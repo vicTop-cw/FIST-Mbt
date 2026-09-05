@@ -1,0 +1,6 @@
+import {
+  "colmugx/mcp" @mcp,
+  "colmugx/mcp/protocol/types" @mcp_types,
+  "colmugx/mcp/protocol/resource" @mcp_resource,
+}
+
