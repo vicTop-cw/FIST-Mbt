@@ -4,3 +4,6 @@ target/
 target
 .mooncakes/
 .moonagent/
+# build/test logs
+_build.log
+_test.log
