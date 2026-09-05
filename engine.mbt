@@ -102,12 +102,8 @@ pub fn FistEngine::claim(
         Ok(x) => x
         Err(e) => return Err(e)
       }
-      // claim 后立即进入执行中（FIST：claim 即开始）
-      let c2 = match c.execute() {
-        Ok(x) => x
-        Err(_) => c
-      }
-      let c3 = { ..c2, updated_at: now, }
+      // claim 仅迁移 待领取 -> 已领取；由 execute 进入执行中，保证已领取态可被 plan 拆分
+      let c3 = { ..c, updated_at: now, }
       ignore(self.store.update_task(c3))
       Ok(c3)
     }

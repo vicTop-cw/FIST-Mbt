@@ -173,7 +173,7 @@ pub async fn run_server() -> Unit {
     )
     .tool(
       "claim",
-      "认领任务（kick off：claim 即开始执行）。参数：task_id、assignee 认领人。",
+      "认领任务（待领取 -> 已领取；随后 execute 进入执行中）。参数：task_id、assignee 认领人。",
       schema(
         {
           "task_id": string_prop("任务 id（必填）"),
@@ -366,7 +366,7 @@ pub async fn run_server() -> Unit {
             {
               role: "user",
               content: @mcp_types.ContentItem::Text(
-                "请为任务 \{task_id} 打卡。检查：1) 我已确认任务描述与交付标准；2) 我使用 claim 认领（claim 即开工）；3) 完成后用 execute 记录交付物、submit 提交验收。",
+                "请为任务 \{task_id} 打卡。检查：1) 我已确认任务描述与交付标准；2) 我使用 claim 认领、execute 记录交付物；3) 完成后用 submit 提交验收。",
               ),
             },
           ],
