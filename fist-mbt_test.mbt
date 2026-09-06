@@ -151,3 +151,88 @@ test "list_all 与按状态过滤" {
   ignore(e.claim(task_id=id, assignee="exec_1", now="2026-09-05T10:01:00Z"))
   assert_eq!(count_status(e, "已领取"), 1)
 }
+
+// —— M1: SQLite 内建数据库 e2e ——
+// 直接驱动 SqliteStore（Store trait）验证五表后端真实读写与跨连接持久化。
+
+test "sqlite 后端：create/get/update/list/delete 全链路" {
+  let s = match SqliteStore::open("smoke_e2e_crud.db") {
+    Some(x) => x
+    None => abort("sqlite open failed")
+  }
+  ignore(s.clear())
+  let t0 = Task::new(
+    id="T0",
+    project_dir="E:/proj/demo",
+    description="根任务",
+    priority="高",
+    importance="高",
+    depth=3,
+    split_n=3,
+    created_at="2026-09-05T10:00:00Z",
+  )
+  ignore(s.create_task(t0))
+  let got = s.get_task("T0")
+  match got {
+    Some(x) => {
+      assert_eq!(x.get_id(), "T0")
+      assert_eq!(x.status_to_string(), "待领取")
+      assert_eq!(x.depth, 3)
+      assert_eq!(x.description, "根任务")
+    }
+    None => abort("T0 should exist")
+  }
+  // 更新：认领 -> 已领取，assignee 写入
+  let claimed = match s.get_task("T0") {
+    Some(x) => x
+    None => abort("no T0")
+  }
+  let claimed = match claimed.claim(assignee="exec_1") {
+    Ok(x) => x
+    Err(m) => abort("claim failed: \{m}")
+  }
+  ignore(s.update_task(claimed))
+  let after = s.get_task("T0")
+  match after {
+    Some(x) => {
+      assert_eq!(x.status_to_string(), "已领取")
+      match x.get_assignee() {
+        Some(a) => assert_eq!(a, "exec_1")
+        None => abort("assignee missing")
+      }
+    }
+    None => abort("no T0 after update")
+  }
+  assert_eq!(s.list_tasks().length(), 1)
+  // delete 复用 remove 语义
+  ignore(s.delete_task("T0"))
+  match s.get_task("T0") {
+    Some(_) => abort("T0 should be gone")
+    None => ()
+  }
+}
+
+test "sqlite 后端：跨连接持久化" {
+  let s1 = match SqliteStore::open("smoke_e2e_persist.db") {
+    Some(x) => x
+    None => abort("sqlite open #1 failed")
+  }
+  ignore(s1.clear())
+  let t = Task::new(
+    id="P0",
+    project_dir="E:/proj/demo",
+    description="持久化任务",
+    created_at="2026-09-05T10:00:00Z",
+  )
+  ignore(s1.create_task(t))
+  // 重新打开数据库（模拟进程重建），任务应仍存在
+  let s2 = match SqliteStore::open("smoke_e2e_persist.db") {
+    Some(x) => x
+    None => abort("sqlite open #2 failed")
+  }
+  match s2.get_task("P0") {
+    Some(x) => assert_eq!(x.description, "持久化任务")
+    None => abort("P0 should survive reopen")
+  }
+  ignore(s2.clear())
+}

@@ -29,5 +29,6 @@ import {
   "mizchi/sqlite@0.3.1",
   "colmugx/mcp@0.17.4",
   "moonbitlang/async@0.21.0",
+  "moonbitlang/x@0.4.40",
 }
 

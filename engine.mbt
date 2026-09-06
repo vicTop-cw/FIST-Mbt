@@ -5,11 +5,12 @@
 pub fn root_task_id() -> String { "T0" }
 
 /// 核心引擎：持有 store，暴露指挥-执行-验收完整闭环。
+/// store 为后端路由（内存 / SQLite），业务逻辑不感知具体实现。
 pub struct FistEngine {
-  store : MemoryStore
+  store : StoreBackend
 }
 
-pub fn FistEngine::new(store~ : MemoryStore = MemoryStore::new()) -> FistEngine {
+pub fn FistEngine::new(store~ : StoreBackend = StoreBackend::Mem(MemoryStore::new())) -> FistEngine {
   { store, }
 }
 

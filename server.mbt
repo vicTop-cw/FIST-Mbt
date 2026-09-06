@@ -2,8 +2,17 @@
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 /// —— 引擎（进程内共享的可变状态）——
+/// 运行时优先接入 SQLite 内建数据库（本项目根目录 fist-mbt.db 持久化）；
+/// 打开失败（如缺 libsqlite3）自动回退内存版，保证 server 总能启动。
+fn make_engine() -> FistEngine {
+  match SqliteStore::new() {
+    Some(s) => FistEngine::new(store = StoreBackend::Sql(s))
+    None => FistEngine::new()
+  }
+}
+
 /// 使用模块级 var，handler 闭包内直接引用（全局变量无需显式捕获）。
-let engine : FistEngine = FistEngine::new()
+let engine : FistEngine = make_engine()
 
 /// 默认时间戳（无系统时钟依赖，保证 demo 可重现）
 fn now_default() -> String { "2026-09-05T00:00:00Z" }

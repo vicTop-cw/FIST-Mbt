@@ -1,3 +1,14 @@
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: 9f2a11add43fbf12a546606fb2b962ab_d6da448aa8e311f1a393525400f8a581
+    ReservedCode1: GRSWKKcGS+h75rRxWqwGNxtMKibO8CYeDd9QifndbDCNr64hZqY8aT7XDiY4qeVSpsLrDQv1ZIPpWWKx1A7KftfgIBoeC66TS6YB89/6jVD8qk7JUFwhnHzofKO0i5p56pwt/4995ml2uT5EUgNLh+hSlI55QPNg5iJ7aPSKh9X9yXgSRZDtCB8Skt0=
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: 9f2a11add43fbf12a546606fb2b962ab_d6da448aa8e311f1a393525400f8a581
+    ReservedCode2: GRSWKKcGS+h75rRxWqwGNxtMKibO8CYeDd9QifndbDCNr64hZqY8aT7XDiY4qeVSpsLrDQv1ZIPpWWKx1A7KftfgIBoeC66TS6YB89/6jVD8qk7JUFwhnHzofKO0i5p56pwt/4995ml2uT5EUgNLh+hSlI55QPNg5iJ7aPSKh9X9yXgSRZDtCB8Skt0=
+---
+
 # FIST-Mbt
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
@@ -141,3 +152,4 @@ claim/execute/submit/verify → list/get → resources/read，全部通过。
 ## License
 
 Apache-2.0
+*（内容由AI生成，仅供参考）*

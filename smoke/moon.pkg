@@ -1,6 +1,5 @@
 import {
   "vicTop-cw/fist-mbt" @lib,
-  "moonbitlang/async" @async,
 }
 
 pkgtype(kind: "executable")

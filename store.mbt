@@ -69,4 +69,55 @@ impl Store for MemoryStore with clear(self) {
 }
 
 /// 提升声明：允许通过具体类型直接调用 trait 方法（避免 deprecated 隐式提升）。
-extend MemoryStore with Store::{create_task, get_task, update_task, list_tasks, delete_task, clear}
+pub extend MemoryStore with Store::{create_task, get_task, update_task, list_tasks, delete_task, clear}
+
+/// 后端路由：内存版（默认，测试/演示）或 SQLite 持久化（运行时内建数据库）。
+/// FistEngine 持此类型，业务层不感知具体后端。
+pub enum StoreBackend {
+  Mem(MemoryStore)
+  Sql(SqliteStore)
+}
+
+impl Store for StoreBackend with create_task(self, task) {
+  match self {
+    Mem(m) => m.create_task(task)
+    Sql(s) => s.create_task(task)
+  }
+}
+
+impl Store for StoreBackend with get_task(self, id) {
+  match self {
+    Mem(m) => m.get_task(id)
+    Sql(s) => s.get_task(id)
+  }
+}
+
+impl Store for StoreBackend with update_task(self, task) {
+  match self {
+    Mem(m) => m.update_task(task)
+    Sql(s) => s.update_task(task)
+  }
+}
+
+impl Store for StoreBackend with list_tasks(self) {
+  match self {
+    Mem(m) => m.list_tasks()
+    Sql(s) => s.list_tasks()
+  }
+}
+
+impl Store for StoreBackend with delete_task(self, id) {
+  match self {
+    Mem(m) => m.delete_task(id)
+    Sql(s) => s.delete_task(id)
+  }
+}
+
+impl Store for StoreBackend with clear(self) {
+  match self {
+    Mem(m) => m.clear()
+    Sql(s) => s.clear()
+  }
+}
+
+pub extend StoreBackend with Store::{create_task, get_task, update_task, list_tasks, delete_task, clear}
