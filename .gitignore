@@ -7,3 +7,5 @@ target
 # build/test logs
 _build.log
 _test.log
+# sqlite e2e test dbs
+*.db

@@ -14,6 +14,14 @@ pub fn FistEngine::new(store~ : StoreBackend = StoreBackend::Mem(MemoryStore::ne
   { store, }
 }
 
+/// 以指定 SQLite 数据库打开持久化引擎（内建数据库入口；失败返回 None 供调用方回退）。
+pub fn FistEngine::open_sqlite(db_path : String) -> Option[FistEngine] {
+  match SqliteStore::open(db_path) {
+    None => None
+    Some(s) => Some(FistEngine::new(store=StoreBackend::Sql(s)))
+  }
+}
+
 /// 发布根任务（仅限人类指挥官）
 pub fn FistEngine::publish(
   self : FistEngine,

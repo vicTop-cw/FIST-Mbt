@@ -325,6 +325,46 @@ pub async fn run_server() -> Unit {
         to_unit_result(engine.delete_task(task_id))
       },
     )
+    .tool(
+      "task_plan_deep",
+      "AO 式递归拆解：对指定任务拆出整棵多层子任务树并写库。参数：task_id 任务id、split_n 每层默认拆分数(默认3)、by 拆解拳长、spec 可选 omega spec JSON(laws 作切割依据、fingerprint 作验收基准)、now 时间戳。",
+      schema(
+        {
+          "task_id": string_prop("父任务 id（必填，非原子任务）"),
+          "split_n": int_prop("每层默认拆分数(默认3，有 spec.laws 时以 laws 为准)"),
+          "by": string_prop("执行拆解的拳长身份(默认 leader)"),
+          "spec": string_prop("可选 omega spec JSON 字符串"),
+          "now": string_prop("时间戳(可选)"),
+        },
+        ["task_id"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let task_id = get_str(args, "task_id")
+        let split_n = get_int(args, "split_n", default=3)
+        let by = get_str(args, "by", default="leader")
+        let spec_raw = get_str(args, "spec")
+        let ts = get_str(args, "now", default=now)
+        let spec : Json? = if spec_raw == "" {
+          None
+        } else {
+          try {
+            Some(@json.parse(spec_raw))
+          } catch {
+            _ => return Err(@mcp_types.ToolError("spec 不是合法 JSON"))
+          }
+        }
+        match engine.plan_deep(
+          task_id~,
+          split_n~,
+          by~,
+          spec=spec,
+          now=ts,
+        ) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
 
     // ---- resources ----
     .resource(
