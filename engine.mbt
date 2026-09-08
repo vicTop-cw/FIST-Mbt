@@ -284,6 +284,26 @@ pub fn FistEngine::get_task(self : FistEngine, task_id : String) -> Option[Task]
   self.store.get_task(task_id)
 }
 
+/// 回滚/重派：任意非归档任务 -> 已领取（M4 heal watchdog 用）。返回回滚后的任务。
+pub fn FistEngine::reopen_task(
+  self : FistEngine,
+  task_id : String,
+  now : String,
+) -> Result[Task, String] {
+  match self.store.get_task(task_id) {
+    None => Err("task not found: \{task_id}")
+    Some(t) => {
+      let c = match t.reopen() {
+        Ok(x) => x
+        Err(e) => return Err(e)
+      }
+      let c2 = { ..c, updated_at: now, }
+      ignore(self.store.update_task(c2))
+      Ok(c2)
+    }
+  }
+}
+
 /// 删除任务（仅限已归档，ARCHIVING 清理）
 pub fn FistEngine::delete_task(self : FistEngine, task_id : String) -> Result[Unit, String] {
   match self.store.get_task(task_id) {

@@ -94,6 +94,8 @@ pub fn Task::get_description(self : Task) -> String { self.description }
 
 pub fn Task::get_assignee(self : Task) -> String? { self.assignee }
 
+pub fn Task::get_updated_at(self : Task) -> String { self.updated_at }
+
 pub fn Task::is_leaf(self : Task) -> Bool { self.depth <= 1 }
 
 /// 构造器（字段带默认值）

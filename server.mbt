@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 10 tools + 2 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 14 tools + 2 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 /// —— 引擎（进程内共享的可变状态）——
@@ -13,6 +13,9 @@ fn make_engine() -> FistEngine {
 
 /// 使用模块级 var，handler 闭包内直接引用（全局变量无需显式捕获）。
 let engine : FistEngine = make_engine()
+
+/// 模块级心跳登记表（M4 运维：ActivityState / no_signal watchdog）。
+let heartbeats : Heartbeat = Heartbeat::new()
 
 /// 默认时间戳（无系统时钟依赖，保证 demo 可重现）
 fn now_default() -> String { "2026-09-05T00:00:00Z" }
@@ -361,6 +364,104 @@ pub async fn run_server() -> Unit {
           now=ts,
         ) {
           Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "conflicts_check",
+      "claim 冲突检测（AO --no-takeover）：认领前检查任务是否已被他人/本人持有。参数：task_id、assignee。",
+      schema(
+        {
+          "task_id": string_prop("任务 id（必填）"),
+          "assignee": string_prop("拟认领人（必填）"),
+        },
+        ["task_id", "assignee"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let task_id = get_str(args, "task_id")
+        let assignee = get_str(args, "assignee")
+        match check_claim(engine, task_id, assignee) {
+          Ok(_) => Ok(@mcp.ToolResult::text(Json::object({
+            "task_id": Json::string(task_id),
+            "assignee": Json::string(assignee),
+            "ok": Json::boolean(true),
+            "message": Json::string("可安全认领（待领取）"),
+          }).stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "heartbeat",
+      "活动信号上报（AO ActivityState）：任务执行前/执行中周期性上报，超时静默将触发 heal 回滚。参数：task_id、signal(可选默认 active)、now。",
+      schema(
+        {
+          "task_id": string_prop("任务 id（必填）"),
+          "signal": string_prop("信号(可选)：pre-execution/active/submit，默认 active"),
+          "now": string_prop("时间戳(可选，默认内置)"),
+        },
+        ["task_id"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let task_id = get_str(args, "task_id")
+        let signal = get_str(args, "signal", default="active")
+        let ts = get_str(args, "now", default=now)
+        match engine.get_task(task_id) {
+          None => Err(@mcp_types.ToolError("task not found: \{task_id}"))
+          Some(_) => {
+            heartbeats.beat(task_id, signal~, now=ts)
+            Ok(@mcp.ToolResult::text(Json::object({
+              "task_id": Json::string(task_id),
+              "signal": Json::string(signal),
+              "last_seen": Json::string(heartbeats.last_seen_of(task_id)),
+            }).stringify()))
+          }
+        }
+      },
+    )
+    .tool(
+      "heal",
+      "no_signal 看护（AO watchdog）：心跳超时静默的活跃任务（执行中/已领取/拆分中）回滚为已领取待重派。参数：now、timeout_sec(可选默认600)。",
+      schema(
+        {
+          "now": string_prop("当前时间戳(默认内置)"),
+          "timeout_sec": int_prop("超时秒数(可选默认600)"),
+        },
+        [],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let ts = get_str(args, "now", default=now)
+        let timeout_sec = get_int(args, "timeout_sec", default=600)
+        match heal_stale_tasks(engine, heartbeats, ts, timeout_sec=timeout_sec) {
+          Ok(healed) => Ok(@mcp.ToolResult::text(Json::object({
+            "healed": Json::array(healed.map(fn(s) { Json::string(s) })),
+            "count": Json::number(healed.length().to_double()),
+            "message": Json::string("超时静默任务已回滚待重派"),
+          }).stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "task_cleanup",
+      "归档清理：删除超过保留期的已归档任务。参数：now、retention_days(可选默认30)。",
+      schema(
+        {
+          "now": string_prop("当前时间戳(默认内置)"),
+          "retention_days": int_prop("归档保留天数(可选默认30)"),
+        },
+        [],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let ts = get_str(args, "now", default=now)
+        let retention_days = get_int(args, "retention_days", default=30)
+        match cleanup_archived(engine, ts, retention_days=retention_days) {
+          Ok(removed) => Ok(@mcp.ToolResult::text(Json::object({
+            "removed": Json::array(removed.map(fn(s) { Json::string(s) })),
+            "count": Json::number(removed.length().to_double()),
+            "message": Json::string("已清理过期归档任务"),
+          }).stringify()))
           Err(e) => Err(@mcp_types.ToolError(e))
         }
       },
