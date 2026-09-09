@@ -21,7 +21,7 @@ license = "Apache-2.0"
 
 keywords = ["MCP", "task-orchestration", "multi-agent", "FIST"]
 
-preferred_target = "wasm"
+preferred_target = "js"
 
 description = "FIST commander task orchestration rewritten in pure MoonBit, exposed as an MCP server."
 
