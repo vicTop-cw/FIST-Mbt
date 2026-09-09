@@ -13,9 +13,11 @@ AIGC:
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
 
+[![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml)
+
 将 **FIST 指挥官任务分配体系**（原 Python 实现）用 **纯 MoonBit 原生重写** 并包装为 **MCP Server** 的参赛作品（2026 MoonBit 九月黑客松）。
 
-指挥官（人类 / 主力模型）通过标准 MCP 协议调用 FIST-Mbt 暴露的 10 个 `task` 系列工具，完成任务的
+指挥官（人类 / 主力模型）通过标准 MCP 协议调用 FIST-Mbt 暴露的 15 个 MCP 工具，完成任务的
 **发布 → 认领 → 拆分 → 执行 → 提交 → 验收 → 归档** 完整闭环，全程贯彻 FIST 七条金条原则。
 
 > 该项目为 `E:\IDEProjects\AI\FIST`（Python）的 MoonBit 原生重写 + MCP 化，非原代码搬运。
