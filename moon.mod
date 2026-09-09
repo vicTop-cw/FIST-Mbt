@@ -15,15 +15,15 @@ version = "0.1.0"
 
 readme = "README.mbt.md"
 
-repository = ""
+repository = "https://github.com/vicTop-cw/FIST-Mbt"
 
 license = "Apache-2.0"
 
-keywords = []
+keywords = ["MCP", "task-orchestration", "multi-agent", "FIST"]
 
 preferred_target = "wasm"
 
-description = ""
+description = "FIST commander task orchestration rewritten in pure MoonBit, exposed as an MCP server."
 
 import {
   "mizchi/sqlite@0.3.1",
