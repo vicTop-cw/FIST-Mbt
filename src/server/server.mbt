@@ -549,8 +549,9 @@ pub async fn run_server() -> Unit {
       },
     )
 
-  // run_stdio 内部 raise TransportError，入口捕获后退出
-  s1.run_stdio() catch {
-    e => println("fist-mbt server error: \{e}")
-  }
+  // 依 target 分派：
+  //  - native/wasm：stdio_native.mbt 中 run_stdio_target 直接走 mcp run_stdio；
+  //  - js：stdio_js.mbt 中 run_stdio_target 走本项目自建 stdio 循环
+  //    （colmugx/mcp 的 JS target server stdio 为 abort 占位）。
+  run_stdio_target(s1)
 }

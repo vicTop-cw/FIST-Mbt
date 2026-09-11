@@ -7,6 +7,20 @@ import {
   "colmugx/mcp/protocol/types" @mcp_types,
   "colmugx/mcp/protocol/resource" @mcp_resource,
   "moonbitlang/core/json" @json,
+  "moonbitlang/async/io" @io,
+  "moonbitlang/async/js_async" @js_async,
 }
 
 supported_targets = "js+native"
+
+options(
+  targets: {
+    "stdio_native.mbt": [ "native" ],
+    "stdio_js.mbt": [ "js" ],
+  },
+)
+
+// stdio_js/stdio_native 使用 io/js_async 等仅在各自 target 生效；
+// json 在 native 测试端不需要, 统一压制 unused_package。
+warnings = "-6-35"
+
