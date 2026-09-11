@@ -8,7 +8,7 @@
 /// 看护一轮：扫描引擎全部任务，对心跳超时静默的活跃任务执行回滚。
 /// 返回本轮被回滚（重派）的任务 id 列表。
 pub fn heal_stale_tasks(
-  engine : FistEngine,
+  engine : @engine.FistEngine,
   hb : Heartbeat,
   now : String,
   timeout_sec~ : Int = 600,

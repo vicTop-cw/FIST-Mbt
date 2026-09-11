@@ -6,13 +6,13 @@
 /// 仓库统一接口
 pub trait Store {
   /// 创建任务；id 冲突返回错误
-  create_task(Self, Task) -> Result[Unit, String]
+  create_task(Self, @core.Task) -> Result[Unit, String]
   /// 按 id 读取
-  get_task(Self, String) -> Option[Task]
+  get_task(Self, String) -> Option[@core.Task]
   /// 全量更新任务
-  update_task(Self, Task) -> Result[Unit, String]
+  update_task(Self, @core.Task) -> Result[Unit, String]
   /// 列出全部任务（任意顺序）
-  list_tasks(Self) -> Array[Task]
+  list_tasks(Self) -> Array[@core.Task]
   /// 删除任务（ARCHIVING 清理用）
   delete_task(Self, String) -> Result[Unit, String]
   /// 清空（仅供测试 / reset）
@@ -21,7 +21,7 @@ pub trait Store {
 
 /// 内存实现：进程内 Map，简单可靠，配合单机 MCP server 足够。
 pub struct MemoryStore {
-  tasks : Map[String, Task]
+  tasks : Map[String, @core.Task]
 }
 
 pub fn MemoryStore::new() -> MemoryStore {
@@ -50,7 +50,7 @@ impl Store for MemoryStore with update_task(self, task) {
 }
 
 impl Store for MemoryStore with list_tasks(self) {
-  let out : Array[Task] = []
+  let out : Array[@core.Task] = []
   self.tasks.each(fn(_, t) { out.push(t) })
   out
 }
@@ -77,6 +77,11 @@ pub enum StoreBackend {
   Mem(MemoryStore)
   Sql(SqliteStore)
 }
+
+/// 后端工厂（跨包构造 StoreBackend 需经 pub 函数）
+pub fn StoreBackend::memory() -> StoreBackend { Mem(MemoryStore::new()) }
+
+pub fn StoreBackend::sqlite(s : SqliteStore) -> StoreBackend { Sql(s) }
 
 impl Store for StoreBackend with create_task(self, task) {
   match self {

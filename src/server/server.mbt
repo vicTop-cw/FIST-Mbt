@@ -4,18 +4,18 @@
 /// —— 引擎（进程内共享的可变状态）——
 /// 运行时优先接入 SQLite 内建数据库（本项目根目录 fist-mbt.db 持久化）；
 /// 打开失败（如缺 libsqlite3）自动回退内存版，保证 server 总能启动。
-fn make_engine() -> FistEngine {
-  match SqliteStore::new() {
-    Some(s) => FistEngine::new(store = StoreBackend::Sql(s))
-    None => FistEngine::new()
+fn make_engine() -> @engine.FistEngine {
+  match @store.SqliteStore::new() {
+    Some(s) => @engine.FistEngine::new(store = @store.StoreBackend::sqlite(s))
+    None => @engine.FistEngine::new()
   }
 }
 
 /// 使用模块级 var，handler 闭包内直接引用（全局变量无需显式捕获）。
-let engine : FistEngine = make_engine()
+let engine : @engine.FistEngine = make_engine()
 
 /// 模块级心跳登记表（M4 运维：ActivityState / no_signal watchdog）。
-let heartbeats : Heartbeat = Heartbeat::new()
+let heartbeats : @ops.Heartbeat = @ops.Heartbeat::new()
 
 /// 默认时间戳（无系统时钟依赖，保证 demo 可重现）
 fn now_default() -> String { "2026-09-05T00:00:00Z" }
@@ -68,7 +68,7 @@ fn get_int(args : Json, key : String, default~ : Int = 3) -> Int {
 }
 
 /// —— 结果转换辅助 ——
-fn to_result(r : Result[Task, String]) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+fn to_result(r : Result[@core.Task, String]) -> Result[@mcp.ToolResult, @mcp.MCPError] {
   match r {
     Ok(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
     Err(e) => Err(@mcp_types.ToolError(e))
@@ -285,7 +285,7 @@ pub async fn run_server() -> Unit {
         let tasks = if status_str == "" {
           engine.list_all()
         } else {
-          match TaskStatus::from_string(status_str) {
+          match @core.TaskStatus::from_string(status_str) {
             Some(st) => engine.list_by_status(st)
             None => return Err(@mcp_types.ToolError(
               "未知状态: \{status_str}",
@@ -381,7 +381,7 @@ pub async fn run_server() -> Unit {
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let task_id = get_str(args, "task_id")
         let assignee = get_str(args, "assignee")
-        match check_claim(engine, task_id, assignee) {
+        match @ops.check_claim(engine, task_id, assignee) {
           Ok(_) => Ok(@mcp.ToolResult::text(Json::object({
             "task_id": Json::string(task_id),
             "assignee": Json::string(assignee),
@@ -433,7 +433,7 @@ pub async fn run_server() -> Unit {
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let ts = get_str(args, "now", default=now)
         let timeout_sec = get_int(args, "timeout_sec", default=600)
-        match heal_stale_tasks(engine, heartbeats, ts, timeout_sec=timeout_sec) {
+        match @ops.heal_stale_tasks(engine, heartbeats, ts, timeout_sec=timeout_sec) {
           Ok(healed) => Ok(@mcp.ToolResult::text(Json::object({
             "healed": Json::array(healed.map(fn(s) { Json::string(s) })),
             "count": Json::number(healed.length().to_double()),
@@ -456,7 +456,7 @@ pub async fn run_server() -> Unit {
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let ts = get_str(args, "now", default=now)
         let retention_days = get_int(args, "retention_days", default=30)
-        match cleanup_archived(engine, ts, retention_days=retention_days) {
+        match @ops.cleanup_archived(engine, ts, retention_days=retention_days) {
           Ok(removed) => Ok(@mcp.ToolResult::text(Json::object({
             "removed": Json::array(removed.map(fn(s) { Json::string(s) })),
             "count": Json::number(removed.length().to_double()),
@@ -477,7 +477,7 @@ pub async fn run_server() -> Unit {
         Ok({
           uri: "fist://principles",
           content: @mcp_resource.ResourceContent::Text(
-            principles_json().stringify(),
+            @core.principles_json().stringify(),
           ),
         })
       },

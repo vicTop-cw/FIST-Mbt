@@ -93,14 +93,22 @@ moon run
 
 ```
 E:\IDEProjects\AI\FIST-Mbt
-├── core_task.mbt       # 任务实体 + 七态状态机（待领取/已领取/拆分中/执行中/待验收/已完成/已归档）
-├── core_role.mbt       # 八角色权限矩阵（human_steward/leader/executor/searcher/reviewer/cleaner/verifier/documenter）
-├── core_principle.mbt  # 七条金条原则常量
-├── store.mbt           # Store trait + MemoryStore 内存实现（后续可换 SQLite）
-├── engine.mbt          # FistEngine：publish/plan/claim/execute/submit/verify/archive/list/get/delete 完整闭环
-├── server.mbt          # MCPServer 装配：tools/resources/prompts 注册 + run_stdio
+├── lib.mbt             # 对外门面：导出 Task/TaskStatus/FistEngine 等,run_server 入口
+├── src/
+│   ├── core/           # 领域核心实体
+│   │   ├── core_task.mbt       # 任务实体 + 七态状态机（待领取/已领取/拆分中/执行中/待验收/已完成/已归档）
+│   │   ├── core_role.mbt       # 八角色权限矩阵（human_steward/leader/executor/searcher/reviewer/cleaner/verifier/documenter）
+│   │   └── core_principle.mbt  # 七条金条原则常量
+│   ├── store/          # 持久化
+│   │   ├── store.mbt           # Store trait + StoreBackend(memory/sqlite) 工厂
+│   │   └── store_sqlite.mbt    # SQLite 实现（内建 DB,fist-mbt.db）
+│   ├── engine/         # FistEngine：publish/plan/claim/execute/submit/verify/archive/list/get/delete 完整闭环
+│   ├── decompose/      # 任务拆解（plan_deep 迁入 engine 后保留辅助计算）
+│   ├── ops/            # 运维操作：conflicts/heartbeat/heal/cleanup/ts
+│   ├── omega/          # 可解释性子包：spec/gate/check
+│   └── server/         # MCPServer 装配：tools/resources/prompts 注册 + run_stdio
 ├── cmd/main/           # 可执行入口（async fn main → run_server）
-├── fist-mbt_test.mbt   # 黑盒单测（moon test）
+├── smoke/              # 冒烟测试包
 ├── README.mbt.md       # 本文档
 └── CHANGELOG.md
 ```

@@ -1,0 +1,5 @@
+import {
+  "vicTop-cw/fist-mbt/src/core" @core,
+}
+
+supported_targets = "js+native"

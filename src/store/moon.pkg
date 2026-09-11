@@ -1,0 +1,7 @@
+import {
+  "vicTop-cw/fist-mbt/src/core" @core,
+  "mizchi/sqlite" @sqlite,
+  "moonbitlang/x/encoding" @encoding,
+}
+
+supported_targets = "js+native"

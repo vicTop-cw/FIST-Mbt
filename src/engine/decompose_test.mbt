@@ -1,11 +1,11 @@
-// M3: AO 式递归拆解（plan_deep）测试。
+// M3: AO 式递归拆解（plan_deep）测试（原 decompose 包，随 plan_deep 迁入 engine 包）。
 // 覆盖：带 spec.laws 的递归拆解、无 spec 默认拆分、原子任务拒绝、SQLite 持久化恢复。
 
-fn dp_new_engine() -> FistEngine {
-  FistEngine::new()
+fn dp_new_engine() -> @engine.FistEngine {
+  @engine.FistEngine::new()
 }
 
-fn dp_publish(e : FistEngine, desc~ : String = "M3 根任务") -> String {
+fn dp_publish(e : @engine.FistEngine, desc~ : String = "M3 根任务") -> String {
   match e.publish(
     project_dir="E:/proj/demo",
     description=desc,
@@ -129,11 +129,11 @@ test "plan_deep 未认领任务（待领取）也允许拆解（拳长可直接 
 test "plan_deep SQLite 持久化：重启后子树可经 get_task 恢复" {
   let db_path = "decompose_persist.db"
   // 幂等：先经 SqliteStore 公共 API 清空上次残留，再构建引擎
-  match SqliteStore::open(db_path) {
+  match @store.SqliteStore::open(db_path) {
     Some(s) => ignore(s.clear())
     None => abort("sqlite open failed")
   }
-  match FistEngine::open_sqlite(db_path) {
+  match @engine.FistEngine::open_sqlite(db_path) {
     None => abort("sqlite open failed")
     Some(e) => {
       let id = dp_publish(e, desc="持久化根任务")
@@ -146,7 +146,7 @@ test "plan_deep SQLite 持久化：重启后子树可经 get_task 恢复" {
     }
   }
   // 模拟进程重建：重新打开同库，子树应完整可恢复
-  match FistEngine::open_sqlite(db_path) {
+  match @engine.FistEngine::open_sqlite(db_path) {
     None => abort("sqlite reopen failed")
     Some(e2) => {
       assert_eq!(e2.get_task("T0") is Some(_), true)

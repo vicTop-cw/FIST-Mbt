@@ -13,6 +13,20 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## [0.1.1] - 2026-09-09
+
+### 源码重排（src/ 分类收拢）
+
+- 根包散落的 `.mbt` 全部按职责收拢进 `src/` 子包并拆分子包，根包仅保留 `lib.mbt` 门面
+  （导出 `Task/TaskStatus/SqliteStore/FistEngine` 与 `run_server`）。
+- 新子包布局：`src/core/`（core_task/core_role/core_principle）、`src/store/`（store/store_sqlite）、
+  `src/engine/`、`src/decompose/`、`src/ops/`、`src/omega/`、`src/server/`；`cmd/main`、`smoke` 保留。
+- 跨包子包封装：新增 `StoreBackend::memory()/sqlite()` 工厂、`TaskStatus` 状态谓词
+  （is_pending/is_claimed/is_splitting/is_executing/is_completed/is_reviewing/is_archived）、
+  `Task::with_updated_at/with_deliverable`，消除跨包直接构造 readonly 类型；`plan_deep` 迁入 engine。
+- 修根包 `typealias` 为 `type`（废弃语法）；更新 README 目录结构与全部 `@core./@store.` 引用。
+- 验证：`moon check` 0 错误，`moon test` 全绿（engine/server/ops/omega 测试 + smoke）。
+
 ## [0.1.0] - 2026-09-05
 
 ### 首版（root commit 147e642）

@@ -6,7 +6,7 @@
 
 /// 清理一轮：删除超过保留期的已归档任务。返回被清理的任务 id 列表。
 pub fn cleanup_archived(
-  engine : FistEngine,
+  engine : @engine.FistEngine,
   now : String,
   retention_days~ : Int = 30,
 ) -> Result[Array[String], String] {

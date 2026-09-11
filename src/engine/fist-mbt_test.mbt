@@ -156,12 +156,12 @@ test "list_all 与按状态过滤" {
 // 直接驱动 SqliteStore（Store trait）验证五表后端真实读写与跨连接持久化。
 
 test "sqlite 后端：create/get/update/list/delete 全链路" {
-  let s = match SqliteStore::open("smoke_e2e_crud.db") {
+  let s = match @store.SqliteStore::open("smoke_e2e_crud.db") {
     Some(x) => x
     None => abort("sqlite open failed")
   }
   ignore(s.clear())
-  let t0 = Task::new(
+  let t0 = @core.Task::new(
     id="T0",
     project_dir="E:/proj/demo",
     description="根任务",
@@ -213,12 +213,12 @@ test "sqlite 后端：create/get/update/list/delete 全链路" {
 }
 
 test "sqlite 后端：跨连接持久化" {
-  let s1 = match SqliteStore::open("smoke_e2e_persist.db") {
+  let s1 = match @store.SqliteStore::open("smoke_e2e_persist.db") {
     Some(x) => x
     None => abort("sqlite open #1 failed")
   }
   ignore(s1.clear())
-  let t = Task::new(
+  let t = @core.Task::new(
     id="P0",
     project_dir="E:/proj/demo",
     description="持久化任务",
@@ -226,7 +226,7 @@ test "sqlite 后端：跨连接持久化" {
   )
   ignore(s1.create_task(t))
   // 重新打开数据库（模拟进程重建），任务应仍存在
-  let s2 = match SqliteStore::open("smoke_e2e_persist.db") {
+  let s2 = match @store.SqliteStore::open("smoke_e2e_persist.db") {
     Some(x) => x
     None => abort("sqlite open #2 failed")
   }

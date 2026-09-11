@@ -45,6 +45,36 @@ pub fn TaskStatus::from_string(s : String) -> Option[TaskStatus] {
 }
 
 /// 排序权重（用于统计/展示）
+
+/// 状态谓词（供跨包业务层判断，避免直接构造变体）
+pub fn TaskStatus::can_split(self : TaskStatus) -> Bool {
+  match self {
+    Pending | Claimed | Splitting => true
+    _ => false
+  }
+}
+
+pub fn TaskStatus::can_execute(self : TaskStatus) -> Bool {
+  match self {
+    Claimed | Splitting | Executing => true
+    _ => false
+  }
+}
+
+pub fn TaskStatus::is_completed(self : TaskStatus) -> Bool { self == Completed }
+pub fn TaskStatus::is_pending(self : TaskStatus) -> Bool { self == Pending }
+
+pub fn TaskStatus::is_claimed(self : TaskStatus) -> Bool { self == Claimed }
+
+pub fn TaskStatus::is_splitting(self : TaskStatus) -> Bool { self == Splitting }
+
+pub fn TaskStatus::is_executing(self : TaskStatus) -> Bool { self == Executing }
+
+
+pub fn TaskStatus::is_reviewing(self : TaskStatus) -> Bool { self == Reviewing }
+
+pub fn TaskStatus::is_archived(self : TaskStatus) -> Bool { self == Archived }
+
 pub fn TaskStatus::order(self : TaskStatus) -> Int {
   match self {
     Pending => 0
@@ -60,23 +90,23 @@ pub fn TaskStatus::order(self : TaskStatus) -> Int {
 /// FIST-Mbt 任务实体
 pub struct Task {
   /// 形如 T0 / T0.1 / T0.1.2 的层级 id
-  id : String
-  parent_id : String?
-  project_dir : String
-  priority : String
-  importance : String
+  pub id : String
+  pub parent_id : String?
+  pub project_dir : String
+  pub priority : String
+  pub importance : String
   /// K 值：根=3，每拆一层减 1；K<=1 为原子任务
-  depth : Int
+  pub depth : Int
   /// 拆分数量（默认 3）
-  split_n : Int
-  status : TaskStatus
-  assignee : String?
-  description : String
-  deliverable : String
-  created_at : String
-  updated_at : String
-  completed_by : String?
-  cleanup_mode : String
+  pub split_n : Int
+  pub status : TaskStatus
+  pub assignee : String?
+  pub description : String
+  pub deliverable : String
+  pub created_at : String
+  pub updated_at : String
+  pub completed_by : String?
+  pub cleanup_mode : String
 } derive(Eq, Debug)
 
 /// 便捷状态访问
@@ -131,6 +161,48 @@ pub fn Task::new(
   }
 }
 
+
+/// 按存储行字段直接构建任务（供 store 层反序列化使用；status 为存储字符串，非法回退 Pending）
+pub fn Task::from_db(
+  id : String,
+  parent_id : String?,
+  project_dir : String,
+  priority : String,
+  importance : String,
+  depth : Int,
+  split_n : Int,
+  status_s : String,
+  assignee : String?,
+  description : String,
+  deliverable : String,
+  created_at : String,
+  updated_at : String,
+  completed_by : String?,
+  cleanup_mode : String,
+) -> Task {
+  let status = match TaskStatus::from_string(status_s) {
+    Some(s) => s
+    None => Pending
+  }
+  {
+    id,
+    parent_id,
+    project_dir,
+    priority,
+    importance,
+    depth,
+    split_n,
+    status,
+    assignee,
+    description,
+    deliverable,
+    created_at,
+    updated_at,
+    completed_by,
+    cleanup_mode,
+  }
+}
+
 /// —— 状态迁移 ——
 /// 每个迁移都是纯函数（返回新 Task），状态机非法流转直接拒绝。
 /// 返回 Err(msg) 表示非法迁移。
@@ -173,6 +245,15 @@ pub fn Task::split(self : Task) -> Result[Task, String] {
         self.status.to_string() +
         "]",
       )
+  }
+}
+
+
+/// 拆分中标记（AO 式拆解用，宽于 split：待领取/已领取/拆分中均可转入）
+pub fn Task::mark_decomposing(self : Task) -> Result[Task, String] {
+  match self.status {
+    Pending | Claimed | Splitting => Ok({ ..self, status: Splitting, })
+    _ => Err("非法拆解: 任务处于 [\{self.status.to_string()}]")
   }
 }
 
@@ -246,6 +327,16 @@ pub fn Task::reopen(self : Task) -> Result[Task, String] {
 }
 
 /// 生成子任务 id：T0.1.2 -> T0.1.2.1
+
+/// 记录类复制更新（跨包不便直接构造 record，由 core 提供）
+pub fn Task::with_updated_at(self : Task, now : String) -> Task {
+  { ..self, updated_at: now, }
+}
+
+pub fn Task::with_deliverable(self : Task, deliverable : String, now : String) -> Task {
+  { ..self, deliverable, updated_at: now, }
+}
+
 pub fn child_id(parent_id~ : String, idx~ : Int) -> String {
   "\{parent_id}.\{idx}"
 }

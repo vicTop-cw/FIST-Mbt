@@ -1,0 +1,12 @@
+import {
+  "vicTop-cw/fist-mbt/src/core" @core,
+  "vicTop-cw/fist-mbt/src/store" @store,
+  "vicTop-cw/fist-mbt/src/engine" @engine,
+  "vicTop-cw/fist-mbt/src/ops" @ops,
+  "colmugx/mcp" @mcp,
+  "colmugx/mcp/protocol/types" @mcp_types,
+  "colmugx/mcp/protocol/resource" @mcp_resource,
+  "moonbitlang/core/json" @json,
+}
+
+supported_targets = "js+native"

@@ -6,8 +6,8 @@
 ///   - cleanup 清理超过保留期的 archived 任务，未过期的不动。
 
 /// 快速构建：含 T0 根任务的引擎（T0 已发布，claim 后可用）。
-fn test_engine() -> FistEngine {
-  let e = FistEngine::new()
+fn test_engine() -> @engine.FistEngine {
+  let e = @engine.FistEngine::new()
   ignore(e.publish(
     project_dir="/demo",
     description="测试根任务",

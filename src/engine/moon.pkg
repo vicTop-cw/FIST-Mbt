@@ -1,8 +1,7 @@
 import {
   "vicTop-cw/fist-mbt/src/core" @core,
   "vicTop-cw/fist-mbt/src/store" @store,
-  "vicTop-cw/fist-mbt/src/engine" @engine,
-  "vicTop-cw/fist-mbt/src/server" @server,
+  "vicTop-cw/fist-mbt/src/decompose" @decompose,
 }
 
 supported_targets = "js+native"

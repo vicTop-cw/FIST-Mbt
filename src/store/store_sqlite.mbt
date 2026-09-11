@@ -56,7 +56,7 @@ fn SqliteStore::task_columns() -> String {
   "id, parent_id, project_dir, priority, importance, depth, split_n, status, assignee, description, deliverable, created_at, updated_at, completed_by, cleanup_mode"
 }
 
-fn SqliteStore::bind_task_values(stmt : @sqlite.Statement, t : Task) -> Unit {
+fn SqliteStore::bind_task_values(stmt : @sqlite.Statement, t : @core.Task) -> Unit {
   ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.get_id()))))
   ignore(stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, _opt_str(t.get_parent())))))
   ignore(stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.project_dir))))
@@ -75,7 +75,7 @@ fn SqliteStore::bind_task_values(stmt : @sqlite.Statement, t : Task) -> Unit {
 }
 
 /// UPDATE 专用绑定：SET 列顺序（parent_id..cleanup_mode）+ WHERE id
-fn SqliteStore::bind_task_update_values(stmt : @sqlite.Statement, t : Task) -> Unit {
+fn SqliteStore::bind_task_update_values(stmt : @sqlite.Statement, t : @core.Task) -> Unit {
   ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, _opt_str(t.get_parent())))))
   ignore(stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.project_dir))))
   ignore(stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.priority))))
@@ -107,32 +107,27 @@ fn _opt_str(o : String?) -> String {
   }
 }
 
-fn row_to_task(stmt : @sqlite.Statement) -> Task {
+fn row_to_task(stmt : @sqlite.Statement) -> @core.Task {
   let parent_raw = str_from_bytes(stmt.column_text(1))
   let assignee_raw = str_from_bytes(stmt.column_text(8))
   let completed_raw = str_from_bytes(stmt.column_text(13))
-  let status_s = str_from_bytes(stmt.column_text(7))
-  let status = match TaskStatus::from_string(status_s) {
-    Some(s) => s
-    None => Pending
-  }
-  {
-    id : str_from_bytes(stmt.column_text(0)),
-    parent_id : if parent_raw == "" { None } else { Some(parent_raw) },
-    project_dir : str_from_bytes(stmt.column_text(2)),
-    priority : str_from_bytes(stmt.column_text(3)),
-    importance : str_from_bytes(stmt.column_text(4)),
-    depth : stmt.column_int(5),
-    split_n : stmt.column_int(6),
-    status,
-    assignee : if assignee_raw == "" { None } else { Some(assignee_raw) },
-    description : str_from_bytes(stmt.column_text(9)),
-    deliverable : str_from_bytes(stmt.column_text(10)),
-    created_at : str_from_bytes(stmt.column_text(11)),
-    updated_at : str_from_bytes(stmt.column_text(12)),
-    completed_by : if completed_raw == "" { None } else { Some(completed_raw) },
-    cleanup_mode : str_from_bytes(stmt.column_text(14)),
-  }
+  @core.Task::from_db(
+    str_from_bytes(stmt.column_text(0)),
+    if parent_raw == "" { None } else { Some(parent_raw) },
+    str_from_bytes(stmt.column_text(2)),
+    str_from_bytes(stmt.column_text(3)),
+    str_from_bytes(stmt.column_text(4)),
+    stmt.column_int(5),
+    stmt.column_int(6),
+    str_from_bytes(stmt.column_text(7)),
+    if assignee_raw == "" { None } else { Some(assignee_raw) },
+    str_from_bytes(stmt.column_text(9)),
+    str_from_bytes(stmt.column_text(10)),
+    str_from_bytes(stmt.column_text(11)),
+    str_from_bytes(stmt.column_text(12)),
+    if completed_raw == "" { None } else { Some(completed_raw) },
+    str_from_bytes(stmt.column_text(14)),
+  )
 }
 
 // —— Store trait 实现 ——
@@ -199,7 +194,7 @@ impl Store for SqliteStore with update_task(self, task) {
 }
 
 impl Store for SqliteStore with list_tasks(self) {
-  let out : Array[Task] = []
+  let out : Array[@core.Task] = []
   match self.db {
     None => out
     Some(db) => {
@@ -255,7 +250,7 @@ pub extend SqliteStore with Store::{create_task, get_task, update_task, list_tas
 // —— archive 快照（Phase 2/5 预置 API，不改变 Store trait）——
 
 /// 将已归档任务写入 archive 表快照。
-pub fn SqliteStore::archive_task(self : SqliteStore, t : Task, archived_at~ : String) -> Result[Unit, String] {
+pub fn SqliteStore::archive_task(self : SqliteStore, t : @core.Task, archived_at~ : String) -> Result[Unit, String] {
   match self.db {
     None => Err("sqlite store 未打开")
     Some(db) => {
