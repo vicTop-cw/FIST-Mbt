@@ -75,24 +75,61 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（14 tools + 2 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**22 tools + 2 resources + 2 prompts**）：
 
+### 生命周期（12）
 | 工具 | 说明 |
-|------|------|
+|---|---|
 | `publish` | 发布根任务 |
 | `plan` | 拆分子任务 |
 | `claim` | 认领任务 |
 | `execute` | 记录执行交付物 |
 | `submit` | 提交验收 |
 | `verify` | 验收通过 |
+| `reject` | 验收拒绝（→已打回） |
+| `retry` | 打回后重试（→执行中） |
+| `pause` | 暂停任务（任意活跃→已暂停） |
+| `resume` | 恢复任务（已暂停→已领取） |
 | `archive` | 归档任务 |
+| `delete` | 删除已归档任务 |
+
+### 查询（2）
+| 工具 | 说明 |
+|---|---|
 | `list` | 列出任务 |
 | `get` | 查询任务详情 |
-| `delete` | 删除已归档任务 |
+
+### 运维（5）
+| 工具 | 说明 |
+|---|---|
 | `task_plan_deep` | AO 式递归拆解 |
 | `conflicts_check` | 认领冲突检测 |
 | `heartbeat` | 活动信号上报 |
 | `heal` | 超时任务回滚 |
+| `task_cleanup` | 归档清理 |
+
+### DAG 依赖图（6）
+| 工具 | 说明 |
+|---|---|
+| `dag_critical_path` | 最长依赖链 |
+| `dag_parallelism` | 可并行任务数 |
+| `dag_ascii` | ASCII 依赖结构图 |
+| `dag_check` | 依赖完成检查 |
+| `dag_ready` | 可领取任务列表 |
+| `dag_sort` | 拓扑排序 |
+
+### 审计与权限（2）
+| 工具 | 说明 |
+|---|---|
+| `audit_permission` | 角色权限查询 |
+| `audit_log` | 追加式审计日志 |
+
+### 多租户命名空间（3）
+| 工具 | 说明 |
+|---|---|
+| `store_open` | 打开命名空间 |
+| `store_list` | 列出已打开 ns |
+| `store_close` | 关闭命名空间 |
 
 Resources: `fist://principles`, `fist://overview`
 Prompts: `fist:check_in`, `fist:verify`

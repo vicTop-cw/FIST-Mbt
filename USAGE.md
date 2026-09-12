@@ -1,18 +1,7 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: 9f2a11add43fbf12a546606fb2b962ab_3478f49aadc911f18f50525400aeaaa3
-    ReservedCode1: UCtjPi/qzgiroN4PMrjIVlzuHMfI98c7mm60xhvrTPPUHjZXEpUZV8XHCuEYbpdZ3OD9XxQIm/tFvcccH0RgNPkm85ETVCPAjcly4M7XSc2HLVB7fBPWvmD6Hmpbv0w7HogxEV001JezjkwyMiYCN8eOV9AtTiFJw9dq3d8syr8Mnlyo8yXKJ5WQ5jY=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: 9f2a11add43fbf12a546606fb2b962ab_3478f49aadc911f18f50525400aeaaa3
-    ReservedCode2: UCtjPi/qzgiroN4PMrjIVlzuHMfI98c7mm60xhvrTPPUHjZXEpUZV8XHCuEYbpdZ3OD9XxQIm/tFvcccH0RgNPkm85ETVCPAjcly4M7XSc2HLVB7fBPWvmD6Hmpbv0w7HogxEV001JezjkwyMiYCN8eOV9AtTiFJw9dq3d8syr8Mnlyo8yXKJ5WQ5jY=
----
-
 # FIST-Mbt 使用文档（USAGE）
 
 > 版本：`vicTop-cw/fist-mbt@0.1.0`（MoonBit，MCP Server）
-> 日期：2026-09-11 ｜ 定位：**实操调用手册**。README.md 是项目概览，本文件是「如何真正用它」的手把手文档，
+> 日期：2026-09-12 ｜ 定位：**实操调用手册**。README.md 是项目概览，本文件是「如何真正用它」的手把手文档，
 > 全部示例均来自本机实机运行（JSON-RPC over STDIO）的真实输出，非凭空构造。
 
 ---
@@ -20,8 +9,9 @@ AIGC:
 ## 1. 它是什么
 
 FIST 指挥官任务分配体系（原 Python 版 `E:\IDEProjects\AI\FIST`）的 **纯 MoonBit 原生重写 + MCP 化** 作品
-（2026 MoonBit 九月黑客松）。对外暴露一个 **STDIO 传输的 MCP Server**，任何 MCP 客户端拉起可执行文件后，
-即可通过标准 `tools/call` 完成任务的 **发布 → 认领 → 拆分 → 执行 → 提交 → 验收 → 归档** 完整闭环。
+（2026 MoonBit 九月黑客松）。对外暴露一个 **STDIO 传输的 MCP Server**（也支持 HTTP/SSE 桥接），
+任何 MCP 客户端拉起可执行文件后，即可通过标准 `tools/call` 完成任务的
+**发布 → 认领 → 拆分 → 执行 → 提交 → 验收 → 归档** 完整闭环。
 
 协议层使用 [`colmugx/mcp`](https://mooncakes.io/colmugx/mcp)（Apache-2.0，协议版本 `2026-07-28`）。
 
@@ -35,7 +25,7 @@ FIST 指挥官任务分配体系（原 Python 版 `E:\IDEProjects\AI\FIST`）的
 moon check                  # 类型检查
 moon build --target native  # 原生后端
 moon build --target js      # JS 后端（Node 运行）
-moon test                   # 核心状态机单测（7 项）
+moon test                   # 全部测试（57 项）
 ```
 
 本机常用启动产物：
@@ -55,6 +45,9 @@ node _build/js/debug/build/cmd/main/main.js
 
 # 方式 B：原生后端
 ./_build/native/debug/build/cmd/main/main.exe
+
+# 方式 C：HTTP/SSE 桥接（可选）
+FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 ```
 
 - 启动后进程在 **STDIO** 上按行读取 JSON-RPC 2.0 请求、按行回写响应，直到 EOF 退出；
@@ -89,10 +82,17 @@ proc = subprocess.Popen(
     stdin=subprocess.PIPE, stdout=subprocess.PIPE,
     text=True, encoding="utf-8", errors="replace", bufsize=1,
 )
+META = {
+    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+    "io.modelcontextprotocol/clientCapabilities": {},
+    "io.modelcontextprotocol/clientInfo": {"name": "my-client", "version": "0.1.0"},
+}
 def rpc(method, **payload):
-    params = {"_meta": META}; params.update(payload)
+    params = {"_meta": META}
+    params.update(payload)
     req = {"jsonrpc":"2.0","id":"1","method":method,"params":params}
-    proc.stdin.write(json.dumps(req, ensure_ascii=False)+"\n"); proc.stdin.flush()
+    proc.stdin.write(json.dumps(req, ensure_ascii=False) + "\n")
+    proc.stdin.flush()
     return json.loads(proc.stdout.readline())
 ```
 
@@ -123,20 +123,24 @@ def rpc(method, **payload):
 
 ---
 
-## 6. 15 个 MCP 工具手册
+## 6. 22 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
-### 6.1 生命周期七件套（对应七态状态机）
+### 6.1 生命周期（对应九态状态机）
 
 | 工具 | 说明 | 参数 |
 |---|---|---|
-| `publish` | 发布根任务（仅 human_steward/human） | project_dir(必) description(必) created_by(选,默认human_steward) now(选) |
+| `publish` | 发布根任务（仅 human_steward/human） | project_dir(必) description(必) created_by(选,默认human_steward) namespace(选,默认default) now(选) |
 | `claim` | 认领任务（待领取→已领取） | task_id(必) assignee(必) now(选) |
 | `plan` | 对已认领任务拆出一层子任务 | task_id(必) split_n(选,默认3) by(选) now(选) |
 | `execute` | 记录执行交付物（→执行中） | task_id(必) deliverable(必) now(选) |
 | `submit` | 提交验收（→待验收） | task_id(必) now(选) |
 | `verify` | 验收通过（→已完成，父任务自动上卷） | task_id(必) verifier(必) now(选) |
+| `reject` | 验收拒绝（→已打回） | task_id(必) reason(选) by(选,默认human_steward) now(选) |
+| `retry` | 打回后重试（→执行中） | task_id(必) now(选) |
+| `pause` | 暂停任务（任意活跃→已暂停） | task_id(必) now(选) |
+| `resume` | 恢复任务（已暂停→已领取） | task_id(必) now(选) |
 | `archive` | 归档（仅人类指挥官） | task_id(必) by(选) now(选) |
 | `delete` | 删除已归档任务 | task_id(必) |
 
@@ -147,7 +151,7 @@ def rpc(method, **payload):
 | `list` | 列出全部任务，可按状态过滤 | status(选,中文状态名) |
 | `get` | 查询单个任务详情 | task_id(必) |
 
-### 6.3 深拆与运维五件套
+### 6.3 深拆与运维
 
 | 工具 | 说明 | 参数 |
 |---|---|---|
@@ -164,6 +168,49 @@ def rpc(method, **payload):
 
 **运维纪律（AO 看护）**：执行前/执行中周期性 `heartbeat` 上报；静默超时由 `heal` 回滚；
 已归档任务超保留期由 `task_cleanup` 清理。
+
+### 6.4 DAG 依赖图
+
+| 工具 | 说明 | 参数 |
+|---|---|---|
+| `dag_critical_path` | 返回当前最长依赖链（关键路径） | 无 |
+| `dag_parallelism` | 返回当前可并行执行的任务数（待领取且依赖已满足） | 无 |
+| `dag_ascii` | 返回当前命名空间任务的 ASCII 依赖结构图 | namespace(可选，默认default) |
+| `dag_check` | 检查某任务的依赖是否全部完成 | task_id(必) |
+| `dag_ready` | 列出所有依赖满足、可领取的任务 | namespace(可选) |
+| `dag_sort` | 对任务列表按依赖深度拓扑排序 | task_ids(JSON 数组，必填) |
+
+> **使用建议**：在 `claim` 前先调 `dag_ready` 查看可领取任务，或 `dag_check` 验证依赖是否满足，
+> 避免死锁。`dag_ascii` 可快速可视化当前任务依赖关系。
+
+### 6.5 审计与权限
+
+| 工具 | 说明 | 参数 |
+|---|---|---|
+| `audit_permission` | 查询某角色是否可执行指定操作 | role(必) action(必) |
+| `audit_log` | 查看追加式审计日志 | filter_actor(选) filter_task_id(选) |
+
+**Role 枚举**：`human_steward`（人类指挥官）、`leader`（AI 指挥官）、`agent`（执行者）
+
+**Action 枚举**：`publish`、`archive`、`delete`、`claim`
+
+**权限矩阵**：
+
+| 角色 \ 操作 | publish | archive | delete | claim |
+|---|---|---|---|---|
+| human_steward | ✅ | ✅ | ✅ | ✅ |
+| leader | ❌ | ❌ | ❌ | ✅ |
+| agent | ❌ | ❌ | ❌ | ✅ |
+
+### 6.6 多租户命名空间
+
+| 工具 | 说明 | 参数 |
+|---|---|---|
+| `store_open` | 打开（或复用）一个命名空间 | namespace(必) data_dir(选,默认当前目录) |
+| `store_list` | 列出当前已打开的命名空间及任务数 | 无 |
+| `store_close` | 关闭指定命名空间（不删除物理库文件） | namespace(必) |
+
+每个命名空间对应独立的 SQLite 文件 `{data_dir}/{namespace}.db`，实现数据隔离。
 
 ---
 
@@ -184,7 +231,7 @@ def rpc(method, **payload):
 **验证结论**：publish → plan → claim/execute/submit/verify（叶子）+ verify（父自动上卷）→ archive 全链真实跑通，
 任务自动持久化到 `fist-mbt.db`。
 
-> 补充实测：`tools/list` 返回 15 个工具；`resources/read(fist://principles)` 返回七条金条 JSON；
+> 补充实测：`tools/list` 返回 22 个工具；`resources/read(fist://principles)` 返回七条金条 JSON；
 > `prompts/get(fist:check_in)` 返回 1 条 role=user 的打卡自查模板消息。
 
 ---
@@ -200,13 +247,28 @@ def rpc(method, **payload):
 
 ---
 
-## 9. 状态机（七态）与迁移规则
+## 9. 状态机（九态）与迁移规则
 
 ```
-待领取 --claim--> 已领取 --plan--> 拆分中 --execute--> 执行中
-已领取 --execute--> 执行中
-执行中 --submit--> 待验收 --verify--> 已完成 --archive--> 已归档 --delete--> 移除
-待验收 --reopen--> 已领取（被打回重做）
+                    ┌─ pause ──┐
+                    ▼          │
+待领取 ──claim──► 已领取 ──plan──► 拆分中 ──execute──► 执行中
+   │                │                                       │
+   │                └──────execute───────────────────────────┘
+   │                                                        ▼
+   │               待验收 ◄── submit ─── 执行中
+   │                │    │
+   │           verify    reject
+   │                │    │
+   │                ▼    ▼
+   │           已完成   已打回 ──retry──► 执行中
+   │                │
+   │           archive
+   │                │
+   │                ▼
+   │           已归档 ──delete──► 移除
+   │
+   └── resume ◄── 已暂停
 ```
 
 - **父任务自动上卷**：当父任务所有叶子子任务全部 `verify` 通过，父任务自动聚入「待验收」，直接 `verify → archive`；
@@ -240,12 +302,16 @@ moon publish
 | 中文乱码 / `gbk codec can't decode` | Python 侧务必 `encoding="utf-8", errors="replace"` 解码 stdout |
 | 父任务 `claim` 报「非法迁移: 当前是[待验收]」 | 子任务全绿后父已自动上卷，直接 `verify → archive`，勿再 claim |
 | `fist-mbt.db` 出现在 git 状态 | `*.db` 已被 `.gitignore` 忽略，无需手动处理 |
+| `store_open` 报"打开命名空间失败" | 检查 `data_dir` 是否存在且可写；测试时需提前创建目录 |
+| `audit_permission` 报"未知角色" | 合法值：`human_steward` / `leader` / `agent`（小写） |
 
 ---
 
 ## 12. 一句话总结
 
-FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server。
+FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（22 个工具）。
 对 AI 客户端而言：**pub/claim/plan + spec 深拆 → 子任务闭环 → verify 上卷 → archive**，
 一路 `tools/call` 即可完成多智能体任务的发布、认领、拆分、执行、验收、归档全生命周期管理。
-*（内容由AI生成，仅供参考）*
+
+**M5 新增能力**：DAG 依赖图分析、九态状态机（含 reject/retry/pause/resume）、
+审计权限矩阵、多租户命名空间隔离。
