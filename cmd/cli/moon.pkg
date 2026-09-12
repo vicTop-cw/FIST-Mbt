@@ -1,8 +1,9 @@
 import {
   "vicTop-cw/fist-mbt/src/core" @core,
   "vicTop-cw/fist-mbt/src/store" @store,
-  "vicTop-cw/fist-mbt/src/decompose" @decompose,
-  "moonbitlang/core/json" @json,
+  "vicTop-cw/fist-mbt/src/engine" @engine,
 }
+
+pkgtype(kind: "executable")
 
 supported_targets = "js+native"

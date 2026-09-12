@@ -22,10 +22,11 @@ pub trait Store {
 /// 内存实现：进程内 Map，简单可靠，配合单机 MCP server 足够。
 pub struct MemoryStore {
   tasks : Map[String, @core.Task]
+  mut default_ns : String
 }
 
 pub fn MemoryStore::new() -> MemoryStore {
-  { tasks: Map([]) }
+  { tasks: Map([]), default_ns: "default" }
 }
 
 impl Store for MemoryStore with create_task(self, task) {
@@ -51,7 +52,20 @@ impl Store for MemoryStore with update_task(self, task) {
 
 impl Store for MemoryStore with list_tasks(self) {
   let out : Array[@core.Task] = []
-  self.tasks.each(fn(_, t) { out.push(t) })
+  let ns = self.default_ns
+  self.tasks.each(fn(_, t) {
+    if t.ns == ns { out.push(t) }
+  })
+  out
+}
+
+/// 列出指定命名空间的任务
+pub fn MemoryStore::list_tasks_in(self : MemoryStore, ns_filter : String) -> Array[@core.Task] {
+  let out : Array[@core.Task] = []
+  let target = if ns_filter == "" { self.default_ns } else { ns_filter }
+  self.tasks.each(fn(_, t) {
+    if t.ns == target { out.push(t) }
+  })
   out
 }
 
@@ -108,6 +122,22 @@ impl Store for StoreBackend with list_tasks(self) {
   match self {
     Mem(m) => m.list_tasks()
     Sql(s) => s.list_tasks()
+  }
+}
+
+/// 列出指定命名空间的任务（跨后端）
+pub fn StoreBackend::list_tasks_in(self : StoreBackend, namespace : String) -> Array[@core.Task] {
+  match self {
+    Mem(m) => m.list_tasks_in(namespace)
+    Sql(s) => s.list_tasks_in(namespace)
+  }
+}
+
+/// 设置默认命名空间
+pub fn StoreBackend::set_namespace(self : StoreBackend, namespace : String) -> Unit {
+  match self {
+    Mem(m) => m.default_ns = namespace
+    Sql(_) => ()
   }
 }
 

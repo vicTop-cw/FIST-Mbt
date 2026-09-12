@@ -32,7 +32,7 @@ pub fn SqliteStore::new() -> Option[SqliteStore] {
 /// 初始化 schema：tasks 为完整任务表，specs/runs/heartbeats/archive 为后续阶段预置骨架。
 fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
   let sqls : Array[String] = [
-    "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', priority TEXT NOT NULL DEFAULT '中', importance TEXT NOT NULL DEFAULT '中', depth INTEGER NOT NULL DEFAULT 3, split_n INTEGER NOT NULL DEFAULT 3, status TEXT NOT NULL DEFAULT '待领取', assignee TEXT DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT 'deferred')",
+    "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority TEXT NOT NULL DEFAULT '中', importance TEXT NOT NULL DEFAULT '中', depth INTEGER NOT NULL DEFAULT 3, split_n INTEGER NOT NULL DEFAULT 3, status TEXT NOT NULL DEFAULT '待领取', assignee TEXT DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT 'deferred', depends_on TEXT NOT NULL DEFAULT '[]')",
     "CREATE TABLE IF NOT EXISTS specs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', spec_type TEXT NOT NULL DEFAULT 'spec', content TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', run_type TEXT NOT NULL DEFAULT 'verify', status TEXT NOT NULL DEFAULT 'running', detail TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL DEFAULT '', finished_at TEXT DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS heartbeats (agent_id TEXT NOT NULL, task_id TEXT NOT NULL, last_seen TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', PRIMARY KEY (agent_id, task_id))",
@@ -53,13 +53,34 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
 // —— 行 <-> Task 序列化辅助 ——
 
 fn SqliteStore::task_columns() -> String {
-  "id, parent_id, project_dir, priority, importance, depth, split_n, status, assignee, description, deliverable, created_at, updated_at, completed_by, cleanup_mode"
+  "id, parent_id, project_dir, ns, priority, importance, depth, split_n, status, assignee, description, deliverable, created_at, updated_at, completed_by, cleanup_mode, depends_on"
 }
 
 fn SqliteStore::bind_task_values(stmt : @sqlite.Statement, t : @core.Task) -> Unit {
   ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.get_id()))))
   ignore(stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, _opt_str(t.get_parent())))))
   ignore(stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.project_dir))))
+  ignore(stmt.bind(4, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.ns))))
+  ignore(stmt.bind(5, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.priority))))
+  ignore(stmt.bind(6, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.importance))))
+  ignore(stmt.bind(7, @sqlite.SqlValue::Int(t.depth)))
+  ignore(stmt.bind(8, @sqlite.SqlValue::Int(t.split_n)))
+  ignore(stmt.bind(9, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.status.to_string()))))
+  ignore(stmt.bind(10, @sqlite.SqlValue::Text(@encoding.encode(UTF8, _opt_str(t.get_assignee())))))
+  ignore(stmt.bind(11, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.description))))
+  ignore(stmt.bind(12, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.deliverable))))
+  ignore(stmt.bind(13, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.created_at))))
+  ignore(stmt.bind(14, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.updated_at))))
+  ignore(stmt.bind(15, @sqlite.SqlValue::Text(@encoding.encode(UTF8, _opt_str(t.completed_by)))))
+  ignore(stmt.bind(16, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.cleanup_mode))))
+  ignore(stmt.bind(17, @sqlite.SqlValue::Text(@encoding.encode(UTF8, _array_to_json(t.depends_on)))))
+}
+
+/// UPDATE 专用绑定：SET 列顺序（parent_id..cleanup_mode）+ WHERE id
+fn SqliteStore::bind_task_update_values(stmt : @sqlite.Statement, t : @core.Task) -> Unit {
+  ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, _opt_str(t.get_parent())))))
+  ignore(stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.project_dir))))
+  ignore(stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.ns))))
   ignore(stmt.bind(4, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.priority))))
   ignore(stmt.bind(5, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.importance))))
   ignore(stmt.bind(6, @sqlite.SqlValue::Int(t.depth)))
@@ -72,24 +93,7 @@ fn SqliteStore::bind_task_values(stmt : @sqlite.Statement, t : @core.Task) -> Un
   ignore(stmt.bind(13, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.updated_at))))
   ignore(stmt.bind(14, @sqlite.SqlValue::Text(@encoding.encode(UTF8, _opt_str(t.completed_by)))))
   ignore(stmt.bind(15, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.cleanup_mode))))
-}
-
-/// UPDATE 专用绑定：SET 列顺序（parent_id..cleanup_mode）+ WHERE id
-fn SqliteStore::bind_task_update_values(stmt : @sqlite.Statement, t : @core.Task) -> Unit {
-  ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, _opt_str(t.get_parent())))))
-  ignore(stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.project_dir))))
-  ignore(stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.priority))))
-  ignore(stmt.bind(4, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.importance))))
-  ignore(stmt.bind(5, @sqlite.SqlValue::Int(t.depth)))
-  ignore(stmt.bind(6, @sqlite.SqlValue::Int(t.split_n)))
-  ignore(stmt.bind(7, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.status.to_string()))))
-  ignore(stmt.bind(8, @sqlite.SqlValue::Text(@encoding.encode(UTF8, _opt_str(t.get_assignee())))))
-  ignore(stmt.bind(9, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.description))))
-  ignore(stmt.bind(10, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.deliverable))))
-  ignore(stmt.bind(11, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.created_at))))
-  ignore(stmt.bind(12, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.updated_at))))
-  ignore(stmt.bind(13, @sqlite.SqlValue::Text(@encoding.encode(UTF8, _opt_str(t.completed_by)))))
-  ignore(stmt.bind(14, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.cleanup_mode))))
+  ignore(stmt.bind(16, @sqlite.SqlValue::Text(@encoding.encode(UTF8, _array_to_json(t.depends_on)))))
 }
 
 fn str_from_bytes(b : Bytes) -> String {
@@ -107,26 +111,57 @@ fn _opt_str(o : String?) -> String {
   }
 }
 
+fn _array_to_json(arr : Array[String]) -> String {
+  if arr.is_empty() { return "[]" }
+  let mut result = "["
+  for i = 0; i < arr.length(); i = i + 1 {
+    if i > 0 { result = result + "," }
+    result = result + "\"" + arr[i] + "\""
+  }
+  result = result + "]"
+  result
+}
+
+fn _json_to_array(json : String) -> Array[String] {
+  let trimmed = json.trim()
+  if trimmed == "" || trimmed == "[]" { return [] }
+  let inner = trimmed[1:trimmed.length() - 1]
+  if inner == "" { return [] }
+  let parts = inner.split(",")
+  let out : Array[String] = []
+  for p in parts {
+    let raw = p.trim()
+    let stripped = if raw.length() >= 2 { raw[1:raw.length() - 1] } else { raw }
+    if stripped != "" {
+      out.push(stripped.to_string())
+    }
+  }
+  out
+}
+
 fn row_to_task(stmt : @sqlite.Statement) -> @core.Task {
   let parent_raw = str_from_bytes(stmt.column_text(1))
-  let assignee_raw = str_from_bytes(stmt.column_text(8))
-  let completed_raw = str_from_bytes(stmt.column_text(13))
+  let assignee_raw = str_from_bytes(stmt.column_text(9))
+  let completed_raw = str_from_bytes(stmt.column_text(14))
+  let depends_raw = str_from_bytes(stmt.column_text(16))
   @core.Task::from_db(
     str_from_bytes(stmt.column_text(0)),
     if parent_raw == "" { None } else { Some(parent_raw) },
     str_from_bytes(stmt.column_text(2)),
     str_from_bytes(stmt.column_text(3)),
     str_from_bytes(stmt.column_text(4)),
-    stmt.column_int(5),
+    str_from_bytes(stmt.column_text(5)),
     stmt.column_int(6),
-    str_from_bytes(stmt.column_text(7)),
+    stmt.column_int(7),
+    str_from_bytes(stmt.column_text(8)),
     if assignee_raw == "" { None } else { Some(assignee_raw) },
-    str_from_bytes(stmt.column_text(9)),
     str_from_bytes(stmt.column_text(10)),
     str_from_bytes(stmt.column_text(11)),
     str_from_bytes(stmt.column_text(12)),
+    str_from_bytes(stmt.column_text(13)),
     if completed_raw == "" { None } else { Some(completed_raw) },
-    str_from_bytes(stmt.column_text(14)),
+    str_from_bytes(stmt.column_text(15)),
+    _json_to_array(depends_raw),
   )
 }
 
@@ -139,7 +174,7 @@ impl Store for SqliteStore with create_task(self, task) {
       if self.get_task(task.get_id()) is Some(_) {
         return Err("task already exists: \{task.get_id()}")
       }
-      let sql = "INSERT INTO tasks (\{SqliteStore::task_columns()}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+      let sql = "INSERT INTO tasks (\{SqliteStore::task_columns()}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: create_task")
         Some(stmt) => {
@@ -178,12 +213,12 @@ impl Store for SqliteStore with update_task(self, task) {
       if self.get_task(task.get_id()) is None {
         return Err("task not found: \{task.get_id()}")
       }
-      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ? WHERE id = ?"
+      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ? WHERE id = ?"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: update_task")
         Some(stmt) => {
           SqliteStore::bind_task_update_values(stmt, task)
-          ignore(stmt.bind(15, @sqlite.SqlValue::Text(@encoding.encode(UTF8, task.get_id()))))
+          ignore(stmt.bind(17, @sqlite.SqlValue::Text(@encoding.encode(UTF8, task.get_id()))))
           let exec_ok = stmt.execute()
           stmt.finalize()
           if exec_ok { Ok(()) } else { Err("sqlite 更新失败: \{task.get_id()}") }
@@ -198,10 +233,33 @@ impl Store for SqliteStore with list_tasks(self) {
   match self.db {
     None => out
     Some(db) => {
-      let sql = "SELECT \{SqliteStore::task_columns()} FROM tasks"
+      let sql = "SELECT \{SqliteStore::task_columns()} FROM tasks WHERE ns = ?"
       match db.prepare(sql) {
         None => out
         Some(stmt) => {
+          ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, "default"))))
+          while stmt.step() {
+            out.push(row_to_task(stmt))
+          }
+          stmt.finalize()
+          out
+        }
+      }
+    }
+  }
+}
+
+/// 列出指定命名空间的任务
+pub fn SqliteStore::list_tasks_in(self : SqliteStore, ns_filter : String) -> Array[@core.Task] {
+  let out : Array[@core.Task] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT \{SqliteStore::task_columns()} FROM tasks WHERE ns = ?"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns_filter))))
           while stmt.step() {
             out.push(row_to_task(stmt))
           }

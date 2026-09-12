@@ -2,6 +2,7 @@ import {
   "vicTop-cw/fist-mbt/src/core" @core,
   "vicTop-cw/fist-mbt/src/store" @store,
   "vicTop-cw/fist-mbt/src/engine" @engine,
+  "moonbitlang/core/json" @json,
 }
 
 supported_targets = "js+native"

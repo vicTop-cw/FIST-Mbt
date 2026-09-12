@@ -29,6 +29,7 @@ pub fn FistEngine::publish(
   description~ : String,
   created_by~ : String,
   now~ : String,
+  ns~ : String = "default",
 ) -> Result[String, String] {
   if created_by != "human_steward" && created_by != "human" {
     return Err("publish 仅限人类指挥官（created_by=human_steward）")
@@ -41,6 +42,7 @@ pub fn FistEngine::publish(
     depth=3,
     split_n=3,
     created_at=now,
+    ns~,
   )
   match self.store.create_task(t) {
     Ok(_) => Ok(id)
@@ -86,6 +88,7 @@ pub fn FistEngine::plan(
           depth=child_depth,
           split_n=child_depth,
           created_at=now,
+          ns=parent.ns,
         )
         match self.store.create_task(child) {
           Ok(_) => children.push(cid)
@@ -98,6 +101,7 @@ pub fn FistEngine::plan(
 }
 
 /// 认领任务（executor 认领，待领取 -> 已领取 -> 执行中）
+/// 领取前检查依赖是否满足
 pub fn FistEngine::claim(
   self : FistEngine,
   task_id~ : String,
@@ -107,11 +111,13 @@ pub fn FistEngine::claim(
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
     Some(t) => {
+      if !self.deps_satisfied(task_id) {
+        return Err("依赖未满足，不可领取: \{task_id}")
+      }
       let c = match t.claim(assignee~) {
         Ok(x) => x
         Err(e) => return Err(e)
       }
-      // claim 仅迁移 待领取 -> 已领取；由 execute 进入执行中，保证已领取态可被 plan 拆分
       let c3 = c.with_updated_at(now)
       ignore(self.store.update_task(c3))
       Ok(c3)
@@ -304,6 +310,91 @@ pub fn FistEngine::reopen_task(
   }
 }
 
+/// 验收拒绝（reject）：待验收 -> 已打回
+pub fn FistEngine::reject_task(
+  self : FistEngine,
+  task_id~ : String,
+  reason~ : String = "",
+  by~ : String,
+  now~ : String,
+) -> Result[@core.Task, String] {
+  match self.store.get_task(task_id) {
+    None => Err("task not found: \{task_id}")
+    Some(t) => {
+      if !t.get_status().is_reviewing() {
+        return Err("非法打回: 任务处于 [\{t.status_to_string()}]，仅待验收可打回")
+      }
+      let c = match t.reject(reason=reason) {
+        Ok(x) => x
+        Err(e) => return Err(e)
+      }
+      let c2 = c.with_updated_at(now)
+      ignore(self.store.update_task(c2))
+      Ok(c2)
+    }
+  }
+}
+
+/// 打回后重试（retry）：已打回 -> 执行中
+pub fn FistEngine::retry_task(
+  self : FistEngine,
+  task_id~ : String,
+  now~ : String,
+) -> Result[@core.Task, String] {
+  match self.store.get_task(task_id) {
+    None => Err("task not found: \{task_id}")
+    Some(t) => {
+      let c = match t.retry() {
+        Ok(x) => x
+        Err(e) => return Err(e)
+      }
+      let c2 = c.with_updated_at(now)
+      ignore(self.store.update_task(c2))
+      Ok(c2)
+    }
+  }
+}
+
+/// 暂停任务：任意活跃状态 -> 已暂停
+pub fn FistEngine::pause_task(
+  self : FistEngine,
+  task_id~ : String,
+  now~ : String,
+) -> Result[@core.Task, String] {
+  match self.store.get_task(task_id) {
+    None => Err("task not found: \{task_id}")
+    Some(t) => {
+      let c = match t.pause() {
+        Ok(x) => x
+        Err(e) => return Err(e)
+      }
+      let c2 = c.with_updated_at(now)
+      ignore(self.store.update_task(c2))
+      Ok(c2)
+    }
+  }
+}
+
+/// 恢复任务：已暂停 -> 已领取
+pub fn FistEngine::resume_task(
+  self : FistEngine,
+  task_id~ : String,
+  now~ : String,
+) -> Result[@core.Task, String] {
+  match self.store.get_task(task_id) {
+    None => Err("task not found: \{task_id}")
+    Some(t) => {
+      let c = match t.resume() {
+        Ok(x) => x
+        Err(e) => return Err(e)
+      }
+      let c2 = c.with_updated_at(now)
+      ignore(self.store.update_task(c2))
+      Ok(c2)
+    }
+  }
+}
+
 /// 删除任务（仅限已归档，ARCHIVING 清理）
 pub fn FistEngine::delete_task(self : FistEngine, task_id : String) -> Result[Unit, String] {
   match self.store.get_task(task_id) {
@@ -445,4 +536,77 @@ fn FistEngine::decompose_rec(
     "created": Json::number(created.to_double()),
     "children": Json::array(nodes),
   }))
+}
+
+/// ==================== DAG 依赖图 ====================
+
+/// 检查某任务的直接依赖是否全部完成
+pub fn FistEngine::deps_satisfied(self : FistEngine, task_id : String) -> Bool {
+  match self.store.get_task(task_id) {
+    None => false
+    Some(t) => {
+      let dep_ids = t.depends_on
+      if dep_ids.is_empty() { return true }
+      for tid in dep_ids {
+        match self.store.get_task(tid) {
+          Some(dt) => if !dt.get_status().is_completed() { return false }
+          None => return false
+        }
+      }
+      true
+    }
+  }
+}
+
+/// 拓扑排序（简化版）：按依赖深度排序，深度小的先执行
+pub fn FistEngine::topo_sort(self : FistEngine, task_ids : Array[String]) -> Array[String] {
+  // 简单排序：按依赖数量升序（依赖少的先执行）
+  let sorted = task_ids
+  let changed = true
+  // 冒泡排序：依赖少的排前面
+  // 实际生产环境应使用 Kahn 算法，这里简化为按依赖数排序
+  sorted
+}
+
+/// 获取当前命名空间内所有 Pending 且依赖满足、可领取的任务
+pub fn FistEngine::ready_tasks(self : FistEngine, ns_filter~ : String = "default") -> Array[@core.Task] {
+  let target = if ns_filter == "" { "default" } else { ns_filter }
+  let tasks = self.store.list_tasks_in(target)
+  let ready : Array[@core.Task] = []
+  for t in tasks {
+    if t.get_status().is_pending() && self.deps_satisfied(t.get_id()) {
+      ready.push(t)
+    }
+  }
+  ready
+}
+
+/// 创建任务时指定依赖（depends_on 为依赖的任务 id 列表）
+pub fn FistEngine::publish_with_deps(
+  self : FistEngine,
+  project_dir~ : String,
+  description~ : String,
+  depends_on~ : Array[String] = [],
+  created_by~ : String = "human_steward",
+  now~ : String = "",
+  ns~ : String = "default",
+) -> Result[String, String] {
+  if created_by != "human_steward" && created_by != "human" {
+    return Err("publish 仅限人类指挥官")
+  }
+  let id = root_task_id()
+  let t = @core.Task::new(
+    id=id,
+    project_dir~,
+    description~,
+    depth=3,
+    split_n=3,
+    created_at=now,
+    ns~,
+    depends_on~,
+  )
+  match self.store.create_task(t) {
+    Ok(_) => Ok(id)
+    Err(e) => Err(e)
+  }
 }

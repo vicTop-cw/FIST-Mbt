@@ -17,6 +17,10 @@ pub enum TaskStatus {
   Completed
   /// 已归档
   Archived
+  /// 已打回（验收不通过，需重做）
+  Rejected
+  /// 已暂停（外部中断/等待依赖）
+  Paused
 } derive(Eq, Debug)
 
 pub fn TaskStatus::to_string(self : TaskStatus) -> String {
@@ -28,6 +32,8 @@ pub fn TaskStatus::to_string(self : TaskStatus) -> String {
     Reviewing => "待验收"
     Completed => "已完成"
     Archived => "已归档"
+    Rejected => "已打回"
+    Paused => "已暂停"
   }
 }
 
@@ -40,6 +46,8 @@ pub fn TaskStatus::from_string(s : String) -> Option[TaskStatus] {
     "待验收" => Some(Reviewing)
     "已完成" => Some(Completed)
     "已归档" => Some(Archived)
+    "已打回" => Some(Rejected)
+    "已暂停" => Some(Paused)
     _ => None
   }
 }
@@ -49,14 +57,23 @@ pub fn TaskStatus::from_string(s : String) -> Option[TaskStatus] {
 /// 状态谓词（供跨包业务层判断，避免直接构造变体）
 pub fn TaskStatus::can_split(self : TaskStatus) -> Bool {
   match self {
-    Pending | Claimed | Splitting => true
+    Pending | Claimed | Splitting | Rejected => true
     _ => false
   }
 }
 
 pub fn TaskStatus::can_execute(self : TaskStatus) -> Bool {
   match self {
-    Claimed | Splitting | Executing => true
+    Claimed | Splitting | Executing | Rejected => true
+    _ => false
+  }
+}
+
+pub fn TaskStatus::is_rejected(self : TaskStatus) -> Bool { self == Rejected }
+pub fn TaskStatus::is_paused(self : TaskStatus) -> Bool { self == Paused }
+pub fn TaskStatus::is_active(self : TaskStatus) -> Bool {
+  match self {
+    Pending | Claimed | Splitting | Executing | Reviewing => true
     _ => false
   }
 }
@@ -84,6 +101,8 @@ pub fn TaskStatus::order(self : TaskStatus) -> Int {
     Reviewing => 4
     Completed => 5
     Archived => 6
+    Rejected => 7
+    Paused => 8
   }
 }
 
@@ -93,6 +112,8 @@ pub struct Task {
   pub id : String
   pub parent_id : String?
   pub project_dir : String
+  /// 命名空间（多租户隔离键，默认 "default"）
+  pub ns : String
   pub priority : String
   pub importance : String
   /// K 值：根=3，每拆一层减 1；K<=1 为原子任务
@@ -107,6 +128,8 @@ pub struct Task {
   pub updated_at : String
   pub completed_by : String?
   pub cleanup_mode : String
+  /// 依赖的任务 id 列表（这些任务完成后，本任务才可领取）
+  pub depends_on : Array[String]
 } derive(Eq, Debug)
 
 /// 便捷状态访问
@@ -141,11 +164,14 @@ pub fn Task::new(
   assignee~ : String = "",
   cleanup_mode~ : String = "deferred",
   created_at~ : String = "",
+  ns~ : String = "default",
+  depends_on~ : Array[String] = [],
 ) -> Task {
   {
     id,
     parent_id: if parent_id == "" { None } else { Some(parent_id) },
     project_dir,
+    ns,
     priority,
     importance,
     depth,
@@ -158,6 +184,7 @@ pub fn Task::new(
     updated_at: created_at,
     completed_by: None,
     cleanup_mode,
+    depends_on,
   }
 }
 
@@ -167,6 +194,7 @@ pub fn Task::from_db(
   id : String,
   parent_id : String?,
   project_dir : String,
+  ns : String,
   priority : String,
   importance : String,
   depth : Int,
@@ -179,6 +207,7 @@ pub fn Task::from_db(
   updated_at : String,
   completed_by : String?,
   cleanup_mode : String,
+  depends_on : Array[String],
 ) -> Task {
   let status = match TaskStatus::from_string(status_s) {
     Some(s) => s
@@ -188,6 +217,7 @@ pub fn Task::from_db(
     id,
     parent_id,
     project_dir,
+    ns,
     priority,
     importance,
     depth,
@@ -200,6 +230,7 @@ pub fn Task::from_db(
     updated_at,
     completed_by,
     cleanup_mode,
+    depends_on,
   }
 }
 
@@ -322,7 +353,68 @@ pub fn Task::archive(self : Task) -> Result[Task, String] {
 pub fn Task::reopen(self : Task) -> Result[Task, String] {
   match self.status {
     Archived => Err("已归档任务不可 reopen，请重新发布")
+    Rejected => Ok({ ..self, status: Claimed, assignee: None, deliverable: "" })
+    Paused => Ok({ ..self, status: Claimed })
     _ => Ok({ ..self, status: Claimed, })
+  }
+}
+
+/// 待验收 -> 已打回（验收不通过，需重做）
+pub fn Task::reject(self : Task, reason~ : String = "") -> Result[Task, String] {
+  match self.status {
+    Reviewing =>
+      Ok({
+        ..self,
+        status: Rejected,
+        description: if reason == "" { self.description } else { self.description + " [打回原因: " + reason + "]" },
+      })
+    _ =>
+      Err(
+        "非法迁移: reject 要求状态 [待验收]，当前是 [" +
+        self.status.to_string() +
+        "]",
+      )
+  }
+}
+
+/// 已打回 -> 执行中（重新执行）
+pub fn Task::retry(self : Task) -> Result[Task, String] {
+  match self.status {
+    Rejected => Ok({ ..self, status: Executing })
+    _ =>
+      Err(
+        "非法迁移: retry 要求状态 [已打回]，当前是 [" +
+        self.status.to_string() +
+        "]",
+      )
+  }
+}
+
+/// 任意活跃状态 -> 已暂停（外部中断/等待依赖）
+pub fn Task::pause(self : Task) -> Result[Task, String] {
+  match self.status {
+    Pending | Claimed | Splitting | Executing | Reviewing | Rejected =>
+      Ok({ ..self, status: Paused })
+    Paused => Err("任务已处于暂停状态")
+    _ =>
+      Err(
+        "非法迁移: pause 要求活跃状态，当前是 [" +
+        self.status.to_string() +
+        "]",
+      )
+  }
+}
+
+/// 已暂停 -> 已领取（恢复执行）
+pub fn Task::resume(self : Task) -> Result[Task, String] {
+  match self.status {
+    Paused => Ok({ ..self, status: Claimed })
+    _ =>
+      Err(
+        "非法迁移: resume 要求状态 [已暂停]，当前是 [" +
+        self.status.to_string() +
+        "]",
+      )
   }
 }
 
@@ -350,6 +442,7 @@ pub fn Task::to_json(self : Task) -> Json {
     None => m.set("parent_id", Json::null())
   }
   m.set("project_dir", Json::string(self.project_dir))
+  m.set("namespace", Json::string(self.ns))
   m.set("priority", Json::string(self.priority))
   m.set("importance", Json::string(self.importance))
   m.set("depth", Json::number(self.depth.to_double()))
