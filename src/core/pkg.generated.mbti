@@ -1,0 +1,140 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/core"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn can(Role, Action) -> Bool
+
+pub fn child_id(parent_id~ : String, idx~ : Int) -> String
+
+pub fn ensure_can(Role, Action) -> Result[Unit, String]
+
+pub fn principles() -> Array[Principle]
+
+pub fn principles_json() -> Json
+
+pub fn role_of(String) -> Result[Role, String]
+
+// Errors
+
+// Types and methods
+pub enum Action {
+  Publish
+  Dispatch
+  Search
+  Allocate
+  Claim
+  Execute
+  Submit
+  Verify
+  Complete
+  Archive
+  Reopen
+  Observe
+  ManageProject
+} derive(Eq, @debug.Debug)
+pub fn Action::to_string(Self) -> String
+
+pub struct Principle {
+  index : Int
+  title : String
+  body : String
+} derive(Eq, @debug.Debug)
+pub fn Principle::get_body(Self) -> String
+pub fn Principle::get_index(Self) -> Int
+pub fn Principle::get_title(Self) -> String
+pub fn Principle::to_json(Self) -> Json
+
+pub enum Role {
+  HumanSteward
+  Leader
+  Searcher
+  Allocator
+  Executor
+  Verifier
+  Recorder
+  Observer
+} derive(Eq, @debug.Debug)
+pub fn Role::description(Self) -> String
+pub fn Role::from_string(String) -> Self?
+pub fn Role::to_string(Self) -> String
+
+pub struct Task {
+  id : String
+  parent_id : String?
+  project_dir : String
+  ns : String
+  priority : String
+  importance : String
+  depth : Int
+  split_n : Int
+  status : TaskStatus
+  assignee : String?
+  description : String
+  deliverable : String
+  created_at : String
+  updated_at : String
+  completed_by : String?
+  cleanup_mode : String
+  depends_on : Array[String]
+} derive(Eq, @debug.Debug)
+pub fn Task::archive(Self) -> Result[Self, String]
+pub fn Task::claim(Self, assignee~ : String) -> Result[Self, String]
+pub fn Task::complete(Self, completed_by~ : String) -> Result[Self, String]
+pub fn Task::execute(Self) -> Result[Self, String]
+pub fn Task::from_db(String, String?, String, String, String, String, Int, Int, String, String?, String, String, String, String, String?, String, Array[String]) -> Self
+pub fn Task::get_assignee(Self) -> String?
+pub fn Task::get_depth(Self) -> Int
+pub fn Task::get_description(Self) -> String
+pub fn Task::get_id(Self) -> String
+pub fn Task::get_parent(Self) -> String?
+pub fn Task::get_status(Self) -> TaskStatus
+pub fn Task::get_updated_at(Self) -> String
+pub fn Task::is_leaf(Self) -> Bool
+pub fn Task::mark_decomposing(Self) -> Result[Self, String]
+pub fn Task::new(id~ : String, project_dir~ : String, description? : String, priority? : String, importance? : String, depth? : Int, split_n? : Int, parent_id? : String, assignee? : String, cleanup_mode? : String, created_at? : String, ns? : String, depends_on? : Array[String]) -> Self
+pub fn Task::pause(Self) -> Result[Self, String]
+pub fn Task::reject(Self, reason? : String) -> Result[Self, String]
+pub fn Task::reopen(Self) -> Result[Self, String]
+pub fn Task::resume(Self) -> Result[Self, String]
+pub fn Task::retry(Self) -> Result[Self, String]
+pub fn Task::split(Self) -> Result[Self, String]
+pub fn Task::status_to_string(Self) -> String
+pub fn Task::submit(Self) -> Result[Self, String]
+pub fn Task::to_json(Self) -> Json
+pub fn Task::with_deliverable(Self, String, String) -> Self
+pub fn Task::with_updated_at(Self, String) -> Self
+
+pub enum TaskStatus {
+  Pending
+  Claimed
+  Splitting
+  Executing
+  Reviewing
+  Completed
+  Archived
+  Rejected
+  Paused
+} derive(Eq, @debug.Debug)
+pub fn TaskStatus::can_execute(Self) -> Bool
+pub fn TaskStatus::can_split(Self) -> Bool
+pub fn TaskStatus::from_string(String) -> Self?
+pub fn TaskStatus::is_active(Self) -> Bool
+pub fn TaskStatus::is_archived(Self) -> Bool
+pub fn TaskStatus::is_claimed(Self) -> Bool
+pub fn TaskStatus::is_completed(Self) -> Bool
+pub fn TaskStatus::is_executing(Self) -> Bool
+pub fn TaskStatus::is_paused(Self) -> Bool
+pub fn TaskStatus::is_pending(Self) -> Bool
+pub fn TaskStatus::is_rejected(Self) -> Bool
+pub fn TaskStatus::is_reviewing(Self) -> Bool
+pub fn TaskStatus::is_splitting(Self) -> Bool
+pub fn TaskStatus::order(Self) -> Int
+pub fn TaskStatus::to_string(Self) -> String
+
+// Type aliases
+
+// Traits

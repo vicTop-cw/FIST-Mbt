@@ -9,5 +9,13 @@ _build.log
 _test.log
 # sqlite e2e test dbs
 *.db
+# temp scripts (m9_*, m18_*, etc.)
+m9_*.js
+m18_*.js
+# atomcode project dir
+.atomcode/
+# generated interface files (optional - uncomment to exclude)
+# *.mbti
+# pkg.generated.mbti
 
 temp/

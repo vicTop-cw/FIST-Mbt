@@ -4,11 +4,12 @@
 /// 已归档（Archived）且归档时间（updated_at）早于保留期（retention_days）的任务，
 /// 通过 FistEngine::delete_task 物理删除。未归档任务一律不受影响（引擎层已限定）。
 
+///|
 /// 清理一轮：删除超过保留期的已归档任务。返回被清理的任务 id 列表。
 pub fn cleanup_archived(
   engine : @engine.FistEngine,
   now : String,
-  retention_days~ : Int = 30,
+  retention_days? : Int = 30,
 ) -> Result[Array[String], String] {
   let now_s = iso_to_secs(now)
   if now_s < 0 || retention_days < 0 {

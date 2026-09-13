@@ -1,6 +1,6 @@
 # FIST-Mbt 使用文档（USAGE）
 
-> 版本：`vicTop-cw/fist-mbt@0.1.0`（MoonBit，MCP Server）
+> 版本：`vicTop-cw/fist-mbt@0.2.0`（MoonBit，MCP Server）
 > 日期：2026-09-12 ｜ 定位：**实操调用手册**。README.md 是项目概览，本文件是「如何真正用它」的手把手文档，
 > 全部示例均来自本机实机运行（JSON-RPC over STDIO）的真实输出，非凭空构造。
 
@@ -8,7 +8,7 @@
 
 ## 1. 它是什么
 
-FIST 指挥官任务分配体系（原 Python 版 `E:\IDEProjects\AI\FIST`）的 **纯 MoonBit 原生重写 + MCP 化** 作品
+FIST 指挥官任务分配体系（原 Python 版 FIST）的 **纯 MoonBit 原生重写 + MCP 化** 作品
 （2026 MoonBit 九月黑客松）。对外暴露一个 **STDIO 传输的 MCP Server**（也支持 HTTP/SSE 桥接），
 任何 MCP 客户端拉起可执行文件后，即可通过标准 `tools/call` 完成任务的
 **发布 → 认领 → 拆分 → 执行 → 提交 → 验收 → 归档** 完整闭环。
@@ -25,7 +25,7 @@ FIST 指挥官任务分配体系（原 Python 版 `E:\IDEProjects\AI\FIST`）的
 moon check                  # 类型检查
 moon build --target native  # 原生后端
 moon build --target js      # JS 后端（Node 运行）
-moon test                   # 全部测试（57 项）
+moon test                   # 全部测试（77 项）
 ```
 
 本机常用启动产物：
@@ -78,7 +78,7 @@ Node + Python 最小驱动框架：
 import subprocess, json, os
 proc = subprocess.Popen(
     ["node", "_build/js/debug/build/cmd/main/main.js"],
-    cwd="E:/IDEProjects/AI/FIST-Mbt",
+    cwd=".",
     stdin=subprocess.PIPE, stdout=subprocess.PIPE,
     text=True, encoding="utf-8", errors="replace", bufsize=1,
 )
@@ -123,7 +123,7 @@ def rpc(method, **payload):
 
 ---
 
-## 6. 22 个 MCP 工具手册
+## 6. 36 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
@@ -134,7 +134,7 @@ def rpc(method, **payload):
 | `publish` | 发布根任务（仅 human_steward/human） | project_dir(必) description(必) created_by(选,默认human_steward) namespace(选,默认default) now(选) |
 | `claim` | 认领任务（待领取→已领取） | task_id(必) assignee(必) now(选) |
 | `plan` | 对已认领任务拆出一层子任务 | task_id(必) split_n(选,默认3) by(选) now(选) |
-| `execute` | 记录执行交付物（→执行中） | task_id(必) deliverable(必) now(选) |
+| `execute` | 记录执行交付物（→执行中），向后兼容旧接口，支持 executor/model/tokens/cost 元数据 | task_id(必) deliverable(必) executor(选) model(选) tokens_in(选) tokens_out(选) cost(选) duration_ms(选) rate_limited(选) failure_reason(选) now(选) |
 | `submit` | 提交验收（→待验收） | task_id(必) now(选) |
 | `verify` | 验收通过（→已完成，父任务自动上卷） | task_id(必) verifier(必) now(选) |
 | `reject` | 验收拒绝（→已打回） | task_id(必) reason(选) by(选,默认human_steward) now(选) |
@@ -210,9 +210,125 @@ def rpc(method, **payload):
 | `store_list` | 列出当前已打开的命名空间及任务数 | 无 |
 | `store_close` | 关闭指定命名空间（不删除物理库文件） | namespace(必) |
 
-每个命名空间对应独立的 SQLite 文件 `{data_dir}/{namespace}.db`，实现数据隔离。
+| `store_close` | 关闭指定命名空间（不删除物理库文件） | namespace(必) |
 
----
+### 6.7 Omega 验证闭环（M6 金条八）
+
+| 工具 | 说明 | 参数 |
+|---|---|---|
+| `omega_verify` | 批量验证 spec JSON：schema + fingerprint 校验，accuracy < 100% 一票否决 | specs(JSON 数组) |
+| `omega_verify_fix` | 失败 spec 根因分类 → 定向修复 → 回归验证（3 轮循环） | specs(JSON 数组) max_rounds(选) |
+
+**Omega 验证示例**：
+
+```json
+{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{
+  "name":"omega_verify",
+  "arguments":{
+    "specs": [
+      {"name":"规范A","laws":["规则1","规则2"],"fingerprint":"abc123"},
+      {"name":"规范B","laws":[],"fingerprint":""}
+    ]
+  },
+  "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}
+}}
+```
+
+真实响应（第二个 spec 因为 laws 为空 + fingerprint 为空而 accuracy=0%，一票否决）：
+
+```json
+{
+  "results": [
+    {"name":"规范A","accuracy":1.0,"errors":[]},
+    {"name":"规范B","accuracy":0.0,"errors":["laws 不能为空","fingerprint 不能为空"]}
+  ],
+  "pass_count": 1,
+  "fail_count": 1,
+  "verdict": "FAIL",
+  "failed_names": ["规范B"]
+}
+```
+
+```json
+{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{
+  "name":"omega_verify_fix",
+  "arguments":{
+    "specs": [
+      {"name":"规范B","laws":[],"fingerprint":""}
+    ]
+  },
+  "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}
+}}
+```
+
+真实响应（自动补全 laws 模板 + 生成 fingerprint，3 轮内收敛到 accuracy=1.0）：
+
+```json{
+  "rounds": 2,
+  "final_results": [
+    {"name":"规范B","accuracy":1.0,"errors":[]}
+  ],
+  "verdict": "PASS"
+}
+```
+
+### 6.8 智能调度与成本（M6 增强）
+
+| 工具 | 说明 | 参数 |
+|---|---|---|
+| `schedule` | 调度预览：根据任务描述自适应计算分级/拆分/成本档/执行器（不落库） | description(必) n_files(选) |
+| `cost_stats` | 执行成本聚合统计（total_records/total_cost/total_tokens/by_executor） | 无 |
+| `cost_budget_check` | 预算超限告警（exceeded/remaining/action） | limit(必) current(必) |
+
+**调度预览示例**：
+
+```json
+{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{
+  "name":"schedule",
+  "arguments":{
+    "description":"重构用户认证模块，涉及 login/logout/oauth 三个子模块",
+    "n_files": 12
+  },
+  "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}
+}}
+```
+
+真实响应（根据描述长度 + 文件数自动判定为 L3 中等任务）：
+
+```json
+{
+  "level": "L3",
+  "description": "...",
+  "split_n": 5,
+  "cost_tier": "medium",
+  "executor": "mcp_delegate",
+  "reason": "描述长度 42 字符 + 12 文件 → 中等复杂度，建议拆 5 个子任务"
+}
+```
+
+**成本统计示例**：
+
+```json
+{"jsonrpc":"2.0","id":21,"method":"tools/call","params":{
+  "name":"cost_stats",
+  "arguments":{},
+  "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}
+}}
+```
+
+真实响应：
+
+```json
+{
+  "total_records": 42,
+  "total_cost": 1.234,
+  "total_tokens": 56780,
+  "by_executor": {
+    "AI_Marvis": {"records": 30, "cost": 0.89, "tokens": 42000},
+    "AI_CodeX": {"records": 12, "cost": 0.344, "tokens": 14780}
+  }
+}
+```
 
 ## 7. 端到端真实闭环（本机实录）
 
@@ -220,7 +336,7 @@ def rpc(method, **payload):
 
 | 步骤 | 调用 | 真实结果 |
 |---|---|---|
-| 1 | `publish(project_dir="E:/proj/usage-demo", description="FIST-Mbt USAGE 文档实机演示任务", created_by="human_steward")` | `{"task_id":"T0","message":"已发布根任务"}` |
+| 1 | `publish(project_dir="./demo-project", description="FIST-Mbt USAGE 文档实机演示任务", created_by="human_steward")` | `{"task_id":"T0","message":"已发布根任务"}` |
 | 2 | `claim(task_id="T0", assignee="AI_Marvis")` | 返回任务对象，`status="已领取"`, `assignee="AI_Marvis"` |
 | 3 | `plan(task_id="T0", split_n=3, by="AI_Marvis")` | `["T0.1","T0.2","T0.3"]`（子任务 depth=2） |
 | 4 | 对 `T0.1` / `T0.2` / `T0.3` 逐个 `claim → execute → submit → verify` | 逐个返回任务对象，`status="已完成"`，`completed_by="human_steward"` |
@@ -231,7 +347,7 @@ def rpc(method, **payload):
 **验证结论**：publish → plan → claim/execute/submit/verify（叶子）+ verify（父自动上卷）→ archive 全链真实跑通，
 任务自动持久化到 `fist-mbt.db`。
 
-> 补充实测：`tools/list` 返回 22 个工具；`resources/read(fist://principles)` 返回七条金条 JSON；
+> 补充实测：`tools/list` 返回 36 个工具；`resources/read(fist://principles)` 返回七条金条 JSON；
 > `prompts/get(fist:check_in)` 返回 1 条 role=user 的打卡自查模板消息。
 
 ---
@@ -309,9 +425,9 @@ moon publish
 
 ## 12. 一句话总结
 
-FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（22 个工具）。
+FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（36 个工具）。
 对 AI 客户端而言：**pub/claim/plan + spec 深拆 → 子任务闭环 → verify 上卷 → archive**，
 一路 `tools/call` 即可完成多智能体任务的发布、认领、拆分、执行、验收、归档全生命周期管理。
 
-**M5 新增能力**：DAG 依赖图分析、九态状态机（含 reject/retry/pause/resume）、
-审计权限矩阵、多租户命名空间隔离。
+**M8 新增能力**：Omega 验证闭环（一票否决 + 自动修复）、智能调度预览、执行器抽象层、成本追踪与预算告警、
+心跳持久化 + WAL 并发、执行元数据扩展。

@@ -49,3 +49,51 @@ AIGC:
     待领取→已领取，execute 进入执行中；同步更新 server 文案。
 - 质量：`moon test` 7 项黑盒单测全绿；MCP STDIO 全链路冒烟通过。
 *（内容由AI生成，仅供参考）*
+
+## [0.2.0] - 2026-09-13
+
+### M6 — Omega 验证闭环 + 智能调度 + 执行器抽象层
+
+**新增工具（+8 个，总计 36 个）：**
+- `omega_verify` — 批量验证 spec JSON（schema + fingerprint 校验，accuracy < 100% 一票否决）
+- `omega_verify_fix` — 失败 spec 根因分类 → 定向修复 → 回归验证（3 轮循环）
+- `schedule` — 调度预览：根据任务描述自适应计算分级/拆分/成本档/执行器（不落库）
+- `cost_stats` — 执行成本聚合统计（total_records/total_cost/total_tokens/by_executor）
+- `cost_budget_check` — 预算超限告警（exceeded/remaining/action）
+
+**元数据扩展：**
+- `execute` 工具向后兼容扩展：支持 executor/model/tokens_in/tokens_out/cost/duration_ms/rate_limited/failure_reason 元数据
+- `StoreBackend::record_execution` — 执行记录持久化到 executions 表
+- `engine.execute_with_meta` — 统一入口写入元数据
+
+**新增子包：**
+- `src/omega/`：spec.mbt / gate.mbt / check.mbt / omega_tool.mbt — 可解释性子包
+- `src/engine/scheduler.mbt`：L1-L4 分级调度（根据描述长度/n_files 自适应计算 split_n/cost_tier/executor）
+- `src/engine/router.mbt`：成本档路由（low→本地/delegate, medium→mcp_delegate, high→mcp_delegate:priority）
+- `src/engine/cost_tool.mbt`：aggregate_stats + budget_check
+- `src/executor/`：base.mbt（Executor trait + ExecResult）/ mcp_delegate.mbt / registry.mbt
+
+**验证：** `moon check` 0 错误，`moon test` 77 项全绿。
+
+### M7 — 成本追踪 + 心跳持久化 + WAL 并发修复
+
+**核心修复与增强：**
+- `StoreBackend::cost_stats()` — 聚合 executions 表统计（total_cost/total_tokens/by_executor 分组）
+- 心跳持久化：`write_heartbeat`/`read_heartbeat`/`delete_heartbeat`/`list_all_heartbeats` 四层 CRUD
+- `SqliteStore::open` 启用 WAL 模式 + `synchronous=NORMAL`（提升并发读写性能）
+- 启动时 `init_heartbeats()` 从 SQLite 加载残留心跳；heartbeat/heal 操作同步落库
+- `is Some(_)` 语法修复 → `match` 表达式（MoonBit 不支持该语法）
+- 测试 base_dir 修复：`"test-data"` → `"."`（SQLite 不自动创建父目录）
+
+**验证：** 77/77 测试通过（含新增 WAL 并发测试 3 ns × 5 tasks）。
+
+### M8 — 文档体系完善 + 用户体验增强
+
+**文档更新：**
+- README.md：工具数 22→36、测试数 57→77；新增 Omega/调度/成本工具表；新增项目结构 executor/ 子包
+- CHANGELOG.md：补录 M6/M7/M8 条目（本条）
+- USAGE.md：新增 Omega 验证/调度/成本/心跳完整示例；更新测试验证命令
+
+**验证：** `moon check` 0 错误，`moon test` 77/77 全绿，`moon info` 8 个 .mbti 接口文件生成。
+
+---

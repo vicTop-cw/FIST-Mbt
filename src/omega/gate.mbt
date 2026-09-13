@@ -1,3 +1,4 @@
+///|
 /// omega/gate.mbt — Ω-gate 跑批验证：对 spec 的测试对批量执行断言。
 ///（移植自 FIST(Python) omega/gate.py。MoonBit 无内置正则，“regex”断言降级为
 ///  contains/前后缀 匹配，其余 7 种断言原样支持。）
@@ -17,7 +18,6 @@
 ///   {"$assert":"eq",      "value":X}                     精确相等
 /// 另支持 "field" 键：先提取 actual[field] 再断言。
 /// 未含 "$assert" 的 expected 保持精确相等语义（向后兼容）。
-
 fn json_or(v : Json?, default : Json) -> Json {
   match v {
     Some(j) => j
@@ -25,6 +25,7 @@ fn json_or(v : Json?, default : Json) -> Json {
   }
 }
 
+///|
 fn text_of(v : Json) -> String {
   match v {
     String(s) => s
@@ -32,6 +33,7 @@ fn text_of(v : Json) -> String {
   }
 }
 
+///|
 /// 正则降级匹配：pattern 语义采用简化规则
 /// - 以 ^ 开头、$ 结尾（长度>2）→ 精确相等（剥掉锚点）
 /// - 以 ^ 开头 → 前缀匹配
@@ -50,6 +52,7 @@ pub fn regex_lite(actual : String, pattern : String) -> Bool {
   actual.contains(pattern)
 }
 
+///|
 fn as_number(v : Json) -> Double? {
   match v {
     Number(n, ..) => Some(n)
@@ -57,6 +60,7 @@ fn as_number(v : Json) -> Double? {
   }
 }
 
+///|
 /// 类型名映射（兼容 Python 版命名）
 fn type_names(v : Json) -> Array[String] {
   match v {
@@ -70,16 +74,24 @@ fn type_names(v : Json) -> Array[String] {
   }
 }
 
+///|
 fn to_elem_set(v : Json) -> Set[String] {
   let s : Set[String] = Set([])
   match v {
-    Array(a) => for x in a { s.add(canonical_json(x)) }
-    String(str) => for ch in str { s.add(ch.to_string()) }
+    Array(a) =>
+      for x in a {
+        s.add(canonical_json(x))
+      }
+    String(str) =>
+      for ch in str {
+        s.add(ch.to_string())
+      }
     _ => ()
   }
   s
 }
 
+///|
 /// 按断言类型检查，返回 (passed, detail)。
 fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
   let kind = match expected.value("$assert") {
@@ -91,10 +103,11 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
       let target_n = as_number(json_or(expected.value("value"), Json::null()))
       let actual_n = as_number(actual)
       let eps = match expected.value("epsilon") {
-        Some(v) => match as_number(v) {
-          Some(e) => e
-          None => 0.000000001
-        }
+        Some(v) =>
+          match as_number(v) {
+            Some(e) => e
+            None => 0.000000001
+          }
         None => 0.000000001
       }
       match (target_n, actual_n) {
@@ -119,11 +132,7 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
       let exp = to_elem_set(json_or(expected.value("value"), Json::null()))
       let act = to_elem_set(actual)
       let missing : Array[String] = []
-      exp.each(fn(e) {
-        if !act.contains(e) {
-          missing.push(e)
-        }
-      })
+      exp.each(fn(e) { if !act.contains(e) { missing.push(e) } })
       let ok = missing.length() == 0
       (ok, "subset: 缺少 [\{missing.join(", ")}] -> \{ok}")
     }
@@ -132,33 +141,34 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
       let exp = to_elem_set(json_or(expected.value("value"), Json::null()))
       let act = to_elem_set(actual)
       let extra : Array[String] = []
-      act.each(fn(a) {
-        if !exp.contains(a) {
-          extra.push(a)
-        }
-      })
+      act.each(fn(a) { if !exp.contains(a) { extra.push(a) } })
       let ok = extra.length() == 0
       (ok, "superset: 多余 [\{extra.join(", ")}] -> \{ok}")
     }
     "type" => {
       let want = match expected.value("value") {
         Some(String(s)) => s
-        _ => match expected.value("name") {
-          Some(String(s)) => s
-          _ => ""
-        }
+        _ =>
+          match expected.value("name") {
+            Some(String(s)) => s
+            _ => ""
+          }
       }
       let names = type_names(actual)
       let ok = names.contains(want.to_lower())
-      (ok, "type: 实际 '\{actual.stringify()}' 是 [\{names.join(", ")}], 期望 \{want} -> \{ok}")
+      (
+        ok,
+        "type: 实际 '\{actual.stringify()}' 是 [\{names.join(", ")}], 期望 \{want} -> \{ok}",
+      )
     }
     "exists" => {
       let key = match expected.value("key") {
         Some(v) => text_of(v)
-        None => match expected.value("value") {
-          Some(v) => text_of(v)
-          None => ""
-        }
+        None =>
+          match expected.value("value") {
+            Some(v) => text_of(v)
+            None => ""
+          }
       }
       let ok = exists_check(actual, key)
       (ok, "exists: key '\{key}' 存在于 '\{actual.stringify()}' -> \{ok}")
@@ -175,7 +185,7 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
       }
       match actual_n {
         Some(v) => {
-          var ok = true
+          let mut ok = true
           let detail : Array[String] = []
           match lo {
             Some(l) => {
@@ -205,18 +215,22 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
   }
 }
 
+///|
 fn exists_check(actual : Json, key : String) -> Bool {
   match actual {
     Object(m) => m.contains(key)
-    Array(a) => a.any(fn(x) { canonical_json(x) == canonical_json(Json::string(key)) })
+    Array(a) =>
+      a.any(fn(x) { canonical_json(x) == canonical_json(Json::string(key)) })
     String(s) => s.contains(key)
-    _ => match actual {
-      Null => false
-      _ => true
-    }
+    _ =>
+      match actual {
+        Null => false
+        _ => true
+      }
   }
 }
 
+///|
 /// 检查实际结果是否符合期望（支持 $assert 断言对象，否则精确相等）。
 pub fn check_expected(actual : Json, expected : Json) -> (Bool, String) {
   match expected {
@@ -230,7 +244,11 @@ pub fn check_expected(actual : Json, expected : Json) -> (Bool, String) {
               let (ok, detail) = check_assert(v, expected)
               (ok, "[field=\{f}] \{detail}")
             }
-            None => (false, "断言字段缺失: '\{f}'（实际 \{actual.stringify()}）")
+            None =>
+              (
+                false,
+                "断言字段缺失: '\{f}'（实际 \{actual.stringify()}）",
+              )
           }
         }
         _ => check_assert(actual, expected)
@@ -238,11 +256,15 @@ pub fn check_expected(actual : Json, expected : Json) -> (Bool, String) {
     }
     _ => {
       let ok = canonical_json(actual) == canonical_json(expected)
-      (ok, "精确相等: '\{actual.stringify()}' == '\{expected.stringify()}' -> \{ok}")
+      (
+        ok,
+        "精确相等: '\{actual.stringify()}' == '\{expected.stringify()}' -> \{ok}",
+      )
     }
   }
 }
 
+///|
 /// 对 spec 的每个测试对跑批，返回结果 JSON 数组。
 /// 每个结果: {"index", "type": "normal"/"error", "passed", "detail"}
 pub fn run_tests(
@@ -265,29 +287,38 @@ pub fn run_tests(
     match t.value("error") {
       Some(String(expected_err)) => {
         let value_str = text_of(value)
-        let passed = (!ok) && value_str.contains(expected_err)
-        results.push(Json::object({
-          "index": Json::number(i.to_double()),
-          "type": Json::string("error"),
-          "passed": jbool(passed),
-          "detail": Json::string("期望错误 '\{expected_err}'，实际: \{value_str}"),
-        }))
+        let passed = !ok && value_str.contains(expected_err)
+        results.push(
+          Json::object({
+            "index": Json::number(i.to_double()),
+            "type": Json::string("error"),
+            "passed": jbool(passed),
+            "detail": Json::string(
+              "期望错误 '\{expected_err}'，实际: \{value_str}",
+            ),
+          }),
+        )
       }
       _ => {
         let exp = json_or(t.value("expected"), Json::null())
         let (passed, detail) = check_expected(value, exp)
-        results.push(Json::object({
-          "index": Json::number(i.to_double()),
-          "type": Json::string("normal"),
-          "passed": jbool(passed),
-          "detail": Json::string("期望 \{exp.stringify()}，实际: \{value.stringify()}；\{detail}"),
-        }))
+        results.push(
+          Json::object({
+            "index": Json::number(i.to_double()),
+            "type": Json::string("normal"),
+            "passed": jbool(passed),
+            "detail": Json::string(
+              "期望 \{exp.stringify()}，实际: \{value.stringify()}；\{detail}",
+            ),
+          }),
+        )
       }
     }
   }
   results
 }
 
+///|
 /// 汇总跑批结果：{"total", "passed", "accuracy"}
 pub fn summarize(results : Array[Json]) -> Json {
   let mut passed : Int = 0
@@ -299,7 +330,7 @@ pub fn summarize(results : Array[Json]) -> Json {
   }
   let total = results.length()
   let acc = if total > 0 {
-    (passed.to_double() / total.to_double()) * 100.0
+    passed.to_double() / total.to_double() * 100.0
   } else {
     0.0
   }

@@ -4,6 +4,7 @@
 
 /// ==================== 内部工具 ====================
 
+///|
 /// 生成 n 层两空格缩进
 fn dag_indent(n : Int) -> String {
   let mut s = ""
@@ -13,6 +14,7 @@ fn dag_indent(n : Int) -> String {
   s
 }
 
+///|
 /// 用逗号拼接依赖 id 列表
 fn dag_join_deps(deps : Array[String]) -> String {
   let mut s = ""
@@ -27,6 +29,7 @@ fn dag_join_deps(deps : Array[String]) -> String {
 
 /// ==================== 关键路径 ====================
 
+///|
 /// 求以 id 结尾的最长依赖链（沿 depends_on 边回溯；memo 化 DFS，含环保护）。
 /// 返回序列按依赖先后排列（最底层依赖在前，id 自身在后）。
 fn FistEngine::longest_chain_ending(
@@ -63,6 +66,7 @@ fn FistEngine::longest_chain_ending(
   out
 }
 
+///|
 /// 关键路径：全图中按 depends_on 建图后的最长依赖链（任务 id 序列）。
 /// 多条等长链取先遇到的一条；空仓库返回空数组。
 pub fn FistEngine::critical_path(self : FistEngine) -> Array[String] {
@@ -80,6 +84,7 @@ pub fn FistEngine::critical_path(self : FistEngine) -> Array[String] {
 
 /// ==================== 并行度 ====================
 
+///|
 /// 当前可并行执行的任务数：状态为待领取且依赖已满足的任务数。
 pub fn FistEngine::parallelism(self : FistEngine) -> Int {
   let mut n = 0
@@ -93,6 +98,7 @@ pub fn FistEngine::parallelism(self : FistEngine) -> Int {
 
 /// ==================== ASCII 依赖图 ====================
 
+///|
 /// 计算任务在 DAG 中的层级（缩进深度）：
 /// 取「parent_id 父链深度」与「depends_on 依赖链深度」的较大者。
 /// 父/依赖不在本命名空间内则不计入；环保护下返回 0。
@@ -143,6 +149,7 @@ fn FistEngine::dag_level(
   level
 }
 
+///|
 /// ASCII 树/缩进图：展示某命名空间下的任务依赖结构。
 /// 层级由 parent_id（子任务归组）与 depends_on（依赖深度）共同决定，
 /// 同层任务按 id 字典序稳定输出；跨命名空间的父/依赖不计入缩进。

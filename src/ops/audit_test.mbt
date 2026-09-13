@@ -1,5 +1,6 @@
 /// audit_test.mbt —— 权限与审计模块测试
 
+///|
 /// 权限矩阵：publish/archive/delete 仅 HumanSteward
 test "audit: 权限矩阵（人类主权四操作）" {
   let hs = match Role::from_string("human_steward") {
@@ -32,6 +33,7 @@ test "audit: 权限矩阵（人类主权四操作）" {
   assert_true(can_claim(agent))
 }
 
+///|
 /// enforce：合法放行 / 越权拒绝
 test "audit: enforce 放行与拒绝" {
   let hs = match Role::from_string("human_steward") {
@@ -73,10 +75,16 @@ test "audit: enforce 放行与拒绝" {
   assert_true(enforce(action="unknown_op", role=hs).is_err())
 }
 
+///|
 /// AuditLog：追加式记录与 entries 顺序
 test "audit: 日志追加保持顺序" {
   let log = AuditLog::new()
-  log.record(action="publish", actor="human_steward", task_id="T0", now="2026-09-05T00:00:00Z")
+  log.record(
+    action="publish",
+    actor="human_steward",
+    task_id="T0",
+    now="2026-09-05T00:00:00Z",
+  )
   log.record(
     action="claim",
     actor="leader-1",
@@ -84,7 +92,12 @@ test "audit: 日志追加保持顺序" {
     detail="认领根任务",
     now="2026-09-05T00:00:10Z",
   )
-  log.record(action="submit", actor="agent-1", task_id="T0.1", now="2026-09-05T00:01:00Z")
+  log.record(
+    action="submit",
+    actor="agent-1",
+    task_id="T0.1",
+    now="2026-09-05T00:01:00Z",
+  )
   let es = log.entries()
   assert_eq(es.length(), 3)
   assert_eq(es[0].action, "publish")
@@ -95,6 +108,7 @@ test "audit: 日志追加保持顺序" {
   assert_eq(es[0].ts, "2026-09-05T00:00:00Z")
 }
 
+///|
 /// AuditLog：by_actor / by_task 过滤互不干扰
 test "audit: by_actor 与 by_task 过滤" {
   let log = AuditLog::new()
@@ -117,10 +131,17 @@ test "audit: by_actor 与 by_task 过滤" {
   assert_eq(log.by_task("T9").length(), 0)
 }
 
+///|
 /// AuditLog：to_json 序列化字段完整
 test "audit: to_json 序列化" {
   let log = AuditLog::new()
-  log.record(action="publish", actor="human_steward", task_id="T0", detail="根任务发布", now="2026-09-05T00:00:00Z")
+  log.record(
+    action="publish",
+    actor="human_steward",
+    task_id="T0",
+    detail="根任务发布",
+    now="2026-09-05T00:00:00Z",
+  )
   let json = log.to_json()
   let s = json.stringify()
   assert_true(s.contains("\"action\":\"publish\""))
@@ -131,6 +152,7 @@ test "audit: to_json 序列化" {
   assert_eq(AuditLog::new().to_json().stringify(), "[]")
 }
 
+///|
 /// 与引擎联动：list_all/get_task 提供审计事实来源
 test "audit: 引擎任务可作为审计来源" {
   let e = @engine.FistEngine::new()
@@ -148,8 +170,7 @@ test "audit: 引擎任务可作为审计来源" {
     ),
   )
   assert_true(
-    enforce(action="publish", role=hs).is_ok() &&
-    e.get_task("T0") is Some(_),
+    enforce(action="publish", role=hs).is_ok() && e.get_task("T0") is Some(_),
   )
   for t in e.list_all() {
     log.record(

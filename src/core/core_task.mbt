@@ -1,6 +1,7 @@
 /// FIST-Mbt core: task model & state machine.
 /// 迁移自 FIST(Python) 的状态机与分层递归理念（七条金条第 4 条：唯一指挥官）。
 
+///|
 /// 任务七态状态机
 pub enum TaskStatus {
   /// 待领取
@@ -23,6 +24,7 @@ pub enum TaskStatus {
   Paused
 } derive(Eq, Debug)
 
+///|
 pub fn TaskStatus::to_string(self : TaskStatus) -> String {
   match self {
     Pending => "待领取"
@@ -37,7 +39,8 @@ pub fn TaskStatus::to_string(self : TaskStatus) -> String {
   }
 }
 
-pub fn TaskStatus::from_string(s : String) -> Option[TaskStatus] {
+///|
+pub fn TaskStatus::from_string(s : String) -> TaskStatus? {
   match s {
     "待领取" => Some(Pending)
     "已领取" => Some(Claimed)
@@ -54,6 +57,7 @@ pub fn TaskStatus::from_string(s : String) -> Option[TaskStatus] {
 
 /// 排序权重（用于统计/展示）
 
+///|
 /// 状态谓词（供跨包业务层判断，避免直接构造变体）
 pub fn TaskStatus::can_split(self : TaskStatus) -> Bool {
   match self {
@@ -62,6 +66,7 @@ pub fn TaskStatus::can_split(self : TaskStatus) -> Bool {
   }
 }
 
+///|
 pub fn TaskStatus::can_execute(self : TaskStatus) -> Bool {
   match self {
     Claimed | Splitting | Executing | Rejected => true
@@ -69,8 +74,17 @@ pub fn TaskStatus::can_execute(self : TaskStatus) -> Bool {
   }
 }
 
-pub fn TaskStatus::is_rejected(self : TaskStatus) -> Bool { self == Rejected }
-pub fn TaskStatus::is_paused(self : TaskStatus) -> Bool { self == Paused }
+///|
+pub fn TaskStatus::is_rejected(self : TaskStatus) -> Bool {
+  self == Rejected
+}
+
+///|
+pub fn TaskStatus::is_paused(self : TaskStatus) -> Bool {
+  self == Paused
+}
+
+///|
 pub fn TaskStatus::is_active(self : TaskStatus) -> Bool {
   match self {
     Pending | Claimed | Splitting | Executing | Reviewing => true
@@ -78,20 +92,42 @@ pub fn TaskStatus::is_active(self : TaskStatus) -> Bool {
   }
 }
 
-pub fn TaskStatus::is_completed(self : TaskStatus) -> Bool { self == Completed }
-pub fn TaskStatus::is_pending(self : TaskStatus) -> Bool { self == Pending }
+///|
+pub fn TaskStatus::is_completed(self : TaskStatus) -> Bool {
+  self == Completed
+}
 
-pub fn TaskStatus::is_claimed(self : TaskStatus) -> Bool { self == Claimed }
+///|
+pub fn TaskStatus::is_pending(self : TaskStatus) -> Bool {
+  self == Pending
+}
 
-pub fn TaskStatus::is_splitting(self : TaskStatus) -> Bool { self == Splitting }
+///|
+pub fn TaskStatus::is_claimed(self : TaskStatus) -> Bool {
+  self == Claimed
+}
 
-pub fn TaskStatus::is_executing(self : TaskStatus) -> Bool { self == Executing }
+///|
+pub fn TaskStatus::is_splitting(self : TaskStatus) -> Bool {
+  self == Splitting
+}
 
+///|
+pub fn TaskStatus::is_executing(self : TaskStatus) -> Bool {
+  self == Executing
+}
 
-pub fn TaskStatus::is_reviewing(self : TaskStatus) -> Bool { self == Reviewing }
+///|
+pub fn TaskStatus::is_reviewing(self : TaskStatus) -> Bool {
+  self == Reviewing
+}
 
-pub fn TaskStatus::is_archived(self : TaskStatus) -> Bool { self == Archived }
+///|
+pub fn TaskStatus::is_archived(self : TaskStatus) -> Bool {
+  self == Archived
+}
 
+///|
 pub fn TaskStatus::order(self : TaskStatus) -> Int {
   match self {
     Pending => 0
@@ -106,6 +142,7 @@ pub fn TaskStatus::order(self : TaskStatus) -> Int {
   }
 }
 
+///|
 /// FIST-Mbt 任务实体
 pub struct Task {
   /// 形如 T0 / T0.1 / T0.1.2 的层级 id
@@ -132,44 +169,76 @@ pub struct Task {
   pub depends_on : Array[String]
 } derive(Eq, Debug)
 
+///|
 /// 便捷状态访问
-pub fn Task::status_to_string(self : Task) -> String { self.status.to_string() }
+pub fn Task::status_to_string(self : Task) -> String {
+  self.status.to_string()
+}
 
-pub fn Task::get_id(self : Task) -> String { self.id }
+///|
+pub fn Task::get_id(self : Task) -> String {
+  self.id
+}
 
-pub fn Task::get_parent(self : Task) -> String? { self.parent_id }
+///|
+pub fn Task::get_parent(self : Task) -> String? {
+  self.parent_id
+}
 
-pub fn Task::get_status(self : Task) -> TaskStatus { self.status }
+///|
+pub fn Task::get_status(self : Task) -> TaskStatus {
+  self.status
+}
 
-pub fn Task::get_depth(self : Task) -> Int { self.depth }
+///|
+pub fn Task::get_depth(self : Task) -> Int {
+  self.depth
+}
 
-pub fn Task::get_description(self : Task) -> String { self.description }
+///|
+pub fn Task::get_description(self : Task) -> String {
+  self.description
+}
 
-pub fn Task::get_assignee(self : Task) -> String? { self.assignee }
+///|
+pub fn Task::get_assignee(self : Task) -> String? {
+  self.assignee
+}
 
-pub fn Task::get_updated_at(self : Task) -> String { self.updated_at }
+///|
+pub fn Task::get_updated_at(self : Task) -> String {
+  self.updated_at
+}
 
-pub fn Task::is_leaf(self : Task) -> Bool { self.depth <= 1 }
+///|
+pub fn Task::is_leaf(self : Task) -> Bool {
+  self.depth <= 1
+}
 
+///|
 /// 构造器（字段带默认值）
 pub fn Task::new(
   id~ : String,
   project_dir~ : String,
-  description~ : String = "",
-  priority~ : String = "中",
-  importance~ : String = "中",
-  depth~ : Int = 3,
-  split_n~ : Int = 3,
-  parent_id~ : String = "",
-  assignee~ : String = "",
-  cleanup_mode~ : String = "deferred",
-  created_at~ : String = "",
-  ns~ : String = "default",
-  depends_on~ : Array[String] = [],
+  description? : String = "",
+  priority? : String = "中",
+  importance? : String = "中",
+  depth? : Int = 3,
+  split_n? : Int = 3,
+  parent_id? : String = "",
+  assignee? : String = "",
+  cleanup_mode? : String = "deferred",
+  created_at? : String = "",
+  ns? : String = "default",
+  depends_on? : Array[String] = [],
 ) -> Task {
   {
     id,
-    parent_id: if parent_id == "" { None } else { Some(parent_id) },
+    parent_id: if parent_id == "" {
+      None
+    } else {
+      Some(parent_id)
+    },
     project_dir,
     ns,
     priority,
@@ -177,7 +246,11 @@ pub fn Task::new(
     depth,
     split_n,
     status: Pending,
-    assignee: if assignee == "" { None } else { Some(assignee) },
+    assignee: if assignee == "" {
+      None
+    } else {
+      Some(assignee)
+    },
     description,
     deliverable: "",
     created_at,
@@ -188,7 +261,7 @@ pub fn Task::new(
   }
 }
 
-
+///|
 /// 按存储行字段直接构建任务（供 store 层反序列化使用；status 为存储字符串，非法回退 Pending）
 pub fn Task::from_db(
   id : String,
@@ -238,6 +311,7 @@ pub fn Task::from_db(
 /// 每个迁移都是纯函数（返回新 Task），状态机非法流转直接拒绝。
 /// 返回 Err(msg) 表示非法迁移。
 
+///|
 /// 待领取 -> 已领取（角色：any active agent）
 pub fn Task::claim(self : Task, assignee~ : String) -> Result[Task, String] {
   match self.status {
@@ -261,6 +335,7 @@ pub fn Task::claim(self : Task, assignee~ : String) -> Result[Task, String] {
   }
 }
 
+///|
 /// 已领取 -> 拆分中（指挥官拆解）
 pub fn Task::split(self : Task) -> Result[Task, String] {
   match self.status {
@@ -279,7 +354,7 @@ pub fn Task::split(self : Task) -> Result[Task, String] {
   }
 }
 
-
+///|
 /// 拆分中标记（AO 式拆解用，宽于 split：待领取/已领取/拆分中均可转入）
 pub fn Task::mark_decomposing(self : Task) -> Result[Task, String] {
   match self.status {
@@ -288,6 +363,7 @@ pub fn Task::mark_decomposing(self : Task) -> Result[Task, String] {
   }
 }
 
+///|
 /// 拆分中 -> 执行中（进入执行）
 pub fn Task::execute(self : Task) -> Result[Task, String] {
   match self.status {
@@ -301,6 +377,7 @@ pub fn Task::execute(self : Task) -> Result[Task, String] {
   }
 }
 
+///|
 /// 执行中 -> 待验收
 pub fn Task::submit(self : Task) -> Result[Task, String] {
   match self.status {
@@ -314,18 +391,18 @@ pub fn Task::submit(self : Task) -> Result[Task, String] {
   }
 }
 
+///|
 /// 待验收 -> 已完成（人类主权：completed_by 必须 human / human_steward 或明确授权）
-pub fn Task::complete(self : Task, completed_by~ : String) -> Result[Task, String] {
+pub fn Task::complete(
+  self : Task,
+  completed_by~ : String,
+) -> Result[Task, String] {
   match self.status {
     Reviewing =>
       if completed_by == "" {
         Err("complete 需要 completed_by 身份")
       } else {
-        Ok({
-          ..self,
-          status: Completed,
-          completed_by: Some(completed_by),
-        })
+        Ok({ ..self, status: Completed, completed_by: Some(completed_by), })
       }
     _ =>
       Err(
@@ -336,6 +413,7 @@ pub fn Task::complete(self : Task, completed_by~ : String) -> Result[Task, Strin
   }
 }
 
+///|
 /// 已完成 -> 已归档
 pub fn Task::archive(self : Task) -> Result[Task, String] {
   match self.status {
@@ -349,24 +427,31 @@ pub fn Task::archive(self : Task) -> Result[Task, String] {
   }
 }
 
+///|
 /// 任意非归档状态 -> 已领取（被打回重做）
 pub fn Task::reopen(self : Task) -> Result[Task, String] {
   match self.status {
     Archived => Err("已归档任务不可 reopen，请重新发布")
-    Rejected => Ok({ ..self, status: Claimed, assignee: None, deliverable: "" })
-    Paused => Ok({ ..self, status: Claimed })
+    Rejected =>
+      Ok({ ..self, status: Claimed, assignee: None, deliverable: "", })
+    Paused => Ok({ ..self, status: Claimed, })
     _ => Ok({ ..self, status: Claimed, })
   }
 }
 
+///|
 /// 待验收 -> 已打回（验收不通过，需重做）
-pub fn Task::reject(self : Task, reason~ : String = "") -> Result[Task, String] {
+pub fn Task::reject(self : Task, reason? : String = "") -> Result[Task, String] {
   match self.status {
     Reviewing =>
       Ok({
         ..self,
         status: Rejected,
-        description: if reason == "" { self.description } else { self.description + " [打回原因: " + reason + "]" },
+        description: if reason == "" {
+          self.description
+        } else {
+          self.description + " [打回原因: " + reason + "]"
+        },
       })
     _ =>
       Err(
@@ -377,10 +462,11 @@ pub fn Task::reject(self : Task, reason~ : String = "") -> Result[Task, String] 
   }
 }
 
+///|
 /// 已打回 -> 执行中（重新执行）
 pub fn Task::retry(self : Task) -> Result[Task, String] {
   match self.status {
-    Rejected => Ok({ ..self, status: Executing })
+    Rejected => Ok({ ..self, status: Executing, })
     _ =>
       Err(
         "非法迁移: retry 要求状态 [已打回]，当前是 [" +
@@ -390,11 +476,12 @@ pub fn Task::retry(self : Task) -> Result[Task, String] {
   }
 }
 
+///|
 /// 任意活跃状态 -> 已暂停（外部中断/等待依赖）
 pub fn Task::pause(self : Task) -> Result[Task, String] {
   match self.status {
     Pending | Claimed | Splitting | Executing | Reviewing | Rejected =>
-      Ok({ ..self, status: Paused })
+      Ok({ ..self, status: Paused, })
     Paused => Err("任务已处于暂停状态")
     _ =>
       Err(
@@ -405,10 +492,11 @@ pub fn Task::pause(self : Task) -> Result[Task, String] {
   }
 }
 
+///|
 /// 已暂停 -> 已领取（恢复执行）
 pub fn Task::resume(self : Task) -> Result[Task, String] {
   match self.status {
-    Paused => Ok({ ..self, status: Claimed })
+    Paused => Ok({ ..self, status: Claimed, })
     _ =>
       Err(
         "非法迁移: resume 要求状态 [已暂停]，当前是 [" +
@@ -420,19 +508,27 @@ pub fn Task::resume(self : Task) -> Result[Task, String] {
 
 /// 生成子任务 id：T0.1.2 -> T0.1.2.1
 
+///|
 /// 记录类复制更新（跨包不便直接构造 record，由 core 提供）
 pub fn Task::with_updated_at(self : Task, now : String) -> Task {
   { ..self, updated_at: now, }
 }
 
-pub fn Task::with_deliverable(self : Task, deliverable : String, now : String) -> Task {
+///|
+pub fn Task::with_deliverable(
+  self : Task,
+  deliverable : String,
+  now : String,
+) -> Task {
   { ..self, deliverable, updated_at: now, }
 }
 
+///|
 pub fn child_id(parent_id~ : String, idx~ : Int) -> String {
   "\{parent_id}.\{idx}"
 }
 
+///|
 /// 任务转 JSON（供 MCP resource / tool 输出）
 pub fn Task::to_json(self : Task) -> Json {
   let m : Map[String, Json] = Map([])

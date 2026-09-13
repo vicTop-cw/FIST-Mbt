@@ -1,27 +1,36 @@
 /// FIST-Mbt engine: 指挥-执行-验收 完整业务层。
 /// 迁移自 FIST(Python) 的 flow (publish→plan→dispatch→claim→execute→submit→verify→complete→archive)。
 
+///|
 /// 根任务 id
-pub fn root_task_id() -> String { "T0" }
+pub fn root_task_id() -> String {
+  "T0"
+}
 
+///|
 /// 核心引擎：持有 store，暴露指挥-执行-验收完整闭环。
 /// store 为后端路由（内存 / SQLite），业务逻辑不感知具体实现。
 pub struct FistEngine {
   store : @store.StoreBackend
 }
 
-pub fn FistEngine::new(store~ : @store.StoreBackend = @store.StoreBackend::memory()) -> FistEngine {
+///|
+pub fn FistEngine::new(
+  store? : @store.StoreBackend = @store.StoreBackend::memory(),
+) -> FistEngine {
   { store, }
 }
 
+///|
 /// 以指定 SQLite 数据库打开持久化引擎（内建数据库入口；失败返回 None 供调用方回退）。
-pub fn FistEngine::open_sqlite(db_path : String) -> Option[FistEngine] {
+pub fn FistEngine::open_sqlite(db_path : String) -> FistEngine? {
   match @store.SqliteStore::open(db_path) {
     None => None
     Some(s) => Some(FistEngine::new(store=@store.StoreBackend::sqlite(s)))
   }
 }
 
+///|
 /// 发布根任务（仅限人类指挥官）
 pub fn FistEngine::publish(
   self : FistEngine,
@@ -29,14 +38,14 @@ pub fn FistEngine::publish(
   description~ : String,
   created_by~ : String,
   now~ : String,
-  ns~ : String = "default",
+  ns? : String = "default",
 ) -> Result[String, String] {
   if created_by != "human_steward" && created_by != "human" {
     return Err("publish 仅限人类指挥官（created_by=human_steward）")
   }
   let id = root_task_id()
   let t = @core.Task::new(
-    id=id,
+    id~,
     project_dir~,
     description~,
     depth=3,
@@ -50,12 +59,13 @@ pub fn FistEngine::publish(
   }
 }
 
+///|
 /// 对指定任务生成子任务树（一层）。非原子任务才可拆分。
 /// 返回生成的子任务 id 列表。
 pub fn FistEngine::plan(
   self : FistEngine,
   task_id~ : String,
-  split_n~ : Int = 3,
+  split_n? : Int = 3,
   by~ : String,
   now~ : String,
 ) -> Result[Array[String], String] {
@@ -100,6 +110,7 @@ pub fn FistEngine::plan(
   }
 }
 
+///|
 /// 认领任务（executor 认领，待领取 -> 已领取 -> 执行中）
 /// 领取前检查依赖是否满足
 pub fn FistEngine::claim(
@@ -125,6 +136,7 @@ pub fn FistEngine::claim(
   }
 }
 
+///|
 /// 记录执行交付物
 pub fn FistEngine::execute(
   self : FistEngine,
@@ -150,7 +162,78 @@ pub fn FistEngine::execute(
   }
 }
 
-/// 提交验收（执行中 -> 待验收）
+///|
+/// 记录执行交付物 + 执行元数据（executor/model/tokens/cost/duration）。
+/// 元数据写入 executions 表（供成本统计使用）；task 本身状态照常流转。
+pub fn FistEngine::execute_with_meta(
+  self : FistEngine,
+  task_id~ : String,
+  deliverable~ : String,
+  now~ : String,
+  executor? : String = "manual",
+  model? : String = "",
+  tokens_in? : Int = 0,
+  tokens_out? : Int = 0,
+  cost? : Double = 0.0,
+  duration_ms? : Int = 0,
+  rate_limited? : Bool = false,
+  failure_reason? : String = "",
+) -> Result[@core.Task, String] {
+  // 1. 写入执行元数据（独立事务，失败不阻塞主流程）
+  ignore(
+    self.store.record_execution(
+      task_id~,
+      executor~,
+      model~,
+      tokens_in~,
+      tokens_out~,
+      cost~,
+      duration_ms~,
+      rate_limited~,
+      failure_reason~,
+      created_at=now,
+    ),
+  )
+  // 2. 主任务状态流转
+  self.execute(task_id~, deliverable~, now~)
+}
+
+///|
+/// 成本聚合统计：委托给 store 后端（SQLite 从 executions 表聚合，内存返回零值）。
+pub fn FistEngine::cost_stats(self : FistEngine) -> Json {
+  self.store.cost_stats()
+}
+
+///|
+/// 写入心跳记录（委托给 store 后端）。
+pub fn FistEngine::store_write_heartbeat(
+  self : FistEngine,
+  agent_id~ : String,
+  task_id~ : String,
+  last_seen~ : String,
+  status~ : String,
+) -> Result[Unit, String] {
+  self.store.write_heartbeat(agent_id~, task_id~, last_seen~, status~)
+}
+
+///|
+/// 删除心跳记录（委托给 store 后端）。
+pub fn FistEngine::store_delete_heartbeat(
+  self : FistEngine,
+  task_id~ : String,
+) -> Result[Unit, String] {
+  self.store.delete_heartbeat(task_id)
+}
+
+///|
+/// 列出全部心跳记录（供启动时加载）。
+pub fn FistEngine::store_list_heartbeats(
+  self : FistEngine,
+) -> Array[(String, String, String, String)] {
+  self.store.list_all_heartbeats()
+}
+
+///|
 pub fn FistEngine::submit(
   self : FistEngine,
   task_id~ : String,
@@ -170,8 +253,12 @@ pub fn FistEngine::submit(
   }
 }
 
+///|
 /// 列出某任务的所有直接子任务
-pub fn FistEngine::children_of(self : FistEngine, task_id : String) -> Array[@core.Task] {
+pub fn FistEngine::children_of(
+  self : FistEngine,
+  task_id : String,
+) -> Array[@core.Task] {
   let out : Array[@core.Task] = []
   for t in self.store.list_tasks() {
     match t.get_parent() {
@@ -182,16 +269,20 @@ pub fn FistEngine::children_of(self : FistEngine, task_id : String) -> Array[@co
   out
 }
 
+///|
 /// 是否为「非叶节点且所有直接子任务都已完成」
 pub fn FistEngine::all_subtasks_completed(
   self : FistEngine,
   parent : @core.Task,
 ) -> Bool {
   let children = self.children_of(parent.get_id())
-  if children.is_empty() { return false }
+  if children.is_empty() {
+    return false
+  }
   children.all(fn(t) { t.get_status().is_completed() })
 }
 
+///|
 /// 验收（verifier）：Reviewing -> Completed；若因此父任务全部子任务完成，则父任务自动待验收。
 pub fn FistEngine::verify(
   self : FistEngine,
@@ -203,7 +294,9 @@ pub fn FistEngine::verify(
     None => Err("task not found: \{task_id}")
     Some(t) => {
       if !t.get_status().is_reviewing() {
-        return Err("非法验收: 任务处于 [\{t.status_to_string()}]，需先 submit")
+        return Err(
+          "非法验收: 任务处于 [\{t.status_to_string()}]，需先 submit",
+        )
       }
       let c = match t.complete(completed_by=verifier) {
         Ok(x) => x
@@ -239,6 +332,7 @@ pub fn FistEngine::verify(
   }
 }
 
+///|
 /// 人类确认归档：Completed -> Archived（仅限人类指挥官）
 pub fn FistEngine::archive(
   self : FistEngine,
@@ -272,11 +366,13 @@ pub fn FistEngine::archive(
   }
 }
 
+///|
 /// 列出全部任务
 pub fn FistEngine::list_all(self : FistEngine) -> Array[@core.Task] {
   self.store.list_tasks()
 }
 
+///|
 /// 按状态过滤列出
 pub fn FistEngine::list_by_status(
   self : FistEngine,
@@ -285,11 +381,13 @@ pub fn FistEngine::list_by_status(
   self.store.list_tasks().filter(fn(t) { t.get_status() == status })
 }
 
+///|
 /// 查询单个任务
-pub fn FistEngine::get_task(self : FistEngine, task_id : String) -> Option[@core.Task] {
+pub fn FistEngine::get_task(self : FistEngine, task_id : String) -> @core.Task? {
   self.store.get_task(task_id)
 }
 
+///|
 /// 回滚/重派：任意非归档任务 -> 已领取（M4 heal watchdog 用）。返回回滚后的任务。
 pub fn FistEngine::reopen_task(
   self : FistEngine,
@@ -310,11 +408,12 @@ pub fn FistEngine::reopen_task(
   }
 }
 
+///|
 /// 验收拒绝（reject）：待验收 -> 已打回
 pub fn FistEngine::reject_task(
   self : FistEngine,
   task_id~ : String,
-  reason~ : String = "",
+  reason? : String = "",
   by~ : String,
   now~ : String,
 ) -> Result[@core.Task, String] {
@@ -322,9 +421,11 @@ pub fn FistEngine::reject_task(
     None => Err("task not found: \{task_id}")
     Some(t) => {
       if !t.get_status().is_reviewing() {
-        return Err("非法打回: 任务处于 [\{t.status_to_string()}]，仅待验收可打回")
+        return Err(
+          "非法打回: 任务处于 [\{t.status_to_string()}]，仅待验收可打回",
+        )
       }
-      let c = match t.reject(reason=reason) {
+      let c = match t.reject(reason~) {
         Ok(x) => x
         Err(e) => return Err(e)
       }
@@ -335,6 +436,7 @@ pub fn FistEngine::reject_task(
   }
 }
 
+///|
 /// 打回后重试（retry）：已打回 -> 执行中
 pub fn FistEngine::retry_task(
   self : FistEngine,
@@ -355,6 +457,7 @@ pub fn FistEngine::retry_task(
   }
 }
 
+///|
 /// 暂停任务：任意活跃状态 -> 已暂停
 pub fn FistEngine::pause_task(
   self : FistEngine,
@@ -375,6 +478,7 @@ pub fn FistEngine::pause_task(
   }
 }
 
+///|
 /// 恢复任务：已暂停 -> 已领取
 pub fn FistEngine::resume_task(
   self : FistEngine,
@@ -395,8 +499,12 @@ pub fn FistEngine::resume_task(
   }
 }
 
+///|
 /// 删除任务（仅限已归档，ARCHIVING 清理）
-pub fn FistEngine::delete_task(self : FistEngine, task_id : String) -> Result[Unit, String] {
+pub fn FistEngine::delete_task(
+  self : FistEngine,
+  task_id : String,
+) -> Result[Unit, String] {
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
     Some(t) =>
@@ -410,6 +518,7 @@ pub fn FistEngine::delete_task(self : FistEngine, task_id : String) -> Result[Un
 
 /// —— AO 式递归拆解（M3）：迁入 engine 包以保持方法定义与类型同包。———
 
+///|
 /// AO 式递归拆解入口：对指定任务拆出整棵子任务树并写库。
 ///
 /// 入参：
@@ -424,9 +533,9 @@ pub fn FistEngine::delete_task(self : FistEngine, task_id : String) -> Result[Un
 pub fn FistEngine::plan_deep(
   self : FistEngine,
   task_id~ : String,
-  split_n~ : Int = 3,
+  split_n? : Int = 3,
   by~ : String,
-  spec~ : Json? = None,
+  spec? : Json? = None,
   now~ : String,
 ) -> Result[Json, String] {
   match self.store.get_task(task_id) {
@@ -443,28 +552,32 @@ pub fn FistEngine::plan_deep(
         return Err("split_n 必须 >= 1")
       }
       let slices = match spec {
-        Some(s) => @decompose.decompose_slices(s, split_n, parent_desc=parent.description)
-        None => @decompose.default_slices(split_n, parent_desc=parent.description)
+        Some(s) =>
+          @decompose.decompose_slices(
+            s,
+            split_n,
+            parent_desc=parent.description,
+          )
+        None =>
+          @decompose.default_slices(split_n, parent_desc=parent.description)
       }
-      match self.decompose_rec(
-        parent,
-        slices,
-        spec,
-        now,
-      ) {
+      match self.decompose_rec(parent, slices, spec, now) {
         Err(e) => Err(e)
         Ok(tree) =>
-          Ok(Json::object({
-            "root": Json::string(task_id),
-            "by": Json::string(by),
-            "split_n": Json::number(split_n.to_double()),
-            "tree": tree,
-          }))
+          Ok(
+            Json::object({
+              "root": Json::string(task_id),
+              "by": Json::string(by),
+              "split_n": Json::number(split_n.to_double()),
+              "tree": tree,
+            }),
+          )
       }
     }
   }
 }
 
+///|
 /// 递归拆解单层并下钻（私有，同包可见）。
 /// 返回该层子树 meta：{ "task_id", "created", "children": [...] }。
 fn FistEngine::decompose_rec(
@@ -485,7 +598,7 @@ fn FistEngine::decompose_rec(
   let mut created = 0
   for i = 0; i < slices.length(); i = i + 1 {
     let idx = i + 1
-    let cid = @core.child_id(parent_id=parent.get_id(), idx=idx)
+    let cid = @core.child_id(parent_id=parent.get_id(), idx~)
     let slice_text = slices[i]
     let full_desc = if spec_hash == "" {
       slice_text
@@ -510,7 +623,10 @@ fn FistEngine::decompose_rec(
     created = created + 1
     // 递归下钻：仅非叶节点继续派生拆分
     let kids_arr : Array[Json] = if !child.is_leaf() {
-      let next_slices = @decompose.default_slices(child.split_n, parent_desc=child.description)
+      let next_slices = @decompose.default_slices(
+        child.split_n,
+        parent_desc=child.description,
+      )
       match self.decompose_rec(child, next_slices, spec, now) {
         Ok(subtree) =>
           match subtree.value("children") {
@@ -531,22 +647,27 @@ fn FistEngine::decompose_rec(
     ])
     nodes.push(Json::object(node_m))
   }
-  Ok(Json::object({
-    "task_id": Json::string(parent.get_id()),
-    "created": Json::number(created.to_double()),
-    "children": Json::array(nodes),
-  }))
+  Ok(
+    Json::object({
+      "task_id": Json::string(parent.get_id()),
+      "created": Json::number(created.to_double()),
+      "children": Json::array(nodes),
+    }),
+  )
 }
 
 /// ==================== DAG 依赖图 ====================
 
+///|
 /// 检查某任务的直接依赖是否全部完成
 pub fn FistEngine::deps_satisfied(self : FistEngine, task_id : String) -> Bool {
   match self.store.get_task(task_id) {
     None => false
     Some(t) => {
       let dep_ids = t.depends_on
-      if dep_ids.is_empty() { return true }
+      if dep_ids.is_empty() {
+        return true
+      }
       for tid in dep_ids {
         match self.store.get_task(tid) {
           Some(dt) => if !dt.get_status().is_completed() { return false }
@@ -558,8 +679,12 @@ pub fn FistEngine::deps_satisfied(self : FistEngine, task_id : String) -> Bool {
   }
 }
 
+///|
 /// 拓扑排序（简化版）：按依赖深度排序，深度小的先执行
-pub fn FistEngine::topo_sort(self : FistEngine, task_ids : Array[String]) -> Array[String] {
+pub fn FistEngine::topo_sort(
+  self : FistEngine,
+  task_ids : Array[String],
+) -> Array[String] {
   // 简单排序：按依赖数量升序（依赖少的先执行）
   let sorted = task_ids
   let changed = true
@@ -568,8 +693,12 @@ pub fn FistEngine::topo_sort(self : FistEngine, task_ids : Array[String]) -> Arr
   sorted
 }
 
+///|
 /// 获取当前命名空间内所有 Pending 且依赖满足、可领取的任务
-pub fn FistEngine::ready_tasks(self : FistEngine, ns_filter~ : String = "default") -> Array[@core.Task] {
+pub fn FistEngine::ready_tasks(
+  self : FistEngine,
+  ns_filter? : String = "default",
+) -> Array[@core.Task] {
   let target = if ns_filter == "" { "default" } else { ns_filter }
   let tasks = self.store.list_tasks_in(target)
   let ready : Array[@core.Task] = []
@@ -581,22 +710,23 @@ pub fn FistEngine::ready_tasks(self : FistEngine, ns_filter~ : String = "default
   ready
 }
 
+///|
 /// 创建任务时指定依赖（depends_on 为依赖的任务 id 列表）
 pub fn FistEngine::publish_with_deps(
   self : FistEngine,
   project_dir~ : String,
   description~ : String,
-  depends_on~ : Array[String] = [],
-  created_by~ : String = "human_steward",
-  now~ : String = "",
-  ns~ : String = "default",
+  depends_on? : Array[String] = [],
+  created_by? : String = "human_steward",
+  now? : String = "",
+  ns? : String = "default",
 ) -> Result[String, String] {
   if created_by != "human_steward" && created_by != "human" {
     return Err("publish 仅限人类指挥官")
   }
   let id = root_task_id()
   let t = @core.Task::new(
-    id=id,
+    id~,
     project_dir~,
     description~,
     depth=3,

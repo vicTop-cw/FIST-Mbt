@@ -1,7 +1,7 @@
 import {
-  "vicTop-cw/fist-mbt/src/core" @core,
-  "vicTop-cw/fist-mbt/src/store" @store,
-  "vicTop-cw/fist-mbt/src/engine" @engine,
+  "vicTop-cw/fist-mbt/src/core",
+  "vicTop-cw/fist-mbt/src/store",
+  "vicTop-cw/fist-mbt/src/engine",
 }
 
 pkgtype(kind: "executable")

@@ -19,7 +19,7 @@ repository = "https://github.com/vicTop-cw/FIST-Mbt"
 
 license = "Apache-2.0"
 
-keywords = ["MCP", "task-orchestration", "multi-agent", "FIST"]
+keywords = [ "MCP", "task-orchestration", "multi-agent", "FIST" ]
 
 preferred_target = "js"
 
@@ -31,4 +31,3 @@ import {
   "moonbitlang/async@0.21.0",
   "moonbitlang/x@0.4.40",
 }
-

@@ -1,0 +1,6 @@
+import {
+  "vicTop-cw/fist-mbt/src/core",
+  "moonbitlang/core/json",
+}
+
+supported_targets = "js+native"

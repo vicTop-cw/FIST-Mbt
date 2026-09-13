@@ -2,13 +2,13 @@
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-57%2F57-brightgreen)](./src)
+[![Tests](https://img.shields.io/badge/tests-77%2F77-brightgreen)](./src)
 
 将 **FIST 指挥官任务分配体系**（原 Python 实现）用 **纯 MoonBit 原生重写** 并包装为 **MCP Server** 的参赛作品（2026 MoonBit 九月黑客松）。
 
-指挥官（人类 / 主力模型）通过标准 MCP 协议调用 FIST-Mbt 暴露的 22 个工具，完成任务的 **发布 → 认领 → 拆分 → 执行 → 提交 → 验收 → 归档** 完整闭环，全程贯彻 FIST 七条金条原则。
+指挥官（人类 / 主力模型）通过标准 MCP 协议调用 FIST-Mbt 暴露的 36 个工具，完成任务的 **发布 → 认领 → 拆分 → 执行 → 提交 → 验收 → 归档** 完整闭环，全程贯彻 FIST 七条金条原则。
 
-> 该项目为 `E:\IDEProjects\AI\FIST`（Python）的 MoonBit 原生重写 + MCP 化，非原代码搬运。
+> 该项目为 FIST（Python）的 MoonBit 原生重写 + MCP 化，非原代码搬运。
 
 ---
 
@@ -20,7 +20,7 @@
 # 依赖解析 & 编译
 moon check
 
-# 运行测试（57 项全部通过）
+# 运行测试（77 项全部通过）
 moon test
 
 # 启动 MCP Server（STDIO 传输）
@@ -46,7 +46,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 ## MCP 暴露面
 
-### Tools（22 个）
+### Tools（36 个）
 
 #### 生命周期八件套（九态状态机）
 
@@ -81,6 +81,27 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 | `heartbeat` | 活动信号上报（超时静默将触发 heal 回滚） | task_id, signal, now |
 | `heal` | no_signal 看护：心跳超时静默的任务回滚为已领取待重派 | now, timeout_sec |
 | `task_cleanup` | 归档清理：删除超保留期的已归档任务 | now, retention_days |
+
+#### Omega 验证闭环（M6 金条八）
+
+| 工具 | 说明 | 关键参数 |
+|---|---|---|
+| `omega_verify` | 批量验证 spec JSON：schema + fingerprint 校验，accuracy < 100% 一票否决 | specs(JSON 数组) |
+| `omega_verify_fix` | 失败 spec 根因分类 → 定向修复 → 回归验证（3 轮循环） | specs(JSON 数组), max_rounds(可选) |
+
+#### 智能调度与成本（M6 增强）
+
+| 工具 | 说明 | 关键参数 |
+|---|---|---|
+| `schedule` | 调度预览：根据任务描述自适应计算分级/拆分/成本档/执行器（不落库） | description, n_files(可选) |
+| `cost_stats` | 执行成本聚合统计（total_records/total_cost/total_tokens/by_executor） | 无 |
+| `cost_budget_check` | 预算超限告警（exceeded/remaining/action） | limit, current |
+
+#### 执行与交付
+
+| 工具 | 说明 | 关键参数 |
+|---|---|---|
+| `execute` | 记录执行交付物（→ 执行中），向后兼容旧接口，支持 executor/model/tokens/cost 元数据 | task_id, deliverable, executor?, model?, tokens_in?, tokens_out?, cost?, duration_ms?, rate_limited?, failure_reason?, now |
 
 #### DAG 扩展（依赖图）
 
@@ -127,7 +148,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 ## 架构
 
 ```
-E:/IDEProjects/AI/FIST-Mbt
+FIST-Mbt/
 ├── .mcp.json            # MCP server 注册（moon run cmd/main）
 ├── AGENTS.md            # FIST 指挥官模式行为指令
 ├── README.md            # 本文档
@@ -160,7 +181,7 @@ E:/IDEProjects/AI/FIST-Mbt
 │   │   └── ops_ts.mbt          # 时间戳工具
 │   ├── omega/           # 可解释性子包：spec/gate/check
 │   └── server/          # MCP server 装配
-│       ├── server.mbt          # 22 个工具注册 + run_server
+│       ├── server.mbt          # 36 个工具注册 + run_server
 │       ├── stdio_js.mbt        # JS 后端 STDIO 传输
 │       └── stdio_native.mbt    # 原生后端 STDIO 传输
 └── moon.mod             # 模块元数据
@@ -223,12 +244,12 @@ E:/IDEProjects/AI/FIST-Mbt
 ## 测试
 
 ```bash
-moon test   # 57 项黑盒测试全部通过
+moon test   # 77 项黑盒测试全部通过
 ```
 
 覆盖：根任务发布、发布权限（仅人类指挥官）、claim/plan/execute/submit/verify/archive/delete 全闭环、
 reject/retry/pause/resume 新增迁移、非法迁移拦截（未认领 plan / execute、未归档 delete）、
-按状态过滤查询、DAG 依赖检查、审计权限矩阵、多租户命名空间。
+按状态过滤查询、DAG 依赖检查、审计权限矩阵、多租户命名空间、WAL 并发写入、心跳持久化。
 
 ---
 
@@ -278,14 +299,14 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 | 端点 | 说明 |
 |---|---|
-| `GET /health` | 健康检查，返回 `{"status":"ok","tools":22}` |
+| `GET /health` | 健康检查，返回 `{"status":"ok","tools":36}` |
 | `POST /mcp` | JSON-RPC over HTTP，请求体与 STDIO 模式一致 |
 
 ---
 
 ## 移植与合规声明
 
-- **来源**：`E:\IDEProjects\AI\FIST`（Python），作者 victo。
+- **来源**：FIST（Python），Apache-2.0 许可证。
 - **许可证**：Apache-2.0。
 - **本期范围**：用 MoonBit 原生重写核心领域逻辑与状态机，并封装为 MCP Server；
   未搬运 Python 原代码，未包含原项目未开源的业务数据。

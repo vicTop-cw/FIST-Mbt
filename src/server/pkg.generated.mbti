@@ -1,0 +1,13 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/server"
+
+// Values
+pub async fn run_server() -> Unit
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

@@ -1,0 +1,80 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/engine"
+
+import {
+  "vicTop-cw/fist-mbt/src/core",
+  "vicTop-cw/fist-mbt/src/store",
+}
+
+// Values
+pub const COMPLEXITY_L1 : String = "L1_simple"
+
+pub const COMPLEXITY_L2 : String = "L2_standard"
+
+pub const COMPLEXITY_L3 : String = "L3_complex"
+
+pub const COMPLEXITY_L4 : String = "L4_irreversible"
+
+pub const COST_TIER_FREE : String = "free"
+
+pub const COST_TIER_HOLD : String = "hold"
+
+pub const COST_TIER_PREMIUM : String = "premium"
+
+pub fn budget_check(Double, Double) -> Json
+
+pub fn budget_check_json(Json) -> Json
+
+pub fn plan_route(String, n_files? : Int) -> Json
+
+pub fn root_task_id() -> String
+
+pub fn route(String, String) -> Json
+
+pub fn schedule_json(Json) -> Json
+
+pub fn schedule_task(String, n_files? : Int) -> Json
+
+// Errors
+
+// Types and methods
+pub struct FistEngine {
+  store : @store.StoreBackend
+}
+pub fn FistEngine::all_subtasks_completed(Self, @core.Task) -> Bool
+pub fn FistEngine::archive(Self, task_id~ : String, by~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::children_of(Self, String) -> Array[@core.Task]
+pub fn FistEngine::claim(Self, task_id~ : String, assignee~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::cost_stats(Self) -> Json
+pub fn FistEngine::critical_path(Self) -> Array[String]
+pub fn FistEngine::dag_ascii(Self, ns~ : String) -> String
+pub fn FistEngine::delete_task(Self, String) -> Result[Unit, String]
+pub fn FistEngine::deps_satisfied(Self, String) -> Bool
+pub fn FistEngine::execute(Self, task_id~ : String, deliverable~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::execute_with_meta(Self, task_id~ : String, deliverable~ : String, now~ : String, executor? : String, model? : String, tokens_in? : Int, tokens_out? : Int, cost? : Double, duration_ms? : Int, rate_limited? : Bool, failure_reason? : String) -> Result[@core.Task, String]
+pub fn FistEngine::get_task(Self, String) -> @core.Task?
+pub fn FistEngine::list_all(Self) -> Array[@core.Task]
+pub fn FistEngine::list_by_status(Self, @core.TaskStatus) -> Array[@core.Task]
+pub fn FistEngine::new(store? : @store.StoreBackend) -> Self
+pub fn FistEngine::open_sqlite(String) -> Self?
+pub fn FistEngine::parallelism(Self) -> Int
+pub fn FistEngine::pause_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::plan(Self, task_id~ : String, split_n? : Int, by~ : String, now~ : String) -> Result[Array[String], String]
+pub fn FistEngine::plan_deep(Self, task_id~ : String, split_n? : Int, by~ : String, spec? : Json?, now~ : String) -> Result[Json, String]
+pub fn FistEngine::publish(Self, project_dir~ : String, description~ : String, created_by~ : String, now~ : String, ns? : String) -> Result[String, String]
+pub fn FistEngine::publish_with_deps(Self, project_dir~ : String, description~ : String, depends_on? : Array[String], created_by? : String, now? : String, ns? : String) -> Result[String, String]
+pub fn FistEngine::ready_tasks(Self, ns_filter? : String) -> Array[@core.Task]
+pub fn FistEngine::reject_task(Self, task_id~ : String, reason? : String, by~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::reopen_task(Self, String, String) -> Result[@core.Task, String]
+pub fn FistEngine::resume_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::retry_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::store_delete_heartbeat(Self, task_id~ : String) -> Result[Unit, String]
+pub fn FistEngine::store_list_heartbeats(Self) -> Array[(String, String, String, String)]
+pub fn FistEngine::store_write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
+pub fn FistEngine::submit(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::topo_sort(Self, Array[String]) -> Array[String]
+pub fn FistEngine::verify(Self, task_id~ : String, verifier~ : String, now~ : String) -> Result[@core.Task, String]
+
+// Type aliases
+
+// Traits

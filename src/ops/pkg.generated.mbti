@@ -1,0 +1,75 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/ops"
+
+import {
+  "moonbitlang/core/debug",
+  "vicTop-cw/fist-mbt/src/core",
+  "vicTop-cw/fist-mbt/src/engine",
+}
+
+// Values
+pub fn can_archive(Role) -> Bool
+
+pub fn can_claim(Role) -> Bool
+
+pub fn can_delete(Role) -> Bool
+
+pub fn can_publish(Role) -> Bool
+
+pub fn check_claim(@engine.FistEngine, String, String) -> Result[Unit, String]
+
+pub fn cleanup_archived(@engine.FistEngine, String, retention_days? : Int) -> Result[Array[String], String]
+
+pub fn enforce(action~ : String, role~ : Role) -> Result[Unit, String]
+
+pub fn heal_stale_tasks(@engine.FistEngine, Heartbeat, String, timeout_sec? : Int) -> Result[Array[String], String]
+
+pub fn iso_to_secs(String) -> Int
+
+pub fn list_contested(@engine.FistEngine) -> Array[@core.Task]
+
+pub fn list_holdings(@engine.FistEngine, String) -> Array[@core.Task]
+
+// Errors
+
+// Types and methods
+pub struct AuditEntry {
+  ts : String
+  action : String
+  actor : String
+  task_id : String
+  detail : String
+} derive(Eq, @debug.Debug)
+
+pub struct AuditLog {
+  entries : Array[AuditEntry]
+}
+pub fn AuditLog::by_actor(Self, String) -> Array[AuditEntry]
+pub fn AuditLog::by_task(Self, String) -> Array[AuditEntry]
+pub fn AuditLog::entries(Self) -> Array[AuditEntry]
+pub fn AuditLog::new() -> Self
+pub fn AuditLog::record(Self, action~ : String, actor~ : String, task_id~ : String, detail? : String, now~ : String) -> Unit
+pub fn AuditLog::to_json(Self) -> Json
+
+pub struct Heartbeat {
+  signals : Map[String, String]
+  last_seen : Map[String, String]
+}
+pub fn Heartbeat::beat(Self, String, signal? : String, now~ : String) -> Unit
+pub fn Heartbeat::clear(Self, String) -> Unit
+pub fn Heartbeat::is_stale(Self, String, String, timeout_sec? : Int) -> Bool
+pub fn Heartbeat::last_seen_of(Self, String) -> String
+pub fn Heartbeat::new() -> Self
+pub fn Heartbeat::signal_of(Self, String) -> String
+
+pub enum Role {
+  HumanSteward
+  Leader
+  Agent
+} derive(Eq, @debug.Debug)
+pub fn Role::from_string(String) -> Self?
+pub fn Role::to_string(Self) -> String
+
+// Type aliases
+
+// Traits

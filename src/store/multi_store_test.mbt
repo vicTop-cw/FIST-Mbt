@@ -1,19 +1,20 @@
+///|
 /// MultiStore 黑盒/白盒测试：open / 惰性打开 / ns 统计 / 关闭。
 /// 内部可变性模式：open/close 直接修改 self.stores，无需返回新实例。
-
 fn base_dir() -> String {
-  "test-data"
+  "."
 }
 
+///|
 test "open 创建并注册命名空间，get 幂等复用" {
   let ms = MultiStore::new(data_dir=base_dir())
-  assert_eq!(ms.open(ns="alpha", data_dir=base_dir()), true)
+  assert_eq(ms.open(ns="alpha", data_dir=base_dir()), true)
   let list = ms.ns_list()
-  assert_eq!(list.length(), 1)
-  assert_eq!(list[0], "alpha")
+  assert_eq(list.length(), 1)
+  assert_eq(list[0], "alpha")
   // 重复 open 同一 ns：幂等，不新增条目
-  assert_eq!(ms.open(ns="alpha", data_dir=base_dir()), true)
-  assert_eq!(ms.ns_list().length(), 1)
+  assert_eq(ms.open(ns="alpha", data_dir=base_dir()), true)
+  assert_eq(ms.ns_list().length(), 1)
   // 通过 get 拿到同一 store，可正常 CRUD
   match ms.get("alpha") {
     Some(s) => {
@@ -25,7 +26,7 @@ test "open 创建并注册命名空间，get 幂等复用" {
         ns="alpha",
       )
       match s.create_task(t) {
-        Ok(_) => assert_eq!(s.list_tasks_in("alpha").length(), 1)
+        Ok(_) => assert_eq(s.list_tasks_in("alpha").length(), 1)
         Err(msg) => abort("create_task failed: \{msg}")
       }
     }
@@ -33,12 +34,13 @@ test "open 创建并注册命名空间，get 幂等复用" {
   }
 }
 
+///|
 test "惰性打开：未显式 open 时 get 可直接打开物理库" {
   let ms = MultiStore::new(data_dir=base_dir())
-  assert_eq!(ms.ns_list().length(), 0)
+  assert_eq(ms.ns_list().length(), 0)
   // 先 open 一次，确保物理库文件存在
-  assert_eq!(ms.open(ns="beta", data_dir=base_dir()), true)
-  assert_eq!(ms.ns_list().length(), 1)
+  assert_eq(ms.open(ns="beta", data_dir=base_dir()), true)
+  assert_eq(ms.ns_list().length(), 1)
   // get 返回的 store 可正常操作
   match ms.get("beta") {
     Some(s) => {
@@ -50,7 +52,7 @@ test "惰性打开：未显式 open 时 get 可直接打开物理库" {
         ns="beta",
       )
       match s.create_task(t) {
-        Ok(_) => assert_eq!(s.list_tasks_in("beta").length(), 1)
+        Ok(_) => assert_eq(s.list_tasks_in("beta").length(), 1)
         Err(msg) => abort("create_task failed: \{msg}")
       }
     }
@@ -58,10 +60,11 @@ test "惰性打开：未显式 open 时 get 可直接打开物理库" {
   }
 }
 
+///|
 test "ns_stats 反映各 ns 任务数" {
   let ms = MultiStore::new(data_dir=base_dir())
-  assert_eq!(ms.open(ns="gs-alpha", data_dir=base_dir()), true)
-  assert_eq!(ms.open(ns="gs-gamma", data_dir=base_dir()), true)
+  assert_eq(ms.open(ns="gs-alpha", data_dir=base_dir()), true)
+  assert_eq(ms.open(ns="gs-gamma", data_dir=base_dir()), true)
   match ms.get("gs-alpha") {
     Some(s) => {
       let t1 = @core.Task::new(
@@ -97,12 +100,12 @@ test "ns_stats 反映各 ns 任务数" {
     None => abort("get gamma failed")
   }
   let stats = ms.ns_stats()
-  assert_eq!(stats.stringify().length() > 0, true)
+  assert_eq(stats.stringify().length() > 0, true)
   let mut alpha_total = -1
   let mut gamma_total = -1
   match stats {
     Json::Object(fields) => {
-      assert_eq!(fields.size(), 2)
+      assert_eq(fields.size(), 2)
       fields.each(fn(k, v) {
         match v {
           Json::Object(item) => {
@@ -115,8 +118,12 @@ test "ns_stats 反映各 ns 任务数" {
                 _ => ()
               }
             })
-            if ns_name == "gs-alpha" { alpha_total = total.to_int() }
-            if ns_name == "gs-gamma" { gamma_total = total.to_int() }
+            if ns_name == "gs-alpha" {
+              alpha_total = total.to_int()
+            }
+            if ns_name == "gs-gamma" {
+              gamma_total = total.to_int()
+            }
           }
           _ => abort("stats item not object")
         }
@@ -124,23 +131,66 @@ test "ns_stats 反映各 ns 任务数" {
     }
     _ => abort("stats not object")
   }
-  assert_eq!(alpha_total, 2)
-  assert_eq!(gamma_total, 1)
+  assert_eq(alpha_total, 2)
+  assert_eq(gamma_total, 1)
 }
 
+///|
 test "close 移除单个 ns，close_all 清空全部" {
   let ms = MultiStore::new(data_dir=base_dir())
-  assert_eq!(ms.open(ns="cl-alpha", data_dir=base_dir()), true)
-  assert_eq!(ms.open(ns="cl-gamma", data_dir=base_dir()), true)
-  assert_eq!(ms.ns_list().length(), 2)
+  assert_eq(ms.open(ns="cl-alpha", data_dir=base_dir()), true)
+  assert_eq(ms.open(ns="cl-gamma", data_dir=base_dir()), true)
+  assert_eq(ms.ns_list().length(), 2)
   ms.close("cl-alpha")
-  assert_eq!(ms.ns_list().length(), 1)
+  assert_eq(ms.ns_list().length(), 1)
   ms.close_all()
-  assert_eq!(ms.ns_list().length(), 0)
+  assert_eq(ms.ns_list().length(), 0)
 }
 
+///|
 test "open 空 ns 被拒" {
   let ms = MultiStore::new(data_dir=base_dir())
-  assert_eq!(ms.open(ns="", data_dir=base_dir()), false)
-  assert_eq!(ms.ns_list().length(), 0)
+  assert_eq(ms.open(ns="", data_dir=base_dir()), false)
+  assert_eq(ms.ns_list().length(), 0)
+}
+
+///|
+/// WAL 并发测试：多命名空间同时写入，验证 WAL 模式下的并发读写稳定性。
+test "WAL 模式：多 ns 并发写入 + 读取一致性" {
+  let ms = MultiStore::new(data_dir=base_dir())
+  let ns_names = ["wal-a", "wal-b", "wal-c"]
+  for ns in ns_names {
+    assert_eq(ms.open(ns~, data_dir=base_dir()), true)
+  }
+  // 每个 ns 写入 5 条任务
+  for ns in ns_names {
+    match ms.get(ns) {
+      Some(s) => {
+        let mut i = 0
+        while i < 5 {
+          let t = @core.Task::new(
+            id="\{ns}_\{i}",
+            project_dir="E:/proj/wal",
+            description="wal task \{i}",
+            created_at="2026-09-13T10:00:00Z",
+            ns~,
+          )
+          match s.create_task(t) {
+            Ok(_) => ()
+            Err(msg) => abort("WAL create_task failed: \{msg}")
+          }
+          i = i + 1
+        }
+      }
+      None => abort("WAL get \{ns} failed")
+    }
+  }
+  // 验证每个 ns 都能正确读取
+  for ns in ns_names {
+    match ms.get(ns) {
+      Some(s) => assert_eq(s.list_tasks_in(ns).length(), 5)
+      None => abort("WAL verify \{ns} failed")
+    }
+  }
+  ms.close_all()
 }

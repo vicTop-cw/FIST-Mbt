@@ -1,7 +1,7 @@
+///|
 /// FIST-Mbt sqlite smoke walker（M1 验收辅助，非交付代码）
 /// 直接驱动 SqliteStore + Store trait，跨连接验证持久化。
 /// 运行：moon build --target js 后 node 运行生成的 smoke.js。
-
 fn check(cond : Bool, name : String) -> Unit {
   if cond {
     println("PASS  \{name}")
@@ -10,6 +10,7 @@ fn check(cond : Bool, name : String) -> Unit {
   }
 }
 
+///|
 fn main {
   println("== FIST-Mbt sqlite smoke ==")
   let s = match @lib.SqliteStore::open("smoke_walker.db") {
@@ -34,7 +35,10 @@ fn main {
       check(x.get_id() == "S0", "create/get id")
       check(x.status_to_string() == "待领取", "status default")
       check(x.get_depth() == 3, "depth roundtrip")
-      check(x.get_description() == "smoke 根任务", "description roundtrip (utf8)")
+      check(
+        x.get_description() == "smoke 根任务",
+        "description roundtrip (utf8)",
+      )
     }
     None => abort("S0 missing after create")
   }
@@ -69,7 +73,8 @@ fn main {
     None => abort("reopen failed")
   }
   match s2.get_task("S0") {
-    Some(x) => check(x.status_to_string() == "已领取", "persist across reopen")
+    Some(x) =>
+      check(x.status_to_string() == "已领取", "persist across reopen")
     None => abort("S0 not persisted")
   }
   ignore(s2.delete_task("S0"))

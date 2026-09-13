@@ -15,13 +15,18 @@
 /// 全过程写 StoreBackend（SQLite 内建数据库），重启后经 get_task 即可恢复完整子树
 /// （M3 验收标准）。
 
+///|
 /// 从 omega spec JSON 提取切割依据（slices）。
 /// 规则：
 ///   - spec 为对象且 laws 为非空字符串数组 → 以 laws 为准（AO "break into focused
 ///     tasks"：每条 law 一个聚焦子任务，等价于把 plan 拆成可执行单元）；
 ///   - 否则 → 退化为按 split_n 生成通用拆解条目。
 /// 返回切片描述数组。
-pub fn decompose_slices(spec : Json, split_n : Int, parent_desc~ : String) -> Array[String] {
+pub fn decompose_slices(
+  spec : Json,
+  split_n : Int,
+  parent_desc~ : String,
+) -> Array[String] {
   match spec {
     Object(_) =>
       match spec.value("laws") {
@@ -34,17 +39,18 @@ pub fn decompose_slices(spec : Json, split_n : Int, parent_desc~ : String) -> Ar
             }
           }
           if out.is_empty() {
-            default_slices(split_n, parent_desc=parent_desc)
+            default_slices(split_n, parent_desc~)
           } else {
             out
           }
         }
-        _ => default_slices(split_n, parent_desc=parent_desc)
+        _ => default_slices(split_n, parent_desc~)
       }
-    _ => default_slices(split_n, parent_desc=parent_desc)
+    _ => default_slices(split_n, parent_desc~)
   }
 }
 
+///|
 /// 无 spec.laws 时的通用切分条目（描述逐层递进派生）。
 pub fn default_slices(split_n : Int, parent_desc~ : String) -> Array[String] {
   let out : Array[String] = []
@@ -54,6 +60,7 @@ pub fn default_slices(split_n : Int, parent_desc~ : String) -> Array[String] {
   out
 }
 
+///|
 /// 取 spec 的 fingerprint 作为验收基准 spec_hash；无 spec / 无 fingerprint 为空串。
 pub fn spec_hash_of(spec : Json?) -> String {
   match spec {

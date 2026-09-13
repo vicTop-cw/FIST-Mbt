@@ -2,6 +2,7 @@
 /// 迁移自 FIST(Python) 的 FIST-SKILL，作为可解释性（赛事验收标准之一）的
 /// 机器可读呈现，并通过 resources/prompts 暴露给 MCP 客户端。
 
+///|
 /// 单条原则
 pub struct Principle {
   index : Int
@@ -9,10 +10,22 @@ pub struct Principle {
   body : String
 } derive(Eq, Debug)
 
-pub fn Principle::get_index(self : Principle) -> Int { self.index }
-pub fn Principle::get_title(self : Principle) -> String { self.title }
-pub fn Principle::get_body(self : Principle) -> String { self.body }
+///|
+pub fn Principle::get_index(self : Principle) -> Int {
+  self.index
+}
 
+///|
+pub fn Principle::get_title(self : Principle) -> String {
+  self.title
+}
+
+///|
+pub fn Principle::get_body(self : Principle) -> String {
+  self.body
+}
+
+///|
 /// 七条金条的权威定义（与 FIST-SKILL/Python 版保持同源）
 pub fn principles() -> Array[Principle] {
   [
@@ -54,6 +67,7 @@ pub fn principles() -> Array[Principle] {
   ]
 }
 
+///|
 /// 单条原则转 JSON（供 resource 输出）
 pub fn Principle::to_json(self : Principle) -> Json {
   let m : Map[String, Json] = Map([])
@@ -63,6 +77,7 @@ pub fn Principle::to_json(self : Principle) -> Json {
   Json::object(m)
 }
 
+///|
 /// 全部原则转 JSON 数组
 pub fn principles_json() -> Json {
   Json::array(principles().map(fn(p) { p.to_json() }))

@@ -50,9 +50,7 @@ async fn run_stdio_target(s1 : @mcp.MCPServer) -> Unit {
   let rs = @js_async.ReadableStream::from_js(stdin_web)
   let reader : &@io.Reader = rs
   while true {
-    let line_opt = reader.read_until("\n") catch {
-      _ => break
-    }
+    let line_opt = reader.read_until("\n") catch { _ => break }
     match line_opt {
       None => break
       Some(line) => {

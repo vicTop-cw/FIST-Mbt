@@ -6,6 +6,7 @@
 ///   - 角色权限矩阵遵循"唯一指挥官/人类主权"原则：publish/archive/delete 仅 HumanSteward，
 ///     claim 面向 Leader / Agent / HumanSteward 全部放开。
 
+///|
 /// 审计单条记录
 pub struct AuditEntry {
   pub ts : String
@@ -15,32 +16,37 @@ pub struct AuditEntry {
   pub detail : String
 } derive(Eq, Debug)
 
+///|
 /// 进程内追加式审计日志
 pub struct AuditLog {
   entries : Array[AuditEntry]
 }
 
+///|
 pub fn AuditLog::new() -> AuditLog {
-  { entries: [] }
+  { entries: [], }
 }
 
+///|
 /// 追加一条审计记录
 pub fn AuditLog::record(
   self : AuditLog,
   action~ : String,
   actor~ : String,
   task_id~ : String,
-  detail~ : String = "",
+  detail? : String = "",
   now~ : String,
 ) -> Unit {
-  self.entries.push({ ts: now, action, actor, task_id, detail })
+  self.entries.push({ ts: now, action, actor, task_id, detail, })
 }
 
+///|
 /// 全量条目（追加序）
 pub fn AuditLog::entries(self : AuditLog) -> Array[AuditEntry] {
   self.entries
 }
 
+///|
 /// 按操作者过滤
 pub fn AuditLog::by_actor(self : AuditLog, actor : String) -> Array[AuditEntry] {
   let out : Array[AuditEntry] = []
@@ -52,8 +58,12 @@ pub fn AuditLog::by_actor(self : AuditLog, actor : String) -> Array[AuditEntry] 
   out
 }
 
+///|
 /// 按任务 id 过滤
-pub fn AuditLog::by_task(self : AuditLog, task_id : String) -> Array[AuditEntry] {
+pub fn AuditLog::by_task(
+  self : AuditLog,
+  task_id : String,
+) -> Array[AuditEntry] {
   let out : Array[AuditEntry] = []
   for e in self.entries {
     if e.task_id == task_id {
@@ -63,6 +73,7 @@ pub fn AuditLog::by_task(self : AuditLog, task_id : String) -> Array[AuditEntry]
   out
 }
 
+///|
 /// 序列化为 JSON 数组（供 MCP resource 输出）
 pub fn AuditLog::to_json(self : AuditLog) -> Json {
   let arr : Array[Json] = []
@@ -78,14 +89,15 @@ pub fn AuditLog::to_json(self : AuditLog) -> Json {
   Json::array(arr)
 }
 
+///|
 /// —— 角色与权限矩阵 ——
-
 pub enum Role {
   HumanSteward
   Leader
   Agent
 } derive(Eq, Debug)
 
+///|
 /// 人类可读角色名
 pub fn Role::to_string(self : Role) -> String {
   match self {
@@ -95,6 +107,7 @@ pub fn Role::to_string(self : Role) -> String {
   }
 }
 
+///|
 /// 从字符串构造 Role（解析失败返回 None）
 pub fn Role::from_string(s : String) -> Role? {
   match s {
@@ -105,6 +118,7 @@ pub fn Role::from_string(s : String) -> Role? {
   }
 }
 
+///|
 /// 发布任务：仅 HumanSteward
 pub fn can_publish(role : Role) -> Bool {
   match role {
@@ -113,6 +127,7 @@ pub fn can_publish(role : Role) -> Bool {
   }
 }
 
+///|
 /// 归档任务：仅 HumanSteward
 pub fn can_archive(role : Role) -> Bool {
   match role {
@@ -121,6 +136,7 @@ pub fn can_archive(role : Role) -> Bool {
   }
 }
 
+///|
 /// 删除任务：仅 HumanSteward
 pub fn can_delete(role : Role) -> Bool {
   match role {
@@ -129,6 +145,7 @@ pub fn can_delete(role : Role) -> Bool {
   }
 }
 
+///|
 /// 认领任务：Leader / Agent / HumanSteward 均可
 pub fn can_claim(role : Role) -> Bool {
   match role {
@@ -136,11 +153,9 @@ pub fn can_claim(role : Role) -> Bool {
   }
 }
 
+///|
 /// 权限执行：不满足返回 Err（描述缺权操作），满足返回 Ok(())
-pub fn enforce(
-  action~ : String,
-  role~ : Role,
-) -> Result[Unit, String] {
+pub fn enforce(action~ : String, role~ : Role) -> Result[Unit, String] {
   let ok = match action {
     "publish" => can_publish(role)
     "archive" => can_archive(role)

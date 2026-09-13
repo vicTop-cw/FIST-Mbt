@@ -1,0 +1,53 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/executor"
+
+import {
+  "vicTop-cw/fist-mbt/src/core",
+}
+
+// Values
+pub fn delegate_execute(@core.Task, ExecContext) -> ExecResult
+
+pub fn is_valid_executor(String) -> Bool
+
+// Errors
+
+// Types and methods
+pub struct ExecContext {
+  project_dir : String
+  task_id : String
+  description : String
+  assignee : String
+}
+
+pub struct ExecResult {
+  ok : Bool
+  deliverable : String
+  executor : String
+  model : String
+  tokens_in : Int
+  tokens_out : Int
+  cost : Double
+  duration_ms : Int
+  error_msg : String
+}
+
+pub struct ExecutorRegistry {
+  executors : Map[String, String]
+}
+pub fn ExecutorRegistry::get(Self, String) -> String?
+pub fn ExecutorRegistry::has(Self, String) -> Bool
+pub fn ExecutorRegistry::list(Self) -> Array[String]
+pub fn ExecutorRegistry::register(Self, String) -> Self
+
+pub struct McpDelegateExecutor {
+  name : String
+}
+
+// Type aliases
+
+// Traits
+pub trait Executor {
+  fn name(Self) -> String
+  fn run(Self, @core.Task, ExecContext) -> ExecResult
+}
