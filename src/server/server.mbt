@@ -679,6 +679,54 @@ pub async fn run_server() -> Unit {
       },
     )
     .tool(
+      "watchdog_tick",
+      "定时任务看门狗编排单入口（推荐仅用于定时任务/无人值守场景，不用于人工指挥流程）：扫描活跃任务，心跳超时则回滚重派；检测到上一轮根任务已完成且提供了 next_description（或可由 meta_prompt_path 读取元提示词）时自动发布下一轮。参数：now、timeout_sec(可选默认600)、namespace(可选，未传则不自动续轮)、next_description(可选)、next_created_by(可选默认watchdog)、meta_prompt_path(可选)。",
+      schema(
+        {
+          "now": string_prop("当前时间戳(默认内置)"),
+          "timeout_sec": int_prop("心跳超时秒数(可选默认600)"),
+          "namespace": string_prop(
+            "作用域命名空间(可选)：自动续轮/自动 heal 只作用于该 ns，未传则不自动续轮",
+          ),
+          "next_description": string_prop(
+            "下一轮任务描述(可选，缺省则不自动续轮)",
+          ),
+          "next_created_by": string_prop(
+            "下一轮任务创建者(可选默认watchdog)",
+          ),
+          "meta_prompt_path": string_prop(
+            "元提示词文档路径(可选)：单个文档或目录，目录内按 yyyyMMdd.HH.mm.ss.md 取最新一份",
+          ),
+        },
+        [],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let ts = get_str(args, "now", default=now)
+        let timeout_sec = get_int(args, "timeout_sec", default=600)
+        let ns = get_str(args, "namespace")
+        let next_description = get_str(args, "next_description")
+        let next_created_by = get_str(
+          args,
+          "next_created_by",
+          default="watchdog",
+        )
+        let meta_prompt_path = get_str(args, "meta_prompt_path")
+        match
+          @ops.watchdog_tick(
+            engine,
+            ts,
+            timeout_sec~,
+            ns~,
+            next_description~,
+            next_created_by~,
+            meta_prompt_path~,
+          ) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
       "task_cleanup",
       "归档清理：删除超过保留期的已归档任务。参数：now、retention_days(可选默认30)。",
       schema(

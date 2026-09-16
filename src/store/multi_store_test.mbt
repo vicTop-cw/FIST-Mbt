@@ -6,7 +6,17 @@ fn base_dir() -> String {
 }
 
 ///|
+/// 清空可能由上次运行残留的物理库，保证本文件测试可重复执行（幂等）。
+fn reset_db(path : String) -> Unit {
+  match SqliteStore::open(path) {
+    Some(s) => ignore(s.clear())
+    None => ()
+  }
+}
+
+///|
 test "open 创建并注册命名空间，get 幂等复用" {
+  reset_db("alpha.db")
   let ms = MultiStore::new(data_dir=base_dir())
   assert_eq(ms.open(ns="alpha", data_dir=base_dir()), true)
   let list = ms.ns_list()
@@ -36,6 +46,7 @@ test "open 创建并注册命名空间，get 幂等复用" {
 
 ///|
 test "惰性打开：未显式 open 时 get 可直接打开物理库" {
+  reset_db("beta.db")
   let ms = MultiStore::new(data_dir=base_dir())
   assert_eq(ms.ns_list().length(), 0)
   // 先 open 一次，确保物理库文件存在
@@ -157,6 +168,9 @@ test "open 空 ns 被拒" {
 ///|
 /// WAL 并发测试：多命名空间同时写入，验证 WAL 模式下的并发读写稳定性。
 test "WAL 模式：多 ns 并发写入 + 读取一致性" {
+  reset_db("wal-a.db")
+  reset_db("wal-b.db")
+  reset_db("wal-c.db")
   let ms = MultiStore::new(data_dir=base_dir())
   let ns_names = ["wal-a", "wal-b", "wal-c"]
   for ns in ns_names {

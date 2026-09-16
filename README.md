@@ -1,12 +1,23 @@
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: 9f2a11add43fbf12a546606fb2b962ab_a9040e79b1b011f18f26525400287e28
+    ReservedCode1: gqaLfUShhHiQRS1EzJF7Uro7Y1DmWppGM5ptSJMt1Sa/oiiB0agGywKVnF6CVW+FibYYdcMTiKVLgPeIRq6q66IWRCiIpXfQv5PS5MhO8uHoxxiOooFGGDD7q62tfOot4vM7KttnAfTheQyUgyjntzjTzjRJGagyhS9hRcfILiP25jWSud82zEO918g=
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: 9f2a11add43fbf12a546606fb2b962ab_a9040e79b1b011f18f26525400287e28
+    ReservedCode2: gqaLfUShhHiQRS1EzJF7Uro7Y1DmWppGM5ptSJMt1Sa/oiiB0agGywKVnF6CVW+FibYYdcMTiKVLgPeIRq6q66IWRCiIpXfQv5PS5MhO8uHoxxiOooFGGDD7q62tfOot4vM7KttnAfTheQyUgyjntzjTzjRJGagyhS9hRcfILiP25jWSud82zEO918g=
+---
+
 # FIST-Mbt
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-77%2F77-brightgreen)](./src)
+[![Tests](https://img.shields.io/badge/tests-93%2F93-brightgreen)](./src)
 
 将 **FIST 指挥官任务分配体系**（原 Python 实现）用 **纯 MoonBit 原生重写** 并包装为 **MCP Server** 的参赛作品（2026 MoonBit 九月黑客松）。
 
-指挥官（人类 / 主力模型）通过标准 MCP 协议调用 FIST-Mbt 暴露的 36 个工具，完成任务的 **发布 → 认领 → 拆分 → 执行 → 提交 → 验收 → 归档** 完整闭环，全程贯彻 FIST 七条金条原则。
+指挥官（人类 / 主力模型）通过标准 MCP 协议调用 FIST-Mbt 暴露的 37 个工具，完成任务的 **发布 → 认领 → 拆分 → 执行 → 提交 → 验收 → 归档** 完整闭环，全程贯彻 FIST 七条金条原则。
 
 > 该项目为 FIST（Python）的 MoonBit 原生重写 + MCP 化，非原代码搬运。
 
@@ -20,7 +31,7 @@
 # 依赖解析 & 编译
 moon check
 
-# 运行测试（77 项全部通过）
+# 运行测试（93 项全部通过）
 moon test
 
 # 启动 MCP Server（STDIO 传输）
@@ -46,7 +57,12 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 ## MCP 暴露面
 
-### Tools（36 个）
+### Tools（37 个）
+
+> **适用范围提示**：`watchdog_tick`（定时任务看门狗编排）**推荐仅用于定时任务 / 无人值守自动化场景**，不用于人工指挥官任务分配流程（自动 heal / 自动续轮在人工流程中有害）。
+>
+> 配套元提示词模板：[`templates/cron_pipeline_meta_prompt.md`](./templates/cron_pipeline_meta_prompt.md)（**统一版**：单一提示词 + 单一定时任务，一次唤醒内四分支自决策——①有活跃任务且心跳新鲜则退出；②心跳超时只交给 `watchdog_tick` 的 heal 分支；③无活跃任务且最新提示词未消费则接一个新根任务；④无活跃任务且提示词已消费则生成下一份 `yyyyMMdd.HH.mm.ss.md`。含按目标项目替换的参数清单、作用域隔离要求与无人值守边界说明）。
+
 
 #### 生命周期八件套（九态状态机）
 
@@ -79,7 +95,8 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 | `task_plan_deep` | AO 式递归拆解，拆出整棵多层子任务树并写库 | task_id, split_n, by, spec, now |
 | `conflicts_check` | claim 冲突检测（认领前检查是否已被他人/本人持有） | task_id, assignee |
 | `heartbeat` | 活动信号上报（超时静默将触发 heal 回滚） | task_id, signal, now |
-| `heal` | no_signal 看护：心跳超时静默的任务回滚为已领取待重派 | now, timeout_sec |
+| `heal` | no_signal 看护：心跳超时静默的任务回滚为已领取待重派（内存版，人工流程） | now, timeout_sec |
+| `watchdog_tick` | 定时任务看门狗编排单入口（推荐仅用于定时任务）：读 SQLite 心跳判定超时回滚；上一轮根任务完成且提供 next_description 或 meta_prompt_path 时自动起下一轮 | now, timeout_sec, namespace, next_description, next_created_by, meta_prompt_path |
 | `task_cleanup` | 归档清理：删除超保留期的已归档任务 | now, retention_days |
 
 #### Omega 验证闭环（M6 金条八）
@@ -178,10 +195,11 @@ FIST-Mbt/
 │   │   ├── ops_heartbeat.mbt   # 心跳上报
 │   │   ├── ops_heal.mbt        # 超时回滚
 │   │   ├── ops_cleanup.mbt     # 归档清理
+│   │   ├── ops_watchdog.mbt    # 看门狗编排 watchdog_tick（跨进程 heal + 自动续轮）
 │   │   └── ops_ts.mbt          # 时间戳工具
 │   ├── omega/           # 可解释性子包：spec/gate/check
 │   └── server/          # MCP server 装配
-│       ├── server.mbt          # 36 个工具注册 + run_server
+│       ├── server.mbt          # 37 个工具注册 + run_server
 │       ├── stdio_js.mbt        # JS 后端 STDIO 传输
 │       └── stdio_native.mbt    # 原生后端 STDIO 传输
 └── moon.mod             # 模块元数据
@@ -244,12 +262,14 @@ FIST-Mbt/
 ## 测试
 
 ```bash
-moon test   # 77 项黑盒测试全部通过
+moon test   # 93 项测试全部通过
 ```
 
 覆盖：根任务发布、发布权限（仅人类指挥官）、claim/plan/execute/submit/verify/archive/delete 全闭环、
 reject/retry/pause/resume 新增迁移、非法迁移拦截（未认领 plan / execute、未归档 delete）、
-按状态过滤查询、DAG 依赖检查、审计权限矩阵、多租户命名空间、WAL 并发写入、心跳持久化。
+按状态过滤查询、DAG 依赖检查、审计权限矩阵、多租户命名空间、WAL 并发写入、心跳持久化、
+看门狗跨进程 heal（读 SQLite 判定超时）、watchdog_tick 编排（waiting/idle/blocked/restarted/advanced）、
+元提示词文档路径续轮（单文件 / 目录取最新、失败不续轮不 panic）。
 
 ---
 
@@ -299,7 +319,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 | 端点 | 说明 |
 |---|---|
-| `GET /health` | 健康检查，返回 `{"status":"ok","tools":36}` |
+| `GET /health` | 健康检查，返回 `{"status":"ok","tools":37}` |
 | `POST /mcp` | JSON-RPC over HTTP，请求体与 STDIO 模式一致 |
 
 ---
@@ -317,3 +337,4 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 ## License
 
 Apache-2.0
+*（内容由AI生成，仅供参考）*

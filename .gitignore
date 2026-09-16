@@ -14,8 +14,13 @@ m9_*.js
 m18_*.js
 # atomcode project dir
 .atomcode/
+# 项目申报书（个人参赛文档，不入仓库）
+项目申报书.md
 # generated interface files (optional - uncomment to exclude)
 # *.mbti
 # pkg.generated.mbti
 
 temp/
+# sqlite runtime files (wal/shm)
+*.db-shm
+*.db-wal

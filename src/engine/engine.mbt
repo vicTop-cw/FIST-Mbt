@@ -388,6 +388,106 @@ pub fn FistEngine::get_task(self : FistEngine, task_id : String) -> @core.Task? 
 }
 
 ///|
+/// 按命名空间列出任务（namespace 为空串时回退默认命名空间）。
+/// 供 watchdog 等运维编排按 ns 扫描使用。
+pub fn FistEngine::list_in_ns(
+  self : FistEngine,
+  namespace : String,
+) -> Array[@core.Task] {
+  let target = if namespace == "" { "default" } else { namespace }
+  self.store.list_tasks_in(target)
+}
+
+///|
+/// 自动续轮标记前缀：已完成但尚未续轮的根任务，其 deliverable 不带该前缀。
+pub fn advance_mark_prefix() -> String {
+  "__advanced__:"
+}
+
+///|
+/// 生成下一轮根任务 id（T0 -> T0r2 -> T0r3 ...），保证与既有任务不冲突。
+fn FistEngine::next_round_id(self : FistEngine) -> String {
+  let base = root_task_id()
+  let mut round = 1
+  let mut candidate = "\{base}r\{round + 1}"
+  let mut taken = true
+  while taken {
+    match self.store.get_task(candidate) {
+      Some(_) => {
+        round = round + 1
+        candidate = "\{base}r\{round + 1}"
+      }
+      None => taken = false
+    }
+  }
+  candidate
+}
+
+///|
+/// 自动续轮（仅供定时任务看门狗 watchdog_tick 调用，见 ops_watchdog.mbt）。
+///
+/// 语义：把已完成的上一轮**根任务**标记为已续轮并归档，同时发布下一轮根任务。
+/// 安全边界（watchdog 计划文档第 0 节）：
+///   - 仅允许作用于非 default 命名空间，避免干扰人工指挥流程；
+///   - 上一轮必须是「已完成」的根任务。
+///
+/// 返回新根任务 id（T0r2、T0r3 ...）。
+pub fn FistEngine::publish_next_round(
+  self : FistEngine,
+  ns~ : String,
+  description~ : String,
+  created_by~ : String,
+  prev_task_id~ : String,
+  now~ : String,
+) -> Result[String, String] {
+  if ns == "" || ns == "default" {
+    return Err(
+      "自动续轮仅限定时任务命名空间（namespace 不得为空或 default）",
+    )
+  }
+  // 续轮发起者仅作审计用途（Task 无 created_by 字段），非法值不阻断。
+  ignore(created_by)
+  let prev = match self.store.get_task(prev_task_id) {
+    None => return Err("task not found: \{prev_task_id}")
+    Some(t) => t
+  }
+  if prev.ns != ns {
+    return Err("上一轮任务不属于命名空间 [\{ns}]")
+  }
+  match prev.get_parent() {
+    Some(_) => return Err("自动续轮仅针对根任务: \{prev_task_id}")
+    None => ()
+  }
+  if !prev.get_status().is_completed() {
+    return Err("上一轮任务尚未完成: [\{prev.status_to_string()}]")
+  }
+  let new_id = self.next_round_id()
+  let next = @core.Task::new(
+    id=new_id,
+    project_dir=prev.project_dir,
+    description~,
+    depth=3,
+    split_n=3,
+    created_at=now,
+    ns~,
+  )
+  match self.store.create_task(next) {
+    Ok(_) => ()
+    Err(e) => return Err(e)
+  }
+  // 标记旧根任务已续轮（保留原交付物信息），随后归档
+  let marked = prev.with_deliverable(
+    "\{advance_mark_prefix()}\{new_id} | \{prev.deliverable}",
+    now,
+  )
+  match marked.archive() {
+    Ok(a) => ignore(self.store.update_task(a.with_updated_at(now)))
+    Err(e) => return Err(e)
+  }
+  Ok(new_id)
+}
+
+///|
 /// 回滚/重派：任意非归档任务 -> 已领取（M4 heal watchdog 用）。返回回滚后的任务。
 pub fn FistEngine::reopen_task(
   self : FistEngine,

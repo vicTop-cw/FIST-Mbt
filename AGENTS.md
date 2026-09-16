@@ -1,3 +1,14 @@
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: 9f2a11add43fbf12a546606fb2b962ab_ab739310b1b011f18304525400aeaaa3
+    ReservedCode1: de9GcMa2Qm/A+/aWqrEO57ddJh84OqJkQdkBcuUrRFJzUUd6KS6o13YUUT1zn6RCmfsYUBcF5DO13gi34N9Ycnp8Qrd3Lw+WzPNXiEjeno8u86defuam4JXgYPCeSQ+o4fBX+PG+S/SsiwvHDMia3IgvzYTEkNGv0tmXFv1drGRpOiSSDpScnwLIkgM=
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: 9f2a11add43fbf12a546606fb2b962ab_ab739310b1b011f18304525400aeaaa3
+    ReservedCode2: de9GcMa2Qm/A+/aWqrEO57ddJh84OqJkQdkBcuUrRFJzUUd6KS6o13YUUT1zn6RCmfsYUBcF5DO13gi34N9Ycnp8Qrd3Lw+WzPNXiEjeno8u86defuam4JXgYPCeSQ+o4fBX+PG+S/SsiwvHDMia3IgvzYTEkNGv0tmXFv1drGRpOiSSDpScnwLIkgM=
+---
+
 # Project Agents.md Guide
 
 This is a [MoonBit](https://docs.moonbitlang.com) project.
@@ -75,7 +86,7 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**22 tools + 2 resources + 2 prompts**）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**37 tools + 2 resources + 2 prompts**）：
 
 ### 生命周期（12）
 | 工具 | 说明 |
@@ -99,14 +110,17 @@ You can browse and install extra skills here:
 | `list` | 列出任务 |
 | `get` | 查询任务详情 |
 
-### 运维（5）
+### 运维（6）
 | 工具 | 说明 |
 |---|---|
 | `task_plan_deep` | AO 式递归拆解 |
 | `conflicts_check` | 认领冲突检测 |
 | `heartbeat` | 活动信号上报 |
-| `heal` | 超时任务回滚 |
+| `heal` | 超时任务回滚（内存版，人工流程） |
+| `watchdog_tick` | 看门狗编排（推荐仅用于定时任务；跨进程 heal + 自动续轮） |
 | `task_cleanup` | 归档清理 |
+
+> 无人值守流水线统一元提示词模板：`templates/cron_pipeline_meta_prompt.md`（**统一版**，取代原 `watchdog_tick_meta_prompt.md`：单一提示词 + 单一定时任务，一次唤醒内四分支自决策——①心跳新鲜即退出；②心跳超时只交给 `watchdog_tick` 的 heal 分支、不自行重启；③无活跃任务且最新提示词未消费则用该提示词接一个新根任务；④无活跃任务且提示词已消费则分析项目现状生成下一份 `yyyyMMdd.HH.mm.ss.md`。含按目标项目替换的参数清单与无人值守边界说明，仅用于定时任务场景）。
 
 ### DAG 依赖图（6）
 | 工具 | 说明 |
@@ -141,3 +155,4 @@ Prompts: `fist:check_in`, `fist:verify`
 | FIST 根 | `E:/IDEProjects/Ai/Fist` |
 | FIST SKILL 全文 | `E:/IDEProjects/Ai/Fist/FIST-SKILL.md` |
 | FIST-Mbt 根 | `E:/IDEProjects/AI/FIST-Mbt` |
+*（内容由AI生成，仅供参考）*

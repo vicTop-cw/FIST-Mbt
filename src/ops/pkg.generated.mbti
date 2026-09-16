@@ -24,11 +24,21 @@ pub fn enforce(action~ : String, role~ : Role) -> Result[Unit, String]
 
 pub fn heal_stale_tasks(@engine.FistEngine, Heartbeat, String, timeout_sec? : Int) -> Result[Array[String], String]
 
+pub fn heal_stale_tasks_from_store(@engine.FistEngine, String, timeout_sec? : Int, ns? : String) -> Result[Array[String], String]
+
+pub fn is_meta_prompt_name(String) -> Bool
+
 pub fn iso_to_secs(String) -> Int
+
+pub fn latest_meta_prompt_in_dir(String) -> String?
 
 pub fn list_contested(@engine.FistEngine) -> Array[@core.Task]
 
 pub fn list_holdings(@engine.FistEngine, String) -> Array[@core.Task]
+
+pub fn read_meta_prompt(String) -> String?
+
+pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String) -> Result[Json, String]
 
 // Errors
 
