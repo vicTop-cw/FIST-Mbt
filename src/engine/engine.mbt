@@ -147,6 +147,11 @@ pub fn FistEngine::execute(
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
     Some(t) => {
+      // Omega 强验证开关（默认关闭）：开启时须先有「已通过」语料才可进入执行
+      match self.omega_execute_gate(task_id) {
+        Err(e) => return Err(e)
+        Ok(_) => ()
+      }
       let st = t.get_status()
       if !st.can_execute() {
         return Err("非法执行: 任务处于 [\{t.status_to_string()}]")
@@ -293,6 +298,17 @@ pub fn FistEngine::verify(
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
     Some(t) => {
+      // Omega 强验证开关（默认关闭）：开启时须先有「已通过」成果复验才可验收
+      match self.omega_verify_gate(task_id) {
+        Err(e) => return Err(e)
+        Ok(_) => ()
+      }
+      // 外部判据闸门（默认关闭）：[gate:required] 任务须有服务端真实执行过的、
+      // 新鲜通过的 check 记录（run_check 落库），防"自写自测恒绿"
+      match self.gate_verify_gate(task_id) {
+        Err(e) => return Err(e)
+        Ok(_) => ()
+      }
       if !t.get_status().is_reviewing() {
         return Err(
           "非法验收: 任务处于 [\{t.status_to_string()}]，需先 submit",
@@ -488,6 +504,49 @@ pub fn FistEngine::publish_next_round(
 }
 
 ///|
+/// 冷启动发布（无上一轮根任务时创建首个任务）。
+/// 仅用于 cron-auto 等自动化命名空间，语义等同「人类指挥官发布首轮」
+/// 但审计日志标记为 watchdog 自动发布。
+///
+/// 安全边界：
+///   - 仅允许作用于非 default 命名空间；
+///   - 该命名空间必须为空（已有任务时拒绝，避免重复发布）。
+pub fn FistEngine::cold_publish(
+  self : FistEngine,
+  ns~ : String,
+  description~ : String,
+  created_by~ : String,
+  project_dir~ : String,
+  now~ : String,
+) -> Result[String, String] {
+  if ns == "" || ns == "default" {
+    return Err(
+      "冷启动发布仅限定时任务命名空间（namespace 不得为空或 default）",
+    )
+  }
+  // 检查该 ns 是否已有任务，避免重复发布
+  if !self.list_in_ns(ns).is_empty() {
+    return Err(
+      "命名空间已存在任务，请使用 publish_next_round 续轮",
+    )
+  }
+  let id = root_task_id()
+  let t = @core.Task::new(
+    id~,
+    project_dir~,
+    description~,
+    depth=3,
+    split_n=3,
+    created_at=now,
+    ns~,
+  )
+  match self.store.create_task(t) {
+    Ok(_) => Ok(id)
+    Err(e) => Err(e)
+  }
+}
+
+///|
 /// 回滚/重派：任意非归档任务 -> 已领取（M4 heal watchdog 用）。返回回滚后的任务。
 pub fn FistEngine::reopen_task(
   self : FistEngine,
@@ -637,6 +696,7 @@ pub fn FistEngine::plan_deep(
   by~ : String,
   spec? : Json? = None,
   now~ : String,
+  omega_strong_verify? : Bool = false,
 ) -> Result[Json, String] {
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
@@ -661,7 +721,7 @@ pub fn FistEngine::plan_deep(
         None =>
           @decompose.default_slices(split_n, parent_desc=parent.description)
       }
-      match self.decompose_rec(parent, slices, spec, now) {
+      match self.decompose_rec(parent, slices, spec, now, omega_strong_verify) {
         Err(e) => Err(e)
         Ok(tree) =>
           Ok(
@@ -686,6 +746,7 @@ fn FistEngine::decompose_rec(
   slices : Array[String],
   spec : Json?,
   now : String,
+  omega_strong_verify : Bool,
 ) -> Result[Json, String] {
   // 父任务进入拆分中（宽于 Task::split：待领取/已领取/拆分中均可转入）
   match parent.mark_decomposing() {
@@ -700,10 +761,16 @@ fn FistEngine::decompose_rec(
     let idx = i + 1
     let cid = @core.child_id(parent_id=parent.get_id(), idx~)
     let slice_text = slices[i]
-    let full_desc = if spec_hash == "" {
-      slice_text
+    let base_desc = if spec_hash == "" {
+      omega_clean_slice(slice_text)
     } else {
-      "\{slice_text} [spec:\{spec_hash}]"
+      "\{omega_clean_slice(slice_text)} [spec:\{spec_hash}]"
+    }
+    // Omega 强验证开关（默认关闭）：开启时为本层子任务打标记，使其受门禁约束
+    let full_desc = if omega_strong_verify {
+      base_desc + " " + omega_mark()
+    } else {
+      base_desc
     }
     let child = @core.Task::new(
       id=cid,
@@ -727,7 +794,8 @@ fn FistEngine::decompose_rec(
         child.split_n,
         parent_desc=child.description,
       )
-      match self.decompose_rec(child, next_slices, spec, now) {
+      match
+        self.decompose_rec(child, next_slices, spec, now, omega_strong_verify) {
         Ok(subtree) =>
           match subtree.value("children") {
             Some(Array(a)) => a

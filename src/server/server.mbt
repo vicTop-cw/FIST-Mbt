@@ -385,8 +385,87 @@ pub async fn run_server() -> Unit {
       },
     )
     .tool(
+      "run_check",
+      "外部判据检查（服务端真实执行命令，防自写自测恒绿）。参数：task_id 任务id、cmd 可执行命令、args 参数数组(可选)、workdir 工作目录(默认项目目录)、timeout_ms 超时毫秒(默认120000)、now 时间戳(可选)。真实 spawn 子进程运行 cmd，退出码 0 记为 passed、否则 failed，结果 JSON（含 stdout/stderr）落库 specs 表（spec_type=check）；[gate:required] 任务的 verify 依赖本记录且校验新鲜度。",
+      schema(
+        {
+          "task_id": string_prop("任务 id（必填）"),
+          "cmd": string_prop(
+            "要执行的外部命令（必填），如 bash / sh / node / cargo",
+          ),
+          "args": array_prop("命令参数数组（可选）"),
+          "workdir": string_prop(
+            "工作目录（可选，默认任务所在项目目录）",
+          ),
+          "timeout_ms": int_prop("超时毫秒（可选，默认 120000）"),
+          "now": string_prop("时间戳(可选)"),
+        },
+        ["task_id", "cmd"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let task_id = get_str(args, "task_id")
+        let cmd = get_str(args, "cmd")
+        let now = get_str(args, "now", default=now_default())
+        if task_id == "" || cmd == "" {
+          return Err(@mcp_types.ToolError("run_check: task_id 与 cmd 必填"))
+        }
+        let args_arr = get_array(args, "args").map(fn(j) {
+          match j {
+            String(s) => s
+            _ => j.stringify()
+          }
+        })
+        let timeout_ms = get_int(args, "timeout_ms", default=120000)
+        // 定位任务（取项目目录作默认 workdir；任务不存在也允许执行，仅不落库）
+        match engine.get_task(task_id) {
+          Some(t) => {
+            let workdir = get_str(args, "workdir", default=t.project_dir)
+            let r = run_check_external(cmd, args_arr, workdir, timeout_ms)
+            match r {
+              Ok(res) => {
+                let status = match res {
+                  Object(m) =>
+                    if m.get("ok") is Some(True) {
+                      "passed"
+                    } else {
+                      "failed"
+                    }
+                  _ => "failed"
+                }
+                match
+                  engine.gate_check_record(
+                    task_id,
+                    res.stringify(),
+                    status,
+                    now,
+                  ) {
+                  Ok(rec) => Ok(@mcp.ToolResult::text(rec.stringify()))
+                  Err(e) => Err(@mcp_types.ToolError(e))
+                }
+              }
+              Err(e) => Err(@mcp_types.ToolError(e))
+            }
+          }
+          None => {
+            // 任务不存在：仍执行命令并返回结果，但不落库（无任务可挂）
+            let workdir = get_str(args, "workdir", default=".")
+            let r = run_check_external(cmd, args_arr, workdir, timeout_ms)
+            match r {
+              Ok(res) =>
+                Err(
+                  @mcp_types.ToolError(
+                    "任务不存在: \{task_id}（命令已执行，结果: \{res.stringify()}，未落库）",
+                  ),
+                )
+              Err(e) => Err(@mcp_types.ToolError(e))
+            }
+          }
+        }
+      },
+    )
+    .tool(
       "verify",
-      "验收通过（待验收 -> 已完成，父任务自动上卷）。参数：task_id、verifier 验收人。",
+      "验收通过（待验收 -> 已完成，父任务自动上卷）。[gate:required] 任务须先有新鲜通过的 run_check 记录。参数：task_id、verifier 验收人。",
       schema(
         {
           "task_id": string_prop("任务 id（必填）"),
@@ -543,7 +622,7 @@ pub async fn run_server() -> Unit {
     )
     .tool(
       "task_plan_deep",
-      "AO 式递归拆解：对指定任务拆出整棵多层子任务树并写库。参数：task_id 任务id、split_n 每层默认拆分数(默认3)、by 拆解拳长、spec 可选 omega spec JSON(laws 作切割依据、fingerprint 作验收基准)、now 时间戳。",
+      "AO 式递归拆解：对指定任务拆出整棵多层子任务树并写库。参数：task_id 任务id、split_n 每层默认拆分数(默认3)、by 拆解拳长、spec 可选 omega spec JSON(laws 作切割依据、fingerprint 作验收基准)、omega_strong_verify 是否开启 Omega 强验证(默认 false，不传即现状)、now 时间戳。开启强验证后每层子任务多出『语料创建者建语料 -> 验证者审语料 -> 执行者执行 -> 验证者复验成果』环节。",
       schema(
         {
           "task_id": string_prop("父任务 id（必填，非原子任务）"),
@@ -552,6 +631,9 @@ pub async fn run_server() -> Unit {
           ),
           "by": string_prop("执行拆解的拳长身份(默认 leader)"),
           "spec": string_prop("可选 omega spec JSON 字符串"),
+          "omega_strong_verify": bool_prop(
+            "是否开启 Omega 强验证(默认 false，不传即现状；开启后每轮需语料审核与成果复验)",
+          ),
           "now": string_prop("时间戳(可选)"),
         },
         ["task_id"],
@@ -569,7 +651,130 @@ pub async fn run_server() -> Unit {
             _ => return Err(@mcp_types.ToolError("spec 不是合法 JSON"))
           }
         }
-        match engine.plan_deep(task_id~, split_n~, by~, spec~, now=ts) {
+        let omega_strong = get_bool(args, "omega_strong_verify", default=false)
+        match
+          engine.plan_deep(
+            task_id~,
+            split_n~,
+            by~,
+            spec~,
+            now=ts,
+            omega_strong_verify=omega_strong,
+          ) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "omega_spec_create",
+      "Omega 强验证·语料创建者：为已开启强验证的任务创建本轮语料，并真正持久化写入 specs 表。参数：task_id、author 语料创建者(默认 spec_author)、content 语料内容(必填)、max_rounds 打回上限(默认3，最大10)、now。",
+      schema(
+        {
+          "task_id": string_prop("任务 id（必填）"),
+          "author": string_prop("语料创建者身份(默认 spec_author)"),
+          "content": string_prop("语料内容（必填）"),
+          "max_rounds": int_prop("打回上限(默认3，最大10)"),
+          "now": string_prop("时间戳(可选)"),
+        },
+        ["task_id", "content"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let task_id = get_str(args, "task_id")
+        let author = get_str(args, "author", default="spec_author")
+        let content = get_str(args, "content")
+        let max_rounds = get_int(args, "max_rounds", default=3)
+        let ts = get_str(args, "now", default=now)
+        match
+          engine.omega_spec_create(
+            task_id~,
+            author~,
+            content~,
+            now=ts,
+            max_rounds~,
+          ) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "omega_spec_review",
+      "Omega 强验证·验证者审语料：审核本轮语料。verdict=approve 通过（放行执行），其它值视为打回重做；打回次数超过 max_rounds 自动升级人工裁决，禁止死循环。参数：task_id、reviewer 验证者(默认 verifier)、verdict、reason 审核意见、max_rounds、now。",
+      schema(
+        {
+          "task_id": string_prop("任务 id（必填）"),
+          "reviewer": string_prop("验证者身份(默认 verifier)"),
+          "verdict": string_prop("approve 通过 / 其它值打回（必填）"),
+          "reason": string_prop("审核意见(可选)"),
+          "max_rounds": int_prop("打回上限(默认3，最大10)"),
+          "now": string_prop("时间戳(可选)"),
+        },
+        ["task_id", "verdict"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let task_id = get_str(args, "task_id")
+        let reviewer = get_str(args, "reviewer", default="verifier")
+        let verdict = get_str(args, "verdict")
+        let reason = get_str(args, "reason")
+        let max_rounds = get_int(args, "max_rounds", default=3)
+        let ts = get_str(args, "now", default=now)
+        match
+          engine.omega_spec_review(
+            task_id~,
+            reviewer~,
+            verdict~,
+            reason~,
+            now=ts,
+            max_rounds~,
+          ) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "omega_result_verify",
+      "Omega 强验证·验证者复验成果：执行者完成后，复验成果与语料是否达标。verdict=pass 达标（可提交验收），其它值打回重做；超过 max_rounds 自动升级人工裁决。参数：task_id、reviewer、verdict、reason、max_rounds、now。",
+      schema(
+        {
+          "task_id": string_prop("任务 id（必填）"),
+          "reviewer": string_prop("验证者身份(默认 verifier)"),
+          "verdict": string_prop("pass 达标 / 其它值打回（必填）"),
+          "reason": string_prop("复验意见(可选)"),
+          "max_rounds": int_prop("打回上限(默认3，最大10)"),
+          "now": string_prop("时间戳(可选)"),
+        },
+        ["task_id", "verdict"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let task_id = get_str(args, "task_id")
+        let reviewer = get_str(args, "reviewer", default="verifier")
+        let verdict = get_str(args, "verdict")
+        let reason = get_str(args, "reason")
+        let max_rounds = get_int(args, "max_rounds", default=3)
+        let ts = get_str(args, "now", default=now)
+        match
+          engine.omega_result_verify(
+            task_id~,
+            reviewer~,
+            verdict~,
+            reason~,
+            now=ts,
+            max_rounds~,
+          ) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "omega_status",
+      "Omega 强验证状态查询：返回该任务是否开启强验证、语料/复验轮次、打回次数、是否已升级人工。参数：task_id。",
+      schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let task_id = get_str(args, "task_id")
+        match engine.omega_status(task_id) {
           Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
           Err(e) => Err(@mcp_types.ToolError(e))
         }
@@ -680,7 +885,7 @@ pub async fn run_server() -> Unit {
     )
     .tool(
       "watchdog_tick",
-      "定时任务看门狗编排单入口（推荐仅用于定时任务/无人值守场景，不用于人工指挥流程）：扫描活跃任务，心跳超时则回滚重派；检测到上一轮根任务已完成且提供了 next_description（或可由 meta_prompt_path 读取元提示词）时自动发布下一轮。参数：now、timeout_sec(可选默认600)、namespace(可选，未传则不自动续轮)、next_description(可选)、next_created_by(可选默认watchdog)、meta_prompt_path(可选)。",
+      "定时任务看门狗编排单入口（推荐仅用于定时任务/无人值守场景，不用于人工指挥流程）：扫描活跃任务，心跳超时则回滚重派；检测到上一轮根任务已完成且提供了 next_description（或可由 meta_prompt_path 读取元提示词）时自动发布下一轮。参数：now、timeout_sec(可选默认600)、namespace(可选，未传则不自动续轮)、next_description(可选)、next_created_by(可选默认watchdog)、meta_prompt_path(可选)、cold_start(可选默认false，冷启动时设为true以发布首个任务)、project_dir(可选，冷启动时用于指定项目目录)。",
       schema(
         {
           "now": string_prop("当前时间戳(默认内置)"),
@@ -697,6 +902,12 @@ pub async fn run_server() -> Unit {
           "meta_prompt_path": string_prop(
             "元提示词文档路径(可选)：单个文档或目录，目录内按 yyyyMMdd.HH.mm.ss.md 取最新一份",
           ),
+          "cold_start": bool_prop(
+            "冷启动模式(可选默认false)：设为true时，若命名空间无已完成根任务，则发布首个任务",
+          ),
+          "project_dir": string_prop(
+            "项目目录(可选)：冷启动时用于指定项目路径",
+          ),
         },
         [],
       ),
@@ -711,6 +922,8 @@ pub async fn run_server() -> Unit {
           default="watchdog",
         )
         let meta_prompt_path = get_str(args, "meta_prompt_path")
+        let cold_start = get_bool(args, "cold_start", default=false)
+        let project_dir = get_str(args, "project_dir")
         match
           @ops.watchdog_tick(
             engine,
@@ -720,6 +933,8 @@ pub async fn run_server() -> Unit {
             next_description~,
             next_created_by~,
             meta_prompt_path~,
+            cold_start~,
+            project_dir~,
           ) {
           Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
           Err(e) => Err(@mcp_types.ToolError(e))

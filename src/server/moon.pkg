@@ -22,5 +22,10 @@ supported_targets = "js+native"
 warnings = "-6-35"
 
 options(
-  targets: { "stdio_native.mbt": [ "native" ], "stdio_js.mbt": [ "js" ] },
+  targets: {
+    "stdio_native.mbt": [ "native" ],
+    "stdio_js.mbt": [ "js" ],
+    "run_check_native.mbt": [ "native" ],
+    "run_check_js.mbt": [ "js" ],
+  },
 )
