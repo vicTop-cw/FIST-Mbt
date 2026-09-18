@@ -166,7 +166,7 @@ Prompts: `fist:check_in`, `fist:verify`
 
 | 项 | 值 |
 |---|---|
-| FIST 根 | `E:/IDEProjects/Ai/Fist` |
-| FIST SKILL 全文 | `E:/IDEProjects/Ai/Fist/FIST-SKILL.md` |
-| FIST-Mbt 根 | `E:/IDEProjects/AI/FIST-Mbt` |
+| FIST 根 | `<FIST-项目根目录>` |
+| FIST SKILL 全文 | `<FIST-项目根目录>/FIST-SKILL.md` |
+| FIST-Mbt 根 | `<FIST-Mbt-项目根目录>` |
 *（内容由AI生成，仅供参考）*

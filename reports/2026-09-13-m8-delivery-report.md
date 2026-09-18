@@ -87,6 +87,6 @@
 
 ## 8. 来源
 
-- FIST Python：`E:/IDEProjects/AI/Fist/` — 任务体系原始设计
-- fistcode：`E:/IDEProjects/AI/DownLoads/fistcode/` — Rust 版实现参考
+- FIST Python：`<FIST-项目根目录>` — 任务体系原始设计
+- fistcode：`<fistcode-项目根目录>` — Rust 版实现参考
 - FIST-Mbt enhancement plan：`reports/2026-09-13-fist-mbt-enhancement-plan.md` — M6/M7 阶段设计与验证策略

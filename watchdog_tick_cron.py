@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FIST-Mbt watchdog_tick cron driver for Pentad project."""
+"""FIST-Mbt watchdog_tick cron driver — round-robin over Pentad/Tnr/Cypy."""
 import json
 import subprocess
 import sys
@@ -9,9 +9,14 @@ from datetime import datetime, timezone, timedelta
 
 MCP_SERVER = r"E:\IDEProjects\AI\FIST-Mbt\_build\js\debug\build\cmd\main\main.js"
 WORKDIR = r"E:\IDEProjects\AI\FIST-Mbt"
-GEN_PROMPTS = r"E:\IDEProjects\AI\Pentad\Gen_Prompts"
-NAMESPACE = "cron-auto"
 TIMEOUT_SEC = 2400
+
+# Round-robin targets: one project per invocation, chosen by least-recently-advanced.
+PROJECTS = [
+    {"name": "pentad", "gen_prompts": r"E:\IDEProjects\AI\Pentad\Gen_Prompts", "namespace": "cron-auto", "state_file": r"E:\IDEProjects\AI\FIST-Mbt\.cron_state_pentad.json"},
+    {"name": "tnr",    "gen_prompts": r"E:\IDEProjects\AI\Tnr\Gen_Prompts",    "namespace": "cron-tnr",  "state_file": r"E:\IDEProjects\AI\FIST-Mbt\.cron_state_tnr.json"},
+    {"name": "cypy",   "gen_prompts": r"E:\IDEProjects\AI\Cypy\Gen_Prompts",   "namespace": "cron-cypy", "state_file": r"E:\IDEProjects\AI\FIST-Mbt\.cron_state_cypy.json"},
+]
 
 def iso_now():
     """Current local time ISO8601."""
@@ -78,12 +83,12 @@ class MCPClient:
                 pass
 
 
-def newest_prompt():
-    """Find the newest yyyyMMdd.HH.mm.ss.md file in Gen_Prompts."""
-    if not os.path.isdir(GEN_PROMPTS):
-        return None, None
+def newest_prompt(gen_prompts):
+    """Find the newest yyyyMMdd.HH.mm.ss.md file in the given Gen_Prompts dir."""
+    if not os.path.isdir(gen_prompts):
+        return None
     best = None
-    for fname in os.listdir(GEN_PROMPTS):
+    for fname in os.listdir(gen_prompts):
         if not fname.endswith(".md"):
             continue
         if fname.startswith("_"):
@@ -93,11 +98,104 @@ def newest_prompt():
             dt = datetime.strptime(base, "%Y%m%d.%H.%M.%S")
         except ValueError:
             continue
-        full = os.path.join(GEN_PROMPTS, fname)
+        full = os.path.join(gen_prompts, fname)
         mtime = os.path.getmtime(full)
         if best is None or dt > best[0]:
             best = (dt, full, mtime)
     return best
+
+
+def load_state(path):
+    """Consumed-state file: {"last_consumed": "yyyyMMdd.HH.mm.ss"}."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_state(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+
+
+def tick_project(client, proj):
+    """One watchdog_tick for a single project. Returns exit code (0 ok, 1 error)."""
+    gen_prompts = proj["gen_prompts"]
+    namespace = proj["namespace"]
+    state_file = proj["state_file"]
+    name = proj["name"]
+
+    # Newest prompt in this project's Gen_Prompts
+    newest = newest_prompt(gen_prompts)
+    if newest is None:
+        print(f"[{name}] no prompts found, skip")
+        return 0
+    newest_dt, newest_path, newest_mtime = newest
+    newest_key = newest_dt.strftime("%Y%m%d.%H.%M.%S")
+    print(f"[{name}] newest prompt: {os.path.basename(newest_path)} ({newest_key})")
+
+    # Unconsumed = newer than state file's last_consumed
+    state = load_state(state_file)
+    last_consumed = state.get("last_consumed", "")
+    should_advance = newest_key > last_consumed
+    print(f"[{name}] last_consumed={last_consumed or '(none)'} should_advance={should_advance}")
+
+    # next_description = first heading line of the prompt
+    next_desc = None
+    if should_advance:
+        try:
+            with open(newest_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except OSError:
+            lines = []
+        for line in lines[:5]:
+            line = line.strip()
+            if line.startswith("#"):
+                next_desc = line.lstrip("#").strip()
+                break
+        if not next_desc:
+            next_desc = lines[0].strip() if lines else "next round"
+
+    args = {
+        "timeout_sec": TIMEOUT_SEC,
+        "namespace": namespace,
+        "next_created_by": "watchdog",
+        "now": iso_now(),
+    }
+    if should_advance:
+        args["next_description"] = next_desc
+        args["meta_prompt_path"] = gen_prompts
+
+    resp = client.call("tools/call", {"name": "watchdog_tick", "arguments": args}, timeout=60)
+    if not resp:
+        print(f"[{name}] ERROR: watchdog_tick timed out")
+        return 1
+    err = resp.get("error")
+    if err:
+        print(f"[{name}] ERROR: {json.dumps(err, ensure_ascii=False)}")
+        return 1
+
+    result = resp.get("result", {})
+    content = result.get("content", [])
+    txt = content[0].get("text", "") if content and isinstance(content[0], dict) else json.dumps(result, ensure_ascii=False)
+    try:
+        data = json.loads(txt)
+    except json.JSONDecodeError:
+        data = {"raw": txt}
+
+    action = data.get("action", "unknown")
+    healed = data.get("healed", 0)
+    new_task_id = data.get("new_task_id")
+    active = data.get("active", 0)
+    print(f"[{name}] action={action} active={active} healed={healed} advanced={new_task_id or '-'}")
+
+    # Mark consumed ONLY when a task actually consumed it (advanced with new task id)
+    if action == "advanced" and new_task_id:
+        state["last_consumed"] = newest_key
+        save_state(state_file, state)
+        print(f"[{name}] state updated: last_consumed={newest_key}")
+    return 0
 
 
 def main():
@@ -105,144 +203,29 @@ def main():
 
     client = MCPClient()
     try:
-        # Step 1: tools/list to confirm watchdog_tick exists
+        # tools/list sanity check
         resp = client.call("tools/list", {})
         if resp and "result" in resp:
-            tools = resp["result"].get("tools", [])
-            tool_names = [t["name"] for t in tools]
+            tool_names = [t["name"] for t in resp["result"].get("tools", [])]
             if "watchdog_tick" not in tool_names:
                 print(f"ERROR: watchdog_tick not found in tools list: {tool_names}")
                 return 1
-            print(f"[ok] watchdog_tick found. Tools: {tool_names}")
+            print(f"[ok] watchdog_tick found ({len(tool_names)} tools)")
         else:
-            err = resp.get("error", {}) if resp else {}
-            print(f"WARN: tools/list failed: {err}")
+            print("WARN: tools/list failed, proceeding anyway")
 
-        # Step 2: list tasks in cron-auto namespace
-        resp = client.call("tools/call", {
-            "name": "list",
-            "arguments": {"namespace": NAMESPACE}
-        })
-        active_count = 0
-        last_completed_prompt_time = None
-        if resp and "result" in resp:
-            result_text = resp["result"]
-            # Extract text content
-            content = result_text.get("content", []) if isinstance(result_text, dict) else []
-            if content:
-                txt = content[0].get("text", "") if isinstance(content[0], dict) else str(content[0])
-            else:
-                txt = json.dumps(result_text, ensure_ascii=False)
-            print(f"[cron-auto tasks] {txt[:2000]}")
-            # Count active tasks heuristically
-            active_count = txt.count('"status": "running"') + txt.count('"status": "claimed"') + txt.count('"status": "in_progress"')
-            active_count += txt.count('"status":"running"') + txt.count('"status":"claimed"') + txt.count('"status":"in_progress"')
-        else:
-            err = resp.get("error", {}) if resp else {}
-            print(f"WARN: list failed: {err}")
+        # Round-robin: tick EVERY project that has an unconsumed prompt or needs healing.
+        # watchdog_tick is idempotent: no unconsumed prompt + healthy tasks => waiting (no-op).
+        failures = 0
+        for proj in PROJECTS:
+            try:
+                if tick_project(client, proj) != 0:
+                    failures += 1
+            except Exception as e:
+                print(f"[{proj['name']}] EXCEPTION: {e}")
+                failures += 1
 
-        # Step 3: check newest prompt
-        newest_dt, newest_path, newest_mtime = newest_prompt()
-        if newest_dt:
-            print(f"[newest prompt] {os.path.basename(newest_path)} ({newest_dt.strftime('%Y-%m-%d %H:%M:%S')})")
-        else:
-            print("[newest prompt] none found")
-
-        # Decide: advance only if newest prompt is after ~16:07 (assume last advanced round
-        # relates to the previous prompt generation). Use heuristic: if newest prompt is
-        # the latest file and it was generated after 16:00 today, treat it as unconsumed.
-        # We check task output above — if a task description references "MIR" and "v0.19",
-        # the latest prompt is already consumed. Safer: only advance when newest prompt
-        # has a mtime newer than the newest completed task. Since we can't easily parse that,
-        # adopt simple rule: advance only if newest_dt > 2026-09-16 16:00 (unconsumed).
-        # The generator runs every ~1h; the last one at 16:07 is unconsumed (no task since).
-        cutoff = datetime(2026, 9, 16, 16, 0, 0)
-        should_advance = newest_dt is not None and newest_dt > cutoff
-
-        # Extract next_description from the prompt file (first heading line)
-        next_desc = None
-        if should_advance and newest_path:
-            with open(newest_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-            for line in lines[:5]:
-                line = line.strip()
-                if line.startswith("#"):
-                    next_desc = line.lstrip("#").strip()
-                    break
-            if not next_desc:
-                next_desc = lines[0].strip() if lines else "next round"
-
-        print(f"[decide] should_advance={should_advance}")
-
-        # Step 4: call watchdog_tick
-        args = {
-            "timeout_sec": TIMEOUT_SEC,
-            "namespace": NAMESPACE,
-            "next_created_by": "watchdog",
-            "now": iso_now(),
-        }
-        if should_advance:
-            args["next_description"] = next_desc
-            args["meta_prompt_path"] = GEN_PROMPTS
-
-        resp = client.call("tools/call", {
-            "name": "watchdog_tick",
-            "arguments": args
-        }, timeout=60)
-
-        if not resp:
-            print("ERROR: watchdog_tick timed out or no response")
-            return 1
-
-        err = resp.get("error")
-        if err:
-            print(f"ERROR: watchdog_tick returned error: {json.dumps(err, ensure_ascii=False)}")
-            return 1
-
-        result = resp.get("result", {})
-        content = result.get("content", [])
-        if content:
-            txt = content[0].get("text", "") if isinstance(content[0], dict) else str(content[0])
-        else:
-            txt = json.dumps(result, ensure_ascii=False)
-
-        try:
-            data = json.loads(txt)
-        except json.JSONDecodeError:
-            data = {"raw": txt}
-
-        print(f"[watchdog result] {json.dumps(data, ensure_ascii=False)}")
-
-        # Step 5: branch by action
-        action = data.get("action", "unknown")
-        healed = data.get("healed", 0)
-        healed_tasks = data.get("healed_tasks", [])
-        new_task_id = data.get("new_task_id")
-        previous_task_id = data.get("previous_task_id")
-        active = data.get("active", 0)
-        blocked = data.get("blocked", [])
-
-        # Format final report
-        note_parts = []
-        if should_advance and newest_dt:
-            note_parts.append(f"续轮依据: {os.path.basename(newest_path)} ({newest_dt.strftime('%H:%M:%S')})")
-        elif newest_dt:
-            note_parts.append(f"未续轮（提示词 {os.path.basename(newest_path)} 已消费或时间早于上轮）")
-        else:
-            note_parts.append("未找到新提示词")
-
-        restarted = "restarted" if action == "restarted" else "-"
-        advanced = new_task_id if action == "advanced" else "-"
-
-        print()
-        print(f"[watchdog-tick] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"action: {action}")
-        print(f"active: {active}   healed: {healed}   blocked: {len(blocked) if isinstance(blocked, list) else blocked}")
-        print(f"restarted_tasks: {restarted if action != 'restarted' else ', '.join(str(t) for t in healed_tasks) if healed_tasks else '-'}")
-        print(f"advanced: {advanced}")
-        print(f"note: {'; '.join(note_parts)}")
-
-        return 0
+        return 1 if failures else 0
     finally:
         client.close()
 

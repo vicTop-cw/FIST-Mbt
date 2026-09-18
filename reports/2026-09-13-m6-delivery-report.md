@@ -108,6 +108,6 @@
 
 ## 9. 来源
 
-- FIST Python：`E:/IDEProjects/AI/Fist/` — 调度路由 + 执行器层 + 成本统计参考
-- fistcode：`E:/IDEProjects/AI/DownLoads/fistcode/` — 执行器抽象层 + CLI 派发参考
-- FIST-Mbt：`E:/IDEProjects/AI/FIST-Mbt/` — 本次变更目标项目
+- FIST Python：`<FIST-项目根目录>` — 调度路由 + 执行器层 + 成本统计参考
+- fistcode：`<fistcode-项目根目录>` — 执行器抽象层 + CLI 派发参考
+- FIST-Mbt：`<FIST-Mbt-项目根目录>` — 本次变更目标项目

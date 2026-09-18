@@ -176,7 +176,7 @@ pub fn watchdog_tick(
 
 ```
 publish({
-  project_dir: "E:/IDEProjects/AI/Pentad",
+  project_dir: "<目标项目根目录>",
   description: "<最新提示词全文>",
   namespace: "cron-auto",
   created_by: "human_steward",
@@ -219,7 +219,7 @@ test "cold_start_creates_first_root_task" {
     "now": now,
     "namespace": "cron-auto",
     "next_description": "测试冷启动任务",
-    "meta_prompt_path": "E:/IDEProjects/AI/Pentad/Gen_Prompts",
+    "meta_prompt_path": "<提示词目录>",
     "cold_start": true,
   }
   let j = watchdog_tick(e, args)
@@ -235,7 +235,7 @@ test "cold_start_creates_first_root_task" {
 # 1. 重新启用调度器
 # 2. 等待下一轮唤醒
 # 3. 检查 cron-auto.db
-python3 -c "import sqlite3; c=sqlite3.connect('E:/IDEProjects/AI/FIST-Mbt/cron-auto.db'); print(c.execute('SELECT id, status, ns FROM tasks').fetchall())"
+python3 -c "import sqlite3; c=sqlite3.connect('<fist-mbt-工作目录>/cron-auto.db'); print(c.execute('SELECT id, status, ns FROM tasks').fetchall())"
 # 期望：[('T0', '待领取', 'cron-auto')]
 ```
 

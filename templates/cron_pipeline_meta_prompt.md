@@ -28,10 +28,10 @@ AIGC:
 
 | # | 参数 / 占位 | 模板中的示例值 | 替换说明 |
 |---|---|---|---|
-| 1 | 目标项目根目录 | `E:\IDEProjects\AI\Pentad` | 改为实际要被推进的项目根目录（正文第一、二、四、五节多处出现） |
-| 2 | MCP server 入口 | `node E:\IDEProjects\AI\FIST-Mbt\_build\js\debug\build\cmd\main\main.js` | 指向本仓库 `cmd/main` 的构建产物；原生后端可改为 `moon run cmd/main` |
-| 3 | 启动工作目录 | `E:\IDEProjects\AI\FIST-Mbt` | 决定 `fist-mbt.db` 的落点，需在目标仓库 `.gitignore` 覆盖范围内 |
-| 4 | 提示词目录（`meta_prompt_path`） | `E:/IDEProjects/AI/Pentad/Gen_Prompts` | 改为目标项目存放提示词文档的目录（单文件或目录均可） |
+| 1 | 目标项目根目录 | `<目标项目根目录>` | 改为实际要被推进的项目根目录（正文第一、二、四、五节多处出现） |
+| 2 | MCP server 入口 | `node <fist-mbt-build-path>/cmd/main/main.js` | 指向本仓库 `cmd/main` 的构建产物；原生后端可改为 `moon run cmd/main` |
+| 3 | 启动工作目录 | `<fist-mbt-工作目录>` | 决定 `fist-mbt.db` 的落点，需在目标仓库 `.gitignore` 覆盖范围内 |
+| 4 | 提示词目录（`meta_prompt_path`） | `<提示词目录>` | 改为目标项目存放提示词文档的目录（单文件或目录均可） |
 | 5 | 提示词文件命名规则 | `yyyyMMdd.HH.mm.ss.md`，忽略 `_` 前缀辅助文件 | 必须与上游生成器（即分支④）的产物一致，否则「目录取最新」会失效 |
 | 6 | `namespace` | `cron-auto` | 每个自动流水线使用独立命名空间；**禁止使用 `default`** |
 | 7 | `timeout_sec` | `2400` | 心跳超时秒数，须小于唤醒周期（模板按 45 分钟节奏留 5 分钟余量） |
@@ -86,11 +86,11 @@ AIGC:
 
 | 项目 | 值 |
 |---|---|
-| MCP server 入口 | `node E:\IDEProjects\AI\FIST-Mbt\_build\js\debug\build\cmd\main\main.js` |
-| 启动工作目录 | `E:\IDEProjects\AI\FIST-Mbt`（使 `fist-mbt.db` 落在仓库内，已被 .gitignore 忽略） |
+| MCP server 入口 | `node <fist-mbt-build-path>/cmd/main/main.js` |
+| 启动工作目录 | `<fist-mbt-工作目录>`（使 `fist-mbt.db` 落在仓库内，已被 .gitignore 忽略） |
 | 传输方式 | stdio JSON-RPC |
-| 目标项目 | `E:\IDEProjects\AI\Pentad` |
-| 提示词目录 | `E:\IDEProjects\AI\Pentad\Gen_Prompts`（正斜杠写法：`E:/IDEProjects/AI/Pentad/Gen_Prompts`） |
+| 目标项目 | `<目标项目根目录>` |
+| 提示词目录 | `<提示词目录>`（正斜杠写法：`<提示词目录>`） |
 | 命名空间 | `cron-auto` |
 | 心跳超时 `timeout_sec` | `2400`（40 分钟，与 45 分钟唤醒节奏留 5 分钟余量） |
 
@@ -181,7 +181,7 @@ watchdog_tick({ "now": "<当前时间 ISO8601>", "timeout_sec": 2400, "namespace
 
 #### 分支③ 无活跃任务且最新提示词尚未被消费 → 接一个新根任务
 
-**先读提示词**：读目录 `E:\IDEProjects\AI\Pentad\Gen_Prompts`，只认文件名形如 `yyyyMMdd.HH.mm.ss.md` 的文件（长度 20 字符、4 个句点、各段纯数字、`.md` 结尾），**忽略以 `_` 开头的辅助文件**与其它命名；取字典序最大者为**最新提示词**（等宽命名下字典序即时间序），记录其**文件名时间戳 P** 与**正文全文**。无合法文件、读取失败或正文为空 → 转分支④。
+**先读提示词**：读目录 `<提示词目录>`，只认文件名形如 `yyyyMMdd.HH.mm.ss.md` 的文件（长度 20 字符、4 个句点、各段纯数字、`.md` 结尾），**忽略以 `_` 开头的辅助文件**与其它命名；取字典序最大者为**最新提示词**（等宽命名下字典序即时间序），记录其**文件名时间戳 P** 与**正文全文**。无合法文件、读取失败或正文为空 → 转分支④。
 
 **再判「是否已被消费」**：
 
@@ -201,7 +201,7 @@ watchdog_tick({
   "namespace": "cron-auto",
   "next_created_by": "watchdog",
   "next_description": "<最新提示词正文全文>",
-  "meta_prompt_path": "E:/IDEProjects/AI/Pentad/Gen_Prompts"
+  "meta_prompt_path": "<提示词目录>"
 })
 ```
 
@@ -214,7 +214,7 @@ watchdog_tick({
 
 ```
 publish({
-  "project_dir": "E:/IDEProjects/AI/Pentad",
+  "project_dir": "<目标项目根目录>",
   "description": "<最新提示词正文全文>",
   "namespace": "cron-auto",
   "created_by": "human_steward",
@@ -226,7 +226,7 @@ publish({
 
 #### 分支④ 无活跃任务且最新提示词已消费完毕 → 生成下一份提示词
 
-1. **只读分析项目当前状态**（`E:\IDEProjects\AI\Pentad`）：
+1. **只读分析项目当前状态**（`<目标项目根目录>`）：
    - 扫描项目根目录，识别主要 crate / 模块（如 `p5c`、`p5lib`、`p5rt`、`p5ls`、`p5pkg`、`p5doc`、`p5bench`）、配置文件（`Cargo.toml`、`fist_config.json` 等）与文档目录（`README.md`、`SYNTAX/`、`ARCH-PLAN/`、`docs/` 等）；
    - 读 `README.md` 与 `docs/` 了解项目目标与当前阶段；
    - 执行 `git log --oneline -20` 了解最近开发方向、`git status` 查看未提交改动与待办（**只读**）；
@@ -255,7 +255,7 @@ publish({
 - （可验证的客观判据，如 cargo check 零告警、cargo test 全部通过）
 ```
 
-4. **落盘**：写入 `E:\IDEProjects\AI\Pentad\Gen_Prompts\yyyyMMdd.HH.mm.ss.md`，文件名用**当前本地时间 24 小时制**（如 `20260916.20.15.30.md`）；若同名文件已存在，把秒数 +1 后重试一次。
+4. **落盘**：写入 `<提示词目录>/yyyyMMdd.HH.mm.ss.md`，文件名用**当前本地时间 24 小时制**（如 `20260916.20.15.30.md`）；若同名文件已存在，把秒数 +1 后重试一次。
    - **只写这一个文件**：不修改项目源码、文档或其它任何文件，不移动 / 删除 `Gen_Prompts` 内已有提示词（含 `_` 前缀文件）；
    - 分析或写盘失败 → **不写脏数据**（不留半截文件、不用占位内容顶替、不覆盖已有文件），记原始报错并退出。
 
@@ -271,7 +271,7 @@ publish({
 - **不臆造工具与参数**：只用第三节列出的工具及其真实参数名；不调用未在此列出的工具。
 - **幂等**：一次唤醒内 `watchdog_tick` 最多调用一次；失败重试总计不超过 1 次。
 - **作用域隔离**：一切自动动作只作用于 `cron-auto`；**绝不触碰 `default` 或其它人工命名空间**。
-- **不写项目代码**：不编辑 `E:\IDEProjects\AI\Pentad` 下的源码。
+- **不写项目代码**：不编辑 `<目标项目根目录>` 下的源码。
 - **文件边界**：除分支④要求写入的那**一个新提示词文件**外，不修改 / 移动 / 删除 `Gen_Prompts` 目录内任何文件。
 - **无破坏性操作**：不执行 `git push`、不删分支、不清库、不停服务。
 - **失败要暴露**：任何异常原样上报，禁止静默吞掉或以「已完成」糊弄。
