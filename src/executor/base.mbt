@@ -15,7 +15,7 @@ pub struct ExecContext {
 }
 
 ///|
-fn ExecContext::new(
+pub fn ExecContext::new(
   project_dir : String,
   task_id : String,
   description : String,
@@ -39,7 +39,7 @@ pub struct ExecResult {
 }
 
 ///|
-fn ExecResult::ok(deliverable : String, executor : String) -> ExecResult {
+pub fn ExecResult::ok(deliverable : String, executor : String) -> ExecResult {
   {
     ok: true,
     deliverable,
@@ -54,7 +54,7 @@ fn ExecResult::ok(deliverable : String, executor : String) -> ExecResult {
 }
 
 ///|
-fn ExecResult::fail(error_msg : String, executor : String) -> ExecResult {
+pub fn ExecResult::fail(error_msg : String, executor : String) -> ExecResult {
   {
     ok: false,
     deliverable: "",
@@ -69,7 +69,7 @@ fn ExecResult::fail(error_msg : String, executor : String) -> ExecResult {
 }
 
 ///|
-fn ExecResult::with_tokens(
+pub fn ExecResult::with_tokens(
   self : ExecResult,
   tokens_in : Int,
   tokens_out : Int,
@@ -89,7 +89,7 @@ fn ExecResult::with_tokens(
 }
 
 ///|
-fn ExecResult::to_json(self : ExecResult) -> Json {
+pub fn ExecResult::to_json(self : ExecResult) -> Json {
   Json::object({
     "ok": Json::boolean(self.ok),
     "deliverable": Json::string(self.deliverable),

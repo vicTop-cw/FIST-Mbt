@@ -13,13 +13,13 @@ pub struct McpDelegateExecutor {
 
 ///|
 /// 默认构造：名为 "McpDelegateExecutor"
-fn McpDelegateExecutor::new() -> McpDelegateExecutor {
+pub fn McpDelegateExecutor::new() -> McpDelegateExecutor {
   { name: "McpDelegateExecutor", }
 }
 
 ///|
 /// 命名构造（供自定义场景）
-fn McpDelegateExecutor::with_name(n : String) -> McpDelegateExecutor {
+pub fn McpDelegateExecutor::with_name(n : String) -> McpDelegateExecutor {
   { name: n, }
 }
 
@@ -27,7 +27,7 @@ fn McpDelegateExecutor::with_name(n : String) -> McpDelegateExecutor {
 /// 生成 task_context.json（对齐 mavis_executor 格式，供客户端读取后执行）
 fn McpDelegateExecutor::make_context(
   self : McpDelegateExecutor,
-  task : @core.Task,
+  _task : @core.Task,
   ctx : ExecContext,
 ) -> Json {
   Json::object({

@@ -493,6 +493,9 @@ impl Store for SqliteStore with fn clear(self) {
     Some(db) => {
       ignore(db.exec("DELETE FROM tasks"))
       ignore(db.exec("DELETE FROM archive"))
+      // 与 MemoryStore 语义对齐：清空时同时清空语料 / 复验 / 升级账本
+      ignore(self.ensure_specs_table())
+      ignore(db.exec("DELETE FROM specs"))
     }
   }
 }

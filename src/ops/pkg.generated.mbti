@@ -38,7 +38,7 @@ pub fn list_holdings(@engine.FistEngine, String) -> Array[@core.Task]
 
 pub fn read_meta_prompt(String) -> String?
 
-pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String) -> Result[Json, String]
+pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String, cold_start? : Bool, project_dir? : String, omega_strong_verify? : Bool, omega_split_n? : Int, omega_spec? : Json?) -> Result[Json, String]
 
 // Errors
 

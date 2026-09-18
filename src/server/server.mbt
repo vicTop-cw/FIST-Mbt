@@ -885,7 +885,7 @@ pub async fn run_server() -> Unit {
     )
     .tool(
       "watchdog_tick",
-      "定时任务看门狗编排单入口（推荐仅用于定时任务/无人值守场景，不用于人工指挥流程）：扫描活跃任务，心跳超时则回滚重派；检测到上一轮根任务已完成且提供了 next_description（或可由 meta_prompt_path 读取元提示词）时自动发布下一轮。参数：now、timeout_sec(可选默认600)、namespace(可选，未传则不自动续轮)、next_description(可选)、next_created_by(可选默认watchdog)、meta_prompt_path(可选)、cold_start(可选默认false，冷启动时设为true以发布首个任务)、project_dir(可选，冷启动时用于指定项目目录)。",
+      "定时任务看门狗编排单入口（推荐仅用于定时任务/无人值守场景，不用于人工指挥流程）：扫描活跃任务，心跳超时则回滚重派；检测到上一轮根任务已完成且提供了 next_description（或可由 meta_prompt_path 读取元提示词）时自动发布下一轮。参数：now、timeout_sec(可选默认600)、namespace(可选，未传则不自动续轮)、next_description(可选)、next_created_by(可选默认watchdog)、meta_prompt_path(可选)、cold_start(可选默认false，冷启动时设为true以发布首个任务)、project_dir(可选，冷启动时用于指定项目目录)、omega_strong_verify(可选默认false，开启后自动拆分并启用Omega强验证)、omega_split_n(可选默认3)、omega_spec(可选JSON)。",
       schema(
         {
           "now": string_prop("当前时间戳(默认内置)"),
@@ -908,6 +908,15 @@ pub async fn run_server() -> Unit {
           "project_dir": string_prop(
             "项目目录(可选)：冷启动时用于指定项目路径",
           ),
+          "omega_strong_verify": bool_prop(
+            "Omega 强验证开关(可选默认false)：开启后新根任务自动拆分并打 [omega:required] 标记",
+          ),
+          "omega_split_n": int_prop(
+            "Omega 强验证拆分数(可选默认3)：每层子任务数",
+          ),
+          "omega_spec": string_prop(
+            "可选 Omega spec JSON(可选)：laws 作切割依据，fingerprint 作验收基准",
+          ),
         },
         [],
       ),
@@ -924,6 +933,21 @@ pub async fn run_server() -> Unit {
         let meta_prompt_path = get_str(args, "meta_prompt_path")
         let cold_start = get_bool(args, "cold_start", default=false)
         let project_dir = get_str(args, "project_dir")
+        let omega_strong_verify = get_bool(
+          args,
+          "omega_strong_verify",
+          default=false,
+        )
+        let omega_split_n = get_int(args, "omega_split_n", default=3)
+        let omega_spec_str = get_str(args, "omega_spec")
+        let omega_spec = if omega_spec_str == "" {
+          None
+        } else {
+          match @omega.parse_spec(omega_spec_str) {
+            Ok(j) => Some(j)
+            Err(_) => None
+          }
+        }
         match
           @ops.watchdog_tick(
             engine,
@@ -935,6 +959,9 @@ pub async fn run_server() -> Unit {
             meta_prompt_path~,
             cold_start~,
             project_dir~,
+            omega_strong_verify~,
+            omega_split_n~,
+            omega_spec~,
           ) {
           Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
           Err(e) => Err(@mcp_types.ToolError(e))

@@ -24,12 +24,13 @@ pub trait Store {
 /// 内存实现：进程内 Map，简单可靠，配合单机 MCP server 足够。
 pub struct MemoryStore {
   tasks : Map[String, @core.Task]
+  specs : Map[String, SpecRecord]
   mut default_ns : String
 }
 
 ///|
 pub fn MemoryStore::new() -> MemoryStore {
-  { tasks: Map([]), default_ns: "default", }
+  { tasks: Map([]), specs: Map([]), default_ns: "default", }
 }
 
 ///|
@@ -76,6 +77,53 @@ pub fn MemoryStore::list_tasks_in(
   out
 }
 
+// —— 语料账本（Omega 强验证）：内存后端同样真实读写，保证测试可验证 ——
+
+///|
+/// 写入 / 覆盖一条语料记录（主键 id）。
+pub fn MemoryStore::upsert_spec(
+  self : MemoryStore,
+  rec : SpecRecord,
+) -> Result[Unit, String] {
+  self.specs.set(rec.id, rec)
+  Ok(())
+}
+
+///|
+/// 按 id 读取单条语料记录。
+pub fn MemoryStore::get_spec(self : MemoryStore, id : String) -> SpecRecord? {
+  self.specs.get(id)
+}
+
+///|
+/// 列出某任务的全部语料 / 复验记录。
+pub fn MemoryStore::list_specs_by_task(
+  self : MemoryStore,
+  task_id : String,
+) -> Array[SpecRecord] {
+  let out : Array[SpecRecord] = []
+  self.specs.each(fn(_, r) { if r.task_id == task_id { out.push(r) } })
+  out
+}
+
+///|
+/// 更新语料状态（可同时更新内容与时间戳）。
+pub fn MemoryStore::update_spec_status(
+  self : MemoryStore,
+  id : String,
+  status : String,
+  content : String,
+  updated_at : String,
+) -> Result[Unit, String] {
+  match self.specs.get(id) {
+    None => Err("spec not found: \{id}")
+    Some(r) => {
+      self.specs.set(id, { ..r, status, content, updated_at, })
+      Ok(())
+    }
+  }
+}
+
 ///|
 impl Store for MemoryStore with fn delete_task(self, id) {
   if !self.tasks.contains(id) {
@@ -89,6 +137,7 @@ impl Store for MemoryStore with fn delete_task(self, id) {
 ///|
 impl Store for MemoryStore with fn clear(self) {
   self.tasks.clear()
+  self.specs.clear()
 }
 
 ///|
@@ -157,11 +206,11 @@ impl Store for StoreBackend with fn list_tasks(self) {
 /// 列出指定命名空间的任务（跨后端）
 pub fn StoreBackend::list_tasks_in(
   self : StoreBackend,
-  namespace : String,
+  ns : String,
 ) -> Array[@core.Task] {
   match self {
-    Mem(m) => m.list_tasks_in(namespace)
-    Sql(s) => s.list_tasks_in(namespace)
+    Mem(m) => m.list_tasks_in(ns)
+    Sql(s) => s.list_tasks_in(ns)
   }
 }
 
@@ -169,10 +218,10 @@ pub fn StoreBackend::list_tasks_in(
 /// 设置默认命名空间
 pub fn StoreBackend::set_namespace(
   self : StoreBackend,
-  namespace : String,
+  ns : String,
 ) -> Unit {
   match self {
-    Mem(m) => m.default_ns = namespace
+    Mem(m) => m.default_ns = ns
     Sql(_) => ()
   }
 }
@@ -310,5 +359,55 @@ pub fn StoreBackend::list_all_heartbeats(
   match self {
     Mem(_) => []
     Sql(s) => s.list_all_heartbeats()
+  }
+}
+
+// —— 语料账本（Omega 强验证）：双后端统一入口 ——
+
+///|
+/// 写入 / 覆盖一条语料记录（内存与 SQLite 后端均真实落库）。
+pub fn StoreBackend::upsert_spec(
+  self : StoreBackend,
+  rec : SpecRecord,
+) -> Result[Unit, String] {
+  match self {
+    Mem(m) => m.upsert_spec(rec)
+    Sql(s) => s.upsert_spec(rec)
+  }
+}
+
+///|
+/// 按 id 读取单条语料记录。
+pub fn StoreBackend::get_spec(self : StoreBackend, id : String) -> SpecRecord? {
+  match self {
+    Mem(m) => m.get_spec(id)
+    Sql(s) => s.get_spec(id)
+  }
+}
+
+///|
+/// 列出某任务的全部语料 / 复验记录。
+pub fn StoreBackend::list_specs_by_task(
+  self : StoreBackend,
+  task_id : String,
+) -> Array[SpecRecord] {
+  match self {
+    Mem(m) => m.list_specs_by_task(task_id)
+    Sql(s) => s.list_specs_by_task(task_id)
+  }
+}
+
+///|
+/// 更新语料状态。
+pub fn StoreBackend::update_spec_status(
+  self : StoreBackend,
+  id : String,
+  status : String,
+  content : String,
+  updated_at : String,
+) -> Result[Unit, String] {
+  match self {
+    Mem(m) => m.update_spec_status(id, status, content, updated_at)
+    Sql(s) => s.update_spec_status(id, status, content, updated_at)
   }
 }

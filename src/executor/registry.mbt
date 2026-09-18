@@ -11,7 +11,7 @@ pub struct ExecutorRegistry {
 
 ///|
 /// 全局注册表（使用 Once 懒初始化）
-fn ExecutorRegistry::new() -> ExecutorRegistry {
+pub fn ExecutorRegistry::new() -> ExecutorRegistry {
   let m : Map[String, String] = Map([])
   // 默认注册 McpDelegateExecutor
   m.set("McpDelegateExecutor", "McpDelegateExecutor")

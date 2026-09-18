@@ -12,6 +12,10 @@ pub fn child_id(parent_id~ : String, idx~ : Int) -> String
 
 pub fn ensure_can(Role, Action) -> Result[Unit, String]
 
+pub fn ensure_can_create_spec(String) -> Result[Unit, String]
+
+pub fn ensure_can_review_spec(String) -> Result[Unit, String]
+
 pub fn principles() -> Array[Principle]
 
 pub fn principles_json() -> Json
@@ -35,6 +39,8 @@ pub enum Action {
   Reopen
   Observe
   ManageProject
+  CreateSpec
+  ReviewSpec
 } derive(Eq, @debug.Debug)
 pub fn Action::to_string(Self) -> String
 
@@ -57,6 +63,7 @@ pub enum Role {
   Verifier
   Recorder
   Observer
+  SpecAuthor
 } derive(Eq, @debug.Debug)
 pub fn Role::description(Self) -> String
 pub fn Role::from_string(String) -> Self?

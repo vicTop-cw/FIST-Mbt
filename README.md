@@ -13,11 +13,11 @@ AIGC:
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-93%2F93-brightgreen)](./src)
+[![Tests](https://img.shields.io/badge/tests-103%2F103-brightgreen)](./src)
 
 将 **FIST 指挥官任务分配体系**（原 Python 实现）用 **纯 MoonBit 原生重写** 并包装为 **MCP Server** 的参赛作品（2026 MoonBit 九月黑客松）。
 
-指挥官（人类 / 主力模型）通过标准 MCP 协议调用 FIST-Mbt 暴露的 37 个工具，完成任务的 **发布 → 认领 → 拆分 → 执行 → 提交 → 验收 → 归档** 完整闭环，全程贯彻 FIST 七条金条原则。
+指挥官（人类 / 主力模型）通过标准 MCP 协议调用 FIST-Mbt 暴露的 41 个工具，完成任务的 **发布 → 认领 → 拆分 → 执行 → 提交 → 验收 → 归档** 完整闭环，全程贯彻 FIST 七条金条原则。
 
 > 该项目为 FIST（Python）的 MoonBit 原生重写 + MCP 化，非原代码搬运。
 
@@ -31,7 +31,7 @@ AIGC:
 # 依赖解析 & 编译
 moon check
 
-# 运行测试（93 项全部通过）
+# 运行测试（103 项全部通过）
 moon test
 
 # 启动 MCP Server（STDIO 传输）
@@ -57,7 +57,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 ## MCP 暴露面
 
-### Tools（37 个）
+### Tools（41 个）
 
 > **适用范围提示**：`watchdog_tick`（定时任务看门狗编排）**推荐仅用于定时任务 / 无人值守自动化场景**，不用于人工指挥官任务分配流程（自动 heal / 自动续轮在人工流程中有害）。
 >
@@ -92,7 +92,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `task_plan_deep` | AO 式递归拆解，拆出整棵多层子任务树并写库 | task_id, split_n, by, spec, now |
+| `task_plan_deep` | AO 式递归拆解，拆出整棵多层子任务树并写库；可选开启 Omega 强验证（每轮插入语料创建/审核/成果复验） | task_id, split_n, by, spec, now, omega_strong_verify(可选，默认 false) |
 | `conflicts_check` | claim 冲突检测（认领前检查是否已被他人/本人持有） | task_id, assignee |
 | `heartbeat` | 活动信号上报（超时静默将触发 heal 回滚） | task_id, signal, now |
 | `heal` | no_signal 看护：心跳超时静默的任务回滚为已领取待重派（内存版，人工流程） | now, timeout_sec |
@@ -105,6 +105,26 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 |---|---|---|
 | `omega_verify` | 批量验证 spec JSON：schema + fingerprint 校验，accuracy < 100% 一票否决 | specs(JSON 数组) |
 | `omega_verify_fix` | 失败 spec 根因分类 → 定向修复 → 回归验证（3 轮循环） | specs(JSON 数组), max_rounds(可选) |
+
+#### Omega 强验证（可选开关，默认关闭）
+
+`task_plan_deep` 的可选参数 `omega_strong_verify`（默认 `false`）控制本功能：**不传 / 传 false** 时行为与既有完全一致（不产生任何语料记录）；**传 true** 时，递归拆解写出的每个子任务都会带上 `omega:required` 标记，进入「语料驱动」的强验证流程：
+
+1. **语料创建**：语料创建者 `spec_author` 调用 `omega_spec_create` 为本轮任务创建语料，真正持久化写入 `specs` 表（status = pending）。
+2. **语料审核**：验证者 `verifier` 调用 `omega_spec_review` 审核并质疑语料——`approve` 放行，其余值视为打回，由语料创建者重做。
+3. **执行门禁**：语料通过前 `execute` 被 `omega_execute_gate` 拒绝；通过后由执行者执行具体任务。
+4. **成果复验**：执行者完成后，验证者调用 `omega_result_verify` 复验成果与对应语料是否达标，不达标继续打回重做（`verify` 前受 `omega_verify_gate` 约束）。
+5. **上限与升级**：打回累计达到 `max_rounds`（默认 3，最大 10）时写入 escalation 记录、返回 `escalated=true` 并暂停任务转人工裁决，禁止死循环。
+
+| 工具 | 说明 | 关键参数 |
+|---|---|---|
+| `omega_spec_create` | 语料创建者为已开启强验证的任务创建本轮语料并持久化 | task_id, author(默认 spec_author), content, max_rounds(可选), now |
+| `omega_spec_review` | 验证者审核语料：`approve` 放行，其它值打回 | task_id, reviewer(默认 verifier), verdict, reason(可选), max_rounds(可选), now |
+| `omega_result_verify` | 验证者复验执行成果与对应语料是否达标 | task_id, reviewer(默认 verifier), verdict, reason(可选), max_rounds(可选), now |
+| `omega_status` | 查询强验证进度（开关状态 / 语料与复验轮次 / 打回数 / 升级标志 / 账本） | task_id |
+
+> 角色约束：`spec_author` 仅可创建语料、`verifier` 仅可审核与复验，且验证者不得审核自己创建的语料；`human_steward` 可执行全部环节。
+> 持久化：语料 / 复验 / 升级记录均落 `specs` 表，跨进程与跨引擎实例可读；`Store::clear` 会连同语料账本一并清空。
 
 #### 智能调度与成本（M6 增强）
 
@@ -183,11 +203,13 @@ FIST-Mbt/
 │   ├── store/           # 持久化
 │   │   ├── store.mbt           # Store 抽象 + StoreBackend 工厂
 │   │   ├── store_sqlite.mbt    # SQLite 实现（内建 DB）
+│   │   ├── store_specs.mbt     # specs 表：Omega 语料/复验/升级持久化
 │   │   └── multi_store.mbt     # 多库命名空间管理器（内部可变性）
 │   ├── engine/          # FistEngine：业务逻辑闭环 + DAG 扩展
 │   │   ├── engine.mbt          # publish/plan/claim/execute/submit/verify/archive + reject/retry/pause/resume
 │   │   ├── engine_dag_ext.mbt  # critical_path/parallelism/dag_ascii
 │   │   ├── decompose.mbt       # 任务拆解计算
+│   │   ├── omega_strong.mbt          # Omega 强验证：语料创建/审核/成果复验 + 门禁 + 打回升级
 │   │   └── *_test.mbt          # 引擎测试
 │   ├── ops/             # 运维与治理
 │   │   ├── audit.mbt           # 追加式审计日志 + Role 权限矩阵
@@ -199,7 +221,7 @@ FIST-Mbt/
 │   │   └── ops_ts.mbt          # 时间戳工具
 │   ├── omega/           # 可解释性子包：spec/gate/check
 │   └── server/          # MCP server 装配
-│       ├── server.mbt          # 37 个工具注册 + run_server
+│       ├── server.mbt          # 41 个工具注册 + run_server
 │       ├── stdio_js.mbt        # JS 后端 STDIO 传输
 │       └── stdio_native.mbt    # 原生后端 STDIO 传输
 └── moon.mod             # 模块元数据
@@ -319,7 +341,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 | 端点 | 说明 |
 |---|---|
-| `GET /health` | 健康检查，返回 `{"status":"ok","tools":37}` |
+| `GET /health` | 健康检查，返回 `{"status":"ok","tools":41}` |
 | `POST /mcp` | JSON-RPC over HTTP，请求体与 STDIO 模式一致 |
 
 ---

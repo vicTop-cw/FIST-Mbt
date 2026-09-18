@@ -86,7 +86,7 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**37 tools + 2 resources + 2 prompts**）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**41 tools + 2 resources + 2 prompts**）：
 
 ### 生命周期（12）
 | 工具 | 说明 |
@@ -144,6 +144,20 @@ You can browse and install extra skills here:
 | `store_open` | 打开命名空间 |
 | `store_list` | 列出已打开 ns |
 | `store_close` | 关闭命名空间 |
+
+### Omega 强验证（可选开关，默认关闭）
+
+`task_plan_deep` 的可选参数 `omega_strong_verify`（默认 `false`）控制本功能：不传 / `false` 时行为与既有完全一致；传 `true` 时，递归拆解写出的每个子任务带 `omega:required` 标记，进入「语料驱动」强验证流程——**语料创建者 `spec_author`** 创建语料（落 `specs` 表）→ **验证者 `verifier`** 审核并质疑语料（不合格打回创建者重做）→ 执行者执行 → 验证者复验成果与语料（不达标继续打回）。
+
+| 工具 | 说明 | 关键参数 |
+|---|---|---|
+| `omega_spec_create` | 语料创建者创建本轮语料并持久化到 `specs` 表 | task_id, author(默认 spec_author), content, max_rounds(可选), now |
+| `omega_spec_review` | 验证者审核语料：`approve` 放行，其它值为打回 | task_id, reviewer(默认 verifier), verdict, reason(可选), max_rounds(可选), now |
+| `omega_result_verify` | 验证者复验执行成果与对应语料 | task_id, reviewer(默认 verifier), verdict, reason(可选), max_rounds(可选), now |
+| `omega_status` | 查询强验证进度（开关 / 轮次 / 打回数 / 升级标志） | task_id |
+
+- 打回上限 `max_rounds` 默认 3（最大 10），超限自动写入升级记录、暂停任务转人工裁决，禁止死循环。
+- `execute` 与 `verify` 在开启强验证的任务上分别受语料门禁与成果复验门禁约束；未开启该开关的任务完全不受影响，既有生命周期语义不变。
 
 Resources: `fist://principles`, `fist://overview`
 Prompts: `fist:check_in`, `fist:verify`

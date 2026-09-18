@@ -404,13 +404,13 @@ pub fn FistEngine::get_task(self : FistEngine, task_id : String) -> @core.Task? 
 }
 
 ///|
-/// 按命名空间列出任务（namespace 为空串时回退默认命名空间）。
+/// 按命名空间列出任务（ns 为空串时回退默认命名空间）。
 /// 供 watchdog 等运维编排按 ns 扫描使用。
 pub fn FistEngine::list_in_ns(
   self : FistEngine,
-  namespace : String,
+  ns : String,
 ) -> Array[@core.Task] {
-  let target = if namespace == "" { "default" } else { namespace }
+  let target = if ns == "" { "default" } else { ns }
   self.store.list_tasks_in(target)
 }
 
@@ -647,7 +647,7 @@ pub fn FistEngine::resume_task(
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
     Some(t) => {
-      let c = match t.resume() {
+      let c = match t.resume_task() {
         Ok(x) => x
         Err(e) => return Err(e)
       }

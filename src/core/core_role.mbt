@@ -20,6 +20,8 @@ pub enum Role {
   Recorder
   /// 观测者（observer）
   Observer
+  /// 语料创建者（Omega 强验证：为本轮任务编写 Omega 语料）
+  SpecAuthor
 } derive(Eq, Debug)
 
 ///|
@@ -33,6 +35,7 @@ pub fn Role::to_string(self : Role) -> String {
     Verifier => "verifier"
     Recorder => "recorder"
     Observer => "observer"
+    SpecAuthor => "spec_author"
   }
 }
 
@@ -47,6 +50,7 @@ pub fn Role::from_string(s : String) -> Role? {
     "verifier" => Some(Verifier)
     "recorder" => Some(Recorder)
     "observer" => Some(Observer)
+    "spec_author" => Some(SpecAuthor)
     _ => None
   }
 }
@@ -68,6 +72,8 @@ pub fn Role::description(self : Role) -> String {
       "验收者：运行验证（omega-verify），必要时调用人类"
     Recorder => "记录者：日志、进度、档案记录（observability）"
     Observer => "观测者：只读看板、审计、权限追踪，不落子"
+    SpecAuthor =>
+      "语料创建者：Omega 强验证开关开启时，为本轮任务编写语料（spec），交由验证者审核"
   }
 }
 
@@ -76,21 +82,10 @@ pub fn Role::description(self : Role) -> String {
 /// HumanSteward 拥有最高权限（唯一人类，可裁决一切）。
 
 ///|
-/// 每个任务的完整操作清单
+/// 每个任务的完整操作清单（仅保留 Omega 强验证相关 Action）
 pub enum Action {
-  Publish // 发布根任务
-  Dispatch // 分发/拆分
-  Search // 信息检索
-  Allocate // 分配执行者
-  Claim // 认领任务
-  Execute // 执行任务
-  Submit // 提交验收
-  Verify // 验收
-  Complete // 标记完成（人类 ONLY）
-  Archive // 归档（人类 ONLY）
-  Reopen // 重新打开
-  Observe // 只读查看
-  ManageProject // 项目管理
+  CreateSpec // 创建语料（Omega 强验证：语料创建者）
+  ReviewSpec // 审核语料 / 复验成果（Omega 强验证：验证者）
 } derive(Eq, Debug)
 
 ///|
@@ -99,26 +94,8 @@ pub enum Action {
 pub fn can(role : Role, action : Action) -> Bool {
   match (role, action) {
     (HumanSteward, _) => true
-    (Leader, Publish) => true
-    (Leader, Dispatch) => true
-    (Leader, Allocate) => true
-    (Leader, Claim) => true
-    (Leader, Execute) => true
-    (Leader, Submit) => true
-    (Leader, Observe) => true
-    (Leader, ManageProject) => true
-    (Searcher, Search) => true
-    (Searcher, Observe) => true
-    (Allocator, Allocate) => true
-    (Allocator, Observe) => true
-    (Executor, Claim) => true
-    (Executor, Execute) => true
-    (Executor, Submit) => true
-    (Executor, Observe) => true
-    (Verifier, Verify) => true
-    (Verifier, Observe) => true
-    (Recorder, Observe) => true
-    (Observer, Observe) => true
+    (SpecAuthor, CreateSpec) => true
+    (Verifier, ReviewSpec) => true
     _ => false
   }
 }
@@ -136,22 +113,29 @@ pub fn ensure_can(role : Role, action : Action) -> Result[Unit, String] {
 }
 
 ///|
+/// Omega 强验证：语料创建权校验（供 engine 包调用，避免跨包构造枚举值）
+pub fn ensure_can_create_spec(actor : String) -> Result[Unit, String] {
+  match role_of(actor) {
+    Ok(r) => ensure_can(r, CreateSpec)
+    Err(e) => Err(e)
+  }
+}
+
+///|
+/// Omega 强验证：语料审核 / 成果复验权校验
+pub fn ensure_can_review_spec(actor : String) -> Result[Unit, String] {
+  match role_of(actor) {
+    Ok(r) => ensure_can(r, ReviewSpec)
+    Err(e) => Err(e)
+  }
+}
+
+///|
 /// Action 可读名（供错误消息）
 pub fn Action::to_string(self : Action) -> String {
   match self {
-    Publish => "publish"
-    Dispatch => "dispatch"
-    Search => "search"
-    Allocate => "allocate"
-    Claim => "claim"
-    Execute => "execute"
-    Submit => "submit"
-    Verify => "verify"
-    Complete => "complete"
-    Archive => "archive"
-    Reopen => "reopen"
-    Observe => "observe"
-    ManageProject => "manage_project"
+    CreateSpec => "create_spec"
+    ReviewSpec => "review_spec"
   }
 }
 

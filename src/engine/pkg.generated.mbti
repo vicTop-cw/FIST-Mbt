@@ -27,6 +27,28 @@ pub fn budget_check(Double, Double) -> Json
 
 pub fn budget_check_json(Json) -> Json
 
+pub fn gate_enabled(@core.Task) -> Bool
+
+pub fn gate_mark() -> String
+
+pub fn omega_author_prefix() -> String
+
+pub fn omega_clean_slice(String) -> String
+
+pub fn omega_enabled(@core.Task) -> Bool
+
+pub fn omega_escalation_id(String, String, Int) -> String
+
+pub fn omega_mark() -> String
+
+pub fn omega_max_rounds_default() -> Int
+
+pub fn omega_norm_max_rounds(Int) -> Int
+
+pub fn omega_result_id(String, Int) -> String
+
+pub fn omega_spec_id(String, Int) -> String
+
 pub fn plan_route(String, n_files? : Int) -> Json
 
 pub fn root_task_id() -> String
@@ -47,6 +69,7 @@ pub fn FistEngine::all_subtasks_completed(Self, @core.Task) -> Bool
 pub fn FistEngine::archive(Self, task_id~ : String, by~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::children_of(Self, String) -> Array[@core.Task]
 pub fn FistEngine::claim(Self, task_id~ : String, assignee~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::cold_publish(Self, ns~ : String, description~ : String, created_by~ : String, project_dir~ : String, now~ : String) -> Result[String, String]
 pub fn FistEngine::cost_stats(Self) -> Json
 pub fn FistEngine::critical_path(Self) -> Array[String]
 pub fn FistEngine::dag_ascii(Self, ns~ : String) -> String
@@ -54,16 +77,28 @@ pub fn FistEngine::delete_task(Self, String) -> Result[Unit, String]
 pub fn FistEngine::deps_satisfied(Self, String) -> Bool
 pub fn FistEngine::execute(Self, task_id~ : String, deliverable~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::execute_with_meta(Self, task_id~ : String, deliverable~ : String, now~ : String, executor? : String, model? : String, tokens_in? : Int, tokens_out? : Int, cost? : Double, duration_ms? : Int, rate_limited? : Bool, failure_reason? : String) -> Result[@core.Task, String]
+pub fn FistEngine::gate_check_record(Self, String, String, String, String) -> Result[Json, String]
+pub fn FistEngine::gate_verify_gate(Self, String) -> Result[Unit, String]
 pub fn FistEngine::get_task(Self, String) -> @core.Task?
 pub fn FistEngine::list_all(Self) -> Array[@core.Task]
 pub fn FistEngine::list_by_status(Self, @core.TaskStatus) -> Array[@core.Task]
 pub fn FistEngine::list_in_ns(Self, String) -> Array[@core.Task]
 pub fn FistEngine::new(store? : @store.StoreBackend) -> Self
+pub fn FistEngine::omega_count(Self, String, String, String) -> Int
+pub fn FistEngine::omega_count_type(Self, String, String) -> Int
+pub fn FistEngine::omega_execute_gate(Self, String) -> Result[Unit, String]
+pub fn FistEngine::omega_latest(Self, String, String) -> @store.SpecRecord?
+pub fn FistEngine::omega_records(Self, String) -> Array[@store.SpecRecord]
+pub fn FistEngine::omega_result_verify(Self, task_id~ : String, reviewer~ : String, verdict~ : String, reason? : String, now~ : String, max_rounds? : Int) -> Result[Json, String]
+pub fn FistEngine::omega_spec_create(Self, task_id~ : String, author~ : String, content~ : String, now~ : String, max_rounds? : Int) -> Result[Json, String]
+pub fn FistEngine::omega_spec_review(Self, task_id~ : String, reviewer~ : String, verdict~ : String, reason? : String, now~ : String, max_rounds? : Int) -> Result[Json, String]
+pub fn FistEngine::omega_status(Self, String) -> Result[Json, String]
+pub fn FistEngine::omega_verify_gate(Self, String) -> Result[Unit, String]
 pub fn FistEngine::open_sqlite(String) -> Self?
 pub fn FistEngine::parallelism(Self) -> Int
 pub fn FistEngine::pause_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::plan(Self, task_id~ : String, split_n? : Int, by~ : String, now~ : String) -> Result[Array[String], String]
-pub fn FistEngine::plan_deep(Self, task_id~ : String, split_n? : Int, by~ : String, spec? : Json?, now~ : String) -> Result[Json, String]
+pub fn FistEngine::plan_deep(Self, task_id~ : String, split_n? : Int, by~ : String, spec? : Json?, now~ : String, omega_strong_verify? : Bool) -> Result[Json, String]
 pub fn FistEngine::publish(Self, project_dir~ : String, description~ : String, created_by~ : String, now~ : String, ns? : String) -> Result[String, String]
 pub fn FistEngine::publish_next_round(Self, ns~ : String, description~ : String, created_by~ : String, prev_task_id~ : String, now~ : String) -> Result[String, String]
 pub fn FistEngine::publish_with_deps(Self, project_dir~ : String, description~ : String, depends_on? : Array[String], created_by? : String, now? : String, ns? : String) -> Result[String, String]

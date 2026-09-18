@@ -165,6 +165,7 @@ fn tick_json(
   previous_task_id : String?,
   blocked : Array[String],
   detail : Json,
+  omega : Json,
 ) -> Json {
   Json::object({
     "action": Json::string(action),
@@ -175,6 +176,7 @@ fn tick_json(
     "previous_task_id": opt_str_json(previous_task_id),
     "blocked": Json::array(blocked.map(fn(s) { Json::string(s) })),
     "detail": detail,
+    "omega": omega,
   })
 }
 
@@ -191,9 +193,16 @@ fn tick_json(
 ///                     yyyyMMdd.HH.mm.ss.md 取最新一份、忽略下划线开头的辅助文件）。
 ///                     当 next_description 未提供时，用该文档内容作为下一轮根任务描述；
 ///                     路径不存在或读取失败时按「不续轮」处理，不 panic。
+///   omega_strong_verify 是否开启 Omega 强验证（默认 false）。开启后：
+///                     1) 新根任务 description 追加 [omega:required] 标记；
+///                     2) 自动执行 task_plan_deep 拆分并开启强验证子任务；
+///                     3) 后续执行/验收受 omega_execute_gate / omega_verify_gate 约束。
+///   omega_split_n     Omega 强验证模式下每层拆分数（默认 3）。
+///   omega_spec        可选 Omega spec JSON（laws 作切割依据，fingerprint 作验收基准）。
 ///
 /// 返回 JSON：{ action, active, healed, healed_tasks, new_task_id,
-///             previous_task_id, blocked, detail }，action ∈ waiting / restarted / advanced / idle。
+///             previous_task_id, blocked, detail, omega }，
+///             action ∈ waiting / restarted / advanced / idle。
 pub fn watchdog_tick(
   engine : @engine.FistEngine,
   now : String,
@@ -202,6 +211,11 @@ pub fn watchdog_tick(
   next_description? : String = "",
   next_created_by? : String = "watchdog",
   meta_prompt_path? : String = "",
+  cold_start? : Bool = false,
+  project_dir? : String = "",
+  omega_strong_verify? : Bool = false,
+  omega_split_n? : Int = 3,
+  omega_spec? : Json? = None,
 ) -> Result[Json, String] {
   let heal_ns = if ns == "" { "default" } else { ns }
   // ---- 1. 回滚阶段（功能 A：读 SQLite 心跳，跨进程正确） ----
@@ -269,36 +283,119 @@ pub fn watchdog_tick(
         None,
         blocked_ids,
         detail,
+        Json::null(),
       ),
     )
   }
   // ---- 5. 完成 -> 自动起下一轮（功能 C，仅当显式指定 ns 且有下一轮描述） ----
   if ns != "" && next_desc != "" {
-    match pending_advance {
-      Some(prev) =>
-        match
-          engine.publish_next_round(
-            ns~,
-            description=next_desc,
-            created_by=next_created_by,
-            prev_task_id=prev.get_id(),
-            now~,
-          ) {
-          Ok(new_id) =>
-            return Ok(
-              tick_json(
-                "advanced",
-                active_ids.length(),
-                healed,
-                Some(new_id),
-                Some(prev.get_id()),
-                blocked_ids,
-                detail,
-              ),
-            )
-          Err(_) => () // 续轮失败退化为等待/空闲，不 panic
+    if pending_advance.is_some() {
+      let prev = pending_advance.unwrap()
+      match
+        engine.publish_next_round(
+          ns~,
+          description=next_desc,
+          created_by=next_created_by,
+          prev_task_id=prev.get_id(),
+          now~,
+        ) {
+        Ok(new_id) => {
+          // Omega 强验证：开启后自动拆分并打标记
+          let omega_info = if omega_strong_verify {
+            match
+              engine.plan_deep(
+                task_id=new_id,
+                split_n=omega_split_n,
+                by=next_created_by,
+                spec=omega_spec,
+                now~,
+                omega_strong_verify=true,
+              ) {
+              Ok(tree) =>
+                Json::object({
+                  "enabled": Json::boolean(true),
+                  "root": Json::string(new_id),
+                  "split_n": Json::number(omega_split_n.to_double()),
+                  "tree": tree,
+                })
+              Err(_) =>
+                Json::object({
+                  "enabled": Json::boolean(false),
+                  "error": Json::string("plan_deep failed"),
+                })
+            }
+          } else {
+            Json::null()
+          }
+          return Ok(
+            tick_json(
+              "advanced",
+              active_ids.length(),
+              healed,
+              Some(new_id),
+              Some(prev.get_id()),
+              blocked_ids,
+              detail,
+              omega_info,
+            ),
+          )
         }
-      None => ()
+        Err(_) => () // 续轮失败退化为等待/空闲，不 panic
+      }
+    } else if cold_start {
+      // 冷启动：无已完成根任务时，发布首个任务
+      let pdir = if project_dir != "" { project_dir } else { "" }
+      match
+        engine.cold_publish(
+          ns~,
+          description=next_desc,
+          created_by=next_created_by,
+          project_dir=pdir,
+          now~,
+        ) {
+        Ok(new_id) => {
+          // Omega 强验证：开启后自动拆分并打标记
+          let omega_info = if omega_strong_verify {
+            match
+              engine.plan_deep(
+                task_id=new_id,
+                split_n=omega_split_n,
+                by=next_created_by,
+                spec=omega_spec,
+                now~,
+                omega_strong_verify=true,
+              ) {
+              Ok(tree) =>
+                Json::object({
+                  "enabled": Json::boolean(true),
+                  "root": Json::string(new_id),
+                  "split_n": Json::number(omega_split_n.to_double()),
+                  "tree": tree,
+                })
+              Err(_) =>
+                Json::object({
+                  "enabled": Json::boolean(false),
+                  "error": Json::string("plan_deep failed"),
+                })
+            }
+          } else {
+            Json::null()
+          }
+          return Ok(
+            tick_json(
+              "advanced",
+              active_ids.length(),
+              healed,
+              Some(new_id),
+              None,
+              blocked_ids,
+              detail,
+              omega_info,
+            ),
+          )
+        }
+        Err(_) => () // 冷启动失败退化为空闲，不 panic
+      }
     }
   }
   // ---- 6. 默认：等待 / 空闲 ----
@@ -312,6 +409,7 @@ pub fn watchdog_tick(
       None,
       blocked_ids,
       detail,
+      Json::null(),
     ),
   )
 }

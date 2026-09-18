@@ -146,27 +146,27 @@ pub fn TaskStatus::order(self : TaskStatus) -> Int {
 /// FIST-Mbt 任务实体
 pub struct Task {
   /// 形如 T0 / T0.1 / T0.1.2 的层级 id
-  pub id : String
-  pub parent_id : String?
-  pub project_dir : String
+  id : String
+  parent_id : String?
+  project_dir : String
   /// 命名空间（多租户隔离键，默认 "default"）
-  pub ns : String
-  pub priority : String
-  pub importance : String
+  ns : String
+  priority : String
+  importance : String
   /// K 值：根=3，每拆一层减 1；K<=1 为原子任务
-  pub depth : Int
+  depth : Int
   /// 拆分数量（默认 3）
-  pub split_n : Int
-  pub status : TaskStatus
-  pub assignee : String?
-  pub description : String
-  pub deliverable : String
-  pub created_at : String
-  pub updated_at : String
-  pub completed_by : String?
-  pub cleanup_mode : String
+  split_n : Int
+  status : TaskStatus
+  assignee : String?
+  description : String
+  deliverable : String
+  created_at : String
+  updated_at : String
+  completed_by : String?
+  cleanup_mode : String
   /// 依赖的任务 id 列表（这些任务完成后，本任务才可领取）
-  pub depends_on : Array[String]
+  depends_on : Array[String]
 } derive(Eq, Debug)
 
 ///|
@@ -494,12 +494,12 @@ pub fn Task::pause(self : Task) -> Result[Task, String] {
 
 ///|
 /// 已暂停 -> 已领取（恢复执行）
-pub fn Task::resume(self : Task) -> Result[Task, String] {
+pub fn Task::resume_task(self : Task) -> Result[Task, String] {
   match self.status {
     Paused => Ok({ ..self, status: Claimed, })
     _ =>
       Err(
-        "非法迁移: resume 要求状态 [已暂停]，当前是 [" +
+        "非法迁移: resume_task 要求状态 [已暂停]，当前是 [" +
         self.status.to_string() +
         "]",
       )
