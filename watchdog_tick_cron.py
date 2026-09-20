@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FIST-Mbt watchdog_tick cron driver — round-robin over Pentad/Tnr/Cypy."""
+"""FIST-Mbt watchdog_tick cron driver — round-robin over Pentad/Tnr."""
 import json
 import subprocess
 import sys
@@ -15,7 +15,6 @@ TIMEOUT_SEC = 2400
 PROJECTS = [
     {"name": "pentad", "gen_prompts": r"E:\IDEProjects\AI\Pentad\Gen_Prompts", "namespace": "cron-auto", "state_file": r"E:\IDEProjects\AI\FIST-Mbt\.cron_state_pentad.json"},
     {"name": "tnr",    "gen_prompts": r"E:\IDEProjects\AI\Tnr\Gen_Prompts",    "namespace": "cron-tnr",  "state_file": r"E:\IDEProjects\AI\FIST-Mbt\.cron_state_tnr.json"},
-    {"name": "cypy",   "gen_prompts": r"E:\IDEProjects\AI\Cypy\Gen_Prompts",   "namespace": "cron-cypy", "state_file": r"E:\IDEProjects\AI\FIST-Mbt\.cron_state_cypy.json"},
 ]
 
 def iso_now():
@@ -142,6 +141,8 @@ def tick_project(client, proj):
     print(f"[{name}] last_consumed={last_consumed or '(none)'} should_advance={should_advance}")
 
     # next_description = first heading line of the prompt
+    # Preserve [gate:required] marker from the prompt so server gate_verify_gate can detect it
+    gate_marker = ""
     next_desc = None
     if should_advance:
         try:
@@ -150,12 +151,19 @@ def tick_project(client, proj):
         except OSError:
             lines = []
         for line in lines[:5]:
+            stripped = line.strip()
+            if "[gate:required]" in stripped:
+                gate_marker = "[gate:required] "
+                break
+        for line in lines[:5]:
             line = line.strip()
             if line.startswith("#"):
                 next_desc = line.lstrip("#").strip()
                 break
         if not next_desc:
             next_desc = lines[0].strip() if lines else "next round"
+        if gate_marker:
+            next_desc = gate_marker + next_desc
 
     args = {
         "timeout_sec": TIMEOUT_SEC,
@@ -166,6 +174,10 @@ def tick_project(client, proj):
     if should_advance:
         args["next_description"] = next_desc
         args["meta_prompt_path"] = gen_prompts
+        # Cold start: namespace has no tasks yet and nothing ever consumed ->
+        # watchdog_tick needs cold_start=true to publish the first root task.
+        if not last_consumed:
+            args["cold_start"] = True
 
     resp = client.call("tools/call", {"name": "watchdog_tick", "arguments": args}, timeout=60)
     if not resp:

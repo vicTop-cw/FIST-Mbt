@@ -440,6 +440,20 @@ fn FistEngine::next_round_id(self : FistEngine) -> String {
 }
 
 ///|
+/// 生成全局第一个空闲的**根任务** id：T0 空闲则用 T0，否则顺延 T0r2、T0r3 ...
+///
+/// 与 next_round_id() 的区别：后者用于「已在推进的轮次」续接（T0 -> T0r2），
+/// 永不返回 T0；本函数用于冷启动发布首任务，必须优先占用 T0，
+/// 仅当 T0 已被别的命名空间占用时才顺延（多 namespace 共用同一 id 空间）。
+fn FistEngine::first_free_root_id(self : FistEngine) -> String {
+  let base = root_task_id()
+  match self.store.get_task(base) {
+    None => base
+    Some(_) => self.next_round_id()
+  }
+}
+
+///|
 /// 自动续轮（仅供定时任务看门狗 watchdog_tick 调用，见 ops_watchdog.mbt）。
 ///
 /// 语义：把已完成的上一轮**根任务**标记为已续轮并归档，同时发布下一轮根任务。
@@ -530,7 +544,9 @@ pub fn FistEngine::cold_publish(
       "命名空间已存在任务，请使用 publish_next_round 续轮",
     )
   }
-  let id = root_task_id()
+  // ID 必须全局唯一：root_task_id() 恒为 "T0"，多 namespace 冷启动会撞主键；
+  // 用 first_free_root_id() 全局探测第一个空闲 id（优先 T0，占用后顺延 T0r2 ...）
+  let id = self.first_free_root_id()
   let t = @core.Task::new(
     id~,
     project_dir~,

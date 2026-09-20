@@ -23,3 +23,9 @@ temp/
 # sqlite runtime files (wal/shm)
 *.db-shm
 *.db-wal
+# cron runtime state & scratch scripts
+.cron_state_*.json
+__pycache__/
+execute_cron.py
+_cron_executor.py
+_cron_query.py

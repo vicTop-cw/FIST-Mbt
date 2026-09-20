@@ -969,6 +969,50 @@ pub async fn run_server() -> Unit {
       },
     )
     .tool(
+      "pipeline_tick",
+      "提示词流水线状态机单入口（仅用于定时任务/无人值守命名空间，不用于人工指挥流程）：以 project_dir/currentState.txt 为唯一状态源，按四分支推进——空闲(Creating/Closed)生成新提示词、提示词已落盘(Pending)发布根任务、执行中(Running)缺报告且超时则要求补报告、报告落盘后校验收口。全程报告先行、不空转、不写脏数据。参数：project_dir(必填)、now(可选)、namespace(可选默认cron-auto)、phase(可选auto/prompt_ready/report_ready)、prompt_name(可选)、timeout_sec(可选默认2400)。",
+      schema(
+        {
+          "project_dir": string_prop(
+            "项目目录(必填)：其下 currentState.txt 为状态源，Gen_Prompts 为提示词目录",
+          ),
+          "now": string_prop("当前时间戳(可选，默认内置)"),
+          "namespace": string_prop(
+            "作用域命名空间(可选默认 cron-auto)：不得为 default",
+          ),
+          "phase": string_prop(
+            "阶段(可选默认 auto)：auto 自动推进 / prompt_ready 提示词已落盘 / report_ready 报告已落盘",
+          ),
+          "prompt_name": string_prop(
+            "指定提示词文件名(可选，缺省取目录内最新一份)",
+          ),
+          "timeout_sec": int_prop("执行超时秒数(可选默认2400)"),
+        },
+        [],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let ts = get_str(args, "now", default=now)
+        let project_dir = get_str(args, "project_dir")
+        let ns = get_str(args, "namespace", default="cron-auto")
+        let phase = get_str(args, "phase", default="auto")
+        let prompt_name = get_str(args, "prompt_name")
+        let timeout_sec = get_int(args, "timeout_sec", default=2400)
+        match
+          @ops.pipeline_tick(
+            engine,
+            project_dir,
+            ts,
+            ns~,
+            timeout_sec~,
+            phase~,
+            prompt_name~,
+          ) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
       "task_cleanup",
       "归档清理：删除超过保留期的已归档任务。参数：now、retention_days(可选默认30)。",
       schema(
