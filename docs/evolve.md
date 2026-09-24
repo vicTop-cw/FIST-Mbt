@@ -133,4 +133,4 @@ evolve_sample { rand:0.5 }   // 高分配偶 v3 更可能被选中作为下一�
 
 ## 八、回归
 
-改动不影响既有模块；全量 `moon test --target js` 保持 **135/135 全绿**。
+改动不影响既有模块；全量 `moon test --target js` 保持 **136/136 全绿**。

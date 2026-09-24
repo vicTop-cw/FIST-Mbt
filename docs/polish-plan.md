@@ -64,8 +64,8 @@ selfdrive_review（审视报告 Next Tasks）
 ## 四、验收标准（每次子任务回传必过）
 
 1. **无硬编码**：源码/smoke 无 `[A-Z]:`、`/home/`、`/Users/` 等绝对路径；路径均相对/参数化。
-2. **无回归**：`git diff` 仅涉及本任务声明的文件；既有 135 测试不受影响。
-3. **测试全绿**：`moon test --target js` 且（若涉及 native 相关）`--target native` 均 135/135。
+2. **无回归**：`git diff` 仅涉及本任务声明的文件；既有 136 测试不受影响。
+3. **测试全绿**：`moon test --target js` 且（若涉及 native 相关）`--target native` 均 136/136。
 4. **功能兼容**：不改变既有 MCP 工具的参数/返回/语义（新增可，破坏不可）。
 5. **文档即实现**：README/USAGE/AGENTS/docs 与实际行为一致；改了实现必须同步改文档，反之亦然。
 

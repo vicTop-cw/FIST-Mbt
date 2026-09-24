@@ -25,7 +25,7 @@ created: 2026-09-24
 ## Acceptance Criteria
 
 - [x] AC-1: evolve 包 5 个测试全绿（采样/查重/新颖性/谱系）
-- [x] AC-2: `moon test --target js` 全量 135/135 无回归
+- [x] AC-2: `moon test --target js` 全量 136/136 无回归
 - [x] AC-3: MCP 端到端可用（submit→snapshot→sample，查重拒绝重复、谱系正确）
 - [x] AC-4: SQLite 持久化表与方法就绪
 
