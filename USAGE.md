@@ -25,7 +25,7 @@ FIST 指挥官任务分配体系（原 Python 版 FIST）的 **纯 MoonBit 原�
 moon check                  # 类型检查
 moon build --target native  # 原生后端
 moon build --target js      # JS 后端（Node 运行）
-moon test                   # 全部测试（136 项）
+moon test                   # 全部测试（148 项）
 ```
 
 本机常用启动产物：
@@ -129,7 +129,7 @@ def rpc(method, **payload):
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
 ```
-→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（57 个工具）
+→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（61 个工具）
 
 **Step 2 · 发布一个根任务**
 ```json
@@ -149,12 +149,12 @@ def rpc(method, **payload):
 三步跑通即 MCP server 端到端可用、环境就绪。
 
 > 本机实测：`python scripts/mcp_smoke.py` 一键自检输出
-> `PASS tools/list → 57 个工具` / `PASS publish → T?` / `PASS get → T? [待领取]` / `MCP-SMOKE PASS`。
+> `PASS tools/list → 61 个工具` / `PASS publish → T?` / `PASS get → T? [待领取]` / `MCP-SMOKE PASS`。
 > 三步 = 该脚本的内部逻辑，二者完全一致。
 
 ---
 
-## 6. 57 个 MCP 工具手册
+## 6. 61 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
@@ -389,12 +389,16 @@ def rpc(method, **payload):
 | `selfdrive_review_ready` | 审视收口：确认 memory/reviews/ 最新审视报告已落盘并推进已审视轮次（报告先行，无报告拒绝推进） | project_dir(必) namespace(选) |
 | `selfdrive_publish_next` | 解析审视报告 `## Next Tasks` 段并将待办并行发布为独立根任务（幂等，description 内嵌 [review:file:idx] 防重） | project_dir(必) namespace(选,默认default) max_tasks(选,默认10) now(选) |
 | `selfdrive_parse_next_tasks` | 纯解析审视报告文本中 `## Next Tasks` 段（调试/校验用） | content(必) max_tasks(选,默认10) |
+| `memory_consolidate` | 自我记忆·收敛写回：verify 通过后把交付物/结论收敛写回 memory/{kind}.md（kind 缺省 target；thinking 为 append-only 带时间戳，其余覆盖写；checkpoint 写时刻） | project_dir(必) task_id(必) kind(选,默认target) content(必) now(选) |
+| `memory_gc` | 自我记忆·上限+软降权归档（不硬删）：超 max_chars 时把 memory/{kind}.md 末尾（老人）条目移入 memory/archive/ 归档，正文只保留最新 max_chars；kind 缺省对四件套全部处理 | project_dir(必) kind(选) max_chars(选,默认2000) now(选) |
+| `memory_link` | 自我记忆·A-Mem 式关联：在 memory/links.md 追加 `from -> to  note` 关联记录（不存在则创建），供 plan/claim 前检索注入 | project_dir(必) from(必) to(必) note(选) now(选) |
 
 ### 6.12 DGM 演化（evolve）+ Laya 决策
 
 | 工具 | 说明 | 参数 |
 |---|---|---|
 | `evolve_submit` | 归档一个产物：本轮设计/代码/目标入档案库，自动递增父代子代数；与档案高度相似则查重丢弃 | id(必) goal(必) note(必) code(必) score(选) parent_id(选) parts(选) now(选) |
+| `evolve_distill` | 自进化蒸馏（EvolveR 最小级）：把 verify 通过的任务交付物蒸馏成 principle 写入 DGM（goal 加 [principle] 前缀，code 写蒸馏内容，复用 evolve_upsert 落库 + Archive 查重语义） | task_id(必) goal(必) note(必) score(选,默认1.0) now(选) |
 | `evolve_snapshot` | 查看档案库快照（count/best/summaries/dead_ends/lineage_of_best） | 无 |
 | `evolve_sample` | 按 p∝s·h 多样性加权采样父代产物（子代越少/性能越高越可能被选） | rand(选,伪随机种子) |
 | `laya_decide` | Laya 可选决策工具（自动探测）：对任务/文本快速分类，命中返回结构化 answers；机器无 laya 返回 available:false 降级，不影响现网 | context(必) questions(选,JSON) model(选,默认english) |
@@ -425,7 +429,7 @@ def rpc(method, **payload):
 **验证结论**：publish → plan → claim/execute/submit/verify（叶子）+ verify（父自动上卷）→ archive 全链真实跑通，
 任务自动持久化到 `fist-mbt.db`。
 
-> 补充实测：`tools/list` 返回 57 个工具；`resources/read(fist://principles)` 返回七条金条 JSON；
+> 补充实测：`tools/list` 返回 61 个工具；`resources/read(fist://principles)` 返回七条金条 JSON；
 > `prompts/get(fist:check_in)` 返回 1 条 role=user 的打卡自查模板消息。
 
 ---
@@ -503,7 +507,7 @@ moon publish
 
 ## 12. 一句话总结
 
-FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（57 个工具）。
+FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（61 个工具）。
 对 AI 客户端而言：**pub/claim/plan + spec 深拆 → 子任务闭环 → verify 上卷 → archive**，
 一路 `tools/call` 即可完成多智能体任务的发布、认领、拆分、执行、验收、归档全生命周期管理。
 

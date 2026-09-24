@@ -1,10 +1,29 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "vicTop-cw/fist-mbt/src/server"
 
+import {
+  "vicTop-cw/fist-mbt/src/evolve",
+  "vicTop-cw/fist-mbt/src/store",
+}
+
 // Values
+pub fn distill_principle_goal(String) -> String
+
+pub fn do_evolve_distill(@evolve.Archive, @store.SqliteStore?, String, String, Double, String) -> Json
+
 pub async fn laya_decide_external(String, Array[String], String, String, Int) -> Result[Json, String]
 
 pub async fn laya_probe_available(String, Array[String], String, Int) -> Result[Bool, String]
+
+pub fn memory_consolidate(String, String, String, String, String) -> Result[Json, String]
+
+pub fn memory_gc_all(String, Int) -> Json
+
+pub fn memory_gc_logic(String, Int) -> (String, String)
+
+pub fn memory_gc_one(String, String, Int) -> Json
+
+pub fn memory_link(String, String, String, String) -> Result[Json, String]
 
 pub async fn run_check_external(String, Array[String], String, Int) -> Result[Json, String]
 
