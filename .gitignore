@@ -16,6 +16,7 @@ m18_*.js
 .atomcode/
 # 项目申报书（个人参赛文档，不入仓库）
 项目申报书.md
+项目申报书.pdf
 # generated interface files (optional - uncomment to exclude)
 # *.mbti
 # pkg.generated.mbti
