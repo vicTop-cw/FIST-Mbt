@@ -2,6 +2,13 @@
 package "vicTop-cw/fist-mbt/src/evolve"
 
 // Values
+pub fn is_robust(Double, floor? : Double) -> Bool
+
+pub fn score_accept(Double, threshold? : Double) -> Bool
+
+pub fn score_artifact(Double, Bool, Bool, Double) -> Double
+
+pub fn score_rank(Double) -> String
 
 // Errors
 
