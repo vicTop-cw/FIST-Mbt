@@ -304,8 +304,6 @@ fn overview_json() -> Json {
 ///|
 /// —— MCP server 构建与运行 ——
 pub async fn run_server() -> Unit {
-  let now = now_default()
-
   let s0 = @mcp.MCPServer::MCPServer("fist-mbt", "0.1.0")
 
   let s1 = s0
@@ -328,7 +326,7 @@ pub async fn run_server() -> Unit {
         let description = get_str(args, "description")
         let ns = get_str(args, "namespace", default="default")
         let created_by = get_str(args, "created_by", default="human_steward")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         let r = engine.publish(
           project_dir~,
           description~,
@@ -370,7 +368,7 @@ pub async fn run_server() -> Unit {
         let description = get_str(args, "description")
         let ns = get_str(args, "namespace")
         let created_by = get_str(args, "created_by", default="selfdrive")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         match
           engine.publish_parallel(
             ns~,
@@ -408,7 +406,7 @@ pub async fn run_server() -> Unit {
         let task_id = get_str(args, "task_id")
         let split_n = get_int(args, "split_n", default=3)
         let by = get_str(args, "by", default="human_steward")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         to_ids_result(engine.plan(task_id~, split_n~, by~, now=ts))
       },
     )
@@ -426,7 +424,7 @@ pub async fn run_server() -> Unit {
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let task_id = get_str(args, "task_id")
         let assignee = get_str(args, "assignee")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         to_result(engine.claim(task_id~, assignee~, now=ts))
       },
     )
@@ -452,7 +450,7 @@ pub async fn run_server() -> Unit {
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let task_id = get_str(args, "task_id")
         let deliverable = get_str(args, "deliverable")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         // 提取可选执行元数据（向后兼容：无元数据时行为同旧版 execute）
         let executor = get_str(args, "executor", default="manual")
         let model = get_str(args, "model", default="")
@@ -492,7 +490,7 @@ pub async fn run_server() -> Unit {
       ),
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let task_id = get_str(args, "task_id")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         to_result(engine.submit(task_id~, now=ts))
       },
     )
@@ -589,7 +587,7 @@ pub async fn run_server() -> Unit {
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let task_id = get_str(args, "task_id")
         let verifier = get_str(args, "verifier")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         to_result(engine.verify(task_id~, verifier~, now=ts))
       },
     )
@@ -609,7 +607,7 @@ pub async fn run_server() -> Unit {
         let task_id = get_str(args, "task_id")
         let reason = get_str(args, "reason", default="")
         let by = get_str(args, "by", default="human_steward")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         to_result(engine.reject_task(task_id~, reason~, by~, now=ts))
       },
     )
@@ -625,7 +623,7 @@ pub async fn run_server() -> Unit {
       ),
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let task_id = get_str(args, "task_id")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         to_result(engine.retry_task(task_id~, now=ts))
       },
     )
@@ -641,7 +639,7 @@ pub async fn run_server() -> Unit {
       ),
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let task_id = get_str(args, "task_id")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         match engine.reopen_task(task_id, ts) {
           Ok(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
           Err(e) => Err(@mcp_types.ToolError(e))
@@ -660,7 +658,7 @@ pub async fn run_server() -> Unit {
       ),
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let task_id = get_str(args, "task_id")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         to_result(engine.pause_task(task_id~, now=ts))
       },
     )
@@ -676,7 +674,7 @@ pub async fn run_server() -> Unit {
       ),
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let task_id = get_str(args, "task_id")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         to_result(engine.resume_task(task_id~, now=ts))
       },
     )
@@ -694,7 +692,7 @@ pub async fn run_server() -> Unit {
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let task_id = get_str(args, "task_id")
         let by = get_str(args, "by", default="human_steward")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         to_result(engine.archive(task_id~, by~, now=ts))
       },
     )
@@ -784,7 +782,7 @@ pub async fn run_server() -> Unit {
         let mut split_n = get_int(args, "split_n", default=3)
         let by = get_str(args, "by", default="leader")
         let spec_raw = get_str(args, "spec")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         let spec : Json? = if spec_raw == "" {
           None
         } else {
@@ -892,7 +890,7 @@ pub async fn run_server() -> Unit {
         let author = get_str(args, "author", default="spec_author")
         let content = get_str(args, "content")
         let max_rounds = get_int(args, "max_rounds", default=3)
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         match
           engine.omega_spec_create(
             task_id~,
@@ -926,7 +924,7 @@ pub async fn run_server() -> Unit {
         let verdict = get_str(args, "verdict")
         let reason = get_str(args, "reason")
         let max_rounds = get_int(args, "max_rounds", default=3)
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         match
           engine.omega_spec_review(
             task_id~,
@@ -961,7 +959,7 @@ pub async fn run_server() -> Unit {
         let verdict = get_str(args, "verdict")
         let reason = get_str(args, "reason")
         let max_rounds = get_int(args, "max_rounds", default=3)
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         match
           engine.omega_result_verify(
             task_id~,
@@ -1033,7 +1031,7 @@ pub async fn run_server() -> Unit {
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let task_id = get_str(args, "task_id")
         let signal = get_str(args, "signal", default="active")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         match engine.get_task(task_id) {
           None => Err(@mcp_types.ToolError("task not found: \{task_id}"))
           Some(_) => {
@@ -1072,7 +1070,7 @@ pub async fn run_server() -> Unit {
         [],
       ),
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         let timeout_sec = get_int(args, "timeout_sec", default=600)
         match @ops.heal_stale_tasks(engine, heartbeats, ts, timeout_sec~) {
           Ok(healed) =>
@@ -1135,7 +1133,7 @@ pub async fn run_server() -> Unit {
         [],
       ),
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         let timeout_sec = get_int(args, "timeout_sec", default=600)
         let ns = get_str(args, "namespace")
         let next_description = get_str(args, "next_description")
@@ -1213,7 +1211,7 @@ pub async fn run_server() -> Unit {
         [],
       ),
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         let project_dir = get_str(args, "project_dir")
         let ns = get_str(args, "namespace", default="cron-auto")
         let phase = get_str(args, "phase", default="auto")
@@ -1757,7 +1755,7 @@ pub async fn run_server() -> Unit {
         [],
       ),
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         let retention_days = get_int(args, "retention_days", default=30)
         match @ops.cleanup_archived(engine, ts, retention_days~) {
           Ok(removed) =>
@@ -1882,7 +1880,7 @@ pub async fn run_server() -> Unit {
         let depends_on_raw = get_str(args, "depends_on", default="[]")
         let ns = get_str(args, "namespace", default="default")
         let created_by = get_str(args, "created_by", default="human_steward")
-        let ts = get_str(args, "now", default=now)
+        let ts = get_str(args, "now", default=now_default())
         let depends_on : Array[String] = try {
           match @json.parse(depends_on_raw) {
             Json::Array(a) => a.map(fn(v) { v.as_string().unwrap_or("") })
