@@ -61,7 +61,7 @@ pub fn plan_route(description : String, n_files? : Int = 1) -> Json {
     "L2_standard" => "free"
     "L3_complex" => "premium"
     "L4_irreversible" => "hold"
-    _ => "free"
+    _ => "hold" // 未知 complexity → 保守默认，强制人工确认，避免 fail-open
   }
   Json::object({
     "schedule": Json::object({
@@ -76,7 +76,15 @@ pub fn plan_route(description : String, n_files? : Int = 1) -> Json {
 fn contains_risk_kw(desc : String) -> Bool {
   let lower = desc.to_lower()
   let kws = [
-    "delete", "drop", "truncate", "destroy", "publish", "deploy", "reset", "force",
+    // 数据/资源删除与破坏
+    "delete", "del ", "rm ", "drop", "truncate", "destroy", "purge", "wipe", "format",
+    "reset", "force", "overwrite", "replace",
+    // 发布/部署
+     "publish", "deploy",
+    // 任意代码执行
+     "exec", "eval", "system(", "shutdown", "halt", "reboot", "restart",
+    // 权限变更
+     "grant", "revoke", "chmod", "chown",
   ]
   for kw in kws {
     if lower.contains(kw.to_lower()) {
