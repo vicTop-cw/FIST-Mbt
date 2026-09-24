@@ -43,6 +43,12 @@ let audit : @ops.AuditLog = @ops.AuditLog::new()
 let mstore : @store.MultiStore = @store.MultiStore::new(data_dir=".")
 
 ///|
+/// DGM 档案库（进程内 Archive，演化/自驱机制状态容器）。
+/// SQLite 持久化能力已在 store 层（evolve_artifacts 表 + evolve_upsert/list）就绪；
+/// 本进程 Archive 用于 MCP 工具的实时采样/查重/新颖性/谱系演示与编排。
+let evolve_arc : @evolve.Archive = @evolve.Archive::new("mem-evolve")
+
+///|
 /// 默认时间戳（无系统时钟依赖，保证 demo 可重现）
 fn now_default() -> String {
   "2026-09-05T00:00:00Z"
@@ -1285,6 +1291,142 @@ pub async fn run_server() -> Unit {
             }).stringify(),
           ),
         )
+      },
+    )
+    .tool(
+      "evolve_submit",
+      "DGM 演化·归档一个产物（Artifact）：把本轮设计/代码/目标加入档案库，自动递增父代子代数。参数：id、goal、note、code、score、parent_id(可选)、parts(可选 JSON 对象)、now(可选)。",
+      schema(
+        {
+          "id": string_prop("产物 id（必填，唯一）"),
+          "goal": string_prop("目标/本轮想解决的问题（必填）"),
+          "note": string_prop("设计意图（必填，查重/新颖性用）"),
+          "code": string_prop("实现内容（必填）"),
+          "score": number_prop("可计算评分(默认0)"),
+          "parent_id": string_prop("父产物 id（可选）"),
+          "parts": string_prop("评分分项 JSON(可选)"),
+          "now": string_prop("时间戳(可选，默认内置)"),
+        },
+        ["id", "goal", "note", "code"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let id = get_str(args, "id")
+        let goal = get_str(args, "goal")
+        let note = get_str(args, "note")
+        let code = get_str(args, "code")
+        let score = get_double(args, "score", default=0.0)
+        let parent_id = get_str(args, "parent_id", default="")
+        let parts_raw = get_str(args, "parts", default="{}")
+        let ts = get_str(args, "now", default=now_default())
+        let parts : Map[String, Double] = Map([])
+        let parsed = @json.parse(parts_raw) catch { _ => Json::object(Map([])) }
+        match parsed {
+          Object(pm) =>
+            for (k, v) in pm {
+              match v {
+                Number(n, ..) => parts.set(k, n)
+                _ => ()
+              }
+            }
+          _ => ()
+        }
+        let art = @evolve.Artifact::create(
+          id~,
+          parent_id=if parent_id == "" { None } else { Some(parent_id) },
+          goal~,
+          note~,
+          code~,
+          score~,
+          parts~,
+          created_at=ts,
+        )
+        // 查重：重复目标丢弃（DGM/Voyager 必修），除非阈值宽松
+        if @evolve.Archive::is_duplicate(evolve_arc, goal, threshold=0.88) {
+          return Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "rejected": Json::boolean(true),
+                "reason": Json::string(
+                  "目标与档案库中已有产物高度相似，丢弃",
+                ),
+              }).stringify(),
+            ),
+          )
+        }
+        @evolve.Archive::add(evolve_arc, art)
+        Ok(@mcp.ToolResult::text(art.to_json().stringify()))
+      },
+    )
+    .tool(
+      "evolve_snapshot",
+      "DGM 演化·查看档案库快照（含 best/lineage/summaries/dead_ends）。参数：无。",
+      schema({}, []),
+      async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let best = match @evolve.Archive::best(evolve_arc) {
+          Some(a) => a.to_json()
+          None => Json::null()
+        }
+        let summaries = Json::array(
+          @evolve.Archive::summaries(evolve_arc, limit=12).map(fn(s) {
+            Json::string(s)
+          }),
+        )
+        let dead = Json::array(
+          @evolve.Archive::dead_ends(evolve_arc, limit=8).map(fn(s) {
+            Json::string(s)
+          }),
+        )
+        let lineage = match @evolve.Archive::best(evolve_arc) {
+          Some(b) =>
+            Json::array(
+              @evolve.Archive::lineage(evolve_arc, b.id, depth=12).map(fn(l) {
+                let (lid, lscore, lgoal) = l
+                Json::string("[\{lid} score=\{lscore} ] \{lgoal}")
+              }),
+            )
+          None => Json::array([])
+        }
+        Ok(
+          @mcp.ToolResult::text(
+            Json::object({
+              "count": Json::number(
+                @evolve.Archive::len(evolve_arc).to_double(),
+              ),
+              "best": best,
+              "summaries": summaries,
+              "dead_ends": dead,
+              "lineage_of_best": lineage,
+            }).stringify(),
+          ),
+        )
+      },
+    )
+    .tool(
+      "evolve_sample",
+      "DGM 演化·按 p∝s·h 多样性加权采样父代产物（子代越少/性能越高越可能被选）。参数：rand(可选)。",
+      schema({ "rand": number_prop("伪随机种子(可选，[0,1))") }, []),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let r = get_double(args, "rand", default=0.5)
+        let picked = @evolve.Archive::sample_parent(evolve_arc, rand=fn() { r })
+        match picked {
+          Some(a) =>
+            Ok(
+              @mcp.ToolResult::text(
+                Json::object({ "picked": a.to_json() }).stringify(),
+              ),
+            )
+          None =>
+            Ok(
+              @mcp.ToolResult::text(
+                Json::object({
+                  "picked": Json::null(),
+                  "note": Json::string(
+                    "档案库为空，先 evolve_submit 添加产物",
+                  ),
+                }).stringify(),
+              ),
+            )
+        }
       },
     )
     .tool(

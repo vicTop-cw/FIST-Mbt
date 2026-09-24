@@ -1,0 +1,45 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/evolve"
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct Archive {
+  items : Map[String, Artifact]
+  path : String
+}
+pub fn Archive::add(Self, Artifact) -> Unit
+pub fn Archive::all(Self) -> Array[Artifact]
+pub fn Archive::best(Self) -> Artifact?
+pub fn Archive::dead_ends(Self, limit? : Int) -> Array[String]
+pub fn Archive::get(Self, String) -> Artifact?
+pub fn Archive::is_duplicate(Self, String, threshold? : Double) -> Bool
+pub fn Archive::is_empty(Self) -> Bool
+pub fn Archive::len(Self) -> Int
+pub fn Archive::lineage(Self, String, depth? : Int) -> Array[(String, Double, String)]
+pub fn Archive::new(String) -> Self
+pub fn Archive::novelty(Self, String) -> Double
+pub fn Archive::sample_parent(Self, lam? : Double, a0? : Double, rand~ : () -> Double) -> Artifact?
+pub fn Archive::summaries(Self, limit? : Int) -> Array[String]
+
+pub struct Artifact {
+  id : String
+  parent_id : String?
+  goal : String
+  note : String
+  code : String
+  score : Double
+  parts : Map[String, Double]
+  children : Int
+  created_at : String
+}
+pub fn Artifact::create(id~ : String, parent_id~ : String?, goal~ : String, note~ : String, code~ : String, score~ : Double, parts~ : Map[String, Double], created_at~ : String) -> Self
+pub fn Artifact::from_json(Json) -> Self
+pub fn Artifact::to_json(Self) -> Json
+pub fn Artifact::with_children(Self, Int) -> Self
+
+// Type aliases
+
+// Traits

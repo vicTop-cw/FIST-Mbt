@@ -60,6 +60,7 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     "CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', run_type TEXT NOT NULL DEFAULT 'verify', status TEXT NOT NULL DEFAULT 'running', detail TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL DEFAULT '', finished_at TEXT DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS heartbeats (agent_id TEXT NOT NULL, task_id TEXT NOT NULL, last_seen TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', PRIMARY KEY (agent_id, task_id))",
     "CREATE TABLE IF NOT EXISTS archive (id TEXT PRIMARY KEY, task_json TEXT NOT NULL DEFAULT '', archived_at TEXT NOT NULL DEFAULT '')",
+    "CREATE TABLE IF NOT EXISTS evolve_artifacts (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', goal TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', code TEXT NOT NULL DEFAULT '', score TEXT NOT NULL DEFAULT '0', parts_json TEXT NOT NULL DEFAULT '{}', children INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '')",
   ]
   match self.db {
     None => false
@@ -450,6 +451,160 @@ pub fn SqliteStore::list_tasks_in(
       }
     }
   }
+}
+
+// =====================================================================
+// DGM 档案库（evolve_artifacts 表）持久化
+// 详见 src/evolve/ —— evolve 包调用这些方法做 SQLite 落库。
+// =====================================================================
+
+///|
+/// 插入一个 DGM 产物（evolve_artifacts 表）。失败返回 Err。
+pub fn SqliteStore::evolve_upsert(
+  self : SqliteStore,
+  id~ : String,
+  parent_id~ : String,
+  goal~ : String,
+  note~ : String,
+  code~ : String,
+  score~ : Double,
+  parts_json~ : String,
+  created_at~ : String,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "INSERT INTO evolve_artifacts (id, parent_id, goal, note, code, score, parts_json, children, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?) ON CONFLICT(id) DO UPDATE SET goal=excluded.goal, note=excluded.note, code=excluded.code, score=excluded.score, parts_json=excluded.parts_json, created_at=excluded.created_at"
+      match db.prepare(sql) {
+        None => Err("sqlite prepare 失败: evolve_upsert")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, id))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, parent_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, goal))),
+          )
+          ignore(
+            stmt.bind(4, @sqlite.SqlValue::Text(@encoding.encode(UTF8, note))),
+          )
+          ignore(
+            stmt.bind(5, @sqlite.SqlValue::Text(@encoding.encode(UTF8, code))),
+          )
+          ignore(
+            stmt.bind(
+              6,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, score.to_string())),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              7,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, parts_json)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              8,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, created_at)),
+            ),
+          )
+          let ok = stmt.execute()
+          stmt.finalize()
+          if ok {
+            Ok(())
+          } else {
+            Err("evolve_upsert 写入失败: \{id}")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 读取全部 DGM 产物（evolve_artifacts 表），按 created_at 升序。
+/// 返回 JSON 数组（供 MCP/展示）。
+pub fn SqliteStore::evolve_list(self : SqliteStore) -> Array[Json] {
+  let out : Array[Json] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT id, parent_id, goal, note, code, score, parts_json, children, created_at FROM evolve_artifacts ORDER BY created_at ASC"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          while stmt.step() {
+            let m : Map[String, Json] = Map([])
+            m.set("id", Json::string(evolve_col_text(stmt, 0)))
+            m.set("parent_id", Json::string(evolve_col_text(stmt, 1)))
+            m.set("goal", Json::string(evolve_col_text(stmt, 2)))
+            m.set("note", Json::string(evolve_col_text(stmt, 3)))
+            m.set("code", Json::string(evolve_col_text(stmt, 4)))
+            let score_raw = evolve_col_text(stmt, 5)
+            m.set("score", Json::number(evolve_parse_double(score_raw)))
+            let parts_raw = evolve_col_text(stmt, 6)
+            m.set(
+              "parts",
+              @json.parse(parts_raw) catch {
+                _ => Json::object(Map([]))
+              },
+            )
+            m.set("children", Json::number(evolve_col_int(stmt, 7).to_double()))
+            m.set("created_at", Json::string(evolve_col_text(stmt, 8)))
+            out.push(Json::object(m))
+          }
+          stmt.finalize()
+          out
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 递增某产物的 children 计数（每次新增子代 +1）。返回是否成功。
+pub fn SqliteStore::evolve_bump_child(self : SqliteStore, id : String) -> Bool {
+  match self.db {
+    None => false
+    Some(db) => {
+      let sql = "UPDATE evolve_artifacts SET children = children + 1 WHERE id = ?"
+      match db.prepare(sql) {
+        None => false
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, id))),
+          )
+          let ok = stmt.execute()
+          stmt.finalize()
+          ok
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 取 evolve_artifacts 某列文本（列索引从 0 起）。
+fn evolve_col_text(stmt : @sqlite.Statement, i : Int) -> String {
+  str_from_bytes(stmt.column_text(i))
+}
+
+///|
+/// 解析 evolve_artifacts 的 score 文本为 Double（复用同包 executions 的解析器）。
+fn evolve_parse_double(raw : String) -> Double {
+  parse_simple_double(raw)
+}
+
+///|
+/// 取 evolve_artifacts 某列 int。
+fn evolve_col_int(stmt : @sqlite.Statement, i : Int) -> Int {
+  stmt.column_int(i)
 }
 
 ///|
