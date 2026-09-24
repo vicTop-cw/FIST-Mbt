@@ -27,13 +27,17 @@
 
 ```
 selfdrive_review（审视报告 Next Tasks）
-   └─ selfdrive_publish_next（并行发布独立根任务 A-E）
-        └─ task_plan_deep（AO 递归拆解成子任务树）
-             └─ claim / execute / submit / verify（认领→执行→提交→验收）
-                  └─ 通过后归档 → 触发下一轮审视（循环收敛）
+   └─【调研先行】跨模块改动/新机制前：委托 WebSearch 找同类库|项目|论文，沉淀 ≥3 条可移植机制（来源+转化）
+        └─ selfdrive_publish_next（并行发布独立根任务 A-E）
+             └─ task_plan_deep（AO 递归拆解成子任务树）
+                  └─ claim / execute / submit / verify（认领→执行→提交→验收）
+                       └─ verify 通过 →【checkpoint 写时刻】报告收敛写回 memory(target/product) + DGM 档案库
+                            └─ 归档 → 触发下一轮审视（循环收敛）
 ```
 
-评审看到的就是：**一个任务编排系统用它自己的审视报告、幂等发布、递归拆解、九态闭环，把自己打磨到可交付** —— 这既是结果也是活 demo。
+评审看到的就是：**一个任务编排系统用它自己的审视报告、幂等发布、递归拆解、九态闭环，先调研同类机制再自我打磨** —— 这既是结果也是活 demo。
+
+> 「调研先行」与「自我记忆（Hermes 式）」的完整设计与来源见 `memory/research/20260924.selffit-research.md`。
 
 ---
 
@@ -58,6 +62,17 @@ selfdrive_review（审视报告 Next Tasks）
 
 ### E. 主动自曝边界（低优先）
 - 文档写明：`node:sqlite` 实验警告、native 配置复杂度、已知遗留 —— 为什么、怎么绕。
+
+### F. 自我记忆(Hermes 式) + 调研先行固化（高优先，本轮调研产出）
+- 新增 3 个记忆 MCP 工具（挂既有 verify/生命周期，无状态语义不变）：`memory_consolidate`（verify 通过 → 报告收敛写 product/target + reviews 缩编）、`memory_gc`（上限触发合并/软遗忘，不硬删）、`memory_link`（A-Mem 式关联，供 plan/claim 前注入）。
+- memory/ 四件套设「字符上限 + 头部用量」；检索改「冻结快照 + 按需关键词精确」，不全文注入。
+- 「调研先行」固化：跨模块改动/新机制前必须 `memory/research/` 沉淀 ≥3 条可移植机制（来源+一句话转化）——本计划 §二 已并入该步骤。
+- 引用来源：Hermes（hermes-agent.nousresearch.com）、Mem0、A-Mem；详见 `memory/research/20260924.selffit-research.md`。
+
+### G. 自进化机制融入（中优先，可选展开）
+- EvolveR：验收通过任务蒸馏成原则回写 DGM 档案库（补强 evolve_sample）；打回项作负样本。
+- Harness RSI：审视只演化外围流程，改进必须用「不参与训练的样本」独立评测写回（对齐 Omega 门禁）。
+- 参考 MoonBit 生态：MoonClaw（长期记忆+job）→ store 层；mcp-sdk → server 对照。
 
 ---
 
