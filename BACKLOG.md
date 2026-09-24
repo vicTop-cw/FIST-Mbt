@@ -8,10 +8,10 @@
 |-----|------|------|------|-------------------|
 | P0 | 补「30 秒体验」一键演示：README 段落 + scripts/demo 一键脚本（一行命令通起），对冲 MCP 接线门槛 | competition/§四 P0-4 + future-roadmap/近 | done(scripts/demo.ps1 已加并实测 61 工具 PASS；README 终版 0930 接段落) | - |
 | P0 | 清理 README 顶部 AIGC 元数据标记，避免被误判为纯 AI 生成 | competition/§四 P0-2 + future-roadmap/近 | pending | - |
-| P0 | 升级 moonbitlang/async 至 0.22.3（处理 Headers breaking change）并升 x 至 0.5.5 | competition/§四 P0-3 | pending | - |
+| P0 | 升级 moonbitlang/async 至 0.22.3（处理 Headers breaking change）并升 x 至 0.5.5 | competition/§四 P0-3 | blocked: 需 moon 工具链 ≥0.1.20260921(现 0.1.20260904); async 0.22.3 自身用 eprintln 被本 core 移除; moon upgrade 需交互 TTY; 项目代码未用 Headers/Http(仅 js_async)非正确性必需 | - |
 | P0 | 创建 scoring.mbt P0（coverage/fingerprint_ok/schema_ok/accuracy 分项评分，≥7 测试）打通自进化闭环 | competition/§四 P1-5 + future-roadmap/近 | pending | - |
 | P0 | 验证 evolve 模块构建+测试（已并入 148 测试内、双端全绿、CI 三轨道绿） | competition/§四 P0-1 | done | commit `88a781f` |
-| P1 | 下一页项目申报书 PDF（方向/价值/亮点/生态贡献/验证步骤），补齐第一印象材料 | competition/§四 P1-6 + future-roadmap/近 | pending | - |
+| P1 | 下一页项目申报书 PDF（方向/价值/亮点/生态贡献/验证步骤），补齐第一印象材料 | competition/§四 P1-6 + future-roadmap/近 | done(gen_apply_pdf.py 生成 A4 单页, simhei CJK, 已生成 项目申报书.pdf 个人档不入库) | commit(gen_apply_pdf) |
 | P1 | 在 mooncakes.io 发布（moon publish），坐实生态贡献 | competition/§四 P1-7 + future-roadmap/近 | done(v0.2.4 已发布; 首跑 409 版本重复已换 0.2.4) | commit `a373267` |
 | P1 | Agent Contract 7 字段：Objective/Constraints/Tool policy/Stop conditions/Escalation/State discipline/Evidence 注入 ops_selfdrive | five-directions/§一 | pending | - |
 | P1 | Tool Use Rubric：pipeline 生成 prompt 时注入工具使用硬规则降 tool 幻觉 | five-directions/§一 | pending | - |
