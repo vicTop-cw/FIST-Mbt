@@ -1,4 +1,4 @@
-# fist-mbt 参赛证据快照（2026-09-24 第2.5波后）
+# fist-mbt 参赛证据快照（2026-09-24 第3波后 · 目标提档 70/85/97）
 
 > 本快照为 4-AI 概率门禁的唯一事实依据。只含可核实事实，不含自吹。
 > 评审口径：某一证据可用「事实 + 合理外推」支撑即给分（稍宽一档）。
@@ -10,7 +10,7 @@
 
 ## 2. 规模与测试可复现
 - **61 个 MCP 工具** + 2 Resources + 2 Prompts；`moon check` 0 错误。
-- **165 项测试用例 js 全绿**（本人已实跑 `moon test --target js` → 167/167）；JS 与 Native 双后端；CI 三轨道绿色徽章（native 以 CI/ubuntu 为准）。
+- **169 项测试用例 js 全绿**（本人已实跑 `moon test --target js` → 169/169）；JS 与 Native 双后端；CI 三轨道绿色徽章（native 以 CI/ubuntu 为准）。
 - 30 秒一键演示 `scripts/demo.ps1` 实测 PASS（拉起 MCP server，tools/list 61 工具 + publish + get 状态断言）。
 - **视觉终端巡演 `scripts/showcase.ps1` 实测 PASS**：ANSI 彩色 + box-drawing 渲染「九态生命周期状态机 / DAG 依赖树 / 自举采用证据」，一屏讲清全项目（非脚本断言，是真视觉层）。
 - 一把自检 `scripts/mcp_smoke.py` 实测 PASS：断言 61 工具、发布命中 task_id、get 命中且状态待领取。
@@ -33,7 +33,9 @@
 ## 5. 发布前质量硬化（评审通过）
 - 用 open-code-review（官方 code-review 引擎）对全套脚本/CI/githooks/gitignore 审查并修复 40 项问题：HTTP 并发串线竞态修复、cron stderr 管道死锁、客户端/服务端 timeout 错位对齐、非原子状态写改 tmp+replace、CI 最小权限 / checkout 钉 commit SHA / concurrency / timeout-minutes / 工具链 cache、pre-commit set -e。
 - 用 ocr-local（20 条 MoonBit 专项规则 + 逐处人工判伪阳性）审查核心源码，修复系统性 `moonbit-result-discard`：`update_task/upsert_spec` 的 `ignore()` 静默吞错 13 处改为 match 传播 Err，消除状态机与 SQLite 持久化漂移；移除 core_task 死代码。抽查复核：baseline 亦复现的 Windows native 堆损坏 flake 为已知环境边界，非本次回归。
-- **live 人工代码审查修复 8 项真实 bug**（DeepSeek 207 findings 经 QClaw 甄别，2026-09-24）：omega batch_verify_fix 不再伪造修复(如实 needs_human_review)、evolve from_json 补还原 parts/children、Archive::add 先查重再累加、gate evaluator Err 短路、topo_sort 由空操作改为 Kahn 拓扑排序(新增 2 测试)、decompose_rec 传 ns、router 风险关键词 8→24+、未知 cost_tier 改 fail-closed。其中 registry Map.set「丢弃返回值」判定为**假阳性**（本工具链 `Map::set -> Unit` 原地修改，核证 `linked_hash_map.mbt:153`）。
+- **live 人工代码审查修复 8 项真实 bug**（DeepSeek 207 findings 经 QClaw 甄别，2026-09-24）：omega batch_verify_fix 不再伪造修复(如实 needs_human_review)、evolve from_json 补还原 parts/children、Archive::add 先查重再累加、gate evaluator Err 短路、topo_sort 由空操作改为 Kahn 拓扑排序(新增 2 测试)、decompose_rec 传 ns、router 风险关键词 8→24+、未知 cost_tier 改 fail-closed。其中 registry Map.set「丢弃返回值」判定为**假阳性**（本工具链 `Map::set -> Unit` 原地修改，核证 `linked_hash_map.mbt:153`，并新增 `map_probe_test` 活体证实）。
+- **Tnr 深度审查(471 findings / 13 critical) 真实项批量修复**：multi_store 路径遍历(ns 白名单 sanitize)+data_dir 一致+get 缓存；stdio 协议通道纯净(stdout 不再被 println 污染)；omega_gate 结果由 exit/ok 推导(fail-closed)；now_default 改真实墙钟 UTC(civil_from_days)；mcp_delegate 文档与实现对齐；根任务 id 冲突(first_free_root_id)；store_sqlite 手写 JSON 改 Json.stringify 转义；ops_ts 月表对齐；scheduler 风险词词边界匹配；executions_upsert_test 读回验证。run_check 任意命令为**设计能力**(localhost-only 已限，文档注明)。
+- **ocr-local 再探 4 项真 bug 修复**：memory kind 路径遍历白名单校验(consolidate 拒绝/gc 回退)；memory_gc_one 写失败如实返回；**冻结时钟彻底修复**(全部工具 default 改每次调用 now_default() 实时墙钟，移除启动只捕获)；engine.execute 失败 Err 传播。
 - 新增一页《项目申报书》PDF（赛事验收必过项）与 mooncakes 包 readme（README.mbt.md，与 moon.mod readme 字段对齐）。
 
 ## 6. 文档即实现 + 无硬编码 + 可复现
