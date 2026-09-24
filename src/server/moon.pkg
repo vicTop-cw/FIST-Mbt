@@ -6,6 +6,7 @@ import {
   "vicTop-cw/fist-mbt/src/omega",
   "vicTop-cw/fist-mbt/src/evolve",
   "vicTop-cw/fist-mbt/src/executor",
+  "vicTop-cw/fist-mbt/atgc",
   "colmugx/mcp",
   "colmugx/mcp/protocol/types" @mcp_types,
   "colmugx/mcp/protocol/resource" @mcp_resource,

@@ -8,7 +8,7 @@ scripts/mcp_smoke.py — FIST-Mbt 一键自检（评审/自驱 10 秒验证 MCP 
 
 行为：
     1) 拉起 `node _build/js/.../cmd/main/main.js`（MCP server, STDIO）
-    2) tools/list            → 断言含 publish 等 64 个工具
+    2) tools/list            → 断言含 publish 等 67 个工具
     3) publish_parallel      → 发布一个任务，断言拿到 task_id
     4) get                   → 按 task_id 查回，断言命中且状态为待领取
     全部通过打印 `MCP-SMOKE PASS`，退出码 0；任一步失败打印 FAIL，退出码 1。
@@ -66,6 +66,14 @@ def main():
     main_js = find_main()
     if not main_js:
         fail("main.js 未找到；请先执行 `moon build --target js cmd/main`")
+    # moonc ≥0.10.14 对可执行目标输出 ESM，mizchi/sqlite 用 CJS require → 注入 require shim（幂等）
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location(
+        "patch_esm_main", os.path.join(os.path.dirname(os.path.abspath(__file__)), "patch_esm_main.py"),
+    )
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    _mod.patch(main_js)
     proc = subprocess.Popen(
         [NODE, main_js],
         stdin=subprocess.PIPE,
@@ -80,7 +88,7 @@ def main():
         # Step 1 · tools/list
         r = rpc(proc, "tools/list")
         tools = [t["name"] for t in r.get("result", {}).get("tools", [])]
-        expected = 64
+        expected = 67
         if len(tools) != expected or "publish" not in tools:
             fail(f"tools/list 异常（共 {len(tools)} 个工具，期望 {expected}，缺 publish）")
         print(f"PASS tools/list → {len(tools)} 个工具（含 publish/selfdrive_publish_next 等）")

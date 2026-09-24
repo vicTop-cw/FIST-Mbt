@@ -86,11 +86,11 @@ def main():
     pdf.add_page()
     pdf.hd("FIST-Mbt 项目申报书", 15, True)
     pdf.hd("FIST 指挥官任务分配体系的纯 MoonBit 原生重写与 MCP 化", 9)
-    pdf.hd("v0.2.4 · 已发布 mooncakes.io/fist-mbt · 64 MCP 工具 · 174 测试全绿 · JS+Native 双后端", 8)
+    pdf.hd("v0.2.4 · 已发布 mooncakes.io/fist-mbt · 67 MCP 工具 · 184 测试全绿 · JS+Native 双后端", 8)
 
     pdf.sec("一、项目简介")
     pdf.p("把多智能体任务编排框架 FIST（原 Python 版）用纯 MoonBit 原生重写，封装为 MCP Server。"
-          "任何 MCP 客户端（Claude Desktop / AtomCode / Cursor / 自研 JSON-RPC 客户端）均可经标准协议调用 64 个工具，"
+          "任何 MCP 客户端（Claude Desktop / AtomCode / Cursor / 自研 JSON-RPC 客户端）均可经标准协议调用 67 个工具，"
           "完成任务的发布 / 认领 / 拆分 / 执行 / 验收 / 归档全生命周期。")
 
     pdf.sec("二、方向与通用性")
