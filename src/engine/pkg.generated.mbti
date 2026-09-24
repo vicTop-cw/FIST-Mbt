@@ -110,6 +110,8 @@ pub fn FistEngine::resume_task(Self, task_id~ : String, now~ : String) -> Result
 pub fn FistEngine::retry_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::store_delete_heartbeat(Self, task_id~ : String) -> Result[Unit, String]
 pub fn FistEngine::store_list_heartbeats(Self) -> Array[(String, String, String, String)]
+pub fn FistEngine::store_recent_call_logs(Self, limit? : Int) -> Array[Json]
+pub fn FistEngine::store_write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int, seq~ : Int) -> Result[Unit, String]
 pub fn FistEngine::store_write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
 pub fn FistEngine::submit(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::topo_sort(Self, Array[String]) -> Array[String]

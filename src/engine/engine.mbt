@@ -250,6 +250,42 @@ pub fn FistEngine::store_list_heartbeats(
 }
 
 ///|
+/// 写入一条调用日志（委托给 store 后端；best-effort，调用方应忽略错误）。
+pub fn FistEngine::store_write_call_log(
+  self : FistEngine,
+  ts~ : String,
+  tool~ : String,
+  caller~ : String,
+  ns~ : String,
+  params_json~ : String,
+  result_json~ : String,
+  ok~ : Bool,
+  runtime_ms~ : Int,
+  seq~ : Int,
+) -> Result[Unit, String] {
+  self.store.write_call_log(
+    ts~,
+    tool~,
+    caller~,
+    ns~,
+    params_json~,
+    result_json~,
+    ok~,
+    runtime_ms~,
+    seq~,
+  )
+}
+
+///|
+/// 读取最近 N 条调用日志（委托给 store 后端，新的在前）。
+pub fn FistEngine::store_recent_call_logs(
+  self : FistEngine,
+  limit? : Int = 50,
+) -> Array[Json] {
+  self.store.recent_call_logs(limit~)
+}
+
+///|
 pub fn FistEngine::submit(
   self : FistEngine,
   task_id~ : String,

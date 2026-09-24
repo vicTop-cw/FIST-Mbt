@@ -61,6 +61,7 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     "CREATE TABLE IF NOT EXISTS heartbeats (agent_id TEXT NOT NULL, task_id TEXT NOT NULL, last_seen TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', PRIMARY KEY (agent_id, task_id))",
     "CREATE TABLE IF NOT EXISTS archive (id TEXT PRIMARY KEY, task_json TEXT NOT NULL DEFAULT '', archived_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS evolve_artifacts (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', goal TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', code TEXT NOT NULL DEFAULT '', score TEXT NOT NULL DEFAULT '0', parts_json TEXT NOT NULL DEFAULT '{}', children INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '')",
+    "CREATE TABLE IF NOT EXISTS call_log (id INTEGER PRIMARY KEY AUTOINCREMENT, seq INTEGER, ts TEXT, tool TEXT, caller TEXT, ns TEXT, params_json TEXT, result_json TEXT, ok INTEGER, runtime_ms INTEGER)",
   ]
   match self.db {
     None => false
@@ -633,6 +634,7 @@ impl Store for SqliteStore with fn clear(self) {
     Some(db) => {
       ignore(db.exec("DELETE FROM tasks"))
       ignore(db.exec("DELETE FROM archive"))
+      ignore(db.exec("DELETE FROM call_log"))
       // 与 MemoryStore 语义对齐：清空时同时清空语料 / 复验 / 升级账本
       ignore(self.ensure_specs_table())
       ignore(db.exec("DELETE FROM specs"))
@@ -920,6 +922,105 @@ pub fn SqliteStore::list_all_heartbeats(
                 str_from_bytes(stmt.column_text(3)),
               ),
             )
+          }
+          stmt.finalize()
+          out
+        }
+      }
+    }
+  }
+}
+
+// —— 调用日志（call_log 表）：与 write_heartbeat 同一持久化模式 ——
+
+///|
+/// 写入一条调用日志到 call_log 表。best-effort：失败返回 Err（调用方应忽略）。
+pub fn SqliteStore::write_call_log(
+  self : SqliteStore,
+  ts~ : String,
+  tool~ : String,
+  caller~ : String,
+  ns~ : String,
+  params_json~ : String,
+  result_json~ : String,
+  ok~ : Bool,
+  runtime_ms~ : Int,
+  seq~ : Int,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "INSERT INTO call_log (seq, ts, tool, caller, ns, params_json, result_json, ok, runtime_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      match db.prepare(sql) {
+        None => Err("sqlite prepare 失败: write_call_log")
+        Some(stmt) => {
+          ignore(stmt.bind(1, @sqlite.SqlValue::Int(seq)))
+          ignore(
+            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ts))),
+          )
+          ignore(
+            stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, tool))),
+          )
+          ignore(
+            stmt.bind(4, @sqlite.SqlValue::Text(@encoding.encode(UTF8, caller))),
+          )
+          ignore(
+            stmt.bind(5, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(
+              6,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, params_json)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              7,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, result_json)),
+            ),
+          )
+          ignore(stmt.bind(8, @sqlite.SqlValue::Int(if ok { 1 } else { 0 })))
+          ignore(stmt.bind(9, @sqlite.SqlValue::Int(runtime_ms)))
+          let exec_ok = stmt.execute()
+          stmt.finalize()
+          if exec_ok {
+            Ok(())
+          } else {
+            Err("sqlite 写入 call_log 失败: tool=\{tool}")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 读取最近 N 条调用日志（按 seq DESC，新的在前）。
+pub fn SqliteStore::recent_call_logs(
+  self : SqliteStore,
+  limit? : Int = 50,
+) -> Array[Json] {
+  let out : Array[Json] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT seq, ts, tool, caller, ns, params_json, result_json, ok, runtime_ms FROM call_log ORDER BY seq DESC LIMIT ?"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          ignore(stmt.bind(1, @sqlite.SqlValue::Int(limit)))
+          while stmt.step() {
+            let m : Map[String, Json] = Map([])
+            m.set("seq", Json::number(stmt.column_int(0).to_double()))
+            m.set("ts", Json::string(str_from_bytes(stmt.column_text(1))))
+            m.set("tool", Json::string(str_from_bytes(stmt.column_text(2))))
+            m.set("caller", Json::string(str_from_bytes(stmt.column_text(3))))
+            m.set("ns", Json::string(str_from_bytes(stmt.column_text(4))))
+            m.set("params", Json::string(str_from_bytes(stmt.column_text(5))))
+            m.set("result", Json::string(str_from_bytes(stmt.column_text(6))))
+            m.set("ok", Json::boolean(stmt.column_int(7) != 0))
+            m.set("runtime_ms", Json::number(stmt.column_int(8).to_double()))
+            out.push(Json::object(m))
           }
           stmt.finalize()
           out

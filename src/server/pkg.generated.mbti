@@ -2,14 +2,21 @@
 package "vicTop-cw/fist-mbt/src/server"
 
 import {
+  "colmugx/mcp/protocol/tool",
+  "colmugx/mcp/protocol/types",
+  "vicTop-cw/fist-mbt/src/engine",
   "vicTop-cw/fist-mbt/src/evolve",
   "vicTop-cw/fist-mbt/src/store",
 }
 
 // Values
+pub fn bug_list(String) -> Result[Json, String]
+
 pub fn distill_principle_goal(String) -> String
 
 pub fn do_evolve_distill(@evolve.Archive, @store.SqliteStore?, String, String, Double, String) -> Json
+
+pub fn instrumented_tool(@colmugx/mcp/server.MCPServer, String, String, Json, async (Json) -> Result[@tool.ToolResult, @types.MCPError]) -> @colmugx/mcp/server.MCPServer
 
 pub async fn laya_decide_external(String, Array[String], String, String, Int) -> Result[Json, String]
 
@@ -24,6 +31,8 @@ pub fn memory_gc_logic(String, Int) -> (String, String)
 pub fn memory_gc_one(String, String, Int) -> Json
 
 pub fn memory_link(String, String, String, String) -> Result[Json, String]
+
+pub fn report_bug(String, String, detail~ : String, severity~ : String, ref_call_id~ : String, reported_by~ : String, publish_task~ : Bool, @engine.FistEngine, now~ : String) -> Result[Json, String]
 
 pub async fn run_check_external(String, Array[String], String, Int) -> Result[Json, String]
 
