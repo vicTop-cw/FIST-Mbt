@@ -36,7 +36,25 @@ pub fn list_contested(@engine.FistEngine) -> Array[@core.Task]
 
 pub fn list_holdings(@engine.FistEngine, String) -> Array[@core.Task]
 
+pub fn pipeline_tick(@engine.FistEngine, String, String, ns? : String, timeout_sec? : Int, phase? : String, prompt_name? : String) -> Result[Json, String]
+
 pub fn read_meta_prompt(String) -> String?
+
+pub fn selfdrive_export_tasks(@engine.FistEngine, String, String) -> Result[Json, String]
+
+pub fn selfdrive_memory_append(String, ns~ : String, kind~ : String, content~ : String, now~ : String) -> Result[Json, String]
+
+pub fn selfdrive_memory_get(String, ns~ : String, kind~ : String) -> Result[Json, String]
+
+pub fn selfdrive_memory_init(String, ns~ : String) -> Result[Json, String]
+
+pub fn selfdrive_parse_next_tasks(String, max_tasks~ : Int) -> Array[String]
+
+pub fn selfdrive_publish_next(@engine.FistEngine, String, ns~ : String, now~ : String, max_tasks~ : Int) -> Result[Json, String]
+
+pub fn selfdrive_review_ready(String, ns~ : String) -> Result[Json, String]
+
+pub fn selfdrive_review_tick(String, ns~ : String, review_every~ : Int) -> Result[Json, String]
 
 pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String, cold_start? : Bool, project_dir? : String, omega_strong_verify? : Bool, omega_split_n? : Int, omega_spec? : Json?) -> Result[Json, String]
 

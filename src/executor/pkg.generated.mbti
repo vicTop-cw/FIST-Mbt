@@ -19,6 +19,7 @@ pub struct ExecContext {
   description : String
   assignee : String
 }
+pub fn ExecContext::new(String, String, String, String) -> Self
 
 pub struct ExecResult {
   ok : Bool
@@ -31,6 +32,10 @@ pub struct ExecResult {
   duration_ms : Int
   error_msg : String
 }
+pub fn ExecResult::fail(String, String) -> Self
+pub fn ExecResult::ok(String, String) -> Self
+pub fn ExecResult::to_json(Self) -> Json
+pub fn ExecResult::with_tokens(Self, Int, Int, Double) -> Self
 
 pub struct ExecutorRegistry {
   executors : Map[String, String]
@@ -38,11 +43,14 @@ pub struct ExecutorRegistry {
 pub fn ExecutorRegistry::get(Self, String) -> String?
 pub fn ExecutorRegistry::has(Self, String) -> Bool
 pub fn ExecutorRegistry::list(Self) -> Array[String]
+pub fn ExecutorRegistry::new() -> Self
 pub fn ExecutorRegistry::register(Self, String) -> Self
 
 pub struct McpDelegateExecutor {
   name : String
 }
+pub fn McpDelegateExecutor::new() -> Self
+pub fn McpDelegateExecutor::with_name(String) -> Self
 
 // Type aliases
 

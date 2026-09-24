@@ -216,10 +216,7 @@ pub fn StoreBackend::list_tasks_in(
 
 ///|
 /// 设置默认命名空间
-pub fn StoreBackend::set_namespace(
-  self : StoreBackend,
-  ns : String,
-) -> Unit {
+pub fn StoreBackend::set_namespace(self : StoreBackend, ns : String) -> Unit {
   match self {
     Mem(m) => m.default_ns = ns
     Sql(_) => ()

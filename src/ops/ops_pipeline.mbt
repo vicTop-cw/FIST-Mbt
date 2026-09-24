@@ -53,9 +53,7 @@ fn ensure_dir(path : String) -> Unit {
 ///|
 /// 安全写入文本文件（失败返回 false，不抛错）。
 fn pipeline_write(path : String, content : String) -> Bool {
-  let r : Unit? = Some(
-    @fs.write_string_to_file(path, content, encoding="utf8"),
-  ) catch {
+  let r : Unit? = Some(@fs.write_string_to_file(path, content, encoding="utf8")) catch {
     _ => None
   }
   match r {
@@ -130,7 +128,11 @@ fn scan_prompt_tasks(
       count = count + 1
       let st = t.get_status().to_string()
       latest_status = st
-      if st == "待领取" || st == "已领取" || st == "拆分中" || st == "执行中" || st == "待验收" {
+      if st == "待领取" ||
+        st == "已领取" ||
+        st == "拆分中" ||
+        st == "执行中" ||
+        st == "待验收" {
         active = Some(t)
       }
     }
@@ -281,7 +283,9 @@ pub fn pipeline_tick(
   }
   let ns_final = if ns == "" { "default" } else { ns }
   if ns_final == "default" {
-    return Err("pipeline_tick 仅限非 default 命名空间（避免污染人工指挥流程）")
+    return Err(
+      "pipeline_tick 仅限非 default 命名空间（避免污染人工指挥流程）",
+    )
   }
   let gen_dir = pipeline_gen_dir(project_dir)
   ensure_dir(gen_dir)
@@ -428,28 +432,25 @@ pub fn pipeline_tick(
     let healed_json = Json::array(healed.map(fn(s) { Json::string(s) }))
     let j = match state_in {
       "absent" | "Creating" | "Closed" =>
-        match advance_from_idle(
-          engine,
-          project_dir,
-          now,
-          ns_final,
-          state_in,
-          state_path,
-        ) {
+        match
+          advance_from_idle(
+            engine, project_dir, now, ns_final, state_in, state_path,
+          ) {
           Ok(x) => x
           Err(e) => return Err(e)
         }
       "Pending" =>
-        match advance_from_pending(
-          engine,
-          project_dir,
-          now,
-          ns_final,
-          gen_dir,
-          state_path,
-          started_path,
-          only_prompt=prompt_name,
-        ) {
+        match
+          advance_from_pending(
+            engine,
+            project_dir,
+            now,
+            ns_final,
+            gen_dir,
+            state_path,
+            started_path,
+            only_prompt=prompt_name,
+          ) {
           Ok(x) => x
           Err(e) => return Err(e)
         }
@@ -725,7 +726,9 @@ fn advance_from_pending(
           "Running",
           "execute",
           ns,
-          "已发布本轮根任务（幂等标记 " + pipeline_marker(pf) + "），等待执行者接管",
+          "已发布本轮根任务（幂等标记 " +
+          pipeline_marker(pf) +
+          "），等待执行者接管",
           Some(pf),
           Some(ppath),
           Some(content),
@@ -809,7 +812,11 @@ fn advance_from_running(
       } else {
         let t0 = iso_to_secs(started)
         let t1 = iso_to_secs(now)
-        if t0 < 0 || t1 < 0 { false } else { t1 - t0 >= timeout_sec }
+        if t0 < 0 || t1 < 0 {
+          false
+        } else {
+          t1 - t0 >= timeout_sec
+        }
       }
       if stale {
         pj_make(

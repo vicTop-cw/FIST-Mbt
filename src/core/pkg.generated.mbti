@@ -26,19 +26,6 @@ pub fn role_of(String) -> Result[Role, String]
 
 // Types and methods
 pub enum Action {
-  Publish
-  Dispatch
-  Search
-  Allocate
-  Claim
-  Execute
-  Submit
-  Verify
-  Complete
-  Archive
-  Reopen
-  Observe
-  ManageProject
   CreateSpec
   ReviewSpec
 } derive(Eq, @debug.Debug)
@@ -106,7 +93,7 @@ pub fn Task::new(id~ : String, project_dir~ : String, description? : String, pri
 pub fn Task::pause(Self) -> Result[Self, String]
 pub fn Task::reject(Self, reason? : String) -> Result[Self, String]
 pub fn Task::reopen(Self) -> Result[Self, String]
-pub fn Task::resume(Self) -> Result[Self, String]
+pub fn Task::resume_task(Self) -> Result[Self, String]
 pub fn Task::retry(Self) -> Result[Self, String]
 pub fn Task::split(Self) -> Result[Self, String]
 pub fn Task::status_to_string(Self) -> String

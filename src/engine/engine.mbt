@@ -563,6 +563,43 @@ pub fn FistEngine::cold_publish(
 }
 
 ///|
+/// 并行追加独立根任务：连续发布多条互不依赖的根任务（自驱式编程「审视 -> 自我派活」用）。
+///
+/// 与 cold_publish（要求 ns 为空）和 publish_next_round（要求前轮已完成并续轮归档）不同，
+/// 本方法允许命名空间已有任务，直接以唯一 id（T0 / T0r2 / T0r3 ...）追加为新的独立根任务，
+/// 不续轮、不归档、不要求前轮状态，专用于同一审视报告的多条 Next Tasks 并行落地。
+pub fn FistEngine::publish_parallel(
+  self : FistEngine,
+  ns~ : String,
+  description~ : String,
+  created_by~ : String,
+  project_dir~ : String,
+  now~ : String,
+) -> Result[String, String] {
+  if ns == "" || ns == "default" {
+    return Err(
+      "并行发布仅限定时任务/自驱命名空间（namespace 不得为空或 default）",
+    )
+  }
+  // 续轮发起者仅作审计用途（Task 无 created_by 字段），非法值不阻断。
+  ignore(created_by)
+  let id = self.first_free_root_id()
+  let t = @core.Task::new(
+    id~,
+    project_dir~,
+    description~,
+    depth=3,
+    split_n=3,
+    created_at=now,
+    ns~,
+  )
+  match self.store.create_task(t) {
+    Ok(_) => Ok(id)
+    Err(e) => Err(e)
+  }
+}
+
+///|
 /// 回滚/重派：任意非归档任务 -> 已领取（M4 heal watchdog 用）。返回回滚后的任务。
 pub fn FistEngine::reopen_task(
   self : FistEngine,

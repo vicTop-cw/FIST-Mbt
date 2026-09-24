@@ -281,6 +281,46 @@ pub async fn run_server() -> Unit {
       },
     )
     .tool(
+      "publish_parallel",
+      "并行追加独立根任务（不要求命名空间为空、不续轮不归档）：在已有任务的命名空间追加新的独立根任务，供自驱/定时命名空间连续发布多根使用。参数：project_dir、description(必填)、namespace(必填，非 default)、created_by(默认 selfdrive)、now。",
+      schema(
+        {
+          "project_dir": string_prop("项目目录（必填）"),
+          "description": string_prop("任务描述（必填）"),
+          "namespace": string_prop("命名空间（必填，不得为 default）"),
+          "created_by": string_prop("创建者身份(默认 selfdrive)"),
+          "now": string_prop("时间戳(可选)"),
+        },
+        ["project_dir", "description", "namespace"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let project_dir = get_str(args, "project_dir")
+        let description = get_str(args, "description")
+        let ns = get_str(args, "namespace")
+        let created_by = get_str(args, "created_by", default="selfdrive")
+        let ts = get_str(args, "now", default=now)
+        match
+          engine.publish_parallel(
+            ns~,
+            description~,
+            created_by~,
+            project_dir~,
+            now=ts,
+          ) {
+          Ok(id) =>
+            Ok(
+              @mcp.ToolResult::text(
+                Json::object({
+                  "task_id": Json::string(id),
+                  "message": Json::string("已并行追加独立根任务"),
+                }).stringify(),
+              ),
+            )
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
       "plan",
       "对指定任务拆分生成一层子任务（非原子任务才可拆）。参数：task_id 任务id、split_n 拆分数量(默认3)、by 执行者。",
       schema(
@@ -1010,6 +1050,199 @@ pub async fn run_server() -> Unit {
           Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
           Err(e) => Err(@mcp_types.ToolError(e))
         }
+      },
+    )
+    .tool(
+      "selfdrive_init",
+      "自驱式编程·初始化 memory 四件套（product/target/task/thinking + reviews 目录），幂等不覆盖。参数：project_dir(必填)、namespace(可选默认 default)。",
+      schema(
+        {
+          "project_dir": string_prop(
+            "项目目录（必填）：其下生成 memory/ 四件套",
+          ),
+          "namespace": string_prop("命名空间(可选默认 default)"),
+        },
+        ["project_dir"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let project_dir = get_str(args, "project_dir")
+        let ns = get_str(args, "namespace", default="default")
+        match @ops.selfdrive_memory_init(project_dir, ns~) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "selfdrive_append",
+      "自驱式编程·追加/更新 memory 条目。参数：project_dir(必填)、kind(必填 thinking/product/target/task)、content(必填)、namespace、now(可选)。thinking 为 append-only 流水带时间戳；其余覆盖写。",
+      schema(
+        {
+          "project_dir": string_prop("项目目录（必填）"),
+          "kind": string_prop(
+            "条目类型（必填）：thinking/product/target/task",
+          ),
+          "content": string_prop("内容（必填）"),
+          "namespace": string_prop("命名空间(可选默认 default)"),
+          "now": string_prop("时间戳(可选，默认内置)"),
+        },
+        ["project_dir", "kind", "content"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let project_dir = get_str(args, "project_dir")
+        let kind = get_str(args, "kind")
+        let content = get_str(args, "content")
+        let ns = get_str(args, "namespace", default="default")
+        let ts = get_str(args, "now", default=now_default())
+        match
+          @ops.selfdrive_memory_append(
+            project_dir,
+            ns~,
+            kind~,
+            content~,
+            now=ts,
+          ) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "selfdrive_get",
+      "自驱式编程·读取指定 memory 文件。参数：project_dir(必填)、kind(必填 thinking/product/target/task)、namespace。返回 {exists, content}。",
+      schema(
+        {
+          "project_dir": string_prop("项目目录（必填）"),
+          "kind": string_prop(
+            "条目类型（必填）：thinking/product/target/task",
+          ),
+          "namespace": string_prop("命名空间(可选默认 default)"),
+        },
+        ["project_dir", "kind"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let project_dir = get_str(args, "project_dir")
+        let kind = get_str(args, "kind")
+        let ns = get_str(args, "namespace", default="default")
+        match @ops.selfdrive_memory_get(project_dir, ns~, kind~) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "selfdrive_export_tasks",
+      "自驱式编程·从任务库导出任务清单到 task.md（视图覆盖写）。参数：project_dir(必填)、namespace(可选默认 default)。",
+      schema(
+        {
+          "project_dir": string_prop("项目目录（必填）"),
+          "namespace": string_prop("命名空间(可选默认 default)"),
+        },
+        ["project_dir"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let project_dir = get_str(args, "project_dir")
+        let ns = get_str(args, "namespace", default="default")
+        match @ops.selfdrive_export_tasks(engine, project_dir, ns) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "selfdrive_review_tick",
+      "自驱式编程·审视轮判定：Reports/ 报告数 - 已审视轮次 >= review_every 触发审视返回 action=review（附最近报告+memory 摘要），否则返回 idle/no_memory/safe_exit。参数：project_dir(必填)、review_every(可选默认3)、namespace。",
+      schema(
+        {
+          "project_dir": string_prop("项目目录（必填）"),
+          "review_every": int_prop(
+            "审视频率(可选默认3)：每满 N 份报告触发一轮",
+          ),
+          "namespace": string_prop("命名空间(可选默认 default)"),
+        },
+        ["project_dir"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let project_dir = get_str(args, "project_dir")
+        let review_every = get_int(args, "review_every", default=3)
+        let ns = get_str(args, "namespace", default="default")
+        match @ops.selfdrive_review_tick(project_dir, ns~, review_every~) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "selfdrive_review_ready",
+      "自驱式编程·审视收口：确认 memory/reviews/ 最新审视报告已落盘并推进已审视轮次（报告先行，无报告拒绝推进）。参数：project_dir(必填)、namespace。",
+      schema(
+        {
+          "project_dir": string_prop("项目目录（必填）"),
+          "namespace": string_prop("命名空间(可选默认 default)"),
+        },
+        ["project_dir"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let project_dir = get_str(args, "project_dir")
+        let ns = get_str(args, "namespace", default="default")
+        match @ops.selfdrive_review_ready(project_dir, ns~) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "selfdrive_publish_next",
+      "自驱式编程·解析最新审视报告 `## Next Tasks` 段并将待办任务并行发布为同命名空间下独立根任务（幂等，description 内嵌 [review:<file>:<idx>] 标记防重）。参数：project_dir(必填)、namespace(可选默认 default)、max_tasks(可选默认10)、now(可选)。",
+      schema(
+        {
+          "project_dir": string_prop("项目目录（必填）"),
+          "namespace": string_prop("命名空间(可选默认 default)"),
+          "max_tasks": int_prop("最多发布任务数(可选默认10)"),
+          "now": string_prop("时间戳(可选，默认内置)"),
+        },
+        ["project_dir"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let project_dir = get_str(args, "project_dir")
+        let ns = get_str(args, "namespace", default="default")
+        let max_tasks = get_int(args, "max_tasks", default=10)
+        let ts = get_str(args, "now", default=now_default())
+        match
+          @ops.selfdrive_publish_next(
+            engine,
+            project_dir,
+            ns~,
+            max_tasks~,
+            now=ts,
+          ) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "selfdrive_parse_next_tasks",
+      "自驱式编程·纯解析审视报告文本中的 `## Next Tasks` 段（调试/校验用）。参数：content(必填)、max_tasks(可选默认10)。",
+      schema(
+        {
+          "content": string_prop("审视报告全文（必填）"),
+          "max_tasks": int_prop("最多返回任务数(可选默认10)"),
+        },
+        ["content"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let content = get_str(args, "content")
+        let max_tasks = get_int(args, "max_tasks", default=10)
+        let tasks = @ops.selfdrive_parse_next_tasks(content, max_tasks~)
+        Ok(
+          @mcp.ToolResult::text(
+            Json::object({
+              "tasks": Json::array(tasks.map(fn(t) { Json::string(t) })),
+              "count": Json::number(tasks.length().to_double()),
+            }).stringify(),
+          ),
+        )
       },
     )
     .tool(

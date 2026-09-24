@@ -101,6 +101,7 @@ pub fn FistEngine::plan(Self, task_id~ : String, split_n? : Int, by~ : String, n
 pub fn FistEngine::plan_deep(Self, task_id~ : String, split_n? : Int, by~ : String, spec? : Json?, now~ : String, omega_strong_verify? : Bool) -> Result[Json, String]
 pub fn FistEngine::publish(Self, project_dir~ : String, description~ : String, created_by~ : String, now~ : String, ns? : String) -> Result[String, String]
 pub fn FistEngine::publish_next_round(Self, ns~ : String, description~ : String, created_by~ : String, prev_task_id~ : String, now~ : String) -> Result[String, String]
+pub fn FistEngine::publish_parallel(Self, ns~ : String, description~ : String, created_by~ : String, project_dir~ : String, now~ : String) -> Result[String, String]
 pub fn FistEngine::publish_with_deps(Self, project_dir~ : String, description~ : String, depends_on? : Array[String], created_by? : String, now? : String, ns? : String) -> Result[String, String]
 pub fn FistEngine::ready_tasks(Self, ns_filter? : String) -> Array[@core.Task]
 pub fn FistEngine::reject_task(Self, task_id~ : String, reason? : String, by~ : String, now~ : String) -> Result[@core.Task, String]

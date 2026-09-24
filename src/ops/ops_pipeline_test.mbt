@@ -33,7 +33,11 @@ fn pl_dir(name : String) -> String {
 ///|
 /// 落盘一份提示词。
 fn pl_prompt(dir : String, name : String, content : String) -> Unit {
-  @fs.write_string_to_file(dir + "/Gen_Prompts/" + name, content, encoding="utf8") catch {
+  @fs.write_string_to_file(
+    dir + "/Gen_Prompts/" + name,
+    content,
+    encoding="utf8",
+  ) catch {
     _ => abort("写提示词失败: " + name)
   }
 }
@@ -69,9 +73,7 @@ fn pl_write(path : String, content : String) -> Unit {
 /// 读状态文件原始内容（缺失返回 "<none>"）。
 fn pl_raw_state(dir : String) -> String {
   match
-    (Some(
-      @fs.read_file_to_string(dir + "/currentState.txt", encoding="utf8"),
-    ) catch {
+    (Some(@fs.read_file_to_string(dir + "/currentState.txt", encoding="utf8")) catch {
       _ => None
     }) {
     Some(s) => s
@@ -127,8 +129,7 @@ fn pl_tick_named(
   now : String,
   prompt_name : String,
 ) -> Json {
-  match
-    pipeline_tick(e, dir, now, ns="cron-auto", prompt_name~) {
+  match pipeline_tick(e, dir, now, ns="cron-auto", prompt_name~) {
     Ok(j) => j
     Err(m) => abort("pipeline_tick 失败: " + m)
   }
@@ -142,7 +143,11 @@ fn pl_count(e : @engine.FistEngine, ns : String) -> Int {
 
 ///|
 /// 取命名空间中某提示词标记对应的任务 id（找不到返回 "<none>"）。
-fn pl_task_of(e : @engine.FistEngine, ns : String, prompt_name : String) -> String {
+fn pl_task_of(
+  e : @engine.FistEngine,
+  ns : String,
+  prompt_name : String,
+) -> String {
   let marker = "[prompt:" + prompt_name + "]"
   for t in e.list_in_ns(ns) {
     if t.description.contains(marker) {
@@ -156,6 +161,7 @@ fn pl_task_of(e : @engine.FistEngine, ns : String, prompt_name : String) -> Stri
 // 用例
 // ---------------------------------------------------------------------------
 
+///|
 test "pipeline_1_idle_generate" {
   let dir = pl_dir("pl_c1_generate")
   pl_prompt(dir, "20260920.10.00.00.md", "# 提示词1\n做点事")
@@ -170,6 +176,7 @@ test "pipeline_1_idle_generate" {
   assert_eq(pl_count(e, "cron-auto"), 0)
 }
 
+///|
 test "pipeline_2_prompt_ready_to_pending" {
   let dir = pl_dir("pl_c2_prompt_ready")
   pl_prompt(dir, "20260920.11.00.00.md", "# 提示词2")
@@ -191,6 +198,7 @@ test "pipeline_2_prompt_ready_to_pending" {
   assert_eq(pl_raw_state(dir).trim().to_owned(), "Pending")
 }
 
+///|
 test "pipeline_3_pending_publishes_root_task" {
   let dir = pl_dir("pl_c3_pending_publish")
   pl_prompt(dir, "20260920.12.00.00.md", "# 提示词3\n做任务3")
@@ -208,6 +216,7 @@ test "pipeline_3_pending_publishes_root_task" {
   assert_true(pl_str(j, "prompt_content").contains("做任务3"))
 }
 
+///|
 test "pipeline_4_pending_idempotent" {
   let dir = pl_dir("pl_c4_idempotent")
   pl_prompt(dir, "20260920.13.00.00.md", "# 提示词4")
@@ -224,6 +233,7 @@ test "pipeline_4_pending_idempotent" {
   assert_eq(pl_count(e, "cron-auto"), 1)
 }
 
+///|
 test "pipeline_5_running_timeout_without_report" {
   let dir = pl_dir("pl_c5_timeout")
   pl_prompt(dir, "20260920.14.00.00.md", "# 提示词5")
@@ -237,6 +247,7 @@ test "pipeline_5_running_timeout_without_report" {
   assert_eq(pl_raw_state(dir).trim().to_owned(), "Running")
 }
 
+///|
 test "pipeline_6_running_with_report_closes" {
   let dir = pl_dir("pl_c6_closed_by_report")
   pl_prompt(dir, "20260920.15.00.00.md", "# 提示词6")
@@ -250,13 +261,20 @@ test "pipeline_6_running_with_report_closes" {
   assert_eq(pl_raw_state(dir).trim().to_owned(), "Closed")
 }
 
+///|
 test "pipeline_7_report_ready_without_report_blocked" {
   let dir = pl_dir("pl_c7_report_ready_missing")
   pl_prompt(dir, "20260920.16.30.00.md", "# 提示词7")
   pl_set_state(dir, "Running")
   let e = wd_sqlite_engine("temp/pl_c7.db")
   let j = match
-    pipeline_tick(e, dir, "2026-09-20T16:35:00+08:00", ns="cron-auto", phase="report_ready") {
+    pipeline_tick(
+      e,
+      dir,
+      "2026-09-20T16:35:00+08:00",
+      ns="cron-auto",
+      phase="report_ready",
+    ) {
     Ok(x) => x
     Err(m) => abort(m)
   }
@@ -266,6 +284,7 @@ test "pipeline_7_report_ready_without_report_blocked" {
   assert_eq(pl_raw_state(dir).trim().to_owned(), "Running")
 }
 
+///|
 test "pipeline_8_report_ready_with_report_closes" {
   let dir = pl_dir("pl_c8_report_ready_ok")
   pl_prompt(dir, "20260920.17.30.00.md", "# 提示词8")
@@ -273,7 +292,13 @@ test "pipeline_8_report_ready_with_report_closes" {
   pl_set_state(dir, "Running")
   let e = wd_sqlite_engine("temp/pl_c8.db")
   let j = match
-    pipeline_tick(e, dir, "2026-09-20T17:35:00+08:00", ns="cron-auto", phase="report_ready") {
+    pipeline_tick(
+      e,
+      dir,
+      "2026-09-20T17:35:00+08:00",
+      ns="cron-auto",
+      phase="report_ready",
+    ) {
     Ok(x) => x
     Err(m) => abort(m)
   }
@@ -281,6 +306,7 @@ test "pipeline_8_report_ready_with_report_closes" {
   assert_eq(pl_raw_state(dir).trim().to_owned(), "Closed")
 }
 
+///|
 test "pipeline_9_closed_without_report_blocks_advance" {
   let dir = pl_dir("pl_c9_closed_no_report")
   pl_prompt(dir, "20260920.18.30.00.md", "# 提示词9")
@@ -292,6 +318,7 @@ test "pipeline_9_closed_without_report_blocks_advance" {
   assert_eq(pl_raw_state(dir).trim().to_owned(), "Closed")
 }
 
+///|
 test "pipeline_10_closed_with_report_generates_next" {
   let dir = pl_dir("pl_c10_closed_has_report")
   pl_prompt(dir, "20260920.19.30.00.md", "# 提示词10")
@@ -305,12 +332,15 @@ test "pipeline_10_closed_with_report_generates_next" {
   assert_eq(pl_raw_state(dir).trim().to_owned(), "Creating")
 }
 
+///|
 test "pipeline_11_next_round_after_completion" {
   let dir = pl_dir("pl_c11_next_round")
   pl_prompt(dir, "20260920.20.30.00.md", "# 提示词11-a")
   pl_set_state(dir, "Pending")
   let e = wd_sqlite_engine("temp/pl_c11.db")
-  let j1 = pl_tick_named(e, dir, "2026-09-20T20:30:00+08:00", "20260920.20.30.00.md")
+  let j1 = pl_tick_named(
+    e, dir, "2026-09-20T20:30:00+08:00", "20260920.20.30.00.md",
+  )
   assert_eq(pl_str(j1, "task_id"), "T0")
   // 报告先行：上一轮报告落盘后才完成任务
   pl_report(dir, "20260920.20.30.00.md", "# 报告11-a")
@@ -318,13 +348,16 @@ test "pipeline_11_next_round_after_completion" {
   // 新提示词落盘 + 再次 Pending -> 发布下一轮根任务
   pl_prompt(dir, "20260920.21.30.00.md", "# 提示词11-b")
   pl_set_state(dir, "Pending")
-  let j2 = pl_tick_named(e, dir, "2026-09-20T21:30:00+08:00", "20260920.21.30.00.md")
+  let j2 = pl_tick_named(
+    e, dir, "2026-09-20T21:30:00+08:00", "20260920.21.30.00.md",
+  )
   assert_eq(wd_action(j2), "execute")
   assert_eq(pl_str(j2, "task_id"), "T0r2")
   assert_eq(pl_count(e, "cron-auto"), 2)
   assert_eq(pl_task_of(e, "cron-auto", "20260920.21.30.00.md"), "T0r2")
 }
 
+///|
 test "pipeline_12_ignores_underscore_files" {
   let dir = pl_dir("pl_c12_underscore")
   pl_prompt(dir, "20260920.22.30.00.md", "# 真提示词12")
@@ -338,6 +371,7 @@ test "pipeline_12_ignores_underscore_files" {
   assert_eq(pl_count(e, "cron-auto"), 1)
 }
 
+///|
 test "pipeline_13_invalid_state_safe_exit" {
   let dir = pl_dir("pl_c13_invalid")
   pl_prompt(dir, "20260920.23.30.00.md", "# 提示词13")
@@ -351,6 +385,7 @@ test "pipeline_13_invalid_state_safe_exit" {
   assert_eq(pl_count(e, "cron-auto"), 0)
 }
 
+///|
 test "pipeline_14_default_namespace_rejected" {
   let dir = pl_dir("pl_c14_default")
   pl_prompt(dir, "20260921.00.30.00.md", "# 提示词14")
@@ -363,6 +398,7 @@ test "pipeline_14_default_namespace_rejected" {
   assert_eq(pl_count(e, "default"), 0)
 }
 
+///|
 test "pipeline_15_stale_heartbeat_healed" {
   let dir = pl_dir("pl_c15_heal")
   pl_prompt(dir, "20260921.01.30.00.md", "# 提示词15")
@@ -371,8 +407,12 @@ test "pipeline_15_stale_heartbeat_healed" {
   let j1 = pl_tick(e, dir, "2026-09-21T01:30:00+08:00")
   assert_eq(pl_str(j1, "task_id"), "T0")
   // T0 置为执行中并写入一条过期心跳（2 小时前）
-  ignore(e.claim(task_id="T0", assignee="worker-a", now="2026-09-21T01:31:00+08:00"))
-  ignore(e.execute(task_id="T0", deliverable="d1", now="2026-09-21T01:32:00+08:00"))
+  ignore(
+    e.claim(task_id="T0", assignee="worker-a", now="2026-09-21T01:31:00+08:00"),
+  )
+  ignore(
+    e.execute(task_id="T0", deliverable="d1", now="2026-09-21T01:32:00+08:00"),
+  )
   wd_beat(e, "T0", "2026-09-21T01:33:00+08:00", "执行中")
   let j2 = pl_tick(e, dir, "2026-09-21T03:40:00+08:00")
   // 超时心跳被回滚：healed 上报且任务回到「已领取」（与 engine.reopen_task 既定语义一致，待重派）
@@ -381,18 +421,23 @@ test "pipeline_15_stale_heartbeat_healed" {
   assert_eq(tasks[0].get_status().to_string(), "已领取")
 }
 
+///|
 test "pipeline_16_backlog_does_not_stack_new_round" {
   let dir = pl_dir("pl_c16_backlog")
   pl_prompt(dir, "20260920.23.30.00.md", "# 提示词16-a")
   pl_set_state(dir, "Pending")
   let e = wd_sqlite_engine("temp/pl_c16.db")
-  let j1 = pl_tick_named(e, dir, "2026-09-20T23:30:00+08:00", "20260920.23.30.00.md")
+  let j1 = pl_tick_named(
+    e, dir, "2026-09-20T23:30:00+08:00", "20260920.23.30.00.md",
+  )
   assert_eq(wd_action(j1), "execute")
   assert_eq(pl_str(j1, "task_id"), "T0")
   // 上一轮任务仍在途（待领取）时又来一份新提示词：不得再发布新任务堆积（空转根因防护）
   pl_prompt(dir, "20260920.23.45.00.md", "# 提示词16-b")
   pl_set_state(dir, "Pending")
-  let j2 = pl_tick_named(e, dir, "2026-09-20T23:45:00+08:00", "20260920.23.45.00.md")
+  let j2 = pl_tick_named(
+    e, dir, "2026-09-20T23:45:00+08:00", "20260920.23.45.00.md",
+  )
   assert_eq(pl_count(e, "cron-auto"), 1)
   assert_eq(wd_action(j2), "wait")
 }

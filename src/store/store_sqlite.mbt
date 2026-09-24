@@ -406,16 +406,10 @@ impl Store for SqliteStore with fn list_tasks(self) {
   match self.db {
     None => out
     Some(db) => {
-      let sql = "SELECT \{SqliteStore::task_columns()} FROM tasks WHERE ns = ?"
+      let sql = "SELECT \{SqliteStore::task_columns()} FROM tasks"
       match db.prepare(sql) {
         None => out
         Some(stmt) => {
-          ignore(
-            stmt.bind(
-              1,
-              @sqlite.SqlValue::Text(@encoding.encode(UTF8, "default")),
-            ),
-          )
           while stmt.step() {
             out.push(row_to_task(stmt))
           }
