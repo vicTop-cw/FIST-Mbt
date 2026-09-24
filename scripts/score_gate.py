@@ -55,10 +55,11 @@ import tempfile
 DEFAULT_RUBRIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_ai_prompt.md")
 
 # 全档达标阈值（客观判据，与 _ai_prompt.md / spec §2.1 一致）
-THRESH = {"p1": 0.60, "p2": 0.80, "p3": 0.95}
+# 目标提档：一等 70% / 二等 85% / 三等 97%（2026-09-24 用户 /goal 更新）
+THRESH = {"p1": 0.70, "p2": 0.85, "p3": 0.97}
 
 # 目标概率（用于输出判读）
-TARGET = {"p1": 0.60, "p2": 0.80, "p3": 0.95}
+TARGET = {"p1": 0.70, "p2": 0.85, "p3": 0.97}
 
 # AI2/AI3/AI4 命令模板默认值（相对占位；可用环境变量覆盖，杜绝绝对路径）
 DEFAULT_CMDS = {
@@ -213,7 +214,7 @@ def render(rows, overall, target_text: str = ""):
             f"{r['error'] or ''}"
         )
     out.append("-" * len(header))
-    out.append("全档达标口径：p1>=0.60 && p2>=0.80 && p3>=0.95 才 pass；聚合=AND（全部 AI 通过才 PASS）。")
+    out.append("全档达标口径：p1>=0.70 && p2>=0.85 && p3>=0.97 才 pass；聚合=AND（全部 AI 通过才 PASS）。")
     out.append("PASS=是" if overall else "PASS=否")
     return "\n".join(out)
 
