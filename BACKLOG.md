@@ -12,7 +12,7 @@
 | P0 | 创建 scoring.mbt P0（coverage/fingerprint_ok/schema_ok/accuracy 分项评分，≥7 测试）打通自进化闭环 | competition/§四 P1-5 + future-roadmap/近 | pending | - |
 | P0 | 验证 evolve 模块构建+测试（已并入 148 测试内、双端全绿、CI 三轨道绿） | competition/§四 P0-1 | done | commit `88a781f` |
 | P1 | 下一页项目申报书 PDF（方向/价值/亮点/生态贡献/验证步骤），补齐第一印象材料 | competition/§四 P1-6 + future-roadmap/近 | pending | - |
-| P1 | 在 mooncakes.io 发布（moon publish），坐实生态贡献 | competition/§四 P1-7 + future-roadmap/近 | pending | - |
+| P1 | 在 mooncakes.io 发布（moon publish），坐实生态贡献 | competition/§四 P1-7 + future-roadmap/近 | done(v0.2.4 已发布; 首跑 409 版本重复已换 0.2.4) | commit `a373267` |
 | P1 | Agent Contract 7 字段：Objective/Constraints/Tool policy/Stop conditions/Escalation/State discipline/Evidence 注入 ops_selfdrive | five-directions/§一 | pending | - |
 | P1 | Tool Use Rubric：pipeline 生成 prompt 时注入工具使用硬规则降 tool 幻觉 | five-directions/§一 | pending | - |
 | P1 | "Did it work?" 输出验证：除"是否运行"外校验输出是否有效 | five-directions/§一 | pending | - |
