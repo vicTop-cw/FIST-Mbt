@@ -10,7 +10,7 @@ fn new_engine() -> FistEngine {
 ///|
 fn publish_root(e : FistEngine, desc? : String = "测试根任务") -> String {
   let r = e.publish(
-    project_dir="E:/proj/demo",
+    project_dir="/proj/demo",
     description=desc,
     created_by="human_steward",
     now="2026-09-05T10:00:00Z",
@@ -37,7 +37,7 @@ test "publish 创建根任务 T0，状态为待领取" {
 test "publish 仅限人类指挥官，非授权者被拒" {
   let e = new_engine()
   let r = e.publish(
-    project_dir="E:/proj/demo",
+    project_dir="/proj/demo",
     description="x",
     created_by="evil_agent",
     now="2026-09-05T10:00:00Z",
@@ -181,7 +181,7 @@ test "sqlite 后端：create/get/update/list/delete 全链路" {
   ignore(s.clear())
   let t0 = @core.Task::new(
     id="T0",
-    project_dir="E:/proj/demo",
+    project_dir="/proj/demo",
     description="根任务",
     priority="高",
     importance="高",
@@ -239,7 +239,7 @@ test "sqlite 后端：跨连接持久化" {
   ignore(s1.clear())
   let t = @core.Task::new(
     id="P0",
-    project_dir="E:/proj/demo",
+    project_dir="/proj/demo",
     description="持久化任务",
     created_at="2026-09-05T10:00:00Z",
   )

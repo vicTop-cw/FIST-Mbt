@@ -1,6 +1,6 @@
 # FIST-Mbt 使用文档（USAGE）
 
-> 版本：`vicTop-cw/fist-mbt@0.2.0`（MoonBit，MCP Server）
+> 版本：`vicTop-cw/fist-mbt@0.2.3`（MoonBit，MCP Server）
 > 日期：2026-09-12 ｜ 定位：**实操调用手册**。README.md 是项目概览，本文件是「如何真正用它」的手把手文档，
 > 全部示例均来自本机实机运行（JSON-RPC over STDIO）的真实输出，非凭空构造。
 
@@ -25,7 +25,7 @@ FIST 指挥官任务分配体系（原 Python 版 FIST）的 **纯 MoonBit 原�
 moon check                  # 类型检查
 moon build --target native  # 原生后端
 moon build --target js      # JS 后端（Node 运行）
-moon test                   # 全部测试（77 项）
+moon test                   # 全部测试（135 项）
 ```
 
 本机常用启动产物：
@@ -106,7 +106,7 @@ def rpc(method, **payload):
 {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
   "name":"publish",
   "arguments":{
-    "project_dir":"E:/proj/demo",
+    "project_dir":"/proj/demo",
     "description":"示例根任务",
     "created_by":"human_steward",
     "now":"2026-09-11T18:20:00Z"
@@ -121,9 +121,36 @@ def rpc(method, **payload):
 {"task_id":"T0","message":"已发布根任务"}
 ```
 
+### 最小端到端三步（评审 1 分钟内可复现）
+
+任意 MCP 客户端以 STDIO 拉起 `moon run cmd/main`，依次发三个请求即可验证 server 可用：
+
+**Step 1 · 列出工具**
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
+```
+→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（57 个工具）
+
+**Step 2 · 发布一个根任务**
+```json
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"publish","arguments":{
+  "project_dir":"/proj/demo","description":"示例根任务","created_by":"human_steward","now":"2026-09-11T18:20:00Z"},
+  "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
+```
+→ `{"task_id":"T0","message":"已发布根任务"}`
+
+**Step 3 · 查询该任务**
+```json
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get","arguments":{"task_id":"T0"},
+  "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
+```
+→ 返回该任务详情（状态：待领取）
+
+三步跑通即 MCP server 端到端可用、环境就绪。
+
 ---
 
-## 6. 36 个 MCP 工具手册
+## 6. 57 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
@@ -330,6 +357,53 @@ def rpc(method, **payload):
 }
 ```
 
+### 6.9 并行发布 / 重派 / 判据检查
+
+| 工具 | 说明 | 参数 |
+|---|---|---|
+| `publish_parallel` | 在已有任务命名空间并行追加独立根任务（不要求 ns 为空、不续轮不归档） | project_dir(必) description(必) namespace(必,非default) created_by(选,默认selfdrive) now(选) |
+| `reopen_task` | 重开/重派任务：任意非归档任务回滚为已领取（M4 heal/运维重派用） | task_id(必) now(选) |
+| `run_check` | 外部判据检查：服务端真实执行命令（防自写自测恒绿），结果落 specs 表；[gate:required] 任务的 verify 依赖其记录 | task_id(必) cmd(必) args(选) workdir(选) timeout_ms(选,默认120000) now(选) |
+| `dag_publish` | 发布带 `depends_on` 依赖关系的根任务 | project_dir(必) description(必) depends_on(必,JSON数组) namespace(选) created_by(选) now(选) |
+
+### 6.10 无人值守编排（watchdog / pipeline）
+
+| 工具 | 说明 | 参数 |
+|---|---|---|
+| `watchdog_tick` | 看门狗编排单一入口（推荐仅用于定时任务）：扫描活跃任务，心跳超时回滚重派；上一轮根任务完成且给 next_description/meta_prompt_path 时自动续下一轮 | now timeout_sec(选,默认600) namespace(选) next_description(选) next_created_by(选,默认watchdog) meta_prompt_path(选) cold_start(选,默认false) project_dir(选) omega_strong_verify(选) omega_split_n(选) omega_spec(选) |
+| `pipeline_tick` | 提示词流水线状态机单入口（仅定时任务 ns）：以 currentState.txt 为状态源四分支推进（空闲生成提示词/提示词落盘发根/执行中缺报告则催报告/报告落盘验收收口），报告先行 | project_dir(必) now(选) namespace(选,默认cron-auto) phase(选,默认auto) prompt_name(选) timeout_sec(选,默认2400) |
+
+### 6.11 自驱式编程（selfdrive）
+
+| 工具 | 说明 | 参数 |
+|---|---|---|
+| `selfdrive_init` | 初始化 memory 四件套（product/target/task/thinking + reviews 目录），幂等不覆盖 | project_dir(必) namespace(选,默认default) |
+| `selfdrive_append` | 追加/更新 memory 条目（thinking 为 append-only 流水，其余覆盖写） | project_dir(必) kind(必,thinking/product/target/task) content(必) namespace(选) now(选) |
+| `selfdrive_get` | 读取指定 memory 文件，返回 {exists, content} | project_dir(必) kind(必) namespace(选) |
+| `selfdrive_export_tasks` | 从任务库导出任务清单到 task.md（视图覆盖写） | project_dir(必) namespace(选) |
+| `selfdrive_review_tick` | 审视轮判定：报告数−已审视轮次≥review_every 触发 action=review（附最近报告+memory 摘要），否则 idle/no_memory/safe_exit | project_dir(必) review_every(选,默认3) namespace(选) |
+| `selfdrive_review_ready` | 审视收口：确认 memory/reviews/ 最新审视报告已落盘并推进已审视轮次（报告先行，无报告拒绝推进） | project_dir(必) namespace(选) |
+| `selfdrive_publish_next` | 解析审视报告 `## Next Tasks` 段并将待办并行发布为独立根任务（幂等，description 内嵌 [review:file:idx] 防重） | project_dir(必) namespace(选,默认default) max_tasks(选,默认10) now(选) |
+| `selfdrive_parse_next_tasks` | 纯解析审视报告文本中 `## Next Tasks` 段（调试/校验用） | content(必) max_tasks(选,默认10) |
+
+### 6.12 DGM 演化（evolve）+ Laya 决策
+
+| 工具 | 说明 | 参数 |
+|---|---|---|
+| `evolve_submit` | 归档一个产物：本轮设计/代码/目标入档案库，自动递增父代子代数；与档案高度相似则查重丢弃 | id(必) goal(必) note(必) code(必) score(选) parent_id(选) parts(选) now(选) |
+| `evolve_snapshot` | 查看档案库快照（count/best/summaries/dead_ends/lineage_of_best） | 无 |
+| `evolve_sample` | 按 p∝s·h 多样性加权采样父代产物（子代越少/性能越高越可能被选） | rand(选,伪随机种子) |
+| `laya_decide` | Laya 可选决策工具（自动探测）：对任务/文本快速分类，命中返回结构化 answers；机器无 laya 返回 available:false 降级，不影响现网 | context(必) questions(选,JSON) model(选,默认english) |
+
+### 6.13 Omega 强验证（语料驱动，task_plan_deep 传 omega_strong_verify=true 开启）
+
+| 工具 | 说明 | 参数 |
+|---|---|---|
+| `omega_spec_create` | 语料创建者为任务创建本轮语料并持久化到 specs 表 | task_id(必) content(必) author(选,默认spec_author) max_rounds(选,默认3) now(选) |
+| `omega_spec_review` | 验证者审核语料：`approve` 放行，其它值打回 | task_id(必) verdict(必) reviewer(选,默认verifier) reason(选) max_rounds(选) now(选) |
+| `omega_result_verify` | 验证者复验执行成果与语料：pass 达标可提交验收，其它值打回重做 | task_id(必) verdict(必) reviewer(选,默认verifier) reason(选) max_rounds(选) now(选) |
+| `omega_status` | 查询强验证进度：开关/语料与复验轮次/打回数/升级标志 | task_id(必) |
+
 ## 7. 端到端真实闭环（本机实录）
 
 干净目录下启动 server（新库），完整跑一遍「发布→认领→拆分→3 子任务闭环→父验收→归档→查询」：
@@ -347,7 +421,7 @@ def rpc(method, **payload):
 **验证结论**：publish → plan → claim/execute/submit/verify（叶子）+ verify（父自动上卷）→ archive 全链真实跑通，
 任务自动持久化到 `fist-mbt.db`。
 
-> 补充实测：`tools/list` 返回 36 个工具；`resources/read(fist://principles)` 返回七条金条 JSON；
+> 补充实测：`tools/list` 返回 57 个工具；`resources/read(fist://principles)` 返回七条金条 JSON；
 > `prompts/get(fist:check_in)` 返回 1 条 role=user 的打卡自查模板消息。
 
 ---
@@ -425,7 +499,7 @@ moon publish
 
 ## 12. 一句话总结
 
-FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（36 个工具）。
+FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（57 个工具）。
 对 AI 客户端而言：**pub/claim/plan + spec 深拆 → 子任务闭环 → verify 上卷 → archive**，
 一路 `tools/call` 即可完成多智能体任务的发布、认领、拆分、执行、验收、归档全生命周期管理。
 

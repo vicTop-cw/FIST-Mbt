@@ -21,7 +21,7 @@ fn main {
 
   let t0 = @lib.Task::new(
     id="S0",
-    project_dir="E:/proj/demo",
+    project_dir="/proj/demo",
     description="smoke 根任务",
     priority="高",
     importance="高",

@@ -169,6 +169,28 @@ fn get_bool(args : Json, key : String, default? : Bool = false) -> Bool {
 }
 
 ///|
+/// 从 laya_decide 返回的 Json 取 `answers.difficulty.score`，缺省回退 2.0。
+/// 供 task_plan_deep 的 laya_auto 自动选档使用（纯解析，各 target 均可用）。
+fn laya_difficulty_score(j : Json) -> Double {
+  match j {
+    Object(m) =>
+      match m.get("answers") {
+        Some(Object(a)) =>
+          match a.get("difficulty") {
+            Some(Object(d)) =>
+              match d.get("score") {
+                Some(Number(n, ..)) => n
+                _ => 2.0
+              }
+            _ => 2.0
+          }
+        _ => 2.0
+      }
+    _ => 2.0
+  }
+}
+
+///|
 /// —— 结果转换辅助 ——
 fn to_result(
   r : Result[@core.Task, String],
@@ -708,13 +730,16 @@ pub async fn run_server() -> Unit {
           "omega_strong_verify": bool_prop(
             "是否开启 Omega 强验证(默认 false，不传即现状；开启后每轮需语料审核与成果复验)",
           ),
+          "laya_auto": bool_prop(
+            "是否开启 Laya 自动选档(默认 false，不传即现状)：开启后探测 Laya，可用则按 difficulty.score 自动定 split_n 并把决策附到返回；不可用则回退 split_n 默认值",
+          ),
           "now": string_prop("时间戳(可选)"),
         },
         ["task_id"],
       ),
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let task_id = get_str(args, "task_id")
-        let split_n = get_int(args, "split_n", default=3)
+        let mut split_n = get_int(args, "split_n", default=3)
         let by = get_str(args, "by", default="leader")
         let spec_raw = get_str(args, "spec")
         let ts = get_str(args, "now", default=now)
@@ -726,7 +751,61 @@ pub async fn run_server() -> Unit {
           }
         }
         let omega_strong = get_bool(args, "omega_strong_verify", default=false)
-        match
+        let laya_auto = get_bool(args, "laya_auto", default=false)
+        // Laya 自动选档：开启后先探测，可用则以任务描述的 difficulty.score 自动定 split_n，
+        // 并把完整决策附到返回（如不可用则回退显式/默认 split_n，行为与现状一致）。
+        let mut laya_info : Json = Json::null()
+        if laya_auto {
+          let avail = match
+            laya_probe_available(
+              "python",
+              ["scripts/laya_decide.py", "--probe"],
+              ".",
+              15000,
+            ) {
+            Ok(a) => a
+            Err(_) => false
+          }
+          if avail {
+            match engine.get_task(task_id) {
+              Some(parent) =>
+                match
+                  laya_decide_external(
+                    "python",
+                    ["scripts/laya_decide.py"],
+                    ".",
+                    Json::object({
+                      "context": Json::string(parent.description),
+                      "questions": Json::null(),
+                      "model": Json::string("english"),
+                    }).stringify(),
+                    300000,
+                  ) {
+                  Ok(res) => {
+                    let raw_n = laya_difficulty_score(res).round().to_int() + 2
+                    let n = if raw_n < 2 {
+                      2
+                    } else if raw_n > 6 {
+                      6
+                    } else {
+                      raw_n
+                    }
+                    split_n = n
+                    let obj = match res {
+                      Object(m) => m
+                      _ => Map([])
+                    }
+                    obj.set("auto_split_n", Json::number(split_n.to_double()))
+                    obj.set("context", Json::string(parent.description))
+                    laya_info = Json::object(obj)
+                  }
+                  Err(_) => ()
+                }
+              None => ()
+            }
+          }
+        }
+        let base = match
           engine.plan_deep(
             task_id~,
             split_n~,
@@ -735,9 +814,22 @@ pub async fn run_server() -> Unit {
             now=ts,
             omega_strong_verify=omega_strong,
           ) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
+          Ok(j) => j
+          Err(e) => return Err(@mcp_types.ToolError(e))
         }
+        // laya_auto 开启时在返回里附 laya 决策信息；否则返回格式与现状完全一致。
+        let out = if laya_auto {
+          match base {
+            Object(m) => {
+              m.set("laya", laya_info)
+              Json::object(m)
+            }
+            _ => base
+          }
+        } else {
+          base
+        }
+        Ok(@mcp.ToolResult::text(out.stringify()))
       },
     )
     .tool(
@@ -1423,6 +1515,86 @@ pub async fn run_server() -> Unit {
                   "note": Json::string(
                     "档案库为空，先 evolve_submit 添加产物",
                   ),
+                }).stringify(),
+              ),
+            )
+        }
+      },
+    )
+    .tool(
+      "laya_decide",
+      "Laya 可选决策工具（自动探测）：用 Laya（Python ML 决策模型）对任务/文本快速分类。命中时返回结构化 answers（task_type/urgency/needs_review 等）；机器无 laya 或探测失败则返回 available:false，调用方照旧走 schedule/LLM，不影响现网。参数：context(必填)、questions(可选 JSON)、model(可选默认 english)。",
+      schema(
+        {
+          "context": string_prop("待决策的任务/文本描述（必填）"),
+          "questions": string_prop(
+            "决策问题 schema JSON（可选；缺省用 Laya 内置 default questions）",
+          ),
+          "model": string_prop("Laya 模型(可选默认 english)"),
+        },
+        ["context"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let context = get_str(args, "context")
+        if context == "" {
+          return Err(@mcp_types.ToolError("context 不能为空"))
+        }
+        let questions_raw = get_str(args, "questions", default="")
+        let model = get_str(args, "model", default="english")
+        // 1) 探测（--probe 仅 import laya，较快；每次调用探测以保证实时准确性）
+        let probe : Result[Bool, String] = laya_probe_available(
+          "python",
+          ["scripts/laya_decide.py", "--probe"],
+          ".",
+          15000,
+        )
+        let avail = match probe {
+          Ok(a) => a
+          Err(_) => false
+        }
+        if not(avail) {
+          return Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "available": Json::boolean(false),
+                "fallback": Json::string("use existing schedule / LLM"),
+                "reason": Json::string(
+                  "机器上未探测到 Laya（python-sidecar 不可用），已降级",
+                ),
+              }).stringify(),
+            ),
+          )
+        }
+        // 2) 可用 → 调 sidecar 决策
+        let questions_json : Json = if questions_raw == "" {
+          Json::null()
+        } else {
+          @json.parse(questions_raw) catch {
+            _ => Json::null()
+          }
+        }
+        let input_json = Json::object({
+          "context": Json::string(context),
+          "questions": questions_json,
+          "model": Json::string(model),
+        }).stringify()
+        match
+          laya_decide_external(
+            "python",
+            ["scripts/laya_decide.py"],
+            ".",
+            input_json,
+            300000,
+          ) {
+          Ok(res) => Ok(@mcp.ToolResult::text(res.stringify()))
+          Err(e) =>
+            // 调度失败也降级（不报错）
+            Ok(
+              @mcp.ToolResult::text(
+                Json::object({
+                  "available": Json::boolean(false),
+                  "fallback": Json::string("use existing schedule / LLM"),
+                  "reason": Json::string("laya sidecar 调用失败: \{e}"),
                 }).stringify(),
               ),
             )

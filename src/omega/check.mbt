@@ -32,11 +32,10 @@ pub fn check_structure(project_dir : String) -> Array[Json] {
     return results
   }
   for item in required_items {
-    let path = if project_dir.has_suffix("/") || project_dir.has_suffix("\\") {
-      project_dir + item
-    } else {
-      project_dir + "\\" + item
-    }
+    // 分隔符跟随输入：含反斜杠视为 Windows 路径（保留），否则统一用 "/"（Windows 亦接受）。
+    // 绝不硬编码单一分隔符，保证 Linux/WSL/mac 上拼接出的路径合法。
+    let sep = if project_dir.contains("\\") { "\\" } else { "/" }
+    let path = project_dir + sep + item
     let exists = @fs.path_exists(path)
     results.push(
       Json::object({

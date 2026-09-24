@@ -17,6 +17,12 @@ fn main {
     ) {
     Ok(id) => {
       println("发布成功: \{id}")
+      // plan 前必须先 claim：publish 后状态为「待领取」，plan 要求「已领取」
+      match
+        engine.claim(task_id=id, assignee="leader", now="2026-09-12T00:00:00Z") {
+        Ok(_) => println("认领成功: \{id}")
+        Err(e) => println("认领错误: \{e}")
+      }
       match
         engine.plan(
           task_id=id,

@@ -13,7 +13,7 @@ fn dp_publish(
 ) -> String {
   match
     e.publish(
-      project_dir="E:/proj/demo",
+      project_dir="/proj/demo",
       description=desc,
       created_by="human_steward",
       now="2026-09-05T10:00:00Z",
