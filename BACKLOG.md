@@ -6,7 +6,7 @@
 
 | P级 | 事项 | 来源 | 状态 | 对应review/commit |
 |-----|------|------|------|-------------------|
-| P0 | 补「30 秒体验」一键演示：README 段落 + scripts/demo 一键脚本（一行命令通起），对冲 MCP 接线门槛 | competition/§四 P0-4 + future-roadmap/近 | pending | - |
+| P0 | 补「30 秒体验」一键演示：README 段落 + scripts/demo 一键脚本（一行命令通起），对冲 MCP 接线门槛 | competition/§四 P0-4 + future-roadmap/近 | done(scripts/demo.ps1 已加并实测 61 工具 PASS；README 终版 0930 接段落) | - |
 | P0 | 清理 README 顶部 AIGC 元数据标记，避免被误判为纯 AI 生成 | competition/§四 P0-2 + future-roadmap/近 | pending | - |
 | P0 | 升级 moonbitlang/async 至 0.22.3（处理 Headers breaking change）并升 x 至 0.5.5 | competition/§四 P0-3 | pending | - |
 | P0 | 创建 scoring.mbt P0（coverage/fingerprint_ok/schema_ok/accuracy 分项评分，≥7 测试）打通自进化闭环 | competition/§四 P1-5 + future-roadmap/近 | pending | - |
