@@ -39,9 +39,9 @@ pub fn iso_to_secs(s : String) -> Int {
   if year < 2024 {
     return -1
   }
-  // 月起点累计天数（非闰年近似，同体系比较足够）
+  // 月起点累计天数（非闰年近似，同体系比较足够；索引 = 真实月份-1）
   let accum : Array[Int] = [
-    0, 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334,
+    0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334,
   ]
   let month_days = if mon >= 1 && mon <= 12 { accum[mon - 1] } else { 0 }
   let days = (year - 2024) * 365 + month_days + day

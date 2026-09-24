@@ -66,6 +66,7 @@ pub fn MultiStore::new(data_dir? : String) -> Self
 pub fn MultiStore::ns_list(Self) -> Array[String]
 pub fn MultiStore::ns_stats(Self) -> Json
 pub fn MultiStore::open(Self, ns~ : String, data_dir~ : String) -> Bool
+pub fn MultiStore::safe_ns(String) -> String?
 
 pub struct SpecRecord {
   id : String

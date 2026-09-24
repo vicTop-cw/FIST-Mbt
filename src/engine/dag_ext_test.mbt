@@ -55,6 +55,7 @@ test "topo_sort: Kahn 依赖先输出(同批稳定按输入序)" {
   assert_eq(sorted, ["A", "B", "D", "C", "E"])
 }
 
+///|
 test "topo_sort: 无依赖时保持输入顺序" {
   let e = dag_test_engine()
   assert_eq(e.topo_sort(["E", "D", "A"]).length(), 3)

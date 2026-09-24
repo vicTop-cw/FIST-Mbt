@@ -388,6 +388,8 @@ pub fn Task::submit(self : Task) -> Result[Task, String] {
 
 ///|
 /// 待验收 -> 已完成（人类主权：completed_by 必须 human / human_steward 或明确授权）
+/// 注意：此处仅校验 completed_by 非空；不引入独立的强身份认证模型（鉴权属上层
+/// MCP 工具/MCP 层职责，本域不做权宜式身份伪造防护，避免脆弱的新鉴权模型）。
 pub fn Task::complete(
   self : Task,
   completed_by~ : String,
