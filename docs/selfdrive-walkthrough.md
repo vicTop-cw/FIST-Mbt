@@ -53,7 +53,7 @@ archive   → 已归档（可再归档）
 
 - **自驱 ≠ 死循环**：审视报告被 `[review:file:idx]` 消费后幂等跳过；无新报告即 `idle`/`waiting` 停住（见 docs「自驱 vs watchdog」）。
 - **递归拆解**：每条根任务可经 `task_plan_deep` 继续拆成多层子任务树。
-- **跨环境可信**：136 项测试 JS+Native 在 Windows + WSL(Linux) 双端全绿（见 README 环境要求）。
+- **跨环境可信**：148 项测试 JS+Native 在 Windows + WSL(Linux) 双端全绿（见 README 环境要求）。
 
 ## 4. 评审一键验证路径
 

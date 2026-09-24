@@ -49,6 +49,11 @@ let mstore : @store.MultiStore = @store.MultiStore::new(data_dir=".")
 let evolve_arc : @evolve.Archive = @evolve.Archive::new("mem-evolve")
 
 ///|
+/// DGM 档案库的 SQLite 持久化句柄（供 evolve_distill 复用 evolve_upsert 落库）。
+/// 打开失败（缺 sqlite）时为 None，蒸馏仅写进程内 Archive，语义仍成立。
+let evolve_store : @store.SqliteStore? = @store.SqliteStore::new()
+
+///|
 /// 默认时间戳（无系统时钟依赖，保证 demo 可重现）
 fn now_default() -> String {
   "2026-09-05T00:00:00Z"
@@ -1383,6 +1388,109 @@ pub async fn run_server() -> Unit {
             }).stringify(),
           ),
         )
+      },
+    )
+    .tool(
+      "memory_consolidate",
+      "自我记忆·收敛写回：verify 通过后把交付物/结论收敛写回 memory/{kind}.md（kind 缺省 target；thinking 为 append-only 带时间戳，其余覆盖写）。参数：project_dir(必填)、task_id(必填)、kind(可选默认 target)、content(必填)、now(可选)。返回 {consolidated, kind, chars, note}。",
+      schema(
+        {
+          "project_dir": string_prop("项目目录（必填）"),
+          "task_id": string_prop("任务 id（必填，用于 tags 注入）"),
+          "kind": string_prop(
+            "条目类型(可选)：thinking/product/target/task，默认 target",
+          ),
+          "content": string_prop("收敛内容（必填）"),
+          "now": string_prop("时间戳(可选，默认内置)"),
+        },
+        ["project_dir", "task_id", "content"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let project_dir = get_str(args, "project_dir")
+        let task_id = get_str(args, "task_id")
+        let kind = get_str(args, "kind", default="target")
+        let content = get_str(args, "content")
+        let ts = get_str(args, "now", default=now_default())
+        match memory_consolidate(project_dir, task_id, kind, content, ts) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "memory_gc",
+      "自我记忆·上限+软降权归档（不硬删）：超 max_chars 时把 memory/{kind}.md 末尾（老人）条目移入 memory/archive/ 归档保留，正文只保留最新 max_chars 个字符。kind 缺省对四件套全部处理。参数：project_dir(必填)、kind(可选)、max_chars(可选默认2000)、now(可选)。",
+      schema(
+        {
+          "project_dir": string_prop("项目目录（必填）"),
+          "kind": string_prop(
+            "条目类型(可选)：thinking/product/target/task；缺省处理全部四件套",
+          ),
+          "max_chars": int_prop("正文上限(可选默认2000)"),
+          "now": string_prop("时间戳(可选，默认内置)"),
+        },
+        ["project_dir"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let project_dir = get_str(args, "project_dir")
+        let kind = get_str(args, "kind")
+        let max_chars = get_int(args, "max_chars", default=2000)
+        let j = if kind == "" {
+          memory_gc_all(project_dir, max_chars)
+        } else {
+          memory_gc_one(project_dir, kind, max_chars)
+        }
+        Ok(@mcp.ToolResult::text(j.stringify()))
+      },
+    )
+    .tool(
+      "memory_link",
+      "自我记忆·A-Mem 式关联：在 memory/links.md 追加一条 `from -> to  note` 关联记录（不存在则创建），供 plan/claim 前检索注入。参数：project_dir(必填)、from(必填)、to(必填)、note(可选)、now(可选)。返回 {linked, from, to}。",
+      schema(
+        {
+          "project_dir": string_prop("项目目录（必填）"),
+          "from": string_prop("来源概念/任务（必填）"),
+          "to": string_prop("目标概念/任务（必填）"),
+          "note": string_prop("关联说明(可选)"),
+          "now": string_prop("时间戳(可选，默认内置)"),
+        },
+        ["project_dir", "from", "to"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let project_dir = get_str(args, "project_dir")
+        let from = get_str(args, "from")
+        let to = get_str(args, "to")
+        let note = get_str(args, "note")
+        match memory_link(project_dir, from, to, note) {
+          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
+      "evolve_distill",
+      "DGM 演化·自进化蒸馏（EvolveR 最小级）：把一次 verify 通过的任务交付物蒸馏成一条 principle 写入 DGM（goal 前加 [principle] 前缀标识，code 写蒸馏内容，复用既有 evolve_upsert 落库 + Archive 查重语义）。参数：task_id(必填)、goal(必填)、note(必填)、score(可选默认1.0)、now(可选)。返回 {distilled, artifact_id}。",
+      schema(
+        {
+          "task_id": string_prop("任务 id（必填）"),
+          "goal": string_prop("蒸馏出的原则/目标（必填）"),
+          "note": string_prop(
+            "原则说明/设计意图（必填，同时写入 code）",
+          ),
+          "score": number_prop("可计算评分(默认1.0)"),
+          "now": string_prop("时间戳(可选，默认内置)"),
+        },
+        ["task_id", "goal", "note"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let goal = get_str(args, "goal")
+        let note = get_str(args, "note")
+        let score = get_double(args, "score", default=1.0)
+        let ts = get_str(args, "now", default=now_default())
+        let j = do_evolve_distill(
+          evolve_arc, evolve_store, goal, note, score, ts,
+        )
+        Ok(@mcp.ToolResult::text(j.stringify()))
       },
     )
     .tool(

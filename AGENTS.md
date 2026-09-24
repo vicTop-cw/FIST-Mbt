@@ -92,7 +92,7 @@ You can browse and install extra skills here:
 
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
 > Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
-> **JS 与 Native 双后端均已在 Windows + WSL(Linux) 通过 136/136 测试。**
+> **JS 与 Native 双后端均已在 Windows + WSL(Linux) 通过 148/148 测试。**
 
 `src/store/store_sqlite.mbt` 依赖 `mizchi/sqlite`（native stub），其 `stub.c` 用尖括号 `#include <sqlite3.h>` 并 `#pragma comment(lib, "sqlite3.lib")` 链接系统 SQLite。
 
@@ -102,11 +102,11 @@ You can browse and install extra skills here:
   2. 编译/链接前在**同一会话**加载 `Enter-VsDevShell`（VS Build Tools）并追加 `INCLUDE`/`LIB` 指向该目录（注册表 User 级环境变量会被 moon 自发现的 MSVC 环境覆盖，不生效）；
   3. 之后 `moon test --target native` 即可通过。缺失时 `stub.c` 报 `fatal error C1083: 无法打开包括文件 "sqlite3.h"` / `LNK1104: sqlite3.lib`。
   一键装载上述环境（自动探测 VS + sqlite-dev）：`pwsh ./scripts/native-env.ps1`；
-  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（稳定 136/136），见 README「已知边界」。
+  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（稳定 148/148），见 README「已知边界」。
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**57 tools** + 2 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**61 tools** + 2 resources + 2 prompts）：
 
 ### 生命周期（12）
 | 工具 | 说明 |
@@ -151,6 +151,14 @@ You can browse and install extra skills here:
 | `dag_check` | 依赖完成检查 |
 | `dag_ready` | 可领取任务列表 |
 | `dag_sort` | 拓扑排序 |
+
+### 自我记忆与自进化（4，F/G 新增强化）
+| 工具 | 说明 |
+|---|---|
+| `memory_consolidate` | verify 通过后把交付物收敛写回 memory/{kind}.md（checkpoint 写时刻） |
+| `memory_gc` | memory/{kind}.md 上限+软降权归档（超限把老人条目移入 memory/archive/，不硬删） |
+| `memory_link` | 在 memory/links.md 追加 A-Mem 式关联记录，供 plan/claim 前检索注入 |
+| `evolve_distill` | 自进化蒸馏：把 verify 通过的任务交付物蒸馏成 [principle] 原则写入 DGM（复用 evolve_upsert 落库） |
 
 ### 审计与权限（2）
 | 工具 | 说明 |
