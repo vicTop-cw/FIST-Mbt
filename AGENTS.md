@@ -87,6 +87,9 @@ You can browse and install extra skills here:
 > 环境要求：新环境首次先 `moon update` 刷新 registry（依赖全公开，无私有包）；
 > **JS 目标需 Node.js ≥ 24**（项目默认 target，SQLite 后端依赖 `node:sqlite` 的 `returnArrays`，
 > node <24 会退化为对象行导致列读取为空）。见 README「环境要求」。
+> **JS 可执行产物 ESM 兼容**：moonc ≥0.10.14 对 `cmd/main` 输出 ESM，而 `mizchi/sqlite` 的 JS 桩用 CJS `require`，
+> 直接 `node main.js` 会报 `require is not defined`。`scripts/mcp_smoke.py` / `demo.ps1` 启动前会自动调
+> `scripts/patch_esm_main.py` 注入 require shim（幂等）；手动跑 server 请先 `python scripts/patch_esm_main.py`。
 
 ### native 目标构建环境要求
 
@@ -106,7 +109,7 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**64 tools** + 2 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**67 tools** + 2 resources + 2 prompts）：
 
 ### 生命周期（12）
 | 工具 | 说明 |

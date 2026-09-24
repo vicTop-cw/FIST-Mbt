@@ -112,7 +112,7 @@ if ($taskCount -ge 0) {
 Write-Output ""
 
 # ================ 5. FOOTER 汇总 ================
-$f1 = (C $GREEN "64 MCP tools") + (C $CYAN " · ") + (C $GREEN "174 tests") + (C $CYAN " · ") + (C $GREEN "JS+Native") + (C $CYAN " · ") + (C $GREEN "CI 3 tracks")
+$f1 = (C $GREEN "67 MCP tools") + (C $CYAN " · ") + (C $GREEN "184 tests") + (C $CYAN " · ") + (C $GREEN "JS+Native") + (C $CYAN " · ") + (C $GREEN "CI 3 tracks")
 W ("  " + $f1)
 W ("  " + (C $BOLD (C $CYAN "fist-mbt drives itself ─ 自举采用，自动演进")))
 Write-Output ""

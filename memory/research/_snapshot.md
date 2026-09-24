@@ -9,8 +9,8 @@
 - GitHub 公开仓库 `github.com/vicTop-cw/FIST-Mbt`，含 15+ 实质 commits，README 顶部带实时 CI 徽章（js/ubuntu、native/ubuntu、js/windows 三轨道绿色）。
 
 ## 2. 规模与测试可复现
-- **64 个 MCP 工具**（61 + 新增 call_log/report_bug/bug_list）+ 2 Resources + 2 Prompts；`moon check` 0 错误。
-- **174 项测试用例 js 全绿**（本人已实跑 `moon test --target js` → 174/174）；JS 与 Native 双后端；CI 三轨道绿色徽章（native 以 CI/ubuntu 为准）。
+- **67 个 MCP 工具**（67（64 核心 + call_log/report_bug/bug_list + atgc*）/report_bug/bug_list）+ 2 Resources + 2 Prompts；`moon check` 0 错误。
+- **184 项测试用例 js 全绿**（本人已实跑 `moon test --target js` → 184/184）；JS 与 Native 双后端；CI 三轨道绿色徽章（native 以 CI/ubuntu 为准）。
 - 30 秒一键演示 `scripts/demo.ps1` 实测 PASS（拉起 MCP server，tools/list 64 工具 + publish + get 状态断言）。
 - **视觉终端巡演 `scripts/showcase.ps1` 实测 PASS**：ANSI 彩色 + box-drawing 渲染「九态生命周期状态机 / DAG 依赖树 / 自举采用证据」，一屏讲清全项目（非脚本断言，是真视觉层）。
 - 一把自检 `scripts/mcp_smoke.py` 实测 PASS：断言 64 工具、发布命中 task_id、get 命中且状态待领取。
