@@ -49,7 +49,9 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 任意 MCP 客户端（Claude Desktop / AtomCode / 自研 JSON-RPC 客户端）以 STDIO 方式拉起该可执行文件即可交互。
 
-**一键自检（约 10 秒）**：`moon run cmd/cli` 若打印「发布成功 / 认领成功 / 拆分成功 3 个子任务」，即环境就绪、Release→拆分→认领全流程可复现。
+**一键自检（约 10 秒）**：
+- `python scripts/mcp_smoke.py` → 自动起 server 并 verify tools/list + publish + get，打印 **`MCP-SMOKE PASS`**；
+- `moon run cmd/cli` → 打印「发布成功 / 认领成功 / 拆分成功 3 个子任务」，即环境就绪、全流程可复现。
 
 ### 最小调用示例（JSON-RPC over STDIO）
 
