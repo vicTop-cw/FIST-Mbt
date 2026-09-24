@@ -37,7 +37,7 @@ pub fn insert_execution(
   db : @sqlite.Database,
   rec : ExecutionRecord,
 ) -> Result[Unit, String] {
-  let sql = "INSERT INTO executions (id, task_id, executor, model, tokens_in, tokens_out, cost, duration_ms, rate_limited, failure_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  let sql = "INSERT INTO executions (id, task_id, executor, model, tokens_in, tokens_out, cost, duration_ms, rate_limited, failure_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET executor=excluded.executor, model=excluded.model, tokens_in=excluded.tokens_in, tokens_out=excluded.tokens_out, cost=excluded.cost, duration_ms=excluded.duration_ms, rate_limited=excluded.rate_limited, failure_reason=excluded.failure_reason"
   match db.prepare(sql) {
     None => Err("sqlite prepare 失败: insert_execution")
     Some(stmt) => {
