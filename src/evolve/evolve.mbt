@@ -69,17 +69,22 @@ pub fn Archive::all(self : Archive) -> Array[Artifact] {
 
 ///|
 /// 添加产物。若 parent 已在库中，累加其 children 计数。
+/// 重复添加同一 id（覆盖已有记录）时不再重复累加父节点 children，避免计数虚高。
 pub fn Archive::add(self : Archive, a : Artifact) -> Unit {
-  match a.parent_id {
-    Some(pid) =>
-      match self.items.get(pid) {
-        Some(p) => {
-          let bumped = Artifact::with_children(p, p.children + 1)
-          self.items.set(pid, bumped)
+  // 先查重：若 id 已存在则视为更新既有记录，不重复增加父节点子代数
+  let is_new = self.items.get(a.id) is None
+  if is_new {
+    match a.parent_id {
+      Some(pid) =>
+        match self.items.get(pid) {
+          Some(p) => {
+            let bumped = Artifact::with_children(p, p.children + 1)
+            self.items.set(pid, bumped)
+          }
+          None => ()
         }
-        None => ()
-      }
-    None => ()
+      None => ()
+    }
   }
   self.items.set(a.id, a)
 }
@@ -410,6 +415,23 @@ pub fn Artifact::from_json(j : Json) -> Artifact {
     Some(Null) => None
     _ => None
   }
+  // 反序列化 children（采样新颖性权重），缺失回退 0
+  let children = match obj.get("children") {
+    Some(Number(n, ..)) => n.to_int()
+    _ => 0
+  }
+  // 反序列化 parts（评分分项），缺失回退空 Map
+  let parts : Map[String, Double] = Map([])
+  match obj.get("parts") {
+    Some(Object(pm)) =>
+      for (k, v) in pm.iter2() {
+        match v {
+          Number(n, ..) => parts.set(k, n)
+          _ => ()
+        }
+      }
+    _ => ()
+  }
   {
     id: str("id"),
     parent_id: parent,
@@ -417,8 +439,8 @@ pub fn Artifact::from_json(j : Json) -> Artifact {
     note: str("note"),
     code: str("code"),
     score,
-    parts: Map([]),
-    children: 0,
+    parts,
+    children,
     created_at: str("created_at"),
   }
 }

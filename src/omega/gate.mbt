@@ -301,17 +301,31 @@ pub fn run_tests(
       }
       _ => {
         let exp = json_or(t.value("expected"), Json::null())
-        let (passed, detail) = check_expected(value, exp)
-        results.push(
-          Json::object({
-            "index": Json::number(i.to_double()),
-            "type": Json::string("normal"),
-            "passed": jbool(passed),
-            "detail": Json::string(
-              "期望 \{exp.stringify()}，实际: \{value.stringify()}；\{detail}",
-            ),
-          }),
-        )
+        if not(ok) {
+          // evaluator 出错（无匹配 error 字段）→ 直接失败，不把错误字符串当正常值走 check_expected
+          results.push(
+            Json::object({
+              "index": Json::number(i.to_double()),
+              "type": Json::string("error_unexpected"),
+              "passed": jbool(false),
+              "detail": Json::string(
+                "求值器异常（未匹配期望错误标记）: \{value.stringify()}",
+              ),
+            }),
+          )
+        } else {
+          let (passed, detail) = check_expected(value, exp)
+          results.push(
+            Json::object({
+              "index": Json::number(i.to_double()),
+              "type": Json::string("normal"),
+              "passed": jbool(passed),
+              "detail": Json::string(
+                "期望 \{exp.stringify()}，实际: \{value.stringify()}；\{detail}",
+              ),
+            }),
+          )
+        }
       }
     }
   }

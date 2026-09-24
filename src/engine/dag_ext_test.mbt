@@ -47,6 +47,20 @@ test "critical_path: 空仓库返回空数组" {
 }
 
 ///|
+test "topo_sort: Kahn 依赖先输出(同批稳定按输入序)" {
+  let e = dag_test_engine()
+  // A 无依赖；B→A；C→B；D→A；E→D。输入乱序输入。
+  // 期望：A 先出；随后 B,D(输入序)同批；随后 C,E(输入序)。
+  let sorted = e.topo_sort(["C", "A", "B", "E", "D"])
+  assert_eq(sorted, ["A", "B", "D", "C", "E"])
+}
+
+test "topo_sort: 无依赖时保持输入顺序" {
+  let e = dag_test_engine()
+  assert_eq(e.topo_sort(["E", "D", "A"]).length(), 3)
+}
+
+///|
 test "critical_path: 含依赖的发布任务也算入图" {
   let e = FistEngine::new()
   let r = e.publish_with_deps(

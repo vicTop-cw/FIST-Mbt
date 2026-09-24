@@ -265,7 +265,13 @@ pub fn batch_verify(spec_contents : Array[(String, String)]) -> Json {
 /// —— verify_fix 入口（修复循环）——
 
 ///|
-/// verify_fix 入口：对失败 specs 做根因分类 → 修复 → 回归验证，循环上限 3 轮。
+/// verify_fix 入口：对失败 specs 做根因分类 → 修复 → 回归验证。
+///
+/// ⚠ 诚实性约束：本纯函数仅持有 batch_verify 的 failed_details（file_name/errors），
+///   **并不持有原始 spec 内容**，因此无法真正调用 apply_fix 或 verify_single_spec 做回归验证。
+///   故不再伪造 "fix_applied" 成功假象：所有失败项一律如实标记为 needs_human_review，
+///   由持有 spec 内容的上层（server 的 omega_verify_fix 工具 / 指挥链）基于根因执行定向修复。
+///
 /// 输入：failed_results 为 batch_verify 的 failed_details 数组。
 /// 返回：{ rounds[], final_accuracy, fixes_applied[], needs_human_review[] }
 pub fn batch_verify_fix(
@@ -273,90 +279,59 @@ pub fn batch_verify_fix(
   max_rounds? : Int = 3,
 ) -> Json {
   let rounds : Array[Json] = []
-  let all_fixes : Array[String] = []
   let human_review : Array[String] = []
-  let mut current_failed = failed_results
-  let mut final_accuracy : Double = 0.0
+  let review_detail : Array[String] = []
 
-  for round_num in 1..<=max_rounds {
-    if current_failed.is_empty() {
-      final_accuracy = 100.0
-      break
+  // 语义错误 → 直接标记人工审查（未做任何修复）
+  for fail_r in failed_results {
+    let fname = match fail_r.value("file_name") {
+      Some(String(s)) => s
+      _ => "unknown"
     }
-    let fixes_this_round : Array[String] = []
-    let mut still_failed : Array[Json] = []
-
-    for fail_r in current_failed {
-      let fname = match fail_r.value("file_name") {
-        Some(String(s)) => s
-        _ => "unknown"
-      }
-      let errors = match fail_r.value("errors") {
-        Some(Array(a)) => a
-        _ => []
-      }
-      let root_cause = if errors.is_empty() {
-        ROOT_CAUSE_UNKNOWN
-      } else {
-        match errors[0] {
-          String(s) => classify_root_cause(s)
-          _ => ROOT_CAUSE_UNKNOWN
-        }
-      }
-
-      // 语义错误 → 直接标记人工审查，不浪费轮次
-      if root_cause == ROOT_CAUSE_SEMANTIC_ERROR {
-        human_review.push(fname)
-        fixes_this_round.push("\{fname}: semantic -> needs_human_review")
-        continue
-      }
-
-      // 尝试修复
-      fixes_this_round.push("\{fname}: \{root_cause} -> fix_applied")
-      // 简化处理：修复后视为通过，不再加入 still_failed
+    let errors = match fail_r.value("errors") {
+      Some(Array(a)) => a
+      _ => []
     }
-
-    // 本轮修复后，假设全部通过（实际由 MCP 工具在持有 spec 内容后重验证）
-    final_accuracy = if failed_results.is_empty() {
-      100.0
+    let root_cause = if errors.is_empty() {
+      ROOT_CAUSE_UNKNOWN
     } else {
-      (failed_results.length() -
-      current_failed.length() +
-      fixes_this_round.length()).to_double() /
-      failed_results.length().to_double() *
-      100.0
+      match errors[0] {
+        String(s) => classify_root_cause(s)
+        _ => ROOT_CAUSE_UNKNOWN
+      }
     }
-
-    rounds.push(
-      Json::object({
-        "round": Json::number(round_num.to_double()),
-        "root_cause": Json::string("mixed"),
-        "fixes_applied": Json::array(
-          fixes_this_round.map(fn(s) { Json::string(s) }),
-        ),
-        "accuracy_before": Json::number(0.0),
-        "accuracy_after": Json::number(final_accuracy),
-      }),
+    human_review.push(fname)
+    review_detail.push(
+      "\{fname}: \{root_cause} -> needs_human_review（无 spec 内容，无法自动修复）",
     )
-
-    for f in fixes_this_round {
-      all_fixes.push(f)
-    }
-
-    // 修复后假设全部通过
-    current_failed = []
-    if final_accuracy >= 100.0 {
-      break
-    }
   }
+
+  // 无真实自动修复能力：最终通过率如实反映失败状况（非空失败则 0%），veto 恒为 true。
+  // 空失败列表保持 100%（与既有测试语义一致）。
+  let final_accuracy = if failed_results.is_empty() { 100.0 } else { 0.0 }
+  rounds.push(
+    Json::object({
+      "round": Json::number(1.0),
+      "root_cause": Json::string("mixed"),
+      "fixes_applied": Json::array([]),
+      "accuracy_before": Json::number(0.0),
+      "accuracy_after": Json::number(final_accuracy),
+      "note": Json::string(
+        "本纯函数无 spec 内容，未实际修复，全部转人工审查",
+      ),
+    }),
+  )
 
   Json::object({
     "rounds": Json::array(rounds),
     "total_rounds": Json::number(rounds.length().to_double()),
     "final_accuracy": Json::number(final_accuracy),
-    "fixes_applied": Json::array(all_fixes.map(fn(s) { Json::string(s) })),
+    "fixes_applied": Json::array([]),
     "needs_human_review": Json::array(
       human_review.map(fn(s) { Json::string(s) }),
+    ),
+    "needs_human_review_detail": Json::array(
+      review_detail.map(fn(s) { Json::string(s) }),
     ),
     "veto": Json::boolean(final_accuracy < 100.0),
   })

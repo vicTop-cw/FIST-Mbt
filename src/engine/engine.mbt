@@ -877,6 +877,7 @@ fn FistEngine::decompose_rec(
     let child = @core.Task::new(
       id=cid,
       project_dir=parent.project_dir,
+      ns=parent.ns,
       description=full_desc,
       parent_id=parent.get_id(),
       priority=parent.priority,
@@ -950,17 +951,74 @@ pub fn FistEngine::deps_satisfied(self : FistEngine, task_id : String) -> Bool {
 }
 
 ///|
-/// 拓扑排序（简化版）：按依赖深度排序，深度小的先执行
+/// 拓扑排序（Kahn 算法）：task A 在 depends_on 中的任务之后执行（依赖先输出）。
+/// 仅按 task_ids 集合内的依赖建图；集合外的依赖视为已满足（不影响本集合内排序）。
+/// 稳定：同批 indegree=0 的节点按 task_ids 原序输出；环残留节点按原序追加尾部。
 pub fn FistEngine::topo_sort(
   self : FistEngine,
   task_ids : Array[String],
 ) -> Array[String] {
-  // 简单排序：按依赖数量升序（依赖少的先执行）
-  let sorted = task_ids
-  let changed = true
-  // 冒泡排序：依赖少的排前面
-  // 实际生产环境应使用 Kahn 算法，这里简化为按依赖数排序
-  sorted
+  let in_task : Map[String, Bool] = Map([])
+  for id in task_ids {
+    in_task.set(id, true)
+  }
+  // indegree: 任务在 task_ids 内尚未满足的依赖数；dependents[d] = 依赖 d 的任务列表
+  let indeg : Map[String, Int] = Map([])
+  let dependents : Map[String, Array[String]] = Map([])
+  for id in task_ids {
+    indeg.set(id, 0)
+    dependents.set(id, [])
+  }
+  for id in task_ids {
+    match self.get_task(id) {
+      Some(t) =>
+        for d in t.depends_on {
+          if in_task.contains(d) && d != id {
+            indeg.set(id, indeg.get(id).unwrap_or(0) + 1)
+            let arr = dependents.get(d).unwrap_or([]).copy()
+            arr.push(id)
+            dependents.set(d, arr)
+          }
+        }
+      None => ()
+    }
+  }
+  let remaining : Map[String, Bool] = Map([])
+  for id in task_ids {
+    remaining.set(id, true)
+  }
+  let out : Array[String] = []
+  while true {
+    let ready : Array[String] = []
+    for id in task_ids {
+      if remaining.contains(id) && indeg.get(id).unwrap_or(0) == 0 {
+        ready.push(id)
+      }
+    }
+    if ready.is_empty() {
+      break
+    }
+    for id in ready {
+      remaining.remove(id)
+      out.push(id)
+      match dependents.get(id) {
+        Some(list) =>
+          for dep in list {
+            if remaining.contains(dep) {
+              indeg.set(dep, indeg.get(dep).unwrap_or(0) - 1)
+            }
+          }
+        None => ()
+      }
+    }
+  }
+  // 环保护：成环剩余节点按原序追加尾部，保证全量输出
+  for id in task_ids {
+    if remaining.contains(id) {
+      out.push(id)
+    }
+  }
+  out
 }
 
 ///|
