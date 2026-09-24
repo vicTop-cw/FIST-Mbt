@@ -10,7 +10,7 @@
 
 ## 2. 规模与测试可复现
 - **61 个 MCP 工具** + 2 Resources + 2 Prompts；`moon check` 0 错误。
-- **165 项测试用例 js 全绿**（本人已实跑 `moon test --target js` → 165/165）；JS 与 Native 双后端；CI 三轨道绿色徽章（native 以 CI/ubuntu 为准）。
+- **165 项测试用例 js 全绿**（本人已实跑 `moon test --target js` → 167/167）；JS 与 Native 双后端；CI 三轨道绿色徽章（native 以 CI/ubuntu 为准）。
 - 30 秒一键演示 `scripts/demo.ps1` 实测 PASS（拉起 MCP server，tools/list 61 工具 + publish + get 状态断言）。
 - **视觉终端巡演 `scripts/showcase.ps1` 实测 PASS**：ANSI 彩色 + box-drawing 渲染「九态生命周期状态机 / DAG 依赖树 / 自举采用证据」，一屏讲清全项目（非脚本断言，是真视觉层）。
 - 一把自检 `scripts/mcp_smoke.py` 实测 PASS：断言 61 工具、发布命中 task_id、get 命中且状态待领取。
@@ -33,6 +33,7 @@
 ## 5. 发布前质量硬化（评审通过）
 - 用 open-code-review（官方 code-review 引擎）对全套脚本/CI/githooks/gitignore 审查并修复 40 项问题：HTTP 并发串线竞态修复、cron stderr 管道死锁、客户端/服务端 timeout 错位对齐、非原子状态写改 tmp+replace、CI 最小权限 / checkout 钉 commit SHA / concurrency / timeout-minutes / 工具链 cache、pre-commit set -e。
 - 用 ocr-local（20 条 MoonBit 专项规则 + 逐处人工判伪阳性）审查核心源码，修复系统性 `moonbit-result-discard`：`update_task/upsert_spec` 的 `ignore()` 静默吞错 13 处改为 match 传播 Err，消除状态机与 SQLite 持久化漂移；移除 core_task 死代码。抽查复核：baseline 亦复现的 Windows native 堆损坏 flake 为已知环境边界，非本次回归。
+- **live 人工代码审查修复 8 项真实 bug**（DeepSeek 207 findings 经 QClaw 甄别，2026-09-24）：omega batch_verify_fix 不再伪造修复(如实 needs_human_review)、evolve from_json 补还原 parts/children、Archive::add 先查重再累加、gate evaluator Err 短路、topo_sort 由空操作改为 Kahn 拓扑排序(新增 2 测试)、decompose_rec 传 ns、router 风险关键词 8→24+、未知 cost_tier 改 fail-closed。其中 registry Map.set「丢弃返回值」判定为**假阳性**（本工具链 `Map::set -> Unit` 原地修改，核证 `linked_hash_map.mbt:153`）。
 - 新增一页《项目申报书》PDF（赛事验收必过项）与 mooncakes 包 readme（README.mbt.md，与 moon.mod readme 字段对齐）。
 
 ## 6. 文档即实现 + 无硬编码 + 可复现
