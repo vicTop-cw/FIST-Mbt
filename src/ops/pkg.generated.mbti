@@ -56,7 +56,7 @@ pub fn selfdrive_review_ready(String, ns~ : String) -> Result[Json, String]
 
 pub fn selfdrive_review_tick(String, ns~ : String, review_every~ : Int) -> Result[Json, String]
 
-pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String, cold_start? : Bool, project_dir? : String, omega_strong_verify? : Bool, omega_split_n? : Int, omega_spec? : Json?) -> Result[Json, String]
+pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String, cold_start? : Bool, project_dir? : String, omega_strong_verify? : Bool, omega_split_n? : Int, omega_spec? : Json?, selfdrive_project_dir? : String, selfdrive_review_every? : Int) -> Result[Json, String]
 
 // Errors
 

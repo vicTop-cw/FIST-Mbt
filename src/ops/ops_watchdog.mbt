@@ -216,6 +216,8 @@ pub fn watchdog_tick(
   omega_strong_verify? : Bool = false,
   omega_split_n? : Int = 3,
   omega_spec? : Json? = None,
+  selfdrive_project_dir? : String = "",
+  selfdrive_review_every? : Int = 3,
 ) -> Result[Json, String] {
   let heal_ns = if ns == "" { "default" } else { ns }
   // ---- 1. 回滚阶段（功能 A：读 SQLite 心跳，跨进程正确） ----
@@ -264,6 +266,21 @@ pub fn watchdog_tick(
       None => ()
     }
   }
+  // 自驱整合：启用 selfdrive 时探测审视轮（报告先行），结果附加到 detail.selfdrive。
+  // 不改变既有 idle/advanced 语义，仅供通过 watchdog_tick 驱动无人值守时同步推进审视。
+  let sd_detail : Json = if selfdrive_project_dir != "" {
+    match
+      selfdrive_review_tick(
+        selfdrive_project_dir,
+        ns~,
+        review_every=selfdrive_review_every,
+      ) {
+      Ok(j) => j
+      Err(_) => Json::string("selfdrive_review_tick failed")
+    }
+  } else {
+    Json::null()
+  }
   let detail = Json::object({
     "namespace": Json::string(heal_ns),
     "scanned": Json::number(tasks.length().to_double()),
@@ -271,6 +288,7 @@ pub fn watchdog_tick(
     "blocked_detail": Json::array(blocked_ids.map(fn(s) { Json::string(s) })),
     "meta_prompt_path": Json::string(meta_prompt_path),
     "meta_prompt_used": Json::boolean(meta_used),
+    "selfdrive": sd_detail,
   })
   // ---- 4. 心跳超时回滚优先返回 ----
   if !healed.is_empty() {
@@ -398,7 +416,7 @@ pub fn watchdog_tick(
       }
     }
   }
-  // ---- 6. 默认：等待 / 空闲 ----
+  // ---- 6. 默认：等待 / 空闲 ---- 
   let action = if !active_ids.is_empty() { "waiting" } else { "idle" }
   Ok(
     tick_json(

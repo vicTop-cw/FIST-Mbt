@@ -287,7 +287,9 @@ pub async fn run_server() -> Unit {
         {
           "project_dir": string_prop("项目目录（必填）"),
           "description": string_prop("任务描述（必填）"),
-          "namespace": string_prop("命名空间（必填，不得为 default）"),
+          "namespace": string_prop(
+            "命名空间（必填，不得为 default）",
+          ),
           "created_by": string_prop("创建者身份(默认 selfdrive)"),
           "now": string_prop("时间戳(可选)"),
         },
@@ -558,6 +560,25 @@ pub async fn run_server() -> Unit {
       },
     )
     .tool(
+      "reopen_task",
+      "重开/重派任务：任意非归档任务回滚为已领取（M4 heal/运维重派用）。参数：task_id、now。",
+      schema(
+        {
+          "task_id": string_prop("任务 id（必填）"),
+          "now": string_prop("时间戳(可选)"),
+        },
+        ["task_id"],
+      ),
+      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+        let task_id = get_str(args, "task_id")
+        let ts = get_str(args, "now", default=now)
+        match engine.reopen_task(task_id, ts) {
+          Ok(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
+          Err(e) => Err(@mcp_types.ToolError(e))
+        }
+      },
+    )
+    .tool(
       "pause",
       "暂停任务（任意活跃状态 -> 已暂停）。参数：task_id。",
       schema(
@@ -609,18 +630,22 @@ pub async fn run_server() -> Unit {
     )
     .tool(
       "list",
-      "列出全部任务，可按状态过滤。参数：status(可选，中文状态名)。",
+      "列出任务，可按状态与命名空间过滤。参数：status(可选，中文状态名)、namespace(可选，按命名空间过滤；不传则列出全库所有命名空间)。",
       schema(
         {
           "status": string_prop(
             "按状态过滤(可选)：待领取/已领取/执行中/待验收/已完成/已归档",
+          ),
+          "namespace": string_prop(
+            "按命名空间过滤(可选)：如 default/cron-auto/cron-cypy/fist-iter；不传则列出全部命名空间",
           ),
         },
         [],
       ),
       async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
         let status_str = get_str(args, "status")
-        let tasks = if status_str == "" {
+        let ns_str = get_str(args, "namespace")
+        let mut tasks = if status_str == "" {
           engine.list_all()
         } else {
           match @core.TaskStatus::from_string(status_str) {
@@ -628,6 +653,9 @@ pub async fn run_server() -> Unit {
             None =>
               return Err(@mcp_types.ToolError("未知状态: \{status_str}"))
           }
+        }
+        if ns_str != "" {
+          tasks = tasks.filter(fn(t) { t.ns == ns_str })
         }
         Ok(
           @mcp.ToolResult::text(
@@ -957,6 +985,12 @@ pub async fn run_server() -> Unit {
           "omega_spec": string_prop(
             "可选 Omega spec JSON(可选)：laws 作切割依据，fingerprint 作验收基准",
           ),
+          "selfdrive_project_dir": string_prop(
+            "自驱式编程整合(可选)：提供时会探测该项目的记忆审视轮，结果挂到 detail.selfdrive（报告先行）",
+          ),
+          "selfdrive_review_every": int_prop(
+            "自驱审视频率(可选默认3)：每满 N 份 Reports 报告触发一轮审视",
+          ),
         },
         [],
       ),
@@ -980,6 +1014,12 @@ pub async fn run_server() -> Unit {
         )
         let omega_split_n = get_int(args, "omega_split_n", default=3)
         let omega_spec_str = get_str(args, "omega_spec")
+        let selfdrive_project_dir = get_str(args, "selfdrive_project_dir")
+        let selfdrive_review_every = get_int(
+          args,
+          "selfdrive_review_every",
+          default=3,
+        )
         let omega_spec = if omega_spec_str == "" {
           None
         } else {
@@ -1002,6 +1042,8 @@ pub async fn run_server() -> Unit {
             omega_strong_verify~,
             omega_split_n~,
             omega_spec~,
+            selfdrive_project_dir~,
+            selfdrive_review_every~,
           ) {
           Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
           Err(e) => Err(@mcp_types.ToolError(e))

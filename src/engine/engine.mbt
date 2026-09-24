@@ -431,6 +431,10 @@ fn FistEngine::next_round_id(self : FistEngine) -> String {
     match self.store.get_task(candidate) {
       Some(_) => {
         round = round + 1
+        // 探测上限：防止 id 空间被异常填满时无限循环（并发撞车由存储层唯一约束兜底）
+        if round >= 100000 {
+          return candidate
+        }
         candidate = "\{base}r\{round + 1}"
       }
       None => taken = false

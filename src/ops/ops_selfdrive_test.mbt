@@ -13,7 +13,34 @@
 // ---------------------------------------------------------------------------
 
 ///|
-/// 准备用例目录（含 memory/reviews 骨架）。
+/// 准备用例目录（含 memory/reviews 骨架）。每次运行先清空本用例目录，
+/// 避免上次运行残留的 Reports//memory/ 文件污染计数（用例幂等可重复跑）。
+fn sd_clean_dir(dir : String) -> Unit {
+  // 删除已知单文件（memory 四件套 + 计数），各自失败忽略（首次运行无残留）
+  for
+    f in [
+      "memory/product.md", "memory/target.md", "memory/task.md", "memory/thinking.md",
+      "memory/_review.count",
+    ] {
+    @fs.remove_file(dir + "/" + f) catch {
+      _ => ()
+    }
+  }
+  // 逐文件删除 Reports/ 与 memory/reviews/ 下已积累的报告，实现幂等
+  for sub in ["Reports", "memory/reviews"] {
+    let p = dir + "/" + sub
+    let names = @fs.read_dir(p) catch { _ => continue }
+    for n in names {
+      @fs.remove_file(p + "/" + n) catch {
+        _ => ()
+      }
+    }
+  }
+}
+
+///|
+/// 准备用例目录（含 memory/reviews 骨架）。每次运行先清空本用例目录，
+/// 避免上次运行残留的 Reports//memory/ 文件污染计数（用例幂等可重复跑）。
 fn sd_dir(name : String) -> String {
   @fs.create_dir("temp") catch {
     _ => ()
@@ -28,6 +55,10 @@ fn sd_dir(name : String) -> String {
   @fs.create_dir(d + "/memory/reviews") catch {
     _ => ()
   }
+  @fs.create_dir(d + "/Reports") catch {
+    _ => ()
+  }
+  sd_clean_dir(d)
   d
 }
 
