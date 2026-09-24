@@ -20,6 +20,16 @@ extern "js" fn js_stdin_web() -> @js_async.Promise[@js_async.JsReadableStream] =
   #| }
 
 ///|
+/// Write a diagnostic line to stderr（stdout 是 JSON-RPC 协议专用通道，
+/// 诊断信息必须走 process.stderr，避免污染协议流）。
+extern "js" fn js_eprintline(s : String) =
+  #| (s) => {
+  #|   try {
+  #|     globalThis.process.stderr.write(s + "\n")
+  #|   } catch (_e) {}
+  #| }
+
+///|
 /// Awaitable stdout write (flush-aware for pipe backpressure).
 extern "js" fn js_stdout_write(s : String) -> @js_async.Promise[Unit] =
   #| async (s) => {
@@ -43,7 +53,7 @@ fn is_notification_message(message : String) -> Bool {
 async fn run_stdio_target(s1 : @mcp.MCPServer) -> Unit {
   let stdin_web = js_stdin_web().wait() catch {
     _ => {
-      println("fist-mbt: cannot bridge process.stdin")
+      js_eprintline("fist-mbt: cannot bridge process.stdin")
       return
     }
   }

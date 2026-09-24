@@ -243,19 +243,10 @@ fn _opt_str(o : String?) -> String {
 }
 
 ///|
+/// 序列化 Array[String] 为 JSON 数组（经 Json 库转义引号/反斜杠/控制字符，
+/// 避免 id 含特殊字符时产生非法 JSON）。
 fn _array_to_json(arr : Array[String]) -> String {
-  if arr.is_empty() {
-    return "[]"
-  }
-  let mut result = "["
-  for i = 0; i < arr.length(); i = i + 1 {
-    if i > 0 {
-      result = result + ","
-    }
-    result = result + "\"" + arr[i] + "\""
-  }
-  result = result + "]"
-  result
+  Json::array(arr.map(fn(s) { Json::string(s) })).stringify()
 }
 
 ///|

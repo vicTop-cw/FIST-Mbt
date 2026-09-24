@@ -43,7 +43,8 @@ pub fn FistEngine::publish(
   if created_by != "human_steward" && created_by != "human" {
     return Err("publish 仅限人类指挥官（created_by=human_steward）")
   }
-  let id = root_task_id()
+  // 根任务 id 全局唯一：T0 被占用时顺延 T0r2/T0r3（避免第二根主键冲突）
+  let id = self.first_free_root_id()
   let t = @core.Task::new(
     id~,
     project_dir~,
@@ -1052,7 +1053,8 @@ pub fn FistEngine::publish_with_deps(
   if created_by != "human_steward" && created_by != "human" {
     return Err("publish 仅限人类指挥官")
   }
-  let id = root_task_id()
+  // 根任务 id 全局唯一：T0 被占用时顺延 T0r2/T0r3
+  let id = self.first_free_root_id()
   let t = @core.Task::new(
     id~,
     project_dir~,

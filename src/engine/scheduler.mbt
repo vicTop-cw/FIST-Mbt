@@ -41,12 +41,56 @@ fn risk_keywords() -> Array[String] {
 }
 
 ///|
-/// 检测描述中是否包含高风险关键词
+/// ASCII 字母/数字/下划线视为"词字符"，用于判断风险词是否整词出现。
+fn _is_word_char(c : Char) -> Bool {
+  let u = c.to_int()
+  (u >= 48 && u <= 57) ||
+  (u >= 65 && u <= 90) ||
+  (u >= 97 && u <= 122) ||
+  u == 95
+}
+
+///|
+/// 词边界匹配：needle 整词出现在 haystack 中（前后为空白/标点/串边界）才命中，
+/// 避免 "enforce"/"reinforce" 因包含 "force" 而误触发 L4 人工冻结。
+fn _has_word(hay : String, needle : String) -> Bool {
+  let chars = hay.to_array()
+  let nd = needle.to_array()
+  let n = chars.length()
+  let m = nd.length()
+  if m == 0 || m > n {
+    return false
+  }
+  let mut i = 0
+  while i + m <= n {
+    let mut equal = true
+    let mut k = 0
+    while k < m {
+      if chars[i + k] != nd[k] {
+        equal = false
+        break
+      }
+      k = k + 1
+    }
+    if equal {
+      let before_ok = i == 0 || not(_is_word_char(chars[i - 1]))
+      let after_ok = i + m == n || not(_is_word_char(chars[i + m]))
+      if before_ok && after_ok {
+        return true
+      }
+    }
+    i = i + 1
+  }
+  false
+}
+
+///|
+/// 检测描述中是否包含高风险关键词（整词匹配）
 fn contains_risk_keyword(desc : String) -> Bool {
   let lower = desc.to_lower()
   let kws = risk_keywords()
   for i = 0; i < kws.length(); i = i + 1 {
-    if lower.contains(kws[i].to_lower()) {
+    if _has_word(lower, kws[i].to_lower()) {
       return true
     }
   }

@@ -10,6 +10,7 @@ import {
   "colmugx/mcp/protocol/types" @mcp_types,
   "colmugx/mcp/protocol/resource" @mcp_resource,
   "moonbitlang/core/json",
+  "moonbitlang/core/env",
   "moonbitlang/x/fs",
   "moonbitlang/async/io",
   "moonbitlang/async/js_async",

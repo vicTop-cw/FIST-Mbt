@@ -54,9 +54,46 @@ let evolve_arc : @evolve.Archive = @evolve.Archive::new("mem-evolve")
 let evolve_store : @store.SqliteStore? = @store.SqliteStore::new()
 
 ///|
-/// 默认时间戳（无系统时钟依赖，保证 demo 可重现）
+/// 把毫秒级 Unix 时间转换为 UTC 时刻两项补齐
+fn _pad2(n : Int) -> String {
+  let s = n.to_string()
+  if s.length() == 1 {
+    "0" + s
+  } else {
+    s
+  }
+}
+
+///|
+/// 从 Unix 日起算天数反推公历 (年, 月, 日)（Howard Hinnant 的 civil_from_days，
+/// 纯整数算术、适用于 z >= 0 即 1970 年起的日期）。
+fn _civil_from_days(z : Int) -> (Int, Int, Int) {
+  let z0 = z + 719468
+  let era = z0 / 146097
+  let doe = z0 - era * 146097
+  let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+  let y = yoe + era * 400
+  let doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+  let mp = (5 * doy + 2) / 153
+  let d = doy - (153 * mp + 2) / 5 + 1
+  let m = if mp < 10 { mp + 3 } else { mp - 9 }
+  let y2 = if m <= 2 { y + 1 } else { y }
+  (y2, m, d)
+}
+
+///|
+/// 默认时间戳：取真实墙钟时间（UTC，毫秒级），格式化为
+/// `YYYY-MM-DDTHH:MM:SSZ`。避免省略 now 参数时共享一个冻结时钟，
+/// 使心跳/陈旧检测/清理/审计与真实时间对齐（不再硬编码 2026-09-05）。
 fn now_default() -> String {
-  "2026-09-05T00:00:00Z"
+  let ms = @env.now().to_int()
+  let total_sec = ms / 1000
+  let sec = total_sec % 60
+  let min = total_sec / 60 % 60
+  let hour = total_sec / 3600 % 24
+  let days = total_sec / 86400
+  let (y, m, d) = _civil_from_days(days)
+  "\{y}-\{_pad2(m)}-\{_pad2(d)}T\{_pad2(hour)}:\{_pad2(min)}:\{_pad2(sec)}Z"
 }
 
 ///|

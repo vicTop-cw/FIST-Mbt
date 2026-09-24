@@ -1,9 +1,11 @@
 /// mcp_delegate.mbt — MCP 委托执行器。
 ///
-/// 核心思路：MoonBit 无 subprocess，将执行请求封装为 task_context.json 通知客户端，
-/// 客户端执行完毕后回调 execute 工具写回交付物。
+/// 核心思路：MoonBit 无 subprocess，把执行请求的上下文（任务 id/项目目录/描述/
+/// assignee/委托说明）内联打包，随返回结果一并交付客户端；客户端执行完毕后
+/// 回调 execute 工具写回交付物。
 ///
 /// 本执行器仅负责生成上下文包并返回"已委托"状态，实际执行由外部客户端完成。
+/// 不写任何文件（不落盘 task_context.json）——上下文随返回值交付。
 
 ///|
 /// MCP 委托执行器（单例结构体）
@@ -24,7 +26,8 @@ pub fn McpDelegateExecutor::with_name(n : String) -> McpDelegateExecutor {
 }
 
 ///|
-/// 生成 task_context.json（对齐 mavis_executor 格式，供客户端读取后执行）
+/// 生成执行上下文 JSON（对齐 mavis_executor 格式，内联返回、不写盘）
+/// _task 当前未参与序列化（字段信息均来自 ctx），保留参数以维持调用形态。
 fn McpDelegateExecutor::make_context(
   self : McpDelegateExecutor,
   _task : @core.Task,

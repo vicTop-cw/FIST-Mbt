@@ -27,7 +27,24 @@ pub fn gate_enabled(t : @core.Task) -> Bool {
 }
 
 ///|
-/// 记录一次外部命令检查结果（status = "passed" 当且仅当 exit_code==0）。
+/// 从 run_check 的检查结果 JSON 推导权威门禁状态：`ok == true`（即 exit_code==0）
+/// 记为 "passed"，其余一律 "failed"（fail-closed）。不信任调用方传入的 status 字符串，
+/// 防止伪造 "passed" 蒙混过关（与 gate_verify_gate 的判据一致）。
+fn _derived_check_status(check_json : String) -> String {
+  let parsed = @json.parse(check_json) catch { _ => return "failed" }
+  match parsed {
+    Object(m) =>
+      match m.get("ok") {
+        Some(True) => "passed"
+        _ => "failed"
+      }
+    _ => "failed"
+  }
+}
+
+///|
+/// 记录一次外部命令检查结果（门禁状态从 check_json 的 ok/exit_code==0 推导，
+/// status 参数已不参与判定，仅保留以维持公开签名兼容）。
 /// 记录 id = check:<task_id>:r<round>（round = 该任务已有 check 记录数 + 1）。
 pub fn FistEngine::gate_check_record(
   self : FistEngine,
@@ -36,6 +53,9 @@ pub fn FistEngine::gate_check_record(
   status : String,
   now : String,
 ) -> Result[Json, String] {
+  // status 参数不再被信任：实际门禁状态一律由 check_json 推导
+  ignore(status)
+  let eff = _derived_check_status(check_json)
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
     Some(_) => {
@@ -45,7 +65,7 @@ pub fn FistEngine::gate_check_record(
         task_id~,
         spec_type="check",
         content=check_json,
-        status~,
+        status=eff,
         created_at=now,
         updated_at=now,
       )
