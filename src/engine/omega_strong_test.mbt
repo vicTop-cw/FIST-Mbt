@@ -18,7 +18,7 @@ fn os_publish(
 ) -> String {
   match
     e.publish(
-      project_dir="E:/proj/omega",
+      project_dir="/proj/omega",
       description=desc,
       created_by="human_steward",
       now="2026-09-17T09:00:00Z",

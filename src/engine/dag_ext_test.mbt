@@ -16,7 +16,7 @@ fn dag_test_engine() -> FistEngine {
     let (id, parent, deps) = s
     let t = @core.Task::new(
       id~,
-      project_dir="E:/proj/demo",
+      project_dir="/proj/demo",
       description="DAG 测试任务 \{id}",
       parent_id=match parent {
         Some(p) => p
@@ -50,7 +50,7 @@ test "critical_path: 空仓库返回空数组" {
 test "critical_path: 含依赖的发布任务也算入图" {
   let e = FistEngine::new()
   let r = e.publish_with_deps(
-    project_dir="E:/proj/demo",
+    project_dir="/proj/demo",
     description="根",
     depends_on=["A"],
     now="2026-01-01T00:00:00Z",
@@ -61,7 +61,7 @@ test "critical_path: 含依赖的发布任务也算入图" {
   }
   let t = @core.Task::new(
     id="A",
-    project_dir="E:/proj/demo",
+    project_dir="/proj/demo",
     description="前置",
     created_at="2026-01-01T00:00:00Z",
   )
@@ -131,7 +131,7 @@ test "dag_ascii: parent_id 归组 + depends_on 缩进" {
     let (id, parent, deps) = s
     let t = @core.Task::new(
       id~,
-      project_dir="E:/proj/demo",
+      project_dir="/proj/demo",
       description="ascii \{id}",
       parent_id=parent,
       created_at="2026-01-01T00:00:00Z",

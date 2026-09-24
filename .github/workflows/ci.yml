@@ -8,7 +8,7 @@ on:
 
 jobs:
   check-and-test-js:
-    name: check + test (js)
+    name: check + test (js, ubuntu)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,8 +18,11 @@ jobs:
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
-      - name: MoonBit version
-        run: moon version --all
+      - name: Refresh registry (first build)
+        run: moon update
+        env:
+          # 从公开 mooncakes registry 拉取；无私有依赖
+          MOON_REGISTRY_UPDATE: "1"
 
       - name: Check (js)
         run: moon check --target js
@@ -28,9 +31,8 @@ jobs:
         run: moon test --target js
 
   check-native:
-    name: check + test (native, best-effort)
+    name: check + test (native, ubuntu)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -44,8 +46,44 @@ jobs:
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
+      - name: Refresh registry (first build)
+        run: moon update
+
       - name: Check (native)
         run: moon check --target native
 
       - name: Test (native)
         run: moon test --target native
+
+  check-windows-js:
+    name: check + test (js, windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install MoonBit toolchain (Windows)
+        shell: pwsh
+        run: |
+          irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
+
+      - name: Add moon to PATH
+        shell: pwsh
+        run: |
+          "$HOME\.moon\bin" | Out-File -Append $env:GITHUB_PATH
+          "$env:USERPROFILE\.moon\bin" | Out-File -Append $env:GITHUB_PATH
+
+      - name: Refresh registry (first build)
+        shell: pwsh
+        run: moon update
+
+      - name: Check (js)
+        shell: pwsh
+        run: moon check --target js
+
+      - name: Test (js)
+        shell: pwsh
+        run: moon test --target js

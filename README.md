@@ -13,42 +13,50 @@ AIGC:
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-103%2F103-brightgreen)](./src)
+[![Tests](https://img.shields.io/badge/tests-135%2F135-brightgreen)](./src)
 
-将 **FIST 指挥官任务分配体系**（原 Python 实现）用 **纯 MoonBit 原生重写** 并包装为 **MCP Server** 的参赛作品（2026 MoonBit 九月黑客松）。
+**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统：从 **发布→认领→拆分→执行→提交→验收→归档** 的完整闭环，到 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗** 这些"系统自己推动自己"的能力，全部以 **57 个 MCP 工具** 暴露给任意 MCP 客户端（Claude Desktop / Cursor / 自研 JSON-RPC）。
 
-指挥官（人类 / 主力模型）通过标准 MCP 协议调用 FIST-Mbt 暴露的 41 个工具，完成任务的 **发布 → 认领 → 拆分 → 执行 → 提交 → 验收 → 归档** 完整闭环，全程贯彻 FIST 七条金条原则。
+**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑能在 Windows 与 Linux 上 135 项测试双端全绿、跨环境可复现——`moon update && moon run cmd/main` 即用，告别 Python 原版的环境安装地狱。
 
-> 该项目为 FIST（Python）的 MoonBit 原生重写 + MCP 化，非原代码搬运。
+> 它用**它自己的**自驱式 + 递归拆解把自己打磨到了可交付态——完整自我迭代证据见 `docs/selfdrive-walkthrough.md`。
 
 ---
 
+## 环境要求（跨平台可复现）
+
+- **MoonBit 工具链**：≥ 0.1.20260827（支持 `errdefer` 与 `async`，实测 0.1.20260904/0.1.20260920 通过）。
+- **Node.js ≥ 24**（JS 目标必需）：SQLite JS 后端依赖 `node:sqlite` 的 `returnArrays`，Node ≥ 24 才生效；
+  <24 会退化为对象行导致列读取为空（实测 node 23 → 28 项失败，node 25 → 135/135 全绿）。
+- **首次构建前**执行 `moon update` 刷新 mooncakes registry 索引：本项目**无私有依赖**，
+  `mizchi/sqlite`、`colmugx/mcp`、`moonbitlang/*` 全部公开可下载，无需 vendor、无需登录。
+- **Native 目标**：需系统 SQLite 开发库（`sqlite3.h` + 链接库）。Linux：`apt-get install libsqlite3-dev`；
+  Windows：准备 `sqlite3.h/sqlite3.lib`（如 `C:\sqlite-dev`）并在 MSVC 环境（`Enter-VsDevShell` + 追加 INCLUDE/LIB）下构建。
+  所有 `moon.pkg` 已内置 native 链接 flag（`-lsqlite3`）。**JS 与 Native 双后端均已在 Windows + WSL(Linux) 上通过全部 135 项测试。**
+
+> 默认推荐 JS 目标（`preferred_target = "js"`），装好 Node ≥ 24 后即可 `moon run cmd/main` 直接启动。
+
 ## 快速开始
 
-依赖：MoonBit 工具链（≥ 0.1.20260827，需支持 `errdefer` 与 `async`）。
-
 ```bash
-# 依赖解析 & 编译
-moon check
-
-# 运行测试（103 项全部通过）
-moon test
-
-# 启动 MCP Server（STDIO 传输）
-moon run cmd/main
-
-# 启动 HTTP/SSE 桥接（可选）
+moon update            # 首次：刷新 registry 索引
+moon check             # 依赖解析 & 编译
+moon test              # 运行测试（135 项全部通过）
+moon run cmd/main      # 启动 MCP Server（STDIO 传输）
+# 可选 HTTP/SSE 桥接
 FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 ```
 
 任意 MCP 客户端（Claude Desktop / AtomCode / 自研 JSON-RPC 客户端）以 STDIO 方式拉起该可执行文件即可交互。
+
+**一键自检（约 10 秒）**：`moon run cmd/cli` 若打印「发布成功 / 认领成功 / 拆分成功 3 个子任务」，即环境就绪、Release→拆分→认领全流程可复现。
 
 ### 最小调用示例（JSON-RPC over STDIO）
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
   "name":"publish",
-  "arguments":{"project_dir":"E:/proj/demo","description":"示例根任务","created_by":"human_steward","now":"2026-09-05T10:00:00Z"},
+  "arguments":{"project_dir":"/proj/demo","description":"示例根任务","created_by":"human_steward","now":"2026-09-05T10:00:00Z"},
   "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}
 }}
 ```
@@ -57,7 +65,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 ## MCP 暴露面
 
-### Tools（41 个）
+### Tools（**57 个**）
 
 > **适用范围提示**：`watchdog_tick`（定时任务看门狗编排）**推荐仅用于定时任务 / 无人值守自动化场景**，不用于人工指挥官任务分配流程（自动 heal / 自动续轮在人工流程中有害）。
 >
@@ -166,6 +174,43 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 | `store_list` | 列出当前已打开的命名空间及任务数 | 无 |
 | `store_close` | 关闭指定命名空间（不删除物理库文件） | namespace |
 
+#### 并行发布 / 重派 / 判据检查
+
+| 工具 | 说明 | 关键参数 |
+|---|---|---|
+| `publish_parallel` | 在已有任务的命名空间并行追加独立根任务（不要求 ns 为空、不续轮不归档） | project_dir, description, namespace(必填非 default), created_by(默认selfdrive), now |
+| `reopen_task` | 重开/重派任务：任意非归档任务回滚为已领取（M4 heal/运维重派用） | task_id, now |
+| `run_check` | 外部判据检查（服务端真实执行命令，防自写自测恒绿）；[gate:required] 任务的 verify 依赖其记录 | task_id, cmd, args(可选), workdir, timeout_ms(默认120000), now |
+| `dag_publish` | 发布带 `depends_on` 依赖关系的根任务 | project_dir, description, depends_on(JSON 数组), namespace, created_by, now |
+
+#### 自驱式编程（selfdrive，M8 增强）
+
+| 工具 | 说明 | 关键参数 |
+|---|---|---|
+| `selfdrive_init` | 初始化 memory 四件套（product/target/task/thinking + reviews 目录），幂等不覆盖 | project_dir(必填), namespace |
+| `selfdrive_append` | 追加/更新 memory 条目（thinking 为 append-only 流水，其余覆盖写） | project_dir, kind, content, namespace, now |
+| `selfdrive_get` | 读取指定 memory 文件，返回 {exists, content} | project_dir, kind, namespace |
+| `selfdrive_export_tasks` | 从任务库导出任务清单到 task.md（视图覆盖写） | project_dir, namespace |
+| `selfdrive_review_tick` | 审视轮判定：报告数≥已审视轮次+review_every 触发 action=review，否则 idle/no_memory | project_dir, review_every(默认3), namespace |
+| `selfdrive_review_ready` | 审视收口：确认最新审视报告已落盘并推进已审视轮次（报告先行） | project_dir, namespace |
+| `selfdrive_publish_next` | 解析审视报告 `## Next Tasks` 段并将待办并行发布为独立根任务（幂等，防重） | project_dir, namespace, max_tasks(默认10), now |
+| `selfdrive_parse_next_tasks` | 纯解析审视报告文本中的 `## Next Tasks` 段（调试/校验用） | content(必填), max_tasks(默认10) |
+
+#### DGM 演化（evolve）
+
+| 工具 | 说明 | 关键参数 |
+|---|---|---|
+| `evolve_submit` | 归档一个产物（Artifact）：本轮设计/代码/目标入档案库，自动递增父代子代数；与档案高度相似则查重丢弃 | id, goal, note, code, score, parent_id(可选), parts(可选), now |
+| `evolve_snapshot` | 查看档案库快照（count/best/summaries/dead_ends/lineage_of_best） | 无 |
+| `evolve_sample` | 按 p∝s·h 多样性加权采样父代产物（子代越少/性能越高越可能被选） | rand(可选) |
+
+#### 可选项（Laya / 单根流水线）
+
+| 工具 | 说明 | 关键参数 |
+|---|---|---|
+| `laya_decide` | Laya 可选决策工具（自动探测）：对任务/文本快速分类；机器无 laya 则返回 available:false 降级，不影响现网 | context(必填), questions(可选), model(默认english) |
+| `pipeline_tick` | 提示词流水线状态机单入口（仅定时任务/无人值守 ns）：以 currentState.txt 为状态源四分支推进，报告先行 | project_dir(必填), now, namespace(默认cron-auto), phase, prompt_name, timeout_sec(默认2400) |
+
 ### Resources（2）
 
 | URI | 内容 |
@@ -221,7 +266,7 @@ FIST-Mbt/
 │   │   └── ops_ts.mbt          # 时间戳工具
 │   ├── omega/           # 可解释性子包：spec/gate/check
 │   └── server/          # MCP server 装配
-│       ├── server.mbt          # 41 个工具注册 + run_server
+│       ├── server.mbt          # 57 个工具注册 + run_server
 │       ├── stdio_js.mbt        # JS 后端 STDIO 传输
 │       └── stdio_native.mbt    # 原生后端 STDIO 传输
 └── moon.mod             # 模块元数据
@@ -284,7 +329,7 @@ FIST-Mbt/
 ## 测试
 
 ```bash
-moon test   # 93 项测试全部通过
+moon test   # 135 项测试全部通过
 ```
 
 覆盖：根任务发布、发布权限（仅人类指挥官）、claim/plan/execute/submit/verify/archive/delete 全闭环、
@@ -341,8 +386,18 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 | 端点 | 说明 |
 |---|---|
-| `GET /health` | 健康检查，返回 `{"status":"ok","tools":41}` |
+| `GET /health` | 健康检查，返回 `{"status":"ok","tools":57}` |
 | `POST /mcp` | JSON-RPC over HTTP，请求体与 STDIO 模式一致 |
+
+---
+
+## 已知边界与常见问题（主动自曝）
+
+- **`node:sqlite` 实验性警告**：JS 后端走 `node:sqlite`，Node ≥ 24 下运行会打印 `ExperimentalWarning: SQLite is an experimental feature`——功能正常、无碍，可忽略（或 `--no-warnings`）。
+- **环境三件事**：Node ≥ 24（JS 后端必需）、首次 `moon update`（刷新 registry）、native 需系统 SQLite（Linux `libsqlite3-dev`；Windows `sqlite3.h/sqlite3.lib` + MSVC）。
+- **native 双端**：全部 `moon.pkg` 已内置 `-lsqlite3`；Windows + Linux 均已 135/135 全绿。
+- **execute 一次性记录**：`executions` 表主键为任务 id，同一任务仅记录一次交付；重复调用同一任务的 `execute` 会报 `UNIQUE constraint failed`——需要覆盖交付物时，先 `reject`/`retry` 回到「执行中」再 `execute`。
+- **自驱非死循环**：审视报告带 `[review:<file>:<idx>]` 幂等标记，无新报告即 `idle`/`waiting` 停住；心跳新鲜时 watchdog 不抢活。
 
 ---
 

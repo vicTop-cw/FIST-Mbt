@@ -2,6 +2,10 @@
 package "vicTop-cw/fist-mbt/src/server"
 
 // Values
+pub async fn laya_decide_external(String, Array[String], String, String, Int) -> Result[Json, String]
+
+pub async fn laya_probe_available(String, Array[String], String, Int) -> Result[Bool, String]
+
 pub async fn run_check_external(String, Array[String], String, Int) -> Result[Json, String]
 
 pub async fn run_server() -> Unit

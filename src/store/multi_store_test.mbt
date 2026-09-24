@@ -30,7 +30,7 @@ test "open 创建并注册命名空间，get 幂等复用" {
     Some(s) => {
       let t = @core.Task::new(
         id="T0",
-        project_dir="E:/proj/demo",
+        project_dir="/proj/demo",
         description="multi-store smoke",
         created_at="2026-09-05T10:00:00Z",
         ns="alpha",
@@ -57,7 +57,7 @@ test "惰性打开：未显式 open 时 get 可直接打开物理库" {
     Some(s) => {
       let t = @core.Task::new(
         id="L0",
-        project_dir="E:/proj/demo",
+        project_dir="/proj/demo",
         description="lazy beta",
         created_at="2026-09-05T10:00:00Z",
         ns="beta",
@@ -80,14 +80,14 @@ test "ns_stats 反映各 ns 任务数" {
     Some(s) => {
       let t1 = @core.Task::new(
         id="SA0",
-        project_dir="E:/proj/demo",
+        project_dir="/proj/demo",
         description="a1",
         created_at="2026-09-05T10:00:00Z",
         ns="gs-alpha",
       )
       let t2 = @core.Task::new(
         id="SA1",
-        project_dir="E:/proj/demo",
+        project_dir="/proj/demo",
         description="a2",
         created_at="2026-09-05T10:01:00Z",
         ns="gs-alpha",
@@ -101,7 +101,7 @@ test "ns_stats 反映各 ns 任务数" {
     Some(s) => {
       let t = @core.Task::new(
         id="SG0",
-        project_dir="E:/proj/demo",
+        project_dir="/proj/demo",
         description="g1",
         created_at="2026-09-05T10:00:00Z",
         ns="gs-gamma",
@@ -184,7 +184,7 @@ test "WAL 模式：多 ns 并发写入 + 读取一致性" {
         while i < 5 {
           let t = @core.Task::new(
             id="\{ns}_\{i}",
-            project_dir="E:/proj/wal",
+            project_dir="/proj/wal",
             description="wal task \{i}",
             created_at="2026-09-13T10:00:00Z",
             ns~,

@@ -13,6 +13,16 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## [0.2.3] - 2026-09-24
+
+### 打磨与跨环境稳定化
+
+- **可复现构建**：依赖全部来自公开 mooncakes registry；新环境首次需 `moon update` 刷新索引后即可 `moon build`/`moon test`，无需私有包或 vendor。
+- **JS 目标 Node 版本约束**：SQLite JS 后端依赖 `node:sqlite` 的 `returnArrays`（Node ≥ 24 生效；<24 退化为对象行导致列读取为空）。已实测：node 25 → 135/135 全绿，node 23 → 28 失败。使用要求：**Node ≥ 24**。
+- **绝对路径清理**：测试/smoke 的 `E:/proj/*` project_dir 样例统一改为 `/proj/*`，消除盘符硬编码。
+- **文档对齐**：README/USAGE/AGENTS/申报书 工具数统一为 57、测试数 135；版本号统一 0.2.3。
+- **新增功能**（0.2.0 后并入）：DGM 档案库 `evolve_*`、自驱闭环 `selfdrive_*`×8、看门狗 `watchdog_tick` 整合、Laya 可选决策 `laya_decide`（探针+降级）、多租户 namespace、并行发布 `publish_parallel`、`reopen_task` 等，MCP 工具由 41 → 57。
+
 ## [0.1.1] - 2026-09-09
 
 ### 源码重排（src/ 分类收拢）
@@ -54,7 +64,7 @@ AIGC:
 
 ### M6 — Omega 验证闭环 + 智能调度 + 执行器抽象层
 
-**新增工具（+8 个，总计 36 个）：**
+**新增工具（+8 个，总计 57 个）：**
 - `omega_verify` — 批量验证 spec JSON（schema + fingerprint 校验，accuracy < 100% 一票否决）
 - `omega_verify_fix` — 失败 spec 根因分类 → 定向修复 → 回归验证（3 轮循环）
 - `schedule` — 调度预览：根据任务描述自适应计算分级/拆分/成本档/执行器（不落库）

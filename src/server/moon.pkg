@@ -28,5 +28,8 @@ options(
     "stdio_js.mbt": [ "js" ],
     "run_check_native.mbt": [ "native" ],
     "run_check_js.mbt": [ "js" ],
+    "laya_native.mbt": [ "native" ],
+    "laya_js.mbt": [ "js" ],
   },
+  link: { "native": { "cc-link-flags": "-lsqlite3" } },
 )
