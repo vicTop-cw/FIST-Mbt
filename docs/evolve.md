@@ -119,7 +119,13 @@ evolve_sample { rand:0.5 }   // 高分配偶 v3 更可能被选中作为下一�
 
 ## 六、评分注入（与 Omega gate 对齐）
 
-`evolve` 本身**不内置评分算法**——这是刻意的。建议评分逻辑对接 fist-mbt 已有的可计算判据：
+`evolve` 本身**不内置评分算法**——这是刻意的，但提供了**可计算评分**原语 `src/evolve/scoring.mbt`：
+
+- `score_artifact(coverage, fingerprint_ok, schema_ok, accuracy) -> Double`：结构完整（fingerprint + schema，各 0.25）+ 覆盖度（0.25）+ 正确度（0.25），返回 `[0,1]` 综合分；两结构位缺失各按 0.25 硬惩罚；
+- `score_rank(score) -> "L1|L2|L3|L4"`：L4≥0.85 / L3≥0.70 / L2≥0.55 / 其余 L1；
+- `score_accept(score, threshold?=0.85) -> Bool`：门禁放行，供落库前 / Omega gate 复用。
+
+**原则：评测是计算，绝不让 LLM 自评**——下面这些可计算判据对接 fist-mbt：
 
 - **`run_check`**：服务端真实执行外部判据命令，退出码 0 = passed；
 - **`omega_verify` / Omega gate**：schema + fingerprint 校验，accuracy < 100% 一票否决；
