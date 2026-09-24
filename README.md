@@ -14,6 +14,7 @@ AIGC:
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
 [![Tests](https://img.shields.io/badge/tests-136%2F136-brightgreen)](./src)
+[![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
 **FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统：从 **发布→认领→拆分→执行→提交→验收→归档** 的完整闭环，到 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗** 这些"系统自己推动自己"的能力，全部以 **57 个 MCP 工具** 暴露给任意 MCP 客户端（Claude Desktop / Cursor / 自研 JSON-RPC）。
 
