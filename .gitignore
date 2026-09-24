@@ -8,6 +8,8 @@ target
 *.log
 # sqlite e2e test dbs
 *.db
+# 自我迭代数据库（评审可查的原始记档，随每轮稳定一并同步入库）
+!fist-mbt.db
 # temp scripts (m9_*, m18_*, etc.)
 m9_*.js
 m18_*.js
