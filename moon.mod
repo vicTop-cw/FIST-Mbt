@@ -28,6 +28,6 @@ description = "FIST commander task orchestration rewritten in pure MoonBit, expo
 import {
   "mizchi/sqlite@0.3.1",
   "colmugx/mcp@0.17.4",
-  "moonbitlang/async@0.21.0",
-  "moonbitlang/x@0.4.40",
+  "moonbitlang/async@0.22.3",
+  "moonbitlang/x@0.5.5",
 }
