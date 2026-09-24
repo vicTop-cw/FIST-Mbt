@@ -26,11 +26,13 @@ pub struct MemoryStore {
   tasks : Map[String, @core.Task]
   specs : Map[String, SpecRecord]
   mut default_ns : String
+  // 进程内调用日志（best-effort，软上限 ~500，超限丢最早一条）
+  call_logs : Array[Json]
 }
 
 ///|
 pub fn MemoryStore::new() -> MemoryStore {
-  { tasks: Map([]), specs: Map([]), default_ns: "default", }
+  { tasks: Map([]), specs: Map([]), default_ns: "default", call_logs: [], }
 }
 
 ///|
@@ -406,5 +408,128 @@ pub fn StoreBackend::update_spec_status(
   match self {
     Mem(m) => m.update_spec_status(id, status, content, updated_at)
     Sql(s) => s.update_spec_status(id, status, content, updated_at)
+  }
+}
+
+// —— 调用日志（call_log）：双后端统一入口 ——
+
+///|
+/// 把一次工具调用固化为 call_log 条目 JSON。
+fn call_log_to_json(
+  seq : Int,
+  ts : String,
+  tool : String,
+  caller : String,
+  ns : String,
+  params_json : String,
+  result_json : String,
+  ok : Bool,
+  runtime_ms : Int,
+) -> Json {
+  Json::object({
+    "seq": Json::number(seq.to_double()),
+    "ts": Json::string(ts),
+    "tool": Json::string(tool),
+    "caller": Json::string(caller),
+    "ns": Json::string(ns),
+    "params": Json::string(params_json),
+    "result": Json::string(result_json),
+    "ok": Json::boolean(ok),
+    "runtime_ms": Json::number(runtime_ms.to_double()),
+  })
+}
+
+///|
+/// 写入一条调用日志（MemoryStore 进程内 array，软上限 ~500，超限丢最早一条）。
+pub fn MemoryStore::write_call_log(
+  self : MemoryStore,
+  ts~ : String,
+  tool~ : String,
+  caller~ : String,
+  ns~ : String,
+  params_json~ : String,
+  result_json~ : String,
+  ok~ : Bool,
+  runtime_ms~ : Int,
+  seq~ : Int,
+) -> Result[Unit, String] {
+  let j = call_log_to_json(
+    seq, ts, tool, caller, ns, params_json, result_json, ok, runtime_ms,
+  )
+  self.call_logs.push(j)
+  if self.call_logs.length() > 500 {
+    ignore(self.call_logs.remove(0))
+  }
+  Ok(())
+}
+
+///|
+/// 读取最近 N 条调用日志（新的在前）。
+pub fn MemoryStore::recent_call_logs(
+  self : MemoryStore,
+  limit? : Int = 50,
+) -> Array[Json] {
+  let n = self.call_logs.length()
+  let take = if n > limit { limit } else { n }
+  let out : Array[Json] = []
+  let mut i = n - 1
+  while i >= 0 && out.length() < take {
+    out.push(self.call_logs[i])
+    i = i - 1
+  }
+  out
+}
+
+///|
+/// 写入一条调用日志（双后端统一入口，best-effort：失败仅返回 Err，调用方应忽略）。
+pub fn StoreBackend::write_call_log(
+  self : StoreBackend,
+  ts~ : String,
+  tool~ : String,
+  caller~ : String,
+  ns~ : String,
+  params_json~ : String,
+  result_json~ : String,
+  ok~ : Bool,
+  runtime_ms~ : Int,
+  seq~ : Int,
+) -> Result[Unit, String] {
+  match self {
+    Mem(m) =>
+      m.write_call_log(
+        ts~,
+        tool~,
+        caller~,
+        ns~,
+        params_json~,
+        result_json~,
+        ok~,
+        runtime_ms~,
+        seq~,
+      )
+    Sql(s) =>
+      s.write_call_log(
+        ts~,
+        tool~,
+        caller~,
+        ns~,
+        params_json~,
+        result_json~,
+        ok~,
+        runtime_ms~,
+        seq~,
+      )
+  }
+}
+
+///|
+/// 读取最近 N 条调用日志（双后端统一入口，新的在前）。
+pub fn StoreBackend::recent_call_logs(
+  self : StoreBackend,
+  limit? : Int = 50,
+) -> Array[Json] {
+  match self {
+    Mem(m) => m.recent_call_logs(limit~)
+    Sql(s) => s.recent_call_logs(limit~)
   }
 }

@@ -302,1998 +302,2182 @@ fn overview_json() -> Json {
 }
 
 ///|
+/// —— 自动调用日志（call_log）包装 ——
+/// colmugx/mcp 的 `.tool(name, desc, schema, handler)` 接受
+/// `async (Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError]` 的 handler。
+/// 我们 `extend` 一个 `instrumented_tool`：在内部用 `_instrument` 包一层 handler，
+/// 调前记录 args、调后记录结果/耗时，并 best-effort 写 call_log，绝不改动原结果。
+
+///|
+/// 进程内注入全局 handler 的自动日志（best-effort，任何失败均被吞掉，不影响工具调用）。
+/// seq 取 @env.now() 毫秒时间戳（跨全部工具单调近似，仅供回放定位，非主键）。
+fn _log_call(
+  tool : String,
+  args : Json,
+  params_json : String,
+  result_json : String,
+  ok : Bool,
+  runtime_ms : Int,
+  now_ms : Int,
+) -> Unit {
+  let caller = get_str(args, "created_by", default="")
+  let ns = get_str(args, "namespace", default=get_str(args, "ns", default=""))
+  let ts = now_default()
+  // 忽略写入失败：调用日志是"尽力而为"，绝不能反过来破坏业务调用
+  ignore(
+    engine.store_write_call_log(
+      ts~,
+      tool~,
+      caller~,
+      ns~,
+      params_json~,
+      result_json~,
+      ok~,
+      runtime_ms~,
+      seq=now_ms,
+    ),
+  )
+}
+
+///|
+/// 包装一个工具 handler：度量耗时、捕获入参/结果、best-effort 记日志，原样返回结果。
+/// Ok 路径结果文本在外部不可读（ToolResult 字段私有），故以 "ok" 占位；
+/// Err 路径记录真实错误信息（MCPError::message()）。
+fn _instrument(
+  tool : String,
+  handler : async (Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError],
+) -> async (Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+  async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    let t0 = @env.now().to_int()
+    let params_json = args.stringify()
+    let r = handler(args)
+    let runtime_ms = @env.now().to_int() - t0
+    let (result_json, ok) = match r {
+      Err(e) => (e.message(), false)
+      Ok(_tr) => ("ok", true)
+    }
+    _log_call(tool, args, params_json, result_json, ok, runtime_ms, t0)
+    r
+  }
+}
+
+///|
+/// 注册一个带自动 call_log 的工具（等价于 `.tool`，但 handler 经 `_instrument` 包装）。
+/// 由于 MoonBit 不能为外部类型 MCPServer 新增方法，这里用自由函数 + 显式回传 server。
+pub fn instrumented_tool(
+  s : @mcp.MCPServer,
+  name : String,
+  description : String,
+  input_schema : Json,
+  handler : async (Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError],
+) -> @mcp.MCPServer {
+  s.tool(name, description, input_schema, _instrument(name, handler))
+}
+
+///|
 /// —— MCP server 构建与运行 ——
 pub async fn run_server() -> Unit {
-  let s0 = @mcp.MCPServer::MCPServer("fist-mbt", "0.1.0")
+  let mut s1 = @mcp.MCPServer::MCPServer("fist-mbt", "0.1.0")
 
-  let s1 = s0
-    // ---- tools ----
-    .tool(
-      "publish",
-      "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)。",
-      schema(
-        {
-          "project_dir": string_prop("项目目录（必填）"),
-          "description": string_prop("任务描述（必填）"),
-          "namespace": string_prop("命名空间(默认 default)"),
-          "created_by": string_prop("创建者身份(默认 human_steward)"),
-          "now": string_prop("时间戳(可选，默认内置)"),
-        },
-        ["project_dir", "description"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let project_dir = get_str(args, "project_dir")
-        let description = get_str(args, "description")
-        let ns = get_str(args, "namespace", default="default")
-        let created_by = get_str(args, "created_by", default="human_steward")
-        let ts = get_str(args, "now", default=now_default())
-        let r = engine.publish(
-          project_dir~,
-          description~,
-          created_by~,
-          now=ts,
-          ns~,
-        )
-        match r {
-          Ok(id) =>
-            Ok(
-              @mcp.ToolResult::text(
-                Json::object({
-                  "task_id": Json::string(id),
-                  "message": Json::string("已发布根任务"),
-                }).stringify(),
-              ),
-            )
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
+  // ---- tools ----
+  s1 = instrumented_tool(
+    s1,
+    "publish",
+    "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "description": string_prop("任务描述（必填）"),
+        "namespace": string_prop("命名空间(默认 default)"),
+        "created_by": string_prop("创建者身份(默认 human_steward)"),
+        "now": string_prop("时间戳(可选，默认内置)"),
       },
-    )
-    .tool(
-      "publish_parallel",
-      "并行追加独立根任务（不要求命名空间为空、不续轮不归档）：在已有任务的命名空间追加新的独立根任务，供自驱/定时命名空间连续发布多根使用。参数：project_dir、description(必填)、namespace(必填，非 default)、created_by(默认 selfdrive)、now。",
-      schema(
-        {
-          "project_dir": string_prop("项目目录（必填）"),
-          "description": string_prop("任务描述（必填）"),
-          "namespace": string_prop(
-            "命名空间（必填，不得为 default）",
-          ),
-          "created_by": string_prop("创建者身份(默认 selfdrive)"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["project_dir", "description", "namespace"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let project_dir = get_str(args, "project_dir")
-        let description = get_str(args, "description")
-        let ns = get_str(args, "namespace")
-        let created_by = get_str(args, "created_by", default="selfdrive")
-        let ts = get_str(args, "now", default=now_default())
-        match
-          engine.publish_parallel(
-            ns~,
-            description~,
-            created_by~,
-            project_dir~,
-            now=ts,
-          ) {
-          Ok(id) =>
-            Ok(
-              @mcp.ToolResult::text(
-                Json::object({
-                  "task_id": Json::string(id),
-                  "message": Json::string("已并行追加独立根任务"),
-                }).stringify(),
-              ),
-            )
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "plan",
-      "对指定任务拆分生成一层子任务（非原子任务才可拆）。参数：task_id 任务id、split_n 拆分数量(默认3)、by 执行者。",
-      schema(
-        {
-          "task_id": string_prop("父任务 id（必填）"),
-          "split_n": int_prop("拆分数量(默认3)"),
-          "by": string_prop("执行拆分的人"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let split_n = get_int(args, "split_n", default=3)
-        let by = get_str(args, "by", default="human_steward")
-        let ts = get_str(args, "now", default=now_default())
-        to_ids_result(engine.plan(task_id~, split_n~, by~, now=ts))
-      },
-    )
-    .tool(
-      "claim",
-      "认领任务（待领取 -> 已领取；随后 execute 进入执行中）。参数：task_id、assignee 认领人。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "assignee": string_prop("认领人（必填）"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id", "assignee"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let assignee = get_str(args, "assignee")
-        let ts = get_str(args, "now", default=now_default())
-        to_result(engine.claim(task_id~, assignee~, now=ts))
-      },
-    )
-    .tool(
-      "execute",
-      "记录执行交付物（向后兼容）。必填：task_id、deliverable；可选：executor(默认manual)、model、tokens_in、tokens_out、cost、duration_ms、rate_limited、failure_reason、now。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "deliverable": string_prop("交付物描述（必填）"),
-          "executor": string_prop("执行器名称(默认 manual)"),
-          "model": string_prop("模型名称(可选)"),
-          "tokens_in": int_prop("输入 token 数(可选默认0)"),
-          "tokens_out": int_prop("输出 token 数(可选默认0)"),
-          "cost": number_prop("执行成本(可选默认0)"),
-          "duration_ms": int_prop("执行耗时毫秒(可选默认0)"),
-          "rate_limited": bool_prop("是否被限流(可选默认false)"),
-          "failure_reason": string_prop("失败原因(可选)"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id", "deliverable"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let deliverable = get_str(args, "deliverable")
-        let ts = get_str(args, "now", default=now_default())
-        // 提取可选执行元数据（向后兼容：无元数据时行为同旧版 execute）
-        let executor = get_str(args, "executor", default="manual")
-        let model = get_str(args, "model", default="")
-        let tokens_in = get_int(args, "tokens_in", default=0)
-        let tokens_out = get_int(args, "tokens_out", default=0)
-        let cost = get_double(args, "cost", default=0.0)
-        let duration_ms = get_int(args, "duration_ms", default=0)
-        let rate_limited = get_bool(args, "rate_limited", default=false)
-        let failure_reason = get_str(args, "failure_reason", default="")
-        // 调用 execute_with_meta：同时写入 executions 表 + 流转任务状态
-        to_result(
-          engine.execute_with_meta(
-            task_id~,
-            deliverable~,
-            now=ts,
-            executor~,
-            model~,
-            tokens_in~,
-            tokens_out~,
-            cost~,
-            duration_ms~,
-            rate_limited~,
-            failure_reason~,
-          ),
-        )
-      },
-    )
-    .tool(
-      "submit",
-      "提交验收（执行中 -> 待验收）。参数：task_id。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let ts = get_str(args, "now", default=now_default())
-        to_result(engine.submit(task_id~, now=ts))
-      },
-    )
-    .tool(
-      "run_check",
-      "外部判据检查（服务端真实执行命令，防自写自测恒绿）。参数：task_id 任务id、cmd 可执行命令、args 参数数组(可选)、workdir 工作目录(默认项目目录)、timeout_ms 超时毫秒(默认120000)、now 时间戳(可选)。真实 spawn 子进程运行 cmd，退出码 0 记为 passed、否则 failed，结果 JSON（含 stdout/stderr）落库 specs 表（spec_type=check）；[gate:required] 任务的 verify 依赖本记录且校验新鲜度。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "cmd": string_prop(
-            "要执行的外部命令（必填），如 bash / sh / node / cargo",
-          ),
-          "args": array_prop("命令参数数组（可选）"),
-          "workdir": string_prop(
-            "工作目录（可选，默认任务所在项目目录）",
-          ),
-          "timeout_ms": int_prop("超时毫秒（可选，默认 120000）"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id", "cmd"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let cmd = get_str(args, "cmd")
-        let now = get_str(args, "now", default=now_default())
-        if task_id == "" || cmd == "" {
-          return Err(@mcp_types.ToolError("run_check: task_id 与 cmd 必填"))
-        }
-        let args_arr = get_array(args, "args").map(fn(j) {
-          match j {
-            String(s) => s
-            _ => j.stringify()
-          }
-        })
-        let timeout_ms = get_int(args, "timeout_ms", default=120000)
-        // 定位任务（取项目目录作默认 workdir；任务不存在也允许执行，仅不落库）
-        match engine.get_task(task_id) {
-          Some(t) => {
-            let workdir = get_str(args, "workdir", default=t.project_dir)
-            let r = run_check_external(cmd, args_arr, workdir, timeout_ms)
-            match r {
-              Ok(res) => {
-                let status = match res {
-                  Object(m) =>
-                    if m.get("ok") is Some(True) {
-                      "passed"
-                    } else {
-                      "failed"
-                    }
-                  _ => "failed"
-                }
-                match
-                  engine.gate_check_record(
-                    task_id,
-                    res.stringify(),
-                    status,
-                    now,
-                  ) {
-                  Ok(rec) => Ok(@mcp.ToolResult::text(rec.stringify()))
-                  Err(e) => Err(@mcp_types.ToolError(e))
-                }
-              }
-              Err(e) => Err(@mcp_types.ToolError(e))
-            }
-          }
-          None => {
-            // 任务不存在：仍执行命令并返回结果，但不落库（无任务可挂）
-            let workdir = get_str(args, "workdir", default=".")
-            let r = run_check_external(cmd, args_arr, workdir, timeout_ms)
-            match r {
-              Ok(res) =>
-                Err(
-                  @mcp_types.ToolError(
-                    "任务不存在: \{task_id}（命令已执行，结果: \{res.stringify()}，未落库）",
-                  ),
-                )
-              Err(e) => Err(@mcp_types.ToolError(e))
-            }
-          }
-        }
-      },
-    )
-    .tool(
-      "verify",
-      "验收通过（待验收 -> 已完成，父任务自动上卷）。[gate:required] 任务须先有新鲜通过的 run_check 记录。参数：task_id、verifier 验收人。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "verifier": string_prop("验收人（必填）"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id", "verifier"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let verifier = get_str(args, "verifier")
-        let ts = get_str(args, "now", default=now_default())
-        to_result(engine.verify(task_id~, verifier~, now=ts))
-      },
-    )
-    .tool(
-      "reject",
-      "验收拒绝（待验收 -> 已打回）。参数：task_id、reason 打回原因、by 操作者。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "reason": string_prop("打回原因（可选）"),
-          "by": string_prop("操作者(默认 human_steward)"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let reason = get_str(args, "reason", default="")
-        let by = get_str(args, "by", default="human_steward")
-        let ts = get_str(args, "now", default=now_default())
-        to_result(engine.reject_task(task_id~, reason~, by~, now=ts))
-      },
-    )
-    .tool(
-      "retry",
-      "打回后重试（已打回 -> 执行中）。参数：task_id。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let ts = get_str(args, "now", default=now_default())
-        to_result(engine.retry_task(task_id~, now=ts))
-      },
-    )
-    .tool(
-      "reopen_task",
-      "重开/重派任务：任意非归档任务回滚为已领取（M4 heal/运维重派用）。参数：task_id、now。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let ts = get_str(args, "now", default=now_default())
-        match engine.reopen_task(task_id, ts) {
-          Ok(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "pause",
-      "暂停任务（任意活跃状态 -> 已暂停）。参数：task_id。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let ts = get_str(args, "now", default=now_default())
-        to_result(engine.pause_task(task_id~, now=ts))
-      },
-    )
-    .tool(
-      "resume",
-      "恢复任务（已暂停 -> 已领取）。参数：task_id。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let ts = get_str(args, "now", default=now_default())
-        to_result(engine.resume_task(task_id~, now=ts))
-      },
-    )
-    .tool(
-      "archive",
-      "归档任务（仅限人类指挥官）。参数：task_id、by 操作者。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "by": string_prop("操作者(默认 human_steward)"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let by = get_str(args, "by", default="human_steward")
-        let ts = get_str(args, "now", default=now_default())
-        to_result(engine.archive(task_id~, by~, now=ts))
-      },
-    )
-    .tool(
-      "list",
-      "列出任务，可按状态与命名空间过滤。参数：status(可选，中文状态名)、namespace(可选，按命名空间过滤；不传则列出全库所有命名空间)。",
-      schema(
-        {
-          "status": string_prop(
-            "按状态过滤(可选)：待领取/已领取/执行中/待验收/已完成/已归档",
-          ),
-          "namespace": string_prop(
-            "按命名空间过滤(可选)：如 default/cron-auto/cron-cypy/fist-iter；不传则列出全部命名空间",
-          ),
-        },
-        [],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let status_str = get_str(args, "status")
-        let ns_str = get_str(args, "namespace")
-        let mut tasks = if status_str == "" {
-          engine.list_all()
-        } else {
-          match @core.TaskStatus::from_string(status_str) {
-            Some(st) => engine.list_by_status(st)
-            None =>
-              return Err(@mcp_types.ToolError("未知状态: \{status_str}"))
-          }
-        }
-        if ns_str != "" {
-          tasks = tasks.filter(fn(t) { t.ns == ns_str })
-        }
-        Ok(
-          @mcp.ToolResult::text(
-            Json::array(tasks.map(fn(t) { t.to_json() })).stringify(),
-          ),
-        )
-      },
-    )
-    .tool(
-      "get",
-      "查询单个任务详情。参数：task_id。",
-      schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        match engine.get_task(task_id) {
-          Some(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
-          None => Err(@mcp_types.ToolError("task not found: \{task_id}"))
-        }
-      },
-    )
-    .tool(
-      "delete",
-      "删除已归档任务。参数：task_id。",
-      schema(
-        { "task_id": string_prop("任务 id（必填，仅已归档可删）") },
-        ["task_id"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        to_unit_result(engine.delete_task(task_id))
-      },
-    )
-    .tool(
-      "task_plan_deep",
-      "AO 式递归拆解：对指定任务拆出整棵多层子任务树并写库。参数：task_id 任务id、split_n 每层默认拆分数(默认3)、by 拆解拳长、spec 可选 omega spec JSON(laws 作切割依据、fingerprint 作验收基准)、omega_strong_verify 是否开启 Omega 强验证(默认 false，不传即现状)、now 时间戳。开启强验证后每层子任务多出『语料创建者建语料 -> 验证者审语料 -> 执行者执行 -> 验证者复验成果』环节。",
-      schema(
-        {
-          "task_id": string_prop("父任务 id（必填，非原子任务）"),
-          "split_n": int_prop(
-            "每层默认拆分数(默认3，有 spec.laws 时以 laws 为准)",
-          ),
-          "by": string_prop("执行拆解的拳长身份(默认 leader)"),
-          "spec": string_prop("可选 omega spec JSON 字符串"),
-          "omega_strong_verify": bool_prop(
-            "是否开启 Omega 强验证(默认 false，不传即现状；开启后每轮需语料审核与成果复验)",
-          ),
-          "laya_auto": bool_prop(
-            "是否开启 Laya 自动选档(默认 false，不传即现状)：开启后探测 Laya，可用则按 difficulty.score 自动定 split_n 并把决策附到返回；不可用则回退 split_n 默认值",
-          ),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let mut split_n = get_int(args, "split_n", default=3)
-        let by = get_str(args, "by", default="leader")
-        let spec_raw = get_str(args, "spec")
-        let ts = get_str(args, "now", default=now_default())
-        let spec : Json? = if spec_raw == "" {
-          None
-        } else {
-          Some(@json.parse(spec_raw)) catch {
-            _ => return Err(@mcp_types.ToolError("spec 不是合法 JSON"))
-          }
-        }
-        let omega_strong = get_bool(args, "omega_strong_verify", default=false)
-        let laya_auto = get_bool(args, "laya_auto", default=false)
-        // Laya 自动选档：开启后先探测，可用则以任务描述的 difficulty.score 自动定 split_n，
-        // 并把完整决策附到返回（如不可用则回退显式/默认 split_n，行为与现状一致）。
-        let mut laya_info : Json = Json::null()
-        if laya_auto {
-          let avail = match
-            laya_probe_available(
-              "python",
-              ["scripts/laya_decide.py", "--probe"],
-              ".",
-              15000,
-            ) {
-            Ok(a) => a
-            Err(_) => false
-          }
-          if avail {
-            match engine.get_task(task_id) {
-              Some(parent) =>
-                match
-                  laya_decide_external(
-                    "python",
-                    ["scripts/laya_decide.py"],
-                    ".",
-                    Json::object({
-                      "context": Json::string(parent.description),
-                      "questions": Json::null(),
-                      "model": Json::string("english"),
-                    }).stringify(),
-                    300000,
-                  ) {
-                  Ok(res) => {
-                    let raw_n = laya_difficulty_score(res).round().to_int() + 2
-                    let n = if raw_n < 2 {
-                      2
-                    } else if raw_n > 6 {
-                      6
-                    } else {
-                      raw_n
-                    }
-                    split_n = n
-                    let obj = match res {
-                      Object(m) => m
-                      _ => Map([])
-                    }
-                    obj.set("auto_split_n", Json::number(split_n.to_double()))
-                    obj.set("context", Json::string(parent.description))
-                    laya_info = Json::object(obj)
-                  }
-                  Err(_) => ()
-                }
-              None => ()
-            }
-          }
-        }
-        let base = match
-          engine.plan_deep(
-            task_id~,
-            split_n~,
-            by~,
-            spec~,
-            now=ts,
-            omega_strong_verify=omega_strong,
-          ) {
-          Ok(j) => j
-          Err(e) => return Err(@mcp_types.ToolError(e))
-        }
-        // laya_auto 开启时在返回里附 laya 决策信息；否则返回格式与现状完全一致。
-        let out = if laya_auto {
-          match base {
-            Object(m) => {
-              m.set("laya", laya_info)
-              Json::object(m)
-            }
-            _ => base
-          }
-        } else {
-          base
-        }
-        Ok(@mcp.ToolResult::text(out.stringify()))
-      },
-    )
-    .tool(
-      "omega_spec_create",
-      "Omega 强验证·语料创建者：为已开启强验证的任务创建本轮语料，并真正持久化写入 specs 表。参数：task_id、author 语料创建者(默认 spec_author)、content 语料内容(必填)、max_rounds 打回上限(默认3，最大10)、now。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "author": string_prop("语料创建者身份(默认 spec_author)"),
-          "content": string_prop("语料内容（必填）"),
-          "max_rounds": int_prop("打回上限(默认3，最大10)"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id", "content"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let author = get_str(args, "author", default="spec_author")
-        let content = get_str(args, "content")
-        let max_rounds = get_int(args, "max_rounds", default=3)
-        let ts = get_str(args, "now", default=now_default())
-        match
-          engine.omega_spec_create(
-            task_id~,
-            author~,
-            content~,
-            now=ts,
-            max_rounds~,
-          ) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "omega_spec_review",
-      "Omega 强验证·验证者审语料：审核本轮语料。verdict=approve 通过（放行执行），其它值视为打回重做；打回次数超过 max_rounds 自动升级人工裁决，禁止死循环。参数：task_id、reviewer 验证者(默认 verifier)、verdict、reason 审核意见、max_rounds、now。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "reviewer": string_prop("验证者身份(默认 verifier)"),
-          "verdict": string_prop("approve 通过 / 其它值打回（必填）"),
-          "reason": string_prop("审核意见(可选)"),
-          "max_rounds": int_prop("打回上限(默认3，最大10)"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id", "verdict"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let reviewer = get_str(args, "reviewer", default="verifier")
-        let verdict = get_str(args, "verdict")
-        let reason = get_str(args, "reason")
-        let max_rounds = get_int(args, "max_rounds", default=3)
-        let ts = get_str(args, "now", default=now_default())
-        match
-          engine.omega_spec_review(
-            task_id~,
-            reviewer~,
-            verdict~,
-            reason~,
-            now=ts,
-            max_rounds~,
-          ) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "omega_result_verify",
-      "Omega 强验证·验证者复验成果：执行者完成后，复验成果与语料是否达标。verdict=pass 达标（可提交验收），其它值打回重做；超过 max_rounds 自动升级人工裁决。参数：task_id、reviewer、verdict、reason、max_rounds、now。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "reviewer": string_prop("验证者身份(默认 verifier)"),
-          "verdict": string_prop("pass 达标 / 其它值打回（必填）"),
-          "reason": string_prop("复验意见(可选)"),
-          "max_rounds": int_prop("打回上限(默认3，最大10)"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["task_id", "verdict"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let reviewer = get_str(args, "reviewer", default="verifier")
-        let verdict = get_str(args, "verdict")
-        let reason = get_str(args, "reason")
-        let max_rounds = get_int(args, "max_rounds", default=3)
-        let ts = get_str(args, "now", default=now_default())
-        match
-          engine.omega_result_verify(
-            task_id~,
-            reviewer~,
-            verdict~,
-            reason~,
-            now=ts,
-            max_rounds~,
-          ) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "omega_status",
-      "Omega 强验证状态查询：返回该任务是否开启强验证、语料/复验轮次、打回次数、是否已升级人工。参数：task_id。",
-      schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        match engine.omega_status(task_id) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "conflicts_check",
-      "claim 冲突检测（AO --no-takeover）：认领前检查任务是否已被他人/本人持有。参数：task_id、assignee。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "assignee": string_prop("拟认领人（必填）"),
-        },
-        ["task_id", "assignee"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let assignee = get_str(args, "assignee")
-        match @ops.check_claim(engine, task_id, assignee) {
-          Ok(_) =>
-            Ok(
-              @mcp.ToolResult::text(
-                Json::object({
-                  "task_id": Json::string(task_id),
-                  "assignee": Json::string(assignee),
-                  "ok": Json::boolean(true),
-                  "message": Json::string("可安全认领（待领取）"),
-                }).stringify(),
-              ),
-            )
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "heartbeat",
-      "活动信号上报（AO ActivityState）：任务执行前/执行中周期性上报，超时静默将触发 heal 回滚。参数：task_id、signal(可选默认 active)、now。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "signal": string_prop(
-            "信号(可选)：pre-execution/active/submit，默认 active",
-          ),
-          "now": string_prop("时间戳(可选，默认内置)"),
-        },
-        ["task_id"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let signal = get_str(args, "signal", default="active")
-        let ts = get_str(args, "now", default=now_default())
-        match engine.get_task(task_id) {
-          None => Err(@mcp_types.ToolError("task not found: \{task_id}"))
-          Some(_) => {
-            // 内存心跳表
-            heartbeats.beat(task_id, signal~, now=ts)
-            // SQLite 持久化（落库失败仅忽略，不阻塞主流程）
-            ignore(
-              engine.store_write_heartbeat(
-                agent_id="fist-mbt",
-                task_id~,
-                last_seen=ts,
-                status=signal,
-              ),
-            )
-            Ok(
-              @mcp.ToolResult::text(
-                Json::object({
-                  "task_id": Json::string(task_id),
-                  "signal": Json::string(signal),
-                  "last_seen": Json::string(heartbeats.last_seen_of(task_id)),
-                }).stringify(),
-              ),
-            )
-          }
-        }
-      },
-    )
-    .tool(
-      "heal",
-      "no_signal 看护（AO watchdog）：心跳超时静默的活跃任务（执行中/已领取/拆分中）回滚为已领取待重派。参数：now、timeout_sec(可选默认600)。",
-      schema(
-        {
-          "now": string_prop("当前时间戳(默认内置)"),
-          "timeout_sec": int_prop("超时秒数(可选默认600)"),
-        },
-        [],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let ts = get_str(args, "now", default=now_default())
-        let timeout_sec = get_int(args, "timeout_sec", default=600)
-        match @ops.heal_stale_tasks(engine, heartbeats, ts, timeout_sec~) {
-          Ok(healed) =>
-            Ok(
-              @mcp.ToolResult::text(
-                Json::object({
-                  "healed": Json::array(healed.map(fn(s) { Json::string(s) })),
-                  "count": Json::number(healed.length().to_double()),
-                  "message": Json::string(
-                    "超时静默任务已回滚待重派",
-                  ),
-                }).stringify(),
-              ),
-            )
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "watchdog_tick",
-      "定时任务看门狗编排单入口（推荐仅用于定时任务/无人值守场景，不用于人工指挥流程）：扫描活跃任务，心跳超时则回滚重派；检测到上一轮根任务已完成且提供了 next_description（或可由 meta_prompt_path 读取元提示词）时自动发布下一轮。参数：now、timeout_sec(可选默认600)、namespace(可选，未传则不自动续轮)、next_description(可选)、next_created_by(可选默认watchdog)、meta_prompt_path(可选)、cold_start(可选默认false，冷启动时设为true以发布首个任务)、project_dir(可选，冷启动时用于指定项目目录)、omega_strong_verify(可选默认false，开启后自动拆分并启用Omega强验证)、omega_split_n(可选默认3)、omega_spec(可选JSON)。",
-      schema(
-        {
-          "now": string_prop("当前时间戳(默认内置)"),
-          "timeout_sec": int_prop("心跳超时秒数(可选默认600)"),
-          "namespace": string_prop(
-            "作用域命名空间(可选)：自动续轮/自动 heal 只作用于该 ns，未传则不自动续轮",
-          ),
-          "next_description": string_prop(
-            "下一轮任务描述(可选，缺省则不自动续轮)",
-          ),
-          "next_created_by": string_prop(
-            "下一轮任务创建者(可选默认watchdog)",
-          ),
-          "meta_prompt_path": string_prop(
-            "元提示词文档路径(可选)：单个文档或目录，目录内按 yyyyMMdd.HH.mm.ss.md 取最新一份",
-          ),
-          "cold_start": bool_prop(
-            "冷启动模式(可选默认false)：设为true时，若命名空间无已完成根任务，则发布首个任务",
-          ),
-          "project_dir": string_prop(
-            "项目目录(可选)：冷启动时用于指定项目路径",
-          ),
-          "omega_strong_verify": bool_prop(
-            "Omega 强验证开关(可选默认false)：开启后新根任务自动拆分并打 [omega:required] 标记",
-          ),
-          "omega_split_n": int_prop(
-            "Omega 强验证拆分数(可选默认3)：每层子任务数",
-          ),
-          "omega_spec": string_prop(
-            "可选 Omega spec JSON(可选)：laws 作切割依据，fingerprint 作验收基准",
-          ),
-          "selfdrive_project_dir": string_prop(
-            "自驱式编程整合(可选)：提供时会探测该项目的记忆审视轮，结果挂到 detail.selfdrive（报告先行）",
-          ),
-          "selfdrive_review_every": int_prop(
-            "自驱审视频率(可选默认3)：每满 N 份 Reports 报告触发一轮审视",
-          ),
-        },
-        [],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let ts = get_str(args, "now", default=now_default())
-        let timeout_sec = get_int(args, "timeout_sec", default=600)
-        let ns = get_str(args, "namespace")
-        let next_description = get_str(args, "next_description")
-        let next_created_by = get_str(
-          args,
-          "next_created_by",
-          default="watchdog",
-        )
-        let meta_prompt_path = get_str(args, "meta_prompt_path")
-        let cold_start = get_bool(args, "cold_start", default=false)
-        let project_dir = get_str(args, "project_dir")
-        let omega_strong_verify = get_bool(
-          args,
-          "omega_strong_verify",
-          default=false,
-        )
-        let omega_split_n = get_int(args, "omega_split_n", default=3)
-        let omega_spec_str = get_str(args, "omega_spec")
-        let selfdrive_project_dir = get_str(args, "selfdrive_project_dir")
-        let selfdrive_review_every = get_int(
-          args,
-          "selfdrive_review_every",
-          default=3,
-        )
-        let omega_spec = if omega_spec_str == "" {
-          None
-        } else {
-          match @omega.parse_spec(omega_spec_str) {
-            Ok(j) => Some(j)
-            Err(_) => None
-          }
-        }
-        match
-          @ops.watchdog_tick(
-            engine,
-            ts,
-            timeout_sec~,
-            ns~,
-            next_description~,
-            next_created_by~,
-            meta_prompt_path~,
-            cold_start~,
-            project_dir~,
-            omega_strong_verify~,
-            omega_split_n~,
-            omega_spec~,
-            selfdrive_project_dir~,
-            selfdrive_review_every~,
-          ) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "pipeline_tick",
-      "提示词流水线状态机单入口（仅用于定时任务/无人值守命名空间，不用于人工指挥流程）：以 project_dir/currentState.txt 为唯一状态源，按四分支推进——空闲(Creating/Closed)生成新提示词、提示词已落盘(Pending)发布根任务、执行中(Running)缺报告且超时则要求补报告、报告落盘后校验收口。全程报告先行、不空转、不写脏数据。参数：project_dir(必填)、now(可选)、namespace(可选默认cron-auto)、phase(可选auto/prompt_ready/report_ready)、prompt_name(可选)、timeout_sec(可选默认2400)。",
-      schema(
-        {
-          "project_dir": string_prop(
-            "项目目录(必填)：其下 currentState.txt 为状态源，Gen_Prompts 为提示词目录",
-          ),
-          "now": string_prop("当前时间戳(可选，默认内置)"),
-          "namespace": string_prop(
-            "作用域命名空间(可选默认 cron-auto)：不得为 default",
-          ),
-          "phase": string_prop(
-            "阶段(可选默认 auto)：auto 自动推进 / prompt_ready 提示词已落盘 / report_ready 报告已落盘",
-          ),
-          "prompt_name": string_prop(
-            "指定提示词文件名(可选，缺省取目录内最新一份)",
-          ),
-          "timeout_sec": int_prop("执行超时秒数(可选默认2400)"),
-        },
-        [],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let ts = get_str(args, "now", default=now_default())
-        let project_dir = get_str(args, "project_dir")
-        let ns = get_str(args, "namespace", default="cron-auto")
-        let phase = get_str(args, "phase", default="auto")
-        let prompt_name = get_str(args, "prompt_name")
-        let timeout_sec = get_int(args, "timeout_sec", default=2400)
-        match
-          @ops.pipeline_tick(
-            engine,
-            project_dir,
-            ts,
-            ns~,
-            timeout_sec~,
-            phase~,
-            prompt_name~,
-          ) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "selfdrive_init",
-      "自驱式编程·初始化 memory 四件套（product/target/task/thinking + reviews 目录），幂等不覆盖。参数：project_dir(必填)、namespace(可选默认 default)。",
-      schema(
-        {
-          "project_dir": string_prop(
-            "项目目录（必填）：其下生成 memory/ 四件套",
-          ),
-          "namespace": string_prop("命名空间(可选默认 default)"),
-        },
-        ["project_dir"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let project_dir = get_str(args, "project_dir")
-        let ns = get_str(args, "namespace", default="default")
-        match @ops.selfdrive_memory_init(project_dir, ns~) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "selfdrive_append",
-      "自驱式编程·追加/更新 memory 条目。参数：project_dir(必填)、kind(必填 thinking/product/target/task)、content(必填)、namespace、now(可选)。thinking 为 append-only 流水带时间戳；其余覆盖写。",
-      schema(
-        {
-          "project_dir": string_prop("项目目录（必填）"),
-          "kind": string_prop(
-            "条目类型（必填）：thinking/product/target/task",
-          ),
-          "content": string_prop("内容（必填）"),
-          "namespace": string_prop("命名空间(可选默认 default)"),
-          "now": string_prop("时间戳(可选，默认内置)"),
-        },
-        ["project_dir", "kind", "content"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let project_dir = get_str(args, "project_dir")
-        let kind = get_str(args, "kind")
-        let content = get_str(args, "content")
-        let ns = get_str(args, "namespace", default="default")
-        let ts = get_str(args, "now", default=now_default())
-        match
-          @ops.selfdrive_memory_append(
-            project_dir,
-            ns~,
-            kind~,
-            content~,
-            now=ts,
-          ) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "selfdrive_get",
-      "自驱式编程·读取指定 memory 文件。参数：project_dir(必填)、kind(必填 thinking/product/target/task)、namespace。返回 {exists, content}。",
-      schema(
-        {
-          "project_dir": string_prop("项目目录（必填）"),
-          "kind": string_prop(
-            "条目类型（必填）：thinking/product/target/task",
-          ),
-          "namespace": string_prop("命名空间(可选默认 default)"),
-        },
-        ["project_dir", "kind"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let project_dir = get_str(args, "project_dir")
-        let kind = get_str(args, "kind")
-        let ns = get_str(args, "namespace", default="default")
-        match @ops.selfdrive_memory_get(project_dir, ns~, kind~) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "selfdrive_export_tasks",
-      "自驱式编程·从任务库导出任务清单到 task.md（视图覆盖写）。参数：project_dir(必填)、namespace(可选默认 default)。",
-      schema(
-        {
-          "project_dir": string_prop("项目目录（必填）"),
-          "namespace": string_prop("命名空间(可选默认 default)"),
-        },
-        ["project_dir"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let project_dir = get_str(args, "project_dir")
-        let ns = get_str(args, "namespace", default="default")
-        match @ops.selfdrive_export_tasks(engine, project_dir, ns) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "selfdrive_review_tick",
-      "自驱式编程·审视轮判定：Reports/ 报告数 - 已审视轮次 >= review_every 触发审视返回 action=review（附最近报告+memory 摘要），否则返回 idle/no_memory/safe_exit。参数：project_dir(必填)、review_every(可选默认3)、namespace。",
-      schema(
-        {
-          "project_dir": string_prop("项目目录（必填）"),
-          "review_every": int_prop(
-            "审视频率(可选默认3)：每满 N 份报告触发一轮",
-          ),
-          "namespace": string_prop("命名空间(可选默认 default)"),
-        },
-        ["project_dir"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let project_dir = get_str(args, "project_dir")
-        let review_every = get_int(args, "review_every", default=3)
-        let ns = get_str(args, "namespace", default="default")
-        match @ops.selfdrive_review_tick(project_dir, ns~, review_every~) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "selfdrive_review_ready",
-      "自驱式编程·审视收口：确认 memory/reviews/ 最新审视报告已落盘并推进已审视轮次（报告先行，无报告拒绝推进）。参数：project_dir(必填)、namespace。",
-      schema(
-        {
-          "project_dir": string_prop("项目目录（必填）"),
-          "namespace": string_prop("命名空间(可选默认 default)"),
-        },
-        ["project_dir"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let project_dir = get_str(args, "project_dir")
-        let ns = get_str(args, "namespace", default="default")
-        match @ops.selfdrive_review_ready(project_dir, ns~) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "selfdrive_publish_next",
-      "自驱式编程·解析最新审视报告 `## Next Tasks` 段并将待办任务并行发布为同命名空间下独立根任务（幂等，description 内嵌 [review:<file>:<idx>] 标记防重）。参数：project_dir(必填)、namespace(可选默认 default)、max_tasks(可选默认10)、now(可选)。",
-      schema(
-        {
-          "project_dir": string_prop("项目目录（必填）"),
-          "namespace": string_prop("命名空间(可选默认 default)"),
-          "max_tasks": int_prop("最多发布任务数(可选默认10)"),
-          "now": string_prop("时间戳(可选，默认内置)"),
-        },
-        ["project_dir"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let project_dir = get_str(args, "project_dir")
-        let ns = get_str(args, "namespace", default="default")
-        let max_tasks = get_int(args, "max_tasks", default=10)
-        let ts = get_str(args, "now", default=now_default())
-        match
-          @ops.selfdrive_publish_next(
-            engine,
-            project_dir,
-            ns~,
-            max_tasks~,
-            now=ts,
-          ) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "selfdrive_parse_next_tasks",
-      "自驱式编程·纯解析审视报告文本中的 `## Next Tasks` 段（调试/校验用）。参数：content(必填)、max_tasks(可选默认10)。",
-      schema(
-        {
-          "content": string_prop("审视报告全文（必填）"),
-          "max_tasks": int_prop("最多返回任务数(可选默认10)"),
-        },
-        ["content"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let content = get_str(args, "content")
-        let max_tasks = get_int(args, "max_tasks", default=10)
-        let tasks = @ops.selfdrive_parse_next_tasks(content, max_tasks~)
-        Ok(
-          @mcp.ToolResult::text(
-            Json::object({
-              "tasks": Json::array(tasks.map(fn(t) { Json::string(t) })),
-              "count": Json::number(tasks.length().to_double()),
-            }).stringify(),
-          ),
-        )
-      },
-    )
-    .tool(
-      "memory_consolidate",
-      "自我记忆·收敛写回：verify 通过后把交付物/结论收敛写回 memory/{kind}.md（kind 缺省 target；thinking 为 append-only 带时间戳，其余覆盖写）。参数：project_dir(必填)、task_id(必填)、kind(可选默认 target)、content(必填)、now(可选)。返回 {consolidated, kind, chars, note}。",
-      schema(
-        {
-          "project_dir": string_prop("项目目录（必填）"),
-          "task_id": string_prop("任务 id（必填，用于 tags 注入）"),
-          "kind": string_prop(
-            "条目类型(可选)：thinking/product/target/task，默认 target",
-          ),
-          "content": string_prop("收敛内容（必填）"),
-          "now": string_prop("时间戳(可选，默认内置)"),
-        },
-        ["project_dir", "task_id", "content"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let project_dir = get_str(args, "project_dir")
-        let task_id = get_str(args, "task_id")
-        let kind = get_str(args, "kind", default="target")
-        let content = get_str(args, "content")
-        let ts = get_str(args, "now", default=now_default())
-        match memory_consolidate(project_dir, task_id, kind, content, ts) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "memory_gc",
-      "自我记忆·上限+软降权归档（不硬删）：超 max_chars 时把 memory/{kind}.md 末尾（老人）条目移入 memory/archive/ 归档保留，正文只保留最新 max_chars 个字符。kind 缺省对四件套全部处理。参数：project_dir(必填)、kind(可选)、max_chars(可选默认2000)、now(可选)。",
-      schema(
-        {
-          "project_dir": string_prop("项目目录（必填）"),
-          "kind": string_prop(
-            "条目类型(可选)：thinking/product/target/task；缺省处理全部四件套",
-          ),
-          "max_chars": int_prop("正文上限(可选默认2000)"),
-          "now": string_prop("时间戳(可选，默认内置)"),
-        },
-        ["project_dir"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let project_dir = get_str(args, "project_dir")
-        let kind = get_str(args, "kind")
-        let max_chars = get_int(args, "max_chars", default=2000)
-        let j = if kind == "" {
-          memory_gc_all(project_dir, max_chars)
-        } else {
-          memory_gc_one(project_dir, kind, max_chars)
-        }
-        Ok(@mcp.ToolResult::text(j.stringify()))
-      },
-    )
-    .tool(
-      "memory_link",
-      "自我记忆·A-Mem 式关联：在 memory/links.md 追加一条 `from -> to  note` 关联记录（不存在则创建），供 plan/claim 前检索注入。参数：project_dir(必填)、from(必填)、to(必填)、note(可选)、now(可选)。返回 {linked, from, to}。",
-      schema(
-        {
-          "project_dir": string_prop("项目目录（必填）"),
-          "from": string_prop("来源概念/任务（必填）"),
-          "to": string_prop("目标概念/任务（必填）"),
-          "note": string_prop("关联说明(可选)"),
-          "now": string_prop("时间戳(可选，默认内置)"),
-        },
-        ["project_dir", "from", "to"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let project_dir = get_str(args, "project_dir")
-        let from = get_str(args, "from")
-        let to = get_str(args, "to")
-        let note = get_str(args, "note")
-        match memory_link(project_dir, from, to, note) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-    .tool(
-      "evolve_distill",
-      "DGM 演化·自进化蒸馏（EvolveR 最小级）：把一次 verify 通过的任务交付物蒸馏成一条 principle 写入 DGM（goal 前加 [principle] 前缀标识，code 写蒸馏内容，复用既有 evolve_upsert 落库 + Archive 查重语义）。参数：task_id(必填)、goal(必填)、note(必填)、score(可选默认1.0)、now(可选)。返回 {distilled, artifact_id}。",
-      schema(
-        {
-          "task_id": string_prop("任务 id（必填）"),
-          "goal": string_prop("蒸馏出的原则/目标（必填）"),
-          "note": string_prop(
-            "原则说明/设计意图（必填，同时写入 code）",
-          ),
-          "score": number_prop("可计算评分(默认1.0)"),
-          "now": string_prop("时间戳(可选，默认内置)"),
-        },
-        ["task_id", "goal", "note"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let goal = get_str(args, "goal")
-        let note = get_str(args, "note")
-        let score = get_double(args, "score", default=1.0)
-        let ts = get_str(args, "now", default=now_default())
-        let j = do_evolve_distill(
-          evolve_arc, evolve_store, goal, note, score, ts,
-        )
-        Ok(@mcp.ToolResult::text(j.stringify()))
-      },
-    )
-    .tool(
-      "evolve_submit",
-      "DGM 演化·归档一个产物（Artifact）：把本轮设计/代码/目标加入档案库，自动递增父代子代数。参数：id、goal、note、code、score、parent_id(可选)、parts(可选 JSON 对象)、now(可选)。",
-      schema(
-        {
-          "id": string_prop("产物 id（必填，唯一）"),
-          "goal": string_prop("目标/本轮想解决的问题（必填）"),
-          "note": string_prop("设计意图（必填，查重/新颖性用）"),
-          "code": string_prop("实现内容（必填）"),
-          "score": number_prop("可计算评分(默认0)"),
-          "parent_id": string_prop("父产物 id（可选）"),
-          "parts": string_prop("评分分项 JSON(可选)"),
-          "now": string_prop("时间戳(可选，默认内置)"),
-        },
-        ["id", "goal", "note", "code"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let id = get_str(args, "id")
-        let goal = get_str(args, "goal")
-        let note = get_str(args, "note")
-        let code = get_str(args, "code")
-        let score = get_double(args, "score", default=0.0)
-        let parent_id = get_str(args, "parent_id", default="")
-        let parts_raw = get_str(args, "parts", default="{}")
-        let ts = get_str(args, "now", default=now_default())
-        let parts : Map[String, Double] = Map([])
-        let parsed = @json.parse(parts_raw) catch { _ => Json::object(Map([])) }
-        match parsed {
-          Object(pm) =>
-            for (k, v) in pm {
-              match v {
-                Number(n, ..) => parts.set(k, n)
-                _ => ()
-              }
-            }
-          _ => ()
-        }
-        let art = @evolve.Artifact::create(
-          id~,
-          parent_id=if parent_id == "" { None } else { Some(parent_id) },
-          goal~,
-          note~,
-          code~,
-          score~,
-          parts~,
-          created_at=ts,
-        )
-        // 查重：重复目标丢弃（DGM/Voyager 必修），除非阈值宽松
-        if @evolve.Archive::is_duplicate(evolve_arc, goal, threshold=0.88) {
-          return Ok(
+      ["project_dir", "description"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let description = get_str(args, "description")
+      let ns = get_str(args, "namespace", default="default")
+      let created_by = get_str(args, "created_by", default="human_steward")
+      let ts = get_str(args, "now", default=now_default())
+      let r = engine.publish(
+        project_dir~,
+        description~,
+        created_by~,
+        now=ts,
+        ns~,
+      )
+      match r {
+        Ok(id) =>
+          Ok(
             @mcp.ToolResult::text(
               Json::object({
-                "rejected": Json::boolean(true),
-                "reason": Json::string(
-                  "目标与档案库中已有产物高度相似，丢弃",
+                "task_id": Json::string(id),
+                "message": Json::string("已发布根任务"),
+              }).stringify(),
+            ),
+          )
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "publish_parallel",
+    "并行追加独立根任务（不要求命名空间为空、不续轮不归档）：在已有任务的命名空间追加新的独立根任务，供自驱/定时命名空间连续发布多根使用。参数：project_dir、description(必填)、namespace(必填，非 default)、created_by(默认 selfdrive)、now。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "description": string_prop("任务描述（必填）"),
+        "namespace": string_prop("命名空间（必填，不得为 default）"),
+        "created_by": string_prop("创建者身份(默认 selfdrive)"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["project_dir", "description", "namespace"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let description = get_str(args, "description")
+      let ns = get_str(args, "namespace")
+      let created_by = get_str(args, "created_by", default="selfdrive")
+      let ts = get_str(args, "now", default=now_default())
+      match
+        engine.publish_parallel(
+          ns~,
+          description~,
+          created_by~,
+          project_dir~,
+          now=ts,
+        ) {
+        Ok(id) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "task_id": Json::string(id),
+                "message": Json::string("已并行追加独立根任务"),
+              }).stringify(),
+            ),
+          )
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "plan",
+    "对指定任务拆分生成一层子任务（非原子任务才可拆）。参数：task_id 任务id、split_n 拆分数量(默认3)、by 执行者。",
+    schema(
+      {
+        "task_id": string_prop("父任务 id（必填）"),
+        "split_n": int_prop("拆分数量(默认3)"),
+        "by": string_prop("执行拆分的人"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let split_n = get_int(args, "split_n", default=3)
+      let by = get_str(args, "by", default="human_steward")
+      let ts = get_str(args, "now", default=now_default())
+      to_ids_result(engine.plan(task_id~, split_n~, by~, now=ts))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "claim",
+    "认领任务（待领取 -> 已领取；随后 execute 进入执行中）。参数：task_id、assignee 认领人。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "assignee": string_prop("认领人（必填）"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id", "assignee"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let assignee = get_str(args, "assignee")
+      let ts = get_str(args, "now", default=now_default())
+      to_result(engine.claim(task_id~, assignee~, now=ts))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "execute",
+    "记录执行交付物（向后兼容）。必填：task_id、deliverable；可选：executor(默认manual)、model、tokens_in、tokens_out、cost、duration_ms、rate_limited、failure_reason、now。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "deliverable": string_prop("交付物描述（必填）"),
+        "executor": string_prop("执行器名称(默认 manual)"),
+        "model": string_prop("模型名称(可选)"),
+        "tokens_in": int_prop("输入 token 数(可选默认0)"),
+        "tokens_out": int_prop("输出 token 数(可选默认0)"),
+        "cost": number_prop("执行成本(可选默认0)"),
+        "duration_ms": int_prop("执行耗时毫秒(可选默认0)"),
+        "rate_limited": bool_prop("是否被限流(可选默认false)"),
+        "failure_reason": string_prop("失败原因(可选)"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id", "deliverable"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let deliverable = get_str(args, "deliverable")
+      let ts = get_str(args, "now", default=now_default())
+      // 提取可选执行元数据（向后兼容：无元数据时行为同旧版 execute）
+      let executor = get_str(args, "executor", default="manual")
+      let model = get_str(args, "model", default="")
+      let tokens_in = get_int(args, "tokens_in", default=0)
+      let tokens_out = get_int(args, "tokens_out", default=0)
+      let cost = get_double(args, "cost", default=0.0)
+      let duration_ms = get_int(args, "duration_ms", default=0)
+      let rate_limited = get_bool(args, "rate_limited", default=false)
+      let failure_reason = get_str(args, "failure_reason", default="")
+      // 调用 execute_with_meta：同时写入 executions 表 + 流转任务状态
+      to_result(
+        engine.execute_with_meta(
+          task_id~,
+          deliverable~,
+          now=ts,
+          executor~,
+          model~,
+          tokens_in~,
+          tokens_out~,
+          cost~,
+          duration_ms~,
+          rate_limited~,
+          failure_reason~,
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "submit",
+    "提交验收（执行中 -> 待验收）。参数：task_id。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let ts = get_str(args, "now", default=now_default())
+      to_result(engine.submit(task_id~, now=ts))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "run_check",
+    "外部判据检查（服务端真实执行命令，防自写自测恒绿）。参数：task_id 任务id、cmd 可执行命令、args 参数数组(可选)、workdir 工作目录(默认项目目录)、timeout_ms 超时毫秒(默认120000)、now 时间戳(可选)。真实 spawn 子进程运行 cmd，退出码 0 记为 passed、否则 failed，结果 JSON（含 stdout/stderr）落库 specs 表（spec_type=check）；[gate:required] 任务的 verify 依赖本记录且校验新鲜度。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "cmd": string_prop(
+          "要执行的外部命令（必填），如 bash / sh / node / cargo",
+        ),
+        "args": array_prop("命令参数数组（可选）"),
+        "workdir": string_prop(
+          "工作目录（可选，默认任务所在项目目录）",
+        ),
+        "timeout_ms": int_prop("超时毫秒（可选，默认 120000）"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id", "cmd"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let cmd = get_str(args, "cmd")
+      let now = get_str(args, "now", default=now_default())
+      if task_id == "" || cmd == "" {
+        return Err(@mcp_types.ToolError("run_check: task_id 与 cmd 必填"))
+      }
+      let args_arr = get_array(args, "args").map(fn(j) {
+        match j {
+          String(s) => s
+          _ => j.stringify()
+        }
+      })
+      let timeout_ms = get_int(args, "timeout_ms", default=120000)
+      // 定位任务（取项目目录作默认 workdir；任务不存在也允许执行，仅不落库）
+      match engine.get_task(task_id) {
+        Some(t) => {
+          let workdir = get_str(args, "workdir", default=t.project_dir)
+          let r = run_check_external(cmd, args_arr, workdir, timeout_ms)
+          match r {
+            Ok(res) => {
+              let status = match res {
+                Object(m) =>
+                  if m.get("ok") is Some(True) {
+                    "passed"
+                  } else {
+                    "failed"
+                  }
+                _ => "failed"
+              }
+              match
+                engine.gate_check_record(task_id, res.stringify(), status, now) {
+                Ok(rec) => Ok(@mcp.ToolResult::text(rec.stringify()))
+                Err(e) => Err(@mcp_types.ToolError(e))
+              }
+            }
+            Err(e) => Err(@mcp_types.ToolError(e))
+          }
+        }
+        None => {
+          // 任务不存在：仍执行命令并返回结果，但不落库（无任务可挂）
+          let workdir = get_str(args, "workdir", default=".")
+          let r = run_check_external(cmd, args_arr, workdir, timeout_ms)
+          match r {
+            Ok(res) =>
+              Err(
+                @mcp_types.ToolError(
+                  "任务不存在: \{task_id}（命令已执行，结果: \{res.stringify()}，未落库）",
                 ),
+              )
+            Err(e) => Err(@mcp_types.ToolError(e))
+          }
+        }
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "verify",
+    "验收通过（待验收 -> 已完成，父任务自动上卷）。[gate:required] 任务须先有新鲜通过的 run_check 记录。参数：task_id、verifier 验收人。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "verifier": string_prop("验收人（必填）"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id", "verifier"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let verifier = get_str(args, "verifier")
+      let ts = get_str(args, "now", default=now_default())
+      to_result(engine.verify(task_id~, verifier~, now=ts))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "reject",
+    "验收拒绝（待验收 -> 已打回）。参数：task_id、reason 打回原因、by 操作者。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "reason": string_prop("打回原因（可选）"),
+        "by": string_prop("操作者(默认 human_steward)"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let reason = get_str(args, "reason", default="")
+      let by = get_str(args, "by", default="human_steward")
+      let ts = get_str(args, "now", default=now_default())
+      to_result(engine.reject_task(task_id~, reason~, by~, now=ts))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "retry",
+    "打回后重试（已打回 -> 执行中）。参数：task_id。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let ts = get_str(args, "now", default=now_default())
+      to_result(engine.retry_task(task_id~, now=ts))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "reopen_task",
+    "重开/重派任务：任意非归档任务回滚为已领取（M4 heal/运维重派用）。参数：task_id、now。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let ts = get_str(args, "now", default=now_default())
+      match engine.reopen_task(task_id, ts) {
+        Ok(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "pause",
+    "暂停任务（任意活跃状态 -> 已暂停）。参数：task_id。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let ts = get_str(args, "now", default=now_default())
+      to_result(engine.pause_task(task_id~, now=ts))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "resume",
+    "恢复任务（已暂停 -> 已领取）。参数：task_id。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let ts = get_str(args, "now", default=now_default())
+      to_result(engine.resume_task(task_id~, now=ts))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "archive",
+    "归档任务（仅限人类指挥官）。参数：task_id、by 操作者。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "by": string_prop("操作者(默认 human_steward)"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let by = get_str(args, "by", default="human_steward")
+      let ts = get_str(args, "now", default=now_default())
+      to_result(engine.archive(task_id~, by~, now=ts))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "list",
+    "列出任务，可按状态与命名空间过滤。参数：status(可选，中文状态名)、namespace(可选，按命名空间过滤；不传则列出全库所有命名空间)。",
+    schema(
+      {
+        "status": string_prop(
+          "按状态过滤(可选)：待领取/已领取/执行中/待验收/已完成/已归档",
+        ),
+        "namespace": string_prop(
+          "按命名空间过滤(可选)：如 default/cron-auto/cron-cypy/fist-iter；不传则列出全部命名空间",
+        ),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let status_str = get_str(args, "status")
+      let ns_str = get_str(args, "namespace")
+      let mut tasks = if status_str == "" {
+        engine.list_all()
+      } else {
+        match @core.TaskStatus::from_string(status_str) {
+          Some(st) => engine.list_by_status(st)
+          None =>
+            return Err(@mcp_types.ToolError("未知状态: \{status_str}"))
+        }
+      }
+      if ns_str != "" {
+        tasks = tasks.filter(fn(t) { t.ns == ns_str })
+      }
+      Ok(
+        @mcp.ToolResult::text(
+          Json::array(tasks.map(fn(t) { t.to_json() })).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "get",
+    "查询单个任务详情。参数：task_id。",
+    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      match engine.get_task(task_id) {
+        Some(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
+        None => Err(@mcp_types.ToolError("task not found: \{task_id}"))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "delete",
+    "删除已归档任务。参数：task_id。",
+    schema(
+      { "task_id": string_prop("任务 id（必填，仅已归档可删）") },
+      ["task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      to_unit_result(engine.delete_task(task_id))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "task_plan_deep",
+    "AO 式递归拆解：对指定任务拆出整棵多层子任务树并写库。参数：task_id 任务id、split_n 每层默认拆分数(默认3)、by 拆解拳长、spec 可选 omega spec JSON(laws 作切割依据、fingerprint 作验收基准)、omega_strong_verify 是否开启 Omega 强验证(默认 false，不传即现状)、now 时间戳。开启强验证后每层子任务多出『语料创建者建语料 -> 验证者审语料 -> 执行者执行 -> 验证者复验成果』环节。",
+    schema(
+      {
+        "task_id": string_prop("父任务 id（必填，非原子任务）"),
+        "split_n": int_prop(
+          "每层默认拆分数(默认3，有 spec.laws 时以 laws 为准)",
+        ),
+        "by": string_prop("执行拆解的拳长身份(默认 leader)"),
+        "spec": string_prop("可选 omega spec JSON 字符串"),
+        "omega_strong_verify": bool_prop(
+          "是否开启 Omega 强验证(默认 false，不传即现状；开启后每轮需语料审核与成果复验)",
+        ),
+        "laya_auto": bool_prop(
+          "是否开启 Laya 自动选档(默认 false，不传即现状)：开启后探测 Laya，可用则按 difficulty.score 自动定 split_n 并把决策附到返回；不可用则回退 split_n 默认值",
+        ),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let mut split_n = get_int(args, "split_n", default=3)
+      let by = get_str(args, "by", default="leader")
+      let spec_raw = get_str(args, "spec")
+      let ts = get_str(args, "now", default=now_default())
+      let spec : Json? = if spec_raw == "" {
+        None
+      } else {
+        Some(@json.parse(spec_raw)) catch {
+          _ => return Err(@mcp_types.ToolError("spec 不是合法 JSON"))
+        }
+      }
+      let omega_strong = get_bool(args, "omega_strong_verify", default=false)
+      let laya_auto = get_bool(args, "laya_auto", default=false)
+      // Laya 自动选档：开启后先探测，可用则以任务描述的 difficulty.score 自动定 split_n，
+      // 并把完整决策附到返回（如不可用则回退显式/默认 split_n，行为与现状一致）。
+      let mut laya_info : Json = Json::null()
+      if laya_auto {
+        let avail = match
+          laya_probe_available(
+            "python",
+            ["scripts/laya_decide.py", "--probe"],
+            ".",
+            15000,
+          ) {
+          Ok(a) => a
+          Err(_) => false
+        }
+        if avail {
+          match engine.get_task(task_id) {
+            Some(parent) =>
+              match
+                laya_decide_external(
+                  "python",
+                  ["scripts/laya_decide.py"],
+                  ".",
+                  Json::object({
+                    "context": Json::string(parent.description),
+                    "questions": Json::null(),
+                    "model": Json::string("english"),
+                  }).stringify(),
+                  300000,
+                ) {
+                Ok(res) => {
+                  let raw_n = laya_difficulty_score(res).round().to_int() + 2
+                  let n = if raw_n < 2 {
+                    2
+                  } else if raw_n > 6 {
+                    6
+                  } else {
+                    raw_n
+                  }
+                  split_n = n
+                  let obj = match res {
+                    Object(m) => m
+                    _ => Map([])
+                  }
+                  obj.set("auto_split_n", Json::number(split_n.to_double()))
+                  obj.set("context", Json::string(parent.description))
+                  laya_info = Json::object(obj)
+                }
+                Err(_) => ()
+              }
+            None => ()
+          }
+        }
+      }
+      let base = match
+        engine.plan_deep(
+          task_id~,
+          split_n~,
+          by~,
+          spec~,
+          now=ts,
+          omega_strong_verify=omega_strong,
+        ) {
+        Ok(j) => j
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
+      // laya_auto 开启时在返回里附 laya 决策信息；否则返回格式与现状完全一致。
+      let out = if laya_auto {
+        match base {
+          Object(m) => {
+            m.set("laya", laya_info)
+            Json::object(m)
+          }
+          _ => base
+        }
+      } else {
+        base
+      }
+      Ok(@mcp.ToolResult::text(out.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "omega_spec_create",
+    "Omega 强验证·语料创建者：为已开启强验证的任务创建本轮语料，并真正持久化写入 specs 表。参数：task_id、author 语料创建者(默认 spec_author)、content 语料内容(必填)、max_rounds 打回上限(默认3，最大10)、now。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "author": string_prop("语料创建者身份(默认 spec_author)"),
+        "content": string_prop("语料内容（必填）"),
+        "max_rounds": int_prop("打回上限(默认3，最大10)"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id", "content"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let author = get_str(args, "author", default="spec_author")
+      let content = get_str(args, "content")
+      let max_rounds = get_int(args, "max_rounds", default=3)
+      let ts = get_str(args, "now", default=now_default())
+      match
+        engine.omega_spec_create(
+          task_id~,
+          author~,
+          content~,
+          now=ts,
+          max_rounds~,
+        ) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "omega_spec_review",
+    "Omega 强验证·验证者审语料：审核本轮语料。verdict=approve 通过（放行执行），其它值视为打回重做；打回次数超过 max_rounds 自动升级人工裁决，禁止死循环。参数：task_id、reviewer 验证者(默认 verifier)、verdict、reason 审核意见、max_rounds、now。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "reviewer": string_prop("验证者身份(默认 verifier)"),
+        "verdict": string_prop("approve 通过 / 其它值打回（必填）"),
+        "reason": string_prop("审核意见(可选)"),
+        "max_rounds": int_prop("打回上限(默认3，最大10)"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id", "verdict"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let reviewer = get_str(args, "reviewer", default="verifier")
+      let verdict = get_str(args, "verdict")
+      let reason = get_str(args, "reason")
+      let max_rounds = get_int(args, "max_rounds", default=3)
+      let ts = get_str(args, "now", default=now_default())
+      match
+        engine.omega_spec_review(
+          task_id~,
+          reviewer~,
+          verdict~,
+          reason~,
+          now=ts,
+          max_rounds~,
+        ) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "omega_result_verify",
+    "Omega 强验证·验证者复验成果：执行者完成后，复验成果与语料是否达标。verdict=pass 达标（可提交验收），其它值打回重做；超过 max_rounds 自动升级人工裁决。参数：task_id、reviewer、verdict、reason、max_rounds、now。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "reviewer": string_prop("验证者身份(默认 verifier)"),
+        "verdict": string_prop("pass 达标 / 其它值打回（必填）"),
+        "reason": string_prop("复验意见(可选)"),
+        "max_rounds": int_prop("打回上限(默认3，最大10)"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id", "verdict"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let reviewer = get_str(args, "reviewer", default="verifier")
+      let verdict = get_str(args, "verdict")
+      let reason = get_str(args, "reason")
+      let max_rounds = get_int(args, "max_rounds", default=3)
+      let ts = get_str(args, "now", default=now_default())
+      match
+        engine.omega_result_verify(
+          task_id~,
+          reviewer~,
+          verdict~,
+          reason~,
+          now=ts,
+          max_rounds~,
+        ) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "omega_status",
+    "Omega 强验证状态查询：返回该任务是否开启强验证、语料/复验轮次、打回次数、是否已升级人工。参数：task_id。",
+    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      match engine.omega_status(task_id) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "conflicts_check",
+    "claim 冲突检测（AO --no-takeover）：认领前检查任务是否已被他人/本人持有。参数：task_id、assignee。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "assignee": string_prop("拟认领人（必填）"),
+      },
+      ["task_id", "assignee"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let assignee = get_str(args, "assignee")
+      match @ops.check_claim(engine, task_id, assignee) {
+        Ok(_) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "task_id": Json::string(task_id),
+                "assignee": Json::string(assignee),
+                "ok": Json::boolean(true),
+                "message": Json::string("可安全认领（待领取）"),
+              }).stringify(),
+            ),
+          )
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "heartbeat",
+    "活动信号上报（AO ActivityState）：任务执行前/执行中周期性上报，超时静默将触发 heal 回滚。参数：task_id、signal(可选默认 active)、now。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "signal": string_prop(
+          "信号(可选)：pre-execution/active/submit，默认 active",
+        ),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      ["task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let signal = get_str(args, "signal", default="active")
+      let ts = get_str(args, "now", default=now_default())
+      match engine.get_task(task_id) {
+        None => Err(@mcp_types.ToolError("task not found: \{task_id}"))
+        Some(_) => {
+          // 内存心跳表
+          heartbeats.beat(task_id, signal~, now=ts)
+          // SQLite 持久化（落库失败仅忽略，不阻塞主流程）
+          ignore(
+            engine.store_write_heartbeat(
+              agent_id="fist-mbt",
+              task_id~,
+              last_seen=ts,
+              status=signal,
+            ),
+          )
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "task_id": Json::string(task_id),
+                "signal": Json::string(signal),
+                "last_seen": Json::string(heartbeats.last_seen_of(task_id)),
               }).stringify(),
             ),
           )
         }
-        @evolve.Archive::add(evolve_arc, art)
-        Ok(@mcp.ToolResult::text(art.to_json().stringify()))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "heal",
+    "no_signal 看护（AO watchdog）：心跳超时静默的活跃任务（执行中/已领取/拆分中）回滚为已领取待重派。参数：now、timeout_sec(可选默认600)。",
+    schema(
+      {
+        "now": string_prop("当前时间戳(默认内置)"),
+        "timeout_sec": int_prop("超时秒数(可选默认600)"),
       },
-    )
-    .tool(
-      "evolve_snapshot",
-      "DGM 演化·查看档案库快照（含 best/lineage/summaries/dead_ends）。参数：无。",
-      schema({}, []),
-      async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let best = match @evolve.Archive::best(evolve_arc) {
-          Some(a) => a.to_json()
-          None => Json::null()
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ts = get_str(args, "now", default=now_default())
+      let timeout_sec = get_int(args, "timeout_sec", default=600)
+      match @ops.heal_stale_tasks(engine, heartbeats, ts, timeout_sec~) {
+        Ok(healed) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "healed": Json::array(healed.map(fn(s) { Json::string(s) })),
+                "count": Json::number(healed.length().to_double()),
+                "message": Json::string("超时静默任务已回滚待重派"),
+              }).stringify(),
+            ),
+          )
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "watchdog_tick",
+    "定时任务看门狗编排单入口（推荐仅用于定时任务/无人值守场景，不用于人工指挥流程）：扫描活跃任务，心跳超时则回滚重派；检测到上一轮根任务已完成且提供了 next_description（或可由 meta_prompt_path 读取元提示词）时自动发布下一轮。参数：now、timeout_sec(可选默认600)、namespace(可选，未传则不自动续轮)、next_description(可选)、next_created_by(可选默认watchdog)、meta_prompt_path(可选)、cold_start(可选默认false，冷启动时设为true以发布首个任务)、project_dir(可选，冷启动时用于指定项目目录)、omega_strong_verify(可选默认false，开启后自动拆分并启用Omega强验证)、omega_split_n(可选默认3)、omega_spec(可选JSON)。",
+    schema(
+      {
+        "now": string_prop("当前时间戳(默认内置)"),
+        "timeout_sec": int_prop("心跳超时秒数(可选默认600)"),
+        "namespace": string_prop(
+          "作用域命名空间(可选)：自动续轮/自动 heal 只作用于该 ns，未传则不自动续轮",
+        ),
+        "next_description": string_prop(
+          "下一轮任务描述(可选，缺省则不自动续轮)",
+        ),
+        "next_created_by": string_prop(
+          "下一轮任务创建者(可选默认watchdog)",
+        ),
+        "meta_prompt_path": string_prop(
+          "元提示词文档路径(可选)：单个文档或目录，目录内按 yyyyMMdd.HH.mm.ss.md 取最新一份",
+        ),
+        "cold_start": bool_prop(
+          "冷启动模式(可选默认false)：设为true时，若命名空间无已完成根任务，则发布首个任务",
+        ),
+        "project_dir": string_prop(
+          "项目目录(可选)：冷启动时用于指定项目路径",
+        ),
+        "omega_strong_verify": bool_prop(
+          "Omega 强验证开关(可选默认false)：开启后新根任务自动拆分并打 [omega:required] 标记",
+        ),
+        "omega_split_n": int_prop(
+          "Omega 强验证拆分数(可选默认3)：每层子任务数",
+        ),
+        "omega_spec": string_prop(
+          "可选 Omega spec JSON(可选)：laws 作切割依据，fingerprint 作验收基准",
+        ),
+        "selfdrive_project_dir": string_prop(
+          "自驱式编程整合(可选)：提供时会探测该项目的记忆审视轮，结果挂到 detail.selfdrive（报告先行）",
+        ),
+        "selfdrive_review_every": int_prop(
+          "自驱审视频率(可选默认3)：每满 N 份 Reports 报告触发一轮审视",
+        ),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ts = get_str(args, "now", default=now_default())
+      let timeout_sec = get_int(args, "timeout_sec", default=600)
+      let ns = get_str(args, "namespace")
+      let next_description = get_str(args, "next_description")
+      let next_created_by = get_str(args, "next_created_by", default="watchdog")
+      let meta_prompt_path = get_str(args, "meta_prompt_path")
+      let cold_start = get_bool(args, "cold_start", default=false)
+      let project_dir = get_str(args, "project_dir")
+      let omega_strong_verify = get_bool(
+        args,
+        "omega_strong_verify",
+        default=false,
+      )
+      let omega_split_n = get_int(args, "omega_split_n", default=3)
+      let omega_spec_str = get_str(args, "omega_spec")
+      let selfdrive_project_dir = get_str(args, "selfdrive_project_dir")
+      let selfdrive_review_every = get_int(
+        args,
+        "selfdrive_review_every",
+        default=3,
+      )
+      let omega_spec = if omega_spec_str == "" {
+        None
+      } else {
+        match @omega.parse_spec(omega_spec_str) {
+          Ok(j) => Some(j)
+          Err(_) => None
         }
-        let summaries = Json::array(
-          @evolve.Archive::summaries(evolve_arc, limit=12).map(fn(s) {
-            Json::string(s)
-          }),
-        )
-        let dead = Json::array(
-          @evolve.Archive::dead_ends(evolve_arc, limit=8).map(fn(s) {
-            Json::string(s)
-          }),
-        )
-        let lineage = match @evolve.Archive::best(evolve_arc) {
-          Some(b) =>
-            Json::array(
-              @evolve.Archive::lineage(evolve_arc, b.id, depth=12).map(fn(l) {
-                let (lid, lscore, lgoal) = l
-                Json::string("[\{lid} score=\{lscore} ] \{lgoal}")
-              }),
-            )
-          None => Json::array([])
-        }
-        Ok(
+      }
+      match
+        @ops.watchdog_tick(
+          engine,
+          ts,
+          timeout_sec~,
+          ns~,
+          next_description~,
+          next_created_by~,
+          meta_prompt_path~,
+          cold_start~,
+          project_dir~,
+          omega_strong_verify~,
+          omega_split_n~,
+          omega_spec~,
+          selfdrive_project_dir~,
+          selfdrive_review_every~,
+        ) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "pipeline_tick",
+    "提示词流水线状态机单入口（仅用于定时任务/无人值守命名空间，不用于人工指挥流程）：以 project_dir/currentState.txt 为唯一状态源，按四分支推进——空闲(Creating/Closed)生成新提示词、提示词已落盘(Pending)发布根任务、执行中(Running)缺报告且超时则要求补报告、报告落盘后校验收口。全程报告先行、不空转、不写脏数据。参数：project_dir(必填)、now(可选)、namespace(可选默认cron-auto)、phase(可选auto/prompt_ready/report_ready)、prompt_name(可选)、timeout_sec(可选默认2400)。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录(必填)：其下 currentState.txt 为状态源，Gen_Prompts 为提示词目录",
+        ),
+        "now": string_prop("当前时间戳(可选，默认内置)"),
+        "namespace": string_prop(
+          "作用域命名空间(可选默认 cron-auto)：不得为 default",
+        ),
+        "phase": string_prop(
+          "阶段(可选默认 auto)：auto 自动推进 / prompt_ready 提示词已落盘 / report_ready 报告已落盘",
+        ),
+        "prompt_name": string_prop(
+          "指定提示词文件名(可选，缺省取目录内最新一份)",
+        ),
+        "timeout_sec": int_prop("执行超时秒数(可选默认2400)"),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ts = get_str(args, "now", default=now_default())
+      let project_dir = get_str(args, "project_dir")
+      let ns = get_str(args, "namespace", default="cron-auto")
+      let phase = get_str(args, "phase", default="auto")
+      let prompt_name = get_str(args, "prompt_name")
+      let timeout_sec = get_int(args, "timeout_sec", default=2400)
+      match
+        @ops.pipeline_tick(
+          engine,
+          project_dir,
+          ts,
+          ns~,
+          timeout_sec~,
+          phase~,
+          prompt_name~,
+        ) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "selfdrive_init",
+    "自驱式编程·初始化 memory 四件套（product/target/task/thinking + reviews 目录），幂等不覆盖。参数：project_dir(必填)、namespace(可选默认 default)。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录（必填）：其下生成 memory/ 四件套",
+        ),
+        "namespace": string_prop("命名空间(可选默认 default)"),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let ns = get_str(args, "namespace", default="default")
+      match @ops.selfdrive_memory_init(project_dir, ns~) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "selfdrive_append",
+    "自驱式编程·追加/更新 memory 条目。参数：project_dir(必填)、kind(必填 thinking/product/target/task)、content(必填)、namespace、now(可选)。thinking 为 append-only 流水带时间戳；其余覆盖写。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "kind": string_prop(
+          "条目类型（必填）：thinking/product/target/task",
+        ),
+        "content": string_prop("内容（必填）"),
+        "namespace": string_prop("命名空间(可选默认 default)"),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      ["project_dir", "kind", "content"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let kind = get_str(args, "kind")
+      let content = get_str(args, "content")
+      let ns = get_str(args, "namespace", default="default")
+      let ts = get_str(args, "now", default=now_default())
+      match
+        @ops.selfdrive_memory_append(project_dir, ns~, kind~, content~, now=ts) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "selfdrive_get",
+    "自驱式编程·读取指定 memory 文件。参数：project_dir(必填)、kind(必填 thinking/product/target/task)、namespace。返回 {exists, content}。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "kind": string_prop(
+          "条目类型（必填）：thinking/product/target/task",
+        ),
+        "namespace": string_prop("命名空间(可选默认 default)"),
+      },
+      ["project_dir", "kind"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let kind = get_str(args, "kind")
+      let ns = get_str(args, "namespace", default="default")
+      match @ops.selfdrive_memory_get(project_dir, ns~, kind~) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "selfdrive_export_tasks",
+    "自驱式编程·从任务库导出任务清单到 task.md（视图覆盖写）。参数：project_dir(必填)、namespace(可选默认 default)。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "namespace": string_prop("命名空间(可选默认 default)"),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let ns = get_str(args, "namespace", default="default")
+      match @ops.selfdrive_export_tasks(engine, project_dir, ns) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "selfdrive_review_tick",
+    "自驱式编程·审视轮判定：Reports/ 报告数 - 已审视轮次 >= review_every 触发审视返回 action=review（附最近报告+memory 摘要），否则返回 idle/no_memory/safe_exit。参数：project_dir(必填)、review_every(可选默认3)、namespace。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "review_every": int_prop(
+          "审视频率(可选默认3)：每满 N 份报告触发一轮",
+        ),
+        "namespace": string_prop("命名空间(可选默认 default)"),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let review_every = get_int(args, "review_every", default=3)
+      let ns = get_str(args, "namespace", default="default")
+      match @ops.selfdrive_review_tick(project_dir, ns~, review_every~) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "selfdrive_review_ready",
+    "自驱式编程·审视收口：确认 memory/reviews/ 最新审视报告已落盘并推进已审视轮次（报告先行，无报告拒绝推进）。参数：project_dir(必填)、namespace。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "namespace": string_prop("命名空间(可选默认 default)"),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let ns = get_str(args, "namespace", default="default")
+      match @ops.selfdrive_review_ready(project_dir, ns~) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "selfdrive_publish_next",
+    "自驱式编程·解析最新审视报告 `## Next Tasks` 段并将待办任务并行发布为同命名空间下独立根任务（幂等，description 内嵌 [review:<file>:<idx>] 标记防重）。参数：project_dir(必填)、namespace(可选默认 default)、max_tasks(可选默认10)、now(可选)。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "namespace": string_prop("命名空间(可选默认 default)"),
+        "max_tasks": int_prop("最多发布任务数(可选默认10)"),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let ns = get_str(args, "namespace", default="default")
+      let max_tasks = get_int(args, "max_tasks", default=10)
+      let ts = get_str(args, "now", default=now_default())
+      match
+        @ops.selfdrive_publish_next(
+          engine,
+          project_dir,
+          ns~,
+          max_tasks~,
+          now=ts,
+        ) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "selfdrive_parse_next_tasks",
+    "自驱式编程·纯解析审视报告文本中的 `## Next Tasks` 段（调试/校验用）。参数：content(必填)、max_tasks(可选默认10)。",
+    schema(
+      {
+        "content": string_prop("审视报告全文（必填）"),
+        "max_tasks": int_prop("最多返回任务数(可选默认10)"),
+      },
+      ["content"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let content = get_str(args, "content")
+      let max_tasks = get_int(args, "max_tasks", default=10)
+      let tasks = @ops.selfdrive_parse_next_tasks(content, max_tasks~)
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "tasks": Json::array(tasks.map(fn(t) { Json::string(t) })),
+            "count": Json::number(tasks.length().to_double()),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "memory_consolidate",
+    "自我记忆·收敛写回：verify 通过后把交付物/结论收敛写回 memory/{kind}.md（kind 缺省 target；thinking 为 append-only 带时间戳，其余覆盖写）。参数：project_dir(必填)、task_id(必填)、kind(可选默认 target)、content(必填)、now(可选)。返回 {consolidated, kind, chars, note}。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "task_id": string_prop("任务 id（必填，用于 tags 注入）"),
+        "kind": string_prop(
+          "条目类型(可选)：thinking/product/target/task，默认 target",
+        ),
+        "content": string_prop("收敛内容（必填）"),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      ["project_dir", "task_id", "content"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let task_id = get_str(args, "task_id")
+      let kind = get_str(args, "kind", default="target")
+      let content = get_str(args, "content")
+      let ts = get_str(args, "now", default=now_default())
+      match memory_consolidate(project_dir, task_id, kind, content, ts) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "memory_gc",
+    "自我记忆·上限+软降权归档（不硬删）：超 max_chars 时把 memory/{kind}.md 末尾（老人）条目移入 memory/archive/ 归档保留，正文只保留最新 max_chars 个字符。kind 缺省对四件套全部处理。参数：project_dir(必填)、kind(可选)、max_chars(可选默认2000)、now(可选)。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "kind": string_prop(
+          "条目类型(可选)：thinking/product/target/task；缺省处理全部四件套",
+        ),
+        "max_chars": int_prop("正文上限(可选默认2000)"),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let kind = get_str(args, "kind")
+      let max_chars = get_int(args, "max_chars", default=2000)
+      let j = if kind == "" {
+        memory_gc_all(project_dir, max_chars)
+      } else {
+        memory_gc_one(project_dir, kind, max_chars)
+      }
+      Ok(@mcp.ToolResult::text(j.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "memory_link",
+    "自我记忆·A-Mem 式关联：在 memory/links.md 追加一条 `from -> to  note` 关联记录（不存在则创建），供 plan/claim 前检索注入。参数：project_dir(必填)、from(必填)、to(必填)、note(可选)、now(可选)。返回 {linked, from, to}。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "from": string_prop("来源概念/任务（必填）"),
+        "to": string_prop("目标概念/任务（必填）"),
+        "note": string_prop("关联说明(可选)"),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      ["project_dir", "from", "to"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let from = get_str(args, "from")
+      let to = get_str(args, "to")
+      let note = get_str(args, "note")
+      match memory_link(project_dir, from, to, note) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "evolve_distill",
+    "DGM 演化·自进化蒸馏（EvolveR 最小级）：把一次 verify 通过的任务交付物蒸馏成一条 principle 写入 DGM（goal 前加 [principle] 前缀标识，code 写蒸馏内容，复用既有 evolve_upsert 落库 + Archive 查重语义）。参数：task_id(必填)、goal(必填)、note(必填)、score(可选默认1.0)、now(可选)。返回 {distilled, artifact_id}。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "goal": string_prop("蒸馏出的原则/目标（必填）"),
+        "note": string_prop(
+          "原则说明/设计意图（必填，同时写入 code）",
+        ),
+        "score": number_prop("可计算评分(默认1.0)"),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      ["task_id", "goal", "note"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let goal = get_str(args, "goal")
+      let note = get_str(args, "note")
+      let score = get_double(args, "score", default=1.0)
+      let ts = get_str(args, "now", default=now_default())
+      let j = do_evolve_distill(evolve_arc, evolve_store, goal, note, score, ts)
+      Ok(@mcp.ToolResult::text(j.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "evolve_submit",
+    "DGM 演化·归档一个产物（Artifact）：把本轮设计/代码/目标加入档案库，自动递增父代子代数。参数：id、goal、note、code、score、parent_id(可选)、parts(可选 JSON 对象)、now(可选)。",
+    schema(
+      {
+        "id": string_prop("产物 id（必填，唯一）"),
+        "goal": string_prop("目标/本轮想解决的问题（必填）"),
+        "note": string_prop("设计意图（必填，查重/新颖性用）"),
+        "code": string_prop("实现内容（必填）"),
+        "score": number_prop("可计算评分(默认0)"),
+        "parent_id": string_prop("父产物 id（可选）"),
+        "parts": string_prop("评分分项 JSON(可选)"),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      ["id", "goal", "note", "code"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let id = get_str(args, "id")
+      let goal = get_str(args, "goal")
+      let note = get_str(args, "note")
+      let code = get_str(args, "code")
+      let score = get_double(args, "score", default=0.0)
+      let parent_id = get_str(args, "parent_id", default="")
+      let parts_raw = get_str(args, "parts", default="{}")
+      let ts = get_str(args, "now", default=now_default())
+      let parts : Map[String, Double] = Map([])
+      let parsed = @json.parse(parts_raw) catch { _ => Json::object(Map([])) }
+      match parsed {
+        Object(pm) =>
+          for (k, v) in pm {
+            match v {
+              Number(n, ..) => parts.set(k, n)
+              _ => ()
+            }
+          }
+        _ => ()
+      }
+      let art = @evolve.Artifact::create(
+        id~,
+        parent_id=if parent_id == "" { None } else { Some(parent_id) },
+        goal~,
+        note~,
+        code~,
+        score~,
+        parts~,
+        created_at=ts,
+      )
+      // 查重：重复目标丢弃（DGM/Voyager 必修），除非阈值宽松
+      if @evolve.Archive::is_duplicate(evolve_arc, goal, threshold=0.88) {
+        return Ok(
           @mcp.ToolResult::text(
             Json::object({
-              "count": Json::number(
-                @evolve.Archive::len(evolve_arc).to_double(),
+              "rejected": Json::boolean(true),
+              "reason": Json::string(
+                "目标与档案库中已有产物高度相似，丢弃",
               ),
-              "best": best,
-              "summaries": summaries,
-              "dead_ends": dead,
-              "lineage_of_best": lineage,
             }).stringify(),
           ),
         )
+      }
+      @evolve.Archive::add(evolve_arc, art)
+      Ok(@mcp.ToolResult::text(art.to_json().stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "evolve_snapshot",
+    "DGM 演化·查看档案库快照（含 best/lineage/summaries/dead_ends）。参数：无。",
+    schema({}, []),
+    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let best = match @evolve.Archive::best(evolve_arc) {
+        Some(a) => a.to_json()
+        None => Json::null()
+      }
+      let summaries = Json::array(
+        @evolve.Archive::summaries(evolve_arc, limit=12).map(fn(s) {
+          Json::string(s)
+        }),
+      )
+      let dead = Json::array(
+        @evolve.Archive::dead_ends(evolve_arc, limit=8).map(fn(s) {
+          Json::string(s)
+        }),
+      )
+      let lineage = match @evolve.Archive::best(evolve_arc) {
+        Some(b) =>
+          Json::array(
+            @evolve.Archive::lineage(evolve_arc, b.id, depth=12).map(fn(l) {
+              let (lid, lscore, lgoal) = l
+              Json::string("[\{lid} score=\{lscore} ] \{lgoal}")
+            }),
+          )
+        None => Json::array([])
+      }
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "count": Json::number(@evolve.Archive::len(evolve_arc).to_double()),
+            "best": best,
+            "summaries": summaries,
+            "dead_ends": dead,
+            "lineage_of_best": lineage,
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "evolve_sample",
+    "DGM 演化·按 p∝s·h 多样性加权采样父代产物（子代越少/性能越高越可能被选）。参数：rand(可选)。",
+    schema({ "rand": number_prop("伪随机种子(可选，[0,1))") }, []),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let r = get_double(args, "rand", default=0.5)
+      let picked = @evolve.Archive::sample_parent(evolve_arc, rand=fn() { r })
+      match picked {
+        Some(a) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({ "picked": a.to_json() }).stringify(),
+            ),
+          )
+        None =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "picked": Json::null(),
+                "note": Json::string(
+                  "档案库为空，先 evolve_submit 添加产物",
+                ),
+              }).stringify(),
+            ),
+          )
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "laya_decide",
+    "Laya 可选决策工具（自动探测）：用 Laya（Python ML 决策模型）对任务/文本快速分类。命中时返回结构化 answers（task_type/urgency/needs_review 等）；机器无 laya 或探测失败则返回 available:false，调用方照旧走 schedule/LLM，不影响现网。参数：context(必填)、questions(可选 JSON)、model(可选默认 english)。",
+    schema(
+      {
+        "context": string_prop("待决策的任务/文本描述（必填）"),
+        "questions": string_prop(
+          "决策问题 schema JSON（可选；缺省用 Laya 内置 default questions）",
+        ),
+        "model": string_prop("Laya 模型(可选默认 english)"),
       },
-    )
-    .tool(
-      "evolve_sample",
-      "DGM 演化·按 p∝s·h 多样性加权采样父代产物（子代越少/性能越高越可能被选）。参数：rand(可选)。",
-      schema({ "rand": number_prop("伪随机种子(可选，[0,1))") }, []),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let r = get_double(args, "rand", default=0.5)
-        let picked = @evolve.Archive::sample_parent(evolve_arc, rand=fn() { r })
-        match picked {
-          Some(a) =>
-            Ok(
-              @mcp.ToolResult::text(
-                Json::object({ "picked": a.to_json() }).stringify(),
+      ["context"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let context = get_str(args, "context")
+      if context == "" {
+        return Err(@mcp_types.ToolError("context 不能为空"))
+      }
+      let questions_raw = get_str(args, "questions", default="")
+      let model = get_str(args, "model", default="english")
+      // 1) 探测（--probe 仅 import laya，较快；每次调用探测以保证实时准确性）
+      let probe : Result[Bool, String] = laya_probe_available(
+        "python",
+        ["scripts/laya_decide.py", "--probe"],
+        ".",
+        15000,
+      )
+      let avail = match probe {
+        Ok(a) => a
+        Err(_) => false
+      }
+      if not(avail) {
+        return Ok(
+          @mcp.ToolResult::text(
+            Json::object({
+              "available": Json::boolean(false),
+              "fallback": Json::string("use existing schedule / LLM"),
+              "reason": Json::string(
+                "机器上未探测到 Laya（python-sidecar 不可用），已降级",
               ),
-            )
-          None =>
-            Ok(
-              @mcp.ToolResult::text(
-                Json::object({
-                  "picked": Json::null(),
-                  "note": Json::string(
-                    "档案库为空，先 evolve_submit 添加产物",
-                  ),
-                }).stringify(),
-              ),
-            )
-        }
-      },
-    )
-    .tool(
-      "laya_decide",
-      "Laya 可选决策工具（自动探测）：用 Laya（Python ML 决策模型）对任务/文本快速分类。命中时返回结构化 answers（task_type/urgency/needs_review 等）；机器无 laya 或探测失败则返回 available:false，调用方照旧走 schedule/LLM，不影响现网。参数：context(必填)、questions(可选 JSON)、model(可选默认 english)。",
-      schema(
-        {
-          "context": string_prop("待决策的任务/文本描述（必填）"),
-          "questions": string_prop(
-            "决策问题 schema JSON（可选；缺省用 Laya 内置 default questions）",
+            }).stringify(),
           ),
-          "model": string_prop("Laya 模型(可选默认 english)"),
-        },
-        ["context"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let context = get_str(args, "context")
-        if context == "" {
-          return Err(@mcp_types.ToolError("context 不能为空"))
-        }
-        let questions_raw = get_str(args, "questions", default="")
-        let model = get_str(args, "model", default="english")
-        // 1) 探测（--probe 仅 import laya，较快；每次调用探测以保证实时准确性）
-        let probe : Result[Bool, String] = laya_probe_available(
-          "python",
-          ["scripts/laya_decide.py", "--probe"],
-          ".",
-          15000,
         )
-        let avail = match probe {
-          Ok(a) => a
-          Err(_) => false
+      }
+      // 2) 可用 → 调 sidecar 决策
+      let questions_json : Json = if questions_raw == "" {
+        Json::null()
+      } else {
+        @json.parse(questions_raw) catch {
+          _ => Json::null()
         }
-        if not(avail) {
-          return Ok(
+      }
+      let input_json = Json::object({
+        "context": Json::string(context),
+        "questions": questions_json,
+        "model": Json::string(model),
+      }).stringify()
+      match
+        laya_decide_external(
+          "python",
+          ["scripts/laya_decide.py"],
+          ".",
+          input_json,
+          300000,
+        ) {
+        Ok(res) => Ok(@mcp.ToolResult::text(res.stringify()))
+        Err(e) =>
+          // 调度失败也降级（不报错）
+          Ok(
             @mcp.ToolResult::text(
               Json::object({
                 "available": Json::boolean(false),
                 "fallback": Json::string("use existing schedule / LLM"),
-                "reason": Json::string(
-                  "机器上未探测到 Laya（python-sidecar 不可用），已降级",
+                "reason": Json::string("laya sidecar 调用失败: \{e}"),
+              }).stringify(),
+            ),
+          )
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "task_cleanup",
+    "归档清理：删除超过保留期的已归档任务。参数：now、retention_days(可选默认30)。",
+    schema(
+      {
+        "now": string_prop("当前时间戳(默认内置)"),
+        "retention_days": int_prop("归档保留天数(可选默认30)"),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ts = get_str(args, "now", default=now_default())
+      let retention_days = get_int(args, "retention_days", default=30)
+      match @ops.cleanup_archived(engine, ts, retention_days~) {
+        Ok(removed) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "removed": Json::array(removed.map(fn(s) { Json::string(s) })),
+                "count": Json::number(removed.length().to_double()),
+                "message": Json::string("已清理过期归档任务"),
+              }).stringify(),
+            ),
+          )
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+
+  // ---- resources ----
+  s1 = s1.resource(
+    "fist://principles",
+    "FIST 七条金条",
+    "FIST-Mbt 的七条不可动摇原则（机器可读 JSON）",
+    "application/json",
+    async fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
+      Ok({
+        uri: "fist://principles",
+        content: @mcp_resource.ResourceContent::Text(
+          @core.principles_json().stringify(),
+        ),
+      })
+    },
+  )
+  s1 = s1.resource(
+    "fist://overview",
+    "任务概览",
+    "当前任务总数与各状态统计",
+    "application/json",
+    async fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
+      Ok({
+        uri: "fist://overview",
+        content: @mcp_resource.ResourceContent::Text(
+          overview_json().stringify(),
+        ),
+      })
+    },
+  )
+
+  // ---- prompts ----
+  s1 = s1.prompt(
+    "fist:check_in",
+    "任务打卡引导：认领/开工前的检查清单",
+    [
+      {
+        name: "task_id",
+        description: Some("要认领/开工的任务 id"),
+        required: Some(true),
+      },
+    ],
+    async fn(args : Json) -> Result[@mcp_types.GetPromptResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      Ok({
+        description: Some("FIST 任务打卡检查清单"),
+        messages: [
+          {
+            role: "user",
+            content: @mcp_types.ContentItem::Text(
+              "请为任务 \{task_id} 打卡。检查：1) 我已确认任务描述与交付标准；2) 我使用 claim 认领、execute 记录交付物；3) 完成后用 submit 提交验收。",
+            ),
+          },
+        ],
+      })
+    },
+  )
+  s1 = s1.prompt(
+    "fist:verify",
+    "验收引导：提交后的验收清单",
+    [
+      {
+        name: "task_id",
+        description: Some("要验收的任务 id"),
+        required: Some(true),
+      },
+    ],
+    async fn(args : Json) -> Result[@mcp_types.GetPromptResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      Ok({
+        description: Some("FIST 任务验收清单"),
+        messages: [
+          {
+            role: "user",
+            content: @mcp_types.ContentItem::Text(
+              "请验收任务 \{task_id}。检查：1) 交付物是否满足描述标准；2) 使用 verify 通过；3) 通过后可用 archive 归档。",
+            ),
+          },
+        ],
+      })
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "dag_publish",
+    "发布带依赖关系的根任务。参数：project_dir、description、depends_on(依赖任务 id JSON 数组)、namespace、created_by、now。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "description": string_prop("任务描述（必填）"),
+        "depends_on": string_prop("依赖任务 id 列表 JSON 数组(可选)"),
+        "namespace": string_prop("命名空间(默认 default)"),
+        "created_by": string_prop("创建者身份(默认 human_steward)"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["project_dir", "description"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let description = get_str(args, "description")
+      let depends_on_raw = get_str(args, "depends_on", default="[]")
+      let ns = get_str(args, "namespace", default="default")
+      let created_by = get_str(args, "created_by", default="human_steward")
+      let ts = get_str(args, "now", default=now_default())
+      let depends_on : Array[String] = try {
+        match @json.parse(depends_on_raw) {
+          Json::Array(a) => a.map(fn(v) { v.as_string().unwrap_or("") })
+          _ => []
+        }
+      } catch {
+        _ => []
+      }
+      let id = match
+        engine.publish_with_deps(
+          project_dir~,
+          description~,
+          depends_on~,
+          created_by~,
+          now=ts,
+          ns~,
+        ) {
+        Ok(id) => id
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "task_id": Json::string(id),
+            "message": Json::string("已发布根任务（带依赖）"),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "dag_critical_path",
+    "返回当前最长依赖链（关键路径）。无参数。",
+    schema({}, []),
+    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let path = engine.critical_path()
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "critical_path": Json::array(path.map(fn(id) { Json::string(id) })),
+            "length": Json::number(path.length().to_double()),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "dag_parallelism",
+    "返回当前可并行执行的任务数（待领取且依赖已满足）。无参数。",
+    schema({}, []),
+    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let n = engine.parallelism()
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({ "parallelism": Json::number(n.to_double()) }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "dag_ascii",
+    "返回当前命名空间任务的 ASCII 依赖结构图。参数：namespace(可选，默认 default)。",
+    schema({ "namespace": string_prop("命名空间(默认 default)") }, []),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let ascii = engine.dag_ascii(ns~)
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "namespace": Json::string(if ns == "" { "default" } else { ns }),
+            "ascii": Json::string(ascii),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "dag_check",
+    "检查某任务的依赖是否全部完成。参数：task_id。",
+    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let ok = engine.deps_satisfied(task_id)
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "task_id": Json::string(task_id),
+            "deps_satisfied": Json::boolean(ok),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "dag_ready",
+    "列出所有依赖满足、可领取的任务。参数：namespace(可选)。",
+    schema({ "namespace": string_prop("命名空间(默认 default)") }, []),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let ready = engine.ready_tasks(ns_filter=ns)
+      Ok(
+        @mcp.ToolResult::text(
+          Json::array(ready.map(fn(t) { t.to_json() })).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "dag_sort",
+    "对任务列表按依赖深度拓扑排序。参数：task_ids(JSON 数组)。",
+    schema(
+      { "task_ids": string_prop("任务 id 列表 JSON 数组（必填）") },
+      ["task_ids"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let raw = get_str(args, "task_ids")
+      let task_ids : Array[String] = try {
+        match @json.parse(raw) {
+          Json::Array(a) => a.map(fn(v) { v.as_string().unwrap_or("") })
+          _ => []
+        }
+      } catch {
+        _ => []
+      }
+      let sorted = engine.topo_sort(task_ids)
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "sorted": Json::array(sorted.map(fn(id) { Json::string(id) })),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+
+  // ---- Omega 验证工具（金条八：一票否决 + verify_fix）----
+  s1 = instrumented_tool(
+    s1,
+    "omega_verify",
+    "批量验证 spec JSON：schema + fingerprint 校验，accuracy < 100% 一票否决。参数：specs(JSON数组，每项 {file_name, content})。",
+    schema(
+      {
+        "specs": array_prop(
+          "spec 数组，每项 {file_name: String, content: String}",
+        ),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let specs_raw = get_array(args, "specs")
+      let spec_files : Array[(String, String)] = []
+      for item in specs_raw {
+        match item.value("file_name") {
+          Some(String(fname)) => {
+            let content = match item.value("content") {
+              Some(String(s)) => s
+              _ => ""
+            }
+            if content != "" {
+              spec_files.push((fname, content))
+            }
+          }
+          _ => ()
+        }
+      }
+      let result = @omega.batch_verify(spec_files)
+      Ok(@mcp.ToolResult::text(result.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "omega_verify_fix",
+    "对失败 spec 做根因分类 → 定向修复 → 回归验证（3 轮循环）。参数：specs(JSON数组，每项 {file_name, content})、max_rounds(可选默认3)。",
+    schema(
+      {
+        "specs": array_prop(
+          "spec 数组，每项 {file_name: String, content: String}",
+        ),
+        "max_rounds": int_prop("最大修复轮次(可选默认3)"),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let specs_raw = get_array(args, "specs")
+      let max_rounds = get_int(args, "max_rounds", default=3)
+      let all_spec_contents : Array[(String, String)] = []
+      for item in specs_raw {
+        match item.value("file_name") {
+          Some(String(fname)) => {
+            let content = match item.value("content") {
+              Some(String(s)) => s
+              _ => ""
+            }
+            if content != "" {
+              all_spec_contents.push((fname, content))
+            }
+          }
+          _ => ()
+        }
+      }
+      // 第一轮：批量验证获取失败项
+      let verify_result = @omega.batch_verify(all_spec_contents)
+      let failed_results : Array[Json] = []
+      match verify_result.value("failed_details") {
+        Some(Array(fd)) =>
+          for fr in fd {
+            failed_results.push(fr)
+          }
+        _ => ()
+      }
+      // 修复循环
+      let fix_result = @omega.batch_verify_fix(failed_results, max_rounds~)
+      Ok(@mcp.ToolResult::text(fix_result.stringify()))
+    },
+  )
+
+  // ---- 成本统计工具 ----
+  s1 = instrumented_tool(
+    s1,
+    "cost_stats",
+    "执行成本聚合统计。参数：无。返回：total_records/total_cost/total_tokens_in/total_tokens_out/by_executor。",
+    schema({}, []),
+    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      Ok(@mcp.ToolResult::text(engine.cost_stats().stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "cost_budget_check",
+    "预算超限告警。参数：limit(预算上限)、current(当前消耗)。返回：{exceeded, remaining, action}。",
+    schema(
+      {
+        "limit": number_prop("预算上限（必填）"),
+        "current": number_prop("当前消耗（必填）"),
+      },
+      ["limit", "current"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let result = @engine.budget_check_json(args)
+      Ok(@mcp.ToolResult::text(result.stringify()))
+    },
+  )
+
+  // ---- 调度预览工具 ----
+  s1 = instrumented_tool(
+    s1,
+    "schedule",
+    "调度预览：根据任务描述自适应计算分级/拆分/成本档/执行器（不落库）。参数：description(必填)、n_files(可选默认1)。",
+    schema(
+      {
+        "description": string_prop("任务描述（必填）"),
+        "n_files": int_prop("涉及文件数(可选默认1)"),
+      },
+      ["description"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let desc = get_str(args, "description")
+      if desc == "" {
+        return Err(@mcp_types.ToolError("description 不能为空"))
+      }
+      let n_files = get_int(args, "n_files", default=1)
+      let result = @engine.schedule_json(
+        Json::object({
+          "description": Json::string(desc),
+          "n_files": Json::number(n_files.to_double()),
+        }),
+      )
+      Ok(@mcp.ToolResult::text(result.stringify()))
+    },
+  )
+
+  // ---- 审计工具 ----
+  s1 = instrumented_tool(
+    s1,
+    "audit_permission",
+    "查询某角色是否可执行指定操作。参数：role(human_steward/leader/agent)、操作名(publish/archive/delete/claim)。",
+    schema(
+      {
+        "role": string_prop("角色名（必填）"),
+        "action": string_prop("操作名（必填）"),
+      },
+      ["role", "action"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let role_s = get_str(args, "role")
+      let action = get_str(args, "action")
+      match @ops.Role::from_string(role_s) {
+        None =>
+          Err(
+            @mcp_types.ToolError(
+              "未知角色: \{role_s}，合法值：human_steward / leader / agent",
+            ),
+          )
+        Some(role) =>
+          match @ops.enforce(action~, role~) {
+            Ok(_) =>
+              Ok(
+                @mcp.ToolResult::text(
+                  Json::object({
+                    "role": Json::string(role_s),
+                    "action": Json::string(action),
+                    "allowed": Json::boolean(true),
+                  }).stringify(),
+                ),
+              )
+            Err(msg) =>
+              Ok(
+                @mcp.ToolResult::text(
+                  Json::object({
+                    "role": Json::string(role_s),
+                    "action": Json::string(action),
+                    "allowed": Json::boolean(false),
+                    "message": Json::string(msg),
+                  }).stringify(),
+                ),
+              )
+          }
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "audit_log",
+    "查看追加式审计日志。可选 filter_actor、filter_task_id；now 仅用于兼容忽略。",
+    schema(
+      {
+        "filter_actor": string_prop("按操作者过滤(可选)"),
+        "filter_task_id": string_prop("按任务 id 过滤(可选)"),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let fa = get_str(args, "filter_actor", default="")
+      let ft = get_str(args, "filter_task_id", default="")
+      let entries = if fa != "" {
+        audit.by_actor(fa)
+      } else if ft != "" {
+        audit.by_task(ft)
+      } else {
+        audit.entries()
+      }
+      Ok(@mcp.ToolResult::text(audit.to_json().stringify()))
+    },
+  )
+  // ---- multi-store 命名空间工具 ----
+  s1 = instrumented_tool(
+    s1,
+    "store_open",
+    "打开（或复用）一个命名空间。参数：namespace、data_dir(可选，默认当前目录)。",
+    schema(
+      {
+        "namespace": string_prop("命名空间（必填）"),
+        "data_dir": string_prop(
+          "库文件根目录(可选，默认当前目录)",
+        ),
+      },
+      ["namespace"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace")
+      let dir = get_str(args, "data_dir", default=".")
+      match mstore.open(ns~, data_dir=dir) {
+        false => Err(@mcp_types.ToolError("打开命名空间失败: \{ns}"))
+        true =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "namespace": Json::string(ns),
+                "opened": Json::boolean(true),
+                "active_namespaces": Json::array(
+                  mstore.ns_list().map(fn(s) { Json::string(s) }),
                 ),
               }).stringify(),
             ),
           )
-        }
-        // 2) 可用 → 调 sidecar 决策
-        let questions_json : Json = if questions_raw == "" {
-          Json::null()
-        } else {
-          @json.parse(questions_raw) catch {
-            _ => Json::null()
-          }
-        }
-        let input_json = Json::object({
-          "context": Json::string(context),
-          "questions": questions_json,
-          "model": Json::string(model),
-        }).stringify()
-        match
-          laya_decide_external(
-            "python",
-            ["scripts/laya_decide.py"],
-            ".",
-            input_json,
-            300000,
-          ) {
-          Ok(res) => Ok(@mcp.ToolResult::text(res.stringify()))
-          Err(e) =>
-            // 调度失败也降级（不报错）
-            Ok(
-              @mcp.ToolResult::text(
-                Json::object({
-                  "available": Json::boolean(false),
-                  "fallback": Json::string("use existing schedule / LLM"),
-                  "reason": Json::string("laya sidecar 调用失败: \{e}"),
-                }).stringify(),
-              ),
-            )
-        }
-      },
-    )
-    .tool(
-      "task_cleanup",
-      "归档清理：删除超过保留期的已归档任务。参数：now、retention_days(可选默认30)。",
-      schema(
-        {
-          "now": string_prop("当前时间戳(默认内置)"),
-          "retention_days": int_prop("归档保留天数(可选默认30)"),
-        },
-        [],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let ts = get_str(args, "now", default=now_default())
-        let retention_days = get_int(args, "retention_days", default=30)
-        match @ops.cleanup_archived(engine, ts, retention_days~) {
-          Ok(removed) =>
-            Ok(
-              @mcp.ToolResult::text(
-                Json::object({
-                  "removed": Json::array(removed.map(fn(s) { Json::string(s) })),
-                  "count": Json::number(removed.length().to_double()),
-                  "message": Json::string("已清理过期归档任务"),
-                }).stringify(),
-              ),
-            )
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
-      },
-    )
-
-    // ---- resources ----
-    .resource(
-      "fist://principles",
-      "FIST 七条金条",
-      "FIST-Mbt 的七条不可动摇原则（机器可读 JSON）",
-      "application/json",
-      async fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
-        Ok({
-          uri: "fist://principles",
-          content: @mcp_resource.ResourceContent::Text(
-            @core.principles_json().stringify(),
-          ),
-        })
-      },
-    )
-    .resource(
-      "fist://overview",
-      "任务概览",
-      "当前任务总数与各状态统计",
-      "application/json",
-      async fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
-        Ok({
-          uri: "fist://overview",
-          content: @mcp_resource.ResourceContent::Text(
-            overview_json().stringify(),
-          ),
-        })
-      },
-    )
-
-    // ---- prompts ----
-    .prompt(
-      "fist:check_in",
-      "任务打卡引导：认领/开工前的检查清单",
-      [
-        {
-          name: "task_id",
-          description: Some("要认领/开工的任务 id"),
-          required: Some(true),
-        },
-      ],
-      async fn(
-        args : Json,
-      ) -> Result[@mcp_types.GetPromptResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        Ok({
-          description: Some("FIST 任务打卡检查清单"),
-          messages: [
-            {
-              role: "user",
-              content: @mcp_types.ContentItem::Text(
-                "请为任务 \{task_id} 打卡。检查：1) 我已确认任务描述与交付标准；2) 我使用 claim 认领、execute 记录交付物；3) 完成后用 submit 提交验收。",
-              ),
-            },
-          ],
-        })
-      },
-    )
-    .prompt(
-      "fist:verify",
-      "验收引导：提交后的验收清单",
-      [
-        {
-          name: "task_id",
-          description: Some("要验收的任务 id"),
-          required: Some(true),
-        },
-      ],
-      async fn(
-        args : Json,
-      ) -> Result[@mcp_types.GetPromptResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        Ok({
-          description: Some("FIST 任务验收清单"),
-          messages: [
-            {
-              role: "user",
-              content: @mcp_types.ContentItem::Text(
-                "请验收任务 \{task_id}。检查：1) 交付物是否满足描述标准；2) 使用 verify 通过；3) 通过后可用 archive 归档。",
-              ),
-            },
-          ],
-        })
-      },
-    )
-    .tool(
-      "dag_publish",
-      "发布带依赖关系的根任务。参数：project_dir、description、depends_on(依赖任务 id JSON 数组)、namespace、created_by、now。",
-      schema(
-        {
-          "project_dir": string_prop("项目目录（必填）"),
-          "description": string_prop("任务描述（必填）"),
-          "depends_on": string_prop(
-            "依赖任务 id 列表 JSON 数组(可选)",
-          ),
-          "namespace": string_prop("命名空间(默认 default)"),
-          "created_by": string_prop("创建者身份(默认 human_steward)"),
-          "now": string_prop("时间戳(可选)"),
-        },
-        ["project_dir", "description"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let project_dir = get_str(args, "project_dir")
-        let description = get_str(args, "description")
-        let depends_on_raw = get_str(args, "depends_on", default="[]")
-        let ns = get_str(args, "namespace", default="default")
-        let created_by = get_str(args, "created_by", default="human_steward")
-        let ts = get_str(args, "now", default=now_default())
-        let depends_on : Array[String] = try {
-          match @json.parse(depends_on_raw) {
-            Json::Array(a) => a.map(fn(v) { v.as_string().unwrap_or("") })
-            _ => []
-          }
-        } catch {
-          _ => []
-        }
-        let id = match
-          engine.publish_with_deps(
-            project_dir~,
-            description~,
-            depends_on~,
-            created_by~,
-            now=ts,
-            ns~,
-          ) {
-          Ok(id) => id
-          Err(e) => return Err(@mcp_types.ToolError(e))
-        }
-        Ok(
-          @mcp.ToolResult::text(
-            Json::object({
-              "task_id": Json::string(id),
-              "message": Json::string("已发布根任务（带依赖）"),
-            }).stringify(),
-          ),
-        )
-      },
-    )
-    .tool(
-      "dag_critical_path",
-      "返回当前最长依赖链（关键路径）。无参数。",
-      schema({}, []),
-      async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let path = engine.critical_path()
-        Ok(
-          @mcp.ToolResult::text(
-            Json::object({
-              "critical_path": Json::array(
-                path.map(fn(id) { Json::string(id) }),
-              ),
-              "length": Json::number(path.length().to_double()),
-            }).stringify(),
-          ),
-        )
-      },
-    )
-    .tool(
-      "dag_parallelism",
-      "返回当前可并行执行的任务数（待领取且依赖已满足）。无参数。",
-      schema({}, []),
-      async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let n = engine.parallelism()
-        Ok(
-          @mcp.ToolResult::text(
-            Json::object({ "parallelism": Json::number(n.to_double()) }).stringify(),
-          ),
-        )
-      },
-    )
-    .tool(
-      "dag_ascii",
-      "返回当前命名空间任务的 ASCII 依赖结构图。参数：namespace(可选，默认 default)。",
-      schema({ "namespace": string_prop("命名空间(默认 default)") }, []),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let ns = get_str(args, "namespace", default="default")
-        let ascii = engine.dag_ascii(ns~)
-        Ok(
-          @mcp.ToolResult::text(
-            Json::object({
-              "namespace": Json::string(if ns == "" { "default" } else { ns }),
-              "ascii": Json::string(ascii),
-            }).stringify(),
-          ),
-        )
-      },
-    )
-    .tool(
-      "dag_check",
-      "检查某任务的依赖是否全部完成。参数：task_id。",
-      schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let task_id = get_str(args, "task_id")
-        let ok = engine.deps_satisfied(task_id)
-        Ok(
-          @mcp.ToolResult::text(
-            Json::object({
-              "task_id": Json::string(task_id),
-              "deps_satisfied": Json::boolean(ok),
-            }).stringify(),
-          ),
-        )
-      },
-    )
-    .tool(
-      "dag_ready",
-      "列出所有依赖满足、可领取的任务。参数：namespace(可选)。",
-      schema({ "namespace": string_prop("命名空间(默认 default)") }, []),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let ns = get_str(args, "namespace", default="default")
-        let ready = engine.ready_tasks(ns_filter=ns)
-        Ok(
-          @mcp.ToolResult::text(
-            Json::array(ready.map(fn(t) { t.to_json() })).stringify(),
-          ),
-        )
-      },
-    )
-    .tool(
-      "dag_sort",
-      "对任务列表按依赖深度拓扑排序。参数：task_ids(JSON 数组)。",
-      schema(
-        { "task_ids": string_prop("任务 id 列表 JSON 数组（必填）") },
-        ["task_ids"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let raw = get_str(args, "task_ids")
-        let task_ids : Array[String] = try {
-          match @json.parse(raw) {
-            Json::Array(a) => a.map(fn(v) { v.as_string().unwrap_or("") })
-            _ => []
-          }
-        } catch {
-          _ => []
-        }
-        let sorted = engine.topo_sort(task_ids)
-        Ok(
-          @mcp.ToolResult::text(
-            Json::object({
-              "sorted": Json::array(sorted.map(fn(id) { Json::string(id) })),
-            }).stringify(),
-          ),
-        )
-      },
-    )
-
-    // ---- Omega 验证工具（金条八：一票否决 + verify_fix）----
-    .tool(
-      "omega_verify",
-      "批量验证 spec JSON：schema + fingerprint 校验，accuracy < 100% 一票否决。参数：specs(JSON数组，每项 {file_name, content})。",
-      schema(
-        {
-          "specs": array_prop(
-            "spec 数组，每项 {file_name: String, content: String}",
-          ),
-        },
-        [],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let specs_raw = get_array(args, "specs")
-        let spec_files : Array[(String, String)] = []
-        for item in specs_raw {
-          match item.value("file_name") {
-            Some(String(fname)) => {
-              let content = match item.value("content") {
-                Some(String(s)) => s
-                _ => ""
-              }
-              if content != "" {
-                spec_files.push((fname, content))
-              }
-            }
-            _ => ()
-          }
-        }
-        let result = @omega.batch_verify(spec_files)
-        Ok(@mcp.ToolResult::text(result.stringify()))
-      },
-    )
-    .tool(
-      "omega_verify_fix",
-      "对失败 spec 做根因分类 → 定向修复 → 回归验证（3 轮循环）。参数：specs(JSON数组，每项 {file_name, content})、max_rounds(可选默认3)。",
-      schema(
-        {
-          "specs": array_prop(
-            "spec 数组，每项 {file_name: String, content: String}",
-          ),
-          "max_rounds": int_prop("最大修复轮次(可选默认3)"),
-        },
-        [],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let specs_raw = get_array(args, "specs")
-        let max_rounds = get_int(args, "max_rounds", default=3)
-        let all_spec_contents : Array[(String, String)] = []
-        for item in specs_raw {
-          match item.value("file_name") {
-            Some(String(fname)) => {
-              let content = match item.value("content") {
-                Some(String(s)) => s
-                _ => ""
-              }
-              if content != "" {
-                all_spec_contents.push((fname, content))
-              }
-            }
-            _ => ()
-          }
-        }
-        // 第一轮：批量验证获取失败项
-        let verify_result = @omega.batch_verify(all_spec_contents)
-        let failed_results : Array[Json] = []
-        match verify_result.value("failed_details") {
-          Some(Array(fd)) =>
-            for fr in fd {
-              failed_results.push(fr)
-            }
-          _ => ()
-        }
-        // 修复循环
-        let fix_result = @omega.batch_verify_fix(failed_results, max_rounds~)
-        Ok(@mcp.ToolResult::text(fix_result.stringify()))
-      },
-    )
-
-    // ---- 成本统计工具 ----
-    .tool(
-      "cost_stats",
-      "执行成本聚合统计。参数：无。返回：total_records/total_cost/total_tokens_in/total_tokens_out/by_executor。",
-      schema({}, []),
-      async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        Ok(@mcp.ToolResult::text(engine.cost_stats().stringify()))
-      },
-    )
-    .tool(
-      "cost_budget_check",
-      "预算超限告警。参数：limit(预算上限)、current(当前消耗)。返回：{exceeded, remaining, action}。",
-      schema(
-        {
-          "limit": number_prop("预算上限（必填）"),
-          "current": number_prop("当前消耗（必填）"),
-        },
-        ["limit", "current"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let result = @engine.budget_check_json(args)
-        Ok(@mcp.ToolResult::text(result.stringify()))
-      },
-    )
-
-    // ---- 调度预览工具 ----
-    .tool(
-      "schedule",
-      "调度预览：根据任务描述自适应计算分级/拆分/成本档/执行器（不落库）。参数：description(必填)、n_files(可选默认1)。",
-      schema(
-        {
-          "description": string_prop("任务描述（必填）"),
-          "n_files": int_prop("涉及文件数(可选默认1)"),
-        },
-        ["description"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let desc = get_str(args, "description")
-        if desc == "" {
-          return Err(@mcp_types.ToolError("description 不能为空"))
-        }
-        let n_files = get_int(args, "n_files", default=1)
-        let result = @engine.schedule_json(
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "store_list",
+    "列出当前已打开的命名空间及任务数。无参数。",
+    schema({}, []),
+    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let list = mstore.ns_list()
+      let stats = mstore.ns_stats()
+      Ok(
+        @mcp.ToolResult::text(
           Json::object({
-            "description": Json::string(desc),
-            "n_files": Json::number(n_files.to_double()),
-          }),
-        )
-        Ok(@mcp.ToolResult::text(result.stringify()))
-      },
-    )
+            "active_namespaces": Json::array(
+              list.map(fn(s) { Json::string(s) }),
+            ),
+            "stats": stats,
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "store_close",
+    "关闭指定命名空间（不删除物理库文件）。参数：namespace。",
+    schema({ "namespace": string_prop("命名空间（必填）") }, [
+      "namespace",
+    ]),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace")
+      mstore.close(ns)
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "namespace": Json::string(ns),
+            "closed": Json::boolean(true),
+            "active_namespaces": Json::array(
+              mstore.ns_list().map(fn(s) { Json::string(s) }),
+            ),
+          }).stringify(),
+        ),
+      )
+    },
+  )
 
-    // ---- 审计工具 ----
-    .tool(
-      "audit_permission",
-      "查询某角色是否可执行指定操作。参数：role(human_steward/leader/agent)、操作名(publish/archive/delete/claim)。",
-      schema(
-        {
-          "role": string_prop("角色名（必填）"),
-          "action": string_prop("操作名（必填）"),
-        },
-        ["role", "action"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let role_s = get_str(args, "role")
-        let action = get_str(args, "action")
-        match @ops.Role::from_string(role_s) {
-          None =>
-            Err(
-              @mcp_types.ToolError(
-                "未知角色: \{role_s}，合法值：human_steward / leader / agent",
-              ),
-            )
-          Some(role) =>
-            match @ops.enforce(action~, role~) {
-              Ok(_) =>
-                Ok(
-                  @mcp.ToolResult::text(
-                    Json::object({
-                      "role": Json::string(role_s),
-                      "action": Json::string(action),
-                      "allowed": Json::boolean(true),
-                    }).stringify(),
-                  ),
-                )
-              Err(msg) =>
-                Ok(
-                  @mcp.ToolResult::text(
-                    Json::object({
-                      "role": Json::string(role_s),
-                      "action": Json::string(action),
-                      "allowed": Json::boolean(false),
-                      "message": Json::string(msg),
-                    }).stringify(),
-                  ),
-                )
-            }
-        }
+  s1 = instrumented_tool(
+    s1,
+    "call_log",
+    "查询最近的调用日志（call_log 表）。参数：limit(可选，默认50)。返回最近工具调用记录（seq/ts/tool/caller/ns/params/result/ok/runtime_ms，新的在前）。用于复盘'是哪次调用+入参+结果产生了 bug'。",
+    schema({ "limit": int_prop("返回条数(可选默认50)") }, []),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let limit = get_int(args, "limit", default=50)
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "count": Json::number(
+              engine.store_recent_call_logs(limit~).length().to_double(),
+            ),
+            "calls": Json::array(engine.store_recent_call_logs(limit~)),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "report_bug",
+    "上报一个运行时 bug：追加到 {project_dir}/memory/bugs.md（OPEN 状态账本）。参数：project_dir(必填)、summary(必填)、detail(可选)、severity(可选 open/critical/high/medium/low)、ref_call_id(可选，指向 call_log 的 seq)、reported_by(可选)、publish_task(可选默认false)：为 true 时同时把'修复 bug: <summary>'发布为 bugs 命名空间下的独立根任务，供自驱/定时流水线认领修复，形成上报→修复闭环。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "summary": string_prop("bug 摘要（必填）"),
+        "detail": string_prop("详细描述(可选)"),
+        "severity": string_prop(
+          "严重度(可选)：open/critical/high/medium/low",
+        ),
+        "ref_call_id": string_prop("关联 call_log seq(可选)"),
+        "reported_by": string_prop("上报者(可选)"),
+        "publish_task": bool_prop(
+          "是否发布修复根任务(可选默认false)",
+        ),
+        "now": string_prop("时间戳(可选，默认内置)"),
       },
-    )
-    .tool(
-      "audit_log",
-      "查看追加式审计日志。可选 filter_actor、filter_task_id；now 仅用于兼容忽略。",
-      schema(
-        {
-          "filter_actor": string_prop("按操作者过滤(可选)"),
-          "filter_task_id": string_prop("按任务 id 过滤(可选)"),
-        },
-        [],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let fa = get_str(args, "filter_actor", default="")
-        let ft = get_str(args, "filter_task_id", default="")
-        let entries = if fa != "" {
-          audit.by_actor(fa)
-        } else if ft != "" {
-          audit.by_task(ft)
-        } else {
-          audit.entries()
-        }
-        Ok(@mcp.ToolResult::text(audit.to_json().stringify()))
-      },
-    )
-    // ---- multi-store 命名空间工具 ----
-    .tool(
-      "store_open",
-      "打开（或复用）一个命名空间。参数：namespace、data_dir(可选，默认当前目录)。",
-      schema(
-        {
-          "namespace": string_prop("命名空间（必填）"),
-          "data_dir": string_prop(
-            "库文件根目录(可选，默认当前目录)",
-          ),
-        },
-        ["namespace"],
-      ),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let ns = get_str(args, "namespace")
-        let dir = get_str(args, "data_dir", default=".")
-        match mstore.open(ns~, data_dir=dir) {
-          false => Err(@mcp_types.ToolError("打开命名空间失败: \{ns}"))
-          true =>
-            Ok(
-              @mcp.ToolResult::text(
-                Json::object({
-                  "namespace": Json::string(ns),
-                  "opened": Json::boolean(true),
-                  "active_namespaces": Json::array(
-                    mstore.ns_list().map(fn(s) { Json::string(s) }),
-                  ),
-                }).stringify(),
-              ),
-            )
-        }
-      },
-    )
-    .tool(
-      "store_list",
-      "列出当前已打开的命名空间及任务数。无参数。",
-      schema({}, []),
-      async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let list = mstore.ns_list()
-        let stats = mstore.ns_stats()
-        Ok(
-          @mcp.ToolResult::text(
-            Json::object({
-              "active_namespaces": Json::array(
-                list.map(fn(s) { Json::string(s) }),
-              ),
-              "stats": stats,
-            }).stringify(),
-          ),
-        )
-      },
-    )
-    .tool(
-      "store_close",
-      "关闭指定命名空间（不删除物理库文件）。参数：namespace。",
-      schema({ "namespace": string_prop("命名空间（必填）") }, [
-        "namespace",
-      ]),
-      async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-        let ns = get_str(args, "namespace")
-        mstore.close(ns)
-        Ok(
-          @mcp.ToolResult::text(
-            Json::object({
-              "namespace": Json::string(ns),
-              "closed": Json::boolean(true),
-              "active_namespaces": Json::array(
-                mstore.ns_list().map(fn(s) { Json::string(s) }),
-              ),
-            }).stringify(),
-          ),
-        )
-      },
-    )
+      ["project_dir", "summary"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let summary = get_str(args, "summary")
+      let detail = get_str(args, "detail")
+      let severity = get_str(args, "severity")
+      let ref_call_id = get_str(args, "ref_call_id")
+      let reported_by = get_str(args, "reported_by")
+      let publish_task = get_bool(args, "publish_task", default=false)
+      let ts = get_str(args, "now", default=now_default())
+      match
+        report_bug(
+          project_dir,
+          summary,
+          detail~,
+          severity~,
+          ref_call_id~,
+          reported_by~,
+          publish_task~,
+          engine,
+          now=ts,
+        ) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "bug_list",
+    "列出 {project_dir}/memory/bugs.md 里的 bug 条目（{id,ts,severity,status,summary}）。用于自驱流水线扫描待修复 bug 并认领。参数：project_dir(必填)。",
+    schema({ "project_dir": string_prop("项目目录（必填）") }, [
+      "project_dir",
+    ]),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      match bug_list(project_dir) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
 
   // 默认 stdio 传输（MCP 标准模式）。
   run_stdio_target(s1)
