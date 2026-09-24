@@ -131,6 +131,10 @@ evolve_sample { rand:0.5 }   // 高分配偶 v3 更可能被选中作为下一�
 - **`omega_verify` / Omega gate**：schema + fingerprint 校验，accuracy < 100% 一票否决；
 - 在调用 `evolve_submit` 前先跑判据拿到 `score`，再入库——保证"评分数值可复现、非 LLM 自评"。
 
+## 六·一、自我调研（self_search，调研先行能力）
+
+`src/evolve/self_search.mbt` 把「凡与目标功能相关都应先调研，对外部库/论文搜索→评估可移植性后融入」固化成分层候选分析：`analyze_candidate` 清洗去重键、`is_duplicate_candidate` 按 (name, source) 判重、`assess_portability` 用可移植动作词做启发式、`distill_candidates` 去重+过滤+按 source 有序输出。外部搜索不内置网络，经注入点 `run_external_search` + `set_search_runner` 委托上层执行，不硬编码路径。
+
 ## 七、边界与注意
 
 - 当前 MCP 的 Archive 是**进程内**状态，重启后清空；如需持久化，调用 store 层 `evolve_upsert / evolve_list / evolve_bump_child`（表 `evolve_artifacts`）。

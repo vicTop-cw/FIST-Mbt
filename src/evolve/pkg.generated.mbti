@@ -2,7 +2,17 @@
 package "vicTop-cw/fist-mbt/src/evolve"
 
 // Values
+pub fn analyze_candidate(String, String, String, String) -> SearchCandidate
+
+pub fn assess_portability(SearchCandidate) -> Bool
+
+pub fn distill_candidates(Array[SearchCandidate]) -> Array[SearchCandidate]
+
+pub fn is_duplicate_candidate(SearchCandidate, SearchCandidate) -> Bool
+
 pub fn is_robust(Double, floor? : Double) -> Bool
+
+pub fn run_external_search(String, Array[String], runner? : ((String, Array[String]) -> Result[String, String])?) -> Result[String, String]
 
 pub fn score_accept(Double, threshold? : Double) -> Bool
 
@@ -46,6 +56,14 @@ pub fn Artifact::create(id~ : String, parent_id~ : String?, goal~ : String, note
 pub fn Artifact::from_json(Json) -> Self
 pub fn Artifact::to_json(Self) -> Json
 pub fn Artifact::with_children(Self, Int) -> Self
+
+pub struct SearchCandidate {
+  name : String
+  title : String
+  source : String
+  mechanism : String
+  portable : Bool
+}
 
 // Type aliases
 
