@@ -1,29 +1,46 @@
----
-topics: [backlog]
-doc_kind: note
-created: 2026-09-24
----
+# fist-mbt BACKLOG（P 优先级待办队列）
 
-# Feature Roadmap
+> 本文档为 selfdrive 审视/门禁的净拉取源：Next Tasks 应从这里取。
+> 由三份调研去重收敛生成：`memory/research/competition.md`、`memory/research/five-directions.md`、`memory/research/future-roadmap.md`。
+> 状态枚举 `pending | done`。锚点事实：61 工具 / 148 测试 / JS+Native 双端全绿 / CI 三绿 / evolve 已在测试内。
 
-> **Rules**: Only active Features (idea/spec/in-progress/review). Move to done after completion.
-> Details in `docs/features/Fxxx-*.md`.
+| P级 | 事项 | 来源 | 状态 | 对应review/commit |
+|-----|------|------|------|-------------------|
+| P0 | 补「30 秒体验」一键演示：README 段落 + scripts/demo 一键脚本（一行命令通起），对冲 MCP 接线门槛 | competition/§四 P0-4 + future-roadmap/近 | pending | - |
+| P0 | 清理 README 顶部 AIGC 元数据标记，避免被误判为纯 AI 生成 | competition/§四 P0-2 + future-roadmap/近 | pending | - |
+| P0 | 升级 moonbitlang/async 至 0.22.3（处理 Headers breaking change）并升 x 至 0.5.5 | competition/§四 P0-3 | pending | - |
+| P0 | 创建 scoring.mbt P0（coverage/fingerprint_ok/schema_ok/accuracy 分项评分，≥7 测试）打通自进化闭环 | competition/§四 P1-5 + future-roadmap/近 | pending | - |
+| P0 | 验证 evolve 模块构建+测试（已并入 148 测试内、双端全绿、CI 三轨道绿） | competition/§四 P0-1 | done | commit `88a781f` |
+| P1 | 下一页项目申报书 PDF（方向/价值/亮点/生态贡献/验证步骤），补齐第一印象材料 | competition/§四 P1-6 + future-roadmap/近 | pending | - |
+| P1 | 在 mooncakes.io 发布（moon publish），坐实生态贡献 | competition/§四 P1-7 + future-roadmap/近 | pending | - |
+| P1 | Agent Contract 7 字段：Objective/Constraints/Tool policy/Stop conditions/Escalation/State discipline/Evidence 注入 ops_selfdrive | five-directions/§一 | pending | - |
+| P1 | Tool Use Rubric：pipeline 生成 prompt 时注入工具使用硬规则降 tool 幻觉 | five-directions/§一 | pending | - |
+| P1 | "Did it work?" 输出验证：除"是否运行"外校验输出是否有效 | five-directions/§一 | pending | - |
+| P2 | 局部补偿替代全局 replanning：history-aware local compensation 控级联效应 | five-directions/§一 | pending | - |
+| P2 | 全局目标校验：每子任务完成后校验是否偏离根目标（non-redundancy） | five-directions/§一 | pending | - |
+| P2 | 集成 moonbitlang/core/quickcheck 属性测试替代部分硬编码断言 | competition/§四 P2-8 + five-directions/§六 + future-roadmap/中 | pending | - |
+| P2 | 评估 mizchi/llm 纯 MoonBit 客户端替代 Python sidecar（进一步纯化） | competition/§四 P2-9 + §六 + future-roadmap/中 | pending | - |
+| P2 | 补充 ARCHITECTURE.md（9 模块关系图 + 数据流 + MCP 协议层），降低概念门槛 | competition/§四 P2-10 + future-roadmap/中 | pending | - |
+| P2 | Interleaved 分支：据子任务执行反馈回退改 plan，而非拆完即弃 | five-directions/§一 | pending | - |
+| P2 | Transactional transition：invariant 失败整笔拒绝、状态 A 回稳 | five-directions/§一 | pending | - |
+| P2 | Pre-execution audit gate：can_execute 之后、execute 之前插入 gate interception | five-directions/§一 | pending | - |
+| P2 | Evaluator-Optimizer schema：feedback 收敛为 Defects/Evidence/Fix/Acceptance 四段式 | five-directions/§一 | pending | - |
+| P2 | 多维度健康指标：除存活外检查 CPU/内存/任务积压/最近成功（4 类检查） | five-directions/§一 | pending | - |
+| P2 | Circuit Breaker 三态：Closed/Open/Half-Open 对外部调用快速失败 | five-directions/§一 | pending | - |
+| P2 | 集成 moonbitlang/core/diff 展示报告对比、测试 diff | competition/§六 + future-roadmap/中 | pending | - |
+| P2 | Dashboard/ASCII 可视化输出（状态流转、DAG 依赖图 JSON→图） | future-roadmap/中 | pending | - |
+| P3 | 创建 P5 self_search.mbt（search_external + analyze_mechanism + portability_assessment 外部检索入库） | competition/§四 P3-11 + future-roadmap/远 | pending | - |
+| P3 | 补充 English README（面向 Lambda World 2026 国际受众） | competition/§四 P3-12 + future-roadmap/近 | pending | - |
+| P3 | 里程碑式渐进：decompose 前先生成粗粒度里程碑再逐步细化 | five-directions/§一 | pending | - |
+| P3 | 可编程策略集：将 Omega gate 8 种 $assert 扩展为支持用户自定义 invariant | five-directions/§一 | pending | - |
+| P3 | Runtime monitoring：按执行 trace 对 LTL 属性低开销认证 | five-directions/§一 | pending | - |
+| P3 | 毫秒级符号逻辑引擎按布尔约束拦截 planned action | five-directions/§一 | pending | - |
+| P3 | Phi Accrual 概率式检测：按心跳历史分布算 φ 值替代固定 timeout | five-directions/§一 | pending | - |
+| P3 | Saga 补偿事务 + durable action log：并发动作前写 append-only 日志、失败按 LIFO 补偿 | five-directions/§一 | pending | - |
+| P3 | Scoring 驱动的自动进化闭环（mutation/skill_lib/curriculum）无人值守自进化 | future-roadmap/远 | pending | - |
+| P3 | 与 moonclaw/posoco/官方 MCP SDK 差异化共处：定位"完整 MCP Server+编排+自进化" | future-roadmap/远 | pending | - |
+| - | gaato/github API 客户端，供 self_search 模块使用 | competition/§六 | pending | - |
+| - | colmugx/posoco 参考 Agent 框架六边形架构设计 | competition/§六 | pending | - |
+| - | colmugx/mcp 已依赖（fist-mbt MCP 协议库），保留 | competition/§六 | done | - |
 
-## Done
-
-| # | Feature | Status | Owner | Link |
-|---|---------|--------|-------|------|
-| F000 | AI 自驱式编程 MCP 功能（selfdrive_* 8 工具 + memory 四件套 + 审视轮闭环） | done | fist-mbt | `docs/features/F000-selfdrive.md` |
-| F001 | list 工具增加 namespace 过滤参数 | done | fist-mbt | `docs/features/F001-list-namespace.md` |
-| F002 | list 状态过滤 + 命名空间隔离盲区优化 | done | fist-mbt | `docs/features/F001-list-namespace.md` |
-| F003 | reopen_task 暴露为 MCP 运维工具 | done | fist-mbt | `docs/features/F003-reopen-task.md` |
-| F004 | selfdrive 审视闭环接入 watchdog_tick 单入口 | done | fist-mbt | `docs/features/F004-selfdrive-watchdog.md` |
-| F005 | 根任务 id 生成并发防死循环保护 | done | fist-mbt | `docs/features/F005-id-concurrency.md` |
-| F006 | 测试 temp/ 残留污染修复（用例幂等可重复跑） | done | fist-mbt | `docs/features/F006-test-residue.md` |
-| F007 | native 构建 sqlite3.h 环境要求文档 | done | fist-mbt | `docs/features/F007-native-env.md` |
-| F008 | DGM 档案库（evolve 模块：p∝s·h 采样 + Jaccard 查重 + novelty + lineage + MCP 工具） | done | fist-mbt | `docs/features/F008-evolve.md` · `docs/evolve.md` |
-| F009 | Laya 可选外部决策工具（laya_decide：自动探测 + 难度/领域/工具/敏感结构化决策 + 降级；task_plan_deep 支持 laya_auto 自动选档） | done | fist-mbt | `docs/laya.md` |
-
-> F000-F008 由 fist-mbt 自身功能（publish_parallel + watchdog_tick 自驱整合）驱动完成。
-
-*（内容由AI生成，仅供参考）*
+> 去重说明：competition/§四 与 five-directions/§一、future-roadmap 各方向的重复项（如 quickcheck、mizchi/llm、ARCHITECTURE、self_search、英文 README）已按主题合并为单行；状态以当前源码/记忆库是否确认实现为准，未确认一律 pending，待逐项核对后再转 done 或删除。
