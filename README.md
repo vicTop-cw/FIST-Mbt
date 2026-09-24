@@ -398,6 +398,8 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 - **`node:sqlite` 实验性警告**：JS 后端走 `node:sqlite`，Node ≥ 24 下运行会打印 `ExperimentalWarning: SQLite is an experimental feature`——功能正常、无碍，可忽略（或 `--no-warnings`）。
 - **环境三件事**：Node ≥ 24（JS 后端必需）、首次 `moon update`（刷新 registry）、native 需系统 SQLite（Linux `libsqlite3-dev`；Windows `sqlite3.h/sqlite3.lib` + MSVC）。
 - **native 双端**：全部 `moon.pkg` 已内置 `-lsqlite3`；Windows + Linux 均已 136/136 全绿。
+- **Windows native 并行测试偶发堆损坏**：仅 `moon test --target native` **默认并行**跑多个测试进程时偶发 `0xc0000374`（堆损坏/竞态）；单一进程、单独包、或串行 `moon test --target native -j 1` 均稳定 136/136，**产品运行时不受影响**。Windows 下复现勿慌：先装载环境再跑测试。
+  一键装载 Windows native 环境：`pwsh ./scripts/native-env.ps1`（自动探测 VS Build Tools + sqlite-dev，可 `-Run "moon test --target native -j 1"` 直接执行）。
 - **execute 幂等**：`executions` 以 `task_id + created_at` 为键、`ON CONFLICT DO UPDATE`——同一任务同一次执行（同 `created_at`）重复 `execute` 会**幂等覆盖**执行元数据而不报错；不同 `created_at` 则各自留存为独立执行记录。
 - **自驱非死循环**：审视报告带 `[review:<file>:<idx>]` 幂等标记，无新报告即 `idle`/`waiting` 停住；心跳新鲜时 watchdog 不抢活。
 
