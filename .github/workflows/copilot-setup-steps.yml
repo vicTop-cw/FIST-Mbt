@@ -12,10 +12,15 @@ on:
     paths:
       - .github/workflows/copilot-setup-steps.yml
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # The job MUST be called `copilot-setup-steps` or it will not be picked up by Copilot.
   copilot-setup-steps:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     # Set the permissions to the lowest permissions possible needed for your steps.
     # Copilot will be given its own token for its operations.
@@ -27,12 +32,15 @@ jobs:
     # If you do not check out your code, Copilot will do this for you.
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        # 固定到完整 commit SHA 以规避可变标签的供应链风险；等价于 actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
 
       - name: Set up MoonBit
         run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh -o /tmp/moonbit-install.sh
+          # 建议核对 /tmp/moonbit-install.sh 的 sha256（安装脚本随版本变更，需在命名对其更新时同步）
+          bash /tmp/moonbit-install.sh
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
       - name: Update MoonBit dependencies
         run: |

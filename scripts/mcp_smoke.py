@@ -8,7 +8,7 @@ scripts/mcp_smoke.py — FIST-Mbt 一键自检（评审/自驱 10 秒验证 MCP 
 
 行为：
     1) 拉起 `node _build/js/.../cmd/main/main.js`（MCP server, STDIO）
-    2) tools/list            → 断言含 publish 等 57 个工具
+    2) tools/list            → 断言含 publish 等 61 个工具
     3) publish_parallel      → 发布一个任务，断言拿到 task_id
     4) get                   → 按 task_id 查回，断言命中且状态为待领取
     全部通过打印 `MCP-SMOKE PASS`，退出码 0；任一步失败打印 FAIL，退出码 1。
@@ -45,7 +45,16 @@ def rpc(proc, method, **payload):
     req = {"jsonrpc": "2.0", "id": "1", "method": method, "params": params}
     proc.stdin.write(json.dumps(req, ensure_ascii=False) + "\n")
     proc.stdin.flush()
-    return json.loads(proc.stdout.readline())
+    line = proc.stdout.readline()
+    if not line:
+        raise RuntimeError("MCP server closed stdout (did it crash?)")
+    try:
+        resp = json.loads(line)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"malformed JSON-RPC response: {line!r}") from e
+    if "error" in resp:
+        raise RuntimeError(f"JSON-RPC error: {resp['error']}")
+    return resp
 
 
 def fail(msg):
@@ -71,8 +80,9 @@ def main():
         # Step 1 · tools/list
         r = rpc(proc, "tools/list")
         tools = [t["name"] for t in r.get("result", {}).get("tools", [])]
-        if not tools or "publish" not in tools:
-            fail(f"tools/list 异常（共 {len(tools)} 个工具，缺 publish）")
+        expected = 61
+        if len(tools) != expected or "publish" not in tools:
+            fail(f"tools/list 异常（共 {len(tools)} 个工具，期望 {expected}，缺 publish）")
         print(f"PASS tools/list → {len(tools)} 个工具（含 publish/selfdrive_publish_next 等）")
 
         # Step 2 · publish
@@ -87,7 +97,10 @@ def main():
                 "created_by": "selfdrive",
             },
         )
-        text = r["result"]["content"][0]["text"]
+        try:
+            text = r["result"]["content"][0]["text"]
+        except (KeyError, IndexError, TypeError):
+            fail(f"publish 返回异常响应: {r}")
         payload = json.loads(text)
         task_id = payload.get("task_id")
         if not task_id:
@@ -97,8 +110,8 @@ def main():
         # Step 3 · get
         r = rpc(proc, "tools/call", name="get", arguments={"task_id": task_id})
         got = json.loads(r["result"]["content"][0]["text"])
-        if got.get("id") != task_id:
-            fail(f"get 未命中 {task_id}")
+        if got.get("id") != task_id or got.get("status") != "待领取":
+            fail(f"get 未命中或状态异常: {got}")
         print(f"PASS get → {got.get('id')} [{got.get('status')}]")
 
         print("MCP-SMOKE PASS")
@@ -106,6 +119,11 @@ def main():
         try:
             proc.stdin.close()
             proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
         except Exception:
             pass
 

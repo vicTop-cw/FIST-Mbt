@@ -68,6 +68,8 @@ def _normalize_answers(answers):
         if isinstance(v, dict):
             # 例如 {choice: "code", confidence: 0.93}
             out[k] = v
+        elif isinstance(v, (str, int, float, bool)) or v is None:
+            out[k] = v
         else:
             out[k] = _json_compact(v)
     return out
@@ -111,8 +113,16 @@ def _decide():
         escalate = False
         for v in normalized.values():
             if isinstance(v, dict):
+                # 显式 needs_review 信号（人工审核）→ escalate
+                if v.get("needs_review"):
+                    escalate = True
+                    continue
                 conf = v.get("confidence", 1.0)
-                # 低置信度或显式 needs_review 高分 → escalate
+                try:
+                    conf = float(conf)
+                except (TypeError, ValueError):
+                    conf = 1.0
+                # 低置信度 → escalate
                 if conf < 0.6:
                     escalate = True
         auto_decide = (not escalate)

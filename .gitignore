@@ -1,7 +1,6 @@
 .DS_Store
 _build/
-target/
-target
+/target/
 .mooncakes/
 .moonagent/
 # build/test logs
@@ -9,7 +8,7 @@ target
 # sqlite e2e test dbs
 *.db
 # 自我迭代数据库（评审可查的原始记档，随每轮稳定一并同步入库）
-!fist-mbt.db
+!/fist-mbt.db
 # temp scripts (m9_*, m18_*, etc.)
 m9_*.js
 m18_*.js
@@ -25,8 +24,8 @@ temp/
 # sqlite runtime files (wal/shm)
 *.db-shm
 *.db-wal
-# cron runtime state & scratch scripts
-.cron_state_*.json
+# cron runtime state & scratch scripts（仅仓库根目录的运行时状态）
+/.cron_state_*.json
 __pycache__/
 execute_cron.py
 _cron_executor.py

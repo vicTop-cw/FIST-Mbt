@@ -608,7 +608,9 @@ fn advance_from_pending(
     match active {
       Some(t) => {
         // 已发布且任务仍在途：状态纠正为 Running，绝不重复发布
-        ignore(pipeline_write(state_path, "Running"))
+        if !pipeline_write(state_path, "Running") {
+          return Err("pipeline: 无法写入状态文件: \{state_path}")
+        }
         return Ok(
           pj_make(
             "Pending",
@@ -718,8 +720,12 @@ fn advance_from_pending(
   }
   match new_id {
     Some(i) => {
-      ignore(pipeline_write(state_path, "Running"))
-      ignore(pipeline_write(started_path, now))
+      if !pipeline_write(state_path, "Running") {
+        return Err("pipeline: 无法写入状态文件: \{state_path}")
+      }
+      if !pipeline_write(started_path, now) {
+        return Err("pipeline: 无法写入启动标记: \{started_path}")
+      }
       Ok(
         pj_make(
           "Pending",

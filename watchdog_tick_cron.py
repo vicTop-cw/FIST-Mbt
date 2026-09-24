@@ -5,7 +5,9 @@ import subprocess
 import sys
 import time
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+from threading import Thread
+from queue import Queue, Empty
 
 MCP_SERVER = r"E:\IDEProjects\AI\FIST-Mbt\_build\js\debug\build\cmd\main\main.js"
 WORKDIR = r"E:\IDEProjects\AI\FIST-Mbt"
@@ -28,12 +30,31 @@ class MCPClient:
             ["node", MCP_SERVER],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             cwd=WORKDIR,
             encoding="utf-8",
             errors="replace",
         )
         self._id = 1
+        # readline() 会无限阻塞；改用后台线程 + Queue.get(timeout) 让 deadline 真正生效（Windows 管道不支持 select）
+        self._lines = Queue()
+        self._reader = Thread(target=self._read_loop, daemon=True)
+        self._reader.start()
+
+    def _read_loop(self):
+        try:
+            for line in self.proc.stdout:
+                if not line:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    self._lines.put(json.loads(line))
+                except json.JSONDecodeError:
+                    continue  # 跳过坏行继续读，与 EOF 区分开
+        except Exception:
+            pass
 
     def send(self, method, params=None):
         msg = {"jsonrpc": "2.0", "id": self._id, "method": method}
@@ -44,13 +65,10 @@ class MCPClient:
         self.proc.stdin.write(line + "\n")
         self.proc.stdin.flush()
 
-    def recv(self):
-        line = self.proc.stdout.readline()
-        if not line:
-            return None
+    def recv(self, timeout=None):
         try:
-            return json.loads(line.strip())
-        except json.JSONDecodeError:
+            return self._lines.get(timeout=timeout)
+        except Empty:
             return None
 
     def call(self, method, params=None, timeout=30):
@@ -64,7 +82,8 @@ class MCPClient:
         self.send(method, params)
         deadline = time.time() + timeout
         while time.time() < deadline:
-            resp = self.recv()
+            remaining = max(0.0, deadline - time.time())
+            resp = self.recv(remaining)
             if resp is None:
                 break
             if resp.get("id") == self._id - 1:
@@ -114,8 +133,10 @@ def load_state(path):
 
 
 def save_state(path, data):
-    with open(path, "w", encoding="utf-8") as f:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
+    os.replace(tmp, path)
 
 
 def tick_project(client, proj):
@@ -130,7 +151,7 @@ def tick_project(client, proj):
     if newest is None:
         print(f"[{name}] no prompts found, skip")
         return 0
-    newest_dt, newest_path, newest_mtime = newest
+    newest_dt, newest_path, _ = newest
     newest_key = newest_dt.strftime("%Y%m%d.%H.%M.%S")
     print(f"[{name}] newest prompt: {os.path.basename(newest_path)} ({newest_key})")
 
@@ -179,7 +200,7 @@ def tick_project(client, proj):
         if not last_consumed:
             args["cold_start"] = True
 
-    resp = client.call("tools/call", {"name": "watchdog_tick", "arguments": args}, timeout=60)
+    resp = client.call("tools/call", {"name": "watchdog_tick", "arguments": args}, timeout=TIMEOUT_SEC + 120)
     if not resp:
         print(f"[{name}] ERROR: watchdog_tick timed out")
         return 1

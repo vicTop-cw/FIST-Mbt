@@ -81,7 +81,11 @@ pub fn FistEngine::plan(
       }
       // 标记父任务进入拆分中
       match parent.split() {
-        Ok(p2) => ignore(self.store.update_task(p2))
+        Ok(p2) =>
+          match self.store.update_task(p2) {
+            Ok(_) => ()
+            Err(e) => return Err("拆分状态落库失败: \{e}")
+          }
         Err(e) => return Err(e)
       }
       let child_depth = parent.get_depth() - 1
@@ -130,7 +134,10 @@ pub fn FistEngine::claim(
         Err(e) => return Err(e)
       }
       let c3 = c.with_updated_at(now)
-      ignore(self.store.update_task(c3))
+      match self.store.update_task(c3) {
+        Ok(_) => ()
+        Err(e) => return Err("认领落库失败: \{e}")
+      }
       Ok(c3)
     }
   }
@@ -161,7 +168,10 @@ pub fn FistEngine::execute(
         Err(_) => t
       }
       let c2 = c.with_deliverable(deliverable, now)
-      ignore(self.store.update_task(c2))
+      match self.store.update_task(c2) {
+        Ok(_) => ()
+        Err(e) => return Err("执行落库失败: \{e}")
+      }
       Ok(c2)
     }
   }
@@ -252,7 +262,10 @@ pub fn FistEngine::submit(
         Err(e) => return Err(e)
       }
       let c2 = c.with_updated_at(now)
-      ignore(self.store.update_task(c2))
+      match self.store.update_task(c2) {
+        Ok(_) => ()
+        Err(e) => return Err("提交落库失败: \{e}")
+      }
       Ok(c2)
     }
   }
@@ -319,7 +332,10 @@ pub fn FistEngine::verify(
         Err(e) => return Err(e)
       }
       let c2 = c.with_updated_at(now)
-      ignore(self.store.update_task(c2))
+      match self.store.update_task(c2) {
+        Ok(_) => ()
+        Err(e) => return Err("验收落库失败: \{e}")
+      }
       // 向上归并：父任务全部子任务完成后自动待验收
       match c2.get_parent() {
         Some(pid) =>
@@ -332,7 +348,10 @@ pub fn FistEngine::verify(
                 }
                 match pe.submit() {
                   Ok(p2) => {
-                    ignore(self.store.update_task(p2.with_updated_at(now)))
+                    match self.store.update_task(p2.with_updated_at(now)) {
+                      Ok(_) => ()
+                      Err(e) => return Err("父任务归并落库失败: \{e}")
+                    }
                     Ok(c2)
                   }
                   Err(e) => Err(e)
@@ -376,7 +395,10 @@ pub fn FistEngine::archive(
           }
       }
       let c2 = c.with_updated_at(now)
-      ignore(self.store.update_task(c2))
+      match self.store.update_task(c2) {
+        Ok(_) => ()
+        Err(e) => return Err("归档落库失败: \{e}")
+      }
       Ok(c2)
     }
   }
@@ -515,7 +537,11 @@ pub fn FistEngine::publish_next_round(
     now,
   )
   match marked.archive() {
-    Ok(a) => ignore(self.store.update_task(a.with_updated_at(now)))
+    Ok(a) =>
+      match self.store.update_task(a.with_updated_at(now)) {
+        Ok(_) => ()
+        Err(e) => return Err("续轮归档落库失败: \{e}")
+      }
     Err(e) => return Err(e)
   }
   Ok(new_id)
@@ -618,7 +644,10 @@ pub fn FistEngine::reopen_task(
         Err(e) => return Err(e)
       }
       let c2 = c.with_updated_at(now)
-      ignore(self.store.update_task(c2))
+      match self.store.update_task(c2) {
+        Ok(_) => ()
+        Err(e) => return Err("重开落库失败: \{e}")
+      }
       Ok(c2)
     }
   }
@@ -646,7 +675,10 @@ pub fn FistEngine::reject_task(
         Err(e) => return Err(e)
       }
       let c2 = c.with_updated_at(now)
-      ignore(self.store.update_task(c2))
+      match self.store.update_task(c2) {
+        Ok(_) => ()
+        Err(e) => return Err("拒绝落库失败: \{e}")
+      }
       Ok(c2)
     }
   }
@@ -667,7 +699,10 @@ pub fn FistEngine::retry_task(
         Err(e) => return Err(e)
       }
       let c2 = c.with_updated_at(now)
-      ignore(self.store.update_task(c2))
+      match self.store.update_task(c2) {
+        Ok(_) => ()
+        Err(e) => return Err("重试落库失败: \{e}")
+      }
       Ok(c2)
     }
   }
@@ -688,7 +723,10 @@ pub fn FistEngine::pause_task(
         Err(e) => return Err(e)
       }
       let c2 = c.with_updated_at(now)
-      ignore(self.store.update_task(c2))
+      match self.store.update_task(c2) {
+        Ok(_) => ()
+        Err(e) => return Err("暂停落库失败: \{e}")
+      }
       Ok(c2)
     }
   }
@@ -709,7 +747,10 @@ pub fn FistEngine::resume_task(
         Err(e) => return Err(e)
       }
       let c2 = c.with_updated_at(now)
-      ignore(self.store.update_task(c2))
+      match self.store.update_task(c2) {
+        Ok(_) => ()
+        Err(e) => return Err("恢复落库失败: \{e}")
+      }
       Ok(c2)
     }
   }
@@ -807,7 +848,11 @@ fn FistEngine::decompose_rec(
 ) -> Result[Json, String] {
   // 父任务进入拆分中（宽于 Task::split：待领取/已领取/拆分中均可转入）
   match parent.mark_decomposing() {
-    Ok(p2) => ignore(self.store.update_task(p2.with_updated_at(now)))
+    Ok(p2) =>
+      match self.store.update_task(p2.with_updated_at(now)) {
+        Ok(_) => ()
+        Err(e) => return Err("递归拆分状态落库失败: \{e}")
+      }
     Err(e) => return Err(e)
   }
   let child_depth = parent.get_depth() - 1
