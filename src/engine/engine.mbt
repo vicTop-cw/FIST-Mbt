@@ -166,7 +166,7 @@ pub fn FistEngine::execute(
       }
       let c = match t.execute() {
         Ok(x) => x
-        Err(_) => t
+        Err(e) => return Err("执行失败: \{e}")
       }
       let c2 = c.with_deliverable(deliverable, now)
       match self.store.update_task(c2) {

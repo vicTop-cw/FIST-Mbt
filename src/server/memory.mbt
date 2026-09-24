@@ -94,6 +94,12 @@ fn mem_kinds() -> Array[String] {
   ["thinking", "product", "target", "task"]
 }
 
+///|
+/// kind 是否属于合法集合（防路径遍历：仅允许白名单内 kind）。
+fn mem_kinds_contain(kind : String) -> Bool {
+  mem_kinds().any(fn(k : String) { k == kind })
+}
+
 // ---------------------------------------------------------------------------
 // memory_consolidate
 // ---------------------------------------------------------------------------
@@ -111,6 +117,9 @@ pub fn memory_consolidate(
 ) -> Result[Json, String] {
   if content.is_empty() {
     return Err("memory_consolidate: content 为空，无可收敛内容")
+  }
+  if not(mem_kinds_contain(kind)) {
+    return Err("memory_consolidate: 非法 kind: \{kind}")
   }
   mem_ensure_dir(mem_dir(project_dir))
   let p = mem_kind_path(project_dir, kind)
@@ -167,6 +176,8 @@ pub fn memory_gc_one(
   kind : String,
   max_chars : Int,
 ) -> Json {
+  // 非法 kind 回退到默认 target，防止路径遍历落到文件系统
+  let kind = if mem_kinds_contain(kind) { kind } else { "target" }
   let p = mem_kind_path(project_dir, kind)
   let content = match mem_read(p) {
     None =>
@@ -201,9 +212,21 @@ pub fn memory_gc_one(
     let sep = if arch_old.has_suffix("\n") { "" } else { "\n" }
     arch_old + sep + archived + "\n"
   }
-  ignore(mem_write(arch_path, arch_new))
+  if not(mem_write(arch_path, arch_new)) {
+    return Json::object({
+      "gc": Json::boolean(false),
+      "kind": Json::string(kind),
+      "note": Json::string("归档写入失败: " + arch_path),
+    })
+  }
   // 正文只保留最新 max_chars
-  ignore(mem_write(p, kept))
+  if not(mem_write(p, kept)) {
+    return Json::object({
+      "gc": Json::boolean(false),
+      "kind": Json::string(kind),
+      "note": Json::string("正文写入失败: " + p),
+    })
+  }
   Json::object({
     "gc": Json::boolean(true),
     "kind": Json::string(kind),
