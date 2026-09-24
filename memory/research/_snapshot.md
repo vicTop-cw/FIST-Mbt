@@ -1,4 +1,4 @@
-# fist-mbt 参赛证据快照（2026-09-24 第3波后 · 目标提档 70/85/97）
+# fist-mbt 参赛证据快照（2026-09-24 第4波后 · 工具链0.10.14+ · ATGC 子项目 · 目标提档 70/85/97）
 
 > 本快照为 4-AI 概率门禁的唯一事实依据。只含可核实事实，不含自吹。
 > 评审口径：某一证据可用「事实 + 合理外推」支撑即给分（稍宽一档）。
@@ -9,11 +9,12 @@
 - GitHub 公开仓库 `github.com/vicTop-cw/FIST-Mbt`，含 15+ 实质 commits，README 顶部带实时 CI 徽章（js/ubuntu、native/ubuntu、js/windows 三轨道绿色）。
 
 ## 2. 规模与测试可复现
-- **67 个 MCP 工具**（67（64 核心 + call_log/report_bug/bug_list + atgc*）/report_bug/bug_list）+ 2 Resources + 2 Prompts；`moon check` 0 错误。
+- **工具链已升级至评选会同要求的版本**：`moonc / core = v0.10.14+`（moon 0.1.20260920）；async 0.22.3、x 0.5.5 已解锁升级，js 全绿无回归；修复 moonc0.10.14 的 JS ESM/`mizchi:sqlite` require 回归（`scripts/patch_esm_main.py` 注入 shim，mcp_smoke 自动调用）。
+- **67 个 MCP 工具**（64 核心 + call_log/report_bug/bug_list + atgc_compile/run/talk）+ 2 Resources + 2 Prompts；`moon check` 0 错误。
 - **184 项测试用例 js 全绿**（本人已实跑 `moon test --target js` → 184/184）；JS 与 Native 双后端；CI 三轨道绿色徽章（native 以 CI/ubuntu 为准）。
-- 30 秒一键演示 `scripts/demo.ps1` 实测 PASS（拉起 MCP server，tools/list 64 工具 + publish + get 状态断言）。
+- 30 秒一键演示 `scripts/demo.ps1` 实测 PASS（拉起 MCP server，tools/list 67 工具 + publish + get 状态断言）。
 - **视觉终端巡演 `scripts/showcase.ps1` 实测 PASS**：ANSI 彩色 + box-drawing 渲染「九态生命周期状态机 / DAG 依赖树 / 自举采用证据」，一屏讲清全项目（非脚本断言，是真视觉层）。
-- 一把自检 `scripts/mcp_smoke.py` 实测 PASS：断言 64 工具、发布命中 task_id、get 命中且状态待领取。
+- 一把自检 `scripts/mcp_smoke.py` 实测 PASS：断言 67 工具、发布命中 task_id、get 命中且状态待领取。
 
 ## 3. 创意 / 生态价值（差异化定位 + 自举采用证据）
 - **自举采用 / Dogfooding（罕见的真实采用证据）**：fist-mbt 用它自己的 8 个 selfdrive MCP 工具**管理自身迭代**——今日 6 轮审视纪要（memory/reviews/*.md，14:10→17:30），自举迭代 SQLite 库实存 **77 任务 / 43 执行 / 18 spec / 11 心跳**。一个 MCP 任务编排框架能证明『用它自己管理自己的开发流程』，是其生态价值最硬的外推点，同类 MCP 框架极少能展示自举可用。
@@ -30,6 +31,7 @@
 - **AI 自驱式编程闭环**：selfdrive_* 8 工具（审视 → 拆解 → 发布 自收敛），MCP 端到端验证跑通。
 - **自搜索**：self_search.mbt 注入式外部搜索 + 候选分析/判重/可移植评估。
 - **调用日志 + bug 上报修复闭环**：call_log 表全工具自动埋点(ts/tool/caller/ns/入参/结果/耗时/ok)；report_bug/bug_list 上报运行时 bug 落 memory/bugs.md，publish_task=true 时发 self-drive 修复任务，形成「发现→上报→自驱认领修复→verify」闭环。
+- **ATGC 双链虚拟机（内嵌叙事对话子项目，纯 MoonBit）**：四进制 DNA 编程语言 + 栈机；atgc/ 包含 base(ATGC↔四进制/reverse_complement 对合 32 对无自反)、codon(64 密码子→Op)、lexer(语境二分)、transpile(MODE_A/B/C)、vm(栈机+快照回滚，除零/下溢不崩溃)、talk(叙事对话)。工具：atgc_compile/atgc_run/atgc_talk；§10 验算 1+2+2=5、(1+2)×3=9 全过；以"转录→翻译→酶执行"的生物学叙事呈现，全程 MoonBit 实现。
 
 ## 5. 发布前质量硬化（评审通过）
 - 用 open-code-review（官方 code-review 引擎）对全套脚本/CI/githooks/gitignore 审查并修复 40 项问题：HTTP 并发串线竞态修复、cron stderr 管道死锁、客户端/服务端 timeout 错位对齐、非原子状态写改 tmp+replace、CI 最小权限 / checkout 钉 commit SHA / concurrency / timeout-minutes / 工具链 cache、pre-commit set -e。
