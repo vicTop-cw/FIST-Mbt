@@ -37,6 +37,8 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from threading import Thread
+from queue import Queue, Empty
 
 MCP_SERVER = r"E:\IDEProjects\AI\FIST-Mbt\_build\js\debug\build\cmd\main\main.js"
 WORKDIR = r"E:\IDEProjects\AI\FIST-Mbt"
@@ -70,10 +72,21 @@ class MCPClient:
     def __init__(self):
         self.proc = subprocess.Popen(
             ["node", MCP_SERVER],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             cwd=WORKDIR, encoding="utf-8", errors="replace",
         )
         self._id = 1
+        # readline() 会无限阻塞，故改用后台线程 + Queue.get(timeout=...) 让 deadline 真正生效（Windows 下 select 不支持管道）
+        self._lines = Queue()
+        self._reader = Thread(target=self._read_loop, daemon=True)
+        self._reader.start()
+
+    def _read_loop(self):
+        try:
+            for line in self.proc.stdout:
+                self._lines.put(line.strip())
+        except Exception:
+            pass
 
     def call(self, method, params=None, timeout=60):
         if params is None:
@@ -89,11 +102,17 @@ class MCPClient:
         self.proc.stdin.flush()
         deadline = time.time() + timeout
         while time.time() < deadline:
-            line = self.proc.stdout.readline()
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                return None
+            try:
+                line = self._lines.get(timeout=remaining)
+            except Empty:
+                return None
             if not line:
                 return None
             try:
-                resp = json.loads(line.strip())
+                resp = json.loads(line)
             except json.JSONDecodeError:
                 continue
             if resp.get("id") == self._id - 1:
@@ -104,7 +123,10 @@ class MCPClient:
         resp = self.call("tools/call", {"name": name, "arguments": arguments}, timeout=timeout)
         if not resp or "error" in resp:
             return None
-        content = resp.get("result", {}).get("content", [])
+        result = resp.get("result") or {}
+        if result.get("isError"):
+            return None  # 工具调用返回错误，让上层打印真实错误而非「返回非 JSON」
+        content = result.get("content", [])
         if not content:
             return ""
         return content[0].get("text", "") if isinstance(content[0], dict) else str(content[0])
@@ -174,11 +196,13 @@ def main():
     failures = 0
     try:
         resp = client.call("tools/list", {})
-        if resp and "result" in resp:
-            names = [t["name"] for t in resp["result"].get("tools", [])]
-            if "pipeline_tick" not in names:
-                print(f"ERROR: pipeline_tick 未注册（当前工具数 {len(names)}），请先 moon build 重建服务端")
-                return 1
+        if not resp or "result" not in resp:
+            print("ERROR: 无法获取工具列表（服务端无响应或返回错误），请确认 MCP 服务端已正常启动")
+            return 1
+        names = [t["name"] for t in resp["result"].get("tools", [])]
+        if "pipeline_tick" not in names:
+            print(f"ERROR: pipeline_tick 未注册（当前工具数 {len(names)}），请先 moon build 重建服务端")
+            return 1
         for proj in targets:
             try:
                 if tick_project(client, proj) != 0:

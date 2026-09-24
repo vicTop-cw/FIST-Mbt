@@ -319,12 +319,7 @@ pub fn Task::claim(self : Task, assignee~ : String) -> Result[Task, String] {
       if assignee == "" {
         Err("claim 需要 assignee")
       } else {
-        Ok({
-          ..self,
-          status: Claimed,
-          assignee: Some(assignee),
-          updated_at: self.updated_at,
-        })
+        Ok({ ..self, status: Claimed, assignee: Some(assignee), })
       }
     _ =>
       Err(

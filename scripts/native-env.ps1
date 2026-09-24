@@ -29,7 +29,10 @@ $ErrorActionPreference = "Stop"
 if ([string]::IsNullOrWhiteSpace($SqliteDev)) { $SqliteDev = $env:FIST_SQLITE_DEV }
 if ([string]::IsNullOrWhiteSpace($SqliteDev)) {
   $sqliteCandidates = @("C:\sqlite-dev", "C:\sqlite", (Join-Path $PSScriptRoot "..\.sqlite-dev"))
-  $sqliteDev = $sqliteCandidates | Where-Object { Test-Path (Join-Path (Join-Path $_ "include") "sqlite3.h") } | Select-Object -First 1
+  $SqliteDev = $sqliteCandidates | Where-Object { Test-Path (Join-Path (Join-Path $_ "include") "sqlite3.h") } | Select-Object -First 1
+}
+if ([string]::IsNullOrWhiteSpace($SqliteDev)) {
+  $SqliteDev = "."  # 占位符：避免下方 Join-Path/Test-Path 抛错，缺失文件告警仍会照常触发
 }
 $sqliteInclude = Join-Path $SqliteDev "include"
 $sqliteLib = Join-Path $SqliteDev "lib"
@@ -40,6 +43,9 @@ if (Test-Path (Join-Path $sqliteInclude "sqlite3.h")) {
   Write-Host "  可用 -SqliteDev <dir> 或环境变量 FIST_SQLITE_DEV 指向含 include\sqlite3.h 与 lib\sqlite3.lib 的根目录。" -ForegroundColor Yellow
 }
 if (-not (Test-Path (Join-Path $sqliteLib "sqlite3.lib"))) {
+  if (-not [string]::IsNullOrWhiteSpace($Run)) {
+    throw "[native-env] 未找到 $sqliteLib\sqlite3.lib，无法执行 -Run（LNK1104: sqlite3.lib）。"
+  }
   Write-Host "[native-env] 未找到 $sqliteLib\sqlite3.lib。Native 链接将失败（LNK1104: sqlite3.lib）。" -ForegroundColor Yellow
 }
 
@@ -58,9 +64,12 @@ if ([string]::IsNullOrWhiteSpace($VsInstallPath)) {
   if ([string]::IsNullOrWhiteSpace($VsInstallPath)) {
     foreach ($root in @("${env:ProgramFiles(x86)}\Microsoft Visual Studio", "$env:ProgramFiles\Microsoft Visual Studio")) {
       $try = Get-ChildItem $root -Directory -ErrorAction SilentlyContinue |
-        ForEach-Object { Join-Path $_.FullName "BuildTools" } |
-        Where-Object { Test-Path (Join-Path $_ "Common7\Tools\Microsoft.VisualStudio.DevShell.dll") } |
-        Select-Object -First 1
+        ForEach-Object {
+          foreach ($edition in @("BuildTools", "Community", "Professional", "Enterprise")) {
+            $candidate = Join-Path $_.FullName $edition
+            if (Test-Path (Join-Path $candidate "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")) { $candidate; break }
+          }
+        } | Select-Object -First 1
       if ($try) { $VsInstallPath = $try; break }
     }
   }
@@ -81,6 +90,7 @@ Write-Host "[native-env] INCLUDE += $sqliteInclude ; LIB += $sqliteLib"
 if (-not [string]::IsNullOrWhiteSpace($Run)) {
   Write-Host "[native-env] 执行: $Run" -ForegroundColor Cyan
   Invoke-Expression $Run
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } else {
   Write-Host "[native-env] 环境就绪。可运行: moon test --target native / moon build --target native" -ForegroundColor Cyan
 }

@@ -134,6 +134,8 @@ class MCPBridge:
             log.error("Reader error: %s", e)
         finally:
             self._running = False
+            # 服务器断连哨兵：唤醒所有等待中的请求（subprocess 退出从未通知 queue）
+            _response_queue.put({"error": "Server disconnected"})
 
     def send(self, method: str, params: dict | None = None) -> dict | None:
         if not self._proc or not self._proc.stdin:
@@ -155,10 +157,16 @@ class MCPBridge:
         while time.time() < deadline:
             try:
                 msg = _response_queue.get(timeout=0.5)
-                if msg.get("id") == req_id:
-                    return msg
             except Empty:
                 continue
+            if msg.get("id") == req_id:
+                return msg
+            if "error" in msg and "id" not in msg:
+                # 服务器断连/错误哨兵（无 id）：立即返回，不必等满 deadline
+                return msg
+            # 该响应属于其它并发请求：放回队列以免被错误消费；无 id 的通知则丢弃
+            if msg.get("id") is not None:
+                _response_queue.put(msg)
         return {"error": "Request timeout"}
 
     def stop(self) -> None:
@@ -253,6 +261,9 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError as e:
             self._json_response({"error": f"Invalid JSON: {e}"}, status=400)
             return
+        if not isinstance(request, dict):
+            self._json_response({"error": "Request must be a JSON object"}, status=400)
+            return
         method = request.get("method", "")
         params = request.get("params", {})
         if not method:
@@ -271,7 +282,7 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     bridge.start()
     threading.Thread(target=_heartbeat_loop, daemon=True).start()
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     log.info("FIST-Mbt HTTP bridge listening on port %d", PORT)
     log.info("  Health: http://localhost:%d/health", PORT)
     log.info("  MCP:    http://localhost:%d/mcp", PORT)
