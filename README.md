@@ -74,7 +74,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 > 配套元提示词模板：[`templates/cron_pipeline_meta_prompt.md`](./templates/cron_pipeline_meta_prompt.md)（**统一版**：单一提示词 + 单一定时任务，一次唤醒内四分支自决策——①有活跃任务且心跳新鲜则退出；②心跳超时只交给 `watchdog_tick` 的 heal 分支；③无活跃任务且最新提示词未消费则接一个新根任务；④无活跃任务且提示词已消费则生成下一份 `yyyyMMdd.HH.mm.ss.md`。含按目标项目替换的参数清单、作用域隔离要求与无人值守边界说明）。
 
 
-#### 生命周期八件套（九态状态机）
+#### 生命周期十二件套（九态状态机）
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|

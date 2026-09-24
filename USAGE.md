@@ -25,7 +25,7 @@ FIST 指挥官任务分配体系（原 Python 版 FIST）的 **纯 MoonBit 原�
 moon check                  # 类型检查
 moon build --target native  # 原生后端
 moon build --target js      # JS 后端（Node 运行）
-moon test                   # 全部测试（135 项）
+moon test                   # 全部测试（136 项）
 ```
 
 本机常用启动产物：
