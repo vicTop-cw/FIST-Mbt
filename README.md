@@ -76,7 +76,7 @@ python scripts/award_demo.py      # → MCP-AWARD-DEMO PASS（能力链全通，
 
 ## MCP 暴露面
 
-### Tools（**85 个** · 精选概览；完整清单与分组见 [AGENTS.md](./AGENTS.md) 与 `fist://map`）
+### Tools（**87 个** · 精选概览；完整清单与分组见 [AGENTS.md](./AGENTS.md) 与 `fist://map`）
 
 > **适用范围提示**：`watchdog_tick`（定时任务看门狗编排）**推荐仅用于定时任务 / 无人值守自动化场景**，不用于人工指挥官任务分配流程（自动 heal / 自动续轮在人工流程中有害）。
 >

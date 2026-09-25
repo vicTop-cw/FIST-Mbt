@@ -445,7 +445,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 83 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 87 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
