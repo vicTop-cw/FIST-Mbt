@@ -87,7 +87,7 @@ def main():
                   description="搭建可插拔的父层调度（拆解演练）", created_by="human_steward", now=NOW)
         rid1 = r1["task_id"]
         t1 = call(p, "task_plan_deep", task_id=rid1, split_n=3, by="leader",
-                  gradient=True, gradient_dag=True, now=NOW)
+                  gradient=True, gradient_dag=True, reinject_context=True, now=NOW)
         eo = t1.get("exec_order") or {}
         assert "order" in eo, "gradient_dag 拆解应返回 exec_order 执行计划"
         order_ids = [s.get("id") for s in (eo.get("order") or [])]
@@ -98,6 +98,12 @@ def main():
         print(f"   ③b 真实DAG+执行计划：gradient_dag=true → 兄弟切片由易到难连 depends_on；"
               f"exec_order {eo.get('count')} 步执行计划：{step_str}"
               f"{'…' if len(order_ids) > 4 else ''}（每步附难度档，照单执行）")
+        # R63 父计划回注：开启 reinject_context 后子任务描述带【父计划】让原子片知其所以然
+        ctx_pick = call(p, "get", task_id=f"{rid1}.1") or {}
+        ctx_desc = ctx_pick.get("description") or ""
+        assert "[父计划:" in ctx_desc, "reinject_context 应让子任务描述携带父计划（R63）"
+        print(f"      ↳ R63 父计划回注：{rid1}.1 描述含【{ctx_desc[ctx_desc.find('[父计划:'):][:40]}…】"
+              f"（原子片知其所归属，防上下文漂移）")
         ss1 = call(p, "status_summary", namespace=NS, now=NOW)
         bd = (ss1.get("by_difficulty") or {})
         print(f"   ③c 项目脉冲 status_summary → 待办难度分布 by_difficulty："
