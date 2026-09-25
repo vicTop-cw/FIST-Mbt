@@ -43,10 +43,14 @@ pub struct MemoryStore {
   mut default_ns : String
   call_logs : Array[Json]
   reservations : Map[String, (String, String, String)]
+  executors : Map[String, (String, String)]
 }
 pub fn MemoryStore::clear(Self) -> Unit
 pub fn MemoryStore::create_task(Self, @core.Task) -> Result[Unit, String]
 pub fn MemoryStore::delete_task(Self, String) -> Result[Unit, String]
+pub fn MemoryStore::executor_clear(Self) -> Bool
+pub fn MemoryStore::executor_list(Self) -> Array[(String, String, String)]
+pub fn MemoryStore::executor_save(Self, name~ : String, abilities_json~ : String, created_at~ : String) -> Result[String, String]
 pub fn MemoryStore::get_spec(Self, String) -> SpecRecord?
 pub fn MemoryStore::get_task(Self, String) -> @core.Task?
 pub fn MemoryStore::list_specs_by_task(Self, String) -> Array[SpecRecord]
@@ -100,6 +104,9 @@ pub fn SqliteStore::ensure_specs_table(Self) -> Bool
 pub fn SqliteStore::evolve_bump_child(Self, String) -> Bool
 pub fn SqliteStore::evolve_list(Self) -> Array[Json]
 pub fn SqliteStore::evolve_upsert(Self, id~ : String, parent_id~ : String, goal~ : String, note~ : String, code~ : String, score~ : Double, parts_json~ : String, created_at~ : String) -> Result[Unit, String]
+pub fn SqliteStore::executor_clear(Self) -> Bool
+pub fn SqliteStore::executor_list(Self) -> Array[(String, String, String)]
+pub fn SqliteStore::executor_save(Self, name~ : String, abilities_json~ : String, created_at~ : String) -> Result[String, String]
 pub fn SqliteStore::get_spec(Self, String) -> SpecRecord?
 pub fn SqliteStore::get_task(Self, String) -> @core.Task?
 pub fn SqliteStore::list_all_heartbeats(Self) -> Array[(String, String, String, String)]
@@ -131,6 +138,9 @@ pub fn StoreBackend::cost_stats(Self) -> Json
 pub fn StoreBackend::create_task(Self, @core.Task) -> Result[Unit, String]
 pub fn StoreBackend::delete_heartbeat(Self, String) -> Result[Unit, String]
 pub fn StoreBackend::delete_task(Self, String) -> Result[Unit, String]
+pub fn StoreBackend::executor_clear(Self) -> Bool
+pub fn StoreBackend::executor_list(Self) -> Array[(String, String, String)]
+pub fn StoreBackend::executor_save(Self, name~ : String, abilities_json~ : String, created_at~ : String) -> Result[String, String]
 pub fn StoreBackend::get_spec(Self, String) -> SpecRecord?
 pub fn StoreBackend::get_task(Self, String) -> @core.Task?
 pub fn StoreBackend::list_all_heartbeats(Self) -> Array[(String, String, String, String)]

@@ -98,6 +98,32 @@ fn strlist(j : Array[Json]) -> Array[String] {
 }
 
 ///|
+/// 把能力标签数组序列化成 JSON 数组串（用于落库）。
+fn ab_to_json(ab : Array[String]) -> String {
+  Json::array(ab.map(fn(s) { Json::string(s) })).stringify()
+}
+
+///|
+/// 从 JSON 数组串反解析能力标签（落库读出）。
+fn ab_from_jsonstr(s : String) -> Array[String] {
+  let j = @json.parse(s) catch { _ => Json::null() }
+  match j {
+    Json::Array(a) => strlist(a)
+    _ => []
+  }
+}
+
+///|
+/// 把 store 里已持久化的执行者能力注册"回灌"进进程内注册表（幂等，跨进程可复现）。
+fn sync_db_executors() -> Unit {
+  for (name, ab, _ca) in engine.executor_list() {
+    if not(exec_reg.has(name)) {
+      ignore(exec_reg.add_ability(name, ab_from_jsonstr(ab)))
+    }
+  }
+}
+
+///|
 /// 把毫秒级 Unix 时间转换为 UTC 时刻两项补齐
 fn _pad2(n : Int) -> String {
   let s = n.to_string()
@@ -386,7 +412,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 81 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 82 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -2636,13 +2662,25 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let name = get_str(args, "name")
       let abs = strlist(get_array(args, "abilities"))
+      // 先把持久化的既有注册回灌进进程内注册表，再登记（跨进程可复现）
+      sync_db_executors()
       ignore(exec_reg.add_ability(name, abs))
+      // 持久化：与 store executors 表对齐（跨 server 重启仍可被 executor_route 读到）
+      let ts = now_default()
+      ignore(
+        engine.executor_save(
+          name~,
+          abilities_json=ab_to_json(abs),
+          created_at=ts,
+        ),
+      )
       Ok(
         @mcp.ToolResult::text(
           Json::object({
             "name": Json::string(name),
             "abilities": Json::array(abs.map(fn(s) { Json::string(s) })),
             "executors": Json::number(exec_reg.list().length().to_double()),
+            "persisted": Json::boolean(true),
             "ok": Json::boolean(true),
           }).stringify(),
         ),
@@ -2663,9 +2701,24 @@ pub async fn run_server() -> Unit {
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let need = get_str(args, "need")
+      sync_db_executors()
       let load = executor_loads(engine)
       let j = exec_reg.route_pick(need, load)
       Ok(@mcp.ToolResult::text(j.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "executor_clear",
+    "Marketplace·清空全部执行者能力注册（重置/整洁，R31）：清空 store executors 表（进程内注册表以 store 为空为基准重建）。无参数。返回 {persisted}。",
+    schema({}, []),
+    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let did_persist = engine.executor_clear()
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({ "persisted": Json::boolean(did_persist) }).stringify(),
+        ),
+      )
     },
   )
   s1 = instrumented_tool(

@@ -85,6 +85,9 @@ pub fn FistEngine::deps_satisfied(Self, String) -> Bool
 pub fn FistEngine::docs_verify_gate(Self, String) -> Result[Unit, String]
 pub fn FistEngine::execute(Self, task_id~ : String, deliverable~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::execute_with_meta(Self, task_id~ : String, deliverable~ : String, now~ : String, executor? : String, model? : String, tokens_in? : Int, tokens_out? : Int, cost? : Double, duration_ms? : Int, rate_limited? : Bool, failure_reason? : String) -> Result[@core.Task, String]
+pub fn FistEngine::executor_clear(Self) -> Bool
+pub fn FistEngine::executor_list(Self) -> Array[(String, String, String)]
+pub fn FistEngine::executor_save(Self, name~ : String, abilities_json~ : String, created_at~ : String) -> Result[String, String]
 pub fn FistEngine::gate_check_record(Self, String, String, String, String) -> Result[Json, String]
 pub fn FistEngine::gate_verify_gate(Self, String) -> Result[Unit, String]
 pub fn FistEngine::get_task(Self, String) -> @core.Task?

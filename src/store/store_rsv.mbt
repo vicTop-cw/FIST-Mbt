@@ -53,3 +53,36 @@ pub fn MemoryStore::rsv_list(
   }
   out
 }
+
+// —— 执行者能力注册（Marketplace 雏形跨进程持久化，R31）——
+
+///|
+/// 内存后端：写入/覆盖一个执行者的能力注册（幂等）。
+pub fn MemoryStore::executor_save(
+  self : MemoryStore,
+  name~ : String,
+  abilities_json~ : String,
+  created_at~ : String,
+) -> Result[String, String] {
+  self.executors.set(name, (abilities_json, created_at))
+  Ok("saved")
+}
+
+///|
+/// 内存后端：列出全部执行者 (name, abilities_json, created_at)。
+pub fn MemoryStore::executor_list(
+  self : MemoryStore,
+) -> Array[(String, String, String)] {
+  let out : Array[(String, String, String)] = []
+  for (k, v) in self.executors {
+    out.push((k, v.0, v.1))
+  }
+  out
+}
+
+///|
+/// 内存后端：清空全部执行者能力注册（Marketplace 重置/整洁）。
+pub fn MemoryStore::executor_clear(self : MemoryStore) -> Bool {
+  self.executors.clear()
+  true
+}

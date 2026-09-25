@@ -8,14 +8,14 @@
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
 moon build --target js cmd/main
 python scripts/mcp_smoke.py
-# 期望输出：PASS tools/list → 81 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
+# 期望输出：PASS tools/list → 82 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
 ```
 
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **81**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 227/227**（Windows + WSL(Linux) 双端实测全绿） |
+| MCP 工具 | **82**（+ 3 resources + 2 prompts） |
+| 测试 | **`moon test --target js` 230/230**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -29,7 +29,7 @@ python scripts/mcp_smoke.py
 6. **多租户**：命名空间物理隔离（`store_open`，`scratch` 临时区不污染根）。
 7. **项目地图**：`fist://map` resource——agent 首读即有，避免全项目乱找（docs/agent-map.md）；`board_ascii` 实时任务看板，一眼看全貌。
 
-## 四、自驱增强证据（git 4994aae → HEAD，30 轮）
+## 四、自驱增强证据（git 4994aae → HEAD，31 轮）
 | 轮 | 增强 | 验证脚本 |
 |---|---|---|
 | 1 项目地图 | `fist://map` + docs/agent-map + 调研纪要 | `map_verify.py` |
@@ -62,6 +62,7 @@ python scripts/mcp_smoke.py
 | 28 脚本整洁 | 清临时残留(`_score_probe/_probe_result`) + rubric 正式化(`_ai_prompt→scoring_rubric`) + 陈旧计数修正（项目整洁支柱） | `git rm/mv` + `score_gate.py` py_compile |
 | 29 挑战题防漂移门禁 | `task_challenge critic=true`：挑战变体发布前过 `critic_review`（与 evolve_critic 同一单一真源），当前策略漂移自动降档、全部漂移拒发（防"由易到难"退化成同质坍缩，SAGE Critic 过滤题目 + R-Few） | `engine_challenge_test.mbt`(+3) + `task_challenge_verify.py` |
 | 30 能力路由 | `executor_register`/`executor_route`：执行者登记能力标签，按 { 能力覆盖率 desc → 负载 asc } 路由最佳执行者（Marketplace/Dynamic 范式，按专长+负载分配） | `registry_test.mbt`(+4) + `executor_route_verify.py` |
+| 31 能力注册持久化 | `executor_*` 落 store executors 表（双后端）+ `executor_clear` 重置：能力注册跨进程可复现（进程A注册→进程B路由读到→clear 消失） | `executor_store_test.mbt`(+3) + `executor_route_verify.py`（跨进程三段） |
 
 ## 五、文档即实现
 - 工具/资源/测试数均与实测一致（README/AGENTS/ARCHITECTURE/agent-map 已同步）。

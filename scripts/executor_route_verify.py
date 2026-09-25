@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scripts/executor_route_verify.py — 验证 executor_register / executor_route（Marketplace 能力路由雏形，R30）E2E。
+"""scripts/executor_route_verify.py — 验证 执行者能力路由（Marketplace 雏形，R30/R31）E2E。
 
-在前置 store_open(scratch) 的命名空间里：发布并完成一条任务 → 登记两个执行者能力标签 →
-executor_route 按「能力覆盖率 desc → 负载 asc」推荐最佳执行者；再验证"能力路由到专长执行者 +
-负载均衡（同覆盖时负载小的优先）"。scratch 隔离，仓库根不留 {NS}.db。
+跨进程持久化（R31）：进程 A `executor_register` 登记能力 → 进程 B（全新、内存注册表为空）
+`executor_route` 仍能按能力路由到该执行者（证明 store executors 表持久化达到跨进程可复现）；
+进程 B `executor_clear` 清空 → 进程 C `executor_route` 不再见该执行者（证明可重置）。
+
+不创建任务（保持交付库干净，负载均衡行为由单元测试 `route_pick` 覆盖）。
 用法：moon build --target js cmd/main && python scripts/executor_route_verify.py
 """
 import json, os, subprocess
-from datetime import datetime, timezone
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 NODE = os.environ.get("FIST_NODE", "node")
 MAIN = "_build/js/debug/build/cmd/main/main.js"
-NS = "executor-verify"
 META = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
         "io.modelcontextprotocol/clientCapabilities": {},
         "io.modelcontextprotocol/clientInfo": {"name": "executor-route-verify", "version": "1.0"}}
-NOW = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def start(argv_mod=None):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("patch_esm_main", os.path.join(ROOT, "scripts", "patch_esm_main.py"))
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); mod.patch(MAIN)
+    return subprocess.Popen([NODE, MAIN], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", bufsize=1)
 
 def rpc(p, m, **kw):
     kw["_meta"] = META
@@ -31,49 +37,53 @@ def call(p, tool, **args):
     if "error" in r: raise RuntimeError(f"{tool}: {r['error']}")
     return json.loads(r["result"]["content"][0]["text"])
 
-def main():
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("patch_esm_main", os.path.join(ROOT, "scripts", "patch_esm_main.py"))
-    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); mod.patch(MAIN)
-    p = subprocess.Popen([NODE, MAIN], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", bufsize=1)
+def stop(p):
     try:
-        tools = [t["name"] for t in rpc(p, "tools/list").get("result", {}).get("tools", [])]
+        p.stdin.close(); p.terminate(); p.wait(timeout=5)
+    except Exception:
+        pass
+
+def names(route):
+    return [c["name"] for c in route.get("candidates", [])]
+
+def main():
+    # ① 进程 A：登记一个执行者（持久化）
+    pa = start()
+    try:
+        tools = [t["name"] for t in rpc(pa, "tools/list").get("result", {}).get("tools", [])]
         print(f"PASS tools/list → {len(tools)} 个工具")
-        assert "executor_register" in tools and "executor_route" in tools, "缺少 executor_register/executor_route"
-
-        # ① 登记两个执行者能力
-        a = call(p, "executor_register", name="exec-A", abilities=["编排", "json"])
-        assert a.get("ok") and a["name"] == "exec-A", f"登记失败: {a}"
-        b = call(p, "executor_register", name="exec-B", abilities=["编排"])
-        assert b.get("ok"), "exec-B 登记失败"
-        print(f"PASS executor_register → exec-A(编排,json) / exec-B(编排)，已注册 {a['executors']}")
-
-        # ② 路由"编排"：exec-A 与 exec-B 覆盖率都 1.0；给 exec-A 加一点负载后，应路由到 exec-B（负载均衡）
-        # 造 exec-A 一条活跃负载：发布→认领 一条任务给 exec-A
-        call(p, "store_open", namespace=NS, scratch=True, now=NOW)
-        r = call(p, "publish", project_dir="/proj/demo", namespace=NS, description="给 exec-A 的负载任务", created_by="human_steward", now=NOW)
-        call(p, "claim", task_id=r["task_id"], assignee="exec-A", now=NOW)
-        rt = call(p, "executor_route", need="编排")
-        assert rt.get("count", 0) >= 2, f"应有 ≥2 候选: {rt}"
-        best = rt["best"]["name"]
-        assert best == "exec-B", f"同覆盖下应负载均衡到 exec-B(负载0)而非 exec-A(负载1): {rt}"
-        print(f"PASS executor_route(need=编排) → 最佳 {best}（同覆盖 1.0，exec-A 负载1 被压后，负载均衡到 exec-B）")
-
-        # ③ 路由到专长：need=json 只有 exec-A 覆盖 1.0 → best=exec-A
-        rt2 = call(p, "executor_route", need="json")
-        assert rt2["best"]["name"] == "exec-A", f"json 专长应路由到 exec-A: {rt2}"
-        print(f"PASS executor_route(need=json) → 最佳 exec-A（专长路由）")
-
-        # 整洁：scratch 隔离
-        assert not os.path.exists(os.path.join(ROOT, NS + ".db")), f"仓库根不应出现 {NS}.db"
-        print("PASS 仓库根无 executor-verify.db（scratch 已隔离）")
-        print("MCP-EXECUTOR-ROUTE-VERIFY PASS")
+        assert "executor_register" in tools and "executor_route" in tools and "executor_clear" in tools
+        a = call(pa, "executor_register", name="exec-RJX", abilities=["json", "编排"])
+        assert a.get("persisted", False), f"应持久化: {a}"
+        assert "exec-RJX" in a["name"], a
+        print(f"PASS 进程A executor_register(exec-RJX:[json,编排]) → persisted=true")
     finally:
-        try:
-            p.stdin.close(); p.terminate(); p.wait(timeout=5)
-        except Exception:
-            pass
+        stop(pa)
+
+    # ② 进程 B（全新进程，内存注册表为空）：跨进程应能按能力路由到 exec-RJX
+    pb = start()
+    try:
+        rt = call(pb, "executor_route", need="json")
+        assert "exec-RJX" in names(rt), f"跨进程应读到持久化的 exec-RJX: {rt}"
+        assert rt["best"]["name"] == "exec-RJX", f"json 专长应路由到 exec-RJX: {rt}"
+        print(f"PASS 进程B executor_route(json) → 跨进程读到持久化 exec-RJX，best=exec-RJX（跨进程可复现）")
+        # ③ 进程 B：清空（Marketplace 重置）
+        cl = call(pb, "executor_clear")
+        assert cl.get("persisted"), f"清空应落库: {cl}"
+        print(f"PASS 进程B executor_clear → persisted=true（已清空 store executors 表）")
+    finally:
+        stop(pb)
+
+    # ④ 进程 C：清空后不应再见 exec-RJX（可重置）
+    pc = start()
+    try:
+        rt2 = call(pc, "executor_route", need="json")
+        assert "exec-RJX" not in names(rt2), f"executor_clear 后不应再见 exec-RJX: {rt2}"
+        print(f"PASS 进程C executor_route(json) → exec-RJX 已消失（Marketplace 可重置/整洁）")
+    finally:
+        stop(pc)
+
+    print("MCP-EXECUTOR-ROUTE-VERIFY PASS")
 
 if __name__ == "__main__":
     main()
