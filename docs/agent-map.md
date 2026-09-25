@@ -28,20 +28,20 @@
 | `atgc-old` | 旧 ATGC 叙事子项目（保留全量） | — |
 | `atgc` | 极简双链虚拟机（能力演示） | — |
 
-## 三、MCP 工具 8 大分组（70 个）
+## 三、MCP 工具分组概览（77 个）
 
 | 组 | 工具 |
 |---|---|
 | 生命周期(12) | publish/plan/claim/execute/submit/verify/reject/retry/pause/resume/archive/delete |
 | 查询(2) | list/get |
 | 运维(6) | task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup |
-| DAG(8) | dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish |
+| 看板/脉冲/预订+DAG(11) | dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish、board_ascii、status_summary、reserve_scope/check/release |
 | 自驱(8) | selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks |
-| 记忆/自进化(4+) | memory_consolidate/gc/link、evolve_submit/sample/snapshot/distill/asset_register/lesson、self_search |
+| 自我记忆/自进化(7) | memory_consolidate/gc/link、evolve_distill/lesson/critic、task_challenge |
 | 审计/权限(2) | audit_permission/log |
 | 多租户(3) | store_open/list/close |
 | 强验证(4) | omega_spec_create/review/result_verify/status |
-| 其它(辅助) | run_check/cost_stats/... |
+| 其它(辅助) | evolve_submit/sample/snapshot/asset_register/self_search、run_check/cost_stats、… |
 
 ## 四、入口引导（agent 该怎么走）
 
