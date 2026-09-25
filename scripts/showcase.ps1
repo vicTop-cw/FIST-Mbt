@@ -7,6 +7,7 @@ scripts/showcase.ps1 — FIST-Mbt 30~60 秒视觉终端演示
   2. 九态生命周期状态机（box-drawing）
   3. DAG 依赖结构图（递归拆解）
   4. 自举采用证据（读盘真实数据：review 轮数 + SQLite 任务/执行数）
+  4b. 自治派送闭环（triage→dispatch_next→executor_route→watchdog autodispatch 零参数）
   5. Footer 汇总
 
 用法（自包含、相对路径、不硬编码盘符）：
@@ -109,10 +110,27 @@ if ($taskCount -ge 0) {
 } else {
     W ("  " + (C $YELLOW "▶ 自举迭代库：未找到可用的 python / sqlite，跳过真实计数（演示不会崩）"))
 }
+
+# ================ 4b. 自治派送闭环（R45 演示 → R56-58 语法下沉 + 看门狗接入 + 零参数） ================
+Write-Output ""
+$h4 = (C $YELLOW "自治派送  AUTONOMOUS DISPATCH  （派送 primitive → watchdog 接入 → 零参数）")
+W $h4
+$d1 = (C $GREEN  "  R0 ┌ task_triage 取顶部可领取任务")
+$d2 = (C $GREEN "     └ dispatch_next ──▶ executor_route（能力覆盖 → 负载）")
+$d2b = (C $CYAN  "            └──▶ 认领给最佳执行者（无需注册执行者回退 agent）")
+$d3 = (C $GREEN  "  watchdog_tick + autodispatch=true ──▶ 无人值守自动派单")
+$d3b = (C $CYAN "         want 为空 → 自动从任务描述抽取能力（零参数：描述+能力注册 → 直接派给谁）")
+$d4 = (C $MAG   "  ▶ 它也在给自己派单：引擎层 store-backed，不经进程内 exec_reg，跨进程可复现")
+W ("  " + $d1)
+W ("  " + $d2)
+W ("     " + $d2b)
+W ("  " + $d3)
+W ("     " + $d3b)
+W ("  " + $d4)
 Write-Output ""
 
 # ================ 5. FOOTER 汇总 ================
-$f1 = (C $GREEN "67 MCP tools") + (C $CYAN " · ") + (C $GREEN "184 tests") + (C $CYAN " · ") + (C $GREEN "JS+Native") + (C $CYAN " · ") + (C $GREEN "CI 3 tracks")
+$f1 = (C $GREEN "83 MCP tools") + (C $CYAN " · ") + (C $GREEN "240 tests") + (C $CYAN " · ") + (C $GREEN "JS+Native") + (C $CYAN " · ") + (C $GREEN "CI 3 tracks")
 W ("  " + $f1)
 W ("  " + (C $BOLD (C $CYAN "fist-mbt drives itself ─ 自举采用，自动演进")))
 Write-Output ""
