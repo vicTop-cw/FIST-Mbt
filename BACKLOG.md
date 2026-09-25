@@ -2,7 +2,7 @@
 
 > 本文档为 selfdrive 审视/门禁的净拉取源：Next Tasks 应从这里取。
 > 由三份调研去重收敛生成：`memory/research/competition.md`、`memory/research/five-directions.md`、`memory/research/future-roadmap.md`。
-> 状态枚举 `pending | done`。锚点事实：**95 工具 / 273 测试**（`moon test --target js` Windows+WSL 双端全绿）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
+> 状态枚举 `pending | done`。锚点事实：**96 工具 / 277 测试**（`moon test --target js` Windows+WSL 双端全绿）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
 
 | P级 | 事项 | 来源 | 状态 | 对应review/commit |
 |-----|------|------|------|-------------------|
@@ -21,7 +21,7 @@
 | P2 | 集成 moonbitlang/core/quickcheck 属性测试替代部分硬编码断言 | competition/§四 P2-8 + five-directions/§六 + future-roadmap/中 | pending | - |
 | P2 | 评估 mizchi/llm 纯 MoonBit 客户端替代 Python sidecar（进一步纯化） | competition/§四 P2-9 + §六 + future-roadmap/中 | pending | - |
 | P2 | 补充 ARCHITECTURE.md（9 模块关系图 + 数据流 + MCP 协议层），降低概念门槛 | competition/§四 P2-10 + future-roadmap/中 | pending | - |
-| P2 | Interleaved 分支：据子任务执行反馈回退改 plan，而非拆完即弃 | five-directions/§一 | pending | - |
+| P2 | Interleaved 分支：据子任务执行反馈回退改 plan，而非拆完即弃 | five-directions/§一 | done(plan_revise 已落地：执行反馈 → keep/rework/ready 三分计划修订，级联控涟漪；feedback 缺省读真实状态、显式 [{task_id,ok}] 可覆盖，纯读不写库；R98 见调研档 20260926.plan-revise.md) | - |
 | P2 | Transactional transition：invariant 失败整笔拒绝、状态 A 回稳 | five-directions/§一 | pending | - |
 | P2 | Pre-execution audit gate：can_execute 之后、execute 之前插入 gate interception | five-directions/§一 | pending | - |
 | P2 | Evaluator-Optimizer schema：feedback 收敛为 Defects/Evidence/Fix/Acceptance 四段式 | five-directions/§一 | pending | - |

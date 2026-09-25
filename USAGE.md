@@ -154,7 +154,7 @@ def rpc(method, **payload):
 
 ---
 
-## 6. 95 个 MCP 工具手册
+## 6. 96 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 

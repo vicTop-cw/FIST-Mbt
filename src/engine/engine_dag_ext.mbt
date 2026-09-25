@@ -853,3 +853,147 @@ pub fn FistEngine::progress_gate(
     ),
   })
 }
+
+///|
+/// 反馈驱动的计划修订（R98，ReAct arXiv 2210.03629 / CoPAL arXiv 2310.07263 蒸馏落地）：
+/// 把"拆完即弃"升级为"执行中持续修订"——给定根任务及子任务执行反馈，计算计划三分：
+/// keep（已证有效、承诺保留）/ rework（失败或其依赖链受牵连，需返工/重做）/ ready
+/// （依赖全部有效且未执行 = 下一步可做）。feedback 缺省时读真实状态（已完成/已归档
+/// =ok；已打回/已暂停=否；其余=未证）。级联：失败任务的下游依赖者一并 rework
+/// （plan commitment 控涟漪——与 saga_repair 依赖者闭包同构）。纯计算、只读不写库
+/// （决策建议，执行权在 agent/指挥官，与 saga 返回补偿序列同一抽象层）。
+pub fn FistEngine::plan_revise(
+  self : FistEngine,
+  root_task_id : String,
+  feedback? : Array[Json] = [],
+  ns? : String = "default",
+) -> Json {
+  if self.get_task(root_task_id) is None {
+    return Json::object({
+      "ok": Json::boolean(false),
+      "root_task_id": Json::string(root_task_id),
+      "note": Json::string("根任务不存在: " + root_task_id),
+    })
+  }
+  let sub = self.subtree_ids(root_task_id)
+  // 显式反馈表：task_id -> ok（覆盖读状态）
+  let fb : Map[String, Bool] = Map([])
+  for f in feedback {
+    let tid_opt = match f.value("task_id") {
+      Some(Json::String(s)) => Some(s)
+      _ => None
+    }
+    let ok_opt = match f.value("ok") {
+      Some(j) => j.as_bool()
+      _ => None
+    }
+    match (tid_opt, ok_opt) {
+      (Some(tid), Some(okv)) => fb.set(tid, okv)
+      _ => ()
+    }
+  }
+  let basis = if feedback.is_empty() { "status" } else { "feedback" }
+  // 证据判定：ok / no / ?
+  let ev : Map[String, String] = Map([])
+  for id in sub {
+    match self.get_task(id) {
+      None => ()
+      Some(t) => {
+        let v = match fb.get(id) {
+          Some(b) => if b { "ok" } else { "no" }
+          None => {
+            let st = t.get_status()
+            if st.is_completed() || st.is_archived() {
+              "ok"
+            } else if st.is_rejected() || st.is_paused() {
+              "no"
+            } else {
+              "?"
+            }
+          }
+        }
+        ev.set(id, v)
+      }
+    }
+  }
+  // 类别：keep / rework / ready（依赖先分类，迭代至稳定；根任务是计划容器，不入桶）
+  let cat : Map[String, String] = Map([])
+  let mut changed = true
+  while changed {
+    changed = false
+    for id in sub {
+      if id == root_task_id {
+        continue
+      }
+      if cat.get(id) is Some(_) {
+        continue
+      }
+      match self.get_task(id) {
+        None => ()
+        Some(t) => {
+          let mut dep_rework = false
+          let mut dep_undone = false
+          for d in t.depends_on {
+            if sub.contains(d) {
+              match cat.get(d) {
+                Some("rework") => dep_rework = true
+                Some("keep") => ()
+                _ => dep_undone = true
+              }
+            } else {
+              // 子树外依赖：按真实状态判定是否完成
+              match self.get_task(d) {
+                Some(dt) =>
+                  if not(dt.get_status().is_completed()) {
+                    dep_undone = true
+                  }
+                None => dep_undone = true
+              }
+            }
+          }
+          let tag = match ev.get(id) {
+            Some("no") => "rework"
+            Some("ok") => if dep_rework { "rework" } else { "keep" }
+            _ =>
+              if dep_rework {
+                "rework"
+              } else if dep_undone {
+                ""
+              } else {
+                "ready"
+              }
+          }
+          if tag != "" {
+            cat.set(id, tag)
+            changed = true
+          }
+        }
+      }
+    }
+  }
+  let keep : Array[String] = []
+  let rework : Array[String] = []
+  let ready : Array[String] = []
+  for id in sub {
+    match cat.get(id) {
+      Some("keep") => keep.push(id)
+      Some("rework") => rework.push(id)
+      Some("ready") => ready.push(id)
+      _ => ()
+    }
+  }
+  Json::object({
+    "ok": Json::boolean(true),
+    "root_task_id": Json::string(root_task_id),
+    "basis": Json::string(basis),
+    "keep_count": Json::number(keep.length().to_double()),
+    "rework_count": Json::number(rework.length().to_double()),
+    "ready_count": Json::number(ready.length().to_double()),
+    "keep": Json::array(keep.map(fn(s) { Json::string(s) })),
+    "rework": Json::array(rework.map(fn(s) { Json::string(s) })),
+    "ready": Json::array(ready.map(fn(s) { Json::string(s) })),
+    "note": Json::string(
+      "反馈驱动的计划修订（ReAct 交错 + CoPAL 分级纠正蒸馏）：keep=已证有效承诺保留 / rework=失败或其依赖链受牵连需返工（控涟漪）/ ready=依赖全部有效且未执行，下一步可做。",
+    ),
+  })
+}

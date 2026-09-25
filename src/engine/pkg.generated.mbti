@@ -124,6 +124,7 @@ pub fn FistEngine::pick_next(Self, String, String, String, String) -> Json
 pub fn FistEngine::plan(Self, task_id~ : String, split_n? : Int, by~ : String, now~ : String) -> Result[Array[String], String]
 pub fn FistEngine::plan_deep(Self, task_id~ : String, split_n? : Int, by~ : String, spec? : Json?, now~ : String, omega_strong_verify? : Bool, gradient? : Bool, calibrate? : Array[Double]?, gradient_dag? : Bool, reinject_context? : Bool) -> Result[Json, String]
 pub fn FistEngine::plan_exec_order(Self, String) -> Json
+pub fn FistEngine::plan_revise(Self, String, feedback? : Array[Json], ns? : String) -> Json
 pub fn FistEngine::progress_gate(Self, String, Int, Int) -> Json
 pub fn FistEngine::publish(Self, project_dir~ : String, description~ : String, created_by~ : String, now~ : String, ns? : String) -> Result[String, String]
 pub fn FistEngine::publish_next_round(Self, ns~ : String, description~ : String, created_by~ : String, prev_task_id~ : String, now~ : String) -> Result[String, String]

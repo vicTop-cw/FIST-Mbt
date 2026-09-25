@@ -195,6 +195,15 @@ def main():
               f"compensate={[s['step'] for s in rep.get('compensate', [])]} "
               f"keep={[s['step'] for s in rep.get('keep', [])]} "
               f"（最小切片补偿控级联，保留未受影响承诺；depends_on 闭包版见单测）")
+        # R98 反馈驱动的计划修订：对 ③b 拆解的根任务做执行反馈修订（读真实状态 basis=status）
+        rv = call(p, "plan_revise", root_task_id=rid1)
+        assert rv.get("ok") is True, "plan_revise 应 ok"
+        assert len(rv.get("ready", [])) >= 1, "plan_revise 应给出下一步 ready"
+        print(f"      ↳ R98 计划修订 plan_revise({rid1}) → basis={rv.get('basis')} "
+              f"keep={rv.get('keep_count')} rework={rv.get('rework_count')} "
+              f"ready={rv.get('ready_count')} "
+              f"（ReAct/CoPAL：执行反馈 → keep/rework/ready 三分修订，下一步可做 "
+              f"{len(rv.get('ready', []))} 条，控级联不涟漪）")
         tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"
