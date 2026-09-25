@@ -221,6 +221,9 @@ test "plan_deep 开启 gradient 时子任务描述带难度梯度与更简单变
         true,
       )
       assert_eq(c_first.description.contains("更简单变体"), true)
+      // R35 深化：提示须含"由易到难——先完成更简单变体，再推广/逆推到本任务"的 LADDER 先易后逆推语
+      assert_eq(c_first.description.contains("先易后逆推"), true)
+      assert_eq(c_first.description.contains("推广/逆推"), true)
       let c_last = kids[kids.length() - 1]
       assert_eq(
         true,

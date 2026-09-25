@@ -136,7 +136,7 @@ You can browse and install extra skills here:
 ### 运维（6）
 | 工具 | 说明 |
 |---|---|
-| `task_plan_deep` | AO 式递归拆解（可选 `gradient=true` 使子任务带难度梯度与更简单变体提示；可选 `calibrate` 按切片给真实难度 0..5 覆盖位置档） |
+| `task_plan_deep` | AO 式递归拆解（可选 `gradient=true` 使子任务带难度梯度与"更简单变体 → 先易后逆推"LADDER 自举提示；可选 `calibrate` 按切片给真实难度 0..5 覆盖位置档） |
 | `conflicts_check` | 认领冲突检测 |
 | `heartbeat` | 活动信号上报 |
 | `heal` | 超时任务回滚（内存版，人工流程） |
