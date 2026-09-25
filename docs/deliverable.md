@@ -8,14 +8,14 @@
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
 moon build --target js cmd/main
 python scripts/mcp_smoke.py
-# 期望输出：PASS tools/list → 90 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
+# 期望输出：PASS tools/list → 91 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
 ```
 
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **90**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 256/256**（Windows + WSL(Linux) 双端实测全绿） |
+| MCP 工具 | **91**（+ 3 resources + 2 prompts） |
+| 测试 | **`moon test --target js` 259/259**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -90,13 +90,14 @@ python scripts/mcp_smoke.py
 | 56 预算阶段切分 | 新增 `cost_budget_split` 工具（R81，ZEBRA 背包水填充蒸馏简化版）：给定总预算按任务 DAG 阶段(slack earliest 层级)切分——每阶段份额=阶段难度权重(难3/中2/易1)占总量比例×总预算(余数补最大权重阶段)，返回 { stages:[{level,tasks,difficulty_sum,share}], total_budget, makespan, note }——预算在依赖图上按阶段切分：瓶颈阶段占额可见，超支先预警 | `dag_ext_test.mbt`「budget_split_by_dag 阶段切分+空仓库」用例（+1） |
 | 57 置信度校准拍卖 | 新增 `executor_auction` 工具（R87，Agora arXiv 2607.09600 蒸馏）：把分派从"排序推荐"升级为"按出价竞拍"——每个已注册执行者对所需能力 need 出价（显式 `bid` 或默认按能力覆盖率），经校准系数 1-\|出价-历史验收通过率\| 折扣防胜者诅咒（过度自信而兑现差的执行者被惩罚），再乘负载折扣 1/(1+负载) 得拍卖分；能力覆盖>0 方可竞拍，返回 bids 全表 + winner + basis + note。Marketplace 叙事续：能力登记→路由(专长+信任+负载)→**拍卖(校准出价)** | `registry_test.mbt`「auction_pick」用例（+3：能力门槛+默认出价 / 胜者诅咒防护 / 负载折扣+空 need） |
 | 58 进度预算门控 | 新增 `progress_gate` 工具（R88，PROGROUTER arXiv 2608.25992 蒸馏）：对任务子树按已消耗预算(难度权重 易/中/难→1/2/3，自动估算或 `spent` 手动注入)与完成进度(已完成+已归档/子树任务数)做双路径剩余成本预测——线性=燃尽率×剩余工作量、保守=1.2×线性（PROGROUTER 双路径），元门控给决策 OK(预算充足继续)/CAUTION(线性可行但缓冲不足→降档缩范围)/ESCALATE(线性已超支→追加预算或暂停)。计划性增强：预算×进度在线体检，先预警后决策，纯计算零副作用 | `dag_ext_test.mbt`「progress_gate」用例（+4：OK 自动估算 / CAUTION / ESCALATE+双路径数字 / 未开工+全完成+空任务+非法预算） |
+| 59 概率式故障检测 | 新增 `phi_accrual` 工具（R89，Hayashibara 2004 经典算法，Cassandra/HBase 生产采用）：按心跳间隔历史分布算怀疑度 φ=-log10(P(心跳晚于 elapsed 到达))，替代固定 timeout——窗口内间隔均值 μ+标准差 σ 建模（σ≈0 回退指数分布；\|z\|≥3 用尾部渐近展开保精度，core 无 sqrt 用牛顿法自实现），φ≥threshold(默认 8,原论文口径) 判 suspect 否则 healthy；无间隔历史 insufficient。升级看护语义：心跳节奏越快、越久没来才值得怀疑——可靠性工程新能力维度 | `engine_phi_test.mbt`「phi_accrual」用例（+3：σ=0 指数回退 / 正态建模 z=5 健康 z=6 怀疑 / 单调性+空历史） |
 
 > 注：内存日志/汇报用字母轮号（含若干纯文档/CI 非功能行，不入上表）；本表仅计功能轮。
 
 ## 五、文档即实现
 - 工具/资源/测试数均与实测一致（README/AGENTS/ARCHITECTURE/agent-map 已同步）。
 - 过程日志 `memory/2026-09-25.md`；综合汇报 `reports/2026-09-25-award-enhancement-5rounds-report.md`。
-- 调研：`memory/research/20260925.enrich-roadmap.md`（Repo Map / DALIA / TURA / AgentX / MoonBit 新特性）、`memory/research/ecosystem-borrow.md`（§五 二轮调研：SAGE/R-Few/SPICE/SEP-1686/RepoMap）、`memory/research/20260926.cost-market-routing.md`（成本感知调度/市场式路由：STAR 依赖图拍卖 / CASTER / ZEBRA / Agora / PROGROUTER / SwarmHarness——已落地 dag_cost_route R77 / executor_route 信任轴 R80 / cost_budget_split R81 / executor_auction 置信度拍卖 R87 / progress_gate 进度预算门控 R88，含落地设计草案）。
+- 调研：`memory/research/20260925.enrich-roadmap.md`（Repo Map / DALIA / TURA / AgentX / MoonBit 新特性）、`memory/research/ecosystem-borrow.md`（§五 二轮调研：SAGE/R-Few/SPICE/SEP-1686/RepoMap）、`memory/research/20260926.cost-market-routing.md`（成本感知调度/市场式路由：STAR 依赖图拍卖 / CASTER / ZEBRA / Agora / PROGROUTER / SwarmHarness——已落地 dag_cost_route R77 / executor_route 信任轴 R80 / cost_budget_split R81 / executor_auction 置信度拍卖 R87 / progress_gate 进度预算门控 R88，含落地设计草案）、`memory/research/20260926.reliability-phi-accrual.md`（可靠性工程新线程：Phi Accrual 概率式故障检测，落地 phi_accrual R89，Cassandra/HBase 生产采用）。
 - 遗留如实：Windows native 竞态、`node:sqlite` 实验性警告、测试落盘 `temp/`（cleanup --check 兜底）见 §六。
 
 ## 六、遗留（诚实自曝）
