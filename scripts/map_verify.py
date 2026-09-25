@@ -39,6 +39,10 @@ def main():
         assert payload.get("product") == "FIST-Mbt"
         assert "engine" in payload.get("packages", {})
         assert "生命周期" in payload.get("tool_groups", {})
+        # R36：地图须含最新分组（Marketplace·能力路由 / 看板·脉冲·预订·推荐+DAG / 自驱含 pick_next）
+        assert "Marketplace·能力路由" in payload.get("tool_groups", {}), "地图缺 Marketplace 分组"
+        assert "看板/脉冲/预订/推荐+DAG" in payload.get("tool_groups", {}), "地图缺看板/脉冲分组"
+        assert "executor_register" in payload.get("tool_groups", {}).get("Marketplace·能力路由", "")
         print("PASS resources/read fist://map → product=", payload.get("product"),
               "packages=", list(payload.get("packages", {})), "tool_groups=", list(payload.get("tool_groups", {})))
         print("MCP-MAP-VERIFY PASS")
