@@ -254,3 +254,105 @@ pub fn render_project_health(
     "blocked_tasks": Json::array(blocked_ids.map(fn(s) { Json::string(s) })),
   })
 }
+
+///|
+/// 四金信号健康巡检（R102，Google SRE Book 2016「Monitoring Distributed Systems」四金信号
+/// latency/traffic/errors/saturation 蒸馏）：project_health 从"一个等级"升级为"四个信号"——
+/// latency=最近已完成任务完成周期（created_at→updated_at 秒，p50/p90，<3 条 insufficient，
+/// SRE 要点：百分位而非均值）；traffic=活跃需求（in_flight 执行中+已领取+拆分中）；errors=
+/// 失败率（已打回+已暂停/总数）；saturation=积压率（待领取/总数——SRE 先行指标：系统先积压
+/// 后坏，>0.5 attention 预警）。单信号 verdict：saturation>0.5 attention / errors>0.3 attention
+/// / latency insufficient / traffic=0 idle；grade=最差信号。纯计算、只读不写库。
+pub fn render_health_check(tasks : Array[@core.Task], ns : String) -> Json {
+  let total = tasks.length()
+  let mut in_flight = 0
+  let mut ready = 0
+  let mut blocked = 0
+  let done_cycles : Array[Int] = []
+  for t in tasks {
+    match t.status_to_string() {
+      "执行中" | "已领取" | "拆分中" => in_flight = in_flight + 1
+      "待领取" => ready = ready + 1
+      "已完成" => {
+        let a = @ops.iso_to_secs(t.created_at)
+        let b = @ops.iso_to_secs(t.updated_at)
+        if a > 0 && b > 0 && b >= a {
+          done_cycles.push(b - a)
+        }
+      }
+      "已暂停" | "已打回" => blocked = blocked + 1
+      _ => ()
+    }
+  }
+  done_cycles.sort()
+  let n = done_cycles.length()
+  let latency_json = if n < 3 {
+    Json::object({
+      "verdict": Json::string("insufficient"),
+      "count": Json::number(n.to_double()),
+      "note": Json::string(
+        "已完成样本 <3，无法算百分位（SRE：用百分位不用均值）",
+      ),
+    })
+  } else {
+    let p50 = done_cycles[n * 50 / 100]
+    let p90 = done_cycles[n * 90 / 100]
+    Json::object({
+      "verdict": Json::string("ok"),
+      "count": Json::number(n.to_double()),
+      "p50_secs": Json::number(p50.to_double()),
+      "p90_secs": Json::number(p90.to_double()),
+    })
+  }
+  let errors_rate = if total <= 0 {
+    0.0
+  } else {
+    blocked.to_double() / total.to_double()
+  }
+  let saturation = if total <= 0 {
+    0.0
+  } else {
+    ready.to_double() / total.to_double()
+  }
+  let errors_verdict = if errors_rate > 0.3 { "attention" } else { "ok" }
+  let saturation_verdict = if saturation > 0.5 { "attention" } else { "ok" }
+  let traffic_verdict = if in_flight <= 0 && ready <= 0 { "idle" } else { "ok" }
+  let grade = if saturation_verdict == "attention" ||
+    errors_verdict == "attention" {
+    "attention"
+  } else if traffic_verdict == "idle" {
+    "idle"
+  } else {
+    "healthy"
+  }
+  Json::object({
+    "ok": Json::boolean(true),
+    "namespace": Json::string(ns),
+    "total_tasks": Json::number(total.to_double()),
+    "signals": Json::object({
+      "latency": latency_json,
+      "traffic": Json::object({
+        "verdict": Json::string(traffic_verdict),
+        "in_flight": Json::number(in_flight.to_double()),
+        "ready": Json::number(ready.to_double()),
+      }),
+      "errors": Json::object({
+        "verdict": Json::string(errors_verdict),
+        "rate": Json::number(errors_rate),
+        "blocked": Json::number(blocked.to_double()),
+      }),
+      "saturation": Json::object({
+        "verdict": Json::string(saturation_verdict),
+        "rate": Json::number(saturation),
+        "backlog": Json::number(ready.to_double()),
+        "note": Json::string(
+          "SRE 先行指标：系统先积压后坏，>0.5 预警",
+        ),
+      }),
+    }),
+    "grade": Json::string(grade),
+    "basis": Json::string(
+      "Google SRE Book 2016 四金信号（latency/traffic/errors/saturation）蒸馏",
+    ),
+  })
+}

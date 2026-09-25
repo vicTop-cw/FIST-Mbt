@@ -20,6 +20,146 @@ fn ba_publish(e : @engine.FistEngine, desc : String) -> String {
 }
 
 ///|
+/// 读出 health_check 的 grade。
+fn hc_grade(j : Json) -> String {
+  match j.value("grade") {
+    Some(Json::String(s)) => s
+    _ => abort("grade 缺失: " + j.stringify())
+  }
+}
+
+///|
+/// 读出 health_check signals 中某信号 verdict。
+fn hc_signal_verdict(j : Json, key : String) -> String {
+  let obj = match j.value("signals") {
+    Some(Object(o)) => o
+    _ => return ""
+  }
+  let sj = match obj.get(key) {
+    Some(x) => x
+    _ => return ""
+  }
+  match sj.value("verdict") {
+    Some(Json::String(v)) => v
+    _ => ""
+  }
+}
+
+///|
+test "health_check：空仓 → idle（traffic=0），latency insufficient" {
+  let e = ba_engine()
+  let j = render_health_check(e.list_all(), "default")
+  assert_eq(hc_grade(j), "idle")
+  assert_eq(hc_signal_verdict(j, "traffic"), "idle")
+  assert_eq(hc_signal_verdict(j, "latency"), "insufficient")
+}
+
+///|
+test "health_check：积压先行预警——待领取过半 → saturation attention（SRE：先积压后坏）" {
+  let e = ba_engine()
+  let root = ba_publish(e, "四金信号根任务")
+  ignore(e.claim(task_id=root, assignee="leader_a", now="2026-09-25T10:01:00Z"))
+  match
+    e.plan_deep(
+      task_id=root,
+      split_n=4,
+      by="leader_a",
+      now="2026-09-25T10:02:00Z",
+    ) {
+    Ok(_) => ()
+    Err(m) => abort("plan_deep failed: \{m}")
+  }
+  // 5 任务（根+4 子）：ready=4 → 饱和 0.8 > 0.5 → attention
+  let j = render_health_check(e.list_all(), "default")
+  assert_eq(hc_signal_verdict(j, "saturation"), "attention")
+  assert_eq(hc_grade(j), "attention")
+}
+
+///|
+test "health_check：healthy + latency 百分位——3 完成 1 待领取，p50/p90 出现" {
+  let e = ba_engine()
+  // 直接 store 构造精确状态（避免 plan_deep 递归生成不可控任务数）：
+  // 根 R(拆分中) + A/B/C(已完成，周期 120s) + D(待领取) → total=5：in_flight=1 ready=1 done=3
+  let specs : Array[(String, String?, String, String, String)] = [
+    ("R", None, "拆分中", "2026-09-25T10:02:00Z", "2026-09-25T10:02:00Z"),
+    (
+      "A",
+      Some("R"),
+      "已完成",
+      "2026-09-25T10:02:00Z",
+      "2026-09-25T10:04:00Z",
+    ),
+    (
+      "B",
+      Some("R"),
+      "已完成",
+      "2026-09-25T10:02:00Z",
+      "2026-09-25T10:04:00Z",
+    ),
+    (
+      "C",
+      Some("R"),
+      "已完成",
+      "2026-09-25T10:02:00Z",
+      "2026-09-25T10:04:00Z",
+    ),
+    (
+      "D",
+      Some("R"),
+      "待领取",
+      "2026-09-25T10:02:00Z",
+      "2026-09-25T10:02:00Z",
+    ),
+  ]
+  for s in specs {
+    let (id, parent, st, created, updated) = s
+    let t = @core.Task::from_db(
+      id,
+      parent,
+      "/proj/board",
+      "default",
+      "中",
+      "中",
+      1,
+      1,
+      st,
+      if st == "已完成" {
+        Some("exec_1")
+      } else {
+        None
+      },
+      "四金信号健康任务 \{id}",
+      "",
+      created,
+      updated,
+      if st == "已完成" {
+        Some("ver_1")
+      } else {
+        None
+      },
+      "",
+      [],
+    )
+    ignore(e.store.create_task(t))
+  }
+  let j = render_health_check(e.list_all(), "default")
+  assert_eq(hc_signal_verdict(j, "latency"), "ok")
+  assert_eq(hc_grade(j), "healthy")
+  match j.value("signals") {
+    Some(Object(o)) =>
+      match o.get("latency") {
+        Some(sj) =>
+          match sj.value("p50_secs") {
+            Some(Json::Number(n, ..)) => assert_eq(n.to_int(), 120)
+            _ => abort("p50_secs 缺失: " + j.stringify())
+          }
+        _ => abort("latency 缺失")
+      }
+    _ => abort("signals 缺失")
+  }
+}
+
+///|
 test "board_ascii 按状态分组 + 深度缩进 + 状态合计" {
   let e = ba_engine()
   let root = ba_publish(e, "Omega 看板根任务")
