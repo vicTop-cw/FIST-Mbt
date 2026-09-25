@@ -2675,19 +2675,28 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "store_open",
-    "打开（或复用）一个命名空间。参数：namespace、data_dir(可选，默认当前目录)。",
+    "打开（或复用）一个命名空间。参数：namespace、data_dir(可选，默认当前目录)、scratch(可选，true 时库落 temp/ 临时区，不污染仓库根)。",
     schema(
       {
         "namespace": string_prop("命名空间（必填）"),
         "data_dir": string_prop(
           "库文件根目录(可选，默认当前目录)",
         ),
+        "scratch": bool_prop(
+          "临时命名空间开关(可选，默认 false)：true 时强制 data_dir=temp/（gitignore），避免根目录堆 .db",
+        ),
       },
       ["namespace"],
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
-      let dir = get_str(args, "data_dir", default=".")
+      var dir = get_str(args, "data_dir", default=".")
+      let scratch = get_bool(args, "scratch", default=false)
+      // 临时命名空间：强制落到 temp/（gitignore），不污染仓库根
+      if scratch {
+        @fs.create_dir("temp") catch { _ => () }
+        dir = "temp"
+      }
       match mstore.open(ns~, data_dir=dir) {
         false => Err(@mcp_types.ToolError("打开命名空间失败: \{ns}"))
         true =>
@@ -2696,6 +2705,8 @@ pub async fn run_server() -> Unit {
               Json::object({
                 "namespace": Json::string(ns),
                 "opened": Json::boolean(true),
+                "data_dir": Json::string(dir),
+                "scratch": Json::boolean(scratch),
                 "active_namespaces": Json::array(
                   mstore.ns_list().map(fn(s) { Json::string(s) }),
                 ),
