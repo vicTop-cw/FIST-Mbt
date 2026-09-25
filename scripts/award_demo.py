@@ -165,6 +165,13 @@ def main():
         assert "stages" in bs and "total_budget" in bs, "cost_budget_split 应返回 stages/total_budget"
         print(f"      ↳ R81 预算阶段切分 cost_budget_split(100) → {len(bs.get('stages', []))} 阶段，"
               f"makespan={bs.get('makespan')}（预算按 DAG 阶段切分：瓶颈阶段占额可见，超支先预警）")
+        # R87 置信度校准拍卖：按出价竞拍（校准系数 1-|出价-兑现率| 防胜者诅咒，Agora 蒸馏）
+        au = call(p, "executor_auction", need="编排", bid={"exec_demo": 0.9, "manual": 0.6})
+        aw = au.get("winner", {}) or {}
+        assert "bids" in au and "winner" in au, "executor_auction 应返回 bids/winner"
+        print(f"      ↳ R87 置信度校准拍卖 executor_auction(need=编排) → 竞拍 {au.get('count')} 家，"
+              f"winner={aw.get('name')} calibration={aw.get('calibration')} score={aw.get('score')} "
+              f"（Agora 蒸馏：出价×校准×负载折扣，过度自信者被惩罚）")
         tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"

@@ -313,13 +313,15 @@ pub fn watchdog_tick(
       _ =>
         Json::object({
           "task_id": Json::string(""),
-          "note": Json::string("无待领取且依赖满足的任务，无需派发"),
+          "note": Json::string(
+            "无待领取且依赖满足的任务，无需派发",
+          ),
         })
     }
   } else {
     Json::null()
   }
-  var detail = Json::object({
+  let mut detail = Json::object({
     "namespace": Json::string(heal_ns),
     "scanned": Json::number(tasks.length().to_double()),
     "active_tasks": Json::object(active_detail),
@@ -462,7 +464,9 @@ pub fn watchdog_tick(
   // 调引擎层 store-backed `dispatch_next` 把顶部可领取任务按能力/负载路由认领给最佳执行者，
   // 结果并入 detail.autodispatch，不改动既有 waiting/idle 语义。
   if autodispatch && ns != "" && active_ids.is_empty() {
-    let ad = engine.dispatch_next(heal_ns, next_created_by, autodispatch_want, now)
+    let ad = engine.dispatch_next(
+      heal_ns, next_created_by, autodispatch_want, now,
+    )
     let detail_new = match detail {
       Object(m) =>
         Json::object({
@@ -473,9 +477,9 @@ pub fn watchdog_tick(
           "meta_prompt_path": m.get("meta_prompt_path").unwrap_or(Json::null()),
           "meta_prompt_used": m.get("meta_prompt_used").unwrap_or(Json::null()),
           "selfdrive": m.get("selfdrive").unwrap_or(Json::null()),
-          "ready_dispatch_preview": m.get(
-            "ready_dispatch_preview",
-          ).unwrap_or(Json::null()),
+          "ready_dispatch_preview": m
+          .get("ready_dispatch_preview")
+          .unwrap_or(Json::null()),
           "autodispatch": ad,
         })
       _ => detail

@@ -284,7 +284,111 @@ pub fn ExecutorRegistry::route_pick_with_trust(
     "count": Json::number(rows.length().to_double()),
     "candidates": Json::array(rows),
     "best": best,
-    "basis": Json::string("能力覆盖 → 历史信任(验收通过率) → 负载 → 名称（R80）"),
+    "basis": Json::string(
+      "能力覆盖 → 历史信任(验收通过率) → 负载 → 名称（R80）",
+    ),
+  })
+}
+
+///|
+/// Agora 置信度校准拍卖（R87，Agora arXiv 2607.09600 蒸馏）：把执行者分派从"排序推荐"
+/// 升级为"按出价竞拍"。每个已注册执行者对任务所需能力 need 出价（显式 bid，缺省按
+/// 能力覆盖率自动出价），经校准系数 `1 - |出价 - 历史验收通过率|` 折扣——防"胜者诅咒"：
+/// 过度自信（出价高而兑现差）的执行者被惩罚；再乘负载折扣 `1/(1+负载)` 得拍卖分。
+/// 能力覆盖 > 0 方可竞拍（能力不匹配不进入拍卖）。纯计算：need/load/trust/bid 均由
+/// 调用方注入，本层不读存储。排序：拍卖分 desc → 名称 asc。
+pub fn ExecutorRegistry::auction_pick(
+  self : ExecutorRegistry,
+  need : String,
+  load : Map[String, Int],
+  trust : Map[String, Double],
+  bid : Map[String, Double],
+) -> Json {
+  let tags = split_need_tags(need)
+  let rows : Array[Json] = []
+  for name in self.list() {
+    let cov = ability_coverage(self.abilities_of(name), tags)
+    if cov > 0.0 {
+      let bd0 = match bid.get(name) {
+        Some(d) => d
+        None => cov
+      }
+      // 出价夹到 0..1（防止调用方传入越界置信度）
+      let bd = if bd0 < 0.0 { 0.0 } else if bd0 > 1.0 { 1.0 } else { bd0 }
+      let tr = match trust.get(name) {
+        Some(d) => d
+        None => 0.5
+      }
+      // 校准 = 1 - |出价 - 历史验收通过率|（Agora：按校准能力而非原始置信度拍卖）
+      let diff = if bd > tr { bd - tr } else { tr - bd }
+      let cal = 1.0 - diff
+      let ld = match load.get(name) {
+        Some(n) => n
+        None => 0
+      }
+      // 负载折扣：活跃任务越多拍卖分越低（负载均衡）
+      let lf = 1.0 / (ld + 1).to_double()
+      let score = bd * cal * lf
+      rows.push(
+        Json::object({
+          "name": Json::string(name),
+          "coverage": Json::number(cov),
+          "bid": Json::number(bd),
+          "trust": Json::number(tr),
+          "calibration": Json::number(cal),
+          "load": Json::number(ld.to_double()),
+          "overconfident": Json::boolean(bd > tr),
+          "score": Json::number(score),
+        }),
+      )
+    }
+  }
+  rows.sort_by(fn(a : Json, b : Json) -> Int {
+    let as_ = num(a, "score")
+    let bs = num(b, "score")
+    if as_ != bs {
+      if as_ > bs {
+        -1
+      } else {
+        1
+      }
+    } else {
+      let an = str(a, "name")
+      let bn = str(b, "name")
+      if an < bn {
+        -1
+      } else {
+        1
+      }
+    }
+  })
+  let winner : Json = if rows.is_empty() { Json::null() } else { rows[0] }
+  let note = if rows.is_empty() {
+    "无能力覆盖>0 的执行者可竞拍（need 无匹配或注册表为空）"
+  } else {
+    let wname = str(winner, "name")
+    let wbid = num(winner, "bid")
+    let wtr = num(winner, "trust")
+    if wbid > wtr {
+      "胜者 " +
+      wname +
+      " 出价高于其历史兑现率，已按校准折扣计入（仍胜出说明其余竞拍者更弱）"
+    } else {
+      "胜者 " +
+      wname +
+      " 出价与历史兑现率一致（校准=1），无胜者诅咒风险"
+    }
+  }
+  Json::object({
+    "need": Json::string(need),
+    "parsed": Json::array(tags.map(fn(s) { Json::string(s) })),
+    "count": Json::number(rows.length().to_double()),
+    "bids": Json::array(rows),
+    "winner": winner,
+    "basis": Json::string(
+      "置信度校准拍卖（Agora arXiv2607.09600 蒸馏）：能力覆盖>0 方可竞拍；出价=显式 bid 或默认按覆盖率；校准=1-|出价-历史验收通过率| 防胜者诅咒；拍卖分=出价×校准×负载折扣 1/(1+负载)；score desc → 名称 asc（R87）",
+    ),
+    "note": Json::string(note),
   })
 }
 

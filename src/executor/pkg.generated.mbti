@@ -47,12 +47,14 @@ pub struct ExecutorRegistry {
 }
 pub fn ExecutorRegistry::abilities_of(Self, String) -> Array[String]
 pub fn ExecutorRegistry::add_ability(Self, String, Array[String]) -> Self
+pub fn ExecutorRegistry::auction_pick(Self, String, Map[String, Int], Map[String, Double], Map[String, Double]) -> Json
 pub fn ExecutorRegistry::get(Self, String) -> String?
 pub fn ExecutorRegistry::has(Self, String) -> Bool
 pub fn ExecutorRegistry::list(Self) -> Array[String]
 pub fn ExecutorRegistry::new() -> Self
 pub fn ExecutorRegistry::register(Self, String) -> Self
 pub fn ExecutorRegistry::route_pick(Self, String, Map[String, Int]) -> Json
+pub fn ExecutorRegistry::route_pick_with_trust(Self, String, Map[String, Int], Map[String, Double]) -> Json
 
 pub struct McpDelegateExecutor {
   name : String

@@ -33,7 +33,9 @@ test "dispatch_next: 注册执行者能力 → 按负载路由并认领给最佳
     ),
   )
   let id = d_publish(e, "打磨编排引擎的调度")
-  let j = e.dispatch_next("", "fallback-agent", "编排", "2026-09-26T10:01:00Z")
+  let j = e.dispatch_next(
+    "", "fallback-agent", "编排", "2026-09-26T10:01:00Z",
+  )
   match j.value("dispatched") {
     Some(True) => ()
     _ => abort("应派发成功: " + j.stringify())
@@ -64,7 +66,9 @@ test "dispatch_next: 无可派发任务时不派发、不改动" {
     ),
   )
   // 没有发布任何待领取任务
-  let j = e.dispatch_next("", "fallback-agent", "编排", "2026-09-26T10:01:00Z")
+  let j = e.dispatch_next(
+    "", "fallback-agent", "编排", "2026-09-26T10:01:00Z",
+  )
   match j.value("dispatched") {
     Some(False) => ()
     _ => abort("空仓库不应派发: " + j.stringify())

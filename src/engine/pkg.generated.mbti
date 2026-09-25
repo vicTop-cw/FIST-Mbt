@@ -74,6 +74,7 @@ pub struct FistEngine {
 }
 pub fn FistEngine::all_subtasks_completed(Self, @core.Task) -> Bool
 pub fn FistEngine::archive(Self, task_id~ : String, by~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::budget_split_by_dag(Self, Int) -> Json
 pub fn FistEngine::challenge(Self, task_id~ : String, by~ : String, factor? : Int, strat? : String, now~ : String, critic? : @evolve.Archive?) -> Result[Json, String]
 pub fn FistEngine::children_of(Self, String) -> Array[@core.Task]
 pub fn FistEngine::claim(Self, task_id~ : String, assignee~ : String, now~ : String) -> Result[@core.Task, String]
@@ -81,7 +82,10 @@ pub fn FistEngine::cold_publish(Self, ns~ : String, description~ : String, creat
 pub fn FistEngine::cost_stats(Self) -> Json
 pub fn FistEngine::critical_path(Self) -> Array[String]
 pub fn FistEngine::dag_ascii(Self, ns~ : String) -> String
+pub fn FistEngine::dag_cost_route(Self) -> Json
 pub fn FistEngine::dag_depend(Self, task_id~ : String, dep_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::dag_schedule(Self) -> Json
+pub fn FistEngine::dag_slack_analysis(Self) -> Json
 pub fn FistEngine::delete_task(Self, String) -> Result[Unit, String]
 pub fn FistEngine::deps_satisfied(Self, String) -> Bool
 pub fn FistEngine::dispatch_next(Self, String, String, String, String) -> Json
@@ -91,6 +95,7 @@ pub fn FistEngine::execute_with_meta(Self, task_id~ : String, deliverable~ : Str
 pub fn FistEngine::executor_clear(Self) -> Bool
 pub fn FistEngine::executor_list(Self) -> Array[(String, String, String)]
 pub fn FistEngine::executor_save(Self, name~ : String, abilities_json~ : String, created_at~ : String) -> Result[String, String]
+pub fn FistEngine::executor_trust(Self) -> Map[String, Double]
 pub fn FistEngine::gate_check_record(Self, String, String, String, String) -> Result[Json, String]
 pub fn FistEngine::gate_verify_gate(Self, String) -> Result[Unit, String]
 pub fn FistEngine::get_task(Self, String) -> @core.Task?
@@ -114,7 +119,7 @@ pub fn FistEngine::parallelism(Self) -> Int
 pub fn FistEngine::pause_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::pick_next(Self, String, String, String, String) -> Json
 pub fn FistEngine::plan(Self, task_id~ : String, split_n? : Int, by~ : String, now~ : String) -> Result[Array[String], String]
-pub fn FistEngine::plan_deep(Self, task_id~ : String, split_n? : Int, by~ : String, spec? : Json?, now~ : String, omega_strong_verify? : Bool, gradient? : Bool, calibrate? : Array[Double]?, gradient_dag? : Bool) -> Result[Json, String]
+pub fn FistEngine::plan_deep(Self, task_id~ : String, split_n? : Int, by~ : String, spec? : Json?, now~ : String, omega_strong_verify? : Bool, gradient? : Bool, calibrate? : Array[Double]?, gradient_dag? : Bool, reinject_context? : Bool) -> Result[Json, String]
 pub fn FistEngine::plan_exec_order(Self, String) -> Json
 pub fn FistEngine::publish(Self, project_dir~ : String, description~ : String, created_by~ : String, now~ : String, ns? : String) -> Result[String, String]
 pub fn FistEngine::publish_next_round(Self, ns~ : String, description~ : String, created_by~ : String, prev_task_id~ : String, now~ : String) -> Result[String, String]

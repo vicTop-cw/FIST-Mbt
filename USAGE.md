@@ -154,7 +154,7 @@ def rpc(method, **payload):
 
 ---
 
-## 6. 87 个 MCP 工具手册
+## 6. 89 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
@@ -416,6 +416,16 @@ def rpc(method, **payload):
 | `omega_spec_review` | 验证者审核语料：`approve` 放行，其它值打回 | task_id(必) verdict(必) reviewer(选,默认verifier) reason(选) max_rounds(选) now(选) |
 | `omega_result_verify` | 验证者复验执行成果与语料：pass 达标可提交验收，其它值打回重做 | task_id(必) verdict(必) reviewer(选,默认verifier) reason(选) max_rounds(选) now(选) |
 | `omega_status` | 查询强验证进度：开关/语料与复验轮次/打回数/升级标志 | task_id(必) |
+
+### 6.14 Marketplace·执行者能力路由（Dynamic 范式）
+
+| 工具 | 说明 | 参数 |
+|---|---|---|
+| `executor_register` | 为执行者登记能力标签集合（如 [编排,json]）并持久化到 store（跨进程可复现） | name(必) abilities(选) |
+| `executor_route` | 能力路由推荐：按 { 能力覆盖 desc → 历史信任(验收通过率,无历史 0.5 中性) desc → 负载 asc } 排序，返回候选 + 最佳执行者 + basis | need(必) |
+| `executor_auction` | 置信度校准拍卖（Agora 蒸馏）：按出价竞拍，校准系数 1-\|出价-验收通过率\| 防胜者诅咒，乘负载折扣得拍卖分；能力覆盖>0 方可竞拍，返回 bids + winner | need(必) bid(选,{执行者:0..1}) |
+| `executor_clear` | 清空全部执行者能力注册（重置/整洁） | 无 |
+| `selfdrive_dispatch` | 能力路由自动派单：triage 取顶部 → 确定所需能力（显式 want 或从描述自动抽取）→ 按能力路由认领给最佳执行者（无匹配回退 agent） | namespace(选) agent(选) want(选) now(选) |
 
 ## 7. 端到端真实闭环（本机实录）
 

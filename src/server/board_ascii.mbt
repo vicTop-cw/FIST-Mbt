@@ -152,7 +152,12 @@ pub fn render_status_summary(
   version : String,
 ) -> Json {
   let by_status : Map[String, Double] = Map([])
-  let by_diff : Map[String, Double] = Map([("易", 0.0), ("中", 0.0), ("难", 0.0), ("无", 0.0)])
+  let by_diff : Map[String, Double] = Map([
+    ("易", 0.0),
+    ("中", 0.0),
+    ("难", 0.0),
+    ("无", 0.0),
+  ])
   let mut total = 0
   for t in tasks {
     let st = t.status_to_string()
@@ -219,11 +224,10 @@ pub fn render_project_health(
       "已完成" => done = done + 1
       "待验收" => reviewing = reviewing + 1
       "已归档" => archived = archived + 1
-      "已暂停" | "已打回" =>
-        {
-          blocked = blocked + 1
-          blocked_ids.push(t.get_id())
-        }
+      "已暂停" | "已打回" => {
+        blocked = blocked + 1
+        blocked_ids.push(t.get_id())
+      }
       _ => ()
     }
   }

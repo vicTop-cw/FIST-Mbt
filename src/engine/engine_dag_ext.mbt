@@ -234,7 +234,9 @@ pub fn FistEngine::dag_depend(
 
 ///|
 /// 拓扑序（依赖先于被依赖；带环保护——成环任务归入 cycle，不阻塞计算）。
-fn dag_topo_order(self : FistEngine) -> (Array[String], Array[String]) {
+fn FistEngine::dag_topo_order(
+  self : FistEngine,
+) -> (Array[String], Array[String]) {
   let ids : Array[String] = []
   for t in self.list_all() {
     ids.push(t.get_id())
@@ -254,7 +256,9 @@ fn dag_topo_order(self : FistEngine) -> (Array[String], Array[String]) {
     }
   }
   let order : Array[String] = []
-  let mut ready_ids : Array[String] = ids.filter(fn(id) { indeg.get(id).unwrap_or(0) == 0 })
+  let mut ready_ids : Array[String] = ids.filter(fn(id) {
+    indeg.get(id).unwrap_or(0) == 0
+  })
   while ready_ids.length() > 0 {
     let cur = ready_ids[0]
     // 移除队首（保持顺序）
@@ -398,7 +402,8 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
     match t.assignee {
       Some(a) =>
         if load.contains(a) {
-          let done = t.get_status().is_completed() || t.get_status().to_string() == "已归档"
+          let done = t.get_status().is_completed() ||
+            t.get_status().to_string() == "已归档"
           if not(done) {
             load.set(a, load.get(a).unwrap_or(0) + 1)
           }
@@ -459,7 +464,13 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
       Some(Number(n, ..)) => n
       _ => 0.0
     }
-    if ae < be { -1 } else if ae > be { 1 } else { 0 }
+    if ae < be {
+      -1
+    } else if ae > be {
+      1
+    } else {
+      0
+    }
   })
   // R75 负载感知：flexible 批中未认领任务建议派给活跃负载最低的已注册执行者
   let flexible_adv : Array[Json] = flexible_batch.map(fn(row) {
@@ -472,7 +483,7 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
     }
     // 已注册执行者中选负载最低者（无注册则不建议）
     let mut best = ""
-    var best_load = 2147483647
+    let mut best_load = 2147483647
     for n in reg_names {
       let l = load.get(n).unwrap_or(0)
       if l < best_load {
@@ -484,10 +495,7 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
       Object(o) => o
       _ => Map([])
     }
-    m.set(
-      "suggest",
-      Json::string(if best != "" { best } else { "" }),
-    )
+    m.set("suggest", Json::string(if best != "" { best } else { "" }))
     Json::object(m)
   })
   Json::object({
@@ -580,15 +588,19 @@ pub fn FistEngine::dag_cost_route(self : FistEngine) -> Json {
       None => ()
     }
     // 候选执行者：能力覆盖 want（want 空 → 全部）；选 执行成本+切换成本 最小，相等取负载最低
-    var best = ""
-    var best_total = 2147483647
-    var best_switch = 0
+    let mut best = ""
+    let mut best_total = 2147483647
+    let mut best_switch = 0
     for n in reg_names {
       let abl = reg_abl.get(n).unwrap_or([])
       if want != "" && not(abl.contains(want)) {
         continue
       }
-      let sw = if deps_asg.length() > 0 && not(deps_asg.contains(n)) { 1 } else { 0 }
+      let sw = if deps_asg.length() > 0 && not(deps_asg.contains(n)) {
+        1
+      } else {
+        0
+      }
       let ttl = est + sw
       if ttl < best_total {
         best_total = ttl
@@ -668,8 +680,8 @@ pub fn FistEngine::budget_split_by_dag(self : FistEngine, budget : Int) -> Json 
     stage_count.set(lv, stage_count.get(lv).unwrap_or(0) + 1)
   }
   let mut total_w = 0
-  var max_lv = 0
-  var max_w = 0
+  let mut max_lv = 0
+  let mut max_w = 0
   for lv in stage_weight.keys() {
     let w = stage_weight.get(lv).unwrap_or(0)
     total_w = total_w + w
@@ -679,11 +691,11 @@ pub fn FistEngine::budget_split_by_dag(self : FistEngine, budget : Int) -> Json 
     }
   }
   // 归一化切分：向下取整，余数补给最大权重阶段
-  var used = 0
+  let mut used = 0
   let shares : Map[Int, Int] = Map([])
   for lv in stage_weight.keys() {
     let w = stage_weight.get(lv).unwrap_or(0)
-    let share = if total_w <= 0 { 0 } else { (budget * w) / total_w }
+    let share = if total_w <= 0 { 0 } else { budget * w / total_w }
     shares.set(lv, share)
     used = used + share
   }
@@ -700,7 +712,9 @@ pub fn FistEngine::budget_split_by_dag(self : FistEngine, budget : Int) -> Json 
       Json::object({
         "level": Json::number(lv.to_double()),
         "tasks": Json::number(stage_count.get(lv).unwrap_or(0).to_double()),
-        "difficulty_sum": Json::number(stage_weight.get(lv).unwrap_or(0).to_double()),
+        "difficulty_sum": Json::number(
+          stage_weight.get(lv).unwrap_or(0).to_double(),
+        ),
         "share": Json::number(shares.get(lv).unwrap_or(0).to_double()),
       }),
     )

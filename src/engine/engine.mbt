@@ -877,8 +877,8 @@ pub fn FistEngine::plan_deep(
       }
       match
         self.decompose_rec(
-          parent, slices, spec, now, omega_strong_verify, gradient, calibrate,
-          gradient_dag, reinject_context,
+          parent, slices, spec, now, omega_strong_verify, gradient, calibrate, gradient_dag,
+          reinject_context,
         ) {
         Err(e) => Err(e)
         Ok(tree) =>
@@ -969,7 +969,8 @@ fn FistEngine::decompose_rec(
     // 还剩余几个兄弟」，让拆出的原子片知道自己"为什么做、旁边还有谁"——防上下文漂移。
     // 子任务拿到父计划 = 真正"知其所以然"，而非孤立切片。
     let child_full = if reinject_context {
-      full_desc + " | [父计划: \{parent.description} · 剩余兄弟: \{n_slices - idx}]"
+      full_desc +
+      " | [父计划: \{parent.description} · 剩余兄弟: \{n_slices - idx}]"
     } else {
       full_desc
     }
@@ -1167,8 +1168,8 @@ pub fn extract_difficulty(desc : String) -> String {
     return ""
   }
   // 定位 tag 后的 ':' 与最终 ']'，取出中间档位文本
-  var colon = -1
-  var i = p + tag.length()
+  let mut colon = -1
+  let mut i = p + tag.length()
   while i < cs.length() {
     if cs[i] == ':' {
       colon = i
@@ -1179,8 +1180,8 @@ pub fn extract_difficulty(desc : String) -> String {
   if colon < 0 {
     return ""
   }
-  var out = ""
-  var j = colon + 1
+  let mut out = ""
+  let mut j = colon + 1
   while j < cs.length() && cs[j] != ']' {
     out = out + cs[j].to_string()
     j = j + 1
@@ -1195,9 +1196,9 @@ pub fn extract_difficulty(desc : String) -> String {
 /// 一目了然"，而非再全库去翻。纯读、无副作用。
 pub fn FistEngine::plan_exec_order(self : FistEngine, root_id : String) -> Json {
   let all_ids : Array[String] = []
-  let mut frontier : Array[String] = self.children_of(root_id).map(
-    fn(t) { t.get_id() },
-  )
+  let mut frontier : Array[String] = self
+    .children_of(root_id)
+    .map(fn(t) { t.get_id() })
   while not(frontier.is_empty()) {
     let next : Array[String] = []
     for id in frontier {

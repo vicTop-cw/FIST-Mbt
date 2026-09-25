@@ -30,7 +30,7 @@ fn triage_row_has_dep(j : Json, id : String, dep : String) -> Bool {
       let mut found = false
       for row in arr {
         match row.value("id") {
-          Some(String(s)) if s == id => {
+          Some(String(s)) if s == id =>
             match row.value("depends_on") {
               Some(Array(d)) if d.length() == 1 =>
                 match d[0] {
@@ -39,7 +39,6 @@ fn triage_row_has_dep(j : Json, id : String, dep : String) -> Bool {
                 }
               _ => ()
             }
-          }
           _ => ()
         }
       }
@@ -158,9 +157,7 @@ fn complete_root(e : @engine.FistEngine, tid : String) -> Unit {
   ignore(e.claim(task_id=tid, assignee="x", now="2026-09-05T10:06:00Z"))
   ignore(e.execute(task_id=tid, deliverable="done", now="2026-09-05T10:07:00Z"))
   ignore(e.submit(task_id=tid, now="2026-09-05T10:08:00Z"))
-  ignore(
-    e.verify(task_id=tid, verifier="v", now="2026-09-05T10:09:00Z"),
-  )
+  ignore(e.verify(task_id=tid, verifier="v", now="2026-09-05T10:09:00Z"))
 }
 
 ///|
