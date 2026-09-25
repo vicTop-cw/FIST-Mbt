@@ -69,18 +69,35 @@ DEFAULT_CMDS = {
 }
 
 
-def build_prompt(rubric_text: str, evidence_text: str) -> str:
-    """组装喂给每个 AI 的完整提示词：rubric + 证据快照内容。"""
-    return (
+def build_prompt(rubric_text: str, evidence_text: str, b64: bool = False) -> str:
+    """组装喂给每个 AI 的完整提示词：rubric + 证据快照内容。
+
+    b64=True 时返回「解码引导 + BASE64_PROMPT: <单行 base64>」——Windows cmd 传参
+    会在换行处截断长提示词，base64 单行传输可绕过（模型先解码再按 rubric 打分，
+    评审内容与直接粘贴完全一致）。
+    """
+    body = (
         rubric_text
         + "\n\n## 证据快照（本次打分唯一事实依据）\n\n"
         + evidence_text
         + "\n\n请严格按 rubric 的「规定输出」返回，首行必须以 `SCORE_JSON:` 开头并输出唯一一行 JSON。"
     )
+    if not b64:
+        return body
+    import base64
+    encoded = base64.b64encode(body.encode("utf-8")).decode("ascii")
+    return (
+        "本次评审所需的完整提示词（统一评分 Rubric + 证据快照 + 输出要求）已用 BASE64 编码为下方单行字符串。"
+        "请先将它解码为 UTF-8 文本，再严格按其中的 rubric 与输出要求打分；"
+        "首行必须以 `SCORE_JSON:` 开头并输出唯一一行 JSON。"
+        "BASE64_PROMPT:" + encoded
+    )
 
 
-def _inflate_template(template: str, prompt: str, prompt_file: str) -> str:
-    """把命令模板中的 {PROMPT}/{PROMPT_FILE} 占位符替换为实际内容/路径。"""
+def _inflate_template(template: str, prompt: str, prompt_file: str, prompt_b64: str) -> str:
+    """把命令模板中的 {PROMPT}/{PROMPT_FILE}/{PROMPT_B64} 占位符替换为实际内容/路径。"""
+    if "{PROMPT_B64}" in template:
+        return template.replace("{PROMPT_B64}", prompt_b64)
     if "{PROMPT_FILE}" in template:
         return template.replace("{PROMPT_FILE}", prompt_file)
     # 说明：{PROMPT} 为跨行的长提示词，用 shlex.quote 作 shell 安全包裹
@@ -101,16 +118,20 @@ def extract_score_json(stdout: str):
     return data
 
 
-def run_cli(cmd: str, timeout: int):
+def run_cli(cmd: str, timeout: int, use_list: bool = False):
     """执行一条 CLI 命令，返回 (exit_code, stdout, stderr)。
 
     不可用（找不到命令 / 超时 / 非零退出）时如实向上抛，由调用方判为 error。
     CLI 未安装等场景由本函数捕获并返回 (None, msg, "")，不使进程崩溃。
+
+    use_list=True 时用 shlex(posix=True) 拆成 argv 列表 + shell=False 直连
+    CreateProcess——绕开 cmd.exe /c 的 8191 字符命令行截断（长 base64 提示词必需）。
     """
+    argv = shlex.split(cmd, posix=True) if use_list else None
     try:
         proc = subprocess.run(
-            cmd,
-            shell=True,
+            argv if argv is not None else cmd,
+            shell=argv is None,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -145,6 +166,7 @@ def gate(builder, ai1_json: dict, evidence_text: str, timeout: int):
     rows = [ai1]
     rubric_text = open(builder.rubric_path, encoding="utf-8").read()
     prompt = build_prompt(rubric_text, evidence_text)
+    prompt_b64 = build_prompt(rubric_text, evidence_text, b64=True)
 
     for key, default_tmpl in DEFAULT_CMDS.items():
         tmpl = os.environ.get(
@@ -156,8 +178,10 @@ def gate(builder, ai1_json: dict, evidence_text: str, timeout: int):
             prompt_file = tf.name
 
         try:
-            full_cmd = _inflate_template(tmpl, prompt, prompt_file)
-            rc, out, err = run_cli(full_cmd, timeout)
+            full_cmd = _inflate_template(tmpl, prompt, prompt_file, prompt_b64)
+            # 长提示词走 argv 列表直连（绕 cmd 8191 截断）；短提示词走 shell（兼容管道/重定向模板）
+            use_list = "{PROMPT_B64}" in tmpl
+            rc, out, err = run_cli(full_cmd, timeout, use_list=use_list)
         finally:
             try:
                 os.unlink(prompt_file)
