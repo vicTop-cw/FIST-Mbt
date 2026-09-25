@@ -9,7 +9,7 @@
 
 - **构建/测试**：`moon check` / `moon test --target js`（230 项全绿）
 - **跑 MCP Server**：`moon build --target js cmd/main && python scripts/patch_esm_main.py` → `node _build/js/debug/build/cmd/main/main.js`
-- **一键自检**：`python scripts/mcp_smoke.py`（工具数 82 + publish/get 链路）
+- **一键自检**：`python scripts/mcp_smoke.py`（工具数 83 + publish/get 链路）
 - **语言**：MoonBit；测试用 `suite`/`test` 而非 `@test def`；guard/match 冒号后换行。
 
 ## 二、src/ 各子包职责地图（谁管什么）
@@ -22,13 +22,13 @@
 | `evolve` | DGM 自进化档案库：Archive/Artifact/sample_parent/查重/新颖度/谱线 | `evolve.mbt` `scoring.mbt` `self_search.mbt` |
 | `omega` | Ω-check：项目结构/回传五段式校验、spec 解析/批量校验 | `check.mbt` |
 | `ops` | 运维：心跳/看门狗/google 调度 | `ops_watchdog.mbt` 等 |
-| `server` | MCP 层：82 个工具+3 resources+2 prompts 注册、call_log 注入、Laya/evolve MCP 封装 | `server.mbt` `laya_js.mbt` `evolve_distill.mbt` `evolve_lesson.mbt` |
+| `server` | MCP 层：83 个工具+3 resources+2 prompts 注册、call_log 注入、Laya/evolve MCP 封装 | `server.mbt` `laya_js.mbt` `evolve_distill.mbt` `evolve_lesson.mbt` |
 | `decompose` | 递归拆解规格 | — |
 | `executor` | 执行器抽象 + 能力注册表 + 能力路由（Marketplace 雏形，R30/R31）+ store 持久化 | `registry.mbt` `base.mbt` |
 | `atgc-old` | 旧 ATGC 叙事子项目（保留全量） | — |
 | `atgc` | 极简双链虚拟机（能力演示） | — |
 
-## 三、MCP 工具分组概览（82 个）
+## 三、MCP 工具分组概览（83 个）
 
 | 组 | 工具 |
 |---|---|
@@ -38,7 +38,7 @@
 | 看板/脉冲/预订/推荐+DAG(12) | dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish、board_ascii、status_summary、reserve_scope/check/release、task_triage |
 | 自驱(9) | selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks、selfdrive_pick_next |
 | 自我记忆/自进化(7) | memory_consolidate/gc/link、evolve_distill/lesson/critic、task_challenge |
-| Marketplace·能力路由(3) | executor_register、executor_route、executor_clear（能力登记/专长负载路由/重置，R30/R31 跨进程持久化） |
+| Marketplace·能力路由(4) | executor_register、executor_route、executor_clear、selfdrive_dispatch（能力登记/专长负载路由/重置/自动派单，R30-R32 跨进程持久化） |
 | 审计/权限(2) | audit_permission/log |
 | 多租户(3) | store_open/list/close |
 | 强验证(4) | omega_spec_create/review/result_verify/status |
