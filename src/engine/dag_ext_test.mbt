@@ -239,7 +239,7 @@ test "dag_slack: 瓶颈与松弛分析——关键路径 slack=0、旁支 slack>
   }
   // A 与 C：earliest=0、latest=0（关键），slack=0
   match j.value("slack_map") {
-    Some(Object(sm)) => {
+    Some(Object(sm)) =>
       match sm.get("A") {
         Some(Object(a)) =>
           match a.get("slack") {
@@ -248,7 +248,6 @@ test "dag_slack: 瓶颈与松弛分析——关键路径 slack=0、旁支 slack>
           }
         _ => abort("slack_map.A 缺失")
       }
-    }
     _ => abort("slack_map 缺失")
   }
   // 构造带松弛的图：A→B 与 A→C 独立分支，B 无后继 -> B 的 latest 可晚于 earliest
@@ -328,10 +327,7 @@ test "dag_schedule: 排程视图——critical/flexible 分批 + assignee 附带
   // 造带松弛的图：A→B 与 A→C 独立分支——两条都关键（须都做完）；B 无后继
   // 为造出 flexible，加 X→B 使 B 有 slack：A(0) -> B(1,slack1) / C(1,slack0)？ 简化：验证 assignee 透传
   let e2 = FistEngine::new()
-  let specs : Array[(String, Array[String])] = [
-    ("A", []),
-    ("B", ["A"]),
-  ]
+  let specs : Array[(String, Array[String])] = [("A", []), ("B", ["A"])]
   for s in specs {
     let (id, deps) = s
     ignore(
@@ -396,9 +392,7 @@ test "dag_schedule R75: 负载感知——flexible 未认领任务附 suggest=�
     )
   }
   // 给 w2 一个活跃任务（执行中）→ w2 负载1 > w1 负载0 → X 未认领建议派给 w1
-  ignore(
-    e.claim(task_id="C", assignee="w2", now="2026-01-01T00:01:00Z"),
-  )
+  ignore(e.claim(task_id="C", assignee="w2", now="2026-01-01T00:01:00Z"))
   let j = e.dag_schedule()
   match j.value("flexible_batch") {
     Some(Array(fb)) => {
@@ -613,7 +607,7 @@ test "budget_split_by_dag: 预算按依赖图阶段切分（R81 ZEBRA 蒸馏）"
       // 三阶段：0/1/2
       assert_eq(st.length(), 3)
       // 份额和 == 总预算（向下取整 + 余数补给最大权重阶段）
-      var sum = 0
+      let mut sum = 0
       for s in st {
         match s.value("share") {
           Some(Number(n, ..)) => sum = sum + n.to_int()

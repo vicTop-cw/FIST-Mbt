@@ -124,6 +124,23 @@ fn sync_db_executors() -> Unit {
 }
 
 ///|
+/// 从参数解析可选出价表 {执行者: 0..1 置信度}（可选参数，缺省返回空表=按覆盖率自动出价）。
+fn json_bid_map(args : Json, key : String) -> Map[String, Double] {
+  let m : Map[String, Double] = Map([])
+  match args.value(key) {
+    Some(Json::Object(o)) =>
+      for (k, v) in o {
+        match v {
+          Json::Number(n, ..) => ignore(m.set(k, n))
+          _ => ()
+        }
+      }
+    _ => ()
+  }
+  m
+}
+
+///|
 /// 读 Json 对象的字符串字段（复用式，等价 executor 包内私有 num/str）。
 fn jstr(j : Json, key : String) -> String {
   match j.value(key) {
@@ -445,7 +462,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 87 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 89 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -471,7 +488,7 @@ fn map_json() -> Json {
         "memory_consolidate/gc/link + evolve_submit/sample/snapshot/distill/lesson/critic/asset_register + task_challenge",
       ),
       "Marketplace·能力路由": Json::string(
-        "executor_register/route/clear + selfdrive_dispatch（按专长+负载自动派单）",
+        "executor_register/auction/route/clear + selfdrive_dispatch（能力登记/置信度拍卖/专长+负载路由/重置/自动派单，R30-R33/R87）",
       ),
       "审计权限": Json::string("audit_permission/log"),
       "多租户": Json::string("store_open/list/close"),
@@ -2811,6 +2828,34 @@ pub async fn run_server() -> Unit {
   )
   s1 = instrumented_tool(
     s1,
+    "executor_auction",
+    "Marketplace·置信度校准拍卖（Agora arXiv 2607.09600 蒸馏，R87）：把执行者分派从排序推荐升级为按出价竞拍——每个已注册执行者对任务所需能力 need 出价（显式 bid，缺省按能力覆盖率自动出价），经校准系数 1-|出价-历史验收通过率| 折扣防胜者诅咒（过度自信而兑现差的执行者被惩罚），再乘负载折扣 1/(1+负载) 得拍卖分；能力覆盖>0 方可竞拍。参数：need 所需能力标签（必填，逗号/顿号/空格分隔），bid 可选出价表 {执行者: 0..1 置信度}。返回 {need, parsed, count, bids, winner, basis, note}。",
+    schema(
+      {
+        "need": string_prop(
+          "所需能力标签（如“编排,json”，必填）",
+        ),
+        "bid": Json::object({
+          "type": Json::string("object"),
+          "description": Json::string(
+            "出价表 {执行者: 0..1 置信度}（可选，缺省按能力覆盖率自动出价）",
+          ),
+        }),
+      },
+      ["need"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let need = get_str(args, "need")
+      let bid = json_bid_map(args, "bid")
+      sync_db_executors()
+      let load = executor_loads(engine)
+      let trust = engine.executor_trust()
+      let j = exec_reg.auction_pick(need, load, trust, bid)
+      Ok(@mcp.ToolResult::text(j.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
     "executor_clear",
     "Marketplace·清空全部执行者能力注册（重置/整洁，R31）：清空 store executors 表（进程内注册表以 store 为空为基准重建）。无参数。返回 {persisted}。",
     schema({}, []),
@@ -2831,7 +2876,9 @@ pub async fn run_server() -> Unit {
       {
         "namespace": string_prop("命名空间(可选，空=全部)"),
         "agent": string_prop("认领者/回退身份(默认 self)"),
-        "want": string_prop("任务所需能力关键词(可选，供能力路由)"),
+        "want": string_prop(
+          "任务所需能力关键词(可选，供能力路由)",
+        ),
         "now": string_prop("时间戳(可选，默认内置)"),
       },
       [],
@@ -2860,7 +2907,9 @@ pub async fn run_server() -> Unit {
               "task_id": Json::string(""),
               "assignee": Json::string(agent),
               "want": Json::string(want),
-              "note": Json::string("无可领取的推荐任务（待领取且依赖已满足集合为空）"),
+              "note": Json::string(
+                "无可领取的推荐任务（待领取且依赖已满足集合为空）",
+              ),
             }).stringify(),
           ),
         )
@@ -2870,11 +2919,7 @@ pub async fn run_server() -> Unit {
         Some(t) => t.get_description()
         None => ""
       }
-      let need = if want != "" {
-        want
-      } else {
-        auto_need(desc)
-      }
+      let need = if want != "" { want } else { auto_need(desc) }
       let load = executor_loads(engine)
       let route = exec_reg.route_pick(need, load)
       let best = match route.value("best") {
@@ -3253,12 +3298,7 @@ pub async fn run_server() -> Unit {
     s1,
     "cost_budget_split",
     "预算按依赖图阶段切分（R81，ZEBRA 背包水填充蒸馏简化版）：给定总预算，按任务 DAG 阶段(slack 分析 earliest 层级)切分——每阶段份额=阶段难度权重(难3/中2/易1)占总量比例×总预算(余数补最大权重阶段)。返回 { stages:[{level,tasks,difficulty_sum,share}], total_budget, makespan, note }——预算在依赖图上按阶段切分：瓶颈阶段(关键路径层)占额可见，超支先预警。参数：budget(总预算，必填)。",
-    schema(
-      {
-        "budget": number_prop("总预算（必填）"),
-      },
-      ["budget"],
-    ),
+    schema({ "budget": number_prop("总预算（必填）") }, ["budget"]),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let budget = jnum(args, "budget").to_int()
       Ok(@mcp.ToolResult::text(engine.budget_split_by_dag(budget).stringify()))

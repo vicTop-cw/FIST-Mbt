@@ -8,14 +8,14 @@
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
 moon build --target js cmd/main
 python scripts/mcp_smoke.py
-# 期望输出：PASS tools/list → 88 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
+# 期望输出：PASS tools/list → 89 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
 ```
 
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **88**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 249/249**（Windows + WSL(Linux) 双端实测全绿） |
+| MCP 工具 | **89**（+ 3 resources + 2 prompts） |
+| 测试 | **`moon test --target js` 252/252**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -88,13 +88,14 @@ python scripts/mcp_smoke.py
 | 54 依赖图成本路由 | 新增 `dag_cost_route` 工具（R77，STAR 式蒸馏）：对 flexible 未认领任务按拓扑序贪心给建议执行者——执行成本(难度档 易/中/难→1/2/3，复用 extract_difficulty) + 切换成本(依赖执行者不同则 +1，STAR 上下文切换税) + 能力约束过滤(描述命中的已注册能力标签，复用 auto_want)，成本相等取负载最低。返回 { cost_route:[{task_id,assignee,est_cost,switch_cost,total}], total_est_cost, basis, note }——DAG 家族最后拼图：critical_path→slack→schedule→cost_route，排程优化闭环最终形态；纯读不 claim | `dag_ext_test.mbt`「dag_cost_route 能力约束+切换税+总成本」「同执行者免切换税+空注册表跳过」用例（+2） |
 | 55 历史信任轴 | `executor_route` 增强（R80，SwarmHarness 蒸馏）：排序键升级为 { 能力覆盖 desc → 历史信任(名下已完成/名下总数，验收通过率，无历史 0.5 中性) desc → 负载 asc }，返回候选带 trust 字段 + basis——防"只认领不交付"，按专长+信任+负载分配；`route_pick_with_trust` 新签名，原 `route_pick` 保留零回归；engine 加 `executor_trust` 计算 | `registry_test.mbt`「route_pick_with_trust 信任轴排序」用例（+1） |
 | 56 预算阶段切分 | 新增 `cost_budget_split` 工具（R81，ZEBRA 背包水填充蒸馏简化版）：给定总预算按任务 DAG 阶段(slack earliest 层级)切分——每阶段份额=阶段难度权重(难3/中2/易1)占总量比例×总预算(余数补最大权重阶段)，返回 { stages:[{level,tasks,difficulty_sum,share}], total_budget, makespan, note }——预算在依赖图上按阶段切分：瓶颈阶段占额可见，超支先预警 | `dag_ext_test.mbt`「budget_split_by_dag 阶段切分+空仓库」用例（+1） |
+| 57 置信度校准拍卖 | 新增 `executor_auction` 工具（R87，Agora arXiv 2607.09600 蒸馏）：把分派从"排序推荐"升级为"按出价竞拍"——每个已注册执行者对所需能力 need 出价（显式 `bid` 或默认按能力覆盖率），经校准系数 1-\|出价-历史验收通过率\| 折扣防胜者诅咒（过度自信而兑现差的执行者被惩罚），再乘负载折扣 1/(1+负载) 得拍卖分；能力覆盖>0 方可竞拍，返回 bids 全表 + winner + basis + note。Marketplace 叙事续：能力登记→路由(专长+信任+负载)→**拍卖(校准出价)** | `registry_test.mbt`「auction_pick」用例（+3：能力门槛+默认出价 / 胜者诅咒防护 / 负载折扣+空 need） |
 
 > 注：内存日志/汇报用字母轮号（含若干纯文档/CI 非功能行，不入上表）；本表仅计功能轮。
 
 ## 五、文档即实现
 - 工具/资源/测试数均与实测一致（README/AGENTS/ARCHITECTURE/agent-map 已同步）。
 - 过程日志 `memory/2026-09-25.md`；综合汇报 `reports/2026-09-25-award-enhancement-5rounds-report.md`。
-- 调研：`memory/research/20260925.enrich-roadmap.md`（Repo Map / DALIA / TURA / AgentX / MoonBit 新特性）、`memory/research/ecosystem-borrow.md`（§五 二轮调研：SAGE/R-Few/SPICE/SEP-1686/RepoMap）、`memory/research/20260926.cost-market-routing.md`（成本感知调度/市场式路由：STAR 依赖图拍卖 / CASTER / ZEBRA / Agora / PROGROUTER / SwarmHarness——已落地 dag_cost_route R77 / executor_route 信任轴 R80 / cost_budget_split R81，含落地设计草案）。
+- 调研：`memory/research/20260925.enrich-roadmap.md`（Repo Map / DALIA / TURA / AgentX / MoonBit 新特性）、`memory/research/ecosystem-borrow.md`（§五 二轮调研：SAGE/R-Few/SPICE/SEP-1686/RepoMap）、`memory/research/20260926.cost-market-routing.md`（成本感知调度/市场式路由：STAR 依赖图拍卖 / CASTER / ZEBRA / Agora / PROGROUTER / SwarmHarness——已落地 dag_cost_route R77 / executor_route 信任轴 R80 / cost_budget_split R81 / executor_auction 置信度拍卖 R87，含落地设计草案）。
 - 遗留如实：Windows native 竞态、`node:sqlite` 实验性警告、测试落盘 `temp/`（cleanup --check 兜底）见 §六。
 
 ## 六、遗留（诚实自曝）

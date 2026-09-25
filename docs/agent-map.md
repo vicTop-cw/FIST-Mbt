@@ -38,7 +38,7 @@
 | 看板/脉冲/预订/推荐+DAG(12) | dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish、board_ascii、status_summary、reserve_scope/check/release、task_triage |
 | 自驱(9) | selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks、selfdrive_pick_next |
 | 自我记忆/自进化(7) | memory_consolidate/gc/link、evolve_distill/lesson/critic、task_challenge |
-| Marketplace·能力路由(4) | executor_register、executor_route、executor_clear、selfdrive_dispatch（能力登记/专长负载路由/重置/自动派单，R30-R32 跨进程持久化） |
+| Marketplace·能力路由(5) | executor_register、executor_auction、executor_route、executor_clear、selfdrive_dispatch（能力登记/置信度拍卖/专长负载路由/重置/自动派单，R30-R33/R87 跨进程持久化） |
 | 审计/权限(2) | audit_permission/log |
 | 多租户(3) | store_open/list/close |
 | 强验证(4) | omega_spec_create/review/result_verify/status |

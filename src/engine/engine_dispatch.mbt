@@ -11,9 +11,7 @@
 /// 解析执行者能力注册（abilities_json 为 JSON 字符串数组）-> Array[String]。
 fn parse_abilities(abs_json : String) -> Array[String] {
   let out : Array[String] = []
-  let v = @json.parse(abs_json) catch {
-    _ => return out
-  }
+  let v = @json.parse(abs_json) catch { _ => return out }
   match v {
     Array(a) =>
       for x in a {
@@ -29,7 +27,7 @@ fn parse_abilities(abs_json : String) -> Array[String] {
 
 ///|
 /// 计算每个执行者的活跃负载：名下"未完成且未归档"的任务数（由 store 分配状态推得，纯读）。
-fn executor_loads(
+fn FistEngine::executor_loads(
   self : FistEngine,
   names : Array[String],
 ) -> Map[String, Int] {
@@ -66,8 +64,8 @@ fn _jstr(j : Json, key : String) -> String {
 /// 从任务描述自动抽取所需能力标签（R58，复用 R33「免手传」思路、store-backed）：
 /// 扫描述里出现的「store 持久化执行者能力标签」，取最长命中者作 need（最具体）。
 /// 没命中返回空串（调用方回退 agent / 空 want）。不依赖 server 进程内 exec_reg。
-fn auto_want(self : FistEngine, desc : String) -> String {
-  var best = ""
+fn FistEngine::auto_want(self : FistEngine, desc : String) -> String {
+  let mut best = ""
   for (_name, abl, _created) in self.executor_list() {
     for a in parse_abilities(abl) {
       if a != "" && desc.contains(a) && a.length() > best.length() {
@@ -91,7 +89,7 @@ pub fn FistEngine::dispatch_next(
   now : String,
 ) -> Json {
   let tri = self.triage(ns, agent, want)
-  let top = _jstr(tri, "task_id")  // triage 顶层 task_id 字段（若顶层是 suggestion 则回退解析）
+  let top = _jstr(tri, "task_id") // triage 顶层 task_id 字段（若顶层是 suggestion 则回退解析）
   let top2 : String = if top == "" {
     match tri.value("suggestion") {
       Some(Object(sm)) => _jstr(Json::object(sm), "task_id")
@@ -105,11 +103,13 @@ pub fn FistEngine::dispatch_next(
       "dispatched": Json::boolean(false),
       "task_id": Json::string(""),
       "to_executor": Json::string(""),
-      "note": Json::string("无可派发的待领取任务（依赖满足集合为空）"),
+      "note": Json::string(
+        "无可派发的待领取任务（依赖满足集合为空）",
+      ),
     })
   }
   // 确定所需能力：显式 want 优先；为空则从顶部任务描述自动抽取（R58 store-backed 免手传）
-  let want_eff: String = if want == "" {
+  let want_eff : String = if want == "" {
     match self.get_task(top2) {
       Some(t) => self.auto_want(t.description)
       None => ""
@@ -118,7 +118,7 @@ pub fn FistEngine::dispatch_next(
     want
   }
   // 从 store 构建执行者注册表
-  var reg = @executor.ExecutorRegistry::new()
+  let mut reg = @executor.ExecutorRegistry::new()
   for (name, abl, _created) in self.executor_list() {
     reg = reg.add_ability(name, parse_abilities(abl))
   }
@@ -142,7 +142,9 @@ pub fn FistEngine::dispatch_next(
         "to_executor": Json::string(to),
         "remaining": Json::number(remaining.to_double()),
         "want": Json::string(want_eff),
-        "note": Json::string("已按能力/负载路由自动派发给执行者(无注册则回退 agent)"),
+        "note": Json::string(
+          "已按能力/负载路由自动派发给执行者(无注册则回退 agent)",
+        ),
       })
     Err(e) =>
       Json::object({

@@ -274,7 +274,10 @@ test "plan_deep reinject_context 把父计划+剩余兄弟回注子任务描述�
       assert_eq(c_first.description.contains("M3 回注启用根"), true)
       assert_eq(c_first.description.contains("剩余兄弟:"), true)
       // 剩余兄弟数 = n-1（首片之后还有 n-1 个兄弟）
-      assert_eq(c_first.description.contains("剩余兄弟: \{kids.length() - 1}"), true)
+      assert_eq(
+        c_first.description.contains("剩余兄弟: \{kids.length() - 1}"),
+        true,
+      )
       // 下钻孙代同样继承父计划（知其所以然贯穿整棵树）
       let ch = e.children_of(c_first.get_id())
       if ch.length() > 0 {
@@ -324,7 +327,7 @@ test "plan_deep gradient_dag 把更简单变体落成真实 DAG 前驱链；默�
         Some(root_tree) =>
           match root_tree.value("children") {
             None => abort("children missing")
-            Some(Array(cs)) => {
+            Some(Array(cs)) =>
               for j = 0; j < cs.length(); j = j + 1 {
                 let dep = match cs[j].value("depends_on") {
                   Some(Array(a)) => a
@@ -346,7 +349,6 @@ test "plan_deep gradient_dag 把更简单变体落成真实 DAG 前驱链；默�
                   assert_eq(dep.length(), 1)
                 }
               }
-            }
             _ => abort("children not array")
           }
       }

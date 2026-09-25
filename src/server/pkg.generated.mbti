@@ -39,6 +39,8 @@ pub fn memory_link(String, String, String, String) -> Result[Json, String]
 
 pub fn render_board_ascii(Array[@core.Task], String) -> Json
 
+pub fn render_project_health(Array[@core.Task], String) -> Json
+
 pub fn render_status_summary(Array[@core.Task], Array[String], String) -> Json
 
 pub fn report_bug(String, String, detail~ : String, severity~ : String, ref_call_id~ : String, reported_by~ : String, publish_task~ : Bool, @engine.FistEngine, now~ : String) -> Result[Json, String]

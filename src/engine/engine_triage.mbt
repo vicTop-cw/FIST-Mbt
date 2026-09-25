@@ -146,9 +146,7 @@ pub fn FistEngine::triage(
         "depth": Json::number(r.depth.to_double()),
         "desc": Json::string(r.desc),
         // 真实 DAG 前驱（复用 R39 gradient_dag 建边）——"就绪原因"看得见
-        "depends_on": Json::array(
-          r.depends_on.map(fn(s) { Json::string(s) }),
-        ),
+        "depends_on": Json::array(r.depends_on.map(fn(s) { Json::string(s) })),
       }),
     )
   }
