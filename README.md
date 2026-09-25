@@ -1,14 +1,3 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: 9f2a11add43fbf12a546606fb2b962ab_a9040e79b1b011f18f26525400287e28
-    ReservedCode1: gqaLfUShhHiQRS1EzJF7Uro7Y1DmWppGM5ptSJMt1Sa/oiiB0agGywKVnF6CVW+FibYYdcMTiKVLgPeIRq6q66IWRCiIpXfQv5PS5MhO8uHoxxiOooFGGDD7q62tfOot4vM7KttnAfTheQyUgyjntzjTzjRJGagyhS9hRcfILiP25jWSud82zEO918g=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: 9f2a11add43fbf12a546606fb2b962ab_a9040e79b1b011f18f26525400287e28
-    ReservedCode2: gqaLfUShhHiQRS1EzJF7Uro7Y1DmWppGM5ptSJMt1Sa/oiiB0agGywKVnF6CVW+FibYYdcMTiKVLgPeIRq6q66IWRCiIpXfQv5PS5MhO8uHoxxiOooFGGDD7q62tfOot4vM7KttnAfTheQyUgyjntzjTzjRJGagyhS9hRcfILiP25jWSud82zEO918g=
----
-
 # FIST-Mbt
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)

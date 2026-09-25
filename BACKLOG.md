@@ -2,12 +2,12 @@
 
 > 本文档为 selfdrive 审视/门禁的净拉取源：Next Tasks 应从这里取。
 > 由三份调研去重收敛生成：`memory/research/competition.md`、`memory/research/five-directions.md`、`memory/research/future-roadmap.md`。
-> 状态枚举 `pending | done`。锚点事实：**87 工具 / 247 测试**（`moon test --target js` Windows+WSL 双端全绿）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
+> 状态枚举 `pending | done`。锚点事实：**88 工具 / 249 测试**（`moon test --target js` Windows+WSL 双端全绿）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
 
 | P级 | 事项 | 来源 | 状态 | 对应review/commit |
 |-----|------|------|------|-------------------|
 | P0 | 补「30 秒体验」一键演示：README 段落 + scripts/demo 一键脚本（一行命令通起），对冲 MCP 接线门槛 | competition/§四 P0-4 + future-roadmap/近 | done(scripts/demo.ps1 已加并实测 61 工具 PASS；README 终版 0930 接段落) | - |
-| P0 | 清理 README 顶部 AIGC 元数据标记，避免被误判为纯 AI 生成 | competition/§四 P0-2 + future-roadmap/近 | pending | - |
+| P0 | 清理 README 顶部 AIGC 元数据标记，避免被误判为纯 AI 生成 | competition/§四 P0-2 + future-roadmap/近 | done(README/AGENTS 顶部 AIGC 块已移除，R86) | commit `9f13284` 后 R86 |
 | P0 | 升级 moonbitlang/async 至 0.22.3（处理 Headers breaking change）并升 x 至 0.5.5 | competition/§四 P0-3 | blocked: 需 moon 工具链 ≥0.1.20260921(现 0.1.20260904); async 0.22.3 自身用 eprintln 被本 core 移除; moon upgrade 需交互 TTY; 项目代码未用 Headers/Http(仅 js_async)非正确性必需 | - |
 | P0 | 创建 scoring.mbt P0（coverage/fingerprint_ok/schema_ok/accuracy 分项评分，≥7 测试）打通自进化闭环 | competition/§四 P1-5 + future-roadmap/近 | pending | - |
 | P0 | 验证 evolve 模块构建+测试（已并入 148 测试内、双端全绿、CI 三轨道绿） | competition/§四 P0-1 | done | commit `88a781f` |
