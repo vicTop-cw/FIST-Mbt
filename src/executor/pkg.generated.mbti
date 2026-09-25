@@ -6,9 +6,13 @@ import {
 }
 
 // Values
+pub fn ability_coverage(Array[String], Array[String]) -> Double
+
 pub fn delegate_execute(@core.Task, ExecContext) -> ExecResult
 
 pub fn is_valid_executor(String) -> Bool
+
+pub fn split_need_tags(String) -> Array[String]
 
 // Errors
 
@@ -39,12 +43,16 @@ pub fn ExecResult::with_tokens(Self, Int, Int, Double) -> Self
 
 pub struct ExecutorRegistry {
   executors : Map[String, String]
+  abilities : Map[String, Array[String]]
 }
+pub fn ExecutorRegistry::abilities_of(Self, String) -> Array[String]
+pub fn ExecutorRegistry::add_ability(Self, String, Array[String]) -> Self
 pub fn ExecutorRegistry::get(Self, String) -> String?
 pub fn ExecutorRegistry::has(Self, String) -> Bool
 pub fn ExecutorRegistry::list(Self) -> Array[String]
 pub fn ExecutorRegistry::new() -> Self
 pub fn ExecutorRegistry::register(Self, String) -> Self
+pub fn ExecutorRegistry::route_pick(Self, String, Map[String, Int]) -> Json
 
 pub struct McpDelegateExecutor {
   name : String

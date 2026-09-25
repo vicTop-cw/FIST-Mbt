@@ -54,6 +54,50 @@ let evolve_arc : @evolve.Archive = @evolve.Archive::new("mem-evolve")
 let evolve_store : @store.SqliteStore? = @store.SqliteStore::new()
 
 ///|
+/// 执行者能力注册表（进程内，Marketplace/Dynamic 范式雏形，R30）。
+/// 供 `executor_register`（登记能力标签）与 `executor_route`（按能力+负载路由）。
+let exec_reg : @executor.ExecutorRegistry = @executor.ExecutorRegistry::new()
+
+///|
+/// 统计各执行者（assignee）当前的活跃负载：其名下"非终态"（未完成/未归档）任务数。
+/// 供 executor_route 做负载均衡。
+fn executor_loads(e : @engine.FistEngine) -> Map[String, Int] {
+  let m : Map[String, Int] = Map([])
+  for t in e.list_all() {
+    let st = t.get_status()
+    let active = not(st.is_pending()) &&
+      not(st.is_completed()) &&
+      not(st.is_archived())
+    if active {
+      match t.get_assignee() {
+        Some(a) => {
+          let cur = match m.get(a) {
+            Some(n) => n
+            None => 0
+          }
+          ignore(m.set(a, cur + 1))
+        }
+        None => ()
+      }
+    }
+  }
+  m
+}
+
+///|
+/// 把 Json 数组 [{String}] 转成 Array[String]（用于 abilities 解析）。
+fn strlist(j : Array[Json]) -> Array[String] {
+  let out : Array[String] = []
+  for x in j {
+    match x {
+      Json::String(s) => out.push(s)
+      _ => ()
+    }
+  }
+  out
+}
+
+///|
 /// 把毫秒级 Unix 时间转换为 UTC 时刻两项补齐
 fn _pad2(n : Int) -> String {
   let s = n.to_string()
@@ -342,7 +386,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 79 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 81 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -2573,6 +2617,54 @@ pub async fn run_server() -> Unit {
       let want = get_str(args, "want")
       let ts = get_str(args, "now", default=now_default())
       let j = engine.pick_next(ns, agent, want, ts)
+      Ok(@mcp.ToolResult::text(j.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "executor_register",
+    "Marketplace·执行者能力注册（Dynamic/Marketplace 雏形，R30）：为执行者登记能力标签集合（如 [编排,json]），供 executor_route 按任务所需能力做专长路由。参数：name 执行者标识(必)、abilities 能力标签数组(可选)。返回 {name, abilities, executors}。",
+    schema(
+      {
+        "name": string_prop("执行者标识（如 executor-A，必填）"),
+        "abilities": array_prop(
+          "能力标签数组（如 [\"编排\",\"json\"]）",
+        ),
+      },
+      ["name"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let name = get_str(args, "name")
+      let abs = strlist(get_array(args, "abilities"))
+      ignore(exec_reg.add_ability(name, abs))
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "name": Json::string(name),
+            "abilities": Json::array(abs.map(fn(s) { Json::string(s) })),
+            "executors": Json::number(exec_reg.list().length().to_double()),
+            "ok": Json::boolean(true),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "executor_route",
+    "Marketplace·能力路由推荐（Dynamic/Marketplace 雏形，R30）：给定任务所需能力 need，从已注册执行者中按 { 能力覆盖率 desc → 负载(名下活跃任务数) asc } 排序，返回候选 + 最佳执行者，供按专长+负载分配（而非仅靠 agent 自选）。参数：need 所需能力标签（逗号/顿号/空格分隔，如“编排,json”）。返回 {need, parsed, count, candidates, best}。",
+    schema(
+      {
+        "need": string_prop(
+          "所需能力标签（如“编排,json”，必填）",
+        ),
+      },
+      ["need"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let need = get_str(args, "need")
+      let load = executor_loads(engine)
+      let j = exec_reg.route_pick(need, load)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
