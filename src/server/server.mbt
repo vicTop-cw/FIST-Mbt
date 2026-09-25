@@ -342,7 +342,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 70 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 76 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -1904,6 +1904,31 @@ pub async fn run_server() -> Unit {
         return Err(@mcp_types.ToolError("cat/reason 均为必填"))
       }
       let j = do_evolve_lesson(evolve_arc, evolve_store, cat, reason, fix, ts)
+      Ok(@mcp.ToolResult::text(j.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "evolve_critic",
+    "自进化·Critic 防漂移门禁（SAGE 论文落地，杜绝课程漂移）：把一条「拟入库的 principle/lesson/资产」的 note 交给 Critic 评审，复用 Archive::novelty + scoring 纯计算，返回是否放行 {admit} 与理由——与档案库最相似资产重合 ≥70% 判「疑似课程漂移/重复」直接建议拒绝；综合分(0.5*score+0.5*新颖度)低于阈值判「稳健性不足」暂缓入库。只评审不写库，供入库前决策。参数：note 候选资产意图/原因(必填)、score 可计算评分(默认0.5)、threshold 放行阈值(默认0.85)、now。返回含 top_hit 最相似资产。",
+    schema(
+      {
+        "note": string_prop(
+          "候选资产的意图/原因（必填，用于新颖度/查重）",
+        ),
+        "score": number_prop("可计算评分(默认0.5)"),
+        "threshold": number_prop("放行阈值(默认0.85)"),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      ["note"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let note = get_str(args, "note")
+      let score = get_double(args, "score", default=0.5)
+      let threshold = get_double(args, "threshold", default=0.85)
+      // 先把 DB 中已沉淀的 [lesson] 教训同步进内存档案库，使 Critic 能对"全量"判漂移
+      ignore(sync_db_lessons(evolve_arc, evolve_store))
+      let j = @evolve.critic_review(evolve_arc, note, score, threshold~)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
