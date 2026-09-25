@@ -449,3 +449,89 @@ test "memory_13_lookup_injected_assets_hit_and_empty" {
     _ => abort("无关词应返回空数组")
   }
 }
+
+// ---------------------------------------------------------------------------
+// 用例 15：do_evolve_lesson（失败回流学习 learn-from-reject）
+// ---------------------------------------------------------------------------
+
+///|
+test "memory_15_lesson_goal_prefix" {
+  assert_eq(lesson_goal("语料不合格"), "[lesson] 语料不合格")
+  assert_eq(lesson_goal("  [lesson] 旧教训  "), "[lesson] 旧教训")
+}
+
+///|
+test "memory_16_lesson_record_and_inject" {
+  // 独立 Archive：记录一条教训，验证 do_evolve_lesson 返回 learned/artifact_id 且可被 inject 检索
+  let arc = @evolve.Archive::new("test-lesson")
+  let j1 = do_evolve_lesson(
+    arc,
+    None,
+    "语料不合格",
+    "语料未覆盖验收指纹，需补齐 fingerprint/schema",
+    "必须先写 fingerprint 再 claim",
+    "2026-09-25T08:00:00Z",
+  )
+  assert_true(mem_bool(j1, "learned"))
+  assert_true(mem_str(j1, "artifact_id").contains("lesson-"))
+  assert_eq(mem_str(j1, "category"), "语料不合格")
+  // 同类目不同 now → 独立成条
+  let j2 = do_evolve_lesson(
+    arc,
+    None,
+    "成果未达标",
+    "deliverable 缺五段式",
+    "",
+    "2026-09-25T08:01:00Z",
+  )
+  assert_true(mem_str(j2, "artifact_id") != mem_str(j1, "artifact_id"))
+  // 可经 lookup_injected_assets_in 按类目命中（goal=[lesson]<cat>）
+  let h = @json.parse(
+    lookup_injected_assets_in(arc, "[lesson] 语料不合格").stringify(),
+  ) catch {
+    _ => Json::null()
+  }
+  match h {
+    Array(a) => assert_eq(a.length(), 1)
+    _ => abort("应按教训类目命中 1 条")
+  }
+  // dead_ends 应能反映教训（score 0.5 加入死路地图候选）
+  let dead = @evolve.Archive::dead_ends(arc, limit=20)
+  assert_true(dead.length() >= 2)
+  // archive 内存库：2 条不同 id
+  assert_eq(@evolve.Archive::len(arc), 2)
+}
+
+///|
+test "memory_17_lesson_persist_sqlite" {
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
+  let s = match @store.SqliteStore::open("temp/lesson_c17.db") {
+    Some(x) => x
+    None => abort("sqlite open failed")
+  }
+  ignore(s.clear())
+  let arc = @evolve.Archive::new("test-lesson-sql")
+  let j = do_evolve_lesson(
+    arc,
+    Some(s),
+    "文档门禁",
+    "docs_gate 校验不通过",
+    "补齐 README/CHANGELOG/reports",
+    "2026-09-25T08:02:00Z",
+  )
+  assert_true(mem_bool(j, "learned"))
+  assert_true(mem_bool(j, "persisted"))
+  let id = mem_str(j, "artifact_id")
+  let list = s.evolve_list()
+  let mut found = false
+  for item in list {
+    if mem_str(item, "id") == id {
+      found = true
+      break
+    }
+  }
+  assert_true(found)
+  ignore(s.clear())
+}

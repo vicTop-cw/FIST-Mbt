@@ -12,7 +12,7 @@
 └───────────────────────────┬───────────────────────────────────────┘
                             │  JSON-RPC over STDIO / HTTP-SSE
 ┌───────────────────────────▼───────────────────────────────────────┐
-│  ① 协议层  src/server/       server.mbt     67 工具注册 + run_server │
+│  ① 协议层  src/server/       server.mbt     69 工具注册 + run_server │
 │                             stdio_js.mbt   JS 后端 STDIO 传输        │
 │                             stdio_native   Native 后端 STDIO 传输    │
 └───────────────────────────┬───────────────────────────────────────┘
@@ -87,7 +87,7 @@ evolve_distill            蒸馏成 [principle] 原则写入 DGM，4-AI 门禁�
 ## 五、快速读懂指引
 
 - 生命周期语义：`README.md` §状态机（九态）
-- 67 工具分组：`README.md` §MCP 暴露面（生命周期/查询/DAG/自驱/演化/运维/Omega/调用日志+bug上报）
+- 69 工具分组：`README.md` §MCP 暴露面（生命周期/查询/DAG/自驱/演化/运维/Omega/调用日志+bug上报）
 - 自驱走通实例：`docs/selfdrive-walkthrough.md`
 - 评审关注"补齐 MCP 概念门槛"建议从此页分层图入手，再下沉到 `src/` 各包。
 

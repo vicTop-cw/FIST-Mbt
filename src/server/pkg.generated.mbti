@@ -16,11 +16,15 @@ pub fn distill_principle_goal(String) -> String
 
 pub fn do_evolve_distill(@evolve.Archive, @store.SqliteStore?, String, String, Double, String) -> Json
 
+pub fn do_evolve_lesson(@evolve.Archive, @store.SqliteStore?, String, String, String, String, score? : Double) -> Json
+
 pub fn instrumented_tool(@colmugx/mcp/server.MCPServer, String, String, Json, async (Json) -> Result[@tool.ToolResult, @types.MCPError]) -> @colmugx/mcp/server.MCPServer
 
 pub async fn laya_decide_external(String, Array[String], String, String, Int) -> Result[Json, String]
 
 pub async fn laya_probe_available(String, Array[String], String, Int) -> Result[Bool, String]
+
+pub fn lesson_goal(String) -> String
 
 pub fn lookup_injected_assets_in(@evolve.Archive, String) -> Json
 

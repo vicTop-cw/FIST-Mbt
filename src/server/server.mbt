@@ -339,7 +339,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 68 工具 + 4 resources + 2 prompts + call_log 注入",
+        "MCP 层 69 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -1868,6 +1868,35 @@ pub async fn run_server() -> Unit {
       }
       @evolve.Archive::add(evolve_arc, art)
       Ok(@mcp.ToolResult::text(art.to_json().stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "evolve_lesson",
+    "自进化·失败回流学习（learn-from-reject）：把一次被打回/失败的原因归档成一条 [lesson]<类目> 资产入 DGM，让建档库能「学教训」——note 存失败原因、code 存纠偏提示，plan/claim 的 inject 可按类目命中「踩过的坑」。参数：cat 类目(必填，检索 tag)、reason 失败原因(必填)、fix 纠偏提示(可选)、score(可选默认0.5)、now。返回 {learned, artifact_id}。",
+    schema(
+      {
+        "cat": string_prop(
+          "教训类目（必填，检索 tag，自动拼成 goal=[lesson]<cat>）",
+        ),
+        "reason": string_prop("失败/被打回的原因（必填）"),
+        "fix": string_prop("纠偏提示/来源（可选，无则用 reason）"),
+        "score": number_prop("可计算评分(默认0.5)"),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      ["cat", "reason"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let cat = get_str(args, "cat")
+      let reason = get_str(args, "reason")
+      let fix = get_str(args, "fix")
+      let score = get_double(args, "score", default=0.5)
+      let ts = get_str(args, "now", default=now_default())
+      if cat == "" || reason == "" {
+        return Err(@mcp_types.ToolError("cat/reason 均为必填"))
+      }
+      let j = do_evolve_lesson(evolve_arc, evolve_store, cat, reason, fix, ts)
+      Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
   s1 = instrumented_tool(

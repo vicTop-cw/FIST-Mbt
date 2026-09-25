@@ -211,6 +211,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 | `evolve_snapshot` | 查看档案库快照（count/best/summaries/dead_ends/lineage_of_best） | 无 |
 | `evolve_sample` | 按 p∝s·h 多样性加权采样父代产物（子代越少/性能越高越可能被选） | rand(可选) |
 | `evolve_asset_register` | 注册可选外部资产（如 code-review / superpowers 类 skill 库）归档进档案库，goal 用 [asset]<来源名> 供 plan/claim 的 inject 按关键词检索 | source, note, code, score(可选), now |
+| `evolve_lesson` | 失败回流学习：把被打回/失败原因归档成 [lesson] 类目资产入 DGM，供 inject 检索「踩过的坑」 | cat, reason, fix(可选), score(可选), now |
 
 #### 可选项（Laya / 单根流水线）
 
@@ -275,7 +276,7 @@ FIST-Mbt/
 │   │   └── ops_ts.mbt          # 时间戳工具
 │   ├── omega/           # 可解释性子包：spec/gate/check
 │   └── server/          # MCP server 装配
-│       ├── server.mbt          # 68 个工具注册 + 3 resources + 2 prompts + run_server
+│       ├── server.mbt          # 69 个工具注册 + 3 resources + 2 prompts + run_server
 │       ├── stdio_js.mbt        # JS 后端 STDIO 传输
 │       └── stdio_native.mbt    # 原生后端 STDIO 传输
 └── moon.mod             # 模块元数据
