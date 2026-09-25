@@ -85,6 +85,19 @@ fn executor_loads(e : @engine.FistEngine) -> Map[String, Int] {
 }
 
 ///|
+/// 把 Json 数组 [{Int}] 转成 Array[Int]（用于 intervals 解析）。
+fn intlist(j : Array[Json]) -> Array[Int] {
+  let out : Array[Int] = []
+  for x in j {
+    match x {
+      Json::Number(n, ..) => out.push(n.to_int())
+      _ => ()
+    }
+  }
+  out
+}
+
+///|
 /// 把 Json 数组 [{String}] 转成 Array[String]（用于 abilities 解析）。
 fn strlist(j : Array[Json]) -> Array[String] {
   let out : Array[String] = []
@@ -462,7 +475,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 90 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 91 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -473,7 +486,7 @@ fn map_json() -> Json {
       ),
       "查询": Json::string("list/get"),
       "运维": Json::string(
-        "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup",
+        "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual",
       ),
       "运维·日志/缺陷/成本/调度": Json::string(
         "call_log/bug_list/report_bug/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide",
@@ -3329,6 +3342,34 @@ pub async fn run_server() -> Unit {
           engine.progress_gate(task_id, budget, spent).stringify(),
         ),
       )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "phi_accrual",
+    "Phi Accrual 概率式故障检测（R89，Hayashibara 2004 经典算法）：按心跳间隔历史分布算怀疑度 φ=-log10(P(心跳晚于 elapsed 到达))，替代固定 timeout——窗口内间隔均值 μ + 标准差 σ 建模（σ≈0 回退指数分布；|z|≥3 用尾部渐近展开保精度），φ≥threshold（默认 8，原论文口径）判 suspect 否则 healthy；无间隔历史返回 insufficient。升级 watchdog/heal 看护语义：心跳节奏越快、越久没来才值得怀疑，而非固定超时。参数：intervals 心跳间隔历史（秒数组，必填）、elapsed 自上次心跳起的秒数（必填）、threshold 怀疑阈值（可选默认 8）。返回 { verdict, phi, mean, stddev, window, threshold, note, basis }。",
+    schema(
+      {
+        "intervals": array_prop(
+          "心跳间隔历史（秒，整数数组，必填）",
+        ),
+        "elapsed": number_prop("自上次心跳起的秒数（必填）"),
+        "threshold": number_prop(
+          "怀疑阈值（可选，默认 8，原论文口径）",
+        ),
+      },
+      ["intervals", "elapsed"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let intervals = intlist(get_array(args, "intervals"))
+      let elapsed = jnum(args, "elapsed").to_int()
+      let threshold = jnum(args, "threshold").to_int()
+      let j = if threshold > 0 {
+        @engine.phi_accrual(intervals, elapsed, threshold~)
+      } else {
+        @engine.phi_accrual(intervals, elapsed)
+      }
+      Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
 

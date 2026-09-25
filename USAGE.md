@@ -154,7 +154,7 @@ def rpc(method, **payload):
 
 ---
 
-## 6. 90 个 MCP 工具手册
+## 6. 91 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
@@ -191,6 +191,7 @@ def rpc(method, **payload):
 | `heartbeat` | 活动信号上报（超时静默将触发 heal 回滚） | task_id(必) signal(选) now(选) |
 | `heal` | no_signal 看护：心跳超时静默的任务回滚为已领取待重派 | now(选) timeout_sec(选) |
 | `task_cleanup` | 归档清理：删除超保留期的已归档任务 | now(选) retention_days(选,默认30) |
+| `phi_accrual` | Phi Accrual 概率式故障检测（R89，Hayashibara 2004）：按心跳间隔历史分布算怀疑度 φ，替代固定 timeout——φ≥threshold(默认8) 判 suspect 否则 healthy | intervals(必,秒数组) elapsed(必,秒) threshold(选,默认8) |
 
 **task_plan_deep 语义化深拆**：`spec` 传 JSON 字符串
 （`{"laws":[...],"fingerprint":"..."}`，用 `json.dumps(ensure_ascii=False)` 生成），

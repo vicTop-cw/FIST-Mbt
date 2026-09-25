@@ -34,7 +34,7 @@
 |---|---|
 | 生命周期(12) | publish/plan/claim/execute/submit/verify/reject/retry/pause/resume/archive/delete |
 | 查询(2) | list/get |
-| 运维(6) | task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup |
+| 运维(7) | task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual |
 | 看板/脉冲/预订/推荐+DAG(12) | dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish、board_ascii、status_summary、reserve_scope/check/release、task_triage |
 | 自驱(9) | selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks、selfdrive_pick_next |
 | 自我记忆/自进化(7) | memory_consolidate/gc/link、evolve_distill/lesson/critic、task_challenge |

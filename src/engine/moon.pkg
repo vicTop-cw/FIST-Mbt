@@ -6,6 +6,7 @@ import {
   "vicTop-cw/fist-mbt/src/evolve",
   "vicTop-cw/fist-mbt/src/executor",
   "moonbitlang/core/json",
+  "moonbitlang/core/math",
   "moonbitlang/x/fs",
 }
 

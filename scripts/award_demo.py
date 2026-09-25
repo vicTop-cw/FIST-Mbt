@@ -178,6 +178,11 @@ def main():
         print(f"      ↳ R88 进度预算门控 progress_gate({rid}, budget=20) → progress={pg.get('progress')} "
               f"spent={pg.get('spent')} verdict={pg.get('verdict')} "
               f"（PROGROUTER 蒸馏：线性/保守双路径预测，预算×进度在线体检）")
+        # R89 Phi Accrual 概率式故障检测：按心跳间隔分布算怀疑度 φ（替代固定 timeout）
+        ph = call(p, "phi_accrual", intervals=[5, 10, 15, 10, 10], elapsed=60)
+        assert ph.get("verdict") in ("healthy", "suspect", "insufficient"), "phi_accrual 应返回 verdict"
+        print(f"      ↳ R89 概率式故障检测 phi_accrual(μ=10s σ≈3.5, elapsed=60s) → φ={ph.get('phi')} "
+              f"verdict={ph.get('verdict')} （Phi Accrual：φ=-log10(P 心跳晚到)，越久越怀疑，替代固定 timeout）")
         tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"

@@ -2,7 +2,7 @@
 
 > 本文档为 selfdrive 审视/门禁的净拉取源：Next Tasks 应从这里取。
 > 由三份调研去重收敛生成：`memory/research/competition.md`、`memory/research/five-directions.md`、`memory/research/future-roadmap.md`。
-> 状态枚举 `pending | done`。锚点事实：**90 工具 / 256 测试**（`moon test --target js` Windows+WSL 双端全绿）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
+> 状态枚举 `pending | done`。锚点事实：**91 工具 / 259 测试**（`moon test --target js` Windows+WSL 双端全绿）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
 
 | P级 | 事项 | 来源 | 状态 | 对应review/commit |
 |-----|------|------|------|-------------------|
@@ -35,7 +35,7 @@
 | P3 | 可编程策略集：将 Omega gate 8 种 $assert 扩展为支持用户自定义 invariant | five-directions/§一 | pending | - |
 | P3 | Runtime monitoring：按执行 trace 对 LTL 属性低开销认证 | five-directions/§一 | pending | - |
 | P3 | 毫秒级符号逻辑引擎按布尔约束拦截 planned action | five-directions/§一 | pending | - |
-| P3 | Phi Accrual 概率式检测：按心跳历史分布算 φ 值替代固定 timeout | five-directions/§一 | pending | - |
+| P3 | Phi Accrual 概率式检测：按心跳历史分布算 φ 值替代固定 timeout | five-directions/§一 | done(phi_accrual 工具 R89：φ=-log10(P 心跳晚到)，σ=0 指数回退+正态建模+尾部渐近，engine_phi_test +3；心跳间隔历史持久化+watchdog 端到端接入留后续) | commit(6fdede1 后 R89) |
 | P3 | Saga 补偿事务 + durable action log：并发动作前写 append-only 日志、失败按 LIFO 补偿 | five-directions/§一 | pending | - |
 | P3 | Scoring 驱动的自动进化闭环（mutation/skill_lib/curriculum）无人值守自进化 | future-roadmap/远 | pending | - |
 | P3 | 与 moonclaw/posoco/官方 MCP SDK 差异化共处：定位"完整 MCP Server+编排+自进化" | future-roadmap/远 | pending | - |

@@ -88,7 +88,7 @@ def main():
         # Step 1 · tools/list
         r = rpc(proc, "tools/list")
         tools = [t["name"] for t in r.get("result", {}).get("tools", [])]
-        expected = 90
+        expected = 91
         if len(tools) != expected or "publish" not in tools:
             fail(f"tools/list 异常（共 {len(tools)} 个工具，期望 {expected}，缺 publish）")
         print(f"PASS tools/list → {len(tools)} 个工具（含 publish/selfdrive_publish_next 等）")

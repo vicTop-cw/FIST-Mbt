@@ -56,6 +56,8 @@ pub fn omega_result_id(String, Int) -> String
 
 pub fn omega_spec_id(String, Int) -> String
 
+pub fn phi_accrual(Array[Int], Int, threshold? : Int) -> Json
+
 pub fn plan_route(String, n_files? : Int) -> Json
 
 pub fn root_task_id() -> String
