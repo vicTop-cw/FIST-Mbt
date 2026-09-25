@@ -117,8 +117,15 @@ def main():
         pk = call(p, "selfdrive_pick_next", namespace=NS, agent="exec_demo", want="编排", now=NOW)
         assert pk.get("claimed"), "应按推荐自动取单认领"
         print(f"   ⑩ 自驱取单 selfdrive_pick_next({NS}) → 认领 {pk.get('picked')}（remaining={pk.get('remaining')}，按能力推荐自动推进）")
+        # ⑪ 自推进闭环：对该取中的任务 执行→提交→验收，再重推荐，证明"推荐→取单→执行→验收→再推荐"整圈通
+        picked = pk.get("picked")
+        call(p, "execute", task_id=picked, deliverable="已按推荐取单并完成", now=NOW)
+        call(p, "submit", task_id=picked, now=NOW)
+        call(p, "verify", task_id=picked, verifier="ver_demo", now=NOW)
+        tr2 = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
+        print(f"   ⑪ 推荐→取单→执行→验收→再推荐：{picked} 已完成；重推荐可领取 {tr2.get('count')} 条、suggestion 指向 {tr2.get('suggestion',{}).get('task_id')}")
 
-        # ⑪ 整洁守卫：仓库根只允许交付库
+        # ⑫ 整洁守卫：仓库根只允许交付库
         print("MCP-AWARD-DEMO PASS — 增强能力链一条命令全部跑通")
     finally:
         try:
