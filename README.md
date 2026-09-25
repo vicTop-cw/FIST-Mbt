@@ -245,7 +245,8 @@ python scripts/award_demo.py      # → MCP-AWARD-DEMO PASS（能力链全通，
 FIST-Mbt/
 ├── .mcp.json            # MCP server 注册（moon run cmd/main）
 ├── AGENTS.md            # FIST 指挥官模式行为指令
-├── README.md            # 本文档
+├── README.md            # 本文档（中文）
+├── README_EN.md         # English README（国际受众 / Lambda World 2026）
 ├── USAGE.md             # 实操调用手册
 ├── cmd/
 │   ├── main/            # STDIO MCP server 入口（moon run cmd/main）

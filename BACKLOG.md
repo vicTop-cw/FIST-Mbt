@@ -30,7 +30,7 @@
 | P2 | 集成 moonbitlang/core/diff 展示报告对比、测试 diff | competition/§六 + future-roadmap/中 | pending | - |
 | P2 | Dashboard/ASCII 可视化输出（状态流转、DAG 依赖图 JSON→图） | future-roadmap/中 | pending | - |
 | P3 | 创建 P5 self_search.mbt（search_external + analyze_mechanism + portability_assessment 外部检索入库） | competition/§四 P3-11 + future-roadmap/远 | pending | - |
-| P3 | 补充 English README（面向 Lambda World 2026 国际受众） | competition/§四 P3-12 + future-roadmap/近 | pending | - |
+| P3 | 补充 English README（面向 Lambda World 2026 国际受众） | competition/§四 P3-12 + future-roadmap/近 | done(README_EN.md 已落地：101 工具/287 测试/机制家族/SRE 四金信号等全量英文呈现，评审首读与 Lambda World 2026 国际受众双受益；R106) | - |
 | P3 | 里程碑式渐进：decompose 前先生成粗粒度里程碑再逐步细化 | five-directions/§一 | pending | - |
 | P3 | 可编程策略集：将 Omega gate 8 种 $assert 扩展为支持用户自定义 invariant | five-directions/§一 | pending | - |
 | P3 | Runtime monitoring：按执行 trace 对 LTL 属性低开销认证 | five-directions/§一 | pending | - |
