@@ -2420,10 +2420,19 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "status_summary",
-    "项目脉冲摘要：返回 { version, total_tasks, by_status:{状态:数量}, active_namespaces }，agent 一次调用概览项目健康。参数：无。",
-    schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      let j = render_status_summary(engine.list_all(), mstore.ns_list(), "0.2.4")
+    "项目脉冲摘要：返回 { version, total_tasks, by_status:{状态:数量}, active_namespaces }。参数：namespace(可选，只统计该 ns；空=全部)。",
+    schema(
+      { "namespace": string_prop("命名空间(可选，只统计该 ns)") },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace")
+      let tasks = if ns == "" {
+        engine.list_all()
+      } else {
+        engine.list_all().filter(fn(t) { t.ns == ns })
+      }
+      let j = render_status_summary(tasks, mstore.ns_list(), "0.2.4")
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )

@@ -211,6 +211,7 @@ def rpc(method, **payload):
 | `dag_ready` | 列出所有依赖满足、可领取的任务 | namespace(可选) |
 | `dag_sort` | 对任务列表按依赖深度拓扑排序 | task_ids(JSON 数组，必填) |
 | `board_ascii` | 实时任务看板：按状态分组 + 深度缩进渲染，一眼看项目全貌 | namespace(可选，空=全部) |
+| `status_summary` | 项目脉冲：{version,total_tasks,by_status,active_namespaces}，一次调用读项目健康 | namespace(可选，只统计该 ns) |
 
 > **使用建议**：在 `claim` 前先调 `dag_ready` 查看可领取任务，或 `dag_check` 验证依赖是否满足，
 > 避免死锁。`dag_ascii` 可快速可视化当前任务依赖关系；`board_ascii` 纵览整个项目"哪些任务、什么状态、在树哪层"。
