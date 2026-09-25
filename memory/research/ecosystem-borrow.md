@@ -30,3 +30,16 @@
 
 ## 四、一句总结
 fist-mbt 已覆盖编排层(Hierarchical+DAG+心跳+成本+地图+脉冲)的主流能力；**差异化护城河再夯实一笔 = 作用域预订(冲突预防)**已落地；下一可借力点按强度排序：Challenger/Critic 防漂移 → 难度梯度拆解 → Marketplace 路由。
+
+## 五、二轮调研（2026-09-25 傍晚，WebSearch 实取）——拿来主义再补
+| 信号来源 | 核心 | 对 fist-mbt 可借力点 |
+|---|---|---|
+| **SAGE**（arXiv 2603.15255，已 R13/R14 落地） | Challenger 自生成更难题，**Critic 过滤"题目与计划"防课程漂移** | 现 `evolve_critic` 只审 principle/lesson；**`task_challenge` 生成的挑战题自身未过差评门禁** → 补"挑战题防漂移评审" |
+| **R-Few**（腾讯 arXiv 2512.02472） | few-shot 锚点 ground 的 Challenger + 在线难度课程，缓解 concept drift / **diversity collapse** | 挑战变体质量离散 → 防"越来越偏/坍缩到同质" |
+| **SPICE**（Meta arXiv 2510.24684） | Challenger+Reasoner self-play 语料驱动课程 | 与 Omega 语料(pass/fail)呼应，self-play 闭环 |
+| **MCP SEP-1686 Task 原语**（2025.11 规范） | call-now / fetch-later 长任务抽象 + keepAlive + 轮询 | `execute/verify` 异步化，与 `watchdog_tick` 心跳统一（低优先） |
+| **Claude Code agents / Workflow** | subagents + workflow fan-out + verifier/skeptic 对抗验证波 + `report_findings` 结构化回传 | 可仿"交付物结构化回传"，约束 execute deliverable JSON 契约 |
+| **RepoMap 模式**（aider） | tree-sitter 解析 + **PageRank 排序 + token 预算裁剪**生成代码地图 | `fist://map` 现为静态人工概述；可升级为"能力路由/上下文注入"的代码地图（中投入） |
+| **AGENTS.md 研究**（arXiv 2602.11988） | LLM 自动生成的 AGENTS.md 反而有害 | 警告：agent 地图/说明生成需保守，重证据 |
+
+**本轮采纳工程（R29 主题）**：SAGE 四专家环补最后一笔——`task_challenge` 生成的挑战变体在发布为根任务前，先经 Critic 防漂移评审（纯计算，重合度/可完成性筛查），不合格则自降档/拒发，坐实"由易到难自推进 + 防课程漂移/坍缩"护城河。与 `evolve_critic` 共用评审语义单一真源。

@@ -51,10 +51,10 @@ import subprocess
 import sys
 import tempfile
 
-# 统一 rubric 提示词：默认取本脚本同目录下的 _ai_prompt.md（相对定位，无硬编码盘符）
-DEFAULT_RUBRIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_ai_prompt.md")
+# 统一 rubric 提示词：默认取本脚本同目录下的 scoring_rubric.md（相对定位，无硬编码盘符）
+DEFAULT_RUBRIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scoring_rubric.md")
 
-# 全档达标阈值（客观判据，与 _ai_prompt.md / spec §2.1 一致）
+# 全档达标阈值（客观判据，与 scoring_rubric.md / spec §2.1 一致）
 # 目标提档：一等 70% / 二等 85% / 三等 97%（2026-09-24 用户 /goal 更新）
 THRESH = {"p1": 0.70, "p2": 0.85, "p3": 0.97}
 
@@ -223,7 +223,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="fist-mbt 4-AI 概率门禁 runner（AND 聚合，1 AI error 即 FAIL）")
     ap.add_argument("--evidence", required=True, help="证据快照文件路径（喂给所有 AI 的确凿事实）")
     ap.add_argument("--ai1-json", required=True, help="AI1 即指挥官自身打分 JSON {p1,p2,p3,verdict}（不含 SCORE_JSON 前缀）")
-    ap.add_argument("--rubric", default=DEFAULT_RUBRIC, help="统一 rubric 提示词文件（默认同目录 _ai_prompt.md）")
+    ap.add_argument("--rubric", default=DEFAULT_RUBRIC, help="统一 rubric 提示词文件（默认同目录 scoring_rubric.md）")
     ap.add_argument("--timeout", type=int, default=180, help="每个 CLI 超时秒数（默认 180）")
     args = ap.parse_args(argv)
 
