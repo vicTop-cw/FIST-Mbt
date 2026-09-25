@@ -1,6 +1,6 @@
 # FIST-Mbt 架构总览
 
-> **一句话定位**：纯 MoonBit 的 AI 指挥官任务编排底座 + MCP Server + 自进化——"人类指挥、AI/定时器持续自推动"的自治系统，以 101 个 MCP 工具暴露给任意 MCP 客户端。
+> **一句话定位**：纯 MoonBit 的 AI 指挥官任务编排底座 + MCP Server + 自进化——"人类指挥、AI/定时器持续自推动"的自治系统，以 102 个 MCP 工具暴露给任意 MCP 客户端。
 
 项目体积小、包边界清晰，本页面向评审展示"用户怎么理解 → 系统怎么运转 → 系统怎么自我进化"的全貌。
 
@@ -12,7 +12,7 @@
 └───────────────────────────┬───────────────────────────────────────┘
                             │  JSON-RPC over STDIO / HTTP-SSE
 ┌───────────────────────────▼───────────────────────────────────────┐
-│  ① 协议层  src/server/       server.mbt     101 工具注册 + run_server │
+│  ① 协议层  src/server/       server.mbt     102 工具注册 + run_server │
 │                             stdio_js.mbt   JS 后端 STDIO 传输        │
 │                             stdio_native   Native 后端 STDIO 传输    │
 └───────────────────────────┬───────────────────────────────────────┘
@@ -78,7 +78,7 @@ evolve_distill            蒸馏成 [principle] 原则写入 DGM，4-AI 门禁�
 
 ## 四、设计要点
 
-1. **纯 MoonBit，零运行时依赖**：无 Python/Rust 包装；JS + Native 双端交叉编译，Windows/Linux 各 295 项测试全绿、跨环境可复现（`moon update && moon run cmd/main` 即用）。
+1. **纯 MoonBit，零运行时依赖**：无 Python/Rust 包装；JS + Native 双端交叉编译，Windows/Linux 各 301 项测试全绿、跨环境可复现（`moon update && moon run cmd/main` 即用）。
 2. **状态机正确性优先**：九态状态机 + 非法迁移拦截（未认领直接 plan/execute 报错）+ 父任务自动上卷，正确性敏感逻辑由强类型保证、易单测。
 3. **验证可计算化**：Omega 语料门禁（schema+fingerprint，accuracy<100% 一票否决）与 evolve 注入式评分均不依赖 LLM 自评，杜绝"自己给自己打分"。
 4. **跨平台可复现**：SQLite 双后端（JS 走 node:sqlite，Native 走 mizchi/sqlite + `-lsqlite3`），specs/心跳均持久化、跨进程可读；Windows native 并行测试偶发堆损坏的边界已在 README 主动自曝，产品运行时不受影响。
@@ -87,7 +87,7 @@ evolve_distill            蒸馏成 [principle] 原则写入 DGM，4-AI 门禁�
 ## 五、快速读懂指引
 
 - 生命周期语义：`README.md` §状态机（九态）
-- 101 工具分组：`README.md` §MCP 暴露面（生命周期/查询/DAG/自驱/演化/运维/Omega/调用日志+bug上报）
+- 102 工具分组：`README.md` §MCP 暴露面（生命周期/查询/DAG/自驱/演化/运维/Omega/调用日志+bug上报）
 - 自驱走通实例：`docs/selfdrive-walkthrough.md`
 - 评审关注"补齐 MCP 概念门槛"建议从此页分层图入手，再下沉到 `src/` 各包。
 

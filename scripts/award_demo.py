@@ -230,6 +230,20 @@ def main():
         assert c5.get("state") == "closed", "探测成功应 Closed"
         print(f"      ↳ R104 熔断器 circuit_breaker(external-http) → fail×3 open(fail-fast) → "
               f"recovery half_open → probe ok closed（Nygard Release It! 三态：Closed/Open/Half-Open）")
+        # R109 迁移契约检查：Design by Contract 蒸馏 —— 待领取 execute 前置拒绝 / 认领后 execute 全通过，状态回稳不落库
+        rid2 = call(p, "publish", project_dir="/proj/demo", namespace=NS,
+                    description="契约检查演示任务", created_by="human_steward", now=NOW)
+        rid2_id = rid2["task_id"]
+        txc1 = call(p, "tx_contract", task_id=rid2_id, action="execute")
+        assert txc1.get("verdict") == "rejected" and txc1.get("phase") == "precondition", \
+            "待领取任务 execute 应前置拒绝"
+        call(p, "claim", task_id=rid2_id, assignee="exec_demo", now=NOW)
+        txc2 = call(p, "tx_contract", task_id=rid2_id, action="execute")
+        assert txc2.get("verdict") == "allowed" and txc2.get("target_state") == "执行中", \
+            "已领取任务 execute 应契约全通过"
+        print(f"      ↳ R109 迁移契约 tx_contract({rid2_id}) → 待领取 execute 前置拒绝(rejected) → "
+              f"认领后 execute 全通过(allowed→{txc2.get('target_state')})，状态回稳不落库"
+              f"（Design by Contract：precondition/invariant/postcondition 三件套）")
         tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"

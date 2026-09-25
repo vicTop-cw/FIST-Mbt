@@ -149,12 +149,12 @@ def rpc(method, **payload):
 三步跑通即 MCP server 端到端可用、环境就绪。
 
 > 本机实测：`python scripts/mcp_smoke.py` 一键自检输出
-> `PASS tools/list → 87 个工具` / `PASS publish → T?` / `PASS get → T? [待领取]` / `MCP-SMOKE PASS`。
+> `PASS tools/list → 102 个工具` / `PASS publish → T?` / `PASS get → T? [待领取]` / `MCP-SMOKE PASS`。
 > 三步 = 该脚本的内部逻辑，二者完全一致。
 
 ---
 
-## 6. 101 个 MCP 工具手册
+## 6. 102 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
@@ -192,6 +192,7 @@ def rpc(method, **payload):
 | `heal` | no_signal 看护：心跳超时静默的任务回滚为已领取待重派 | now(选) timeout_sec(选) |
 | `task_cleanup` | 归档清理：删除超保留期的已归档任务 | now(选) retention_days(选,默认30) |
 | `phi_accrual` | Phi Accrual 概率式故障检测（R89，Hayashibara 2004）：按心跳间隔历史分布算怀疑度 φ，替代固定 timeout——φ≥threshold(默认8) 判 suspect 否则 healthy | intervals(必,秒数组) elapsed(必,秒) threshold(选,默认8) |
+| `tx_contract` | 迁移契约检查（R109，Design by Contract 蒸馏）：对 (task, action) 只读预检 precondition/invariant/postcondition 三件套，任一失败 verdict=rejected 整笔拒绝、状态 A 回稳（不落库）；全通过 allowed（建议仍走正式生命周期工具执行） | task_id(必) action(必,claim/split/execute/submit/reject/retry/pause/resume/reopen/complete/archive/mark_decomposing) assignee(选,默认agent) completed_by(选,默认human_steward) |
 
 **task_plan_deep 语义化深拆**：`spec` 传 JSON 字符串
 （`{"laws":[...],"fingerprint":"..."}`，用 `json.dumps(ensure_ascii=False)` 生成），

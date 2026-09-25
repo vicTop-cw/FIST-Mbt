@@ -2,7 +2,7 @@
 
 > 本文档为 selfdrive 审视/门禁的净拉取源：Next Tasks 应从这里取。
 > 由三份调研去重收敛生成：`memory/research/competition.md`、`memory/research/five-directions.md`、`memory/research/future-roadmap.md`。
-> 状态枚举 `pending | done`。锚点事实：**101 工具 / 295 测试**（`moon test --target js` Windows+WSL 双端全绿，含 quickcheck 属性测试）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
+> 状态枚举 `pending | done`。锚点事实：**102 工具 / 301 测试**（`moon test --target js` Windows+WSL 双端全绿，含 quickcheck 属性测试）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
 
 | P级 | 事项 | 来源 | 状态 | 对应review/commit |
 |-----|------|------|------|-------------------|
@@ -22,7 +22,7 @@
 | P2 | 评估 mizchi/llm 纯 MoonBit 客户端替代 Python sidecar（进一步纯化） | competition/§四 P2-9 + §六 + future-roadmap/中 | pending | - |
 | P2 | 补充 ARCHITECTURE.md（9 模块关系图 + 数据流 + MCP 协议层），降低概念门槛 | competition/§四 P2-10 + future-roadmap/中 | pending | - |
 | P2 | Interleaved 分支：据子任务执行反馈回退改 plan，而非拆完即弃 | five-directions/§一 | done(plan_revise 已落地：执行反馈 → keep/rework/ready 三分计划修订，级联控涟漪；feedback 缺省读真实状态、显式 [{task_id,ok}] 可覆盖，纯读不写库；R98 见调研档 20260926.plan-revise.md) | - |
-| P2 | Transactional transition：invariant 失败整笔拒绝、状态 A 回稳 | five-directions/§一 | pending | - |
+| P2 | Transactional transition：invariant 失败整笔拒绝、状态 A 回稳 | five-directions/§一 | done(tx_contract 已落地：对 (task, action) 只读预检 Meyer 三件套——precondition 前置状态合法（复用 Task 迁移语义）/ invariant 领域不变量（K 值合法/身份保持/assignee 纪律）/ postcondition 目标态=文档化目标态；任一失败整笔拒绝、状态 A 回稳不落库；R109 见调研档 20260926.transactional-transition.md) | - |
 | P2 | Pre-execution audit gate：can_execute 之后、execute 之前插入 gate interception | five-directions/§一 | pending | - |
 | P2 | Evaluator-Optimizer schema：feedback 收敛为 Defects/Evidence/Fix/Acceptance 四段式 | five-directions/§一 | pending | - |
 | P2 | 多维度健康指标：除存活外检查 CPU/内存/任务积压/最近成功（4 类检查） | five-directions/§一 | done(health_check 已落地：SRE 四金信号 latency(完成周期 p50/p90)/traffic(活跃)/errors(失败率)/saturation(积压先行指标>0.5 预警)，grade=最差信号；R102 见调研档 20260926.health-check.md) | - |
@@ -30,7 +30,7 @@
 | P2 | 集成 moonbitlang/core/diff 展示报告对比、测试 diff | competition/§六 + future-roadmap/中 | pending | - |
 | P2 | Dashboard/ASCII 可视化输出（状态流转、DAG 依赖图 JSON→图） | future-roadmap/中 | pending | - |
 | P3 | 创建 P5 self_search.mbt（search_external + analyze_mechanism + portability_assessment 外部检索入库） | competition/§四 P3-11 + future-roadmap/远 | pending | - |
-| P3 | 补充 English README（面向 Lambda World 2026 国际受众） | competition/§四 P3-12 + future-roadmap/近 | done(README_EN.md 已落地：101 工具/295 测试/机制家族/SRE 四金信号等全量英文呈现，评审首读与 Lambda World 2026 国际受众双受益；R106) | - |
+| P3 | 补充 English README（面向 Lambda World 2026 国际受众） | competition/§四 P3-12 + future-roadmap/近 | done(README_EN.md 已落地：102 工具/301 测试/机制家族/SRE 四金信号等全量英文呈现，评审首读与 Lambda World 2026 国际受众双受益；R106) | - |
 | P3 | 里程碑式渐进：decompose 前先生成粗粒度里程碑再逐步细化 | five-directions/§一 | pending | - |
 | P3 | 可编程策略集：将 Omega gate 8 种 $assert 扩展为支持用户自定义 invariant | five-directions/§一 | pending | - |
 | P3 | Runtime monitoring：按执行 trace 对 LTL 属性低开销认证 | five-directions/§一 | pending | - |

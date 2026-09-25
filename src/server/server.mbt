@@ -475,7 +475,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 94 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 102 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -486,7 +486,7 @@ fn map_json() -> Json {
       ),
       "查询": Json::string("list/get"),
       "运维": Json::string(
-        "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback/saga_repair",
+        "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback/saga_repair/circuit_fail/succeed/status/tx_contract",
       ),
       "运维·日志/缺陷/成本/调度": Json::string(
         "call_log/bug_list/report_bug/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide",
@@ -1511,6 +1511,40 @@ pub async fn run_server() -> Unit {
           )
         Err(e) => Err(@mcp_types.ToolError(e))
       }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "tx_contract",
+    "迁移契约检查（R109，Design by Contract 蒸馏：Bertrand Meyer Eiffel 1986/1997 precondition/invariant/postcondition 三件套 + PMAT ch59 work-item 契约先例）：对 (task, action) 做只读预检——precondition（前置状态合法，复用 Task 迁移语义）/ invariant（领域不变量在迁移后成立：IN-1 id 非空 / IN-2 K 值 depth≥1 / IN-3 split_n≥1 / IN-4 身份保持 id/project_dir/ns / IN-5 assignee 纪律，claim/reopen 除外）/ postcondition（目标态=文档化目标态）。任一失败 → verdict=rejected 整笔拒绝、状态 A 回稳（不落库）；全部通过 → verdict=allowed。纯计算只读不写库（决策建议，执行权在调用方）。参数：task_id、action（claim/split/execute/submit/reject/retry/pause/resume/reopen/complete/archive/mark_decomposing）、assignee(可选默认 agent，claim 用)、completed_by(可选默认 human_steward，complete 用)。返回 { ok, task_id, action, phase, verdict, reasons, target_state, state_stable, note }。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "action": string_prop(
+          "迁移动作（必填）：claim/split/execute/submit/reject/retry/pause/resume/reopen/complete/archive/mark_decomposing",
+        ),
+        "assignee": string_prop("拟认领人(可选，claim 用，默认 agent)"),
+        "completed_by": string_prop(
+          "验收身份(可选，complete 用，默认 human_steward)",
+        ),
+      },
+      ["task_id", "action"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let action = get_str(args, "action")
+      let assignee = get_str(args, "assignee", default="agent")
+      let completed_by = get_str(args, "completed_by", default="human_steward")
+      Ok(
+        @mcp.ToolResult::text(
+          engine.transition_contract(
+            task_id,
+            action,
+            assignee~,
+            completed_by~,
+          ).stringify(),
+        ),
+      )
     },
   )
   s1 = instrumented_tool(
