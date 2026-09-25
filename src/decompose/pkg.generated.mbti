@@ -6,6 +6,10 @@ pub fn decompose_slices(Json, Int, parent_desc~ : String) -> Array[String]
 
 pub fn default_slices(Int, parent_desc~ : String) -> Array[String]
 
+pub fn difficulty_label(Int, Int) -> String
+
+pub fn simpler_variant_hint(String) -> String
+
 pub fn spec_hash_of(Json?) -> String
 
 // Errors

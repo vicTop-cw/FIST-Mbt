@@ -29,14 +29,17 @@ pub fn render_board_ascii(
   ns_filter : String,
 ) -> Json {
   let order : Array[String] = [
-    "待领取", "已领取", "拆分中", "执行中", "待验收", "已打回", "已完成", "已暂停", "已归档",
+    "待领取", "已领取", "拆分中", "执行中", "待验收", "已打回",
+    "已完成", "已暂停", "已归档",
   ]
   // 按状态分组
   let buckets : Map[String, Array[@core.Task]] = Map([])
   for t in tasks {
     if ns_filter == "" || t.ns == ns_filter {
       let st = t.status_to_string()
-      if st == "" { continue }
+      if st == "" {
+        continue
+      }
       match buckets.get(st) {
         Some(a) => a.push(t)
         None => buckets.set(st, [t])
@@ -93,9 +96,15 @@ fn append_group(
   let sorted = arr
   sorted.sort_by(fn(a, b) {
     if a.depth != b.depth {
-      if a.depth < b.depth { -1 } else { 1 }
+      if a.depth < b.depth {
+        -1
+      } else {
+        1
+      }
+    } else if a.created_at < b.created_at {
+      -1
     } else {
-      if a.created_at < b.created_at { -1 } else { 1 }
+      1
     }
   })
   for t in sorted {
@@ -145,8 +154,6 @@ pub fn render_status_summary(
     "version": Json::string(version),
     "total_tasks": Json::number(total.to_double()),
     "by_status": Json::object(stJson),
-    "active_namespaces": Json::array(
-      active_ns.map(fn(s) { Json::string(s) }),
-    ),
+    "active_namespaces": Json::array(active_ns.map(fn(s) { Json::string(s) })),
   })
 }

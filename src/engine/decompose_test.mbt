@@ -181,6 +181,58 @@ test "plan_deep 未认领任务（待领取）也允许拆解（拳长可直接 
 }
 
 ///|
+test "plan_deep 开启 gradient 时子任务描述带难度梯度与更简单变体；默认关闭零回归" {
+  let e = dp_new_engine()
+  let id = dp_publish(e)
+  // 默认不传 gradient：描述不含梯度标记（零回归）
+  match
+    e.plan_deep(
+      task_id=id,
+      split_n=3,
+      by="leader_a",
+      now="2026-09-05T10:01:00Z",
+    ) {
+    Err(m) => abort("default plan_deep failed: \{m}")
+    Ok(_) =>
+      match e.get_task("T0.1") {
+        Some(t) => assert_eq(t.description.contains("难度梯度"), false)
+        None => abort("T0.1 missing")
+      }
+  }
+  // 开启 gradient：T0.1/T0.2/T0.3 各带难度梯度标注 + 更简单变体提示
+  let id2 = dp_publish(e, desc="M3 挑战根任务")
+  match
+    e.plan_deep(
+      task_id=id2,
+      split_n=3,
+      by="leader_a",
+      gradient=true,
+      now="2026-09-05T10:02:00Z",
+    ) {
+    Err(m) => abort("gradient plan_deep failed: \{m}")
+    Ok(_) => {
+      // id2 由 first_free_root_id 顺延得到（如 T0r2.children 即本轮梯度根的子节点
+      let kids = e.children_of(id2)
+      assert_eq(kids.length() >= 3, true)
+      // 梯度：第 1 片 -> 易（含更简单变体提示）；最后 1 片 -> 难
+      let c_first = kids[0]
+      assert_eq(
+        c_first.description.contains("[难度梯度 1/\{kids.length()}:易]"),
+        true,
+      )
+      assert_eq(c_first.description.contains("更简单变体"), true)
+      let c_last = kids[kids.length() - 1]
+      assert_eq(
+        true,
+        c_last.description.contains(
+          "[难度梯度 \{kids.length()}/\{kids.length()}:难]",
+        ),
+      )
+    }
+  }
+}
+
+///|
 test "plan_deep SQLite 持久化：重启后子树可经 get_task 恢复" {
   let db_path = "decompose_persist.db"
   // 幂等：先经 SqliteStore 公共 API 清空上次残留，再构建引擎

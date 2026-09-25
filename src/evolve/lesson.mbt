@@ -68,9 +68,9 @@ pub fn evolve_lesson_persist(
         s.evolve_upsert(
           id~,
           parent_id="",
-          goal=goal,
+          goal~,
           note=reason.to_string(),
-          code=code,
+          code~,
           score=sc,
           parts_json="{}",
           created_at=now,

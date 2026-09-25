@@ -14,16 +14,25 @@ pub fn FistEngine::rsv_set(
 }
 
 ///|
-pub fn FistEngine::rsv_get(self : FistEngine, scope : String) -> (String, String, String)? {
+pub fn FistEngine::rsv_get(
+  self : FistEngine,
+  scope : String,
+) -> (String, String, String)? {
   self.store.rsv_get(scope)
 }
 
 ///|
-pub fn FistEngine::rsv_release(self : FistEngine, scope : String, agent : String) -> Bool {
+pub fn FistEngine::rsv_release(
+  self : FistEngine,
+  scope : String,
+  agent : String,
+) -> Bool {
   self.store.rsv_release(scope, agent)
 }
 
 ///|
-pub fn FistEngine::rsv_list(self : FistEngine) -> Array[(String, String, String)] {
+pub fn FistEngine::rsv_list(
+  self : FistEngine,
+) -> Array[(String, String, String)] {
   self.store.rsv_list()
 }
