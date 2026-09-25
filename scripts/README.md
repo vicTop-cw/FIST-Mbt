@@ -43,6 +43,7 @@
 - `omega_lesson_verify.py` — **Omega 打回自动落 [lesson] + 进程内可见** E2E（三类打回自动沉淀 + scratch 隔离 + 结束精确清理根库）。
 - `plan_gradient_verify.py` — `task_plan_deep gradient=true` 难度梯度 + 更简单变体 E2E（默认关闭零回归 + scratch 隔离）。
 - `evolve_critic_verify.py` — `evolve_critic` Critic 防漂移门禁 E2E（76 工具 + 放行/拒收/收紧阈值 + 只评审不写库）。
+- `task_challenge_verify.py` — `task_challenge` Challenger 进阶变体 E2E（77 工具 + [challenge]溯源/扩规模 + 未完成任务拒绝 + scratch 隔离）。
 - `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
 
 > 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/main` + `patch_esm_main` → node）。

@@ -8,14 +8,14 @@
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
 moon build --target js cmd/main
 python scripts/mcp_smoke.py
-# 期望输出：PASS tools/list → 76 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
+# 期望输出：PASS tools/list → 77 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
 ```
 
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
 | MCP 工具 | **75**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 213/213**（Windows + WSL(Linux) 双端实测全绿） |
+| 测试 | **`moon test --target js` 215/215**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -45,6 +45,7 @@ python scripts/mcp_smoke.py
 | 11 预订整洁 | `clear()` 一并清空 reservations（防跨次残留） | 单测 |
 | 12 难度梯度 | `task_plan_deep gradient=true`：拆解子任务带「难度梯度 序号/总数:易/中/难」+「更简单变体」提示（LADDER 信号） | `plan_gradient_verify.py` |
 | 13 Critic防漂移 | `evolve_critic` 门禁（SAGE）：入库前纯计算评审拟议 principle/lesson，重合≥70% 判课程漂移拒收、综合分低暂缓 | `evolve_critic_verify.py` |
+| 14 Challenger进阶 | `task_challenge`：对已完成/已归档任务发布更难变体新根任务（[challenge] 溯源 + 重要度升档，SAGE 四专家环补齐） | `task_challenge_verify.py` |
 
 ## 五、文档即实现
 - 工具/资源/测试数均与实测一致（README/AGENTS/ARCHITECTURE/agent-map 已同步）。
