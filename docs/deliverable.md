@@ -14,8 +14,8 @@ python scripts/mcp_smoke.py
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **75**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 216/216**（Windows + WSL(Linux) 双端实测全绿） |
+| MCP 工具 | **78**（+ 3 resources + 2 prompts） |
+| 测试 | **`moon test --target js` 218/218**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -51,6 +51,7 @@ python scripts/mcp_smoke.py
 | 17 难度校准 | `task_plan_deep gradient+calibrate`：按切片给真实难度 0..5 覆盖位置档（LADDER 补真实难度） | `plan_gradient_verify.py`（含 calibrate） |
 | 18 文档一致 | agent-map 分组对齐 77 工具、fist://map 文案 76→77（文档即实现扫尾） | 全仓 grep 计数审计 |
 | 19 native 证据 | `moon check --target native` 0 错误；Windows native 竞态(0xc0000374)文档如实修正，权威门槛=JS 后端双端+Linux native | 实机验证 + cleanup CLEAN |
+| 20 下一步推荐 | `task_triage`：可领取任务按 优先级→重要度→深度 排行 + suggestion（agent 无需全量扫描即可决定下一单） | `engine_triage_test.mbt` + award_demo ⑨ |
 
 ## 五、文档即实现
 - 工具/资源/测试数均与实测一致（README/AGENTS/ARCHITECTURE/agent-map 已同步）。
