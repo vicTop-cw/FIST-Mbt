@@ -139,6 +139,7 @@ pub fn FistEngine::rsv_list(Self) -> Array[(String, String, String)]
 pub fn FistEngine::rsv_release(Self, String, String) -> Bool
 pub fn FistEngine::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[String, String]
 pub fn FistEngine::saga_register(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, now~ : String) -> Result[Json, String]
+pub fn FistEngine::saga_repair(Self, ns? : String, String, failed_step~ : String, mark? : Bool) -> Result[Json, String]
 pub fn FistEngine::saga_rollback(Self, ns? : String, String, mark? : Bool) -> Result[Json, String]
 pub fn FistEngine::store_delete_heartbeat(Self, task_id~ : String) -> Result[Unit, String]
 pub fn FistEngine::store_list_heartbeat_intervals(Self, String) -> Array[Int]

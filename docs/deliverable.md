@@ -8,14 +8,14 @@
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
 moon build --target js cmd/main
 python scripts/mcp_smoke.py
-# 期望输出：PASS tools/list → 94 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
+# 期望输出：PASS tools/list → 95 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
 ```
 
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **94**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 269/269**（Windows + WSL(Linux) 双端实测全绿） |
+| MCP 工具 | **95**（+ 3 resources + 2 prompts） |
+| 测试 | **`moon test --target js` 273/273**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -92,6 +92,9 @@ python scripts/mcp_smoke.py
 | 58 进度预算门控 | 新增 `progress_gate` 工具（R88，PROGROUTER arXiv 2608.25992 蒸馏）：对任务子树按已消耗预算(难度权重 易/中/难→1/2/3，自动估算或 `spent` 手动注入)与完成进度(已完成+已归档/子树任务数)做双路径剩余成本预测——线性=燃尽率×剩余工作量、保守=1.2×线性（PROGROUTER 双路径），元门控给决策 OK(预算充足继续)/CAUTION(线性可行但缓冲不足→降档缩范围)/ESCALATE(线性已超支→追加预算或暂停)。计划性增强：预算×进度在线体检，先预警后决策，纯计算零副作用 | `dag_ext_test.mbt`「progress_gate」用例（+4：OK 自动估算 / CAUTION / ESCALATE+双路径数字 / 未开工+全完成+空任务+非法预算） |
 | 59 概率式故障检测 | 新增 `phi_accrual` 工具（R89，Hayashibara 2004 经典算法，Cassandra/HBase 生产采用）：按心跳间隔历史分布算怀疑度 φ=-log10(P(心跳晚于 elapsed 到达))，替代固定 timeout——窗口内间隔均值 μ+标准差 σ 建模（σ≈0 回退指数分布；\|z\|≥3 用尾部渐近展开保精度，core 无 sqrt 用牛顿法自实现），φ≥threshold(默认 8,原论文口径) 判 suspect 否则 healthy；无间隔历史 insufficient。升级看护语义：心跳节奏越快、越久没来才值得怀疑——可靠性工程新能力维度 | `engine_phi_test.mbt`「phi_accrual」用例（+3：σ=0 指数回退 / 正态建模 z=5 健康 z=6 怀疑 / 单调性+空历史） |
 | 60 概率式看护闭环 | watchdog 端到端 φ 判活（R90，默认关闭零回归）：新增 heartbeat_history 表（SQLite，每任务保留最近 1000 条间隔）——`heartbeat` 工具每次上报自动算间隔落库（复用 @ops.iso_to_secs）；`watchdog_tick` 加 `phi_gate=true`（+`phi_threshold`，默认 8）：心跳超时判定改用概率怀疑度 φ（读持久化间隔历史 + elapsed），φ≥阈值才回滚——心跳节奏越快、越久没来才值得怀疑（实测静默 100s、间隔 5s：φ≈8.7 判死，而固定 timeout 600 不判）；`clear()` 一并清空间隔史。可靠性线程闭环：原语→持久化→运行时行为 | `ops_watchdog_test.mbt`「R90」用例（+2：间隔史写入/时间序读回/clear 清空 + phi_gate 早于固定 timeout 判活对照） |
+| 61 Saga 补偿事务 | 新增 `saga_register`/`saga_rollback` 两工具（R92，Garcia-Molina & Salem 1987 SIGMOD 蒸馏，91→93 工具）：多步骤任务链每个前向步骤成功后登记「可补偿动作」（业务逆转描述，非 DB ROLLBACK）到 durable action log（saga_log 表，UNIQUE(ns,root,step) 幂等重登记）；失败时 `saga_rollback` 按 LIFO（严格倒序）返回待补偿序列，mark=true 默认消费防重复回滚、mark=false 仅预览——失败不再卡死/整树重来，按补偿序列优雅收尾；`clear()` 一并清空。失败收尾显式化（看护发现失败 → Saga 负责收尾） | `engine_saga_test.mbt`（+4：LIFO 倒序+mark 幂等 / 幂等重登记 / mark=false 预览 / clear 清空） |
+| 62 Monte Carlo 完工预测 | 新增 `dag_mc` 工具（R94，Van Slyke 1963 首倡 MCS 求网络完工分布，93→94 工具）：PERT 确定性分析的概率式补充——按难度档采样三角分布时长（易(2,3,5)/中(3,5,8)/难(5,8,14)），xorshift32 确定性 PRNG + 牛顿法 sqrt（core 无 sqrt）整网模拟 samples 次，得完工分布(min/mean/p50/p90/max) + 按期概率 P(≤deadline) + 关键度排行（任务出现在最长路径的频率，含近关键路径，top 10）——克服 PERT 单关键路径/merge bias，回答"能不能按期、风险在哪、谁是最大风险"；seed 固定可复现 | `dag_mc_test.mbt`（+4：同 seed 可复现 / p_on_time 单调 / 关键度 A→B 链 / insufficient+samples 钳制） |
+| 63 局部补偿控级联 | 新增 `saga_repair` 工具（R96，Plan Commitment 2023 / scope-aware repair 2026 蒸馏，94→95 工具）：给定失败步骤，计算最小补偿切片——失败步骤 + 其依赖下游（任务 depends_on 传递闭包中仍 pending 的步骤；无 task_id 时按注册序保守兜底 basis=order）——只补偿切片（LIFO）、切片外步骤保留承诺不补偿（keep，控级联不涟漪撤销），与 `saga_rollback` 全局 LIFO 整链收尾互补；mark=true 消费切片（幂等）、keep 保持 pending 供后续按需补偿——plan repair 保留承诺 > 整树重规划 | `engine_saga_test.mbt`「saga_repair」（+4：depends_on 闭包最小切片+旁路 keep / 注册序兜底 / mark=false 预览+失败步骤 Err / keep 与 rollback 两级共存） |
 
 > 注：内存日志/汇报用字母轮号（含若干纯文档/CI 非功能行，不入上表）；本表仅计功能轮。
 
