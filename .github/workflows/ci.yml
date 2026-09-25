@@ -41,6 +41,10 @@ jobs:
         shell: bash
         run: python3 scripts/check_tools_sync.py
 
+      - name: Test-count single-source guard (四文档测试总数==实测)
+        shell: bash
+        run: python3 scripts/check_test_sync.py /tmp/moon_test.log
+
       - name: Cleanliness guard (仓库整洁，仅交付库 fist-mbt.db)
         shell: bash
         run: python3 scripts/cleanup_artifacts.py && python3 scripts/cleanup_artifacts.py --check
