@@ -95,7 +95,7 @@ You can browse and install extra skills here:
 
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
 > Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
-> **JS 与 Native 双后端均已在 Windows + WSL(Linux) 通过 244/244 测试。**
+> **JS 与 Native 双后端均已在 Windows + WSL(Linux) 通过 245/245 测试。**
 
 `src/store/store_sqlite.mbt` 依赖 `mizchi/sqlite`（native stub），其 `stub.c` 用尖括号 `#include <sqlite3.h>` 并 `#pragma comment(lib, "sqlite3.lib")` 链接系统 SQLite。
 
@@ -105,7 +105,7 @@ You can browse and install extra skills here:
   2. 编译/链接前在**同一会话**加载 `Enter-VsDevShell`（VS Build Tools）并追加 `INCLUDE`/`LIB` 指向该目录（注册表 User 级环境变量会被 moon 自发现的 MSVC 环境覆盖，不生效）；
   3. 之后 `moon test --target native` 即可通过。缺失时 `stub.c` 报 `fatal error C1083: 无法打开包括文件 "sqlite3.h"` / `LNK1104: sqlite3.lib`。
   一键装载上述环境（自动探测 VS + sqlite-dev）：`pwsh ./scripts/native-env.ps1`；
-  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，Windows + Linux 244/244）**，见 README「已知边界」。
+  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，Windows + Linux 245/245）**，见 README「已知边界」。
 
 ## MCP Server
 
@@ -192,7 +192,7 @@ You can browse and install extra skills here:
 | `dag_depend` | 显式给任务追加前置依赖（构建 DAG 依赖边，不只靠 plan_deep 隐式父子） |
 | `dag_publish` | 发布带依赖关系的根任务 |
 | `dag_slack` | 瓶颈与松弛分析（PERT/CPM 硬核调度，R71）：对每个任务算 earliest/latest/slack（0=关键路径，>0=可灵活并行安排），返回 { makespan, critical, slack_map, cycle }——找出"谁在关键路径上、谁有松弛可并行"，直接支撑排程优化 |
-| `dag_schedule` | 排程视图（R74，基于 dag_slack 落成可执行排程）：返回 critical_batch(关键路径瓶颈,须串行盯紧) 与 flexible_batch(slack>0,按最早开始排序可并行,可优先派给空闲执行者) 两批，每批附 assignee——谁在瓶颈、谁可并行派单一目了然 |
+| `dag_schedule` | 排程视图（R74→R75 负载感知，基于 dag_slack 落成可执行排程）：返回 critical_batch(关键路径瓶颈,须串行盯紧) 与 flexible_batch(slack>0,按最早开始排序可并行,附 assignee；未认领项附 suggest=活跃负载最低的已注册执行者) 两批——谁在瓶颈、谁可并行派单、建议派给谁，一目了然 |
 | `board_ascii` | 实时任务看板：按状态分组 + 深度缩进渲染，每行标注难度档（复用难度单一抽取来源），一眼看项目全貌与难度（namespace 可选） |
 | `status_summary` | 项目脉冲：{version, total_tasks, by_status, by_difficulty(待领取难度结构 易/中/难/无), active_namespaces}，可接 namespace 过滤；by_difficulty 复用难度单一抽取来源（支柱②） |
 | `project_health` | 项目健康卡（R68）：单次调用看全项目健康——聚合 in_flight(执行中+已领取+拆分中)/ready(待领取)/done(已完成)/blocked(已暂停+已打回)/reviewing(待验收)/archived 计数 + 健康等级(empty/attention/stalled/healthy) + blocked_tasks;可接 namespace 过滤（支柱①"一眼看全项目"） |

@@ -353,3 +353,73 @@ test "dag_schedule: 排程视图——critical/flexible 分批 + assignee 附带
     _ => abort("e2 critical_batch 缺失")
   }
 }
+
+///|
+test "dag_schedule R75: 负载感知——flexible 未认领任务附 suggest=负载最低执行者" {
+  // 图：A 无依赖(关键,slack0)、X 无依赖(有 slack 可并行)——makespan=0 下 X slack>=0
+  // 为造出 slack>0 的 flexible 项，加长链 A→B→C 使 makespan=2，则并列的 X、Y(无依赖) 有 slack=2
+  let e = FistEngine::new()
+  // 注册执行者 w1(负载0) 与 w2(负载0)
+  ignore(
+    e.executor_save(
+      name="w1",
+      abilities_json="[\"编排\"]",
+      created_at="2026-01-01T00:00:00Z",
+    ),
+  )
+  ignore(
+    e.executor_save(
+      name="w2",
+      abilities_json="[\"编排\"]",
+      created_at="2026-01-01T00:00:01Z",
+    ),
+  )
+  let specs : Array[(String, Array[String])] = [
+    ("A", []),
+    ("B", ["A"]),
+    ("C", ["B"]),
+    ("X", []),
+    ("Y", []),
+  ]
+  for s in specs {
+    let (id, deps) = s
+    ignore(
+      e.store.create_task(
+        @core.Task::new(
+          id~,
+          project_dir="/proj/demo",
+          description="load \{id}",
+          created_at="2026-01-01T00:00:00Z",
+          depends_on=deps,
+        ),
+      ),
+    )
+  }
+  // 给 w2 一个活跃任务（执行中）→ w2 负载1 > w1 负载0 → X 未认领建议派给 w1
+  ignore(
+    e.claim(task_id="C", assignee="w2", now="2026-01-01T00:01:00Z"),
+  )
+  let j = e.dag_schedule()
+  match j.value("flexible_batch") {
+    Some(Array(fb)) => {
+      assert_true(fb.length() >= 2) // X,Y 有 slack 进 flexible
+      // X 或 Y 未认领且 suggest=w1（负载低）
+      let mut found_suggest = false
+      for row in fb {
+        let asg = match row.value("assignee") {
+          Some(Json::String(s)) => s
+          _ => ""
+        }
+        let sug = match row.value("suggest") {
+          Some(Json::String(s)) => s
+          _ => ""
+        }
+        if asg == "" && sug == "w1" {
+          found_suggest = true
+        }
+      }
+      assert_true(found_suggest)
+    }
+    _ => abort("flexible_batch 缺失: " + j.stringify())
+  }
+}
