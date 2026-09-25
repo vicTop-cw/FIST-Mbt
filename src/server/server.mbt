@@ -2623,6 +2623,15 @@ pub async fn run_server() -> Unit {
   )
   s1 = instrumented_tool(
     s1,
+    "dag_cost_route",
+    "依赖图成本路由（R77，STAR 式蒸馏）：对 flexible(slack>0) 未认领任务按拓扑序贪心给建议执行者——执行成本(难度档易/中/难→1/2/3)+切换税(依赖执行者不同则+1，上下文切换成本)，能力约束过滤(描述命中的已注册能力标签)。返回 { cost_route:[{task_id,assignee,est_cost,switch_cost,total}], total_est_cost, basis, note }——排程优化闭环：critical_path→slack→schedule→cost_route。纯读不 claim。无参数。",
+    schema({}, []),
+    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      Ok(@mcp.ToolResult::text(engine.dag_cost_route().stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
     "dag_ascii",
     "返回当前命名空间任务的 ASCII 依赖结构图。参数：namespace(可选，默认 default)。",
     schema({ "namespace": string_prop("命名空间(默认 default)") }, []),
