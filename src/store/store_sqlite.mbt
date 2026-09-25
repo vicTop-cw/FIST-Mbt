@@ -60,6 +60,7 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     "CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', run_type TEXT NOT NULL DEFAULT 'verify', status TEXT NOT NULL DEFAULT 'running', detail TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL DEFAULT '', finished_at TEXT DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS heartbeats (agent_id TEXT NOT NULL, task_id TEXT NOT NULL, last_seen TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', PRIMARY KEY (agent_id, task_id))",
     "CREATE TABLE IF NOT EXISTS heartbeat_history (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL DEFAULT '', interval_sec INTEGER NOT NULL DEFAULT 0, ts TEXT NOT NULL DEFAULT '')",
+    "CREATE TABLE IF NOT EXISTS saga_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ns TEXT NOT NULL DEFAULT 'default', root_task_id TEXT NOT NULL DEFAULT '', step TEXT NOT NULL DEFAULT '', task_id TEXT NOT NULL DEFAULT '', compensation TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT '', UNIQUE(ns, root_task_id, step))",
     "CREATE TABLE IF NOT EXISTS archive (id TEXT PRIMARY KEY, task_json TEXT NOT NULL DEFAULT '', archived_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS evolve_artifacts (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', goal TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', code TEXT NOT NULL DEFAULT '', score TEXT NOT NULL DEFAULT '0', parts_json TEXT NOT NULL DEFAULT '{}', children INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS call_log (id INTEGER PRIMARY KEY AUTOINCREMENT, seq INTEGER, ts TEXT, tool TEXT, caller TEXT, ns TEXT, params_json TEXT, result_json TEXT, ok INTEGER, runtime_ms INTEGER)",
@@ -647,6 +648,8 @@ impl Store for SqliteStore with fn clear(self) {
       ignore(db.exec("DELETE FROM executors"))
       // 心跳间隔历史也在清空范围（防测试/scratch 间隔史跨次残留，R90）
       ignore(db.exec("DELETE FROM heartbeat_history"))
+      // Saga 补偿登记也在清空范围（防测试/scratch 补偿登记跨次残留，R92）
+      ignore(db.exec("DELETE FROM saga_log"))
     }
   }
 }
@@ -1249,6 +1252,158 @@ pub fn SqliteStore::list_heartbeat_intervals(
 }
 
 // —— 调用日志（call_log 表）：与 write_heartbeat 同一持久化模式 ——
+
+///|
+/// 登记一条 Saga 补偿步骤（R92，durable action log）：同一 (ns, root_task_id, step)
+/// 幂等覆盖——重登记会把 status 重置为 pending（重试安全），created_at 刷新。
+pub fn SqliteStore::write_saga_action(
+  self : SqliteStore,
+  ns? : String = "default",
+  root_task_id~ : String,
+  step~ : String,
+  task_id? : String = "",
+  compensation~ : String,
+  created_at~ : String,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "INSERT INTO saga_log (ns, root_task_id, step, task_id, compensation, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?) ON CONFLICT(ns, root_task_id, step) DO UPDATE SET task_id=excluded.task_id, compensation=excluded.compensation, status='pending', created_at=excluded.created_at"
+      match db.prepare(sql) {
+        None => Err("sqlite prepare 失败: write_saga_action")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, root_task_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, step))),
+          )
+          ignore(
+            stmt.bind(
+              4,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, task_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              5,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, compensation)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              6,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, created_at)),
+            ),
+          )
+          let exec_ok = stmt.execute()
+          stmt.finalize()
+          if exec_ok {
+            Ok(())
+          } else {
+            Err("sqlite 写入 Saga 补偿失败: \{step}")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 列出某根任务已登记的 Saga 补偿步骤（前向顺序 id ASC：登记顺序）。
+/// 返回 (id, step, task_id, compensation, status) 五元组数组。
+pub fn SqliteStore::list_saga_actions(
+  self : SqliteStore,
+  ns : String,
+  root_task_id : String,
+) -> Array[(Int, String, String, String, String)] {
+  let out : Array[(Int, String, String, String, String)] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT id, step, task_id, compensation, status FROM saga_log WHERE ns = ? AND root_task_id = ? ORDER BY id ASC"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, root_task_id)),
+            ),
+          )
+          while stmt.step() {
+            out.push(
+              (
+                stmt.column_int(0),
+                str_from_bytes(stmt.column_text(1)),
+                str_from_bytes(stmt.column_text(2)),
+                str_from_bytes(stmt.column_text(3)),
+                str_from_bytes(stmt.column_text(4)),
+              ),
+            )
+          }
+          stmt.finalize()
+          out
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 把指定 Saga 补偿步骤标记为 done（已补偿/已消费），幂等。
+pub fn SqliteStore::mark_saga_actions_done(
+  self : SqliteStore,
+  ns? : String = "default",
+  root_task_id~ : String,
+  ids~ : Array[Int],
+) -> Result[Unit, String] {
+  if ids.is_empty() {
+    return Ok(())
+  }
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let placeholders = ids.map(fn(_) { "?" }).join(",")
+      let sql = "UPDATE saga_log SET status='done' WHERE ns = ? AND root_task_id = ? AND id IN (\{placeholders})"
+      match db.prepare(sql) {
+        None => Err("sqlite prepare 失败: mark_saga_actions_done")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, root_task_id)),
+            ),
+          )
+          let mut i = 3
+          for id in ids {
+            ignore(stmt.bind(i, @sqlite.SqlValue::Int(id)))
+            i = i + 1
+          }
+          let exec_ok = stmt.execute()
+          stmt.finalize()
+          if exec_ok {
+            Ok(())
+          } else {
+            Err("sqlite 标记 Saga 补偿失败")
+          }
+        }
+      }
+    }
+  }
+}
 
 ///|
 /// 写入一条调用日志到 call_log 表。best-effort：失败返回 Err（调用方应忽略）。

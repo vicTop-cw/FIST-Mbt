@@ -2,7 +2,7 @@
 
 > 本文档为 selfdrive 审视/门禁的净拉取源：Next Tasks 应从这里取。
 > 由三份调研去重收敛生成：`memory/research/competition.md`、`memory/research/five-directions.md`、`memory/research/future-roadmap.md`。
-> 状态枚举 `pending | done`。锚点事实：**91 工具 / 261 测试**（`moon test --target js` Windows+WSL 双端全绿）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
+> 状态枚举 `pending | done`。锚点事实：**93 工具 / 265 测试**（`moon test --target js` Windows+WSL 双端全绿）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
 
 | P级 | 事项 | 来源 | 状态 | 对应review/commit |
 |-----|------|------|------|-------------------|
@@ -36,7 +36,7 @@
 | P3 | Runtime monitoring：按执行 trace 对 LTL 属性低开销认证 | five-directions/§一 | pending | - |
 | P3 | 毫秒级符号逻辑引擎按布尔约束拦截 planned action | five-directions/§一 | pending | - |
 | P3 | Phi Accrual 概率式检测：按心跳历史分布算 φ 值替代固定 timeout | five-directions/§一 | done(phi_accrual 原语 R89 + watchdog phi_gate 端到端 R90：heartbeat_history 表持久化间隔，watchdog_tick phi_gate=true 用 φ 判活默认关闭零回归；实测静默100s/间隔5s φ≈8.7 判死而固定600不判) | commit(2f6e4c7 后 R90) |
-| P3 | Saga 补偿事务 + durable action log：并发动作前写 append-only 日志、失败按 LIFO 补偿 | five-directions/§一 | pending | - |
+| P3 | Saga 补偿事务 + durable action log：并发动作前写 append-only 日志、失败按 LIFO 补偿 | five-directions/§一 | done(saga_register/saga_rollback 已落地：saga_log 表 + LIFO 幂等补偿序列，R92 见调研档 20260926.saga-compensation.md) | - |
 | P3 | Scoring 驱动的自动进化闭环（mutation/skill_lib/curriculum）无人值守自进化 | future-roadmap/远 | pending | - |
 | P3 | 与 moonclaw/posoco/官方 MCP SDK 差异化共处：定位"完整 MCP Server+编排+自进化" | future-roadmap/远 | pending | - |
 | - | gaato/github API 客户端，供 self_search 模块使用 | competition/§六 | pending | - |

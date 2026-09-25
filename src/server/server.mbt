@@ -475,7 +475,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 91 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 93 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -486,7 +486,7 @@ fn map_json() -> Json {
       ),
       "查询": Json::string("list/get"),
       "运维": Json::string(
-        "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual",
+        "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback",
       ),
       "运维·日志/缺陷/成本/调度": Json::string(
         "call_log/bug_list/report_bug/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide",
@@ -3403,6 +3403,70 @@ pub async fn run_server() -> Unit {
         @engine.phi_accrual(intervals, elapsed)
       }
       Ok(@mcp.ToolResult::text(j.stringify()))
+    },
+  )
+
+  // ---- Saga 补偿事务（R92，Garcia-Molina & Salem 1987 蒸馏） ----
+  s1 = instrumented_tool(
+    s1,
+    "saga_register",
+    "Saga 补偿登记（R92，durable action log）：多步骤任务链的每个前向步骤成功后，登记其「可补偿动作」（业务逆转描述）——失败时按 LIFO 优雅收尾，而非卡死/整树重来。幂等：同 (namespace, root_task_id, step) 重登记会重置为 pending 并刷新 compensation（重试安全）。参数：root_task_id 根任务（必填）、step 步骤名（必填）、compensation 补偿动作描述（必填，业务逆转而非逆向操作）、task_id 执行该步骤的任务（可选）、namespace 命名空间（可选默认 default）、now 时间戳（可选）。返回 { root_task_id, step, task_id, compensation, status: pending, registered }。",
+    schema(
+      {
+        "root_task_id": string_prop("根任务 id（saga 作用域，必填）"),
+        "step": string_prop("前向步骤名（必填）"),
+        "compensation": string_prop(
+          "补偿动作描述（必填，业务逆转动作）",
+        ),
+        "task_id": string_prop("执行该步骤的任务 id（可选）"),
+        "namespace": string_prop("命名空间（可选默认 default）"),
+        "now": string_prop("时间戳（可选）"),
+      },
+      ["root_task_id", "step", "compensation"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let root_task_id = get_str(args, "root_task_id")
+      let step = get_str(args, "step")
+      let task_id = get_str(args, "task_id", default="")
+      let compensation = get_str(args, "compensation")
+      let now = get_str(args, "now", default=now_default())
+      match
+        engine.saga_register(
+          ns~,
+          root_task_id~,
+          step~,
+          task_id~,
+          compensation~,
+          now~,
+        ) {
+        Err(m) => Err(@mcp_types.ToolError(m))
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "saga_rollback",
+    "Saga 补偿序列（R92）：按 LIFO（严格倒序，后登记先补偿）返回某根任务待补偿步骤序列。mark=true（默认）返回后即标记 done（幂等：重复调用已补偿步骤不再出现，防重复回滚）；mark=false 仅预览不消费。补偿是业务逆转动作，由调用方（指挥官/agent）按 pending 顺序执行真实补偿。参数：root_task_id 根任务（必填）、mark 是否消费（可选默认 true）、namespace（可选默认 default）。返回 { root_task_id, lifo, pending_count, pending: [{id, step, task_id, compensation, status}], marked_done, note }。",
+    schema(
+      {
+        "root_task_id": string_prop("根任务 id（saga 作用域，必填）"),
+        "mark": bool_prop(
+          "返回后即标记 done（可选默认 true，幂等）",
+        ),
+        "namespace": string_prop("命名空间（可选默认 default）"),
+      },
+      ["root_task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let root_task_id = get_str(args, "root_task_id")
+      let mark = get_bool(args, "mark", default=true)
+      match engine.saga_rollback(ns~, root_task_id, mark~) {
+        Err(m) => Err(@mcp_types.ToolError(m))
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+      }
     },
   )
 
