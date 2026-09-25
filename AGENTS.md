@@ -157,7 +157,7 @@ You can browse and install extra skills here:
 | `dag_depend` | 显式给任务追加前置依赖（构建 DAG 依赖边，不只靠 plan_deep 隐式父子） |
 | `dag_publish` | 发布带依赖关系的根任务 |
 | `board_ascii` | 实时任务看板：按状态分组 + 深度缩进渲染，一眼看项目全貌（namespace 可选） |
-| `status_summary` | 项目脉冲：{version, total_tasks, by_status, active_namespaces}，可接 namespace 过滤 |
+| `status_summary` | 项目脉冲：{version, total_tasks, by_status, by_difficulty(待领取难度结构 易/中/难/无), active_namespaces}，可接 namespace 过滤；by_difficulty 复用难度单一抽取来源（支柱②） |
 | `reserve_scope` / `reserve_check` / `reserve_release` | 作用域预订（拿来主义：Interlinked 文件预订 → 多 agent 并发编辑冲突预防） |
 | `task_triage` | 下一步推荐：可领取任务按 能力匹配(want)→优先级→重要度→深度 排行 + suggestion（agent 无需全量扫描即知下一单；want 为能力路由，Marketplookup 雏形）。每条含真实 DAG 依赖 `depends_on`（复用 dag_depend/gradient_dag 建边，"下一单"就绪前驱可见） |
 

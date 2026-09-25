@@ -126,8 +126,10 @@ fn append_group(
 }
 
 ///|
-/// 项目脉冲摘要：返回 { version, total_tasks, by_status:{状态:数量}, active_namespaces }。
-/// 供 agent 一次调用概览项目健康，无需 list+逐条筛选。
+/// 项目脉冲摘要：返回 { version, total_tasks, by_status:{状态:数量}, by_difficulty:{易/中/难/无:数量},
+///   active_namespaces }。
+/// 供 agent 一次调用概览项目健康，无需 list+逐条筛选。by_difficulty 统计"待领取"任务的难度结构，
+/// 复用 @engine.extract_difficulty 单一抽取来源（支柱②复用），"难度一目了然"（支柱①）。
 /// tasks 为引擎任务集；active_ns 为当前已打开命名空间清单；version 为模块版本串。
 pub fn render_status_summary(
   tasks : Array[@core.Task],
@@ -135,6 +137,7 @@ pub fn render_status_summary(
   version : String,
 ) -> Json {
   let by_status : Map[String, Double] = Map([])
+  let by_diff : Map[String, Double] = Map([("易", 0.0), ("中", 0.0), ("难", 0.0), ("无", 0.0)])
   let mut total = 0
   for t in tasks {
     let st = t.status_to_string()
@@ -145,15 +148,34 @@ pub fn render_status_summary(
         None => by_status.set(st, 1.0)
       }
     }
+    // 难度分布：仅统计待领取（可动手）任务
+    if t.status_to_string() == "待领取" {
+      let raw = @engine.extract_difficulty(t.description)
+      let key = if raw.contains("难") {
+        "难"
+      } else if raw.contains("中") {
+        "中"
+      } else if raw.contains("易") {
+        "易"
+      } else {
+        "无"
+      }
+      by_diff.set(key, by_diff.get(key).unwrap_or(0.0) + 1.0)
+    }
   }
   let stJson : Map[String, Json] = Map([])
   for (st, n) in by_status {
     stJson.set(st, Json::number(n))
   }
+  let diffJson : Map[String, Json] = Map([])
+  for (d, n) in by_diff {
+    diffJson.set(d, Json::number(n))
+  }
   Json::object({
     "version": Json::string(version),
     "total_tasks": Json::number(total.to_double()),
     "by_status": Json::object(stJson),
+    "by_difficulty": Json::object(diffJson),
     "active_namespaces": Json::array(active_ns.map(fn(s) { Json::string(s) })),
   })
 }

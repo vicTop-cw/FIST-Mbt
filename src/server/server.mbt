@@ -2624,7 +2624,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "status_summary",
-    "项目脉冲摘要：返回 { version, total_tasks, by_status:{状态:数量}, active_namespaces }。参数：namespace(可选，只统计该 ns；空=全部)。",
+    "项目脉冲摘要：返回 { version, total_tasks, by_status:{状态:数量}, by_difficulty:{易/中/难/无:数量}, active_namespaces }。by_difficulty 统计待领取任务的难度结构（复用难度单一抽取来源）。参数：namespace(可选，只统计该 ns；空=全部)。",
     schema(
       { "namespace": string_prop("命名空间(可选，只统计该 ns)") },
       [],
