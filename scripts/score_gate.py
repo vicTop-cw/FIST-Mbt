@@ -61,11 +61,13 @@ THRESH = {"p1": 0.70, "p2": 0.85, "p3": 0.97}
 # 目标概率（用于输出判读）
 TARGET = {"p1": 0.70, "p2": 0.85, "p3": 0.97}
 
-# AI2/AI3/AI4 命令模板默认值（相对占位；可用环境变量覆盖，杜绝绝对路径）
+# AI2/AI3/AI4 命令模板默认值（R92 定案 `--prompt-file` 文件通道：提示词落文件直读，
+# 无 cmd 截断、无 base64 解码负担、`--no-tools` 禁工具循环，模型直接出 SCORE_JSON；
+# 仍可用环境变量 SCORE_AI*_CMD 覆盖，杜绝绝对路径）。
 DEFAULT_CMDS = {
-    "AI2": "{atomcode} -p \"{PROMPT}\"",
-    "AI3": "{atomcode} -p \"{PROMPT}\"",  # 原为 codearts/盘古，已改 atomcode 默认模型
-    "AI4": "{atomcode} -p \"{PROMPT}\"",
+    "AI2": "atomcode --no-tools --ephemeral --prompt-file \"{PROMPT_FILE}\" --model \"LongCat-2.0\" --provider longcat",
+    "AI3": "atomcode --no-tools --ephemeral --prompt-file \"{PROMPT_FILE}\"",  # atomcode 默认模型
+    "AI4": "atomcode --no-tools --ephemeral --prompt-file \"{PROMPT_FILE}\" --model \"kimi-k3\" --provider Kimi",
 }
 
 
