@@ -134,6 +134,7 @@ pub fn StoreBackend::recent_call_logs(Self, limit? : Int) -> Array[Json]
 pub fn StoreBackend::record_execution(Self, task_id~ : String, executor~ : String, model~ : String, tokens_in~ : Int, tokens_out~ : Int, cost~ : Double, duration_ms~ : Int, rate_limited~ : Bool, failure_reason~ : String, created_at~ : String) -> Result[Unit, String]
 pub fn StoreBackend::set_namespace(Self, String) -> Unit
 pub fn StoreBackend::sqlite(SqliteStore) -> Self
+pub fn StoreBackend::sqlite_store(Self) -> SqliteStore?
 pub fn StoreBackend::update_spec_status(Self, String, String, String, String) -> Result[Unit, String]
 pub fn StoreBackend::update_task(Self, @core.Task) -> Result[Unit, String]
 pub fn StoreBackend::upsert_spec(Self, SpecRecord) -> Result[Unit, String]

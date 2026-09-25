@@ -1,6 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "vicTop-cw/fist-mbt/src/evolve"
 
+import {
+  "vicTop-cw/fist-mbt/src/store",
+}
+
 // Values
 pub fn analyze_candidate(String, String, String, String) -> SearchCandidate
 
@@ -8,15 +12,23 @@ pub fn assess_portability(SearchCandidate) -> Bool
 
 pub fn distill_candidates(Array[SearchCandidate]) -> Array[SearchCandidate]
 
+pub fn evolve_lesson_persist(@store.SqliteStore?, id~ : String, String, String, String, String, score? : Double) -> Bool
+
 pub fn is_duplicate_candidate(SearchCandidate, SearchCandidate) -> Bool
 
 pub fn is_robust(Double, floor? : Double) -> Bool
+
+pub fn lesson_goal(String) -> String
+
+pub fn lesson_ts_part(String) -> String
 
 pub fn run_external_search(String, Array[String], runner? : ((String, Array[String]) -> Result[String, String])?) -> Result[String, String]
 
 pub fn score_accept(Double, threshold? : Double) -> Bool
 
 pub fn score_artifact(Double, Bool, Bool, Double) -> Double
+
+pub fn score_of_lesson(Double) -> Double
 
 pub fn score_rank(Double) -> String
 
