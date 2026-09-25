@@ -21,7 +21,7 @@
 ## 现有正式工具速查
 
 **基础 / 演示**
-- `mcp_smoke.py` — MCP server 一键自检（72 工具 + publish/get 链路）。
+- `mcp_smoke.py` — MCP server 一键自检（75 工具 + publish/get 链路）。
 - `patch_esm_main.py` — moonc≥0.10.14 ESM 输出注入 createRequire shim（幂等）。
 - `demo.ps1` — 一键演示（build+patch+smoke）。
 - `native-env.ps1` — Windows native 环境一键装载（VS + sqlite-dev）。

@@ -111,6 +111,10 @@ pub fn FistEngine::reject_task(Self, task_id~ : String, reason? : String, by~ : 
 pub fn FistEngine::reopen_task(Self, String, String) -> Result[@core.Task, String]
 pub fn FistEngine::resume_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::retry_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::rsv_get(Self, String) -> (String, String, String)?
+pub fn FistEngine::rsv_list(Self) -> Array[(String, String, String)]
+pub fn FistEngine::rsv_release(Self, String, String) -> Bool
+pub fn FistEngine::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[String, String]
 pub fn FistEngine::store_delete_heartbeat(Self, task_id~ : String) -> Result[Unit, String]
 pub fn FistEngine::store_list_heartbeats(Self) -> Array[(String, String, String, String)]
 pub fn FistEngine::store_recent_call_logs(Self, limit? : Int) -> Array[Json]
