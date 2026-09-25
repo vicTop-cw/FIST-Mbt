@@ -499,3 +499,133 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
     ),
   })
 }
+
+/// ==================== 成本路由（R77，STAR 式依赖图成本路由） ====================
+
+///|
+/// 依赖图成本路由（R77，STAR 蒸馏简化版）：在 dag_schedule 排程视图之上补「成本」维度——
+/// 对 flexible（slack>0）批中未认领任务，按拓扑序贪心给出建议执行者：在「能力覆盖的
+/// 已注册执行者」里选 执行成本 + 切换成本 之和最小者。
+///   - 执行成本：难度档映射（易/中/难 → 1/2/3，复用 extract_difficulty 单一来源）；
+///   - 能力约束：任务所需能力 = 描述命中的最长已注册能力标签（复用 auto_want），
+///     未命中标签的执行者被排除（want 空则全命中）；
+///   - 切换成本：任务依赖链上已路由执行者若与候选不同则 +1（STAR 的上下文切换税）；
+///   - 成本相等时取活跃负载最低者（与 R75 一致）。
+/// 纯计算、无副作用（只给建议不 claim）。——排程优化闭环最终形态：
+/// critical_path→slack→schedule→suggest→cost_route。
+pub fn FistEngine::dag_cost_route(self : FistEngine) -> Json {
+  let slack = self.dag_slack_analysis()
+  let (order, _cycle) = self.dag_topo_order()
+  // 执行者注册表：候选顺序按注册顺序（executor_list 稳定）
+  let reg_names : Array[String] = []
+  let reg_abl : Map[String, Array[String]] = Map([])
+  for (name, abl, _created) in self.executor_list() {
+    reg_names.push(name)
+    reg_abl.set(name, parse_abilities(abl))
+  }
+  let load = self.executor_loads(reg_names)
+  // 已路由执行者记录（切换成本基准）：已认领任务先登记为固定占用
+  let routed : Map[String, String] = Map([])
+  for t in self.list_all() {
+    match t.assignee {
+      Some(a) => routed.set(t.get_id(), a)
+      None => ()
+    }
+  }
+  let rows : Array[Json] = []
+  let mut total_cost = 0
+  for id in order {
+    // 只处理 slack>0（flexible）且未认领的任务
+    let mut sl = -1
+    match slack.value("slack_map") {
+      Some(Object(sm)) =>
+        match sm.get(id) {
+          Some(Object(o)) =>
+            match o.get("slack") {
+              Some(Number(n, ..)) => sl = n.to_int()
+              _ => ()
+            }
+          _ => ()
+        }
+      _ => ()
+    }
+    if sl <= 0 {
+      continue
+    }
+    if routed.contains(id) {
+      continue
+    }
+    let desc = match self.get_task(id) {
+      Some(t) => t.description
+      None => ""
+    }
+    if desc == "" {
+      continue
+    }
+    // 任务所需能力：描述命中的最长已注册能力标签（无注册标签则空 = 全命中）
+    let want = self.auto_want(desc)
+    // 难度 → 执行成本（易/中/难 → 1/2/3，无难度标记按 1）
+    let lab = triage_label_of(desc)
+    let est = if lab == "难" { 3 } else if lab == "中" { 2 } else { 1 }
+    // 依赖任务的执行者（切换成本基准）
+    let deps_asg : Array[String] = []
+    match self.get_task(id) {
+      Some(t) =>
+        for d in t.depends_on {
+          match routed.get(d) {
+            Some(a) => deps_asg.push(a)
+            None => ()
+          }
+        }
+      None => ()
+    }
+    // 候选执行者：能力覆盖 want（want 空 → 全部）；选 执行成本+切换成本 最小，相等取负载最低
+    var best = ""
+    var best_total = 2147483647
+    var best_switch = 0
+    for n in reg_names {
+      let abl = reg_abl.get(n).unwrap_or([])
+      if want != "" && not(abl.contains(want)) {
+        continue
+      }
+      let sw = if deps_asg.length() > 0 && not(deps_asg.contains(n)) { 1 } else { 0 }
+      let ttl = est + sw
+      if ttl < best_total {
+        best_total = ttl
+        best = n
+        best_switch = sw
+      } else if ttl == best_total {
+        let bl = load.get(best).unwrap_or(0)
+        let nl = load.get(n).unwrap_or(0)
+        if nl < bl {
+          best = n
+          best_switch = sw
+        }
+      }
+    }
+    if best == "" {
+      continue
+    }
+    routed.set(id, best)
+    total_cost = total_cost + best_total
+    rows.push(
+      Json::object({
+        "task_id": Json::string(id),
+        "assignee": Json::string(best),
+        "est_cost": Json::number(est.to_double()),
+        "switch_cost": Json::number(best_switch.to_double()),
+        "total": Json::number(best_total.to_double()),
+      }),
+    )
+  }
+  Json::object({
+    "basis": Json::string(
+      "STAR 式依赖图成本路由：执行成本(难度档易/中/难→1/2/3)+切换税(依赖执行者不同则+1)，能力约束过滤，拓扑贪心",
+    ),
+    "cost_route": Json::array(rows),
+    "total_est_cost": Json::number(total_cost.to_double()),
+    "note": Json::string(
+      "仅对 slack>0 未认领任务给出建议执行者(纯读不 claim)；无注册执行者或能力不匹配项跳过",
+    ),
+  })
+}

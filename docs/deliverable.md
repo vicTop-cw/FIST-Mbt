@@ -8,14 +8,14 @@
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
 moon build --target js cmd/main
 python scripts/mcp_smoke.py
-# 期望输出：PASS tools/list → 86 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
+# 期望输出：PASS tools/list → 87 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
 ```
 
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **86**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 245/245**（Windows + WSL(Linux) 双端实测全绿） |
+| MCP 工具 | **87**（+ 3 resources + 2 prompts） |
+| 测试 | **`moon test --target js` 247/247**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -85,6 +85,7 @@ python scripts/mcp_smoke.py
 | 51 项目健康卡 | 新增 `project_health` 工具（R68）：单次调用聚合 in_flight/ready/done/blocked/reviewing/archived 六类计数 + 健康等级(empty/attention/stalled/healthy) + blocked_tasks，可接 ns 过滤——"agent 一眼看全项目健康"，正中支柱①"一目了然"与"更好的 AI 项目管理工具" | `board_ascii_test.mbt`「project_health 健康卡+等级判定」用例（+1） |
 | 52 瓶颈与松弛分析 | 新增 `dag_slack` 工具（R71，PERT/CPM 硬核调度）：对每个任务算 earliest/latest/slack（0=关键路径，>0=可灵活并行安排），返回 { makespan, critical, slack_map, cycle }——"找出谁在关键路径上、谁有松弛可并行"，支撑排程优化。门禁复评 FAIL(AI3 p1 0.62) 后按"硬创新"要求落地，非演示叠加 | `dag_ext_test.mbt`「dag_slack 临界+松弛+环检测」用例（+1） |
 | 53 排程视图·负载感知 | 新增 `dag_schedule` 工具（R74→R75）：基于 dag_slack 的松弛分析落成可执行排程——critical_batch(关键路径瓶颈,须串行盯紧) + flexible_batch(slack>0,按最早开始排序可并行,附 assignee，未认领项 add suggest=活跃负载最低的已注册执行者，R75 负载感知)——谁在瓶颈、谁可并行派单、建议派给谁，排程优化闭环 | `dag_ext_test.mbt`「dag_schedule 分批+assignee」「R75 负载感知 suggest」用例（+2） |
+| 54 依赖图成本路由 | 新增 `dag_cost_route` 工具（R77，STAR 式蒸馏）：对 flexible 未认领任务按拓扑序贪心给建议执行者——执行成本(难度档 易/中/难→1/2/3，复用 extract_difficulty) + 切换成本(依赖执行者不同则 +1，STAR 上下文切换税) + 能力约束过滤(描述命中的已注册能力标签，复用 auto_want)，成本相等取负载最低。返回 { cost_route:[{task_id,assignee,est_cost,switch_cost,total}], total_est_cost, basis, note }——DAG 家族最后拼图：critical_path→slack→schedule→cost_route，排程优化闭环最终形态；纯读不 claim | `dag_ext_test.mbt`「dag_cost_route 能力约束+切换税+总成本」「同执行者免切换税+空注册表跳过」用例（+2） |
 
 > 注：内存日志/汇报用字母轮号（含若干纯文档/CI 非功能行，不入上表）；本表仅计功能轮。
 

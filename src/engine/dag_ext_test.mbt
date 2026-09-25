@@ -423,3 +423,163 @@ test "dag_schedule R75: 负载感知——flexible 未认领任务附 suggest=�
     _ => abort("flexible_batch 缺失: " + j.stringify())
   }
 }
+
+///|
+test "dag_cost_route: 能力约束+切换税+总成本（R77 STAR 式成本路由）" {
+  // 图 A→B→C 关键链 + A→D 短链：D slack=1 flexible。A 已认领给 alice（切换成本基准）。
+  let e = FistEngine::new()
+  ignore(
+    e.executor_save(
+      name="alice",
+      abilities_json="[\"编排\"]",
+      created_at="2026-01-01T00:00:00Z",
+    ),
+  )
+  ignore(
+    e.executor_save(
+      name="bob",
+      abilities_json="[\"json\"]",
+      created_at="2026-01-01T00:00:01Z",
+    ),
+  )
+  let specs : Array[(String, Array[String], String)] = [
+    ("A", [], "编排根任务"),
+    ("B", ["A"], "编排子任务"),
+    ("C", ["B"], "编排子任务"),
+    ("D", ["A"], "json 子任务 [难度梯度 1/2:难]"),
+  ]
+  for s in specs {
+    let (id, deps, desc) = s
+    ignore(
+      e.store.create_task(
+        @core.Task::new(
+          id~,
+          project_dir="/proj/demo",
+          description=desc,
+          created_at="2026-01-01T00:00:00Z",
+          depends_on=deps,
+        ),
+      ),
+    )
+  }
+  match e.claim(task_id="A", assignee="alice", now="2026-01-01T00:01:00Z") {
+    Ok(_) => ()
+    Err(m) => abort("claim A failed: \{m}")
+  }
+  let j = e.dag_cost_route()
+  // 仅 D 是 flexible 且未认领
+  match j.value("cost_route") {
+    Some(Array(cr)) => {
+      assert_eq(cr.length(), 1)
+      match cr[0].value("task_id") {
+        Some(Json::String(s)) => assert_eq(s, "D")
+        _ => abort("task_id 缺失")
+      }
+      // 能力约束：D want=json -> 路由 bob（alice 无 json 被排除）
+      match cr[0].value("assignee") {
+        Some(Json::String(s)) => assert_eq(s, "bob")
+        _ => abort("assignee 缺失")
+      }
+      // est=3（难）；switch=1（依赖 A=alice≠bob）；total=4
+      match cr[0].value("est_cost") {
+        Some(Number(n, ..)) => assert_eq(n.to_int(), 3)
+        _ => abort("est_cost 缺失")
+      }
+      match cr[0].value("switch_cost") {
+        Some(Number(n, ..)) => assert_eq(n.to_int(), 1)
+        _ => abort("switch_cost 缺失")
+      }
+      match cr[0].value("total") {
+        Some(Number(n, ..)) => assert_eq(n.to_int(), 4)
+        _ => abort("total 缺失")
+      }
+    }
+    _ => abort("cost_route 缺失: " + j.stringify())
+  }
+  match j.value("total_est_cost") {
+    Some(Number(n, ..)) => assert_eq(n.to_int(), 4)
+    _ => abort("total_est_cost 缺失: " + j.stringify())
+  }
+}
+
+///|
+test "dag_cost_route: 同执行者免切换税 + 空注册表跳过（R77）" {
+  // 场景1：D 描述含"编排" -> want=编排 -> 仅 alice 可路由；与依赖 A=alice 相同 -> switch=0
+  let e = FistEngine::new()
+  ignore(
+    e.executor_save(
+      name="alice",
+      abilities_json="[\"编排\"]",
+      created_at="2026-01-01T00:00:00Z",
+    ),
+  )
+  let specs : Array[(String, Array[String], String)] = [
+    ("A", [], "编排根任务"),
+    ("B", ["A"], "编排子任务"),
+    ("C", ["B"], "编排子任务"),
+    ("D", ["A"], "编排子任务"),
+  ]
+  for s in specs {
+    let (id, deps, desc) = s
+    ignore(
+      e.store.create_task(
+        @core.Task::new(
+          id~,
+          project_dir="/proj/demo",
+          description=desc,
+          created_at="2026-01-01T00:00:00Z",
+          depends_on=deps,
+        ),
+      ),
+    )
+  }
+  match e.claim(task_id="A", assignee="alice", now="2026-01-01T00:01:00Z") {
+    Ok(_) => ()
+    Err(m) => abort("e2 claim A failed: \{m}")
+  }
+  let j = e.dag_cost_route()
+  match j.value("cost_route") {
+    Some(Array(cr)) => {
+      assert_eq(cr.length(), 1)
+      match cr[0].value("assignee") {
+        Some(Json::String(s)) => assert_eq(s, "alice")
+        _ => abort("e2 assignee 缺失")
+      }
+      // 与依赖 A=alice 相同执行者 -> 免切换税
+      match cr[0].value("switch_cost") {
+        Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
+        _ => abort("e2 switch_cost 缺失")
+      }
+    }
+    _ => abort("e2 cost_route 缺失: " + j.stringify())
+  }
+  // 场景2：无注册执行者 -> cost_route 空、total=0（note 说明跳过）
+  let e3 = FistEngine::new()
+  let specs3 : Array[(String, Array[String], String)] = [
+    ("A", [], "编排根任务"),
+    ("D", ["A"], "编排子任务"),
+  ]
+  for s in specs3 {
+    let (id, deps, desc) = s
+    ignore(
+      e3.store.create_task(
+        @core.Task::new(
+          id~,
+          project_dir="/proj/demo",
+          description=desc,
+          created_at="2026-01-01T00:00:00Z",
+          depends_on=deps,
+        ),
+      ),
+    )
+  }
+  let j3 = e3.dag_cost_route()
+  match j3.value("cost_route") {
+    Some(Array(cr)) => assert_eq(cr.length(), 0)
+    _ => abort("e3 cost_route 缺失: " + j3.stringify())
+  }
+  match j3.value("total_est_cost") {
+    Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
+    _ => abort("e3 total_est_cost 缺失")
+  }
+}

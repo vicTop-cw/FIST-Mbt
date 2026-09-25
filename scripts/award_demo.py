@@ -145,6 +145,15 @@ def main():
         print(f"      ↳ R68 项目健康卡 project_health({NS}) → grade={ph.get('grade')}；"
               f"in_flight={ph.get('in_flight')} ready={ph.get('ready')} done={ph.get('done')} "
               f"blocked={ph.get('blocked')}（一眼看全项目健康，不逐条 list）")
+        # R77 依赖图成本路由：排程优化闭环最终形态（STAR 式蒸馏，纯读不 claim）
+        rpc(p, "tools/call", name="executor_register", arguments={
+            "name": "exec_demo", "abilities": ["编排"], "now": NOW,
+        })
+        cr = call(p, "dag_cost_route", now=NOW)
+        assert "cost_route" in cr and "total_est_cost" in cr, "cost_route 应返回 cost_route/total_est_cost"
+        print(f"      ↳ R77 依赖图成本路由 dag_cost_route → {len(cr.get('cost_route', []))} 条建议，"
+              f"total_est_cost={cr.get('total_est_cost')}（执行成本难度档+切换税+能力约束，"
+              f"critical_path→slack→schedule→cost_route 闭环）")
         tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"

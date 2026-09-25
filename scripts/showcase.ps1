@@ -129,8 +129,24 @@ W ("     " + $d3b)
 W ("  " + $d4)
 Write-Output ""
 
+# ================ 4c. 成本路由（R77 STAR 式：排程优化闭环最终形态） ================
+Write-Output ""
+$h4c = (C $YELLOW "成本路由  COST ROUTE  （依赖图成本感知派单，STAR 蒸馏）")
+W $h4c
+$e1 = (C $GREEN "  R0 ┌ dag_slack（PERT/CPM 瓶颈/松弛）")
+$e2 = (C $GREEN "     └ dag_schedule（critical/flexible 分批 + 负载 suggest）")
+$e3 = (C $CYAN "        └──▶ dag_cost_route（执行成本难度档 + 切换税 + 能力约束）")
+$e4 = (C $MAG   "  ▶ 依赖任务换执行者要付切换税；成本相等取负载最低——纯读建议不 claim")
+$e5 = (C $CYAN "     critical_path → slack → schedule → cost_route：排程优化闭环最终形态")
+W ("  " + $e1)
+W ("  " + $e2)
+W ("     " + $e3)
+W ("  " + $e4)
+W ("  " + $e5)
+Write-Output ""
+
 # ================ 5. FOOTER 汇总 ================
-$f1 = (C $GREEN "83 MCP tools") + (C $CYAN " · ") + (C $GREEN "240 tests") + (C $CYAN " · ") + (C $GREEN "JS+Native") + (C $CYAN " · ") + (C $GREEN "CI 3 tracks")
+$f1 = (C $GREEN "87 MCP tools") + (C $CYAN " · ") + (C $GREEN "247 tests") + (C $CYAN " · ") + (C $GREEN "JS+Native") + (C $CYAN " · ") + (C $GREEN "CI 3 tracks")
 W ("  " + $f1)
 W ("  " + (C $BOLD (C $CYAN "fist-mbt drives itself ─ 自举采用，自动演进")))
 Write-Output ""
