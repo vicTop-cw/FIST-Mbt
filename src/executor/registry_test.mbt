@@ -55,3 +55,51 @@ test "check_name_order：同覆盖同负载按名称字母序" {
     _ => abort("best 不应为空: " + j.stringify())
   }
 }
+
+///|
+test "route_pick_with_trust：覆盖 desc → 信任 desc → 负载 asc（R80 历史信任轴）" {
+  let reg = @executor.ExecutorRegistry::new()
+    .add_ability("ex-A", ["编排", "json"])
+    .add_ability("ex-B", ["编排"])
+    .add_ability("ex-C", ["json"])
+  let load : Map[String, Int] = Map([("ex-A", 3), ("ex-B", 0), ("ex-C", 0)])
+  // 同覆盖(1.0)下：ex-A trust 0.9 > ex-B trust 0.3 → ex-A 优先（信任轴压过负载差异）
+  let trust : Map[String, Double] = Map([("ex-A", 0.9), ("ex-B", 0.3)])
+  let j = reg.route_pick_with_trust("编排", load, trust)
+  match j.value("best") {
+    Some(Object(m)) =>
+      match m.get("name") {
+        Some(String(n)) => assert_eq(n, "ex-A")
+        _ => abort("best 应有 name: " + j.stringify())
+      }
+    _ => abort("best 不应为空: " + j.stringify())
+  }
+  // 每条候选应带 trust 字段；注册表含系统执行者(manual/McpDelegateExecutor)，总数 ≥ 3
+  match j.value("candidates") {
+    Some(Array(cs)) =>
+      if cs.length() < 3 {
+        abort("candidates 过少: " + cs.length().to_string() + " j=" + j.stringify())
+      }
+    _ => abort("candidates 缺失: " + j.stringify())
+  }
+  match j.value("basis") {
+    Some(String(s)) =>
+      if not(s.contains("信任")) {
+        abort("basis 内容: " + s)
+      }
+    _ => abort("basis 缺失: " + j.stringify())
+  }
+  // 信任相同(均无历史 → 0.5 中性)时回退负载轴：ex-B(0) 优先于 ex-A(3)
+  let j2 = reg.route_pick_with_trust("编排", load, Map([]))
+  match j2.value("best") {
+    Some(Object(m)) =>
+      match m.get("name") {
+        Some(String(n)) =>
+          if n != "ex-B" {
+            abort("j2 best 名称: " + n)
+          }
+        _ => abort("j2 best 应有 name: " + j2.stringify())
+      }
+    _ => abort("j2 best 不应为空: " + j2.stringify())
+  }
+}

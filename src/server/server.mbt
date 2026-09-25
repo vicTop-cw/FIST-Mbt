@@ -2791,7 +2791,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "executor_route",
-    "Marketplace·能力路由推荐（Dynamic/Marketplace 雏形，R30）：给定任务所需能力 need，从已注册执行者中按 { 能力覆盖率 desc → 负载(名下活跃任务数) asc } 排序，返回候选 + 最佳执行者，供按专长+负载分配（而非仅靠 agent 自选）。参数：need 所需能力标签（逗号/顿号/空格分隔，如“编排,json”）。返回 {need, parsed, count, candidates, best}。",
+    "Marketplace·能力路由推荐（Dynamic/Marketplace 雏形，R30；R80 历史信任轴）：给定任务所需能力 need，从已注册执行者中按 { 能力覆盖率 desc → 历史信任(名下已完成/名下总数，验收通过率，无历史 0.5 中性) desc → 负载(名下活跃任务数) asc } 排序，返回候选 + 最佳执行者 + basis——按专长+信任+负载分配（防只认领不交付）。参数：need 所需能力标签（逗号/顿号/空格分隔，如“编排,json”）。返回 {need, parsed, count, candidates, best, basis}。",
     schema(
       {
         "need": string_prop(
@@ -2804,7 +2804,8 @@ pub async fn run_server() -> Unit {
       let need = get_str(args, "need")
       sync_db_executors()
       let load = executor_loads(engine)
-      let j = exec_reg.route_pick(need, load)
+      let trust = engine.executor_trust()
+      let j = exec_reg.route_pick_with_trust(need, load, trust)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
