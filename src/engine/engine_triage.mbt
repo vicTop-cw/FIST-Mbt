@@ -55,12 +55,20 @@ struct TriageRow {
 }
 
 ///|
-/// 下一步推荐（Triage）：返回 { count, ns, agent, suggestion?, tasks:[...] }。
-/// namespace 为空表示全量；只统计"待领取且依赖已满足"的任务。
+/// 候选描述/ id 是否命中能力关键词（want 为空视为全命中，即不做能力偏好）。
+fn cap_match(r : TriageRow, want : String) -> Bool {
+  want == "" || r.desc.contains(want) || r.id.contains(want)
+}
+
+///|
+/// 下一步推荐（Triage，带能力偏好路由）：返回 { count, ns, agent, want, suggestion?, tasks:[...] }。
+/// namespace 为空表示全量；只统计"待领取且依赖已满足"的任务。want 为能力关键词（Marketplookup 雏形）：
+/// 非空时，命中该关键词的候选排在头部（按能力匹配路由"这个 agent 擅长啥就先领啥"），不命中者照旧跟进。
 pub fn FistEngine::triage(
   self : FistEngine,
   namespace : String,
   agent : String,
+  want : String,
 ) -> Json {
   let rows : Array[TriageRow] = []
   for t in self.list_all() {
@@ -92,21 +100,32 @@ pub fn FistEngine::triage(
     })
   }
   rows.sort_by(fn(a, b) {
-    let pc = ranking(a.priority) - ranking(b.priority)
-    if pc != 0 {
-      pc
-    } else {
-      let ic = ranking(a.importance) - ranking(b.importance)
-      if ic != 0 {
-        ic
-      } else if a.depth != b.depth {
-        if a.depth < b.depth {
-          -1
-        } else {
-          1
-        }
+    // 能力偏好：命中 want 的排在头部（Router 雏形）
+    let am = cap_match(a, want)
+    let bm = cap_match(b, want)
+    if am != bm {
+      if am {
+        -1
       } else {
-        a.id.compare(b.id)
+        1
+      }
+    } else {
+      let pc = ranking(a.priority) - ranking(b.priority)
+      if pc != 0 {
+        pc
+      } else {
+        let ic = ranking(a.importance) - ranking(b.importance)
+        if ic != 0 {
+          ic
+        } else if a.depth != b.depth {
+          if a.depth < b.depth {
+            -1
+          } else {
+            1
+          }
+        } else {
+          a.id.compare(b.id)
+        }
       }
     }
   })
@@ -128,11 +147,17 @@ pub fn FistEngine::triage(
     ("count", Json::number(rows.length().to_double())),
     ("ns", Json::string(namespace)),
     ("agent", Json::string(agent)),
+    ("want", Json::string(want)),
     ("tasks", Json::array(tasks)),
   ])
   if not(rows.is_empty()) {
     let top = rows[0]
-    let reason = "依赖已满足；优先级\{top.priority}/重要度\{top.importance}/难度\{top.difficulty}，建议优先领取"
+    let cap = if cap_match(top, want) && want != "" {
+      "；能力匹配<\{want}>"
+    } else {
+      ""
+    }
+    let reason = "依赖已满足；优先级\{top.priority}/重要度\{top.importance}/难度\{top.difficulty}\{cap}，建议优先领取"
     m.set(
       "suggestion",
       Json::object({

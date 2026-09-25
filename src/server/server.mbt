@@ -2519,7 +2519,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "task_triage",
-    "下一步该做啥（推荐式挑选）：对指定命名空间（namespace 缺省全量）把『待领取且依赖已满足』的任务按 优先级(高>中>低)→重要度(高>中>低)→深度(叶可执行单元优先)→id 排出序，并给出一条 suggestion（此刻建议先领哪条及理由），供 agent 无需全量扫描。难度标签直接复用拆解时的『难度梯度 …:易/中/难』标记。参数：namespace(可选)、agent(调用方身份，可审计)。返回 { count, ns, agent, tasks:[...], suggestion? }。",
+    "下一步该做啥（推荐式挑选 + 能力偏好路由）：对指定命名空间（namespace 缺省全量）把『待领取且依赖已满足』的任务按 能力匹配(want)→优先级(高>中>低)→重要度(高>中>低)→深度(叶可执行单元优先)→id 排出序，并给出一条 suggestion（此刻建议先领哪条及理由），供 agent 无需全量扫描。难度标签直接复用拆解时的『难度梯度 …:易/中/难』标记。参数：namespace(可选)、agent(调用方身份，可审计)、want 能力关键词(可选，命中者排头部，Marketplookup 雏形)。返回 { count, ns, agent, want, tasks:[...], suggestion? }。",
     schema(
       {
         "namespace": string_prop(
@@ -2528,13 +2528,17 @@ pub async fn run_server() -> Unit {
         "agent": string_prop(
           "调用方身份(默认 self)，用于 suggestion/审计",
         ),
+        "want": string_prop(
+          "能力关键词(可选)：命中该关键词的可领取任务排头部(按能力路由)",
+        ),
       },
       [],
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let agent = get_str(args, "agent", default="self")
-      let j = engine.triage(ns, agent)
+      let want = get_str(args, "want")
+      let j = engine.triage(ns, agent, want)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )

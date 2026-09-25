@@ -110,10 +110,10 @@ def main():
         ss = call(p, "status_summary", namespace=NS, now=NOW)
         ba = call(p, "board_ascii", namespace=NS, now=NOW)
         print(f"   ⑧ 脉冲 status_summary({NS}) → total={ss.get('total_tasks')}；板面 board_ascii 行数≈{len(ba.get('ascii','').splitlines()) if isinstance(ba, dict) else ''}")
-        tr = call(p, "task_triage", namespace=NS, agent="exec_demo")
+        tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"
-        print(f"   ⑨ 下一步推荐 task_triage({NS}) → 可领取 {tr.get('count')} 条，suggestion 指向 {tr.get('suggestion',{}).get('task_id')}")
+        print(f"   ⑨ 下一步推荐 task_triage({NS}) → 可领取 {tr.get('count')} 条，suggestion 指向 {tr.get('suggestion',{}).get('task_id')}（want={tr.get('want','')} 能力路由）")
 
         # ⑩ 整洁守卫：仓库根只允许交付库
         print("MCP-AWARD-DEMO PASS — 增强能力链一条命令全部跑通")
