@@ -1147,7 +1147,7 @@ fn find_sub_chars(hay : Array[Char], needle : Array[Char]) -> Int {
 
 ///|
 /// 从任务描述中抽取 LADDER 难度档（`[难度梯度 idx/n:档]` 中档位子串），无则返回空串。
-fn extract_difficulty(desc : String) -> String {
+pub fn extract_difficulty(desc : String) -> String {
   let tag = "[难度梯度 "
   let cs = desc.to_array()
   let p = find_sub_chars(cs, tag.to_array())

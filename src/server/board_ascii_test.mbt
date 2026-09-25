@@ -115,6 +115,27 @@ test "status_summary 项目脉冲：总量 + 按状态计数 + 活跃命名空�
   assert_true(s.contains("default"))
   // 至少有一个状态计数（待领取 等）
   assert_true(s.contains("待领取"))
+  // by_difficulty 不变量：各难度档数量之和 == 待领取任务数（复用 extract_difficulty，支柱②）
+  match
+    render_status_summary(tasks, ["default"], "0.2.4").value("by_difficulty") {
+    Some(Object(dm)) => {
+      let mut sum = 0.0
+      for (_k, v) in dm {
+        match v {
+          Number(n, ..) => sum = sum + n
+          _ => ()
+        }
+      }
+      let mut pend = 0
+      for t in tasks {
+        if t.status_to_string() == "待领取" {
+          pend = pend + 1
+        }
+      }
+      assert_eq(sum.to_int(), pend)
+    }
+    _ => abort("by_difficulty 缺失: " + s)
+  }
 }
 
 ///|

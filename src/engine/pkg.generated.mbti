@@ -32,6 +32,8 @@ pub fn ch_desc(String, String, String) -> String
 
 pub fn challenge_strategies() -> Array[String]
 
+pub fn extract_difficulty(String) -> String
+
 pub fn gate_enabled(@core.Task) -> Bool
 
 pub fn gate_mark() -> String
