@@ -342,7 +342,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 78 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 79 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -2539,6 +2539,30 @@ pub async fn run_server() -> Unit {
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
       let j = engine.triage(ns, agent, want)
+      Ok(@mcp.ToolResult::text(j.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "selfdrive_pick_next",
+    "自驱·按推荐自动取下一单：对指定命名空间取 task_triage 的顶部推荐并认领给 agent（待领取→已领取；能力匹配 want 优先），让无人值守可按能力推荐自推进。复用 triage 排行 + claim，只动一条推荐任务、不动看门狗主流程（零回归）。参数：namespace(可选)、agent(认领者,默认 self)、want 能力关键词(可选)、now。返回 { picked, remaining, claimed, ns, want, task?, note|error? }。",
+    schema(
+      {
+        "namespace": string_prop("命名空间(可选，空=全部)"),
+        "agent": string_prop("认领者身份(默认 self)"),
+        "want": string_prop(
+          "能力关键词(可选)：命中者可领取任务优先被取单",
+        ),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace")
+      let agent = get_str(args, "agent", default="self")
+      let want = get_str(args, "want")
+      let ts = get_str(args, "now", default=now_default())
+      let j = engine.pick_next(ns, agent, want, ts)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )

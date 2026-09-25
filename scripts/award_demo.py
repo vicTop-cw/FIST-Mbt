@@ -114,8 +114,11 @@ def main():
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"
         print(f"   ⑨ 下一步推荐 task_triage({NS}) → 可领取 {tr.get('count')} 条，suggestion 指向 {tr.get('suggestion',{}).get('task_id')}（want={tr.get('want','')} 能力路由）")
+        pk = call(p, "selfdrive_pick_next", namespace=NS, agent="exec_demo", want="编排", now=NOW)
+        assert pk.get("claimed"), "应按推荐自动取单认领"
+        print(f"   ⑩ 自驱取单 selfdrive_pick_next({NS}) → 认领 {pk.get('picked')}（remaining={pk.get('remaining')}，按能力推荐自动推进）")
 
-        # ⑩ 整洁守卫：仓库根只允许交付库
+        # ⑪ 整洁守卫：仓库根只允许交付库
         print("MCP-AWARD-DEMO PASS — 增强能力链一条命令全部跑通")
     finally:
         try:

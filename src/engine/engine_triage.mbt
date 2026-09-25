@@ -169,3 +169,71 @@ pub fn FistEngine::triage(
   }
   Json::object(m)
 }
+
+///|
+/// 下一步自动取单（自驱推进）：按 triage 的能力推荐取顶部候选并认领给 `agent`（0 状态迁移：待领取→已领取）。
+/// 复用 `triage`（排行+suggestion）与 `claim`（认领），只动一条推荐任务，不动看门狗主流程（零回归）。
+/// 返回 { picked, remaining, claimed, ns, want, task?, note|error? }。
+pub fn FistEngine::pick_next(
+  self : FistEngine,
+  namespace : String,
+  agent : String,
+  want : String,
+  now : String,
+) -> Json {
+  let tg = self.triage(namespace, agent, want)
+  let m = match tg {
+    Object(mm) => mm
+    _ => Map([])
+  }
+  let count = match m.get("count") {
+    Some(Number(n, ..)) => n.to_int()
+    _ => 0
+  }
+  let m2 = match m.get("suggestion") {
+    Some(Object(s)) => s
+    _ => Map([])
+  }
+  let picked = match m2.get("task_id") {
+    Some(String(id)) => Some(id)
+    _ => None
+  }
+  match picked {
+    None =>
+      Json::object({
+        "picked": Json::string(""),
+        "remaining": Json::number(count.to_double()),
+        "claimed": Json::boolean(false),
+        "ns": Json::string(namespace),
+        "want": Json::string(want),
+        "note": Json::string(
+          "无可领取的推荐任务（待领取且依赖已满足集合为空）",
+        ),
+      })
+    Some(pid) =>
+      match self.claim(task_id=pid, assignee=agent, now~) {
+        Ok(t) =>
+          Json::object({
+            "picked": Json::string(pid),
+            "remaining": Json::number(
+              (if count > 0 { count - 1 } else { 0 }).to_double(),
+            ),
+            "claimed": Json::boolean(true),
+            "ns": Json::string(namespace),
+            "want": Json::string(want),
+            "task": t.to_json(),
+            "note": Json::string("已按能力推荐认领该条"),
+          })
+        Err(e) =>
+          Json::object({
+            "picked": Json::string(""),
+            "remaining": Json::number(count.to_double()),
+            "claimed": Json::boolean(false),
+            "ns": Json::string(namespace),
+            "want": Json::string(want),
+            "error": Json::string(e),
+            "note": Json::string("认领失败，未改动任何状态"),
+          })
+      }
+  }
+}

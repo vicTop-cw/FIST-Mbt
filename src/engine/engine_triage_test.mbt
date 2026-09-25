@@ -124,3 +124,24 @@ test "task_triage 能力偏好路由：want 命中的候选排头部" {
     _ => abort("want 应回显")
   }
 }
+
+///|
+test "selfdrive_pick_next 按推荐取走一条并认领；无可领取时不改动" {
+  let e = tr_engine()
+  let id = tr_publish(e, "打磨编排引擎调度")
+  let j = e.pick_next("", "exec_demo", "编排", "2026-09-05T10:01:00Z")
+  match j.value("claimed") {
+    Some(True) => ()
+    _ => abort("应认领成功: " + j.stringify())
+  }
+  match j.value("picked") {
+    Some(String(pid)) => assert_eq(pid, id)
+    _ => abort("picked 应等于根任务")
+  }
+  // 认领后该任务不再是待领取，再取单应无可领取
+  let j2 = e.pick_next("", "exec_demo", "", "2026-09-05T10:02:00Z")
+  match j2.value("claimed") {
+    Some(False) => ()
+    _ => abort("已认领后再取应无可领取: " + j2.stringify())
+  }
+}
