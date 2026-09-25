@@ -475,7 +475,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 93 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 94 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -492,7 +492,7 @@ fn map_json() -> Json {
         "call_log/bug_list/report_bug/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide",
       ),
       "看板/脉冲/预订/推荐+DAG": Json::string(
-        "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish + board_ascii + status_summary + reserve_scope/check/release + task_triage",
+        "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish/slack/schedule/cost_route/mc + board_ascii + status_summary + reserve_scope/check/release + task_triage",
       ),
       "自驱": Json::string(
         "selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks + selfdrive_pick_next + selfdrive_dispatch",
@@ -2691,6 +2691,37 @@ pub async fn run_server() -> Unit {
     schema({}, []),
     async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       Ok(@mcp.ToolResult::text(engine.dag_cost_route().stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "dag_mc",
+    "Monte Carlo 概率式完工预测（R94，Van Slyke 1963 首倡 MCS 求网络完工分布）：对作用域内每个任务按难度档([难度梯度 X]→易/中/难)采样三点三角分布时长，整网模拟 samples 次，得完工时间分布(min/mean/p50/p90/max)+按期概率 P(完工≤deadline)+关键度排行(任务出现在最长路径的频率，含近关键路径)——克服 PERT 单关键路径/merge bias，回答【能不能按期、风险在哪】。seed 固定则结果可复现；纯读无副作用。参数：namespace(可选默认 default)、root_task_id(可选，取该根子树)、deadline(可选，>0 时算 P(≤deadline))、samples(可选默认 1000，<10 钳到 10)、seed(可选默认 42)。返回 { scope, samples, deadline, p_on_time, makespan:{min,mean,p50,p90,max}, criticality:[{task_id,critical_freq}], note }；空作用域返回 insufficient。",
+    schema(
+      {
+        "namespace": string_prop("命名空间（可选默认 default）"),
+        "root_task_id": string_prop("根任务 id（可选，取该子树）"),
+        "deadline": int_prop("完工期限（可选，>0 时算按期概率）"),
+        "samples": int_prop(
+          "模拟次数（可选默认 1000，<10 钳到 10）",
+        ),
+        "seed": int_prop("随机种子（可选默认 42，固定可复现）"),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let root = get_str(args, "root_task_id", default="")
+      let deadline = get_int(args, "deadline", default=0)
+      let samples = get_int(args, "samples", default=1000)
+      let seed = get_int(args, "seed", default=42)
+      Ok(
+        @mcp.ToolResult::text(
+          engine
+          .dag_mc(ns~, root_task_id=root, deadline~, samples~, seed~)
+          .stringify(),
+        ),
+      )
     },
   )
   s1 = instrumented_tool(
