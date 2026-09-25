@@ -135,10 +135,16 @@ def main():
         ck2 = call(p, "reserve_check", scope="src/demo_shim.mbt", now=NOW)
         print(f"   ⑦ 作用域预订 src/demo_shim.mbt → held_by={ck2.get('holder') or ck2.get('agent') or ck2.get('held_by')}（并发冲突预防）")
 
-        # ⑧ 项目脉搏 + 实时看板 + 下一步推荐（只读）
+        # ⑧ 项目脉搏 + 实时看板 + 健康卡 + 下一步推荐（只读）
         ss = call(p, "status_summary", namespace=NS, now=NOW)
         ba = call(p, "board_ascii", namespace=NS, now=NOW)
         print(f"   ⑧ 脉冲 status_summary({NS}) → total={ss.get('total_tasks')}；板面 board_ascii 行数≈{len(ba.get('ascii','').splitlines()) if isinstance(ba, dict) else ''}")
+        # R68 项目健康卡：单次调用看全项目健康（一条命令给出等级+阻塞详情）
+        ph = call(p, "project_health", namespace=NS, now=NOW)
+        assert ph.get("grade") in ("empty", "attention", "stalled", "healthy"), "health 应给出合法等级"
+        print(f"      ↳ R68 项目健康卡 project_health({NS}) → grade={ph.get('grade')}；"
+              f"in_flight={ph.get('in_flight')} ready={ph.get('ready')} done={ph.get('done')} "
+              f"blocked={ph.get('blocked')}（一眼看全项目健康，不逐条 list）")
         tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"
