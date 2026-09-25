@@ -20,7 +20,7 @@
 ## 远期（季度/半年评选、生态深耕）
 - **P5 self_search.mbt（自我搜索外部生态并蒸馏入档）** — 参考五方向调研实现外部检索入库。为何增分：独特"自进化"能力，可作为季度评选"持续迭代"证据。
 - **Scoring 驱动的自动进化闭环（mutation/skill_lib/curriculum）** — 让 fist-mbt 自动产出并沉淀技能。为何增分：把自驱动推向"无人值守自进化"，生态中独一无二。
-- **失败回流学习（learn-from-reject）** — ✅ 已落地 `evolve_lesson` 独立工具（2026-09-25）：把被打回/失败原因归档成 `[lesson]<类目>` 资产入 DGM（note=reason、code=纠偏提示），衔接 `inject` 通路、`dead_ends` 直接反映教训（`moon test` 199/199 + `lesson_verify.py` E2E PASS）。**后续增强项**：把 omega 打回（`omega_spec_review`/`omega_result_verify`）与 `evolve_lesson` 自动串联——打回时自动落 [lesson]，无需人工调工具（需在 engine 层加 StoreBackend::evolve_upsert 包装，避免跨server循环依赖；本阶段列为中期项，因当前独立工具已满足"能学教训"核心）。为何增分：把"会犯错"从黑盒变成可演绎的护城河，独一无二。
+- **失败回流学习（learn-from-reject）** — ✅ 已落地 `evolve_lesson` 独立工具（2026-09-25）：把被打回/失败原因归档成 `[lesson]<类目>` 资产入 DGM（note=reason、code=纠偏提示），衔接 `inject` 通路、`dead_ends` 直接反映教训（`moon test` 200/200 + `lesson_verify.py` E2E PASS）。**后续增强项（已自动串联）**：omega 打回（`omega_spec_review`/`omega_result_verify`/`omega_escalate`）已与 `evolve_lesson` 自动串联——打回时引擎自动落 [lesson]，无需人工调工具（R6 落地 `evolve/lesson.mbt` 单一真源 + `StoreBackend::sqlite_store`，E2E `omega_lesson_verify.py` PASS）。为何增分：把"会犯错"从黑盒变成可演绎的护城河，独一无二。
 - **与 moonclaw/posoco/官方 MCP SDK 的差异化共处**（定位"完整 MCP Server+编排+自进化"而非平台） — 在竞品升温下守住并放大稀缺位。为何增分：避免被误判重复造轮子，保持"生态唯一一体化"卖点。
 
 ## 一句总结
