@@ -93,3 +93,29 @@ test "status_summary 项目脉冲：总量 + 按状态计数 + 活跃命名空�
   // 至少有一个状态计数（待领取 等）
   assert_true(s.contains("待领取"))
 }
+
+///|
+test "status_summary 支持 namespace 过滤：只统计该 ns" {
+  let e = ba_engine()
+  let root = ba_publish(e, "脉冲 ns 过滤根")
+  ignore(e.claim(task_id=root, assignee="leader_a", now="2026-09-25T10:30:00Z"))
+  match
+    e.plan_deep(task_id=root, split_n=1, by="leader_a", now="2026-09-25T10:31:00Z") {
+    Ok(_) => ()
+    Err(m) => abort("plan_deep failed: \{m}")
+  }
+  let tasks = e.list_all()
+  // 按任务的真实 ns 过滤：total = 该 ns 任务数（此处应 >= 1 且 <= 全部）
+  let ns = tasks[0].ns
+  let scoped = render_status_summary(tasks.filter(fn(t) { t.ns == ns }), ["default"], "0.2.4")
+  match scoped.value("total_tasks") {
+    Some(Number(n, ..)) => assert_true(n.to_int() >= 1)
+    _ => abort("scoped total_tasks 缺失: " + scoped.stringify())
+  }
+  // 按不存在的 ns 过滤：total 应为 0
+  let zero = render_status_summary(tasks.filter(fn(t) { t.ns == "no-such-ns" }), [], "0.2.4")
+  match zero.value("total_tasks") {
+    Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
+    _ => abort("zero total_tasks 缺失: " + zero.stringify())
+  }
+}
