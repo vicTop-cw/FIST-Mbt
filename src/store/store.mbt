@@ -552,6 +552,44 @@ pub fn StoreBackend::mark_saga_actions_done(
   }
 }
 
+///|
+/// 读取某熔断器记录（R104：内存后端返回 None，SQLite 实读）。
+pub fn StoreBackend::cb_get(
+  self : StoreBackend,
+  ns : String,
+  circuit : String,
+) -> (String, Int, Int, Int, Int, Int, Int)? {
+  match self {
+    Mem(_) => None
+    Sql(s) => s.cb_get(ns, circuit)
+  }
+}
+
+///|
+/// 写入/覆盖熔断器记录（R104：内存后端为 no-op，SQLite 幂等 upsert）。
+pub fn StoreBackend::cb_save(
+  self : StoreBackend,
+  ns : String,
+  circuit : String,
+  state : String,
+  failures : Int,
+  window_secs : Int,
+  threshold : Int,
+  recovery_secs : Int,
+  opened_at : Int,
+  last_fail_ts : Int,
+  updated_at : String,
+) -> Result[Unit, String] {
+  match self {
+    Mem(_) => Ok(())
+    Sql(s) =>
+      s.cb_save(
+        ns, circuit, state, failures, window_secs, threshold, recovery_secs, opened_at,
+        last_fail_ts, updated_at,
+      )
+  }
+}
+
 // —— 语料账本（Omega 强验证）：双后端统一入口 ——
 
 ///|

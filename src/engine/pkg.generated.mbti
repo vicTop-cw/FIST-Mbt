@@ -79,6 +79,9 @@ pub fn FistEngine::archive(Self, task_id~ : String, by~ : String, now~ : String)
 pub fn FistEngine::budget_split_by_dag(Self, Int) -> Json
 pub fn FistEngine::challenge(Self, task_id~ : String, by~ : String, factor? : Int, strat? : String, now~ : String, critic? : @evolve.Archive?) -> Result[Json, String]
 pub fn FistEngine::children_of(Self, String) -> Array[@core.Task]
+pub fn FistEngine::circuit_fail(Self, ns? : String, circuit~ : String, now_secs~ : Int, window_secs? : Int, threshold? : Int, recovery_secs? : Int) -> Json
+pub fn FistEngine::circuit_status(Self, ns? : String, circuit~ : String, now_secs~ : Int) -> Json
+pub fn FistEngine::circuit_succeed(Self, ns? : String, circuit~ : String, now_secs~ : Int) -> Json
 pub fn FistEngine::claim(Self, task_id~ : String, assignee~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::cold_publish(Self, ns~ : String, description~ : String, created_by~ : String, project_dir~ : String, now~ : String) -> Result[String, String]
 pub fn FistEngine::cost_stats(Self) -> Json

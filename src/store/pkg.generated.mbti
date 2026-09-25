@@ -96,6 +96,8 @@ pub struct SqliteStore {
   db : @sqlite.Database?
 }
 pub fn SqliteStore::archive_task(Self, @core.Task, archived_at~ : String) -> Result[Unit, String]
+pub fn SqliteStore::cb_get(Self, String, String) -> (String, Int, Int, Int, Int, Int, Int)?
+pub fn SqliteStore::cb_save(Self, String, String, String, Int, Int, Int, Int, Int, Int, String) -> Result[Unit, String]
 pub fn SqliteStore::clear(Self) -> Unit
 pub fn SqliteStore::create_task(Self, @core.Task) -> Result[Unit, String]
 pub fn SqliteStore::delete_heartbeat(Self, String) -> Result[Unit, String]
@@ -138,6 +140,8 @@ pub enum StoreBackend {
   Mem(MemoryStore)
   Sql(SqliteStore)
 }
+pub fn StoreBackend::cb_get(Self, String, String) -> (String, Int, Int, Int, Int, Int, Int)?
+pub fn StoreBackend::cb_save(Self, String, String, String, Int, Int, Int, Int, Int, Int, String) -> Result[Unit, String]
 pub fn StoreBackend::clear(Self) -> Unit
 pub fn StoreBackend::cost_stats(Self) -> Json
 pub fn StoreBackend::create_task(Self, @core.Task) -> Result[Unit, String]
