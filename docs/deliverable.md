@@ -14,8 +14,8 @@ python scripts/mcp_smoke.py
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **78**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 219/219**（Windows + WSL(Linux) 双端实测全绿） |
+| MCP 工具 | **79**（+ 3 resources + 2 prompts） |
+| 测试 | **`moon test --target js` 220/220**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -29,7 +29,7 @@ python scripts/mcp_smoke.py
 6. **多租户**：命名空间物理隔离（`store_open`，`scratch` 临时区不污染根）。
 7. **项目地图**：`fist://map` resource——agent 首读即有，避免全项目乱找（docs/agent-map.md）；`board_ascii` 实时任务看板，一眼看全貌。
 
-## 四、自驱增强证据（git 4994aae → HEAD，23 轮）
+## 四、自驱增强证据（git 4994aae → HEAD，26 轮）
 | 轮 | 增强 | 验证脚本 |
 |---|---|---|
 | 1 项目地图 | `fist://map` + docs/agent-map + 调研纪要 | `map_verify.py` |
@@ -55,6 +55,9 @@ python scripts/mcp_smoke.py
 | 21 下一步推荐 | `task_triage`：可领取任务按 优先级→重要度→深度 排行 + suggestion（agent 无需全量扫描即可决定下一单） | `engine_triage_test.mbt` + award_demo ⑨ |
 | 22 CI/计数收尾 | CI 三轨道复核（js/native-Linux/js-Win，native 只在 Linux 跑规避竞态）+ 补漏 4 处 77→78 工具计数 | ci.yml 核对 + 全仓 grep |
 | 23 能力路由 | `task_triage want`：描述/id 命中能力关键词的可领取任务排头部，suggestion 标注能力匹配（Marketplace 雏形） | `engine_triage_test.mbt` + award_demo ⑨(want=编排) |
+| 24 轮表对账 | deliverable 轮证据表 R1..R23 连续（修正错位/补缺/追新） | 文档核对 |
+| 25 自检门禁 | README「一键完整自检(评审用)」+ 修正 Tools(61→78) 超陈旧计数，期望逐条实跑核对 | `moon test`+`mcp_smoke`+`award_demo` |
+| 26 自驱取单 | `selfdrive_pick_next`：按 triage 能力推荐自动取走顶部并认领（待领取→已领取，无人值守按能力自推进） | `engine_triage_test.mbt` + award_demo ⑩ |
 
 ## 五、文档即实现
 - 工具/资源/测试数均与实测一致（README/AGENTS/ARCHITECTURE/agent-map 已同步）。
