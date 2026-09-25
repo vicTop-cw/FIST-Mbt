@@ -31,24 +31,36 @@ fn wb_bool(j : Json, key : String) -> Bool {
 
 ///|
 test "call_log_wrapper_ok_and_err_logged" {
-  // Ok 路径：工具 "wbtool_ok"，调用者 created_by=tester
+  // 用独立的内存后端引擎，避免测试污染共享的仓库根 fist-mbt.db
+  let iso = @engine.FistEngine::new(store=@store.StoreBackend::memory())
+  // Ok 路径：工具 "wbtool_ok"，调用者 created_by=tester，ns 回退 project_dir
   _log_call(
+    iso,
     "wbtool_ok",
-    Json::object(Map([("created_by", Json::string("tester"))])),
+    Json::object(
+      Map([
+        ("created_by", Json::string("tester")),
+        ("project_dir", Json::string("wb/proj")),
+      ]),
+    ),
     "{\"x\":1}",
     "ok",
     true,
     2,
-    1,
   )
-  // Err 路径：工具 "wbtool_err"，无 caller/ns（默认空）
-  _log_call("wbtool_err", Json::object({}), "{}", "boom info", false, 5, 2)
-  let logs = engine.store_recent_call_logs(limit=100)
+  // Err 路径：工具 "wbtool_err"，无 caller/ns/project_dir（全默认空）
+  _log_call(iso, "wbtool_err", Json::object({}), "{}", "boom info", false, 5)
+  let logs = iso.store_recent_call_logs(limit=100)
   let mut ok_seen : Bool = false
   let mut err_seen : Bool = false
+  let mut ns_fall_bk : Bool = false
   for l in logs {
     if wb_str(l, "tool") == "wbtool_ok" && wb_bool(l, "ok") {
       ok_seen = true
+      // ns 缺失时应回退 project_dir
+      if wb_str(l, "ns") == "wb/proj" {
+        ns_fall_bk = true
+      }
     }
     if wb_str(l, "tool") == "wbtool_err" && not(wb_bool(l, "ok")) {
       err_seen = true
@@ -56,4 +68,5 @@ test "call_log_wrapper_ok_and_err_logged" {
   }
   assert_true(ok_seen)
   assert_true(err_seen)
+  assert_true(ns_fall_bk)
 }

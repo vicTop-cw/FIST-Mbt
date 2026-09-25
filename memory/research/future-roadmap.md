@@ -20,6 +20,7 @@
 ## 远期（季度/半年评选、生态深耕）
 - **P5 self_search.mbt（自我搜索外部生态并蒸馏入档）** — 参考五方向调研实现外部检索入库。为何增分：独特"自进化"能力，可作为季度评选"持续迭代"证据。
 - **Scoring 驱动的自动进化闭环（mutation/skill_lib/curriculum）** — 让 fist-mbt 自动产出并沉淀技能。为何增分：把自驱动推向"无人值守自进化"，生态中独一无二。
+- **失败回流学习（learn-from-reject）** — 把 `reject` / omega 文料或成果复验打回的 `reason` 结构化回写 evolve 档案库，供摘要/死路地图（dead_ends）真正"学教训"：每条打回 → 归档一条 `[lesson]<类目>` 产物，`note` 存失败原因、`code` 存纠偏提示，`plan/claim` 的 `inject` 可按类目命中注入「曾踩过的坑」。现状 gap：omega 打回只写 `specs` 表状态、不回流 evolve_arc。落地点：`engine/reject` 与 `omega_spec_review`/`omega_result_verify` 打回分支出补调 `distill`；配合本批新增的 `evolve_asset_register`/`inject` 通路即闭环。为何增分：把"会犯错"从黑盒变成可演绎的护城河，独一无二。
 - **与 moonclaw/posoco/官方 MCP SDK 的差异化共处**（定位"完整 MCP Server+编排+自进化"而非平台） — 在竞品升温下守住并放大稀缺位。为何增分：避免被误判重复造轮子，保持"生态唯一一体化"卖点。
 
 ## 一句总结

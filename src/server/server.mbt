@@ -86,12 +86,14 @@ fn _civil_from_days(z : Int) -> (Int, Int, Int) {
 /// `YYYY-MM-DDTHH:MM:SSZ`。避免省略 now 参数时共享一个冻结时钟，
 /// 使心跳/陈旧检测/清理/审计与真实时间对齐（不再硬编码 2026-09-05）。
 fn now_default() -> String {
-  let ms = @env.now().to_int()
-  let total_sec = ms / 1000
-  let sec = total_sec % 60
-  let min = total_sec / 60 % 60
-  let hour = total_sec / 3600 % 24
-  let days = total_sec / 86400
+  // @env.now() 返回 UInt64 毫秒；直接用 Int64 做整数运算，避免 .to_int()
+  // 对 UInt64 的 32 位截断（1790 亿级别毫秒被截成负值，导致 1969 时间戳）。
+  let ms = @env.now().to_int64()
+  let total_sec = ms / 1000L
+  let sec = (total_sec % 60L).to_int()
+  let min = (total_sec / 60L % 60L).to_int()
+  let hour = (total_sec / 3600L % 24L).to_int()
+  let days = (total_sec / 86400L).to_int()
   let (y, m, d) = _civil_from_days(days)
   "\{y}-\{_pad2(m)}-\{_pad2(d)}T\{_pad2(hour)}:\{_pad2(min)}:\{_pad2(sec)}Z"
 }
@@ -244,6 +246,48 @@ fn to_result(
 }
 
 ///|
+/// 检索档案库资产：按逗号分隔的 keywords，对每个 Artifact 的 goal 做子串匹配，
+/// 返回命中项的 {goal, note, code}，供 plan/claim 前注入。检索不到命中项时返回空数组。
+pub fn lookup_injected_assets_in(
+  arc : @evolve.Archive,
+  inject : String,
+) -> Json {
+  let hits : Array[Json] = []
+  let ksq : Array[String] = []
+  for k in inject.split(",") {
+    let s = k.trim().to_string()
+    if s != "" {
+      ksq.push(s)
+    }
+  }
+  if ksq.is_empty() {
+    return Json::array(hits)
+  }
+  for art in @evolve.Archive::all(arc) {
+    for k in ksq {
+      if art.goal.contains(k) || art.note.contains(k) {
+        hits.push(
+          Json::object({
+            "id": Json::string(art.id),
+            "goal": Json::string(art.goal),
+            "note": Json::string(art.note),
+            "code": Json::string(art.code),
+          }),
+        )
+        break
+      }
+    }
+  }
+  Json::array(hits)
+}
+
+///|
+/// 检索全局档案库资产（工具调用入口）：委托给带 arc 参数的纯函数。
+fn lookup_injected_assets(inject : String) -> Json {
+  lookup_injected_assets_in(evolve_arc, inject)
+}
+
+///|
 fn to_ids_result(
   r : Result[Array[String], String],
 ) -> Result[@mcp.ToolResult, @mcp.MCPError] {
@@ -310,22 +354,36 @@ fn overview_json() -> Json {
 
 ///|
 /// 进程内注入全局 handler 的自动日志（best-effort，任何失败均被吞掉，不影响工具调用）。
-/// seq 取 @env.now() 毫秒时间戳（跨全部工具单调近似，仅供回放定位，非主键）。
+/// seq 用单调递增计数器（跨全部工具严格递增，供回放定位/排序，非主键）。
+/// 规避 @env.now().to_int() 对 UInt64 毫秒做 32 位截断产生的负值/1970 错乱排序。
+let _call_log_seq : Ref[Int] = { val: 0, }
+
+///|
 fn _log_call(
+  eng : @engine.FistEngine,
   tool : String,
   args : Json,
   params_json : String,
   result_json : String,
   ok : Bool,
   runtime_ms : Int,
-  now_ms : Int,
 ) -> Unit {
   let caller = get_str(args, "created_by", default="")
-  let ns = get_str(args, "namespace", default=get_str(args, "ns", default=""))
+  // ns 缺失时回退 project_dir，实现多项目（兄弟项目）可追溯分组
+  let mut ns = get_str(
+    args,
+    "namespace",
+    default=get_str(args, "ns", default=""),
+  )
+  if ns.is_empty() {
+    ns = get_str(args, "project_dir", default="")
+  }
   let ts = now_default()
+  _call_log_seq.val = _call_log_seq.val + 1
+  let seq = _call_log_seq.val
   // 忽略写入失败：调用日志是"尽力而为"，绝不能反过来破坏业务调用
   ignore(
-    engine.store_write_call_log(
+    eng.store_write_call_log(
       ts~,
       tool~,
       caller~,
@@ -334,7 +392,7 @@ fn _log_call(
       result_json~,
       ok~,
       runtime_ms~,
-      seq=now_ms,
+      seq~,
     ),
   )
 }
@@ -348,15 +406,15 @@ fn _instrument(
   handler : async (Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError],
 ) -> async (Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
   async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-    let t0 = @env.now().to_int()
+    let t0 = @env.now().to_int64()
     let params_json = args.stringify()
     let r = handler(args)
-    let runtime_ms = @env.now().to_int() - t0
+    let runtime_ms = (@env.now().to_int64() - t0).to_int()
     let (result_json, ok) = match r {
       Err(e) => (e.message(), false)
       Ok(_tr) => ("ok", true)
     }
-    _log_call(tool, args, params_json, result_json, ok, runtime_ms, t0)
+    _log_call(engine, tool, args, params_json, result_json, ok, runtime_ms)
     r
   }
 }
@@ -465,12 +523,15 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "plan",
-    "对指定任务拆分生成一层子任务（非原子任务才可拆）。参数：task_id 任务id、split_n 拆分数量(默认3)、by 执行者。",
+    "对指定任务拆分生成一层子任务（非原子任务才可拆）。参数：task_id 任务id、split_n 拆分数量(默认3)、by 执行者、inject 可选逗号分隔的档案资产关键词(命中则把资产 code/note 追加到返回 injected_assets)。",
     schema(
       {
         "task_id": string_prop("父任务 id（必填）"),
         "split_n": int_prop("拆分数量(默认3)"),
         "by": string_prop("执行拆分的人"),
+        "inject": string_prop(
+          "可选：逗号分隔的档案库资产 keywords（如 code-review,superpowers），按 goal 子串检索命中资产并追加到返回",
+        ),
         "now": string_prop("时间戳(可选)"),
       },
       ["task_id"],
@@ -480,17 +541,38 @@ pub async fn run_server() -> Unit {
       let split_n = get_int(args, "split_n", default=3)
       let by = get_str(args, "by", default="human_steward")
       let ts = get_str(args, "now", default=now_default())
-      to_ids_result(engine.plan(task_id~, split_n~, by~, now=ts))
+      let inject = get_str(args, "inject")
+      // 先执行拆解拿 ids
+      let ids = match engine.plan(task_id~, split_n~, by~, now=ts) {
+        Ok(a) => a
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
+      // inject 非空：检索档案资产并转成对象返回；否则保持现有数组格式
+      if inject == "" {
+        return Ok(
+          @mcp.ToolResult::text(
+            Json::array(ids.map(fn(s) { Json::string(s) })).stringify(),
+          ),
+        )
+      }
+      let injected = lookup_injected_assets(inject)
+      let m : Map[String, Json] = Map([])
+      m.set("task_ids", Json::array(ids.map(fn(s) { Json::string(s) })))
+      m.set("injected_assets", injected)
+      Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
     },
   )
   s1 = instrumented_tool(
     s1,
     "claim",
-    "认领任务（待领取 -> 已领取；随后 execute 进入执行中）。参数：task_id、assignee 认领人。",
+    "认领任务（待领取 -> 已领取；随后 execute 进入执行中）。参数：task_id、assignee 认领人、inject 可选逗号分隔档案资产关键词(命中则把 code/note 追加到返回 injected_assets)。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
         "assignee": string_prop("认领人（必填）"),
+        "inject": string_prop(
+          "可选：逗号分隔的档案库资产 keywords，按 goal 子串检索命中资产并追加到返回",
+        ),
         "now": string_prop("时间戳(可选)"),
       },
       ["task_id", "assignee"],
@@ -499,7 +581,20 @@ pub async fn run_server() -> Unit {
       let task_id = get_str(args, "task_id")
       let assignee = get_str(args, "assignee")
       let ts = get_str(args, "now", default=now_default())
-      to_result(engine.claim(task_id~, assignee~, now=ts))
+      let inject = get_str(args, "inject")
+      match engine.claim(task_id~, assignee~, now=ts) {
+        Err(e) => Err(@mcp_types.ToolError(e))
+        Ok(t) => {
+          if inject == "" {
+            return Ok(@mcp.ToolResult::text(t.to_json().stringify()))
+          }
+          let injected = lookup_injected_assets(inject)
+          let m : Map[String, Json] = Map([])
+          m.set("task", t.to_json())
+          m.set("injected_assets", injected)
+          Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
+        }
+      }
     },
   )
   s1 = instrumented_tool(
@@ -648,11 +743,14 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "verify",
-    "验收通过（待验收 -> 已完成，父任务自动上卷）。[gate:required] 任务须先有新鲜通过的 run_check 记录。参数：task_id、verifier 验收人。",
+    "验收通过（待验收 -> 已完成，父任务自动上卷）。[gate:required] 任务须先有新鲜通过的 run_check 记录；可选 docs_check 开启「文档即实现」门禁（校验 README/CHANGELOG/reports 存在性与交付物回传五段式，不达标打回）。参数：task_id、verifier、docs_check、now。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
         "verifier": string_prop("验收人（必填）"),
+        "docs_check": bool_prop(
+          "是否开启文档一致性门禁(默认 false，不传即现状)：开启后校验项目结构 README.md/CHANGELOG.md/reports 与交付物回传五段式，缺项打回",
+        ),
         "now": string_prop("时间戳(可选)"),
       },
       ["task_id", "verifier"],
@@ -661,7 +759,8 @@ pub async fn run_server() -> Unit {
       let task_id = get_str(args, "task_id")
       let verifier = get_str(args, "verifier")
       let ts = get_str(args, "now", default=now_default())
-      to_result(engine.verify(task_id~, verifier~, now=ts))
+      let docs_check = get_bool(args, "docs_check", default=false)
+      to_result(engine.verify(task_id~, verifier~, now=ts, docs_check~))
     },
   )
   s1 = instrumented_tool(
@@ -854,8 +953,18 @@ pub async fn run_server() -> Unit {
           "是否开启 Omega 强验证(默认 false，不传即现状；开启后每轮需语料审核与成果复验)",
         ),
         "laya_auto": bool_prop(
-          "是否开启 Laya 自动选档(默认 false，不传即现状)：开启后探测 Laya，可用则按 difficulty.score 自动定 split_n 并把决策附到返回；不可用则回退 split_n 默认值",
+          "是否开启 Laya 自动选档(默认 false)：开启后探测 Laya，可用则按 difficulty.score 自动定 split_n 并把决策附到返回；不可用则回退 split_n 默认值。若同时传 decide_split_n，则忽略 Laya(躬身自决优先)",
         ),
+        "decide_split_n": int_prop(
+          "躬身自决拆分数(可选)：显式传入即以 agent 自决为准，跳过 Laya sidecar；缺省沿用 split_n/laya_auto 逻辑",
+        ),
+        "decide_difficulty": number_prop(
+          "躬身自估困难度(可选，0..5)：随 plan_decision 返回做可审计依据，不强制校验",
+        ),
+        "decide_reason": string_prop(
+          "躬身选档理由(可选，可审计)：说明为何定此拆分数",
+        ),
+        "decide_by": string_prop("躬身选档身份(默认 leader)"),
         "now": string_prop("时间戳(可选)"),
       },
       ["task_id"],
@@ -875,10 +984,20 @@ pub async fn run_server() -> Unit {
       }
       let omega_strong = get_bool(args, "omega_strong_verify", default=false)
       let laya_auto = get_bool(args, "laya_auto", default=false)
-      // Laya 自动选档：开启后先探测，可用则以任务描述的 difficulty.score 自动定 split_n，
-      // 并把完整决策附到返回（如不可用则回退显式/默认 split_n，行为与现状一致）。
+      // —— 躬身入局选档（decide_*）—— 决策由 agent/调用方显式自决，可审计，优先于 Laya。
+      let decide_split_n = get_int(args, "decide_split_n", default=0)
+      let decide_difficulty = get_double(args, "decide_difficulty", default=0.0)
+      let decide_reason = get_str(args, "decide_reason")
+      let decide_by = get_str(args, "decide_by", default="leader")
+      // 躬身自决拆分数（>0 视为有效）优先；无自决时才走 Laya 冷启动/默认。
+      let mut decided : Bool = false
+      if decide_split_n > 0 {
+        split_n = decide_split_n
+        decided = true
+      }
+      // Laya 自动选档（仅在无躬身自决、且显式开启 laya_auto 时探测）：
       let mut laya_info : Json = Json::null()
-      if laya_auto {
+      if laya_auto && not(decided) {
         let avail = match
           laya_probe_available(
             "python",
@@ -940,17 +1059,26 @@ pub async fn run_server() -> Unit {
         Ok(j) => j
         Err(e) => return Err(@mcp_types.ToolError(e))
       }
-      // laya_auto 开启时在返回里附 laya 决策信息；否则返回格式与现状完全一致。
-      let out = if laya_auto {
-        match base {
-          Object(m) => {
-            m.set("laya", laya_info)
-            Json::object(m)
+      // 组装返回：躬身自决 → 附 plan_decision；查明 laya_auto → 附 laya；否则与现状一致。
+      let out = match base {
+        Object(m) => {
+          if decided {
+            let dm : Map[String, Json] = Map([
+              ("source", Json::string("self")),
+              ("split_n", Json::number(split_n.to_double())),
+              ("difficulty", Json::number(decide_difficulty)),
+              ("reason", Json::string(decide_reason)),
+              ("by", Json::string(decide_by)),
+              ("decided_at", Json::string(now_default())),
+            ])
+            m.set("plan_decision", Json::object(dm))
           }
-          _ => base
+          if laya_auto && not(decided) {
+            m.set("laya", laya_info)
+          }
+          Json::object(m)
         }
-      } else {
-        base
+        _ => base
       }
       Ok(@mcp.ToolResult::text(out.stringify()))
     },
@@ -1679,6 +1807,47 @@ pub async fn run_server() -> Unit {
           ),
         )
       }
+      @evolve.Archive::add(evolve_arc, art)
+      Ok(@mcp.ToolResult::text(art.to_json().stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "evolve_asset_register",
+    "DGM 演化·注册一个可选外部资产（如 code-review / superpowers 类 skill 库）：作为 Artifact 归档进档案库，goal 用 [asset]<来源名> 便于 plan/claim 的 inject 按关键词检索，note 放可注入提示词、code 放来源路径/URL。返回产物 JSON；asset_id 可省略（自动生成，避免与既有产物 id 冲突）。",
+    schema(
+      {
+        "source": string_prop(
+          "资产来源名/关键词（必填，如 code-review）；检索用，自动拼成 goal=[asset]<source>",
+        ),
+        "note": string_prop("可注入提示词（必填）"),
+        "code": string_prop("来源路径或 URL（必填）"),
+        "score": number_prop("可计算评分(默认0)"),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      ["source", "note", "code"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let source = get_str(args, "source")
+      let note = get_str(args, "note")
+      let code = get_str(args, "code")
+      let score = get_double(args, "score", default=0.0)
+      let ts = get_str(args, "now", default=now_default())
+      if source == "" || note == "" || code == "" {
+        return Err(@mcp_types.ToolError("source/note/code 均为必填"))
+      }
+      let goal = "[asset]\{source}"
+      let asset_id = "asset-\{source}-\{ts}"
+      let art = @evolve.Artifact::create(
+        id=asset_id,
+        parent_id=None,
+        goal~,
+        note~,
+        code~,
+        score~,
+        parts=Map([]),
+        created_at=ts,
+      )
       @evolve.Archive::add(evolve_arc, art)
       Ok(@mcp.ToolResult::text(art.to_json().stringify()))
     },

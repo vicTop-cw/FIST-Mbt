@@ -344,10 +344,11 @@ pub fn FistEngine::verify(
   task_id~ : String,
   verifier~ : String,
   now~ : String,
+  docs_check? : Bool = false,
 ) -> Result[@core.Task, String] {
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
-    Some(t) => {
+    Some(_t) => {
       // Omega 强验证开关（默认关闭）：开启时须先有「已通过」成果复验才可验收
       match self.omega_verify_gate(task_id) {
         Err(e) => return Err(e)
@@ -358,6 +359,18 @@ pub fn FistEngine::verify(
       match self.gate_verify_gate(task_id) {
         Err(e) => return Err(e)
         Ok(_) => ()
+      }
+      // 「文档即实现」门禁（默认关闭）：仅 docs_check=true 时校验 README/CHANGELOG/reports
+      // 存在性与交付物回传五段式；不达标返回 Err(明细) 打回。
+      if docs_check {
+        match self.docs_verify_gate(task_id) {
+          Err(e) => return Err(e)
+          Ok(_) => ()
+        }
+      }
+      let t = match self.store.get_task(task_id) {
+        Some(x) => x
+        None => return Err("task not found: \{task_id}")
       }
       if !t.get_status().is_reviewing() {
         return Err(

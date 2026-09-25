@@ -22,6 +22,8 @@ pub async fn laya_decide_external(String, Array[String], String, String, Int) ->
 
 pub async fn laya_probe_available(String, Array[String], String, Int) -> Result[Bool, String]
 
+pub fn lookup_injected_assets_in(@evolve.Archive, String) -> Json
+
 pub fn memory_consolidate(String, String, String, String, String) -> Result[Json, String]
 
 pub fn memory_gc_all(String, Int) -> Json
