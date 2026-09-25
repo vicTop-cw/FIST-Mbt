@@ -42,7 +42,7 @@
 | 审计/权限(2) | audit_permission/log |
 | 多租户(3) | store_open/list/close |
 | 强验证(4) | omega_spec_create/review/result_verify/status |
-| 其它(辅助) | evolve_submit/sample/snapshot/asset_register/self_search、run_check/cost_stats、… |
+| 其它(辅助) | evolve_submit/sample/snapshot/asset_register/self_search、run_check/cost_stats/progress_gate、… |
 
 ## 四、入口引导（agent 该怎么走）
 

@@ -639,3 +639,177 @@ test "budget_split_by_dag: 预算按依赖图阶段切分（R81 ZEBRA 蒸馏）"
     _ => abort("e2 total_budget 缺失")
   }
 }
+
+///|
+/// 构造 进度门控 测试引擎：P(根,[难度梯度 1/3:中]) + C1/C2([难度梯度 1/2:中])，C1 已完成。
+/// 子树=3 任务，done=1 → progress=1/3；已开工难度权重和=2（仅 C1）。
+fn progress_gate_engine() -> FistEngine {
+  let e = FistEngine::new()
+  let specs : Array[(String, String, String)] = [
+    ("P", "", "[难度梯度 1/3:中] 进度门控根任务"),
+    ("C1", "P", "[难度梯度 1/2:中] 子任务一"),
+    ("C2", "P", "[难度梯度 1/2:中] 子任务二"),
+  ]
+  for s in specs {
+    let (id, parent, desc) = s
+    let t = @core.Task::new(
+      id~,
+      project_dir="/proj/demo",
+      description=desc,
+      parent_id=parent,
+      created_at="2026-01-01T00:00:00Z",
+      depends_on=[],
+    )
+    ignore(e.store.create_task(t))
+  }
+  // C1 走完 认领→执行→提交→验收 置为已完成
+  ignore(e.claim(task_id="C1", assignee="exec_1", now="2026-09-05T10:01:00Z"))
+  ignore(e.execute(task_id="C1", deliverable="x", now="2026-09-05T10:02:00Z"))
+  ignore(e.submit(task_id="C1", now="2026-09-05T10:03:00Z"))
+  ignore(e.verify(task_id="C1", verifier="ver_1", now="2026-09-05T10:04:00Z"))
+  e
+}
+
+///|
+test "progress_gate：OK 判决（线性+保守均充足，自动估算 spent=2）" {
+  let e = progress_gate_engine()
+  let j = e.progress_gate("P", 10, 0)
+  // progress = 1/3（1 done / 3 任务）
+  match j.value("progress") {
+    Some(Number(n, ..)) =>
+      if n - 1.0 / 3.0 > 0.000000001 || n - 1.0 / 3.0 < -0.000000001 {
+        abort("progress 应为 1/3: " + j.stringify())
+      }
+    _ => abort("progress 缺失: " + j.stringify())
+  }
+  match j.value("spent") {
+    Some(Number(n, ..)) => assert_eq(n.to_int(), 2)
+    _ => abort("spent 缺失: " + j.stringify())
+  }
+  // 线性=燃尽率6×剩余2/3=4，保守=4.8；remaining=8 → 均充足 → OK
+  match j.value("verdict") {
+    Some(String(v)) =>
+      if v != "OK" {
+        abort("verdict 应为 OK: " + j.stringify())
+      }
+    _ => abort("verdict 缺失: " + j.stringify())
+  }
+}
+
+///|
+test "progress_gate：CAUTION 判决（线性可行但保守缓冲不足）" {
+  let e = progress_gate_engine()
+  // spent_override=3 → 燃尽率 9、线性 6、保守 7.2；remaining=7 → 线性可行、保守超 → CAUTION
+  let j = e.progress_gate("P", 10, 3)
+  match j.value("verdict") {
+    Some(String(v)) =>
+      if v != "CAUTION" {
+        abort("verdict 应为 CAUTION: " + j.stringify())
+      }
+    _ => abort("verdict 缺失: " + j.stringify())
+  }
+  match j.value("action") {
+    Some(String(a)) =>
+      if not(a.contains("降档")) && not(a.contains("缩减")) {
+        abort("action 应建议降档/缩范围: " + a)
+      }
+    _ => abort("action 缺失: " + j.stringify())
+  }
+}
+
+///|
+test "progress_gate：ESCALATE 判决（线性已超支）+ 双路径数字" {
+  let e = progress_gate_engine()
+  // spent_override=5 → 燃尽率 15、线性 10、保守 12；remaining=5 → 线性即超 → ESCALATE
+  let j = e.progress_gate("P", 10, 5)
+  match j.value("verdict") {
+    Some(String(v)) =>
+      if v != "ESCALATE" {
+        abort("verdict 应为 ESCALATE: " + j.stringify())
+      }
+    _ => abort("verdict 缺失: " + j.stringify())
+  }
+  match j.value("projection") {
+    Some(Object(o)) => {
+      match o.get("linear") {
+        Some(Number(n, ..)) =>
+          if n - 10.0 > 0.000001 || n - 10.0 < -0.000001 {
+            abort("linear 应为 10: " + j.stringify())
+          }
+        _ => abort("projection.linear 缺失: " + j.stringify())
+      }
+      match o.get("conservative") {
+        Some(Number(n, ..)) =>
+          if n - 12.0 > 0.000001 || n - 12.0 < -0.000001 {
+            abort("conservative 应为 12: " + j.stringify())
+          }
+        _ => abort("projection.conservative 缺失: " + j.stringify())
+      }
+    }
+    _ => abort("projection 缺失: " + j.stringify())
+  }
+}
+
+///|
+test "progress_gate：未开工=OK / 全完成=OK / 空任务+非法预算=ok:false" {
+  // 未开工：仅根任务待领取 → progress 0、燃尽率 0 → OK
+  let e0 = FistEngine::new()
+  let t = @core.Task::new(
+    id="P0",
+    project_dir="/proj/demo",
+    description="[难度梯度 1/1:易] 未开工任务",
+    parent_id="",
+    created_at="2026-01-01T00:00:00Z",
+    depends_on=[],
+  )
+  ignore(e0.store.create_task(t))
+  let j0 = e0.progress_gate("P0", 5, 0)
+  match j0.value("verdict") {
+    Some(String(v)) =>
+      if v != "OK" {
+        abort("未开工 verdict 应为 OK: " + j0.stringify())
+      }
+    _ => abort("j0 verdict 缺失: " + j0.stringify())
+  }
+  // 全完成：C1/C2/P 全部验收 → progress 1.0 → OK（已完成）
+  let e = progress_gate_engine()
+  ignore(e.claim(task_id="C2", assignee="exec_1", now="2026-09-05T10:05:00Z"))
+  ignore(e.execute(task_id="C2", deliverable="y", now="2026-09-05T10:06:00Z"))
+  ignore(e.submit(task_id="C2", now="2026-09-05T10:07:00Z"))
+  ignore(e.verify(task_id="C2", verifier="ver_1", now="2026-09-05T10:08:00Z"))
+  ignore(e.claim(task_id="P", assignee="exec_1", now="2026-09-05T10:09:00Z"))
+  ignore(e.execute(task_id="P", deliverable="z", now="2026-09-05T10:10:00Z"))
+  ignore(e.submit(task_id="P", now="2026-09-05T10:11:00Z"))
+  ignore(e.verify(task_id="P", verifier="ver_1", now="2026-09-05T10:12:00Z"))
+  let j1 = e.progress_gate("P", 10, 0)
+  match j1.value("verdict") {
+    Some(String(v)) =>
+      if v != "OK" {
+        abort("全完成 verdict 应为 OK: " + j1.stringify())
+      }
+    _ => abort("j1 verdict 缺失: " + j1.stringify())
+  }
+  match j1.value("progress") {
+    Some(Number(n, ..)) => assert_eq(n, 1.0)
+    _ => abort("j1 progress 缺失: " + j1.stringify())
+  }
+  // 空任务 / 非法预算 → ok:false
+  let j2 = e.progress_gate("NOPE", 10, 0)
+  match j2.value("ok") {
+    Some(j) =>
+      match j.as_bool() {
+        Some(b) => assert_eq(b, false)
+        None => abort("j2 ok 非布尔: " + j2.stringify())
+      }
+    _ => abort("j2 ok 缺失: " + j2.stringify())
+  }
+  let j3 = e.progress_gate("P", 0, 0)
+  match j3.value("ok") {
+    Some(j) =>
+      match j.as_bool() {
+        Some(b) => assert_eq(b, false)
+        None => abort("j3 ok 非布尔: " + j3.stringify())
+      }
+    _ => abort("j3 ok 缺失: " + j3.stringify())
+  }
+}
