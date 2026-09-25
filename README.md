@@ -16,7 +16,7 @@ AIGC:
 [![Tests](https://img.shields.io/badge/tests-230%2F230-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
-**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统：从 **发布→认领→拆分→执行→提交→验收→归档** 的完整闭环，到 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗** 这些"系统自己推动自己"的能力，全部以 **82 个 MCP 工具** 暴露给任意 MCP 客户端（Claude Desktop / Cursor / 自研 JSON-RPC）。
+**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统：从 **发布→认领→拆分→执行→提交→验收→归档** 的完整闭环，到 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗** 这些"系统自己推动自己"的能力，全部以 **83 个 MCP 工具** 暴露给任意 MCP 客户端（Claude Desktop / Cursor / 自研 JSON-RPC）。
 
 **为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑能在 Windows 与 Linux 上 230 项测试双端全绿、跨环境可复现——`moon update && moon run cmd/main` 即用，告别 Python 原版的环境安装地狱。
 
@@ -57,7 +57,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 **一键完整自检（评审用，实测期望）**：
 ```bash
 moon test --target js -j 1        # → Total tests: 230, passed: 230, failed: 0
-python scripts/mcp_smoke.py       # → PASS tools/list → 82 个工具 … MCP-SMOKE PASS
+python scripts/mcp_smoke.py       # → PASS tools/list → 83 个工具 … MCP-SMOKE PASS
 python scripts/award_demo.py      # → MCP-AWARD-DEMO PASS（能力链全通，结尾自动 cleanup → CLEAN）
 ```
 > 说明：`moon test` 会生成被 gitignore 的临时 `.db`（属正常），`award_demo`/`cleanup_artifacts.py` 结尾会清掉并使仓库仅剩交付库 `fist-mbt.db`（`cleanup_artifacts.py --check` 可作 CI 干净度守卫）。
@@ -76,7 +76,7 @@ python scripts/award_demo.py      # → MCP-AWARD-DEMO PASS（能力链全通，
 
 ## MCP 暴露面
 
-### Tools（**82 个** · 精选概览；完整清单与分组见 [AGENTS.md](./AGENTS.md) 与 `fist://map`）
+### Tools（**83 个** · 精选概览；完整清单与分组见 [AGENTS.md](./AGENTS.md) 与 `fist://map`）
 
 > **适用范围提示**：`watchdog_tick`（定时任务看门狗编排）**推荐仅用于定时任务 / 无人值守自动化场景**，不用于人工指挥官任务分配流程（自动 heal / 自动续轮在人工流程中有害）。
 >
@@ -285,7 +285,7 @@ FIST-Mbt/
 │   │   └── ops_ts.mbt          # 时间戳工具
 │   ├── omega/           # 可解释性子包：spec/gate/check
 │   └── server/          # MCP server 装配
-│       ├── server.mbt          # 82 个工具注册 + 3 resources + 2 prompts + run_server
+│       ├── server.mbt          # 83 个工具注册 + 3 resources + 2 prompts + run_server
 │       ├── stdio_js.mbt        # JS 后端 STDIO 传输
 │       └── stdio_native.mbt    # 原生后端 STDIO 传输
 └── moon.mod             # 模块元数据

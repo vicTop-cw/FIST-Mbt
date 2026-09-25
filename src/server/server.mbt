@@ -124,6 +124,24 @@ fn sync_db_executors() -> Unit {
 }
 
 ///|
+/// 读 Json 对象的字符串字段（复用式，等价 executor 包内私有 num/str）。
+fn jstr(j : Json, key : String) -> String {
+  match j.value(key) {
+    Some(Json::String(s)) => s
+    _ => ""
+  }
+}
+
+///|
+/// 读 Json 对象的数值字段。
+fn jnum(j : Json, key : String) -> Double {
+  match j.value(key) {
+    Some(Json::Number(n, ..)) => n
+    _ => 0.0
+  }
+}
+
+///|
 /// 把毫秒级 Unix 时间转换为 UTC 时刻两项补齐
 fn _pad2(n : Int) -> String {
   let s = n.to_string()
@@ -412,7 +430,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 82 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 83 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -2719,6 +2737,95 @@ pub async fn run_server() -> Unit {
           Json::object({ "persisted": Json::boolean(did_persist) }).stringify(),
         ),
       )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "selfdrive_dispatch",
+    "Marketplace·能力路由自动派单（R32，把 R30/R31 的'路由推荐'落到动作）：先 `task_triage` 取顶部可领取任务，再按 `want` 所需能力经 `executor_route` 找最佳执行者（能力覆盖率 desc → 负载 asc），并把该任务**直接认领给该执行者**（待领取→已领取）。无匹配执行者时回退认领给 `agent`。让'按专长+负载分配'不再只是建议，而是系统自动派单。参数：namespace(可选)、agent(默认 self，回退认领者)、want 所需能力关键词(可选)、now。返回 {dispatched, task_id, assignee, want, route?}。",
+    schema(
+      {
+        "namespace": string_prop("命名空间(可选，空=全部)"),
+        "agent": string_prop("认领者/回退身份(默认 self)"),
+        "want": string_prop("任务所需能力关键词(可选，供能力路由)"),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace")
+      let agent = get_str(args, "agent", default="self")
+      let want = get_str(args, "want")
+      let ts = get_str(args, "now", default=now_default())
+      sync_db_executors()
+      // 1. 取顶部可领取任务
+      let tr = engine.triage(ns, agent, want)
+      let sug = match tr.value("suggestion") {
+        Some(Json::Object(o)) => o
+        _ => Map([])
+      }
+      let task_id = match sug.get("task_id") {
+        Some(Json::String(id)) => id
+        _ => ""
+      }
+      if task_id == "" {
+        return Ok(
+          @mcp.ToolResult::text(
+            Json::object({
+              "dispatched": Json::boolean(false),
+              "task_id": Json::string(""),
+              "assignee": Json::string(agent),
+              "want": Json::string(want),
+              "note": Json::string("无可领取的推荐任务（待领取且依赖已满足集合为空）"),
+            }).stringify(),
+          ),
+        )
+      }
+      // 2. 能力路由决定派给谁（无覆盖匹配则回退 agent）
+      let load = executor_loads(engine)
+      let route = exec_reg.route_pick(want, load)
+      let best = match route.value("best") {
+        Some(Json::Object(o)) => o
+        _ => Map([])
+      }
+      let cov = jnum(Json::object(best), "coverage")
+      let best_name = jstr(Json::object(best), "name")
+      let assignee = if cov > 0.0 && best_name != "" {
+        best_name
+      } else {
+        agent
+      }
+      // 3. 认领（0 状态迁移：待领取→已领取）
+      match engine.claim(task_id~, assignee~, now=ts) {
+        Err(e) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "dispatched": Json::boolean(false),
+                "task_id": Json::string(task_id),
+                "assignee": Json::string(assignee),
+                "want": Json::string(want),
+                "note": Json::string("认领失败: " + e),
+              }).stringify(),
+            ),
+          )
+        Ok(_) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "dispatched": Json::boolean(true),
+                "task_id": Json::string(task_id),
+                "assignee": Json::string(assignee),
+                "want": Json::string(want),
+                "routed": Json::boolean(assignee != agent),
+                "route": Json::object({
+                  "best": Json::string(best_name),
+                  "coverage": Json::number(cov),
+                }),
+              }).stringify(),
+            ),
+          )
+      }
     },
   )
   s1 = instrumented_tool(
