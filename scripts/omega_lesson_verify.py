@@ -150,6 +150,13 @@ def main():
         assert any("omega.result_rejected" in g for g in goals), f"缺少 result_rejected 教训: {goals}"
         assert any("成果未达标" in n for n in notes), f"复验教训未记原因: {notes}"
         print(f"PASS 库内 [lesson] 教训 {len(lessons)} 条 → " + "; ".join(goals))
+
+        # ④ 同一进程内可见：evolve_snapshot 的 dead_ends 应如实反映自动教训（骑行 DB→内存同步）
+        snap = call(p, "evolve_snapshot")
+        dead = " ".join(snap.get("dead_ends", []))
+        assert "omega.spec_rejected" in dead, f"dead_ends 未含 spec 自动教训: {dead}"
+        assert "omega.result_rejected" in dead, f"dead_ends 未含 result 自动教训: {dead}"
+        print(f"PASS evolve_snapshot.dead_ends 进程内可见自动教训 → {len(dead)}")
         print("MCP-OMEGA-LESSON-VERIFY PASS")
     finally:
         try:
