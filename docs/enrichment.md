@@ -28,10 +28,11 @@
 
 - **已经有的不重复做**：递归拆解(plan_deep)、DAG、Omega、evolve 档案、call_log、docs_gate —— 都是已有的"轮子"，本轮不再造。
 - **本轮新增/增强**：
-  1. 项目地图入口（`docs/agent-map.md`）——解决"agent 全项目乱找"，最高性价比。
+  1. 项目地图入口（`docs/agent-map.md` + `fist://map` resource）——解决"agent 全项目乱找"，最高性价比。
   2. 脚本整洁规范（`scripts/README.md`）——让临时/正式工具可区分。
   3. 调研记档（本条 + roadmap）——供后续增强随时引用。
-- **记入后续 backlog**：`declare` 强契约、`@fs.tmpdir` 临时产物隔离、`fist://map` MCP resource。
+  4. **失败回流学习**（`evolve_lesson`）——把打回/失败原因归档成 [lesson] 资产，配合 inject 检索"踩过的坑"（已实现，2026-09-25）。
+- **记入后续 backlog**：`declare` 强契约、`@fs.tmpdir` 临时产物隔离。
 
 ## 四、来源
 - `memory/research/20260925.enrich-roadmap.md`（含全部 URL 引用）

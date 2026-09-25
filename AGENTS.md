@@ -109,7 +109,7 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**68 tools** + 3 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**69 tools** + 3 resources + 2 prompts）：
 
 ### 生命周期（12）
 | 工具 | 说明 |
@@ -162,6 +162,7 @@ You can browse and install extra skills here:
 | `memory_gc` | memory/{kind}.md 上限+软降权归档（超限把老人条目移入 memory/archive/，不硬删） |
 | `memory_link` | 在 memory/links.md 追加 A-Mem 式关联记录，供 plan/claim 前检索注入 |
 | `evolve_distill` | 自进化蒸馏：把 verify 通过的任务交付物蒸馏成 [principle] 原则写入 DGM（复用 evolve_upsert 落库） |
+| `evolve_lesson` | 失败回流学习：把被打回/失败原因归档成 [lesson] 类目资产入 DGM，供 plan/claim 的 inject 检索「踩过的坑」 |
 
 ### 审计与权限（2）
 | 工具 | 说明 |
