@@ -176,3 +176,24 @@ test "status_summary 支持 namespace 过滤：只统计该 ns" {
     _ => abort("zero total_tasks 缺失: " + zero.stringify())
   }
 }
+
+///|
+test "board_ascii 每行标注难度档（复用 extract_difficulty，支柱①+②）" {
+  let e = ba_engine()
+  let root = ba_publish(e, "看板难度根")
+  ignore(e.claim(task_id=root, assignee="leader_a", now="2026-09-25T10:01:00Z"))
+  ignore(
+    e.plan_deep(
+      task_id=root,
+      split_n=3,
+      by="leader_a",
+      gradient=true,
+      now="2026-09-25T10:02:00Z",
+    ),
+  )
+  let j = render_board_ascii(e.list_all(), "")
+  match j.value("ascii") {
+    Some(String(s)) => assert_true(s.contains("难度["))
+    _ => abort("ascii 缺失")
+  }
+}

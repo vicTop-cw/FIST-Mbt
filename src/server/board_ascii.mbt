@@ -121,7 +121,22 @@ fn append_group(
     if desc.length() > 40 {
       desc = desc.substring(start=0, end=40) + "…"
     }
-    lines.push(indent + "[" + st + "] " + short_id + " · " + desc)
+    // R55：看板每行标注自身难度档（复用 pub extract_difficulty 单一来源，支柱①②"一目了然+复用"）
+    let mut diff_note = ""
+    let raw_diff = @engine.extract_difficulty(t.get_description())
+    let diff_label = if raw_diff.contains("难") {
+      "难"
+    } else if raw_diff.contains("中") {
+      "中"
+    } else if raw_diff.contains("易") {
+      "易"
+    } else {
+      ""
+    }
+    if diff_label != "" {
+      diff_note = " 难度[" + diff_label + "]"
+    }
+    lines.push(indent + "[" + st + "] " + short_id + " · " + desc + diff_note)
   }
 }
 
