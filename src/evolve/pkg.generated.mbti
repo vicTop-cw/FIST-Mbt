@@ -10,6 +10,12 @@ pub fn analyze_candidate(String, String, String, String) -> SearchCandidate
 
 pub fn assess_portability(SearchCandidate) -> Bool
 
+pub fn critic_dup_sim() -> Double
+
+pub fn critic_most_similar(Archive, String) -> (String, String, Double)?
+
+pub fn critic_review(Archive, String, Double, threshold? : Double) -> Json
+
 pub fn distill_candidates(Array[SearchCandidate]) -> Array[SearchCandidate]
 
 pub fn evolve_lesson_persist(@store.SqliteStore?, id~ : String, String, String, String, String, score? : Double) -> Bool
