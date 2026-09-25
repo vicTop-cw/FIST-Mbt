@@ -102,6 +102,7 @@ pub fn FistEngine::executor_trust(Self) -> Map[String, Double]
 pub fn FistEngine::gate_check_record(Self, String, String, String, String) -> Result[Json, String]
 pub fn FistEngine::gate_verify_gate(Self, String) -> Result[Unit, String]
 pub fn FistEngine::get_task(Self, String) -> @core.Task?
+pub fn FistEngine::goal_drift_check(Self, String, subtask_id? : String, ns? : String) -> Json
 pub fn FistEngine::list_all(Self) -> Array[@core.Task]
 pub fn FistEngine::list_by_status(Self, @core.TaskStatus) -> Array[@core.Task]
 pub fn FistEngine::list_in_ns(Self, String) -> Array[@core.Task]

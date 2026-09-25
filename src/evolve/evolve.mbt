@@ -188,7 +188,7 @@ pub fn Archive::best(self : Archive) -> Artifact? {
 ///|
 /// 切词：去空白后按字符去重（中英文通用；中文无需空格）。
 /// 用字符集做 Jaccard，对中文句子有效（单字即 token）。
-fn tokens(s : String) -> Array[String] {
+pub fn tokens(s : String) -> Array[String] {
   let seen : Map[String, Bool] = Map([])
   let out : Array[String] = []
   for c in s.to_lower() {
@@ -210,7 +210,7 @@ fn occupied(ch : String) -> Bool {
 
 ///|
 /// 两个 token 数组的 Jaccard 相似度 |a∩b| / |a∪b|。
-fn jaccard(a : Array[String], b : Array[String]) -> Double {
+pub fn jaccard(a : Array[String], b : Array[String]) -> Double {
   if a.is_empty() && b.is_empty() {
     return 0.0
   }

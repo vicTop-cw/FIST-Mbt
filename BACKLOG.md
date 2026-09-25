@@ -2,7 +2,7 @@
 
 > 本文档为 selfdrive 审视/门禁的净拉取源：Next Tasks 应从这里取。
 > 由三份调研去重收敛生成：`memory/research/competition.md`、`memory/research/five-directions.md`、`memory/research/future-roadmap.md`。
-> 状态枚举 `pending | done`。锚点事实：**96 工具 / 277 测试**（`moon test --target js` Windows+WSL 双端全绿）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
+> 状态枚举 `pending | done`。锚点事实：**97 工具 / 280 测试**（`moon test --target js` Windows+WSL 双端全绿）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
 
 | P级 | 事项 | 来源 | 状态 | 对应review/commit |
 |-----|------|------|------|-------------------|
@@ -17,7 +17,7 @@
 | P1 | Tool Use Rubric：pipeline 生成 prompt 时注入工具使用硬规则降 tool 幻觉 | five-directions/§一 | pending | - |
 | P1 | "Did it work?" 输出验证：除"是否运行"外校验输出是否有效 | five-directions/§一 | pending | - |
 | P2 | 局部补偿替代全局 replanning：history-aware local compensation 控级联效应 | five-directions/§一 | done(saga_repair 已落地：失败步骤 + 其 depends_on 依赖闭包中 pending 下游为最小补偿切片，LIFO 补偿切片、切片外承诺 keep，无 task_id 按注册序兜底；R96 见调研档 20260926.local-compensation.md) | - |
-| P2 | 全局目标校验：每子任务完成后校验是否偏离根目标（non-redundancy） | five-directions/§一 | pending | - |
+| P2 | 全局目标校验：每子任务完成后校验是否偏离根目标（non-redundancy） | five-directions/§一 | done(goal_drift_check 已落地：drift=1-jaccard(根目标,子任务)>0.7 判 drift_suspect 附 re_anchor 提示 / 与兄弟 jaccard≥0.7 判 redundant_suspect 防重复子目标，词法纯计算复用 @evolve.tokens/jaccard 零 LLM；R100 见调研档 20260926.goal-drift-check.md) | - |
 | P2 | 集成 moonbitlang/core/quickcheck 属性测试替代部分硬编码断言 | competition/§四 P2-8 + five-directions/§六 + future-roadmap/中 | pending | - |
 | P2 | 评估 mizchi/llm 纯 MoonBit 客户端替代 Python sidecar（进一步纯化） | competition/§四 P2-9 + §六 + future-roadmap/中 | pending | - |
 | P2 | 补充 ARCHITECTURE.md（9 模块关系图 + 数据流 + MCP 协议层），降低概念门槛 | competition/§四 P2-10 + future-roadmap/中 | pending | - |

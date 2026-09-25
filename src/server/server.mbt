@@ -492,7 +492,7 @@ fn map_json() -> Json {
         "call_log/bug_list/report_bug/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide",
       ),
       "看板/脉冲/预订/推荐+DAG": Json::string(
-        "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish/slack/schedule/cost_route/mc/plan_revise + board_ascii + status_summary + reserve_scope/check/release + task_triage",
+        "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish/slack/schedule/cost_route/mc/plan_revise/goal_drift_check + board_ascii + status_summary + reserve_scope/check/release + task_triage",
       ),
       "自驱": Json::string(
         "selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks + selfdrive_pick_next + selfdrive_dispatch",
@@ -2745,6 +2745,31 @@ pub async fn run_server() -> Unit {
       Ok(
         @mcp.ToolResult::text(
           engine.plan_revise(root, feedback~, ns~).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "goal_drift_check",
+    "全局目标校验（R100，goal drift arXiv 2505.02709 / Repetitiveness Rate arXiv 2603.12710 / IntentCUA 2602.17049 / HiMAP ICML2026 蒸馏）：每子任务完成后校验是否偏离根目标（drift）或与兄弟重复（non-redundancy）——词法 Jaccard 纯计算（复用 @evolve.tokens/jaccard 单真源，零 LLM 自评）。drift=1-jaccard(根目标,子任务) >0.7 判 drift_suspect（附 re_anchor 提示：把根目标重新注入，防 context drift 渐失原始目标）；与任一兄弟 jaccard ≥0.7 判 redundant_suspect（防重复子目标/重复造轮子）。subtask_id 缺省校验根下全部后代。纯计算、只读不写库。参数：root_task_id 根任务（必填）、subtask_id 单个子任务（可选，缺省校验全部）、namespace（可选默认 default）。返回 { ok, root_task_id, basis, threshold:{drift, redundancy}, counts:{aligned, drift_suspect, redundant_suspect}, checks:[{subtask_id, drift_score, redundancy_score, verdict, re_anchor}], note }。",
+    schema(
+      {
+        "root_task_id": string_prop("根任务 id（必填）"),
+        "subtask_id": string_prop(
+          "单个子任务 id（可选，缺省校验全部后代）",
+        ),
+        "namespace": string_prop("命名空间（可选默认 default）"),
+      },
+      ["root_task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let root = get_str(args, "root_task_id")
+      let subtask = get_str(args, "subtask_id", default="")
+      Ok(
+        @mcp.ToolResult::text(
+          engine.goal_drift_check(root, subtask_id=subtask, ns~).stringify(),
         ),
       )
     },

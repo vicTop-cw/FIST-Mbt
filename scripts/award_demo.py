@@ -204,6 +204,13 @@ def main():
               f"ready={rv.get('ready_count')} "
               f"（ReAct/CoPAL：执行反馈 → keep/rework/ready 三分修订，下一步可做 "
               f"{len(rv.get('ready', []))} 条，控级联不涟漪）")
+        # R100 全局目标校验：对 ③b 拆解的根任务校验 drift/冗余（读真实描述，纯计算）
+        gd = call(p, "goal_drift_check", root_task_id=rid1)
+        assert gd.get("ok") is True, "goal_drift_check 应 ok"
+        cnt = gd.get("counts", {})
+        print(f"      ↳ R100 目标校验 goal_drift_check({rid1}) → aligned={cnt.get('aligned')} "
+              f"drift_suspect={cnt.get('drift_suspect')} redundant_suspect={cnt.get('redundant_suspect')} "
+              f"（goal drift 防偏离根目标 + non-redundancy 防重复子目标，词法 Jaccard 纯计算零 LLM）")
         tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"
