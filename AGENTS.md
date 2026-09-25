@@ -145,7 +145,7 @@ You can browse and install extra skills here:
 
 > 无人值守流水线统一元提示词模板：`templates/cron_pipeline_meta_prompt.md`（**统一版**，取代原 `watchdog_tick_meta_prompt.md`：单一提示词 + 单一定时任务，一次唤醒内四分支自决策——①心跳新鲜即退出；②心跳超时只交给 `watchdog_tick` 的 heal 分支、不自行重启；③无活跃任务且最新提示词未消费则用该提示词接一个新根任务；④无活跃任务且提示词已消费则分析项目现状生成下一份 `yyyyMMdd.HH.mm.ss.md`。含按目标项目替换的参数清单与无人值守边界说明，仅用于定时任务场景）。
 
-### DAG 依赖图（8）
+### 项目看板 / 脉冲 / 预订 + DAG（11）
 | 工具 | 说明 |
 |---|---|
 | `dag_critical_path` | 最长依赖链 |
@@ -160,7 +160,7 @@ You can browse and install extra skills here:
 | `status_summary` | 项目脉冲：{version, total_tasks, by_status, active_namespaces}，可接 namespace 过滤 |
 | `reserve_scope` / `reserve_check` / `reserve_release` | 作用域预订（拿来主义：Interlinked 文件预订 → 多 agent 并发编辑冲突预防） |
 
-### 自我记忆与自进化（4，F/G 新增强化）
+### 自我记忆与自进化（5，F/G 新增强化）
 | 工具 | 说明 |
 |---|---|
 | `memory_consolidate` | verify 通过后把交付物收敛写回 memory/{kind}.md（checkpoint 写时刻） |
