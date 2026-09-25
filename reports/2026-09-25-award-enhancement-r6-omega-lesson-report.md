@@ -8,6 +8,8 @@
 供 plan/claim 的 inject 与 dead_ends 检索"踩过的坑"——把"会犯错"从黑盒变成可演绎的护城河。
 测试 **200/200** 全绿，E2E `omega_lesson_verify.py` PASS，已推送 `c741150`。
 
+> 补：**闭环修正**——第 6 轮自动回流仅落 DB（engine 侧），而 `inject`/`dead_ends`/`evolve_snapshot` 只读内存 `evolve_arc`，同进程内不可见。已加 server 私有 `sync_db_lessons` 把 DB `[lesson]` 经 `Artifact::from_json`+`Archive::add` 回灌进内存 arc（幂等），并钩到 `inject` 入口与 `evolve_snapshot`；wbtest + E2E 断言 dead_ends 进程内可见。测试 → **201/201**。
+
 ## 关键改动
 - `src/engine/evolve_auto_wire.mbt`（新）：`FistEngine::omega_auto_lesson`——打回即落 [lesson]。
 - `src/engine/omega_strong.mbt`：spec_review / result_verify 打回分支 + escalate 超限升级 自动调用，返回体带 `learned_lesson`。
@@ -23,10 +25,10 @@
 代码 +481/-79；新增 1 条集成测试（199→200）；无新增依赖/MCP 工具。
 
 ## 任务分配记录
-引擎行为增强 + 单测 + E2E 证据脚本 + 文档同步（README/AGENTS/ARCHITECTURE/deliverable/申报书 199→200）。
+引擎行为增强 + 单测 + E2E 证据脚本 + 文档同步（README/AGENTS/ARCHITECTURE/deliverable/申报书 199→201）。
 
 ## 遗留风险
-- evolve_artifacts 落库走 `engine.store`（根库），`store_open(scratch)` 仅隔离任务路由、不隔离 evolve 写入；已在 E2E 中按本脚本原因精确清理根库，产品多 ns 场景待后续如需彻底隔离再定。
+- evolve_artifacts 落库走 `engine.store`（根库），`store_open(scratch)` 仅隔离任务路由、不隔离 evolve 写入；已在 E2E 中按本脚本原因精确清理根库；进程内可见性已由 sync_db_lessons 补齐（跨进程/多 ns 彻底隔离待后续如需再定）。
 
 ## 后续建议
 - 下一候选中期项：`declare` 强契约 / `@fs.tmpdir` 系统临时目录 / 多 ns 下 evolve 写入隔离。

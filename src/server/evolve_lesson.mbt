@@ -49,3 +49,29 @@ pub fn do_evolve_lesson(
     "note": Json::string("失败教训已回流为 [lesson] 资产"),
   })
 }
+
+///|
+/// 把 SQLite 中已沉淀的 [lesson] 教训回灌进内存 Archive（幂等，按 id 去重）。
+/// 目的：Omega 打回自动回流（engine 侧仅落库）写入的教训，经此同步后在同一进程内
+/// 对立于 `evolve_snapshot`/`dead_ends`/plan·claim 的 `inject` 可见。
+/// 返回本次新同步条数。
+fn sync_db_lessons(
+  arc : @evolve.Archive,
+  store : @store.SqliteStore?,
+) -> Int {
+  let mut n = 0
+  match store {
+    None => ()
+    Some(s) =>
+      for j in s.evolve_list() {
+        let a = @evolve.Artifact::from_json(j)
+        if a.goal.has_prefix("[lesson]") {
+          if arc.get(a.id) is None {
+            @evolve.Archive::add(arc, a)
+            n = n + 1
+          }
+        }
+      }
+  }
+  n
+}

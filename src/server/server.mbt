@@ -282,8 +282,11 @@ pub fn lookup_injected_assets_in(
 }
 
 ///|
-/// 检索全局档案库资产（工具调用入口）：委托给带 arc 参数的纯函数。
+/// 检索全局档案库资产（工具调用入口）：先把 DB 中的 [lesson] 教训同步进内存档案库，
+/// 再委托给带 arc 参数的纯函数（这样 Omega 打回自动落库的教训在 plan/claim 的
+/// inject 中可见，而不仅是落库）。
 fn lookup_injected_assets(inject : String) -> Json {
+  ignore(sync_db_lessons(evolve_arc, evolve_store))
   lookup_injected_assets_in(evolve_arc, inject)
 }
 
@@ -1946,6 +1949,9 @@ pub async fn run_server() -> Unit {
     "DGM 演化·查看档案库快照（含 best/lineage/summaries/dead_ends）。参数：无。",
     schema({}, []),
     async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      // 先同步 DB 中已沉淀的 [lesson]（含 Omega 打回自动落库的）进内存档案库，
+      // 使 dead_ends 能如实反映"踩过的坑（此路不通）"。
+      ignore(sync_db_lessons(evolve_arc, evolve_store))
       let best = match @evolve.Archive::best(evolve_arc) {
         Some(a) => a.to_json()
         None => Json::null()
