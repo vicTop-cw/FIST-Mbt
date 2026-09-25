@@ -2653,6 +2653,25 @@ pub async fn run_server() -> Unit {
   )
   s1 = instrumented_tool(
     s1,
+    "project_health",
+    "项目健康卡（单次调用看全项目健康）：返回 { version, grade:empty/attention/stalled/healthy, total_tasks, in_flight(执行中+已领取+拆分中), ready(待领取), done(已完成), blocked(已暂停+已打回), reviewing(待验收), archived, blocked_tasks:[阻塞任务id] }。grade 判定：有阻塞→attention；无任务→empty；无进行无就绪→stalled；否则→healthy。参数：namespace(可选，只统计该 ns；空=全部)。",
+    schema(
+      { "namespace": string_prop("命名空间(可选，只统计该 ns)") },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace")
+      let tasks = if ns == "" {
+        engine.list_all()
+      } else {
+        engine.list_all().filter(fn(t) { t.ns == ns })
+      }
+      let j = render_project_health(tasks, "0.2.4")
+      Ok(@mcp.ToolResult::text(j.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
     "task_triage",
     "下一步该做啥（推荐式挑选 + 能力偏好路由）：对指定命名空间（namespace 缺省全量）把『待领取且依赖已满足』的任务按 能力匹配(want)→优先级(高>中>低)→重要度(高>中>低)→深度(叶可执行单元优先)→id 排出序，并给出一条 suggestion（此刻建议先领哪条及理由），供 agent 无需全量扫描。难度标签直接复用拆解时的『难度梯度 …:易/中/难』标记。参数：namespace(可选)、agent(调用方身份，可审计)、want 能力关键词(可选，命中者排头部，Marketplookup 雏形)。返回 { count, ns, agent, want, tasks:[...], suggestion? }。",
     schema(

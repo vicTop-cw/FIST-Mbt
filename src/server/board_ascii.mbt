@@ -194,3 +194,59 @@ pub fn render_status_summary(
     "active_namespaces": Json::array(active_ns.map(fn(s) { Json::string(s) })),
   })
 }
+
+///|
+/// 项目健康卡（R68）：单次调用看全项目健康，无需 list+逐条筛选。
+/// 聚合 in_flight(执行中/已领取/拆分中) / ready(待领取) / done(已完成) /
+/// blocked(已暂停/已打回) / reviewing(待验收) / archived(已归档) 六类计数，
+/// 并给一档健康等级：empty(无任务) / attention(有阻塞) / stalled(无进行无就绪) /
+/// healthy(有就绪或进行中且无阻塞)。——"agent 一眼看全项目健康"（支柱①）。
+pub fn render_project_health(
+  tasks : Array[@core.Task],
+  version : String,
+) -> Json {
+  let mut in_flight = 0
+  let mut ready = 0
+  let mut done = 0
+  let mut blocked = 0
+  let mut reviewing = 0
+  let mut archived = 0
+  let blocked_ids : Array[String] = []
+  for t in tasks {
+    match t.status_to_string() {
+      "执行中" | "已领取" | "拆分中" => in_flight = in_flight + 1
+      "待领取" => ready = ready + 1
+      "已完成" => done = done + 1
+      "待验收" => reviewing = reviewing + 1
+      "已归档" => archived = archived + 1
+      "已暂停" | "已打回" =>
+        {
+          blocked = blocked + 1
+          blocked_ids.push(t.get_id())
+        }
+      _ => ()
+    }
+  }
+  let total = tasks.length()
+  let grade = if total == 0 {
+    "empty"
+  } else if blocked > 0 {
+    "attention"
+  } else if in_flight == 0 && ready == 0 {
+    "stalled"
+  } else {
+    "healthy"
+  }
+  Json::object({
+    "version": Json::string(version),
+    "grade": Json::string(grade),
+    "total_tasks": Json::number(total.to_double()),
+    "in_flight": Json::number(in_flight.to_double()),
+    "ready": Json::number(ready.to_double()),
+    "done": Json::number(done.to_double()),
+    "blocked": Json::number(blocked.to_double()),
+    "reviewing": Json::number(reviewing.to_double()),
+    "archived": Json::number(archived.to_double()),
+    "blocked_tasks": Json::array(blocked_ids.map(fn(s) { Json::string(s) })),
+  })
+}

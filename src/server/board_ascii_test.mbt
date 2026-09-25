@@ -197,3 +197,41 @@ test "board_ascii 每行标注难度档（复用 extract_difficulty，支柱①+
     _ => abort("ascii 缺失")
   }
 }
+
+///|
+test "project_health 健康卡：聚合六类计数 + 等级判定（R68）" {
+  let e = ba_engine()
+  // 空库 -> empty
+  let h0 = render_project_health(e.list_all(), "0.2.4")
+  match h0.value("grade") {
+    Some(String(g)) => assert_eq(g, "empty")
+    _ => abort("空库 grade 应 empty")
+  }
+  // 发布根 + 认领 -> 有 in_flight(+1 已领取)，root 状态已领取 -> healthy（无阻塞、有进行）
+  let root = ba_publish(e, "健康根任务")
+  ignore(e.claim(task_id=root, assignee="leader_a", now="2026-09-25T11:00:00Z"))
+  let h1 = render_project_health(e.list_all(), "0.2.4")
+  match h1.value("grade") {
+    Some(String(g)) => assert_eq(g, "healthy")
+    _ => abort("有进行应 healthy")
+  }
+  match h1.value("in_flight") {
+    Some(Number(n, ..)) => assert_true(n >= 1.0)
+    _ => abort("in_flight 缺失")
+  }
+  // 暂停 -> 计入 blocked，grade 降为 attention
+  ignore(e.pause_task(task_id=root, now="2026-09-25T11:01:00Z"))
+  let h2 = render_project_health(e.list_all(), "0.2.4")
+  match h2.value("grade") {
+    Some(String(g)) => assert_eq(g, "attention")
+    _ => abort("有阻塞应 attention")
+  }
+  match h2.value("blocked_tasks") {
+    Some(Array(a)) => assert_true(a.length() >= 1)
+    _ => abort("blocked_tasks 应含被暂停任务")
+  }
+  match h2.value("blocked") {
+    Some(Number(n, ..)) => assert_true(n >= 1.0)
+    _ => abort("blocked 计数缺失")
+  }
+}
