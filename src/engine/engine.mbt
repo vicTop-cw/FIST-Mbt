@@ -847,6 +847,7 @@ pub fn FistEngine::plan_deep(
   omega_strong_verify? : Bool = false,
   gradient? : Bool = false,
   calibrate? : Array[Double]? = None,
+  gradient_dag? : Bool = false,
 ) -> Result[Json, String] {
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
@@ -874,6 +875,7 @@ pub fn FistEngine::plan_deep(
       match
         self.decompose_rec(
           parent, slices, spec, now, omega_strong_verify, gradient, calibrate,
+          gradient_dag,
         ) {
         Err(e) => Err(e)
         Ok(tree) =>
@@ -902,6 +904,7 @@ fn FistEngine::decompose_rec(
   omega_strong_verify : Bool,
   gradient : Bool,
   calibrate : Array[Double]?,
+  gradient_dag : Bool,
 ) -> Result[Json, String] {
   // 父任务进入拆分中（宽于 Task::split：待领取/已领取/拆分中均可转入）
   match parent.mark_decomposing() {
@@ -916,6 +919,10 @@ fn FistEngine::decompose_rec(
   let spec_hash = @decompose.spec_hash_of(spec)
   let nodes : Array[Json] = []
   let mut created = 0
+  // LADDER 真实 DAG 化：gradient_dag 开启时，本层切片按"由易到难"连成前驱链，
+  // 使"先完成更简单变体再逆推本体"成为真实可领取门禁（依赖前驱完成后本片才可认领），
+  // 而非仅 description 里的提示文本。默认关闭零回归。
+  let mut prev_cid : String? = None
   for i = 0; i < slices.length(); i = i + 1 {
     let idx = i + 1
     let cid = @core.child_id(parent_id=parent.get_id(), idx~)
@@ -954,6 +961,15 @@ fn FistEngine::decompose_rec(
     } else {
       base_desc + grad_suffix
     }
+    // LADDER 真实 DAG：开启 gradient_dag 时，给非首切片挂上前一兄弟切片作依赖
+    let dag_dep : Array[String] = if gradient && gradient_dag {
+      match prev_cid {
+        Some(p) => [p]
+        None => []
+      }
+    } else {
+      []
+    }
     let child = @core.Task::new(
       id=cid,
       project_dir=parent.project_dir,
@@ -965,12 +981,16 @@ fn FistEngine::decompose_rec(
       depth=child_depth,
       split_n=if child_depth > 1 { child_depth } else { 1 },
       created_at=now,
+      depends_on=dag_dep,
     )
     match self.store.create_task(child) {
       Ok(_) => ()
       Err(e) => return Err(e)
     }
     created = created + 1
+    if gradient && gradient_dag {
+      prev_cid = Some(cid)
+    }
     // 递归下钻：仅非叶节点继续派生拆分
     let kids_arr : Array[Json] = if !child.is_leaf() {
       let next_slices = @decompose.default_slices(
@@ -980,6 +1000,7 @@ fn FistEngine::decompose_rec(
       match
         self.decompose_rec(
           child, next_slices, spec, now, omega_strong_verify, gradient, calibrate,
+          gradient_dag,
         ) {
         Ok(subtree) =>
           match subtree.value("children") {
@@ -996,6 +1017,7 @@ fn FistEngine::decompose_rec(
       ("depth", Json::number(child_depth.to_double())),
       ("leaf", Json::boolean(child.is_leaf())),
       ("spec_hash", Json::string(spec_hash)),
+      ("depends_on", Json::array(dag_dep.map(fn(s) { Json::string(s) }))),
       ("children", Json::array(kids_arr)),
     ])
     nodes.push(Json::object(node_m))

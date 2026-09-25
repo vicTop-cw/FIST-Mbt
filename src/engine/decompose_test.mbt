@@ -236,6 +236,89 @@ test "plan_deep 开启 gradient 时子任务描述带难度梯度与更简单变
 }
 
 ///|
+test "plan_deep gradient_dag 把更简单变体落成真实 DAG 前驱链；默认关闭零回归" {
+  let e = dp_new_engine()
+  // 控制组：仅 gradient=true 不传 gradient_dag，兄弟切片 depends_on 全空（零回归）
+  let cid = dp_publish(e, desc="gradient-only 根")
+  match
+    e.plan_deep(
+      task_id=cid,
+      split_n=3,
+      by="leader_a",
+      gradient=true,
+      now="2026-09-05T10:03:00Z",
+    ) {
+    Err(m) => abort("gradient-only plan_deep failed: \{m}")
+    Ok(_) => {
+      let kids = e.children_of(cid)
+      for k in kids {
+        assert_eq(k.depends_on.is_empty(), true)
+      }
+    }
+  }
+  // 实验组：gradient_dag=true → 兄弟切片由易到难连成前驱链
+  let did = dp_publish(e, desc="gradient-dag 根")
+  match
+    e.plan_deep(
+      task_id=did,
+      split_n=3,
+      by="leader_a",
+      gradient=true,
+      gradient_dag=true,
+      now="2026-09-05T10:04:00Z",
+    ) {
+    Err(m) => abort("gradient_dag plan_deep failed: \{m}")
+    Ok(tree) => {
+      // 返回树顶层三兄弟：首个无依赖，后续各依赖前一兄弟
+      match tree.value("tree") {
+        None => abort("tree missing")
+        Some(root_tree) =>
+          match root_tree.value("children") {
+            None => abort("children missing")
+            Some(Array(cs)) => {
+              for j = 0; j < cs.length(); j = j + 1 {
+                let dep = match cs[j].value("depends_on") {
+                  Some(Array(a)) => a
+                  _ => []
+                }
+                if j == 0 {
+                  assert_eq(dep.is_empty(), true)
+                } else {
+                  let prev_id = match cs[j - 1].value("id") {
+                    Some(Json::String(s)) => s
+                    _ => ""
+                  }
+                  // 依赖恰为前一兄弟 id
+                  let has_prev = match dep[0] {
+                    Json::String(s) => s == prev_id
+                    _ => false
+                  }
+                  assert_eq(has_prev, true)
+                  assert_eq(dep.length(), 1)
+                }
+              }
+            }
+            _ => abort("children not array")
+          }
+      }
+      // 落库后 children_of 也能读到真实 depends_on
+      let kids = e.children_of(did)
+      for j = 0; j < kids.length(); j = j + 1 {
+        if j == 0 {
+          assert_eq(kids[j].depends_on.is_empty(), true)
+        } else {
+          assert_eq(
+            kids[j].depends_on.length() == 1 &&
+            kids[j].depends_on[0] == kids[j - 1].id,
+            true,
+          )
+        }
+      }
+    }
+  }
+}
+
+///|
 test "plan_deep 难度校准：gradient+calibrate 用真实难度覆盖位置档，长度不匹配时回退" {
   let e = dp_new_engine()
   let id = dp_publish(e)
