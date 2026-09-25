@@ -1126,6 +1126,104 @@ pub fn FistEngine::topo_sort(
 }
 
 ///|
+/// 在 Char 数组中寻找任一子串起始下标（找不到返回 -1）。
+fn find_sub_chars(hay : Array[Char], needle : Array[Char]) -> Int {
+  if needle.length() == 0 {
+    return 0
+  }
+  let mut i = 0
+  while i + needle.length() <= hay.length() {
+    let mut j = 0
+    while j < needle.length() && hay[i + j] == needle[j] {
+      j = j + 1
+    }
+    if j == needle.length() {
+      return i
+    }
+    i = i + 1
+  }
+  -1
+}
+
+///|
+/// 从任务描述中抽取 LADDER 难度档（`[难度梯度 idx/n:档]` 中档位子串），无则返回空串。
+fn extract_difficulty(desc : String) -> String {
+  let tag = "[难度梯度 "
+  let cs = desc.to_array()
+  let p = find_sub_chars(cs, tag.to_array())
+  if p < 0 {
+    return ""
+  }
+  // 定位 tag 后的 ':' 与最终 ']'，取出中间档位文本
+  var colon = -1
+  var i = p + tag.length()
+  while i < cs.length() {
+    if cs[i] == ':' {
+      colon = i
+      break
+    }
+    i = i + 1
+  }
+  if colon < 0 {
+    return ""
+  }
+  var out = ""
+  var j = colon + 1
+  while j < cs.length() && cs[j] != ']' {
+    out = out + cs[j].to_string()
+    j = j + 1
+  }
+  out
+}
+
+///|
+/// 生成整棵拆解子树的「执行计划」视图：收集根任务全部后代（BFS），按 DAG
+/// `depends_on` 拓扑排序，输出一张扁平、按依赖可安全执行的清单（每条含
+/// id/depth/难度档/依赖/状态）。供 agent 拆解后拿到即可照单执行——"一张计划、
+/// 一目了然"，而非再全库去翻。纯读、无副作用。
+pub fn FistEngine::plan_exec_order(self : FistEngine, root_id : String) -> Json {
+  let all_ids : Array[String] = []
+  let mut frontier : Array[String] = self.children_of(root_id).map(
+    fn(t) { t.get_id() },
+  )
+  while not(frontier.is_empty()) {
+    let next : Array[String] = []
+    for id in frontier {
+      all_ids.push(id)
+      for c in self.children_of(id) {
+        next.push(c.get_id())
+      }
+    }
+    frontier = next
+  }
+  // 拓扑序执行（依赖先完成），体现"先易后逆推"的顺序保证
+  let order = self.topo_sort(all_ids)
+  let plan : Array[Json] = []
+  for id in order {
+    match self.get_task(id) {
+      Some(t) =>
+        plan.push(
+          Json::object({
+            "id": Json::string(t.get_id()),
+            "depth": Json::number(t.get_depth().to_double()),
+            "difficulty": Json::string(extract_difficulty(t.description)),
+            "depends_on": Json::array(
+              t.depends_on.map(fn(s) { Json::string(s) }),
+            ),
+            "status": Json::string(t.get_status().to_string()),
+          }),
+        )
+      None => ()
+    }
+  }
+  Json::object({
+    "task_id": Json::string(root_id),
+    "count": Json::number(plan.length().to_double()),
+    "order": Json::array(plan),
+  })
+}
+
+///|
 /// 获取当前命名空间内所有 Pending 且依赖满足、可领取的任务
 pub fn FistEngine::ready_tasks(
   self : FistEngine,
