@@ -11,7 +11,7 @@
 ## 2. 规模与测试可复现
 - **工具链已升级至评选会同要求的版本**：`moonc / core = v0.10.14+`（moon 0.1.20260920）；async 0.22.3、x 0.5.5 已解锁升级，js 全绿无回归；修复 moonc0.10.14 的 JS ESM/`mizchi:sqlite` require 回归（`scripts/patch_esm_main.py` 注入 shim，mcp_smoke 自动调用）。
 - **67 个 MCP 工具**（64 核心 + call_log/report_bug/bug_list + atgc_compile/run/talk）+ 2 Resources + 2 Prompts；`moon check` 0 错误。
-- **184 项测试用例 js 全绿**（本人已实跑 `moon test --target js` → 184/184）；JS 与 Native 双后端；CI 三轨道绿色徽章（native 以 CI/ubuntu 为准）。
+- **191 项测试用例 js 全绿**（本人已实跑 `moon test --target js` → 191/191，含新增 atgc 极简库测试）；JS 与 Native 双后端；CI 三轨道绿色徽章（native 以 CI/ubuntu 为准）。
 - 30 秒一键演示 `scripts/demo.ps1` 实测 PASS（拉起 MCP server，tools/list 67 工具 + publish + get 状态断言）。
 - **视觉终端巡演 `scripts/showcase.ps1` 实测 PASS**：ANSI 彩色 + box-drawing 渲染「九态生命周期状态机 / DAG 依赖树 / 自举采用证据」，一屏讲清全项目（非脚本断言，是真视觉层）。
 - 一把自检 `scripts/mcp_smoke.py` 实测 PASS：断言 67 工具、发布命中 task_id、get 命中且状态待领取。
@@ -32,6 +32,7 @@
 - **自搜索**：self_search.mbt 注入式外部搜索 + 候选分析/判重/可移植评估。
 - **调用日志 + bug 上报修复闭环**：call_log 表全工具自动埋点(ts/tool/caller/ns/入参/结果/耗时/ok)；report_bug/bug_list 上报运行时 bug 落 memory/bugs.md，publish_task=true 时发 self-drive 修复任务，形成「发现→上报→自驱认领修复→verify」闭环。
 - **ATGC 双链虚拟机（内嵌叙事对话子项目，纯 MoonBit）**：四进制 DNA 编程语言 + 栈机；atgc/ 包含 base(ATGC↔四进制/reverse_complement 对合 32 对无自反)、codon(64 密码子→Op)、lexer(语境二分)、transpile(MODE_A/B/C)、vm(栈机+快照回滚，除零/下溢不崩溃)、talk(叙事对话)。工具：atgc_compile/atgc_run/atgc_talk；§10 验算 1+2+2=5、(1+2)×3=9 全过；以"转录→翻译→酶执行"的生物学叙事呈现，全程 MoonBit 实现。
+- **atgc 极小库经 fist-mbt 自驱+Omega 强验证管线开发，atgc-old 为全量参照**（能力演示见 `docs/atgc-selfdrive-demo.md`）。
 
 ## 5. 发布前质量硬化（评审通过）
 - 用 open-code-review（官方 code-review 引擎）对全套脚本/CI/githooks/gitignore 审查并修复 40 项问题：HTTP 并发串线竞态修复、cron stderr 管道死锁、客户端/服务端 timeout 错位对齐、非原子状态写改 tmp+replace、CI 最小权限 / checkout 钉 commit SHA / concurrency / timeout-minutes / 工具链 cache、pre-commit set -e。
