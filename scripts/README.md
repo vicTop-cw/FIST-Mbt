@@ -21,7 +21,7 @@
 ## 现有正式工具速查
 
 **基础 / 演示**
-- `mcp_smoke.py` — MCP server 一键自检（83 工具 + publish/get 链路）。
+- `mcp_smoke.py` — MCP server 一键自检（84 工具 + publish/get 链路）。
 - `award_demo.py` — **获奖自驱 DEMO（评审一条命令演示）**：串演 map→递归拆解(gradient)→验收闭环→Challenger→Critic→作用域预订→脉冲/看板 全链路，结尾自动清理临时区并 `--check` 守卫仓库干净。用法：`python scripts/award_demo.py`。
 - `cleanup_artifacts.py` — **项目整洁/生成物清理**：删除仓库根"除交付库 `fist-mbt.db` 外"的全部被 gitignore 的 `*.db / -shm / -wal` 测试/演示残留，清空 `temp/`，并把 `scripts/` 下 `_` 前缀临时脚本移入 temp/ 后清理（任务完即清策略，R66）；`--check` 模式作 CI 干净度守卫（0 = 干净，非 0 退出码 1）。用法：`python scripts/cleanup_artifacts.py` / `python scripts/cleanup_artifacts.py --check`。
 - `score_gate.py` + `scoring_rubric.md` — **4-AI 概率自评分门禁**：统一 rubric 提示词（维度/稍宽口径/SCORE_JSON 契约）作为正式工具统一管理（原 `_ai_prompt.md` 从临时命名升级）；全档达标 AND 聚合、error 不降级。
@@ -52,9 +52,9 @@
 - `scratch_verify.py` — `store_open(scratch)` 临时隔离 E2E。
 - `omega_lesson_verify.py` — **Omega 打回自动落 [lesson] + 进程内可见** E2E（三类打回自动沉淀 + scratch 隔离 + 结束精确清理根库）。
 - `plan_gradient_verify.py` — `task_plan_deep gradient=true` 难度梯度 + 更简单变体 E2E（默认关闭零回归 + scratch 隔离）。
-- `evolve_critic_verify.py` — `evolve_critic` Critic 防漂移门禁 E2E（83 工具 + 放行/拒收/收紧阈值 + 只评审不写库）。
-- `task_challenge_verify.py` — `task_challenge` Challenger 进阶变体 E2E（83 工具 + [challenge]溯源/扩规模 + 未完成任务拒绝 + scratch 隔离）。
-- `executor_route_verify.py` — **执行者能力路由（Marketplace 雏形）E2E**：`executor_register` 登记能力 + `executor_route` 按「能力覆盖率 desc → 负载 asc」路由最佳执行者（83 工具）；R31 跨进程三步：进程A注册→进程B路由读到→clear 消失。
+- `evolve_critic_verify.py` — `evolve_critic` Critic 防漂移门禁 E2E（84 工具 + 放行/拒收/收紧阈值 + 只评审不写库）。
+- `task_challenge_verify.py` — `task_challenge` Challenger 进阶变体 E2E（84 工具 + [challenge]溯源/扩规模 + 未完成任务拒绝 + scratch 隔离）。
+- `executor_route_verify.py` — **执行者能力路由（Marketplace 雏形）E2E**：`executor_register` 登记能力 + `executor_route` 按「能力覆盖率 desc → 负载 asc」路由最佳执行者（84 工具）；R31 跨进程三步：进程A注册→进程B路由读到→clear 消失。
 - `dispatch_verify.py` — **能力自动派单（R32）E2E**：`selfdrive_dispatch` 按 want 能力路由并把任务直接认领给最佳执行者（待领取→已领取）；运行后会向交付库写演示任务，完成即 `git checkout -- fist-mbt.db` 恢复整洁。
 - `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
 
