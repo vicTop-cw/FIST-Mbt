@@ -22,13 +22,13 @@
 | `evolve` | DGM 自进化档案库：Archive/Artifact/sample_parent/查重/新颖度/谱线 | `evolve.mbt` `scoring.mbt` `self_search.mbt` |
 | `omega` | Ω-check：项目结构/回传五段式校验、spec 解析/批量校验 | `check.mbt` |
 | `ops` | 运维：心跳/看门狗/google 调度 | `ops_watchdog.mbt` 等 |
-| `server` | MCP 层：83 个工具+3 resources+2 prompts 注册、call_log 注入、Laya/evolve MCP 封装 | `server.mbt` `laya_js.mbt` `evolve_distill.mbt` `evolve_lesson.mbt` |
+| `server` | MCP 层：87 个工具+3 resources+2 prompts 注册、call_log 注入、Laya/evolve MCP 封装 | `server.mbt` `laya_js.mbt` `evolve_distill.mbt` `evolve_lesson.mbt` |
 | `decompose` | 递归拆解规格 | — |
 | `executor` | 执行器抽象 + 能力注册表 + 能力路由（Marketplace 雏形，R30/R31）+ store 持久化 | `registry.mbt` `base.mbt` |
 | `atgc-old` | 旧 ATGC 叙事子项目（保留全量） | — |
 | `atgc` | 极简双链虚拟机（能力演示） | — |
 
-## 三、MCP 工具分组概览（83 个）
+## 三、MCP 工具分组概览（87 个）
 
 | 组 | 工具 |
 |---|---|
