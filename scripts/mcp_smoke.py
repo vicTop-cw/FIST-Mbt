@@ -8,7 +8,7 @@ scripts/mcp_smoke.py — FIST-Mbt 一键自检（评审/自驱 10 秒验证 MCP 
 
 行为：
     1) 拉起 `node _build/js/.../cmd/main/main.js`（MCP server, STDIO）
-    2) tools/list            → 断言含 publish 等 71 个工具
+    2) tools/list            → 断言含 publish 等 72 个工具
     3) publish_parallel      → 发布一个任务，断言拿到 task_id
     4) get                   → 按 task_id 查回，断言命中且状态为待领取
     全部通过打印 `MCP-SMOKE PASS`，退出码 0；任一步失败打印 FAIL，退出码 1。
@@ -88,7 +88,7 @@ def main():
         # Step 1 · tools/list
         r = rpc(proc, "tools/list")
         tools = [t["name"] for t in r.get("result", {}).get("tools", [])]
-        expected = 71
+        expected = 72
         if len(tools) != expected or "publish" not in tools:
             fail(f"tools/list 异常（共 {len(tools)} 个工具，期望 {expected}，缺 publish）")
         print(f"PASS tools/list → {len(tools)} 个工具（含 publish/selfdrive_publish_next 等）")

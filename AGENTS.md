@@ -95,7 +95,7 @@ You can browse and install extra skills here:
 
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
 > Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
-> **JS 与 Native 双后端均已在 Windows + WSL(Linux) 通过 203/203 测试。**
+> **JS 与 Native 双后端均已在 Windows + WSL(Linux) 通过 204/204 测试。**
 
 `src/store/store_sqlite.mbt` 依赖 `mizchi/sqlite`（native stub），其 `stub.c` 用尖括号 `#include <sqlite3.h>` 并 `#pragma comment(lib, "sqlite3.lib")` 链接系统 SQLite。
 
@@ -105,11 +105,11 @@ You can browse and install extra skills here:
   2. 编译/链接前在**同一会话**加载 `Enter-VsDevShell`（VS Build Tools）并追加 `INCLUDE`/`LIB` 指向该目录（注册表 User 级环境变量会被 moon 自发现的 MSVC 环境覆盖，不生效）；
   3. 之后 `moon test --target native` 即可通过。缺失时 `stub.c` 报 `fatal error C1083: 无法打开包括文件 "sqlite3.h"` / `LNK1104: sqlite3.lib`。
   一键装载上述环境（自动探测 VS + sqlite-dev）：`pwsh ./scripts/native-env.ps1`；
-  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（稳定 203/203），见 README「已知边界」。
+  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（稳定 204/204），见 README「已知边界」。
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**71 tools** + 3 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**72 tools** + 3 resources + 2 prompts）：
 
 ### 生命周期（12）
 | 工具 | 说明 |

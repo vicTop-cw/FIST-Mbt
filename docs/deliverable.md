@@ -8,14 +8,14 @@
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
 moon build --target js cmd/main
 python scripts/mcp_smoke.py
-# 期望输出：PASS tools/list → 71 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
+# 期望输出：PASS tools/list → 72 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
 ```
 
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **71**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 203/203**（Windows + WSL(Linux) 双端实测全绿） |
+| MCP 工具 | **72**（+ 3 resources + 2 prompts） |
+| 测试 | **`moon test --target js` 204/204**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -38,6 +38,9 @@ python scripts/mcp_smoke.py
 | 4 双端复现 | WSL 199/199 复核 | —（实机） |
 | 5 临时隔离 | `store_open(scratch)` | `scratch_verify.py` |
 | 6 回流闭环演示 | lesson 归档→dead_ends 可见 | `lesson_chain_selfdrive.py` |
+| 7 Omega自动落lesson | auto-lesson + 进程内可见 | `omega_lesson_verify.py` |
+| 8 看板 | `board_ascii` 实时任务看板 | `board_ascii_test.mbt` |
+| 9 脉冲 | `status_summary` + fix `fist://overview`(version/9态) | 单测 + E2E |
 
 ## 五、文档即实现
 - 工具/资源/测试数均与实测一致（README/AGENTS/ARCHITECTURE/agent-map 已同步）。

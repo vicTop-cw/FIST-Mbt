@@ -380,19 +380,19 @@ fn overview_json() -> Json {
   let tasks = engine.list_all()
   let m : Map[String, Json] = Map([
     ("product", Json::string("FIST-Mbt")),
-    ("version", Json::string("0.1.0")),
+    ("version", Json::string("0.2.4")),
     ("principles", Json::number(7.0)),
     (
       "statuses",
       Json::string(
-        "待领取/已领取/拆分中/执行中/待验收/已完成/已归档",
+        "待领取/已领取/拆分中/执行中/待验收/已打回/已完成/已暂停/已归档",
       ),
     ),
   ])
   let counts : Map[String, Json] = Map([])
   let status_names = [
-    "待领取", "已领取", "拆分中", "执行中", "待验收", "已完成",
-    "已归档",
+    "待领取", "已领取", "拆分中", "执行中", "待验收", "已打回", "已完成",
+    "已暂停", "已归档",
   ]
   for s in status_names {
     counts.set(
@@ -2415,6 +2415,16 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace")
       let board = render_board_ascii(engine.list_all(), ns)
       Ok(@mcp.ToolResult::text(board.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "status_summary",
+    "项目脉冲摘要：返回 { version, total_tasks, by_status:{状态:数量}, active_namespaces }，agent 一次调用概览项目健康。参数：无。",
+    schema({}, []),
+    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let j = render_status_summary(engine.list_all(), mstore.ns_list(), "0.2.4")
+      Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
   s1 = instrumented_tool(
