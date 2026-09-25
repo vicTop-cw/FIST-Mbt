@@ -142,6 +142,21 @@ fn jnum(j : Json, key : String) -> Double {
 }
 
 ///|
+/// 任务→所需能力自动抽取（R33）：扫任务描述里出现的「已注册执行者能力标签」，
+/// 取最长命中的那个作 need（最具体）。没命中返回空串（调用方回退 agent / 空 want）。
+fn auto_need(desc : String) -> String {
+  let mut best = ""
+  for name in exec_reg.list() {
+    for a in exec_reg.abilities_of(name) {
+      if a != "" && desc.contains(a) && a.length() > best.length() {
+        best = a
+      }
+    }
+  }
+  best
+}
+
+///|
 /// 把毫秒级 Unix 时间转换为 UTC 时刻两项补齐
 fn _pad2(n : Int) -> String {
   let s = n.to_string()
@@ -2742,7 +2757,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "selfdrive_dispatch",
-    "Marketplace·能力路由自动派单（R32，把 R30/R31 的'路由推荐'落到动作）：先 `task_triage` 取顶部可领取任务，再按 `want` 所需能力经 `executor_route` 找最佳执行者（能力覆盖率 desc → 负载 asc），并把该任务**直接认领给该执行者**（待领取→已领取）。无匹配执行者时回退认领给 `agent`。让'按专长+负载分配'不再只是建议，而是系统自动派单。参数：namespace(可选)、agent(默认 self，回退认领者)、want 所需能力关键词(可选)、now。返回 {dispatched, task_id, assignee, want, route?}。",
+    "Marketplace·能力路由自动派单（R32/R33，把 R30/R31 的'路由推荐'落到动作）：先 `task_triage` 取顶部可领取任务，确定所需能力——显式 `want` 优先，否则**从任务描述自动抽取**已注册执行者的能力标签（R33 免手传）——经 `executor_route` 找最佳执行者（能力覆盖率 desc → 负载 asc），并把该任务**直接认领给该执行者**（待领取→已领取）。无匹配执行者时回退认领给 `agent`。让'按专长+负载分配'不再只是建议，而是系统自动派单。参数：namespace(可选)、agent(默认 self，回退认领者)、want 所需能力关键词(可选)、now。返回 {dispatched, task_id, assignee, want, need_auto, route?}。",
     schema(
       {
         "namespace": string_prop("命名空间(可选，空=全部)"),
@@ -2781,9 +2796,18 @@ pub async fn run_server() -> Unit {
           ),
         )
       }
-      // 2. 能力路由决定派给谁（无覆盖匹配则回退 agent）
+      // 2. 能力决定派给谁：显式 want 优先，否则从任务描述自动抽取所需能力（R33 免手传）
+      let desc = match engine.get_task(task_id) {
+        Some(t) => t.get_description()
+        None => ""
+      }
+      let need = if want != "" {
+        want
+      } else {
+        auto_need(desc)
+      }
       let load = executor_loads(engine)
-      let route = exec_reg.route_pick(want, load)
+      let route = exec_reg.route_pick(need, load)
       let best = match route.value("best") {
         Some(Json::Object(o)) => o
         _ => Map([])
@@ -2804,7 +2828,7 @@ pub async fn run_server() -> Unit {
                 "dispatched": Json::boolean(false),
                 "task_id": Json::string(task_id),
                 "assignee": Json::string(assignee),
-                "want": Json::string(want),
+                "want": Json::string(need),
                 "note": Json::string("认领失败: " + e),
               }).stringify(),
             ),
@@ -2816,7 +2840,8 @@ pub async fn run_server() -> Unit {
                 "dispatched": Json::boolean(true),
                 "task_id": Json::string(task_id),
                 "assignee": Json::string(assignee),
-                "want": Json::string(want),
+                "want": Json::string(need),
+                "need_auto": Json::boolean(want == "" && need != ""),
                 "routed": Json::boolean(assignee != agent),
                 "route": Json::object({
                   "best": Json::string(best_name),
