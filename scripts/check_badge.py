@@ -33,6 +33,14 @@ def parse_readme_badge(readme_text):
     return int(m.group(1)), int(m.group(2))
 
 
+def parse_readme_selfcheck_count(readme_text):
+    """解析 README「一键完整自检」块注释里的 `Total tests: N, passed: N`（R50 校准项）-> N；找不到返回 None。"""
+    m = re.search(r"#\s*→\s*Total tests:\s*(\d+),\s*passed:\s*(\d+)", readme_text)
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
 def main():
     if len(sys.argv) != 3:
         raise SystemExit("用法: python scripts/check_badge.py <moon_test_log> <README.md>")
@@ -58,6 +66,18 @@ def main():
             f"请用 `moon test --target js -j 1` 实测后同步（工具数/测试数/徽章全量对齐）。"
         )
     print(f"PASS 徽章一致：README tests-{n}%2F{d} == 实测 {total}/{total}")
+
+    # R50/R52：README「一键完整自检（评审用）」注释里的 Total tests 也须与实测一致，
+    # 否则评审照命令运行时"注释写 N/实测 M"矛盾。
+    sc = parse_readme_selfcheck_count(readme_text)
+    if sc is None:
+        raise SystemExit("FATAL: README 未找到『一键完整自检』里的 'Total tests: N, passed: N' 注释")
+    sn, sp = sc
+    if sn != total or sp != total:
+        raise SystemExit(
+            f"SELFCHECK-STALE: README 自检注释 Total tests {sn}/{sp} ≠ 实测 {total}/{total}。请同步。"
+        )
+    print(f"PASS 自检注释一致：README 『→ Total tests: {sn}, passed: {sp}』 == 实测 {total}")
 
 
 if __name__ == "__main__":
