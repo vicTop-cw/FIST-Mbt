@@ -1,6 +1,5 @@
 import {
   "vicTop-cw/fist-mbt/src/core",
-  "vicTop-cw/fist-mbt/src/store",
   "vicTop-cw/fist-mbt/src/engine",
 }
 
