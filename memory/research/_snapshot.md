@@ -1,51 +1,30 @@
-# fist-mbt 参赛证据快照（2026-09-24 第4波后 · 工具链0.10.14+ · ATGC 子项目 · 目标提档 70/85/97）
+# fist-mbt 证据快照 · 2026-09-26（本轮门禁打分唯一事实依据）
 
-> 本快照为 4-AI 概率门禁的唯一事实依据。只含可核实事实，不含自吹。
-> 评审口径：某一证据可用「事实 + 合理外推」支撑即给分（稍宽一档）。
+> 生成方式：实测命令输出 + 仓库现状（git log / moon test / 守卫脚本），无虚构。
 
-## 1. 项目身份与发布状态
-- 纯 MoonBit 实现的 MCP Server：把多智能体任务编排框架「FIST 指挥官任务分配体系」从 Python 原生重写为 MoonBit，未搬运 Python 代码，许可证 Apache-2.0。
-- **已发布至 mooncakes 生态**：`vicTop-cw/fist-mbt@0.2.4`（`moon publish` 返回 200 OK；首跑 409 版本重复后换新版本成功）。
-- GitHub 公开仓库 `github.com/vicTop-cw/FIST-Mbt`，含 15+ 实质 commits，README 顶部带实时 CI 徽章（js/ubuntu、native/ubuntu、js/windows 三轨道绿色）。
+## 一、项目一句话
+纯 MoonBit 实现的 FIST 指挥官任务分配体系，同时作为 MCP Server 暴露给 AI 客户端（83 个 MCP 工具 + 3 resources + 2 prompts）——「人类指挥、AI/定时器持续自推动」的自治任务编排底座。
 
-## 2. 规模与测试可复现
-- **工具链已升级至评选会同要求的版本**：`moonc / core = v0.10.14+`（moon 0.1.20260920）；async 0.22.3、x 0.5.5 已解锁升级，js 全绿无回归；修复 moonc0.10.14 的 JS ESM/`mizchi:sqlite` require 回归（`scripts/patch_esm_main.py` 注入 shim，mcp_smoke 自动调用）。
-- **67 个 MCP 工具**（64 核心 + call_log/report_bug/bug_list + atgc_compile/run/talk）+ 2 Resources + 2 Prompts；`moon check` 0 错误。
-- **191 项测试用例 js 全绿**（本人已实跑 `moon test --target js` → 191/191，含新增 atgc 极简库测试）；JS 与 Native 双后端；CI 三轨道绿色徽章（native 以 CI/ubuntu 为准）。
-- 30 秒一键演示 `scripts/demo.ps1` 实测 PASS（拉起 MCP server，tools/list 67 工具 + publish + get 状态断言）。
-- **视觉终端巡演 `scripts/showcase.ps1` 实测 PASS**：ANSI 彩色 + box-drawing 渲染「九态生命周期状态机 / DAG 依赖树 / 自举采用证据」，一屏讲清全项目（非脚本断言，是真视觉层）。
-- 一把自检 `scripts/mcp_smoke.py` 实测 PASS：断言 67 工具、发布命中 task_id、get 命中且状态待领取。
+## 二、硬指标（快照）
+- MCP 工具：**83**（+3 resources +2 prompts），由 `scripts/check_tools_sync.py` 以 server.mbt 实际注册名为单一真源校验，与 AGENTS/README/deliverable/scoring_rubric 全对齐。
+- 测试：`moon test --target js -j 1` **240/240**（Windows + WSL(Linux) 双端实测全绿）；`check_test_sync.py --total 240` PASS（跨四文档校验总数单一真源）；`check_badge.py` 徽章 240/240 一致。
+- 工具链：moonc/core v0.10.14+（moon 0.1.20260920），评选会同要求版本；JS+Native 双目标均编译通过。
+- CI：GitHub Actions 三轨道（js ubuntu / native ubuntu / js windows）实时徽章。
+- 回归：0；本轮自治派单三连（R56 primitive / R57 watchdog 接入 / R58 want 免手传）均默认关闭零回归，既有语义不破坏。
 
-## 3. 创意 / 生态价值（差异化定位 + 自举采用证据）
-- **自举采用 / Dogfooding（罕见的真实采用证据）**：fist-mbt 用它自己的 8 个 selfdrive MCP 工具**管理自身迭代**——今日 6 轮审视纪要（memory/reviews/*.md，14:10→17:30），自举迭代 SQLite 库实存 **77 任务 / 43 执行 / 18 spec / 11 心跳**。一个 MCP 任务编排框架能证明『用它自己管理自己的开发流程』，是其生态价值最硬的外推点，同类 MCP 框架极少能展示自举可用。
-- **差异化 vs 同类**：对比 moonclaw / 官方 MCP SDK(colmugx/mcp) / posoco —— fist-mbt 不是「纯协议封装库」，而是**完整的 MCP Server + 任务编排引擎 + 生命周期状态机 + DAG + Omega 强验证 + 自我记忆/自进化 + AI 自驱式闭环**，全程纯 MoonBit，且已发布 mooncakes、有真实自举迭代记录。
+## 三、口径（全档达标 AND）
+每个 AI 需 `verdict=pass` 且 `p1≥0.70 && p2≥0.85 && p3≥0.97`；4 家全过才 PASS。目标：一等 70% / 二等 85% / 三等 97%。
 
-## 4. 核心能力（现 64 工具，全生命周期）
-- 生命周期：九态状态机 / 父任务自动上卷 / K 值递归衰减 / 非法迁移拦截 / publish_parallel 并行发布。
-- DAG 依赖图：关键路径 / 并行度 / 拓扑排序 / 依赖检查 / ASCII 可视化 / ready 列表。
-- 智能调度：L1-L4 自适应分级 / 成本档路由 / 可替换执行器抽象层。
-- Omega 强验证：spec JSON 一票否决 + 自动修复循环 + 超限转人工。
-- 运维治理：冲突检测 / 心跳上报 / 超时回滚 heal / 归档清理 / 审计日志 / 看门狗编排。
-- 多租户：命名空间隔离到独立 SQLite（WAL），惰性开/关，跨命名空间成本汇总。
-- **自我记忆与自进化**：memory_consolidate/gc/link + evolve_distill（验收通过任务蒸馏为原则）+ 可计算评分 scoring.mbt。
-- **AI 自驱式编程闭环**：selfdrive_* 8 工具（审视 → 拆解 → 发布 自收敛），MCP 端到端验证跑通。
-- **自搜索**：self_search.mbt 注入式外部搜索 + 候选分析/判重/可移植评估。
-- **调用日志 + bug 上报修复闭环**：call_log 表全工具自动埋点(ts/tool/caller/ns/入参/结果/耗时/ok)；report_bug/bug_list 上报运行时 bug 落 memory/bugs.md，publish_task=true 时发 self-drive 修复任务，形成「发现→上报→自驱认领修复→verify」闭环。
-- **ATGC 双链虚拟机（内嵌叙事对话子项目，纯 MoonBit）**：四进制 DNA 编程语言 + 栈机；atgc/ 包含 base(ATGC↔四进制/reverse_complement 对合 32 对无自反)、codon(64 密码子→Op)、lexer(语境二分)、transpile(MODE_A/B/C)、vm(栈机+快照回滚，除零/下溢不崩溃)、talk(叙事对话)。工具：atgc_compile/atgc_run/atgc_talk；§10 验算 1+2+2=5、(1+2)×3=9 全过；以"转录→翻译→酶执行"的生物学叙事呈现，全程 MoonBit 实现。
-- **atgc 极小库经 fist-mbt 自驱+Omega 强验证管线开发，atgc-old 为全量参照**（能力演示见 `docs/atgc-selfdrive-demo.md`）。
+## 四、能力清单（对评审各维度的证据）
+- **完成度（25）**：发布→认领→拆分→执行→提交→验收→归档全闭环 + 重开/归档清理；跨进程 SQLite 后端（引擎层 store-backed），js/native 双后端 240/240。
+- **技术难度（20）**：纯 MoonBit 无运行时依赖；DAG 依赖（dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish + gradient 难度梯度）；自进化（distill/lesson/critic 防漂移门禁/sample/snapshot/submit/asset_register/task_challenge）；Omega 强验证（语料门禁+成果复验，打回上限防死循环）；调用日志/缺陷上报修复闭环；审计与权限；多租户命名空间；看门狗跨进程 heal+自动续轮。
+- **创意生态（30）**：
+  - 自驱审视闭环（selfdrive_* 9 工具：init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks/pick_next）——系统自己推动自己。
+  - 拿来主义/复用（支柱②）：`fist://map` 让 agent 首读即有项目地图一目了然（支柱①）；难度抽取/pub 跨包单一来源；`dispatch_next` 复用 executor `route_pick` 单真源路由、want 免手传复用 R33 auto_need 思路且 store-backed 零 server 耦合；能力路由/执行者 Marketplace 雏形 + 看门狗自治派单零参数闭环（R56-58）。
+  - 自治闭环叙事（R56 引擎层 store-backed 派单 primitive → R57 watchdog `autodispatch` 接入 → R58 `dispatch_next` want 空自动抽取）——从 primitive 到无人值守自动派单三段全打通。
+  - 衍生纯 MoonBit 子项目 atgc（base/codon/lexer/transpile/vm/talk，§10 验算全过）与 atgc-old。
+- **美关演示（25）**：`board_ascii` 实时看板每行标难度档；`status_summary` 项目脉冲（by_status/by_difficulty）；`showcase.ps1` 视觉终端巡演（九态/DAG/自举采用/**自治派送闭环视觉段**，ANSI+box，实测 exit 0 / 1.7s 渲染，读取真实库 **548 tasks / 196 executions / 6 review 存档**）；`award_demo.py` 难度链路端到端；`demo.ps1` 30 秒演示；CI 徽章。
+- **自举采用证据（新）**：showcase 实跑读盘——548 项任务 / 196 次执行 / 6 轮子代理自审，FIST-Mbt 正用它自己管理自己的迭代（selfdrive-walkthrough.md 完整记录 6 轮自驱审视如何把自己打磨到 240/240 可交付态）——即「一项目即活证据，自己是自己的第一个执行者」。
 
-## 5. 发布前质量硬化（评审通过）
-- 用 open-code-review（官方 code-review 引擎）对全套脚本/CI/githooks/gitignore 审查并修复 40 项问题：HTTP 并发串线竞态修复、cron stderr 管道死锁、客户端/服务端 timeout 错位对齐、非原子状态写改 tmp+replace、CI 最小权限 / checkout 钉 commit SHA / concurrency / timeout-minutes / 工具链 cache、pre-commit set -e。
-- 用 ocr-local（20 条 MoonBit 专项规则 + 逐处人工判伪阳性）审查核心源码，修复系统性 `moonbit-result-discard`：`update_task/upsert_spec` 的 `ignore()` 静默吞错 13 处改为 match 传播 Err，消除状态机与 SQLite 持久化漂移；移除 core_task 死代码。抽查复核：baseline 亦复现的 Windows native 堆损坏 flake 为已知环境边界，非本次回归。
-- **live 人工代码审查修复 8 项真实 bug**（DeepSeek 207 findings 经 QClaw 甄别，2026-09-24）：omega batch_verify_fix 不再伪造修复(如实 needs_human_review)、evolve from_json 补还原 parts/children、Archive::add 先查重再累加、gate evaluator Err 短路、topo_sort 由空操作改为 Kahn 拓扑排序(新增 2 测试)、decompose_rec 传 ns、router 风险关键词 8→24+、未知 cost_tier 改 fail-closed。其中 registry Map.set「丢弃返回值」判定为**假阳性**（本工具链 `Map::set -> Unit` 原地修改，核证 `linked_hash_map.mbt:153`，并新增 `map_probe_test` 活体证实）。
-- **Tnr 深度审查(471 findings / 13 critical) 真实项批量修复**：multi_store 路径遍历(ns 白名单 sanitize)+data_dir 一致+get 缓存；stdio 协议通道纯净(stdout 不再被 println 污染)；omega_gate 结果由 exit/ok 推导(fail-closed)；now_default 改真实墙钟 UTC(civil_from_days)；mcp_delegate 文档与实现对齐；根任务 id 冲突(first_free_root_id)；store_sqlite 手写 JSON 改 Json.stringify 转义；ops_ts 月表对齐；scheduler 风险词词边界匹配；executions_upsert_test 读回验证。run_check 任意命令为**设计能力**(localhost-only 已限，文档注明)。
-- **ocr-local 再探 4 项真 bug 修复**：memory kind 路径遍历白名单校验(consolidate 拒绝/gc 回退)；memory_gc_one 写失败如实返回；**冻结时钟彻底修复**(全部工具 default 改每次调用 now_default() 实时墙钟，移除启动只捕获)；engine.execute 失败 Err 传播。
-- 新增一页《项目申报书》PDF（赛事验收必过项）与 mooncakes 包 readme（README.mbt.md，与 moon.mod readme 字段对齐）。
-
-## 6. 文档即实现 + 无硬编码 + 可复现
-- `ARCHITECTURE.md` 一页架构（9 模块关系）；`docs/evolve.md`、`docs/laya.md`、`docs/features/*`、`templates/*`、`memory/research/`（调研库，含近 3 月竞品与未来扩展）、`BACKLOG.md`（P 优先级队列）。
-- 源码无绝对路径硬编码（相对路径/环境变量），`memory/research/recent-market.md` 已收集近 3 月新增 MoonBit 项目与潜在竞品、未来扩展。
-
-## 7. 已知边界（如实）
-- Windows 本地 native 全量测试偶发 `0xc0000374`（堆损坏/竞态），为已记录的环境已知边界，js 看门禁、native 以 CI/ubuntu 为准。
-- 依赖 `moonbitlang/async@0.21.0` 暂未升 0.22.3（需要更新的 moon 工具链，属环境前置，不影响正确性——项目代码未用其 Headers/Http API）。
+## 五、近期承诺历史（git log --oneline 最近 15）
+R58 dispatch_next want 免手传；R57 watchdog autodispatch；R56 engine 派单 primitive；R55 board 难度标注；R54 移除 cmd/cli unused store；R53 复现审计；R52 check_badge 防自检陈旧；R51 看门狗派发预览；R50 评审自检注释校准；R49 文档收尾；R48 fist://map 补全；R47 测试数单一真源守卫；R46 工具清单单一真源守卫（补齐 AGENTS 29 工具）；R45 难度链路端到端；R44 status_summary by_difficulty。
