@@ -52,6 +52,7 @@ struct TriageRow {
   difficulty : String
   depth : Int
   desc : String
+  depends_on : Array[String]
 }
 
 ///|
@@ -97,6 +98,7 @@ pub fn FistEngine::triage(
       difficulty,
       depth: t.get_depth(),
       desc: truncate(t.description, 60),
+      depends_on: t.depends_on,
     })
   }
   rows.sort_by(fn(a, b) {
@@ -140,6 +142,10 @@ pub fn FistEngine::triage(
         "difficulty": Json::string(r.difficulty),
         "depth": Json::number(r.depth.to_double()),
         "desc": Json::string(r.desc),
+        // 真实 DAG 前驱（复用 R39 gradient_dag 建边）——"就绪原因"看得见
+        "depends_on": Json::array(
+          r.depends_on.map(fn(s) { Json::string(s) }),
+        ),
       }),
     )
   }
