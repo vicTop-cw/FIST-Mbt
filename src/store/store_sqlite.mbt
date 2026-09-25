@@ -639,6 +639,8 @@ impl Store for SqliteStore with fn clear(self) {
       // 与 MemoryStore 语义对齐：清空时同时清空语料 / 复验 / 升级账本
       ignore(self.ensure_specs_table())
       ignore(db.exec("DELETE FROM specs"))
+      // 作用域预订也在清空范围（防测试/scratch 预订跨次残留）
+      ignore(db.exec("DELETE FROM reservations"))
     }
   }
 }
@@ -659,13 +661,31 @@ pub fn SqliteStore::rsv_set(
       match db.prepare(sql) {
         None => Err("rsv_set prepare failed")
         Some(stmt) => {
-          ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))))
-          ignore(stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent))))
-          ignore(stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ttl_until))))
-          ignore(stmt.bind(4, @sqlite.SqlValue::Text(@encoding.encode(UTF8, created_at))))
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))),
+          )
+          ignore(
+            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent))),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, ttl_until)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              4,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, created_at)),
+            ),
+          )
           let ok = stmt.execute()
           stmt.finalize()
-          if ok { Ok("reserved") } else { Err("rsv_set execute failed") }
+          if ok {
+            Ok("reserved")
+          } else {
+            Err("rsv_set execute failed")
+          }
         }
       }
     }
@@ -674,7 +694,10 @@ pub fn SqliteStore::rsv_set(
 
 ///|
 /// SQLite 后端：查询某作用域预订。
-pub fn SqliteStore::rsv_get(self : SqliteStore, scope : String) -> (String, String, String)? {
+pub fn SqliteStore::rsv_get(
+  self : SqliteStore,
+  scope : String,
+) -> (String, String, String)? {
   match self.db {
     None => None
     Some(db) => {
@@ -682,13 +705,17 @@ pub fn SqliteStore::rsv_get(self : SqliteStore, scope : String) -> (String, Stri
       match db.prepare(sql) {
         None => None
         Some(stmt) => {
-          ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))))
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))),
+          )
           let r : (String, String, String)? = if stmt.step() {
-            Some((
-              str_from_bytes(stmt.column_text(0)),
-              str_from_bytes(stmt.column_text(1)),
-              str_from_bytes(stmt.column_text(2)),
-            ))
+            Some(
+              (
+                str_from_bytes(stmt.column_text(0)),
+                str_from_bytes(stmt.column_text(1)),
+                str_from_bytes(stmt.column_text(2)),
+              ),
+            )
           } else {
             None
           }
@@ -714,8 +741,12 @@ pub fn SqliteStore::rsv_release(
       match db.prepare(sql) {
         None => false
         Some(stmt) => {
-          ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))))
-          ignore(stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent))))
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))),
+          )
+          ignore(
+            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent))),
+          )
           let ok = stmt.execute()
           stmt.finalize()
           ok
@@ -727,7 +758,9 @@ pub fn SqliteStore::rsv_release(
 
 ///|
 /// SQLite 后端：列出全部预订。
-pub fn SqliteStore::rsv_list(self : SqliteStore) -> Array[(String, String, String)] {
+pub fn SqliteStore::rsv_list(
+  self : SqliteStore,
+) -> Array[(String, String, String)] {
   let out : Array[(String, String, String)] = []
   match self.db {
     None => out
@@ -737,11 +770,13 @@ pub fn SqliteStore::rsv_list(self : SqliteStore) -> Array[(String, String, Strin
         None => out
         Some(stmt) => {
           while stmt.step() {
-            out.push((
-              str_from_bytes(stmt.column_text(0)),
-              str_from_bytes(stmt.column_text(1)),
-              str_from_bytes(stmt.column_text(2)),
-            ))
+            out.push(
+              (
+                str_from_bytes(stmt.column_text(0)),
+                str_from_bytes(stmt.column_text(1)),
+                str_from_bytes(stmt.column_text(2)),
+              ),
+            )
           }
           stmt.finalize()
           out
