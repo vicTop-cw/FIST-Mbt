@@ -31,3 +31,7 @@ __pycache__/
 execute_cron.py
 _cron_executor.py
 _cron_query.py
+# IDE / scratch transient
+.trae/
+.office-claw/
+_cron_tmp_sends.jsonl

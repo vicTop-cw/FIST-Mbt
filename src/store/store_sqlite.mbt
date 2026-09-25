@@ -995,7 +995,7 @@ pub fn SqliteStore::write_call_log(
 }
 
 ///|
-/// 读取最近 N 条调用日志（按 seq DESC，新的在前）。
+/// 读取最近 N 条调用日志（按自增 id DESC，新的在前；seq 仅作同进程单调定位）。
 pub fn SqliteStore::recent_call_logs(
   self : SqliteStore,
   limit? : Int = 50,
@@ -1004,7 +1004,7 @@ pub fn SqliteStore::recent_call_logs(
   match self.db {
     None => out
     Some(db) => {
-      let sql = "SELECT seq, ts, tool, caller, ns, params_json, result_json, ok, runtime_ms FROM call_log ORDER BY seq DESC LIMIT ?"
+      let sql = "SELECT seq, ts, tool, caller, ns, params_json, result_json, ok, runtime_ms FROM call_log ORDER BY id DESC LIMIT ?"
       match db.prepare(sql) {
         None => out
         Some(stmt) => {

@@ -75,6 +75,7 @@ pub fn FistEngine::critical_path(Self) -> Array[String]
 pub fn FistEngine::dag_ascii(Self, ns~ : String) -> String
 pub fn FistEngine::delete_task(Self, String) -> Result[Unit, String]
 pub fn FistEngine::deps_satisfied(Self, String) -> Bool
+pub fn FistEngine::docs_verify_gate(Self, String) -> Result[Unit, String]
 pub fn FistEngine::execute(Self, task_id~ : String, deliverable~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::execute_with_meta(Self, task_id~ : String, deliverable~ : String, now~ : String, executor? : String, model? : String, tokens_in? : Int, tokens_out? : Int, cost? : Double, duration_ms? : Int, rate_limited? : Bool, failure_reason? : String) -> Result[@core.Task, String]
 pub fn FistEngine::gate_check_record(Self, String, String, String, String) -> Result[Json, String]
@@ -115,7 +116,7 @@ pub fn FistEngine::store_write_call_log(Self, ts~ : String, tool~ : String, call
 pub fn FistEngine::store_write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
 pub fn FistEngine::submit(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::topo_sort(Self, Array[String]) -> Array[String]
-pub fn FistEngine::verify(Self, task_id~ : String, verifier~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::verify(Self, task_id~ : String, verifier~ : String, now~ : String, docs_check? : Bool) -> Result[@core.Task, String]
 
 // Type aliases
 

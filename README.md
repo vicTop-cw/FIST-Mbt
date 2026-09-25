@@ -80,11 +80,11 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
 | `publish` | 发布根任务（仅 human_steward/human） | project_dir, description, created_by, namespace, now |
-| `claim` | 认领任务（待领取 → 已领取） | task_id, assignee, now |
-| `plan` | 对已认领任务拆分为子任务 | task_id, split_n, by, now |
+| `claim` | 认领任务（待领取 → 已领取）；可选 `inject`（逗号分隔档案资产关键词，命中则把 code/note 追加到返回 injected_assets） | task_id, assignee, now, inject(可选) |
+| `plan` | 对已认领任务拆分为子任务；可选 `inject`（同上注入资产） | task_id, split_n, by, now, inject(可选) |
 | `execute` | 记录执行交付物（→ 执行中） | task_id, deliverable, now |
 | `submit` | 提交验收（→ 待验收） | task_id, now |
-| `verify` | 验收通过（→ 已完成，父任务自动上卷） | task_id, verifier, now |
+| `verify` | 验收通过（→ 已完成，父任务自动上卷）；可选 `docs_check=true` 开启「文档即实现」门禁（校验 README/CHANGELOG/reports 存在性与交付物回传五段式，不达标打回） | task_id, verifier, now, docs_check(可选，默认 false) |
 | `reject` | 验收拒绝（→ 已打回） | task_id, reason, by, now |
 | `retry` | 打回后重试（→ 执行中） | task_id, now |
 | `pause` | 暂停任务（任意活跃 → 已暂停） | task_id, now |
@@ -103,7 +103,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `task_plan_deep` | AO 式递归拆解，拆出整棵多层子任务树并写库；可选开启 Omega 强验证（每轮插入语料创建/审核/成果复验） | task_id, split_n, by, spec, now, omega_strong_verify(可选，默认 false) |
+| `task_plan_deep` | AO 式递归拆解，拆出整棵多层子任务树并写库；可选 Omega 强验证（每轮插入语料创建/审核/成果复验）、`decide_*` 躬身自决选档（优先于 Laya，返回 plan_decision）、`laya_auto` 冷启动参考 | task_id, split_n, by, spec, now, omega_strong_verify(可选), decide_split_n/decide_difficulty/decide_reason/decide_by(可选), laya_auto(可选，默认 false) |
 | `conflicts_check` | claim 冲突检测（认领前检查是否已被他人/本人持有） | task_id, assignee |
 | `heartbeat` | 活动信号上报（超时静默将触发 heal 回滚） | task_id, signal, now |
 | `heal` | no_signal 看护：心跳超时静默的任务回滚为已领取待重派（内存版，人工流程） | now, timeout_sec |
@@ -210,6 +210,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 | `evolve_distill` | 自进化蒸馏（EvolveR 最小级）：把 verify 通过的任务交付物蒸馏成 principle 写入 DGM（goal 加 [principle] 前缀，复用 evolve_upsert 落库） | task_id, goal, note, score(默认1.0), now |
 | `evolve_snapshot` | 查看档案库快照（count/best/summaries/dead_ends/lineage_of_best） | 无 |
 | `evolve_sample` | 按 p∝s·h 多样性加权采样父代产物（子代越少/性能越高越可能被选） | rand(可选) |
+| `evolve_asset_register` | 注册可选外部资产（如 code-review / superpowers 类 skill 库）归档进档案库，goal 用 [asset]<来源名> 供 plan/claim 的 inject 按关键词检索 | source, note, code, score(可选), now |
 
 #### 可选项（Laya / 单根流水线）
 

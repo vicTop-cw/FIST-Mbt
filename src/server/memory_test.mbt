@@ -367,3 +367,85 @@ test "memory_12_distill_persist_sqlite" {
   assert_true(found)
   ignore(s.clear())
 }
+
+// ---------------------------------------------------------------------------
+// 用例 13：lookup_injected_assets（外库可选资产 → plan/claim 前注入检索）
+// ---------------------------------------------------------------------------
+
+///|
+test "memory_13_lookup_injected_assets_hit_and_empty" {
+  // 独立 Archive 注入两条资产，验证 lookup_injected_assets_in 按关键词子串命中
+  let arc = @evolve.Archive::new("test-inject")
+  let a1 = @evolve.Artifact::create(
+    id="asset-code-review-x",
+    parent_id=None,
+    goal="[asset]code-review 代码审查检查单",
+    note="审查提示词: 检查缺意外路径/竞态",
+    code="docs/superpowers/checklist.md",
+    score=1.0,
+    parts=Map([]),
+    created_at="2026-09-20T00:00:00Z",
+  )
+  arc.add(a1)
+  let a2 = @evolve.Artifact::create(
+    id="asset-superpowers-x",
+    parent_id=None,
+    goal="[asset]superpowers 强工作流",
+    note="拆解提示词",
+    code="vendor/superpowers",
+    score=1.0,
+    parts=Map([]),
+    created_at="2026-09-20T00:00:00Z",
+  )
+  arc.add(a2)
+  // 命中：code-review → 1 条
+  let h1 = @json.parse(
+    lookup_injected_assets_in(arc, "code-review").stringify(),
+  ) catch {
+    _ => Json::null()
+  }
+  match h1 {
+    Array(a) => assert_eq(a.length(), 1)
+    _ => abort("应命中 1 条 code-review 资产")
+  }
+  // 命中：superpowers + code-review（逗号分隔多关键词）→ 2 条
+  let h2 = @json.parse(
+    lookup_injected_assets_in(arc, "superpowers,code-review").stringify(),
+  ) catch {
+    _ => Json::null()
+  }
+  match h2 {
+    Array(a) => assert_eq(a.length(), 2)
+    _ => abort("应命中 2 条资产")
+  }
+  // 命中项含 code/note（供注入）
+  match h2 {
+    Array(a2_) =>
+      match a2_[0] {
+        Object(m) =>
+          match m.get("code") {
+            Some(String(c)) =>
+              assert_true(c.contains("checklist") || c.contains("superpowers"))
+            _ => abort("命中项应含 code")
+          }
+        _ => abort("命中项应为对象")
+      }
+    _ => abort("应命中 2 条资产")
+  }
+  // 不命中：空关键词 → 空数组
+  let e0 = @json.parse(lookup_injected_assets_in(arc, "").stringify()) catch {
+    _ => Json::null()
+  }
+  match e0 {
+    Array(a) => assert_eq(a.length(), 0)
+    _ => abort("空关键词应返回空数组")
+  }
+  // 无关词 → 空数组
+  let e1 = @json.parse(lookup_injected_assets_in(arc, "xyzzy").stringify()) catch {
+    _ => Json::null()
+  }
+  match e1 {
+    Array(a) => assert_eq(a.length(), 0)
+    _ => abort("无关词应返回空数组")
+  }
+}
