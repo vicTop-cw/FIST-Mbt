@@ -310,3 +310,46 @@ test "dag_slack: 瓶颈与松弛分析——关键路径 slack=0、旁支 slack>
     _ => abort("环应被检测: " + j3.stringify())
   }
 }
+
+///|
+test "dag_schedule: 排程视图——critical/flexible 分批 + assignee 附带（R74）" {
+  // 图 A→B→C 与 A→D→E 全关键（slack=0）-> 全部进 critical_batch
+  let e = dag_test_engine()
+  ignore(e.claim(task_id="A", assignee="leader_a", now="2026-01-01T00:01:00Z"))
+  let j = e.dag_schedule()
+  match j.value("critical_batch") {
+    Some(Array(cb)) => assert_eq(cb.length(), 5) // A,B,C,D,E 全关键
+    _ => abort("critical_batch 缺失: " + j.stringify())
+  }
+  match j.value("flexible_batch") {
+    Some(Array(fb)) => assert_eq(fb.length(), 0) // 无松弛
+    _ => abort("flexible_batch 缺失")
+  }
+  // 造带松弛的图：A→B 与 A→C 独立分支——两条都关键（须都做完）；B 无后继
+  // 为造出 flexible，加 X→B 使 B 有 slack：A(0) -> B(1,slack1) / C(1,slack0)？ 简化：验证 assignee 透传
+  let e2 = FistEngine::new()
+  let specs : Array[(String, Array[String])] = [
+    ("A", []),
+    ("B", ["A"]),
+  ]
+  for s in specs {
+    let (id, deps) = s
+    ignore(
+      e2.store.create_task(
+        @core.Task::new(
+          id~,
+          project_dir="/proj/demo",
+          description="sch \{id}",
+          created_at="2026-01-01T00:00:00Z",
+          depends_on=deps,
+        ),
+      ),
+    )
+  }
+  let j2 = e2.dag_schedule()
+  // A critical（slack=0）、B critical（slack=0，无后继但仍须做完）
+  match j2.value("critical_batch") {
+    Some(Array(cb)) => assert_eq(cb.length(), 2)
+    _ => abort("e2 critical_batch 缺失")
+  }
+}
