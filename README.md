@@ -54,6 +54,14 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 - `python scripts/mcp_smoke.py` → 自动起 server 并 verify tools/list + publish + get，打印 **`MCP-SMOKE PASS`**；
 - `moon run cmd/cli` → 打印「发布成功 / 认领成功 / 拆分成功 3 个子任务」，即环境就绪、全流程可复现。
 
+**一键完整自检（评审用，实测期望）**：
+```bash
+moon test --target js -j 1        # → Total tests: 219, passed: 219, failed: 0
+python scripts/mcp_smoke.py       # → PASS tools/list → 78 个工具 … MCP-SMOKE PASS
+python scripts/award_demo.py      # → MCP-AWARD-DEMO PASS（能力链全通，结尾自动 cleanup → CLEAN）
+```
+> 说明：`moon test` 会生成被 gitignore 的临时 `.db`（属正常），`award_demo`/`cleanup_artifacts.py` 结尾会清掉并使仓库仅剩交付库 `fist-mbt.db`（`cleanup_artifacts.py --check` 可作 CI 干净度守卫）。
+
 ### 最小调用示例（JSON-RPC over STDIO）
 
 ```json
@@ -68,7 +76,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 ## MCP 暴露面
 
-### Tools（**61 个**）
+### Tools（**78 个** · 精选概览；完整清单与分组见 [AGENTS.md](./AGENTS.md) 与 `fist://map`）
 
 > **适用范围提示**：`watchdog_tick`（定时任务看门狗编排）**推荐仅用于定时任务 / 无人值守自动化场景**，不用于人工指挥官任务分配流程（自动 heal / 自动续轮在人工流程中有害）。
 >
