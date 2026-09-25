@@ -50,6 +50,14 @@ def main():
         assert f"from {tid}" in g["description"], f"应溯源 from {tid}"
         assert "3 倍" in g["description"], f"scale 应写入 factor=3: {g['description']}"
         print(f"PASS task_challenge → new_id={new_id} 带 [challenge]/溯源/3倍")
+        # R29 防漂移门禁：critic=true 在 MCP 层接受、返回 critic/critic_status、仍能发布（空档案库放行）
+        cg = call(p, "task_challenge", task_id=tid, by="auto", strat="unhint", critic=True, now=NOW)
+        assert cg.get("critic_status") == "admitted", f"空档案库应放行: {cg.get('critic_status')}"
+        assert "critic" in cg, "应返回 critic 评审"
+        assert "critic_status" in cg, "应返回 critic_status"
+        g2 = call(p, "get", task_id=cg["new_id"])
+        assert "[challenge]" in g2["description"], "critic 门禁下仍应产出 [challenge]"
+        print(f"PASS task_challenge critic=true → critic_status={cg['critic_status']} 附评审 + [challenge] 产出（防漂移门禁）")
         # 未完成任务应拒绝
         r2 = call(p, "publish", project_dir="/proj/demo", namespace=NS, description="待挑战任务", created_by="human_steward", now=NOW)
         try:

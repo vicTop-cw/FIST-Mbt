@@ -1173,7 +1173,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "task_challenge",
-    "自进化·Challenger 进阶变体（SAGE 四专家环另一半，与 R12 梯度/R13 Critic 互补）：对一条【已完成/已归档】任务按策略发布上一档『更难变体』—新根任务带 [challenge] 标记 + from 溯源 + 重要度升一档，构成『由易到难』自推进序列，让复杂能力持续上探而非停在完成点。参数：task_id 源任务(必填，须已完成/已归档)、by 触发者(默认 auto)、factor 扩规模倍数(默认2，仅 scale 策略生效)、strat 进阶策略(默认 scale，可选 generalize/unhint/constrain/scale)、now。返回 {new_id,source,factor,strat,importance}。",
+    "自进化·Challenger 进阶变体（SAGE 四专家环另一半，与 R12 梯度/R13 Critic 互补）：对一条【已完成/已归档】任务按策略发布上一档『更难变体』—新根任务带 [challenge] 标记 + from 溯源 + 重要度升一档，构成『由易到难』自推进序列，让复杂能力持续上探而非停在完成点。可选 critic（缺省关闭零回归）：开启后对生成的挑战题先做 Critic 防漂移评审（与 evolve_critic 同一单一真源，防课程漂移/同质坍缩），当前策略漂移自动降档、全部漂移则拒发。参数：task_id 源任务(必填，须已完成/已归档)、by 触发者(默认 auto)、factor 扩规模倍数(默认2，仅 scale 策略生效)、strat 进阶策略(默认 scale，可选 generalize/unhint/constrain/scale)、critic 是否开启防漂移门禁(默认 false)、now。返回 {new_id,source,factor,strat,importance,critic,critic_status}。",
     schema(
       {
         "task_id": string_prop(
@@ -1183,6 +1183,9 @@ pub async fn run_server() -> Unit {
         "factor": int_prop("扩规模倍数(默认2，仅 scale 策略生效)"),
         "strat": string_prop(
           "进阶策略(默认 scale；generalize/unhint/constrain/scale)",
+        ),
+        "critic": bool_prop(
+          "是否开启防漂移门禁(默认 false；true 时挑战题过 Critic 评审，漂移自动降档/拒发)",
         ),
         "now": string_prop("时间戳(可选，默认内置)"),
       },
@@ -1194,7 +1197,14 @@ pub async fn run_server() -> Unit {
       let factor = get_int(args, "factor", default=2)
       let strat = get_str(args, "strat", default="scale")
       let ts = get_str(args, "now", default=now_default())
-      match engine.challenge(task_id~, by~, factor~, strat~, now=ts) {
+      let critic_on = get_bool(args, "critic", default=false)
+      // 开启门禁时，先把 DB 已沉淀 [lesson] 同步进内存档案库，再作评判（查全量判漂移，与 evolve_critic 一致）
+      if critic_on {
+        ignore(sync_db_lessons(evolve_arc, evolve_store))
+      }
+      let gated = if critic_on { Some(evolve_arc) } else { None }
+      match
+        engine.challenge(task_id~, by~, factor~, strat~, now=ts, critic=gated) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }

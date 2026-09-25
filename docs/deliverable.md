@@ -15,7 +15,7 @@ python scripts/mcp_smoke.py
 | 项 | 值 |
 |---|---|
 | MCP 工具 | **79**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 220/220**（Windows + WSL(Linux) 双端实测全绿） |
+| 测试 | **`moon test --target js` 223/223**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -29,7 +29,7 @@ python scripts/mcp_smoke.py
 6. **多租户**：命名空间物理隔离（`store_open`，`scratch` 临时区不污染根）。
 7. **项目地图**：`fist://map` resource——agent 首读即有，避免全项目乱找（docs/agent-map.md）；`board_ascii` 实时任务看板，一眼看全貌。
 
-## 四、自驱增强证据（git 4994aae → HEAD，26 轮）
+## 四、自驱增强证据（git 4994aae → HEAD，29 轮）
 | 轮 | 增强 | 验证脚本 |
 |---|---|---|
 | 1 项目地图 | `fist://map` + docs/agent-map + 调研纪要 | `map_verify.py` |
@@ -58,11 +58,15 @@ python scripts/mcp_smoke.py
 | 24 轮表对账 | deliverable 轮证据表 R1..R23 连续（修正错位/补缺/追新） | 文档核对 |
 | 25 自检门禁 | README「一键完整自检(评审用)」+ 修正 Tools(61→78) 超陈旧计数，期望逐条实跑核对 | `moon test`+`mcp_smoke`+`award_demo` |
 | 26 自驱取单 | `selfdrive_pick_next`：按 triage 能力推荐自动取走顶部并认领（待领取→已领取，无人值守按能力自推进） | `engine_triage_test.mbt` + award_demo ⑩ |
+| 27 自驱闭环演示 | award_demo ⑪ 推荐→取单→执行→验收→再推荐整圈跑通 | `award_demo.py` |
+| 28 脚本整洁 | 清临时残留(`_score_probe/_probe_result`) + rubric 正式化(`_ai_prompt→scoring_rubric`) + 陈旧计数修正（项目整洁支柱） | `git rm/mv` + `score_gate.py` py_compile |
+| 29 挑战题防漂移门禁 | `task_challenge critic=true`：挑战变体发布前过 `critic_review`（与 evolve_critic 同一单一真源），当前策略漂移自动降档、全部漂移拒发（防"由易到难"退化成同质坍缩，SAGE Critic 过滤题目 + R-Few） | `engine_challenge_test.mbt`(+3) + `task_challenge_verify.py` |
 
 ## 五、文档即实现
 - 工具/资源/测试数均与实测一致（README/AGENTS/ARCHITECTURE/agent-map 已同步）。
 - 过程日志 `memory/2026-09-25.md`；综合汇报 `reports/2026-09-25-award-enhancement-5rounds-report.md`。
-- 调研：`memory/research/20260925.enrich-roadmap.md`（Repo Map / DALIA / TURA / AgentX / MoonBit 新特性）。
+- 调研：`memory/research/20260925.enrich-roadmap.md`（Repo Map / DALIA / TURA / AgentX / MoonBit 新特性）、`memory/research/ecosystem-borrow.md`（§五 二轮调研：SAGE/R-Few/SPICE/SEP-1686/RepoMap）。
+- 遗留如实：Windows native 竞态、`node:sqlite` 实验性警告、测试落盘 `temp/`（cleanup --check 兜底）见 §六。
 
 ## 六、遗留（诚实自曝）
 - Windows native 测试偶发 `0xc0000374`（堆损坏/竞态，`-j 1` 可降但不保证消除；权威稳定门槛 = JS 后端双端 + Linux native，产品单进程不受影响，README「已知边界」）。
