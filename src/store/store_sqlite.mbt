@@ -66,6 +66,7 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     "CREATE TABLE IF NOT EXISTS call_log (id INTEGER PRIMARY KEY AUTOINCREMENT, seq INTEGER, ts TEXT, tool TEXT, caller TEXT, ns TEXT, params_json TEXT, result_json TEXT, ok INTEGER, runtime_ms INTEGER)",
     "CREATE TABLE IF NOT EXISTS reservations (scope TEXT PRIMARY KEY, agent TEXT NOT NULL DEFAULT '', ttl_until TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS executors (name TEXT PRIMARY KEY, abilities_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT '')",
+    "CREATE TABLE IF NOT EXISTS circuit_breakers (ns TEXT NOT NULL DEFAULT 'default', circuit TEXT NOT NULL DEFAULT '', state TEXT NOT NULL DEFAULT 'closed', failures INTEGER NOT NULL DEFAULT 0, window_secs INTEGER NOT NULL DEFAULT 60, threshold INTEGER NOT NULL DEFAULT 3, recovery_secs INTEGER NOT NULL DEFAULT 30, opened_at INTEGER NOT NULL DEFAULT 0, last_fail_ts INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT '', PRIMARY KEY (ns, circuit))",
   ]
   match self.db {
     None => false
@@ -650,6 +651,7 @@ impl Store for SqliteStore with fn clear(self) {
       ignore(db.exec("DELETE FROM heartbeat_history"))
       // Saga 补偿登记也在清空范围（防测试/scratch 补偿登记跨次残留，R92）
       ignore(db.exec("DELETE FROM saga_log"))
+      ignore(db.exec("DELETE FROM circuit_breakers"))
     }
   }
 }
@@ -1398,6 +1400,110 @@ pub fn SqliteStore::mark_saga_actions_done(
             Ok(())
           } else {
             Err("sqlite 标记 Saga 补偿失败")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 读取某熔断器记录（R104）：(state, failures, window_secs, threshold, recovery_secs, opened_at, last_fail_ts)。
+pub fn SqliteStore::cb_get(
+  self : SqliteStore,
+  ns : String,
+  circuit : String,
+) -> (String, Int, Int, Int, Int, Int, Int)? {
+  match self.db {
+    None => None
+    Some(db) => {
+      let sql = "SELECT state, failures, window_secs, threshold, recovery_secs, opened_at, last_fail_ts FROM circuit_breakers WHERE ns = ? AND circuit = ?"
+      match db.prepare(sql) {
+        None => None
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, circuit)),
+            ),
+          )
+          let mut row : (String, Int, Int, Int, Int, Int, Int)? = None
+          if stmt.step() {
+            row = Some(
+              (
+                str_from_bytes(stmt.column_text(0)),
+                stmt.column_int(1),
+                stmt.column_int(2),
+                stmt.column_int(3),
+                stmt.column_int(4),
+                stmt.column_int(5),
+                stmt.column_int(6),
+              ),
+            )
+          }
+          stmt.finalize()
+          row
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 写入/覆盖熔断器记录（R104，ON CONFLICT DO UPDATE 幂等）。
+pub fn SqliteStore::cb_save(
+  self : SqliteStore,
+  ns : String,
+  circuit : String,
+  state : String,
+  failures : Int,
+  window_secs : Int,
+  threshold : Int,
+  recovery_secs : Int,
+  opened_at : Int,
+  last_fail_ts : Int,
+  updated_at : String,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "INSERT INTO circuit_breakers (ns, circuit, state, failures, window_secs, threshold, recovery_secs, opened_at, last_fail_ts, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(ns, circuit) DO UPDATE SET state=excluded.state, failures=excluded.failures, window_secs=excluded.window_secs, threshold=excluded.threshold, recovery_secs=excluded.recovery_secs, opened_at=excluded.opened_at, last_fail_ts=excluded.last_fail_ts, updated_at=excluded.updated_at"
+      match db.prepare(sql) {
+        None => Err("sqlite prepare 失败: cb_save")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, circuit)),
+            ),
+          )
+          ignore(
+            stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, state))),
+          )
+          ignore(stmt.bind(4, @sqlite.SqlValue::Int(failures)))
+          ignore(stmt.bind(5, @sqlite.SqlValue::Int(window_secs)))
+          ignore(stmt.bind(6, @sqlite.SqlValue::Int(threshold)))
+          ignore(stmt.bind(7, @sqlite.SqlValue::Int(recovery_secs)))
+          ignore(stmt.bind(8, @sqlite.SqlValue::Int(opened_at)))
+          ignore(stmt.bind(9, @sqlite.SqlValue::Int(last_fail_ts)))
+          ignore(
+            stmt.bind(
+              10,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, updated_at)),
+            ),
+          )
+          let exec_ok = stmt.execute()
+          stmt.finalize()
+          if exec_ok {
+            Ok(())
+          } else {
+            Err("sqlite 写入熔断器失败")
           }
         }
       }

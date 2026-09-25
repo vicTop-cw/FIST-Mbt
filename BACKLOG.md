@@ -2,7 +2,7 @@
 
 > 本文档为 selfdrive 审视/门禁的净拉取源：Next Tasks 应从这里取。
 > 由三份调研去重收敛生成：`memory/research/competition.md`、`memory/research/five-directions.md`、`memory/research/future-roadmap.md`。
-> 状态枚举 `pending | done`。锚点事实：**98 工具 / 283 测试**（`moon test --target js` Windows+WSL 双端全绿）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
+> 状态枚举 `pending | done`。锚点事实：**101 工具 / 287 测试**（`moon test --target js` Windows+WSL 双端全绿）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
 
 | P级 | 事项 | 来源 | 状态 | 对应review/commit |
 |-----|------|------|------|-------------------|
@@ -26,7 +26,7 @@
 | P2 | Pre-execution audit gate：can_execute 之后、execute 之前插入 gate interception | five-directions/§一 | pending | - |
 | P2 | Evaluator-Optimizer schema：feedback 收敛为 Defects/Evidence/Fix/Acceptance 四段式 | five-directions/§一 | pending | - |
 | P2 | 多维度健康指标：除存活外检查 CPU/内存/任务积压/最近成功（4 类检查） | five-directions/§一 | done(health_check 已落地：SRE 四金信号 latency(完成周期 p50/p90)/traffic(活跃)/errors(失败率)/saturation(积压先行指标>0.5 预警)，grade=最差信号；R102 见调研档 20260926.health-check.md) | - |
-| P2 | Circuit Breaker 三态：Closed/Open/Half-Open 对外部调用快速失败 | five-directions/§一 | pending | - |
+| P2 | Circuit Breaker 三态：Closed/Open/Half-Open 对外部调用快速失败 | five-directions/§一 | done(circuit_fail/circuit_succeed/circuit_status 已落地：Closed 窗口失败计数达阈值 → Open fail-fast / 恢复定时器 → Half-Open 探测 / 成功 Closed 失败回 Open，双后端 circuit_breakers 表；R104 见调研档 20260926.circuit-breaker.md) | - |
 | P2 | 集成 moonbitlang/core/diff 展示报告对比、测试 diff | competition/§六 + future-roadmap/中 | pending | - |
 | P2 | Dashboard/ASCII 可视化输出（状态流转、DAG 依赖图 JSON→图） | future-roadmap/中 | pending | - |
 | P3 | 创建 P5 self_search.mbt（search_external + analyze_mechanism + portability_assessment 外部检索入库） | competition/§四 P3-11 + future-roadmap/远 | pending | - |

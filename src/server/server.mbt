@@ -2862,6 +2862,95 @@ pub async fn run_server() -> Unit {
   )
   s1 = instrumented_tool(
     s1,
+    "circuit_fail",
+    "熔断器·上报失败（R104，Nygard Release It! 2007 / Fowler / Azure 蒸馏）：外部调用失败后上报并推进三态状态机——Closed 窗口内失败计数达阈值 → Open（fail-fast 拒绝）；Half-Open 探测失败 → 回 Open 重启恢复定时器。参数：circuit 熔断器名（必填）、now 时间戳（可选）、window_secs 失败窗口秒（可选默认 60）、threshold 失败阈值（可选默认 3）、recovery_secs 恢复秒（可选默认 30）、namespace（可选默认 default）。返回 { circuit, state, failures, window_secs, threshold, recovery_secs, opened_at, allow_call, note }——allow_call=false 即调用方应立即快速失败。",
+    schema(
+      {
+        "circuit": string_prop(
+          "熔断器名（必填，如 external-http / laya）",
+        ),
+        "window_secs": int_prop("失败窗口秒（可选默认 60）"),
+        "threshold": int_prop("失败阈值（可选默认 3）"),
+        "recovery_secs": int_prop("恢复秒（可选默认 30）"),
+        "now": string_prop("时间戳（可选，默认取服务器时钟）"),
+        "namespace": string_prop("命名空间（可选默认 default）"),
+      },
+      ["circuit"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let circuit = get_str(args, "circuit")
+      let now = get_str(args, "now", default=now_default())
+      let secs = @ops.iso_to_secs(now)
+      let w = get_int(args, "window_secs", default=60)
+      let thr = get_int(args, "threshold", default=3)
+      let rec = get_int(args, "recovery_secs", default=30)
+      Ok(
+        @mcp.ToolResult::text(
+          engine
+          .circuit_fail(
+            ns~,
+            circuit~,
+            now_secs=secs,
+            window_secs=w,
+            threshold=thr,
+            recovery_secs=rec,
+          )
+          .stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "circuit_succeed",
+    "熔断器·上报成功（R104）：外部调用成功后回灌——Closed 复位计数；Half-Open 探测成功 → Closed（恢复）。参数：circuit 熔断器名（必填）、now 时间戳（可选）、namespace（可选默认 default）。返回 { circuit, state, failures, ... , allow_call, note }。",
+    schema(
+      {
+        "circuit": string_prop("熔断器名（必填）"),
+        "now": string_prop("时间戳（可选，默认取服务器时钟）"),
+        "namespace": string_prop("命名空间（可选默认 default）"),
+      },
+      ["circuit"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let circuit = get_str(args, "circuit")
+      let now = get_str(args, "now", default=now_default())
+      let secs = @ops.iso_to_secs(now)
+      Ok(
+        @mcp.ToolResult::text(
+          engine.circuit_succeed(ns~, circuit~, now_secs=secs).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "circuit_status",
+    "熔断器·查询状态（R104）：查三态并做 Half-Open 到期判定——Open 且 elapsed≥recovery_secs → 转 Half-Open（放行探测请求，其余仍快速失败）。参数：circuit 熔断器名（必填）、now 时间戳（可选）、namespace（可选默认 default）。返回 { circuit, state, failures, window_secs, threshold, recovery_secs, opened_at, allow_call, note }。",
+    schema(
+      {
+        "circuit": string_prop("熔断器名（必填）"),
+        "now": string_prop("时间戳（可选，默认取服务器时钟）"),
+        "namespace": string_prop("命名空间（可选默认 default）"),
+      },
+      ["circuit"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let circuit = get_str(args, "circuit")
+      let now = get_str(args, "now", default=now_default())
+      let secs = @ops.iso_to_secs(now)
+      Ok(
+        @mcp.ToolResult::text(
+          engine.circuit_status(ns~, circuit~, now_secs=secs).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
     "task_triage",
     "下一步该做啥（推荐式挑选 + 能力偏好路由）：对指定命名空间（namespace 缺省全量）把『待领取且依赖已满足』的任务按 能力匹配(want)→优先级(高>中>低)→重要度(高>中>低)→深度(叶可执行单元优先)→id 排出序，并给出一条 suggestion（此刻建议先领哪条及理由），供 agent 无需全量扫描。难度标签直接复用拆解时的『难度梯度 …:易/中/难』标记。参数：namespace(可选)、agent(调用方身份，可审计)、want 能力关键词(可选，命中者排头部，Marketplookup 雏形)。返回 { count, ns, agent, want, tasks:[...], suggestion? }。",
     schema(

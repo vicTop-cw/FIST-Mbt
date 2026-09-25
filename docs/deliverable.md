@@ -8,14 +8,14 @@
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
 moon build --target js cmd/main
 python scripts/mcp_smoke.py
-# 期望输出：PASS tools/list → 98 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
+# 期望输出：PASS tools/list → 101 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
 ```
 
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **98**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 283/283**（Windows + WSL(Linux) 双端实测全绿） |
+| MCP 工具 | **101**（+ 3 resources + 2 prompts） |
+| 测试 | **`moon test --target js` 287/287**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -98,6 +98,7 @@ python scripts/mcp_smoke.py
 | 64 反馈驱动计划修订 | 新增 `plan_revise` 工具（R98，ReAct arXiv 2210.03629 / CoPAL arXiv 2310.07263 蒸馏，95→96 工具）：把「拆完即弃」升级为「执行中持续修订」——给定根任务及子任务执行反馈，计算计划三分 keep（已证有效承诺保留）/ rework（失败或其依赖链受牵连需返工，控级联不涟漪）/ ready（依赖全部有效且未执行，下一步可做）；feedback 缺省读真实状态（已完成/已归档=ok、已打回/已暂停=否），传 [{task_id, ok}] 显式覆盖；纯计算只读不写库（决策建议，执行权在 agent/指挥官）——ReAct 交错 + CoPAL 分级纠正（可恢复→局部修订） | `dag_ext_test.mbt`「plan_revise」（+4：status 基础 keep/rework 级联 / ready+feedback 覆盖 / feedback no 级联 / 根不存在 ok:false） |
 | 65 全局目标校验 | 新增 `goal_drift_check` 工具（R100，goal drift arXiv 2505.02709 / Repetitiveness Rate arXiv 2603.12710 / IntentCUA 2602.17049 / HiMAP ICML2026 蒸馏，96→97 工具）：每子任务完成后校验是否偏离根目标（drift）或与兄弟重复（non-redundancy）——词法 Jaccard 纯计算（复用 @evolve.tokens/jaccard 单真源，零 LLM 自评，贴「评测是计算」原则）。drift=1-jaccard(根目标,子任务)>0.7 判 drift_suspect（附 re_anchor 提示：把根目标重新注入，防 context drift 渐失原始目标）；与任一兄弟 jaccard≥0.7 判 redundant_suspect（防重复子目标/重复造轮子，HiMAP uniqueness monitor）；subtask_id 缺省校验根下全部后代；纯计算只读不写库 | `dag_ext_test.mbt`「goal_drift_check」（+3：aligned/drift_suspect 附 re_anchor / redundant_suspect 兄弟重复+subtask_id 过滤 / 根不存在 ok:false） |
 | 66 四金信号健康巡检 | 新增 `health_check` 工具（R102，Google SRE Book 2016「Monitoring Distributed Systems」蒸馏，97→98 工具）：project_health 从"一个等级"升级为"四个信号"——latency（最近已完成任务完成周期 created_at→updated_at 秒，p50/p90 百分位，<3 条 insufficient，SRE 用百分位不用均值）/ traffic（活跃需求 in_flight+ready）/ errors（失败率 已打回+已暂停/总数 >0.3 attention）/ saturation（积压率 待领取/总数——SRE 先行指标：系统先积压后坏，>0.5 attention 预警）；grade=最差信号（healthy/attention/idle）；纯计算只读不写库，ns 可选过滤 | `board_ascii_test.mbt`「health_check」（+3：空仓 idle+latency insufficient / 积压过半 saturation attention 先行预警 / healthy+latency p50/p90=120s） |
+| 67 熔断器三态 | 新增 `circuit_fail`/`circuit_succeed`/`circuit_status` 三工具（R104，Nygard Release It! 2007 / Fowler / Azure / AWS 蒸馏，98→101 工具）：Closed（窗口内失败计数）→ 达阈值 → Open（fail-fast 拒绝，allow_call=false 微秒返回不耗线程池）→ 恢复定时器到期 → Half-Open（放行探测请求）→ 探测成功 Closed / 探测失败回 Open；store 双后端 circuit_breakers 表（幂等 upsert + clear 清空），engine 纯函数状态机（now_secs Int，规避 engine 无 ops 依赖） | `engine_circuit_test.mbt`「circuit」（+4：Closed 计数达阈值→Open fail-fast / Open 到期→Half-Open 放行探测→succeed→Closed / Half-Open 探测失败→回 Open / 窗口外复位+clear 清空） |
 
 > 注：内存日志/汇报用字母轮号（含若干纯文档/CI 非功能行，不入上表）；本表仅计功能轮。
 

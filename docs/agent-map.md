@@ -7,9 +7,9 @@
 
 `FIST-Mbt` 是**纯 MoonBit 实现的 MCP Server**：一个「AI 指挥官」式任务编排器——发布根任务，递归拆解成多层子任务，经认领/执行/提交/验收/归档闭环；含 DGM 自进化档案库（evolve）与 Omega 强验证。全栈 MoonBit，JS+Native 双后端，SQLite 持久化。
 
-- **构建/测试**：`moon check` / `moon test --target js`（283 项全绿）
+- **构建/测试**：`moon check` / `moon test --target js`（287 项全绿）
 - **跑 MCP Server**：`moon build --target js cmd/main && python scripts/patch_esm_main.py` → `node _build/js/debug/build/cmd/main/main.js`
-- **一键自检**：`python scripts/mcp_smoke.py`（工具数 98 + publish/get 链路）
+- **一键自检**：`python scripts/mcp_smoke.py`（工具数 101 + publish/get 链路）
 - **语言**：MoonBit；测试用 `suite`/`test` 而非 `@test def`；guard/match 冒号后换行。
 
 ## 二、src/ 各子包职责地图（谁管什么）
@@ -22,19 +22,19 @@
 | `evolve` | DGM 自进化档案库：Archive/Artifact/sample_parent/查重/新颖度/谱线 | `evolve.mbt` `scoring.mbt` `self_search.mbt` |
 | `omega` | Ω-check：项目结构/回传五段式校验、spec 解析/批量校验 | `check.mbt` |
 | `ops` | 运维：心跳/看门狗/google 调度 | `ops_watchdog.mbt` 等 |
-| `server` | MCP 层：98 个工具+3 resources+2 prompts 注册、call_log 注入、Laya/evolve MCP 封装 | `server.mbt` `laya_js.mbt` `evolve_distill.mbt` `evolve_lesson.mbt` |
+| `server` | MCP 层：101 个工具+3 resources+2 prompts 注册、call_log 注入、Laya/evolve MCP 封装 | `server.mbt` `laya_js.mbt` `evolve_distill.mbt` `evolve_lesson.mbt` |
 | `decompose` | 递归拆解规格 | — |
 | `executor` | 执行器抽象 + 能力注册表 + 能力路由（Marketplace 雏形，R30/R31）+ store 持久化 | `registry.mbt` `base.mbt` |
 | `atgc-old` | 旧 ATGC 叙事子项目（保留全量） | — |
 | `atgc` | 极简双链虚拟机（能力演示） | — |
 
-## 三、MCP 工具分组概览（98 个）
+## 三、MCP 工具分组概览（101 个）
 
 | 组 | 工具 |
 |---|---|
 | 生命周期(14) | publish/publish_parallel/plan/claim/execute/submit/verify/reject/retry/pause/resume/reopen_task/archive/delete |
 | 查询(2) | list/get |
-| 运维(10) | task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback/saga_repair |
+| 运维(13) | task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback/saga_repair/circuit_fail/circuit_succeed/circuit_status |
 | 运维·日志/缺陷/成本/调度(11) | call_log/bug_list/report_bug/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide |
 | 自驱闭环(9) | selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks/pick_next（+ selfdrive_dispatch 见 Marketplace） |
 | 看板/脉冲/预订/推荐+DAG(20) | dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish/slack/schedule/cost_route/mc/plan_revise/goal_drift_check、board_ascii、status_summary、project_health/health_check、reserve_scope/check/release、task_triage |

@@ -219,6 +219,17 @@ def main():
               f"latency={sig.get('latency', {}).get('verdict')} traffic={sig.get('traffic', {}).get('verdict')} "
               f"errors={sig.get('errors', {}).get('verdict')} saturation={sig.get('saturation', {}).get('verdict')} "
               f"（SRE Book 2016：积压饱和为先行指标，先积压后坏 >0.5 预警）")
+        # R104 熔断器：Closed 失败达阈值 → Open（fail-fast）→ 恢复 → Half-Open 探测成功 → Closed
+        c1 = call(p, "circuit_fail", circuit="external-http", now="2026-09-26T07:00:01Z", threshold=3, recovery_secs=30)
+        c2 = call(p, "circuit_fail", circuit="external-http", now="2026-09-26T07:00:02Z", threshold=3, recovery_secs=30)
+        c3 = call(p, "circuit_fail", circuit="external-http", now="2026-09-26T07:00:03Z", threshold=3, recovery_secs=30)
+        assert c3.get("state") == "open" and c3.get("allow_call") is False, "第 3 次失败应熔断 fail-fast"
+        c4 = call(p, "circuit_status", circuit="external-http", now="2026-09-26T07:00:40Z", threshold=3, recovery_secs=30)
+        assert c4.get("state") == "half_open", "恢复 30s 后应 Half-Open 放行探测"
+        c5 = call(p, "circuit_succeed", circuit="external-http", now="2026-09-26T07:00:41Z", threshold=3, recovery_secs=30)
+        assert c5.get("state") == "closed", "探测成功应 Closed"
+        print(f"      ↳ R104 熔断器 circuit_breaker(external-http) → fail×3 open(fail-fast) → "
+              f"recovery half_open → probe ok closed（Nygard Release It! 三态：Closed/Open/Half-Open）")
         tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"
