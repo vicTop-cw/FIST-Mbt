@@ -997,3 +997,106 @@ pub fn FistEngine::plan_revise(
     ),
   })
 }
+
+///|
+/// 全局目标校验（R100，goal drift arXiv 2505.02709 / Repetitiveness Rate arXiv 2603.12710 /
+/// IntentCUA 2602.17049 / HiMAP ICML2026 蒸馏落地）：每子任务完成后校验是否偏离根目标
+/// （drift）或与兄弟重复（non-redundancy）——词法 Jaccard 纯计算（复用 @evolve.tokens/
+/// jaccard 单真源，零 LLM 自评，贴"评测是计算"原则）。drift = 1 - jaccard(根目标, 子任务)
+/// > 0.7 判 drift_suspect（附 re_anchor 提示：把根目标重新注入，Zylos goal re-anchoring）；
+/// 与任一兄弟 jaccard ≥ 0.7 判 redundant_suspect（HiMAP uniqueness monitor：防重复子目标）。
+/// subtask_id 缺省校验根下全部后代。纯计算、只读不写库（决策建议，执行权在 agent/指挥官）。
+pub fn FistEngine::goal_drift_check(
+  self : FistEngine,
+  root_task_id : String,
+  subtask_id? : String = "",
+  ns? : String = "default",
+) -> Json {
+  match self.get_task(root_task_id) {
+    None =>
+      return Json::object({
+        "ok": Json::boolean(false),
+        "root_task_id": Json::string(root_task_id),
+        "note": Json::string("根任务不存在: " + root_task_id),
+      })
+    Some(rt) => {
+      let goal_tokens = @evolve.tokens(rt.get_description())
+      let targets : Array[String] = if subtask_id != "" {
+        [subtask_id]
+      } else {
+        self.subtree_ids(root_task_id).filter(fn(id) { id != root_task_id })
+      }
+      let checks : Array[Json] = []
+      let mut aligned = 0
+      let mut drift_suspect = 0
+      let mut redundant_suspect = 0
+      for id in targets {
+        match self.get_task(id) {
+          None => ()
+          Some(t) => {
+            let tk = @evolve.tokens(t.get_description())
+            let drift = 1.0 - @evolve.jaccard(goal_tokens, tk)
+            // 兄弟冗余：同父兄弟中最大相似度
+            let mut red = 0.0
+            match t.get_parent() {
+              Some(p) =>
+                for sib in self.children_of(p) {
+                  if sib.get_id() != id {
+                    let s = @evolve.jaccard(
+                      tk,
+                      @evolve.tokens(sib.get_description()),
+                    )
+                    if s > red {
+                      red = s
+                    }
+                  }
+                }
+              None => ()
+            }
+            let (verdict, re_anchor) = if drift > 0.7 {
+              ("drift_suspect", true)
+            } else if red >= 0.7 {
+              ("redundant_suspect", false)
+            } else {
+              ("aligned", false)
+            }
+            if verdict == "drift_suspect" {
+              drift_suspect = drift_suspect + 1
+            } else if verdict == "redundant_suspect" {
+              redundant_suspect = redundant_suspect + 1
+            } else {
+              aligned = aligned + 1
+            }
+            let cm = Map::new()
+            cm.set("subtask_id", Json::string(id))
+            cm.set("drift_score", Json::number(drift))
+            cm.set("redundancy_score", Json::number(red))
+            cm.set("verdict", Json::string(verdict))
+            cm.set("re_anchor", Json::boolean(re_anchor))
+            checks.push(Json::object(cm))
+          }
+        }
+      }
+      Json::object({
+        "ok": Json::boolean(true),
+        "root_task_id": Json::string(root_task_id),
+        "basis": Json::string(
+          "jaccard@evolve（词法相似度纯计算，零 LLM 自评）",
+        ),
+        "threshold": Json::object({
+          "drift": Json::number(0.7),
+          "redundancy": Json::number(0.7),
+        }),
+        "counts": Json::object({
+          "aligned": Json::number(aligned.to_double()),
+          "drift_suspect": Json::number(drift_suspect.to_double()),
+          "redundant_suspect": Json::number(redundant_suspect.to_double()),
+        }),
+        "checks": Json::array(checks),
+        "note": Json::string(
+          "全局目标校验（non-redundancy）：drift=1-jaccard(根目标,子任务) >0.7 判 drift_suspect（附 re_anchor 提示：把根目标重新注入）；与兄弟 jaccard ≥0.7 判 redundant_suspect（防重复子目标）。",
+        ),
+      })
+    }
+  }
+}

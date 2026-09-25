@@ -980,3 +980,139 @@ test "plan_revise：根任务不存在 → ok:false" {
     _ => abort("ok 缺失: " + j.stringify())
   }
 }
+
+///|
+/// 读出 goal_drift_check 中某子任务的 verdict。
+fn gdc_verdict(j : Json, id : String) -> String {
+  match j.value("checks") {
+    Some(Array(a)) =>
+      for x in a {
+        match x.value("subtask_id") {
+          Some(Json::String(s)) =>
+            if s == id {
+              match x.value("verdict") {
+                Some(Json::String(v)) => return v
+                _ => abort("verdict 缺失: " + j.stringify())
+              }
+            }
+          _ => ()
+        }
+      }
+    _ => abort("checks 缺失: " + j.stringify())
+  }
+  abort("未找到子任务 " + id)
+}
+
+///|
+/// 读出 goal_drift_check counts 中某类计数。
+fn gdc_count(j : Json, key : String) -> Int {
+  let obj = match j.value("counts") {
+    Some(Object(o)) => o
+    _ => return 0
+  }
+  match obj.get(key) {
+    Some(Json::Number(n, ..)) => n.to_int()
+    _ => 0
+  }
+}
+
+///|
+test "goal_drift_check：aligned 与 drift_suspect（偏离根目标，附 re_anchor）" {
+  let e = FistEngine::new()
+  let specs : Array[(String, String?, String)] = [
+    ("G", None, "搭建可插拔的父层调度系统"),
+    ("A", Some("G"), "父层调度引擎与插拔接口设计"),
+    ("B", Some("G"), "前端页面美工调色与配色方案"),
+  ]
+  for s in specs {
+    let (id, parent, desc) = s
+    let t = @core.Task::new(
+      id~,
+      project_dir="/proj/demo",
+      description=desc,
+      parent_id=match parent {
+        Some(p) => p
+        None => ""
+      },
+      created_at="2026-09-26T06:00:00Z",
+      depends_on=[],
+    )
+    ignore(e.store.create_task(t))
+  }
+  let j = e.goal_drift_check("G")
+  // A 与根目标共享「父层调度/插拔」→ aligned；B 无共同语义 → drift_suspect
+  assert_eq(gdc_verdict(j, "A"), "aligned")
+  assert_eq(gdc_verdict(j, "B"), "drift_suspect")
+  assert_eq(gdc_count(j, "aligned"), 1)
+  assert_eq(gdc_count(j, "drift_suspect"), 1)
+  // drift_suspect 的 re_anchor 提示为 true
+  match j.value("checks") {
+    Some(Array(a)) =>
+      for x in a {
+        match x.value("subtask_id") {
+          Some(Json::String(s)) =>
+            if s == "B" {
+              match x.value("re_anchor") {
+                Some(jj) =>
+                  match jj.as_bool() {
+                    Some(b) => assert_eq(b, true)
+                    None => abort("re_anchor 非布尔: " + j.stringify())
+                  }
+                _ => abort("re_anchor 缺失")
+              }
+            }
+          _ => ()
+        }
+      }
+    _ => abort("checks 缺失")
+  }
+}
+
+///|
+test "goal_drift_check：redundant_suspect（与兄弟重复，防重复子目标）+ subtask_id 过滤" {
+  let e = FistEngine::new()
+  let specs : Array[(String, String?, String)] = [
+    ("G2", None, "数据采集与清洗管线"),
+    ("C", Some("G2"), "数据采集模块实现"),
+    ("D", Some("G2"), "采集数据模块实现"),
+  ]
+  for s in specs {
+    let (id, parent, desc) = s
+    let t = @core.Task::new(
+      id~,
+      project_dir="/proj/demo",
+      description=desc,
+      parent_id=match parent {
+        Some(p) => p
+        None => ""
+      },
+      created_at="2026-09-26T06:00:00Z",
+      depends_on=[],
+    )
+    ignore(e.store.create_task(t))
+  }
+  let j = e.goal_drift_check("G2")
+  // C 与 D 字符级全同（去重后同 token 集）→ 互相判 redundant_suspect
+  assert_eq(gdc_verdict(j, "D"), "redundant_suspect")
+  assert_eq(gdc_count(j, "redundant_suspect"), 2)
+  // subtask_id 过滤：只校验单条
+  let j1 = e.goal_drift_check("G2", subtask_id="C")
+  match j1.value("checks") {
+    Some(Array(a)) => assert_eq(a.length(), 1)
+    _ => abort("checks 缺失: " + j1.stringify())
+  }
+}
+
+///|
+test "goal_drift_check：根任务不存在 → ok:false" {
+  let e = FistEngine::new()
+  let j = e.goal_drift_check("NOPE")
+  match j.value("ok") {
+    Some(jj) =>
+      match jj.as_bool() {
+        Some(b) => assert_eq(b, false)
+        None => abort("ok 非布尔: " + j.stringify())
+      }
+    _ => abort("ok 缺失: " + j.stringify())
+  }
+}

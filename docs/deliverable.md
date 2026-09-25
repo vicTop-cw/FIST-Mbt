@@ -8,14 +8,14 @@
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
 moon build --target js cmd/main
 python scripts/mcp_smoke.py
-# 期望输出：PASS tools/list → 96 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
+# 期望输出：PASS tools/list → 97 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
 ```
 
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **96**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 277/277**（Windows + WSL(Linux) 双端实测全绿） |
+| MCP 工具 | **97**（+ 3 resources + 2 prompts） |
+| 测试 | **`moon test --target js` 280/280**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -96,6 +96,7 @@ python scripts/mcp_smoke.py
 | 62 Monte Carlo 完工预测 | 新增 `dag_mc` 工具（R94，Van Slyke 1963 首倡 MCS 求网络完工分布，93→94 工具）：PERT 确定性分析的概率式补充——按难度档采样三角分布时长（易(2,3,5)/中(3,5,8)/难(5,8,14)），xorshift32 确定性 PRNG + 牛顿法 sqrt（core 无 sqrt）整网模拟 samples 次，得完工分布(min/mean/p50/p90/max) + 按期概率 P(≤deadline) + 关键度排行（任务出现在最长路径的频率，含近关键路径，top 10）——克服 PERT 单关键路径/merge bias，回答"能不能按期、风险在哪、谁是最大风险"；seed 固定可复现 | `dag_mc_test.mbt`（+4：同 seed 可复现 / p_on_time 单调 / 关键度 A→B 链 / insufficient+samples 钳制） |
 | 63 局部补偿控级联 | 新增 `saga_repair` 工具（R96，Plan Commitment 2023 / scope-aware repair 2026 蒸馏，94→95 工具）：给定失败步骤，计算最小补偿切片——失败步骤 + 其依赖下游（任务 depends_on 传递闭包中仍 pending 的步骤；无 task_id 时按注册序保守兜底 basis=order）——只补偿切片（LIFO）、切片外步骤保留承诺不补偿（keep，控级联不涟漪撤销），与 `saga_rollback` 全局 LIFO 整链收尾互补；mark=true 消费切片（幂等）、keep 保持 pending 供后续按需补偿——plan repair 保留承诺 > 整树重规划 | `engine_saga_test.mbt`「saga_repair」（+4：depends_on 闭包最小切片+旁路 keep / 注册序兜底 / mark=false 预览+失败步骤 Err / keep 与 rollback 两级共存） |
 | 64 反馈驱动计划修订 | 新增 `plan_revise` 工具（R98，ReAct arXiv 2210.03629 / CoPAL arXiv 2310.07263 蒸馏，95→96 工具）：把「拆完即弃」升级为「执行中持续修订」——给定根任务及子任务执行反馈，计算计划三分 keep（已证有效承诺保留）/ rework（失败或其依赖链受牵连需返工，控级联不涟漪）/ ready（依赖全部有效且未执行，下一步可做）；feedback 缺省读真实状态（已完成/已归档=ok、已打回/已暂停=否），传 [{task_id, ok}] 显式覆盖；纯计算只读不写库（决策建议，执行权在 agent/指挥官）——ReAct 交错 + CoPAL 分级纠正（可恢复→局部修订） | `dag_ext_test.mbt`「plan_revise」（+4：status 基础 keep/rework 级联 / ready+feedback 覆盖 / feedback no 级联 / 根不存在 ok:false） |
+| 65 全局目标校验 | 新增 `goal_drift_check` 工具（R100，goal drift arXiv 2505.02709 / Repetitiveness Rate arXiv 2603.12710 / IntentCUA 2602.17049 / HiMAP ICML2026 蒸馏，96→97 工具）：每子任务完成后校验是否偏离根目标（drift）或与兄弟重复（non-redundancy）——词法 Jaccard 纯计算（复用 @evolve.tokens/jaccard 单真源，零 LLM 自评，贴「评测是计算」原则）。drift=1-jaccard(根目标,子任务)>0.7 判 drift_suspect（附 re_anchor 提示：把根目标重新注入，防 context drift 渐失原始目标）；与任一兄弟 jaccard≥0.7 判 redundant_suspect（防重复子目标/重复造轮子，HiMAP uniqueness monitor）；subtask_id 缺省校验根下全部后代；纯计算只读不写库 | `dag_ext_test.mbt`「goal_drift_check」（+3：aligned/drift_suspect 附 re_anchor / redundant_suspect 兄弟重复+subtask_id 过滤 / 根不存在 ok:false） |
 
 > 注：内存日志/汇报用字母轮号（含若干纯文档/CI 非功能行，不入上表）；本表仅计功能轮。
 
