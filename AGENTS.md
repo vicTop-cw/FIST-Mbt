@@ -111,10 +111,11 @@ You can browse and install extra skills here:
 
 本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**83 tools** + 3 resources + 2 prompts）：
 
-### 生命周期（12）
+### 生命周期（14）
 | 工具 | 说明 |
 |---|---|
 | `publish` | 发布根任务 |
+| `publish_parallel` | 同命名空间下多根任务并行发布（多任务并行根） |
 | `plan` | 拆分子任务 |
 | `claim` | 认领任务 |
 | `execute` | 记录执行交付物 |
@@ -124,6 +125,7 @@ You can browse and install extra skills here:
 | `retry` | 打回后重试（→执行中） |
 | `pause` | 暂停任务（任意活跃→已暂停） |
 | `resume` | 恢复任务（已暂停→已领取） |
+| `reopen_task` | 重开已归档/已完成任务（回待处理） |
 | `archive` | 归档任务 |
 | `delete` | 删除已归档任务 |
 
@@ -145,6 +147,39 @@ You can browse and install extra skills here:
 
 > 无人值守流水线统一元提示词模板：`templates/cron_pipeline_meta_prompt.md`（**统一版**，取代原 `watchdog_tick_meta_prompt.md`：单一提示词 + 单一定时任务，一次唤醒内四分支自决策——①心跳新鲜即退出；②心跳超时只交给 `watchdog_tick` 的 heal 分支、不自行重启；③无活跃任务且最新提示词未消费则用该提示词接一个新根任务；④无活跃任务且提示词已消费则分析项目现状生成下一份 `yyyyMMdd.HH.mm.ss.md`。含按目标项目替换的参数清单与无人值守边界说明，仅用于定时任务场景）。
 
+### 自驱闭环（9）
+| 工具 | 说明 |
+|---|---|
+| `selfdrive_init` | 自驱会话初始化 |
+| `selfdrive_append` | 追加审视上下文 |
+| `selfdrive_get` | 读取当前自驱状态 |
+| `selfdrive_export_tasks` | 导出任务清单 |
+| `selfdrive_review_tick` | 审视轮探测（报告先行） |
+| `selfdrive_review_ready` | 是否已有可消费审视报告 |
+| `selfdrive_publish_next` | 把新报告发布为下一条根任务 |
+| `selfdrive_parse_next_tasks` | 解析报告里的任务清单 |
+| `selfdrive_pick_next` | 按 triage 能力推荐取走顶部并认领（无人值守按能力自续推） |
+
+### 运维 · 日志 / 缺陷 / 成本 / 调度（9）
+| 工具 | 说明 |
+|---|---|
+| `call_log` | 调用日志查询（时间戳/seq/项目分组） |
+| `bug_list` | 缺陷/ BUG 列表 |
+| `report_bug` | 上报缺陷 |
+| `run_check` | 端到端自检（构建/测试/MCP 冒烟） |
+| `schedule` | 定时/提醒调度 |
+| `pipeline_tick` | 无人值守流水线唤醒一拍 |
+| `cost_stats` | 成本统计 |
+| `cost_budget_check` | 预算/成本上限检查 |
+| `laya_decide` | Laya 冷启动选档（难度/拆分数探测） |
+
+### 衍生子项目 · ATGC-old（3）
+| 工具 | 说明 |
+|---|---|
+| `atgc_old_compile` | ATGC-old 编译（DNA↔程序） |
+| `atgc_old_run` | ATGC-old 运行（DNA 程序执行） |
+| `atgc_old_talk` | ATGC-old 会话（叙事/模式切换） |
+
 ### 项目看板 / 脉冲 / 预订 / 推荐 + DAG（12）
 | 工具 | 说明 |
 |---|---|
@@ -161,7 +196,7 @@ You can browse and install extra skills here:
 | `reserve_scope` / `reserve_check` / `reserve_release` | 作用域预订（拿来主义：Interlinked 文件预订 → 多 agent 并发编辑冲突预防） |
 | `task_triage` | 下一步推荐：可领取任务按 能力匹配(want)→优先级→重要度→深度 排行 + suggestion（agent 无需全量扫描即知下一单；want 为能力路由，Marketplookup 雏形）。每条含真实 DAG 依赖 `depends_on`（复用 dag_depend/gradient_dag 建边，"下一单"就绪前驱可见） |
 
-### 自我记忆与自进化（7，F/G 新增强化）
+### 自我记忆与自进化（11，F/G 新增强化）
 | 工具 | 说明 |
 |---|---|
 | `memory_consolidate` | verify 通过后把交付物收敛写回 memory/{kind}.md（checkpoint 写时刻） |
@@ -170,6 +205,10 @@ You can browse and install extra skills here:
 | `evolve_distill` | 自进化蒸馏：把 verify 通过的任务交付物蒸馏成 [principle] 原则写入 DGM（复用 evolve_upsert 落库） |
 | `evolve_lesson` | 失败回流学习：把被打回/失败原因归档成 [lesson] 类目资产入 DGM，供 plan/claim 的 inject 检索「踩过的坑」 |
 | `evolve_critic` | Critic 防漂移门禁（SAGE）：入库前纯计算评审拟议的 principle/lesson，与档案库重合≥70% 判「课程漂移/重复」拒收、综合分低于阈值暂缓，规避自进化课程漂移；只评审不写库 |
+| `evolve_sample` | 档案库多样采样（供蒸馏/注入） |
+| `evolve_snapshot` | 自进化快照（当前档案/死路一览） |
+| `evolve_submit` | 交付物提交（入档前拟稿） |
+| `evolve_asset_register` | 外部资产注册（复用档案库，plan/claim 可 inject） |
 | `task_challenge` | Challenger 进阶变体（SAGE 四专家环）：对已完成/已归档任务按策略发布更难变体新根任务（[challenge] 标记 + from 溯源 + 重要度升档），构成「由易到难」自推进序列；可选 `critic=true` 开启防漂移门禁（挑战题发布前过 `critic_review`，当前策略漂移自动降档、全部漂移拒发） |
 
 ### Marketplace·执行者能力路由（Dynamic 范式） （4，R30-R32）
@@ -203,6 +242,8 @@ You can browse and install extra skills here:
 | `omega_spec_review` | 验证者审核语料：`approve` 放行，其它值为打回 | task_id, reviewer(默认 verifier), verdict, reason(可选), max_rounds(可选), now |
 | `omega_result_verify` | 验证者复验执行成果与对应语料 | task_id, reviewer(默认 verifier), verdict, reason(可选), max_rounds(可选), now |
 | `omega_status` | 查询强验证进度（开关 / 轮次 / 打回数 / 升级标志） | task_id |
+| `omega_verify` | Omega 强验证总入口（语料门禁 + 成果复验） | task_id, 判定, reason(可选) |
+| `omega_verify_fix` | Omega 验证未达标后修正再验 | task_id, 修正说明 |
 
 - 打回上限 `max_rounds` 默认 3（最大 10），超限自动写入升级记录、暂停任务转人工裁决，禁止死循环。
 - `execute` 与 `verify` 在开启强验证的任务上分别受语料门禁与成果复验门禁约束；未开启该开关的任务完全不受影响，既有生命周期语义不变。

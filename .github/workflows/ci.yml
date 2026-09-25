@@ -37,6 +37,10 @@ jobs:
         shell: bash
         run: python3 scripts/check_badge.py /tmp/moon_test.log README.md
 
+      - name: Tool-list single-source guard (AGENTS/README 工具与会注册对齐)
+        shell: bash
+        run: python3 scripts/check_tools_sync.py
+
       - name: Cleanliness guard (仓库整洁，仅交付库 fist-mbt.db)
         shell: bash
         run: python3 scripts/cleanup_artifacts.py && python3 scripts/cleanup_artifacts.py --check
@@ -98,3 +102,7 @@ jobs:
       - name: Test (js)
         shell: pwsh
         run: moon test --target js
+
+      - name: Tool-list single-source guard (AGENTS/README 工具与会注册对齐)
+        shell: pwsh
+        run: python scripts/check_tools_sync.py
