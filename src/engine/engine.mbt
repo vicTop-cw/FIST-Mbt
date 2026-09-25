@@ -834,6 +834,8 @@ pub fn FistEngine::delete_task(
 ///   by        执行拆解的拳长身份（仅记录）；
 ///   spec      可选 omega spec JSON（laws 作切割依据，fingerprint 作验收基准）；
 ///   now       时间戳。
+///   reinject_context  是否把「父计划 + 剩余兄弟」回注进每条子任务描述（R63，ReCAP 借鉴；
+///                      默认 false 零回归）——让原子片知道自己"为什么做、旁边还有谁"，防上下文漂移。
 ///
 /// 返回：{ "root", "by", "created", "tree" }，tree 为多层子树结构；
 /// 任一子节点非叶时将继续递归（depth 递减，is_leaf=depth<=1 停止）。
@@ -848,6 +850,7 @@ pub fn FistEngine::plan_deep(
   gradient? : Bool = false,
   calibrate? : Array[Double]? = None,
   gradient_dag? : Bool = false,
+  reinject_context? : Bool = false,
 ) -> Result[Json, String] {
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
@@ -875,7 +878,7 @@ pub fn FistEngine::plan_deep(
       match
         self.decompose_rec(
           parent, slices, spec, now, omega_strong_verify, gradient, calibrate,
-          gradient_dag,
+          gradient_dag, reinject_context,
         ) {
         Err(e) => Err(e)
         Ok(tree) =>
@@ -905,6 +908,7 @@ fn FistEngine::decompose_rec(
   gradient : Bool,
   calibrate : Array[Double]?,
   gradient_dag : Bool,
+  reinject_context : Bool,
 ) -> Result[Json, String] {
   // 父任务进入拆分中（宽于 Task::split：待领取/已领取/拆分中均可转入）
   match parent.mark_decomposing() {
@@ -961,6 +965,14 @@ fn FistEngine::decompose_rec(
     } else {
       base_desc + grad_suffix
     }
+    // ReCAP 借鉴·父计划回注（默认关闭零回归）：在子任务描述里带上「它归属于哪个父计划 +
+    // 还剩余几个兄弟」，让拆出的原子片知道自己"为什么做、旁边还有谁"——防上下文漂移。
+    // 子任务拿到父计划 = 真正"知其所以然"，而非孤立切片。
+    let child_full = if reinject_context {
+      full_desc + " | [父计划: \{parent.description} · 剩余兄弟: \{n_slices - idx}]"
+    } else {
+      full_desc
+    }
     // LADDER 真实 DAG：开启 gradient_dag 时，给非首切片挂上前一兄弟切片作依赖
     let dag_dep : Array[String] = if gradient && gradient_dag {
       match prev_cid {
@@ -974,7 +986,7 @@ fn FistEngine::decompose_rec(
       id=cid,
       project_dir=parent.project_dir,
       ns=parent.ns,
-      description=full_desc,
+      description=child_full,
       parent_id=parent.get_id(),
       priority=parent.priority,
       importance=parent.importance,
@@ -1000,7 +1012,7 @@ fn FistEngine::decompose_rec(
       match
         self.decompose_rec(
           child, next_slices, spec, now, omega_strong_verify, gradient, calibrate,
-          gradient_dag,
+          gradient_dag, reinject_context,
         ) {
         Ok(subtree) =>
           match subtree.value("children") {
