@@ -15,7 +15,7 @@ python scripts/mcp_smoke.py
 | 项 | 值 |
 |---|---|
 | MCP 工具 | **83**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 234/234**（Windows + WSL(Linux) 双端实测全绿） |
+| 测试 | **`moon test --target js` 235/235**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -29,7 +29,7 @@ python scripts/mcp_smoke.py
 6. **多租户**：命名空间物理隔离（`store_open`，`scratch` 临时区不污染根）。
 7. **项目地图**：`fist://map` resource——agent 首读即有，避免全项目乱找（docs/agent-map.md）；`board_ascii` 实时任务看板，一眼看全貌。
 
-## 四、自驱增强证据（git 4994aae → HEAD，45 轮）
+## 四、自驱增强证据（git 4994aae → HEAD，46 轮）
 | 轮 | 增强 | 验证脚本 |
 |---|---|---|
 | 1 项目地图 | `fist://map` + docs/agent-map + 调研纪要 | `map_verify.py` |
@@ -77,6 +77,7 @@ python scripts/mcp_smoke.py
 | 43 测试数单一真源 | `scripts/check_test_sync.py` + ci.yml JS 轨：补 check_badge 盲区，跨 README/AGENTS/deliverable/scoring_rubric 校验测试总数==实测（N/N、N 全绿、独立 N 任一），正路径 PASS、负路径 FAIL=1 | `python scripts/check_test_sync.py --total 233`（PASS） |
 | 44 地图补全 | `fist://map` tool_groups 补齐 R46 新工具家族（生命周期 publish_parallel/reopen_task、强验证 verify/verify_fix、新增「运维·日志/缺陷/成本/调度」「衍生·ATGC-old」分组、自驱补 selfdrive_dispatch）；map_verify 加断言锁住关键补漏——agent 首读地图即全概（支柱①） | `python scripts/map_verify.py`（PASS 12 分组）+ `moon test` 233/233 |
 | 45 看门狗派发预览 | `watchdog_tick` 在显式 ns 无人值守场景新增 `detail.ready_dispatch_preview`：复用 engine.triage 给出"下一单可自动派发"的候选（纯读不认领，避免 ops 仓与 server 进程内 exec_reg 耦合；自治派单的前置信号） | `ops_watchdog_test.mbt`「watchdog R51 派发预览」用例（+1） |
+| 46 看板难度标注 | `board_ascii` 每行任务附自身难度档（复用 pub `extract_difficulty` 单一来源）——实时看板一眼看任务难度结构（支柱①"一目了然"＋②"复用"） | `board_ascii_test.mbt`「board_ascii 每行标注难度档」用例（+1） |
 
 > 注：内存日志/汇报用字母轮号（含若干纯文档/CI 非功能行，不入上表）；本表仅计功能轮。
 
