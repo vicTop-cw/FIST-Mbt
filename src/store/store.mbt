@@ -500,6 +500,58 @@ pub fn StoreBackend::list_heartbeat_intervals(
   }
 }
 
+///|
+/// 登记 Saga 补偿步骤（R92：SQLite 落库 durable action log，内存后端为 no-op）。
+pub fn StoreBackend::write_saga_action(
+  self : StoreBackend,
+  ns? : String = "default",
+  root_task_id~ : String,
+  step~ : String,
+  task_id? : String = "",
+  compensation~ : String,
+  created_at~ : String,
+) -> Result[Unit, String] {
+  match self {
+    Mem(_) => Ok(())
+    Sql(s) =>
+      s.write_saga_action(
+        ns~,
+        root_task_id~,
+        step~,
+        task_id~,
+        compensation~,
+        created_at~,
+      )
+  }
+}
+
+///|
+/// 列出某根任务的 Saga 补偿步骤（R92：内存后端返回空，SQLite 前向顺序）。
+pub fn StoreBackend::list_saga_actions(
+  self : StoreBackend,
+  ns : String,
+  root_task_id : String,
+) -> Array[(Int, String, String, String, String)] {
+  match self {
+    Mem(_) => []
+    Sql(s) => s.list_saga_actions(ns, root_task_id)
+  }
+}
+
+///|
+/// 把指定 Saga 补偿步骤标记 done（R92：内存后端为 no-op，SQLite 幂等更新）。
+pub fn StoreBackend::mark_saga_actions_done(
+  self : StoreBackend,
+  ns? : String = "default",
+  root_task_id~ : String,
+  ids~ : Array[Int],
+) -> Result[Unit, String] {
+  match self {
+    Mem(_) => Ok(())
+    Sql(s) => s.mark_saga_actions_done(ns~, root_task_id~, ids~)
+  }
+}
+
 // —— 语料账本（Omega 强验证）：双后端统一入口 ——
 
 ///|

@@ -270,6 +270,48 @@ pub fn FistEngine::store_list_heartbeat_intervals(
 }
 
 ///|
+/// 登记 Saga 补偿步骤（R92，durable action log；委托给 store 后端）。
+pub fn FistEngine::store_write_saga_action(
+  self : FistEngine,
+  ns? : String = "default",
+  root_task_id~ : String,
+  step~ : String,
+  task_id? : String = "",
+  compensation~ : String,
+  created_at~ : String,
+) -> Result[Unit, String] {
+  self.store.write_saga_action(
+    ns~,
+    root_task_id~,
+    step~,
+    task_id~,
+    compensation~,
+    created_at~,
+  )
+}
+
+///|
+/// 列出某根任务的 Saga 补偿步骤（R92；前向顺序）。
+pub fn FistEngine::store_list_saga_actions(
+  self : FistEngine,
+  ns : String,
+  root_task_id : String,
+) -> Array[(Int, String, String, String, String)] {
+  self.store.list_saga_actions(ns, root_task_id)
+}
+
+///|
+/// 把指定 Saga 补偿步骤标记 done（R92；幂等）。
+pub fn FistEngine::store_mark_saga_actions_done(
+  self : FistEngine,
+  ns? : String = "default",
+  root_task_id~ : String,
+  ids~ : Array[Int],
+) -> Result[Unit, String] {
+  self.store.mark_saga_actions_done(ns~, root_task_id~, ids~)
+}
+
+///|
 /// 写入一条调用日志（委托给 store 后端；best-effort，调用方应忽略错误）。
 pub fn FistEngine::store_write_call_log(
   self : FistEngine,
