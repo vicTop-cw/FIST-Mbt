@@ -172,6 +172,12 @@ def main():
         print(f"      ↳ R87 置信度校准拍卖 executor_auction(need=编排) → 竞拍 {au.get('count')} 家，"
               f"winner={aw.get('name')} calibration={aw.get('calibration')} score={aw.get('score')} "
               f"（Agora 蒸馏：出价×校准×负载折扣，过度自信者被惩罚）")
+        # R88 进度预算路由门控：预算×进度双路径预测 + 元门控决策（PROGROUTER 蒸馏）
+        pg = call(p, "progress_gate", task_id=rid, budget=20, now=NOW)
+        assert pg.get("ok") and "verdict" in pg, "progress_gate 应返回 ok/verdict"
+        print(f"      ↳ R88 进度预算门控 progress_gate({rid}, budget=20) → progress={pg.get('progress')} "
+              f"spent={pg.get('spent')} verdict={pg.get('verdict')} "
+              f"（PROGROUTER 蒸馏：线性/保守双路径预测，预算×进度在线体检）")
         tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"

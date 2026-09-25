@@ -462,7 +462,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 89 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 90 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -476,7 +476,7 @@ fn map_json() -> Json {
         "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup",
       ),
       "运维·日志/缺陷/成本/调度": Json::string(
-        "call_log/bug_list/report_bug/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/laya_decide",
+        "call_log/bug_list/report_bug/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide",
       ),
       "看板/脉冲/预订/推荐+DAG": Json::string(
         "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish + board_ascii + status_summary + reserve_scope/check/release + task_triage",
@@ -3302,6 +3302,33 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let budget = jnum(args, "budget").to_int()
       Ok(@mcp.ToolResult::text(engine.budget_split_by_dag(budget).stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "progress_gate",
+    "进度预算路由门控（R88，PROGROUTER arXiv 2608.25992 蒸馏）：对任务子树按已消耗预算(难度权重 易/中/难→1/2/3，自动估算或手动注入 spent) 与 完成进度(已完成+已归档/子树任务数) 做双路径剩余成本预测——线性=燃尽率×剩余工作量、保守=1.2×线性，元门控给决策 OK(预算充足继续) / CAUTION(线性可行但缓冲不足，建议降档缩范围) / ESCALATE(线性已超支，建议追加预算或暂停)——计划性增强：预算×进度在线体检，先预警后决策。参数：task_id(必)、budget(总预算，必)、spent(可选手动注入已消耗，缺省按难度权重自动估算)。返回 {ok, task_id, budget, spent, remaining, progress, burn_rate, projection:{linear, conservative}, verdict, action, basis}。",
+    schema(
+      {
+        "task_id": string_prop(
+          "任务 id（必填，以其为根的子树参与进度/预算统计）",
+        ),
+        "budget": number_prop("总预算（必填，正整数）"),
+        "spent": number_prop(
+          "已消耗（可选，手动注入；缺省按子树非待领取任务难度权重 易/中/难→1/2/3 自动估算）",
+        ),
+      },
+      ["task_id", "budget"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let budget = jnum(args, "budget").to_int()
+      let spent = jnum(args, "spent").to_int()
+      Ok(
+        @mcp.ToolResult::text(
+          engine.progress_gate(task_id, budget, spent).stringify(),
+        ),
+      )
     },
   )
 

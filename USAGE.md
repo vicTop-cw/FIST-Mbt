@@ -154,7 +154,7 @@ def rpc(method, **payload):
 
 ---
 
-## 6. 89 个 MCP 工具手册
+## 6. 90 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
@@ -315,6 +315,7 @@ def rpc(method, **payload):
 | `schedule` | 调度预览：根据任务描述自适应计算分级/拆分/成本档/执行器（不落库） | description(必) n_files(选) |
 | `cost_stats` | 执行成本聚合统计（total_records/total_cost/total_tokens/by_executor） | 无 |
 | `cost_budget_check` | 预算超限告警（exceeded/remaining/action） | limit(必) current(必) |
+| `progress_gate` | 进度预算门控（R88，PROGROUTER 蒸馏）：预算×进度双路径预测 + 元门控 OK/CAUTION/ESCALATE 决策（先预警后决策） | task_id(必) budget(必) spent(选) |
 
 **调度预览示例**：
 

@@ -733,3 +733,123 @@ pub fn FistEngine::budget_split_by_dag(self : FistEngine, budget : Int) -> Json 
     ),
   })
 }
+
+/// ==================== 进度预算路由门控（R88，PROGROUTER 蒸馏） ====================
+
+///|
+/// 收集 task_id 的子树 id（自身 + 全部 parent_id 后代，BFS；复用 children_of）。
+fn FistEngine::subtree_ids(self : FistEngine, root : String) -> Array[String] {
+  let out : Array[String] = [root]
+  let mut i = 0
+  while i < out.length() {
+    let pid = out[i]
+    for c in self.children_of(pid) {
+      out.push(c.get_id())
+    }
+    i = i + 1
+  }
+  out
+}
+
+///|
+/// 进度预算路由门控（R88，PROGROUTER arXiv 2608.25992 蒸馏简化版）：在线进度引导——
+/// 对任务子树按「已消耗预算（难度权重 易/中/难→1/2/3，复用 extract_difficulty 单一来源）
+/// 与 完成进度（已完成+已归档 / 子树任务数）」做双路径剩余成本预测：
+///   线性 = 燃尽率(burn_rate=spent/progress) × 剩余工作量(1-progress)；
+///   保守 = 线性 × 1.2（PROGROUTER 双路径，缓冲 20%）。
+/// 元门控给决策：OK（预算充足继续）/ CAUTION（线性可行但缓冲不足 → 建议降档/缩范围）/
+/// ESCALATE（线性已超支 → 建议追加预算或暂停）。纯计算、无副作用。
+/// spent_override>0 可覆盖自动估算（如按真实 token/成本统计注入）；0 或缺省=自动。
+pub fn FistEngine::progress_gate(
+  self : FistEngine,
+  task_id : String,
+  budget : Int,
+  spent_override : Int,
+) -> Json {
+  match self.get_task(task_id) {
+    None =>
+      return Json::object({
+        "ok": Json::boolean(false),
+        "task_id": Json::string(task_id),
+        "note": Json::string("任务不存在: " + task_id),
+      })
+    Some(_) => ()
+  }
+  if budget <= 0 {
+    return Json::object({
+      "ok": Json::boolean(false),
+      "task_id": Json::string(task_id),
+      "budget": Json::number(0.0),
+      "note": Json::string("budget 必须为正"),
+    })
+  }
+  let ids = self.subtree_ids(task_id)
+  let mut total = 0
+  let mut done = 0
+  let mut started_weight = 0
+  for id in ids {
+    match self.get_task(id) {
+      Some(x) => {
+        total = total + 1
+        let st = x.get_status()
+        if st.is_completed() || st.is_archived() {
+          done = done + 1
+        }
+        // 已开工（非待领取）的任务计入已消耗预算（难度权重）
+        if not(st.is_pending()) {
+          let lab = triage_label_of(x.get_description())
+          let w = if lab == "难" { 3 } else if lab == "中" { 2 } else { 1 }
+          started_weight = started_weight + w
+        }
+      }
+      None => ()
+    }
+  }
+  let progress = if total <= 0 {
+    0.0
+  } else {
+    done.to_double() / total.to_double()
+  }
+  let spent = if spent_override > 0 { spent_override } else { started_weight }
+  let remaining = (budget - spent).to_double()
+  // 燃尽率：每单位进度消耗的预算（未开工时为 0）
+  let burn = if progress > 0.0 { spent.to_double() / progress } else { 0.0 }
+  let remaining_work = 1.0 - progress
+  let linear = burn * remaining_work
+  let conservative = linear * 1.2
+  let (verdict, action) = if progress >= 1.0 {
+    (
+      "OK",
+      "已完成，预算结余 " +
+      (budget - spent).to_string() +
+      "（负为超支）",
+    )
+  } else if linear <= remaining && conservative <= remaining {
+    ("OK", "继续推进（按当前燃尽率预算充足）")
+  } else if linear <= remaining {
+    (
+      "CAUTION", "缩减范围/降档（如选更简单变体或减少拆分数）后继续",
+    )
+  } else {
+    ("ESCALATE", "追加预算或暂停复核（按当前燃尽率将超支）")
+  }
+  Json::object({
+    "ok": Json::boolean(true),
+    "task_id": Json::string(task_id),
+    "budget": Json::number(budget.to_double()),
+    "spent": Json::number(spent.to_double()),
+    "remaining": Json::number(remaining),
+    "progress": Json::number(progress),
+    "burn_rate": Json::number(burn),
+    "remaining_work": Json::number(remaining_work),
+    "projection": Json::object({
+      "linear": Json::number(linear),
+      "conservative": Json::number(conservative),
+    }),
+    "verdict": Json::string(verdict),
+    "action": Json::string(action),
+    "basis": Json::string(
+      "进度预算路由门控（PROGROUTER arXiv2608.25992 蒸馏）：双路径预测 线性=燃尽率×剩余工作量 / 保守=1.2×线性; 元门控 OK/CAUTION/ESCALATE（R88）",
+    ),
+  })
+}
