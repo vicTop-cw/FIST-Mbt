@@ -473,6 +473,33 @@ pub fn StoreBackend::list_all_heartbeats(
   }
 }
 
+///|
+/// 追加心跳间隔历史（R90：SQLite 落库，内存后端为 no-op——与心跳表同模式）。
+pub fn StoreBackend::write_heartbeat_interval(
+  self : StoreBackend,
+  task_id~ : String,
+  interval_sec~ : Int,
+  ts~ : String,
+) -> Result[Unit, String] {
+  match self {
+    Mem(_) => Ok(())
+    Sql(s) => s.write_heartbeat_interval(task_id~, interval_sec~, ts~)
+  }
+}
+
+///|
+/// 读取心跳间隔历史（R90：内存后端返回空）。
+pub fn StoreBackend::list_heartbeat_intervals(
+  self : StoreBackend,
+  task_id : String,
+  limit? : Int = 100,
+) -> Array[Int] {
+  match self {
+    Mem(_) => []
+    Sql(s) => s.list_heartbeat_intervals(task_id, limit~)
+  }
+}
+
 // —— 语料账本（Omega 强验证）：双后端统一入口 ——
 
 ///|

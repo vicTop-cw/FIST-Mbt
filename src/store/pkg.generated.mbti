@@ -111,6 +111,7 @@ pub fn SqliteStore::get_spec(Self, String) -> SpecRecord?
 pub fn SqliteStore::get_task(Self, String) -> @core.Task?
 pub fn SqliteStore::list_all_heartbeats(Self) -> Array[(String, String, String, String)]
 pub fn SqliteStore::list_archived(Self) -> Array[(String, String)]
+pub fn SqliteStore::list_heartbeat_intervals(Self, String, limit? : Int) -> Array[Int]
 pub fn SqliteStore::list_specs_by_task(Self, String) -> Array[SpecRecord]
 pub fn SqliteStore::list_tasks(Self) -> Array[@core.Task]
 pub fn SqliteStore::list_tasks_in(Self, String) -> Array[@core.Task]
@@ -128,6 +129,7 @@ pub fn SqliteStore::update_task(Self, @core.Task) -> Result[Unit, String]
 pub fn SqliteStore::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
 pub fn SqliteStore::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int, seq~ : Int) -> Result[Unit, String]
 pub fn SqliteStore::write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
+pub fn SqliteStore::write_heartbeat_interval(Self, task_id~ : String, interval_sec~ : Int, ts~ : String) -> Result[Unit, String]
 
 pub enum StoreBackend {
   Mem(MemoryStore)
@@ -144,6 +146,7 @@ pub fn StoreBackend::executor_save(Self, name~ : String, abilities_json~ : Strin
 pub fn StoreBackend::get_spec(Self, String) -> SpecRecord?
 pub fn StoreBackend::get_task(Self, String) -> @core.Task?
 pub fn StoreBackend::list_all_heartbeats(Self) -> Array[(String, String, String, String)]
+pub fn StoreBackend::list_heartbeat_intervals(Self, String, limit? : Int) -> Array[Int]
 pub fn StoreBackend::list_specs_by_task(Self, String) -> Array[SpecRecord]
 pub fn StoreBackend::list_tasks(Self) -> Array[@core.Task]
 pub fn StoreBackend::list_tasks_in(Self, String) -> Array[@core.Task]
@@ -163,6 +166,7 @@ pub fn StoreBackend::update_task(Self, @core.Task) -> Result[Unit, String]
 pub fn StoreBackend::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
 pub fn StoreBackend::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int, seq~ : Int) -> Result[Unit, String]
 pub fn StoreBackend::write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
+pub fn StoreBackend::write_heartbeat_interval(Self, task_id~ : String, interval_sec~ : Int, ts~ : String) -> Result[Unit, String]
 
 // Type aliases
 

@@ -2,12 +2,12 @@
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-259%2F259-brightgreen)](./src)
+[![Tests](https://img.shields.io/badge/tests-261%2F261-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
 **FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统：从 **发布→认领→拆分→执行→提交→验收→归档** 的完整闭环，到 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗** 这些"系统自己推动自己"的能力，全部以 **91 个 MCP 工具** 暴露给任意 MCP 客户端（Claude Desktop / Cursor / 自研 JSON-RPC）。
 
-**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑能在 Windows 与 Linux 上 259 项测试双端全绿、跨环境可复现——`moon update && moon run cmd/main` 即用，告别 Python 原版的环境安装地狱。
+**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑能在 Windows 与 Linux 上 261 项测试双端全绿、跨环境可复现——`moon update && moon run cmd/main` 即用，告别 Python 原版的环境安装地狱。
 
 > 它用**它自己的**自驱式 + 递归拆解把自己打磨到了可交付态——完整自我迭代证据见 `docs/selfdrive-walkthrough.md`。
 
@@ -17,7 +17,7 @@
 
 - **MoonBit 工具链**：≥ 0.1.20260827（支持 `errdefer` 与 `async`，实测 0.1.20260904/0.1.20260920 通过）。
 - **Node.js ≥ 24**（JS 目标必需）：SQLite JS 后端依赖 `node:sqlite` 的 `returnArrays`，Node ≥ 24 才生效；
-  < 24 会退化为对象行导致列读取为空（实测 node 23 → 28 项失败，node 25 → 259/259 全绿）。
+  < 24 会退化为对象行导致列读取为空（实测 node 23 → 28 项失败，node 25 → 261/261 全绿）。
 - **首次构建前**执行 `moon update` 刷新 mooncakes registry 索引：本项目**无私有依赖**，
   `mizchi/sqlite`、`colmugx/mcp`、`moonbitlang/*` 全部公开可下载，无需 vendor、无需登录。
 - **Native 目标**：需系统 SQLite 开发库（`sqlite3.h` + 链接库）。Linux：`apt-get install libsqlite3-dev`；
@@ -45,7 +45,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 **一键完整自检（评审用，实测期望）**：
 ```bash
-moon test --target js -j 1        # → Total tests: 259, passed: 259, failed: 0
+moon test --target js -j 1        # → Total tests: 261, passed: 261, failed: 0
 python scripts/mcp_smoke.py       # → PASS tools/list → 91 个工具 … MCP-SMOKE PASS
 python scripts/award_demo.py      # → MCP-AWARD-DEMO PASS（能力链全通，结尾自动 cleanup → CLEAN）
 ```
@@ -104,7 +104,7 @@ python scripts/award_demo.py      # → MCP-AWARD-DEMO PASS（能力链全通，
 | `conflicts_check` | claim 冲突检测（认领前检查是否已被他人/本人持有） | task_id, assignee |
 | `heartbeat` | 活动信号上报（超时静默将触发 heal 回滚） | task_id, signal, now |
 | `heal` | no_signal 看护：心跳超时静默的任务回滚为已领取待重派（内存版，人工流程） | now, timeout_sec |
-| `watchdog_tick` | 定时任务看门狗编排单入口（推荐仅用于定时任务）：读 SQLite 心跳判定超时回滚；上一轮根任务完成且提供 next_description 或 meta_prompt_path 时自动起下一轮 | now, timeout_sec, namespace, next_description, next_created_by, meta_prompt_path |
+| `watchdog_tick` | 定时任务看门狗编排单入口（推荐仅用于定时任务）：读 SQLite 心跳判定超时回滚；上一轮根任务完成且提供 next_description 或 meta_prompt_path 时自动起下一轮；可选 `phi_gate=true` 用 Phi Accrual 概率式判活（φ≥phi_threshold 才回滚，默认关闭零回归） | now, timeout_sec, namespace, next_description, next_created_by, meta_prompt_path, phi_gate(可选), phi_threshold(可选) |
 | `task_cleanup` | 归档清理：删除超保留期的已归档任务 | now, retention_days |
 
 #### Omega 验证闭环（M6 金条八）
@@ -407,8 +407,8 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 - **`node:sqlite` 实验性警告**：JS 后端走 `node:sqlite`，Node ≥ 24 下运行会打印 `ExperimentalWarning: SQLite is an experimental feature`——功能正常、无碍，可忽略（或 `--no-warnings`）。
 - **环境三件事**：Node ≥ 24（JS 后端必需）、首次 `moon update`（刷新 registry）、native 需系统 SQLite（Linux `libsqlite3-dev`；Windows `sqlite3.h/sqlite3.lib` + MSVC）。
-- **native 双端**：全部 `moon.pkg` 已内置 `-lsqlite3`；JS 后端 Windows + Linux 均已 259/259 全绿；native 后端 `moon check --target native` 0 错误（Linux native 稳定），Windows native 受下方竞态影响。
-- **Windows native 偶发堆损坏竞态**：`moon test --target native` 在 Windows 上偶发 `0xc0000374`（堆损坏/竞态）——即便 `-j 1` 串行亦可能复现（实测 server.whitebox 偶撞），根因在本机 native SQLite stub 与并发关库的竞态，**产品运行时不受影响、非逻辑缺陷**。**权威稳定门槛 = JS 后端（Node ≥ 24，Windows + Linux 双端 259/259）**；Windows 下复现勿慌：先 `pwsh ./scripts/native-env.ps1` 装载环境再跑。
+- **native 双端**：全部 `moon.pkg` 已内置 `-lsqlite3`；JS 后端 Windows + Linux 均已 261/261 全绿；native 后端 `moon check --target native` 0 错误（Linux native 稳定），Windows native 受下方竞态影响。
+- **Windows native 偶发堆损坏竞态**：`moon test --target native` 在 Windows 上偶发 `0xc0000374`（堆损坏/竞态）——即便 `-j 1` 串行亦可能复现（实测 server.whitebox 偶撞），根因在本机 native SQLite stub 与并发关库的竞态，**产品运行时不受影响、非逻辑缺陷**。**权威稳定门槛 = JS 后端（Node ≥ 24，Windows + Linux 双端 261/261）**；Windows 下复现勿慌：先 `pwsh ./scripts/native-env.ps1` 装载环境再跑。
   一键装载 Windows native 环境：`pwsh ./scripts/native-env.ps1`（自动探测 VS Build Tools + sqlite-dev，可 `-Run "moon test --target native -j 1"` 直接执行）。
 - **execute 幂等**：`executions` 以 `task_id + created_at` 为键、`ON CONFLICT DO UPDATE`——同一任务同一次执行（同 `created_at`）重复 `execute` 会**幂等覆盖**执行元数据而不报错；不同 `created_at` 则各自留存为独立执行记录。
 - **自驱非死循环**：审视报告带 `[review:<file>:<idx>]` 幂等标记，无新报告即 `idle`/`waiting` 停住；心跳新鲜时 watchdog 不抢活。

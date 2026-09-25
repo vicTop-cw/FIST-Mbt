@@ -895,3 +895,76 @@ test "watchdog R57: autodispatch=false 时绝不认领（零回归回归确认�
     None => abort("T0 应存在")
   }
 }
+
+///|
+/// 写入一条心跳间隔历史（R90，Phi Accrual 判活数据源）。
+fn wd_beat_interval(
+  e : @engine.FistEngine,
+  task_id : String,
+  interval_sec : Int,
+  ts : String,
+) -> Unit {
+  ignore(e.store_write_heartbeat_interval(task_id~, interval_sec~, ts~))
+}
+
+///|
+test "watchdog R90: heartbeat_history 写入/按时间序读回/clear 清空" {
+  let e = wd_sqlite_engine("watchdog_r90_store.db")
+  wd_beat_interval(e, "T0", 5, "t1")
+  wd_beat_interval(e, "T0", 10, "t2")
+  wd_beat_interval(e, "T0", 15, "t3")
+  let ivs = e.store_list_heartbeat_intervals("T0")
+  assert_eq(ivs, [5, 10, 15])
+  // 其它任务隔离
+  assert_eq(e.store_list_heartbeat_intervals("T1").length(), 0)
+  // clear() 一并清空（防测试/scratch 间隔史跨次残留）
+  ignore(e.store.clear())
+  assert_eq(e.store_list_heartbeat_intervals("T0").length(), 0)
+}
+
+///|
+test "watchdog R90: phi_gate 概率判活早于固定 timeout（间隔5s、静默100s）" {
+  // phi_gate=true：间隔历史 [5,5,5]，静默 100s → φ≈8.686>8 suspect → 回滚（即使固定 600 未到）
+  let e = wd_sqlite_engine("watchdog_r90a.db")
+  wd_publish(e, "default")
+  wd_to_executing(e)
+  wd_beat(e, "T0", "2026-09-17T00:08:20Z", "active") // 距 00:10:00 整 100s
+  wd_beat_interval(e, "T0", 5, "x1")
+  wd_beat_interval(e, "T0", 5, "x2")
+  wd_beat_interval(e, "T0", 5, "x3")
+  let j = match
+    @ops.watchdog_tick(e, "2026-09-17T00:10:00Z", ns="default", phi_gate=true) {
+    Ok(j) => j
+    Err(m) => abort("phi watchdog_tick 失败: " + m)
+  }
+  match j.value("healed") {
+    Some(Number(n, ..)) => assert_eq(n.to_int(), 1)
+    _ => abort("phi_gate healed 缺失: " + j.stringify())
+  }
+  match j.value("healed_tasks") {
+    Some(Array(a)) => assert_eq(a.length(), 1)
+    _ => abort("phi_gate healed_tasks 缺失: " + j.stringify())
+  }
+  // 对照组：phi_gate=false（固定 timeout 600），同一 100s 静默不判 → 零回归
+  let e2 = wd_sqlite_engine("watchdog_r90b.db")
+  wd_publish(e2, "default")
+  wd_to_executing(e2)
+  wd_beat(e2, "T0", "2026-09-17T00:08:20Z", "active")
+  wd_beat_interval(e2, "T0", 5, "x1")
+  wd_beat_interval(e2, "T0", 5, "x2")
+  wd_beat_interval(e2, "T0", 5, "x3")
+  let j2 = match
+    @ops.watchdog_tick(
+      e2,
+      "2026-09-17T00:10:00Z",
+      ns="default",
+      timeout_sec=600,
+    ) {
+    Ok(j) => j
+    Err(m) => abort("fixed watchdog_tick 失败: " + m)
+  }
+  match j2.value("healed") {
+    Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
+    _ => abort("fixed healed 缺失: " + j2.stringify())
+  }
+}

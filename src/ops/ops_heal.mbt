@@ -98,3 +98,77 @@ pub fn heal_stale_tasks_from_store(
   }
   Ok(healed)
 }
+
+///|
+/// Phi Accrual 概率式看护一轮（R90，默认关闭零回归）：与 `heal_stale_tasks_from_store`
+/// 语义一致（活跃任务判死 -> 回滚为已领取），但「是否 stale」改用**概率怀疑度 φ** 判定：
+///   对有心跳间隔历史的活跃任务：elapsed = now - last_seen，intervals = 持久化间隔历史，
+///   φ = -log10(P(心跳晚于 elapsed 到达))，φ ≥ phi_threshold（默认 8）判 suspect -> 回滚；
+///   从未心跳 -> 沿用 no_signal 语义（判 stale）；无间隔历史 / 时间戳不可解析 ->
+///   保守不判（等下一轮有历史再判），避免误伤。
+/// 相比固定 timeout：心跳节奏越快、越久没来才值得怀疑——不规则慢心跳不被固定超时误杀。
+pub fn heal_stale_tasks_by_phi(
+  engine : @engine.FistEngine,
+  now : String,
+  phi_threshold? : Int = 8,
+  ns? : String = "default",
+) -> Result[Array[String], String] {
+  let healed : Array[String] = []
+  let now_s = iso_to_secs(now)
+  if now_s < 0 {
+    return Ok(healed)
+  }
+  let last_seen_map : Map[String, String] = Map([])
+  for row in engine.store_list_heartbeats() {
+    let (_agent_id, task_id, last_seen, _status) = row
+    if task_id != "" {
+      last_seen_map.set(task_id, last_seen)
+    }
+  }
+  for t in engine.list_in_ns(ns) {
+    let st = t.get_status().to_string()
+    let is_active = st == "执行中" || st == "已领取" || st == "拆分中"
+    if !is_active {
+      continue
+    }
+    let stale = match last_seen_map.get(t.get_id()) {
+      None => true // 从未心跳过 -> 沿用 no_signal 语义
+      Some(ts) => {
+        let ts_s = iso_to_secs(ts)
+        if ts_s < 0 {
+          false
+        } else {
+          let elapsed = now_s - ts_s
+          if elapsed < 0 {
+            false // 时钟回拨，保守不判
+          } else {
+            let intervals = engine.store_list_heartbeat_intervals(t.get_id())
+            if intervals.is_empty() {
+              false // 无间隔历史：无法概率建模，保守不判（等有历史再判）
+            } else {
+              let j = @engine.phi_accrual(
+                intervals,
+                elapsed,
+                threshold=phi_threshold,
+              )
+              match j.value("verdict") {
+                Some(String(v)) => v == "suspect"
+                _ => false
+              }
+            }
+          }
+        }
+      }
+    }
+    if stale {
+      match engine.reopen_task(t.get_id(), now) {
+        Ok(_) => {
+          ignore(engine.store_delete_heartbeat(task_id=t.get_id()))
+          healed.push(t.get_id())
+        }
+        Err(_) => ()
+      }
+    }
+  }
+  Ok(healed)
+}

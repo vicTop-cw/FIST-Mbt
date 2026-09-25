@@ -203,6 +203,11 @@ fn tick_json(
 ///                     dispatch_next 把顶部待领取任务按能力/负载认领给最佳执行者
 ///                     （默认 false，零回归；结果并入 detail.autodispatch）。
 ///   autodispatch_want dispatch_next 所需能力标签（autodispatch=true 时按此能力路由执行者）。
+///   phi_gate         是否启用 Phi Accrual 概率式判活（R90，默认 false 零回归）：true 时
+///                     心跳超时判定改用概率怀疑度 φ（读持久化间隔历史 + elapsed），
+///                     φ≥phi_threshold 判 suspect 才回滚——心跳节奏越快、越久没来才值得怀疑；
+///                     false 时维持既有固定 timeout_sec 语义。
+///   phi_threshold    phi_gate=true 时的怀疑阈值（默认 8，原论文口径）。
 ///
 /// 返回 JSON：{ action, active, healed, healed_tasks, new_task_id,
 ///             previous_task_id, blocked, detail, omega }，
@@ -224,13 +229,22 @@ pub fn watchdog_tick(
   selfdrive_review_every? : Int = 3,
   autodispatch? : Bool = false,
   autodispatch_want? : String = "",
+  phi_gate? : Bool = false,
+  phi_threshold? : Int = 8,
 ) -> Result[Json, String] {
   let heal_ns = if ns == "" { "default" } else { ns }
   // ---- 1. 回滚阶段（功能 A：读 SQLite 心跳，跨进程正确） ----
-  let healed = match
-    heal_stale_tasks_from_store(engine, now, timeout_sec~, ns=heal_ns) {
-    Ok(l) => l
-    Err(_) => []
+  // R90：phi_gate=true 时用概率怀疑度 φ 判活（默认关闭零回归），否则既有固定 timeout。
+  let healed = if phi_gate {
+    match heal_stale_tasks_by_phi(engine, now, phi_threshold~, ns=heal_ns) {
+      Ok(l) => l
+      Err(_) => []
+    }
+  } else {
+    match heal_stale_tasks_from_store(engine, now, timeout_sec~, ns=heal_ns) {
+      Ok(l) => l
+      Err(_) => []
+    }
   }
   // ---- 2. 扫描作用域内任务，分类活跃 / 阻塞 / 待续轮 ----
   let tasks = engine.list_in_ns(heal_ns)
@@ -328,6 +342,7 @@ pub fn watchdog_tick(
     "blocked_detail": Json::array(blocked_ids.map(fn(s) { Json::string(s) })),
     "meta_prompt_path": Json::string(meta_prompt_path),
     "meta_prompt_used": Json::boolean(meta_used),
+    "phi_gate": Json::boolean(phi_gate),
     "selfdrive": sd_detail,
     "ready_dispatch_preview": ready_preview,
     "autodispatch": Json::null(),
@@ -476,6 +491,7 @@ pub fn watchdog_tick(
           "blocked_detail": m.get("blocked_detail").unwrap_or(Json::null()),
           "meta_prompt_path": m.get("meta_prompt_path").unwrap_or(Json::null()),
           "meta_prompt_used": m.get("meta_prompt_used").unwrap_or(Json::null()),
+          "phi_gate": m.get("phi_gate").unwrap_or(Json::null()),
           "selfdrive": m.get("selfdrive").unwrap_or(Json::null()),
           "ready_dispatch_preview": m
           .get("ready_dispatch_preview")

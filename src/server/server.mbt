@@ -1534,6 +1534,21 @@ pub async fn run_server() -> Unit {
       match engine.get_task(task_id) {
         None => Err(@mcp_types.ToolError("task not found: \{task_id}"))
         Some(_) => {
+          // 计算本次心跳间隔（R90：Phi Accrual 判活数据源），上次心跳存在且可解析才记
+          let prev = heartbeats.last_seen_of(task_id)
+          if prev != "" && prev != ts {
+            let now_s = @ops.iso_to_secs(ts)
+            let prev_s = @ops.iso_to_secs(prev)
+            if now_s >= 0 && prev_s >= 0 && now_s > prev_s {
+              ignore(
+                engine.store_write_heartbeat_interval(
+                  task_id~,
+                  interval_sec=now_s - prev_s,
+                  ts~,
+                ),
+              )
+            }
+          }
           // 内存心跳表
           heartbeats.beat(task_id, signal~, now=ts)
           // SQLite 持久化（落库失败仅忽略，不阻塞主流程）
@@ -1628,6 +1643,18 @@ pub async fn run_server() -> Unit {
         "selfdrive_review_every": int_prop(
           "自驱审视频率(可选默认3)：每满 N 份 Reports 报告触发一轮审视",
         ),
+        "autodispatch": bool_prop(
+          "自治派单(可选默认false零回归，R57)：显式 namespace 无人值守且无活跃任务时，自动把顶部待领取任务按能力/负载认领给最佳执行者，结果并入 detail.autodispatch",
+        ),
+        "autodispatch_want": string_prop(
+          "自治派单所需能力标签(可选，autodispatch=true 时按此路由；缺省自动从任务描述抽取)",
+        ),
+        "phi_gate": bool_prop(
+          "Phi Accrual 概率式判活(可选默认false零回归)：true 时心跳超时判定改用概率怀疑度 φ（读持久化间隔历史），φ≥phi_threshold 判 suspect 才回滚——心跳节奏越快、越久没来才值得怀疑",
+        ),
+        "phi_threshold": int_prop(
+          "phi_gate 怀疑阈值(可选默认8，原论文口径)",
+        ),
       },
       [],
     ),
@@ -1653,6 +1680,8 @@ pub async fn run_server() -> Unit {
         "selfdrive_review_every",
         default=3,
       )
+      let phi_gate = get_bool(args, "phi_gate", default=false)
+      let phi_threshold = get_int(args, "phi_threshold", default=8)
       let omega_spec = if omega_spec_str == "" {
         None
       } else {
@@ -1677,6 +1706,10 @@ pub async fn run_server() -> Unit {
           omega_spec~,
           selfdrive_project_dir~,
           selfdrive_review_every~,
+          autodispatch=get_bool(args, "autodispatch", default=false),
+          autodispatch_want=get_str(args, "autodispatch_want"),
+          phi_gate~,
+          phi_threshold~,
         ) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))

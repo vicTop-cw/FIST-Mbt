@@ -59,6 +59,7 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     "CREATE TABLE IF NOT EXISTS specs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', spec_type TEXT NOT NULL DEFAULT 'spec', content TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', run_type TEXT NOT NULL DEFAULT 'verify', status TEXT NOT NULL DEFAULT 'running', detail TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL DEFAULT '', finished_at TEXT DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS heartbeats (agent_id TEXT NOT NULL, task_id TEXT NOT NULL, last_seen TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', PRIMARY KEY (agent_id, task_id))",
+    "CREATE TABLE IF NOT EXISTS heartbeat_history (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL DEFAULT '', interval_sec INTEGER NOT NULL DEFAULT 0, ts TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS archive (id TEXT PRIMARY KEY, task_json TEXT NOT NULL DEFAULT '', archived_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS evolve_artifacts (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', goal TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', code TEXT NOT NULL DEFAULT '', score TEXT NOT NULL DEFAULT '0', parts_json TEXT NOT NULL DEFAULT '{}', children INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS call_log (id INTEGER PRIMARY KEY AUTOINCREMENT, seq INTEGER, ts TEXT, tool TEXT, caller TEXT, ns TEXT, params_json TEXT, result_json TEXT, ok INTEGER, runtime_ms INTEGER)",
@@ -644,6 +645,8 @@ impl Store for SqliteStore with fn clear(self) {
       ignore(db.exec("DELETE FROM reservations"))
       // 执行者能力注册也在清空范围（防测试/scratch 注册跨次残留，R31）
       ignore(db.exec("DELETE FROM executors"))
+      // 心跳间隔历史也在清空范围（防测试/scratch 间隔史跨次残留，R90）
+      ignore(db.exec("DELETE FROM heartbeat_history"))
     }
   }
 }
@@ -1156,6 +1159,88 @@ pub fn SqliteStore::list_all_heartbeats(
             )
           }
           stmt.finalize()
+          out
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 追加一条心跳间隔历史（R90，Phi Accrual 判活的数据源）；同一任务保留最近 1000 条。
+pub fn SqliteStore::write_heartbeat_interval(
+  self : SqliteStore,
+  task_id~ : String,
+  interval_sec~ : Int,
+  ts~ : String,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "INSERT INTO heartbeat_history (task_id, interval_sec, ts) VALUES (?, ?, ?)"
+      match db.prepare(sql) {
+        None => Err("sqlite prepare 失败: write_heartbeat_interval")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, task_id)),
+            ),
+          )
+          ignore(stmt.bind(2, @sqlite.SqlValue::Int(interval_sec)))
+          ignore(
+            stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ts))),
+          )
+          let exec_ok = stmt.execute()
+          stmt.finalize()
+          if exec_ok {
+            // 裁剪：每任务只留最近 1000 条（防无限增长）
+            ignore(
+              db.exec(
+                "DELETE FROM heartbeat_history WHERE task_id = '\{task_id}' AND id NOT IN (SELECT id FROM heartbeat_history WHERE task_id = '\{task_id}' ORDER BY id DESC LIMIT 1000)",
+              ),
+            )
+            Ok(())
+          } else {
+            Err("sqlite 写入心跳间隔失败: \{task_id}")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 读取指定任务的心跳间隔历史（时间序：旧→新；最多 limit 条，默认 100）。
+pub fn SqliteStore::list_heartbeat_intervals(
+  self : SqliteStore,
+  task_id : String,
+  limit? : Int = 100,
+) -> Array[Int] {
+  let out : Array[Int] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT interval_sec FROM heartbeat_history WHERE task_id = ? ORDER BY id DESC LIMIT ?"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, task_id)),
+            ),
+          )
+          ignore(stmt.bind(2, @sqlite.SqlValue::Int(limit)))
+          let rows : Array[Int] = []
+          while stmt.step() {
+            rows.push(stmt.column_int(0))
+          }
+          stmt.finalize()
+          // 逆序翻转 → 时间序（旧→新）
+          for i = rows.length() - 1; i >= 0; i = i - 1 {
+            out.push(rows[i])
+          }
           out
         }
       }
