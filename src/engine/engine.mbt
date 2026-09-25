@@ -846,6 +846,7 @@ pub fn FistEngine::plan_deep(
   now~ : String,
   omega_strong_verify? : Bool = false,
   gradient? : Bool = false,
+  calibrate? : Array[Double]? = None,
 ) -> Result[Json, String] {
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
@@ -872,7 +873,7 @@ pub fn FistEngine::plan_deep(
       }
       match
         self.decompose_rec(
-          parent, slices, spec, now, omega_strong_verify, gradient,
+          parent, slices, spec, now, omega_strong_verify, gradient, calibrate,
         ) {
         Err(e) => Err(e)
         Ok(tree) =>
@@ -900,6 +901,7 @@ fn FistEngine::decompose_rec(
   now : String,
   omega_strong_verify : Bool,
   gradient : Bool,
+  calibrate : Array[Double]?,
 ) -> Result[Json, String] {
   // 父任务进入拆分中（宽于 Task::split：待领取/已领取/拆分中均可转入）
   match parent.mark_decomposing() {
@@ -927,9 +929,22 @@ fn FistEngine::decompose_rec(
     // 让递归拆解产出"由易到难/可验证最小片"的梯度，而非扁平同难单元。
     let n_slices = slices.length()
     let grad_suffix = if gradient {
-      let lvl = @decompose.difficulty_label(idx, n_slices)
+      // 难度校准（可选）：调用方按切片给真实/投影难度(0..5)，长度须与切片一致才生效；
+      // 否则回退到位置三分档（由易到难）。默认缺省=纯位置档，零回归。
+      let calibrated = match calibrate {
+        Some(arr) if arr.length() == n_slices => Some(arr[idx - 1])
+        _ => None
+      }
+      let lvl = match calibrated {
+        Some(d) => @decompose.difficulty_label_from(d)
+        None => @decompose.difficulty_label(idx, n_slices)
+      }
+      let calib_note = match calibrated {
+        Some(d) => " d=\{d.to_string()}"
+        None => ""
+      }
       let hint = @decompose.simpler_variant_hint(omega_clean_slice(slice_text))
-      " [难度梯度 \{idx}/\{n_slices}:\{lvl}] \{hint}"
+      " [难度梯度 \{idx}/\{n_slices}:\{lvl}\{calib_note}] \{hint}"
     } else {
       ""
     }
@@ -964,7 +979,7 @@ fn FistEngine::decompose_rec(
       )
       match
         self.decompose_rec(
-          child, next_slices, spec, now, omega_strong_verify, gradient,
+          child, next_slices, spec, now, omega_strong_verify, gradient, calibrate,
         ) {
         Ok(subtree) =>
           match subtree.value("children") {

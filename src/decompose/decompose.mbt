@@ -90,6 +90,19 @@ pub fn difficulty_label(idx : Int, split_n : Int) -> String {
 }
 
 ///|
+/// 由难度数值(0..5)映射档位（易/中/难）。供 plan_deep 的难度校准(calibrate)使用，
+/// 让"难度梯度"反映真实/投影难度，而非纯位置。
+pub fn difficulty_label_from(d : Double) -> String {
+  if d <= 2.0 {
+    "易"
+  } else if d <= 3.5 {
+    "中"
+  } else {
+    "难"
+  }
+}
+
+///|
 /// LADDER 信号：为某切片生成"更简单变体"提示，引导执行者先把目标切成可独立验证
 /// 的最小可行片（st稳态分片），贴合"自生成更简单变体→难度梯度自举"的论文信号。
 pub fn simpler_variant_hint(slice_text : String) -> String {
