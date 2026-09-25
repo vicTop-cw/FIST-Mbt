@@ -370,3 +370,81 @@ pub fn FistEngine::dag_slack_analysis(self : FistEngine) -> Json {
     "cycle": Json::array(cycle.map(fn(s) { Json::string(s) })),
   })
 }
+
+/// ==================== 排程视图（R74，基于 slack 落成可执行排程） ====================
+
+///|
+/// 排程视图（R74）：在 dag_slack_analysis 基础上把任务落成可执行排程——
+/// 按 slack 分两层批：critical 批（slack=0，关键路径瓶颈，须串行盯紧）与
+/// flexible 批（slack>0，可按最早开始排序并行的弹性任务），每批附 assignee 当前占用，
+/// 让"谁在瓶颈、谁可并行派单"一目了然。复用 dag_slack_analysis（不重复算图）。
+pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
+  let slack = self.dag_slack_analysis()
+  let ids : Array[String] = []
+  for t in self.list_all() {
+    ids.push(t.get_id())
+  }
+  // 从 slack.slack_map 取每个任务的 slack 与 earliest
+  let critical_batch : Array[Json] = []
+  let flexible_batch : Array[Json] = []
+  for id in ids {
+    let mut sl = -1
+    let mut ea = -1
+    match slack.value("slack_map") {
+      Some(Object(sm)) =>
+        match sm.get(id) {
+          Some(Object(o)) => {
+            sl = match o.get("slack") {
+              Some(Number(n, ..)) => n.to_int()
+              _ => -1
+            }
+            ea = match o.get("earliest") {
+              Some(Number(n, ..)) => n.to_int()
+              _ => -1
+            }
+          }
+          _ => ()
+        }
+      _ => ()
+    }
+    let assignee = match self.get_task(id) {
+      Some(t) =>
+        match t.assignee {
+          Some(a) => a
+          None => ""
+        }
+      None => ""
+    }
+    let row = Json::object({
+      "task_id": Json::string(id),
+      "earliest": Json::number(ea.to_double()),
+      "slack": Json::number(sl.to_double()),
+      "assignee": Json::string(assignee),
+    })
+    if sl == 0 {
+      critical_batch.push(row)
+    } else if sl > 0 {
+      flexible_batch.push(row)
+    }
+  }
+  // 弹性批按最早开始排序（可并行窗口）
+  flexible_batch.sort_by(fn(a : Json, b : Json) -> Int {
+    let ae = match a.value("earliest") {
+      Some(Number(n, ..)) => n
+      _ => 0.0
+    }
+    let be = match b.value("earliest") {
+      Some(Number(n, ..)) => n
+      _ => 0.0
+    }
+    if ae < be { -1 } else if ae > be { 1 } else { 0 }
+  })
+  Json::object({
+    "basis": Json::string("PERT/CPM slack（基于 dag_slack_analysis）"),
+    "critical_batch": Json::array(critical_batch),
+    "flexible_batch": Json::array(flexible_batch),
+    "note": Json::string(
+      "critical_batch=关键路径瓶颈(须串行盯紧)；flexible_batch=有松弛可按最早开始并行的任务(可优先派给空闲执行者)",
+    ),
+  })
+}

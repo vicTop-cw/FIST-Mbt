@@ -8,14 +8,14 @@
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
 moon build --target js cmd/main
 python scripts/mcp_smoke.py
-# 期望输出：PASS tools/list → 85 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
+# 期望输出：PASS tools/list → 86 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
 ```
 
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **85**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 243/243**（Windows + WSL(Linux) 双端实测全绿） |
+| MCP 工具 | **86**（+ 3 resources + 2 prompts） |
+| 测试 | **`moon test --target js` 244/244**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -84,6 +84,7 @@ python scripts/mcp_smoke.py
 | 50 父计划回注 | `plan_deep` 增 `reinject_context`（R63，ReCAP 借鉴，默认 false 零回归）：把「父计划摘要 + 剩余兄弟」回注进每条子任务描述，递归下钻整树继承——让拆出的原子片知道自己"为什么做、旁边还有谁"，防上下文漂移；engine + MCP task_plan_deep 双端贯通 | `decompose_test.mbt`「reinject_context 回注+默认关闭零回归」用例（+1） |
 | 51 项目健康卡 | 新增 `project_health` 工具（R68）：单次调用聚合 in_flight/ready/done/blocked/reviewing/archived 六类计数 + 健康等级(empty/attention/stalled/healthy) + blocked_tasks，可接 ns 过滤——"agent 一眼看全项目健康"，正中支柱①"一目了然"与"更好的 AI 项目管理工具" | `board_ascii_test.mbt`「project_health 健康卡+等级判定」用例（+1） |
 | 52 瓶颈与松弛分析 | 新增 `dag_slack` 工具（R71，PERT/CPM 硬核调度）：对每个任务算 earliest/latest/slack（0=关键路径，>0=可灵活并行安排），返回 { makespan, critical, slack_map, cycle }——"找出谁在关键路径上、谁有松弛可并行"，支撑排程优化。门禁复评 FAIL(AI3 p1 0.62) 后按"硬创新"要求落地，非演示叠加 | `dag_ext_test.mbt`「dag_slack 临界+松弛+环检测」用例（+1） |
+| 53 排程视图 | 新增 `dag_schedule` 工具（R74，基于 dag_slack 落成可执行排程）：critical_batch(关键路径瓶颈,须串行盯紧) 与 flexible_batch(slack>0,按最早开始排序可并行,附 assignee) 两批——谁在瓶颈、谁可并行派单一目了然，排程优化闭环 | `dag_ext_test.mbt`「dag_schedule 分批+assignee」用例（+1） |
 
 > 注：内存日志/汇报用字母轮号（含若干纯文档/CI 非功能行，不入上表）；本表仅计功能轮。
 
