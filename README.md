@@ -161,6 +161,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 | `dag_check` | 检查某任务的依赖是否全部完成 | task_id |
 | `dag_ready` | 列出所有依赖满足、可领取的任务 | namespace(可选) |
 | `dag_sort` | 对任务列表按依赖深度拓扑排序 | task_ids(JSON 数组) |
+| `dag_depend` | 显式给任务追加前置依赖（构建 DAG 依赖边，不只靠父任务） | task_id, dep_id, now |
 
 #### 审计与权限（M5 治理）
 
@@ -276,7 +277,7 @@ FIST-Mbt/
 │   │   └── ops_ts.mbt          # 时间戳工具
 │   ├── omega/           # 可解释性子包：spec/gate/check
 │   └── server/          # MCP server 装配
-│       ├── server.mbt          # 69 个工具注册 + 3 resources + 2 prompts + run_server
+│       ├── server.mbt          # 70 个工具注册 + 3 resources + 2 prompts + run_server
 │       ├── stdio_js.mbt        # JS 后端 STDIO 传输
 │       └── stdio_native.mbt    # 原生后端 STDIO 传输
 └── moon.mod             # 模块元数据

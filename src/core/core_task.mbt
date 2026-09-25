@@ -521,6 +521,28 @@ pub fn Task::with_deliverable(
 }
 
 ///|
+/// 追加一条前置依赖（去重）并更新时间戳；返回带新 depends_on 的副本。
+/// 供显式 DAG 构建（dag_depend）使用——不只靠 plan_deep 的隐式父子关系。
+pub fn Task::with_depends_on(
+  self : Task,
+  dep_id : String,
+  now : String,
+) -> Task {
+  let deps : Array[String] = if self.depends_on.contains(dep_id) {
+    self.depends_on
+  } else {
+    // 拷贝原依赖数组并追加（Array 可变容器，push 就地生效）
+    let out : Array[String] = []
+    for d in self.depends_on {
+      out.push(d)
+    }
+    out.push(dep_id)
+    out
+  }
+  { ..self, depends_on: deps, updated_at: now, }
+}
+
+///|
 pub fn child_id(parent_id~ : String, idx~ : Int) -> String {
   "\{parent_id}.\{idx}"
 }
@@ -554,6 +576,10 @@ pub fn Task::to_json(self : Task) -> Json {
     None => m.set("completed_by", Json::null())
   }
   m.set("cleanup_mode", Json::string(self.cleanup_mode))
+  m.set(
+    "depends_on",
+    Json::array(self.depends_on.map(fn(d) { Json::string(d) })),
+  )
   m.set("is_leaf", Json::boolean(self.is_leaf()))
   Json::object(m)
 }

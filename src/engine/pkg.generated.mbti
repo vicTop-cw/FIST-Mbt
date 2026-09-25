@@ -73,6 +73,7 @@ pub fn FistEngine::cold_publish(Self, ns~ : String, description~ : String, creat
 pub fn FistEngine::cost_stats(Self) -> Json
 pub fn FistEngine::critical_path(Self) -> Array[String]
 pub fn FistEngine::dag_ascii(Self, ns~ : String) -> String
+pub fn FistEngine::dag_depend(Self, task_id~ : String, dep_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::delete_task(Self, String) -> Result[Unit, String]
 pub fn FistEngine::deps_satisfied(Self, String) -> Bool
 pub fn FistEngine::docs_verify_gate(Self, String) -> Result[Unit, String]

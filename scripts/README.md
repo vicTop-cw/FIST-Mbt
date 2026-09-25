@@ -20,7 +20,7 @@
 
 ## 现有正式工具速查
 
-- `mcp_smoke.py` — MCP server 一键自检（69 工具 + publish/get 链路）。
+- `mcp_smoke.py` — MCP server 一键自检（70 工具 + publish/get 链路）。
 - `patch_esm_main.py` — moonc≥0.10.14 ESM 输出注入 createRequire shim（幂等）。
 - `log_fix_selfdrive.py` — call_log 缺陷修复自驱闭环。
 - `enhance_verify.py` — 三块增强 E2E 验证。

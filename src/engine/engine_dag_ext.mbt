@@ -197,3 +197,35 @@ pub fn FistEngine::dag_ascii(self : FistEngine, ns~ : String) -> String {
   }
   out
 }
+
+///|
+/// 显式给任务追加一条前置依赖（构建 DAG 依赖边，不只靠 plan_deep 隐式父子）。
+/// 校验：task 与 dep 均存在、非同一任务、且不会形成直接自环；去重追加并落库。
+/// 返回追加后的任务 JSON。失败返回 Err（含人语原因）。
+pub fn FistEngine::dag_depend(
+  self : FistEngine,
+  task_id~ : String,
+  dep_id~ : String,
+  now~ : String,
+) -> Result[@core.Task, String] {
+  let task = match self.store.get_task(task_id) {
+    None => return Err("task not found: \{task_id}")
+    Some(t) => t
+  }
+  if dep_id == task_id {
+    return Err("不能依赖自身: \{task_id}")
+  }
+  let _dep = match self.store.get_task(dep_id) {
+    None => return Err("依赖任务 \{dep_id} 不存在")
+    Some(d) => d
+  }
+  // 已存在则幂等返回现任务
+  if task.depends_on.contains(dep_id) {
+    return Ok(task)
+  }
+  let c = task.with_depends_on(dep_id, now)
+  match self.store.update_task(c) {
+    Ok(_) => Ok(c)
+    Err(e) => Err("依赖落库失败: \{e}")
+  }
+}
