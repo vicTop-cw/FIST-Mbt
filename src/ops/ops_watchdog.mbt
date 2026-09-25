@@ -281,6 +281,38 @@ pub fn watchdog_tick(
   } else {
     Json::null()
   }
+  // 无人值守派发预览（R51，纯读零回归）：显式传 ns 时，用 engine.triage 给出"下一单可自动派发"的
+  // 候选（不自动认领——完整派发走 server 自驱派单，避免 ops 仓与进程内 exec_reg 耦合）。
+  // 只读快照，供外部 cron/agent 一看就知道"此刻可对哪条按能力/难度自动接单"。
+  let ready_preview : Json = if ns != "" {
+    let tri = engine.triage(heal_ns, "watchdog", "")
+    match tri.value("suggestion") {
+      Some(Object(sm)) => {
+        let tid = match sm.get("task_id") {
+          Some(Json::String(s)) => s
+          _ => ""
+        }
+        let reason = match sm.get("reason") {
+          Some(Json::String(r)) => r
+          _ => ""
+        }
+        Json::object({
+          "task_id": Json::string(tid),
+          "note": Json::string(reason),
+          "hint": Json::string(
+            "可对这条调 selfdrive_dispatch/schedule 做能力路由自治派单",
+          ),
+        })
+      }
+      _ =>
+        Json::object({
+          "task_id": Json::string(""),
+          "note": Json::string("无待领取且依赖满足的任务，无需派发"),
+        })
+    }
+  } else {
+    Json::null()
+  }
   let detail = Json::object({
     "namespace": Json::string(heal_ns),
     "scanned": Json::number(tasks.length().to_double()),
@@ -289,6 +321,7 @@ pub fn watchdog_tick(
     "meta_prompt_path": Json::string(meta_prompt_path),
     "meta_prompt_used": Json::boolean(meta_used),
     "selfdrive": sd_detail,
+    "ready_dispatch_preview": ready_preview,
   })
   // ---- 4. 心跳超时回滚优先返回 ----
   if !healed.is_empty() {
