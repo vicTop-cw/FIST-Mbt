@@ -173,6 +173,16 @@ pub fn StoreBackend::sqlite(s : SqliteStore) -> StoreBackend {
 }
 
 ///|
+/// 提取底层 SQLite 句柄（内存后端返回 None）。
+/// 供跨包复用 SqliteStore 专有能力（如 evolve_artifacts 的 evolve_upsert / evolve_list）。
+pub fn StoreBackend::sqlite_store(self : StoreBackend) -> SqliteStore? {
+  match self {
+    Mem(_) => None
+    Sql(s) => Some(s)
+  }
+}
+
+///|
 impl Store for StoreBackend with fn create_task(self, task) {
   match self {
     Mem(m) => m.create_task(task)

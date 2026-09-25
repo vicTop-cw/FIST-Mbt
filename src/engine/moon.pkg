@@ -3,6 +3,7 @@ import {
   "vicTop-cw/fist-mbt/src/store",
   "vicTop-cw/fist-mbt/src/decompose",
   "vicTop-cw/fist-mbt/src/omega",
+  "vicTop-cw/fist-mbt/src/evolve",
   "moonbitlang/core/json",
   "moonbitlang/x/fs",
 }

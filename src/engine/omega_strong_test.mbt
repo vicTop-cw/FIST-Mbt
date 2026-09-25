@@ -345,3 +345,104 @@ test "omega 语料真正落库：同一 SQLite 库换引擎实例仍可读" {
     Err(m) => abort("omega_status after reopen failed: \{m}")
   }
 }
+
+///|
+test "omega 打回自动落 [lesson] 教训（spec 打回 + 复验打回 + 超限升级），同一库可读" {
+  let db = "omega_auto_lesson.db"
+  // 幂等：先经 SqliteStore 公共 API 清空上次残留任务，保证测试可重复执行
+  match @store.SqliteStore::open(db) {
+    Some(s) => ignore(s.clear())
+    None => abort("sqlite open failed: \{db}")
+  }
+  let e = match @engine.FistEngine::open_sqlite(db) {
+    Some(x) => x
+    None => abort("open_sqlite failed: \{db}")
+  }
+  let id = os_publish(e, desc="Omega 自动回流根任务")
+  os_split(e, id, true)
+  let cid = os_first_child(e, id)
+  ignore(e.claim(task_id=cid, assignee="exec_1", now="2026-09-17T09:03:00Z"))
+  // ① 语料被打回（带原因）：自动落 [lesson] omega.spec_rejected
+  ignore(
+    e.omega_spec_create(
+      task_id=cid,
+      author="spec_author",
+      content="验收标准 v1",
+      now="2026-09-17T09:04:00Z",
+    ),
+  )
+  match
+    e.omega_spec_review(
+      task_id=cid,
+      reviewer="verifier",
+      verdict="reject",
+      reason="验收标准不量化",
+      now="2026-09-17T09:05:00Z",
+    ) {
+    Ok(j) => assert_true(j.stringify().contains("\"learned_lesson\":true"))
+    Err(m) => abort("spec_review reject failed: \{m}")
+  }
+  // ② 语料重做 + 审核通过 + 执行 + 提交，进入成果复验
+  ignore(
+    e.omega_spec_create(
+      task_id=cid,
+      author="spec_author",
+      content="验收标准 v2（可量化）",
+      now="2026-09-17T09:06:00Z",
+    ),
+  )
+  match
+    e.omega_spec_review(
+      task_id=cid,
+      reviewer="verifier",
+      verdict="approve",
+      now="2026-09-17T09:07:00Z",
+    ) {
+    Ok(_) => ()
+    Err(m) => abort("spec approve failed: \{m}")
+  }
+  ignore(
+    e.execute(task_id=cid, deliverable="成果 v1", now="2026-09-17T09:08:00Z"),
+  )
+  ignore(e.submit(task_id=cid, now="2026-09-17T09:09:00Z"))
+  // ③ 成果复验打回（max_rounds=1）：落 [lesson] omega.result_rejected
+  match
+    e.omega_result_verify(
+      task_id=cid,
+      reviewer="verifier",
+      verdict="fail",
+      reason="成果未达标",
+      now="2026-09-17T09:10:00Z",
+      max_rounds=1,
+    ) {
+    Ok(j) => assert_true(j.stringify().contains("\"learned_lesson\":true"))
+    Err(m) => abort("result_verify reject failed: \{m}")
+  }
+  // ④ 复验仍不达标 -> 超限升级人工：落 [lesson] omega.escalated
+  match
+    e.omega_result_verify(
+      task_id=cid,
+      reviewer="verifier",
+      verdict="fail",
+      reason="重做后仍不达标",
+      now="2026-09-17T09:11:00Z",
+      max_rounds=1,
+    ) {
+    Ok(j) => assert_true(j.stringify().contains("\"learned_lesson\":true"))
+    Err(m) => abort("result_verify escalate failed: \{m}")
+  }
+  // ⑤ 换引擎实例读取同一库：三类教训均已沉淀且可检索（原因被记进 note）
+  let s = match @store.SqliteStore::open(db) {
+    Some(x) => x
+    None => abort("reopen sqlite failed: \{db}")
+  }
+  let join = s
+    .evolve_list()
+    .map(fn(j) { j.stringify() })
+    .fold_left(init="", fn(a, x) { a + x })
+  assert_true(join.contains("[lesson] omega.spec_rejected"))
+  assert_true(join.contains("验收标准不量化"))
+  assert_true(join.contains("[lesson] omega.result_rejected"))
+  assert_true(join.contains("成果未达标"))
+  assert_true(join.contains("[lesson] omega.escalated"))
+}

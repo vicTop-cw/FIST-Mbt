@@ -410,7 +410,19 @@ pub fn FistEngine::omega_spec_review(
     }
     match self.store.update_spec_status(cur.id, "rejected", cur.content, now) {
       Err(e) => Err(e)
-      Ok(_) =>
+      Ok(_) => {
+        // 失败回流：语料被打回即自动落 [lesson] 教训，供 plan/claim inject 检索
+        let learned = self.omega_auto_lesson(
+          rejected,
+          "omega.spec_rejected",
+          if reason == "" {
+            "语料被打回（未附原因）"
+          } else {
+            reason
+          },
+          "语料未达要求，按审核意见重写后重新 omega_spec_create",
+          now,
+        )
         Ok(
           Json::object({
             "ok": Json::boolean(true),
@@ -422,10 +434,12 @@ pub fn FistEngine::omega_spec_review(
             "reason": Json::string(reason),
             "rounds_rejected": Json::number(rejected.to_double()),
             "max_rounds": Json::number(max_r.to_double()),
+            "learned_lesson": Json::boolean(learned),
             "next_action": Json::string("omega_spec_create"),
             "escalated": Json::boolean(false),
           }),
         )
+      }
     }
   }
 }
@@ -527,6 +541,18 @@ pub fn FistEngine::omega_result_verify(
     match self.store.upsert_spec(rec) {
       Err(e) => Err(e)
       Ok(_) => {
+        // 失败回流：成果复验未达标即自动落 [lesson] 教训
+        let learned = self.omega_auto_lesson(
+          rejected,
+          "omega.result_rejected",
+          if reason == "" {
+            "成果复验未达标（未附原因）"
+          } else {
+            reason
+          },
+          "交付物未达语料要求，按复验意见重做后重新 execute/submit",
+          now,
+        )
         // 打回重做：若已提交待验收，则用既有 reject 语义退回执行
         let mut demoted = ""
         if t.get_status().is_reviewing() {
@@ -551,6 +577,7 @@ pub fn FistEngine::omega_result_verify(
             "reason": Json::string(reason),
             "rounds_rejected": Json::number(rejected.to_double()),
             "max_rounds": Json::number(max_r.to_double()),
+            "learned_lesson": Json::boolean(learned),
             "task_transition": Json::string(demoted),
             "next_action": Json::string("execute"),
             "escalated": Json::boolean(false),
@@ -574,6 +601,18 @@ fn FistEngine::omega_escalate(
   reason : String,
   now : String,
 ) -> Json {
+  // 失败回流：打回超限升级本身是最典型的「此路不通」教训，自动沉淀进 DGM
+  let learned = self.omega_auto_lesson(
+    rounds,
+    "omega.escalated",
+    if reason == "" {
+      "打回超限升级人工（未附原因）"
+    } else {
+      reason
+    },
+    "该打回原因已反复出现，需换策略而非继续同样的做法",
+    now,
+  )
   let esc_id = omega_escalation_id(task_id, stage, rounds)
   let payload = "stage: " +
     stage +
@@ -609,6 +648,7 @@ fn FistEngine::omega_escalate(
     "reason": Json::string(reason),
     "needs_human_review": Json::boolean(true),
     "task_paused": Json::boolean(paused),
+    "learned_lesson": Json::boolean(learned),
     "next_action": Json::string("human_review"),
     "escalated": Json::boolean(true),
   })

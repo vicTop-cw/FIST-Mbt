@@ -456,8 +456,8 @@ test "memory_13_lookup_injected_assets_hit_and_empty" {
 
 ///|
 test "memory_15_lesson_goal_prefix" {
-  assert_eq(lesson_goal("语料不合格"), "[lesson] 语料不合格")
-  assert_eq(lesson_goal("  [lesson] 旧教训  "), "[lesson] 旧教训")
+  assert_eq(@evolve.lesson_goal("语料不合格"), "[lesson] 语料不合格")
+  assert_eq(@evolve.lesson_goal("  [lesson] 旧教训  "), "[lesson] 旧教训")
 }
 
 ///|

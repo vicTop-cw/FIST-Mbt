@@ -86,6 +86,7 @@ pub fn FistEngine::list_all(Self) -> Array[@core.Task]
 pub fn FistEngine::list_by_status(Self, @core.TaskStatus) -> Array[@core.Task]
 pub fn FistEngine::list_in_ns(Self, String) -> Array[@core.Task]
 pub fn FistEngine::new(store? : @store.StoreBackend) -> Self
+pub fn FistEngine::omega_auto_lesson(Self, Int, String, String, String, String) -> Bool
 pub fn FistEngine::omega_count(Self, String, String, String) -> Int
 pub fn FistEngine::omega_count_type(Self, String, String) -> Int
 pub fn FistEngine::omega_execute_gate(Self, String) -> Result[Unit, String]
