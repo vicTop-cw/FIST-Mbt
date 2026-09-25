@@ -154,6 +154,17 @@ def main():
         print(f"      ↳ R77 依赖图成本路由 dag_cost_route → {len(cr.get('cost_route', []))} 条建议，"
               f"total_est_cost={cr.get('total_est_cost')}（执行成本难度档+切换税+能力约束，"
               f"critical_path→slack→schedule→cost_route 闭环）")
+        # R80 历史信任轴：executor_route 按 能力覆盖→信任→负载 排序（防只认领不交付）
+        er2 = call(p, "executor_route", need="编排")
+        best = er2.get("best", {}) or {}
+        assert "candidates" in er2, "executor_route 应返回 candidates"
+        print(f"      ↳ R80 历史信任轴 executor_route(need=编排) → best={best.get('name')} "
+              f"trust={best.get('trust')} load={best.get('load')}（能力覆盖→信任→负载，防只认领不交付）")
+        # R81 预算阶段切分：预算在依赖图上按阶段切分，瓶颈阶段占额可见
+        bs = call(p, "cost_budget_split", budget=100, now=NOW)
+        assert "stages" in bs and "total_budget" in bs, "cost_budget_split 应返回 stages/total_budget"
+        print(f"      ↳ R81 预算阶段切分 cost_budget_split(100) → {len(bs.get('stages', []))} 阶段，"
+              f"makespan={bs.get('makespan')}（预算按 DAG 阶段切分：瓶颈阶段占额可见，超支先预警）")
         tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"
