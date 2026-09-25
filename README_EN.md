@@ -2,12 +2,12 @@
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-287%2F287-brightgreen)](./src)
+[![Tests](https://img.shields.io/badge/tests-295%2F295-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
 **FIST-Mbt** is an **AI commander task-orchestration foundation** rewritten in **pure MoonBit** and exposed as an **MCP Server** — not another agent framework, but an autonomous system that keeps itself moving: the full lifecycle `publish → claim → plan → execute → submit → verify → archive`, plus self-driving review loops, DGM evolution sampling, Omega strong verification, and cross-process watchdog — all surfaced as **101 MCP tools** to any MCP client (Claude Desktop / Cursor / a custom JSON-RPC client).
 
-**Why MoonBit**: task orchestration is inherently correctness-sensitive (state machine, permission matrix, append-only audit, recursive decomposition). MoonBit's strong typing, zero runtime dependencies, and JS+Native cross-compilation let this logic pass **287 tests on both Windows and Linux** — reproducible on any machine. `moon update && moon run cmd/main` and you are up; no Python environment hell.
+**Why MoonBit**: task orchestration is inherently correctness-sensitive (state machine, permission matrix, append-only audit, recursive decomposition). MoonBit's strong typing, zero runtime dependencies, and JS+Native cross-compilation let this logic pass **295 tests on both Windows and Linux** — reproducible on any machine. `moon update && moon run cmd/main` and you are up; no Python environment hell.
 
 > It polished itself to a deliverable state using its **own** self-driving + recursive-decomposition pipeline — evidence: `docs/selfdrive-walkthrough.md`.
 
@@ -18,7 +18,7 @@
 ```bash
 moon update                    # first run: refresh registry index (all deps are public)
 moon check
-moon test --target js -j 1     # → Total tests: 287, passed: 287, failed: 0
+moon test --target js -j 1     # → Total tests: 295, passed: 295, failed: 0
 moon run cmd/main              # start the MCP server (STDIO transport)
 ```
 
@@ -72,7 +72,7 @@ The core value is **recursive decomposition of complex tasks made observable and
 - self-driving review, watchdog, sagas, and circuit breakers keep long-running autonomous pipelines from stalling or cascading;
 - self-evolution closes the loop: the tool absorbs what works from each verified delivery.
 
-Everything is reproducible: one command re-runs 287 tests, the smoke test, and the full capability-chain demo.
+Everything is reproducible: one command re-runs 295 tests, the smoke test, and the full capability-chain demo.
 
 ---
 
@@ -96,16 +96,16 @@ Pure MoonBit; no Rust/C wrappers. Protocol layer: [`colmugx/mcp`](https://moonca
 
 ## Testing
 
-- **287/287** tests green on the JS backend — verified on both Windows and WSL(Linux).
+- **295/295** tests green on the JS backend — verified on both Windows and WSL(Linux). Since R107 the suite includes **property tests** (`moonbitlang/core/quickcheck`): random inputs validate invariants (slice arity/prefix, difficulty monotonicity, Task transition discipline claim/execute/reopen/split/submit/reject) with fixed seeds — reproducible on any machine.
 - CI three tracks (js ubuntu / native ubuntu / js windows) with live badges.
-- Guard family: `check_tools_sync` (101 tools aligned) / `check_test_sync` (287 aligned) / `check_badge` / `check_scripts_index` / `map_verify` / `cleanup --check` (repo cleanliness gate).
+- Guard family: `check_tools_sync` (101 tools aligned) / `check_test_sync` (295 aligned) / `check_badge` / `check_scripts_index` / `map_verify` / `cleanup --check` (repo cleanliness gate).
 
 ---
 
 ## Known Boundaries (honest notes)
 
 - JS backend prints Node's `ExperimentalWarning: SQLite is an experimental feature` on Node ≥ 24 — harmless, ignorable.
-- Windows native test may rarely hit `0xc0000374` (heap race in the local native SQLite stub) even with `-j 1`; the authoritative stability gate is the JS backend (Node ≥ 24, Windows + Linux both 287/287).
+- Windows native test may rarely hit `0xc0000374` (heap race in the local native SQLite stub) even with `-j 1`; the authoritative stability gate is the JS backend (Node ≥ 24, Windows + Linux both 295/295).
 
 ---
 
