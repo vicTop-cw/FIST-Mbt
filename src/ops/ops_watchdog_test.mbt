@@ -828,3 +828,74 @@ test "watchdog R51: ns 下无人值守派发预览给出可自动派发的下一
     _ => abort("detail 缺失")
   }
 }
+
+///|
+test "watchdog R57: autodispatch=true + ns 待领取任务 + store 执行者 -> 认领给最佳执行者" {
+  let e = wd_sqlite_engine("watchdog_r57.db")
+  // 注册执行者能力（落 store）
+  ignore(
+    e.executor_save(
+      name="worker-57",
+      abilities_json="[\"编排\",\"js\"]",
+      created_at="2026-09-17T10:00:00Z",
+    ),
+  )
+  wd_publish(e, "cron-auto-dispatch") // T0 待领取
+  let r = @ops.watchdog_tick(
+    e,
+    "2026-09-17T10:00:10Z",
+    timeout_sec=600,
+    ns="cron-auto-dispatch",
+    autodispatch=true,
+    autodispatch_want="编排",
+  )
+  let j = match r {
+    Ok(v) => v
+    Err(m) => abort("watchdog_tick 失败: " + m)
+  }
+  // 无活跃任务、无续轮 -> idle
+  assert_eq(wd_action(j), "idle")
+  // detail.autodispatch 应派发成功并将 T0 认领给 worker-57
+  match j.value("detail") {
+    Some(Object(d)) =>
+      match d.get("autodispatch") {
+        Some(Object(ad)) => {
+          assert_eq(ad.get("dispatched"), Some(Json::boolean(true)))
+          assert_eq(ad.get("task_id"), Some(Json::string("T0")))
+          assert_eq(ad.get("to_executor"), Some(Json::string("worker-57")))
+        }
+        _ => abort("detail.autodispatch 应为对象: " + j.stringify())
+      }
+    _ => abort("detail 缺失")
+  }
+  // T0 已被 worker-57 认领
+  match e.get_task("T0") {
+    Some(t) => assert_eq(t.assignee, Some("worker-57"))
+    None => abort("T0 应存在")
+  }
+}
+
+///|
+test "watchdog R57: autodispatch=false 时绝不认领（零回归回归确认）" {
+  let e = wd_sqlite_engine("watchdog_r57b.db")
+  ignore(
+    e.executor_save(
+      name="worker-57b",
+      abilities_json="[\"编排\"]",
+      created_at="2026-09-17T10:00:00Z",
+    ),
+  )
+  wd_publish(e, "cron-no-dispatch") // T0 待领取
+  // 默认 autodispatch=false（不传）
+  let j = wd_tick_ok(e, "2026-09-17T10:00:10Z", ns="cron-no-dispatch")
+  assert_eq(wd_action(j), "idle")
+  // detail.autodispatch 应为 null，任务仍待领取、无人认领
+  match j.value("detail") {
+    Some(Object(d)) => assert_eq(d.get("autodispatch"), Some(Json::null()))
+    _ => abort("detail 缺失")
+  }
+  match e.get_task("T0") {
+    Some(t) => assert_eq(t.assignee, None)
+    None => abort("T0 应存在")
+  }
+}

@@ -15,7 +15,7 @@ python scripts/mcp_smoke.py
 | 项 | 值 |
 |---|---|
 | MCP 工具 | **83**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 237/237**（Windows + WSL(Linux) 双端实测全绿） |
+| 测试 | **`moon test --target js` 239/239**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -79,6 +79,7 @@ python scripts/mcp_smoke.py
 | 45 看门狗派发预览 | `watchdog_tick` 在显式 ns 无人值守场景新增 `detail.ready_dispatch_preview`：复用 engine.triage 给出"下一单可自动派发"的候选（纯读不认领，避免 ops 仓与 server 进程内 exec_reg 耦合；自治派单的前置信号） | `ops_watchdog_test.mbt`「watchdog R51 派发预览」用例（+1） |
 | 46 看板难度标注 | `board_ascii` 每行任务附自身难度档（复用 pub `extract_difficulty` 单一来源）——实时看板一眼看任务难度结构（支柱①"一目了然"＋②"复用"） | `board_ascii_test.mbt`「board_ascii 每行标注难度档」用例（+1） |
 | 47 引擎层自治派单 | 新增 `FistEngine::dispatch_next`（engine 层 store-backed 自治派单 primitive，R56）：读 store 持久化执行者能力注册 + executor 包 `route_pick` 按能力/负载路由 → 把 triage 顶部任务直接认领给最佳执行者（无注册回退 agent）。纯增量、零回归、不经 server 进程内 exec_reg——是看门狗自治派单的地基（未起 watchdog，仅 engine primitive + 单测） | `engine_dispatch_test.mbt`「dispatch_next」用例（+2） |
+| 48 看门狗自治派单 | `watchdog_tick` 新增 `autodispatch`/`autodispatch_want`（R57，默认关闭零回归）：显式 ns 无人值守且无活跃任务时调 engine `dispatch_next` 把顶部待领取任务按能力/负载认领给最佳执行者，结果并入 `detail.autodispatch`——自治闭环闭环：派单 primitive + 看门狗驱动全打通（引擎层派单下沉、不经 server 进程内 exec_reg） | `ops_watchdog_test.mbt`「watchdog R57」用例（+2） |
 
 > 注：内存日志/汇报用字母轮号（含若干纯文档/CI 非功能行，不入上表）；本表仅计功能轮。
 

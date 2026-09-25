@@ -199,6 +199,10 @@ fn tick_json(
 ///                     3) 后续执行/验收受 omega_execute_gate / omega_verify_gate 约束。
 ///   omega_split_n     Omega 强验证模式下每层拆分数（默认 3）。
 ///   omega_spec        可选 Omega spec JSON（laws 作切割依据，fingerprint 作验收基准）。
+///   autodispatch      是否在显式 ns 无人值守且无活跃任务时，调引擎层 store-backed
+///                     dispatch_next 把顶部待领取任务按能力/负载认领给最佳执行者
+///                     （默认 false，零回归；结果并入 detail.autodispatch）。
+///   autodispatch_want dispatch_next 所需能力标签（autodispatch=true 时按此能力路由执行者）。
 ///
 /// 返回 JSON：{ action, active, healed, healed_tasks, new_task_id,
 ///             previous_task_id, blocked, detail, omega }，
@@ -218,6 +222,8 @@ pub fn watchdog_tick(
   omega_spec? : Json? = None,
   selfdrive_project_dir? : String = "",
   selfdrive_review_every? : Int = 3,
+  autodispatch? : Bool = false,
+  autodispatch_want? : String = "",
 ) -> Result[Json, String] {
   let heal_ns = if ns == "" { "default" } else { ns }
   // ---- 1. 回滚阶段（功能 A：读 SQLite 心跳，跨进程正确） ----
@@ -313,7 +319,7 @@ pub fn watchdog_tick(
   } else {
     Json::null()
   }
-  let detail = Json::object({
+  var detail = Json::object({
     "namespace": Json::string(heal_ns),
     "scanned": Json::number(tasks.length().to_double()),
     "active_tasks": Json::object(active_detail),
@@ -322,6 +328,7 @@ pub fn watchdog_tick(
     "meta_prompt_used": Json::boolean(meta_used),
     "selfdrive": sd_detail,
     "ready_dispatch_preview": ready_preview,
+    "autodispatch": Json::null(),
   })
   // ---- 4. 心跳超时回滚优先返回 ----
   if !healed.is_empty() {
@@ -451,6 +458,30 @@ pub fn watchdog_tick(
   }
   // ---- 6. 默认：等待 / 空闲 ---- 
   let action = if !active_ids.is_empty() { "waiting" } else { "idle" }
+  // R57 自治派单（默认关闭，零回归）：显式 ns 无人值守且无活跃任务时，
+  // 调引擎层 store-backed `dispatch_next` 把顶部可领取任务按能力/负载路由认领给最佳执行者，
+  // 结果并入 detail.autodispatch，不改动既有 waiting/idle 语义。
+  if autodispatch && ns != "" && active_ids.is_empty() {
+    let ad = engine.dispatch_next(heal_ns, next_created_by, autodispatch_want, now)
+    let detail_new = match detail {
+      Object(m) =>
+        Json::object({
+          "namespace": m.get("namespace").unwrap_or(Json::null()),
+          "scanned": m.get("scanned").unwrap_or(Json::null()),
+          "active_tasks": m.get("active_tasks").unwrap_or(Json::null()),
+          "blocked_detail": m.get("blocked_detail").unwrap_or(Json::null()),
+          "meta_prompt_path": m.get("meta_prompt_path").unwrap_or(Json::null()),
+          "meta_prompt_used": m.get("meta_prompt_used").unwrap_or(Json::null()),
+          "selfdrive": m.get("selfdrive").unwrap_or(Json::null()),
+          "ready_dispatch_preview": m.get(
+            "ready_dispatch_preview",
+          ).unwrap_or(Json::null()),
+          "autodispatch": ad,
+        })
+      _ => detail
+    }
+    detail = detail_new
+  }
   Ok(
     tick_json(
       action,
