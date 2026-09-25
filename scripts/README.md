@@ -21,7 +21,8 @@
 ## 现有正式工具速查
 
 **基础 / 演示**
-- `mcp_smoke.py` — MCP server 一键自检（75 工具 + publish/get 链路）。
+- `mcp_smoke.py` — MCP server 一键自检（77 工具 + publish/get 链路）。
+- `cleanup_artifacts.py` — **项目整洁/生成物清理**：删除仓库根"除交付库 `fist-mbt.db` 外"的全部被 gitignore 的 `*.db / -shm / -wal` 测试/演示残留，并清空 `temp/`；`--check` 模式作 CI 干净度守卫（0 = 干净，非 0 退出码 1）。用法：`python scripts/cleanup_artifacts.py` / `python scripts/cleanup_artifacts.py --check`。
 - `patch_esm_main.py` — moonc≥0.10.14 ESM 输出注入 createRequire shim（幂等）。
 - `demo.ps1` — 一键演示（build+patch+smoke）。
 - `native-env.ps1` — Windows native 环境一键装载（VS + sqlite-dev）。
