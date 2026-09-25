@@ -27,6 +27,8 @@
 - `score_gate.py` + `scoring_rubric.md` — **4-AI 概率自评分门禁**：统一 rubric 提示词（维度/稍宽口径/SCORE_JSON 契约）作为正式工具统一管理（原 `_ai_prompt.md` 从临时命名升级）；全档达标 AND 聚合、error 不降级。
 - `patch_esm_main.py` — moonc≥0.10.14 ESM 输出注入 createRequire shim（幂等）。
 - `check_badge.py` — **README 测试徽章一致性守卫（R34）**：比对 `moon test` 实测测试数与 README 徽章 `tests-N%2FN`，不一致即退出码 1（挂 CI 作"徽章不过时可复现"门禁，杜绝手改漏同步）。已经在 `.github/workflows/ci.yml` 的 JS 轨道里自动执行。
+- `check_tools_sync.py` — **工具清单单一真源守卫（R46）**：以 `src/server/server.mbt` 实际注册工具名为唯一真源，校验 AGENTS 表格工具名 ⊆ 真源、真源全部入 AGENTS、README/AGENTS/deliverable/scoring_rubric 工具总数==实测（双向防幽灵/漏写）。已在 ci.yml JS 两轨自动执行。
+- `check_test_sync.py` — **测试总数单一真源守卫（R47）**：从 `moon test` 日志提取实测总数，跨 README/AGENTS/deliverable/scoring_rubric 校验述一致（N/N、N 全绿、独立 N 任一）；`--total N` 直传亦可。已在 ci.yml JS 轨自动执行。
 - `demo.ps1` — 一键演示（build+patch+smoke）。
 - `native-env.ps1` — Windows native 环境一键装载（VS + sqlite-dev）。
 - `gen_apply_pdf.py` — 一页项目申报书 PDF 生成（个人档，不入库）。
