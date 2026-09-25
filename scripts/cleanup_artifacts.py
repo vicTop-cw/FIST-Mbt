@@ -10,6 +10,7 @@ smoke_*.db、decompose_persist.db、alpha.db 等 .db / -shm / -wal），并在 t
 本脚本（幂等、安全）：
   - 删除仓库根"除 fist-mbt.db（唯一被 git 跟踪的交付 数据库快照）之外"的全部 *.db / *.db-shm / *.db-wal；
   - 清空 temp/（scratch 临时库区）；
+  - 把 scripts/ 下 `_` 前缀的临时脚本（任务完即清策略）移入 temp/，使正式工具目录干净；
   - --check 模式只报告残留数量（0 = 干净），不删任何文件。
 
 用法：
@@ -52,21 +53,72 @@ def temp_files():
     return out
 
 
+# 临时脚本的扩展名（任务完即清策略的对象）
+_TMP_SCRIPT_EXT = (".py", ".ps1", ".sh")
+
+
+def stray_underscore_scripts():
+    """scripts/ 下 `_` 前缀的临时脚本（正式工具目录不应留）。返回绝对路径+相对名列表。"""
+    sdir = os.path.join(ROOT, "scripts")
+    out = []
+    if not os.path.isdir(sdir):
+        return out
+    for name in sorted(os.listdir(sdir)):
+        full = os.path.join(sdir, name)
+        if not (
+            name.startswith("_")
+            and os.path.isfile(full)
+            and name.endswith(_TMP_SCRIPT_EXT)
+        ):
+            continue
+        out.append((full, os.path.join("scripts", name)))
+    return out
+
+
 def main():
     check_only = "--check" in sys.argv[1:]
     root_stray = stray_root_dbs()
     tfiles = temp_files()
+    uscripts = stray_underscore_scripts()
+    # 已跨到 temp/ 的临时脚本也算 temp 残留（一并清掉，幂等）
+    for _abs, rel in uscripts:
+        moved = os.path.join(ROOT, "temp", os.path.basename(rel))
+        if moved not in tfiles:
+            tfiles.append(moved)
     total = len(root_stray) + len(tfiles)
     if check_only:
-        if total != 0:
-            print(f"DIRTY: 仓库残留 {len(root_stray)} 个根 .db 生成物 + {len(tfiles)} 个 temp/ 文件（共 {total}）")
+        if total != 0 or uscripts:
+            print(
+                f"DIRTY: 仓库残留 {len(root_stray)} 个根 .db + {len(tfiles)} 个 temp/ 文件 "
+                f"+ {len(uscripts)} 个 scripts/ `_` 临时脚本（共 {total + len(uscripts)}）"
+            )
             sys.exit(1)
-        print("CLEAN: 仓库根仅 fist-mbt.db，temp/ 无残留 — 生成物整洁")
+        print("CLEAN: 仓库根仅 fist-mbt.db，temp/ 无残留，scripts/ 无 `_` 临时脚本 — 整洁")
         return
-    if total == 0:
-        print("CLEAN: 无需清理（仓库根仅 fist-mbt.db，temp/ 无残留）")
+    if total == 0 and not uscripts:
+        print("CLEAN: 无需清理（仓库根仅 fist-mbt.db，temp/ 无残留，scripts/ 无临时脚本）")
         return
     removed = 0
+    # 将 scripts/ 下 `_` 临时脚本移入 temp/（任务完即清，移走后正式工具目录干净）
+    for abs_p, rel in uscripts:
+        dst = os.path.join(ROOT, "temp", os.path.basename(rel))
+        try:
+            os.makedirs(os.path.join(ROOT, "temp"), exist_ok=True)
+            os.replace(abs_p, dst)
+            print(f"mv  {rel} → temp/")
+            removed += 1
+        except OSError as e:
+            print(f"!! 移入失败 {rel}: {e}")
+    # 移入后 temp/ 有了这些文件，走统一 temp 清理（若为临时脚本则一并删除）
+    tfiles2 = temp_files()
+    for rel in tfiles2:
+        p = os.path.join(ROOT, rel)
+        try:
+            os.remove(p)
+            print(f"rm  {rel}")
+            removed += 1
+        except OSError as e:
+            print(f"!! 删除失败 {rel}: {e}")
     for name in root_stray:
         p = os.path.join(ROOT, name)
         try:
@@ -75,14 +127,6 @@ def main():
             removed += 1
         except OSError as e:
             print(f"!! 删除失败 {name}: {e}")
-    for rel in tfiles:
-        p = os.path.join(ROOT, rel)
-        try:
-            os.remove(p)
-            print(f"rm  {rel}")
-            removed += 1
-        except OSError as e:
-            print(f"!! 删除失败 {rel}: {e}")
     # 清空 temp 目录保留目录本身（若存在且已空）
     tdir = os.path.join(ROOT, "temp")
     try:
