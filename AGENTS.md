@@ -178,7 +178,7 @@ You can browse and install extra skills here:
 | `executor_register` | 执行者能力登记（Marketplace 雏形）：为执行者登记能力标签集合（如 [编排,json]），并持久化到 store（跨进程可复现） |
 | `executor_route` | 能力路由推荐：给定任务所需能力 need，从已注册执行者按 { 能力覆盖率 desc → 负载(名下活跃任务数) asc } 排序，返回候选 + 最佳执行者，实现"按专长+负载分配"（而非仅靠 agent 自选）；启动会回灌已持久化注册 |
 | `executor_clear` | 清空全部执行者能力注册（Marketplace 重置/整洁，防测试残留） |
-| `selfdrive_dispatch` | 能力路由自动派单（R32）：取 triage 顶部可领取任务 → 按 want 能力经 executor_route 找最佳执行者 → **直接认领给该执行者**（待领取→已领取）；无匹配时回退 `agent`，把"推荐"落成动作 |
+| `selfdrive_dispatch` | 能力路由自动派单（R32/R33）：取 triage 顶部可领取任务 → 确定所需能力（显式 `want` 优先，否则从任务描述自动抽取已注册能力标签，R33 免手传）→ 经 executor_route 找最佳执行者 → **直接认领给该执行者**（待领取→已领取）；无匹配时回退 `agent`，把"推荐"落成动作 |
 
 ### 审计与权限（2）
 | 工具 | 说明 |

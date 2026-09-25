@@ -67,13 +67,23 @@ def main():
         assert d["task_id"] == tid, f"应派单给发布的任务 {tid}: {d}"
         print(f"PASS selfdrive_dispatch(want=编排) → 派单 {tid} 给 exec-DP（routed=true, coverage={d['route']['coverage']}）")
 
-        # ④ 状态迁移验证：该任务已认领给 exec-DP
+        # ④ 免手传：另发一条「编排」任务，不传 want，应从描述自动抽取能力并仍路由到 exec-DP
+        r2 = call(p, "publish", project_dir="/proj/demo", namespace=NS, description="做一个编排调度器 v2", created_by="human", now=NOW)
+        tid2 = r2["task_id"]
+        d2 = call(p, "selfdrive_dispatch", namespace=NS, agent="self", now=NOW)
+        assert d2.get("dispatched"), f"自动抽取后应能派单: {d2}"
+        assert d2.get("need_auto"), f"应走能力自动抽取: {d2}"
+        assert d2.get("routed"), f"应能自动路由到注册执行者: {d2}"
+        assert d2["assignee"] == "exec-DP", f"免手传应仍派给 exec-DP: {d2}"
+        assert d2["want"] == "编排", f"自动抽取 want 应为 编排: {d2}"
+        print(f"PASS selfdrive_dispatch(免 want) → 自动抽取 want={d2['want']} 派给 exec-DP（need_auto=true）")
+        # ⑤ 状态迁移验证：任务已认领给 exec-DP
         g = call(p, "get", task_id=tid)
         assert g.get("assignee") == "exec-DP", f"任务 assignee 应为 exec-DP: {g}"
         assert g.get("status") in ("已领取",), f"任务应已领取: {g.get('status')}"
-        print(f"PASS 任务状态 → {g.get('status')}，assignee=exec-DP（0 迁移 待领取→已领取 经能力路由）")
+        print(f"PASS 任务状态 → {g.get('status')}，assignee=exec-DP（0 迁移 待领取→已领取 经能力自动路由）")
 
-        # ⑤ 清理能力注册（防存留）
+        # ⑥ 清理能力注册（防存留）
         call(p, "executor_clear")
         print("PASS executor_clear 已复位能力注册")
         print("MCP-DISPATCH-VERIFY PASS")
