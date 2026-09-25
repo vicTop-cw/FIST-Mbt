@@ -2615,7 +2615,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_schedule",
-    "排程视图（R74，基于 dag_slack 落成可执行排程）：返回 { critical_batch:[{task_id,earliest,slack,assignee}](关键路径瓶颈,须串行盯紧), flexible_batch:[...](slack>0,按最早开始排序可并行,可优先派给空闲执行者), basis, note }——谁在瓶颈、谁可并行派单一目了然。无参数。",
+    "排程视图（R75 负载感知，基于 dag_slack 落成可执行排程）：返回 { critical_batch:[{task_id,earliest,slack,assignee}](关键路径瓶颈,须串行盯紧), flexible_batch:[...](slack>0,按最早开始排序可并行,未认领项附 suggest=活跃负载最低的已注册执行者), basis, note }——谁在瓶颈、谁可并行派单、建议派给谁，一目了然。无参数。",
     schema({}, []),
     async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       Ok(@mcp.ToolResult::text(engine.dag_schedule().stringify()))

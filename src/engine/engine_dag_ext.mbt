@@ -374,15 +374,37 @@ pub fn FistEngine::dag_slack_analysis(self : FistEngine) -> Json {
 /// ==================== 排程视图（R74，基于 slack 落成可执行排程） ====================
 
 ///|
-/// 排程视图（R74）：在 dag_slack_analysis 基础上把任务落成可执行排程——
+/// 排程视图（R75 增强）：在 dag_slack_analysis 基础上把任务落成可执行排程——
 /// 按 slack 分两层批：critical 批（slack=0，关键路径瓶颈，须串行盯紧）与
 /// flexible 批（slack>0，可按最早开始排序并行的弹性任务），每批附 assignee 当前占用，
-/// 让"谁在瓶颈、谁可并行派单"一目了然。复用 dag_slack_analysis（不重复算图）。
+/// 并对 flexible 批中未认领任务给出「负载感知建议派单」（suggest：活跃负载最低的已注册执行者）。
+/// 复用 dag_slack_analysis（不重复算图）。——"谁在瓶颈、谁可并行派单"一目了然，排程优化闭环。
 pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
   let slack = self.dag_slack_analysis()
   let ids : Array[String] = []
   for t in self.list_all() {
     ids.push(t.get_id())
+  }
+  // 负载感知：统计各已注册执行者名下活跃（未完成未归档）任务数
+  let reg_names : Array[String] = []
+  for (name, _abl, _created) in self.executor_list() {
+    reg_names.push(name)
+  }
+  let load : Map[String, Int] = Map([])
+  for n in reg_names {
+    load.set(n, 0)
+  }
+  for t in self.list_all() {
+    match t.assignee {
+      Some(a) =>
+        if load.contains(a) {
+          let done = t.get_status().is_completed() || t.get_status().to_string() == "已归档"
+          if not(done) {
+            load.set(a, load.get(a).unwrap_or(0) + 1)
+          }
+        }
+      None => ()
+    }
   }
   // 从 slack.slack_map 取每个任务的 slack 与 earliest
   let critical_batch : Array[Json] = []
@@ -439,12 +461,41 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
     }
     if ae < be { -1 } else if ae > be { 1 } else { 0 }
   })
+  // R75 负载感知：flexible 批中未认领任务建议派给活跃负载最低的已注册执行者
+  let flexible_adv : Array[Json] = flexible_batch.map(fn(row) {
+    let asg = match row.value("assignee") {
+      Some(Json::String(s)) => s
+      _ => ""
+    }
+    if asg != "" {
+      return row
+    }
+    // 已注册执行者中选负载最低者（无注册则不建议）
+    let mut best = ""
+    var best_load = 2147483647
+    for n in reg_names {
+      let l = load.get(n).unwrap_or(0)
+      if l < best_load {
+        best_load = l
+        best = n
+      }
+    }
+    let m = match row {
+      Object(o) => o
+      _ => Map([])
+    }
+    m.set(
+      "suggest",
+      Json::string(if best != "" { best } else { "" }),
+    )
+    Json::object(m)
+  })
   Json::object({
     "basis": Json::string("PERT/CPM slack（基于 dag_slack_analysis）"),
     "critical_batch": Json::array(critical_batch),
-    "flexible_batch": Json::array(flexible_batch),
+    "flexible_batch": Json::array(flexible_adv),
     "note": Json::string(
-      "critical_batch=关键路径瓶颈(须串行盯紧)；flexible_batch=有松弛可按最早开始并行的任务(可优先派给空闲执行者)",
+      "critical_batch=关键路径瓶颈(须串行盯紧)；flexible_batch=有松弛可按最早开始并行的任务，未认领项附 suggest=活跃负载最低的已注册执行者(R75 负载感知)",
     ),
   })
 }
