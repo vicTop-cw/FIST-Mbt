@@ -95,7 +95,7 @@ You can browse and install extra skills here:
 
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
 > Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
-> **JS 与 Native 双后端均已在 Windows + WSL(Linux) 通过 239/239 测试。**
+> **JS 与 Native 双后端均已在 Windows + WSL(Linux) 通过 240/240 测试。**
 
 `src/store/store_sqlite.mbt` 依赖 `mizchi/sqlite`（native stub），其 `stub.c` 用尖括号 `#include <sqlite3.h>` 并 `#pragma comment(lib, "sqlite3.lib")` 链接系统 SQLite。
 
@@ -105,7 +105,7 @@ You can browse and install extra skills here:
   2. 编译/链接前在**同一会话**加载 `Enter-VsDevShell`（VS Build Tools）并追加 `INCLUDE`/`LIB` 指向该目录（注册表 User 级环境变量会被 moon 自发现的 MSVC 环境覆盖，不生效）；
   3. 之后 `moon test --target native` 即可通过。缺失时 `stub.c` 报 `fatal error C1083: 无法打开包括文件 "sqlite3.h"` / `LNK1104: sqlite3.lib`。
   一键装载上述环境（自动探测 VS + sqlite-dev）：`pwsh ./scripts/native-env.ps1`；
-  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，Windows + Linux 239/239）**，见 README「已知边界」。
+  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，Windows + Linux 240/240）**，见 README「已知边界」。
 
 ## MCP Server
 
@@ -142,7 +142,7 @@ You can browse and install extra skills here:
 | `conflicts_check` | 认领冲突检测 |
 | `heartbeat` | 活动信号上报 |
 | `heal` | 超时任务回滚（内存版，人工流程） |
-| `watchdog_tick` | 看门狗编排（推荐仅用于定时任务；跨进程 heal + 自动续轮）。无人值守场景（显式传 ns）附 `detail.ready_dispatch_preview`：复用 triage 给出"下一单可自动派发"的候选（纯读，不自动认领） |
+| `watchdog_tick` | 看门狗编排（推荐仅用于定时任务；跨进程 heal + 自动续轮）。无人值守场景（显式传 ns）附 `detail.ready_dispatch_preview`：复用 triage 给出"下一单可自动派发"的候选（纯读，不自动认领）；`autodispatch=true` 时进一步调引擎层 `dispatch_next` 把顶部待领取任务按能力/负载自动认领给最佳执行者（`autodispatch_want` 可选，缺省自动从任务描述抽取能力；结果并入 `detail.autodispatch`，默认关闭零回归） |
 | `task_cleanup` | 归档清理 |
 
 > 无人值守流水线统一元提示词模板：`templates/cron_pipeline_meta_prompt.md`（**统一版**，取代原 `watchdog_tick_meta_prompt.md`：单一提示词 + 单一定时任务，一次唤醒内四分支自决策——①心跳新鲜即退出；②心跳超时只交给 `watchdog_tick` 的 heal 分支、不自行重启；③无活跃任务且最新提示词未消费则用该提示词接一个新根任务；④无活跃任务且提示词已消费则分析项目现状生成下一份 `yyyyMMdd.HH.mm.ss.md`。含按目标项目替换的参数清单与无人值守边界说明，仅用于定时任务场景）。
