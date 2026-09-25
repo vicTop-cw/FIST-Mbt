@@ -319,6 +319,71 @@ test "plan_deep gradient_dag 把更简单变体落成真实 DAG 前驱链；默�
 }
 
 ///|
+test "plan_exec_order 输出 DAG 序执行计划：依赖先于被依赖，携带难度档" {
+  let e = dp_new_engine()
+  let id = dp_publish(e, desc="exec-order 根")
+  // 拆解两层、gradient+gradient_dag（深度 2 → 顶层 3 兄弟 + 二三层再派生）
+  match
+    e.plan_deep(
+      task_id=id,
+      split_n=3,
+      by="leader_a",
+      gradient=true,
+      gradient_dag=true,
+      now="2026-09-05T10:05:00Z",
+    ) {
+    Err(m) => abort("gradient_dag plan_deep failed: \{m}")
+    Ok(_) => {
+      // 返回树顶层 3 兄弟均由易到难连链；exec_order 全后代扁平拓扑序
+      let ej = e.plan_exec_order(id)
+      match ej.value("order") {
+        None => abort("order missing")
+        Some(Array(seq)) => {
+          let idx : Map[String, Int] = Map([])
+          for k = 0; k < seq.length(); k = k + 1 {
+            let oid = match seq[k].value("id") {
+              Some(Json::String(s)) => s
+              _ => abort("id missing")
+            }
+            idx.set(oid, k)
+            // 每个后代都应有难度档（gradient 开启）
+            let d = match seq[k].value("difficulty") {
+              Some(Json::String(s)) => s
+              _ => ""
+            }
+            assert_eq(d != "", true)
+          }
+          // DAG 序不变量：任一任务其 depends_on 中的前驱在序中下标必须更小
+          for k = 0; k < seq.length(); k = k + 1 {
+            let deps = match seq[k].value("depends_on") {
+              Some(Array(a)) => a
+              _ => []
+            }
+            let oid = match seq[k].value("id") {
+              Some(Json::String(s)) => s
+              _ => ""
+            }
+            for dep in deps {
+              match dep {
+                Json::String(did) =>
+                  assert_eq(
+                    // 在集合内才校验顺序（跨子树依赖归因到根内已含）
+                    idx.get(did).is_none() ||
+                    idx.get(did).unwrap_or(-1) < idx.get(oid).unwrap_or(-1),
+                    true,
+                  )
+                _ => ()
+              }
+            }
+          }
+        }
+        _ => abort("order not array")
+      }
+    }
+  }
+}
+
+///|
 test "plan_deep 难度校准：gradient+calibrate 用真实难度覆盖位置档，长度不匹配时回退" {
   let e = dp_new_engine()
   let id = dp_publish(e)

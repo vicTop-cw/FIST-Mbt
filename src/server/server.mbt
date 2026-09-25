@@ -1274,6 +1274,9 @@ pub async fn run_server() -> Unit {
           if laya_auto && not(decided) {
             m.set("laya", laya_info)
           }
+          // 「执行计划」视图：拆解后给出一张按 DAG 拓扑序、附难度/依赖/深度的
+          // 扁平执行清单，agent 拿到即可照单执行（纯读，无副作用）。
+          m.set("exec_order", engine.plan_exec_order(task_id))
           Json::object(m)
         }
         _ => base
