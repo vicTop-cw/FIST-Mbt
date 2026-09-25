@@ -129,7 +129,7 @@ def rpc(method, **payload):
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
 ```
-→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（79 个工具）
+→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（81 个工具）
 
 **Step 2 · 发布一个根任务**
 ```json
@@ -149,12 +149,12 @@ def rpc(method, **payload):
 三步跑通即 MCP server 端到端可用、环境就绪。
 
 > 本机实测：`python scripts/mcp_smoke.py` 一键自检输出
-> `PASS tools/list → 79 个工具` / `PASS publish → T?` / `PASS get → T? [待领取]` / `MCP-SMOKE PASS`。
+> `PASS tools/list → 81 个工具` / `PASS publish → T?` / `PASS get → T? [待领取]` / `MCP-SMOKE PASS`。
 > 三步 = 该脚本的内部逻辑，二者完全一致。
 
 ---
 
-## 6. 79 个 MCP 工具手册
+## 6. 81 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
@@ -434,7 +434,7 @@ def rpc(method, **payload):
 **验证结论**：publish → plan → claim/execute/submit/verify（叶子）+ verify（父自动上卷）→ archive 全链真实跑通，
 任务自动持久化到 `fist-mbt.db`。
 
-> 补充实测：`tools/list` 返回 79 个工具；`resources/read(fist://principles)` 返回七条金条 JSON；
+> 补充实测：`tools/list` 返回 81 个工具；`resources/read(fist://principles)` 返回七条金条 JSON；
 > `prompts/get(fist:check_in)` 返回 1 条 role=user 的打卡自查模板消息。
 
 ---
@@ -512,7 +512,7 @@ moon publish
 
 ## 12. 一句话总结
 
-FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（79 个工具）。
+FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（81 个工具）。
 对 AI 客户端而言：**pub/claim/plan + spec 深拆 → 子任务闭环 → verify 上卷 → archive**，
 一路 `tools/call` 即可完成多智能体任务的发布、认领、拆分、执行、验收、归档全生命周期管理。
 
