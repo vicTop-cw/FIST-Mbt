@@ -211,6 +211,14 @@ def main():
         print(f"      ↳ R100 目标校验 goal_drift_check({rid1}) → aligned={cnt.get('aligned')} "
               f"drift_suspect={cnt.get('drift_suspect')} redundant_suspect={cnt.get('redundant_suspect')} "
               f"（goal drift 防偏离根目标 + non-redundancy 防重复子目标，词法 Jaccard 纯计算零 LLM）")
+        # R102 四金信号健康巡检：SRE Book 2016 latency/traffic/errors/saturation
+        hc = call(p, "health_check", namespace=NS)
+        assert hc.get("grade") in ("healthy", "attention", "idle"), "health_check 应返回 grade"
+        sig = hc.get("signals", {})
+        print(f"      ↳ R102 四金信号巡检 health_check({NS}) → grade={hc.get('grade')} "
+              f"latency={sig.get('latency', {}).get('verdict')} traffic={sig.get('traffic', {}).get('verdict')} "
+              f"errors={sig.get('errors', {}).get('verdict')} saturation={sig.get('saturation', {}).get('verdict')} "
+              f"（SRE Book 2016：积压饱和为先行指标，先积压后坏 >0.5 预警）")
         tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"

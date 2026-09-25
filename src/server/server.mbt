@@ -492,7 +492,7 @@ fn map_json() -> Json {
         "call_log/bug_list/report_bug/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide",
       ),
       "看板/脉冲/预订/推荐+DAG": Json::string(
-        "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish/slack/schedule/cost_route/mc/plan_revise/goal_drift_check + board_ascii + status_summary + reserve_scope/check/release + task_triage",
+        "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish/slack/schedule/cost_route/mc/plan_revise/goal_drift_check + board_ascii + status_summary + project_health/health_check + reserve_scope/check/release + task_triage",
       ),
       "自驱": Json::string(
         "selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks + selfdrive_pick_next + selfdrive_dispatch",
@@ -2838,6 +2838,25 @@ pub async fn run_server() -> Unit {
         engine.list_all().filter(fn(t) { t.ns == ns })
       }
       let j = render_project_health(tasks, "0.2.4")
+      Ok(@mcp.ToolResult::text(j.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "health_check",
+    "四金信号健康巡检（R102，Google SRE Book 2016「Monitoring Distributed Systems」蒸馏）：project_health 从「一个等级」升级为「四个信号」——latency（最近已完成任务完成周期 created_at→updated_at 秒，p50/p90 百分位，<3 条 insufficient）、traffic（活跃需求 in_flight+ready）、errors（失败率 已打回+已暂停/总数 >0.3 attention）、saturation（积压率 待领取/总数——SRE 先行指标：系统先积压后坏，>0.5 attention 预警）。grade=最差信号（healthy/attention/idle）。纯计算只读不写库。参数：namespace(可选，只统计该 ns；空=全部)。返回 { ok, namespace, total_tasks, signals:{latency,traffic,errors,saturation}, grade, basis }。",
+    schema(
+      { "namespace": string_prop("命名空间(可选，只统计该 ns)") },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace")
+      let tasks = if ns == "" {
+        engine.list_all()
+      } else {
+        engine.list_all().filter(fn(t) { t.ns == ns })
+      }
+      let j = render_health_check(tasks, if ns == "" { "all" } else { ns })
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
