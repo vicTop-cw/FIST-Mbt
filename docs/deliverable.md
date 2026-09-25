@@ -29,7 +29,7 @@ python scripts/mcp_smoke.py
 6. **多租户**：命名空间物理隔离（`store_open`，`scratch` 临时区不污染根）。
 7. **项目地图**：`fist://map` resource——agent 首读即有，避免全项目乱找（docs/agent-map.md）；`board_ascii` 实时任务看板，一眼看全貌。
 
-## 四、自驱增强证据（git 4994aae → HEAD，43 轮）
+## 四、自驱增强证据（git 4994aae → HEAD，44 轮）
 | 轮 | 增强 | 验证脚本 |
 |---|---|---|
 | 1 项目地图 | `fist://map` + docs/agent-map + 调研纪要 | `map_verify.py` |
@@ -75,6 +75,7 @@ python scripts/mcp_smoke.py
 | 41 脉冲难度分布 | `status_summary` 新增 `by_difficulty`（待领取任务按 易/中/难/无 分布）：`extract_difficulty` 升为 pub 跨包复用（server 包），项目脉冲一眼看"待办难度结构"（支柱①＋②） | `board_ascii_test.mbt`「status_summary … by_difficulty 不变量」用例 |
 | 42 工具单一真源 | `scripts/check_tools_sync.py` + ci.yml 两轨：唯一真源=server.mbt 实际注册名，校验 AGENTS 表格工具名 ⊆ 真源、真源全部入 AGENTS、四文档工具总数==83（双向防幽灵/漏写）。守卫发现 AGENTS 只列 54/83 后补齐 29 个（新增 自驱闭环/运维杂项/ATGC-old 三组，生命周期14、自进化11、Omega补2），PASS | `python scripts/check_tools_sync.py`（PASS）+ `moon test` 233/233 |
 | 43 测试数单一真源 | `scripts/check_test_sync.py` + ci.yml JS 轨：补 check_badge 盲区，跨 README/AGENTS/deliverable/scoring_rubric 校验测试总数==实测（N/N、N 全绿、独立 N 任一），正路径 PASS、负路径 FAIL=1 | `python scripts/check_test_sync.py --total 233`（PASS） |
+| 44 地图补全 | `fist://map` tool_groups 补齐 R46 新工具家族（生命周期 publish_parallel/reopen_task、强验证 verify/verify_fix、新增「运维·日志/缺陷/成本/调度」「衍生·ATGC-old」分组、自驱补 selfdrive_dispatch）；map_verify 加断言锁住关键补漏——agent 首读地图即全概（支柱①） | `python scripts/map_verify.py`（PASS 12 分组）+ `moon test` 233/233 |
 
 > 注：内存日志/汇报用字母轮号（含若干纯文档/CI 非功能行，不入上表）；本表仅计功能轮。
 

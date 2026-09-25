@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scripts/map_verify.py — 验证 fist://map 项目地图 resource 端到端可用。"""
-import json, os, subprocess, sys
+"""scripts/map_verify.py — 验证 fist://map 项目地图 resource 端到端可用，且 tool_groups 覆盖全部真源工具。"""
+import json, os, re, subprocess, sys
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 NODE = os.environ.get("FIST_NODE", "node")
 MAIN = "_build/js/debug/build/cmd/main/main.js"
 META = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
         "io.modelcontextprotocol/clientCapabilities": {},
         "io.modelcontextprotocol/clientInfo": {"name": "map-verify", "version": "1.0"}}
+RE_TOOL = re.compile(r'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"')
 
 def rpc(proc, method, **payload):
     params = {"_meta": META}; params.update(payload)
@@ -43,6 +44,14 @@ def main():
         assert "Marketplace·能力路由" in payload.get("tool_groups", {}), "地图缺 Marketplace 分组"
         assert "看板/脉冲/预订/推荐+DAG" in payload.get("tool_groups", {}), "地图缺看板/脉冲分组"
         assert "executor_register" in payload.get("tool_groups", {}).get("Marketplace·能力路由", "")
+        # R48：地图补齐此前漏掉的工具家族（生命周期 parallel/reopen、强验证 verify/fix、运维杂项、衍生 ATGC）
+        tg = payload.get("tool_groups", {})
+        assert "publish_parallel" in tg.get("生命周期", "") and "reopen_task" in tg.get("生命周期", ""), "地图生命周期缺 publish_parallel/reopen_task"
+        assert "verify_fix" in tg.get("强验证", ""), "地图强验证缺 omega_verify_fix"
+        assert "运维·日志/缺陷/成本/调度" in tg, "地图缺运维杂项分组"
+        assert "call_log" in tg.get("运维·日志/缺陷/成本/调度", ""), "地图运维杂项缺 call_log"
+        assert "衍生·ATGC-old" in tg, "地图缺衍生 ATGC-old 分组"
+        assert "atgc_old_compile" in tg.get("衍生·ATGC-old", ""), "地图衍生缺 atgc_old_compile"
         print("PASS resources/read fist://map → product=", payload.get("product"),
               "packages=", list(payload.get("packages", {})), "tool_groups=", list(payload.get("tool_groups", {})))
         print("MCP-MAP-VERIFY PASS")
