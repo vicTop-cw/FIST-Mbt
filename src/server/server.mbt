@@ -1869,8 +1869,8 @@ pub async fn run_server() -> Unit {
   // ---- ATGC 双链虚拟机（嵌入式子项目，纯 MoonBit）----
   s1 = instrumented_tool(
     s1,
-    "atgc_compile",
-    "ATGC 双链虚拟机·编译：把 DNA 序列转录成 mRNA 并翻译成操作列表。参数：seq(必填) DNA 序列（仅允许 A/T/G/C/U 与空白/`;;` 注释，大小写不敏感）。返回 {transcription, ops, mode, antisense, rollback} JSON。",
+    "atgc_old_compile",
+    "ATGC 双链虚拟机(全量参照 atgc-old)·编译：把 DNA 序列转录成 mRNA 并翻译成操作列表。参数：seq(必填) DNA 序列（仅允许 A/T/G/C/U 与空白/`;;` 注释，大小写不敏感）。返回 {transcription, ops, mode, antisense, rollback} JSON。",
     schema(
       {
         "seq": string_prop(
@@ -1881,7 +1881,7 @@ pub async fn run_server() -> Unit {
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let seq = get_str(args, "seq")
-      match @atgc.atgc_compile(seq) {
+      match @atgc_old.atgc_compile(seq) {
         Ok(j) => Ok(@mcp.ToolResult::text(j))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
@@ -1889,8 +1889,8 @@ pub async fn run_server() -> Unit {
   )
   s1 = instrumented_tool(
     s1,
-    "atgc_run",
-    "ATGC 双链虚拟机·运行：执行 DNA 程序（含快照回滚）。参数：seq(必填)。返回 {output, stack_history, final_stack, result, rolled_back} JSON。",
+    "atgc_old_run",
+    "ATGC 双链虚拟机(全量参照 atgc-old)·运行：执行 DNA 程序（含快照回滚）。参数：seq(必填)。返回 {output, stack_history, final_stack, result, rolled_back} JSON。",
     schema(
       {
         "seq": string_prop(
@@ -1901,7 +1901,7 @@ pub async fn run_server() -> Unit {
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let seq = get_str(args, "seq")
-      match @atgc.atgc_run(seq) {
+      match @atgc_old.atgc_run(seq) {
         Ok(j) => Ok(@mcp.ToolResult::text(j))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
@@ -1909,8 +1909,8 @@ pub async fn run_server() -> Unit {
   )
   s1 = instrumented_tool(
     s1,
-    "atgc_talk",
-    "ATGC 双链虚拟机·叙事对话：把 DNA 程序讲成生物故事（转录→mRNA→翻译→酶执行）并输出最终数值；可选择性回答自由问题；无 seq 时返回双链虚拟机简介。参数：seq(可选)、question(可选)。",
+    "atgc_old_talk",
+    "ATGC 双链虚拟机(全量参照 atgc-old)·叙事对话：把 DNA 程序讲成生物故事（转录→mRNA→翻译→酶执行）并输出最终数值；可选择性回答自由问题；无 seq 时返回双链虚拟机简介。参数：seq(可选)、question(可选)。",
     schema(
       {
         "seq": string_prop(
@@ -1925,7 +1925,7 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let seq = get_str(args, "seq")
       let question = get_str(args, "question")
-      Ok(@mcp.ToolResult::text(@atgc.atgc_talk(seq, question)))
+      Ok(@mcp.ToolResult::text(@atgc_old.atgc_talk(seq, question)))
     },
   )
 
