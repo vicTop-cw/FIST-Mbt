@@ -236,6 +236,55 @@ test "plan_deep 开启 gradient 时子任务描述带难度梯度与更简单变
 }
 
 ///|
+test "plan_deep reinject_context 把父计划+剩余兄弟回注子任务描述；默认关闭零回归" {
+  let e = dp_new_engine()
+  // 默认不传 reinject_context：描述不含父计划标记（零回归）
+  let id = dp_publish(e, desc="M3 回注根任务")
+  match
+    e.plan_deep(
+      task_id=id,
+      split_n=3,
+      by="leader_a",
+      now="2026-09-05T10:01:00Z",
+    ) {
+    Err(m) => abort("default plan_deep failed: \{m}")
+    Ok(_) =>
+      match e.get_task("T0.1") {
+        Some(t) => assert_eq(t.description.contains("[父计划:"), false)
+        None => abort("T0.1 missing")
+      }
+  }
+  // 开启 reinject_context：子任务描述携带父计划 + 剩余兄弟，且下钻孙代也能继承父计划
+  let id2 = dp_publish(e, desc="M3 回注启用根")
+  match
+    e.plan_deep(
+      task_id=id2,
+      split_n=3,
+      by="leader_a",
+      reinject_context=true,
+      now="2026-09-05T10:02:00Z",
+    ) {
+    Err(m) => abort("reinject plan_deep failed: \{m}")
+    Ok(_) => {
+      let kids = e.children_of(id2)
+      assert_eq(kids.length() >= 3, true)
+      // 首切片含「父计划」= 根任务描述 + 剩余兄弟计数
+      let c_first = kids[0]
+      assert_eq(c_first.description.contains("[父计划:"), true)
+      assert_eq(c_first.description.contains("M3 回注启用根"), true)
+      assert_eq(c_first.description.contains("剩余兄弟:"), true)
+      // 剩余兄弟数 = n-1（首片之后还有 n-1 个兄弟）
+      assert_eq(c_first.description.contains("剩余兄弟: \{kids.length() - 1}"), true)
+      // 下钻孙代同样继承父计划（知其所以然贯穿整棵树）
+      let ch = e.children_of(c_first.get_id())
+      if ch.length() > 0 {
+        assert_eq(ch[0].description.contains("[父计划:"), true)
+      }
+    }
+  }
+}
+
+///|
 test "plan_deep gradient_dag 把更简单变体落成真实 DAG 前驱链；默认关闭零回归" {
   let e = dp_new_engine()
   // 控制组：仅 gradient=true 不传 gradient_dag，兄弟切片 depends_on 全空（零回归）
