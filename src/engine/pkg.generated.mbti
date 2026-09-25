@@ -84,6 +84,7 @@ pub fn FistEngine::dag_ascii(Self, ns~ : String) -> String
 pub fn FistEngine::dag_depend(Self, task_id~ : String, dep_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::delete_task(Self, String) -> Result[Unit, String]
 pub fn FistEngine::deps_satisfied(Self, String) -> Bool
+pub fn FistEngine::dispatch_next(Self, String, String, String, String) -> Json
 pub fn FistEngine::docs_verify_gate(Self, String) -> Result[Unit, String]
 pub fn FistEngine::execute(Self, task_id~ : String, deliverable~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::execute_with_meta(Self, task_id~ : String, deliverable~ : String, now~ : String, executor? : String, model? : String, tokens_in? : Int, tokens_out? : Int, cost? : Double, duration_ms? : Int, rate_limited? : Bool, failure_reason? : String) -> Result[@core.Task, String]
