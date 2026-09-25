@@ -8,14 +8,17 @@
 /// 复用现有 store.list_all / deps_satisfied / get_status，无新表/依赖。
 
 ///|
-/// 从任务描述提取 gradient 难度标签（`…:易]`/`…:中]`/`…:难]` 结尾），未命中返回空串。
+/// 从任务描述提取 gradient 难度档（易/中/难），复用 R40 的 extract_difficulty 单一抽取来源：
+/// 相比旧 `:易]` 后缀粗匹配，能正确识别 calibrate 的真实难度（如 `易 d=1.0` → 易）。
+/// 未命中返回空串（由调用方按叶/分支兜底）。
 fn triage_label_of(desc : String) -> String {
-  if desc.contains(":易]") {
-    "易"
-  } else if desc.contains(":中]") {
-    "中"
-  } else if desc.contains(":难]") {
+  let d = extract_difficulty(desc)
+  if d.contains("难") {
     "难"
+  } else if d.contains("中") {
+    "中"
+  } else if d.contains("易") {
+    "易"
   } else {
     ""
   }

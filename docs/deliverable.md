@@ -29,7 +29,7 @@ python scripts/mcp_smoke.py
 6. **多租户**：命名空间物理隔离（`store_open`，`scratch` 临时区不污染根）。
 7. **项目地图**：`fist://map` resource——agent 首读即有，避免全项目乱找（docs/agent-map.md）；`board_ascii` 实时任务看板，一眼看全貌。
 
-## 四、自驱增强证据（git 4994aae → HEAD，39 轮）
+## 四、自驱增强证据（git 4994aae → HEAD，40 轮）
 | 轮 | 增强 | 验证脚本 |
 |---|---|---|
 | 1 项目地图 | `fist://map` + docs/agent-map + 调研纪要 | `map_verify.py` |
@@ -71,6 +71,7 @@ python scripts/mcp_smoke.py
 | 37 gradient真实DAG | `task_plan_deep gradient_dag=true`：把 LADDER「更简单变体→先易后逆推」由提示文本升级为**真实 DAG 前驱链**——每层兄弟切片按由易到难连 depends_on，更难切片须等前驱完成后才可认领，经 `dag_ready/dag_ascii/topo_sort` 可见；仅显式开启，默认零回归、工具数不变 | `decompose_test.mbt`「gradient_dag 真实 DAG 前驱链」用例 |
 | 38 执行计划视图 | `task_plan_deep` 返回新增 `exec_order`：拆解后即给出整棵子树的**按 DAG 拓扑序、附难度档/依赖/深度的扁平执行清单**，agent 拿到即可照单执行（纯读无副作用，不加工具）；与 gradient_dag 协同——依赖先于被依赖，"先易后逆推"可见可执行 | `decompose_test.mbt`「plan_exec_order DAG 序执行计划」用例 |
 | 39 推荐带依赖 | `task_triage` 每条推荐任务新增输出 `depends_on`（复用 R39 DAG 边）：走 `dag_depend`/`gradient_dag` 建的依赖，"下一单"不光看难度/优先级，还能看到它就绪的前驱是谁（DAG→推荐纵向闭合，复用/拿来主义支柱） | `engine_triage_test.mbt`「task_triage 暴露 depends_on」用例 |
+| 40 难度抽取单一化 | `task_triage` 的难度标签改复用 R40 的 `extract_difficulty` 单一抽取来源（去重 `triage_label_of` 的 `:易]` 后缀粗匹配，并支持 calibrate 真实难度 `难 d=5`→难 归一；空回退叶/分支兜底不变）——消除两处难度解析重复，落实支柱②复用/避重复 | `engine_triage_test.mbt`「task_triage 返回可领取排行并带难度标签」既有用例回归 |
 
 > 注：内存日志/汇报用字母轮号（含若干纯文档/CI 非功能行，不入上表）；本表仅计功能轮。
 
