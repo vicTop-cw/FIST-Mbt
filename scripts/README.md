@@ -21,7 +21,7 @@
 ## 现有正式工具速查
 
 **基础 / 演示**
-- `mcp_smoke.py` — MCP server 一键自检（70 工具 + publish/get 链路）。
+- `mcp_smoke.py` — MCP server 一键自检（71 工具 + publish/get 链路）。
 - `patch_esm_main.py` — moonc≥0.10.14 ESM 输出注入 createRequire shim（幂等）。
 - `demo.ps1` — 一键演示（build+patch+smoke）。
 - `native-env.ps1` — Windows native 环境一键装载（VS + sqlite-dev）。
@@ -41,5 +41,6 @@
 - `dag_depend_verify.py` — DAG 显式依赖 E2E。
 - `scratch_verify.py` — `store_open(scratch)` 临时隔离 E2E。
 - `omega_lesson_verify.py` — **Omega 打回自动落 [lesson] + 进程内可见** E2E（三类打回自动沉淀 + scratch 隔离 + 结束精确清理根库）。
+- `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
 
 > 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/main` + `patch_esm_main` → node）。
