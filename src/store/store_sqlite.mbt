@@ -63,6 +63,7 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     "CREATE TABLE IF NOT EXISTS evolve_artifacts (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', goal TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', code TEXT NOT NULL DEFAULT '', score TEXT NOT NULL DEFAULT '0', parts_json TEXT NOT NULL DEFAULT '{}', children INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS call_log (id INTEGER PRIMARY KEY AUTOINCREMENT, seq INTEGER, ts TEXT, tool TEXT, caller TEXT, ns TEXT, params_json TEXT, result_json TEXT, ok INTEGER, runtime_ms INTEGER)",
     "CREATE TABLE IF NOT EXISTS reservations (scope TEXT PRIMARY KEY, agent TEXT NOT NULL DEFAULT '', ttl_until TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '')",
+    "CREATE TABLE IF NOT EXISTS executors (name TEXT PRIMARY KEY, abilities_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT '')",
   ]
   match self.db {
     None => false
@@ -641,6 +642,8 @@ impl Store for SqliteStore with fn clear(self) {
       ignore(db.exec("DELETE FROM specs"))
       // 作用域预订也在清空范围（防测试/scratch 预订跨次残留）
       ignore(db.exec("DELETE FROM reservations"))
+      // 执行者能力注册也在清空范围（防测试/scratch 注册跨次残留，R31）
+      ignore(db.exec("DELETE FROM executors"))
     }
   }
 }
@@ -795,6 +798,91 @@ pub extend SqliteStore with Store::{
   list_tasks,
   delete_task,
   clear,
+}
+
+// —— executors 表（执行者能力注册，Marketplace 雏形的跨进程持久化，R31）——
+
+///|
+/// SQLite 后端：写入/覆盖一个执行者的能力注册。（幂等：同 name 覆盖）
+pub fn SqliteStore::executor_save(
+  self : SqliteStore,
+  name~ : String,
+  abilities_json~ : String,
+  created_at~ : String,
+) -> Result[String, String] {
+  match self.db {
+    None => Err("db not available")
+    Some(db) => {
+      let sql = "INSERT INTO executors (name, abilities_json, created_at) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET abilities_json=excluded.abilities_json, created_at=excluded.created_at"
+      match db.prepare(sql) {
+        None => Err("executor_save prepare failed")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, name))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, abilities_json)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, created_at)),
+            ),
+          )
+          let ok = stmt.execute()
+          stmt.finalize()
+          if ok {
+            Ok("saved")
+          } else {
+            Err("executor_save execute failed")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// SQLite 后端：列出全部执行者 (name, abilities_json, created_at)。
+pub fn SqliteStore::executor_list(
+  self : SqliteStore,
+) -> Array[(String, String, String)] {
+  let out : Array[(String, String, String)] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT name, abilities_json, created_at FROM executors ORDER BY name"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          while stmt.step() {
+            out.push(
+              (
+                str_from_bytes(stmt.column_text(0)),
+                str_from_bytes(stmt.column_text(1)),
+                str_from_bytes(stmt.column_text(2)),
+              ),
+            )
+          }
+          stmt.finalize()
+          out
+        }
+      }
+    }
+  }
+}
+
+///|
+/// SQLite 后端：清空全部执行者能力注册（Marketplace 重置/整洁）。
+pub fn SqliteStore::executor_clear(self : SqliteStore) -> Bool {
+  match self.db {
+    None => ()
+    Some(db) => ignore(db.exec("DELETE FROM executors"))
+  }
+  true
 }
 
 // —— executions 表（执行元数据，供成本统计使用）——

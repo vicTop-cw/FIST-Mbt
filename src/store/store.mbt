@@ -31,6 +31,8 @@ pub struct MemoryStore {
   // 作用域预订（Interlinked 拿来主义：多 agent 并发编辑冲突预防）
   // scope -> (agent, ttl_until, created_at)
   reservations : Map[String, (String, String, String)]
+  // 执行者能力注册（Marketplace 雏形持久化，R31）：name -> (abilities_json, created_at)
+  executors : Map[String, (String, String)]
 }
 
 ///|
@@ -41,6 +43,7 @@ pub fn MemoryStore::new() -> MemoryStore {
     default_ns: "default",
     call_logs: [],
     reservations: Map([]),
+    executors: Map([]),
   }
 }
 
@@ -152,6 +155,8 @@ impl Store for MemoryStore with fn clear(self) {
   self.call_logs.clear()
   // 作用域预订也在清空范围（防测试/scratch 预订跨次残留）
   self.reservations.clear()
+  // 执行者能力注册也在清空范围（防测试/scratch 注册跨次残留，R31）
+  self.executors.clear()
 }
 
 ///|
@@ -311,6 +316,40 @@ pub fn StoreBackend::rsv_list(
   match self {
     Mem(m) => m.rsv_list()
     Sql(s) => s.rsv_list()
+  }
+}
+
+///|
+/// 后端统一：写入/覆盖一个执行者的能力注册（幂等）。
+pub fn StoreBackend::executor_save(
+  self : StoreBackend,
+  name~ : String,
+  abilities_json~ : String,
+  created_at~ : String,
+) -> Result[String, String] {
+  match self {
+    Mem(m) => m.executor_save(name~, abilities_json~, created_at~)
+    Sql(s) => s.executor_save(name~, abilities_json~, created_at~)
+  }
+}
+
+///|
+/// 后端统一：列出全部执行者 (name, abilities_json, created_at)。
+pub fn StoreBackend::executor_list(
+  self : StoreBackend,
+) -> Array[(String, String, String)] {
+  match self {
+    Mem(m) => m.executor_list()
+    Sql(s) => s.executor_list()
+  }
+}
+
+///|
+/// 后端统一：清空全部执行者能力注册（Marketplace 重置/整洁）。
+pub fn StoreBackend::executor_clear(self : StoreBackend) -> Bool {
+  match self {
+    Mem(m) => m.executor_clear()
+    Sql(s) => s.executor_clear()
   }
 }
 
