@@ -7,7 +7,7 @@
 
 `FIST-Mbt` 是**纯 MoonBit 实现的 MCP Server**：一个「AI 指挥官」式任务编排器——发布根任务，递归拆解成多层子任务，经认领/执行/提交/验收/归档闭环；含 DGM 自进化档案库（evolve）与 Omega 强验证。全栈 MoonBit，JS+Native 双后端，SQLite 持久化。
 
-- **构建/测试**：`moon check` / `moon test --target js`（216 项全绿）
+- **构建/测试**：`moon check` / `moon test --target js`（218 项全绿）
 - **跑 MCP Server**：`moon build --target js cmd/main && python scripts/patch_esm_main.py` → `node _build/js/debug/build/cmd/main/main.js`
 - **一键自检**：`python scripts/mcp_smoke.py`（工具数 75 + publish/get 链路）
 - **语言**：MoonBit；测试用 `suite`/`test` 而非 `@test def`；guard/match 冒号后换行。
@@ -28,14 +28,14 @@
 | `atgc-old` | 旧 ATGC 叙事子项目（保留全量） | — |
 | `atgc` | 极简双链虚拟机（能力演示） | — |
 
-## 三、MCP 工具分组概览（77 个）
+## 三、MCP 工具分组概览（78 个）
 
 | 组 | 工具 |
 |---|---|
 | 生命周期(12) | publish/plan/claim/execute/submit/verify/reject/retry/pause/resume/archive/delete |
 | 查询(2) | list/get |
 | 运维(6) | task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup |
-| 看板/脉冲/预订+DAG(11) | dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish、board_ascii、status_summary、reserve_scope/check/release |
+| 看板/脉冲/预订/推荐+DAG(12) | dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish、board_ascii、status_summary、reserve_scope/check/release、task_triage |
 | 自驱(8) | selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks |
 | 自我记忆/自进化(7) | memory_consolidate/gc/link、evolve_distill/lesson/critic、task_challenge |
 | 审计/权限(2) | audit_permission/log |

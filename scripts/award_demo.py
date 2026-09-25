@@ -106,12 +106,16 @@ def main():
         ck2 = call(p, "reserve_check", scope="src/demo_shim.mbt", now=NOW)
         print(f"   ⑦ 作用域预订 src/demo_shim.mbt → held_by={ck2.get('holder') or ck2.get('agent') or ck2.get('held_by')}（并发冲突预防）")
 
-        # ⑧ 项目脉搏 + 实时看板（只读）
+        # ⑧ 项目脉搏 + 实时看板 + 下一步推荐（只读）
         ss = call(p, "status_summary", namespace=NS, now=NOW)
         ba = call(p, "board_ascii", namespace=NS, now=NOW)
         print(f"   ⑧ 脉冲 status_summary({NS}) → total={ss.get('total_tasks')}；板面 board_ascii 行数≈{len(ba.get('ascii','').splitlines()) if isinstance(ba, dict) else ''}")
+        tr = call(p, "task_triage", namespace=NS, agent="exec_demo")
+        assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
+        assert tr.get("suggestion"), "triage 应有 suggestion"
+        print(f"   ⑨ 下一步推荐 task_triage({NS}) → 可领取 {tr.get('count')} 条，suggestion 指向 {tr.get('suggestion',{}).get('task_id')}")
 
-        # ⑨ 整洁守卫：仓库根只允许交付库
+        # ⑩ 整洁守卫：仓库根只允许交付库
         print("MCP-AWARD-DEMO PASS — 增强能力链一条命令全部跑通")
     finally:
         try:

@@ -125,7 +125,10 @@ pub fn FistEngine::store_write_call_log(Self, ts~ : String, tool~ : String, call
 pub fn FistEngine::store_write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
 pub fn FistEngine::submit(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::topo_sort(Self, Array[String]) -> Array[String]
+pub fn FistEngine::triage(Self, String, String) -> Json
 pub fn FistEngine::verify(Self, task_id~ : String, verifier~ : String, now~ : String, docs_check? : Bool) -> Result[@core.Task, String]
+
+type TriageRow
 
 // Type aliases
 

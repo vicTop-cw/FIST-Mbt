@@ -342,7 +342,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 77 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 78 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -2513,6 +2513,28 @@ pub async fn run_server() -> Unit {
         engine.list_all().filter(fn(t) { t.ns == ns })
       }
       let j = render_status_summary(tasks, mstore.ns_list(), "0.2.4")
+      Ok(@mcp.ToolResult::text(j.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "task_triage",
+    "下一步该做啥（推荐式挑选）：对指定命名空间（namespace 缺省全量）把『待领取且依赖已满足』的任务按 优先级(高>中>低)→重要度(高>中>低)→深度(叶可执行单元优先)→id 排出序，并给出一条 suggestion（此刻建议先领哪条及理由），供 agent 无需全量扫描。难度标签直接复用拆解时的『难度梯度 …:易/中/难』标记。参数：namespace(可选)、agent(调用方身份，可审计)。返回 { count, ns, agent, tasks:[...], suggestion? }。",
+    schema(
+      {
+        "namespace": string_prop(
+          "命名空间(可选，只统计该 ns；空=全部)",
+        ),
+        "agent": string_prop(
+          "调用方身份(默认 self)，用于 suggestion/审计",
+        ),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace")
+      let agent = get_str(args, "agent", default="self")
+      let j = engine.triage(ns, agent)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
