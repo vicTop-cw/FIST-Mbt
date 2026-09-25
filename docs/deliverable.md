@@ -29,7 +29,7 @@ python scripts/mcp_smoke.py
 6. **多租户**：命名空间物理隔离（`store_open`，`scratch` 临时区不污染根）。
 7. **项目地图**：`fist://map` resource——agent 首读即有，避免全项目乱找（docs/agent-map.md）；`board_ascii` 实时任务看板，一眼看全貌。
 
-## 四、自驱增强证据（git 4994aae → HEAD，32 轮）
+## 四、自驱增强证据（git 4994aae → HEAD，36 轮）
 | 轮 | 增强 | 验证脚本 |
 |---|---|---|
 | 1 项目地图 | `fist://map` + docs/agent-map + 调研纪要 | `map_verify.py` |
@@ -64,6 +64,10 @@ python scripts/mcp_smoke.py
 | 30 能力路由 | `executor_register`/`executor_route`：执行者登记能力标签，按 { 能力覆盖率 desc → 负载 asc } 路由最佳执行者（Marketplace/Dynamic 范式，按专长+负载分配） | `registry_test.mbt`(+4) + `executor_route_verify.py` |
 | 31 能力注册持久化 | `executor_*` 落 store executors 表（双后端）+ `executor_clear` 重置：能力注册跨进程可复现（进程A注册→进程B路由读到→clear 消失） | `executor_store_test.mbt`(+3) + `executor_route_verify.py`（跨进程三段） |
 | 32 能力自动派单 | `selfdrive_dispatch`：triage 取顶部 → executor_route 按 want 找最佳执行者 → 直接认领给该执行者（待领取→已领取，把"推荐"落成动作） | `dispatch_verify.py` E2E |
+| 33 派单免手传 | `selfdrive_dispatch` 不传 want 时从任务描述自动抽取已注册能力标签（need_auto） | `dispatch_verify.py`（免 want 用例） |
+| 34 徽章守卫 | `check_badge.py` + ci.yml JS 轨 Badge guard：README 徽章 ≠ 实测测试数即 FAIL（杜绝计数手改漏同步） | `python scripts/check_badge.py`（正/负路径） |
+| 35 LADDER 深化 | `gradient` 提示补"先易后逆推"自举闭环（先完成更简单变体再推广/逆推到本体） | `simpler_variant_hint` + decompose_test 断言 |
+| 36 地图同步 | `fist://map` tool_groups 全量同步到 83 工具 10 分组（补 看板/脉冲/预订/推荐+M、Marketplace·能力路由、pick_next/critic/lesson/challenge），map_verify 加断言 | `map_verify.py` E2E |
 
 ## 五、文档即实现
 - 工具/资源/测试数均与实测一致（README/AGENTS/ARCHITECTURE/agent-map 已同步）。
