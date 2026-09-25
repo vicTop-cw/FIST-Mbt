@@ -813,3 +813,170 @@ test "progress_gate：未开工=OK / 全完成=OK / 空任务+非法预算=ok:fa
     _ => abort("j3 ok 缺失: " + j3.stringify())
   }
 }
+
+///|
+/// plan_revise 测试引擎：根 R + 三个孩子 A/B/C（C 依赖 B），A 已完成、B 已打回、C 待领取。
+fn plan_revise_engine() -> FistEngine {
+  let e = FistEngine::new()
+  let specs : Array[(String, String?, Array[String])] = [
+    ("R", None, []),
+    ("A", Some("R"), []),
+    ("B", Some("R"), []),
+    ("C", Some("R"), ["B"]),
+  ]
+  for s in specs {
+    let (id, parent, deps) = s
+    let t = @core.Task::new(
+      id~,
+      project_dir="/proj/demo",
+      description="plan revise 任务 \{id}",
+      parent_id=match parent {
+        Some(p) => p
+        None => ""
+      },
+      created_at="2026-09-26T06:00:00Z",
+      depends_on=deps,
+    )
+    ignore(e.store.create_task(t))
+  }
+  // A 走完 认领→执行→提交→验收 → 已完成
+  ignore(e.claim(task_id="A", assignee="exec_1", now="2026-09-26T06:01:00Z"))
+  ignore(e.execute(task_id="A", deliverable="ok", now="2026-09-26T06:02:00Z"))
+  ignore(e.submit(task_id="A", now="2026-09-26T06:03:00Z"))
+  ignore(e.verify(task_id="A", verifier="ver_1", now="2026-09-26T06:04:00Z"))
+  // B 走完 认领→执行→提交→打回 → 已打回
+  ignore(e.claim(task_id="B", assignee="exec_1", now="2026-09-26T06:05:00Z"))
+  ignore(e.execute(task_id="B", deliverable="bad", now="2026-09-26T06:06:00Z"))
+  ignore(e.submit(task_id="B", now="2026-09-26T06:07:00Z"))
+  ignore(
+    e.reject_task(
+      task_id="B",
+      reason="不合格",
+      by="ver_1",
+      now="2026-09-26T06:08:00Z",
+    ),
+  )
+  e
+}
+
+///|
+/// 读出 plan_revise JSON 的某字符串数组桶（keep/rework/ready）。
+fn prv_list(j : Json, key : String) -> Array[String] {
+  let out : Array[String] = []
+  match j.value(key) {
+    Some(Array(a)) =>
+      for x in a {
+        match x {
+          Json::String(s) => out.push(s)
+          _ => abort("prv " + key + " 元素非字符串: " + j.stringify())
+        }
+      }
+    _ => abort("prv " + key + " 缺失: " + j.stringify())
+  }
+  out
+}
+
+///|
+/// 读出 plan_revise JSON 的 basis。
+fn prv_basis(j : Json) -> String {
+  match j.value("basis") {
+    Some(Json::String(s)) => s
+    _ => abort("basis 缺失: " + j.stringify())
+  }
+}
+
+///|
+test "plan_revise：status 基础——keep 已完成承诺、rework 打回及其依赖链（控级联）" {
+  let e = plan_revise_engine()
+  let j = e.plan_revise("R")
+  assert_eq(prv_basis(j), "status")
+  // A 已完成 → keep；B 已打回 → rework；C 依赖 B（未开工但链受牵连）→ rework
+  assert_eq(prv_list(j, "keep").join(","), "A")
+  assert_eq(prv_list(j, "rework").join(","), "B,C")
+  assert_eq(prv_list(j, "ready").length(), 0)
+}
+
+///|
+test "plan_revise：ready=依赖全部有效且未执行（下一步可做）；feedback 显式覆盖读状态" {
+  let e = FistEngine::new()
+  let specs : Array[(String, String?, Array[String])] = [
+    ("R2", None, []),
+    ("X", Some("R2"), []),
+    ("Y", Some("R2"), ["X"]),
+  ]
+  for s in specs {
+    let (id, parent, deps) = s
+    let t = @core.Task::new(
+      id~,
+      project_dir="/proj/demo",
+      description="plan revise 任务 \{id}",
+      parent_id=match parent {
+        Some(p) => p
+        None => ""
+      },
+      created_at="2026-09-26T06:00:00Z",
+      depends_on=deps,
+    )
+    ignore(e.store.create_task(t))
+  }
+  // status 基础：X 无依赖未执行 → ready；Y 依赖 X（X 未完成）→ 等待不入桶
+  let j1 = e.plan_revise("R2")
+  assert_eq(prv_list(j1, "ready").join(","), "X")
+  assert_eq(prv_list(j1, "keep").length(), 0)
+  assert_eq(prv_list(j1, "rework").length(), 0)
+  // feedback 显式覆盖：X ok → keep；Y 依赖 keep → ready
+  let fb : Array[Json] = [
+    Json::object({ "task_id": Json::string("X"), "ok": Json::boolean(true) }),
+  ]
+  let j2 = e.plan_revise("R2", feedback=fb)
+  assert_eq(prv_basis(j2), "feedback")
+  assert_eq(prv_list(j2, "keep").join(","), "X")
+  assert_eq(prv_list(j2, "ready").join(","), "Y")
+}
+
+///|
+test "plan_revise：feedback 显式 no → rework（未开工下游级联，控涟漪）" {
+  let e = FistEngine::new()
+  let specs : Array[(String, String?, Array[String])] = [
+    ("R3", None, []),
+    ("P", Some("R3"), []),
+    ("Q", Some("R3"), ["P"]),
+  ]
+  for s in specs {
+    let (id, parent, deps) = s
+    let t = @core.Task::new(
+      id~,
+      project_dir="/proj/demo",
+      description="plan revise 任务 \{id}",
+      parent_id=match parent {
+        Some(p) => p
+        None => ""
+      },
+      created_at="2026-09-26T06:00:00Z",
+      depends_on=deps,
+    )
+    ignore(e.store.create_task(t))
+  }
+  let fb : Array[Json] = [
+    Json::object({ "task_id": Json::string("P"), "ok": Json::boolean(false) }),
+  ]
+  let j = e.plan_revise("R3", feedback=fb)
+  // P 显式 no → rework；Q 依赖 P → 级联 rework
+  assert_eq(prv_list(j, "rework").join(","), "P,Q")
+  assert_eq(prv_list(j, "keep").length(), 0)
+  assert_eq(prv_list(j, "ready").length(), 0)
+}
+
+///|
+test "plan_revise：根任务不存在 → ok:false" {
+  let e = FistEngine::new()
+  let j = e.plan_revise("NOPE")
+  match j.value("ok") {
+    Some(jj) =>
+      match jj.as_bool() {
+        Some(b) => assert_eq(b, false)
+        None => abort("ok 非布尔: " + j.stringify())
+      }
+    _ => abort("ok 缺失: " + j.stringify())
+  }
+}
