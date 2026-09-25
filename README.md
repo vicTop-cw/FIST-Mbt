@@ -152,6 +152,7 @@ python scripts/award_demo.py      # → MCP-AWARD-DEMO PASS（能力链全通，
 | `schedule` | 调度预览：根据任务描述自适应计算分级/拆分/成本档/执行器（不落库） | description, n_files(可选) |
 | `cost_stats` | 执行成本聚合统计（total_records/total_cost/total_tokens/by_executor） | 无 |
 | `cost_budget_check` | 预算超限告警（exceeded/remaining/action） | limit, current |
+| `cost_budget_split` | 预算按依赖图阶段切分（R81 ZEBRA 蒸馏：每阶段份额=阶段难度权重占量比例×总预算，瓶颈阶段占额可见、超支先预警） | budget |
 
 #### 执行与交付
 
@@ -170,6 +171,9 @@ python scripts/award_demo.py      # → MCP-AWARD-DEMO PASS（能力链全通，
 | `dag_ready` | 列出所有依赖满足、可领取的任务 | namespace(可选) |
 | `dag_sort` | 对任务列表按依赖深度拓扑排序 | task_ids(JSON 数组) |
 | `dag_depend` | 显式给任务追加前置依赖（构建 DAG 依赖边，不只靠父任务） | task_id, dep_id, now |
+| `dag_slack` | 瓶颈与松弛分析（R71 PERT/CPM 硬核调度：earliest/latest/slack + 环检测——谁在关键路径、谁有松弛可并行） | 无 |
+| `dag_schedule` | 排程视图（R74→R75：critical/flexible 分批 + 未认领项 suggest=负载最低执行者——谁在瓶颈、谁可并行派单） | 无 |
+| `dag_cost_route` | 依赖图成本路由（R77 STAR 式蒸馏：执行成本难度档+切换税+能力约束——critical_path→slack→schedule→cost_route 排程优化闭环） | 无 |
 
 #### 审计与权限（M5 治理）
 

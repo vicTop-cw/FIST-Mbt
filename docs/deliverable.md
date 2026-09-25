@@ -94,7 +94,7 @@ python scripts/mcp_smoke.py
 ## 五、文档即实现
 - 工具/资源/测试数均与实测一致（README/AGENTS/ARCHITECTURE/agent-map 已同步）。
 - 过程日志 `memory/2026-09-25.md`；综合汇报 `reports/2026-09-25-award-enhancement-5rounds-report.md`。
-- 调研：`memory/research/20260925.enrich-roadmap.md`（Repo Map / DALIA / TURA / AgentX / MoonBit 新特性）、`memory/research/ecosystem-borrow.md`（§五 二轮调研：SAGE/R-Few/SPICE/SEP-1686/RepoMap）。
+- 调研：`memory/research/20260925.enrich-roadmap.md`（Repo Map / DALIA / TURA / AgentX / MoonBit 新特性）、`memory/research/ecosystem-borrow.md`（§五 二轮调研：SAGE/R-Few/SPICE/SEP-1686/RepoMap）、`memory/research/20260926.cost-market-routing.md`（成本感知调度/市场式路由：STAR 依赖图拍卖 / CASTER / ZEBRA / Agora / PROGROUTER / SwarmHarness——已落地 dag_cost_route R77 / executor_route 信任轴 R80 / cost_budget_split R81，含落地设计草案）。
 - 遗留如实：Windows native 竞态、`node:sqlite` 实验性警告、测试落盘 `temp/`（cleanup --check 兜底）见 §六。
 
 ## 六、遗留（诚实自曝）
