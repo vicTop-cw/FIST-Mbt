@@ -8,14 +8,14 @@
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
 moon build --target js cmd/main
 python scripts/mcp_smoke.py
-# 期望输出：PASS tools/list → 72 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
+# 期望输出：PASS tools/list → 75 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
 ```
 
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **72**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 205/205**（Windows + WSL(Linux) 双端实测全绿） |
+| MCP 工具 | **75**（+ 3 resources + 2 prompts） |
+| 测试 | **`moon test --target js` 207/207**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |

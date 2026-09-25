@@ -129,7 +129,7 @@ def rpc(method, **payload):
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
 ```
-→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（72 个工具）
+→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（75 个工具）
 
 **Step 2 · 发布一个根任务**
 ```json
@@ -149,12 +149,12 @@ def rpc(method, **payload):
 三步跑通即 MCP server 端到端可用、环境就绪。
 
 > 本机实测：`python scripts/mcp_smoke.py` 一键自检输出
-> `PASS tools/list → 72 个工具` / `PASS publish → T?` / `PASS get → T? [待领取]` / `MCP-SMOKE PASS`。
+> `PASS tools/list → 75 个工具` / `PASS publish → T?` / `PASS get → T? [待领取]` / `MCP-SMOKE PASS`。
 > 三步 = 该脚本的内部逻辑，二者完全一致。
 
 ---
 
-## 6. 72 个 MCP 工具手册
+## 6. 75 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
@@ -212,6 +212,9 @@ def rpc(method, **payload):
 | `dag_sort` | 对任务列表按依赖深度拓扑排序 | task_ids(JSON 数组，必填) |
 | `board_ascii` | 实时任务看板：按状态分组 + 深度缩进渲染，一眼看项目全貌 | namespace(可选，空=全部) |
 | `status_summary` | 项目脉冲：{version,total_tasks,by_status,active_namespaces}，一次调用读项目健康 | namespace(可选，只统计该 ns) |
+| `reserve_scope` | 预订工作作用域防并发编辑冲突（空/超时/同 agent 可占；他人占用返回持有者） | scope, agent, ttl_until(必), now |
+| `reserve_check` | 查询作用域是否可编辑（空闲可用） | scope(必), now |
+| `reserve_release` | 释放自己的作用域（仅持有者有效） | scope(必), agent(必) |
 
 > **使用建议**：在 `claim` 前先调 `dag_ready` 查看可领取任务，或 `dag_check` 验证依赖是否满足，
 > 避免死锁。`dag_ascii` 可快速可视化当前任务依赖关系；`board_ascii` 纵览整个项目"哪些任务、什么状态、在树哪层"。
@@ -431,7 +434,7 @@ def rpc(method, **payload):
 **验证结论**：publish → plan → claim/execute/submit/verify（叶子）+ verify（父自动上卷）→ archive 全链真实跑通，
 任务自动持久化到 `fist-mbt.db`。
 
-> 补充实测：`tools/list` 返回 72 个工具；`resources/read(fist://principles)` 返回七条金条 JSON；
+> 补充实测：`tools/list` 返回 75 个工具；`resources/read(fist://principles)` 返回七条金条 JSON；
 > `prompts/get(fist:check_in)` 返回 1 条 role=user 的打卡自查模板消息。
 
 ---
@@ -509,7 +512,7 @@ moon publish
 
 ## 12. 一句话总结
 
-FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（72 个工具）。
+FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（75 个工具）。
 对 AI 客户端而言：**pub/claim/plan + spec 深拆 → 子任务闭环 → verify 上卷 → archive**，
 一路 `tools/call` 即可完成多智能体任务的发布、认领、拆分、执行、验收、归档全生命周期管理。
 

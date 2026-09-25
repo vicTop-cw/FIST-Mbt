@@ -2438,6 +2438,151 @@ pub async fn run_server() -> Unit {
   )
   s1 = instrumented_tool(
     s1,
+    "reserve_scope",
+    "预订一个工作作用域（文件/目录/资源）防多 agent 并发编辑冲突。若作用域空闲（未被他人活体预订）则由本 agent 占据，否则返回持有者。TTL 由 ttl_until(ISO-8601 未来时间戳串)给定；到时自动视为可让渡。参数：scope、agent、ttl_until(必)、now(时间戳)。",
+    schema(
+      {
+        "scope": string_prop("作用域（如 src/foo.mbt 或模块名，必填）"),
+        "agent": string_prop("预订者（如 exec_1，必填）"),
+        "ttl_until": string_prop("TTL 截止时间戳（ISO-8601，必填）"),
+        "now": string_prop("当前时间戳(可选，默认内置)"),
+      },
+      ["scope", "agent", "ttl_until"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let scope = get_str(args, "scope")
+      let agent = get_str(args, "agent")
+      let ttl_until = get_str(args, "ttl_until")
+      let now = get_str(args, "now", default=now_default())
+      match engine.rsv_get(scope) {
+        // 空闲（无预订，或原预订已过期）→ 抢占
+        None => {
+          let r = engine.rsv_set(scope~, agent~, ttl_until~, created_at=now)
+          match r {
+            Ok(_) =>
+              Ok(
+                @mcp.ToolResult::text(
+                  Json::object({
+                    "scope": Json::string(scope),
+                    "agent": Json::string(agent),
+                    "ttl_until": Json::string(ttl_until),
+                    "reserved": Json::boolean(true),
+                    "action": Json::string("reserved"),
+                  }).stringify(),
+                ),
+              )
+            Err(e) => Err(@mcp_types.ToolError(e))
+          }
+        }
+        Some((owner, ot, _)) if owner == agent || ot < now => {
+          // 同 agent 续期，或原持有者已超时 → 让渡/续期
+          let r = engine.rsv_set(scope~, agent~, ttl_until~, created_at=now)
+          match r {
+            Ok(_) =>
+              Ok(
+                @mcp.ToolResult::text(
+                  Json::object({
+                    "scope": Json::string(scope),
+                    "agent": Json::string(agent),
+                    "ttl_until": Json::string(ttl_until),
+                    "reserved": Json::boolean(true),
+                    "action": Json::string(if owner == agent { "renewed" } else { "taken_over" }),
+                    "prev_agent": Json::string(owner),
+                  }).stringify(),
+                ),
+              )
+            Err(e) => Err(@mcp_types.ToolError(e))
+          }
+        }
+        Some((owner, ot, _)) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "scope": Json::string(scope),
+                "reserved": Json::boolean(false),
+                "held_by": Json::string(owner),
+                "ttl_until": Json::string(ot),
+                "reason": Json::string("该作用域已被其他 agent 活体预订"),
+              }).stringify(),
+            ),
+          )
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "reserve_check",
+    "查询某工作作用域是否可编辑（空闲可用）。参数：scope、now(时间戳)。",
+    schema(
+      {
+        "scope": string_prop("作用域（必填）"),
+        "now": string_prop("当前时间戳(可选)"),
+      },
+      ["scope"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let scope = get_str(args, "scope")
+      let now = get_str(args, "now", default=now_default())
+      match engine.rsv_get(scope) {
+        None =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "scope": Json::string(scope),
+                "free": Json::boolean(true),
+                "agent": Json::string(""),
+              }).stringify(),
+            ),
+          )
+        Some((agent, ttl_until, _)) if ttl_until < now =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "scope": Json::string(scope),
+                "free": Json::boolean(true),
+                "agent": Json::string(agent),
+                "expired_ttl_until": Json::string(ttl_until),
+              }).stringify(),
+            ),
+          )
+        Some((agent, ttl_until, _)) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "scope": Json::string(scope),
+                "free": Json::boolean(false),
+                "agent": Json::string(agent),
+                "ttl_until": Json::string(ttl_until),
+              }).stringify(),
+            ),
+          )
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "reserve_release",
+    "释放自己的工作作用域（仅持有者有效）。参数：scope、agent。",
+    schema(
+      { "scope": string_prop("作用域（必填）"), "agent": string_prop("持有者（必填）") },
+      ["scope", "agent"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let scope = get_str(args, "scope")
+      let agent = get_str(args, "agent")
+      let ok = engine.rsv_release(scope, agent)
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "scope": Json::string(scope),
+            "released": Json::boolean(ok),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
     "dag_check",
     "检查某任务的依赖是否全部完成。参数：task_id。",
     schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),

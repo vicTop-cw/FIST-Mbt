@@ -28,11 +28,20 @@ pub struct MemoryStore {
   mut default_ns : String
   // 进程内调用日志（best-effort，软上限 ~500，超限丢最早一条）
   call_logs : Array[Json]
+  // 作用域预订（Interlinked 拿来主义：多 agent 并发编辑冲突预防）
+  // scope -> (agent, ttl_until, created_at)
+  reservations : Map[String, (String, String, String)]
 }
 
 ///|
 pub fn MemoryStore::new() -> MemoryStore {
-  { tasks: Map([]), specs: Map([]), default_ns: "default", call_logs: [], }
+  {
+    tasks: Map([]),
+    specs: Map([]),
+    default_ns: "default",
+    call_logs: [],
+    reservations: Map([]),
+  }
 }
 
 ///|
@@ -248,6 +257,51 @@ impl Store for StoreBackend with fn clear(self) {
   match self {
     Mem(m) => m.clear()
     Sql(s) => s.clear()
+  }
+}
+
+///|
+/// 后端统一：写入/覆盖某作用域预订（拿来主义：Interlinked 文件预订）。
+pub fn StoreBackend::rsv_set(
+  self : StoreBackend,
+  scope~ : String,
+  agent~ : String,
+  ttl_until~ : String,
+  created_at~ : String,
+) -> Result[String, String] {
+  match self {
+    Mem(m) => m.rsv_set(scope~, agent~, ttl_until~, created_at~)
+    Sql(s) => s.rsv_set(scope~, agent~, ttl_until~, created_at~)
+  }
+}
+
+///|
+/// 后端统一：查询某作用域预订。
+pub fn StoreBackend::rsv_get(
+  self : StoreBackend,
+  scope : String,
+) -> (String, String, String)? {
+  match self {
+    Mem(m) => m.rsv_get(scope)
+    Sql(s) => s.rsv_get(scope)
+  }
+}
+
+///|
+/// 后端统一：释放预订（仅持有者）。
+pub fn StoreBackend::rsv_release(self : StoreBackend, scope : String, agent : String) -> Bool {
+  match self {
+    Mem(m) => m.rsv_release(scope, agent)
+    Sql(s) => s.rsv_release(scope, agent)
+  }
+}
+
+///|
+/// 后端统一：列出全部预订。
+pub fn StoreBackend::rsv_list(self : StoreBackend) -> Array[(String, String, String)] {
+  match self {
+    Mem(m) => m.rsv_list()
+    Sql(s) => s.rsv_list()
   }
 }
 

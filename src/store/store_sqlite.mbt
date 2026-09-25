@@ -62,6 +62,7 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     "CREATE TABLE IF NOT EXISTS archive (id TEXT PRIMARY KEY, task_json TEXT NOT NULL DEFAULT '', archived_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS evolve_artifacts (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', goal TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', code TEXT NOT NULL DEFAULT '', score TEXT NOT NULL DEFAULT '0', parts_json TEXT NOT NULL DEFAULT '{}', children INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS call_log (id INTEGER PRIMARY KEY AUTOINCREMENT, seq INTEGER, ts TEXT, tool TEXT, caller TEXT, ns TEXT, params_json TEXT, result_json TEXT, ok INTEGER, runtime_ms INTEGER)",
+    "CREATE TABLE IF NOT EXISTS reservations (scope TEXT PRIMARY KEY, agent TEXT NOT NULL DEFAULT '', ttl_until TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '')",
   ]
   match self.db {
     None => false
@@ -638,6 +639,114 @@ impl Store for SqliteStore with fn clear(self) {
       // 与 MemoryStore 语义对齐：清空时同时清空语料 / 复验 / 升级账本
       ignore(self.ensure_specs_table())
       ignore(db.exec("DELETE FROM specs"))
+    }
+  }
+}
+
+///|
+/// SQLite 后端：写入/覆盖某作用域预订（ON CONFLICT DO UPDATE）。
+pub fn SqliteStore::rsv_set(
+  self : SqliteStore,
+  scope~ : String,
+  agent~ : String,
+  ttl_until~ : String,
+  created_at~ : String,
+) -> Result[String, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "INSERT INTO reservations (scope, agent, ttl_until, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(scope) DO UPDATE SET agent=excluded.agent, ttl_until=excluded.ttl_until, created_at=excluded.created_at"
+      match db.prepare(sql) {
+        None => Err("rsv_set prepare failed")
+        Some(stmt) => {
+          ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))))
+          ignore(stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent))))
+          ignore(stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ttl_until))))
+          ignore(stmt.bind(4, @sqlite.SqlValue::Text(@encoding.encode(UTF8, created_at))))
+          let ok = stmt.execute()
+          stmt.finalize()
+          if ok { Ok("reserved") } else { Err("rsv_set execute failed") }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// SQLite 后端：查询某作用域预订。
+pub fn SqliteStore::rsv_get(self : SqliteStore, scope : String) -> (String, String, String)? {
+  match self.db {
+    None => None
+    Some(db) => {
+      let sql = "SELECT agent, ttl_until, created_at FROM reservations WHERE scope = ?"
+      match db.prepare(sql) {
+        None => None
+        Some(stmt) => {
+          ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))))
+          let r : (String, String, String)? = if stmt.step() {
+            Some((
+              str_from_bytes(stmt.column_text(0)),
+              str_from_bytes(stmt.column_text(1)),
+              str_from_bytes(stmt.column_text(2)),
+            ))
+          } else {
+            None
+          }
+          stmt.finalize()
+          r
+        }
+      }
+    }
+  }
+}
+
+///|
+/// SQLite 后端：释放预订（仅持有者；删除行数决定成功）。
+pub fn SqliteStore::rsv_release(
+  self : SqliteStore,
+  scope : String,
+  agent : String,
+) -> Bool {
+  match self.db {
+    None => false
+    Some(db) => {
+      let sql = "DELETE FROM reservations WHERE scope = ? AND agent = ?"
+      match db.prepare(sql) {
+        None => false
+        Some(stmt) => {
+          ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))))
+          ignore(stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent))))
+          let ok = stmt.execute()
+          stmt.finalize()
+          ok
+        }
+      }
+    }
+  }
+}
+
+///|
+/// SQLite 后端：列出全部预订。
+pub fn SqliteStore::rsv_list(self : SqliteStore) -> Array[(String, String, String)] {
+  let out : Array[(String, String, String)] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT agent, ttl_until, created_at FROM reservations ORDER BY created_at"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          while stmt.step() {
+            out.push((
+              str_from_bytes(stmt.column_text(0)),
+              str_from_bytes(stmt.column_text(1)),
+              str_from_bytes(stmt.column_text(2)),
+            ))
+          }
+          stmt.finalize()
+          out
+        }
+      }
     }
   }
 }

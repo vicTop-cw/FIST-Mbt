@@ -42,6 +42,7 @@ pub struct MemoryStore {
   specs : Map[String, SpecRecord]
   mut default_ns : String
   call_logs : Array[Json]
+  reservations : Map[String, (String, String, String)]
 }
 pub fn MemoryStore::clear(Self) -> Unit
 pub fn MemoryStore::create_task(Self, @core.Task) -> Result[Unit, String]
@@ -53,6 +54,10 @@ pub fn MemoryStore::list_tasks(Self) -> Array[@core.Task]
 pub fn MemoryStore::list_tasks_in(Self, String) -> Array[@core.Task]
 pub fn MemoryStore::new() -> Self
 pub fn MemoryStore::recent_call_logs(Self, limit? : Int) -> Array[Json]
+pub fn MemoryStore::rsv_get(Self, String) -> (String, String, String)?
+pub fn MemoryStore::rsv_list(Self) -> Array[(String, String, String)]
+pub fn MemoryStore::rsv_release(Self, String, String) -> Bool
+pub fn MemoryStore::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[String, String]
 pub fn MemoryStore::update_spec_status(Self, String, String, String, String) -> Result[Unit, String]
 pub fn MemoryStore::update_task(Self, @core.Task) -> Result[Unit, String]
 pub fn MemoryStore::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
@@ -107,6 +112,10 @@ pub fn SqliteStore::open(String) -> Self?
 pub fn SqliteStore::read_heartbeat(Self, String) -> (String, String, String)
 pub fn SqliteStore::recent_call_logs(Self, limit? : Int) -> Array[Json]
 pub fn SqliteStore::record_execution(Self, task_id~ : String, executor~ : String, model~ : String, tokens_in~ : Int, tokens_out~ : Int, cost~ : Double, duration_ms~ : Int, rate_limited~ : Bool, failure_reason~ : String, created_at~ : String) -> Result[Unit, String]
+pub fn SqliteStore::rsv_get(Self, String) -> (String, String, String)?
+pub fn SqliteStore::rsv_list(Self) -> Array[(String, String, String)]
+pub fn SqliteStore::rsv_release(Self, String, String) -> Bool
+pub fn SqliteStore::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[String, String]
 pub fn SqliteStore::update_spec_status(Self, String, String, String, String) -> Result[Unit, String]
 pub fn SqliteStore::update_task(Self, @core.Task) -> Result[Unit, String]
 pub fn SqliteStore::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
@@ -132,6 +141,10 @@ pub fn StoreBackend::memory() -> Self
 pub fn StoreBackend::read_heartbeat(Self, String) -> (String, String, String)
 pub fn StoreBackend::recent_call_logs(Self, limit? : Int) -> Array[Json]
 pub fn StoreBackend::record_execution(Self, task_id~ : String, executor~ : String, model~ : String, tokens_in~ : Int, tokens_out~ : Int, cost~ : Double, duration_ms~ : Int, rate_limited~ : Bool, failure_reason~ : String, created_at~ : String) -> Result[Unit, String]
+pub fn StoreBackend::rsv_get(Self, String) -> (String, String, String)?
+pub fn StoreBackend::rsv_list(Self) -> Array[(String, String, String)]
+pub fn StoreBackend::rsv_release(Self, String, String) -> Bool
+pub fn StoreBackend::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[String, String]
 pub fn StoreBackend::set_namespace(Self, String) -> Unit
 pub fn StoreBackend::sqlite(SqliteStore) -> Self
 pub fn StoreBackend::sqlite_store(Self) -> SqliteStore?
