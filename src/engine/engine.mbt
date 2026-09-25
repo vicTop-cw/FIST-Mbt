@@ -250,6 +250,26 @@ pub fn FistEngine::store_list_heartbeats(
 }
 
 ///|
+/// 追加心跳间隔历史（R90，Phi Accrual 判活数据源；委托给 store 后端）。
+pub fn FistEngine::store_write_heartbeat_interval(
+  self : FistEngine,
+  task_id~ : String,
+  interval_sec~ : Int,
+  ts~ : String,
+) -> Result[Unit, String] {
+  self.store.write_heartbeat_interval(task_id~, interval_sec~, ts~)
+}
+
+///|
+/// 读取心跳间隔历史（R90，时间序旧→新；委托给 store 后端）。
+pub fn FistEngine::store_list_heartbeat_intervals(
+  self : FistEngine,
+  task_id : String,
+) -> Array[Int] {
+  self.store.list_heartbeat_intervals(task_id)
+}
+
+///|
 /// 写入一条调用日志（委托给 store 后端；best-effort，调用方应忽略错误）。
 pub fn FistEngine::store_write_call_log(
   self : FistEngine,

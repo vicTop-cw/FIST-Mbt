@@ -381,7 +381,7 @@ def rpc(method, **payload):
 
 | 工具 | 说明 | 参数 |
 |---|---|---|
-| `watchdog_tick` | 看门狗编排单一入口（推荐仅用于定时任务）：扫描活跃任务，心跳超时回滚重派；上一轮根任务完成且给 next_description/meta_prompt_path 时自动续下一轮 | now timeout_sec(选,默认600) namespace(选) next_description(选) next_created_by(选,默认watchdog) meta_prompt_path(选) cold_start(选,默认false) project_dir(选) omega_strong_verify(选) omega_split_n(选) omega_spec(选) |
+| `watchdog_tick` | 看门狗编排单一入口（推荐仅用于定时任务）：扫描活跃任务，心跳超时回滚重派；上一轮根任务完成且给 next_description/meta_prompt_path 时自动续下一轮；可选 `phi_gate=true` 用 Phi Accrual 概率式判活（φ≥phi_threshold 才回滚，默认关闭零回归） | now timeout_sec(选,默认600) namespace(选) next_description(选) next_created_by(选,默认watchdog) meta_prompt_path(选) cold_start(选,默认false) project_dir(选) omega_strong_verify(选) omega_split_n(选) omega_spec(选) autodispatch(选,默认false) autodispatch_want(选) phi_gate(选,默认false) phi_threshold(选,默认8) |
 | `pipeline_tick` | 提示词流水线状态机单入口（仅定时任务 ns）：以 currentState.txt 为状态源四分支推进（空闲生成提示词/提示词落盘发根/执行中缺报告则催报告/报告落盘验收收口），报告先行 | project_dir(必) now(选) namespace(选,默认cron-auto) phase(选,默认auto) prompt_name(选) timeout_sec(选,默认2400) |
 
 ### 6.11 自驱式编程（selfdrive）
