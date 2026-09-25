@@ -15,7 +15,7 @@ python scripts/mcp_smoke.py
 | 项 | 值 |
 |---|---|
 | MCP 工具 | **75**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 215/215**（Windows + WSL(Linux) 双端实测全绿） |
+| 测试 | **`moon test --target js` 216/216**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -46,6 +46,9 @@ python scripts/mcp_smoke.py
 | 12 难度梯度 | `task_plan_deep gradient=true`：拆解子任务带「难度梯度 序号/总数:易/中/难」+「更简单变体」提示（LADDER 信号） | `plan_gradient_verify.py` |
 | 13 Critic防漂移 | `evolve_critic` 门禁（SAGE）：入库前纯计算评审拟议 principle/lesson，重合≥70% 判课程漂移拒收、综合分低暂缓 | `evolve_critic_verify.py` |
 | 14 Challenger进阶 | `task_challenge`：对已完成/已归档任务发布更难变体新根任务（[challenge] 溯源 + 重要度升档，SAGE 四专家环补齐） | `task_challenge_verify.py` |
+| 15 生成物清理 | `cleanup_artifacts.py`：除交付库 fist-mbt.db 外清理 *.db/-shm/-wal 与 temp/；--check 作 CI 干净度守卫 | 实跑 74+63 移除 + CLEAN |
+| 16 自驱 DEMO | `award_demo.py`：一条命令串演 map→拆解(gradient)→验收→Challenger→Critic→预订→脉冲/看板 | `python scripts/award_demo.py` |
+| 17 难度校准 | `task_plan_deep gradient+calibrate`：按切片给真实难度 0..5 覆盖位置档（LADDER 补真实难度） | `plan_gradient_verify.py`（含 calibrate） |
 
 ## 五、文档即实现
 - 工具/资源/测试数均与实测一致（README/AGENTS/ARCHITECTURE/agent-map 已同步）。

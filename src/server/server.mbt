@@ -1017,6 +1017,9 @@ pub async fn run_server() -> Unit {
         "gradient": bool_prop(
           "是否开启难度梯度标注(默认 false，不传即现状；开启后每个拆出的子任务描述附带『难度梯度 序号/总数:易/中/难』+『更简单变体』提示，使递归拆解呈由易到难、可验证最小片的梯度)",
         ),
+        "calibrate": array_prop(
+          "可选难度校准：按切片给真实/投影难度数组(0..5，长度须与每层切片数一致才生效)；缺省回退按位置的易/中/难(零回归)。开启 gradient 时生效。",
+        ),
         "laya_auto": bool_prop(
           "是否开启 Laya 自动选档(默认 false)：开启后探测 Laya，可用则按 difficulty.score 自动定 split_n 并把决策附到返回；不可用则回退 split_n 默认值。若同时传 decide_split_n，则忽略 Laya(躬身自决优先)",
         ),
@@ -1049,6 +1052,22 @@ pub async fn run_server() -> Unit {
       }
       let omega_strong = get_bool(args, "omega_strong_verify", default=false)
       let gradient = get_bool(args, "gradient", default=false)
+      // 可选难度校准数组：把 JSON 数字数组转成 Double 数组（缺省 None = 位置档）
+      let calibrate : Array[Double]? = {
+        let arr = get_array(args, "calibrate")
+        if arr.is_empty() {
+          None
+        } else {
+          Some(
+            arr.map(fn(j) {
+              match j {
+                Number(n, ..) => n
+                _ => 0.0
+              }
+            }),
+          )
+        }
+      }
       let laya_auto = get_bool(args, "laya_auto", default=false)
       // —— 躬身入局选档（decide_*）—— 决策由 agent/调用方显式自决，可审计，优先于 Laya。
       let decide_split_n = get_int(args, "decide_split_n", default=0)
@@ -1122,6 +1141,7 @@ pub async fn run_server() -> Unit {
           now=ts,
           omega_strong_verify=omega_strong,
           gradient~,
+          calibrate~,
         ) {
         Ok(j) => j
         Err(e) => return Err(@mcp_types.ToolError(e))

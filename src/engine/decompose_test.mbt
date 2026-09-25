@@ -233,6 +233,66 @@ test "plan_deep 开启 gradient 时子任务描述带难度梯度与更简单变
 }
 
 ///|
+test "plan_deep 难度校准：gradient+calibrate 用真实难度覆盖位置档，长度不匹配时回退" {
+  let e = dp_new_engine()
+  let id = dp_publish(e)
+  // calibrate 长度与切片一致：T0.1 d=1.0(易)、T0.2 d=3.0(中)、T0.3 d=5.0(难)
+  match
+    e.plan_deep(
+      task_id=id,
+      split_n=3,
+      by="leader_a",
+      gradient=true,
+      calibrate=Some([1.0, 3.0, 5.0]),
+      now="2026-09-05T10:01:00Z",
+    ) {
+    Err(m) => abort("calibrated plan_deep failed: \{m}")
+    Ok(_) => {
+      let a = match e.get_task("T0.1") {
+        Some(t) => t
+        None => abort("T0.1 missing")
+      }
+      assert_eq(a.description.contains("[难度梯度 1/3:易"), true)
+      // 校准难度数值（JS 端 1.0 渲染为 "1"，此处只断言 "d=1" 前缀命中）
+      assert_eq(a.description.contains("d=1"), true)
+      let b = match e.get_task("T0.2") {
+        Some(t) => t
+        None => abort("T0.2 missing")
+      }
+      assert_eq(b.description.contains("[难度梯度 2/3:中"), true)
+      assert_eq(b.description.contains("d=3"), true)
+      let c = match e.get_task("T0.3") {
+        Some(t) => t
+        None => abort("T0.3 missing")
+      }
+      assert_eq(c.description.contains("[难度梯度 3/3:难"), true)
+      assert_eq(c.description.contains("d=5"), true)
+    }
+  }
+  // calibrate 长度不匹配：回退位置档（不崩塌）
+  let id2 = dp_publish(e, desc="M3 校准回退根")
+  match
+    e.plan_deep(
+      task_id=id2,
+      split_n=3,
+      by="leader_a",
+      gradient=true,
+      calibrate=Some([2.0]),
+      now="2026-09-05T10:02:00Z",
+    ) {
+    Err(m) => abort("calibrate mismatch should still succeed: \{m}")
+    Ok(_) => {
+      // id2 由 first_free_root_id 顺延（如 T0r2），取它的首个子节点
+      let kids = e.children_of(id2)
+      let a = kids[0]
+      // 位置 1/3 → 易，且不附加校准 d 记号
+      assert_eq(a.description.contains("[难度梯度 1/3:易]"), true)
+      assert_eq(a.description.contains(" d="), false)
+    }
+  }
+}
+
+///|
 test "plan_deep SQLite 持久化：重启后子树可经 get_task 恢复" {
   let db_path = "decompose_persist.db"
   // 幂等：先经 SqliteStore 公共 API 清空上次残留，再构建引擎

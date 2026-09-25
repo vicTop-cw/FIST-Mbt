@@ -50,6 +50,15 @@ def main():
         assert "更简单变体" in c1["description"], f"应含更简单变体提示: {c1['description']}"
         assert "[难度梯度 3/3:难]" in c3["description"], f"末片应为难: {c3['description']}"
         print("PASS gradient=true → 难度梯度标注（1/3:易、3/3:难）+ 更简单变体提示")
+        # 难度校准：gradient + calibrate 用真实难度覆盖位置档
+        r3 = call(p, "publish", project_dir="/proj/demo", namespace=NS, description="G 校准根任务", created_by="human_steward", now=NOW)
+        rid3 = r3["task_id"]
+        ignore3 = call(p, "task_plan_deep", task_id=rid3, split_n=3, by="leader", gradient=True, calibrate=[1, 3, 5], now=NOW)
+        ck1 = call(p, "get", task_id=f"{rid3}.1")
+        ck3 = call(p, "get", task_id=f"{rid3}.3")
+        assert "[难度梯度 1/3:易" in ck1["description"] and "d=1" in ck1["description"], f"首片应校准 d=1: {ck1['description']}"
+        assert "[难度梯度 3/3:难" in ck3["description"] and "d=5" in ck3["description"], f"末片应校准 d=5: {ck3['description']}"
+        print("PASS 难度校准 calibrate=[1,3,5] → 真实难度覆盖位置档（d=1 易 / d=5 难）")
         # 整洁：scratch 库落 temp/，仓库根无残留 {NS}.db
         root_db = os.path.join(ROOT, NS + ".db")
         if os.path.exists(root_db):
