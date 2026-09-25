@@ -29,7 +29,11 @@
 - `check_badge.py` — **README 测试徽章一致性守卫（R34）**：比对 `moon test` 实测测试数与 README 徽章 `tests-N%2FN`，不一致即退出码 1（挂 CI 作"徽章不过时可复现"门禁，杜绝手改漏同步）。已经在 `.github/workflows/ci.yml` 的 JS 轨道里自动执行。
 - `check_tools_sync.py` — **工具清单单一真源守卫（R46）**：以 `src/server/server.mbt` 实际注册工具名为唯一真源，校验 AGENTS 表格工具名 ⊆ 真源、真源全部入 AGENTS、README/AGENTS/deliverable/scoring_rubric 工具总数==实测（双向防幽灵/漏写）。已在 ci.yml JS 两轨自动执行。
 - `check_test_sync.py` — **测试总数单一真源守卫（R47）**：从 `moon test` 日志提取实测总数，跨 README/AGENTS/deliverable/scoring_rubric 校验述一致（N/N、N 全绿、独立 N 任一）；`--total N` 直传亦可。已在 ci.yml JS 轨自动执行。
+- `check_scripts_index.py` — **工具类辅助代码单一索引守卫（R62）**：校验 `scripts/README.md` 已登记全部「正式」辅助脚本（无 `_` 前缀），防新生脚本不留说明就堆积——把地图/整洁下沉到工具层。用法：`python scripts/check_scripts_index.py`（0=PASS，1=漏登记）。
 - `demo.ps1` — 一键演示（build+patch+smoke）。
+- `showcase.ps1` — **30~60 秒视觉终端巡演**：Header/徽章、九态生命周期、DAG、自举采用（读盘真实 548 tasks/196 exec/6 review）、自治派送闭环（triage→dispatch_next→executor_route→watchdog autodispatch 零参数），ANSI+box；实测 exit 0 / ~1.7s，无盘符。用法：`pwsh -NoProfile -File scripts/showcase.ps1`。
+- `fist-mbt-http.py` — **HTTP/SSE 传输服务**：把 stdio MCP server 桥接成 HTTP，`GET /health` 健康检查 + MCP over HTTP/SSE。
+- `laya_decide.py` — **Laya 决策 sidecar**：把 Laya ML 模型包成可被 fist-mbt MCP server 调用的 JSON sidecar（冷启动选档/探测）。
 - `native-env.ps1` — Windows native 环境一键装载（VS + sqlite-dev）。
 - `gen_apply_pdf.py` — 一页项目申报书 PDF 生成（个人档，不入库）。
 

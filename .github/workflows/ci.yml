@@ -45,6 +45,10 @@ jobs:
         shell: bash
         run: python3 scripts/check_test_sync.py /tmp/moon_test.log
 
+      - name: Scripts-index guard (工具类辅助代码统一登记 scripts/README)
+        shell: bash
+        run: python3 scripts/check_scripts_index.py
+
       - name: Cleanliness guard (仓库整洁，仅交付库 fist-mbt.db)
         shell: bash
         run: python3 scripts/cleanup_artifacts.py && python3 scripts/cleanup_artifacts.py --check
