@@ -804,3 +804,27 @@ test "watchdog E-4: omega 强验证下执行前必须语料审核通过" {
     Err(m) => abort("语料通过后执行应放行: " + m)
   }
 }
+
+///|
+test "watchdog R51: ns 下无人值守派发预览给出可自动派发的下一单（纯读、不认领）" {
+  let e = wd_sqlite_engine("watchdog_r51.db")
+  wd_publish(e, "cron-preview") // T0 待领取
+  let j = wd_tick_omega_ok(
+    e,
+    "2026-09-17T10:00:00Z",
+    ns="cron-preview",
+  )
+  // 无下一轮描述 -> 不续轮；detail.ready_dispatch_preview 应指向可派发的 T0
+  match j.value("detail") {
+    Some(Object(d)) =>
+      match d.get("ready_dispatch_preview") {
+        Some(Object(p)) =>
+          match p.get("task_id") {
+            Some(Json::String(tid)) => assert_eq(tid, "T0")
+            _ => abort("preview.task_id 缺失")
+          }
+        _ => abort("ready_dispatch_preview 缺失: " + j.stringify())
+      }
+    _ => abort("detail 缺失")
+  }
+}
