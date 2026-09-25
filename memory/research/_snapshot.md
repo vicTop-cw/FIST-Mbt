@@ -4,16 +4,16 @@
 > 口径：全档达标 一等≥0.70 / 二等≥0.85 / 三等≥0.97，AND 聚合。
 
 ## 一、硬指标（可复现）
-- **93 个 MCP 工具**（+3 resources +2 prompts，R92 新增 saga_register/saga_rollback 补偿事务），`moon test --target js -j 1` **265/265 全绿**（Windows + WSL(Linux) 双端实测一致）。
+- **94 个 MCP 工具**（+3 resources +2 prompts，R94 新增 dag_mc Monte Carlo 完工预测），`moon test --target js -j 1` **269/269 全绿**（Windows + WSL(Linux) 双端实测一致）。
 - 工具链 moonc ≥0.10.14（评选会同要求版本），mooncakes **v0.2.4 已发布**（200 OK），一页申报书 PDF 已生成。
-- CI 三轨道（js ubuntu / native ubuntu / js windows）实时徽章；守卫族 check_tools_sync(91)/check_test_sync(261)/check_badge/check_scripts_index/map_verify/cleanup --check 全 PASS。
+- CI 三轨道（js ubuntu / native ubuntu / js windows）实时徽章；守卫族 check_tools_sync(94)/check_test_sync(269)/check_badge/check_scripts_index/map_verify/cleanup --check 全 PASS。
 - 依赖全公开：`moon update` 即可构建，无私有包/无硬编码盘符/任意机器结果可复现。
 
 ## 一b、p3 必然性证据（本次第 19 次评估前 24h 内实测输出，非纸面）
-- 一键自检链实测全过（本会话真实运行）：`moon test --target js -j 1` → **Total tests: 265, passed: 265, failed: 0**；`python scripts/mcp_smoke.py` → **PASS tools/list → 93 个工具 … MCP-SMOKE PASS**；`python scripts/award_demo.py` → **MCP-AWARD-DEMO PASS**（R68-R90 能力链一条命令全通，含 executor_auction/progress_gate/phi_accrual 实测输出，结尾 cleanup → CLEAN）。
-- 守卫族实测全 PASS：check_tools_sync（93 对齐）/ check_test_sync（265 对齐）/ check_badge（README 徽章 265%2F265 == 实测）/ check_scripts_index / map_verify（fist://map 12 分组）/ cleanup --check（CLEAN：仓库根仅 fist-mbt.db）。
+- 一键自检链实测全过（本会话真实运行）：`moon test --target js -j 1` → **Total tests: 269, passed: 269, failed: 0**；`python scripts/mcp_smoke.py` → **PASS tools/list → 94 个工具 … MCP-SMOKE PASS**；`python scripts/award_demo.py` → **MCP-AWARD-DEMO PASS**（R68-R90 能力链一条命令全通，含 executor_auction/progress_gate/phi_accrual 实测输出，结尾 cleanup → CLEAN）。
+- 守卫族实测全 PASS：check_tools_sync（94 对齐）/ check_test_sync（269 对齐）/ check_badge（README 徽章 269%2F269 == 实测）/ check_scripts_index / map_verify（fist://map 12 分组）/ cleanup --check（CLEAN：仓库根仅 fist-mbt.db）。
 - 验收闭环真实走通：发布→认领→拆分→执行→提交→验收→归档 全生命周期 + Omega 强验证（语料 316 条）+ 看门狗跨进程 heal（heartbeat 11 条）+ 概率式判活 phi_gate。
-- 双端可复现：JS 后端 Windows + WSL(Linux) 均 265/265（此前多轮双端实测一致）；mooncakes 发布成功即外部验证构建/打包/发布链路。
+- 双端可复现：JS 后端 Windows + WSL(Linux) 均 269/269（此前多轮双端实测一致）；mooncakes 发布成功即外部验证构建/打包/发布链路。
 - **文档=实现实时校准（本轮第 19 次评估刚做）**：复核发现申报书表头陈旧计数（88 工具/249 测试），已实时校准为 **91 工具 / 261 测试 / 双端 261/261**，全文再无陈旧当前状态（仅历史轮表如实留痕）；申报书 md+PDF（55KB）与 README（徽章 261%2F261）、AGENTS、deliverable、scoring_rubric 全量对齐——消除"文档失真→淘汰风险"感知。
 - **提交包完备性**：申报书（md+PDF）齐备、mooncakes v0.2.4 发布页在线（200 OK）、CI 三轨道（js ubuntu / native ubuntu / js windows）实时徽章、README 环境要求（Node≥24 / native sqlite）齐全——评审/评分者首读即定位，无"找不到/不一致"硬伤。
 

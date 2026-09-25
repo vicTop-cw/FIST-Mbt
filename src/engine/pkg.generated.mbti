@@ -86,6 +86,7 @@ pub fn FistEngine::critical_path(Self) -> Array[String]
 pub fn FistEngine::dag_ascii(Self, ns~ : String) -> String
 pub fn FistEngine::dag_cost_route(Self) -> Json
 pub fn FistEngine::dag_depend(Self, task_id~ : String, dep_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::dag_mc(Self, ns? : String, root_task_id? : String, deadline? : Int, samples? : Int, seed? : Int) -> Json
 pub fn FistEngine::dag_schedule(Self) -> Json
 pub fn FistEngine::dag_slack_analysis(Self) -> Json
 pub fn FistEngine::delete_task(Self, String) -> Result[Unit, String]
