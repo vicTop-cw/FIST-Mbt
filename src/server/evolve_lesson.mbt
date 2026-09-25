@@ -39,7 +39,15 @@ pub fn do_evolve_lesson(
   )
   @evolve.Archive::add(arc, art)
   // 统一落库语义（复用 evolve 包的单一真源，与 Omega 打回自动回流一致）
-  let stored = @evolve.evolve_lesson_persist(store, id~, cat, reason, fix, now, score=sc)
+  let stored = @evolve.evolve_lesson_persist(
+    store,
+    id~,
+    cat,
+    reason,
+    fix,
+    now,
+    score=sc,
+  )
   Json::object({
     "learned": Json::boolean(true),
     "artifact_id": Json::string(id),
@@ -55,10 +63,7 @@ pub fn do_evolve_lesson(
 /// 目的：Omega 打回自动回流（engine 侧仅落库）写入的教训，经此同步后在同一进程内
 /// 对立于 `evolve_snapshot`/`dead_ends`/plan·claim 的 `inject` 可见。
 /// 返回本次新同步条数。
-fn sync_db_lessons(
-  arc : @evolve.Archive,
-  store : @store.SqliteStore?,
-) -> Int {
+fn sync_db_lessons(arc : @evolve.Archive, store : @store.SqliteStore?) -> Int {
   let mut n = 0
   match store {
     None => ()

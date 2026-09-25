@@ -845,6 +845,7 @@ pub fn FistEngine::plan_deep(
   spec? : Json? = None,
   now~ : String,
   omega_strong_verify? : Bool = false,
+  gradient? : Bool = false,
 ) -> Result[Json, String] {
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
@@ -869,7 +870,10 @@ pub fn FistEngine::plan_deep(
         None =>
           @decompose.default_slices(split_n, parent_desc=parent.description)
       }
-      match self.decompose_rec(parent, slices, spec, now, omega_strong_verify) {
+      match
+        self.decompose_rec(
+          parent, slices, spec, now, omega_strong_verify, gradient,
+        ) {
         Err(e) => Err(e)
         Ok(tree) =>
           Ok(
@@ -895,6 +899,7 @@ fn FistEngine::decompose_rec(
   spec : Json?,
   now : String,
   omega_strong_verify : Bool,
+  gradient : Bool,
 ) -> Result[Json, String] {
   // 父任务进入拆分中（宽于 Task::split：待领取/已领取/拆分中均可转入）
   match parent.mark_decomposing() {
@@ -918,11 +923,21 @@ fn FistEngine::decompose_rec(
     } else {
       "\{omega_clean_slice(slice_text)} [spec:\{spec_hash}]"
     }
+    // LADDER 信号（默认关闭零回归）：开启时为该切片标注难度梯度 + 更简单变体提示，
+    // 让递归拆解产出"由易到难/可验证最小片"的梯度，而非扁平同难单元。
+    let n_slices = slices.length()
+    let grad_suffix = if gradient {
+      let lvl = @decompose.difficulty_label(idx, n_slices)
+      let hint = @decompose.simpler_variant_hint(omega_clean_slice(slice_text))
+      " [难度梯度 \{idx}/\{n_slices}:\{lvl}] \{hint}"
+    } else {
+      ""
+    }
     // Omega 强验证开关（默认关闭）：开启时为本层子任务打标记，使其受门禁约束
     let full_desc = if omega_strong_verify {
-      base_desc + " " + omega_mark()
+      base_desc + grad_suffix + " " + omega_mark()
     } else {
-      base_desc
+      base_desc + grad_suffix
     }
     let child = @core.Task::new(
       id=cid,
@@ -948,7 +963,9 @@ fn FistEngine::decompose_rec(
         parent_desc=child.description,
       )
       match
-        self.decompose_rec(child, next_slices, spec, now, omega_strong_verify) {
+        self.decompose_rec(
+          child, next_slices, spec, now, omega_strong_verify, gradient,
+        ) {
         Ok(subtree) =>
           match subtree.value("children") {
             Some(Array(a)) => a

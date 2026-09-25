@@ -24,7 +24,7 @@
 |---|---|---|
 | Interlinked | 作用域预订防并发编辑冲突 | ✅ R10 `reserve_*` |
 | SAGE | Challenger/Critic 防 drift | 中期：plan_deep 加"难度梯度/简单变体"+ lesson 过滤 |
-| LADDER | 难度梯度自举 | 中期：plan_deep 输出 simple-variant 提示 |
+| LADDER | 难度梯度自举 | ✅ R12 `task_plan_deep gradient=true`：子任务带「难度梯度 序号/总数:易/中/难」+「更简单变体」提示（简单变体 ✅，lesson 过滤待做） |
 | Dynamic(Marketplace) | 能力注册 + 路由 | 远期：executor 抽象层朝 marketplace |
 | 生产指南 | OpenTelemetry/限流 | 低优先（单机场景） |
 

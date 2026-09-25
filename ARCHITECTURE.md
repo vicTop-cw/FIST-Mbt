@@ -78,7 +78,7 @@ evolve_distill            蒸馏成 [principle] 原则写入 DGM，4-AI 门禁�
 
 ## 四、设计要点
 
-1. **纯 MoonBit，零运行时依赖**：无 Python/Rust 包装；JS + Native 双端交叉编译，Windows/Linux 各 208 项测试全绿、跨环境可复现（`moon update && moon run cmd/main` 即用）。
+1. **纯 MoonBit，零运行时依赖**：无 Python/Rust 包装；JS + Native 双端交叉编译，Windows/Linux 各 209 项测试全绿、跨环境可复现（`moon update && moon run cmd/main` 即用）。
 2. **状态机正确性优先**：九态状态机 + 非法迁移拦截（未认领直接 plan/execute 报错）+ 父任务自动上卷，正确性敏感逻辑由强类型保证、易单测。
 3. **验证可计算化**：Omega 语料门禁（schema+fingerprint，accuracy<100% 一票否决）与 evolve 注入式评分均不依赖 LLM 自评，杜绝"自己给自己打分"。
 4. **跨平台可复现**：SQLite 双后端（JS 走 node:sqlite，Native 走 mizchi/sqlite + `-lsqlite3`），specs/心跳均持久化、跨进程可读；Windows native 并行测试偶发堆损坏的边界已在 README 主动自曝，产品运行时不受影响。

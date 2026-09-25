@@ -8,7 +8,12 @@ fn ba_engine() -> @engine.FistEngine {
 ///|
 fn ba_publish(e : @engine.FistEngine, desc : String) -> String {
   match
-    e.publish(project_dir="/proj/board", description=desc, created_by="human_steward", now="2026-09-25T10:00:00Z") {
+    e.publish(
+      project_dir="/proj/board",
+      description=desc,
+      created_by="human_steward",
+      now="2026-09-25T10:00:00Z",
+    ) {
     Ok(id) => id
     Err(m) => abort("publish failed: \{m}")
   }
@@ -20,7 +25,12 @@ test "board_ascii 按状态分组 + 深度缩进 + 状态合计" {
   let root = ba_publish(e, "Omega 看板根任务")
   ignore(e.claim(task_id=root, assignee="leader_a", now="2026-09-25T10:01:00Z"))
   match
-    e.plan_deep(task_id=root, split_n=2, by="leader_a", now="2026-09-25T10:02:00Z") {
+    e.plan_deep(
+      task_id=root,
+      split_n=2,
+      by="leader_a",
+      now="2026-09-25T10:02:00Z",
+    ) {
     Ok(_) => ()
     Err(m) => abort("plan_deep failed: \{m}")
   }
@@ -29,7 +39,9 @@ test "board_ascii 按状态分组 + 深度缩进 + 状态合计" {
   assert_true(children.length() >= 2)
   let c0 = children[0].get_id()
   ignore(e.claim(task_id=c0, assignee="exec_1", now="2026-09-25T10:03:00Z"))
-  ignore(e.execute(task_id=c0, deliverable="成果 v1", now="2026-09-25T10:04:00Z"))
+  ignore(
+    e.execute(task_id=c0, deliverable="成果 v1", now="2026-09-25T10:04:00Z"),
+  )
 
   let board = render_board_ascii(e.list_all(), "")
   let j = board.stringify()
@@ -54,7 +66,12 @@ test "board_ascii 支持 namespace 过滤" {
   let root = ba_publish(e, "看板 ns 过滤根")
   ignore(e.claim(task_id=root, assignee="leader_a", now="2026-09-25T10:10:00Z"))
   match
-    e.plan_deep(task_id=root, split_n=1, by="leader_a", now="2026-09-25T10:11:00Z") {
+    e.plan_deep(
+      task_id=root,
+      split_n=1,
+      by="leader_a",
+      now="2026-09-25T10:11:00Z",
+    ) {
     Ok(_) => ()
     Err(m) => abort("plan_deep failed: \{m}")
   }
@@ -75,7 +92,12 @@ test "status_summary 项目脉冲：总量 + 按状态计数 + 活跃命名空�
   let root = ba_publish(e, "脉冲根任务")
   ignore(e.claim(task_id=root, assignee="leader_a", now="2026-09-25T10:20:00Z"))
   match
-    e.plan_deep(task_id=root, split_n=1, by="leader_a", now="2026-09-25T10:21:00Z") {
+    e.plan_deep(
+      task_id=root,
+      split_n=1,
+      by="leader_a",
+      now="2026-09-25T10:21:00Z",
+    ) {
     Ok(_) => ()
     Err(m) => abort("plan_deep failed: \{m}")
   }
@@ -83,7 +105,8 @@ test "status_summary 项目脉冲：总量 + 按状态计数 + 活跃命名空�
   assert_true(tasks.length() >= 2)
   let s = render_status_summary(tasks, ["default"], "0.2.4").stringify()
   // 总量 = 引擎任务数
-  match render_status_summary(tasks, ["default"], "0.2.4").value("total_tasks") {
+  match
+    render_status_summary(tasks, ["default"], "0.2.4").value("total_tasks") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), tasks.length())
     _ => abort("total_tasks 缺失: " + s)
   }
@@ -100,20 +123,33 @@ test "status_summary 支持 namespace 过滤：只统计该 ns" {
   let root = ba_publish(e, "脉冲 ns 过滤根")
   ignore(e.claim(task_id=root, assignee="leader_a", now="2026-09-25T10:30:00Z"))
   match
-    e.plan_deep(task_id=root, split_n=1, by="leader_a", now="2026-09-25T10:31:00Z") {
+    e.plan_deep(
+      task_id=root,
+      split_n=1,
+      by="leader_a",
+      now="2026-09-25T10:31:00Z",
+    ) {
     Ok(_) => ()
     Err(m) => abort("plan_deep failed: \{m}")
   }
   let tasks = e.list_all()
   // 按任务的真实 ns 过滤：total = 该 ns 任务数（此处应 >= 1 且 <= 全部）
   let ns = tasks[0].ns
-  let scoped = render_status_summary(tasks.filter(fn(t) { t.ns == ns }), ["default"], "0.2.4")
+  let scoped = render_status_summary(
+    tasks.filter(fn(t) { t.ns == ns }),
+    ["default"],
+    "0.2.4",
+  )
   match scoped.value("total_tasks") {
     Some(Number(n, ..)) => assert_true(n.to_int() >= 1)
     _ => abort("scoped total_tasks 缺失: " + scoped.stringify())
   }
   // 按不存在的 ns 过滤：total 应为 0
-  let zero = render_status_summary(tasks.filter(fn(t) { t.ns == "no-such-ns" }), [], "0.2.4")
+  let zero = render_status_summary(
+    tasks.filter(fn(t) { t.ns == "no-such-ns" }),
+    [],
+    "0.2.4",
+  )
   match zero.value("total_tasks") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
     _ => abort("zero total_tasks 缺失: " + zero.stringify())

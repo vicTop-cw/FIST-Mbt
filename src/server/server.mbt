@@ -391,8 +391,8 @@ fn overview_json() -> Json {
   ])
   let counts : Map[String, Json] = Map([])
   let status_names = [
-    "待领取", "已领取", "拆分中", "执行中", "待验收", "已打回", "已完成",
-    "已暂停", "已归档",
+    "待领取", "已领取", "拆分中", "执行中", "待验收", "已打回",
+    "已完成", "已暂停", "已归档",
   ]
   for s in status_names {
     counts.set(
@@ -1002,7 +1002,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "task_plan_deep",
-    "AO 式递归拆解：对指定任务拆出整棵多层子任务树并写库。参数：task_id 任务id、split_n 每层默认拆分数(默认3)、by 拆解拳长、spec 可选 omega spec JSON(laws 作切割依据、fingerprint 作验收基准)、omega_strong_verify 是否开启 Omega 强验证(默认 false，不传即现状)、now 时间戳。开启强验证后每层子任务多出『语料创建者建语料 -> 验证者审语料 -> 执行者执行 -> 验证者复验成果』环节。",
+    "AO 式递归拆解：对指定任务拆出整棵多层子任务树并写库。参数：task_id 任务id、split_n 每层默认拆分数(默认3)、by 拆解拳长、spec 可选 omega spec JSON(laws 作切割依据、fingerprint 作验收基准)、omega_strong_verify 是否开启 Omega 强验证(默认 false，不传即现状)、gradient 是否开启难度梯度标注(默认 false，开启后每个拆出的子任务描述附带『难度梯度 序号/总数:难易档』+『更简单变体』提示，使递归拆解呈由易到难、可验证最小片的梯度)、now 时间戳。开启强验证后每层子任务多出『语料创建者建语料 -> 验证者审语料 -> 执行者执行 -> 验证者复验成果』环节。",
     schema(
       {
         "task_id": string_prop("父任务 id（必填，非原子任务）"),
@@ -1013,6 +1013,9 @@ pub async fn run_server() -> Unit {
         "spec": string_prop("可选 omega spec JSON 字符串"),
         "omega_strong_verify": bool_prop(
           "是否开启 Omega 强验证(默认 false，不传即现状；开启后每轮需语料审核与成果复验)",
+        ),
+        "gradient": bool_prop(
+          "是否开启难度梯度标注(默认 false，不传即现状；开启后每个拆出的子任务描述附带『难度梯度 序号/总数:易/中/难』+『更简单变体』提示，使递归拆解呈由易到难、可验证最小片的梯度)",
         ),
         "laya_auto": bool_prop(
           "是否开启 Laya 自动选档(默认 false)：开启后探测 Laya，可用则按 difficulty.score 自动定 split_n 并把决策附到返回；不可用则回退 split_n 默认值。若同时传 decide_split_n，则忽略 Laya(躬身自决优先)",
@@ -1045,6 +1048,7 @@ pub async fn run_server() -> Unit {
         }
       }
       let omega_strong = get_bool(args, "omega_strong_verify", default=false)
+      let gradient = get_bool(args, "gradient", default=false)
       let laya_auto = get_bool(args, "laya_auto", default=false)
       // —— 躬身入局选档（decide_*）—— 决策由 agent/调用方显式自决，可审计，优先于 Laya。
       let decide_split_n = get_int(args, "decide_split_n", default=0)
@@ -1117,6 +1121,7 @@ pub async fn run_server() -> Unit {
           spec~,
           now=ts,
           omega_strong_verify=omega_strong,
+          gradient~,
         ) {
         Ok(j) => j
         Err(e) => return Err(@mcp_types.ToolError(e))
@@ -2442,7 +2447,9 @@ pub async fn run_server() -> Unit {
     "预订一个工作作用域（文件/目录/资源）防多 agent 并发编辑冲突。若作用域空闲（未被他人活体预订）则由本 agent 占据，否则返回持有者。TTL 由 ttl_until(ISO-8601 未来时间戳串)给定；到时自动视为可让渡。参数：scope、agent、ttl_until(必)、now(时间戳)。",
     schema(
       {
-        "scope": string_prop("作用域（如 src/foo.mbt 或模块名，必填）"),
+        "scope": string_prop(
+          "作用域（如 src/foo.mbt 或模块名，必填）",
+        ),
         "agent": string_prop("预订者（如 exec_1，必填）"),
         "ttl_until": string_prop("TTL 截止时间戳（ISO-8601，必填）"),
         "now": string_prop("当前时间戳(可选，默认内置)"),
@@ -2486,7 +2493,13 @@ pub async fn run_server() -> Unit {
                     "agent": Json::string(agent),
                     "ttl_until": Json::string(ttl_until),
                     "reserved": Json::boolean(true),
-                    "action": Json::string(if owner == agent { "renewed" } else { "taken_over" }),
+                    "action": Json::string(
+                      if owner == agent {
+                        "renewed"
+                      } else {
+                        "taken_over"
+                      },
+                    ),
                     "prev_agent": Json::string(owner),
                   }).stringify(),
                 ),
@@ -2502,7 +2515,9 @@ pub async fn run_server() -> Unit {
                 "reserved": Json::boolean(false),
                 "held_by": Json::string(owner),
                 "ttl_until": Json::string(ot),
-                "reason": Json::string("该作用域已被其他 agent 活体预订"),
+                "reason": Json::string(
+                  "该作用域已被其他 agent 活体预订",
+                ),
               }).stringify(),
             ),
           )
@@ -2564,7 +2579,10 @@ pub async fn run_server() -> Unit {
     "reserve_release",
     "释放自己的工作作用域（仅持有者有效）。参数：scope、agent。",
     schema(
-      { "scope": string_prop("作用域（必填）"), "agent": string_prop("持有者（必填）") },
+      {
+        "scope": string_prop("作用域（必填）"),
+        "agent": string_prop("持有者（必填）"),
+      },
       ["scope", "agent"],
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
@@ -2871,11 +2889,13 @@ pub async fn run_server() -> Unit {
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
-      var dir = get_str(args, "data_dir", default=".")
+      let mut dir = get_str(args, "data_dir", default=".")
       let scratch = get_bool(args, "scratch", default=false)
       // 临时命名空间：强制落到 temp/（gitignore），不污染仓库根
       if scratch {
-        @fs.create_dir("temp") catch { _ => () }
+        @fs.create_dir("temp") catch {
+          _ => ()
+        }
         dir = "temp"
       }
       match mstore.open(ns~, data_dir=dir) {

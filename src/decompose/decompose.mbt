@@ -72,3 +72,26 @@ pub fn spec_hash_of(spec : Json?) -> String {
     None => ""
   }
 }
+
+///|
+/// LADDER 信号：把拆分序号在 split_n 片中的位置映射为难度档（由易到难三档）。
+/// 让递归拆解产出"梯度"而非扁平同难单元（供 plan_deep gradient 标注）。
+pub fn difficulty_label(idx : Int, split_n : Int) -> String {
+  let total = if split_n < 1 { 1 } else { split_n }
+  let pos = if idx < 1 { 1 } else if idx > split_n { split_n } else { idx }
+  let third = (total + 2) / 3
+  if pos <= third {
+    "易"
+  } else if pos > third * 2 {
+    "难"
+  } else {
+    "中"
+  }
+}
+
+///|
+/// LADDER 信号：为某切片生成"更简单变体"提示，引导执行者先把目标切成可独立验证
+/// 的最小可行片（st稳态分片），贴合"自生成更简单变体→难度梯度自举"的论文信号。
+pub fn simpler_variant_hint(slice_text : String) -> String {
+  "更简单变体：先把「\{slice_text}」做成可独立验证的最小可行片"
+}
