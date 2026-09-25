@@ -31,7 +31,11 @@ jobs:
         run: moon check --target js
 
       - name: Test (js)
-        run: moon test --target js
+        run: set -o pipefail; moon test --target js 2>&1 | tee /tmp/moon_test.log
+
+      - name: Badge consistency guard (README 徽章须与实测一致)
+        shell: bash
+        run: python3 scripts/check_badge.py /tmp/moon_test.log README.md
 
   check-native:
     name: check + test (native, ubuntu)
