@@ -23,7 +23,7 @@
 | 信号来源 | 提炼 | 落地 |
 |---|---|---|
 | Interlinked | 作用域预订防并发编辑冲突 | ✅ R10 `reserve_*` |
-| SAGE | Challenger/Critic 防 drift | ✅ R13 `evolve_critic` 门禁：入库前纯计算评审拟议 principle/lesson，与档案库重合≥70% 判课程漂移/重复拒收、综合分(0.5·score+0.5·novelty)低判稳健性不足暂缓（只评审不写库）（Challenger 生更难任务未做） |
+| SAGE | Challenger/Critic 防 drift、自生成更难任务 | ✅ R13 `evolve_critic` 防漂移门禁 + ✅ R14 `task_challenge` 进阶变体（四专家环闭环：Critic 把关、Challenger 上难、Planner·Solver 即 plan/执行） |
 | LADDER | 难度梯度自举 | ✅ R12 `task_plan_deep gradient=true`：子任务带「难度梯度 序号/总数:易/中/难」+「更简单变体」提示（简单变体 ✅，lesson 过滤待做） |
 | Dynamic(Marketplace) | 能力注册 + 路由 | 远期：executor 抽象层朝 marketplace |
 | 生产指南 | OpenTelemetry/限流 | 低优先（单机场景） |

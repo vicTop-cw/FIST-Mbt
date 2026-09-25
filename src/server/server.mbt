@@ -1152,6 +1152,36 @@ pub async fn run_server() -> Unit {
   )
   s1 = instrumented_tool(
     s1,
+    "task_challenge",
+    "自进化·Challenger 进阶变体（SAGE 四专家环另一半，与 R12 梯度/R13 Critic 互补）：对一条【已完成/已归档】任务按策略发布上一档『更难变体』—新根任务带 [challenge] 标记 + from 溯源 + 重要度升一档，构成『由易到难』自推进序列，让复杂能力持续上探而非停在完成点。参数：task_id 源任务(必填，须已完成/已归档)、by 触发者(默认 auto)、factor 扩规模倍数(默认2，仅 scale 策略生效)、strat 进阶策略(默认 scale，可选 generalize/unhint/constrain/scale)、now。返回 {new_id,source,factor,strat,importance}。",
+    schema(
+      {
+        "task_id": string_prop(
+          "源任务 id（必填，须为已完成/已归档）",
+        ),
+        "by": string_prop("触发者身份(默认 auto)"),
+        "factor": int_prop("扩规模倍数(默认2，仅 scale 策略生效)"),
+        "strat": string_prop(
+          "进阶策略(默认 scale；generalize/unhint/constrain/scale)",
+        ),
+        "now": string_prop("时间戳(可选，默认内置)"),
+      },
+      ["task_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let by = get_str(args, "by", default="auto")
+      let factor = get_int(args, "factor", default=2)
+      let strat = get_str(args, "strat", default="scale")
+      let ts = get_str(args, "now", default=now_default())
+      match engine.challenge(task_id~, by~, factor~, strat~, now=ts) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
     "omega_spec_create",
     "Omega 强验证·语料创建者：为已开启强验证的任务创建本轮语料，并真正持久化写入 specs 表。参数：task_id、author 语料创建者(默认 spec_author)、content 语料内容(必填)、max_rounds 打回上限(默认3，最大10)、now。",
     schema(

@@ -27,6 +27,8 @@ pub fn budget_check(Double, Double) -> Json
 
 pub fn budget_check_json(Json) -> Json
 
+pub fn challenge_strategies() -> Array[String]
+
 pub fn gate_enabled(@core.Task) -> Bool
 
 pub fn gate_mark() -> String
@@ -67,6 +69,7 @@ pub struct FistEngine {
 }
 pub fn FistEngine::all_subtasks_completed(Self, @core.Task) -> Bool
 pub fn FistEngine::archive(Self, task_id~ : String, by~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::challenge(Self, task_id~ : String, by~ : String, factor? : Int, strat? : String, now~ : String) -> Result[Json, String]
 pub fn FistEngine::children_of(Self, String) -> Array[@core.Task]
 pub fn FistEngine::claim(Self, task_id~ : String, assignee~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::cold_publish(Self, ns~ : String, description~ : String, created_by~ : String, project_dir~ : String, now~ : String) -> Result[String, String]
