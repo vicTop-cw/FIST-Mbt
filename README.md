@@ -410,6 +410,15 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 ---
 
+## 用 fist-mbt 自驱 + Omega 强验证开发 atgc（能力演示）
+
+`atgc/` 这个极小的 ATGC 双链虚拟机库，是经 **fist-mbt 自己的生命周期管线**真实开发出来的：`publish_parallel` 发布根任务 → `task_plan_deep(omega_strong_verify=true)` 递归拆解 → 每个叶子过 **`omega_spec_create`→`omega_spec_review(approve)`→`claim`→`execute`（写入真实 atgc 源码）→`omega_result_verify(pass)`→`submit`→`verify`**，验证语料与成果复验都被**真实门禁**把关，且**每一次工具调用都由 `instrumented_tool` 落入 `call_log` 留痕**；根任务最终 `verify`+`archive` 收官归档。原全量 `atgc-old/` 完整保留作参照。
+
+复现：`moon build --target js cmd/main` 后执行 `python scripts/atgc_selfdrive_demo.py`。
+完整证据（管线图 / 角色 / DB 计数 / 诚实说明）见 [`docs/atgc-selfdrive-demo.md`](./docs/atgc-selfdrive-demo.md)。
+
+---
+
 ## 移植与合规声明
 
 - **来源**：FIST（Python），Apache-2.0 许可证。
