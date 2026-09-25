@@ -458,14 +458,17 @@ fn map_json() -> Json {
       "运维": Json::string(
         "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup",
       ),
-      "DAG": Json::string(
-        "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish",
+      "看板/脉冲/预订/推荐+DAG": Json::string(
+        "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish + board_ascii + status_summary + reserve_scope/check/release + task_triage",
       ),
       "自驱": Json::string(
-        "selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks",
+        "selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks + selfdrive_pick_next",
       ),
       "记忆与自进化": Json::string(
-        "memory_consolidate/gc/link + evolve_submit/sample/snapshot/distill/asset_register",
+        "memory_consolidate/gc/link + evolve_submit/sample/snapshot/distill/lesson/critic/asset_register + task_challenge",
+      ),
+      "Marketplace·能力路由": Json::string(
+        "executor_register/route/clear + selfdrive_dispatch（按专长+负载自动派单）",
       ),
       "审计权限": Json::string("audit_permission/log"),
       "多租户": Json::string("store_open/list/close"),
