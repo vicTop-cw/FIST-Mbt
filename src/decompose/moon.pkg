@@ -2,6 +2,10 @@ import {
   "vicTop-cw/fist-mbt/src/core",
 }
 
+import {
+  "moonbitlang/core/quickcheck",
+} for "test"
+
 supported_targets = "js+native"
 
 options(
