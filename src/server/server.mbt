@@ -1126,6 +1126,9 @@ pub async fn run_server() -> Unit {
         "calibrate": array_prop(
           "可选难度校准：按切片给真实/投影难度数组(0..5，长度须与每层切片数一致才生效)；缺省回退按位置的易/中/难(零回归)。开启 gradient 时生效。",
         ),
+        "gradient_dag": bool_prop(
+          "是否把 LADDER『更简单变体→先易后逆推』落成真实 DAG 前置依赖(默认 false，须 gradient=true 才生效)：开启后每个非首切片会对前一兄弟切片建 depends_on，这样后续更难切片必须等它更简单的前驱切片完成后才可认领——由提示文本升级为真实可领取门禁，经 dag_ready/dag_ascii/topo_sort 可见。默认关闭零回归。",
+        ),
         "laya_auto": bool_prop(
           "是否开启 Laya 自动选档(默认 false)：开启后探测 Laya，可用则按 difficulty.score 自动定 split_n 并把决策附到返回；不可用则回退 split_n 默认值。若同时传 decide_split_n，则忽略 Laya(躬身自决优先)",
         ),
@@ -1158,6 +1161,7 @@ pub async fn run_server() -> Unit {
       }
       let omega_strong = get_bool(args, "omega_strong_verify", default=false)
       let gradient = get_bool(args, "gradient", default=false)
+      let gradient_dag = get_bool(args, "gradient_dag", default=false)
       // 可选难度校准数组：把 JSON 数字数组转成 Double 数组（缺省 None = 位置档）
       let calibrate : Array[Double]? = {
         let arr = get_array(args, "calibrate")
@@ -1248,6 +1252,7 @@ pub async fn run_server() -> Unit {
           omega_strong_verify=omega_strong,
           gradient~,
           calibrate~,
+          gradient_dag~,
         ) {
         Ok(j) => j
         Err(e) => return Err(@mcp_types.ToolError(e))
