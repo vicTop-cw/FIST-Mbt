@@ -452,17 +452,20 @@ fn map_json() -> Json {
     }),
     "tool_groups": Json::object({
       "生命周期": Json::string(
-        "publish/plan/claim/execute/submit/verify/reject/retry/pause/resume/archive/delete",
+        "publish/publish_parallel/plan/claim/execute/submit/verify/reject/retry/pause/resume/reopen_task/archive/delete",
       ),
       "查询": Json::string("list/get"),
       "运维": Json::string(
         "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup",
       ),
+      "运维·日志/缺陷/成本/调度": Json::string(
+        "call_log/bug_list/report_bug/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/laya_decide",
+      ),
       "看板/脉冲/预订/推荐+DAG": Json::string(
         "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish + board_ascii + status_summary + reserve_scope/check/release + task_triage",
       ),
       "自驱": Json::string(
-        "selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks + selfdrive_pick_next",
+        "selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks + selfdrive_pick_next + selfdrive_dispatch",
       ),
       "记忆与自进化": Json::string(
         "memory_consolidate/gc/link + evolve_submit/sample/snapshot/distill/lesson/critic/asset_register + task_challenge",
@@ -472,7 +475,10 @@ fn map_json() -> Json {
       ),
       "审计权限": Json::string("audit_permission/log"),
       "多租户": Json::string("store_open/list/close"),
-      "强验证": Json::string("omega_spec_create/review/result_verify/status"),
+      "强验证": Json::string(
+        "omega_spec_create/review/result_verify/status/verify/verify_fix",
+      ),
+      "衍生·ATGC-old": Json::string("atgc_old_compile/run/talk"),
     }),
     "entry": Json::string(
       "先读 README.md + ARCHITECTURE.md + docs/agent-map.md 定位；加/改工具到 src/server/server.mbt；动存储到 src/store/store_sqlite.mbt",
