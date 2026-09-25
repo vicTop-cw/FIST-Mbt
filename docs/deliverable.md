@@ -29,7 +29,7 @@ python scripts/mcp_smoke.py
 6. **多租户**：命名空间物理隔离（`store_open`，`scratch` 临时区不污染根）。
 7. **项目地图**：`fist://map` resource——agent 首读即有，避免全项目乱找（docs/agent-map.md）；`board_ascii` 实时任务看板，一眼看全貌。
 
-## 四、自驱增强证据（git 4994aae → HEAD，19 轮）
+## 四、自驱增强证据（git 4994aae → HEAD，23 轮）
 | 轮 | 增强 | 验证脚本 |
 |---|---|---|
 | 1 项目地图 | `fist://map` + docs/agent-map + 调研纪要 | `map_verify.py` |
@@ -51,7 +51,10 @@ python scripts/mcp_smoke.py
 | 17 难度校准 | `task_plan_deep gradient+calibrate`：按切片给真实难度 0..5 覆盖位置档（LADDER 补真实难度） | `plan_gradient_verify.py`（含 calibrate） |
 | 18 文档一致 | agent-map 分组对齐 77 工具、fist://map 文案 76→77（文档即实现扫尾） | 全仓 grep 计数审计 |
 | 19 native 证据 | `moon check --target native` 0 错误；Windows native 竞态(0xc0000374)文档如实修正，权威门槛=JS 后端双端+Linux native | 实机验证 + cleanup CLEAN |
-| 20 下一步推荐 | `task_triage`：可领取任务按 优先级→重要度→深度 排行 + suggestion（agent 无需全量扫描即可决定下一单） | `engine_triage_test.mbt` + award_demo ⑨ |
+| 20 交付完整化 | deliverable 轮证据补齐/遗留如实化（native 竞态、已实现的失败回流不误列） | 文档核对 |
+| 21 下一步推荐 | `task_triage`：可领取任务按 优先级→重要度→深度 排行 + suggestion（agent 无需全量扫描即可决定下一单） | `engine_triage_test.mbt` + award_demo ⑨ |
+| 22 CI/计数收尾 | CI 三轨道复核（js/native-Linux/js-Win，native 只在 Linux 跑规避竞态）+ 补漏 4 处 77→78 工具计数 | ci.yml 核对 + 全仓 grep |
+| 23 能力路由 | `task_triage want`：描述/id 命中能力关键词的可领取任务排头部，suggestion 标注能力匹配（Marketplace 雏形） | `engine_triage_test.mbt` + award_demo ⑨(want=编排) |
 
 ## 五、文档即实现
 - 工具/资源/测试数均与实测一致（README/AGENTS/ARCHITECTURE/agent-map 已同步）。
