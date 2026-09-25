@@ -82,7 +82,7 @@ def main():
         assert "[难度梯度" in c1["description"], "叶子应带难度梯度标注"
         print(f"   ② 递归拆解(gradient=true) → {tree.get('tree',{}).get('created',0)} 子任务；叶 {leaves[0]} 带难度梯度")
 
-        # ③b 真实 DAG 前驱链 + 执行计划视图（R39/R40 纵向串联：先易后逆推 → 一计划一目了然）
+        # ③b 真实 DAG 前驱链 + 执行计划视图（R39/R40/R44 纵向串联：先易后逆推 → 计划 → 难度分布）
         r1 = call(p, "publish", project_dir="/proj/demo", namespace=NS,
                   description="搭建可插拔的父层调度（拆解演练）", created_by="human_steward", now=NOW)
         rid1 = r1["task_id"]
@@ -92,9 +92,17 @@ def main():
         assert "order" in eo, "gradient_dag 拆解应返回 exec_order 执行计划"
         order_ids = [s.get("id") for s in (eo.get("order") or [])]
         assert order_ids, "exec_order 应有非空执行计划"
+        step_str = " → ".join(
+            f"{s.get('id')}[{s.get('difficulty','')}]" for s in (eo.get("order") or [])[:4]
+        )
         print(f"   ③b 真实DAG+执行计划：gradient_dag=true → 兄弟切片由易到难连 depends_on；"
-              f"exec_order {eo.get('count')} 步执行计划：{' → '.join(order_ids[:4])}"
-              f"{'…' if len(order_ids) > 4 else ''}（附难度档/依赖/深度，照单执行）")
+              f"exec_order {eo.get('count')} 步执行计划：{step_str}"
+              f"{'…' if len(order_ids) > 4 else ''}（每步附难度档，照单执行）")
+        ss1 = call(p, "status_summary", namespace=NS, now=NOW)
+        bd = (ss1.get("by_difficulty") or {})
+        print(f"   ③c 项目脉冲 status_summary → 待办难度分布 by_difficulty："
+              f"易={bd.get('易', 0)}/中={bd.get('中', 0)}/难={bd.get('难', 0)}/无={bd.get('无', 0)}"
+              f"（难度结构一目了然，R44 复用单一抽取来源）")
         print("   PASS 拆解即给一张按依赖可安全执行的计划，agent 照单执行")
 
         # ④ 认领→执行→提交→验收 闭环（完成第一个叶子）
