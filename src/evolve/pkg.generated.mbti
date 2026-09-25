@@ -24,6 +24,8 @@ pub fn is_duplicate_candidate(SearchCandidate, SearchCandidate) -> Bool
 
 pub fn is_robust(Double, floor? : Double) -> Bool
 
+pub fn jaccard(Array[String], Array[String]) -> Double
+
 pub fn lesson_goal(String) -> String
 
 pub fn lesson_ts_part(String) -> String
@@ -37,6 +39,8 @@ pub fn score_artifact(Double, Bool, Bool, Double) -> Double
 pub fn score_of_lesson(Double) -> Double
 
 pub fn score_rank(Double) -> String
+
+pub fn tokens(String) -> Array[String]
 
 // Errors
 
