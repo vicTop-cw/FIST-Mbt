@@ -205,6 +205,90 @@ pub fn ExecutorRegistry::route_pick(
 }
 
 ///|
+/// 历史信任轴路由（R80，SwarmHarness 蒸馏）：在 route_pick 排序里加 trust 轴——
+/// 排序键 coverage desc → trust desc → load asc → name asc。trust 由调用方注入
+/// （执行者历史验收通过率，无历史取 0.5 中性）。原 route_pick 签名保留零回归。
+pub fn ExecutorRegistry::route_pick_with_trust(
+  self : ExecutorRegistry,
+  need : String,
+  load : Map[String, Int],
+  trust : Map[String, Double],
+) -> Json {
+  let tags = split_need_tags(need)
+  let rows : Array[Json] = []
+  for name in self.list() {
+    let cov = ability_coverage(self.abilities_of(name), tags)
+    let ld = match load.get(name) {
+      Some(n) => n
+      None => 0
+    }
+    let tr = match trust.get(name) {
+      Some(d) => d
+      None => 0.5
+    }
+    rows.push(
+      Json::object({
+        "name": Json::string(name),
+        "coverage": Json::number(cov),
+        "trust": Json::number(tr),
+        "load": Json::number(ld.to_double()),
+        "abilities": Json::array(
+          self.abilities_of(name).map(fn(s) { Json::string(s) }),
+        ),
+      }),
+    )
+  }
+  rows.sort_by(fn(a : Json, b : Json) -> Int {
+    let ac = num(a, "coverage")
+    let bc = num(b, "coverage")
+    if ac != bc {
+      if ac > bc {
+        -1
+      } else {
+        1
+      }
+    } else {
+      let at = num(a, "trust")
+      let bt = num(b, "trust")
+      if at != bt {
+        if at > bt {
+          -1
+        } else {
+          1
+        }
+      } else {
+        let al = num(a, "load")
+        let bl = num(b, "load")
+        if al != bl {
+          if al < bl {
+            -1
+          } else {
+            1
+          }
+        } else {
+          let an = str(a, "name")
+          let bn = str(b, "name")
+          if an < bn {
+            -1
+          } else {
+            1
+          }
+        }
+      }
+    }
+  })
+  let best : Json = if rows.is_empty() { Json::null() } else { rows[0] }
+  Json::object({
+    "need": Json::string(need),
+    "parsed": Json::array(tags.map(fn(s) { Json::string(s) })),
+    "count": Json::number(rows.length().to_double()),
+    "candidates": Json::array(rows),
+    "best": best,
+    "basis": Json::string("能力覆盖 → 历史信任(验收通过率) → 负载 → 名称（R80）"),
+  })
+}
+
+///|
 /// 读 Json 对象的数值字段。
 fn num(j : Json, key : String) -> Double {
   match j.value(key) {

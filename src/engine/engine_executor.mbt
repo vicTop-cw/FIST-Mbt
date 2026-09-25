@@ -29,3 +29,33 @@ pub fn FistEngine::executor_list(
 pub fn FistEngine::executor_clear(self : FistEngine) -> Bool {
   self.store.executor_clear()
 }
+
+///|
+/// 执行者历史信任分（R80，SwarmHarness 蒸馏）：各 assignee 名下 已完成任务数 / 名下任务总数
+/// （分母含打回/执行中/待验收等，防"只认领不交付"）；名下无任务取 0.5 中性。
+/// 供 executor_route 历史信任轴（排序键 能力覆盖→信任→负载）。
+pub fn FistEngine::executor_trust(self : FistEngine) -> Map[String, Double] {
+  let total : Map[String, Int] = Map([])
+  let done : Map[String, Int] = Map([])
+  for t in self.list_all() {
+    match t.assignee {
+      Some(a) => {
+        let cur = total.get(a).unwrap_or(0)
+        total.set(a, cur + 1)
+        if t.get_status().is_completed() {
+          let d = done.get(a).unwrap_or(0)
+          done.set(a, d + 1)
+        }
+      }
+      None => ()
+    }
+  }
+  let out : Map[String, Double] = Map([])
+  for (name, _abl, _created) in self.executor_list() {
+    let tt = total.get(name).unwrap_or(0)
+    let dd = done.get(name).unwrap_or(0)
+    let tr = if tt <= 0 { 0.5 } else { dd.to_double() / tt.to_double() }
+    out.set(name, tr)
+  }
+  out
+}
