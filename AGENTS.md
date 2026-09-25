@@ -109,7 +109,7 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**67 tools** + 2 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**68 tools** + 3 resources + 2 prompts）：
 
 ### 生命周期（12）
 | 工具 | 说明 |
@@ -190,7 +190,7 @@ You can browse and install extra skills here:
 - 打回上限 `max_rounds` 默认 3（最大 10），超限自动写入升级记录、暂停任务转人工裁决，禁止死循环。
 - `execute` 与 `verify` 在开启强验证的任务上分别受语料门禁与成果复验门禁约束；未开启该开关的任务完全不受影响，既有生命周期语义不变。
 
-Resources: `fist://principles`, `fist://overview`
+Resources: `fist://map`, `fist://principles`, `fist://overview`
 Prompts: `fist:check_in`, `fist:verify`
 
 ## 路径约定

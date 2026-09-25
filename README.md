@@ -219,10 +219,11 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 | `laya_decide` | Laya 可选决策工具（自动探测）：对任务/文本快速分类；机器无 laya 则返回 available:false 降级，不影响现网 | context(必填), questions(可选), model(默认english) |
 | `pipeline_tick` | 提示词流水线状态机单入口（仅定时任务/无人值守 ns）：以 currentState.txt 为状态源四分支推进，报告先行 | project_dir(必填), now, namespace(默认cron-auto), phase, prompt_name, timeout_sec(默认2400) |
 
-### Resources（2）
+### Resources（3）
 
 | URI | 内容 |
 |---|---|
+| `fist://map` | 项目地图（Repo Map）：src/ 子包职责 + 工具分组 + 入口引导，AI agent 首读定位 |
 | `fist://principles` | FIST 七条金条原则（JSON） |
 | `fist://overview` | 任务体系概览 |
 
@@ -274,7 +275,7 @@ FIST-Mbt/
 │   │   └── ops_ts.mbt          # 时间戳工具
 │   ├── omega/           # 可解释性子包：spec/gate/check
 │   └── server/          # MCP server 装配
-│       ├── server.mbt          # 61 个工具注册 + run_server
+│       ├── server.mbt          # 68 个工具注册 + 3 resources + 2 prompts + run_server
 │       ├── stdio_js.mbt        # JS 后端 STDIO 传输
 │       └── stdio_native.mbt    # 原生后端 STDIO 传输
 └── moon.mod             # 模块元数据

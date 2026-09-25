@@ -313,6 +313,65 @@ fn to_unit_result(
 }
 
 ///|
+/// 项目地图（Repo Map）：src/ 子包职责 + MCP 工具分组 + 入口引导。
+/// 供 AI agent 通过 fist://map 首读定位，避免全项目盲目探索。
+fn map_json() -> Json {
+  Json::object({
+    "product": Json::string("FIST-Mbt"),
+    "orientation": Json::string(
+      "纯 MoonBit 实现的 MCP Server：AI 指挥官式任务编排（发布→拆解→认领→执行→提交→验收→归档）+ DGM 自进化 + Omega 强验证",
+    ),
+    "build_test": Json::string("moon check && moon test --target js"),
+    "run_server": Json::string(
+      "moon build --target js cmd/main && python scripts/patch_esm_main.py && node _build/js/debug/build/cmd/main/main.js",
+    ),
+    "packages": Json::object({
+      "core": Json::string("领域模型 Task/TaskStatus + 七条金条"),
+      "store": Json::string(
+        "持久化 Memory/SQLite 双后端 + call_log/heartbeats/specs/evolve_artifacts",
+      ),
+      "engine": Json::string(
+        "业务核心 publish/claim/plan_deep/execute/verify/archive + DAG + Omega/docs 门禁",
+      ),
+      "evolve": Json::string(
+        "DGM 自进化档案库 Archive/Artifact/采样/查重/谱系",
+      ),
+      "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
+      "ops": Json::string("运维：心跳/看门狗/heal/清理"),
+      "server": Json::string(
+        "MCP 层 68 工具 + 4 resources + 2 prompts + call_log 注入",
+      ),
+      "decompose": Json::string("递归拆解规格"),
+      "executor": Json::string("执行器"),
+    }),
+    "tool_groups": Json::object({
+      "生命周期": Json::string(
+        "publish/plan/claim/execute/submit/verify/reject/retry/pause/resume/archive/delete",
+      ),
+      "查询": Json::string("list/get"),
+      "运维": Json::string(
+        "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup",
+      ),
+      "DAG": Json::string(
+        "dag_critical_path/parallelism/ascii/check/ready/sort",
+      ),
+      "自驱": Json::string(
+        "selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks",
+      ),
+      "记忆与自进化": Json::string(
+        "memory_consolidate/gc/link + evolve_submit/sample/snapshot/distill/asset_register",
+      ),
+      "审计权限": Json::string("audit_permission/log"),
+      "多租户": Json::string("store_open/list/close"),
+      "强验证": Json::string("omega_spec_create/review/result_verify/status"),
+    }),
+    "entry": Json::string(
+      "先读 README.md + ARCHITECTURE.md + docs/agent-map.md 定位；加/改工具到 src/server/server.mbt；动存储到 src/store/store_sqlite.mbt",
+    ),
+  })
+}
+
+///|
 /// —— overview 资源：任务统计概览 ——
 fn overview_json() -> Json {
   let tasks = engine.list_all()
@@ -2124,6 +2183,19 @@ pub async fn run_server() -> Unit {
         content: @mcp_resource.ResourceContent::Text(
           overview_json().stringify(),
         ),
+      })
+    },
+  )
+
+  s1 = s1.resource(
+    "fist://map",
+    "项目地图",
+    "fist-mbt 结构地图（Repo Map）：src/ 各子包职责、MCP 工具分组、入口引导，供 AI agent 首读定位，避免全项目盲目探索",
+    "application/json",
+    async fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
+      Ok({
+        uri: "fist://map",
+        content: @mcp_resource.ResourceContent::Text(map_json().stringify()),
       })
     },
   )
