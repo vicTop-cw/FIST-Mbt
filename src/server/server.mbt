@@ -2408,6 +2408,17 @@ pub async fn run_server() -> Unit {
   )
   s1 = instrumented_tool(
     s1,
+    "board_ascii",
+    "返回当前命名空间的实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（哪些任务、什么状态、在树哪层）。参数：namespace(可选，空=全部命名空间)。",
+    schema({ "namespace": string_prop("命名空间(默认全部)") }, []),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace")
+      let board = render_board_ascii(engine.list_all(), ns)
+      Ok(@mcp.ToolResult::text(board.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
     "dag_check",
     "检查某任务的依赖是否全部完成。参数：task_id。",
     schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
