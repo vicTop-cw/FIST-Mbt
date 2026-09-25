@@ -44,7 +44,9 @@ pub fn MemoryStore::rsv_release(
 
 ///|
 /// 内存后端：列出全部预订（升序，无指定顺序保证）。
-pub fn MemoryStore::rsv_list(self : MemoryStore) -> Array[(String, String, String)] {
+pub fn MemoryStore::rsv_list(
+  self : MemoryStore,
+) -> Array[(String, String, String)] {
   let out : Array[(String, String, String)] = []
   for (_, v) in self.reservations {
     out.push(v)

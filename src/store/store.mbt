@@ -149,6 +149,9 @@ impl Store for MemoryStore with fn delete_task(self, id) {
 impl Store for MemoryStore with fn clear(self) {
   self.tasks.clear()
   self.specs.clear()
+  self.call_logs.clear()
+  // 作用域预订也在清空范围（防测试/scratch 预订跨次残留）
+  self.reservations.clear()
 }
 
 ///|
@@ -289,7 +292,11 @@ pub fn StoreBackend::rsv_get(
 
 ///|
 /// 后端统一：释放预订（仅持有者）。
-pub fn StoreBackend::rsv_release(self : StoreBackend, scope : String, agent : String) -> Bool {
+pub fn StoreBackend::rsv_release(
+  self : StoreBackend,
+  scope : String,
+  agent : String,
+) -> Bool {
   match self {
     Mem(m) => m.rsv_release(scope, agent)
     Sql(s) => s.rsv_release(scope, agent)
@@ -298,7 +305,9 @@ pub fn StoreBackend::rsv_release(self : StoreBackend, scope : String, agent : St
 
 ///|
 /// 后端统一：列出全部预订。
-pub fn StoreBackend::rsv_list(self : StoreBackend) -> Array[(String, String, String)] {
+pub fn StoreBackend::rsv_list(
+  self : StoreBackend,
+) -> Array[(String, String, String)] {
   match self {
     Mem(m) => m.rsv_list()
     Sql(s) => s.rsv_list()
