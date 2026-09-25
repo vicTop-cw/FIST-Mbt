@@ -56,7 +56,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 **一键完整自检（评审用，实测期望）**：
 ```bash
-moon test --target js -j 1        # → Total tests: 230, passed: 230, failed: 0
+moon test --target js -j 1        # → Total tests: 233, passed: 233, failed: 0
 python scripts/mcp_smoke.py       # → PASS tools/list → 83 个工具 … MCP-SMOKE PASS
 python scripts/award_demo.py      # → MCP-AWARD-DEMO PASS（能力链全通，结尾自动 cleanup → CLEAN）
 ```
