@@ -175,7 +175,7 @@ You can browse and install extra skills here:
 ### 多租户命名空间（3）
 | 工具 | 说明 |
 |---|---|
-| `store_open` | 打开命名空间 |
+| `store_open` | 打开命名空间（`scratch=true` 落 temp/ 临时区，不污染仓库根） |
 | `store_list` | 列出已打开 ns |
 | `store_close` | 关闭命名空间 |
 

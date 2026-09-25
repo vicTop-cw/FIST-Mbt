@@ -174,7 +174,7 @@ FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `store_open` | 打开（或复用）一个命名空间 | namespace, data_dir(可选) |
+| `store_open` | 打开（或复用）一个命名空间；`scratch=true` 时库落 temp/（gitignore，不污染仓库根） | namespace, data_dir(可选), scratch(可选) |
 | `store_list` | 列出当前已打开的命名空间及任务数 | 无 |
 | `store_close` | 关闭指定命名空间（不删除物理库文件） | namespace |
 
