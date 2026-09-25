@@ -63,9 +63,26 @@ fn _jstr(j : Json, key : String) -> String {
 }
 
 ///|
+/// 从任务描述自动抽取所需能力标签（R58，复用 R33「免手传」思路、store-backed）：
+/// 扫描述里出现的「store 持久化执行者能力标签」，取最长命中者作 need（最具体）。
+/// 没命中返回空串（调用方回退 agent / 空 want）。不依赖 server 进程内 exec_reg。
+fn auto_want(self : FistEngine, desc : String) -> String {
+  var best = ""
+  for (_name, abl, _created) in self.executor_list() {
+    for a in parse_abilities(abl) {
+      if a != "" && desc.contains(a) && a.length() > best.length() {
+        best = a
+      }
+    }
+  }
+  best
+}
+
+///|
 /// 引擎层自治派单（纯增量、零回归）：取 `triage` 顶部可领取任务 → 用 store 持久化执行者能力
 /// 注册经 executor 包 `route_pick` 按「能力覆盖 → 负载」路由最佳执行者 → 将任务直接认领给该执行者；
-/// 无注册/路由失败时回退到 `agent`。返回 { dispatched, task_id, to_executor, remaining, note?/error? }。
+/// 无注册/路由失败时回退到 `agent`。want 为空时自动从顶部任务描述抽取所需能力（R58）。
+/// 返回 { dispatched, task_id, to_executor, remaining, note?/error?, want? }。
 pub fn FistEngine::dispatch_next(
   self : FistEngine,
   ns : String,
@@ -91,6 +108,15 @@ pub fn FistEngine::dispatch_next(
       "note": Json::string("无可派发的待领取任务（依赖满足集合为空）"),
     })
   }
+  // 确定所需能力：显式 want 优先；为空则从顶部任务描述自动抽取（R58 store-backed 免手传）
+  let want_eff: String = if want == "" {
+    match self.get_task(top2) {
+      Some(t) => self.auto_want(t.description)
+      None => ""
+    }
+  } else {
+    want
+  }
   // 从 store 构建执行者注册表
   var reg = @executor.ExecutorRegistry::new()
   for (name, abl, _created) in self.executor_list() {
@@ -98,7 +124,7 @@ pub fn FistEngine::dispatch_next(
   }
   let names = reg.list()
   let load = self.executor_loads(names)
-  let route = reg.route_pick(want, load)
+  let route = reg.route_pick(want_eff, load)
   let best = match route.value("best") {
     Some(Object(b)) => _jstr(Json::object(b), "name")
     _ => ""
@@ -115,6 +141,7 @@ pub fn FistEngine::dispatch_next(
         "task_id": Json::string(top2),
         "to_executor": Json::string(to),
         "remaining": Json::number(remaining.to_double()),
+        "want": Json::string(want_eff),
         "note": Json::string("已按能力/负载路由自动派发给执行者(无注册则回退 agent)"),
       })
     Err(e) =>
@@ -122,6 +149,7 @@ pub fn FistEngine::dispatch_next(
         "dispatched": Json::boolean(false),
         "task_id": Json::string(top2),
         "to_executor": Json::string(to),
+        "want": Json::string(want_eff),
         "error": Json::string(e),
         "note": Json::string("派发认领失败，未改动任何状态"),
       })

@@ -74,3 +74,39 @@ test "dispatch_next: 无可派发任务时不派发、不改动" {
     _ => abort("task_id 应为空串")
   }
 }
+
+///|
+test "dispatch_next: want 为空时从任务描述自动抽取能力并路由（R58 免手传）" {
+  let e = d_engine()
+  ignore(
+    e.executor_save(
+      name="nete",
+      abilities_json="[\"仪表\",\"信息图\"]",
+      created_at="2026-09-26T10:00:00Z",
+    ),
+  )
+  // 描述里含能力标签"仪表"，未显式传 want
+  let j = match
+    e.publish(
+      project_dir="/proj/dispatch-auto",
+      description="打磨仪表盘图表的自动化",
+      created_by="human_steward",
+      now="2026-09-26T10:00:00Z",
+    ) {
+    Ok(_) => e.dispatch_next("", "fallback-agent", "", "2026-09-26T10:01:00Z")
+    Err(m) => abort("publish failed: " + m)
+  }
+  match j.value("dispatched") {
+    Some(True) => ()
+    _ => abort("应派发成功: " + j.stringify())
+  }
+  // 自动抽取到"仪表"，路由命中 nete
+  match j.value("want") {
+    Some(String(w)) => assert_eq(w, "仪表")
+    _ => abort("want 缺失: " + j.stringify())
+  }
+  match j.value("to_executor") {
+    Some(String(to)) => assert_eq(to, "nete")
+    _ => abort("to_executor 缺失")
+  }
+}
