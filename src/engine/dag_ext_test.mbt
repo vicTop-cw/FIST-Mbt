@@ -583,3 +583,65 @@ test "dag_cost_route: 同执行者免切换税 + 空注册表跳过（R77）" {
     _ => abort("e3 total_est_cost 缺失")
   }
 }
+
+///|
+test "budget_split_by_dag: 预算按依赖图阶段切分（R81 ZEBRA 蒸馏）" {
+  // 链 A→B→C（A 难/B 中/C 易）：earliest A=0/B=1/C=2；预算 10 → 权重 3/2/1 归一化
+  let e = FistEngine::new()
+  let specs : Array[(String, Array[String], String)] = [
+    ("A", [], "编排根任务 [难度梯度 1/3:难]"),
+    ("B", ["A"], "编排子任务 [难度梯度 2/3:中]"),
+    ("C", ["B"], "编排子任务 [难度梯度 3/3:易]"),
+  ]
+  for s in specs {
+    let (id, deps, desc) = s
+    ignore(
+      e.store.create_task(
+        @core.Task::new(
+          id~,
+          project_dir="/proj/demo",
+          description=desc,
+          created_at="2026-01-01T00:00:00Z",
+          depends_on=deps,
+        ),
+      ),
+    )
+  }
+  let j = e.budget_split_by_dag(10)
+  match j.value("stages") {
+    Some(Array(st)) => {
+      // 三阶段：0/1/2
+      assert_eq(st.length(), 3)
+      // 份额和 == 总预算（向下取整 + 余数补给最大权重阶段）
+      var sum = 0
+      for s in st {
+        match s.value("share") {
+          Some(Number(n, ..)) => sum = sum + n.to_int()
+          _ => ()
+        }
+      }
+      assert_eq(sum, 10)
+      // 阶段 0（A，权重 3/6）占 5 份额
+      match st[0].value("level") {
+        Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
+        _ => abort("stage0 level 缺失")
+      }
+    }
+    _ => abort("stages 缺失: " + j.stringify())
+  }
+  match j.value("total_budget") {
+    Some(Number(n, ..)) => assert_eq(n.to_int(), 10)
+    _ => abort("total_budget 缺失")
+  }
+  // 空仓库：stages 空、total_budget 保真
+  let e2 = FistEngine::new()
+  let j2 = e2.budget_split_by_dag(7)
+  match j2.value("stages") {
+    Some(Array(st)) => assert_eq(st.length(), 0)
+    _ => abort("e2 stages 缺失: " + j2.stringify())
+  }
+  match j2.value("total_budget") {
+    Some(Number(n, ..)) => assert_eq(n.to_int(), 7)
+    _ => abort("e2 total_budget 缺失")
+  }
+}

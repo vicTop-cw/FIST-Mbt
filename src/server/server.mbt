@@ -3249,6 +3249,21 @@ pub async fn run_server() -> Unit {
       Ok(@mcp.ToolResult::text(result.stringify()))
     },
   )
+  s1 = instrumented_tool(
+    s1,
+    "cost_budget_split",
+    "预算按依赖图阶段切分（R81，ZEBRA 背包水填充蒸馏简化版）：给定总预算，按任务 DAG 阶段(slack 分析 earliest 层级)切分——每阶段份额=阶段难度权重(难3/中2/易1)占总量比例×总预算(余数补最大权重阶段)。返回 { stages:[{level,tasks,difficulty_sum,share}], total_budget, makespan, note }——预算在依赖图上按阶段切分：瓶颈阶段(关键路径层)占额可见，超支先预警。参数：budget(总预算，必填)。",
+    schema(
+      {
+        "budget": number_prop("总预算（必填）"),
+      },
+      ["budget"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let budget = jnum(args, "budget").to_int()
+      Ok(@mcp.ToolResult::text(engine.budget_split_by_dag(budget).stringify()))
+    },
+  )
 
   // ---- 调度预览工具 ----
   s1 = instrumented_tool(

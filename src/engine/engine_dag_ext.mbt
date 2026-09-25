@@ -629,3 +629,93 @@ pub fn FistEngine::dag_cost_route(self : FistEngine) -> Json {
     ),
   })
 }
+
+/// ==================== 预算按依赖图阶段切分（R81，ZEBRA 水填充蒸馏简化版） ====================
+
+///|
+/// 预算按依赖图阶段切分（R81，ZEBRA 背包水填充蒸馏简化版）：给定总预算，
+/// 按任务 DAG 阶段（slack 分析的 earliest 层级 0..makespan）切分——每阶段基础份额 =
+/// 该阶段任务数 × 难度权重（难3/中2/易1，复用难度档单一来源；无难度标记按 1），
+/// 总权重归一化后乘总预算（向下取整，余数补给最大权重阶段）。
+/// 返回 { stages:[{level, tasks, difficulty_sum, share}], total_budget, makespan, note }。
+/// ——"预算在依赖图上按阶段切分：瓶颈阶段(关键路径层)占额可见，超支先预警"，机制设计叙事。
+pub fn FistEngine::budget_split_by_dag(self : FistEngine, budget : Int) -> Json {
+  let slack = self.dag_slack_analysis()
+  // 每任务 earliest 作为阶段
+  let level_of : Map[String, Int] = Map([])
+  match slack.value("slack_map") {
+    Some(Object(sm)) =>
+      for id in sm.keys() {
+        match sm.get(id) {
+          Some(Object(o)) =>
+            match o.get("earliest") {
+              Some(Number(n, ..)) => level_of.set(id, n.to_int())
+              _ => ()
+            }
+          _ => ()
+        }
+      }
+    _ => ()
+  }
+  // 阶段聚合：难度权重（难3/中2/易1，无难度 1）+ 任务数
+  let stage_weight : Map[Int, Int] = Map([])
+  let stage_count : Map[Int, Int] = Map([])
+  for t in self.list_all() {
+    let lv = level_of.get(t.get_id()).unwrap_or(0)
+    let lab = triage_label_of(t.description)
+    let w = if lab == "难" { 3 } else if lab == "中" { 2 } else { 1 }
+    stage_weight.set(lv, stage_weight.get(lv).unwrap_or(0) + w)
+    stage_count.set(lv, stage_count.get(lv).unwrap_or(0) + 1)
+  }
+  let mut total_w = 0
+  var max_lv = 0
+  var max_w = 0
+  for lv in stage_weight.keys() {
+    let w = stage_weight.get(lv).unwrap_or(0)
+    total_w = total_w + w
+    if w > max_w {
+      max_w = w
+      max_lv = lv
+    }
+  }
+  // 归一化切分：向下取整，余数补给最大权重阶段
+  var used = 0
+  let shares : Map[Int, Int] = Map([])
+  for lv in stage_weight.keys() {
+    let w = stage_weight.get(lv).unwrap_or(0)
+    let share = if total_w <= 0 { 0 } else { (budget * w) / total_w }
+    shares.set(lv, share)
+    used = used + share
+  }
+  if total_w > 0 && used < budget {
+    let cur = shares.get(max_lv).unwrap_or(0)
+    shares.set(max_lv, cur + (budget - used))
+  }
+  // 输出阶段行（按层级升序）
+  let stages : Array[Json] = []
+  let lvs : Array[Int] = stage_weight.keys().to_array()
+  lvs.sort()
+  for lv in lvs {
+    stages.push(
+      Json::object({
+        "level": Json::number(lv.to_double()),
+        "tasks": Json::number(stage_count.get(lv).unwrap_or(0).to_double()),
+        "difficulty_sum": Json::number(stage_weight.get(lv).unwrap_or(0).to_double()),
+        "share": Json::number(shares.get(lv).unwrap_or(0).to_double()),
+      }),
+    )
+  }
+  let mut makespan = 0
+  match slack.value("makespan") {
+    Some(Number(n, ..)) => makespan = n.to_int()
+    _ => ()
+  }
+  Json::object({
+    "stages": Json::array(stages),
+    "total_budget": Json::number(budget.to_double()),
+    "makespan": Json::number(makespan.to_double()),
+    "note": Json::string(
+      "阶段=slack 分析的 earliest 层级；份额=阶段难度权重占总量比例×总预算(余数补最大权重阶段)——瓶颈阶段占额可见，超支先预警",
+    ),
+  })
+}
