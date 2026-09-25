@@ -183,6 +183,18 @@ def main():
         assert ph.get("verdict") in ("healthy", "suspect", "insufficient"), "phi_accrual 应返回 verdict"
         print(f"      ↳ R89 概率式故障检测 phi_accrual(μ=10s σ≈3.5, elapsed=60s) → φ={ph.get('phi')} "
               f"verdict={ph.get('verdict')} （Phi Accrual：φ=-log10(P 心跳晚到)，越久越怀疑，替代固定 timeout）")
+        # R96 Saga 局部补偿控级联：失败步骤 → 最小补偿切片（演示无 task_id，走注册序 basis=order）
+        for stp in ("step1", "step2", "step3"):
+            call(p, "saga_register", root_task_id="demo-root", step=stp,
+                 compensation="undo " + stp, now=NOW)
+        rep = call(p, "saga_repair", root_task_id="demo-root", failed_step="step2", mark=True)
+        assert rep.get("basis") in ("depends_on", "order"), "saga_repair 应返回 basis"
+        assert len(rep.get("compensate", [])) == 2 and len(rep.get("keep", [])) == 1, \
+            "应只补偿失败步骤+其下游、保留先前承诺"
+        print(f"      ↳ R96 局部补偿 saga_repair(demo-root, step2 失败) → basis={rep.get('basis')} "
+              f"compensate={[s['step'] for s in rep.get('compensate', [])]} "
+              f"keep={[s['step'] for s in rep.get('keep', [])]} "
+              f"（最小切片补偿控级联，保留未受影响承诺；depends_on 闭包版见单测）")
         tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"

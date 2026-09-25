@@ -486,7 +486,7 @@ fn map_json() -> Json {
       ),
       "查询": Json::string("list/get"),
       "运维": Json::string(
-        "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback",
+        "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback/saga_repair",
       ),
       "运维·日志/缺陷/成本/调度": Json::string(
         "call_log/bug_list/report_bug/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide",
@@ -3495,6 +3495,32 @@ pub async fn run_server() -> Unit {
       let root_task_id = get_str(args, "root_task_id")
       let mark = get_bool(args, "mark", default=true)
       match engine.saga_rollback(ns~, root_task_id, mark~) {
+        Err(m) => Err(@mcp_types.ToolError(m))
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "saga_repair",
+    "Saga 局部补偿（R96，Plan Commitment / scope-aware repair 蒸馏）：给定失败步骤，计算最小补偿切片——失败步骤 + 其依赖下游（任务 depends_on 传递闭包中仍 pending 的步骤，无 task_id 时按注册序保守兜底）——只补偿切片（LIFO），切片外步骤保留承诺不补偿（keep，控级联不涟漪撤销），与 saga_rollback 全局 LIFO 整链收尾互补。mark=true（默认）返回后即把切片标记 done（幂等），keep 步骤保持 pending 供后续按需补偿。参数：root_task_id 根任务（必填）、failed_step 失败步骤名（必填）、mark 是否消费切片（可选默认 true）、namespace（可选默认 default）。返回 { root_task_id, failed_step, basis: depends_on|order, compensate_count, keep_count, compensate: [{id, step, task_id, compensation, status}], keep: [...], marked_done, note }。",
+    schema(
+      {
+        "root_task_id": string_prop("根任务 id（saga 作用域，必填）"),
+        "failed_step": string_prop("失败的前向步骤名（必填）"),
+        "mark": bool_prop(
+          "返回后即标记切片 done（可选默认 true，幂等）",
+        ),
+        "namespace": string_prop("命名空间（可选默认 default）"),
+      },
+      ["root_task_id", "failed_step"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let root_task_id = get_str(args, "root_task_id")
+      let failed_step = get_str(args, "failed_step")
+      let mark = get_bool(args, "mark", default=true)
+      match engine.saga_repair(ns~, root_task_id, failed_step~, mark~) {
         Err(m) => Err(@mcp_types.ToolError(m))
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
       }
