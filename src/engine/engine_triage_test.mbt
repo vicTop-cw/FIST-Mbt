@@ -35,7 +35,7 @@ test "task_triage 返回可领取排行 + suggestion，且带难度标签" {
       now="2026-09-05T10:01:00Z",
     ),
   )
-  let j = e.triage("", "exec_demo")
+  let j = e.triage("", "exec_demo", "")
   match j.value("count") {
     Some(Number(n, ..)) => assert_true(n.to_int() >= 1)
     _ => abort("count 缺失: " + j.stringify())
@@ -63,13 +63,13 @@ test "task_triage 返回可领取排行 + suggestion，且带难度标签" {
 test "task_triage 按 namespace 过滤：命中当前集合内该 ns，未命中为 0" {
   let e = tr_engine()
   ignore(tr_publish(e, "甲项目任务"))
-  let j_x = e.triage("default", "exec_demo")
+  let j_x = e.triage("default", "exec_demo", "")
   match j_x.value("count") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 1)
     _ => abort("count 缺失 default: " + j_x.stringify())
   }
   // 不存在的 ns → count 0 且无 suggestion
-  let j_z = e.triage("no-such-ns", "exec_demo")
+  let j_z = e.triage("no-such-ns", "exec_demo", "")
   match j_z.value("count") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
     _ => abort("count 缺失 z")
@@ -77,5 +77,50 @@ test "task_triage 按 namespace 过滤：命中当前集合内该 ns，未命中
   match j_z.value("suggestion") {
     None => ()
     _ => abort("空 ns 不应有 suggestion")
+  }
+}
+
+///|
+test "task_triage 能力偏好路由：want 命中的候选排头部" {
+  let e = tr_engine()
+  // 两条可领取根任务，一条描述含"编排引擎"，一条含"解析器"
+  match
+    e.publish(
+      project_dir="/proj/triage",
+      description="打磨编排引擎的调度与持久化",
+      created_by="human_steward",
+      now="2026-09-05T10:00:00Z",
+    ) {
+    Err(m) => abort("publish1 failed: \{m}")
+    Ok(_) => ()
+  }
+  match
+    e.publish(
+      project_dir="/proj/triage",
+      description="实现解析器的词法分析",
+      created_by="human_steward",
+      now="2026-09-05T10:00:00Z",
+    ) {
+    Err(m) => abort("publish2 failed: \{m}")
+    Ok(_) => ()
+  }
+  // 再说 want=编排：编排那条应排头部
+  let j = e.triage("", "exec_demo", "编排")
+  match j.value("suggestion") {
+    Some(Object(m)) =>
+      match m.get("task_id") {
+        Some(String(tid)) =>
+          match e.get_task(tid) {
+            Some(t) => assert_eq(t.description.contains("编排"), true)
+            None => abort("suggestion tid missing in store")
+          }
+        _ => abort("suggestion.task_id 缺失")
+      }
+    _ => abort("应有 suggestion")
+  }
+  // want 应回显在返回里
+  match j.value("want") {
+    Some(String(w)) => assert_eq(w, "编排")
+    _ => abort("want 应回显")
   }
 }
