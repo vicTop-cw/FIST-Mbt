@@ -229,3 +229,144 @@ pub fn FistEngine::dag_depend(
     Err(e) => Err("依赖落库失败: \{e}")
   }
 }
+
+/// ==================== 瓶颈与松弛分析（PERT/CPM，R71） ====================
+
+///|
+/// 拓扑序（依赖先于被依赖；带环保护——成环任务归入 cycle，不阻塞计算）。
+fn dag_topo_order(self : FistEngine) -> (Array[String], Array[String]) {
+  let ids : Array[String] = []
+  for t in self.list_all() {
+    ids.push(t.get_id())
+  }
+  let indeg : Map[String, Int] = Map([])
+  let deps_of : Map[String, Array[String]] = Map([])
+  for id in ids {
+    indeg.set(id, 0)
+    deps_of.set(id, [])
+  }
+  // 建前置→后继边：任务 t 依赖 d（d 是 t 的前置）→ 边 d→t；indeg[t]++（t 的前置数）
+  for t in self.list_all() {
+    for d in t.depends_on {
+      deps_of.set(d, deps_of.get(d).unwrap_or([]) + [t.get_id()])
+      let cur = indeg.get(t.get_id()).unwrap_or(0)
+      indeg.set(t.get_id(), cur + 1)
+    }
+  }
+  let order : Array[String] = []
+  let mut ready_ids : Array[String] = ids.filter(fn(id) { indeg.get(id).unwrap_or(0) == 0 })
+  while ready_ids.length() > 0 {
+    let cur = ready_ids[0]
+    // 移除队首（保持顺序）
+    let rest : Array[String] = []
+    for i = 1; i < ready_ids.length(); i = i + 1 {
+      rest.push(ready_ids[i])
+    }
+    ready_ids = rest
+    order.push(cur)
+    // cur 的后继（以 cur 为前置的任务）：前置完成 -> 后继入度-1
+    for nxt in deps_of.get(cur).unwrap_or([]) {
+      let nd = indeg.get(nxt).unwrap_or(0)
+      indeg.set(nxt, nd - 1)
+      if indeg.get(nxt).unwrap_or(0) == 0 {
+        ready_ids = ready_ids + [nxt]
+      }
+    }
+  }
+  let cycle = ids.filter(fn(id) { indeg.get(id).unwrap_or(0) > 0 })
+  (order, cycle)
+}
+
+///|
+/// 瓶颈与松弛分析（PERT/CPM 硬核调度能力，R71）：对每个任务计算
+///   earliest（依赖全部就绪的最早开始步数）、latest（不拖慢总工期的最晚开始步数）、
+///   slack（latest-earliest；0=关键路径上，>0=可灵活并行安排）。
+/// 返回 { critical:[关键路径任务id], slack_map:{id:{earliest,latest,slack}}, makespan, cycle:[成环任务] }。
+/// ——"找出谁在关键路径上、谁有松弛可并行"，直接支撑排程优化（不是视图叠加）。
+pub fn FistEngine::dag_slack_analysis(self : FistEngine) -> Json {
+  let (order, cycle) = self.dag_topo_order()
+  let ids : Array[String] = []
+  for t in self.list_all() {
+    ids.push(t.get_id())
+  }
+  // earliest: 前向——依赖全就绪的最早开始
+  let earliest : Map[String, Int] = Map([])
+  for id in ids {
+    earliest.set(id, 0)
+  }
+  for id in order {
+    match self.get_task(id) {
+      Some(t) =>
+        for d in t.depends_on {
+          let de = earliest.get(d).unwrap_or(0)
+          let ce = earliest.get(id).unwrap_or(0)
+          if de + 1 > ce {
+            earliest.set(id, de + 1)
+          }
+        }
+      None => ()
+    }
+  }
+  // makespan: 全图最长 earliest（总工期）
+  let mut makespan = 0
+  for id in ids {
+    let e = earliest.get(id).unwrap_or(0)
+    if e > makespan {
+      makespan = e
+    }
+  }
+  // latest: 反向——不拖慢总工期的最晚开始
+  let latest : Map[String, Int] = Map([])
+  for id in ids {
+    latest.set(id, makespan)
+  }
+  let rev : Map[String, Array[String]] = Map([])
+  for id in ids {
+    rev.set(id, [])
+  }
+  for t in self.list_all() {
+    for d in t.depends_on {
+      rev.set(d, rev.get(d).unwrap_or([]) + [t.get_id()])
+    }
+  }
+  for i = order.length() - 1; i >= 0; i = i - 1 {
+    let id = order[i]
+    let mut lt = makespan
+    for nxt in rev.get(id).unwrap_or([]) {
+      let ln = latest.get(nxt).unwrap_or(0)
+      if ln - 1 < lt {
+        lt = ln - 1
+      }
+    }
+    if lt < 0 {
+      lt = 0
+    }
+    latest.set(id, lt)
+  }
+  // slack = latest - earliest；0 → 关键路径
+  let slack_map : Map[String, Json] = Map([])
+  let critical : Array[String] = []
+  for id in ids {
+    let e = earliest.get(id).unwrap_or(0)
+    let l = latest.get(id).unwrap_or(0)
+    let slack = l - e
+    if slack == 0 {
+      critical.push(id)
+    }
+    slack_map.set(
+      id,
+      Json::object({
+        "earliest": Json::number(e.to_double()),
+        "latest": Json::number(l.to_double()),
+        "slack": Json::number(slack.to_double()),
+      }),
+    )
+  }
+  critical.sort()
+  Json::object({
+    "makespan": Json::number(makespan.to_double()),
+    "critical": Json::array(critical.map(fn(s) { Json::string(s) })),
+    "slack_map": Json::object(slack_map),
+    "cycle": Json::array(cycle.map(fn(s) { Json::string(s) })),
+  })
+}

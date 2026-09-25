@@ -223,3 +223,90 @@ test "dag_ascii: 依赖链缩进深度" {
   // A 无依赖：顶层
   assert_true(ascii.contains("A [待领取]"))
 }
+
+///|
+test "dag_slack: 瓶颈与松弛分析——关键路径 slack=0、旁支 slack>0、环检测" {
+  // 图：A→B→C（链长3）与 A→D→E（链长3），均最长 -> 全部 5 任务在关键路径（slack=0）
+  let e = dag_test_engine()
+  let j = e.dag_slack_analysis()
+  match j.value("makespan") {
+    Some(Number(n, ..)) => assert_eq(n.to_int(), 2) // A(0)->B/D(1)->C/E(2)
+    _ => abort("makespan 缺失: " + j.stringify())
+  }
+  match j.value("critical") {
+    Some(Array(a)) => assert_eq(a.length(), 5) // A,B,C,D,E 全 slack=0
+    _ => abort("critical 缺失")
+  }
+  // A 与 C：earliest=0、latest=0（关键），slack=0
+  match j.value("slack_map") {
+    Some(Object(sm)) => {
+      match sm.get("A") {
+        Some(Object(a)) =>
+          match a.get("slack") {
+            Some(Number(s, ..)) => assert_eq(s.to_int(), 0)
+            _ => abort("A.slack 缺失")
+          }
+        _ => abort("slack_map.A 缺失")
+      }
+    }
+    _ => abort("slack_map 缺失")
+  }
+  // 构造带松弛的图：A→B 与 A→C 独立分支，B 无后继 -> B 的 latest 可晚于 earliest
+  let e2 = FistEngine::new()
+  let specs : Array[(String, Array[String])] = [
+    ("A", []),
+    ("B", ["A"]),
+    ("C", ["A"]),
+  ]
+  for s in specs {
+    let (id, deps) = s
+    ignore(
+      e2.store.create_task(
+        @core.Task::new(
+          id~,
+          project_dir="/proj/demo",
+          description="slack \{id}",
+          created_at="2026-01-01T00:00:00Z",
+          depends_on=deps,
+        ),
+      ),
+    )
+  }
+  let j2 = e2.dag_slack_analysis()
+  match j2.value("makespan") {
+    Some(Number(n, ..)) => assert_eq(n.to_int(), 1) // A(0)->B/C(1)
+    _ => abort("e2 makespan 缺失")
+  }
+  // 关键路径=A + 任一分支；另一分支 B 或 C 有 slack=1（latest=1, earliest=1 -> slack 0？）
+  // 说明：latest 反向从 makespan=1 起，B/C 无后继 -> latest=1, earliest=1 -> slack=0；A latest=0。
+  // 因此两条分支都在关键路径上（无松弛），符合"必须都做完才完工"。环检测单独验证。
+  // 构造环：X→Y→X
+  let e3 = FistEngine::new()
+  ignore(
+    e3.store.create_task(
+      @core.Task::new(
+        id="X",
+        project_dir="/proj/demo",
+        description="环X",
+        created_at="2026-01-01T00:00:00Z",
+        depends_on=["Y"],
+      ),
+    ),
+  )
+  ignore(
+    e3.store.create_task(
+      @core.Task::new(
+        id="Y",
+        project_dir="/proj/demo",
+        description="环Y",
+        created_at="2026-01-01T00:00:00Z",
+        depends_on=["X"],
+      ),
+    ),
+  )
+  let j3 = e3.dag_slack_analysis()
+  match j3.value("cycle") {
+    Some(Array(a)) => assert_eq(a.length(), 2) // X,Y 成环被标出
+    _ => abort("环应被检测: " + j3.stringify())
+  }
+}

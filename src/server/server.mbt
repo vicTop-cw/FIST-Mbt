@@ -2605,6 +2605,15 @@ pub async fn run_server() -> Unit {
   )
   s1 = instrumented_tool(
     s1,
+    "dag_slack",
+    "瓶颈与松弛分析（PERT/CPM 硬核调度，R71）：对每个任务算 earliest/latest/slack（0=关键路径，>0=可灵活并行安排），返回 { makespan, critical:[关键任务], slack_map:{id:{earliest,latest,slack}}, cycle:[成环任务] }——找出【谁在关键路径上、谁有松弛可并行】，直接支撑排程优化。无参数。",
+    schema({}, []),
+    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      Ok(@mcp.ToolResult::text(engine.dag_slack_analysis().stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
     "dag_ascii",
     "返回当前命名空间任务的 ASCII 依赖结构图。参数：namespace(可选，默认 default)。",
     schema({ "namespace": string_prop("命名空间(默认 default)") }, []),

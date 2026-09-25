@@ -8,14 +8,14 @@
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
 moon build --target js cmd/main
 python scripts/mcp_smoke.py
-# 期望输出：PASS tools/list → 84 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
+# 期望输出：PASS tools/list → 85 个工具 / PASS publish / PASS get → MCP-SMOKE PASS
 ```
 
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **84**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 242/242**（Windows + WSL(Linux) 双端实测全绿） |
+| MCP 工具 | **85**（+ 3 resources + 2 prompts） |
+| 测试 | **`moon test --target js` 243/243**（Windows + WSL(Linux) 双端实测全绿） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
@@ -67,13 +67,13 @@ python scripts/mcp_smoke.py
 | 33 派单免手传 | `selfdrive_dispatch` 不传 want 时从任务描述自动抽取已注册能力标签（need_auto） | `dispatch_verify.py`（免 want 用例） |
 | 34 徽章守卫 | `check_badge.py` + ci.yml JS 轨 Badge guard：README 徽章 ≠ 实测测试数即 FAIL（杜绝计数手改漏同步） | `python scripts/check_badge.py`（正/负路径） |
 | 35 LADDER 深化 | `gradient` 提示补"先易后逆推"自举闭环（先完成更简单变体再推广/逆推到本体） | `simpler_variant_hint` + decompose_test 断言 |
-| 36 地图同步 | `fist://map` tool_groups 全量同步到 84 工具 10 分组（补 看板/脉冲/预订/推荐+M、Marketplace·能力路由、pick_next/critic/lesson/challenge），map_verify 加断言 | `map_verify.py` E2E |
+| 36 地图同步 | `fist://map` tool_groups 全量同步到 85 工具 10 分组（补 看板/脉冲/预订/推荐+M、Marketplace·能力路由、pick_next/critic/lesson/challenge），map_verify 加断言 | `map_verify.py` E2E |
 | 37 gradient真实DAG | `task_plan_deep gradient_dag=true`：把 LADDER「更简单变体→先易后逆推」由提示文本升级为**真实 DAG 前驱链**——每层兄弟切片按由易到难连 depends_on，更难切片须等前驱完成后才可认领，经 `dag_ready/dag_ascii/topo_sort` 可见；仅显式开启，默认零回归、工具数不变 | `decompose_test.mbt`「gradient_dag 真实 DAG 前驱链」用例 |
 | 38 执行计划视图 | `task_plan_deep` 返回新增 `exec_order`：拆解后即给出整棵子树的**按 DAG 拓扑序、附难度档/依赖/深度的扁平执行清单**，agent 拿到即可照单执行（纯读无副作用，不加工具）；与 gradient_dag 协同——依赖先于被依赖，"先易后逆推"可见可执行 | `decompose_test.mbt`「plan_exec_order DAG 序执行计划」用例 |
 | 39 推荐带依赖 | `task_triage` 每条推荐任务新增输出 `depends_on`（复用 R39 DAG 边）：走 `dag_depend`/`gradient_dag` 建的依赖，"下一单"不光看难度/优先级，还能看到它就绪的前驱是谁（DAG→推荐纵向闭合，复用/拿来主义支柱） | `engine_triage_test.mbt`「task_triage 暴露 depends_on」用例 |
 | 40 难度抽取单一化 | `task_triage` 的难度标签改复用 R40 的 `extract_difficulty` 单一抽取来源（去重 `triage_label_of` 的 `:易]` 后缀粗匹配，并支持 calibrate 真实难度 `难 d=5`→难 归一；空回退叶/分支兜底不变）——消除两处难度解析重复，落实支柱②复用/避重复 | `engine_triage_test.mbt`「task_triage 返回可领取排行并带难度标签」既有用例回归 |
 | 41 脉冲难度分布 | `status_summary` 新增 `by_difficulty`（待领取任务按 易/中/难/无 分布）：`extract_difficulty` 升为 pub 跨包复用（server 包），项目脉冲一眼看"待办难度结构"（支柱①＋②） | `board_ascii_test.mbt`「status_summary … by_difficulty 不变量」用例 |
-| 42 工具单一真源 | `scripts/check_tools_sync.py` + ci.yml 两轨：唯一真源=server.mbt 实际注册名，校验 AGENTS 表格工具名 ⊆ 真源、真源全部入 AGENTS、四文档工具总数==84（双向防幽灵/漏写）。守卫发现 AGENTS 只列 54/84 后补齐 29 个（新增 自驱闭环/运维杂项/ATGC-old 三组，生命周期14、自进化11、Omega补2），PASS | `python scripts/check_tools_sync.py`（PASS）+ `moon test` 233/233 |
+| 42 工具单一真源 | `scripts/check_tools_sync.py` + ci.yml 两轨：唯一真源=server.mbt 实际注册名，校验 AGENTS 表格工具名 ⊆ 真源、真源全部入 AGENTS、四文档工具总数==85（双向防幽灵/漏写）。守卫发现 AGENTS 只列 54/85 后补齐 29 个（新增 自驱闭环/运维杂项/ATGC-old 三组，生命周期14、自进化11、Omega补2），PASS | `python scripts/check_tools_sync.py`（PASS）+ `moon test` 233/233 |
 | 43 测试数单一真源 | `scripts/check_test_sync.py` + ci.yml JS 轨：补 check_badge 盲区，跨 README/AGENTS/deliverable/scoring_rubric 校验测试总数==实测（N/N、N 全绿、独立 N 任一），正路径 PASS、负路径 FAIL=1 | `python scripts/check_test_sync.py --total 233`（PASS） |
 | 44 地图补全 | `fist://map` tool_groups 补齐 R46 新工具家族（生命周期 publish_parallel/reopen_task、强验证 verify/verify_fix、新增「运维·日志/缺陷/成本/调度」「衍生·ATGC-old」分组、自驱补 selfdrive_dispatch）；map_verify 加断言锁住关键补漏——agent 首读地图即全概（支柱①） | `python scripts/map_verify.py`（PASS 12 分组）+ `moon test` 233/233 |
 | 45 看门狗派发预览 | `watchdog_tick` 在显式 ns 无人值守场景新增 `detail.ready_dispatch_preview`：复用 engine.triage 给出"下一单可自动派发"的候选（纯读不认领，避免 ops 仓与 server 进程内 exec_reg 耦合；自治派单的前置信号） | `ops_watchdog_test.mbt`「watchdog R51 派发预览」用例（+1） |
@@ -83,6 +83,7 @@ python scripts/mcp_smoke.py
 | 49 派单能力自动抽取 | `dispatch_next` 在 `want` 为空时从顶部任务描述自动抽取所需能力标签（R58，store-backed 复用 R33「免手传」思路、不依赖 server exec_reg）：扫描述里出现的 store 持久化执行者能力标签取最长命中，返回 `want` 字段——「零参数自动派单」达成，watchdog `autodispatch_want` 可缺省 | `engine_dispatch_test.mbt`「want 自动抽取路由」用例（+1） |
 | 50 父计划回注 | `plan_deep` 增 `reinject_context`（R63，ReCAP 借鉴，默认 false 零回归）：把「父计划摘要 + 剩余兄弟」回注进每条子任务描述，递归下钻整树继承——让拆出的原子片知道自己"为什么做、旁边还有谁"，防上下文漂移；engine + MCP task_plan_deep 双端贯通 | `decompose_test.mbt`「reinject_context 回注+默认关闭零回归」用例（+1） |
 | 51 项目健康卡 | 新增 `project_health` 工具（R68）：单次调用聚合 in_flight/ready/done/blocked/reviewing/archived 六类计数 + 健康等级(empty/attention/stalled/healthy) + blocked_tasks，可接 ns 过滤——"agent 一眼看全项目健康"，正中支柱①"一目了然"与"更好的 AI 项目管理工具" | `board_ascii_test.mbt`「project_health 健康卡+等级判定」用例（+1） |
+| 52 瓶颈与松弛分析 | 新增 `dag_slack` 工具（R71，PERT/CPM 硬核调度）：对每个任务算 earliest/latest/slack（0=关键路径，>0=可灵活并行安排），返回 { makespan, critical, slack_map, cycle }——"找出谁在关键路径上、谁有松弛可并行"，支撑排程优化。门禁复评 FAIL(AI3 p1 0.62) 后按"硬创新"要求落地，非演示叠加 | `dag_ext_test.mbt`「dag_slack 临界+松弛+环检测」用例（+1） |
 
 > 注：内存日志/汇报用字母轮号（含若干纯文档/CI 非功能行，不入上表）；本表仅计功能轮。
 
