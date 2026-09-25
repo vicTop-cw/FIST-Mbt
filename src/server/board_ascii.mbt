@@ -29,7 +29,7 @@ pub fn render_board_ascii(
   ns_filter : String,
 ) -> Json {
   let order : Array[String] = [
-    "待领取", "已领取", "执行中", "待验收", "已打回", "已完成", "已暂停", "已归档",
+    "待领取", "已领取", "拆分中", "执行中", "待验收", "已打回", "已完成", "已暂停", "已归档",
   ]
   // 按状态分组
   let buckets : Map[String, Array[@core.Task]] = Map([])
@@ -114,4 +114,39 @@ fn append_group(
     }
     lines.push(indent + "[" + st + "] " + short_id + " · " + desc)
   }
+}
+
+///|
+/// 项目脉冲摘要：返回 { version, total_tasks, by_status:{状态:数量}, active_namespaces }。
+/// 供 agent 一次调用概览项目健康，无需 list+逐条筛选。
+/// tasks 为引擎任务集；active_ns 为当前已打开命名空间清单；version 为模块版本串。
+pub fn render_status_summary(
+  tasks : Array[@core.Task],
+  active_ns : Array[String],
+  version : String,
+) -> Json {
+  let by_status : Map[String, Double] = Map([])
+  let mut total = 0
+  for t in tasks {
+    let st = t.status_to_string()
+    if st != "" {
+      total = total + 1
+      match by_status.get(st) {
+        Some(n) => by_status.set(st, n + 1.0)
+        None => by_status.set(st, 1.0)
+      }
+    }
+  }
+  let stJson : Map[String, Json] = Map([])
+  for (st, n) in by_status {
+    stJson.set(st, Json::number(n))
+  }
+  Json::object({
+    "version": Json::string(version),
+    "total_tasks": Json::number(total.to_double()),
+    "by_status": Json::object(stJson),
+    "active_namespaces": Json::array(
+      active_ns.map(fn(s) { Json::string(s) }),
+    ),
+  })
 }

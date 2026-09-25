@@ -68,3 +68,28 @@ test "board_ascii 支持 namespace 过滤" {
   assert_false(none.contains("[待领取]"))
   assert_false(none.contains("[已领取]"))
 }
+
+///|
+test "status_summary 项目脉冲：总量 + 按状态计数 + 活跃命名空间" {
+  let e = ba_engine()
+  let root = ba_publish(e, "脉冲根任务")
+  ignore(e.claim(task_id=root, assignee="leader_a", now="2026-09-25T10:20:00Z"))
+  match
+    e.plan_deep(task_id=root, split_n=1, by="leader_a", now="2026-09-25T10:21:00Z") {
+    Ok(_) => ()
+    Err(m) => abort("plan_deep failed: \{m}")
+  }
+  let tasks = e.list_all()
+  assert_true(tasks.length() >= 2)
+  let s = render_status_summary(tasks, ["default"], "0.2.4").stringify()
+  // 总量 = 引擎任务数
+  match render_status_summary(tasks, ["default"], "0.2.4").value("total_tasks") {
+    Some(Number(n, ..)) => assert_eq(n.to_int(), tasks.length())
+    _ => abort("total_tasks 缺失: " + s)
+  }
+  assert_true(s.contains("\"version\":\"0.2.4\""))
+  assert_true(s.contains("active_namespaces"))
+  assert_true(s.contains("default"))
+  // 至少有一个状态计数（待领取 等）
+  assert_true(s.contains("待领取"))
+}
