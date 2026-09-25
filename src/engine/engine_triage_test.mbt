@@ -23,6 +23,33 @@ fn tr_publish(e : @engine.FistEngine, desc : String) -> String {
 }
 
 ///|
+/// 在 triage 返回里查找 id 任务，断言其 depends_on 恰为 [dep]。找到返回 true。
+fn triage_row_has_dep(j : Json, id : String, dep : String) -> Bool {
+  match j.value("tasks") {
+    Some(Array(arr)) => {
+      let mut found = false
+      for row in arr {
+        match row.value("id") {
+          Some(String(s)) if s == id => {
+            match row.value("depends_on") {
+              Some(Array(d)) if d.length() == 1 =>
+                match d[0] {
+                  String(did) if did == dep => found = true
+                  _ => ()
+                }
+              _ => ()
+            }
+          }
+          _ => ()
+        }
+      }
+      found
+    }
+    _ => false
+  }
+}
+
+///|
 test "task_triage 返回可领取排行 + suggestion，且带难度标签" {
   let e = tr_engine()
   let id = tr_publish(e, "构建一个编排引擎")
@@ -123,6 +150,32 @@ test "task_triage 能力偏好路由：want 命中的候选排头部" {
     Some(String(w)) => assert_eq(w, "编排")
     _ => abort("want 应回显")
   }
+}
+
+///|
+/// 完成一条根任务（无子任务，直接闭环）。
+fn complete_root(e : @engine.FistEngine, tid : String) -> Unit {
+  ignore(e.claim(task_id=tid, assignee="x", now="2026-09-05T10:06:00Z"))
+  ignore(e.execute(task_id=tid, deliverable="done", now="2026-09-05T10:07:00Z"))
+  ignore(e.submit(task_id=tid, now="2026-09-05T10:08:00Z"))
+  ignore(
+    e.verify(task_id=tid, verifier="v", now="2026-09-05T10:09:00Z"),
+  )
+}
+
+///|
+test "task_triage 暴露真实 DAG 依赖 depends_on（复用 dag_depend 前驱链）" {
+  let e = tr_engine()
+  let a = tr_publish(e, "前置根A（先做）")
+  let b = tr_publish(e, "依赖根B（后做）")
+  ignore(e.dag_depend(task_id=b, dep_id=a, now="2026-09-05T10:01:00Z"))
+  // B 依赖 A：DAG 建边后 B 待领取但依赖未满足 → 不入 triage
+  let j0 = e.triage("", "exec_demo", "")
+  assert_eq(triage_row_has_dep(j0, b, a), false)
+  // 完成 A，B 依赖满足 → 可领取并入 triage，且暴露 depends_on=[A]
+  complete_root(e, a)
+  let j = e.triage("", "exec_demo", "")
+  assert_eq(triage_row_has_dep(j, b, a), true)
 }
 
 ///|
