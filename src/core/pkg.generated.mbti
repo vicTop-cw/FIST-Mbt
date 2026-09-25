@@ -100,6 +100,7 @@ pub fn Task::status_to_string(Self) -> String
 pub fn Task::submit(Self) -> Result[Self, String]
 pub fn Task::to_json(Self) -> Json
 pub fn Task::with_deliverable(Self, String, String) -> Self
+pub fn Task::with_depends_on(Self, String, String) -> Self
 pub fn Task::with_updated_at(Self, String) -> Self
 
 pub enum TaskStatus {

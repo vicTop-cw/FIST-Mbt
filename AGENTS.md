@@ -109,7 +109,7 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**69 tools** + 3 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**70 tools** + 3 resources + 2 prompts）：
 
 ### 生命周期（12）
 | 工具 | 说明 |
@@ -145,7 +145,7 @@ You can browse and install extra skills here:
 
 > 无人值守流水线统一元提示词模板：`templates/cron_pipeline_meta_prompt.md`（**统一版**，取代原 `watchdog_tick_meta_prompt.md`：单一提示词 + 单一定时任务，一次唤醒内四分支自决策——①心跳新鲜即退出；②心跳超时只交给 `watchdog_tick` 的 heal 分支、不自行重启；③无活跃任务且最新提示词未消费则用该提示词接一个新根任务；④无活跃任务且提示词已消费则分析项目现状生成下一份 `yyyyMMdd.HH.mm.ss.md`。含按目标项目替换的参数清单与无人值守边界说明，仅用于定时任务场景）。
 
-### DAG 依赖图（6）
+### DAG 依赖图（8）
 | 工具 | 说明 |
 |---|---|
 | `dag_critical_path` | 最长依赖链 |
@@ -154,6 +154,8 @@ You can browse and install extra skills here:
 | `dag_check` | 依赖完成检查 |
 | `dag_ready` | 可领取任务列表 |
 | `dag_sort` | 拓扑排序 |
+| `dag_depend` | 显式给任务追加前置依赖（构建 DAG 依赖边，不只靠 plan_deep 隐式父子） |
+| `dag_publish` | 发布带依赖关系的根任务 |
 
 ### 自我记忆与自进化（4，F/G 新增强化）
 | 工具 | 说明 |

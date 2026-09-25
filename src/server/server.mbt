@@ -339,7 +339,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 69 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层 70 工具 + 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -353,7 +353,7 @@ fn map_json() -> Json {
         "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup",
       ),
       "DAG": Json::string(
-        "dag_critical_path/parallelism/ascii/check/ready/sort",
+        "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish",
       ),
       "自驱": Json::string(
         "selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks",
@@ -2330,6 +2330,25 @@ pub async fn run_server() -> Unit {
           }).stringify(),
         ),
       )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "dag_depend",
+    "给任务追加一条前置依赖（显式构建 DAG 依赖边，不只靠 plan_deep 隐式父子；供 dag_check/ready/critical_path/ascii 使用）。参数：task_id 任务(必经)、dep_id 前置依赖任务 id(必经)、now。幂等去重；校验两任务存在且非自身。返回追加后的任务 JSON。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "dep_id": string_prop("前置依赖任务 id（必填）"),
+        "now": string_prop("时间戳(可选)"),
+      },
+      ["task_id", "dep_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let dep_id = get_str(args, "dep_id")
+      let ts = get_str(args, "now", default=now_default())
+      to_result(engine.dag_depend(task_id~, dep_id~, now=ts))
     },
   )
   s1 = instrumented_tool(

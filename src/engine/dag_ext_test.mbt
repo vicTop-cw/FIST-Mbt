@@ -173,6 +173,43 @@ test "dag_ascii: 空命名空间返回空串" {
 }
 
 ///|
+test "dag_depend: 追加/幂等/自环/缺失" {
+  let e = dag_test_engine()
+  // 给 A 追加依赖 X
+  let a = e.store.create_task(
+    @core.Task::new(
+      id="X",
+      project_dir="/proj/demo",
+      description="新依赖",
+      created_at="2026-01-01T00:00:00Z",
+    ),
+  )
+  match a {
+    Ok(_) => ()
+    Err(m) => abort("create X failed: \{m}")
+  }
+  // 追加成功
+  match e.dag_depend(task_id="A", dep_id="X", now="2026-01-01T05:00:00Z") {
+    Ok(t) => assert_true(t.depends_on.contains("X"))
+    Err(m) => abort("dag_depend failed: \{m}")
+  }
+  // 自环拒绝
+  match e.dag_depend(task_id="A", dep_id="A", now="2026-01-01T05:00:00Z") {
+    Err(_) => ()
+    Ok(_) => abort("自环应被拒绝")
+  }
+  // 缺失依赖拒绝
+  match e.dag_depend(task_id="A", dep_id="NOPE", now="2026-01-01T05:00:00Z") {
+    Err(_) => ()
+    Ok(_) => abort("缺失依赖应被拒绝")
+  }
+  // 幂等：重复追加同一依赖只保留一条
+  ignore(e.dag_depend(task_id="A", dep_id="X", now="2026-01-01T05:00:01Z"))
+  let t = e.store.get_task("A").unwrap()
+  assert_eq(t.depends_on.length(), 1)
+}
+
+///|
 test "dag_ascii: 依赖链缩进深度" {
   let e = dag_test_engine()
   let ascii = e.dag_ascii(ns="default")
