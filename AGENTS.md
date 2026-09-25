@@ -1,14 +1,3 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: 9f2a11add43fbf12a546606fb2b962ab_ab739310b1b011f18304525400aeaaa3
-    ReservedCode1: de9GcMa2Qm/A+/aWqrEO57ddJh84OqJkQdkBcuUrRFJzUUd6KS6o13YUUT1zn6RCmfsYUBcF5DO13gi34N9Ycnp8Qrd3Lw+WzPNXiEjeno8u86defuam4JXgYPCeSQ+o4fBX+PG+S/SsiwvHDMia3IgvzYTEkNGv0tmXFv1drGRpOiSSDpScnwLIkgM=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: 9f2a11add43fbf12a546606fb2b962ab_ab739310b1b011f18304525400aeaaa3
-    ReservedCode2: de9GcMa2Qm/A+/aWqrEO57ddJh84OqJkQdkBcuUrRFJzUUd6KS6o13YUUT1zn6RCmfsYUBcF5DO13gi34N9Ycnp8Qrd3Lw+WzPNXiEjeno8u86defuam4JXgYPCeSQ+o4fBX+PG+S/SsiwvHDMia3IgvzYTEkNGv0tmXFv1drGRpOiSSDpScnwLIkgM=
----
-
 # Project Agents.md Guide
 
 This is a [MoonBit](https://docs.moonbitlang.com) project.
