@@ -58,7 +58,7 @@ pub fn transcribe(seq : String) -> String {
 /// 头部 `ATGTAA` 标记指令区开始，`TAATAATAA` 标记结束；无指令时默认模式 B。
 /// 返回 (指令名字数组, 程序体)。
 pub fn parse_directives(norm : String) -> (Array[String], String) {
-  if !norm.starts_with("ATGTAA") {
+  if !norm.has_prefix("ATGTAA") {
     return (["MODE_B"], norm)
   }
   let end = find_substr(norm, "TAATAATAA")

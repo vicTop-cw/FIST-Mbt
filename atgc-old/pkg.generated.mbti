@@ -1,0 +1,124 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/atgc-old"
+
+// Values
+pub fn assemble(Array[Inst]) -> Array[Inst]
+
+pub fn atgc_compile(String) -> Result[String, String]
+
+pub fn atgc_explain(String) -> String
+
+pub fn atgc_intro() -> String
+
+pub fn atgc_run(String) -> Result[String, String]
+
+pub fn atgc_talk(String, String) -> String
+
+pub fn base_to_int(Char) -> Int?
+
+pub fn compile_dna(String) -> Compiled
+
+pub fn complement(Char) -> Char?
+
+pub fn decode(String) -> Op
+
+pub fn find_substr(String, String) -> Int
+
+pub fn group_codons(String) -> Array[String]
+
+pub fn int_to_base(Int) -> Char
+
+pub fn int_to_codon(Int) -> String
+
+pub fn is_data_prefix(Op) -> Bool
+
+pub fn is_valid_dna(String) -> Bool
+
+pub fn lex_stream(Array[String]) -> Array[Inst]
+
+pub fn normalize(String) -> String
+
+pub fn op_name(Op) -> String
+
+pub fn parse_directives(String) -> (Array[String], String)
+
+pub fn quaternary_of(String) -> Int?
+
+pub fn rc_pairs() -> Array[(String, String)]
+
+pub fn render_ops(Array[Inst]) -> String
+
+pub fn reverse_complement(String) -> String?
+
+pub fn run(Array[Inst], Bool) -> RunResult
+
+pub fn run_dna(String) -> RunResult
+
+pub fn slice_str(String, Int, Int) -> String
+
+pub fn to_program(String) -> Array[Inst]
+
+pub fn transcribe(String) -> String
+
+pub fn valid_input(String) -> Bool
+
+// Errors
+
+// Types and methods
+pub struct Compiled {
+  mode : String
+  mrna : String
+  body : String
+  ops : String
+  antisense : String
+  backward : String
+  program2 : String
+  rollback : Bool
+  program : Array[Inst]
+}
+
+pub enum Inst {
+  Op(Op)
+  Number(Int)
+}
+
+pub enum Op {
+  Start
+  Halt
+  HaltErr
+  Break
+  OutNum
+  OutChar
+  PushImm(Int)
+  Pop
+  Dup
+  Swap
+  Over
+  Rot
+  Call
+  Return
+  Jump
+  JumpIfZero
+  JumpIfNeg
+  JumpIfPos
+  Nop
+  Add
+  Sub
+  Mul
+  Div
+  Load
+  Store
+  Mod
+}
+
+pub struct RunResult {
+  output : String
+  stack_history : Array[String]
+  final_stack : Array[Int]
+  result : String
+  rolled_back : Bool
+}
+
+// Type aliases
+
+// Traits
