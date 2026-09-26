@@ -568,6 +568,7 @@ pub fn selfdrive_publish_next(
   ns~ : String,
   now~ : String,
   max_tasks~ : Int,
+  mode? : String = "",
 ) -> Result[Json, String] {
   let latest = match sd_latest_review(project_dir) {
     None =>
@@ -600,6 +601,16 @@ pub fn selfdrive_publish_next(
       ),
     )
   }
+  // R117 mode 参数扩展：校验 mode 合法性（空串或 advance 走旧路径零回归）
+  let mode_str = mode.trim().to_owned()
+  let effective_mode = if mode_str == "" || mode_str == "advance" {
+    "" // 空串表示不打 mode 标签（零回归）
+  } else {
+    match parse_mode(mode_str) {
+      Err(e) => return Err(e)
+      Ok(_) => mode_str
+    }
+  }
   // 幂等：扫描 ns 内已发布过的 [review:<file>:<idx>] 标记
   let existing : Map[String, Bool] = Map([])
   for t in engine.list_in_ns(ns) {
@@ -618,10 +629,22 @@ pub fn selfdrive_publish_next(
       skipped.push(tasks[i])
       continue
     }
+    // R117：给每个任务 description 加 [mode:<mode>] 标签（幂等：已存在则跳过）
+    let mode_tag = if effective_mode != "" {
+      if tasks[i].contains("[mode:") {
+        ""
+      } else {
+        "\n\n[mode:" + effective_mode + "]"
+      }
+    } else {
+      ""
+    }
     let desc = tasks[i] +
       "\n\n<!-- " +
       marker +
-      " -->\n\n" +
+      " -->" +
+      mode_tag +
+      "\n\n" +
       sd_agent_contract(tasks[i])
     let new_id = try_publish_one(engine, ns, desc, now, project_dir)
     match new_id {

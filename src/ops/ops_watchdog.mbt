@@ -231,6 +231,7 @@ pub fn watchdog_tick(
   autodispatch_want? : String = "",
   phi_gate? : Bool = false,
   phi_threshold? : Int = 8,
+  mode? : String = "",
 ) -> Result[Json, String] {
   let heal_ns = if ns == "" { "default" } else { ns }
   // ---- 1. 回滚阶段（功能 A：读 SQLite 心跳，跨进程正确） ----
@@ -274,11 +275,29 @@ pub fn watchdog_tick(
       }
     }
   }
-  // ---- 3. 解析下一轮描述（显式描述优先，其次读元提示词文档） ----
+  // ---- 3. 模式模板解析（R117 mode 参数扩展，零回归：不传则走旧路径） ----
+  let mode_str = mode.trim().to_owned()
+  let effective_meta_path = if mode_str == "" || mode_str == "advance" {
+    // mode 为空 或 advance → 走用户显式传的 meta_prompt_path（零回归）
+    meta_prompt_path
+  } else {
+    // 非 advance：先校验 mode 值合法性
+    match parse_mode(mode_str) {
+      Err(e) => return Err(e)
+      Ok(_) => ()
+    }
+    let tp = mode_template_path(mode_str)
+    if @fs.path_exists(tp) {
+      tp // mode 指定的模板存在 → 覆盖
+    } else {
+      return Err("mode=" + mode_str + " 模板不存在: " + tp)
+    }
+  }
+  // ---- 4. 解析下一轮描述（显式描述优先，其次读元提示词文档 / mode 模板） ----
   let mut next_desc = next_description
   let mut meta_used = false
-  if next_desc == "" && meta_prompt_path != "" {
-    match read_meta_prompt(meta_prompt_path) {
+  if next_desc == "" && effective_meta_path != "" {
+    match read_meta_prompt(effective_meta_path) {
       Some(c) => {
         next_desc = c
         meta_used = true
@@ -346,6 +365,7 @@ pub fn watchdog_tick(
     "selfdrive": sd_detail,
     "ready_dispatch_preview": ready_preview,
     "autodispatch": Json::null(),
+    "mode": Json::string(if mode_str == "" { "advance" } else { mode_str }),
   })
   // ---- 4. 心跳超时回滚优先返回 ----
   if !healed.is_empty() {
