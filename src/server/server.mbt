@@ -232,6 +232,9 @@ fn now_default() -> String {
 }
 
 ///|
+/// (run_check_workdir_ok 已移至 bugreport_resolve.mbt，供 server + test 共用)
+
+///|
 /// —— JSON schema 辅助 ——
 fn string_prop(desc : String) -> Json {
   Json::object({
@@ -661,7 +664,7 @@ pub async fn run_server() -> Unit {
       let description = get_str(args, "description")
       let ns = get_str(args, "namespace", default="default")
       let created_by = get_str(args, "created_by", default="human_steward")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let r = engine.publish(
         project_dir~,
         description~,
@@ -702,7 +705,7 @@ pub async fn run_server() -> Unit {
       let description = get_str(args, "description")
       let ns = get_str(args, "namespace")
       let created_by = get_str(args, "created_by", default="selfdrive")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       match
         engine.publish_parallel(
           ns~,
@@ -744,7 +747,7 @@ pub async fn run_server() -> Unit {
       let task_id = get_str(args, "task_id")
       let split_n = get_int(args, "split_n", default=3)
       let by = get_str(args, "by", default="human_steward")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let inject = get_str(args, "inject")
       // 先执行拆解拿 ids
       let ids = match engine.plan(task_id~, split_n~, by~, now=ts) {
@@ -784,7 +787,7 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let assignee = get_str(args, "assignee")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let inject = get_str(args, "inject")
       match engine.claim(task_id~, assignee~, now=ts) {
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -824,7 +827,7 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let deliverable = get_str(args, "deliverable")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       // 提取可选执行元数据（向后兼容：无元数据时行为同旧版 execute）
       let executor = get_str(args, "executor", default="manual")
       let model = get_str(args, "model", default="")
@@ -865,14 +868,14 @@ pub async fn run_server() -> Unit {
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       to_result(engine.submit(task_id~, now=ts))
     },
   )
   s1 = instrumented_tool(
     s1,
     "run_check",
-    "外部判据检查（服务端真实执行命令，防自写自测恒绿）。参数：task_id 任务id、cmd 可执行命令、args 参数数组(可选)、workdir 工作目录(默认项目目录)、timeout_ms 超时毫秒(默认120000)、now 时间戳(可选)。真实 spawn 子进程运行 cmd，退出码 0 记为 passed、否则 failed，结果 JSON（含 stdout/stderr）落库 specs 表（spec_type=check）；[gate:required] 任务的 verify 依赖本记录且校验新鲜度。",
+    "外部判据检查（**宿主 RCE 能力**：服务端真实执行任意命令，防自写自测恒绿；请勿暴露给不可信客户端）。参数：task_id 任务id、cmd 可执行命令、args 参数数组(可选)、workdir 工作目录(默认任务所在项目目录，**必须在项目目录子树内**，拒绝绝对路径/盘符/..)、timeout_ms 超时毫秒(默认120000)、now 时间戳(可选，服务端盖章)。真实 spawn 子进程运行 cmd，退出码 0 记为 passed、否则 failed，结果 JSON（含 stdout/stderr）落库 specs 表（spec_type=check）；[gate:required] 任务的 verify 依赖本记录且校验新鲜度。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -881,17 +884,17 @@ pub async fn run_server() -> Unit {
         ),
         "args": array_prop("命令参数数组（可选）"),
         "workdir": string_prop(
-          "工作目录（可选，默认任务所在项目目录）",
+          "工作目录（可选，默认任务所在项目目录；**必须在项目目录子树内**，拒绝绝对路径/盘符/..）",
         ),
         "timeout_ms": int_prop("超时毫秒（可选，默认 120000）"),
-        "now": string_prop("时间戳(可选)"),
+        "now": string_prop("时间戳(可选，服务端盖章)"),
       },
       ["task_id", "cmd"],
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let cmd = get_str(args, "cmd")
-      let now = get_str(args, "now", default=now_default())
+      let now = now_default()
       if task_id == "" || cmd == "" {
         return Err(@mcp_types.ToolError("run_check: task_id 与 cmd 必填"))
       }
@@ -906,6 +909,14 @@ pub async fn run_server() -> Unit {
       match engine.get_task(task_id) {
         Some(t) => {
           let workdir = get_str(args, "workdir", default=t.project_dir)
+          // BUG-4 fix: workdir 必须在项目目录子树内，拒绝绝对路径/盘符/..
+          if not(run_check_workdir_ok(workdir, t.project_dir)) {
+            return Err(
+              @mcp_types.ToolError(
+                "run_check: 非法 workdir（拒绝绝对路径/盘符/..，且必须在项目目录子树内）",
+              ),
+            )
+          }
           let r = run_check_external(cmd, args_arr, workdir, timeout_ms)
           match r {
             Ok(res) => {
@@ -930,6 +941,14 @@ pub async fn run_server() -> Unit {
         None => {
           // 任务不存在：仍执行命令并返回结果，但不落库（无任务可挂）
           let workdir = get_str(args, "workdir", default=".")
+          // BUG-4 fix: 任务不存在时只允许 workdir="."
+          if workdir != "." {
+            return Err(
+              @mcp_types.ToolError(
+                "run_check: 任务不存在时 workdir 必须为 '.'（拒绝外部路径）",
+              ),
+            )
+          }
           let r = run_check_external(cmd, args_arr, workdir, timeout_ms)
           match r {
             Ok(res) =>
@@ -962,7 +981,7 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let verifier = get_str(args, "verifier")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let docs_check = get_bool(args, "docs_check", default=false)
       to_result(engine.verify(task_id~, verifier~, now=ts, docs_check~))
     },
@@ -984,7 +1003,7 @@ pub async fn run_server() -> Unit {
       let task_id = get_str(args, "task_id")
       let reason = get_str(args, "reason", default="")
       let by = get_str(args, "by", default="human_steward")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       to_result(engine.reject_task(task_id~, reason~, by~, now=ts))
     },
   )
@@ -1001,7 +1020,7 @@ pub async fn run_server() -> Unit {
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       to_result(engine.retry_task(task_id~, now=ts))
     },
   )
@@ -1018,7 +1037,7 @@ pub async fn run_server() -> Unit {
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       match engine.reopen_task(task_id, ts) {
         Ok(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -1038,7 +1057,7 @@ pub async fn run_server() -> Unit {
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       to_result(engine.pause_task(task_id~, now=ts))
     },
   )
@@ -1055,7 +1074,7 @@ pub async fn run_server() -> Unit {
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       to_result(engine.resume_task(task_id~, now=ts))
     },
   )
@@ -1074,7 +1093,7 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let by = get_str(args, "by", default="human_steward")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       to_result(engine.archive(task_id~, by~, now=ts))
     },
   )
@@ -1190,7 +1209,7 @@ pub async fn run_server() -> Unit {
       let mut split_n = get_int(args, "split_n", default=3)
       let by = get_str(args, "by", default="leader")
       let spec_raw = get_str(args, "spec")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let spec : Json? = if spec_raw == "" {
         None
       } else {
@@ -1351,7 +1370,7 @@ pub async fn run_server() -> Unit {
       let by = get_str(args, "by", default="auto")
       let factor = get_int(args, "factor", default=2)
       let strat = get_str(args, "strat", default="scale")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let critic_on = get_bool(args, "critic", default=false)
       // 开启门禁时，先把 DB 已沉淀 [lesson] 同步进内存档案库，再作评判（查全量判漂移，与 evolve_critic 一致）
       if critic_on {
@@ -1384,7 +1403,7 @@ pub async fn run_server() -> Unit {
       let author = get_str(args, "author", default="spec_author")
       let content = get_str(args, "content")
       let max_rounds = get_int(args, "max_rounds", default=3)
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       match
         engine.omega_spec_create(
           task_id~,
@@ -1419,7 +1438,7 @@ pub async fn run_server() -> Unit {
       let verdict = get_str(args, "verdict")
       let reason = get_str(args, "reason")
       let max_rounds = get_int(args, "max_rounds", default=3)
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       match
         engine.omega_spec_review(
           task_id~,
@@ -1455,7 +1474,7 @@ pub async fn run_server() -> Unit {
       let verdict = get_str(args, "verdict")
       let reason = get_str(args, "reason")
       let max_rounds = get_int(args, "max_rounds", default=3)
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       match
         engine.omega_result_verify(
           task_id~,
@@ -1563,7 +1582,7 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let signal = get_str(args, "signal", default="active")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       match engine.get_task(task_id) {
         None => Err(@mcp_types.ToolError("task not found: \{task_id}"))
         Some(_) => {
@@ -1618,7 +1637,7 @@ pub async fn run_server() -> Unit {
       [],
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let timeout_sec = get_int(args, "timeout_sec", default=600)
       match @ops.heal_stale_tasks(engine, heartbeats, ts, timeout_sec~) {
         Ok(healed) =>
@@ -1688,11 +1707,14 @@ pub async fn run_server() -> Unit {
         "phi_threshold": int_prop(
           "phi_gate 怀疑阈值(可选默认8，原论文口径)",
         ),
+        "mode": string_prop(
+          "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy。非 advance 时自动读 templates/pipeline_mode_<mode>.md 替代 meta_prompt_path（显式 meta_prompt_path 优先）。非法值立即返回 Err。",
+        ),
       },
       [],
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let timeout_sec = get_int(args, "timeout_sec", default=600)
       let ns = get_str(args, "namespace")
       let next_description = get_str(args, "next_description")
@@ -1715,6 +1737,7 @@ pub async fn run_server() -> Unit {
       )
       let phi_gate = get_bool(args, "phi_gate", default=false)
       let phi_threshold = get_int(args, "phi_threshold", default=8)
+      let mode = get_str(args, "mode")
       let omega_spec = if omega_spec_str == "" {
         None
       } else {
@@ -1743,6 +1766,7 @@ pub async fn run_server() -> Unit {
           autodispatch_want=get_str(args, "autodispatch_want"),
           phi_gate~,
           phi_threshold~,
+          mode~,
         ) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -1769,16 +1793,20 @@ pub async fn run_server() -> Unit {
           "指定提示词文件名(可选，缺省取目录内最新一份)",
         ),
         "timeout_sec": int_prop("执行超时秒数(可选默认2400)"),
+        "mode": string_prop(
+          "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy。非 advance 时自动读 templates/pipeline_mode_<mode>.md。",
+        ),
       },
       [],
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let project_dir = get_str(args, "project_dir")
       let ns = get_str(args, "namespace", default="cron-auto")
       let phase = get_str(args, "phase", default="auto")
       let prompt_name = get_str(args, "prompt_name")
       let timeout_sec = get_int(args, "timeout_sec", default=2400)
+      let mode = get_str(args, "mode")
       match
         @ops.pipeline_tick(
           engine,
@@ -1788,6 +1816,7 @@ pub async fn run_server() -> Unit {
           timeout_sec~,
           phase~,
           prompt_name~,
+          mode~,
         ) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -1837,7 +1866,7 @@ pub async fn run_server() -> Unit {
       let kind = get_str(args, "kind")
       let content = get_str(args, "content")
       let ns = get_str(args, "namespace", default="default")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       match
         @ops.selfdrive_memory_append(project_dir, ns~, kind~, content~, now=ts) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
@@ -1943,6 +1972,9 @@ pub async fn run_server() -> Unit {
         "namespace": string_prop("命名空间(可选默认 default)"),
         "max_tasks": int_prop("最多发布任务数(可选默认10)"),
         "now": string_prop("时间戳(可选，默认内置)"),
+        "mode": string_prop(
+          "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy。",
+        ),
       },
       ["project_dir"],
     ),
@@ -1950,7 +1982,8 @@ pub async fn run_server() -> Unit {
       let project_dir = get_str(args, "project_dir")
       let ns = get_str(args, "namespace", default="default")
       let max_tasks = get_int(args, "max_tasks", default=10)
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
+      let mode = get_str(args, "mode")
       match
         @ops.selfdrive_publish_next(
           engine,
@@ -1958,10 +1991,46 @@ pub async fn run_server() -> Unit {
           ns~,
           max_tasks~,
           now=ts,
+          mode~,
         ) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "mode_list",
+    "返回 6 种自驱编程开发模式的完整信息（mode / name / description / constraints / template_path / forbidden_tools）。纯计算只读，供 AI 选择模式。",
+    schema({}, []),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let modes = @ops.all_modes()
+      Ok(@mcp.ToolResult::text(Json::array(modes).stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "mode_templates",
+    "检查 templates/pipeline_mode_*.md 全部存在性，返回 {templates:{advance:true,...}, missing:[...]}。mode 参数预检用。",
+    schema({}, []),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let names = [
+        "advance", "polish", "verify", "bugfind", "fix_and_merge", "tidy",
+      ]
+      let exists : Map[String, Json] = Map([])
+      let missing : Array[Json] = []
+      for n in names {
+        let p = @ops.mode_template_path(n)
+        let ok = @fs.path_exists(p)
+        exists.set(n, Json::boolean(ok))
+        if !ok {
+          missing.push(Json::string(n))
+        }
+      }
+      let m : Map[String, Json] = Map([])
+      m.set("templates", Json::object(exists))
+      m.set("missing", Json::array(missing))
+      Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
     },
   )
   s1 = instrumented_tool(
@@ -2010,7 +2079,7 @@ pub async fn run_server() -> Unit {
       let task_id = get_str(args, "task_id")
       let kind = get_str(args, "kind", default="target")
       let content = get_str(args, "content")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       match memory_consolidate(project_dir, task_id, kind, content, ts) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -2089,7 +2158,7 @@ pub async fn run_server() -> Unit {
       let goal = get_str(args, "goal")
       let note = get_str(args, "note")
       let score = get_double(args, "score", default=1.0)
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let j = do_evolve_distill(evolve_arc, evolve_store, goal, note, score, ts)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
@@ -2119,7 +2188,7 @@ pub async fn run_server() -> Unit {
       let score = get_double(args, "score", default=0.0)
       let parent_id = get_str(args, "parent_id", default="")
       let parts_raw = get_str(args, "parts", default="{}")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let parts : Map[String, Double] = Map([])
       let parsed = @json.parse(parts_raw) catch { _ => Json::object(Map([])) }
       match parsed {
@@ -2180,7 +2249,7 @@ pub async fn run_server() -> Unit {
       let reason = get_str(args, "reason")
       let fix = get_str(args, "fix")
       let score = get_double(args, "score", default=0.5)
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       if cat == "" || reason == "" {
         return Err(@mcp_types.ToolError("cat/reason 均为必填"))
       }
@@ -2234,7 +2303,7 @@ pub async fn run_server() -> Unit {
       let note = get_str(args, "note")
       let code = get_str(args, "code")
       let score = get_double(args, "score", default=0.0)
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       if source == "" || note == "" || code == "" {
         return Err(@mcp_types.ToolError("source/note/code 均为必填"))
       }
@@ -2425,7 +2494,7 @@ pub async fn run_server() -> Unit {
       [],
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let retention_days = get_int(args, "retention_days", default=30)
       match @ops.cleanup_archived(engine, ts, retention_days~) {
         Ok(removed) =>
@@ -2621,7 +2690,7 @@ pub async fn run_server() -> Unit {
       let depends_on_raw = get_str(args, "depends_on", default="[]")
       let ns = get_str(args, "namespace", default="default")
       let created_by = get_str(args, "created_by", default="human_steward")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let depends_on : Array[String] = try {
         match @json.parse(depends_on_raw) {
           Json::Array(a) => a.map(fn(v) { v.as_string().unwrap_or("") })
@@ -2667,7 +2736,7 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let dep_id = get_str(args, "dep_id")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       to_result(engine.dag_depend(task_id~, dep_id~, now=ts))
     },
   )
@@ -2916,7 +2985,7 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let circuit = get_str(args, "circuit")
-      let now = get_str(args, "now", default=now_default())
+      let now = now_default()
       let secs = @ops.iso_to_secs(now)
       let w = get_int(args, "window_secs", default=60)
       let thr = get_int(args, "threshold", default=3)
@@ -2952,7 +3021,7 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let circuit = get_str(args, "circuit")
-      let now = get_str(args, "now", default=now_default())
+      let now = now_default()
       let secs = @ops.iso_to_secs(now)
       Ok(
         @mcp.ToolResult::text(
@@ -2976,7 +3045,7 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let circuit = get_str(args, "circuit")
-      let now = get_str(args, "now", default=now_default())
+      let now = now_default()
       let secs = @ops.iso_to_secs(now)
       Ok(
         @mcp.ToolResult::text(
@@ -3030,7 +3099,7 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace")
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       let j = engine.pick_next(ns, agent, want, ts)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
@@ -3158,7 +3227,7 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace")
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       sync_db_executors()
       // 1. 取顶部可领取任务
       let tr = engine.triage(ns, agent, want)
@@ -3257,7 +3326,7 @@ pub async fn run_server() -> Unit {
       let scope = get_str(args, "scope")
       let agent = get_str(args, "agent")
       let ttl_until = get_str(args, "ttl_until")
-      let now = get_str(args, "now", default=now_default())
+      let now = now_default()
       match engine.rsv_get(scope) {
         // 空闲（无预订，或原预订已过期）→ 抢占
         None => {
@@ -3334,7 +3403,7 @@ pub async fn run_server() -> Unit {
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let scope = get_str(args, "scope")
-      let now = get_str(args, "now", default=now_default())
+      let now = now_default()
       match engine.rsv_get(scope) {
         None =>
           Ok(
@@ -3655,7 +3724,7 @@ pub async fn run_server() -> Unit {
       let step = get_str(args, "step")
       let task_id = get_str(args, "task_id", default="")
       let compensation = get_str(args, "compensation")
-      let now = get_str(args, "now", default=now_default())
+      let now = now_default()
       match
         engine.saga_register(
           ns~,
@@ -3801,7 +3870,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "audit_log",
-    "查看追加式审计日志。可选 filter_actor、filter_task_id；now 仅用于兼容忽略。",
+    "查看追加式审计日志。**注意：** audit_log 仅返回**本进程生命周期**内的内存记录（不落库）；跨进程查询请改用 call_log。返回结构带 scope 字段以区分。可选 filter_actor、filter_task_id。",
     schema(
       {
         "filter_actor": string_prop("按操作者过滤(可选)"),
@@ -3819,7 +3888,25 @@ pub async fn run_server() -> Unit {
       } else {
         audit.entries()
       }
-      Ok(@mcp.ToolResult::text(audit.to_json().stringify()))
+      // BUG-3 fix: 返回带 scope 的对象，显式声明仅本进程可见。
+      // 旧客户端可取 entries 字段兼容处理。
+      let arr = entries.map(fn(e) {
+        let m : Map[String, Json] = Map([])
+        m.set("ts", Json::string(e.ts))
+        m.set("action", Json::string(e.action))
+        m.set("actor", Json::string(e.actor))
+        m.set("task_id", Json::string(e.task_id))
+        m.set("detail", Json::string(e.detail))
+        Json::object(m)
+      })
+      let out = Json::object({
+        "scope": Json::string("process"),
+        "entries": Json::array(arr),
+        "note": Json::string(
+          "仅本进程生命周期内的审计记录；跨进程请用 call_log",
+        ),
+      })
+      Ok(@mcp.ToolResult::text(out.stringify()))
     },
   )
   // ---- multi-store 命名空间工具 ----
@@ -3935,10 +4022,12 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "report_bug",
-    "上报一个运行时 bug：追加到 {project_dir}/memory/bugs.md（OPEN 状态账本）。参数：project_dir(必填)、summary(必填)、detail(可选)、severity(可选 open/critical/high/medium/low)、ref_call_id(可选，指向 call_log 的 seq)、reported_by(可选)、publish_task(可选默认false)：为 true 时同时把'修复 bug: <summary>'发布为 bugs 命名空间下的独立根任务，供自驱/定时流水线认领修复，形成上报→修复闭环。",
+    "上报一个运行时 bug：追加到 {project_dir}/memory/bugs.md（OPEN 状态账本）。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（绝对 + normalize 后的落点）。参数：project_dir(必填)、summary(必填)、detail(可选)、severity(可选 open/critical/high/medium/low)、ref_call_id(可选，指向 call_log 的 seq)、reported_by(可选)、publish_task(可选默认false)：为 true 时同时把'修复 bug: <summary>'发布为 bugs 命名空间下的独立根任务，供自驱/定时流水线认领修复，形成上报→修复闭环。",
     schema(
       {
-        "project_dir": string_prop("项目目录（必填）"),
+        "project_dir": string_prop(
+          "项目目录（必填，**相对 server 进程 cwd**，拒绝绝对路径/盘符/..）",
+        ),
         "summary": string_prop("bug 摘要（必填）"),
         "detail": string_prop("详细描述(可选)"),
         "severity": string_prop(
@@ -3961,7 +4050,7 @@ pub async fn run_server() -> Unit {
       let ref_call_id = get_str(args, "ref_call_id")
       let reported_by = get_str(args, "reported_by")
       let publish_task = get_bool(args, "publish_task", default=false)
-      let ts = get_str(args, "now", default=now_default())
+      let ts = now_default()
       match
         report_bug(
           project_dir,
@@ -4005,10 +4094,15 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "bug_list",
-    "列出 {project_dir}/memory/bugs.md 里的 bug 条目（{id,ts,severity,status,summary}）。用于自驱流水线扫描待修复 bug 并认领。参数：project_dir(必填)。",
-    schema({ "project_dir": string_prop("项目目录（必填）") }, [
-      "project_dir",
-    ]),
+    "列出 {project_dir}/memory/bugs.md 里的 bug 条目（{id,ts,severity,status,summary}）。用于自驱流水线扫描待修复 bug 并认领。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（绝对 + normalize 后的落点）。参数：project_dir(必填)。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录（必填，**相对 server 进程 cwd**，拒绝绝对路径/盘符/..）",
+        ),
+      },
+      ["project_dir"],
+    ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
       match bug_list(project_dir) {
@@ -4127,6 +4221,538 @@ pub async fn run_server() -> Unit {
       let icl = get_bool(args, "include_checklist", default=true)
       let ptype2 = if ptype.is_empty() { "moontbit_mcp" } else { ptype }
       Ok(@mcp.ToolResult::text(project_standards(ptype2, icl).stringify()))
+    },
+  )
+
+  // ===== github_sync 三件套 =====
+  s1 = instrumented_tool(
+    s1,
+    "github_queue_status",
+    "查看待同步 GitHub issue 队列状态——总数/pending/sent/最老条目/按严重度分布。纯计算读 JSONL 队列，不碰网络。参数：project_dir(必填)。",
+    schema({ "project_dir": string_prop("项目目录（必填）") }, [
+      "project_dir",
+    ]),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      match github_queue_status(project_dir) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "github_flush_plan",
+    "生成 GitHub issue 同步计划——为每条 pending bug 生成一条 curl 命令（含 FIST_GITHUB_TOKEN 占位符）。不执行任何网络调用，外部拿到后手动/脚本执行 curl，成功后调 github_queue_mark_sent 标记。参数：project_dir(必填)、limit(可选默认20)。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "limit": int_prop("输出上限(可选默认20)"),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let limit = get_int(args, "limit", default=20)
+      match github_flush_plan(project_dir, limit) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "github_queue_mark_sent",
+    "标记一批 bug_id 已同步至 GitHub issue（写入 sent_at + github_issue_number）。curl 执行成功后调此工具回写队列，幂等安全。参数：project_dir(必填)、bug_ids(必填数组)、sent_at(必填 ISO 时间)、issue_numbers(可选 JSON 对象)。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "bug_ids": array_prop("已同步的 bug_id 数组（必填）"),
+        "sent_at": string_prop("同步时间戳 ISO 格式（必填）"),
+        "issue_numbers": string_prop(
+          "bug_id->issue_number 映射 JSON 对象（可选）",
+        ),
+      },
+      ["project_dir", "bug_ids", "sent_at"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let sent_at = get_str(args, "sent_at")
+      let ids_arr = get_array(args, "bug_ids")
+      let bug_ids = ids_arr.map(fn(v) { v.as_string().unwrap_or("") })
+      let issue_nums_raw = get_str(args, "issue_numbers")
+      let issue_numbers = if issue_nums_raw.is_empty() {
+        Map([])
+      } else {
+        let m = Map([])
+        let j = @json.parse(issue_nums_raw) catch { _ => Json::object(Map([])) }
+        match j {
+          Object(om) => {
+            for (k, v) in om {
+              match v {
+                Number(n, ..) => m.set(k, n.to_int())
+                _ => ()
+              }
+            }
+            m
+          }
+          _ => Map([])
+        }
+      }
+      match
+        github_queue_mark_sent(project_dir, bug_ids, sent_at, issue_numbers) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "github_env_check",
+    "检查 GitHub issue 同步的环境变量配置状态——读 FIST_GITHUB_ENABLED / FIST_GITHUB_REPO / FIST_GITHUB_TOKEN，返回 enabled/repo/token_present/ready 四元组。纯计算只读环境变量，不碰网络。外部 AI 开发前先查此工具，确认能否自动上报 bug。",
+    schema({}, []),
+    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let enabled = match @env.get_env_var("FIST_GITHUB_ENABLED") {
+        Some(v) => v == "true" || v == "1" || v == "yes"
+        None => false
+      }
+      let repo = match @env.get_env_var("FIST_GITHUB_REPO") {
+        Some(v) => v
+        None => ""
+      }
+      let token_present = match @env.get_env_var("FIST_GITHUB_TOKEN") {
+        Some(v) => !v.is_empty()
+        None => false
+      }
+      let ready = enabled && !repo.is_empty() && token_present
+      let mm : Map[String, Json] = Map([])
+      mm.set("enabled", Json::boolean(enabled))
+      mm.set("repo", Json::string(repo))
+      mm.set("repo_set", Json::boolean(!repo.is_empty()))
+      mm.set("token_present", Json::boolean(token_present))
+      mm.set("ready", Json::boolean(ready))
+      let hints : Array[String] = []
+      if !enabled {
+        hints.push("set FIST_GITHUB_ENABLED=true to enable auto-sync")
+      }
+      if repo.is_empty() {
+        hints.push("set FIST_GITHUB_REPO=owner/repo")
+      }
+      if !token_present {
+        hints.push("set FIST_GITHUB_TOKEN=ghp_xxx for curl execution")
+      }
+      let hints_json = hints.map(fn(s) { Json::string(s) })
+      mm.set("hints", Json::array(hints_json))
+      Ok(@mcp.ToolResult::text(Json::object(mm).stringify()))
+    },
+  )
+
+  // ===== github_sync 执行层：4 个新工具 =====
+  s1 = instrumented_tool(
+    s1,
+    "github_flush_execute",
+    "一键执行 github_flush_plan 生成的 curl 命令，直接在队列上发 GitHub issue。硬门控——force 必须显式为 true 才执行，防误操作。JS target 下真实执行 curl；native target 返回跳过提示。成功后自动回写 github_queue_mark_sent（从 curl 返回解析 issue.number）。参数：project_dir(必填)、force(必填=true 才执行)、limit(可选默认 10)、timeout_ms(可选默认 15000)。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "force": bool_prop(
+          "硬门控——必须 true 才执行 curl，防误操作（必填）",
+        ),
+        "limit": int_prop(
+          "每次最多执行几条 pending（可选，默认 10）",
+        ),
+        "timeout_ms": int_prop(
+          "单条 curl 超时 ms（可选，默认 15000）",
+        ),
+      },
+      ["project_dir", "force"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let force = get_bool(args, "force", default=false)
+      let limit = get_int(args, "limit", default=10)
+      let timeout_ms = get_int(args, "timeout_ms", default=15000)
+      if !force {
+        return Err(
+          @mcp_types.ToolError(
+            "github_flush_execute 需要显式 force=true 才执行（硬门控，防误操作）",
+          ),
+        )
+      }
+      let plan_res = github_flush_plan(project_dir, limit)
+      let plan_json = match plan_res {
+        Ok(j) => j
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
+      let plan_obj = match plan_json {
+        Object(m) => m
+        _ => return Err(@mcp_types.ToolError("flush_plan 返回非对象"))
+      }
+      let plan_arr = match plan_obj.get("plan") {
+        Some(Array(a)) => a
+        _ => []
+      }
+      if plan_arr.length() == 0 {
+        let mm : Map[String, Json] = Map([])
+        mm.set("executed", Json::boolean(false))
+        mm.set(
+          "message",
+          Json::string("队列里没有 pending 的 bug——无需 flush"),
+        )
+        return Ok(@mcp.ToolResult::text(Json::object(mm).stringify()))
+      }
+      let bug_ids : Array[String] = []
+      let curl_cmds : Array[String] = []
+      for entry in plan_arr {
+        match entry {
+          Object(m) => {
+            let bid = match m.get("bug_id") {
+              Some(String(s)) => s
+              _ => ""
+            }
+            let cmd = match m.get("curl_command") {
+              Some(String(s)) => s
+              _ => ""
+            }
+            if !bid.is_empty() && !cmd.is_empty() {
+              bug_ids.push(bid)
+              curl_cmds.push(cmd)
+            }
+          }
+          _ => ()
+        }
+      }
+      let batch_res = github_execute_batch(curl_cmds, project_dir, timeout_ms)
+      let batch_json = match batch_res {
+        Ok(j) => j
+        Err(e) => {
+          let mm : Map[String, Json] = Map([])
+          mm.set("executed", Json::boolean(false))
+          mm.set("message", Json::string(e))
+          mm.set(
+            "hint",
+            Json::string(
+              "native target 没有 node child_process 能力，请在 js target 运行 server",
+            ),
+          )
+          return Ok(@mcp.ToolResult::text(Json::object(mm).stringify()))
+        }
+      }
+      let batch_obj = match batch_json {
+        Object(m) => m
+        _ => return Err(@mcp_types.ToolError("batch 返回非对象"))
+      }
+      let total = match batch_obj.get("total") {
+        Some(Number(n, ..)) => n.to_int()
+        _ => 0
+      }
+      let succeeded = match batch_obj.get("succeeded") {
+        Some(Number(n, ..)) => n.to_int()
+        _ => 0
+      }
+      let results_arr = match batch_obj.get("results") {
+        Some(Array(a)) => a
+        _ => []
+      }
+      // 为每条成功的 curl 解析 issue number
+      let issue_numbers : Map[String, Int] = Map([])
+      let sent_at_list : Array[String] = []
+      let sent_at_now = "flushed-by-github_flush_execute"
+      let mut i1 = 0
+      while i1 < plan_arr.length() {
+        if i1 < results_arr.length() {
+          let res_json = results_arr[i1]
+          let bug_id = bug_ids[i1]
+          let ok_bool = match res_json {
+            Object(m) =>
+              match m.get("ok") {
+                Some(True) => true
+                _ => false
+              }
+            _ => false
+          }
+          if ok_bool {
+            let stdout_str = match res_json {
+              Object(m) =>
+                match m.get("stdout") {
+                  Some(String(s)) => s
+                  _ => ""
+                }
+              _ => ""
+            }
+            let inner = @json.parse(stdout_str.trim().to_owned()) catch {
+              _ => Json::null()
+            }
+            let num = match inner {
+              Object(im) =>
+                match im.get("number") {
+                  Some(Number(n, ..)) => n.to_int()
+                  _ => -1
+                }
+              _ => -1
+            }
+            if num > 0 {
+              issue_numbers.set(bug_id, num)
+            }
+            sent_at_list.push(bug_id)
+          }
+        }
+        i1 = i1 + 1
+      }
+      let mark_res = github_queue_mark_sent(
+        project_dir, sent_at_list, sent_at_now, issue_numbers,
+      )
+      let mark_json = match mark_res {
+        Ok(j) => j
+        Err(_) => Json::object(Map([]))
+      }
+      // 组装返回
+      let result_obj : Array[Json] = []
+      let mut i2 = 0
+      while i2 < plan_arr.length() {
+        let pm : Map[String, Json] = Map([])
+        let bid2 = bug_ids[i2]
+        pm.set("bug_id", Json::string(bid2))
+        match issue_numbers.get(bid2) {
+          Some(n) => pm.set("issue_number", Json::number(n.to_double()))
+          None => ()
+        }
+        let res_json2 = if i2 < results_arr.length() {
+          results_arr[i2]
+        } else {
+          Json::object(Map([]))
+        }
+        match res_json2 {
+          Object(rm) => {
+            match rm.get("ok") {
+              Some(True) => pm.set("ok", Json::boolean(true))
+              Some(False) => pm.set("ok", Json::boolean(false))
+              _ => pm.set("ok", Json::boolean(false))
+            }
+            match rm.get("error") {
+              Some(String(s)) => pm.set("error", Json::string(s))
+              _ => ()
+            }
+          }
+          _ => pm.set("ok", Json::boolean(false))
+        }
+        result_obj.push(Json::object(pm))
+        i2 = i2 + 1
+      }
+      let mm : Map[String, Json] = Map([])
+      mm.set("executed", Json::boolean(true))
+      mm.set("total", Json::number(total.to_double()))
+      mm.set("succeeded", Json::number(succeeded.to_double()))
+      mm.set("failed", Json::number((total - succeeded).to_double()))
+      mm.set("marked_sent", mark_json)
+      mm.set("results", Json::array(result_obj))
+      Ok(@mcp.ToolResult::text(Json::object(mm).stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "github_issue_close",
+    "根据 bug_id -> issue_number 映射，批量关闭 GitHub issue（PUT state=closed）。硬门控——force 必须为 true。通常在 FIST 任务归档/完成后触发。参数：project_dir(必填)、force(必填=true)、issue_numbers_json(必填 bug_id->issue_number 的 JSON 对象)、timeout_ms(可选默认 15000)。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "force": bool_prop(
+          "硬门控——必须 true 才执行 close（必填）",
+        ),
+        "issue_numbers_json": string_prop(
+          "bug_id->issue_number 映射的 JSON 对象字符串（必填）",
+        ),
+        "timeout_ms": int_prop(
+          "单条 curl 超时 ms（可选，默认 15000）",
+        ),
+      },
+      ["project_dir", "force", "issue_numbers_json"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let force = get_bool(args, "force", default=false)
+      let timeout_ms = get_int(args, "timeout_ms", default=15000)
+      let issue_nums_raw = get_str(args, "issue_numbers_json")
+      if !force {
+        return Err(
+          @mcp_types.ToolError(
+            "github_issue_close 需要显式 force=true 才执行",
+          ),
+        )
+      }
+      let issue_numbers : Map[String, Int] = Map([])
+      let j = @json.parse(issue_nums_raw) catch { _ => Json::object(Map([])) }
+      match j {
+        Object(om) =>
+          for (k, v) in om {
+            match v {
+              Number(n, ..) => issue_numbers.set(k, n.to_int())
+              _ => ()
+            }
+          }
+        _ => ()
+      }
+      if issue_numbers.length() == 0 {
+        return Err(
+          @mcp_types.ToolError("issue_numbers_json 为空或格式错误"),
+        )
+      }
+      let plan_res = github_build_close_plan(project_dir, issue_numbers)
+      let plan_json = match plan_res {
+        Ok(j) => j
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
+      let plan_obj = match plan_json {
+        Object(m) => m
+        _ => return Err(@mcp_types.ToolError("close plan 返回非对象"))
+      }
+      let plan_arr = match plan_obj.get("plan") {
+        Some(Array(a)) => a
+        _ => []
+      }
+      if plan_arr.length() == 0 {
+        let mm : Map[String, Json] = Map([])
+        mm.set("executed", Json::boolean(false))
+        mm.set(
+          "message",
+          Json::string(
+            "没有可以 close 的 issue（repo 缺失或 issue_number 无效）",
+          ),
+        )
+        return Ok(@mcp.ToolResult::text(Json::object(mm).stringify()))
+      }
+      let curl_cmds : Array[String] = []
+      for entry in plan_arr {
+        match entry {
+          Object(m) => {
+            let cmd = match m.get("curl_command") {
+              Some(String(s)) => s
+              _ => ""
+            }
+            if !cmd.is_empty() {
+              curl_cmds.push(cmd)
+            }
+          }
+          _ => ()
+        }
+      }
+      let batch_res = github_execute_batch(curl_cmds, project_dir, timeout_ms)
+      let mm : Map[String, Json] = Map([])
+      mm.set("executed", Json::boolean(true))
+      match batch_res {
+        Err(e) => {
+          mm.set("executed", Json::boolean(false))
+          mm.set("message", Json::string(e))
+        }
+        Ok(br) => {
+          let total = match br {
+            Object(m) =>
+              match m.get("total") {
+                Some(Number(n, ..)) => n.to_int()
+                _ => 0
+              }
+            _ => 0
+          }
+          let succeeded = match br {
+            Object(m) =>
+              match m.get("succeeded") {
+                Some(Number(n, ..)) => n.to_int()
+                _ => 0
+              }
+            _ => 0
+          }
+          mm.set("total", Json::number(total.to_double()))
+          mm.set("succeeded", Json::number(succeeded.to_double()))
+          mm.set("failed", Json::number((total - succeeded).to_double()))
+        }
+      }
+      Ok(@mcp.ToolResult::text(Json::object(mm).stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "github_issue_comment",
+    "给指定 bug_id 对应的 GitHub issue 追加评论（POST comments API）。硬门控——force 必须为 true。先从队列找到 bug_id 对应的 github_issue_number（bug 必须已经 flush 成功过），再执行 comment curl。参数：project_dir(必填)、force(必填=true)、bug_id(必填)、comment_body(必填)、timeout_ms(可选默认 15000)。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "force": bool_prop("硬门控——必须 true 才执行（必填）"),
+        "bug_id": string_prop(
+          "bug_id（必填，队列里必须已 flush 过）",
+        ),
+        "comment_body": string_prop("评论正文（必填）"),
+        "timeout_ms": int_prop("curl 超时 ms（可选，默认 15000）"),
+      },
+      ["project_dir", "force", "bug_id", "comment_body"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let force = get_bool(args, "force", default=false)
+      let bug_id = get_str(args, "bug_id")
+      let comment_body = get_str(args, "comment_body")
+      let timeout_ms = get_int(args, "timeout_ms", default=15000)
+      if !force {
+        return Err(
+          @mcp_types.ToolError(
+            "github_issue_comment 需要显式 force=true 才执行",
+          ),
+        )
+      }
+      let plan_res = github_build_comment_plan(
+        project_dir, bug_id, comment_body,
+      )
+      let plan_json = match plan_res {
+        Ok(j) => j
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
+      let curl_cmd = match plan_json {
+        Object(m) =>
+          match m.get("curl_command") {
+            Some(String(s)) => s
+            _ => ""
+          }
+        _ => ""
+      }
+      if curl_cmd.is_empty() {
+        return Err(@mcp_types.ToolError("comment plan 未生成 curl 命令"))
+      }
+      let exec_res = github_execute_single(curl_cmd, project_dir, timeout_ms)
+      let mm : Map[String, Json] = Map([])
+      mm.set("executed", Json::boolean(true))
+      mm.set("bug_id", Json::string(bug_id))
+      match plan_json {
+        Object(m) =>
+          match m.get("issue_number") {
+            Some(Number(n, ..)) => mm.set("issue_number", Json::number(n))
+            _ => mm.set("issue_number", Json::number(-1.0))
+          }
+        _ => mm.set("issue_number", Json::number(-1.0))
+      }
+      match exec_res {
+        Ok(j) => mm.set("execution", j)
+        Err(e) => mm.set("execution_error", Json::string(e))
+      }
+      Ok(@mcp.ToolResult::text(Json::object(mm).stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "github_issue_webhook_parse",
+    "解析 GitHub issue comment webhook payload，提取 @fist-bot 指令。纯计算正则匹配，零 LLM、零网络。支持指令：'@fist-bot reopen <task_id>' / '@fist-bot challenge' / '@fist-bot close' / '@fist-bot blocked <reason>'。返回结构化 action 供 FIST 闭环消费。参数：payload(必填 webhook 原始 JSON 字符串)。",
+    schema(
+      {
+        "payload": string_prop(
+          "GitHub issue comment webhook 原始 JSON 字符串（必填）",
+        ),
+      },
+      ["payload"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let payload = get_str(args, "payload")
+      match github_webhook_parse(payload) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
     },
   )
 
