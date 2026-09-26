@@ -274,12 +274,23 @@ pub fn pipeline_tick(
   timeout_sec? : Int = 2400,
   phase? : String = "auto",
   prompt_name? : String = "",
+  mode? : String = "",
 ) -> Result[Json, String] {
   if project_dir == "" {
     return Err("project_dir 不能为空")
   }
   if !@fs.path_exists(project_dir) {
     return Err("project_dir 不存在: " + project_dir)
+  }
+  // R117 mode 参数扩展：校验 mode 合法性（零回归：空串或 advance 走旧路径）
+  let mode_str = mode.trim().to_owned()
+  let effective_mode = if mode_str == "" || mode_str == "advance" {
+    "advance"
+  } else {
+    match parse_mode(mode_str) {
+      Err(e) => return Err(e)
+      Ok(_) => mode_str
+    }
   }
   let ns_final = if ns == "" { "default" } else { ns }
   if ns_final == "default" {
@@ -303,18 +314,22 @@ pub fn pipeline_tick(
     match picked {
       None =>
         Ok(
-          pj_make(
-            state_in,
-            state_in,
-            "safe_exit",
-            ns_final,
-            "未找到任何合法提示词文件，保持原状态（不写脏数据）",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+          pj_set(
+            pj_make(
+              state_in,
+              state_in,
+              "safe_exit",
+              ns_final,
+              "未找到任何合法提示词文件，保持原状态（不写脏数据）",
+              None,
+              None,
+              None,
+              None,
+              None,
+              None,
+            ),
+            "mode",
+            Json::string(effective_mode),
           ),
         )
       Some(pf) => {
@@ -322,18 +337,22 @@ pub fn pipeline_tick(
         let ok = @fs.path_exists(ppath)
         if !ok {
           return Ok(
-            pj_make(
-              state_in,
-              state_in,
-              "safe_exit",
-              ns_final,
-              "指定提示词文件不存在: " + pf,
-              Some(pf),
-              Some(ppath),
-              None,
-              None,
-              None,
-              None,
+            pj_set(
+              pj_make(
+                state_in,
+                state_in,
+                "safe_exit",
+                ns_final,
+                "指定提示词文件不存在: " + pf,
+                Some(pf),
+                Some(ppath),
+                None,
+                None,
+                None,
+                None,
+              ),
+              "mode",
+              Json::string(effective_mode),
             ),
           )
         }
@@ -341,18 +360,22 @@ pub fn pipeline_tick(
           return Err("写入 currentState.txt 失败: " + state_path)
         }
         Ok(
-          pj_make(
-            state_in,
-            "Pending",
-            "prompt_pending",
-            ns_final,
-            "提示词已落盘，状态置 Pending，等待发布执行",
-            Some(pf),
-            Some(ppath),
-            None,
-            None,
-            None,
-            None,
+          pj_set(
+            pj_make(
+              state_in,
+              "Pending",
+              "prompt_pending",
+              ns_final,
+              "提示词已落盘，状态置 Pending，等待发布执行",
+              Some(pf),
+              Some(ppath),
+              None,
+              None,
+              None,
+              None,
+            ),
+            "mode",
+            Json::string(effective_mode),
           ),
         )
       }
@@ -366,18 +389,22 @@ pub fn pipeline_tick(
     match picked {
       None =>
         Ok(
-          pj_make(
-            state_in,
-            state_in,
-            "safe_exit",
-            ns_final,
-            "未找到提示词文件，无法定位报告",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+          pj_set(
+            pj_make(
+              state_in,
+              state_in,
+              "safe_exit",
+              ns_final,
+              "未找到提示词文件，无法定位报告",
+              None,
+              None,
+              None,
+              None,
+              None,
+              None,
+            ),
+            "mode",
+            Json::string(effective_mode),
           ),
         )
       Some(pf) =>
@@ -385,18 +412,22 @@ pub fn pipeline_tick(
           None =>
             // 报告先行：报告缺失时拒绝置 Closed，状态保持不变
             Ok(
-              pj_make(
-                state_in,
-                state_in,
-                "write_report",
-                ns_final,
-                "报告未落盘，拒绝置 Closed（报告先行），请先补写报告",
-                Some(pf),
-                None,
-                None,
-                None,
-                None,
-                None,
+              pj_set(
+                pj_make(
+                  state_in,
+                  state_in,
+                  "write_report",
+                  ns_final,
+                  "报告未落盘，拒绝置 Closed（报告先行），请先补写报告",
+                  Some(pf),
+                  None,
+                  None,
+                  None,
+                  None,
+                  None,
+                ),
+                "mode",
+                Json::string(effective_mode),
               ),
             )
           Some(rp) => {
@@ -404,18 +435,22 @@ pub fn pipeline_tick(
               return Err("写入 currentState.txt 失败: " + state_path)
             }
             Ok(
-              pj_make(
-                state_in,
-                "Closed",
-                "closed",
-                ns_final,
-                "报告已落盘，状态置 Closed，本轮闭环",
-                Some(pf),
-                None,
-                None,
-                Some(rp),
-                None,
-                None,
+              pj_set(
+                pj_make(
+                  state_in,
+                  "Closed",
+                  "closed",
+                  ns_final,
+                  "报告已落盘，状态置 Closed，本轮闭环",
+                  Some(pf),
+                  None,
+                  None,
+                  Some(rp),
+                  None,
+                  None,
+                ),
+                "mode",
+                Json::string(effective_mode),
               ),
             )
           }
@@ -478,7 +513,8 @@ pub fn pipeline_tick(
           None,
         )
     }
-    Ok(pj_set(j, "healed", healed_json))
+    let j2 = pj_set(j, "healed", healed_json)
+    Ok(pj_set(j2, "mode", Json::string(effective_mode)))
   }
 }
 
