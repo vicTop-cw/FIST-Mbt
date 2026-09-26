@@ -139,8 +139,11 @@ pub fn mode_constraints(mode : String) -> Json {
 /// forbidden_tools（某些 mode 显式禁用的工具/任务名；空数组表示无约束）。
 fn mode_forbidden_tools(mode_str : String) -> Array[String] {
   match mode_str {
-    "polish" => ["publish_new_feature_task", "issue_scan_with_generate_new"]
-    "tidy" => ["publish_new_feature_task"]
+    // BUG-37：旧名单写的是**不存在的工具名**（publish_new_feature_task / issue_scan_with_generate_new
+    // 在 server.mbt 注册表里计数为 0），按名单拦截的下游永远匹配不到，红线只剩提示词文字。
+    // 换成真实注册名：这三个都能创建根任务，正是"打磨/整理不该扩展功能边界"要挡的入口。
+    "polish" => ["publish", "publish_parallel", "dag_publish"]
+    "tidy" => ["publish", "publish_parallel", "dag_publish"]
     _ => []
   }
 }

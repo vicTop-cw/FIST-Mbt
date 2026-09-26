@@ -79,6 +79,7 @@ pub fn Task::archive(Self) -> Result[Self, String]
 pub fn Task::claim(Self, assignee~ : String) -> Result[Self, String]
 pub fn Task::complete(Self, completed_by~ : String) -> Result[Self, String]
 pub fn Task::execute(Self) -> Result[Self, String]
+pub fn Task::execute_exit_hint(TaskStatus) -> String
 pub fn Task::from_db(String, String?, String, String, String, String, Int, Int, String, String?, String, String, String, String, String?, String, Array[String]) -> Self
 pub fn Task::get_assignee(Self) -> String?
 pub fn Task::get_depth(Self) -> Int

@@ -116,7 +116,29 @@ fn scan_rules() -> Array[ScanRule] {
 }
 
 ///|
-/// 逐行匹配一条规则，返回命中（行号从 1 起）。
+/// 是否为整行注释（doc 注释 `///` 或行注释 `//`，trim 后判定）。
+/// BUG-15 修复①：规则此前对**每一行原文**做子串匹配，doc 注释里的散文
+/// （如「0xcbf29ce484222325 / 0x100000001b3」含 "/ 0"、「…返回 None。」含 "/ n"）
+/// 被当成代码命中，div-by-zero(unprotected-division) 等档的 high 因此被注释占满。
+/// 只跳「整行是注释」的行，行尾注释不在本轮范围内（需要 token 级判定，另开 issue）。
+fn scan_is_comment_line(line : StringView) -> Bool {
+  let t = line.trim()
+  t.starts_with("///") || t.starts_with("//")
+}
+
+///|
+/// 是否为「规则定义表所在文件」——即扫描器自身。
+/// BUG-15 修复②：规则表里的 pattern/hint 字面量（`"/ 0"`、`"rows[0]"`、
+/// `".unwrap()"`、`"unsafe_get"`、`"substring("` …）本身就是被搜的字符串，
+/// 于是 issue_scan.mbt 一个文件贡献 15 条命中、其中 3 条被判 high。
+/// 判定不靠硬编码路径：文件名后缀 + 必须含 `fn scan_rules(` 规则表标记，
+/// 避免误伤其它同名文件；该文件里的真实代码此前也只产出误报（dir[0] 已有 is_empty 守卫）。
+fn scan_is_rules_table(path : String, content : String) -> Bool {
+  path.has_suffix("issue_scan.mbt") && content.contains("fn scan_rules(")
+}
+
+///|
+/// 逐行匹配一条规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
 fn scan_match_lines(
   content : String,
   rule : ScanRule,
@@ -126,10 +148,12 @@ fn scan_match_lines(
   let mut ln = 1
   for line in content.split("\n") {
     let mut hit = false
-    for needle in rule.pattern {
-      if line.contains(needle) {
-        hit = true
-        break
+    if not(scan_is_comment_line(line)) {
+      for needle in rule.pattern {
+        if line.contains(needle) {
+          hit = true
+          break
+        }
       }
     }
     if hit {
@@ -223,10 +247,14 @@ fn scan_dir_ok(dir : String) -> Bool {
 
 ///|
 /// 对单个文件执行全部规则扫描（无命中返回空数组）。
+/// 规则表所在文件（扫描器自身）整体跳过——它的 pattern 字面量必然命中自己（见 scan_is_rules_table）。
 fn scan_file(path : String, rules : Array[ScanRule]) -> Array[ScanFinding] {
   let content = match mem_read(path) {
     None => return []
     Some(c) => c
+  }
+  if scan_is_rules_table(path, content) {
+    return []
   }
   let out : Array[ScanFinding] = []
   for r in rules {

@@ -1,8 +1,13 @@
 # FIST-Mbt 使用文档（USAGE）
 
-> 版本：`vicTop-cw/fist-mbt@0.2.3`（MoonBit，MCP Server）
+> 版本：`vicTop-cw/fist-mbt@0.3.0`（MoonBit，MCP Server）
 > 日期：2026-09-12 ｜ 定位：**实操调用手册**。README.md 是项目概览，本文件是「如何真正用它」的手把手文档，
 > 全部示例均来自本机实机运行（JSON-RPC over STDIO）的真实输出，非凭空构造。
+>
+> **覆盖边界（2026-09-26 明示，BUG-30）**：本手册演示的是到 0.2.3 为止的调用面。0.2.4 起新增的
+> **四模式流水线（寻虫→修复→验证→打磨）、`issue_scan` / `report_bug` / `call_log` / `output_validate` /
+> `laya_decide` / Omega 强验证**等能力**不在本文件**——用法看 `AGENTS.md` 的工具表与
+> `templates/pipeline_mode_*.md`（那才是当前主用法的权威叙述）。按本手册学不到本轮实际在跑的那套流程，这是有意的分工，不是遗漏。
 
 ---
 

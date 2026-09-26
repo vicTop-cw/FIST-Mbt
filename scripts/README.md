@@ -31,6 +31,15 @@
 - `check_tools_sync.py` — **工具清单单一真源守卫（R46）**：以 `src/server/server.mbt` 实际注册工具名为唯一真源，校验 AGENTS 表格工具名 ⊆ 真源、真源全部入 AGENTS、README/AGENTS/deliverable/scoring_rubric 工具总数==实测（双向防幽灵/漏写）。已在 ci.yml JS 两轨自动执行。
 - `check_test_sync.py` — **测试总数单一真源守卫（R47）**：从 `moon test` 日志提取实测总数，跨 README/AGENTS/deliverable/scoring_rubric 校验述一致（N/N、N 全绿、独立 N 任一）；`--total N` 直传亦可。已在 ci.yml JS 轨自动执行。
 - `check_scripts_index.py` — **工具类辅助代码单一索引守卫（R62）**：校验 `scripts/README.md` 已登记全部「正式」辅助脚本（无 `_` 前缀），防新生脚本不留说明就堆积——把地图/整洁下沉到工具层。用法：`python scripts/check_scripts_index.py`（0=PASS，1=漏登记）。
+- `check_plugin_sync.py` 的索引缺口补齐登记（本轮 cl7 落地时实测出的历史欠账）：
+- `flush_github.mjs` — **GitHub 缺陷外发通道 Node 入口**：走 MCP stdio 调 `github_flush_execute`，把 `report_bug` 入账的缺陷推到远端 issue。用法：`node scripts/flush_github.mjs [--limit 50] [--timeout-ms 30000]`（需 `GITHUB_TOKEN`，凭据只从环境注入）。
+- `output_validate.py` — **交付物硬门 CLI 形态**：`output_validate`(R113) 的命令行入口（与 MCP/skill 同一真源），逐件校验 path/check_key + invariant，退出码即门禁结论。用法：`python scripts/output_validate.py <project_dir> --artifacts '[{"path":"README.md","contains":"FIST"}]'`。
+- `mcp_bug_loop.py` — **修复闭环历史验证脚本（Round 1）**：对 5 个已修 bug 逐个走 publish→claim→execute→submit→verify 的 MCP 客户端；保留作活证据，非日常工具（一次性验证，跑前注意命名空间隔离）。
+- `pentad_fist.py` — **Pentad 衍生项目 MCP 客户端**：基于 `mcp_smoke.py` 的 rpc 模式注册 Pentad 项目并开 `omega_strong_verify` + `call_log`，供跨项目自驱演示。
+- `test_mcp_bugs.py` — **缺陷相关工具的 MCP 冒烟测试**：对 `report_bug/bug_list/run_check` 等做端到端调用；与 `mcp_bug_loop.py` 同批历史脚本，保留作证据。
+- `gen_plugins.py` — **一源四态·插件态生成器（cl7 生成侧）**：以 `src/server/server.mbt` 工具数 / `moon.mod` 版本 / `memory/bugs.md` 账本 / `plugins/source/` 正文 / 根 `.mcp.json` 启动参数为唯一真源，生成 atomcode→codearts→deepseek-harness→claude 四宿主插件目录（字节稳定、无时间戳）。插件目录是**投影**，手改必被 `check_plugin_sync.py` 拦。用法：`python scripts/gen_plugins.py [--check]`（0=已生成/无漂移，1=--check 发现漂移，2=真源解析失败）。
+- `check_plugin_sync.py` — **一源四态·插件态一致性守卫（cl7）**：子进程重跑 `gen_plugins.py --check` 做漂移判定，另校验四宿主入口齐全、无残留 `{{占位符}}`、claude manifest 版本==moon.mod、`plugins/claude/.mcp.json` 与根 `.mcp.json` 逐字节相等、每个生成 SKILL.md 的 `tools=` 等于实测工具数；实测<=100 直接 FATAL(2) 不自证为绿。用法：`python scripts/check_plugin_sync.py`（0=PASS，1=漂移/缺项，2=判据无法自证）。
+- `check_doc_surface.py` — **文档面一致性守卫（Round 2 验证模式产物，BUG-22/30 的机械化闭环）**：以 `server.mbt` 注册表为真源，校验 ① 每个工具在 AGENTS **和** README 逐个可查（防"标题数字对、正文没跟上"）；② README 功能全景分组计数之和==实测；③ 各文档自述版本==`moon.mod`（历史/时间线文件豁免）；④ 反幻影哨兵——真源解析到 <=100 个工具即 FATAL(2)，绝不因空清单报 PASS。用法：`python scripts/check_doc_surface.py`（0=PASS，1=漂移，2=无法自证）。**R116 新增**：J6 规范正文(`AI-DEVELOPMENT-STANDARD.md`)↔机器投影(`project_standards.mbt`) 的 id/版本一致；J7 规范性表面（README/AGENTS/docs/templates/对外工具描述）禁残留「三形态/一源三态」旧口径；J8 `templates/*.md` 里对已注册工具的调用示例与参数表，顶层参数必须 ∈ 真源 schema 且不缺 required（`_instrument` 只校验 required，未知键静默丢弃）；`--selftest` 对合成违例必须发红。
 - `demo.ps1` — 一键演示（build+patch+smoke）。
 - `showcase.ps1` — **30~60 秒视觉终端巡演**：Header/徽章、九态生命周期、DAG、自举采用（读盘真实 548 tasks/196 exec/6 review）、自治派送闭环（triage→dispatch_next→executor_route→watchdog autodispatch 零参数），ANSI+box；实测 exit 0 / ~1.7s，无盘符。用法：`pwsh -NoProfile -File scripts/showcase.ps1`。
 - `fist-mbt-http.py` — **HTTP/SSE 传输服务**：把 stdio MCP server 桥接成 HTTP，`GET /health` 健康检查 + MCP over HTTP/SSE。

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-scripts/output_validate.py — 产出物验证 CLI（output_validate 三形态之一：MCP / CLI / skill）
+scripts/output_validate.py — 产出物验证 CLI（一源四态 · CLI 形态：MCP / CLI / Skill 手写，Plugin 由 gen_plugins.py 投影）
 
 用法（项目根）：
     python scripts/output_validate.py <project_dir> \
@@ -22,7 +22,7 @@ scripts/output_validate.py — 产出物验证 CLI（output_validate 三形态�
     - 薄封装：验证逻辑单真源在 MoonBit 端（src/server/output_validate.mbt），
       CLI 只负责拉起 server + 调用工具，避免重复造轮子。
     - 与 issue_scan.py 同款 ESM shim 注入（moonc ≥0.10.14 输出 ESM，mizchi/sqlite 用 CJS）。
-    - 三形态对齐：同一 output_validate 工具可通过 MCP 协议、本 CLI 脚本、或 skill 调用，
+    - 四态对齐：同一 output_validate 工具可通过 MCP 协议、本 CLI 脚本、skill 文档或宿主插件态调用，
       三者共享相同的 MoonBit 实现与 JSON schema。
 """
 import json

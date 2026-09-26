@@ -14,18 +14,18 @@ fn default_rules() -> Array[Json] {
       ),
       "severity": Json::string("hard"),
       "how_to_check": Json::string(
-        "output_validate 查 README/CHANGELOG/API docs 的存在性 + contains 关键字",
+        "见 AI-DEVELOPMENT-STANDARD.md「目标项目必备文档集」（README/AGENTS/CHANGELOG/docs skill/memory bugs.md/reports/templates 各自的必填段与门禁）；output_validate 查存在性 + contains 关键字",
       ),
     }),
     Json::object({
       "id": Json::string("r2-single-source"),
-      "title": Json::string("一源三态，单真源优先"),
+      "title": Json::string("一源四态，单真源优先"),
       "body": Json::string(
-        "核心逻辑写在单一语言/运行时，CLI/Skill/MCP 都是薄封装。禁止在 CLI 里重写业务逻辑。",
+        "核心逻辑写在单一语言/运行时，CLI/Skill/Plugin 都是薄封装。禁止在 CLI 里重写业务逻辑。插件态必须是真源的**生成投影**（scripts/gen_plugins.py），手写副本必然腐烂（外部 skill 曾长期写「41 工具」而真源已 100+）。",
       ),
       "severity": Json::string("hard"),
       "how_to_check": Json::string(
-        "代码审查：CLI 脚本有无业务逻辑？MoonBit 端才是单真源。",
+        "代码审查：CLI 脚本有无业务逻辑？MoonBit 端才是单真源。插件目录漂移由 scripts/check_plugin_sync.py(cl7) 拦。",
       ),
     }),
     Json::object({
@@ -80,14 +80,14 @@ fn fist_rules() -> Array[Json] {
       ),
     }),
     Json::object({
-      "id": Json::string("f2-three-forms-aligned"),
-      "title": Json::string("三形态必须对齐：MCP CLI Skill"),
+      "id": Json::string("f2-four-forms-aligned"),
+      "title": Json::string("四态必须对齐：MCP CLI Skill Plugin"),
       "body": Json::string(
-        "每个新 MCP 工具上线时，必须同步：1 薄 CLI 封装；2 skill 文档说明何时用/怎么用/怎么闭环。MCP 是单真源。",
+        "每个新 MCP 工具上线时，必须同步：1 薄 CLI 封装；2 skill 文档说明何时用/怎么用/怎么闭环；3 四宿主插件态（atomcode/codearts/deepseek-harness/claude）重新生成。MCP 是单真源，插件目录禁止手改。",
       ),
       "severity": Json::string("hard"),
       "how_to_check": Json::string(
-        "tools 数 vs CLI 脚本数 vs skill 文档数；新工具上线 checklist 必含这两项。",
+        "tools 数 vs CLI 脚本数 vs skill 文档数 vs 插件投影文件数；新工具上线 checklist 必含这三项；gen_plugins.py --check 与 check_plugin_sync.py 必须绿。",
       ),
     }),
     Json::object({
@@ -127,7 +127,7 @@ fn fist_rules() -> Array[Json] {
 }
 
 ///|
-/// 三形态验收 checklist（6 项）。
+/// 四态验收 checklist（7 项）。
 fn checklist() -> Array[Json] {
   [
     Json::object({
@@ -160,6 +160,13 @@ fn checklist() -> Array[Json] {
       "question": Json::string("README/AGENTS 计数同步？"),
       "gate": Json::string("medium"),
     }),
+    Json::object({
+      "id": Json::string("cl7-plugin-forms-sync"),
+      "question": Json::string(
+        "四宿主插件态（atomcode/codearts/deepseek-harness/claude）已重生成且与真源一致？",
+      ),
+      "gate": Json::string("hard"),
+    }),
   ]
 }
 
@@ -174,13 +181,16 @@ pub fn project_standards(
   let gen_cnt = gen.length().to_double()
   let fist_cnt = fist.length().to_double()
   let total = gen_cnt + fist_cnt
+  // 规范性正文单真源 = AI-DEVELOPMENT-STANDARD.md；本函数是它的机器投影。
+  // 一致性由 scripts/check_doc_surface.py 的 J6 拦（缺任一 id 或版本不符即红）。
   if include_checklist {
     Json::object({
       "project_type": Json::string(project_type),
       "generated_at": Json::string(
         "project_standards.mbt (pure, deterministic)",
       ),
-      "version": Json::string("R114"),
+      "version": Json::string("R116"),
+      "canonical_doc": Json::string("AI-DEVELOPMENT-STANDARD.md"),
       "general_rules": Json::array(gen),
       "fist_specific_rules": Json::array(fist),
       "count_general": Json::number(gen_cnt),
@@ -194,7 +204,8 @@ pub fn project_standards(
       "generated_at": Json::string(
         "project_standards.mbt (pure, deterministic)",
       ),
-      "version": Json::string("R114"),
+      "version": Json::string("R116"),
+      "canonical_doc": Json::string("AI-DEVELOPMENT-STANDARD.md"),
       "general_rules": Json::array(gen),
       "fist_specific_rules": Json::array(fist),
       "count_general": Json::number(gen_cnt),

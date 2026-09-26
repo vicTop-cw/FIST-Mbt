@@ -6,6 +6,12 @@
 ///   - 时间戳由调用方传入 now（测试确定性、无隐式系统时间依赖）；
 ///   - 角色权限矩阵遵循"唯一指挥官/人类主权"原则：publish/archive/delete 仅 HumanSteward，
 ///     claim 面向 Leader / Agent / HumanSteward 全部放开。
+///
+/// 对外契约（BUG-3 收口，2026-09-26 Round 2）：正因为上面「不落库」是**设计**而非缺陷，
+///   MCP 工具 `audit_log` 不允许把「本进程没看到」伪装成「什么都没发生」——返回体恒为
+///   `{scope:'process', entries, count, note}`（构造在 server.mbt::audit_log_payload），
+///   空 entries 时 note 会显式指向 call_log。要改造成持久审计面属于**新架构**（需与
+///   call_log 合表/定序），本轮刻意不做，只把假空变成可区分。
 
 ///|
 /// 审计单条记录

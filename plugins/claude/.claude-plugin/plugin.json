@@ -1,0 +1,16 @@
+{
+  "name": "fist-mbt",
+  "description": "FIST 指挥官 MCP server（120 工具）+ 自驱流水线四模式，v0.3.0。真源：vicTop-cw/fist-mbt",
+  "version": "0.3.0",
+  "author": {
+    "name": "vicTop"
+  },
+  "repository": "https://github.com/vicTop-cw/fist-mbt",
+  "keywords": [
+    "fist",
+    "moonbit",
+    "mcp",
+    "orchestration",
+    "selfdrive"
+  ]
+}

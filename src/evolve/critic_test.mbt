@@ -83,3 +83,33 @@ test "evolve_critic 低稳健性：平均分低于阈值 → 拒收" {
     _ => abort("低分应拒收: " + j.stringify())
   }
 }
+
+///|
+test "evolve_critic 中性 score=0.5：不得被一个没算过的分数一票否决（BUG-60）" {
+  let arc = cr_engine()
+  // 空库 ⇒ 新颖度 1.0。修复前：combined=(0.5+1.0)/2=0.75 < 0.85 ⇒ 永远拒收，
+  // 于是 evolve_critic（不传 score）与 task_challenge（硬传 0.5）的门禁全部形同虚设。
+  let j = @evolve.critic_review(
+    arc, "把模型路由的决策与 IO 分包的可检锚点", 0.5,
+  )
+  match j.value("admit") {
+    Some(True) => ()
+    _ => abort("未计分应按新颖度放行: " + j.stringify())
+  }
+  // 成对：漂移防护仍然生效——重复条目即使中性分也必须拒收（不是"放宽门禁"）
+  let arc2 = cr_engine()
+  cr_add(arc2, "专注解析器前端词法分析的实现")
+  let dup = @evolve.critic_review(
+    arc2, "专注解析器前端词法分析的实现", 0.5,
+  )
+  match dup.value("admit") {
+    Some(False) => ()
+    _ => abort("高重合仍须拒收: " + dup.stringify())
+  }
+  // 成对：真给了低分照旧拒收（显式 score 的加权语义不变）
+  let low = @evolve.critic_review(arc, "又一个全新的独立目标", 0.1)
+  match low.value("admit") {
+    Some(False) => ()
+    _ => abort("显式低分应拒收: " + low.stringify())
+  }
+}

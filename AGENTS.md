@@ -84,7 +84,8 @@ You can browse and install extra skills here:
 
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
 > Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
-> **JS 与 Native 双后端均已在 Windows + WSL(Linux) 通过 317/317 测试。**
+> **JS 后端**：`moon test --target js` = **439/439**（2026-09-26 Windows 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并）。
+> **Native 后端**：上一轮在 Windows + WSL(Linux) 通过 317/317；本轮未复跑 native，不据旧数宣称双端同版全绿。
 
 `src/store/store_sqlite.mbt` 依赖 `mizchi/sqlite`（native stub），其 `stub.c` 用尖括号 `#include <sqlite3.h>` 并 `#pragma comment(lib, "sqlite3.lib")` 链接系统 SQLite。
 
@@ -94,11 +95,11 @@ You can browse and install extra skills here:
   2. 编译/链接前在**同一会话**加载 `Enter-VsDevShell`（VS Build Tools）并追加 `INCLUDE`/`LIB` 指向该目录（注册表 User 级环境变量会被 moon 自发现的 MSVC 环境覆盖，不生效）；
   3. 之后 `moon test --target native` 即可通过。缺失时 `stub.c` 报 `fatal error C1083: 无法打开包括文件 "sqlite3.h"` / `LNK1104: sqlite3.lib`。
   一键装载上述环境（自动探测 VS + sqlite-dev）：`pwsh ./scripts/native-env.ps1`；
-  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，Windows + Linux 317/317）**，见 README「已知边界」。
+  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 439/439）**，见 README「已知边界」。
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**105 tools** + 3 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**120 tools** + 3 resources + 2 prompts）：
 
 ### 生命周期（14）
 | 工具 | 说明 |
@@ -127,7 +128,7 @@ You can browse and install extra skills here:
 ### 运维（14）
 | 工具 | 说明 |
 |---|---|
-| `task_plan_deep` | AO 式递归拆解（可选 `gradient=true` 使子任务带难度梯度与"更简单变体 → 先易后逆推"LADDER 自举提示；可选 `calibrate` 按切片给真实难度 0..5 覆盖位置档；可选 `reinject_context=true` 把父计划+剩余兄弟回注进子任务描述，防上下文漂移） |
+| `task_plan_deep` | AO 式递归拆解（可选 `gradient=true` 使子任务带难度梯度与"更简单变体 → 先易后逆推"LADDER 自举提示；可选 `calibrate` 按切片给真实难度 0..5 覆盖位置档；可选 `reinject_context=true` 把父计划+剩余兄弟回注进子任务描述，防上下文漂移；可选 `boundary_probe=true` 追加一条『边界审视叶』作为全局输入域 owner，并给每条叶挂『边界四问(空输入/极值/非法输入/资源极限)』，治弱语料下的 Goodhart 下界（atgc-merge 归因报告机理 1/2）；两者默认 false 零回归） |
 | `conflicts_check` | 认领冲突检测 |
 | `heartbeat` | 活动信号上报 |
 | `heal` | 超时任务回滚（内存版，人工流程） |
@@ -163,7 +164,7 @@ You can browse and install extra skills here:
 | `call_log` | 调用日志查询（时间戳/seq/项目分组） |
 | `bug_list` | 缺陷/ BUG 列表 |
 | `report_bug` | 上报缺陷 |
-| `issue_scan` | 规则驱动源码扫描（打磨收尾引入）：递归收集目录下 .mbt 文件，内建 10 条 MoonBit 高危规则逐行匹配（除零/空数组下标/无保护 unwrap/unsafe_get/无保护整除/substring 越界/ignore 丢错/字符串下标/潜在溢出/空集合单例），产出 findings（rule/severity/file/line/code）+ by_severity/by_rule 聚合；命中可直接喂 `report_bug` 形成"扫描→上报→修复"闭环——免外部二进制、无绝对路径硬编码，MCP/CLI/skill 三形态复用；`include_tests`（默认 false）只扫产品代码跳过 `_test/_wbtest` 以降噪 |
+| `issue_scan` | 规则驱动源码扫描（打磨收尾引入）：递归收集目录下 .mbt 文件，内建 10 条 MoonBit 高危规则逐行匹配（除零/空数组下标/无保护 unwrap/unsafe_get/无保护整除/substring 越界/ignore 丢错/字符串下标/潜在溢出/空集合单例），产出 findings（rule/severity/file/line/code）+ by_severity/by_rule 聚合；命中可直接喂 `report_bug` 形成"扫描→上报→修复"闭环——免外部二进制、无绝对路径硬编码，MCP/CLI/skill 三态复用并随插件态分发四宿主；`include_tests`（默认 false）只扫产品代码跳过 `_test/_wbtest` 以降噪 |
 | `eval_feedback` | 反馈收敛（R111，Evaluator-Optimizer schema 蒸馏：Anthropic E/O + Self-Refine 2303.17651 + Reflexion 2303.11366 + zubi.ai 四段式）——自由文本反馈归一为 Defects/Evidence/Fix/Acceptance 四段式契约 + 确定性 verdict（无缺陷且 acceptance 非空 → pass 可收敛；否则 fail + 缺证据/缺修复/缺段标注）；纯计算只读不写库，与 plan_revise 反馈修订互补 |
 | `run_check` | 端到端自检（构建/测试/MCP 冒烟） |
 | `output_validate` | 交付物硬门验证（R113）：对 artifacts 数组逐件验——path/check_key 二选一；path→文件存在/非空/invariant(contains/not_contains/min_chars)；check_key→external_results 字典引用，取 ok/code/stderr；返回 verdict(pass/fail)/passed/failed/checks，require_evidence=true 时强制非空 evidence |
@@ -173,7 +174,7 @@ You can browse and install extra skills here:
 | `cost_budget_check` | 预算/成本上限检查 |
 | `cost_budget_split` | 预算按依赖图阶段切分（R81，ZEBRA 背包水填充蒸馏简化版）：给定总预算按任务 DAG 阶段(slack earliest 层级)切分——每阶段份额=阶段难度权重(难3/中2/易1)占总量比例×总预算(余数补最大权重阶段)，返回 { stages:[{level,tasks,difficulty_sum,share}], total_budget, makespan, note }——瓶颈阶段占额可见，超支先预警 |
 | `progress_gate` | 进度预算路由门控（R88，PROGROUTER arXiv 2608.25992 蒸馏）：对任务子树按已消耗预算(难度权重 易/中/难→1/2/3，自动估算或手动注入 spent)与完成进度(已完成+已归档/子树任务数)做双路径剩余成本预测——线性=燃尽率×剩余工作量、保守=1.2×线性，元门控给决策 OK(预算充足继续)/CAUTION(线性可行但缓冲不足，建议降档缩范围)/ESCALATE(线性已超支，建议追加预算或暂停)——预算×进度在线体检，先预警后决策 |
-| `project_standards` | AI 项目开发规范（R114）：通用 5 条（文档即实现/一源三态/确定性优先/增量零回归/自我迭代）+ FIST 专项 5 条（用自身能力迭代/三形态必须对齐/证据梯至少 L4/重任务先拆 DAG/工具命名即文档）；附 6 项三形态 checklist（cl1-mcp-exists → cl6-doc-sync），可直接喂 output_validate 当验收门禁。纯计算零依赖。 |
+| `project_standards` | AI 项目开发规范（R116，机器投影；规范性正文真源 = `AI-DEVELOPMENT-STANDARD.md`）：通用 5 条（文档即实现/**一源四态**/确定性优先/增量零回归/自我迭代）+ FIST 专项 5 条（用自身能力迭代/**四态必须对齐**/证据梯至少 L4/重任务先拆 DAG/工具命名即文档）；附 7 项四态 checklist（cl1-mcp-exists → cl6-doc-sync → **cl7-plugin-forms-sync**），可直接喂 output_validate 当验收门禁。纯计算零依赖。白盒锁：`src/server/project_standards_wbtest.mbt`（此前该工具零覆盖）。 |
 | `laya_decide` | Laya 决策（冷启动选档/功能路由 + 确定性回退）：有 Laya→sidecar 决定难度/拆分数/机制选择；无 Laya→降级到内建规则式决策分支（laya_route 纯计算：按任务描述关键词对机制族打分选 feature_route + 复杂度启发式给 split_n）。研发方向「功能太多难决策 / 复杂多任务不知用哪些功能」的落点 |
 
 ### 衍生子项目 · ATGC-old（3）
@@ -260,8 +261,50 @@ You can browse and install extra skills here:
 - 打回上限 `max_rounds` 默认 3（最大 10），超限自动写入升级记录、暂停任务转人工裁决，禁止死循环。
 - `execute` 与 `verify` 在开启强验证的任务上分别受语料门禁与成果复验门禁约束；未开启该开关的任务完全不受影响，既有生命周期语义不变。
 
+### 开发模式与模板（2）
+| 工具 | 说明 |
+|---|---|
+| `mode_list` | 返回 6 种自驱开发模式的完整信息（mode / name / description / constraints / template_path / forbidden_tools），纯计算只读，供 AI 选模式 |
+| `mode_templates` | 检查 `templates/pipeline_mode_*.md` 全部存在性，返回 `{templates:{advance:true,...}, missing:[...]}`；`pipeline_tick`/`watchdog_tick` 的 `mode` 参数预检用 |
+
+### GitHub 同步 · 缺陷上报通道（8）
+| 工具 | 说明 |
+|---|---|
+| `github_env_check` | 检查同步环境变量配置（读 `FIST_GITHUB_ENABLED`/`FIST_GITHUB_REPO`/`FIST_GITHUB_TOKEN`），返回 enabled/repo/token_present/ready 四元组。纯计算只读，不碰网络——外部 AI 开发前先查此工具判断能否自动上报 bug |
+| `github_queue_status` | 查看待同步 GitHub issue 队列状态——总数/pending/sent/最老条目/按严重度分布。纯计算读 JSONL 队列，不碰网络 |
+| `github_flush_plan` | 为每条 pending bug 生成一条 curl 命令（含 `FIST_GITHUB_TOKEN` 占位符），**不执行任何网络调用**；外部拿到后手动/脚本执行，成功后调 `github_queue_mark_sent` 回写 |
+| `github_flush_execute` | 一键执行 `github_flush_plan` 生成的 curl，直接在队列上发 issue。硬门控——`force` 必须显式为 `true`；JS target 真实执行 curl，native target 返回跳过提示，成功后自动回写 sent（从响应解析 `issue.number`） |
+| `github_queue_mark_sent` | 标记一批 `bug_ids` 已同步（写 sent_at + github_issue_number），幂等安全 |
+| `github_issue_close` | 按 bug_id→issue_number 映射批量关闭 issue（PUT state=closed）。硬门控——`force` 必须为 `true`；通常在 FIST 任务归档/完成后触发 |
+| `github_issue_comment` | 给指定 bug_id 对应的 issue 追加评论（POST comments API）。硬门控——`force` 必须为 `true`；该 bug 须已 flush 成功过 |
+| `github_issue_webhook_parse` | 解析 GitHub issue comment webhook payload，提取 `@fist-bot` 指令（reopen / challenge / close / blocked），返回结构化 action 供 FIST 闭环消费。纯计算正则匹配，零 LLM 零网络 |
+
+### 模型路由 · 外部执行器（4，合并自兄弟项目 fist-model-router 与 FIST 的 aider/atomcode 执行器）
+| 工具 | 说明 |
+|---|---|
+| `model_route` | 模型配额路由决策（免费优先 + 达 `threshold_pct`(默认95%) 自动切付费 + 付费耗尽回退免费 + 每模型独立 5h 滚动窗口）。参数：`project_dir`(必填，相对、拒绝对称/盘符/`..`)、`namespace`(可选默认 default，**每个 ns 一份独立配额账**)、`record_model`(可选：给名则 `used+1` 后再决策，留空=只问不消耗)、`config_json`(可选：RouterConfig JSON 文本覆盖池定义，同名模型已用配额保留；**非法 JSON 直接报错不静默回落**)。状态落盘 `{project_dir}/memory/model-router-{ns}.json` 跨进程复现；**时间戳服务端盖章，调用面无 `now` 参数**（BUG-33 政策）；两池皆不可用 → `ok=false` 显式失败，绝不静默改用别的模型。真源 `src/router`（纯计算零 IO）+ `src/server/model_router_ops.mbt`（IO 层）。白盒锁 `src/router/model_router_wbtest.mbt`(rt_1~12) / `router_state_wbtest.mbt`(rs_1~5) / `src/server/model_router_ops_wbtest.mbt`(mo_1~5) |
+| `model_router_status` | 只读查当前路由状态：每模型 `used/limit/usage_pct/share_pct/over_threshold/exhausted` + 当前档位 + 切换次数 + 状态文件路径与 `exists`。不改配额、不落盘 |
+| `model_router_reset` | 清窗口：所有模型 `used`/`window_start` 归零（等价"这 5 小时重新开始"），档位与游标保持；`hard=true` 连档位/游标/切换计数一起复位 |
+| `executor_run` | 把任务真交给外部编码执行器（宿主命令能力，**默认收紧**）：`executor` 只接受登记表 `aider \| atomcode`，argv 形状固定在 `src/executor/cli_argv.mbt`（不经 shell ⇒ 提示词里的 `;` `$()` 反引号都只是**一个** argv 元素），可执行文件名由登记表推导 ⇒ 调用方无法注入任意命令。`model` 留空则先向路由器要一个模型并记账（路由↔执行器接线点）；`dry_run=true`（新增可选参数）只回显 argv、**一个进程都不起**；native 构建返回明确拒绝。密钥只来自 server 进程环境变量，本仓库不读 `.env`、不回显 key。参数：`project_dir`(必填)、`executor`(必填)、`prompt`(必填非空且不含 NUL)、`model`(可选)、`namespace`(可选)、`timeout_ms`(可选默认 180000)、`dry_run`(可选默认 false) |
+
 Resources: `fist://map`, `fist://principles`, `fist://overview`
+### 一源四态 · 插件态（生成投影，非手写）
+
+> **开发规范正文真源 = [`AI-DEVELOPMENT-STANDARD.md`](AI-DEVELOPMENT-STANDARD.md)**（R116）。`project_standards` 工具是它的机器投影，README/AGENTS/skill 只做摘要；三者一致性由 `check_doc_surface.py` J6/J7 拦（缺任一规则 id、版本不符或残留旧口径即红）。目标项目照该文件的 §2 文档集骨架开工。
+
+每个功能的第四种形态是**宿主插件目录**，由 `scripts/gen_plugins.py` 从单一真源投影，顺序固定：
+**atomcode → codearts → deepseek-harness → claude**（真源 = `plugins/source/` 正文 + `server.mbt` 工具数 + `moon.mod` 版本 + `memory/bugs.md` 账本 + 根 `.mcp.json` 启动参数）。
+
+- 插件目录**禁止手改**：`scripts/check_plugin_sync.py`（cl7）子进程重跑生成器做逐字节 diff，另查四宿主入口齐全、无残留 `{{占位符}}`、manifest 版本==moon.mod、`plugins/claude/.mcp.json` 与根 `.mcp.json` 逐字相等、生成 SKILL.md 的 `tools=` == 实测工具数；实测 <=100 直接 FATAL(2)（判据无法自证绝不报绿）。
+- 守卫族（6 个，全在 ci.yml JS 轨）：`check_tools_sync` / `check_test_sync` / `check_badge` / `check_scripts_index` / **`check_plugin_sync`（cl7）** / `check_doc_surface`（文档面 J1-J8：逐个工具可查 + 分组和==实测 + 自述版本==moon.mod + 反幻影哨兵 + **J6 规范正文↔机器投影一致** + **J7 规范性表面禁旧口径** + **J8 模板调用参数==真源 schema**；`--selftest` 用合成违例证明 J6/J7/J8 能发红，不是装饰）。
+
 Prompts: `fist:check_in`, `fist:verify`
+
+> **术语注记（2026-09-26 立，防误读）**：本仓日志/账本里出现的 `pentad-r1/r2/r3` 是
+> **FIST-Mbt 自身「四模式流水线自我迭代」的轮次标签**（ns 名与 `reported_by` 署名已入库，不改写历史），
+> 与衍生项目 **Pentad**（`scripts/pentad_fist.py`、模板里「Pentad 无人值守流水线」正文）不是一回事：
+> 那些地方 Pentad 是被 FIST-Mbt 驱动的**另一个项目**。写文档/报告标题一律用「四模式流水线自我迭代 · Round N」，
+> 不要把 Pentad 当本仓特性名（本轮已把 4 份报告与三处文档计数口径改回本仓术语）。
 
 ## 路径约定
 

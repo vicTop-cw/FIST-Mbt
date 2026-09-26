@@ -25,7 +25,7 @@
 ## 三、禁止事项（模式约束）
 
 - **不新建文件**：清整是做减法和补注释——除归档外不新增源码/文档文件。
-- **不新增功能代码**：严禁发布新功能任务（`publish_new_feature_task`），严禁引入新能力。
+- **不新增功能代码**：严禁用 `publish` / `publish_parallel` / `dag_publish` 发布新功能任务，严禁引入新能力。
 - **不引入新依赖**：不改 `moon.pkg` / `Cargo.toml` 的依赖声明。
 - **不重构架构**：不移动模块、不合并文件、不拆分大文件——结构性改动交给人工或 `advance` 模式。
 - **不删除 git 历史**：清理临时文件和 dead code 可以 commit，但不做 `git reset`、`git rebase`、`git push --force`。
@@ -42,11 +42,11 @@
 
 ## 五、FIST 工具链调用顺序
 
-- **第一步：project_standards（cl6-doc-sync）** —— 调用 `project_standards({ "project_dir": "<目标项目根目录>", "dry_run": false })`，让项目的编码标准工具（含 `cl6-doc-sync` 文档同步检查）跑一遍，拿到需要修正的注释/文档清单。
-- **第二步：moon fmt 统一风格** —— 调用 `run_check_external({ "cwd": "<目标项目根目录>", "command": ["moon", "fmt"], "timeout_sec": 60 })`，让格式化工具自动处理风格不一致。
-- **第三步：moon info 盘点依赖** —— 调用 `run_check_external({ "cwd": "<目标项目根目录>", "command": ["moon", "info"], "timeout_sec": 30 })`，检查项目依赖状态，识别可能的未使用 crate。
-- **第四步：dead code 扫描** —— 调用 `run_check_external({ "cwd": "<目标项目根目录>", "command": ["moon", "check", "--warn"], "timeout_sec": 120 })`，从编译器告警里筛出 dead code（未使用函数、未使用导入）。
-- **第五步：output_validate 门禁** —— 调用 `output_validate({ "project_dir": "<目标项目根目录>", "check_results": [<清整结果数组>], "require_evidence": true })`，让门禁工具判定清整是否引入退化。
+- **第一步：project_standards（cl6-doc-sync）** —— 调用 `project_standards({ "project_type": "moonbit-mcp", "include_checklist": true })` 拿到 7 项四态 checklist 作为整改清单。该工具**只下发规范、不做扫描**（无 `project_dir`/`dry_run` 参数）；文档同步的实际判据由 `python scripts/check_doc_surface.py`（J1-J8）给出。
+- **第二步：moon fmt 统一风格** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["fmt"], "workdir": "<目标项目根目录>", "timeout_ms": 60000 })`，让格式化工具自动处理风格不一致。
+- **第三步：moon info 盘点依赖** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["info"], "workdir": "<目标项目根目录>", "timeout_ms": 30000 })`，检查项目依赖状态，识别可能的未使用 crate。
+- **第四步：dead code 扫描** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["check", "--warn"], "workdir": "<目标项目根目录>", "timeout_ms": 120000 })`，从编译器告警里筛出 dead code（未使用函数、未使用导入）。
+- **第五步：output_validate 门禁** —— 调用 `output_validate({ "project_dir": "<目标项目根目录>", "artifacts": [ { "path": "<被清整的文件>", "not_contains": "<旧口径关键字>" } ], "evidence": [<实际跑过的判据>], "require_evidence": true })`，让门禁工具判定清整是否引入退化（**没有** `check_results` 参数）。
 
 ---
 

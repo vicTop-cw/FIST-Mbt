@@ -49,6 +49,16 @@ jobs:
         shell: bash
         run: python3 scripts/check_scripts_index.py
 
+      - name: Plugin-form guard cl7 (一源四态：四宿主插件目录==真源投影)
+        shell: bash
+        run: |
+          python3 scripts/gen_plugins.py --check
+          python3 scripts/check_plugin_sync.py
+
+      - name: Doc-surface guard (文档逐个工具可查/分组和==实测/自述版本==moon.mod)
+        shell: bash
+        run: python3 scripts/check_doc_surface.py
+
       - name: Cleanliness guard (仓库整洁，仅交付库 fist-mbt.db)
         shell: bash
         run: python3 scripts/cleanup_artifacts.py && python3 scripts/cleanup_artifacts.py --check

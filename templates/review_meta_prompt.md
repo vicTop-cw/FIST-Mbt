@@ -40,7 +40,7 @@
 | `selfdrive_get` | `project_dir`、`kind`(thinking/product/target/task)、`namespace`(可选) | 读 memory 条目 |
 | `selfdrive_review_tick` | `project_dir`、`review_every`(可选默认3)、`namespace`(可选) | 触发审视（返回 `review` 时执行本模板） |
 | `selfdrive_review_ready` | `project_dir`、`namespace`(可选) | 审视报告落盘后的收口（报告先行，无报告拒绝推进） |
-| `selfdrive_publish_next` | `project_dir`、`max_tasks`(可选默认10)、`namespace`(可选)、`now`(可选) | 解析 `## Next Tasks` 并并行发布（幂等防重） |
+| `selfdrive_publish_next` | `project_dir`、`max_tasks`(可选默认10)、`namespace`(可选) | 解析 `## Next Tasks` 并并行发布（幂等防重） |
 
 ## 四、撰写步骤
 

@@ -8,7 +8,21 @@ import {
 // Values
 pub fn ability_coverage(Array[String], Array[String]) -> Double
 
+pub fn aider_argv(prompt~ : String, model~ : String, edit_format? : String, map_tokens? : Int, encoding? : String) -> Result[Array[String], String]
+
+pub fn atomcode_argv(prompt~ : String, model~ : String, workdir? : String, auto_yes? : Bool) -> Result[Array[String], String]
+
+pub fn build_command(executor~ : String, prompt~ : String, model~ : String, workdir? : String) -> Result[(String, Array[String]), String]
+
 pub fn delegate_execute(@core.Task, ExecContext) -> ExecResult
+
+pub fn executor_binary(String) -> String
+
+pub fn executor_missing_hint(String) -> String
+
+pub fn external_executors() -> Array[String]
+
+pub fn is_external_executor(String) -> Bool
 
 pub fn is_valid_executor(String) -> Bool
 

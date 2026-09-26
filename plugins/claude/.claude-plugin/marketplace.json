@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "fist-mbt",
+  "metadata": {
+    "version": "0.3.0",
+    "description": "FIST-Mbt 插件态（由 scripts/gen_plugins.py 生成）"
+  },
+  "owner": {
+    "name": "vicTop"
+  },
+  "plugins": [
+    {
+      "name": "fist-mbt",
+      "description": "FIST 指挥官任务编排与自驱流水线：120 个 MCP 工具 + fist-mbt/fist-commander 两个 skill",
+      "source": "./",
+      "category": "development"
+    }
+  ]
+}
