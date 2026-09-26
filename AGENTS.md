@@ -84,7 +84,7 @@ You can browse and install extra skills here:
 
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
 > Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
-> **JS 与 Native 双后端均已在 Windows + WSL(Linux) 通过 301/301 测试。**
+> **JS 与 Native 双后端均已在 Windows + WSL(Linux) 通过 307/307 测试。**
 
 `src/store/store_sqlite.mbt` 依赖 `mizchi/sqlite`（native stub），其 `stub.c` 用尖括号 `#include <sqlite3.h>` 并 `#pragma comment(lib, "sqlite3.lib")` 链接系统 SQLite。
 
@@ -94,11 +94,11 @@ You can browse and install extra skills here:
   2. 编译/链接前在**同一会话**加载 `Enter-VsDevShell`（VS Build Tools）并追加 `INCLUDE`/`LIB` 指向该目录（注册表 User 级环境变量会被 moon 自发现的 MSVC 环境覆盖，不生效）；
   3. 之后 `moon test --target native` 即可通过。缺失时 `stub.c` 报 `fatal error C1083: 无法打开包括文件 "sqlite3.h"` / `LNK1104: sqlite3.lib`。
   一键装载上述环境（自动探测 VS + sqlite-dev）：`pwsh ./scripts/native-env.ps1`；
-  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，Windows + Linux 301/301）**，见 README「已知边界」。
+  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，Windows + Linux 307/307）**，见 README「已知边界」。
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**102 tools** + 3 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**103 tools** + 3 resources + 2 prompts）：
 
 ### 生命周期（14）
 | 工具 | 说明 |
@@ -157,12 +157,13 @@ You can browse and install extra skills here:
 | `selfdrive_parse_next_tasks` | 解析报告里的任务清单 |
 | `selfdrive_pick_next` | 按 triage 能力推荐取走顶部并认领（无人值守按能力自续推） |
 
-### 运维 · 日志 / 缺陷 / 成本 / 调度（11）
+### 运维 · 日志 / 缺陷 / 成本 / 调度（12）
 | 工具 | 说明 |
 |---|---|
 | `call_log` | 调用日志查询（时间戳/seq/项目分组） |
 | `bug_list` | 缺陷/ BUG 列表 |
 | `report_bug` | 上报缺陷 |
+| `eval_feedback` | 反馈收敛（R111，Evaluator-Optimizer schema 蒸馏：Anthropic E/O + Self-Refine 2303.17651 + Reflexion 2303.11366 + zubi.ai 四段式）——自由文本反馈归一为 Defects/Evidence/Fix/Acceptance 四段式契约 + 确定性 verdict（无缺陷且 acceptance 非空 → pass 可收敛；否则 fail + 缺证据/缺修复/缺段标注）；纯计算只读不写库，与 plan_revise 反馈修订互补 |
 | `run_check` | 端到端自检（构建/测试/MCP 冒烟） |
 | `schedule` | 定时/提醒调度 |
 | `pipeline_tick` | 无人值守流水线唤醒一拍 |
