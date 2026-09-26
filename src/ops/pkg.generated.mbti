@@ -8,6 +8,8 @@ import {
 }
 
 // Values
+pub fn all_modes() -> Array[Json]
+
 pub fn can_archive(Role) -> Bool
 
 pub fn can_claim(Role) -> Bool
@@ -19,6 +21,8 @@ pub fn can_publish(Role) -> Bool
 pub fn check_claim(@engine.FistEngine, String, String) -> Result[Unit, String]
 
 pub fn cleanup_archived(@engine.FistEngine, String, retention_days? : Int) -> Result[Array[String], String]
+
+pub fn default_mode() -> PipelineMode
 
 pub fn enforce(action~ : String, role~ : Role) -> Result[Unit, String]
 
@@ -38,7 +42,15 @@ pub fn list_contested(@engine.FistEngine) -> Array[@core.Task]
 
 pub fn list_holdings(@engine.FistEngine, String) -> Array[@core.Task]
 
-pub fn pipeline_tick(@engine.FistEngine, String, String, ns? : String, timeout_sec? : Int, phase? : String, prompt_name? : String) -> Result[Json, String]
+pub fn mode_constraints(String) -> Json
+
+pub fn mode_short(PipelineMode) -> String
+
+pub fn mode_template_path(String) -> String
+
+pub fn parse_mode(String) -> Result[PipelineMode, String]
+
+pub fn pipeline_tick(@engine.FistEngine, String, String, ns? : String, timeout_sec? : Int, phase? : String, prompt_name? : String, mode? : String) -> Result[Json, String]
 
 pub fn read_meta_prompt(String) -> String?
 
@@ -54,13 +66,13 @@ pub fn selfdrive_memory_init(String, ns~ : String) -> Result[Json, String]
 
 pub fn selfdrive_parse_next_tasks(String, max_tasks~ : Int) -> Array[String]
 
-pub fn selfdrive_publish_next(@engine.FistEngine, String, ns~ : String, now~ : String, max_tasks~ : Int) -> Result[Json, String]
+pub fn selfdrive_publish_next(@engine.FistEngine, String, ns~ : String, now~ : String, max_tasks~ : Int, mode? : String) -> Result[Json, String]
 
 pub fn selfdrive_review_ready(String, ns~ : String) -> Result[Json, String]
 
 pub fn selfdrive_review_tick(String, ns~ : String, review_every~ : Int) -> Result[Json, String]
 
-pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String, cold_start? : Bool, project_dir? : String, omega_strong_verify? : Bool, omega_split_n? : Int, omega_spec? : Json?, selfdrive_project_dir? : String, selfdrive_review_every? : Int, autodispatch? : Bool, autodispatch_want? : String, phi_gate? : Bool, phi_threshold? : Int) -> Result[Json, String]
+pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String, cold_start? : Bool, project_dir? : String, omega_strong_verify? : Bool, omega_split_n? : Int, omega_spec? : Json?, selfdrive_project_dir? : String, selfdrive_review_every? : Int, autodispatch? : Bool, autodispatch_want? : String, phi_gate? : Bool, phi_threshold? : Int, mode? : String) -> Result[Json, String]
 
 // Errors
 
@@ -93,6 +105,15 @@ pub fn Heartbeat::is_stale(Self, String, String, timeout_sec? : Int) -> Bool
 pub fn Heartbeat::last_seen_of(Self, String) -> String
 pub fn Heartbeat::new() -> Self
 pub fn Heartbeat::signal_of(Self, String) -> String
+
+pub enum PipelineMode {
+  Advance
+  Polish
+  Verify
+  BugFind
+  FixAndMerge
+  Tidy
+}
 
 pub enum Role {
   HumanSteward

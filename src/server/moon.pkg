@@ -32,6 +32,8 @@ options(
     "run_check_js.mbt": [ "js" ],
     "laya_native.mbt": [ "native" ],
     "laya_js.mbt": [ "js" ],
+    "github_native.mbt": [ "native" ],
+    "github_js.mbt": [ "js" ],
   },
   link: { "native": { "cc-link-flags": "-lsqlite3" } },
 )

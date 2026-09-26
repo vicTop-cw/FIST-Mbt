@@ -13,11 +13,41 @@ import {
 // Values
 pub fn bug_list(String) -> Result[Json, String]
 
+pub fn bug_resolve_path(String) -> String
+
 pub fn distill_principle_goal(String) -> String
 
 pub fn do_evolve_distill(@evolve.Archive, @store.SqliteStore?, String, String, Double, String) -> Json
 
 pub fn do_evolve_lesson(@evolve.Archive, @store.SqliteStore?, String, String, String, String, score? : Double) -> Json
+
+pub fn github_build_close_plan(String, Map[String, Int]) -> Result[Json, String]
+
+pub fn github_build_comment_plan(String, String, String) -> Result[Json, String]
+
+pub async fn github_execute_batch(Array[String], String, Int) -> Result[Json, String]
+
+pub async fn github_execute_close(String, String, Int) -> Result[Json, String]
+
+pub async fn github_execute_comment(String, String, Int) -> Result[Json, String]
+
+pub async fn github_execute_single(String, String, Int) -> Result[Json, String]
+
+pub fn github_find_sent_entries(String, Array[String]) -> Result[Json, String]
+
+pub fn github_flush_plan(String, Int) -> Result[Json, String]
+
+pub fn github_queue_append(String, String, String, String, String, String, String, Array[String]) -> Result[Json, String]
+
+pub fn github_queue_mark_sent(String, Array[String], String, Map[String, Int]) -> Result[Json, String]
+
+pub fn github_queue_pending(String) -> Result[Array[Json], String]
+
+pub fn github_queue_read(String) -> Result[Json, String]
+
+pub fn github_queue_status(String) -> Result[Json, String]
+
+pub fn github_webhook_parse(String) -> Result[Json, String]
 
 pub fn instrumented_tool(@colmugx/mcp/server.MCPServer, String, String, Json, async (Json) -> Result[@tool.ToolResult, @types.MCPError]) -> @colmugx/mcp/server.MCPServer
 
@@ -51,13 +81,17 @@ pub fn render_project_health(Array[@core.Task], String) -> Json
 
 pub fn render_status_summary(Array[@core.Task], Array[String], String) -> Json
 
-pub fn report_bug(String, String, detail~ : String, severity~ : String, ref_call_id~ : String, reported_by~ : String, publish_task~ : Bool, @engine.FistEngine, now~ : String) -> Result[Json, String]
+pub fn report_bug(String, String, detail~ : String, severity~ : String, ref_call_id~ : String, reported_by~ : String, publish_task~ : Bool, github_sync? : Bool, github_repo? : String, @engine.FistEngine, now~ : String) -> Result[Json, String]
 
 pub fn route_decision(String, Int) -> Json
 
 pub async fn run_check_external(String, Array[String], String, Int) -> Result[Json, String]
 
+pub fn run_check_workdir_ok(String, String) -> Bool
+
 pub async fn run_server() -> Unit
+
+pub fn selfdrive_round_tick(Json) -> Json
 
 // Errors
 
