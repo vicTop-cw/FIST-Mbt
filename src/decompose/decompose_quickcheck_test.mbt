@@ -82,7 +82,8 @@ test "quickcheck: difficulty_label_from 随难度数值单调不减" {
       if d1 > d2 {
         true
       } else {
-        diff_order(difficulty_label_from(d1)) <= diff_order(difficulty_label_from(d2))
+        diff_order(difficulty_label_from(d1)) <=
+        diff_order(difficulty_label_from(d2))
       }
     },
     count=100,

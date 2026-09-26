@@ -120,6 +120,8 @@ AIGC:
 | `get` | `task_id` | 需要单条任务细节时使用（可选） |
 | `watchdog_tick` | `now`、`timeout_sec`、`namespace`、`next_description`、`next_created_by`、`meta_prompt_path` | 单入口编排：**heal → 续轮 → 状态汇报** |
 | `publish` | `project_dir`、`description`、`namespace`、`created_by`、`now` | 仅用于分支③的**冷启动兜底**（`created_by` 只能是 `human_steward` / `human`） |
+| `issue_scan` | `dir`、`max_findings`(可选)、`include_tests`(可选) | **分支④找潜问题前置**：扫描 `<目标项目根目录>` 源码目录，内建 10 条 MoonBit 高危规则（除零/空数组下标/unwrap 等）产出 findings |
+| `report_bug` | `project_dir`、`summary`、`detail`(可选)、`severity`(可选)、`publish_task`(可选) | 把 `issue_scan` 确诊的高危命中上报到 memory/bugs.md（`publish_task=true` 自动发布修复根任务成闭环） |
 
 **`watchdog_tick` 的真实语义（据源码 `src/ops/ops_watchdog.mbt`）**
 
@@ -227,6 +229,7 @@ publish({
 #### 分支④ 无活跃任务且最新提示词已消费完毕 → 生成下一份提示词
 
 1. **只读分析项目当前状态**（`<目标项目根目录>`）：
+   - **先找潜问题（打磨/污染常态化）**：调用 `issue_scan({ "dir": "<目标项目根目录>/src 或对应源码目录" })`，看命中 findings（除零/空数组下标/unwrap/include_tests 默认只扫产品代码）；对**确认是真缺陷**的高危命中，调用 `report_bug({ "project_dir": "<目标项目根目录>", "summary": "[rule:id] file:line code", "publish_task": true })` 入账并自动发布修复根任务；误报不回填（避免刷账）。
    - 扫描项目根目录，识别主要 crate / 模块（如 `p5c`、`p5lib`、`p5rt`、`p5ls`、`p5pkg`、`p5doc`、`p5bench`）、配置文件（`Cargo.toml`、`fist_config.json` 等）与文档目录（`README.md`、`SYNTAX/`、`ARCH-PLAN/`、`docs/` 等）；
    - 读 `README.md` 与 `docs/` 了解项目目标与当前阶段；
    - 执行 `git log --oneline -20` 了解最近开发方向、`git status` 查看未提交改动与待办（**只读**）；

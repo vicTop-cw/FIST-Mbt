@@ -21,7 +21,8 @@
 ## 现有正式工具速查
 
 **基础 / 演示**
-- `mcp_smoke.py` — MCP server 一键自检（84 工具 + publish/get 链路）。
+- `mcp_smoke.py` — MCP server 一键自检（104 工具 + publish/get 链路 + issue_scan 命中校验）。
+- `issue_scan.py` — **规则驱动源码扫描 CLI（打磨收尾：issue_scan 三形态之 CLI）**：薄封装 MCP 工具，扫描逻辑单真源在 MoonBit 端；用法 `python scripts/issue_scan.py <dir> [--max-findings N] [--include-tests]`（默认跳过测试文件，`--include-tests` 连 `_test/_wbtest` 一起扫），先 `moon build --target js cmd/main`。skill 文档见 `docs/issue-scan-skill.md`。
 - `award_demo.py` — **获奖自驱 DEMO（评审一条命令演示）**：串演 map→递归拆解(gradient)→验收闭环→Challenger→Critic→作用域预订→脉冲/看板 全链路，结尾自动清理临时区并 `--check` 守卫仓库干净。用法：`python scripts/award_demo.py`。
 - `cleanup_artifacts.py` — **项目整洁/生成物清理**：删除仓库根"除交付库 `fist-mbt.db` 外"的全部被 gitignore 的 `*.db / -shm / -wal` 测试/演示残留，清空 `temp/`，并把 `scripts/` 下 `_` 前缀临时脚本移入 temp/ 后清理（任务完即清策略，R66）；`--check` 模式作 CI 干净度守卫（0 = 干净，非 0 退出码 1）。用法：`python scripts/cleanup_artifacts.py` / `python scripts/cleanup_artifacts.py --check`。
 - `score_gate.py` + `scoring_rubric.md` — **4-AI 概率自评分门禁**：统一 rubric 提示词（维度/稍宽口径/SCORE_JSON 契约）作为正式工具统一管理（原 `_ai_prompt.md` 从临时命名升级）；全档达标 AND 聚合、error 不降级。

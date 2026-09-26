@@ -618,7 +618,11 @@ pub fn selfdrive_publish_next(
       skipped.push(tasks[i])
       continue
     }
-    let desc = tasks[i] + "\n\n<!-- " + marker + " -->"
+    let desc = tasks[i] +
+      "\n\n<!-- " +
+      marker +
+      " -->\n\n" +
+      sd_agent_contract(tasks[i])
     let new_id = try_publish_one(engine, ns, desc, now, project_dir)
     match new_id {
       Some(id) => {
@@ -672,4 +676,20 @@ fn try_publish_one(
     Ok(id) => Some(id)
     Err(_) => None
   }
+}
+
+///|
+/// Agent Contract 7 字段（five-directions §一 P1 蒸馏）：给自驱发布的任务注入执行纪律，
+/// 使每个根任务自带 Objective/Constraints/Tool policy/Stop conditions/Escalation/
+/// State discipline/Evidence 七段契约，强化「会自我迭代的 AI 项目管理工具」的执行闭环。
+/// 纯函数确定性生成，不改生命周期语义；执行者/验收方可据契约判定「是否按要求做、做对」。
+pub fn sd_agent_contract(task : String) -> String {
+  "## 执行契约（自驱注入 · Agent Contract）\n- Objective: " +
+  task +
+  "\n- Constraints: 只完成任务目标与边界内动作；不越权、不改无关文件、不臆造工具或参数\n" +
+  "- Tool policy: 用已有的自包含工具（issue_scan 等先查潜问题）；以 `moon test`/`moon check` 真实验证；不调用未列出的工具\n" +
+  "- Stop conditions: 完成标准达成即停；失败如实上报原始报错，不以「已完成」糊弄\n" +
+  "- Escalation: 无法自决或遇外部阻塞→上报指挥官；不暴力重试\n" +
+  "- State discipline: 严守 认领→执行→提交→验收→归档 生命周期；不跳状态\n" +
+  "- Evidence: 交付物附可复现验证（文件/命令/测试输出）"
 }

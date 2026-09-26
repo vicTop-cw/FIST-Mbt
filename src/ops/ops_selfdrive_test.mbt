@@ -429,4 +429,27 @@ test "selfdrive_7_publish_next_idempotent" {
   let tasks = e.list_in_ns("sd-test")
   assert_true(tasks[0].description.contains("[review:20260920.13.00.00.md:0]"))
   assert_true(tasks[1].description.contains("[review:20260920.13.00.00.md:1]"))
+  // Agent Contract 已随自驱发布注入
+  assert_true(
+    tasks[0].description.contains(
+      "## 执行契约（自驱注入 · Agent Contract）",
+    ),
+  )
+  assert_true(
+    tasks[0].description.contains("- Evidence: 交付物附可复现验证"),
+  )
+}
+
+///|
+test "selfdrive_8_agent_contract_fields" {
+  // 纯函数契约生成：必须含 7 个字段标记，且 Objective 回填任务原文
+  let c = sd_agent_contract("做一个自驱任务")
+  let fields = [
+    "- Objective:", "- Constraints:", "- Tool policy:", "- Stop conditions:", "- Escalation:",
+    "- State discipline:", "- Evidence:",
+  ]
+  for f in fields {
+    assert_true(c.contains(f))
+  }
+  assert_true(c.contains("做一个自驱任务"))
 }

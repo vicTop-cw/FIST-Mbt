@@ -11,7 +11,7 @@ fn parse_section(text : String, header : String) -> Array[String] {
   for line in text.split("\n") {
     let t = line.trim()
     if t.starts_with("## ") {
-      in_section = t == ("## " + header)
+      in_section = t == "## " + header
     } else if in_section && t.starts_with("- ") {
       let s = t.to_owned()
       out.push(s.substring(start=2, end=s.length()))
@@ -24,7 +24,7 @@ fn parse_section(text : String, header : String) -> Array[String] {
 /// 反馈文本中是否存在某 `## 段名` 标题（段"在场"判定，与条目数无关）。
 fn section_present(text : String, header : String) -> Bool {
   for line in text.split("\n") {
-    if line.trim() == ("## " + header) {
+    if line.trim() == "## " + header {
       return true
     }
   }
@@ -75,7 +75,12 @@ pub fn FistEngine::eval_feedback(
     flags.push("section_missing:" + missing.join(","))
   }
   let verdict = if d == 0 && a > 0 { "pass" } else { "fail" }
-  let (sc_d, sc_e, sc_f, sc_a) = (d.to_double(), e.to_double(), f.to_double(), a.to_double())
+  let (sc_d, sc_e, sc_f, sc_a) = (
+    d.to_double(),
+    e.to_double(),
+    f.to_double(),
+    a.to_double(),
+  )
   Json::object({
     "ok": Json::boolean(true),
     "task_id": Json::string(task_id),

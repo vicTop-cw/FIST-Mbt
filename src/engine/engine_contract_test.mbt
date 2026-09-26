@@ -35,14 +35,12 @@ fn cx_phase(j : Json) -> String {
 fn cx_reasons(j : Json) -> Array[String] {
   match j.value("reasons") {
     Some(Json::Array(arr)) =>
-      arr.map(
-        fn(v) {
-          match v {
-            Json::String(s) => s
-            _ => ""
-          }
-        },
-      )
+      arr.map(fn(v) {
+        match v {
+          Json::String(s) => s
+          _ => ""
+        }
+      })
     _ => abort("reasons 缺失: " + j.stringify())
   }
 }
@@ -56,13 +54,17 @@ fn cx_target(j : Json) -> String {
 }
 
 ///|
-fn publish_croot(e : @engine.FistEngine, desc? : String = "契约测试根任务") -> String {
-  match e.publish(
-    project_dir="/proj/demo",
-    description=desc,
-    created_by="human_steward",
-    now="2026-09-26T10:00:00Z",
-  ) {
+fn publish_croot(
+  e : @engine.FistEngine,
+  desc? : String = "契约测试根任务",
+) -> String {
+  match
+    e.publish(
+      project_dir="/proj/demo",
+      description=desc,
+      created_by="human_steward",
+      now="2026-09-26T10:00:00Z",
+    ) {
     Ok(id) => id
     Err(m) => abort("publish failed: \{m}")
   }
@@ -105,7 +107,10 @@ test "tx_contract：invariant 失败整笔拒绝（K 值非法 depth=0 任务 ex
   // 注入非法 K 值任务（depth=0）到 store，模拟上游缺陷产生的非法状态
   match @store.SqliteStore::open("tc_r109_t3.db") {
     Some(s) =>
-      match s.create_task(@core.Task::new(id="K0", project_dir="/p", depth=0, split_n=3)) {
+      match
+        s.create_task(
+          @core.Task::new(id="K0", project_dir="/p", depth=0, split_n=3),
+        ) {
         Ok(_) => ()
         Err(m) => abort("create_task failed: " + m)
       }
@@ -145,7 +150,13 @@ test "tx_contract：submit 对称（执行中可提交 allowed；待验收再提
   let e = contract_engine("tc_r109_t5.db")
   let id1 = publish_croot(e, desc="任务甲")
   ignore(e.claim(task_id=id1, assignee="agent", now="2026-09-26T10:01:00Z"))
-  ignore(e.execute(task_id=id1, deliverable="契约执行交付", now="2026-09-26T10:02:00Z"))
+  ignore(
+    e.execute(
+      task_id=id1,
+      deliverable="契约执行交付",
+      now="2026-09-26T10:02:00Z",
+    ),
+  )
   let j1 = e.transition_contract(id1, "submit")
   assert_eq(cx_verdict(j1), "allowed")
   assert_eq(cx_target(j1), "待验收")
@@ -160,9 +171,13 @@ test "tx_contract：reopen on 已归档 前置拒绝" {
   let e = contract_engine("tc_r109_t6.db")
   let id = publish_croot(e)
   ignore(e.claim(task_id=id, assignee="agent", now="2026-09-26T10:01:00Z"))
-  ignore(e.execute(task_id=id, deliverable="交付", now="2026-09-26T10:02:00Z"))
+  ignore(
+    e.execute(task_id=id, deliverable="交付", now="2026-09-26T10:02:00Z"),
+  )
   ignore(e.submit(task_id=id, now="2026-09-26T10:03:00Z"))
-  ignore(e.verify(task_id=id, verifier="human_steward", now="2026-09-26T10:04:00Z"))
+  ignore(
+    e.verify(task_id=id, verifier="human_steward", now="2026-09-26T10:04:00Z"),
+  )
   ignore(e.archive(task_id=id, by="human_steward", now="2026-09-26T10:05:00Z"))
   let j = e.transition_contract(id, "reopen")
   assert_eq(cx_verdict(j), "rejected")
