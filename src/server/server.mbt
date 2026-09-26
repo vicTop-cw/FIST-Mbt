@@ -489,7 +489,7 @@ fn map_json() -> Json {
         "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback/saga_repair/circuit_fail/succeed/status/tx_contract",
       ),
       "运维·日志/缺陷/成本/调度": Json::string(
-        "call_log/bug_list/report_bug/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide",
+        "call_log/bug_list/report_bug/eval_feedback/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide",
       ),
       "看板/脉冲/预订/推荐+DAG": Json::string(
         "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish/slack/schedule/cost_route/mc/plan_revise/goal_drift_check + board_ascii + status_summary + project_health/health_check + reserve_scope/check/release + task_triage",
@@ -3975,6 +3975,29 @@ pub async fn run_server() -> Unit {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "eval_feedback",
+    "反馈收敛（R111，Evaluator-Optimizer schema 蒸馏：Anthropic E/O 模式 + Self-Refine arXiv 2303.17651 + Reflexion arXiv 2303.11366 + zubi.ai 四段式）：把自由文本反馈归一为 Defects/Evidence/Fix/Acceptance 四段式契约 + 确定性 verdict——无缺陷且 acceptance 非空 → pass（optimizer 可收敛）；否则 fail + flags（evidence_missing / fix_missing / section_missing:...）。纯计算只读不写库（决策建议，执行权在调用方；与 plan_revise 反馈修订互补：反馈从叙事升级为可计算契约）。参数：feedback(必填，含 ## Defects / ## Evidence / ## Fix / ## Acceptance 段，各段 - 列表项)、task_id(可选)。返回 { ok, task_id, schema:{defects,evidence,fix,acceptance}, counts, verdict, flags, note }。",
+    schema(
+      {
+        "feedback": string_prop(
+          "反馈文本（必填，含 ## Defects / ## Evidence / ## Fix / ## Acceptance 段，各段 - 列表项）",
+        ),
+        "task_id": string_prop("关联任务 id(可选)"),
+      },
+      ["feedback"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let feedback = get_str(args, "feedback")
+      let task_id = get_str(args, "task_id", default="")
+      Ok(
+        @mcp.ToolResult::text(
+          engine.eval_feedback(feedback, task_id~).stringify(),
+        ),
+      )
     },
   )
   s1 = instrumented_tool(

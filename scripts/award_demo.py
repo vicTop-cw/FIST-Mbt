@@ -244,6 +244,15 @@ def main():
         print(f"      ↳ R109 迁移契约 tx_contract({rid2_id}) → 待领取 execute 前置拒绝(rejected) → "
               f"认领后 execute 全通过(allowed→{txc2.get('target_state')})，状态回稳不落库"
               f"（Design by Contract：precondition/invariant/postcondition 三件套）")
+        # R111 反馈收敛：Evaluator-Optimizer schema —— 四段式反馈归一 + 确定性 verdict（pass 可收敛）
+        ef1 = call(p, "eval_feedback", feedback="## Defects\n（无）\n## Evidence\n- 能力链全通\n## Fix\n- 无需修复\n## Acceptance\n- MCP-AWARD-DEMO PASS\n- 守卫族全 PASS")
+        assert ef1.get("verdict") == "pass", "无缺陷四段式应 pass"
+        ef2 = call(p, "eval_feedback", feedback="## Defects\n- 看板缩进错误\n## Evidence\n- board_ascii_test 复现\n## Fix\n- 修正缩进\n## Acceptance\n- 看板测试通过")
+        assert ef2.get("verdict") == "fail" and ef2.get("counts", {}).get("defects") == 1, \
+            "有缺陷四段式应 fail 且结构化"
+        print(f"      ↳ R111 反馈收敛 eval_feedback → 无缺陷四段式 pass(可收敛) / "
+              f"有缺陷四段式 fail(defects=1, E/O 闭环 Defects→Fix→再 eval→pass)"
+              f"（Anthropic E/O + Self-Refine + zubi.ai 四段式：反馈从叙事升级为可计算契约）")
         tr = call(p, "task_triage", namespace=NS, agent="exec_demo", want="编排")
         assert tr.get("count", 0) >= 1, "triage 应至少 1 条可领取"
         assert tr.get("suggestion"), "triage 应有 suggestion"
