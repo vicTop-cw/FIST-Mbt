@@ -4106,6 +4106,30 @@ pub async fn run_server() -> Unit {
     },
   )
 
+  // ===== project_standards：AI 项目开发规范（默认内置 + FIST 专项）=====
+  s1 = instrumented_tool(
+    s1,
+    "project_standards",
+    "AI 项目开发规范（默认内置 5 条 + FIST 专项 5 条）。纯计算、零依赖，给 agent 一套『应该怎么开发』的基线——文档即实现、一源三态、确定性优先、增量零回归、自我迭代；加上 FIST 强制：用自身能力迭代/三形态必须对齐/证据梯至少 L4/重任务先拆 DAG/工具命名即文档。附三形态 checklist（cl1-mcp-exists 到 cl6-doc-sync），可直接喂 output_validate 当验收门禁。参数：project_type（可选默认 moontbit_mcp，给针对性上下文）、include_checklist（可选默认 true，是否附带验收 checklist）。",
+    schema(
+      {
+        "project_type": string_prop(
+          "项目类型标签（可选，默认 moontbit_mcp）。用于给规范清单打上下文标注",
+        ),
+        "include_checklist": bool_prop(
+          "是否附带三形态验收 checklist（默认 true）。是新功能上线的硬门",
+        ),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let ptype = get_str(args, "project_type")
+      let icl = get_bool(args, "include_checklist", default=true)
+      let ptype2 = if ptype.is_empty() { "moontbit_mcp" } else { ptype }
+      Ok(@mcp.ToolResult::text(project_standards(ptype2, icl).stringify()))
+    },
+  )
+
   // 默认 stdio 传输（MCP 标准模式）。
   run_stdio_target(s1)
 }
