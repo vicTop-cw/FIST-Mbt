@@ -226,6 +226,8 @@ pub fn report_bug(
   ref_call_id~ : String,
   reported_by~ : String,
   publish_task~ : Bool,
+  github_sync? : Bool = false,
+  github_repo? : String = "",
   eng : @engine.FistEngine,
   now~ : String,
 ) -> Result[Json, String] {
@@ -298,6 +300,9 @@ pub fn report_bug(
   m.set("bug_id", Json::string(bug_id))
   m.set("status", Json::string("OPEN"))
   m.set("path", Json::string(path))
+  // BUG-5 fix: 补 resolved_path（绝对 + normalize），让落点可审
+  m.set("resolved_path", Json::string(bug_resolve_path(project_dir)))
+  m.set("project_dir", Json::string(project_dir))
   if not(task_id.is_empty()) {
     m.set("task_id", Json::string(task_id))
   }
@@ -321,6 +326,8 @@ pub fn bug_list(project_dir : String) -> Result[Json, String] {
   Ok(
     Json::object({
       "path": Json::string(path),
+      "project_dir": Json::string(project_dir),
+      "resolved_path": Json::string(bug_resolve_path(project_dir)),
       "count": Json::number(entries.length().to_double()),
       "bugs": Json::array(entries),
     }),

@@ -135,3 +135,60 @@ test "bug_report_validation" {
   )
   assert_true(r2 is Err(_))
 }
+
+///|
+/// BUG-5 fix: report_bug / bug_list 返回值补 resolved_path 和 project_dir，
+/// 让落点可审；同时 contract 描述明确 "相对 server 进程 cwd"。
+test "bug5_report_bug_returns_resolved_path" {
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
+  let d = "temp/bug_c5"
+  @fs.create_dir(d) catch {
+    _ => ()
+  }
+  @fs.remove_file(d + "/memory/bugs.md") catch {
+    _ => ()
+  }
+  let eng = @engine.FistEngine::new()
+  let j = match
+    report_bug(
+      d,
+      "BUG-5 验证",
+      detail="",
+      severity="high",
+      ref_call_id="",
+      reported_by="",
+      publish_task=false,
+      eng,
+      now="2026-09-26T00:00:00Z",
+    ) {
+    Ok(x) => x
+    Err(m) => abort(m)
+  }
+  // resolved_path 存在且是规范化后的相对路径
+  let resolved = bug_str(j, "resolved_path")
+  assert_true(resolved.contains("bug_c5"))
+  assert_false(resolved.contains("\\")) // 反斜杠已规范化
+  let pd = bug_str(j, "project_dir")
+  assert_eq(pd, d)
+  // bug_list 也带 resolved_path
+  let lj = match bug_list(d) {
+    Ok(x) => x
+    Err(m) => abort(m)
+  }
+  assert_true(bug_str(lj, "resolved_path").contains("bug_c5"))
+  assert_eq(bug_str(lj, "project_dir"), d)
+}
+
+///|
+/// BUG-4 fix: run_check workdir 非法时应被拒绝（通过 workdir_ok 函数验证）。
+test "bug4_run_check_workdir_ok" {
+  assert_true(run_check_workdir_ok(".", "temp/proj"))
+  assert_true(run_check_workdir_ok("temp/proj", "temp/proj"))
+  assert_false(run_check_workdir_ok("", "temp/proj"))
+  assert_false(run_check_workdir_ok("../outside", "temp/proj"))
+  assert_false(run_check_workdir_ok("..", "temp/proj"))
+  assert_false(run_check_workdir_ok("/abs/path", "temp/proj"))
+  assert_false(run_check_workdir_ok("C:/Windows", "temp/proj"))
+}

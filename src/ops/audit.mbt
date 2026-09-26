@@ -1,7 +1,8 @@
 /// audit.mbt —— 权限与审计模块（M5 治理：人类主权 + 追加式审计日志）
 ///
 /// 设计要点：
-///   - AuditLog 为进程内追加式日志（append-only），不落库；
+///   - AuditLog 为进程内追加式日志（append-only），**不落库**；
+///   - 跨进程查询请用 call_log（已落库）；audit_log 仅对**本进程生命周期**内可见；
 ///   - 时间戳由调用方传入 now（测试确定性、无隐式系统时间依赖）；
 ///   - 角色权限矩阵遵循"唯一指挥官/人类主权"原则：publish/archive/delete 仅 HumanSteward，
 ///     claim 面向 Leader / Agent / HumanSteward 全部放开。

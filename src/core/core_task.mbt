@@ -359,13 +359,14 @@ pub fn Task::mark_decomposing(self : Task) -> Result[Task, String] {
 }
 
 ///|
-/// 拆分中 -> 执行中（进入执行）
+/// 拆分中/已领取/执行中 -> 执行中（进入/覆盖/追加交付物）
+/// 执行中 -> execute = 覆盖/追加交付物（retry 后原地更新交付物的直觉行为）
 pub fn Task::execute(self : Task) -> Result[Task, String] {
   match self.status {
-    Splitting | Claimed => Ok({ ..self, status: Executing, })
+    Splitting | Claimed | Executing => Ok({ ..self, status: Executing, })
     _ =>
       Err(
-        "非法迁移: execute 要求状态 [拆分中/已领取]，当前是 [" +
+        "非法迁移: execute 要求状态 [拆分中/已领取/执行中]，当前是 [" +
         self.status.to_string() +
         "]",
       )

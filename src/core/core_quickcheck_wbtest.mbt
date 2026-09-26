@@ -128,3 +128,52 @@ test "quickcheck: submit/reject 对称纪律（仅执行中可提交、仅待验
     seed=20260930,
   )
 }
+
+///|
+/// BUG-2 fix: retry 后（状态=执行中）再 execute 应能成功追加/覆盖交付物。
+/// 原守卫只允许 [拆分中/已领取]，retry 落在 执行中 → 死角。
+test "bug2_execute_after_retry_ok" {
+  let t = Task::new(
+    id="T-bug2",
+    project_dir="temp/bugfix",
+    description="BUG-2 复现",
+    created_at="2026-09-26T00:00:00Z",
+  )
+  // 正常路径跑一遍：pending→claimed→splitting→executing→reviewing→rejected→executing(retry)
+  let c1 = match t.claim(assignee="agentX") {
+    Ok(x) => x
+    Err(e) => abort(e)
+  }
+  let c2 = match c1.split() {
+    Ok(x) => x
+    Err(e) => abort(e)
+  }
+  let c3 = match c2.execute() {
+    Ok(x) => x
+    Err(e) => abort(e)
+  }
+  let c3d = c3.with_deliverable("第一次交付物", "2026-09-26T00:01:00Z")
+  let c4 = match c3d.submit() {
+    Ok(x) => x
+    Err(e) => abort(e)
+  }
+  let c5 = match c4.reject(reason="质量不过关") {
+    Ok(x) => x
+    Err(e) => abort(e)
+  }
+  assert_eq(c5.get_status().to_string(), "已打回")
+  let c6 = match c5.retry() {
+    Ok(x) => x
+    Err(e) => abort(e)
+  }
+  assert_eq(c6.get_status().to_string(), "执行中")
+  // 关键：在 执行中 状态再 execute 应能成功（BUG-2 修复前这里会失败）
+  let c7 = match c6.execute() {
+    Ok(x) => x
+    Err(e) => abort("BUG-2 修复后 execute(执行中) 应成功：" + e)
+  }
+  let c7d = c7.with_deliverable(
+    "重做后的新交付物", "2026-09-26T00:02:00Z",
+  )
+  assert_eq(c7d.deliverable, "重做后的新交付物")
+}
