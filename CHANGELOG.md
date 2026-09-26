@@ -13,6 +13,51 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## [0.2.6] - 2026-09-26
+
+### 🐛 BUG 清偿（5 单全部闭环）
+
+- **BUG-1 [high] 时间戳服务端盖章**：publish/claim/execute/submit/verify 的持久化时间戳从"调用方 now 透传"改为**服务端 `@env.now()` 统一盖章**；now 参数保留 schema（零回归）但不再读取。源码：`src/server/server.mbt` `now_default()` + 9 处写库点切换
+- **BUG-2 [medium] retry 后 execute 死角**：execute 的合法前态从 `[拆分中/已领取]` 扩到 `[拆分中/已领取/执行中]`，`src/core/core_task.mbt` 守卫放宽 + 新增白盒测试 `bug2_execute_after_retry_ok`
+- **BUG-3 [medium] audit_log 进程内假空**：返回结构从裸数组改为 `{scope:"process", entries, note}`，让跨进程空结果可区分；`src/ops/audit.mbt` + `src/server/server.mbt`
+- **BUG-4 [high] run_check workdir 限定（最小收口）**：新增 `run_check_workdir_ok` 拦截空串/`..`/绝对路径/盘符，拒绝后返回明确错误；白名单机制**不做**（留活口）。源码：`src/server/bugreport_resolve.mbt`
+- **BUG-5 [medium] project_dir 契约分裂**：`report_bug` 返回值补 `resolved_path`（绝对 + normalize 后）让落点可审；server.mbt 参数描述补「相对 server 进程 cwd」说明。源码：`src/server/bugreport_resolve.mbt` + `src/server/bugreport.mbt`
+
+### ✨ 自驱编程 6 模式流水线
+
+新增 `ops_modes.mbt` 模式注册表 + 三引擎扩展（watchdog_tick / pipeline_tick / selfdrive_publish_next 接受 `mode` 参数）+ 6 份元提示词模板：
+
+| mode | 核心动作 | 禁止 |
+|------|----------|------|
+| advance（默认） | 四分支自决策 | 无 |
+| polish | 扫 FIXME/TODO 补边角 | 不加新功能 |
+| verify | API 枚举 + 文档自洽 | 不改源码 |
+| bugfind | issue_scan + ocr-cli 预留 | 不修复 |
+| fix_and_merge | github issues → 分派 → 合并 | 不引入新功能 |
+| tidy | 盘点 → 清理 → 补注释 | 不新增功能代码 |
+
+MCP 新工具：`mode_list` / `mode_templates`
+
+### 🔧 其他
+
+- **GitHub 同步扩展**：8 个 github_* 工具 + selfdrive_round_tick 轮次决策
+- **CI Workflows**：fist-ci.yml + fist-bug-sync.yml
+- **工具脚本**：mcp_bug_loop.py（MCP 闭环验证）、flush_github.mjs、pentad_fist.py
+- **fist-mbt.db 移出 git 跟踪**：保留 `*.db` 忽略规则
+- **测试基线**：366/366 ✅（含 BUG-2/BUG-4/BUG-5 回归测试 + ops_modes 25 条）
+- **MCP 工具数**：57 → 116
+
+### 回归验证
+
+```
+moon test --target js -j 1 → Total tests: 366, passed: 366, failed: 0
+moon info                  → 0 errors
+moon fmt                   → tasks_failed=0
+git log --oneline          → 7/7 commit 线性落地
+```
+
+---
+
 ## [0.2.3] - 2026-09-24
 
 ### 打磨与跨环境稳定化
