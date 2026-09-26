@@ -173,6 +173,7 @@ You can browse and install extra skills here:
 | `cost_budget_check` | 预算/成本上限检查 |
 | `cost_budget_split` | 预算按依赖图阶段切分（R81，ZEBRA 背包水填充蒸馏简化版）：给定总预算按任务 DAG 阶段(slack earliest 层级)切分——每阶段份额=阶段难度权重(难3/中2/易1)占总量比例×总预算(余数补最大权重阶段)，返回 { stages:[{level,tasks,difficulty_sum,share}], total_budget, makespan, note }——瓶颈阶段占额可见，超支先预警 |
 | `progress_gate` | 进度预算路由门控（R88，PROGROUTER arXiv 2608.25992 蒸馏）：对任务子树按已消耗预算(难度权重 易/中/难→1/2/3，自动估算或手动注入 spent)与完成进度(已完成+已归档/子树任务数)做双路径剩余成本预测——线性=燃尽率×剩余工作量、保守=1.2×线性，元门控给决策 OK(预算充足继续)/CAUTION(线性可行但缓冲不足，建议降档缩范围)/ESCALATE(线性已超支，建议追加预算或暂停)——预算×进度在线体检，先预警后决策 |
+| `project_standards` | AI 项目开发规范（R114）：通用 5 条（文档即实现/一源三态/确定性优先/增量零回归/自我迭代）+ FIST 专项 5 条（用自身能力迭代/三形态必须对齐/证据梯至少 L4/重任务先拆 DAG/工具命名即文档）；附 6 项三形态 checklist（cl1-mcp-exists → cl6-doc-sync），可直接喂 output_validate 当验收门禁。纯计算零依赖。 |
 | `laya_decide` | Laya 决策（冷启动选档/功能路由 + 确定性回退）：有 Laya→sidecar 决定难度/拆分数/机制选择；无 Laya→降级到内建规则式决策分支（laya_route 纯计算：按任务描述关键词对机制族打分选 feature_route + 复杂度启发式给 split_n）。研发方向「功能太多难决策 / 复杂多任务不知用哪些功能」的落点 |
 
 ### 衍生子项目 · ATGC-old（3）

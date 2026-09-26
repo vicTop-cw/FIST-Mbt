@@ -41,6 +41,8 @@ pub fn memory_link(String, String, String, String) -> Result[Json, String]
 
 pub fn output_validate(String, Array[Json], Json, String, require_evidence? : Bool) -> Result[Json, String]
 
+pub fn project_standards(String, Bool) -> Json
+
 pub fn render_board_ascii(Array[@core.Task], String) -> Json
 
 pub fn render_health_check(Array[@core.Task], String) -> Json
