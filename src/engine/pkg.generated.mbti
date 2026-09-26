@@ -24,6 +24,10 @@ pub const COST_TIER_PREMIUM : String = "premium"
 
 pub fn advance_mark_prefix() -> String
 
+pub fn boundary_probe_hint() -> String
+
+pub fn boundary_probe_slice() -> String
+
 pub fn budget_check(Double, Double) -> Json
 
 pub fn budget_check_json(Json) -> Json
@@ -127,7 +131,7 @@ pub fn FistEngine::parallelism(Self) -> Int
 pub fn FistEngine::pause_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::pick_next(Self, String, String, String, String) -> Json
 pub fn FistEngine::plan(Self, task_id~ : String, split_n? : Int, by~ : String, now~ : String) -> Result[Array[String], String]
-pub fn FistEngine::plan_deep(Self, task_id~ : String, split_n? : Int, by~ : String, spec? : Json?, now~ : String, omega_strong_verify? : Bool, gradient? : Bool, calibrate? : Array[Double]?, gradient_dag? : Bool, reinject_context? : Bool) -> Result[Json, String]
+pub fn FistEngine::plan_deep(Self, task_id~ : String, split_n? : Int, by~ : String, spec? : Json?, now~ : String, omega_strong_verify? : Bool, gradient? : Bool, calibrate? : Array[Double]?, gradient_dag? : Bool, reinject_context? : Bool, boundary_probe? : Bool) -> Result[Json, String]
 pub fn FistEngine::plan_exec_order(Self, String) -> Json
 pub fn FistEngine::plan_revise(Self, String, feedback? : Array[Json], ns? : String) -> Json
 pub fn FistEngine::progress_gate(Self, String, Int, Int) -> Json

@@ -55,6 +55,57 @@ priv struct ArtifactSpec {
 /// 解析一个 artifact JSON 对象，返回 ArtifactSpec。
 /// 支持两类：
 ///   { path: "xxx.mbt" }                    → file artifact
+
+///|
+/// artifact 规格的字面校验（BUG-31）。
+/// 病灶：`parse_artifact` 对键**只看认识的**，拼错/臆造的键（如 `contans`、`must_contain`）
+/// 被静默忽略，spec 退化成「文件存在 + 非空」的空检查——硬门 verdict 仍是 pass，
+/// detail 还写着「invariant 全部通过」，L4 证据梯因此可以自证为真。
+/// 返回 ""=合法；否则给可直接回给调用方的原因（含可用键清单，不让人猜）。
+fn artifact_spec_errors(a : Json) -> String {
+  let allowed : Array[String] = [
+    "path", "check_key", "min_chars", "contains", "not_contains",
+  ]
+  match a {
+    Object(m) => {
+      let mut unknown = ""
+      let mut n_unknown = 0
+      for k in m.keys() {
+        if !allowed.any(fn(x : String) { x == k }) {
+          if n_unknown > 0 {
+            unknown = unknown + ", "
+          }
+          unknown = unknown + k
+          n_unknown = n_unknown + 1
+        }
+      }
+      if n_unknown > 0 {
+        let why = "含未知键 " +
+          unknown +
+          "（会被静默忽略=假 pass）。可用键只有 path/check_key/min_chars/contains/not_contains"
+        return why
+      }
+      let has_path = match m.get("path") {
+        Some(String(s)) => s != ""
+        _ => false
+      }
+      let has_key = match m.get("check_key") {
+        Some(String(s)) => s != ""
+        _ => false
+      }
+      if !has_path && !has_key {
+        return "path 与 check_key 至少给一个（都不给=这条什么都不检查，却算通过）"
+      }
+      if has_path && has_key {
+        return "path 与 check_key 二选一，不能同时给（两条检查路径语义不同）"
+      }
+      ""
+    }
+    _ => "不是 JSON 对象"
+  }
+}
+
+///|
 ///   { path: "xxx.mbt", contains: "YYY" }  → file + invariant=contains
 ///   { path: "xxx.mbt", not_contains: "Z"} → file + invariant=not_contains
 ///   { path: "xxx.mbt", min_chars: 100 }   → file + invariant=size
@@ -158,11 +209,28 @@ fn check_file_artifact(
       }
     }
   }
-  {
-    artifact: spec.path,
-    ok: true,
-    detail: "OK（存在/非空/invariant 全部通过）",
+  // BUG-31 建议 2：pass 文案只声明**真正评估过**的不变量，纯存在性检查不得冒充 invariant 通过
+  let have_min = spec.min_chars > 0
+  let have_c = !spec.contains.is_empty()
+  let have_nc = !spec.not_contains.is_empty()
+  let pass_detail = if !have_min && !have_c && !have_nc {
+    "OK（仅存在性/非空：未声明任何 invariant）"
+  } else {
+    let mut names = ""
+    if have_min {
+      names = names + "min_chars, "
+    }
+    if have_c {
+      names = names + "contains, "
+    }
+    if have_nc {
+      names = names + "not_contains, "
+    }
+    let cut = if names.ends_with(", ") { 2 } else { 0 }
+    let tail = names.substring(start=0, end=names.length() - cut)
+    "OK（存在/非空 + invariant 全部通过: " + tail + "）"
   }
+  { artifact: spec.path, ok: true, detail: pass_detail, }
 }
 
 ///|
@@ -293,6 +361,16 @@ pub fn output_validate(
   let mut any_failed = false
   let mut parsed_count = 0
   for a in artifacts {
+    let spec_err = artifact_spec_errors(a)
+    if spec_err != "" {
+      checks.push({
+        artifact: "<invalid>",
+        ok: false,
+        detail: "artifact 规格非法: " + spec_err,
+      })
+      any_failed = true
+      continue
+    }
     match parse_artifact(a) {
       None => {
         checks.push({

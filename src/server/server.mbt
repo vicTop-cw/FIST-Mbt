@@ -232,7 +232,58 @@ fn now_default() -> String {
 }
 
 ///|
-/// (run_check_workdir_ok 已移至 bugreport_resolve.mbt，供 server + test 共用)
+/// BUG-3（Round 2 收口）：audit_log 的返回体构造（抽成纯函数，好让契约可被回归测试钉住）。
+/// 病灶：@ops.AuditLog 是**进程内**实现、不落库（见 src/ops/audit.mbt 头注），而每次 MCP
+/// 调用是新起进程 → 裸数组 [] 与「从来没有发生过任何治理动作」不可区分，这是审计面最坏的
+/// 失败（假阴性证据）。本轮只做「让空结果可区分且自我说明」，不改落库（那是新架构，另单）：
+/// 恒返回 { scope:"process", entries:[...], note:"仅本进程…；跨进程请用 call_log" }。
+fn audit_log_payload(entries : Array[@ops.AuditEntry]) -> Json {
+  let arr = entries.map(fn(e) {
+    let m : Map[String, Json] = Map([])
+    m.set("ts", Json::string(e.ts))
+    m.set("action", Json::string(e.action))
+    m.set("actor", Json::string(e.actor))
+    m.set("task_id", Json::string(e.task_id))
+    m.set("detail", Json::string(e.detail))
+    Json::object(m)
+  })
+  Json::object({
+    "scope": Json::string("process"),
+    "entries": Json::array(arr),
+    "count": Json::number(arr.length().to_double()),
+    "note": Json::string(
+      "仅本进程生命周期内的审计记录（AuditLog 不落库）；空 entries **不等于**没有治理动作——跨进程请用 call_log（服务端盖章、持久）",
+    ),
+  })
+}
+
+///|
+/// BUG-4（Round 2）：run_check 拒绝一次宿主命令尝试时的统一出口。
+/// 拒绝必须**可审**：① 立刻写进程内 audit_log（audit_log 当场能查到 scope=process 的这条）；
+/// ② 错误文案原样返回，由 _instrument 落进 call_log（跨进程持久痕迹，含完整入参）。
+/// 旧版 workdir 判定（bugreport_resolve.mbt 的 run_check_workdir_ok）已被
+/// run_check_guard.mbt 的子树判定 + cmd 白名单取代，那里只留一个兼容别名。
+fn run_check_deny(
+  task_id : String,
+  actor : String,
+  reason : String,
+) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+  ignore(
+    audit.record(
+      action="run_check_denied",
+      actor~,
+      task_id~,
+      detail=reason,
+      now=now_default(),
+    ),
+  )
+  Err(
+    @mcp_types.ToolError(
+      reason +
+      "。本次尝试已落审计：audit_log(本进程) 与 call_log(跨进程, tool=run_check, ok=false) 均可查",
+    ),
+  )
+}
 
 ///|
 /// —— JSON schema 辅助 ——
@@ -349,6 +400,82 @@ fn get_bool(args : Json, key : String, default? : Bool = false) -> Bool {
 }
 
 ///|
+/// BUG-18（Round 2 修复）：Laya sidecar 的**延迟预算对齐**。
+///
+/// 病灶（活证据 temp/r2_laya_before.json + .err）：本机 `laya_decide` 一次真实调用
+/// 阻塞 **278.77s**（rc=0），因为 ① 每次调用都无条件重跑 `--probe`（旧预算 15000ms），
+/// ② sidecar 决策调用给了 300000ms（5 分钟）预算。而 `.mcp.json` 里 server 的
+/// `timeout_ms` 只有 **30000**：客户端在 30s 就先超时，看到的是「无响应」，
+/// 正好是 BUG-14 承诺「绝不阻断现网」的反面。
+///
+/// 现在的不变式（三者关系必须一起看，改任何一个都要重算）：
+///   laya_probe_budget_ms + laya_sidecar_budget_ms (=25s) < 客户端 laya_client_budget_ms(30s)
+/// 即**服务端一定先于客户端出结论**，最坏情况也回一个降级 decision 而不是让调用方干等；
+/// 留 5s 余量给 node/python 进程 spawn 与 MCP 往返。要真用满 Laya 侧车（本机实测 ~270s），
+/// 必须**同时**上调 `.mcp.json` 的 timeout_ms 和下面两个常量，否则客户端仍先断。
+/// `.mcp.json` 的 timeout_ms 是真源，这里只是镜像常量（没有构建期单一真源＝BUG-16 遗留）。
+let laya_client_budget_ms : Int = 30000
+
+///|
+let laya_probe_budget_ms : Int = 5000
+
+///|
+let laya_sidecar_budget_ms : Int = 20000
+
+///|
+/// probe 结果的进程内缓存（BUG-18）：`--probe` 会真的 `import laya`，是每次调用的固定
+/// 成本；同一台机器上可用性不会毫秒级变化，所以缓存 TTL 内的答案。
+/// 键固定 "probe"，值 {available, at_ms}。**运维语义**：装上/卸掉 Laya 后最迟
+/// laya_probe_ttl_ms 生效，要立刻生效就重启 server（本缓存只在进程内，不落库）。
+let laya_probe_cache : Map[String, Json] = Map([])
+
+///|
+let laya_probe_ttl_ms : Int64 = 300000L
+
+///|
+/// TTL 判定（纯函数，便于回归测试）：缓存条目是否仍然新鲜。
+/// at_ms<=0 视为"从没探过"（不新鲜），命中窗口内才算新鲜。
+fn laya_probe_cache_fresh(now_ms : Int64, at_ms : Int64) -> Bool {
+  at_ms > 0L && now_ms - at_ms < laya_probe_ttl_ms
+}
+
+///|
+/// 带 TTL 缓存的 Laya 探测：TTL 内复用上次答案，否则真探一次并回灌缓存。
+/// 语义与 laya_probe_available 一致（Err=探测失败=不可用），只是不再每次付费。
+async fn laya_probe_cached(
+  cmd : String,
+  args : Array[String],
+  workdir : String,
+  timeout_ms : Int,
+) -> Result[Bool, String] {
+  let now_ms = @env.now().to_int64()
+  let cached : Json = match laya_probe_cache.get("probe") {
+    Some(j) => j
+    None => Json::null()
+  }
+  let at_ms = get_int(cached, "at_ms", default=-1).to_int64()
+  if laya_probe_cache_fresh(now_ms, at_ms) {
+    // 命中：不再 spawn（at_ms 供调用方自证用的是哪一次探测）
+    return Ok(get_bool(cached, "available", default=false))
+  }
+  let r = laya_probe_available(cmd, args, workdir, timeout_ms)
+  let avail = match r {
+    Ok(a) => a
+    Err(_) => false
+  }
+  ignore(
+    laya_probe_cache.set(
+      "probe",
+      Json::object({
+        "available": Json::boolean(avail),
+        "at_ms": Json::number(now_ms.to_double()),
+      }),
+    ),
+  )
+  r
+}
+
+///|
 /// 从 laya_decide 返回的 Json 取 `answers.difficulty.score`，缺省回退 2.0。
 /// 供 task_plan_deep 的 laya_auto 自动选档使用（纯解析，各 target 均可用）。
 fn laya_difficulty_score(j : Json) -> Double {
@@ -369,6 +496,48 @@ fn laya_difficulty_score(j : Json) -> Double {
     _ => 2.0
   }
 }
+
+///|
+/// 契约守卫（BUG-14 修复）：`laya_decide` 的工具描述承诺顶层恒含 `decision`，但
+///   1) sidecar（scripts/laya_decide.py）只输出 answers/auto_decide/escalate，从不产出 decision；
+///   2) src/server/laya_js.mbt 在退出码非 0 时把 available 覆写为 false 后**仍返回 Ok(...)**，
+///      于是 handler 的 `not(avail)` 回退分支（唯一调 route_decision 的分支）不会触发，
+///      `Ok(res) => res.stringify()` 原样透传 → 调用方按文档取 decision.feature_route 拿到 undefined。
+/// 这里把 decision 补齐为**恒在**：res 自带 decision 就原样保留（前向兼容 sidecar 未来产出），
+/// 否则合并 route_decision(context, split_n_hint)（本工具 decision 结构的唯一真源）。
+/// 不改动 available 的原判定、不改工具签名、不引入依赖。
+fn laya_ensure_decision(
+  res : Json,
+  context : String,
+  split_n_hint : Int,
+) -> Json {
+  let obj = match res {
+    Object(m) => m
+    _ => Map([])
+  }
+  match obj.get("decision") {
+    Some(_) => res
+    None => {
+      obj.set("decision", route_decision(context, split_n_hint))
+      obj.set(
+        "decision_note",
+        Json::string(
+          "decision 由内建规则式分支 laya_route 补齐（Laya sidecar 只输出 answers，不产出 feature_route/split_n）；本工具保证 decision 恒在，调用方无需按 available 自行分支",
+        ),
+      )
+      Json::object(obj)
+    }
+  }
+}
+
+///|
+/// 项目自述版本（BUG-16 修复：对外版本单一真源）。
+/// 此前 status_summary / project_health / fist://overview 三处各写一遍上一版版本号字面量，
+/// 升版时漏改 → 对外自述落后一整版（违反规范 r1「文档即实现」/ r2「一源四态·单真源优先」；
+/// 漂移过程与活证据见 memory/bugs.md 的 BUG-16 条目）。现收敛到本常量；回归测试
+/// （src/server/fist-mbt_wbtest.mbt）逐字比对它与 moon.mod 里 version 的声明值，并断言本文件
+/// 不再残留任何硬编码版本字面量——所以这段说明本身也不写旧版本号，否则会被回归锁误伤。
+let project_version : String = "0.3.0"
 
 ///|
 /// —— 结果转换辅助 ——
@@ -525,7 +694,7 @@ fn overview_json() -> Json {
   let tasks = engine.list_all()
   let m : Map[String, Json] = Map([
     ("product", Json::string("FIST-Mbt")),
-    ("version", Json::string("0.2.4")),
+    ("version", Json::string(project_version)),
     ("principles", Json::number(7.0)),
     (
       "statuses",
@@ -605,16 +774,81 @@ fn _log_call(
 }
 
 ///|
+/// schema 声明的 required 参数名（BUG-19 用；解析不到就返回空数组=不新增约束）。
+fn schema_required(input_schema : Json) -> Array[String] {
+  let out : Array[String] = []
+  match input_schema.value("required") {
+    Some(Json::Array(arr)) =>
+      for j in arr {
+        match j {
+          Json::String(s) => if s != "" { out.push(s) }
+          _ => ()
+        }
+      }
+    _ => ()
+  }
+  out
+}
+
+///|
+/// 缺失的必填参数名。口径与 handler 一致：不给 / Null / 空串都算缺——
+/// `get_str(args, k)` 对这三种形态一律返回 ""，下游会把它当成「不存在的任务」或静默用默认值。
+fn missing_required(args : Json, required : Array[String]) -> Array[String] {
+  let out : Array[String] = []
+  for name in required {
+    let blank = match args.value(name) {
+      None => true
+      Some(Json::Null) => true
+      Some(Json::String(s)) => s.trim() == ""
+      _ => false
+    }
+    if blank {
+      out.push(name)
+    }
+  }
+  out
+}
+
+///|
+/// 逗号连接（不依赖跨版本不稳的 join 语义）。
+fn rq_join(items : Array[String]) -> String {
+  let mut out = ""
+  for i = 0; i < items.length(); i = i + 1 {
+    if i > 0 {
+      out = out + ", "
+    }
+    out = out + items[i]
+  }
+  out
+}
+
+///|
 /// 包装一个工具 handler：度量耗时、捕获入参/结果、best-effort 记日志，原样返回结果。
 /// Ok 路径结果文本在外部不可读（ToolResult 字段私有），故以 "ok" 占位；
 /// Err 路径记录真实错误信息（MCPError::message()）。
 fn _instrument(
   tool : String,
+  input_schema : Json,
   handler : async (Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError],
 ) -> async (Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+  // BUG-19：`schema(props, required)` 过去**只声明不校验**——缺必填参数会落到 handler 的
+  // `get_str(args, "x")` 拿到 ""，再被下游当成「任务不存在」或直接返回假成功。契约在这里补齐：
+  // 缺 required 一律拒，并写清缺哪几个（调用方看 tools/list 的 inputSchema 即可自证）。
+  let required = schema_required(input_schema)
   async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
     let t0 = @env.now().to_int64()
     let params_json = args.stringify()
+    let miss = missing_required(args, required)
+    if miss.length() > 0 {
+      let msg = tool +
+        ": 缺必填参数 " +
+        rq_join(miss) +
+        "（schema.required 已声明，BUG-19 硬门）。全部可用参数见 tools/list 的 inputSchema.properties"
+      let e = @mcp_types.ToolError(msg)
+      // 被拒的调用同样记账：否则"入口被硬门挡住"在跨进程审计里等于没发生
+      _log_call(engine, tool, args, params_json, e.message(), false, 0)
+      return Err(e)
+    }
     let r = handler(args)
     let runtime_ms = (@env.now().to_int64() - t0).to_int()
     let (result_json, ok) = match r {
@@ -636,13 +870,20 @@ pub fn instrumented_tool(
   input_schema : Json,
   handler : async (Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError],
 ) -> @mcp.MCPServer {
-  s.tool(name, description, input_schema, _instrument(name, handler))
+  s.tool(
+    name,
+    description,
+    input_schema,
+    _instrument(name, input_schema, handler),
+  )
 }
 
 ///|
 /// —— MCP server 构建与运行 ——
 pub async fn run_server() -> Unit {
-  let mut s1 = @mcp.MCPServer::MCPServer("fist-mbt", "0.1.0")
+  // BUG-21：握手版本曾是硬编码 "0.1.0"，与 moon.mod / project_version / 文档三处口径分裂——
+  // 客户端 tools/list 之外的唯一自报身份就是它，必须与单一真源一致。
+  let mut s1 = @mcp.MCPServer::MCPServer("fist-mbt", project_version)
 
   // ---- tools ----
   s1 = instrumented_tool(
@@ -655,7 +896,6 @@ pub async fn run_server() -> Unit {
         "description": string_prop("任务描述（必填）"),
         "namespace": string_prop("命名空间(默认 default)"),
         "created_by": string_prop("创建者身份(默认 human_steward)"),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       ["project_dir", "description"],
     ),
@@ -696,7 +936,6 @@ pub async fn run_server() -> Unit {
         "description": string_prop("任务描述（必填）"),
         "namespace": string_prop("命名空间（必填，不得为 default）"),
         "created_by": string_prop("创建者身份(默认 selfdrive)"),
-        "now": string_prop("时间戳(可选)"),
       },
       ["project_dir", "description", "namespace"],
     ),
@@ -739,7 +978,6 @@ pub async fn run_server() -> Unit {
         "inject": string_prop(
           "可选：逗号分隔的档案库资产 keywords（如 code-review,superpowers），按 goal 子串检索命中资产并追加到返回",
         ),
-        "now": string_prop("时间戳(可选)"),
       },
       ["task_id"],
     ),
@@ -780,7 +1018,6 @@ pub async fn run_server() -> Unit {
         "inject": string_prop(
           "可选：逗号分隔的档案库资产 keywords，按 goal 子串检索命中资产并追加到返回",
         ),
-        "now": string_prop("时间戳(可选)"),
       },
       ["task_id", "assignee"],
     ),
@@ -807,7 +1044,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "execute",
-    "记录执行交付物（向后兼容）。必填：task_id、deliverable；可选：executor(默认manual)、model、tokens_in、tokens_out、cost、duration_ms、rate_limited、failure_reason、now。",
+    "记录执行交付物（向后兼容）。合法前态：拆分中/已领取/**执行中**→执行中（BUG-2 收口：执行中重复 execute = 追加/覆盖交付物，因此 reject→retry（→执行中）后可以直接原地更新交付物，无需 pause→resume 绕行；被拒时错误文案会给出当前状态的可用出路）。必填：task_id、deliverable；可选：executor(默认manual)、model、tokens_in、tokens_out、cost、duration_ms、rate_limited、failure_reason、now。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -820,7 +1057,6 @@ pub async fn run_server() -> Unit {
         "duration_ms": int_prop("执行耗时毫秒(可选默认0)"),
         "rate_limited": bool_prop("是否被限流(可选默认false)"),
         "failure_reason": string_prop("失败原因(可选)"),
-        "now": string_prop("时间戳(可选)"),
       },
       ["task_id", "deliverable"],
     ),
@@ -859,13 +1095,7 @@ pub async fn run_server() -> Unit {
     s1,
     "submit",
     "提交验收（执行中 -> 待验收）。参数：task_id。",
-    schema(
-      {
-        "task_id": string_prop("任务 id（必填）"),
-        "now": string_prop("时间戳(可选)"),
-      },
-      ["task_id"],
-    ),
+    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
@@ -875,19 +1105,18 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "run_check",
-    "外部判据检查（**宿主 RCE 能力**：服务端真实执行任意命令，防自写自测恒绿；请勿暴露给不可信客户端）。参数：task_id 任务id、cmd 可执行命令、args 参数数组(可选)、workdir 工作目录(默认任务所在项目目录，**必须在项目目录子树内**，拒绝绝对路径/盘符/..)、timeout_ms 超时毫秒(默认120000)、now 时间戳(可选，服务端盖章)。真实 spawn 子进程运行 cmd，退出码 0 记为 passed、否则 failed，结果 JSON（含 stdout/stderr）落库 specs 表（spec_type=check）；[gate:required] 任务的 verify 依赖本记录且校验新鲜度。",
+    "外部判据检查（**宿主命令执行能力**：服务端真实 spawn 进程，防自写自测恒绿；请勿暴露给不可信客户端）。自 Round 2 起执行面**默认收紧**（BUG-4 收口，判定在 src/server/run_check_guard.mbt）：① cmd 必须在白名单内——默认只放项目脚本解释器 moon/node/python/python3/py/bash/sh/zsh/powershell/pwsh（集合来源=call_log 实测调用面）或**项目内的**相对判据脚本（如 `scripts/check.sh`）；② workdir 必须在任务 project_dir 子树内（默认即 project_dir 本身，绝对/相对皆可），越界（`..` 上跳、跨盘、不同根）直接拒绝。要扩展白名单只有两条路：把判据脚本写进项目目录按相对路径调用，或由**运维侧**设环境变量 FIST_RUN_CHECK_ALLOW=git,cargo（调用方传参不能给自己扩权）。被拒的尝试一律落审计（audit_log 本进程 + call_log 跨进程）。参数：task_id 任务id、cmd 可执行命令、args 参数数组(可选)、workdir 工作目录(默认任务 project_dir，须在项目子树内)、timeout_ms 超时毫秒(默认120000)（注：时间戳由服务端盖章，不接受调用方注入 now）。真实 spawn 子进程运行 cmd，退出码 0 记为 passed、否则 failed，结果 JSON（含 stdout/stderr）落库 specs 表（spec_type=check）；[gate:required] 任务的 verify 依赖本记录且校验新鲜度。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
         "cmd": string_prop(
-          "要执行的外部命令（必填），如 bash / sh / node / cargo",
+          "要执行的外部命令（必填，受 BUG-4 白名单约束）：默认允许 moon/node/python/python3/py/bash/sh/zsh/powershell/pwsh，或项目内相对判据脚本（scripts/xxx.sh）；扩展靠运维侧环境变量 FIST_RUN_CHECK_ALLOW",
         ),
         "args": array_prop("命令参数数组（可选）"),
         "workdir": string_prop(
-          "工作目录（可选，默认任务所在项目目录；**必须在项目目录子树内**，拒绝绝对路径/盘符/..）",
+          "工作目录（可选，默认任务 project_dir；**必须在项目目录子树内**——project_dir 本身或其子目录，拒绝 .. 上跳/跨盘/与 project_dir 绝对-相对形态不一致）",
         ),
         "timeout_ms": int_prop("超时毫秒（可选，默认 120000）"),
-        "now": string_prop("时间戳(可选，服务端盖章)"),
       },
       ["task_id", "cmd"],
     ),
@@ -905,17 +1134,30 @@ pub async fn run_server() -> Unit {
         }
       })
       let timeout_ms = get_int(args, "timeout_ms", default=120000)
+      // BUG-4（Round 2）：先过 cmd 白名单（allow_extra 恒为空数组——只有运维侧环境变量
+      // FIST_RUN_CHECK_ALLOW 能扩权，调用方无处自授），再定位任务。两条分支
+      // （任务存在/不存在）共用同一判定，防「任务不存在」变成绕过白名单的后门。
+      match run_check_cmd_denied(cmd, []) {
+        Some(reason) => return run_check_deny(task_id, "unknown", reason)
+        None => ()
+      }
       // 定位任务（取项目目录作默认 workdir；任务不存在也允许执行，仅不落库）
       match engine.get_task(task_id) {
         Some(t) => {
           let workdir = get_str(args, "workdir", default=t.project_dir)
-          // BUG-4 fix: workdir 必须在项目目录子树内，拒绝绝对路径/盘符/..
-          if not(run_check_workdir_ok(workdir, t.project_dir)) {
-            return Err(
-              @mcp_types.ToolError(
-                "run_check: 非法 workdir（拒绝绝对路径/盘符/..，且必须在项目目录子树内）",
-              ),
-            )
+          // BUG-4 fix（Round 2）：workdir 必须落在任务 project_dir 子树内。
+          // 绝对 project_dir 本身**是**合法值（实测调用面 38/51 就是这种形态）。
+          match run_check_workdir_denied(workdir, t.project_dir) {
+            Some(reason) =>
+              return run_check_deny(
+                task_id,
+                match t.get_assignee() {
+                  Some(a) if a != "" => a
+                  _ => "unassigned"
+                },
+                reason,
+              )
+            None => ()
           }
           let r = run_check_external(cmd, args_arr, workdir, timeout_ms)
           match r {
@@ -939,15 +1181,17 @@ pub async fn run_server() -> Unit {
           }
         }
         None => {
-          // 任务不存在：仍执行命令并返回结果，但不落库（无任务可挂）
+          // 任务不存在：仍执行命令并返回结果，但不落库（无任务可挂）。
+          // BUG-4（Round 2）：这条分支同样过白名单（上面已判），workdir 则**钉死在 server
+          // cwd 子树**（等价于 project_dir="."），越界照旧拒绝并落审计——不因为
+          // 「没有任务」就放开执行面。
           let workdir = get_str(args, "workdir", default=".")
-          // BUG-4 fix: 任务不存在时只允许 workdir="."
-          if workdir != "." {
-            return Err(
-              @mcp_types.ToolError(
-                "run_check: 任务不存在时 workdir 必须为 '.'（拒绝外部路径）",
-              ),
-            )
+          match run_check_workdir_denied(workdir, ".") {
+            Some(reason) => {
+              let hint = "（任务 \{task_id} 不存在，workdir 只允许 server cwd 子树内的相对路径，如 `.`）"
+              return run_check_deny(task_id, "unknown", reason + hint)
+            }
+            None => ()
           }
           let r = run_check_external(cmd, args_arr, workdir, timeout_ms)
           match r {
@@ -974,7 +1218,6 @@ pub async fn run_server() -> Unit {
         "docs_check": bool_prop(
           "是否开启文档一致性门禁(默认 false，不传即现状)：开启后校验项目结构 README.md/CHANGELOG.md/reports 与交付物回传五段式，缺项打回",
         ),
-        "now": string_prop("时间戳(可选)"),
       },
       ["task_id", "verifier"],
     ),
@@ -995,7 +1238,6 @@ pub async fn run_server() -> Unit {
         "task_id": string_prop("任务 id（必填）"),
         "reason": string_prop("打回原因（可选）"),
         "by": string_prop("操作者(默认 human_steward)"),
-        "now": string_prop("时间戳(可选)"),
       },
       ["task_id"],
     ),
@@ -1011,13 +1253,7 @@ pub async fn run_server() -> Unit {
     s1,
     "retry",
     "打回后重试（已打回 -> 执行中）。参数：task_id。",
-    schema(
-      {
-        "task_id": string_prop("任务 id（必填）"),
-        "now": string_prop("时间戳(可选)"),
-      },
-      ["task_id"],
-    ),
+    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
@@ -1028,13 +1264,7 @@ pub async fn run_server() -> Unit {
     s1,
     "reopen_task",
     "重开/重派任务：任意非归档任务回滚为已领取（M4 heal/运维重派用）。参数：task_id、now。",
-    schema(
-      {
-        "task_id": string_prop("任务 id（必填）"),
-        "now": string_prop("时间戳(可选)"),
-      },
-      ["task_id"],
-    ),
+    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
@@ -1048,13 +1278,7 @@ pub async fn run_server() -> Unit {
     s1,
     "pause",
     "暂停任务（任意活跃状态 -> 已暂停）。参数：task_id。",
-    schema(
-      {
-        "task_id": string_prop("任务 id（必填）"),
-        "now": string_prop("时间戳(可选)"),
-      },
-      ["task_id"],
-    ),
+    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
@@ -1065,13 +1289,7 @@ pub async fn run_server() -> Unit {
     s1,
     "resume",
     "恢复任务（已暂停 -> 已领取）。参数：task_id。",
-    schema(
-      {
-        "task_id": string_prop("任务 id（必填）"),
-        "now": string_prop("时间戳(可选)"),
-      },
-      ["task_id"],
-    ),
+    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
@@ -1086,7 +1304,6 @@ pub async fn run_server() -> Unit {
       {
         "task_id": string_prop("任务 id（必填）"),
         "by": string_prop("操作者(默认 human_steward)"),
-        "now": string_prop("时间戳(可选)"),
       },
       ["task_id"],
     ),
@@ -1163,7 +1380,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "task_plan_deep",
-    "AO 式递归拆解：对指定任务拆出整棵多层子任务树并写库。参数：task_id 任务id、split_n 每层默认拆分数(默认3)、by 拆解拳长、spec 可选 omega spec JSON(laws 作切割依据、fingerprint 作验收基准)、omega_strong_verify 是否开启 Omega 强验证(默认 false，不传即现状)、gradient 是否开启难度梯度标注(默认 false，开启后每个拆出的子任务描述附带『难度梯度 序号/总数:难易档』+『更简单变体』提示，使递归拆解呈由易到难、可验证最小片的梯度)、now 时间戳。开启强验证后每层子任务多出『语料创建者建语料 -> 验证者审语料 -> 执行者执行 -> 验证者复验成果』环节。",
+    "AO 式递归拆解：对指定任务拆出整棵多层子任务树并写库。参数：task_id 任务id、split_n 每层默认拆分数(默认3)、by 拆解拳长、spec 可选 omega spec JSON(laws 作切割依据、fingerprint 作验收基准)、omega_strong_verify 是否开启 Omega 强验证(默认 false，不传即现状)、gradient 是否开启难度梯度标注(默认 false，开启后每个拆出的子任务描述附带『难度梯度 序号/总数:难易档』+『更简单变体』提示，使递归拆解呈由易到难、可验证最小片的梯度)（注：时间戳一律由服务端盖章，不接受调用方注入 now）。开启强验证后每层子任务多出『语料创建者建语料 -> 验证者审语料 -> 执行者执行 -> 验证者复验成果』环节。",
     schema(
       {
         "task_id": string_prop("父任务 id（必填，非原子任务）"),
@@ -1187,6 +1404,9 @@ pub async fn run_server() -> Unit {
         "reinject_context": bool_prop(
           "是否把『父计划 + 剩余兄弟』回注进每条子任务描述(默认 false 零回归，ReCAP 借鉴/R63)：开启后每个拆出的子任务描述携带它归属于哪个父计划摘要 + 还剩几个兄弟，让原子片知其所以然，防上下文漂移，整棵树递归下钻均继承。",
         ),
+        "boundary_probe": bool_prop(
+          "是否为『spec 没写的域外行为』补一个 owner(默认 false 零回归，atgc-merge 归因报告机理 1/2)：开启后本层切片末尾追加一条『边界审视叶』(全局输入域 owner，须对空输入/极值/非法输入/资源极限逐项给用例或声明不适用)，并给其余每条叶挂『边界四问』提示，整棵树递归下钻均继承。用于治『验收锚定+弱语料』：语料只断言做了没时，执行体会理性地停在判据边界上。",
+        ),
         "laya_auto": bool_prop(
           "是否开启 Laya 自动选档(默认 false)。开启后探测 Laya，可用则按 difficulty.score 自动定 split_n（递归层数交给 Laya 推断）并附决策；不可用回退 split_n 默认值。⚠ 本机若 laya 可 import 但 predict 慢/卡（无内部超时），开启会拉长每次拆解耗时，故默认关闭按需开启。显式传 decide_split_n 则忽略 Laya(躬身自决优先)",
         ),
@@ -1200,7 +1420,6 @@ pub async fn run_server() -> Unit {
           "躬身选档理由(可选，可审计)：说明为何定此拆分数",
         ),
         "decide_by": string_prop("躬身选档身份(默认 leader)"),
-        "now": string_prop("时间戳(可选)"),
       },
       ["task_id"],
     ),
@@ -1221,6 +1440,7 @@ pub async fn run_server() -> Unit {
       let gradient = get_bool(args, "gradient", default=false)
       let gradient_dag = get_bool(args, "gradient_dag", default=false)
       let reinject_context = get_bool(args, "reinject_context", default=false)
+      let boundary_probe = get_bool(args, "boundary_probe", default=false)
       // 可选难度校准数组：把 JSON 数字数组转成 Double 数组（缺省 None = 位置档）
       let calibrate : Array[Double]? = {
         let arr = get_array(args, "calibrate")
@@ -1252,12 +1472,13 @@ pub async fn run_server() -> Unit {
       // Laya 自动选档（仅在无躬身自决、且显式开启 laya_auto 时探测）：
       let mut laya_info : Json = Json::null()
       if laya_auto && not(decided) {
+        // BUG-18：探测走 TTL 缓存、预算与 .mcp.json 的 30s 客户端超时对齐
         let avail = match
-          laya_probe_available(
+          laya_probe_cached(
             "python",
             ["scripts/laya_decide.py", "--probe"],
             ".",
-            15000,
+            laya_probe_budget_ms,
           ) {
           Ok(a) => a
           Err(_) => false
@@ -1275,7 +1496,7 @@ pub async fn run_server() -> Unit {
                     "questions": Json::null(),
                     "model": Json::string("english"),
                   }).stringify(),
-                  300000,
+                  laya_sidecar_budget_ms,
                 ) {
                 Ok(res) => {
                   let raw_n = laya_difficulty_score(res).round().to_int() + 2
@@ -1313,6 +1534,7 @@ pub async fn run_server() -> Unit {
           calibrate~,
           gradient_dag~,
           reinject_context~,
+          boundary_probe~,
         ) {
         Ok(j) => j
         Err(e) => return Err(@mcp_types.ToolError(e))
@@ -1361,7 +1583,6 @@ pub async fn run_server() -> Unit {
         "critic": bool_prop(
           "是否开启防漂移门禁(默认 false；true 时挑战题过 Critic 评审，漂移自动降档/拒发)",
         ),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       ["task_id"],
     ),
@@ -1394,7 +1615,6 @@ pub async fn run_server() -> Unit {
         "author": string_prop("语料创建者身份(默认 spec_author)"),
         "content": string_prop("语料内容（必填）"),
         "max_rounds": int_prop("打回上限(默认3，最大10)"),
-        "now": string_prop("时间戳(可选)"),
       },
       ["task_id", "content"],
     ),
@@ -1428,7 +1648,6 @@ pub async fn run_server() -> Unit {
         "verdict": string_prop("approve 通过 / 其它值打回（必填）"),
         "reason": string_prop("审核意见(可选)"),
         "max_rounds": int_prop("打回上限(默认3，最大10)"),
-        "now": string_prop("时间戳(可选)"),
       },
       ["task_id", "verdict"],
     ),
@@ -1464,7 +1683,6 @@ pub async fn run_server() -> Unit {
         "verdict": string_prop("pass 达标 / 其它值打回（必填）"),
         "reason": string_prop("复验意见(可选)"),
         "max_rounds": int_prop("打回上限(默认3，最大10)"),
-        "now": string_prop("时间戳(可选)"),
       },
       ["task_id", "verdict"],
     ),
@@ -1575,7 +1793,6 @@ pub async fn run_server() -> Unit {
         "signal": string_prop(
           "信号(可选)：pre-execution/active/submit，默认 active",
         ),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       ["task_id"],
     ),
@@ -1629,13 +1846,7 @@ pub async fn run_server() -> Unit {
     s1,
     "heal",
     "no_signal 看护（AO watchdog）：心跳超时静默的活跃任务（执行中/已领取/拆分中）回滚为已领取待重派。参数：now、timeout_sec(可选默认600)。",
-    schema(
-      {
-        "now": string_prop("当前时间戳(默认内置)"),
-        "timeout_sec": int_prop("超时秒数(可选默认600)"),
-      },
-      [],
-    ),
+    schema({ "timeout_sec": int_prop("超时秒数(可选默认600)") }, []),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ts = now_default()
       let timeout_sec = get_int(args, "timeout_sec", default=600)
@@ -1660,7 +1871,6 @@ pub async fn run_server() -> Unit {
     "定时任务看门狗编排单入口（推荐仅用于定时任务/无人值守场景，不用于人工指挥流程）：扫描活跃任务，心跳超时则回滚重派；检测到上一轮根任务已完成且提供了 next_description（或可由 meta_prompt_path 读取元提示词）时自动发布下一轮。参数：now、timeout_sec(可选默认600)、namespace(可选，未传则不自动续轮)、next_description(可选)、next_created_by(可选默认watchdog)、meta_prompt_path(可选)、cold_start(可选默认false，冷启动时设为true以发布首个任务)、project_dir(可选，冷启动时用于指定项目目录)、omega_strong_verify(可选默认false，开启后自动拆分并启用Omega强验证)、omega_split_n(可选默认3)、omega_spec(可选JSON)。",
     schema(
       {
-        "now": string_prop("当前时间戳(默认内置)"),
         "timeout_sec": int_prop("心跳超时秒数(可选默认600)"),
         "namespace": string_prop(
           "作用域命名空间(可选)：自动续轮/自动 heal 只作用于该 ns，未传则不自动续轮",
@@ -1782,7 +1992,6 @@ pub async fn run_server() -> Unit {
         "project_dir": string_prop(
           "项目目录(必填)：其下 currentState.txt 为状态源，Gen_Prompts 为提示词目录",
         ),
-        "now": string_prop("当前时间戳(可选，默认内置)"),
         "namespace": string_prop(
           "作用域命名空间(可选默认 cron-auto)：不得为 default",
         ),
@@ -1857,7 +2066,6 @@ pub async fn run_server() -> Unit {
         ),
         "content": string_prop("内容（必填）"),
         "namespace": string_prop("命名空间(可选默认 default)"),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       ["project_dir", "kind", "content"],
     ),
@@ -1971,7 +2179,6 @@ pub async fn run_server() -> Unit {
         "project_dir": string_prop("项目目录（必填）"),
         "namespace": string_prop("命名空间(可选默认 default)"),
         "max_tasks": int_prop("最多发布任务数(可选默认10)"),
-        "now": string_prop("时间戳(可选，默认内置)"),
         "mode": string_prop(
           "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy。",
         ),
@@ -2070,7 +2277,6 @@ pub async fn run_server() -> Unit {
           "条目类型(可选)：thinking/product/target/task，默认 target",
         ),
         "content": string_prop("收敛内容（必填）"),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       ["project_dir", "task_id", "content"],
     ),
@@ -2097,7 +2303,6 @@ pub async fn run_server() -> Unit {
           "条目类型(可选)：thinking/product/target/task；缺省处理全部四件套",
         ),
         "max_chars": int_prop("正文上限(可选默认2000)"),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       ["project_dir"],
     ),
@@ -2123,7 +2328,6 @@ pub async fn run_server() -> Unit {
         "from": string_prop("来源概念/任务（必填）"),
         "to": string_prop("目标概念/任务（必填）"),
         "note": string_prop("关联说明(可选)"),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       ["project_dir", "from", "to"],
     ),
@@ -2150,7 +2354,6 @@ pub async fn run_server() -> Unit {
           "原则说明/设计意图（必填，同时写入 code）",
         ),
         "score": number_prop("可计算评分(默认1.0)"),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       ["task_id", "goal", "note"],
     ),
@@ -2176,7 +2379,6 @@ pub async fn run_server() -> Unit {
         "score": number_prop("可计算评分(默认0)"),
         "parent_id": string_prop("父产物 id（可选）"),
         "parts": string_prop("评分分项 JSON(可选)"),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       ["id", "goal", "note", "code"],
     ),
@@ -2240,7 +2442,6 @@ pub async fn run_server() -> Unit {
         "reason": string_prop("失败/被打回的原因（必填）"),
         "fix": string_prop("纠偏提示/来源（可选，无则用 reason）"),
         "score": number_prop("可计算评分(默认0.5)"),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       ["cat", "reason"],
     ),
@@ -2268,7 +2469,6 @@ pub async fn run_server() -> Unit {
         ),
         "score": number_prop("可计算评分(默认0.5)"),
         "threshold": number_prop("放行阈值(默认0.85)"),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       ["note"],
     ),
@@ -2294,7 +2494,6 @@ pub async fn run_server() -> Unit {
         "note": string_prop("可注入提示词（必填）"),
         "code": string_prop("来源路径或 URL（必填）"),
         "score": number_prop("可计算评分(默认0)"),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       ["source", "note", "code"],
     ),
@@ -2401,7 +2600,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "laya_decide",
-    "Laya 决策工具（自动探测 + 确定性回退）：用 Laya（Python ML 决策模型）对任务/文本快速分类并给出「该用哪些功能机制 + 建议拆分数」决策；**机器无 Laya 或探测失败时，自动降级到内建规则式决策分支**（laya_route 纯计算：按任务描述关键词对机制族打分选最匹配 feature_route + 按复杂度启发式给 split_n），绝不阻断现网。参数：context(必填)、split_n_hint(可选整数，建议拆分数基线默认3)、questions(可选 JSON)、model(可选默认 english)。返回 { available, decision:{source/feature_route/split_n/splits_per_family/reasons} }；available=false 表示走回退分支（decision.source=fallback）。",
+    "Laya 决策工具（自动探测 + 确定性回退）：用 Laya（Python ML 决策模型）对任务/文本快速分类并给出「该用哪些功能机制 + 建议拆分数」决策；**机器无 Laya 或探测失败时，自动降级到内建规则式决策分支**（laya_route 纯计算：按任务描述关键词对机制族打分选最匹配 feature_route + 按复杂度启发式给 split_n），绝不阻断现网。参数：context(必填)、split_n_hint(可选整数，建议拆分数基线默认3)、questions(可选 JSON)、model(可选默认 english)、**no_sidecar(可选默认 false；true=跳过探测与 sidecar，直取规则式分支——无人值守流水线在延迟预算内显式选降级的逃生门)**。⏱ **延迟预算（BUG-18）**：本工具的服务端预算与 `.mcp.json` 的 `timeout_ms=30000` 显式对齐——探测 ≤5s（结果进程内缓存 TTL 5min，不再每次 `import laya`）+ sidecar ≤20s = 25s < 30s，服务端一定先于客户端出结论；若你的机器 Laya 更慢（本机实测 sidecar 单跑约 279s），要么接受降级 decision，要么同时上调 `.mcp.json` 与 src/server/server.mbt 的三个 laya_*_budget 常量。超时/失败**不报错**，回 available=false + 可用 decision。返回 { available, decision:{source/feature_route/split_n/splits_per_family/reasons} }；**decision 恒在**（BUG-14 修复：sidecar 只产出 answers，其 feature_route/split_n 由 laya_route 规则式分支补齐；sidecar 若自带 decision 则原样保留），available=false 表示 Laya 不可用（或被本预算截断）、此时 decision.source=fallback，available=true 时 answers 为 Laya 原始分类结果、decision 为可执行基线。",
     schema(
       {
         "context": string_prop("待决策的任务/文本描述（必填）"),
@@ -2410,6 +2609,9 @@ pub async fn run_server() -> Unit {
           "决策问题 schema JSON（可选；缺省用 Laya 内置 default questions）",
         ),
         "model": string_prop("Laya 模型(可选默认 english)"),
+        "no_sidecar": bool_prop(
+          "跳过 Laya 探测与 sidecar、直接走内建规则式分支(可选，默认 false=现状零回归)。用于在 30s 客户端超时预算内拿确定性决策（BUG-18）",
+        ),
       },
       ["context"],
     ),
@@ -2421,32 +2623,49 @@ pub async fn run_server() -> Unit {
       let split_n_hint = get_int(args, "split_n_hint", default=3)
       let questions_raw = get_str(args, "questions", default="")
       let model = get_str(args, "model", default="english")
-      // 1) 探测（--probe 仅 import laya，较快；每次调用探测以保证实时准确性）
-      let probe : Result[Bool, String] = laya_probe_available(
+      // 0) BUG-18 逃生门：显式不要 sidecar → 0 次 spawn，直接规则式决策。
+      //    默认 false，既有调用（不传本参数）行为逐字不变。
+      if get_bool(args, "no_sidecar", default=false) {
+        return Ok(
+          @mcp.ToolResult::text(
+            Json::object({
+              "available": Json::boolean(false),
+              "sidecar": Json::string("skipped"),
+              "decision": route_decision(context, split_n_hint),
+              "note": Json::string(
+                "调用方显式 no_sidecar=true：跳过 Laya 探测与 sidecar（BUG-18 延迟预算逃生门），直取内建规则式决策分支 laya_route；确定性、零延迟、可复现",
+              ),
+            }).stringify(),
+          ),
+        )
+      }
+      // 1) 探测（BUG-18：改走进程内 TTL 缓存 + 与客户端超时对齐的小预算；
+      //    旧版每次无条件 15s 探测是 4 分钟阻塞的一半成因）
+      let probe : Result[Bool, String] = laya_probe_cached(
         "python",
         ["scripts/laya_decide.py", "--probe"],
         ".",
-        15000,
+        laya_probe_budget_ms,
       )
       let avail = match probe {
         Ok(a) => a
         Err(_) => false
       }
       if not(avail) {
-        // 无 Laya → 确定性回退分支（本自驱改造核心：不再是空降级，而给出可用决策）
+        // 无 Laya（或探测失败/超时）→ 确定性回退分支（本自驱改造核心：不再是空降级，而给出可用决策）
         return Ok(
           @mcp.ToolResult::text(
             Json::object({
               "available": Json::boolean(false),
               "decision": route_decision(context, split_n_hint),
               "note": Json::string(
-                "机器上未探测到 Laya，已降级到内建规则式决策分支（laya_route）",
+                "机器上未探测到 Laya（或探测失败/超出 \{laya_probe_budget_ms}ms 预算），已降级到内建规则式决策分支（laya_route）",
               ),
             }).stringify(),
           ),
         )
       }
-      // 2) 可用 → 调 sidecar 决策
+      // 2) 可用 → 调 sidecar 决策（BUG-18：预算 ≤20s，与 probe 合计仍小于 .mcp.json 的 30s）
       let questions_json : Json = if questions_raw == "" {
         Json::null()
       } else {
@@ -2465,17 +2684,25 @@ pub async fn run_server() -> Unit {
           ["scripts/laya_decide.py"],
           ".",
           input_json,
-          300000,
+          laya_sidecar_budget_ms,
         ) {
-        Ok(res) => Ok(@mcp.ToolResult::text(res.stringify()))
+        Ok(res) =>
+          // BUG-14：sidecar 退出码 0（available 真假皆然）也必须带 decision，
+          // 否则描述承诺的 decision.feature_route/split_n 在这条主路径上是 undefined。
+          Ok(
+            @mcp.ToolResult::text(
+              laya_ensure_decision(res, context, split_n_hint).stringify(),
+            ),
+          )
         Err(e) =>
-          // 调度失败也降级（不报错）
+          // 调度失败也降级（不报错）；降级同样必须给可执行的 decision
           Ok(
             @mcp.ToolResult::text(
               Json::object({
                 "available": Json::boolean(false),
                 "fallback": Json::string("use existing schedule / LLM"),
                 "reason": Json::string("laya sidecar 调用失败: \{e}"),
+                "decision": route_decision(context, split_n_hint),
               }).stringify(),
             ),
           )
@@ -2487,10 +2714,7 @@ pub async fn run_server() -> Unit {
     "task_cleanup",
     "归档清理：删除超过保留期的已归档任务。参数：now、retention_days(可选默认30)。",
     schema(
-      {
-        "now": string_prop("当前时间戳(默认内置)"),
-        "retention_days": int_prop("归档保留天数(可选默认30)"),
-      },
+      { "retention_days": int_prop("归档保留天数(可选默认30)") },
       [],
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
@@ -2680,7 +2904,6 @@ pub async fn run_server() -> Unit {
         "depends_on": string_prop("依赖任务 id 列表 JSON 数组(可选)"),
         "namespace": string_prop("命名空间(默认 default)"),
         "created_by": string_prop("创建者身份(默认 human_steward)"),
-        "now": string_prop("时间戳(可选)"),
       },
       ["project_dir", "description"],
     ),
@@ -2729,7 +2952,6 @@ pub async fn run_server() -> Unit {
       {
         "task_id": string_prop("任务 id（必填）"),
         "dep_id": string_prop("前置依赖任务 id（必填）"),
-        "now": string_prop("时间戳(可选)"),
       },
       ["task_id", "dep_id"],
     ),
@@ -2923,7 +3145,7 @@ pub async fn run_server() -> Unit {
       } else {
         engine.list_all().filter(fn(t) { t.ns == ns })
       }
-      let j = render_status_summary(tasks, mstore.ns_list(), "0.2.4")
+      let j = render_status_summary(tasks, mstore.ns_list(), project_version)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
@@ -2942,7 +3164,7 @@ pub async fn run_server() -> Unit {
       } else {
         engine.list_all().filter(fn(t) { t.ns == ns })
       }
-      let j = render_project_health(tasks, "0.2.4")
+      let j = render_project_health(tasks, project_version)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
@@ -2968,7 +3190,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "circuit_fail",
-    "熔断器·上报失败（R104，Nygard Release It! 2007 / Fowler / Azure 蒸馏）：外部调用失败后上报并推进三态状态机——Closed 窗口内失败计数达阈值 → Open（fail-fast 拒绝）；Half-Open 探测失败 → 回 Open 重启恢复定时器。参数：circuit 熔断器名（必填）、now 时间戳（可选）、window_secs 失败窗口秒（可选默认 60）、threshold 失败阈值（可选默认 3）、recovery_secs 恢复秒（可选默认 30）、namespace（可选默认 default）。返回 { circuit, state, failures, window_secs, threshold, recovery_secs, opened_at, allow_call, note }——allow_call=false 即调用方应立即快速失败。",
+    "熔断器·上报失败（R104，Nygard Release It! 2007 / Fowler / Azure 蒸馏）：外部调用失败后上报并推进三态状态机——Closed 窗口内失败计数达阈值 → Open（fail-fast 拒绝）；Half-Open 探测失败 → 回 Open 重启恢复定时器。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、window_secs 失败窗口秒（可选默认 60）、threshold 失败阈值（可选默认 3）、recovery_secs 恢复秒（可选默认 30）、namespace（可选默认 default）。返回 { circuit, state, failures, window_secs, threshold, recovery_secs, opened_at, allow_call, note }——allow_call=false 即调用方应立即快速失败。",
     schema(
       {
         "circuit": string_prop(
@@ -2977,7 +3199,6 @@ pub async fn run_server() -> Unit {
         "window_secs": int_prop("失败窗口秒（可选默认 60）"),
         "threshold": int_prop("失败阈值（可选默认 3）"),
         "recovery_secs": int_prop("恢复秒（可选默认 30）"),
-        "now": string_prop("时间戳（可选，默认取服务器时钟）"),
         "namespace": string_prop("命名空间（可选默认 default）"),
       },
       ["circuit"],
@@ -3009,11 +3230,10 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "circuit_succeed",
-    "熔断器·上报成功（R104）：外部调用成功后回灌——Closed 复位计数；Half-Open 探测成功 → Closed（恢复）。参数：circuit 熔断器名（必填）、now 时间戳（可选）、namespace（可选默认 default）。返回 { circuit, state, failures, ... , allow_call, note }。",
+    "熔断器·上报成功（R104）：外部调用成功后回灌——Closed 复位计数；Half-Open 探测成功 → Closed（恢复）。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、namespace（可选默认 default）。返回 { circuit, state, failures, ... , allow_call, note }。",
     schema(
       {
         "circuit": string_prop("熔断器名（必填）"),
-        "now": string_prop("时间戳（可选，默认取服务器时钟）"),
         "namespace": string_prop("命名空间（可选默认 default）"),
       },
       ["circuit"],
@@ -3033,11 +3253,10 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "circuit_status",
-    "熔断器·查询状态（R104）：查三态并做 Half-Open 到期判定——Open 且 elapsed≥recovery_secs → 转 Half-Open（放行探测请求，其余仍快速失败）。参数：circuit 熔断器名（必填）、now 时间戳（可选）、namespace（可选默认 default）。返回 { circuit, state, failures, window_secs, threshold, recovery_secs, opened_at, allow_call, note }。",
+    "熔断器·查询状态（R104）：查三态并做 Half-Open 到期判定——Open 且 elapsed≥recovery_secs → 转 Half-Open（放行探测请求，其余仍快速失败）。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、namespace（可选默认 default）。返回 { circuit, state, failures, window_secs, threshold, recovery_secs, opened_at, allow_call, note }。",
     schema(
       {
         "circuit": string_prop("熔断器名（必填）"),
-        "now": string_prop("时间戳（可选，默认取服务器时钟）"),
         "namespace": string_prop("命名空间（可选默认 default）"),
       },
       ["circuit"],
@@ -3091,7 +3310,6 @@ pub async fn run_server() -> Unit {
         "want": string_prop(
           "能力关键词(可选)：命中者可领取任务优先被取单",
         ),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       [],
     ),
@@ -3219,7 +3437,6 @@ pub async fn run_server() -> Unit {
         "want": string_prop(
           "任务所需能力关键词(可选，供能力路由)",
         ),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       [],
     ),
@@ -3318,7 +3535,6 @@ pub async fn run_server() -> Unit {
         ),
         "agent": string_prop("预订者（如 exec_1，必填）"),
         "ttl_until": string_prop("TTL 截止时间戳（ISO-8601，必填）"),
-        "now": string_prop("当前时间戳(可选，默认内置)"),
       },
       ["scope", "agent", "ttl_until"],
     ),
@@ -3394,13 +3610,7 @@ pub async fn run_server() -> Unit {
     s1,
     "reserve_check",
     "查询某工作作用域是否可编辑（空闲可用）。参数：scope、now(时间戳)。",
-    schema(
-      {
-        "scope": string_prop("作用域（必填）"),
-        "now": string_prop("当前时间戳(可选)"),
-      },
-      ["scope"],
-    ),
+    schema({ "scope": string_prop("作用域（必填）") }, ["scope"]),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let scope = get_str(args, "scope")
       let now = now_default()
@@ -3704,7 +3914,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "saga_register",
-    "Saga 补偿登记（R92，durable action log）：多步骤任务链的每个前向步骤成功后，登记其「可补偿动作」（业务逆转描述）——失败时按 LIFO 优雅收尾，而非卡死/整树重来。幂等：同 (namespace, root_task_id, step) 重登记会重置为 pending 并刷新 compensation（重试安全）。参数：root_task_id 根任务（必填）、step 步骤名（必填）、compensation 补偿动作描述（必填，业务逆转而非逆向操作）、task_id 执行该步骤的任务（可选）、namespace 命名空间（可选默认 default）、now 时间戳（可选）。返回 { root_task_id, step, task_id, compensation, status: pending, registered }。",
+    "Saga 补偿登记（R92，durable action log）：多步骤任务链的每个前向步骤成功后，登记其「可补偿动作」（业务逆转描述）——失败时按 LIFO 优雅收尾，而非卡死/整树重来。幂等：同 (namespace, root_task_id, step) 重登记会重置为 pending 并刷新 compensation（重试安全）。参数：root_task_id 根任务（必填）、step 步骤名（必填）、compensation 补偿动作描述（必填，业务逆转而非逆向操作）、task_id 执行该步骤的任务（可选）、namespace 命名空间（可选默认 default）（注：时间戳一律由服务端盖章，不接受调用方注入 now）。返回 { root_task_id, step, task_id, compensation, status: pending, registered }。",
     schema(
       {
         "root_task_id": string_prop("根任务 id（saga 作用域，必填）"),
@@ -3714,7 +3924,6 @@ pub async fn run_server() -> Unit {
         ),
         "task_id": string_prop("执行该步骤的任务 id（可选）"),
         "namespace": string_prop("命名空间（可选默认 default）"),
-        "now": string_prop("时间戳（可选）"),
       },
       ["root_task_id", "step", "compensation"],
     ),
@@ -3870,7 +4079,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "audit_log",
-    "查看追加式审计日志。**注意：** audit_log 仅返回**本进程生命周期**内的内存记录（不落库）；跨进程查询请改用 call_log。返回结构带 scope 字段以区分。可选 filter_actor、filter_task_id。",
+    "查看追加式审计日志。**注意：** audit_log 仅返回**本进程生命周期**内的内存记录（AuditLog 不落库，见 src/ops/audit.mbt 设计注）；跨进程查询请改用 call_log。返回体恒为 {scope:'process', entries, count, note}，**空 entries 不代表没发生过治理动作**。可选 filter_actor、filter_task_id。",
     schema(
       {
         "filter_actor": string_prop("按操作者过滤(可选)"),
@@ -3888,25 +4097,8 @@ pub async fn run_server() -> Unit {
       } else {
         audit.entries()
       }
-      // BUG-3 fix: 返回带 scope 的对象，显式声明仅本进程可见。
-      // 旧客户端可取 entries 字段兼容处理。
-      let arr = entries.map(fn(e) {
-        let m : Map[String, Json] = Map([])
-        m.set("ts", Json::string(e.ts))
-        m.set("action", Json::string(e.action))
-        m.set("actor", Json::string(e.actor))
-        m.set("task_id", Json::string(e.task_id))
-        m.set("detail", Json::string(e.detail))
-        Json::object(m)
-      })
-      let out = Json::object({
-        "scope": Json::string("process"),
-        "entries": Json::array(arr),
-        "note": Json::string(
-          "仅本进程生命周期内的审计记录；跨进程请用 call_log",
-        ),
-      })
-      Ok(@mcp.ToolResult::text(out.stringify()))
+      // BUG-3 fix: 恒返回带 scope/note 的对象（构造集中在 audit_log_payload，契约可测）。
+      Ok(@mcp.ToolResult::text(audit_log_payload(entries).stringify()))
     },
   )
   // ---- multi-store 命名空间工具 ----
@@ -4038,7 +4230,6 @@ pub async fn run_server() -> Unit {
         "publish_task": bool_prop(
           "是否发布修复根任务(可选默认false)",
         ),
-        "now": string_prop("时间戳(可选，默认内置)"),
       },
       ["project_dir", "summary"],
     ),
@@ -4114,7 +4305,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "issue_scan",
-    "规则驱动源码扫描（打磨收尾引入的自驱能力）：递归收集 {dir} 下 .mbt 文件，用内建 10 条 MoonBit 高危规则逐行匹配（除零/空数组下标/无保护 unwrap/unsafe_get/无保护整除/substring 越界/ignore 丢错/字符串下标/潜在溢出/空集合单例），产出 findings（rule/severity/file/line/code）。返回 {scanned_files,total_findings,include_tests,by_severity,by_rule,findings}；命中可直接喂给 report_bug（summary='[rule:id] file:line code'）形成扫描→上报→修复闭环。参数：dir(必填，相对项目子目录如 src)、rules_file(可选，预留外部规则 JSON，当前忽略)、max_findings(可选默认 100，输出上限)、include_tests(可选默认 false：是否扫描 _test/_wbtest 测试文件——默认跳过以降噪、聚焦产品代码)。",
+    "规则驱动源码扫描（打磨收尾引入的自驱能力）：递归收集 {dir} 下 .mbt 文件，用内建 10 条 MoonBit 高危规则逐行匹配（除零/空数组下标/无保护 unwrap/unsafe_get/无保护整除/substring 越界/ignore 丢错/字符串下标/潜在溢出/空集合单例），产出 findings（rule/severity/file/line/code）。降噪（BUG-15）：**整行注释（trim 后以 /// 或 // 起始）不参与匹配**，doc 注释里的散文不再被当成代码命中；**规则表所在文件（issue_scan.mbt 且含 `fn scan_rules(`）整体跳过**，pattern/hint 字面量不再自命中（scanned_files 仍如实计数）。返回 {scanned_files,total_findings,include_tests,by_severity,by_rule,findings}；命中可直接喂给 report_bug（summary='[rule:id] file:line code'）形成扫描→上报→修复闭环；命中仍只是候选，须由调用方读上下文/实跑复核后才是 bug。参数：dir(必填，相对项目子目录如 src)、rules_file(可选，预留外部规则 JSON，当前忽略)、max_findings(可选默认 100，输出上限)、include_tests(可选默认 false：是否扫描 _test/_wbtest 测试文件——默认跳过以降噪、聚焦产品代码)。",
     schema(
       {
         "dir": string_prop(
@@ -4204,14 +4395,14 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "project_standards",
-    "AI 项目开发规范（默认内置 5 条 + FIST 专项 5 条）。纯计算、零依赖，给 agent 一套『应该怎么开发』的基线——文档即实现、一源三态、确定性优先、增量零回归、自我迭代；加上 FIST 强制：用自身能力迭代/三形态必须对齐/证据梯至少 L4/重任务先拆 DAG/工具命名即文档。附三形态 checklist（cl1-mcp-exists 到 cl6-doc-sync），可直接喂 output_validate 当验收门禁。参数：project_type（可选默认 moontbit_mcp，给针对性上下文）、include_checklist（可选默认 true，是否附带验收 checklist）。",
+    "AI 项目开发规范（默认内置 5 条 + FIST 专项 5 条）。纯计算、零依赖，只**下发清单**、不扫描文件也不修改文档（要扫描请用 issue_scan / check_doc_surface.py）。规范性正文真源 = AI-DEVELOPMENT-STANDARD.md，本工具是它的机器投影。基线：文档即实现、一源四态、确定性优先、增量零回归、自我迭代；加上 FIST 强制：用自身能力迭代（call_log/report_bug/laya/Omega 四开关可量化）/四态必须对齐/证据梯至少 L4/重任务先拆 DAG/工具命名即文档。附四态验收 checklist 7 项（cl1-mcp-exists 到 cl7-plugin-forms-sync），可直接喂 output_validate 当验收门禁。参数：project_type（可选默认 moontbit_mcp，给针对性上下文）、include_checklist（可选默认 true，是否附带验收 checklist）。",
     schema(
       {
         "project_type": string_prop(
           "项目类型标签（可选，默认 moontbit_mcp）。用于给规范清单打上下文标注",
         ),
         "include_checklist": bool_prop(
-          "是否附带三形态验收 checklist（默认 true）。是新功能上线的硬门",
+          "是否附带四态验收 checklist 7 项（默认 true，cl1→cl7）。是新功能上线的硬门",
         ),
       },
       [],
@@ -4221,6 +4412,159 @@ pub async fn run_server() -> Unit {
       let icl = get_bool(args, "include_checklist", default=true)
       let ptype2 = if ptype.is_empty() { "moontbit_mcp" } else { ptype }
       Ok(@mcp.ToolResult::text(project_standards(ptype2, icl).stringify()))
+    },
+  )
+
+  // ===== 模型路由 + 外部执行器（合并自兄弟项目 fist-model-router 与 FIST 的 aider/atomcode 执行器）=====
+  s1 = instrumented_tool(
+    s1,
+    "model_route",
+    "模型路由决策（免费优先 + 达阈值切付费 + 每模型 5h 滚动窗口）。纯决策来自 src/router（确定性、可单测），用量状态落盘 {project_dir}/memory/model-router-{ns}.json 跨进程复现。**时间戳由服务端盖章，不接受调用方注入 now**（BUG-33 政策）；两池皆耗尽时显式 ok=false，绝不静默改用别的模型。参数：project_dir(必填，相对路径)、namespace(可选默认 default)、record_model(可选：给模型名则先记账再决策，用于执行器真实用完一次)、config_json(可选：RouterConfig 的 JSON 文本，覆盖池定义；同名模型的已用配额保留；**非法 JSON 直接报错，不静默回落默认池**)（注：本工具不含任何密钥，凭据只来自 server 进程环境变量）。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录（必填，相对 server 进程 cwd，拒绝绝对路径/盘符/..）",
+        ),
+        "namespace": string_prop(
+          "命名空间（可选，默认 default）——每个 ns 一份独立配额账",
+        ),
+        "record_model": string_prop(
+          "可选：要记账的模型名（须已在池内）。给了就 used+1 后再决策；留空=只问不消耗",
+        ),
+        "config_json": string_prop(
+          "可选：RouterConfig 的 JSON 文本，如 {\"window_seconds\":18000,\"threshold_pct\":95,\"free_pool\":[{\"name\":\"x\",\"limit\":10}],\"paid_pool\":[]}；非法字段回落默认并写进 warnings",
+        ),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let pd = get_str(args, "project_dir")
+      let ns = get_str(args, "namespace")
+      let rec = get_str(args, "record_model")
+      let cj = get_str(args, "config_json")
+      let cfgj = match mr_parse_config(cj) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
+        Ok(j) => j
+      }
+      let ns2 = if ns.is_empty() { "default" } else { ns }
+      match model_route_impl(pd, ns=ns2, record_model=rec, config=cfgj) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "model_router_status",
+    "查当前模型路由状态（每模型 used/limit/占比/是否超阈值 + 当前档位 + 切换次数 + 状态文件路径与是否存在）。只读：不改配额不落盘。参数：project_dir(必填)、namespace(可选默认 default)。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录（必填，相对 server 进程 cwd）",
+        ),
+        "namespace": string_prop("命名空间（可选，默认 default）"),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let pd = get_str(args, "project_dir")
+      let ns = get_str(args, "namespace")
+      let ns2 = if ns.is_empty() { "default" } else { ns }
+      match model_router_status_impl(pd, ns=ns2) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "model_router_reset",
+    "清模型路由窗口：把所有模型的 used 与 window_start 归零（等价于'这 5 小时重新开始'）。hard=true 时连当前档位/轮询游标/切换计数一起复位。参数：project_dir(必填)、namespace(可选)、hard(可选默认 false)。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录（必填，相对 server 进程 cwd）",
+        ),
+        "namespace": string_prop("命名空间（可选，默认 default）"),
+        "hard": bool_prop(
+          "可选：true 时连同档位/游标/切换计数一起复位（默认只清窗口）",
+        ),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let pd = get_str(args, "project_dir")
+      let ns = get_str(args, "namespace")
+      let hard = get_bool(args, "hard", default=false)
+      let ns2 = if ns.is_empty() { "default" } else { ns }
+      match model_router_reset_impl(pd, ns=ns2, hard~) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "executor_run",
+    "把任务交给外部编码执行器真跑（宿主命令能力，默认收紧）：执行器名**只能**是已登记集合 aider | atomcode，argv 形状由 src/executor/cli_argv.mbt 固定（不经过 shell，提示词里的 ; $() 反引号都只是字面量），可执行文件名由登记表推导——调用方无法借本工具注入任意命令。model 留空时先向 model_route 要一个模型并记账（路由↔执行器接线点）；无可用模型直接失败不猜模型。结果 ok=false 时附可诊断 error/hint，绝不静默成功。参数：project_dir(必填)、executor(必填 aider|atomcode)、prompt(必填，非空且不含 NUL)、model(可选，留空则路由决定)、namespace(可选)、timeout_ms(可选默认 180000)、dry_run(可选默认 false：只回显将执行的 argv、一个进程都不起，先审后跑)（注：时间戳由服务端盖章）。执行需 js/node 运行时；native 构建返回明确拒绝。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录（必填，相对 server 进程 cwd；作为执行器工作目录）",
+        ),
+        "executor": string_prop(
+          "执行器名（必填，只接受 aider | atomcode）",
+        ),
+        "prompt": string_prop(
+          "任务描述（必填，作为 --message/-p 的字面量参数）",
+        ),
+        "model": string_prop(
+          "可选：指定模型；留空则由模型路由器决定并记账",
+        ),
+        "namespace": string_prop(
+          "命名空间（可选，默认 default）——路由配额按 ns 记",
+        ),
+        "timeout_ms": int_prop(
+          "可选：子进程超时毫秒（默认 180000）",
+        ),
+        "dry_run": bool_prop(
+          "可选（默认 false）：true 时只回显将执行的 argv，不启动任何外部进程——先审后跑",
+        ),
+      },
+      ["project_dir", "executor", "prompt"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let pd = get_str(args, "project_dir")
+      let ex = get_str(args, "executor")
+      let prompt = get_str(args, "prompt")
+      let model = get_str(args, "model")
+      let ns = get_str(args, "namespace")
+      let ns2 = if ns.is_empty() { "default" } else { ns }
+      let tm = match args {
+        Json::Object(m) =>
+          match m.get("timeout_ms") {
+            Some(Json::Number(n, ..)) => {
+              let v = n.to_int()
+              if v > 0 {
+                v
+              } else {
+                180000
+              }
+            }
+            _ => 180000
+          }
+        _ => 180000
+      }
+      let j = executor_run_impl(
+        pd,
+        ns=ns2,
+        executor=ex,
+        prompt~,
+        model~,
+        timeout_ms=tm,
+        dry_run=get_bool(args, "dry_run", default=false),
+      )
+      Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
 

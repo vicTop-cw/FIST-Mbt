@@ -182,13 +182,22 @@ test "bug5_report_bug_returns_resolved_path" {
 }
 
 ///|
-/// BUG-4 fix: run_check workdir 非法时应被拒绝（通过 workdir_ok 函数验证）。
+/// BUG-4 fix: run_check workdir 校验（Round 1 起的兼容别名，语义在 Round 2 收紧为子树判定）。
+/// 注意这里 `(".", "temp/proj")` 的期望值**从 true 改成 false**：Round 1 版只要"不上跳、不绝对"
+/// 就放行，于是 project_dir=temp/proj 的任务可以在 server cwd（整个仓库根）里跑命令——
+/// 那不是"项目目录子树内"。Round 2 按子树判定后这种错配必须拒（完整矩阵见
+/// run_check_guard_test.mbt；实测调用面里也不存在这种传法：workdir 恒等于 project_dir 或 `.`）。
 test "bug4_run_check_workdir_ok" {
-  assert_true(run_check_workdir_ok(".", "temp/proj"))
+  assert_false(run_check_workdir_ok(".", "temp/proj"))
   assert_true(run_check_workdir_ok("temp/proj", "temp/proj"))
+  assert_true(run_check_workdir_ok("temp/proj/scripts", "temp/proj"))
   assert_false(run_check_workdir_ok("", "temp/proj"))
   assert_false(run_check_workdir_ok("../outside", "temp/proj"))
   assert_false(run_check_workdir_ok("..", "temp/proj"))
   assert_false(run_check_workdir_ok("/abs/path", "temp/proj"))
   assert_false(run_check_workdir_ok("C:/Windows", "temp/proj"))
+  // Round 1 会误拒、Round 2 必须放行：绝对 project_dir 本身（实测调用面主形态）
+  assert_true(
+    run_check_workdir_ok("E:/IDEProjects/AI/Cypy", "E:/IDEProjects/AI/Cypy"),
+  )
 }

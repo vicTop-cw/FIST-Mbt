@@ -146,7 +146,12 @@ pub fn FistEngine::dag_mc(
     )
     return Json::object(im)
   }
-  let n = if samples < 10 { 10 } else { samples }
+  // BUG-24：只有下界钳制的 samples 会让单次 MCP 调用无限膨胀（实测 samples=200000
+  // 阻塞 >100s，而客户端超时 30s ——调用方看到的是"无响应"而不是结果）。
+  // 上界 5000 是按 p90 收敛够用 + 落在 30s 预算内定的；被钳制时如实回显，不假装跑满。
+  let n_requested = if samples < 10 { 10 } else { samples }
+  let mc_cap = 5000
+  let n = if n_requested > mc_cap { mc_cap } else { n_requested }
   let makespans : Array[Int] = []
   let critical_hits : Map[String, Int] = Map([])
   for t in tasks {
@@ -242,6 +247,18 @@ pub fn FistEngine::dag_mc(
   let m = Map::new()
   m.set("scope", Json::object(sc))
   m.set("samples", Json::number(n.to_double()))
+  // BUG-24：如实回显"要了多少 / 实际跑了多少 / 为什么"，调用方不用读源码就能知道被钳制
+  m.set("samples_requested", Json::number(n_requested.to_double()))
+  m.set("samples_capped", Json::boolean(n != n_requested))
+  if n != n_requested {
+    m.set(
+      "cap_note",
+      Json::string(
+        "samples 被钳制到 \{n}（上限 5000）：本工具跑在 MCP 同步调用里，客户端超时 30s，" +
+        "跑满 \{n_requested} 会让调用方只看到「无响应」。要多样本请分批换 seed 自行聚合。",
+      ),
+    )
+  }
   m.set("deadline", Json::number(deadline.to_double()))
   m.set("p_on_time", Json::number(p_on_time))
   m.set("makespan", Json::object(mk))

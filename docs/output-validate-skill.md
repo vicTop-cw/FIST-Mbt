@@ -40,7 +40,7 @@ tools/call output_validate
   "passed": 4,
   "failed": 0,
   "checks": [
-    { "artifact": "README.md", "ok": true, "detail": "OK（存在/非空/invariant 全部通过）" },
+    { "artifact": "README.md", "ok": true, "detail": "OK（存在/非空 + invariant 全部通过: contains）"  // 纯 {path} 时改成 "OK（仅存在性/非空：未声明任何 invariant）" },
     { "artifact": "moon_test", "ok": true, "detail": "external ok=true, code=0" }
   ],
   "evidence_layer": "l4-pass",
@@ -75,7 +75,7 @@ python scripts/output_validate.py . \
 ```
 先 `moon build --target js cmd/main` 保证 main.js 新鲜。
 
-### 三形态关系
+### 四态关系（MCP / CLI / Skill 手写 + Plugin 投影）
 - **单真源 = MoonBit 实现**（`src/server/output_validate.mbt`）：MCP 工具直接调它；
   CLI 是薄封装（拉起 server → 调工具 → 打印 JSON），不复制验证逻辑。
 - skill（本文档）教 agent 何时用、怎么写 artifacts 清单、怎么解读 fail 并回修。

@@ -176,8 +176,22 @@ pub fn memory_gc_one(
   kind : String,
   max_chars : Int,
 ) -> Json {
-  // 非法 kind 回退到默认 target，防止路径遍历落到文件系统
-  let kind = if mem_kinds_contain(kind) { kind } else { "target" }
+  // BUG-36：这里原本把非法 kind 静默改靶到 target 再继续写盘——防路径遍历的意图是对的，
+  // 但补救动作是"换一个你没点名的文件接着截"，打错一个字（thinking g）就写坏 target.md。
+  // 现在：不在白名单就直接拒、不落笔（consolidate 对同一字段本来就是 Err；本函数返回 Json，
+  // 故以 gc:false + error 表达拒绝）。
+  if not(mem_kinds_contain(kind)) {
+    let allowed = mem_kinds().join(" | ")
+    let msg = "memory_gc: 非法 kind=" +
+      kind +
+      "，拒绝执行（绝不改靶写到别的文件）。可用 kind: " +
+      allowed
+    return Json::object({
+      "gc": Json::boolean(false),
+      "kind": Json::string(kind),
+      "error": Json::string(msg),
+    })
+  }
   let p = mem_kind_path(project_dir, kind)
   let content = match mem_read(p) {
     None =>

@@ -51,7 +51,8 @@ pub fn critic_most_similar(
 /// Critic 综合评审（SAGE Critic 角色，纯计算）：
 ///   - novelty      = Archive::novelty(note)      （相对档案库新鲜度 [0,1]）
 ///   - sim          = 与最相似既有资产的重合度（最相似者）
-///   - combined     = 0.5*score + 0.5*novelty     （稳健性 × 新颖度，防"高分但重复"）
+///   - combined     = score==0.5（未计分）→ novelty；否则 0.5*score + 0.5*novelty
+///                    （BUG-60：中性 0.5 不参与加权，否则 combined 上限 0.75 永远够不到默认阈值 0.85）
 ///   - admit        = sim < dup_sim 且 score_accept(combined, threshold)
 /// 返回决策 JSON：{ admit, novelty, score, combined, threshold, sim, rank, reason, top_hit? }。
 pub fn critic_review(
@@ -65,7 +66,15 @@ pub fn critic_review(
     Some((_, _, j)) => j
     None => 0.0
   }
-  let combined = (0.5 * score + 0.5 * novelty).clamp(min=0.0, max=1.0)
+  let combined = if score == 0.5 {
+    // BUG-60：0.5 是"分数没算"的中性值，不该参与加权后再跟 0.85 比——
+    // (0.5 + novelty)/2 最大 0.75 < 0.85 ⇒ 默认参数下门禁**永远关着**
+    // （`evolve_critic` 不传 score、`task_challenge` 硬传 0.5 都中招，等于门自己在装样子）。
+    // 没算分就只按新颖度判；算了分才做"稳健 × 新颖"加权。
+    novelty.clamp(min=0.0, max=1.0)
+  } else {
+    (0.5 * score + 0.5 * novelty).clamp(min=0.0, max=1.0)
+  }
   let dup = sim >= critic_dup_sim()
   let ok = not(dup) && score_accept(combined, threshold~)
   let reason = if dup {

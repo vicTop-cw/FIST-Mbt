@@ -85,7 +85,19 @@ pub fn report_bug(String, String, detail~ : String, severity~ : String, ref_call
 
 pub fn route_decision(String, Int) -> Json
 
+pub fn run_check_cmd_allowed(String, Array[String]) -> Bool
+
+pub fn run_check_cmd_denied(String, Array[String]) -> String?
+
+pub fn run_check_default_allow_cmds() -> Array[String]
+
 pub async fn run_check_external(String, Array[String], String, Int) -> Result[Json, String]
+
+pub fn run_check_guard_note() -> String
+
+pub fn run_check_workdir_denied(String, String) -> String?
+
+pub fn run_check_workdir_in_project(String, String) -> Bool
 
 pub fn run_check_workdir_ok(String, String) -> Bool
 
@@ -96,6 +108,8 @@ pub fn selfdrive_round_tick(Json) -> Json
 // Errors
 
 // Types and methods
+type RcPath
+
 type ScanFinding
 
 type ScanRule

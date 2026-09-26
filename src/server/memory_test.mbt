@@ -368,6 +368,62 @@ test "memory_12_distill_persist_sqlite" {
   ignore(s.clear())
 }
 
+///|
+/// BUG-36 回归锁：非法 kind 必须"拒绝且不落笔"。
+/// 旧实现把非法 kind 静默改靶到 target —— 打错一个字就截掉调用方没点名的文件。
+test "memory_18_gc_illegal_kind_refuses_without_writing" {
+  let dir = mem_dir("mem_c18_badkind")
+  // 预置 target.md：若实现仍改靶，这里会被截成 5 字符 + 生成归档
+  @fs.write_string_to_file(
+    dir + "/memory/target.md",
+    "0123456789abcdefghij",
+    encoding="utf8",
+  ) catch {
+    _ => abort("写档失败")
+  }
+  let j = memory_gc_one(dir, "thinking g", 5)
+  assert_true(not(mem_bool(j, "gc")))
+  assert_eq(mem_str(j, "kind"), "thinking g")
+  // 拒绝必须带原因：非法值本身 + 合法集合（不能只回一个干巴巴的 false）
+  let err = mem_str(j, "error")
+  assert_true(err.contains("thinking g"))
+  assert_true(err.contains("thinking"))
+  assert_true(err.contains("task"))
+  // 关键：target.md 原样保留，归档目录也没被写入
+  let body = @fs.read_file_to_string(dir + "/memory/target.md", encoding="utf8") catch {
+    _ => abort("读正文失败")
+  }
+  assert_eq(body, "0123456789abcdefghij")
+  assert_true(not(@fs.path_exists(dir + "/memory/archive/target.archive.md")))
+}
+
+///|
+/// BUG-36 同族缺口：consolidate 的非法 kind 必须 Err 且不写任何文件。
+/// （开关对照实测发现：把 consolidate 的 Err 换成静默改靶后，全部既有用例仍 91/91 绿——
+/// 说明这条口径此前一直没有锁，只靠实现自证。）
+test "memory_19_consolidate_illegal_kind_err_without_writing" {
+  let dir = mem_dir("mem_c19_badkind_cons")
+  @fs.write_string_to_file(
+    dir + "/memory/target.md",
+    "原有正文不许动",
+    encoding="utf8",
+  ) catch {
+    _ => abort("写档失败")
+  }
+  match
+    memory_consolidate(
+      dir, "T1", "thinking g", "越权正文", "2026-09-26T00:00:00Z",
+    ) {
+    Ok(_) => abort("非法 kind 必须被拒，不能返回 Ok")
+    Err(m) => assert_true(m.contains("thinking g"))
+  }
+  let body = @fs.read_file_to_string(dir + "/memory/target.md", encoding="utf8") catch {
+    _ => abort("读正文失败")
+  }
+  assert_eq(body, "原有正文不许动")
+  assert_true(not(@fs.path_exists(dir + "/memory/thinking g.md")))
+}
+
 // ---------------------------------------------------------------------------
 // 用例 13：lookup_injected_assets（外库可选资产 → plan/claim 前注入检索）
 // ---------------------------------------------------------------------------

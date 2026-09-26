@@ -162,7 +162,10 @@ pub fn FistEngine::execute(
       }
       let st = t.get_status()
       if !st.can_execute() {
-        return Err("非法执行: 任务处于 [\{t.status_to_string()}]")
+        // BUG-2：被拒时必须给"当前状态 → 可用出路"，否则调用方只能新建任务绕开旧账
+        return Err(
+          "非法执行: 任务处于 [\{t.status_to_string()}]。出路：\{@core.Task::execute_exit_hint(st)}",
+        )
       }
       let c = match t.execute() {
         Ok(x) => x
@@ -457,6 +460,23 @@ pub fn FistEngine::verify(
                 let pe = match parent.execute() {
                   Ok(x) => x
                   Err(_) => parent
+                }
+                // BUG-59：自动提升的父节点若交付物为空，Omega 成果复验门禁会把它锁死——
+                // 「待验收」不许 execute，于是 verify 与 omega_result_verify 互相拒绝，
+                // 唯一出路只剩人工 reject→retry。父节点的"成果"本就是子任务交付之合，
+                // 所以提升时直接继承（有则不覆盖，零回归）。
+                let pe = if pe.deliverable == "" {
+                  let kids = self.children_of(pe.get_id())
+                  let merged = if kids.is_empty() {
+                    "（子任务均已完成，无文字交付物）"
+                  } else {
+                    kids
+                    .map(fn(t) { "[\{t.get_id()}] \{t.deliverable}" })
+                    .join("\n")
+                  }
+                  pe.with_deliverable(merged, now)
+                } else {
+                  pe
                 }
                 match pe.submit() {
                   Ok(p2) => {
@@ -898,6 +918,10 @@ pub fn FistEngine::delete_task(
 ///   now       时间戳。
 ///   reinject_context  是否把「父计划 + 剩余兄弟」回注进每条子任务描述（R63，ReCAP 借鉴；
 ///                      默认 false 零回归）——让原子片知道自己"为什么做、旁边还有谁"，防上下文漂移。
+///   boundary_probe    是否为「spec 没写的域外行为」补一个 owner（R115+，atgc-merge 归因报告
+///                      机理 1「递归拆解损失全局视角」+ 机理 2「验收锚定 + 弱语料」）：
+///                      true 时本层末尾追加一条「边界审视叶」（全局输入域 owner），
+///                      并给其余每条叶挂「边界四问」提示。默认 false 零回归。
 ///
 /// 返回：{ "root", "by", "created", "tree" }，tree 为多层子树结构；
 /// 任一子节点非叶时将继续递归（depth 递减，is_leaf=depth<=1 停止）。
@@ -913,6 +937,7 @@ pub fn FistEngine::plan_deep(
   calibrate? : Array[Double]? = None,
   gradient_dag? : Bool = false,
   reinject_context? : Bool = false,
+  boundary_probe? : Bool = false,
 ) -> Result[Json, String] {
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
@@ -940,7 +965,7 @@ pub fn FistEngine::plan_deep(
       match
         self.decompose_rec(
           parent, slices, spec, now, omega_strong_verify, gradient, calibrate, gradient_dag,
-          reinject_context,
+          reinject_context, boundary_probe,
         ) {
         Err(e) => Err(e)
         Ok(tree) =>
@@ -971,6 +996,7 @@ fn FistEngine::decompose_rec(
   calibrate : Array[Double]?,
   gradient_dag : Bool,
   reinject_context : Bool,
+  boundary_probe : Bool,
 ) -> Result[Json, String] {
   // 父任务进入拆分中（宽于 Task::split：待领取/已领取/拆分中均可转入）
   match parent.mark_decomposing() {
@@ -980,6 +1006,13 @@ fn FistEngine::decompose_rec(
         Err(e) => return Err("递归拆分状态落库失败: \{e}")
       }
     Err(e) => return Err(e)
+  }
+  // 边界审视叶（默认关闭零回归）：给"spec 没写的域外行为"一个可领取、可验收的归属，
+  // 补掉递归拆解后被压缩掉的全局视角（atgc-merge 归因报告机理 1）。
+  let slices = if boundary_probe {
+    slices + [boundary_probe_slice()]
+  } else {
+    slices
   }
   let child_depth = parent.get_depth() - 1
   let spec_hash = @decompose.spec_hash_of(spec)
@@ -1030,11 +1063,18 @@ fn FistEngine::decompose_rec(
     // ReCAP 借鉴·父计划回注（默认关闭零回归）：在子任务描述里带上「它归属于哪个父计划 +
     // 还剩余几个兄弟」，让拆出的原子片知道自己"为什么做、旁边还有谁"——防上下文漂移。
     // 子任务拿到父计划 = 真正"知其所以然"，而非孤立切片。
-    let child_full = if reinject_context {
+    let reinjected = if reinject_context {
       full_desc +
       " | [父计划: \{parent.description} · 剩余兄弟: \{n_slices - idx}]"
     } else {
       full_desc
+    }
+    // 边界四问（默认关闭零回归）：把"spec 之外也要想"变成每条叶的显式义务，
+    // 而不是等裁判发现某条边界无人负责（atgc-merge 归因报告机理 2/3）。
+    let child_full = if boundary_probe && slice_text != boundary_probe_slice() {
+      reinjected + boundary_probe_hint()
+    } else {
+      reinjected
     }
     // LADDER 真实 DAG：开启 gradient_dag 时，给非首切片挂上前一兄弟切片作依赖
     let dag_dep : Array[String] = if gradient && gradient_dag {
@@ -1075,7 +1115,7 @@ fn FistEngine::decompose_rec(
       match
         self.decompose_rec(
           child, next_slices, spec, now, omega_strong_verify, gradient, calibrate,
-          gradient_dag, reinject_context,
+          gradient_dag, reinject_context, boundary_probe,
         ) {
         Ok(subtree) =>
           match subtree.value("children") {

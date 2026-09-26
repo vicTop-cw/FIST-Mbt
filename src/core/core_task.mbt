@@ -67,9 +67,14 @@ pub fn TaskStatus::can_split(self : TaskStatus) -> Bool {
 }
 
 ///|
+/// execute 的前态谓词（engine.execute 的第一道门）。
+/// BUG-2 相邻加固（守卫一致性）：这里曾多出一条 `Rejected`，而 Task::execute 并不接受
+/// 已打回——两条门不一致时，调用方拿到的是引擎的"非法执行: 任务处于 [已打回]"（无出路），
+/// 而不是域迁移里带 retry 出路的文案。集合与 Task::execute 逐字对齐（对外结果不变：
+/// 两条门对 Rejected 都是拒，只是文案统一）。
 pub fn TaskStatus::can_execute(self : TaskStatus) -> Bool {
   match self {
-    Claimed | Splitting | Executing | Rejected => true
+    Claimed | Splitting | Executing => true
     _ => false
   }
 }
@@ -361,6 +366,13 @@ pub fn Task::mark_decomposing(self : Task) -> Result[Task, String] {
 ///|
 /// 拆分中/已领取/执行中 -> 执行中（进入/覆盖/追加交付物）
 /// 执行中 -> execute = 覆盖/追加交付物（retry 后原地更新交付物的直觉行为）
+/// BUG-2（Round 2 收口）：合法前态含「执行中」。retry 的落点就是执行中，若这里不收，
+///   「被打回重做」这条最该更新交付物的路径会写不进 deliverable（omega_result_verify
+///   随即报「尚无交付物」），诱导操作者新建任务覆盖旧账、破坏 append-only 审计。
+///   选择放宽 execute 而不改 retry 的落点：retry→执行中 是**对外承诺的语义**
+///   （AGENTS.md 工具表「打回后重试（→执行中）」、已发布流水线的状态判据都按它写），
+///   改它等于改一条公共状态机迁移；而「执行中重复 execute」本就是幂等追加，影响面更小。
+///   错误文案必须给**出路**（当前状态 → 该走哪条迁移），否则调用方只能猜或另起任务。
 pub fn Task::execute(self : Task) -> Result[Task, String] {
   match self.status {
     Splitting | Claimed | Executing => Ok({ ..self, status: Executing, })
@@ -368,8 +380,27 @@ pub fn Task::execute(self : Task) -> Result[Task, String] {
       Err(
         "非法迁移: execute 要求状态 [拆分中/已领取/执行中]，当前是 [" +
         self.status.to_string() +
-        "]",
+        "]。出路：" +
+        Task::execute_exit_hint(self.status),
       )
+  }
+}
+
+///|
+/// execute 被拒时按当前状态给出可用出路（BUG-2 文案，纯函数便于回归测试）。
+pub fn Task::execute_exit_hint(status : TaskStatus) -> String {
+  match status {
+    Pending => "待领取→先 claim 再 execute"
+    Claimed | Splitting | Executing => "已是可执行状态，直接 execute"
+    Rejected =>
+      "已打回→先 retry（→执行中）再 execute 覆盖交付物"
+    Reviewing =>
+      "待验收→若要改交付物先 reject（→已打回）再 retry（→执行中），再 execute"
+    Paused => "已暂停→先 resume（→已领取）再 execute"
+    Completed =>
+      "已完成→原地更正交付物请 reopen_task（→待领取）后重新走链路，勿新建任务覆盖旧账"
+    Archived =>
+      "已归档→不可写；确需返工先 reopen_task 重开，勿新建任务覆盖旧账"
   }
 }
 

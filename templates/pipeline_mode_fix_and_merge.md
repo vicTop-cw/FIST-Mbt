@@ -63,9 +63,9 @@
 - **第一步：github_queue_status 查队列** —— 调用 `github_queue_status({ "project_dir": "<目标项目根目录>" })`，拿到 FIST-Mbt 内部已上报的 bug 队列（`report_bug` 入账且未修复的条目）。同时若配置了 GitHub token，`github_sync` 会自动拉取远程 open issues 合并返回。
 - **第二步：选择一个 issue** —— 按 label 优先级 + 复杂度评估，选一个可独立闭环的 issue（建议每次只修 1 个）。
 - **第三步：claim 认领** —— 调用 `watchdog_tick` 或手动 `list` + `get` 确认该 bug 对应的 FIST-Mbt 任务状态，必要时 `publish` 一条修复任务并 `claim`。
-- **第四步：execute 实施修复** —— 拉取 issue 描述中的复现步骤 → 定位源码 → 修改 → 跑 `run_check_external({ "cwd": "...", "command": ["moon", "check"], "timeout_sec": 120 })` 确认编译通过 → 跑 `run_check_external({ "cwd": "...", "command": ["moon", "test"], "timeout_sec": 180 })` 确认测试通过。
+- **第四步：execute 实施修复** —— 拉取 issue 描述中的复现步骤 → 定位源码 → 修改 → 跑 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["check"], "workdir": "...", "timeout_ms": 120000 })` 确认编译通过 → 跑 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["test"], "workdir": "...", "timeout_ms": 180000 })` 确认测试通过。
 - **第五步：verify 验收** —— 调用 `output_validate` 把修复结果和测试证据传入做门禁；门禁过了才进入合并流程。
-- **第六步：合并（外部执行）** —— 调用 `run_check_external` 执行 git 命令：`git checkout -b fix/<issue-id>` → `git add .` → `git commit` → `git push` → 创建 PR（如有 `gh` CLI）→ 等 CI → merge → `git branch -d fix/<issue-id>`。**这步不在 FIST-Mbt 原生工具链内，由外部 git 环境执行**。
+- **第六步：合并（外部执行）** —— 调用 `run_check` 执行 git 命令：`git checkout -b fix/<issue-id>` → `git add .` → `git commit` → `git push` → 创建 PR（如有 `gh` CLI）→ 等 CI → merge → `git branch -d fix/<issue-id>`。**这步不在 FIST-Mbt 原生工具链内，由外部 git 环境执行**。
 - **第七步：解冲突（如需要）** —— 若 merge 时冲突，读冲突文件 → 手动合并 → 重新 `moon test` → 继续。
 
 ---

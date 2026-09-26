@@ -122,8 +122,8 @@ AIGC:
 |---|---|---|
 | `list` | `status`（可选，中文状态名） | 查状态**主入口**：返回**库内全部任务**的 JSON 数组；**它没有 namespace 参数**，请按每条的 `namespace` 字段自行过滤 `cron-auto` |
 | `get` | `task_id` | 需要单条任务细节时使用（可选） |
-| `watchdog_tick` | `now`、`timeout_sec`、`namespace`、`next_description`、`next_created_by`、`meta_prompt_path` | 单入口编排：**heal → 续轮 → 状态汇报** |
-| `publish` | `project_dir`、`description`、`namespace`、`created_by`、`now` | 仅用于分支③的**冷启动兜底**（`created_by` 只能是 `human_steward` / `human`） |
+| `watchdog_tick` | `timeout_sec`、`namespace`、`next_description`、`next_created_by`、`meta_prompt_path` | 单入口编排：**heal → 续轮 → 状态汇报** |
+| `publish` | `project_dir`、`description`、`namespace`、`created_by` | 仅用于分支③的**冷启动兜底**（`created_by` 只能是 `human_steward` / `human`） |
 | `issue_scan` | `dir`、`max_findings`(可选)、`include_tests`(可选) | **分支④找潜问题前置**：扫描 `<目标项目根目录>` 源码目录，内建 10 条 MoonBit 高危规则（除零/空数组下标/unwrap 等）产出 findings |
 | `report_bug` | `project_dir`、`summary`、`detail`(可选)、`severity`(可选)、`publish_task`(可选) | 把 `issue_scan` 确诊的高危命中上报到 memory/bugs.md（`publish_task=true` 自动发布修复根任务成闭环） |
 
@@ -170,7 +170,7 @@ AIGC:
 调用：
 
 ```
-watchdog_tick({ "now": "<当前时间 ISO8601>", "timeout_sec": 2400, "namespace": "cron-auto" })
+watchdog_tick({ "timeout_sec": 2400, "namespace": "cron-auto" })
 ```
 
 **注意：分支①②一律不要传 `next_description`，也不要传 `meta_prompt_path`**，否则可能触发续轮。
@@ -202,7 +202,6 @@ watchdog_tick({ "now": "<当前时间 ISO8601>", "timeout_sec": 2400, "namespace
 
 ```
 watchdog_tick({
-  "now": "<当前时间 ISO8601>",
   "timeout_sec": 2400,
   "namespace": "cron-auto",
   "next_created_by": "watchdog",
@@ -223,8 +222,7 @@ publish({
   "project_dir": "<目标项目根目录>",
   "description": "<最新提示词正文全文>",
   "namespace": "cron-auto",
-  "created_by": "human_steward",
-  "now": "<当前时间 ISO8601>"
+  "created_by": "human_steward"
 })
 ```
 
@@ -259,6 +257,8 @@ publish({
 - （不要做什么、边界条件）
 
 ## 完成标准
+
+- [ ] **边界与域外行为**：测试须覆盖输入域边界（空输入 / 极值 / 非法输入 / 资源极限）与 spec 未写的域外行为，不适用项要显式声明依据（不能因 spec 没写就默认沉默）。深拆实例默认带 `reinject_context=true`（父计划回注防漂移）；复杂根任务再开 `boundary_probe=true`，让引擎追加一条「边界审视叶」作为全局输入域 owner。
 - （可验证的客观判据，如 cargo check 零告警、cargo test 全部通过）
 ```
 

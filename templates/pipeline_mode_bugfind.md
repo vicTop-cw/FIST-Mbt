@@ -45,8 +45,8 @@
 - **第一步：issue_scan 高危规则扫描** —— 调用 `issue_scan({ "dir": "<目标项目根目录>/src", "max_findings": 50, "include_tests": true })`，拿到内建 10 条规则的静态命中（如除零、空数组下标、unwrap 风险、资源泄漏等）。
 - **第二步：open-code-review（预留接口）** —— 调用 `ocr-cli({ "project_dir": "<目标项目根目录>", "focus": "boundary" })` 对关键路径做面向边界条件的 code review。
   > **备注**：`ocr-cli` 躬身入局版（open-code-review CLI）**尚未集成**到 FIST-Mbt。当前 fallback：跳过此步，仅用 issue_scan 命中 + 自造边界 case 生成作为替代。等 ocr-cli 集成后，把其输出与 issue_scan 合并去重后再往下走。
-- **第三步：构造边界 case + run_check_external 验证** —— 对每个 findings，构造非常规输入调用 `run_check_external` 跑一次；能触发 panic/崩溃/异常行为的即确认为真 bug。
-- **第四步：moon test 回归确认** —— 调用 `run_check_external({ "cwd": "<目标项目根目录>", "command": ["moon", "test"], "timeout_sec": 180 })`，确认边界 case 没污染已有测试。
+- **第三步：构造边界 case + run_check 验证** —— 对每个 findings，构造非常规输入调用 `run_check` 跑一次；能触发 panic/崩溃/异常行为的即确认为真 bug。
+- **第四步：moon test 回归确认** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["test"], "workdir": "<目标项目根目录>", "timeout_ms": 180000 })`，确认边界 case 没污染已有测试。
 - **第五步：report_bug 入账** —— 对所有确认的真 bug，逐条调用 `report_bug({ "project_dir": "...", "summary": "[bugfind:rule_id] file:line: description", "severity": "medium|high|critical", "publish_task": true })`，让 FIST-Mbt 自动发布修复根任务进入后续 `fix_and_merge` 队列。
 
 ---

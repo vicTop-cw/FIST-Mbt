@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-scripts/issue_scan.py — 规则驱动源码扫描 CLI（打磨收尾：issue_scan 三形态之一）
+scripts/issue_scan.py — 规则驱动源码扫描 CLI（一源四态 · CLI 形态；插件态由 gen_plugins.py 投影）
 
 用法（项目根）：
     python scripts/issue_scan.py <dir> [--max-findings N] [--include-tests]
@@ -61,16 +61,46 @@ def rpc(proc, method, **payload):
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python scripts/issue_scan.py <dir> [--max-findings N] [--include-tests]")
+        print("用法: python scripts/issue_scan.py <dir> [--max-findings N] "
+              "[--include-tests [true|false]]")
         sys.exit(1)
-    scan_dir = sys.argv[1]
+    argv = sys.argv[1:]
+    scan_dir = None
     max_findings = 100
-    include_tests = "--include-tests" in sys.argv
-    if "--max-findings" in sys.argv:
-        try:
-            max_findings = int(sys.argv[sys.argv.index("--max-findings") + 1])
-        except (IndexError, ValueError):
-            pass
+    # BUG-57：以前写 `"--include-tests" in sys.argv`，于是 `--include-tests false`
+    # 会**反过来**开启扫描（MCP 形态该参数是 bool，调用方照习惯写值就拿到相反结果且无提示）。
+    include_tests = False
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--max-findings":
+            if i + 1 >= len(argv):
+                print("FAIL --max-findings 缺值（不猜默认）")
+                sys.exit(2)
+            try:
+                max_findings = int(argv[i + 1])
+            except ValueError:
+                print("FAIL --max-findings 需要整数，收到 %r" % argv[i + 1])
+                sys.exit(2)
+            i += 2
+            continue
+        if a == "--include-tests":
+            nxt = argv[i + 1] if i + 1 < len(argv) else None
+            if nxt in ("true", "false"):
+                include_tests = nxt == "true"
+                i += 2
+            else:
+                include_tests = True
+                i += 1
+            continue
+        if a.startswith("-"):
+            print("FAIL 未知参数 %r：本脚本只认 --max-findings / --include-tests" % a)
+            sys.exit(2)
+        if scan_dir is not None:
+            print("FAIL 多余的位置参数 %r：扫描目录只有一个（拼错的开关不静默改语义）" % a)
+            sys.exit(2)
+        scan_dir = a
+        i += 1
     main_js = find_main()
     if not main_js:
         print("FAIL main.js 未找到；请先执行 `moon build --target js cmd/main`")

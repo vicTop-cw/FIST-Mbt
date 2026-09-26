@@ -24,7 +24,7 @@
 
 ## 三、禁止事项（模式约束）
 
-- **不加新功能**：严禁发布新功能任务（`publish_new_feature_task`），严禁引入原设计之外的能力。
+- **不加新功能**：严禁用 `publish` / `publish_parallel` / `dag_publish` 发布新功能任务（`mode_list` 的 `forbidden_tools` 就是这三个真实注册名），严禁引入原设计之外的能力。
 - **不新建文件**：除非是为既有测试补配套测试文件，否则不新增源码文件。
 - **不引入新依赖**：不改 `moon.pkg` / `Cargo.toml` 的依赖声明。
 - **不改公共 API 签名**：打磨可以改善内部实现，但不改变已有公开函数的参数个数、返回类型或语义契约。
@@ -43,10 +43,10 @@
 ## 五、FIST 工具链调用顺序
 
 - **第一步：issue_scan**（已有的 FIXME/TODO 匹配）——调用 `issue_scan({ "dir": "<目标项目根目录>/src", "max_findings": 50 })`，拿到扫描结果，作为本轮打磨的定位清单。
-- **第二步：run_check_external** —— 调用 `run_check_external({ "cwd": "<目标项目根目录>", "command": ["moon", "test"], "timeout_sec": 180 })`，在任何改动前先跑一遍基准测试。
+- **第二步：run_check** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["test"], "workdir": "<目标项目根目录>", "timeout_ms": 180000 })`，在任何改动前先跑一遍基准测试。
 - **第三步：执行打磨** —— 按 issue_scan 命中逐组处理，每组完成后跑一次 `moon test`。
-- **第四步：moon fmt / cargo fmt** —— 调用 `run_check_external({ "cwd": "<目标项目根目录>", "command": ["moon", "fmt"], "timeout_sec": 60 })` 统一格式。
-- **第五步：evolve_distill** —— 调用 `evolve_distill({ "project_dir": "<目标项目根目录>", "round": "polish" })` 记录本轮打磨中发现的可改进 pattern。
+- **第四步：moon fmt / cargo fmt** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["fmt"], "workdir": "<目标项目根目录>", "timeout_ms": 60000 })` 统一格式。
+- **第五步：evolve_distill** —— 调用 `evolve_distill({ "task_id": "<本轮任务 id>", "goal": "[principle] <可复用原则>", "note": "<为什么/怎么用>", "score": 1.0 })` 记录本轮打磨中发现的可改进 pattern（必填 `task_id`/`goal`/`note`，**没有** `project_dir`/`round` 参数）。
 
 ---
 
@@ -55,7 +55,7 @@
 - 一次唤醒内至多打磨一个模块的 1-2 个打磨点，不做扩散。
 - 打磨改动后**必须**跑测试，退出码非零即安全退出、还原改动。
 - 任何工具调用失败原样上报，禁止静默吞掉。
-- 不臆造工具参数：`issue_scan` 真实签名为 `(dir, max_findings?, include_tests?)`；`run_check_external` 真实签名为 `(cwd, command, timeout_sec)`。
+- 不臆造工具参数：`issue_scan` 真实签名为 `(dir, max_findings?, include_tests?)`；`run_check` 真实签名为 `(cwd, command, timeout_sec)`。
 
 ---
 

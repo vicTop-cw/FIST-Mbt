@@ -32,7 +32,7 @@ python scripts/issue_scan.py src --include-tests   # 连测试文件一起扫
 ```
 先 `moon build --target js cmd/main` 保证 main.js 新鲜。
 
-### 三形态关系
+### 四态关系（MCP / CLI / Skill 手写 + Plugin 投影）
 - **单真源 = MoonBit 实现**（`src/server/issue_scan.mbt`）：MCP 工具直接调它；
   CLI 是薄封装（拉起 server → 调工具 → 打印 JSON），不复制扫描逻辑。
 - skill（本文档）教 agent 何时用、怎么看、怎么闭环。

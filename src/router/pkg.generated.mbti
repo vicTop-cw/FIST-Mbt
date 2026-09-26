@@ -1,0 +1,83 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/router"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn iso_to_secs(String) -> Int
+
+pub fn router_restore(Json, config? : Json) -> (ModelRouter, Array[String])
+
+pub fn secs_to_iso(Int) -> String
+
+// Errors
+
+// Types and methods
+pub struct ModelQuota {
+  name : String
+  tier : ModelTier
+  limit : Int
+  mut used : Int
+  mut window_start : String
+} derive(Eq, @debug.Debug)
+pub fn ModelQuota::is_exhausted(Self) -> Bool
+pub fn ModelQuota::new(name~ : String, tier~ : ModelTier, limit? : Int, used? : Int, window_start? : String) -> Self
+pub fn ModelQuota::remaining(Self) -> Int
+pub fn ModelQuota::to_json(Self) -> Json
+pub fn ModelQuota::usage_pct(Self) -> Double
+
+pub struct ModelRouter {
+  config : RouterConfig
+  mut free_idx : Int
+  mut paid_idx : Int
+  mut current_tier : ModelTier
+  mut switch_count : Int
+  mut last_switch_at : String
+  mut last_reason : String
+  mut last_pick : String
+} derive(Eq, @debug.Debug)
+pub fn ModelRouter::active_pool(Self) -> Array[ModelQuota]
+pub fn ModelRouter::current_model(Self) -> ModelQuota?
+pub fn ModelRouter::force_switch(Self, tier~ : ModelTier, now~ : String) -> RouteDecision
+pub fn ModelRouter::from_config(RouterConfig) -> Self
+pub fn ModelRouter::hard_reset(Self) -> Unit
+pub fn ModelRouter::new() -> Self
+pub fn ModelRouter::pick(Self, now~ : String) -> RouteDecision
+pub fn ModelRouter::record_call(Self, model~ : String, now~ : String) -> RouteDecision
+pub fn ModelRouter::reset_windows(Self) -> Unit
+pub fn ModelRouter::to_state(Self) -> Json
+pub fn ModelRouter::usage_report(Self) -> Json
+pub fn ModelRouter::window_reset_check(Self, now~ : String) -> Int
+
+pub enum ModelTier {
+  Free
+  Paid
+} derive(Eq, @debug.Debug)
+pub fn ModelTier::from_string(String) -> Self?
+pub fn ModelTier::to_string(Self) -> String
+
+pub struct RouteDecision {
+  model_name : String
+  tier : ModelTier
+  reason : String
+  switched : Bool
+  next_switch_at : String
+  available : Bool
+} derive(Eq, @debug.Debug)
+pub fn RouteDecision::to_json(Self) -> Json
+
+pub struct RouterConfig {
+  window_seconds : Int
+  threshold_pct : Double
+  free_models : Array[ModelQuota]
+  paid_models : Array[ModelQuota]
+} derive(Eq, @debug.Debug)
+pub fn RouterConfig::default() -> Self
+pub fn RouterConfig::from_json(Json) -> (Self, Array[String])
+pub fn RouterConfig::to_json(Self) -> Json
+
+// Type aliases
+
+// Traits
