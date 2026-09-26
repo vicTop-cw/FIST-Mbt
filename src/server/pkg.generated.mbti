@@ -21,6 +21,8 @@ pub fn do_evolve_lesson(@evolve.Archive, @store.SqliteStore?, String, String, St
 
 pub fn instrumented_tool(@colmugx/mcp/server.MCPServer, String, String, Json, async (Json) -> Result[@tool.ToolResult, @types.MCPError]) -> @colmugx/mcp/server.MCPServer
 
+pub fn issue_scan(String, String, Int, include_tests? : Bool) -> Result[Json, String]
+
 pub async fn laya_decide_external(String, Array[String], String, String, Int) -> Result[Json, String]
 
 pub async fn laya_probe_available(String, Array[String], String, Int) -> Result[Bool, String]
@@ -37,6 +39,8 @@ pub fn memory_gc_one(String, String, Int) -> Json
 
 pub fn memory_link(String, String, String, String) -> Result[Json, String]
 
+pub fn output_validate(String, Array[Json], Json, String, require_evidence? : Bool) -> Result[Json, String]
+
 pub fn render_board_ascii(Array[@core.Task], String) -> Json
 
 pub fn render_health_check(Array[@core.Task], String) -> Json
@@ -47,6 +51,8 @@ pub fn render_status_summary(Array[@core.Task], Array[String], String) -> Json
 
 pub fn report_bug(String, String, detail~ : String, severity~ : String, ref_call_id~ : String, reported_by~ : String, publish_task~ : Bool, @engine.FistEngine, now~ : String) -> Result[Json, String]
 
+pub fn route_decision(String, Int) -> Json
+
 pub async fn run_check_external(String, Array[String], String, Int) -> Result[Json, String]
 
 pub async fn run_server() -> Unit
@@ -54,6 +60,9 @@ pub async fn run_server() -> Unit
 // Errors
 
 // Types and methods
+type ScanFinding
+
+type ScanRule
 
 // Type aliases
 

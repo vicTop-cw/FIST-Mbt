@@ -31,7 +31,7 @@ fn contract_try(
   completed_by : String,
 ) -> Result[@core.Task, String] {
   match action {
-    "claim" => task.claim(assignee=assignee)
+    "claim" => task.claim(assignee~)
     "split" => task.split()
     "execute" => task.execute()
     "submit" => task.submit()
@@ -40,7 +40,7 @@ fn contract_try(
     "pause" => task.pause()
     "resume" => task.resume_task()
     "reopen" => task.reopen()
-    "complete" => task.complete(completed_by=completed_by)
+    "complete" => task.complete(completed_by~)
     "archive" => task.archive()
     "mark_decomposing" => task.mark_decomposing()
     _ => Err("未知动作: " + action)
@@ -61,17 +61,27 @@ fn invariant_violations(
     out.push("IN-1 违反: 任务 id 为空")
   }
   if after.depth < 1 {
-    out.push("IN-2 违反: K 值非法（depth=" + after.depth.to_string() + "，须 ≥1）")
+    out.push(
+      "IN-2 违反: K 值非法（depth=" +
+      after.depth.to_string() +
+      "，须 ≥1）",
+    )
   }
   if after.split_n < 1 {
-    out.push("IN-3 违反: split_n=" + after.split_n.to_string() + "，须 ≥1")
+    out.push(
+      "IN-3 违反: split_n=" + after.split_n.to_string() + "，须 ≥1",
+    )
   }
   if after.id != before.id ||
     after.project_dir != before.project_dir ||
     after.ns != before.ns {
-    out.push("IN-4 违反: 身份字段在迁移后漂移（id/project_dir/ns 须保持）")
+    out.push(
+      "IN-4 违反: 身份字段在迁移后漂移（id/project_dir/ns 须保持）",
+    )
   }
-  if action != "claim" && action != "reopen" && after.assignee != before.assignee {
+  if action != "claim" &&
+    action != "reopen" &&
+    after.assignee != before.assignee {
     out.push("IN-5 违反: assignee 在非认领/重开动作下漂移")
   }
   out
@@ -140,7 +150,9 @@ pub fn FistEngine::transition_contract(
                   "reasons": Json::array([Json::string("动作无契约定义")]),
                   "target_state": Json::string(""),
                   "state_stable": Json::boolean(true),
-                  "note": Json::string("迁移契约检查：动作不在契约表内。"),
+                  "note": Json::string(
+                    "迁移契约检查：动作不在契约表内。",
+                  ),
                 })
               Some(target) =>
                 if nt.status_to_string() != target {
@@ -152,8 +164,11 @@ pub fn FistEngine::transition_contract(
                     "verdict": Json::string("rejected"),
                     "reasons": Json::array([
                       Json::string(
-                        "postcondition 违反: 目标态 [" + nt.status_to_string() +
-                          "] ≠ 文档化目标态 [" + target + "]",
+                        "postcondition 违反: 目标态 [" +
+                        nt.status_to_string() +
+                        "] ≠ 文档化目标态 [" +
+                        target +
+                        "]",
                       ),
                     ]),
                     "target_state": Json::string(""),

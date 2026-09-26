@@ -88,10 +88,30 @@ def main():
         # Step 1 · tools/list
         r = rpc(proc, "tools/list")
         tools = [t["name"] for t in r.get("result", {}).get("tools", [])]
-        expected = 103
+        expected = 104
         if len(tools) != expected or "publish" not in tools:
             fail(f"tools/list 异常（共 {len(tools)} 个工具，期望 {expected}，缺 publish）")
         print(f"PASS tools/list → {len(tools)} 个工具（含 publish/selfdrive_publish_next 等）")
+
+        # Step 1b · issue_scan（打磨收尾新增：找目标项目潜问题）
+        if "issue_scan" not in tools:
+            fail("tools/list 缺 issue_scan（找目标项目潜问题扫描）")
+        scan_dir = "temp/mcp-smoke-scan"
+        os.makedirs(scan_dir, exist_ok=True)
+        with open(os.path.join(scan_dir, "d.mbt"), "w", encoding="utf-8") as f:
+            f.write("fn f() -> Int {\n  let rows : Array[Int] = []\n  rows[0]\n}\n")
+        r = rpc(
+            proc,
+            "tools/call",
+            name="issue_scan",
+            arguments={"dir": scan_dir, "max_findings": 20},
+        )
+        scan = json.loads(r["result"]["content"][0]["text"])
+        if scan.get("total_findings", 0) < 1:
+            fail(f"issue_scan 未命中注入的高危模式: {scan}")
+        print(
+            f"PASS issue_scan → 扫描 {scan.get('scanned_files')} 文件，命中 {scan.get('total_findings')} 条"
+        )
 
         # Step 2 · publish
         r = rpc(

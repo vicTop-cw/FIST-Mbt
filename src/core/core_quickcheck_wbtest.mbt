@@ -24,8 +24,8 @@ fn rand_task(i : Int) -> Task {
     id="t_" + i.to_string(),
     project_dir="/p",
     description="prop desc " + (i % 7).to_string(),
-    depth=1 + (i % 5),
-    split_n=1 + (i % 5),
+    depth=1 + i % 5,
+    split_n=1 + i % 5,
   )
   { ..t, status: status_at(i), }
 }
@@ -38,8 +38,10 @@ test "quickcheck: claim 迁移纪律（空 assignee 拒绝 / 非待领取拒绝 
       let a = if i % 3 == 0 { "" } else { "agent" + (i % 3).to_string() }
       match t.claim(assignee=a) {
         Ok(nt) =>
-          nt.get_status() == Claimed && nt.get_id() == t.get_id() &&
-          nt.get_description() == t.get_description() && nt.get_assignee() == Some(a)
+          nt.get_status() == Claimed &&
+          nt.get_id() == t.get_id() &&
+          nt.get_description() == t.get_description() &&
+          nt.get_assignee() == Some(a)
         Err(_) => t.get_status() != Pending || a == ""
       }
     },
@@ -56,7 +58,8 @@ test "quickcheck: execute 迁移纪律（仅已领取/拆分中可执行，其�
       let t = rand_task(i)
       match t.execute() {
         Ok(nt) =>
-          nt.get_status() == Executing && nt.get_id() == t.get_id() &&
+          nt.get_status() == Executing &&
+          nt.get_id() == t.get_id() &&
           nt.get_depth() == t.get_depth()
         Err(_) => t.get_status() != Claimed && t.get_status() != Splitting
       }
@@ -74,7 +77,8 @@ test "quickcheck: reopen 迁移纪律（仅已归档拒绝，其余回已领取�
       let t = rand_task(i)
       match t.reopen() {
         Ok(nt) =>
-          nt.get_status() == Claimed && nt.get_id() == t.get_id() &&
+          nt.get_status() == Claimed &&
+          nt.get_id() == t.get_id() &&
           nt.get_description() == t.get_description()
         Err(_) => t.get_status() == Archived
       }
@@ -92,7 +96,9 @@ test "quickcheck: split 迁移纪律（仅已领取且非叶子可拆，叶子/�
       let t = rand_task(i)
       match t.split() {
         Ok(nt) =>
-          t.get_status() == Claimed && !t.is_leaf() && nt.get_status() == Splitting
+          t.get_status() == Claimed &&
+          !t.is_leaf() &&
+          nt.get_status() == Splitting
         Err(_) => t.get_status() != Claimed || t.is_leaf()
       }
     },

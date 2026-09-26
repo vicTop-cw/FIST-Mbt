@@ -42,6 +42,8 @@ pub fn pipeline_tick(@engine.FistEngine, String, String, ns? : String, timeout_s
 
 pub fn read_meta_prompt(String) -> String?
 
+pub fn sd_agent_contract(String) -> String
+
 pub fn selfdrive_export_tasks(@engine.FistEngine, String, String) -> Result[Json, String]
 
 pub fn selfdrive_memory_append(String, ns~ : String, kind~ : String, content~ : String, now~ : String) -> Result[Json, String]

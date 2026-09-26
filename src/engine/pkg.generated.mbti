@@ -96,6 +96,7 @@ pub fn FistEngine::delete_task(Self, String) -> Result[Unit, String]
 pub fn FistEngine::deps_satisfied(Self, String) -> Bool
 pub fn FistEngine::dispatch_next(Self, String, String, String, String) -> Json
 pub fn FistEngine::docs_verify_gate(Self, String) -> Result[Unit, String]
+pub fn FistEngine::eval_feedback(Self, String, task_id? : String) -> Json
 pub fn FistEngine::execute(Self, task_id~ : String, deliverable~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::execute_with_meta(Self, task_id~ : String, deliverable~ : String, now~ : String, executor? : String, model? : String, tokens_in? : Int, tokens_out? : Int, cost? : Double, duration_ms? : Int, rate_limited? : Bool, failure_reason? : String) -> Result[@core.Task, String]
 pub fn FistEngine::executor_clear(Self) -> Bool
@@ -158,6 +159,7 @@ pub fn FistEngine::store_write_heartbeat_interval(Self, task_id~ : String, inter
 pub fn FistEngine::store_write_saga_action(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, created_at~ : String) -> Result[Unit, String]
 pub fn FistEngine::submit(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::topo_sort(Self, Array[String]) -> Array[String]
+pub fn FistEngine::transition_contract(Self, String, String, assignee? : String, completed_by? : String) -> Json
 pub fn FistEngine::triage(Self, String, String, String) -> Json
 pub fn FistEngine::verify(Self, task_id~ : String, verifier~ : String, now~ : String, docs_check? : Bool) -> Result[@core.Task, String]
 

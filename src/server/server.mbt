@@ -1169,7 +1169,7 @@ pub async fn run_server() -> Unit {
           "是否把『父计划 + 剩余兄弟』回注进每条子任务描述(默认 false 零回归，ReCAP 借鉴/R63)：开启后每个拆出的子任务描述携带它归属于哪个父计划摘要 + 还剩几个兄弟，让原子片知其所以然，防上下文漂移，整棵树递归下钻均继承。",
         ),
         "laya_auto": bool_prop(
-          "是否开启 Laya 自动选档(默认 false)：开启后探测 Laya，可用则按 difficulty.score 自动定 split_n 并把决策附到返回；不可用则回退 split_n 默认值。若同时传 decide_split_n，则忽略 Laya(躬身自决优先)",
+          "是否开启 Laya 自动选档(默认 false)。开启后探测 Laya，可用则按 difficulty.score 自动定 split_n（递归层数交给 Laya 推断）并附决策；不可用回退 split_n 默认值。⚠ 本机若 laya 可 import 但 predict 慢/卡（无内部超时），开启会拉长每次拆解耗时，故默认关闭按需开启。显式传 decide_split_n 则忽略 Laya(躬身自决优先)",
         ),
         "decide_split_n": int_prop(
           "躬身自决拆分数(可选)：显式传入即以 agent 自决为准，跳过 Laya sidecar；缺省沿用 split_n/laya_auto 逻辑",
@@ -1523,7 +1523,9 @@ pub async fn run_server() -> Unit {
         "action": string_prop(
           "迁移动作（必填）：claim/split/execute/submit/reject/retry/pause/resume/reopen/complete/archive/mark_decomposing",
         ),
-        "assignee": string_prop("拟认领人(可选，claim 用，默认 agent)"),
+        "assignee": string_prop(
+          "拟认领人(可选，claim 用，默认 agent)",
+        ),
         "completed_by": string_prop(
           "验收身份(可选，complete 用，默认 human_steward)",
         ),
@@ -1537,12 +1539,9 @@ pub async fn run_server() -> Unit {
       let completed_by = get_str(args, "completed_by", default="human_steward")
       Ok(
         @mcp.ToolResult::text(
-          engine.transition_contract(
-            task_id,
-            action,
-            assignee~,
-            completed_by~,
-          ).stringify(),
+          engine
+          .transition_contract(task_id, action, assignee~, completed_by~)
+          .stringify(),
         ),
       )
     },
@@ -2333,10 +2332,11 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "laya_decide",
-    "Laya 可选决策工具（自动探测）：用 Laya（Python ML 决策模型）对任务/文本快速分类。命中时返回结构化 answers（task_type/urgency/needs_review 等）；机器无 laya 或探测失败则返回 available:false，调用方照旧走 schedule/LLM，不影响现网。参数：context(必填)、questions(可选 JSON)、model(可选默认 english)。",
+    "Laya 决策工具（自动探测 + 确定性回退）：用 Laya（Python ML 决策模型）对任务/文本快速分类并给出「该用哪些功能机制 + 建议拆分数」决策；**机器无 Laya 或探测失败时，自动降级到内建规则式决策分支**（laya_route 纯计算：按任务描述关键词对机制族打分选最匹配 feature_route + 按复杂度启发式给 split_n），绝不阻断现网。参数：context(必填)、split_n_hint(可选整数，建议拆分数基线默认3)、questions(可选 JSON)、model(可选默认 english)。返回 { available, decision:{source/feature_route/split_n/splits_per_family/reasons} }；available=false 表示走回退分支（decision.source=fallback）。",
     schema(
       {
         "context": string_prop("待决策的任务/文本描述（必填）"),
+        "split_n_hint": int_prop("拆分数基线(可选，默认3)"),
         "questions": string_prop(
           "决策问题 schema JSON（可选；缺省用 Laya 内置 default questions）",
         ),
@@ -2349,6 +2349,7 @@ pub async fn run_server() -> Unit {
       if context == "" {
         return Err(@mcp_types.ToolError("context 不能为空"))
       }
+      let split_n_hint = get_int(args, "split_n_hint", default=3)
       let questions_raw = get_str(args, "questions", default="")
       let model = get_str(args, "model", default="english")
       // 1) 探测（--probe 仅 import laya，较快；每次调用探测以保证实时准确性）
@@ -2363,13 +2364,14 @@ pub async fn run_server() -> Unit {
         Err(_) => false
       }
       if not(avail) {
+        // 无 Laya → 确定性回退分支（本自驱改造核心：不再是空降级，而给出可用决策）
         return Ok(
           @mcp.ToolResult::text(
             Json::object({
               "available": Json::boolean(false),
-              "fallback": Json::string("use existing schedule / LLM"),
-              "reason": Json::string(
-                "机器上未探测到 Laya（python-sidecar 不可用），已降级",
+              "decision": route_decision(context, split_n_hint),
+              "note": Json::string(
+                "机器上未探测到 Laya，已降级到内建规则式决策分支（laya_route）",
               ),
             }).stringify(),
           ),
@@ -4010,6 +4012,94 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
       match bug_list(project_dir) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "issue_scan",
+    "规则驱动源码扫描（打磨收尾引入的自驱能力）：递归收集 {dir} 下 .mbt 文件，用内建 10 条 MoonBit 高危规则逐行匹配（除零/空数组下标/无保护 unwrap/unsafe_get/无保护整除/substring 越界/ignore 丢错/字符串下标/潜在溢出/空集合单例），产出 findings（rule/severity/file/line/code）。返回 {scanned_files,total_findings,include_tests,by_severity,by_rule,findings}；命中可直接喂给 report_bug（summary='[rule:id] file:line code'）形成扫描→上报→修复闭环。参数：dir(必填，相对项目子目录如 src)、rules_file(可选，预留外部规则 JSON，当前忽略)、max_findings(可选默认 100，输出上限)、include_tests(可选默认 false：是否扫描 _test/_wbtest 测试文件——默认跳过以降噪、聚焦产品代码)。",
+    schema(
+      {
+        "dir": string_prop(
+          "扫描目录（必填，相对路径如 src，拒绝绝对路径/穿越）",
+        ),
+        "rules_file": string_prop("外部规则 JSON 路径(可选，预留)"),
+        "max_findings": int_prop("findings 输出上限(可选，默认 100)"),
+        "include_tests": bool_prop(
+          "是否扫描测试文件 _test/_wbtest(可选，默认 false 跳过)",
+        ),
+      },
+      ["dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let dir = get_str(args, "dir")
+      let rules_file = get_str(args, "rules_file")
+      let max_findings = get_int(args, "max_findings", default=100)
+      let include_tests = get_bool(args, "include_tests", default=false)
+      match issue_scan(dir, rules_file, max_findings, include_tests~) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "output_validate",
+    "产出物验证（Did it work? 证据梯 L4 硬门）：按 artifacts 描述的交付产物做确定性验证——文件存在？非空？invariant 成立？外部 run_check 结果 ok？报告不是证据，只有交付产物的实际状态才能证明工作发生了。任一 artifact 失败即 verdict=fail。enforce 闭环：verdict=fail 时调用方可直接 report_bug(publish_task=true) 或 reject 打回。参数：task_id(可选, 用于取 project_dir)、project_dir(可选, 相对 CWD 路径如 .)、artifacts(必填, 数组：{path, contains?, not_contains?, min_chars?} 或 {check_key})、external_results(可选 Json, 外部 run_check 结果字典)、evidence(可选, agent 报告)、require_evidence(可选默认 false, 硬门全过时是否要求 evidence 非空)。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（可选, 用于取项目目录）"),
+        "project_dir": string_prop(
+          "项目目录（可选, 相对路径如 ., 不传则依 task_id 或 CWD）",
+        ),
+        "artifacts": array_prop(
+          "要验证的交付产物数组（必填）。每项：{path, contains?, not_contains?, min_chars?} 检查文件；或 {check_key} 引用 external_results 中的外部 run_check 结果",
+        ),
+        "evidence": string_prop(
+          "agent 报告字符串（示意层弱证据；硬门全过时可选参考）",
+        ),
+        "require_evidence": bool_prop(
+          "是否要求 evidence 非空（默认 false）。硬门全过但 evidence 空且此为 true → verdict=fail",
+        ),
+      },
+      ["artifacts"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let task_id = get_str(args, "task_id")
+      let project_dir = get_str(args, "project_dir")
+      let artifacts = get_array(args, "artifacts")
+      let external_results = match args {
+        Object(m) =>
+          match m.get("external_results") {
+            Some(obj) => obj
+            _ => Json::object({})
+          }
+        _ => Json::object({})
+      }
+      let evidence = get_str(args, "evidence")
+      let require_evidence = get_bool(args, "require_evidence", default=false)
+      // project_dir 优先级：显式传 > task_id 拿 > "."
+      let workdir = if !project_dir.is_empty() {
+        project_dir
+      } else if !task_id.is_empty() {
+        match engine.get_task(task_id) {
+          Some(t) => t.project_dir
+          None => "."
+        }
+      } else {
+        "."
+      }
+      match
+        output_validate(
+          workdir,
+          artifacts,
+          external_results,
+          evidence,
+          require_evidence~,
+        ) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
