@@ -15,6 +15,8 @@ scripts/mcp_smoke.py — FIST-Mbt 一键自检（评审/自驱 10 秒验证 MCP 
 """
 import json
 import os
+import re
+from pathlib import Path
 import subprocess
 import sys
 
@@ -62,6 +64,15 @@ def fail(msg):
     sys.exit(1)
 
 
+RE_TOOL = re.compile(r'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"')
+
+
+def registry_tool_count():
+    """工具数真源：src/server/server.mbt 的注册点（与 check_tools_sync 逐字同口径）。"""
+    src = Path(__file__).resolve().parent.parent / "src" / "server" / "server.mbt"
+    return len(set(RE_TOOL.findall(src.read_text(encoding="utf-8"))))
+
+
 def main():
     main_js = find_main()
     if not main_js:
@@ -88,7 +99,11 @@ def main():
         # Step 1 · tools/list
         r = rpc(proc, "tools/list")
         tools = [t["name"] for t in r.get("result", {}).get("tools", [])]
-        expected = 104
+        # BUG-67 同族（第三处）：这里曾硬写 104/120 —— 注册表涨了它就过期，
+        # 而且过期方式是"自检通过/自检失败"这种假信号。改成直接读真源同一口径。
+        expected = registry_tool_count()
+        if expected < 100:
+            fail(f"server.mbt 只解析到 {expected} 个工具（<100 视为解析失效，不出假绿）")
         if len(tools) != expected or "publish" not in tools:
             fail(f"tools/list 异常（共 {len(tools)} 个工具，期望 {expected}，缺 publish）")
         print(f"PASS tools/list → {len(tools)} 个工具（含 publish/selfdrive_publish_next 等）")

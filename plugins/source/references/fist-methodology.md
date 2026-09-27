@@ -51,25 +51,15 @@ T0           (root)
     └── T0.2.1
 ```
 
-## MCP Tools (41 total)
+## MCP Tools
 
-### Lifecycle (12)
-- `publish`, `plan`, `claim`, `execute`, `submit`, `verify`, `reject`, `retry`, `pause`, `resume`, `archive`, `delete`
+Not listed here any more — a hand-copied second inventory is exactly what rotted
+(it sat at "41 total" while the registry had grown to {{TOOL_COUNT}}; BUG-67).
+The only projections of the registry are:
 
-### Query (2)
-- `list`, `get`
+- `SKILL.md` §Tool count & categories — {{TOOL_COUNT}} tools, grouped as
+  {{TOOL_GROUPS}}
+- README §功能全景 (repo) — the grouping source, pinned against `tools/list`
+  by `scripts/check_doc_surface.py` J4 and re-checked at plugin-generation time
 
-### Operations (6)
-- `task_plan_deep`, `conflicts_check`, `heartbeat`, `heal`, `watchdog_tick`, `task_cleanup`
-
-### DAG (6)
-- `dag_critical_path`, `dag_parallelism`, `dag_ascii`, `dag_check`, `dag_ready`, `dag_sort`
-
-### Audit (2)
-- `audit_permission`, `audit_log`
-
-### Multi-tenant (3)
-- `store_open`, `store_list`, `store_close`
-
-### Omega (4, optional)
-- `omega_spec_create`, `omega_spec_review`, `omega_result_verify`, `omega_status`
+`tools/list` on a running server is the live truth; anything else is a copy.

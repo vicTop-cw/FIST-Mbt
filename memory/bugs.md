@@ -970,3 +970,156 @@ HEAD 内容上发红 19 条、工作树 0。
 ### FIXED(2026-09-26 六模式轮 · 合并 fist-model-router（指挥官终审） / BUG-60)
 
 中性分不再参与加权：`critic_review` 在 `score == 0.5`（= 没算分）时按 `novelty` 单独判，显式给分才走 `0.5*score + 0.5*novelty`。这样 `evolve_critic` 不传 score 与 `task_challenge` 硬传 0.5 两条默认路径都能真正过审，而漂移/重复防护不变。锁 `src/evolve/critic_test.mbt` 一条三判据：中性分+空库⇒放行、中性分+高重合⇒仍拒、显式 0.1⇒仍拒。
+## BUG-61 [2026-09-27T03:02:07Z] [high] OPEN
+- summary: [r4][executor_run] 文档承诺的记账从未发生
+- detail: AGENTS.md 与 executor_run 工具描述都写「model 留空则先向路由器要一个模型并记账」，实际 src/server/model_router_ops.mbt:241 调 model_route_impl(project_dir, ns~) 时不传 record_model ⇒ 只 pick 不 record_call。实测（temp/r4/verify_laneA.py + fist.py 真跑）：执行器跑完后状态里 used 仍为 0、switch_count 不推进 ⇒ 执行器流量永不影响档位，路由对真实用量失明。
+- reported_by: pmode-r4-bugfind
+- task_id: T0r366
+
+## BUG-62 [2026-09-27T03:02:07Z] [high] OPEN
+- summary: [r4][executor_run] dry_run=true 并非无副作用：写盘 + 推进游标，两次同样请求返回不同模型
+- detail: 复现：python temp/r4/verify_laneA.py（同一 ns 连打两次 executor_run dry_run=true）。实测第一次 argv 用 AtomGit-qwen3.8-27b、第二次换成 AtomGit-glm5.3-flash，且 temp/.../memory/model-router-<ns>.json 的 free_idx 由 0 变 1、模型 window_start 被盖章。根因与「model 留空=只问不消耗」同源：model_route_impl 在只查询分支也调 mr_save（src/server/model_router_ops.mbt:110），轮询游标在无人消耗配额时就被推进。
+- reported_by: pmode-r4-bugfind
+- task_id: T0r367
+
+## BUG-63 [2026-09-27T03:02:07Z] [high] OPEN
+- summary: [r4][model_route] config_json 传 JSON 对象被静默当成没传，走默认池且零告警
+- detail: BUG-55 已把「非法 JSON 静默回落默认池」修成显式报错，但类型边界还漏着一条：schema 声明 config_json 是 string，而 MCP/LLM 客户端最常直接给对象。实测（temp/r4 探针）：同一个配置以对象传 → decision.model=AtomGit-qwen3.8-27b（默认池）、warnings 只有「无有效状态」；以字符串传 → decision.model=ZZZ-FREE（自定义池生效）。根因 src/server/server.mbt:340 get_str 对非字符串一律回退默认值。
+- reported_by: pmode-r4-bugfind
+- task_id: T0r368
+
+## BUG-64 [2026-09-27T03:02:07Z] [medium] OPEN
+- summary: [r4][model_route] namespace 未过 safe_ns：写不进盘的 ns 静默失去配额约束
+- detail: src/router/router_state.mbt:13 直接拼 memory/model-router-{ns}.json，未复用仓库现成的 src/store/multi_store.mbt:24 safe_ns。实测 ns=a/b → persisted=false 而 ok=true，连记三次 used 恒为 1 ⇒ 上限形同虚设；大小写不敏感文件系统上 NSLOWER/nslower 共用一本账（同源）。
+- reported_by: pmode-r4-bugfind
+- task_id: T0r369
+
+## BUG-65 [2026-09-27T03:02:07Z] [medium] OPEN
+- summary: [r4][router 测试] 假绿锁：ent(used=-3) 根本没把 -3 写进 JSON，「负数夹紧」断言恒真
+- detail: src/router/router_state_wbtest.mbt:32-34 的 ent() 仅在 used>=0 时才写 used 键，于是 :100 传入的 used=-3 在 JSON 里缺席，:107 的 assert_eq(used, 0) 测的是「字段缺失时的默认值」而不是负数夹紧路径 ⇒ src/router/model_router.mbt:59 的夹紧逻辑实际零覆盖。同文件另三处弱断言：rs_1 的付费单元只查 is Some(_)、rt_7 标题含「占比」却不查 share_pct、mo_* 全部没看 usage.current_model（故记账后报别名的缺陷落在所有锁之外）。
+- reported_by: pmode-r4-bugfind
+- task_id: T0r370
+
+## BUG-66 [2026-09-27T03:02:07Z] [medium] OPEN
+- summary: [r4][插件态] 投影真源仍在广告幻影参数 now（120 个工具声明 now 的为 0）
+- detail: plugins/source/SKILL.md:57「**All tool calls take an explicit `now`**」、references/mcp-tools.md:29、references/seven-modes.md:25 同样措辞。实测 src/server/server.mbt 里声明 now 的工具数为 0（BUG-33 政策：时间戳服务端盖章）。守卫侧：J8 专治幻影参数，但 scripts/check_doc_surface.py:243 只扫 templates/，plugins/source/ 与四宿主投影不在任何判据射程内 ⇒ 投影把谎言放大成 4 份发货。
+- reported_by: pmode-r4-bugfind
+- task_id: T0r371
+
+## BUG-67 [2026-09-27T03:02:07Z] [medium] OPEN
+- summary: [r4][插件态] references 走 copytree 原样字节复制，工具数写死腐烂且无守卫
+- detail: plugins/source/references/fist-methodology.md:54 仍写「MCP Tools (41 total)」，plugins/source/SKILL.md 另有「105 tool registrations」与分组和 112（同一文件头戳却是 tools=120）。gen_plugins.py:142 对 references 是 shutil.copytree（不做占位符替换），结构上永远无法承载 {{TOOL_COUNT}}；而 check_tools_sync/check_doc_surface 均不提 plugins/ （实测 grep 命中 0），cl7 J6 只取第一个 tools= 命中 ⇒ 投影正文里的数字无人对账。
+- reported_by: pmode-r4-bugfind
+- task_id: T0r372
+
+## BUG-68 [2026-09-27T03:02:07Z] [medium] OPEN
+- summary: [r4][守卫] 现状面文档枚举器各自为政：ARCHITECTURE.md / README.mbt.md 全仓无人判
+- detail: 实测：git 跟踪 262 份 .md，check_test_sync 扫描面 101 份，「既不在面内也不属历史豁免」4 份，其中 ARCHITECTURE.md:81 写「317 全绿」、:3/:15/:90 写「104 工具」，README.mbt.md:9 写「307/307」（真源 120 工具 / 442 测试 / v0.3.0）。同族：check_tools_sync 遍历 5 份、check_doc_surface J4 遍历 4 份、J7 一份清单 —— BUG-50 只修了其中一份枚举器。
+- reported_by: pmode-r4-bugfind
+- task_id: T0r373
+
+## BUG-69 [2026-09-27T03:02:07Z] [medium] OPEN
+- summary: [r4][守卫] check_test_sync --selftest 测不到「扫描面漏文件」这一类
+- detail: scripts/check_test_sync.py:218 的 sweeps 是手写夹具，全程不调 current_docs()（:96）与 run()（:173）⇒ 自检只证纯函数 judge 会红，判据最强的一层（R1 全量扫）恰好没被自测覆盖。本轮实测的 ARCHITECTURE.md 漏面就是它原理上抓不到的形状。
+- reported_by: pmode-r4-bugfind
+- task_id: T0r374
+
+## BUG-70 [2026-09-27T03:02:07Z] [low] OPEN
+- summary: [r4][守卫] check_plugin_sync 用绝对路径的 p.parts 过滤 source，克隆目录含 source 时判据空转
+- detail: scripts/check_plugin_sync.py:106 与 :146 都是 `"source" not in p.parts` —— p 来自 PLUGINS.rglob，parts 含整条绝对路径。把仓库克隆到路径任一段叫 source 的目录（如 C:/source/FIST-Mbt）⇒ generated 集合直接变空，J3/J6 全程无对象可比仍打 PASS。
+- reported_by: pmode-r4-bugfind
+- task_id: T0r375
+
+## BUG-71 [2026-09-27T03:02:07Z] [low] OPEN
+- summary: [r4][文档] server.mbt 头注释写「16 tools + 2 resources + 2 prompts」，且 resources/prompts 计数零守卫
+- detail: src/server/server.mbt:1 头注释与实际 120 工具差一个数量级；实测 s1.resource( 命中 3、s1.prompt( 命中 2。宣称处 AGENTS.md:102、README_EN.md:90、docs/agent-map.md:26、docs/deliverable.md:17 —— 六守卫里没有任何一条对 resources/prompts 计数负责（check_tools_sync 只管工具名与总数）。
+- reported_by: pmode-r4-bugfind
+- task_id: T0r376
+
+## BUG-72 [2026-09-27T03:02:07Z] [low] OPEN
+- summary: [r4][issue_scan] 裸子串 needle 在字符串字面量上假阳性
+- detail: src/server/issue_scan.mbt:71 的 substring-overrun 用裸子串匹配，实测在 src/server/server.mbt:2216 这类纯文案（"mode / name / description / ..."）上命中；全仓 substring-overrun 17 条含多条此类噪声。另记：ignored-error / empty-collection-singleton 两条规则在本仓恒 0 命中（needle 的唯一出处是 issue_scan.mbt 自己的规则表，而 :137 又显式跳过该文件）——属"规则表无受控命中自检"，不是匹配缺陷，交 Round 5 决定是否配 fixture。
+- reported_by: pmode-r4-bugfind
+- task_id: T0r377
+
+## BUG-73 [2026-09-27T04:24:27Z] [high] OPEN
+- summary: [r4][model_route] pool_pick 不扫描：游标落在耗尽格上时整档判死，白切付费档
+- detail: src/router/model_router.mbt:284（修复前）`let idx = (start_idx % n + n) % n` —— 循环变量 i 从不参与下标，pool_pick 把**同一个格子重测 n 次**，而它的文档注释写的是「池内第一个可用模型下标（环形扫描）」。后果实测：免费池 [free-busy(limit=1,used=1), free-ok(limit=10)]、游标停在 0 时，pick 返回 paid-a 并 current_tier=Paid、switch_count=1 —— 免费档还有一个满血模型却被判整档不可用，直接跳到付费档烧钱（违反「免费优先」这条主承诺）。锁：rt_15_同档仍有健康模型时不许跳档（先跑在未修复代码上为红，见 temp/r4/t6.log；合成违例复跑见 temp/r4/mut_b73.log，D 组）。注：本仓既有路由测试全部用单元池（rt_3/rt_5/rt_7/rt_9），单元池里 n=1 使该缺陷不可见，rt_13 虽用双免费池却只看 decision.model 与 current_model，未把游标停在耗尽格上。
+- reported_by: pmode-r4-fix
+- task_id: T0r380
+
+
+### FIXED(2026-09-27 四模式轮 · Round 4 修复段（指挥官终审，调用面实测） / BUG-61)
+
+executor_run 在**进程真起来**那一支（Ok 分支）调 mr_record_only 把这次用量记到路由账上，返回体新增 quota 字段说明 recorded/not_routed/record_failed；显式指定 model 属越池覆盖，不代记账。
+锁：mo_6/mo_8/mo_9（记账路径与「只有消耗才落盘」的边界）+ 调用面 temp/r4/verify_r4_callsite.py E1/E2（record_model 后 total_used 0→1）。
+**残余缺口（不自证为已验收）**：executed=true 真跑侧仍无端到端证据——宿主执行器真跑未获授权（BUG-4 边界默认收紧），故本条按「代码+白盒+记账路径调用面已证、真跑侧待授权」入账。
+
+### FIXED(2026-09-27 四模式轮 · Round 4 修复段（指挥官终审，调用面实测） / BUG-62)
+
+只问不消耗改为真零副作用：model_route_impl 里 save 只在 consuming（给了 record_model）时发生，persisted=consuming，并新增 mode 字段明说本次形态（src/server/model_router_ops.mbt:125-152）。
+唯一例外是**只播种定义不播种用量**：显式给 config_json 池定义时在 pick 之前落盘池形状，否则 executor_run 自动记账那一笔（不带 config）只能拿默认池，自定义模型名走「未在任何池中配置」，配额形同虚设（BUG-61 的接线前提）。
+锁：mo_6（无 config 查询不建文件、三次同问同一模型）、mo_8（带 config 播种后 total_used 仍 0、再不带 config 的消耗能记上）、mo_9（**逐字节**对照：查询前后状态文件内容完全相同，消耗后才变）；成对反证见 temp/r4/prove_locks_red.py（退回修复前形态 ⇒ mo_2/4/6/7/8/9 六条全红）。
+
+### FIXED(2026-09-27 四模式轮 · Round 4 修复段（指挥官终审，调用面实测） / BUG-63)
+
+server.mbt 新增 get_json_text：字符串照原样、对象按 stringify 走同一条 mr_parse_config 校验、缺失/Null 才是「没给配置」，不再被静默当成没传。锁：src/server/server_r3_wbtest.mbt 的 BUG-63 一条（对象→文本→再解析回对象的整链，含零回归对照：缺失/Null 得空串）；非空锁证明 temp/r4/prove_locks_red2.py A 组（把对象取值退回 `Some(_) => Some("")` ⇒ 该锁必须红）。
+调用面 B1/B2：config_json 以对象传时 decision.model=CS-FREE-A（自定义池生效）且无回落 warning。
+
+### FIXED(2026-09-27 四模式轮 · Round 4 修复段（指挥官终审，调用面实测） / BUG-64)
+
+model_route / model_router_status / model_router_reset / executor_run 四个入口统一过 mr_check_ns（复用仓库唯一真源 @store.MultiStore::safe_ns），空 ns 仍按既有约定=default（零回归）；非法 ns 显式拒绝且文案带出路（「只允许字母/数字/_/-」）。锁 mo_7（三个同步入口 + 空 ns 成对放行）；executor_run 是 async，其 ns 拒绝由调用面 C1/C2 覆盖（a/b 被拒、拒绝原因可见）。
+
+### FIXED(2026-09-27 四模式轮 · Round 4 修复段（指挥官终审，调用面实测） / BUG-65)
+
+假绿锁补真：rs_6 把 used=-3 **真写进 JSON**（不再走 ent() 的 used>=0 哨兵），第一次真正钉住 ModelQuota::new 的负数夹紧；rt_14 把 rt_12 收尾那句 `current_model() is Some(_)` 换成双元池上的具体模型名（单元池里 98%1、99%1、-7%1 全是 0，三条断言恒过＝假锁）。
+非空锁证明 temp/r4/prove_locks_red2.py B/C 组：拆掉夹紧 ⇒ rs_6 红；环形取模换成恒定第 0 格 ⇒ rt_14 红。
+
+### FIXED(2026-09-27 四模式轮 · Round 4 修复段（指挥官终审，调用面实测） / BUG-66)
+
+plugins/source 四处对已删除参数 now 的广告改成「时间戳服务端盖章、调用面无 now」（SKILL.md、references/mcp-tools.md、seven-modes.md、known-issues.md 的 BUG-1 条目）；守卫面：check_doc_surface 的 J7 禁词表加 `explicit now`，规范性表面扩到 plugins/source/**.md，J8 扫描面从 templates/ 扩到 templates/ + plugins/source/（并加「扫不到插件真源就 FATAL」的枚举器哨兵）。
+四宿主投影由 gen_plugins.py 重生成，cl7 逐字节复核 PASS（4 宿主 / 56 文件）。
+
+### FIXED(2026-09-27 四模式轮 · Round 4 修复段（指挥官终审，调用面实测） / BUG-67)
+
+references 不再是 shutil.copytree 的原样字节复制——gen_plugins 逐文件走 render()，因此 {{TOOL_COUNT}}/{{TOOL_GROUPS}} 能进投影正文；分组表**从 README 分组标题投影**并在生成时复算分组和==注册表实测，对不上直接 die（不产「看着正常」的插件）；SKILL.md 里手抄的 105/112 与 references/fist-methodology.md 的 41/12 快照一并删除（第二份真源就是腐烂源）。
+同类第三处：scripts/mcp_smoke.py 硬写的 expected=104/120 改成 registry_tool_count() 读真源同口径，并加 <100 拒绝出假绿。cl7 J6 从「只取第一个 tools= 命中」收紧为「每个命中都得等于实测」。
+
+### FIXED(2026-09-27 四模式轮 · Round 4 修复段（指挥官终审，调用面实测） / BUG-68)
+
+check_test_sync 的文档枚举从手写元组改成 git ls-files 派生（tracked_docs，空/过小即 FATAL），扫描面 102 份现状文档，ARCHITECTURE.md(317/104) 与 README.mbt.md(307/103) 第一次进射程并被判红→改绿；同族：check_tools_sync 加 R3b（现状面每处工具数声明逐处对账，不只要求「出现过实测数」）与 R7（tools+resources+prompts 三元组，含 server.mbt:1 头注释本身）；文档侧一次性对齐 ARCHITECTURE/README.mbt/USAGE/agent-map/scripts-README 共 8 处旧数 + 14 处测试数 442→453。
+
+### FIXED(2026-09-27 四模式轮 · Round 4 修复段（指挥官终审，调用面实测） / BUG-69)
+
+check_test_sync --selftest 增加 R0-enumerator 变体：直接考 current_docs()/enumerator_gaps 本身（不调 judge），断言①曾漏面的 ARCHITECTURE.md、README.mbt.md 必须在扫描面里，②把扫描面人为收窄成「只带子目录的文档」时差集判据必须报出 ARCHITECTURE.md（否则它是装饰），③全量面自比不得自报漏文件（防恒红）。实测末行：SELFTEST PASS 8 个变体（计数由 run_case 累加）+ R0-enumerator 单独一条 ok ⇒ 共 9 项检查，但「变体」口径是 8，引用时按末行原文，别手加。
+
+### FIXED(2026-09-27 四模式轮 · Round 4 修复段（指挥官终审，调用面实测） / BUG-70)
+
+check_plugin_sync 的 source 过滤从 `"source" not in p.parts`（parts 含整条绝对路径）改成 is_generated(p, plugins)——只看相对 PLUGINS 的第一段；新增 generated_files() 单点复用 + 集合为空时打 FATAL（空转的 J3/J6 绝不报 PASS）；新增 --selftest 两判据：克隆到 …/source/… 下的生成文件必须仍算生成、真源 plugins/source/ 必须不算。同族防线也补进 check_doc_surface（is_plugin_surface 可注入 plugins 根）。
+
+### FIXED(2026-09-27 四模式轮 · Round 4 修复段（指挥官终审，调用面实测） / BUG-71)
+
+server.mbt:1 头注释从「16 tools + 2 resources + 2 prompts」改为实测 120/3/2 并写明真源与守卫；resources/prompts 计数从此有守卫：check_tools_sync 按 s1.resource( / s1.prompt( 数注册点，R7 把三元组声明（含头注释）逐处对账。跑法与结果：python scripts/check_tools_sync.py PASS。
+
+### FIXED(2026-09-27 四模式轮 · Round 4 修复段（指挥官终审，调用面实测） / BUG-72)
+
+issue_scan 的命中条件从裸 `line.contains(needle)` 改成 scan_outside_literal：先取「可扫代码部分」（字符串字面量内容整体丢弃、在第一个未转义 `//` 处截断），再匹配。顺带还掉 BUG-15 欠的「行尾注释不在本轮范围（需要 token 级判定，另开 issue）」半边债——实测只需两个状态量一趟扫描。
+锁：src/server/issue_scan_wbtest.mbt 三条成对锁（真代码行必抓到 / 文案与注释里的同一串必不抓 / 两道降噪同时生效时行号必须是 5）。纯降噪证明：temp/r4/prove_b72_diff.py 同一份语料开关两态 80→76 条，去掉 4 条、新增 0 条（去掉的全是行尾散文与描述文案）。
+
+### FIXED(2026-09-27 四模式轮 · Round 4 修复段（指挥官终审，调用面实测） / BUG-73)
+
+修复中新发现并当场收口：src/router/model_router.mbt pool_pick 的循环里 idx 只由 start_idx 算出、i 从不参与下标 ⇒ 同一格重测 n 次，游标停在耗尽模型上时**整档判为不可用**，免费池还有一个满血模型却切到付费档（白花钱 + switch_count 假增长）。改为 idx=((start_idx+i)%n+n)%n。
+锁先落码后改产品：rt_15 在未修复代码上实测红（temp/r4/t6.log：`"paid-a" != "free-ok"`），修复后转绿、全量 453/453（temp/r4/full3.log）；合成违例复跑 temp/r4/mut_b73.log（D 组）。
+既有单元池测试（rt_3/rt_5/rt_7/rt_9）看不见该缺陷，故双元池断言是本条的关键增量。
+## BUG-74 [2026-09-27T04:53:57Z] [medium] OPEN
+- summary: [r4][task_plan_deep] 工具描述只列参数不写返回形状，调用方按自然键名取值静默得空（拆解看似 0 子任务）
+- detail: src/server/server.mbt 的 task_plan_deep 描述串（实测该串内不含「返回」「tree」「children」任一词）只文档化了入参，未声明返回形状；真实返回是 {root, by, split_n, tree:{task_id, created:int, children:[{id, depth, leaf, spec_hash, depends_on, children:[…]}]}, exec_order:{task_id, count, order:[…]}} —— 子任务藏在 tree.children 的递归层里，且 created 是**计数**不是数组。同仓其它工具是写明返回形状的（issue_scan「返回 {scanned_files,total_findings,…}」、call_log「返回最近工具调用记录（seq/ts/tool/…）」），所以这是漏项而非风格。实测代价（本轮活证据 temp/r4/publish_pmode-r4-verify.json + 立项日志）：指挥官脚本用 tp.get('subtasks') or tp.get('tasks') or tp.get('created') or [] 取值 → 顶层全 miss → 打印「plan -> 直接子任务 0 个」，而服务端其实已建 7 枝 / 21 叶；若不是随后用 list(namespace=) 复核，就会误判拆解失败并重复发布（产生孤儿任务树）。created 尤其危险：真出现在顶层时 for k in created 直接 TypeError，而 or [] 的写法会把整数 7 当成假列表。修复方向（不动公开 API、不改返回体）：描述串补返回形状 + 明确 created 是计数，AGENTS.md 同口径；并给守卫加一条「有返回体的工具描述必须出现『返回』二字」的自检，配成对锁（缺『返回』的合成描述必红、issue_scan 这类已写明的必不红）。
+- reported_by: pmode-r4-verify
+- task_id: T0r385
+
+## BUG-75 [2026-09-27T04:53:57Z] [medium] OPEN
+- summary: [r4][run_check] 判据失败只回退出码、拿不到 stdout/stderr，落库的完整结果又无工具可读回 ⇒ 无人值守只能本地重跑（正是该工具要防的路径）
+- detail: 工具描述承诺「结果 JSON（含 stdout/stderr）落库 specs 表」，但调用面拿不到它：实测 run_check 回执键 = [check_id, note, ok, round, status, task_id]（无 stdout/stderr）；src/engine/omega_gate.mbt:74-81 的返回 Map 也只 set 这六个键，content=check_json 只写不读回；call_log 的 result 列对 run_check 行只有 "ok" 一词（实测最近 40 行里 10 条 run_check 全如此），不是那份 JSON。后果分两种，都命中本项目的旗舰场景：① passed 时指挥官举不出判据到底打了什么，只能自己再 subprocess 跑一遍同一条命令来取文本 —— 而 run_check 存在的理由就是「服务端真跑、不靠调用方自述」，重跑等于把证据梯降级回 L1；② failed 时更糟：只知 exit code 非 0，不知是断言红、路径不存在还是命令被白名单拒，无人值守流水线（watchdog_tick/pipeline_tick）没有终端可看，只能整单打回重做。次要观察（同一条里一并修）：omega_gate.mbt:80 把**调用方传入的 status** 原样回显，而第 57 行刚声明该参数不被信任、门禁状态一律由 check_json 的 ok 推导（eff）。当前 run_check 工具面无 status 参数、由服务端推导，所以还不会被利用，但「回执里的 status 可以是假话、记录里的 status 才是推导值」这种分叉应当合流。修复方向：回执加 stdout_tail/stderr_tail（截断到固定长度，避免超大输出撑爆 MCP 帧），并/或提供按 check_id 读回 specs.content 的只读工具；回显 status 改用 eff。判据成对：失败判据必须能带出最后 N 行 stderr（合成一条必然失败的命令），通过判据不得因为截断而丢 ok 字段。
+- reported_by: pmode-r4-verify
+- task_id: T0r386
+

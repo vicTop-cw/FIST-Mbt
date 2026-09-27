@@ -22,7 +22,7 @@ Seven battle-tested modes, each a full closed loop on the FIST state machine. Te
 
 ## Common red lines
 
-- Explicit `now` on every call; relative paths for bug-family tools; probe `report_bug` landing spot once per session.
+- Timestamps are server-stamped — there is no `now` to pass (BUG-33). Relative paths for bug-family tools; probe `report_bug` landing spot once per session.
 - No irreversible ops without human approval (push / delete / wipe); local commit only where the param card allows.
 - Gate not green → no verify. Failures surface verbatim; never fake completion.
 - Omega strong verify on: spec_create → spec_review → execute → result_verify → verify; missing deliverable = reopen → execute → resubmit.

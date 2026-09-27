@@ -138,6 +138,87 @@ fn scan_is_rules_table(path : String, content : String) -> Bool {
 }
 
 ///|
+/// 从 at 起，cs 是否以 pat 开头（逐字符比，不靠切片：中文按字节下标极易切坏）。
+fn scan_matches_at(cs : Array[Char], pat : Array[Char], at : Int) -> Bool {
+  let m = pat.length()
+  if at < 0 || at + m > cs.length() {
+    return false
+  }
+  let mut k = 0
+  while k < m {
+    if cs[at + k] != pat[k] {
+      return false
+    }
+    k = k + 1
+  }
+  true
+}
+
+///|
+/// 取一行的"可扫代码部分"：字符串字面量**内容整体丢弃**（留一对空引号作壳），
+/// 并从第一个不在字面量里的 `//` 处截断行尾注释。
+///
+/// BUG-15 当年声明"行尾注释不在本轮范围内（需要 token 级判定，另开 issue）"——
+/// 这里只需两个状态量（在不在字面量里、上一个字符是不是反斜杠），一趟扫描就够，
+/// 不必完整 lexer，所以把那半边的债一起还了：
+/// `Json::Null => (d, []) // null = 没给配置` 不再被裸子串 `/ n` 命中。
+fn scan_code_part(line : StringView) -> String {
+  let cs = line.to_string().to_array()
+  let n = cs.length()
+  let out : Array[Char] = []
+  let mut in_lit = false
+  let mut prev_bs = false
+  let mut i = 0
+  while i < n {
+    let c = cs[i]
+    if in_lit {
+      if c == '\\' {
+        prev_bs = !prev_bs
+      } else {
+        if c == '"' && !prev_bs {
+          in_lit = false
+          out.push(c)
+        }
+        prev_bs = false
+      }
+    } else if c == '"' {
+      in_lit = true
+      out.push(c)
+    } else if c == '/' && i + 1 < n && cs[i + 1] == '/' {
+      break
+    } else {
+      out.push(c)
+    }
+    i = i + 1
+  }
+  String::from_array(out)
+}
+
+///|
+/// needle 是否出现在本行的**代码部分**（字符串字面量内容之外、行尾注释之前）。
+/// BUG-72：规则表用裸子串匹配，于是工具描述里的一句文案（`"…substring(start=0…)"`、
+/// `"… rows[0] …"`）也被当成代码命中——扫描器把"提到某事"读成"做了某事"，
+/// 实测全仓 substring-overrun 17 条里多条是这种噪声（BUG-15 的注释面是同一类的另一半）。
+/// 已知局限（一律保守少报，不误报）：多行字符串/未闭合字面量会丢掉行尾余下部分；
+/// 插值 `\{a / 0}` 里的代码按字面量内容放过。
+fn scan_outside_literal(line : StringView, needle : String) -> Bool {
+  let cs = scan_code_part(line).to_array()
+  let pat = needle.to_array()
+  let n = cs.length()
+  if pat.is_empty() || pat.length() > n {
+    return false
+  }
+  let mut i = 0
+  while i < n {
+    if scan_matches_at(cs, pat, i) {
+      return true
+    }
+    i = i + 1
+  }
+  false
+}
+
+///|
 /// 逐行匹配一条规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
 fn scan_match_lines(
   content : String,
@@ -150,7 +231,8 @@ fn scan_match_lines(
     let mut hit = false
     if not(scan_is_comment_line(line)) {
       for needle in rule.pattern {
-        if line.contains(needle) {
+        // BUG-72：只算字面量之外的命中（文案里的 `substring(` 不是调用）
+        if scan_outside_literal(line, needle) {
           hit = true
           break
         }

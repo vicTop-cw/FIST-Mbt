@@ -277,3 +277,78 @@ test "rt_13_current_model 报真在用的模型而不是游标位（BUG-56 成�
   assert_eq(g2("current_model"), "free-a")
   assert_eq(g2("last_pick"), "")
 }
+
+///|
+/// BUG-65 附带：rt_12 收尾那句 `current_model() is Some(_)` 是弱断言——
+/// 返回类型是 ModelQuota? ⇒ 只要返回"任意一个模型"就恒真，越界游标到底绕回哪一格没人管。
+/// 这里用**双元池**钉具体名字：单元池里 `99 % 1 == 0`、`-7 % 1 == 0`，两条断言都恒过，
+/// 只有池长 >1 时"取模 + 负数绕回"才是一个能被写错的具体结果。
+test "rt_14_越界游标取模后 current_model 必须点名（补 rt_12 的弱断言）" {
+  let r = ModelRouter::from_config({
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [],
+    paid_models: [
+      ModelQuota::new(name="paid-a", tier=Paid, limit=7),
+      ModelQuota::new(name="paid-b", tier=Paid, limit=7),
+    ],
+  })
+  r.current_tier = Paid
+  r.paid_idx = 98 // 98 % 2 = 0
+  match r.current_model() {
+    Some(q) => assert_eq(q.name, "paid-a")
+    None => abort("付费池非空，current_model 不该为空")
+  }
+  r.paid_idx = 99 // 99 % 2 = 1 ⇒ 绕回第二格
+  match r.current_model() {
+    Some(q) => assert_eq(q.name, "paid-b")
+    None => abort("越界游标没有点名到具体模型")
+  }
+  // 负游标：% 与被除数同号 ⇒ -7 % 2 = -1，必须再 +len 绕回正下标（-1+2=1）
+  r.paid_idx = -7
+  match r.current_model() {
+    Some(q) => assert_eq(q.name, "paid-b")
+    None => abort("负游标下 current_model 为空")
+  }
+  // 越界游标先夹紧再决策，否则 99/-7 这类下标直接崩
+  assert_true(r.pick(now="2026-09-27T00:00:00Z").available)
+}
+
+///|
+/// rt_15 池内扫描必须真的扫（新发现 BUG-73）：pool_pick 的循环里 `idx` 只由 start_idx
+/// 算出，`i` 从不参与下标 ⇒ 它把同一个格子重测 n 次，游标停在耗尽模型上时**整档判为不可用**，
+/// 于是"免费池还有一个健康模型"却被切到付费档（switch_count+1、真金白银的付费配额被消耗）。
+/// 修复前三条断言全红（返回 paid-a）。
+test "rt_15_同档仍有健康模型时不许跳档（环形扫描要真的扫描）" {
+  let cfg = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [
+      ModelQuota::new(name="free-busy", tier=Free, limit=1, used=1),
+      ModelQuota::new(name="free-ok", tier=Free, limit=10),
+    ],
+    paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=10)],
+  }
+  let r = ModelRouter::from_config(cfg)
+  r.free_idx = 0 // 游标正好停在耗尽那一格
+  let d = r.pick(now=rt_at(0, 1))
+  assert_eq(d.model_name, "free-ok")
+  assert_eq(d.tier, Free)
+  assert_eq(r.current_tier, Free)
+  assert_eq(r.switch_count, 0)
+  // 零回归：选中后游标仍按"下一格"推进（1+1 mod 2 = 0），轮询语义不变
+  assert_eq(r.free_idx, 0)
+  // 反向成对：整档真的全耗尽时才允许跳付费
+  let r2 = ModelRouter::from_config({
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [
+      ModelQuota::new(name="f1", tier=Free, limit=1, used=1),
+      ModelQuota::new(name="f2", tier=Free, limit=1, used=1),
+    ],
+    paid_models: [ModelQuota::new(name="p1", tier=Paid, limit=10)],
+  })
+  let d2 = r2.pick(now=rt_at(0, 1))
+  assert_eq(d2.model_name, "p1")
+  assert_eq(r2.current_tier, Paid)
+}

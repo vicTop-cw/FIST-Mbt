@@ -33,6 +33,7 @@
 任一违例即 FAIL（退出码非 0）。R1 的豁免表条目若已失效（不再命中任何声明）同样 FAIL。
 """
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -63,6 +64,7 @@ EXEMPT = [
     ("docs/polish-plan.md", "148", "标题自述「初稿」的规划快照，描述的是当时的底子"),
     ("docs/features/F008-evolve.md", "148", "已勾 `- [x] AC-2` 是该特性轮的验收记录，非现状断言"),
     ("README_EN.md", "317", "native 轨旧数（该句已同时声明本轮未复跑，不许读成双端同版全绿）"),
+    ("ARCHITECTURE.md", "317", "native 轨上一轮实测，本轮未复跑（同一句已写明 JS 端 453/453 才是权威门槛）"),
     ("BACKLOG.md", "295", "done 行的 R107 当轮实测数（待办队列的历史列，不是现状断言）"),
 ]
 
@@ -93,22 +95,49 @@ def is_history(rel: str) -> bool:
     return bool(HISTORY_DATED_NAME.match(Path(rel).name))
 
 
+def tracked_docs():
+    """git 跟踪的 .md 清单（BUG-68：枚举器必须从"仓库跟踪了什么"派生，不能手写元组）。
+
+    手写清单必然落后于新增文档 —— 本轮实测 ARCHITECTURE.md（写着 317 全绿）与
+    README.mbt.md（写着 307/307）都在跟踪清单里、却都不在扫描面里，全仓无人判。
+    git 不可用/清单为空时**拒绝出绿灯**（判据无法自证绝不报绿，与 cl7 同口径）。
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "-z", "--", "*.md"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except Exception as e:  # git 不在 PATH 等
+        raise SystemExit(f"FATAL 无法调用 git ls-files（{e}）—— 拒绝在无枚举时出绿灯")
+    if r.returncode != 0:
+        raise SystemExit(f"FATAL git ls-files 退出码 {r.returncode}：{r.stderr.strip()[:200]}")
+    files = [x.replace("\\", "/") for x in (r.stdout or "").split("\0") if x.strip()]
+    if len(files) < 20:
+        raise SystemExit(f"FATAL 只枚举到 {len(files)} 份跟踪 .md（<20 视为枚举失效）")
+    return files
+
+
 def current_docs():
-    """现状面文档集合（实测：README/AGENTS/USAGE/SKILL/规范 + docs/** + scripts/*.md
-    + templates/*.md + plugins/**，全部 .md）。"""
-    out = []
-    for top in ("README.md", "README_EN.md", "AGENTS.md", "USAGE.md", "BACKLOG.md",
-                "FIST-SKILL.md", "AI-DEVELOPMENT-STANDARD.md"):
-        out.append(top)
-    for sub in ("docs", "scripts", "templates", "plugins"):
-        d = ROOT / sub
-        if not d.is_dir():
-            continue
-        pattern = "**/*.md" if sub in ("docs", "plugins") else "*.md"
-        for p in d.glob(pattern):
-            if p.is_file():
-                out.append(str(p.relative_to(ROOT)).replace("\\", "/"))
-    return sorted(set(out))
+    """现状面文档集合 = 跟踪清单 − 历史面（memory/reports/…，见 is_history）。"""
+    return sorted(set(tracked_docs()))
+
+
+def enumerator_gaps(swept, tracked):
+    """R5：扫描面相对"仓库到底跟踪了什么"漏掉了哪些现状文档。
+
+    BUG-68 的形状就是这里漏的：手写元组永远落后于新增文档（ARCHITECTURE.md 写着 317 全绿、
+    README.mbt.md 写着 307/307，两份都在 git 跟踪清单里，却都不在扫描面里 ⇒ 全仓无人判）。
+    判据与扫描面取自**两条独立路径**（一条走 git，一条走文档遍历），所以扫描面被重新
+    收窄时这里会红，而不是跟着一起闭眼。
+    """
+    s = set(swept)
+    return [
+        f for f in tracked
+        if f not in s and not is_history(f) and (ROOT / f).is_file()
+    ]
 
 
 def collect_claims(text: str):
@@ -210,6 +239,7 @@ def selftest() -> int:
         "docs/features/F008-evolve.md": "- [x] AC-2: `moon test --target js` 全量 148/148 无回归",
         # 豁免表条目必须在夹具里各有一条声明——否则 R4 会判"豁免失效"（这是设计，不是噪声）
         "README_EN.md": "native track last verified with 317/317 tests green, not re-run",
+        "ARCHITECTURE.md": "JS 端 439/439 全绿；Native 端上一轮 Windows+WSL 317/317 全绿，本轮未复跑",
         "BACKLOG.md": "done(R107 那轮 295/295 全绿)",
         "docs/other.md": "无关文字：测试 105/104 是引文，1986/1997 是年份",
         "memory/2026-09-26.md": "当日记录写 406/406（历史面豁免）",
@@ -245,6 +275,31 @@ def selftest() -> int:
         return agree, probs
 
     print("SELFTEST 违例对照（每条要求命中自己指名的问题，基准那份必须 rc=0）")
+    # 0) 枚举器自证（BUG-69）：自检的手写夹具永远测不到"扫描面漏文件"，
+    #    所以这一条**不调 judge**，直接考 current_docs()/enumerator_gaps 本身。
+    live_now = current_docs()
+    enum_fail = []
+    for must in ("ARCHITECTURE.md", "README.mbt.md"):
+        if must not in live_now:
+            enum_fail.append(f"扫描面又漏了 {must}（本轮实测的两份漏网文档）")
+    narrow = [
+        x for x in live_now
+        if "/" in x and not x.startswith(
+            ("docs/", "scripts/", "templates/", "plugins/"))
+    ]
+    gaps = enumerator_gaps(narrow, live_now)
+    if "ARCHITECTURE.md" not in gaps:
+        enum_fail.append("把扫描面收窄成只带子目录的文档后，差集判据没报出 ARCHITECTURE.md ⇒ 它是装饰")
+    if enumerator_gaps(live_now, live_now):
+        enum_fail.append("全量扫描面自报漏文件 ⇒ 两条路径没对齐，判据会恒红")
+    if enum_fail:
+        print("SELFTEST FAIL（枚举器层）：")
+        for f in enum_fail:
+            print("  - " + f)
+        return 1
+    done_enum = len(live_now)
+    print(f"  ok  R0-enumerator（现状面 {done_enum} 份，含曾漏面的两份；收窄夹具能被抓）")
+
     # 1) 基准：现状面全一致 + 豁免有效 + 历史面不参与
     agree, probs = run_case("baseline-clean", dict(base))
     if agree is None:

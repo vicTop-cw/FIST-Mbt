@@ -20,7 +20,7 @@ Use this skill to work with the FIST-Mbt codebase — a pure MoonBit implementat
 - **Seven-state task state machine**: 待领取 → 已领取 → 拆分中 → 执行中 → 待验收 → 已完成 → 已归档, plus 已打回 / 已暂停 / (reopen paths)
 - **Hierarchical decomposition**: `T0 → T0.1 → T0.1.2`, K-value depth (root=3, decrement, ≤1 = atomic leaf)
 - **DAG extensions**: critical path, slack (PERT/CPM), schedule with load-aware assignment, Monte Carlo completion forecast, cost routing
-- **Self-driving loop** (9 tools): `selfdrive_init/_get/_append/_review_tick/_review_ready/_publish_next/_pick_next/...` — review-report-driven continuous iteration
+- **Self-driving loop** (`selfdrive_*`): `selfdrive_init/_get/_append/_review_tick/_review_ready/_publish_next/_pick_next/...` — review-report-driven continuous iteration
 - **Omega strong verification** (opt-in, per task tree): `task_plan_deep(omega_strong_verify=true)` → every leaf carries `omega:required` → `omega_spec_create` → `omega_spec_review` → execute → `omega_result_verify` → `verify`; bounce limit 3 (max 10), auto-escalate to human
 - **Laya decision routing**: `laya_decide` probes a local Laya sidecar for difficulty/domain/sensitivity; auto-degrades (`available:false`) — note BUG-14: the `decision` field is missing on 3 of 4 return paths (unfixed), rely on degradation + record your own reasoning
 - **Marketplace/executor routing, GitHub sync channel (8 tools)**, **memory/evolve self-memory**, **cost/progress gates**, **board/health observability**
@@ -28,10 +28,12 @@ Use this skill to work with the FIST-Mbt codebase — a pure MoonBit implementat
 
 ## Tool count & categories ({{TOOL_COUNT}}, measured from the registry)
 
-- Lifecycle 14 (publish/publish_parallel/plan/claim/execute/submit/verify/reject/retry/pause/resume/reopen_task/archive/delete)
-- Query 2 (list/get) · Ops 14 (task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_*/circuit_*/tx_contract)
-- Selfdrive 9 · Logs/bugs/cost/schedule 15 (call_log/bug_list/report_bug/issue_scan/eval_feedback/run_check/output_validate/project_standards/laya_decide/...)
-- Omega 6 · DAG 20 · Marketplace 5 · Memory/evolve 11 · ATGC-old 3 · Audit 2 · Namespace 3 · Board/health 8
+{{TOOL_GROUPS}}
+
+The grouping above is **projected**, not hand-copied (BUG-67): it comes from README
+§功能全景, whose group sum is pinned against the live registry by
+`scripts/check_doc_surface.py` (J4); the generator re-checks the sum at projection
+time and refuses to emit a plugin when it disagrees.
 
 Exact registry: `src/server/server.mbt`; live truth: `tools/list`. Cross-check with `scripts/check_tools_sync.py`.
 
@@ -41,7 +43,7 @@ Exact registry: `src/server/server.mbt`; live truth: `tools/list`. Cross-check w
 src/
 ├── core/     # Task model, state machine, roles, golden principles
 ├── engine/   # FistEngine: lifecycle, scheduler, challenge, dag_ext, evolve, omega_strong
-├── server/   # MCP server (stdio), 105 tool registrations, issue_scan, laya, run_check
+├── server/   # MCP server (stdio), {{TOOL_COUNT}} tool registrations, issue_scan, laya, run_check
 ├── store/    # memory + SQLite backends (mizchi/sqlite; node:sqlite needs Node>=24)
 ├── ops/      # watchdog, heal, heartbeat, selfdrive, audit, bugreport, modes
 ├── omega/    # Omega strong verification: gate, check, spec
@@ -54,7 +56,7 @@ src/
 - **Claim before execute** — the state machine rejects unclaimed `plan`/`execute`.
 - After all leaves are green the parent **auto-rolls to 待验收**; verify it directly, do NOT re-claim (illegal transition).
 - `retry` lands in 执行中 where `execute` refuses (BUG-2, unfixed): detour `pause → resume → execute` (tool name is `resume`).
-- **All tool calls take an explicit `now`** (ISO8601) — avoids the BUG-1 timestamp trap and keeps `call_log` auditable.
+- **Timestamps are stamped server-side** — no tool takes a `now` argument (BUG-33 policy). `call_log` and ledger times are server-clock values, so a caller cannot forge them.
 - **Paths must be relative** for bug-family tools (`report_bug`/`bug_list`/`issue_scan`); they resolve against the **server process cwd** — and `memory`-family tools do NOT validate (BUG-5 contract split, unfixed). Probe the landing spot once per session.
 - `report_bug(publish_task=true)` drops the fix root task into namespace `"bugs"`, detached from your tree (BUG-8), and `list` may not show it (BUG-12) — reconcile via `get(task_id)`.
 - There is **no bug_close API** (BUG-9): bugs stay OPEN even when fix tasks complete — reconcile manually via `bug_list` + task states.

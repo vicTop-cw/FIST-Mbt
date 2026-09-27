@@ -26,6 +26,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+# BUG-58：GBK 控制台下中文判据文案会乱码/崩（不可读的守卫等于没有守卫）。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = Path(__file__).resolve().parent.parent
 PLUGINS = ROOT / "plugins"
 SERVER = ROOT / "src" / "server" / "server.mbt"
@@ -34,6 +40,26 @@ ROOT_MCP = ROOT / ".mcp.json"
 
 RE_TOOL = re.compile(r'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"')
 RE_VERSION = re.compile(r'^version\s*=\s*"([^"]+)"', re.M)
+
+
+def is_generated(p, plugins=None):
+    """p 是否属于"生成投影"（而不是真源 plugins/source/）。纯函数，可喂合成路径自测。"""
+    plugins = PLUGINS if plugins is None else plugins
+    rel = p.relative_to(plugins)
+    return bool(rel.parts) and rel.parts[0] != "source"
+
+
+def generated_files():
+    """四宿主的生成投影（排除真源 plugins/source/）。
+
+    BUG-70：原来写的是 `"source" not in p.parts`，而 `p` 来自 PLUGINS.rglob —— parts 里含
+    **整条绝对路径**。把仓库克隆到 C:/source/FIST-Mbt 这类任一段叫 source 的目录时，
+    真源过滤会顺手把所有生成文件也滤掉，集合变空而判据照打 PASS。
+    ⇒ 只按"相对 PLUGINS 的第一段"判归属，绝对路径长什么样都无关。
+    """
+    if not PLUGINS.is_dir():
+        return []
+    return sorted(p for p in PLUGINS.rglob("*") if p.is_file() and is_generated(p))
 RE_STAMP_TOOLS = re.compile(r"tools=(\d+)")
 
 # 宿主入口（顺序即指定顺序）：缺任何一个都不算"四态齐全"
@@ -101,25 +127,31 @@ def main() -> int:
                 problems.append(f"J2 宿主入口为空：{f.relative_to(ROOT)}")
 
     if PLUGINS.is_dir():
-        generated = [
-            p for p in PLUGINS.rglob("*")
-            if p.is_file() and "source" not in p.parts
-        ]
+        generated = generated_files()
+        # BUG-70 反幻影哨兵：集合为空时 J3/J6 会"无对象可比"而打 PASS —— 判据无法自证绝不报绿
+        if not generated:
+            problems.append(
+                f"FATAL 生成文件集合为空（PLUGINS={PLUGINS}）⇒ J3/J6 全程空转，不是"
+                "插件干净，是枚举器坏了"
+            )
         # J3 无残留占位符
         for p in generated:
             txt = p.read_text(encoding="utf-8", errors="replace")
             if "{{" in txt:
                 problems.append(f"J3 残留未替换占位符：{p.relative_to(ROOT)}")
         # J6 每个 SKILL.md 的 stamp 计数 == 实测
+        # BUG-67：原先只看 found[0]，正文里再抄第二个数字就没人对（"tools=120 的同一份
+        # SKILL.md 里写着 105/112"就是这一眼漏过去的）。现在**每个** tools= 命中都必须等于实测。
         for p in generated:
             if p.name != "SKILL.md":
                 continue
             found = RE_STAMP_TOOLS.findall(p.read_text(encoding="utf-8", errors="replace"))
             if not found:
                 problems.append(f"J6 SKILL.md 缺生成戳 tools=：{p.relative_to(ROOT)}")
-            elif found[0] != str(n):
+            elif [x for x in found if x != str(n)]:
                 problems.append(
-                    f"J6 {p.relative_to(ROOT)} 声明 tools={found[0]}，实测 {n}"
+                    f"J6 {p.relative_to(ROOT)} 有 {len(found)} 处 tools= 声明，"
+                    f"其中与实测 {n} 不符的是 {sorted(set(found) - {str(n)})}"
                 )
 
     # J4 claude manifest 自述版本 == moon.mod
@@ -143,11 +175,35 @@ def main() -> int:
         print(f"处置：python scripts/gen_plugins.py 重新生成后复跑本守卫")
         return 1
     print(
-        f"PASS 插件态一致：4 宿主 / {len([p for p in PLUGINS.rglob('*') if p.is_file() and 'source' not in p.parts])} "
+        f"PASS 插件态一致：4 宿主 / {len(generated_files())} "
         f"个生成文件 / {n} 工具 / v{version}"
     )
     return 0
 
 
+def selftest() -> int:
+    """负向自检：BUG-70 的合成违例必须被抓、真源必须不被误抓，且真实仓库上枚举非空。"""
+    fails = []
+    clone = Path("C:/source/proj")  # 路径中间段就叫 source —— 旧过滤器正是在这里失明的
+    gen = clone / "plugins" / "atomcode" / "skills" / "fist-mbt" / "SKILL.md"
+    src = clone / "plugins" / "source" / "SKILL.md"
+    if not is_generated(gen, clone / "plugins"):
+        fails.append(f"BUG-70 仍在：克隆到 …/source/… 下时生成文件被判成局外（{gen}）")
+    if is_generated(src, clone / "plugins"):
+        fails.append("成对反例失守：真源 plugins/source/ 被当成生成投影（会拿真源自比自）")
+    real = generated_files()
+    if len(real) < 40:
+        fails.append(f"真实仓库上只枚举到 {len(real)} 个生成文件（<40 ⇒ 枚举器空转）")
+    if is_generated(PLUGINS / "source" / "SKILL.md"):
+        fails.append("本仓真源 plugins/source/SKILL.md 被算进了生成集合")
+    if fails:
+        print("SELFTEST FAIL（cl7 判据自身违例）：")
+        for f in fails:
+            print("  - " + f)
+        return 1
+    print(f"SELFTEST OK：合成克隆路径两判都对，真实生成集合 {len(real)} 个文件")
+    return 0
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(selftest() if "--selftest" in sys.argv else main())

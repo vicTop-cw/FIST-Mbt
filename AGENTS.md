@@ -84,7 +84,7 @@ You can browse and install extra skills here:
 
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
 > Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
-> **JS 后端**：`moon test --target js` = **442/442**（2026-09-27 Windows 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并）。
+> **JS 后端**：`moon test --target js` = **453/453**（2026-09-27 Windows 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并）。
 > **Native 后端**：上一轮在 Windows + WSL(Linux) 通过 317/317；本轮未复跑 native，不据旧数宣称双端同版全绿。
 
 `src/store/store_sqlite.mbt` 依赖 `mizchi/sqlite`（native stub），其 `stub.c` 用尖括号 `#include <sqlite3.h>` 并 `#pragma comment(lib, "sqlite3.lib")` 链接系统 SQLite。
@@ -95,7 +95,7 @@ You can browse and install extra skills here:
   2. 编译/链接前在**同一会话**加载 `Enter-VsDevShell`（VS Build Tools）并追加 `INCLUDE`/`LIB` 指向该目录（注册表 User 级环境变量会被 moon 自发现的 MSVC 环境覆盖，不生效）；
   3. 之后 `moon test --target native` 即可通过。缺失时 `stub.c` 报 `fatal error C1083: 无法打开包括文件 "sqlite3.h"` / `LNK1104: sqlite3.lib`。
   一键装载上述环境（自动探测 VS + sqlite-dev）：`pwsh ./scripts/native-env.ps1`；
-  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 442/442）**，见 README「已知边界」。
+  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 453/453）**，见 README「已知边界」。
 
 ## MCP Server
 
@@ -282,7 +282,7 @@ You can browse and install extra skills here:
 ### 模型路由 · 外部执行器（4，合并自兄弟项目 fist-model-router 与 FIST 的 aider/atomcode 执行器）
 | 工具 | 说明 |
 |---|---|
-| `model_route` | 模型配额路由决策（免费优先 + 达 `threshold_pct`(默认95%) 自动切付费 + 付费耗尽回退免费 + 每模型独立 5h 滚动窗口）。参数：`project_dir`(必填，相对、拒绝对称/盘符/`..`)、`namespace`(可选默认 default，**每个 ns 一份独立配额账**)、`record_model`(可选：给名则 `used+1` 后再决策，留空=只问不消耗)、`config_json`(可选：RouterConfig JSON 文本覆盖池定义，同名模型已用配额保留；**非法 JSON 直接报错不静默回落**)。状态落盘 `{project_dir}/memory/model-router-{ns}.json` 跨进程复现；**时间戳服务端盖章，调用面无 `now` 参数**（BUG-33 政策）；两池皆不可用 → `ok=false` 显式失败，绝不静默改用别的模型。真源 `src/router`（纯计算零 IO）+ `src/server/model_router_ops.mbt`（IO 层）。白盒锁 `src/router/model_router_wbtest.mbt`(rt_1~12) / `router_state_wbtest.mbt`(rs_1~5) / `src/server/model_router_ops_wbtest.mbt`(mo_1~5) |
+| `model_route` | 模型配额路由决策（免费优先 + 达 `threshold_pct`(默认95%) 自动切付费 + 付费耗尽回退免费 + 每模型独立 5h 滚动窗口）。参数：`project_dir`(必填，相对、拒绝对称/盘符/`..`)、`namespace`(可选默认 default，**每个 ns 一份独立配额账**)、`record_model`(可选：给名则 `used+1` 后再决策，留空=只问不消耗)、`config_json`(可选：RouterConfig JSON 文本覆盖池定义，同名模型已用配额保留；**非法 JSON 直接报错不静默回落**)。状态落盘 `{project_dir}/memory/model-router-{ns}.json` 跨进程复现；**只问不消耗＝零副作用**（不记账/不推进游标/`persisted=false`；给了 config_json 池定义时只播种定义不播种用量，BUG-62）；`namespace` 只允许字母数字`_`-`-`，非法值显式拒绝（BUG-64）；**时间戳服务端盖章，调用面无 `now` 参数**（BUG-33 政策）；两池皆不可用 → `ok=false` 显式失败，绝不静默改用别的模型。真源 `src/router`（纯计算零 IO）+ `src/server/model_router_ops.mbt`（IO 层）。白盒锁 `src/router/model_router_wbtest.mbt`(rt_1~15，含 rt_14 越界游标点名、rt_15 池内环形扫描) / `router_state_wbtest.mbt`(rs_1~6，rs_6 补 rs_3 的假绿) / `src/server/model_router_ops_wbtest.mbt`(mo_1~9，mo_6/mo_8/mo_9 钉查询零副作用、mo_7 钉 ns 校验) / `src/server/server_r3_wbtest.mbt`(BUG-63 config_json 对象形态) / `src/server/issue_scan_wbtest.mbt`(BUG-72 字面量/注释降噪成对锁) |
 | `model_router_status` | 只读查当前路由状态：每模型 `used/limit/usage_pct/share_pct/over_threshold/exhausted` + 当前档位 + 切换次数 + 状态文件路径与 `exists`。不改配额、不落盘 |
 | `model_router_reset` | 清窗口：所有模型 `used`/`window_start` 归零（等价"这 5 小时重新开始"），档位与游标保持；`hard=true` 连档位/游标/切换计数一起复位 |
 | `executor_run` | 把任务真交给外部编码执行器（宿主命令能力，**默认收紧**）：`executor` 只接受登记表 `aider \| atomcode`，argv 形状固定在 `src/executor/cli_argv.mbt`（不经 shell ⇒ 提示词里的 `;` `$()` 反引号都只是**一个** argv 元素），可执行文件名由登记表推导 ⇒ 调用方无法注入任意命令。`model` 留空则先向路由器要一个模型并记账（路由↔执行器接线点）；`dry_run=true`（新增可选参数）只回显 argv、**一个进程都不起**；native 构建返回明确拒绝。密钥只来自 server 进程环境变量，本仓库不读 `.env`、不回显 key。参数：`project_dir`(必填)、`executor`(必填)、`prompt`(必填非空且不含 NUL)、`model`(可选)、`namespace`(可选)、`timeout_ms`(可选默认 180000)、`dry_run`(可选默认 false) |

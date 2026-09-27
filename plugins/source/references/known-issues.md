@@ -4,7 +4,7 @@ All OPEN at snapshot time. Full live details: FIST-Mbt repo `memory/bugs.md`. Ch
 
 ## High
 
-- **BUG-1** Caller-supplied `now` is persisted verbatim into `tasks.created_at/updated_at` → ledger timestamps can be forged (measured 7.5–8.3h ahead), and freshness checks (`omega_gate`) mis-fire. Detour: always pass explicit `now` yourself; treat ledger timestamps as advisory. Fix direction: server-side stamping (now = test seam only).
+- **BUG-1** *(closed by server-side stamping — see BUG-33 policy)* Caller-supplied `now` used to be persisted verbatim into `tasks.created_at/updated_at` → ledger timestamps could be forged (measured 7.5–8.3h ahead) and freshness checks (`omega_gate`) mis-fired. **No tool accepts a `now` argument any more**: the server stamps ISO8601 itself, so read ledger timestamps as server-clock values and stop trying to inject your own.
 - **BUG-4** `run_check` spawns arbitrary host commands (no allowlist / workdir bound); `laya_js`/`github_js` use `sh -c` shapes. Detour: never expose the server to untrusted clients; pass explicit argv, project-scoped workdir. Fix direction: default-tight allowlist + workdir subtree.
 - **BUG-14** `laya_decide` omits the contract-promised `decision` field on 3/4 return paths (sidecar passthrough, non-zero exit, Err branch). Detour: read `answers` directly, degrade to self-decided routing and record reasoning (this is also why `laya` shows as `fallback` in most reports).
 

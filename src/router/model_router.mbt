@@ -281,7 +281,10 @@ fn pool_pick(
   }
   let mut i = 0
   while i < n {
-    let idx = (start_idx % n + n) % n
+    // BUG-73：下标必须随 i 走（(start_idx + i)），旧式 `(start_idx % n + n) % n` 把同一个
+    // 格子重测 n 次 —— 游标停在耗尽模型上时整档被判不可用，于是"免费池还有健康模型"
+    // 却切到付费档（白花钱 + switch_count 假增长）。负数绕回仍要保留（% 与被除数同号）。
+    let idx = ((start_idx + i) % n + n) % n
     let m = pool[idx]
     if m.usage_pct() < threshold && !m.is_exhausted() {
       return Some(idx)
