@@ -9,6 +9,22 @@
 /// 密钥：本文件不读 .env、不打印任何 key；aider/atomcode 的凭据只来自 server 进程环境变量。
 
 ///|
+/// 命名空间校验（BUG-64）：复用仓库唯一真源 `MultiStore::safe_ns`。
+/// 旧实现直接把 ns 拼进文件名 ⇒ `a/b` 这类 ns 写不进盘（`persisted=false`）却仍回 `ok=true`，
+/// 配额上限形同虚设；大小写不敏感文件系统上两个 ns 还会共用一本账。
+/// 空 ns 按既有约定视为 `default`（零回归），其余非法一律显式拒绝。
+fn mr_check_ns(ns : String) -> String? {
+  let eff = if ns.is_empty() { "default" } else { ns }
+  match @store.MultiStore::safe_ns(eff) {
+    Some(_) => None
+    None =>
+      Some(
+        "非法 namespace '\{ns}'：只允许字母/数字/_/-（含 / \\ . 空格 都会造成静默丢账或大小写串账，已拒绝）",
+      )
+  }
+}
+
+///|
 /// 状态文件路径（project_dir 必须相对且不含穿越；沿用 bugreport 的同一条校验）
 fn mr_state_path(project_dir : String, ns : String) -> String {
   let safe_ns = if ns.is_empty() { "default" } else { ns }
@@ -88,6 +104,16 @@ fn mr_parse_config(text : String) -> Result[Json, String] {
 }
 
 ///|
+/// config_json 里是否**显式给了池定义**。只给 window_seconds/threshold_pct 不算——
+/// 不该为一次纯参数微调就替调用方建一个状态文件。
+fn mr_config_gives_pools(config : Json) -> Bool {
+  match config {
+    Json::Object(m) => m.contains("free_pool") || m.contains("paid_pool")
+    _ => false
+  }
+}
+
+///|
 /// 决策 + 可选记账 + 落盘（工具 `model_route` 的实现体）。时间戳服务端盖章。
 fn model_route_impl(
   project_dir : String,
@@ -100,16 +126,29 @@ fn model_route_impl(
       "model_route: 非法 project_dir（拒绝绝对路径/穿越/盘符）",
     )
   }
+  match mr_check_ns(ns) {
+    Some(msg) => return Err("model_route: " + msg)
+    None => ()
+  }
   let now = now_default()
   let (r, warns) = @router.router_restore(mr_read(project_dir, ns), config~)
-  let dec = if record_model.is_empty() {
-    r.pick(now~)
-  } else {
+  // BUG-61/62：只有**真消耗**（调用方给了 record_model）才推进账本并落盘。
+  // 旧实现连"只问不消耗"的查询也 mr_save ⇒ pick 推进过的轮询游标、以及 pick 顺手盖上的
+  // window_start（5h 窗口没人使用就开始倒计时）都被写进了账，两次相同查询还会换模型。
+  let consuming = !record_model.is_empty()
+  // 唯一的例外：**播种定义，不播种用量**。调用方显式给了池定义时，必须在 pick 之前把
+  // 池形状落盘——否则后续不带 config_json 的记账（executor_run 自动记的那一笔就是）只能
+  // 拿默认池，自定义模型名走"未在任何池中配置"分支，配额形同虚设（本文件反复拦的静默降级族）。
+  let seeds_pools = !consuming && mr_config_gives_pools(config)
+  let seed_res = if seeds_pools { mr_save(r, project_dir, ns) } else { Ok(()) }
+  let dec = if consuming {
     r.record_call(model=record_model, now~)
+  } else {
+    r.pick(now~)
   }
-  let save_res = mr_save(r, project_dir, ns)
+  let save_res = if consuming { mr_save(r, project_dir, ns) } else { seed_res }
   let persisted = match save_res {
-    Ok(_) => true
+    Ok(_) => consuming
     Err(_) => false
   }
   let mut items : Array[(String, Json)] = [
@@ -119,6 +158,18 @@ fn model_route_impl(
     ("usage", r.usage_report()),
     ("warnings", mr_warn_arr(warns)),
     ("persisted", Json::boolean(persisted)),
+    (
+      "mode",
+      Json::string(
+        if consuming {
+          "consume（record_model 已给：记账 + 落盘）"
+        } else if seeds_pools {
+          "query-only（不记账、不推进轮询游标；已按 config_json 播种池定义，用量为零）"
+        } else {
+          "query-only（未给 record_model：不记账、不落盘、不推进轮询游标）"
+        },
+      ),
+    ),
     ("state_path", Json::string(mr_state_path(project_dir, ns))),
   ]
   if !dec.available {
@@ -140,6 +191,28 @@ fn model_route_impl(
 }
 
 ///|
+/// 只记账不做决策（BUG-61 的接线点：执行器真跑完，把这次用量记到路由账上）。
+/// 复用 model_route_impl 的"给了 record_model 才落盘"语义，避免两处各写一遍存盘逻辑。
+fn mr_record_only(
+  project_dir : String,
+  ns~ : String,
+  model : String,
+) -> Result[Unit, String] {
+  match model_route_impl(project_dir, ns~, record_model=model) {
+    Err(e) => Err(e)
+    Ok(j) =>
+      match j {
+        Json::Object(m) =>
+          match m.get("persisted") {
+            Some(Json::True) => Ok(())
+            _ => Err("记账未落盘（persisted=false）")
+          }
+        _ => Err("记账返回体不是对象")
+      }
+  }
+}
+
+///|
 /// 只读状态查询（不改配额、不落盘）
 fn model_router_status_impl(
   project_dir : String,
@@ -149,6 +222,10 @@ fn model_router_status_impl(
     return Err(
       "model_router_status: 非法 project_dir（拒绝绝对路径/穿越/盘符）",
     )
+  }
+  match mr_check_ns(ns) {
+    Some(msg) => return Err("model_router_status: " + msg)
+    None => ()
   }
   let path = mr_state_path(project_dir, ns)
   let (r, warns) = @router.router_restore(mr_read(project_dir, ns))
@@ -174,6 +251,10 @@ fn model_router_reset_impl(
     return Err(
       "model_router_reset: 非法 project_dir（拒绝绝对路径/穿越/盘符）",
     )
+  }
+  match mr_check_ns(ns) {
+    Some(msg) => return Err("model_router_reset: " + msg)
+    None => ()
   }
   let now = now_default()
   let (r, _) = @router.router_restore(mr_read(project_dir, ns))
@@ -226,6 +307,10 @@ async fn executor_run_impl(
       [],
     )
   }
+  match mr_check_ns(ns) {
+    Some(msg) => return fail("executor_run: " + msg, [])
+    None => ()
+  }
   if !@executor.is_external_executor(executor) {
     return fail(
       "未知执行器 '" +
@@ -237,6 +322,9 @@ async fn executor_run_impl(
   }
   let mut chosen = model
   let mut route_json = Json::null()
+  // 只有"模型是路由器给的"才需要在真跑后记账；调用方显式指定 model 属越池覆盖，
+  // 由调用方自己负责，不替它动配额账。
+  let mut routed_by_pool = false
   if chosen.is_empty() {
     match model_route_impl(project_dir, ns~) {
       Err(e) => return fail(e, [])
@@ -269,6 +357,7 @@ async fn executor_run_impl(
             }
             chosen = name
             route_json = j
+            routed_by_pool = true
           }
           _ =>
             return fail(
@@ -296,6 +385,7 @@ async fn executor_run_impl(
         ("ok", Json::boolean(true)),
         ("executed", Json::boolean(false)),
         ("dry_run", Json::boolean(true)),
+        ("quota_touched", Json::boolean(false)),
         ("argv", Json::array(args.map(fn(a) { Json::string(a) }))),
         ("workdir", Json::string(project_dir)),
         ("timeout_ms", Json::number(timeout_ms.to_double())),
@@ -336,6 +426,16 @@ async fn executor_run_impl(
         ],
       )
     Ok(j) => {
+      // BUG-61：进程真起来的一方才记账（Err 分支是 ENOENT 一类，没起进程就不消耗）。
+      // 这正是 AGENTS.md 与工具描述承诺的"model 留空则先要一个模型并记账"。
+      let quota_note = if routed_by_pool {
+        match mr_record_only(project_dir, ns~, chosen) {
+          Ok(_) => "recorded(\{chosen})"
+          Err(e) => "record_failed: \{e}"
+        }
+      } else {
+        "not_routed(调用方显式指定 model，不代记账)"
+      }
       let jm : Map[String, Json] = match j {
         Json::Object(mm) => mm
         _ => Map([])
@@ -367,6 +467,7 @@ async fn executor_run_impl(
         head +
         [
           ("executed", Json::boolean(true)),
+          ("quota", Json::string(quota_note)),
           ("exit_code", Json::number(code.to_double())),
           (
             "cost_estimate",

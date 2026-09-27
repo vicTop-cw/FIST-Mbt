@@ -57,6 +57,34 @@ RE_FIXED = re.compile(r"^### FIXED\(", re.M)
 # 宿主插件名（各宿主市场的目录名）
 SKILL_MAIN = "fist-mbt"
 SKILL_COMMANDER = "fist-commander"
+README_DOC = ROOT / "README.md"  # BUG-67：分组表唯一真源
+
+
+RE_README_GROUP = re.compile(r"^###\s+\S.*?[（(](\d+)[)）]\s*$", re.M)
+
+
+def tool_groups(n: int) -> str:
+    """把 README「功能全景」的分组标题投影成插件正文的一行分组表。
+
+    BUG-67 的根因是"分组数字被手抄了第二份"。这里不新增第二份真源：
+    README 的分组和由 check_doc_surface.py J4 钉住（分组和 == 注册表实测），
+    本函数只把它再投影一次，并且**当场复算**——对不上直接 die，不产出"看着正常"的插件。
+    """
+    if not README_DOC.exists():
+        die("README.md 真源缺失，无法投影工具分组")
+    text = README_DOC.read_text(encoding="utf-8")
+    pairs = [x for x in RE_README_GROUP.findall(text)]
+    if not pairs:
+        die("README.md 未解析到任何 `### 分组（N）` 标题（判据坏了，不是文档坏了）")
+    names = [
+        re.sub(r"[（(]\d+[)）]\s*$", "", ln.strip()[4:]).strip()
+        for ln in text.splitlines()
+        if RE_README_GROUP.match(ln.strip())
+    ]
+    total = sum(int(x) for x in pairs)
+    if total != n:
+        die(f"README 分组和 {total} != 注册表实测 {n} ⇒ 拒绝投影（先修 README）")
+    return "、".join(f"{nm} {ct}" for nm, ct in zip(names, pairs))
 
 
 def die(msg: str) -> None:
@@ -87,6 +115,7 @@ def measure() -> dict:
     open_cnt = total - fixed
     return {
         "TOOL_COUNT": str(n),
+        "TOOL_GROUPS": tool_groups(n),
         "VERSION": m.group(1),
         "LEDGER_SUMMARY": (
             f"BUG-1~{max(ids)} 共 {total} 条入账："
@@ -140,7 +169,24 @@ def write_skill(dest_dir: Path, src_file: Path, host: str, vals: dict,
         target = dest_dir / "references"
         if target.exists():
             shutil.rmtree(target)
-        shutil.copytree(refs, target)
+        target.mkdir(parents=True, exist_ok=True)
+        # BUG-67：原来这里是 shutil.copytree —— 原样字节复制**结构上永远无法**承载
+        # {{TOOL_COUNT}}，于是投影正文只能手抄数字，抄完就开始腐烂
+        # （实测 references/fist-methodology.md 停在 "41 total"，真源早已 120）。
+        # 现在逐文件走 render()，占位符与 SKILL.md 同一套真源。
+        for f in sorted(refs.rglob("*")):
+            if f.is_dir():
+                continue
+            dst = target / f.relative_to(refs)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if f.suffix.lower() == ".md":
+                dst.write_text(
+                    render(f.read_text(encoding="utf-8"), vals),
+                    encoding="utf-8",
+                    newline="\n",
+                )
+            else:
+                shutil.copyfile(f, dst)
 
 
 def write_text(path: Path, content: str) -> None:

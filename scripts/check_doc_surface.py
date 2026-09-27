@@ -55,6 +55,9 @@ PS_MBT = ROOT / "src" / "server" / "project_standards.mbt"
 CANON = ROOT / "AI-DEVELOPMENT-STANDARD.md"  # 规范性正文：与 README/AGENTS 同级，放仓库根
 SKILL_DOC = ROOT / "docs" / "project-standards-skill.md"
 TEMPLATES_DIR = ROOT / "templates"
+# BUG-66：插件投影真源（plugins/source/）是"发货正文"，四宿主由 gen_plugins.py 逐字节复制。
+# 它此前不在任何判据射程内 ⇒ 一句过时的参数广告会被放大成 4 份对外契约。
+PLUGIN_SRC = ROOT / "plugins" / "source"
 DOCS_DIR = ROOT / "docs"
 MOONMOD = ROOT / "moon.mod"
 AGENTS = ROOT / "AGENTS.md"
@@ -74,7 +77,13 @@ RE_PS_ID = re.compile(r"\"id\": Json::string\(\"((?:r|f|cl)\d[a-z0-9-]*)\"\)")
 RE_PS_VER = re.compile(r"\"version\":\s*Json::string\(\"(R\d+)\"\)")
 
 # J7：规范性表面 + 禁词（历史陈述豁免）
-STALE_NEEDLES = ("三形态", "一源三态")
+STALE_NEEDLES = (
+    "三形态",
+    "一源三态",
+    # BUG-66：`now` 是本项目**已删除**的调用面参数（BUG-33 政策：时间戳服务端盖章），
+    # 规范性表面（含插件投影真源 plugins/source/）再广告它就是契约说谎。
+    "explicit `now`",
+)
 
 # J8：工具属性声明与 required 列表
 RE_PROP = re.compile(r"\"([a-z_0-9]+)\":\s*(?:required_)?(?:string|bool|int|double|number|array|object|enum)_prop")
@@ -216,10 +225,15 @@ def j6_standard_consistency():
 
 
 def j7_stale_wording():
-    """规范性表面禁旧口径；历史陈述（memory/reports/CHANGELOG/scripts/生成投影）豁免。"""
+    """规范性表面禁旧口径；历史陈述（memory/reports/CHANGELOG/生成投影副本）豁免。
+
+    BUG-66：豁免名单里**没有** plugins/source/ —— 它是真源正文（生成副本 plugins/<host>/ 由
+    cl7 逐字节比对真源，所以判真源就够，不必重复判副本一遍）。
+    """
     surfaces = [README, AGENTS, CANON, SERVER, PS_MBT]
     surfaces += sorted(DOCS_DIR.glob("*.md"))
     surfaces += sorted(TEMPLATES_DIR.glob("*.md"))
+    surfaces += sorted(PLUGIN_SRC.rglob("*.md"))
     problems = []
     for p in surfaces:
         if not p.exists():
@@ -234,13 +248,33 @@ def j7_stale_wording():
     return problems
 
 
+def is_plugin_surface(p, plugins=None):
+    """是否属于插件真源正文。BUG-70 同族防线：只看相对 plugins 根的第一段，
+    用 `"source" in str(p)` / `p.parts` 会被克隆目录里任意一段叫 source 的路径骗过。
+    plugins 可注入 —— 合成克隆路径必须对着**它自己的** plugins 根判。"""
+    plugins = PLUGIN_SRC.parent if plugins is None else plugins
+    try:
+        rel = p.relative_to(plugins)
+    except ValueError:
+        return False
+    return bool(rel.parts) and rel.parts[0] == "source"
+
+
+def j8_surfaces():
+    """J8 扫描面 = 模板 + 插件真源（BUG-66：只扫 templates/ 时投影正文不在射程内）。"""
+    return sorted(TEMPLATES_DIR.glob("*.md")) + sorted(PLUGIN_SRC.rglob("*.md"))
+
+
 def j8_template_params():
-    """模板调用示例/参数表 vs 真源属性集：臆造参数与缺 required 都能抓到。"""
+    """模板与插件真源的调用示例/参数表 vs 工具属性集：臆造参数与缺 required 都能抓到。"""
     reg = tool_registry()
     if not reg:
         return ["FATAL J8 判据无法自证：server.mbt 未解析到任何工具块"]
     problems = []
-    for tpl in sorted(TEMPLATES_DIR.glob("*.md")):
+    surfaces = j8_surfaces()
+    if not any(is_plugin_surface(p) for p in surfaces):
+        return ["FATAL J8 扫描面不含 plugins/source/ 任何文件（枚举器坏了，不是文档坏了）"]
+    for tpl in surfaces:
         text = tpl.read_text(encoding="utf-8")
         for m in re.finditer(r"\b([a-z_][a-z0-9_]{2,})\(\s*\{", text):
             name = m.group(1)
@@ -255,12 +289,12 @@ def j8_template_params():
             unknown = sorted({k for k in keys if k not in reg[name]["props"]})
             if unknown:
                 problems.append(
-                    f"J8 {tpl.name}:{line} {name}(...) 用了未声明参数 {unknown}"
+                    f"J8 {tpl.relative_to(ROOT)}:{line} {name}(...) 用了未声明参数 {unknown}"
                     f"（_instrument 只校验 required，未知键静默丢弃=写了等于没验）"
                 )
             missing = sorted(k for k in reg[name]["required"] if k not in keys)
             if missing:
-                problems.append(f"J8 {tpl.name}:{line} {name}(...) 缺必填参数 {missing}")
+                problems.append(f"J8 {tpl.relative_to(ROOT)}:{line} {name}(...) 缺必填参数 {missing}")
         for line_no, line in enumerate(text.splitlines(), 1):
             cells = [c.strip() for c in line.split("|")]
             if len(cells) < 3 or not cells[1].startswith("`"):
@@ -273,7 +307,7 @@ def j8_template_params():
             for tok in re.findall(r"`([a-z_][a-z0-9_]*)`", cells[2]):
                 if tok not in reg[tool]["props"]:
                     problems.append(
-                        f"J8 {tpl.name}:{line_no} 参数表里 {tool} 的 `{tok}` 未在该工具 schema 声明（契约说谎）"
+                        f"J8 {tpl.relative_to(ROOT)}:{line_no} 参数表里 {tool} 的 `{tok}` 未在该工具 schema 声明（契约说谎）"
                     )
     return problems
 
@@ -286,6 +320,19 @@ def j_selftest():
         fails.append("J6 对『正文缺 id』不敏感 → 判据是装饰")
     if not stale_hits("本项目遵守一源三态与三形态 checklist"):
         fails.append("J7 对『旧口径句子』不敏感 → 判据是装饰")
+    # BUG-66：广告一个已被删除的调用面参数，必须是 J7 能发红的形状（禁词表里就该有它）
+    if not stale_hits("All tool calls take an explicit `now` (ISO8601)"):
+        fails.append("J7 抓不到『explicit `now`』这类幻影参数文案 → plugins/source 的 BUG-66 会重犯")
+    # BUG-66/70：J8 的枚举器必须真的覆盖插件真源，而且不能被"路径里有一段叫 source"骗过
+    if not any(is_plugin_surface(p) for p in j8_surfaces()):
+        fails.append("J8 扫描面不含 plugins/source/ → 投影正文无人判")
+    clone_plugins = Path("C:/source/proj/plugins")
+    probe_in = clone_plugins / "source" / "SKILL.md"
+    probe_out = clone_plugins / "atomcode" / "skills" / "fist-mbt" / "SKILL.md"
+    if not is_plugin_surface(probe_in, clone_plugins):
+        fails.append("is_plugin_surface 没把克隆在 …/source/… 下的真源认出来 → 扫描面空转")
+    if is_plugin_surface(probe_out, clone_plugins):
+        fails.append("is_plugin_surface 把生成副本也判成真源 → 会重复计一遍假违例")
     reg = tool_registry()
     if "output_validate" not in reg:
         fails.append("J8 解析不到 output_validate（解析器失效）")

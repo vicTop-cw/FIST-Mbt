@@ -64,6 +64,50 @@ test "BUG-19：缺失判定与 handler 的 get_str 口径一致（缺/Null/空�
 }
 
 ///|
+/// BUG-63：`config_json` 允许两种传法（JSON 文本 / 已解析的对象），旧 handler 用 get_str
+/// 取它 ⇒ 对象形态拿到 ""，等于**整份配置被静默丢掉**、悄悄用默认池跑（工具却回 ok=true）。
+/// 这里锁提取→解析整条链：对象必须能解析回同形状的 Json，缺失/Null 才是"没给配置"。
+test "BUG-63：get_json_text 取对象形态的配置不丢内容，取缺失/Null 才为空" {
+  let as_text = Json::object({
+    "config_json": Json::string("{\"threshold_pct\": 80.0}"),
+  })
+  assert_eq(get_json_text(as_text, "config_json"), "{\"threshold_pct\": 80.0}")
+  // 对象形态：修复前这条拿到 ""（配置被吞），现在必须拿到可再解析的 JSON 文本
+  let as_obj = Json::object({
+    "config_json": Json::object({
+      "threshold_pct": Json::number(80.0),
+      "free_pool": Json::array([
+        Json::object({
+          "name": Json::string("b63_free"),
+          "limit": Json::number(3.0),
+        }),
+      ]),
+    }),
+  })
+  let got = get_json_text(as_obj, "config_json")
+  assert_true(!got.is_empty())
+  match mr_parse_config(got) {
+    Err(e) => abort("对象形态的配置没能再解析回来：" + e)
+    Ok(j) =>
+      match j {
+        Json::Object(m) => {
+          assert_true(m.contains("free_pool"))
+          assert_true(m.contains("threshold_pct"))
+        }
+        _ => abort("解析结果不是对象")
+      }
+  }
+  // 成对（零回归）：没给 / 显式 null 仍然是"没给配置"，不当成违例
+  assert_eq(get_json_text(Json::object({}), "config_json"), "")
+  assert_eq(
+    get_json_text(Json::object({ "config_json": Json::null() }), "config_json"),
+    "",
+  )
+  assert_eq(get_json_text(Json::null(), "config_json"), "")
+  assert_eq(mr_parse_config("").is_ok(), true)
+}
+
+///|
 test "BUG-19：拒绝消息必须自带出路（说清缺哪几个、去哪看全量参数）" {
   let miss = rq_join(
     missing_required(Json::object({}), schema_required(r3_schema())),

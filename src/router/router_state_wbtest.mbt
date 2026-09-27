@@ -157,3 +157,35 @@ test "rs_5_state 落盘体含 schema 版本且绝不含密钥形状" {
     assert_true(!s.contains(bad))
   }
 }
+
+///|
+/// BUG-65：rs_3 的"负 used 夹紧"原本是**假绿**——ent() 用 `used >= 0` 当哨兵，
+/// 传 used=-3 时该键根本没进 JSON，断言测的是"字段缺失走默认"而不是夹紧。
+/// 这里把任意 JSON 值真塞进去，夹紧（model_router.mbt 的 ModelQuota::new）才第一次被钉住。
+test "rs_6_负 used 真进 JSON 并被夹紧为 0（补 rs_3 的假绿）" {
+  let raw = qj([
+    ("schema", qn(1)),
+    (
+      "free_pool",
+      Json::array([
+        qj([("name", qs("neg-used")), ("limit", qn(5)), ("used", qn(-3))]),
+      ]),
+    ),
+    (
+      "paid_pool",
+      Json::array([
+        qj([("name", qs("neg-used-paid")), ("limit", qn(5)), ("used", qn(-1))]),
+      ]),
+    ),
+  ])
+  let (r, _) = router_restore(raw)
+  assert_eq(r.config.free_models.length(), 1)
+  assert_eq(r.config.free_models[0].used, 0)
+  assert_eq(r.config.paid_models[0].used, 0)
+  // 夹紧后仍要能正常决策；current_model 钉**具体名字**而不是"is Some(_)"（rs_3 的弱断言）
+  match r.current_model() {
+    Some(q) => assert_eq(q.name, "neg-used")
+    None => abort("免费池非空，current_model 不该为空")
+  }
+  assert_eq(r.pick(now="2026-09-27T00:00:00Z").model_name, "neg-used")
+}

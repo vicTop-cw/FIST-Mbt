@@ -13,6 +13,40 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.0 (unreleased) - 四模式流水线自我迭代 · Round 4（寻虫 → 修复 → 验证 → 打磨）
+
+- **寻虫段**（ns `pmode-r4-bugfind`，重点覆盖本轮新合并的插件态与路由/执行器）：入账
+  **BUG-61~72 共 12 条**（4 high / 5 medium / 3 low），修复单挂 `T0r375~T0r377` 等。形状分布：
+  路由语义 4 条（只问不消耗却写盘、config_json 对象态被静默丢弃、executor 记账错位、ns 不做安全校验）、
+  假绿测试锁 1 条、插件投影真源 2 条、守卫族 4 条、扫描器噪声 1 条。
+- **修复段**（ns `pmode-r4-fix`，根 `T0r379`）：12 条逐条带**成对回归锁**修复，修复中新发现并当场收口
+  **BUG-73**（`pool_pick` 循环变量不参与下标 ⇒ 游标停在耗尽格时整档判死、免费池还有满血模型就切付费档）。
+  锁先落码再改产品：rt_15 在未修复码上实测红（`"paid-a" != "free-ok"`）。13 条全部走 Omega 链，
+  根下 **21 张叶 → 已完成 21 / 未闭合 0**。承重证明两条并列：`temp/r4/prove_locks_red.py`
+  （退回修复前形态 ⇒ mo_2/4/6/7/8/9 六条全红）、`prove_locks_red2.py`（4 组合成违例各钉一条新锁）。
+- **验证段**（ns `pmode-r4-verify`，根 `T0r382`）：六条泳道、**13 条判据交给服务端 `run_check` 真跑**
+  （不让指挥官自己 subprocess —— 那正是"防自写自测恒绿"要防的事），全 passed；调用面另计
+  `temp/router_smoke.py` 27/27、`temp/r4/verify_r4_callsite.py` 14/14、`scripts/mcp_smoke.py` PASS。
+  `output_validate` 正门 `verdict=pass`，**同批配一条必然违例对照门** `verdict=fail`（抽掉一条真结果 +
+  引用不存在的 check_key/path），证明这道门不是空的。自证走 `call_log`：最近 400 行覆盖 27 个工具，
+  本轮关键能力（publish/laya_decide/task_plan_deep/run_check/output_validate/issue_scan/
+  project_standards/bug_list/report_bug/github_queue_status）在表里逐条可查，17 条 ok=false 全部来自
+  刻意的负路径探针与两处本方键名取错（不是产品静默失败）。树最终 **29/29 已完成**。
+- **两条新判据留在验证段**（下次可复跑）：`temp/r4/v4_idem_plugins.py` —— 同一棵真源连跑两次
+  `gen_plugins`，生成文件内容哈希必须不变（cl7 每次拿最新产物当基准，抓不到生成过程自身的不确定）；
+  `temp/r4/v4_ledger_three_way.py` —— 从账本反解总数/待修/FIXED，与 9 份投影文件的 17 处投影句逐字相等，
+  缺戳或枚举面过小即 FATAL。
+- **验证段又抓到 2 条**（只入账不就地改，交 Round 5 修复段）：**BUG-74** `task_plan_deep` 描述只列参数
+  不写返回形状，指挥官脚本按自然键名取值当场打印"直接子任务 0 个"而服务端其实已建 21 叶；
+  **BUG-75** `run_check` 回执不含 stdout/stderr、落库的完整结果又无工具可读回 ⇒ 判据红了举不出红在哪，
+  无人值守只能本地重跑（等于把证据梯降级回自述）。
+- **全量与投影**：JS 后端 `moon test --target js` **453/453**（`temp/r4/full4.log`），六守卫 rc=0 +
+  四份 `--selftest` 全 PASS；缺陷账本 BUG-1~75（29 待修 / 46 已挂 FIXED 小记），四宿主插件态重投影后
+  cl7 逐字节一致（4 宿主 / 56 生成文件 / 120 工具 / v0.3.0）。
+- **如实留下的缺口**：BUG-61 的 `executed=true` 真跑分支无端到端证据（宿主执行器真跑未获授权，
+  BUG-4 边界默认收紧，只证到记账路径与 dry_run）；native 轨本轮未复跑，不据旧数宣称双端同版全绿；
+  GitHub 同步 `enabled=false`（凭据只走环境变量），队列为空是"未开同步"而不是"无 bug 待同步"，两栏不许混读。
+
 ## v0.3.0 (unreleased) - 双远端同步（GitCode）+ 遗留 OPEN 缺陷 BUG-50/51 闭合
 
 - **同步**：本轮起仓库同时发布到 **GitCode**（`https://gitcode.com/VictorTop/Fist-Mbt.git`，

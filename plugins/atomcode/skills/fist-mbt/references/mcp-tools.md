@@ -26,7 +26,7 @@ Server entry: `node cmd/main/main.js` (run `python scripts/patch_esm_main.py` fi
 - `params._meta` = { protocolVersion: "2026-07-28", clientCapabilities: {}, clientInfo: {...} } — missing → `Missing required _meta field`.
 - `initialize` returns `Method not found` — harmless, call `tools/call` directly.
 - Python stdout decode: `encoding="utf-8", errors="replace"` (gbk otherwise).
-- Explicit `now` (ISO8601) on every mutating call; `heartbeat` during long work.
+- No `now` parameter exists on any tool (BUG-33): the server stamps ISO8601 timestamps itself, so ledger times cannot be forged by the caller. `heartbeat` during long work.
 - Relative paths only for bug-family tools; they resolve against server cwd (BUG-5).
 
 ## Contract-drift watchlist (verify against live behavior)

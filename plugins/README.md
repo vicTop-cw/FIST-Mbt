@@ -12,4 +12,4 @@
 - 生成：`python scripts/gen_plugins.py`
 - 守卫（cl7）：`python scripts/check_plugin_sync.py`——重跑生成器到临时区再逐字节 diff，
   手改插件、忘重生成、数字漂移都会红。
-- 当前投影：120 工具 / v0.3.0 / 缺陷账本 BUG-1~60 共 60 条入账：27 条待修 / 33 条已挂 FIXED 小记（账本只追加不关闭，见 BUG-9）
+- 当前投影：120 工具 / v0.3.0 / 缺陷账本 BUG-1~75 共 75 条入账：29 条待修 / 46 条已挂 FIXED 小记（账本只追加不关闭，见 BUG-9）

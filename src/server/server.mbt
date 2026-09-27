@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 16 tools + 2 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 120 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -333,6 +333,26 @@ fn schema(props : Map[String, Json], required : Array[String]) -> Json {
     "properties": Json::object(props),
     "required": Json::array(required.map(fn(s) { Json::string(s) })),
   })
+}
+
+///|
+/// config_json 一类的"文本型 JSON 参数"取值（BUG-63）：
+/// schema 声明是字符串，但真实 MCP 客户端经常直接给 JSON 对象/数组。
+/// `get_str` 对非字符串一律回退默认值 ⇒ 自定义配置被静默当成"没传"，
+/// 用默认池跑完还回 ok=true、warnings 里一条配置告警都没有（BUG-55 的失效模式
+/// 在类型边界复活）。这里两种形态都收：字符串照旧，对象/数组先取其文本，
+/// 再走**同一条** JSON 校验 —— 合法就用、非法就显式报错，绝不静默回落。
+fn get_json_text(args : Json, key : String) -> String {
+  match args {
+    Json::Object(m) =>
+      match m.get(key) {
+        None => ""
+        Some(Json::Null) => ""
+        Some(Json::String(s)) => s
+        Some(v) => v.stringify()
+      }
+    _ => ""
+  }
 }
 
 ///|
@@ -4424,7 +4444,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "model_route",
-    "模型路由决策（免费优先 + 达阈值切付费 + 每模型 5h 滚动窗口）。纯决策来自 src/router（确定性、可单测），用量状态落盘 {project_dir}/memory/model-router-{ns}.json 跨进程复现。**时间戳由服务端盖章，不接受调用方注入 now**（BUG-33 政策）；两池皆耗尽时显式 ok=false，绝不静默改用别的模型。参数：project_dir(必填，相对路径)、namespace(可选默认 default)、record_model(可选：给模型名则先记账再决策，用于执行器真实用完一次)、config_json(可选：RouterConfig 的 JSON 文本，覆盖池定义；同名模型的已用配额保留；**非法 JSON 直接报错，不静默回落默认池**)（注：本工具不含任何密钥，凭据只来自 server 进程环境变量）。",
+    "模型路由决策（免费优先 + 达阈值切付费 + 每模型 5h 滚动窗口）。纯决策来自 src/router（确定性、可单测），用量状态落盘 {project_dir}/memory/model-router-{ns}.json 跨进程复现。**时间戳由服务端盖章，不接受调用方注入 now**（BUG-33 政策）；两池皆耗尽时显式 ok=false，绝不静默改用别的模型。**只问不消耗（不给 record_model）＝零副作用**：不记账、不推进轮询游标、不给模型盖窗口起点，返回 persisted=false 与 mode=query-only（BUG-62：旧实现连查询也落盘，两次相同查询会换模型、5h 窗口没人使用就开始倒计时）。唯一例外是**只播种定义不播种用量**：显式给了 config_json 的池定义时，在决策之前把池形状写进状态文件（否则 executor_run 自动记账那一笔不带 config，只能拿默认池，自定义模型名走「未在任何池中配置」，配额形同虚设）。namespace 只允许字母/数字/_/-（空=default）：写不进盘的 ns 会被显式拒绝，不再静默失去配额约束（BUG-64）。参数：project_dir(必填，相对路径)、namespace(可选默认 default)、record_model(可选：给模型名则先记账再决策，用于执行器真实用完一次)、config_json(可选：RouterConfig 的 JSON **文本或对象均可**（BUG-63：给对象时按其文本走同一条校验，不再被静默当成没传），覆盖池定义；同名模型的已用配额保留；**非法 JSON 直接报错，不静默回落默认池**)（注：本工具不含任何密钥，凭据只来自 server 进程环境变量）。",
     schema(
       {
         "project_dir": string_prop(
@@ -4434,10 +4454,10 @@ pub async fn run_server() -> Unit {
           "命名空间（可选，默认 default）——每个 ns 一份独立配额账",
         ),
         "record_model": string_prop(
-          "可选：要记账的模型名（须已在池内）。给了就 used+1 后再决策；留空=只问不消耗",
+          "可选：要记账的模型名（须已在池内）。给了才 used+1、才落盘（persisted=true）；留空=只问不消耗，一个字节都不动状态文件（BUG-62 成对锁 mo_9 逐字节自证）",
         ),
         "config_json": string_prop(
-          "可选：RouterConfig 的 JSON 文本，如 {\"window_seconds\":18000,\"threshold_pct\":95,\"free_pool\":[{\"name\":\"x\",\"limit\":10}],\"paid_pool\":[]}；非法字段回落默认并写进 warnings",
+          "RouterConfig 的 JSON（文本或对象均可，BUG-63），如 {\"window_seconds\":18000,\"threshold_pct\":95,\"free_pool\":[{\"name\":\"x\",\"limit\":10}],\"paid_pool\":[]}；非法字段回落默认并写进 warnings",
         ),
       },
       ["project_dir"],
@@ -4446,7 +4466,7 @@ pub async fn run_server() -> Unit {
       let pd = get_str(args, "project_dir")
       let ns = get_str(args, "namespace")
       let rec = get_str(args, "record_model")
-      let cj = get_str(args, "config_json")
+      let cj = get_json_text(args, "config_json")
       let cfgj = match mr_parse_config(cj) {
         Err(e) => return Err(@mcp_types.ToolError(e))
         Ok(j) => j
