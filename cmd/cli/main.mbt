@@ -12,6 +12,7 @@ async fn main {
 
   match sub {
     "serve" => run_serve()
+    "version" => run_version()
     "demo" => run_demo()
     "doctor" => run_doctor()
     "help" => print_help()
@@ -26,15 +27,25 @@ async fn main {
 ///|
 /// 打印帮助
 fn print_help() -> Unit {
-  println("FIST-Mbt CLI v0.3.0")
+  let v = @server.get_version()
+  println("FIST-Mbt CLI v\{v}")
   println("")
   println("用法: fist <subcommand>")
   println("")
   println("子命令:")
+  println("  version  打印版本号")
   println("  serve    启动 MCP server（stdio 传输）")
   println("  demo     自包含七态闭环 demo")
   println("  doctor   只读健康检查")
   println("  help     显示本帮助")
+}
+
+///|
+/// version：打印版本号（单一真源 moon.mod → project_version）
+fn run_version() -> Unit {
+  let v = @server.get_version()
+  println("FIST-Mbt v\{v}")
+  println("(moon.mod version 单一真源)")
 }
 
 ///|
