@@ -1103,12 +1103,20 @@ pub fn FistEngine::plan_revise(
 }
 
 ///|
-/// 全局目标校验（R100，goal drift arXiv 2505.02709 / Repetitiveness Rate arXiv 2603.12710 /
-/// IntentCUA 2602.17049 / HiMAP ICML2026 蒸馏落地）：每子任务完成后校验是否偏离根目标
-/// （drift）或与兄弟重复（non-redundancy）——词法 Jaccard 纯计算（复用 @evolve.tokens/
-/// jaccard 单真源，零 LLM 自评，贴"评测是计算"原则）。drift = 1 - jaccard(根目标, 子任务)
-/// > 0.7 判 drift_suspect（附 re_anchor 提示：把根目标重新注入，Zylos goal re-anchoring）；
-/// 与任一兄弟 jaccard ≥ 0.7 判 redundant_suspect（HiMAP uniqueness monitor：防重复子目标）。
+/// 全局目标校验（R100，goal drift arXiv 2505.02709 / Repetitiveness Rate 2603.12710 /
+/// IntentCUA 2602.17049 / HiMAP ICML2026 蒸馏落地）——**advisory 判据，不是硬门**（BUG-25）。
+///
+/// 词法口径（单真源 @evolve.tokens）：similarity = max(jaccard, coverage)，drift = 1 - similarity。
+///   · coverage 非对称（|根∩子|/|根|）：只问"根目标的词还在不在"，子任务多写模板不被长度惩罚；
+///   · jaccard 保留给兄弟冗余（对称量，语义正确）。
+///
+/// 为什么必须降级成 advisory（标定实测，scripts/calibrate_goal_drift.py）：
+///   真实父子对全集 1222 条 drift_suspect=1.9%，随机错配对照 400 条=81.3%（有分离）；
+///   但**改写型**父子对（去掉前缀拼接桩与模板桩后剩 39 条，如 T0r61→T0r61.1「依赖图恒空」
+///   被写成「增量编译链与依赖图修复：cypyc/incremental/...」）假阳性 56~59%，
+///   3 个可测家族上绝对阈值 0.7 命中 15/15——合法拆解与真漂移在词面上不可分。
+///   所以：判据照旧发红（离群时最有信息量），但 verdict 一律带 advisory=true，
+///   下游按它打回就是把 15/15 的正常子任务反复打回（BUG-25 影响 2 的病灶）。
 /// subtask_id 缺省校验根下全部后代。纯计算、只读不写库（决策建议，执行权在 agent/指挥官）。
 pub fn FistEngine::goal_drift_check(
   self : FistEngine,
@@ -1134,40 +1142,37 @@ pub fn FistEngine::goal_drift_check(
       let mut aligned = 0
       let mut drift_suspect = 0
       let mut redundant_suspect = 0
+      let mut insufficient = 0
       for id in targets {
         match self.get_task(id) {
           None => ()
           Some(t) => {
             let tk = @evolve.tokens(t.get_description())
-            let drift = 1.0 - @evolve.jaccard(goal_tokens, tk)
-            // 兄弟冗余：同父兄弟中最大相似度
-            let mut red = 0.0
-            match t.get_parent() {
-              Some(p) =>
-                for sib in self.children_of(p) {
-                  if sib.get_id() != id {
-                    let s = @evolve.jaccard(
-                      tk,
-                      @evolve.tokens(sib.get_description()),
-                    )
-                    if s > red {
-                      red = s
-                    }
-                  }
-                }
-              None => ()
-            }
-            let (verdict, re_anchor) = if drift > 0.7 {
-              ("drift_suspect", true)
-            } else if red >= 0.7 {
-              ("redundant_suspect", false)
+            let red = self.sibling_max_similarity(t, tk)
+            // 信息量不足（空描述/纯模板桩）判 insufficient，不判漂移——
+            // 恒阳性正是本条缺陷的形状（BUG-25：6/6 全误报里就混着这一类）
+            let low_info = goal_tokens.length() < drift_min_tokens ||
+              tk.length() < drift_min_tokens
+            let drift = if low_info {
+              1.0
             } else {
-              ("aligned", false)
+              1.0 - drift_similarity(goal_tokens, tk)
+            }
+            let verdict = if low_info {
+              "insufficient"
+            } else if drift > drift_threshold {
+              "drift_suspect"
+            } else if red >= redundancy_threshold {
+              "redundant_suspect"
+            } else {
+              "aligned"
             }
             if verdict == "drift_suspect" {
               drift_suspect = drift_suspect + 1
             } else if verdict == "redundant_suspect" {
               redundant_suspect = redundant_suspect + 1
+            } else if verdict == "insufficient" {
+              insufficient = insufficient + 1
             } else {
               aligned = aligned + 1
             }
@@ -1176,7 +1181,9 @@ pub fn FistEngine::goal_drift_check(
             cm.set("drift_score", Json::number(drift))
             cm.set("redundancy_score", Json::number(red))
             cm.set("verdict", Json::string(verdict))
-            cm.set("re_anchor", Json::boolean(re_anchor))
+            // advisory 恒真：本判据在中文改写型语料上假阳性 15/15，不可作打回硬门（BUG-25）
+            cm.set("advisory", Json::boolean(true))
+            cm.set("re_anchor", Json::boolean(verdict == "drift_suspect"))
             checks.push(Json::object(cm))
           }
         }
@@ -1185,22 +1192,96 @@ pub fn FistEngine::goal_drift_check(
         "ok": Json::boolean(true),
         "root_task_id": Json::string(root_task_id),
         "basis": Json::string(
-          "jaccard@evolve（词法相似度纯计算，零 LLM 自评）",
+          "max(jaccard, coverage)@evolve（词法相似度纯计算，零 LLM 自评；coverage 非对称、不罚长度）",
         ),
+        "hard_gate": Json::boolean(false),
         "threshold": Json::object({
-          "drift": Json::number(0.7),
-          "redundancy": Json::number(0.7),
+          "drift": Json::number(drift_threshold),
+          "redundancy": Json::number(redundancy_threshold),
+          "min_tokens": Json::number(drift_min_tokens.to_double()),
+        }),
+        "calibration": Json::object({
+          "corpus": Json::string(
+            "fist-mbt.db 只读实测（2026-09-27），复跑：python scripts/calibrate_goal_drift.py",
+          ),
+          "real_pairs_suspect": Json::number(0.019),
+          "real_pairs_n": Json::number(1222.0),
+          "random_control_suspect": Json::number(0.813),
+          "random_control_n": Json::number(400.0),
+          "reworded_pairs_suspect": Json::number(0.590),
+          "reworded_pairs_n": Json::number(39.0),
+          "conclusion": Json::string(
+            "全量分离成立（1.9% vs 81.3%），但改写型父子对 59% 假阳性 ⇒ 只可 advisory，硬用会把正常拆解反复打回",
+          ),
         }),
         "counts": Json::object({
           "aligned": Json::number(aligned.to_double()),
           "drift_suspect": Json::number(drift_suspect.to_double()),
           "redundant_suspect": Json::number(redundant_suspect.to_double()),
+          "insufficient": Json::number(insufficient.to_double()),
         }),
         "checks": Json::array(checks),
         "note": Json::string(
-          "全局目标校验（non-redundancy）：drift=1-jaccard(根目标,子任务) >0.7 判 drift_suspect（附 re_anchor 提示：把根目标重新注入）；与兄弟 jaccard ≥0.7 判 redundant_suspect（防重复子目标）。",
+          "全局目标校验（advisory，非硬门）：drift=1-max(jaccard,coverage)(根目标,子任务) >0.7 记 drift_suspect（附 re_anchor 提示）；与兄弟 jaccard ≥0.7 记 redundant_suspect；任一侧词数 <6 记 insufficient（不判漂移）。打回决策需人工/指挥官复核——中文改写型子任务上本判据假阳性 15/15（见 calibration）。",
         ),
       })
     }
+  }
+}
+
+///|
+/// 判据常量（与标定脚本同源，改这里=改判据，必须重跑 scripts/calibrate_goal_drift.py）
+let drift_threshold : Double = 0.7
+
+///|
+let redundancy_threshold : Double = 0.7
+
+///|
+let drift_min_tokens : Int = 6
+
+///|
+fn drift_similarity(a : Array[String], b : Array[String]) -> Double {
+  max_of(@evolve.jaccard(a, b), @evolve.coverage(a, b))
+}
+
+///|
+/// 同父兄弟里与本任务的最大词法相似度（对称量）。
+/// 取两个口径的最大值：二字组词集抓"用词相同"，可见字符集抓"词序换位"
+/// （`数据采集模块` ↔ `采集数据模块` 在前者只有 0.556，后者 1.0）；
+/// 标定实测该分量在真实非模板家族上与单口径同为 34.8%，不额外增误报。
+fn FistEngine::sibling_max_similarity(
+  self : FistEngine,
+  t : @core.Task,
+  tk : Array[String],
+) -> Double {
+  let mut red = 0.0
+  match t.get_parent() {
+    Some(p) =>
+      for sib in self.children_of(p) {
+        if sib.get_id() != t.get_id() {
+          let sd = sib.get_description()
+          let s = max_of(
+            @evolve.jaccard(tk, @evolve.tokens(sd)),
+            @evolve.jaccard(
+              @evolve.unigrams(t.get_description()),
+              @evolve.unigrams(sd),
+            ),
+          )
+          if s > red {
+            red = s
+          }
+        }
+      }
+    None => ()
+  }
+  red
+}
+
+///|
+fn max_of(a : Double, b : Double) -> Double {
+  if a > b {
+    a
+  } else {
+    b
   }
 }
