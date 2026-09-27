@@ -36,3 +36,4 @@ _cron_query.py
 _cron_tmp_sends.jsonl
 # blackbox release artifacts
 _release/
+memory/bugs_pending_github.json
