@@ -6066,3 +6066,11 @@ pub async fn run_server() -> Unit {
   // 默认 stdio 传输（MCP 标准模式）。
   run_stdio_target(s1)
 }
+
+///|
+/// 暴露单一真源 project_version（cli/外部模块只读版本号入口）。
+/// 不直接暴露 pub let 是因为 MoonBit 包内 let 默认私有；
+/// BUG-16 回归测试仍锁 src/server/server.mbt L560 的字面量，不改它。
+pub fn get_version() -> String {
+  project_version
+}
