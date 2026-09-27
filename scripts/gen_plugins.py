@@ -13,7 +13,7 @@
   - 版本：moon.mod 的 version
   - 缺陷账本：memory/bugs.md 的 `## BUG-N ... OPEN` 与 `### FIXED(...)`
   - 正文：plugins/source/SKILL.md(+references/)、plugins/source/SKILL.commander.md
-  - 启动命令：根 .mcp.json 的 mcpServers（不在插件里重写第二份）
+  - 启动命令：仓库根 MCP 真源（`MCP_CANDIDATES` 里实际存在的那个）的 mcpServers（不在插件里重写第二份）
 
 产出（宿主顺序 = 指定顺序：atomcode → codearts → deepseek-harness → claude）：
   plugins/atomcode/skills/{fist-mbt,fist-commander}/
@@ -47,7 +47,24 @@ SOURCE = ROOT / "plugins" / "source"
 SERVER = ROOT / "src" / "server" / "server.mbt"
 MOON_MOD = ROOT / "moon.mod"
 BUGS = ROOT / "memory" / "bugs.md"
-ROOT_MCP = ROOT / ".mcp.json"
+# BUG-86：启动参数真源的文件名在 254de24 被改成 `.mcp.dev.json`（开发态/使用态拆分），
+# 但三个消费者还钉着 `.mcp.json` ⇒ cl7 FATAL、gen_plugins 直接 die、仓库自测红。
+# 口径：**两个名字都接受，按优先级取实际存在的那一个，并把取到了谁打印出来**——
+# 单一真源的要求不变（同一时刻只认一份），变的只是文件名可解析。两个都不在才算缺陷。
+MCP_CANDIDATES = (".mcp.json", ".mcp.dev.json")
+
+
+def resolve_root_mcp(root: Path) -> Path:
+    """返回实际存在的启动参数真源；都不存在时回首个候选名（由调用方的存在性检查报死）。"""
+    for name in MCP_CANDIDATES:
+        c = root / name
+        if c.exists():
+            return c
+    return root / MCP_CANDIDATES[0]
+
+
+ROOT_MCP = resolve_root_mcp(ROOT)
+MCP_NAME = ROOT_MCP.name  # 投影正文里引用的真源文件名（BUG-86：随搬家走，不钉死）
 
 RE_TOOL = re.compile(r'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"')
 RE_VERSION = re.compile(r'^version\s*=\s*"([^"]+)"', re.M)
@@ -263,7 +280,7 @@ def generate(base: Path, vals: dict) -> None:
     commander_src = SOURCE / "SKILL.commander.md"
     root_mcp = json.loads(ROOT_MCP.read_text(encoding="utf-8"))
     if "fist-mbt" not in root_mcp.get("mcpServers", {}):
-        die("根 .mcp.json 未声明 mcpServers['fist-mbt']（启动参数真源异常）")
+        die("根 {} 未声明 mcpServers['fist-mbt']（启动参数真源异常）".format(MCP_NAME))
 
     # ① atomcode：宿主读 ~/.atomcode/skills/<name>/SKILL.md（frontmatter name/description）
     write_skill(base / "atomcode" / "skills" / SKILL_MAIN, main_src, "atomcode", vals)
@@ -278,7 +295,7 @@ def generate(base: Path, vals: dict) -> None:
 
 - 本目录内容全部由 `scripts/gen_plugins.py` 从 `plugins/source/` 生成，**不要手改**；
   改了会在 `scripts/check_plugin_sync.py`（cl7）下红。
-- MCP server 真源在仓库根 `.mcp.json`（{vals['TOOL_COUNT']} 工具 / v{vals['VERSION']}）；
+- MCP server 真源在仓库根 `{MCP_NAME}`（{vals['TOOL_COUNT']} 工具 / v{vals['VERSION']}）；
   AtomCode 侧只需在 mcp 配置里指向同一命令，不在插件里复制第二份启动参数。
 """,
     )
@@ -300,7 +317,7 @@ def generate(base: Path, vals: dict) -> None:
 2. 把 `UserSkillStatus.append.txt` 的两行追加进 `~/.codeartsdoer/skills/UserSkillStatus.txt`。
 
 内容由 `scripts/gen_plugins.py` 生成（真源=`plugins/source/`）；手改由 cl7 守卫拦。
-MCP 启动参数以仓库根 `.mcp.json` 为准（{vals['TOOL_COUNT']} 工具 / v{vals['VERSION']}）。
+MCP 启动参数以仓库根 `{MCP_NAME}` 为准（{vals['TOOL_COUNT']} 工具 / v{vals['VERSION']}）。
 """,
     )
 
@@ -315,7 +332,7 @@ MCP 启动参数以仓库根 `.mcp.json` 为准（{vals['TOOL_COUNT']} 工具 / 
 ## FIST-Mbt（一源四态·插件态）
 
 - 本 harness 走 FIST 指挥官模式：意图 → 分流 → 派单 → 终审 → 沉淀汇报；不亲力亲为可分配工作。
-- MCP server `fist-mbt`（{vals['TOOL_COUNT']} 工具 / v{vals['VERSION']}）经仓库根 `.mcp.json` 暴露；
+- MCP server `fist-mbt`（{vals['TOOL_COUNT']} 工具 / v{vals['VERSION']}）经仓库根 `{MCP_NAME}` 暴露；
   工具清单唯一真源是 `src/server/server.mbt`，**以 tools/list 为准**，任何文档数字都可能滞后。
 - 已知缺陷账本：{vals['LEDGER_SUMMARY']}（真源 `memory/bugs.md`，状态位可就地改、叙述面只追加）。
 - 详细操作见 `skills/{SKILL_MAIN}/SKILL.md` 与 `references/`（同为生成产物）。
@@ -364,7 +381,7 @@ MCP 启动参数以仓库根 `.mcp.json` 为准（{vals['TOOL_COUNT']} 工具 / 
             ],
         },
     )
-    # .mcp.json：**逐字节复制**根真源（不是重新序列化——序列化会改排版，等于偷偷造第二份）
+    # claude 侧 .mcp.json：**逐字节复制**根真源（不是重新序列化——序列化会改排版，等于偷偷造第二份）
     claude_mcp = base / "claude" / ".mcp.json"
     claude_mcp.parent.mkdir(parents=True, exist_ok=True)
     claude_mcp.write_bytes(ROOT_MCP.read_bytes())
@@ -374,7 +391,7 @@ MCP 启动参数以仓库根 `.mcp.json` 为准（{vals['TOOL_COUNT']} 工具 / 
 
 `/plugin marketplace add <本仓路径>/plugins/claude` → `/plugin install fist-mbt@fist-mbt`。
 
-- `.mcp.json` 是仓库根 `.mcp.json` 的**逐字副本**（启动参数只有一份真源）；
+- `.mcp.json` 是仓库根 `{MCP_NAME}` 的**逐字副本**（启动参数只有一份真源）；
 - `skills/` 由 `scripts/gen_plugins.py` 投影自 `plugins/source/`；手改由 cl7 守卫拦。
 """,
     )

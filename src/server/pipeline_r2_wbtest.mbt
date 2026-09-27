@@ -91,9 +91,47 @@ fn r2_read_or_abort(path : String) -> String {
 }
 
 ///|
+/// 客户端超时真源的候选路径，顺序即优先级（BUG-86）。
+/// 根 `.mcp.json` 在 254de24 被改名成 `.mcp.dev.json`，而守卫族/生成器/本锁仍指旧名——
+/// 只读单一文件名会把"真源搬家"误报成"配置坏了"，反过来写死新名又会在下次搬家时又红。
+/// 与 scripts/gen_plugins.py 的 MCP_CANDIDATES 同口径，两处名单由本锁对齐。
+fn r2_mcp_candidates() -> Array[String] {
+  [".mcp.json", ".mcp.dev.json"]
+}
+
+///|
+/// 用 " / " 串起候选名（本版本 String 没有 join；手写以免把名单第二份抄进消息里）。
+fn r2_slash_join(xs : Array[String]) -> String {
+  let mut s = ""
+  for x in xs {
+    if not(s.is_empty()) {
+      s = s + " / "
+    }
+    s = s + x
+  }
+  s
+}
+
+///|
+/// 取第一个可读的 MCP 启动真源文本；全都读不到才 abort（防"路径不对→空串→假绿"）。
+fn r2_root_mcp_text() -> String {
+  for p in r2_mcp_candidates() {
+    match mem_read(p) {
+      Some(c) => return c
+      None => ()
+    }
+  }
+  abort(
+    "不可读 MCP 启动真源（试过 " +
+    r2_slash_join(r2_mcp_candidates()) +
+    "）——该守卫无法自证",
+  )
+}
+
+///|
 test "BUG-18：sidecar/probe 预算必须严格小于 .mcp.json 的客户端超时（实测 278.77s 的病根）" {
-  // 真源是 .mcp.json 的 timeout_ms：镜像常量必须与它一致，且两个服务端预算之和要留在它下面
-  let mcp = r2_read_or_abort(".mcp.json")
+  // 真源是 MCP 启动配置的 timeout_ms：镜像常量必须与它一致，且两个服务端预算之和要留在它下面
+  let mcp = r2_root_mcp_text()
   let client_ms = r2_json_int_field(mcp, "timeout_ms")
   assert_true(client_ms > 0)
   assert_eq(laya_client_budget_ms, client_ms)

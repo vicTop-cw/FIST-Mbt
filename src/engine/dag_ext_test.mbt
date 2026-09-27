@@ -1116,3 +1116,118 @@ test "goal_drift_check：根任务不存在 → ok:false" {
     _ => abort("ok 缺失: " + j.stringify())
   }
 }
+
+///|
+/// 给 BUG-20 造一棵可数的子树：ns `b20` 下 T0 + 3 个子任务，另有 2 个别的 ns 的任务。
+/// 不走 publish（要自由指定 parent_id / ns / 难度档字样），直接写 store。
+fn b20_engine() -> FistEngine {
+  let e = FistEngine::new()
+  let specs : Array[(String, String, String)] = [
+    ("T0", "", "b20"),
+    ("T1", "T0", "b20"),
+    ("T2", "T0", "b20"),
+    ("T3", "T0", "b20"),
+    ("O1", "", "other"),
+    ("O2", "O1", "other"),
+  ]
+  for s in specs {
+    let (id, parent, ns) = s
+    let t = @core.Task::new(
+      id~,
+      project_dir="/proj/demo",
+      description="BUG-20 作用域夹具 " + id,
+      parent_id=parent,
+      created_at="2026-09-27T00:00:00Z",
+      ns~,
+    )
+    ignore(e.store.create_task(t))
+  }
+  e
+}
+
+///|
+/// 读 cost_budget_split 返回体里的作用域自证字段
+fn b20_scope(j : Json) -> (String, Int) {
+  let kind = match j.value("scope") {
+    Some(Object(sm)) =>
+      match sm.get("scope_kind") {
+        Some(String(s)) => s
+        _ => "<缺>"
+      }
+    _ => "<无 scope 字段>"
+  }
+  let cnt = match j.value("scope") {
+    Some(Object(sm)) =>
+      match sm.get("scoped_task_count") {
+        Some(Number(n, ..)) => n.to_int()
+        _ => -1
+      }
+    _ => -1
+  }
+  (kind, cnt)
+}
+
+///|
+/// BUG-20：task_id/namespace 必须真的参与取数（过去恒扫全库），budget<=0 必须拒。
+/// 成对：① 子树/单 ns 的计数 == 夹具现数，绝不等于全库数；② 不传作用域仍是全库
+/// （旧行为零回归），但这一点要写在 scope 里；③ 负预算不产份额。
+test "BUG-20：cost_budget_split 作用域真参与取数 + 负预算拒绝" {
+  let e = b20_engine()
+  // ① 子树：T0 下 4 个任务（自身 + 3 子），全库是 6 个
+  let sub = e.budget_split_by_dag(100, root="T0")
+  let (sub_kind, sub_cnt) = b20_scope(sub)
+  assert_eq(sub_kind, "subtree")
+  assert_eq(sub_cnt, 4)
+  // 份额总和必须等于预算（否则"切分"本身是假的）
+  assert_eq(b20_share_sum(sub), 100)
+  // ② 单 ns：other 下 2 个
+  let byns = e.budget_split_by_dag(100, ns="other")
+  let (ns_kind, ns_cnt) = b20_scope(byns)
+  assert_eq(ns_kind, "namespace")
+  assert_eq(ns_cnt, 2)
+  // ③ 不传作用域＝全库 6 个（旧行为，零回归），且作用域写在返回体里
+  let all = e.budget_split_by_dag(100)
+  let (all_kind, all_cnt) = b20_scope(all)
+  assert_eq(all_kind, "whole-store")
+  assert_eq(all_cnt, 6)
+  // ④ 负预算：拒绝且不切出负份额
+  let neg = e.budget_split_by_dag(-50)
+  match neg.value("verdict") {
+    Some(String(v)) => assert_eq(v, "rejected")
+    _ => abort("负预算未被拒绝: " + neg.stringify())
+  }
+  match neg.value("stages") {
+    Some(Array(rows)) => assert_eq(rows.length(), 0)
+    _ => abort("负预算不得产出任何阶段: " + neg.stringify())
+  }
+  assert_eq(b20_share_sum(neg), 0)
+  // ⑤ 根任务不存在：insufficient，而不是悄悄退回全库（那正是本条缺陷的形状）
+  let ghost = e.budget_split_by_dag(100, root="T999")
+  match ghost.value("verdict") {
+    Some(String(v)) => assert_eq(v, "insufficient")
+    _ => abort("不存在的根任务应 insufficient: " + ghost.stringify())
+  }
+  let (_, ghost_cnt) = b20_scope(ghost)
+  assert_eq(ghost_cnt, 0)
+}
+
+///|
+/// 把 stages[*].share 求和（自己算，不接受实现自报的总数）
+fn b20_share_sum(j : Json) -> Int {
+  let mut sum = 0
+  match j.value("stages") {
+    Some(Array(rows)) =>
+      for r in rows {
+        match r {
+          Object(sm) =>
+            match sm.get("share") {
+              Some(Number(n, ..)) => sum = sum + n.to_int()
+              _ => ()
+            }
+          _ => ()
+        }
+      }
+    _ => ()
+  }
+  sum
+}
