@@ -41,9 +41,13 @@ jobs:
         shell: bash
         run: python3 scripts/check_tools_sync.py
 
-      - name: Test-count single-source guard (四文档测试总数==实测)
+      - name: Test-count single-source guard (全量现状面测试总数==实测 + 豁免有效性)
         shell: bash
         run: python3 scripts/check_test_sync.py /tmp/moon_test.log
+
+      - name: Test-count guard selftest (BUG-50：判据必须先证明自己会红)
+        shell: bash
+        run: python3 scripts/check_test_sync.py --selftest
 
       - name: Scripts-index guard (工具类辅助代码统一登记 scripts/README)
         shell: bash

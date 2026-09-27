@@ -91,6 +91,8 @@ pub fn run_check_cmd_denied(String, Array[String]) -> String?
 
 pub fn run_check_default_allow_cmds() -> Array[String]
 
+pub fn run_check_effective_workdir(String, String) -> String
+
 pub async fn run_check_external(String, Array[String], String, Int) -> Result[Json, String]
 
 pub fn run_check_guard_note() -> String

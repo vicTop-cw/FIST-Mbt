@@ -1105,7 +1105,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "run_check",
-    "外部判据检查（**宿主命令执行能力**：服务端真实 spawn 进程，防自写自测恒绿；请勿暴露给不可信客户端）。自 Round 2 起执行面**默认收紧**（BUG-4 收口，判定在 src/server/run_check_guard.mbt）：① cmd 必须在白名单内——默认只放项目脚本解释器 moon/node/python/python3/py/bash/sh/zsh/powershell/pwsh（集合来源=call_log 实测调用面）或**项目内的**相对判据脚本（如 `scripts/check.sh`）；② workdir 必须在任务 project_dir 子树内（默认即 project_dir 本身，绝对/相对皆可），越界（`..` 上跳、跨盘、不同根）直接拒绝。要扩展白名单只有两条路：把判据脚本写进项目目录按相对路径调用，或由**运维侧**设环境变量 FIST_RUN_CHECK_ALLOW=git,cargo（调用方传参不能给自己扩权）。被拒的尝试一律落审计（audit_log 本进程 + call_log 跨进程）。参数：task_id 任务id、cmd 可执行命令、args 参数数组(可选)、workdir 工作目录(默认任务 project_dir，须在项目子树内)、timeout_ms 超时毫秒(默认120000)（注：时间戳由服务端盖章，不接受调用方注入 now）。真实 spawn 子进程运行 cmd，退出码 0 记为 passed、否则 failed，结果 JSON（含 stdout/stderr）落库 specs 表（spec_type=check）；[gate:required] 任务的 verify 依赖本记录且校验新鲜度。",
+    "外部判据检查（**宿主命令执行能力**：服务端真实 spawn 进程，防自写自测恒绿；请勿暴露给不可信客户端）。自 Round 2 起执行面**默认收紧**（BUG-4 收口，判定在 src/server/run_check_guard.mbt）：① cmd 必须在白名单内——默认只放项目脚本解释器 moon/node/python/python3/py/bash/sh/zsh/powershell/pwsh（集合来源=call_log 实测调用面）或**项目内的**相对判据脚本（如 `scripts/check.sh`）；② workdir 必须在任务 project_dir 子树内（默认即 project_dir 本身；**相对 workdir 按任务 project_dir 相对解析，`.` 就是该任务的项目目录本身**，与 project_dir 是绝对还是相对无关 —— BUG-51 统一口径，实际 spawn 的 cwd 用归一后的绝对形态）。注意这条口径与 `report_bug`/`bug_list` 的 `project_dir` **相反**：那个参数是 bug 账的落盘根，只接受相对 store 根的路径（拒绝绝对路径/盘符/`..`）。越界（`..` 上跳、跨盘、脱离子树、绝对 workdir 配相对 project_dir）直接拒绝。要扩展白名单只有两条路：把判据脚本写进项目目录按相对路径调用，或由**运维侧**设环境变量 FIST_RUN_CHECK_ALLOW=git,cargo（调用方传参不能给自己扩权）。被拒的尝试一律落审计（audit_log 本进程 + call_log 跨进程）。参数：task_id 任务id、cmd 可执行命令、args 参数数组(可选)、workdir 工作目录(默认任务 project_dir；相对路径按任务 project_dir 解析，绝对路径须在项目子树内)、timeout_ms 超时毫秒(默认120000)（注：时间戳由服务端盖章，不接受调用方注入 now）。真实 spawn 子进程运行 cmd，退出码 0 记为 passed、否则 failed，结果 JSON（含 stdout/stderr）落库 specs 表（spec_type=check）；[gate:required] 任务的 verify 依赖本记录且校验新鲜度。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -1114,7 +1114,7 @@ pub async fn run_server() -> Unit {
         ),
         "args": array_prop("命令参数数组（可选）"),
         "workdir": string_prop(
-          "工作目录（可选，默认任务 project_dir；**必须在项目目录子树内**——project_dir 本身或其子目录，拒绝 .. 上跳/跨盘/与 project_dir 绝对-相对形态不一致）",
+          "工作目录（可选，默认任务 project_dir；**相对路径按任务 project_dir 相对解析，`.` 即该项目目录本身**，绝对路径必须落在该子树内；拒绝 .. 上跳/跨盘/脱离子树/绝对 workdir 配相对 project_dir。BUG-51 统一口径）",
         ),
         "timeout_ms": int_prop("超时毫秒（可选，默认 120000）"),
       },
@@ -1159,7 +1159,12 @@ pub async fn run_server() -> Unit {
               )
             None => ()
           }
-          let r = run_check_external(cmd, args_arr, workdir, timeout_ms)
+          let r = run_check_external(
+            cmd,
+            args_arr,
+            run_check_effective_workdir(workdir, t.project_dir),
+            timeout_ms,
+          )
           match r {
             Ok(res) => {
               let status = match res {

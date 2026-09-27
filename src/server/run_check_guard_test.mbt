@@ -133,3 +133,62 @@ test "BUG-4 workdir 拒绝文案必须自带出路（说清接受什么形态，
   assert_true(note.contains("FIST_RUN_CHECK_ALLOW"))
   assert_true(note.contains("子树"))
 }
+
+///|
+/// BUG-51 成对锁：路径口径统一后，"同一个相对根跑完整链路"必须能走通。
+/// 修复前这三条 ALLOW 全红（`.` 配绝对 project_dir 被"与项目不同根"打断，
+/// 正是模板第 3 步卡住的位置）；反向的 REJECT 若被放宽则是真漏洞。
+test "BUG-51 相对 workdir 按任务 project_dir 解析：`.` 与子目录放行、上跳仍拒" {
+  let abs = "E:/IDEProjects/AI/FIST-Mbt"
+  // ALLOW：合法用法（含"丑但在树内"——只测拒绝侧会把过严实现也判成通过）
+  assert_true(run_check_workdir_in_project(".", abs))
+  assert_true(run_check_workdir_in_project("scripts", abs))
+  assert_true(run_check_workdir_in_project("src/../scripts", abs))
+  // REJECT：冲出自身起点（拼接后"看起来在里面"的唯一作案形态）
+  assert_false(run_check_workdir_in_project("../../etc", abs))
+  assert_false(run_check_workdir_in_project("a/../../b", abs))
+  // REJECT：相对 project_dir 承载不了绝对 workdir（真实位置取决于 server cwd）
+  assert_false(run_check_workdir_in_project(abs, "."))
+  // 零回归：相对/相对仍是子树判定，`.` 不在 temp/proj 里面
+  assert_false(run_check_workdir_in_project(".", "temp/proj"))
+  assert_true(run_check_workdir_in_project("temp/proj", "temp/proj"))
+}
+
+///|
+/// BUG-51：守卫放行相对 workdir 之后，真正 spawn 的 cwd 必须是归一后的绝对形态。
+/// 只改判定不改执行面 = 判据说"在项目里"而进程跑在 server cwd，比拒绝更糟。
+test "BUG-51 执行面 cwd 归一：混形态给绝对路径，同形态逐字不动" {
+  let abs = "E:/IDEProjects/AI/FIST-Mbt"
+  assert_eq(run_check_effective_workdir(".", abs), abs)
+  assert_eq(run_check_effective_workdir("scripts", abs), abs + "/scripts")
+  assert_eq(run_check_effective_workdir("temp/r2/../x", abs), abs + "/temp/x")
+  // 反斜杠绝对 project_dir 同样归一（实测调用面里有 E:\... 形态）
+  assert_eq(
+    run_check_effective_workdir("scripts", "E:\\IDEProjects\\AI\\FIST-Mbt"),
+    abs + "/scripts",
+  )
+  // 同形态调用逐字返回原值 ⇒ 既有 38/51 次绝对用法零回归
+  assert_eq(run_check_effective_workdir(abs, abs), abs)
+  assert_eq(
+    run_check_effective_workdir("temp/proj/scripts", "temp/proj"),
+    "temp/proj/scripts",
+  )
+  // 被守卫拒掉的形态不改写（该拿不到执行机会）
+  assert_eq(run_check_effective_workdir("../../etc", abs), "../../etc")
+}
+
+///|
+test "BUG-51 绝对 workdir 配相对 project_dir：拒绝文案点名两条出路" {
+  match run_check_workdir_denied("E:/x/y", ".") {
+    None => abort("绝对 workdir + 相对 project_dir 未被拒")
+    Some(r) => {
+      must(r.contains("相对"), "文案未说明形态差异: " + r)
+      must(r.contains("出路"), "文案未给出可执行出路: " + r)
+      // 出路 ① 就是本次统一的口径：相对 workdir 按任务 project_dir 相对
+      must(
+        r.contains("project_dir 相对"),
+        "文案未指认统一后的口径: " + r,
+      )
+    }
+  }
+}

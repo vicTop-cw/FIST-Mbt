@@ -29,7 +29,15 @@
 - `patch_esm_main.py` — moonc≥0.10.14 ESM 输出注入 createRequire shim（幂等）。
 - `check_badge.py` — **README 测试徽章一致性守卫（R34）**：比对 `moon test` 实测测试数与 README 徽章 `tests-N%2FN`，不一致即退出码 1（挂 CI 作"徽章不过时可复现"门禁，杜绝手改漏同步）。已经在 `.github/workflows/ci.yml` 的 JS 轨道里自动执行。
 - `check_tools_sync.py` — **工具清单单一真源守卫（R46）**：以 `src/server/server.mbt` 实际注册工具名为唯一真源，校验 AGENTS 表格工具名 ⊆ 真源、真源全部入 AGENTS、README/AGENTS/deliverable/scoring_rubric 工具总数==实测（双向防幽灵/漏写）。已在 ci.yml JS 两轨自动执行。
-- `check_test_sync.py` — **测试总数单一真源守卫（R47）**：从 `moon test` 日志提取实测总数，跨 README/AGENTS/deliverable/scoring_rubric 校验述一致（N/N、N 全绿、独立 N 任一）；`--total N` 直传亦可。已在 ci.yml JS 轨自动执行。
+- `check_test_sync.py` — **测试总数单一真源守卫（R47；BUG-50 收口时判据重设计）**：从 `moon test` 日志
+  或 `--total N` 取实测总数，四条判据——**R1** 反向扫全部现状面文档（含 README_EN/BACKLOG，99 份），
+  每条测试总数声明必须 == 实测（窄口径四种形状：`N/N` 等值对、`N 项|个|条 [测试|用例] 全绿|通过|passed`、
+  `total=N`、日志回显 `Total tests: N, passed: N`；不等值对是引文/年份/编号，不算声明）；
+  **R2** must-carry 5 份文档必须携带实测数（不许靠删声明消解违例）；**R3** 防空转（现状面一条命中声明
+  都没有即红）；**R4** 历史数/别的 target 必须在 `EXEMPT` 里逐条点名 `(文件, 数, 理由)`，条目失效也判红。
+  历史记录（`memory/`、`reports/`、`CHANGELOG.md`、`docs/superpowers/plans/`、`YYYY-MM-DD` 前缀文件）
+  整面豁免。`--selftest` 用 8 个违例变体证明判据会红（含"自洽的谎"型与"不得误抓引文"反向对照）。
+  已在 ci.yml JS 轨自动执行（真判据 + selftest 两条步骤）。
 - `check_scripts_index.py` — **工具类辅助代码单一索引守卫（R62）**：校验 `scripts/README.md` 已登记全部「正式」辅助脚本（无 `_` 前缀），防新生脚本不留说明就堆积——把地图/整洁下沉到工具层。用法：`python scripts/check_scripts_index.py`（0=PASS，1=漏登记）。
 - `check_plugin_sync.py` 的索引缺口补齐登记（本轮 cl7 落地时实测出的历史欠账）：
 - `flush_github.mjs` — **GitHub 缺陷外发通道 Node 入口**：走 MCP stdio 调 `github_flush_execute`，把 `report_bug` 入账的缺陷推到远端 issue。用法：`node scripts/flush_github.mjs [--limit 50] [--timeout-ms 30000]`（需 `GITHUB_TOKEN`，凭据只从环境注入）。
