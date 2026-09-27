@@ -99,7 +99,7 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**122 tools** + 3 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**126 tools** + 3 resources + 2 prompts）：
 
 ### 生命周期（14）
 | 工具 | 说明 |
@@ -269,7 +269,7 @@ You can browse and install extra skills here:
 | `mode_list` | 返回 6 种自驱开发模式的完整信息（mode / name / description / constraints / template_path / forbidden_tools），纯计算只读，供 AI 选模式 |
 | `mode_templates` | 检查 `templates/pipeline_mode_*.md` 全部存在性，返回 `{templates:{advance:true,...}, missing:[...]}`；`pipeline_tick`/`watchdog_tick` 的 `mode` 参数预检用 |
 
-### GitHub 同步 · 缺陷上报通道（8）
+### GitHub/GitCode 同步 · 缺陷上报通道（12）
 | 工具 | 说明 |
 |---|---|
 | `github_env_check` | 检查同步环境变量配置（读 `FIST_GITHUB_ENABLED`/`FIST_GITHUB_REPO`/`FIST_GITHUB_TOKEN`），返回 enabled/repo/token_present/ready 四元组。纯计算只读，不碰网络——外部 AI 开发前先查此工具判断能否自动上报 bug |
@@ -280,6 +280,10 @@ You can browse and install extra skills here:
 | `github_issue_close` | 按 bug_id→issue_number 映射批量关闭 issue（PUT state=closed）。硬门控——`force` 必须为 `true`；通常在 FIST 任务归档/完成后触发 |
 | `github_issue_comment` | 给指定 bug_id 对应的 issue 追加评论（POST comments API）。硬门控——`force` 必须为 `true`；该 bug 须已 flush 成功过 |
 | `github_issue_webhook_parse` | 解析 GitHub issue comment webhook payload，提取 `@fist-bot` 指令（reopen / challenge / close / blocked），返回结构化 action 供 FIST 闭环消费。纯计算正则匹配，零 LLM 零网络 |
+| `gitcode_env_check` | 检查 GitCode 同步环境变量配置（读 `FIST_GITCODE_TOKEN`/`FIST_GITCODE_PROJECT_ID`），返回 enabled/repo/token_present/ready 四元组。纯计算只读，不碰网络 |
+| `gitcode_queue_status` | 查看待同步 GitCode issue 队列状态——复用 `bugs_pending_github.jsonl`，含 `gitcode_project_id`/`gitcode_issue_iid` 字段。纯计算读 JSONL 队列，不碰网络 |
+| `gitcode_flush_plan` | 为每条 pending bug 生成一条 curl 命令（GitCode API v4 + `PRIVATE-TOKEN` header），**不执行任何网络调用**；外部拿到后手动/脚本执行，成功后调 `gitcode_queue_mark_sent` 回写 |
+| `gitcode_queue_mark_sent` | 标记一批 `bug_ids` 已同步 GitCode（写 sent_at + gitcode_issue_iid），幂等安全 |
 
 ### 模型路由 · 外部执行器（4，合并自兄弟项目 fist-model-router 与 FIST 的 aider/atomcode 执行器）
 | 工具 | 说明 |

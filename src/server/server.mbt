@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 122 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 126 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -3338,7 +3338,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "goal_drift_check",
-    "全局目标校验（R100，goal drift arXiv 2505.02709 / Repetitiveness Rate 2603.12710 / IntentCUA 2602.17049 / HiMAP ICML2026 蒸馏）：**advisory 判据，不是打回硬门**（BUG-25 标定，hard_gate=false）。词法相似度纯计算（复用 @evolve.tokens/jaccard/coverage 单真源，零 LLM 自评）：similarity=max(jaccard, coverage)，coverage=|根∩子|/|根| 是非对称量（子任务多写模板不被长度稀释）；drift=1-similarity >0.7 记 drift_suspect 并附 re_anchor 提示，与任一兄弟 jaccard ≥0.7 记 redundant_suspect，任一侧词数 <min_tokens(6) 记 insufficient（不判漂移——恒阳性正是本工具的原始缺陷形状）。标定实测（python scripts/calibrate_goal_drift.py，语料=本机 fist-mbt.db）：全量父子对 1222 条假阳性 1.9% vs 随机错配 400 条 81.3%（分离成立），但**改写型**父子对 39 条假阳性 59%、3 个可测家族上绝对阈值命中 15/15 ⇒ 合法拆解与真漂移在词面上不可分，verdict 一律带 advisory=true，按它自动打回会把正常子任务反复打回。subtask_id 缺省校验根下全部后代。纯计算、只读不写库。参数：root_task_id 根任务（必填）、subtask_id 单个子任务（可选，缺省校验全部）、namespace（可选默认 default）。返回 { ok, root_task_id, basis, hard_gate, threshold:{drift, redundancy, min_tokens}, calibration:{corpus, real_pairs_suspect, reworded_pairs_suspect, random_control_suspect, conclusion}, counts:{aligned, drift_suspect, redundant_suspect, insufficient}, checks:[{subtask_id, drift_score, redundancy_score, verdict, advisory, re_anchor}], note }。",
+    "全局目标校验（R100，goal drift arXiv 2505.02709 / Repetitiveness Rate 2603.12710 / IntentCUA 2602.17049 / HiMAP ICML2026 蒸馏）：**advisory 判据，不是打回硬门**（BUG-25 标定，hard_gate=false）。词法相似度纯计算（复用 @evolve.tokens/jaccard/coverage 单真源，零 LLM 自评）：similarity=max(jaccard, coverage)，coverage=|根∩子|/|根| 是非对称量（子任务多写模板不被长度稀释）；drift=1-similarity >0.7 记 drift_suspect 并附 re_anchor 提示，与任一兄弟 jaccard ≥0.7 记 redundant_suspect，任一侧词数 <min_tokens(6) 记 insufficient（不判漂移——恒阳性正是本工具的原始缺陷形状）。标定实测（python scripts/calibrate_goal_drift.py，语料=本机 fist-mbt.db）：全量父子对 1262 条假阳性 1.9% vs 随机错配 400 条 81.3%（分离成立），但**改写型**父子对 39 条假阳性 59%、3 个可测家族上绝对阈值命中 15/15 ⇒ 合法拆解与真漂移在词面上不可分，verdict 一律带 advisory=true，按它自动打回会把正常子任务反复打回。subtask_id 缺省校验根下全部后代。纯计算、只读不写库。参数：root_task_id 根任务（必填）、subtask_id 单个子任务（可选，缺省校验全部）、namespace（可选默认 default）。返回 { ok, root_task_id, basis, hard_gate, threshold:{drift, redundancy, min_tokens}, calibration:{corpus, real_pairs_suspect, reworded_pairs_suspect, random_control_suspect, conclusion}, counts:{aligned, drift_suspect, redundant_suspect, insufficient}, checks:[{subtask_id, drift_score, redundancy_score, verdict, advisory, re_anchor}], note }。",
     schema(
       {
         "root_task_id": string_prop("根任务 id（必填）"),
