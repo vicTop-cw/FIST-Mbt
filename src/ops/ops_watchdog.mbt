@@ -236,8 +236,18 @@ pub fn watchdog_tick(
   let heal_ns = if ns == "" { "default" } else { ns }
   // ---- 1. 回滚阶段（功能 A：读 SQLite 心跳，跨进程正确） ----
   // R90：phi_gate=true 时用概率怀疑度 φ 判活（默认关闭零回归），否则既有固定 timeout。
+  // BUG-27：φ 分支缺间隔历史时内部回落到同一个 timeout_sec，两条路径的恢复能力可比。
+  let phi_no_history : Array[String] = []
   let healed = if phi_gate {
-    match heal_stale_tasks_by_phi(engine, now, phi_threshold~, ns=heal_ns) {
+    match
+      heal_stale_tasks_by_phi(
+        engine,
+        now,
+        phi_threshold~,
+        ns=heal_ns,
+        timeout_sec~,
+        no_history_ids=phi_no_history,
+      ) {
       Ok(l) => l
       Err(_) => []
     }
@@ -367,6 +377,18 @@ pub fn watchdog_tick(
     ),
     "meta_prompt_used": Json::boolean(meta_used),
     "phi_gate": Json::boolean(phi_gate),
+    // BUG-27 建议②：披露哪些活跃任务不是由 φ 建模判活、而是由固定 timeout 兜底判的。
+    // 没有这一栏时，phi_gate=true 的恢复行为与 false 差在哪只能靠读源码知道。
+    "phi_timeout_fallback_ids": Json::array(
+      phi_no_history.map(fn(s) { Json::string(s) }),
+    ),
+    "phi_judged_by": Json::string(
+      if phi_gate {
+        "有心跳间隔历史的按 φ；无历史、或 φ 返回 insufficient/rejected 的按 timeout_sec 兜底（本栏列兜底的那些）"
+      } else {
+        "phi_gate=false：全部按固定 timeout_sec 判活"
+      },
+    ),
     "selfdrive": sd_detail,
     "ready_dispatch_preview": ready_preview,
     "autodispatch": Json::null(),

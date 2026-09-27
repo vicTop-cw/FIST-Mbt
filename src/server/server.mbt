@@ -811,6 +811,61 @@ fn schema_required(input_schema : Json) -> Array[String] {
 }
 
 ///|
+/// schema 声明的参数名（inputSchema.properties 的键）。解析不到返回空数组=不做未知键判定。
+fn schema_properties(input_schema : Json) -> Array[String] {
+  let out : Array[String] = []
+  match input_schema.value("properties") {
+    Some(Object(map)) =>
+      for (k, _) in map {
+        if k != "" {
+          out.push(k)
+        }
+      }
+    _ => ()
+  }
+  out
+}
+
+///|
+/// 传了「某已声明参数的错名」的那些键（BUG-23）。
+///
+/// 判定口径：**只在键名与某个已声明参数互为前缀时**算同一个参数的错名
+/// （`ns`↔`namespace`、`desc`↔`description`、`task`↔`task_id`）。这类键几乎不可能是别的意图，
+/// 静默忽略它等于把「任务落到哪个 ns」这个问题从写侧挪到下游读侧去查——实测本仓的 CLI
+/// `publish --ns r1` 就这样整颗落进 default，随后按 --ns 读回一律 insufficient。
+///
+/// 对**完全对不上任何声明**的键（历史调用里的 project_dir / now）保持忽略：
+/// temp/phaseC/audit_unknown_args.py 对 5890 行 call_log 的实测是 4310 行带 schema 外键，
+/// 一律拒绝会当场打断 73% 的既有调用面。`now` 那一类是文案在广告没人读的参数，归 BUG-80。
+fn misnamed_args(args : Json, props : Array[String]) -> Array[(String, String)] {
+  let out : Array[(String, String)] = []
+  if props.is_empty() {
+    return out
+  }
+  match args {
+    Object(map) =>
+      for (k, _) in map {
+        if not(props.any(fn(p) { p == k })) {
+          // 取最短的那个已声明键作建议：前缀关系下短的更可能是同一参数的错名
+          let mut suggest = ""
+          for p in props {
+            if p.starts_with(k) || k.starts_with(p) {
+              if suggest.is_empty() || p.length() < suggest.length() {
+                suggest = p
+              }
+            }
+          }
+          if not(suggest.is_empty()) {
+            out.push((k, suggest))
+          }
+        }
+      }
+    _ => ()
+  }
+  out
+}
+
+///|
 /// 缺失的必填参数名。口径与 handler 一致：不给 / Null / 空串都算缺——
 /// `get_str(args, k)` 对这三种形态一律返回 ""，下游会把它当成「不存在的任务」或静默用默认值。
 fn missing_required(args : Json, required : Array[String]) -> Array[String] {
@@ -855,6 +910,7 @@ fn _instrument(
   // `get_str(args, "x")` 拿到 ""，再被下游当成「任务不存在」或直接返回假成功。契约在这里补齐：
   // 缺 required 一律拒，并写清缺哪几个（调用方看 tools/list 的 inputSchema 即可自证）。
   let required = schema_required(input_schema)
+  let props = schema_properties(input_schema)
   async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
     let t0 = @env.now().to_int64()
     let params_json = args.stringify()
@@ -866,6 +922,27 @@ fn _instrument(
         "（schema.required 已声明，BUG-19 硬门）。全部可用参数见 tools/list 的 inputSchema.properties"
       let e = @mcp_types.ToolError(msg)
       // 被拒的调用同样记账：否则"入口被硬门挡住"在跨进程审计里等于没发生
+      _log_call(engine, tool, args, params_json, e.message(), false, 0)
+      return Err(e)
+    }
+    // BUG-23：错名参数（与已声明参数互为前缀）过去被静默忽略——publish --ns 就这样整颗
+    // 落进 default ns，而返回体只有 task_id，调用面看不出任何异常。当场点名两个键名。
+    let bad = misnamed_args(args, props)
+    if bad.length() > 0 {
+      let mut hint = ""
+      for (k, p) in bad {
+        if hint != "" {
+          hint = hint + "；"
+        }
+        hint = hint + "「" + k + "」应为「" + p + "」"
+      }
+      let msg = tool +
+        ": 参数名不被接受 " +
+        hint +
+        "（该工具声明的参数：" +
+        rq_join(props) +
+        "）。BUG-23：这类键过去被静默忽略，任务会落进默认命名空间而返回体看不出来。"
+      let e = @mcp_types.ToolError(msg)
       _log_call(engine, tool, args, params_json, e.message(), false, 0)
       return Err(e)
     }
@@ -909,7 +986,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "publish",
-    "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)。",
+    "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)。返回 {task_id, namespace, message}，其中 namespace 是任务**实际落在**的 ns（BUG-23：过去只回 task_id，把键名写成 ns 会静默落进 default 而无从发现）。参数名逐字对 inputSchema：与本工具已声明参数互为前缀的错名（ns/desc 这类）直接拒绝，不做静默忽略。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -938,6 +1015,8 @@ pub async fn run_server() -> Unit {
             @mcp.ToolResult::text(
               Json::object({
                 "task_id": Json::string(id),
+                // BUG-23：回显任务**实际落在**哪个 ns，落错当场看得见
+                "namespace": Json::string(ns),
                 "message": Json::string("已发布根任务"),
               }).stringify(),
             ),
@@ -978,6 +1057,8 @@ pub async fn run_server() -> Unit {
             @mcp.ToolResult::text(
               Json::object({
                 "task_id": Json::string(id),
+                // BUG-23：同 publish —— 回显实际落点 ns
+                "namespace": Json::string(ns),
                 "message": Json::string("已并行追加独立根任务"),
               }).stringify(),
             ),
@@ -1870,18 +1951,37 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "heal",
-    "no_signal 看护（AO watchdog）：心跳超时静默的活跃任务（执行中/已领取/拆分中）回滚为已领取待重派。参数：now、timeout_sec(可选默认600)。",
-    schema({ "timeout_sec": int_prop("超时秒数(可选默认600)") }, []),
+    "no_signal 看护（AO watchdog）：心跳超时静默的活跃任务（执行中/已领取/拆分中）回滚为已领取待重派。参数：timeout_sec(可选默认600)、namespace(可选)。**namespace 不传时扫全库所有命名空间**（BUG-81：多 ns 共用同一个 fist-mbt.db，一次不带 ns 的 heal 会把别的轮次的在途任务一并 reopen，而 reopen 不署名 ⇒ 枝干 assignee 被清空）；只想看护自己这一批就显式传 ns。返回 { healed, count, scope, namespace, message }，scope 明说这次是全库还是单 ns（时间戳一律服务端盖章，不接受调用方注入 now）。",
+    schema(
+      {
+        "timeout_sec": int_prop("超时秒数(可选默认600)"),
+        "namespace": string_prop(
+          "作用域命名空间(可选)：只回滚该 ns 的在途任务；不传=全库（旧行为）",
+        ),
+      },
+      [],
+    ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ts = now_default()
       let timeout_sec = get_int(args, "timeout_sec", default=600)
-      match @ops.heal_stale_tasks(engine, heartbeats, ts, timeout_sec~) {
+      let heal_ns = get_str(args, "namespace")
+      match
+        @ops.heal_stale_tasks(engine, heartbeats, ts, timeout_sec~, ns=heal_ns) {
         Ok(healed) =>
           Ok(
             @mcp.ToolResult::text(
               Json::object({
                 "healed": Json::array(healed.map(fn(s) { Json::string(s) })),
                 "count": Json::number(healed.length().to_double()),
+                // BUG-81：作用域必须在调用面自证，不能让"回滚了 5 条"看起来总是本批次那 5 条
+                "scope": Json::string(
+                  if heal_ns.is_empty() {
+                    "all-namespaces"
+                  } else {
+                    "namespace"
+                  },
+                ),
+                "namespace": Json::string(heal_ns),
                 "message": Json::string("超时静默任务已回滚待重派"),
               }).stringify(),
             ),
@@ -3874,11 +3974,28 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "cost_budget_split",
-    "预算按依赖图阶段切分（R81，ZEBRA 背包水填充蒸馏简化版）：给定总预算，按任务 DAG 阶段(slack 分析 earliest 层级)切分——每阶段份额=阶段难度权重(难3/中2/易1)占总量比例×总预算(余数补最大权重阶段)。返回 { stages:[{level,tasks,difficulty_sum,share}], total_budget, makespan, note }——预算在依赖图上按阶段切分：瓶颈阶段(关键路径层)占额可见，超支先预警。参数：budget(总预算，必填)。",
-    schema({ "budget": number_prop("总预算（必填）") }, ["budget"]),
+    "预算按依赖图阶段切分（R81，ZEBRA 背包水填充蒸馏简化版）：给定总预算，按任务 DAG 阶段(slack 分析 earliest 层级)切分——每阶段份额=阶段难度权重(难3/中2/易1)占总量比例×总预算(余数补最大权重阶段)。返回 { verdict: ok|rejected|insufficient, stages:[{level,tasks,difficulty_sum,share}], total_budget, makespan, scope:{root_task_id,namespace,scoped_task_count,scope_kind}, note }——瓶颈阶段(关键路径层)占额可见，超支先预警。参数：budget(总预算，必填，**必须为正**：负数/0 直接 rejected，过去 -50 会切出 -42/-5/-2 的负份额)、task_id(可选：只按该任务子树切分)、namespace(可选：不给 task_id 时按该 ns 切分)。BUG-20：这两个作用域参数过去**传了也不生效**、恒扫全库（某轮 7 个任务的子树被报成 tasks=1152＝全库数）；现在真的参与取数，且切了哪些任务写在 scope 里自证。两个都不传＝全库（旧行为，scope_kind=whole-store）。",
+    schema(
+      {
+        "budget": number_prop("总预算（必填，正整数）"),
+        "task_id": string_prop(
+          "作用域根任务(可选)：只对该任务的子树切分；与 namespace 同时给时以子树为准",
+        ),
+        "namespace": string_prop(
+          "作用域命名空间(可选)：不给 task_id 时按该 ns 切分；都不给＝全库",
+        ),
+      },
+      ["budget"],
+    ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let budget = jnum(args, "budget").to_int()
-      Ok(@mcp.ToolResult::text(engine.budget_split_by_dag(budget).stringify()))
+      let root = get_str(args, "task_id")
+      let ns = get_str(args, "namespace")
+      Ok(
+        @mcp.ToolResult::text(
+          engine.budget_split_by_dag(budget, root~, ns~).stringify(),
+        ),
+      )
     },
   )
   s1 = instrumented_tool(
@@ -3911,13 +4028,15 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "phi_accrual",
-    "Phi Accrual 概率式故障检测（R89，Hayashibara 2004 经典算法）：按心跳间隔历史分布算怀疑度 φ=-log10(P(心跳晚于 elapsed 到达))，替代固定 timeout——窗口内间隔均值 μ + 标准差 σ 建模（σ≈0 回退指数分布；|z|≥3 用尾部渐近展开保精度），φ≥threshold（默认 8，原论文口径）判 suspect 否则 healthy；无间隔历史返回 insufficient。升级 watchdog/heal 看护语义：心跳节奏越快、越久没来才值得怀疑，而非固定超时。参数：intervals 心跳间隔历史（秒数组，必填）、elapsed 自上次心跳起的秒数（必填）、threshold 怀疑阈值（可选默认 8）。返回 { verdict, phi, mean, stddev, window, threshold, note, basis }。",
+    "Phi Accrual 概率式故障检测（R89，Hayashibara 2004 经典算法）：按心跳间隔历史分布算怀疑度 φ=-log10(P(心跳晚于 elapsed 到达))，替代固定 timeout——窗口内间隔均值 μ + 标准差 σ 建模（σ≈0 回退指数分布；|z|≥3 用尾部渐近展开保精度），φ≥threshold（默认 8，原论文口径）判 suspect 否则 healthy；无间隔历史返回 insufficient；**取值域外返回 rejected 且不出结论**（BUG-26：elapsed<0、间隔≤0、非整数或越出 Int 域的值过去会被静默饱和/截断后照样回一个 healthy，看护据此不 heal，任务就永久卡着）。升级 watchdog/heal 看护语义：心跳节奏越快、越久没来才值得怀疑，而非固定超时。参数：intervals 心跳间隔历史（秒数组，必填）、elapsed 自上次心跳起的秒数（必填）、threshold 怀疑阈值（可选默认 8）。返回 { verdict: insufficient|rejected|healthy|suspect, phi, mean, stddev, window, threshold, note, basis }；rejected 时只有 verdict/phi/window/threshold/note/basis，没有 mean/stddev（没有可信均值，不伪造）。",
     schema(
       {
         "intervals": array_prop(
-          "心跳间隔历史（秒，整数数组，必填）",
+          "心跳间隔历史（秒，整数数组，必填；元素须为 1..2147483647 的整数）",
         ),
-        "elapsed": number_prop("自上次心跳起的秒数（必填）"),
+        "elapsed": number_prop(
+          "自上次心跳起的秒数（必填，0..2147483647 的整数）",
+        ),
         "threshold": number_prop(
           "怀疑阈值（可选，默认 8，原论文口径）",
         ),
@@ -3925,9 +4044,72 @@ pub async fn run_server() -> Unit {
       ["intervals", "elapsed"],
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      let intervals = intlist(get_array(args, "intervals"))
-      let elapsed = jnum(args, "elapsed").to_int()
-      let threshold = jnum(args, "threshold").to_int()
+      // BUG-26：这里原先用 intlist(...) / jnum(...).to_int()，两者都会**静默**把
+      // 1e300 饱和成 2147483647、把 1.5 截断成 1、把非数字元素整个丢掉。
+      // φ 的建模输入失真后输出仍是格式完好的判定，所以改成逐个严格转换并按原值报错。
+      let raw = get_array(args, "intervals")
+      let intervals : Array[Int] = []
+      let offs : Array[String] = []
+      let mut idx = 0
+      for item in raw {
+        match item {
+          Json::Number(n, ..) =>
+            match @engine.phi_coerce_seconds(n) {
+              Some(v) => intervals.push(v)
+              None =>
+                offs.push("intervals[" + idx.to_string() + "]=" + n.to_string())
+            }
+          _ =>
+            offs.push(
+              "intervals[" +
+              idx.to_string() +
+              "] 不是数字（过去会被直接丢掉＝少一个观测）",
+            )
+        }
+        idx = idx + 1
+      }
+      let el = match args.value("elapsed") {
+        Some(Json::Number(n, ..)) => @engine.phi_coerce_seconds(n)
+        _ => None
+      }
+      let bad = offs
+      if el == None {
+        let shown = match args.value("elapsed") {
+          Some(j) => j.stringify()
+          None => "缺失"
+        }
+        bad.push("elapsed=" + shown + "（须为 0..2147483647 的整数）")
+      }
+      if not(bad.is_empty()) {
+        return Err(
+          @mcp_types.ToolError(
+            "phi_accrual: 取值域外 " +
+            rq_join(bad) +
+            "。BUG-26：这类输入过去会被静默饱和后照常输出 healthy，看护据此不 heal。",
+          ),
+        )
+      }
+      let elapsed = match el {
+        Some(v) => v
+        None => 0
+      }
+      let threshold = match args.value("threshold") {
+        None => 8
+        Some(Json::Null) => 8
+        Some(Json::Number(n, ..)) =>
+          match @engine.phi_coerce_seconds(n) {
+            Some(v) => v
+            None => -1
+          }
+        _ => 8
+      }
+      if threshold == -1 {
+        return Err(
+          @mcp_types.ToolError(
+            "phi_accrual: threshold 越出 Int 域或带小数，取值域是 1..2147483647 的整数（BUG-26）",
+          ),
+        )
+      }
       let j = if threshold > 0 {
         @engine.phi_accrual(intervals, elapsed, threshold~)
       } else {
@@ -4257,7 +4439,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "report_bug",
-    "上报一个运行时 bug：追加到 {project_dir}/memory/bugs.md（OPEN 状态账本）。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（绝对 + normalize 后的落点）。参数：project_dir(必填)、summary(必填)、detail(可选)、severity(可选 open/critical/high/medium/low)、ref_call_id(可选，指向 call_log 的 seq)、reported_by(可选)、publish_task(可选默认false)：为 true 时同时把'修复 bug: <summary>'发布为 bugs 命名空间下的独立根任务，供自驱/定时流水线认领修复，形成上报→修复闭环。",
+    "上报一个运行时 bug：追加到 {project_dir}/memory/bugs.md（OPEN 状态账本）。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（绝对 + normalize 后的落点）。参数：project_dir(必填)、summary(必填)、detail(可选)、severity(可选 open/critical/high/medium/low)、ref_call_id(可选，指向 call_log 的 seq)、reported_by(可选)、publish_task(可选默认false)：为 true 时同时把'修复 bug: <summary>'发布为独立根任务，供自驱/定时流水线认领修复，形成上报→修复闭环；task_ns(可选，缺省 bugs)：修复单落到哪个命名空间——想与本批次任务树同库对账就显式传它，否则默认落在 ns `bugs`（那是另一棵树，按批次 ns 查会查不到，BUG-8）。返回 {bug_id, id, status, path, resolved_path, project_dir, task_namespace, task_id?}：**bug_id 与 id 是同一个编号的两个键**（BUG-11：写侧只发 bug_id、读侧 bug_list 只发 id，按任一侧字段名对账的另一侧会静默拿到 null）；task_namespace 回显修复单实际落在哪个 ns（未发单时是空串，不是 'bugs'）。**账本状态**（OPEN/FIXED/DUPLICATE/FALSE_POSITIVE）写在条目抬头、由修复方就地编辑该文件完成（本模块不提供关闭 API，见 src/server/bugreport.mbt 头注释与 memory/bugs.md「记账规则」）；对外那句「X 条待修 / Y 条已修」只从抬头状态反解，不是数小记条数。",
     schema(
       {
         "project_dir": string_prop(
@@ -4273,6 +4455,9 @@ pub async fn run_server() -> Unit {
         "publish_task": bool_prop(
           "是否发布修复根任务(可选默认false)",
         ),
+        "task_ns": string_prop(
+          "修复单落到的命名空间(可选，缺省 bugs)；publish_task=false 时无效果",
+        ),
       },
       ["project_dir", "summary"],
     ),
@@ -4284,6 +4469,7 @@ pub async fn run_server() -> Unit {
       let ref_call_id = get_str(args, "ref_call_id")
       let reported_by = get_str(args, "reported_by")
       let publish_task = get_bool(args, "publish_task", default=false)
+      let task_ns = get_str(args, "task_ns")
       let ts = now_default()
       match
         report_bug(
@@ -4294,6 +4480,7 @@ pub async fn run_server() -> Unit {
           ref_call_id~,
           reported_by~,
           publish_task~,
+          task_ns~,
           engine,
           now=ts,
         ) {

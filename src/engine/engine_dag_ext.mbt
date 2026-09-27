@@ -645,13 +645,76 @@ pub fn FistEngine::dag_cost_route(self : FistEngine) -> Json {
 /// ==================== 预算按依赖图阶段切分（R81，ZEBRA 水填充蒸馏简化版） ====================
 
 ///|
+/// 预算切分的取数范围（BUG-20①）：root 给定时取该任务子树，否则按 ns（空=default→全库按 ns=""）。
+fn FistEngine::budget_scope_ids(
+  self : FistEngine,
+  root : String,
+  ns : String,
+) -> Array[String] {
+  if root != "" {
+    self.subtree_ids(root)
+  } else {
+    let pool = if ns == "" { self.list_all() } else { self.list_in_ns(ns) }
+    let out : Array[String] = []
+    for t in pool {
+      out.push(t.get_id())
+    }
+    out
+  }
+}
+
+///|
+/// 作用域自证字段（BUG-20③）：这次切分覆盖的是哪些任务，写在返回体里而不是靠调用方回忆。
+fn budget_scope_json(root : String, ns : String, count : Int) -> Json {
+  Json::object({
+    "root_task_id": Json::string(root),
+    "namespace": Json::string(ns),
+    "scoped_task_count": Json::number(count.to_double()),
+    "scope_kind": Json::string(
+      if root != "" {
+        "subtree"
+      } else if ns != "" {
+        "namespace"
+      } else {
+        "whole-store"
+      },
+    ),
+  })
+}
+
+///|
 /// 预算按依赖图阶段切分（R81，ZEBRA 背包水填充蒸馏简化版）：给定总预算，
 /// 按任务 DAG 阶段（slack 分析的 earliest 层级 0..makespan）切分——每阶段基础份额 =
 /// 该阶段任务数 × 难度权重（难3/中2/易1，复用难度档单一来源；无难度标记按 1），
 /// 总权重归一化后乘总预算（向下取整，余数补给最大权重阶段）。
-/// 返回 { stages:[{level, tasks, difficulty_sum, share}], total_budget, makespan, note }。
+/// 返回 { verdict, stages:[{level, tasks, difficulty_sum, share}], total_budget, makespan, scope, note }。
 /// ——"预算在依赖图上按阶段切分：瓶颈阶段(关键路径层)占额可见，超支先预警"，机制设计叙事。
-pub fn FistEngine::budget_split_by_dag(self : FistEngine, budget : Int) -> Json {
+///
+/// BUG-20 改的三件事：
+/// ① 过去**只吃 budget**，task_id/namespace 传了也不生效，算的永远是整个 store（实测
+///    某轮 T0r292 子树 7 个任务，它报 tasks=1152＝全库数）——现在 root/ns 真的参与取数，
+///    与同族 dag_slack/dag_mc 的作用域口径一致；
+/// ② budget<=0（含负数）过去直接产出负份额（-50 → -42/-5/-2），既不拒也不警——现在拒绝；
+/// ③ 切了哪些任务写进返回体的 `scope` 自证。root/ns 都不给＝全库（旧行为，零回归），
+///    但这一点从此写在返回体里，而不是靠调用方记得自己没传。
+pub fn FistEngine::budget_split_by_dag(
+  self : FistEngine,
+  budget : Int,
+  root? : String = "",
+  ns? : String = "",
+) -> Json {
+  if budget <= 0 {
+    return Json::object({
+      "stages": Json::array([]),
+      "total_budget": Json::number(budget.to_double()),
+      "verdict": Json::string("rejected"),
+      "note": Json::string(
+        "budget 必须是正整数（收到 " +
+        budget.to_string() +
+        "）：负预算只会切出负份额，那不是预算而是赤字",
+      ),
+    })
+  }
   let slack = self.dag_slack_analysis()
   // 每任务 earliest 作为阶段
   let level_of : Map[String, Int] = Map([])
@@ -669,10 +732,36 @@ pub fn FistEngine::budget_split_by_dag(self : FistEngine, budget : Int) -> Json 
       }
     _ => ()
   }
+  // ---- 作用域取数（BUG-20①）----
+  let scope_ids = self.budget_scope_ids(root, ns)
+  let root_missing = match self.get_task(root) {
+    None => true
+    Some(_) => false
+  }
+  if root != "" && root_missing {
+    return Json::object({
+      "stages": Json::array([]),
+      "total_budget": Json::number(budget.to_double()),
+      "verdict": Json::string("insufficient"),
+      "scope": budget_scope_json(root, ns, 0),
+      "note": Json::string(
+        "作用域内无任务：根任务不存在 " +
+        root +
+        "（与 dag_mc 同口径——不退回全库，退回全库正是本条缺陷的形状）",
+      ),
+    })
+  }
   // 阶段聚合：难度权重（难3/中2/易1，无难度 1）+ 任务数
   let stage_weight : Map[Int, Int] = Map([])
   let stage_count : Map[Int, Int] = Map([])
+  let in_scope : Map[String, Bool] = Map([])
+  for id in scope_ids {
+    in_scope.set(id, true)
+  }
   for t in self.list_all() {
+    if not(in_scope.get(t.get_id()).unwrap_or(false)) {
+      continue
+    }
     let lv = level_of.get(t.get_id()).unwrap_or(0)
     let lab = triage_label_of(t.description)
     let w = if lab == "难" { 3 } else if lab == "中" { 2 } else { 1 }
@@ -724,10 +813,25 @@ pub fn FistEngine::budget_split_by_dag(self : FistEngine, budget : Int) -> Json 
     Some(Number(n, ..)) => makespan = n.to_int()
     _ => ()
   }
+  if scope_ids.is_empty() {
+    // 空作用域不出"三阶段全 0"的像模像样的切分（BUG-20①的另一半）
+    return Json::object({
+      "stages": Json::array([]),
+      "total_budget": Json::number(budget.to_double()),
+      "makespan": Json::number(0.0),
+      "verdict": Json::string("insufficient"),
+      "scope": budget_scope_json(root, ns, 0),
+      "note": Json::string(
+        "作用域内无任务，未做切分（不是预算问题，是取数范围为空）",
+      ),
+    })
+  }
   Json::object({
     "stages": Json::array(stages),
     "total_budget": Json::number(budget.to_double()),
     "makespan": Json::number(makespan.to_double()),
+    "verdict": Json::string("ok"),
+    "scope": budget_scope_json(root, ns, scope_ids.length()),
     "note": Json::string(
       "阶段=slack 分析的 earliest 层级；份额=阶段难度权重占总量比例×总预算(余数补最大权重阶段)——瓶颈阶段占额可见，超支先预警",
     ),
