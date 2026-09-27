@@ -192,6 +192,9 @@ python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path
 - **GitHub**: https://github.com/vicTop-cw/FIST-Mbt
 - **GitCode 镜像**: https://gitcode.com/VictorTop/Fist-Mbt （`master` + 标签与 GitHub 同步发布；
   本机 `git remote gitcode` 配的是 HTTPS 取 / `pushurl` 走 `git@gitcode.com:…` 推，凭据只来自环境变量）
+- **fist-evidence**（实证伴生仓）: https://github.com/vicTop-cw/fist-evidence —— 本系统三组受控实验
+  （A/B 编排对照 / 三方合并裁决 / 复杂度阶梯含幻觉实锤）+ 八项目驱动实例的原始证据链，一字可回溯；
+  「证据梯至少 L4」的实物展示
 - **License**: Apache-2.0
 
 ---
