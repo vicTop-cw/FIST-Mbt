@@ -43,7 +43,7 @@ pub fn gitcode_queue_append(String, String, String, String, String, String, Stri
 
 pub fn gitcode_queue_mark_sent(String, String, String, sent_at? : String) -> Result[Json, String]
 
-pub fn gitcode_queue_mark_sent_batch(String, Array[String], String, Map[String, String]) -> Result[Json, String]
+pub fn gitcode_queue_mark_sent_batch(String, Array[String], Map[String, String], sent_at? : String) -> Result[Json, String]
 
 pub fn gitcode_queue_pending(String) -> Result[Json, String]
 
@@ -71,7 +71,7 @@ pub fn github_flush_plan(String, Int) -> Result[Json, String]
 
 pub fn github_queue_append(String, String, String, String, String, String, String, Array[String]) -> Result[Json, String]
 
-pub fn github_queue_mark_sent(String, Array[String], String, Map[String, Int]) -> Result[Json, String]
+pub fn github_queue_mark_sent(String, Array[String], Map[String, Int], sent_at? : String) -> Result[Json, String]
 
 pub fn github_queue_pending(String) -> Result[Array[Json], String]
 

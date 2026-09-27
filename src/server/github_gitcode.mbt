@@ -315,8 +315,8 @@ pub fn gitcode_queue_mark_sent(
 pub fn gitcode_queue_mark_sent_batch(
   project_dir : String,
   bug_ids : Array[String],
-  sent_at : String,
   iids_map : Map[String, String],
+  sent_at? : String = "",
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err("gitcode_queue_mark_sent: 非法 project_dir")
@@ -324,7 +324,7 @@ pub fn gitcode_queue_mark_sent_batch(
   if bug_ids.length() == 0 {
     return Err("gitcode_queue_mark_sent: bug_ids 不能为空")
   }
-  let sent = if sent_at.is_empty() { "gitcode" } else { sent_at }
+  let sent = if sent_at.is_empty() { "gitcode-auto" } else { sent_at }
   let all_entries = extract_arr(github_queue_read(project_dir))
 
   let updated : Array[Json] = []

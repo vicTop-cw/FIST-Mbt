@@ -190,8 +190,8 @@ test "BUG-35：comment 与 close 的 payload 同样必须是合法 JSON" {
     github_queue_mark_sent(
       d,
       ["BUG-1"],
-      "2026-09-27T00:01:00Z",
       Map([("BUG-1", 77)]),
+      sent_at="2026-09-27T00:01:00Z",
     ),
     "mark_sent",
   )
