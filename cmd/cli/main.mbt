@@ -320,11 +320,24 @@ fn run_doctor() -> Unit {
     println("❌ [4/5] 七态机闭环失败")
   }
 
-  // —— 检查 5：SQLite store（Node 25 ESM 环境 require 未定义，已知边界）——
-  // 在 Node 24 + patch_esm_main.py 环境下可正常打开；Node 25 跳过不阻塞验收
-  ref_total[0] = ref_total[0] + 1
-  ref_ok[0] = ref_ok[0] + 1
-  println("⏭️ [5/5] SQLite store 跳过（Node 25 ESM require 未定义，Node 24+patch 后可用）")
+  // —— 检查 5：SQLite store（真实尝试，失败自动 skip 不阻塞）——
+    ref_total[0] = ref_total[0] + 1
+    let tmp_db = "_fist_doctor_check.db"
+    match @engine.FistEngine::open_sqlite(tmp_db) {
+      None => println("⏭️ [5/5] SQLite store 跳过（open_sqlite 返回 None，可能 ESM require 不可用）")
+      Some(e) => {
+        // 最小闭环: open_sqlite + publish（具名参数，跟 demo 一致）
+        let pub_res = e.publish(
+          project_dir="./",
+          description="sqlite engine check",
+          created_by="human_steward",
+          now="2026-09-27T15:00:00Z",
+          ns="doctor-sqlite-check",
+        )
+        println("✅ [5/5] SQLite store 可打开 (open_sqlite + publish 闭环, pub=\{pub_res.to_string()})")
+        ref_ok[0] = ref_ok[0] + 1
+      }
+    }
 
   // 汇总
   println("")
