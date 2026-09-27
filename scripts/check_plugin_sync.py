@@ -36,7 +36,20 @@ ROOT = Path(__file__).resolve().parent.parent
 PLUGINS = ROOT / "plugins"
 SERVER = ROOT / "src" / "server" / "server.mbt"
 MOON_MOD = ROOT / "moon.mod"
-ROOT_MCP = ROOT / ".mcp.json"
+# BUG-86：同 gen_plugins —— 真源文件名可解析（.mcp.json 优先，回落 .mcp.dev.json），
+# 且必须把"取到了哪一份"打出来：否则 J5 的"逐字相等"是在跟一个不存在的文件比。
+MCP_CANDIDATES = (".mcp.json", ".mcp.dev.json")
+
+
+def resolve_root_mcp(root: Path) -> Path:
+    for name in MCP_CANDIDATES:
+        cc = root / name
+        if cc.exists():
+            return cc
+    return root / MCP_CANDIDATES[0]
+
+
+ROOT_MCP = resolve_root_mcp(ROOT)
 
 RE_TOOL = re.compile(r'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"')
 RE_VERSION = re.compile(r'^version\s*=\s*"([^"]+)"', re.M)
@@ -164,9 +177,17 @@ def main() -> int:
 
     # J5 启动参数单一真源（逐字相等，防止两份 .mcp.json 漂移）
     claude_mcp = PLUGINS / "claude" / ".mcp.json"
-    if claude_mcp.exists():
+    if not ROOT_MCP.exists():
+        problems.append(
+            "J5 仓库根启动参数真源不存在（试过 %s）——没有真源时『逐字相等』恒过，那是装饰"
+            % ", ".join(MCP_CANDIDATES)
+        )
+    elif claude_mcp.exists():
         if claude_mcp.read_bytes() != ROOT_MCP.read_bytes():
-            problems.append("J5 plugins/claude/.mcp.json 与仓库根 .mcp.json 不一致（启动参数有两份真源）")
+            problems.append(
+                "J5 plugins/claude/.mcp.json 与仓库根 %s 不一致（启动参数有两份真源）"
+                % ROOT_MCP.name
+            )
 
     if problems:
         print(f"FAIL 插件态（一源四态 cl7）不一致（真源 {n} 工具 / v{version}）：")

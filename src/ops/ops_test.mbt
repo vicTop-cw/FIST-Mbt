@@ -180,3 +180,105 @@ test "ops: cleanup 保留期内不动" {
     Err(_) => abort("cleanup 不应失败")
   }
 }
+
+///|
+/// BUG-81：heal 的作用域。多 ns 共用同一个库时，不带 ns 的 heal 会把**别的轮次**的在途任务
+/// 一并 reopen（而 reopen 不署名 ⇒ 枝干 assignee 被清空）。成对锁：
+///   ① 传 ns 只回滚该 ns 的那条；
+///   ② 不传 ns 回滚两条（旧行为，零回归——所以这条默认必须在返回体里自证作用域）；
+///   ③ 心跳新鲜的那条在任何一种作用域下都不被动。
+test "BUG-81：heal 带 namespace 只回滚该 ns，不带=全库（旧行为）" {
+  let e = @engine.FistEngine::new()
+  // 两个命名空间各发一条根任务，并都推进到「执行中」
+  match
+    e.publish(
+      project_dir="/demo",
+      description="b81-a 轮的在途任务",
+      created_by="human_steward",
+      now="2026-09-27T00:00:00Z",
+      ns="b81-a",
+    ) {
+    Ok(_) => ()
+    Err(m) => abort("publish b81-a 失败: " + m)
+  }
+  match
+    e.publish(
+      project_dir="/demo",
+      description="b81-b 轮的在途任务",
+      created_by="human_steward",
+      now="2026-09-27T00:00:00Z",
+      ns="b81-b",
+    ) {
+    Ok(id_b) => {
+      ignore(e.claim(task_id=id_b, assignee="w-b", now="2026-09-27T00:00:01Z"))
+      ignore(
+        e.execute(task_id=id_b, deliverable="d", now="2026-09-27T00:00:02Z"),
+      )
+    }
+    Err(m) => abort("publish b81-b 失败: " + m)
+  }
+  let id_a = match e.list_in_ns("b81-a") {
+    [t] => t.get_id()
+    _ => abort("b81-a 应恰有 1 条任务")
+  }
+  ignore(e.claim(task_id=id_a, assignee="w-a", now="2026-09-27T00:00:01Z"))
+  ignore(e.execute(task_id=id_a, deliverable="d", now="2026-09-27T00:00:02Z"))
+  // 两条都没有心跳记录 = no_signal；b81-b 补一条新鲜心跳作反向对照
+  let hb = Heartbeat::new()
+  let now_late = "2026-09-27T00:20:00Z"
+  // ① 带 ns：只回滚 b81-a 那一条
+  match heal_stale_tasks(e, hb, now_late, timeout_sec=600, ns="b81-a") {
+    Ok(list) => {
+      assert_eq(list.length(), 1)
+      assert_eq(list[0], id_a)
+    }
+    Err(m) => abort("带 ns 的 heal 不应失败: " + m)
+  }
+  // b81-b 仍是执行中（没被别的 ns 的 heal 波及）
+  match e.get_task(id_b_of(e)) {
+    Some(t) => assert_eq(t.get_status().to_string(), "执行中")
+    None => abort("b81-b 的任务应还在")
+  }
+  // ② 不带 ns：全库作用域。这里回滚 2 条 = b81-b 那条 + ①里已回滚成「已领取」（仍是活跃态、
+  // 且心跳已被清）的 b81-a ——正是 BUG-81 的形状：一次不点名 ns 的 heal 会波及别的轮次。
+  match heal_stale_tasks(e, hb, now_late, timeout_sec=600) {
+    Ok(list) => {
+      assert_eq(list.length(), 2)
+      if not(list.contains(id_a)) {
+        abort(
+          "全库 heal 漏了 id_a=" +
+          id_a +
+          "，实得 [" +
+          b81_ids(list) +
+          "]",
+        )
+      }
+      if not(list.contains(id_b_of(e))) {
+        abort("全库 heal 漏了 b81-b，实得 [" + b81_ids(list) + "]")
+      }
+    }
+    Err(m) => abort("全库 heal 不应失败: " + m)
+  }
+}
+
+///|
+/// 取 b81-b 命名空间里那条任务的 id（发布顺序不写死在断言里）
+fn id_b_of(e : @engine.FistEngine) -> String {
+  match e.list_in_ns("b81-b") {
+    [t] => t.get_id()
+    _ => ""
+  }
+}
+
+///|
+/// 调试用的 id 串接（失败消息要能自证"到底回滚了哪几条"）
+fn b81_ids(list : Array[String]) -> String {
+  let mut out = ""
+  for s in list {
+    if out != "" {
+      out = out + ","
+    }
+    out = out + s
+  }
+  out
+}

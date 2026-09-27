@@ -827,14 +827,37 @@ fn schema_properties(input_schema : Json) -> Array[String] {
 }
 
 ///|
-/// 传了「某已声明参数的错名」的那些键（BUG-23）。
+/// 实测调用面出现过的缩写错名 → 正名（BUG-23 判定口径 ①）。
+/// 为什么必须有这张表：**缩写不是子串**——"ns" 在 "namespace" 里并不连续，
+/// 只用子串规则抓不到它；本轮第一版就栽在这个前提上（回归锁打红才发现）。
+/// 表里的正名只有在「该工具确实声明了它」时才生效（见 misnamed_args），
+/// 所以多列几个候选不会误伤别的工具。
+fn known_arg_aliases(k : String) -> String {
+  if k == "ns" {
+    "namespace"
+  } else if k == "task" {
+    "task_id"
+  } else if k == "desc" {
+    "description"
+  } else if k == "root" {
+    "root_task_id"
+  } else if k == "proj" || k == "project" {
+    "project_dir"
+  } else {
+    ""
+  }
+}
+
+///|
+/// 传了「某已声明参数的错名」的那些键（BUG-23）。判定口径两条，任一命中即算错名：
+/// ① 缩写表 known_arg_aliases（`ns`↔`namespace`）且该正名确实被这个工具声明；
+/// ② 互为子串且长度≥2（`desc`↔`description`、`task`↔`task_id`、`dir`↔`project_dir`），
+///    长度下限挡住单字符键——"a" 会子串命中一堆声明，那是噪声不是同根。
 ///
-/// 判定口径：**只在键名与某个已声明参数互为前缀时**算同一个参数的错名
-/// （`ns`↔`namespace`、`desc`↔`description`、`task`↔`task_id`）。这类键几乎不可能是别的意图，
-/// 静默忽略它等于把「任务落到哪个 ns」这个问题从写侧挪到下游读侧去查——实测本仓的 CLI
+/// 静默忽略这类键等于把「任务落到哪个 ns」从写侧挪到下游读侧去查：实测本仓的 CLI
 /// `publish --ns r1` 就这样整颗落进 default，随后按 --ns 读回一律 insufficient。
 ///
-/// 对**完全对不上任何声明**的键（历史调用里的 project_dir / now）保持忽略：
+/// 对**完全对不上任何声明**的键（历史调用里的 now）保持忽略——
 /// temp/phaseC/audit_unknown_args.py 对 5890 行 call_log 的实测是 4310 行带 schema 外键，
 /// 一律拒绝会当场打断 73% 的既有调用面。`now` 那一类是文案在广告没人读的参数，归 BUG-80。
 fn misnamed_args(args : Json, props : Array[String]) -> Array[(String, String)] {
@@ -846,12 +869,19 @@ fn misnamed_args(args : Json, props : Array[String]) -> Array[(String, String)] 
     Object(map) =>
       for (k, _) in map {
         if not(props.any(fn(p) { p == k })) {
-          // 取最短的那个已声明键作建议：前缀关系下短的更可能是同一参数的错名
           let mut suggest = ""
-          for p in props {
-            if p.starts_with(k) || k.starts_with(p) {
-              if suggest.is_empty() || p.length() < suggest.length() {
-                suggest = p
+          // ① 缩写表：命中的正名必须真的被这个工具声明
+          let alias = known_arg_aliases(k)
+          if alias != "" && props.any(fn(p) { p == alias }) {
+            suggest = alias
+          }
+          // ② 同根子串：取最短的那个已声明键作建议（短的更可能是同一参数）
+          if suggest.is_empty() && k.length() >= 2 {
+            for p in props {
+              if p.contains(k) || k.contains(p) {
+                if suggest.is_empty() || p.length() < suggest.length() {
+                  suggest = p
+                }
               }
             }
           }
@@ -986,7 +1016,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "publish",
-    "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)。返回 {task_id, namespace, message}，其中 namespace 是任务**实际落在**的 ns（BUG-23：过去只回 task_id，把键名写成 ns 会静默落进 default 而无从发现）。参数名逐字对 inputSchema：与本工具已声明参数互为前缀的错名（ns/desc 这类）直接拒绝，不做静默忽略。",
+    "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)。返回 {task_id, namespace, message}，其中 namespace 是任务**实际落在**的 ns（BUG-23：过去只回 task_id，把键名写成 ns 会静默落进 default 而无从发现）。参数名逐字对 inputSchema：与本工具已声明参数同根（互为子串）的错名（ns/desc/project 这类）直接拒绝，不做静默忽略。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),

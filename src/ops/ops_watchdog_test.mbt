@@ -968,3 +968,97 @@ test "watchdog R90: phi_gate 概率判活早于固定 timeout（间隔5s、静�
     _ => abort("fixed healed 缺失: " + j2.stringify())
   }
 }
+
+///|
+/// BUG-27：「发过一次心跳就停摆」的任务，phi_gate=true 与 false **都要**救回来。
+/// 旧实现在这里弃权：间隔历史的唯一写入点是 heartbeat 的第二次上报，停摆的任务永远
+/// 没有历史 ⇒ 永远命中"无间隔历史，保守不判" ⇒ 永远不回滚。库里 heartbeats 每任务 1 条、
+/// heartbeat_history 0 行是常态，所以这不是边角场景。
+/// 成对口径（同一夹具跑开关两态）：升级态不得比默认少做恢复，也不得多做误伤。
+test "watchdog BUG-27: 单次心跳后停摆 -> phi_gate 两态都回滚（兜底不弃权）" {
+  // 心跳落在 700s 前：超过默认 timeout 600，但没有第二条心跳⇒无间隔历史
+  let e = wd_sqlite_engine("watchdog_b27_phi.db")
+  wd_publish(e, "default")
+  wd_to_executing(e)
+  wd_beat(e, "T0", "2026-09-17T00:00:02Z", "active")
+  assert_eq(e.store_list_heartbeat_intervals("T0").length(), 0) // 夹具前提：确实没有可建模的历史
+  let j = match
+    @ops.watchdog_tick(
+      e,
+      "2026-09-17T00:11:42Z",
+      ns="default",
+      timeout_sec=600,
+      phi_gate=true,
+    ) {
+    Ok(j) => j
+    Err(m) => abort("phi_gate watch 失败: " + m)
+  }
+  match j.value("healed") {
+    Some(Number(n, ..)) =>
+      if n.to_int() != 1 {
+        abort(
+          "BUG-27：无间隔历史时 φ 分支必须回落 timeout，实得 " +
+          j.stringify(),
+        )
+      }
+    _ => abort("healed 缺失: " + j.stringify())
+  }
+  match e.get_task("T0") {
+    Some(t) => assert_eq(t.get_status().to_string(), "已领取")
+    None => abort("T0 应存在")
+  }
+  // 披露栏：这条是兜底救的，不是 φ 判的（缺这栏时"为什么没救/靠什么救的"只能读源码）
+  match j.value("detail") {
+    Some(Object(d)) =>
+      match d.get("phi_timeout_fallback_ids") {
+        Some(Array(a)) =>
+          if a.length() != 1 {
+            abort(
+              "phi_timeout_fallback_ids 应点名这条兜底任务: " +
+              j.stringify(),
+            )
+          }
+        _ => abort("缺 phi_timeout_fallback_ids 披露栏")
+      }
+    _ => abort("缺 detail 栏")
+  }
+  // 同一夹具的开关对照组（phi_gate=false）：恢复数不得比升级态少，也不得多
+  let e2 = wd_sqlite_engine("watchdog_b27_fixed.db")
+  wd_publish(e2, "default")
+  wd_to_executing(e2)
+  wd_beat(e2, "T0", "2026-09-17T00:00:02Z", "active")
+  let j2 = match
+    @ops.watchdog_tick(
+      e2,
+      "2026-09-17T00:11:42Z",
+      ns="default",
+      timeout_sec=600,
+    ) {
+    Ok(j) => j
+    Err(m) => abort("固定 timeout watch 失败: " + m)
+  }
+  match j2.value("healed") {
+    Some(Number(n, ..)) => assert_eq(n.to_int(), 1)
+    _ => abort("固定 timeout healed 缺失: " + j2.stringify())
+  }
+  // 反向对照：心跳新鲜（20s 前、无历史）⇒ 两态都不得回滚（兜底不是"一律判死"）
+  let e3 = wd_sqlite_engine("watchdog_b27_fresh.db")
+  wd_publish(e3, "default")
+  wd_to_executing(e3)
+  wd_beat(e3, "T0", "2026-09-17T00:11:22Z", "active")
+  let j3 = match
+    @ops.watchdog_tick(
+      e3,
+      "2026-09-17T00:11:42Z",
+      ns="default",
+      timeout_sec=600,
+      phi_gate=true,
+    ) {
+    Ok(j) => j
+    Err(m) => abort("新鲜心跳 watch 失败: " + m)
+  }
+  match j3.value("healed") {
+    Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
+    _ => abort("新鲜心跳不得被兜底误伤: " + j3.stringify())
+  }
+}
