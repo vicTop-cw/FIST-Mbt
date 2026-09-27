@@ -193,6 +193,31 @@ if ((-not $NoPath) -and ($pathUser -notlike "*$binDir*")) {
     Write-Host "  (PATH 未修改)" -ForegroundColor DarkGray
 }
 
+# ---------- ESM patch（JS 版）----------
+if (-not $NativeOnly -and (Test-Path $jsBin) -and (Test-Path $patchPy)) {
+    try {
+        & python $patchPy $jsBin 2>&1 | ForEach-Object { Write-Host "  patch: $_" -ForegroundColor DarkGray }
+    } catch {
+        Write-Host "  (ESM patch 跳过: python 不可用)" -ForegroundColor DarkGray
+    }
+}
+
+# ---------- Doctor 自检 ----------
+$doctorTarget = if ($NativeOnly) { $nativeBin } else { $jsBin }
+if ($doctorTarget -and (Test-Path $doctorTarget)) {
+    Write-Host ""
+    Write-Host "=== 自检: fist-mbt doctor ===" -ForegroundColor Cyan
+    try {
+        & node $doctorTarget doctor 2>&1 | Select-Object -Last 8 | ForEach-Object {
+            if ($_ -match "✅") { Write-Host "  $_" -ForegroundColor Green }
+            elseif ($_ -match "⏭️") { Write-Host "  $_" -ForegroundColor DarkGray }
+            else { Write-Host "  $_" }
+        }
+    } catch {
+        Write-Host "  (doctor 跳过: $_)" -ForegroundColor Yellow
+    }
+}
+
 Write-Host "`n=== 安装完成 ===" -ForegroundColor Green
 Write-Host "  已装: $($installed -join ', ')"
 Write-Host "  路径: $InstallDir"
