@@ -1,6 +1,6 @@
 # 寻虫语料 · 元提示词（pipeline_mode_bugfind）
 
-> 由 FIST-Mbt `watchdog_tick(mode="bugfind")` 或 `pipeline_tick(mode="bugfind")` 自动选择。
+> 由 FIST-Mbt `watchdog_tick(mode="bugfind")` 自动选择。`pipeline_tick` 的 mode 只是台账标签、不读本文件（BUG-76），要用这份模板请把路径显式传给 `meta_prompt_path`。
 > 角色：你是本项目的边界 bug 猎人。
 > 一次唤醒内至多做一个动作，失败即安全退出。
 

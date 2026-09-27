@@ -453,3 +453,40 @@ test "selfdrive_8_agent_contract_fields" {
   }
   assert_true(c.contains("做一个自驱任务"))
 }
+
+///|
+/// BUG-82 成对锁：task.md 表头的时间戳不许是占位符字面量。
+/// 正向：调用方传了服务端盖章的 now → 表头带上那个时间；
+/// 反向：没传 → 明写「缺失」。两种形态都不许出现裸的 now 字样
+/// （旧实现写死字面量 "now"，审视轮拿这份视图就完全没有新鲜度判据）。
+test "selfdrive_b82_export_stamp_成对" {
+  let dir = sd_dir("sd_b82_export")
+  let e = sd_engine("sd_b82.db")
+  let path = dir + "/memory/task.md"
+  match selfdrive_export_tasks(e, dir, "sd-b82", now="2026-09-27T07:00:00Z") {
+    Err(m) => abort(m)
+    Ok(_) => ()
+  }
+  let got = Some(@fs.read_file_to_string(path, encoding="utf8")) catch {
+    _ => None
+  }
+  let head = match got {
+    Some(s) => s
+    None => abort("task.md 没写出来")
+  }
+  assert_true(head.contains("2026-09-27T07:00:00Z"))
+  assert_false(head.contains("导出时间：now"))
+  match selfdrive_export_tasks(e, dir, "sd-b82") {
+    Err(m) => abort(m)
+    Ok(_) => ()
+  }
+  let got2 = Some(@fs.read_file_to_string(path, encoding="utf8")) catch {
+    _ => None
+  }
+  let head2 = match got2 {
+    Some(s) => s
+    None => abort("task.md 重读失败")
+  }
+  assert_true(head2.contains("缺失"))
+  assert_false(head2.contains("导出时间：now"))
+}

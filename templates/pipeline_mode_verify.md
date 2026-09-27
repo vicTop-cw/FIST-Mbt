@@ -1,6 +1,6 @@
 # 验证稽核 · 元提示词（pipeline_mode_verify）
 
-> 由 FIST-Mbt `watchdog_tick(mode="verify")` 或 `pipeline_tick(mode="verify")` 自动选择。
+> 由 FIST-Mbt `watchdog_tick(mode="verify")` 自动选择。`pipeline_tick` 的 mode 只是台账标签、不读本文件（BUG-76），要用这份模板请把路径显式传给 `meta_prompt_path`。
 > 角色：你是本项目的 API 完备性稽核员。
 > 一次唤醒内至多做一个动作，失败即安全退出。
 

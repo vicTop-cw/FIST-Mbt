@@ -1123,3 +1123,110 @@ issue_scan 的命中条件从裸 `line.contains(needle)` 改成 scan_outside_lit
 - reported_by: pmode-r4-verify
 - task_id: T0r386
 
+## BUG-76 [2026-09-27T05:32:12Z] [high] OPEN
+- summary: [r5][pipeline_tick] mode 参数从不读模式模板，工具描述与模板头部双向承诺落空
+- detail: 复核证据（本会话实跑）：`grep -rn mode_template_path src/` 只有 ops_modes.mbt:178（mode_list 回显）、ops_watchdog.mbt:289、以及 ops_modes_wbtest 的三条；**src/ops/ops_pipeline.mbt 命中 0 次**。该文件里 effective_mode（:287）的全部去处是 pj_set(...,"mode",...) 写台账（:332/:355/:378/...），prompt 正文取自 Gen_Prompts 目录那份文件。而两头都在说另一回事：src/server/server.mbt:2031 参数描述『非 advance 时自动读 templates/pipeline_mode_<mode>.md』、templates/pipeline_mode_bugfind.md:3『由 watchdog_tick(mode="bugfind") 或 pipeline_tick(mode="bugfind") 自动选择』。影响：按 USAGE 操作的外部 cron 拿到 action=generate + mode=bugfind 的回执，实际收到的提示词与 mode 无关，台账却显示 mode=bugfind ⇒ 无人值守轮的『用了哪份提示词』不可信。修复取向（指挥官已判）：本仓 R117 只把 mode→模板接在 watchdog_tick 上，pipeline_tick 侧不接线是现状；因此先按**文案口径**收口（描述与模板头部改成如实说 mode 只是标签、模板由 watchdog_tick 或显式路径决定），真正的 mode→模板接线如需请开特性单——不在缺陷单里顺手改无人值守行为。
+- reported_by: pmode-r5-bugfind
+- task_id: T0r387
+
+## BUG-77 [2026-09-27T05:32:12Z] [high] OPEN
+- summary: [r5][watchdog_tick] 非 advance 时 mode 模板覆盖调用方显式 meta_prompt_path，且 detail 回显被忽略的那个路径
+- detail: 复核证据：src/ops/ops_watchdog.mbt:280-294 —— mode_str 非空且非 advance 时走 else 分支，无条件取 mode_template_path(mode_str) 作为 effective_meta_path，**meta_prompt_path 在该分支根本不参与判断**；而 src/server/server.mbt:1946 明写『（显式 meta_prompt_path 优先）』。更糟的是 :362 回显 "meta_prompt_path": Json::string(meta_prompt_path) —— 回执指名的是被丢弃的那个值，effective_meta_path 全程不出现在 detail 里。影响：调用方以为自己的提示词生效（回执还盖了章），实际发布的是模板正文；事后审计（含 call_log 的 params）全部指向错源。这条与 BUG-76 同族但承重不同：76 是『承诺了没做』，77 是『做了但回执说谎』。修复：① 回显改用 effective_meta_path（或新增 meta_prompt_resolved 字段，零回归）；② 描述里的优先级口径与代码对齐（谁覆盖谁，点名写清）；锁：成对白盒断言『mode + 显式路径同给时，回执点名的就是真正被读的那份』。
+- reported_by: pmode-r5-bugfind
+- task_id: T0r388
+
+## BUG-78 [2026-09-27T05:32:12Z] [high] OPEN
+- summary: [r5][store_open] data_dir 不过任何路径校验，只有 ns 被消毒 ⇒ 可在仓库外任意目录落 .db
+- detail: 复核证据：src/store/multi_store.mbt:52-60 —— 只对 ns 调 MultiStore::safe_ns，随后 `let dir = if data_dir == "" { self.data_dir } else { data_dir }`、`let path = "\{dir}/\{safe}.db"` 直接交给 SqliteStore::open（open 会建文件）。对照同仓两处同类守卫：src/server/bugreport.mbt:26-42（拒 .. / 盘符 / 前导分隔符）、src/server/model_router_ops.mbt 的 mr_check_ns（注释明写复用 MultiStore::safe_ns 这一真源）。工具面 server.mbt:4137/4148 把 data_dir 原样透出，schema 描述只有『库文件根目录(可选，默认当前目录)』；multi_store_test.mbt 全部用固定 base_dir()="."，**没有一条断言 data_dir 边界**。影响：docs/deliverable.md 承诺的『命名空间物理隔离』可被指到任意目录；同 server 上 project_dir 一律拒穿越，唯独这里放行（scratch=true 强制落 temp 恰好说明作者在意落点）。修复：data_dir 走与 bugreport 同一套消毒（拒绝对称/盘符/.. 上跳），拒时文案带出路；配成对锁（temp/... 放行 + ../outside 必拒）。
+- reported_by: pmode-r5-bugfind
+- task_id: T0r389
+
+## BUG-79 [2026-09-27T05:32:12Z] [medium] OPEN
+- summary: [r5][rsv_release] SQLite 后端把『语句跑成功』当『删到了行』，非持有者调用也回 true
+- detail: 复核证据：src/store/store_sqlite.mbt:751 `DELETE FROM reservations WHERE scope = ? AND agent = ?`，:761-763 `let ok = stmt.execute(); stmt.finalize(); ok`；而 .mooncakes/mizchi/sqlite 的 **js 与 native 两版签名都是 `Statement::execute -> Bool`**（sqlite_js.mbt:358 / sqlite_native.mbt:489）——绑定层根本不给 changes()，所以这个 Bool 只表示『执行没报错』，删 0 行也返回 true。对照内存后端 src/store/store_rsv.mbt:31-43：`Some((a,_,_)) if a == agent => ...; _ => false` 是**校验持有者**的；函数头 :742 注释还写着『删除行数决定成功』。server.mbt:3692 把这个 Bool 直接当释放结果回给调用方。影响：生产（SQLite）后端上 B 非持有者调 reserve_release 会被告知『已释放』而预订仍在，于是 B 与 A 同改一份作用域——正是该原语要防的多 agent 撞车；内存后端的单测永远绿，抓不到。修复：删前先 rsv_get 校持有者（与内存后端同语义），不匹配回 false；锁：成对断言『持有者释放回 true、非持有者回 false 且预订仍在』，两后端同夹具。
+- reported_by: pmode-r5-bugfind
+- task_id: T0r390
+
+## BUG-80 [2026-09-27T05:32:12Z] [medium] OPEN
+- summary: [r5][守卫] BUG-33 残留：28 处工具描述仍广告 now 参数，而判据 5 的正则在真源上命中 0 ⇒ 该守卫是装饰
+- detail: 复核证据（本会话 python 计数）：src/server/server.mbt 里 `、now。` 命中 15、`参数：now` 命中 3、`now(可选)` 命中 8、`now(时间戳)` 命中 2，合计 28 行；而 scripts/check_tools_sync.py:39 的 RE_NOW_AD = `"now"\s*:\s*string_prop|、now 时间戳` 在同一文件上**命中 0 次**。同时全仓 `get_str(args, "now")` 命中 0（唯一读 "now" 的地方是 selfdrive_round_tick.mbt:221 从 spec map 取，且该模块无调用面）⇒ 这 28 处广告的是没人读的参数。影响：① 契约说谎（BUG-33 原话：广告一个已删除的参数）；② 更实际的是 heartbeat —— 想注入受控心跳造 φ 间隔历史的人拿到墙钟，:1833 `prev != ts` 还会把同秒心跳丢掉，phi_accrual 的历史在无人值守里几乎不增长；heal/watchdog_tick 也写不出确定性超时判据。修复取向：先把正则换成能覆盖四种实测写法的口径（换完必须立刻 FATAL，否则新正则也是装饰），再按工具逐个决定：确实还接受 now 的把参数补回 schema（当前是拒收），只服务端盖章的删掉文案。因量级 28 处且涉及调用面语义，本条**先入账，修不修由指挥官在下轮定**，不许用『已有 FIXED 小记』把它读成闭环。
+- reported_by: pmode-r5-bugfind
+- task_id: T0r391
+
+## BUG-81 [2026-09-27T05:32:12Z] [medium] OPEN
+- summary: [r5][heal] 唯一不带 ns 的看护入口扫 list_all() ⇒ 一次 heal 回滚全库所有命名空间的在途任务
+- detail: 复核证据：src/ops/ops_heal.mbt:18 `for t in engine.list_all()`，而 src/store/store_sqlite.mbt:402 的 list_tasks 是 `SELECT ... FROM tasks`（**无 WHERE ns**），:424 的 list_tasks_in 才是 `... FROM tasks WHERE ns = ?`；同文件另一条跨进程版 heal（:71 起）用的是 engine.list_in_ns(ns)。heal 的 schema 只有 timeout_sec，描述也没给 ns 出口。影响：多 ns 共用根 fist-mbt.db 时，任一 agent 为自己 ns 调 heal 会把别的轮的 执行中/已领取/拆分中 一并 reopen_task；engine.mbt:766-786 的 reopen 不署名 ⇒ 枝干 assignee 被清空。与 watchdog_tick 描述承诺的『自动 heal 只作用于该 ns』形成直接反差。AGENTS.md 把 heal 写成『内存版，人工流程』只覆盖了心跳来源（init_heartbeats 已从库回填），不覆盖扫描范围这一半。修复：加可选 namespace 参数（不传=现状零回归，传了=按 ns 过滤），并在描述里点名不传的作用域；锁成对：两 ns 各塞一条超时任务，带 ns 只回滚一条。
+- reported_by: pmode-r5-bugfind
+- task_id: T0r392
+
+## BUG-82 [2026-09-27T05:32:12Z] [low] OPEN
+- summary: [r5][selfdrive_export_tasks] 把字面量 "now" 当导出时间写进 memory/task.md
+- detail: 复核证据：src/ops/ops_selfdrive.mbt:333-338 把导出时间那一行拼成『（导出时间：』+ 字符串字面量 now + 『，共 … 条）』，而该函数签名（:325-329）里没有 now/ts 入参，server.mbt:2145-2148 也不传时间。影响：memory/task.md 是审视轮唯一的任务视图（templates/review_meta_prompt.md 指示审视者 selfdrive_get(kind=task) 读它），读到『导出时间：now』这种半成品字段，清单新鲜度就失去了可判依据——占位符被当成正文发出去。修复：用服务端时钟 now_default() 盖（与 BUG-33『时间戳服务端盖章』政策一致）；锁：导出后断言该行匹配『导出时间：20..-..-..T..:..』且不含裸 now。
+- reported_by: pmode-r5-bugfind
+- task_id: T0r393
+
+
+### FIXED(2026-09-27 四模式轮 · Round 5 修复段（指挥官终审，锁承重已复算） / BUG-74)
+
+src/server/server.mbt 的 task_plan_deep 描述补上返回契约：顶层是 {root, by, split_n, tree, exec_order}，子任务在 tree.children 里**逐层递归**，并点名 tree.created 是整数计数不是数组。同族三处一并补（都是本会话亲自读错的对象）：run_check 回执 9 个键、bug_list 的 {bugs,count,path,...} 信封、github_queue_status 的 {total,pending,sent,...} 且写明「enabled=false 时 total=0 是没开同步，不是没 bug 待同步」。守卫面：check_doc_surface 新增 **J9**（必查清单点名 + 「写了返回的工具数」棘轮，基线实测 66，只许升）。承重证明 temp/r5/prove_j9.py：逐一抠掉四个必查工具的「返回」二字 ⇒ J9 逐条发红；非必查工具不被误点名；抹 1 条即跌破棘轮。SELFTEST 另含「英文 returns 不算契约」的反向对照。
+
+### FIXED(2026-09-27 四模式轮 · Round 5 修复段（指挥官终审，锁承重已复算） / BUG-75)
+
+src/engine/omega_gate.mbt：gate_check_record 的回执新增 stdout_tail / stderr_tail / output_truncated（各取**末** gate_check_tail_limit()=2000 字符；取末不取前，因为判据的关键信息在结尾），并把 status 从"回显调用方传入值"改成回显**推导值** eff —— 第 57 行本就声明该参数不被信任，回执与记录分两套话就是给伪证留口子。完整输出仍存 specs.content 供库内复核；run_check 工具描述同步（J9 必查清单成员）。锁：src/engine/omega_gate_wbtest.mbt 三条（og_1 带回尾巴且 status 用推导值 / og_2 取的是末 N 不是前 N /og_3 坏 JSON 与非字符串字段安静回空串）。承重证明 temp/r5/mut_b75.py：只摘掉三个字段 + 把 status 退回回显 ⇒ src/engine 112 条里 **3 条 og_ 发红**，脚本 finally 里逐字节复原。（为什么不能用"拿 HEAD 码重跑"：HEAD 版连辅助函数都没有，测试根本编译不过，那只证明引用了新符号。）
+
+### FIXED(2026-09-27 四模式轮 · Round 5 修复段（指挥官终审，锁承重已复算） / BUG-76)
+
+按**文案口径**收口（不改无人值守行为）：pipeline_tick 的 mode 参数描述改为如实说"只作为台账标签、不读模式模板"，指出要按模式取模板请用 watchdog_tick(mode=) 或显式传 meta_prompt_path；6 份 templates/pipeline_mode_*.md 头部不再宣称被 pipeline_tick 自动选择（advance 那份是 HTML 注释形态，脚本两种形态都认、并断言 6 份一份不漏：temp/r5/fix_templates_b76.py）。真正的 mode→模板接线 = 改变在跑的 cron 轮实际拿到的提示词，属新能力，另开特性单，不塞进缺陷修复里。
+
+### FIXED(2026-09-27 四模式轮 · Round 5 修复段（指挥官终审，锁承重已复算） / BUG-77)
+
+src/ops/ops_watchdog.mbt：detail 里把"调用方给的那份"与"真被读的那份"**分栏回**——新增 meta_prompt_resolved（= effective_meta_path）与 meta_prompt_overridden（两者是否不同），保留 meta_prompt_path 原值不改语义（零回归）；watchdog_tick 描述里那句『显式 meta_prompt_path 优先』改成与代码一致的事实：非 advance 时 mode 模板**覆盖**显式路径，要让显式路径生效就别传 mode 或传 advance。行为未动（改优先级会让在跑的任务突然换提示词），修的是"回执说谎"这一半。注：本条暂无自动化锁——回执字段级断言需要真起 watchdog_tick（依赖 temp 目录与心跳状态），按「代码+描述+回执字段实测」入账，测试补挂转结下轮。
+
+### FIXED(2026-09-27 四模式轮 · Round 5 修复段（指挥官终审，锁承重已复算） / BUG-78)
+
+src/store/multi_store.mbt：新增 pub fn MultiStore::data_dir_ok（拒空串 / `..` / 前导斜杠或反斜杠 / 盘符），口径与 src/server/bugreport.mbt 的 bug_project_dir_ok 一致（同族守卫不许两套规则）；open() 与惰性 get() **两条入口都过校验**（只挡入参会漏掉"构造期就把根写歪"这条路径）。server 侧 store_open 拒绝时分列原因（非法 ns / 非法 data_dir 各一条，后者自带两条出路），描述同步（J9 之外顺手补了返回契约）。锁：src/store/multi_store_test.mbt 新增成对用例 —— 正向 . / temp / temp/ms-b78 不误拒，反向 "" / ../outside / temp/../../outside / /etc / C:/evil / 前导反斜杠 六形态必拒，再加入口级断言（非法目录 open=false 且 ns 不进 ns_list；合法 temp 落点 open=true）。
+
+### FIXED(2026-09-27 四模式轮 · Round 5 修复段（指挥官终审，锁承重已复算） / BUG-82)
+
+src/ops/ops_selfdrive.mbt：selfdrive_export_tasks 表头那行的时间从**字面量 "now"** 改为新增可选参数 now~（默认空串），空串时明写「缺失（调用方未传服务端盖章的 now）」而不是拿占位符冒充值；
+src/server/server.mbt 调用点传 now_default()（与 BUG-33 时间戳盖章政策一致）。锁：src/ops/ops_selfdrive_test.mbt 新增 selfdrive_b82_export_stamp_成对 —— 传了 now 则 task.md 表头含该时间戳，没传则含「缺失」，两种形态都断言**不含**"导出时间：now"。
+## BUG-83 [2026-09-27T05:59:38Z] [medium] OPEN
+- summary: run_check 回执顶层 ok 与 status 两种含义，描述只解释 status ⇒ 调用方把「已落库」读成「已通过」（实测致 Round 5 验证段自述 11/11 为伪）
+- detail: 位置：src/engine/omega_gate.mbt:125（m.set("ok", Json::boolean(true))）与 :131（status 由推导值写入）；对外文案 src/server/server.mbt:1128 run_check 描述的结尾。
+现象：run_check 返回值同时含 ok 与 status 两键。ok 的含义是「判据已跑完并落库」（spawn 成功即 true，与判据通过与否无关）；status 才是 passed/failed 判定（服务端由子进程退出码推导）。描述里只写了「status 一律由结果 JSON 的 ok 推导」——这个「结果 JSON 的 ok」指的是 specs 表里那次 spawn 的结果对象，跟回执顶层的 ok 不是同一个东西，而顶层 ok 自己的含义在文案里一个字都没提。
+实测代价（不是假想）：Round 5 验证段首跑驱动 temp/r5/r5_round.py 以 r.get('ok') is True 作为判据结论，打印「判据 11/11」「结论 GREEN」，而同一份 r5_round_report.json 里 j9_load_bearing 的 status 就是 failed；该错误结论还被写进了验证段叶子正文并入 Omega 链已完成的记录。
+修复：run_check 描述把两个 ok 的分工写在脸上（顶层 ok=已跑完并落库，判定只看 status，别拿 ok 当结论）。
+锁：scripts/check_doc_surface.py J9 新增第三判据 RET_MUST_EXPLAIN（按工具列出必须同时出现的语义关键词，缺任一词逐一点名发红）；承重证明 temp/r5/prove_j9.py 第④段在真实真源上抹词 ⇒ 必须红；--selftest 含「干净合成输入不误红」反向对照。
+- reported_by: pmode-r5-verify
+- task_id: T0r398
+
+
+### FIXED(2026-09-27 四模式轮 · Round 5 勘误段（指挥官终审，锁承重已复算） / BUG-83)
+
+真源 src/server/server.mbt 的 run_check 描述把两个 ok 的分工写在脸上：**顶层 ok 只表示「判据已跑完并落库」**（spawn 成功即 true，与判据通过与否无关），**判据通过与否只看 status**（passed/failed，服务端由退出码推导），并点名"别拿 ok 当结论"的实测后果。旧措辞『status 一律由结果 JSON 的 ok 推导』整句删除——那句里的 ok 指的是 specs 表里那次 spawn 的结果对象，跟回执顶层同名不同义，正是本轮误读的源头。锁 scripts/check_doc_surface.py J9 新增第三判据 RET_MUST_EXPLAIN（按工具列出必须同时出现的语义关键词，缺任一词逐一点名发红；清单里的工具从注册表消失同样发红——清单失效比缺契约更糟）。SELFTEST 补三条对照：抹词必红、分工写清不误红、清单落空必红；承重证明 temp/r5/prove_j9.py 第④段在**真实描述**上逐个抹「已跑完并落库」「只看 status」⇒ 各发红一条，末尾追加无关句 ⇒ 不误红（防恒红判据）。调用面实测：tools/list 120 工具，run_check 描述 1425 字符，两措辞齐、旧口径残留 0；文件面判据 temp/r5/b83_closure_check.py 七条断言全成立（含"首跑伪结论日志仍留痕、不许事后抹证"）。顺带修掉那条真红的原因：prove_j9.py 原以 replace(…,1) 抠字，而 bug_list 描述里「返回」实测出现 2 次（task_plan_deep/run_check/github_queue_status 各 1 次），只抠一处 J9 照绿 ⇒ 变异不生效；已改全量替换并先量次数。勘误落账方式：已完成的 T0r395 验证段行不改写（账本/树同一套路子），另起 ns pmode-r5-erratum 根 T0r399（12 叶全 已完成，两条判据由服务端 run_check 真跑 status=passed，output_validate 正门 pass / 必然违例对照门 fail）。
+## BUG-84 [2026-09-27T06:17:00Z] [medium] OPEN
+- summary: 文档面判据范围在规范表面滞后（AGENTS.md/AI-DEVELOPMENT-STANDARD.md 仍写 J1-J8，真源已有 J9），且无判据能抓这种滞后（J1-J5→J1-J8 已重犯一次）
+- detail: 位置（现状面两处，都是规范性表面）：AGENTS.md:299 的『check_doc_surface（文档面 J1-J8：…）』与 AI-DEVELOPMENT-STANDARD.md:15 表格里的『check_doc_surface(J1-J8)』。
+现象：Round 4 给 check_doc_surface 加了 J9（返回契约），两份规范表面仍写 J1-J8；本轮又加了 J9 的第三判据，范围数字继续滞后。守卫族段落是『实现了几条判据』的唯一对外口径，写少了=声明滞后（读者以为 J9 不存在，绕着走），写多了=幻影判据（读者拿不存在的判据当门禁）。
+这是同一族第二次：CHANGELOG.md:168 记着上一轮就发生过 J1-J5 → J1-J8 的滞后，当时靠人肉同步、没留判据。
+实测复现：python -c "import re,pathlib;print(sorted({int(x) for x in re.findall(r'J(\d+)', pathlib.Path('scripts/check_doc_surface.py').read_text(encoding='utf-8'))}))" ⇒ [1..9]，而 AGENTS/规范两处 J1-(\d+) 抓出来的都是 8。
+修复：新增 J10 判据范围自述==实现（扫描 AGENTS.md/AI-DEVELOPMENT-STANDARD.md 里含 check_doc_surface 的行上的 J1-n，与脚本自身 def jN_/---- JN 实现的最大序号比对；少一分『声明滞后』、多一分『幻影判据』都点名发红，一处口径都抓不到即 FATAL 不报绿）；两份规范表面同步到 J1-J9。
+- reported_by: pmode-r5-erratum
+- task_id: T0r400
+
+
+### FIXED(2026-09-27 四模式轮 · Round 5 勘误段（指挥官终审，锁承重已复算） / BUG-84)
+
+同步三处现状声明面到 J1-J10：AGENTS.md:299（守卫族段，连 selftest 覆盖范围一起如实写）、
+AI-DEVELOPMENT-STANDARD.md:15（规范表格里的守卫族行）、templates/pipeline_mode_tidy.md:45（对外发货模板）。
+锁 = scripts/check_doc_surface.py 新增 **J10 判据范围自述==实现**：实现侧从本脚本自身的
+`def jN_` / `---- JN` 标记取并集（实测 max=J10），声明侧扫 AGENTS + 规范正文 + templates/*.md +
+plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的教训：发货正文会被放大成 4 份对外契约，
+扫描面不许只挑两份）。少写一档 ⇒『声明滞后』、多写 ⇒『幻影判据』，逐条点名文件与行号；
+一处声明都抓不到同样发红（删声明消解违例 ≠ 没有问题）。
+踩到并修掉的解析器坑（判据先判自己）：正则初版写成 `J1-(\d+)`，而三处表面实际写的是 `J1-J8` 双 J 形态
+⇒ claims 恒空；正是『空扫描必红』那条哨兵把它当场抓住，而不是让它以全绿蒙混。
+承重证明 temp/r5/prove_j10.py：在**真实文件副本**上做四向变异（少写一档必红 / 吹到 J1-J99 必红 /
+良性追加不误红 / 整块声明删掉也红），三个表面各跑一组，副本 finally 清理。
+--selftest 新增 5 条 J10 对照（滞后 / 幻影 / 两面一致不误红 / 空扫描 / 实现侧解析饿死）；
+守卫自身的 SELFTEST 与 PASS 文案同步到 J1-J10（消息本身也是声明面，别制造第二次滞后）。

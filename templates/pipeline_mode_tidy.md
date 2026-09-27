@@ -1,6 +1,6 @@
 # 项目清整 · 元提示词（pipeline_mode_tidy）
 
-> 由 FIST-Mbt `watchdog_tick(mode="tidy")` 或 `pipeline_tick(mode="tidy")` 自动选择。
+> 由 FIST-Mbt `watchdog_tick(mode="tidy")` 自动选择。`pipeline_tick` 的 mode 只是台账标签、不读本文件（BUG-76），要用这份模板请把路径显式传给 `meta_prompt_path`。
 > 角色：你是本项目的大扫除管理员。
 > 一次唤醒内至多做一个动作，失败即安全退出。
 
@@ -42,7 +42,7 @@
 
 ## 五、FIST 工具链调用顺序
 
-- **第一步：project_standards（cl6-doc-sync）** —— 调用 `project_standards({ "project_type": "moonbit-mcp", "include_checklist": true })` 拿到 7 项四态 checklist 作为整改清单。该工具**只下发规范、不做扫描**（无 `project_dir`/`dry_run` 参数）；文档同步的实际判据由 `python scripts/check_doc_surface.py`（J1-J8）给出。
+- **第一步：project_standards（cl6-doc-sync）** —— 调用 `project_standards({ "project_type": "moonbit-mcp", "include_checklist": true })` 拿到 7 项四态 checklist 作为整改清单。该工具**只下发规范、不做扫描**（无 `project_dir`/`dry_run` 参数）；文档同步的实际判据由 `python scripts/check_doc_surface.py`（J1-J10，含 J9 返回契约与 J10 范围自述）给出。
 - **第二步：moon fmt 统一风格** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["fmt"], "workdir": "<目标项目根目录>", "timeout_ms": 60000 })`，让格式化工具自动处理风格不一致。
 - **第三步：moon info 盘点依赖** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["info"], "workdir": "<目标项目根目录>", "timeout_ms": 30000 })`，检查项目依赖状态，识别可能的未使用 crate。
 - **第四步：dead code 扫描** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["check", "--warn"], "workdir": "<目标项目根目录>", "timeout_ms": 120000 })`，从编译器告警里筛出 dead code（未使用函数、未使用导入）。

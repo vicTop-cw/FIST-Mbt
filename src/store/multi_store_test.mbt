@@ -208,3 +208,29 @@ test "WAL 模式：多 ns 并发写入 + 读取一致性" {
   }
   ms.close_all()
 }
+
+///|
+/// BUG-78 成对锁：data_dir 的消毒必须覆盖**实际落点**，且拒绝要有出路可判。
+/// 正向用 "."（与既有测试同目录）与 "temp"（仓库内 gitignore 目录），
+/// 反向钉四种越界形态；最后一档是入口级——非法目录必须 open=false。
+test "data_dir 只接受相对路径（BUG-78 成对）" {
+  // 正向：合法相对目录不许被误拒（误拒＝把既有 store_open(scratch) 路径打断）
+  assert_true(MultiStore::data_dir_ok("."))
+  assert_true(MultiStore::data_dir_ok("temp"))
+  assert_true(MultiStore::data_dir_ok("temp/ms-b78"))
+  // 反向：四种逃逸形态逐一必拒
+  assert_false(MultiStore::data_dir_ok(""))
+  assert_false(MultiStore::data_dir_ok("../outside"))
+  assert_false(MultiStore::data_dir_ok("temp/../../outside"))
+  assert_false(MultiStore::data_dir_ok("/etc"))
+  assert_false(MultiStore::data_dir_ok("C:/evil"))
+  // 前导反斜杠（UNC 形态的起始）同样算"前导分隔符"
+  assert_false(MultiStore::data_dir_ok("\\server"))
+  // 入口级：非法 data_dir 不得建库（open 回 false，且 ns 不进 ns_list）
+  let ms = MultiStore::new(data_dir=".")
+  assert_false(ms.open(ns="b78out", data_dir="../b78-outside"))
+  assert_false(ms.ns_list().contains("b78out"))
+  assert_true(ms.open(ns="b78ok", data_dir="temp"))
+  assert_true(ms.ns_list().contains("b78ok"))
+  ms.close_all()
+}

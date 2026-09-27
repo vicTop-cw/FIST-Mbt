@@ -41,9 +41,35 @@ pub fn MultiStore::safe_ns(ns : String) -> String? {
 }
 
 ///|
-/// 打开（或复用已打开的）某个命名空间对应的库文件 {data_dir}/{safe_ns}.db。
+/// 库文件根目录校验（BUG-78）：只接受**相对 server 进程 cwd** 的相对路径。
+/// 拒空串 / `..` 上跳 / 前导分隔符 / 盘符（`C:`）——过去这里只对 ns 走 safe_ns，
+/// data_dir 原样拼进 `\{dir}/\{safe}.db` 就交给 SqliteStore::open（open 会建文件），
+/// 于是"命名空间物理隔离"实际是"调用方指到哪就往哪建库"。
+/// 口径与 src/server/bugreport.mbt 的 bug_project_dir_ok 保持一致：
+/// 同族守卫不该有两套规则（project_dir 拒穿越、data_dir 放行，就是本次缺陷的形状）。
+pub fn MultiStore::data_dir_ok(dir : String) -> Bool {
+  if dir.is_empty() {
+    return false
+  }
+  if dir.contains("..") {
+    return false
+  }
+  let c0 = dir[0]
+  if c0 == '/' || c0 == '\\' {
+    return false
+  }
+  // 拒绝盘符（如 C: 或 D:），顺带挡掉 Windows 绝对形态
+  if dir.length() >= 2 && dir[1] == ':' {
+    return false
+  }
+  true
+}
+
+///|
+/// 打开（或复用）某个命名空间对应的库文件 {data_dir}/{safe_ns}.db。
 /// ns 会先经 safe_ns 消毒，非法命名空间直接失败返回 false。
-/// data_dir~ 为空时回退到 self.data_dir（与 get 保持一致，避免状态分裂）。
+/// data_dir~ 为空时回退到 self.data_dir（与 get 保持一致，避免状态分裂）；
+/// **两者取用后的最终目录仍要过 data_dir_ok**（BUG-78：消毒范围覆盖实际落点，不只覆盖入参形态）。
 pub fn MultiStore::open(
   self : MultiStore,
   ns~ : String,
@@ -57,6 +83,9 @@ pub fn MultiStore::open(
         return true
       }
       let dir = if data_dir == "" { self.data_dir } else { data_dir }
+      if not(MultiStore::data_dir_ok(dir)) {
+        return false
+      }
       let path = "\{dir}/\{safe}.db"
       match SqliteStore::open(path) {
         None => false
@@ -79,16 +108,20 @@ pub fn MultiStore::get(self : MultiStore, ns : String) -> SqliteStore? {
     Some(safe) =>
       match self.stores.get(safe) {
         Some(s) => Some(s)
-        None => {
-          let path = "\{self.data_dir}/\{safe}.db"
-          match SqliteStore::open(path) {
-            Some(s) => {
-              self.stores.set(safe, s)
-              Some(s)
+        None =>
+          if not(MultiStore::data_dir_ok(self.data_dir)) {
+            // 构造期就把根目录写歪（如绝对路径）也不建库：与 open 同口径，别留第二条免检入口
+            None
+          } else {
+            let path = "\{self.data_dir}/\{safe}.db"
+            match SqliteStore::open(path) {
+              Some(s) => {
+                self.stores.set(safe, s)
+                Some(s)
+              }
+              None => None
             }
-            None => None
           }
-        }
       }
   }
 }

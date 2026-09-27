@@ -322,17 +322,26 @@ pub fn selfdrive_memory_get(
 ///|
 /// 从任务库导出任务清单到 task.md（视图覆盖写）。
 /// 输出 markdown 任务树：id + 状态 + 描述（截断至 200 字符）。
+/// BUG-82：表头那行的时间过去是**字面量 "now"**（审视轮按 review_meta_prompt 读这份视图，
+/// 看到"导出时间：now"就没了新鲜度判据）。现在时间戳由调用方（服务端盖章）传进来；
+/// 没传就明写"缺失"，绝不拿占位符冒充值。
 pub fn selfdrive_export_tasks(
   engine : @engine.FistEngine,
   project_dir : String,
   ns : String,
+  now? : String = "",
 ) -> Result[Json, String] {
   let tasks = engine.list_in_ns(ns)
+  let stamp = if now.is_empty() {
+    "缺失（调用方未传服务端盖章的 now）"
+  } else {
+    now
+  }
   let lines : Array[String] = []
   lines.push("# 任务清单（Task）\n")
   lines.push(
     "（导出时间：" +
-    "now" +
+    stamp +
     "，共 " +
     tasks.length().to_string() +
     " 条）\n",

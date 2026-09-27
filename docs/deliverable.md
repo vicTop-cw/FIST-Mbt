@@ -15,7 +15,7 @@ python scripts/mcp_smoke.py
 | 项 | 值 |
 |---|---|
 | MCP 工具 | **120**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 453/453**（2026-09-27 Windows 实测，四模式流水线自我迭代 Round 1~3 收口；native 轨见 AGENTS.md「已知边界」） |
+| 测试 | **`moon test --target js` 458/458**（2026-09-27 Windows 实测，四模式流水线自我迭代 Round 1~3 收口；native 轨见 AGENTS.md「已知边界」） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |
