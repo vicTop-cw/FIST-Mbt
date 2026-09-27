@@ -38,19 +38,14 @@ fn print_help() -> Unit {
 }
 
 ///|
-/// serve：启动 MCP server
-/// 当前实现：提示用户手动运行（避免直接 import server 包的 SQLite require 问题）
-/// 后续版本补 @process.spawn 启动编译产物
-fn run_serve() -> Unit {
+///|
+/// serve：启动 MCP server (stdio 传输)
+/// 直接 import @server.run_server()，零 spawn 零进程创建
+async fn run_serve() -> Unit {
   println("[fist] serve — 启动 MCP server (stdio 传输)")
+  println("stdin/stdout 接管, Ctrl+C 停止")
   println("")
-  println("当前环境建议：")
-  println("  moon run cmd/main")
-  println("")
-  println("或直接启动编译产物：")
-  println("  moon build cmd/main && node _build/js/debug/build/cmd/main/main.js")
-  println("")
-  println("serve 子命令的进程 spawn 实现待补充。")
+  @server.run_server()
 }
 
 ///|
