@@ -1,4 +1,40 @@
-## BUG-1 [2026-09-26T03:52:44Z] [high] OPEN
+## 记账规则（本文件的状态词汇与计数口径 · 2026-09-27 立）
+
+**状态**写在条目抬头的最后一个字段（`## BUG-n [时间] [严重度] 状态`），**可就地修改**——它只表达
+"当前还剩哪些没修"，是工作清单而非证据；改掉旧状态不销毁历史，历史由下面的叙述面承载。
+**叙述面**（条目正文、`### FIXED(...)` 小记、`reports/*`、`memory/2026-09-*.md` 轮次段、
+`CHANGELOG.md` 轮次段、已完成的 `T0r*` 任务行）**只追加、不改写、不删除**，包括写错的那些——
+抹掉证伪材料就等于把自己改写成"一直是对的"。
+
+**抬头文法**（判据按此解析，形态不符即红）：
+
+行首示例（为避免被按行计数的判据当成条目，这里不写成行首形态）：
+
+- `## BUG-n [ISO 时间] [high|medium|low] 状态 [→BUG-m]`　← `→BUG-m` 只有 DUPLICATE 必须带
+- `### FIXED(<日期 轮次> / BUG-a[, BUG-b …])`　← 抬头里的编号集合＝本条小记点名收掉的条目
+
+| 状态 | 含义 | 立此状态需要的证据 |
+|---|---|---|
+| `OPEN` | 未修（含"本轮结转"） | 无；结转必须在正文写明理由与出路 |
+| `FIXED` | 已修 | 必须有一条**点名本编号**的 `### FIXED(… / BUG-nn)` 小记，写清改了哪个真源、哪条锁钉住 |
+| `FALSE_POSITIVE` | 误报（复核后不是缺陷，或本就是设计） | 必须写明复核依据：该面自己的定位声明 / 实测数据 / 规范出处 |
+| `DUPLICATE` | 重复入账 | 必须点名被并入的主编号，且主编号自身不能是 `DUPLICATE` |
+
+**计数口径**（对外投影的唯一来源）：
+
+- `待修 = 抬头状态为 OPEN 的条目数`；`已修 / 误报 / 重复` 各按抬头状态计数。
+- **不再用「条目数 − 小记条数」**：一条小记可能收 1~16 条，也可能一条都不收（Round 1~3 的 22 条
+  小记抬头里没有编号，机器无法归属）。把"小记有几条"当成"修了几条"就是历史上那句假数的来源。
+- **判据不许自证**：数字只从抬头状态反解；投影句、插件正文都由它派生，两者不同源。
+
+**硬门**（`scripts/gen_plugins.py` 生成前自检，任一不成立即拒绝生成、不产出"看起来正常"的插件）：
+
+1. 标 `FIXED` 的条目必须被至少一条小记抬头点名（防空口标修好）。
+2. 被小记点名的条目必须已标 `FIXED`（防修了没标——Round 1~3 全是这一类）。
+3. `DUPLICATE` 指向的主编号必须存在、不是 `DUPLICATE`，且主编号状态不得比副本更差。
+4. 状态词汇不在闭集内 ⇒ 红（防 `Fixed`/`fixed`/`已修` 各写一套）。
+
+## BUG-1 [2026-09-26T03:52:44Z] [high] FIXED
 - summary: 任务行时间戳由调用方 now 决定并被真实写库，账本可被写成未来时间（审计不可反驳性失效）
 - detail: 现象：publish/claim/execute/submit/verify 等写操作接受可选 now 参数，且该值被真实写入 tasks.created_at/updated_at；而 call_log.ts 由服务端盖章。二者权威不一致，导致同一份账里存在两种时钟。
 
@@ -22,7 +58,7 @@
 没有回填，而 `gen_plugins.py` 的"待修 26 条"就是按 FIXED 段数算的 ⇒ 该数字**偏大、把已修的说成待修**。
 下一轮该做一次逐条核销（BUG-6~13 本轮未复核，不在此断言其状态）。
 
-## BUG-2 [2026-09-26T03:52:44Z] [medium] OPEN
+## BUG-2 [2026-09-26T03:52:44Z] [medium] FIXED
 - summary: retry 之后无法登记交付物：execute 只接受 拆分中/已领取，而 retry 落在 执行中，形成状态机死角
 - detail: 现象：`reject`（待验收->已打回）后走 `retry`（已打回->执行中，src/core/core_task.mbt:463），但唯一能写 deliverable 的 `execute` 要求状态 [拆分中/已领取]（同文件 :368 的守卫文案即报错原文），于是在「已打回重做」这条最该更新交付物的路径上写不进新交付物；`omega_result_verify` 随即报「尚无交付物」。
 
@@ -37,7 +73,7 @@
 
 engine 放宽 execute 状态守卫：已打回可直接 execute 并写明出路；reject→retry→execute 全链写 deliverable 通过（调用面 T0r301 链）。回归锁 src/engine/engine_execute_r2_test.mbt。
 证据：调用面终审 14/15 PASS（唯一 FAIL 系判据自身读取上一笔 stderr，已用 workdir==project_dir 正例复验 status=passed）；laya_decide 21.0s/20.9s < 30s 客户端预算；run_check 对 rm/..越界成对拒绝且文案自带出路。
-## BUG-3 [2026-09-26T03:52:44Z] [medium] OPEN
+## BUG-3 [2026-09-26T03:52:44Z] [medium] FIXED
 - summary: audit_log 作为治理查询面暴露，但实现是进程内不落库，跨进程永远返回 []（假空的审计证据）
 - detail: 现象：MCP 工具 `audit_log`（描述为「查看追加式审计日志」）读的是进程内 AuditLog，**不落库**；每一次 MCP 调用新起一个 server 进程时，它返回空数组，而库里其实有完整写入痕迹。
 
@@ -52,7 +88,7 @@ engine 放宽 execute 状态守卫：已打回可直接 execute 并写明出路�
 
 audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count}，空结果不再伪装「无治理动作」；handler 统一走 audit_log_payload。回归锁 src/server/pipeline_r2_wbtest.mbt:124。
 证据：调用面终审 14/15 PASS（唯一 FAIL 系判据自身读取上一笔 stderr，已用 workdir==project_dir 正例复验 status=passed）；laya_decide 21.0s/20.9s < 30s 客户端预算；run_check 对 rm/..越界成对拒绝且文案自带出路。
-## BUG-4 [2026-09-26T03:52:44Z] [high] OPEN
+## BUG-4 [2026-09-26T03:52:44Z] [high] FIXED
 - summary: run_check 用 node child_process.spawn 执行任意命令，无白名单/无授权位/无 workdir 约束（宿主级命令执行面）
 - detail: 现象：`run_check` 为了「防自写自测恒绿」在服务端真实执行外部命令，实现是 src/server/run_check_js.mbt:15 的 `js_run_command(cmd, args, workdir, timeout_ms)` → spawn(cmd, args, {cwd})。整个文件不存在任何 allowlist / 授权检查 / 路径约束（`grep -n 'allow|whitelist|白名单|拒绝|forbidden' src/server/run_check_js.mbt` 无命中）。同类原语还有 src/server/github_js.mbt:41,:91 与 src/server/laya_js.mbt（spawn sh / ComSpec -c 形式，更接近任意 shell）。
 
@@ -69,7 +105,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 
 新增 src/server/run_check_guard.mbt 并接入 run_check handler 两条分支：cmd 白名单（默认集取自 call_log 实测调用面，扩权仅运维侧环境变量 FIST_RUN_CHECK_ALLOW）+ workdir 按 project_dir 子树判定（绝对 project_dir 本身放行，纠正 Round 1 误杀）。调用面：rm 被拒含出路、../etc 被拒说「子树」、workdir==project_dir 实测 status=passed。
 证据：调用面终审 14/15 PASS（唯一 FAIL 系判据自身读取上一笔 stderr，已用 workdir==project_dir 正例复验 status=passed）；laya_decide 21.0s/20.9s < 30s 客户端预算；run_check 对 rm/..越界成对拒绝且文案自带出路。
-## BUG-5 [2026-09-26T03:52:44Z] [medium] OPEN
+## BUG-5 [2026-09-26T03:52:44Z] [medium] FIXED
 - summary: project_dir 契约分裂：bug 族强制相对（默认报错不告知可接受形态），memory 族同一参数接受绝对路径并直接落盘
 - detail: 现象：同名参数 `project_dir` 在本服务里有两套**相反**的契约——bug 族工具强制相对路径并拒绝绝对路径，而其余 20+ 个工具（memory 族/selfdrive 族）完全不做形态校验、直接把它当真实文件系统路径拼接。工具描述与参数说明里看不到这个差别，措辞逐字相同。
 
@@ -83,7 +119,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 建议（按代价升序）：① 把 report_bug/bug_list 的描述与 string_prop 改成「项目目录（必填，**相对 server 进程 cwd**，拒绝绝对路径/盘符/..）」；② 返回值补 `resolved_path`（绝对 + normalize 后），让落点可审；③ 长期：统一两套契约——要么全部接受绝对路径并做 canonicalize + 允许的根白名单，要么全部要求相对并给统一的校验函数（现在 bug 族有、memory 族没有）。
 - reported_by: cypy-commander
 
-## BUG-6 [2026-09-26T05:55:08Z] [medium] OPEN
+## BUG-6 [2026-09-26T05:55:08Z] [medium] DUPLICATE →BUG-5
 - summary: BUG-5 resolved_path check
 - detail: (缺失)
 - hygiene[2026-09-26 pentad-r1 fix_and_merge]: **本条为探针残留、非缺陷**。summary 是上一轮
@@ -99,7 +135,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
   状态位仍显示 OPEN 是**已知缺陷 BUG-9 的表现**，不是遗漏。真正关闭需补 bug_close API（下一轮）。
 - reported_by: pentad-r1-fix（卫生复核，非新缺陷）
 
-## BUG-7 [2026-09-26T05:55:47Z] [medium] OPEN
+## BUG-7 [2026-09-26T05:55:47Z] [medium] DUPLICATE →BUG-5
 - summary: BUG-5 resolved_path check
 - detail: (缺失)
 - hygiene[2026-09-26 pentad-r1 fix_and_merge]: **本条为探针残留、非缺陷**。summary 是上一轮
@@ -131,7 +167,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 建议：① 新增 `bug_close(bug_id, resolved_by, task_id, now)`，把状态位写成 `CLOSED [<task_id>]` 并落 call_log；② 或在修复单 `verify` 成功时自动销账（需要 bug↔task 反查表，`report_bug` 已经在写 task_id，具备条件）；③ 过渡期至少让 `bug_list` 返回关联任务的当前 status，别让读方只能看 OPEN。
 - reported_by: cypy-polisher
 
-## BUG-10 [2026-09-26T06:26:20Z] [low] OPEN
+## BUG-10 [2026-09-26T06:26:20Z] [low] FALSE_POSITIVE
 - summary: [lifecycle] archive 走 complete 且要求状态 [待验收]，停在 [待领取] 的任务没有任何合法废弃路径（孤儿单永久残留）
 - detail: 现象：`archive` 内部走 `complete` 迁移，前置状态是 `[待验收]`；而诊断/试写期间产生的、只到 `待领取` 的任务既不能 `archive`（迁移非法）、也没有 `cancel`/`abandon` 类工具可废弃，`verify`/`submit` 又要求先有交付物。结果是任务库里永久留下无法清理的行。
 活证据（2026-09-26 实测）：本轮隔离库 E:/IDEProjects/AI/Cypy/fist-mbt.db 中入账探针留下的 T0r2..T0r5 四条停在 `待领取`，`archive` 原样报错 `非法迁移: complete 要求状态 [待验收]，当前是 [待领取]`（逐条回复见 E:/IDEProjects/AI/Cypy/.fist-polish-20260926/close_fixes.out.json 的 `diagnostic-archive:*`）。同一工具对 `待领取` 与 `已完成` 两种状态给出同一个 `complete` 前置，错误文案未提示出路。
@@ -147,7 +183,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 建议：① `bug_list` 行同时输出 `bug_id`（与 `id` 同值，向后兼容）；② 或在工具描述里写明读侧字段名；③ 长期把 bug 实体 id 收敛成单一字段名，写读两侧共用同一个序列化函数。
 - reported_by: cypy-polisher
 
-## BUG-12 [2026-09-26T07:57:19Z] [medium] OPEN
+## BUG-12 [2026-09-26T07:57:19Z] [medium] FIXED
 - summary: [contract] list 描述称「不传 namespace 则列出全库所有命名空间」，实测只回单一 ns 的行，ns `bugs`（report_bug 自动发布的修复单所在）一条都不回
 - detail: 现象：`list` 的 inputSchema 描述写「namespace(可选，按命名空间过滤；不传则列出全库所有命名空间)」，但不带 `namespace` 的查询只回一个命名空间的行。
 活证据（2026-09-26 实测，cwd=E:/IDEProjects/AI/Cypy，隔离库 E:/IDEProjects/AI/Cypy/fist-mbt.db）：不带 namespace 的 `list` 返回 19 行，逐行 `namespace` 去重后只有 ['cypy-polish-20260926'] 一个值；同库 `list(namespace="cypy-polish-20260926")` 返回 19 行、`list(namespace="bugs")` 返回 15 行，其中 15 行（如 T0r10, T0r11, T0r12, T0r13, T0r14）在没有 namespace 的查询里一条都不出现。原始回复见 E:/IDEProjects/AI/Cypy/.fist-polish-20260926/probe_list_scope.out.json 与 probe_lifecycle_park.out.json。
@@ -155,7 +191,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 建议：① 让无 namespace 的查询真正跨全库，或在返回体里加 `namespaces_scanned` 让调用方能自证范围；② 若刻意默认单 ns，就把描述改成「缺省按调用方最近使用的 ns」这类真实语义并给出取全库的入参；③ `list` 增加 `include_namespaces`，让 `bugs` 能被显式纳入。
 - reported_by: cypy-polisher
 
-## BUG-13 [2026-09-26T07:57:19Z] [low] OPEN
+## BUG-13 [2026-09-26T07:57:19Z] [low] DUPLICATE →BUG-10
 - summary: [更正 BUG-10] 停在 [待领取] 的任务有合法出路 `pause`（任意活跃状态→已暂停），「无合法废弃路径 / 只能靠假交付物刷成已完成」不成立
 - detail: 被更正条目：本账本 BUG-10「archive 走 complete 且要求状态 [待验收]，停在 [待领取] 的任务没有任何合法废弃路径（孤儿单永久残留）」。
 仍然成立的部分：`archive` 确实走 `complete`，对 `待领取` 原样报 `非法迁移: complete 要求状态 [待验收]，当前是 [待领取]`。
@@ -165,7 +201,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 建议：① `archive`/`complete` 的非法迁移错误文案追加一句「可用工具：pause / reopen_task」；② 在 lifecycle 文档里给出 `待领取` 的两条出路（park 或走完 claim→execute→submit→verify），别让下一位读者照 BUG-10 的措辞去造假交付物。
 - reported_by: cypy-polisher
 
-## BUG-14 [2026-09-26T08:07:01Z] [high] OPEN
+## BUG-14 [2026-09-26T08:07:01Z] [high] FIXED
 - summary: [bugfind:contract] laya_decide 在 3/4 条返回路径上不输出契约承诺的 decision 字段
 - detail: 契约：src/server/server.mbt:2406 工具描述逐字写「返回 { available, decision:{source/feature_route/split_n/splits_per_family/reasons} }；available=false 表示走回退分支（decision.source=fallback）」。
 
@@ -196,7 +232,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 - 状态位说明：本条仍显示 OPEN 是**账本没有 close API**（BUG-9）的表现，修复本身已按 Omega 全流程 verify 完成。
 
 
-## BUG-15 [2026-09-26T08:08:34Z] [medium] OPEN
+## BUG-15 [2026-09-26T08:08:34Z] [medium] FIXED
 - summary: [bugfind:issue_scan-precision] src/server/issue_scan.mbt 不跳注释行、不排自身规则表，high 档实测 0/8 精确率
 - detail: 契约：src/server/issue_scan.mbt:149 的 scan_skip 只跳过 target/、node_modules、.git/、.db/.sqlite/.mbti/.md；src/server/issue_scan.mbt:186 scan_match_lines 对**每一行原文**做子串匹配，既不跳过注释行（/// 与 //），也不排除规则表所在文件自身。
 
@@ -227,7 +263,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 - 状态位说明：本条仍显示 OPEN 是账本无 close API（BUG-9）的表现。
 
 
-## BUG-16 [2026-09-26T08:09:10Z] [medium] OPEN
+## BUG-16 [2026-09-26T08:09:10Z] [medium] FIXED
 - summary: [bugfind:single-source] status_summary/project_health/fist://overview 汇报 version=0.2.4，moon.mod 实为 0.3.0（三处硬编码）
 - detail: 契约：status_summary 的工具描述（src/server/server.mbt:2913）声明返回 { version, ... }，README.md:184 与 moon.mod 是版本单一来源；AGENTS.md 与 moon.mod 均已升到 0.3.0。
 
@@ -259,7 +295,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 - 状态位说明：本条仍显示 OPEN 是账本无 close API（BUG-9）的表现。
 
 
-## BUG-17 [2026-09-26T09:14:15Z] [medium] OPEN
+## BUG-17 [2026-09-26T09:14:15Z] [medium] FIXED
 - summary: [verify:doc-single-source] 工具数/测试数跨文档三套口径：AGENTS.md=105、deliverable.md=104、scoring_rubric.md=104（实测 116）；README=329、AGENTS/deliverable=317（实测 JS 376）；且 10 个已注册工具在 AGENTS.md 零记载
 - detail: 活证据（2026-09-26 实测）：修复前 `python scripts/check_tools_sync.py` FAIL 并逐条列出 —— server 注册但 AGENTS 未列出 (10): github_env_check, github_flush_execute, github_flush_plan, github_issue_close, github_issue_comment, github_issue_webhook_parse, github_queue_mark_sent, github_queue_status, mode_list, mode_templates；同时报 README.md/AGENTS.md/deliverable.md/scoring_rubric.md 四份文档缺 116 的表述。测试数同构漂移：README.md:5 徽章 329/329、README.md:10/30/79/146 均写 329，而 AGENTS.md:87/97 与 docs/deliverable.md:18 写 317，`moon test --target js` 实测 376。
 影响：① 违反规范 r1「文档即实现」/r2「一源三态·单真源优先」——AI 客户端读 AGENTS.md 会以为只有 105 个能力，整个 GitHub 同步通道（issue_up 的落地面）与 6 模式自驱入口对外不可见；② 「JS 与 Native 双后端均已通过 329/329」这类句子把两个后端的旧数字绑在一起宣称，升版时必然漏改（本轮就是这么漂的）；③ 守卫本身（check_tools_sync/check_test_sync/check_badge）早就写好了，却没在改动当轮跑，漂移积累到 12 项才被发现。
@@ -267,7 +303,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 遗留：版本/计数仍无构建期单一真源（BUG-16 只收了代码内三处，文档侧仍靠人工 + 守卫判红）。
 - reported_by: pentad-r1-verify
 
-## BUG-18 [2026-09-26T09:14:16Z] [medium] OPEN
+## BUG-18 [2026-09-26T09:14:16Z] [medium] FIXED
 - summary: [bugfind:latency] laya_decide 单次调用实测阻塞约 4 分钟（每次调用都重跑 --probe，且 sidecar 决策调用超时预算 300s），无人值守流水线单拍可被一个决策工具吃掉大半预算
 - detail: 活证据（2026-09-26 实测，修复 BUG-14 之后）：`python scripts/fist.py call laya_decide --context "寻虫模式发掘生命周期模块边界bug需要拆分"` 第一次 150s 超时无响应（rc=124，客户端报 'MCP server closed stdout'），放宽到 400s 后 rc=0 返回，耗时 >150s、<400s；同日早前一次同类调用约 60s 返回。原始留档 temp/laya_r1b.json。
 源码位置：src/server/server.mbt laya_decide handler 内 `laya_probe_available("python", ["scripts/laya_decide.py", "--probe"], ".", 15000)` 无条件每次调用都探测（注释自述「每次调用探测以保证实时准确性」），随后 `laya_decide_external(..., 300000)` 给了 5 分钟超时；`.mcp.json` 里 server 的 timeout_ms 只有 30000，两侧预算相差 10 倍。
@@ -280,7 +316,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 
 Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 20s = 25s < 30s），probe 结果加进程内 TTL(5min) 缓存，新增 no_sidecar 逃生门（默认 false）。调用面两次 laya_decide 21.0s/20.9s，均 < 30s 且 decision 恒在（source=fallback）。
 证据：调用面终审 14/15 PASS（唯一 FAIL 系判据自身读取上一笔 stderr，已用 workdir==project_dir 正例复验 status=passed）；laya_decide 21.0s/20.9s < 30s 客户端预算；run_check 对 rm/..越界成对拒绝且文案自带出路。
-## BUG-19 [2026-09-26T09:27:31Z] [high] OPEN
+## BUG-19 [2026-09-26T09:27:31Z] [high] FIXED
 - summary: [bugfind:contract] MCP 工具 schema 声明的 required 全链路不校验：74/88 个工具的广告契约形同虚设，已在 Saga 与预订两个治理面上产出「假成功」
 - detail: 现象：src/server/server.mbt:279 fn schema(props, required) 只把 required 写进 inputSchema 用于对外宣告；src/server/server.mbt:674 instrumented_tool 仅用 _instrument(name, handler) 包一层调用日志，随后 s.tool(name, description, input_schema, ...) 直连——服务端与 colmugx/mcp 两侧都没有任何"缺必填就拒绝"的校验点。实测省略必填参数的调用一律返回成功形状。
 
@@ -319,7 +355,7 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
 建议：① 让 cost_budget_split 真正按 task_id(+namespace) 取子树，与 dag_mc/dag_slack 对齐；子树为空时返回 insufficient 而不是全库；② budget<=0 直接拒绝并在错误文案说明取值范围；③ 返回体补 scope 字段（scoped_task_count / root_task_id / namespace），让作用域可自证（同 BUG-12 建议①的思路）。
 - reported_by: pentad-r2-bugfind
 
-## BUG-21 [2026-09-26T09:27:32Z] [medium] OPEN
+## BUG-21 [2026-09-26T09:27:32Z] [medium] FIXED
 - summary: [bugfind:single-source] MCP 握手自报 serverInfo.version=0.1.0，与 moon.mod 的 0.3.0 及 Round 1 新增的 project_version 常量都不一致 —— BUG-16 的修法漏了对外握手面，且回归锁盯的是 0.2.4 抓不到它
 - detail: 现象：src/server/server.mbt:687 逐字写 let mut s1 = @mcp.MCPServer::MCPServer("fist-mbt", "0.1.0")。这是 MCP initialize 响应里 serverInfo.version 的唯一来源，即任何 MCP 客户端连上来第一眼看到的"这个项目是什么版本"。
 
@@ -331,7 +367,7 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
 建议：① 把 MCPServer 构造的第二个实参改为引用 project_version（一处改动，零 API 变化）；② 把回归锁从"禁止出现某个旧版本字面量"升级为"禁止 src/server/ 下任何形如 0.x.y 的版本字面量，除 project_version 声明行本身"，这样下次升版漏改任一面都会判红；③ 补一条调用面判据：initialize 响应的 serverInfo.version 必须等于 moon.mod 的 version（可在 mcp_smoke 里做，注意与其它构建并发时先 build 再取）。
 - reported_by: pentad-r2-bugfind
 
-## BUG-22 [2026-09-26T09:29:15Z] [medium] OPEN
+## BUG-22 [2026-09-26T09:29:15Z] [medium] FIXED
 - summary: [bugfind:doc-surface] README 工具全景只列 103 个且仍缺 Round 1 补进 AGENTS.md 的那 10 个工具——上一轮只把标题数字改成 116，正文没跟上；守卫看不见这件事（它只校验 AGENTS.md 的名字集合）
 - detail: 现象：Round 1 的 polish 把 README.md:8/36 的工具总数由 105 改为 116，并让 check_tools_sync 转 PASS。但 README 自己的「功能全景」分组表并没有同步扩张。
 
@@ -371,7 +407,7 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
   3) CLI 网关 scripts/fist.py 增加已知别名表（ns->namespace）并在转换时告警，避免 skill/CLI/MCP 三形态各自猜。
 - reported_by: pentad-r2-bugfind
 
-## BUG-24 [2026-09-26T09:38:38Z] [medium] OPEN
+## BUG-24 [2026-09-26T09:38:38Z] [medium] FIXED
 - summary: [bugfind:availability] dag_mc 的 samples 只有下界钳制、无上界：samples=200000 使单次 MCP 调用阻塞超过 100s，而 .mcp.json 给 server 的 timeout_ms 只有 30000；小值被静默抬到 10 且不写进 note
 - detail: 现象：src/engine/engine_dag_mc.mbt:149 逐字为 let n = if samples < 10 { 10 } else { samples }（默认形参 :134 为 samples? : Int = 1000）。下界有钳制、上界完全没有；:244 把生效值回显进 samples 字段。
 
@@ -526,7 +562,7 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
   3) 给守卫补一条版本一致性判据：所有 *.md 里形如 vicTop-cw/fist-mbt@x.y.z 的自述版本必须等于 moon.mod 的 version，或显式标注为历史戳（如 CHANGELOG / 版本时间线小节允许旧值）——注意区分"当前自述"与"历史陈述"，Round 1 已刻意把 README 的 0.2.4/0.2.5 时间线行保留为历史，不能一刀切判红。
 - reported_by: pentad-r2-doc-surface
 
-## BUG-31 [2026-09-26T10:41:50Z] [medium] OPEN
+## BUG-31 [2026-09-26T10:41:50Z] [medium] FIXED
 - summary: [contract] src/server/output_validate.mbt:63-90 parse_artifact 不校验未知字段：拼错/臆造的 artifact 键被静默降级为「文件存在+非空」，verdict 仍是 pass，且 detail 断言「invariant 全部通过」——L4 硬门可被空检查满足
 - detail: 现象（2026-09-26 实测，server cwd=E:/IDEProjects/AI/Cypy，证据 .fist-polish-20260926/probe_output_validate3.json）：
   A) artifacts=[{path: tests/..., contans: <repo 里不存在的串>}] -> verdict=pass，detail 「OK（存在/非空/invariant 全部通过）」
@@ -546,7 +582,7 @@ output_validate 的 artifact 规格改为**先校验再解释**：新增 `artifa
 证据：调用面 J07 未知键 `invariant` 判 fail（detail 点名未知键）、J08 合法 `contains` 仍 pass；
 开关对照：摘掉校验分支后该锁转红。
 
-## BUG-32 [2026-09-26T11:04:49Z] [high] OPEN
+## BUG-32 [2026-09-26T11:04:49Z] [high] FIXED
 - summary: [contract] scripts/fist.py:35 不校验入口产物新鲜度：调用面验收可能在度量旧二进制
 - detail: 现象（2026-09-26 11:03 实测）：src/server/server.mbt 自 17:59 起已接入 run_check_guard（cmd 白名单 + workdir 子树），但 scripts/fist.py 第 35 行直接拉起 _build/js/debug/build/cmd/main/main.js（mtime 16:51，早于源码 68 分钟），导致调用面终审全程测的是 Round 1 旧行为：run_check 对 `rm -rf /` 返回 ok=true、workdir 拒绝文案是旧的「拒绝绝对路径/盘符」、laya_decide 单跳 211s 超客户端 30s 预算。执行 `moon build --target js cmd/main` + patch_esm_main.py 后，同一判据脚本立刻变 14/15 PASS、laya 21.0s/20.9s。危害：①任何「打到调用面」的验收可能在 silently 度量旧产物，假绿或假红；②MCP 客户端连的也是这个入口（.mcp.json 走 moon run 会重建，但脚本轨不会）；③本仓守卫族没有任何一条比较 src/** 与入口产物的 mtime，BUG-22/30 的「守卫覆盖面窄于主张」在产物层重演。修复方向：scripts/fist.py 启动前比较 max(mtime of src/**, moon.pkg) 与 main.js，落后即自动 `moon build --target js cmd/main` 并 patch，或显式拒绝并提示重建；并把该顺序不变量纳入守卫族（可并入 check_plugin_sync 同级的新守卫）。
 
@@ -559,7 +595,7 @@ scripts/fist.py 启动前比较 `max(mtime src/**.mbt|.mbti, moon.mod, moon.pkg)
 `FIST_NO_AUTOBUILD=1` 同一状态下 rc=1 且文案点名两侧路径。终审另加 J00 顺序不变量：入口过期即 FATAL 作废全部判据。
 已知缺口（诚实记账）：本条只有调用面证据，未进守卫族——守卫族判据必须能在 CI 里自证，而该不变量在"未构建的干净克隆"上必然为假。
 
-## BUG-33 [2026-09-26T11:23:48Z] [high] OPEN
+## BUG-33 [2026-09-26T11:23:48Z] [high] FIXED
 - summary: [bugfind:contract-debt] 45 个工具广告可选参数 now，全仓 0 处读取：调用方传 now 被静默丢弃
 - detail: 实测（2026-09-26 11:22，指挥官独立复算）：`grep -c '"now": *string_prop' src/server/server.mbt`=45；`get_str(args, "now")` 在 src/** 全量=0；`now_default()`=47。即 server 时钟盖章（BUG-1 的正确修复）已落地，但 45 份 inputSchema 仍在承诺「时间戳(可选，默认内置)」——契约在说谎，且副作用是心跳陈旧/熔断恢复窗/Omega 新鲜度无法写确定性判据（注入不了受控时钟）。run_check:1121 的「服务端盖章」是诚实措辞样板。正确出路不是让 handler 重新接受 caller now（那会回退 BUG-1 的账本可反驳性修复），而是**停止广告**并写明由服务端盖章。
 
@@ -596,7 +632,7 @@ native/js 双后端 + 迁移），属跨模块契约变更，不在一轮 fix �
 出路：①payload 用 `Json::object + stringify` 生成；②curl 改 `--data @<临时 json 文件>` 消掉 shell 引号层；
 ③补一条不依赖 token 的判据（对生成的 --data 段做 `json.loads`）；④`github_queue_append` 要么注册成工具要么从文案里去掉。
 
-## BUG-36 [2026-09-26T11:23:50Z] [medium] OPEN
+## BUG-36 [2026-09-26T11:23:50Z] [medium] FIXED
 - summary: [bugfind:wrong-target] memory_gc 对非法 kind 静默改靶到 target：打错一个字会截掉你没点名的文件
 - detail: src/server/memory.mbt:180 `let kind = if mem_kinds_contain(kind) { kind } else { "target" }`，注释写明意图是「防路径遍历落到文件系统」——意图正当，但补救动作是**换目标继续写**：随后 :223 会截断正文并把老条目搬档。对照同文件 :121 的 consolidate 对同一字段是直接 Err。即 `--kind thinking g` 实际写坏 memory/target.md，而返回体只回 kind:"target"，调用方极易忽略。修复方向：非法 kind 一律 Err 并列出合法集合（保住防遍历的意图，同时不越权写别的文件）；这也让「归档不硬删」的既有承诺仍可自证。
 
@@ -610,7 +646,7 @@ native/js 双后端 + 迁移），属跨模块契约变更，不在一轮 fix �
 调用面：J09 拒绝并列出集合、J10 target.md sha256 不变、J11 consolidate 同样拒。
 附带发现（记在本条不另立账）：第一次开关对照误改了 consolidate 的 Err 而全量仍 91/91 绿，正好暴露"consolidate 非法 kind 无锁"这一覆盖缺口。
 
-## BUG-37 [2026-09-26T11:23:50Z] [low] OPEN
+## BUG-37 [2026-09-26T11:23:50Z] [low] FIXED
 - summary: [bugfind:phantom-guard] mode_list 的 forbidden_tools 写的是不存在的工具名，「禁发新功能」约束无可匹配对象
 - detail: src/ops/ops_modes.mbt:142-143 发布禁用名单 `publish_new_feature_task` / `issue_scan_with_generate_new`，而 `fist.py list-tools` 对两者计数均为 **0**（真源 server.mbt 注册表也没有；实调 mode_list 已复核返回体）。后果：polish/tidy 模式的「禁止发布新功能」红线在机器面上是空的——按名单匹配拦截的下游永远匹配不到，约束只剩提示词文字。真实可拦截的同族动作是 `publish`（配 created_by 角色闭集）。修复方向：名单改成真实注册名并注明「按 (tool, role) 组合拒」，或明确该字段只是给人类读的文档（那就不该叫 forbidden_tools）。
 
@@ -622,7 +658,7 @@ native/js 双后端 + 迁移），属跨模块契约变更，不在一轮 fix �
 守卫：check_tools_sync.py 判据 4（名单 ⊆ tools/list 真注册集，解析到 0 个名字即 FATAL 不出绿灯）。
 证据：调用面 J12 无越界名、J13 polish/tidy 名单非空且全为真注册名。
 
-## BUG-38 [2026-09-26T11:49:59Z] [high] OPEN
+## BUG-38 [2026-09-26T11:49:59Z] [high] FIXED
 - summary: [bugfind:phantom-tool-call] templates 用 `run_check_external({cwd,command,timeout_sec})` 教主流程跑外部判据，但该工具未注册（真名 run_check，参数名 task_id/cmd/args/workdir/timeout_ms 全不同），按模板执行必然调空
 - detail: 现象（2026-09-26 11:41 实测，指挥官独立复算）：
 1) `grep -c '"run_check_external"' src/server/server.mbt` = 0（未注册），
@@ -647,7 +683,7 @@ native/js 双后端 + 迁移），属跨模块契约变更，不在一轮 fix �
 守卫：check_tools_sync.py 判据 6——模板里 `` `name(` `` 调用形状必须命中 tools/list 真注册集。
 证据：调用面 J14 全部模板调用形状命中（残留=∅）、J15 模板 run_check 的键 ⊆ 真实 properties（args/cmd/task_id/timeout_ms/workdir）。
 
-## BUG-39 [2026-09-26T12:02:12Z] [medium] OPEN
+## BUG-39 [2026-09-26T12:02:12Z] [medium] FIXED
 - summary: [bugfind:cli-crash] scripts/fist.py 对返回顶层数组的工具（mode_list/call_log 等）AttributeError 崩溃：判退出码只兜 JSONDecodeError 不兜类型错误
 - detail: 现象（2026-09-26 11:54 实测）：`python scripts/fist.py call mode_list` ->
   File "scripts/fist.py", in cmd_call: `verdict = payload.get("verdict", "")`
@@ -665,7 +701,7 @@ scripts/fist.py 判退出码前先 `isinstance(payload, dict)`，数组型结果
 证据：调用面 J25 子进程真跑 `python scripts/fist.py call mode_list` → rc=0 且 stdout 含 polish（修复前同命令 rc=1 + AttributeError 栈）。
 已知语义边界（诚实记账）：数组结果不再参与 verdict 判定——工具若改用数组承载 fail 语义，本判码会漏；现行 verdict/ok 契约都在对象里。
 
-## BUG-40 [2026-09-26T12:02:13Z] [medium] OPEN
+## BUG-40 [2026-09-26T12:02:13Z] [medium] DUPLICATE →BUG-5
 - summary: [contract:split-policy] 同名字段 project_dir 在 bug 族（report_bug/bug_list/github_*）拒绝绝对路径，而任务族（publish/list/dag_*）接受：一条流水线两套口径，绝对路径客户端默认调不动账本
 - detail: 现象（2026-09-26 11:57 实测，同一 MCP 入口、同一次会话）：
   1) bug_list(project_dir="E:\IDEProjects\AI\FIST-Mbt") -> Err "bug_list: 非法 project_dir（拒绝绝对路径/穿越/盘符）"
@@ -682,7 +718,7 @@ scripts/fist.py 判退出码前先 `isinstance(payload, dict)`，数组型结果
   B) 保持加固，但在错误文案里给出可执行出路（"改传项目根相对路径，如 `.`"），并在 AGENTS/模板里把"账本族用相对 project_dir"写清。
 - task_id: T0r317
 
-## BUG-41 [2026-09-26T12:37:31Z] [medium] OPEN
+## BUG-41 [2026-09-26T12:37:31Z] [medium] FIXED
 - summary: [improvement:boundary-owner] 深拆/Omega 只验 spec 内行为：spec 未写的域外行为没有 owner（atgc-merge 归因报告机理 1+2，抓手 1/2/3/4）
 - detail: 来源：`E:/IDEProjects/AI/_fist_meta_prompts/实验/atgc-merge/归因报告_防御完备性.md`（A/B 实验附录，裁判 Loomy，2026-09-26）。
 
@@ -721,22 +757,22 @@ scripts/fist.py 判退出码前先 `isinstance(payload, dict)`，数组型结果
 （`E:/IDEProjects/AI/_fist_meta_prompts/模式*模板.md`），补丁正文与幂等应用脚本已备在
 `temp/atgc_handoff_抓手4_外部模板补丁.md`；另实测七份模板**没有** `## 完成标准` 小节，故补丁以"附：完成标准补丁"追加文末。
 
-## BUG-42 [2026-09-26T13:31:20Z] [high] OPEN
+## BUG-42 [2026-09-26T13:31:20Z] [high] FIXED
 - summary: [verify][BUG-42] src/server/server.mbt project_standards 描述仍称一源三态/三形态/cl1-cl6：对外描述与工具输出（四态+cl7）自相矛盾，所有 MCP 客户端读到的是旧口径
 - detail: 证据：temp/j_before_after.py 在 HEAD 内容上发红 32 条（J6=2/J7=11/J8=19），工作树为 0；temp/stdalign_verify.py 为本轮调用面终审。
 - reported_by: std-auditor
 
-## BUG-43 [2026-09-26T13:31:20Z] [high] OPEN
+## BUG-43 [2026-09-26T13:31:20Z] [high] DUPLICATE →BUG-49
 - summary: [verify][BUG-43] templates 的 FIST 调用示例用了未声明参数（output_validate 的 check_results、project_standards 的 project_dir/dry_run、evolve_distill 的 project_dir/round）并缺 required；_instrument 只校验 required ⇒ 未知键静默丢弃，照模板执行=以为验了其实没验
 - detail: 证据：temp/j_before_after.py 在 HEAD 内容上发红 32 条（J6=2/J7=11/J8=19），工作树为 0；temp/stdalign_verify.py 为本轮调用面终审。
 - reported_by: std-auditor
 
-## BUG-44 [2026-09-26T13:31:20Z] [medium] OPEN
+## BUG-44 [2026-09-26T13:31:20Z] [medium] DUPLICATE →BUG-50
 - summary: [verify][BUG-44] docs/agent-map.md 宣称测试数 316 项全绿（实测 406）；check_test_sync 只核对「实测数出现在 4 份文档」，不核对文档里的**其它**数字是否等于实测 ⇒ 数值声明无人管
 - detail: 证据：temp/j_before_after.py 在 HEAD 内容上发红 32 条（J6=2/J7=11/J8=19），工作树为 0；temp/stdalign_verify.py 为本轮调用面终审。
 - reported_by: std-auditor
 
-## BUG-45 [2026-09-26T13:32:33Z] [high] OPEN
+## BUG-45 [2026-09-26T13:32:33Z] [high] DUPLICATE →BUG-48
 - summary: [verify][BUG-42] src/server/server.mbt project_standards 描述仍称一源三态/三形态/cl1-cl6：对外描述与工具输出（四态+cl7）自相矛盾，所有 MCP 客户端读到的是旧口径
 - detail: 证据：temp/j_before_after.py 在 HEAD 内容上发红 32 条（J6=2/J7=11/J8=19），工作树为 0；temp/stdalign_verify.py 为本轮调用面终审。
 - reported_by: std-auditor
@@ -748,7 +784,7 @@ scripts/fist.py 判退出码前先 `isinstance(payload, dict)`，数组型结果
 下游 Omega 链与生命周期整体走错分支，重跑时重复入账 ⇒ **重复条目，实际修复见 BUG-48 的 FIXED 段**。
 教训入档：驱动重跑前应先幂等检查（同一 summary 不重复 report_bug）。
 
-## BUG-46 [2026-09-26T13:32:34Z] [high] OPEN
+## BUG-46 [2026-09-26T13:32:34Z] [high] DUPLICATE →BUG-49
 - summary: [verify][BUG-43] templates 的 FIST 调用示例用了未声明参数（output_validate 的 check_results、project_standards 的 project_dir/dry_run、evolve_distill 的 project_dir/round）并缺 required；_instrument 只校验 required ⇒ 未知键静默丢弃，照模板执行=以为验了其实没验
 - detail: 证据：temp/j_before_after.py 在 HEAD 内容上发红 32 条（J6=2/J7=11/J8=19），工作树为 0；temp/stdalign_verify.py 为本轮调用面终审。
 - reported_by: std-auditor
@@ -758,7 +794,7 @@ scripts/fist.py 判退出码前先 `isinstance(payload, dict)`，数组型结果
 
 同 BUG-45：本条为 BUG-49 的重复（驱动重跑副作用），实际修复与证据见 BUG-49 的 FIXED 段。
 
-## BUG-47 [2026-09-26T13:32:34Z] [medium] OPEN
+## BUG-47 [2026-09-26T13:32:34Z] [medium] DUPLICATE →BUG-50
 - summary: [verify][BUG-44] docs/agent-map.md 宣称测试数 316 项全绿（实测 406）；check_test_sync 只核对「实测数出现在 4 份文档」，不核对文档里的**其它**数字是否等于实测 ⇒ 数值声明无人管
 - detail: 证据：temp/j_before_after.py 在 HEAD 内容上发红 32 条（J6=2/J7=11/J8=19），工作树为 0；temp/stdalign_verify.py 为本轮调用面终审。
 - reported_by: std-auditor
@@ -768,7 +804,7 @@ scripts/fist.py 判退出码前先 `isinstance(payload, dict)`，数组型结果
 
 同 BUG-45：本条为 BUG-50 的重复（驱动重跑副作用），实际修复与证据见 BUG-50 的 FIXED 段。
 
-## BUG-48 [2026-09-26T13:34:23Z] [high] OPEN
+## BUG-48 [2026-09-26T13:34:23Z] [high] FIXED
 - summary: [verify][BUG-42] src/server/server.mbt 的 project_standards 对外描述仍称「一源三态/三形态必须对齐/三形态 checklist（cl1 到 cl6）」，而工具输出实为 R115+ 四态与 cl1~cl7：描述与输出自相矛盾，且 116 个客户端读到的都是旧口径；wbtest 只锁输出不锁描述，故锁的意图③落空
 - detail: 证据：temp/j_before_after.py 在 HEAD 内容上发红 32 条（J6=2/J7=11/J8=19），工作树 0；temp/stdalign_verify.py 为本轮调用面终审；修复落在 check_doc_surface J6/J7/J8 + 35 处文档口径对齐。
 - reported_by: std-auditor
@@ -783,7 +819,7 @@ cl1→cl7），并**如实声明能力边界**（"只下发清单，不扫描文
 钉 version/canonical_doc/7 项 cl7/无旧口径。判据侧：**新守卫 J7** 扫规范性表面，**J6** 校正文↔投影，
 `--selftest` 用合成违例证明两条都能红（`temp/j_before_after.py`：HEAD 内容上 J6=2/J7=11 条发红，工作树 0）。
 
-## BUG-49 [2026-09-26T13:34:23Z] [high] OPEN
+## BUG-49 [2026-09-26T13:34:23Z] [high] FIXED
 - summary: [verify][BUG-43] templates 的 FIST 调用示例用了未声明参数（output_validate 的 check_results、project_standards 的 project_dir/dry_run、evolve_distill 的 project_dir/round、publish/watchdog_tick 的 now）并缺 required（artifacts/task_id/goal/note）；_instrument 只校验 required ⇒ 未知键静默丢弃，照模板执行等于「以为跑了硬门其实什么都没验」
 - detail: 证据：temp/j_before_after.py 在 HEAD 内容上发红 32 条（J6=2/J7=11/J8=19），工作树 0；temp/stdalign_verify.py 为本轮调用面终审；修复落在 check_doc_surface J6/J7/J8 + 35 处文档口径对齐。
 - reported_by: std-auditor
@@ -799,7 +835,7 @@ output_validate→artifacts+evidence，并写明"没有 check_results 这个参�
 属性集与 required，对模板的 `tool({ ... })` 只取 **depth-1 键**（避免误伤 artifacts 子 schema 的 path/contains）并核对参数表；
 HEAD 内容上发红 19 条、工作树 0。
 
-## BUG-50 [2026-09-26T13:34:23Z] [medium] OPEN
+## BUG-50 [2026-09-26T13:34:23Z] [medium] FIXED
 - summary: [verify][BUG-44] 数值声明无人管：docs/agent-map.md 宣称测试数 316 项全绿（实测 406）。check_test_sync 只核对「实测数出现在 4 份指定文档」，不核对其它文档里的数字是否等于实测，也不核对反向违例 ⇒ 文档里的旧数字可以长绿
 - detail: 证据：temp/j_before_after.py 在 HEAD 内容上发红 32 条（J6=2/J7=11/J8=19），工作树 0；temp/stdalign_verify.py 为本轮调用面终审；修复落在 check_doc_surface J6/J7/J8 + 35 处文档口径对齐。
 - reported_by: std-auditor
@@ -846,7 +882,7 @@ HEAD 内容上发红 19 条、工作树 0。
   `docs/evolve.md:146`（148/148）、`docs/atgc-selfdrive-demo.md:93`（191/191，且原文用词是"当前"）。
   两处已按实测数改写。这就是 BUG-44/50 说的"第 5 份文档写着别的数"被抓住的第一个实例。
 
-## BUG-51 [2026-09-26T13:39:19Z] [medium] OPEN
+## BUG-51 [2026-09-26T13:39:19Z] [medium] FIXED
 - summary: [verify][BUG-51] 路径口径在工具间相反：report_bug/bug_list 拒绝绝对 project_dir（『非法 project_dir（拒绝绝对路径/穿越/盘符）』），而 run_check 又拒绝 workdir='.'（『workdir=. 与项目不同根（workdir 盘符= 项目盘符=E:）』，因任务 project_dir 记的是绝对路径）⇒ 照模板用同一个相对根跑完整链路必卡在第 3 步；两工具需统一路径策略或在描述里写明各自口径
 - detail: 复现：temp/rc_raw.py（先 project_dir='.' 成功 report_bug，再 workdir='.' 被 run_check 拒；改 workdir=绝对根后通过）。失败本身是硬门且带 audit_log/call_log（可审计性合格），缺的是**口径一致性**。
 - reported_by: std-auditor
@@ -879,7 +915,7 @@ HEAD 内容上发红 19 条、工作树 0。
   S03/S04 子目录与 `src/../scripts` 归一、S05~S08 上跳与混形态仍拒且文案带出路、
   S09/S10 `report_bug` 的相对口径未受影响、仍拒绝对 project_dir（账本边界没被执行面的放宽带着走）。
 
-## BUG-52 [2026-09-26T15:46:13Z] [high] OPEN
+## BUG-52 [2026-09-26T15:46:13Z] [high] FIXED
 - summary: 上游 fist-model-router：时间戳↔秒用「365 天固定年 + 每月 31 天」近似，5h 窗口判定跨月/闰年偏移
 - detail: 证据：源项目 src/model_router.mbt `iso_to_secs` 用 `(year-2024)*365 + (mon-1)*31 + day`，既不漏 4/6/9/11 月的 30 天也不管闰日 ⇒ `window_reset_check` 的 now_s-s>=18000 在跨月时最多偏 3 天，配额窗口实际不过期或提前过期。处置：合并时改写为 civil-days 精确算法（Howard Hinnant days_from_civil），回归锁 src/router/model_router_wbtest.mbt rt_1（含闰日 2028-02-29 精确秒数）/rt_2（非法时间戳一律 -1，不当成 0 参与减法）。
 - reported_by: router-merge-r1
@@ -889,7 +925,7 @@ HEAD 内容上发红 19 条、工作树 0。
 
 合并即修：`src/router/model_router.mbt` 改用 civil-days 精确换算（days_from_civil/civil_from_days），闰日与跨月都对。回归锁 rt_1（`2024-02-29`/`2026-03-01` 精确秒数）、rt_2（非法时间戳一律 -1，绝不参与减法）。
 
-## BUG-53 [2026-09-26T15:46:13Z] [high] OPEN
+## BUG-53 [2026-09-26T15:46:13Z] [high] FIXED
 - summary: 上游 fist-model-router：current_model() 在池为空时索引 [0] 直接 panic
 - detail: 证据：源项目 Free/Paid 分支都写 `if idx < len { pool[idx] } else { pool[0] }`，空池时 len=0 ⇒ else 取 pool[0] ⇒ 越界 panic，MCP server 整条连接被打断。处置：合并后 current_model() 返回 ModelQuota?，pick 的两池皆空分支给available=false + 明确 reason（不静默换模型）。回归锁 rt_4（空池不 panic）/rt_5（两池耗尽显式不可用）、mo_3 与调用面判据 S04x。
 - reported_by: router-merge-r1
@@ -899,7 +935,7 @@ HEAD 内容上发红 19 条、工作树 0。
 
 合并即修：`current_model()` 返回 `ModelQuota?`，两池皆空走 `available=false` + 明确 reason。锁 rt_4（空池不 panic）、rt_5（全耗尽显式不可用）、mo_3（记账后仍无模型 ⇒ 点名「不会静默改用别的模型」）、调用面 S03/S04。
 
-## BUG-54 [2026-09-26T15:46:13Z] [high] OPEN
+## BUG-54 [2026-09-26T15:46:13Z] [high] FIXED
 - summary: router_restore 不夹紧越界游标：free_idx/paid_idx 为负时取模落到负下标（坏状态文件即可触发）
 - detail: 证据：修复前 src/router/router_state.mbt 直接 `r.free_idx = st_int(sm, "free_idx", default=0)`，而 pool_pick 用 `(start_idx + i) % n`；MoonBit 的 % 与被除数同号 ⇒ -7 % 2 = -1，下一次 model_route 就按下标 -1 panic。坏/手改过的 memory/model-router-*.json 即可触发。活证据：白盒测试 rs_3 在修复前实测 FAILED（`false is not true`，warnings<3 且未夹紧），修复后 5/5 绿；夹紧行为由 rs_3 的 assert_eq(r.free_idx, 0) 与 warning 点名锁住。
 - reported_by: router-merge-r1
@@ -909,7 +945,7 @@ HEAD 内容上发红 19 条、工作树 0。
 
 `router_restore` 把 `free_idx`/`paid_idx` 夹紧到池内并对越界点名 warning；语义前提用 `assert_eq(-7 % 2, -1)` 写进测试（MoonBit 的 % 与被除数同号 ⇒ 负游标必然落负下标）。活证据：修复前 rs_3 实测 FAILED（`false is not true`），修复后 src/router 18/18 绿。
 
-## BUG-55 [2026-09-26T15:46:13Z] [medium] OPEN
+## BUG-55 [2026-09-26T15:46:13Z] [medium] FIXED
 - summary: model_route 的 config_json 解析失败被静默当作「没传配置」，调用方以为覆盖了池定义实际用了默认池
 - detail: 证据：修复前 src/server/server.mbt 写 `@json.parse(cj) catch { _ => Json::null() }`，而 `Json::null()` 在 router_restore 里正是「无配置」的语义 ⇒ 打错的 config_json 会静默改用 RouterConfig::default()（模型名完全不同），与 BUG-31/33/43 同族的静默降级。处置：新增 mr_parse_config（空串=不覆盖，非法 JSON=Err 并说明不回落），回归锁：调用面判据 S04（tools/call model_route --config_json '{"free_pool":[oops' → is_error）。
 - reported_by: router-merge-r1
@@ -919,7 +955,7 @@ HEAD 内容上发红 19 条、工作树 0。
 
 新增 `mr_parse_config`：空串=不覆盖（`Json::null()`），非法 JSON=Err 并在工具描述里写明「不静默回落默认池」。调用面锁 S04（tools/call 传 `{"free_pool":[oops` → is_error）。
 
-## BUG-56 [2026-09-26T15:46:13Z] [medium] OPEN
+## BUG-56 [2026-09-26T15:46:13Z] [medium] FIXED
 - summary: usage_report.current_model 报的是轮询游标位而不是本次选中的模型，同一响应里与 decision.model 自相矛盾
 - detail: 活证据（真实调用面，2026-09-26 实测）：`python scripts/fist.py call model_route --project_dir . --namespace rmscli` 返回 `decision.model=AtomGit-qwen3.8-27b` 而同一 JSON 里 `usage.current_model=AtomGit-glm5.3-flash`——pick 把游标推进到 (idx+1)%n 后，current_model() 读的是**下一个**候选，却被命名成「当前模型」。后果：agent 读 usage 段会以为用的是另一个模型，配额账与实跑模型对不上。处置建议：usage_report 报真实选中模型（ModelRouter 记 last_pick），游标位另起名 cursor_model。
 - reported_by: router-merge-r1
@@ -929,7 +965,7 @@ HEAD 内容上发红 19 条、工作树 0。
 
 `ModelRouter` 增加 `last_pick`，`pick` 收敛到单一 choke point 登记（force_switch 成功分支同步登记），`usage_report` 的 `current_model` 报真在用的模型、游标位另名 `cursor_model`，状态 schema 加 `last_pick`。成对锁 rt_13（两键必须不同，否则断言是空的）+ rs_1（跨进程往返）+ 调用面 S03c。
 
-## BUG-57 [2026-09-26T15:46:13Z] [low] OPEN
+## BUG-57 [2026-09-26T15:46:13Z] [low] FIXED
 - summary: scripts/issue_scan.py：`--include-tests false` 被当成开启（CLI 与 MCP 语义漂移）
 - detail: 活证据：`python scripts/issue_scan.py src/router --include-tests false` 返回 `"include_tests":true` 且扫进了 2 个 _wbtest 文件（scanned_files=5）。根因 scripts/issue_scan.py:68 `include_tests = "--include-tests" in sys.argv`——只判存在不判值，而 MCP 形态该参数是 bool（默认 false），照 MCP 习惯写 `false` 的调用方拿到相反结果且没有任何提示，多余的位置参数也被静默忽略。处置建议：接受 `--include-tests [true|false]`，对无法识别的位置参数显式报错退出。
 - reported_by: router-merge-r1
@@ -939,7 +975,7 @@ HEAD 内容上发红 19 条、工作树 0。
 
 `scripts/issue_scan.py` 显式解析 `--include-tests [true|false]`，未知参数与多余位置参数直接 exit 2。实测：`--include-tests false` → `include_tests=False, scanned_files=3`（只产品代码）；`--includ-tests`（拼错）→ FAIL 并列出可用开关。
 
-## BUG-58 [2026-09-26T15:46:13Z] [medium] OPEN
+## BUG-58 [2026-09-26T15:46:13Z] [medium] FIXED
 - summary: 守卫族在 GBK 控制台直接抛 UnicodeEncodeError，本地拿不到判定（只拿到 traceback）
 - detail: 活证据：Windows 默认 GBK 控制台下 `python scripts/check_doc_surface.py` 打印 「J6 规范正文↔投影一致…」时 UnicodeEncodeError 崩在 print，退出码非 0；同一脚本 `PYTHONIOENCODING=utf-8` 下才输出 PASS。守卫族的「红」必须是判据红，编码崩溃冒充红色会让本地结论不可信（CI 在 Linux UTF-8 下掩盖了这件事）。同类：check_test_sync/check_badge/gen_plugins 的中文输出在 GBK 下是乱码（能跑但不可读）。处置建议：scripts/*.py 入口统一 sys.stdout.reconfigure(encoding='utf-8', errors='replace')。
 - reported_by: router-merge-r1
@@ -949,7 +985,7 @@ HEAD 内容上发红 19 条、工作树 0。
 
 `check_tools_sync/check_test_sync/check_badge/check_scripts_index/check_doc_surface/gen_plugins` 入口统一 `stdout/stderr.reconfigure(encoding=utf-8, errors=replace)`（另两条守卫本就有）。实测：不加 `PYTHONIOENCODING` 在 GBK 控制台直跑 6 守卫全部 PASS 且中文可读。
 
-## BUG-59 [2026-09-26T16:04:49Z] [medium] OPEN
+## BUG-59 [2026-09-26T16:04:49Z] [medium] FIXED
 - summary: 父节点被自动提升为待验收时交付物为空，Omega 成果复验门禁与 execute 合法态互锁，无出路
 - detail: 证据链（ns=router-merge，2026-09-26 实测）：子叶全 verify ⇒ 引擎把父节点提升「待验收」，但父节点 deliverable 仍为空；此时三条调用互相锁死——omega_result_verify 报「尚无交付物（deliverable 为空），无可复验成果」；execute 报「非法执行: 任务处于 [待验收]，合法路径：验收(verify)/需要改进(reject→已打回)/重试(retry→执行中)」；verify 报「Omega 强验证门禁：尚未做成果复验」。reopen_task 只支持已归档/已完成。⇒ 开了 omega_strong_verify 的递归拆解树，只要父节点没在子叶完成前自己 execute 过，就必然卡死，只能人工 reject→retry 绕一圈（本轮 5 个父节点全中）。
 修法建议：①自动提升时把子叶交付的并集写进父节点 deliverable（最贴近语义，成本最低）；或②允许「待验收」态补记交付物（execute 在该态放行一次）；或③提升即视为无需复验（不建议，弱化门禁）。
@@ -960,7 +996,7 @@ HEAD 内容上发红 19 条、工作树 0。
 ### FIXED(2026-09-26 六模式轮 · 合并 fist-model-router（指挥官终审） / BUG-59)
 
 `FistEngine::verify` 的父节点自动提升分支继承子叶交付并集（父节点已有交付则不覆盖，零回归）。锁 `src/engine/engine_promote_r6_test.mbt` 两条（提升即带交付 / 已有交付不被覆盖）。活证据：修复前本轮 5 个父节点全部卡在「待验收」——omega_result_verify 报无交付物、execute 报状态非法、verify 报门禁未过，只能人工 reject→retry 绕出（ns=router-merge 实测记录）。
-## BUG-60 [2026-09-26T16:20:31Z] [medium] OPEN
+## BUG-60 [2026-09-26T16:20:31Z] [medium] FIXED
 - summary: evolve_critic 门禁在默认参数下永不可满足：中性 score=0.5 参与加权后 combined 上限 0.75 < 阈值 0.85
 - detail: 活证据（2026-09-26 实测）：evolve_critic 的 score 属性描述写「默认0.5」，threshold「默认0.85」，而 critic_review 计算 combined=0.5*score+0.5*novelty ⇒ 不传 score 时 combined 最大 (0.5+1.0)/2=0.75，永远低于 0.85，任何候选都被判「稳健性不足，暂缓入库」。实测两次调用均 admit=false（score=0.5、novelty=0.887、combined=0.694）。第二个受害者是 task_challenge：src/engine/engine_challenge.mbt:115/140 硬传 0.5，于是 critic=true 的挑战题在任何档案库状态下都进不了门禁的"放行"分支——特性看起来开着，实际恒拒。门禁恒关比没有门禁更糟：它给出"已过审"的错觉。
 - reported_by: router-merge-r1
@@ -970,79 +1006,79 @@ HEAD 内容上发红 19 条、工作树 0。
 ### FIXED(2026-09-26 六模式轮 · 合并 fist-model-router（指挥官终审） / BUG-60)
 
 中性分不再参与加权：`critic_review` 在 `score == 0.5`（= 没算分）时按 `novelty` 单独判，显式给分才走 `0.5*score + 0.5*novelty`。这样 `evolve_critic` 不传 score 与 `task_challenge` 硬传 0.5 两条默认路径都能真正过审，而漂移/重复防护不变。锁 `src/evolve/critic_test.mbt` 一条三判据：中性分+空库⇒放行、中性分+高重合⇒仍拒、显式 0.1⇒仍拒。
-## BUG-61 [2026-09-27T03:02:07Z] [high] OPEN
+## BUG-61 [2026-09-27T03:02:07Z] [high] FIXED
 - summary: [r4][executor_run] 文档承诺的记账从未发生
 - detail: AGENTS.md 与 executor_run 工具描述都写「model 留空则先向路由器要一个模型并记账」，实际 src/server/model_router_ops.mbt:241 调 model_route_impl(project_dir, ns~) 时不传 record_model ⇒ 只 pick 不 record_call。实测（temp/r4/verify_laneA.py + fist.py 真跑）：执行器跑完后状态里 used 仍为 0、switch_count 不推进 ⇒ 执行器流量永不影响档位，路由对真实用量失明。
 - reported_by: pmode-r4-bugfind
 - task_id: T0r366
 
-## BUG-62 [2026-09-27T03:02:07Z] [high] OPEN
+## BUG-62 [2026-09-27T03:02:07Z] [high] FIXED
 - summary: [r4][executor_run] dry_run=true 并非无副作用：写盘 + 推进游标，两次同样请求返回不同模型
 - detail: 复现：python temp/r4/verify_laneA.py（同一 ns 连打两次 executor_run dry_run=true）。实测第一次 argv 用 AtomGit-qwen3.8-27b、第二次换成 AtomGit-glm5.3-flash，且 temp/.../memory/model-router-<ns>.json 的 free_idx 由 0 变 1、模型 window_start 被盖章。根因与「model 留空=只问不消耗」同源：model_route_impl 在只查询分支也调 mr_save（src/server/model_router_ops.mbt:110），轮询游标在无人消耗配额时就被推进。
 - reported_by: pmode-r4-bugfind
 - task_id: T0r367
 
-## BUG-63 [2026-09-27T03:02:07Z] [high] OPEN
+## BUG-63 [2026-09-27T03:02:07Z] [high] FIXED
 - summary: [r4][model_route] config_json 传 JSON 对象被静默当成没传，走默认池且零告警
 - detail: BUG-55 已把「非法 JSON 静默回落默认池」修成显式报错，但类型边界还漏着一条：schema 声明 config_json 是 string，而 MCP/LLM 客户端最常直接给对象。实测（temp/r4 探针）：同一个配置以对象传 → decision.model=AtomGit-qwen3.8-27b（默认池）、warnings 只有「无有效状态」；以字符串传 → decision.model=ZZZ-FREE（自定义池生效）。根因 src/server/server.mbt:340 get_str 对非字符串一律回退默认值。
 - reported_by: pmode-r4-bugfind
 - task_id: T0r368
 
-## BUG-64 [2026-09-27T03:02:07Z] [medium] OPEN
+## BUG-64 [2026-09-27T03:02:07Z] [medium] FIXED
 - summary: [r4][model_route] namespace 未过 safe_ns：写不进盘的 ns 静默失去配额约束
 - detail: src/router/router_state.mbt:13 直接拼 memory/model-router-{ns}.json，未复用仓库现成的 src/store/multi_store.mbt:24 safe_ns。实测 ns=a/b → persisted=false 而 ok=true，连记三次 used 恒为 1 ⇒ 上限形同虚设；大小写不敏感文件系统上 NSLOWER/nslower 共用一本账（同源）。
 - reported_by: pmode-r4-bugfind
 - task_id: T0r369
 
-## BUG-65 [2026-09-27T03:02:07Z] [medium] OPEN
+## BUG-65 [2026-09-27T03:02:07Z] [medium] FIXED
 - summary: [r4][router 测试] 假绿锁：ent(used=-3) 根本没把 -3 写进 JSON，「负数夹紧」断言恒真
 - detail: src/router/router_state_wbtest.mbt:32-34 的 ent() 仅在 used>=0 时才写 used 键，于是 :100 传入的 used=-3 在 JSON 里缺席，:107 的 assert_eq(used, 0) 测的是「字段缺失时的默认值」而不是负数夹紧路径 ⇒ src/router/model_router.mbt:59 的夹紧逻辑实际零覆盖。同文件另三处弱断言：rs_1 的付费单元只查 is Some(_)、rt_7 标题含「占比」却不查 share_pct、mo_* 全部没看 usage.current_model（故记账后报别名的缺陷落在所有锁之外）。
 - reported_by: pmode-r4-bugfind
 - task_id: T0r370
 
-## BUG-66 [2026-09-27T03:02:07Z] [medium] OPEN
+## BUG-66 [2026-09-27T03:02:07Z] [medium] FIXED
 - summary: [r4][插件态] 投影真源仍在广告幻影参数 now（120 个工具声明 now 的为 0）
 - detail: plugins/source/SKILL.md:57「**All tool calls take an explicit `now`**」、references/mcp-tools.md:29、references/seven-modes.md:25 同样措辞。实测 src/server/server.mbt 里声明 now 的工具数为 0（BUG-33 政策：时间戳服务端盖章）。守卫侧：J8 专治幻影参数，但 scripts/check_doc_surface.py:243 只扫 templates/，plugins/source/ 与四宿主投影不在任何判据射程内 ⇒ 投影把谎言放大成 4 份发货。
 - reported_by: pmode-r4-bugfind
 - task_id: T0r371
 
-## BUG-67 [2026-09-27T03:02:07Z] [medium] OPEN
+## BUG-67 [2026-09-27T03:02:07Z] [medium] FIXED
 - summary: [r4][插件态] references 走 copytree 原样字节复制，工具数写死腐烂且无守卫
 - detail: plugins/source/references/fist-methodology.md:54 仍写「MCP Tools (41 total)」，plugins/source/SKILL.md 另有「105 tool registrations」与分组和 112（同一文件头戳却是 tools=120）。gen_plugins.py:142 对 references 是 shutil.copytree（不做占位符替换），结构上永远无法承载 {{TOOL_COUNT}}；而 check_tools_sync/check_doc_surface 均不提 plugins/ （实测 grep 命中 0），cl7 J6 只取第一个 tools= 命中 ⇒ 投影正文里的数字无人对账。
 - reported_by: pmode-r4-bugfind
 - task_id: T0r372
 
-## BUG-68 [2026-09-27T03:02:07Z] [medium] OPEN
+## BUG-68 [2026-09-27T03:02:07Z] [medium] FIXED
 - summary: [r4][守卫] 现状面文档枚举器各自为政：ARCHITECTURE.md / README.mbt.md 全仓无人判
 - detail: 实测：git 跟踪 262 份 .md，check_test_sync 扫描面 101 份，「既不在面内也不属历史豁免」4 份，其中 ARCHITECTURE.md:81 写「317 全绿」、:3/:15/:90 写「104 工具」，README.mbt.md:9 写「307/307」（真源 120 工具 / 442 测试 / v0.3.0）。同族：check_tools_sync 遍历 5 份、check_doc_surface J4 遍历 4 份、J7 一份清单 —— BUG-50 只修了其中一份枚举器。
 - reported_by: pmode-r4-bugfind
 - task_id: T0r373
 
-## BUG-69 [2026-09-27T03:02:07Z] [medium] OPEN
+## BUG-69 [2026-09-27T03:02:07Z] [medium] FIXED
 - summary: [r4][守卫] check_test_sync --selftest 测不到「扫描面漏文件」这一类
 - detail: scripts/check_test_sync.py:218 的 sweeps 是手写夹具，全程不调 current_docs()（:96）与 run()（:173）⇒ 自检只证纯函数 judge 会红，判据最强的一层（R1 全量扫）恰好没被自测覆盖。本轮实测的 ARCHITECTURE.md 漏面就是它原理上抓不到的形状。
 - reported_by: pmode-r4-bugfind
 - task_id: T0r374
 
-## BUG-70 [2026-09-27T03:02:07Z] [low] OPEN
+## BUG-70 [2026-09-27T03:02:07Z] [low] FIXED
 - summary: [r4][守卫] check_plugin_sync 用绝对路径的 p.parts 过滤 source，克隆目录含 source 时判据空转
 - detail: scripts/check_plugin_sync.py:106 与 :146 都是 `"source" not in p.parts` —— p 来自 PLUGINS.rglob，parts 含整条绝对路径。把仓库克隆到路径任一段叫 source 的目录（如 C:/source/FIST-Mbt）⇒ generated 集合直接变空，J3/J6 全程无对象可比仍打 PASS。
 - reported_by: pmode-r4-bugfind
 - task_id: T0r375
 
-## BUG-71 [2026-09-27T03:02:07Z] [low] OPEN
+## BUG-71 [2026-09-27T03:02:07Z] [low] FIXED
 - summary: [r4][文档] server.mbt 头注释写「16 tools + 2 resources + 2 prompts」，且 resources/prompts 计数零守卫
 - detail: src/server/server.mbt:1 头注释与实际 120 工具差一个数量级；实测 s1.resource( 命中 3、s1.prompt( 命中 2。宣称处 AGENTS.md:102、README_EN.md:90、docs/agent-map.md:26、docs/deliverable.md:17 —— 六守卫里没有任何一条对 resources/prompts 计数负责（check_tools_sync 只管工具名与总数）。
 - reported_by: pmode-r4-bugfind
 - task_id: T0r376
 
-## BUG-72 [2026-09-27T03:02:07Z] [low] OPEN
+## BUG-72 [2026-09-27T03:02:07Z] [low] FIXED
 - summary: [r4][issue_scan] 裸子串 needle 在字符串字面量上假阳性
 - detail: src/server/issue_scan.mbt:71 的 substring-overrun 用裸子串匹配，实测在 src/server/server.mbt:2216 这类纯文案（"mode / name / description / ..."）上命中；全仓 substring-overrun 17 条含多条此类噪声。另记：ignored-error / empty-collection-singleton 两条规则在本仓恒 0 命中（needle 的唯一出处是 issue_scan.mbt 自己的规则表，而 :137 又显式跳过该文件）——属"规则表无受控命中自检"，不是匹配缺陷，交 Round 5 决定是否配 fixture。
 - reported_by: pmode-r4-bugfind
 - task_id: T0r377
 
-## BUG-73 [2026-09-27T04:24:27Z] [high] OPEN
+## BUG-73 [2026-09-27T04:24:27Z] [high] FIXED
 - summary: [r4][model_route] pool_pick 不扫描：游标落在耗尽格上时整档判死，白切付费档
 - detail: src/router/model_router.mbt:284（修复前）`let idx = (start_idx % n + n) % n` —— 循环变量 i 从不参与下标，pool_pick 把**同一个格子重测 n 次**，而它的文档注释写的是「池内第一个可用模型下标（环形扫描）」。后果实测：免费池 [free-busy(limit=1,used=1), free-ok(limit=10)]、游标停在 0 时，pick 返回 paid-a 并 current_tier=Paid、switch_count=1 —— 免费档还有一个满血模型却被判整档不可用，直接跳到付费档烧钱（违反「免费优先」这条主承诺）。锁：rt_15_同档仍有健康模型时不许跳档（先跑在未修复代码上为红，见 temp/r4/t6.log；合成违例复跑见 temp/r4/mut_b73.log，D 组）。注：本仓既有路由测试全部用单元池（rt_3/rt_5/rt_7/rt_9），单元池里 n=1 使该缺陷不可见，rt_13 虽用双免费池却只看 decision.model 与 current_model，未把游标停在耗尽格上。
 - reported_by: pmode-r4-fix
@@ -1111,31 +1147,31 @@ issue_scan 的命中条件从裸 `line.contains(needle)` 改成 scan_outside_lit
 修复中新发现并当场收口：src/router/model_router.mbt pool_pick 的循环里 idx 只由 start_idx 算出、i 从不参与下标 ⇒ 同一格重测 n 次，游标停在耗尽模型上时**整档判为不可用**，免费池还有一个满血模型却切到付费档（白花钱 + switch_count 假增长）。改为 idx=((start_idx+i)%n+n)%n。
 锁先落码后改产品：rt_15 在未修复代码上实测红（temp/r4/t6.log：`"paid-a" != "free-ok"`），修复后转绿、全量 453/453（temp/r4/full3.log）；合成违例复跑 temp/r4/mut_b73.log（D 组）。
 既有单元池测试（rt_3/rt_5/rt_7/rt_9）看不见该缺陷，故双元池断言是本条的关键增量。
-## BUG-74 [2026-09-27T04:53:57Z] [medium] OPEN
+## BUG-74 [2026-09-27T04:53:57Z] [medium] FIXED
 - summary: [r4][task_plan_deep] 工具描述只列参数不写返回形状，调用方按自然键名取值静默得空（拆解看似 0 子任务）
 - detail: src/server/server.mbt 的 task_plan_deep 描述串（实测该串内不含「返回」「tree」「children」任一词）只文档化了入参，未声明返回形状；真实返回是 {root, by, split_n, tree:{task_id, created:int, children:[{id, depth, leaf, spec_hash, depends_on, children:[…]}]}, exec_order:{task_id, count, order:[…]}} —— 子任务藏在 tree.children 的递归层里，且 created 是**计数**不是数组。同仓其它工具是写明返回形状的（issue_scan「返回 {scanned_files,total_findings,…}」、call_log「返回最近工具调用记录（seq/ts/tool/…）」），所以这是漏项而非风格。实测代价（本轮活证据 temp/r4/publish_pmode-r4-verify.json + 立项日志）：指挥官脚本用 tp.get('subtasks') or tp.get('tasks') or tp.get('created') or [] 取值 → 顶层全 miss → 打印「plan -> 直接子任务 0 个」，而服务端其实已建 7 枝 / 21 叶；若不是随后用 list(namespace=) 复核，就会误判拆解失败并重复发布（产生孤儿任务树）。created 尤其危险：真出现在顶层时 for k in created 直接 TypeError，而 or [] 的写法会把整数 7 当成假列表。修复方向（不动公开 API、不改返回体）：描述串补返回形状 + 明确 created 是计数，AGENTS.md 同口径；并给守卫加一条「有返回体的工具描述必须出现『返回』二字」的自检，配成对锁（缺『返回』的合成描述必红、issue_scan 这类已写明的必不红）。
 - reported_by: pmode-r4-verify
 - task_id: T0r385
 
-## BUG-75 [2026-09-27T04:53:57Z] [medium] OPEN
+## BUG-75 [2026-09-27T04:53:57Z] [medium] FIXED
 - summary: [r4][run_check] 判据失败只回退出码、拿不到 stdout/stderr，落库的完整结果又无工具可读回 ⇒ 无人值守只能本地重跑（正是该工具要防的路径）
 - detail: 工具描述承诺「结果 JSON（含 stdout/stderr）落库 specs 表」，但调用面拿不到它：实测 run_check 回执键 = [check_id, note, ok, round, status, task_id]（无 stdout/stderr）；src/engine/omega_gate.mbt:74-81 的返回 Map 也只 set 这六个键，content=check_json 只写不读回；call_log 的 result 列对 run_check 行只有 "ok" 一词（实测最近 40 行里 10 条 run_check 全如此），不是那份 JSON。后果分两种，都命中本项目的旗舰场景：① passed 时指挥官举不出判据到底打了什么，只能自己再 subprocess 跑一遍同一条命令来取文本 —— 而 run_check 存在的理由就是「服务端真跑、不靠调用方自述」，重跑等于把证据梯降级回 L1；② failed 时更糟：只知 exit code 非 0，不知是断言红、路径不存在还是命令被白名单拒，无人值守流水线（watchdog_tick/pipeline_tick）没有终端可看，只能整单打回重做。次要观察（同一条里一并修）：omega_gate.mbt:80 把**调用方传入的 status** 原样回显，而第 57 行刚声明该参数不被信任、门禁状态一律由 check_json 的 ok 推导（eff）。当前 run_check 工具面无 status 参数、由服务端推导，所以还不会被利用，但「回执里的 status 可以是假话、记录里的 status 才是推导值」这种分叉应当合流。修复方向：回执加 stdout_tail/stderr_tail（截断到固定长度，避免超大输出撑爆 MCP 帧），并/或提供按 check_id 读回 specs.content 的只读工具；回显 status 改用 eff。判据成对：失败判据必须能带出最后 N 行 stderr（合成一条必然失败的命令），通过判据不得因为截断而丢 ok 字段。
 - reported_by: pmode-r4-verify
 - task_id: T0r386
 
-## BUG-76 [2026-09-27T05:32:12Z] [high] OPEN
+## BUG-76 [2026-09-27T05:32:12Z] [high] FIXED
 - summary: [r5][pipeline_tick] mode 参数从不读模式模板，工具描述与模板头部双向承诺落空
 - detail: 复核证据（本会话实跑）：`grep -rn mode_template_path src/` 只有 ops_modes.mbt:178（mode_list 回显）、ops_watchdog.mbt:289、以及 ops_modes_wbtest 的三条；**src/ops/ops_pipeline.mbt 命中 0 次**。该文件里 effective_mode（:287）的全部去处是 pj_set(...,"mode",...) 写台账（:332/:355/:378/...），prompt 正文取自 Gen_Prompts 目录那份文件。而两头都在说另一回事：src/server/server.mbt:2031 参数描述『非 advance 时自动读 templates/pipeline_mode_<mode>.md』、templates/pipeline_mode_bugfind.md:3『由 watchdog_tick(mode="bugfind") 或 pipeline_tick(mode="bugfind") 自动选择』。影响：按 USAGE 操作的外部 cron 拿到 action=generate + mode=bugfind 的回执，实际收到的提示词与 mode 无关，台账却显示 mode=bugfind ⇒ 无人值守轮的『用了哪份提示词』不可信。修复取向（指挥官已判）：本仓 R117 只把 mode→模板接在 watchdog_tick 上，pipeline_tick 侧不接线是现状；因此先按**文案口径**收口（描述与模板头部改成如实说 mode 只是标签、模板由 watchdog_tick 或显式路径决定），真正的 mode→模板接线如需请开特性单——不在缺陷单里顺手改无人值守行为。
 - reported_by: pmode-r5-bugfind
 - task_id: T0r387
 
-## BUG-77 [2026-09-27T05:32:12Z] [high] OPEN
+## BUG-77 [2026-09-27T05:32:12Z] [high] FIXED
 - summary: [r5][watchdog_tick] 非 advance 时 mode 模板覆盖调用方显式 meta_prompt_path，且 detail 回显被忽略的那个路径
 - detail: 复核证据：src/ops/ops_watchdog.mbt:280-294 —— mode_str 非空且非 advance 时走 else 分支，无条件取 mode_template_path(mode_str) 作为 effective_meta_path，**meta_prompt_path 在该分支根本不参与判断**；而 src/server/server.mbt:1946 明写『（显式 meta_prompt_path 优先）』。更糟的是 :362 回显 "meta_prompt_path": Json::string(meta_prompt_path) —— 回执指名的是被丢弃的那个值，effective_meta_path 全程不出现在 detail 里。影响：调用方以为自己的提示词生效（回执还盖了章），实际发布的是模板正文；事后审计（含 call_log 的 params）全部指向错源。这条与 BUG-76 同族但承重不同：76 是『承诺了没做』，77 是『做了但回执说谎』。修复：① 回显改用 effective_meta_path（或新增 meta_prompt_resolved 字段，零回归）；② 描述里的优先级口径与代码对齐（谁覆盖谁，点名写清）；锁：成对白盒断言『mode + 显式路径同给时，回执点名的就是真正被读的那份』。
 - reported_by: pmode-r5-bugfind
 - task_id: T0r388
 
-## BUG-78 [2026-09-27T05:32:12Z] [high] OPEN
+## BUG-78 [2026-09-27T05:32:12Z] [high] FIXED
 - summary: [r5][store_open] data_dir 不过任何路径校验，只有 ns 被消毒 ⇒ 可在仓库外任意目录落 .db
 - detail: 复核证据：src/store/multi_store.mbt:52-60 —— 只对 ns 调 MultiStore::safe_ns，随后 `let dir = if data_dir == "" { self.data_dir } else { data_dir }`、`let path = "\{dir}/\{safe}.db"` 直接交给 SqliteStore::open（open 会建文件）。对照同仓两处同类守卫：src/server/bugreport.mbt:26-42（拒 .. / 盘符 / 前导分隔符）、src/server/model_router_ops.mbt 的 mr_check_ns（注释明写复用 MultiStore::safe_ns 这一真源）。工具面 server.mbt:4137/4148 把 data_dir 原样透出，schema 描述只有『库文件根目录(可选，默认当前目录)』；multi_store_test.mbt 全部用固定 base_dir()="."，**没有一条断言 data_dir 边界**。影响：docs/deliverable.md 承诺的『命名空间物理隔离』可被指到任意目录；同 server 上 project_dir 一律拒穿越，唯独这里放行（scratch=true 强制落 temp 恰好说明作者在意落点）。修复：data_dir 走与 bugreport 同一套消毒（拒绝对称/盘符/.. 上跳），拒时文案带出路；配成对锁（temp/... 放行 + ../outside 必拒）。
 - reported_by: pmode-r5-bugfind
@@ -1159,7 +1195,7 @@ issue_scan 的命中条件从裸 `line.contains(needle)` 改成 scan_outside_lit
 - reported_by: pmode-r5-bugfind
 - task_id: T0r392
 
-## BUG-82 [2026-09-27T05:32:12Z] [low] OPEN
+## BUG-82 [2026-09-27T05:32:12Z] [low] FIXED
 - summary: [r5][selfdrive_export_tasks] 把字面量 "now" 当导出时间写进 memory/task.md
 - detail: 复核证据：src/ops/ops_selfdrive.mbt:333-338 把导出时间那一行拼成『（导出时间：』+ 字符串字面量 now + 『，共 … 条）』，而该函数签名（:325-329）里没有 now/ts 入参，server.mbt:2145-2148 也不传时间。影响：memory/task.md 是审视轮唯一的任务视图（templates/review_meta_prompt.md 指示审视者 selfdrive_get(kind=task) 读它），读到『导出时间：now』这种半成品字段，清单新鲜度就失去了可判依据——占位符被当成正文发出去。修复：用服务端时钟 now_default() 盖（与 BUG-33『时间戳服务端盖章』政策一致）；锁：导出后断言该行匹配『导出时间：20..-..-..T..:..』且不含裸 now。
 - reported_by: pmode-r5-bugfind
@@ -1190,7 +1226,7 @@ src/store/multi_store.mbt：新增 pub fn MultiStore::data_dir_ok（拒空串 / 
 
 src/ops/ops_selfdrive.mbt：selfdrive_export_tasks 表头那行的时间从**字面量 "now"** 改为新增可选参数 now~（默认空串），空串时明写「缺失（调用方未传服务端盖章的 now）」而不是拿占位符冒充值；
 src/server/server.mbt 调用点传 now_default()（与 BUG-33 时间戳盖章政策一致）。锁：src/ops/ops_selfdrive_test.mbt 新增 selfdrive_b82_export_stamp_成对 —— 传了 now 则 task.md 表头含该时间戳，没传则含「缺失」，两种形态都断言**不含**"导出时间：now"。
-## BUG-83 [2026-09-27T05:59:38Z] [medium] OPEN
+## BUG-83 [2026-09-27T05:59:38Z] [medium] FIXED
 - summary: run_check 回执顶层 ok 与 status 两种含义，描述只解释 status ⇒ 调用方把「已落库」读成「已通过」（实测致 Round 5 验证段自述 11/11 为伪）
 - detail: 位置：src/engine/omega_gate.mbt:125（m.set("ok", Json::boolean(true))）与 :131（status 由推导值写入）；对外文案 src/server/server.mbt:1128 run_check 描述的结尾。
 现象：run_check 返回值同时含 ok 与 status 两键。ok 的含义是「判据已跑完并落库」（spawn 成功即 true，与判据通过与否无关）；status 才是 passed/failed 判定（服务端由子进程退出码推导）。描述里只写了「status 一律由结果 JSON 的 ok 推导」——这个「结果 JSON 的 ok」指的是 specs 表里那次 spawn 的结果对象，跟回执顶层的 ok 不是同一个东西，而顶层 ok 自己的含义在文案里一个字都没提。
@@ -1204,7 +1240,7 @@ src/server/server.mbt 调用点传 now_default()（与 BUG-33 时间戳盖章政
 ### FIXED(2026-09-27 四模式轮 · Round 5 勘误段（指挥官终审，锁承重已复算） / BUG-83)
 
 真源 src/server/server.mbt 的 run_check 描述把两个 ok 的分工写在脸上：**顶层 ok 只表示「判据已跑完并落库」**（spawn 成功即 true，与判据通过与否无关），**判据通过与否只看 status**（passed/failed，服务端由退出码推导），并点名"别拿 ok 当结论"的实测后果。旧措辞『status 一律由结果 JSON 的 ok 推导』整句删除——那句里的 ok 指的是 specs 表里那次 spawn 的结果对象，跟回执顶层同名不同义，正是本轮误读的源头。锁 scripts/check_doc_surface.py J9 新增第三判据 RET_MUST_EXPLAIN（按工具列出必须同时出现的语义关键词，缺任一词逐一点名发红；清单里的工具从注册表消失同样发红——清单失效比缺契约更糟）。SELFTEST 补三条对照：抹词必红、分工写清不误红、清单落空必红；承重证明 temp/r5/prove_j9.py 第④段在**真实描述**上逐个抹「已跑完并落库」「只看 status」⇒ 各发红一条，末尾追加无关句 ⇒ 不误红（防恒红判据）。调用面实测：tools/list 120 工具，run_check 描述 1425 字符，两措辞齐、旧口径残留 0；文件面判据 temp/r5/b83_closure_check.py 七条断言全成立（含"首跑伪结论日志仍留痕、不许事后抹证"）。顺带修掉那条真红的原因：prove_j9.py 原以 replace(…,1) 抠字，而 bug_list 描述里「返回」实测出现 2 次（task_plan_deep/run_check/github_queue_status 各 1 次），只抠一处 J9 照绿 ⇒ 变异不生效；已改全量替换并先量次数。勘误落账方式：已完成的 T0r395 验证段行不改写（账本/树同一套路子），另起 ns pmode-r5-erratum 根 T0r399（12 叶全 已完成，两条判据由服务端 run_check 真跑 status=passed，output_validate 正门 pass / 必然违例对照门 fail）。
-## BUG-84 [2026-09-27T06:17:00Z] [medium] OPEN
+## BUG-84 [2026-09-27T06:17:00Z] [medium] FIXED
 - summary: 文档面判据范围在规范表面滞后（AGENTS.md/AI-DEVELOPMENT-STANDARD.md 仍写 J1-J8，真源已有 J9），且无判据能抓这种滞后（J1-J5→J1-J8 已重犯一次）
 - detail: 位置（现状面两处，都是规范性表面）：AGENTS.md:299 的『check_doc_surface（文档面 J1-J8：…）』与 AI-DEVELOPMENT-STANDARD.md:15 表格里的『check_doc_surface(J1-J8)』。
 现象：Round 4 给 check_doc_surface 加了 J9（返回契约），两份规范表面仍写 J1-J8；本轮又加了 J9 的第三判据，范围数字继续滞后。守卫族段落是『实现了几条判据』的唯一对外口径，写少了=声明滞后（读者以为 J9 不存在，绕着走），写多了=幻影判据（读者拿不存在的判据当门禁）。
@@ -1230,3 +1266,40 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
 良性追加不误红 / 整块声明删掉也红），三个表面各跑一组，副本 finally 清理。
 --selftest 新增 5 条 J10 对照（滞后 / 幻影 / 两面一致不误红 / 空扫描 / 实现侧解析饿死）；
 守卫自身的 SELFTEST 与 PASS 文案同步到 J1-J10（消息本身也是声明面，别制造第二次滞后）。
+
+### FIXED(2026-09-27 全量兑账（6 路只读复核 + 指挥官抽验 5 条：BUG-12/19/23/33/9） / BUG-1, BUG-2, BUG-3, BUG-4, BUG-5, BUG-12, BUG-14, BUG-15, BUG-16, BUG-17, BUG-18, BUG-19, BUG-21, BUG-22, BUG-24, BUG-31, BUG-32, BUG-33, BUG-36, BUG-37, BUG-38, BUG-39, BUG-41, BUG-42, BUG-48, BUG-49)
+
+口径：本条小记是**兑账补记**，不是新的修复动作。逐条判定由 6 个只读子代理各自给出 file:line 或测试名，
+指挥官再抽验 5 条最容易判错的对上代码（BUG-12 无 ns 的 list 是否真走 list_all、BUG-19 是否存在绕过包装层的
+直连注册、BUG-33 schema 内 `now` 属性是否已清零、BUG-9/23 的"没修"是否成立）；抽验结论与复核一致。
+判据口径同时改了：状态只从条目抬头反解，**不再用「条目数 − 小记条数」**（旧口径把"小记有几条"当成
+"修了几条 bug"，一条小记可收 1~16 条，也可一条不收 ⇒ 那句"30 条待修"从来没有定义，见 BUG-9）。
+同批另有 9 条判 DUPLICATE（BUG-6/7/13/40/43/44/45/46/47，抬头已写 →主编号）、1 条判 FALSE_POSITIVE
+（BUG-10：pause 本就接受[待领取]，"没有合法废弃出路"不成立）。以下逐条给本轮复核证据：
+
+- BUG-1：src/server/server.mbt:277 now=now_default()；src 内 get_str(args,"now") 0 命中；锁 scripts/check_tools_sync.py:39,205 判据5（服务端盖章已生效）
+- BUG-2：src/core/core_task.mbt:381 execute 前态含[执行中]；锁 engine_execute_r2_test.mbt:79,194（retry→execute 出路已开）
+- BUG-3：src/server/server.mbt:240 audit_log_payload + :4128 调用；锁 pipeline_r2_wbtest.mbt:142（返回体自带 scope 说明）
+- BUG-4：src/server/run_check_guard.mbt:281/137/150，接入 server.mbt:1170；锁 run_check_guard_test.mbt:40,85,103（laya/github 侧仍 sh -c，另案）
+- BUG-5：src/server/bugreport.mbt:304,330 resolved_path；锁 bugreport_test.mbt:142（③统一契约未做，见 BUG-40 归并说明）
+- BUG-12：src/server/server.mbt:1361 无 ns 走 engine.list_all()；store_sqlite.mbt:407 SELECT 无 WHERE ns（无锁）
+- BUG-14：src/server/server.mbt:529 laya_ensure_decision，Ok :2721 / Err :2734 补齐；锁 laya_decide_wbtest.mbt:85-165（六条白盒）
+- BUG-15：src/server/issue_scan.mbt:124 scan_is_comment_line / :136 scan_is_rules_table；锁 lint_5/6/7（行尾注释也覆盖）
+- BUG-16：src/server/server.mbt:560 project_version，:717/:3175/:3194 引用；锁 fist-mbt_wbtest.mbt:92（0.2.4 字面量零命中）
+- BUG-17：check_tools_sync + check_doc_surface 双 PASS，120 工具四文档对齐（构建期单一真源仍缺，另案）
+- BUG-18：src/server/server.mbt:450/465 probe TTL 缓存、:2655 no_sidecar；锁 pipeline_r2_wbtest.mbt:129（预算 <30s 同文件锁）
+- BUG-19：src/server/server.mbt:849 _instrument 读 schema_required ⇒ 缺必填 ToolError；s1.tool 直连 0 处（120 工具全过包装层）
+- BUG-21：src/server/server.mbt:906 MCPServer("fist-mbt", project_version)，全仓无 0.1.0（握手行无独立断言）
+- BUG-22：README.md:38-77 分组和=120 且 10 工具齐全；锁 check_doc_surface.py J3（J3 即本条建议②）
+- BUG-24：src/engine/engine_dag_mc.mbt:152 上界钳制 + samples_requested/capped；锁含防误钳成对
+- BUG-31：src/server/output_validate.mbt:65 artifact_spec_errors（:364 调用）；锁 output_validate_r3_test.mbt:41/71/120（未知键不再静默降级）
+- BUG-32：scripts/fist.py:60 newest_source + :78-90 过期自动 build，FIST_NO_AUTOBUILD=1 显式拒绝（无锁）
+- BUG-33：server.mbt schema 内 "now" 属性 0 命中；锁 check_tools_sync.py:39/205 判据5（描述残留 28 处另立 BUG-80）
+- BUG-36：src/server/memory.mbt:183 白名单外 gc:false+error 并列出集合；锁 memory_test.mbt:374/404（不再静默改靶）
+- BUG-37：src/ops/ops_modes.mbt:145 改为真实工具名；锁 check_tools_sync.py:190-203（拦截仍靠调用方匹配）
+- BUG-38：templates/ 内 run_check_external 0 命中，全为 run_check({task_id,cmd,args,...})；锁 check_tools_sync.py:209-214
+- BUG-39：scripts/fist.py:224 isinstance(payload,dict) 后才取 verdict，:229 兜 UnicodeDecodeError（仓内无锁）
+- BUG-41：src/engine/omega_strong.mbt:24/31 + engine.mbt:1012/1074 + server.mbt:1432 boundary_probe；锁 engine_boundary_test.mbt:43/70（外部模板库半越界未落）
+- BUG-42：src/server/server.mbt:4441 描述已是一源四态 + cl1→cl7；锁 project_standards_wbtest.mbt:46/72 + J6/J7（issue_scan.mbt:6 注释仍称三形态）
+- BUG-48：src/server/server.mbt:4441；J7 扫 SERVER（check_doc_surface.py:233）；锁 test "R116：一源四态…"（本族主编号）
+- BUG-49：templates/pipeline_mode_{verify,tidy,polish}.md 无 check_results/now；锁 J8 + selftest:524（本族主编号）
