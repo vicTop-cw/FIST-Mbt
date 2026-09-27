@@ -34,3 +34,5 @@ _cron_query.py
 .trae/
 .office-claw/
 _cron_tmp_sends.jsonl
+# blackbox release artifacts
+_release/
