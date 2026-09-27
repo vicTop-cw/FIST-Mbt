@@ -688,3 +688,44 @@ pub fn github_webhook_parse(payload : String) -> Result[Json, String] {
   }
   Ok(Json::object(mm))
 }
+
+///|
+/// 检查 GitHub issue 同步的环境变量配置——纯计算只读，不碰网络。
+/// 读 FIST_GITHUB_ENABLED / FIST_GITHUB_REPO / FIST_GITHUB_TOKEN，
+/// 返回 {enabled, repo, repo_set, token_present, ready, hints}，
+/// ready = enabled && repo_set && token_present。
+pub fn github_env_check() -> Result[Json, String] {
+  let enabled = match @env.get_env_var("FIST_GITHUB_ENABLED") {
+    Some(v) => v == "true" || v == "1" || v == "yes"
+    None => false
+  }
+  let repo = match @env.get_env_var("FIST_GITHUB_REPO") {
+    Some(v) => v
+    None => ""
+  }
+  let token_present = match @env.get_env_var("FIST_GITHUB_TOKEN") {
+    Some(v) => !v.is_empty()
+    None => false
+  }
+  let repo_set = !repo.is_empty()
+  let ready = enabled && repo_set && token_present
+  let mm : Map[String, Json] = Map([])
+  mm.set("enabled", Json::boolean(enabled))
+  mm.set("repo", Json::string(repo))
+  mm.set("repo_set", Json::boolean(repo_set))
+  mm.set("token_present", Json::boolean(token_present))
+  mm.set("ready", Json::boolean(ready))
+  let hints : Array[String] = []
+  if !enabled {
+    hints.push("set FIST_GITHUB_ENABLED=true to enable auto-sync")
+  }
+  if repo.is_empty() {
+    hints.push("set FIST_GITHUB_REPO=owner/repo")
+  }
+  if !token_present {
+    hints.push("set FIST_GITHUB_TOKEN=ghp_xxx for curl execution")
+  }
+  let hints_json = hints.map(fn(s) { Json::string(s) })
+  mm.set("hints", Json::array(hints_json))
+  Ok(Json::object(mm))
+}

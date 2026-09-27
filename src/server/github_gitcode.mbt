@@ -257,12 +257,14 @@ pub fn gitcode_flush_plan(
 }
 
 ///|
-/// 标记某条 bug 已发送到 GitCode。
+/// 标记某条 bug 已发送到 GitCode（单条版）。
 /// 在现有条目上追加 gitcode_issue_iid + 更新 sent_at。
+/// sent_at 可选（默认 "gitcode"）；gitcode_issue_iid 为 GitCode issue 的 iid 字符串。
 pub fn gitcode_queue_mark_sent(
   project_dir : String,
   bug_id : String,
   gitcode_issue_iid : String,
+  sent_at? : String = "gitcode",
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err("gitcode_queue_mark_sent: 非法 project_dir")
@@ -273,6 +275,7 @@ pub fn gitcode_queue_mark_sent(
   if gitcode_issue_iid.is_empty() {
     return Err("gitcode_queue_mark_sent: gitcode_issue_iid 不能为空")
   }
+  let sent = if sent_at.is_empty() { "gitcode" } else { sent_at }
   let all_entries = extract_arr(github_queue_read(project_dir))
 
   let updated : Array[Json] = []
@@ -286,8 +289,62 @@ pub fn gitcode_queue_mark_sent(
         }
         let is_git = is_gitcode_entry(entry)
         if bid == bug_id && is_git {
-          m.set("sent_at", Json::string("gitcode"))
+          m.set("sent_at", Json::string(sent))
           m.set("gitcode_issue_iid", Json::string(gitcode_issue_iid))
+          marked = marked + 1
+        }
+        updated.push(Json::object(m))
+      }
+      _ => updated.push(entry)
+    }
+  }
+
+  let lines = updated.map(fn(j : Json) { j.stringify() })
+  let _ = mem_write(gq_path(project_dir), lines.join("\n") + "\n")
+
+  let mm : Map[String, Json] = Map([])
+  mm.set("marked", Json::number(marked.to_double()))
+  mm.set("total", Json::number(updated.length().to_double()))
+  Ok(Json::object(mm))
+}
+
+///|
+/// 批量标记一批 bug_ids 已同步至 GitCode（与 github_queue_mark_sent 同口径）。
+/// iids_map 是 bug_id → gitcode_issue_iid 的映射（可选），
+/// 没有 iid 的条目仍会标记 sent_at，只是不写 iid。
+pub fn gitcode_queue_mark_sent_batch(
+  project_dir : String,
+  bug_ids : Array[String],
+  sent_at : String,
+  iids_map : Map[String, String],
+) -> Result[Json, String] {
+  if !bug_project_dir_ok(project_dir) {
+    return Err("gitcode_queue_mark_sent: 非法 project_dir")
+  }
+  if bug_ids.length() == 0 {
+    return Err("gitcode_queue_mark_sent: bug_ids 不能为空")
+  }
+  let sent = if sent_at.is_empty() { "gitcode" } else { sent_at }
+  let all_entries = extract_arr(github_queue_read(project_dir))
+
+  let updated : Array[Json] = []
+  let mut marked = 0
+  for entry in all_entries {
+    match entry {
+      Object(m) => {
+        let bid = match m.get("bug_id") {
+          Some(String(s)) => s
+          _ => ""
+        }
+        let is_git = is_gitcode_entry(entry)
+        let in_batch = bug_ids.contains(bid)
+        if in_batch && is_git {
+          m.set("sent_at", Json::string(sent))
+          match iids_map.get(bid) {
+            Some(iid) if !iid.is_empty() =>
+              m.set("gitcode_issue_iid", Json::string(iid))
+            _ => ()
+          }
           marked = marked + 1
         }
         updated.push(Json::object(m))
@@ -354,4 +411,119 @@ pub fn gitcode_queue_pending(project_dir : String) -> Result[Json, String] {
     }
   }
   Ok(Json::array(pending))
+}
+
+///|
+/// 追加一条 GitCode 条目到共享 JSONL 队列（GitCode 是 GitHub fallback，
+/// 同 github_queue_append 但字段换成 gitcode_project_id + PRIVATE-TOKEN）。
+/// 条目与 GitHub 条目同文件，靠 gitcode_project_id 非空区分通道。
+pub fn gitcode_queue_append(
+  project_dir : String,
+  bug_id : String,
+  summary : String,
+  detail : String,
+  severity : String,
+  ts : String,
+  gitcode_project_id : String,
+  gitcode_labels : Array[String],
+) -> Result[Json, String] {
+  if !bug_project_dir_ok(project_dir) {
+    return Err("gitcode_queue_append: 非法 project_dir")
+  }
+  if bug_id.is_empty() {
+    return Err("gitcode_queue_append: bug_id 不能为空")
+  }
+  if summary.is_empty() {
+    return Err("gitcode_queue_append: summary 不能为空")
+  }
+  if gitcode_project_id.is_empty() {
+    return Err("gitcode_queue_append: gitcode_project_id 不能为空")
+  }
+  let existing = extract_arr(github_queue_read(project_dir))
+  for entry in existing {
+    match entry {
+      Object(m) => {
+        let eid = match m.get("bug_id") {
+          Some(String(s)) => s
+          _ => ""
+        }
+        let is_git = is_gitcode_entry(entry)
+        if eid == bug_id && is_git {
+          let mm : Map[String, Json] = Map([])
+          mm.set("bug_id", Json::string(bug_id))
+          mm.set("exists", Json::boolean(true))
+          return Ok(Json::object(mm))
+        }
+      }
+      _ => ()
+    }
+  }
+  let labels_json : Array[Json] = []
+  for lb in gitcode_labels {
+    labels_json.push(Json::string(lb))
+  }
+  let nm : Map[String, Json] = Map([])
+  nm.set("bug_id", Json::string(bug_id))
+  nm.set("summary", Json::string(summary))
+  nm.set("detail", Json::string(detail))
+  nm.set("severity", Json::string(severity))
+  nm.set("ts", Json::string(ts))
+  nm.set("gitcode_project_id", Json::string(gitcode_project_id))
+  nm.set("gitcode_labels", Json::array(labels_json))
+  nm.set("sent_at", Json::null())
+  nm.set("gitcode_issue_iid", Json::null())
+  let entry_json = Json::object(nm)
+
+  let old = match mem_read(gq_path(project_dir)) {
+    None => ""
+    Some(s) => s
+  }
+  mem_ensure_dir(mem_dir(project_dir))
+  let _ = mem_write(gq_path(project_dir), old + entry_json.stringify() + "\n")
+
+  let mm : Map[String, Json] = Map([])
+  mm.set("bug_id", Json::string(bug_id))
+  mm.set("exists", Json::boolean(false))
+  Ok(Json::object(mm))
+}
+
+///|
+/// 检查 GitCode issue 同步的环境变量配置——纯计算只读，不碰网络。
+/// 读 FIST_GITCODE_ENABLED / FIST_GITCODE_PROJECT_ID / FIST_GITCODE_TOKEN，
+/// 返回 {enabled, project_id_set, token_present, ready, hints}，
+/// ready = enabled && project_id_set && token_present。
+pub fn gitcode_env_check() -> Result[Json, String] {
+  let enabled = match @env.get_env_var("FIST_GITCODE_ENABLED") {
+    Some(v) => v == "true" || v == "1" || v == "yes"
+    None => false
+  }
+  let project_id = match @env.get_env_var("FIST_GITCODE_PROJECT_ID") {
+    Some(v) => v
+    None => ""
+  }
+  let token_present = match @env.get_env_var("FIST_GITCODE_TOKEN") {
+    Some(v) => !v.is_empty()
+    None => false
+  }
+  let project_id_set = !project_id.is_empty()
+  let ready = enabled && project_id_set && token_present
+  let mm : Map[String, Json] = Map([])
+  mm.set("enabled", Json::boolean(enabled))
+  mm.set("project_id", Json::string(project_id))
+  mm.set("project_id_set", Json::boolean(project_id_set))
+  mm.set("token_present", Json::boolean(token_present))
+  mm.set("ready", Json::boolean(ready))
+  let hints : Array[String] = []
+  if !enabled {
+    hints.push("set FIST_GITCODE_ENABLED=true to enable GitCode sync")
+  }
+  if project_id.is_empty() {
+    hints.push("set FIST_GITCODE_PROJECT_ID=your_project_id")
+  }
+  if !token_present {
+    hints.push("set FIST_GITCODE_TOKEN=your_personal_access_token")
+  }
+  let hints_json = hints.map(fn(s) { Json::string(s) })
+  mm.set("hints", Json::array(hints_json))
+  Ok(Json::object(mm))
 }
