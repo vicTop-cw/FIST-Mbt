@@ -8,13 +8,13 @@
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
 moon build --target js cmd/main
 python scripts/mcp_smoke.py
-# 期望输出：PASS tools/list → 122 个工具 / PASS issue_scan / PASS publish / PASS get → MCP-SMOKE PASS
+# 期望输出：PASS tools/list → 126 个工具 / PASS issue_scan / PASS publish / PASS get → MCP-SMOKE PASS
 ```
 
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **122**（+ 3 resources + 2 prompts） |
+| MCP 工具 | **126**（+ 3 resources + 2 prompts） |
 | 测试 | **`moon test --target js` 508/508**（2026-09-27 Windows 实测，四模式流水线自我迭代 Round 1~3 收口；native 轨见 AGENTS.md「已知边界」） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
