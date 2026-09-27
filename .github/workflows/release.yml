@@ -1,0 +1,145 @@
+# .github/workflows/release.yml
+# FIST-Mbt 黑盒化分发 —— Release Pipeline
+# 触发: tag v* (push v0.2.6, v0.3.0 等)
+# 产物: JS 版 zip + Linux Native 版 zip + (Windows Native 可选) → 上传到 GitHub Releases
+
+name: FIST-Mbt Blackbox Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Override version (default: from tag)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  MOON_VERSION: 'latest'
+  NODE_VERSION: '24'
+  TAG: ${{ github.ref_name }}
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" == v* ]]; then TAG="${TAG#v}"; fi
+          echo "value=${TAG}" >> "$GITHUB_OUTPUT"
+
+  build-js:
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit
+        run: curl -fsSL https://cli.moonbitlang.com/install/unix | bash
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build JS target
+        run: |
+          moon build --target js
+          python3 scripts/patch_esm_main.py
+
+      - name: Package JS artifact
+        run: |
+          mkdir -p _release/js
+          cp _build/js/debug/build/cmd/main/main.js _release/js/fist-mbt.js
+          cd _release/js && zip -r ../fist-mbt-js-v${{ needs.meta.outputs.version }}.zip . && cd ../..
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fist-mbt-js
+          path: _release/fist-mbt-js-v${{ needs.meta.outputs.version }}.zip
+
+  build-native-linux:
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit
+        run: curl -fsSL https://cli.moonbitlang.com/install/unix | bash
+
+      - name: Install sqlite3 dev
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev sqlite3
+
+      - name: Build native
+        run: moon build --target native
+
+      - name: Package native artifact
+        run: |
+          mkdir -p _release/native
+          cp _build/native/debug/build/cmd/main/main _release/native/fist-mbt
+          chmod +x _release/native/fist-mbt
+          cd _release/native && zip -r ../fist-mbt-native-linux-x64-v${{ needs.meta.outputs.version }}.zip . && cd ../..
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fist-mbt-native-linux
+          path: _release/fist-mbt-native-linux-x64-v${{ needs.meta.outputs.version }}.zip
+
+  build-native-windows:
+    needs: meta
+    runs-on: windows-latest
+    continue-on-error: true   # Windows runner 可能没有 MSVC+sqlite3.lib，允许失败不阻塞 release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit
+        run: curl.exe -fsSL https://cli.moonbitlang.com/install/windows -o moonbit.zip; Expand-Archive moonbit.zip -Path .moonbit -Force; $env:PATH = "$(Resolve-Path .moonbit);$env:PATH"
+
+      - name: Load VS DevShell + sqlite
+        run: |
+          # Windows runner 自带 VS Build Tools；SQLite 需单独装
+          # 若 sqlite3.lib 未就绪，本 job 会因 continue-on-error 被跳过
+          if (Test-Path scripts/native-env.ps1) {
+            . scripts/native-env.ps1
+          }
+
+      - name: Build native
+        run: moon build --target native
+
+      - name: Package native artifact
+        run: |
+          New-Item -ItemType Directory -Force _release/native | Out-Null
+          Copy-Item _build/native/debug/build/cmd/main/main.exe _release/native/fist-mbt.exe
+          Compress-Archive -Path _release/native/* -DestinationPath "_release/fist-mbt-native-win-x64-v${{ needs.meta.outputs.version }}.zip" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fist-mbt-native-win
+          path: _release/fist-mbt-native-win-x64-v${{ needs.meta.outputs.version }}.zip
+
+  release:
+    needs: [build-js, build-native-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: _artifacts
+          merge-multiple: true
+
+      - name: Display artifacts
+        run: ls -la _artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: FIST-Mbt v${{ needs.meta.outputs.version }}
+          generate_release_notes: true
+          files: _artifacts/*.zip

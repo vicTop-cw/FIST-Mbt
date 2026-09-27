@@ -1,0 +1,17 @@
+{
+  "_comment": "FIST-Mbt 黑盒化 MCP 配置模板（使用态，不依赖源码）",
+  "_usage": "把本文件复制为外部项目的 .mcp.json 或 merge 进已有 mcpServers",
+  "_install_hint": "首次使用前先运行 install.ps1 (Windows) 或 install.sh (Linux/mac) 安装可执行物",
+  "mcpServers": {
+    "fist-mbt": {
+      "command": "fist-mbt",
+      "args": [],
+      "timeout_ms": 30000,
+      "env": {
+        "FIST_PROJECT_DIR": ".",
+        "_note_native_needs_sqlite3_dll": "Windows native 版若报 sqlite3.dll 缺失，需装 sqlite3 运行库到 PATH 或同目录",
+        "_note_js_needs_node_24_plus": "JS 版需 Node.js >= 24（用 node fist-mbt.js 运行，支持 returnArrays）"
+      }
+    }
+  }
+}
