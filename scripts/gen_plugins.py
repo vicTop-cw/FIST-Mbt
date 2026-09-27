@@ -53,6 +53,57 @@ RE_TOOL = re.compile(r'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"')
 RE_VERSION = re.compile(r'^version\s*=\s*"([^"]+)"', re.M)
 RE_BUG_HEAD = re.compile(r"^## BUG-(\d+)\b", re.M)
 RE_FIXED = re.compile(r"^### FIXED\(", re.M)
+# 抬头文法与闭集（真源定义写在 memory/bugs.md 的「记账规则」段）
+BUG_STATUSES = ("OPEN", "FIXED", "DUPLICATE", "FALSE_POSITIVE")
+RE_BUG_STATUS = re.compile(
+    r"^## (BUG-\d+) \[[^\]]+\] \[(high|medium|low)\] (\S+)(?: (→BUG-\d+))?", re.M
+)
+# 小记抬头里点名的编号集合：### FIXED(<stamp> / BUG-a, BUG-b …)
+RE_FIXED_IDS = re.compile(r"^### FIXED\([^)]* / ([^)]*?)\)\s*$", re.M)
+
+
+def ledger_status(bugs_txt):
+    """纯判据：喂账本正文，出 (四态计数, 违例列表)。
+
+    抽成函数是为了能被变异证明直接考（temp/recon/prove_ledger_gates.py）——
+    长在 die() 里的门禁和写在纸上的规则一样，没人验证过它会不会红。
+    """
+    ids = re.findall(r"^## BUG-(\d+)\b", bugs_txt, re.M)
+    if not ids:
+        return {}, ["账本一条 BUG 条目都没解析到（判据坏了，不是账本空）"]
+    heads = RE_BUG_STATUS.findall(bugs_txt)
+    problems = []
+    if len(heads) != len(ids):
+        problems.append(
+            f"条目 {len(ids)} 条 / 可解析抬头状态 {len(heads)} 条不符 ⇒ 有抬头不合文法"
+            "（`## BUG-n [时间] [严重度] 状态 [→BUG-m]`）")
+    st = {h[0]: (h[2], (h[3] or "").lstrip("→")) for h in heads}
+    bad_vocabulary = sorted({s for s, _ in st.values()} - set(BUG_STATUSES))
+    if bad_vocabulary:
+        problems.append(f"抬头出现闭集外的状态词：{bad_vocabulary}（闭集={list(BUG_STATUSES)}）")
+    named = {i for grp in RE_FIXED_IDS.findall(bugs_txt)
+             for i in re.split(r"[,\s]+", grp) if i.startswith("BUG-")}
+    counts = {s: sum(1 for _, (v, _m) in st.items() if v == s) for s in BUG_STATUSES}
+    key = lambda x: int(x.split("-")[1])  # noqa: E731
+    # 硬门①：标 FIXED 必须被某条小记抬头点名（防空口标修好）
+    unclaimed = sorted((k for k, (v, _) in st.items() if v == "FIXED" and k not in named), key=key)
+    if unclaimed:
+        problems.append(f"{len(unclaimed)} 条标 FIXED 却无小记点名：{' '.join(unclaimed[:8])}")
+    # 硬门②：被点名的必须已标 FIXED（防修了没标 / 小记与状态两套话）
+    stale = sorted((k for k in named if st.get(k, ("?", ""))[0] != "FIXED"), key=key)
+    if stale:
+        problems.append(f"{len(stale)} 条被小记点名但状态不是 FIXED：{' '.join(stale[:8])}")
+    # 硬门③：DUPLICATE 必须带合法主编号（存在、不是自己、不再是个 DUPLICATE）
+    for k, (v, main) in st.items():
+        if v != "DUPLICATE":
+            continue
+        if not main:
+            problems.append(f"{k} 标 DUPLICATE 却没写 →BUG-m")
+        elif main == k or main not in st:
+            problems.append(f"{k} 的主编号 {main} 不存在或指向自己")
+        elif st[main][0] == "DUPLICATE":
+            problems.append(f"{k} 的主编号 {main} 自身也是 DUPLICATE（链条不允许）")
+    return counts, problems
 
 # 宿主插件名（各宿主市场的目录名）
 SKILL_MAIN = "fist-mbt"
@@ -106,25 +157,29 @@ def measure() -> dict:
         die("moon.mod 未解析到 version")
     bugs_txt = BUGS.read_text(encoding="utf-8")
     ids = [int(x) for x in RE_BUG_HEAD.findall(bugs_txt)]
-    fixed = len(RE_FIXED.findall(bugs_txt))
     if not ids:
         die("memory/bugs.md 未解析到任何缺陷条目")
     total = len(ids)
-    # 账本只追加、没有关闭 API（BUG-9）：修好的条目挂 `### FIXED(...)` 小记，
-    # 标题状态仍是 OPEN。摘要必须把这两栏分开写，否则"30 条待修"是假话。
-    open_cnt = total - fixed
+    # 计数只从**条目抬头的状态位**反解（2026-09-27 兑账立的口径）。
+    # 旧口径 open_cnt = total - len(### FIXED) 把"小记有几条"当成"修了几条 bug"，
+    # 而一条小记可收 1~16 条、也可一条都不收 ⇒ 那句"30 条待修"从来没有定义。
+    counts, problems = ledger_status(bugs_txt)
+    if problems:
+        die("账本状态与叙述面对不上：\n  - " + "\n  - ".join(problems))
     return {
         "TOOL_COUNT": str(n),
         "TOOL_GROUPS": tool_groups(n),
         "VERSION": m.group(1),
         "LEDGER_SUMMARY": (
             f"BUG-1~{max(ids)} 共 {total} 条入账："
-            f"{open_cnt} 条待修 / {fixed} 条已挂 FIXED 小记"
-            "（账本只追加不关闭，见 BUG-9）"
+            f"{counts['OPEN']} 条待修 / {counts['FIXED']} 条已修 / "
+            f"{counts['DUPLICATE']} 条重复并入 / {counts['FALSE_POSITIVE']} 条误报"
+            "（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）"
         ),
         "_tools": n,
-        "_open": open_cnt,
-        "_fixed": fixed,
+        "_open": counts["OPEN"],
+        "_fixed": counts["FIXED"],
+        "_counts": counts,
     }
 
 
@@ -262,7 +317,7 @@ MCP 启动参数以仓库根 `.mcp.json` 为准（{vals['TOOL_COUNT']} 工具 / 
 - 本 harness 走 FIST 指挥官模式：意图 → 分流 → 派单 → 终审 → 沉淀汇报；不亲力亲为可分配工作。
 - MCP server `fist-mbt`（{vals['TOOL_COUNT']} 工具 / v{vals['VERSION']}）经仓库根 `.mcp.json` 暴露；
   工具清单唯一真源是 `src/server/server.mbt`，**以 tools/list 为准**，任何文档数字都可能滞后。
-- 已知缺陷账本：{vals['LEDGER_SUMMARY']}（真源 `memory/bugs.md`，只追加不关闭）。
+- 已知缺陷账本：{vals['LEDGER_SUMMARY']}（真源 `memory/bugs.md`，状态位可就地改、叙述面只追加）。
 - 详细操作见 `skills/{SKILL_MAIN}/SKILL.md` 与 `references/`（同为生成产物）。
 """,
     )
