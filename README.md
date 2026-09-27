@@ -189,6 +189,8 @@ python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path
 
 - **MochaCakes**: `vicTop-cw/fist-mbt@0.3.0`
 - **GitHub**: https://github.com/vicTop-cw/FIST-Mbt
+- **GitCode 镜像**: https://gitcode.com/VictorTop/Fist-Mbt （`master` + 标签与 GitHub 同步发布；
+  本机 `git remote gitcode` 配的是 HTTPS 取 / `pushurl` 走 `git@gitcode.com:…` 推，凭据只来自环境变量）
 - **License**: Apache-2.0
 
 ---
