@@ -84,7 +84,7 @@ You can browse and install extra skills here:
 
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
 > Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
-> **JS 后端**：`moon test --target js` = **453/453**（2026-09-27 Windows 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并）。
+> **JS 后端**：`moon test --target js` = **458/458**（2026-09-27 Windows 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并）。
 > **Native 后端**：上一轮在 Windows + WSL(Linux) 通过 317/317；本轮未复跑 native，不据旧数宣称双端同版全绿。
 
 `src/store/store_sqlite.mbt` 依赖 `mizchi/sqlite`（native stub），其 `stub.c` 用尖括号 `#include <sqlite3.h>` 并 `#pragma comment(lib, "sqlite3.lib")` 链接系统 SQLite。
@@ -95,7 +95,7 @@ You can browse and install extra skills here:
   2. 编译/链接前在**同一会话**加载 `Enter-VsDevShell`（VS Build Tools）并追加 `INCLUDE`/`LIB` 指向该目录（注册表 User 级环境变量会被 moon 自发现的 MSVC 环境覆盖，不生效）；
   3. 之后 `moon test --target native` 即可通过。缺失时 `stub.c` 报 `fatal error C1083: 无法打开包括文件 "sqlite3.h"` / `LNK1104: sqlite3.lib`。
   一键装载上述环境（自动探测 VS + sqlite-dev）：`pwsh ./scripts/native-env.ps1`；
-  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 453/453）**，见 README「已知边界」。
+  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 458/458）**，见 README「已知边界」。
 
 ## MCP Server
 
@@ -296,7 +296,7 @@ Resources: `fist://map`, `fist://principles`, `fist://overview`
 **atomcode → codearts → deepseek-harness → claude**（真源 = `plugins/source/` 正文 + `server.mbt` 工具数 + `moon.mod` 版本 + `memory/bugs.md` 账本 + 根 `.mcp.json` 启动参数）。
 
 - 插件目录**禁止手改**：`scripts/check_plugin_sync.py`（cl7）子进程重跑生成器做逐字节 diff，另查四宿主入口齐全、无残留 `{{占位符}}`、manifest 版本==moon.mod、`plugins/claude/.mcp.json` 与根 `.mcp.json` 逐字相等、生成 SKILL.md 的 `tools=` == 实测工具数；实测 <=100 直接 FATAL(2)（判据无法自证绝不报绿）。
-- 守卫族（6 个，全在 ci.yml JS 轨）：`check_tools_sync` / `check_test_sync` / `check_badge` / `check_scripts_index` / **`check_plugin_sync`（cl7）** / `check_doc_surface`（文档面 J1-J8：逐个工具可查 + 分组和==实测 + 自述版本==moon.mod + 反幻影哨兵 + **J6 规范正文↔机器投影一致** + **J7 规范性表面禁旧口径** + **J8 模板调用参数==真源 schema**；`--selftest` 用合成违例证明 J6/J7/J8 能发红，不是装饰）。
+- 守卫族（6 个，全在 ci.yml JS 轨）：`check_tools_sync` / `check_test_sync` / `check_badge` / `check_scripts_index` / **`check_plugin_sync`（cl7）** / `check_doc_surface`（文档面 J1-J10：逐个工具可查 + 分组和==实测 + 自述版本==moon.mod + 反幻影哨兵 + **J6 规范正文↔机器投影一致** + **J7 规范性表面禁旧口径** + **J8 模板调用参数==真源 schema** + **J9 工具描述返回契约（必查清单 + 歧义键分工 + 棘轮只许升）** + **J10 判据范围自述==实现（少写=声明滞后、多写=幻影判据）**；`--selftest` 用合成违例证明 J6/J7/J8/J9/J10 能发红，J9/J10 各配反向对照（干净输入/两面一致不误红），不是装饰）。
 
 Prompts: `fist:check_in`, `fist:verify`
 

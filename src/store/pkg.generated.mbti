@@ -73,6 +73,7 @@ pub struct MultiStore {
 }
 pub fn MultiStore::close(Self, String) -> Unit
 pub fn MultiStore::close_all(Self) -> Unit
+pub fn MultiStore::data_dir_ok(String) -> Bool
 pub fn MultiStore::get(Self, String) -> SqliteStore?
 pub fn MultiStore::new(data_dir? : String) -> Self
 pub fn MultiStore::ns_list(Self) -> Array[String]

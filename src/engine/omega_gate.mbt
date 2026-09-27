@@ -43,6 +43,45 @@ fn _derived_check_status(check_json : String) -> String {
 }
 
 ///|
+/// 从 run_check 的结果 JSON 里取某个文本字段的**末 n 个字符**（BUG-75）。
+/// 判据红了只给退出码等于没给证据：调用方要么本地重跑一遍同一条命令（那就退回到
+/// "自写自测"这条 run_check 正是要防的路径），要么整单打回却不知打回原因。
+/// 解析失败 / 字段缺失 / 字段不是字符串一律回 ("", false)——记录已落库，
+/// 取不到尾巴不该让回执本身失败。
+fn _json_str_tail(check_json : String, key : String, n : Int) -> (String, Bool) {
+  let parsed = @json.parse(check_json) catch { _ => return ("", false) }
+  match parsed {
+    Object(m) =>
+      match m.get(key) {
+        Some(String(s)) => {
+          let cs = s.to_array()
+          let len = cs.length()
+          if len <= n {
+            (s, false)
+          } else {
+            let out : Array[Char] = []
+            let mut i = len - n
+            while i < len {
+              out.push(cs[i])
+              i = i + 1
+            }
+            (String::from_array(out), true)
+          }
+        }
+        _ => ("", false)
+      }
+    _ => ("", false)
+  }
+}
+
+///|
+/// 回执携带的输出尾巴上限（字符）。取"末 N"而不是"前 N"：判据的关键信息在结尾
+/// （失败断言、汇总行、exit code 说明），前 N 往往是命令回显或进度条。
+fn gate_check_tail_limit() -> Int {
+  2000
+}
+
+///|
 /// 记录一次外部命令检查结果（门禁状态从 check_json 的 ok/exit_code==0 推导，
 /// status 参数已不参与判定，仅保留以维持公开签名兼容）。
 /// 记录 id = check:<task_id>:r<round>（round = 该任务已有 check 记录数 + 1）。
@@ -73,15 +112,32 @@ pub fn FistEngine::gate_check_record(
         Err(e) => Err(e)
         Ok(_) => {
           let m : Map[String, Json] = Map([])
+          let (out_tail, out_cut) = _json_str_tail(
+            check_json,
+            "stdout",
+            gate_check_tail_limit(),
+          )
+          let (err_tail, err_cut) = _json_str_tail(
+            check_json,
+            "stderr",
+            gate_check_tail_limit(),
+          )
           m.set("ok", Json::boolean(true))
           m.set("check_id", Json::string(rec.id))
           m.set("task_id", Json::string(task_id))
           m.set("round", Json::number(round.to_double()))
-          m.set("status", Json::string(status))
+          // BUG-75：回显**推导后**的门禁状态，不再回显调用方传入的 status——
+          // 上面第 57 行已声明该参数不被信任，回执与记录分着说两套话就是给伪证留口子。
+          m.set("status", Json::string(eff))
+          // BUG-75：把判据的实际输出带回去（末 N 字符），passed 也带，
+          // 否则"通过性证据"举不出判据打了什么，只能本地重跑同一条命令。
+          m.set("stdout_tail", Json::string(out_tail))
+          m.set("stderr_tail", Json::string(err_tail))
+          m.set("output_truncated", Json::boolean(out_cut || err_cut))
           m.set(
             "note",
             Json::string(
-              "外部判据已落库；若任务带 [gate:required]，verify 将校验本记录新鲜度（created_at >= 任务 updated_at）",
+              "外部判据已落库；若任务带 [gate:required]，verify 将校验本记录新鲜度（created_at >= 任务 updated_at）。stdout_tail/stderr_tail 为末 \{gate_check_tail_limit()} 字符，完整结果见 specs 表 content",
             ),
           )
           Ok(Json::object(m))

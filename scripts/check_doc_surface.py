@@ -312,6 +312,136 @@ def j8_template_params():
     return problems
 
 
+# ---- J9 工具描述的返回契约（BUG-74）----
+# 不全量立判据的原因写在脸上：现在 120 个注册点里 54 个没写返回契约，
+# 一上来按全量要求要么第一天就红、要么被迫写成"豁免 54 条"的白名单游戏。
+# 取三条今天就能落地的：
+#   ① 必查清单 = 本轮**亲自因为缺契约而误判过**的工具（实测来源，不是许愿清单）；
+#   ② 棘轮 = 写了「返回」的工具数只许升不许降，要退必须显式改基线并写明理由；
+#   ③ 歧义键分工 = 同一段返回契约里两个含义不同的键必须各自点名（见 RET_MUST_EXPLAIN）。
+RE_TOOL_DESC = re.compile(
+    r'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"\s*,\s*"((?:[^"\\]|\\.)*)"', re.S
+)
+RET_MUST_CARRY = [
+    "task_plan_deep",         # 按 subtasks/tasks/created 取值 ⇒ 顶层全 miss，误判"拆解失败"
+    "run_check",              # 只回退出码 ⇒ 判据红了举不出红在哪
+    "bug_list",               # 返回是对象不是裸数组 ⇒ 当 list 取恒得空
+    "github_queue_status",    # total=0 会被读成"无 bug 待同步"（其实是没开同步）
+]
+RET_FLOOR = 66  # 基线 = 2026-09-27 实测：120 个注册点里 66 个描述含「返回」
+#   ③ 同族歧义：一个描述里同时出现两个含义不同的键时，必须把分工写在脸上。
+#      实测来源 = BUG-83：run_check 回执顶层 ok=「已跑完并落库」、status=「通过与否」，
+#      描述只解释了 status，Round 5 验证段驱动就把顶层 ok 当结论自述了 11/11。
+#      只列本轮亲自踩过的工具，不做全量许愿清单（与 ① 同一取材口径）。
+RET_MUST_EXPLAIN = {
+    "run_check": ["已跑完并落库", "只看 status"],
+}
+
+
+def tool_desc_registry():
+    """server.mbt → {工具名: 描述串}（重名取第一次，与 real_tools 的集合口径一致）。"""
+    descs = {}
+    for name, desc in RE_TOOL_DESC.findall(SERVER.read_text(encoding="utf-8")):
+        descs.setdefault(name, desc)
+    return descs
+
+
+def return_contract_problems(descs, must_carry=RET_MUST_CARRY, floor=RET_FLOOR,
+                             must_explain=RET_MUST_EXPLAIN):
+    """纯判据：喂 {工具: 描述} 出违例列表。自测拿合成字典直接考它，不碰真源。"""
+    if len(descs) < 100:
+        return [f"J9 只解析到 {len(descs)} 个工具描述（<100 视为解析器坏了，不出绿）"]
+    problems = []
+    for t in must_carry:
+        if t not in descs:
+            problems.append(f"J9 必查工具解析不到：{t}（清单失效比缺契约更糟）")
+        elif "返回" not in descs[t]:
+            problems.append(
+                f"J9 {t} 描述没有返回契约 —— 调用方只能猜键名，猜错是静默得空而不是报错")
+    for t, needles in must_explain.items():
+        d = descs.get(t)
+        if d is None:
+            problems.append(f"J9 歧义分工清单里的工具解析不到：{t}（清单失效比缺契约更糟）")
+            continue
+        for nd in needles:
+            if nd not in d:
+                problems.append(
+                    f"J9 {t} 的返回契约未写明「{nd}」—— 同名键两种含义时调用方会把"
+                    "「已落库」读成「已通过」（BUG-83 实测把信封 ok 汇总成 11/11）")
+    has = sum(1 for d in descs.values() if "返回" in d)
+    if has < floor:
+        problems.append(
+            f"J9 写了返回契约的工具数 {has} < 基线 {floor}（棘轮只许升；要降请显式改 RET_FLOOR 并写理由）")
+    return problems
+
+
+def j9_return_contract():
+    return return_contract_problems(tool_desc_registry())
+
+
+# ---- J10 判据范围自述 == 实际实现（BUG-84）----
+# 守卫族段落里的"J1-Jn"是"这套文档面到底实现了几条判据"的唯一对外口径。
+# 同一族已经重犯两次（CHANGELOG 里记着 J1-J5→J1-J8 那次也是人肉同步）：
+# 少写 ⇒ 读者以为 J9/J10 不存在、绕着走；多写 ⇒ 读者拿不存在的判据当门禁。两个方向都要能发红。
+RE_J_IMPL = re.compile(r"(?:def j|---- J)(\d+)")
+RE_J_CLAIM = re.compile(r"J1-J(\d+)")  # 表面写的是 "J1-J8" 这种双 J 形态（实测三处皆然）
+
+
+def implemented_j_rules(src=None):
+    """本脚本自己实现了哪些 J 判据：`def jN_…` 与 `---- JN` 两类标记取并集。"""
+    if src is None:
+        src = Path(__file__).resolve().read_text(encoding="utf-8")
+    return {int(x) for x in RE_J_IMPL.findall(src)}
+
+
+def j10_claim_surfaces():
+    """声明面 = 现状规范表面 + 对外发货表面（模板/插件真源）。
+    BUG-66 的教训就是"发货正文里的过时口径会被放大成 4 份对外契约"，扫描面不许只挑两份。"""
+    return ([AGENTS, CANON]
+            + sorted(TEMPLATES_DIR.glob("*.md"))
+            + sorted(PLUGIN_SRC.glob("*.md")))
+
+
+def j10_range_claims(paths=None):
+    """现状规范表面里对范围的声明：{文件名: [(行号, 声明的上界), …]}。
+    只认**同一行里提到 check_doc_surface** 的 J1-n，避免把历史叙述当现状声明。"""
+    out = {}
+    for p in (paths or j10_claim_surfaces()):
+        if not p.exists():
+            continue
+        hits = [(i + 1, int(n))
+                for i, line in enumerate(p.read_text(encoding="utf-8").splitlines())
+                if "check_doc_surface" in line for n in RE_J_CLAIM.findall(line)]
+        if hits:
+            out[str(p.relative_to(ROOT))] = hits
+    return out
+
+
+def j10_range_problems(claims, impl_max):
+    """纯判据：喂声明与实现上界出违例。自测拿合成输入直接考它，不碰文件。"""
+    if impl_max < 1:
+        return ["J10 解析不到已实现判据（先判解析器坏，再判文档坏）"]
+    if not claims:
+        return ["J10 一处判据范围声明都没抓到（扫描面空转 ≠ 没有问题）"]
+    problems = []
+    for label, hits in claims.items():
+        for ln, n in hits:
+            if n < impl_max:
+                problems.append(
+                    f"J10 {label}:{ln} 声明 J1-J{n} < 实现最高 J{impl_max} —— 声明滞后，"
+                    "读者会按不存在的口径绕过已有门禁")
+            elif n > impl_max:
+                problems.append(
+                    f"J10 {label}:{ln} 声明 J1-J{n} > 实现最高 J{impl_max} —— 幻影判据，"
+                    "读者会拿不存在的判据当保障")
+    return problems
+
+
+def j10_range_consistency():
+    impl = implemented_j_rules()
+    return j10_range_problems(j10_range_claims(), max(impl) if impl else 0)
+
+
 def j_selftest():
     """负向自检：每条新判据都必须能在合成违例上发红，否则它只是装饰。"""
     fails = []
@@ -334,6 +464,60 @@ def j_selftest():
     if is_plugin_surface(probe_out, clone_plugins):
         fails.append("is_plugin_surface 把生成副本也判成真源 → 会重复计一遍假违例")
     reg = tool_registry()
+    # BUG-74/83：J9 的对照——缺契约必红、跌破棘轮必红、干净输入不得误红，
+    # ③ 歧义键分工另含"抹词必红 + 写清不误红 + 清单落空必红"三条。
+    # 合成违例文案里**不许出现 needle 本身**（"只写参数不写返回"就含着「返回」二字，
+    # 那样判据永远不红，测的是我的造句而不是判据）。
+    synth = {f"t{i}": ("returns {a, b}" if i else "only documents parameters")
+             for i in range(120)}
+    if not return_contract_problems(synth, must_carry=["t0"], must_explain={}):
+        fails.append("J9 对『必查工具缺返回契约』不敏感 → BUG-74 那类误判抓不到")
+    if not return_contract_problems({f"t{i}": "returns {a}" for i in range(110)},
+                                    floor=120, must_explain={}):
+        fails.append("J9 棘轮不承重（110 条 < 基线 120 却不红）")
+    if return_contract_problems({f"t{i}": "返回 {a}" for i in range(120)},
+                                must_carry=[], floor=1, must_explain={}):
+        fails.append("J9 对干净输入误报（恒红判据不可信）")
+    # 判据认的是中文「返回」，不是英文 returns：这条反向对照防"把判据改成大小写不敏感后恒过"
+    if not return_contract_problems({f"t{i}": "returns {a}" for i in range(120)},
+                                    must_carry=["t0"], floor=1, must_explain={}):
+        fails.append("J9 把英文 returns 当成了契约（needle 口径被放宽）")
+    amb_bad = {f"t{i}": "返回 {a}" for i in range(119)}
+    amb_bad["run_check"] = "返回 {ok, status}：ok=true 表示判据通过，status 是同义字段"
+    if not any("run_check" in p for p in return_contract_problems(amb_bad, must_carry=[], floor=1)):
+        fails.append("J9 对『两个 ok 不分工』不敏感 → BUG-83 那类误判还会重犯")
+    amb_ok = dict(amb_bad)
+    amb_ok["run_check"] = ("返回 {ok, status}：顶层 ok 只表示已跑完并落库，"
+                           "判据通过与否只看 status")
+    if return_contract_problems(amb_ok, must_carry=[], floor=1):
+        fails.append("J9 对已写清分工的描述误红")
+    if not any("解析不到" in p for p in return_contract_problems(
+            {f"t{i}": "返回 {a}" for i in range(120)}, must_carry=[], floor=1)):
+        fails.append("J9 分工清单里的工具从注册表消失时不红 → 清单失效比缺契约更糟")
+    j9_real = j9_return_contract()
+    if j9_real:
+        fails.append("J9 在真实真源上就红了（先判解析器坏，再判产品坏）：" + j9_real[0])
+    if len(tool_desc_registry()) < 100:
+        fails.append("J9 解析器饿死：tool_desc_registry 读不到 100 个描述")
+    # BUG-84：J10 四个方向都要能发红，且"两面一致"这条不误红（防恒红）。
+    impl_now = max(implemented_j_rules())
+    if impl_now < 9:
+        fails.append(f"J10 实现侧解析只到 J{impl_now} —— 枚举器饿死，范围比对没有意义")
+    if not any("声明滞后" in p for p in j10_range_problems({"AGENTS.md": [(299, 8)]}, 9)):
+        fails.append("J10 抓不到『声明滞后』（本轮真实违例形状：文档写 J1-J8、真源已有 J9）")
+    if not any("幻影判据" in p for p in j10_range_problems({"AGENTS.md": [(299, 99)]}, 9)):
+        fails.append("J10 抓不到『幻影判据』（吹比实现更大的范围）")
+    if j10_range_problems({"AGENTS.md": [(299, 9)], "AI-DEVELOPMENT-STANDARD.md": [(15, 9)]}, 9):
+        fails.append("J10 对两面一致的输入误红")
+    if not j10_range_problems({}, 9):
+        fails.append("J10 扫描面空转时不红（没抓到声明 ≠ 没有问题）")
+    if not j10_range_problems({"AGENTS.md": [(299, 1)]}, 0):
+        fails.append("J10 实现侧解析为空时不红（先判解析器坏）")
+    j10_real = j10_range_consistency()
+    if j10_real:
+        fails.append("J10 在真实现状面上就红了：" + j10_real[0])
+    if not j10_range_claims():
+        fails.append("J10 现状规范表面一处范围声明都没有 —— 扫描面对象选错了")
     if "output_validate" not in reg:
         fails.append("J8 解析不到 output_validate（解析器失效）")
     else:
@@ -385,7 +569,9 @@ def main(argv):
             for f in fails:
                 print("  - " + f)
             return 2
-        print(f"SELFTEST OK: 真源解析到 {n} 个工具，J6/J7/J8 对合成违例均发红")
+        print(f"SELFTEST OK: 真源解析到 {n} 个工具，J6/J7/J8/J9/J10 对合成违例均发红"
+              "（J9 另含『干净输入不得误红』『英文不算契约』『分工写清不得误红』三条反向对照"
+              "与『分工清单落空必红』一条；J10 含滞后/幻影/空扫描/解析器饿死四条 + 两面一致不误红对照）")
         return 0
 
     agents_txt = AGENTS.read_text(encoding="utf-8")
@@ -425,6 +611,8 @@ def main(argv):
     problems += j6_standard_consistency()
     problems += j7_stale_wording()
     problems += j8_template_params()
+    problems += j9_return_contract()
+    problems += j10_range_consistency()
 
     if problems:
         print(f"FAIL 文档面不一致（真源 {n} 工具 / moon.mod {mv}）：")
@@ -433,7 +621,8 @@ def main(argv):
         return 1
     print(
         f"PASS 文档面一致：{n} 工具在 AGENTS/README 逐个可查、分组和={n}、当前自述版本={mv}、"
-        "J6 规范正文↔投影一致、J7 无旧口径、J8 模板调用面契约干净"
+        "J6 规范正文↔投影一致、J7 无旧口径、J8 模板调用面契约干净、"
+        "J9 返回契约（必查清单 + 歧义键分工 + 棘轮）未退化、J10 判据范围自述==实现"
     )
     return 0
 

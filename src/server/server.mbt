@@ -1125,7 +1125,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "run_check",
-    "外部判据检查（**宿主命令执行能力**：服务端真实 spawn 进程，防自写自测恒绿；请勿暴露给不可信客户端）。自 Round 2 起执行面**默认收紧**（BUG-4 收口，判定在 src/server/run_check_guard.mbt）：① cmd 必须在白名单内——默认只放项目脚本解释器 moon/node/python/python3/py/bash/sh/zsh/powershell/pwsh（集合来源=call_log 实测调用面）或**项目内的**相对判据脚本（如 `scripts/check.sh`）；② workdir 必须在任务 project_dir 子树内（默认即 project_dir 本身；**相对 workdir 按任务 project_dir 相对解析，`.` 就是该任务的项目目录本身**，与 project_dir 是绝对还是相对无关 —— BUG-51 统一口径，实际 spawn 的 cwd 用归一后的绝对形态）。注意这条口径与 `report_bug`/`bug_list` 的 `project_dir` **相反**：那个参数是 bug 账的落盘根，只接受相对 store 根的路径（拒绝绝对路径/盘符/`..`）。越界（`..` 上跳、跨盘、脱离子树、绝对 workdir 配相对 project_dir）直接拒绝。要扩展白名单只有两条路：把判据脚本写进项目目录按相对路径调用，或由**运维侧**设环境变量 FIST_RUN_CHECK_ALLOW=git,cargo（调用方传参不能给自己扩权）。被拒的尝试一律落审计（audit_log 本进程 + call_log 跨进程）。参数：task_id 任务id、cmd 可执行命令、args 参数数组(可选)、workdir 工作目录(默认任务 project_dir；相对路径按任务 project_dir 解析，绝对路径须在项目子树内)、timeout_ms 超时毫秒(默认120000)（注：时间戳由服务端盖章，不接受调用方注入 now）。真实 spawn 子进程运行 cmd，退出码 0 记为 passed、否则 failed，结果 JSON（含 stdout/stderr）落库 specs 表（spec_type=check）；[gate:required] 任务的 verify 依赖本记录且校验新鲜度。",
+    "外部判据检查（**宿主命令执行能力**：服务端真实 spawn 进程，防自写自测恒绿；请勿暴露给不可信客户端）。自 Round 2 起执行面**默认收紧**（BUG-4 收口，判定在 src/server/run_check_guard.mbt）：① cmd 必须在白名单内——默认只放项目脚本解释器 moon/node/python/python3/py/bash/sh/zsh/powershell/pwsh（集合来源=call_log 实测调用面）或**项目内的**相对判据脚本（如 `scripts/check.sh`）；② workdir 必须在任务 project_dir 子树内（默认即 project_dir 本身；**相对 workdir 按任务 project_dir 相对解析，`.` 就是该任务的项目目录本身**，与 project_dir 是绝对还是相对无关 —— BUG-51 统一口径，实际 spawn 的 cwd 用归一后的绝对形态）。注意这条口径与 `report_bug`/`bug_list` 的 `project_dir` **相反**：那个参数是 bug 账的落盘根，只接受相对 store 根的路径（拒绝绝对路径/盘符/`..`）。越界（`..` 上跳、跨盘、脱离子树、绝对 workdir 配相对 project_dir）直接拒绝。要扩展白名单只有两条路：把判据脚本写进项目目录按相对路径调用，或由**运维侧**设环境变量 FIST_RUN_CHECK_ALLOW=git,cargo（调用方传参不能给自己扩权）。被拒的尝试一律落审计（audit_log 本进程 + call_log 跨进程）。参数：task_id 任务id、cmd 可执行命令、args 参数数组(可选)、workdir 工作目录(默认任务 project_dir；相对路径按任务 project_dir 解析，绝对路径须在项目子树内)、timeout_ms 超时毫秒(默认120000)（注：时间戳由服务端盖章，不接受调用方注入 now）。真实 spawn 子进程运行 cmd，退出码 0 记为 passed、否则 failed，结果 JSON（含 stdout/stderr）落库 specs 表（spec_type=check）；[gate:required] 任务的 verify 依赖本记录且校验新鲜度。返回 {ok, check_id, task_id, round, status, stdout_tail, stderr_tail, output_truncated, note}：**顶层的 ok 只表示「判据已跑完并落库」**（spawn 成功即 true，与判据通过与否无关），**判据通过与否只看 status**（passed/failed，服务端由子进程退出码推导，调用方声称的 passed 无效）。别拿 ok 当结论：BUG-83 实测有驱动以顶层 ok 汇总出『判据 11/11 通过』，而同一份回执里 status=failed 的那条就躺在旁边。stdout/stderr 各带**末 2000 字符**（判据的关键信息在结尾；BUG-75 前只回退出码，failed 时举不出红在哪、只能本地重跑同一条命令，等于退回本工具要防的自述路径），完整输出仍存 specs.content 供库内复核。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -1405,7 +1405,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "task_plan_deep",
-    "AO 式递归拆解：对指定任务拆出整棵多层子任务树并写库。参数：task_id 任务id、split_n 每层默认拆分数(默认3)、by 拆解拳长、spec 可选 omega spec JSON(laws 作切割依据、fingerprint 作验收基准)、omega_strong_verify 是否开启 Omega 强验证(默认 false，不传即现状)、gradient 是否开启难度梯度标注(默认 false，开启后每个拆出的子任务描述附带『难度梯度 序号/总数:难易档』+『更简单变体』提示，使递归拆解呈由易到难、可验证最小片的梯度)（注：时间戳一律由服务端盖章，不接受调用方注入 now）。开启强验证后每层子任务多出『语料创建者建语料 -> 验证者审语料 -> 执行者执行 -> 验证者复验成果』环节。",
+    "AO 式递归拆解：对指定任务拆出整棵多层子任务树并写库。参数：task_id 任务id、split_n 每层默认拆分数(默认3)、by 拆解拳长、spec 可选 omega spec JSON(laws 作切割依据、fingerprint 作验收基准)、omega_strong_verify 是否开启 Omega 强验证(默认 false，不传即现状)、gradient 是否开启难度梯度标注(默认 false，开启后每个拆出的子任务描述附带『难度梯度 序号/总数:难易档』+『更简单变体』提示，使递归拆解呈由易到难、可验证最小片的梯度)（注：时间戳一律由服务端盖章，不接受调用方注入 now）。开启强验证后每层子任务多出『语料创建者建语料 -> 验证者审语料 -> 执行者执行 -> 验证者复验成果』环节。返回 {root, by, split_n, tree, exec_order}：**子任务在 tree.children 里逐层递归**，tree = {task_id, created, children:[{id, depth, leaf, spec_hash, depends_on, children[…]}]}，exec_order = {task_id, count, order:[…]}。两个坑点名（BUG-74，实测撞过）：① 顶层没有 subtasks/tasks/created，按这些键取必得空，会误判『拆解失败』而重复发布（造孤儿树）；② tree.created 是**整数计数**不是数组，拿它当列表遍历会直接崩。取叶子请递归 tree.children，或事后调 list(namespace=) 复核真实数量。",
     schema(
       {
         "task_id": string_prop("父任务 id（必填，非原子任务）"),
@@ -1943,7 +1943,7 @@ pub async fn run_server() -> Unit {
           "phi_gate 怀疑阈值(可选默认8，原论文口径)",
         ),
         "mode": string_prop(
-          "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy。非 advance 时自动读 templates/pipeline_mode_<mode>.md 替代 meta_prompt_path（显式 meta_prompt_path 优先）。非法值立即返回 Err。",
+          "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy。非 advance 时 templates/pipeline_mode_<mode>.md **覆盖**显式 meta_prompt_path（不是反过来！BUG-77：旧描述写的是『显式优先』，代码走的是 mode 优先）；要让显式路径生效就别传 mode 或传 advance。回执里 meta_prompt_resolved 才是真被读的那份，meta_prompt_path 只是你传进来的那个。非法值立即返回 Err。",
         ),
       },
       [],
@@ -2028,7 +2028,7 @@ pub async fn run_server() -> Unit {
         ),
         "timeout_sec": int_prop("执行超时秒数(可选默认2400)"),
         "mode": string_prop(
-          "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy。非 advance 时自动读 templates/pipeline_mode_<mode>.md。",
+          "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy。BUG-76：本工具的 mode **只作为标签写进台账**，不读模式模板（接线只在 watchdog_tick 上做了）；要按模式取 templates/pipeline_mode_<mode>.md 请用 watchdog_tick(mode=) 或自己把路径传给 meta_prompt_path。",
         ),
       },
       [],
@@ -2145,7 +2145,9 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let ns = get_str(args, "namespace", default="default")
-      match @ops.selfdrive_export_tasks(engine, project_dir, ns) {
+      // BUG-82：时间戳服务端盖章（不接受调用方注入 now，见 BUG-33 政策）
+      match
+        @ops.selfdrive_export_tasks(engine, project_dir, ns, now=now_default()) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
@@ -4130,7 +4132,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "store_open",
-    "打开（或复用）一个命名空间。参数：namespace、data_dir(可选，默认当前目录)、scratch(可选，true 时库落 temp/ 临时区，不污染仓库根)。",
+    "打开（或复用）一个命名空间。参数：namespace、data_dir(可选，默认当前目录；**只接受相对 server 进程 cwd 的相对路径**——含 .. / 前导分隔符 / 盘符一律拒。BUG-78：过去 data_dir 原样拼接，指到哪就往哪建 .db，『命名空间物理隔离』形同虚设)、scratch(可选，true 时库落 temp/ 临时区，不污染仓库根)。返回 {namespace, opened, data_dir, path}；失败原因分列（非法 ns 与非法 data_dir 不合并成一句『打开失败』，否则调用方不知道该改哪个参数）。",
     schema(
       {
         "namespace": string_prop("命名空间（必填）"),
@@ -4153,6 +4155,22 @@ pub async fn run_server() -> Unit {
           _ => ()
         }
         dir = "temp"
+      }
+      // BUG-78：原因分列再动手——把非法 ns 和非法 data_dir 合并成一句"打开失败"，
+      // 调用方就只能猜该改哪个参数（本项目对拒绝文案的一贯要求：自带出路）
+      if @store.MultiStore::safe_ns(ns) is None {
+        return Err(
+          @mcp_types.ToolError(
+            "store_open: 非法 namespace=\{ns}（只允许字母/数字/_/-，拒分隔符与穿越）",
+          ),
+        )
+      }
+      if not(@store.MultiStore::data_dir_ok(dir)) {
+        return Err(
+          @mcp_types.ToolError(
+            "store_open: 非法 data_dir=\{dir}（只接受相对 server 进程 cwd 的相对路径，拒 .. 、前导分隔符、盘符）。两条出路：① 传相对目录（如 temp/ns-probe）；② 直接给 scratch=true 落 temp/",
+          ),
+        )
       }
       match mstore.open(ns~, data_dir=dir) {
         false => Err(@mcp_types.ToolError("打开命名空间失败: \{ns}"))
@@ -4310,7 +4328,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "bug_list",
-    "列出 {project_dir}/memory/bugs.md 里的 bug 条目（{id,ts,severity,status,summary}）。用于自驱流水线扫描待修复 bug 并认领。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（绝对 + normalize 后的落点）。参数：project_dir(必填)。",
+    "列出 {project_dir}/memory/bugs.md 里的 bug 条目。**返回是对象不是裸数组**：{bugs:[{id,ts,severity,status,summary,detail}], count, path, project_dir, resolved_path}（BUG-74 同族：按 `bl if isinstance(bl,list)` 取会恒得空，看起来像『账本没 bug』）。用于自驱流水线扫描待修复 bug 并认领。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（绝对 + normalize 后的落点）。参数：project_dir(必填)。",
     schema(
       {
         "project_dir": string_prop(
@@ -4597,7 +4615,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "github_queue_status",
-    "查看待同步 GitHub issue 队列状态——总数/pending/sent/最老条目/按严重度分布。纯计算读 JSONL 队列，不碰网络。参数：project_dir(必填)。",
+    "查看待同步 GitHub issue 队列状态。返回 {total, pending, sent, oldest_pending_ts, by_severity, pending_list, path}。纯计算读 JSONL 队列，不碰网络。**两栏不许混读**（BUG-74 同族，实测撞过）：total=0 只说明队列文件为空——`github_env_check` 的 enabled=false 时压根不会有入队记录，此时『没有待同步』读起来像『没有 bug 待上报』，是两回事；判断『能不能自动上报』请看 github_env_check 的 enabled/repo_set/token_present/ready 四元组。参数：project_dir(必填)。",
     schema({ "project_dir": string_prop("项目目录（必填）") }, [
       "project_dir",
     ]),

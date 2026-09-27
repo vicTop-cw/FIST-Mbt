@@ -1,5 +1,5 @@
 <!-- advance 模式默认元提示词，从 cron_pipeline_meta_prompt.md 同名内容复制 -->
-<!-- 由 watchdog_tick(mode="advance") 或 pipeline_tick(mode="advance") 自动读取 -->
+<!-- 由 watchdog_tick(mode="advance") 自动读取；pipeline_tick 的 mode 只是台账标签、不读本文件（BUG-76）。要用这份模板请把路径显式传给 meta_prompt_path -->
 
 ---
 

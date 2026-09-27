@@ -359,7 +359,12 @@ pub fn watchdog_tick(
     "scanned": Json::number(tasks.length().to_double()),
     "active_tasks": Json::object(active_detail),
     "blocked_detail": Json::array(blocked_ids.map(fn(s) { Json::string(s) })),
+    // BUG-77：调用方给的那份与被读的那份**分栏回**，只回前者＝回执说谎
     "meta_prompt_path": Json::string(meta_prompt_path),
+    "meta_prompt_resolved": Json::string(effective_meta_path),
+    "meta_prompt_overridden": Json::boolean(
+      effective_meta_path != meta_prompt_path,
+    ),
     "meta_prompt_used": Json::boolean(meta_used),
     "phi_gate": Json::boolean(phi_gate),
     "selfdrive": sd_detail,
