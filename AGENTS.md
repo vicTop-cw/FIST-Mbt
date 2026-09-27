@@ -84,7 +84,7 @@ You can browse and install extra skills here:
 
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
 > Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
-> **JS 后端**：`moon test --target js` = **458/458**（2026-09-27 Windows 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并）。
+> **JS 后端**：`moon test --target js` = **508/508**（2026-09-27 Windows 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并）。
 > **Native 后端**：上一轮在 Windows + WSL(Linux) 通过 317/317；本轮未复跑 native，不据旧数宣称双端同版全绿。
 
 `src/store/store_sqlite.mbt` 依赖 `mizchi/sqlite`（native stub），其 `stub.c` 用尖括号 `#include <sqlite3.h>` 并 `#pragma comment(lib, "sqlite3.lib")` 链接系统 SQLite。
@@ -95,11 +95,11 @@ You can browse and install extra skills here:
   2. 编译/链接前在**同一会话**加载 `Enter-VsDevShell`（VS Build Tools）并追加 `INCLUDE`/`LIB` 指向该目录（注册表 User 级环境变量会被 moon 自发现的 MSVC 环境覆盖，不生效）；
   3. 之后 `moon test --target native` 即可通过。缺失时 `stub.c` 报 `fatal error C1083: 无法打开包括文件 "sqlite3.h"` / `LNK1104: sqlite3.lib`。
   一键装载上述环境（自动探测 VS + sqlite-dev）：`pwsh ./scripts/native-env.ps1`；
-  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 458/458）**，见 README「已知边界」。
+  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 508/508）**，见 README「已知边界」。
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**120 tools** + 3 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**122 tools** + 3 resources + 2 prompts）：
 
 ### 生命周期（14）
 | 工具 | 说明 |
@@ -158,11 +158,13 @@ You can browse and install extra skills here:
 | `selfdrive_parse_next_tasks` | 解析报告里的任务清单 |
 | `selfdrive_pick_next` | 按 triage 能力推荐取走顶部并认领（无人值守按能力自续推） |
 
-### 运维 · 日志 / 缺陷 / 成本 / 调度（13）
+### 运维 · 日志 / 缺陷 / 成本 / 调度（15）
 | 工具 | 说明 |
 |---|---|
 | `call_log` | 调用日志查询（时间戳/seq/项目分组） |
-| `bug_list` | 缺陷/ BUG 列表 |
+| `bug_list` | 缺陷/ BUG 列表（每行带回 `linked_task_status`，`open_with_linked_done` 一次看见「账本说没修、任务库说修完了」的矛盾） |
+| `bug_fix` | 批量标 FIXED：**同一笔**改抬头 + 落一条点名整批的 `### FIXED(<盖章时间> / BUG-a, BUG-b)` 小记（evidence 必填非空；幂等重跑；终态之间不互跳）。为什么不给"只改抬头"的路：记账规则把两者做成互锁硬门，分两次调用中间态就是 gen_plugins 拒绝产出的红账本 |
+| `bug_mark_status` | 改判单条抬头状态（OPEN/DUPLICATE/FALSE_POSITIVE；**FIXED 一律拒**，走 `bug_fix`）。DUPLICATE 必须带 `dup_of` 且主编号合法（禁自指/禁链）；FALSE_POSITIVE 可选 `evidence` 追加一行立据。返回含 `from_status`/`changed`（同状态幂等 no-op） |
 | `report_bug` | 上报缺陷 |
 | `issue_scan` | 规则驱动源码扫描（打磨收尾引入）：递归收集目录下 .mbt 文件，内建 10 条 MoonBit 高危规则逐行匹配（除零/空数组下标/无保护 unwrap/unsafe_get/无保护整除/substring 越界/ignore 丢错/字符串下标/潜在溢出/空集合单例），产出 findings（rule/severity/file/line/code）+ by_severity/by_rule 聚合；命中可直接喂 `report_bug` 形成"扫描→上报→修复"闭环——免外部二进制、无绝对路径硬编码，MCP/CLI/skill 三态复用并随插件态分发四宿主；`include_tests`（默认 false）只扫产品代码跳过 `_test/_wbtest` 以降噪 |
 | `eval_feedback` | 反馈收敛（R111，Evaluator-Optimizer schema 蒸馏：Anthropic E/O + Self-Refine 2303.17651 + Reflexion 2303.11366 + zubi.ai 四段式）——自由文本反馈归一为 Defects/Evidence/Fix/Acceptance 四段式契约 + 确定性 verdict（无缺陷且 acceptance 非空 → pass 可收敛；否则 fail + 缺证据/缺修复/缺段标注）；纯计算只读不写库，与 plan_revise 反馈修订互补 |
@@ -296,7 +298,7 @@ Resources: `fist://map`, `fist://principles`, `fist://overview`
 **atomcode → codearts → deepseek-harness → claude**（真源 = `plugins/source/` 正文 + `server.mbt` 工具数 + `moon.mod` 版本 + `memory/bugs.md` 账本 + 根 `.mcp.json` 启动参数）。
 
 - 插件目录**禁止手改**：`scripts/check_plugin_sync.py`（cl7）子进程重跑生成器做逐字节 diff，另查四宿主入口齐全、无残留 `{{占位符}}`、manifest 版本==moon.mod、`plugins/claude/.mcp.json` 与根 `.mcp.json` 逐字相等、生成 SKILL.md 的 `tools=` == 实测工具数；实测 <=100 直接 FATAL(2)（判据无法自证绝不报绿）。
-- 守卫族（6 个，全在 ci.yml JS 轨）：`check_tools_sync` / `check_test_sync` / `check_badge` / `check_scripts_index` / **`check_plugin_sync`（cl7）** / `check_doc_surface`（文档面 J1-J10：逐个工具可查 + 分组和==实测 + 自述版本==moon.mod + 反幻影哨兵 + **J6 规范正文↔机器投影一致** + **J7 规范性表面禁旧口径** + **J8 模板调用参数==真源 schema** + **J9 工具描述返回契约（必查清单 + 歧义键分工 + 棘轮只许升）** + **J10 判据范围自述==实现（少写=声明滞后、多写=幻影判据）**；`--selftest` 用合成违例证明 J6/J7/J8/J9/J10 能发红，J9/J10 各配反向对照（干净输入/两面一致不误红），不是装饰）。
+- 守卫族（7 个，全在 ci.yml JS 轨）：`check_tools_sync` / `check_test_sync` / `check_badge` / `check_scripts_index` / **`check_plugin_sync`（cl7）** / `check_doc_surface` / **`check_store_tables_wired`（BUG-28：库内每张表要么有写入点、要么在 store 源文件里 `schema-reserved:` 点名预留，两个方向都发红）**（文档面 J1-J10：逐个工具可查 + 分组和==实测 + 自述版本==moon.mod + 反幻影哨兵 + **J4 子判据：注册表发布版本只在 `BACKLOG.md` 一处自述** + **J6 规范正文↔机器投影一致** + **J7 规范性表面禁旧口径** + **J8 模板调用参数==真源 schema** + **J9 工具描述返回契约（必查清单 + 歧义键分工 + 棘轮只许升）** + **J10 判据范围自述==实现（少写=声明滞后、多写=幻影判据）**；`--selftest` 用合成违例证明 J4/J6/J7/J8/J9/J10 能发红（自检正文里没写对照，`SELFTEST OK` 那行就不会报它——那份清单从正文反解，不手写），J9/J10/J4 各配反向对照（干净输入/两面一致不误红），且 ci.yml 的文档面那一步先跑 `--selftest` 再跑全量（BUG-89：本轮之前 ci.yml 里只有 `check_test_sync` 的自检被执行，文档面守卫的自检崩了也报绿），不是装饰）。
 
 Prompts: `fist:check_in`, `fist:verify`
 

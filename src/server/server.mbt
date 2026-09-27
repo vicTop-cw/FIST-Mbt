@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 120 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 122 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -1058,7 +1058,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "publish_parallel",
-    "并行追加独立根任务（不要求命名空间为空、不续轮不归档）：在已有任务的命名空间追加新的独立根任务，供自驱/定时命名空间连续发布多根使用。参数：project_dir、description(必填)、namespace(必填，非 default)、created_by(默认 selfdrive)、now。",
+    "并行追加独立根任务（不要求命名空间为空、不续轮不归档）：在已有任务的命名空间追加新的独立根任务，供自驱/定时命名空间连续发布多根使用。参数：project_dir、description(必填)、namespace(必填，非 default)、created_by(默认 selfdrive)。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -1175,7 +1175,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "execute",
-    "记录执行交付物（向后兼容）。合法前态：拆分中/已领取/**执行中**→执行中（BUG-2 收口：执行中重复 execute = 追加/覆盖交付物，因此 reject→retry（→执行中）后可以直接原地更新交付物，无需 pause→resume 绕行；被拒时错误文案会给出当前状态的可用出路）。必填：task_id、deliverable；可选：executor(默认manual)、model、tokens_in、tokens_out、cost、duration_ms、rate_limited、failure_reason、now。",
+    "记录执行交付物（向后兼容）。合法前态：拆分中/已领取/**执行中**→执行中（BUG-2 收口：执行中重复 execute = 追加/覆盖交付物，因此 reject→retry（→执行中）后可以直接原地更新交付物，无需 pause→resume 绕行；被拒时错误文案会给出当前状态的可用出路）。必填：task_id、deliverable；可选：executor(默认manual)、model、tokens_in、tokens_out、cost、duration_ms、rate_limited、failure_reason。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -1346,7 +1346,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "verify",
-    "验收通过（待验收 -> 已完成，父任务自动上卷）。[gate:required] 任务须先有新鲜通过的 run_check 记录；可选 docs_check 开启「文档即实现」门禁（校验 README/CHANGELOG/reports 存在性与交付物回传五段式，不达标打回）。参数：task_id、verifier、docs_check、now。",
+    "验收通过（待验收 -> 已完成，父任务自动上卷）。[gate:required] 任务须先有新鲜通过的 run_check 记录；可选 docs_check 开启「文档即实现」门禁（校验 README/CHANGELOG/reports 存在性与交付物回传五段式，不达标打回）。参数：task_id、verifier、docs_check。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -1399,7 +1399,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "reopen_task",
-    "重开/重派任务：任意非归档任务回滚为已领取（M4 heal/运维重派用）。参数：task_id、now。",
+    "重开/重派任务：任意非归档任务回滚为已领取（M4 heal/运维重派用）。参数：task_id。",
     schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
@@ -1705,7 +1705,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "task_challenge",
-    "自进化·Challenger 进阶变体（SAGE 四专家环另一半，与 R12 梯度/R13 Critic 互补）：对一条【已完成/已归档】任务按策略发布上一档『更难变体』—新根任务带 [challenge] 标记 + from 溯源 + 重要度升一档，构成『由易到难』自推进序列，让复杂能力持续上探而非停在完成点。可选 critic（缺省关闭零回归）：开启后对生成的挑战题先做 Critic 防漂移评审（与 evolve_critic 同一单一真源，防课程漂移/同质坍缩），当前策略漂移自动降档、全部漂移则拒发。参数：task_id 源任务(必填，须已完成/已归档)、by 触发者(默认 auto)、factor 扩规模倍数(默认2，仅 scale 策略生效)、strat 进阶策略(默认 scale，可选 generalize/unhint/constrain/scale)、critic 是否开启防漂移门禁(默认 false)、now。返回 {new_id,source,factor,strat,importance,critic,critic_status}。",
+    "自进化·Challenger 进阶变体（SAGE 四专家环另一半，与 R12 梯度/R13 Critic 互补）：对一条【已完成/已归档】任务按策略发布上一档『更难变体』—新根任务带 [challenge] 标记 + from 溯源 + 重要度升一档，构成『由易到难』自推进序列，让复杂能力持续上探而非停在完成点。可选 critic（缺省关闭零回归）：开启后对生成的挑战题先做 Critic 防漂移评审（与 evolve_critic 同一单一真源，防课程漂移/同质坍缩），当前策略漂移自动降档、全部漂移则拒发。参数：task_id 源任务(必填，须已完成/已归档)、by 触发者(默认 auto)、factor 扩规模倍数(默认2，仅 scale 策略生效)、strat 进阶策略(默认 scale，可选 generalize/unhint/constrain/scale)、critic 是否开启防漂移门禁(默认 false)。返回 {new_id,source,factor,strat,importance,critic,critic_status}。",
     schema(
       {
         "task_id": string_prop(
@@ -1744,7 +1744,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "omega_spec_create",
-    "Omega 强验证·语料创建者：为已开启强验证的任务创建本轮语料，并真正持久化写入 specs 表。参数：task_id、author 语料创建者(默认 spec_author)、content 语料内容(必填)、max_rounds 打回上限(默认3，最大10)、now。",
+    "Omega 强验证·语料创建者：为已开启强验证的任务创建本轮语料，并真正持久化写入 specs 表。参数：task_id、author 语料创建者(默认 spec_author)、content 语料内容(必填)、max_rounds 打回上限(默认3，最大10)。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -1776,7 +1776,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "omega_spec_review",
-    "Omega 强验证·验证者审语料：审核本轮语料。verdict=approve 通过（放行执行），其它值视为打回重做；打回次数超过 max_rounds 自动升级人工裁决，禁止死循环。参数：task_id、reviewer 验证者(默认 verifier)、verdict、reason 审核意见、max_rounds、now。",
+    "Omega 强验证·验证者审语料：审核本轮语料。verdict=approve 通过（放行执行），其它值视为打回重做；打回次数超过 max_rounds 自动升级人工裁决，禁止死循环。参数：task_id、reviewer 验证者(默认 verifier)、verdict、reason 审核意见、max_rounds。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -1811,7 +1811,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "omega_result_verify",
-    "Omega 强验证·验证者复验成果：执行者完成后，复验成果与语料是否达标。verdict=pass 达标（可提交验收），其它值打回重做；超过 max_rounds 自动升级人工裁决。参数：task_id、reviewer、verdict、reason、max_rounds、now。",
+    "Omega 强验证·验证者复验成果：执行者完成后，复验成果与语料是否达标。verdict=pass 达标（可提交验收），其它值打回重做；超过 max_rounds 自动升级人工裁决。参数：task_id、reviewer、verdict、reason、max_rounds。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -1922,7 +1922,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "heartbeat",
-    "活动信号上报（AO ActivityState）：任务执行前/执行中周期性上报，超时静默将触发 heal 回滚。参数：task_id、signal(可选默认 active)、now。",
+    "活动信号上报（AO ActivityState）：任务执行前/执行中周期性上报，超时静默将触发 heal 回滚。参数：task_id、signal(可选默认 active)。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -2023,7 +2023,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "watchdog_tick",
-    "定时任务看门狗编排单入口（推荐仅用于定时任务/无人值守场景，不用于人工指挥流程）：扫描活跃任务，心跳超时则回滚重派；检测到上一轮根任务已完成且提供了 next_description（或可由 meta_prompt_path 读取元提示词）时自动发布下一轮。参数：now、timeout_sec(可选默认600)、namespace(可选，未传则不自动续轮)、next_description(可选)、next_created_by(可选默认watchdog)、meta_prompt_path(可选)、cold_start(可选默认false，冷启动时设为true以发布首个任务)、project_dir(可选，冷启动时用于指定项目目录)、omega_strong_verify(可选默认false，开启后自动拆分并启用Omega强验证)、omega_split_n(可选默认3)、omega_spec(可选JSON)。",
+    "定时任务看门狗编排单入口（推荐仅用于定时任务/无人值守场景，不用于人工指挥流程）：扫描活跃任务，心跳超时则回滚重派；检测到上一轮根任务已完成且提供了 next_description（或可由 meta_prompt_path 读取元提示词）时自动发布下一轮。参数：timeout_sec(可选默认600)、namespace(可选，未传则不自动续轮)、next_description(可选)、next_created_by(可选默认watchdog)、meta_prompt_path(可选)、cold_start(可选默认false，冷启动时设为true以发布首个任务)、project_dir(可选，冷启动时用于指定项目目录)、omega_strong_verify(可选默认false，开启后自动拆分并启用Omega强验证)、omega_split_n(可选默认3)、omega_spec(可选JSON)。",
     schema(
       {
         "timeout_sec": int_prop("心跳超时秒数(可选默认600)"),
@@ -2141,7 +2141,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "pipeline_tick",
-    "提示词流水线状态机单入口（仅用于定时任务/无人值守命名空间，不用于人工指挥流程）：以 project_dir/currentState.txt 为唯一状态源，按四分支推进——空闲(Creating/Closed)生成新提示词、提示词已落盘(Pending)发布根任务、执行中(Running)缺报告且超时则要求补报告、报告落盘后校验收口。全程报告先行、不空转、不写脏数据。参数：project_dir(必填)、now(可选)、namespace(可选默认cron-auto)、phase(可选auto/prompt_ready/report_ready)、prompt_name(可选)、timeout_sec(可选默认2400)。",
+    "提示词流水线状态机单入口（仅用于定时任务/无人值守命名空间，不用于人工指挥流程）：以 project_dir/currentState.txt 为唯一状态源，按四分支推进——空闲(Creating/Closed)生成新提示词、提示词已落盘(Pending)发布根任务、执行中(Running)缺报告且超时则要求补报告、报告落盘后校验收口。全程报告先行、不空转、不写脏数据。参数：project_dir(必填)、namespace(可选默认cron-auto)、phase(可选auto/prompt_ready/report_ready)、prompt_name(可选)、timeout_sec(可选默认2400)。",
     schema(
       {
         "project_dir": string_prop(
@@ -2212,7 +2212,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "selfdrive_append",
-    "自驱式编程·追加/更新 memory 条目。参数：project_dir(必填)、kind(必填 thinking/product/target/task)、content(必填)、namespace、now(可选)。thinking 为 append-only 流水带时间戳；其余覆盖写。",
+    "自驱式编程·追加/更新 memory 条目。参数：project_dir(必填)、kind(必填 thinking/product/target/task)、content(必填)、namespace。thinking 为 append-only 流水带时间戳；其余覆盖写。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -2330,7 +2330,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "selfdrive_publish_next",
-    "自驱式编程·解析最新审视报告 `## Next Tasks` 段并将待办任务并行发布为同命名空间下独立根任务（幂等，description 内嵌 [review:<file>:<idx>] 标记防重）。参数：project_dir(必填)、namespace(可选默认 default)、max_tasks(可选默认10)、now(可选)。",
+    "自驱式编程·解析最新审视报告 `## Next Tasks` 段并将待办任务并行发布为同命名空间下独立根任务（幂等，description 内嵌 [review:<file>:<idx>] 标记防重）。参数：project_dir(必填)、namespace(可选默认 default)、max_tasks(可选默认10)。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -2425,7 +2425,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "memory_consolidate",
-    "自我记忆·收敛写回：verify 通过后把交付物/结论收敛写回 memory/{kind}.md（kind 缺省 target；thinking 为 append-only 带时间戳，其余覆盖写）。参数：project_dir(必填)、task_id(必填)、kind(可选默认 target)、content(必填)、now(可选)。返回 {consolidated, kind, chars, note}。",
+    "自我记忆·收敛写回：verify 通过后把交付物/结论收敛写回 memory/{kind}.md（kind 缺省 target；thinking 为 append-only 带时间戳，其余覆盖写）。参数：project_dir(必填)、task_id(必填)、kind(可选默认 target)、content(必填)。返回 {consolidated, kind, chars, note}。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -2452,7 +2452,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "memory_gc",
-    "自我记忆·上限+软降权归档（不硬删）：超 max_chars 时把 memory/{kind}.md 末尾（老人）条目移入 memory/archive/ 归档保留，正文只保留最新 max_chars 个字符。kind 缺省对四件套全部处理。参数：project_dir(必填)、kind(可选)、max_chars(可选默认2000)、now(可选)。",
+    "自我记忆·上限+软降权归档（不硬删）：超 max_chars 时把 memory/{kind}.md 末尾（老人）条目移入 memory/archive/ 归档保留，正文只保留最新 max_chars 个字符。kind 缺省对四件套全部处理。参数：project_dir(必填)、kind(可选)、max_chars(可选默认2000)。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -2478,7 +2478,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "memory_link",
-    "自我记忆·A-Mem 式关联：在 memory/links.md 追加一条 `from -> to  note` 关联记录（不存在则创建），供 plan/claim 前检索注入。参数：project_dir(必填)、from(必填)、to(必填)、note(可选)、now(可选)。返回 {linked, from, to}。",
+    "自我记忆·A-Mem 式关联：在 memory/links.md 追加一条 `from -> to  note` 关联记录（不存在则创建），供 plan/claim 前检索注入。参数：project_dir(必填)、from(必填)、to(必填)、note(可选)。返回 {linked, from, to}。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -2502,7 +2502,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "evolve_distill",
-    "DGM 演化·自进化蒸馏（EvolveR 最小级）：把一次 verify 通过的任务交付物蒸馏成一条 principle 写入 DGM（goal 前加 [principle] 前缀标识，code 写蒸馏内容，复用既有 evolve_upsert 落库 + Archive 查重语义）。参数：task_id(必填)、goal(必填)、note(必填)、score(可选默认1.0)、now(可选)。返回 {distilled, artifact_id}。",
+    "DGM 演化·自进化蒸馏（EvolveR 最小级）：把一次 verify 通过的任务交付物蒸馏成一条 principle 写入 DGM（goal 前加 [principle] 前缀标识，code 写蒸馏内容，复用既有 evolve_upsert 落库 + Archive 查重语义）。参数：task_id(必填)、goal(必填)、note(必填)、score(可选默认1.0)。返回 {distilled, artifact_id}。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -2526,7 +2526,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "evolve_submit",
-    "DGM 演化·归档一个产物（Artifact）：把本轮设计/代码/目标加入档案库，自动递增父代子代数。参数：id、goal、note、code、score、parent_id(可选)、parts(可选 JSON 对象)、now(可选)。",
+    "DGM 演化·归档一个产物（Artifact）：把本轮设计/代码/目标加入档案库，自动递增父代子代数。参数：id、goal、note、code、score、parent_id(可选)、parts(可选 JSON 对象)。",
     schema(
       {
         "id": string_prop("产物 id（必填，唯一）"),
@@ -2590,7 +2590,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "evolve_lesson",
-    "自进化·失败回流学习（learn-from-reject）：把一次被打回/失败的原因归档成一条 [lesson]<类目> 资产入 DGM，让建档库能「学教训」——note 存失败原因、code 存纠偏提示，plan/claim 的 inject 可按类目命中「踩过的坑」。参数：cat 类目(必填，检索 tag)、reason 失败原因(必填)、fix 纠偏提示(可选)、score(可选默认0.5)、now。返回 {learned, artifact_id}。",
+    "自进化·失败回流学习（learn-from-reject）：把一次被打回/失败的原因归档成一条 [lesson]<类目> 资产入 DGM，让建档库能「学教训」——note 存失败原因、code 存纠偏提示，plan/claim 的 inject 可按类目命中「踩过的坑」。参数：cat 类目(必填，检索 tag)、reason 失败原因(必填)、fix 纠偏提示(可选)、score(可选默认0.5)。返回 {learned, artifact_id}。",
     schema(
       {
         "cat": string_prop(
@@ -2618,7 +2618,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "evolve_critic",
-    "自进化·Critic 防漂移门禁（SAGE 论文落地，杜绝课程漂移）：把一条「拟入库的 principle/lesson/资产」的 note 交给 Critic 评审，复用 Archive::novelty + scoring 纯计算，返回是否放行 {admit} 与理由——与档案库最相似资产重合 ≥70% 判「疑似课程漂移/重复」直接建议拒绝；综合分(0.5*score+0.5*新颖度)低于阈值判「稳健性不足」暂缓入库。只评审不写库，供入库前决策。参数：note 候选资产意图/原因(必填)、score 可计算评分(默认0.5)、threshold 放行阈值(默认0.85)、now。返回含 top_hit 最相似资产。",
+    "自进化·Critic 防漂移门禁（SAGE 论文落地，杜绝课程漂移）：把一条「拟入库的 principle/lesson/资产」的 note 交给 Critic 评审，复用 Archive::novelty + scoring 纯计算，返回是否放行 {admit} 与理由——与档案库最相似资产重合 ≥70% 判「疑似课程漂移/重复」直接建议拒绝；综合分(0.5*score+0.5*新颖度)低于阈值判「稳健性不足」暂缓入库。只评审不写库，供入库前决策。参数：note 候选资产意图/原因(必填)、score 可计算评分(默认0.5)、threshold 放行阈值(默认0.85)。返回含 top_hit 最相似资产。",
     schema(
       {
         "note": string_prop(
@@ -2869,7 +2869,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "task_cleanup",
-    "归档清理：删除超过保留期的已归档任务。参数：now、retention_days(可选默认30)。",
+    "归档清理：删除超过保留期的已归档任务。参数：retention_days(可选默认30)。",
     schema(
       { "retention_days": int_prop("归档保留天数(可选默认30)") },
       [],
@@ -3053,7 +3053,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_publish",
-    "发布带依赖关系的根任务。参数：project_dir、description、depends_on(依赖任务 id JSON 数组)、namespace、created_by、now。",
+    "发布带依赖关系的根任务。参数：project_dir、description、depends_on(依赖任务 id JSON 数组)、namespace、created_by。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -3104,7 +3104,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_depend",
-    "给任务追加一条前置依赖（显式构建 DAG 依赖边，不只靠 plan_deep 隐式父子；供 dag_check/ready/critical_path/ascii 使用）。参数：task_id 任务(必经)、dep_id 前置依赖任务 id(必经)、now。幂等去重；校验两任务存在且非自身。返回追加后的任务 JSON。",
+    "给任务追加一条前置依赖（显式构建 DAG 依赖边，不只靠 plan_deep 隐式父子；供 dag_check/ready/critical_path/ascii 使用）。参数：task_id 任务(必经)、dep_id 前置依赖任务 id(必经)。幂等去重；校验两任务存在且非自身。返回追加后的任务 JSON。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -3279,7 +3279,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "board_ascii",
-    "返回当前命名空间的实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（哪些任务、什么状态、在树哪层）。参数：namespace(可选，空=全部命名空间)。",
+    "返回当前命名空间的实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（哪些任务、什么状态、在树哪层）。已完成一档在合计行里标出「(无交付物N)」——「已完成」不自动等于有成果（BUG-29 的探针/绕验收残留）。参数：namespace(可选，空=全部命名空间)。返回 { counts:{状态:数量}, done_no_artifact, ascii }。",
     schema({ "namespace": string_prop("命名空间(默认全部)") }, []),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
@@ -3290,7 +3290,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "status_summary",
-    "项目脉冲摘要：返回 { version, total_tasks, by_status:{状态:数量}, by_difficulty:{易/中/难/无:数量}, active_namespaces }。by_difficulty 统计待领取任务的难度结构（复用难度单一抽取来源）。参数：namespace(可选，只统计该 ns；空=全部)。",
+    "项目脉冲摘要：返回 { version, total_tasks, by_status:{状态:数量}, done_no_artifact, by_difficulty:{易/中/难/无:数量}, active_namespaces }。by_difficulty 统计待领取任务的难度结构（复用难度单一抽取来源）。done_no_artifact=已完成但交付物为空的条数（BUG-29：这一档不为 0 时，「已完成」不等于成果）。参数：namespace(可选，只统计该 ns；空=全部)。",
     schema(
       { "namespace": string_prop("命名空间(可选，只统计该 ns)") },
       [],
@@ -3309,7 +3309,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "project_health",
-    "项目健康卡（单次调用看全项目健康）：返回 { version, grade:empty/attention/stalled/healthy, total_tasks, in_flight(执行中+已领取+拆分中), ready(待领取), done(已完成), blocked(已暂停+已打回), reviewing(待验收), archived, blocked_tasks:[阻塞任务id] }。grade 判定：有阻塞→attention；无任务→empty；无进行无就绪→stalled；否则→healthy。参数：namespace(可选，只统计该 ns；空=全部)。",
+    "项目健康卡（单次调用看全项目健康）：返回 { version, grade:empty/attention/stalled/healthy, total_tasks, in_flight(执行中+已领取+拆分中), ready(待领取), done(已完成), done_no_artifact, done_no_artifact_baseline, residue_over_baseline, blocked(已暂停+已打回), reviewing(待验收), archived, blocked_tasks:[阻塞任务id] }。grade 判定：有阻塞**或残留高出基线**→attention；无任务→empty；无进行无就绪→stalled；否则→healthy。done_no_artifact=已完成但无交付物（BUG-29 探针/绕验收残留），基线=账本点名作废的条数（只许降不许升，新高即压等级）。参数：namespace(可选，只统计该 ns；空=全部)。",
     schema(
       { "namespace": string_prop("命名空间(可选，只统计该 ns)") },
       [],
@@ -3347,7 +3347,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "circuit_fail",
-    "熔断器·上报失败（R104，Nygard Release It! 2007 / Fowler / Azure 蒸馏）：外部调用失败后上报并推进三态状态机——Closed 窗口内失败计数达阈值 → Open（fail-fast 拒绝）；Half-Open 探测失败 → 回 Open 重启恢复定时器。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、window_secs 失败窗口秒（可选默认 60）、threshold 失败阈值（可选默认 3）、recovery_secs 恢复秒（可选默认 30）、namespace（可选默认 default）。返回 { circuit, state, failures, window_secs, threshold, recovery_secs, opened_at, allow_call, note }——allow_call=false 即调用方应立即快速失败。",
+    "熔断器·上报失败（R104，Nygard Release It! 2007 / Fowler / Azure 蒸馏）：外部调用失败后上报并推进三态状态机——Closed 窗口内失败计数达阈值 → Open（fail-fast 拒绝）；Half-Open 探测失败 → 回 Open 重启恢复定时器。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、window_secs 失败窗口秒（可选默认 60）、threshold 失败阈值（可选默认 3）、recovery_secs 恢复秒（可选默认 30）、namespace（可选默认 default）。返回 { circuit, state, failures, probes_granted, probe_limit, window_secs, threshold, recovery_secs, opened_at, allow_call, note }——allow_call=false 即调用方应立即快速失败。",
     schema(
       {
         "circuit": string_prop(
@@ -3387,7 +3387,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "circuit_succeed",
-    "熔断器·上报成功（R104）：外部调用成功后回灌——Closed 复位计数；Half-Open 探测成功 → Closed（恢复）。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、namespace（可选默认 default）。返回 { circuit, state, failures, ... , allow_call, note }。",
+    "熔断器·上报成功（R104）：外部调用成功后回灌——Closed 复位计数；Half-Open 探测成功 → Closed（恢复，节流配额随之解除）。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、namespace（可选默认 default）。返回 { circuit, state, failures, probes_granted, probe_limit, window_secs, threshold, recovery_secs, opened_at, allow_call, note }。",
     schema(
       {
         "circuit": string_prop("熔断器名（必填）"),
@@ -3410,11 +3410,14 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "circuit_status",
-    "熔断器·查询状态（R104）：查三态并做 Half-Open 到期判定——Open 且 elapsed≥recovery_secs → 转 Half-Open（放行探测请求，其余仍快速失败）。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、namespace（可选默认 default）。返回 { circuit, state, failures, window_secs, threshold, recovery_secs, opened_at, allow_call, note }。",
+    "熔断器·查询状态（R104）：查三态并做 Half-Open 到期判定——Open 且 elapsed≥recovery_secs → 转 Half-Open（**只放行 probe_limit 次探测，默认 1**，配额用尽即 allow_call=false 继续快速失败；BUG-34：旧实现全量透传，与本句承诺相反）。探测结果由 circuit_succeed/circuit_fail 上报；拿到配额却长时间不上报时，超过一个 recovery 窗自动重置配额（否则一次被吞掉的探测会把半开态永久锁死）。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、namespace（可选默认 default）、probe_limit 半开探测配额（可选默认 1，<=0 视为不节流）。返回 { circuit, state, failures, probes_granted, probe_limit, window_secs, threshold, recovery_secs, opened_at, allow_call, note }。半开态下 failures 即 probes_granted（已放行探测数），不要按失败数解释。",
     schema(
       {
         "circuit": string_prop("熔断器名（必填）"),
         "namespace": string_prop("命名空间（可选默认 default）"),
+        "probe_limit": int_prop(
+          "半开态放行探测的配额（可选默认 1）；<=0 表示不节流",
+        ),
       },
       ["circuit"],
     ),
@@ -3423,9 +3426,12 @@ pub async fn run_server() -> Unit {
       let circuit = get_str(args, "circuit")
       let now = now_default()
       let secs = @ops.iso_to_secs(now)
+      let probe_limit = get_int(args, "probe_limit", default=1)
       Ok(
         @mcp.ToolResult::text(
-          engine.circuit_status(ns~, circuit~, now_secs=secs).stringify(),
+          engine
+          .circuit_status(ns~, circuit~, now_secs=secs, probe_limit~)
+          .stringify(),
         ),
       )
     },
@@ -3459,7 +3465,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "selfdrive_pick_next",
-    "自驱·按推荐自动取下一单：对指定命名空间取 task_triage 的顶部推荐并认领给 agent（待领取→已领取；能力匹配 want 优先），让无人值守可按能力推荐自推进。复用 triage 排行 + claim，只动一条推荐任务、不动看门狗主流程（零回归）。参数：namespace(可选)、agent(认领者,默认 self)、want 能力关键词(可选)、now。返回 { picked, remaining, claimed, ns, want, task?, note|error? }。",
+    "自驱·按推荐自动取下一单：对指定命名空间取 task_triage 的顶部推荐并认领给 agent（待领取→已领取；能力匹配 want 优先），让无人值守可按能力推荐自推进。复用 triage 排行 + claim，只动一条推荐任务、不动看门狗主流程（零回归）。参数：namespace(可选)、agent(认领者,默认 self)、want 能力关键词(可选)。返回 { picked, remaining, claimed, ns, want, task?, note|error? }。",
     schema(
       {
         "namespace": string_prop("命名空间(可选，空=全部)"),
@@ -3586,7 +3592,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "selfdrive_dispatch",
-    "Marketplace·能力路由自动派单（R32/R33，把 R30/R31 的'路由推荐'落到动作）：先 `task_triage` 取顶部可领取任务，确定所需能力——显式 `want` 优先，否则**从任务描述自动抽取**已注册执行者的能力标签（R33 免手传）——经 `executor_route` 找最佳执行者（能力覆盖率 desc → 负载 asc），并把该任务**直接认领给该执行者**（待领取→已领取）。无匹配执行者时回退认领给 `agent`。让'按专长+负载分配'不再只是建议，而是系统自动派单。参数：namespace(可选)、agent(默认 self，回退认领者)、want 所需能力关键词(可选)、now。返回 {dispatched, task_id, assignee, want, need_auto, route?}。",
+    "Marketplace·能力路由自动派单（R32/R33，把 R30/R31 的'路由推荐'落到动作）：先 `task_triage` 取顶部可领取任务，确定所需能力——显式 `want` 优先，否则**从任务描述自动抽取**已注册执行者的能力标签（R33 免手传）——经 `executor_route` 找最佳执行者（能力覆盖率 desc → 负载 asc），并把该任务**直接认领给该执行者**（待领取→已领取）。无匹配执行者时回退认领给 `agent`。让'按专长+负载分配'不再只是建议，而是系统自动派单。参数：namespace(可选)、agent(默认 self，回退认领者)、want 所需能力关键词(可选)。返回 {dispatched, task_id, assignee, want, need_auto, route?}。",
     schema(
       {
         "namespace": string_prop("命名空间(可选，空=全部)"),
@@ -3684,7 +3690,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "reserve_scope",
-    "预订一个工作作用域（文件/目录/资源）防多 agent 并发编辑冲突。若作用域空闲（未被他人活体预订）则由本 agent 占据，否则返回持有者。TTL 由 ttl_until(ISO-8601 未来时间戳串)给定；到时自动视为可让渡。参数：scope、agent、ttl_until(必)、now(时间戳)。",
+    "预订一个工作作用域（文件/目录/资源）防多 agent 并发编辑冲突。若作用域空闲（未被他人活体预订）则由本 agent 占据，否则返回持有者。TTL 由 ttl_until(ISO-8601 未来时间戳串)给定；到时自动视为可让渡。参数：scope、agent、ttl_until(必)。",
     schema(
       {
         "scope": string_prop(
@@ -3766,7 +3772,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "reserve_check",
-    "查询某工作作用域是否可编辑（空闲可用）。参数：scope、now(时间戳)。",
+    "查询某工作作用域是否可编辑（空闲可用）。参数：scope。",
     schema({ "scope": string_prop("作用域（必填）") }, ["scope"]),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let scope = get_str(args, "scope")
@@ -4469,7 +4475,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "report_bug",
-    "上报一个运行时 bug：追加到 {project_dir}/memory/bugs.md（OPEN 状态账本）。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（绝对 + normalize 后的落点）。参数：project_dir(必填)、summary(必填)、detail(可选)、severity(可选 open/critical/high/medium/low)、ref_call_id(可选，指向 call_log 的 seq)、reported_by(可选)、publish_task(可选默认false)：为 true 时同时把'修复 bug: <summary>'发布为独立根任务，供自驱/定时流水线认领修复，形成上报→修复闭环；task_ns(可选，缺省 bugs)：修复单落到哪个命名空间——想与本批次任务树同库对账就显式传它，否则默认落在 ns `bugs`（那是另一棵树，按批次 ns 查会查不到，BUG-8）。返回 {bug_id, id, status, path, resolved_path, project_dir, task_namespace, task_id?}：**bug_id 与 id 是同一个编号的两个键**（BUG-11：写侧只发 bug_id、读侧 bug_list 只发 id，按任一侧字段名对账的另一侧会静默拿到 null）；task_namespace 回显修复单实际落在哪个 ns（未发单时是空串，不是 'bugs'）。**账本状态**（OPEN/FIXED/DUPLICATE/FALSE_POSITIVE）写在条目抬头、由修复方就地编辑该文件完成（本模块不提供关闭 API，见 src/server/bugreport.mbt 头注释与 memory/bugs.md「记账规则」）；对外那句「X 条待修 / Y 条已修」只从抬头状态反解，不是数小记条数。",
+    "上报一个运行时 bug：追加到 {project_dir}/memory/bugs.md（OPEN 状态账本）。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（绝对 + normalize 后的落点）。参数：project_dir(必填)、summary(必填)、detail(可选)、severity(可选 open/critical/high/medium/low)、ref_call_id(可选，指向 call_log 的 seq)、reported_by(可选)、publish_task(可选默认false)：为 true 时同时把'修复 bug: <summary>'发布为独立根任务，供自驱/定时流水线认领修复，形成上报→修复闭环；task_ns(可选，缺省 bugs)：修复单落到哪个命名空间——想与本批次任务树同库对账就显式传它，否则默认落在 ns `bugs`（那是另一棵树，按批次 ns 查会查不到，BUG-8）。返回 {bug_id, id, status, path, resolved_path, project_dir, task_namespace, task_id?}：**bug_id 与 id 是同一个编号的两个键**（BUG-11：写侧只发 bug_id、读侧 bug_list 只发 id，按任一侧字段名对账的另一侧会静默拿到 null）；task_namespace 回显修复单实际落在哪个 ns（未发单时是空串，不是 'bugs'）。**账本状态**（OPEN/FIXED/DUPLICATE/FALSE_POSITIVE）写在条目抬头，改它走 `bug_fix`（标修好，同一笔落 ### FIXED 小记）或 `bug_mark_status`（改判 OPEN/DUPLICATE/FALSE_POSITIVE）——BUG-9 之前这里写着「本模块不提供关闭 API」，账本因此只写不销；对外那句「X 条待修 / Y 条已修」只从抬头状态反解，不是数小记条数。",
     schema(
       {
         "project_dir": string_prop(
@@ -4478,7 +4484,7 @@ pub async fn run_server() -> Unit {
         "summary": string_prop("bug 摘要（必填）"),
         "detail": string_prop("详细描述(可选)"),
         "severity": string_prop(
-          "严重度(可选)：open/critical/high/medium/low",
+          "严重度(可选)：critical/high/medium/low（缺省 medium；闭集与账本抬头文法逐字对齐，BUG-88）",
         ),
         "ref_call_id": string_prop("关联 call_log seq(可选)"),
         "reported_by": string_prop("上报者(可选)"),
@@ -4545,7 +4551,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "bug_list",
-    "列出 {project_dir}/memory/bugs.md 里的 bug 条目。**返回是对象不是裸数组**：{bugs:[{id,ts,severity,status,summary,detail}], count, path, project_dir, resolved_path}（BUG-74 同族：按 `bl if isinstance(bl,list)` 取会恒得空，看起来像『账本没 bug』）。用于自驱流水线扫描待修复 bug 并认领。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（绝对 + normalize 后的落点）。参数：project_dir(必填)。",
+    "列出 {project_dir}/memory/bugs.md 里的 bug 条目。**返回是对象不是裸数组**：{bugs:[{id,bug_id,ts,severity,status,summary,detail,task_id?,linked_task_id?,linked_task_status?}], count, path, project_dir, resolved_path, open_with_linked_done, note}（BUG-9：linked_task_status 取自任务库实时状态，open_with_linked_done>0 就是「账本说没修、任务库说修完了」两份账互相矛盾，一次调用即可看见；抬头状态位用 bug_fix（标修好）/ bug_mark_status（改判）改，判据与闭集见 memory/bugs.md「记账规则」）（BUG-74 同族：按 `bl if isinstance(bl,list)` 取会恒得空，看起来像『账本没 bug』）。用于自驱流水线扫描待修复 bug 并认领。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（绝对 + normalize 后的落点）。参数：project_dir(必填)。",
     schema(
       {
         "project_dir": string_prop(
@@ -4556,7 +4562,88 @@ pub async fn run_server() -> Unit {
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
-      match bug_list(project_dir) {
+      // BUG-9：读侧把每条 bug 的关联修复单实时状态一并带回（纯逻辑在 bugreport.mbt）
+      match
+        bug_list_with_links(project_dir, fn(tid) {
+          match engine.get_task(tid) {
+            Some(t) => t.status_to_string()
+            None => ""
+          }
+        }) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "bug_fix",
+    "批量把缺陷抬头标成 FIXED，并**同一笔**追加一条点名整批的 `### FIXED(<盖章时间> / BUG-a, BUG-b)` 小记（BUG-9 的控制面正身：账本此前只写不销，「还剩几条没修」只能人肉数）。为什么是一笔而不是两步：memory/bugs.md 的记账规则把「标 FIXED」与「有小记点名」做成互锁（gen_plugins 生成前硬门①②），分两次调用中间就是一本生成器拒绝产出的红账本。返回 {bug_ids, heading_changed, already_fixed, note_written, note_header, path}：**heading_changed=本次真正改抬头的条数、already_fixed=本就 FIXED 只补小记的条数、note_written=false 表示同抬头小记已存在（幂等重跑，不重复写）**；evidence 必填非空——「说修好了但没人写改在哪」正是历史上假 GREEN 的来源；终态之间不互跳（DUPLICATE/FALSE_POSITIVE 要先用 bug_mark_status 回 OPEN）；编号不存在整笔拒绝，不许静默少写一条。时间戳由服务端盖章，调用面没有 ts/now 参数（BUG-33 政策）。project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。参数：project_dir(必填)、bug_ids(必填，编号数组，`9` 与 `BUG-9` 两种写法都收)、evidence(必填非空)。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录（必填，**相对 server 进程 cwd**，拒绝绝对路径/盘符/..）",
+        ),
+        "bug_ids": array_prop(
+          "要标修好的编号数组（必填，如 [\"BUG-9\",\"BUG-30\"]）",
+        ),
+        "evidence": string_prop(
+          "改了哪个真源、哪条锁钉住（必填非空，写进小记正文）",
+        ),
+      },
+      ["project_dir", "bug_ids"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let bug_ids = get_array(args, "bug_ids").map(fn(v) {
+        v.as_string().unwrap_or("")
+      })
+      let evidence = get_str(args, "evidence")
+      match bug_fix(project_dir, bug_ids, evidence~, ts=now_default()) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "bug_mark_status",
+    "就地改**一条**缺陷的抬头状态（BUG-9 控制面的另一半：改判，不是销账）。返回 {bug_id, id, status, from_status, changed, duplicate_of?, path}：**changed=false 表示目标状态与主编号都没变（幂等 no-op，一个字节都不写）、from_status 是改之前的状态**。状态闭集 = OPEN/FIXED/DUPLICATE/FALSE_POSITIVE（真源 memory/bugs.md「记账规则」，与 gen_plugins 的闭集判据同源）。**FIXED 在这里一律被拒**：只改抬头会绕过「标 FIXED 必须有小记点名」那道硬门，产出 gen_plugins 拒绝生成的红账本，标修好请走 bug_fix。DUPLICATE 必须带 dup_of 且主编号要存在、不是自己、自身不再是 DUPLICATE（链条禁止）；FALSE_POSITIVE 传非空 evidence 时在条目正文追加一行 `- false_positive(<盖章时间>): …` 立据（只追加、不改既有叙述）。写盘面只有一行抬头，叙述面（正文/小记/reports/轮次日志）一律只追加——改掉旧状态不销毁历史。时间戳由服务端盖章，调用面没有 ts/now 参数（BUG-33 政策）。参数：project_dir(必填，相对 cwd)、bug_id(必填)、status(必填，FIXED 会被拒)、dup_of(仅 DUPLICATE 必填)、evidence(仅 FALSE_POSITIVE 可选)。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录（必填，**相对 server 进程 cwd**，拒绝绝对路径/盘符/..）",
+        ),
+        "bug_id": string_prop(
+          "缺陷编号（必填，`9` 与 `BUG-9` 都收）",
+        ),
+        "status": string_prop(
+          "目标状态(必填)：OPEN/FIXED/DUPLICATE/FALSE_POSITIVE；FIXED 一律拒",
+        ),
+        "dup_of": string_prop(
+          "并入的主编号（仅 DUPLICATE 必填，如 BUG-7）",
+        ),
+        "evidence": string_prop(
+          "误报复核依据（仅 FALSE_POSITIVE 可选，非空则追加一行立据）",
+        ),
+      },
+      ["project_dir", "bug_id", "status"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let bug_id = get_str(args, "bug_id")
+      let status = get_str(args, "status")
+      let dup_of = get_str(args, "dup_of")
+      let evidence = get_str(args, "evidence")
+      match
+        bug_mark_status(
+          project_dir,
+          bug_id,
+          status,
+          dup_of~,
+          evidence~,
+          ts=now_default(),
+        ) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }

@@ -73,10 +73,41 @@ RE_FIXED = re.compile(r"^### FIXED\(", re.M)
 # 抬头文法与闭集（真源定义写在 memory/bugs.md 的「记账规则」段）
 BUG_STATUSES = ("OPEN", "FIXED", "DUPLICATE", "FALSE_POSITIVE")
 RE_BUG_STATUS = re.compile(
-    r"^## (BUG-\d+) \[[^\]]+\] \[(high|medium|low)\] (\S+)(?: (→BUG-\d+))?", re.M
+    r"^## (BUG-\d+) \[[^\]]+\] \[(critical|high|medium|low)\] (\S+)(?: (→BUG-\d+))?",
+    re.M,
 )
 # 小记抬头里点名的编号集合：### FIXED(<stamp> / BUG-a, BUG-b …)
 RE_FIXED_IDS = re.compile(r"^### FIXED\([^)]* / ([^)]*?)\)\s*$", re.M)
+
+# 严重度词表的两侧：写侧 = src/server/bugreport.mbt 的 bug_severities()，
+# 判据侧 = 上面 RE_BUG_STATUS 的严重度组。两处各写一份 ⇒ 谁改了另一处静默失配（BUG-88）。
+RE_SEV_FN = re.compile(r"fn bug_severities\(\) -> Array\[String\] \{(.*?)\n\}", re.S)
+RE_SEV_ITEMS = re.compile(r'"([a-z_]+)"')
+RE_SEV_IN_GRAMMAR = re.compile(r"\\\[\(([a-z|]+)\)\\\]")
+BUGREPORT_SRC = ROOT / "src" / "server" / "bugreport.mbt"
+
+
+def severity_vocab_drift(writer_src=None, grammar=None):
+    """纯判据：写侧闭集与抬头文法必须是同一套词。喂合成输入即可考它（与 ledger_status 同口径）。"""
+    src = BUGREPORT_SRC.read_text(encoding="utf-8") if writer_src is None else writer_src
+    pat = RE_BUG_STATUS.pattern if grammar is None else grammar
+    problems = []
+    m = RE_SEV_FN.search(src)
+    if not m:
+        return ["读不到 bug_severities() 的闭集 —— 先判解析器坏，再判产品坏"]
+    writer = RE_SEV_ITEMS.findall(m.group(1))
+    g = RE_SEV_IN_GRAMMAR.search(pat)
+    if not g:
+        return ["读不到抬头文法里的严重度组 —— 判据侧解析失效"]
+    grammar_set = set(g.group(1).split("|"))
+    if set(writer) != grammar_set:
+        problems.append(
+            f"严重度词表漂移：写侧 bug_severities()={sorted(writer)} "
+            f"vs 抬头文法={sorted(grammar_set)} ⇒ 有一侧能写、另一侧读不到")
+    grammar_only = sorted(grammar_set - set(writer))
+    if grammar_only:
+        problems.append(f"文法收而写侧不产的词：{grammar_only}（判据在放行写侧永远不会写的形状）")
+    return problems
 
 
 def ledger_status(bugs_txt):
@@ -181,6 +212,8 @@ def measure() -> dict:
     # 旧口径 open_cnt = total - len(### FIXED) 把"小记有几条"当成"修了几条 bug"，
     # 而一条小记可收 1~16 条、也可一条都不收 ⇒ 那句"30 条待修"从来没有定义。
     counts, problems = ledger_status(bugs_txt)
+    # BUG-88：写侧能产的词必须全部落在判据文法里，否则一条正常上报就能把账本写成读不到的抬头
+    problems = problems + severity_vocab_drift()
     if problems:
         die("账本状态与叙述面对不上：\n  - " + "\n  - ".join(problems))
     return {

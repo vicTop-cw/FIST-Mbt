@@ -251,19 +251,20 @@ pub fn github_flush_plan(
         }
 
         let body = build_issue_body(bug_id, summary, detail, sev)
-        let labels_json = labels2
-          .map(fn(l : String) { "\"" + l + "\"" })
-          .join(",")
-        let payload = "{\"title\":" +
-          shell_quote(summary) +
-          ",\"body\":" +
-          shell_quote(body) +
-          ",\"labels\":[" +
-          labels_json +
-          "]}"
+        // BUG-35：payload 必须由 Json 构造再 stringify——旧口径把值套 shell_quote 塞进
+        // JSON 字符串，build_issue_body 恒含裸换行，产出的 --data 连 json.loads 都过不了
+        // （issue_up 的落地面整条失败，不是某个边缘字段）。shell 转义与 JSON 转义是两层，
+        // 混用是这条缺陷的根因。
+        let payload = Json::object({
+          "title": Json::string(summary),
+          "body": Json::string(body),
+          "labels": Json::array(labels2.map(fn(l : String) { Json::string(l) })),
+        }).stringify()
         let curl_cmd = "curl -sS -X POST \"https://api.github.com/repos/" +
           repo +
-          "/issues\" -H \"Authorization: Bearer ${FIST_GITHUB_TOKEN}\" " +
+          "/issues\" -H \"Authorization: Bearer " +
+          token_placeholder() +
+          "\" " +
           "-H \"Accept: application/vnd.github+json\" " +
           "-H \"Content-Type: application/json\" " +
           "--data " +
@@ -275,6 +276,7 @@ pub fn github_flush_plan(
         pm.set("title", Json::string(summary))
         pm.set("severity", Json::string(sev))
         pm.set("curl_command", Json::string(curl_cmd))
+        pm.set("payload_json", Json::string(payload))
         plan.push(Json::object(pm))
       }
       _ => ()
@@ -380,9 +382,23 @@ fn build_issue_body(
 }
 
 ///|
-/// Shell 单引号转义：内部单引号替换为双引号。
+/// 交给 **shell** 展开的 token 占位符（真值只在服务端进程环境变量里，代码永不读取、永不回显）。
+///
+/// `$` 与 `{` 必须拆开拼：写成 `${FIST_GITHUB_TOKEN}` 字面量会被 MoonBit 编译器当成
+/// **字符串插值**，JS target 产出的是一行引用未定义变量的模板串——调用面实测
+/// `ReferenceError: FIST_GITHUB_TOKEN is not defined`（BUG-87），三个 plan 构造器在
+/// server 默认目标上全部炸在运行时，native 侧则是编不过。别"顺手改回"字面量写法。
+fn token_placeholder() -> String {
+  "$" + "{FIST_GITHUB_TOKEN}"
+}
+
+///|
+/// POSIX 单引号包装：内部单引号按 shell 惯例换成 `'"'"'`（BUG-35）。
+/// 旧实现把 `'` 静默替换成 `"`——那是**篡改载荷**：标题/正文里的普通英文缩写
+/// （`don't`）到了 GitHub 侧就成了 `don"t`，且 shell 语义上 `'` 本来就能安全转义成
+/// `'"'"'`，没有理由改内容。
 fn shell_quote(s : String) -> String {
-  let replaced = s.replace(old="'", new="\"")
+  let replaced = s.replace(old="'", new="'\"'\"'")
   "'" + replaced + "'"
 }
 
@@ -498,7 +514,9 @@ pub fn github_build_close_plan(
       repo +
       "/issues/" +
       real_num.to_string() +
-      "\" -H \"Authorization: Bearer ${FIST_GITHUB_TOKEN}\" " +
+      "\" -H \"Authorization: Bearer " +
+      token_placeholder() +
+      "\" " +
       "-H \"Accept: application/vnd.github+json\" " +
       "-H \"Content-Type: application/json\" " +
       "--data " +
@@ -545,12 +563,15 @@ pub fn github_build_comment_plan(
   if repo.is_empty() {
     return Err("github_build_comment_plan: bug_id 无 github_repo 配置")
   }
-  let payload = "{\"body\":" + shell_quote(comment_body) + "}"
+  // BUG-35：同上——正文里一定有换行/引号，只能交给 Json 转义
+  let payload = Json::object({ "body": Json::string(comment_body) }).stringify()
   let curl_cmd = "curl -sS -X POST \"https://api.github.com/repos/" +
     repo +
     "/issues/" +
     issue_num.to_string() +
-    "/comments\" -H \"Authorization: Bearer ${FIST_GITHUB_TOKEN}\" " +
+    "/comments\" -H \"Authorization: Bearer " +
+    token_placeholder() +
+    "\" " +
     "-H \"Accept: application/vnd.github+json\" " +
     "-H \"Content-Type: application/json\" " +
     "--data " +

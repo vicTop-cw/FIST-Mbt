@@ -69,8 +69,23 @@ pub fn render_board_ascii(
     }
   }
   let sum : Array[String] = []
+  let mut residue = 0
   for (st, arr) in buckets {
-    sum.push(st + ":" + arr.length().to_string())
+    // BUG-29：已完成档在合计行里直接标出"其中无交付物"，看板自证成果与残留
+    if st == "已完成" {
+      residue = done_no_artifact(arr)
+    }
+    let label = if st == "已完成" && residue > 0 {
+      st +
+      ":" +
+      arr.length().to_string() +
+      "(无交付物" +
+      residue.to_string() +
+      ")"
+    } else {
+      st + ":" + arr.length().to_string()
+    }
+    sum.push(label)
   }
   let ns_label = if ns_filter == "" { "全部命名空间" } else { ns_filter }
   let header = "== FIST 任务看板（" + ns_label + "） =="
@@ -82,6 +97,7 @@ pub fn render_board_ascii(
   }
   Json::object({
     "counts": Json::object(countsJson),
+    "done_no_artifact": Json::number(residue.to_double()),
     "ascii": Json::string(header + "\n" + body + "\n" + footer),
   })
 }
@@ -195,10 +211,31 @@ pub fn render_status_summary(
     "version": Json::string(version),
     "total_tasks": Json::number(total.to_double()),
     "by_status": Json::object(stJson),
+    // BUG-29：已完成 ≠ 有交付物且被验过——探针/绕过验收的单会停在"已完成"。
+    // 单列一档，读侧才能自证"已完成里有多少其实没交付物"。
+    "done_no_artifact": Json::number(done_no_artifact(tasks).to_double()),
     "by_difficulty": Json::object(diffJson),
     "active_namespaces": Json::array(active_ns.map(fn(s) { Json::string(s) })),
   })
 }
+
+///|
+/// 已完成但交付物为空的任务数（BUG-29 的"无成果已完成"档，全库口径由调用方传入的任务集决定）。
+pub fn done_no_artifact(tasks : Array[@core.Task]) -> Int {
+  let mut n = 0
+  for t in tasks {
+    if t.status_to_string() == "已完成" && t.deliverable == "" {
+      n = n + 1
+    }
+  }
+  n
+}
+
+///|
+/// 残留硬门基线（BUG-29）：账本里**点名作废**的探针单数——T0r286/T0r287（memory/bugs.md BUG-29，
+/// 判据=只读直查 status='已完成' 且 deliverable 空 且 specs=0 且 created_at==updated_at）。
+/// 只许降不许升：新高出基线即 residue_over_baseline=true，project_health 据此把等级压到 attention。
+let done_no_artifact_baseline : Int = 2
 
 ///|
 /// 项目健康卡（R68）：单次调用看全项目健康，无需 list+逐条筛选。
@@ -232,9 +269,13 @@ pub fn render_project_health(
     }
   }
   let total = tasks.length()
+  // BUG-29 棘轮：已完成但无交付物（探针/绕过验收的残留）不得多于账本点名作废的基线；
+  // 高出即把等级压到 attention——"已完成"不再自动等于成果，读侧一眼能看见差了多少条。
+  let residue = done_no_artifact(tasks)
+  let residue_over = residue > done_no_artifact_baseline
   let grade = if total == 0 {
     "empty"
-  } else if blocked > 0 {
+  } else if blocked > 0 || residue_over {
     "attention"
   } else if in_flight == 0 && ready == 0 {
     "stalled"
@@ -248,6 +289,11 @@ pub fn render_project_health(
     "in_flight": Json::number(in_flight.to_double()),
     "ready": Json::number(ready.to_double()),
     "done": Json::number(done.to_double()),
+    "done_no_artifact": Json::number(residue.to_double()),
+    "done_no_artifact_baseline": Json::number(
+      done_no_artifact_baseline.to_double(),
+    ),
+    "residue_over_baseline": Json::boolean(residue_over),
     "blocked": Json::number(blocked.to_double()),
     "reviewing": Json::number(reviewing.to_double()),
     "archived": Json::number(archived.to_double()),

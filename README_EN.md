@@ -18,7 +18,7 @@
 ```bash
 moon update                    # first run: refresh registry index (all deps are public)
 moon check
-moon test --target js -j 1     # → Total tests: 458, passed: 458, failed: 0
+moon test --target js -j 1     # → Total tests: 508, passed: 508, failed: 0
 moon run cmd/main              # start the MCP server (STDIO transport)
 ```
 
@@ -27,7 +27,7 @@ moon run cmd/main              # start the MCP server (STDIO transport)
 **One-command self-check (for reviewers):**
 
 ```bash
-python scripts/mcp_smoke.py    # → PASS tools/list → 120 tools … MCP-SMOKE PASS
+python scripts/mcp_smoke.py    # → PASS tools/list → 122 tools … MCP-SMOKE PASS
 python scripts/award_demo.py   # → MCP-AWARD-DEMO PASS (capability chain, ends with cleanup → CLEAN)
 ```
 
@@ -87,7 +87,7 @@ FIST-Mbt/
 ├── src/engine/       # FistEngine business logic + DAG ext + decomposition
 ├── src/ops/          # operations: audit, heartbeat, heal, watchdog, cleanup
 ├── src/omega/        # explainable spec/gate/check
-└── src/server/       # MCP assembly: 120 tools + 3 resources + 2 prompts
+└── src/server/       # MCP assembly: 122 tools + 3 resources + 2 prompts
 ```
 
 Pure MoonBit; no Rust/C wrappers. Protocol layer: [`colmugx/mcp`](https://mooncakes.io/colmugx/mcp) (Apache-2.0, protocol 2026-07-28). Domain core (`core/store/engine`) is separated from the protocol layer for clean unit testing.
@@ -96,16 +96,16 @@ Pure MoonBit; no Rust/C wrappers. Protocol layer: [`colmugx/mcp`](https://moonca
 
 ## Testing
 
-- **458/458** tests green on the JS backend (Windows, measured 2026-09-27). The native track was last measured at 317/317 and has **not** been re-run this round — do not read that as a dual-target green. Since R107 the suite includes **property tests** (`moonbitlang/core/quickcheck`): random inputs validate invariants (slice arity/prefix, difficulty monotonicity, Task transition discipline claim/execute/reopen/split/submit/reject) with fixed seeds. Since R109 a **transition-contract guard** (`tx_contract`, Design by Contract: precondition/invariant/postcondition read-only pre-check — any failure rejects the batch, state A stays stable, nothing persisted). Since R111 a **feedback convergence** tool (`eval_feedback`, Evaluator-Optimizer schema: free-text feedback normalized into Defects/Evidence/Fix/Acceptance with a deterministic pass/fail verdict) — reproducible on any machine.
+- **508/508** tests green on the JS backend (Windows, measured 2026-09-27). The native track was last measured at 317/317 and has **not** been re-run this round — do not read that as a dual-target green. Since R107 the suite includes **property tests** (`moonbitlang/core/quickcheck`): random inputs validate invariants (slice arity/prefix, difficulty monotonicity, Task transition discipline claim/execute/reopen/split/submit/reject) with fixed seeds. Since R109 a **transition-contract guard** (`tx_contract`, Design by Contract: precondition/invariant/postcondition read-only pre-check — any failure rejects the batch, state A stays stable, nothing persisted). Since R111 a **feedback convergence** tool (`eval_feedback`, Evaluator-Optimizer schema: free-text feedback normalized into Defects/Evidence/Fix/Acceptance with a deterministic pass/fail verdict) — reproducible on any machine.
 - CI three tracks (js ubuntu / native ubuntu / js windows) with live badges.
-- Guard family: `check_tools_sync` (120 tools aligned) / `check_test_sync` (442 aligned — sweeps **every** current-state doc, not a 4-file whitelist; `--selftest` proves the judge itself can go red) / `check_badge` / `check_scripts_index` / `map_verify` / `cleanup --check` (repo cleanliness gate).
+- Guard family: `check_tools_sync` (122 tools aligned) / `check_test_sync` (442 aligned — sweeps **every** current-state doc, not a 4-file whitelist; `--selftest` proves the judge itself can go red) / `check_badge` / `check_scripts_index` / `map_verify` / `cleanup --check` (repo cleanliness gate).
 
 ---
 
 ## Known Boundaries (honest notes)
 
 - JS backend prints Node's `ExperimentalWarning: SQLite is an experimental feature` on Node ≥ 24 — harmless, ignorable.
-- Windows native test may rarely hit `0xc0000374` (heap race in the local native SQLite stub) even with `-j 1`; the authoritative stability gate is the JS backend (Node ≥ 24, 458/458 measured on Windows).
+- Windows native test may rarely hit `0xc0000374` (heap race in the local native SQLite stub) even with `-j 1`; the authoritative stability gate is the JS backend (Node ≥ 24, 508/508 measured on Windows).
 
 ---
 

@@ -154,12 +154,12 @@ def rpc(method, **payload):
 三步跑通即 MCP server 端到端可用、环境就绪。
 
 > 本机实测：`python scripts/mcp_smoke.py` 一键自检输出
-> `PASS tools/list → 120 个工具` / `PASS publish → T?` / `PASS get → T? [待领取]` / `MCP-SMOKE PASS`。
+> `PASS tools/list → 122 个工具` / `PASS publish → T?` / `PASS get → T? [待领取]` / `MCP-SMOKE PASS`。
 > 三步 = 该脚本的内部逻辑，二者完全一致。
 
 ---
 
-## 6. 120 个 MCP 工具手册
+## 6. 122 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
