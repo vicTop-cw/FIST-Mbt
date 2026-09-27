@@ -308,6 +308,12 @@ Prompts: `fist:check_in`, `fist:verify`
 > 那些地方 Pentad 是被 FIST-Mbt 驱动的**另一个项目**。写文档/报告标题一律用「四模式流水线自我迭代 · Round N」，
 > 不要把 Pentad 当本仓特性名（本轮已把 4 份报告与三处文档计数口径改回本仓术语）。
 
+> **实证伴生仓（fist-evidence，2026-09-27 公开）**：本系统的受控实验证据链在独立仓库
+> https://github.com/vicTop-cw/fist-evidence —— 三组实验（`selfdrive-ab-20260926` 编排 vs 裸跑 /
+> `atgc-merge-20260926` 三方合并裁决含归因自我修正 / `core-split-ladder-20260927` 核心拆解最小内核 +
+> 裸跑幻觉实锤）+ 十份真实项目驱动实例总表，原始报告/日志/裁判测试一字可回溯。
+> 本仓「证据梯至少 L4（实测才算数）」的对外展示面即该仓库；引用实验结论时以 `stories/evidence/` 原件为准。
+
 ## 路径约定
 
 | 项 | 值 |
