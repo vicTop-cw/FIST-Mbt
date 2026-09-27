@@ -232,6 +232,7 @@ pub fn watchdog_tick(
   phi_gate? : Bool = false,
   phi_threshold? : Int = 8,
   mode? : String = "",
+  flush_bug_queue? : Bool = false,
 ) -> Result[Json, String] {
   let heal_ns = if ns == "" { "default" } else { ns }
   // ---- 1. 回滚阶段（功能 A：读 SQLite 心跳，跨进程正确） ----
