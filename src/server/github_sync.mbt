@@ -299,12 +299,13 @@ pub fn github_flush_plan(
 pub fn github_queue_mark_sent(
   project_dir : String,
   bug_ids : Array[String],
-  sent_at : String,
   issue_numbers : Map[String, Int],
+  sent_at? : String = "",
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err("github_queue_mark_sent: 非法 project_dir")
   }
+  let sent_val = if sent_at.is_empty() { "auto" } else { sent_at }
   let entries = extract_arr(github_queue_read(project_dir))
   let target_ids : Map[String, Bool] = Map([])
   for id in bug_ids {
@@ -325,7 +326,7 @@ pub fn github_queue_mark_sent(
           _ => false
         }
         if want {
-          m.set("sent_at", Json::string(sent_at))
+          m.set("sent_at", Json::string(sent_val))
           let issue_num = match issue_numbers.get(bid) {
             Some(n) => Json::number(n.to_double())
             None => Json::null()

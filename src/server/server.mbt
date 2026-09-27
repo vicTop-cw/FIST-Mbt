@@ -2166,7 +2166,10 @@ pub async fn run_server() -> Unit {
                     Err(e) => flush_result.set("github_error", Json::string(e))
                   }
                 } else {
-                  flush_result.set("github_skipped", Json::string("env not ready"))
+                  flush_result.set(
+                    "github_skipped",
+                    Json::string("env not ready"),
+                  )
                 }
               }
               Err(e) => flush_result.set("github_error", Json::string(e))
@@ -2197,17 +2200,30 @@ pub async fn run_server() -> Unit {
                     if !pid.is_empty() {
                       match gitcode_flush_plan(actual_dir, pid, 10) {
                         Ok(_plan) => {
-                          flush_result.set("gitcode_attempted", Json::boolean(true))
-                          flush_result.set("fallback_used", Json::string("gitcode"))
+                          flush_result.set(
+                            "gitcode_attempted",
+                            Json::boolean(true),
+                          )
+                          flush_result.set(
+                            "fallback_used",
+                            Json::string("gitcode"),
+                          )
                           gc_ok = true
                         }
-                        Err(e) => flush_result.set("gitcode_error", Json::string(e))
+                        Err(e) =>
+                          flush_result.set("gitcode_error", Json::string(e))
                       }
                     } else {
-                      flush_result.set("gitcode_skipped", Json::string("project_id empty"))
+                      flush_result.set(
+                        "gitcode_skipped",
+                        Json::string("project_id empty"),
+                      )
                     }
                   } else {
-                    flush_result.set("gitcode_skipped", Json::string("env not ready"))
+                    flush_result.set(
+                      "gitcode_skipped",
+                      Json::string("env not ready"),
+                    )
                   }
                 }
                 Err(e) => flush_result.set("gitcode_error", Json::string(e))
@@ -4785,8 +4801,8 @@ pub async fn run_server() -> Unit {
                             let _ = github_queue_mark_sent(
                               project_dir,
                               [bug_id],
-                              ts,
                               Map([(bug_id, issue_number)]),
+                              sent_at=ts,
                             )
                           }
                           github_ok = true
@@ -4970,8 +4986,8 @@ pub async fn run_server() -> Unit {
                             let _ = gitcode_queue_mark_sent_batch(
                               project_dir,
                               [bug_id],
-                              ts,
                               Map([(bug_id, iid)]),
+                              sent_at=ts,
                             )
                           }
                           let mm : Map[String, Json] = Map([])
@@ -5463,21 +5479,21 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "github_queue_mark_sent",
-    "标记一批 bug_id 已同步至 GitHub issue（写入 sent_at + github_issue_number）。curl 执行成功后调此工具回写队列，幂等安全。参数：project_dir(必填)、bug_ids(必填数组)、sent_at(必填 ISO 时间)、issue_numbers(可选 JSON 对象)。",
+    "标记一批 bug_id 已同步至 GitHub issue（写入 sent_at + github_issue_number）。curl 执行成功后调此工具回写队列，幂等安全。参数：project_dir(必填)、bug_ids(必填数组)、sent_at(可选，缺省自动回退)、issue_numbers(可选 JSON 对象)。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
         "bug_ids": array_prop("已同步的 bug_id 数组（必填）"),
-        "sent_at": string_prop("同步时间戳 ISO 格式（必填）"),
+        "sent_at": string_prop("同步时间戳 ISO 格式（可选）"),
         "issue_numbers": string_prop(
           "bug_id->issue_number 映射 JSON 对象（可选）",
         ),
       },
-      ["project_dir", "bug_ids", "sent_at"],
+      ["project_dir", "bug_ids"],
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
-      let sent_at = get_str(args, "sent_at")
+      let sent_at = get_str(args, "sent_at", default="")
       let ids_arr = get_array(args, "bug_ids")
       let bug_ids = ids_arr.map(fn(v) { v.as_string().unwrap_or("") })
       let issue_nums_raw = get_str(args, "issue_numbers")
@@ -5500,7 +5516,7 @@ pub async fn run_server() -> Unit {
         }
       }
       match
-        github_queue_mark_sent(project_dir, bug_ids, sent_at, issue_numbers) {
+        github_queue_mark_sent(project_dir, bug_ids, issue_numbers, sent_at~) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
@@ -5700,7 +5716,10 @@ pub async fn run_server() -> Unit {
         i1 = i1 + 1
       }
       let mark_res = github_queue_mark_sent(
-        project_dir, sent_at_list, sent_at_now, issue_numbers,
+        project_dir,
+        sent_at_list,
+        issue_numbers,
+        sent_at=sent_at_now,
       )
       let mark_json = match mark_res {
         Ok(j) => j
@@ -6006,21 +6025,21 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "gitcode_queue_mark_sent",
-    "标记一批 bug_id 已同步至 GitCode issue（写入 sent_at + gitcode_issue_iid）。curl 执行成功后调此工具回写队列，幂等安全。参数：project_dir(必填)、bug_ids(必填数组)、sent_at(必填 ISO 时间)、gitcode_issue_iids(可选 JSON 对象：bug_id → iid 映射)。",
+    "标记一批 bug_id 已同步至 GitCode issue（写入 sent_at + gitcode_issue_iid）。curl 执行成功后调此工具回写队列，幂等安全。参数：project_dir(必填)、bug_ids(必填数组)、sent_at(可选，缺省自动回退)、gitcode_issue_iids(可选 JSON 对象：bug_id → iid 映射)。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
         "bug_ids": array_prop("已同步的 bug_id 数组（必填）"),
-        "sent_at": string_prop("同步时间戳 ISO 格式（必填）"),
+        "sent_at": string_prop("同步时间戳 ISO 格式（可选）"),
         "gitcode_issue_iids": string_prop(
           "bug_id→gitcode_issue_iid 映射 JSON 对象（可选）",
         ),
       },
-      ["project_dir", "bug_ids", "sent_at"],
+      ["project_dir", "bug_ids"],
     ),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
-      let sent_at = get_str(args, "sent_at")
+      let sent_at = get_str(args, "sent_at", default="")
       let ids_arr = get_array(args, "bug_ids")
       let bug_ids = ids_arr.map(fn(v) { v.as_string().unwrap_or("") })
       let iids_raw = get_str(args, "gitcode_issue_iids")
@@ -6044,7 +6063,7 @@ pub async fn run_server() -> Unit {
         }
       }
       match
-        gitcode_queue_mark_sent_batch(project_dir, bug_ids, sent_at, iids_map) {
+        gitcode_queue_mark_sent_batch(project_dir, bug_ids, iids_map, sent_at~) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
