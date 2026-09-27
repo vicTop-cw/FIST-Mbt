@@ -4,98 +4,197 @@ scripts/blackbox/install.ps1 —— FIST-Mbt 黑盒安装（Windows）
 
 来源优先级:
   1) -Source <dir>          —— 本地已构建目录 (_release)
-  2) -Version + GitHub Releases 下载 URL（默认）
+  2) GitHub Releases → GitCode Releases fallback
 
 安装位置:
-  <InstallDir>\fist-mbt.js  (或 fist-mbt.exe)
-  $env:LOCALAPPDATA\FIST-Mbt\fist-mbt 下
+  <InstallDir>\FIST-Mbt\fist-mbt.js / fist-mbt.exe
 
 Shim:
-  在 ~/.local/bin/fist-mbt.cmd 放 shim（若目录在 PATH 上即可直接 fist-mbt）
+  ~/.local/bin/fist-mbt.cmd  放 shim（自动追加到用户 PATH）
 
 用法:
   pwsh ./scripts/blackbox/install.ps1                                # 默认 JS 版
   pwsh ./scripts/blackbox/install.ps1 -JsOnly                        # 只装 JS 版
   pwsh ./scripts/blackbox/install.ps1 -NativeOnly                    # 只装 Native 版
   pwsh ./scripts/blackbox/install.ps1 -Source .\_release             # 从本地构建装
-  pwsh ./scripts/blackbox/install.ps1 -InstallDir C:\tools\FIST-Mbt  # 自定义安装路径
+  pwsh ./scripts/blackbox/install.ps1 -InstallDir C:\tools           # 自定义父目录
+  pwsh ./scripts/blackbox/install.ps1 -NoPath                        # 不自动改 PATH
 #>
 param(
-    [string]$Source = "",                  # 本地目录；空则从 GitHub Releases 拉
-    [string]$InstallDir = "$env:LOCALAPPDATA\FIST-Mbt",
-    [string]$Version = "0.2.6",
-    [string]$Repo = "AI/???",               # TODO: 替换为真实 GitHub repo path
+    [string]$Source = "",
+    [string]$InstallDir = "$env:LOCALAPPDATA",
+    [string]$Version = "",
     [switch]$JsOnly,
-    [switch]$NativeOnly
+    [switch]$NativeOnly,
+    [switch]$NoPath
 )
 
 $ErrorActionPreference = "Stop"
-Write-Host "=== FIST-Mbt Install v$Version ===" -ForegroundColor Cyan
 
+# ---------- Repo ----------
+$GitHubRepo = "vicTop-cw/FIST-Mbt"
+$GitCodeRepo = "VictorTop/Fist-Mbt"
+
+# ---------- 规范化 InstallDir（自动加 FIST-Mbt 子目录） ----------
+$InstallDir = Join-Path $InstallDir "FIST-Mbt"
 New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 New-Item -ItemType Directory -Path "$env:USERPROFILE\.local\bin" -Force | Out-Null
 
-function Copy-Binary($name, $zipPattern, $targetName) {
-    $dest = Join-Path $InstallDir $targetName
-    if ($Source -and (Test-Path (Join-Path $Source $zipPattern))) {
-        Copy-Item (Join-Path $Source $zipPattern) $dest -Force
-        Write-Host "  ✅ 从本地: $dest" -ForegroundColor Green
-        return $true
+# ---------- 推断版本 ----------
+if (-not $Version) {
+    if ($Source -and (Test-Path "$Source\VERSION")) {
+        $Version = (Get-Content "$Source\VERSION" -Raw).Trim()
+        Write-Host "[VERSION] 从本地: $Version" -ForegroundColor DarkGray
+    } else {
+        $Version = "0.3.0"
+        Write-Host "[VERSION] 默认: $Version (可 -Version 指定)" -ForegroundColor DarkGray
     }
-    # 远程下载
-    $url = "https://github.com/$Repo/releases/download/v$Version/$zipPattern"
-    Write-Host "  下载: $url" -ForegroundColor Yellow
+}
+Write-Host "=== FIST-Mbt Install v$Version ===" -ForegroundColor Cyan
+
+# ---------- Node >=24 检查 ----------
+function Test-Node {
+    param([int]$MinMajor = 24)
     try {
-        Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\$zipPattern" -UseBasicParsing
-        if ($zipPattern.EndsWith(".zip")) {
-            Expand-Archive "$env:TEMP\$zipPattern" -DestinationPath "$env:TEMP\fist-unpack" -Force
-            Copy-Item "$env:TEMP\fist-unpack\*" $dest -Recurse -Force
-            Remove-Item "$env:TEMP\$zipPattern" -Force -ErrorAction SilentlyContinue
-            Remove-Item "$env:TEMP\fist-unpack" -Recurse -Force -ErrorAction SilentlyContinue
-        } else {
-            Copy-Item "$env:TEMP\$zipPattern" $dest -Force
+        $v = (& node -v) 2>$null
+        if (-not $v) { Write-Host "  未找到 node" -ForegroundColor Red; return $false }
+        $major = [int]($v -replace '^v', '' -split '\.')[0]
+        if ($major -lt $MinMajor) {
+            Write-Host "  node 版本过低: $v (需要 >=v$MinMajor)" -ForegroundColor Red
+            return $false
         }
-        Write-Host "  ✅ 远程安装: $dest" -ForegroundColor Green
+        Write-Host "  node $v OK" -ForegroundColor Green
         return $true
     } catch {
-        Write-Host "  ⚠️ 下载失败（跳过）: $_" -ForegroundColor Yellow
+        Write-Host "  node 不可用: $_" -ForegroundColor Red
+        return $false
+    }
+}
+$needNode = -not $NativeOnly
+if ($needNode) { Test-Node | Out-Null }
+
+# ---------- 双源下载 ----------
+function Download-Artifact {
+    param(
+        [Parameter(Mandatory)] [string]$Filename,
+        [Parameter(Mandatory)] [string]$Version,
+        [Parameter(Mandatory)] [string]$Dest
+    )
+    $url1 = "https://github.com/$GitHubRepo/releases/download/v$Version/$Filename"
+    Write-Host "  GitHub: $url1" -ForegroundColor DarkGray
+    try {
+        Invoke-WebRequest -Uri $url1 -OutFile $Dest -UseBasicParsing -TimeoutSec 30
+        Write-Host "  GitHub OK" -ForegroundColor Green
+        return $true
+    } catch {
+        Write-Host "  GitHub 失败" -ForegroundColor Yellow
+    }
+    $url2 = "https://gitcode.com/$GitCodeRepo/releases/download/v$Version/$Filename"
+    Write-Host "  GitCode: $url2" -ForegroundColor DarkGray
+    try {
+        Invoke-WebRequest -Uri $url2 -OutFile $Dest -UseBasicParsing -TimeoutSec 30
+        Write-Host "  GitCode OK" -ForegroundColor Green
+        return $true
+    } catch {
+        Write-Host "  GitCode 也失败" -ForegroundColor Red
         return $false
     }
 }
 
-$installed = @()
-if (-not $NativeOnly) {
-    if (Copy-Binary "JS" "fist-mbt.js" "fist-mbt.js") { $installed += "JS" }
-}
-if (-not $JsOnly) {
-    if (Copy-Binary "Native" "fist-mbt.exe" "fist-mbt.exe") { $installed += "Native" }
+# ---------- 解包 + 安装 ----------
+function Install-Package {
+    param(
+        [Parameter(Mandatory)] [string]$Name,
+        [Parameter(Mandatory)] [string]$ZipPattern,
+        [Parameter(Mandatory)] [string]$TargetName
+    )
+    $destMain = Join-Path $InstallDir $TargetName
+    $localZip = $null
+    if ($Source) {
+        foreach ($sub in @("", "js", "native")) {
+            $cand = if ($sub) { Join-Path $Source "$sub\$ZipPattern" } else { Join-Path $Source $ZipPattern }
+            if (Test-Path $cand) { $localZip = $cand; break }
+        }
+        if (-not $localZip) {
+            $bare = Join-Path $Source $TargetName
+            if (Test-Path $bare) {
+                Copy-Item $bare $destMain -Force
+                $barePatch = Join-Path $Source "patch_esm_main.py"
+                if (Test-Path $barePatch) { Copy-Item $barePatch (Join-Path $InstallDir "patch_esm_main.py") -Force }
+                Write-Host "  OK 本地裸文件: $destMain" -ForegroundColor Green
+                return $true
+            }
+        }
+    }
+    if ($localZip) {
+        $zipPath = $localZip
+    } else {
+        $zipPath = Join-Path $env:TEMP $ZipPattern
+        if (-not (Download-Artifact -Filename $ZipPattern -Version $Version -Dest $zipPath)) { return $false }
+    }
+    $unpack = Join-Path $env:TEMP ("fist-unpack-" + [guid]::NewGuid().ToString("N"))
+    try {
+        Expand-Archive $zipPath -DestinationPath $unpack -Force
+        Get-ChildItem $unpack -File -Recurse | ForEach-Object {
+            if ($_.Name -eq $TargetName) { Copy-Item $_.FullName $destMain -Force }
+            if ($_.Name -eq "patch_esm_main.py") { Copy-Item $_.FullName (Join-Path $InstallDir "patch_esm_main.py") -Force }
+        }
+        if (-not (Test-Path $destMain)) { Write-Host "  zip 内未找到 $TargetName" -ForegroundColor Red; return $false }
+        Write-Host "  OK ${Name}: $destMain" -ForegroundColor Green
+    } catch {
+        Write-Host "  解包失败: $_" -ForegroundColor Red
+        return $false
+    } finally {
+        Remove-Item $unpack -Recurse -Force -ErrorAction SilentlyContinue
+        if (-not $localZip) { Remove-Item $zipPath -Force -ErrorAction SilentlyContinue }
+    }
+    return $true
 }
 
+# ---------- 执行安装 ----------
+$installed = @()
+if (-not $NativeOnly) {
+    if (Install-Package -Name "JS" -ZipPattern "fist-mbt-js-v$Version.zip" -TargetName "fist-mbt.js") { $installed += "JS" }
+}
+if (-not $JsOnly) {
+    if (Install-Package -Name "Native" -ZipPattern "fist-mbt-native-win-x64-v$Version.zip" -TargetName "fist-mbt.exe") { $installed += "Native" }
+}
 if ($installed.Count -eq 0) {
-    Write-Host "❌ 无可用二进制安装" -ForegroundColor Red
-    exit 1
+    Write-Host "无可用二进制安装" -ForegroundColor Red; exit 1
 }
 
 # ---------- Shim ----------
 $shim = "$env:USERPROFILE\.local\bin\fist-mbt.cmd"
 $jsBin = Join-Path $InstallDir "fist-mbt.js"
 $nativeBin = Join-Path $InstallDir "fist-mbt.exe"
-
+$patchPy = Join-Path $InstallDir "patch_esm_main.py"
 $content = @"
 @echo off
-REM FIST-Mbt shim — 由 install.ps1 生成
-REM 用法: fist-mbt [args...]
-
+REM FIST-Mbt shim — v$Version
 if exist "$nativeBin" (
   "$nativeBin" %*
   goto :eof
 )
+REM 若 ESM require 报错, 运行 python $patchPy 重新 patch
 node "$jsBin" %*
 "@
 Set-Content -Path $shim -Value $content -Encoding ASCII
-Write-Host "  ✅ Shim: $shim" -ForegroundColor Green
+Write-Host "  OK Shim: $shim" -ForegroundColor Green
+
+# ---------- PATH 追加 ----------
+$binDir = "$env:USERPROFILE\.local\bin"
+$pathUser = [Environment]::GetEnvironmentVariable("PATH", "User")
+if ((-not $NoPath) -and ($pathUser -notlike "*$binDir*")) {
+    $newPath = if ([string]::IsNullOrWhiteSpace($pathUser)) { $binDir } else { "$binDir;$pathUser" }
+    [Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
+    $env:PATH = "$binDir;" + $env:PATH
+    Write-Host "  OK 追加 $binDir 到用户 PATH" -ForegroundColor Green
+} else {
+    Write-Host "  (PATH 未修改)" -ForegroundColor DarkGray
+}
 
 Write-Host "`n=== 安装完成 ===" -ForegroundColor Green
 Write-Host "  已装: $($installed -join ', ')"
 Write-Host "  路径: $InstallDir"
-Write-Host "  若 fist-mbt 不在 PATH, 请加 $env:USERPROFILE\.local\bin 到 PATH"
+Write-Host "  Shim: $shim"
+Write-Host "  运行: fist-mbt --help"
