@@ -13,6 +13,48 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.0 (unreleased) - 缺陷账本兑账 + 已知 OPEN 全部独立清零（不走流水线）
+
+- **规则先成文（`memory/bugs.md`「记账规则」段）**：应「这么死板……修了的当然能标记，递归弄的报告只能增不能删」这句质询而立。
+  状态词汇闭集 `OPEN / FIXED / DUPLICATE / FALSE_POSITIVE`（`误报` 的英文即 `FALSE_POSITIVE`）；**状态只存在于条目抬头一行**
+  `## BUG-n [时间] [严重度] 状态 [→BUG-m]`；抬头以下的叙述面（detail / `### FIXED` 小记 / 证据）只追加不删——历史过程照得到，
+  当前结论只认抬头。计数口径同时改判：旧式 `open_cnt = 总条数 − 小记条数` 把"小记有几条"当成"修了几条 bug"，
+  而一条小记可收 1~16 条、也可一条都不收 ⇒ 那句"30 条待修"从来没有定义，现一律从抬头状态位反解。
+- **四条硬门进生成器**（`gen_plugins.ledger_status`，违例即 `die()`、不产出"看着正常"的插件）：
+  ① 标 FIXED 必须被某条小记抬头点名（防空口标修好）；② 被小记点名的必须已标 FIXED（防两套话）；
+  ③ DUPLICATE 必须带合法主编号（存在、非自指、非链条）；④ 闭集外的状态词一律红。判据抽成纯函数是为了能被变异直接考。
+- **控制面补齐（BUG-9 的可操作那半）**：`src/server/bugreport.mbt` 新增 `bug_fix`（抬头 + `### FIXED` 小记**同一笔**写、幂等、
+  整笔原子）与 `bug_mark_status`（OPEN/DUPLICATE/FALSE_POSITIVE 改判，DUPLICATE 三种非法形状必拒且带原因），
+  并登记为 MCP 工具 ⇒ **120 → 122**。刻意拒绝"只改抬头标 FIXED"：那会绕过硬门①、产出一本生成器拒绝产出的红账本。
+- **兑账 + 独立清零**：84 条逐条归属（58 FIXED / 16 OPEN / 9 DUPLICATE / 1 FALSE_POSITIVE），随后 16 条 OPEN **不走 FIST 流水线、
+  逐条独立修**——BUG-8/9/11/20/23/25/26/27/28/29/30/34/35/79/80/81。修复过程中**新入账并当场收口 5 条**：
+  BUG-85（内存/SQLite 两后端语义分歧，锁 `store_backend_semantics_test.mbt`）、BUG-86（启动参数真源搬家后投影不可解析，
+  J5 补「真源不存在⇒红」）、**BUG-87**（`github_sync.mbt` 里 `"${FIST_GITHUB_TOKEN}"` 被 MoonBit 当**字符串插值** ⇒
+  JS 运行时 `ReferenceError: FIST_GITHUB_TOKEN is not defined`，即 flush_plan 的产物一跑就死，critical）、
+  **BUG-88**（severity 词表两侧各写一份：写侧收 `open/critical`、抬头文法只认 `high|medium|low` ⇒ 一条**完全合法**的
+  `report_bug` 就能写出判据读不到的抬头，生成器 FATAL、整条投影链停摆）、**BUG-89**（文档面守卫的 `--selftest` 从不被自动面执行）。
+  BUG-88 的触发者是我自己：本轮把 BUG-87 按 `critical` 入账，`gen_plugins` 立刻拒绝生成 ⇒ 修法两侧同改并加
+  **跨语言单源门禁** `severity_vocab_drift()`（从 `bugreport.mbt` 反解闭集与自己的文法做集合相等，漂移即 FATAL，四方向合成对照实测）。
+- **账本最终态（由新工具自己写盘，无一手改 markdown ⇒ 控制面的调用面证据就是这次收口本身）**：
+  `BUG-1~89 共 89 条：0 条待修 / 79 条已修 / 9 条重复并入 / 1 条误报`。
+- **全量与投影**：JS 后端 `moon test --target js` **508/508**（连跑两次同数，`temp/phaseC/full_final.log` /
+  `temp/phaseC/full_final2.log`）；七守卫 rc=0 +
+  `check_doc_surface --selftest` rc=0（覆盖面清单改由自检正文反解，现为 **J4/J6/J7/J8/J9/J10**）+ `mcp_smoke` PASS；
+  四宿主插件态重投影 cl7 逐字节一致（4 宿主 / 56 生成文件 / 122 工具 / v0.3.0）。计数面（README 徽章/自检注释、AGENTS、
+  ARCHITECTURE、docs、scoring_rubric、README_EN/.mbt）由 `check_test_sync`/`check_badge` 从实测日志反解同步，不手抄。
+- **测试总数在同一条命令上移动过 487 → 508（差 21，机制未定位，如实记）**：本轮中段 `moon test --target js` 实测
+  **487/487**（`temp/phaseC/full487.log`），收口前连跑两次都是 **508/508**（`temp/phaseC/full_final.log` /
+  `full_final2.log`）。21 这个数恰好等于 `src/server/github_gitcode_wbtest.mbt` 里的 `test` 块数——该文件在 HEAD 就有、
+  本轮从未被我改动、`git status` 全程干净；同一时刻该工作区有并发进程在活动（仓库根新落 `alpha.db`/`cb_b34_t*.db` 等、
+  `.fist-gitcode-20260927/` 里有 `selfdrive_*.py`）。**"哪一次是真的"这个问题我不给猜测答案**，按可复现者定稿：
+  收口数以连跑两次的 508 为准，计数面全部由 `check_test_sync`/`check_badge` 从该日志反解同步；
+  487 那次同样真实发生过，两份日志都留着。
+- **如实留下的缺口**：① 本轮一次**未带 ns 的 `heal`** 在共享根库 `fist-mbt.db` 上回滚了 **23 个命名空间的 396 条在途任务**
+  （`2026-09-27T09:47:56Z`，影响面清单 `temp/phaseC/unscoped_heal_affected.json`）；事前没留快照 ⇒ 无法逐条还原，
+  这正是 BUG-81 立的那条面（`heal` 唯一不带 ns 的入口扫 `list_all()`）在真实库上的兑现，只补了作用域、补不回数据；
+  ② `executor_run` 真跑分支仍只证到 `dry_run` 与记账路径（BUG-4 边界，真执行未获授权）；③ native 轨本轮未复跑；
+  ④ BUG-88/89 的残余：跨语言词表门禁靠正则读两侧源码，形状是**约定**不是证明；rc 被管道吞掉这类读数姿势只能靠"落盘日志再读 rc"的习惯约束。
+
 ## v0.3.0 (unreleased) - 四模式流水线自我迭代 · Round 5（寻虫 → 修复 → 验证 → 打磨 + 勘误）
 
 - **寻虫段**（承接 Round 4 验证段入账的 BUG-74/75，另起子代理扫插件态/路由/存储/看护面）：

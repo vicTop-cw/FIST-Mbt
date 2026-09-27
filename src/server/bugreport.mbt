@@ -6,13 +6,17 @@
 ///     并行发布为命名空间 bugs 下的独立根任务，供系统自驱认领修复。
 ///   - bug_list：解析 memory/bugs.md 为 {id, ts, severity, status, summary}。
 ///
-/// 关闭（status → CLOSED）由修复方 agent 直接编辑该条目完成，本模块不提供
-/// 独立 bug_ack（保持最小足迹）。路径一律相对拼接（mem_join），跨平台可移植。
+/// 关闭与改判由本模块的 bug_fix / bug_mark_status 完成（BUG-9 之前只能人肉编辑），
+/// 状态只存在于抬头一行，正文与叙述面保持追加。路径一律相对拼接（mem_join），跨平台可移植。
 
 ///|
-/// 允许的 severity 取值（默认 open）。
+/// 允许的 severity 取值（缺省 medium；BUG-88：本集合与账本抬头文法逐字相等，由生成器把关）。
 fn bug_severities() -> Array[String] {
-  ["open", "critical", "high", "medium", "low"]
+  // BUG-88：这套集合必须与账本抬头文法（memory/bugs.md 的 `## BUG-n [时间] [严重度] 状态`）
+  // **逐字相等**——gen_plugins 生成前会比对两侧，漂移即 FATAL。
+  // 旧集里的 `open` 是个状态词冒充严重度：省略 severity 时默认落 [open]，
+  // 而判据只认 high|medium|low ⇒ 一条不传 severity 的正常上报就能把账本写成读不到的抬头。
+  ["critical", "high", "medium", "low"]
 }
 
 ///|
@@ -254,12 +258,12 @@ pub fn report_bug(
   if summary.is_empty() {
     return Err("report_bug: summary 不能为空")
   }
-  let sev = if severity.is_empty() { "open" } else { severity }
+  let sev = if severity.is_empty() { "medium" } else { severity }
   if not(bug_severity_ok(sev)) {
     return Err(
       "report_bug: 非法 severity=" +
       sev +
-      "（合法值：open/critical/high/medium/low）",
+      "（合法值：critical/high/medium/low；缺省 medium。BUG-88：闭集必须等于抬头文法）",
     )
   }
   mem_ensure_dir(mem_dir(project_dir))
@@ -338,6 +342,75 @@ pub fn report_bug(
 
 ///|
 /// 列出 {project_dir}/memory/bugs.md 里的 bug 条目（含 status 的均返回）。
+
+///|
+/// 带**关联修复单当前状态**的 bug 清单（BUG-9 的读侧出路）。
+///
+/// 写侧按声明的设计不做状态 API（本模块文件头：关闭由修复方直接编辑条目完成），
+/// 但读侧此前只能看到抬头写的 OPEN——账本与任务库两份账于是可以互相矛盾而无人发现
+/// （原始证据：Cypy 的 bugs.md 八条全 OPEN，同轮八张修复单 verify 回复全「已完成」）。
+/// 这里给每条带 task_id 的条目挂 `linked_task_status`，并汇总 `open_with_linked_done`
+/// ——"账本说没修、任务库说修完了"变成一次调用就能看见的数，而不是靠人对照。
+/// 状态查询由调用方注入（纯函数不碰引擎，便于白盒锁）。
+pub fn bug_list_with_links(
+  project_dir : String,
+  task_status_of : (String) -> String,
+) -> Result[Json, String] {
+  match bug_list(project_dir) {
+    Err(e) => Err(e)
+    Ok(j) => {
+      let entries = match j.value("bugs") {
+        Some(Array(a)) => a
+        _ => []
+      }
+      let enriched : Array[Json] = []
+      let mut open_with_linked_done = 0
+      for e in entries {
+        match e {
+          Object(m) => {
+            let status = match m.get("status") {
+              Some(Json::String(s)) => s
+              _ => ""
+            }
+            let tid = match m.get("task_id") {
+              Some(Json::String(s)) => s
+              _ => ""
+            }
+            let linked = if tid == "" { "" } else { task_status_of(tid) }
+            if linked != "" {
+              m.set("linked_task_id", Json::string(tid))
+              m.set("linked_task_status", Json::string(linked))
+            }
+            // 只对"抬头仍 OPEN 但关联单已完成"这一类计账——那正是两份账矛盾的形状
+            if status == "OPEN" && linked == "已完成" {
+              open_with_linked_done = open_with_linked_done + 1
+            }
+            enriched.push(Json::object(m))
+          }
+          _ => enriched.push(e)
+        }
+      }
+      let top = match j {
+        Object(m) => m
+        _ => Map([])
+      }
+      top.set("bugs", Json::array(enriched))
+      top.set(
+        "open_with_linked_done",
+        Json::number(open_with_linked_done.to_double()),
+      )
+      top.set(
+        "note",
+        Json::string(
+          "open_with_linked_done>0 ⇒ 账本抬头与任务库当前状态互相矛盾：要么该条已修完但抬头没改 FIXED（记账规则允许就地改抬头），要么修复单被误标完成。linked_task_status 取自任务库实时状态，空串=该条目没有关联修复单或任务已不存在。",
+        ),
+      )
+      Ok(Json::object(top))
+    }
+  }
+}
+
+///|
 pub fn bug_list(project_dir : String) -> Result[Json, String] {
   if not(bug_project_dir_ok(project_dir)) {
     return Err(
@@ -359,4 +432,318 @@ pub fn bug_list(project_dir : String) -> Result[Json, String] {
       "bugs": Json::array(entries),
     }),
   )
+}
+
+///|
+/// 抬头状态闭集（真源 = 本账本顶部「记账规则」段，2026-09-27 立）。
+/// 写侧与判据共用这一份，避免"API 收 Fixed、抬头写 FIXED、投影数成第三种"三套话。
+fn bug_status_closed() -> Array[String] {
+  ["OPEN", "FIXED", "FALSE_POSITIVE", "DUPLICATE"]
+}
+
+///|
+/// 按行切正文（与 bug_lines_to_text 互为逆运算：写回时统一补 \n）。
+fn bug_lines_of(text : String) -> Array[String] {
+  let out : Array[String] = []
+  for v in text.split("\n") {
+    out.push(v.to_string())
+  }
+  out
+}
+
+///|
+fn bug_lines_to_text(lines : Array[String]) -> String {
+  let mut acc = ""
+  for l in lines {
+    acc = acc + l + "\n"
+  }
+  acc
+}
+
+///|
+/// 用 / 拼闭集，只为了把违例文案写得可复核（不依赖 Array::join 是否存在）。
+fn bug_slash_join(items : Array[String]) -> String {
+  let mut acc = ""
+  for s in items {
+    acc = if acc.is_empty() { s } else { acc + "/" + s }
+  }
+  acc
+}
+
+///|
+/// 用逗号+空格拼编号列表：小记抬头 `### FIXED(ts / BUG-a, BUG-b)` 的分隔符口径
+/// 必须与 gen_plugins 的 RE_FIXED_IDS 一致，别改成中文顿号（判据认半角逗号）。
+fn bug_comma_join(items : Array[String]) -> String {
+  let mut acc = ""
+  for s in items {
+    acc = if acc.is_empty() { s } else { acc + ", " + s }
+  }
+  acc
+}
+
+///|
+/// 归一缺陷编号：接受 `9` 与 `BUG-9` 两种写法，一律输出后者。
+fn bug_norm_id(bug_id : String) -> String {
+  if bug_id.has_prefix("BUG-") {
+    bug_id
+  } else {
+    "BUG-" + bug_id
+  }
+}
+
+///|
+/// 某编号抬头所在行（0-based），找不到回 -1。
+fn bug_header_line(lines : Array[String], bug_id : String) -> Int {
+  let want = bug_norm_id(bug_id)
+  let n = lines.length()
+  let mut i = 0
+  while i < n {
+    let t = lines[i].trim().to_string()
+    if bug_is_header(t) && bug_parse_header(t).0 == want {
+      return i
+    }
+    i = i + 1
+  }
+  -1
+}
+
+///|
+/// 条目正文的结束行 = 下一条抬头（或文件尾）。
+/// 小记只能插在这个界内，否则会把邻居条目的正文吞进本条目的证据里。
+fn bug_entry_end(lines : Array[String], from : Int) -> Int {
+  let n = lines.length()
+  let mut j = from + 1
+  while j < n {
+    if bug_is_header(lines[j].trim().to_string()) {
+      return j
+    }
+    j = j + 1
+  }
+  j
+}
+
+///|
+/// 抬头那一行的三段（编号 / 时间戳 / 严重度）+ 裸状态串（可能带 `→BUG-m`）。
+fn bug_split_header(line : String) -> (String, String, String, String, String) {
+  let (id, ts, sev, raw_status) = bug_parse_header(line.trim().to_string())
+  let parts = raw_status.split("→").to_array()
+  let status = parts[0].trim().to_string()
+  let main = if parts.length() == 2 { parts[1].trim().to_string() } else { "" }
+  (id, ts, sev, status, main)
+}
+
+///|
+/// 读账本正文；文件不存在按空文处理（"编号不存在"由调用方判，这里不猜）。
+fn bug_read_text(project_dir : String) -> String {
+  match mem_read(bug_file_path(project_dir)) {
+    None => ""
+    Some(s) => s
+  }
+}
+
+///|
+fn bug_status_result(
+  id : String,
+  status : String,
+  dup_of : String,
+  from : String,
+  changed : Bool,
+  path : String,
+) -> Json {
+  let m : Map[String, Json] = Map([])
+  m.set("bug_id", Json::string(id))
+  m.set("id", Json::string(id))
+  m.set("status", Json::string(status))
+  m.set("from_status", Json::string(from))
+  m.set("changed", Json::boolean(changed))
+  if not(dup_of.is_empty()) {
+    m.set("duplicate_of", Json::string(dup_of))
+  }
+  m.set("path", Json::string(path))
+  Json::object(m)
+}
+
+///|
+/// 把一条缺陷的抬头状态就地改掉（BUG-9 的控制面缺口：账本此前只写不销，OPEN 集合永远清不掉）。
+///
+/// 写盘面**只有一行**：`## BUG-n [时间] [严重度] 状态 [→BUG-m]` 的状态字段被替换，其余字节不动。
+/// 叙述面（正文、`### FIXED(...)` 小记、reports/、memory/ 轮次段）按记账规则只追加——
+/// 改掉旧状态不销毁历史，历史由那些面承载。同状态重复调用是幂等 no-op。
+///
+/// 刻意**不**允许直接标 FIXED：那条路会绕过「标 FIXED 必须有一条点名本编号的小记」这道硬门
+/// （gen_plugins 生成前自检①），把账本写成生成器拒绝产出的红状态。标修好走 `bug_fix`。
+pub fn bug_mark_status(
+  project_dir : String,
+  bug_id : String,
+  new_status : String,
+  dup_of? : String,
+  evidence? : String,
+  ts~ : String,
+) -> Result[Json, String] {
+  if !bug_project_dir_ok(project_dir) {
+    return Err("bug_mark_status: 非法 project_dir")
+  }
+  if ts.trim().is_empty() {
+    return Err(
+      "bug_mark_status: 需要 ts（时间戳由调用层服务端盖章）",
+    )
+  }
+  let want = bug_norm_id(bug_id)
+  let closed = bug_status_closed()
+  if !closed.any(fn(s : String) { s == new_status }) {
+    return Err(
+      "bug_mark_status: 状态 [" +
+      new_status +
+      "] 不在闭集 [" +
+      bug_slash_join(closed) +
+      "] 内",
+    )
+  }
+  if new_status == "FIXED" {
+    return Err(
+      "bug_mark_status: 标 FIXED 必须走 bug_fix——它同一笔落 ### FIXED 小记；" +
+      "只改抬头会撞上 gen_plugins 硬门①（标修好却无小记点名）",
+    )
+  }
+  let path = bug_file_path(project_dir)
+  let lines = bug_lines_of(bug_read_text(project_dir))
+  let idx = bug_header_line(lines, want)
+  if idx < 0 {
+    return Err("bug_mark_status: 编号不存在 " + want)
+  }
+  let (id, h_ts, sev, cur_status, cur_main) = bug_split_header(lines[idx])
+  let note_text = match evidence {
+    None => ""
+    Some(s) => s.trim().to_string()
+  }
+  let add_note = new_status == "FALSE_POSITIVE" && not(note_text.is_empty())
+
+  let mut new_main = ""
+  if new_status == "DUPLICATE" {
+    let target = match dup_of {
+      None => ""
+      Some(s) => bug_norm_id(s)
+    }
+    if target.is_empty() {
+      return Err("bug_mark_status: DUPLICATE 必须带 →BUG-m 主编号")
+    }
+    if target == want {
+      return Err("bug_mark_status: 主编号不能指向自己 " + target)
+    }
+    let t_idx = bug_header_line(lines, target)
+    if t_idx < 0 {
+      return Err("bug_mark_status: 主编号 " + target + " 不存在")
+    }
+    let (_, _, _, t_status, _) = bug_split_header(lines[t_idx])
+    if t_status == "DUPLICATE" {
+      return Err(
+        "bug_mark_status: 主编号 " +
+        target +
+        " 自身也是 DUPLICATE（链条不允许）",
+      )
+    }
+    new_main = target
+  }
+  // 幂等：目标状态与主编号都没变、又不需要补误报立据 ⇒ 一个字节都不写。
+  if cur_status == new_status && new_main == cur_main && !add_note {
+    return Ok(
+      bug_status_result(id, new_status, new_main, cur_status, false, path),
+    )
+  }
+  let tail = if new_main.is_empty() { "" } else { " →" + new_main }
+  lines[idx] = "## " + id + " [" + h_ts + "] [" + sev + "] " + new_status + tail
+  if add_note {
+    let end = bug_entry_end(lines, idx)
+    lines.insert(end, "- false_positive(" + ts + "): " + note_text)
+  }
+  let wrote = mem_write(path, bug_lines_to_text(lines))
+  if !wrote {
+    return Err("bug_mark_status: 写入失败 " + path)
+  }
+  Ok(bug_status_result(id, new_status, new_main, cur_status, true, path))
+}
+
+///|
+/// 批量标修好（BUG-9 的控制面正身）：一次调用 = 一批编号的抬头改 FIXED，
+/// 外加**一条**点名整批的 `### FIXED(<ts> / BUG-a, BUG-b)` 小记（evidence 写清改了哪个真源、
+/// 哪条锁钉住）。
+///
+/// 为什么必须同一笔写两面：记账规则把「标 FIXED」与「有小记点名」做成互锁（生成器硬门①②），
+/// 分两次调用的中间态就是一本生成器拒绝产出的红账本。
+/// 幂等：已 FIXED 的条目只补小记、不重改抬头；小记抬头已存在则整笔 no-op。
+pub fn bug_fix(
+  project_dir : String,
+  bug_ids : Array[String],
+  evidence~ : String,
+  ts~ : String,
+) -> Result[Json, String] {
+  if !bug_project_dir_ok(project_dir) {
+    return Err("bug_fix: 非法 project_dir")
+  }
+  if ts.trim().is_empty() {
+    return Err("bug_fix: 需要 ts（时间戳由调用层服务端盖章）")
+  }
+  let ev = evidence.trim().to_string()
+  if ev.is_empty() {
+    return Err(
+      "bug_fix: 需要 evidence——空口标修好正是历史上假 GREEN 的来源（记账规则硬门①）",
+    )
+  }
+  if bug_ids.is_empty() {
+    return Err("bug_fix: bug_ids 不能为空")
+  }
+  let path = bug_file_path(project_dir)
+  let lines = bug_lines_of(bug_read_text(project_dir))
+  let named : Array[String] = []
+  let mut changed = 0
+  let mut already = 0
+  let mut insert_at = 0
+  for raw_id in bug_ids {
+    let want = bug_norm_id(raw_id)
+    let idx = bug_header_line(lines, want)
+    if idx < 0 {
+      return Err("bug_fix: 编号不存在 " + want)
+    }
+    let (id, h_ts, sev, cur, cur_main) = bug_split_header(lines[idx])
+    if cur == "DUPLICATE" || cur == "FALSE_POSITIVE" {
+      return Err(
+        "bug_fix: " +
+        want +
+        " 当前是 " +
+        cur +
+        "，终态之间不互跳（要改判先回 OPEN）",
+      )
+    }
+    if cur != "FIXED" {
+      let tail = if cur_main.is_empty() { "" } else { " →" + cur_main }
+      lines[idx] = "## " + id + " [" + h_ts + "] [" + sev + "] FIXED" + tail
+      changed = changed + 1
+    } else {
+      already = already + 1
+    }
+    named.push(want)
+    let e = bug_entry_end(lines, idx)
+    if e > insert_at {
+      insert_at = e
+    }
+  }
+  let header = "### FIXED(" + ts + " / " + bug_comma_join(named) + ")"
+  let exists = lines.any(fn(l : String) { l.trim().to_string() == header })
+  if !exists {
+    lines.insert(insert_at, "- evidence: " + ev)
+    lines.insert(insert_at, header)
+    lines.insert(insert_at, "")
+  }
+  let wrote = mem_write(path, bug_lines_to_text(lines))
+  if !wrote {
+    return Err("bug_fix: 写入失败 " + path)
+  }
+  let m : Map[String, Json] = Map([])
+  m.set("bug_ids", Json::array(named.map(fn(s : String) { Json::string(s) })))
+  m.set("heading_changed", Json::number(changed.to_double()))
+  m.set("already_fixed", Json::number(already.to_double()))
+  m.set("note_written", Json::boolean(!exists))
+  m.set("note_header", Json::string(header))
+  m.set("path", Json::string(path))
+  Ok(Json::object(m))
 }

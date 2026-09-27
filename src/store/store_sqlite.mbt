@@ -1,7 +1,11 @@
 /// FIST-Mbt store: SQLite 持久化后端（M1 内建数据库）。
 /// 依赖 mizchi/sqlite（native+js 双端）。五表骨架单调落盘，其中 tasks 完整接入 Store trait；
-/// specs / runs / heartbeats / archive 先建表供 Phase 2(Omega) / Phase 5(scheduler) 使用。
+/// specs / heartbeats / archive 已接线；**runs 是建了表但全仓零写入零读取的预留骨架**（BUG-28），
+/// 别再把它当成"验收有记录可查"——门禁与验收运行实际落 `specs`（gate_check_record 写 spec_type='gate'）。
+/// schema-reserved: runs
 /// 列约定：parent_id / assignee / completed_by 等可空字段用空串 "" 表示 None。
+/// 上面那行 `schema-reserved:` 是机器可读声明，由 scripts/check_store_tables_wired.py 对表：
+/// 每张表要么有写入点、要么在这里点名预留，两者都占或都不占一律红灯（防再长出第二张 runs）。
 
 ///|
 /// SQLite 后端：持有打开的 Database（Option 以承载 open 失败场景）。

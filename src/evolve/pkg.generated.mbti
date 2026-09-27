@@ -10,6 +10,8 @@ pub fn analyze_candidate(String, String, String, String) -> SearchCandidate
 
 pub fn assess_portability(SearchCandidate) -> Bool
 
+pub fn coverage(Array[String], Array[String]) -> Double
+
 pub fn critic_dup_sim() -> Double
 
 pub fn critic_most_similar(Archive, String) -> (String, String, Double)?
@@ -41,6 +43,8 @@ pub fn score_of_lesson(Double) -> Double
 pub fn score_rank(Double) -> String
 
 pub fn tokens(String) -> Array[String]
+
+pub fn unigrams(String) -> Array[String]
 
 // Errors
 

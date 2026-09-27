@@ -59,9 +59,17 @@ jobs:
           python3 scripts/gen_plugins.py --check
           python3 scripts/check_plugin_sync.py
 
-      - name: Doc-surface guard (文档逐个工具可查/分组和==实测/自述版本==moon.mod)
+      - name: Doc-surface guard (文档逐个工具可查/分组和==实测/自述版本==moon.mod；BUG-89 自检同跑)
         shell: bash
-        run: python3 scripts/check_doc_surface.py
+        run: |
+          python3 scripts/check_doc_surface.py --selftest
+          python3 scripts/check_doc_surface.py
+
+      - name: Store-schema wiring guard (BUG-28：每张表要么有写入点要么显式声明预留)
+        shell: bash
+        run: |
+          python3 scripts/check_store_tables_wired.py --selftest
+          python3 scripts/check_store_tables_wired.py
 
       - name: Cleanliness guard (仓库整洁，仅交付库 fist-mbt.db)
         shell: bash

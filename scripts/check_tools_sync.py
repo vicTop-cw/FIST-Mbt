@@ -36,7 +36,32 @@ RE_BACKTICK = re.compile(r"`([\w\-]+)`")
 RE_FORBIDDEN_BODY = re.compile(
     r"fn mode_forbidden_tools\([^)]*\).*?\n\}", re.S
 )
-RE_NOW_AD = re.compile(r'"now"\s*:\s*string_prop|、now 时间戳')
+# BUG-80：旧口径 `"now":\s*string_prop|、now 时间戳` 在真源上**命中 0**——28 处广告用的是另外四种写法
+# （、now。/ 参数：now / now(可选) / now(时间戳)），恒 0 的判据等于装饰（BUG-33 的残留因此看不见）。
+# 新口径覆盖四种实测写法；"不接受调用方注入 now" 这种否定句不算广告（BUG-33 政策本身就这么写）。
+RE_NOW_AD = re.compile(
+    r'"now"\s*:\s*string_prop'          # 重新声明 now 入参
+    r'|、now(?=[），,。)\s])'                # 参数表里的 、now
+    r'|参数：now'
+    r'|now\(可选'
+    r'|now\(时间戳'
+    r'|now\s*时间戳'
+)
+RE_NOW_NEGATION = re.compile(r'不接受调用方注入\s*now|无\s*now\s*入参')
+
+
+def now_ad_hits(text):
+    """广告 now 的命中位置，剔除否定句（否定句是政策声明，不是广告）。
+    判据必须能数出条数：只报『有没有』就永远不知道它是不是饿死的。"""
+    hits = []
+    for m in RE_NOW_AD.finditer(text):
+        lo = max(0, m.start() - 40)
+        ctx = text[lo:m.end() + 10]
+        if RE_NOW_NEGATION.search(ctx):
+            continue
+        hits.append(text.count("\n", 0, m.start()) + 1)
+    return hits
+
 # "被当成工具调用"的反引号名：`name(...)` 形状 —— 只有工具才会带括号出现，
 # 因此不会把 project_dir / task_id 这类参数名误纳进来。
 RE_TOOL_SHAPE = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\(")
@@ -202,9 +227,14 @@ def main():
         if x not in real:
             problems.append(f"mode_forbidden_tools 含未注册工具名 {x}（BUG-37：名单空转，红线只剩文字）")
 
-    # 5) 不得再向调用方广告时钟入参（BUG-33）
-    if RE_NOW_AD.search(server_txt):
-        problems.append('server.mbt 重新广告了 "now" 入参（BUG-33：时钟由服务端盖章，广告无人读的参数=契约说谎）')
+    # 5) 不得再向调用方广告时钟入参（BUG-33；BUG-80：判据要数得出条数）
+    ads = now_ad_hits(server_txt)
+    if ads:
+        problems.append(
+            'server.mbt 有 %d 处仍在广告 "now" 入参（行号 %s；BUG-33：时钟由服务端盖章，'
+            '广告无人读的参数=契约说谎，BUG-80：旧正则命中 0 才让这批复活）'
+            % (len(ads), ", ".join(str(x) for x in ads[:12]))
+        )
 
     # 6) 模板中以 `name(...)` 调用形状出现的名字必须是真注册名（BUG-38 文档面）
     for tpl in TEMPLATES:

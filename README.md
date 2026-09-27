@@ -2,12 +2,12 @@
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-458%2F458-brightgreen)](./src)
+[![Tests](https://img.shields.io/badge/tests-508%2F508-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
-**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **120 个 MCP 工具** 暴露给任意 MCP 客户端。
+**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **122 个 MCP 工具** 暴露给任意 MCP 客户端。
 
-**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 458 项测试全绿、跨环境可复现。
+**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 508 项测试全绿、跨环境可复现。
 
 > 它用**它自己的**自驱式 + 递归拆解把自己打磨到了可交付态——完整自我迭代证据见 `docs/selfdrive-walkthrough.md`，CLI `python scripts/fist.py call project_standards` 可一键拉取本项目遵守的 AI 开发规范。
 
@@ -28,14 +28,14 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 1. ✅ MCP 工具注册了？ → `server.mbt` instrumented_tool 块
 2. ✅ CLI 封装到位？ → `scripts/fist.py call <tool>` 或独立 `scripts/xxx.py`
 3. ✅ Skill 文档写了？ → `docs/xxx-skill.md`
-4. ✅ `moon test` 全绿？ → 458/458 零回归（`--target js`，本轮 Windows 实测）
+4. ✅ `moon test` 全绿？ → 508/508 零回归（`--target js`，本轮 Windows 实测）
 5. ✅ 交付物过 `output_validate` L4 硬门？ → verdict=pass
 6. ✅ README / AGENTS.md 计数同步？ → 工具数、测试数
 7. ✅ 插件态已重生成且与真源一致？ → `python scripts/gen_plugins.py && python scripts/check_plugin_sync.py`（cl7）
 
 ---
 
-## 功能全景（120 个 MCP 工具）
+## 功能全景（122 个 MCP 工具）
 
 ### 生命周期（14）
 `publish` · `publish_parallel` · `plan` · `claim` · `execute` · `submit` · `verify` · `reject` · `retry` · `pause` · `resume` · `reopen_task` · `archive` · `delete`
@@ -49,8 +49,8 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 ### 自驱闭环（9）
 `selfdrive_init` · `selfdrive_append` · `selfdrive_get` · `selfdrive_export_tasks` · `selfdrive_review_tick` · `selfdrive_review_ready` · `selfdrive_publish_next` · `selfdrive_parse_next_tasks` · `selfdrive_pick_next`
 
-### 运维·验证·规范（15）
-`call_log` · `bug_list` · `report_bug` · `issue_scan` · `eval_feedback` · `run_check` · `output_validate` · `project_standards` · `schedule` · `pipeline_tick` · `cost_stats` · `cost_budget_check` · `cost_budget_split` · `progress_gate` · `laya_decide`
+### 运维·验证·规范（17）
+`call_log` · `bug_list` · `bug_fix` · `bug_mark_status` · `report_bug` · `issue_scan` · `eval_feedback` · `run_check` · `output_validate` · `project_standards` · `schedule` · `pipeline_tick` · `cost_stats` · `cost_budget_check` · `cost_budget_split` · `progress_gate` · `laya_decide`
 
 ### 模型路由·外部执行器（4）
 `model_route` · `model_router_status` · `model_router_reset` · `executor_run`
@@ -87,7 +87,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 # 1. 构建 + 测试
 moon update            # 首次：刷新 registry 索引
 moon build --target js cmd/main
-moon test --target js  # → Total tests: 458, passed: 458, failed: 0
+moon test --target js  # → Total tests: 508, passed: 508, failed: 0
 
 # 2. 启动 MCP Server（STDIO）
 python scripts/patch_esm_main.py  # ESM shim（moonc ≥0.10.14 输出 ESM，sqlite JS 桩用 CJS）
@@ -97,7 +97,7 @@ node _build/js/debug/build/cmd/main/main.js
 FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 # 4. CLI 通用网关（一源四态·CLI 形态）
-python scripts/fist.py list-tools                     # 列出 120 个工具
+python scripts/fist.py list-tools                     # 列出 122 个工具
 python scripts/fist.py call project_standards          # AI 开发规范
 python scripts/fist.py call store_open --namespace scratch --scratch true
 python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path":"moon.mod","contains":"vicTop-cw"}]'
@@ -157,7 +157,7 @@ python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path
 - **Node.js ≥ 24**（JS 目标必需，SQLite JS 后端依赖 node:sqlite）
 - **Native 目标**：系统 SQLite 开发库（sqlite3.h + sqlite3.lib）。一键装载：`pwsh ./scripts/native-env.ps1`
 
-> **JS 后端**：`moon test --target js` = **458/458**（本轮 2026-09-27 Windows 实测，含一源四态 cl7、模型路由与外部执行器合并（4 工具 + 24 项回归锁）、BUG-4/18 与三轮自我迭代回归锁 BUG-19/21/24/31/36）。
+> **JS 后端**：`moon test --target js` = **508/508**（本轮 2026-09-27 Windows 实测，含一源四态 cl7、模型路由与外部执行器合并（4 工具 + 24 项回归锁）、BUG-4/18 与三轮自我迭代回归锁 BUG-19/21/24/31/36）。
 > **Native 后端**：上一轮在 Windows + WSL(Linux) 通过 317/317；本轮四模式流水线未复跑 native，故不据旧数宣称双端同版全绿，见「已知边界」。
 
 ## 架构
@@ -187,7 +187,8 @@ python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path
 
 ## 资源
 
-- **MochaCakes**: `vicTop-cw/fist-mbt@0.3.0`
+- **MochaCakes**: `vicTop-cw/fist-mbt`（注册表上实际发布到哪个版本以 BACKLOG P1 条目为准；本行刻意不写版本号——
+  本机没有可复核注册表的通道，写死数字就会和 BACKLOG 的发布记录互相矛盾，这是 BUG-30 的原始形状）
 - **GitHub**: https://github.com/vicTop-cw/FIST-Mbt
 - **GitCode 镜像**: https://gitcode.com/VictorTop/Fist-Mbt （`master` + 标签与 GitHub 同步发布；
   本机 `git remote gitcode` 配的是 HTTPS 取 / `pushurl` 走 `git@gitcode.com:…` 推，凭据只来自环境变量）

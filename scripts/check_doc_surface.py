@@ -20,6 +20,9 @@
   J3 README.md 功能全景各分组标题括号里的数字之和必须 == N。
   J4 所有文档里 `vicTop-cw/fist-mbt@x.y.z` 形态的**当前自述**版本必须 == moon.mod 的 version；
      例外：CHANGELOG.md、memory/、reports/、docs/polish-plan.md 属历史/计划陈述，允许旧值。
+     子判据（BUG-30）：注册表**发布版本**（"已发布到 x.y.z"）只允许一处权威自述 = BACKLOG.md；
+     本机没有注册表复核通道，第二处发布版本只能和权威面打架 ⇒ 别的现状面出现即红。
+     扫描面为空、权威面缺声明、枚举器少于 10 份 .md 都判红，不许"没抓到 = 没问题"。
   J5 反幻影：J2/J3 若在"清单为空"时也能通过，就是判据自己坏了 —— 因此 J2 前置哨兵
      断言 N>100、AGENTS/README 解析到的名字数 >100，否则直接判 FATAL（而不是 PASS）。
   J6 规范正文 ↔ 机器投影一致（R116 新增）：AI-DEVELOPMENT-STANDARD.md 必须含
@@ -33,11 +36,21 @@
      为什么必须有：_instrument 只校验 required，未知键被**静默丢弃**（BUG-31 同族）——
      模板写 `check_results`/`dry_run`/`now` 时 agent 以为自己在跑硬门，实际什么都没验。
      只比 depth-1 键，artifacts 数组元素里的 path/contains 等子 schema 键不误伤。
+  J9 工具描述的返回契约（BUG-74/83）：对 server.mbt 里**每个工具的描述**做三件事——
+     ① 必查清单里的工具必须写"返回 {…}"（认中文「返回」，英文 returns 不算，口径放宽=恒过）；
+     ② 歧义键分工清单（如 run_check 的 ok/status）必须点名该键职责，抹掉分工即红、写清不误红，
+        清单里的工具从注册表消失也判红（清单失效比缺契约更糟）；
+     ③ 棘轮 RET_FLOOR：写了返回契约的工具数只许升不许降。
+  J10 判据范围自述 == 实际实现（BUG-84）：AGENTS/模板/插件真源里"J1-JN"式的范围声明，
+     与本脚本 `def jN_…` / `---- JN` 反解出的实现上界比对——少写=声明滞后，多写=幻影判据，
+     两个方向都判红；扫描面为空、实现侧解析不到、两面一致却红，同样判红。
 
 设计约束：不改被校验的文档、不写库、纯只读。
 """
+import inspect
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -442,6 +455,79 @@ def j10_range_consistency():
     return j10_range_problems(j10_range_claims(), max(impl) if impl else 0)
 
 
+# ---- J4 子判据：注册表发布版本只能有一处自述（BUG-30 建议①，编号不扩，免得 J10 范围自述说谎）----
+# 与 J4 主判据的分工要说清：J4 管「文档自述的本项目版本 == moon.mod」，那说的是**代码版本**；
+# 「注册表上到底发布到哪个版本」是另一件事，本机没有复核通道（WebFetch 被策略拦过，实测不可达）。
+# BUG-30 的原始形状正是两份现状面各写一个发布版本（README 的 MochaCakes 行 vs BACKLOG 的 done 行），
+# 都无验证链接 ⇒ 读者无法判新旧。既然证不了，就把"只允许一处权威自述"做成硬门：
+# 第二处出现即红；权威面（BACKLOG 的发布条目）被删空同样即红——删正身来消解违例不是修法。
+RE_PUB_LINE = re.compile(r"发布|published|mochacakes|mooncakes", re.I)
+RE_VER = re.compile(r"(?<![\d.])v?([0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2})(?![\d.])")
+PUB_AUTHORITY = "BACKLOG.md"
+
+
+def pub_surfaces():
+    """扫描面从 git 跟踪清单派生（BUG-68 口径：手写元组必然落后于新增文档）。
+    历史面豁免：memory/ reports/ CHANGELOG/ 日期名文件是当时的记录，不是现状断言。
+    git 不可用或枚举过小时拒绝出绿灯。"""
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "-z", "--", "*.md"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+    except Exception as e:
+        raise SystemExit(f"FATAL J4 无法调用 git ls-files（{e}）—— 拒绝在无枚举时出绿灯")
+    if r.returncode != 0:
+        raise SystemExit(
+            f"FATAL J4 git ls-files 退出码 {r.returncode}：{r.stderr.strip()[:200]}")
+    files = [x.replace("\\", "/") for x in (r.stdout or "").split("\0") if x.strip()]
+    keep = [
+        f for f in files
+        if f != "CHANGELOG.md"
+        and not f.startswith(("memory/", "reports/", "docs/superpowers/plans/"))
+        and not re.match(r"^\d{4}-\d{2}-\d{2}", Path(f).name)
+    ]
+    if len(keep) < 10:
+        raise SystemExit(f"FATAL J4 只枚举到 {len(keep)} 份现状 .md（<10 视为枚举失效）")
+    return keep
+
+
+def publication_claims(paths=None):
+    """现状面里对『注册表发布版本』的自述：返回 [(相对路径, 行号, 版本号)]。"""
+    out = []
+    for rel in (paths if paths is not None else pub_surfaces()):
+        p = ROOT / rel
+        if not p.is_file():
+            continue
+        text = p.read_text(encoding="utf-8", errors="replace")
+        for ln, line in enumerate(text.splitlines(), 1):
+            if not RE_PUB_LINE.search(line):
+                continue
+            for m in RE_VER.finditer(line):
+                out.append((rel.replace("\\", "/"), ln, m.group(1)))
+    return out
+
+
+def publication_problems(claims, authority=PUB_AUTHORITY, swept=None):
+    """纯判定：权威面恰好有自述，别的现状面一处都不许有。喂合成输入即可考它。
+    swept 是**扫描面**（不是命中面）：扫描面为空 ⇒ 枚举器饿死，判据不许顺势报绿。"""
+    problems = []
+    if swept is not None and not swept:
+        return [f"J4 扫描面为空 —— 没抓到声明不等于没有问题，先判枚举器坏"]
+    if not [c for c in claims if c[0] == authority]:
+        problems.append(
+            f"J4 {authority} 里没有发布版本自述 —— 把唯一权威删掉来消解违例不是修法")
+    for rel, ln, v in [c for c in claims if c[0] != authority]:
+        problems.append(
+            f"J4 {rel}:{ln} 另写一处发布版本 {v}（本机无注册表复核通道，"
+            f"第二处自述只会与 {authority} 打架）—— 请删掉版本号并指向 {authority} 的发布条目")
+    return problems
+
+
+def j_publication_consistency():
+    swept = pub_surfaces()
+    return publication_problems(publication_claims(swept), swept=swept)
+
+
 def j_selftest():
     """负向自检：每条新判据都必须能在合成违例上发红，否则它只是装饰。"""
     fails = []
@@ -518,6 +604,25 @@ def j_selftest():
         fails.append("J10 在真实现状面上就红了：" + j10_real[0])
     if not j10_range_claims():
         fails.append("J10 现状规范表面一处范围声明都没有 —— 扫描面对象选错了")
+    # J4 子判据（BUG-30）：注册表发布版本只能有一处权威自述。四条对照缺一不可——
+    # 两处打架必红、权威被删空必红、扫描面空转必红、单处自述不许误红。
+    if not any("另写一处" in p for p in publication_problems(
+            [(PUB_AUTHORITY, 15, "0.2.4"), ("README.md", 190, "0.2.5")],
+            swept=["README.md", PUB_AUTHORITY])):
+        fails.append("J4 对『两处发布版本自述』不敏感 → BUG-30 的原始形状会重犯")
+    if not any("没有发布版本自述" in p for p in publication_problems(
+            [("README.md", 190, "0.2.5")], swept=["README.md", PUB_AUTHORITY])):
+        fails.append("J4 在权威面缺声明时不红 → 删掉 BACKLOG 那行就能骗过判据")
+    if publication_problems([(PUB_AUTHORITY, 15, "0.2.4")],
+                            swept=[PUB_AUTHORITY, "README.md"]):
+        fails.append("J4 对唯一权威的干净现状误红（恒红判据不可信）")
+    if not any("扫描面为空" in p for p in publication_problems([], swept=[])):
+        fails.append("J4 扫描面空转时不红（没抓到声明 ≠ 没有问题）")
+    if len(pub_surfaces()) < 10:
+        fails.append("J4 枚举器饿死：现状面 .md 少于 10 份")
+    j4_real = j_publication_consistency()
+    if j4_real:
+        fails.append("J4 在真实现状面上就红了（先判解析器坏，再判文档坏）：" + j4_real[0])
     if "output_validate" not in reg:
         fails.append("J8 解析不到 output_validate（解析器失效）")
     else:
@@ -529,6 +634,11 @@ def j_selftest():
         if "contains" in [k for k in keys if k not in reg["output_validate"]["props"]]:
             fails.append("J8 把子 schema 键 contains 误伤为臆造参数（应只看 depth-1）")
     return fails
+
+
+# 自检正文的源码快照：SELFTEST OK 那行报"覆盖了哪几条判据"必须从这里反解，
+# 手写这份清单就等于"声称有 J4 对照、实际正文里一条没有"（J10 管的正是这类漂移）。
+J_SELFTEST_SRC = inspect.getsource(j_selftest)
 
 
 def miss_ids_of(canon_text, ids):
@@ -569,9 +679,12 @@ def main(argv):
             for f in fails:
                 print("  - " + f)
             return 2
-        print(f"SELFTEST OK: 真源解析到 {n} 个工具，J6/J7/J8/J9/J10 对合成违例均发红"
-              "（J9 另含『干净输入不得误红』『英文不算契约』『分工写清不得误红』三条反向对照"
-              "与『分工清单落空必红』一条；J10 含滞后/幻影/空扫描/解析器饿死四条 + 两面一致不误红对照）")
+        # 自述范围从**自检正文**派生，不手写：写了 J4 的对照却没进正文，这里就少报一条。
+        rules = sorted({int(x) for x in re.findall(r'"J(\d+) ', J_SELFTEST_SRC)}, key=int)
+        print(f"SELFTEST OK: 真源解析到 {n} 个工具，"
+              + "/".join(f"J{r}" for r in rules) + " 对合成违例均发红"
+              "（反向对照含『干净输入不得误红』『英文不算契约』『分工写清不得误红』"
+              "『两面一致不误红』，防空转含『分工清单落空必红』『空扫描必红』『解析器饿死必红』）")
         return 0
 
     agents_txt = AGENTS.read_text(encoding="utf-8")
@@ -608,6 +721,7 @@ def main(argv):
             if v != mv:
                 problems.append(f"{rel} 自述版本 {v} != moon.mod {mv}（若为历史陈述请放进带日期的时间线小节）")
 
+    problems += j_publication_consistency()
     problems += j6_standard_consistency()
     problems += j7_stale_wording()
     problems += j8_template_params()

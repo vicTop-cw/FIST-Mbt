@@ -375,3 +375,137 @@ test "project_health 健康卡：聚合六类计数 + 等级判定（R68）" {
     _ => abort("blocked 计数缺失")
   }
 }
+
+///|
+/// BUG-29 夹具：把任务推到已完成（deliv 非空则带交付物，空则复现"无成果已完成"的探针形状）
+fn b29_done(id : String, deliv : String) -> @core.Task {
+  let t0 = @core.Task::new(
+    id~,
+    project_dir="/proj/board",
+    description="BUG-29 夹具 " + id,
+    created_at="2026-09-27T00:00:00Z",
+  )
+  let t1 = match t0.claim(assignee="bot") {
+    Ok(x) => x
+    Err(m) => abort("claim: " + m)
+  }
+  let t2 = match t1.execute() {
+    Ok(x) => x
+    Err(m) => abort("execute: " + m)
+  }
+  let t3 = match t2.submit() {
+    Ok(x) => x
+    Err(m) => abort("submit: " + m)
+  }
+  let t4 = if deliv == "" {
+    t3
+  } else {
+    t3.with_deliverable(deliv, "2026-09-27T00:01:00Z")
+  }
+  match t4.complete(completed_by="human_steward") {
+    Ok(x) => x
+    Err(m) => abort("complete: " + m)
+  }
+}
+
+///|
+/// 读顶层整数字段
+fn b29_num(j : Json, key : String) -> Int {
+  match j.value(key) {
+    Some(Json::Number(n, ..)) => n.to_int()
+    _ => abort("\{key} 缺失: " + j.stringify())
+  }
+}
+
+///|
+/// 读顶层布尔字段
+fn b29_bool(j : Json, key : String) -> Bool {
+  match j.value(key) {
+    Some(v) =>
+      match v.as_bool() {
+        Some(b) => b
+        None => abort("\{key} 非布尔: " + j.stringify())
+      }
+    None => abort("\{key} 缺失: " + j.stringify())
+  }
+}
+
+///|
+test "BUG-29：已完成单列 done_no_artifact 档——status_summary / board 两处口径一致" {
+  let tasks = [
+    b29_done("D1", "交付物 A"),
+    b29_done("D2", ""),
+    b29_done("D3", ""),
+    b29_done("D4", "交付物 D"),
+  ]
+  let s = render_status_summary(tasks, ["default"], "0.3.0")
+  // 已完成=4，其中无交付物=2（旧口径把两者混为一谈，指挥官按 status 判进度就把探针读成成果）
+  match s.value("by_status") {
+    Some(Object(m)) =>
+      match m.get("已完成") {
+        Some(Json::Number(n, ..)) => assert_eq(n.to_int(), 4)
+        _ => abort("by_status.已完成 缺失: " + s.stringify())
+      }
+    _ => abort("by_status 缺失")
+  }
+  assert_eq(b29_num(s, "done_no_artifact"), 2)
+  let b = render_board_ascii(tasks, "default")
+  assert_eq(b29_num(b, "done_no_artifact"), 2)
+  match b.value("ascii") {
+    Some(Json::String(a)) => {
+      assert_true(a.contains("已完成:4(无交付物2)"))
+      // 作用域一致性：board 的计数按 ns 过滤后仍与 status_summary 同源
+      let b2 = render_board_ascii(tasks, "nosuch")
+      assert_eq(b29_num(b2, "done_no_artifact"), 0)
+    }
+    _ => abort("ascii 缺失")
+  }
+}
+
+///|
+/// 读 project_health 的 grade（与上方既有用例同口径，BUG-29 棘轮用例复用）
+fn ph_grade(j : Json) -> String {
+  match j.value("grade") {
+    Some(Json::String(g)) => g
+    _ => abort("grade 缺失: " + j.stringify())
+  }
+}
+
+///|
+test "BUG-29：棘轮——残留数等于基线不报警，高出基线即 project_health 压到 attention" {
+  // 基线=账本点名作废的探针单（T0r286/T0r287，见 memory/bugs.md BUG-29）
+  // P1 是待领取：让等级只由"残留"这一个变量决定（否则全已完成会先撞上 stalled）
+  let p1 = @core.Task::new(
+    id="P1",
+    project_dir="/proj/board",
+    description="BUG-29 夹具 待领取",
+    created_at="2026-09-27T00:00:00Z",
+  )
+  let at_baseline = [
+    p1,
+    b29_done("A1", ""),
+    b29_done("A2", ""),
+    b29_done("A3", "有交付物"),
+  ]
+  let h0 = render_project_health(at_baseline, "0.3.0")
+  assert_eq(b29_num(h0, "done_no_artifact"), 2)
+  assert_eq(b29_bool(h0, "residue_over_baseline"), false)
+  assert_eq(ph_grade(h0), "healthy")
+  // 多一条无交付物的已完成 ⇒ 只许降不许升，新高即红灯（等级降级 + 显式布尔位）
+  let over = [
+    p1,
+    b29_done("B1", ""),
+    b29_done("B2", ""),
+    b29_done("B3", ""),
+    b29_done("B4", "有交付物"),
+  ]
+  let h1 = render_project_health(over, "0.3.0")
+  assert_eq(b29_num(h1, "done_no_artifact"), 3)
+  assert_eq(b29_bool(h1, "residue_over_baseline"), true)
+  assert_eq(ph_grade(h1), "attention")
+  // 清干净（残留归零）也必须仍然 healthy——防止判据反向恒红
+  let clean = [p1, b29_done("C1", "交付物"), b29_done("C2", "交付物")]
+  let h2 = render_project_health(clean, "0.3.0")
+  assert_eq(b29_num(h2, "done_no_artifact"), 0)
+  assert_eq(ph_grade(h2), "healthy")
+}

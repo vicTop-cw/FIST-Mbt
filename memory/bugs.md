@@ -10,7 +10,7 @@
 
 行首示例（为避免被按行计数的判据当成条目，这里不写成行首形态）：
 
-- `## BUG-n [ISO 时间] [high|medium|low] 状态 [→BUG-m]`　← `→BUG-m` 只有 DUPLICATE 必须带
+- `## BUG-n [ISO 时间] [critical|high|medium|low] 状态 [→BUG-m]`　← `→BUG-m` 只有 DUPLICATE 必须带
 - `### FIXED(<日期 轮次> / BUG-a[, BUG-b …])`　← 抬头里的编号集合＝本条小记点名收掉的条目
 
 | 状态 | 含义 | 立此状态需要的证据 |
@@ -151,7 +151,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
   状态位仍显示 OPEN 是**已知缺陷 BUG-9 的表现**，不是遗漏。真正关闭需补 bug_close API（下一轮）。
 - reported_by: pentad-r1-fix（卫生复核，非新缺陷）
 
-## BUG-8 [2026-09-26T06:26:20Z] [medium] OPEN
+## BUG-8 [2026-09-26T06:26:20Z] [medium] FIXED
 - summary: [ledger-lifecycle] src/server/bugreport.mbt:264 自动发布的修复单硬落 namespace "bugs"，与发起 ns 断裂，根任务上卷覆盖不到它
 - detail: 现象：`report_bug(publish_task=true)` 生成的修复单被写死在 ns `bugs`（`src/server/bugreport.mbt:264` 的 `ns="bugs"`），`parent_id=null`，而调用方本轮用的是 ns `cypy-polish-20260926`。
 活证据（2026-09-26 实测，cwd=E:/IDEProjects/AI/Cypy）：8 张修复单 T0r6..T0r13 的 `claim`/`verify` 原始回复里都带 `"namespace": "bugs", "parent_id": null`，见 E:/IDEProjects/AI/Cypy/.fist-polish-20260926/close_fixes.out.json 的 `BUG-1:claim` 与 `BUG-8:claim` 两条。
@@ -159,7 +159,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 建议（按代价升序）：① `report_bug` 增加 `task_namespace` 入参，缺省仍为 `bugs` 但允许调用方指定；② 返回值与 `bug_list` 行都补 `namespace`/`task_id` 已在做，再加 `root_task_id` 以便按发起树聚合；③ 文档明确写「修复单落在独立 ns `bugs`，不挂到调用方任务树」，别让「父任务自动上卷」的措辞覆盖它。
 - reported_by: cypy-polisher
 
-## BUG-9 [2026-09-26T06:26:20Z] [medium] OPEN
+## BUG-9 [2026-09-26T06:26:20Z] [medium] FIXED
 - summary: [ledger-lifecycle] 缺陷账本只写不销：无 bug 关闭/状态位 API，修复单全部「已完成」后 bugs.md 条目仍恒为 OPEN
 - detail: 现象：bug 工具族只有 `report_bug`（写）与 `bug_list`（读）（`src/server/server.mbt:4024` 与 `:4096` 是全部注册点），没有任何 `bug_close`/`bug_resolve`/状态入参。`bugs.md` 条目头写 `## BUG-n [ts] [sev] OPEN`，此后无论关联修复单走到哪一步，该状态位都没有合法路径可翻转。
 活证据（2026-09-26 实测）：E:/IDEProjects/AI/Cypy/memory/bugs.md 的 BUG-1..BUG-8 八条全部标 `OPEN`（grep `^## BUG-` 八行尾列全 OPEN），而同轮 E:/IDEProjects/AI/Cypy/.fist-polish-20260926/close_fixes.out.json 显示 T0r6..T0r13 八张修复单 `verify` 回复 status 全部 `已完成`。同一事实两份账，一份说全绿一份说全开。
@@ -167,6 +167,9 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 建议：① 新增 `bug_close(bug_id, resolved_by, task_id, now)`，把状态位写成 `CLOSED [<task_id>]` 并落 call_log；② 或在修复单 `verify` 成功时自动销账（需要 bug↔task 反查表，`report_bug` 已经在写 task_id，具备条件）；③ 过渡期至少让 `bug_list` 返回关联任务的当前 status，别让读方只能看 OPEN。
 - reported_by: cypy-polisher
 
+
+### FIXED(2026-09-27T12:18:14Z / BUG-9)
+- evidence: 控制面落地：src/server/bugreport.mbt 新增 bug_fix（抬头 + ### FIXED 小记同一笔、幂等）与 bug_mark_status（OPEN/DUPLICATE/FALSE_POSITIVE 改判；DUPLICATE 校主编号存在/非自指/非链，FALSE_POSITIVE 可追加一行立据），并登记为两个 MCP 工具（120→122，AGENTS/README/deliverable/scoring_rubric/ARCHITECTURE/README(_EN/.mbt)/插件态同步）。刻意不接受「只改抬头标 FIXED」：那会绕过 gen_plugins 硬门①、产出一本生成器拒绝产出的红账本。读侧 bug_list 每行带回 linked_task_status，顶层 open_with_linked_done 一次看见两份账的矛盾。锁 src/server/bugreport_status_wbtest.mbt 三条；**本脚本自身即调用面证据**：真实账本的 OPEN→FIXED 全部由工具写盘，无一手改 markdown。
 ## BUG-10 [2026-09-26T06:26:20Z] [low] FALSE_POSITIVE
 - summary: [lifecycle] archive 走 complete 且要求状态 [待验收]，停在 [待领取] 的任务没有任何合法废弃路径（孤儿单永久残留）
 - detail: 现象：`archive` 内部走 `complete` 迁移，前置状态是 `[待验收]`；而诊断/试写期间产生的、只到 `待领取` 的任务既不能 `archive`（迁移非法）、也没有 `cancel`/`abandon` 类工具可废弃，`verify`/`submit` 又要求先有交付物。结果是任务库里永久留下无法清理的行。
@@ -175,7 +178,7 @@ audit_log 返回体改为 {scope:process, note 指向 call_log, entries[], count
 建议：① 提供 `abandon(task_id, by, reason, now)`：允许从 `待领取`/`执行中` 迁到`已废弃`，reason 进 call_log；② 或让 `archive` 接受 `待领取` 并把它当「未开工即作废」，不再要求 complete 前置；③ 错误文案补一句「可用工具：<xxx>」，让调用方不用读源码找出路。
 - reported_by: cypy-polisher
 
-## BUG-11 [2026-09-26T06:26:20Z] [low] OPEN
+## BUG-11 [2026-09-26T06:26:20Z] [low] FIXED
 - summary: [contract] report_bug 返回 `bug_id` 而 bug_list 同一字段叫 `id`，按写侧字段名做对账的读侧会静默拿到 null
 - detail: 现象：写侧 `report_bug` 响应键是 `bug_id`，读侧 `bug_list` 每行的键是 `id`（值同为 `BUG-n`）——同一实体两个字段名，工具描述未提示这一差异。
 活证据（2026-09-26 实测，cwd=E:/IDEProjects/AI/Cypy）：`bug_list(project_dir=".")` 首行键集合 `['detail','id','reported_by','severity','status','summary','task_id','ts']`，且 `any('bug_id' in row)` 为 False；而入账响应里是 `"bug_id": "BUG-8"`。本轮幂等入账器按 `row.get("bug_id")` 取值，导致重跑时 7 条「已在账」的缺陷在 E:/IDEProjects/AI/Cypy/.fist-polish-20260926/intake_map.json 中被写成 `"bug_id": null`（`task_id` 仍正确），报告渲染时以 KeyError 暴露。
@@ -338,7 +341,7 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
 建议（按代价升序）：① 在 instrumented_tool 的包装层做一次统一校验（读 inputSchema 的 required，缺失或空串即返回 ToolError 并落 call_log），一处改动覆盖 74 个工具，零逐案改动；② 至少给 saga_register(compensation)/reserve_scope(scope)/circuit_status(circuit) 三个治理面加显式守卫，错误文案要说明接受什么形态（同 BUG-5 的教训）；③ 把"required 声明数 == 有校验的工具数"写进 scripts/check_tools_sync.py 一类的守卫，防止后续新增工具继续只写宣告不写校验。
 - reported_by: pentad-r2-bugfind
 
-## BUG-20 [2026-09-26T09:27:32Z] [medium] OPEN
+## BUG-20 [2026-09-26T09:27:32Z] [medium] FIXED
 - summary: [bugfind:scope] cost_budget_split 无视 task_id/namespace 入参、恒扫全库，且负预算直接产出负份额（本工具宣称「按依赖图阶段切分预算」，实际无法回答任何单棵任务树的预算）
 - detail: 契约：src/server/server.mbt 的工具描述与 AGENTS.md 均写「给定总预算按任务 DAG 阶段(slack earliest 层级)切分……瓶颈阶段占额可见，超支先预警」，入参含 task_id（必填 budget）。
 
@@ -386,7 +389,7 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
 处置说明：本轮寻虫发现，**不在 Round 2 修复集合的 4 项里**（那是 BUG-4/18/2/3），改派给 Round 2 的 polish 阶段由指挥官收口，避免与修复子代理并发争抢 README.md。
 - reported_by: pentad-r2-verify
 
-## BUG-23 [2026-09-26T09:38:37Z] [high] OPEN
+## BUG-23 [2026-09-26T09:38:37Z] [high] FIXED
 - summary: [bugfind:multi-tenant] publish 对未知/错名入参静默忽略并落到 namespace=default，且响应不回显 namespace —— 多租户隔离在调用方无感的情况下失效
 - detail: 现象：src/server/server.mbt 的 publish handler 用 get_str(args, namespace, default=default) 取值，而 instrumented_tool（server.mbt:674）与底层 s.tool 都不校验调用方传进来的键名是否在 schema 里。于是把参数名写成 ns 时，请求被整颗静默降级到 default 命名空间，而 publish 的返回体只有 {task_id, message:已发布根任务}，不含 namespace —— 调用方在调用面看不出任何异常。
 
@@ -427,7 +430,7 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
   3) 回归锁：断言 samples 超界时返回体含被钳制的证据，防止「加了上界但依旧静默」。
 - reported_by: pentad-r2-bugfind
 
-## BUG-25 [2026-09-26T09:38:38Z] [medium] OPEN
+## BUG-25 [2026-09-26T09:38:38Z] [medium] FIXED
 - summary: [bugfind:oracle-quality] goal_drift_check 在中文任务描述上恒判漂移：对 Round 1 已通过 Omega 强验证的 T0r292 任务树给出 aligned=0 / drift_suspect=6（6/6 全误报），该门禁在本项目主语言下不具判别力
 - detail: 现象：goal_drift_check 的 drift = 1 - jaccard(根目标, 子任务)，阈值 0.7，basis 自述「词法相似度纯计算，零 LLM 自评」。中文描述经其分词后词集合高度稀疏且几乎不相交，jaccard 天然趋 0 -> drift 恒趋 1 -> 任何中文子任务都会被判定为疑似偏离根目标。
 
@@ -447,7 +450,7 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
   3) 标定完成前，把 goal_drift_check 输出降级为 advisory 并在返回体注明「中文语料下未标定，勿作打回依据」，防止下游把它当硬门。
 - reported_by: pentad-r2-bugfind
 
-## BUG-26 [2026-09-26T09:38:39Z] [low] OPEN
+## BUG-26 [2026-09-26T09:38:39Z] [low] FIXED
 - summary: [bugfind:numeric] phi_accrual 接受负 elapsed 并返回 verdict=healthy；intervals 含 1e300 时 mean 被静默钳成 2147483647（Int32 上溢饱和哨兵），怀疑度 phi 的建模输入已失真却仍输出结论
 - detail: 现象：phi_accrual(intervals, elapsed, threshold) 是看门狗判活核心（watchdog_tick 的 phi_gate=true 分支用它替代固定 timeout）。实测两处数值边界无校验。
 
@@ -469,7 +472,7 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
   3) 给 σ≈0 回退分支加回归判据：构造必然上溢的输入样例，断言不得出现 verdict（必须走拒绝路径），防止「修了溢出但仍在输出结论」。
 - reported_by: pentad-r2-bugfind
 
-## BUG-27 [2026-09-26T09:45:15Z] [high] OPEN
+## BUG-27 [2026-09-26T09:45:15Z] [high] FIXED
 - summary: [bugfind:unattended-paradox] watchdog_tick 的 phi_gate=true 会让『只发过一次心跳就死掉的任务』永远不被 heal —— 概率判活把它要防的那种失效恰好判成不需处理，比默认固定 timeout 更差
 - detail: 现象：src/ops/ops_heal.mbt:110 heal_stale_tasks_by_phi 的判定链是这样分叉的：
   - last_seen_map.get(task) == None  -> true（从未心跳过，沿用 no_signal 语义，会 heal）
@@ -498,7 +501,7 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
   4) 顺带：让 heartbeat 在首次上报时也落一条起始间隔占位或直接允许单点回退，避免历史永远空。
 - reported_by: pentad-r2-ledger-audit
 
-## BUG-28 [2026-09-26T09:45:16Z] [medium] OPEN
+## BUG-28 [2026-09-26T09:45:16Z] [medium] FIXED
 - summary: [bugfind:dead-schema] store 建了 runs 表并注释为 Omega/scheduler 的数据面，但全仓无任何写入、读取点，恒为 0 行 —— 交付与验收的运行记录没有持久化落点
 - detail: 现象：src/store/store_sqlite.mbt:60 CREATE TABLE IF NOT EXISTS runs (id, task_id, run_type DEFAULT 'verify', status DEFAULT 'running', detail, started_at, finished_at)，文件头 :3 与 :55 的注释逐字写「specs / runs / heartbeats / archive 先建表供 Phase 2(Omega) / Phase 5(scheduler) 使用」。
 
@@ -518,7 +521,7 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
   3) 无论选哪条，加一条守卫判据：库内每张表要么有写入点、要么在文档中标注为预留——防止再长出第二张 runs。
 - reported_by: pentad-r2-ledger-audit
 
-## BUG-29 [2026-09-26T09:46:52Z] [low] OPEN
+## BUG-29 [2026-09-26T09:46:52Z] [low] FIXED
 - summary: [ledger-residue] 探针批次的 2 条假交付单永久停在已完成：T0r286/T0r287 描述为 BUG-1/BUG-2 探针、deliverable 空、specs 0 条、created_at==updated_at 同一秒，被计入已完成 233 的统计
 - detail: 现象（2026-09-26 只读直查 fist-mbt.db mode=ro）：
   select id,ns,parent_id,completed_by,created_at,updated_at,description from tasks
@@ -543,7 +546,7 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
   3) 加一条守卫判据：status='已完成' 且 (deliverable 空 或 无 specs 记录) 的数量必须为 0，否则红灯——这条能在 CI 直接跑，成本最低且能防后续再积累。
 - reported_by: pentad-r2-ledger-audit
 
-## BUG-30 [2026-09-26T09:50:31Z] [medium] OPEN
+## BUG-30 [2026-09-26T09:50:31Z] [medium] FIXED
 - summary: [doc-staleness] 实操手册 USAGE.md 停在 2026-09-12 的 v0.2.3 快照，覆盖 75/116 工具——本项目当前主用法（四模式流水线）与 output_validate/issue_scan/project_standards/laya 等新能力全都不在手册里；另 README 与 BACKLOG 对「已发布到 mooncakes 的版本」互相矛盾
 - detail: 先说清楚**这不是"USAGE 少列了 41 个工具"那么简单**，也不该被当成缺陷直接修：USAGE.md:5-6 逐字自述「定位：**实操调用手册**。README.md 是项目概览，本文件是「如何真正用它」的手把手文档」——它有意的不是全量参考（README 才是），所以覆盖面小本身符合其声明范围。真正的问题在别处。
 
@@ -562,6 +565,9 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
   3) 给守卫补一条版本一致性判据：所有 *.md 里形如 vicTop-cw/fist-mbt@x.y.z 的自述版本必须等于 moon.mod 的 version，或显式标注为历史戳（如 CHANGELOG / 版本时间线小节允许旧值）——注意区分"当前自述"与"历史陈述"，Round 1 已刻意把 README 的 0.2.4/0.2.5 时间线行保留为历史，不能一刀切判红。
 - reported_by: pentad-r2-doc-surface
 
+
+### FIXED(2026-09-27T12:18:14Z / BUG-25, BUG-30)
+- evidence: BUG-25 goal_drift_check 词法口径重标定（commit 13b5125）：drift 判定降为 advisory + 新增 insufficient 分类 + CJK 二字组分词；标定数字由 scripts/calibrate_goal_drift.py 实测产出并嵌进返回体 calibration{}。第一版假设（族内相对阈）被自己的实测推翻（39 对真关联上 59% 假阳、族内规则 TP=0）故未采纳，被否的口径连同数字留在标定输出里。BUG-30 文档面：USAGE.md 顶部写明覆盖边界（演示到 0.2.3 的调用面，四模式流水线看 AGENTS.md 与 templates/pipeline_mode_*.md）；README 的 MochaCakes 行删掉写死的发布版本——本机没有可复核注册表的通道（WebFetch 被策略拦，实测不可达），改为指向 BACKLOG 的发布条目，并把「发布版本只能有一处自述」做成 scripts/check_doc_surface.py 的 J4 子判据（扫描面从 git ls-files 派生，--selftest 四条对照：两处打架必红、权威删空必红、空扫描必红、单处不误红）。
 ## BUG-31 [2026-09-26T10:41:50Z] [medium] FIXED
 - summary: [contract] src/server/output_validate.mbt:63-90 parse_artifact 不校验未知字段：拼错/臆造的 artifact 键被静默降级为「文件存在+非空」，verdict 仍是 pass，且 detail 断言「invariant 全部通过」——L4 硬门可被空检查满足
 - detail: 现象（2026-09-26 实测，server cwd=E:/IDEProjects/AI/Cypy，证据 .fist-polish-20260926/probe_output_validate3.json）：
@@ -607,7 +613,7 @@ scripts/fist.py 启动前比较 `max(mtime src/**.mbt|.mbti, moon.mod, moon.pkg)
 守卫：scripts/check_tools_sync.py 判据 5 同时禁止 schema 广告 `"now": string_prop` 与描述里的「、now 时间戳」（正则退化即 FATAL）。
 证据：调用面 J03 全部 116 工具的 inputSchema.properties 无 now、J04 全部 description 无「now 时间戳」。
 
-## BUG-34 [2026-09-26T11:23:49Z] [medium] OPEN
+## BUG-34 [2026-09-26T11:23:49Z] [medium] FIXED
 - summary: [bugfind:circuit-halfopen] 熔断 Half-Open 无探测节流：恢复窗内所有调用都放行，与工具描述承诺相反
 - detail: src/engine/engine_circuit.mbt:140 `let allow = state != "open"` → half_open 对任何调用回 allow_call=true；全文件无 probe/节流计数。而 server.mbt:3311 的 circuit_status 描述承诺「Open 且 elapsed>=recovery_secs → 转 Half-Open（放行探测请求，**其余仍快速失败**）」。后果：恢复窗口全量透传，正是要防的下游踩踏；半开态退化成「只是换个名字的 closed」。判据：threshold=1 触发 open → 过 recovery → 连查 circuit_status N 次全 allow_call=true，无一次被挡。修复方向：半开态给探测配额（默认 1，可配 probe_limit），配额用尽即回快速失败；成功探测才复位。
 
@@ -618,7 +624,7 @@ native/js 双后端 + 迁移），属跨模块契约变更，不在一轮 fix �
 比现状更容易误导——宁可不改。当前"描述承诺 vs 实现"的落差仍是活缺陷（OPEN），出路：cb 表加 `probe_count` 列，
 `circuit_status` 转 half_open 时置 0，`circuit_fail/succeed` 之外的每次 half_open 放行先自增并在达 probe_limit(默认 1) 后返回 allow_call=false。
 
-## BUG-35 [2026-09-26T11:23:49Z] [medium] OPEN
+## BUG-35 [2026-09-26T11:23:49Z] [medium] FIXED
 - summary: [bugfind:github-payload] github flush/comment 拼的 --data 不是合法 JSON（值套 shell_quote + 正文含裸换行），win32 还走 cmd.exe 单引号
 - detail: src/server/github_sync.mbt:257-270 用字符串拼接生成 `--data`，字段值套 shell_quote（:384-387 只把 ' 变成 " 序列，不转义双引号与换行）；而 build_issue_body 恒含裸换行 → 产出的 --data 无法被 json.loads 解析。github_js.mbt:23-24 在 win32 走 `cmd.exe /c`，单引号在 cmd 下不构成引用、`${FIST_GITHUB_TOKEN}` 也不展开。影响面：issue_up 的**落地面**（把账本推到远端 issue）整条失败，而不是某条边缘字段。可离线判据（不需 token）：夹具 memory/bugs_pending_github.json 放一条 pending → `call github_flush_plan --project-dir .` → 取返回 curl_command 的 --data 段做 json.loads，当前必抛。修复方向：用 Json 构造 payload 再 stringify，shell_quote 只用于 shell 层，不承担 JSON 转义职责（两层混淆是根因）。
 
@@ -1177,24 +1183,30 @@ issue_scan 的命中条件从裸 `line.contains(needle)` 改成 scan_outside_lit
 - reported_by: pmode-r5-bugfind
 - task_id: T0r389
 
-## BUG-79 [2026-09-27T05:32:12Z] [medium] OPEN
+## BUG-79 [2026-09-27T05:32:12Z] [medium] FIXED
 - summary: [r5][rsv_release] SQLite 后端把『语句跑成功』当『删到了行』，非持有者调用也回 true
 - detail: 复核证据：src/store/store_sqlite.mbt:751 `DELETE FROM reservations WHERE scope = ? AND agent = ?`，:761-763 `let ok = stmt.execute(); stmt.finalize(); ok`；而 .mooncakes/mizchi/sqlite 的 **js 与 native 两版签名都是 `Statement::execute -> Bool`**（sqlite_js.mbt:358 / sqlite_native.mbt:489）——绑定层根本不给 changes()，所以这个 Bool 只表示『执行没报错』，删 0 行也返回 true。对照内存后端 src/store/store_rsv.mbt:31-43：`Some((a,_,_)) if a == agent => ...; _ => false` 是**校验持有者**的；函数头 :742 注释还写着『删除行数决定成功』。server.mbt:3692 把这个 Bool 直接当释放结果回给调用方。影响：生产（SQLite）后端上 B 非持有者调 reserve_release 会被告知『已释放』而预订仍在，于是 B 与 A 同改一份作用域——正是该原语要防的多 agent 撞车；内存后端的单测永远绿，抓不到。修复：删前先 rsv_get 校持有者（与内存后端同语义），不匹配回 false；锁：成对断言『持有者释放回 true、非持有者回 false 且预订仍在』，两后端同夹具。
 - reported_by: pmode-r5-bugfind
 - task_id: T0r390
 
-## BUG-80 [2026-09-27T05:32:12Z] [medium] OPEN
+## BUG-80 [2026-09-27T05:32:12Z] [medium] FIXED
 - summary: [r5][守卫] BUG-33 残留：28 处工具描述仍广告 now 参数，而判据 5 的正则在真源上命中 0 ⇒ 该守卫是装饰
 - detail: 复核证据（本会话 python 计数）：src/server/server.mbt 里 `、now。` 命中 15、`参数：now` 命中 3、`now(可选)` 命中 8、`now(时间戳)` 命中 2，合计 28 行；而 scripts/check_tools_sync.py:39 的 RE_NOW_AD = `"now"\s*:\s*string_prop|、now 时间戳` 在同一文件上**命中 0 次**。同时全仓 `get_str(args, "now")` 命中 0（唯一读 "now" 的地方是 selfdrive_round_tick.mbt:221 从 spec map 取，且该模块无调用面）⇒ 这 28 处广告的是没人读的参数。影响：① 契约说谎（BUG-33 原话：广告一个已删除的参数）；② 更实际的是 heartbeat —— 想注入受控心跳造 φ 间隔历史的人拿到墙钟，:1833 `prev != ts` 还会把同秒心跳丢掉，phi_accrual 的历史在无人值守里几乎不增长；heal/watchdog_tick 也写不出确定性超时判据。修复取向：先把正则换成能覆盖四种实测写法的口径（换完必须立刻 FATAL，否则新正则也是装饰），再按工具逐个决定：确实还接受 now 的把参数补回 schema（当前是拒收），只服务端盖章的删掉文案。因量级 28 处且涉及调用面语义，本条**先入账，修不修由指挥官在下轮定**，不许用『已有 FIXED 小记』把它读成闭环。
 - reported_by: pmode-r5-bugfind
 - task_id: T0r391
 
-## BUG-81 [2026-09-27T05:32:12Z] [medium] OPEN
+
+### FIXED(2026-09-27T12:18:14Z / BUG-34, BUG-29, BUG-80, BUG-28, BUG-35)
+- evidence: BUG-34 熔断 Half-Open 加探测节流：circuit_status 在 open→half_open 时把 failures 复用为「已放行探测数」并按 probe_limit(默认 1) 节流，超限走 deny 分支（src/engine/engine_circuit.mbt），锁 src/engine/engine_circuit_test.mbt 三条（含 stale 时钟回拨一支）。BUG-29 已完成零交付物进脉冲面：board_ascii.done_no_artifact + status_summary/project_health 挂 done_no_artifact 与 residue_over_baseline（基线 2 = 账本点名的 T0r286/T0r287，实测现库正好 2），锁 src/server/board_ascii_test.mbt 两条。BUG-80 守卫复活：scripts/check_tools_sync.py 判据 5 的 RE_NOW_AD 扩到实测四种写法并打印命中行号，真源删掉 27 处 now 广告（删前 RED 证据 temp/phaseC/bug80_red_before_deleting.log，删后 rc=0）。BUG-28 预留骨架不再隐形：新增 scripts/check_store_tables_wired.py（schema↔写入↔预留三向 + --selftest 合成违例）+ store_sqlite.mbt 的 `schema-reserved: runs` 标记 + ci.yml JS 轨一步。BUG-35 payload 交回 Json：flush_plan/comment/close 三处 --data 改由 Json::object(...).stringify()，shell_quote 按 POSIX '"'"' 转义（旧实现把 ' 静默换成 " 是篡改载荷），并加 payload_json 旁路；锁 src/server/github_sync_wbtest.mbt 三条（零网络零 token，判据口径就是账本建议③点名的那条）。
+## BUG-81 [2026-09-27T05:32:12Z] [medium] FIXED
 - summary: [r5][heal] 唯一不带 ns 的看护入口扫 list_all() ⇒ 一次 heal 回滚全库所有命名空间的在途任务
 - detail: 复核证据：src/ops/ops_heal.mbt:18 `for t in engine.list_all()`，而 src/store/store_sqlite.mbt:402 的 list_tasks 是 `SELECT ... FROM tasks`（**无 WHERE ns**），:424 的 list_tasks_in 才是 `... FROM tasks WHERE ns = ?`；同文件另一条跨进程版 heal（:71 起）用的是 engine.list_in_ns(ns)。heal 的 schema 只有 timeout_sec，描述也没给 ns 出口。影响：多 ns 共用根 fist-mbt.db 时，任一 agent 为自己 ns 调 heal 会把别的轮的 执行中/已领取/拆分中 一并 reopen_task；engine.mbt:766-786 的 reopen 不署名 ⇒ 枝干 assignee 被清空。与 watchdog_tick 描述承诺的『自动 heal 只作用于该 ns』形成直接反差。AGENTS.md 把 heal 写成『内存版，人工流程』只覆盖了心跳来源（init_heartbeats 已从库回填），不覆盖扫描范围这一半。修复：加可选 namespace 参数（不传=现状零回归，传了=按 ns 过滤），并在描述里点名不传的作用域；锁成对：两 ns 各塞一条超时任务，带 ns 只回滚一条。
 - reported_by: pmode-r5-bugfind
 - task_id: T0r392
 
+
+### FIXED(2026-09-27T12:18:14Z / BUG-8, BUG-11, BUG-20, BUG-23, BUG-26, BUG-27, BUG-79, BUG-81)
+- evidence: commit 9a26441 那一批（本条只补状态位，不改写其叙述）：BUG-8 report_bug 增 task_ns 并回显 task_namespace；BUG-11 bug_list 行与 report_bug 回执同时给 id/bug_id，→BUG-m 拆成 duplicate_of 字段；BUG-20 cost_budget_split 的 task_id/namespace 真参与取数、budget<=0 直接 rejected、返回体补 scope 自证；BUG-23 _instrument 拒缩写错名（ns↔namespace）——本脚本跑前先探调用面，探得 4005 才敢标；BUG-26 phi_accrual 加取值域门（负 elapsed / 非正间隔 → rejected 且不出结论）；BUG-27 heal_stale_tasks_by_phi 缺间隔历史时回落固定 timeout 而非弃权；BUG-79 SqliteStore::rsv_release 先校持有者再删（锁 store_backend_semantics_test.mbt 成对断言）；BUG-81 heal 的 ns 作用域显式化，缺省全库那条路在签名与描述里都写明。
 ## BUG-82 [2026-09-27T05:32:12Z] [low] FIXED
 - summary: [r5][selfdrive_export_tasks] 把字面量 "now" 当导出时间写进 memory/task.md
 - detail: 复核证据：src/ops/ops_selfdrive.mbt:333-338 把导出时间那一行拼成『（导出时间：』+ 字符串字面量 now + 『，共 … 条）』，而该函数签名（:325-329）里没有 now/ts 入参，server.mbt:2145-2148 也不传时间。影响：memory/task.md 是审视轮唯一的任务视图（templates/review_meta_prompt.md 指示审视者 selfdrive_get(kind=task) 读它），读到『导出时间：now』这种半成品字段，清单新鲜度就失去了可判依据——占位符被当成正文发出去。修复：用服务端时钟 now_default() 盖（与 BUG-33『时间戳服务端盖章』政策一致）；锁：导出后断言该行匹配『导出时间：20..-..-..T..:..』且不含裸 now。
@@ -1303,3 +1315,95 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
 - BUG-42：src/server/server.mbt:4441 描述已是一源四态 + cl1→cl7；锁 project_standards_wbtest.mbt:46/72 + J6/J7（issue_scan.mbt:6 注释仍称三形态）
 - BUG-48：src/server/server.mbt:4441；J7 扫 SERVER（check_doc_surface.py:233）；锁 test "R116：一源四态…"（本族主编号）
 - BUG-49：templates/pipeline_mode_{verify,tidy,polish}.md 无 check_results/now；锁 J8 + selftest:524（本族主编号）
+## BUG-85 [2026-09-27T12:18:14Z] [high] FIXED
+- summary: [bugfind:backend-divergence] MemoryStore::list_tasks 按 default_ns 过滤、SQLite 后端不过滤，同名方法两种语义
+- detail: 现象：trait 声明是「列出全部任务」，内存后端却按 default 命名空间过滤，SQLite 后端不过滤 ⇒ 凡按 list_all()/list_tasks 取数的工具（heal / cost_budget_split / status_summary 等）在测试里与生产里作用域不同：测试绿的那一份根本没跑过生产的数据形状。
+活证据（2026-09-27 实测）：同一夹具下 list_tasks 两后端返回行数不同；收口后按 trait 声明收敛，并让 list_tasks_in("") 在两后端同义（列出全部）。
+修复真源：src/store/store_memory.mbt / store_sqlite.mbt；锁：src/store/store_backend_semantics_test.mbt（成对断言两后端同语义）。
+注：本条正身早写在 commit 9a26441 的说明里但从未进账本 ⇒ 由本会话补登（BUG-9 的形状）。
+- reported_by: phaseC-independent-cleanup
+
+## BUG-86 [2026-09-27T12:18:14Z] [high] FIXED
+- summary: [guard:startup-args] 根 .mcp.json 改名后三个消费者仍钉旧名 ⇒ cl7 FATAL、仓库自测红、插件态无法重投影
+- detail: 现象：commit 254de24 把根 .mcp.json 改名为 .mcp.dev.json，而 gen_plugins / check_plugin_sync(cl7) / pipeline_r2_wbtest(BUG-18 锁) 三个消费者仍写死旧文件名。
+后果：cl7 直接 FATAL(2)（判据无法自证）、`moon test` 的 BUG-18 锁红、四宿主插件态无法重投影——即整个「一源四态」链条断在一份被搬走真源的配置文件上。
+修复：三处消费者统一走 MCP_CANDIDATES 按优先级解析实际存在的那份；J5 增加「真源不存在⇒红」（旧版在没有真源时「逐字相等」恒过，那是装饰）；投影正文里的文件名跟着解析结果走，不再写死。
+真源：scripts/gen_plugins.py、scripts/check_plugin_sync.py、src/server/pipeline_r2_wbtest.mbt。
+- reported_by: phaseC-independent-cleanup
+
+## BUG-87 [2026-09-27T12:18:14Z] [critical] FIXED
+- summary: [bugfind:string-interpolation] curl 命令里的 `Bearer ${FIST_GITHUB_TOKEN}` 被编译器当字符串插值 ⇒ 三个 plan 构造器在 JS target 运行时抛错
+- detail: 现象：src/server/github_sync.mbt 三处把 token 占位符写成字面量 `${FIST_GITHUB_TOKEN}`，MoonBit 按字符串插值编译，JS 产物是一行引用未定义变量的模板串。
+活证据（2026-09-27 实测，temp/phaseC/gh3.log）：`ReferenceError: FIST_GITHUB_TOKEN is not defined`，调用面分别在 github_flush_plan / github_build_comment_plan / github_build_close_plan。产物证据：_build/js/debug/test/src/server/server.whitebox_test.js 内 `Authorization: Bearer ${FIST_GITHUB_TOKEN}` 以模板占位符形态出现。
+影响：GitHub 同步的「生成计划」这一整段对外能力在 server 默认目标（JS）上完全不可用，native 侧则是编译期未定义标识符——不是边缘字段，是整条路。而且它此前**零覆盖**：只有把 payload 真解析一遍的判据才会撞出来（BUG-35 那条锁就是干这个的）。
+修复：新增 token_placeholder() 单一真源（`"$" + "{FIST_GITHUB_TOKEN}"` 拆开拼），三处共用；锁 src/server/github_sync_wbtest.mbt 第④条断言占位符逐字活到命令里。
+- reported_by: phaseC-independent-cleanup
+
+
+
+
+
+
+
+### FIXED(2026-09-27T12:18:14Z / BUG-85, BUG-86, BUG-87)
+- evidence: 这三条的正身写在补登的 detail 里（含 file:line、产物证据与可复跑判据）；修复真源分别是 src/store/store_memory.mbt+store_sqlite.mbt（BUG-85，锁 store_backend_semantics_test.mbt）、scripts/gen_plugins.py+check_plugin_sync.py+src/server/pipeline_r2_wbtest.mbt（BUG-86，J5 新增「真源不存在⇒红」）、src/server/github_sync.mbt 的 token_placeholder()（BUG-87，锁 github_sync_wbtest.mbt 第④条）。实测证据 = JS target 486/486 与七守卫 rc=0。
+## BUG-88 [2026-09-27T12:37:17Z] [high] FIXED
+- summary: [guard:vocab-drift] report_bug 的 severity 闭集含 critical/open，而 gen_plugins 的抬头文法只认 high|medium|low ⇒ 合法上报能写出判据读不到的抬头，生成器 FATAL
+- detail: 现象：两侧各写一份同一套词。
+  · 写侧 src/server/bugreport.mbt:14 `fn bug_severities() = ["open","critical","high","medium","low"]`，
+    且 :261 省略 severity 时**缺省落 "open"**；
+  · 判据侧 scripts/gen_plugins.py:76 抬头文法只匹配 `\[(high|medium|low)\]`。
+活证据（2026-09-27 实跑，本轮把自己撞红的就是这条）：把 BUG-87 按 severity=critical 入账后
+  `python scripts/gen_plugins.py` ⇒ `FATAL 真源自证失败：条目 87 条 / 可解析抬头状态 86 条不符`，
+  四宿主插件态无法重投影；`ledger_status` 同时报「BUG-87 被小记点名但状态不是 FIXED」
+  ——它其实已是 FIXED，只是文法读不到那行，于是**已修好的条目被投影成未修**。
+另一面：`open` 是状态词冒充严重度（抬头状态字段也叫 OPEN），缺省值 [open] 落在文法里同样读不到，
+  ⇒ 任何省略 severity 的上报都会写坏账本，且此前无一条测试覆盖（既有测试都显式传 severity）。
+影响：①生成链停摆（cl7 与插件投影全依赖 gen_plugins）；②对外那句「X 条待修」由抬头状态反解，
+  读不到的条目被直接丢掉 ⇒ 待修数被低估，这是"看起来更干净"的假绿方向。
+修复（本轮已落）：
+  1. 写侧闭集与缺省值改为 critical/high/medium/low（缺省 medium，去掉状态词 open）；
+  2. 判据侧文法同步为 `\[(critical|high|medium|low)\]`；memory/bugs.md 的抬头文法行同步；
+  3. 加**跨语言单源门禁** gen_plugins.severity_vocab_drift()：从 bugreport.mbt 解析 bug_severities()
+     与自己的文法做集合相等比对，漂移即 FATAL（生成前自检，与 ledger_status 四条硬门同处）；
+  4. 锁 src/server/bugreport_status_wbtest.mbt「BUG-88」一条：逐个 severity 往返
+     （写出去→从盘上读回该字段），并钉缺省值=[medium]、闭集外的 blocker 必须被显式拒绝。
+残余（不自证已修）：门禁靠正则读两侧源码，若词表改成从常量/外部文件取，解析会失效 ⇒
+  解析失效那一支已按「先判解析器坏」出红，但形状仍是约定而非证明。
+- reported_by: phaseC-independent-cleanup
+
+
+
+### FIXED(2026-09-27T12:37:17Z / BUG-88)
+- evidence: 两侧词表收成一份真源并互锁：写侧 src/server/bugreport.mbt 的 bug_severities()=[critical,high,medium,low]、缺省由 open 改 medium；判据侧 scripts/gen_plugins.py 的抬头文法同步加 critical；memory/bugs.md 抬头文法行同步。新增 gen_plugins.severity_vocab_drift() 作生成前自检（解析写侧闭集与文法做集合相等，漂移即 FATAL、解析器饿死亦 FATAL），四方向合成对照实测：现状 PASS、文法窄一级红、写侧混入 open 红、词表读不到红。锁：src/server/bugreport_status_wbtest.mbt 的 BUG-88 一条（逐值往返 + 缺省 [medium] + 闭集外必须显式拒）。实测：JS target 全量绿 + 七守卫 rc=0。
+## BUG-89 [2026-09-27T12:47:33Z] [medium] FIXED
+- summary: [guard:selftest-never-run] check_doc_surface.py --selftest 不进 CI ⇒ 判据自检本身可以崩掉而全量仍报绿（本轮实测两处崩溃：NameError: fake、TypeError: sorted）
+- detail: 现象：本轮之前的 ci.yml 只把两个自检里的一个挂上了自动面。
+  · `git show HEAD:.github/workflows/ci.yml` :48-50 跑 `check_test_sync.py --selftest`；
+    :64 的 `check_doc_surface.py` **只有全量**，没有 --selftest；
+    store-schema 守卫那一步（现 :71-72 带自检）当时整段还不存在——它和文档面自检都是本轮才补的。
+活证据（2026-09-27 实跑，本轮我自己改坏后撞上的）：
+  `python scripts/check_doc_surface.py --selftest`
+    → `NameError: name 'fake' is not defined`（j_selftest 里 J6 对照的输入串被编辑时误删）
+    → 补回后又 `TypeError: sorted expected 1 argument, got 2`（SELFTEST OK 那行的规则清单派生式写错）
+    → 两处都在**同一命令**上发红，而 CI 全量分支 rc=0、守卫族收口脚本也 rc=0 ⇒ 一处都没拦住。
+放大器（写进账是因为它会一直骗人）：
+  `python scripts/check_doc_surface.py --selftest 2>&1 | tail -4; echo rc=$?` 里的 `$?` 是 **tail** 的退出码，
+  不是 python 的 ⇒ 崩溃的 traceback 配上 rc=0 会被读成"通过"。本轮第一次就是这样漏过去的
+  （留档 temp/phaseC/selftest_doc.log：改前那份里有完整 traceback，改后才是 SELFTEST OK）。
+影响：AGENTS.md 对外承诺「`--selftest` 用合成违例证明 J6/J7/J8/J9/J10 能发红」——这条承诺没有任何
+  自动面复核；判据的"会红证明"退化成一次性人工动作，正是 BUG-50 立的规矩要防的形状。
+  更糟的是本轮新增的 J4 子判据是靠这条自检背书的，自检不跑 ⇒ 新判据等于没上过岗。
+修复（本轮已落）：
+  1. ci.yml 文档面那一步改成先 `--selftest` 再全量（与 store-schema 那一步同形）；
+  2. `SELFTEST OK` 里"覆盖了哪几条判据"不再手写，改为 `inspect.getsource(j_selftest)` 反解
+     （正文里没写某条对照，那行就不会报它 ⇒ 声明与自检体不可能再漂移）；
+  3. 修回 `fake` 定义与 `sorted(..., key=int)`；自检现在报 J4/J6/J7/J8/J9/J10。
+残余（不自证已修）：`--selftest` 只证明判据**能**红，不证明它红的口径对；rc 被管道吞掉这类
+  读数姿势问题要靠"落盘日志再读 rc"的习惯，本轮已把每条守卫输出写到 temp/phaseC/*.log 复核。
+- reported_by: phaseC-independent-cleanup
+
+
+
+### FIXED(2026-09-27T12:47:33Z / BUG-89)
+- evidence: 把自检挂上自动面并让它自己声明覆盖面：.github/workflows/ci.yml 文档面一步改为 `check_doc_surface.py --selftest` + 全量两步；check_doc_surface.py 的 SELFTEST OK 规则清单改由 inspect.getsource(j_selftest) 反解（不手写），并修回被误删的 fake 定义与 sorted(key=int)。实测：`python scripts/check_doc_surface.py --selftest` rc=0 且正文点名 J4/J6/J7/J8/J9/J10；改前同一命令两次 traceback（留档 temp/phaseC/selftest_doc.log）。AGENTS.md/scripts/README.md 的守卫族描述同步声明这条 CI 接线。

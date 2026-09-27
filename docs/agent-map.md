@@ -7,7 +7,7 @@
 
 `FIST-Mbt` 是**纯 MoonBit 实现的 MCP Server**：一个「AI 指挥官」式任务编排器——发布根任务，递归拆解成多层子任务，经认领/执行/提交/验收/归档闭环；含 DGM 自进化档案库（evolve）与 Omega 强验证。全栈 MoonBit，JS+Native 双后端，SQLite 持久化。
 
-- **构建/测试**：`moon check` / `moon test --target js`（**458 项全绿**，2026-09-27 Windows 实测）
+- **构建/测试**：`moon check` / `moon test --target js`（**508 项全绿**，2026-09-27 Windows 实测）
 - **跑 MCP Server**：`moon build --target js cmd/main && python scripts/patch_esm_main.py` → `node _build/js/debug/build/cmd/main/main.js`
 - **一键自检**：`python scripts/mcp_smoke.py`（工具数 104 + publish/get 链路 + issue_scan 命中校验）
 - **找目标项目潜问题**：`issue_scan`（MCP 工具）/ `python scripts/issue_scan.py <dir>`（CLI）/ [技能文档](issue-scan-skill.md)（skill）三处手写形态 + 插件态投影（四态），规则驱动扫描，命中喂 `report_bug` 闭环
@@ -23,7 +23,7 @@
 | `evolve` | DGM 自进化档案库：Archive/Artifact/sample_parent/查重/新颖度/谱线 | `evolve.mbt` `scoring.mbt` `self_search.mbt` |
 | `omega` | Ω-check：项目结构/回传五段式校验、spec 解析/批量校验 | `check.mbt` |
 | `ops` | 运维：心跳/看门狗/google 调度 | `ops_watchdog.mbt` 等 |
-| `server` | MCP 层：120 个工具+3 resources+2 prompts 注册、call_log 注入、Laya/evolve MCP 封装、规则驱动源码扫描（issue_scan） | `server.mbt` `laya_js.mbt` `evolve_distill.mbt` `evolve_lesson.mbt` `issue_scan.mbt` |
+| `server` | MCP 层：122 个工具+3 resources+2 prompts 注册、call_log 注入、Laya/evolve MCP 封装、规则驱动源码扫描（issue_scan） | `server.mbt` `laya_js.mbt` `evolve_distill.mbt` `evolve_lesson.mbt` `issue_scan.mbt` |
 | `decompose` | 递归拆解规格 | — |
 | `executor` | 执行器抽象 + 能力注册表 + 能力路由（Marketplace 雏形，R30/R31）+ store 持久化 | `registry.mbt` `base.mbt` |
 | `atgc-old` | 旧 ATGC 叙事子项目（保留全量） | — |

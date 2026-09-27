@@ -11,7 +11,13 @@ import {
 }
 
 // Values
+pub fn bug_fix(String, Array[String], evidence~ : String, ts~ : String) -> Result[Json, String]
+
 pub fn bug_list(String) -> Result[Json, String]
+
+pub fn bug_list_with_links(String, (String) -> String) -> Result[Json, String]
+
+pub fn bug_mark_status(String, String, String, dup_of? : String, evidence? : String, ts~ : String) -> Result[Json, String]
 
 pub fn bug_resolve_path(String) -> String
 
@@ -20,6 +26,22 @@ pub fn distill_principle_goal(String) -> String
 pub fn do_evolve_distill(@evolve.Archive, @store.SqliteStore?, String, String, Double, String) -> Json
 
 pub fn do_evolve_lesson(@evolve.Archive, @store.SqliteStore?, String, String, String, String, score? : Double) -> Json
+
+pub fn done_no_artifact(Array[@core.Task]) -> Int
+
+pub async fn gitcode_execute_batch(Array[String], String, Int) -> Result[Json, String]
+
+pub async fn gitcode_execute_single(String, String, Int) -> Result[Json, String]
+
+pub fn gitcode_flush_plan(String, String, Int) -> Result[Json, String]
+
+pub fn gitcode_queue_mark_sent(String, String, String) -> Result[Json, String]
+
+pub fn gitcode_queue_pending(String) -> Result[Json, String]
+
+pub fn gitcode_queue_read(String) -> Result[Json, String]
+
+pub fn gitcode_queue_status(String, String) -> Result[Json, String]
 
 pub fn github_build_close_plan(String, Map[String, Int]) -> Result[Json, String]
 
