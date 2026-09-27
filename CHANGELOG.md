@@ -13,6 +13,31 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.0 (unreleased) - 双远端同步（GitCode）+ 遗留 OPEN 缺陷 BUG-50/51 闭合
+
+- **同步**：本轮起仓库同时发布到 **GitCode**（`https://gitcode.com/VictorTop/Fist-Mbt.git`，
+  远端名 `gitcode`）与 GitHub `origin`。GitCode 侧 HTTPS 无凭据可用（凭据只走环境变量注入，
+  仓库不读 `.env`），故 remote 配 `URL=https` + `pushurl=git@gitcode.com:…`，推送用 SSH；
+  两侧 hooks 均 PASSED，本地附 `v0.3.0` 标签。
+- **BUG-50 收口（判据重设计）**：`scripts/check_test_sync.py` 从"实测数出现在 4 份白名单文档"
+  升级为四条判据 —— R1 全量反向扫 **99 份现状文档**（含本轮新补的 `README_EN.md`/`BACKLOG.md`，
+  此前整面在扫描口径之外，里面的 `307 tests / 104 tools / 316 aligned` 无人认领）、
+  R2 五份 must-carry 文档必须携带实测数（防止"删掉声明"消解违例）、R3 防空转（现状面一条声明都没有
+  即红：正则饿死 ≠ 没有问题）、R4 豁免表 `(文件, 数, 理由)` 逐条点名且**条目失效即红**。
+  新增 `--selftest`：**8 个违例变体各命中自己指名的判据**（含"自洽的谎"型与"不得误抓引文/年份/编号"
+  反向对照），已挂进 ci.yml。首跑即抓到旧白名单看不见的两份文档写着 `148/148`、`191/191` ⇒ 已按实测改写。
+- **BUG-51 收口（路径口径统一）**：`run_check` 的 `workdir` **相对路径一律按任务 `project_dir` 解析**
+  （`.` 就是该项目目录本身，与 project_dir 绝对/相对无关），并新增 `run_check_effective_workdir`
+  把归一后的绝对路径交给 spawn ——只改判定不改执行面就是新漏洞（判据说"在里面"、进程跑在 server cwd）。
+  反向仍拒且文案自带两条出路：绝对 workdir 配相对 project_dir 无法判定归属；`..` 冲出自身起点在拼接前就拒。
+  两条口径（`run_check.workdir` 相对任务项目 vs `report_bug/output_validate.project_dir` 相对 store 根）
+  在规范正文 §5、工具描述与参数描述三处同时写明。
+- **回归与验收**：新增 3 个用例块（ALLOW/REJECT 成对 + 归一 + 拒绝文案出路）；
+  **开关对照**不动工作区源码（`temp/b51_red/` 用 HEAD 判定 + 新版归一组包，同一份测试在其上
+  `10 tests / 2 failed`，红的正是缺陷本体那两条）；**调用面终审** `temp/b51_callsite.py`
+  打真实 MCP 入口 13 条判据 0 红，含 S02b（harness 特意把 server 起在 `temp/`，排除
+  "继承 server cwd"的替代解释）。JS 后端 `moon test --target js` **442/442**，六守卫 rc=0。
+
 ## v0.3.0 (unreleased) - 合并兄弟项目 fist-model-router + 接入 aider/atomcode 执行器（六模式自驱轮）
 
 - **推进（合并本体）**：`src/router/`（`model_router.mbt` 决策核心 + `router_config.mbt` 配置回落 + `router_state.mbt` 状态

@@ -89,6 +89,11 @@ report_bug({ "project_dir": ".", "summary": "[verify] file:line: reason", "sever
 
 > `project_standards` **没有** `project_dir`/`dry_run`，也不会自己扫描文档——它只下发清单；扫描由调用方（agent/守卫脚本）做。把"清单工具"写成"检查工具"就是契约说谎（见 `memory/bugs.md` BUG-43）。
 
+> **`.` 在两处含义不同、但都合法（BUG-51 统一后的口径，别写成二选一）**：
+> `run_check` 的 `workdir` 相对**任务的 project_dir**（`.` 即该任务的项目目录本身，与 project_dir 绝对还是相对无关，
+> 实际 spawn 的 cwd 由服务端归一为绝对路径）；`report_bug` / `output_validate` 的 `project_dir` 相对
+> **store 根**（只接受相对路径，拒绝对路径/盘符/上跳——那是账本落盘的边界，不是执行边界）。
+
 ## 6. 违例分级与处置
 
 - `hard` 违例：当场打回（`reject`）或入账并挂修复任务；不得以"下一轮再说"跳过。

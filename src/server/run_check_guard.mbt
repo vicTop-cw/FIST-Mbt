@@ -28,6 +28,11 @@
 ///   - laya/github 的 `sh -c` 拼接路径不在本文件射程内（属同类原语加固，另单）。
 ///   - workdir/project_dir 精确逐段比较（不做大小写折叠）：实测调用面里 workdir 总是
 ///     由调用方按同一字符串传入（== project_dir），精确比较零回归；放宽只会造成误放行。
+///   - **路径口径（BUG-51 统一后）**：`run_check` 的 workdir 相对时按**任务 project_dir**
+///     相对解析（`.` 即项目目录本身）；而 `report_bug`/`bug_list` 的 project_dir 是
+///     **账本落盘根**，只接受相对 store 根的路径（拒绝绝对/盘符/`..`，防把 bug 账写到
+///     项目外）。两者语义不同、规则相反是有意为之，但必须各自写明——旧版没写，
+///     照模板用同一个 `.` 跑完整链路会在第 3 步被"形态不一致"打断。
 ///
 /// 纯 MoonBit、零依赖、js+native 同码：判定与执行分离，server.mbt 的 handler 只负责
 /// 「问一次 → 拒了就落审计」。
@@ -159,16 +164,23 @@ pub fn run_check_workdir_denied(
       "run_check: workdir=\{workdir} 含越出根目录的 `..`（BUG-4 收口：拒绝上跳）。只接受项目目录 \{proj} 本身或其子树内的目录",
     )
   }
+  // BUG-51（口径统一）：**相对 workdir 一律按任务 project_dir 相对解析**，与 project_dir
+  // 是绝对还是相对无关——旧版在这里判"形态不一致"直接拒，导致同一条链路上
+  // report_bug(project_dir='.') 能过、run_check(workdir='.') 被拒（模板第 3 步必卡）。
+  // 安全性不降：上面的 escaped 已排除 `..` 冲出自身起点，故拼接结果必落在项目子树内；
+  // 反向（绝对 workdir + 相对 project_dir）仍然拒——相对根的真实位置取决于 server cwd，
+  // 无法判定绝对路径归属，放开就是拿"不知道"当"在里面"。
+  if not(w.absolute) && p.absolute {
+    return None
+  }
+  if w.absolute != p.absolute {
+    return Some(
+      "run_check: workdir=\{workdir} 是绝对路径，而任务 project_dir=\{proj} 是相对形态，无法判定其归属（相对根的真实位置取决于 server cwd）。两条出路：① workdir 改传相对路径（按任务 project_dir 相对，`.` 即项目目录本身）；② 发布任务时就把 project_dir 记成绝对路径",
+    )
+  }
   if w.drive != p.drive {
     return Some(
       "run_check: workdir=\{workdir} 与项目不同根（workdir 盘符=\{w.drive} 项目盘符=\{p.drive}）。只接受项目目录 \{proj} 所在根下的路径",
-    )
-  }
-  if w.absolute != p.absolute {
-    let wform = if w.absolute { "绝对" } else { "相对" }
-    let pform = if p.absolute { "绝对" } else { "相对" }
-    return Some(
-      "run_check: workdir=\{workdir} 与 project_dir=\{proj} 形态不一致（\{wform} vs \{pform}），无法判定子树归属。两者须同形态：同用任务的绝对 project_dir，或都相对 server cwd",
     )
   }
   if p.segs.length() > w.segs.length() {
@@ -184,6 +196,33 @@ pub fn run_check_workdir_denied(
     }
   }
   None
+}
+
+///|
+/// 真正给子进程当 cwd 的路径（BUG-51）：守卫放行相对 workdir 之后，执行面必须**用它解析后的
+/// 绝对形态**，否则 `workdir='.'` 会落到 server cwd 而不是任务项目目录——判据说"在里面"，
+/// 执行却在别处，那比拒绝更糟。同形态调用（绝对/绝对、相对/相对）逐字返回原值，零回归。
+pub fn run_check_effective_workdir(
+  workdir : String,
+  project_dir : String,
+) -> String {
+  let proj = if project_dir.trim() == "" { "." } else { project_dir }
+  let w = rc_path(workdir)
+  let p = rc_path(proj)
+  if not(w.absolute) && p.absolute && not(w.escaped) {
+    let segs = p.segs.copy()
+    for s in w.segs {
+      segs.push(s)
+    }
+    let tail = rc_join(segs)
+    if p.drive == "" {
+      "/" + tail
+    } else {
+      p.drive + "/" + tail
+    }
+  } else {
+    workdir
+  }
 }
 
 ///|
@@ -296,5 +335,5 @@ pub fn run_check_cmd_denied(
 /// 守卫摘要（供审计 detail / 工具描述同源自洽）。
 pub fn run_check_guard_note() -> String {
   let allow_txt = rc_join(run_check_default_allow_cmds())
-  "run_check 受 BUG-4 收口约束：cmd 白名单（默认 \{allow_txt}；运维扩展位 FIST_RUN_CHECK_ALLOW）+ workdir 必须在任务 project_dir 子树内；被拒尝试写进审计（进程内 audit_log + 跨进程 call_log）"
+  "run_check 受 BUG-4 收口约束：cmd 白名单（默认 \{allow_txt}；运维扩展位 FIST_RUN_CHECK_ALLOW）+ workdir 必须在任务 project_dir 子树内（相对 workdir 按 project_dir 相对解析，`.` 即项目目录本身；BUG-51 统一口径）；被拒尝试写进审计（进程内 audit_log + 跨进程 call_log）"
 }

@@ -812,10 +812,72 @@ HEAD 内容上发红 19 条、工作树 0。
 **判据缺口未在本轮闭合（如实声明）**：`check_test_sync` 的判据形状是"实测数出现在指定 4 份文档"，
 天然测不到"第 5 份文档写着别的数"；要闭合需把扫描面从白名单改成全量文档并处理"历史数字豁免"（native 317/317 一类
 合法旧数），属判据重设计，交下一轮处理。同类缺口见规范正文 §7「已知边界」。
+
+### FIXED(2026-09-27 双远端同步轮 · BUG-50/51 收口（指挥官亲自改判据） / BUG-50)
+
+判据重设计已落地（`scripts/check_test_sync.py` 整段重写，四条判据代替一条存在性检查）：
+
+- **R1 全量反向扫**：现状面 97 份文档（README/AGENTS/USAGE/SKILL/规范 + `docs/**` + `scripts/*.md` +
+  `templates/*.md` + `plugins/**`）里每一条"测试总数声明"必须 == 实测。窄口径只认三种形状
+  （等值对 `N/N`、`N 项|个|条 [测试|用例] 全绿|通过|passed`、`total=N`），**不等值对一律不算声明**——
+  否则 `105/104`（BUG-17 引文）、`1986/1997`（论文年份）、`22/30`（缺陷编号）全会被判成谎数。
+- **R2 正向 must-carry**：5 份现状文档必须携带实测数（防止有人把声明整段删掉来"消解"违例）。
+- **R3 防空转**：现状面至少要有 1 条声明等于实测，否则红——正则饿死 ≠ 没有问题。
+- **R4 豁免双向**：历史数/别的 target 必须在 `EXEMPT` 里逐条点名 `(文件, 数, 理由)`，
+  **条目失效同样判红**（白名单只进不出就是下一个谎言）。当前 7 条：README/AGENTS/README_EN 的 `317`
+  （native 轨旧数，三处原文都已声明本轮未复跑）、`docs/deliverable.md` 的 `233`（R43 交付行的当轮数）、
+  `docs/polish-plan.md` 的 `148`（标题自述「初稿」）、`docs/features/F008-evolve.md` 的 `148`
+  （已勾 `- [x] AC-2` 是当轮验收记录）、`BACKLOG.md` 的 `295`（done 行的 R107 当轮数）。
+- **本轮自己又踩出一个同族洞**：把判据写完才发现扫描面**漏了两份现状文档**——`README_EN.md`
+  （整面停在 `307 tests / 104 tools / check_test_sync (316 aligned)`）与 `BACKLOG.md`
+  （锚点事实停在 `104 工具 / 311 测试`）。⇒ 两份纳入扫描面并逐处对齐到 120 工具 / 442 测试；
+  `README_EN` 原来还写着"317/317 green … verified on both Windows and WSL"，与中文 README
+  「本轮未复跑 native，不据旧数宣称双端同版全绿」的口径矛盾，一并改成 JS 实测 + native 旧数声明。
+  **守卫的扫描口径漏一个目录/文件，等于那里的一切改动无人认领**（见 [[feedback-guard-narrower-than-claim]]）。
+- **口径补第四种形状**：`Total tests: N, passed: N`（日志回显）原先不被认成声明——README 的自检示例行
+  就是靠 `check_badge` 才抓到，属同一族数字却走了另一条门 ⇒ 并入 R1，并加 selftest 变体钉住。
+- **历史记录按路径类别整面豁免**（不逐条点名）：`memory/`、`reports/`、`CHANGELOG.md`、
+  `docs/superpowers/plans/`、文件名以 `YYYY-MM-DD` 开头的文件——改写它们等于伪造历史。
+- **判据自证**：`python scripts/check_test_sync.py --selftest` **8 个变体**各命中自己指名的那一条
+  （含"自洽的谎"型：把实测数整批改写成 500 并同步扩豁免表，仍被 R2 抓住；以及"不得误抓引文/年份/编号"
+  的反向对照），基准夹具必须 rc=0；已挂进 CI（`.github/workflows/ci.yml`「Test-count guard selftest」，
+  与真判据同步跑）。末行计数由 `run_case` 实测累加，不手写数字。
+- **首跑活证据**：`--total 439` 在新判据下红 3 条，指向两份**旧白名单看不见**的文档——
+  `docs/evolve.md:146`（148/148）、`docs/atgc-selfdrive-demo.md:93`（191/191，且原文用词是"当前"）。
+  两处已按实测数改写。这就是 BUG-44/50 说的"第 5 份文档写着别的数"被抓住的第一个实例。
+
 ## BUG-51 [2026-09-26T13:39:19Z] [medium] OPEN
 - summary: [verify][BUG-51] 路径口径在工具间相反：report_bug/bug_list 拒绝绝对 project_dir（『非法 project_dir（拒绝绝对路径/穿越/盘符）』），而 run_check 又拒绝 workdir='.'（『workdir=. 与项目不同根（workdir 盘符= 项目盘符=E:）』，因任务 project_dir 记的是绝对路径）⇒ 照模板用同一个相对根跑完整链路必卡在第 3 步；两工具需统一路径策略或在描述里写明各自口径
 - detail: 复现：temp/rc_raw.py（先 project_dir='.' 成功 report_bug，再 workdir='.' 被 run_check 拒；改 workdir=绝对根后通过）。失败本身是硬门且带 audit_log/call_log（可审计性合格），缺的是**口径一致性**。
 - reported_by: std-auditor
+
+### FIXED(2026-09-27 双远端同步轮 · BUG-50/51 收口（指挥官亲自改判据） / BUG-51)
+
+两半都做：**统一口径 + 把两条口径同时写明**。
+
+- `src/server/run_check_guard.mbt`：`run_check_workdir_denied` 不再拿"形态不一致"当拒绝理由——
+  **相对 workdir 一律按任务 `project_dir` 相对解析**（`.` 即该任务的项目目录本身），与 project_dir 是绝对
+  还是相对无关；反向（绝对 workdir + 相对 project_dir）仍然拒，且文案点名两条出路（① 相对 workdir；
+  ② 发布任务时给绝对 project_dir）。安全性不降：`escaped` 判定在前，`..` 冲出自身起点仍在拼接之前就被拒。
+- 新增 `run_check_effective_workdir`，`server.mbt` 的 run_check handler 把**归一后的绝对路径**交给 spawn。
+  只改判定不改执行面就是新漏洞：判据会说"在项目里"，进程却跑在 server cwd。同形态调用逐字返回原值 ⇒ 零回归。
+- 口径写进三处表面：工具描述 + `workdir` 参数描述 + `AI-DEVELOPMENT-STANDARD.md` §5 新增一段
+  「`.` 在两处含义不同、但都合法」（run_check 的 workdir 相对任务 project_dir；
+  `report_bug`/`output_validate` 的 project_dir 相对 store 根——那是账本落盘边界，不是执行边界）。
+- 回归锁（`src/server/run_check_guard_test.mbt`，+3 用例块）：ALLOW/REJECT **成对**写
+  （`.`、`scripts`、`src/../scripts` 放行；`../../etc`、`a/../../b`、绝对 workdir 配相对 project、
+  `.` 配相对 `temp/proj` 仍拒），另两块锁归一（`.`→项目根、`scripts`→根/scripts、
+  `temp/r2/../x`→根/temp/x、反斜杠 project 也归一）与拒绝文案自带出路。
+- **开关对照（不动工作区源码）**：`temp/b51_red/` 用 HEAD 版判定 + 新版归一函数组成对照包，
+  同一份测试文件在其上 `Total tests: 10, passed: 8, failed: 2`，两条红恰是
+  `guard_test.mbt:141`（`.` 配绝对 project 未放行 = 缺陷本体）与 `:181`（拒绝文案无出路），
+  第三块（归一 helper）两侧同绿 ⇒ 标**纯 helper 锁**不作缺陷守卫。对照包 `moon.pkg` 已改名
+  `moon.pkg.disabled` 退出全量计数（它一度把全量套件毒成 452/450——2 红就来自它）。
+- **调用面终审**：`temp/b51_callsite.py` 打真实 MCP 入口（node main.js），**13 条判据 0 红**：
+  S01 `.` 放行、S02 真 spawn 的 cwd == 归一后的绝对项目根、S02b cwd 不是 server 自己的 cwd
+  （harness 特意 `chdir` 到 `temp/` 起 server，否则"cwd==项目根"分不清是归一生效还是继承 server cwd）、
+  S03/S04 子目录与 `src/../scripts` 归一、S05~S08 上跳与混形态仍拒且文案带出路、
+  S09/S10 `report_bug` 的相对口径未受影响、仍拒绝对 project_dir（账本边界没被执行面的放宽带着走）。
 
 ## BUG-52 [2026-09-26T15:46:13Z] [high] OPEN
 - summary: 上游 fist-model-router：时间戳↔秒用「365 天固定年 + 每月 31 天」近似，5h 窗口判定跨月/闰年偏移
