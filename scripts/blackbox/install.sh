@@ -245,6 +245,24 @@ UNIT
     echo "     状态: systemctl --user status fist-mbt"
 fi
 
+# ---------- ESM patch（JS 版）----------
+if [[ $NATIVE -eq 0 ]] && [[ -f "$INSTALL_DIR/fist-mbt.js" ]] && [[ -f "$INSTALL_DIR/patch_esm_main.py" ]]; then
+    if command -v python3 >/dev/null 2>&1; then
+        python3 "$INSTALL_DIR/patch_esm_main.py" "$INSTALL_DIR/fist-mbt.js" | while IFS= read -r line; do echo "  patch: $line"; done
+    elif command -v python >/dev/null 2>&1; then
+        python "$INSTALL_DIR/patch_esm_main.py" "$INSTALL_DIR/fist-mbt.js" | while IFS= read -r line; do echo "  patch: $line"; done
+    else
+        echo "  (ESM patch 跳过: python 不可用)"
+    fi
+fi
+
+# ---------- Doctor 自检 ----------
+if [[ $NATIVE -eq 0 ]] && [[ -f "$INSTALL_DIR/fist-mbt.js" ]]; then
+    echo ""
+    echo "=== 自检: fist-mbt doctor ==="
+    node "$INSTALL_DIR/fist-mbt.js" doctor 2>&1 | tail -8
+fi
+
 echo ""
 echo "=== 安装完成 ==="
 echo "  已装: $installed"
