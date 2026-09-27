@@ -62,6 +62,10 @@ pub fn omega_spec_id(String, Int) -> String
 
 pub fn phi_accrual(Array[Int], Int, threshold? : Int) -> Json
 
+pub fn phi_coerce_seconds(Double) -> Int?
+
+pub fn phi_domain_error(Array[Int], Int) -> String
+
 pub fn plan_route(String, n_files? : Int) -> Json
 
 pub fn root_task_id() -> String
@@ -80,7 +84,7 @@ pub struct FistEngine {
 }
 pub fn FistEngine::all_subtasks_completed(Self, @core.Task) -> Bool
 pub fn FistEngine::archive(Self, task_id~ : String, by~ : String, now~ : String) -> Result[@core.Task, String]
-pub fn FistEngine::budget_split_by_dag(Self, Int) -> Json
+pub fn FistEngine::budget_split_by_dag(Self, Int, root? : String, ns? : String) -> Json
 pub fn FistEngine::challenge(Self, task_id~ : String, by~ : String, factor? : Int, strat? : String, now~ : String, critic? : @evolve.Archive?) -> Result[Json, String]
 pub fn FistEngine::children_of(Self, String) -> Array[@core.Task]
 pub fn FistEngine::circuit_fail(Self, ns? : String, circuit~ : String, now_secs~ : Int, window_secs? : Int, threshold? : Int, recovery_secs? : Int) -> Json

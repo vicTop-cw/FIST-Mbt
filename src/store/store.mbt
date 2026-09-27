@@ -72,10 +72,14 @@ impl Store for MemoryStore with fn update_task(self, task) {
 }
 
 ///|
+/// BUG-85：`Store::list_tasks` 的声明是「列出全部任务」，内存后端过去却按 `default_ns`
+/// 悄悄过滤，而 SQLite 后端不过滤（`SELECT ... FROM tasks` 无 WHERE ns）——同一个方法名
+/// 两种语义：按 list_all() 取数的 heal/board_ascii/status_summary 在测试（内存桩）里只看
+/// 得到 default ns，在生产（SQLite）里看到全库；反过来显式按 ns 过滤的那几处在内存桩上恒空。
+/// 按声明收敛：这里返回**全部**，要按命名空间取数用 `list_tasks_in`。
 impl Store for MemoryStore with fn list_tasks(self) {
   let out : Array[@core.Task] = []
-  let ns = self.default_ns
-  self.tasks.each(fn(_, t) { if t.ns == ns { out.push(t) } })
+  self.tasks.each(fn(_, t) { out.push(t) })
   out
 }
 

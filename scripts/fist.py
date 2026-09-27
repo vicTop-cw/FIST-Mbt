@@ -10,10 +10,16 @@ scripts/fist.py — FIST-Mbt 统一 CLI 网关（一源四态 · CLI 形态）
 用法：
     python scripts/fist.py list-tools                          # 列出所有工具名
     python scripts/fist.py call <tool_name> --arg val ...      # 通用调用
-    python scripts/fist.py call publish --ns scratch --title "测试" --desc "..."
-    python scripts/fist.py call store_open --ns scratch --scratch true
-    python scripts/fist.py call task_plan_deep --ns scratch --gradient true --max_depth 3
+    python scripts/fist.py call store_open --namespace scratch --scratch true
+    python scripts/fist.py call publish --project-dir . --description "测试" --namespace scratch
+    python scripts/fist.py call task_plan_deep --task-id T0 --split_n 3 --gradient true
     python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path":"moon.mod"}]'
+
+参数名口径（BUG-23）：旗标逐字就是 MCP 参数名，只认 `--ns`→`namespace`、`--desc`→`description`
+两个别名；对不上该工具 inputSchema 的键**当场拒绝**并列出实际接受的键名。
+过去这里逐字转发，`--ns scratch` 发出去服务端读不到 `namespace` 就静默落 default ns——
+写侧静默降级、读侧如实查空，排查成本全压在下游工具上。旧示例里的 --title/--max_depth
+根本不是那些工具的参数名（实测 task_plan_deep 声明的是 split_n）。
 
 参数格式（--arg 值）：
     - 纯数字 → float/int 自动转换
@@ -167,6 +173,51 @@ def parse_args(argv):
     return out
 
 
+def tool_schemas(proc):
+    """取每个工具实际接受的参数名（tools/list 的 inputSchema.properties）。拿不到返回 None。"""
+    try:
+        r = rpc(proc, "tools/list")
+    except Exception:
+        return None
+    tools = (r.get("result") or {}).get("tools") or []
+    out = {}
+    for t in tools:
+        props = (t.get("inputSchema") or {}).get("properties") or {}
+        out[t["name"]] = sorted(props.keys())
+    return out or None
+
+
+# 旗标别名：只收「无歧义的同义改写」，其余错名一律拒绝（见 normalize_kwargs）。
+ARG_ALIASES = {"ns": "namespace", "desc": "description"}
+
+
+def normalize_kwargs(tool_name, kwargs, schemas):
+    """BUG-23：把 CLI 旗标对齐该工具的 inputSchema，出网前处理错名。
+
+    过去 `--ns scratch` 逐字发成 {"ns": ...}，服务端读 `namespace` 取不到就落 default ——
+    「写侧静默降级 + 读侧如实查空」，任务全堆进默认 ns 而按 --ns 读回一律 insufficient。
+    能唯一改名的改（只认 ARG_ALIASES），改不上的交给调用方拒绝。
+    返回 (对齐后的 kwargs, 未识别键列表)；schemas 为 None（tools/list 没拿到）时不拦，保持旧行为。
+    """
+    if schemas is None:
+        return kwargs, []
+    accepted = schemas.get(tool_name)
+    if accepted is None:
+        return kwargs, []  # 工具名本身不存在：让服务端报 "Tool not found"，不在这里多嘴
+    out = {}
+    conflicts = []
+    for k, v in kwargs.items():
+        key = k
+        if key not in accepted and ARG_ALIASES.get(key) in accepted:
+            key = ARG_ALIASES[key]
+        if key in out:
+            conflicts.append("重复映射 %s->%s" % (k, key))
+            continue
+        out[key] = v
+    unknown = [k for k in out if k not in accepted]
+    return out, unknown + conflicts
+
+
 def run_server():
     main_js = find_main()
     if not main_js:
@@ -244,9 +295,11 @@ def main():
         print("  list-tools          列出所有 MCP 工具名")
         print("  call <tool> --k v   通用 MCP 工具调用")
         print("示例:")
-        print("  python scripts/fist.py call store_open --ns scratch --scratch true")
-        print("  python scripts/fist.py call publish --ns scratch --title '测试'")
-        print("  python scripts/fist.py call task_plan_deep --ns scratch --gradient true --max_depth 3")
+        print("  python scripts/fist.py call store_open --namespace scratch --scratch true")
+        print("  python scripts/fist.py call publish --project-dir . --description '测试'")
+        print("  python scripts/fist.py call task_plan_deep --task-id T0 --split_n 3 --gradient true")
+        print("参数名逐字对 tools/list 的 inputSchema；只认别名 ns->namespace、desc->description，")
+        print("其它未知键当场拒绝（BUG-23：过去静默忽略，publish 因此整颗落进 default ns）。")
         sys.exit(0)
 
     sub = argv[0]
@@ -264,6 +317,15 @@ def main():
         kwargs = parse_args(rest[1:])
         proc = run_server()
         try:
+            # BUG-23：出网前把旗标对齐该工具的 inputSchema，错名当场拒绝而不是静默降级。
+            schemas = tool_schemas(proc)
+            kwargs, rejected = normalize_kwargs(tool_name, kwargs, schemas)
+            if rejected:
+                print("FAIL %s: 未知入参 %s（该工具实际接受：%s）" % (
+                    tool_name, ", ".join(rejected),
+                    ", ".join((schemas or {}).get(tool_name) or ["?"])))
+                print("     别名表：ns->namespace、desc->description；其余键名必须逐字对 tools/list。")
+                sys.exit(1)
             cmd_call(proc, tool_name, kwargs)
         finally:
             try:

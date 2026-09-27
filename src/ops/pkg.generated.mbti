@@ -26,9 +26,9 @@ pub fn default_mode() -> PipelineMode
 
 pub fn enforce(action~ : String, role~ : Role) -> Result[Unit, String]
 
-pub fn heal_stale_tasks(@engine.FistEngine, Heartbeat, String, timeout_sec? : Int) -> Result[Array[String], String]
+pub fn heal_stale_tasks(@engine.FistEngine, Heartbeat, String, timeout_sec? : Int, ns? : String) -> Result[Array[String], String]
 
-pub fn heal_stale_tasks_by_phi(@engine.FistEngine, String, phi_threshold? : Int, ns? : String) -> Result[Array[String], String]
+pub fn heal_stale_tasks_by_phi(@engine.FistEngine, String, phi_threshold? : Int, ns? : String, timeout_sec? : Int, no_history_ids? : Array[String]) -> Result[Array[String], String]
 
 pub fn heal_stale_tasks_from_store(@engine.FistEngine, String, timeout_sec? : Int, ns? : String) -> Result[Array[String], String]
 

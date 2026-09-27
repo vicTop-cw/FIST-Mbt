@@ -147,14 +147,27 @@ fn bug_parse(text : String) -> Array[Json] {
       if active {
         out.push(Json::object(cur))
       }
-      let (id, ts, sev, status) = bug_parse_header(t)
+      let (id, ts, sev, raw_status) = bug_parse_header(t)
+      // 记账规则（memory/bugs.md 顶部）允许 DUPLICATE 抬头带 `→BUG-m` 主编号；
+      // 在这里拆成独立字段回给读侧，status 保持单值，别让调用方自己切字符串。
+      let arrow = raw_status.split("→").to_array()
+      let (status, dup_of) = if arrow.length() == 2 {
+        (arrow[0].trim().to_string(), arrow[1].trim().to_string())
+      } else {
+        (raw_status, "")
+      }
       cur = Map([
         ("id", Json::string(id)),
+        // BUG-11：与写侧 report_bug 的 `bug_id` 同名对齐，两个键都给 ⇒ 任一读法都对得上账
+        ("bug_id", Json::string(id)),
         ("ts", Json::string(ts)),
         ("severity", Json::string(sev)),
         ("status", Json::string(status)),
         ("summary", Json::string("")),
       ])
+      if not(dup_of.is_empty()) {
+        cur.set("duplicate_of", Json::string(dup_of))
+      }
       active = true
     } else if active {
       let fields = [
@@ -226,6 +239,8 @@ pub fn report_bug(
   ref_call_id~ : String,
   reported_by~ : String,
   publish_task~ : Bool,
+  // BUG-8：修复单落哪个 ns 由调用方决定（缺省 "bugs" ⇒ 既有调用零回归）
+  task_ns? : String = "bugs",
   github_sync? : Bool = false,
   github_repo? : String = "",
   eng : @engine.FistEngine,
@@ -258,10 +273,15 @@ pub fn report_bug(
 
   // 可选：发布修复根任务（best-effort；失败不阻断落账，仅在返回里体现）
   let mut task_id : String = ""
+  // BUG-8：修复单落到哪个 ns 由调用方决定（缺省仍 "bugs"，零回归）。
+  // 过去这里写死 ns="bugs"，与发起轮的 ns 断裂：按批次 ns 查不到修复单，
+  // 「子单全部 verify 后父任务自动上卷」这条生命周期对 issue_up 通道永不触发。
+  // 无论有没有发单都把生效 ns 回显出去（空 publish_task 时回空串，不是 "bugs"）。
+  let eff_task_ns = if task_ns.is_empty() { "bugs" } else { task_ns }
   if publish_task {
     match
       eng.publish_parallel(
-        ns="bugs",
+        ns=eff_task_ns,
         description="修复 bug: " + summary,
         created_by=if reported_by.is_empty() {
           "bug_reporter"
@@ -298,11 +318,18 @@ pub fn report_bug(
   }
   let m : Map[String, Json] = Map([])
   m.set("bug_id", Json::string(bug_id))
+  // BUG-11：写侧叫 bug_id、读侧（bug_list 行）叫 id，按写侧字段名对账的读侧静默拿 null。
+  // 两侧都发这两个键 ⇒ 任一字段名都对得上；不删旧键 ⇒ 既有调用零回归。
+  m.set("id", Json::string(bug_id))
   m.set("status", Json::string("OPEN"))
   m.set("path", Json::string(path))
   // BUG-5 fix: 补 resolved_path（绝对 + normalize），让落点可审
   m.set("resolved_path", Json::string(bug_resolve_path(project_dir)))
   m.set("project_dir", Json::string(project_dir))
+  m.set(
+    "task_namespace",
+    Json::string(if publish_task { eff_task_ns } else { "" }),
+  )
   if not(task_id.is_empty()) {
     m.set("task_id", Json::string(task_id))
   }

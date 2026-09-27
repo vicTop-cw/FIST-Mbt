@@ -5,7 +5,8 @@
 ///   - σ≈0：回退指数分布（P_after = e^(-elapsed/μ)）；
 ///   - 正态建模：z=(elapsed-μ)/σ，|z|≥3 用尾部渐近展开保精度（erf 近似在深尾部误差放大）。
 /// φ ≥ threshold（默认 8，原论文口径）判 "suspect"（疑似宕机），否则 "healthy"；
-/// 无间隔历史返回 "insufficient"。纯计算、无副作用、可复现。
+/// 无间隔历史返回 "insufficient"，取值域外（负 elapsed / 非正间隔）返回 "rejected" 且不出结论。
+/// 纯计算、无副作用、可复现。
 
 ///|
 /// 牛顿法平方根（core 无 sqrt；20 次迭代足够收敛）。
@@ -54,14 +55,68 @@ fn normal_tail_q(z : Double) -> Double {
 }
 
 ///|
+/// JSON 秒数 → Int 的**安全**转换（BUG-26 的上溢落点）：`Double::to_int()` 对超出 Int 域的
+/// 值（如实测的 1e300）**饱和**成 2147483647，随后仍被当成均值继续算 φ；带小数的值被截断、
+/// 非数字元素被整条丢掉。这里把这三类失真一律收成 None，让调用面在转换**之前**拒绝。
+pub fn phi_coerce_seconds(v : Double) -> Int? {
+  let int_max_d = 2147483647.0
+  // v != v 抓 NaN；±inf 与 1e300 由范围比较抓（NaN 不参与大小比较，所以两条都要）。
+  if v != v || v < -int_max_d || v > int_max_d {
+    None
+  } else {
+    let n = v.to_int()
+    if n.to_double() == v {
+      Some(n)
+    } else {
+      None
+    }
+  }
+}
+
+///|
+/// 取值域校验（BUG-26）：φ 的建模输入一旦失真（负 elapsed、非正间隔），输出仍是格式完好的
+/// healthy/suspect——看起来是结论，实际是溢出后的算术。把「不可建模」提到结论之前。
+/// 返回拒绝原因（空串=通过）。间隔的**上溢**发生在 JSON→Int 的转换点，由调用面拦。
+pub fn phi_domain_error(intervals : Array[Int], elapsed : Int) -> String {
+  if elapsed < 0 {
+    return "elapsed 为负（\{elapsed.to_string()}s）：时钟回拨或心跳尚未到达，无 elapsed 可建模"
+  }
+  let mut bad = 0
+  for iv in intervals {
+    if iv <= 0 {
+      bad = bad + 1
+    }
+  }
+  if bad > 0 {
+    return "intervals 含 \{bad.to_string()} 个非正间隔：φ 按间隔建模，0/负秒数不是观测值"
+  }
+  ""
+}
+
+///|
 /// Phi Accrual 主计算：给定心跳间隔历史 intervals（秒）与自上次心跳起的 elapsed（秒），
-/// 返回 { verdict: insufficient|healthy|suspect, phi, mean, stddev, window, threshold, note, basis }。
+/// 返回 { verdict: rejected|insufficient|healthy|suspect, phi, mean, stddev, window, threshold, note, basis }。
 /// threshold 默认 8（原论文口径）；窗口默认取最近全部传入间隔（≤1000 条）。
+/// 取值域外返回 `rejected` 且**不出结论**——以前这类输入带着饱和后的均值照样回 healthy，
+/// 看护据此不 heal，任务永久卡在已领取。
 pub fn phi_accrual(
   intervals : Array[Int],
   elapsed : Int,
   threshold? : Int = 8,
 ) -> Json {
+  let dom = phi_domain_error(intervals, elapsed)
+  if dom != "" {
+    return Json::object({
+      "verdict": Json::string("rejected"),
+      "phi": Json::number(0.0),
+      "window": Json::number(intervals.length().to_double()),
+      "threshold": Json::number(threshold.to_double()),
+      "note": Json::string(dom),
+      "basis": Json::string(
+        "取值域门（BUG-26）：判活结论要求 elapsed≥0 且每个间隔为正整数秒",
+      ),
+    })
+  }
   let win = intervals.length()
   if win <= 0 {
     return Json::object({

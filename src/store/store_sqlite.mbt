@@ -420,11 +420,14 @@ impl Store for SqliteStore with fn list_tasks(self) {
 }
 
 ///|
-/// 列出指定命名空间的任务
+/// 列出指定命名空间的任务。
+/// BUG-85：空 ns 的回退口径与内存后端对齐（`list_tasks_in("")` = 默认命名空间），
+/// 否则同一个入参在两个后端上一个是 default 行、一个是零行。
 pub fn SqliteStore::list_tasks_in(
   self : SqliteStore,
   ns_filter : String,
 ) -> Array[@core.Task] {
+  let target = if ns_filter == "" { "default" } else { ns_filter }
   let out : Array[@core.Task] = []
   match self.db {
     None => out
@@ -434,10 +437,7 @@ pub fn SqliteStore::list_tasks_in(
         None => out
         Some(stmt) => {
           ignore(
-            stmt.bind(
-              1,
-              @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns_filter)),
-            ),
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, target))),
           )
           while stmt.step() {
             out.push(row_to_task(stmt))
@@ -739,7 +739,12 @@ pub fn SqliteStore::rsv_get(
 }
 
 ///|
-/// SQLite 后端：释放预订（仅持有者；删除行数决定成功）。
+/// SQLite 后端：释放预订（仅持有者）。
+/// BUG-79：`Statement::execute -> Bool` 只表示「语句没报错」——绑定层（mizchi/sqlite 的
+/// js 与 native 两版签名都是 execute -> Bool）根本不给 changes()，删 0 行同样返回 true。
+/// 于是非持有者调 reserve_release 会被告知「已释放」而预订仍在，两个 agent 同改一份作用域，
+/// 正是这个原语要防的多 agent 撞车；内存后端校持有者，所以它的单测永远绿、抓不到。
+/// 修法：删前先按 scope 读回持有者比对，不匹配即 false（与内存后端同语义）。
 pub fn SqliteStore::rsv_release(
   self : SqliteStore,
   scope : String,
@@ -747,23 +752,33 @@ pub fn SqliteStore::rsv_release(
 ) -> Bool {
   match self.db {
     None => false
-    Some(db) => {
-      let sql = "DELETE FROM reservations WHERE scope = ? AND agent = ?"
-      match db.prepare(sql) {
-        None => false
-        Some(stmt) => {
-          ignore(
-            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))),
-          )
-          ignore(
-            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent))),
-          )
-          let ok = stmt.execute()
-          stmt.finalize()
-          ok
+    Some(db) =>
+      match self.rsv_get(scope) {
+        Some((owner, _, _)) if owner == agent => {
+          let sql = "DELETE FROM reservations WHERE scope = ? AND agent = ?"
+          match db.prepare(sql) {
+            None => false
+            Some(stmt) => {
+              ignore(
+                stmt.bind(
+                  1,
+                  @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope)),
+                ),
+              )
+              ignore(
+                stmt.bind(
+                  2,
+                  @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent)),
+                ),
+              )
+              let ok = stmt.execute()
+              stmt.finalize()
+              ok
+            }
+          }
         }
+        _ => false
       }
-    }
   }
 }
 

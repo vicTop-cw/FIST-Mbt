@@ -182,7 +182,139 @@ test "bug5_report_bug_returns_resolved_path" {
 }
 
 ///|
-/// BUG-4 fix: run_check workdir 校验（Round 1 起的兼容别名，语义在 Round 2 收紧为子树判定）。
+/// BUG-8 / BUG-11（调用面契约，不靠模块自述）：
+///   · `task_ns` 决定修复单落在哪个 ns —— 传 batch-a 时 bugs ns 里必须一条都没有
+///     （BUG-8 的原状是写死 ns="bugs"，按批次 ns 永远查不到修复单）；
+///   · 返回体同时给 `bug_id` 与 `id`（BUG-11：写侧只发 bug_id、读侧只发 id，
+///     按另一侧字段名对账的读方静默拿到 null）；
+///   · `task_namespace` 在未发单时是空串而不是 "bugs"——回显的是实际落点，不是缺省值。
+/// 前提：BUG-85 之后内存后端的 list_tasks/list_tasks_in 与 SQLite 同语义，
+/// 所以"路由到哪"能在同一进程内测出来；旧语义下这条断言只会得到 all=0 的假象。
+test "bug8_bug11_task_ns_echo_and_id_alias" {
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
+  let d = "temp/bug_c8"
+  @fs.create_dir(d + "/memory") catch {
+    _ => ()
+  }
+  @fs.remove_file(d + "/memory/bugs.md") catch {
+    _ => ()
+  }
+  let eng = @engine.FistEngine::new()
+  let j = match
+    report_bug(
+      d,
+      "BUG-8 验证：修复单要能落进发起 ns",
+      detail="ns 写死 bugs 时上卷永不触发",
+      severity="medium",
+      ref_call_id="",
+      reported_by="phaseC",
+      publish_task=true,
+      task_ns="batch-a",
+      eng,
+      now="2026-09-27T00:00:00Z",
+    ) {
+    Ok(x) => x
+    Err(m) => abort(m)
+  }
+  assert_eq(bug_str(j, "task_namespace"), "batch-a")
+  assert_eq(bug_str(j, "bug_id"), bug_str(j, "id"))
+  // task_id 的形态必须钉住：bug_str 对缺失键回 "<null>"，"非空"不等于"是真实根单 id"
+  assert_true(bug_str(j, "task_id").has_prefix("T0"))
+  // 修复单真的落在 batch-a，而不是 ns bugs
+  assert_eq(eng.list_in_ns("batch-a").length(), 1)
+  assert_eq(eng.list_in_ns("bugs").length(), 0)
+  // 不传 task_ns 时回落到缺省 bugs（零回归）
+  let eng2 = @engine.FistEngine::new()
+  let j2 = match
+    report_bug(
+      d,
+      "BUG-8 缺省路径",
+      detail="",
+      severity="low",
+      ref_call_id="",
+      reported_by="phaseC",
+      publish_task=true,
+      eng2,
+      now="2026-09-27T00:00:01Z",
+    ) {
+    Ok(x) => x
+    Err(m) => abort(m)
+  }
+  assert_eq(bug_str(j2, "task_namespace"), "bugs")
+  assert_eq(eng2.list_in_ns("bugs").length(), 1)
+  // publish_task=false 时不回显成 "bugs"：没有发单就没有落点
+  let eng3 = @engine.FistEngine::new()
+  let j3 = match
+    report_bug(
+      d,
+      "BUG-8 未发单",
+      detail="",
+      severity="low",
+      ref_call_id="",
+      reported_by="phaseC",
+      publish_task=false,
+      eng3,
+      now="2026-09-27T00:00:02Z",
+    ) {
+    Ok(x) => x
+    Err(m) => abort(m)
+  }
+  assert_eq(bug_str(j3, "task_namespace"), "")
+}
+
+///|
+/// BUG-11 + 记账规则（memory/bugs.md 顶部「记账规则」段）的读侧解析：
+///   · bug_list 每行同时给 `id` 与 `bug_id`，值相等；
+///   · DUPLICATE 抬头带的 `→BUG-m` 主编号拆成 `duplicate_of`，`status` 保持单值
+///     （否则读侧按 status 计数时把 "DUPLICATE →BUG-5" 当成一个没见过的状态词）；
+///   · FIXED / FALSE_POSITIVE 抬头不产 duplicate_of 键——少这一条断言，
+///     "只在 DUPLICATE 上产字段"这件事就没有对照（恒产也恒绿）。
+test "ledger_status_vocabulary_parses_duplicate_of" {
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
+  let d = "temp/bug_c_ledger"
+  @fs.create_dir(d + "/memory") catch {
+    _ => ()
+  }
+  @fs.write_string_to_file(
+    d + "/memory/bugs.md",
+    "# 缺陷账本（测试夹具）\n" +
+    "\n" +
+    "## BUG-1 [2026-09-26T00:00:00Z] [high] FIXED\n" +
+    "- summary: 已修完的一条\n" +
+    "- reported_by: phaseC\n" +
+    "\n" +
+    "## BUG-2 [2026-09-26T00:00:01Z] [medium] DUPLICATE →BUG-1\n" +
+    "- summary: 与 BUG-1 同根因的一条\n" +
+    "\n" +
+    "## BUG-3 [2026-09-26T00:00:02Z] [low] FALSE_POSITIVE\n" +
+    "- summary: 判据作用域误读的一条\n",
+    encoding="utf8",
+  ) catch {
+    _ => abort("写夹具失败")
+  }
+  let lj = match bug_list(d) {
+    Ok(x) => x
+    Err(m) => abort(m)
+  }
+  let arr = bug_arr(lj, "bugs")
+  assert_eq(arr.length(), 3)
+  assert_eq(bug_str(arr[0], "id"), bug_str(arr[0], "bug_id"))
+  assert_eq(bug_str(arr[0], "status"), "FIXED")
+  assert_eq(bug_str(arr[1], "status"), "DUPLICATE")
+  assert_eq(bug_str(arr[1], "duplicate_of"), "BUG-1")
+  assert_eq(bug_str(arr[2], "status"), "FALSE_POSITIVE")
+  // 反向对照：非 DUPLICATE 的条目不得凭空多出一个空 duplicate_of
+  match arr[0] {
+    Object(m) => assert_true(m.get("duplicate_of") is None)
+    _ => abort("bug_list 行不是 object")
+  }
+}
+
+///|
 /// 注意这里 `(".", "temp/proj")` 的期望值**从 true 改成 false**：Round 1 版只要"不上跳、不绝对"
 /// 就放行，于是 project_dir=temp/proj 的任务可以在 server cwd（整个仓库根）里跑命令——
 /// 那不是"项目目录子树内"。Round 2 按子树判定后这种错配必须拒（完整矩阵见
