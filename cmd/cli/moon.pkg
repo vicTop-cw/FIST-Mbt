@@ -1,6 +1,8 @@
 import {
-  "vicTop-cw/fist-mbt/src/core",
   "vicTop-cw/fist-mbt/src/engine",
+  "vicTop-cw/fist-mbt/src/store",
+  "moonbitlang/async",
+  "moonbitlang/core/env",
 }
 
 pkgtype(kind: "executable")
