@@ -2075,6 +2075,9 @@ pub async fn run_server() -> Unit {
         "mode": string_prop(
           "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy。非 advance 时 templates/pipeline_mode_<mode>.md **覆盖**显式 meta_prompt_path（不是反过来！BUG-77：旧描述写的是『显式优先』，代码走的是 mode 优先）；要让显式路径生效就别传 mode 或传 advance。回执里 meta_prompt_resolved 才是真被读的那份，meta_prompt_path 只是你传进来的那个。非法值立即返回 Err。",
         ),
+        "flush_bug_queue": bool_prop(
+          "是否自动 flush bug 队列到 GitHub/GitCode（可选默认false）——定时唤醒时顺便 flush，GitHub 失败自动切 GitCode",
+        ),
       },
       [],
     ),
@@ -2103,6 +2106,7 @@ pub async fn run_server() -> Unit {
       let phi_gate = get_bool(args, "phi_gate", default=false)
       let phi_threshold = get_int(args, "phi_threshold", default=8)
       let mode = get_str(args, "mode")
+      let flush_bug_queue = get_bool(args, "flush_bug_queue", default=false)
       let omega_spec = if omega_spec_str == "" {
         None
       } else {
@@ -2132,8 +2136,106 @@ pub async fn run_server() -> Unit {
           phi_gate~,
           phi_threshold~,
           mode~,
+          flush_bug_queue~,
         ) {
-        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Ok(j) => {
+          // —— flush_bug_queue 追加段（append-only，不改上面任何代码）——
+          let auto_flush = get_bool(args, "flush_bug_queue", default=false)
+          let mut gh_ok = false
+          let flush_result : Map[String, Json] = Map([])
+          if auto_flush {
+            let pd = get_str(args, "project_dir")
+            let actual_dir = if pd.is_empty() { "." } else { pd }
+            // 1. GitHub env check
+            match github_env_check() {
+              Ok(ge) => {
+                let gh_ready = match ge {
+                  Object(m) =>
+                    match m.get("ready") {
+                      Some(True) => true
+                      _ => false
+                    }
+                  _ => false
+                }
+                if gh_ready {
+                  match github_flush_plan(actual_dir, 10) {
+                    Ok(_plan) => {
+                      flush_result.set("github_attempted", Json::boolean(true))
+                      gh_ok = true
+                    }
+                    Err(e) => flush_result.set("github_error", Json::string(e))
+                  }
+                } else {
+                  flush_result.set("github_skipped", Json::string("env not ready"))
+                }
+              }
+              Err(e) => flush_result.set("github_error", Json::string(e))
+            }
+
+            // 2. 如果 GitHub 没成功，试 GitCode
+            let mut gc_ok = false
+            if !gh_ok {
+              match gitcode_env_check() {
+                Ok(gce) => {
+                  let gc_ready = match gce {
+                    Object(m) =>
+                      match m.get("ready") {
+                        Some(True) => true
+                        _ => false
+                      }
+                    _ => false
+                  }
+                  if gc_ready {
+                    let pid = match gce {
+                      Object(m) =>
+                        match m.get("project_id") {
+                          Some(String(s)) => s
+                          _ => ""
+                        }
+                      _ => ""
+                    }
+                    if !pid.is_empty() {
+                      match gitcode_flush_plan(actual_dir, pid, 10) {
+                        Ok(_plan) => {
+                          flush_result.set("gitcode_attempted", Json::boolean(true))
+                          flush_result.set("fallback_used", Json::string("gitcode"))
+                          gc_ok = true
+                        }
+                        Err(e) => flush_result.set("gitcode_error", Json::string(e))
+                      }
+                    } else {
+                      flush_result.set("gitcode_skipped", Json::string("project_id empty"))
+                    }
+                  } else {
+                    flush_result.set("gitcode_skipped", Json::string("env not ready"))
+                  }
+                }
+                Err(e) => flush_result.set("gitcode_error", Json::string(e))
+              }
+            }
+
+            flush_result.set("any_success", Json::boolean(gh_ok || gc_ok))
+          }
+
+          // 只在 auto_flush=true 时才合并 flush_result，保证默认路径字节级一致
+          let final_json = if auto_flush {
+            match j {
+              Object(m) => {
+                m.set("flush_bug_queue", Json::object(flush_result))
+                Json::object(m)
+              }
+              _ => {
+                let mm : Map[String, Json] = Map([])
+                mm.set("flush_bug_queue", Json::object(flush_result))
+                mm.set("original", j)
+                Json::object(mm)
+              }
+            }
+          } else {
+            j
+          }
+          Ok(@mcp.ToolResult::text(final_json.stringify()))
+        }
         Err(e) => Err(@mcp_types.ToolError(e))
       }
     },
