@@ -4475,7 +4475,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "report_bug",
-    "上报一个运行时 bug：追加到 {project_dir}/memory/bugs.md（OPEN 状态账本）。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（绝对 + normalize 后的落点）。参数：project_dir(必填)、summary(必填)、detail(可选)、severity(可选 open/critical/high/medium/low)、ref_call_id(可选，指向 call_log 的 seq)、reported_by(可选)、publish_task(可选默认false)：为 true 时同时把'修复 bug: <summary>'发布为独立根任务，供自驱/定时流水线认领修复，形成上报→修复闭环；task_ns(可选，缺省 bugs)：修复单落到哪个命名空间——想与本批次任务树同库对账就显式传它，否则默认落在 ns `bugs`（那是另一棵树，按批次 ns 查会查不到，BUG-8）。返回 {bug_id, id, status, path, resolved_path, project_dir, task_namespace, task_id?}：**bug_id 与 id 是同一个编号的两个键**（BUG-11：写侧只发 bug_id、读侧 bug_list 只发 id，按任一侧字段名对账的另一侧会静默拿到 null）；task_namespace 回显修复单实际落在哪个 ns（未发单时是空串，不是 'bugs'）。**账本状态**（OPEN/FIXED/DUPLICATE/FALSE_POSITIVE）写在条目抬头，改它走 `bug_fix`（标修好，同一笔落 ### FIXED 小记）或 `bug_mark_status`（改判 OPEN/DUPLICATE/FALSE_POSITIVE）——BUG-9 之前这里写着「本模块不提供关闭 API」，账本因此只写不销；对外那句「X 条待修 / Y 条已修」只从抬头状态反解，不是数小记条数。",
+    "上报一个运行时 bug：追加到 {project_dir}/memory/bugs.md（OPEN 状态账本）。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（绝对 + normalize 后的落点）。参数：project_dir(必填)、summary(必填)、detail(可选)、severity(可选 open/critical/high/medium/low)、ref_call_id(可选，指向 call_log 的 seq)、reported_by(可选)、publish_task(可选默认false)：为 true 时同时把'修复 bug: <summary>'发布为独立根任务，供自驱/定时流水线认领修复，形成上报→修复闭环；task_ns(可选，缺省 bugs)：修复单落到哪个命名空间——想与本批次任务树同库对账就显式传它，否则默认落在 ns `bugs`（那是另一棵树，按批次 ns 查会查不到，BUG-8）；auto_push(可选默认false)：上报后立即尝试推送到远端 issue 系统——GitHub 优先，失败自动切 GitCode fallback；remote_fallback(可选默认 '[\"github\",\"gitcode\"]')：远端 fallback 顺序 JSON 数组字符串，auto_push=true 时生效。返回 {bug_id, id, status, path, resolved_path, project_dir, task_namespace, task_id?, auto_push?}：**bug_id 与 id 是同一个编号的两个键**（BUG-11：写侧只发 bug_id、读侧 bug_list 只发 id，按任一侧字段名对账的另一侧会静默拿到 null）；task_namespace 回显修复单实际落在哪个 ns（未发单时是空串，不是 'bugs'）。**账本状态**（OPEN/FIXED/DUPLICATE/FALSE_POSITIVE）写在条目抬头，改它走 `bug_fix`（标修好，同一笔落 ### FIXED 小记）或 `bug_mark_status`（改判 OPEN/DUPLICATE/FALSE_POSITIVE）——BUG-9 之前这里写着「本模块不提供关闭 API」，账本因此只写不销；对外那句「X 条待修 / Y 条已修」只从抬头状态反解，不是数小记条数。",
     schema(
       {
         "project_dir": string_prop(
@@ -4494,6 +4494,12 @@ pub async fn run_server() -> Unit {
         "task_ns": string_prop(
           "修复单落到的命名空间(可选，缺省 bugs)；publish_task=false 时无效果",
         ),
+        "auto_push": bool_prop(
+          "上报后立即尝试推送到远端 issue 系统(可选默认false)——GitHub 优先，失败自动切 GitCode",
+        ),
+        "remote_fallback": string_prop(
+          "远端 fallback 顺序 JSON 数组字符串(可选默认 '[\"github\",\"gitcode\"]')——auto_push=true 时生效",
+        ),
       },
       ["project_dir", "summary"],
     ),
@@ -4506,8 +4512,10 @@ pub async fn run_server() -> Unit {
       let reported_by = get_str(args, "reported_by")
       let publish_task = get_bool(args, "publish_task", default=false)
       let task_ns = get_str(args, "task_ns")
+      let auto_push = get_bool(args, "auto_push", default=false)
+      let remote_fallback_raw = get_str(args, "remote_fallback")
       let ts = now_default()
-      match
+      let bug_result = match
         report_bug(
           project_dir,
           summary,
@@ -4520,8 +4528,407 @@ pub async fn run_server() -> Unit {
           engine,
           now=ts,
         ) {
-        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-        Err(e) => Err(@mcp_types.ToolError(e))
+        Ok(j) => j
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
+      // 从 report_bug 返回提取 bug_id
+      let bug_id = match bug_result {
+        Object(m) =>
+          match m.get("bug_id") {
+            Some(String(s)) => s
+            _ => ""
+          }
+        _ => ""
+      }
+      // 构造 fallback 顺序数组
+      let fallback : Array[String] = if remote_fallback_raw.is_empty() {
+        ["github", "gitcode"]
+      } else {
+        let arr = @json.parse(remote_fallback_raw) catch {
+          _ => Json::array([])
+        }
+        match arr {
+          Array(a) =>
+            a
+            .map(fn(v) { v.as_string().unwrap_or("") })
+            .filter(fn(s) { !s.is_empty() })
+          _ => ["github", "gitcode"]
+        }
+      }
+
+      if !auto_push {
+        // 零回归路径：auto_push=false 时行为与当前字节级一致
+        return Ok(@mcp.ToolResult::text(bug_result.stringify()))
+      }
+
+      // ===== auto_push=true：立即 flush fallback 逻辑 =====
+      let remote_push : Map[String, Json] = Map([])
+      let mut github_ok = false
+
+      if fallback.contains("github") {
+        // 先检查 github 环境
+        let gh_check_res = github_env_check()
+        let gh_check = match gh_check_res {
+          Ok(j) => j
+          Err(e) => {
+            let mm : Map[String, Json] = Map([])
+            mm.set("ok", Json::boolean(false))
+            mm.set("error", Json::string("github_env_check: " + e))
+            remote_push.set("github", Json::object(mm))
+            Json::object(Map([]))
+          }
+        }
+        let gh_ready = match gh_check {
+          Object(m) =>
+            match m.get("ready") {
+              Some(True) => true
+              _ => false
+            }
+          _ => false
+        }
+        if !gh_ready {
+          let mm : Map[String, Json] = Map([])
+          mm.set("ok", Json::boolean(false))
+          mm.set(
+            "error",
+            Json::string("github_env_check: ready=false，跳过 GitHub"),
+          )
+          remote_push.set("github", Json::object(mm))
+        } else {
+          let repo = match gh_check {
+            Object(m) =>
+              match m.get("repo") {
+                Some(String(s)) => s
+                _ => ""
+              }
+            _ => ""
+          }
+          // 入队 GitHub 条目
+          let labels : Array[String] = if severity == "critical" {
+            ["bug", "priority-critical"]
+          } else if severity == "high" {
+            ["bug", "priority-high"]
+          } else if severity == "medium" {
+            ["bug", "priority-medium"]
+          } else if severity == "low" {
+            ["bug", "priority-low"]
+          } else {
+            ["bug"]
+          }
+          let eff_sev = if severity.is_empty() { "medium" } else { severity }
+          let append_res = github_queue_append(
+            project_dir, bug_id, summary, detail, eff_sev, ts, repo, labels,
+          )
+          match append_res {
+            Err(e) => {
+              let mm : Map[String, Json] = Map([])
+              mm.set("ok", Json::boolean(false))
+              mm.set("error", Json::string("入队失败: " + e))
+              remote_push.set("github", Json::object(mm))
+            }
+            Ok(_) => {
+              // 生成 flush_plan
+              let plan_res = github_flush_plan(project_dir, 1)
+              let curl_cmd = match plan_res {
+                Ok(pj) =>
+                  match pj {
+                    Object(pm) =>
+                      match pm.get("plan") {
+                        Some(Array(pa)) =>
+                          if pa.length() > 0 {
+                            match pa[0] {
+                              Object(oe) =>
+                                match oe.get("curl_command") {
+                                  Some(String(s)) => s
+                                  _ => ""
+                                }
+                              _ => ""
+                            }
+                          } else {
+                            ""
+                          }
+                        _ => ""
+                      }
+                    _ => ""
+                  }
+                Err(_) => ""
+              }
+              if curl_cmd.is_empty() {
+                let mm : Map[String, Json] = Map([])
+                mm.set("ok", Json::boolean(false))
+                mm.set(
+                  "error",
+                  Json::string("flush_plan 未生成 curl 命令"),
+                )
+                remote_push.set("github", Json::object(mm))
+              } else {
+                // 执行 curl（JS target 下，native 返回明确 Err）
+                let exec_res = github_execute_single(
+                  curl_cmd, project_dir, 15000,
+                )
+                match exec_res {
+                  Ok(exec_json) =>
+                    match exec_json {
+                      Object(em) => {
+                        let ok = match em.get("ok") {
+                          Some(True) => true
+                          _ => false
+                        }
+                        if ok {
+                          let issue_number = match em.get("issue_number") {
+                            Some(Number(n, ..)) => n.to_int()
+                            _ => -1
+                          }
+                          if issue_number > 0 {
+                            let _ = github_queue_mark_sent(
+                              project_dir,
+                              [bug_id],
+                              ts,
+                              Map([(bug_id, issue_number)]),
+                            )
+                          }
+                          github_ok = true
+                          let mm : Map[String, Json] = Map([])
+                          mm.set("ok", Json::boolean(true))
+                          if issue_number > 0 {
+                            mm.set(
+                              "issue_url",
+                              Json::string(
+                                "https://github.com/" +
+                                repo +
+                                "/issues/" +
+                                issue_number.to_string(),
+                              ),
+                            )
+                            mm.set(
+                              "issue_number",
+                              Json::number(issue_number.to_double()),
+                            )
+                          }
+                          remote_push.set("github", Json::object(mm))
+                        } else {
+                          let mm : Map[String, Json] = Map([])
+                          mm.set("ok", Json::boolean(false))
+                          let err_msg = match em.get("error") {
+                            Some(String(s)) => s
+                            _ => "execution failed"
+                          }
+                          mm.set("error", Json::string(err_msg))
+                          remote_push.set("github", Json::object(mm))
+                        }
+                      }
+                      _ => {
+                        let mm : Map[String, Json] = Map([])
+                        mm.set("ok", Json::boolean(false))
+                        mm.set(
+                          "error",
+                          Json::string("unexpected response shape"),
+                        )
+                        remote_push.set("github", Json::object(mm))
+                      }
+                    }
+                  Err(e) => {
+                    let mm : Map[String, Json] = Map([])
+                    mm.set("ok", Json::boolean(false))
+                    mm.set("error", Json::string("execute: " + e))
+                    remote_push.set("github", Json::object(mm))
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if !github_ok && fallback.contains("gitcode") {
+        let gc_check_res = gitcode_env_check()
+        let gc_check = match gc_check_res {
+          Ok(j) => j
+          Err(e) => {
+            let mm : Map[String, Json] = Map([])
+            mm.set("ok", Json::boolean(false))
+            mm.set("error", Json::string("env_check: " + e))
+            remote_push.set("gitcode", Json::object(mm))
+            Json::object(Map([]))
+          }
+        }
+        let gc_ready = match gc_check {
+          Object(m) =>
+            match m.get("ready") {
+              Some(True) => true
+              _ => false
+            }
+          _ => false
+        }
+        if !gc_ready {
+          let mm : Map[String, Json] = Map([])
+          mm.set("ok", Json::boolean(false))
+          mm.set(
+            "error",
+            Json::string("gitcode_env_check: ready=false，跳过 GitCode"),
+          )
+          mm.set("fallback_used", Json::boolean(false))
+          remote_push.set("gitcode", Json::object(mm))
+        } else {
+          let pid = match gc_check {
+            Object(m) =>
+              match m.get("project_id") {
+                Some(String(s)) => s
+                _ => ""
+              }
+            _ => ""
+          }
+          let labels : Array[String] = if severity == "critical" {
+            ["bug", "priority-critical"]
+          } else if severity == "high" {
+            ["bug", "priority-high"]
+          } else if severity == "medium" {
+            ["bug", "priority-medium"]
+          } else if severity == "low" {
+            ["bug", "priority-low"]
+          } else {
+            ["bug"]
+          }
+          let eff_sev = if severity.is_empty() { "medium" } else { severity }
+          let append_res = gitcode_queue_append(
+            project_dir, bug_id, summary, detail, eff_sev, ts, pid, labels,
+          )
+          match append_res {
+            Err(e) => {
+              let mm : Map[String, Json] = Map([])
+              mm.set("ok", Json::boolean(false))
+              mm.set("error", Json::string("入队失败: " + e))
+              remote_push.set("gitcode", Json::object(mm))
+            }
+            Ok(_) => {
+              let plan_res = gitcode_flush_plan(project_dir, pid, 1)
+              let curl_cmd = match plan_res {
+                Ok(pj) =>
+                  match pj {
+                    Object(pm) =>
+                      match pm.get("plan") {
+                        Some(Array(pa)) =>
+                          if pa.length() > 0 {
+                            match pa[0] {
+                              Object(oe) =>
+                                match oe.get("curl_command") {
+                                  Some(String(s)) => s
+                                  _ => ""
+                                }
+                              _ => ""
+                            }
+                          } else {
+                            ""
+                          }
+                        _ => ""
+                      }
+                    _ => ""
+                  }
+                Err(_) => ""
+              }
+              if curl_cmd.is_empty() {
+                let mm : Map[String, Json] = Map([])
+                mm.set("ok", Json::boolean(false))
+                mm.set(
+                  "error",
+                  Json::string("gitcode_flush_plan 未生成 curl 命令"),
+                )
+                remote_push.set("gitcode", Json::object(mm))
+              } else {
+                // 执行 GitCode curl（复用 github_execute_single 的 JS 壳）
+                let exec_res = github_execute_single(
+                  curl_cmd, project_dir, 15000,
+                )
+                match exec_res {
+                  Ok(exec_json) =>
+                    match exec_json {
+                      Object(em) => {
+                        let ok = match em.get("ok") {
+                          Some(True) => true
+                          _ => false
+                        }
+                        if ok {
+                          // 解析 GitCode iid
+                          let stdout_str = match em.get("stdout") {
+                            Some(String(s)) => s
+                            _ => ""
+                          }
+                          let inner = @json.parse(stdout_str.trim().to_owned()) catch {
+                            _ => Json::null()
+                          }
+                          let iid = match inner {
+                            Object(im) =>
+                              match im.get("iid") {
+                                Some(Number(n, ..)) => n.to_int().to_string()
+                                _ => ""
+                              }
+                            _ => ""
+                          }
+                          if !iid.is_empty() {
+                            let _ = gitcode_queue_mark_sent_batch(
+                              project_dir,
+                              [bug_id],
+                              ts,
+                              Map([(bug_id, iid)]),
+                            )
+                          }
+                          let mm : Map[String, Json] = Map([])
+                          mm.set("ok", Json::boolean(true))
+                          mm.set("fallback_used", Json::string("gitcode"))
+                          if !iid.is_empty() {
+                            mm.set(
+                              "issue_url",
+                              Json::string(
+                                "https://gitcode.com/" + pid + "/issues/" + iid,
+                              ),
+                            )
+                            mm.set("issue_iid", Json::string(iid))
+                          }
+                          remote_push.set("gitcode", Json::object(mm))
+                        } else {
+                          let mm : Map[String, Json] = Map([])
+                          mm.set("ok", Json::boolean(false))
+                          let err_msg = match em.get("error") {
+                            Some(String(s)) => s
+                            _ => "execution failed"
+                          }
+                          mm.set("error", Json::string(err_msg))
+                          mm.set("fallback_used", Json::boolean(false))
+                          remote_push.set("gitcode", Json::object(mm))
+                        }
+                      }
+                      _ => {
+                        let mm : Map[String, Json] = Map([])
+                        mm.set("ok", Json::boolean(false))
+                        mm.set(
+                          "error",
+                          Json::string("unexpected response shape"),
+                        )
+                        mm.set("fallback_used", Json::boolean(false))
+                        remote_push.set("gitcode", Json::object(mm))
+                      }
+                    }
+                  Err(e) => {
+                    let mm : Map[String, Json] = Map([])
+                    mm.set("ok", Json::boolean(false))
+                    mm.set("error", Json::string("execute: " + e))
+                    mm.set("fallback_used", Json::boolean(false))
+                    remote_push.set("gitcode", Json::object(mm))
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 合并 remote_push 到 report_bug 返回
+      match bug_result {
+        Object(m) => {
+          m.set("auto_push", Json::object(remote_push))
+          Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
+        }
+        _ => Ok(@mcp.ToolResult::text(bug_result.stringify()))
       }
     },
   )
@@ -5441,6 +5848,113 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let payload = get_str(args, "payload")
       match github_webhook_parse(payload) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+
+  // ===== gitcode 四件套：GitCode issue 同步（fallback 通道）=====
+  s1 = instrumented_tool(
+    s1,
+    "gitcode_queue_status",
+    "查看待同步 GitCode issue 队列状态。返回 {total, pending, sent, oldest_pending_ts, by_severity, pending_list, path}。纯计算读 JSONL 队列，不碰网络。**两栏不许混读**（同 github_queue_status 的 BUG-74 口径：total=0 ≠ 没有 bug 待上报——GitCode 是 GitHub 的 fallback，入队需显式带 gitcode_project_id）。可选 gitcode_project_id：非空时只统计该 project_id 的条目。参数：project_dir(必填)、gitcode_project_id(可选数字字符串)。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "gitcode_project_id": string_prop(
+          "GitCode 项目 ID（可选，非空时只统计该项目）",
+        ),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let pid = get_str(args, "gitcode_project_id")
+      match gitcode_queue_status(project_dir, pid) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "gitcode_flush_plan",
+    "生成 GitCode issue 同步计划——为每条 pending bug 生成一条 curl 命令（PRIVATE-TOKEN: ${FIST_GITCODE_TOKEN}，URL: https://gitcode.com/api/v4/projects/{id}/issues）。不执行任何网络调用，外部拿到后手动/脚本执行 curl，成功后调 gitcode_queue_mark_sent 标记。参数：project_dir(必填)、gitcode_project_id(必填数字字符串)、limit(可选默认20)。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "gitcode_project_id": string_prop(
+          "GitCode 项目 ID（必填，格式如 12345）",
+        ),
+        "limit": int_prop("输出上限(可选默认20)"),
+      },
+      ["project_dir", "gitcode_project_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let pid = get_str(args, "gitcode_project_id")
+      let limit = get_int(args, "limit", default=20)
+      match gitcode_flush_plan(project_dir, pid, limit) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "gitcode_queue_mark_sent",
+    "标记一批 bug_id 已同步至 GitCode issue（写入 sent_at + gitcode_issue_iid）。curl 执行成功后调此工具回写队列，幂等安全。参数：project_dir(必填)、bug_ids(必填数组)、sent_at(必填 ISO 时间)、gitcode_issue_iids(可选 JSON 对象：bug_id → iid 映射)。",
+    schema(
+      {
+        "project_dir": string_prop("项目目录（必填）"),
+        "bug_ids": array_prop("已同步的 bug_id 数组（必填）"),
+        "sent_at": string_prop("同步时间戳 ISO 格式（必填）"),
+        "gitcode_issue_iids": string_prop(
+          "bug_id→gitcode_issue_iid 映射 JSON 对象（可选）",
+        ),
+      },
+      ["project_dir", "bug_ids", "sent_at"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let sent_at = get_str(args, "sent_at")
+      let ids_arr = get_array(args, "bug_ids")
+      let bug_ids = ids_arr.map(fn(v) { v.as_string().unwrap_or("") })
+      let iids_raw = get_str(args, "gitcode_issue_iids")
+      let iids_map = if iids_raw.is_empty() {
+        Map([])
+      } else {
+        let m : Map[String, String] = Map([])
+        let j = @json.parse(iids_raw) catch { _ => Json::object(Map([])) }
+        match j {
+          Object(om) => {
+            for (k, v) in om {
+              match v {
+                String(s) => m.set(k, s)
+                Number(n, ..) => m.set(k, n.to_int().to_string())
+                _ => ()
+              }
+            }
+            m
+          }
+          _ => Map([])
+        }
+      }
+      match
+        gitcode_queue_mark_sent_batch(project_dir, bug_ids, sent_at, iids_map) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "gitcode_env_check",
+    "检查 GitCode issue 同步的环境变量配置状态——读 FIST_GITCODE_ENABLED / FIST_GITCODE_PROJECT_ID / FIST_GITCODE_TOKEN，返回 enabled/project_id_set/token_present/ready/hints 五元组。纯计算只读环境变量，不碰网络。外部 AI 开发前先查此工具，确认能否自动上报 bug（GitCode 是 GitHub 的 fallback 通道）。",
+    schema({}, []),
+    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      match gitcode_env_check() {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
