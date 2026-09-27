@@ -40,18 +40,18 @@ def main():
         b = call(p, "publish_parallel", project_dir=ROOT, description="DAG B", namespace=NS, created_by="dag", now=NOW)["task_id"]
         print(f"PASS publish → A={a} B={b}")
         # B 依赖 A
-        tb = call(p, "dag_depend", task_id=b, dep_id=a, now=NOW)
+        tb = call(p, "dag_depend", task_id=b, dep_id=a)
         deps = tb.get("depends_on", [])
         assert a in deps, f"B 应依赖 A: {deps}"
         print(f"PASS dag_depend → B.depends_on={deps}")
         # 自环拒绝
         try:
-            call(p, "dag_depend", task_id=a, dep_id=a, now=NOW)
+            call(p, "dag_depend", task_id=a, dep_id=a)
             print("FAIL 自环应被拒绝"); sys.exit(1)
         except RuntimeError as e:
             print("PASS dag_depend 自环被拒绝")
         # dag_ascii 应含依赖标注
-        ascii_out = call(p, "dag_ascii", **{"ns": NS})
+        ascii_out = call(p, "dag_ascii", namespace=NS)
         print(f"PASS dag_ascii 可调用（含 DAG 依赖线）")
         print("MCP-DAG-DEPEND-VERIFY PASS")
     finally:
