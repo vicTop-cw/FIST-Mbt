@@ -186,14 +186,89 @@ pub fn Archive::best(self : Archive) -> Artifact? {
 // ---------------------------------------------------------------------------
 
 ///|
-/// 切词：去空白后按字符去重（中英文通用；中文无需空格）。
-/// 用字符集做 Jaccard，对中文句子有效（单字即 token）。
+/// 切词单真源（BUG-25 标定后重写）：ASCII 词 + CJK 单字 + CJK 相邻二字组，去重。
+///
+/// 旧口径是"可见字符集"——对中文等价于逐字拆散，`熔断器三态` 与 `三态熔断器` 同分，
+/// 而真正的病灶是**改写型子任务**：子任务合法地换一套词（"依赖图恒空"→"增量编译链修复"），
+/// 字符集重合因此趋 0，绝对阈值下 15/15 全判漂移（实测见 scripts/calibrate_goal_drift.py）。
+/// 新口径加 ASCII 词与 CJK 二字组，让"同词/同词组"才计分：
+/// 全量父子对（1222 条）假阳性 16.9%→1.9%，随机错配对照仍 81.3% 判可疑。
+/// 口径必须与 scripts/calibrate_goal_drift.py 逐字对齐——数字不是抄来的，是那条命令跑出来的。
 pub fn tokens(s : String) -> Array[String] {
+  let seen : Map[String, Bool] = Map([])
+  let out : Array[String] = []
+  let chars = s.to_lower().to_array()
+  let n = chars.length()
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if is_cjk(c) {
+      // CJK 段：先扫到段边界，再发单字与相邻二字组（"熔断器"→ 熔/断/器/熔断/断器）
+      let mut j = i
+      while j < n && is_cjk(chars[j]) {
+        j = j + 1
+      }
+      let mut k = i
+      while k < j {
+        tok_add(seen, out, chars[k].to_string())
+        if k + 1 < j {
+          tok_add(seen, out, chars[k].to_string() + chars[k + 1].to_string())
+        }
+        k = k + 1
+      }
+      i = j
+    } else if is_word_char(c) {
+      let mut j = i
+      let mut w = ""
+      while j < n && is_word_char(chars[j]) {
+        w = w + chars[j].to_string()
+        j = j + 1
+      }
+      tok_add(seen, out, w)
+      i = j
+    } else {
+      i = i + 1
+    }
+  }
+  out
+}
+
+///|
+/// 去重后入表（Map/Array 是可变值类型，无需 mut 绑定；见 cb_json 同形写法）。
+fn tok_add(seen : Map[String, Bool], out : Array[String], k : String) -> Unit {
+  if k != "" && seen.get(k).is_none() {
+    seen.set(k, true)
+    out.push(k)
+  }
+}
+
+///|
+/// CJK 统一表意文字（含扩展 A）——"按字成词"的前提只对这些字符成立。
+fn is_cjk(c : Char) -> Bool {
+  let cp = c.to_int()
+  (cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0x3400 && cp <= 0x4dbf)
+}
+
+///|
+/// ASCII 词字符：字母/数字/下划线/连字符（与标定脚本的 `[a-z0-9_-]+` 同集）。
+fn is_word_char(c : Char) -> Bool {
+  let cp = c.to_int()
+  let alpha = cp >= 'a'.to_int() && cp <= 'z'.to_int()
+  let digit = cp >= '0'.to_int() && cp <= '9'.to_int()
+  alpha || digit || cp == '_'.to_int() || cp == '-'.to_int()
+}
+
+///|
+/// 可见字符去重集（旧 `tokens` 口径，保留给**兄弟冗余**用）。
+/// 兄弟重复的典型形状是"词序换位"（`数据采集模块` ↔ `采集数据模块`），
+/// 二字组口径会把它们放行（jaccard 0.556），字符集恰好对词序不敏感（1.0）；
+/// 实测这个分量在真实非模板家族上不额外增加误报（两种口径同为 34.8%，见标定脚本）。
+pub fn unigrams(s : String) -> Array[String] {
   let seen : Map[String, Bool] = Map([])
   let out : Array[String] = []
   for c in s.to_lower() {
     let ch = c.to_string()
-    if occupied(ch) && seen.get(ch).is_none() {
+    if ch.trim() != "" && seen.get(ch).is_none() {
       seen.set(ch, true)
       out.push(ch)
     }
@@ -202,10 +277,25 @@ pub fn tokens(s : String) -> Array[String] {
 }
 
 ///|
-/// 是否为可见字符（排除空白与控制字符）。
-fn occupied(ch : String) -> Bool {
-  let w = ch.trim()
-  w != ""
+/// 覆盖率 |a∩b| / |a|——**非对称**，a 是基准（根目标），b 是待测文本。
+/// Jaccard 用并集做分母，长文本天然被稀释：子任务多写 200 字模板就"更像漂移"，
+/// 那是长度惩罚不是目标偏离。coverage 只问"根目标里的词还在不在"，多写不罚。
+pub fn coverage(a : Array[String], b : Array[String]) -> Double {
+  if a.is_empty() {
+    return 0.0
+  }
+  let in_b : Map[String, Bool] = Map([])
+  for w in b {
+    in_b.set(w, true)
+  }
+  let mut inter = 0
+  // a 已由 tokens 去重，这里不再二次去重（重复元素会把分母外的分子抬高）
+  for w in a {
+    if in_b.contains(w) {
+      inter = inter + 1
+    }
+  }
+  inter.to_double() / a.length().to_double()
 }
 
 ///|
