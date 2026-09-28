@@ -297,3 +297,21 @@ fist.cmd : (node:36896) ExperimentalWarning: SQLite is an experimental feature a
 
 教训两条：**①「自检打印的 ✅」不是判据，要看它挂在哪条实测分支上**——无条件的那句永远绿，等于永远不说谎也永远不说真话；
 **② 一句错误的诊断比没有诊断更贵**：它把用户支去开新终端、重装，而真因只是一行 stderr 警告。
+
+### 沙箱外真面复验（盖章 2026-09-28T09:03:56Z）
+
+上面那张表的证据全部来自**沙箱**（env 重定向 + 沙箱 bin 顶 PATH），而「安装器自检经 shim 跑到 fist」
+这句话的用户面是 `~/.local/bin\fist.cmd` 加**真** PATH —— 不是同一个解析环境，所以再跑一次真面：
+用修好的 `install_onecmd.ps1` 以同版本、同字节（zip 由当前已装产物现打包）在真用户目录重装一次，
+跑前跑后 `fist-mbt.js` 都是 `sha256:616b7632`（同一版本重装不该改字节，改了即 FAIL）。
+
+| 面 | 回执 |
+|---|---|
+| 安装 rc | `0` |
+| 自检经 shim 那行 | 打出 `✅ fist (PATH) → …`（BUG-109 修前这一行**永远**打不出来，只出 ⚠️ 假因） |
+| 用户面 bash | `command -v fist` = `/c/Users/victo/.local/bin/fist`；`fist version` = `FIST-Mbt v0.3.0 (moon.mod version 单一真源)`；`fist doctor` rc=0 |
+| 装完 smoke | `fist demo` rc=0，`🎉 七态闭环全绿 ✅`（回执 `temp/b109-post-reinstall-demo.txt`） |
+| 真产物字节 | `616b7632 → 616b7632` 未变 |
+
+顺带一条旁证：`fist demo` 的回执**末尾**就挂着 `(node:…) ExperimentalWarning: SQLite is an experimental feature`
+——正是这行 stderr 在 `$ErrorActionPreference="Stop"` 下被升级成终止错误，才让旧自检把"跑通了"说成"PATH 未刷新"。
