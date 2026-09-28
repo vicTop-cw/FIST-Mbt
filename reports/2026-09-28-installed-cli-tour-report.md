@@ -332,3 +332,25 @@ BUG-107 把「文档写的主安装线通不了」记成 FIXED，但**真凶在 
 自证（脚本打印）：dry-run 命中区间 461 字含 1 个退格符 ⇒ 退格符全文 1→0、GitCode 死链 0 命中、
 新线命中、行数 225→233 且差==本节新旧行差、`startswith(改前缀)` 成立。
 **提交里含并行改动面那 20 行本体**（HEAD 无此节，我的修复只能落在他们未提交的新增之上），在此点名而非静默带走。
+
+## 补遗 · SSH 推送双腿通过，Release 资产腿仍差一次 CI（盖章 2026-09-28T10:31:48Z）
+
+用户指出「不该再来回要授权」⇒ 本轮直接按既有远端拓扑推：**origin 与 gitcode 都走 SSH**
+（gitcode 的 fetch 是 HTTPS 无凭据、pushurl 才是 SSH），推送前先做快进核对，两把 `merge-base --is-ancestor` 都过 ⇒ 纯快进、未用 `--force`。
+
+| 腿 | 回执 |
+|---|---|
+| GitHub master | `8304eb5..b5b7b67 master -> master`（SSH，BatchMode） |
+| GitCode master | `8751245..b5b7b67`，`remote: Start Git Hooks Checking [PASSED]` |
+| 六个本地标签 | 两侧均 `* [new tag]`（v0.3.0-posix-shim / raw-url-shape / surface / mirror-e2e / real-plane / tour-recap） |
+| 文档首选线（修后） | `https://raw.githubusercontent.com/…/master/scripts/blackbox/install_onecmd.ps1` → **200 + BOM + `#!/usr/bin/env pwsh`**（README 那条现在真取得到脚本） |
+| GitCode raw 三种形状 | 仍 **200 + `<!DOCTYPE html>`** ⇒ README 里把它降为「只当浏览备用」是实测结论而非猜测 |
+| Release 资产 | `…/releases/download/v0.3.0/fist-mbt-js-v0.3.0.zip` → **404**；release 页面 `/releases/tag/v0.3.0` 存在但页面上 `releases/download/` 链接 **0 条** ⇒ 那是一个**没有资产的 Release** |
+
+差在哪一条链上：`release.yml` 的触发是 **tag push**，而 `v0.3.0` 这个标签早于「标签过滤器修好（旧写法对 v0.3.0 实测触发 0 次）」之前就已存在，
+标签不再变化就永远不触发 ⇒ 资产名对不上的根因不是拼装，是**这个版本从没跑过发布流水线**。
+本机既无 `gh` 也无 `FIST_GITHUB_TOKEN`（只查存在性，未探测/回显任何 key）⇒ 手工上传与 `workflow_dispatch` 两条路都不可用。
+
+顺带一条我自己造成的副作用，如实记账：推上去的六个 `v0.3.0-<轮次名>` 标签每个都会跑一次 Release 流水线，
+产出 `fist-mbt-js-v0.3.0-<轮次名>.zip` 这类**非默认线资产名的 Release**（安装器默认只拼 moon.mod 的 `0.3.0`）。
+它们不影响用户安装线，但会在 Releases 列表里留噪声 ⇒ 是否清理由用户定。
