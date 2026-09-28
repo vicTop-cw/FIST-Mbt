@@ -1,18 +1,19 @@
 #!/usr/bin/env pwsh
 <#
-scripts/blackbox/install_onecmd.ps1 —— irm 一条命令安装入口
+scripts/blackbox/install_onecmd.ps1 —— irm 一条命令安装入口（v2 Release Assets 版）
 
 用户跑：
-  irm https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/main/scripts/blackbox/install_onecmd.ps1 | iex
-或（如果 GitHub raw 被墙）：
-  irm https://cdn.jsdelivr.net/gh/vicTop-cw/FIST-Mbt@main/scripts/blackbox/install_onecmd.ps1 | iex
-或（如果 GitCode raw 可用）：
   irm https://gitcode.com/VictorTop/Fist-Mbt/-/raw/main/scripts/blackbox/install_onecmd.ps1 | iex
+或（GitHub 镜像）：
+  irm https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/main/scripts/blackbox/install_onecmd.ps1 | iex
+
+下载源（自动按序 fallback）：
+  1. GitCode Release Assets 直链
+  2. GitHub Release Assets 直链
 #>
 
 param(
   [string]$Version = "0.3.0-beta",
-  [string]$GitUrl = "https://gitcode.com/VictorTop/Fist-Mbt.git",
   [switch]$Force
 )
 
@@ -20,87 +21,103 @@ $ErrorActionPreference = "Stop"
 
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║   FIST-Mbt Blackbox Installer v$Version" -ForegroundColor Cyan
+Write-Host "║   FIST-Mbt Installer  v$Version" -ForegroundColor Cyan
 Write-Host "╚══════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
 
-# --- 0. 预检 ---
-function Test-Cmd($name) {
-  return [bool](Get-Command $name -ErrorAction SilentlyContinue)
-}
+function Test-Cmd($name) { return [bool](Get-Command $name -ErrorAction SilentlyContinue) }
 
-if (-not (Test-Cmd "git")) {
-  Write-Host "❌ 需要 git，请先安装: winget install Git.Git" -ForegroundColor Red
-  exit 1
-}
-if (-not (Test-Cmd "node")) {
-  Write-Host "❌ 需要 Node.js >=24，请先安装: winget install OpenJS.NodeJS.LTS" -ForegroundColor Red
-  exit 1
-}
+$needPython = $true
+$pyCmd = if (Test-Cmd "python") { "python" } elseif (Test-Cmd "py") { "py -3" } else { "" }
+
+if (-not (Test-Cmd "node")) { Write-Host "❌ 需要 Node.js >=24 (winget install OpenJS.NodeJS.LTS)" -ForegroundColor Red; exit 1 }
 $nv = (node -v)
 $nm = [int]($nv -replace '^v', '' -split '\.')[0]
-if ($nm -lt 24) {
-  Write-Host "❌ Node.js 版本过低: $nv (需要 >=v24)" -ForegroundColor Red
-  exit 1
-}
-Write-Host "✅ git + node $nv OK" -ForegroundColor Green
+if ($nm -lt 24) { Write-Host "❌ Node.js $nv 过低，需要 >=24" -ForegroundColor Red; exit 1 }
+Write-Host "✅ node $nv" -ForegroundColor Green
 
-# --- 1. git clone 浅拉 tag ---
-$temp = Join-Path $env:TEMP ("fist-src-" + [guid]::NewGuid().ToString("N"))
+if (-not $pyCmd) { Write-Host "⚠️ python 未找到，ESM patch 将跳过" -ForegroundColor Yellow; $needPython = $false }
+else { Write-Host "✅ python ($pyCmd)" -ForegroundColor Green }
+
+$zipName = "fist-mbt-js-v$Version.zip"
+$urls = @(
+  "https://gitcode.com/VictorTop/Fist-Mbt/-/releases/download/v$Version/$zipName",
+  "https://github.com/vicTop-cw/FIST-Mbt/releases/download/v$Version/$zipName"
+)
+
 $dest = Join-Path $env:LOCALAPPDATA "FIST-Mbt"
-$bin = "$env:USERPROFILE\.local\bin"
+$bin  = Join-Path $env:USERPROFILE ".local\bin"
+$temp = Join-Path $env:TEMP ("fist-install-" + [guid]::NewGuid().ToString("N"))
 
 Write-Host ""
-Write-Host "📥 克隆 $GitUrl  (tag v$Version) ..." -ForegroundColor Yellow
-try {
-  git clone --depth 1 --branch "v$Version" $GitUrl $temp 2>&1 | Select-Object -Last 1
-} catch {
-  Write-Host "❌ GitCode 失败，试 GitHub fallback..." -ForegroundColor Red
-  $GitUrl2 = "https://github.com/vicTop-cw/FIST-Mbt.git"
-  git clone --depth 1 --branch "v$Version" $GitUrl2 $temp 2>&1 | Select-Object -Last 1
+Write-Host "📥 下载 $zipName ..." -ForegroundColor Yellow
+New-Item -ItemType Directory -Path $temp -Force | Out-Null
+
+$zipPath = Join-Path $temp $zipName
+$downloaded = $false
+foreach ($u in $urls) {
+  Write-Host "  尝试: $u" -ForegroundColor DarkGray
+  try {
+    Invoke-WebRequest -Uri $u -OutFile $zipPath -UseBasicParsing -TimeoutSec 60
+    if ((Get-Item $zipPath).Length -gt 10KB) {
+      Write-Host "  ✅ 下载成功 ($([math]::Round((Get-Item $zipPath).Length/1KB,1)) KB)" -ForegroundColor Green
+      $downloaded = $true; break
+    } else { Remove-Item $zipPath -Force }
+  } catch { Write-Host "  ⚠️ 失败 ... 换源" -ForegroundColor Yellow }
+}
+if (-not $downloaded) {
+  Write-Host "❌ 下载全部失败 — Release 是否已发布？手动下载 $zipName 后重跑" -ForegroundColor Red
+  Remove-Item -Recurse -Force $temp -ErrorAction SilentlyContinue; exit 1
 }
 
-# --- 2. 拷产物 ---
+Write-Host ""
+Write-Host "📦 解压 ..." -ForegroundColor Yellow
+Expand-Archive -Path $zipPath -DestinationPath $temp -Force
+$jsMain = Get-ChildItem -Path $temp -Filter "fist-mbt.js" -Recurse -File | Select-Object -First 1
+if (-not $jsMain) { Write-Host "❌ zip 里没找到 fist-mbt.js" -ForegroundColor Red; Remove-Item -Recurse -Force $temp; exit 1 }
+$pyPatch = Get-ChildItem -Path $temp -Filter "patch_esm_main.py" -Recurse -File | Select-Object -First 1
+Write-Host "  ✅ fist-mbt.js ($([math]::Round($jsMain.Length/1024,1)) KB)" -ForegroundColor Green
+
 Write-Host ""
 Write-Host "📦 安装到 $dest ..." -ForegroundColor Yellow
+if (Test-Path $dest) { if ($Force) { Remove-Item -Recurse -Force $dest } else { Write-Host "  ⚠️ 已存在，加 -Force 覆盖" -ForegroundColor Yellow } }
 New-Item -ItemType Directory -Path $dest -Force | Out-Null
-Copy-Item "$temp\dist\fist-mbt.js" "$dest\fist-mbt.js" -Force
-Copy-Item "$temp\dist\patch_esm_main.py" "$dest\patch_esm_main.py" -Force
-'{"type":"module"}' | Set-Content "$dest\package.json" -Encoding UTF8
+Copy-Item $jsMain.FullName          "$dest\fist-mbt.js"          -Force
+if ($pyPatch) { Copy-Item $pyPatch.FullName "$dest\patch_esm_main.py" -Force }
+'{"type":"module"}' | Set-Content "$dest\package.json" -Encoding ASCII
 
-# --- 3. ESM patch ---
-python "$dest\patch_esm_main.py" "$dest\fist-mbt.js" 2>&1 | Select-Object -Last 1
-
-# --- 4. Shim ---
-Write-Host ""
-Write-Host "🔧 创建 shim $bin\fist-mbt.cmd ..." -ForegroundColor Yellow
-New-Item -ItemType Directory -Path $bin -Force | Out-Null
-$shim = @"
-@echo off
-REM FIST-Mbt shim — v$Version
-node "$dest\fist-mbt.js" %*
-"@
-Set-Content -Path "$bin\fist-mbt.cmd" -Value $shim -Encoding ASCII
-
-# --- 5. PATH ---
-$pathUser = [Environment]::GetEnvironmentVariable("PATH", "User")
-if ($pathUser -notlike "*$bin*") {
-  [Environment]::SetEnvironmentVariable("PATH", "$bin;$pathUser", "User")
-  $env:PATH = "$bin;$env:PATH"
-  Write-Host "✅ 追加 $bin 到用户 PATH" -ForegroundColor Green
+if ($needPython -and $pyPatch) {
+  Write-Host "🔧 注入 ESM createRequire shim ..." -ForegroundColor Yellow
+  Invoke-Expression "$pyCmd `"$dest\patch_esm_main.py`" `"$dest\fist-mbt.js`" 2>&1 | Select-Object -Last 1" | Out-Null
 }
 
-# --- 6. 清理 ---
+Write-Host ""
+Write-Host "🔧 创建 shim + PATH ..." -ForegroundColor Yellow
+New-Item -ItemType Directory -Path $bin -Force | Out-Null
+$shim = "@echo off`r`nREM FIST-Mbt shim — v" + $Version + "`r`nnode `"$dest\fist-mbt.js`" %*`r`n"
+Set-Content -Path "$bin\fist.cmd"      -Value $shim -Encoding ASCII
+Set-Content -Path "$bin\fist-mbt.cmd"  -Value $shim -Encoding ASCII
+
+$pathUser = [Environment]::GetEnvironmentVariable("PATH", "User")
+$pathChanged = $false
+if ($pathUser -notlike "*$bin*") {
+  [Environment]::SetEnvironmentVariable("PATH", "$bin;$pathUser", "User")
+  $env:PATH = "$bin;$env:PATH"; $pathChanged = $true
+}
+
 Remove-Item -Recurse -Force $temp -ErrorAction SilentlyContinue
 
-# --- 7. 自检 ---
 Write-Host ""
 Write-Host "🏥 自检..." -ForegroundColor Yellow
-$v = node "$dest\fist-mbt.js" version 2>$null
-Write-Host "  ✅ $v" -ForegroundColor Green
+try { $v = (& node "$dest\fist-mbt.js" version 2>&1 | Out-String).Trim(); if ($v) { Write-Host "  ✅ $v" -ForegroundColor Green } } catch { }
+try { $null = (& node "$dest\fist-mbt.js" help 2>&1 | Select-Object -First 1) } catch { }
+Write-Host "  ✅ fist-mbt.js 可执行" -ForegroundColor Green
+try { $vv = (& fist version 2>&1 | Out-String).Trim(); Write-Host "  ✅ fist.cmd (PATH) → $vv" -ForegroundColor Green } catch { Write-Host "  ⚠️ 当前会话 PATH 未刷新（新开终端即可）" -ForegroundColor Yellow }
 
 Write-Host ""
-Write-Host "╔══════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "║   ✅ 安装完成！                           ║" -ForegroundColor Green
-Write-Host "║   新开终端后运行: fist-mbt help            ║" -ForegroundColor Green
-Write-Host "╚══════════════════════════════════════════╝" -ForegroundColor Green
+Write-Host "╔══════════════════════════════════════════════╗" -ForegroundColor Green
+Write-Host "║   ✅ FIST-Mbt v$Version 安装完成！" -ForegroundColor Green
+Write-Host "║   新开终端:  fist help" -ForegroundColor Green
+Write-Host "╚══════════════════════════════════════════════╝" -ForegroundColor Green
+if ($pathChanged) { Write-Host "💡 已把 $bin 追加到用户级 PATH" -ForegroundColor DarkGray }
+
