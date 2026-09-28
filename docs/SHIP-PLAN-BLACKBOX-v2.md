@@ -29,7 +29,7 @@
 ### 已就绪
 | 组件 | 状态 | 证据 |
 |------|------|------|
-| moon test JS 后端 | **508/508 全绿** | `moon test --target js` 真跑 |
+| moon test JS 后端 | **531/531 全绿** | `moon test --target js` 真跑 |
 | 账本 BUG | **43 FIXED + 6 DUPLICATE/FALSE_POSITIVE，零 OPEN** | `memory/bugs.md` 逐条解析 |
 | 构建脚本 | `scripts/blackbox/build_release.ps1` | 产出 JS + Native zip |
 | Windows 安装脚本 | `scripts/blackbox/install.ps1`（~180 行） | GitHub→GitCode 双源、PATH 追加、doctor 自检 |
@@ -42,14 +42,14 @@
 
 | # | 缺口 | 影响 | 补法 |
 |---|------|------|------|
-| G1 | **从未发布过任何 GitCode/GitHub Release** | install.ps1 的 Download-Artifact 会 404 | 首次发布 v0.3.0-beta |
+| G1 | **从未发布过任何 GitCode/GitHub Release** | install.ps1 的 Download-Artifact 会 404 | 首次发布（版本号只在 `BACKLOG.md` 的发布条目里自述，此处不重复数号） |
 | G2 | **缺少 irm 一条命令入口脚本** | 用户不知道执行什么 | 写 `install_onecmd.ps1`，即 irm 管道入口 |
 | G3 | **GitCode Releases API 未接入** | 当前 install.ps1 里 GitCode 路径写的是 GitHub 格式，GitCode 不同 | 改 GitCode API：`/api/v4/projects/{id}/releases` |
 | G4 | **后台 hidden shim 未创建** | 用户手动跑会有 console 窗口 | install.ps1 自动生成 `fist-mbt-background.cmd` |
 | G5 | **WSL2 未实测** | Linux 安装脚本理论有、WSL2 实际未知 | 端到端验证 |
 | G6 | **serve 子命令缺参数** | 现在只有 `fist-mbt.cmd serve`，没有 `--foreground/--bg` | CLI 加极简参数解析 |
 | G7 | **CI 自动发布未接 GitCode** | GitHub Actions release.yml 只写了 GitHub | 加 GitCode upload step |
-| G8 | **6 个单模式无法串联循环** | 现有 `PipelineMode` 是单次语义约束，没有编排层 | Phase 6 新增 `PipelineLoop` 编排层 + 3 个 MCP 工具 |
+| G8 | **6 个单模式无法串联循环** | 现有 `PipelineMode` 是单次语义约束，没有编排层 | Phase 6 新增 `PipelineLoop` 编排层与配套 MCP 工具（`loop_create` / `loop_tick` / `loop_status`，2026-09-28 已交付；当前工具总数以 `server.mbt` 注册表为准，由 `check_tools_sync` 对表） |
 
 ---
 
@@ -57,7 +57,7 @@
 
 ### Phase 0：GitCode Release 基础设施（1 次 commit）
 
-**目标**：首次发布 v0.3.0-beta，让 irm 命令有东西可拉。
+**目标**：产出第一个 Release，让 irm 命令有东西可拉（版本号以 `BACKLOG.md` 发布条目为准）。
 
 | 步骤 | 动作 | 文件 |
 |------|------|------|
@@ -198,7 +198,7 @@ fist-mbt serve &        # 后台跑，无窗口
 
 | 验收项 | 方法 | 通过标准 |
 |--------|------|----------|
-| moon test 不退化 | `moon test --target js` | 508/508 |
+| moon test 不退化 | `moon test --target js` | 531/531 |
 | irm 命令可达 | 浏览器直接打开 GitCode URL | 200 + 脚本内容正确 |
 | Windows 安装 | 干净 PowerShell 跑 irm 命令 | shim + PATH + doctor ✅ |
 | Windows 后台 | `fist-mbt-background.cmd serve` | 无 console 窗口 + `Get-Process node` 可见 |
@@ -356,4 +356,4 @@ pub struct PipelineLoop {
 | goal_reached | 环创建时 3 OPEN bug，loop 内 fix_and_merge 全修后 loop_tick | status=goal_reached |
 | 预设环 | `preset_loop("fix-iterate")` | 返回 steps=["bugfind","fix_and_merge"] |
 | 持久化 | loop_create → 进程重启 → loop_status | 状态完整保留 |
-| moon test | `moon test --target js` | 508/508（新测用例追加 ≥10 条） |
+| moon test | `moon test --target js` | 531/531（新测用例追加 ≥10 条） |

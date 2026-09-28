@@ -122,3 +122,45 @@ AIGC:
   `temp/tool-tour-*/tour-*.stderr.log`（4 GB OOM 原文）、`temp/goalverify0928.db`（空库）vs 根库行 `T0r496`。
 - 上游对照：`scripts/blackbox/build_release.ps1:38`（发布入口 = `cmd/cli/cli.js`）、
   `scripts/mcp_smoke.py:29-46`（`params._meta` 协议契约真源）、`src/engine/omega_gate.mbt:136`（`output_truncated`）。
+
+
+---
+
+## 续段（盖章 2026-09-28T05:29:54Z）：BUG-94 定位到根因并修掉，读面复跑到绿
+
+第一段把 BUG-94 记成"读面崩、写面 ok"的**归因边界**。本段把它推到底：
+
+- **根因**：`executions` 表从来不在 `src/store/store_sqlite.mbt` 的 `create_schema` 清单里，
+  只在**写**路径 `record_execution` 里 ensure。读路径 `StoreBackend::cost_stats` →
+  `aggregate_stats` → `list_all_executions` 直接 prepare `FROM executions`，而 js 桥的
+  `Database.prepare` 缺表时**抛异常**（不是返回 None）⇒ 未捕获异常打死 server。
+- **第一段那条"写面 ok / 读面崩"的差别不是树，是顺序**：写面播种链里先跑过 `execute`（把表建出来了）。
+  单独起 server 只读时，仓库根/无参、仓库根/带 ns、临时 box/无参 **三格全复现**
+  `Error: no such table: executions`（`temp/cost_stats_repro_3c39fd.log`）。
+- **修法两层**：① `executions_table_sql()` 进建表清单（新库开库即有表）；
+  ② `cost_stats` 读前 ensure（**存量老库**没这张表时也能自保——只补①对老库无效）。
+- **承重对照（同一判据两态实测）**：白盒 `src/store/cost_stats_executions_wbtest.mbt` 两条
+  （开库即查表 / `DROP TABLE` 后只读聚合回零值）。HEAD 源码 + 该判据 ⇒
+  `Total tests: 23, passed: 21, failed: 2`，两条红信息逐字 `Error: no such table: executions`
+  （`temp/cs_lock_head2.log`）；修复后 ⇒ 该包 23/23、全量 JS 后端 **531/531**（`temp/relbuild_test_r4.log`）。
+- **调用面复验（安装版 eb18f4f0）**：三种形态全部 `alive_after=True` 且回执
+  `{"total_records":0,...,"by_executor":{}}`（`temp/cost_stats_repro_e51bb6.log`）；
+  巡回两面 **129/129 打到调用面**：写面 ok 81 / refused 42 / skipped 6 / crashed 0，
+  读面 ok 76 / refused 41 / skipped 12 / crashed 0。
+
+## 续段自报的一个自身缺陷（BUG-98，已修）
+
+读面把 `project_dir="."` 当探针项目，而 `.` 就是仓库根 ⇒ 驱动里的 `report_bug` **直接写进了真账本**
+`memory/bugs.md`，一天内两发；其中 05:01 那一把编号推到了 90，而我 05:04 手写台账时按"89 条"的旧读数
+分配 90~94 ⇒ **BUG-90 出现两个抬头**。处置：
+- 两条垃圾条目改判 `FALSE_POSITIVE` 并逐条立据（重编号为 BUG-96/BUG-97，消除撞号）；
+- 缺陷本体另立 **BUG-98（FIXED）**：`mcp_tool_tour.py` 增加 `READ_PLANE_SKIP`
+  （report_bug / bug_fix / bug_mark_status / memory_consolidate / memory_gc / memory_link），
+  读面一律 skipped 并写明理由；
+- 判据：读面跑前跑后 `memory/bugs.md` 的 sha256 必须逐字相等 —— 实测
+  `63cd8b2593587b63` == `63cd8b2593587b63`（`temp/ledger_hash_before_read.txt`）。
+- 教训入档：**手写台账编号与工具发单不能并行数号**；改完脚本要先重新反解上界再落笔。
+
+账本现状：97 条抬头、无重复 id = 83 FIXED / 9 DUPLICATE / 3 FALSE_POSITIVE / 2 OPEN（BUG-92 拒绝文案自相矛盾、
+BUG-93 退役入口 `cmd/main` 散落 15+ 处）。仍未做：服务面级 catch-all（任何 handler 异常应回 JSON-RPC error
+而不是让进程退出）——那是"一个工具打死会话"的总闸，本轮只堵住了具体通路。

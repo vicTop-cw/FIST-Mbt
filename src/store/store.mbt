@@ -409,7 +409,15 @@ pub fn StoreBackend::cost_stats(self : StoreBackend) -> Json {
     Sql(s) =>
       match s.db {
         None => zero_cost_stats("sqlite_no_db")
-        Some(db) => aggregate_stats(db)
+        // BUG-94：读路径也要 ensure。只在建表清单里补不够——存量库
+        // （早于这次补表就建好的 fist-mbt.db）里没有 executions 表，js 桥的
+        // prepare 遇到缺表是**抛异常**而不是返回 None，一次 cost_stats 就能打死 server。
+        Some(db) =>
+          if !s.ensure_executions_table() {
+            zero_cost_stats("sqlite_executions_missing")
+          } else {
+            aggregate_stats(db)
+          }
       }
   }
 }

@@ -1407,8 +1407,9 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
 
 ### FIXED(2026-09-27T12:47:33Z / BUG-89)
 - evidence: 把自检挂上自动面并让它自己声明覆盖面：.github/workflows/ci.yml 文档面一步改为 `check_doc_surface.py --selftest` + 全量两步；check_doc_surface.py 的 SELFTEST OK 规则清单改由 inspect.getsource(j_selftest) 反解（不手写），并修回被误删的 fake 定义与 sorted(key=int)。实测：`python scripts/check_doc_surface.py --selftest` rc=0 且正文点名 J4/J6/J7/J8/J9/J10；改前同一命令两次 traceback（留档 temp/phaseC/selftest_doc.log）。AGENTS.md/scripts/README.md 的守卫族描述同步声明这条 CI 接线。
-## BUG-90 [2026-09-28T05:01:52Z] [medium] OPEN
+## BUG-96 [2026-09-28T05:01:52Z] [low] FALSE_POSITIVE
 - summary: 巡回探针：调用面可用性核验
+- evidence: 非产品缺陷——本条由 `scripts/mcp_tool_tour.py --plane read` 自己写进真账本的：读面把 `project_dir="."` 当探针项目，而 `.` 就是仓库根 ⇒ `report_bug` 直接落`memory/bugs.md`。且第一发还与本轮手写的 BUG-90 **撞号**（脚本按 05:04 读到的 89 条反解下一个号，而 05:01 那发已经把上界推到了 90——同一份号在两处各自数，就是双发）。缺陷本体另立条目并已修（读面不再允许写真账本），此处只把垃圾条目改判并留据。
 
 
 ## BUG-90 [2026-09-28T05:04:57Z] [critical] FIXED
@@ -1486,7 +1487,7 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
   未修原因：一次性改 15 个脚本会越出本轮责任面（且与并行改动面重叠），先入账并给出可复跑判据。
 - reported_by: installed-cli-tour
 
-## BUG-94 [2026-09-28T05:04:57Z] [high] OPEN
+## BUG-94 [2026-09-28T05:04:57Z] [high] FIXED
 - summary: cost_stats 无参调用触发未捕获的 ERR_SQLITE_ERROR，直接把 MCP 会话打死（与 BUG-91 同族：store 层 JS 桥的异常没被收成 JSON-RPC error）
 - detail:
   逐字（temp/tour_evidence.txt 的 crashed 行，excerpt 取自 server stderr）：
@@ -1517,3 +1518,49 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
   写面 129/129 工具打到调用面 = ok 81 / refused 42 / skipped 6 / crashed 0，明细逐字留档
   temp/tour_evidence.txt。安装面：scripts/blackbox/install_onecmd.ps1 加 `-LocalZip`（离线/发布前自证）、
   install.sh 加 `FIST_LOCAL_ZIP`，两条下载失败路径改为打印 HTTP 状态与候选 URL。
+
+### FIXED(2026-09-28T05:26:41Z / BUG-94)
+- evidence: 根因不是"cost_stats 的 SQL 写错"，是 **executions 表从来没进建表清单**：
+  `src/store/store_sqlite.mbt` 的 `create_schema` 列了 12 张表却没有 executions，
+  表只在**写**路径 `record_execution` 里 `ensure_executions_table()`；读路径
+  `StoreBackend::cost_stats` → `aggregate_stats` → `list_all_executions` 直接 prepare
+  `FROM executions`，而 js 桥的 `Database.prepare` 缺表时是**抛异常**不是返回 None
+  ⇒ 未捕获异常一路打死 server。
+  改判正文里"写面 ok / 读面崩"的归因：两档的差别不是树，而是**那一轮写面先跑过 `execute`**
+  （写路径把表建出来了）；单独起 server 只读时三格（仓库根/无参、仓库根/带 ns、临时 box/无参）
+  全部复现 `Error: no such table: executions` —— 复现留档 temp/cost_stats_repro_3c39fd.log。
+  修法两层：① `executions_table_sql()` 进 `create_schema`（新库开库即有表）；
+  ② `cost_stats` 读前 `ensure_executions_table()`（**存量老库**没这张表时也能自保，
+  只补建表清单对老库无效，这是第二条存在的理由）。
+  白盒锁 `src/store/cost_stats_executions_wbtest.mbt` 两条：开库后立刻 `SELECT 1 FROM executions`
+  必须成立；`DROP TABLE executions` 后只读聚合必须回 `total_records=0`。
+  承重对照（同一判据两态实测）：HEAD 源码 + 新判据 ⇒ `Total tests: 23, passed: 21, failed: 2`，
+  两条红信息逐字是 `Error: no such table: executions`（留档 temp/cs_lock_head2.log）；
+  修复后同一包 23/23、全量 JS 后端 **531/531**（temp/relbuild_test_r4.log，git archive HEAD 快照树）。
+  调用面复验（安装版 eb18f4f0，三格）：无参 / 带 namespace / 临时 box 三种形态全部
+  `alive_after=True` 且回执 `{"total_records":0,...,"by_executor":{}}`
+  （留档 temp/cost_stats_repro_e51bb6.log）——修前同一驱动是"管道关闭 + 未捕获异常"。
+  残余（不自证已修）：服务面级 catch-all（任何 handler 异常应回 JSON-RPC error 而不是让进程退出）
+  仍未做，那是这一类"一个工具打死会话"的总闸；本轮只堵住了 executions 这一条具体通路。
+## BUG-97 [2026-09-28T05:26:44Z] [low] FALSE_POSITIVE
+- summary: 巡回探针：调用面可用性核验
+- evidence: 非产品缺陷——本条由 `scripts/mcp_tool_tour.py --plane read` 自己写进真账本的：读面把 `project_dir="."` 当探针项目，而 `.` 就是仓库根 ⇒ `report_bug` 直接落`memory/bugs.md`。且第一发还与本轮手写的 BUG-90 **撞号**（脚本按 05:04 读到的 89 条反解下一个号，而 05:01 那发已经把上界推到了 90——同一份号在两处各自数，就是双发）。缺陷本体另立条目并已修（读面不再允许写真账本），此处只把垃圾条目改判并留据。
+
+## BUG-98 [2026-09-28T05:28:31Z] [medium] FIXED
+- summary: mcp_tool_tour 读面把 project_dir="." 当探针项目 ⇒ report_bug/bug_* 直接写进仓库根真账本（实跑双发）
+- detail: |
+  形状：读面的设计意图是"cwd=仓库根，只打不改源码的工具"，但 `build_args` 对所有工具一视同仁地
+  喂 `project_dir`，于是 `report_bug` 按 `memory/bugs.md` 的落盘根规则写到了**真账本**上。
+  后果两笔：① 台账长出两条非缺陷条目（已改判 FALSE_POSITIVE 并逐条立据，见 BUG-96/BUG-97）；
+  ② 其中一条与本轮手写的 BUG-90 **编号相撞**——`bug_next_seq` 是按抬头最大值取的，
+  而我先在 05:01 用工具发了一发、又在 05:04 用脚本按"89 条"的旧读数手写 90~94 ⇒ 同一号出现两次。
+  修法：驱动侧加 READ_PLANE_SKIP 闭集（report_bug / bug_fix / bug_mark_status /
+  memory_consolidate / memory_gc / memory_link）——读面一律 skipped 并写明理由；
+  判据：跑读面前后对 `memory/bugs.md` 取 sha256，必须逐字相等（temp/ledger_hash_before_read.txt
+  与 after 两份）。手写台账与工具发单不能并行数号：改完脚本后先重新反解上界再落笔。
+- reported_by: installed-cli-tour
+
+### FIXED(2026-09-28T05:28:31Z / BUG-98)
+- evidence: scripts/mcp_tool_tour.py 增加 READ_PLANE_SKIP（6 只写工具在读面记 skipped 并带原因）；
+  复跑读面 129/129 全部打到调用面（ok 79 / refused 44 / skipped 6 / crashed 0），
+  且 `memory/bugs.md` 的 sha256 跑前跑后逐字相等（修前同一天内它被同一驱动写过两次：BUG-90 撞号条与 BUG-95）。

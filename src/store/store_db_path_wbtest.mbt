@@ -3,7 +3,6 @@
 /// 未设置/空串必须逐字回落到 "fist-mbt.db"（零回归档）。
 /// 为什么判纯函数而不是直接读环境：判据要能在任何环境下跑出同一结论；
 /// 环境注入留给调用面实测（scripts/store_isolation_probe.py 起 serve 时带 env）。
-
 test "db_path_from_env: 环境缺席回默认库（零回归）" {
   assert_eq(SqliteStore::db_path_from_env(None), "fist-mbt.db")
 }

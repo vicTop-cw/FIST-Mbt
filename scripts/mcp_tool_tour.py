@@ -60,6 +60,18 @@ SKIPPED = {
     "delete": "不可逆删除",
     "watchdog_tick": "无人值守编排会真派单，交定时任务面",
 }
+# 读面禁打的"会写项目文件"的工具（BUG-98）：读面的 project_dir="." 就是仓库根，
+# report_bug 一类会直接往真账本 memory/bugs.md 追加条目——实测同一天内写过两次，
+# 其中一次还和手写台账的编号相撞。读面只做读，写面才在临时 box 里写真东西。
+READ_PLANE_SKIP = {
+    "report_bug": "读面 project_dir=. 即仓库根，会写真账本 memory/bugs.md",
+    "bug_fix": "同上：会改真账本抬头",
+    "bug_mark_status": "同上：会改真账本抬头",
+    "memory_consolidate": "会写 memory/{kind}.md 真记忆面",
+    "memory_gc": "会归档/移动 memory/ 真条目",
+    "memory_link": "会追加 memory/links.md 真关联面",
+}
+
 SERVER_JS = [
     os.path.expandvars(r"%LOCALAPPDATA%\FIST-Mbt\fist-mbt.js"),
     os.path.join(ROOT, "_build", "js", "debug", "build", "cmd", "cli", "cli.js"),
@@ -438,6 +450,12 @@ def main():
             name = tl["name"]
             if name in SKIPPED:
                 rows.append({"tool": name, "kind": "skipped", "why": SKIPPED[name], "excerpt": ""})
+                kinds["skipped"] = kinds.get("skipped", 0) + 1
+                continue
+            if a.plane == "read" and name in READ_PLANE_SKIP:
+                rows.append({"tool": name, "kind": "skipped",
+                             "why": "读面禁写件（BUG-98）：" + READ_PLANE_SKIP[name],
+                             "excerpt": ""})
                 kinds["skipped"] = kinds.get("skipped", 0) + 1
                 continue
             args = build_args(name, tl.get("inputSchema"), ctx, a.plane == "read")
