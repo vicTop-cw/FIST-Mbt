@@ -182,3 +182,26 @@ BUG-93 退役入口 `cmd/main` 散落 15+ 处）。仍未做：服务面级 catc
 
 来源：本轮以用户身份安装的 `fist`（sha256:eb18f4f0）+ 仓库 `git archive HEAD` 派生树实测；
 所有临时件在 `temp/`，历史面（memory/ reports/ CHANGELOG.md 既有段落）只追加未改写。
+
+## 再补遗 · 自述面判据（BUG-104）（盖章 2026-09-28T07:31:34Z）
+
+上一条补遗之后又追问了一件事：**「129 工具」有人钉着，「3 resources + 2 prompts」没有人钉**。
+
+| 项 | 结论 | 证据（逐字可回溯） |
+|---|---|---|
+| 缺陷定位 | BUG-104（medium，入账即 FIXED）：AGENTS.md 自述的 resources / prompts 两面与 `serverInfo.version ↔ moon.mod` 无任何判据认领 | `AGENTS.md` 的 `Resources:` / `Prompts:` 两行 vs `scripts/check_doc_surface.py` 覆盖面（只解 tools 表） |
+| 判据 | `scripts/mcp_tool_tour.py::surface_probe()`：期望值从 AGENTS.md 两行反解、与服务端实回**双向**对表；反解失败即自拒不报绿 | `temp/surf2_read_1790580101.log` 第 3 行、`temp/surf2_write_1790580144.log` 第 3 行（两行逐字相同） |
+| 判据自证 | `--surface-selftest` 12 支对照：10 违例必红 + 干净支必绿 + 无声明行必自拒 ⇒ `SURFACE-SELFTEST: OK … 不符 0 支`；已作为独立一步进 `ci.yml`（`check-and-test-js` job） | `python scripts/mcp_tool_tour.py --surface-selftest` rc=0 |
+| 调用面（安装态产物 sha256:**616b7632**） | read 面 129 工具 ok=76 refused=41 skipped=12 crashed=0 自述面红=0，且外溢判据取证面 172 项 0 新建 0 改动 | `temp/surf2_read_1790580101.log` |
+| 调用面（同上） | write 面 129 工具 ok=81 refused=42 skipped=6 crashed=0 自述面红=0（临时 box + 隔离库，仓库根 `fist-mbt.db` 未动） | `temp/surf2_write_1790580144.log` |
+| 实测自述面 | `resources=3(声明 3)[map=2182 overview=212 principles=606] prompts=2(声明 2)[check_in=1消息 verify=1消息] serverInfo=0.3.0 moon.mod=0.3.0` | 同上两份日志第 3 行 |
+| 投影复算 | `gen_plugins` 重生成 + cl7 PASS（4 宿主 / 56 文件 / v0.3.0）；`check_doc_surface` J1-J10 PASS；账本 103 条 = 90 已修 / 9 重复并入 / 4 误报 / 0 待修 | `python scripts/check_plugin_sync.py` rc=0 |
+
+两处对旧文字的**改判（不改写原文，只在此点名）**：
+1. 上一段「来源」写的是 `fist`（sha256:eb18f4f0）；本段两条巡回跑的是**重装后**的产物 sha256:616b7632
+   （含 BUG-101 的 stdout 净化与 serve 语义），旧 identity 只描述它当时那一批证据，不外推到本段。
+2. 上一段表格 `BUG-103 修复` 行只有 2 格（缺第三格证据列），本表按 3 列补齐；
+   那一行的证据其实存在（`temp/b103_*.log`），是当时漏排版 ⇒ 教训：**表格列数也是主张**，
+   少一格的行在渲染时会被静默补空，正好看不到"这条没有证据"。
+
+来源：本轮以用户身份安装的 `fist`（sha256:616b7632）+ 仓库工作树；临时件在 `temp/`，历史面只追加。

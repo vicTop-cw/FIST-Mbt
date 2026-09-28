@@ -1651,3 +1651,30 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
 - 版本号真源改绑 moon.mod（两个安装器）+ 空值即失败 + 资产名同源守卫；
   实测：不带参数时 URL 由 `v0.3.0-beta/…` 变 `v0.3.0/fist-mbt-js-v0.3.0.zip`；
   离线 `-LocalZip` 安装 → doctor 5/5、serve 第一行 JSON、129 工具。
+
+## BUG-104 [2026-09-28T07:23:55Z] [medium] FIXED
+- summary: AGENTS.md 自述的「3 resources + 2 prompts」与 serverInfo 版本，此前没有任何判据认领
+- detail:
+  工具面被 `check_tools_sync` / `check_doc_surface` 钉到逐字对齐，而同一行自述里的
+  resources 与 prompts 两面、以及 `tools/list → result._meta.serverInfo.version ↔ moon.mod`
+  这条版本对表，全靠人偶尔手试一次——正是 J10 型缺口：自述有人写、判据没人认领。
+  本轮把两面打到调用面（安装态产物 sha256:616b7632）：`resources/list` 回 3 条且逐条
+  `resources/read` 非空（map=2182 / overview=212 / principles=606 字符），`prompts/list` 回 2 条
+  且逐条 `prompts/get` 各回 1 条消息，serverInfo=0.3.0 == moon.mod=0.3.0 —— 现状是对的，
+  「对」不等于「有人守着」：此前它坏掉时不会有任何东西变红。
+  修法：scripts/mcp_tool_tour.py 增 `surface_probe()`——期望值从 AGENTS.md 的
+  `Resources:` / `Prompts:` 两行反解（不手抄常量），与服务端实回**双向**对表
+  （少一条、多一条、读回空文本、prompt 零消息、版本不符、验收位为空，一律计入红面 ⇒ 巡回退出码非 0）；
+  AGENTS.md 反解不出条目时判据自拒（"判据无法自证绝不报绿"），不静默返回零问题。
+  判据自身配 `--surface-selftest`：12 支对照（10 违例必红 + 干净支必绿 + 无声明行必自拒），
+  用桩 server 不起 node、不碰库，已作为独立一步挂在 .github/workflows/ci.yml。
+  为什么判据装在巡回而不是新写一个 check_*：两面都必须真跑协议才能观测，
+  离线脚本只能验文档自述、验不到服务端实回——那正是本条缺陷的形状。
+### FIXED(2026-09-28T07:23:55Z / BUG-104)
+由 `scripts/mcp_tool_tour.py` 的自述面判据收口：两面双向对表 + 12 支对照进 CI。
+调用面实测（安装态产物 sha256:616b7632，`--plane read` / `--plane write` 各一遍，两遍自述面行逐字相同）：
+  自述面（resources/prompts/版本）= resources=3(声明 3)[map=2182 overview=212 principles=606] prompts=2(声明 2)[check_in=1消息 verify=1消息] serverInfo=0.3.0 moon.mod=0.3.0
+  read  面：TOUR: GREEN —— 129 工具 ok=76 refused=41 skipped=12 crashed=0 not_tested=0 复活=0 自述面红=0（读面外溢判据：取证面新建 0 / memory 改动 0）
+  write 面：TOUR: GREEN —— 129 工具 ok=81 refused=42 skipped=6 crashed=0 not_tested=0 复活=0 自述面红=0
+判据对照实测（`python scripts/mcp_tool_tour.py --surface-selftest`）：
+  SURFACE-SELFTEST: OK —— 12 支（10 违例 + 1 干净 + 1 自拒），不符 0 支

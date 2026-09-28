@@ -34,6 +34,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -137,6 +138,14 @@ class Serve:
                     "params": {"_meta": META}})
         m = self._recv(w)
         return m["result"]["tools"]
+
+    def raw(self, method, params):
+        """非 tools/call 的方法面（resources/* prompts/*）也按同一份 _meta 打。"""
+        self.mid += 1
+        w = self.mid
+        self._send({"jsonrpc": "2.0", "id": w, "method": method,
+                    "params": dict(params, _meta=META)})
+        return self._recv(w)
 
     def close(self):
         try:
@@ -406,6 +415,205 @@ def seed(srv, ctx):
     return out
 
 
+def surface_probe(srv, root=None):
+    """自述面巡回：文档写着「3 resources + 2 prompts」，这里就把这两面打到调用面并双向对表。
+
+    为什么不只数工具：`check_doc_surface`/`check_tools_sync` 钉的是 tools 面，resources/prompts
+    两个面此前没有任何判据认领——文档说 3+2，服务端实际给几个、能不能读、读回来是不是空，
+    全靠人偶尔试一次（J10 型缺口：自述有人写、判据没人认领）。
+    期望值从 AGENTS.md 的 `Resources:` / `Prompts:` 两行反解，不在此处手抄常量。
+    """
+    problems = []
+    root = root or ROOT
+    agents = io.open(os.path.join(root, "AGENTS.md"), encoding="utf-8", errors="replace").read()
+    m_res = re.search(r"^Resources:(.*)$", agents, re.M)
+    m_pr = re.search("^Prompts:(.*)$", agents, re.M)
+    want_res = set(re.findall(r"`(fist://[\w./-]+)`", m_res.group(1))) if m_res else set()
+    want_pr = set(re.findall(r"`(fist:[\w./-]+)`", m_pr.group(1))) if m_pr else set()
+    if not want_res or not want_pr:
+        return ["自述面反解失败：AGENTS.md 的 Resources:/Prompts: 行里没解析出条目"
+                "（判据无法自证，绝不报绿）"], ""
+    rr = srv.raw("resources/list", {})
+    if "error" in rr:
+        problems.append("resources/list 被拒：%s" % json.dumps(rr["error"], ensure_ascii=False)[:120])
+        res_list = []
+    else:
+        res_list = rr.get("result", {}).get("resources", []) or []
+    got_res = set(x.get("uri", "") for x in res_list)
+    for miss in sorted(want_res - got_res):
+        problems.append("文档声明的 resource 服务端没有：%s" % miss)
+    for extra in sorted(got_res - want_res):
+        problems.append("服务端有但文档没声明的 resource：%s" % extra)
+    res_chars = []
+    for uri in sorted(got_res & want_res):
+        rd = srv.raw("resources/read", {"uri": uri})
+        if "error" in rd:
+            problems.append("resources/read %s 被拒：%s" % (uri, json.dumps(rd["error"], ensure_ascii=False)[:110]))
+            continue
+        cont = (rd.get("result", {}).get("contents") or [{}])
+        txt = cont[0].get("text", "") if cont else ""
+        if not txt.strip():
+            problems.append("resources/read %s 回的是空文本（读通了但没内容）" % uri)
+            continue
+        # 逐条把"读到的字节量"打进自述：账本里"非空"这种话要能被下一轮逐字复核，
+        # 只写"非空"就等于把一次性观测重新变成叙述。
+        res_chars.append("%s=%d" % (uri.replace("fist://", ""), len(txt)))
+    pp = srv.raw("prompts/list", {})
+    if "error" in pp:
+        problems.append("prompts/list 被拒：%s" % json.dumps(pp["error"], ensure_ascii=False)[:120])
+        pr_list = []
+    else:
+        pr_list = pp.get("result", {}).get("prompts", []) or []
+    got_pr = set(x.get("name", "") for x in pr_list)
+    for miss in sorted(want_pr - got_pr):
+        problems.append("文档声明的 prompt 服务端没有：%s" % miss)
+    for extra in sorted(got_pr - want_pr):
+        problems.append("服务端有但文档没声明的 prompt：%s" % extra)
+    pr_msgs = []
+    for name in sorted(got_pr & want_pr):
+        g = srv.raw("prompts/get", {"name": name, "arguments": {}})
+        if "error" in g:
+            problems.append("prompts/get %s 被拒：%s" % (name, json.dumps(g["error"], ensure_ascii=False)[:110]))
+            continue
+        msgs = g.get("result", {}).get("messages") or []
+        if not msgs:
+            problems.append("prompts/get %s 返回零条消息" % name)
+            continue
+        pr_msgs.append("%s=%d消息" % (name.replace("fist:", ""), len(msgs)))
+    mm = io.open(os.path.join(root, "moon.mod"), encoding="utf-8", errors="replace").read()
+    m_ver = re.search(r'version\s*=\s*"([^"]+)"', mm)
+    want_ver = m_ver.group(1) if m_ver else ""
+    tt = srv.raw("tools/list", {})
+    srv_ver = ((tt.get("result", {}) or {}).get("_meta", {})
+               .get("io.modelcontextprotocol/serverInfo", {}) or {}).get("version", "")
+    if not want_ver:
+        problems.append("moon.mod 里没解析出版本号（版本对表无法自证）")
+    elif not srv_ver:
+        problems.append("tools/list 的 result._meta 里没有 serverInfo（BUG-21 的验收位置空了）")
+    elif srv_ver != want_ver:
+        problems.append("serverInfo 版本 %s ≠ moon.mod %s" % (srv_ver, want_ver))
+    summary = "resources=%d(声明 %d)[%s] prompts=%d(声明 %d)[%s] serverInfo=%s moon.mod=%s" % (
+        len(res_list), len(want_res), " ".join(res_chars),
+        len(pr_list), len(want_pr), " ".join(pr_msgs), srv_ver or "?", want_ver or "?")
+    return problems, summary
+
+
+class FakeSrv(object):
+    """自述面判据的桩 server：按夹具表回放 RPC 回执，缺项＝被拒。"""
+
+    def __init__(self, spec):
+        self.spec = spec
+
+    def raw(self, method, params):
+        v = self.spec.get(method)
+        if v is None:
+            return {"error": {"code": -32000, "message": "refused by fixture"}}
+        return {"result": v}
+
+
+def surface_fixture():
+    """与 AGENTS.md 当前声明同集的干净回执（干净支的"零 problem"因此不是自证）。"""
+    res = re.search(r"^Resources:(.*)$", io.open(os.path.join(ROOT, "AGENTS.md"),
+                                                 encoding="utf-8").read(), re.M)
+    pr = re.search(r"^Prompts:(.*)$", io.open(os.path.join(ROOT, "AGENTS.md"),
+                                               encoding="utf-8").read(), re.M)
+    return {
+        "resources/list": {"resources": [{"uri": u} for u in re.findall(r"`(fist://[\w./-]+)`", res.group(1))]},
+        "resources/read": {"contents": [{"text": "夹具正文，非空"}]},
+        "prompts/list": {"prompts": [{"name": n} for n in re.findall(r"`(fist:[\w./-]+)`", pr.group(1))]},
+        "prompts/get": {"messages": [{"role": "user", "content": "x"}]},
+        "tools/list": {"_meta": {"io.modelcontextprotocol/serverInfo": {
+            "name": "fist-mbt", "version": version_from_moon_mod()}}},
+    }
+
+
+def version_from_moon_mod():
+    mm = io.open(os.path.join(ROOT, "moon.mod"), encoding="utf-8", errors="replace").read()
+    m = re.search(r'version\s*=\s*"([^"]+)"', mm)
+    return m.group(1) if m else ""
+
+
+def surface_selftest():
+    """`--surface-selftest`：自述面判据的 12 支对照（10 支违例必红 + 1 支干净必绿 + 1 支自拒）。
+
+    为什么单独跑：判据只在巡回里跑，而巡回要 node + 产物 + 数分钟——CI 轨执行不了；
+    没有可独立执行的对照，它就只是一段"本轮绿过一次"的叙述（本仓踩过的同型坑：
+    `--selftest` 没被 CI 那一步执行，自检本身崩了也报绿）。这里用桩 server 把每类违例
+    都造一遍，不起 node、不碰库，CI 可直接跑。
+    """
+    cases = []
+    cases.append(("干净：夹具与 AGENTS.md 同集 ⇒ 零 problem", lambda s: None, False))
+
+    def drop_res(s):
+        s["resources/list"]["resources"].pop(0)
+
+    def ghost_res(s):
+        s["resources/list"]["resources"].append({"uri": "fist://ghost"})
+
+    def blank_res(s):
+        s["resources/read"]["contents"][0]["text"] = "   "
+
+    def drop_pr(s):
+        s["prompts/list"]["prompts"] = s["prompts/list"]["prompts"][1:]
+
+    def ghost_pr(s):
+        s["prompts/list"]["prompts"].append({"name": "fist:ghost"})
+
+    def empty_msg(s):
+        s["prompts/get"]["messages"] = []
+
+    def bad_ver(s):
+        s["tools/list"]["_meta"]["io.modelcontextprotocol/serverInfo"]["version"] = "9.9.9"
+
+    def no_ver(s):
+        s["tools/list"]["_meta"] = {}
+
+    def deny_res(s):
+        s["resources/list"] = None
+
+    def deny_pr(s):
+        s["prompts/list"] = None
+
+    cases += [
+        ("声明的 resource 服务端没有", drop_res, True),
+        ("服务端多出的 resource 文档没声明", ghost_res, True),
+        ("resource 读回来是空文本", blank_res, True),
+        ("声明的 prompt 服务端没有", drop_pr, True),
+        ("服务端多出的 prompt 文档没声明", ghost_pr, True),
+        ("prompt get 返回零条消息", empty_msg, True),
+        ("serverInfo 版本 ≠ moon.mod", bad_ver, True),
+        ("serverInfo 验收位为空", no_ver, True),
+        ("resources/list 被拒", deny_res, True),
+        ("prompts/list 被拒", deny_pr, True),
+    ]
+    fails = []
+    for name, mutate, expect_red in cases:
+        spec = surface_fixture()
+        mutate(spec)
+        probs, summ = surface_probe(FakeSrv(spec))
+        print("  %-38s problems=%d %s" % (name, len(probs),
+                                          (probs[0][:78] if probs else summ[:78])))
+        if bool(probs) != expect_red:
+            fails.append(name + ("（该红没红）" if expect_red else "（该绿没绿）"))
+    # 第 12 支：文档没有声明行 ⇒ 判据必须自拒，不能静默零 problem
+    box = os.path.join(ROOT, "temp", "surf-selftest-%s" % RUN_ID)
+    os.makedirs(box, exist_ok=True)
+    io.open(os.path.join(box, "AGENTS.md"), "w", encoding="utf-8", newline="\n").write(
+        "# 假文档：没有 Resources:/Prompts: 两行\n")
+    io.open(os.path.join(box, "moon.mod"), "w", encoding="utf-8", newline="\n").write(
+        'version = "0.0.0"\n')
+    probs, summ = surface_probe(FakeSrv(surface_fixture()), root=box)
+    print("  %-38s problems=%d %s" % ("文档无声明行 ⇒ 判据自拒", len(probs),
+                                      (probs[0][:78] if probs else "(空)")))
+    if not (len(probs) == 1 and "反解失败" in probs[0]):
+        fails.append("反解失败支未自拒")
+    print("SURFACE-SELFTEST: %s —— %d 支（%d 违例 + 1 干净 + 1 自拒），不符 %d 支" % (
+        "OK" if not fails else "FAIL", len(cases) + 1, len(cases) - 1, len(fails)))
+    for f in fails:
+        print("  FAIL " + f)
+    return 0 if not fails else 2
+
+
 def surface_snapshot():
     """读面外溢判据的取证面：仓库根一层文件 + memory/ 递归（moon 构建临时件 *.tmp 除外）。"""
     snap = {}
@@ -428,7 +636,11 @@ def main():
     ap.add_argument("--plane", choices=["write", "read"], default="write")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--js", default="")
+    ap.add_argument("--surface-selftest", action="store_true",
+                    help="只跑自述面判据的对照（桩 server，不起 node、不碰库）")
     a = ap.parse_args()
+    if a.surface_selftest:
+        return surface_selftest()
 
     cands = ([a.js] if a.js else []) + SERVER_JS
     js = next((p for p in cands if os.path.isfile(p)), None)
@@ -471,6 +683,10 @@ def main():
         if len(tools) <= 100:
             print("TOUR: UNUSABLE —— tools/list 只回 %d 个（判据无法自证绝不报绿）" % len(tools))
             return 2
+        surf_problems, surf_summary = surface_probe(srv)
+        print("自述面（resources/prompts/版本）= %s" % surf_summary)
+        for sp in surf_problems:
+            print("  !! 自述面 %s" % sp)
         ctx = {"project_dir": proj, "data_dir": proj, "namespace": ns, "now": now_iso(),
                "task_id": "T0", "root_task_id": "T0", "loop_name": "tour-loop-" + RUN_ID[-6:],
                "bug_id": "BUG-1"}
@@ -548,6 +764,7 @@ def main():
             io.open(jp, "w", encoding="utf-8").write(json.dumps(
                 {"started": now_iso(), "server_js": js, "server_sha8": sha8(js),
                  "plane": a.plane, "tools_listed": len(tools), "ns": ns,
+                 "surface": {"summary": surf_summary, "problems": surf_problems},
                  "seed": seedlog, "rows": rows, "kinds": kinds},
                 ensure_ascii=False, indent=2))
             print("JSON 证据 = %s" % os.path.relpath(jp, ROOT).replace("\\", "/"))
@@ -571,12 +788,14 @@ def main():
             if newf or mod_mem:
                 print("!! 读面外溢 ⇒ 判红（巡回探针不该在被测项目里留下任何文件）")
                 return 2
-        # 红面 = 崩溃 + 未打到调用面 + 复活失败；refused 不算红（那是产品的自述拒绝）
-        red = kinds.get("crashed", 0) + kinds.get("not_tested", 0) + kinds.get("broken", 0)
-        print("TOUR: %s —— %d 工具 ok=%d refused=%d skipped=%d crashed=%d not_tested=%d 复活=%d" % (
+        # 红面 = 崩溃 + 未打到调用面 + 复活失败 + 自述面漂移；refused 不算红（那是产品的自述拒绝）
+        red = (kinds.get("crashed", 0) + kinds.get("not_tested", 0)
+               + kinds.get("broken", 0) + len(surf_problems))
+        print("TOUR: %s —— %d 工具 ok=%d refused=%d skipped=%d crashed=%d not_tested=%d 复活=%d 自述面红=%d" % (
             "GREEN" if red == 0 else "RED", len(rows), kinds.get("ok", 0),
             kinds.get("refused", 0), kinds.get("skipped", 0),
-            kinds.get("crashed", 0), kinds.get("not_tested", 0), restarts))
+            kinds.get("crashed", 0), kinds.get("not_tested", 0), restarts,
+            len(surf_problems)))
         return 0 if red == 0 else 1
     finally:
         srv.close()
