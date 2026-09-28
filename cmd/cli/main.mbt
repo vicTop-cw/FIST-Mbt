@@ -49,6 +49,7 @@ fn run_version() -> Unit {
 }
 
 ///|
+
 ///|
 /// serve：启动 MCP server (stdio 传输)
 /// 直接 import @server.run_server()，零 spawn 零进程创建
@@ -79,20 +80,32 @@ fn run_demo() -> Unit {
     ns~,
   )
   let root_id : String = match pub_result {
-    Ok(id) => { println("✅ [1/7] publish → \{id}"); id }
-    Err(e) => { println("❌ publish: \{e}"); return }
+    Ok(id) => {
+      println("✅ [1/7] publish → \{id}")
+      id
+    }
+    Err(e) => {
+      println("❌ publish: \{e}")
+      return
+    }
   }
 
   // 2. claim 根（Pending → Claimed）
   match engine.claim(task_id=root_id, assignee="leader", now~) {
     Ok(_) => println("✅ [2/7] claim → 已领取")
-    Err(e) => { println("❌ claim 根: \{e}"); return }
+    Err(e) => {
+      println("❌ claim 根: \{e}")
+      return
+    }
   }
 
   // 3. plan 根（Claimed → Splitting，生成 depth=2 子任务）
   match engine.plan(task_id=root_id, split_n=2, by="agent", now~) {
     Ok(ids) => println("✅ [3/7] plan → 生成 \{ids.length()} 个子任务")
-    Err(e) => { println("❌ plan 根: \{e}"); return }
+    Err(e) => {
+      println("❌ plan 根: \{e}")
+      return
+    }
   }
 
   // 4. 对每个子任务再 claim + plan 一层（depth=2 → depth=1 叶子）
@@ -118,7 +131,9 @@ fn run_demo() -> Unit {
   let ref_fail = [0]
 
   for t in engine.list_all() {
-    if !t.is_leaf() { continue }
+    if !t.is_leaf() {
+      continue
+    }
     ref_count[0] = ref_count[0] + 1
     let tid = t.get_id()
 
@@ -129,31 +144,48 @@ fn run_demo() -> Unit {
     let ex = engine.execute(task_id=tid, deliverable="\{tid} 交付物", now~)
     match ex {
       Ok(_) => ()
-      Err(e) => { println("   ❌ execute \{tid}: \{e}"); ref_fail[0] = ref_fail[0] + 1; continue }
+      Err(e) => {
+        println("   ❌ execute \{tid}: \{e}")
+        ref_fail[0] = ref_fail[0] + 1
+        continue
+      }
     }
 
     // submit（Executing → Reviewing）
     let sb = engine.submit(task_id=tid, now~)
     match sb {
       Ok(_) => ()
-      Err(e) => { println("   ❌ submit \{tid}: \{e}"); ref_fail[0] = ref_fail[0] + 1; continue }
+      Err(e) => {
+        println("   ❌ submit \{tid}: \{e}")
+        ref_fail[0] = ref_fail[0] + 1
+        continue
+      }
     }
 
     // verify（Reviewing → Completed，并自动向上归并父任务）
     let vr = engine.verify(task_id=tid, verifier="leader", now~)
     match vr {
       Ok(_) => ref_ok[0] = ref_ok[0] + 1
-      Err(e) => { println("   ❌ verify \{tid}: \{e}"); ref_fail[0] = ref_fail[0] + 1 }
+      Err(e) => {
+        println("   ❌ verify \{tid}: \{e}")
+        ref_fail[0] = ref_fail[0] + 1
+      }
     }
   }
-  println("✅ [5/7] 叶子闭环: \{ref_ok[0]}/\{ref_count[0]} 成功, \{ref_fail[0]} 失败")
+  println(
+    "✅ [5/7] 叶子闭环: \{ref_ok[0]}/\{ref_count[0]} 成功, \{ref_fail[0]} 失败",
+  )
 
   // 6. 手动 verify 所有中间层任务（engine.verify 向上归并不自动 verify 父）
   let ref_mid = [0]
   for t in engine.list_all() {
     let tid = t.get_id()
-    if tid == root_id { continue }
-    if t.is_leaf() { continue }
+    if tid == root_id {
+      continue
+    }
+    if t.is_leaf() {
+      continue
+    }
     let vr = engine.verify(task_id=tid, verifier="leader", now~)
     match vr {
       Ok(_) => ref_mid[0] = ref_mid[0] + 1
@@ -297,16 +329,23 @@ fn run_doctor() -> Unit {
               } else {
                 let kid_id = kids[0].get_id()
                 let _ = e4.claim(task_id=kid_id, assignee="w", now~)
-                let ex = match e4.execute(task_id=kid_id, deliverable="done", now~) {
+                let ex = match
+                  e4.execute(task_id=kid_id, deliverable="done", now~) {
                   Err(_) => false
                   Ok(_) =>
                     match e4.submit(task_id=kid_id, now~) {
                       Err(_) => false
                       Ok(_) =>
-                        match e4.verify(task_id=kid_id, verifier="leader", now~) {
+                        match
+                          e4.verify(task_id=kid_id, verifier="leader", now~) {
                           Err(_) => false
                           Ok(_) =>
-                            match e4.archive(task_id=root_id, by="human_steward", now~) {
+                            match
+                              e4.archive(
+                                task_id=root_id,
+                                by="human_steward",
+                                now~,
+                              ) {
                               Err(_) => false
                               Ok(_) => true
                             }
@@ -327,23 +366,28 @@ fn run_doctor() -> Unit {
   }
 
   // —— 检查 5：SQLite store（真实尝试，失败自动 skip 不阻塞）——
-    ref_total[0] = ref_total[0] + 1
-    let tmp_db = "_fist_doctor_check.db"
-    match @engine.FistEngine::open_sqlite(tmp_db) {
-      None => println("⏭️ [5/5] SQLite store 跳过（open_sqlite 返回 None，可能 ESM require 不可用）")
-      Some(e) => {
-        // 最小闭环: open_sqlite + publish（具名参数，跟 demo 一致）
-        let pub_res = e.publish(
-          project_dir="./",
-          description="sqlite engine check",
-          created_by="human_steward",
-          now="2026-09-27T15:00:00Z",
-          ns="doctor-sqlite-check",
-        )
-        println("✅ [5/5] SQLite store 可打开 (open_sqlite + publish 闭环, pub=\{pub_res.to_string()})")
-        ref_ok[0] = ref_ok[0] + 1
-      }
+  ref_total[0] = ref_total[0] + 1
+  let tmp_db = "_fist_doctor_check.db"
+  match @engine.FistEngine::open_sqlite(tmp_db) {
+    None =>
+      println(
+        "⏭️ [5/5] SQLite store 跳过（open_sqlite 返回 None，可能 ESM require 不可用）",
+      )
+    Some(e) => {
+      // 最小闭环: open_sqlite + publish（具名参数，跟 demo 一致）
+      let pub_res = e.publish(
+        project_dir="./",
+        description="sqlite engine check",
+        created_by="human_steward",
+        now="2026-09-27T15:00:00Z",
+        ns="doctor-sqlite-check",
+      )
+      println(
+        "✅ [5/5] SQLite store 可打开 (open_sqlite + publish 闭环, pub=\{pub_res.to_string()})",
+      )
+      ref_ok[0] = ref_ok[0] + 1
     }
+  }
 
   // 汇总
   println("")
