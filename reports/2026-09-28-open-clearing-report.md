@@ -77,3 +77,20 @@
   `scripts/cli_flag_probe.py`、`cmd/cli/subcmd.mbt`、`cmd/cli/subcmd_wbtest.mbt`、
   `src/server/fist-mbt_wbtest.mbt`（BUG-16 常驻锁）、`.github/workflows/ci.yml`（新步）、`.github/workflows/release.yml`。
 - 过程记录：`CHANGELOG.md` 本轮段、`memory/2026-09-28.md` 收口段；一次性脚本与证据留在 `temp/`（不入库）。
+
+## 推送后的 CI 回执（追加，盖章 2026-09-28T17:55Z）
+
+推 `af54d5e` 后匿名读 `/actions/runs/<id>/jobs`（只看步骤名，日志要授权）：
+
+- **`CI` 工作流**：`check + test (js, ubuntu)` = **success**、`check + test (js, windows)` = **success**
+  ⇒ 本轮所有判据所在的**权威 JS 门在干净 checkout 上是绿的**（含新增的 `cli_flag_probe` 一步）；
+  唯一红的是 `check + test (native, ubuntu)` 的 `Test (native)` —— AGENTS 已写明 native 非权威面，
+  本轮未复跑也未宣称修好。
+- **`FIST CI — Build + Test`（狗食轨）**：`Format check` 红 —— **这一格是我的**：
+  我新写的 `cmd/cli/subcmd.mbt` / `subcmd_wbtest.mbt` 没按 `moon fmt` 的形落盘。
+  修：取 moon fmt 自己生成的规范化产物逐文件落回（不是整档 formatter 扫全仓），
+  顺带把同一条红里**别人欠的那一格**（`src/engine/plan_remedy_wbtest.mbt`，纯换行 3 处、11 行差异）一起格式化掉；
+  复跑 `moon fmt --check` = 0 处差异，`moon test --target js src/engine cmd/cli` = 126/126。
+  `Test (native, j=1)` 的红与上面同源（native 非权威），不在本轮主张范围内。
+- 教训：**"提交前跑一遍 `moon fmt --check`" 是本轮才补进习惯的动作** —— 之前只跑 `moon test`，
+  而格式门住在那个我第一眼没看的狗食工作流里。

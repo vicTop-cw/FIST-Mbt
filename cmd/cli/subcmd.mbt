@@ -42,7 +42,7 @@ fn exit_code_of(cmd : Subcmd) -> Int {
 ///|
 /// 把退出码真的交给宿主运行时。JS 腿是权威门槛（Node），native 腿用 libc `exit`；
 /// 其余运行时没有退出码可设，就当场炸出来，绝不静默回 0（那正是 BUG-106 的形态）。
-#cfg(target = "js")
+#cfg(target="js")
 extern "js" fn js_try_exit(code : Int) -> Bool =
   #| function(code) {
   #|   if (typeof process !== "undefined" && typeof process.exit === "function") {
@@ -53,7 +53,7 @@ extern "js" fn js_try_exit(code : Int) -> Bool =
   #| }
 
 ///|
-#cfg(target = "js")
+#cfg(target="js")
 fn cli_exit(code : Int) -> Unit {
   if !js_try_exit(code) {
     abort("运行时没有 process.exit，无法回显退出码 \{code}")
@@ -61,17 +61,17 @@ fn cli_exit(code : Int) -> Unit {
 }
 
 ///|
-#cfg(any(target = "native", target = "llvm"))
+#cfg(any(target="native", target="llvm"))
 extern "c" fn native_exit(code : Int) = "exit"
 
 ///|
-#cfg(any(target = "native", target = "llvm"))
+#cfg(any(target="native", target="llvm"))
 fn cli_exit(code : Int) -> Unit {
   native_exit(code)
 }
 
 ///|
-#cfg(not(any(target = "js", target = "native", target = "llvm")))
+#cfg(not(any(target="js", target="native", target="llvm")))
 fn cli_exit(code : Int) -> Unit {
   abort("该运行时无法设置退出码，本应回 \{code}")
 }
