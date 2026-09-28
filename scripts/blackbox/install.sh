@@ -12,8 +12,17 @@
 
 set -euo pipefail
 
-VERSION="${1:-0.3.0-beta}"
-FORCE="${2:-}"
+VERSION="0.3.0-beta"
+FORCE=""
+DRY_RUN=""
+for arg in "$@"; do
+  case "$arg" in
+    --force)   FORCE="1" ;;
+    --dry-run) DRY_RUN="1" ;;
+    -*) : ;;  # 忽略其它
+    *)   VERSION="$arg" ;;  # 第一个非 flag 作 version
+  esac
+done
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; DIM='\033[2m'; NC='\033[0m'
 
@@ -192,3 +201,4 @@ echo -e "${GREEN}║   新开终端后运行:  fist help${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${DIM}💡 已把 ${BIN_DIR} 追加到 ${RC_FILE} — 新开终端生效${NC}"
+
