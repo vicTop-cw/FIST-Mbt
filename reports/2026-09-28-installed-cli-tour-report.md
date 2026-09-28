@@ -384,3 +384,40 @@ BUG-107 把「文档写的主安装线通不了」记成 FIXED，但**真凶在 
 翻 FIXED 的判据写在账本条目里（匿名 HEAD 得 200 + `PK`，且用真公网线不带任何参数装出 `fist version` = 0.3.2）；
 ② 本仓 CI 长期是红的（`run 178 → 186` 全是 failed，含早于本轮的多笔提交），
 而匿名 API 现在 `403 rate limit exceeded` ⇒ 读不到日志，继续定位需要 `FIST_GITHUB_TOKEN` 从环境变量注入，或在 UI 里点开 run。
+
+## 更正 · BUG-111 的归因只覆盖了一半：真最后一格是 runner 上没有 moon（盖章 2026-09-28T11:54:14Z）
+
+BUG-111 里我写的"真因在作业依赖"是**不完整归因**，这里用只读 API 拿到的失败步骤名更正（不是重写原文，是追加更正）：
+
+| 作业 | 结论 | 失败步骤 |
+|---|---|---|
+| meta | success | — |
+| build-js | failure | **Build JS target** |
+| build-native-linux | failure | **Build native** |
+| build-native-windows | failure | **Install MoonBit** |
+| release | **skipped** | —（前置红所以根本没跑） |
+
+两个作业红在"调 moon 的那一步"、一个红在"装 moon 的那一步"、`release` 是 skipped 而非跑挂 ⇒
+形状指向**工具链没到手**。同仓的 `ci.yml` / `fist-ci.yml` 是这么装的（且验证过能跑）：
+
+```bash
+curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+moon update
+```
+
+`release.yml` 三条全缺：URL 少 `.sh`、不导出 `GITHUB_PATH`、不 `moon update` ⇒
+runner 每步起新 shell、安装脚本改的只是 shell rc ⇒ 下一步里 `moon` 不在 PATH。
+
+**为什么我上一次复跑没抓到**：我在 `git archive HEAD` 快照树里把 CI 的 JS 三步逐条复跑，全绿
+（`moon build --target js` 0 errors / `patch_esm_main.py` rc=0 / zip 374KB `PK`），据此写下"失败在作业依赖不在产物"。
+那次复跑用的是**本机全局安装的 moon**，与 runner 的 PATH 不是同一个环境——
+它证明的是"代码编得过"，我却把它当成了"CI 那一步也过得去"。
+⇒ 教训：**跨环境复跑必须先证环境同形**（这里就是 `which moon` 在 runner 上取不取得到），
+否则"复跑全绿"会变成一张把自己骗过去的假证据。这条与 [[feedback-verify-at-call-site]] 同族：
+调用面不只包括函数入口，也包括**跑它的那台机器的 PATH**。
+
+判据面加 **R9**：跑 moon 的 workflow 必须有把 moon 交进 `GITHUB_PATH` 的**代码行**（注释不算——
+第一版判据就是被我在 release.yml 写的注释里那个 "GITHUB_PATH" 喂回针，"摘掉导出行"那格变异不红，`--selftest` 当场抓到），
+安装 URL 必须是 `install/unix.sh` 那条形状。`--selftest` 十七格 ⇒ 十九格。
+发布动作仍走纯快进：版本 `0.3.2 → 0.3.3` 打新标签 `v0.3.3`。

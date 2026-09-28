@@ -1902,3 +1902,38 @@ README 两条安装线改 GitHub master raw 直链 + GitCode 降为浏览备用�
   `install: Release Assets` 等多笔早于本轮的提交）**状态全是 failed** ⇒ 本仓 CI 长期是红的，
   「说是全弄好了」这句话在 CI 面上没有支撑。匿名 API 现在 403 rate limit exceeded，读不到日志，
   定位需要 `FIST_GITHUB_TOKEN`（只从环境变量注入）或在 UI 上点开任一条 run。
+
+## BUG-112 [2026-09-28T11:54:14Z] [medium] OPEN
+- summary: BUG-111 的归因**只覆盖了一半**——真正让 Release 零资产的是 `release.yml` 的工具链 bootstrap：
+  安装 URL 用了 `cli.moonbitlang.com/install/unix`（少 `.sh`），而且**从不把 moon 目录写进 `GITHUB_PATH`**
+  ⇒ runner 每步起新 shell，安装脚本改的只是 shell rc，下一步里 `moon` 根本不在 PATH
+  ⇒ `Build JS target` 步骤红 ⇒ `release` 作业被 skip ⇒ 默认安装线一直 404
+- detail:
+  取证路径（这一步关键，前面全靠猜）：匿名 `GET /repos/…/actions/runs/<id>/jobs` 拿到每个作业的**失败步骤名**：
+    meta                   success
+    build-js               failure   ← STEP "Build JS target"
+    build-native-linux     failure   ← STEP "Build native"
+    build-native-windows   failure   ← STEP "Install MoonBit"
+    release                skipped
+  两个作业都在"调 moon 的那一步"红、一个在"装 moon 的那一步"红、release 是 skipped（不是跑挂）
+  ⇒ 形状指向"工具链没到手"，不是"代码编不过"。
+  对照组是**同一个仓里跑通过的 `ci.yml` / `fist-ci.yml`**：它们用
+    curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+    echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+    moon update
+  而 `release.yml` 三条都没有——三条一起缺 ⇒ 同一个 `moon build` 在 CI 轨能跑、在发布轨跑不了。
+  **本轮我差点再次误判**：在 `git archive HEAD` 快照树里复跑 CI 的 JS 三步全绿，据此写进 BUG-111 的
+  证据说"产物没问题、真因在作业依赖"。那次复跑用的是**本机全局装的 moon**，与 runner 的 PATH 不是同一个环境
+  ⇒ 复跑证明了"代码能编"，却被我当成了"CI 那步也能过"。教训：跨环境复跑必须先证**环境同形**（PATH 里有没有那个工具）。
+  修（已落盘）：`release.yml` 的 build-js 与 build-native-linux 两侧都对齐 ci.yml 形状
+  （`.sh` + `echo "$HOME/.moon/bin" >> "$GITHUB_PATH"` + 新增 `Refresh registry (first build)` 跑 `moon update`）。
+  `build-native-windows` 仍红在 `Install MoonBit`（它用的是 `install/windows` + Expand-Archive，
+  而 ci.yml 的 Windows 轨用 `irm …/install/powershell.ps1 | iex`）——该作业有 `continue-on-error: true`，
+  不顶掉发布，本轮不扩大改动面，只记账不装成已修。
+  判据面：**R9**（跑 moon 的 workflow 必须有 moon 进 `GITHUB_PATH`、安装 URL 必须是 `install/unix.sh`），
+  且判据**只看去掉 `#` 注释行之后的代码面**——第一版判据被我在 release.yml 写的注释里的 "GITHUB_PATH" 喂回针，
+  "摘掉导出行"那格变异不红（`--selftest` 当场抓到）；`--selftest` 十七格 ⇒ 十九格（R9×2）。
+  发布动作：版本前进 0.3.2 → 0.3.3 并打新标签 `v0.3.3`（纯快进；不删不重指已发布标签）。
+- 待证（先记 OPEN 的理由）：`moon` 进 PATH 之后 `Build JS target` 是否真过、Release 是否真出资产，
+  都要等 `v0.3.3` 那一次 run 的回执。翻 FIXED 的判据写在 BUG-111 末：匿名 HEAD 资产 URL 得 200 + `PK`，
+  且用**公网线不带任何参数**装出 `fist version` = 0.3.3。

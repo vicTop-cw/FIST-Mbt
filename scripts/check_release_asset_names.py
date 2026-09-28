@@ -42,6 +42,12 @@ CI 看不见这条：CI 不发 Release，也不跑安装器。
      AGENTS 自己写明权威门槛是 JS 后端；一次 native 编译失败不该让 JS 安装线没资产），
      同时 `build-native-linux` 必须与 windows 侧一样带 `continue-on-error: true`。
 
+  R9 工具链 bootstrap 与 CI 同源（BUG-112，从 run 2 的失败步骤名反解出来的真最后一格）：
+     `release.yml` 用 `cli.moonbitlang.com/install/unix`（少 `.sh`）**且从不把 moon 目录写进 `GITHUB_PATH`** ⇒
+     runner 每步起新 shell，安装脚本改的是 shell rc，下一步里 `moon` 不在 PATH ⇒ `Build JS target` 红 ⇒
+     `release` 作业被 skip ⇒ Release 零资产、默认安装线一直 404。
+     判据只看**去掉注释行之后**的代码面（第一版被自家注释里的 "GITHUB_PATH" 喂回针，那格变异不红）。
+
 自证：写死默认值必红 / 缺 moon.mod 解析必红 / 资产名漂移必红 / 空值不失败必红 /
 无扩展名 shim 被摘掉必红 / 不做 HTML 与魔数检查必红 / 文档首选线漂到 main 必红 /
 自检退化成空 catch 或无条件 ✅ 或去掉 stderr 隔离必红 /
@@ -56,6 +62,9 @@ FILES = {
     "sh": os.path.join("scripts", "blackbox", "install.sh"),
     "build": os.path.join("scripts", "blackbox", "build_release.ps1"),
     "release_yml": os.path.join(".github", "workflows", "release.yml"),
+    # R9 要有对照面：ci.yml / fist-ci.yml 里那套 bootstrap 是**跑通过**的形状，release 链只能照它抄
+    "ci_yml": os.path.join(".github", "workflows", "ci.yml"),
+    "fist_ci_yml": os.path.join(".github", "workflows", "fist-ci.yml"),
 }
 # 写死字面量默认版本（注释里出现 0.3.0 不算，只抓赋值形态）
 HARDCODED = re.compile(r'(?:^\s*\[string\]\$Version\s*=\s*"[\d][^"]*"|(?:^|\n)\s*VERSION\s*=\s*"[\d][^"]*")', re.M)
@@ -178,6 +187,23 @@ def judge(texts):
                         '（Stop 下 ExperimentalWarning 会被当成安装失败，✅ 那行永远打不出来）')
     if not re.search(r'if \(\$jsVer\) \{[\s\S]{0,300}?fist-mbt\.js 可执行', ps1):
         problems.append('R7 install_onecmd.ps1 的「✅ fist-mbt.js 可执行」没挂在版本回执的条件分支上（无条件绿=装饰）')
+    # R9 工具链 bootstrap 必须与 ci.yml 同形（BUG-112 实测：release.yml 的安装 URL 少 `.sh`，
+    # 且从不把 moon 目录写进 GITHUB_PATH ⇒ runner 每步起新 shell，`moon` 不在 PATH，
+    # build-js 红 ⇒ release 作业被 skip ⇒ 默认安装线永远 404。本机装了全局 moon，
+    # "在 git archive 快照树里复跑 CI 的三步"因此全绿 —— 这条只在 runner 上现形）
+    MOON_CALL = re.compile(r'\bmoon\s+(?:build|test|update|ide|check)\b')
+    for wf_name, wf_key in (("release.yml", "release_yml"), ("ci.yml", "ci_yml"), ("fist-ci.yml", "fist_ci_yml")):
+        wf = texts.get(wf_key)
+        if not wf or not MOON_CALL.search(wf):
+            continue
+        # 只看**代码面**：注释里出现 "GITHUB_PATH" 不算导出（第一版就被自家说明文字喂回过针——
+        # 我在 release.yml 写的注释里有这个词，于是"摘掉导出行"那格变异不红了）。
+        wf_code = "\n".join(l for l in wf.split("\n") if not l.lstrip().startswith("#"))
+        if "GITHUB_PATH" not in wf_code:
+            problems.append("R9 %s 里跑了 moon 却没把工具链目录写进 GITHUB_PATH"
+                            "（安装脚本改的是 shell rc，下一步的 shell 看不见 ⇒ moon 不在 PATH）" % wf_name)
+        if "cli.moonbitlang.com/install/unix" in wf_code and "cli.moonbitlang.com/install/unix.sh" not in wf_code:
+            problems.append("R9 %s 的 unix 安装 URL 少了 `.sh`（与 ci.yml 不同源 ⇒ 装完不等于装对）" % wf_name)
     return problems
 
 
@@ -188,7 +214,12 @@ def selftest():
     # R8 判的是 release.yml：干净支必须拿真文件，否则"读不到 release.yml"那条会把干净输入判红
     # （同一个守卫里，缺席即报——所以自证的夹具也得齐件）。
     clean_yml = io.open(os.path.join(ROOT, FILES["release_yml"]), encoding="utf-8-sig").read()
-    base = {"ps1": clean_ps1, "sh": clean_sh, "build": clean_build, "release_yml": clean_yml}
+    # R9 的对照面就是这两个工作流：干净支得把它们一起加载，否则 texts.get(...) 为 None 会静默跳过，
+    # "能红"的自证就只剩 release.yml 一侧（另一侧坏了没人管）。
+    clean_ci = io.open(os.path.join(ROOT, FILES["ci_yml"]), encoding="utf-8-sig").read()
+    clean_fci = io.open(os.path.join(ROOT, FILES["fist_ci_yml"]), encoding="utf-8-sig").read()
+    base = {"ps1": clean_ps1, "sh": clean_sh, "build": clean_build,
+            "release_yml": clean_yml, "ci_yml": clean_ci, "fist_ci_yml": clean_fci}
     fails = []
     if judge(dict(base)):
         fails.append("干净输入被误判（本仓现状应通过）：%s" % judge(dict(base))[:2])
@@ -225,6 +256,9 @@ def selftest():
         # R8 三支（BUG-111 的三种退化）：needs 退回顶掉发布 / 摘掉 meta / 摘掉 native 的容错
         ("release_yml", "needs: [meta, build-js]", "needs: [build-js, build-native-linux]", "R8"),
         ("release_yml", "needs: [meta, build-js]", "needs: [build-js]", "R8"),
+        # R9 两支（BUG-112 的两种退化）：moon 目录不交给下一步 / 安装 URL 退回少 `.sh`
+        ("release_yml", 'echo "$HOME/.moon/bin" >> "$GITHUB_PATH"', "echo '# (变异：不把 moon 交给下一步)'", "R9"),
+        ("release_yml", "cli.moonbitlang.com/install/unix.sh", "cli.moonbitlang.com/install/unix", "R9"),
         ("release_yml", "    continue-on-error: true\n    runs-on: ubuntu-latest",
          "    runs-on: ubuntu-latest", "R8"),
     ]
@@ -243,7 +277,7 @@ def selftest():
             fails.append(r)
     for f in fails:
         print("SELFTEST FAIL " + f)
-    print("SELFTEST %s（干净不误红 + 变异必红：R1×2 / R2 / R3×2 / R4 / R5×2 / R6×3 / R7×3 / R8×3）" % ("OK" if not fails else "FAIL"))
+    print("SELFTEST %s（干净不误红 + 变异必红：R1×2 / R2 / R3×2 / R4 / R5×2 / R6×3 / R7×3 / R8×3 / R9×2）" % ("OK" if not fails else "FAIL"))
     return 0 if not fails else 2
 
 
@@ -260,8 +294,8 @@ def main():
     if problems:
         print("FAIL 发布资产名/安装器版本真源不一致（用户按 `irm | iex` 装会 404）")
         return 1
-    print("PASS 分发面同源（R1-R8）：资产名三处一致 + 版本真源 moon.mod + 空值即失败 + "
-          "命令名两类 shell 都可见 + 200/HTML/魔数检查 + 安装自检不假绿 + 发布作业不顶掉分发")
+    print("PASS 分发面同源（R1-R9）：资产名三处一致 + 版本真源 moon.mod + 空值即失败 + "
+          "命令名两类 shell 都可见 + 200/HTML/魔数检查 + 安装自检不假绿 + 发布作业不顶掉分发 + 工具链 bootstrap 与 CI 同源")
     return 0
 
 
