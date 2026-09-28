@@ -221,3 +221,16 @@ BUG-93 退役入口 `cmd/main` 散落 15+ 处）。仍未做：服务面级 catc
 一处口径澄清（不改写上文，只在此点名）：上文「再补遗」段说 read 面 `skipped=12`、write 面 `skipped=6`，
 那是 129 工具里**授权边界内主动不打**的件数（真发 issue / 真关 issue / 改真账本等），
 不是"没测到" ⇒ `not_tested=0` 才是覆盖判据。
+
+## 再补遗 · 全局命令全链路（bash → shim → `fist serve` → MCP）（盖章 2026-09-28T08:03:27Z）
+
+补完 BUG-105 之后，把"用户实际敲的那条命令"整链跑了一遍（此前巡回 spawn 的是 `node <js> serve`，
+中间少一层 shim）：
+
+| 面 | 观测 | 判据 |
+|---|---|---|
+| `fist demo`（bash，经 shim） | `七态闭环全绿` exit=0，`FIST_DB_PATH` 指到哪就只在那儿落库（`temp/b105-cli/cli.db`），仓库根 `fist-mbt.db` 未动 | 退出码 + 目录清单 |
+| `fist serve`（bash → shim → node → serve） | `tools/list` 129 / `resources/list` 3 / `serverInfo.version=0.3.0` / `status_summary` 真回执带 version 与计数 / 协议 stdout **零**人类行 | 与"node 直调产物"对照组逐格相同 |
+| initialize 一跑 | 我的第一版探针把标准 `initialize` 当门 ⇒ 全判红。**是我的期望错**：本服务端是 2026-07-28 口径、无握手，身份在每个请求的 `params._meta` 里（BUG-21 的验收位置就是这个） | 改按 `_meta` 形状重打即 PASS |
+
+证据脚本：`temp/b105_serve_over_shim.py`（两面对表，shim 组与直调组同为 PASS）。
