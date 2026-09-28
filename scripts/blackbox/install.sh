@@ -13,7 +13,9 @@
 
 set -euo pipefail
 
-VERSION="0.3.0-beta"
+# 版本号唯一真源 = moon.mod（发布资产名也从它生成）。写死默认值的后果与 .ps1 同一条：
+# `curl … | bash` 不带参数时会指向发布链不会产出的资产名，两个源都 404。
+VERSION="${FIST_VERSION:-}"
 FORCE=""
 DRY_RUN=""
 for arg in "$@"; do
@@ -24,6 +26,25 @@ for arg in "$@"; do
     *)   VERSION="$arg" ;;  # 第一个非 flag 作 version
   esac
 done
+
+# 没显式给版本就现取：从 moon.mod（与发布链同源的那批 raw 地址）解析；离线口子认本地 zip 的文件名。
+RAW_MOONMODS="https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/moon.mod https://gitcode.com/VictorTop/Fist-Mbt/-/raw/master/moon.mod"
+VERSION_SOURCE=""
+if [ -z "$VERSION" ] && [ -n "${FIST_LOCAL_ZIP:-}" ]; then
+  VERSION=$(basename "$FIST_LOCAL_ZIP" | sed -n 's/^fist-mbt-js-v\(.*\)\.zip$/\1/p')
+  [ -n "$VERSION" ] && VERSION_SOURCE="本地 zip 文件名"
+fi
+if [ -z "$VERSION" ]; then
+  for r in $RAW_MOONMODS; do
+    mm=$(curl -fsSL --max-time 20 "$r" 2>/dev/null) || continue
+    VERSION=$(printf '%s' "$mm" | sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    if [ -n "$VERSION" ]; then VERSION_SOURCE="$r"; break; fi
+  done
+fi
+if [ -z "$VERSION" ]; then
+  echo "❌ 无法从 moon.mod 解析版本号（候选源见脚本头）。显式指定：FIST_VERSION=0.3.0 bash install.sh" >&2
+  exit 1
+fi
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; DIM='\033[2m'; NC='\033[0m'
 

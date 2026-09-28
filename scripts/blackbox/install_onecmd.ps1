@@ -13,7 +13,9 @@ scripts/blackbox/install_onecmd.ps1 —— irm 一条命令安装入口（v2 Rel
 #>
 
 param(
-  [string]$Version = "0.3.0-beta",
+  # 版本号唯一真源 = moon.mod（发布资产名也从它生成）。写死默认值的后果实测过：
+  # 默认值偏一个字 ⇒ 用户跑不带参数的 `irm … | iex` 永远指向发布链不会产出的资产名（两条源都 404）。
+  [string]$Version = "",
   [switch]$Force,
   # 离线/内网/发布前自证：给了本地 zip 就跳过下载（不发 Release 也能装）
   [string]$LocalZip = ""
@@ -40,6 +42,33 @@ Write-Host "✅ node $nv" -ForegroundColor Green
 
 if (-not $pyCmd) { Write-Host "⚠️ python 未找到，ESM patch 将跳过" -ForegroundColor Yellow; $needPython = $false }
 else { Write-Host "✅ python ($pyCmd)" -ForegroundColor Green }
+
+# 版本号没显式给就现取：从 moon.mod（与发布链同源的那批 raw 地址）解析，解析不到就显式失败——
+# 绝不静默退回某个"猜出来的版本号"，那正是 `irm | iex` 装不上的根因。
+$rawUrls = @(
+  "https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/moon.mod",
+  "https://gitcode.com/VictorTop/Fist-Mbt/-/raw/master/moon.mod"
+)
+$versionSource = ""
+if ($Version -eq "") {
+  if ($LocalZip -ne "" -and (Split-Path -Leaf $LocalZip) -match '^fist-mbt-js-v(.+)\.zip$') {
+    $Version = $matches[1]; $versionSource = "本地 zip 文件名"
+  } else {
+    foreach ($r in $rawUrls) {
+      try {
+        $mm = (Invoke-WebRequest -Uri $r -UseBasicParsing -TimeoutSec 20).Content
+        if ($mm -match '(?m)^\s*version\s*=\s*"([^"]+)"') { $Version = $matches[1]; $versionSource = $r; break }
+      } catch {
+        Write-Host "  · 取不到 $r ：$($_.Exception.Message)" -ForegroundColor DarkGray
+      }
+    }
+  }
+}
+if ($Version -eq "") {
+  Write-Host "❌ 无法从 moon.mod 解析版本号（候选源见上）。显式指定：& <脚本> -Version 0.3.0" -ForegroundColor Red
+  exit 1
+}
+Write-Host "  目标版本 v$Version（来源：$versionSource）" -ForegroundColor DarkGray
 
 $zipName = "fist-mbt-js-v$Version.zip"
 $urls = @(

@@ -177,6 +177,7 @@ BUG-93 退役入口 `cmd/main` 散落 15+ 处）。仍未做：服务面级 catc
 | 提交树自证 | `git archive` 327bb7a 干净树 **531/531** rc=0 | `temp/verify_327bb7a_test.log` |
 | 账本 | 账本 100 条 = 87 已修 / 9 重复并入 / 4 误报 / 0 待修 | `memory/bugs.md` 抬头计数 |
 | BUG-102 修复 | cl7 比较侧行尾归一 + `drift_keys` 分栏 + `gen_plugins --selftest` 四格进 CI；同一新克隆漂移 55 → 1（那 1 份是真未重生成），重生成后 rc=0 | `temp/cl_check_plugin_sync.out`（旧守卫 55 条）、提交 da47806 后复跑 cl7 PASS |
+| BUG-103 修复 | 安装器版本真源改绑 moon.mod（空值即 exit 1）+ 新守卫 check_release_asset_names.py（守卫族 11）；不带参数时 URL 由 v0.3.0-beta 变 v0.3.0/fist-mbt-js-v0.3.0.zip；离线装完 doctor 5/5、serve 第一行 JSON、129 工具 |
 | 已知红 | `gen_help_docs.py` 未登记（并行改动面的文件，本环不代改）| `temp/g_check_scripts_index.log` |
 
 来源：本轮以用户身份安装的 `fist`（sha256:eb18f4f0）+ 仓库 `git archive HEAD` 派生树实测；
