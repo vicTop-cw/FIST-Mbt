@@ -6,7 +6,7 @@
 ## 一、10 秒自检（评审用这个）
 ```bash
 # ① 构建 + 拉起 MCP server 并自检（需 Node ≥ 24）
-moon build --target js cmd/main
+moon build --target js cmd/cli
 python scripts/mcp_smoke.py
 # 期望输出：PASS tools/list → 129 个工具 / PASS issue_scan / PASS publish / PASS get → MCP-SMOKE PASS
 ```
@@ -15,7 +15,7 @@ python scripts/mcp_smoke.py
 | 项 | 值 |
 |---|---|
 | MCP 工具 | **129**（+ 3 resources + 2 prompts） |
-| 测试 | **`moon test --target js` 531/531**（2026-09-28 Windows 实测，四模式流水线自我迭代 Round 1~3 收口；native 轨见 AGENTS.md「已知边界」） |
+| 测试 | **`moon test --target js` 533/533**（2026-09-28 Windows 实测，四模式流水线自我迭代 Round 1~3 收口；native 轨见 AGENTS.md「已知边界」） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
 | Env | Node ≥ 24；`moon info && moon fmt` 后测试（AGENTS.md / 环境要求） |

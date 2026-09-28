@@ -73,7 +73,7 @@ python scripts/output_validate.py . \
 
 # 退出码：verdict=pass → 0，fail → 1
 ```
-先 `moon build --target js cmd/main` 保证 main.js 新鲜。
+先 `moon build --target js cmd/cli` 保证 main.js 新鲜。
 
 ### 四态关系（MCP / CLI / Skill 手写 + Plugin 投影）
 - **单真源 = MoonBit 实现**（`src/server/output_validate.mbt`）：MCP 工具直接调它；

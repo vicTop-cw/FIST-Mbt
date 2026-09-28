@@ -2,7 +2,7 @@
   "mcpServers": {
     "fist-mbt": {
       "command": "moon",
-      "args": ["run", "cmd/main"],
+      "args": ["run", "cmd/cli"],
       "timeout_ms": 30000,
       "disabled": false
     }

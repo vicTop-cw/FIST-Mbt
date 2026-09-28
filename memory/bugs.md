@@ -1452,7 +1452,7 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
   temp/runaway_repro.py；是否升级为仓库内判据交裁决。
 - reported_by: installed-cli-tour
 
-## BUG-92 [2026-09-28T05:04:57Z] [medium] OPEN
+## BUG-92 [2026-09-28T05:04:57Z] [medium] FALSE_POSITIVE
 - summary: 状态机拒绝文案的"要求状态"与实际要求的态不一致——「非法拆分: split 要求状态 [待领取]，当前是 [待领取]」把调用方指回它已经满足的那一档
 - detail:
   逐字文案（从回执 JSON 的 \u 转义反解，不是控制台显示）：
@@ -1468,7 +1468,14 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
   未修原因：射程在 src/engine 状态机的报错拼装，与本轮并行改动面重叠；交裁决后另开。
 - reported_by: installed-cli-tour
 
-## BUG-93 [2026-09-28T05:04:57Z] [medium] OPEN
+  改判依据（2026-09-28 活证据，temp/bug92_probe.log，installed 产物 sha256:eb18f4f0，
+  回执 JSON 的 \u 转义逐字反解，不经控制台码页）：
+    `非法迁移: split 要求状态 [\u5df2\u9886\u53d6]，当前是 [\u5f85\u9886\u53d6]` ＝「要求状态 [已领取]，当前是 [待领取]」——两态本就不同，没有自相矛盾。
+  原判那句「要求状态 [待领取]，当前是 [待领取]」是**上报侧**把 cp936 控制台乱码按字形猜出来的，
+  属于记忆条目「报缺陷前先读它自己的定位声明」的同型失误：乱码不是证据。
+  真缺陷另立 BUG-99（拒绝文案不带出路），本条按误报关闭。
+
+## BUG-93 [2026-09-28T05:04:57Z] [medium] FIXED
 - summary: 发布入口迁到 cmd/cli 后，仓库内 15+ 处脚本/文档仍指 cmd/main 且不带 serve 子命令——E2E 的"绿"测的是不发布的那棵入口
 - detail:
   命中清单（grep -rl "cmd/main" scripts/ 实跑）：
@@ -1486,6 +1493,13 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
   字面 ⇒ 红，历史陈述文件豁免），再逐只改到 `cmd/cli` + `serve`。
   未修原因：一次性改 15 个脚本会越出本轮责任面（且与并行改动面重叠），先入账并给出可复跑判据。
 - reported_by: installed-cli-tour
+
+  收口（独立修复，不走流水线）：
+  ① 现状面 cmd/main → cmd/cli：51 份文件 / 104 处（scripts 28 个 .py 全部 py_compile 通过，docs/.github/根 .md/.mcp*.json/plugins/source 真源同步）；历史面（memory/ reports/ CHANGELOG.md）不动。
+  ② 入口搬家的另一半：cmd/main 裸跑＝直接起 server，cmd/cli 裸跑＝只打印 help ⇒ 26 个启动点的 argv 补 `"serve"`（temp/fix_serve_argv.py 逐文件计数落盘）。
+  ③ 新守卫 scripts/check_entry_paths.py：入口清单从 `cmd/*/moon.pkg` 的 `pkgtype(kind:"executable")` 反解、发布入口从 build_release.ps1 反解，R1 禁现状面指退役入口、R2 禁 Popen argv 少 serve；`--selftest` 四格（合成违例命中 2 / 干净不误红 / 空清单报「判据空转」/ R2 成对）。承重实测：同一守卫跑在 HEAD 树（temp/verify-327bb7a）= 119 条违例 rc=1，跑在修复后的树 = 0 条 rc=0。
+  ④ 调用面终审：HEAD 派生树 + 本环三件修复 → `moon build --target js cmd/cli` → `python scripts/patch_esm_main.py` → `python scripts/mcp_smoke.py` = MCP-SMOKE PASS（tools/list 129、publish/get 打通），证据 temp/smoke_e2e_proof3.log。
+
 
 ## BUG-94 [2026-09-28T05:04:57Z] [high] FIXED
 - summary: cost_stats 无参调用触发未捕获的 ERR_SQLITE_ERROR，直接把 MCP 会话打死（与 BUG-91 同族：store 层 JS 桥的异常没被收成 JSON-RPC error）
@@ -1564,3 +1578,46 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
 - evidence: scripts/mcp_tool_tour.py 增加 READ_PLANE_SKIP（6 只写工具在读面记 skipped 并带原因）；
   复跑读面 129/129 全部打到调用面（ok 79 / refused 44 / skipped 6 / crashed 0），
   且 `memory/bugs.md` 的 sha256 跑前跑后逐字相等（修前同一天内它被同一驱动写过两次：BUG-90 撞号条与 BUG-95）。
+
+## BUG-99 [2026-09-28T06:00:00Z] [medium] FIXED
+- summary: plan 的第二道门拒绝时只报「要求状态」不报出路，且与第一道门 can_split 词汇分叉（非法拆分: … / 非法迁移: split …）
+- detail:
+  第一道门 `TaskStatus::can_split` 收 待领取/已领取/拆分中/已打回，第二道门 `Task::split` 只收 已领取 ⇒
+  待领取/拆分中/已打回穿过第一道门后被第二道门拒，回执没有出路；调用方照文案 claim 一个已打回的任务会被 claim 再拒（claim 只收待领取），
+  永远走不出来。巡回播种链实测同树对照：publish→plan 被拒、publish→claim→plan 放行（["T0.1","T0.2"]）。
+  修法：engine.plan 的第二道门拒绝时按当前态附出路（claim / get+task_plan_deep / retry），
+  成对锁 src/engine/plan_remedy_wbtest.mbt 两条——HEAD 旧码下 2 红（temp/eng_prefix_test.log，124 收集/2 失败），
+  修复后 JS 全量 533/533（temp/verify_eng_full.log）。
+  本条即 BUG-92 的正身（BUG-92 按误报关闭，缺陷本体在此重报）。
+- reported_by: installed-cli-tour
+
+## BUG-100 [2026-09-28T06:00:00Z] [medium] FIXED
+- summary: 巡回驱动「读面」在被测仓库里留下状态文件（currentState.txt / memory/_review.count / memory/model-router-tour-read-*.json / 仓库根 tour-read-*.db）
+- detail:
+  读面把 project_dir 与 store_open 的 data_dir 都留在仓库根 ⇒ 凡带 project_dir 的工具（model_route / pipeline_tick / selfdrive_* / memory_*）
+  一调用就往被测项目写文件；「读面只读」这句自述是假的。上一轮的 READ_PLANE_SKIP 只挡了 6 只写工具，挡不住「有默认落点」的读类调用。
+  修法（驱动侧，产品语义不动）：读面 project_dir/data_dir 指向 temp/ 草稿项目、stderr 日志引到 temp/、
+  并加**外溢硬门**——跑前跑后对比「仓库根一层文件 + memory/ 递归」的 (size, mtime)；新建文件或 memory/ 内被改 ⇒ rc=2。
+  硬门第一次跑就抓到 tour-read-f6c169.db 落在仓库根（rc=2，temp/tour_read_plane_r2.log），补 data_dir 后转 GREEN
+  （temp/tour_read_plane_r3.log：取证面 172 项 / 新建 0 / memory 改动 0，129 工具 ok=76 refused=41 skipped=12 crashed=0）。
+- reported_by: installed-cli-tour
+
+## BUG-101 [2026-09-28T06:00:00Z] [high] FIXED
+- summary: `fist serve` 在 JSON-RPC 的 stdout 上先打人类横幅（3 处 println），stdio 客户端第一行拿到的是 `FIST-Mbt Help…` / `stdin/stdout …` / 空行而不是 JSON
+- detail:
+  调用面证据：scripts/mcp_smoke.py 在 cmd/main→cmd/cli 搬家后必然失败，逐字为
+  `RuntimeError: malformed JSON-RPC response: '[fist] serve ?? 启动 MCP server (stdio 传输)'`，
+  补 serve 后又依次撞到 `stdin/stdout …Ctrl+C…` 与空行 —— 三条都出自 run_serve 体内（cmd/cli/main.mbt）。
+  这与该子命令自己的说明（stdio 传输的 MCP server）矛盾：协议通道上只应有 JSON-RPC 帧。
+  修法：run_serve 体内 3 处 println 不再写 stdout（该 toolchain 下没找到可用的 stderr print API，
+  `moonbitlang/core/io` 在本模块不可解，故不硬凑 stderr 横幅；人用反馈留在 doctor/help）。
+  回归门就是 mcp_smoke 本身：横幅若被重新引入，第一行非 JSON ⇒ 直接红。
+  实测：HEAD 派生树 + 本件修复 → MCP-SMOKE PASS（129 工具）。
+- reported_by: installed-cli-tour
+
+### FIXED(2026-09-28T06:29:39Z / BUG-93, BUG-99, BUG-100, BUG-101)
+- 入口清单与协议纯度一批收口：cmd/main→cmd/cli 104 处 + 26 个启动点补 serve + 新守卫 check_entry_paths.py
+  （HEAD 树 119 条违例 / 修复树 0 条）；plan 第二道门拒绝附出路 + 2 条成对白盒（旧码 2 红、全量 533/533）；
+  巡回读面外溢硬门（首次即抓到仓库根 ns 库，补 data_dir 后 0 新建 0 改动）；serve 的 stdout 去横幅（mcp_smoke PASS）。
+- 证据：temp/bug93_apply.log, temp/eg_prefix_run.log, temp/eg_full3.log, temp/eng_prefix_test.log, 
+  temp/verify_eng_full.log, temp/tour_read_plane_r2.log, temp/tour_read_plane_r3.log, temp/smoke_e2e_proof3.log

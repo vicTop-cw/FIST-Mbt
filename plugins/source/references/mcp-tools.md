@@ -2,7 +2,7 @@
 
 **Live truth first**: call `tools/list` on the server — the registry evolves fast (41 → 105+ in weeks). This file is a categorical map, not an exhaustive schema list.
 
-Server entry: `node cmd/main/main.js` (run `python scripts/patch_esm_main.py` first; Node ≥ 24). Protocol `2026-07-28`, `params._meta` three fields required. Python driver: `scripts/fist.py call <tool> --json '<args>'` (or subprocess per fist_drive.py pattern).
+Server entry: `node cmd/cli/cli.js` (run `python scripts/patch_esm_main.py` first; Node ≥ 24). Protocol `2026-07-28`, `params._meta` three fields required. Python driver: `scripts/fist.py call <tool> --json '<args>'` (or subprocess per fist_drive.py pattern).
 
 ## Tool categories (105 at snapshot)
 

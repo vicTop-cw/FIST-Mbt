@@ -13,7 +13,7 @@ Use this skill to work with the FIST-Mbt codebase — a pure MoonBit implementat
 2. Load the relevant reference from `references/` per the routing table below.
 3. For code changes, verify with `moon check` / `moon test` before completing; `moon fmt` + `moon info` before handoff.
 4. For MCP tool questions, prefer a live `tools/list` over docs (docs may lag; see `references/mcp-tools.md`).
-5. **Run the server with Node >= 24**, and run `python scripts/patch_esm_main.py` (idempotent) before starting `node cmd/main/main.js` directly — ESM output needs a require shim.
+5. **Run the server with Node >= 24**, and run `python scripts/patch_esm_main.py` (idempotent) before starting `node cmd/cli/cli.js` directly — ESM output needs a require shim.
 
 ## Project overview
 

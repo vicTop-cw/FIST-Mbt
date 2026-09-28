@@ -60,7 +60,7 @@ selfdrive_review（审视报告 Next Tasks）
 
 ### D. 低门槛可复现（中优先）
 - 环境要求（Node≥24 / 首次 `moon update` / native 需 sqlite）移到 README 最显眼位置。
-- 提供 `moon run cmd/main` 后 10 秒自检通过的 smoke/自检入口。
+- 提供 `moon run cmd/cli` 后 10 秒自检通过的 smoke/自检入口。
 
 ### E. 主动自曝边界（低优先）
 - 文档写明：`node:sqlite` 实验警告、native 配置复杂度、已知遗留 —— 为什么、怎么绕。

@@ -6,7 +6,7 @@ scripts/enhance_verify.py — 三块增强的端到端 MCP 验证（只读/业�
   B) verify(docs_check=true) 门禁 → 对齐单测（此处仅确认工具可调用，不依赖真实缺文档）
   C) evolve_asset_register(source=...) → evolve_snapshot 可查；plan(inject=...) 返回 injected_assets
 
-前置：moon build --target js cmd/main
+前置：moon build --target js cmd/cli
 运行：python scripts/enhance_verify.py
 """
 import json
@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 NODE = os.environ.get("FIST_NODE", "node")
-MAIN = "_build/js/debug/build/cmd/main/main.js"
+MAIN = "_build/js/debug/build/cmd/cli/cli.js"
 NS = "enhance-e2e"
 META = {
     "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -69,7 +69,7 @@ def main():
     spec.loader.exec_module(mod)
     mod.patch(MAIN)
     proc = subprocess.Popen(
-        [NODE, MAIN], cwd=ROOT,
+        [NODE, MAIN, "serve"], cwd=ROOT,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, encoding="utf-8", errors="replace", bufsize=1)
     try:

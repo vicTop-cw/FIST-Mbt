@@ -33,7 +33,7 @@ AIGC:
 | # | 参数 / 占位 | 模板中的示例值 | 替换说明 |
 |---|---|---|---|
 | 1 | 目标项目根目录 | `<目标项目根目录>` | 改为实际要被推进的项目根目录（正文第一、二、四、五节多处出现） |
-| 2 | MCP server 入口 | `node <fist-mbt-build-path>/cmd/main/main.js` | 指向本仓库 `cmd/main` 的构建产物；原生后端可改为 `moon run cmd/main` |
+| 2 | MCP server 入口 | `node <fist-mbt-build-path>/cmd/cli/cli.js` | 指向本仓库 `cmd/cli` 的构建产物；原生后端可改为 `moon run cmd/cli` |
 | 3 | 启动工作目录 | `<fist-mbt-工作目录>` | 决定 `fist-mbt.db` 的落点，需在目标仓库 `.gitignore` 覆盖范围内 |
 | 4 | 提示词目录（`meta_prompt_path`） | `<提示词目录>` | 改为目标项目存放提示词文档的目录（单文件或目录均可） |
 | 5 | 提示词文件命名规则 | `yyyyMMdd.HH.mm.ss.md`，忽略 `_` 前缀辅助文件 | 必须与上游生成器（即分支④）的产物一致，否则「目录取最新」会失效 |
@@ -90,7 +90,7 @@ AIGC:
 
 | 项目 | 值 |
 |---|---|
-| MCP server 入口 | `node <fist-mbt-build-path>/cmd/main/main.js` |
+| MCP server 入口 | `node <fist-mbt-build-path>/cmd/cli/cli.js` |
 | 启动工作目录 | `<fist-mbt-工作目录>`（使 `fist-mbt.db` 落在仓库内，已被 .gitignore 忽略） |
 | 传输方式 | stdio JSON-RPC |
 | 目标项目 | `<目标项目根目录>` |

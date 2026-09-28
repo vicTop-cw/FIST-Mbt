@@ -10,14 +10,14 @@
 全部走真实 MCP STDIO 链路（只评审不写库的部分保持只评审），使用独立命名空间 + scratch 落临时区，
 演示结束后不改动交付库分录、仓库根不残留生成物（结尾自动 cleanup_artifacts --check 守卫）。
 
-前置：`moon build --target js cmd/main`（脚本会自动跑）+ patch_esm_main。
+前置：`moon build --target js cmd/cli`（脚本会自动跑）+ patch_esm_main。
 用法：python scripts/award_demo.py
 """
 import json, os, subprocess, sys
 from datetime import datetime, timedelta, timezone
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 NODE = os.environ.get("FIST_NODE", "node")
-MAIN = "_build/js/debug/build/cmd/main/main.js"
+MAIN = "_build/js/debug/build/cmd/cli/cli.js"
 NS = "award-demo"
 META = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
         "io.modelcontextprotocol/clientCapabilities": {},
@@ -54,11 +54,11 @@ def walk_tree(node, acc):
 
 def main():
     # 1. 构建 + patch + 拉起 server
-    subprocess.run(["moon", "build", "--target", "js", "cmd/main"], cwd=ROOT, check=True, capture_output=True)
+    subprocess.run(["moon", "build", "--target", "js", "cmd/cli"], cwd=ROOT, check=True, capture_output=True)
     import importlib.util
     spec = importlib.util.spec_from_file_location("patch_esm_main", os.path.join(ROOT, "scripts", "patch_esm_main.py"))
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); mod.patch(MAIN)
-    p = subprocess.Popen([NODE, MAIN], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    p = subprocess.Popen([NODE, MAIN, "serve"], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", bufsize=1)
     try:
         # ① 先有地图（fist://map）

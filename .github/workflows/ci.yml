@@ -77,6 +77,12 @@ jobs:
           python3 scripts/check_ps_encoding.py --selftest
           python3 scripts/check_ps_encoding.py
 
+      - name: Entry-list guard (BUG-93/101：现状面不得指退役入口；Popen argv 必须带 serve)
+        shell: bash
+        run: |
+          python3 scripts/check_entry_paths.py --selftest
+          python3 scripts/check_entry_paths.py
+
       - name: Store-isolation probe (BUG-90：FIST_DB_PATH 必须真的改道，两格成对 + 合成违例)
         shell: bash
         run: |

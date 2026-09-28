@@ -14,7 +14,7 @@ scripts/output_validate.py — 产出物验证 CLI（一源四态 · CLI 形态�
         --artifacts artifacts.json
 
 行为：
-    1) 拉起 `node _build/js/.../cmd/main/main.js`（MCP server, STDIO）
+    1) 拉起 `node _build/js/.../cmd/cli/cli.js`（MCP server, STDIO）
     2) tools/call output_validate {project_dir, artifacts, external_results, evidence, require_evidence}
     3) 打印 JSON 结果；verdict=pass → 退出 0，fail 或 error → 退出 1
 
@@ -32,8 +32,8 @@ import sys
 
 NODE = os.environ.get("FIST_NODE", "node")
 MAIN_CANDIDATES = [
-    "_build/js/debug/build/cmd/main/main.js",
-    "target/js/release/build/cmd/main/main.js",
+    "_build/js/debug/build/cmd/cli/cli.js",
+    "target/js/release/build/cmd/cli/cli.js",
 ]
 META = {
     "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -158,7 +158,7 @@ def main():
 
     main_js = find_main()
     if not main_js:
-        print("FAIL main.js 未找到；请先执行 `moon build --target js cmd/main`")
+        print("FAIL main.js 未找到；请先执行 `moon build --target js cmd/cli`")
         sys.exit(1)
 
     import importlib.util
@@ -171,7 +171,7 @@ def main():
     _mod.patch(main_js)
 
     proc = subprocess.Popen(
-        [NODE, main_js],
+        [NODE, main_js, "serve"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,

@@ -111,6 +111,6 @@ jobs:
       # run_check 在 native 下能真实访问 sqlite3 存储层，更完整
       - name: Run native self-check (skeleton)
         run: |
-          echo "// TODO: moon run --target native cmd/main"
+          echo "// TODO: moon run --target native cmd/cli"
           echo "// → MCP call tools/call run_check / tools/call issue_scan"
           echo "// native target 下 sqlite3 真实可用，巡检覆盖更全"

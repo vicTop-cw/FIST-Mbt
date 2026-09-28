@@ -30,7 +30,7 @@ tools/call issue_scan
 python scripts/issue_scan.py src --max-findings 30
 python scripts/issue_scan.py src --include-tests   # 连测试文件一起扫
 ```
-先 `moon build --target js cmd/main` 保证 main.js 新鲜。
+先 `moon build --target js cmd/cli` 保证 main.js 新鲜。
 
 ### 四态关系（MCP / CLI / Skill 手写 + Plugin 投影）
 - **单真源 = MoonBit 实现**（`src/server/issue_scan.mbt`）：MCP 工具直接调它；

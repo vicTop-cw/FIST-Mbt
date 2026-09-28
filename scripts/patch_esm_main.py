@@ -9,7 +9,7 @@ mizchi/sqlite 内部 `require("node:sqlite")` 抛 "require is not defined in ES 
 即可让同一个模块作用域内的 require 可用（幂等，重复调用安全）。
 
 用法：python scripts/patch_esm_main.py [main.js 路径]
-路径缺省时自动定位 <repo>/_build/js/debug/build/cmd/main/main.js。
+路径缺省时自动定位 <repo>/_build/js/debug/build/cmd/cli/cli.js。
 任何 runner(demo.ps1 / mcp_smoke.py)在 `moon build` 后先调用本脚本再启动 server。
 """
 import os
@@ -17,7 +17,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__)) + os.sep + ".."
 ROOT = os.path.normpath(ROOT)
-DEFAULT = os.path.join(ROOT, "_build", "js", "debug", "build", "cmd", "main", "main.js")
+DEFAULT = os.path.join(ROOT, "_build", "js", "debug", "build", "cmd", "cli", "cli.js")
 
 SHIM = "import { createRequire as _cr } from 'node:module';\nconst require = _cr(import.meta.url);\n"
 

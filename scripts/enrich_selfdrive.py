@@ -14,7 +14,7 @@ submit → verify → 根归档。全程走 MCP 真实调用，fist-mbt.db 留�
   叶3 项目整洁:  新增 scripts/README.md（脚本分类规范：_ 前缀=临时）
   叶4 文档对齐:  校对并追加 68 工具分组说明(evolve_asset_register)到 README 工具表
 
-前置：moon build --target js cmd/main
+前置：moon build --target js cmd/cli
 运行：python scripts/enrich_selfdrive.py
 """
 import json
@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 NODE = os.environ.get("FIST_NODE", "node")
-MAIN = "_build/js/debug/build/cmd/main/main.js"
+MAIN = "_build/js/debug/build/cmd/cli/cli.js"
 NS = "enrich-selfdrive"
 CREATED_BY = "selfdrive_lead"
 ASSIGNEE = "selfdrive_lead"
@@ -152,7 +152,7 @@ def read_deliverable(fname):
 def main():
     main_js = find_main()
     if not main_js:
-        print("FAIL: main.js 未找到；请先 moon build --target js cmd/main", file=sys.stderr)
+        print("FAIL: main.js 未找到；请先 moon build --target js cmd/cli", file=sys.stderr)
         sys.exit(1)
     import importlib.util
     spec = importlib.util.spec_from_file_location(
@@ -161,7 +161,7 @@ def main():
     spec.loader.exec_module(mod)
     mod.patch(main_js)
     proc = subprocess.Popen(
-        [NODE, main_js], cwd=ROOT,
+        [NODE, main_js, "serve"], cwd=ROOT,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, encoding="utf-8", errors="replace", bufsize=1)
     try:

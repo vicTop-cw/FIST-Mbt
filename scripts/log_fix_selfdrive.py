@@ -16,7 +16,7 @@ claim → execute → omega_result_verify → submit → verify →archive 全�
 最后只读核对 fist-mbt.db 的 call_log：新 ts 全为 2026、ns 回退 project_dir、seq 单调。
 
 前置：
-  moon build --target js cmd/main
+  moon build --target js cmd/cli
 运行（项目根）：
   python scripts/log_fix_selfdrive.py
 """
@@ -30,8 +30,8 @@ from datetime import datetime, timezone
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 NODE = os.environ.get("FIST_NODE", "node")
 MAIN_CANDIDATES = [
-    "_build/js/debug/build/cmd/main/main.js",
-    "target/js/release/build/cmd/main/main.js",
+    "_build/js/debug/build/cmd/cli/cli.js",
+    "target/js/release/build/cmd/cli/cli.js",
 ]
 NS = "log-fix-selfdrive"
 CREATED_BY = "log_fix_executor"
@@ -180,7 +180,7 @@ def fix_gist(fname: str) -> str:
 def main():
     main_js = find_main()
     if not main_js:
-        print("FAIL: main.js 未找到；请先 `moon build --target js cmd/main`", file=sys.stderr)
+        print("FAIL: main.js 未找到；请先 `moon build --target js cmd/cli`", file=sys.stderr)
         sys.exit(1)
     import importlib.util
     spec = importlib.util.spec_from_file_location(
@@ -191,7 +191,7 @@ def main():
     mod.patch(main_js)
 
     proc = subprocess.Popen(
-        [NODE, main_js], cwd=ROOT,
+        [NODE, main_js, "serve"], cwd=ROOT,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, encoding="utf-8", errors="replace", bufsize=1,
     )
