@@ -49,6 +49,9 @@ AIGC:
   全量 JS **533/533**（temp/verify_eng_full.log）；提交树自证：`git archive` 出的 327bb7a 树 **531/531**
   （temp/verify_327bb7a_test.log），HEAD 派生树 + 本环修复 → `MCP-SMOKE PASS`（temp/smoke_e2e_proof3.log）。
   账本 100 条 = 87 已修 / 9 重复并入 / 4 误报 / 0 待修。已知红一项归并行改动面：`gen_help_docs.py` 未在 scripts/README.md 登记。
+  **BUG-102 收口（同轮追加，上文那条「2 待修/1 待修」是当时的盘面，不改写）**：2026-09-28T06:45:59Z
+  cl7 在全新 autocrlf 克隆里恒报 55 份「内容不一致」，实为 `tree_digest` 逐字节比撞上 「提交里 LF vs 检出后 CRLF」；改在**比较侧**做行尾归一（写盘字节不动、四宿主投影不动），真漂移与「仅行尾不同」分栏报数，`gen_plugins.py --selftest` 四格自证（相同 / 仅行尾 / 内容漂移 / 缺失与多余，并钉住 CRLF 夹具必须与 LF 字节不同以防夹具空转），该自检同时进 ci.yml 的 cl7 那一步（BUG-89 同型：自检不被执行等于没有）。
+  承重实测：同一棵新克隆里旧守卫 55 漂移、新守卫 1 漂移，而那 1 份正是当时真没重生成的 plugins/README.md ⇒ 归一没把真问题放行；重生成后 `check_plugin_sync` rc=0。账本 101 条 = 88 已修 / 9 重复并入 / 4 误报 / 0 待修。
 
 - **账本**：BUG-90~94 五条入账（90/91 FIXED 并落 `### FIXED` 小记；92 拒绝文案自相矛盾、93 退役入口 `cmd/main`
   仍散在 15+ 处脚本/文档、94 `cost_stats` 未捕获 `ERR_SQLITE_ERROR` 杀会话 三条 OPEN 交裁决）；
