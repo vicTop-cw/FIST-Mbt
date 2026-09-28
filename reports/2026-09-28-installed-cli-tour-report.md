@@ -249,3 +249,51 @@ BUG-93 退役入口 `cmd/main` 散落 15+ 处）。仍未做：服务面级 catc
 收口（BUG-107，high，入账即 FIXED）：安装器首选线全改 GitHub master raw；moon.mod 取回内容先做 HTML 形状检查（是网页就点名换源）；资产下载后先验 zip 魔数 `PK` 再看大小。判据 R6 + 三格变异；自述同步 AGENTS 守卫族与 scripts/README（五条 ⇒ 六条、八格 ⇒ 十一格）。
 判据自己也红过一次：R6 的首选线正则写成 `install_(?:onecmd\.ps1|sh)`，把 `install.sh` 读成 `install_sh` ⇒ 干净输入误红。**尺子坏与产品坏要用同一套对照区分**，这次靠「干净支必须绿」那格抓到。
 交出去的一处：README「黑盒用户」段本轮由并行改动面新加，两行安装线用的是 GitCode raw —— 对方在写该文件 ⇒ 不代改，改法即上表第一行。
+
+## 补遗 · 「真的走下载」第一次跑得起来，顺带抓出自检的假绿（盖章 2026-09-28T08:55:13Z）
+
+BUG-107 之后手里还剩一个没兑现的主张：「按文档装」的**下载**那一步。`-LocalZip` 绕开它，公网 Release 又需要推送授权。
+于是给两个安装器加镜像入口（`-BaseUrl` / `FIST_BASE_URL`），并写常驻端到端 `scripts/blackbox/e2e_mirror_install.py`
+——本机 `http.server` 挂 `moon.mod` + `/-/releases/download/v0.3.0/fist-mbt-js-v0.3.0.zip`（zip 由已装产物现打包），
+让安装器**真的走一次下载**装进沙箱。
+
+| 面 | 实测回执 | 判定 |
+|---|---|---|
+| 正向安装 rc | `0` | 通过 |
+| 版本来源 | `http://127.0.0.1:<port>/moon.mod` | 镜像 moon.mod 命中 |
+| 资产名拼装 | `v0.3.0/fist-mbt-js-v0.3.0.zip` | 命中 |
+| POSIX shim | `POSIX shim, LF` | 门通过 |
+| 安装器自检经 shim 跑到 fist | `fist (PATH)` | **修好后才第一次命中**（见 BUG-109） |
+| 沙箱产物 | `sha256:616b7632` ＝ 镜像一致 | 通过 |
+| 沙箱 bin | `fist / fist-mbt / fist.cmd / fist-mbt.cmd` 四件齐 | 通过 |
+| bash → 沙箱 `fist version` | rc=0 首行 `FIST-Mbt v0.3.0` | 通过 |
+| bash → 沙箱 `fist doctor` | rc=0 首行 `✅ [1/5] FistEngine 能创建` | 通过 |
+| 反面对照（资产换 20KB HTML） | rc=1，回执含「前两字节 `3C-21`」，未装出产物 | 拒绝带理由 |
+| HKCU 用户级 PATH | 跑前 1708 字 ⇒ 跑后逐字还原相同 | 沙箱外零污染 |
+| 真安装目录产物 | `616b7632 → 616b7632` | 不动别人已装的那份 |
+
+**BUG-108（medium，入账即 FIXED）**：下载段从未可验 = 验证面的空洞，补上述镜像入口与常驻 e2e。
+顺带抓到 PS 5.1 的 `(Invoke-WebRequest).Content` 在服务器标 `application/octet-stream` 时返回 **`byte[]`**——
+版本正则对 `byte[]` 静默失配，回执只说「正文里没有可解析的 version 行」，看着像镜像造错了。
+修在产品侧（非 string 先按 UTF-8 解码），不改测试夹具的形状。
+
+**BUG-109（high，入账即 FIXED）**：这条是上一格「自检经 shim 跑到 fist 永不命中」逼出来的。
+我一度怀疑探针写错，因为同一份 shim 在 bash 里 `fist version` 是 rc=0、stdout 正常。逐字证据
+（`temp/b108-sandbox/selfcheck-ps-stderr.txt`）：
+
+```
+fist.cmd : (node:36896) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+    + FullyQualifiedErrorId : NativeCommandError
+```
+
+错误记录的**来源就是 shim 本身** ⇒ 命令名解析成功、进程真跑起来了；而脚本顶部 `$ErrorActionPreference="Stop"`
+把原生命令的一行 stderr 升级成终止错误。node:sqlite 每次启动都打那行警告 ⇒ 这不是偶发，是**每次**。
+于是自检同时说两件假话：`✅ fist-mbt.js 可执行` 挂在两个必然进 catch 的 try 之后**无条件**打印（假绿），
+`& fist version` 的 catch 又把它渲染成「当前会话 PATH 未刷新（新开终端即可）」（假因——PATH 那一刻是对的）。
+修法：`Invoke-FistNative` 封装（调用期临时降 EAP、`2>$null` 隔离 stderr、`finally` 还原）；
+版本无 stdout ⇒ `❌ 产物跑不出版本（node 不在 PATH 或产物损坏）` + **exit 1**；
+`Get-Command fist` 分流「解析不到」与「解析到却无回执」。判据面加 **R7**（三支子判据：禁空 catch /
+原生调用必须降 EAP+stderr 隔离 / ✅ 必须挂在版本回执的条件分支上），`--selftest` 十一格 ⇒ 十四格。
+
+教训两条：**①「自检打印的 ✅」不是判据，要看它挂在哪条实测分支上**——无条件的那句永远绿，等于永远不说谎也永远不说真话；
+**② 一句错误的诊断比没有诊断更贵**：它把用户支去开新终端、重装，而真因只是一行 stderr 警告。
