@@ -443,7 +443,8 @@ MCP 启动参数以仓库根 `{MCP_NAME}` 为准（{vals['TOOL_COUNT']} 工具 /
 | Claude | `claude/.claude-plugin/*.json` + `.mcp.json` + `skills/` | marketplace add |
 
 - 生成：`python scripts/gen_plugins.py`
-- 守卫（cl7）：`python scripts/check_plugin_sync.py`——重跑生成器到临时区再逐字节 diff，
+- 守卫（cl7）：`python scripts/check_plugin_sync.py`——重跑生成器到临时区再逐字节 diff（比较前先做
+  行尾归一，否则 autocrlf 克隆会把整棵投影判红，见 BUG-102；判据自身有 `gen_plugins.py --selftest` 四格），
   手改插件、忘重生成、数字漂移都会红。
 - 当前投影：{vals['TOOL_COUNT']} 工具 / v{vals['VERSION']} / 缺陷账本 {vals['LEDGER_SUMMARY']}
 """,
@@ -458,6 +459,31 @@ def tree_digest(base: Path) -> dict:
     return out
 
 
+def norm_eol(b) -> bytes:
+    """行尾归一：CRLF→LF。
+
+    为什么必须归一（BUG-102）：提交里的投影是 LF，而 `core.autocrlf=true` 的 Windows 克隆
+    checkout 出来是 CRLF ⇒ 逐字节比会把 55 份文件全报"内容不一致"，而同一棵树重跑生成器后
+    `git diff` 却是空的。Linux/CI 默认行尾恰好掩盖了这条，于是 cl7 在开发者机器上恒红、
+    在 CI 上恒绿——两边都在测行尾，没人在测投影。
+    """
+    return b.replace(b"\r\n", b"\n") if isinstance(b, bytes) else b
+
+
+def drift_keys(cur: dict, new: dict):
+    """返回 (真漂移键, 只差行尾的键)。只差行尾不算漂移，但要在正文里看得见。"""
+    drift, eol_only = [], []
+    for k in sorted(set(cur) | set(new)):
+        a, b = cur.get(k), new.get(k)
+        if a == b:
+            continue
+        if k in cur and k in new and norm_eol(a) == norm_eol(b):
+            eol_only.append(k)
+            continue
+        drift.append(k)
+    return drift, eol_only
+
+
 def is_source(path_key: str) -> bool:
     """plugins/source/ 是人手维护的真源，不参与投影 diff。"""
     parts = Path(path_key).parts
@@ -468,8 +494,42 @@ def comparable(base: Path) -> dict:
     return {k: v for k, v in tree_digest(base).items() if not is_source(k)}
 
 
+def selftest_projection() -> int:
+    """四格自证：漂移判据在"行尾归一"后仍能抓真问题（BUG-102 的防过度放行对照）。"""
+    fails = []
+    a = b"tools: 129\nversion: 0.3.0\n"
+    # 1) 逐字相同 → 干净
+    d, e = drift_keys({"f": a}, {"f": a})
+    if d or e:
+        fails.append(f"格1 相同内容被判漂移：drift={d} eol={e}")
+    # 2) 只差行尾（Windows 克隆的真实形态）→ 不算漂移，但要可见
+    crlf = a.replace(b"\n", b"\r\n")
+    d, e = drift_keys({"f": crlf}, {"f": a})
+    if d or e != ["f"]:
+        fails.append(f"格2 仅行尾差异应进 eol_only、不得进 drift：drift={d} eol={e}")
+    if crlf == a:
+        fails.append("格2 夹具失效：CRLF 与 LF 字节相同，等于什么都没测")
+    # 3) 真内容漂移 → 必须红
+    d, _ = drift_keys({"f": a}, {"f": b"tools: 128\nversion: 0.3.0\n"})
+    if d != ["f"]:
+        fails.append(f"格3 内容漂移未红：drift={d}")
+    # 4) 缺失 / 多余两个方向都要红（防止归一逻辑把"文件不见了"也放行）
+    d, _ = drift_keys({}, {"f": a})
+    if d != ["f"]:
+        fails.append(f"格4a 插件目录缺文件未红：drift={d}")
+    d, _ = drift_keys({"f": a}, {})
+    if d != ["f"]:
+        fails.append(f"格4b 插件目录手写残留未红：drift={d}")
+    for x in fails:
+        print("SELFTEST FAIL " + x)
+    print("SELFTEST %s（四格：相同/仅行尾/内容漂移/缺失与多余）" % ("OK" if not fails else "FAIL"))
+    return 0 if not fails else 2
+
+
 def main() -> int:
     check = "--check" in sys.argv
+    if "--selftest" in sys.argv:
+        return selftest_projection()
     vals = measure()
     if check:
         tmp = Path(tempfile.mkdtemp(prefix="fist_plugins_"))
@@ -477,7 +537,7 @@ def main() -> int:
             generate(tmp, vals)
             cur = comparable(ROOT / "plugins")
             new = comparable(tmp)
-            drift = sorted(k for k in set(cur) | set(new) if cur.get(k) != new.get(k))
+            drift, eol_only = drift_keys(cur, new)
             if drift:
                 print(f"FAIL 插件态漂移（{len(drift)} 个文件与真源投影不一致）：")
                 for k in drift:
@@ -489,7 +549,8 @@ def main() -> int:
                         why = "内容不一致"
                     print("  - " + k + "：" + why)
                 return 1
-            print(f"OK 插件态与真源一致（{vals['TOOL_COUNT']} 工具 / v{vals['VERSION']}）")
+            note = f"（另有 {len(eol_only)} 份仅行尾不同，按 BUG-102 归一后视为一致）" if eol_only else ""
+            print(f"OK 插件态与真源一致（{vals['TOOL_COUNT']} 工具 / v{vals['VERSION']}）{note}")
             return 0
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

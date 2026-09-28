@@ -1622,18 +1622,9 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
 - 证据：temp/bug93_apply.log, temp/eg_prefix_run.log, temp/eg_full3.log, temp/eng_prefix_test.log, 
   temp/verify_eng_full.log, temp/tour_read_plane_r2.log, temp/tour_read_plane_r3.log, temp/smoke_e2e_proof3.log
 
-## BUG-102 [2026-09-28T06:39:17Z] [medium] OPEN
-- summary: 一源四态 cl7 在全新克隆里必然报「55 个文件与真源投影不一致」——守卫按字节比，而 checkout 把 LF 换成 CRLF
-- detail:
-  复现面＝`git clone` 到 5fe5cf1 后跑 `python scripts/check_plugin_sync.py` → rc=1，逐条列 plugins/README.md、
-  atomcode/INSTALL.md 等 55 个「内容不一致」；但在同一棵克隆里再跑 `python scripts/gen_plugins.py`，
-  `git diff` 只有 `LF will be replaced by CRLF` 警告、零内容差异 ⇒ 真源与投影一致，**红的是行尾比较**：
-  提交里的 plugins 文件是 LF，工作区（core.autocrlf=true 的 Windows 克隆）是 CRLF，守卫拿 CRLF 磁盘件比 LF 生成串。
-  影响：Windows 上开发者/cl7 自检恒红（Linux/CI 默认 autocrlf=input ⇒ 恰好不红，所以 CI 看不见这条）；
-  一旦有人为了消红去改生成器写 CRLF，反而会把 4 宿主投影全量 churn。
-  建议修法（二选一，交裁决）：① gen_plugins 的 `--check` 与 check_plugin_sync 的比较两侧先做行尾归一（universal newlines），
-  并加一格「同一内容换 CRLF 后仍判一致」的合成对照；② 仓库加 `.gitattributes` 把 `plugins/**` 与 `*.md` 钉 eol=lf，
-  并复跑 cl7 两面（Windows 克隆 + CI）。本环不动：改比较逻辑会牵动 4 宿主 56 份投影的判定，属分发面口径变更。
-  证据：temp/cl_check_plugin_sync.out（克隆树 rc=1）、temp/commit_selfproof.log（archive 树同判）、
-  克隆内 `git diff --stat` 在重新生成后为空。
-- reported_by: installed-cli-tour
+## BUG-102 [2026-09-28T06:39:17Z] [medium] FIXED
+
+### FIXED(2026-09-28T06:44:04Z / BUG-102)
+- 采行「比较侧行尾归一」那条：`gen_plugins.norm_eol()` + `drift_keys()`，漂移与"仅行尾不同"分栏，后者在正文里报数（看得见才不会被当成没事）；`--selftest` 四格＝相同/仅行尾/内容漂移/缺失与多余，并把"CRLF 夹具与 LF 必须字节不同"也钉成对照（防止夹具自己失效）。
+- 实测：同一份新守卫在 autocrlf 全新克隆里漂移 55 → 1，那 1 份是当时真未重生成的 plugins/README.md（改了投影正文没重跑生成器）——**说明归一没有把真问题一起放行**；重生成后 cl7 PASS。
+- ci.yml 的 cl7 那一步前加 `python3 scripts/gen_plugins.py --selftest`（BUG-89 同型：自检不被执行就等于没有）。
