@@ -90,6 +90,11 @@ jobs:
           python3 scripts/check_release_asset_names.py --selftest
           python3 scripts/check_release_asset_names.py
 
+      - name: Self-described surface guard (BUG-104：resources/prompts/版本 自述面判据的 12 支对照)
+        shell: bash
+        run: |
+          python3 scripts/mcp_tool_tour.py --surface-selftest
+
       - name: Store-isolation probe (BUG-90：FIST_DB_PATH 必须真的改道，两格成对 + 合成违例)
         shell: bash
         run: |
