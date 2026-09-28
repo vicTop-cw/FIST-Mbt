@@ -10,16 +10,18 @@ async fn main {
   // args[0] = node.exe 路径, args[1] = .js 路径, args[2..] = 用户参数
   let sub = if args.length() >= 3 { args[2] } else { "" }
 
-  match sub {
-    "serve" => run_serve()
-    "version" => run_version()
-    "demo" => run_demo()
-    "doctor" => run_doctor()
-    "help" => print_help()
-    "" => print_help()
-    other => {
+  let cmd = parse_subcmd(sub)
+  match cmd {
+    Serve => run_serve()
+    Version => run_version()
+    Demo => run_demo()
+    Doctor => run_doctor()
+    Help => print_help()
+    NoArgs => print_help()
+    Unknown(other) => {
       println("未知子命令: \{other}")
       print_help()
+      cli_exit(exit_code_of(cmd))
     }
   }
 }

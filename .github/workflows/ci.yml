@@ -102,6 +102,14 @@ jobs:
           python3 scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js
           python3 scripts/store_isolation_probe.py --selftest
 
+      - name: CLI call-site probe (BUG-106/114：旗、退出码、版本自述必须打到入口面)
+        shell: bash
+        # 复用上面那一步的 cmd/cli 产物：白盒测试钉的是 parse_subcmd，
+        # 入口被改回字符串 match 或源码常量落后时它照样全绿 —— 这里起真产物看真 rc。
+        run: |
+          python3 scripts/cli_flag_probe.py --selftest
+          python3 scripts/cli_flag_probe.py
+
       - name: Cleanliness guard (仓库整洁，仅交付库 fist-mbt.db)
         shell: bash
         run: python3 scripts/cleanup_artifacts.py && python3 scripts/cleanup_artifacts.py --check

@@ -1711,7 +1711,7 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
   守卫面：`check_release_asset_names.py --selftest` → `SELFTEST OK`（八格）；全量 rc=0；
         `check_doc_surface` rc=0（R5 的自述已同步）；`check_ps_encoding` rc=0（安装器 BOM/解析 0 错）。
 
-## BUG-106 [2026-09-28T07:50:09Z] [medium] OPEN
+## BUG-106 [2026-09-28T07:50:09Z] [medium] FIXED
 - summary: `fist --help` / `-h` / `--version` / `-V` 被当"未知子命令"，且未知子命令的退出码是 0
 - detail:
   调用面实测（安装态产物，bash 走 POSIX shim 逐个打）：
@@ -1736,6 +1736,16 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
     other => { println("未知子命令: \{other}"); print_help(); exit(2) }
   退出码建议 2（区分"用法错"与"运行错"），并配一条白盒钉 `未知子命令` 分支不再回 0。
 - 出路：并行改动面收口后由该文件当前 owner 落上面这段（本环会在下一轮巡回里复测这四个旗）。
+
+### FIXED(2026-09-28T16:41:55Z / BUG-106)
+真源落在 `cmd/cli/subcmd.mbt`（本轮新增）：`parse_subcmd` 一处展开 `version|--version|-V` 与
+`help|--help|-h`，`USAGE_ERROR_EXIT_CODE = 2` 与 `exit_code_of` 给退出码，`cli_exit` 三形态
+（js 走 `process.exit`、native 走 libc `exit`、其余运行时 abort 而不是静默回 0）。
+`cmd/cli/main.mbt` 的分发改成读 `parse_subcmd` + `cli_exit(exit_code_of(cmd))`，臂的形状只剩一处。
+锁两层：白盒 `cmd/cli/subcmd_wbtest.mbt` 两格（别名归位 / 未知必非 0 且已知必 0，成对反向对照）；
+调用面 `scripts/cli_flag_probe.py`（CI 新步，起真产物 `node cli.js <arm>` 看真 rc）。本轮实测：
+`version` / `--version` / `-V` 三格 rc=0 且首行 `FIST-Mbt v0.3.4`，未知参数 rc=2 且首行点名被拒的是什么。
+条目末那句「本环会在下一轮巡回里复测这四个旗」已兑现——复测的就是上面那次调用面跑。
 ## BUG-107 [2026-09-28T08:19:46Z] [high] FIXED
 - summary: 文档写的主安装线（GitCode raw 直链）匿名 GET 返回 HTTP 200 + 一整个 HTML 页，另一条写的是 GitHub `main` 分支而默认分支是 master ⇒ 用户照文档 `irm … | iex` 第一步就拿到网页
 - detail:
@@ -1872,7 +1882,7 @@ README 两条安装线改 GitHub master raw 直链 + GitCode 降为浏览备用�
 代码栅栏的 0x08 坏字节清除，六条装后命令独立成块。判据面：`check_doc_surface.py` 全量复跑，
 `check_release_asset_names.py` R6 早已把"首选线必须 GitHub master"钉在安装器侧（文档侧这条暂无自动门，见下）。
 
-## BUG-111 [2026-09-28T11:33:28Z] [medium] OPEN
+## BUG-111 [2026-09-28T11:33:28Z] [medium] FIXED
 - summary: 发布流水线**史上第一次真跑**（`FIST-Mbt Blackbox Release` run 1，由我推的 `v0.3.1` 触发）就失败，
   `https://github.com/vicTop-cw/FIST-Mbt/releases/download/v0.3.1/fist-mbt-js-v0.3.1.zip` 实测 404、
   `/releases/tag/v0.3.1` 页面上 `releases/download/` 链接 **0 条** ⇒ 「不带参数的 `irm | iex`」这条默认安装线
@@ -1903,7 +1913,7 @@ README 两条安装线改 GitHub master raw 直链 + GitCode 降为浏览备用�
   「说是全弄好了」这句话在 CI 面上没有支撑。匿名 API 现在 403 rate limit exceeded，读不到日志，
   定位需要 `FIST_GITHUB_TOKEN`（只从环境变量注入）或在 UI 上点开任一条 run。
 
-## BUG-112 [2026-09-28T11:54:14Z] [medium] OPEN
+## BUG-112 [2026-09-28T11:54:14Z] [medium] FIXED
 - summary: BUG-111 的归因**只覆盖了一半**——真正让 Release 零资产的是 `release.yml` 的工具链 bootstrap：
   安装 URL 用了 `cli.moonbitlang.com/install/unix`（少 `.sh`），而且**从不把 moon 目录写进 `GITHUB_PATH`**
   ⇒ runner 每步起新 shell，安装脚本改的只是 shell rc，下一步里 `moon` 根本不在 PATH
@@ -1938,6 +1948,16 @@ README 两条安装线改 GitHub master raw 直链 + GitCode 降为浏览备用�
   都要等 `v0.3.3` 那一次 run 的回执。翻 FIXED 的判据写在 BUG-111 末：匿名 HEAD 资产 URL 得 200 + `PK`，
   且用**公网线不带任何参数**装出 `fist version` = 0.3.3。
 
+
+### FIXED(2026-09-28T16:41:55Z / BUG-111, BUG-112)
+两条一起收：`v0.3.3` 那一次 `FIST-Mbt Blackbox Release` 已给出两条条目末各自要求的判据——
+meta / build-js / release 三作业绿（`Build JS target` 不再红 ⇒ BUG-112 的 `unix.sh` +
+`echo "$HOME/.moon/bin" >> "$GITHUB_PATH"` + `moon update` 三条生效），
+匿名 HEAD `.../releases/download/v0.3.3/fist-mbt-js-v0.3.3.zip` 得 302 → 真资产、前两字节 `PK`；
+再用**公网线不带任何参数**（从 README 反解出来的那一行）跑一次真安装：rc=0，横幅 0.3.3、
+shim/PATH/自检四格全命中（`scripts/blackbox/e2e_irm_line.py` 沙箱档，用户 PATH 逐字还原）。
+BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并留在 112 的正文里；
+这里只按叙述面追加，不回写 111 的正文。判据面：R8（发布作业不许顶掉分发）+ R9（工具链 bootstrap 与 CI 同源）。
 ## BUG-113 [2026-09-28T12:12:10Z] [high] FIXED
 - summary: README 与安装器头部那条 Windows 主安装线「irm <GitHub master raw> | iex」当场解析失败 ——
   iex : At line:22 char:22 / + [string]$Version = "", / 赋值表达式的左侧无效（InvalidLeftHandSide）；
@@ -1978,7 +1998,7 @@ README 两条安装线改 GitHub master raw 直链 + GitCode 降为浏览备用�
 文档线改 .ToString().TrimStart([char]0xFEFF) 形（README + 安装器头部 + 两处理由注释）；判据 R10 两支、
 --selftest 廿一格；常驻 scripts/blackbox/e2e_irm_line.py 跑从 README 反解出来的那一行，沙箱实证 rc=0 四格全命中。
 
-## BUG-114 [2026-09-28T12:12:10Z] [high] OPEN
+## BUG-114 [2026-09-28T12:12:10Z] [high] FIXED
 - summary: 版本自述其实有三个真源 —— moon.mod（规范真源）、src/server/server.mbt:565 的
   let project_version : String = "0.3.0"、cmd/cli/help_topics.mbt:4 的 const FIST_VERSION = "0.3.0"。
   本轮把 moon.mod 前进到 0.3.3 之后，公网装出来的全局命令 fist version 仍回 v0.3.0
@@ -1996,3 +2016,16 @@ README 两条安装线改 GitHub master raw 直链 + GitCode 降为浏览备用�
   或加一支判据：server.mbt 的 project_version 与 cmd/cli 的 FIST_VERSION 必须 == moon.mod 的 version，
   不一致即红并点名行号。**这条判据本轮没加**：它一落地就是当场红，而它指名的两个面不在我手里——
   把一个自己修不了的红门禁塞进 CI 只是把债转嫁给下一次构建，不如先入账交裁决。
+
+### FIXED(2026-09-28T16:41:55Z / BUG-114)
+三处对齐 moon.mod：`src/server/server.mbt` 的 `project_version`、`cmd/cli/help_topics.mbt` 的
+`FIST_VERSION`，与 `moon.mod` / `USAGE.md` 一起前进到 0.3.4。
+常驻锁由红转绿（活证据）：HEAD 上 `moon.mod=0.3.3` 而 `project_version="0.3.0"` ⇒
+`src/server/fist-mbt_wbtest.mbt` 的「BUG-16 对外版本单一真源」那格在 master 上一直是红的——
+红着没人读等于没锁，这正是本条能活到 0.3.3 的原因；本轮 `moon test --target js src/server` = 145/145。
+新增机器可检面（条目里建议的那条）：`check_release_asset_names.py` 加 **R11**——`let project_version`
+与 `cmd/cli` 侧扫到的任何 `const *VERSION*` 必须 == moon.mod；读不到基线即自拒，可选面缺席不误红，
+`--selftest` 五格对照（常量落后 / 真源搬家 / 基线读不到 / 常量表漂移必红 + 无该面不误红）。
+调用面：`scripts/cli_flag_probe.py` 钉「`fist version` 首行必须回显 moon.mod 版本」，帮助面同规则。
+公网复验随 `v0.3.4` 的 run 之后再跑一次 `e2e_irm_line.py`（其版本针本轮已改成从 moon.mod 反解，
+不再写死 0.3.3——写死的针一升版就漂，漂成假绿最坏）。

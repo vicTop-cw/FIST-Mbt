@@ -2,7 +2,7 @@
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "fist-mbt",
   "metadata": {
-    "version": "0.3.3",
+    "version": "0.3.4",
     "description": "FIST-Mbt 插件态（由 scripts/gen_plugins.py 生成）"
   },
   "owner": {

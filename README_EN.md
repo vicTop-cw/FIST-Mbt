@@ -18,7 +18,7 @@
 ```bash
 moon update                    # first run: refresh registry index (all deps are public)
 moon check
-moon test --target js -j 1     # → Total tests: 533, passed: 533, failed: 0
+moon test --target js -j 1     # → Total tests: 535, passed: 535, failed: 0
 moon run cmd/cli              # start the MCP server (STDIO transport)
 ```
 
@@ -96,7 +96,7 @@ Pure MoonBit; no Rust/C wrappers. Protocol layer: [`colmugx/mcp`](https://moonca
 
 ## Testing
 
-- **533/533** tests green on the JS backend (Windows, measured 2026-09-28). The native track was last measured at 317/317 and has **not** been re-run this round — do not read that as a dual-target green. Since R107 the suite includes **property tests** (`moonbitlang/core/quickcheck`): random inputs validate invariants (slice arity/prefix, difficulty monotonicity, Task transition discipline claim/execute/reopen/split/submit/reject) with fixed seeds. Since R109 a **transition-contract guard** (`tx_contract`, Design by Contract: precondition/invariant/postcondition read-only pre-check — any failure rejects the batch, state A stays stable, nothing persisted). Since R111 a **feedback convergence** tool (`eval_feedback`, Evaluator-Optimizer schema: free-text feedback normalized into Defects/Evidence/Fix/Acceptance with a deterministic pass/fail verdict) — reproducible on any machine.
+- **535/535** tests green on the JS backend (Windows, measured 2026-09-28). The native track was last measured at 317/317 and has **not** been re-run this round — do not read that as a dual-target green. Since R107 the suite includes **property tests** (`moonbitlang/core/quickcheck`): random inputs validate invariants (slice arity/prefix, difficulty monotonicity, Task transition discipline claim/execute/reopen/split/submit/reject) with fixed seeds. Since R109 a **transition-contract guard** (`tx_contract`, Design by Contract: precondition/invariant/postcondition read-only pre-check — any failure rejects the batch, state A stays stable, nothing persisted). Since R111 a **feedback convergence** tool (`eval_feedback`, Evaluator-Optimizer schema: free-text feedback normalized into Defects/Evidence/Fix/Acceptance with a deterministic pass/fail verdict) — reproducible on any machine.
 - CI three tracks (js ubuntu / native ubuntu / js windows) with live badges.
 - Guard family: `check_tools_sync` (129 tools aligned) / `check_test_sync` (442 aligned — sweeps **every** current-state doc, not a 4-file whitelist; `--selftest` proves the judge itself can go red) / `check_badge` / `check_scripts_index` / `map_verify` / `cleanup --check` (repo cleanliness gate).
 

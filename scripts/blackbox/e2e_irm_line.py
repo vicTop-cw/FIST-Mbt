@@ -33,6 +33,19 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 BOX = os.path.join(ROOT, "temp", "irm-sandbox")
 REAL_DEST = os.path.expandvars(r"%LOCALAPPDATA%\FIST-Mbt")
 README = os.path.join(ROOT, "README.md")
+
+
+def mod_version():
+    """版本基线只从 moon.mod 反解：写死字面量的判据一升版就漂（漂成假红还算好的，漂成假绿最坏）。"""
+    m = re.search(r'^version\s*=\s*"([^"]+)"', io.open(
+        os.path.join(ROOT, "moon.mod"), encoding="utf-8").read(), re.M)
+    if not m:
+        raise SystemExit("FATAL moon.mod 反解不到 version ⇒ 判据没有基线，绝不报绿")
+    return m.group(1)
+
+
+VER = mod_version()
+ASSET = "fist-mbt-js-v%s.zip" % VER
 LINE_RE = re.compile(r'^\s*iex \(\(irm (\S+?)\)\.ToString\(\)\.TrimStart\(\[char\]0xFEFF\)\)\s*$|^'
                      r'\s*irm (\S+?) \| iex\s*$', re.M)
 
@@ -106,7 +119,7 @@ def sandbox():
         rc, out = run_line(line, env, BOX, "irm")
         print("=== 沙箱档 rc=%d ===" % rc)
         for ln in out.split("\n"):
-            if any(k in ln for k in ("v0.3.3", "fist-mbt-js-v", "fist (PATH)", "POSIX shim", "InvalidLeftHandSide",
+            if any(k in ln for k in ("v" + VER, "fist-mbt-js-v", "fist (PATH)", "POSIX shim", "InvalidLeftHandSide",
                                      "赋值表达式", "404", "PK", "❌")):
                 print("   " + ln.strip()[:112])
         if bare:
@@ -118,8 +131,8 @@ def sandbox():
         else:
             if rc != 0:
                 fails.append("文档线 rc=%d（应 0）" % rc)
-            for needle, why in (("0.3.3", "版本从 moon.mod 反解"),
-                                ("fist-mbt-js-v0.3.3.zip", "资产名与发布产物同源"),
+            for needle, why in ((VER, "版本从 moon.mod 反解"),
+                                (ASSET, "资产名与发布产物同源"),
                                 ("fist (PATH)", "自检经 shim 出回执（BUG-109）"),
                                 ("POSIX shim, LF", "无扩展名 shim 门（BUG-105）")):
                 print("  %-26s %s（%s）" % (needle, "命中" if needle in out else "未命中", why))
@@ -130,8 +143,8 @@ def sandbox():
             if not os.path.isfile(js):
                 fails.append("沙箱里没有产物")
             txt = probe(env, BOX, "沙箱 bash")
-            if "v0.3.3" not in txt:
-                fails.append("沙箱里 fist version 不是 0.3.3：%r" % txt[:70])
+            if ("v" + VER) not in txt:
+                fails.append("沙箱里 fist version 不是 %s：%r" % (VER, txt[:70]))
             if "doctor=0" not in txt:
                 fails.append("沙箱里 fist doctor 非 0")
     finally:
@@ -174,12 +187,12 @@ def real():
     rc, out = run_line(line, env, ROOT, "irm-real")
     print("=== 真用户面 rc=%d ===" % rc)
     for ln in out.split("\n"):
-        if any(k in ln for k in ("v0.3.3", "fist (PATH)", "POSIX shim", "❌", "404")):
+        if any(k in ln for k in ("v" + VER, "fist (PATH)", "POSIX shim", "❌", "404")):
             print("   " + ln.strip()[:112])
     after = sha8(js)
     print("   真产物：%s → %s" % (before, after))
     txt = probe(env, ROOT, "真面 bash")
-    ok = rc == 0 and "v0.3.3" in txt and "doctor=0" in txt
+    ok = rc == 0 and ("v" + VER) in txt and "doctor=0" in txt
     if not ok and os.path.isfile(bak):
         print("   不绿 ⇒ 自动还原备份")
         shutil.copy2(bak, js)
