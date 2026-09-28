@@ -315,3 +315,20 @@ fist.cmd : (node:36896) ExperimentalWarning: SQLite is an experimental feature a
 
 顺带一条旁证：`fist demo` 的回执**末尾**就挂着 `(node:…) ExperimentalWarning: SQLite is an experimental feature`
 ——正是这行 stderr 在 `$ErrorActionPreference="Stop"` 下被升级成终止错误，才让旧自检把"跑通了"说成"PATH 未刷新"。
+
+## 补遗 · README 那条线由我落了（含并行改动面本体）（盖章 2026-09-28T10:22:50Z）
+
+BUG-107 把「文档写的主安装线通不了」记成 FIXED，但**真凶在 README 那两行**——当时 README 由并行改动面在写，
+我按边界不代改。本轮用户指令收回（「README 补丁你去改」），落盘时又发现同段代码栅栏的字节里嵌着退格符：
+
+| 面 | 修前（逐字实测） | 修后 |
+|---|---|---|
+| Windows 安装线 | `irm https://gitcode.com/VictorTop/Fist-Mbt/-/raw/main/scripts/blackbox/install_onecmd.ps1 \| iex` | `irm https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install_onecmd.ps1 \| iex` |
+| Linux 安装线 | 同上 GitCode `raw/main` | GitHub `raw/master` 的 `install.sh` |
+| 代码栅栏开 | `` `ash ``（真实字节 `0x60 0x08 61 73 68`） | ` ```bash ` |
+| 代码栅栏闭 | 一个裸反引号 | ` ``` ` |
+| GitCode 的角色 | 被写成主安装线 | 降为「只当浏览备用」，并写明三种 raw 形状都回 200 + HTML ⇒ 不许接进 `\| iex` |
+
+自证（脚本打印）：dry-run 命中区间 461 字含 1 个退格符 ⇒ 退格符全文 1→0、GitCode 死链 0 命中、
+新线命中、行数 225→233 且差==本节新旧行差、`startswith(改前缀)` 成立。
+**提交里含并行改动面那 20 行本体**（HEAD 无此节，我的修复只能落在他们未提交的新增之上），在此点名而非静默带走。
