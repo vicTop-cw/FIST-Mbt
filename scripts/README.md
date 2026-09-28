@@ -60,6 +60,7 @@
 - `native-env.ps1` — Windows native 环境一键装载（VS + sqlite-dev）。
 - `gen_apply_pdf.py` — 一页项目申报书 PDF 生成（个人档，不入库）。
 - `check_entry_paths.py` — **入口清单守卫（BUG-93/101）**：可执行入口清单从 `cmd/*/moon.pkg` 的 `pkgtype(kind:"executable")` 反解，发布入口从 `scripts/blackbox/build_release.ps1` 反解，其余为退役入口。R1 禁现状面（脚本/文档/CI/根 .md/.mcp*.json）用命令或产物路径指向退役入口；R2 禁 `Popen([node, cli.js])` 的 argv 少 `serve`（cmd/cli 裸跑只打印 help，客户端第一行就不是 JSON-RPC）。历史面（memory/ reports/ CHANGELOG.md）与守卫自身不判；扫描面为 0 或退役清单为空 ⇒ FATAL（判据空转绝不报绿）。`--selftest` 四格自证。用法：`python scripts/check_entry_paths.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。
+- `check_release_asset_names.py` — **发布资产名同源守卫（BUG-103）**：安装器（`install_onecmd.ps1` / `install.sh`）与 `build_release.ps1`/`release.yml` 必须共用 `fist-mbt-js-v<moon.mod 版本>.zip` 这一个资产名；R1 禁给版本号写字面量默认值（写死一个字 ⇒ 用户跑不带参数的 `irm | iex` 永远 404）、R2 必须真的解析 `moon.mod` 里的 `version = "…"`、R3 三处资产名模板同源、R4 版本解析为空必须 `exit 1`（不许静默用猜的版本）。必读文件缺席即 FATAL（判据无法自证不出假绿）；`--selftest` 六格变异 + 干净不误红。用法：`python scripts/check_release_asset_names.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。
 
 **自驱闭环（selfdrive）**
 - `log_fix_selfdrive.py` — call_log 缺陷修复自驱闭环。

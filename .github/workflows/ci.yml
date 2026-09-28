@@ -84,6 +84,12 @@ jobs:
           python3 scripts/check_entry_paths.py --selftest
           python3 scripts/check_entry_paths.py
 
+      - name: Release asset-name single source (BUG-103：安装器版本真源=moon.mod，空值必须失败)
+        shell: bash
+        run: |
+          python3 scripts/check_release_asset_names.py --selftest
+          python3 scripts/check_release_asset_names.py
+
       - name: Store-isolation probe (BUG-90：FIST_DB_PATH 必须真的改道，两格成对 + 合成违例)
         shell: bash
         run: |

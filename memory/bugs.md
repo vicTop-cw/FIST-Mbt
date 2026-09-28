@@ -1628,3 +1628,26 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
 - 采行「比较侧行尾归一」那条：`gen_plugins.norm_eol()` + `drift_keys()`，漂移与"仅行尾不同"分栏，后者在正文里报数（看得见才不会被当成没事）；`--selftest` 四格＝相同/仅行尾/内容漂移/缺失与多余，并把"CRLF 夹具与 LF 必须字节不同"也钉成对照（防止夹具自己失效）。
 - 实测：同一份新守卫在 autocrlf 全新克隆里漂移 55 → 1，那 1 份是当时真未重生成的 plugins/README.md（改了投影正文没重跑生成器）——**说明归一没有把真问题一起放行**；重生成后 cl7 PASS。
 - ci.yml 的 cl7 那一步前加 `python3 scripts/gen_plugins.py --selftest`（BUG-89 同型：自检不被执行就等于没有）。
+
+## BUG-103 [2026-09-28T07:02:04Z] [critical] FIXED
+- summary: 安装器默认版本写死 0.3.0-beta，而发布资产名按 moon.mod 的 0.3.0 生成 ⇒ 不带参数的 `irm … | iex` 永远 404
+- detail:
+  两条下载源（GitCode / GitHub Release Assets）都由 `install_onecmd.ps1` / `install.sh` 的参数拼装
+  `fist-mbt-js-v$Version.zip`，而 `build_release.ps1` 与 `release.yml` 的版本号来自 `moon.mod`；
+  默认值写死 `0.3.0-beta` 就是三处不同源：本轮实测把默认值清空后，同一个不带参数的安装器
+  打印出的候选 URL 立刻从 `v0.3.0-beta/…` 变成 `v0.3.0/fist-mbt-js-v0.3.0.zip`（即发布链真正会产出的名字）。
+  CI 看不见这条：CI 既不发 Release，也不跑安装器——所以「分发面全绿」与「用户装得上」是两件事。
+  修法：默认留空 ⇒ 运行时从 moon.mod 解析（GitHub raw 优先、GitCode raw 兜底）；
+  离线口子 `-LocalZip` / `FIST_LOCAL_ZIP` 从 zip 文件名反解版本；
+  解析不到就 `exit 1` 并打印候选源与手带 `-Version` 的方法，绝不静默用一个猜出来的版本号。
+  新守卫 scripts/check_release_asset_names.py：R1 禁字面量默认版本、R2 必须真去解析 moon.mod 的 
+  `version = "…"`、R3 三处资产名模板同源、R4 空值分支必须 exit 1；
+  `--selftest` 六格变异（R1×2 / R2 / R3×2 / R4）＋干净输入不误红。
+  调用面实测：`-LocalZip …v0.3.0.zip` 装完 `fist doctor` 5/5、
+  安装产物 serve 的第一行就是 JSON、tools/list 129（temp 与本轮终端输出）。
+- reported_by: installed-cli-tour
+
+### FIXED(2026-09-28T07:02:04Z / BUG-103)
+- 版本号真源改绑 moon.mod（两个安装器）+ 空值即失败 + 资产名同源守卫；
+  实测：不带参数时 URL 由 `v0.3.0-beta/…` 变 `v0.3.0/fist-mbt-js-v0.3.0.zip`；
+  离线 `-LocalZip` 安装 → doctor 5/5、serve 第一行 JSON、129 工具。
