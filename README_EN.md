@@ -105,7 +105,7 @@ Pure MoonBit; no Rust/C wrappers. Protocol layer: [`colmugx/mcp`](https://moonca
 ## Known Boundaries (honest notes)
 
 - JS backend prints Node's `ExperimentalWarning: SQLite is an experimental feature` on Node ≥ 24 — harmless, ignorable.
-- Windows native test may rarely hit `0xc0000374` (heap race in the local native SQLite stub) even with `-j 1`; the authoritative stability gate is the JS backend (Node ≥ 24, 533/533 measured on Windows).
+- Windows native test may rarely hit `0xc0000374` (heap race in the local native SQLite stub) even with `-j 1`; the authoritative stability gate is the JS backend (Node ≥ 24, 535/535 measured on Windows).
 
 ---
 
