@@ -59,6 +59,11 @@ let evolve_store : @store.SqliteStore? = @store.SqliteStore::new()
 let exec_reg : @executor.ExecutorRegistry = @executor.ExecutorRegistry::new()
 
 ///|
+/// Phase 6 组合环进程内注册表。loop_create 注册、loop_tick 推进、loop_status 查询。
+/// 模仿 AuditLog/ExecutorRegistry 的内部可变性模式。
+let loop_reg : @ops.LoopRegistry = @ops.LoopRegistry::new()
+
+///|
 /// 统计各执行者（assignee）当前的活跃负载：其名下"非终态"（未完成/未归档）任务数。
 /// 供 executor_route 做负载均衡。
 fn executor_loads(e : @engine.FistEngine) -> Map[String, Int] {
@@ -681,7 +686,7 @@ fn map_json() -> Json {
         "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback/saga_repair/circuit_fail/succeed/status/tx_contract",
       ),
       "运维·日志/缺陷/成本/调度": Json::string(
-        "call_log/bug_list/report_bug/eval_feedback/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide",
+        "call_log/bug_list/report_bug/eval_feedback/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide/loop_create/loop_tick/loop_status",
       ),
       "看板/脉冲/预订/推荐+DAG": Json::string(
         "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish/slack/schedule/cost_route/mc/plan_revise/goal_drift_check + board_ascii + status_summary + project_health/health_check + reserve_scope/check/release + task_triage",
@@ -2302,6 +2307,200 @@ pub async fn run_server() -> Unit {
         ) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  // -------------------------------------------------------------------------
+  // Phase 6 组合环 MCP 工具：loop_create / loop_tick / loop_status
+  // -------------------------------------------------------------------------
+  s1 = instrumented_tool(
+    s1,
+    "loop_create",
+    "创建组合环（Phase 6 组合环编排层）：给定环名 + steps 数组或预设名（fix-iterate/build-verify/full-iterate），创建并注册到进程内 LoopRegistry。",
+    schema(
+      {
+        "name": string_prop("组合环唯一名称(必填)"),
+        "steps": Json::object({
+          "type": Json::string("array"),
+          "description": Json::string("step mode 数组，6 种合法 mode 之一：advance/polish/verify/bugfind/fix_and_merge/tidy"),
+          "items": string_prop("单个 step mode"),
+        }),
+        "preset": string_prop("预设环名(可选)：fix-iterate | build-verify | full-iterate。若提供则覆盖 steps"),
+        "max_rounds": int_prop("硬上限(可选默认5)"),
+        "stop_on_goal": bool_prop("健康度 healthy+零blocked 即停(可选默认true)"),
+        "stop_on_exceeded": bool_prop("test↑10% 或 open_bug↓50% 即停(可选默认true)"),
+        "baseline_test_count": int_prop("baseline 测试数(可选默认0)"),
+        "baseline_open_bug_count": int_prop("baseline 未关闭 bug 数(可选默认0)"),
+      },
+      ["name"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let name = get_str(args, "name")
+      if name == "" {
+        return Err(@mcp_types.ToolError("name is required"))
+      }
+      match loop_reg.get(name) {
+        Some(_) => return Err(@mcp_types.ToolError("loop already exists: " + name))
+        None => ()
+      }
+      let preset = get_str(args, "preset")
+      let steps : Array[String] =
+        if preset != "" {
+          match @ops.preset_loop(preset) {
+            Ok((s, _)) => s
+            Err(e) => return Err(@mcp_types.ToolError(e))
+          }
+        } else {
+          let raw = get_array(args, "steps")
+          if raw.length() == 0 {
+            return Err(@mcp_types.ToolError("either steps or preset is required"))
+          }
+          raw.map(fn(j) {
+            match j {
+              String(s) => s
+              _ => j.stringify()
+            }
+          })
+        }
+      match @ops.validate_loop_steps(steps) {
+        Some(e) => return Err(@mcp_types.ToolError(e))
+        None => ()
+      }
+      let now = get_str(args, "now", default=now_default())
+      // max_rounds 默认 5（get_int 默认 3，不能直接用）
+      let max_rounds = match args {
+        Object(m) =>
+          match m.get("max_rounds") {
+            Some(Number(n, ..)) => n.to_int()
+            _ => 5
+          }
+        _ => 5
+      }
+      // stop_on_goal / stop_on_exceeded 默认 true（get_bool 默认 false）
+      let stop_on_goal = match args {
+        Object(m) =>
+          match m.get("stop_on_goal") {
+            None => true
+            Some(True) => true
+            Some(False) => false
+            _ => true
+          }
+        _ => true
+      }
+      let stop_on_exceeded = match args {
+        Object(m) =>
+          match m.get("stop_on_exceeded") {
+            None => true
+            Some(True) => true
+            Some(False) => false
+            _ => true
+          }
+        _ => true
+      }
+      let baseline_test_count = match args {
+        Object(m) =>
+          match m.get("baseline_test_count") {
+            Some(Number(n, ..)) => n.to_int()
+            _ => 0
+          }
+        _ => 0
+      }
+      let baseline_open_bug_count = match args {
+        Object(m) =>
+          match m.get("baseline_open_bug_count") {
+            Some(Number(n, ..)) => n.to_int()
+            _ => 0
+          }
+        _ => 0
+      }
+      let lp = @ops.loop_create(
+        name,
+        steps,
+        now,
+        max_rounds~,
+        stop_on_goal~,
+        stop_on_exceeded~,
+        baseline_test_count~,
+        baseline_open_bug_count~,
+      )
+      loop_reg.set(name, lp)
+      Ok(@mcp.ToolResult::text(@ops.loop_to_json(lp).stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "loop_tick",
+    "推进一环（Phase 6）：从 LoopRegistry 取出当前 PipelineLoop，调 loop_tick 纯函数推进，更新 registry，返回 LoopTickResult JSON（含 next_mode / should_stop / stop_reason / loop_after）。",
+    schema(
+      {
+        "name": string_prop("已注册环名称(必填)"),
+        "project_health_grade": string_prop("当前项目健康度等级(可选)：healthy/attention/stalled"),
+        "blocked_tasks": int_prop("当前 blocked_tasks 数(可选默认0)"),
+        "current_test_count": int_prop("当前测试数(可选默认0)"),
+        "current_open_bug_count": int_prop("当前未关闭 bug 数(可选默认0)"),
+      },
+      ["name"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let name = get_str(args, "name")
+      match loop_reg.get(name) {
+        None => return Err(@mcp_types.ToolError("loop not found: " + name))
+        Some(lp) => {
+          let now = now_default()
+          let project_health_grade = get_str(args, "project_health_grade")
+          let blocked_tasks = get_int(args, "blocked_tasks", default=0)
+          let current_test_count = get_int(args, "current_test_count", default=0)
+          let current_open_bug_count = get_int(args, "current_open_bug_count", default=0)
+          let result = @ops.loop_tick(
+            lp,
+            now,
+            current_test_count~,
+            current_open_bug_count~,
+            project_health_grade~,
+            blocked_tasks~,
+          )
+          loop_reg.set(name, result.loop_after)
+          let json = Json::object(Map([
+            ("next_mode", Json::string(result.next_mode)),
+            ("next_step_idx", Json::number(result.next_step_idx.to_double())),
+            ("next_round", Json::number(result.next_round.to_double())),
+            ("should_stop", Json::boolean(result.should_stop)),
+            ("stop_reason", Json::string(result.stop_reason)),
+            ("history", result.history_json),
+            ("loop_after", @ops.loop_to_json(result.loop_after)),
+          ]))
+          Ok(@mcp.ToolResult::text(json.stringify()))
+        }
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "loop_status",
+    "查询组合环状态（Phase 6）。无 name 参数时列出所有已注册环的摘要；有 name 参数时返回单个环完整 JSON。",
+    schema(
+      {
+        "name": string_prop("查询特定环的 name(可选)，缺省列出所有"),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let name = get_str(args, "name")
+      if name != "" {
+        match loop_reg.get(name) {
+          None => Err(@mcp_types.ToolError("loop not found: " + name))
+          Some(lp) =>
+            Ok(@mcp.ToolResult::text(@ops.loop_to_json(lp).stringify()))
+        }
+      } else {
+        let names = loop_reg.list_names()
+        let arr = names.map(fn(n) {
+          match loop_reg.get(n) {
+            Some(lp) => @ops.loop_to_json(lp)
+            None => Json::object(Map([]))
+          }
+        })
+        Ok(@mcp.ToolResult::text(Json::array(arr).stringify()))
       }
     },
   )
