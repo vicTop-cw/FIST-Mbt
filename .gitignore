@@ -37,3 +37,8 @@ _cron_tmp_sends.jsonl
 # blackbox release artifacts
 _release/
 memory/bugs_pending_github.json
+
+# 构建产物
+dist/
+!dist/
+!dist/*
