@@ -94,3 +94,12 @@
   `Test (native, j=1)` 的红与上面同源（native 非权威），不在本轮主张范围内。
 - 教训：**"提交前跑一遍 `moon fmt --check`" 是本轮才补进习惯的动作** —— 之前只跑 `moon test`，
   而格式门住在那个我第一眼没看的狗食工作流里。
+
+
+## 残余观察（追加 · 盖章 2026-09-28T18:01:26Z）
+
+- 权威 `CI`（JS 轨 ubuntu + windows）在 `2426a66` 上 **success**；native 轨红（AGENTS 已声明非权威门槛）。
+- 狗食轨 `fist-ci.yml` 的 `Format check` 仍红，但 **HEAD 树在本机 moon 下 `moon fmt --check` = 0 处差异**
+  （第一次测出的"3 个脏文件 / 12,614 行"是 `tar -x` 解出 CRLF 造成的测量自身故障）。
+  ⇒ 另开 **BUG-118（OPEN）**：首案是把两条工作流的 MoonBit 版本钉成同一个，
+  或带 Token 读一次该步骤日志确认它到底报哪些文件；**不为了变绿去改产品码**。

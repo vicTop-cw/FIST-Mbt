@@ -2120,3 +2120,26 @@ BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并
   修：`probe()` 加 `sbin=` 参数，沙箱档**点名**跑 `<沙箱>/.local/bin/fist`，
   文件不可执行就直接打 `MISSING <路径>` 并记一条 FAIL（"不许摸真用户面的旧产物顶数"）。
   顺带给下载重试加判据 R12（两支：拆掉"有 HTTP 响应就 break"的闸必红 / 拆掉退避间隔必红）。
+
+## BUG-118 [2026-09-28T18:01:26Z] [low] OPEN
+- summary: `fist-ci.yml`（狗食轨）的 **Format check** 步骤在推送后的 run 里持续红，但**被检内容本身是干净的**——
+  用本机 moon 对 `HEAD` 树逐文件实测 `moon fmt --check` = 0 处差异 ⇒ 红点最可能在该工作流**装"最新 moon"**
+  （`install/unix.sh` 不钉版本），formatter 规则随工具链版本漂；本轮不定案、不猜着修
+- detail:
+  分栏清楚（都是 2426a66 这一次推送的回执，匿名 `/actions/runs/<id>/jobs` 只读步骤名）：
+    `CI`：check + test (js, ubuntu) = **success** / (js, windows) = **success** / (native, ubuntu) = failure(`Test (native)`)
+    `FIST CI — Build + Test`：(native, ubuntu) = failure(`Test (native, j=1)`) / (js, ubuntu) = failure(**Format check**)
+  已排除"是我的文件"：`cmd/cli/subcmd.mbt`、`subcmd_wbtest.mbt` 的形本轮已按 moon fmt 落回（并顺手清了
+  `src/engine/plan_remedy_wbtest.mbt` 的存量 3 处换行）；再把 `git show HEAD:` 的 LF 字节逐文件落进
+  `git archive` 树里跑 `moon fmt --check` ⇒ **0 处差异**（第一次跑这个测量时得到 3 个"脏文件"，
+  真相是 Windows 的 `tar -x` 解出 **CRLF**：`src/server/server.mbt` 全文 6294 行里 CR=6294，
+  于是 formatter 的 LF 输出与它逐行相异 = 12,614 行差异，一个假的"巨额债务"。测量前必须先点行尾数）
+  ⇒ 仓库内容在本机工具链（moon 0.1.20260920）下是合规的，红的解释只剩"两侧工具链版本不同形"。
+- 为什么不本轮定案：要区分"最新 moon 的 formatter 变了"和"runner 上还有别的变量"，
+  要么读一次 runner 日志（需要授权/Token 注入），要么本机 `moon update` 换版本再测——
+  后者会污染本轮其它测量（所有"实测"都建立在当前版本上），所以留给下一轮单独做。
+- 出路（按代价排序）：
+  1) 在 `fist-ci.yml` 与 `ci.yml` 里**钉同一个 MoonBit 版本**（或至少让两条轨同版本），
+     把"formatter 随 latest 漂"从判据面里摘出去——这是唯一能长期止血的一条；
+  2) 或带 `FIST_GITHUB_TOKEN`（只从环境变量注入）读一次该步骤的日志，确认它报的是哪些文件；
+  3) 无论哪条，别改产品码去凑一个说不清的绿。
