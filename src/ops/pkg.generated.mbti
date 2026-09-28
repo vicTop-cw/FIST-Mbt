@@ -42,6 +42,14 @@ pub fn list_contested(@engine.FistEngine) -> Array[@core.Task]
 
 pub fn list_holdings(@engine.FistEngine, String) -> Array[@core.Task]
 
+pub fn loop_create(String, Array[String], String, max_rounds? : Int, stop_on_goal? : Bool, stop_on_exceeded? : Bool, baseline_test_count? : Int, baseline_open_bug_count? : Int) -> PipelineLoop
+
+pub fn loop_status_str(LoopStatus) -> String
+
+pub fn loop_tick(PipelineLoop, String, current_test_count? : Int, current_open_bug_count? : Int, project_health_grade? : String, blocked_tasks? : Int) -> LoopTickResult
+
+pub fn loop_to_json(PipelineLoop) -> Json
+
 pub fn mode_constraints(String) -> Json
 
 pub fn mode_short(PipelineMode) -> String
@@ -51,6 +59,8 @@ pub fn mode_template_path(String) -> String
 pub fn parse_mode(String) -> Result[PipelineMode, String]
 
 pub fn pipeline_tick(@engine.FistEngine, String, String, ns? : String, timeout_sec? : Int, phase? : String, prompt_name? : String, mode? : String) -> Result[Json, String]
+
+pub fn preset_loop(String) -> Result[(Array[String], String), String]
 
 pub fn read_meta_prompt(String) -> String?
 
@@ -71,6 +81,8 @@ pub fn selfdrive_publish_next(@engine.FistEngine, String, ns~ : String, now~ : S
 pub fn selfdrive_review_ready(String, ns~ : String) -> Result[Json, String]
 
 pub fn selfdrive_review_tick(String, ns~ : String, review_every~ : Int) -> Result[Json, String]
+
+pub fn validate_loop_steps(Array[String]) -> String?
 
 pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String, cold_start? : Bool, project_dir? : String, omega_strong_verify? : Bool, omega_split_n? : Int, omega_spec? : Json?, selfdrive_project_dir? : String, selfdrive_review_every? : Int, autodispatch? : Bool, autodispatch_want? : String, phi_gate? : Bool, phi_threshold? : Int, mode? : String, flush_bug_queue? : Bool) -> Result[Json, String]
 
@@ -105,6 +117,51 @@ pub fn Heartbeat::is_stale(Self, String, String, timeout_sec? : Int) -> Bool
 pub fn Heartbeat::last_seen_of(Self, String) -> String
 pub fn Heartbeat::new() -> Self
 pub fn Heartbeat::signal_of(Self, String) -> String
+
+pub struct LoopRegistry {
+  loops : Map[String, PipelineLoop]
+}
+pub fn LoopRegistry::get(Self, String) -> PipelineLoop?
+pub fn LoopRegistry::list_names(Self) -> Array[String]
+pub fn LoopRegistry::new() -> Self
+pub fn LoopRegistry::remove(Self, String) -> Unit
+pub fn LoopRegistry::set(Self, String, PipelineLoop) -> Unit
+
+pub enum LoopStatus {
+  Active
+  MaxRoundsHit
+  GoalReached
+  Exceeded
+  NoSteps
+}
+
+pub struct LoopTickResult {
+  loop_id : String
+  next_mode : String
+  next_step_idx : Int
+  next_round : Int
+  should_stop : Bool
+  stop_reason : String
+  history_json : Json
+  loop_after : PipelineLoop
+}
+
+pub struct PipelineLoop {
+  name : String
+  steps : Array[String]
+  current_idx : Int
+  round : Int
+  max_rounds : Int
+  stop_on_goal : Bool
+  stop_on_exceeded : Bool
+  created_at : String
+  updated_at : String
+  stop_reason : String
+  goal_reached : Bool
+  exceeded : Bool
+  baseline_test_count : Int
+  baseline_open_bug_count : Int
+}
 
 pub enum PipelineMode {
   Advance
