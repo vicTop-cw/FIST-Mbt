@@ -126,25 +126,38 @@ if ($LocalZip -ne "") {
 }
 foreach ($u in $(if ($downloaded) { @() } else { $urls })) {
   Write-Host "  尝试: $u" -ForegroundColor DarkGray
-  try {
-    Invoke-WebRequest -Uri $u -OutFile $zipPath -UseBasicParsing -TimeoutSec 60
-    # BUG-107：光看大小会被"200 + 一整页 HTML"糊过去（备用源的真实形状就是网页）。
-    # zip 的前两字节必须是 PK —— 这一条判据不看状态码，只看拿到的东西是什么。
-    $magic = [IO.File]::ReadAllBytes($zipPath)[0..1]
-    if ($magic[0] -ne 0x50 -or $magic[1] -ne 0x4B) {
-      Write-Host "  · 该源给的不是 zip（前两字节 $([BitConverter]::ToString($magic))，多半是 HTML 页）" -ForegroundColor DarkGray
-      Remove-Item $zipPath -Force; continue
+  # BUG-116：到 release-assets 的链路会瞬时"传输层被对端关闭"（同一时刻 curl 却能取到 200 + PK），
+  # 一失败就换源会把"抖一下就好"放大成"装不上"。所以只对**没有 HTTP 响应**的传输层错误退避重试；
+  # 404/403 与"给的不是 zip"都是确定性结论，重试只是拖慢用户。
+  for ($try = 1; $try -le 3; $try++) {
+    $retry = $false
+    try {
+      Invoke-WebRequest -Uri $u -OutFile $zipPath -UseBasicParsing -TimeoutSec 60
+      # BUG-107：光看大小会被"200 + 一整页 HTML"糊过去（备用源的真实形状就是网页）。
+      # zip 的前两字节必须是 PK —— 这一条判据不看状态码，只看拿到的东西是什么。
+      $magic = [IO.File]::ReadAllBytes($zipPath)[0..1]
+      if ($magic[0] -ne 0x50 -or $magic[1] -ne 0x4B) {
+        Write-Host "  · 该源给的不是 zip（前两字节 $([BitConverter]::ToString($magic))，多半是 HTML 页）" -ForegroundColor DarkGray
+        Remove-Item $zipPath -Force
+        break
+      }
+      if ((Get-Item $zipPath).Length -gt 10KB) {
+        Write-Host "  ✅ 下载成功 ($([math]::Round((Get-Item $zipPath).Length/1KB,1)) KB)" -ForegroundColor Green
+        $downloaded = $true
+      } else { Remove-Item $zipPath -Force }
+      break
+    } catch {
+      # 吞掉异常就等于让用户分不清「资产没发布(404)」和「我这里断网」，两者处方完全不同
+      $resp = $_.Exception.Response
+      $code = if ($resp) { [int]$resp.StatusCode } else { "n/a(传输层)" }
+      $why = ($_.Exception.Message -replace '\s+', ' ')
+      Write-Host ("  ⚠️ 第 $try 次失败 HTTP " + $code + " (" + $_.Exception.GetType().Name + ") " + $why + " ... ") -ForegroundColor Yellow
+      if ($resp) { break }                       # 有响应 = 确定性结论，直接换源
+      if ($try -lt 3) { $retry = $true }
     }
-    if ((Get-Item $zipPath).Length -gt 10KB) {
-      Write-Host "  ✅ 下载成功 ($([math]::Round((Get-Item $zipPath).Length/1KB,1)) KB)" -ForegroundColor Green
-      $downloaded = $true; break
-    } else { Remove-Item $zipPath -Force }
-  } catch {
-    # 吞掉异常就等于让用户分不清「资产没发布(404)」和「我这里断网」，两者处方完全不同
-    $resp = $_.Exception.Response
-    $code = if ($resp) { [int]$resp.StatusCode } else { "n/a" }
-    Write-Host ("  ⚠️ 失败 HTTP " + $code + " (" + $_.Exception.GetType().Name + ") ... 换源") -ForegroundColor Yellow
+    if ($retry) { Start-Sleep -Seconds (2 * $try) } else { break }
   }
+  if ($downloaded) { break }
 }
 if (-not $downloaded) {
   Write-Host "❌ 下载全部失败（每个源的状态见上）。三种可能：Release 未发布 / 资产名不是 $zipName / 本机连不上外网" -ForegroundColor Red
