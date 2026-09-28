@@ -41,7 +41,9 @@ fn pr_err(r : Result[Array[String], String]) -> String {
 test "plan @待领取：要求态不等于当前态，且点名 claim 出路" {
   let e = pr_engine()
   let tid = pr_publish(e, "BUG-99 出路锁：待领取直接 plan")
-  let msg = pr_err(e.plan(task_id=tid, split_n=2, by="leader", now="2026-09-28T06:00:01Z"))
+  let msg = pr_err(
+    e.plan(task_id=tid, split_n=2, by="leader", now="2026-09-28T06:00:01Z"),
+  )
   assert_true(msg.contains("要求状态 [已领取]"))
   assert_true(msg.contains("当前是 [待领取]"))
   // 成对判据：BUG-92 误报的那句形状是「要求状态 [待领取]，当前是 [待领取]」——不得复现
@@ -58,11 +60,14 @@ test "plan @拆分中（重复 plan）：出路点名 get 与 task_plan_deep，�
     Ok(_) => ()
     Err(m) => abort("claim failed: \{m}")
   }
-  match e.plan(task_id=tid, split_n=2, by="leader", now="2026-09-28T06:00:03Z") {
+  match
+    e.plan(task_id=tid, split_n=2, by="leader", now="2026-09-28T06:00:03Z") {
     Ok(kids) => assert_eq(kids.length(), 2)
     Err(m) => abort("首次 plan 应放行: \{m}")
   }
-  let msg = pr_err(e.plan(task_id=tid, split_n=2, by="leader", now="2026-09-28T06:00:04Z"))
+  let msg = pr_err(
+    e.plan(task_id=tid, split_n=2, by="leader", now="2026-09-28T06:00:04Z"),
+  )
   assert_true(msg.contains("当前是 [拆分中]"))
   assert_true(msg.contains("出路："))
   assert_true(msg.contains("task_plan_deep"))
