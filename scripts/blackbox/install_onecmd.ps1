@@ -3,7 +3,11 @@
 scripts/blackbox/install_onecmd.ps1 —— irm 一条命令安装入口（v2 Release Assets 版）
 
 用户跑（首选，2026-09-28 实测公网可达且返回正文即脚本）：
-  irm https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install_onecmd.ps1 | iex
+  iex ((irm https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install_onecmd.ps1).ToString().TrimStart([char]0xFEFF))
+# BUG-113：这里为什么不写 `irm … | iex` 而是先 TrimStart —— 本文件含中文，按 check_ps_encoding
+# 必须带 UTF-8 BOM；`irm` 把 BOM 留成首字符 U+FEFF，`iex` 就不再把 `param()` 当首语句，
+# 报「At line:22 char:22 赋值表达式的左侧无效」。用 `powershell -File` 走磁盘没这问题
+# （两条调用面不同形）⇒ 回归入口：scripts/blackbox/e2e_irm_line.py 跑**字面文档线**。
 备用（GitCode 镜像，同一份内容）：
   irm https://gitcode.com/VictorTop/Fist-Mbt/-/raw/master/scripts/blackbox/install_onecmd.ps1 | iex
 

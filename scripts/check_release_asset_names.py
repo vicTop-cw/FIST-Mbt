@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""BUG-103 + BUG-105 + BUG-107 + BUG-109 + BUG-111 + BUG-112 判据：资产名/版本真源同源、命令名两类 shell 都可见、200 不等于拿到文件、装完的自检不许假绿、发布作业不许顶掉分发。
+"""BUG-103 + BUG-105 + BUG-107 + BUG-109 + BUG-111 + BUG-112 + BUG-113 判据：资产名/版本真源同源、命令名两类 shell 都可见、200 不等于拿到文件、装完的自检不许假绿、发布作业不许顶掉分发。
 
 （R5/R6/R7/R8 为什么住在"资产名"这个守卫里：本守卫真正管的是**分发面同源**——用户按文档敲的那条命令、
 和发布链产出的那个文件名、以及那条命令实际拿回来的字节，三者必须说的是同一件事。
@@ -12,7 +12,7 @@
 `irm … | iex`（不带任何参数）时，两条下载源都指向发布链永远不会产出的文件名。
 CI 看不见这条：CI 不发 Release，也不跑安装器。
 
-判据（九条，全部只看文本形状，不联网）：
+判据（十条，全部只看文本形状，不联网）：
   R1 安装器不许给版本号写死字面量默认值（`$Version = "0.x"` / `VERSION="0.x"`）；
   R2 两个安装器都要真的从 moon.mod 取版本（出现 moon.mod 且出现解析用的正则/sed）；
   R3 资产名模板三处一致：install_onecmd.ps1 / install.sh / build_release.ps1 必须都是
@@ -65,6 +65,7 @@ FILES = {
     # R9 要有对照面：ci.yml / fist-ci.yml 里那套 bootstrap 是**跑通过**的形状，release 链只能照它抄
     "ci_yml": os.path.join(".github", "workflows", "ci.yml"),
     "fist_ci_yml": os.path.join(".github", "workflows", "fist-ci.yml"),
+    "readme": "README.md",
 }
 # 写死字面量默认版本（注释里出现 0.3.0 不算，只抓赋值形态）
 HARDCODED = re.compile(r'(?:^\s*\[string\]\$Version\s*=\s*"[\d][^"]*"|(?:^|\n)\s*VERSION\s*=\s*"[\d][^"]*")', re.M)
@@ -143,6 +144,12 @@ def judge(texts):
         if not DOC_GH_MASTER.search(txt):
             problems.append("R6 %s 文档首选安装线没指 GitHub master 的 raw 直链"
                             "（实测唯一匿名可达；写成 main 或非 GitHub 源会把用户送去 HTML 页）" % name)
+    # R10 文档那条线必须 BOM 安全（BUG-113 实测：脚本带 UTF-8 BOM ⇒ `irm | iex` 在 param() 处报
+    # 「赋值表达式的左侧无效」，而同一个脚本 `-File` 跑正常 ⇒ 用户粘的是文档线，不是 -File）
+    if "TrimStart([char]0xFEFF)" not in ps1:
+        problems.append("R10 install_onecmd.ps1 的文档线没有 TrimStart([char]0xFEFF) ⇒ 带 BOM 的脚本被 iex 解析不了")
+    if "TrimStart([char]0xFEFF)" not in (texts.get("readme") or ""):
+        problems.append("R10 README 的 Windows 安装线没有 TrimStart([char]0xFEFF)（用户照抄即当场失败）")
     if "<(!DOCTYPE|html)" not in ps1:
         problems.append("R6 install_onecmd.ps1 没对 moon.mod 响应做 HTML 形状检查")
     if "0x50" not in ps1 or "0x4B" not in ps1:
@@ -219,7 +226,8 @@ def selftest():
     clean_ci = io.open(os.path.join(ROOT, FILES["ci_yml"]), encoding="utf-8-sig").read()
     clean_fci = io.open(os.path.join(ROOT, FILES["fist_ci_yml"]), encoding="utf-8-sig").read()
     base = {"ps1": clean_ps1, "sh": clean_sh, "build": clean_build,
-            "release_yml": clean_yml, "ci_yml": clean_ci, "fist_ci_yml": clean_fci}
+            "release_yml": clean_yml, "ci_yml": clean_ci, "fist_ci_yml": clean_fci,
+            "readme": io.open(os.path.join(ROOT, FILES["readme"]), encoding="utf-8").read()}
     fails = []
     if judge(dict(base)):
         fails.append("干净输入被误判（本仓现状应通过）：%s" % judge(dict(base))[:2])
@@ -259,6 +267,9 @@ def selftest():
         # R9 两支（BUG-112 的两种退化）：moon 目录不交给下一步 / 安装 URL 退回少 `.sh`
         ("release_yml", 'echo "$HOME/.moon/bin" >> "$GITHUB_PATH"', "echo '# (变异：不把 moon 交给下一步)'", "R9"),
         ("release_yml", "cli.moonbitlang.com/install/unix.sh", "cli.moonbitlang.com/install/unix", "R9"),
+        # R10 两支：文档线退回裸 `irm … | iex`（安装器侧 / README 侧）
+        ("ps1", "TrimStart([char]0xFEFF)", "NO-TRIM", "R10"),
+        ("readme", "TrimStart([char]0xFEFF)", "NO-TRIM", "R10"),
         ("release_yml", "    continue-on-error: true\n    runs-on: ubuntu-latest",
          "    runs-on: ubuntu-latest", "R8"),
     ]
@@ -277,7 +288,7 @@ def selftest():
             fails.append(r)
     for f in fails:
         print("SELFTEST FAIL " + f)
-    print("SELFTEST %s（干净不误红 + 变异必红：R1×2 / R2 / R3×2 / R4 / R5×2 / R6×3 / R7×3 / R8×3 / R9×2）" % ("OK" if not fails else "FAIL"))
+    print("SELFTEST %s（干净不误红 + 变异必红：R1×2 / R2 / R3×2 / R4 / R5×2 / R6×3 / R7×3 / R8×3 / R9×2 / R10×2）" % ("OK" if not fails else "FAIL"))
     return 0 if not fails else 2
 
 
@@ -294,7 +305,7 @@ def main():
     if problems:
         print("FAIL 发布资产名/安装器版本真源不一致（用户按 `irm | iex` 装会 404）")
         return 1
-    print("PASS 分发面同源（R1-R9）：资产名三处一致 + 版本真源 moon.mod + 空值即失败 + "
+    print("PASS 分发面同源（R1-R10）：资产名三处一致 + 版本真源 moon.mod + 空值即失败 + "
           "命令名两类 shell 都可见 + 200/HTML/魔数检查 + 安装自检不假绿 + 发布作业不顶掉分发 + 工具链 bootstrap 与 CI 同源")
     return 0
 
