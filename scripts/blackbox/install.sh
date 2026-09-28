@@ -4,7 +4,8 @@
 # 用户跑：
 #   curl -fsSL https://gitcode.com/VictorTop/Fist-Mbt/-/raw/main/scripts/blackbox/install.sh | bash
 # 或：
-#   curl -fsSL https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/main/scripts/blackbox/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install.sh | bash
+#   （GitHub 侧默认分支实测为 master；写成 main 会 404）
 #
 # 下载源（自动 fallback）：
 #   1. GitCode Release Assets 直链
@@ -91,13 +92,21 @@ mkdir -p "$TMP"
 
 ZIP_PATH="${TMP}/${ZIP}"
 DOWNLOADED=0
-for URL in "${URLS[@]}"; do
+# 离线口子：FIST_LOCAL_ZIP=/path/to/zip 直接装本地资产（内网、CI、发布前自证都要它）
+if [ -n "${FIST_LOCAL_ZIP:-}" ]; then
+  if [ ! -f "$FIST_LOCAL_ZIP" ]; then echo -e "${RED}❌  FIST_LOCAL_ZIP 不存在: $FIST_LOCAL_ZIP${NC}"; exit 1; fi
+  cp "$FIST_LOCAL_ZIP" "$ZIP_PATH"; DOWNLOADED=1
+  echo -e "${GREEN}  ✅ 用本地 zip（跳过下载）: $FIST_LOCAL_ZIP${NC}"
+fi
+for URL in $( [ "$DOWNLOADED" -eq 1 ] || printf "%s\n" "${URLS[@]}" ); do
   echo -e "${DIM}  尝试: ${URL}${NC}"
   if [ "$DL" = "curl" ]; then
-    curl -fsSL --max-time 60 -o "$ZIP_PATH" "$URL" 2>/dev/null || true
+    # 状态码打出来，失败才知道是 404 还是断网（-w 取码，curl 非零也不吞）
+    HTTP_CODE=$(curl -sSL --max-time 60 -o "$ZIP_PATH" -w "%{http_code}" "$URL" 2>/dev/null) || HTTP_CODE="err"
   else
-    wget -q --timeout=60 -O "$ZIP_PATH" "$URL" 2>/dev/null || true
+    HTTP_CODE=$(wget -q --timeout=60 -O "$ZIP_PATH" "$URL" 2>/dev/null && echo 200 || echo err)
   fi
+  [ "$HTTP_CODE" != "200" ] && echo -e "${YELLOW}  ⚠️ HTTP ${HTTP_CODE} ... 换源${NC}"
   if [ -f "$ZIP_PATH" ] && [ "$(stat -c%s "$ZIP_PATH" 2>/dev/null || stat -f%z "$ZIP_PATH")" -gt 10240 ]; then
     KS=$(( $(stat -c%s "$ZIP_PATH" 2>/dev/null || stat -f%z "$ZIP_PATH") / 1024 ))
     echo -e "${GREEN}  ✅ 下载成功 (${KS} KB)${NC}"
@@ -108,7 +117,8 @@ for URL in "${URLS[@]}"; do
 done
 
 if [ "$DOWNLOADED" -eq 0 ]; then
-  echo -e "${RED}❌ 下载全部失败 — Release 是否已发布？${NC}"
+  echo -e "${RED}❌ 下载全部失败 — Release 是否已发布？可离线安装：FIST_LOCAL_ZIP=/path/$ZIP bash install.sh${NC}"
+  for U in "${URLS[@]}"; do echo -e "${DIM}    - ${U}${NC}"; done
   exit 1
 fi
 

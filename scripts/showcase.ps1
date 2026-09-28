@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 <#
 scripts/showcase.ps1 — FIST-Mbt 30~60 秒视觉终端演示
 

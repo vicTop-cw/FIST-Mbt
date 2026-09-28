@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 <#
 scripts/demo.ps1 — FIST-Mbt 30 秒体验：一键自检 + CLI 演示
 

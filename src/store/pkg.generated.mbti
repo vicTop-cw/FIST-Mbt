@@ -101,6 +101,8 @@ pub fn SqliteStore::cb_get(Self, String, String) -> (String, Int, Int, Int, Int,
 pub fn SqliteStore::cb_save(Self, String, String, String, Int, Int, Int, Int, Int, Int, String) -> Result[Unit, String]
 pub fn SqliteStore::clear(Self) -> Unit
 pub fn SqliteStore::create_task(Self, @core.Task) -> Result[Unit, String]
+pub fn SqliteStore::db_path_from_env(String?) -> String
+pub fn SqliteStore::default_db_path() -> String
 pub fn SqliteStore::delete_heartbeat(Self, String) -> Result[Unit, String]
 pub fn SqliteStore::delete_task(Self, String) -> Result[Unit, String]
 pub fn SqliteStore::ensure_specs_table(Self) -> Bool

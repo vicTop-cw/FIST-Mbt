@@ -71,6 +71,19 @@ jobs:
           python3 scripts/check_store_tables_wired.py --selftest
           python3 scripts/check_store_tables_wired.py
 
+      - name: PowerShell encoding guard (BUG-88：无 BOM 的非 ASCII .ps1 在 PS5.1 下解析期即炸)
+        shell: bash
+        run: |
+          python3 scripts/check_ps_encoding.py --selftest
+          python3 scripts/check_ps_encoding.py
+
+      - name: Store-isolation probe (BUG-90：FIST_DB_PATH 必须真的改道，两格成对 + 合成违例)
+        shell: bash
+        run: |
+          moon build --target js cmd/cli
+          python3 scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js
+          python3 scripts/store_isolation_probe.py --selftest
+
       - name: Cleanliness guard (仓库整洁，仅交付库 fist-mbt.db)
         shell: bash
         run: python3 scripts/cleanup_artifacts.py && python3 scripts/cleanup_artifacts.py --check

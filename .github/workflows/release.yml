@@ -8,7 +8,9 @@ name: FIST-Mbt Blackbox Release
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+      # GitHub Actions 的 ref 过滤器不支持 [0-9] 字符类：旧写法对已推上去的
+      # v0.3.0 / v0.3.0-beta 两个 tag 实测触发次数 0 ⇒ Release 从未产出过。
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
@@ -32,9 +34,23 @@ jobs:
     steps:
       - id: version
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          if [[ "$TAG" == v* ]]; then TAG="${TAG#v}"; fi
-          echo "value=${TAG}" >> "$GITHUB_OUTPUT"
+          REF="${GITHUB_REF_NAME}"
+          if [[ "$REF" == v* ]]; then
+            VER="${REF#v}"
+          else
+            # workflow_dispatch 时 ref_name 是分支名，剥不出版本 ⇒ 退回真源 moon.mod
+            VER="${{ inputs.version }}"
+            if [[ -z "$VER" ]]; then
+              # 版本真源 = moon.mod（本仓没有 moon.mod.json）；正则与 scripts/gen_plugins.py 的
+              # RE_VERSION 同一条，避免两处解析口径分叉。
+              VER=$(python3 -c "import re;m=re.search(r'^version\\s*=\\s*\"([^\"]+)\"', open('moon.mod').read(), re.M);print(m.group(1) if m else '')")
+            fi
+            if [[ -z "$VER" ]]; then
+              echo "FATAL: 从 moon.mod 取不到 version ⇒ 宁可让发布红，也不产出 fist-mbt-js-v.zip 这种空版本资产"
+              exit 1
+            fi
+          fi
+          echo "value=${VER}" >> "$GITHUB_OUTPUT"
 
   build-js:
     needs: meta
@@ -53,12 +69,12 @@ jobs:
       - name: Build JS target
         run: |
           moon build --target js
-          python3 scripts/patch_esm_main.py
+          python3 scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js
 
       - name: Package JS artifact
         run: |
           mkdir -p _release/js
-          cp _build/js/debug/build/cmd/main/main.js _release/js/fist-mbt.js
+          cp _build/js/debug/build/cmd/cli/cli.js _release/js/fist-mbt.js
           cd _release/js && zip -r ../fist-mbt-js-v${{ needs.meta.outputs.version }}.zip . && cd ../..
 
       - uses: actions/upload-artifact@v4
@@ -84,7 +100,7 @@ jobs:
       - name: Package native artifact
         run: |
           mkdir -p _release/native
-          cp _build/native/debug/build/cmd/main/main _release/native/fist-mbt
+          cp _build/native/debug/build/cmd/cli/cli _release/native/fist-mbt
           chmod +x _release/native/fist-mbt
           cd _release/native && zip -r ../fist-mbt-native-linux-x64-v${{ needs.meta.outputs.version }}.zip . && cd ../..
 
@@ -117,7 +133,7 @@ jobs:
       - name: Package native artifact
         run: |
           New-Item -ItemType Directory -Force _release/native | Out-Null
-          Copy-Item _build/native/debug/build/cmd/main/main.exe _release/native/fist-mbt.exe
+          Copy-Item _build/native/debug/build/cmd/cli/cli.exe _release/native/fist-mbt.exe
           Compress-Archive -Path _release/native/* -DestinationPath "_release/fist-mbt-native-win-x64-v${{ needs.meta.outputs.version }}.zip" -Force
 
       - uses: actions/upload-artifact@v4
@@ -141,5 +157,6 @@ jobs:
         with:
           tag_name: ${{ env.TAG }}
           name: FIST-Mbt v${{ needs.meta.outputs.version }}
+          prerelease: ${{ contains(env.TAG, '-') }}
           generate_release_notes: true
           files: _artifacts/*.zip
