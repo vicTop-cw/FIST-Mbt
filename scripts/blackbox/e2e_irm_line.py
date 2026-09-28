@@ -90,8 +90,13 @@ def run_line(cmd_line, env, box, tag):
     return r.returncode, out
 
 
-def probe(env, box, label):
-    r = subprocess.run(["bash", "-c", "command -v fist; fist version 2>/dev/null; fist doctor >/dev/null 2>&1; echo doctor=$?"],
+def probe(env, box, label, sbin=None):
+    """默认走 PATH；沙箱档必须**点名沙箱那一份**——否则沙箱里没装成时会摸到真用户面的旧产物，
+    把"根本没装上"读成"装成了旧版本"（BUG-117 的第二个形态）。"""
+    exe = os.path.join(sbin, "fist").replace("\\", "/") if sbin else "fist"
+    script = ("if [ -x '%s' ]; then echo '%s'; '%s' version 2>/dev/null; "
+              "'%s' doctor >/dev/null 2>&1; echo doctor=$?; else echo 'MISSING %s'; fi") % (exe, exe, exe, exe, exe)
+    r = subprocess.run(["bash", "-c", script],
                        capture_output=True, text=True, encoding="utf-8", errors="replace",
                        cwd=box, env=env, timeout=300)
     txt = (r.stdout or "").replace("\r", "").strip()
@@ -102,6 +107,11 @@ def probe(env, box, label):
 def sandbox():
     line, url, bare = documented_line()
     print("被检面（README 反解）：%s\n  目标 URL：%s\n  旧裸形：%s" % (line, url, bare))
+    # 沙箱每次先清空：上一次留下的安装会让文档线（不带 -Force）直接 exit 1，
+    # 于是判据红的是"沙箱脏了"而不是"文档线坏了"——假红比不跑更糟（第二次跑就撞上了）。
+    if os.path.isdir(BOX):
+        shutil.rmtree(BOX, ignore_errors=True)
+        print("沙箱已重置（清 %s）" % os.path.relpath(BOX, ROOT))
     os.makedirs(BOX, exist_ok=True)
     env = dict(os.environ)
     env["LOCALAPPDATA"] = os.path.join(BOX, "AppData", "Local")
@@ -142,7 +152,9 @@ def sandbox():
             print("  沙箱产物 = %s；bin = %s" % (sha8(js), sorted(os.listdir(sbin))))
             if not os.path.isfile(js):
                 fails.append("沙箱里没有产物")
-            txt = probe(env, BOX, "沙箱 bash")
+            txt = probe(env, BOX, "沙箱 bash", sbin)
+            if txt.startswith("MISSING"):
+                fails.append("沙箱里没有可执行的 fist（探针点名要跑 %s）⇒ 不许摸真用户面的旧产物顶数" % sbin)
             if ("v" + VER) not in txt:
                 fails.append("沙箱里 fist version 不是 %s：%r" % (VER, txt[:70]))
             if "doctor=0" not in txt:

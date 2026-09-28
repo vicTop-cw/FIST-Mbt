@@ -2055,3 +2055,68 @@ BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并
 `src/engine/engine_execute_r2_test.mbt::r2e_engine` 补建 `temp/`；对照实证：同一无 `temp/` 条件下
 修前 532/535（3 failed，全在该文件）、修后 535/535（`temp/fixed_no_temp.log`）。
 本轮第 3 笔提交（前两笔是 0.3.4 的主体与文档面同步）。
+
+## BUG-116 [2026-09-28T17:35:26Z] [medium] OPEN
+- summary: v0.3.4 发布成功后，**从本机**复跑「文档那条线」的安装时下载段失败
+  （PowerShell 侧 9/9 次 "基础连接已经关闭: 发送时发生错误 / 由于远程方已关闭传输流，身份验证失败"），
+  而同一资产用 curl 取到 200 + 372,836 字节 + 前两字节 `PK` ⇒ **不是发布面坏，是本机到
+  release-assets.githubusercontent.com 的传输链路不稳定**；因此 0.3.4 的公网安装复验**当前没做成**
+- detail:
+  已排除的方向（都有实测）：
+    1) 资产不在/名字漂移 —— 不在：`curl -sIL` 得
+       `Content-Disposition: attachment; filename=fist-mbt-js-v0.3.4.zip`、
+       `Content-Type: application/octet-stream`，实取 size=372836、magic=`PK`；
+       run af54d5e → meta/build-js/release 三作业 success（native 两作业仍 failure，非权威面）。
+    2) 安装器代码退化 —— 不是：`install_onecmd.ps1` 的下载段自 0.3.3 那次
+       实证 rc=0 之后**一个字节都没动**（本轮只改了 `cmd/cli`、判据与文档面）。
+    3) TLS 协议档设错 —— 不是：`SystemDefault / Tls12 / Tls13` 三档各 3 次，9/9 同一错误；
+       而同一条 URL 在同一时刻用 curl 是 200（矩阵证据 `temp/probe-tls-result.txt`）。
+    4) 代理才是变量：HKCU `ProxyEnable=1 / ProxyServer=127.0.0.1:7897`（clash），
+       而 bash 侧无 `http(s)_proxy` ⇒ .NET 走系统代理、curl 走直连，两条路不同形；
+       且第一次 `SystemDefault` 单发是成功的（200/372836/PK），随后 9 连败 ⇒ 时好时坏，
+       典型的链路/代理侧抖动，而不是确定性代码缺陷。
+  安装器这一段的行为本身是对的：**每个源都失败时逐源打状态并 rc=1**（没有静默半成品，
+  也没有把下载失败说成"PATH 未刷新"——那是 BUG-109 已修的形态）。
+- 为什么不判 FALSE_POSITIVE：现象真实存在且用户面可复现（在这台机器上照文档抄就是装不上）；
+  只是成因不在本仓代码里，本轮也没有把它伪装成"已修"。
+- 出路（下一轮或换环境执行，别为了变绿改判据）：
+  1) 在网络正常的一侧复跑 `python scripts/blackbox/e2e_irm_line.py`（版本针已从 moon.mod 反解，
+     升版不用再改判据）——它红了就是真红，绿了就是本条的关闭证据；
+  2) 若想给"代理链路不稳"这一类加韧度：安装器逐源**重试 + 退避**（现在每源一次），
+     并把"传输层错误"与"404/HTML 形状"分开报（现在共用一段状态文本）；
+  3) 本机侧可先验：`curl.exe` 通而 `Invoke-WebRequest` 不通时，优先查系统代理与 TLS 中间盒，
+     不要改产品码。
+
+- 复测追加（2026-09-28T17:40:44Z，同日稍后）：把失败点往前挪了一格看清了——**装不上脚本本身**，不是装不上资产。
+  沙箱档 rc=1 的原始回执（`temp/irm-sandbox/irm.log`）第一行就是
+  `irm : 基础连接已经关闭: 发送时发生错误 … Invoke-RestMethod … WebException`，
+  被打红的是 `irm https://raw.githubusercontent.com/…/install_onecmd.ps1` 这一步，
+  产品码一行都没跑到 ⇒ 本轮给安装器加的下载重试**没有被这一格验证到**（它守的是下一步）。
+  另两条链路事实：`curl --noproxy '*'` 取 github.com 得 000（**直连根本不通**），
+  系统代理开着（HKCU ProxyEnable=1 / 127.0.0.1:7897）；同一时刻经代理的 curl 能取到资产
+  200 + 372,836 字节 + `PK`，而 PowerShell 的 Invoke-WebRequest 9/9 次传输层被对端关闭
+  （三档 TLS 各 3 次，`temp/probe-tls-result.txt`）⇒ 变量在本机的代理/TLS 中间盒，不在产品码。
+  状态保持 OPEN 的理由不变：用户在这台机器上照文档抄确实装不上；关闭证据 = 链路健康时
+  `scripts/blackbox/e2e_irm_line.py` 跑绿（版本针已从 moon.mod 反解，不用再改判据）。
+## BUG-117 [2026-09-28T17:35:26Z] [low] FIXED
+- summary: 判据自己的假红——`scripts/blackbox/e2e_irm_line.py` 的沙箱档不清场：
+  第二次跑时沙箱里已有上一轮装好的产物，安装器（文档线不带 `-Force`）直接 exit 1，
+  于是回执里四格针**全部未命中**，看起来像"文档线又坏了"，实际测的是"沙箱脏了"
+- detail:
+  活证据：本轮第一次跑 rc=1、四格全未命中，而末行"沙箱产物 = 2eaa4803 / bin 四件齐"——
+  那个 sha 正是**上一轮 0.3.3 装进同一个沙箱**留下的产物；`fist version` 回 v0.3.0 也是因为
+  探针在 PATH 上摸到了旧的第二份 shim（`/c/Users/victo/.local/bin/fist`，真用户面那份）而不是沙箱那份。
+  判据红得"有道理"但红错了对象 ⇒ 与 BUG-89/109 同族：**自检的成立前提没被自己检查**。
+- 修：`sandbox()` 起手 `shutil.rmtree(BOX)` 并打印"沙箱已重置"（沙箱本来就是为该次安装造的，
+  真安装目录与用户 PATH 的只读核对逻辑不变）。修后再跑：文档线**确实走到下载段**并逐源报状态
+  （那才是本轮真正该看见的东西 ⇒ 顺带暴露 BUG-116）。
+
+### FIXED(2026-09-28T17:35:26Z / BUG-117)
+`scripts/blackbox/e2e_irm_line.py::sandbox()` 每次跑前清空 `temp/irm-sandbox`；
+自证：清场后回执从"四格全未命中 + 沙箱里是上一轮的 sha"变成"版本针/资产名针命中 + 逐源状态打印"。
+- 复测追加（2026-09-28T17:40:44Z）：同一次复跑又抓到探针的第二种顶数形态——沙箱里 `bin=[]`（什么都没装上），
+  而探针走 PATH 摸到了真用户面那份旧产物，于是回执写着 `fist version` 回 v0.3.0，
+  读起来像"沙箱装成了 0.3.0"，其实是"沙箱没装上 + 探针跑错了树"。
+  修：`probe()` 加 `sbin=` 参数，沙箱档**点名**跑 `<沙箱>/.local/bin/fist`，
+  文件不可执行就直接打 `MISSING <路径>` 并记一条 FAIL（"不许摸真用户面的旧产物顶数"）。
+  顺带给下载重试加判据 R12（两支：拆掉"有 HTTP 响应就 break"的闸必红 / 拆掉退避间隔必红）。

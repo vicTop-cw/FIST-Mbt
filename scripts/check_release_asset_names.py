@@ -60,6 +60,12 @@ CI 看不见这条：CI 不发 Release，也不跑安装器。
       cmd/cli 侧的版本常量面是**可选面**（CLI 也可以只读 @server.get_version()），扫目录而不是点名文件，
       缺席不报错、在场就必须同源（两格成对：漂移必红 + 无该面不误红）。
 
+  R12 下载段的重试只许对准**传输层**错误（BUG-116 实测：本机走系统代理时
+      `raw.githubusercontent.com` / `release-assets.githubusercontent.com` 会抛
+      "基础连接已经关闭 · 由于远程方已关闭传输流" —— 同一时刻 curl 却能取到 200 + `PK`；
+      一失败就换源会把"抖一下就好"放大成"装不上"）。但 404/403/"给的不是 zip" 是确定性结论，
+      重试只会让用户多等 N 倍。两条子判据：必须保留"拿到 HTTP 响应就 break"的闸 + 重试必须带退避间隔。
+
 自证：写死默认值必红 / 缺 moon.mod 解析必红 / 资产名漂移必红 / 空值不失败必红 /
 无扩展名 shim 被摘掉必红 / 不做 HTML 与魔数检查必红 / 文档首选线漂到 main 必红 /
 自检退化成空 catch 或无条件 ✅ 或去掉 stderr 隔离必红 /
@@ -272,6 +278,13 @@ def judge(texts):
         for where, h in (texts.get("cli_version_consts") or []):
             if h != ver:
                 problems.append('R11 %s 的版本常量="%s" ≠ moon.mod 的 "%s"' % (where, h, ver))
+    # R12 下载段的重试只许对准**传输层**错误（BUG-116：本机代理到 release-assets 会瞬时"传输被对端关闭"，
+    # 一失败就换源把"抖一下就好"放大成"装不上"；但 404/"给的不是 zip" 是确定性结论，重试只是拖慢用户）
+    if "if ($resp) { break }" not in ps1:
+        problems.append("R12 install_onecmd.ps1 的重试没有「拿到 HTTP 响应就不重试」的闸"
+                        "（404/403 会被重试 N 次，用户多等 N 倍时间还是装不上）")
+    if "Start-Sleep -Seconds (2 * $try)" not in ps1:
+        problems.append("R12 install_onecmd.ps1 的传输层重试没有退避间隔（同刻重试风暴，代理更容易掐）")
     return problems
 
 
@@ -359,6 +372,9 @@ def selftest():
         ("server_mbt", 'let project_version : String = "%s"' % VER,
          "let moved_away : Int = 1", "R11"),
         ("moon_mod", 'version = "%s"' % VER, 'name = "no-version-line-here"', "R11"),
+        # R12 两支（BUG-116 的两种退化）：把"有响应就不重试"的闸拆掉 / 把退避间隔拆掉
+        ("ps1", "if ($resp) { break }", "if ($false) { break }", "R12"),
+        ("ps1", "Start-Sleep -Seconds (2 * $try)", "$null = 1", "R12"),
     ]
     executed = []
     for key, old, new, want in checks:
