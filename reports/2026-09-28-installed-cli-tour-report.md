@@ -354,3 +354,33 @@ BUG-107 把「文档写的主安装线通不了」记成 FIXED，但**真凶在 
 顺带一条我自己造成的副作用，如实记账：推上去的六个 `v0.3.0-<轮次名>` 标签每个都会跑一次 Release 流水线，
 产出 `fist-mbt-js-v0.3.0-<轮次名>.zip` 这类**非默认线资产名的 Release**（安装器默认只拼 moon.mod 的 `0.3.0`）。
 它们不影响用户安装线，但会在 Releases 列表里留噪声 ⇒ 是否清理由用户定。
+
+## 补遗 · 发布流水线第一次真跑就失败（根因在作业依赖，不在产物）（盖章 2026-09-28T11:33:28Z）
+
+推 `v0.3.1` 之后等了 420 秒，资产 URL 一直 404；抓 Actions 页面得到的关键事实是那句
+`failed: Run **1** of FIST-Mbt Blackbox Release` —— 这条发布流水线**从来没有跑过第二次，也没跑过第一次之前的一次**，
+本轮是它史上第一跑，而第一跑就红了。
+
+排除误判的实测（都在 `git archive HEAD` 快照树里做，建树自证 551 文件 == `git ls-files` 551）：
+
+| CI 的 JS 三步 | 本机快照复跑结果 |
+|---|---|
+| `moon build --target js` | `ran 78 tasks, 499 warnings, **0 errors**` |
+| `python3 scripts/patch_esm_main.py …/cli.js` | rc=0，打印 `patched …` |
+| 打包 `fist-mbt-js-v0.3.1.zip` | 374,830 字节，前两字节 `b'PK'` |
+
+⇒ 产物没问题，问题在 `release.yml` 的 `release` 作业：
+
+1. 它引用 `needs.meta.outputs.version`，自己的 `needs` 却是 `[build-js, build-native-linux]` ——
+   **`meta` 不在 needs 里就取不到值**，Release 名与资产名会漂成空版本形态；
+2. 它把**可选的** `build-native-linux` 当一票否决项，而 AGENTS 自己写明权威门槛是 JS 后端；
+   同文件里 `build-native-windows` 反而已经带 `continue-on-error: true`。
+
+修：`needs: [meta, build-js]` + `build-native-linux: continue-on-error: true`；判据面加 **R8**（三支子判据各必红，
+`--selftest` 十四格 ⇒ 十七格）。发布动作走纯快进——不删也不重指已经发布出去的 `v0.3.0`/`v0.3.1` 标签
+（那等于改写公网 release point，与本仓「只快进、绝不 force」的纪律冲突），改成版本前进 `0.3.1 → 0.3.2` 打新标签。
+
+**如实记两件事**：① 这条先入账为 **OPEN**——修复与判据已落盘，但「Release 真出了资产」还没发生，
+翻 FIXED 的判据写在账本条目里（匿名 HEAD 得 200 + `PK`，且用真公网线不带任何参数装出 `fist version` = 0.3.2）；
+② 本仓 CI 长期是红的（`run 178 → 186` 全是 failed，含早于本轮的多笔提交），
+而匿名 API 现在 `403 rate limit exceeded` ⇒ 读不到日志，继续定位需要 `FIST_GITHUB_TOKEN` 从环境变量注入，或在 UI 里点开 run。

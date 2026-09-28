@@ -84,6 +84,10 @@ jobs:
 
   build-native-linux:
     needs: meta
+    # BUG-111：native 侧长期不是权威面（AGENTS 自己写明「权威稳定门槛 = JS 后端」），
+    # 却在这里一票否决 JS 分发面 ⇒ 一次 native 编译失败就等于 Release 全无资产。
+    # 与 build-native-windows 对齐：允许它红，但不许它顶掉发布。
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -142,7 +146,13 @@ jobs:
           path: _release/fist-mbt-native-win-x64-v${{ needs.meta.outputs.version }}.zip
 
   release:
-    needs: [build-js, build-native-linux]
+    # BUG-111 两处一起修：
+    # ① 原来 needs 里只有 build-js / build-native-linux，正文却引用 needs.meta.outputs.version
+    #    ——`meta` 不在自己的 needs 里，这个引用取不到值（Release 名与资产名都会漂成空版本形态）；
+    #    同文件里 build-js 等作业是 `needs: meta` 才拿到 version 的，release 这一格漏了。
+    # ② JS 安装线只吃 build-js 的产物，却被**可选的** native 作业一票否决 ⇒ 一次 native 编译失败
+    #    就等于 Release 全无资产（本机快照实测 JS 三步全通过，资产却一个也没出）。
+    needs: [meta, build-js]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
