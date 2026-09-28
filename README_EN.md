@@ -7,7 +7,7 @@
 
 **FIST-Mbt** is an **AI commander task-orchestration foundation** rewritten in **pure MoonBit** and exposed as an **MCP Server** — not another agent framework, but an autonomous system that keeps itself moving: the full lifecycle `publish → claim → plan → execute → submit → verify → archive`, plus self-driving review loops, DGM evolution sampling, Omega strong verification, and cross-process watchdog — all surfaced as **104 MCP tools** to any MCP client (Claude Desktop / Cursor / a custom JSON-RPC client).
 
-**Why MoonBit**: task orchestration is inherently correctness-sensitive (state machine, permission matrix, append-only audit, recursive decomposition). MoonBit's strong typing, zero runtime dependencies, and JS+Native cross-compilation let this logic pass **310 tests on both Windows and Linux** — reproducible on any machine. `moon update && moon run cmd/main` and you are up; no Python environment hell.
+**Why MoonBit**: task orchestration is inherently correctness-sensitive (state machine, permission matrix, append-only audit, recursive decomposition). MoonBit's strong typing, zero runtime dependencies, and JS+Native cross-compilation let this logic pass **310 tests on both Windows and Linux** — reproducible on any machine. `moon update && moon run cmd/cli` and you are up; no Python environment hell.
 
 > It polished itself to a deliverable state using its **own** self-driving + recursive-decomposition pipeline — evidence: `docs/selfdrive-walkthrough.md`.
 
@@ -18,8 +18,8 @@
 ```bash
 moon update                    # first run: refresh registry index (all deps are public)
 moon check
-moon test --target js -j 1     # → Total tests: 531, passed: 531, failed: 0
-moon run cmd/main              # start the MCP server (STDIO transport)
+moon test --target js -j 1     # → Total tests: 533, passed: 533, failed: 0
+moon run cmd/cli              # start the MCP server (STDIO transport)
 ```
 
 **Requirements**: MoonBit toolchain ≥ 0.1.20260827; **Node.js ≥ 24** for the JS target (the SQLite JS backend relies on `node:sqlite` `returnArrays`; older Node silently returns object rows and reads fail); Native target needs a system SQLite dev library (`libsqlite3-dev` on Linux; `sqlite3.h/sqlite3.lib` + MSVC on Windows — `pwsh ./scripts/native-env.ps1` loads it).
@@ -80,7 +80,7 @@ Everything is reproducible: one command re-runs 442 tests, the smoke test, and t
 
 ```
 FIST-Mbt/
-├── cmd/main          # STDIO MCP server entry (moon run cmd/main)
+├── cmd/cli          # STDIO MCP server entry (moon run cmd/cli)
 ├── cmd/cli           # CLI entry (moon run cmd/cli/main)
 ├── src/core/         # domain entities + nine-state machine + DAG depends_on
 ├── src/store/        # persistence: Store abstraction, SQLite impl, multi-tenant
@@ -96,7 +96,7 @@ Pure MoonBit; no Rust/C wrappers. Protocol layer: [`colmugx/mcp`](https://moonca
 
 ## Testing
 
-- **531/531** tests green on the JS backend (Windows, measured 2026-09-28). The native track was last measured at 317/317 and has **not** been re-run this round — do not read that as a dual-target green. Since R107 the suite includes **property tests** (`moonbitlang/core/quickcheck`): random inputs validate invariants (slice arity/prefix, difficulty monotonicity, Task transition discipline claim/execute/reopen/split/submit/reject) with fixed seeds. Since R109 a **transition-contract guard** (`tx_contract`, Design by Contract: precondition/invariant/postcondition read-only pre-check — any failure rejects the batch, state A stays stable, nothing persisted). Since R111 a **feedback convergence** tool (`eval_feedback`, Evaluator-Optimizer schema: free-text feedback normalized into Defects/Evidence/Fix/Acceptance with a deterministic pass/fail verdict) — reproducible on any machine.
+- **533/533** tests green on the JS backend (Windows, measured 2026-09-28). The native track was last measured at 317/317 and has **not** been re-run this round — do not read that as a dual-target green. Since R107 the suite includes **property tests** (`moonbitlang/core/quickcheck`): random inputs validate invariants (slice arity/prefix, difficulty monotonicity, Task transition discipline claim/execute/reopen/split/submit/reject) with fixed seeds. Since R109 a **transition-contract guard** (`tx_contract`, Design by Contract: precondition/invariant/postcondition read-only pre-check — any failure rejects the batch, state A stays stable, nothing persisted). Since R111 a **feedback convergence** tool (`eval_feedback`, Evaluator-Optimizer schema: free-text feedback normalized into Defects/Evidence/Fix/Acceptance with a deterministic pass/fail verdict) — reproducible on any machine.
 - CI three tracks (js ubuntu / native ubuntu / js windows) with live badges.
 - Guard family: `check_tools_sync` (129 tools aligned) / `check_test_sync` (442 aligned — sweeps **every** current-state doc, not a 4-file whitelist; `--selftest` proves the judge itself can go red) / `check_badge` / `check_scripts_index` / `map_verify` / `cleanup --check` (repo cleanliness gate).
 
@@ -105,7 +105,7 @@ Pure MoonBit; no Rust/C wrappers. Protocol layer: [`colmugx/mcp`](https://moonca
 ## Known Boundaries (honest notes)
 
 - JS backend prints Node's `ExperimentalWarning: SQLite is an experimental feature` on Node ≥ 24 — harmless, ignorable.
-- Windows native test may rarely hit `0xc0000374` (heap race in the local native SQLite stub) even with `-j 1`; the authoritative stability gate is the JS backend (Node ≥ 24, 531/531 measured on Windows).
+- Windows native test may rarely hit `0xc0000374` (heap race in the local native SQLite stub) even with `-j 1`; the authoritative stability gate is the JS backend (Node ≥ 24, 533/533 measured on Windows).
 
 ---
 

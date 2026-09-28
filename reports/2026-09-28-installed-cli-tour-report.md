@@ -164,3 +164,19 @@ AIGC:
 账本现状：97 条抬头、无重复 id = 83 FIXED / 9 DUPLICATE / 3 FALSE_POSITIVE / 2 OPEN（BUG-92 拒绝文案自相矛盾、
 BUG-93 退役入口 `cmd/main` 散落 15+ 处）。仍未做：服务面级 catch-all（任何 handler 异常应回 JSON-RPC error
 而不是让进程退出）——那是"一个工具打死会话"的总闸，本轮只堵住了具体通路。
+
+## 补遗（2026-09-28T06:31:07Z）· 三件新收口与一处改判
+
+| 项 | 结论 | 证据（逐字可回溯） |
+|---|---|---|
+| BUG-92 改判 | 误报（引用文案出自 cp936 乱码猜测）；真缺陷重报为 BUG-99 并修 | `temp/bug92_probe.log` 的 \u 转义回执 |
+| BUG-93 修复 | 104 处 cmd/main→cmd/cli + 26 个启动点补 serve + 守卫 `check_entry_paths.py`（守卫族 9→10）| `temp/bug93_apply.log`、`temp/eg_prefix_run.log`(HEAD 树 119 违例)、`temp/eg_full3.log`(0 违例) |
+| BUG-100 修复 | 读面 project_dir/data_dir 指向 temp/ 草稿项目 + 外溢硬门 | `temp/tour_read_plane_r2.log`(rc=2 抓到仓库根 ns 库)、`temp/tour_read_plane_r3.log`(GREEN 0 新建 0 改动) |
+| BUG-101 修复 | run_serve 不再往 JSON-RPC stdout 打横幅（3 处）| `temp/smoke_e2e_proof.log`→`temp/smoke_e2e_proof3.log` MCP-SMOKE PASS |
+| 全量 | JS `moon test --target js` **533/533** rc=0 | `temp/verify_eng_full.log` |
+| 提交树自证 | `git archive` 327bb7a 干净树 **531/531** rc=0 | `temp/verify_327bb7a_test.log` |
+| 账本 | 账本 100 条 = 87 已修 / 9 重复并入 / 4 误报 / 0 待修 | `memory/bugs.md` 抬头计数 |
+| 已知红 | `gen_help_docs.py` 未登记（并行改动面的文件，本环不代改）| `temp/g_check_scripts_index.log` |
+
+来源：本轮以用户身份安装的 `fist`（sha256:eb18f4f0）+ 仓库 `git archive HEAD` 派生树实测；
+所有临时件在 `temp/`，历史面（memory/ reports/ CHANGELOG.md 既有段落）只追加未改写。

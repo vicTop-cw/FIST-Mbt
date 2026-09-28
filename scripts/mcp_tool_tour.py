@@ -3,7 +3,7 @@
 """scripts/mcp_tool_tour.py — 全工具调用面巡回（129/129 至少打一次，参数从 schema 反解）。
 
 为什么要有这条（`mcp_smoke.py` 顶不了）：
-  · `mcp_smoke.py` 的候选入口是 `_build/js/debug/build/cmd/main/main.js`，而发布产物是
+  · `mcp_smoke.py` 的候选入口是 `_build/js/debug/build/cmd/cli/cli.js`，而发布产物是
     `cmd/cli/cli.js`（`scripts/blackbox/build_release.ps1:38`）⇒ 冒烟跑的是**不发布的那棵入口**，
     并且从不带 `serve` 子命令。装好的 `fist-mbt` 全局命令能不能用，它一次都没证明过。
   · 手工写死 129 条参数也不可信（本仓踩过：`laya_decide` 参数收窄后旧键被静默丢弃、
@@ -91,8 +91,10 @@ def sha8(path):
 
 
 class Serve:
-    def __init__(self, js, cwd, env):
-        self.errlog = os.path.join(cwd, "tour-%s.stderr.log" % RUN_ID)
+    def __init__(self, js, cwd, env, log_dir=None):
+        # stderr 日志落在 log_dir（默认 cwd）；读面 cwd=仓库根 ⇒ 必须引到 temp/，
+        # 否则巡回探针自己往仓库根吐文件（BUG-100 的外溢面之一）。
+        self.errlog = os.path.join(log_dir or cwd, "tour-%s.stderr.log" % RUN_ID)
         self.p = subprocess.Popen(
             [os.environ.get("NODE", "node"), js, "serve"], cwd=cwd,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -266,6 +268,12 @@ def build_args(tool, schema, ctx, read_only):
         args["dry_run"] = True          # executor_run：只回显 argv，不起进程
     if "force" in props:
         args["force"] = False           # 出网类：即便被调用也停在门后
+    # store_open 的 data_dir 缺省落在 server cwd（读面＝仓库根）⇒ 命名空间库会直接在
+    # 被测项目里长出来。外溢判据第一次跑就抓到 tour-read-*.db，故一律指向草稿项目。
+    if "data_dir" in props:
+        args["data_dir"] = ctx["data_dir"]
+    if "scratch" in props:
+        args["scratch"] = True
     return args
 
 
@@ -398,6 +406,23 @@ def seed(srv, ctx):
     return out
 
 
+def surface_snapshot():
+    """读面外溢判据的取证面：仓库根一层文件 + memory/ 递归（moon 构建临时件 *.tmp 除外）。"""
+    snap = {}
+    for name in os.listdir(ROOT):
+        p = os.path.join(ROOT, name)
+        if os.path.isfile(p) and not name.endswith(".tmp"):
+            st = os.stat(p)
+            snap[name] = (st.st_size, st.st_mtime_ns)
+    mem = os.path.join(ROOT, "memory")
+    for dirpath, _dirnames, filenames in os.walk(mem):
+        for fn in filenames:
+            p = os.path.join(dirpath, fn)
+            st = os.stat(p)
+            snap[os.path.relpath(p, ROOT).replace("\\", "/")] = (st.st_size, st.st_mtime_ns)
+    return snap
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--plane", choices=["write", "read"], default="write")
@@ -417,12 +442,21 @@ def main():
         cwd = box
         iso_db = os.path.join(box, "tour.db")
         proj = "."
+        log_dir = box
     else:
-        cwd = ROOT                      # 读面：真源码树
+        cwd = ROOT                      # 读面：真源码树（issue_scan/project_standards 要读到真源码）
+        # BUG-100：project_dir 不再是仓库根。带 project_dir 的工具（model_route / pipeline_tick /
+        # selfdrive_* / memory_*）会把状态文件写进"被巡回路过"的仓库——上一轮读面就在仓库根长出
+        # currentState.txt、memory/_review.count、memory/model-router-tour-read-*.json。
+        # 读面照样打到调用面，只是落点改到 temp/ 下的草稿项目。
+        proj_box = os.path.join(ROOT, "temp", "tool-tour-proj-" + RUN_ID)
+        os.makedirs(proj_box, exist_ok=True)
         iso_db = os.path.join(ROOT, "temp", "tool-tour-%s.db" % RUN_ID)
-        proj = "."                      # 相对 server cwd
+        proj = os.path.relpath(proj_box, ROOT).replace("\\", "/")
+        log_dir = os.path.join(ROOT, "temp")
     env = dict(os.environ)
     env["FIST_DB_PATH"] = iso_db        # 两面都隔离：共享根库一行不动
+    before_snap = surface_snapshot() if a.plane == "read" else {}
     ns = "tour-%s-%s" % (a.plane, RUN_ID[-6:])
 
     print("server = %s (sha256:%s)" % (js, sha8(js)))
@@ -430,14 +464,14 @@ def main():
         a.plane, os.path.relpath(cwd, ROOT).replace("\\", "/"),
         os.path.relpath(iso_db, ROOT).replace("\\", "/"), ns))
 
-    srv = Serve(js, cwd, env)
+    srv = Serve(js, cwd, env, log_dir)
     rows, seedlog = [], []
     try:
         tools = srv.list_tools()
         if len(tools) <= 100:
             print("TOUR: UNUSABLE —— tools/list 只回 %d 个（判据无法自证绝不报绿）" % len(tools))
             return 2
-        ctx = {"project_dir": proj, "namespace": ns, "now": now_iso(),
+        ctx = {"project_dir": proj, "data_dir": proj, "namespace": ns, "now": now_iso(),
                "task_id": "T0", "root_task_id": "T0", "loop_name": "tour-loop-" + RUN_ID[-6:],
                "bug_id": "BUG-1"}
         if a.plane == "write":
@@ -475,7 +509,7 @@ def main():
                 except Exception:
                     pass
                 try:
-                    srv = Serve(js, cwd, env)
+                    srv = Serve(js, cwd, env, log_dir)
                     srv.list_tools()
                     restarts += 1
                 except Exception as e2:
@@ -517,6 +551,26 @@ def main():
                  "seed": seedlog, "rows": rows, "kinds": kinds},
                 ensure_ascii=False, indent=2))
             print("JSON 证据 = %s" % os.path.relpath(jp, ROOT).replace("\\", "/"))
+        # 读面外溢判据（BUG-100）：读面只许读——仓库根/memory/ 长出任何新文件即判红。
+        # 新建一律致命（读面没有创建仓库文件的正当理由）；memory/ 内被改动同样致命
+        # （真账本/真记忆面）；仓库根其它文件被改只列不发红，因为同一时刻可能有并行改动面。
+        if a.plane == "read":
+            after = surface_snapshot()
+            newf = sorted(set(after) - set(before_snap))
+            mod = sorted(k for k in set(after) & set(before_snap) if after[k] != before_snap[k])
+            mod_mem = [k for k in mod if k.startswith("memory/")]
+            mod_root = [k for k in mod if not k.startswith("memory/")]
+            print("  读面外溢判据：取证面 %d 项 / 新建 %d / memory 改动 %d / 根改动 %d" % (
+                len(before_snap), len(newf), len(mod_mem), len(mod_root)))
+            for k in newf:
+                print("   NEW       %s" % k)
+            for k in mod_mem:
+                print("   MOD-MEM   %s" % k)
+            for k in mod_root:
+                print("   MOD-ROOT  %s（只列不发红：并行改动面）" % k)
+            if newf or mod_mem:
+                print("!! 读面外溢 ⇒ 判红（巡回探针不该在被测项目里留下任何文件）")
+                return 2
         # 红面 = 崩溃 + 未打到调用面 + 复活失败；refused 不算红（那是产品的自述拒绝）
         red = kinds.get("crashed", 0) + kinds.get("not_tested", 0) + kinds.get("broken", 0)
         print("TOUR: %s —— %d 工具 ok=%d refused=%d skipped=%d crashed=%d not_tested=%d 复活=%d" % (

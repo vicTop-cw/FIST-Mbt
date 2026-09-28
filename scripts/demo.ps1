@@ -6,7 +6,7 @@ scripts/demo.ps1 — FIST-Mbt 30 秒体验：一键自检 + CLI 演示
     pwsh ./scripts/demo.ps1
 
 行为：
-    1) 若 JS server 产物缺失则先 `moon build --target js cmd/main`
+    1) 若 JS server 产物缺失则先 `moon build --target js cmd/cli`
     2) `python scripts/mcp_smoke.py`   → 打印 MCP-SMOKE PASS（tools/list + publish + get 断言）
     3) `moon run cmd/cli`              → 打印「发布成功 / 认领成功 / 拆分成功」
     全部通过时打印 `[DEMO] PASS`，供评审 30 秒复现环境就绪。
@@ -20,7 +20,7 @@ try {
   # 每次先 build 刷新产物，避免 mcp_smoke 用到陈旧 main.js 导致工具数不一致。
   # moon build 为增量，up-to-date 时秒级。
   Write-Host "[demo] 刷新 JS server 产物..." -ForegroundColor Cyan
-  moon build --target js cmd/main
+  moon build --target js cmd/cli
 
   Write-Host "[demo] 一键自检 (mcp_smoke)..." -ForegroundColor Cyan
   python scripts/mcp_smoke.py

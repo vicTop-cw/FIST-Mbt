@@ -18,7 +18,7 @@ selfdrive_publish_next（审视报告 → 发布自驱根任务）
 对自驱/演示任务 `T0r41` 调用：
 
 ```
-moon run cmd/main → tools/call
+moon run cmd/cli → tools/call
   name: task_plan_deep
   args: { task_id: "T0r41", split_n: 2, by: "fist-selfdrive" }
 ```

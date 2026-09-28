@@ -38,6 +38,17 @@ AIGC:
   并与手写台账撞出两个 `## BUG-90` 抬头；处置=两条垃圾条目改判 FALSE_POSITIVE 并重编号消撞号，
   缺陷本体另立 BUG-98（FIXED，驱动加 `READ_PLANE_SKIP` 六只写工具 + 读面前后 sha256 相等为准绳）。
   账本现 97 条、无重复 id = 83 已修 / 9 重复并入 / 3 误报 / 2 待修。
+- **BUG-92 改判 + BUG-93/99/100/101 收口（同轮追加，上一条 97 条的计数是当时的盘面）**：
+  BUG-92 那句「split 要求状态 [待领取]，当前是 [待领取]」是我把 cp936 控制台乱码按字形猜出来的——  活探针 temp/bug92_probe.log 从回执 \u 转义逐字反解得到的是「要求状态 [已领取]，当前是 [待领取]」，
+  两态本就不同 ⇒ 按 FALSE_POSITIVE 关闭；真缺陷（拒绝文案不带出路 + 两道门词汇分叉）重报为 BUG-99 并修。
+  BUG-93 入口搬家补齐另一半：104 处 cmd/main→cmd/cli + 26 个启动点补 `serve` + 新守卫 `scripts/check_entry_paths.py`（同一守卫在 HEAD 树 119 条违例、修复树 0 条）；
+  BUG-100 巡回读面在被测仓库留状态文件 ⇒ 读面 project_dir/data_dir 改指 temp/ 草稿项目并加外溢硬门
+  （硬门首跑即抓到仓库根 tour-read-*.db，补后 129 工具 GREEN、取证面 172 项 0 新建 0 改动）；
+  BUG-101 `serve` 往 JSON-RPC 的 stdout 打 3 处人类横幅 ⇒ run_serve 体内不再写 stdout，
+  回归门就是 mcp_smoke（横幅回来第一行非 JSON 即红）。
+  全量 JS **533/533**（temp/verify_eng_full.log）；提交树自证：`git archive` 出的 327bb7a 树 **531/531**
+  （temp/verify_327bb7a_test.log），HEAD 派生树 + 本环修复 → `MCP-SMOKE PASS`（temp/smoke_e2e_proof3.log）。
+  账本 100 条 = 87 已修 / 9 重复并入 / 4 误报 / 0 待修。已知红一项归并行改动面：`gen_help_docs.py` 未在 scripts/README.md 登记。
 
 - **账本**：BUG-90~94 五条入账（90/91 FIXED 并落 `### FIXED` 小记；92 拒绝文案自相矛盾、93 退役入口 `cmd/main`
   仍散在 15+ 处脚本/文档、94 `cost_stats` 未捕获 `ERR_SQLITE_ERROR` 杀会话 三条 OPEN 交裁决）；

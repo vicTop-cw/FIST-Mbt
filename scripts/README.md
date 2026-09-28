@@ -21,11 +21,11 @@
 ## 现有正式工具速查
 
 **基础 / 演示**
-- `mcp_smoke.py` — MCP server 一键自检（129 工具 + publish/get 链路 + issue_scan 命中校验）。**已知边界（BUG-93）**：候选入口是 `_build/js/debug/build/cmd/main/main.js` 且不带 `serve` 子命令，而发布产物是 `cmd/cli/cli.js`（见 `blackbox/build_release.ps1`）⇒ 它绿不等于装好的 `fist-mbt` 全局命令能用；调用面全量巡回请用 `mcp_tool_tour.py`。
+- `mcp_smoke.py` — MCP server 一键自检（129 工具 + publish/get 链路 + issue_scan 命中校验）。**已知边界（BUG-93）**：候选入口是 `_build/js/debug/build/cmd/cli/cli.js` 且不带 `serve` 子命令，而发布产物是 `cmd/cli/cli.js`（见 `blackbox/build_release.ps1`）⇒ 它绿不等于装好的 `fist-mbt` 全局命令能用；调用面全量巡回请用 `mcp_tool_tour.py`。
 - `mcp_tool_tour.py` — **全工具调用面巡回**：从 `tools/list` 的 `inputSchema.required` 反解参数，把 129 个工具逐个真打一遍，三面分栏记账（`ok` / `refused`=按设计拒绝 / `skipped`=授权边界内主动不打 / `crashed`=进程死掉后复活继续数）。写面跑在临时 box + `FIST_DB_PATH` 隔离库，仓库根 `fist-mbt.db` 一行不动。用法：`python scripts/mcp_tool_tour.py --plane write --json`（0=无崩溃/无未打到，1=有，2=入口或工具数自证失败）。
 - `store_isolation_probe.py` — **存储隔离调用面探针（BUG-90 活判据）**：同一个 cwd 两格只差 `FIST_DB_PATH`，断言行落被指定的库且 cwd 里不得长出默认库；`--selftest` 追加合成违例（库路径指到不存在的目录 ⇒ 必须报红）。用法：`python scripts/store_isolation_probe.py --selftest`（0=两格符合预期，1=违例未被抓到或隔离失效，2=找不到 server 产物）。
 - `check_ps_encoding.py` — **PowerShell 脚本编码守卫（BUG-88 分发面同源）**：Windows PowerShell 5.1 读无 BOM 的 UTF-8 `.ps1` 会按 ANSI(cp936) 解，多字节序列吞掉字符串收尾引号 ⇒ 用户在 `irm | iex` 那一步直接 ParserError，产品码一行没跑。判据：每个 `.ps1` 要么纯 ASCII，要么带 UTF-8 BOM；扫描面为空即 FATAL(2)（一个都没抓到 ≠ 没有问题）；`--selftest` 用合成违例 + 合规不误红 + 增删 BOM 变异三条自证。用法：`python scripts/check_ps_encoding.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。
-- `issue_scan.py` — **规则驱动源码扫描 CLI（打磨收尾：issue_scan 三形态之 CLI）**：薄封装 MCP 工具，扫描逻辑单真源在 MoonBit 端；用法 `python scripts/issue_scan.py <dir> [--max-findings N] [--include-tests]`（默认跳过测试文件，`--include-tests` 连 `_test/_wbtest` 一起扫），先 `moon build --target js cmd/main`。skill 文档见 `docs/issue-scan-skill.md`。
+- `issue_scan.py` — **规则驱动源码扫描 CLI（打磨收尾：issue_scan 三形态之 CLI）**：薄封装 MCP 工具，扫描逻辑单真源在 MoonBit 端；用法 `python scripts/issue_scan.py <dir> [--max-findings N] [--include-tests]`（默认跳过测试文件，`--include-tests` 连 `_test/_wbtest` 一起扫），先 `moon build --target js cmd/cli`。skill 文档见 `docs/issue-scan-skill.md`。
 - `award_demo.py` — **获奖自驱 DEMO（评审一条命令演示）**：串演 map→递归拆解(gradient)→验收闭环→Challenger→Critic→作用域预订→脉冲/看板 全链路，结尾自动清理临时区并 `--check` 守卫仓库干净。用法：`python scripts/award_demo.py`。
 - `cleanup_artifacts.py` — **项目整洁/生成物清理**：删除仓库根"除交付库 `fist-mbt.db` 外"的全部被 gitignore 的 `*.db / -shm / -wal` 测试/演示残留，清空 `temp/`，并把 `scripts/` 下 `_` 前缀临时脚本移入 temp/ 后清理（任务完即清策略，R66）；`--check` 模式作 CI 干净度守卫（0 = 干净，非 0 退出码 1）。用法：`python scripts/cleanup_artifacts.py` / `python scripts/cleanup_artifacts.py --check`。
 - `score_gate.py` + `scoring_rubric.md` — **4-AI 概率自评分门禁**：统一 rubric 提示词（维度/稍宽口径/SCORE_JSON 契约）作为正式工具统一管理（原 `_ai_prompt.md` 从临时命名升级）；全档达标 AND 聚合、error 不降级。
@@ -59,6 +59,7 @@
 - `laya_decide.py` — **Laya 决策 sidecar**：把 Laya ML 模型包成可被 fist-mbt MCP server 调用的 JSON sidecar（冷启动选档/探测）。
 - `native-env.ps1` — Windows native 环境一键装载（VS + sqlite-dev）。
 - `gen_apply_pdf.py` — 一页项目申报书 PDF 生成（个人档，不入库）。
+- `check_entry_paths.py` — **入口清单守卫（BUG-93/101）**：可执行入口清单从 `cmd/*/moon.pkg` 的 `pkgtype(kind:"executable")` 反解，发布入口从 `scripts/blackbox/build_release.ps1` 反解，其余为退役入口。R1 禁现状面（脚本/文档/CI/根 .md/.mcp*.json）用命令或产物路径指向退役入口；R2 禁 `Popen([node, cli.js])` 的 argv 少 `serve`（cmd/cli 裸跑只打印 help，客户端第一行就不是 JSON-RPC）。历史面（memory/ reports/ CHANGELOG.md）与守卫自身不判；扫描面为 0 或退役清单为空 ⇒ FATAL（判据空转绝不报绿）。`--selftest` 四格自证。用法：`python scripts/check_entry_paths.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。
 
 **自驱闭环（selfdrive）**
 - `log_fix_selfdrive.py` — call_log 缺陷修复自驱闭环。
@@ -81,4 +82,4 @@
 - `dispatch_verify.py` — **能力自动派单（R32）E2E**：`selfdrive_dispatch` 按 want 能力路由并把任务直接认领给最佳执行者（待领取→已领取）；运行后会向交付库写演示任务，完成即 `git checkout -- fist-mbt.db` 恢复整洁。
 - `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
 
-> 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/main` + `patch_esm_main` → node）。
+> 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/cli` + `patch_esm_main` → node）。

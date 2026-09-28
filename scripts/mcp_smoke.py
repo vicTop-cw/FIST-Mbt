@@ -4,10 +4,10 @@
 scripts/mcp_smoke.py — FIST-Mbt 一键自检（评审/自驱 10 秒验证 MCP server 可用）
 
 用法（项目根）：
-    python scripts/mcp_smoke.py            # 需先 moon build --target js cmd/main
+    python scripts/mcp_smoke.py            # 需先 moon build --target js cmd/cli
 
 行为：
-    1) 拉起 `node _build/js/.../cmd/main/main.js`（MCP server, STDIO）
+    1) 拉起 `node _build/js/.../cmd/cli/cli.js`（MCP server, STDIO）
     2) tools/list            → 断言含 publish 等 79 个工具
     3) publish_parallel      → 发布一个任务，断言拿到 task_id
     4) get                   → 按 task_id 查回，断言命中且状态为待领取
@@ -22,8 +22,8 @@ import sys
 
 NODE = os.environ.get("FIST_NODE", "node")
 MAIN_CANDIDATES = [
-    "_build/js/debug/build/cmd/main/main.js",
-    "target/js/release/build/cmd/main/main.js",
+    "_build/js/debug/build/cmd/cli/cli.js",
+    "target/js/release/build/cmd/cli/cli.js",
 ]
 NS = "mcp-smoke"
 
@@ -76,7 +76,7 @@ def registry_tool_count():
 def main():
     main_js = find_main()
     if not main_js:
-        fail("main.js 未找到；请先执行 `moon build --target js cmd/main`")
+        fail("main.js 未找到；请先执行 `moon build --target js cmd/cli`")
     # moonc ≥0.10.14 对可执行目标输出 ESM，mizchi/sqlite 用 CJS require → 注入 require shim（幂等）
     import importlib.util
     _spec = importlib.util.spec_from_file_location(
@@ -86,7 +86,7 @@ def main():
     _spec.loader.exec_module(_mod)
     _mod.patch(main_js)
     proc = subprocess.Popen(
-        [NODE, main_js],
+        [NODE, main_js, "serve"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,

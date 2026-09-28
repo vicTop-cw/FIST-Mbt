@@ -112,9 +112,9 @@ class MCPBridge:
         if MBT_MAIN_JS.exists():
             return ["node", str(MBT_MAIN_JS)]
         if MBT_MAIN_MBT.exists():
-            return ["moon", "run", "cmd/main"]
+            return ["moon", "run", "cmd/cli"]
         # Fallback: try moon directly
-        return ["moon", "run", "cmd/main"]
+        return ["moon", "run", "cmd/cli"]
 
     def _read_loop(self) -> None:
         try:

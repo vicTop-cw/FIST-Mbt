@@ -7,12 +7,12 @@
 进程 B `executor_clear` 清空 → 进程 C `executor_route` 不再见该执行者（证明可重置）。
 
 不创建任务（保持交付库干净，负载均衡行为由单元测试 `route_pick` 覆盖）。
-用法：moon build --target js cmd/main && python scripts/executor_route_verify.py
+用法：moon build --target js cmd/cli && python scripts/executor_route_verify.py
 """
 import json, os, subprocess
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 NODE = os.environ.get("FIST_NODE", "node")
-MAIN = "_build/js/debug/build/cmd/main/main.js"
+MAIN = "_build/js/debug/build/cmd/cli/cli.js"
 META = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
         "io.modelcontextprotocol/clientCapabilities": {},
         "io.modelcontextprotocol/clientInfo": {"name": "executor-route-verify", "version": "1.0"}}
@@ -21,7 +21,7 @@ def start(argv_mod=None):
     import importlib.util
     spec = importlib.util.spec_from_file_location("patch_esm_main", os.path.join(ROOT, "scripts", "patch_esm_main.py"))
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); mod.patch(MAIN)
-    return subprocess.Popen([NODE, MAIN], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    return subprocess.Popen([NODE, MAIN, "serve"], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", bufsize=1)
 
 def rpc(p, m, **kw):

@@ -5,7 +5,7 @@ scripts/atgc_selfdrive_demo.py — fist-mbt 旗舰 DEMO：自驱式 + Omega 强�
 端到端闭环，产出极简 ATGC 双链虚拟机的 4 个叶子交付物。
 
 前置（按需，脚本不负责 build）：
-    moon install && moon build --target js cmd/main
+    moon install && moon build --target js cmd/cli
 
 运行（项目根）：
     python scripts/atgc_selfdrive_demo.py
@@ -35,8 +35,8 @@ ATGC_DIR = os.path.join(ROOT, "atgc")
 
 NODE = os.environ.get("FIST_NODE", "node")
 MAIN_CANDIDATES = [
-    "_build/js/debug/build/cmd/main/main.js",
-    "target/js/release/build/cmd/main/main.js",
+    "_build/js/debug/build/cmd/cli/cli.js",
+    "target/js/release/build/cmd/cli/cli.js",
 ]
 NS = "atgc-selfdrive"
 CREATED_BY = "demo_executor"
@@ -227,7 +227,7 @@ def process_leaf(proc, task_id: str, content: str, spec_content: str,
 def main():
     main_js = find_main()
     if not main_js:
-        print("FAIL: main.js 未找到；请先 `moon build --target js cmd/main`", file=sys.stderr)
+        print("FAIL: main.js 未找到；请先 `moon build --target js cmd/cli`", file=sys.stderr)
         sys.exit(1)
     call_start_ms = int(__import__("time").time() * 1000)
     # ESM/createRequire shim（幂等）
@@ -239,7 +239,7 @@ def main():
     mod.patch(main_js)
 
     proc = subprocess.Popen(
-        [NODE, main_js], cwd=ROOT,
+        [NODE, main_js, "serve"], cwd=ROOT,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, encoding="utf-8", errors="replace", bufsize=1,
     )

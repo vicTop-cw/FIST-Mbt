@@ -16,7 +16,7 @@ META = {
     "io.modelcontextprotocol/clientCapabilities": {},
     "io.modelcontextprotocol/clientInfo": {"name": "pentad-fist-driver", "version": "0.1"},
 }
-MAIN_JS = "_build/js/debug/build/cmd/main/main.js"
+MAIN_JS = "_build/js/debug/build/cmd/cli/cli.js"
 
 
 def rpc(proc, method, **payload):
@@ -54,7 +54,7 @@ def main():
     _mod.patch(MAIN_JS)
 
     proc = subprocess.Popen(
-        ["node", MAIN_JS],
+        ["node", MAIN_JS, "serve"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,

@@ -5,7 +5,7 @@ scripts/fist.py — FIST-Mbt 统一 CLI 网关（一源四态 · CLI 形态）
 
 全部 MCP 工具（数量以 tools/list 实测为准，见 scripts/README 与 README 表格）通过
 `fist.py` 子命令路由调用。启动前自带入口产物新鲜度自检（BUG-32）：
-产物 mtime 早于 src/** 即自动 `moon build --target js cmd/main`，绝不静默度量旧二进制。
+产物 mtime 早于 src/** 即自动 `moon build --target js cmd/cli`，绝不静默度量旧二进制。
 
 用法：
     python scripts/fist.py list-tools                          # 列出所有工具名
@@ -40,8 +40,8 @@ import sys
 
 NODE = os.environ.get("FIST_NODE", "node")
 MAIN_CANDIDATES = [
-    "_build/js/debug/build/cmd/main/main.js",
-    "target/js/release/build/cmd/main/main.js",
+    "_build/js/debug/build/cmd/cli/cli.js",
+    "target/js/release/build/cmd/cli/cli.js",
 ]
 META = {
     "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -89,16 +89,16 @@ def ensure_fresh(main_js, root):
         sys.stderr.write(
             "FAIL 入口产物早于源码（BUG-32）：{} < {}；"
             "已设 FIST_NO_AUTOBUILD=1，拒绝在旧二进制上验收。"
-            "请先执行 `moon build --target js cmd/main`\n".format(main_js, src_path)
+            "请先执行 `moon build --target js cmd/cli`\n".format(main_js, src_path)
         )
         sys.exit(1)
     sys.stderr.write(
-        "[fist.py] 入口产物早于源码（BUG-32）：{} < {} → 自动 moon build --target js cmd/main\n".format(
+        "[fist.py] 入口产物早于源码（BUG-32）：{} < {} → 自动 moon build --target js cmd/cli\n".format(
             main_js, src_path
         )
     )
     r = subprocess.run(
-        ["moon", "build", "--target", "js", "cmd/main"],
+        ["moon", "build", "--target", "js", "cmd/cli"],
         cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     if r.returncode != 0:
@@ -221,7 +221,7 @@ def normalize_kwargs(tool_name, kwargs, schemas):
 def run_server():
     main_js = find_main()
     if not main_js:
-        print("FAIL main.js 未找到；请先执行 `moon build --target js cmd/main`")
+        print("FAIL main.js 未找到；请先执行 `moon build --target js cmd/cli`")
         sys.exit(1)
     ensure_fresh(main_js, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
     import importlib.util
@@ -232,7 +232,7 @@ def run_server():
     _spec.loader.exec_module(_mod)
     _mod.patch(main_js)
     proc = subprocess.Popen(
-        [NODE, main_js],
+        [NODE, main_js, "serve"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, encoding="utf-8", errors="replace", bufsize=1,
     )

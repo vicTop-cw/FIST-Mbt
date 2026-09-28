@@ -6,7 +6,7 @@
  *   node scripts/flush_github.mjs [--limit 50] [--timeout-ms 30000]
  *
  * 前置条件:
- *   1. moon build --target js 产出 build/js/main.js（cmd/main 入口）
+ *   1. moon build --target js 产出 build/js/main.js（cmd/cli 入口）
  *   2. 环境变量 FIST_GITHUB_ENABLED / FIST_GITHUB_REPO / FIST_GITHUB_TOKEN 已设置
  *
  * 退出码:
@@ -50,13 +50,13 @@ let pendingId = 0;
 function nextId() { return ++pendingId; }
 
 async function run() {
-  // 启动 MCP server（moon build 后是 build/js/cmd/main/main.js 或类似路径）
+  // 启动 MCP server（moon build 后是 build/js/cmd/cli/cli.js 或类似路径）
   // 先尝试常见路径
   const fs = await import("node:fs");
   const path = await import("node:path");
 
   const candidates = [
-    "build/js/cmd/main/main.js",
+    "build/js/cmd/cli/cli.js",
     "build/js/main.js",
   ];
   let serverEntry = null;

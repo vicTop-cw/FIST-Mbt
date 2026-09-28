@@ -61,6 +61,23 @@ pub fn FistEngine::publish(
 }
 
 ///|
+/// `plan` 的第二道门（`Task::split` 只收 [已领取]）拒绝时的出路文案。
+/// 第一道门 `can_split` 比它宽（待领取/已领取/拆分中/已打回都放行），所以
+/// 待领取/拆分中/已打回三态都会走到这里；只报"要求状态"不报"怎么到达"，
+/// 调用方就会照文案去 claim 一个已打回的任务（claim 只收待领取），永远走不出来。
+fn split_remedy(task_id : String, st : @core.TaskStatus) -> String {
+  if st.is_pending() {
+    "先 claim(task_id=\{task_id}, assignee=...) 使任务进入 [已领取]，再 plan"
+  } else if st.is_splitting() {
+    "子树已存在：get(task_id=\{task_id}) 看已有子任务后直接领取叶子，需要更深层级用 task_plan_deep"
+  } else if st.is_rejected() {
+    "已打回不可直接拆：先 retry(task_id=\{task_id}) 回到活跃态，或由指挥官改描述后重新发布"
+  } else {
+    "get(task_id=\{task_id}) 查当前态，按生命周期 claim → plan 推进"
+  }
+}
+
+///|
 /// 对指定任务生成子任务树（一层）。非原子任务才可拆分。
 /// 返回生成的子任务 id 列表。
 pub fn FistEngine::plan(
@@ -87,7 +104,7 @@ pub fn FistEngine::plan(
             Ok(_) => ()
             Err(e) => return Err("拆分状态落库失败: \{e}")
           }
-        Err(e) => return Err(e)
+        Err(e) => return Err(e + "。出路：" + split_remedy(task_id, st))
       }
       let child_depth = parent.get_depth() - 1
       let children : Array[String] = []

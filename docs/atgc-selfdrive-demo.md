@@ -48,7 +48,7 @@ task_plan_deep(omega_strong_verify=true, split_n=4)
 ## 复现命令
 
 ```bash
-moon install && moon build --target js cmd/main   # 先 build MCP server（JS 目标）
+moon install && moon build --target js cmd/cli   # 先 build MCP server（JS 目标）
 python scripts/atgc_selfdrive_demo.py             # 跑真实 MCP 驱动管线
 ```
 
@@ -90,7 +90,7 @@ README 顶部 CI 徽章与 `atgc/`、`atgc-old/`、`scripts/atgc_selfdrive_demo.
   第 5–8 叶（同一聚合下的第二叶）循环复用对应模块内容——**内容仍是真实交付物**，用于保证整棵递归树可归并、根任务可收官归档。
 - **Omega 门禁真实把关**：`execute` 在语料 `approved` 前会被 `omega_execute_gate` 拒绝；
   `verify` 在 `omega_result_verify=pass` 前被 `omega_verify_gate` 拒绝。所以「开发被 fist-mbt 真正门禁过」是**如实**的，不是演示代码里绕过。
-- **测试数**：当前 `moon test --target js` = **531/531**（含新增 atgc 极简库测试）。
+- **测试数**：当前 `moon test --target js` = **533/533**（含新增 atgc 极简库测试）。
 
 ## 结论 / 价值
 

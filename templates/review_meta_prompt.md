@@ -15,7 +15,7 @@
 
 | 项目 | 值 |
 |---|---|
-| MCP server 入口 | `node <fist-mbt-build-path>/cmd/main/main.js`（或 `moon run cmd/main`） |
+| MCP server 入口 | `node <fist-mbt-build-path>/cmd/cli/cli.js`（或 `moon run cmd/cli`） |
 | 传输方式 | stdio JSON-RPC |
 | 审视报告目录 | `<目标项目根目录>/memory/reviews/` |
 | 报告命名 | `yyyyMMdd.HH.mm.ss.md`（24h 制，如 `20260920.13.00.00.md`），**忽略 `_` 前缀辅助文件** |

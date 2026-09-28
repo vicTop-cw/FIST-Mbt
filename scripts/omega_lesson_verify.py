@@ -11,7 +11,7 @@ import json, os, sqlite3, subprocess, sys
 from datetime import datetime, timezone
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 NODE = os.environ.get("FIST_NODE", "node")
-MAIN = "_build/js/debug/build/cmd/main/main.js"
+MAIN = "_build/js/debug/build/cmd/cli/cli.js"
 NS = "omega-lesson-verify"
 NOW = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 META = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -95,7 +95,7 @@ def main():
     import importlib.util
     spec = importlib.util.spec_from_file_location("patch_esm_main", os.path.join(ROOT, "scripts", "patch_esm_main.py"))
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); mod.patch(MAIN)
-    p = subprocess.Popen([NODE, MAIN], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    p = subprocess.Popen([NODE, MAIN, "serve"], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", bufsize=1)
     try:
         tools = [t["name"] for t in rpc(p, "tools/list").get("result", {}).get("tools", [])]

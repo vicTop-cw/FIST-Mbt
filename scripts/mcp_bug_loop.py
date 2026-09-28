@@ -9,7 +9,7 @@ META = {
 }
 
 proc = subprocess.Popen(
-    ["node", "_build/js/debug/build/cmd/main/main.js"],
+    ["node", "_build/js/debug/build/cmd/cli/cli.js", "serve"],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
     text=True, bufsize=1,
 )

@@ -7,7 +7,7 @@ scripts/issue_scan.py — 规则驱动源码扫描 CLI（一源四态 · CLI 形
     python scripts/issue_scan.py <dir> [--max-findings N] [--include-tests]
 
 行为：
-    1) 拉起 `node _build/js/.../cmd/main/main.js`（MCP server, STDIO）
+    1) 拉起 `node _build/js/.../cmd/cli/cli.js`（MCP server, STDIO）
     2) tools/call issue_scan {dir, max_findings} → 打印 JSON 结果
     3) 退出码 0（扫描成功）/ 1（失败或命中非法目录）
 
@@ -24,8 +24,8 @@ import sys
 
 NODE = os.environ.get("FIST_NODE", "node")
 MAIN_CANDIDATES = [
-    "_build/js/debug/build/cmd/main/main.js",
-    "target/js/release/build/cmd/main/main.js",
+    "_build/js/debug/build/cmd/cli/cli.js",
+    "target/js/release/build/cmd/cli/cli.js",
 ]
 META = {
     "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -103,7 +103,7 @@ def main():
         i += 1
     main_js = find_main()
     if not main_js:
-        print("FAIL main.js 未找到；请先执行 `moon build --target js cmd/main`")
+        print("FAIL main.js 未找到；请先执行 `moon build --target js cmd/cli`")
         sys.exit(1)
     import importlib.util
     _spec = importlib.util.spec_from_file_location(
@@ -113,7 +113,7 @@ def main():
     _spec.loader.exec_module(_mod)
     _mod.patch(main_js)
     proc = subprocess.Popen(
-        [NODE, main_js],
+        [NODE, main_js, "serve"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,

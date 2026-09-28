@@ -54,9 +54,9 @@ fn run_version() -> Unit {
 /// serve：启动 MCP server (stdio 传输)
 /// 直接 import @server.run_server()，零 spawn 零进程创建
 async fn run_serve() -> Unit {
-  println("[fist] serve — 启动 MCP server (stdio 传输)")
-  println("stdin/stdout 接管, Ctrl+C 停止")
-  println("")
+  // (BUG-101) println("[fist] serve — 启动 MCP server (stdio 传输)") —— stdout 只走 JSON-RPC
+  // (BUG-101) println("stdin/stdout 接管, Ctrl+C 停止") —— stdout 只走 JSON-RPC
+  // (BUG-101) println("") —— stdout 只走 JSON-RPC
   @server.run_server()
 }
 

@@ -7,7 +7,7 @@
 
 | 入口 | 命令 | 演示内容 |
 |---|---|---|
-| 自驱动能 | `moon run cmd/main` → `selfdrive_*` | 审视报告 → 幂等发布 → 自我推进 |
+| 自驱动能 | `moon run cmd/cli` → `selfdrive_*` | 审视报告 → 幂等发布 → 自我推进 |
 | 状态机闭环 | 见 §2 | publish → plan → claim → execute → submit → verify → archive |
 | 一键 CLI | `moon run cmd/cli` | publish → plan → list |
 
@@ -60,7 +60,7 @@ archive   → 已归档（可再归档）
 ```bash
 moon update                      # 首次刷新 registry
 moon run cmd/cli/main            # 一键 publish→plan→list 演示
-moon run cmd/main                # 启动 MCP server，可走 selfdrive_* 自驱闭环
+moon run cmd/cli                # 启动 MCP server，可走 selfdrive_* 自驱闭环
 ```
 
 *（内容由AI生成，仅供参考）*

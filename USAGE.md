@@ -37,8 +37,8 @@ moon test                   # 全部测试（148 项）
 
 | 后端 | 产物路径 |
 |---|---|
-| JS | `_build/js/debug/build/cmd/main/main.js`（`node` 运行） |
-| native | `_build/native/debug/build/cmd/main/main.exe` |
+| JS | `_build/js/debug/build/cmd/cli/cli.js`（`node` 运行） |
+| native | `_build/native/debug/build/cmd/cli/cli.exe` |
 
 ---
 
@@ -46,10 +46,10 @@ moon test                   # 全部测试（148 项）
 
 ```bash
 # 方式 A：JS 后端（Node）
-node _build/js/debug/build/cmd/main/main.js
+node _build/js/debug/build/cmd/cli/cli.js
 
 # 方式 B：原生后端
-./_build/native/debug/build/cmd/main/main.exe
+./_build/native/debug/build/cmd/cli/cli.exe
 
 # 方式 C：HTTP/SSE 桥接（可选）
 FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
@@ -82,7 +82,7 @@ Node + Python 最小驱动框架：
 ```python
 import subprocess, json, os
 proc = subprocess.Popen(
-    ["node", "_build/js/debug/build/cmd/main/main.js"],
+    ["node", "_build/js/debug/build/cmd/cli/cli.js"],
     cwd=".",
     stdin=subprocess.PIPE, stdout=subprocess.PIPE,
     text=True, encoding="utf-8", errors="replace", bufsize=1,
@@ -128,7 +128,7 @@ def rpc(method, **payload):
 
 ### 最小端到端三步（评审 1 分钟内可复现）
 
-任意 MCP 客户端以 STDIO 拉起 `moon run cmd/main`，依次发三个请求即可验证 server 可用：
+任意 MCP 客户端以 STDIO 拉起 `moon run cmd/cli`，依次发三个请求即可验证 server 可用：
 
 **Step 1 · 列出工具**
 ```json

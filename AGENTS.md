@@ -76,7 +76,7 @@ You can browse and install extra skills here:
 > 环境要求：新环境首次先 `moon update` 刷新 registry（依赖全公开，无私有包）；
 > **JS 目标需 Node.js ≥ 24**（项目默认 target，SQLite 后端依赖 `node:sqlite` 的 `returnArrays`，
 > node <24 会退化为对象行导致列读取为空）。见 README「环境要求」。
-> **JS 可执行产物 ESM 兼容**：moonc ≥0.10.14 对 `cmd/main` 输出 ESM，而 `mizchi/sqlite` 的 JS 桩用 CJS `require`，
+> **JS 可执行产物 ESM 兼容**：moonc ≥0.10.14 对 `cmd/cli` 输出 ESM，而 `mizchi/sqlite` 的 JS 桩用 CJS `require`，
 > 直接 `node main.js` 会报 `require is not defined`。`scripts/mcp_smoke.py` / `demo.ps1` 启动前会自动调
 > `scripts/patch_esm_main.py` 注入 require shim（幂等）；手动跑 server 请先 `python scripts/patch_esm_main.py`。
 
@@ -84,7 +84,7 @@ You can browse and install extra skills here:
 
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
 > Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
-> **JS 后端**：`moon test --target js` = **531/531**（2026-09-28 Windows 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并）。
+> **JS 后端**：`moon test --target js` = **533/533**（2026-09-28 Windows 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并）。
 > **Native 后端**：上一轮在 Windows + WSL(Linux) 通过 317/317；本轮未复跑 native，不据旧数宣称双端同版全绿。
 
 `src/store/store_sqlite.mbt` 依赖 `mizchi/sqlite`（native stub），其 `stub.c` 用尖括号 `#include <sqlite3.h>` 并 `#pragma comment(lib, "sqlite3.lib")` 链接系统 SQLite。
@@ -95,7 +95,7 @@ You can browse and install extra skills here:
   2. 编译/链接前在**同一会话**加载 `Enter-VsDevShell`（VS Build Tools）并追加 `INCLUDE`/`LIB` 指向该目录（注册表 User 级环境变量会被 moon 自发现的 MSVC 环境覆盖，不生效）；
   3. 之后 `moon test --target native` 即可通过。缺失时 `stub.c` 报 `fatal error C1083: 无法打开包括文件 "sqlite3.h"` / `LNK1104: sqlite3.lib`。
   一键装载上述环境（自动探测 VS + sqlite-dev）：`pwsh ./scripts/native-env.ps1`；
-  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 531/531）**，见 README「已知边界」。
+  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 533/533）**，见 README「已知边界」。
 
 ## MCP Server
 
@@ -305,7 +305,7 @@ Resources: `fist://map`, `fist://principles`, `fist://overview`
 **atomcode → codearts → deepseek-harness → claude**（真源 = `plugins/source/` 正文 + `server.mbt` 工具数 + `moon.mod` 版本 + `memory/bugs.md` 账本 + 根 `.mcp.json` 启动参数）。
 
 - 插件目录**禁止手改**：`scripts/check_plugin_sync.py`（cl7）子进程重跑生成器做逐字节 diff，另查四宿主入口齐全、无残留 `{{占位符}}`、manifest 版本==moon.mod、`plugins/claude/.mcp.json` 与根 `.mcp.json` 逐字相等、生成 SKILL.md 的 `tools=` == 实测工具数；实测 <=100 直接 FATAL(2)（判据无法自证绝不报绿）。
-- 守卫族（9 个，全在 ci.yml JS 轨）：`check_tools_sync` / `check_test_sync` / `check_badge` / `check_scripts_index` / **`check_plugin_sync`（cl7）** / `check_doc_surface` / **`check_store_tables_wired`（BUG-28：库内每张表要么有写入点、要么在 store 源文件里 `schema-reserved:` 点名预留，两个方向都发红）** / **`check_ps_encoding`（BUG-88：.ps1 要么纯 ASCII 要么带 UTF-8 BOM，否则 PS5.1 按 ANSI 读会解析期即炸）** / **`store_isolation_probe`（BUG-90：`FIST_DB_PATH` 必须真的改道——同一 cwd 两格只差这个环境变量，且带合成违例格）（文档面 J1-J10：逐个工具可查 + 分组和==实测 + 自述版本==moon.mod + 反幻影哨兵 + **J4 子判据：注册表发布版本只在 `BACKLOG.md` 一处自述** + **J6 规范正文↔机器投影一致** + **J7 规范性表面禁旧口径** + **J8 模板调用参数==真源 schema** + **J9 工具描述返回契约（必查清单 + 歧义键分工 + 棘轮只许升）** + **J10 判据范围自述==实现（少写=声明滞后、多写=幻影判据）**；`--selftest` 用合成违例证明 J4/J6/J7/J8/J9/J10 能发红（自检正文里没写对照，`SELFTEST OK` 那行就不会报它——那份清单从正文反解，不手写），J9/J10/J4 各配反向对照（干净输入/两面一致不误红），且 ci.yml 的文档面那一步先跑 `--selftest` 再跑全量（BUG-89：本轮之前 ci.yml 里只有 `check_test_sync` 的自检被执行，文档面守卫的自检崩了也报绿），不是装饰）。
+- 守卫族（10 个，全在 ci.yml JS 轨）：`check_tools_sync` / `check_test_sync` / `check_badge` / `check_scripts_index` / **`check_plugin_sync`（cl7）** / `check_doc_surface` / **`check_store_tables_wired`（BUG-28：库内每张表要么有写入点、要么在 store 源文件里 `schema-reserved:` 点名预留，两个方向都发红）** / **`check_ps_encoding`（BUG-88：.ps1 要么纯 ASCII 要么带 UTF-8 BOM，否则 PS5.1 按 ANSI 读会解析期即炸）** / **`store_isolation_probe`（BUG-90：`FIST_DB_PATH` 必须真的改道——同一 cwd 两格只差这个环境变量，且带合成违例格） / **`check_entry_paths`（BUG-93/101：现状面的命令与产物路径不得指退役入口，`Popen([node, cli.js])` 的 argv 必须带 serve——入口搬家漏掉的另一半；判据从 `cmd/*/moon.pkg` 的 `pkgtype(kind:"executable")` 与 build_release.ps1 反解入口清单，不硬编码）（文档面 J1-J10：逐个工具可查 + 分组和==实测 + 自述版本==moon.mod + 反幻影哨兵 + **J4 子判据：注册表发布版本只在 `BACKLOG.md` 一处自述** + **J6 规范正文↔机器投影一致** + **J7 规范性表面禁旧口径** + **J8 模板调用参数==真源 schema** + **J9 工具描述返回契约（必查清单 + 歧义键分工 + 棘轮只许升）** + **J10 判据范围自述==实现（少写=声明滞后、多写=幻影判据）**；`--selftest` 用合成违例证明 J4/J6/J7/J8/J9/J10 能发红（自检正文里没写对照，`SELFTEST OK` 那行就不会报它——那份清单从正文反解，不手写），J9/J10/J4 各配反向对照（干净输入/两面一致不误红），且 ci.yml 的文档面那一步先跑 `--selftest` 再跑全量（BUG-89：本轮之前 ci.yml 里只有 `check_test_sync` 的自检被执行，文档面守卫的自检崩了也报绿），不是装饰）。
 
 Prompts: `fist:check_in`, `fist:verify`
 
