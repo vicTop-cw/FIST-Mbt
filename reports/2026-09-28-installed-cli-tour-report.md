@@ -234,3 +234,18 @@ BUG-93 退役入口 `cmd/main` 散落 15+ 处）。仍未做：服务面级 catc
 | initialize 一跑 | 我的第一版探针把标准 `initialize` 当门 ⇒ 全判红。**是我的期望错**：本服务端是 2026-07-28 口径、无握手，身份在每个请求的 `params._meta` 里（BUG-21 的验收位置就是这个） | 改按 `_meta` 形状重打即 PASS |
 
 证据脚本：`temp/b105_serve_over_shim.py`（两面对表，shim 组与直调组同为 PASS）。
+
+## 再补遗 · 文档那条安装线其实通不了（盖章 2026-09-28T08:22:01Z）
+
+把「作为用户去装」这句话真当成一次网络请求来做审计（只 GET、不执行、不带凭据）：
+
+| 源 | 实测 | 含义 |
+|---|---|---|
+| GitHub raw **master** | 200，首行 `#!/usr/bin/env pwsh`，5557 字节 | 唯一匿名可用的 raw 直链 |
+| GitHub raw main | 取不到（该仓默认分支 master） | 文档里那条 `main` 链接是死路 |
+| GitCode `/-/raw/master`、`/raw/master`、`/raw/main` | **200 + `<!DOCTYPE html>`（5527 字节）** | HTML 灌进 `iex` 就是解析错；200 让旧代码把它读成「成功」 |
+| raw.gitcode.com 子域 | 403 | 没有可用的匿名 raw 形式 |
+
+收口（BUG-107，high，入账即 FIXED）：安装器首选线全改 GitHub master raw；moon.mod 取回内容先做 HTML 形状检查（是网页就点名换源）；资产下载后先验 zip 魔数 `PK` 再看大小。判据 R6 + 三格变异；自述同步 AGENTS 守卫族与 scripts/README（五条 ⇒ 六条、八格 ⇒ 十一格）。
+判据自己也红过一次：R6 的首选线正则写成 `install_(?:onecmd\.ps1|sh)`，把 `install.sh` 读成 `install_sh` ⇒ 干净输入误红。**尺子坏与产品坏要用同一套对照区分**，这次靠「干净支必须绿」那格抓到。
+交出去的一处：README「黑盒用户」段本轮由并行改动面新加，两行安装线用的是 GitCode raw —— 对方在写该文件 ⇒ 不代改，改法即上表第一行。
