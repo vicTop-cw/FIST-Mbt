@@ -22,7 +22,10 @@ param(
   [string]$Version = "",
   [switch]$Force,
   # 离线/内网/发布前自证：给了本地 zip 就跳过下载（不发 Release 也能装）
-  [string]$LocalZip = ""
+  [string]$LocalZip = "",
+  # 镜像入口：给一个 base（内网镜像 / 本机 http.server）就只从它下面按**与公网同形的路径**取
+  # moon.mod 与资产 —— 这样"下载这一步"在没有公网 Release 时也能被真跑一遍，而不是只能靠 -LocalZip 绕行。
+  [string]$BaseUrl = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,6 +57,7 @@ $rawUrls = @(
   "https://gitcode.com/VictorTop/Fist-Mbt/-/raw/master/moon.mod"
 )
 $versionSource = ""
+if ($BaseUrl -ne "") { $rawUrls = @(($BaseUrl.TrimEnd('/') + "/moon.mod")) }
 if ($Version -eq "") {
   if ($LocalZip -ne "" -and (Split-Path -Leaf $LocalZip) -match '^fist-mbt-js-v(.+)\.zip$') {
     $Version = $matches[1]; $versionSource = "本地 zip 文件名"
@@ -61,6 +65,9 @@ if ($Version -eq "") {
     foreach ($r in $rawUrls) {
       try {
         $mm = (Invoke-WebRequest -Uri $r -UseBasicParsing -TimeoutSec 20).Content
+        # 有的源（本机 http.server、内网镜像）把 .mod 标成 application/octet-stream ⇒ PS 交回来的是
+        # byte[] 而不是 string，直接 -match 会静默不中，用户只看到"解析不到版本"。先按 UTF-8 归一。
+        if ($mm -isnot [string]) { $mm = [Text.Encoding]::UTF8.GetString($mm) }
         # BUG-107：状态码 200 不代表拿到了文件。GitCode 匿名 raw 直链实测返回一整个 HTML 页，
         # 而 HTML 里没有 `version = "…"` ⇒ 旧代码会安静地跳到下一个源，用户看不到"这源给的是网页"。
         if ($mm -match '^\s*<(!DOCTYPE|html)') {
@@ -86,6 +93,12 @@ $urls = @(
   "https://gitcode.com/VictorTop/Fist-Mbt/-/releases/download/v$Version/$zipName",
   "https://github.com/vicTop-cw/FIST-Mbt/releases/download/v$Version/$zipName"
 )
+if ($BaseUrl -ne "") { $urls = @(($BaseUrl.TrimEnd('/') + "/-/releases/download/v$Version/$zipName")) }
+if ($BaseUrl -ne "" -and $LocalZip -ne "") {
+  # 两个"跳过公网"的口子同时给，日志里就说不清装的是哪一份东西 ⇒ 当场拒，不做"取第一个"的猜
+  Write-Host "❌ -BaseUrl 与 -LocalZip 不能同时给（前者走镜像下载，后者跳过下载）" -ForegroundColor Red
+  exit 1
+}
 
 $dest = Join-Path $env:LOCALAPPDATA "FIST-Mbt"
 $bin  = Join-Path $env:USERPROFILE ".local\bin"
@@ -192,10 +205,39 @@ Remove-Item -Recurse -Force $temp -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "🏥 自检..." -ForegroundColor Yellow
-try { $v = (& node "$dest\fist-mbt.js" version 2>&1 | Out-String).Trim(); if ($v) { Write-Host "  ✅ $v" -ForegroundColor Green } } catch { }
-try { $null = (& node "$dest\fist-mbt.js" help 2>&1 | Select-Object -First 1) } catch { }
-Write-Host "  ✅ fist-mbt.js 可执行" -ForegroundColor Green
-try { $vv = (& fist version 2>&1 | Out-String).Trim(); Write-Host "  ✅ fist.cmd (PATH) → $vv" -ForegroundColor Green } catch { Write-Host "  ⚠️ 当前会话 PATH 未刷新（新开终端即可）" -ForegroundColor Yellow }
+# BUG-109：脚本顶部是 $ErrorActionPreference="Stop"，而原生命令只要往 stderr 打一个字，
+# 经 2>&1 就被包成终止错误（NativeCommandError）。node:sqlite 每次启动都打
+# ExperimentalWarning: SQLite is an experimental feature ⇒ 旧写法里那两个 try 必然进
+# catch（空 catch 把错吞掉），下一行 "✅ fist-mbt.js 可执行" 却无条件打印——绿是假的；
+# 更糟的是 `& fist version` 的 catch 把"命令跑通了"报成"当前会话 PATH 未刷新"，
+# 把用户支到一个不存在的原因上。正解：调用期临时降 EAP、stderr 单独丢（只要 stdout 回执），
+# 并把「命令名解析不到」和「解析到了却无回执」分成两条不同诊断。
+function Invoke-FistNative {
+  param($Exe, [string[]]$ExeArgs)
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try { $out = (& $Exe @ExeArgs 2>$null | Out-String) } finally { $ErrorActionPreference = $prevEap }
+  return $out.Trim()
+}
+$jsVer = Invoke-FistNative -Exe "node" -ExeArgs @("$dest\fist-mbt.js", "version")
+if ($jsVer) {
+  Write-Host "  ✅ $jsVer" -ForegroundColor Green
+  Write-Host "  ✅ fist-mbt.js 可执行" -ForegroundColor Green
+} else {
+  Write-Host "  ❌ 产物跑不出版本（node 不在 PATH 或产物损坏）：node `"$dest\fist-mbt.js`" version 无 stdout 回执" -ForegroundColor Red
+  exit 1
+}
+$shimCmd = Get-Command fist -ErrorAction SilentlyContinue
+if ($shimCmd) {
+  $vv = Invoke-FistNative -Exe $shimCmd.Source -ExeArgs @("version")
+  if ($vv) { Write-Host "  ✅ fist (PATH) → $vv" -ForegroundColor Green }
+  else {
+    Write-Host "  ❌ fist 解析到 $($shimCmd.Source)，但跑起来没有回执" -ForegroundColor Red
+    exit 1
+  }
+} else {
+  Write-Host "  ⚠️ 当前会话 PATH 未刷新（新开终端即可）" -ForegroundColor Yellow
+}
 # 无扩展名那份只能由 POSIX shell 验到：这里核字节（shebang 必须是首行且行尾不是 CRLF），
 # 因为 CRLF 的 `#!/bin/sh` 在 Git Bash 里报的是 "bad interpreter"——装完当场看不出来。
 $shBytes = [IO.File]::ReadAllBytes((Join-Path $bin "fist"))

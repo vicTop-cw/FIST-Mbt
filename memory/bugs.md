@@ -1770,3 +1770,77 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
     （干净不误红 + 变异必红：R1×2 / R2 / R3×2 / R4 / R5×2 / R6×3，共十一格）
 自证侧的针也修过一次：R6 的"首选线"正则起初写成 `install_(?:onecmd\.ps1|sh)`，
 把 `install.sh` 拼成了 `install_sh` ⇒ 干净输入被误判红（判据坏了，不是产品坏了）。
+
+## BUG-108 [2026-09-28T08:52:15Z] [medium] FIXED
+- summary: 「下载那一步」从来没有可跑的法子——`-LocalZip` 是**跳过**下载而不是走下载，
+  而公网 Release 资产在有授权 push 之前根本不存在 ⇒ URL 拼装、状态码处理、HTML sniff、zip 魔数、
+  解压、ESM patch、shim 写出、PATH 追加、装完自检，这一整段从未被执行过一次
+- detail:
+  本轮以用户身份跑 `irm … | iex` 的等价流程时撞到的不是某个 bug，而是**验证面的空洞**：
+  手里只有 `-LocalZip`（直接给 zip）这条腿，它绕开的恰好是 BUG-103/105/107 三次修复所在的代码段。
+  修法（我这侧，两个安装器 + 一个常驻 e2e）：
+  ① `install_onecmd.ps1` 加 `-BaseUrl`、`install.sh` 加 `FIST_BASE_URL`——只把
+     moon.mod 与 Release 直链的**前缀**换成镜像，其余逻辑一行不改（换的必须是拼装入口而不是分支）；
+  ② 镜像入口与本地 zip 互斥要**显式拒绝**（`-BaseUrl` 与 `-LocalZip` 同给 ⇒ exit 1），
+     否则两个来源同时生效时"装了哪一个"不可归因；
+  ③ 新增 `scripts/blackbox/e2e_mirror_install.py`：本机 `http.server` 挂镜像目录
+     （moon.mod 从仓库取、资产 zip 由已装产物现打包），把安装器装进**沙箱**——
+     子进程 env 里 LOCALAPPDATA/USERPROFILE/TEMP 全指 temp/b108-sandbox、沙箱 bin 顶到 PATH 最前
+     （否则自检绿的是别人真装的那份），HKCU 用户级 PATH 跑前抓原值、跑完逐字还原并复核，
+     真安装目录产物跑前跑后 sha256 必须相同；反面对照把资产换成 20KB 的 HTML 页 ⇒ 必须 rc!=0 且点名原因。
+  它一跑就抓到两处（都记在各自条目里）：
+  ④ PS 5.1 下 `(Invoke-WebRequest).Content` 在服务器把文件标成 `application/octet-stream` 时是
+     **`byte[]`** 而不是 string ⇒ 版本正则静默失配，回执只说"正文里没有可解析的 version 行"；
+     修法是把非 string 的响应体按 UTF-8 解码后再匹配，而不是去改镜像的形状；
+  ⑤ 自检的假绿与假因 ⇒ 见 BUG-109。
+  修复面复算（本机实跑，非自述）：正向 `rc=0`，四格全命中（版本来源=镜像 moon.mod /
+  资产名按版本拼装 / POSIX shim, LF / fist (PATH)），沙箱产物 sha256:616b7632 与镜像一致，
+  bin 四件齐 `['fist','fist-mbt','fist-mbt.cmd','fist.cmd']`，
+  bash 下 `fist version` 首行 `FIST-Mbt v0.3.0`、`fist doctor` rc=0 首行 `✅ [1/5] FistEngine 能创建`；
+  反面对照 `rc=1`，回执含「前两字节 3C-21」且未装出产物；
+  用户 PATH「已还原（1708 字，逐字相同）」、真产物「616b7632 → 616b7632」。
+  证据日志 = `temp/b108-sandbox/run.log`、`temp/b108-e2e-run2.txt`。
+- 遗留边界：这条只覆盖 Windows 侧的下载段。`install.sh` 的 `FIST_BASE_URL` 是同一形状的镜像入口，
+  但 e2e 未在 WSL 复跑（本轮无 WSL 通道）；公网 Release 一旦发布，首选线仍要按 BUG-107 实测的
+  GitHub master raw 直链，镜像只当测试面用。
+
+### FIXED(2026-09-28T08:52:15Z / BUG-108)
+镜像入口（`-BaseUrl` / `FIST_BASE_URL`）+ 常驻端到端 `scripts/blackbox/e2e_mirror_install.py`，
+正向 rc=0 四格命中、反面 rc=1 带原因、沙箱边界三条自证通过。
+
+## BUG-109 [2026-09-28T08:52:15Z] [high] FIXED
+- summary: 安装器自检在 node:sqlite 的启动警告下**同时**做了两件坏事——把"跑通了"报成
+  "当前会话 PATH 未刷新"（假因），以及在两个必然抛错的 try 之后无条件打印
+  `✅ fist-mbt.js 可执行`（假绿）⇒ 装完的用户被支去开新终端/重装，而真因只是一行 stderr 警告
+- detail:
+  端到端镜像安装（BUG-108）里那条"自检经 shim 跑到 fist"的针一直不命中，先怀疑探针，实测才发现是产品：
+  沙箱里同一份 shim 用 bash 跑 `fist version` 是 rc=0、有正常 stdout，安装器那句 `& fist version`
+  却进了 catch。逐字证据（`temp/b108-sandbox/selfcheck-ps-stderr.txt`）：
+    `fist.cmd : (node:36896) ExperimentalWarning: SQLite is an experimental feature and might change at any time`
+    `FullyQualifiedErrorId : NativeCommandError`
+  错误记录的**来源就是 shim 本身** ⇒ 命令名解析成功、进程真的跑起来了；
+  脚本顶部是 `$ErrorActionPreference = "Stop"`，原生命令的 stderr 经 `2>&1` 会被包成终止错误，
+  而 node:sqlite 每次启动都打这行警告 ⇒ 只要用这套产物，这条路径**每次**都进 catch（不是偶发）。
+  失效三面（同一次调用里同时成立）：
+  ① `Write-Host "  ✅ fist-mbt.js 可执行"` 挂在两个 `try { … } catch { }` 之后**无条件**执行
+     —— 那两个 try 在此环境里从来没成功过，✅ 是装饰；
+  ② 版本回执那行永远打不出来（被同一个 catch 吞掉，且 catch 体是空的 ⇒ 无从归因）；
+  ③ `& fist version` 的 catch 把上述一切渲染成「当前会话 PATH 未刷新（新开终端即可）」，
+     这是**指向不存在原因的诊断**：PATH 那一刻是对的。
+  修法（`install_onecmd.ps1` 自检段）：
+  ① 新增 `Invoke-FistNative`——调用期临时 `$ErrorActionPreference = "Continue"`、
+     `finally` 还原，stderr 用 `2>$null` 隔离（我们只要 stdout 回执）；空 catch 全部拆掉；
+  ② `node … version` 无 stdout ⇒ `❌ 产物跑不出版本（node 不在 PATH 或产物损坏）` + **exit 1**
+     （自检不许在失败时说"成功"，也不许说"警告一下算了"）；
+  ③ `Get-Command fist` 先分流：解析不到才说「PATH 未刷新（新开终端即可）」；
+     解析到了却无回执 ⇒ `❌ fist 解析到 <路径>，但跑起来没有回执` + exit 1——两条不同诊断不再互相冒充。
+  判据面：`check_release_asset_names.py` 六条 ⇒ **七条**（R7 钉这三面），
+  `--selftest` 十一格 ⇒ **十四格**（R7×3：把 `2>$null` 改回 `2>&1` 必红、
+  ✅ 脱离 `if ($jsVer)` 分支必红、引入空 catch 必红），且 `PASS` 那行的范围自述同步成 R1-R7。
+  修复面复算：`python scripts/check_release_asset_names.py` 全量 rc=0、`--selftest` → `SELFTEST OK`；
+  端到端重跑 `=== 端到端镜像安装：PASS ===`，`安装器自检经 shim 跑到 fist 命中`
+  （回执 `fist (PATH) → FIST-Mbt v0.3.0` 打出来了）；`bash -n`/`check_ps_encoding` 与 PS 解析 0 错同步复跑。
+
+### FIXED(2026-09-28T08:52:15Z / BUG-109)
+自检段改为「临时降 EAP + stderr 隔离 + 空 stdout 即 exit 1 + PATH 解析分流」，
+假绿（无条件 ✅）与假因（把跑通说成 PATH 未刷新）同时消失；R7×3 判据 + 端到端实测留证。

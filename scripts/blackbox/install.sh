@@ -31,6 +31,15 @@ done
 
 # 没显式给版本就现取：从 moon.mod（与发布链同源的那批 raw 地址）解析；离线口子认本地 zip 的文件名。
 RAW_MOONMODS="https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/moon.mod https://gitcode.com/VictorTop/Fist-Mbt/-/raw/master/moon.mod"
+# 镜像入口（BUG-108）：给了 FIST_BASE_URL 就只从它下面按**与公网同形的路径**取 moon.mod 与资产，
+# 于是"下载这一步"在内网/本机 http.server 上也能真跑一遍（-LocalZip 是跳过下载，两者不等价）。
+if [ -n "${FIST_BASE_URL:-}" ]; then
+  FIST_BASE_URL="${FIST_BASE_URL%/}"
+  RAW_MOONMODS="${FIST_BASE_URL}/moon.mod"
+  if [ -n "${FIST_LOCAL_ZIP:-}" ]; then
+    echo "FIST_BASE_URL 与 FIST_LOCAL_ZIP 不能同时给（前者走镜像下载，后者跳过下载）" >&2; exit 1
+  fi
+fi
 VERSION_SOURCE=""
 if [ -z "$VERSION" ] && [ -n "${FIST_LOCAL_ZIP:-}" ]; then
   VERSION=$(basename "$FIST_LOCAL_ZIP" | sed -n 's/^fist-mbt-js-v\(.*\)\.zip$/\1/p')
@@ -109,6 +118,9 @@ URLS=(
   "https://gitcode.com/VictorTop/Fist-Mbt/-/releases/download/v${VERSION}/${ZIP}"
   "https://github.com/vicTop-cw/FIST-Mbt/releases/download/v${VERSION}/${ZIP}"
 )
+if [ -n "${FIST_BASE_URL:-}" ]; then
+  URLS=("${FIST_BASE_URL}/-/releases/download/v${VERSION}/${ZIP}")
+fi
 
 DEST="${HOME}/.local/share/fist-mbt"
 BIN_DIR="${HOME}/.local/bin"
