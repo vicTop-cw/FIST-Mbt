@@ -91,6 +91,17 @@ AIGC:
   - **结转（不装成已修）**：`cmd/cli/help_topics.mbt` 与 `main.mbt` 的 `fist help <topic>` 本体仍是并行改动面的未提交新增 ⇒
     本次提交只带我自己的那一处分发改动（HEAD 正文 + 我的 hunk，摘段双向验：暂存里不含对方行、工作区仍含），
     对方那半边留在工作区不代为发布；`check_scripts_index` 在本地因对方未登记的 `gen_help_docs.py` 报红，HEAD 面上不存在该文件 ⇒ 不随本次提交进 CI。
+  **BUG-115 收口（同轮再追加 · 第 3 笔）**：验证"我提交的那一棵树"时撞上——`temp/staged-tree` 首轮
+  `moon test --target js` = 535/532/**3 failed**，随后 4 次（含删 `_build` 冷构建）全绿。第二次撞上就不叫偶发：
+  在 HEAD 的干净 worktree 里 `rm -rf temp` 后必红，三条全出自 `src/engine/engine_execute_r2_test.mbt`，
+  错误是 "unable to open database file"。成因是**测试之间隐性依赖**——该文件的 `r2e_engine` 打开
+  `temp/r2_bug2_*.db` 却不建 `temp/`（SQLite 只造文件不造父目录），靠同包 `docs_gate_test.mbt` 里那句
+  `@fs.create_dir("temp")` 先跑赢竞速；主工作树永远绿（`temp/` 早就在），于是"本机全绿"在这条上纯属假证据。
+  修：helper 补 `@fs.create_dir("temp") catch { _ => () }`（沿用同包惯用法），对照实证同一无 `temp/` 条件下
+  修前 532/535、修后 **535/535**（`temp/fixed_no_temp.log`）。另点名一条可能性：BUG-111 记过
+  "Actions run 178→186 全 failed 但匿名 API 403 读不到日志"，本条是它的一个可复跑解释，
+  但不据此宣称已把 CI 全量跑绿（native 轨与别的红还没归因）。同形风险只查不铺：
+  另 9 个用 `temp/` 路径的测试文件在同样条件下都不红 ⇒ 只在被观测到的这一处落修。
 - **账本**：BUG-90~94 五条入账（90/91 FIXED 并落 `### FIXED` 小记；92 拒绝文案自相矛盾、93 退役入口 `cmd/main`
   仍散在 15+ 处脚本/文档、94 `cost_stats` 未捕获 `ERR_SQLITE_ERROR` 杀会话 三条 OPEN 交裁决）；
   现状 95 条 = 3 待修 / 81 已修 / 9 重复并入 / 1 误报。
