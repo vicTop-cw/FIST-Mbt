@@ -59,7 +59,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install MoonBit
-        run: curl -fsSL https://cli.moonbitlang.com/install/unix | bash
+        run: |
+          # BUG-112：这一格的 bootstrap 与 ci.yml 里**验证过的**形状不一致 —— 安装 URL 少了 `.sh`，
+          # 而且没把 $HOME/.moon/bin 写进 GITHUB_PATH ⇒ 后续步骤里 `moon` 不在 PATH，
+          # build-js 直接红 ⇒ release 作业被 skip ⇒ Release 零资产（默认安装线一直 404 的最后一段真因）。
+          # 注意：本机装了全局 moon，所以"在快照树里复跑 CI 的三步"是绿的——这条只在 runner 上现形。
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Refresh registry (first build)
+        run: moon update
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -93,7 +102,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install MoonBit
-        run: curl -fsSL https://cli.moonbitlang.com/install/unix | bash
+        run: |
+          # 同 BUG-112：与 ci.yml 的 bootstrap 对齐（`.sh` + 导出 GITHUB_PATH），否则 `moon` 不在 PATH
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Refresh registry (first build)
+        run: moon update
 
       - name: Install sqlite3 dev
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev sqlite3
