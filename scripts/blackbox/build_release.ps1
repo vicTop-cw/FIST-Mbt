@@ -12,7 +12,7 @@ function Invoke-MoonBuild($target, $label) {
     $prevErr = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     Write-Host "[$label] moon build --target $target ..." -ForegroundColor Yellow
-    $result = (& moon build --target $target 2>&1 | Out-String)
+    $result = (& moon build --target $target cmd/cli 2>&1 | Out-String)
     $ExitCode = $LASTEXITCODE
     $ErrorActionPreference = $prevErr
     $result -split "`n" | Select-Object -Last 3 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
@@ -35,7 +35,7 @@ $any = $false
 
 if (-not $SkipJs) {
     if (Invoke-MoonBuild "js" "JS") {
-        $jsMain = Resolve-Path "$REPO_ROOT\_build\js\debug\build\cmd\main\main.js" -ErrorAction SilentlyContinue
+        $jsMain = Resolve-Path "$REPO_ROOT\_build\js\debug\build\cmd\cli\cli.js" -ErrorAction SilentlyContinue
         if (-not $jsMain) { Write-Host "[JS] main.js not found" -ForegroundColor Red; exit 1 }
         Write-Host "[JS] patching ESM createRequire ..." -ForegroundColor Yellow
         $patchScript = Resolve-Path "$PSScriptRoot\patch_esm_main.py" -ErrorAction SilentlyContinue
@@ -52,7 +52,7 @@ if (-not $SkipNative) {
     $nativeEnv = Resolve-Path "$REPO_ROOT\scripts\native-env.ps1" -ErrorAction SilentlyContinue
     if ($nativeEnv) { try { . $nativeEnv } catch { } }
     if (Invoke-MoonBuild "native" "Native") {
-        $nativeMain = Resolve-Path "$REPO_ROOT\_build\native\debug\build\cmd\main\main.exe" -ErrorAction SilentlyContinue
+        $nativeMain = Resolve-Path "$REPO_ROOT\_build\native\debug\build\cmd\cli\cli.exe" -ErrorAction SilentlyContinue
         if ($nativeMain) {
             Copy-Item $nativeMain "$TargetDir\native\fist-mbt.exe" -Force
             Write-Host "[Native] OK: fist-mbt.exe" -ForegroundColor Green
@@ -85,3 +85,4 @@ Get-ChildItem $TargetDir -Recurse -File | ForEach-Object {
     $mb = [math]::Round($_.Length / 1048576, 2)
     Write-Host "  $rel  ($mb MB)"
 }
+
