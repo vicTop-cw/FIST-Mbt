@@ -1937,3 +1937,62 @@ README 两条安装线改 GitHub master raw 直链 + GitCode 降为浏览备用�
 - 待证（先记 OPEN 的理由）：`moon` 进 PATH 之后 `Build JS target` 是否真过、Release 是否真出资产，
   都要等 `v0.3.3` 那一次 run 的回执。翻 FIXED 的判据写在 BUG-111 末：匿名 HEAD 资产 URL 得 200 + `PK`，
   且用**公网线不带任何参数**装出 `fist version` = 0.3.3。
+
+## BUG-113 [2026-09-28T12:12:10Z] [high] FIXED
+- summary: README 与安装器头部那条 Windows 主安装线「irm <GitHub master raw> | iex」当场解析失败 ——
+  iex : At line:22 char:22 / + [string]$Version = "", / 赋值表达式的左侧无效（InvalidLeftHandSide）；
+  而同一个脚本用 powershell -File 跑一切正常 ⇒ 之前所有 e2e 都走 -File，这一格从来没被任何判据照过
+- detail:
+  发现路径：发布资产终于出来之后（BUG-112 修完 CI），第一次把「用户照抄的那一行」原样跑了一次（沙箱档）。
+  成因是两条各自正确的自家规矩撞车：
+  ① check_ps_encoding（BUG-88）要求含中文的 .ps1 必须带 UTF-8 BOM，否则 PS5.1 按 ANSI 读会解析期即炸；
+  ② irm（= Invoke-RestMethod）对 text/plain 返回的是**字符串**，且把 BOM 留成首字符 U+FEFF；
+     iex 拿到以 U+FEFF 开头的串时首行 shebang 不再被认成注释 ⇒ param(...) 不在「脚本首语句」位置
+     ⇒ [string]$Version = "" 被当普通赋值表达式解析 ⇒ 红。
+  最小对照（temp/bom_min_control.py：6 行脚本 + powershell -EncodedCommand，避开引号与换行被 shell 吃掉）：
+    A-noBOM     firstCharU=35     IEX=OK            IEX-TRIM=OK
+    B-withBOM   firstCharU=65279  IEX=FAIL: At line:4 char:22 +   [string]$Version = "",
+    同一串 TrimStart(U+FEFF) 之后 IEX-TRIM=OK ⇒ 唯一变量就是 BOM。
+  我自己的第一个修法也是错的：写成「((irm …).Content.TrimStart(…))」——那条路上 .Content 是 null
+  （InvokeMethodOnNull），因为 irm 本来就返回字符串而不是响应对象；正确形是 .ToString().TrimStart([char]0xFEFF)。
+  修（保留 BOM，改文档线；BUG-88 那条编码约束有真实理由，不动它）：
+    iex ((irm https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install_onecmd.ps1).ToString().TrimStart([char]0xFEFF))
+  README 与 install_onecmd.ps1 头部同步，并各写一段「为什么长这样」，防下一个人手抖改回裸形。
+  判据面加 R10：安装器文档线与 README 的 Windows 线都必须含 TrimStart([char]0xFEFF)；
+  --selftest 十九格 ⇒ 廿一格（R10×2：任一侧退回裸形必红）；README 从此进判据面（缺席即红）。
+  常驻回归入口 scripts/blackbox/e2e_irm_line.py：命令**从 README 反解**、不硬编码（文档改坏就红，
+  文档写对则用户与判据跑同一串字节）；反解不到即 FATAL 自拒。默认沙箱档
+  （LOCALAPPDATA/USERPROFILE/TEMP 重定向 + 沙箱 bin 顶 PATH + HKCU 用户级 PATH 逐字还原 + 真安装目录 sha 只读核对），
+  --real 才落真面且带产物备份/自动还原；README 仍是裸形时 --real 拒绝执行（那是已知会红的形）。
+  修复面实证（沙箱档，字面文档线，走真公网）rc=0：
+    「0.3.3」命中 / 「fist-mbt-js-v0.3.3.zip」命中 / 「✅ fist (PATH) → FIST-Mbt v0.3.0」命中（BUG-109 的门在真公网路径上也成立）/
+    「✅ fist (POSIX shim, LF)」命中 / 横幅「FIST-Mbt v0.3.3 安装完成」/ 沙箱 bin 四件齐
+    ['fist','fist-mbt','fist-mbt.cmd','fist.cmd'] / 沙箱产物 sha256:2eaa4803（CI 构建物与本机构建 616b7632 不同形是正常的）/
+    用户 PATH 1708 字逐字还原 / 真产物 616b7632 → 616b7632 未动。
+  同一次跑还新暴露一条：装出来的 fist version 回 v0.3.0 而横幅是 0.3.3 ⇒ 另开 BUG-114。
+- 残余边界：个别代理把 raw 标成 application/octet-stream 时 irm 可能给出 byte[]，.ToString() 得 System.Byte[]
+  从而在 iex 处红——红是可见的（不是静默装错），且该形状已由安装器内部的 UTF-8 强制解码覆盖 moon.mod 那一步；
+  WSL 侧 curl -fsSL … | bash 无此问题（实测 install.sh 前 4 字节 23 21 2f 75，无 BOM）。
+
+### FIXED(2026-09-28T12:12:10Z / BUG-113)
+文档线改 .ToString().TrimStart([char]0xFEFF) 形（README + 安装器头部 + 两处理由注释）；判据 R10 两支、
+--selftest 廿一格；常驻 scripts/blackbox/e2e_irm_line.py 跑从 README 反解出来的那一行，沙箱实证 rc=0 四格全命中。
+
+## BUG-114 [2026-09-28T12:12:10Z] [high] OPEN
+- summary: 版本自述其实有三个真源 —— moon.mod（规范真源）、src/server/server.mbt:565 的
+  let project_version : String = "0.3.0"、cmd/cli/help_topics.mbt:4 的 const FIST_VERSION = "0.3.0"。
+  本轮把 moon.mod 前进到 0.3.3 之后，公网装出来的全局命令 fist version 仍回 v0.3.0
+- detail:
+  实证就在 BUG-113 那一次沙箱跑里：横幅「FIST-Mbt v0.3.3 安装完成」，而 fist version 打「FIST-Mbt v0.3.0」。
+  巡回的 surface_probe 校的是 serverInfo.version ↔ moon.mod（调用面），产物只要是新构建的就会红；
+  check_doc_surface 只校 文档 ↔ moon.mod ⇒ 看不见源码常量这一格（一源四态里「第四态」的落点）。
+  可粘贴补丁（各一行；改完需重建产物才算数）：
+    src/server/server.mbt:565  let project_version : String = "0.3.3"
+    cmd/cli/help_topics.mbt:4  const FIST_VERSION = "0.3.3"
+  不在本轮改的理由：src/server/server.mbt 工作树 dirty（并行改动面在写），
+  cmd/cli/help_topics.mbt 是对方未跟踪的新文件（?? cmd/cli/help_topics.mbt）——
+  往这两处插臂会被整档写回静默吃掉（BUG-106 同型）。
+  建议收口形状（机器可检）：把两个常量并进「从 moon.mod 反解」的生成面（gen_plugins 已在读 moon.mod 的 version），
+  或加一支判据：server.mbt 的 project_version 与 cmd/cli 的 FIST_VERSION 必须 == moon.mod 的 version，
+  不一致即红并点名行号。**这条判据本轮没加**：它一落地就是当场红，而它指名的两个面不在我手里——
+  把一个自己修不了的红门禁塞进 CI 只是把债转嫁给下一次构建，不如先入账交裁决。

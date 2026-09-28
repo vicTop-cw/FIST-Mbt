@@ -109,7 +109,12 @@ Release zip 只含 MoonBit 编译产物，零源码依赖：
 
 ```bash
 # Windows PowerShell（首选：2026-09-28 实测唯一匿名能取到脚本正文的 raw 直链）
-irm https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install_onecmd.ps1 | iex
+iex ((irm https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install_onecmd.ps1).ToString().TrimStart([char]0xFEFF))
+
+> Windows 这条为什么不是 `irm … | iex` 而是先 `.TrimStart([char]0xFEFF)`：
+> 安装器 .ps1 含中文，按本仓 `check_ps_encoding`（BUG-88）必须带 UTF-8 BOM；
+> `irm` 会把 BOM 留成首字符 U+FEFF，`iex` 于是在 `param()` 里报「赋值表达式的左侧无效」（BUG-113 实测）。
+> `powershell -File` 读磁盘没这个问题 ⇒ 三条调用面（-File / -Command / `irm | iex`）不同形，别互相背书。
 
 # WSL / Linux
 curl -fsSL https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install.sh | bash
