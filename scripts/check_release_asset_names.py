@@ -1,19 +1,28 @@
 # -*- coding: utf-8 -*-
-"""BUG-103 判据：发布资产名 ↔ 安装器 ↔ moon.mod 三者一致。
+"""BUG-103 + BUG-105 判据：发布资产名 ↔ 安装器 ↔ moon.mod 三者一致，且装完的命令名两类 shell 都可见。
+
+（R5 为什么住在"资产名"这个守卫里：本守卫真正管的是**分发面同源**——用户按文档敲的那条命令、
+和发布链产出的那个文件名，两边必须对得上。资产名对不上是"下载 404"，命令名对不上是"下载成功却
+找不到命令"，同一张表面的两种失效，拆成两个守卫只会各看半边。）
 
 要钉的失效形状（本轮实测）：`install_onecmd.ps1` 与 `install.sh` 的默认版本写死 `0.3.0-beta`，
 而发布资产名由 `build_release.ps1` 按 moon.mod 的 `0.3.0` 生成 ⇒ 用户跑字面的
 `irm … | iex`（不带任何参数）时，两条下载源都指向发布链永远不会产出的文件名。
 CI 看不见这条：CI 不发 Release，也不跑安装器。
 
-判据（四条，全部只看文本形状，不联网）：
+判据（五条，全部只看文本形状，不联网）：
   R1 安装器不许给版本号写死字面量默认值（`$Version = "0.x"` / `VERSION="0.x"`）；
   R2 两个安装器都要真的从 moon.mod 取版本（出现 moon.mod 且出现解析用的正则/sed）；
   R3 资产名模板三处一致：install_onecmd.ps1 / install.sh / build_release.ps1 必须都是
      `fist-mbt-js-v<版本>.zip`（release.yml 里若也出现资产名，一并比）；
   R4 解析失败必须显式失败（空版本分支里有 exit 1），不许静默用猜的版本号。
+  R5 命令名在两类 shell 里都要可见（BUG-105）：Windows 侧除 `.cmd` 外必须再写**无扩展名**的
+     `#!/bin/sh` shim 并有"四件齐"的 exit 1 门（POSIX shell 不解析 PATHEXT ⇒ 只给 .cmd
+     就等于在 Git Bash / MSYS / agent harness 的 bash 里 `fist` 不存在）；
+     WSL/Linux 侧必须有 `cat > "$BIN_DIR/fist"` + `chmod +x`。
 
-自证四格：写死默认值必红 / 缺 moon.mod 解析必红 / 资产名漂移必红 / 干净输入不误红。
+自证：写死默认值必红 / 缺 moon.mod 解析必红 / 资产名漂移必红 / 空值不失败必红 /
+无扩展名 shim 被摘掉必红 + 干净输入不误红。
 """
 import argparse, io, os, re, sys
 
@@ -80,6 +89,20 @@ def judge(texts):
     for name, txt in (("install_onecmd.ps1", ps1), ("install.sh", sh)):
         if not EMPTY_FAIL.search(txt):
             problems.append("R4 %s 缺「版本解析为空即 exit 1」的门（会静默用猜的版本号）" % name)
+    # R5 命令名两类 shell 都要可见（BUG-105：POSIX shell 不解析 PATHEXT，只给 .cmd 等于没给命令）
+    if "'#!/bin/sh'" not in ps1 and '"#!/bin/sh"' not in ps1:
+        problems.append("R5 install_onecmd.ps1 不写 POSIX shim（Git Bash / MSYS 下 `fist` 会 command not found）")
+    for nm in ("fist", "fist-mbt"):
+        # 闭引号紧跟名字 ⇒ `"$bin\fist"` 不会误命中 `"$bin\fist-mbt"`；
+        # 别在 `"` 后加 \b（引号与空格同为非单词字符 ⇒ 那里根本没有边界，针会恒 0）。
+        if not re.search(r'Set-Content\s+-Path\s+"\$bin\\%s"' % nm, ps1):
+            problems.append('R5 install_onecmd.ps1 缺无扩展名 shim 写入："$bin\\%s"' % nm)
+    if not re.search(r'shimMissing[\s\S]{0,260}exit 1', ps1):
+        problems.append("R5 install_onecmd.ps1 的「四件齐」门不在（缺件必须显式失败，不许静默装半套）")
+    if not re.search(r'cat > "\$BIN_DIR/fist" *<<', sh):
+        problems.append("R5 install.sh 没写无扩展名 $BIN_DIR/fist")
+    if not re.search(r'chmod \+x "\$BIN_DIR/fist"', sh):
+        problems.append("R5 install.sh 忘了 chmod +x（写了 shim 但不可执行）")
     return problems
 
 
@@ -107,6 +130,10 @@ def selftest():
         ("sh", 'ZIP="fist-mbt-js-v${VERSION}.zip"', 'ZIP="fist-js-${VERSION}.zip"', "R3"),
         # 空值分支不再 exit 1 ⇒ 安装器会静默带着猜出来的版本号去下载
         ("sh", '  exit 1', '  exit 0', "R4"),
+        # R5 两支：Windows 侧摘掉无扩展名 shim 的写入行 / WSL 侧把 chmod +x 改错文件名
+        ("ps1", 'Set-Content -Path "$bin\\fist"     -Value $shimSh -Encoding ASCII -NoNewline',
+         "  # (变异：POSIX shim 不再写出)", "R5"),
+        ("sh", 'chmod +x "$BIN_DIR/fist"', 'chmod +x "$BIN_DIR/fist.cmd"', "R5"),
     ]
     for key, old, new, want in checks:
         if key == "ps1" and new.strip().startswith("#"):
@@ -123,7 +150,7 @@ def selftest():
             fails.append(r)
     for f in fails:
         print("SELFTEST FAIL " + f)
-    print("SELFTEST %s（干净不误红 + 变异必红：R1×2 / R2 / R3×2 / R4×1）" % ("OK" if not fails else "FAIL"))
+    print("SELFTEST %s（干净不误红 + 变异必红：R1×2 / R2 / R3×2 / R4×1 / R5×2）" % ("OK" if not fails else "FAIL"))
     return 0 if not fails else 2
 
 
