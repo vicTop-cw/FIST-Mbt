@@ -176,6 +176,7 @@ BUG-93 退役入口 `cmd/main` 散落 15+ 处）。仍未做：服务面级 catc
 | 全量 | JS `moon test --target js` **533/533** rc=0 | `temp/verify_eng_full.log` |
 | 提交树自证 | `git archive` 327bb7a 干净树 **531/531** rc=0 | `temp/verify_327bb7a_test.log` |
 | 账本 | 账本 100 条 = 87 已修 / 9 重复并入 / 4 误报 / 0 待修 | `memory/bugs.md` 抬头计数 |
+| BUG-102 修复 | cl7 比较侧行尾归一 + `drift_keys` 分栏 + `gen_plugins --selftest` 四格进 CI；同一新克隆漂移 55 → 1（那 1 份是真未重生成），重生成后 rc=0 | `temp/cl_check_plugin_sync.out`（旧守卫 55 条）、提交 da47806 后复跑 cl7 PASS |
 | 已知红 | `gen_help_docs.py` 未登记（并行改动面的文件，本环不代改）| `temp/g_check_scripts_index.log` |
 
 来源：本轮以用户身份安装的 `fist`（sha256:eb18f4f0）+ 仓库 `git archive HEAD` 派生树实测；
