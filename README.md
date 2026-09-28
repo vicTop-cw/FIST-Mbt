@@ -103,6 +103,34 @@ python scripts/fist.py call store_open --namespace scratch --scratch true
 python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path":"moon.mod","contains":"vicTop-cw"}]'
 ```
 
+### 黑盒用户（无需源码）
+
+Release zip 只含 MoonBit 编译产物，零源码依赖：
+
+```bash
+# Windows PowerShell（首选：2026-09-28 实测唯一匿名能取到脚本正文的 raw 直链）
+irm https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install_onecmd.ps1 | iex
+
+# WSL / Linux
+curl -fsSL https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install.sh | bash
+```
+
+> 分支名是 **master** 不是 main（该仓默认分支为 master，`raw/main` 实测取不到东西）。
+> GitCode 上同名仓库只当**浏览备用**：实测它的三种 raw 形状（`/-/raw/`、`/raw/`、`raw.` 子域）
+> 匿名 GET 都返回 **HTTP 200 + 一整页 HTML** 而不是脚本正文 ⇒ 别把它接进 `| iex`
+> （「200 不等于拿到文件」；安装器内部那道正文形状检查是给下载资产用的，不是给这条线用的）。
+
+安装后（shim 在 `~/.local/bin`，Windows 下 POSIX shell 里同样可见）：
+
+```bash
+fist help          # 列出 6 大 topic
+fist help tools    # 129 MCP tools 按 11 分组清单
+fist help mcp      # .mcp.json 配置模板
+fist serve         # 启动 MCP server（stdio）
+fist demo          # 七态闭环 demo
+fist doctor        # 5 项健康检查
+```
+
 ### 独立 CLI 脚本（P0 强化验证类）
 | 脚本 | 对应 MCP | 场景 |
 |---|---|---|

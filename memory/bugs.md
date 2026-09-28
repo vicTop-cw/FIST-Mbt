@@ -1844,3 +1844,30 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
 ### FIXED(2026-09-28T08:52:15Z / BUG-109)
 自检段改为「临时降 EAP + stderr 隔离 + 空 stdout 即 exit 1 + PATH 解析分流」，
 假绿（无条件 ✅）与假因（把跑通说成 PATH 未刷新）同时消失；R7×3 判据 + 端到端实测留证。
+
+## BUG-110 [2026-09-28T10:22:50Z] [medium] FIXED
+- summary: README「黑盒用户」段的两条安装线都指向 `gitcode.com/…/-/raw/**main**/…` —— 既是 BUG-107 实测的
+  「200 + 一整页 HTML」源，又写错分支（该仓默认分支是 master）⇒ 用户照 README 抄的那条命令从来没对过；
+  同一段的代码栅栏字节里还嵌着一个 **退格控制符 0x08**，整块既不渲染、闭合处只剩一个裸反引号
+- detail:
+  这条是 BUG-107 末「归属边界」里交出去的那一处（当时 README 由并行改动面在写 ⇒ 不代改），
+  2026-09-28 由用户指令「README 补丁你去改」收回本环落盘。
+  坏字节实测（`python` 逐行 `repr`，不是目测）：那一行真实字节是
+    `0x60 0x08 61 73 68`  ⇒ 显示成 `` `ash ``，本意是 ```bash
+  形态成因是写入方把 `\b` 当转义吃了一次。危害不只是难看：`fist help tools` / `fist serve` /
+  `fist doctor` 那几行在 GitHub 渲染后是散在正文里的裸命令，用户分不清哪条要抄。
+  修法（`temp/readme_install_lines.py`，锚点用**整段唯一上下文**而不是那行坏字节本身，因为它含不可见字符）：
+  ① 首选线一律 GitHub **master** 的 raw 直链（两条：`install_onecmd.ps1` / `install.sh`），与安装器内注释同源；
+  ② GitCode 降级为「只当浏览备用」并写明实测形状（三种 raw 形状都回 200 + HTML ⇒ 不许接进 `| iex`）；
+  ③ 代码栅栏重写成合法围栏，安装后的六条命令单独成块；分支名坑用引文点名（`raw/main` 取不到东西）。
+  落盘前后自证（脚本打印，不靠目测）：dry-run 命中区间 5592..6053（461 字，含退格符 1 个）；
+  退格符全文计数 1 → 0；`gitcode.com/VictorTop/Fist-Mbt/-/raw/main` 在 README 归零；
+  新线 `raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/…install_onecmd.ps1` 命中；
+  行数 225 → 233 且差值 == 本节新旧行差（证明没动到别处）；`out.startswith(改前缀)` 逐字成立。
+  **同一次提交里含并行改动面的本体**：这一节 20 行在 HEAD 里不存在（`git diff --stat README.md` = 20 insertions），
+  是我的 URL 修复落在他们未提交的新增之上 ⇒ 提交必然把他们那段一起带走。这里点名而不是静默带走。
+
+### FIXED(2026-09-28T10:22:50Z / BUG-110)
+README 两条安装线改 GitHub master raw 直链 + GitCode 降为浏览备用并写明 200/HTML 实测；
+代码栅栏的 0x08 坏字节清除，六条装后命令独立成块。判据面：`check_doc_surface.py` 全量复跑，
+`check_release_asset_names.py` R6 早已把"首选线必须 GitHub master"钉在安装器侧（文档侧这条暂无自动门，见下）。
