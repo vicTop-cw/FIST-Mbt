@@ -54,11 +54,11 @@ T0           (root)
 ## MCP Tools
 
 Not listed here any more — a hand-copied second inventory is exactly what rotted
-(it sat at "41 total" while the registry had grown to 126; BUG-67).
+(it sat at "41 total" while the registry had grown to 129; BUG-67).
 The only projections of the registry are:
 
-- `SKILL.md` §Tool count & categories — 126 tools, grouped as
-  生命周期 14、查询 2、运维·编排 14、自驱闭环 9、运维·验证·规范 17、模型路由·外部执行器 4、衍生 3、看板·DAG·规划 22、自我记忆·自进化 11、Marketplace·能力路由 5、审计·多租户 5、GitHub/GitCode 同步·缺陷外发 12、开发模式与模板 2、Omega 强验证 6
+- `SKILL.md` §Tool count & categories — 129 tools, grouped as
+  生命周期 14、查询 2、运维·编排 14、自驱闭环 9、运维·验证·规范 20、模型路由·外部执行器 4、衍生 3、看板·DAG·规划 22、自我记忆·自进化 11、Marketplace·能力路由 5、审计·多租户 5、GitHub/GitCode 同步·缺陷外发 12、开发模式与模板 2、Omega 强验证 6
 - README §功能全景 (repo) — the grouping source, pinned against `tools/list`
   by `scripts/check_doc_surface.py` J4 and re-checked at plugin-generation time
 

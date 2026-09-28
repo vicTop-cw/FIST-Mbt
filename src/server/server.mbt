@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 126 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 129 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|

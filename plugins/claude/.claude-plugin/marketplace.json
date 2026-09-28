@@ -11,7 +11,7 @@
   "plugins": [
     {
       "name": "fist-mbt",
-      "description": "FIST 指挥官任务编排与自驱流水线：126 个 MCP 工具 + fist-mbt/fist-commander 两个 skill",
+      "description": "FIST 指挥官任务编排与自驱流水线：129 个 MCP 工具 + fist-mbt/fist-commander 两个 skill",
       "source": "./",
       "category": "development"
     }
