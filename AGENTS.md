@@ -99,7 +99,7 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**126 tools** + 3 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**129 tools** + 3 resources + 2 prompts）：
 
 ### 生命周期（14）
 | 工具 | 说明 |
@@ -178,6 +178,9 @@ You can browse and install extra skills here:
 | `progress_gate` | 进度预算路由门控（R88，PROGROUTER arXiv 2608.25992 蒸馏）：对任务子树按已消耗预算(难度权重 易/中/难→1/2/3，自动估算或手动注入 spent)与完成进度(已完成+已归档/子树任务数)做双路径剩余成本预测——线性=燃尽率×剩余工作量、保守=1.2×线性，元门控给决策 OK(预算充足继续)/CAUTION(线性可行但缓冲不足，建议降档缩范围)/ESCALATE(线性已超支，建议追加预算或暂停)——预算×进度在线体检，先预警后决策 |
 | `project_standards` | AI 项目开发规范（R116，机器投影；规范性正文真源 = `AI-DEVELOPMENT-STANDARD.md`）：通用 5 条（文档即实现/**一源四态**/确定性优先/增量零回归/自我迭代）+ FIST 专项 5 条（用自身能力迭代/**四态必须对齐**/证据梯至少 L4/重任务先拆 DAG/工具命名即文档）；附 7 项四态 checklist（cl1-mcp-exists → cl6-doc-sync → **cl7-plugin-forms-sync**），可直接喂 output_validate 当验收门禁。纯计算零依赖。白盒锁：`src/server/project_standards_wbtest.mbt`（此前该工具零覆盖）。 |
 | `laya_decide` | Laya 决策（冷启动选档/功能路由 + 确定性回退）：有 Laya→sidecar 决定难度/拆分数/机制选择；无 Laya→降级到内建规则式决策分支（laya_route 纯计算：按任务描述关键词对机制族打分选 feature_route + 复杂度启发式给 split_n）。研发方向「功能太多难决策 / 复杂多任务不知用哪些功能」的落点 |
+| `loop_create` | 创建组合环（Phase 6）：preset=full-iterate/fix-iterate/build-verify 或自定义 steps，注册到进程内 LoopRegistry |
+| `loop_tick` | 推进一环（Phase 6）：取当前 steps[idx] → 返回 next_mode / next_round / should_stop / stop_reason |
+| `loop_status` | 查询组合环状态（Phase 6）：name 空=列出所有已注册环，name 指定=单环完整 JSON |
 
 ### 衍生子项目 · ATGC-old（3）
 | 工具 | 说明 |

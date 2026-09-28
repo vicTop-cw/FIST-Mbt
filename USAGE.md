@@ -154,12 +154,12 @@ def rpc(method, **payload):
 三步跑通即 MCP server 端到端可用、环境就绪。
 
 > 本机实测：`python scripts/mcp_smoke.py` 一键自检输出
-> `PASS tools/list → 126 个工具` / `PASS publish → T?` / `PASS get → T? [待领取]` / `MCP-SMOKE PASS`。
+> `PASS tools/list → 129 个工具` / `PASS publish → T?` / `PASS get → T? [待领取]` / `MCP-SMOKE PASS`。
 > 三步 = 该脚本的内部逻辑，二者完全一致。
 
 ---
 
-## 6. 126 个 MCP 工具手册
+## 6. 129 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
@@ -415,7 +415,10 @@ def rpc(method, **payload):
 | `evolve_distill` | 自进化蒸馏（EvolveR 最小级）：把 verify 通过的任务交付物蒸馏成 principle 写入 DGM（goal 加 [principle] 前缀，code 写蒸馏内容，复用 evolve_upsert 落库 + Archive 查重语义） | task_id(必) goal(必) note(必) score(选,默认1.0) now(选) |
 | `evolve_snapshot` | 查看档案库快照（count/best/summaries/dead_ends/lineage_of_best） | 无 |
 | `evolve_sample` | 按 p∝s·h 多样性加权采样父代产物（子代越少/性能越高越可能被选） | rand(选,伪随机种子) |
-| `laya_decide` | Laya 可选决策工具（自动探测）：对任务/文本快速分类，命中返回结构化 answers；机器无 laya 返回 available:false 降级，不影响现网 | context(必) questions(选,JSON) model(选,默认english) |
+| laya_decide | Laya 决策（冷启动选档/功能路由）
+| loop_create | 创建组合环（Phase 6）：preset 或自定义 steps |
+| loop_tick | 推进一环（Phase 6）：返回 next_mode / should_stop |
+| loop_status | 查询组合环状态 | Laya 可选决策工具（自动探测）：对任务/文本快速分类，命中返回结构化 answers；机器无 laya 返回 available:false 降级，不影响现网 | context(必) questions(选,JSON) model(选,默认english) |
 
 ### 6.13 Omega 强验证（语料驱动，task_plan_deep 传 omega_strong_verify=true 开启）
 
