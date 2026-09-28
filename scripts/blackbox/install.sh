@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # scripts/blackbox/install.sh —— curl 一条命令安装入口（Linux/WSL）
 #
-# 用户跑：
-#   curl -fsSL https://gitcode.com/VictorTop/Fist-Mbt/-/raw/main/scripts/blackbox/install.sh | bash
-# 或：
+# 用户跑（首选，2026-09-28 实测公网可达且返回正文即脚本）：
 #   curl -fsSL https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install.sh | bash
 #   （GitHub 侧默认分支实测为 master；写成 main 会 404）
+# 备用（GitCode 镜像）：
+#   curl -fsSL https://gitcode.com/VictorTop/Fist-Mbt/-/raw/master/scripts/blackbox/install.sh | bash
+#   实测该域三种 raw 形状匿名 GET 都返回 **HTTP 200 + 一整个 HTML 页** ⇒ 只能备用，
+#   且下面两处都做了"正文形状"检查：200 不等于拿到文件。
 #
 # 下载源（自动 fallback）：
 #   1. GitCode Release Assets 直链
@@ -37,6 +39,12 @@ fi
 if [ -z "$VERSION" ]; then
   for r in $RAW_MOONMODS; do
     mm=$(curl -fsSL --max-time 20 "$r" 2>/dev/null) || continue
+    # BUG-107：有些托管域匿名 raw 直链回的是 HTML 页且状态码 200 —— 不 sniff 正文就会把"源给的是网页"
+    # 和"源不可达"混成同一句话，用户按处方排查会走错方向。
+    case "$mm" in
+      "<"!DOCTYPE*|"<"doctype*|"<"html*)
+        echo "  · $r 返回 HTML 页而不是文件（该源不可用作 raw 直链）" >&2; continue ;;
+    esac
     VERSION=$(printf '%s' "$mm" | sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
     if [ -n "$VERSION" ]; then VERSION_SOURCE="$r"; break; fi
   done
@@ -128,6 +136,11 @@ for URL in $( [ "$DOWNLOADED" -eq 1 ] || printf "%s\n" "${URLS[@]}" ); do
     HTTP_CODE=$(wget -q --timeout=60 -O "$ZIP_PATH" "$URL" 2>/dev/null && echo 200 || echo err)
   fi
   [ "$HTTP_CODE" != "200" ] && echo -e "${YELLOW}  ⚠️ HTTP ${HTTP_CODE} ... 换源${NC}"
+  # BUG-107：状态码 200 + 一大页 HTML 也能过"大于 10KB"这一关 ⇒ 先看前两字节是不是 zip 魔数 PK
+  if [ -f "$ZIP_PATH" ] && [ "$(head -c 2 "$ZIP_PATH" 2>/dev/null)" != "PK" ]; then
+    echo -e "${DIM}  · 该源给的不是 zip（首两字节 $(head -c 8 "$ZIP_PATH" 2>/dev/null | tr -d '\0')，多半是 HTML 页）${NC}"
+    rm -f "$ZIP_PATH"; continue
+  fi
   if [ -f "$ZIP_PATH" ] && [ "$(stat -c%s "$ZIP_PATH" 2>/dev/null || stat -f%z "$ZIP_PATH")" -gt 10240 ]; then
     KS=$(( $(stat -c%s "$ZIP_PATH" 2>/dev/null || stat -f%z "$ZIP_PATH") / 1024 ))
     echo -e "${GREEN}  ✅ 下载成功 (${KS} KB)${NC}"

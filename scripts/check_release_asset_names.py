@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
-"""BUG-103 + BUG-105 判据：发布资产名 ↔ 安装器 ↔ moon.mod 三者一致，且装完的命令名两类 shell 都可见。
+"""BUG-103 + BUG-105 + BUG-107 判据：资产名/版本真源同源、命令名两类 shell 都可见、200 不等于拿到文件。
 
-（R5 为什么住在"资产名"这个守卫里：本守卫真正管的是**分发面同源**——用户按文档敲的那条命令、
-和发布链产出的那个文件名，两边必须对得上。资产名对不上是"下载 404"，命令名对不上是"下载成功却
-找不到命令"，同一张表面的两种失效，拆成两个守卫只会各看半边。）
+（R5/R6 为什么住在"资产名"这个守卫里：本守卫真正管的是**分发面同源**——用户按文档敲的那条命令、
+和发布链产出的那个文件名、以及那条命令实际拿回来的字节，三者必须说的是同一件事。
+资产名对不上是"下载 404"，命令名对不上是"下载成功却找不到命令"，
+源返回 HTML 是"HTTP 200 但装不了"——同一张表面的三种失效，拆成三个守卫只会各看半边。）
 
 要钉的失效形状（本轮实测）：`install_onecmd.ps1` 与 `install.sh` 的默认版本写死 `0.3.0-beta`，
 而发布资产名由 `build_release.ps1` 按 moon.mod 的 `0.3.0` 生成 ⇒ 用户跑字面的
 `irm … | iex`（不带任何参数）时，两条下载源都指向发布链永远不会产出的文件名。
 CI 看不见这条：CI 不发 Release，也不跑安装器。
 
-判据（五条，全部只看文本形状，不联网）：
+判据（六条，全部只看文本形状，不联网）：
   R1 安装器不许给版本号写死字面量默认值（`$Version = "0.x"` / `VERSION="0.x"`）；
   R2 两个安装器都要真的从 moon.mod 取版本（出现 moon.mod 且出现解析用的正则/sed）；
   R3 资产名模板三处一致：install_onecmd.ps1 / install.sh / build_release.ps1 必须都是
@@ -20,9 +21,13 @@ CI 看不见这条：CI 不发 Release，也不跑安装器。
      `#!/bin/sh` shim 并有"四件齐"的 exit 1 门（POSIX shell 不解析 PATHEXT ⇒ 只给 .cmd
      就等于在 Git Bash / MSYS / agent harness 的 bash 里 `fist` 不存在）；
      WSL/Linux 侧必须有 `cat > "$BIN_DIR/fist"` + `chmod +x`。
+  R6 「200 不等于拿到文件」（BUG-107，公网实测）：GitCode 三种 raw 形状（`/-/raw/`、`/raw/`、`raw.` 子域）
+     匿名 GET 都返回 HTTP 200 + 一整个 HTML 页 ⇒ 文档首选安装线必须指 GitHub **master** 的 raw 直链
+     （写成 main 实测取不到），且两个安装器都要 (a) 对 moon.mod 响应做 HTML 形状检查、
+     (b) 下载后验 zip 魔数 `PK`——只按「状态码 200 + 大于 10KB」放行，一页 HTML 就能被当作资产继续解压。
 
 自证：写死默认值必红 / 缺 moon.mod 解析必红 / 资产名漂移必红 / 空值不失败必红 /
-无扩展名 shim 被摘掉必红 + 干净输入不误红。
+无扩展名 shim 被摘掉必红 / 不做 HTML 与魔数检查必红 / 文档首选线漂到 main 必红 + 干净输入不误红。
 """
 import argparse, io, os, re, sys
 
@@ -103,6 +108,22 @@ def judge(texts):
         problems.append("R5 install.sh 没写无扩展名 $BIN_DIR/fist")
     if not re.search(r'chmod \+x "\$BIN_DIR/fist"', sh):
         problems.append("R5 install.sh 忘了 chmod +x（写了 shim 但不可执行）")
+    # R6 「200 不等于拿到文件」（BUG-107，公网实测：GitCode 三种 raw 形状都回 HTML 页且状态码 200）
+    DOC_GH_MASTER = re.compile(
+        r'raw\.githubusercontent\.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/'
+        r'(?:install_onecmd\.ps1|install\.sh)')
+    for name, txt in (("install_onecmd.ps1", ps1), ("install.sh", sh)):
+        if not DOC_GH_MASTER.search(txt):
+            problems.append("R6 %s 文档首选安装线没指 GitHub master 的 raw 直链"
+                            "（实测唯一匿名可达；写成 main 或非 GitHub 源会把用户送去 HTML 页）" % name)
+    if "<(!DOCTYPE|html)" not in ps1:
+        problems.append("R6 install_onecmd.ps1 没对 moon.mod 响应做 HTML 形状检查")
+    if "0x50" not in ps1 or "0x4B" not in ps1:
+        problems.append("R6 install_onecmd.ps1 下载后没验 zip 魔数 PK（HTML 页也可能 >10KB）")
+    if '"PK"' not in sh:
+        problems.append("R6 install.sh 下载后没验 zip 魔数 PK")
+    if "!DOCTYPE" not in sh:
+        problems.append("R6 install.sh 没对 moon.mod 响应做 HTML 形状检查")
     return problems
 
 
@@ -134,6 +155,11 @@ def selftest():
         ("ps1", 'Set-Content -Path "$bin\\fist"     -Value $shimSh -Encoding ASCII -NoNewline',
          "  # (变异：POSIX shim 不再写出)", "R5"),
         ("sh", 'chmod +x "$BIN_DIR/fist"', 'chmod +x "$BIN_DIR/fist.cmd"', "R5"),
+        # R6 三支：摘掉 zip 魔数检查 / 摘掉 HTML 形状检查 / 文档首选线漂到 main
+        ("sh", '[ "$(head -c 2 "$ZIP_PATH" 2>/dev/null)" != "PK" ]', 'false', "R6"),
+        ("ps1", "<(!DOCTYPE|html)", "<NO-HTML-SNIFF>", "R6"),
+        ("ps1", "FIST-Mbt/master/scripts/blackbox/install_onecmd.ps1",
+         "FIST-Mbt/main/scripts/blackbox/install_onecmd.ps1", "R6"),
     ]
     for key, old, new, want in checks:
         if key == "ps1" and new.strip().startswith("#"):
@@ -150,7 +176,7 @@ def selftest():
             fails.append(r)
     for f in fails:
         print("SELFTEST FAIL " + f)
-    print("SELFTEST %s（干净不误红 + 变异必红：R1×2 / R2 / R3×2 / R4×1 / R5×2）" % ("OK" if not fails else "FAIL"))
+    print("SELFTEST %s（干净不误红 + 变异必红：R1×2 / R2 / R3×2 / R4 / R5×2 / R6×3）" % ("OK" if not fails else "FAIL"))
     return 0 if not fails else 2
 
 

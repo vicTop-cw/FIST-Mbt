@@ -2,10 +2,14 @@
 <#
 scripts/blackbox/install_onecmd.ps1 —— irm 一条命令安装入口（v2 Release Assets 版）
 
-用户跑：
-  irm https://gitcode.com/VictorTop/Fist-Mbt/-/raw/main/scripts/blackbox/install_onecmd.ps1 | iex
-或（GitHub 镜像）：
-  irm https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/main/scripts/blackbox/install_onecmd.ps1 | iex
+用户跑（首选，2026-09-28 实测公网可达且返回正文即脚本）：
+  irm https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install_onecmd.ps1 | iex
+备用（GitCode 镜像，同一份内容）：
+  irm https://gitcode.com/VictorTop/Fist-Mbt/-/raw/master/scripts/blackbox/install_onecmd.ps1 | iex
+
+分支名用 master 不是 main：GitHub 默认分支是 master，raw/main 那条实测取不到东西。
+GitCode 侧实测三种形状（/-/raw/、/raw/、raw. 子域）匿名 GET 都返回 **HTTP 200 + HTML 页**，
+所以它只能当备用，且必须过下面那道"正文形状"检查（200 不等于拿到文件）。
 
 下载源（自动按序 fallback）：
   1. GitCode Release Assets 直链
@@ -57,7 +61,14 @@ if ($Version -eq "") {
     foreach ($r in $rawUrls) {
       try {
         $mm = (Invoke-WebRequest -Uri $r -UseBasicParsing -TimeoutSec 20).Content
+        # BUG-107：状态码 200 不代表拿到了文件。GitCode 匿名 raw 直链实测返回一整个 HTML 页，
+        # 而 HTML 里没有 `version = "…"` ⇒ 旧代码会安静地跳到下一个源，用户看不到"这源给的是网页"。
+        if ($mm -match '^\s*<(!DOCTYPE|html)') {
+          Write-Host "  · $r 返回 HTML 页而不是文件（该源不可用作 raw 直链）" -ForegroundColor DarkGray
+          continue
+        }
         if ($mm -match '(?m)^\s*version\s*=\s*"([^"]+)"') { $Version = $matches[1]; $versionSource = $r; break }
+        Write-Host "  · $r 的正文里没有可解析的 version 行" -ForegroundColor DarkGray
       } catch {
         Write-Host "  · 取不到 $r ：$($_.Exception.Message)" -ForegroundColor DarkGray
       }
@@ -100,6 +111,13 @@ foreach ($u in $(if ($downloaded) { @() } else { $urls })) {
   Write-Host "  尝试: $u" -ForegroundColor DarkGray
   try {
     Invoke-WebRequest -Uri $u -OutFile $zipPath -UseBasicParsing -TimeoutSec 60
+    # BUG-107：光看大小会被"200 + 一整页 HTML"糊过去（备用源的真实形状就是网页）。
+    # zip 的前两字节必须是 PK —— 这一条判据不看状态码，只看拿到的东西是什么。
+    $magic = [IO.File]::ReadAllBytes($zipPath)[0..1]
+    if ($magic[0] -ne 0x50 -or $magic[1] -ne 0x4B) {
+      Write-Host "  · 该源给的不是 zip（前两字节 $([BitConverter]::ToString($magic))，多半是 HTML 页）" -ForegroundColor DarkGray
+      Remove-Item $zipPath -Force; continue
+    }
     if ((Get-Item $zipPath).Length -gt 10KB) {
       Write-Host "  ✅ 下载成功 ($([math]::Round((Get-Item $zipPath).Length/1KB,1)) KB)" -ForegroundColor Green
       $downloaded = $true; break

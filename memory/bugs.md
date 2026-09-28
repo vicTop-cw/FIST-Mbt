@@ -1736,3 +1736,37 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
     other => { println("未知子命令: \{other}"); print_help(); exit(2) }
   退出码建议 2（区分"用法错"与"运行错"），并配一条白盒钉 `未知子命令` 分支不再回 0。
 - 出路：并行改动面收口后由该文件当前 owner 落上面这段（本环会在下一轮巡回里复测这四个旗）。
+## BUG-107 [2026-09-28T08:19:46Z] [high] FIXED
+- summary: 文档写的主安装线（GitCode raw 直链）匿名 GET 返回 HTTP 200 + 一整个 HTML 页，另一条写的是 GitHub `main` 分支而默认分支是 master ⇒ 用户照文档 `irm … | iex` 第一步就拿到网页
+- detail:
+  只读探测（不执行任何拿到的脚本、不带凭据）实测四路：
+    GitHub raw **master**  → 200，正文首行 `#!/usr/bin/env pwsh`（唯一真正可用的 raw 直链）
+    GitHub raw main        → 取不到（该仓默认分支是 master，raw/main 没有这条路径）
+    GitCode /-/raw/master  → **200 + `<!DOCTYPE html>`**（5527 字节的网页，不是文件）
+    GitCode /raw/master、/raw/main → 同样 200 + HTML；raw.gitcode.com 子域 → 403
+  最坏的一点是**状态码是 200**：旧代码只看"能不能拿到内容 + 大于 10KB"，
+  于是"源给的是网页"和"源不可达"在用户侧是同一句模糊提示；
+  而 `irm … | iex` 把 HTML 灌进 iex 会当场炸解析错，用户只会看到"按文档装的失败"。
+  同一形状也污染 BUG-103 修的 moon.mod 版本解析：GitCode 兜底那条永远解析不到 version。
+  修法（都在**我这侧**的两个安装器，README 那两行在并行改动面手里，见本条末）：
+  ① 首选线一律改成 GitHub master 的 raw 直链，GitCode 降为备用并写明实测形状；
+  ② 取 moon.mod 时先 sniff 正文（`<(!DOCTYPE|html)` ⇒ 点名"这源给的是网页"再换源），
+     解析不到 version 也单独说一句；
+  ③ 下载资产后**先验 zip 魔数 `PK`** 再看大小（bash 侧 `head -c 2`，PS 侧读前两字节比对 0x50/0x4B），
+     不是 zip 就删掉换源——只看 200 与 10KB 的放行等于把网页当资产解压。
+  判据面：`check_release_asset_names.py` 五条 ⇒ **六条**（新增 R6 钉这三件事 + 首选线必须是 GitHub master），
+  `--selftest` 八格 ⇒ 十一格（R6×3：摘掉 PK 检查必红、摘掉 HTML sniff 必红、首选线漂回 main 必红）。
+- 归属边界：README「黑盒用户」那两行现在写的是 GitCode `/-/raw/main/...`（并行改动面本轮新加，
+  实测该 URL 返回 HTML）。该文件对方在写 ⇒ 本轮不代改，交过去的话就是把首选线换成
+  `https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install_onecmd.ps1`。
+
+### FIXED(2026-09-28T08:19:46Z / BUG-107)
+只读探测留证（脚本 `temp/b105_irm_readonly.py` / `temp/b105_url_shapes.py`，只 GET 不执行）：
+  GitHub raw master → 200 且首行 `#!/usr/bin/env pwsh`（5557 字节，正文即脚本）
+  GitCode 三形状 → 200 + 首行 `<!DOCTYPE html>`（5527 字节）；raw.gitcode.com → 403
+修复面复算：
+  `bash -n scripts/blackbox/install.sh` rc=0；`check_ps_encoding` rc=0（.ps1 仍带 BOM、解析 0 错）；
+  `check_release_asset_names.py` 全量 rc=0（PASS），`--selftest` → `SELFTEST OK`
+    （干净不误红 + 变异必红：R1×2 / R2 / R3×2 / R4 / R5×2 / R6×3，共十一格）
+自证侧的针也修过一次：R6 的"首选线"正则起初写成 `install_(?:onecmd\.ps1|sh)`，
+把 `install.sh` 拼成了 `install_sh` ⇒ 干净输入被误判红（判据坏了，不是产品坏了）。
