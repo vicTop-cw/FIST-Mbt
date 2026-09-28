@@ -205,3 +205,19 @@ BUG-93 退役入口 `cmd/main` 散落 15+ 处）。仍未做：服务面级 catc
    少一格的行在渲染时会被静默补空，正好看不到"这条没有证据"。
 
 来源：本轮以用户身份安装的 `fist`（sha256:616b7632）+ 仓库工作树；临时件在 `temp/`，历史面只追加。
+
+## 再补遗 · 装完之后命令在 bash 里不存在（BUG-105）与一条新开（BUG-106）（盖章 2026-09-28T07:51:57Z）
+
+| 项 | 结论 | 证据（逐字可回溯） |
+|---|---|---|
+| 缺陷 | BUG-105（medium，入账即 FIXED）：Windows 安装器只给 `.cmd` shim ⇒ bash 侧 `fist` 不存在；顺带 shim 注释里的 em dash 被 ASCII 写盘压成 `?` | bash `which fist` → not found；`ls ~/.local/bin` 只见 `fist.cmd`/`fist-mbt.cmd`（102 字节，内容 `REM FIST-Mbt shim ? v0.3.0`） |
+| 修法 | `install_onecmd.ps1` 再写无扩展名 `fist`/`fist-mbt`（`#!/bin/sh`，LF）+「四件齐」门 +「shebang/无 CR」门 | `scripts/blackbox/install_onecmd.ps1` 的 `创建 shim + PATH` 段与自检段 |
+| 判据 | `check_release_asset_names.py` R1-R4 ⇒ **R1-R5**；`--selftest` 六格 ⇒ 八格（R5×2 变异必红 + 干净不误红） | `temp/r5_selftest.log` 尾行 `SELFTEST OK`；全量 `temp/r5_full.log` rc=0 |
+| 门承重对照 | M1 摘掉两条 POSIX 写入 ⇒ rc=1 并点名 `shim 未全部写出：fist, fist-mbt`；M2 原样复跑 ⇒ rc=0 | `python temp/b105_gate_canary.py`（两格，1 红 1 绿） |
+| 调用面（隔离 bin） | 四件齐：`fist`/`fist-mbt` bytes=77 CR=0 head=`#!/bin/sh`，`.cmd` 两份 CR=4；bash 里 `fist version`→`FIST-Mbt v0.3.0`、`fist doctor`→`5/5 checks 通过` | `python temp/b105_shim_probe.py` + `PATH=temp/b105-shim-bin bash -c 'fist doctor'` |
+| 真机面 | `~/.local/bin/fist` 新增后 `which fist` → `/c/Users/victo/.local/bin/fist`，`fist version` → v0.3.0（**只新增不覆盖**：`.cmd` 与 `fist-mbt.js` 保持并行改动面装好的那份） | `ls -la ~/.local/bin` 与 `fist version` 输出 |
+| 新开 | BUG-106（medium，OPEN，跨环移交）：`--help/-h/--version/-V` 判"未知子命令"且**退出码 0**；补丁已随账本给出 | 逐旗实测：`--help`→`未知子命令: --help` exit=0；`-V`→同 exit=0；`help`/`version` 正常 |
+
+一处口径澄清（不改写上文，只在此点名）：上文「再补遗」段说 read 面 `skipped=12`、write 面 `skipped=6`，
+那是 129 工具里**授权边界内主动不打**的件数（真发 issue / 真关 issue / 改真账本等），
+不是"没测到" ⇒ `not_tested=0` 才是覆盖判据。

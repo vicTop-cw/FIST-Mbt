@@ -1678,3 +1678,61 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
   write 面：TOUR: GREEN —— 129 工具 ok=81 refused=42 skipped=6 crashed=0 not_tested=0 复活=0 自述面红=0
 判据对照实测（`python scripts/mcp_tool_tour.py --surface-selftest`）：
   SURFACE-SELFTEST: OK —— 12 支（10 违例 + 1 干净 + 1 自拒），不符 0 支
+## BUG-105 [2026-09-28T07:50:09Z] [medium] FIXED
+- summary: Windows 安装器只产出 `.cmd` shim ⇒ 装完之后在 Git Bash / MSYS / agent harness 的 bash 里 `fist` 直接 command not found
+- detail:
+  POSIX shell 不解析 PATHEXT，只给 `fist.cmd` 就等于在这个用户的主目录 bin 里放了一个
+  "Windows 才认的名"。本轮就是被这条撞出来的：`which fist` 在 bash 里报 not found，
+  而同一个命令在 PowerShell 里跑得好好的（`fist doctor` 5/5）——两半都是真的，
+  缺的那半是"文档写着 `fist help`，读者用的却是 bash"。
+  顺带两处实测到的粗糙：① 旧 shim 的注释行写了 em dash，而写盘用 `-Encoding ASCII` ⇒ 落成真 `?`
+  （`REM FIST-Mbt shim ? v0.3.0`）；② 无扩展名 shim 的行尾必须是 LF，CRLF 的 shebang 在
+  bash 里报的是 `bad interpreter`，装完当场看不出来。
+  修法：安装器在 `%USERPROFILE%\.local\bin` 里同时写 `fist.cmd`/`fist-mbt.cmd` 与无扩展名
+  `fist`/`fist-mbt`（`#!/bin/sh` + `exec node "<js>" "$@"`，LF），并加两道硬门：
+  四件不齐 ⇒ 点名缺哪几件再 `exit 1`；shim 头不是 `#!/bin/sh` 或字节里含 CR ⇒ 同样 `exit 1`。
+  判据面：`scripts/check_release_asset_names.py` 增 **R5**（分发面同源守卫的第 5 条，
+  同守卫另两条钉资产名与版本真源）——Windows 侧必须有无扩展名写入 + 四件门，
+  WSL/Linux 侧必须有 `cat > "$BIN_DIR/fist"` + `chmod +x`；`--selftest` 从六格加到八格
+  （R5×2：摘掉 Set-Content 那两行必须红、`chmod +x` 改错文件名必须红），AGENTS 守卫族条目与
+  scripts/README 行同步到 R5/八格（J10：自述范围==实现范围）。
+  本机也按新形状补齐了 shim（只**新增**两个无扩展名文件，没覆盖并行改动面已装好的 `.cmd` 与产物）。
+### FIXED(2026-09-28T07:50:09Z / BUG-105)
+调用面实测（隔离 bin 里跑安装器摘出的那一段，逐字摘自 `install_onecmd.ps1`，不借副作用）：
+  正向：`temp/b105-shim-bin` 落四件 `fist`/`fist-mbt`/`fist.cmd`/`fist-mbt.cmd`，
+        POSIX 两份 bytes=77 CR=0 head=b'#!/bin/sh'，`.cmd` 两份 CR=4（CRLF 正确）；
+        `PATH=<隔离bin> bash -c 'fist version'` → `FIST-Mbt v0.3.0`（exit=0）；
+        `fist doctor` → `5/5 checks 通过`（exit=0）。
+  负面对照（`temp/b105_gate_canary.py`）：摘掉两条 POSIX 写入 ⇒ rc=1 且点名
+        `shim 未全部写出：fist, fist-mbt（期望 .cmd + 无扩展名 POSIX 两份）`；
+        原样复跑 ⇒ rc=0。门承重成立（1 红 1 绿）。
+  真机安装面：`~/.local/bin/fist` 新增后，bash 里 `which fist` → `/c/Users/victo/.local/bin/fist`，
+        `fist version` → `FIST-Mbt v0.3.0`。
+  守卫面：`check_release_asset_names.py --selftest` → `SELFTEST OK`（八格）；全量 rc=0；
+        `check_doc_surface` rc=0（R5 的自述已同步）；`check_ps_encoding` rc=0（安装器 BOM/解析 0 错）。
+
+## BUG-106 [2026-09-28T07:50:09Z] [medium] OPEN
+- summary: `fist --help` / `-h` / `--version` / `-V` 被当"未知子命令"，且未知子命令的退出码是 0
+- detail:
+  调用面实测（安装态产物，bash 走 POSIX shim 逐个打）：
+    `--help` → 首行 `未知子命令: --help`，exit=0
+    `-h`     → 首行 `未知子命令: -h`，exit=0
+    `--version` → 首行 `未知子命令: --version`，exit=0
+    `-V`     → 首行 `未知子命令: -V`，exit=0
+    `help`/`version` → 正常，exit=0
+  两半都是缺陷，第二半更坑：`未知子命令` 却回 0 ⇒ `fist --version || exit 1` 这类包装
+  会把失败读成成功（与 BUG-19/23 一族同型：拒绝要有形，还要可判）。
+- remedy（本轮不代改的原因与补丁一起给）：
+  真源 `cmd/cli/main.mbt` 的分发块现在是并行改动面的**在写文件**（工作树已 dirty，
+  同批还有未跟踪的 `cmd/cli/help_topics.mbt`；`fist help <topic>` 正在那里长出来）。
+  往对方正在重写的 match 里插两条臂，对方随后整档写回就会静默吃掉我的修复 ⇒
+  留成 OPEN 并把可粘贴的补丁交过去：
+    "serve" => run_serve()
+    "version" | "--version" | "-V" => run_version()
+    "demo" => run_demo()
+    "doctor" => run_doctor()
+    "help" | "--help" | "-h" => run_help(args)
+    "" => print_help()
+    other => { println("未知子命令: \{other}"); print_help(); exit(2) }
+  退出码建议 2（区分"用法错"与"运行错"），并配一条白盒钉 `未知子命令` 分支不再回 0。
+- 出路：并行改动面收口后由该文件当前 owner 落上面这段（本环会在下一轮巡回里复测这四个旗）。

@@ -142,9 +142,26 @@ if ($needPython -and $pyPatch) {
 Write-Host ""
 Write-Host "🔧 创建 shim + PATH ..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Path $bin -Force | Out-Null
-$shim = "@echo off`r`nREM FIST-Mbt shim — v" + $Version + "`r`nnode `"$dest\fist-mbt.js`" %*`r`n"
-Set-Content -Path "$bin\fist.cmd"      -Value $shim -Encoding ASCII
-Set-Content -Path "$bin\fist-mbt.cmd"  -Value $shim -Encoding ASCII
+# 注释一律纯 ASCII：这下面用 -Encoding ASCII 写盘，非 ASCII 字符会被替换成 '?'
+# （实测旧版那行 REM 落盘成 "shim ? v0.3.0"），而 shim 内容本身不参与执行，别放中文。
+$shimCmd = "@echo off`r`nREM FIST-Mbt shim (v" + $Version + ")`r`nnode `"$dest\fist-mbt.js`" %*`r`n"
+Set-Content -Path "$bin\fist.cmd"     -Value $shimCmd -Encoding ASCII
+Set-Content -Path "$bin\fist-mbt.cmd" -Value $shimCmd -Encoding ASCII
+# BUG-105：POSIX shell（Git Bash / MSYS / Cygwin / agent harness 的 bash 工具）不按 PATHEXT
+# 解析命令名 ⇒ 只写 .cmd 的话，装完在同一台机器的 bash 里 `fist` 直接 command not found。
+# 再写一份无扩展名 shim；换行必须是 LF——CRLF 的 shebang 会让 sh 报 "bad interpreter"。
+$shimSh = '#!/bin/sh' + "`n" + 'exec node "' + $dest + '\fist-mbt.js" "$@"' + "`n"
+Set-Content -Path "$bin\fist"     -Value $shimSh -Encoding ASCII -NoNewline
+Set-Content -Path "$bin\fist-mbt" -Value $shimSh -Encoding ASCII -NoNewline
+# 硬门：四件齐才算装上。少一件就是"文档说装好了、命令却找不到"的那类坑，绝不静默放过。
+$shimMissing = @()
+foreach ($f in @("fist.cmd", "fist-mbt.cmd", "fist", "fist-mbt")) {
+  if (-not (Test-Path (Join-Path $bin $f))) { $shimMissing += $f }
+}
+if ($shimMissing.Count -gt 0) {
+  Write-Host "❌ shim 未全部写出：$($shimMissing -join ', ')（期望 .cmd + 无扩展名 POSIX 两份）" -ForegroundColor Red
+  exit 1
+}
 
 $pathUser = [Environment]::GetEnvironmentVariable("PATH", "User")
 $pathChanged = $false
@@ -161,6 +178,16 @@ try { $v = (& node "$dest\fist-mbt.js" version 2>&1 | Out-String).Trim(); if ($v
 try { $null = (& node "$dest\fist-mbt.js" help 2>&1 | Select-Object -First 1) } catch { }
 Write-Host "  ✅ fist-mbt.js 可执行" -ForegroundColor Green
 try { $vv = (& fist version 2>&1 | Out-String).Trim(); Write-Host "  ✅ fist.cmd (PATH) → $vv" -ForegroundColor Green } catch { Write-Host "  ⚠️ 当前会话 PATH 未刷新（新开终端即可）" -ForegroundColor Yellow }
+# 无扩展名那份只能由 POSIX shell 验到：这里核字节（shebang 必须是首行且行尾不是 CRLF），
+# 因为 CRLF 的 `#!/bin/sh` 在 Git Bash 里报的是 "bad interpreter"——装完当场看不出来。
+$shBytes = [IO.File]::ReadAllBytes((Join-Path $bin "fist"))
+$shHead = [Text.Encoding]::ASCII.GetString($shBytes[0..8])
+if ($shHead -eq "#!/bin/sh" -and ($shBytes -notcontains 13)) {
+  Write-Host "  ✅ fist (POSIX shim, LF) 供 Git Bash / MSYS 使用" -ForegroundColor Green
+} else {
+  Write-Host "  ❌ POSIX shim 头不对或含 CR（bash 下会报 bad interpreter）" -ForegroundColor Red
+  exit 1
+}
 
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════════╗" -ForegroundColor Green
