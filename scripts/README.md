@@ -21,7 +21,10 @@
 ## 现有正式工具速查
 
 **基础 / 演示**
-- `mcp_smoke.py` — MCP server 一键自检（120 工具 + publish/get 链路 + issue_scan 命中校验）。
+- `mcp_smoke.py` — MCP server 一键自检（129 工具 + publish/get 链路 + issue_scan 命中校验）。**已知边界（BUG-93）**：候选入口是 `_build/js/debug/build/cmd/main/main.js` 且不带 `serve` 子命令，而发布产物是 `cmd/cli/cli.js`（见 `blackbox/build_release.ps1`）⇒ 它绿不等于装好的 `fist-mbt` 全局命令能用；调用面全量巡回请用 `mcp_tool_tour.py`。
+- `mcp_tool_tour.py` — **全工具调用面巡回**：从 `tools/list` 的 `inputSchema.required` 反解参数，把 129 个工具逐个真打一遍，三面分栏记账（`ok` / `refused`=按设计拒绝 / `skipped`=授权边界内主动不打 / `crashed`=进程死掉后复活继续数）。写面跑在临时 box + `FIST_DB_PATH` 隔离库，仓库根 `fist-mbt.db` 一行不动。用法：`python scripts/mcp_tool_tour.py --plane write --json`（0=无崩溃/无未打到，1=有，2=入口或工具数自证失败）。
+- `store_isolation_probe.py` — **存储隔离调用面探针（BUG-90 活判据）**：同一个 cwd 两格只差 `FIST_DB_PATH`，断言行落被指定的库且 cwd 里不得长出默认库；`--selftest` 追加合成违例（库路径指到不存在的目录 ⇒ 必须报红）。用法：`python scripts/store_isolation_probe.py --selftest`（0=两格符合预期，1=违例未被抓到或隔离失效，2=找不到 server 产物）。
+- `check_ps_encoding.py` — **PowerShell 脚本编码守卫（BUG-88 分发面同源）**：Windows PowerShell 5.1 读无 BOM 的 UTF-8 `.ps1` 会按 ANSI(cp936) 解，多字节序列吞掉字符串收尾引号 ⇒ 用户在 `irm | iex` 那一步直接 ParserError，产品码一行没跑。判据：每个 `.ps1` 要么纯 ASCII，要么带 UTF-8 BOM；扫描面为空即 FATAL(2)（一个都没抓到 ≠ 没有问题）；`--selftest` 用合成违例 + 合规不误红 + 增删 BOM 变异三条自证。用法：`python scripts/check_ps_encoding.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。
 - `issue_scan.py` — **规则驱动源码扫描 CLI（打磨收尾：issue_scan 三形态之 CLI）**：薄封装 MCP 工具，扫描逻辑单真源在 MoonBit 端；用法 `python scripts/issue_scan.py <dir> [--max-findings N] [--include-tests]`（默认跳过测试文件，`--include-tests` 连 `_test/_wbtest` 一起扫），先 `moon build --target js cmd/main`。skill 文档见 `docs/issue-scan-skill.md`。
 - `award_demo.py` — **获奖自驱 DEMO（评审一条命令演示）**：串演 map→递归拆解(gradient)→验收闭环→Challenger→Critic→作用域预订→脉冲/看板 全链路，结尾自动清理临时区并 `--check` 守卫仓库干净。用法：`python scripts/award_demo.py`。
 - `cleanup_artifacts.py` — **项目整洁/生成物清理**：删除仓库根"除交付库 `fist-mbt.db` 外"的全部被 gitignore 的 `*.db / -shm / -wal` 测试/演示残留，清空 `temp/`，并把 `scripts/` 下 `_` 前缀临时脚本移入 temp/ 后清理（任务完即清策略，R66）；`--check` 模式作 CI 干净度守卫（0 = 干净，非 0 退出码 1）。用法：`python scripts/cleanup_artifacts.py` / `python scripts/cleanup_artifacts.py --check`。

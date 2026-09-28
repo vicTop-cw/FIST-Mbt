@@ -2,6 +2,7 @@ import {
   "vicTop-cw/fist-mbt/src/core",
   "mizchi/sqlite",
   "moonbitlang/x/encoding",
+  "moonbitlang/core/env",
 }
 
 supported_targets = "js+native"

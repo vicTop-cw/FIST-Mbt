@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 <#
 scripts/blackbox/install.ps1 —— FIST-Mbt 黑盒安装（Windows）
 

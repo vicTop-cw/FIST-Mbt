@@ -13,6 +13,31 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.0 (unreleased) - 安装面自证：以用户身份装 + 用装好的全局命令打满 129 工具（盖章 2026-09-28T05:09:38Z）
+
+- **判据三条新增**：`scripts/check_ps_encoding.py`（.ps1 要么纯 ASCII 要么带 UTF-8 BOM，空扫描面 FATAL 不出假绿，
+  `--selftest` 含合成违例/不误红/增删 BOM 翻转三格）、`scripts/store_isolation_probe.py`（BUG-90 活判据：同一 cwd
+  两格只差 `FIST_DB_PATH`，C1 断言行落指定库且 cwd 内不得长出默认库；`--selftest` 追一格合成违例）、
+  `scripts/mcp_tool_tour.py`（129 工具调用面巡回，参数从 `tools/list` 的 `inputSchema` 反解，
+  三面分栏 ok/refused/skipped/crashed + 基数自证）。ci.yml 守卫族 7 → 9。
+- **两个 critical 修复**：① BUG-90 `store_open(scratch=true)` 的 ns 库不参与路由（`MultiStore::get` 全仓零调用，
+  工具闭包统一用模块级 engine），行照落仓库根 `fist-mbt.db`——新增 `SqliteStore::db_path_from_env/default_db_path`
+  与运维侧 `FIST_DB_PATH`（未设置时逐字回退默认库，零回归），白盒 `src/store/store_db_path_wbtest.mbt` 三条；
+  ② BUG-91 `run_check` 无上限累积子进程 stdout/stderr 可被一次调用打死会话——`run_check_js.mbt` 每流末 1 MiB
+  + `stdout_capped/stderr_capped` 旗（`output_truncated` 语义不变）。
+  两处都有两态实测：修复前产物 C1 RED / 同夹具 2.1s 进程死；修复后两格 GREEN / 6.6s 正常回执。
+- **分发面**：安装器补离线入口 `install_onecmd.ps1 -LocalZip`、`install.sh FIST_LOCAL_ZIP`；下载失败路径改为
+  打印 HTTP 状态与候选 URL；`release.yml` 标签过滤 `v[0-9]+.[0-9]+.[0-9]+` → `v*`（GitHub ref 过滤器不支持
+  字符类，实测 0 runs），发布版本源改正则读 `moon.mod`，4 处入口路径 `cmd/main` → `cmd/cli`（发布产物真身）。
+- **PS 5.1 编码债清掉**：`native-env.ps1`（实测 12 处解析错误）、`showcase.ps1`（5 处）、`demo.ps1`（0 处但中文乱码）
+  补 UTF-8 BOM，复测 `Parser::ParseFile` 三档全部 0 处。
+- **账本**：BUG-90~94 五条入账（90/91 FIXED 并落 `### FIXED` 小记；92 拒绝文案自相矛盾、93 退役入口 `cmd/main`
+  仍散在 15+ 处脚本/文档、94 `cost_stats` 未捕获 `ERR_SQLITE_ERROR` 杀会话 三条 OPEN 交裁决）；
+  现状 95 条 = 3 待修 / 81 已修 / 9 重复并入 / 1 误报。
+- **测试面**：JS 后端 **529/529**（HEAD 基线 526 + 本轮 3 条白盒，在 `git archive HEAD` 快照树跑，避开并行改动面）；
+  native 本轮未复跑。
+- **汇报**：`reports/2026-09-28-installed-cli-tour-report.md`（含逐字拒绝文案清单指针 `temp/tour_evidence.txt`）。
+
 ## v0.3.0 (unreleased) - 缺陷账本兑账 + 已知 OPEN 全部独立清零（不走流水线）
 
 - **规则先成文（`memory/bugs.md`「记账规则」段）**：应「这么死板……修了的当然能标记，递归弄的报告只能增不能删」这句质询而立。

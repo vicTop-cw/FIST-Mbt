@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 <#
 scripts/native-env.ps1 — 一键装载 Windows Native 构建环境（VS MSVC + SQLite 开发库）
 

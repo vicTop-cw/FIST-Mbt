@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 <#
 scripts/blackbox/install_onecmd.ps1 —— irm 一条命令安装入口（v2 Release Assets 版）
 
@@ -14,7 +14,9 @@ scripts/blackbox/install_onecmd.ps1 —— irm 一条命令安装入口（v2 Rel
 
 param(
   [string]$Version = "0.3.0-beta",
-  [switch]$Force
+  [switch]$Force,
+  # 离线/内网/发布前自证：给了本地 zip 就跳过下载（不发 Release 也能装）
+  [string]$LocalZip = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,7 +57,17 @@ New-Item -ItemType Directory -Path $temp -Force | Out-Null
 
 $zipPath = Join-Path $temp $zipName
 $downloaded = $false
-foreach ($u in $urls) {
+if ($LocalZip -ne "") {
+  if (-not (Test-Path $LocalZip)) {
+    Write-Host "❌  -LocalZip 指向的文件不存在: $LocalZip" -ForegroundColor Red
+    Remove-Item -Recurse -Force $temp -ErrorAction SilentlyContinue; exit 1
+  }
+  $li = Get-Item $LocalZip
+  Copy-Item $li.FullName $zipPath -Force
+  Write-Host ("  ✅ 用本地 zip（跳过下载）: " + $li.FullName + " (" + [math]::Round($li.Length/1KB,1) + " KB)") -ForegroundColor Green
+  $downloaded = $true
+}
+foreach ($u in $(if ($downloaded) { @() } else { $urls })) {
   Write-Host "  尝试: $u" -ForegroundColor DarkGray
   try {
     Invoke-WebRequest -Uri $u -OutFile $zipPath -UseBasicParsing -TimeoutSec 60
@@ -63,10 +75,17 @@ foreach ($u in $urls) {
       Write-Host "  ✅ 下载成功 ($([math]::Round((Get-Item $zipPath).Length/1KB,1)) KB)" -ForegroundColor Green
       $downloaded = $true; break
     } else { Remove-Item $zipPath -Force }
-  } catch { Write-Host "  ⚠️ 失败 ... 换源" -ForegroundColor Yellow }
+  } catch {
+    # 吞掉异常就等于让用户分不清「资产没发布(404)」和「我这里断网」，两者处方完全不同
+    $resp = $_.Exception.Response
+    $code = if ($resp) { [int]$resp.StatusCode } else { "n/a" }
+    Write-Host ("  ⚠️ 失败 HTTP " + $code + " (" + $_.Exception.GetType().Name + ") ... 换源") -ForegroundColor Yellow
+  }
 }
 if (-not $downloaded) {
-  Write-Host "❌ 下载全部失败 — Release 是否已发布？手动下载 $zipName 后重跑" -ForegroundColor Red
+  Write-Host "❌ 下载全部失败（每个源的状态见上）。三种可能：Release 未发布 / 资产名不是 $zipName / 本机连不上外网" -ForegroundColor Red
+  foreach ($u in $urls) { Write-Host "    - $u" -ForegroundColor DarkGray }
+  Write-Host "  离线安装：& <脚本路径> -Version $Version -LocalZip $env:USERPROFILE\Downloads\$zipName" -ForegroundColor DarkGray
   Remove-Item -Recurse -Force $temp -ErrorAction SilentlyContinue; exit 1
 }
 

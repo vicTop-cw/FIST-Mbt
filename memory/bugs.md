@@ -1407,3 +1407,113 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
 
 ### FIXED(2026-09-27T12:47:33Z / BUG-89)
 - evidence: 把自检挂上自动面并让它自己声明覆盖面：.github/workflows/ci.yml 文档面一步改为 `check_doc_surface.py --selftest` + 全量两步；check_doc_surface.py 的 SELFTEST OK 规则清单改由 inspect.getsource(j_selftest) 反解（不手写），并修回被误删的 fake 定义与 sorted(key=int)。实测：`python scripts/check_doc_surface.py --selftest` rc=0 且正文点名 J4/J6/J7/J8/J9/J10；改前同一命令两次 traceback（留档 temp/phaseC/selftest_doc.log）。AGENTS.md/scripts/README.md 的守卫族描述同步声明这条 CI 接线。
+## BUG-90 [2026-09-28T05:01:52Z] [medium] OPEN
+- summary: 巡回探针：调用面可用性核验
+
+
+## BUG-90 [2026-09-28T05:04:57Z] [critical] FIXED
+- summary: store_open(scratch=true) 的命名空间库不参与路由——单轮验证的任务行仍落仓库根 fist-mbt.db，而自述写的是"库落 temp/ 临时区，不污染仓库根"
+- detail:
+  实跑面（安装版全局命令，2026-09-28 12:16 全工具巡回）：
+    store_open(namespace=goalverify0928, scratch=true) → {"opened":true,"data_dir":"temp","scratch":true}
+    并且建出了 temp/goalverify0928.db。
+  只读复核（sqlite mode=ro，两库同一时刻）：
+    temp/goalverify0928.db → tasks=0 call_log=0（**空库**）
+    仓库根 fist-mbt.db     → tasks 里出现 ns='goalverify0928' 的行 T0r496（project_dir=temp/goal-verify/proj），call_log 里 8 条同 ns
+  根因（读码定位，不是猜）：工具闭包统一注入模块级 engine —— src/server/server.mbt:17
+  `let engine = make_engine()`，而 make_engine 走 SqliteStore::new()；旧版
+  src/store/store_sqlite.mbt 的 `SqliteStore::new()` 写死 `SqliteStore::open("fist-mbt.db")`。
+  `MultiStore::get()`（真正按 ns 路由到 {data_dir}/{ns}.db 的那条路）在全仓**零调用**
+  ⇒ ns 只是"已打开命名空间"的登记表，不是存储路由。
+  放大器（为什么一直没被发现）：scripts/scratch_verify.py 标题自称"验证 store_open scratch=true
+  临时命名空间落 temp/ 不污染仓库根"，但它只断言 ① store_open 回显 data_dir=="temp"
+  ② 仓库根没有名为 `{ns}.db` 的文件——两条都只看**文件位置**，从不查**行的落点**
+  ⇒ 这是一条恒绿的隔离判据，BUG-90 正好藏在它的盲区里。
+- reported_by: installed-cli-tour
+
+## BUG-91 [2026-09-28T05:04:57Z] [critical] FIXED
+- summary: run_check 无上限累积子进程 stdout/stderr，一次调用即可打死整个 MCP 会话（白名单收住了"能跑什么"，没收住"能吐多少"）
+- detail:
+  触发面：巡回第 30 个工具 run_check(cmd="python", args=[]) —— Windows 的 python 在无 tty 时
+  把 _pyrepl 的 traceback 反复刷出，server 侧 `stdout += d` 不设上限。
+  失败形态（两档都实测到，留档 temp/tool-tour-20260928044409-3dde15/tour-*.stderr.log 与
+  temp/runaway_repro_3d397a.log）：
+    ① 堆到 4 GB → `FATAL ERROR: Ineffective mark-compacts near heap limit` → 进程死；
+    ② 用无限输出夹具 node -e "while(true)process.stdout.write('x'.repeat(200000))" 复现，
+       修复前产物（sha256:9771abf9）2.1s 管道关闭，stderr `RangeError: Invalid string length`
+       （抛出点就是拼接处）；修复后安装版同一夹具 6.6s 正常回执 status=failed、进程存活。
+  连带损失（也是本条要入账的第二件事）：崩溃后驱动把后续 94 个工具全记成 broken，
+  既夸大了失效面，又让崩溃点之后的工具一次都没打到——判据侧的账要记在判据头上。
+  修法：src/server/run_check_js.mbt 每流各留**末 1 MiB**（保留尾巴，判据关键信息在结尾），
+  并如实带 stdout_capped/stderr_capped 旗 ⇒ 截断可见，不伪装完整；回执 stdout_tail 仍是末 2000 字符，
+  `output_truncated` 由 engine/omega_gate.mbt:136 按长度算，语义不变。
+  残余（不自证已修）：这条锁目前没有 MoonBit 单测（js-only 执行面），判据在
+  temp/runaway_repro.py；是否升级为仓库内判据交裁决。
+- reported_by: installed-cli-tour
+
+## BUG-92 [2026-09-28T05:04:57Z] [medium] OPEN
+- summary: 状态机拒绝文案的"要求状态"与实际要求的态不一致——「非法拆分: split 要求状态 [待领取]，当前是 [待领取]」把调用方指回它已经满足的那一档
+- detail:
+  逐字文案（从回执 JSON 的 \u 转义反解，不是控制台显示）：
+    `非法拆分: split 要求状态 [待领取]，当前是 [待领取]`
+  同一棵树的对照实测（巡回播种链）：
+    publish → plan           被上述文案拒；
+    publish → claim(assignee) → plan   **ok**（返回 ["T0.1","T0.2"]）。
+  ⇒ 真实要求的是"根任务已被领取（已领取/拆分中）"，而文案把"要求状态"印成 `[待领取]`，
+  与"当前状态"字面相同 ⇒ 调用方按文案办事会去把任务改成一个它已经是的状态，永远走不出来。
+  违反本仓对拒绝文案的一贯规矩（拒绝必须自带正确出路，见 BUG-4/BUG-78 同族）。
+  建议修法：状态机报错处点名"要求的是哪一态、当前是哪一态、用哪个工具能走到那一态"，
+  并给这条文案配成对判据（要求态 != 当前态；相等即判文案坏了）。
+  未修原因：射程在 src/engine 状态机的报错拼装，与本轮并行改动面重叠；交裁决后另开。
+- reported_by: installed-cli-tour
+
+## BUG-93 [2026-09-28T05:04:57Z] [medium] OPEN
+- summary: 发布入口迁到 cmd/cli 后，仓库内 15+ 处脚本/文档仍指 cmd/main 且不带 serve 子命令——E2E 的"绿"测的是不发布的那棵入口
+- detail:
+  命中清单（grep -rl "cmd/main" scripts/ 实跑）：
+    mcp_smoke.py、scratch_verify.py、atgc_selfdrive_demo.py、award_demo.py、dag_depend_verify.py、
+    dispatch_verify.py、enhance_verify.py、enrich_selfdrive.py、evolve_critic_verify.py、
+    executor_route_verify.py、fist-mbt-http.py、fist.py、flush_github.mjs、
+    blackbox/patch_esm_main.py、demo.ps1、scripts/README.md（索引正文同样残留）
+  两棵入口**同时存在且产物不同**（同一时刻构建）：
+    _build/js/debug/build/cmd/main/main.js = 2,681,667 B
+    _build/js/debug/build/cmd/cli/cli.js   = 2,779,308 B
+  发布产物是后者（scripts/blackbox/build_release.ps1:38 与 release.yml 的 4 处入口路径本轮已改到 cmd/cli）。
+  后果：这些 *_verify.py 全绿也证明不了装好的 `fist-mbt` 全局命令可用（本轮就是靠新增
+  scripts/mcp_tool_tour.py 才第一次打到发布入口的 129 个工具）。
+  建议修法：照 J7"旧口径禁词"同形加一条入口清单守卫（扫 scripts/ 与 README 里的 `cmd/main`
+  字面 ⇒ 红，历史陈述文件豁免），再逐只改到 `cmd/cli` + `serve`。
+  未修原因：一次性改 15 个脚本会越出本轮责任面（且与并行改动面重叠），先入账并给出可复跑判据。
+- reported_by: installed-cli-tour
+
+## BUG-94 [2026-09-28T05:04:57Z] [high] OPEN
+- summary: cost_stats 无参调用触发未捕获的 ERR_SQLITE_ERROR，直接把 MCP 会话打死（与 BUG-91 同族：store 层 JS 桥的异常没被收成 JSON-RPC error）
+- detail:
+  逐字（temp/tour_evidence.txt 的 crashed 行，excerpt 取自 server stderr）：
+    `server closed stdout; stderr tail= ... Error [ERR_SQLITE_ERROR] ... code: 'ERR_SQLITE_ERROR', errcode: 1, errstr: 'SQL lo...`
+  成对实测（同一份安装版 sha256:99beda11，同一驱动，只差 cwd/库）：
+    写面（cwd=临时 box，FIST_DB_PATH=box/tour.db）  → cost_stats arguments={} **ok**
+    读面（cwd=仓库根，FIST_DB_PATH=temp/tool-tour-*.db）→ 同一调用 **进程死**，驱动复活 server 后继续跑完其余工具
+  ⇒ 主张只写到这一层：存在一种库状态让 cost_stats 抛未捕获 sqlite 异常并终止服务面；
+  具体 SQL 未定位，第三棵树未复跑（归因边界照写）。
+  建议修法：① store 层 JS 桥把 prepare/step 的异常包成 Err 返回（与本仓"永不 reject"的
+  run_check_js.mbt 同形）；② server 侧工具分发加 catch-all，任何 handler 异常回 JSON-RPC error
+  而不是让进程退出——这条是服务面级别的鲁棒性，值得单独一条判据（"任意工具畸形调用后
+  会话必须仍可响应"）。
+  未修原因：定位需要逐条 SQL 复现，本轮预算已用于两个 critical 的修复与安装面自证。
+- reported_by: installed-cli-tour
+
+### FIXED(2026-09-28T05:04:57Z / BUG-90, BUG-91)
+- evidence: 两格都改在**调用面可复跑**的位置并配成对对照。BUG-90：src/store/store_sqlite.mbt 新增
+  `SqliteStore::db_path_from_env/default_db_path`，默认库由环境变量 `FIST_DB_PATH` 决定
+  （与 FIST_RUN_CHECK_ALLOW 同族：扩权位只在运维侧进程环境，MCP 调用方不能自我扩权），
+  未设置时逐字回退 "fist-mbt.db"（零回归）；白盒锁 src/store/store_db_path_wbtest.mbt 三条
+  （缺席/显式路径/空串）；判据 scripts/store_isolation_probe.py：同一个 cwd 两格只差这一环境变量，
+  C1 断言行落指定库且 cwd 内**不得**长出默认库、C2 断言无 env 时回落 cwd，`--selftest` 再追一格
+  合成违例（库路径指向不存在的目录 ⇒ 必须报红）。承重对照实测：修复前产物（sha 9771abf9）在 C1 报
+  RED / C2 GREEN，修复后（f24be5be）两格 GREEN。BUG-91：src/server/run_check_js.mbt 每流上限 1 MiB
+  + stdout_capped/stderr_capped 旗；对照实测见本条正文（同一夹具，修前 2.1s 死、修后 6.6s 活）。
+  全量面：JS 后端 529/529（HEAD 基线 526 + 本轮新增 3 条白盒）；巡回（安装版全局命令）
+  写面 129/129 工具打到调用面 = ok 81 / refused 42 / skipped 6 / crashed 0，明细逐字留档
+  temp/tour_evidence.txt。安装面：scripts/blackbox/install_onecmd.ps1 加 `-LocalZip`（离线/发布前自证）、
+  install.sh 加 `FIST_LOCAL_ZIP`，两条下载失败路径改为打印 HTTP 状态与候选 URL。

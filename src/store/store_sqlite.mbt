@@ -50,9 +50,33 @@ fn SqliteStore::exec_if_ok(self : SqliteStore, sql : String) -> Unit {
 }
 
 ///|
-/// 以默认路径（fist-mbt.db，随运行目录）打开的便捷构造。
+/// 默认库路径（相对 server 进程 cwd）。
+let default_db_path : String = "fist-mbt.db"
+
+///|
+/// 由环境值决定库路径（纯函数，便于白盒判据；空串视为未设置）。
+pub fn SqliteStore::db_path_from_env(env_value : String?) -> String {
+  match env_value {
+    Some(p) => if p.is_empty() { default_db_path } else { p }
+    None => default_db_path
+  }
+}
+
+///|
+/// 进程默认库路径回显（只读，供工具与 CLI 说明"这一轮的行到底落在哪个文件"）。
+pub fn SqliteStore::default_db_path() -> String {
+  SqliteStore::db_path_from_env(@env.get_env_var("FIST_DB_PATH"))
+}
+
+///|
+/// 以默认路径打开的便捷构造。
+/// BUG-90：默认路径过去写死 `fist-mbt.db`，调用面没有任何合规出口把一整轮验证
+/// 收进独立库 —— `store_open(scratch=true)` 自称"库落 temp/ 临时区，不污染仓库根"，
+/// 实测任务行仍落仓库根 `fist-mbt.db`（工具闭包用的是模块级 engine，而非 mstore 里的 ns 库）。
+/// 这里补的是**运维侧**出口：`FIST_DB_PATH` 环境变量，与 `FIST_RUN_CHECK_ALLOW` 同族
+/// （扩权位只在进程环境里，调用方传参不能自我扩权）。未设置时行为逐字不变。
 pub fn SqliteStore::new() -> SqliteStore? {
-  SqliteStore::open("fist-mbt.db")
+  SqliteStore::open(SqliteStore::default_db_path())
 }
 
 ///|
