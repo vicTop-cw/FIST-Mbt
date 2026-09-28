@@ -94,6 +94,14 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     "CREATE TABLE IF NOT EXISTS call_log (id INTEGER PRIMARY KEY AUTOINCREMENT, seq INTEGER, ts TEXT, tool TEXT, caller TEXT, ns TEXT, params_json TEXT, result_json TEXT, ok INTEGER, runtime_ms INTEGER)",
     "CREATE TABLE IF NOT EXISTS reservations (scope TEXT PRIMARY KEY, agent TEXT NOT NULL DEFAULT '', ttl_until TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS executors (name TEXT PRIMARY KEY, abilities_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT '')",
+    // BUG-94：executions 过去**不在**建表清单里，只在**写**路径上 ensure
+    // （record_execution 调 ensure_executions_table）。读路径 `cost_stats` 直接
+    // prepare `FROM executions` ⇒ 新库（没写过任何执行记录）上一次 cost_stats 就
+    // `Error: no such table: executions`，而 js 桥的 prepare 是**抛异常**不是返回 None
+    // ⇒ 未捕获异常一路打死 server 进程（实测 2026-09-28 三格全复现：仓库根/无参、
+    // 仓库根/带 ns、临时 box/无参）。表要么一开始就在，要么读写两侧都 ensure——
+    // 这里两条都做：新库由建表清单覆盖，旧库由 cost_stats 的 ensure 兜住。
+    executions_table_sql(),
     "CREATE TABLE IF NOT EXISTS circuit_breakers (ns TEXT NOT NULL DEFAULT 'default', circuit TEXT NOT NULL DEFAULT '', state TEXT NOT NULL DEFAULT 'closed', failures INTEGER NOT NULL DEFAULT 0, window_secs INTEGER NOT NULL DEFAULT 60, threshold INTEGER NOT NULL DEFAULT 3, recovery_secs INTEGER NOT NULL DEFAULT 30, opened_at INTEGER NOT NULL DEFAULT 0, last_fail_ts INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT '', PRIMARY KEY (ns, circuit))",
   ]
   match self.db {

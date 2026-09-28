@@ -31,11 +31,24 @@ AIGC:
   字符类，实测 0 runs），发布版本源改正则读 `moon.mod`，4 处入口路径 `cmd/main` → `cmd/cli`（发布产物真身）。
 - **PS 5.1 编码债清掉**：`native-env.ps1`（实测 12 处解析错误）、`showcase.ps1`（5 处）、`demo.ps1`（0 处但中文乱码）
   补 UTF-8 BOM，复测 `Parser::ParseFile` 三档全部 0 处。
+- **BUG-94 续（同轮内定位到根因并修）**：`executions` 表补进 `create_schema` + `cost_stats` 读前 ensure
+  （两层缺一不可：只补建表清单对**存量老库**无效）；白盒 `src/store/cost_stats_executions_wbtest.mbt` 两条，
+  HEAD 源码下逐字复现 `Error: no such table: executions`（2 红），修复后包 23/23、JS 全量 **531/531**。
+- **BUG-96/97/98（自报缺陷）**：巡回驱动读面把 `project_dir="."` 当探针项目 ⇒ `report_bug` 写进真账本两次，
+  并与手写台账撞出两个 `## BUG-90` 抬头；处置=两条垃圾条目改判 FALSE_POSITIVE 并重编号消撞号，
+  缺陷本体另立 BUG-98（FIXED，驱动加 `READ_PLANE_SKIP` 六只写工具 + 读面前后 sha256 相等为准绳）。
+  账本现 97 条、无重复 id = 83 已修 / 9 重复并入 / 3 误报 / 2 待修。
+
 - **账本**：BUG-90~94 五条入账（90/91 FIXED 并落 `### FIXED` 小记；92 拒绝文案自相矛盾、93 退役入口 `cmd/main`
   仍散在 15+ 处脚本/文档、94 `cost_stats` 未捕获 `ERR_SQLITE_ERROR` 杀会话 三条 OPEN 交裁决）；
   现状 95 条 = 3 待修 / 81 已修 / 9 重复并入 / 1 误报。
 - **测试面**：JS 后端 **529/529**（HEAD 基线 526 + 本轮 3 条白盒，在 `git archive HEAD` 快照树跑，避开并行改动面）；
   native 本轮未复跑。
+- **测试面同轮再动（追加，不改写上一条）**：BUG-94 的两条白盒 `cost_stats_executions_wbtest.mbt` 之后落地，
+  收口实测 **531/531**（`temp/relbuild_test_r4.log`，rc=0），徽章/AGENTS/ARCHITECTURE/docs 等**现状面**由
+  `check_test_sync` 从该日志反解同步到 531。**历史面不动**：`CHANGELOG.md` 在 `check_test_sync` 的
+  `HISTORY_FILES` 豁免表里，本轮一度把下文 2026-09-27 记录中的 `508/508` 一并扫成 531，已逐字还原
+  （叙述面只追加不删改，把旧实测数改成新数即伪造历史）。
 - **汇报**：`reports/2026-09-28-installed-cli-tour-report.md`（含逐字拒绝文案清单指针 `temp/tour_evidence.txt`）。
 
 ## v0.3.0 (unreleased) - 缺陷账本兑账 + 已知 OPEN 全部独立清零（不走流水线）
