@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-"""BUG-103 + BUG-105 + BUG-107 + BUG-109 判据：资产名/版本真源同源、命令名两类 shell 都可见、200 不等于拿到文件、装完的自检不许假绿。
+"""BUG-103 + BUG-105 + BUG-107 + BUG-109 + BUG-111 判据：资产名/版本真源同源、命令名两类 shell 都可见、200 不等于拿到文件、装完的自检不许假绿、发布作业不许顶掉分发。
 
-（R5/R6/R7 为什么住在"资产名"这个守卫里：本守卫真正管的是**分发面同源**——用户按文档敲的那条命令、
+（R5/R6/R7/R8 为什么住在"资产名"这个守卫里：本守卫真正管的是**分发面同源**——用户按文档敲的那条命令、
 和发布链产出的那个文件名、以及那条命令实际拿回来的字节，三者必须说的是同一件事。
 资产名对不上是"下载 404"，命令名对不上是"下载成功却找不到命令"，
-源返回 HTML 是"HTTP 200 但装不了"，自检假绿是"安装器自己说装好了、那句诊断还是错的"——
-同一张表面的四种失效，拆成四个守卫只会各看半边。）
+源返回 HTML 是"HTTP 200 但装不了"，自检假绿是"安装器自己说装好了、那句诊断还是错的"，
+发布作业依赖错是"流水线跑完了却一个资产也没出"——同一张表面的五种失效，拆成五个守卫只会各看半边。）
 
 要钉的失效形状（本轮实测）：`install_onecmd.ps1` 与 `install.sh` 的默认版本写死 `0.3.0-beta`，
 而发布资产名由 `build_release.ps1` 按 moon.mod 的 `0.3.0` 生成 ⇒ 用户跑字面的
 `irm … | iex`（不带任何参数）时，两条下载源都指向发布链永远不会产出的文件名。
 CI 看不见这条：CI 不发 Release，也不跑安装器。
 
-判据（七条，全部只看文本形状，不联网）：
+判据（八条，全部只看文本形状，不联网）：
   R1 安装器不许给版本号写死字面量默认值（`$Version = "0.x"` / `VERSION="0.x"`）；
   R2 两个安装器都要真的从 moon.mod 取版本（出现 moon.mod 且出现解析用的正则/sed）；
   R3 资产名模板三处一致：install_onecmd.ps1 / install.sh / build_release.ps1 必须都是
@@ -35,9 +35,17 @@ CI 看不见这条：CI 不发 Release，也不跑安装器。
      "临时降 EAP + stderr 隔离"的封装（`$ErrorActionPreference = "Continue"` 与 `2>` 同现）；
      (c) `✅ fist-mbt.js 可执行` 必须挂在版本回执的条件分支上，不许无条件打印。
 
+  R8 发布作业不许顶掉分发（BUG-111，release run 1 实测失败且 Release 零资产；本机快照复跑证明
+     JS 三步全通过：`moon build --target js` 0 errors、`patch_esm_main.py` rc=0、zip 374KB 魔数 `PK`）：
+     `release` 作业的 needs 必须**含 meta**（它引用 `needs.meta.outputs.version`，不在自己 needs 里就取空值
+     ⇒ Release 名与资产名漂成空版本形态），且**不得含 native 作业**（native 不是权威面，
+     AGENTS 自己写明权威门槛是 JS 后端；一次 native 编译失败不该让 JS 安装线没资产），
+     同时 `build-native-linux` 必须与 windows 侧一样带 `continue-on-error: true`。
+
 自证：写死默认值必红 / 缺 moon.mod 解析必红 / 资产名漂移必红 / 空值不失败必红 /
 无扩展名 shim 被摘掉必红 / 不做 HTML 与魔数检查必红 / 文档首选线漂到 main 必红 /
-自检退化成空 catch 或无条件 ✅ 或去掉 stderr 隔离必红 + 干净输入不误红。
+自检退化成空 catch 或无条件 ✅ 或去掉 stderr 隔离必红 /
+发布作业 needs 退回顶掉 native 或摘掉 meta 或摘掉 native 容错必红 + 干净输入不误红。
 """
 import argparse, io, os, re, sys
 
@@ -134,6 +142,31 @@ def judge(texts):
         problems.append("R6 install.sh 下载后没验 zip 魔数 PK")
     if "!DOCTYPE" not in sh:
         problems.append("R6 install.sh 没对 moon.mod 响应做 HTML 形状检查")
+    # R8 发布作业的依赖面（BUG-111，实测 release run 1 失败且 Release 零资产）：
+    # release 作业引用 needs.meta.outputs.version，却没把 meta 列进自己的 needs ⇒ 取不到值；
+    # 又把**可选的** native 作业当一票否决项 ⇒ native 编译一红，JS 分发面就没资产。
+    if yml:
+        m = re.search(r'\n  release:\n([\s\S]{0,500})', yml)
+        if not m:
+            problems.append("R8 release.yml 里找不到 release 作业（发布链无从核对，判据自拒）")
+        else:
+            seg = m.group(1)
+            mn = re.search(r'needs:\s*\[([^\]]*)\]', seg)
+            if not mn:
+                problems.append("R8 release 作业没有 needs 清单（引用 needs.meta 会取空值）")
+            else:
+                needs = mn.group(1)
+                if "meta" not in needs:
+                    problems.append("R8 release 作业的 needs 里没有 meta，正文却引用 needs.meta.outputs.version"
+                                    "（Release 名与资产名会漂成空版本形态）")
+                if "native" in needs:
+                    problems.append("R8 release 作业的 needs 里含 native 作业"
+                                    "（native 不是权威面，一次编译失败就不该顶掉 JS 分发资产的发布）")
+        if not re.search(r'build-native-linux:[\s\S]{0,300}?continue-on-error:\s*true', yml):
+            problems.append("R8 release.yml 的 build-native-linux 没有 continue-on-error（与 windows 侧不对齐，"
+                            "却仍然顶掉发布）")
+    else:
+        problems.append("R8 读不到 release.yml ⇒ 发布链判据无法自证（不报绿）")
     # R7 装完的自检不许假绿（BUG-109，端到端镜像安装实测）：
     # 顶部 $ErrorActionPreference="Stop" + 原生命令的 stderr ⇒ NativeCommandError（终止错误）。
     # node:sqlite 每次启动都打 ExperimentalWarning ⇒ 旧写法里 `& node … 2>&1` 必进 catch，
@@ -152,7 +185,10 @@ def selftest():
     clean_ps1 = io.open(os.path.join(ROOT, FILES["ps1"]), encoding="utf-8-sig").read()
     clean_sh = io.open(os.path.join(ROOT, FILES["sh"]), encoding="utf-8-sig").read()
     clean_build = io.open(os.path.join(ROOT, FILES["build"]), encoding="utf-8-sig").read()
-    base = {"ps1": clean_ps1, "sh": clean_sh, "build": clean_build, "release_yml": ""}
+    # R8 判的是 release.yml：干净支必须拿真文件，否则"读不到 release.yml"那条会把干净输入判红
+    # （同一个守卫里，缺席即报——所以自证的夹具也得齐件）。
+    clean_yml = io.open(os.path.join(ROOT, FILES["release_yml"]), encoding="utf-8-sig").read()
+    base = {"ps1": clean_ps1, "sh": clean_sh, "build": clean_build, "release_yml": clean_yml}
     fails = []
     if judge(dict(base)):
         fails.append("干净输入被误判（本仓现状应通过）：%s" % judge(dict(base))[:2])
@@ -186,6 +222,11 @@ def selftest():
         ("ps1", "if ($jsVer) {", "if ($true) {", "R7"),
         ("ps1", "  $prevEap = $ErrorActionPreference",
          "  $prevEap = $ErrorActionPreference\n  try { $null = 1 } catch { }", "R7"),
+        # R8 三支（BUG-111 的三种退化）：needs 退回顶掉发布 / 摘掉 meta / 摘掉 native 的容错
+        ("release_yml", "needs: [meta, build-js]", "needs: [build-js, build-native-linux]", "R8"),
+        ("release_yml", "needs: [meta, build-js]", "needs: [build-js]", "R8"),
+        ("release_yml", "    continue-on-error: true\n    runs-on: ubuntu-latest",
+         "    runs-on: ubuntu-latest", "R8"),
     ]
     for key, old, new, want in checks:
         if key == "ps1" and new.strip().startswith("#"):
@@ -202,7 +243,7 @@ def selftest():
             fails.append(r)
     for f in fails:
         print("SELFTEST FAIL " + f)
-    print("SELFTEST %s（干净不误红 + 变异必红：R1×2 / R2 / R3×2 / R4 / R5×2 / R6×3 / R7×3）" % ("OK" if not fails else "FAIL"))
+    print("SELFTEST %s（干净不误红 + 变异必红：R1×2 / R2 / R3×2 / R4 / R5×2 / R6×3 / R7×3 / R8×3）" % ("OK" if not fails else "FAIL"))
     return 0 if not fails else 2
 
 
@@ -219,8 +260,8 @@ def main():
     if problems:
         print("FAIL 发布资产名/安装器版本真源不一致（用户按 `irm | iex` 装会 404）")
         return 1
-    print("PASS 分发面同源（R1-R7）：资产名三处一致 + 版本真源 moon.mod + 空值即失败 + "
-          "命令名两类 shell 都可见 + 200/HTML/魔数检查 + 安装自检不假绿")
+    print("PASS 分发面同源（R1-R8）：资产名三处一致 + 版本真源 moon.mod + 空值即失败 + "
+          "命令名两类 shell 都可见 + 200/HTML/魔数检查 + 安装自检不假绿 + 发布作业不顶掉分发")
     return 0
 
 

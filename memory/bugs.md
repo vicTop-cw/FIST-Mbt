@@ -1871,3 +1871,34 @@ plugins/source/*.md 里含 check_doc_surface 的行上的 `J1-Jn`（BUG-66 的�
 README 两条安装线改 GitHub master raw 直链 + GitCode 降为浏览备用并写明 200/HTML 实测；
 代码栅栏的 0x08 坏字节清除，六条装后命令独立成块。判据面：`check_doc_surface.py` 全量复跑，
 `check_release_asset_names.py` R6 早已把"首选线必须 GitHub master"钉在安装器侧（文档侧这条暂无自动门，见下）。
+
+## BUG-111 [2026-09-28T11:33:28Z] [medium] OPEN
+- summary: 发布流水线**史上第一次真跑**（`FIST-Mbt Blackbox Release` run 1，由我推的 `v0.3.1` 触发）就失败，
+  `https://github.com/vicTop-cw/FIST-Mbt/releases/download/v0.3.1/fist-mbt-js-v0.3.1.zip` 实测 404、
+  `/releases/tag/v0.3.1` 页面上 `releases/download/` 链接 **0 条** ⇒ 「不带参数的 `irm | iex`」这条默认安装线
+  至今仍差最后一个资产
+- detail:
+  先排掉两个容易误判的方向（都留了实测）：
+  ① 不是 URL 拼装错——资产名由 moon.mod 反解，R3/R6 早就钉住同源；
+  ② 不是产物造不出来——`git archive HEAD` 快照树（解出 551 文件 == `git ls-files` 551，建树自证）里逐条复跑 CI 的 JS 三步：
+     `moon build --target js` → `ran 78 tasks, 499 warnings, **0 errors**`；
+     `python scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js` → rc=0（`patched …`）；
+     打包 → 374,830 字节、前两字节 `b'PK'`。**JS 腿在已提交树上是全绿的**。
+  静态可见的作业面缺陷两处（`release.yml` 的 `release` 作业）：
+  ③ 正文引用 `needs.meta.outputs.version`，而它自己的 `needs` 只有 `[build-js, build-native-linux]`
+     —— `meta` 不在 needs 里就取不到值 ⇒ Release 名与资产名会漂成空版本形态；
+  ④ `needs` 里含 `build-native-linux`：AGENTS 自己写明「权威稳定门槛 = JS 后端」，native 只是可选面，
+     却一票否决整条发布（同文件里 `build-native-windows` 反而已经带 `continue-on-error: true`）。
+  修（已落盘）：`release: needs: [meta, build-js]` + `build-native-linux: continue-on-error: true`；
+  判据 `check_release_asset_names.py` 由 R1-R7 加到 **R1-R8**（三支子判据：needs 退回顶掉 native 必红 /
+  摘掉 meta 必红 / 摘掉 native 容错必红），`--selftest` 十四格 ⇒ **十七格**，PASS 行范围自述同步成 R1-R8。
+  发布动作选**纯快进**的一条：不删也不重指已发布的 `v0.3.0`/`v0.3.1` 标签（那等于改写公网 release point，
+  与本仓「只快进、绝不 force」的纪律冲突），改为版本前进 0.3.1 → 0.3.2 并打新标签 `v0.3.2` 触发 CI；
+  盘面只有两处真写死版本（`moon.mod` 与 `USAGE.md` 的 `vicTop-cw/fist-mbt@…` 自述行），其余表面从 moon.mod 反解。
+- 待证（这条为什么先记 OPEN 而不是 FIXED）：**修复本身已落盘并有判据，但「Release 真的出了资产」还没发生**。
+  翻 FIXED 的判据 = 匿名只读 HEAD 该资产 URL 得 200 + `Content-Type` 是 zip 形态 + 前两字节 `PK`，
+  且再用那条**公网**线（不带 `-BaseUrl`、不带 `-LocalZip`）跑一次真安装，装出的产物 `fist version` 回 0.3.2。
+- 顺带一条不属于我本轮成因、但必须记账的发现：Actions 页面 `run 178 → 186`（含 `feat(phase-6)`、`chore: moon fmt`、
+  `install: Release Assets` 等多笔早于本轮的提交）**状态全是 failed** ⇒ 本仓 CI 长期是红的，
+  「说是全弄好了」这句话在 CI 面上没有支撑。匿名 API 现在 403 rate limit exceeded，读不到日志，
+  定位需要 `FIST_GITHUB_TOKEN`（只从环境变量注入）或在 UI 上点开任一条 run。
