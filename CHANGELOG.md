@@ -62,6 +62,35 @@ AIGC:
   **BUG-112 入账（OPEN · release.yml 工具链 bootstrap 与 CI 同源已修，资产待 v0.3.3 的 run）**：从匿名 `/actions/runs/<id>/jobs` 取到的失败步骤名把真因钉住——`meta` success / `build-js` 红在 **Build JS target** / `build-native-linux` 红在 **Build native** / `build-native-windows` 红在 **Install MoonBit** / `release` 是 **skipped**（不是跑挂）⇒ 工具链没到手，不是代码编不过。对照同仓跑通过的 `ci.yml`：它用 `install/unix.sh` 且 `echo "$HOME/.moon/bin" >> "$GITHUB_PATH"` + `moon update`，而 `release.yml` 三条全缺 ⇒ 同一个 `moon build` 在 CI 轨能跑、发布轨跑不了。**顺带纠正 BUG-111 的归因**：我在 `git archive HEAD` 快照树里复跑 JS 三步全绿，就写下「产物没问题」——那复跑用的是**本机全局 moon**，与 runner 的 PATH 不同形；它证明「代码编得过」，不能证明「CI 那一步也过得去」。修：build-js 与 build-native-linux 两侧 bootstrap 对齐 ci.yml（`.sh` + 导出 GITHUB_PATH + `moon update`）；windows 侧仍红在装工具链，但那是 `continue-on-error` 的非权威面，本轮只记账不扩大改动面。判据加 **R9**（只看去掉 `#` 注释后的代码面——第一版被自家注释里的 "GITHUB_PATH" 喂回针，那格变异不红，`--selftest` 当场抓到），`--selftest` 十七格 ⇒ 十九格；版本 0.3.2 → 0.3.3 打新标签走纯快进。
   **BUG-113 收口（同轮追加）**：资产终于出来之后第一次把「用户照抄的那一行」原样跑（沙箱档），文档线自己红——报「At line:22 char:22 [string]$Version 赋值表达式的左侧无效」，而同一个脚本 `powershell -File` 跑正常（之前所有 e2e 都走 -File ⇒ 这一格没人照过）。成因是两条各自正确的规矩撞车：BUG-88 要求含中文的 .ps1 带 UTF-8 BOM，而 `irm` 返回**字符串**且把 BOM 留成首字符 U+FEFF ⇒ `iex` 认不出 `param()` 是首语句。最小对照（`temp/bom_min_control.py`，-EncodedCommand）：无 BOM⇒OK / 有 BOM⇒FAIL / TrimStart(U+FEFF)⇒OK ⇒ 唯一变量是 BOM。我第一个修法也是错的：`.Content.TrimStart` 那条路上 `.Content` 是 null（InvokeMethodOnNull）⇒ 正确形 `.ToString().TrimStart([char]0xFEFF)`。修：README + 安装器头部改 BOM 安全形并各写理由；判据加 R10（十九格→廿一格，任一侧退回裸形必红，README 进判据面）；常驻 `scripts/blackbox/e2e_irm_line.py` 从 README **反解**那一行来跑，默认沙箱档、`--real` 才落真面带备份还原。实证 rc=0：0.3.3 / 资产名 / `fist (PATH)` / `POSIX shim, LF` 四格全命中，横幅 v0.3.3 安装完成，沙箱产物 sha256:2eaa4803，用户 PATH 逐字还原、真产物未动。同一次跑又暴露一格：`fist version` 仍回 v0.3.0 ⇒ 新开 BUG-114（版本自述有三个真源，其中两个常量在并行改动面手里，可粘贴补丁已入账、本轮不代改）。\n
 
+  **BUG-106 / BUG-111 / BUG-112 / BUG-114 收口（同轮追加 · 账本 OPEN 清零 · 版本 0.3.4）**：用户指令「bugs.md 看下，有就启动修复模式 全部清掉」⇒
+  四条 OPEN 一次落地，收尾后台账 **113 条 = 100 已修 / 9 重复并入 / 4 误报 / 0 待修**（`gen_plugins` 回执同源）。
+  - **BUG-111+112（只翻状态）**：`v0.3.3` 那一次 run 已把两条条目末自写的判据全部兑现——meta/build-js/release 三作业绿、
+    匿名 HEAD 资产 302 → `fist-mbt-js-v0.3.3.zip` 且前两字节 `PK`、公网线（不带任何参数）装进沙箱 rc=0 四格全命中。
+    挂一条 `### FIXED(stamp / BUG-111, BUG-112)` 合并点名；111 的原始归因（"真因在作业依赖"）已被 112 证伪并留在叙述面，不回写。
+  - **BUG-114（版本自述其实有三个真源）**：`moon.mod` 0.3.3 而 `src/server/server.mbt` 的 `project_version` 与
+    `cmd/cli/help_topics.mbt` 的 `FIST_VERSION` 都还写着 `0.3.0` ⇒ 装出来的 `fist version` 回 v0.3.0、横幅回 v0.3.3。
+    最不好受的一条事实：`src/server/fist-mbt_wbtest.mbt` 里那条「BUG-16 对外版本单一真源」常驻锁**在 master 上一直是红的**
+    （它比的正是这两处），红着没人读等于没锁。修：三处 + `USAGE.md` 一起到 0.3.4；判据加 **R11**（`let project_version`
+    与 `cmd/cli` 侧扫到的任何 `const *VERSION*` 必须 == moon.mod，读不到基线即自拒、可选面缺席不误红，五格对照）；
+    另把 `e2e_irm_line.py` 里写死的 `0.3.3` 针改成从 moon.mod 反解（写死的针一升版就漂，漂成假绿最坏）。
+  - **BUG-106（`fist --help` 被当未知子命令、且未知子命令回 0）**：跨环等并行改动面收口这条本轮不再等——新增 `cmd/cli/subcmd.mbt`
+    把词法做成单一真源（`parse_subcmd` 展开 `version|--version|-V`、`help|--help|-h`；`USAGE_ERROR_EXIT_CODE = 2` + `exit_code_of`；
+    `cli_exit` 三形态：js 走 `process.exit`、native 走 libc `exit`、其余运行时 abort 而不是静默回 0），`main.mbt` 只读它。
+    锁两层：白盒 `cmd/cli/subcmd_wbtest.mbt`（别名归位 / 未知必非 0 且已知必 0，成对反向对照）+ **调用面新判据
+    `scripts/cli_flag_probe.py`**（起真产物 `node cli.js <arm>` 看真 rc、读真首行；版本旗必须回显 moon.mod 版本、
+    帮助面同规则、未知参数 rc≠0；文案针从 `cmd/cli/main.mbt` 反解、版本针从 `moon.mod` 反解；`--selftest` 七格）。
+    为什么白盒不够：入口被改回字符串 match 或 `cli_exit` 被摘掉，纯函数测试照样全绿。实测：三格版本旗 rc=0 首行 `v0.3.4`、
+    `__probe_not_a_subcommand__` rc=2、`--help` 走帮助不落未知臂。
+  - **判据面顺带修掉两处自己的假账**：`check_release_asset_names --selftest` 的格子清单与 PASS 行范围从今**从实现反解**，
+    不再手写计数——旧行写 `R5×2`，而其中一格因"变异只改注释"被循环 `continue` 跳过，**那一格从没跑过**（幻影判据）；
+    现改成"删掉 POSIX shim 写入行"的真变异并把清单变成 `Counter(已执行格子)`。
+  - **发布动作**：`moon.mod`/`USAGE.md` → 0.3.4，四宿主投影重生成（129 工具 / v0.3.4 / 0 条待修），
+    本地 tag `v0.3.4` 走纯快进（不删不重指已发布标签），CI 新增一步 `cli_flag_probe`（先 `--selftest` 再全量）。
+  - **测试面**：`moon test --target js` = **535/535**（533 + 本轮 `cmd/cli` 两支白盒），现状面声明由 `check_test_sync` 同步；
+    native 本轮未复跑，不据旧数宣称双端同版全绿。
+  - **结转（不装成已修）**：`cmd/cli/help_topics.mbt` 与 `main.mbt` 的 `fist help <topic>` 本体仍是并行改动面的未提交新增 ⇒
+    本次提交只带我自己的那一处分发改动（HEAD 正文 + 我的 hunk，摘段双向验：暂存里不含对方行、工作区仍含），
+    对方那半边留在工作区不代为发布；`check_scripts_index` 在本地因对方未登记的 `gen_help_docs.py` 报红，HEAD 面上不存在该文件 ⇒ 不随本次提交进 CI。
 - **账本**：BUG-90~94 五条入账（90/91 FIXED 并落 `### FIXED` 小记；92 拒绝文案自相矛盾、93 退役入口 `cmd/main`
   仍散在 15+ 处脚本/文档、94 `cost_stats` 未捕获 `ERR_SQLITE_ERROR` 杀会话 三条 OPEN 交裁决）；
   现状 95 条 = 3 待修 / 81 已修 / 9 重复并入 / 1 误报。
