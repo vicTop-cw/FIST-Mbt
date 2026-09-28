@@ -14,6 +14,8 @@
 | BUG-114 | `server.mbt` 的 `project_version`、`cmd/cli/help_topics.mbt` 的 `FIST_VERSION` 与 `moon.mod`/`USAGE.md` 一起到 0.3.4 | 新增 **R11**（源码常量 == moon.mod，五格对照，基线读不到即自拒、可选面缺席不误红）+ 常驻 `fist-mbt_wbtest.mbt` 由红转绿 | `node cli.js version` 首行 `FIST-Mbt v0.3.4` |
 | BUG-106 | 新增 `cmd/cli/subcmd.mbt`（`parse_subcmd` 单源展开 `--version/-V/--help/-h`、`USAGE_ERROR_EXIT_CODE=2`、`exit_code_of`、`cli_exit` 三形态），`main.mbt` 只读它 | 白盒 `cmd/cli/subcmd_wbtest.mbt` 两格 + 新增调用面判据 `scripts/cli_flag_probe.py`（七格自证，CI 新步） | 三格版本旗 rc=0 首行回显版本；`--help`/`-h` rc=0 且不落未知臂；未知参数 **rc=2** |
 
+| BUG-115（本轮新开并即修） | 测试文件 `r2e_engine` 补 `@fs.create_dir("temp")`（SQLite 不造父目录，原先依赖同包另一文件先建目录） | CI 的 JS 轨在干净 checkout 上跑全量即常驻判据 | 同一无 `temp/` 条件下：修前 535/532/3 failed，修后 535/535（`temp/fixed_no_temp.log`） |
+
 配套：`moon.mod`/`USAGE.md` → **0.3.4**，四宿主投影重生成（129 工具 / v0.3.4 / 0 条待修），
 文档面测试总数 533 → **535** 由 `check_test_sync` 反解同步（README/README_EN/AGENTS/docs 五面）。
 
@@ -39,10 +41,17 @@
    对方随后整档写回时若丢掉 `parse_subcmd`，白盒会随文件一起消失，但**调用面判据会红**（CI 新步 `cli_flag_probe`）。
 2. **`check_scripts_index` 本地红**：对方未登记的 `scripts/gen_help_docs.py`。HEAD 面上不存在该文件 ⇒ 不随本次进 CI。
    本轮不替对方收尾，只在此点名。
-3. **工作树里 `run_serve` 的横幅 `println` 被重新启用**（HEAD 是按 BUG-101 注释掉的）⇒ 本地
-   `python scripts/fist.py call cost_stats` 现在报 `malformed JSON-RPC response: 'stdin/stdout 接管...'`，
-   而 `list-tools` 走另一条路仍返回 129 工具。这是**盘上可观测的并发面事实**，不属于本次发布面（发布树里那三行是注释），
-   故不并入本轮账本计数，交对方收口时自查。
+3. **干净树上的三连红已定位并修掉**（BUG-115，本轮第 3 笔）：暂存树首轮 535/532/3 failed，
+   在 HEAD 的干净 worktree 里 `rm -rf temp` 复跑必红 ⇒ 三条全出自
+   `src/engine/engine_execute_r2_test.mbt`（它开 `temp/*.db` 却不建 `temp/`，靠同包另一文件先建目录）。
+   修后同条件 535/535。**这条同时给 BUG-111 里那句「Actions run 178→186 全 failed 但读不到日志」提供了一个可复跑解释**，
+   但不据此宣称 CI 已全量绿（native 轨与别的红因还没归因）。
+   方法论上的收获：**开发工作树里的"全绿"不覆盖新 clone**——凡是碰测试面/存储面的收口，
+   第一次全量复跑要在 `git archive` 或 worktree 的干净树里做。
+   另记一条**并发面事实**（不算我的账、也不并入本轮计数）：工作树里 `run_serve` 的横幅 `println` 被
+   并行改动面重新启用（HEAD 按 BUG-101 是注释掉的）⇒ 本地 `python scripts/fist.py call cost_stats` 现在报
+   `malformed JSON-RPC response: 'stdin/stdout 接管...'`，而 `list-tools` 走另一条路仍返回 129 工具。
+   发布树里那三行是注释 ⇒ 不随本次发布，交对方收口时自查。
 4. **`v0.3.4` 的公网复验在发布之后**：推送 + 标签触发 release 流水线有外部时延。本轮已把
    `e2e_irm_line.py` 的版本针改成从 `moon.mod` 反解（不再写死 0.3.3），所以 run 完成后重跑它就是复验，不必再改判据。
 5. **native 轨仍非权威**：`build-native-windows` 在 CI 上红在 `Install MoonBit`（用 `install/windows` + Expand-Archive，

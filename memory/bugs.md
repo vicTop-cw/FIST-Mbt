@@ -2029,3 +2029,29 @@ BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并
 调用面：`scripts/cli_flag_probe.py` 钉「`fist version` 首行必须回显 moon.mod 版本」，帮助面同规则。
 公网复验随 `v0.3.4` 的 run 之后再跑一次 `e2e_irm_line.py`（其版本针本轮已改成从 moon.mod 反解，
 不再写死 0.3.3——写死的针一升版就漂，漂成假绿最坏）。
+
+## BUG-115 [2026-09-28T17:10:52Z] [medium] FIXED
+- summary: `moon test --target js` 在**干净树**上偶发 3 红（`src/engine/engine_execute_r2_test.mbt` 三连
+  "unable to open database file"）——该文件的 `r2e_engine` 打开 `temp/r2_bug2_*.db` 却不建 `temp/`，
+  依赖**同包另一个测试文件**（`docs_gate_test.mbt` 里的 `@fs.create_dir("temp")`）先跑赢竞速
+- detail:
+  活证据（本轮暂存树快照复跑时撞上，两次可比）：
+    `temp/staged-tree` 首轮 = 535/532/**3 failed**，随后 4 次（含删 `_build` 冷构建）= 535/535；
+    `temp/head-wt`（HEAD 的干净 worktree）`rm -rf temp` 后 = 535/532/**3 failed**，三条全是
+      `[vicTop-cw/fist-mbt] test src/engine/engine_execute_r2_test.mbt:54/79/194 ...
+       failed: Error: unable to open database file`
+    同条件 + 本条修好后 = **535/535**（`temp/fixed_no_temp.log`，rc=0）。
+  主工作树永远绿，因为 `temp/` 早就在那儿（我自己的 scratch 就落在那里）⇒
+  **"本机全绿"在这条上是纯粹的假证据**；能看见它的只有新 clone / `git archive` 树 / CI。
+  很可能也是 BUG-111 里那条「Actions 上 run 178→186 全是 failed，匿名 API 403 读不到日志所以没定位」
+  的一部分成因——那条现在有了可复跑的解释，但仍不据旧数宣称已把 CI 全量跑绿。
+  同形风险（本轮实测其余 9 个用 `temp/` 路径的测试文件都不红：它们要么自己 `create_dir`，
+  要么走会建目录的写文件通路）——只在被观测到的这一处落修，不预防性铺开。
+- 修：`r2e_engine` 开头补 `@fs.create_dir("temp") catch { _ => () }`（沿用同包 `docs_gate_test.mbt` 的既有惯用法），
+  并写明"SQLite 只造文件、不造父目录"。**判据面**：CI 的 JS 轨就在干净 checkout 上跑全量，
+  这条修复由 CI 常驻看；本机侧要复跑只需 `rm -rf temp && moon test --target js`（判据可复现，不靠回忆）。
+
+### FIXED(2026-09-28T17:10:52Z / BUG-115)
+`src/engine/engine_execute_r2_test.mbt::r2e_engine` 补建 `temp/`；对照实证：同一无 `temp/` 条件下
+修前 532/535（3 failed，全在该文件）、修后 535/535（`temp/fixed_no_temp.log`）。
+本轮第 3 笔提交（前两笔是 0.3.4 的主体与文档面同步）。

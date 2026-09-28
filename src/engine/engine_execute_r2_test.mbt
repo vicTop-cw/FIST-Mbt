@@ -9,6 +9,11 @@
 ///|
 /// 干净的 SQLite 引擎（先清库保证用例幂等）。
 fn r2e_engine(db_path : String) -> @engine.FistEngine {
+  // SQLite 只造文件、不造父目录：本文件此前依赖**别的测试文件**先把 `temp/` 建出来，
+  // 于是干净树（`git archive` / 新 worktree / CI 刚 checkout）上跑赢竞速就三连红（BUG-115）。
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
   match @store.SqliteStore::open(db_path) {
     Some(s) => ignore(s.clear())
     None => abort("sqlite open failed: " + db_path)
