@@ -1,6 +1,6 @@
 ---
 name: fist-mbt
-description: Use this skill when the user needs help with FIST-Mbt, a pure MoonBit MCP server ({{TOOL_COUNT}} tools, single source of truth) for FIST commander task orchestration and self-driving development loops. Use it when working with FIST task lifecycle (publish/claim/plan/execute/submit/verify/archive), the seven development modes (advance/hunt/fix-and-merge/verify/polish/tidy/night-loop), Omega strong verification, DAG dependencies, multi-tenant namespaces, SQLite storage, Laya decision routing, or the meta-prompt templates for unattended pipelines. Helps navigate the codebase, run closed-loop self-driving sessions, and avoid known pitfalls (bug ledger: {{LEDGER_SUMMARY}}).
+description: Use this skill when the user needs help with FIST-Mbt, a pure MoonBit MCP server ({{TOOL_COUNT}} tools, single source of truth) for FIST commander task orchestration and self-driving development loops. Use it when working with FIST task lifecycle (publish/claim/plan/execute/submit/verify/archive), the seven development modes (advance / polish / verify / bugfind / fix_and_merge / tidy / explore - identifiers as accepted by mode_list), Omega strong verification, DAG dependencies, multi-tenant namespaces, SQLite storage, Laya decision routing, or the meta-prompt templates for unattended pipelines. Helps navigate the codebase, run closed-loop self-driving sessions, and avoid known pitfalls (bug ledger: {{LEDGER_SUMMARY}}).
 ---
 
 # FIST-Mbt
@@ -71,7 +71,7 @@ Full details: `memory/bugs.md` in the FIST-Mbt repo. High: BUG-1 (caller-supplie
 
 ## Self-driving modes (meta-prompts, see the meta-prompt library)
 
-Seven modes with battle-tested templates: 推进 advance / 寻虫 bug-hunt / 修复与合并 fix-and-merge / 验证 verify / 清整 tidy / 夜间循环 night-loop (free-model window) — each with a param card, mode-specific flow, red lines, and a reporting format. Loop pattern: progress ledger + one closed-loop mode per segment; failures skip forward, never stall.
+Seven modes, identifiers exactly as `mode_list` returns them: 推进 `advance` / 打磨 `polish` / 验证 `verify` / 寻虫 `bugfind` / 修复与合并 `fix_and_merge` / 清整 `tidy` / 探索 `explore` — each with a meta-prompt template at `templates/pipeline_mode_<identifier>.md` (precheck with `mode_templates`). Six of them are workers; `explore` scores goal complexity 0..5, picks one worker, and may run several workers in parallel only when their declared file scopes are pairwise disjoint (`reserve_scope` + `conflicts_check`). Loop pattern: progress ledger + one closed loop per segment; failures skip forward, never stall.
 
 ## Situation routing
 
