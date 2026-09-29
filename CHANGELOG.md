@@ -50,6 +50,7 @@ AIGC:
   无基线即自拒；模板形态 `v$VERSION` 不误红），`--selftest` 反解出 `R13×2`（漂移必红 + 模板不红），
   AGENTS 守卫族段与 `scripts/README.md` 索引同步。**台账现 0 条待修**（110 抬头 = 106 FIXED + 4 FALSE_POSITIVE）。
 - **BUG-121（上报即收口，盖章 2026-09-29T07:16:30Z）**：终审自证「文档点名的开发模式名 ↔ 注册表」时抓到插件态说谎——`plugins/source/SKILL.md` 与 `references/seven-modes.md` 写着 `hunt`、`fix-and-merge`、`night-loop` 三个服务端不接受的标识符，矩阵还整列漏了 `polish` 与新加的 `explore`（四宿主 SKILL 是 `gen_plugins.py` 投影出去的，消费方按名调用当场被拒）。改为注册表 7 个标识符 + 服务端 `mode_display_name` 中文名、补 explore 行（含四道并行门）、模板落点写明 `templates/pipeline_mode_<identifier>.md`，重投影后 cl7 逐字节一致。**台账现 0 条待修**（111 抬头 = 107 FIXED + 4 FALSE_POSITIVE）。
+- **BUG-122 / BUG-123（上报即收口，盖章 2026-09-29T07:28:19Z / 07:28:20Z）**：终审按文档命令逐条跑 demo 面时抓到两条指引缺陷——①`mcp_smoke.py`/`enrich_selfdrive.py`/`award_demo.py`/`omega_lesson_verify.py` 都不设 `FIST_DB_PATH`，而 README/USAGE/agent-map/deliverable 四处教人裸跑⇒ 演示任务与调用行写进仓库根的自举台账（实测根账 1986/6905 → 1987/6909，本轮这一次已进真实账，只追加不删）；四脚本现默认改道 `temp/<脚本名>.db`（显式设过的调用方不变），改道后裸跑 rc=0 且根账计数逐字不变。②`gen_help_docs.py` 自称是 `help_tools()` 文案的落笔依据，实测它反解的是 `fist://map` 的**定位图**（12 组/107 个简写 token）而非 129 个的注册表 ⇒ 照它写会把刚修好的 13 组/129 倒退回 12 组/107；docstring、脚本输出的边界行与索引条目都已改，CLI 权威面点名 = `node cli.js help tools` + AGENTS/README 表（J1/J2 钉）。**台账现 0 条待修**（113 抬头 = 109 FIXED + 4 FALSE_POSITIVE）。
 - **demo 车道回传**：一条 `println`→`eprintln` 解封 **27 个** stdio 判据/demo；`mcp_smoke.py` = MCP-SMOKE PASS、
   `atgc_selfdrive_demo` 与 `e2e_mirror_install` 本机跑绿，仓库根台账 **1986 任务 / 6905 调用** 跑前跑后逐字不变
   （只读证明）。产物硬门 `output_validate` 对本轮 14 件交付物判 **verdict=pass / evidence_layer=l4-pass**。

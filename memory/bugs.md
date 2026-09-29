@@ -2218,3 +2218,44 @@ BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并
 
 ### FIXED(2026-09-29T07:16:30Z / BUG-121)
 - evidence: plugins/source/SKILL.md 与 plugins/source/references/seven-modes.md 的模式清单改为注册表 7 个标识符 + 服务端 mode_display_name 的中文名；补 explore 行（复杂度 0..5 选一个单模式，并行须申报作用域两两不相交 + reserve_scope 拿到预订 + conflicts_check 放行，否则退回单模式串行）；模板落点写明 templates/pipeline_mode_<identifier>.md；seven-modes.md 加历史注记说明 hunt/fix-and-merge/night-loop 不是标识符。gen_plugins.py 重投影四宿主后 check_plugin_sync.py = PASS（逐字节一致）。 判据缺口（文档模式名 <-> 注册表无常驻对照）另计入报告 §7 后续建议。
+## BUG-122 [2026-09-29T07:28:18Z] [medium] FIXED
+- summary: demo/自检脚本裸跑会把演示数据写进仓库根的自举台账 fist-mbt.db（四处文档教人这么跑）
+- detail: 发现面：终审收口对「提供的 demo 需要完全可用」逐条跑文档命令，跑完只读复核根台账计数。
+被检面：scripts/mcp_smoke.py、enrich_selfdrive.py、award_demo.py、omega_lesson_verify.py —— 四个都不设 FIST_DB_PATH；
+而 README「一键完整自检」、USAGE:163、docs/agent-map.md:12/56、docs/deliverable.md:10 四处都教人裸跑。
+实测：裸跑一次 mcp_smoke ⇒ 根台账 tasks 1986 到 1987、call_log 6905 到 6909（本轮这一次留下的行已进真实台账，只追加不删）。
+为什么是缺陷：仓库根 fist-mbt.db 是自举台账（.gitignore 挡着不等于可脏），演示数据混进真实账会污染
+「本轮用了哪些工具要问 call_log」这类对账；demo.ps1 已经自己设 FIST_DB_PATH，说明这正是本项目认定的正确形状。
+残留同型面（计入报告 §7，不在本轮射程）：scripts/dispatch_verify.py 等若干 *_verify.py 仍写根库，
+且它们的索引行教人「完成即 git checkout -- fist-mbt.db 恢复整洁」——该文件是 gitignored，checkout 恢复不了，
+那句出路本身就是坏的（应改脚本默认隔离，而不是教人回滚一个 git 不管的文件）。
+- reported_by: fist-mbt-final-review-demo-plane
+
+
+
+### FIXED(2026-09-29T07:28:19Z / BUG-122)
+- evidence: 四个脚本在 NODE 行之后统一加默认改道：FIST_DB_PATH 未显式设置时落 temp/<脚本名>.db，
+显式设过的调用方（demo.ps1 那类）行为不变。
+实测：改道后裸跑 mcp_smoke rc=0 且 MCP-SMOKE PASS，根台账 tasks/call_log 前后逐字不变（1987/6909），
+演示行落进 temp/mcp_smoke.db（tasks=1、call_log=3）。
+scripts/README.md 的 mcp_smoke 条目写明该边界并点名另外三个同改脚本与残留同型面。
+## BUG-123 [2026-09-29T07:28:19Z] [medium] FIXED
+- summary: gen_help_docs.py 自称是 cmd/cli help_tools() 文案的落笔依据，照它写会把 CLI 帮助从 13 组/129 倒退回 12 组/107
+- detail: 发现面：终审自证「文档点名的分组/工具数 == 调用面」时拿 scripts/gen_help_docs.py 的快照与 `fist help tools` 对表。
+被检面：scripts/gen_help_docs.py 的 docstring 与 scripts/README.md 该条（原写「help_tools() 文案照它的输出人工落笔」）。
+实测：脚本反解 src/server/server.mbt 的 tool_groups 得 12 组/107 个 token；tools/list 真值 129 个；
+`node cli.js help tools` 回执 13 组/129（本轮刚补 [Modes 2] 一组）。
+为什么是缺陷而不是「资源面少列了 22 个工具」：fist://map 的 tool_groups 按自身声明是一张定位图
+（组值省略公共前缀简写，如 succeed status、append/get/export_tasks），不是注册表；拿它与 tools/list 做机械差集
+会把「未点名」虚报到 73 —— 先读被检件的自述定位声明，再决定是不是缺陷（本条一度被误判成产品缺陷）。
+真缺陷在**指引面**：脚本与索引都把它说成 CLI 文案的权威源，照做就会把已经对了的 CLI 帮助改坏。
+- reported_by: fist-mbt-final-review-demo-plane
+
+
+
+### FIXED(2026-09-29T07:28:20Z / BUG-123)
+- evidence: gen_help_docs.py 的 docstring 改写 + 快照输出加打两行边界提醒（定位图 != 注册表；
+CLI 权威面 = `node cli.js help tools` 回执 + AGENTS/README 工具表，由 check_tools_sync 的 J1/J2 钉）。
+scripts/README.md 该条同步，点名「不许照它落笔」的实测后果（13 组/129 倒退 12 组/107）。
+顺带把扫描从 lazy 正则改成花括号配平（旧写法遇到块内 `})` 会静默截断——本次实测两者同结果，属加固不是修行为）。
+实测：`python scripts/gen_help_docs.py` rc=0 并打印边界行；check_scripts_index / check_doc_surface / check_tools_sync rc=0。

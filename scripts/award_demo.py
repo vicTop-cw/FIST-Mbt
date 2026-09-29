@@ -17,6 +17,12 @@ import json, os, subprocess, sys
 from datetime import datetime, timedelta, timezone
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 NODE = os.environ.get("FIST_NODE", "node")
+# BUG-122：README/USAGE/agent-map/deliverable 四处都教人**裸跑**这份自检或 demo，而不带 FIST_DB_PATH 时
+# 服务端会把演示数据写进仓库根的自举台账 fist-mbt.db（每裸跑一次多一条任务与若干调用行）。
+# 默认改道 temp/ 下的隔离库；调用方显式给了 FIST_DB_PATH 就照它的（demo.ps1 那类已经自己设过）。
+_FIST_ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+if not (os.environ.get("FIST_DB_PATH") or "").strip():
+    os.environ["FIST_DB_PATH"] = os.path.join(_FIST_ROOT, "temp", "award_demo.db")
 MAIN = "_build/js/debug/build/cmd/cli/cli.js"
 NS = "award-demo"
 META = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
