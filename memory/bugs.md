@@ -2340,7 +2340,7 @@ B（剥掉 curl）rc=1、C（干净）rc=0；用户 PATH 逐字还原 1708 字�
 追加后 `git status --porcelain -uall` 的未跟踪未忽略面只剩 `.mcp.json`（有意不入库，且点号文件本来就不进包）。
 下一版的发布前置（本轮只登记不实现）：门禁应扫**解包后的载荷**（`moon view` + `moon add` 到空壳工程 + find 列件），
 而不是扫 git 跟踪面；这一步现在靠我手工做，无常驻判据。
-## BUG-128 [2026-09-29T09:36:03Z] [high] OPEN
+## BUG-128 [2026-09-29T09:36:03Z] [high] FIXED
 - summary: 同一个 0.3.4 现在有两份不同的码：GitHub Release 资产（git tag v0.3.4 的树）与 mooncakes 包（今天收口后的树）
 - detail: 发现面：发布后用 `git diff --stat v0.3.4..HEAD` 对身份，量到 tag 与载荷不是同一棵树。
 实测：本地 tag `v0.3.4` = af54d5e（2026-09-29 01:15 +0800，当时 moon.mod 已写 0.3.4）；
@@ -2351,6 +2351,28 @@ v0.3.4..HEAD 共 **11 个提交**，`src`+`cmd` 侧 **21 个文件 +1643/−269*
 所以用户没有任何办法从版本号分辨自己装到了哪一份 ⇒ 与 BUG-114（源码版本常量落后 moon.mod）同族的另一面。
 - reported_by: fist-mbt-mooncakes-publish-audit
 
+
+### FIXED(2026-09-29T10:44:53Z / BUG-128)
+- evidence: 出路①（owner 2026-09-29 裁决「发 0.3.5」）已执行完，逐格实测：
+① 版本真源三处同步：`moon.mod` 0.3.4→0.3.5、`src/server/server.mbt::project_version`、
+   `cmd/cli/help_topics.mbt::FIST_VERSION` 三处逐字相等（R11 判据 + `src/server/fist-mbt_wbtest.mbt` 白盒锁），
+   README 离线线的 `fist-mbt-js-v0.3.5.zip` 字面量同步（R13）；注册表发布版本自述仍只在 `BACKLOG.md` 一处（J4）。
+② 调用面自证：`scripts/cli_flag_probe.py` 起真产物回显 0.3.5；真 RPC 回执里 `0.3.5` 出现 3 次、`0.3.4` 0 次；
+   插件态重投影后 `check_plugin_sync`（cl7）逐字节通过。
+③ 发布：`moon publish --dry-run` = 202 Accepted；真发第一次 rc=127 传输层抛
+   `send failed because receiver is gone`（`Check passed` 与 zip 校验都在它之前通过）⇒ 先 `moon view --versions`
+   读回注册表确认 0.3.5 未登记（仍是 0.3.4/9 版）才重试，第二次 `Server status: 200 OK`、rc=0；
+   读回 `vicTop-cw/fist-mbt@0.3.5` / Latest 0.3.5 / Versions 10 / Published 2026-09-29T10:35:10.876305+00:00。
+④ 载荷对表（USAGE §10 第 3 步）：空壳消费工程 `moon add vicTop-cw/fist-mbt@0.3.5` 后
+   `moon check --target js` rc=0（58 个任务）⇒ 新进程能解析并编译这一版；解包 **552 件**，
+   与 `git ls-tree -r 124a20a` 的非点号跟踪面双向差集 **0/0**，逐件比对（仅归一 CRLF）**0 处不一致**
+   ⇒ 「注册表载荷 == 被 tag 的那棵树」这次是量出来的，不是推的；
+   `__cli_pkg.mbt.tmp` 件数 0（BUG-127 的修在下一版载荷上兑现）；凭据形状扫载荷 **0 命中**。
+⑤ 身份：本地 `v0.3.5` 与 `mooncakes-0.3.5` 都钉在 124a20a（即上面比对的那棵树）；
+   `fist-final-review-20260929` 仍留 a0dfef3 不移动。
+同号两树的旧事实不可撤销（注册表版本不许覆盖，只能 `moon deprecate`）⇒ 0.3.4 那一格作为遗留风险写进
+CHANGELOG/BACKLOG，是否给 0.3.4 打 deprecate 标记留 owner 裁决；公网安装线（GitHub raw/Release 资产）
+本轮没有 push，故仍指向发布前的码——这一格同样是遗留面，不是已修面。
 ## BUG-129 [2026-09-29T09:46:36Z] [medium] FIXED
 - summary: 「发布载荷对表」当时只由我手工跑了一遍，没有常驻判据认领（BUG-127 的 FIXED 小记自己写了这一格）
 - detail: 发现面：BUG-127 收口时我在 `### FIXED` 小记里如实写了「下一版的发布前置（本轮只登记不实现）：
@@ -2378,3 +2400,4 @@ M1 造未跟踪未忽略件必红 / M2 造被现成 `*.log` 规则挡住的件�
 接线：ci.yml JS 轨加「先 --selftest 再全量」两步；scripts/README 登记；AGENTS 守卫族 12→13，并把相邻那句「与上面 11 个 check_* 并列」改成不带数目的写法——那个数当时已经过期一次了。
 自证踩到的两个坑也写进了判据正文：① 守卫源码里不许出现完整 token 形状（我一开始把假串直接写进字面量，
 P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红」在开发期必然失败（新守卫自己未跟踪）⇒ 换成更强的 G1'（红面与未跟踪面双向对齐、不许幻影红），而不是删门或放宽阈值。
+
