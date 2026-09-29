@@ -523,6 +523,10 @@ moon publish --dry-run
 # 2) 正式发布
 moon publish
 #    看到 "Server status: 200 OK" 且退出码 0 即成功
+#    若这发抛**传输层**错（实测形状：`request or response body error … send failed because receiver is gone`，
+#    而它前面的 "Check passed" 与 zip 校验都已通过）⇒ 与安装器取数同一类（BUG-116/125），重试即可；
+#    但重试前**必须先 `moon view … --versions` 读回注册表**确认这一版没登记上——版本号不可覆盖不可撤销，
+#    已经收下的再重发只会吃 409，而"以为没发出去"的错判会让你以为旧载荷还是新的
 # 3) 发完必须**解包对表**（BUG-127 的教训：打包面 = 工作树 − .gitignore，不是 git 跟踪面）：
 #      moon add vicTop-cw/fist-mbt@<新版本>    # 在空壳工程里，从注册表真取一份
 #      find .mooncakes/vicTop-cw/fist-mbt -type f | sort > /tmp/payload.txt
@@ -530,6 +534,11 @@ moon publish
 #      comm -23 /tmp/payload.txt /tmp/tracked.txt   # 载荷里多出来的 = 跟着公开了的本地残留（应为空）
 #      comm -13 /tmp/payload.txt /tmp/tracked.txt   # 被 moon 丢掉的（点号文件/目录一律不进包）
 #    再对载荷内容扫一遍凭据形状与本机绝对路径——扫 git 面不等于扫公开面。
+#    还要与**要打 tag 的那一棵树**逐件比对（`git ls-tree -r <sha>` 取非点号跟踪面 + `git cat-file blob` 比字节，
+#    Windows 下只归一 CRLF）：「载荷 ⊆ git 跟踪面」不等于「载荷 == 被 tag 的树」，
+#    BUG-128 的根因正是这两件事被当成一件（tag 比载荷旧 11 个提交，而 `fist version` 只回版本号、分不出来）。
+#    另配一发消费侧实证：空壳工程 `moon add vicTop-cw/fist-mbt@<新版本>` 后 `moon check --target js` 要 rc=0，
+#    这才叫"别人拉这一版编得动"，注册表列出版本号本身证不了这一点。
 ```
 
 > **载荷边界（本次发布实测；版本号只在 `BACKLOG.md` 自述）**：`.github/`、`.githooks/`、`.codeartsdoer/`、`.gitignore`、`docs/*/.gitkeep`、

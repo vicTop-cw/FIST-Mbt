@@ -13,6 +13,39 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.5 (mooncakes 已发布 / GitHub Release 未发布) - BUG-128 出路①执行：版本号前进一位 + 注册表载荷逐件对表（盖章 2026-09-29T10:44:53Z）
+
+- **版本真源三处同步（owner 裁决的代价那一格，逐字改）**：`moon.mod` `0.3.4→0.3.5`、
+  `src/server/server.mbt::project_version`、`cmd/cli/help_topics.mbt::FIST_VERSION` —— R11 判据 +
+  `src/server/fist-mbt_wbtest.mbt` 白盒锁要求三者相等；README 离线线的 `fist-mbt-js-v0.3.5.zip` 字面量随之（R13）；
+  注册表发布版本的自述仍**只在 `BACKLOG.md` 一处**（J4，本轮我新写的 `scripts/README` 条目被它当场打回过一次，见下条）。
+- **BUG-128 已修（盖章 2026-09-29T10:44:53Z，出路①）**：`moon publish --dry-run` 得 `202 Accepted`，真发**第一发传输层抛**
+  `request or response body error … send failed because receiver is gone`（rc=127，`temp/v35_publish.log`；它前面的
+  `Check passed` 与 zip 校验都已过 ⇒ 不是载荷问题），**先 `moon view --versions` 读回注册表确认这一版没登记上**（仍是 9 版）才重试，
+  第二发 `Server status: 200 OK`（`temp/v35_publish_try1.log`）⇒ 注册表读回 `Latest: 0.3.5 / Versions: 10 /
+  Published 2026-09-29T10:35:10.876305+00:00`。这一课写进了 USAGE §10 第 2 步：**只对传输层错重试、重试前必须读回注册表**
+  （与 BUG-116/125 同族，但方向相反——这里 409 才是不能碰的那格）。
+- **发布后对表升级到"树身份"（USAGE §10 第 3 步补的两格）**：空壳消费工程 `moon add vicTop-cw/fist-mbt@0.3.5` 后
+  `moon check --target js` **rc=0（58 个任务）** ⇒ "别人拉这一版编得动"是量出来的；解包 **552 件**与 `git ls-tree -r 124a20a`
+  的非点号跟踪面**双向差集 0/0**、逐件比字节（只归一 CRLF）**0 处不一致** ⇒ 注册表载荷 == 被打 tag 的那棵树。
+  `__cli_pkg.mbt.tmp` 件数 **0**（BUG-127 的修在下一版载荷上兑现）；凭据形状扫载荷 **0 命中**（早前一次 `grep -E` 报的两处
+  是 `memory/2026-09-27.md` 的散文与守卫自己的 `SECRET_RE` 文本，用守卫的权威口径复扫即 0）。
+  本地 tag `v0.3.5` 与 `mooncakes-0.3.5` 同钉 `124a20a`；`fist-final-review-20260929` 不动（终审面仍指 `a0dfef3`）。
+- **收口面复跑（0.3.5 树上，逐条 rc=0）**：`moon info && moon fmt`（190 tasks）→ `moon test --target js -j 1` **572/572**
+  （`temp/v35_js_test.log`）→ 守卫族 tools_sync / test_sync（含 `--selftest` 8 变体）/ badge / scripts_index /
+  plugin_sync（4 宿主 56 件 v0.3.5）/ doc_surface（含 `--selftest`）/ store_tables_wired / demo_isolation /
+  ps_encoding / entry_paths / release_asset_names（`--selftest` R1–R14 + 全量）/ publish_payload /
+  mcp_tool_tour `--surface-selftest`（12 支）/ store_isolation_probe。
+  **探针点名跑了两个身份**：默认那发命中安装态 `fist-mbt.js (sha256:616b7632)`（本机仍是上一版安装产物），
+  `FIST_PROBE_JS` 强制指本地 0.3.5 产物 `(sha256:11355248)` 那发同样 2 格 GREEN ⇒ 隔离判据对新产物也成立。
+  **两处 rc=1 是我的调用姿势错，不是回归**：`check_test_sync` / `check_badge` 要接测试日志参数（CI 里传 `/tmp/moon_test.log`），
+  补 `temp/v35_js_test.log` 后双双 rc=0。
+- **台账现 0 条待修**：仓内现成计数器（`gen_plugins.py`）口径 = **BUG-1~129 共 128 条入账：0 待修 / 115 已修 / 9 重复并入 / 4 误报**
+  （128 而非 129：编号 95 从未入账，独立正则复算与投影口径一致）。
+- **有意留下的两格（不是已修）**：①**没有 push** ⇒ 公网安装线（GitHub raw/Release 资产 `fist-mbt-js-v0.3.5.zip`）还不存在，
+  注册表这条线已是最新码；②`0.3.4` 同号两树的历史事实**撤不回**（版本不可覆盖），是否给注册表 0.3.4 打 `moon deprecate`
+  留 owner 裁决——这是对外署名动作，不自行执行。
+
 ## v0.3.4 (unreleased) - 终审前收口：看护缺陷修到跨进程调用面、探索模式上线、demo 族解封（盖章 2026-09-29T06:18:10Z）
 
 - **BUG-119 修复（开工时唯一 high）**：`heal` 从"读进程内内存心跳表"改为读**持久化心跳表**（唯一真相），
@@ -56,7 +89,7 @@ AIGC:
 - **BUG-126（上报即收口，盖章 2026-09-29T08:19:52Z）**：`scripts/README` 的 `showcase.ps1` 条目把**读盘实时计数**当事实写死（548 tasks / 196 exec），而这两个数是脚本自己 `select count(*)` 现数的（`scripts/showcase.ps1:119-138`）⇒ 每次演示都在长；实测盘面真值 tasks=1987 / executions=461，写死的两个已漂。改为「读盘实时计数，索引不写死数字；数不到时降级 n/a 不崩」，顺带把取证侧一条实测坑写进同一行：默认码页下 `-File` 重定向出来的中文回执在**子进程内**就成了 `?`，外层按 UTF-8 或 GBK 都还原不回来，须先置 `[Console]::OutputEncoding=UTF-8`。缺口如实登记不假装有守卫：目前没有常驻判据把「文档里的活体计数字面量」打到盘上真值（R13 只管资产名形状，J 系列不管任务计数），已写进报告 §7 下一轮建议。
 - **发布到 mooncakes（0.3.4，2026-09-29T09:26:54Z）**：`moon publish --dry-run` 得 `Server status: 202 Accepted`（包名/版本 `vicTop-cw/fist-mbt version 0.3.4`），正式发得 `Server status: 200 OK`、rc=0；`moon view` 回读 `Latest: 0.3.4 / Versions: 9 / Downloads: 31`。发布前置门：`moon test --target js` **572/572 rc=0**（`temp/publish_gate_js.log`，另一次独立复跑在 `temp/final_js4.log`）＋守卫族 11 步逐条 rc=0（含两个新守卫的 `--selftest`）＋`moon fmt --check` no work。
 - **BUG-127（上报即收口，盖章 2026-09-29T09:36:03Z）**：`moon publish` 的**打包面是「工作树 − .gitignore」，不是 git 跟踪面**。发完把注册表真交付的载荷解出来对表：552 件里 **1 件根本不在 git 里**（`__cli_pkg.mbt.tmp`，moon 生成的 `cmd/cli` 包声明临时件，内容只有 5 行 import、无凭据无本机路径 ⇒ 卫生事故不是泄露事故），而**18 个被跟踪文件不在载荷里**（点号开头的文件/目录 moon 一律排除：`.github/*` 5、`.githooks/*` 2、`.codeartsdoer/*` 2、`.gitignore`、`.mcp.dev.json`、`.mcp.example.json`、`docs/*/.gitkeep` 3、`plugins/claude/.claude-plugin/*` 2、`plugins/claude/.mcp.json`）。修：`.gitignore` 追加 `*.mbt.tmp`（`git check-ignore -v` 可检），USAGE §10 补「发完解包对表」的第三步与载荷边界，BACKLOG P1 的发布自述改为实测注册表态。对表这一步当时**只有我在跑**——那格缺口另开 BUG-129 并当场补成常驻判据（见下条）。
-- **BUG-128（入账，OPEN 等 owner 裁决）**：**同一个 0.3.4 现在有两份不同的码**。本地 tag `v0.3.4` = `af54d5e`（01:15 +0800，当时 `moon.mod` 已写 0.3.4），而注册表的 0.3.4 载荷取自 `a0dfef3`——两者之间隔着 **11 个提交、`src`+`cmd` 侧 21 个文件 +1643/−269**（看护跨进程修复、探索模式、R 系列判据等）。用户侧形状：`install_onecmd.ps1 -Version 0.3.4` 拿旧码（GitHub Release 资产），`moon add vicTop-cw/fist-mbt@0.3.4` 拿新码，而 `fist version` 只回显 0.3.4 ⇒ 无法分辨。**两条出路（发版不可撤销，等 owner 选）**：① `moon.mod` 前进到 0.3.5 + 重发注册表 + 打 `v0.3.5`（推荐，代价=一轮版本自述同步）；② 把 GitHub Release 的 `v0.3.4` 资产重做到当前树（代价=动已发布的 tag，需明确授权）。本轮**没有**自行 bump，也没有 push。
+- **BUG-128（入账，OPEN 等 owner 裁决）**：**同一个 0.3.4 现在有两份不同的码**。本地 tag `v0.3.4` = `af54d5e`（01:15 +0800，当时 `moon.mod` 已写 0.3.4），而注册表的 0.3.4 载荷取自 `a0dfef3`——两者之间隔着 **11 个提交、`src`+`cmd` 侧 21 个文件 +1643/−269**（看护跨进程修复、探索模式、R 系列判据等）。用户侧形状：`install_onecmd.ps1 -Version 0.3.4` 拿旧码（GitHub Release 资产），`moon add vicTop-cw/fist-mbt@0.3.4` 拿新码，而 `fist version` 只回显 0.3.4 ⇒ 无法分辨。**两条出路（发版不可撤销，等 owner 选）**：① `moon.mod` 前进到 0.3.5 + 重发注册表 + 打 `v0.3.5`（推荐，代价=一轮版本自述同步）；② 把 GitHub Release 的 `v0.3.4` 资产重做到当前树（代价=动已发布的 tag，需明确授权）。本轮**没有**自行 bump，也没有 push。（**追记**：owner 选出路①，已按 `v0.3.5` 段执行完并标 FIXED，盖章 2026-09-29T10:44:53Z；`0.3.4` 同号两树这一事实撤不回——注册表版本不可覆盖，是否给那一版打 `moon deprecate` 仍留 owner 裁决。）
 - **BUG-129（上报即收口，盖章 2026-09-29T09:46:36Z）**：BUG-127 的 `### FIXED` 小记当时自己写了「这道对表没有常驻判据」——缺口挂在叙述面里没人认领就是 J10 型缝，而它已经真漏过一次东西，所以不等下一次发布。新增 `scripts/check_publish_payload.py`：P1 未被 `.gitignore` 挡住又未被 git 跟踪的非点号文件 ⇒ 红（点名 + 修法）；P2 红面里出现凭据形状 ⇒ 另判事故级；P3 打包面列不出任何文件 ⇒ FATAL(2) 自拒。离线可跑、不联网（载荷真值要 `moon add` 才拿得到，CI 不该跑网络），所以它是**代理门不是替身**：静态面数出将随包公开 552 件、注册表解包实测也是 552 件，**数目相等而集合不同**（载荷里有后来才被 ignore 挡掉的 `__cli_pkg.mbt.tmp`，静态面里有发布后新增的守卫件）⇒ 发完仍要解包对表一次。`--selftest` 四支（G1 干净不误红；工作树带未跟踪件时自动换 G1' 逐件点名且无幻影红 / M1 造未跟踪件必红 / M2 造被现成 `*.log` 挡住的件必不红 / M3 红面里塞凭据形状必点名 P2），实测 `PASS 发布载荷面干净：将随包公开 552 件，其中未被 git 跟踪的 0 件（另有 18 件点号条目 moon 本来就不打包）`。ci.yml JS 轨挂「先 --selftest 再全量」，守卫族 12→13；顺手把相邻那句「与上面 11 个 `check_*` 并列」改成不带数目的写法——**那个数已经过期过一次了**。两处自证踩坑也写进判据正文：守卫源码里不许出现完整 token 形状（我第一版把假串写字面量里，P2 当场打到守卫自己 ⇒ 改运行时拼接）；G1 在开发期必然失败（新守卫自己未跟踪 ⇒ 换成更强的 G1'，不删门也不放宽）。
 **台账现 1 条待修**（128 条入账 = 114 已修 / 9 重复并入 / 4 误报 / **1 待修 = BUG-128**，与 `gen_plugins.py` 的投影行逐字同源；那 1 条不是漏修，是**发版方向的裁决位**）。
 > **口径更正（同轮追加，改的是数不是事）**：上面 BUG-120 / BUG-121 / BUG-122·123 三条原写的「110 / 111 / 113 抬头」
