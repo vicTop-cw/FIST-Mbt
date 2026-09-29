@@ -47,7 +47,7 @@
 - **N-1 未声明键静默吞（规模已实测）**：48.1% 的历史调用带未声明键、`now` 命中 2167 次而调用方毫无感知。仓内 `check_doc_surface.py` 的 J8 只比对模板里的顶层参数名，运行时不校验——所以"驱动以为盖了时间/以为传了过滤条件"这一类**假绿**没有常驻判据。修法不该是"立刻拒"（会把现有 48% 的调用形状当场打红），第一步应是**回执里点名被忽略的键**（`ignored_keys`），可见之后再谈拒。
 - **N-2 `serve` 往协议 stdout 打横幅**（BUG-76 的未收面，本轮活体复现）。修法二选一：横幅改 stderr，或默认不带、`--banner` 显式开。验收判据要打在"首行必须 `json.loads` 得动"这一条上，而不是打文案。
 - **N-3 `loop_create` 是 now 政策的唯一活口**（读 args 的 `now` 并写进 `created_at`，schema 不 advertise，描述却说时间戳由服务端盖章）。要么删掉这个读取（走测试替身通道），要么显式 advertise 成测试专用入参——现在这样是**文档与实现相反**。
-- **N-4 AGENTS.md 的参数列不在任何判据的扫描面上**：`AGENTS.md:259-261` 给 Omega 三件套（`omega_spec_create`/`omega_spec_review`/`omega_result_verify`）的"关键参数"列写着 `now`，而这三者的 live properties 分别是 `[author,content,max_rounds,task_id]` / `[max_rounds,reason,reviewer,task_id,verdict]` / 同前，源码里也没有 `get_str(args,"now")` ⇒ 文档广告了一个实现不读、传了会被静默吞的参数。没人抓到它的原因很具体：`check_tools_sync` 判据 5 只禁 server.mbt 里广告 `"now": string_prop`，J2 只比工具名覆盖，J8 只比 `templates/*.md` 的调用参数——**AGENTS 表格那一列谁都不管**。修法便宜：把 J8 的比对面扩到 AGENTS 参数列（反解第三列的标识符逐个 ∈ 该工具 properties，并查 required 是否被漏写），配一格反向对照（把某个参数换成不存在的键必须红）。
+- **N-4 AGENTS.md 的参数列不在任何判据的扫描面上**（本轮已按活体 schema 修好那 6 行，见 §7；这条留着的价值是**缺口本身还在**）：修前 `AGENTS.md` 的 Omega 三件套（`omega_spec_create`/`omega_spec_review`/`omega_result_verify`）的"关键参数"列写着 `now`，而这三者的 live properties 分别是 `[author,content,max_rounds,task_id]` / `[max_rounds,reason,reviewer,task_id,verdict]` / 同前，源码里也没有 `get_str(args,"now")` ⇒ 文档广告了一个实现不读、传了会被静默吞的参数。没人抓到它的原因很具体：`check_tools_sync` 判据 5 只禁 server.mbt 里广告 `"now": string_prop`，J2 只比工具名覆盖，J8 只比 `templates/*.md` 的调用参数——**AGENTS 表格那一列谁都不管**。修法便宜：把 J8 的比对面扩到 AGENTS 参数列（反解第三列的标识符逐个 ∈ 该工具 properties，并查 required 是否被漏写），配一格反向对照（把某个参数换成不存在的键必须红）。
 
 **取数跑在哪棵树上（并发工作区纪律）**：本轮三条结论各有各的面，不许混读——
 - **调用面**：`_build/js/debug/build/cmd/cli/cli.js`（09-29 00:29 构建）＋ 起真进程打 JSON-RPC；这个产物里含别的车道未提交的改动，所以"回执长什么样"只对那一次运行负责。
@@ -64,7 +64,7 @@
 1. **修 BUG-119 的第一格：成对常驻判据先行**。判据形状照 §3 的三臂（A 无心跳 / B 有心跳 / C 已暂停），**A 与 B 必须在同一夹具里**，并补第四臂「心跳写在上一进程」。默认语义建议：`None` 分支不再是"即死"，而是按 `created_at` 起算给宽限期（与 `timeout_sec` 同一个闸），已暂停继续不动。
    **验收**：四臂常驻测试全绿；且在 `git archive HEAD` 的旧码树上至少 1 臂红（证明锁承重）；`watchdog_tick(namespace=…)` 不再把刚认领的单列进 `healed_tasks`。
 2. **心跳跨进程的根因定位**（JS sqlite SELECT 取值形状 / 心跳读写不同源），产出写进 BUG-119 的 `### FIXED` 小记。
-3. **时钟入参归一（N-3 + N-4 一起做，两半都是"文档与实现相反"）**：① 关掉 `loop_create` 对未 advertise 的 `now` 的读取（走测试替身通道，或显式做成测试专用入参并写进 schema）；② 删掉 `AGENTS.md:259-261` Omega 三件套参数列里的 `now`；③ 把 J8 的比对面从 `templates/*.md` 扩到 AGENTS 的参数列，配"改成不存在的键必须红"的反向对照。
+3. **时钟入参归一（N-3 + N-4 一起做，两半都是"文档与实现相反"）**：① 关掉 `loop_create` 对未 advertise 的 `now` 的读取（走测试替身通道，或显式做成测试专用入参并写进 schema）；② 删掉 AGENTS Omega 三件套参数列里的 `now`（**本轮已删**，同批还修了 `omega_verify`/`omega_verify_fix` 两行的入参与描述）；③ 把 J8 的比对面从 `templates/*.md` 扩到 AGENTS 的参数列，配"改成不存在的键必须红"的反向对照。
    **验收**：全仓 `get_str(args, "now"` 命中数 = 0（HEAD 实测 = 1 处，在 `loop_create` 分支）；AGENTS 参数列反解出的标识符全部 ∈ 对应工具 properties；`check_tools_sync.py` 判据 5 之外新增这一格计数（它现在只禁"广告"，看不见"未广告却读取"，也看不见文档表格里的参数列）。
 
 ### P1′ — 结构性改进（终审后第一批）
