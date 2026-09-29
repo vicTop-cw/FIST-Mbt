@@ -234,8 +234,8 @@ fist doctor        # 5 项健康检查
 
 ## 资源
 
-- **MochaCakes**: `vicTop-cw/fist-mbt`（注册表上实际发布到哪个版本以 BACKLOG P1 条目为准；本行刻意不写版本号——
-  本机没有可复核注册表的通道，写死数字就会和 BACKLOG 的发布记录互相矛盾，这是 BUG-30 的原始形状）
+- **MochaCakes**: `vicTop-cw/fist-mbt`（注册表上实际发布到哪个版本**只在 BACKLOG 的 P1 条目自述一处**；本行刻意不写版本号——
+  写死就会和 BACKLOG 的发布记录双向漂移，这是 BUG-30 的原始形状。要当场核对就跑 `moon view vicTop-cw/fist-mbt --versions`）
 - **GitHub**: https://github.com/vicTop-cw/FIST-Mbt
 - **GitCode 镜像**: https://gitcode.com/VictorTop/Fist-Mbt （`master` + 标签与 GitHub 同步发布；
   本机 `git remote gitcode` 配的是 HTTPS 取 / `pushurl` 走 `git@gitcode.com:…` 推，凭据只来自环境变量）

@@ -95,7 +95,13 @@ jobs:
       - name: Spawn-plane isolation guard (BUG-122：demo/自检脚本裸跑不许写仓库根自举台账)
         shell: bash
         run: |
-          python3 scripts/check_demo_isolation.py --selftest
+          python3 scripts/check_demo_isolation.py
+
+      - name: Publish payload guard (BUG-127：`moon publish` 打的是工作树－.gitignore，不是 git 跟踪面)
+        shell: bash
+        run: |
+          python3 scripts/check_publish_payload.py --selftest
+          python3 scripts/check_publish_payload.py
           python3 scripts/check_demo_isolation.py
 
       - name: Release asset-name single source (BUG-103：安装器版本真源=moon.mod，空值必须失败)
