@@ -12,6 +12,8 @@ import {
 
 supported_targets = "js+native"
 
+warnings = "-6" // multi-target unused_package suppression (align with server)
+
 options(
   link: { "native": { "cc-link-flags": "-lsqlite3" } },
 )

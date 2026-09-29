@@ -111,12 +111,30 @@ test "ops: 超时静默 -> heal 回滚为已领取（可重派）" {
 }
 
 ///|
-test "ops: 从未上报心跳的执行中任务 -> heal 视为 no_signal 回滚" {
+test "ops: 从未上报心跳但刚刚活动过 -> heal 不回滚（BUG-119 首拍即死）" {
   let e = test_engine()
   let hb = Heartbeat::new()
   ignore(e.claim(task_id="T0", assignee="worker-a", now="2026-09-05T00:00:01Z"))
   ignore(e.execute(task_id="T0", deliverable="d", now="2026-09-05T00:00:02Z"))
+  // 内存心跳表里没有任何行；任务 execute 才过 1 秒
   let healed = heal_stale_tasks(e, hb, "2026-09-05T00:00:03Z", timeout_sec=600)
+  match healed {
+    Ok(list) => assert_true(list.is_empty())
+    Err(_) => abort("heal 不应失败")
+  }
+  match e.get_task("T0") {
+    Some(t) => assert_true(t.get_status().to_string() == "执行中")
+    None => abort("T0 应存在")
+  }
+}
+
+///|
+test "ops: 从未上报心跳且活动时钟超 timeout -> heal 仍回滚（no_signal 不弱化）" {
+  let e = test_engine()
+  let hb = Heartbeat::new()
+  ignore(e.claim(task_id="T0", assignee="worker-a", now="2026-09-05T00:00:01Z"))
+  ignore(e.execute(task_id="T0", deliverable="d", now="2026-09-05T00:00:02Z"))
+  let healed = heal_stale_tasks(e, hb, "2026-09-05T00:16:42Z", timeout_sec=600)
   match healed {
     Ok(list) => {
       assert_true(list.length() == 1)
@@ -239,14 +257,15 @@ test "BUG-81：heal 带 namespace 只回滚该 ns，不带=全库（旧行为）
     Some(t) => assert_eq(t.get_status().to_string(), "执行中")
     None => abort("b81-b 的任务应还在")
   }
-  // ② 不带 ns：全库作用域。这里回滚 2 条 = b81-b 那条 + ①里已回滚成「已领取」（仍是活跃态、
-  // 且心跳已被清）的 b81-a ——正是 BUG-81 的形状：一次不点名 ns 的 heal 会波及别的轮次。
+  // ② 不带 ns：全库作用域。BUG-119 后这里回滚 1 条 = b81-b 那条：①里刚 reopen 的 b81-a
+  // 其 `updated_at` 被盖成 now_late，同一拍它「刚刚活动过」，不再被二次回滚。
+  // BUG-81 的形状仍然成立——**不带 ns 就是会动别的命名空间**（这里动的就是 b81-b）。
   match heal_stale_tasks(e, hb, now_late, timeout_sec=600) {
     Ok(list) => {
-      assert_eq(list.length(), 2)
-      if not(list.contains(id_a)) {
+      assert_eq(list.length(), 1)
+      if list.contains(id_a) {
         abort(
-          "全库 heal 漏了 id_a=" +
+          "BUG-119 后不应在同一拍二次回滚 id_a=" +
           id_a +
           "，实得 [" +
           b81_ids(list) +

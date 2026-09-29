@@ -9,15 +9,39 @@ from datetime import datetime
 from threading import Thread
 from queue import Queue, Empty
 
-MCP_SERVER = r"E:\IDEProjects\AI\FIST-Mbt\_build\js\debug\build\cmd\main\main.js"
-WORKDIR = r"E:\IDEProjects\AI\FIST-Mbt"
+ROOT = os.path.dirname(os.path.abspath(__file__))
+SIBLINGS = os.path.dirname(ROOT)
+# 现役入口 = cmd/cli 的 JS 产物，且必须带 `serve` 子命令（cmd/cli 裸跑只打印 help，
+# 客户端拿到的第一行就不是 JSON-RPC）。曾写死绝对盘符 + 退役入口 cmd/main ⇒ 定时任务
+# 每天演示一遍昨天的产品（BUG-118，check_entry_paths R1 现在能照到这一格）。
+MCP_SERVER = os.path.join(ROOT, "_build", "js", "debug", "build", "cmd", "cli", "cli.js")
+WORKDIR = ROOT
 TIMEOUT_SEC = 2400
+
+# 伴生项目（Pentad / Tnr）与本仓同级目录；被 env 覆盖，不在脚本里钉死盘符。
+def _sibling(*parts):
+    return os.environ.get("FIST_CRON_" + parts[0].upper() + "_DIR",
+                          os.path.join(SIBLINGS, *parts))
 
 # Round-robin targets: one project per invocation, chosen by least-recently-advanced.
 PROJECTS = [
-    {"name": "pentad", "gen_prompts": r"E:\IDEProjects\AI\Pentad\Gen_Prompts", "namespace": "cron-auto", "state_file": r"E:\IDEProjects\AI\FIST-Mbt\.cron_state_pentad.json"},
-    {"name": "tnr",    "gen_prompts": r"E:\IDEProjects\AI\Tnr\Gen_Prompts",    "namespace": "cron-tnr",  "state_file": r"E:\IDEProjects\AI\FIST-Mbt\.cron_state_tnr.json"},
+    {"name": "pentad", "gen_prompts": os.path.join(_sibling("Pentad"), "Gen_Prompts"), "namespace": "cron-auto", "state_file": os.path.join(ROOT, ".cron_state_pentad.json")},
+    {"name": "tnr",    "gen_prompts": os.path.join(_sibling("Tnr"), "Gen_Prompts"),    "namespace": "cron-tnr",  "state_file": os.path.join(ROOT, ".cron_state_tnr.json")},
 ]
+
+
+def ensure_patched_entry():
+    """起服前给 ESM 产物注入 require shim（幂等；moonc ≥0.10.14 的已知不兼容，见 AGENTS「工具」段）。
+    产物不在 ⇒ 点名要跑的那条 build 命令后退出，绝不静默退回退役入口。"""
+    if not os.path.isfile(MCP_SERVER):
+        sys.exit("FATAL 入口产物不存在：%s\n      先跑 `moon build --target js cmd/cli`" % MCP_SERVER)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "patch_esm_main", os.path.join(ROOT, "scripts", "patch_esm_main.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.patch(MCP_SERVER)
+
 
 def iso_now():
     """Current local time ISO8601."""
@@ -26,8 +50,9 @@ def iso_now():
 
 class MCPClient:
     def __init__(self):
+        ensure_patched_entry()
         self.proc = subprocess.Popen(
-            ["node", MCP_SERVER],
+            ["node", MCP_SERVER, "serve"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -35,6 +60,7 @@ class MCPClient:
             encoding="utf-8",
             errors="replace",
         )
+
         self._id = 1
         # readline() 会无限阻塞；改用后台线程 + Queue.get(timeout) 让 deadline 真正生效（Windows 管道不支持 select）
         self._lines = Queue()

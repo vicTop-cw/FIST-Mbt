@@ -21,18 +21,19 @@ let engine : @engine.FistEngine = make_engine()
 let heartbeats : @ops.Heartbeat = @ops.Heartbeat::new()
 
 ///|
-fn init_heartbeats() -> Unit {
-  let rows = engine.store_list_heartbeats()
-  for row in rows {
-    let (_agent_id, task_id, last_seen, status) = row
-    if task_id != "" {
-      heartbeats.beat(task_id, signal=status, now=last_seen)
-    }
+/// BUG-119：跨进程心跳回读。旧实现是模块级 `let _init_hb : Unit = init_heartbeats()`——
+/// MoonBit 不保留未被引用的非 `pub` 顶层绑定，那行"启动时回灌"根本没进产物
+/// （实测产物里 `init__heartbeats` 出现 0 次），新进程的内存心跳表因此恒为空。
+/// 现在不在启动时预热：**持久化心跳表是唯一真相**，`heal` 走 store 版判活，
+/// `heartbeat` 需要上一次心跳时按需回读单行。内存表只当本进程的写缓冲。
+fn hb_last_seen_of(task_id : String) -> String {
+  let mem = heartbeats.last_seen_of(task_id)
+  if mem != "" {
+    mem
+  } else {
+    engine.store_read_heartbeat_last_seen(task_id)
   }
 }
-
-///|
-let _init_hb : Unit = init_heartbeats()
 
 ///|
 /// 模块级追加式审计日志（M5 治理：人类主权 + 追加式审计）。
@@ -1945,7 +1946,8 @@ pub async fn run_server() -> Unit {
         None => Err(@mcp_types.ToolError("task not found: \{task_id}"))
         Some(_) => {
           // 计算本次心跳间隔（R90：Phi Accrual 判活数据源），上次心跳存在且可解析才记
-          let prev = heartbeats.last_seen_of(task_id)
+          // BUG-119：上次心跳以持久化表为准，别的进程上报的也算数
+          let prev = hb_last_seen_of(task_id)
           if prev != "" && prev != ts {
             let now_s = @ops.iso_to_secs(ts)
             let prev_s = @ops.iso_to_secs(prev)
@@ -1961,21 +1963,27 @@ pub async fn run_server() -> Unit {
           }
           // 内存心跳表
           heartbeats.beat(task_id, signal~, now=ts)
-          // SQLite 持久化（落库失败仅忽略，不阻塞主流程）
-          ignore(
+          // SQLite 持久化：落库失败不阻塞主流程，但必须如实回执（BUG-119）——
+          // 内存后端下 write_heartbeat 也返回 Ok，所以"是否落库"只能看后端自述
+          let store_ok = match
             engine.store_write_heartbeat(
               agent_id="fist-mbt",
               task_id~,
               last_seen=ts,
               status=signal,
-            ),
-          )
+            ) {
+            Ok(_) => true
+            Err(_) => false
+          }
+          let hb_backend = engine.heartbeat_backend()
           Ok(
             @mcp.ToolResult::text(
               Json::object({
                 "task_id": Json::string(task_id),
                 "signal": Json::string(signal),
                 "last_seen": Json::string(heartbeats.last_seen_of(task_id)),
+                "backend": Json::string(hb_backend),
+                "persisted": Json::boolean(store_ok && hb_backend == "sqlite"),
               }).stringify(),
             ),
           )
@@ -1986,7 +1994,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "heal",
-    "no_signal 看护（AO watchdog）：心跳超时静默的活跃任务（执行中/已领取/拆分中）回滚为已领取待重派。参数：timeout_sec(可选默认600)、namespace(可选)。**namespace 不传时扫全库所有命名空间**（BUG-81：多 ns 共用同一个 fist-mbt.db，一次不带 ns 的 heal 会把别的轮次的在途任务一并 reopen，而 reopen 不署名 ⇒ 枝干 assignee 被清空）；只想看护自己这一批就显式传 ns。返回 { healed, count, scope, namespace, message }，scope 明说这次是全库还是单 ns（时间戳一律服务端盖章，不接受调用方注入 now）。",
+    "no_signal 看护（AO watchdog）：心跳超时静默的活跃任务（执行中/已领取/拆分中）回滚为已领取待重派。参数：timeout_sec(可选默认600)、namespace(可选)。**namespace 不传时扫全库所有命名空间**（BUG-81：多 ns 共用同一个 fist-mbt.db，一次不带 ns 的 heal 会把别的轮次的在途任务一并 reopen，而 reopen 不署名 ⇒ 枝干 assignee 被清空）；只想看护自己这一批就显式传 ns。返回 { healed, count, scope, namespace, backend, heartbeat_source, message }，scope 明说这次是全库还是单 ns（时间戳一律服务端盖章，不接受调用方注入 now）。**判活以持久化心跳表为准**（BUG-119）：没有心跳行不等于「已静默」，此时退到任务行的 `updated_at`（claim/execute/reopen 都会盖章它）——距最后一次活动超过 timeout_sec 才回滚，进程重启后的第一拍不再把在途任务一律打死。",
     schema(
       {
         "timeout_sec": int_prop("超时秒数(可选默认600)"),
@@ -2000,8 +2008,15 @@ pub async fn run_server() -> Unit {
       let ts = now_default()
       let timeout_sec = get_int(args, "timeout_sec", default=600)
       let heal_ns = get_str(args, "namespace")
+      let skipped : Array[String] = []
       match
-        @ops.heal_stale_tasks(engine, heartbeats, ts, timeout_sec~, ns=heal_ns) {
+        @ops.heal_stale_tasks_from_store(
+          engine,
+          ts,
+          timeout_sec~,
+          ns=heal_ns,
+          skipped_ids=skipped,
+        ) {
         Ok(healed) =>
           Ok(
             @mcp.ToolResult::text(
@@ -2017,6 +2032,12 @@ pub async fn run_server() -> Unit {
                   },
                 ),
                 "namespace": Json::string(heal_ns),
+                // BUG-119：判活读的是持久化心跳表，后端身份必须写在回执里
+                // （memory 后端时心跳只活在本进程，看护结论不可跨进程复现）
+                "backend": Json::string(engine.heartbeat_backend()),
+                "heartbeat_source": Json::string("sqlite-heartbeats"),
+                // 判死但回滚不了的条目（如「已领取」不可 reopen）必须点名，不能只让 healed 变少
+                "skipped": Json::array(skipped.map(fn(s) { Json::string(s) })),
                 "message": Json::string("超时静默任务已回滚待重派"),
               }).stringify(),
             ),
@@ -2078,7 +2099,7 @@ pub async fn run_server() -> Unit {
           "phi_gate 怀疑阈值(可选默认8，原论文口径)",
         ),
         "mode": string_prop(
-          "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy。非 advance 时 templates/pipeline_mode_<mode>.md **覆盖**显式 meta_prompt_path（不是反过来！BUG-77：旧描述写的是『显式优先』，代码走的是 mode 优先）；要让显式路径生效就别传 mode 或传 advance。回执里 meta_prompt_resolved 才是真被读的那份，meta_prompt_path 只是你传进来的那个。非法值立即返回 Err。",
+          "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy | explore。非 advance 时 templates/pipeline_mode_<mode>.md **覆盖**显式 meta_prompt_path（不是反过来！BUG-77：旧描述写的是『显式优先』，代码走的是 mode 优先）；要让显式路径生效就别传 mode 或传 advance。回执里 meta_prompt_resolved 才是真被读的那份，meta_prompt_path 只是你传进来的那个。非法值立即返回 Err。",
         ),
         "flush_bug_queue": bool_prop(
           "是否自动 flush bug 队列到 GitHub/GitCode（可选默认false）——定时唤醒时顺便 flush，GitHub 失败自动切 GitCode",
@@ -2281,7 +2302,7 @@ pub async fn run_server() -> Unit {
         ),
         "timeout_sec": int_prop("执行超时秒数(可选默认2400)"),
         "mode": string_prop(
-          "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy。BUG-76：本工具的 mode **只作为标签写进台账**，不读模式模板（接线只在 watchdog_tick 上做了）；要按模式取 templates/pipeline_mode_<mode>.md 请用 watchdog_tick(mode=) 或自己把路径传给 meta_prompt_path。",
+          "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy | explore。BUG-76：本工具的 mode **只作为标签写进台账**，不读模式模板（接线只在 watchdog_tick 上做了）；要按模式取 templates/pipeline_mode_<mode>.md 请用 watchdog_tick(mode=) 或自己把路径传给 meta_prompt_path。",
         ),
       },
       [],
@@ -2322,15 +2343,25 @@ pub async fn run_server() -> Unit {
         "name": string_prop("组合环唯一名称(必填)"),
         "steps": Json::object({
           "type": Json::string("array"),
-          "description": Json::string("step mode 数组，6 种合法 mode 之一：advance/polish/verify/bugfind/fix_and_merge/tidy"),
+          "description": Json::string(
+            "step mode 数组，7 种合法 mode 之一：advance/polish/verify/bugfind/fix_and_merge/tidy/explore",
+          ),
           "items": string_prop("单个 step mode"),
         }),
-        "preset": string_prop("预设环名(可选)：fix-iterate | build-verify | full-iterate。若提供则覆盖 steps"),
+        "preset": string_prop(
+          "预设环名(可选)：fix-iterate | build-verify | full-iterate。若提供则覆盖 steps",
+        ),
         "max_rounds": int_prop("硬上限(可选默认5)"),
-        "stop_on_goal": bool_prop("健康度 healthy+零blocked 即停(可选默认true)"),
-        "stop_on_exceeded": bool_prop("test↑10% 或 open_bug↓50% 即停(可选默认true)"),
+        "stop_on_goal": bool_prop(
+          "健康度 healthy+零blocked 即停(可选默认true)",
+        ),
+        "stop_on_exceeded": bool_prop(
+          "test↑10% 或 open_bug↓50% 即停(可选默认true)",
+        ),
         "baseline_test_count": int_prop("baseline 测试数(可选默认0)"),
-        "baseline_open_bug_count": int_prop("baseline 未关闭 bug 数(可选默认0)"),
+        "baseline_open_bug_count": int_prop(
+          "baseline 未关闭 bug 数(可选默认0)",
+        ),
       },
       ["name"],
     ),
@@ -2340,28 +2371,28 @@ pub async fn run_server() -> Unit {
         return Err(@mcp_types.ToolError("name is required"))
       }
       match loop_reg.get(name) {
-        Some(_) => return Err(@mcp_types.ToolError("loop already exists: " + name))
+        Some(_) =>
+          return Err(@mcp_types.ToolError("loop already exists: " + name))
         None => ()
       }
       let preset = get_str(args, "preset")
-      let steps : Array[String] =
-        if preset != "" {
-          match @ops.preset_loop(preset) {
-            Ok((s, _)) => s
-            Err(e) => return Err(@mcp_types.ToolError(e))
-          }
-        } else {
-          let raw = get_array(args, "steps")
-          if raw.length() == 0 {
-            return Err(@mcp_types.ToolError("either steps or preset is required"))
-          }
-          raw.map(fn(j) {
-            match j {
-              String(s) => s
-              _ => j.stringify()
-            }
-          })
+      let steps : Array[String] = if preset != "" {
+        match @ops.preset_loop(preset) {
+          Ok((s, _)) => s
+          Err(e) => return Err(@mcp_types.ToolError(e))
         }
+      } else {
+        let raw = get_array(args, "steps")
+        if raw.length() == 0 {
+          return Err(@mcp_types.ToolError("either steps or preset is required"))
+        }
+        raw.map(fn(j) {
+          match j {
+            String(s) => s
+            _ => j.stringify()
+          }
+        })
+      }
       match @ops.validate_loop_steps(steps) {
         Some(e) => return Err(@mcp_types.ToolError(e))
         None => ()
@@ -2434,10 +2465,14 @@ pub async fn run_server() -> Unit {
     schema(
       {
         "name": string_prop("已注册环名称(必填)"),
-        "project_health_grade": string_prop("当前项目健康度等级(可选)：healthy/attention/stalled"),
+        "project_health_grade": string_prop(
+          "当前项目健康度等级(可选)：healthy/attention/stalled",
+        ),
         "blocked_tasks": int_prop("当前 blocked_tasks 数(可选默认0)"),
         "current_test_count": int_prop("当前测试数(可选默认0)"),
-        "current_open_bug_count": int_prop("当前未关闭 bug 数(可选默认0)"),
+        "current_open_bug_count": int_prop(
+          "当前未关闭 bug 数(可选默认0)",
+        ),
       },
       ["name"],
     ),
@@ -2449,8 +2484,16 @@ pub async fn run_server() -> Unit {
           let now = now_default()
           let project_health_grade = get_str(args, "project_health_grade")
           let blocked_tasks = get_int(args, "blocked_tasks", default=0)
-          let current_test_count = get_int(args, "current_test_count", default=0)
-          let current_open_bug_count = get_int(args, "current_open_bug_count", default=0)
+          let current_test_count = get_int(
+            args,
+            "current_test_count",
+            default=0,
+          )
+          let current_open_bug_count = get_int(
+            args,
+            "current_open_bug_count",
+            default=0,
+          )
           let result = @ops.loop_tick(
             lp,
             now,
@@ -2460,15 +2503,17 @@ pub async fn run_server() -> Unit {
             blocked_tasks~,
           )
           loop_reg.set(name, result.loop_after)
-          let json = Json::object(Map([
-            ("next_mode", Json::string(result.next_mode)),
-            ("next_step_idx", Json::number(result.next_step_idx.to_double())),
-            ("next_round", Json::number(result.next_round.to_double())),
-            ("should_stop", Json::boolean(result.should_stop)),
-            ("stop_reason", Json::string(result.stop_reason)),
-            ("history", result.history_json),
-            ("loop_after", @ops.loop_to_json(result.loop_after)),
-          ]))
+          let json = Json::object(
+            Map([
+              ("next_mode", Json::string(result.next_mode)),
+              ("next_step_idx", Json::number(result.next_step_idx.to_double())),
+              ("next_round", Json::number(result.next_round.to_double())),
+              ("should_stop", Json::boolean(result.should_stop)),
+              ("stop_reason", Json::string(result.stop_reason)),
+              ("history", result.history_json),
+              ("loop_after", @ops.loop_to_json(result.loop_after)),
+            ]),
+          )
           Ok(@mcp.ToolResult::text(json.stringify()))
         }
       }
@@ -2480,7 +2525,9 @@ pub async fn run_server() -> Unit {
     "查询组合环状态（Phase 6）。无 name 参数时列出所有已注册环的摘要；有 name 参数时返回单个环完整 JSON。",
     schema(
       {
-        "name": string_prop("查询特定环的 name(可选)，缺省列出所有"),
+        "name": string_prop(
+          "查询特定环的 name(可选)，缺省列出所有",
+        ),
       },
       [],
     ),
@@ -2654,7 +2701,7 @@ pub async fn run_server() -> Unit {
         "namespace": string_prop("命名空间(可选默认 default)"),
         "max_tasks": int_prop("最多发布任务数(可选默认10)"),
         "mode": string_prop(
-          "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy。",
+          "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy | explore。",
         ),
       },
       ["project_dir"],
@@ -2682,7 +2729,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "mode_list",
-    "返回 6 种自驱编程开发模式的完整信息（mode / name / description / constraints / template_path / forbidden_tools）。纯计算只读，供 AI 选择模式。",
+    "返回 7 种自驱编程开发模式的完整信息（mode / name / description / constraints / template_path / forbidden_tools）。纯计算只读，供 AI 选择模式。其中 `explore`（探索模式）不直接开发：它先给目标复杂度打分（0..5，复用难度单一抽取来源），再据此**自选**一个单模式去跑；只有在候选模式申报的文件作用域两两不相交（`reserve_scope` 预订成功 + 认领前 `conflicts_check` 可认领）时才允许并行多模式，否则退回单模式串行。",
     schema({}, []),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let modes = @ops.all_modes()
@@ -2692,12 +2739,11 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "mode_templates",
-    "检查 templates/pipeline_mode_*.md 全部存在性，返回 {templates:{advance:true,...}, missing:[...]}。mode 参数预检用。",
+    "检查 templates/pipeline_mode_*.md 全部存在性，返回 {templates:{advance:true,...}, missing:[...]}。mode 参数预检用。名单从模式注册表 all_modes() 反解，不硬编码——注册表加模式而这里漏检查就是『模板缺席没人报』（BUG-118 同族：判据看不见样本就等于没判）。",
     schema({}, []),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-      let names = [
-        "advance", "polish", "verify", "bugfind", "fix_and_merge", "tidy",
-      ]
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      // 名单从模式注册表反解：注册表加模式而这里漏名单 ⇒ 模板缺席永远没人报
+      let names = @ops.all_modes().map(fn(j) { get_str(j, "mode") })
       let exists : Map[String, Json] = Map([])
       let missing : Array[Json] = []
       for n in names {

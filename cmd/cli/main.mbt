@@ -16,7 +16,7 @@ async fn main {
     Version => run_version()
     Demo => run_demo()
     Doctor => run_doctor()
-    Help => print_help()
+    Help => run_help(args)
     NoArgs => print_help()
     Unknown(other) => {
       println("未知子命令: \{other}")
@@ -27,19 +27,33 @@ async fn main {
 }
 
 ///|
-/// 打印帮助
+/// help 子命令：解析 topic 参数，调用 help_topics
+/// args[2]="help", args[3]=topic, args[4]=可选第二参数
+fn run_help(args : Array[String]) -> Unit {
+  let topic : String = if args.length() > 3 { args[3] } else { "" }
+  match topic {
+    "overview" => println(help_overview())
+    "cli" => println(help_cli())
+    "tools" => println(help_tools())
+    "tool" => {
+      let tool = if args.length() > 4 { args[4] } else { "" }
+      if tool.length() == 0 {
+        println("Usage: fist help tool <tool_name>")
+        println("List:  fist help tools")
+      } else {
+        println("Tool detail: " + tool)
+      }
+    }
+    "mcp" => println(help_mcp())
+    "plugins" => println(help_plugins())
+    "install" => println(help_install())
+    _ => println(list_topics())
+  }
+}
+
+///|
 fn print_help() -> Unit {
-  let v = @server.get_version()
-  println("FIST-Mbt CLI v\{v}")
-  println("")
-  println("用法: fist <subcommand>")
-  println("")
-  println("子命令:")
-  println("  version  打印版本号")
-  println("  serve    启动 MCP server（stdio 传输）")
-  println("  demo     自包含七态闭环 demo")
-  println("  doctor   只读健康检查")
-  println("  help     显示本帮助")
+  println(list_topics())
 }
 
 ///|
@@ -56,9 +70,11 @@ fn run_version() -> Unit {
 /// serve：启动 MCP server (stdio 传输)
 /// 直接 import @server.run_server()，零 spawn 零进程创建
 async fn run_serve() -> Unit {
-  // (BUG-101) println("[fist] serve — 启动 MCP server (stdio 传输)") —— stdout 只走 JSON-RPC
-  // (BUG-101) println("stdin/stdout 接管, Ctrl+C 停止") —— stdout 只走 JSON-RPC
-  // (BUG-101) println("") —— stdout 只走 JSON-RPC
+  // BUG-101/R12：stdout 只走 JSON-RPC —— 这句提示打给 stderr，否则第一条协议帧前多一行横幅，
+  // 所有 stdio 客户端（scripts/mcp_smoke.py 等 27 个判据）解析首行即崩
+  eprintln("[fist] serve — 启动 MCP server (stdio 传输)")
+  eprintln("stdin/stdout 接管, Ctrl+C 停止")
+  eprintln("")
   @server.run_server()
 }
 

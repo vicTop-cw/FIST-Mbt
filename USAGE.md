@@ -13,12 +13,20 @@
 
 ## 1. 它是什么
 
+**定位一句话**：fist-mbt 是 **AI 自驱式开发的项目管理者**——一等的打磨对象是**自驱**与**递归拆解**，
+并且用它自己的这两件能力迭代自己（README.md 首行同源，此处不另起口径）。
+
 FIST 指挥官任务分配体系（原 Python 版 FIST）的 **纯 MoonBit 原生重写 + MCP 化** 作品
 （2026 MoonBit 九月黑客松）。对外暴露一个 **STDIO 传输的 MCP Server**（也支持 HTTP/SSE 桥接），
 任何 MCP 客户端拉起可执行文件后，即可通过标准 `tools/call` 完成任务的
 **发布 → 认领 → 拆分 → 执行 → 提交 → 验收 → 归档** 完整闭环。
 
 协议层使用 [`colmugx/mcp`](https://mooncakes.io/colmugx/mcp)（Apache-2.0，协议版本 `2026-07-28`）。
+
+> **证据面**：本手册的示例是本机实跑，但"这套编排真的更好"这件事由伴生仓 **fist-evidence**
+> <https://github.com/vicTop-cw/fist-evidence> 承担——三组受控实验（A/B 编排对照 / 三方合并裁决 /
+> 复杂度阶梯含裸跑幻觉实锤）+ 十份真实项目驱动实例（覆盖八项目），报告/日志/裁判测试一字可回溯。
+> 引用实验结论请以该仓 `stories/experiment-0*.md` 与 `stories/evidence/` 原件为准（该路径属伴生仓，本仓无 `stories/`）。
 
 ---
 

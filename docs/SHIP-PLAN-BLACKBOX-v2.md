@@ -1,5 +1,7 @@
 # FIST-Mbt 黑盒分发与一键安装计划（重述版）
 
+> **现状指针（2026-09-29 复核）**：本文件是 v0.3.0-beta 期的**计划面**记录，其中的安装线已过期——裸 `irm … | iex` 在带 BOM 的脚本上当场解析失败（BUG-113），`main` 分支的 raw 取不到、可达线是 GitHub **master**（BUG-107）。用户照抄的那一行**一律以 `README.md` 的安装段为准**，那条线由 `scripts/blackbox/e2e_irm_line.py` 从 README 反解后真跑，README 退回旧形时判据直接拒绝执行。
+
 日期：2026-09-28 ｜ 版本：v1.0 ｜ 状态：实施中
 前序计划：已被误删（SHIP-PLAN-0930.md，未 commit 过），本文件为重述
 
@@ -29,7 +31,7 @@
 ### 已就绪
 | 组件 | 状态 | 证据 |
 |------|------|------|
-| moon test JS 后端 | **535/535 全绿** | `moon test --target js` 真跑 |
+| moon test JS 后端 | **572/572 全绿** | `moon test --target js` 真跑 |
 | 账本 BUG | **43 FIXED + 6 DUPLICATE/FALSE_POSITIVE，零 OPEN** | `memory/bugs.md` 逐条解析 |
 | 构建脚本 | `scripts/blackbox/build_release.ps1` | 产出 JS + Native zip |
 | Windows 安装脚本 | `scripts/blackbox/install.ps1`（~180 行） | GitHub→GitCode 双源、PATH 追加、doctor 自检 |
@@ -198,7 +200,7 @@ fist-mbt serve &        # 后台跑，无窗口
 
 | 验收项 | 方法 | 通过标准 |
 |--------|------|----------|
-| moon test 不退化 | `moon test --target js` | 535/535 |
+| moon test 不退化 | `moon test --target js` | 572/572 |
 | irm 命令可达 | 浏览器直接打开 GitCode URL | 200 + 脚本内容正确 |
 | Windows 安装 | 干净 PowerShell 跑 irm 命令 | shim + PATH + doctor ✅ |
 | Windows 后台 | `fist-mbt-background.cmd serve` | 无 console 窗口 + `Get-Process node` 可见 |
@@ -356,4 +358,4 @@ pub struct PipelineLoop {
 | goal_reached | 环创建时 3 OPEN bug，loop 内 fix_and_merge 全修后 loop_tick | status=goal_reached |
 | 预设环 | `preset_loop("fix-iterate")` | 返回 steps=["bugfind","fix_and_merge"] |
 | 持久化 | loop_create → 进程重启 → loop_status | 状态完整保留 |
-| moon test | `moon test --target js` | 535/535（新测用例追加 ≥10 条） |
+| moon test | `moon test --target js` | 572/572（新测用例追加 ≥10 条） |

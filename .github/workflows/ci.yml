@@ -30,6 +30,14 @@ jobs:
       - name: Check (js)
         run: moon check --target js
 
+      - name: Format check (BUG-118：格式门住在权威 CI，不只在狗食轨)
+        shell: bash
+        # 把打这条红用的工具链版本留在日志里：BUG-118 的未定案项是"两条轨的 moon 版本不同形"，
+        # 没有版本自述，下一轮就只能在猜
+        run: |
+          moon version --all
+          moon fmt --check
+
       - name: Test (js)
         run: set -o pipefail; moon test --target js 2>&1 | tee /tmp/moon_test.log
 
@@ -101,6 +109,14 @@ jobs:
           moon build --target js cmd/cli
           python3 scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js
           python3 scripts/store_isolation_probe.py --selftest
+
+      - name: Heartbeat cross-process guard (BUG-119：判活必须打到两个真进程)
+        shell: bash
+        # 单元测试用 MemoryStore + 同进程心跳对象，结构上照不到这一格；
+        # 这条常驻 e2e 起两个真 `node cli.js serve`，锁「无心跳行不等于首拍即死」与跨进程心跳可见
+        run: |
+          moon build --target js cmd/cli
+          python3 scripts/blackbox/e2e_heartbeat_xproc.py
 
       - name: CLI call-site probe (BUG-106/114：旗、退出码、版本自述必须打到入口面)
         shell: bash
@@ -175,3 +191,11 @@ jobs:
       - name: Tool-list single-source guard (AGENTS/README 工具与会注册对齐)
         shell: pwsh
         run: python scripts/check_tools_sync.py
+
+      - name: Public install line e2e (BUG-116：文档那条线要真装通，公网侧取证)
+        shell: pwsh
+        # 观测臂，不是一票否决：BUG-116 的教训正是"链路侧红不是产品红"（本机 9/9 传输层被对端
+        # 关闭、同一时刻 curl 得 200+PK）。这条在 runner 上跑绿就是 BUG-116 的关闭证据；
+        # 跑红时先看回执里打的是传输层错误还是 404/HTML 形状——前者是环境，后者才是产品。
+        continue-on-error: true
+        run: python scripts/blackbox/e2e_irm_line.py

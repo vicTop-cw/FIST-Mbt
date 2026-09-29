@@ -37,7 +37,9 @@ jobs:
         run: set -o pipefail; moon test --target js 2>&1 | tee /tmp/moon_js_test.log
 
       - name: Format check
-        run: moon fmt --check
+        run: |
+          moon version --all
+          moon fmt --check
 
       - name: Moon info
         if: runner.os == 'Linux'

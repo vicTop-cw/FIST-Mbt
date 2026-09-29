@@ -21,6 +21,35 @@ $root = Split-Path -Parent $PSScriptRoot   # FIST-Mbt 根
 $reviewsDir = Join-Path $root "memory\reviews"
 $dbPath     = Join-Path $root "fist-mbt.db"
 
+# ============ 自述数字一律从真源反解（不写字面量常量）============
+# 页脚曾把版本/工具数/测试数钉成死字面量，注册表与 moon.mod 早就前进了好几轮，演示页还在报旧版
+# （BUG-118：demo 自述假）。三个数各自的真源：
+#   版本   = moon.mod 的 version                       （发布链与插件态同源的那一份）
+#   工具数 = src/server/server.mbt 的注册点            （与 scripts/check_tools_sync.py 逐字同口径）
+#   测试数 = README.md 的 tests-N%2FN 徽章              （check_badge.py 看着它，实测才允许写）
+$ver = "n/a"
+$moonMod = Join-Path $root "moon.mod"
+if (Test-Path $moonMod) {
+  $m = [regex]::Match((Get-Content -Raw -Encoding UTF8 $moonMod), '(?m)^version\s*=\s*"([^"]+)"')
+  if ($m.Success) { $ver = $m.Groups[1].Value }
+}
+$testStr = "n/a tests"
+$readmeMd = Join-Path $root "README.md"
+if (Test-Path $readmeMd) {
+  $b = [regex]::Match((Get-Content -Raw -Encoding UTF8 $readmeMd), 'tests-(\d+)%2F(\d+)')
+  if ($b.Success) { $testStr = "$($b.Groups[1].Value)/$($b.Groups[2].Value) tests" }
+}
+$toolCount = -1
+$serverMbt = Join-Path $root "src\server\server.mbt"
+if (Test-Path $serverMbt) {
+  $t = Get-Content -Raw -Encoding UTF8 $serverMbt
+  $names = [regex]::Matches($t, 'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"') |
+    ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+  $toolCount = @($names).Count
+}
+# 反幻影：本仓注册表早已过百，解析到 <=100 就是解析失效，不许拿它当"工具数"报（同 check_plugin_sync 的口径）
+if ($toolCount -gt 100) { $toolsStr = "$toolCount MCP tools" } else { $toolsStr = "工具数解析失效($toolCount)" }
+
 # ---- ANSI 色彩原语（直接输出转义码，Windows Terminal / CI 均可用）----
 $ESC  = [char]27
 $GREEN = "$ESC[0;32m"; $CYAN = "$ESC[0;36m"; $YELLOW = "$ESC[0;33m"
@@ -37,7 +66,7 @@ $line1 = (C $CYAN "│ ") + (C $GREEN "FIST-Mbt") + (C $CYAN "  — 纯 MoonBit 
 $line1 = $line1.PadRight(80 - 1) + (C $CYAN "│")
 $line2 = (C $CYAN "│ ") + (C $CYAN "徽章: ") + (C $GREEN "[moon:js] [moon:native] [moon:js-windows]  CI 3 tracks")
 $line2 = $line2.PadRight(80 - 1) + (C $CYAN "│")
-$line3 = (C $CYAN "│ ") + (C $YELLOW "vicTop-cw/fist-mbt@0.2.4  ·  mooncakes published")
+$line3 = (C $CYAN "│ ") + (C $YELLOW "vicTop-cw/fist-mbt@$ver  ·  mooncakes published  ·  $toolsStr")
 $line3 = $line3.PadRight(80 - 1) + (C $CYAN "│")
 $lineF  = (C $CYAN "└────────────────────────────────────────────────────────────────────────┘")
 W $lineH; W $line1; W $line2; W $line3; W $lineF
@@ -86,7 +115,8 @@ $taskCount = -1; $execCount = -1
 $py = @'
 import sqlite3, sys
 db = sys.argv[1]
-c = sqlite3.connect(db)
+# 真只读：根台账是并发工作区共享的自举账本，普通 connect 会顺手长出 -wal/-shm（BUG-90 同族外溢面）
+c = sqlite3.connect("file:" + db.replace("\\", "/") + "?mode=ro", uri=True)
 try:
     t = c.execute("select count(*) from tasks").fetchone()[0]
     e = c.execute("select count(*) from executions").fetchone()[0]
@@ -145,8 +175,8 @@ W ("  " + $e4)
 W ("  " + $e5)
 Write-Output ""
 
-# ================ 5. FOOTER 汇总 ================
-$f1 = (C $GREEN "87 MCP tools") + (C $CYAN " · ") + (C $GREEN "247 tests") + (C $CYAN " · ") + (C $GREEN "JS+Native") + (C $CYAN " · ") + (C $GREEN "CI 3 tracks")
+# ================ 5. FOOTER 汇总（三个数全从真源反解，见文件头那段） ================
+$f1 = (C $GREEN $toolsStr) + (C $CYAN " · ") + (C $GREEN $testStr) + (C $CYAN " · ") + (C $GREEN "JS+Native") + (C $CYAN " · ") + (C $GREEN "CI 3 tracks")
 W ("  " + $f1)
 W ("  " + (C $BOLD (C $CYAN "fist-mbt drives itself ─ 自举采用，自动演进")))
 Write-Output ""

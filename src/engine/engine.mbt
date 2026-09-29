@@ -270,6 +270,22 @@ pub fn FistEngine::store_list_heartbeats(
 }
 
 ///|
+/// 读单个任务的持久化心跳 last_seen（BUG-119：跨进程真相的唯一读取点；无记录返回空串）。
+pub fn FistEngine::store_read_heartbeat_last_seen(
+  self : FistEngine,
+  task_id : String,
+) -> String {
+  let (_agent_id, last_seen, _status) = self.store.read_heartbeat(task_id)
+  last_seen
+}
+
+///|
+/// 心跳后端自述 `"sqlite"` / `"memory"`（BUG-119：落库与否必须让调用面看得见）。
+pub fn FistEngine::heartbeat_backend(self : FistEngine) -> String {
+  self.store.backend_name()
+}
+
+///|
 /// 追加心跳间隔历史（R90，Phi Accrual 判活数据源；委托给 store 后端）。
 pub fn FistEngine::store_write_heartbeat_interval(
   self : FistEngine,

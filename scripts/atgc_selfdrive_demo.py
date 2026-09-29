@@ -11,7 +11,7 @@ scripts/atgc_selfdrive_demo.py — fist-mbt 旗舰 DEMO：自驱式 + Omega 强�
     python scripts/atgc_selfdrive_demo.py
 
 流程（全程经 MCP JSON-RPC STDIO，不伪造任何一步）：
-  1. tools/list 健全性检查（期望 67 工具）。
+  1. tools/list 健全性检查（断言含 publish_parallel；工具数打在回执里，不钉字面量）。
   2. publish_parallel            → 并行发布独立根任务（ns=atgc-selfdrive）。
   3. task_plan_deep(omega_strong_verify=true) → AO 式递归拆成 4 个 omega:required 叶。
   4. 对每个叶（顺序）：omega_spec_create → omega_spec_review(approve) → claim →
@@ -115,6 +115,22 @@ def find_main() -> str:
         if os.path.exists(os.path.join(ROOT, p)):
             return os.path.join(ROOT, p)
     return ""
+
+
+def resolved_db_path() -> str:
+    """这一轮的行到底落在哪个文件——与**服务端**逐字同一条解析，不再写死仓库根。
+
+    服务端真源 `src/store/store_sqlite.mbt`：`db_path_from_env(FIST_DB_PATH)`，
+    空串/未设置 ⇒ 默认 `fist-mbt.db`（相对 server 进程 cwd，本 demo 用 cwd=ROOT 起服）。
+
+    BUG-118 之前这里写死 `os.path.join(ROOT, "fist-mbt.db")`：演示分录照样落进仓库根那本
+    真实自举台账（1986 任务），而"证据核对"数的也是同一本共享账 ⇒ 演示污染生产账本，
+    且核对面看不见自己刚写进去的行。带 FIST_DB_PATH 跑时两者必须指向同一个文件。
+    """
+    env = (os.environ.get("FIST_DB_PATH") or "").strip()
+    if not env:
+        return os.path.join(ROOT, "fist-mbt.db")   # 空串＝未设置，与服务端的 is_empty 分支一致
+    return env if os.path.isabs(env) else os.path.join(ROOT, env)
 
 
 def now() -> str:
@@ -322,9 +338,10 @@ def main():
         gp, _ = call(proc, "get", task_id=root)
         print(f"\nPASS 根任务最终状态: id={gp.get('id')} status={gp.get('status')}")
 
-        # 6) DB 证据核对（只读）
+        # 6) DB 证据核对（只读）——库路径与**服务端解析的那一个**保持一致
         print("\n—— DB 证据核对 (只读) ——")
-        db_path = os.path.join(ROOT, "fist-mbt.db")
+        db_path = resolved_db_path()
+        print(f"    库 = {db_path}（服务端同一解析：FIST_DB_PATH 优先，空/未设置才回仓库根默认库）")
         verify_db(db_path, root, all_node_ids, counts, call_start_ms)
         print(f"\nMCP-ATG-SELFDRIVE PASS · SUCCESS")
 
@@ -343,9 +360,10 @@ def main():
 
 def verify_db(db_path, root, node_ids, counts, call_start_ms):
     if not os.path.exists(db_path):
-        print("    (fist-mbt.db 不存在，跳过 DB 核对)")
+        print(f"    ({db_path} 不存在，跳过 DB 核对)")
         return
-    conn = sqlite3.connect(db_path)
+    # 自称"只读核对"就得真只读：mode=ro ⇒ 连 schema 都不会被顺手建出来
+    conn = sqlite3.connect(f"file:{db_path.replace(os.sep, '/')}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     ids = [root] + node_ids

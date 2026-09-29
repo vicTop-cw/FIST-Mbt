@@ -22,11 +22,11 @@ test "loop_create: 全自定义参数" {
     "custom",
     ["bugfind", "fix_and_merge"],
     "now",
-    max_rounds = 10,
-    stop_on_goal = false,
-    stop_on_exceeded = false,
-    baseline_test_count = 100,
-    baseline_open_bug_count = 5,
+    max_rounds=10,
+    stop_on_goal=false,
+    stop_on_exceeded=false,
+    baseline_test_count=100,
+    baseline_open_bug_count=5,
   )
   assert_eq(lp.max_rounds, 10)
   assert_eq(lp.stop_on_goal, false)
@@ -89,8 +89,9 @@ test "preset_loop: 未知名称" {
 test "validate_loop_steps: 合法 steps" {
   assert_true(validate_loop_steps(["advance", "bugfind"]).is_none())
   assert_true(
-    validate_loop_steps(["advance", "polish", "verify", "bugfind", "fix_and_merge", "tidy"])
-      .is_none()
+    validate_loop_steps([
+      "advance", "polish", "verify", "bugfind", "fix_and_merge", "tidy",
+    ]).is_none(),
   )
 }
 
@@ -144,7 +145,7 @@ test "loop_tick: 单步推进 2-steps 环" {
 
 ///|
 test "loop_tick: 完整走满触发 max_rounds" {
-  let lp = loop_create("lp", ["advance"], "t0", max_rounds = 3)
+  let lp = loop_create("lp", ["advance"], "t0", max_rounds=3)
   let mut current = lp
   let mut last_stop = false
   for i in 0..<10 {
@@ -165,13 +166,8 @@ test "loop_tick: 完整走满触发 max_rounds" {
 
 ///|
 test "loop_tick: healthy + 零 blocked → goal_reached" {
-  let lp = loop_create("lp", ["advance", "verify"], "t0", stop_on_goal = true)
-  let r = loop_tick(
-    lp,
-    "t1",
-    project_health_grade = "healthy",
-    blocked_tasks = 0,
-  )
+  let lp = loop_create("lp", ["advance", "verify"], "t0", stop_on_goal=true)
+  let r = loop_tick(lp, "t1", project_health_grade="healthy", blocked_tasks=0)
   assert_true(r.should_stop)
   assert_true(r.stop_reason.contains("goal_reached"))
   assert_true(r.loop_after.goal_reached)
@@ -179,13 +175,8 @@ test "loop_tick: healthy + 零 blocked → goal_reached" {
 
 ///|
 test "loop_tick: healthy 但有 blocked → 不停" {
-  let lp = loop_create("lp", ["advance", "verify"], "t0", stop_on_goal = true)
-  let r = loop_tick(
-    lp,
-    "t1",
-    project_health_grade = "healthy",
-    blocked_tasks = 3,
-  )
+  let lp = loop_create("lp", ["advance", "verify"], "t0", stop_on_goal=true)
+  let r = loop_tick(lp, "t1", project_health_grade="healthy", blocked_tasks=3)
   assert_true(not(r.should_stop))
 }
 
@@ -199,10 +190,10 @@ test "loop_tick: test_count 涨 10%+ → exceeded" {
     "lp",
     ["advance"],
     "t0",
-    baseline_test_count = 100,
-    baseline_open_bug_count = 5,
+    baseline_test_count=100,
+    baseline_open_bug_count=5,
   )
-  let r = loop_tick(lp, "t1", current_test_count = 120, current_open_bug_count = 5)
+  let r = loop_tick(lp, "t1", current_test_count=120, current_open_bug_count=5)
   assert_true(r.should_stop)
   assert_true(r.stop_reason.contains("exceeded"))
   assert_true(r.loop_after.exceeded)
@@ -214,10 +205,10 @@ test "loop_tick: open_bug 降 50%+ → exceeded" {
     "lp",
     ["advance"],
     "t0",
-    baseline_test_count = 100,
-    baseline_open_bug_count = 10,
+    baseline_test_count=100,
+    baseline_open_bug_count=10,
   )
-  let r = loop_tick(lp, "t1", current_test_count = 100, current_open_bug_count = 4)
+  let r = loop_tick(lp, "t1", current_test_count=100, current_open_bug_count=4)
   assert_true(r.should_stop)
   assert_true(r.stop_reason.contains("exceeded"))
 }
@@ -231,20 +222,31 @@ test "loop_to_json: 基本字段完整" {
   let lp = loop_create("j", ["advance", "bugfind"], "t0")
   let j = loop_to_json(lp)
   match j.value("name") {
-    Some(n) => assert_true((match n { Json::String(_) => true; _ => false }))
+    Some(n) =>
+      assert_true(
+        match n {
+          Json::String(_) => true
+          _ => false
+        },
+      )
     None => assert_true(false)
   }
   match j.value("steps") {
-    Some(s) => assert_true((match s { Json::Array(_) => true; _ => false }))
+    Some(s) =>
+      assert_true(
+        match s {
+          Json::Array(_) => true
+          _ => false
+        },
+      )
     None => assert_true(false)
   }
   match j.value("status") {
-    Some(s) => {
+    Some(s) =>
       match s {
         Json::String("active") => assert_true(true)
         _ => assert_true(false)
       }
-    }
     None => assert_true(false)
   }
 }

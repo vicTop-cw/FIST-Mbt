@@ -8,6 +8,11 @@
 
 展示 fist-mbt 的**可靠性闭环**：它用**它自己的**任务生命周期 + Omega 强验证语料门禁 + 全量调用日志，把一个新的极小 ATGC 库（`atgc/`）**真实地开发了出来**——发布→递归拆解→每叶语料审核→执行→成果复验→验收→归档，全程有可核验的落库证据。这本身就是「用它自己管理自己」的最硬采用证据。
 
+> 想看**受控实验级**的证据（而不是一次 demo 的落库计数）：本项目的叙事与实证伴生仓
+> **fist-evidence** <https://github.com/vicTop-cw/fist-evidence>——三组受控实验（A/B 编排对照 / 三方合并裁决 /
+> 复杂度阶梯含裸跑幻觉实锤）+ 十份真实项目驱动实例（覆盖八项目），报告、日志、裁判测试一字可回溯。
+> 本 demo 属"单次运行自证"，那一仓属"可复跑对照实验"，两者层级不同、互为补充。
+
 ## 管线图
 
 ```
@@ -53,7 +58,10 @@ python scripts/atgc_selfdrive_demo.py             # 跑真实 MCP 驱动管线
 ```
 
 > 脚本内部会先嵌套调用 `scripts/patch_esm_main.py`（幂等）为 `moonc ≥0.10.14` 的 ESM 产物注入 `require` shim，
-> 再以 stdio 拉起 `node main.js`，全程 JSON-RPC 走 MCP，**不伪造任何一步**。
+> 再以 stdio 拉起真实入口 `node _build/js/debug/build/cmd/cli/cli.js serve`
+> （**`serve` 必带**：不带子命令时 `cmd/cli` 只打印 help 就退出，`main.js` 这个文件名早已不是本仓的产物路径），
+> 全程 JSON-RPC 走 MCP，**不伪造任何一步**。手工起 server 同理；黑盒安装后的等价命令是全局 `fist serve`
+> （注意 `python scripts/fist.py` 只有 `list-tools` 与 `call` 两个子命令，**没有** `serve`）。
 
 ## 真实证据
 
@@ -90,7 +98,7 @@ README 顶部 CI 徽章与 `atgc/`、`atgc-old/`、`scripts/atgc_selfdrive_demo.
   第 5–8 叶（同一聚合下的第二叶）循环复用对应模块内容——**内容仍是真实交付物**，用于保证整棵递归树可归并、根任务可收官归档。
 - **Omega 门禁真实把关**：`execute` 在语料 `approved` 前会被 `omega_execute_gate` 拒绝；
   `verify` 在 `omega_result_verify=pass` 前被 `omega_verify_gate` 拒绝。所以「开发被 fist-mbt 真正门禁过」是**如实**的，不是演示代码里绕过。
-- **测试数**：当前 `moon test --target js` = **535/535**（含新增 atgc 极简库测试）。
+- **测试数**：当前 `moon test --target js` = **572/572**（含新增 atgc 极简库测试）。
 
 ## 结论 / 价值
 

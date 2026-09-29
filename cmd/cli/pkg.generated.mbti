@@ -2,6 +2,19 @@
 package "vicTop-cw/fist-mbt/cmd/cli"
 
 // Values
+pub fn help_cli() -> String
+
+pub fn help_install() -> String
+
+pub fn help_mcp() -> String
+
+pub fn help_overview() -> String
+
+pub fn help_plugins() -> String
+
+pub fn help_tools() -> String
+
+pub fn list_topics() -> String
 
 // Errors
 

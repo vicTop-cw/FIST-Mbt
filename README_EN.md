@@ -1,15 +1,20 @@
 # FIST-Mbt
 
+> **fist-mbt — the project manager for AI self-driven development.**
+> Only two things are polished as first-class objects: **self-driving** and **recursive decomposition** —
+> and the project iterates on itself with exactly those two (see the note below).
+
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-310%2F310-brightgreen)](./src)
+[![Tests](https://img.shields.io/badge/tests-572%2F572-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
-**FIST-Mbt** is an **AI commander task-orchestration foundation** rewritten in **pure MoonBit** and exposed as an **MCP Server** — not another agent framework, but an autonomous system that keeps itself moving: the full lifecycle `publish → claim → plan → execute → submit → verify → archive`, plus self-driving review loops, DGM evolution sampling, Omega strong verification, and cross-process watchdog — all surfaced as **104 MCP tools** to any MCP client (Claude Desktop / Cursor / a custom JSON-RPC client).
+**FIST-Mbt** is an **AI commander task-orchestration foundation** rewritten in **pure MoonBit** and exposed as an **MCP Server** — not another agent framework, but an autonomous system that keeps itself moving: the full lifecycle `publish → claim → plan → execute → submit → verify → archive`, plus self-driving review loops, DGM evolution sampling, Omega strong verification, and cross-process watchdog — all surfaced as **129 MCP tools** to any MCP client (Claude Desktop / Cursor / a custom JSON-RPC client).
 
-**Why MoonBit**: task orchestration is inherently correctness-sensitive (state machine, permission matrix, append-only audit, recursive decomposition). MoonBit's strong typing, zero runtime dependencies, and JS+Native cross-compilation let this logic pass **310 tests on both Windows and Linux** — reproducible on any machine. `moon update && moon run cmd/cli` and you are up; no Python environment hell.
+**Why MoonBit**: task orchestration is inherently correctness-sensitive (state machine, permission matrix, append-only audit, recursive decomposition). MoonBit's strong typing, zero runtime dependencies, and JS+Native cross-compilation let this logic pass **572/572 tests on the JS target** (Windows + Linux CI, measured 2026-09-29) — reproducible on any machine. `moon update && moon test --target js -j 1` and you are up; no Python environment hell.
 
 > It polished itself to a deliverable state using its **own** self-driving + recursive-decomposition pipeline — evidence: `docs/selfdrive-walkthrough.md`.
+> "It says so itself" is not evidence: the narrative / proof surface of this project is the companion repository **fist-evidence** <https://github.com/vicTop-cw/fist-evidence> — see the Evidence section below.
 
 ---
 
@@ -18,9 +23,15 @@
 ```bash
 moon update                    # first run: refresh registry index (all deps are public)
 moon check
-moon test --target js -j 1     # → Total tests: 535, passed: 535, failed: 0
-moon run cmd/cli              # start the MCP server (STDIO transport)
+moon test --target js -j 1     # → Total tests: 572, passed: 572, failed: 0
+python scripts/patch_esm_main.py            # ESM shim: moonc ≥0.10.14 emits ESM, the SQLite JS stub uses CJS require
+node _build/js/debug/build/cmd/cli/cli.js serve   # start the MCP server (STDIO) — `serve` is mandatory, bare run only prints help
 ```
+
+> Verified on this tree: bare `node _build/js/debug/build/cmd/cli/cli.js` prints the help banner and exits (`serve` is not optional),
+> while `… cli.js serve` takes over stdin/stdout as the MCP server. After the black-box install the equivalent command is the
+> global `fist serve`. Note that `python scripts/fist.py` is the **CLI gateway** with only two subcommands,
+> `list-tools` and `call`; it has **no** `serve` subcommand.
 
 **Requirements**: MoonBit toolchain ≥ 0.1.20260827; **Node.js ≥ 24** for the JS target (the SQLite JS backend relies on `node:sqlite` `returnArrays`; older Node silently returns object rows and reads fail); Native target needs a system SQLite dev library (`libsqlite3-dev` on Linux; `sqlite3.h/sqlite3.lib` + MSVC on Windows — `pwsh ./scripts/native-env.ps1` loads it).
 
@@ -72,7 +83,7 @@ The core value is **recursive decomposition of complex tasks made observable and
 - self-driving review, watchdog, sagas, and circuit breakers keep long-running autonomous pipelines from stalling or cascading;
 - self-evolution closes the loop: the tool absorbs what works from each verified delivery.
 
-Everything is reproducible: one command re-runs 442 tests, the smoke test, and the full capability-chain demo.
+Everything is reproducible: one command re-runs the 572-test JS suite, the smoke test, and the full capability-chain demo.
 
 ---
 
@@ -96,16 +107,28 @@ Pure MoonBit; no Rust/C wrappers. Protocol layer: [`colmugx/mcp`](https://moonca
 
 ## Testing
 
-- **535/535** tests green on the JS backend (Windows, measured 2026-09-28). The native track was last measured at 317/317 and has **not** been re-run this round — do not read that as a dual-target green. Since R107 the suite includes **property tests** (`moonbitlang/core/quickcheck`): random inputs validate invariants (slice arity/prefix, difficulty monotonicity, Task transition discipline claim/execute/reopen/split/submit/reject) with fixed seeds. Since R109 a **transition-contract guard** (`tx_contract`, Design by Contract: precondition/invariant/postcondition read-only pre-check — any failure rejects the batch, state A stays stable, nothing persisted). Since R111 a **feedback convergence** tool (`eval_feedback`, Evaluator-Optimizer schema: free-text feedback normalized into Defects/Evidence/Fix/Acceptance with a deterministic pass/fail verdict) — reproducible on any machine.
+- **572/572** tests green on the JS backend (Windows; first measured 2026-09-28, re-confirmed 2026-09-29 on this working tree). The native track was last measured at 317/317 and has **not** been re-run this round — do not read that as a dual-target green. Since R107 the suite includes **property tests** (`moonbitlang/core/quickcheck`): random inputs validate invariants (slice arity/prefix, difficulty monotonicity, Task transition discipline claim/execute/reopen/split/submit/reject) with fixed seeds. Since R109 a **transition-contract guard** (`tx_contract`, Design by Contract: precondition/invariant/postcondition read-only pre-check — any failure rejects the batch, state A stays stable, nothing persisted). Since R111 a **feedback convergence** tool (`eval_feedback`, Evaluator-Optimizer schema: free-text feedback normalized into Defects/Evidence/Fix/Acceptance with a deterministic pass/fail verdict) — reproducible on any machine.
 - CI three tracks (js ubuntu / native ubuntu / js windows) with live badges.
-- Guard family: `check_tools_sync` (129 tools aligned) / `check_test_sync` (442 aligned — sweeps **every** current-state doc, not a 4-file whitelist; `--selftest` proves the judge itself can go red) / `check_badge` / `check_scripts_index` / `map_verify` / `cleanup --check` (repo cleanliness gate).
+- Guard family: `check_tools_sync` (129 tools aligned) / `check_test_sync` (572 aligned — sweeps **every** current-state doc, not a 4-file whitelist; `--selftest` proves the judge itself can go red) / `check_badge` / `check_scripts_index` / `map_verify` / `cleanup --check` (repo cleanliness gate).
+
+---
+
+## Evidence (narrative companion repo)
+
+Saying "it works" is not evidence — this project's proof surface is a separate repository,
+[fist-evidence](https://github.com/vicTop-cw/fist-evidence) (public since 2026-09-27): three controlled experiments
+(A/B: orchestrated self-driving vs bare run; three-way merge adjudication with self-corrected attribution;
+complexity ladder including a caught bare-run hallucination) plus ten real-project drive instances spanning eight
+projects. The original reports, run logs and judge tests are reproducible verbatim there
+(`stories/experiment-0*.md`, `stories/evidence/`, `cases/cases.md` — those paths live in that repo; this repo has no `stories/` directory).
+It is the physical form of this project's own rule "evidence ladder at least L4 — only measured counts".
 
 ---
 
 ## Known Boundaries (honest notes)
 
 - JS backend prints Node's `ExperimentalWarning: SQLite is an experimental feature` on Node ≥ 24 — harmless, ignorable.
-- Windows native test may rarely hit `0xc0000374` (heap race in the local native SQLite stub) even with `-j 1`; the authoritative stability gate is the JS backend (Node ≥ 24, 535/535 measured on Windows).
+- Windows native test may rarely hit `0xc0000374` (heap race in the local native SQLite stub) even with `-j 1`; the authoritative stability gate is the JS backend (Node ≥ 24, 572/572 measured on Windows).
 
 ---
 

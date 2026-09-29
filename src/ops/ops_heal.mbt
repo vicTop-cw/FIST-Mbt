@@ -6,6 +6,29 @@
 /// 并清掉其心跳记录，完成"回滚重派"闭环。原子/已完成/已归档任务不在看护范围。
 
 ///|
+/// BUG-119 的兜底时钟：无心跳行时，用任务行的 `updated_at` 当"最后一次真实活动"。
+/// claim/execute/reopen 都会服务端盖章 `updated_at` 并持久化，因此"静默超过 timeout"仍然是
+/// no_signal，只是不再"首拍即死"。`updated_at` 为空或不可解析 -> 保守不判（与本文件对
+/// 不可解析时间戳一贯的「不误伤」口径一致）。
+fn stale_by_task_clock(
+  updated_at : String,
+  now_s : Int,
+  timeout_sec : Int,
+) -> Bool {
+  if now_s < 0 || updated_at.is_empty() {
+    false
+  } else {
+    let base_s = iso_to_secs(updated_at)
+    if base_s < 0 {
+      false
+    } else {
+      let elapsed = now_s - base_s
+      elapsed >= 0 && elapsed > timeout_sec
+    }
+  }
+}
+
+///|
 /// 看护一轮：对心跳超时静默的活跃任务执行回滚，返回被回滚（重派）的任务 id 列表。
 ///
 /// `ns` 为空串（缺省）时扫**全库所有命名空间**——BUG-81 记的就是这条默认的作用域：
@@ -19,6 +42,7 @@ pub fn heal_stale_tasks(
   ns? : String = "",
 ) -> Result[Array[String], String] {
   let healed : Array[String] = []
+  let now_s = iso_to_secs(now)
   let scoped = if ns.is_empty() {
     engine.list_all()
   } else {
@@ -26,12 +50,19 @@ pub fn heal_stale_tasks(
   }
   for t in scoped {
     let st = t.get_status()
+    let last_hb = hb.last_seen_of(t.get_id())
+    let silent = if last_hb.is_empty() {
+      // BUG-119：没有心跳行不等于已静默超时，退到任务活动时钟
+      stale_by_task_clock(t.get_updated_at(), now_s, timeout_sec)
+    } else {
+      hb.is_stale(t.get_id(), now, timeout_sec~)
+    }
     let stale = (
         st.to_string() == "执行中" ||
         st.to_string() == "已领取" ||
         st.to_string() == "拆分中"
       ) &&
-      hb.is_stale(t.get_id(), now, timeout_sec~)
+      silent
     if stale {
       // 回滚为已领取（reopen_task 内部更新 updated_at）
       match engine.reopen_task(t.get_id(), now) {
@@ -62,6 +93,7 @@ pub fn heal_stale_tasks_from_store(
   now : String,
   timeout_sec? : Int = 600,
   ns? : String = "default",
+  skipped_ids? : Array[String] = [],
 ) -> Result[Array[String], String] {
   let healed : Array[String] = []
   let now_s = iso_to_secs(now)
@@ -77,14 +109,21 @@ pub fn heal_stale_tasks_from_store(
     }
   }
   // 2. 扫描指定命名空间的任务，对超时静默的活跃任务回滚重派
-  for t in engine.list_in_ns(ns) {
+  // BUG-119：ns 为空串 = 全库（与 heal_stale_tasks 的 BUG-81 口径一致），不再静默落到 default
+  let scoped = if ns.is_empty() {
+    engine.list_all()
+  } else {
+    engine.list_in_ns(ns)
+  }
+  for t in scoped {
     let st = t.get_status().to_string()
     let is_active = st == "执行中" || st == "已领取" || st == "拆分中"
     if !is_active {
       continue
     }
     let stale = match last_seen_map.get(t.get_id()) {
-      None => true // 从未心跳过 -> 视为 no_signal
+      // BUG-119：没有心跳行不等于已静默超时，退到任务活动时钟
+      None => stale_by_task_clock(t.get_updated_at(), now_s, timeout_sec)
       Some(ts) => {
         let ts_s = iso_to_secs(ts)
         if ts_s < 0 {
@@ -101,7 +140,10 @@ pub fn heal_stale_tasks_from_store(
           ignore(engine.store_delete_heartbeat(task_id=t.get_id()))
           healed.push(t.get_id())
         }
-        Err(_) => ()
+        // BUG-119 附带：判死但回滚不了（如「已领取」不可 reopen）过去被静默吞掉，
+        // 调用面只看到 healed 少一条、不知道有一条被跳过——现在点名披露（与 BUG-27 的
+        // `no_history_ids` 同一手法：判据看不见的东西就等于没发生）
+        Err(_) => skipped_ids.push(t.get_id())
       }
     }
   }
@@ -150,7 +192,11 @@ pub fn heal_stale_tasks_by_phi(
       continue
     }
     let stale = match last_seen_map.get(t.get_id()) {
-      None => true // 从未心跳过 -> 沿用 no_signal 语义
+      // BUG-119：无心跳行 -> 退到任务活动时钟并如实披露（与 BUG-27「缺数据须兜底、不弃权」同族）
+      None => {
+        no_history_ids.push(t.get_id())
+        stale_by_task_clock(t.get_updated_at(), now_s, timeout_sec)
+      }
       Some(ts) => {
         let ts_s = iso_to_secs(ts)
         if ts_s < 0 {
