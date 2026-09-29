@@ -514,13 +514,28 @@ def rpc(method, **payload):
 
 ```bash
 # 0) 确认 moon.mod：name/version/repository/description/keywords 非空，preferred_target 与目标后端一致
+# 0.5) 确认这个版本号**从没发过**：moon view vicTop-cw/fist-mbt --versions
+#      注册表的版本不可撤销、不可覆盖；同号重发会被拒（0.2.x 那轮就吃过 409），
+#      而"git tag 与注册表同号不同码"是另一类事故（形状见 `memory/bugs.md` 的 BUG-128：本地 `v<同版本号>` 标签比注册表载荷旧一截）
 # 1) 先 dry-run 验证元数据与打包（native 全量 check >150s，等待后再读日志尾部）
 moon publish --dry-run
 #    看到 "Check passed" 与 "Server status: 202 Accepted / Dry run completed successfully" 即通过
 # 2) 正式发布
 moon publish
 #    看到 "Server status: 200 OK" 且退出码 0 即成功
+# 3) 发完必须**解包对表**（BUG-127 的教训：打包面 = 工作树 − .gitignore，不是 git 跟踪面）：
+#      moon add vicTop-cw/fist-mbt@<新版本>    # 在空壳工程里，从注册表真取一份
+#      find .mooncakes/vicTop-cw/fist-mbt -type f | sort > /tmp/payload.txt
+#      git ls-files | sort > /tmp/tracked.txt
+#      comm -23 /tmp/payload.txt /tmp/tracked.txt   # 载荷里多出来的 = 跟着公开了的本地残留（应为空）
+#      comm -13 /tmp/payload.txt /tmp/tracked.txt   # 被 moon 丢掉的（点号文件/目录一律不进包）
+#    再对载荷内容扫一遍凭据形状与本机绝对路径——扫 git 面不等于扫公开面。
 ```
+
+> **载荷边界（本次发布实测；版本号只在 `BACKLOG.md` 自述）**：`.github/`、`.githooks/`、`.codeartsdoer/`、`.gitignore`、`docs/*/.gitkeep`、
+> `.mcp.dev.json`、`.mcp.example.json`、`plugins/claude/.claude-plugin/*`、`plugins/claude/.mcp.json`
+> 共 18 件**不随包分发**（点号开头的文件或目录 moon 一律排除）⇒ 从 mooncakes 装的人拿到的是代码+文档，
+> MCP 配置要自己写；插件态分发走的是 GitHub Release 资产那条线，不是注册表。
 
 ---
 

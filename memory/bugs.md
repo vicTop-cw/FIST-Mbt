@@ -2319,3 +2319,62 @@ B（剥掉 curl）rc=1、C（干净）rc=0；用户 PATH 逐字还原 1708 字�
 - evidence: scripts/README.md:57 改写为：该行是**读盘实时计数**（现数自仓库根 fist-mbt.db，随使用增长 ⇒ 索引里不写死数字）；数不到时脚本降级打 n/a 并明说「跳过真实计数（演示不会崩）」（脚本 line 140-141，实测过这条分支的形状）；补码页口径与取证办法，实测耗时由 ~1.7s 校正为 ~1.5s（temp/demo_audit2.log）。
 承重实测：`temp/demo_audit2.py` 两条 rc=0，全程仓库根 tasks/call_log 恒为 1987/6909（`temp/demo_audit2.log` 首尾行），与 `temp/demo_audit.log` 的 9 条 python 侧文档命令合计 11 条全 rc=0（BUG-124 的 demo 面证据链由此闭合）。
 缺口如实登记（不在本轮实现）：没有常驻判据把「文档里的活体计数字面量」打到盘上真值——已写进终审预备报告 §7 的下一轮建议（与 J11 模式名对表同一批）。
+## BUG-127 [2026-09-29T09:36:03Z] [medium] FIXED
+- summary: mooncakes 的打包面是「工作树 − .gitignore」而不是 git 跟踪面 ⇒ 未 ignore 的构建残留会进公开包
+- detail: 发现面：发 0.3.4 前先按「569 个 git 跟踪文件」扫了敏感面（0 凭据形状、0 本地绝对路径），
+发完再把**注册表实际交付的载荷**解出来对表：载荷 552 件，其中 1 件根本不在 git 里 —— `__cli_pkg.mbt.tmp`
+（moon 生成的 cmd/cli 包声明临时件）。⇒ 我那道的门禁扫错了面：跟踪面绿不代表公开面干净。
+同一次对表还量到反方向：**18 个被跟踪的文件不在载荷里**（`.github/*` 5、`.githooks/*` 2、`.codeartsdoer/*` 2、
+`.gitignore` 1、`.mcp.dev.json` 1、`.mcp.example.json` 1、`docs/*/.gitkeep` 3、`plugins/claude/.claude-plugin/*` 2、
+`plugins/claude/.mcp.json` 1 —— 共同点：**点号开头的文件或目录 moon 一律不打包**）。
+所以「一源四态」里的 MCP 配置面与 claude 插件 manifest **不会**随 mooncakes 分发，
+消费方要自己写 `.mcp.json`（README 的 mooncakes 用法段有没有把这条边界说清，是另一格）。
+内容风险实测：`__cli_pkg.mbt.tmp` 只有 5 行 import 声明，无凭据、无本机路径 ⇒ 不是泄露事故，是**卫生事故**。
+- reported_by: fist-mbt-mooncakes-publish-audit
+
+
+
+### FIXED(2026-09-29T09:36:03Z / BUG-127)
+- evidence: .gitignore 追加 `*.mbt.tmp`（第 48 行，附为什么的一行注释：打包面=工作树−ignore）。
+机器可检：`git check-ignore -v __cli_pkg.mbt.tmp` 回 `.gitignore:48:*.mbt.tmp`；
+追加后 `git status --porcelain -uall` 的未跟踪未忽略面只剩 `.mcp.json`（有意不入库，且点号文件本来就不进包）。
+下一版的发布前置（本轮只登记不实现）：门禁应扫**解包后的载荷**（`moon view` + `moon add` 到空壳工程 + find 列件），
+而不是扫 git 跟踪面；这一步现在靠我手工做，无常驻判据。
+## BUG-128 [2026-09-29T09:36:03Z] [high] OPEN
+- summary: 同一个 0.3.4 现在有两份不同的码：GitHub Release 资产（git tag v0.3.4 的树）与 mooncakes 包（今天收口后的树）
+- detail: 发现面：发布后用 `git diff --stat v0.3.4..HEAD` 对身份，量到 tag 与载荷不是同一棵树。
+实测：本地 tag `v0.3.4` = af54d5e（2026-09-29 01:15 +0800，当时 moon.mod 已写 0.3.4）；
+v0.3.4..HEAD 共 **11 个提交**，`src`+`cmd` 侧 **21 个文件 +1643/−269**（看护跨进程修复、探索模式注册表与纯函数、
+白盒锁、R11/R13/R14 相关面等）；mooncakes 上的 0.3.4 发布于 2026-09-29T09:26:54Z，取自 a0dfef3 的工作树。
+后果（用户侧形状）：`install_onecmd.ps1 -Version 0.3.4` 拿到的是**旧码**（GitHub Release 资产），
+`moon add vicTop-cw/fist-mbt@0.3.4` 拿到的是**新码**，两者同号不同物；`fist version` 又只回显 0.3.4，
+所以用户没有任何办法从版本号分辨自己装到了哪一份 ⇒ 与 BUG-114（源码版本常量落后 moon.mod）同族的另一面。
+- reported_by: fist-mbt-mooncakes-publish-audit
+
+## BUG-129 [2026-09-29T09:46:36Z] [medium] FIXED
+- summary: 「发布载荷对表」当时只由我手工跑了一遍，没有常驻判据认领（BUG-127 的 FIXED 小记自己写了这一格）
+- detail: 发现面：BUG-127 收口时我在 `### FIXED` 小记里如实写了「下一版的发布前置（本轮只登记不实现）：
+这道对表目前没有常驻判据」——那就是本条。缺口挂在账本的叙述面里而没人认领，正是本仓反复的 J10 型形状：
+「自述有人写、判据没人认领」。既然发 0.3.4 已经证明这类缝真会漏东西（`__cli_pkg.mbt.tmp` 进了公开包），
+就不该等下一次发布再补。
+被检面：`moon publish` 前置检查面。以前只有两道间接门——`check_release_asset_names`（资产名/安装器/moon.mod 同源）
+与 `check_plugin_sync`（四宿主逐字节），都不看「哪些文件会随包公开」。
+为什么不复用现成件：载荷真值只有解包才拿得到（要联网 `moon add`），CI 里不该跑网络；
+所以常驻判据走的是**等价静态面**——git 自己算得出的「工作树 − .gitignore」就是 moon 的打包面（点号条目另论）。
+但要说清它是**代理门不是替身**：静态面数出将随包公开 552 件，注册表解包实测也是 552 件，**数目相等而集合不同**
+（载荷里有后来才被 `.gitignore` 挡掉的 `__cli_pkg.mbt.tmp`，静态面里有发布之后新增的守卫件）⇒
+发完仍要解包对表一次，本判据管的是「别把本地残留带上车」这一头。
+- reported_by: fist-mbt-mooncakes-publish-audit
+
+
+
+### FIXED(2026-09-29T09:46:36Z / BUG-129)
+- evidence: 新增 `scripts/check_publish_payload.py`：P1 未被 .gitignore 挡住又未被 git 跟踪的非点号文件 ⇒ 红（点名文件与修法）；
+P2 红面里出现凭据形状 ⇒ 另判事故级并单列（已发版本撤不回）；P3 打包面列不出任何文件 ⇒ FATAL(2) 自拒。离线、不起进程、不联网。
+`--selftest` 四支从已执行格子反解：G1 干净不误红（工作树带未跟踪件时自动换 G1'：逐件点名且无幻影红）/ 
+M1 造未跟踪未忽略件必红 / M2 造被现成 `*.log` 规则挡住的件必不红 / M3 红面里塞凭据形状必点名 P2；
+造件在 finally 逐个删并复核盘上无残留。实测回执：`SELFTEST OK（… 打包面 552 件 / 其中未跟踪未忽略 1 件 / 被 moon 排除的点号件 18 件）`（那 1 件正是守卫自己，未 add 时它就该红——这一手顺带证明判据看得见东西）。
+全量实测（`git add` 之后）：`PASS 发布载荷面干净：将随包公开 552 件，其中未被 git 跟踪的 0 件（另有 18 件点号条目 moon 本来就不打包）`，rc=0（`temp/payload_guard_plain.log`；带未跟踪件的那次留了 `.prev` 与 `temp/payload_guard_selftest.log`）。
+接线：ci.yml JS 轨加「先 --selftest 再全量」两步；scripts/README 登记；AGENTS 守卫族 12→13，并把相邻那句「与上面 11 个 check_* 并列」改成不带数目的写法——那个数当时已经过期一次了。
+自证踩到的两个坑也写进了判据正文：① 守卫源码里不许出现完整 token 形状（我一开始把假串直接写进字面量，
+P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红」在开发期必然失败（新守卫自己未跟踪）⇒ 换成更强的 G1'（红面与未跟踪面双向对齐、不许幻影红），而不是删门或放宽阈值。

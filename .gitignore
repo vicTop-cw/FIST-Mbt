@@ -42,3 +42,7 @@ memory/bugs_pending_github.json
 dist/
 !dist/
 !dist/*
+
+# moon 生成的 pkg 临时件——`moon publish` 的打包面 = 工作树减 .gitignore（不是 git 跟踪面），
+# 0.3.4 发布载荷实测带上了 __cli_pkg.mbt.tmp（552 件里唯一不在 git 里的）⇒ 这类残留必须挡在 ignore 面
+*.mbt.tmp

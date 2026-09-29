@@ -10,7 +10,7 @@ Owner 本轮要求七件事，逐件的状态：
 
 | # | 要求 | 状态 | 证据位置 |
 |---|---|---|---|
-| 1 | 将所有 bug 清掉（开工时 OPEN 3 条：BUG-116/118/119） | BUG-119 FIXED（实测）；BUG-118 权威 CI 门已落地、版本钉定案项如实留白；BUG-116 走"给用户一条能装上的线 + 常驻判据"的收口。此后按目标继续自查，同轮又入账并当场收口 **BUG-120…BUG-125** 六条（文档资产名漂移 / 插件态模式名 / demo 裸跑污染 / 指引冒充权威 / 污染同型残留面 / 安装器内部单栈）⇒ 台账 **124 条入账 = 111 已修 / 9 重复并入 / 4 误报 / 0 待修** | `memory/bugs.md` 抬头 + `### FIXED` 小记；投影行同源（§6） |
+| 1 | 将所有 bug 清掉（开工时 OPEN 3 条：BUG-116/118/119） | BUG-119 FIXED（实测）；BUG-118 权威 CI 门已落地、版本钉定案项如实留白；BUG-116 走"给用户一条能装上的线 + 常驻判据"的收口。此后按目标继续自查，同轮又入账 **BUG-120…BUG-129** 十条（文档资产名漂移 / 插件态模式名 / demo 裸跑污染 / 指引冒充权威 / 污染同型残留面 / 安装器内部单栈 / 索引里的活体计数 / mooncakes 载荷面 / 同号双份码 / 载荷对表无常驻判据），除 BUG-128 外**当场全部收口** ⇒ 台账 **128 条入账 = 114 已修 / 9 重复并入 / 4 误报**；**剩 1 条待修 = BUG-128**，它不是漏修而是发布方向的裁决位（§7.1 给了两条出路） | `memory/bugs.md` 抬头 + `### FIXED` 小记；投影行同源（§6） |
 | 2 | 确保无回归 | `moon test --target js -j 1` 全量通过（数字见 §3），守卫族逐条 rc=0；新增判据在 `git archive HEAD` 旧码树上发红（证明锁承重）。收口面复跑 `temp/final_js4.log` = **572/572 rc=0**（开工那份 `temp/final_js.log` 随 temp 回收，见 §9 证据寿命段） | `temp/final_js4.log`（现存）；`temp/final_js.log`、`temp/head119_guard.log`（当时存在，现已被回收，复现命令见 §9） |
 | 3 | 符合本项目开发文档（`AI-DEVELOPMENT-STANDARD.md`） | 一源四态（cl7 重投影）、证据梯 L4（每条实测）、确定性优先（新增纯函数零 IO）、增量零回归（默认语义不变，只改被判死的那一支） | §6 checklist |
 | 4 | 提供的 demo 完全可用 | 根因是 `cmd/cli/main.mbt` 把 serve 横幅打回 stdout（BUG-101 的修复被并发改动重新启用）⇒ 一条 `eprintln` 修好整族 stdio demo；收口时**按 README/USAGE 文档里的命令逐字重跑 11 条**（README DEMO 表 7 条 + 独立 CLI 表 2 条 + `demo.ps1`/`showcase.ps1`）全 rc=0，且全程根台账 1987/6909 一字不动（BUG-124 的隔离面） | `temp/demo_audit.log`（现存）、§4 表 |
@@ -131,10 +131,12 @@ Owner 本轮要求七件事，逐件的状态：
   | `blackbox/e2e_transport_stack_fallback.py`（本轮新增承重件，钉 BUG-125） | 0 | `=== 端到端传输层换栈判据：PASS（A 换栈装通 / B 无 curl 必红 / C 正向不误伤）===`，附 `用户 PATH 已还原（1708 字，逐字相同）` 与 `真产物 … sha256:616b7632 → 616b7632` |
   | `mcp_tool_tour --surface-selftest` | 0 | `SURFACE-SELFTEST: OK —— 12 支（10 违例 + 1 干净 + 1 自拒），不符 0 支` |
   | `store_isolation_probe` | 0 | `PROBE: GREEN —— 2 格中红 0 格` |
+  | `check_publish_payload --selftest`（本轮新增第 13 个守卫，钉 BUG-127/129） | 0 | `SELFTEST OK（已执行格子：G1' 现状带未跟踪件时：逐件点名且无幻影红 / M1 未跟踪未忽略的文件必红 / M2 被 .gitignore 挡住则不红 / M3 红面里的凭据形状必点名 P2；打包面 552 件 / 其中未跟踪未忽略 1 件 / 被 moon 排除的点号件 18 件）` |
+  | `check_publish_payload`（全量，add 之后） | 0 | `PASS 发布载荷面干净：将随包公开 552 件，其中未被 git 跟踪的 0 件（另有 18 件点号条目 moon 本来就不打包）` |
   | `cli_flag_probe`（真产物三档） | 0 | `PASS 调用面三档全对（版本旗=0.3.4 · 未知必非 0 · 帮助旗不落未知臂）` |
   | `blackbox/e2e_heartbeat_xproc`（本轮新增常驻臂） | 0 | `=== E2E-HEARTBEAT-XPROC PASS：8 格全绿（跨进程看护语义已锁） ===` |
   | `moon fmt --check` | 0 | `Finished. moon: no work to do` |
-  | `gen_plugins.py` + `check_plugin_sync.py`（BUG-121 修文字后复投；收口面 BUG-124/125/126 之后再复投一次） | 0 | `PASS 插件态一致：4 宿主 / 56 个生成文件 / 129 工具 / v0.3.4`；最终投影行 = `BUG-1~126 共 125 条入账：0 条待修 / 112 条已修 / 9 条重复并入 / 4 条误报`（中途一行是 `BUG-1~121 共 120 条…`，如实留作过程） |
+  | `gen_plugins.py` + `check_plugin_sync.py`（BUG-121 修文字后复投；收口面每批账变动后各复投一次） | 0 | `PASS 插件态一致：4 宿主 / 56 个生成文件 / 129 工具 / v0.3.4`；最终投影行 = `BUG-1~129 共 128 条入账：1 条待修 / 114 已修 / 9 条重复并入 / 4 条误报`（中途两行 `BUG-1~121 共 120 条…` / `BUG-1~126 共 125 条…0 条待修` 如实留作过程，那 1 条待修是发布后新入的 BUG-128） |
   | `output_validate`（cl5 交付物硬门，跑在真产物上） | 0 | `verdict=pass passed=14 failed=0`，`evidence_layer=l4-pass` |
   | `mcp_smoke`（改道后裸跑） | 0 | `MCP-SMOKE PASS`；根台账 tasks/call_log 前后逐字 1987/6909（BUG-122 的复验） |
 
@@ -151,11 +153,18 @@ Owner 本轮要求七件事，逐件的状态：
 > ② 根台账污染的同型残留面 ⇒ **BUG-124 已修**（21 个脚本默认改道 + `check_demo_isolation` 常驻，见 §6）。
 > 那句"本轮不扩大改动面，留给下一轮"是我上一版写的，改动面已经扩大了，所以这句作废——不删条目、改口径。
 
-1. **推送授权（唯一需要 owner 拍的动作）**：BUG-116 的公网线、BUG-118 的"两条轨工具链版本是否同形"、
-   以及 BUG-124/125 收口后的 CI 红点清零，关闭证据都只能在**推送后的 CI 运行**里产生（本机对
-   `cli.moonbitlang.com` 取安装脚本 TLS 失败 rc=35，`Invoke-RestMethod` 走系统代理时对
-   `raw.githubusercontent.com` 传输层被对端关闭）。本轮所有提交都只在本地，**没有 push**；
-   `master` 领先 `origin/master` 的格数见 §7b。
+1. **两项需要 owner 拍的动作**：
+   - **推送**：BUG-116 的公网线、BUG-118 的"两条轨工具链版本是否同形"、以及 BUG-124/125 收口后的 CI 红点清零，
+     关闭证据都只能在**推送后的 CI 运行**里产生（本机对 `cli.moonbitlang.com` 取安装脚本 TLS 失败 rc=35，
+     `Invoke-RestMethod` 走系统代理时对 `raw.githubusercontent.com` 传输层被对端关闭）。
+     本轮所有提交都只在本地，**没有 push**；`master` 领先 `origin/master` 的格数见 §7b。
+   - **BUG-128 的出路（台账里那 1 条待修就是这个裁决位）**：注册表的 `0.3.4` 载荷取自 `a0dfef3`，
+     而本地 tag `v0.3.4` 停在 `af54d5e`（差 11 个提交、`src`+`cmd` 侧 +1643/−269）⇒
+     `install_onecmd.ps1 -Version 0.3.4` 与 `moon add vicTop-cw/fist-mbt@0.3.4` 现在给的是**两份不同码、同一个号**。
+     ①**推荐**：`moon.mod` 前进到 0.3.5 → 重发注册表 → 打 `v0.3.5`（代价=一轮版本自述同步：moon.mod/USAGE/插件态/R11 源码常量，
+     判据 R1–R14 与 `cli_flag_probe` 会逐面接住）；②把 GitHub Release 的 `v0.3.4` 资产重做到当前树
+     （代价=动**已发布的 tag**，需明确授权，且本机 push tag 会触发 `release.yml`）。
+     我没有自行 bump、也没有重发——注册表版本不可撤销，这一格不该由代理替 owner 决定。
 2. 并发车道仍在同一工作树写代码（`cmd/cli` help 子命令、`ops_loop` 重构、`scripts/*` demo 修复）：
    本轮的全量数字是"合并面"的数字，不代表单独任何一车道；分栏见 §3。
 3. `check_scripts_index` 开工时报 `gen_help_docs.py` 未登记（并发车道的新脚本）——**本轮收口时已登记**，
@@ -206,12 +215,14 @@ cdd72fd fix(看护面),feat(探索模式),fix(守卫面),docs(收口): 终审预
 
 ## 8. 来源
 
-**仍存在的证据（可直接复看）**：`temp/final_js4.log`（572/572 + `MOON-TEST-RC=0`）、
-`temp/demo_audit.log`（9 行文档命令 + `FATAL_红条数=0`）、`temp/demo_audit2.py`/`temp/demo_audit2.log`（两条 `.ps1`）、
+**仍存在的证据（可直接复看）**：`temp/final_js4.log`（572/572 + `MOON-TEST-RC=0`）、**`temp/publish_gate_js.log`（发布前置那次独立复跑，同数同 rc）**、
+`temp/publish_034.log`（`Server status: 200 OK` + `PUBLISH-RC=0`）、`temp/pkg_install_probe/`（从注册表真取的消费者工程，`.mooncakes/vicTop-cw/fist-mbt` 即公开载荷 552 件）、
+`temp/payload_files.txt` / `temp/tracked_files.txt`（两向 `comm` 对表的原料）、`temp/demo_audit.log`（9 行文档命令 + `FATAL_红条数=0`）、`temp/demo_audit2.py`/`temp/demo_audit2.log`（两条 `.ps1`）、
 `temp/r14_e2e_verify.log` 与 `temp/r14_e2e_verify2.log`（换栈三格，后者是收紧 B 负门后的复跑）、
-`temp/bug124_125_receipt.json`、`temp/bug126_receipt.json`（`report_bug`/`bug_fix` 回执原文）、
+`temp/bug124_125_receipt.json`、`temp/bug126_receipt.json`、`temp/bug127_128_receipt.json`、`temp/bug129_receipt.json`（`report_bug`/`bug_fix` 回执原文）、
+`temp/payload_guard_selftest.log`、`temp/payload_guard_plain.log`（+ `.prev`：带未跟踪件那次与干净那次各留一份）、`temp/publish_cl7.log`、
 `scripts/blackbox/e2e_heartbeat_xproc.py`、`scripts/blackbox/e2e_transport_stack_fallback.py`、`scripts/check_demo_isolation.py`、
-`docs/improvement-plan-20260929.md`、`memory/bugs.md`（BUG-116…126 抬头与小记）、owner 2026-09-29 终审目标原文。
+`docs/improvement-plan-20260929.md`、`memory/bugs.md`（BUG-116…128 抬头与小记）、owner 2026-09-29 终审目标原文。
 
 ## 9. 证据文件寿命与取证口径（终审复核前必读）
 
@@ -238,7 +249,9 @@ cdd72fd fix(看护面),feat(探索模式),fix(守卫面),docs(收口): 终审预
 | 面 | 改动 | 落点 |
 |---|---|---|
 | 污染面 | 21 个 `spawn serve` 脚本加默认改道（未显式设 `FIST_DB_PATH` 时落 `temp/<脚本名>.db`） | `scripts/{atgc_selfdrive_demo,dag_depend_verify,dispatch_verify,enhance_verify,evolve_critic_verify,executor_route_verify,fist,issue_scan,lesson_chain_selfdrive,lesson_selfdrive,lesson_verify,log_fix_selfdrive,map_verify,mcp_bug_loop,output_validate,pentad_fist,plan_gradient_verify,scratch_selfdrive,scratch_verify,task_challenge_verify,test_mcp_bugs}.py` |
-| 新守卫 | `scripts/check_demo_isolation.py`（I1/I2/I3 + 五支 selftest）挂 ci.yml JS 轨 | 守卫族 11→12，AGENTS 与 scripts/README 同步 |
+| 新守卫 | `scripts/check_demo_isolation.py`（I1/I2/I3 + 五支 selftest）与 `scripts/check_publish_payload.py`（P1/P2/P3 + 四支 selftest）挂 ci.yml JS 轨 | 守卫族 11→13，AGENTS 与 scripts/README 同步 |
 | 分发面 | `install_onecmd.ps1` 内部两发取数接 curl 兜底臂（只在无 HTTP 响应时换栈） | 判据 R14 + 三格承重件 |
-| 账本 | BUG-124/125/126 三条 `report_bug`→`bug_fix`（隔离库跑真 RPC，`publish_task=false`） | `memory/bugs.md`，投影行 125 条 / 0 待修 |
+| 账本 | BUG-124/125/126/127 四条 `report_bug`→`bug_fix` + BUG-128 只入账（隔离库跑真 RPC，`publish_task=false`） | `memory/bugs.md`，投影行 127 条 / 1 待修（=BUG-128 裁决位） |
+| 发布面 | `moon publish` 把 `vicTop-cw/fist-mbt@0.3.4` 发上 mooncakes（202 预检 → 200 OK → `moon view` 回读 Latest=0.3.4 / 9 版 / Downloads 31）；发布前置 = 全量 JS 轨 + 守卫族逐条 rc=0 | `temp/publish_034.log`、`temp/publish_gate_js.log` |
+| 载荷门禁面 | 发布后**解包对表**量出「打包面 = 工作树 − .gitignore」：1 件本地残留进了公开包、18 件点号文件没进包 ⇒ `.gitignore` 追加 `*.mbt.tmp`、USAGE §10 补第三步与载荷边界、BACKLOG P1 改为实测注册表态 | `.gitignore:48`、`USAGE.md` §10、`temp/payload_files.txt` |
 | 文档面 | README 诚实边界段、CHANGELOG 三条 + 口径更正段、scripts/README 两个新件登记 + showcase 行去死数字、SHIP-PLAN 现状指针 | §5 / §7 |
