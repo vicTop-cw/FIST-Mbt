@@ -4,14 +4,19 @@ Seven battle-tested modes, each a full closed loop on the FIST state machine. Te
 
 ## Mode matrix
 
-| Mode | Purpose | Default switches | Trigger scenario |
-|---|---|---|---|
-| 推进 advance | New feature / version iteration, deep-split tree, leaf-by-leaf closure | omega ✅ laya ✅ issue_up ✅ | Version sprints, new subsystems |
-| 寻虫 bug-hunt | Five-route hunting (adversarial samples / diffing / fuzz / report re-check / code reading) → minimal repro → report, quick-win-only fixes | issue_up ✅ | Pre-release hunting, hotspot modules |
-| 修复与合并 fix-and-merge | Backlog bug closure + branch/backup merge (pre-flight demo, human approval before real merge) | issue_up ✅ | bugs.md backlog, feature merge |
-| 验证 verify | Gates run with evidence + Omega ledger audit + output hard gate; never fixes, only reports | omega ✅ issue_up ✅ | Pre-release re-verification |
-| 清整 tidy | Ledger/memory/temp-product inventory; deletions always ask first | issue_up ✅ | Phase wrap-up, archive retiring |
-| 夜间循环 night-loop | Free-model window cron: time-gate + progress ledger relay, hunt→fix→verify→polish × N rounds | omega ✅ laya ✅ issue_up ✅ call_log ✅ | Unattended windows (e.g. 23:00–08:00) |
+| Identifier | Display name | Purpose | Default switches | Trigger scenario |
+|---|---|---|---|---|
+| `advance` | 持续开发新功能 | New feature / version iteration, deep-split tree, leaf-by-leaf closure | omega yes, laya yes, issue_up yes | Version sprints, new subsystems |
+| `polish` | 打磨完善（不加新功能） | Harden/refactor what exists; publishing a new feature task is refused | issue_up yes | Pre-release polish, hotspot modules |
+| `verify` | API 枚举与完备性验证 | Gates run with evidence + Omega ledger audit + output hard gate; never fixes, only reports | omega yes, issue_up yes | Pre-release re-verification |
+| `bugfind` | 寻虫：issue_scan + 边界语料 | Rule-driven source scan + boundary corpus -> minimal repro -> report | issue_up yes | Hunting before a release |
+| `fix_and_merge` | 修复 issues + 合并分支 | Backlog bug closure + branch merge (human approval before the real merge); needs a GitHub/GitCode token | issue_up yes | bugs.md backlog, feature merge |
+| `tidy` | 项目打扫清整 | Ledger/memory/temp-product inventory; adding new code is refused, deletions ask first | issue_up yes | Phase wrap-up, archive retiring |
+| `explore` | 探索：按复杂度自选模式 | Scores the goal's complexity 0..5, selects one of the six single modes, and only then dispatches a leg into it. Parallel modes are allowed **only** when each candidate declares a non-empty file scope, the scopes are pairwise disjoint, `reserve_scope` returns reserved/renewed/taken_over and `conflicts_check` clears — otherwise it falls back to single-mode serial. | no forbidden tools (it is a selector, not a worker) | Goal given without a pre-chosen mode; multi-mode candidates |
+
+> Historical note: older copies of this file listed `hunt`, `fix-and-merge` and `night-loop`. Only `bugfind`
+> and `fix_and_merge` are accepted by the server; `night-loop` was never a mode identifier (the unattended
+> window is `watchdog_tick` + the cron meta-prompt template, not a mode), and `explore` replaces it here.
 
 ## Loop pattern (mode G core)
 

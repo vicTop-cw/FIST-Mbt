@@ -49,6 +49,7 @@ AIGC:
   版本一前进照抄即 404。补 `check_release_asset_names.py` 的 **R13**（README 里以数字开头的资产名版本 == `moon.mod`，
   无基线即自拒；模板形态 `v$VERSION` 不误红），`--selftest` 反解出 `R13×2`（漂移必红 + 模板不红），
   AGENTS 守卫族段与 `scripts/README.md` 索引同步。**台账现 0 条待修**（110 抬头 = 106 FIXED + 4 FALSE_POSITIVE）。
+- **BUG-121（上报即收口，盖章 2026-09-29T07:16:30Z）**：终审自证「文档点名的开发模式名 ↔ 注册表」时抓到插件态说谎——`plugins/source/SKILL.md` 与 `references/seven-modes.md` 写着 `hunt`、`fix-and-merge`、`night-loop` 三个服务端不接受的标识符，矩阵还整列漏了 `polish` 与新加的 `explore`（四宿主 SKILL 是 `gen_plugins.py` 投影出去的，消费方按名调用当场被拒）。改为注册表 7 个标识符 + 服务端 `mode_display_name` 中文名、补 explore 行（含四道并行门）、模板落点写明 `templates/pipeline_mode_<identifier>.md`，重投影后 cl7 逐字节一致。**台账现 0 条待修**（111 抬头 = 107 FIXED + 4 FALSE_POSITIVE）。
 - **demo 车道回传**：一条 `println`→`eprintln` 解封 **27 个** stdio 判据/demo；`mcp_smoke.py` = MCP-SMOKE PASS、
   `atgc_selfdrive_demo` 与 `e2e_mirror_install` 本机跑绿，仓库根台账 **1986 任务 / 6905 调用** 跑前跑后逐字不变
   （只读证明）。产物硬门 `output_validate` 对本轮 14 件交付物判 **verdict=pass / evidence_layer=l4-pass**。

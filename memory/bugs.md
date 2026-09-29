@@ -2205,3 +2205,16 @@ BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并
 
 ### FIXED(2026-09-29T07:05:54Z / BUG-120)
 - evidence: `scripts/check_release_asset_names.py` 新增 R13：judge() 用 `fist-mbt-js-v(\d[0-9A-Za-z.\-]*?)\.zip` 扫 README 正文，以数字开头的版本字面量必须 == moon.mod 的 version，读不到基线即自拒；模板形态 `v$VERSION` 放行（不误红，否则会把文档逼回写死版本）。`--selftest` 两支：README 字面量改成 0.9.9 必红、改成 `v$VERSION` 不许红，格子清单从已执行格子反解 => `R13×2`。自述同步：AGENTS.md 守卫族段 + scripts/README.md 该条索引（BUG-120 加进守卫标题）+ check_release_asset_names 自身 PASS 行反解到 R13。实测：`python scripts/check_release_asset_names.py` rc=0；`--selftest` rc=0；check_doc_surface / check_scripts_index / check_entry_paths rc=0。
+## BUG-121 [2026-09-29T07:16:30Z] [medium] FIXED
+- summary: 插件态 skill 广告的开发模式名有两个不存在、还漏了 explore——照抄 mode=hunt / mode=night-loop 会被服务端当场拒
+- detail: 发现面：终审收口自证「文档点名的模式名是否与 src/ops/ops_modes.mbt::all_modes() 同形」。
+被检面：plugins/source/SKILL.md 的 description 行与模式段、plugins/source/references/seven-modes.md 的模式矩阵。
+注册表真值：advance / polish / verify / bugfind / fix_and_merge / tidy / explore（7 条；mode_list 实测回 7 条，mode_templates 的 missing 为空）。
+文档谎言：写了 hunt、fix-and-merge、night-loop 三个不存在的标识符；night-loop 从来不是模式标识符（无人值守窗口是 watchdog_tick + cron 元提示词模板），矩阵还整列漏掉 polish 与新加的 explore。
+影响：这四份 SKILL 由 gen_plugins 投影到 atomcode/codearts/deepseek-harness/claude，消费方按名调用即失败。mode_templates 只验模板文件存在性、check_doc_surface 的 J8 只比「模板调用参数 == 真源 schema」，没有一条判据把「文档点名的模式名」打到注册表上（J10 只管 J 系列的范围声明）。
+- reported_by: fist-mbt-final-review-plugin-plane
+
+
+
+### FIXED(2026-09-29T07:16:30Z / BUG-121)
+- evidence: plugins/source/SKILL.md 与 plugins/source/references/seven-modes.md 的模式清单改为注册表 7 个标识符 + 服务端 mode_display_name 的中文名；补 explore 行（复杂度 0..5 选一个单模式，并行须申报作用域两两不相交 + reserve_scope 拿到预订 + conflicts_check 放行，否则退回单模式串行）；模板落点写明 templates/pipeline_mode_<identifier>.md；seven-modes.md 加历史注记说明 hunt/fix-and-merge/night-loop 不是标识符。gen_plugins.py 重投影四宿主后 check_plugin_sync.py = PASS（逐字节一致）。 判据缺口（文档模式名 <-> 注册表无常驻对照）另计入报告 §7 后续建议。

@@ -122,6 +122,7 @@ Owner 本轮要求七件事，逐件的状态：
   | `cli_flag_probe`（真产物三档） | 0 | `PASS 调用面三档全对（版本旗=0.3.4 · 未知必非 0 · 帮助旗不落未知臂）` |
   | `blackbox/e2e_heartbeat_xproc`（本轮新增常驻臂） | 0 | `=== E2E-HEARTBEAT-XPROC PASS：8 格全绿（跨进程看护语义已锁） ===` |
   | `moon fmt --check` | 0 | `Finished. moon: no work to do` |
+  | `gen_plugins.py` + `check_plugin_sync.py`（BUG-121 修文字后复投） | 0 | `PASS 插件态一致：4 宿主 / 56 个生成文件 / 129 工具 / v0.3.4`；投影行 = `BUG-1~121 共 120 条入账：0 条待修 / 107 条已修 / 9 条重复并入 / 4 条误报` |
   | `output_validate`（cl5 交付物硬门，跑在真产物上） | 0 | `verdict=pass passed=14 failed=0`，`evidence_layer=l4-pass` |
 
   对应 cl 映射：cl1/cl2/cl3 = `check_tools_sync` + `check_doc_surface`；cl4 = `check_doc_surface` J3 + `cli_flag_probe`；
@@ -146,6 +147,7 @@ Owner 本轮要求七件事，逐件的状态：
    留此作过程记录（不登记就是 CI 文档面红）。
 5. `cleanup_artifacts.py --check` 的存量脏（根目录 77 份 .db + temp 366 件）不是本轮引入，
    CI 里那一步是先清后查，本地保持不动。
+6. **新增判据缺口（本轮未实现，只登记）**：没有一条常驻判据把「文档点名的开发模式名」打到 `src/ops/ops_modes.mbt::all_modes()` 上——`mode_templates` 只验模板文件存在性，`check_doc_surface` 的 J8 只比「模板调用参数 == 真源 schema」，J10 只管 J 系列的范围声明。BUG-121 就是从这个缝里长出来的（文案已修，缝还在）。建议下一轮把它做成 J11 或 R14 的一支：从注册表反解标识符集合，与 SKILL/AGENTS/USAGE 里点名模式的每一行做双向对表（多一个名 = 幻影，少一个名 = 声明滞后），照 J10 的形状配「空扫描必红」哨兵。
 6. `memory/bugs.md` 的 18 条重复单与账本 `CLOSED` 词汇（建议书 D3/D4）仍是待裁决项，未动。
    本轮新增的 BUG-120 走的是 `report_bug`（拿号）→ `bug_fix`（同一笔落 `### FIXED(… / BUG-120)` 小记），
    未产生修复单（修复已在同一轮落地，`publish_task=false`）。
