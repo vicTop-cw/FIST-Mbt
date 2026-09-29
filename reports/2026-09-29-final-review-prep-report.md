@@ -188,15 +188,17 @@ Owner 本轮要求七件事，逐件的状态：
 
 ## 7b. 提交面身份（终审对表用）
 
-本地提交串（**未 push**；加上本段所在的 `docs(report)` 之后 `git rev-list --count origin/master..HEAD` = 8）：
+本地提交串（**未 push**；加上本段所在的 `docs(report)` 之后 `git rev-list --count origin/master..HEAD` = 10）：
 
 ```
+9653604 feat(发布面),fix(载荷面),fix(账本): mooncakes 0.3.4 发布后的三格收口——BUG-127/129 已修、BUG-128 挂裁决
+a0dfef3 docs(report),docs(memory): 第二批收口面自证——§6 表刷新、§7 两项闭合、§9 证据寿命、§10 改动清单
 cd8702f fix(污染面),fix(分发面),feat(守卫面): BUG-124/125/126——残留同型面一次收干净
-a8dfe60 docs(report): §7b 提交面身份——commit 串、tag 指向与有意不入库的两个文件
 41eefd8 fix(demo面),docs(指引面): BUG-122/123——裸跑不再污染根台账，gen_help_docs 不再冒充 CLI 文案权威
 9f3927d fix(插件态),docs(守卫面): BUG-121——SKILL 广告的模式名有两个服务端根本不认
-cdd72fd fix(看护面),feat(探索模式),fix(守卫面),docs(收口): 终审预备——0 条待修 + 572/572 + cl1–cl7 逐条 rc=0
 ```
+
+（`cdd72fd`/`a8dfe60` 在其下，串起 `214fd8a` 基线。）
 
 - `cdd72fd` = 看护修复 + 探索模式 + R13 + 文档面收口；**第一轮 572/572 与守卫族 17 步 rc=0 的测量树就是这个面**。
 - `9f3927d` = BUG-121：四宿主 SKILL 的模式名对齐注册表（`hunt` / `fix-and-merge` / `night-loop` 不是标识符）。
@@ -206,8 +208,13 @@ cdd72fd fix(看护面),feat(探索模式),fix(守卫面),docs(收口): 终审预
   R14 + BUG-124/125/126 三条入账 + `§5/§6/§9/§10` 与 CHANGELOG/AGENTS/scripts-README 同步。
   **§6 表里那批 rc=0 与 `temp/final_js4.log` 的 572/572 是在 `cd8702f` 的工作树（含随后仅动本文档的提交）上测的**；
   这一提交不含任何 `src/**.mbt` 改动（`git show --stat cd8702f` 可见），所以码面与 `cdd72fd` 那次全量数字同源。
-- 本地 tag `fist-final-review-20260929` 现钉在本文档所在提交上（不用 `v*` 前缀，避免将来 push tag 时
-  误触发 `release.yml` 的 tag 条件）；判据取号一律**钉 tag 而非 `HEAD`**，否则本段之后的补记会自比恒真。
+- 本地 tag `fist-final-review-20260929` 钉在 **`a0dfef3`**（= 注册表 0.3.4 载荷所用的树，见下条），**不随本文档的
+  后续提交前移**——不然"终审面"会变成"比发布面新一格"的两个身份。不用 `v*` 前缀，避免将来 push tag 时
+  误触发 `release.yml` 的 tag 条件。
+- 发布轮另立 `mooncakes-0.3.4` → `a0dfef3`（机器可读的"注册表那份 0.3.4 是哪棵树"），
+  与既有 `v0.3.4` → `af54d5e`（GitHub Release 资产所用树）**并列可见**——BUG-128 说的"同号两份码"从此不靠回忆，
+  `git tag -l --format='%(refname:short) -> %(*objectname:short)' mooncakes-0.3.4 v0.3.4` 一行就能对出来。
+- 判据取号一律**钉 tag 而非 `HEAD`**，否则本段之后的补记会自比恒真。
 
 有意**不入库**的两个文件：`.mcp.json`（254de24 起改为不跟踪，跟踪面是 `.mcp.dev.json`，两者与
 `plugins/claude/.mcp.json` 语义等价，实测三处 JSON 内容相同）与 `__cli_pkg.mbt.tmp`（moon 构建残留，
