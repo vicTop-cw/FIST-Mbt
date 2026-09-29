@@ -113,8 +113,7 @@ def rpc(method, **payload):
   "arguments":{
     "project_dir":"/proj/demo",
     "description":"示例根任务",
-    "created_by":"human_steward",
-    "now":"2026-09-11T18:20:00Z"
+    "created_by":"human_steward"
   },
   "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}
 }}
@@ -134,12 +133,12 @@ def rpc(method, **payload):
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
 ```
-→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（87 个工具）
+→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（本机 `tools/list` 实测：**129 个 MCP 工具**）
 
 **Step 2 · 发布一个根任务**
 ```json
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"publish","arguments":{
-  "project_dir":"/proj/demo","description":"示例根任务","created_by":"human_steward","now":"2026-09-11T18:20:00Z"},
+  "project_dir":"/proj/demo","description":"示例根任务","created_by":"human_steward"},
   "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
 ```
 → `{"task_id":"T0","message":"已发布根任务"}`
@@ -167,17 +166,17 @@ def rpc(method, **payload):
 
 | 工具 | 说明 | 参数 |
 |---|---|---|
-| `publish` | 发布根任务（仅 human_steward/human） | project_dir(必) description(必) created_by(选,默认human_steward) namespace(选,默认default) now(选) |
-| `claim` | 认领任务（待领取→已领取） | task_id(必) assignee(必) now(选) |
-| `plan` | 对已认领任务拆出一层子任务 | task_id(必) split_n(选,默认3) by(选) now(选) |
-| `execute` | 记录执行交付物（→执行中），向后兼容旧接口，支持 executor/model/tokens/cost 元数据 | task_id(必) deliverable(必) executor(选) model(选) tokens_in(选) tokens_out(选) cost(选) duration_ms(选) rate_limited(选) failure_reason(选) now(选) |
-| `submit` | 提交验收（→待验收） | task_id(必) now(选) |
-| `verify` | 验收通过（→已完成，父任务自动上卷） | task_id(必) verifier(必) now(选) |
-| `reject` | 验收拒绝（→已打回） | task_id(必) reason(选) by(选,默认human_steward) now(选) |
-| `retry` | 打回后重试（→执行中） | task_id(必) now(选) |
-| `pause` | 暂停任务（任意活跃→已暂停） | task_id(必) now(选) |
-| `resume` | 恢复任务（已暂停→已领取） | task_id(必) now(选) |
-| `archive` | 归档（仅人类指挥官） | task_id(必) by(选) now(选) |
+| `publish` | 发布根任务（仅 human_steward/human） | project_dir(必) description(必) created_by(选,默认human_steward) namespace(选,默认default) |
+| `claim` | 认领任务（待领取→已领取） | task_id(必) assignee(必) |
+| `plan` | 对已认领任务拆出一层子任务 | task_id(必) split_n(选,默认3) by(选) |
+| `execute` | 记录执行交付物（→执行中），向后兼容旧接口，支持 executor/model/tokens/cost 元数据 | task_id(必) deliverable(必) executor(选) model(选) tokens_in(选) tokens_out(选) cost(选) duration_ms(选) rate_limited(选) failure_reason(选) |
+| `submit` | 提交验收（→待验收） | task_id(必) |
+| `verify` | 验收通过（→已完成，父任务自动上卷） | task_id(必) verifier(必) |
+| `reject` | 验收拒绝（→已打回） | task_id(必) reason(选) by(选,默认human_steward) |
+| `retry` | 打回后重试（→执行中） | task_id(必) |
+| `pause` | 暂停任务（任意活跃→已暂停） | task_id(必) |
+| `resume` | 恢复任务（已暂停→已领取） | task_id(必) |
+| `archive` | 归档（仅人类指挥官） | task_id(必) by(选) |
 | `delete` | 删除已归档任务 | task_id(必) |
 
 ### 6.2 查询
@@ -191,11 +190,11 @@ def rpc(method, **payload):
 
 | 工具 | 说明 | 参数 |
 |---|---|---|
-| `task_plan_deep` | AO 式递归拆解，拆出整棵多层子任务树并写库 | task_id(必) split_n(选,默认3) by(选) spec(选) now(选) |
+| `task_plan_deep` | AO 式递归拆解，拆出整棵多层子任务树并写库 | task_id(必) split_n(选,默认3) by(选) spec(选) |
 | `conflicts_check` | claim 冲突检测（认领前检查是否已被他人/本人持有） | task_id(必) assignee(必) |
-| `heartbeat` | 活动信号上报（超时静默将触发 heal 回滚） | task_id(必) signal(选) now(选) |
-| `heal` | no_signal 看护：心跳超时静默的任务回滚为已领取待重派 | now(选) timeout_sec(选) |
-| `task_cleanup` | 归档清理：删除超保留期的已归档任务 | now(选) retention_days(选,默认30) |
+| `heartbeat` | 活动信号上报（超时静默将触发 heal 回滚） | task_id(必) signal(选) |
+| `heal` | no_signal 看护：心跳超时静默的任务回滚为已领取待重派 | timeout_sec(选) |
+| `task_cleanup` | 归档清理：删除超保留期的已归档任务 | retention_days(选,默认30) |
 | `phi_accrual` | Phi Accrual 概率式故障检测（R89，Hayashibara 2004）：按心跳间隔历史分布算怀疑度 φ，替代固定 timeout——φ≥threshold(默认8) 判 suspect 否则 healthy | intervals(必,秒数组) elapsed(必,秒) threshold(选,默认8) |
 | `tx_contract` | 迁移契约检查（R109，Design by Contract 蒸馏）：对 (task, action) 只读预检 precondition/invariant/postcondition 三件套，任一失败 verdict=rejected 整笔拒绝、状态 A 回稳（不落库）；全通过 allowed（建议仍走正式生命周期工具执行） | task_id(必) action(必,claim/split/execute/submit/reject/retry/pause/resume/reopen/complete/archive/mark_decomposing) assignee(选,默认agent) completed_by(选,默认human_steward) |
 | `eval_feedback` | 反馈收敛（R111，Evaluator-Optimizer schema 蒸馏）：把自由文本反馈归一为 Defects/Evidence/Fix/Acceptance 四段式契约 + 确定性 verdict——无缺陷且 acceptance 非空 → pass 可收敛；否则 fail + flags（缺证据/缺修复/缺段）；与 plan_revise 反馈修订互补 | feedback(必,含 ## Defects/Evidence/Fix/Acceptance 段，各段 - 列表项) task_id(选) |
@@ -220,8 +219,8 @@ def rpc(method, **payload):
 | `dag_sort` | 对任务列表按依赖深度拓扑排序 | task_ids(JSON 数组，必填) |
 | `board_ascii` | 实时任务看板：按状态分组 + 深度缩进渲染，一眼看项目全貌 | namespace(可选，空=全部) |
 | `status_summary` | 项目脉冲：{version,total_tasks,by_status,active_namespaces}，一次调用读项目健康 | namespace(可选，只统计该 ns) |
-| `reserve_scope` | 预订工作作用域防并发编辑冲突（空/超时/同 agent 可占；他人占用返回持有者） | scope, agent, ttl_until(必), now |
-| `reserve_check` | 查询作用域是否可编辑（空闲可用） | scope(必), now |
+| `reserve_scope` | 预订工作作用域防并发编辑冲突（空/超时/同 agent 可占；他人占用返回持有者） | scope, agent, ttl_until(必) |
+| `reserve_check` | 查询作用域是否可编辑（空闲可用） | scope(必) |
 | `reserve_release` | 释放自己的作用域（仅持有者有效） | scope(必), agent(必) |
 
 > **使用建议**：在 `claim` 前先调 `dag_ready` 查看可领取任务，或 `dag_check` 验证依赖是否满足，
@@ -379,40 +378,40 @@ def rpc(method, **payload):
 
 | 工具 | 说明 | 参数 |
 |---|---|---|
-| `publish_parallel` | 在已有任务命名空间并行追加独立根任务（不要求 ns 为空、不续轮不归档） | project_dir(必) description(必) namespace(必,非default) created_by(选,默认selfdrive) now(选) |
-| `reopen_task` | 重开/重派任务：任意非归档任务回滚为已领取（M4 heal/运维重派用） | task_id(必) now(选) |
-| `run_check` | 外部判据检查：服务端真实执行命令（防自写自测恒绿），结果落 specs 表；[gate:required] 任务的 verify 依赖其记录 | task_id(必) cmd(必) args(选) workdir(选) timeout_ms(选,默认120000) now(选) |
-| `dag_publish` | 发布带 `depends_on` 依赖关系的根任务 | project_dir(必) description(必) depends_on(必,JSON数组) namespace(选) created_by(选) now(选) |
+| `publish_parallel` | 在已有任务命名空间并行追加独立根任务（不要求 ns 为空、不续轮不归档） | project_dir(必) description(必) namespace(必,非default) created_by(选,默认selfdrive) |
+| `reopen_task` | 重开/重派任务：任意非归档任务回滚为已领取（M4 heal/运维重派用） | task_id(必) |
+| `run_check` | 外部判据检查：服务端真实执行命令（防自写自测恒绿），结果落 specs 表；[gate:required] 任务的 verify 依赖其记录 | task_id(必) cmd(必) args(选) workdir(选) timeout_ms(选,默认120000) |
+| `dag_publish` | 发布带 `depends_on` 依赖关系的根任务 | project_dir(必) description(必) depends_on(必,JSON数组) namespace(选) created_by(选) |
 
 ### 6.10 无人值守编排（watchdog / pipeline）
 
 | 工具 | 说明 | 参数 |
 |---|---|---|
-| `watchdog_tick` | 看门狗编排单一入口（推荐仅用于定时任务）：扫描活跃任务，心跳超时回滚重派；上一轮根任务完成且给 next_description/meta_prompt_path 时自动续下一轮；可选 `phi_gate=true` 用 Phi Accrual 概率式判活（φ≥phi_threshold 才回滚，默认关闭零回归） | now timeout_sec(选,默认600) namespace(选) next_description(选) next_created_by(选,默认watchdog) meta_prompt_path(选) cold_start(选,默认false) project_dir(选) omega_strong_verify(选) omega_split_n(选) omega_spec(选) autodispatch(选,默认false) autodispatch_want(选) phi_gate(选,默认false) phi_threshold(选,默认8) |
-| `pipeline_tick` | 提示词流水线状态机单入口（仅定时任务 ns）：以 currentState.txt 为状态源四分支推进（空闲生成提示词/提示词落盘发根/执行中缺报告则催报告/报告落盘验收收口），报告先行 | project_dir(必) now(选) namespace(选,默认cron-auto) phase(选,默认auto) prompt_name(选) timeout_sec(选,默认2400) |
+| `watchdog_tick` | 看门狗编排单一入口（推荐仅用于定时任务）：扫描活跃任务，心跳超时回滚重派；上一轮根任务完成且给 next_description/meta_prompt_path 时自动续下一轮；可选 `phi_gate=true` 用 Phi Accrual 概率式判活（φ≥phi_threshold 才回滚，默认关闭零回归） |  timeout_sec(选,默认600) namespace(选) next_description(选) next_created_by(选,默认watchdog) meta_prompt_path(选) cold_start(选,默认false) project_dir(选) omega_strong_verify(选) omega_split_n(选) omega_spec(选) autodispatch(选,默认false) autodispatch_want(选) phi_gate(选,默认false) phi_threshold(选,默认8) |
+| `pipeline_tick` | 提示词流水线状态机单入口（仅定时任务 ns）：以 currentState.txt 为状态源四分支推进（空闲生成提示词/提示词落盘发根/执行中缺报告则催报告/报告落盘验收收口），报告先行 | project_dir(必) namespace(选,默认cron-auto) phase(选,默认auto) prompt_name(选) timeout_sec(选,默认2400) |
 
 ### 6.11 自驱式编程（selfdrive）
 
 | 工具 | 说明 | 参数 |
 |---|---|---|
 | `selfdrive_init` | 初始化 memory 四件套（product/target/task/thinking + reviews 目录），幂等不覆盖 | project_dir(必) namespace(选,默认default) |
-| `selfdrive_append` | 追加/更新 memory 条目（thinking 为 append-only 流水，其余覆盖写） | project_dir(必) kind(必,thinking/product/target/task) content(必) namespace(选) now(选) |
+| `selfdrive_append` | 追加/更新 memory 条目（thinking 为 append-only 流水，其余覆盖写） | project_dir(必) kind(必,thinking/product/target/task) content(必) namespace(选) |
 | `selfdrive_get` | 读取指定 memory 文件，返回 {exists, content} | project_dir(必) kind(必) namespace(选) |
 | `selfdrive_export_tasks` | 从任务库导出任务清单到 task.md（视图覆盖写） | project_dir(必) namespace(选) |
 | `selfdrive_review_tick` | 审视轮判定：报告数−已审视轮次≥review_every 触发 action=review（附最近报告+memory 摘要），否则 idle/no_memory/safe_exit | project_dir(必) review_every(选,默认3) namespace(选) |
 | `selfdrive_review_ready` | 审视收口：确认 memory/reviews/ 最新审视报告已落盘并推进已审视轮次（报告先行，无报告拒绝推进） | project_dir(必) namespace(选) |
-| `selfdrive_publish_next` | 解析审视报告 `## Next Tasks` 段并将待办并行发布为独立根任务（幂等，description 内嵌 [review:file:idx] 防重） | project_dir(必) namespace(选,默认default) max_tasks(选,默认10) now(选) |
+| `selfdrive_publish_next` | 解析审视报告 `## Next Tasks` 段并将待办并行发布为独立根任务（幂等，description 内嵌 [review:file:idx] 防重） | project_dir(必) namespace(选,默认default) max_tasks(选,默认10) |
 | `selfdrive_parse_next_tasks` | 纯解析审视报告文本中 `## Next Tasks` 段（调试/校验用） | content(必) max_tasks(选,默认10) |
-| `memory_consolidate` | 自我记忆·收敛写回：verify 通过后把交付物/结论收敛写回 memory/{kind}.md（kind 缺省 target；thinking 为 append-only 带时间戳，其余覆盖写；checkpoint 写时刻） | project_dir(必) task_id(必) kind(选,默认target) content(必) now(选) |
-| `memory_gc` | 自我记忆·上限+软降权归档（不硬删）：超 max_chars 时把 memory/{kind}.md 末尾（老人）条目移入 memory/archive/ 归档，正文只保留最新 max_chars；kind 缺省对四件套全部处理 | project_dir(必) kind(选) max_chars(选,默认2000) now(选) |
-| `memory_link` | 自我记忆·A-Mem 式关联：在 memory/links.md 追加 `from -> to  note` 关联记录（不存在则创建），供 plan/claim 前检索注入 | project_dir(必) from(必) to(必) note(选) now(选) |
+| `memory_consolidate` | 自我记忆·收敛写回：verify 通过后把交付物/结论收敛写回 memory/{kind}.md（kind 缺省 target；thinking 为 append-only 带时间戳，其余覆盖写；checkpoint 写时刻） | project_dir(必) task_id(必) kind(选,默认target) content(必) |
+| `memory_gc` | 自我记忆·上限+软降权归档（不硬删）：超 max_chars 时把 memory/{kind}.md 末尾（老人）条目移入 memory/archive/ 归档，正文只保留最新 max_chars；kind 缺省对四件套全部处理 | project_dir(必) kind(选) max_chars(选,默认2000) |
+| `memory_link` | 自我记忆·A-Mem 式关联：在 memory/links.md 追加 `from -> to  note` 关联记录（不存在则创建），供 plan/claim 前检索注入 | project_dir(必) from(必) to(必) note(选) |
 
 ### 6.12 DGM 演化（evolve）+ Laya 决策
 
 | 工具 | 说明 | 参数 |
 |---|---|---|
-| `evolve_submit` | 归档一个产物：本轮设计/代码/目标入档案库，自动递增父代子代数；与档案高度相似则查重丢弃 | id(必) goal(必) note(必) code(必) score(选) parent_id(选) parts(选) now(选) |
-| `evolve_distill` | 自进化蒸馏（EvolveR 最小级）：把 verify 通过的任务交付物蒸馏成 principle 写入 DGM（goal 加 [principle] 前缀，code 写蒸馏内容，复用 evolve_upsert 落库 + Archive 查重语义） | task_id(必) goal(必) note(必) score(选,默认1.0) now(选) |
+| `evolve_submit` | 归档一个产物：本轮设计/代码/目标入档案库，自动递增父代子代数；与档案高度相似则查重丢弃 | id(必) goal(必) note(必) code(必) score(选) parent_id(选) parts(选) |
+| `evolve_distill` | 自进化蒸馏（EvolveR 最小级）：把 verify 通过的任务交付物蒸馏成 principle 写入 DGM（goal 加 [principle] 前缀，code 写蒸馏内容，复用 evolve_upsert 落库 + Archive 查重语义） | task_id(必) goal(必) note(必) score(选,默认1.0) |
 | `evolve_snapshot` | 查看档案库快照（count/best/summaries/dead_ends/lineage_of_best） | 无 |
 | `evolve_sample` | 按 p∝s·h 多样性加权采样父代产物（子代越少/性能越高越可能被选） | rand(选,伪随机种子) |
 | laya_decide | Laya 决策（冷启动选档/功能路由）
@@ -424,9 +423,9 @@ def rpc(method, **payload):
 
 | 工具 | 说明 | 参数 |
 |---|---|---|
-| `omega_spec_create` | 语料创建者为任务创建本轮语料并持久化到 specs 表 | task_id(必) content(必) author(选,默认spec_author) max_rounds(选,默认3) now(选) |
-| `omega_spec_review` | 验证者审核语料：`approve` 放行，其它值打回 | task_id(必) verdict(必) reviewer(选,默认verifier) reason(选) max_rounds(选) now(选) |
-| `omega_result_verify` | 验证者复验执行成果与语料：pass 达标可提交验收，其它值打回重做 | task_id(必) verdict(必) reviewer(选,默认verifier) reason(选) max_rounds(选) now(选) |
+| `omega_spec_create` | 语料创建者为任务创建本轮语料并持久化到 specs 表 | task_id(必) content(必) author(选,默认spec_author) max_rounds(选,默认3) |
+| `omega_spec_review` | 验证者审核语料：`approve` 放行，其它值打回 | task_id(必) verdict(必) reviewer(选,默认verifier) reason(选) max_rounds(选) |
+| `omega_result_verify` | 验证者复验执行成果与语料：pass 达标可提交验收，其它值打回重做 | task_id(必) verdict(必) reviewer(选,默认verifier) reason(选) max_rounds(选) |
 | `omega_status` | 查询强验证进度：开关/语料与复验轮次/打回数/升级标志 | task_id(必) |
 
 ### 6.14 Marketplace·执行者能力路由（Dynamic 范式）
@@ -437,7 +436,7 @@ def rpc(method, **payload):
 | `executor_route` | 能力路由推荐：按 { 能力覆盖 desc → 历史信任(验收通过率,无历史 0.5 中性) desc → 负载 asc } 排序，返回候选 + 最佳执行者 + basis | need(必) |
 | `executor_auction` | 置信度校准拍卖（Agora 蒸馏）：按出价竞拍，校准系数 1-\|出价-验收通过率\| 防胜者诅咒，乘负载折扣得拍卖分；能力覆盖>0 方可竞拍，返回 bids + winner | need(必) bid(选,{执行者:0..1}) |
 | `executor_clear` | 清空全部执行者能力注册（重置/整洁） | 无 |
-| `selfdrive_dispatch` | 能力路由自动派单：triage 取顶部 → 确定所需能力（显式 want 或从描述自动抽取）→ 按能力路由认领给最佳执行者（无匹配回退 agent） | namespace(选) agent(选) want(选) now(选) |
+| `selfdrive_dispatch` | 能力路由自动派单：triage 取顶部 → 确定所需能力（显式 want 或从描述自动抽取）→ 按能力路由认领给最佳执行者（无匹配回退 agent） | namespace(选) agent(选) want(选) |
 
 ## 7. 端到端真实闭环（本机实录）
 
@@ -456,7 +455,7 @@ def rpc(method, **payload):
 **验证结论**：publish → plan → claim/execute/submit/verify（叶子）+ verify（父自动上卷）→ archive 全链真实跑通，
 任务自动持久化到 `fist-mbt.db`。
 
-> 补充实测：`tools/list` 返回 87 个工具；`resources/read(fist://principles)` 返回七条金条 JSON；
+> 补充实测：`tools/list` 返回 87 个工具（**那一次实跑的截面记录，不改数**；当前总数见 §6 标题）；`resources/read(fist://principles)` 返回七条金条 JSON；
 > `prompts/get(fist:check_in)` 返回 1 条 role=user 的打卡自查模板消息。
 
 ---
@@ -534,7 +533,7 @@ moon publish
 
 ## 12. 一句话总结
 
-FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（87 个工具）。
+FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（本机 `tools/list` 实测 **129 个 MCP 工具**）。
 对 AI 客户端而言：**pub/claim/plan + spec 深拆 → 子任务闭环 → verify 上卷 → archive**，
 一路 `tools/call` 即可完成多智能体任务的发布、认领、拆分、执行、验收、归档全生命周期管理。
 

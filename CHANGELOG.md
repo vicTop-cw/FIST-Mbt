@@ -13,6 +13,33 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.4 (unreleased) - 改进建议书逐条复测：4 条前提被证伪、1 条看护缺陷入账（盖章 2026-09-29T03:58:39Z）
+
+- **复核方法**：`docs/improvement-proposals-20260928.md` 12 条 + 实验报告 4 条过程发现，逐条打到调用面/库面/守卫面
+  重测（长驻交互式 Popen 直连 `cmd/cli` 产物 + `FIST_DB_PATH` 隔离库，仓库根 `fist-mbt.db` 只读）。
+  落点 `docs/improvement-plan-20260929.md`（逐条判定表 + 修正后的 P0′/P1′/P2′ + 5 项待裁决）。
+- **四条前提被实测证伪**（照原案修会修不到东西）：P1-1 server 响应全缓冲死锁（同进程两次往返 0.25s / 0.10s 各回 129 工具；
+  真残留是 `serve` 往协议 stdout 先打两行横幅）；P1-3 pause 被 heal 撤销（`heal(ns,600)` 回执 `healed=[]`、暂停单被列进
+  `blocked`，代码面 `ops_heal.mbt:82` 活跃集本就不含已暂停）；P2-3 盖章 ±1h 漂移（服务端 vs 客户端 UTC 实测 +0.2 秒，
+  真病灶是库里 87 行非规范时间戳 + `iso_to_secs` 不看偏移，`+08:00` 被当 UTC 读偏 8 小时）；P1-4 list 的 ns 过滤失灵
+  （BUG-85 已修，`list()` 全库 4 个 ns / `list(probeA)` 精确 1 行）。P0-1 `bug_close` 缺位也已兑现（`bug_fix` 单条即走）。
+- **入账 BUG-119（high，OPEN）**：心跳跨进程不可见——进程 1 `heartbeat` 落库并 sqlite 只读确认那一行在，
+  进程 2 的 `heal(namespace, timeout_sec=3600)` 仍回 `healed=["T0"]`、`watchdog_tick` 的 `active_tasks` 读回空串；
+  叠加 `ops_heal.mbt:87` 的 `None => true`（无心跳行直接判死、`timeout_sec` 不起作用）⇒ 无人值守每拍清空在途任务。
+  它是 P1-5（自动拉起执行器）的硬前置。
+- **文档面顺手修两格**（同一形状：文档点的参数实现不读）：`AGENTS.md` Omega 表 6 行（3 行删 `now`；2 行把
+  `omega_verify`/`omega_verify_fix` 的入参从 `task_id/判定/reason` 改成活体的 `specs`(+`max_rounds`) 并改写描述）；
+  `USAGE.md` 摘掉 36 处 `now` 参数（含两个 JSON 示例，改后 13 块示例仍全部可解析）+ 两处「87 个工具」改为实测
+  「129 个 MCP 工具」（写成带 MCP 的形状，好让 `check_tools_sync` 的 `RE_TOOL_CLAIM` 数得着）。
+  §7 那条「返回 87 个工具」是那次实跑的截面记录，**没改数**，只加了限定语。
+- **判据缺口定位**（本轮最有价值的一条，写进 P0′-3③/P1′）：手册的参数列与工具计数都不在任何守卫的扫描面上——
+  `check_tools_sync` 判据 5 只扫 server.mbt 广告位、J2 只比工具名、J8 只比 `templates/*.md`、`RE_TOOL_CLAIM` 要带「MCP」。
+  原型对表脚本量出的噪声形状也一并记档：14 处命中里仅 6 处真违例，另 8 处是取值枚举/散文被当参数名
+  ⇒ 新判据必须带形状约束并把这 8 条钉成"干净不误红"格。
+- **守卫复跑**：`check_tools_sync` 0 / `check_doc_surface` 0 / `check_plugin_sync` 0（BUG-119 入账后按 cl7 处置
+  重投影 9 个插件文件，逐文件 diff 只有一行账本投影）。`check_scripts_index`（`gen_help_docs.py` 未登记）与
+  `cleanup_artifacts --check`（77 根 .db + 366 temp 文件）两格红**不属本轮**，只登记不代改。
+
 ## v0.3.0 (unreleased) - 安装面自证：以用户身份装 + 用装好的全局命令打满 129 工具（盖章 2026-09-28T05:09:38Z）
 
 - **判据三条新增**：`scripts/check_ps_encoding.py`（.ps1 要么纯 ASCII 要么带 UTF-8 BOM，空扫描面 FATAL 不出假绿，
