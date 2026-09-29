@@ -285,6 +285,24 @@ def judge(texts):
                         "（404/403 会被重试 N 次，用户多等 N 倍时间还是装不上）")
     if "Start-Sleep -Seconds (2 * $try)" not in ps1:
         problems.append("R12 install_onecmd.ps1 的传输层重试没有退避间隔（同刻重试风暴，代理更容易掐）")
+    # R14 钉「安装器**内部**两发取数也要能换 TLS 栈」（BUG-116 的内部半）：R12 管的是 zip 那一发的重试纪律，
+    # 文档线那发（irm）由 e2e_irm_line 的两臂管着；中间这一格原先没人认领——脚本取回来了、
+    # 红在内部那一发（本机活证据：Invoke-WebRequest 抛"基础连接已经关闭" ⇒「无法从 moon.mod 解析版本号」）。
+    # 判据只数形状，不看注释：兜底臂的注册、两处调用（moon.mod 侧 + zip 侧）、以及"只对传输层换栈"的闸。
+    if "function Get-UrlTo(" not in ps1:
+        problems.append("R14 install_onecmd.ps1 没有 curl 兜底臂的注册（function Get-UrlTo）"
+                        "⇒ .NET 栈一抖动，内部取数就无路可走")
+    if ps1.count("Get-UrlTo $") < 2:
+        problems.append("R14 install_onecmd.ps1 的兜底臂调用点不足 2 处（现 %d 处）"
+                        "：moon.mod 那一发与资产 zip 那一发都得能换栈，只接一处等于还有一半单栈"
+                        % ps1.count("Get-UrlTo $"))
+    if "-not $_.Exception.Response" not in ps1:
+        problems.append("R14 install_onecmd.ps1 的换栈没有「只对没有 HTTP 响应的传输层错误」的闸"
+                        "（404/403 也换栈 = 把确定性结论拖成双倍等待，与 R12 同一条纪律）")
+    if "Get-UrlTo" in ps1 and ("-fsSL" not in ps1 or not re.search(r'--retry\s+\d', ps1)):
+        problems.append("R14 install_onecmd.ps1 的兜底臂缺 curl 旗（-fsSL 防把 404 页存成脚本；"
+                        "--retry N 才是"
+                        "「只重试瞬时」的上限）——注意针必须带次数，`--retry` 单独当子串会被 `--retry-delay` 喂绿")
     # R13 钉「文档离线线里的资产名版本字面量不许落后于 moon.mod」（BUG-120）：R1 只扫安装器（禁写死默认值），
     # J4 只认 `@x.y.z` 式版本声明 ⇒ README 里 `-LocalZip …ist-mbt-js-v0.3.4.zip` 这条**用户会照抄**的资产名
     # 正好落在两面守卫之间，没人认领；版本一前进，离线/内网线就把用户指向一个不存在的资产。
@@ -390,6 +408,13 @@ def selftest():
         ("ps1", "Start-Sleep -Seconds (2 * $try)", "$null = 1", "R12"),
         # R13 一支（BUG-120 的退化）：README 离线线的资产名版本字面量落后于 moon.mod
         ("readme", "fist-mbt-js-v%s.zip" % VER, "fist-mbt-js-v0.9.9.zip", "R13"),
+        # R14 四支（BUG-116 内部半的四种退化）：摘掉一处换栈调用 / 摘掉另一处 / 摘掉传输层闸 / 摘掉 curl 旗
+        # R14 五支（BUG-116 内部半的五种退化）：摘掉兜底臂注册 / 摘掉一处换栈调用 / 摘掉另一处 / 摘掉传输层闸 / 摘掉重试上限
+        ("ps1", "function Get-UrlTo(", "function FetchViaCurl(", "R14"),
+        ("ps1", "if (Get-UrlTo $r $tmp 20) {", "if ($false) {", "R14"),
+        ("ps1", "$tmpOk = Get-UrlTo $u", "$tmpOk = $false", "R14"),
+        ("ps1", "-not $_.Exception.Response", "-not $true", "R14"),
+        ("ps1", "-fsSL --retry 3", "-fsSL", "R14"),
     ]
     executed = []
     for key, old, new, want in checks:

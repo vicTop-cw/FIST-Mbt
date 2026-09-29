@@ -2259,3 +2259,63 @@ CLI 权威面 = `node cli.js help tools` 回执 + AGENTS/README 工具表，由 
 scripts/README.md 该条同步，点名「不许照它落笔」的实测后果（13 组/129 倒退 12 组/107）。
 顺带把扫描从 lazy 正则改成花括号配平（旧写法遇到块内 `})` 会静默截断——本次实测两者同结果，属加固不是修行为）。
 实测：`python scripts/gen_help_docs.py` rc=0 并打印边界行；check_scripts_index / check_doc_surface / check_tools_sync rc=0。
+## BUG-124 [2026-09-29T08:05:32Z] [medium] FIXED
+- summary: BUG-122 的残留同型面：另有 21 个 spawn serve 的 demo/verify 脚本仍裸跑写仓库根自举台账，且无常驻判据
+- detail: 发现面：终审按文档命令逐条跑 demo 面之前，先静态枚举「Popen + "serve" 但不把 FIST_DB_PATH 交给子进程」的脚本。
+被检面（21 个，命名以 git diff 反解为准）：scratch_verify / dispatch_verify / enhance_verify / map_verify /
+lesson_verify / dag_depend_verify / evolve_critic_verify / executor_route_verify / plan_gradient_verify /
+task_challenge_verify / lesson_selfdrive / lesson_chain_selfdrive / log_fix_selfdrive / scratch_selfdrive /
+atgc_selfdrive_demo / pentad_fist / fist / issue_scan / output_validate / mcp_bug_loop / test_mcp_bugs。
+为什么 BUG-122 只修了 4 个：那 4 个是文档（README/USAGE/agent-map/deliverable）教人裸跑的入口，其余同型面当时
+只写进了报告 §7 的「残留」——残留不是修复：任何一次巡逻或自驱跑这些脚本，真实台账就长演示行。
+另有一处**出路本身是坏的**：scripts/README 对 dispatch_verify 写的收口办法是 git checkout -- fist-mbt.db，
+而该文件是 gitignored，git 根本不管它 ⇒ 那句教人的话不可执行。
+- reported_by: fist-mbt-final-review-demo-audit
+
+
+
+### FIXED(2026-09-29T08:05:32Z / BUG-124)
+- evidence: 上述脚本统一加默认改道（未显式设置 FIST_DB_PATH 时落 temp/<脚本名>.db；显式设过的调用方行为不变）。
+补常驻判据 scripts/check_demo_isolation.py：I1 缺改道针必红 / I2 豁免面漂到不 spawn 的文件必红 /
+I3 扫描面空必自拒；--selftest 五支（G1 干净不误红 / M1 摘针必红 / M1b 只加注释不误红 / M2 豁免漂移必红 / M3 空扫描自拒），
+格子清单从已执行对照反解。现状面 29 个 spawn 脚本全合规，豁免 1 项（store_isolation_probe 的 C2 对照格必须走默认路径，
+且两格 cwd 与库都在临时 box 内）。ci.yml JS 轨挂「先 --selftest 再全量」两步；AGENTS 守卫族计数 11 到 12；
+scripts/README 登记。
+按文档命令实测：README 的 DEMO 表 7 条 + 独立 CLI 表 2 条 + demo.ps1/showcase.ps1 = 11 条全 rc=0，
+全程仓库根台账 tasks/call_log 恒为 1987/6909（temp/demo_audit.log）。
+## BUG-125 [2026-09-29T08:05:32Z] [medium] FIXED
+- summary: 安装器内部两发取数（moon.mod 定版本 + 资产 zip）只有 .NET 单栈，就是「脚本取回来了、红在内部那一发」的来源
+- detail: 发现面：BUG-116 车道活证据 run6/run7——curl 兜底臂把 install_onecmd.ps1 取回来后，红在内部那一发：
+「基础连接已经关闭」+「无法从 moon.mod 解析版本号」，最终只剩 -LocalZip 离线线可用。
+被检面：scripts/blackbox/install_onecmd.ps1 的两处 Invoke-WebRequest（取 moon.mod 解析版本 / 取资产 zip）。
+为什么 BUG-116 当时没修到它：R12 判的是 zip 那一发的**重试纪律**（有响应就 break + 退避间隔），
+文档线的两臂由 e2e_irm_line 判；「内部取数能不能换 TLS 栈」这一格两版守卫都不看 ⇒ 与 BUG-120 同族的两面缝隙。
+- reported_by: fist-mbt-final-review-demo-audit
+
+
+
+### FIXED(2026-09-29T08:05:32Z / BUG-125)
+- evidence: install_onecmd.ps1 新增兜底臂 function Get-UrlTo（curl.exe -fsSL --retry 3 --retry-delay 2 --retry-all-errors），
+两处 .NET 取数都接上：moon.mod 侧换栈后仍走同一套 HTML sniff + 版本解析（来源行标注 [curl-fallback]），
+zip 侧换栈后仍验 PK 魔数 + 大小门。换栈只在「异常没有 Response」时发生，404/403 仍直接换源（与 R12 同纪律）。
+判据加 R14（check_release_asset_names）：兜底臂注册在 / 两处调用点都在 / 传输层闸在 / curl 旗带重试上限；
+--selftest 五支变异（含「针必须带次数——单独的 --retry 子串会被 --retry-delay 喂绿」这一手），反解 R14×5。
+承重证据 scripts/blackbox/e2e_transport_stack_fallback.py 三格实测：A rc=0 且 curl-fallback 命中=True、
+B（剥掉 curl）rc=1、C（干净）rc=0；用户 PATH 逐字还原 1708 字，真产物 sha256 616b7632 不变。
+另：PS 侧两条硬口径写进判据 docstring——throw 是语句不是表达式（必须包成 (& { throw ... })），
+变异副本必须带 UTF-8 BOM 写盘（否则含中文 .ps1 在 PS5.1 解析期即坏，第一版把三格全跑红是尺子坏不是产品坏）。
+## BUG-126 [2026-09-29T08:19:52Z] [low] FIXED
+- summary: scripts/README 把 showcase.ps1 的读盘实时计数写成死数字（548 tasks/196 exec/6 review），演示每跑一次就漂一次
+- detail: 发现面：BUG-124 收口时按文档命令复跑 showcase.ps1，它的「自举迭代库」那行现数自仓库根 fist-mbt.db（脚本 line 119-138：只读 URI 连库、select count(*) from tasks / executions），而索引条目把这三个数当事实写死了。
+被检面：scripts/README.md:57 showcase.ps1 条目。
+实测漂移（只读数）：文档写 548 tasks / 196 exec，盘面真值 tasks=1987 / executions=461；6 review 那一项来自 memory/reviews 目录 listing，本次仍为 6。⇒ 三个数里两个已经漂了，而且这类数**每次演示都在长**，写进文档就是埋一颗定时假话。
+同族前例：BUG-120（README 离线线里的资产名版本字面量落后 moon.mod，R13 收口）——都是「文档抄了一个会变的活体值」。区别在于这条没有判据认领：R13 只管资产名形状，check_doc_surface 的 J 系列管工具数/版本/模板参数，谁都不看索引条目里的任务计数。
+另发现一条取证侧的坑（写进同一行文档）：默认码页下 `pwsh -File scripts/showcase.ps1` 重定向出来的中文回执在**子进程内**就被写成 `?`，外层无论按 UTF-8 还是 GBK 解都还原不回来 ⇒ 证据看得见但复核不了；先置 [Console]::OutputEncoding=UTF-8 才拿得到 `[DEMO] PASS — 环境就绪，30 秒可复现` 这种可引用行。
+- reported_by: fist-mbt-final-review-demo-audit
+
+
+
+### FIXED(2026-09-29T08:19:52Z / BUG-126)
+- evidence: scripts/README.md:57 改写为：该行是**读盘实时计数**（现数自仓库根 fist-mbt.db，随使用增长 ⇒ 索引里不写死数字）；数不到时脚本降级打 n/a 并明说「跳过真实计数（演示不会崩）」（脚本 line 140-141，实测过这条分支的形状）；补码页口径与取证办法，实测耗时由 ~1.7s 校正为 ~1.5s（temp/demo_audit2.log）。
+承重实测：`temp/demo_audit2.py` 两条 rc=0，全程仓库根 tasks/call_log 恒为 1987/6909（`temp/demo_audit2.log` 首尾行），与 `temp/demo_audit.log` 的 9 条 python 侧文档命令合计 11 条全 rc=0（BUG-124 的 demo 面证据链由此闭合）。
+缺口如实登记（不在本轮实现）：没有常驻判据把「文档里的活体计数字面量」打到盘上真值——已写进终审预备报告 §7 的下一轮建议（与 J11 模式名对表同一批）。
