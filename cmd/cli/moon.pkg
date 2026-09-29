@@ -1,7 +1,6 @@
 import {
   "vicTop-cw/fist-mbt/src/engine",
   "vicTop-cw/fist-mbt/src/server",
-  "vicTop-cw/fist-mbt/src/store",
   "moonbitlang/async",
   "moonbitlang/core/env",
 }

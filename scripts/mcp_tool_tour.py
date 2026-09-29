@@ -73,9 +73,14 @@ READ_PLANE_SKIP = {
     "memory_link": "会追加 memory/links.md 真关联面",
 }
 
+# 被测产物候选，**顺序就是优先级**（BUG-118：上一版把本机已装那份排在最前 ⇒
+# 整轮巡回悄悄打在 %LOCALAPPDATA% 的旧安装上，回执 serverInfo=0.3.0 而 moon.mod 已是新版，
+# 一分钟的巡回测的不是本仓的代码）。仓库构建产物优先；本机安装面**保留**做兜底
+# （没有 _build 时仍能巡回已装的 fist-mbt.js），但它过不了下面的版本门就会自拒。
 SERVER_JS = [
-    os.path.expandvars(r"%LOCALAPPDATA%\FIST-Mbt\fist-mbt.js"),
     os.path.join(ROOT, "_build", "js", "debug", "build", "cmd", "cli", "cli.js"),
+    os.path.join(ROOT, "target", "js", "release", "build", "cmd", "cli", "cli.js"),
+    os.path.expandvars(r"%LOCALAPPDATA%\FIST-Mbt\fist-mbt.js"),
 ]
 
 
@@ -533,6 +538,28 @@ def version_from_moon_mod():
     return m.group(1) if m else ""
 
 
+def artifact_version_gate(srv):
+    """巡回开工前的版本门：被测产物的 serverInfo 版本必须 == moon.mod 声明的版本。
+
+    为什么不能只在末尾的自述面比对里等：那已经花掉一整轮 129 工具的调用面巡回，
+    而它测的是**另一个版本**（实测：`SERVER_JS[0]` 取到 %LOCALAPPDATA% 的旧装 ⇒
+    serverInfo=0.3.0 / moon.mod=0.3.4，全轮红在最后一行才报出来）。
+    自拒口径与判据家族一致：拿不到基线/拿不到版本 ⇒ 2（判据无法自证），不冒充"巡回失败=产品红"。
+    逃生门只有一个且必须显式：`FIST_TOUR_ALLOW_VERSION_MISMATCH=1`（要巡回已装版时用，照样打横幅）。
+    """
+    want = version_from_moon_mod()
+    tt = srv.raw("tools/list", {})
+    got = ((tt.get("result", {}) or {}).get("_meta", {})
+           .get("io.modelcontextprotocol/serverInfo", {}) or {}).get("version", "")
+    if not want:
+        return False, got, want, "moon.mod 反解不到 version ⇒ 没有基线，绝不巡回"
+    if not got:
+        return False, got, want, "产物的 tools/list 没有回 serverInfo（BUG-21 的验收位为空）"
+    if got != want:
+        return False, got, want, "被测产物是 %s，而本仓声明 %s ⇒ 巡回测的不是这份代码" % (got, want)
+    return True, got, want, "版本门通过：被测产物 == moon.mod"
+
+
 def surface_selftest():
     """`--surface-selftest`：自述面判据的 12 支对照（10 支违例必红 + 1 支干净必绿 + 1 支自拒）。
 
@@ -683,6 +710,18 @@ def main():
         if len(tools) <= 100:
             print("TOUR: UNUSABLE —— tools/list 只回 %d 个（判据无法自证绝不报绿）" % len(tools))
             return 2
+        # 版本门放在这里：已经确认起得来、拿得到 serverInfo，但**一支工具都还没打**。
+        gate_ok, gate_got, gate_want, gate_why = artifact_version_gate(srv)
+        if not gate_ok and os.environ.get("FIST_TOUR_ALLOW_VERSION_MISMATCH") == "1":
+            print("!! 版本门被显式放行（FIST_TOUR_ALLOW_VERSION_MISMATCH=1）：%s" % gate_why)
+        elif not gate_ok:
+            print("TOUR: REFUSED —— %s" % gate_why)
+            print("  被测产物 = %s (sha256:%s)" % (js, sha8(js)))
+            print("  要测本仓这一版：先 `moon build --target js cmd/cli && python scripts/patch_esm_main.py`")
+            print("  确实要巡回已装的那份：FIST_TOUR_ALLOW_VERSION_MISMATCH=1 复跑（结论会打横幅）")
+            return 2
+        else:
+            print("版本门 = %s（serverInfo %s == moon.mod %s）" % (gate_why, gate_got, gate_want))
         surf_problems, surf_summary = surface_probe(srv)
         print("自述面（resources/prompts/版本）= %s" % surf_summary)
         for sp in surf_problems:

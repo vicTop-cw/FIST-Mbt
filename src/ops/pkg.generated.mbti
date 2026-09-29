@@ -22,15 +22,25 @@ pub fn check_claim(@engine.FistEngine, String, String) -> Result[Unit, String]
 
 pub fn cleanup_archived(@engine.FistEngine, String, retention_days? : Int) -> Result[Array[String], String]
 
+pub fn complexity_band_of_tier(String) -> (Int, Int)
+
 pub fn default_mode() -> PipelineMode
 
 pub fn enforce(action~ : String, role~ : Role) -> Result[Unit, String]
+
+pub fn estimate_complexity(String, Int) -> Int
+
+pub fn explore_plan(String, Int, Array[String], Array[Array[String]], Bool) -> Json
+
+pub fn file_scope_conflicts(Array[Array[String]]) -> Array[String]
+
+pub fn file_scopes_disjoint(Array[Array[String]]) -> Bool
 
 pub fn heal_stale_tasks(@engine.FistEngine, Heartbeat, String, timeout_sec? : Int, ns? : String) -> Result[Array[String], String]
 
 pub fn heal_stale_tasks_by_phi(@engine.FistEngine, String, phi_threshold? : Int, ns? : String, timeout_sec? : Int, no_history_ids? : Array[String]) -> Result[Array[String], String]
 
-pub fn heal_stale_tasks_from_store(@engine.FistEngine, String, timeout_sec? : Int, ns? : String) -> Result[Array[String], String]
+pub fn heal_stale_tasks_from_store(@engine.FistEngine, String, timeout_sec? : Int, ns? : String, skipped_ids? : Array[String]) -> Result[Array[String], String]
 
 pub fn is_meta_prompt_name(String) -> Bool
 
@@ -65,6 +75,8 @@ pub fn preset_loop(String) -> Result[(Array[String], String), String]
 pub fn read_meta_prompt(String) -> String?
 
 pub fn sd_agent_contract(String) -> String
+
+pub fn select_mode_by_complexity(Int) -> PipelineMode
 
 pub fn selfdrive_export_tasks(@engine.FistEngine, String, String, now? : String) -> Result[Json, String]
 
@@ -170,6 +182,7 @@ pub enum PipelineMode {
   BugFind
   FixAndMerge
   Tidy
+  Explore
 }
 
 pub enum Role {

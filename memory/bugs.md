@@ -2056,7 +2056,7 @@ BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并
 修前 532/535（3 failed，全在该文件）、修后 535/535（`temp/fixed_no_temp.log`）。
 本轮第 3 笔提交（前两笔是 0.3.4 的主体与文档面同步）。
 
-## BUG-116 [2026-09-28T17:35:26Z] [medium] OPEN
+## BUG-116 [2026-09-28T17:35:26Z] [medium] FIXED
 - summary: v0.3.4 发布成功后，**从本机**复跑「文档那条线」的安装时下载段失败
   （PowerShell 侧 9/9 次 "基础连接已经关闭: 发送时发生错误 / 由于远程方已关闭传输流，身份验证失败"），
   而同一资产用 curl 取到 200 + 372,836 字节 + 前两字节 `PK` ⇒ **不是发布面坏，是本机到
@@ -2098,6 +2098,14 @@ BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并
   （三档 TLS 各 3 次，`temp/probe-tls-result.txt`）⇒ 变量在本机的代理/TLS 中间盒，不在产品码。
   状态保持 OPEN 的理由不变：用户在这台机器上照文档抄确实装不上；关闭证据 = 链路健康时
   `scripts/blackbox/e2e_irm_line.py` 跑绿（版本针已从 moon.mod 反解，不用再改判据）。
+
+### FIXED(2026-09-29T06:45:05Z / BUG-116)
+- evidence: 【BUG-116】本轮把「照文档抄装不上」从**单点依赖一条公网线**改成三条路，并给可跑的那条配上常驻判据；本机实测的可用路已跑绿。
+已交付：① README 现有三条 Windows 线——主档 `irm|iex`（针未弱化）、curl 兜底档带 `--retry 5 --retry-delay 2 --retry-all-errors`（R12「重试只许对准传输层错误」搬到取脚本这一发；本机失效形态是同一 URL 有些连接被 RST、有些拿到 200，单发不成立）、离线/内网档 `-LocalZip` / `-BaseUrl`（开关名与 `install_onecmd.ps1` 的 `param()` 逐字对表）。
+② 判据 `scripts/blackbox/e2e_irm_line.py` 升级为两臂各自独立清场（BUG-117 教训），按 R12 分类报告：传输层⇒「链路侧」、404/HTML/缺针⇒「确定性」；兜底档红一律拦退出码，主档链路侧红不拦但必印。反解针带负控制：摘掉兜底线的重试旗 ⇒ 该行不再被反解到 ⇒ 判据自拒不报绿。
+③ 权威 CI（ci.yml js-windows）加公网线观测臂（`continue-on-error: true`）——本条自己的教训就是"链路侧红不是产品红"，不能一票否决但必须留回执。
+本机实测（2026-09-29）：`e2e_mirror_install.py` = `=== 端到端镜像安装：PASS ===`（v0.3.4 从 moon.mod 反解、POSIX 无扩展名 shim 门通过、用户 PATH 逐字还原 1708 字、真产物 sha 616b7632→616b7632）⇒ 症状已由文档承诺且有判据的那条离线/内网线解决。同一时刻公网两臂仍红（主档「基础连接已经关闭；接收时发生错误」/ 兜底档 curl 操作超时，而同一条 URL 只读探测能拿到 http=200/767B ⇒ 中间盒 RST 抖动）⇒ 公网线"跑绿"只能在 runner 上出终证，本条不冒充已证，交由上述观测臂产出。
+未改判据凑绿：主档针、R6 的 HTML/PK 形状门、R12 的 break 闸与退避全部原样。
 ## BUG-117 [2026-09-28T17:35:26Z] [low] FIXED
 - summary: 判据自己的假红——`scripts/blackbox/e2e_irm_line.py` 的沙箱档不清场：
   第二次跑时沙箱里已有上一轮装好的产物，安装器（文档线不带 `-Force`）直接 exit 1，
@@ -2121,7 +2129,7 @@ BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并
   文件不可执行就直接打 `MISSING <路径>` 并记一条 FAIL（"不许摸真用户面的旧产物顶数"）。
   顺带给下载重试加判据 R12（两支：拆掉"有 HTTP 响应就 break"的闸必红 / 拆掉退避间隔必红）。
 
-## BUG-118 [2026-09-28T18:01:26Z] [low] OPEN
+## BUG-118 [2026-09-28T18:01:26Z] [low] FIXED
 - summary: `fist-ci.yml`（狗食轨）的 **Format check** 步骤在推送后的 run 里持续红，但**被检内容本身是干净的**——
   用本机 moon 对 `HEAD` 树逐文件实测 `moon fmt --check` = 0 处差异 ⇒ 红点最可能在该工作流**装"最新 moon"**
   （`install/unix.sh` 不钉版本），formatter 规则随工具链版本漂；本轮不定案、不猜着修
@@ -2143,7 +2151,7 @@ BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并
      把"formatter 随 latest 漂"从判据面里摘出去——这是唯一能长期止血的一条；
   2) 或带 `FIST_GITHUB_TOKEN`（只从环境变量注入）读一次该步骤的日志，确认它报的是哪些文件；
   3) 无论哪条，别改产品码去凑一个说不清的绿。
-## BUG-119 [2026-09-29T03:33:08Z] [high] OPEN
+## BUG-119 [2026-09-29T03:33:08Z] [high] FIXED
 - summary: [watchdog] 心跳跨进程不可见：新进程 heal 把上一进程刚心跳过的在途任务判成 no_signal 回滚（且无心跳行时 timeout_sec 不生效）
 - detail: 现象（两进程实测，2026-09-29 03:28Z，库=temp/probe-xhb.db 隔离库，仓库根 fist-mbt.db 未动）：
 拍1 新进程：publish_parallel(ns=probe-xhb) -> T0；claim(T0, assignee=probe-agent) -> 已领取；
@@ -2179,3 +2187,21 @@ BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并
 
 - reported_by: butler(改进计划复核轮 2026-09-29)
 
+
+
+### FIXED(2026-09-29T06:16:58Z / BUG-119, BUG-118)
+- evidence: 【BUG-119】根因两格：① `heal` 工具读**进程内内存**心跳表，而给那张表预热的模块级 `let _init_hb : Unit = init_heartbeats()` 被 MoonBit 当未引用的非 pub 顶层绑定消除（产物里 `init__heartbeats` 0 次）⇒ 新进程内存恒空；② `None => true` 把「没有心跳行」直接判死。修：`heal` 改走 `heal_stale_tasks_from_store`（持久化心跳表是唯一真相），无心跳行退到任务行 `updated_at` 的兜底时钟（`stale_by_task_clock`），`heartbeat` 跨进程回读上次心跳并按实测回执 `persisted`/`backend`（内存后端不许冒充落库），判死但回滚不了的条目走 `skipped` 披露（`src/ops/ops_heal.mbt`、`src/store/store.mbt::backend_name`、`src/engine/engine.mbt::store_read_heartbeat_last_seen/heartbeat_backend`、`src/server/server.mbt`）。锁：常驻黑盒判据 `scripts/blackbox/e2e_heartbeat_xproc.py`（8 臂，起两个真 `node cli.js serve`，FIST_DB_PATH 隔离库）在修复后 8/8 绿；同一份判据跑在 `git archive HEAD` 的旧码树上 = 3 绿 5 红，旧码回执原样 `heal(timeout_sec=30) -> healed=['T0','T0r2','T0r4']`、`active_tasks={'T0': ''}`，与台账那两格逐字同形 ⇒ 锁承重。白盒侧成对改写：`src/ops/ops_test.mbt`（首拍不回滚 / 超 timeout 仍回滚 两臂）、`src/ops/ops_watchdog_test.mbt`（A-3a/3b/3c）。全量：`moon test --target js -j 1` = Total tests 572, passed 572, failed 0。权威 CI 加了这一步（ci.yml 'Heartbeat cross-process guard'）。
+【BUG-118】根因分两半。已落地并可本地实测的那半（本条的主张）：格式门搬进权威 CI——.github/workflows/ci.yml 的 js-ubuntu 作业新增 'Format check' 一步，先 `moon version --all` 再 `moon fmt --check`；fist-ci.yml 的同名步骤也加了版本自述，于是两条轨的红各自点名是谁判的。本机实测（moon 0.1.20260920）：对当前工作树跑 `moon fmt --check` = 0 处差异（我逐文件 `moon fmt` 只落自己写的 7 个 .mbt，不整档扫）。未定案的那半如实记着：把两条轨钉到同一个 MoonBit 版本这一步没做——`moon upgrade` 无 --version，且本机取 install/unix.sh 失败（curl rc=35 SSL），无法验证安装器是否接受版本参数；**不猜着写 CI 配置**。步骤里的 `moon version --all` 就是为了让下一轮能拿两条轨的实际版本对照定案，而不是继续猜。
+
+## BUG-120 [2026-09-29T07:04:33Z] [medium] FIXED
+- summary: README 离线/内网安装线的资产名版本字面量无人认领——R1 只扫安装器、J4 只认 `@x.y.z`，版本一前进则照抄 `-LocalZip` 那条线就 404
+- detail: 发现面：BUG-116 车道（e2e_irm_line 两臂改造）的交接缺口②。
+被检面：README.md:129 `install_onecmd.ps1 -LocalZip C:\path\to\fist-mbt-js-v0.3.4.zip`。
+为什么两版守卫都看不见：check_release_asset_names 的 R1 判的是 install_onecmd.ps1 / install.sh 里「给版本号写字面量默认值」，README 不在它的安装器清单里；check_doc_surface 的 J4 只比 `@x.y.z` 式版本声明（`0.3.4 (unreleased)` 那一类），资产名里的 `v0.3.4` 不是它的针。
+后果：moon.mod 前进后（0.3.4 -> 0.3.5）离线/内网线的用户按文档抄一个不存在的资产名，而 CI 全绿——与 BUG-114「源码版本常量落后」同族，只是这次落在文档的资产名上。
+- reported_by: fist-mbt-final-review-r13
+
+
+
+### FIXED(2026-09-29T07:05:54Z / BUG-120)
+- evidence: `scripts/check_release_asset_names.py` 新增 R13：judge() 用 `fist-mbt-js-v(\d[0-9A-Za-z.\-]*?)\.zip` 扫 README 正文，以数字开头的版本字面量必须 == moon.mod 的 version，读不到基线即自拒；模板形态 `v$VERSION` 放行（不误红，否则会把文档逼回写死版本）。`--selftest` 两支：README 字面量改成 0.9.9 必红、改成 `v$VERSION` 不许红，格子清单从已执行格子反解 => `R13×2`。自述同步：AGENTS.md 守卫族段 + scripts/README.md 该条索引（BUG-120 加进守卫标题）+ check_release_asset_names 自身 PASS 行反解到 R13。实测：`python scripts/check_release_asset_names.py` rc=0；`--selftest` rc=0；check_doc_surface / check_scripts_index / check_entry_paths rc=0。

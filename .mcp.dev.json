@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "fist-mbt": {
-      "command": "moon",
-      "args": ["run", "cmd/cli"],
+      "command": "node",
+      "args": ["_build/js/debug/build/cmd/cli/cli.js", "serve"],
       "timeout_ms": 30000,
       "disabled": false
     }

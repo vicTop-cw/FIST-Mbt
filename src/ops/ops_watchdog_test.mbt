@@ -221,10 +221,11 @@ test "watchdog A-2: 心跳新鲜 -> 不回滚" {
 }
 
 ///|
-test "watchdog A-3: 无任何心跳记录 -> 视为 stale 并回滚" {
-  let e = wd_sqlite_engine("watchdog_a3.db")
+test "watchdog A-3a: 无任何心跳记录但刚刚活动过 -> 不回滚（BUG-119 首拍即死）" {
+  let e = wd_sqlite_engine("watchdog_a3a.db")
   wd_publish(e, "cron-auto")
   wd_to_executing(e)
+  // execute 盖在 00:00:02，1 秒后看护：没有心跳行不等于已经静默
   match
     heal_stale_tasks_from_store(
       e,
@@ -232,10 +233,48 @@ test "watchdog A-3: 无任何心跳记录 -> 视为 stale 并回滚" {
       timeout_sec=600,
       ns="cron-auto",
     ) {
+    Ok(list) => assert_eq(list.length(), 0)
+    Err(m) => abort("heal 不应失败: " + m)
+  }
+  match e.get_task("T0") {
+    Some(t) => assert_eq(t.get_status().to_string(), "执行中")
+    None => abort("T0 应存在")
+  }
+}
+
+///|
+test "watchdog A-3b: 无任何心跳记录且活动时钟超 timeout -> 仍回滚（no_signal 不弱化）" {
+  let e = wd_sqlite_engine("watchdog_a3b.db")
+  wd_publish(e, "cron-auto")
+  wd_to_executing(e)
+  match
+    heal_stale_tasks_from_store(
+      e,
+      "2026-09-17T00:16:42Z",
+      timeout_sec=600,
+      ns="cron-auto",
+    ) {
     Ok(list) => {
       assert_eq(list.length(), 1)
       assert_eq(list[0], "T0")
     }
+    Err(m) => abort("heal 不应失败: " + m)
+  }
+}
+
+///|
+test "watchdog A-3c: ns 传空串 = 全库扫描（BUG-119 与 heal 的 BUG-81 口径一致）" {
+  let e = wd_sqlite_engine("watchdog_a3c.db")
+  wd_publish(e, "other-ns")
+  wd_to_executing(e)
+  match
+    heal_stale_tasks_from_store(
+      e,
+      "2026-09-17T00:16:42Z",
+      timeout_sec=600,
+      ns="",
+    ) {
+    Ok(list) => assert_eq(list.length(), 1)
     Err(m) => abort("heal 不应失败: " + m)
   }
 }

@@ -19,6 +19,8 @@ ESM patch、shim 写出、PATH 追加、自检**全在被跳过的那一段里**
 import hashlib
 import io
 import os
+import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -35,6 +37,25 @@ REAL_DEST = os.path.expandvars(r"%LOCALAPPDATA%\FIST-Mbt")
 LOG = os.path.join(BOX, "run.log")  # 正向那一跑的完整回执（反面跑在 neg/run.log）
 
 
+def mod_version():
+    """版本基线只从 moon.mod 反解（与 e2e_irm_line.py 同一条规矩）。
+
+    写死字面量的判据一升版就漂：BUG-118 实测——本夹具曾把资产目录钉死在一个旧版本字面量上，
+    而安装器已改为按 moon.mod 要资产 ⇒ 镜像里 404 ⇒ 正向安装 rc=1、三格未命中。漂的方向还是
+    假红（看得见），更坏的是反过来：夹具版本恰好永远对不上却报绿。
+    """
+    m = re.search(r'^version\s*=\s*"([^"]+)"', io.open(
+        os.path.join(ROOT, "moon.mod"), encoding="utf-8").read(), re.M)
+    if not m:
+        raise SystemExit("FATAL moon.mod 反解不到 version ⇒ 判据没有基线，绝不报绿")
+    return m.group(1)
+
+
+VER = mod_version()
+VDIR = "v" + VER
+ASSET = "fist-mbt-js-v%s.zip" % VER
+
+
 def sha8(p):
     return hashlib.sha256(io.open(p, "rb").read()).hexdigest()[:8] if os.path.isfile(p) else "(无)"
 
@@ -48,19 +69,22 @@ def free_port():
 
 
 def build_mirror(port):
-    for d in (MIRROR, os.path.join(MIRROR, "-"), os.path.join(MIRROR, "releases")):
-        os.makedirs(d, exist_ok=True)
-    asset_dir = os.path.join(MIRROR, "-", "releases", "download", "v0.3.0")
+    # 每次清场：上一轮留下的**旧版本目录**会让"装到了哪一份"变成猜（BUG-117 同型——判据
+    # 会红在/绿在上一轮的旧产物上）。下载根整棵重铺，版本目录只有当前这一个。
+    dl_root = os.path.join(MIRROR, "-", "releases", "download")
+    shutil.rmtree(dl_root, ignore_errors=True)
+    asset_dir = os.path.join(dl_root, VDIR)
     os.makedirs(asset_dir, exist_ok=True)
     io.open(os.path.join(MIRROR, "moon.mod"), "w", encoding="utf-8", newline="\n").write(
         io.open(os.path.join(ROOT, "moon.mod"), encoding="utf-8").read())
     js = os.path.join(REAL_DEST, "fist-mbt.js")
     assert os.path.isfile(js), "真安装目录里没有产物：先确认已装过"
-    zp = os.path.join(asset_dir, "fist-mbt-js-v0.3.0.zip")
+    zp = os.path.join(asset_dir, ASSET)
     with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
         z.write(js, "fist-mbt.js")
         z.write(os.path.join(ROOT, "scripts", "patch_esm_main.py"), "patch_esm_main.py")
-    print("镜像就绪：%s（%d KB，内含 fist-mbt.js sha256:%s）" % (
+    print("镜像就绪：版本基线=%s（从 moon.mod 反解）资产=%s/%s" % (VER, VDIR, ASSET))
+    print("  %s（%d KB，内含 fist-mbt.js sha256:%s）" % (
         os.path.relpath(zp, ROOT).replace("\\", "/"),
         os.path.getsize(zp) // 1024, sha8(js)))
     srv = subprocess.Popen([sys.executable, "-m", "http.server", str(port),
@@ -85,7 +109,17 @@ def set_path(val):
                    capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
+def fresh_box(box):
+    """每次跑之前把沙箱清场（BUG-117 同型的坑，本轮实测踩到）：
+    `temp/b108-sandbox/neg/` 里躺着上一轮（09-28 14:51）装出来的 fist-mbt.js ⇒
+    "反面对照不得留下已安装产物"那一格红在**上一轮的旧产物**上，而不是本轮的下载行为。
+    沙箱只在 temp/ 下，删了自己生成的那棵树，绝不碰真安装目录。"""
+    shutil.rmtree(box, ignore_errors=True)
+    os.makedirs(box, exist_ok=True)
+
+
 def run_installer(base, box=BOX, extra=None):
+    fresh_box(box)
     env = dict(os.environ)
     env["LOCALAPPDATA"] = os.path.join(box, "AppData", "Local")
     env["USERPROFILE"] = os.path.join(box, "User")
@@ -110,9 +144,9 @@ def check(out, base):
     # 拿中文当针会得到"其实成功了却判未命中"的假红（本仓踩过：乱码不是证据）。
     marks = {
         "版本来源=镜像 moon.mod": base + "/moon.mod",
-        "资产名按版本拼装": "v0.3.0/fist-mbt-js-v0.3.0.zip",
+        "资产名按版本拼装": "%s/%s" % (VDIR, ASSET),
         "POSIX shim 门通过": "POSIX shim, LF",
-        # BUG-109 修好后这行才打得出来：`✅ fist (PATH) → FIST-Mbt v0.3.0`。
+        # BUG-109 修好后这行才打得出来：`✅ fist (PATH) → FIST-Mbt v<moon.mod 版本>`。
         # 旧安装器在 node:sqlite 的 ExperimentalWarning 下必然进 catch ⇒ 针永远不命中，
         # 于是"安装器自检经 shim 跑到 fist"这条主张从来没有被证过（不是探针坏，是产品假绿）。
         "安装器自检经 shim 跑到 fist": "fist (PATH)",
@@ -167,8 +201,8 @@ def main():
             print("  %-28s rc=%d 首行=%r" % (name, r.returncode, head))
             if r.returncode != 0 or not head:
                 fails.append("%s 没跑通（rc=%d）" % (name, r.returncode))
-        # 反面对照：镜像里放一个 HTML 冒充资产
-        asset = os.path.join(MIRROR, "-", "releases", "download", "v0.3.0", "fist-mbt-js-v0.3.0.zip")
+        # 反面对照：镜像里放一个 HTML 冒充资产（换的是**当前版本**那一份，与正向同一目标）
+        asset = os.path.join(MIRROR, "-", "releases", "download", VDIR, ASSET)
         io.open(asset + ".real", "wb").write(io.open(asset, "rb").read())
         io.open(asset, "w", encoding="utf-8", newline="\n").write(
             "<!DOCTYPE html>\n<html><body>not a zip</body></html>\n" + "x" * 20000)
@@ -177,7 +211,7 @@ def main():
         print("=== 反面对照（另起沙箱 %s，资产换成 HTML 页）rc=%d ===" % (
             os.path.relpath(box2, ROOT).replace("\\", "/"), rc2))
         for ln in out2.split("\n"):
-            if any(k in ln for k in ("zip", "HTML", "http://", "v0.3.0")):
+            if any(k in ln for k in ("zip", "HTML", "http://", VDIR, ASSET)):
                 print("   " + ln.strip()[:110])
         if rc2 == 0:
             fails.append("HTML 冒充资产竟然成功（魔数门没承重）")

@@ -43,4 +43,4 @@
 | - | colmugx/posoco 参考 Agent 框架六边形架构设计 | competition/§六 | pending | - |
 | - | colmugx/mcp 已依赖（fist-mbt MCP 协议库），保留 | competition/§六 | done | - |
 
-> 去重说明：competition/§四 与 five-directions/§一、future-roadmap 各方向的重复项（如 quickcheck、mizchi/llm、ARCHITECTURE、self_search、英文 README）已按主题合并为单行；状态以当前源码/记忆库是否确认实现为准，未确认一律 pending，待逐项核对后再转 done 或删除。
+> 去重说明：competition/§四 与 five-directions/§一、future-roadmap 各方向的重复项（如 quickcheck、mizchi/llm、ARCHITECTURE、self_search、英文 README）已按主题合并为单行；状态以当前源码/记忆库是否确认实现为准，未确认一律 pending，待逐项核对后再转 done 或删除。| F094 | 多管家协作 · 同项目文件级并行协调层（file_binds 表 + file_bind/release/status 三工具 + 构建互斥 + worktree 终态；硬前置=BUG-119 心跳跨进程修复，见 improvement-plan §P0′） | spec（未来扩展） | TBD | [docs/features/F094-multi-butler-file-binds.md](docs/features/F094-multi-butler-file-binds.md) |

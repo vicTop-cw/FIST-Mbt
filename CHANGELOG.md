@@ -13,6 +13,46 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.4 (unreleased) - 终审前收口：看护缺陷修到跨进程调用面、探索模式上线、demo 族解封（盖章 2026-09-29T06:18:10Z）
+
+- **BUG-119 修复（开工时唯一 high）**：`heal` 从"读进程内内存心跳表"改为读**持久化心跳表**（唯一真相），
+  「没有心跳行」不再等于首拍即死，而是退到任务行 `updated_at` 的兜底时钟（`src/ops/ops_heal.mbt::stale_by_task_clock`）；
+  另一半根因是模块级 `let _init_hb : Unit = init_heartbeats()` 被 MoonBit 当未引用的非 pub 顶层绑定**消除**，
+  "启动时回灌"从未进产物 ⇒ 删除该惯用法，`heartbeat` 改为按需跨进程回读并如实回执 `persisted`/`backend`，
+  判死却回滚不了的条目走 `skipped` 披露。**常驻判据** `scripts/blackbox/e2e_heartbeat_xproc.py`（8 臂、两个真进程、
+  隔离 `FIST_DB_PATH`）修后 8/8 绿；同一判据在 `git archive HEAD` 旧码树上 **3 绿 5 红**（旧码原样
+  `healed=['T0','T0r2','T0r4']` + `active_tasks={'T0': ''}`）⇒ 锁承重；权威 CI 增配同名一步。
+- **BUG-118 落定案的一半**：`moon fmt --check` 从狗食轨搬进权威 `ci.yml`（js-ubuntu），
+  两条轨的格式步骤都先打 `moon version --all`——不再让"哪一版 formatter 判的红"靠猜；
+  版本参数能否钉住（`moon upgrade` 无 `--version`、本机取安装脚本 TLS 失败 rc=35）如实留白，不猜着写 CI 配置。
+- **探索模式 `explore` 上线（7 种模式）**：`src/ops/ops_modes.mbt` 注册 + 纯函数
+  `estimate_complexity`/`select_mode_by_complexity`/`file_scopes_disjoint`/`explore_plan`（复用难度单一抽取来源，零 IO），
+  模板 `templates/pipeline_mode_explore.md`（含 §步骤 3.5 递归拆解接法）；并行只在
+  `reserve_scope` 预订成功 + `conflicts_check` 放行 + 作用域两两不相交时放行，否则退回单模式串行。
+  **MCP 工具数保持 129**（`mode_list` 投影注册表，未新增工具）；`mode_templates` 名单改为从注册表反解。
+- **demo 族解封**：`cmd/cli/main.mbt::run_serve` 的三行提示由 `println` 改 `eprintln`——
+  stdout 只许走 JSON-RPC（BUG-101 的修复曾被并发改动重新启用），一条改动放行 27 个 stdio 判据/demo，
+  `scripts/mcp_smoke.py` 当场 MCP-SMOKE PASS。
+- **文档面**：定位语「fist-mbt —— AI 自驱式开发的项目管理者」与伴生仓 fist-evidence 指针落到
+  README/README_EN/AGENTS/USAGE 首屏与证据段；现状面测试总数按 `check_test_sync` 从 535 全量同步到
+  **572/572**（`moon test --target js -j 1` 实测，白盒 +34 条探索模式锁、看护成对改写 +3 条）。
+- **BUG-116 结论（已 FIXED，盖章 2026-09-29T06:45:05Z）**：用户可见症状「一条命令装不上」现在有**三条在「取脚本」这一发判过线的出路**——
+  主 `irm | iex`（BOM 安全形）、curl 兜底臂带 `--retry 5 --retry-delay 2 --retry-all-errors`（本机链路抖动时实测可通，
+  BUG-116 的根因正是"一失败就换源把瞬时抖动放大成装不上"）、离线/内网 `-LocalZip` / `-BaseUrl`。
+  公网侧瞬时不可达本身判为**环境面**，改为 `js-windows` 的 `Public install line e2e` 常驻观察臂（continue-on-error，
+  红不拦合并但每天出账）；`e2e_irm_line.py` 的兜底臂仍硬拦退出码。
+  **诚实边界**（车道回传，`temp/bug116-e2e-v10.log` / `temp/e2e-irm-receipts/`）：两臂换掉的只是「取脚本」这一发的传输栈，
+  安装器**内部**下载 zip 仍走 .NET `Invoke-WebRequest`——run6/run7 的活证据是"脚本取回来了、红在内部那一发"；
+  链路整断时两条线一起红，那种情况只剩 `-LocalZip` 离线线。彻底修要动 `install_onecmd.ps1` 的取数段，已另计入遗留面。
+- **BUG-120（上报即收口，盖章 2026-09-29T07:05:54Z）**：同一车道的交接缺口②——README 离线/内网线的资产名
+  `fist-mbt-js-v0.3.4.zip` 是**版本字面量**，而 R1 只扫安装器、J4 只认 `@x.y.z` 式声明 ⇒ 这一格落在两版守卫之间无人认领，
+  版本一前进照抄即 404。补 `check_release_asset_names.py` 的 **R13**（README 里以数字开头的资产名版本 == `moon.mod`，
+  无基线即自拒；模板形态 `v$VERSION` 不误红），`--selftest` 反解出 `R13×2`（漂移必红 + 模板不红），
+  AGENTS 守卫族段与 `scripts/README.md` 索引同步。**台账现 0 条待修**（110 抬头 = 106 FIXED + 4 FALSE_POSITIVE）。
+- **demo 车道回传**：一条 `println`→`eprintln` 解封 **27 个** stdio 判据/demo；`mcp_smoke.py` = MCP-SMOKE PASS、
+  `atgc_selfdrive_demo` 与 `e2e_mirror_install` 本机跑绿，仓库根台账 **1986 任务 / 6905 调用** 跑前跑后逐字不变
+  （只读证明）。产物硬门 `output_validate` 对本轮 14 件交付物判 **verdict=pass / evidence_layer=l4-pass**。
+
 ## v0.3.4 (unreleased) - 改进建议书逐条复测：4 条前提被证伪、1 条看护缺陷入账（盖章 2026-09-29T03:58:39Z）
 
 - **复核方法**：`docs/improvement-proposals-20260928.md` 12 条 + 实验报告 4 条过程发现，逐条打到调用面/库面/守卫面

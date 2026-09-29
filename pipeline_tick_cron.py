@@ -40,13 +40,22 @@ from datetime import datetime
 from threading import Thread
 from queue import Queue, Empty
 
-MCP_SERVER = r"E:\IDEProjects\AI\FIST-Mbt\_build\js\debug\build\cmd\main\main.js"
-WORKDIR = r"E:\IDEProjects\AI\FIST-Mbt"
+ROOT = os.path.dirname(os.path.abspath(__file__))
+SIBLINGS = os.path.dirname(ROOT)
+# 现役入口 = cmd/cli 的 JS 产物 + `serve`（曾写死绝对盘符与退役入口 cmd/main ⇒ 定时任务演示昨天的产品）。
+MCP_SERVER = os.path.join(ROOT, "_build", "js", "debug", "build", "cmd", "cli", "cli.js")
+WORKDIR = ROOT
 TIMEOUT_SEC = 2400
 
+
+def _sibling(name):
+    """伴生项目与本仓同级目录；被 env 覆盖，不在脚本里钉死盘符。"""
+    return os.environ.get("FIST_CRON_%s_DIR" % name.upper(), os.path.join(SIBLINGS, name))
+
+
 PROJECTS = [
-    {"name": "pentad", "project_dir": r"E:\IDEProjects\AI\Pentad", "namespace": "cron-auto"},
-    {"name": "tnr",    "project_dir": r"E:\IDEProjects\AI\Tnr",    "namespace": "cron-tnr"},
+    {"name": "pentad", "project_dir": _sibling("Pentad"), "namespace": "cron-auto"},
+    {"name": "tnr",    "project_dir": _sibling("Tnr"),    "namespace": "cron-tnr"},
 ]
 
 # action -> 元提示词里的分支名（汇报用）
@@ -68,13 +77,28 @@ def iso_now():
     return datetime.now().astimezone().isoformat()
 
 
+def ensure_patched_entry():
+    """起服前给 ESM 产物注入 require shim（幂等）；产物缺失 ⇒ 点名 build 命令后退出，
+    绝不静默退回退役入口（那正是本脚本上一轮的失效形状）。"""
+    if not os.path.isfile(MCP_SERVER):
+        sys.exit("FATAL 入口产物不存在：%s\n      先跑 `moon build --target js cmd/cli`" % MCP_SERVER)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "patch_esm_main", os.path.join(ROOT, "scripts", "patch_esm_main.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.patch(MCP_SERVER)
+
+
 class MCPClient:
     def __init__(self):
+        ensure_patched_entry()
         self.proc = subprocess.Popen(
-            ["node", MCP_SERVER],
+            ["node", MCP_SERVER, "serve"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             cwd=WORKDIR, encoding="utf-8", errors="replace",
         )
+
         self._id = 1
         # readline() 会无限阻塞，故改用后台线程 + Queue.get(timeout=...) 让 deadline 真正生效（Windows 下 select 不支持管道）
         self._lines = Queue()

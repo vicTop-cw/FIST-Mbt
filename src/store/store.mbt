@@ -463,6 +463,16 @@ pub fn StoreBackend::read_heartbeat(
 }
 
 ///|
+/// 后端自述（BUG-119）：`"sqlite"` 表示心跳真的落库、跨进程可读；`"memory"` 表示只活在本进程。
+/// 看护面必须把它打进回执——否则内存后端会冒充"心跳已持久化"。
+pub fn StoreBackend::backend_name(self : StoreBackend) -> String {
+  match self {
+    Mem(_) => "memory"
+    Sql(_) => "sqlite"
+  }
+}
+
+///|
 /// 删除心跳记录。
 pub fn StoreBackend::delete_heartbeat(
   self : StoreBackend,

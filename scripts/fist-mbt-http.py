@@ -5,15 +5,16 @@ Bridges the stdio-based MCP server (MoonBit) to HTTP.
 Exposes:
   GET  /health  → Health check
   POST /mcp     → JSON-RPC request → MCP server response
-  GET  /sse     → Server-Sent Events stream (notifications)
+  GET  /events  → Server-Sent Events stream (notifications)
 
 Usage:
-  python scripts/fist-mbt-http.py [port]
+  python scripts/fist-mbt-http.py [port]        # 位置参数（README「HTTP/SSE 桥」广告的就是这条）
   FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
+  两者都给时**位置参数优先**（命令行比环境更靠近这次调用）。
 
 Environment:
   FIST_MCP_PORT: HTTP port (default 3000)
-  FIST_MCP_TRANSPORT: "http" to enable HTTP bridge (otherwise stdio only)
+  FIST_DB_PATH : 传给 server 子进程的库路径（不设置＝server 按自己的默认解析落库）
 """
 
 import json
@@ -33,11 +34,35 @@ logging.basicConfig(
 )
 log = logging.getLogger("fist-mbt-http")
 
-PORT = int(os.environ.get("FIST_MCP_PORT", 3000))
+ROOT = Path(__file__).resolve().parent.parent
 
-# Path to compiled MoonBit JS entry (fallback to moon run)
-MBT_MAIN_JS = Path(__file__).parent.parent / "target" / "js" / "release" / "build" / "cmd" / "main" / "main.js"
-MBT_MAIN_MBT = Path(__file__).parent.parent / "cmd" / "main" / "main.mbt"
+# 端口解析：位置参数 > FIST_MCP_PORT > 3000。
+# BUG-118：README.md:96-97 广告的是 `python scripts/fist-mbt-http.py [port]`，而这里过去
+# **只读 env**，位置参数被静默忽略 ⇒ 用户传 3001 仍监听 3000，第二个宿主直接 bind 失败。
+def resolve_port(argv, env) -> int:
+    raw = argv[0] if argv else env.get("FIST_MCP_PORT", "")
+    if not str(raw).strip():
+        return 3000
+    try:
+        p = int(str(raw).strip())
+    except ValueError:
+        raise SystemExit(
+            "FATAL 端口不是整数：%r（用法：python scripts/fist-mbt-http.py [port]，"
+            "或 FIST_MCP_PORT=<port>）" % raw)
+    if not (1 <= p <= 65535):
+        raise SystemExit("FATAL 端口越界（1..65535）：%d" % p)
+    return p
+
+
+PORT = resolve_port(sys.argv[1:], os.environ)
+
+# 现役 MCP 入口产物：cmd/cli（cmd/main 已退役；曾经这里指着 target/js/release/cmd/main，
+# 那个路径在本仓根本不存在 ⇒ 每次都退到 `moon run cmd/cli`，而 moon run 重发的 ESM bundle
+# 没有 require shim ⇒ ReferenceError: require is not defined，桥接服务从来就没起过 server）。
+MAIN_CANDIDATES = (
+    Path("_build") / "js" / "debug" / "build" / "cmd" / "cli" / "cli.js",
+    Path("target") / "js" / "release" / "build" / "cmd" / "cli" / "cli.js",
+)
 
 # Pending requests awaiting response
 _response_queue: Queue = Queue()
@@ -102,19 +127,38 @@ class MCPBridge:
             stdout=subprocess.PIPE,
             stderr=sys.stderr,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
+            cwd=str(ROOT),
         )
         self._running = True
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
 
     def _find_command(self) -> list[str] | None:
-        if MBT_MAIN_JS.exists():
-            return ["node", str(MBT_MAIN_JS)]
-        if MBT_MAIN_MBT.exists():
-            return ["moon", "run", "cmd/cli"]
-        # Fallback: try moon directly
-        return ["moon", "run", "cmd/cli"]
+        """现役入口 + `serve` + ESM require shim；找不到产物就点名要跑的 build 命令。
+
+        曾经的两级回退都不可用：① 上一代入口的 release 产物路径——那个 cmd 目标已退役，且本仓
+        根本没有那个路径；② `moon run cmd/cli` 会**重新发一遍** bundle，把 patch_esm_main
+        注入的 shim 抹掉 ⇒ 起服即 `ReferenceError: require is not defined`。
+        """
+        for rel in MAIN_CANDIDATES:
+            js = ROOT / rel
+            if not js.is_file():
+                continue
+            # moonc ≥0.10.14 对可执行目标输出 ESM，mizchi/sqlite 的 JS 桩用 CJS require（幂等注入）
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "patch_esm_main", str(ROOT / "scripts" / "patch_esm_main.py"))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            mod.patch(str(js))
+            return [os.environ.get("FIST_NODE", "node"), str(js), "serve"]
+        log.error(
+            "找不到 MCP 入口产物（试过的候选：%s）⇒ 先跑 `moon build --target js cmd/cli`",
+            ", ".join(str(c) for c in MAIN_CANDIDATES))
+        return None
 
     def _read_loop(self) -> None:
         try:
@@ -141,11 +185,20 @@ class MCPBridge:
         if not self._proc or not self._proc.stdin:
             return {"error": "Server not running"}
         req_id = next_id()
+        # 本 server 走 MCP 2026-07-28 形状：每条请求的 params._meta 要带协议版本/客户端身份，
+        # 缺了服务端直接拒。HTTP 侧不该要求每个调用方都手抄这段 ⇒ 桥这里补齐（调用方给了就尊重）。
+        params = dict(params or {})
+        meta = dict(params.get("_meta") or {})
+        meta.setdefault("io.modelcontextprotocol/protocolVersion", "2026-07-28")
+        meta.setdefault("io.modelcontextprotocol/clientCapabilities", {})
+        meta.setdefault("io.modelcontextprotocol/clientInfo",
+                        {"name": "fist-mbt-http-bridge", "version": "1.0"})
+        params["_meta"] = meta
         request = {
             "jsonrpc": "2.0",
             "id": req_id,
             "method": method,
-            "params": params or {},
+            "params": params,
         }
         try:
             self._proc.stdin.write(json.dumps(request) + "\n")

@@ -115,6 +115,7 @@ pub fn FistEngine::gate_check_record(Self, String, String, String, String) -> Re
 pub fn FistEngine::gate_verify_gate(Self, String) -> Result[Unit, String]
 pub fn FistEngine::get_task(Self, String) -> @core.Task?
 pub fn FistEngine::goal_drift_check(Self, String, subtask_id? : String, ns? : String) -> Json
+pub fn FistEngine::heartbeat_backend(Self) -> String
 pub fn FistEngine::list_all(Self) -> Array[@core.Task]
 pub fn FistEngine::list_by_status(Self, @core.TaskStatus) -> Array[@core.Task]
 pub fn FistEngine::list_in_ns(Self, String) -> Array[@core.Task]
@@ -160,6 +161,7 @@ pub fn FistEngine::store_list_heartbeat_intervals(Self, String) -> Array[Int]
 pub fn FistEngine::store_list_heartbeats(Self) -> Array[(String, String, String, String)]
 pub fn FistEngine::store_list_saga_actions(Self, String, String) -> Array[(Int, String, String, String, String)]
 pub fn FistEngine::store_mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int]) -> Result[Unit, String]
+pub fn FistEngine::store_read_heartbeat_last_seen(Self, String) -> String
 pub fn FistEngine::store_recent_call_logs(Self, limit? : Int) -> Array[Json]
 pub fn FistEngine::store_write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int, seq~ : Int) -> Result[Unit, String]
 pub fn FistEngine::store_write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]

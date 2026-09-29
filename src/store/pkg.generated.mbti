@@ -143,6 +143,7 @@ pub enum StoreBackend {
   Mem(MemoryStore)
   Sql(SqliteStore)
 }
+pub fn StoreBackend::backend_name(Self) -> String
 pub fn StoreBackend::cb_get(Self, String, String) -> (String, Int, Int, Int, Int, Int, Int)?
 pub fn StoreBackend::cb_save(Self, String, String, String, Int, Int, Int, Int, Int, Int, String) -> Result[Unit, String]
 pub fn StoreBackend::clear(Self) -> Unit

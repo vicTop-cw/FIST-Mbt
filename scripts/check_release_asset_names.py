@@ -285,6 +285,19 @@ def judge(texts):
                         "（404/403 会被重试 N 次，用户多等 N 倍时间还是装不上）")
     if "Start-Sleep -Seconds (2 * $try)" not in ps1:
         problems.append("R12 install_onecmd.ps1 的传输层重试没有退避间隔（同刻重试风暴，代理更容易掐）")
+    # R13 钉「文档离线线里的资产名版本字面量不许落后于 moon.mod」（BUG-120）：R1 只扫安装器（禁写死默认值），
+    # J4 只认 `@x.y.z` 式版本声明 ⇒ README 里 `-LocalZip …ist-mbt-js-v0.3.4.zip` 这条**用户会照抄**的资产名
+    # 正好落在两面守卫之间，没人认领；版本一前进，离线/内网线就把用户指向一个不存在的资产。
+    # 只数"以数字开头的版本串"，模板形态（v$VERSION / v<新版本>）不是字面量，一律放行。
+    lit = sorted({m.group(1) for m in re.finditer(
+        r'fist-mbt-js-v(\d[0-9A-Za-z.\-]*?)\.zip', texts.get("readme") or "")})
+    if lit and not mv:
+        problems.append("R13 README 出现资产名版本字面量，但 moon.mod 反解不到 version ⇒ 判据没有基线，不报绿")
+    for v13 in lit:
+        if mv and v13 != mv.group(1):
+            problems.append('R13 README 的资产名版本字面量 fist-mbt-js-v%s.zip ≠ moon.mod 的 "%s"'
+                            "（照抄离线/内网线即 404；R1 只扫安装器、J4 只认 @x.y.z，这一格原先无人认领）"
+                            % (v13, mv.group(1)))
     return problems
 
 
@@ -375,6 +388,8 @@ def selftest():
         # R12 两支（BUG-116 的两种退化）：把"有响应就不重试"的闸拆掉 / 把退避间隔拆掉
         ("ps1", "if ($resp) { break }", "if ($false) { break }", "R12"),
         ("ps1", "Start-Sleep -Seconds (2 * $try)", "$null = 1", "R12"),
+        # R13 一支（BUG-120 的退化）：README 离线线的资产名版本字面量落后于 moon.mod
+        ("readme", "fist-mbt-js-v%s.zip" % VER, "fist-mbt-js-v0.9.9.zip", "R13"),
     ]
     executed = []
     for key, old, new, want in checks:
@@ -404,6 +419,14 @@ def selftest():
     if any(p.startswith("R11") for p in probs):
         fails.append("R11 在 cmd/cli 无版本常量面时误红（那是可选面）：%s" % probs[:1])
     executed.append("R11")
+    # R13 的另一半：模板形态不是字面量 ⇒ 不许误红（否则等于把 README 逼回写死版本号）
+    d = dict(base)
+    d["readme"] = d["readme"].replace("fist-mbt-js-v%s.zip" % VER, "fist-mbt-js-v$VERSION.zip")
+    probs = judge(d)
+    if any(p.startswith("R13") for p in probs):
+        fails.append("R13 对模板形态 v$VERSION 误红（那不是字面量，判据会把文档逼回写死版本）：%s" % probs[:1])
+    executed.append("R13")
+
     from collections import Counter
     cnt = Counter(executed)
     inventory = " / ".join("%s×%d" % (k, v) if v > 1 else k for k, v in sorted(
