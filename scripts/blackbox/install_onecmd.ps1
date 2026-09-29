@@ -60,6 +60,20 @@ $rawUrls = @(
   "https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/moon.mod",
   "https://gitcode.com/VictorTop/Fist-Mbt/-/raw/master/moon.mod"
 )
+# BUG-116 内部取数面收口：本机走系统代理时 .NET 栈（irm/Invoke-WebRequest）会瞬时抛「基础连接已经关闭」，
+# 而同一时刻 curl.exe（Schannel 栈）取同一个 URL 能得 200 + 正确字节。旧版只把 curl 兜底放在**文档线**，
+# 安装器内部这两发（moon.mod 与资产 zip）仍单栈 ⇒ 实测出现「脚本取回来了、红在内部那一发」。
+# 现在两发都：.NET 抛错且**没有 HTTP 响应**（传输层，不是 404/403 这种确定性结论）时，换 curl.exe 再取一次。
+$script:CurlExe = if (Get-Command curl.exe -ErrorAction SilentlyContinue) { (Get-Command curl.exe).Source } else { "" }
+function Get-UrlTo([string]$Url, [string]$OutFile, [int]$Sec) {
+  if ($script:CurlExe -eq "") { return $false }
+  try {
+    & $script:CurlExe -fsSL --retry 3 --retry-delay 2 --retry-all-errors --max-time $Sec -o $OutFile $Url 2>$null | Out-Null
+    return (($LASTEXITCODE -eq 0) -and (Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0))
+  } catch {
+    return $false
+  }
+}
 $versionSource = ""
 if ($BaseUrl -ne "") { $rawUrls = @(($BaseUrl.TrimEnd('/') + "/moon.mod")) }
 if ($Version -eq "") {
@@ -69,6 +83,7 @@ if ($Version -eq "") {
     foreach ($r in $rawUrls) {
       try {
         $mm = (Invoke-WebRequest -Uri $r -UseBasicParsing -TimeoutSec 20).Content
+        # （下面按 byte[]/string 归一，再走 HTML sniff —— 两条取数路径共用同一套形状检查）
         # 有的源（本机 http.server、内网镜像）把 .mod 标成 application/octet-stream ⇒ PS 交回来的是
         # byte[] 而不是 string，直接 -match 会静默不中，用户只看到"解析不到版本"。先按 UTF-8 归一。
         if ($mm -isnot [string]) { $mm = [Text.Encoding]::UTF8.GetString($mm) }
@@ -81,7 +96,21 @@ if ($Version -eq "") {
         if ($mm -match '(?m)^\s*version\s*=\s*"([^"]+)"') { $Version = $matches[1]; $versionSource = $r; break }
         Write-Host "  · $r 的正文里没有可解析的 version 行" -ForegroundColor DarkGray
       } catch {
-        Write-Host "  · 取不到 $r ：$($_.Exception.Message)" -ForegroundColor DarkGray
+        $why = ($_.Exception.Message -replace '\s+', ' ')
+        if (-not $_.Exception.Response) {
+          # 传输层失败才换栈（与 zip 那一发同一条纪律）；换源解决不了抖动，换 TLS 栈才解决得了
+          $tmp = [IO.Path]::GetTempFileName()
+          if (Get-UrlTo $r $tmp 20) { $mm = [IO.File]::ReadAllText($tmp, [Text.Encoding]::UTF8) }
+          Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+          if ($mm) {
+            if ($mm -match '^\s*<(!DOCTYPE|html)') { Write-Host "  · $r （curl 臂）返回 HTML 页而不是文件" -ForegroundColor DarkGray; continue }
+            if ($mm -match '(?m)^\s*version\s*=\s*"([^"]+)"') { $Version = $matches[1]; $versionSource = ($r + " [curl-fallback]"); break }
+          } else {
+            Write-Host "  · 取不到 $r ：$why（curl 臂也不可用）" -ForegroundColor DarkGray
+          }
+        } else {
+          Write-Host "  · 取不到 $r ：$why" -ForegroundColor DarkGray
+        }
       }
     }
   }
@@ -153,6 +182,17 @@ foreach ($u in $(if ($downloaded) { @() } else { $urls })) {
       $why = ($_.Exception.Message -replace '\s+', ' ')
       Write-Host ("  ⚠️ 第 $try 次失败 HTTP " + $code + " (" + $_.Exception.GetType().Name + ") " + $why + " ... ") -ForegroundColor Yellow
       if ($resp) { break }                       # 有响应 = 确定性结论，直接换源
+      # 传输层错误：先换 TLS 栈（curl.exe / Schannel）再退避重试 —— 换源不换栈是 BUG-116 的老病根
+      $tmpOk = Get-UrlTo $u ($zipPath + ".curltry") 60
+      if ($tmpOk) {
+        $m2 = [IO.File]::ReadAllBytes($zipPath + ".curltry")[0..1]
+        if ($m2[0] -eq 0x50 -and $m2[1] -eq 0x4B -and ((Get-Item ($zipPath + ".curltry")).Length -gt 10KB)) {
+          Move-Item ($zipPath + ".curltry") $zipPath -Force
+          Write-Host "  ✅ curl-fallback 下载成功 ($([math]::Round((Get-Item $zipPath).Length/1KB,1)) KB)" -ForegroundColor Green
+          $downloaded = $true
+        } else { Remove-Item ($zipPath + ".curltry") -Force }
+      }
+      if ($downloaded) { break }
       if ($try -lt 3) { $retry = $true }
     }
     if ($retry) { Start-Sleep -Seconds (2 * $try) } else { break }

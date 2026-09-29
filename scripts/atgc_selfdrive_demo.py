@@ -34,6 +34,13 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 ATGC_DIR = os.path.join(ROOT, "atgc")
 
 NODE = os.environ.get("FIST_NODE", "node")
+# BUG-122：本 demo 的服务端解析是「FIST_DB_PATH 优先，空/未设置才回仓库根默认库」⇒ 按 README 裸跑会把
+# 自驱链的演示任务写进仓库根的自举台账。这里在未显式设置时默认改道 temp/，且核对面读的是同一个文件
+# （见 resolve_db：它继续走 os.environ，所以改道后打印的库路径与被写入的库仍一致）。
+if not (os.environ.get("FIST_DB_PATH") or "").strip():
+    os.environ["FIST_DB_PATH"] = os.path.join(
+        os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")),
+        "temp", "atgc_selfdrive_demo.db")
 MAIN_CANDIDATES = [
     "_build/js/debug/build/cmd/cli/cli.js",
     "target/js/release/build/cmd/cli/cli.js",

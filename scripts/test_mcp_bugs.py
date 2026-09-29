@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Test MCP server with bug-related tools"""
 import subprocess, json, sys, time
+import os
+# BUG-122 同型收口：裸跑会把演示数据写进仓库根的自举台账 fist-mbt.db ⇒ 默认改道 temp/ 隔离库。
+_FIST_ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+if not (os.environ.get("FIST_DB_PATH") or "").strip():
+    os.environ["FIST_DB_PATH"] = os.path.join(_FIST_ROOT, "temp", "test_mcp_bugs.db")
 
 META = {
     "io.modelcontextprotocol/protocolVersion": "2026-07-28",

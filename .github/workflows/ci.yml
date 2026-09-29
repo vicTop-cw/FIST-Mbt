@@ -92,6 +92,12 @@ jobs:
           python3 scripts/check_entry_paths.py --selftest
           python3 scripts/check_entry_paths.py
 
+      - name: Spawn-plane isolation guard (BUG-122：demo/自检脚本裸跑不许写仓库根自举台账)
+        shell: bash
+        run: |
+          python3 scripts/check_demo_isolation.py --selftest
+          python3 scripts/check_demo_isolation.py
+
       - name: Release asset-name single source (BUG-103：安装器版本真源=moon.mod，空值必须失败)
         shell: bash
         run: |

@@ -6,6 +6,11 @@ scripts/pentad_fist.py — FIST-Mbt 驱动 Pentad 开发的 MCP 客户端
 """
 import json
 import os
+# BUG-122 同型收口：不带 FIST_DB_PATH 裸跑会把演示数据写进仓库根的自举台账 fist-mbt.db。
+# 默认改道 temp/ 下的隔离库；调用方显式设过 FIST_DB_PATH 就照它的（store_isolation_probe 那类必须自己控制）。
+_FIST_ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+if not (os.environ.get("FIST_DB_PATH") or "").strip():
+    os.environ["FIST_DB_PATH"] = os.path.join(_FIST_ROOT, "temp", "pentad_fist.db")
 import subprocess
 import sys
 import time
