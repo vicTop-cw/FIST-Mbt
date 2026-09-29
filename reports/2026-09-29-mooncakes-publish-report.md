@@ -16,7 +16,7 @@
 | 2 | 注册表上现在是**最新码**且**版本号能分辨** | `moon view vicTop-cw/fist-mbt --versions` = 10 版，首位 `0.3.5`；`Latest: 0.3.5 / Published 2026-09-29T10:35:10.876305+00:00`；三处版本真源（`moon.mod` / `server.mbt::project_version` / `help_topics.mbt::FIST_VERSION`）逐字 == `0.3.5`（R11 + 白盒锁） | 本轮 `moon view` 回执；`scripts/check_release_asset_names.py` R11 |
 | 3 | 别人拉这一版**编得动**（不是"注册表列出了号"） | 空壳消费工程 `moon add vicTop-cw/fist-mbt@0.3.5` 后 `moon check --target js` **rc=0（58 个任务）** | `temp/pkg_install_probe/check*.log` |
 | 4 | **公开的就是我 tag 的**（BUG-128 的根因那一格） | 解包载荷 **552 件** vs `git ls-tree -r 124a20a` 非点号跟踪面：双向差集 **0/0**，逐件比字节（仅归一 CRLF）**0 处不一致**；载荷内 `__cli_pkg.mbt.tmp` = **0 件**（BUG-127 的修在下一版兑现）；凭据形状扫载荷 **0 命中** | 本报告 §3.3 |
-| 5 | 收口面在新版本上仍成立 | 守卫族 14 项逐条 rc=0（含 `--selftest`）；`store_isolation_probe` 对**安装态**与**本地 0.3.5 产物**两个身份分别 2 格 GREEN | 本报告 §3.4 |
+| 5 | 收口面在新版本上仍成立 | §3.4 那张表 **15 行 / 表内 17 次调用**逐条 rc=0（`check_*` 13 个，doc_surface 与 release_asset_names 那两行各含"自检 + 全量"两步；另有 `mcp_tool_tour --surface-selftest` 与 `store_isolation_probe`），探针那行按**两个产物身份**实跑 2 次 ⇒ 累计 18 次 | 本报告 §3.4 |
 
 一句话：**发上去了，且发的是当前码；代价如实付在了版本号前进一格上。**
 
@@ -74,6 +74,10 @@ __cli_pkg.mbt.tmp 命中                          0
 **宽松口径的假阳与守卫口径的真阴不能混着报**，所以这条主张的证据是后者。
 
 ### 3.4 守卫族复跑（0.3.5 树上，逐条 rc）
+
+> 这张表自带口径：**15 行 / 表内 17 次调用**（`check_*` 13 个；`check_doc_surface` 与 `check_release_asset_names`
+> 各占一行但跑了两步"自检 + 全量"），`store_isolation_probe` 那行按两个产物身份**实跑 2 次** ⇒ 累计 18 次。
+> 上一版这里写的是"守卫族 14 项"——那个数既数不出表体、也没算自检步，属于「范围数字本身就是主张」（J10 同型）。
 
 | 判据 | rc | 结论行（尾部原文） |
 |---|---|---|
