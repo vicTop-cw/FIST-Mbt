@@ -188,7 +188,8 @@ Owner 本轮要求七件事，逐件的状态：
 
 ## 7b. 提交面身份（终审对表用）
 
-本地提交串（**未 push**；加上本段所在的 `docs(report)` 之后 `git rev-list --count origin/master..HEAD` = 10）：
+本地提交串（**未 push**；领先格数**不写死**——本段之后的每一笔补记都会让它 +1，读现值请跑
+`git rev-list --count origin/master..HEAD`；发布轮收口那一刻实测为 10）：
 
 ```
 9653604 feat(发布面),fix(载荷面),fix(账本): mooncakes 0.3.4 发布后的三格收口——BUG-127/129 已修、BUG-128 挂裁决
