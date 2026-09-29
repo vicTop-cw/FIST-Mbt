@@ -507,7 +507,7 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
 
 实跑核查（2026-09-26）：
   grep -rn "INSERT INTO runs|UPDATE runs|DELETE FROM runs|REPLACE INTO runs" src/ --include=*.mbt  -> **零命中**
-  grep -rniE "runs" src/store/*.mbt 除建表外 -> 只有两处注释，无任何读侧
+  grep -rniE "\bruns\b" src/store/*.mbt 除建表外 -> 只有两处注释，无任何读侧
   只读查库：select count(*) from runs -> **0**（同库 specs=451、call_log=3120、tasks=1147，说明不是「库没初始化」）
 
 影响：

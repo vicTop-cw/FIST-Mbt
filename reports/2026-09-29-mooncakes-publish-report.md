@@ -101,6 +101,47 @@ __cli_pkg.mbt.tmp 命中                          0
 （CI 里传 `/tmp/moon_test.log`）。我第一次不带参数跑，两条各回 `rc=1`（`FAIL 无法从参数/日志解析测试总数` / 空输出）——
 那是调用姿势错，补上 `temp/v35_js_test.log` 后双双 rc=0。**判据红先怀疑尺子怎么被用的，再怀疑被测。**
 
+上表 `check_publish_payload` 那行的原文取自**发布那一刻**的扫描。这个数是**跟着文档面走的活值**：
+`124a20a` 上 552 → 本报告落盘后 553 → 再补 `memory/2026-09-30.md` 后 554，**三次 rc 都是 0**，
+且「未被 git 跟踪的」始终 **0 件** ⇒ 判据锁的是"别把本地残留带上车"那一维，不是某个数。
+引用时要么带时刻，要么带规则；单写一个 552 就是在造一颗下一轮就红的定时漂移雷（BUG-126 同型）。
+
+### 3.5 公网安装线：把"未 push 的后果"从推断改成实测（`e2e_irm_line.py`，两档沙箱）
+
+复核对 §6 第 1 行做了一次真跑（沙箱档，不碰 `--real`、不动真用户产物）——**它红了，而且红得有信息量**：
+
+```
+主档   （irm / .NET）      ：FAIL·链路侧 无法连接到远程服务器；n/a(传输层)；（安装器收尾汇总，属后果不是病因：下载全部失败）
+兜底档 （curl.exe / Schannel）：FAIL·确定性 输出无可识别诊断、判据针未命中：回执缺 '0.3.5'（版本从 moon.mod 反解）
+  FAIL 沙箱里 fist version 不是 0.3.5：探针回执='…/irm-sandbox-fallback/User/.local/bin/fist\nFIST-Mbt v0.3.4\n(moon.mod version 单一真源)\ndoctor=0'
+curl.exe 对照（同一时刻、同一 URL）｜ exit=0 ｜ HTTP=200 bytes=16011 首字节=EFBBBF23
+IRM-E2E-RC=1
+```
+
+三格读数分开说：
+
+- **兜底档是"确定性红"**：脚本取回来了（16011 字节、带 BOM、`-File` 跑通、`doctor=0`），安装也**真装成了**——
+  装成的是 `FIST-Mbt v0.3.4`。⇒ 「公网那条线今天给的是旧码」这一格**不再是推断**，`fist version` 的回执就是量场。
+  病因是 **GitHub 侧未 push**：raw master 的 `moon.mod` 还写 0.3.4，安装器的版本单一真源正是从那里反解的（R1）。
+- **主档是"链路侧红"**（BUG-116 那一类），按 R12 的规矩单列、不与确定性混报，也**不**因为兜底档绿了就免印。
+- **这条在 CI 里是观测臂**（`continue-on-error: true`），不拦整条流水线；push `master` + 发 `v0.3.5` 的 GitHub Release 资产后，
+  两档的针（`0.3.5` / `fist-mbt-js-v0.3.5.zip` / `fist (PATH)` / `POSIX shim, LF`）才可能对得上。
+  ⇒ 这就是 §6 第 1 行那句"公网线仍指旧码"的**可复跑版本**，owner push 完可以直接拿这条当验收判据。
+
+### 3.6 复跑在 `0815c72`（发布后两笔文档提交之上）——数字没有老化
+
+| 面 | 命令 | 回执 |
+|---|---|---|
+| 代码面是否动过 | `git diff --name-only 124a20a..HEAD` | 16 个文件**全是文档/投影**，`.mbt`/`moon.pkg`/`moon.mod` **0 个** ⇒ 572 那组数字与被发布载荷同源 |
+| 全量测试 | `moon test --target js -j 1`（tree `0815c72`） | `Total tests: 572, passed: 572, failed: 0.` + `MOON-TEST-RC=0`（`temp/final_js5.log`，日志首行自带 `started=`/`tree=` 身份） |
+| 格式门 | `moon fmt --check` | `Finished. moon: no work to do` `FMT-RC=0` |
+| 看护跨进程 e2e | `scripts/blackbox/e2e_heartbeat_xproc.py` | `=== E2E-HEARTBEAT-XPROC PASS：8 格全绿（跨进程看护语义已锁） ===` + 基数门 `8/8` |
+| 入口调用面 | `scripts/cli_flag_probe.py --selftest` / 全量 | 自检 7 支对照全按预期；全量 rc=0（版本旗回 `0.3.5`） |
+| 各守卫自检 | `gen_plugins --check/--selftest`、`store_tables_wired/ps_encoding/entry_paths/publish_payload/release_asset_names --selftest`、`mcp_tool_tour --surface-selftest` | 逐条 rc=0（`temp/recheck_selftests.log`） |
+| 整洁面 | `cleanup_artifacts.py --check`（**只读档**，不带 --check 的那版会删证据，本地不跑） | `DIRTY: 仓库残留 75 个根 .db + 121 个 temp/ 文件 + 0 个 scripts/ _ 临时脚本（共 196）`——**存量脏，非本轮引入**（终审准备报告 §7.4 已记；CI 那步是先清后查） |
+| 不可见字符 | 对本轮改动的 7 份文件扫 `Cf/Cc` + ZWSP/NBSP/BOM | 命中 **1 处**：`memory/bugs.md:510` 里 `grep -rniE "\bruns\b"` 的两个 `\b` 被当年的 Python 串吃成 **U+0008 退格符**（引入者 `a3657a2`，非本轮）；已按字节断言还原为字面 `\b`（diff 恰好 1 行、+2 字节、行数不变），此处登记而不改口径 |
+
+
 ---
 
 ## 4. 资源消耗
@@ -129,7 +170,7 @@ __cli_pkg.mbt.tmp 命中                          0
 
 | # | 事项 | 状态 | 需要谁 |
 |---|---|---|---|
-| 1 | **没有 push**：本轮所有提交只在本地（含 `v0.3.5`/`mooncakes-0.3.5` 两个本地 tag）。公网安装线（GitHub raw/Release 的 `fist-mbt-js-v0.3.5.zip`）因此**尚不存在**，照 README 那条线装的人仍拿旧码；注册表这条线已是最新 ⇒ 两线短期"新码/旧码"并存，与 BUG-128 同形状但方向已知且已在账本写明 | 等授权 | owner（push + 发 GitHub Release） |
+| 1 | **没有 push**：本轮所有提交只在本地（含 `v0.3.5`/`mooncakes-0.3.5` 两个本地 tag）。公网安装线（GitHub raw/Release 的 `fist-mbt-js-v0.3.5.zip`）因此**尚不存在**，照 README 那条线装的人仍拿旧码——**这一格已实测，不是推断**：`e2e_irm_line.py` 兜底档真装成并回执 `FIST-Mbt v0.3.4`，判据针缺 `0.3.5`（§3.5）；注册表这条线已是最新 ⇒ 两线短期"新码/旧码"并存，与 BUG-128 同形状但方向已知且已在账本写明 | 等授权 | owner（push + 发 GitHub Release；push 完可拿 §3.5 那条 e2e 当验收判据） |
 | 2 | **0.3.4 同号两树撤不回**：注册表版本不可覆盖。可选缓解 = `moon deprecate vicTop-cw/fist-mbt@0.3.4`（对外署名动作） | 等裁决 | owner |
 | 3 | native 端本轮未复跑（沿用「权威稳定门槛 = JS 后端」的既有口径，不据旧数宣称双端同版全绿） | 如实留白 | 无需决定 |
 | 4 | `store_isolation_probe` 默认优先命中**安装态产物**（本机那一份仍是上一版安装产物）；这是设计（探的是用户跑的产物），但意味着不带 `FIST_PROBE_JS` 时它不验新码。本轮两个身份都跑了 | 已记录 | 无需决定 |
@@ -165,9 +206,12 @@ __cli_pkg.mbt.tmp 命中                          0
   - 现存：`temp/v35_info_fmt.log`、`temp/v35_build.log`、`temp/v35_js_test.log`、`temp/v35_dryrun.log`、
     `temp/v35_publish.log`（= 第 1 发失败，内含 `PUBLISH-RC=127`）、`temp/v35_publish_try1.log`（= 第 2 发 `200 OK`，
     **文件名与次序反着，别按名字读时间线**；两份的先后以 mtime 与本表为准：18:33 失败 / 18:35 成功）、
-    `temp/v35_docs_selftest.log`、`temp/v35_docs_full.log`、`temp/v35_guard_sweep.log`、
+    `temp/v35_docs_selftest.log`、`temp/v35_docs_full.log`、`temp/v35_guard_sweep.log`、`temp/v35_guard_sweep2.log`、
     `temp/v35_isolation.log`、`temp/v35_isolation_local.log`、`temp/bug128_close_receipt.json`、
-    `temp/bug128-close.db`、`temp/pkg_install_probe/**`（含 0.3.5 解包载荷）。
+    `temp/bug128-close.db`、`temp/pkg_install_probe/**`（含 0.3.5 解包载荷）；
+    **复跑那一轮（§3.5/§3.6，tree `0815c72`）**另存 `temp/final_js5.log`（首行 `started=… tree=0815c72` +
+    `Total tests: 572 … MOON-TEST-RC=0`）、`temp/recheck_fmt.log`、`temp/recheck_selftests.log`、
+    `temp/recheck_hb.log`（看护 8 格）、`temp/recheck_irm.log`（公网线两档分栏，`IRM-E2E-RC=1` 即 §6 第 1 行的实测）。
   - 再生命令：全量测试 `moon test --target js -j 1`；守卫单条 `python scripts/<name>.py [temp/v35_js_test.log]`；
     载荷对表 `moon add vicTop-cw/fist-mbt@0.3.5` → `find .mooncakes/vicTop-cw/fist-mbt -type f` ↔ `git ls-tree -r 124a20a --name-only`。
 - 提交/tag：`124a20a`（0.3.5 载荷，`v0.3.5` 与 `mooncakes-0.3.5` 同钉）；`a0dfef3`（`fist-final-review-20260929`，不回改）；
