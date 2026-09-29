@@ -2143,3 +2143,39 @@ BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并
      把"formatter 随 latest 漂"从判据面里摘出去——这是唯一能长期止血的一条；
   2) 或带 `FIST_GITHUB_TOKEN`（只从环境变量注入）读一次该步骤的日志，确认它报的是哪些文件；
   3) 无论哪条，别改产品码去凑一个说不清的绿。
+## BUG-119 [2026-09-29T03:33:08Z] [high] OPEN
+- summary: [watchdog] 心跳跨进程不可见：新进程 heal 把上一进程刚心跳过的在途任务判成 no_signal 回滚（且无心跳行时 timeout_sec 不生效）
+- detail: 现象（两进程实测，2026-09-29 03:28Z，库=temp/probe-xhb.db 隔离库，仓库根 fist-mbt.db 未动）：
+拍1 新进程：publish_parallel(ns=probe-xhb) -> T0；claim(T0, assignee=probe-agent) -> 已领取；
+  heartbeat(task_id=T0, signal=alive) 回执 verbatim：
+  {"task_id":"T0","signal":"alive","last_seen":"2026-09-29T03:28:40Z"}
+进程1 退出。中间用 sqlite3 mode=ro 直接读库确认那一行真的落盘，verbatim：
+  [('fist-mbt','T0','2026-09-29T03:28:40Z','alive')]
+拍2 新进程：heal(namespace=probe-xhb, timeout_sec=3600) 回执 verbatim：
+  {"healed":["T0"],"count":1,"scope":"namespace","namespace":"probe-xhb","message":"超时静默任务已回滚待重派"}
+  watchdog_tick(namespace=probe-xhb, timeout_sec=3600) 的 detail.active_tasks = {'T0': ''}（last_seen 读回空串）
+判定：心跳跨进程不可见——同进程内读得到（对照组：同一次 heal 里有心跳的 B 臂没被点名），
+新进程里读回空串 ⇒ 无人值守（cron 每次唤醒都是新进程）会把「上一拍还在正常干活」的在途任务判成 no_signal 回滚。
+
+放大伤害的第二格：src/ops/ops_heal.mbt:87 那一支写的是 `None => true`（从未心跳 = 直接判死），
+所以 timeout_sec 在「没有心跳行」这个形状上根本不起作用——新认领、还来不及发第一个心跳的任务，
+同一拍里就被回滚（实测 A 臂：claim 后立刻 heal(ns, 600) ⇒ healed 点名该单）。
+两格叠起来 = 看护每拍清空在途。
+
+活证据锚点：
+  src/ops/ops_heal.mbt:82 活跃集=执行中/已领取/拆分中（已暂停不在里面，故与本单无关，也不背这个锅）
+  src/ops/ops_heal.mbt:86-87  `None => true // 从未心跳过 -> 视为 no_signal`
+  src/store/store.mbt:479-486 注释「供启动时加载」；src/store/store_sqlite.mbt:1196-1223 读面 SELECT 正常形状。
+    跨进程读空不能由「没加载」解释（heal 每轮直接查库），要按 stmt.step()/列取值逐格定位。
+复现步骤（不依赖任何脚本）：
+  1) FIST_DB_PATH=<隔离库> node _build/js/debug/build/cmd/cli/cli.js serve   （stdin 常驻；_meta 必带 protocolVersion）
+  2) publish_parallel{project_dir,namespace,description} -> claim{task_id,assignee} -> heartbeat{task_id,signal}
+  3) 关进程1；sqlite3 只读确认 heartbeats 里有 (agent_id,task_id,last_seen,status) 那一行
+  4) 同一 FIST_DB_PATH 再起进程2，调 heal{namespace,timeout_sec=3600}
+  5) 期望 healed=[] 且 active_tasks 的 last_seen 非空；实测 healed=[<该单>] 且 last_seen=''
+出路（不替修复轮定方案）：① 先做成对常驻判据（同进程有心跳不回滚 + 跨进程有心跳不回滚），任一侧退化即红；
+② 再定根因（心跳读面形状 or 心跳按库/进程分片未读回）；③ `None => true` 那一支单独定语义：
+无心跳要给宽限期（例如按 created_at 起算），不能首拍即死。
+
+- reported_by: butler(改进计划复核轮 2026-09-29)
+

@@ -256,12 +256,12 @@ You can browse and install extra skills here:
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `omega_spec_create` | 语料创建者创建本轮语料并持久化到 `specs` 表 | task_id, author(默认 spec_author), content, max_rounds(可选), now |
-| `omega_spec_review` | 验证者审核语料：`approve` 放行，其它值为打回 | task_id, reviewer(默认 verifier), verdict, reason(可选), max_rounds(可选), now |
-| `omega_result_verify` | 验证者复验执行成果与对应语料 | task_id, reviewer(默认 verifier), verdict, reason(可选), max_rounds(可选), now |
+| `omega_spec_create` | 语料创建者创建本轮语料并持久化到 `specs` 表 | task_id, author(默认 spec_author), content, max_rounds(可选) |
+| `omega_spec_review` | 验证者审核语料：`approve` 放行，其它值为打回 | task_id, reviewer(默认 verifier), verdict, reason(可选), max_rounds(可选) |
+| `omega_result_verify` | 验证者复验执行成果与对应语料 | task_id, reviewer(默认 verifier), verdict, reason(可选), max_rounds(可选) |
 | `omega_status` | 查询强验证进度（开关 / 轮次 / 打回数 / 升级标志） | task_id |
-| `omega_verify` | Omega 强验证总入口（语料门禁 + 成果复验） | task_id, 判定, reason(可选) |
-| `omega_verify_fix` | Omega 验证未达标后修正再验 | task_id, 修正说明 |
+| `omega_verify` | 批量验证 spec JSON（schema + fingerprint 校验，accuracy < 100% 一票否决）——**不是**按 task_id 走的总入口 | specs(JSON 数组，每项 `{file_name, content}`) |
+| `omega_verify_fix` | 对失败 spec 做根因分类 → 定向修复 → 回归验证（3 轮循环） | specs(JSON 数组), max_rounds(可选默认 3) |
 
 - 打回上限 `max_rounds` 默认 3（最大 10），超限自动写入升级记录、暂停任务转人工裁决，禁止死循环。
 - `execute` 与 `verify` 在开启强验证的任务上分别受语料门禁与成果复验门禁约束；未开启该开关的任务完全不受影响，既有生命周期语义不变。
