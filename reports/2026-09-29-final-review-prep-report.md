@@ -154,6 +154,28 @@ Owner 本轮要求七件事，逐件的状态：
    本轮新增的 BUG-120 走的是 `report_bug`（拿号）→ `bug_fix`（同一笔落 `### FIXED(… / BUG-120)` 小记），
    未产生修复单（修复已在同一轮落地，`publish_task=false`）。
 
+## 7b. 提交面身份（终审对表用）
+
+本地提交串（**未 push**；`git status` 显示 `master` 领先 `origin/master` 5 个提交，含本轮之前的两个本地提交）：
+
+```
+41eefd8 fix(demo面),docs(指引面): BUG-122/123——裸跑不再污染根台账，gen_help_docs 不再冒充 CLI 文案权威
+9f3927d fix(插件态),docs(守卫面): BUG-121——SKILL 广告的模式名有两个服务端根本不认
+cdd72fd fix(看护面),feat(探索模式),fix(守卫面),docs(收口): 终审预备——0 条待修 + 572/572 + cl1–cl7 逐条 rc=0
+```
+
+外加本段所在的第 4 个提交（纯 `docs(report)`，不动任何被测量面），tag 钉在它上面。
+
+- `cdd72fd` = 看护修复 + 探索模式 + R13 + 文档面收口；**572/572 与守卫族 17 步 rc=0 的测量树就是这个面**。
+- `9f3927d` = BUG-121：四宿主 SKILL 的模式名对齐注册表（`hunt` / `fix-and-merge` / `night-loop` 不是标识符）。
+- `41eefd8` = BUG-122/123：demo 裸跑默认改道隔离库 + `gen_help_docs.py` 的权威声明改为「不许照它落笔」。
+- 本地 tag `fist-final-review-20260929` 钉在本段之后最后一个提交上（不用 `v*` 前缀，避免将来 push tag 时
+  误触发 `release.yml` 的 tag 条件）。
+
+有意**不入库**的两个文件：`.mcp.json`（254de24 起改为不跟踪，跟踪面是 `.mcp.dev.json`，两者与
+`plugins/claude/.mcp.json` 语义等价，实测三处 JSON 内容相同）与 `__cli_pkg.mbt.tmp`（moon 构建残留，
+不是我造的就不删，只是不进提交）。
+
 ## 8. 来源
 
 `temp/demo-audit-20260929.md`、`temp/head119_guard.log`、`temp/bug116_irm_recheck_20260929.log`、
