@@ -1,6 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "vicTop-cw/fist-mbt/cmd/cli"
 
+import {
+  "moonbitlang/core/debug",
+}
+
 // Values
 pub fn help_cli() -> String
 
@@ -19,6 +23,7 @@ pub fn list_topics() -> String
 // Errors
 
 // Types and methods
+type Subcmd derive(Eq, @debug.Debug)
 
 // Type aliases
 

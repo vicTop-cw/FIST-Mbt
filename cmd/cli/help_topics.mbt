@@ -1,7 +1,7 @@
 // cmd/cli/help_topics.mbt - FIST-Mbt help data, inlined into binary
 
 ///|
-const FIST_VERSION = "0.3.4"
+const FIST_VERSION = "0.3.5"
 
 ///|
 pub fn list_topics() -> String {

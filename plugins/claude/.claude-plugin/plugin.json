@@ -1,7 +1,7 @@
 {
   "name": "fist-mbt",
-  "description": "FIST 指挥官 MCP server（129 工具）+ 自驱流水线四模式，v0.3.4。真源：vicTop-cw/fist-mbt",
-  "version": "0.3.4",
+  "description": "FIST 指挥官 MCP server（129 工具）+ 自驱流水线四模式，v0.3.5。真源：vicTop-cw/fist-mbt",
+  "version": "0.3.5",
   "author": {
     "name": "vicTop"
   },
