@@ -282,9 +282,11 @@ run 36652585908  workflow 『FIST CI — Build + Test』@ 00e64bd
   js/ubuntu success · native/ubuntu failure(Test (native, j=1)) · nightly skipped
 ```
 
-第二发读数（同一把尺、又一次 push 之上）：文档收口提交 `9545b58` 的两发 run 36653233709 / 36653233734
-里，`check + test (js, ubuntu)` 仍 **success**、`step #13 Plugin-form guard cl7 (一源四态：四宿主插件目录==真源投影)` 仍 **success** ⇒ 不是一次性转绿；
-两发的整体 failure 仍只来自 native 那一格（`Test (native)` / `Test (native, j=1)`）= BUG-130。
+**同一步连读三笔 push**（每笔两个 workflow 各一发，匿名只读 API）：`00e64bd`（修复本体）→ run 36652585906『CI』
+的 `step #13 Plugin-form guard cl7` **success**；`9545b58`（文档收口）→ run 36653233709『CI』#13 **success**、
+36653233734『FIST CI — Build + Test』js/ubuntu success；`206a912`（读数追记）→ run 36653471185『CI』#13 **success**、
+36653471311 js/ubuntu success ⇒ 不是一次性转绿。三笔的整体 conclusion 都是 failure，
+唯一红格自始至终是 native 那一格（`Test (native)` / `Test (native, j=1)`）= BUG-130，不由本格顶掉。
 
 ⇒ 入账 **BUG-131** 并已 `bug_fix` 盖章 **FIXED**（`### FIXED(2026-09-30T01:00:35Z / BUG-131)`，抬头 `heading_changed: 1`）。
 本机那份 `.mcp.json` **原样保留未动**——它是本机连接器在读的配置，删不删、要不要跟踪仍是 owner 的开放问题；
