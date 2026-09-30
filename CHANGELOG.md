@@ -70,6 +70,13 @@ AIGC:
 
 - **原先挂着的两格遗留，本日都由 owner 裁决关闭**：①“没有 push”→ 已 push（GitHub + GitCode，Release 资产到位，见上条）；②“0.3.4 同号两树撤不回”→ 不给任何版本打 deprecate（工具作用域是整模块全标，见上条与 `USAGE.md` §10 第 4 步），旧号的树身份仍由 `v0.3.4`(af54d5e) / `mooncakes-0.3.4`(a0dfef3) 两枚标签一行命令对出来。
 
+- **push 之后自抓的回归（BUG-131，2026-09-30T00:52:37Z）**：拿权威 CI 复验时抓到 **ci.yml 的 `Plugin-form guard cl7` 由 09-28 的绿转成我这次 push 后的红**，而本机 cl7 PASS ⇒ 按『本机绿 / CI 红先怀疑尺子的输入面』的旧例去查 CI 等价树（`git archive HEAD`）：`gen_plugins.py --check` 红着点名 4 份投影，统一 diff 每份只差一行——投影正文那句「MCP server 真源在仓库根 X（129 工具 / v0.3.5）」里的**文件名**（提交面 `.mcp.json` / CI 面 `.mcp.dev.json`）。
+  根因是机器可检的：`gen_plugins.py` 与 `check_plugin_sync.py` 各写 `MCP_CANDIDATES = ('.mcp.json', '.mcp.dev.json')` 并取第一个存在的，而 `MCP_NAME = ROOT_MCP.name` 要写进投影正文 ⇒ 取到哪一份由**本机磁盘上有什么**决定；仓库根那份 `.mcp.json` 是**未跟踪也未被 ignore** 的本机连接器残留（`git ls-files` 空 + `git check-ignore` 空 + `git status` 回 `??`，内容与跟踪真源逐字节相同，三份 sha256 前缀同为 `7a609527`），CI 的 checkout 里它不存在。
+  修法：两处顺序改**跟踪面优先** `('.mcp.dev.json', '.mcp.json')`（`.mcp.json` 降级为搬家前的别名兜底）；`gen_plugins.py --selftest` 四格→**五格**，第五格在临时目录放两份候选并要求取到 `.mcp.dev.json`。**第一版我把期望值写成 `MCP_CANDIDATES[0]`，与实现同公式＝恒真判据**（顺序打回旧口径照样绿），反向对照当场抓到（打回旧口径 ⇒ `格5 候选表首位是 .mcp.json…` + `格5b 两份候选都在时取到了 .mcp.json` 双红 rc=2），改成写死字面名后新顺序 rc=0。观测面同步补：`--check` 的 OK/FAIL 行与 cl7 的 PASS 行都打印『启动参数真源取到哪一份』。
+  为什么这道格子没人守着：`check_publish_payload`（BUG-127/129）的 P1 **只管非点号件**（点号条目 moon 本来就不打包），于是『点号 + 未跟踪 + 未忽略 + 同时是某个投影的输入』这一格没有常驻判据——它不泄漏，只让生成产物随机器变，比泄漏难发现因为**开发机上永远是对的**（对照面：`check_entry_paths` 会点名『仓库根另有 N 份未入库 .py』，但那姿势只覆盖 .py）。
+  双侧实测（本机工作树 + 只含跟踪件的 `temp/cl7ci2` 等价树）：`gen_plugins --check` / `--selftest` / `check_plugin_sync`（含 `--selftest`）全 rc=0，`check_doc_surface`（含 `--selftest`）/ `check_scripts_index` / `check_tools_sync` / `check_publish_payload` / `check_ps_encoding` / `check_demo_isolation` 一并复跑绿。入账 **BUG-131（OPEN）**，翻 FIXED 的判据写在条目里＝新 push 后 ci.yml 那一格回 success（照 BUG-111 的先例：修复已落盘而 CI 面未验收，就不算修完）。
+  台账口径随之（`gen_plugins.py` 计数器同一次投影回执）：**BUG-1~131 共 130 条入账 = 115 已修 / 9 重复并入 / 4 误报 / 2 待修（BUG-130 + BUG-131）**，四宿主投影已按新账重生成。
+
 ## v0.3.4 (unreleased) - 终审前收口：看护缺陷修到跨进程调用面、探索模式上线、demo 族解封（盖章 2026-09-29T06:18:10Z）
 
 - **BUG-119 修复（开工时唯一 high）**：`heal` 从"读进程内内存心跳表"改为读**持久化心跳表**（唯一真相），

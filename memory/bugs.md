@@ -2419,3 +2419,17 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
   Linux 侧要 WSL；而 CI 那台的失败形态与这两条都不必然同因，靠本机跑绿去宣布关闭是假的。
 - reported_by: fist-mbt-post-push-ci-audit
 
+## BUG-131 [2026-09-30T00:50:05Z] [medium] OPEN
+- summary: cl7 插件态投影引用的启动参数真源文件名由『本机未跟踪残留』决定 ⇒ 同一棵 HEAD 本机绿、CI 红（我 2026-09-30 push 124a20a 之后 ci.yml 的 Plugin-form guard cl7 那一步就是红的）
+- detail: 发现面：owner 授权 push 之后按既有口径拿权威 CI 当验收。09-28 的 ci.yml js/ubuntu job 是 success []，我这次 push 后同一 job 的失败步骤名 = 『Plugin-form guard cl7 —— 一源四态的第四态漂移或生成投影里有手写残留』。本机复跑 cl7 却 PASS ⇒ 『本机绿 / CI 红』这一型先怀疑尺子的输入面，不怀疑被测。
+取证（CI 等价面 = git archive HEAD 解到 temp/cl7repro，那棵树里没有本机残留）：python scripts/gen_plugins.py --check 回 FAIL 插件态漂移（4 个文件与真源投影不一致），点名 atomcode\INSTALL.md / claude\INSTALL.md / codearts\INSTALL.md / deepseek-harness\instructions.append.md；统一 diff 每份只差一行——投影正文那句『MCP server 真源在仓库根 X（129 工具 / v0.3.5）』里的文件名：提交面是 .mcp.json，CI 面生成的是 .mcp.dev.json。
+根因（机器可检，不是推测）：scripts/gen_plugins.py 与 scripts/check_plugin_sync.py 各写 MCP_CANDIDATES = ('.mcp.json', '.mcp.dev.json') 并取第一个存在的，而 MCP_NAME = ROOT_MCP.name 是要写进投影正文的那个字 ⇒ 取到哪一份由『本机磁盘上有什么』决定，不由仓库决定。
+本机残留身份：git ls-files -- .mcp.json 空、git check-ignore -v .mcp.json 空、git status --porcelain 回 ?? .mcp.json ⇒ 一份既未跟踪又未被忽略的仓库根残留；内容与跟踪真源逐字节相同（.mcp.json / .mcp.dev.json / plugins/claude/.mcp.json 三份 sha256 前缀同为 7a609527），而 CI 的 checkout 里它根本不存在。它为什么在仓库根：本机 MCP 连接器读的就是这个名字（该事实2026-09-29 终审批备报告 §表格已记『根 .mcp.json 未入库 ⇒ 需 owner 决定要不要跟踪』，尚未裁决）。
+为什么现有守卫看不见：check_publish_payload（BUG-127/129）的 P1 只管非点号件（点号条目 moon 本来就不打包），G1' 那句『工作树带未跟踪件时逐件点名』也走同一条排除 ⇒『点号 + 未跟踪 + 未忽略 + 同时是某投影的输入』这一格没有常驻判据认领。它不泄漏、只让生成产物随机器变，比泄漏更难发现：开发机上永远是对的。
+修法与常驻判据（本轮已落盘）：两处候选顺序改为跟踪面优先 ('.mcp.dev.json', '.mcp.json')，.mcp.json 降级为搬家前别名兜底；gen_plugins.py --selftest 由四格升级为五格，第五格在临时目录放两份候选并要求取到 .mcp.dev.json。第一版我把期望值写成 MCP_CANDIDATES[0]，与实现同公式＝恒真判据（顺序改回旧口径照样绿），反向对照当场抓到并改成写死字面名。实测：新顺序 rc=0；把顺序打回旧口径 rc=2 并双红（格5 候选表首位是 .mcp.json… + 格5b 两份候选都在时取到了 .mcp.json）。
+观测面同步补：gen_plugins --check 的 OK/FAIL 行与 cl7 的 PASS 行都打印『启动参数真源取到哪一份』，下次再分叉时第一眼看得见，而不是只看见『4 个文件漂移』。
+影响与债：受影响的是 HEAD 上已提交的投影字节（124a20a 那 4 份写的是本机残留名），修完须重投影 + 再 push 才转绿；v0.3.5 的注册表载荷不含点号件，已发布内容不受影响。
+建议口径（同族通用）：生成器与守卫读的每个输入文件必须落在跟踪面上，或由判据点名『本机多出来一份同名残留』——否则 cl7 这类逐字节守卫只是把开发机的磁盘状态固化进提交里。
+证据（本轮实测，非自述）：temp/cl7repro（git archive HEAD）实测 --check rc=1 点名 4 份投影；三份候选 sha256 前缀 7a609527 逐字节相同；git ls-files / check-ignore / status 三向对齐 => ?? .mcp.json；gen_plugins --selftest 新顺序 rc=0、旧顺序反证 rc=2（格5+格5b 双红）；修复后本机与 CI 等价面 temp/cl7ci2 两侧 cl7 均 PASS（启动参数真源 .mcp.dev.json）
+- reported_by: fist-mbt-post-push-cl7-audit-68696c86
+

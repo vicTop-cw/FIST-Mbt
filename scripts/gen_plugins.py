@@ -49,9 +49,11 @@ MOON_MOD = ROOT / "moon.mod"
 BUGS = ROOT / "memory" / "bugs.md"
 # BUG-86：启动参数真源的文件名在 254de24 被改成 `.mcp.dev.json`（开发态/使用态拆分），
 # 但三个消费者还钉着 `.mcp.json` ⇒ cl7 FATAL、gen_plugins 直接 die、仓库自测红。
-# 口径：**两个名字都接受，按优先级取实际存在的那一个，并把取到了谁打印出来**——
-# 单一真源的要求不变（同一时刻只认一份），变的只是文件名可解析。两个都不在才算缺陷。
-MCP_CANDIDATES = (".mcp.json", ".mcp.dev.json")
+# 口径：两个名字都接受，按优先级取实际存在的那一个，并把取到了谁打在结论行里。
+# BUG-131：优先级必须是**跟踪面优先**。旧顺序 (".mcp.json", ".mcp.dev.json") 让本机那份
+# 未跟踪、未被 ignore 的残留赢过仓库真源，而取到的文件名要写进投影正文 ⇒ 同一棵 HEAD
+# 在本机绿、在 CI 红（cl7 逐字节 diff 点名 4 份投影）。`.mcp.json` 从此只当搬家前的别名兜底。
+MCP_CANDIDATES = (".mcp.dev.json", ".mcp.json")
 
 
 def resolve_root_mcp(root: Path) -> Path:
@@ -444,7 +446,8 @@ MCP 启动参数以仓库根 `{MCP_NAME}` 为准（{vals['TOOL_COUNT']} 工具 /
 
 - 生成：`python scripts/gen_plugins.py`
 - 守卫（cl7）：`python scripts/check_plugin_sync.py`——重跑生成器到临时区再逐字节 diff（比较前先做
-  行尾归一，否则 autocrlf 克隆会把整棵投影判红，见 BUG-102；判据自身有 `gen_plugins.py --selftest` 四格），
+  行尾归一，否则 autocrlf 克隆会把整棵投影判红，见 BUG-102；判据自身有 `gen_plugins.py --selftest` 五格，
+  第五格钉「启动参数真源文件名不被本机未跟踪残留决定」（BUG-131：本机绿 / CI 红的源头）），
   手改插件、忘重生成、数字漂移都会红。
 - 当前投影：{vals['TOOL_COUNT']} 工具 / v{vals['VERSION']} / 缺陷账本 {vals['LEDGER_SUMMARY']}
 """,
@@ -495,7 +498,8 @@ def comparable(base: Path) -> dict:
 
 
 def selftest_projection() -> int:
-    """四格自证：漂移判据在"行尾归一"后仍能抓真问题（BUG-102 的防过度放行对照）。"""
+    """五格自证：漂移判据在"行尾归一"后仍能抓真问题（BUG-102 的防过度放行对照），
+    第五格钉真源文件名解析不受本机未跟踪残留影响（BUG-131）。"""
     fails = []
     a = b"tools: 129\nversion: 0.3.0\n"
     # 1) 逐字相同 → 干净
@@ -520,9 +524,37 @@ def selftest_projection() -> int:
     d, _ = drift_keys({"f": a}, {})
     if d != ["f"]:
         fails.append(f"格4b 插件目录手写残留未红：drift={d}")
+    # 5) BUG-131：真源文件名不得被本机残留决定。期望值在这里**写死字面名**，不跟着
+    #    MCP_CANDIDATES 的顺序取 —— 判据与实现同公式就是恒真判据（把顺序改回旧口径照样绿）。
+    tracked, alias = ".mcp.dev.json", ".mcp.json"
+    if MCP_CANDIDATES[0] != tracked:
+        fails.append(
+            f"格5 候选表首位是 {MCP_CANDIDATES[0]}，不是跟踪真源 {tracked}"
+            "——本机残留会改变投影正文，CI 必红"
+        )
+    tmp = Path(tempfile.mkdtemp(prefix="fist_mcpname_"))
+    try:
+        both = tmp / "both"
+        alias_only = tmp / "alias"
+        for d_ in (both, alias_only):
+            d_.mkdir(parents=True)
+        for name in (tracked, alias):
+            (both / name).write_text("{}", encoding="utf-8")
+        (alias_only / alias).write_text("{}", encoding="utf-8")
+        got = resolve_root_mcp(both).name
+        if got != tracked:
+            fails.append(f"格5b 两份候选都在时取到了 {got}，应为 {tracked}")
+        got = resolve_root_mcp(alias_only).name
+        if got != alias:
+            fails.append(f"格5c 只有别名候选时未兜底到 {alias}：取到 {got}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     for x in fails:
         print("SELFTEST FAIL " + x)
-    print("SELFTEST %s（四格：相同/仅行尾/内容漂移/缺失与多余）" % ("OK" if not fails else "FAIL"))
+    print(
+        "SELFTEST %s（五格：相同/仅行尾/内容漂移/缺失与多余/真源文件名不被本机残留决定）"
+        % ("OK" if not fails else "FAIL")
+    )
     return 0 if not fails else 2
 
 
@@ -548,9 +580,17 @@ def main() -> int:
                     else:
                         why = "内容不一致"
                     print("  - " + k + "：" + why)
+                # BUG-131：投影正文引用哪份启动参数真源，是"本机绿 / CI 红"的第一嫌疑
+                print(
+                    "  真源解析：mcpServers=%s（候选 %s）"
+                    % (MCP_NAME, ", ".join(MCP_CANDIDATES))
+                )
                 return 1
             note = f"（另有 {len(eol_only)} 份仅行尾不同，按 BUG-102 归一后视为一致）" if eol_only else ""
-            print(f"OK 插件态与真源一致（{vals['TOOL_COUNT']} 工具 / v{vals['VERSION']}）{note}")
+            print(
+                f"OK 插件态与真源一致（{vals['TOOL_COUNT']} 工具 / v{vals['VERSION']}）{note}"
+                f"｜启动参数真源取到 {MCP_NAME}"
+            )
             return 0
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

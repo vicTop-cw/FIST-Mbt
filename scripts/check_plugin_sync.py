@@ -11,7 +11,8 @@
   J2 四宿主齐全：atomcode / codearts / deepseek-harness / claude 各自的入口文件存在且非空；
   J3 无残留占位符：plugins/ 下任何文件不得含 `{{`（说明生成器没跑完或真源改了没重生成）；
   J4 版本一致：claude 两个 manifest 的 version == moon.mod 的 version；
-  J5 启动参数单一真源：plugins/claude/.mcp.json 与仓库根 .mcp.json 逐字相等；
+  J5 启动参数单一真源：plugins/claude/.mcp.json 与仓库根 .mcp.dev.json 逐字相等
+     （BUG-131：真源按「跟踪面优先」解析，本机那份未跟踪的 .mcp.json 残留不得决定基线）；
   J6 计数一致：每个生成 SKILL.md 的 stamp 里 tools= 必须等于 server.mbt 实测工具数；
   J7 反幻影哨兵：实测工具数 <=100 直接 FATAL 退出 2——解析失败绝不报 PASS。
 
@@ -36,9 +37,11 @@ ROOT = Path(__file__).resolve().parent.parent
 PLUGINS = ROOT / "plugins"
 SERVER = ROOT / "src" / "server" / "server.mbt"
 MOON_MOD = ROOT / "moon.mod"
-# BUG-86：同 gen_plugins —— 真源文件名可解析（.mcp.json 优先，回落 .mcp.dev.json），
-# 且必须把"取到了哪一份"打出来：否则 J5 的"逐字相等"是在跟一个不存在的文件比。
-MCP_CANDIDATES = (".mcp.json", ".mcp.dev.json")
+# BUG-86：同 gen_plugins —— 真源文件名可解析，且必须把"取到了哪一份"打出来：
+# 否则 J5 的"逐字相等"是在跟一个不存在的文件比。
+# BUG-131：顺序与 gen_plugins 同步改为**跟踪面优先**（原来 .mcp.json 在前，本机那份未跟踪
+# 残留会赢过仓库真源 ⇒ J5 拿残留当基线、投影正文跟着换文件名、CI 红而本机绿）。
+MCP_CANDIDATES = (".mcp.dev.json", ".mcp.json")
 
 
 def resolve_root_mcp(root: Path) -> Path:
@@ -197,7 +200,7 @@ def main() -> int:
         return 1
     print(
         f"PASS 插件态一致：4 宿主 / {len(generated_files())} "
-        f"个生成文件 / {n} 工具 / v{version}"
+        f"个生成文件 / {n} 工具 / v{version} / 启动参数真源 {ROOT_MCP.name}"
     )
     return 0
 
