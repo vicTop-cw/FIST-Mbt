@@ -77,6 +77,9 @@ AIGC:
   双侧实测（本机工作树 + 只含跟踪件的 `temp/cl7ci2` 等价树）：`gen_plugins --check` / `--selftest` / `check_plugin_sync`（含 `--selftest`）全 rc=0，`check_doc_surface`（含 `--selftest`）/ `check_scripts_index` / `check_tools_sync` / `check_publish_payload` / `check_ps_encoding` / `check_demo_isolation` 一并复跑绿。入账 **BUG-131（OPEN）**，翻 FIXED 的判据写在条目里＝新 push 后 ci.yml 那一格回 success（照 BUG-111 的先例：修复已落盘而 CI 面未验收，就不算修完）。
   台账口径随之（`gen_plugins.py` 计数器同一次投影回执）：**BUG-1~131 共 130 条入账 = 115 已修 / 9 重复并入 / 4 误报 / 2 待修（BUG-130 + BUG-131）**，四宿主投影已按新账重生成。
 
+- **BUG-131 当日转正（2026-09-30T01:00:35Z）**：条目里写死的翻转判据已满足——权威 CI run 36652585906（workflow 『CI』@ `00e64bd`）的 `check + test (js, ubuntu)` job **success**，其中**第 13 步** `Plugin-form guard cl7 (一源四态：四宿主插件目录==真源投影)` = **success**；同一格在修复前那发 run 36650601254（@ `ec4c347`）是该 job 的唯一红格 ⇒ 红→绿读在**同一步**，不是摘门也不是换判据。`git archive HEAD` 等价树（`temp/cl7ci3`：无本机 `.mcp.json`、autocrlf 的 CRLF 检出）三条结论行都点名『启动参数真源 `.mcp.dev.json`』，本机同三步同 rc=0 ⇒ 两侧同解。
+  同一 run 的 native 轨仍红在 `Test (native)`，那条属 **BUG-130（OPEN）**，不由本格顺带关闭。台账回到 **1 条待修**：`gen_plugins.py` 计数器 = **BUG-1~131 共 130 条入账 = 116 已修 / 9 重复并入 / 4 误报 / 1 待修（BUG-130）**。
+
 ## v0.3.4 (unreleased) - 终审前收口：看护缺陷修到跨进程调用面、探索模式上线、demo 族解封（盖章 2026-09-29T06:18:10Z）
 
 - **BUG-119 修复（开工时唯一 high）**：`heal` 从"读进程内内存心跳表"改为读**持久化心跳表**（唯一真相），
