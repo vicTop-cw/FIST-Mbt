@@ -2401,3 +2401,21 @@ M1 造未跟踪未忽略件必红 / M2 造被现成 `*.log` 规则挡住的件�
 自证踩到的两个坑也写进了判据正文：① 守卫源码里不许出现完整 token 形状（我一开始把假串直接写进字面量，
 P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红」在开发期必然失败（新守卫自己未跟踪）⇒ 换成更强的 G1'（红面与未跟踪面双向对齐、不许幻影红），而不是删门或放宽阈值。
 
+## BUG-130 [2026-09-30T00:07:57Z] [medium] OPEN
+- summary: push 后拿权威 CI 当验收，抓到一条自 09-28 起持续红、且匿名取不到定因、账本无人认领的门：ci.yml 的 native 测试轨（步骤名 Test (native, j=1)）
+- detail: 发现面：owner 授权 push，于是按既有口径把『推送后的 CI 运行』当关闭证据（不是本机自述）。
+实测（匿名 Actions API，只 GET、不带凭据、不读 .env）：run 36648283575
+  （head_branch=master，created_at=2026-09-30T00:02:16Z）三个 job 结论 = native:failure / js:success / nightly:skipped；native 那 job 内红的那一格步骤名 = Test (native, j=1)，
+  其余 6 步（含 Check (native)）全 success ⇒ 编译过、测试不过。
+同型红不是本轮引入：run 36463333299（2026-09-28T18:10:35Z）与 run 36461416256（17:54:09Z）
+  同样是 Test (native, j=1) failure；那两次还各多一格 js 的 Format check 红，
+  今天 Format check 已转绿 ⇒ 本轮 CI 面唯一的好转是 BUG-118 那道格式门。
+为什么这条要入账而不是当『已知边界』划走：AGENTS.md 确实把 native 声明为非权威门槛
+  （Windows 并行偶发 0xc0000374、建议 -j 1、权威稳定门槛 = JS 后端），但 ci.yml 里这一步**没有** continue-on-error，
+  『设计上允许红』的门就挂成了『会红且没人解释』的门——这正是 BUG-114 那句『红着没人读等于没锁』的 CI 版。
+定因取不到也是事实，且要说清是哪一格取不到：GET /repos/vicTop-cw/FIST-Mbt/actions/jobs/109676257901/logs
+  匿名回 403（message = Must have admin rights to Repository）⇒ 调用面只拿得到步骤名与结论，拿不到断言/崩溃细节。
+本机复现不在本轮改动面上：native 测试在 Windows 侧要 sqlite3.h/sqlite3.lib + 同会话 MSVC 环境（scripts/native-env.ps1），
+  Linux 侧要 WSL；而 CI 那台的失败形态与这两条都不必然同因，靠本机跑绿去宣布关闭是假的。
+- reported_by: fist-mbt-post-push-ci-audit
+

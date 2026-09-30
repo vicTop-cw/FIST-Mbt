@@ -52,9 +52,23 @@ AIGC:
   当年 Python 串把 `\b` 吃成退格 ⇒ 台账里那条 grep 照抄跑不通），按字节断言还原为字面反斜杠（diff 1 行 / +2 字节 / 行数不变），
   写日志时同一机制又踩一次、被同一把扫帚扫出来。**口径与结论一字未改**，改的是显示层破损。
   顺带把上一笔"守卫族 14 项"改成可从表体反解的 **15 行 / 17 次调用**（范围数字也是主张，J10 同型——这次打在我自己上一笔上）。
-- **有意留下的两格（不是已修）**：①**没有 push** ⇒ 公网安装线（GitHub raw/Release 资产 `fist-mbt-js-v0.3.5.zip`）还不存在，
-  注册表这条线已是最新码；②`0.3.4` 同号两树的历史事实**撤不回**（版本不可覆盖），是否给注册表 0.3.4 打 `moon deprecate`
-  留 owner 裁决——这是对外署名动作，不自行执行。
+- **push 轮（owner 授权，2026-09-30T00:0xZ）**：`master` 与 `v0.3.5` 推到 **GitHub + GitCode** 两个远端（都是 fast-forward，
+  `ahead` 归 0；本地 `mooncakes-0.3.5`/`fist-final-review-20260929` 按惯例不外推）。`release.yml` run 36648312524
+  = meta/build-js/release **success**，Release `v0.3.5` published 2026-09-30T00:03:17Z、资产 `fist-mbt-js-v0.3.5.zip` 376617B
+  （与 v0.3.4 那发的资产形状与数量一致；两个 native job 红但都带 `continue-on-error`，native zip 历来没上过）
+  ⇒ **公网安装线与注册表现在同号同码**，§7 那条"下一轮该 push"的建议就此闭合。
+  权威 CI run 36648283575 两条新读数：js 轨 **success**（其中 `Format check` 是 09-28 两次红之后首次转绿 = BUG-118 的门生效了）；
+  native 轨 **failure**，唯一红格 `Test (native, j=1)`（`Check (native)` 绿 ⇒ 编得过、测试不过），且同格 09-28 起已连红三次
+  ⇒ **不是本轮引入**，但它与 AGENTS 声明的"native 非权威门槛"互相矛盾（这一步没挂 `continue-on-error`）——
+  入账 **BUG-130（OPEN，等 owner 选门怎么改）**而不是划进已知边界；定因取不到也写进账：匿名取 job 日志回
+  `403 Must have admin rights to Repository`，本机复现 native 要 sqlite-dev+MSVC 或 WSL，不拿"本机跑绿"宣布关闭。
+  **台账现 1 条待修**：129 条入账 = 115 已修 / 9 重复并入 / 4 误报 / **1 待修（BUG-130）**（口径 = `gen_plugins.py` 计数器）。
+- **两条 owner 裁决落成文档面**：① **不给任何版本打 deprecate**——`moon deprecate --dry-run` 实测作用域是**整模块 10 版全标（含最新的 0.3.5）**、
+  `--undo` 只整模块清，换不到"单号消歧"只会把最新号一起消音 ⇒ 这条限制写进 `USAGE.md` §10 第 4 步，0.3.4 的树身份仍靠 `v0.3.4`/`mooncakes-0.3.4` 两枚标签对；
+  ② **不发 0.3.6**——push 后新增的两笔是纯文档提交（`.mbt`/`moon.mod` 0 差异），0.3.5 载荷的代码面与 master 逐字节相同，
+  代价（包内 CHANGELOG/plugins 文本落后 GitHub）作为已知边界记进报告 §6 第 2b 行，不烧不可回收的版本号。
+
+- **原先挂着的两格遗留，本日都由 owner 裁决关闭**：①“没有 push”→ 已 push（GitHub + GitCode，Release 资产到位，见上条）；②“0.3.4 同号两树撤不回”→ 不给任何版本打 deprecate（工具作用域是整模块全标，见上条与 `USAGE.md` §10 第 4 步），旧号的树身份仍由 `v0.3.4`(af54d5e) / `mooncakes-0.3.4`(a0dfef3) 两枚标签一行命令对出来。
 
 ## v0.3.4 (unreleased) - 终审前收口：看护缺陷修到跨进程调用面、探索模式上线、demo 族解封（盖章 2026-09-29T06:18:10Z）
 
