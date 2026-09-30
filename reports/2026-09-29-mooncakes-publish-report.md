@@ -233,7 +233,9 @@ Release v0.3.5 published=2026-09-30T00:03:17Z  资产 = fist-mbt-js-v0.3.5.zip  
 | `check + test (native, ubuntu)` | **failure** | 红的只有一格 `Test (native, j=1)`；`Check (native)` success ⇒ **编得过、测试不过**。同一格在 09-28 两次 run 里同样红 ⇒ 不是本轮引入 |
 | `nightly self-check` | skipped | 定时轨，push 不触发 |
 
-这一格已**入账为 BUG-130（OPEN）**而不是划进"已知边界"：AGENTS.md 确实声明 native 非权威门槛，但 ci.yml 里这一步**没有** `continue-on-error` ⇒ 一条"设计上允许红"的门挂成了"会红且没人解释"的门（BUG-114 那句「红着没人读等于没锁」的 CI 版）。**定因我取不到，这一点也写进账**：匿名取 job 日志回 `403 Must have admin rights to Repository`，我在调用面只拿得到步骤名与结论；本机复现 native 要 sqlite-dev + MSVC 同会话（或 WSL），且与 CI 那台的失败形态不必然同因——所以不拿"本机跑绿"宣布关闭。出路三条（削权成观测臂 / 由有日志权限的人定因后修真因 / native 轨只留 workflow_dispatch）留给 owner，我不自行改门。
+这一格已**入账为 BUG-130（OPEN）**而不是划进"已知边界"：AGENTS.md 确实声明 native 非权威门槛，但 ci.yml 里这一步**没有** `continue-on-error` ⇒ 一条"设计上允许红"的门挂成了"会红且没人解释"的门（BUG-114 那句「红着没人读等于没锁」的 CI 版）。**【同轮追记，%s】这一段的两句要限定**：① 『只拿得到步骤名』写窄了——失败**退出码**匿名可取，路径是 `GET /repos/<owner>/<repo>/check-runs/<job_id>/annotations`，两个 native job 的 failure 级原文逐字为 `Process completed with exit code 255.`（`temp/bug130_annotations.json`）；② 『取不到』只对 **stderr 正文**成立（`/actions/jobs/<id>/logs` 确实 403）。另外把『CI』在匿名窗口内可见的 23 次运行逐 job 读过：最早三发（run#176 @ 09-28T00:59:43Z）三个 job 全红，native 那一格在窗口内**从未绿过** ⇒ 原句『自 09-28 起持续红』的下界要推到匿名可见的最早一发。
+
+**定因我取不到，这一点也写进账**：匿名取 job 日志回 `403 Must have admin rights to Repository`，我在调用面只拿得到步骤名与结论；本机复现 native 要 sqlite-dev + MSVC 同会话（或 WSL），且与 CI 那台的失败形态不必然同因——所以不拿"本机跑绿"宣布关闭。出路三条（削权成观测臂 / 由有日志权限的人定因后修真因 / native 轨只留 workflow_dispatch）留给 owner，我不自行改门。
 
 **两条 owner 裁决（同日）**：① **不给任何版本打 deprecate**——`moon deprecate --dry-run` 实测作用域是**整模块 10 个版本全标（含 0.3.5）**，`--undo` 也只能整模块一起清，用它换"单号消歧"会把最新号一起消音；这条限制已写进 `USAGE.md` §10 第 4 步。② **不发 0.3.6**——push 后多出的两笔提交是纯文档（`.mbt`/`moon.mod` 0 个差异），0.3.5 载荷的**代码面**与 master 逐字节相同；代价说清了：包内 CHANGELOG/plugins 文本落后于 GitHub 上的同名文档，这一格作为已知边界记录，不烧不可回收的版本号。
 
@@ -324,6 +326,8 @@ run 36652585908  workflow 『FIST CI — Build + Test』@ 00e64bd
 | 2b | **注册表载荷的文档面落后 GitHub**（owner 选"维持 0.3.5"，不烧 0.3.6）：0.3.5 包内 CHANGELOG 最新段仍是 `v0.3.4`、plugins 文本同落后，而**代码面**与 master 逐字节相同（`.mbt`/`moon.mod` 0 差异） | 已知边界，有意留 | 下一个真改动自然带走 |
 | 2c | **BUG-130（新入账，OPEN）**：权威 CI 的 `Test (native, j=1)` 自 09-28 起连续三次红（`Check (native)` 绿 ⇒ 编得过测不过），且该步**没有** `continue-on-error`，与 AGENTS 声明的"native 非权威门槛"互相矛盾；匿名取不到定因（job 日志 403）。三条出路留在账里等 owner：降级成观测臂 / 有权限者取日志定因 / native 轨只留 dispatch。台账现 **129 条入账 = 115 已修 / 9 重复并入 / 4 误报 / 1 待修**（**追记：这一格的台账数已被同轮新入账的 BUG-131 顶掉，现口径见 2d 行；原文保留不覆写**） | 等裁决 | owner（门怎么改）|
 | 2d | ~~**cl7 在 CI 上红（BUG-131）**~~ **本日自抓自修并转正**：插件投影引用的启动参数真源文件名由本机未跟踪残留 `.mcp.json` 决定 ⇒ 本机绿 / CI 红；改跟踪面优先 + 第五格常驻判据（反向对照 rc=2 可红）。CI 第 13 步 `Plugin-form guard cl7` 实测 success（§3.8）。现台账 = **BUG-1~131 共 130 条入账 = 116 已修 / 9 重复并入 / 4 误报 / 1 待修（BUG-130）** | 已闭合（判据在 CI 面读回） | — |
+| 2e | **仓库根 `.mcp.json` 已按 owner 裁决走 ignore**：`.gitignore` 加**根锚定**的 `/.mcp.json`（裸形会盖住跟踪件 `plugins/claude/.mcp.json`）。实测：`git check-ignore -v .mcp.json` 命中新行、对 claude 那份无命中、`git status` 的 `??` 消失；文件本体仍在盘上供本机连接器读，投影无影响（BUG-131 后解析本就选 `.mcp.dev.json`） | 已闭合 | — |
+| 2f | **BUG-132（新入账，OPEN）**：`fist-ci.yml:85` 的 `nightly self-check` 条件钉 `refs/heads/main`，而本仓默认分支是 `master`、全仓无 `schedule:` ⇒ 恒假死门；其最后一步也只是三条 `echo` 的 TODO 占位。与 BUG-130 同一裁决面（native 轨若降级，这条是唯一还剩的 native 巡检位）。出路三条在账里：改 ref / 补 schedule 并写实体命令 / 删作业 | 等裁决 | owner（两条一起选） |
 | 3 | native 端本轮未复跑（沿用「权威稳定门槛 = JS 后端」的既有口径，不据旧数宣称双端同版全绿） | 如实留白 | 无需决定 |
 | 4 | `store_isolation_probe` 默认优先命中**安装态产物**（本机那一份仍是上一版安装产物）；这是设计（探的是用户跑的产物），但意味着不带 `FIST_PROBE_JS` 时它不验新码。本轮两个身份都跑了 | 已记录 | 无需决定 |
 | 5 | 发布版本号的**下一次**前进会再撞同一个缝：`v<版本号>` 标签与注册表载荷必须同树，目前靠我手工对表。已把"载荷 == 被 tag 的树"写进 USAGE §10 第 3 步，但没有常驻判据（要联网解包，CI 不该跑网络） | 已知缺口 | 下轮建议 |
