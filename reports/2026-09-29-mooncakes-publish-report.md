@@ -23,6 +23,11 @@
 一句话：**发上去了，且发的是当前码；代价如实付在了版本号前进一格上。**
 
 ---
+> **追记（cl7 回归轮，2026-09-30T01:01:18Z）**：第 1 行那句「台账 0 条待修」是**发布当时**的读数，保留不覆写。
+> 当日其后新入账两条：**BUG-130**（CI 的 native 门自 09-28 起持续红，OPEN 等 owner 选门）与
+> **BUG-131**（**我这次 push 把 `Plugin-form guard cl7` 推红了**，本机却绿——由权威 CI 抓到、当轮自修并转正，见 §3.8）。
+> 现口径 = **BUG-1~131 共 130 条入账 = 116 已修 / 9 重复并入 / 4 误报 / 1 待修（BUG-130）**。
+
 
 ## 2. 这一轮挣到的是什么（不是复述上一轮）
 
@@ -234,6 +239,54 @@ Release v0.3.5 published=2026-09-30T00:03:17Z  资产 = fist-mbt-js-v0.3.5.zip  
 
 ---
 
+### 3.8 cl7 回归轮（自抓自修，含 CI 读数）：`Plugin-form guard cl7` 红→绿是同一步
+
+**发现面不是本机，是 CI**：push 之后照口径拿权威 CI 当验收。§3.7 记的那发 js 轨 success 是 run 36648283575（@ `124a20a`）；
+今天再读后续那发 **run 36650601254（@ `ec4c347`，我 push 上去的最后一笔文档提交）** 时，`check + test (js, ubuntu)` 已经变 failure，
+唯一红格步骤名 = `Plugin-form guard cl7 (一源四态：四宿主插件目录==真源投影)`。
+⇒ 这一格红是**我推上去的**（把本机残留的名字固化进投影那一笔就是 `124a20a`），不是既有边界；而本机复跑 cl7 一直 PASS ⇒ 按旧例先怀疑尺子的输入面。
+
+**CI 等价面复现**（`git archive HEAD` 解到 `temp/cl7repro`，那棵树里没有本机残留）：
+
+| 命令 | 本机工作树（修前） | CI 等价面（修前） | 两侧（修后） |
+|---|---|---|---|
+| `gen_plugins.py --check` | rc=0 | **rc=1**：4 份投影各差一行 | 两侧 rc=0 |
+| `gen_plugins.py --selftest` | rc=0（旧四格） | rc=0（旧四格） | 两侧 rc=0（新五格） |
+| `check_plugin_sync.py`（cl7） | rc=0 | rc=1（转抄 J1 漂移） | 两侧 rc=0 |
+
+差的那一行是投影正文那句『MCP server 真源在仓库根 **X**（129 工具 / v0.3.5）』里的文件名：提交面 `X=.mcp.json`、
+CI 面 `X=.mcp.dev.json`。根因机器可检：`gen_plugins.py` 与 `check_plugin_sync.py` 各写
+`MCP_CANDIDATES = ('.mcp.json', '.mcp.dev.json')` 并取第一个存在的，而 `MCP_NAME = ROOT_MCP.name` 要写进投影正文 ⇒
+取到哪一份由**本机磁盘上有什么**决定。仓库根那份 `.mcp.json` 是**未跟踪也未被 ignore** 的本机 MCP 连接器配置
+（`git ls-files` 空 + `git check-ignore` 空 + `git status` 回 `??`，内容与跟踪真源逐字节相同，三份 sha256 前缀 `7a609527`）。
+
+**修法与判据**：两处顺序改**跟踪面优先**——`MCP_CANDIDATES = ('.mcp.dev.json', '.mcp.json')`，
+`.mcp.json` 降级为搬家前的别名兜底；`--selftest` 四格→五格（第五格在临时目录放两份候选、要求解析到 `.mcp.dev.json`，**期望值写死字面名**）；
+`--check` 的 OK/FAIL 行与 cl7 的 PASS 行都打印取到了哪一份真源。
+恒真判据那一手又犯了一次：第五格第一版写成 `if got != MCP_CANDIDATES[0]`，与实现同公式 ⇒
+顺序打回旧口径照样绿；**反向对照**（内存里换回旧顺序重跑自检）才是要那把尺子，实测旧顺序 rc=2 双红。
+
+**为什么现有守卫看不见**：`check_publish_payload`（BUG-127/129）的 P1 只管非点号件（点号条目 moon 本来就不打包）⇒
+『点号 + 未跟踪 + 未忽略 + 同时是投影输入』这一格没人认领。对照面：`check_entry_paths` 会点名
+『仓库根另有 N 份未入库 .py』——那姿势只覆盖 .py。这一型不泄漏、只让生成产物随机器变，**比泄漏难发现，因为开发机上永远是对的**。
+
+**收口读数（匿名只读 API）**：
+
+```
+run 36652585906  workflow 『CI』@ 00e64bd
+  job check + test (js, ubuntu)   conclusion=success
+    step #13 Plugin-form guard cl7 (一源四态：四宿主插件目录==真源投影) = success   ← 本次的验收格
+  job check + test (js, windows)  conclusion=success
+  job check + test (native, ubuntu) conclusion=failure  · 红格 Test (native)      ← BUG-130，另案
+run 36652585908  workflow 『FIST CI — Build + Test』@ 00e64bd
+  js/ubuntu success · native/ubuntu failure(Test (native, j=1)) · nightly skipped
+```
+
+⇒ 入账 **BUG-131** 并已 `bug_fix` 盖章 **FIXED**（`### FIXED(2026-09-30T01:00:35Z / BUG-131)`，抬头 `heading_changed: 1`）。
+本机那份 `.mcp.json` **原样保留未动**——它是本机连接器在读的配置，删不删、要不要跟踪仍是 owner 的开放问题；
+修完之后投影不再依赖它，所以留着也不会再让 CI 分叉。
+
+
 ## 4. 资源消耗
 
 - 网络动作：`moon publish --dry-run` ×1、`moon publish` ×2（1 失败 1 成功）、`moon view --versions` ×3（含重试前置确认）、
@@ -263,7 +316,8 @@ Release v0.3.5 published=2026-09-30T00:03:17Z  资产 = fist-mbt-js-v0.3.5.zip  
 | 1 | ~~**没有 push**~~ **本日已闭合**：owner 授权后 `master` 与 `v0.3.5` 都推到了 GitHub 与 GitCode（fast-forward，ahead 归 0），Release 出到 `fist-mbt-js-v0.3.5.zip`（§3.7），且同一判据第三次跑到**两档全 PASS**、装到 `FIST-Mbt v0.3.5 / doctor=0`（§3.5c）⇒ 两线同号同码，这格有判据绿背书；`e2e_irm_line` 的 push 后读数在 §3.5 末尾 | 已闭合 | — |
 | 2 | ~~**0.3.4 是否 deprecate**~~ **本日裁决：不动**。理由不是我原先写的那条，而是量出来的新事实：`moon deprecate` 作用域是**整模块全部 10 版（含 0.3.5）**，`--undo` 也只整模块清 ⇒ 换不到"单号消歧"，只会把最新号一起消音。限制写进 USAGE §10 第 4 步；0.3.4 那对 `v0.3.4`(af54d5e) / `mooncakes-0.3.4`(a0dfef3) 的树身份仍可一行命令对出来 | 已裁决并落文档 | — |
 | 2b | **注册表载荷的文档面落后 GitHub**（owner 选"维持 0.3.5"，不烧 0.3.6）：0.3.5 包内 CHANGELOG 最新段仍是 `v0.3.4`、plugins 文本同落后，而**代码面**与 master 逐字节相同（`.mbt`/`moon.mod` 0 差异） | 已知边界，有意留 | 下一个真改动自然带走 |
-| 2c | **BUG-130（新入账，OPEN）**：权威 CI 的 `Test (native, j=1)` 自 09-28 起连续三次红（`Check (native)` 绿 ⇒ 编得过测不过），且该步**没有** `continue-on-error`，与 AGENTS 声明的"native 非权威门槛"互相矛盾；匿名取不到定因（job 日志 403）。三条出路留在账里等 owner：降级成观测臂 / 有权限者取日志定因 / native 轨只留 dispatch。台账现 **129 条入账 = 115 已修 / 9 重复并入 / 4 误报 / 1 待修** | 等裁决 | owner（门怎么改）|
+| 2c | **BUG-130（新入账，OPEN）**：权威 CI 的 `Test (native, j=1)` 自 09-28 起连续三次红（`Check (native)` 绿 ⇒ 编得过测不过），且该步**没有** `continue-on-error`，与 AGENTS 声明的"native 非权威门槛"互相矛盾；匿名取不到定因（job 日志 403）。三条出路留在账里等 owner：降级成观测臂 / 有权限者取日志定因 / native 轨只留 dispatch。台账现 **129 条入账 = 115 已修 / 9 重复并入 / 4 误报 / 1 待修**（**追记：这一格的台账数已被同轮新入账的 BUG-131 顶掉，现口径见 2d 行；原文保留不覆写**） | 等裁决 | owner（门怎么改）|
+| 2d | ~~**cl7 在 CI 上红（BUG-131）**~~ **本日自抓自修并转正**：插件投影引用的启动参数真源文件名由本机未跟踪残留 `.mcp.json` 决定 ⇒ 本机绿 / CI 红；改跟踪面优先 + 第五格常驻判据（反向对照 rc=2 可红）。CI 第 13 步 `Plugin-form guard cl7` 实测 success（§3.8）。现台账 = **BUG-1~131 共 130 条入账 = 116 已修 / 9 重复并入 / 4 误报 / 1 待修（BUG-130）** | 已闭合（判据在 CI 面读回） | — |
 | 3 | native 端本轮未复跑（沿用「权威稳定门槛 = JS 后端」的既有口径，不据旧数宣称双端同版全绿） | 如实留白 | 无需决定 |
 | 4 | `store_isolation_probe` 默认优先命中**安装态产物**（本机那一份仍是上一版安装产物）；这是设计（探的是用户跑的产物），但意味着不带 `FIST_PROBE_JS` 时它不验新码。本轮两个身份都跑了 | 已记录 | 无需决定 |
 | 5 | 发布版本号的**下一次**前进会再撞同一个缝：`v<版本号>` 标签与注册表载荷必须同树，目前靠我手工对表。已把"载荷 == 被 tag 的树"写进 USAGE §10 第 3 步，但没有常驻判据（要联网解包，CI 不该跑网络） | 已知缺口 | 下轮建议 |
@@ -318,3 +372,13 @@ Release v0.3.5 published=2026-09-30T00:03:17Z  资产 = fist-mbt-js-v0.3.5.zip  
   BUG-130 的 RPC 回执：`temp/bug130_receipt.json`（`report_bug` → `BUG-130 / OPEN`，隔离库 `temp/bug130.db`）。
 - 账本：`memory/bugs.md` 的 `### FIXED(2026-09-29T10:44:53Z / BUG-128)`（抬头状态位与 `bug_fix` 回执 `heading_changed: 1`）；
   日志：`memory/2026-09-29.md` 发布轮段。
+
+**cl7 回归轮追加（2026-09-30T01:00:35Z）**：
+- CI/远端读数（匿名只读，不带凭据）：`temp/cl7_ci_poll.log`（run 36652585906 / 36652585908 逐 job 与 **CL7 CELL 第 13 步结论**，
+  `started=`/`ended=` 双戳）、`temp/cl7repro/`（修前 CI 等价面，`--check` rc=1 点名 4 份投影）、
+  `temp/cl7ci3/`（修后 CI 等价面 = `git archive HEAD`，三步 rc=0）。
+- 修复与判据：commit `00e64bd`（19 files, +116/−38，已 fast-forward 推 origin + gitcode）；
+  `scripts/gen_plugins.py`（`MCP_CANDIDATES` 顺序 + 第五格）、`scripts/check_plugin_sync.py`（同顺序 + PASS 行打印真源名）。
+- 账本：`memory/bugs.md` 的 `## BUG-131 ... FIXED` 与 `### FIXED(2026-09-30T01:00:35Z / BUG-131)`；
+  RPC 回执 `temp/bug131-report.log`（`report_bug` → `BUG-131 / OPEN`）与 `temp/bug131_close.log`
+  （`bug_fix` → `heading_changed: 1 / note_written: true`），两者都跑在隔离库 `temp/bug131.db` / `temp/bug131-close.db`。

@@ -2419,7 +2419,7 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
   Linux 侧要 WSL；而 CI 那台的失败形态与这两条都不必然同因，靠本机跑绿去宣布关闭是假的。
 - reported_by: fist-mbt-post-push-ci-audit
 
-## BUG-131 [2026-09-30T00:50:05Z] [medium] OPEN
+## BUG-131 [2026-09-30T00:50:05Z] [medium] FIXED
 - summary: cl7 插件态投影引用的启动参数真源文件名由『本机未跟踪残留』决定 ⇒ 同一棵 HEAD 本机绿、CI 红（我 2026-09-30 push 124a20a 之后 ci.yml 的 Plugin-form guard cl7 那一步就是红的）
 - detail: 发现面：owner 授权 push 之后按既有口径拿权威 CI 当验收。09-28 的 ci.yml js/ubuntu job 是 success []，我这次 push 后同一 job 的失败步骤名 = 『Plugin-form guard cl7 —— 一源四态的第四态漂移或生成投影里有手写残留』。本机复跑 cl7 却 PASS ⇒ 『本机绿 / CI 红』这一型先怀疑尺子的输入面，不怀疑被测。
 取证（CI 等价面 = git archive HEAD 解到 temp/cl7repro，那棵树里没有本机残留）：python scripts/gen_plugins.py --check 回 FAIL 插件态漂移（4 个文件与真源投影不一致），点名 atomcode\INSTALL.md / claude\INSTALL.md / codearts\INSTALL.md / deepseek-harness\instructions.append.md；统一 diff 每份只差一行——投影正文那句『MCP server 真源在仓库根 X（129 工具 / v0.3.5）』里的文件名：提交面是 .mcp.json，CI 面生成的是 .mcp.dev.json。
@@ -2433,3 +2433,21 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
 证据（本轮实测，非自述）：temp/cl7repro（git archive HEAD）实测 --check rc=1 点名 4 份投影；三份候选 sha256 前缀 7a609527 逐字节相同；git ls-files / check-ignore / status 三向对齐 => ?? .mcp.json；gen_plugins --selftest 新顺序 rc=0、旧顺序反证 rc=2（格5+格5b 双红）；修复后本机与 CI 等价面 temp/cl7ci2 两侧 cl7 均 PASS（启动参数真源 .mcp.dev.json）
 - reported_by: fist-mbt-post-push-cl7-audit-68696c86
 
+
+
+### FIXED(2026-09-30T00:58:12Z / BUG-131)
+- evidence: 条目里写死的翻转判据已满足，且读的是同一个格、同一把尺：
+① 权威 CI（匿名只读 API）run 36652585906 = workflow 『CI』@ 00e64bd：job `check + test (js, ubuntu)`
+   conclusion=**success**，其中第 13 步 `Plugin-form guard cl7 (一源四态：四宿主插件目录==真源投影)`
+   conclusion=**success**；同一格在修复前那发 run 36650601254（@ ec4c347）是该 job 的唯一红格
+   （red step 名单点名 Plugin-form guard cl7）⇒ 红→绿读在同一步，不是换判据或摘门。
+② 修复身份：commit 00e64bd（19 files, +116/−38）fast-forward 推 origin(GitHub) 与 gitcode 两远端
+   （ec4c347..00e64bd，无 force、无删标签）。
+③ CI 等价面复验：`git archive HEAD` 解到 temp/cl7ci3（那棵树里没有本机 .mcp.json，且是 autocrlf 的 CRLF 检出）
+   跑 gen_plugins.py --check rc=0（正文另报『55 份仅行尾不同』按 BUG-102 归一后视为一致）、
+   --selftest rc=0（五格全过）、check_plugin_sync.py rc=0；三条结论行都点名『启动参数真源 .mcp.dev.json』。
+   本机工作树（同时存在两份候选）同三步同样 rc=0 ⇒ 两侧同解，这一格从此与本机磁盘无关。
+④ 常驻判据：--selftest 新增第五格在临时目录放两份候选并要求解析到 .mcp.dev.json，期望值写死字面名。
+   反向对照实测：内存里把候选顺序打回旧口径 ⇒ `格5 候选表首位是 .mcp.json…` + `格5b 两份候选都在时取到了 .mcp.json`
+   双红 rc=2；新顺序 rc=0。（第一版期望值写成 MCP_CANDIDATES[0]，与实现同公式＝恒真判据，被这条对照当场抓出。）
+⑤ 没在这条出口里的两格要说清：仓库根那份未跟踪的 .mcp.json 是**本机 MCP 连接器在读的配置**，   按原样保留未动（删/跟踪都属 owner 的开放决定），投影已不依赖它；   同轮 CI 面上仍红的 native 轨 `Test (native)` 属 BUG-130（OPEN，等 owner 选门怎么改），不由本条顺带关闭。
