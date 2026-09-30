@@ -539,6 +539,13 @@ moon publish
 #    BUG-128 的根因正是这两件事被当成一件（tag 比载荷旧 11 个提交，而 `fist version` 只回版本号、分不出来）。
 #    另配一发消费侧实证：空壳工程 `moon add vicTop-cw/fist-mbt@<新版本>` 后 `moon check --target js` 要 rc=0，
 #    这才叫"别人拉这一版编得动"，注册表列出版本号本身证不了这一点。
+# 4) 想让旧号在市场上"消音"？`moon deprecate` 做不到这个粒度——它的作用域是**整模块的所有现有版本**
+#    （help 原文：Specify the full module name without a version selector），`--undo` 也只能整模块一起清。
+#    实测形状：`moon deprecate <模块> --dry-run --reason ...` 会对**包括最新那一版在内**的每个版本打印
+#    "Would deprecate ...@<ver>"。所以只有一种情况该用它：整模块都不再推荐。
+#    单版本消歧请走文档面（README/BACKLOG 指升）+ GitHub Release 资产那条线，别拿整模块标记去换一格清晰。
+# 5) push 之后把公网那条线当**验收判据**（不是当风险登记）：`scripts/blackbox/e2e_irm_line.py`
+#    的命令从 README 反解，Release 资产到位后它才会绿；红了先看它归的哪一类（链路侧 / 确定性）。
 ```
 
 > **载荷边界（本次发布实测；版本号只在 `BACKLOG.md` 自述）**：`.github/`、`.githooks/`、`.codeartsdoer/`、`.gitignore`、`docs/*/.gitkeep`、

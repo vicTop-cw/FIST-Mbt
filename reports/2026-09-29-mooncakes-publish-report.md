@@ -17,6 +17,8 @@
 | 3 | 别人拉这一版**编得动**（不是"注册表列出了号"） | 空壳消费工程 `moon add vicTop-cw/fist-mbt@0.3.5` 后 `moon check --target js` **rc=0（58 个任务）** | `temp/pkg_install_probe/check*.log` |
 | 4 | **公开的就是我 tag 的**（BUG-128 的根因那一格） | 解包载荷 **552 件** vs `git ls-tree -r 124a20a` 非点号跟踪面：双向差集 **0/0**，逐件比字节（仅归一 CRLF）**0 处不一致**；载荷内 `__cli_pkg.mbt.tmp` = **0 件**（BUG-127 的修在下一版兑现）；凭据形状扫载荷 **0 命中** | 本报告 §3.3 |
 | 5 | 收口面在新版本上仍成立 | §3.4 那张表 **15 行 / 表内 17 次调用**逐条 rc=0（`check_*` 13 个，doc_surface 与 release_asset_names 那两行各含"自检 + 全量"两步；另有 `mcp_tool_tour --surface-selftest` 与 `store_isolation_probe`），探针那行按**两个产物身份**实跑 2 次 ⇒ 累计 18 次 | 本报告 §3.4 |
+| 6 | 两线合上：GitHub 侧也有能装的 0.3.5 | owner 授权后 `master`+`v0.3.5` 推到 **GitHub + GitCode**（fast-forward，`ahead` 归 0）；`release.yml` run 36648312524 = meta/build-js/release success，Release `v0.3.5` published 2026-09-30T00:03:17Z、资产 `fist-mbt-js-v0.3.5.zip` **376617B**（与 v0.3.4 那发的资产数量/形状一致）⇒ §3.5 那条"公网线指旧码"的实测从此反转，见 §3.7 | §3.7 + `temp/rel_035.json` |
+| 7 | 两条 owner 裁决都落在文档面，**注册表未被误伤** | ① `moon deprecate --dry-run` 实测作用域 = **整模块 10 版全标（含 0.3.5）** ⇒ owner 选**不动 0.3.4**，限制写进 USAGE §10 第 4 步；② push 后新增两笔是纯文档（`.mbt`/`moon.mod` 0 差异）⇒ owner 选**不发 0.3.6**，包内文档落后这一格记为已知边界（§6 第 2b 行） | 本报告 §3.7 / §6 |
 
 一句话：**发上去了，且发的是当前码；代价如实付在了版本号前进一格上。**
 
@@ -128,6 +130,43 @@ IRM-E2E-RC=1
   两档的针（`0.3.5` / `fist-mbt-js-v0.3.5.zip` / `fist (PATH)` / `POSIX shim, LF`）才可能对得上。
   ⇒ 这就是 §6 第 1 行那句"公网线仍指旧码"的**可复跑版本**，owner push 完可以直接拿这条当验收判据。
 
+### 3.5b push 之后同一判据复跑：这条红现在**归因到链路**，两栏都干净地分开
+
+push + Release 到位后再跑一次同一份 `e2e_irm_line.py`（沙箱档，`temp/irm_after_push.log`，`IRM-E2E-RC=1`）：
+
+```
+主档   （irm / .NET）      ：FAIL·链路侧 无法连接到远程服务器；n/a(传输层)；（安装器收尾汇总，属后果不是病因：下载全部失败）
+兜底档 （curl.exe / Schannel）：FAIL·链路侧 无法连接到远程服务器；n/a(传输层)；（同上）
+curl.exe 对照（同一时刻、同一 URL）｜ exit=56 ｜ HTTP=000 bytes=0 ｜ curl: (56) Recv failure: Connection was reset
+```
+
+与 §3.5 那次（push 前）的区别要说准：那次兜底档是**确定性红**（拿得到脚本、装成了 `v0.3.4`）；
+这一次两档都归 **链路侧**，且脚本自己在同一时刻贴出 `curl` 对照 `exit=56 / HTTP=000`——本机走系统代理时
+`raw.githubusercontent.com` 正在被重置连接（BUG-116 的原始形状），**不是** Release 资产缺失。
+⇒ 所以这条判据此刻**不能**当"push 后两线已合上"的验收证据；那个结论另有独立证据：
+GitHub API 读回 Release `v0.3.5` 已 published、资产名与大小都在（§3.7 + `temp/rel_035.json`）。
+判据要等链路恢复再取一次绿才算收口；这一点如实留白，不用环境侧的红去宣布产品失败，也不用产品侧的读数去顶替判据。
+
+**取证侧又踩的一手（也说清）**：这次读日志早于进程退出，看到 71 字节的 `started=` 行就判"后台 stdout 被回收"，
+实际是**块缓冲到退出才刷**——进程结束后同一份文件长成 7504 字节并带 `IRM-E2E-RC`。
+我当场用 `Get-Process python` 查活体没查到，那一条读数也不可信（同机 Windows Store 的 `python` 别名会换进程名）。
+**修法**：要么 `-u` 无缓冲跑，要么判活看"有没有新的子进程 spawn"，别拿日志字节数当存活信号（本仓旧坑重现，这次是我自己踩）。
+
+同一判据在无缓冲下又跑了一次（`temp/irm_after_push2.log`，`ended=2026-09-30T00:22:02Z`，`IRM-E2E-RC=1`），
+两次合起来才是完整读数——**这次的红比第一次更有信息量**：
+
+```
+主档   ：FAIL·链路侧 基础连接已经关闭；接收时发生错误
+兜底档 ：FAIL·链路侧 无法连接到远程服务器；n/a(传输层)（下载全部失败）
+curl.exe 对照（同一时刻、同一 URL）｜ exit=0 ｜ HTTP=200 bytes=18795 首字节=EFBBBF23
+```
+
+- `curl` 对照同一刻对 **raw** 拿到 **200 / 18795 字节**（push 前那次是 16011 字节）⇒ **push 生效可证**：
+  线上那份安装器已经是带 R14 的新版（124a20a 那批改的正是 `install_onecmd.ps1`，之前从未上过远端）。
+- 但取 **zip 资产**那一段仍在传输层被断（raw 通、release-assets CDN 不通），所以这条判据**还没取到绿**。
+  结论按 R12 的规矩写：这是环境侧的一格，不据此宣布产品红；也不拿 §3.7 的 API 读数顶替判据的绿。
+  ⇒ **待办**：链路恢复后再跑一次 `e2e_irm_line.py`，两档都绿才算把"公网线"这格从"已发布"升级成"判据已验收"。
+
 ### 3.6 复跑在 `0815c72`（发布后两笔文档提交之上）——数字没有老化
 
 | 面 | 命令 | 回执 |
@@ -141,6 +180,35 @@ IRM-E2E-RC=1
 | 整洁面 | `cleanup_artifacts.py --check`（**只读档**，不带 --check 的那版会删证据，本地不跑） | `DIRTY: 仓库残留 75 个根 .db + 121 个 temp/ 文件 + 0 个 scripts/ _ 临时脚本（共 196）`——**存量脏，非本轮引入**（终审准备报告 §7.4 已记；CI 那步是先清后查） |
 | 不可见字符 | 对本轮改动的 7 份文件扫 `Cf/Cc` + ZWSP/NBSP/BOM | 命中 **1 处**：`memory/bugs.md:510` 里 `grep -rniE "\bruns\b"` 的两个 `\b` 被当年的 Python 串吃成 **U+0008 退格符**（引入者 `a3657a2`，非本轮）；已按字节断言还原为字面 `\b`（diff 恰好 1 行、+2 字节、行数不变），此处登记而不改口径 |
 
+
+### 3.7 push 轮（owner 授权后）：两线合上，权威 CI 交出两条新读数
+
+**动作**：`git push origin master` = `3d27271..c67bd19`（fast-forward，`ahead` 归 0）→ `git push origin v0.3.5`（`* [new tag]`）
+→ 同两步再做给 `gitcode`（SSH pushurl 那条线，`The server may need to be upgraded` 只是 OpenSSH 后量子告警，推送成功）。
+本地 `mooncakes-0.3.5` 与 `fist-final-review-20260929` **仍不外推**（沿用既有惯例：远端只挂 `v*`，非 `v` 标签是本地身份记录）。
+
+**Release 侧实测（匿名 API，只 GET、不带凭据）**：
+
+```
+release.yml run 36648312524（head_branch=v0.3.5）：meta success / build-js success / release success
+                                              build-native-linux failure / build-native-windows failure（两者都有 continue-on-error）
+Release v0.3.5 published=2026-09-30T00:03:17Z  资产 = fist-mbt-js-v0.3.5.zip  376617B
+对照 v0.3.4：published=2026-09-28T17:25:12Z     资产 = fist-mbt-js-v0.3.4.zip  372836B   ⇒ 资产形状与数量一致，native zip 两条版本号都从未上过
+```
+
+⇒ 公网那条线现在**有了能装的 0.3.5**；`e2e_irm_line.py` 的复跑读数见 §3.5 末尾（push 前那条实测保留不动，push 后同一判据另跑一次）。
+
+**权威 CI（`FIST CI — Build + Test`，run 36648283575，master）两条新读数**：
+
+| job | 结论 | 关键差别 |
+|---|---|---|
+| `check + test (js, ubuntu)` | **success** | 含 `Format check`——09-28 那两次它还是红的（run 36463333299 / 36461416256），BUG-118 把格式门搬进权威 CI 之后今天首次转绿 |
+| `check + test (native, ubuntu)` | **failure** | 红的只有一格 `Test (native, j=1)`；`Check (native)` success ⇒ **编得过、测试不过**。同一格在 09-28 两次 run 里同样红 ⇒ 不是本轮引入 |
+| `nightly self-check` | skipped | 定时轨，push 不触发 |
+
+这一格已**入账为 BUG-130（OPEN）**而不是划进"已知边界"：AGENTS.md 确实声明 native 非权威门槛，但 ci.yml 里这一步**没有** `continue-on-error` ⇒ 一条"设计上允许红"的门挂成了"会红且没人解释"的门（BUG-114 那句「红着没人读等于没锁」的 CI 版）。**定因我取不到，这一点也写进账**：匿名取 job 日志回 `403 Must have admin rights to Repository`，我在调用面只拿得到步骤名与结论；本机复现 native 要 sqlite-dev + MSVC 同会话（或 WSL），且与 CI 那台的失败形态不必然同因——所以不拿"本机跑绿"宣布关闭。出路三条（削权成观测臂 / 由有日志权限的人定因后修真因 / native 轨只留 workflow_dispatch）留给 owner，我不自行改门。
+
+**两条 owner 裁决（同日）**：① **不给任何版本打 deprecate**——`moon deprecate --dry-run` 实测作用域是**整模块 10 个版本全标（含 0.3.5）**，`--undo` 也只能整模块一起清，用它换"单号消歧"会把最新号一起消音；这条限制已写进 `USAGE.md` §10 第 4 步。② **不发 0.3.6**——push 后多出的两笔提交是纯文档（`.mbt`/`moon.mod` 0 个差异），0.3.5 载荷的**代码面**与 master 逐字节相同；代价说清了：包内 CHANGELOG/plugins 文本落后于 GitHub 上的同名文档，这一格作为已知边界记录，不烧不可回收的版本号。
 
 ---
 
@@ -170,8 +238,10 @@ IRM-E2E-RC=1
 
 | # | 事项 | 状态 | 需要谁 |
 |---|---|---|---|
-| 1 | **没有 push**：本轮所有提交只在本地（含 `v0.3.5`/`mooncakes-0.3.5` 两个本地 tag）。公网安装线（GitHub raw/Release 的 `fist-mbt-js-v0.3.5.zip`）因此**尚不存在**，照 README 那条线装的人仍拿旧码——**这一格已实测，不是推断**：`e2e_irm_line.py` 兜底档真装成并回执 `FIST-Mbt v0.3.4`，判据针缺 `0.3.5`（§3.5）；注册表这条线已是最新 ⇒ 两线短期"新码/旧码"并存，与 BUG-128 同形状但方向已知且已在账本写明 | 等授权 | owner（push + 发 GitHub Release；push 完可拿 §3.5 那条 e2e 当验收判据） |
-| 2 | **0.3.4 同号两树撤不回**：注册表版本不可覆盖。可选缓解 = `moon deprecate vicTop-cw/fist-mbt@0.3.4`（对外署名动作） | 等裁决 | owner |
+| 1 | ~~**没有 push**~~ **本日已闭合**：owner 授权后 `master` 与 `v0.3.5` 都推到了 GitHub 与 GitCode（fast-forward，ahead 归 0），Release 出到 `fist-mbt-js-v0.3.5.zip`（§3.7）⇒ 两线同号同码；`e2e_irm_line` 的 push 后读数在 §3.5 末尾 | 已闭合 | — |
+| 2 | ~~**0.3.4 是否 deprecate**~~ **本日裁决：不动**。理由不是我原先写的那条，而是量出来的新事实：`moon deprecate` 作用域是**整模块全部 10 版（含 0.3.5）**，`--undo` 也只整模块清 ⇒ 换不到"单号消歧"，只会把最新号一起消音。限制写进 USAGE §10 第 4 步；0.3.4 那对 `v0.3.4`(af54d5e) / `mooncakes-0.3.4`(a0dfef3) 的树身份仍可一行命令对出来 | 已裁决并落文档 | — |
+| 2b | **注册表载荷的文档面落后 GitHub**（owner 选"维持 0.3.5"，不烧 0.3.6）：0.3.5 包内 CHANGELOG 最新段仍是 `v0.3.4`、plugins 文本同落后，而**代码面**与 master 逐字节相同（`.mbt`/`moon.mod` 0 差异） | 已知边界，有意留 | 下一个真改动自然带走 |
+| 2c | **BUG-130（新入账，OPEN）**：权威 CI 的 `Test (native, j=1)` 自 09-28 起连续三次红（`Check (native)` 绿 ⇒ 编得过测不过），且该步**没有** `continue-on-error`，与 AGENTS 声明的"native 非权威门槛"互相矛盾；匿名取不到定因（job 日志 403）。三条出路留在账里等 owner：降级成观测臂 / 有权限者取日志定因 / native 轨只留 dispatch。台账现 **129 条入账 = 115 已修 / 9 重复并入 / 4 误报 / 1 待修** | 等裁决 | owner（门怎么改）|
 | 3 | native 端本轮未复跑（沿用「权威稳定门槛 = JS 后端」的既有口径，不据旧数宣称双端同版全绿） | 如实留白 | 无需决定 |
 | 4 | `store_isolation_probe` 默认优先命中**安装态产物**（本机那一份仍是上一版安装产物）；这是设计（探的是用户跑的产物），但意味着不带 `FIST_PROBE_JS` 时它不验新码。本轮两个身份都跑了 | 已记录 | 无需决定 |
 | 5 | 发布版本号的**下一次**前进会再撞同一个缝：`v<版本号>` 标签与注册表载荷必须同树，目前靠我手工对表。已把"载荷 == 被 tag 的树"写进 USAGE §10 第 3 步，但没有常驻判据（要联网解包，CI 不该跑网络） | 已知缺口 | 下轮建议 |
@@ -180,8 +250,9 @@ IRM-E2E-RC=1
 
 ## 7. 后续建议（按性价比）
 
-1. **push + GitHub Release 重做到 `124a20a`**（或 owner 认可的下一个提交），让公网安装线与注册表同号同码——
-   这是本轮唯一还会被用户直接撞到的面。
+1. ~~**push + GitHub Release 重做到 `124a20a`**~~ **本日已完成**：`master` + `v0.3.5` 推到 GitHub 与 GitCode，
+   Release 资产 `fist-mbt-js-v0.3.5.zip` 到位（§3.7）⇒ 这条从"下一轮建议"变成"已闭合"。
+   接手口径：以后这条线红了就跑 `e2e_irm_line.py`，按它分好的「链路侧 / 确定性」两栏读，别把环境当产品杀。
 2. 给 `check_release_asset_names` 加 **R15**：Release 作业的资产名 ↔ **本地 tag 指向的树**（`git rev-list -n1 v$(moon.mod 版本)`）
    一致，且该 tag 必须存在——现在 R13 只钉"资产名字面量 == moon.mod"，钉不到"那棵树上有没有这个 tag"。
    这条是 §6 第 5 格缺口里**离线可判**的那半边，值得做。
@@ -215,6 +286,12 @@ IRM-E2E-RC=1
   - 再生命令：全量测试 `moon test --target js -j 1`；守卫单条 `python scripts/<name>.py [temp/v35_js_test.log]`；
     载荷对表 `moon add vicTop-cw/fist-mbt@0.3.5` → `find .mooncakes/vicTop-cw/fist-mbt -type f` ↔ `git ls-tree -r 124a20a --name-only`。
 - 提交/tag：`124a20a`（0.3.5 载荷，`v0.3.5` 与 `mooncakes-0.3.5` 同钉）；`a0dfef3`（`fist-final-review-20260929`，不回改）；
-  `af54d5e`（`v0.3.4`，与注册表旧载荷不同树，即 BUG-128 的正身）。
+  `af54d5e`（`v0.3.4`，与注册表旧载荷不同树，即 BUG-128 的正身）；收口三笔 `6a03093`/`0815c72`/`c67bd19` 与 push 轮这一笔都在 `master` 上，
+  **已推送到 GitHub 与 GitCode**（`git rev-list --count origin/master..HEAD` = 0）。
+- push 轮的对外读数（匿名只读 API，不带凭据）：`temp/api_jobs.json`（run 36648283575 逐 job/逐步骤结论）、
+  `temp/api_hist.json`（branch=master 最近 8 次 run 结论，含 09-28 两次同型红）、
+  `temp/api_joblogs.json`（403 `Must have admin rights to Repository` 原文）、
+  `temp/rel_035.json`（Release `v0.3.5` 与资产清单）、`temp/rel_jobs.json`（release.yml run 36648312524 的 5 个 job 结论）。
+  BUG-130 的 RPC 回执：`temp/bug130_receipt.json`（`report_bug` → `BUG-130 / OPEN`，隔离库 `temp/bug130.db`）。
 - 账本：`memory/bugs.md` 的 `### FIXED(2026-09-29T10:44:53Z / BUG-128)`（抬头状态位与 `bug_fix` 回执 `heading_changed: 1`）；
   日志：`memory/2026-09-29.md` 发布轮段。

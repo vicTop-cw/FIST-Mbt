@@ -159,6 +159,10 @@ Owner 本轮要求七件事，逐件的状态：
      关闭证据都只能在**推送后的 CI 运行**里产生（本机对 `cli.moonbitlang.com` 取安装脚本 TLS 失败 rc=35，
      `Invoke-RestMethod` 走系统代理时对 `raw.githubusercontent.com` 传输层被对端关闭）。
      本轮所有提交都只在本地，**没有 push**；`master` 领先 `origin/master` 的格数见 §7b。
+     **（追记，2026-09-30）** owner 已授权并执行：`master` + `v0.3.5` 推到 GitHub 与 GitCode（fast-forward，`ahead` 归 0），
+     Release 出到 `fist-mbt-js-v0.3.5.zip` ⇒ BUG-116/124/125 那三条"关闭证据只能在推送后的 CI 运行里产生"的门
+     现在有了权威 CI 读数：js 轨 **success**（含 09-28 起首次转绿的 `Format check`），native 轨 `Test (native, j=1)` **连红第三次**
+     （09-28 起同格已红，非本轮引入）⇒ 另入账 **BUG-130（OPEN）**。逐格读数见 `2026-09-29-mooncakes-publish-report.md` §3.7。
    - **BUG-128 的出路（台账里那 1 条待修就是这个裁决位）**：注册表的 `0.3.4` 载荷取自 `a0dfef3`，
      而本地 tag `v0.3.4` 停在 `af54d5e`（差 11 个提交、`src`+`cmd` 侧 +1643/−269）⇒
      `install_onecmd.ps1 -Version 0.3.4` 与 `moon add vicTop-cw/fist-mbt@0.3.4` 现在给的是**两份不同码、同一个号**。
