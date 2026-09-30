@@ -80,6 +80,26 @@ AIGC:
 - **BUG-131 当日转正（2026-09-30T01:00:35Z）**：条目里写死的翻转判据已满足——权威 CI run 36652585906（workflow 『CI』@ `00e64bd`）的 `check + test (js, ubuntu)` job **success**，其中**第 13 步** `Plugin-form guard cl7 (一源四态：四宿主插件目录==真源投影)` = **success**；同一格在修复前那发 run 36650601254（@ `ec4c347`）是该 job 的唯一红格 ⇒ 红→绿读在**同一步**，不是摘门也不是换判据。`git archive HEAD` 等价树（`temp/cl7ci3`：无本机 `.mcp.json`、autocrlf 的 CRLF 检出）三条结论行都点名『启动参数真源 `.mcp.dev.json`』，本机同三步同 rc=0 ⇒ 两侧同解。
   同一 run 的 native 轨仍红在 `Test (native)`，那条属 **BUG-130（OPEN）**，不由本格顺带关闭。台账回到 **1 条待修**：`gen_plugins.py` 计数器 = **BUG-1~131 共 130 条入账 = 116 已修 / 9 重复并入 / 4 误报 / 1 待修（BUG-130）**。
 
+- **owner 两点指示的落地（2026-09-30T01:41:22Z）**：① **仓库根 `.mcp.json` 走 ignore**——`.gitignore` 末尾加 **根锚定**的 `/.mcp.json`
+  （不是裸 `.mcp.json`：裸形会连跟踪件 `plugins/claude/.mcp.json` 一起盖住，将来重 `add` 会被静默拒收）。
+  实测三条：`git check-ignore -v .mcp.json` ⇒ `.gitignore:53:/.mcp.json`；`git check-ignore plugins/claude/.mcp.json` ⇒ **无命中**（rc=1）；
+  `git status --porcelain` 里那条 `?? .mcp.json` 消失。文件本体仍在盘上（本机连接器在读），投影侧无影响——
+  跟踪面优先的解析（BUG-131）本来就选 `.mcp.dev.json`。AGENTS 一源四态段同步指到真名并写明它已被 ignore。
+  ② **BUG-130 详解 + 顺手抓到一条死门**：见下两条。
+- **BUG-130 的两条新读数（账本 `### 追记(2026-09-30T01:41:22Z / BUG-130)`，抬头状态仍 OPEN）**：① 失败**退出码匿名可取**——
+  `GET /repos/vicTop-cw/FIST-Mbt/check-runs/<job_id>/annotations` 公开可读，两个 native job 各回 3 条，
+  其中 failure 级原文逐字为 `Process completed with exit code 255.`（存 `temp/bug130_annotations.json`）；
+  取不到的只有 stderr 正文（`/actions/jobs/<id>/logs` 仍 403）。② 红的范围比原先写的更宽更久——
+  『CI』工作流在匿名窗口内可见的 23 次运行（run#176 @ 09-28T00:59:43Z 起）逐 job 读过，
+  最早三发三个 job **全红**（含两档 `Test (js)`），js 是在这窗口内才转绿的，而 native 那一格**窗口内从未绿过**。
+  ⇒ 嫌疑面收窄：`Check (native)` 绿排除编译/链接与 `libsqlite3-dev`，`-j 1` 那一臂同样 255 排除『只是 Windows 并行堆竞态』；
+  255 我读成异常终止多于断言失败，但**这句没有对照、当猜测记**（不知道 moon 在断言失败时回几）。
+- **BUG-132 新入账（OPEN）**：`fist-ci.yml:85` 的 `nightly self-check` 条件写 `github.ref == 'refs/heads/main'`，
+  而本仓默认分支是 `master`（`git symbolic-ref refs/remotes/origin/HEAD`），且全仓唯一 `schedule:` 在 `fist-bug-sync.yml`
+  ⇒ 这道每日自检**永不可能运行**；它最后一步正文还是三条 `echo` 的 `// TODO:` 占位 ⇒ 恒 skipped 的空壳作业。
+  我原先把每次读数里的 `nightly: skipped` 读成『定时轨没到点』——那是把恒假当成了未触发。修法三条留在账里等 owner，与 BUG-130 **同一裁决面**（native 轨若降级，这条就是唯一还剩的 native 巡检位）。
+- **台账现口径**（`gen_plugins.py` 计数器同一次投影回执）：**BUG-1~132 共 131 条入账 = 116 已修 / 9 重复并入 / 4 误报 / 2 待修（BUG-130 + BUG-132）**（基数由抬头状态反解、与状态和自洽；编号 95 从未入账）。
+
 ## v0.3.4 (unreleased) - 终审前收口：看护缺陷修到跨进程调用面、探索模式上线、demo 族解封（盖章 2026-09-29T06:18:10Z）
 
 - **BUG-119 修复（开工时唯一 high）**：`heal` 从"读进程内内存心跳表"改为读**持久化心跳表**（唯一真相），

@@ -2419,6 +2419,30 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
   Linux 侧要 WSL；而 CI 那台的失败形态与这两条都不必然同因，靠本机跑绿去宣布关闭是假的。
 - reported_by: fist-mbt-post-push-ci-audit
 
+### 追记(2026-09-30T01:38:03Z / BUG-130)
+- 本条原先那句「匿名只拿得到步骤名与结论，拿不到断言/崩溃细节」**范围写窄了**，两条新读数补在下面（原文不改）：
+  ① **匿名能拿到失败退出码**：`GET /repos/vicTop-cw/FIST-Mbt/check-runs/<job_id>/annotations` 公开可读，
+     两个 native job（run 36653784727 job 109693561355 / run 36653784771 job 109693561135）
+     各回 3 条 annotation，其中 **failure 级原文 = `Process completed with exit code 255.`**（逐字存 `temp/bug130_annotations.json`）。
+     取不到的是 **stderr 正文**（`/actions/jobs/<id>/logs` 仍 403 `Must have admin rights to Repository`）。
+  ② **红的范围比原先记的更宽也更久**：把 workflow『CI』在匿名窗口内可见的全部 23 次运行（run#176 @ 2026-09-28T00:59:43Z
+     起，到 run#198 @ 2026-09-30T01:09:46Z）逐 job 读过——**最早那三发（#176/#177/#178）三个 job 全红**（含 `Test (js)` 两档），
+     js 轨是在这个窗口内才转绿的，而 `Test (native)` / `Test (native, j=1)` 在窗口内**从未绿过**。
+     ⇒ 「自 09-28 起持续红」这句的下界要推到匿名可见的最早一发，更早的历史超出可读范围，不写成主张。
+- **定因面由此收窄一格（下面前半条是读数推论，后半条明写是猜测）**：`Check (native)` = `moon check --target native` 绿
+  ⇒ 失败发生在测试阶段而不是编译/链接阶段，`libsqlite3-dev` 那条嫌疑随之基本排除；而 `-j 1` 串行那一臂同样回 255
+  ⇒ 不能只用 AGENTS 里那条 **Windows 并行 `0xc0000374`** 解释（CI 是 ubuntu，且串行也死）。
+  **以下是猜测、没有对照**：rc=255 的形状我读成"进程异常终止"多于"某条断言 fail"，但手上没有 native 断言失败的 rc 对照
+  （不知道 moon 在那种情形回几），所以这句不能当结论用。要定案还差 stderr：
+  要么用带 `actions:read` 的 token 取一次 job 日志（本机 env 现在 `token_present=false`），要么 WSL 里
+  `moon test --target native -j 1` 复现——本机这个 Bash 是 MSYS/mingw 环境（`cc` 指向 mingw 工具链），
+  在它里面跑出来的红**不能**当 CI 同因的证据，这点先钉死。
+- 顺带在同一片面读到一条**与 130 无关的独立缺陷**：`fist-ci.yml` 的 `nightly` 作业 `if: github.event_name == 'push'
+  && github.ref == 'refs/heads/main'`，而本仓默认分支是 `master`（`git symbolic-ref refs/remotes/origin/HEAD`
+  = `refs/remotes/origin/master`，两个 workflow 的 `on.push.branches` 都写作 `[main, master]`），
+  且 `fist-ci.yml` 里**没有任何 `schedule:` 触发** ⇒ 这道「每日自检」永不可能运行，
+  每次运行里 `nightly self-check: skipped` 不是「定时轨没到点」，是**条件恒假**。另立 BUG-132，不并到本条。
+
 ## BUG-131 [2026-09-30T00:50:05Z] [medium] FIXED
 - summary: cl7 插件态投影引用的启动参数真源文件名由『本机未跟踪残留』决定 ⇒ 同一棵 HEAD 本机绿、CI 红（我 2026-09-30 push 124a20a 之后 ci.yml 的 Plugin-form guard cl7 那一步就是红的）
 - detail: 发现面：owner 授权 push 之后按既有口径拿权威 CI 当验收。09-28 的 ci.yml js/ubuntu job 是 success []，我这次 push 后同一 job 的失败步骤名 = 『Plugin-form guard cl7 —— 一源四态的第四态漂移或生成投影里有手写残留』。本机复跑 cl7 却 PASS ⇒ 『本机绿 / CI 红』这一型先怀疑尺子的输入面，不怀疑被测。
@@ -2451,3 +2475,18 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
    反向对照实测：内存里把候选顺序打回旧口径 ⇒ `格5 候选表首位是 .mcp.json…` + `格5b 两份候选都在时取到了 .mcp.json`
    双红 rc=2；新顺序 rc=0。（第一版期望值写成 MCP_CANDIDATES[0]，与实现同公式＝恒真判据，被这条对照当场抓出。）
 ⑤ 没在这条出口里的两格要说清：仓库根那份未跟踪的 .mcp.json 是**本机 MCP 连接器在读的配置**，   按原样保留未动（删/跟踪都属 owner 的开放决定），投影已不依赖它；   同轮 CI 面上仍红的 native 轨 `Test (native)` 属 BUG-130（OPEN，等 owner 选门怎么改），不由本条顺带关闭。
+## BUG-132 [2026-09-30T01:40:06Z] [medium] OPEN
+- summary: `.github/workflows/fist-ci.yml` 的 `nightly self-check` 是道**条件恒假的死门**：守卫写 `refs/heads/main` 而本仓默认分支是 `master`，且全仓没有 `schedule:` 触发⇒ 每次运行里的 `nightly self-check: skipped` 不是『定时轨没到点』，是『永不可能运行』
+- detail: 发现面：查 BUG-130 时逐 job 读 CI 结论，每次都看到 `nightly self-check: skipped`。我一开始把它读成『schedule 轨在 push 事件里不触发』（这是常见形状，也确实是它字面的意图），但那样就没有任何一次运行会跑它——于是去读守卫条件本身。
+机器可检的三条（全部本轮实测，非自述）：
+① `.github/workflows/fist-ci.yml:85` 原文 `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`（grep -rn 'refs/heads' .github/workflows 只此一处命中）。
+② 本仓默认分支是 master：`git symbolic-ref refs/remotes/origin/HEAD` = `refs/remotes/origin/master`；而 `fist-ci.yml:4-7` 与 `ci.yml:4-7` 的 `on.push.branches` / `on.pull_request.branches` 都写作 `[main, master]` ⇒ push 事件的 `github.ref` 只会是 `refs/heads/master`（本仓所有推送都落 master），等式右侧永不成立。
+③ 全仓 workflow 里唯一的 `schedule:` 在 `fist-bug-sync.yml:4-6`（cron '0 3 * * *'），`fist-ci.yml` 没有任何 schedule ⇒ 连『定时事件时 ref 取默认分支』这条后门也不存在。
+后果（两层，都是实测）：① 这道作业从未执行过一次；② 就算它执行了也没干什么——它的最后一步 `Run native self-check (skeleton)` 正文是三条 `echo` 打的 `// TODO:` 占位（`fist-ci.yml:112-118`，注释写着『预留：native target 跑 run_check / issue_scan 自驱巡检』），前面几步只是装工具链 + `moon build --target native`。⇒ 这是一道**恒 skipped 的空壳作业**。
+文档面也没人替它说话：`grep -rn nightly AGENTS.md README.md scripts/README.md` **零命中**——所以它既不会红、也没有任何文档主张它在跑，属于纯粹的死代码挂在 CI 面上。但它占的是 `nightly self-check` 这个名字：读数里出现一个『未触发所以正常』的绿灯占位，下一个人（或下一个 agent）会把 skipped 读成『定时轨还没到点』——这次我就是先这么读了一遍才发现。
+为什么单立一条不并到 BUG-130：130 是『native 门会红、定因待取』，本条是『兜底巡检位永不动作』；两条的修法与判据都不同（130 改门权限/取日志，本条改触发条件、补正文或删门）。如果 owner 按 130 的出路把 native 轨降级成观测臂或只留 dispatch，本条就是那条线上唯一还剩的 native 巡检面——所以这两条要一起裁决，不能只修一条。
+建议出路（不在本轮自行改，改 CI 属共享系统动作）：a) ref 条件改按仓库事实取面（`refs/heads/master`），或去掉 ref 守卫、把分支过滤交回 `on:`；b) 补 `schedule:` 触发并真把 `run_check`/`issue_scan` 两步写成实体命令（否则修了条件还是空转）；c) 若决定不要这道巡检，就删作业——**留着恒 skipped 的空壳是最坏的一档**。
+另记一条与判据相关的经验（不是缺陷，是给下一个查 CI 的人）：匿名可读 `GET /repos/<owner>/<repo>/check-runs/<job_id>/annotations`，拿得到 failure 级原文（BUG-130 那两臂的 `Process completed with exit code 255.` 就是这么来的）；而 `/actions/jobs/<id>/logs` 匿名必 403 ⇒ 想拿退出码不必等 token。
+证据（本轮实测，非自述）：grep -rn 'refs/heads' .github/workflows ⇒ 唯一命中 fist-ci.yml:85；grep -rn 'schedule|cron:' .github/workflows ⇒ 只有 fist-bug-sync.yml:4-6；git symbolic-ref refs/remotes/origin/HEAD ⇒ refs/remotes/origin/master；匿名 Actions API 逐 job 读数（run 36653784771 等）里 `nightly self-check` 恒 skipped
+- reported_by: fist-mbt-native-gate-audit-0d7b7115
+

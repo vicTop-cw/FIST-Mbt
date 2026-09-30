@@ -46,3 +46,8 @@ dist/
 # moon 生成的 pkg 临时件——`moon publish` 的打包面 = 工作树减 .gitignore（不是 git 跟踪面），
 # 0.3.4 发布载荷实测带上了 __cli_pkg.mbt.tmp（552 件里唯一不在 git 里的）⇒ 这类残留必须挡在 ignore 面
 *.mbt.tmp
+
+# 仓库根 `.mcp.json` = 本机 MCP 连接器在读的那一份：未跟踪、内容与跟踪真源 .mcp.dev.json 逐字节相同。
+# BUG-131 之后投影已按跟踪面优先解析，这里再把它挡在 ignore 面 ⇒ `git status` 与「工作树 − .gitignore」两面都干净。
+# 只锚仓库根（plugins/claude/.mcp.json 是跟踪件，不许被这条规则盖住）。
+/.mcp.json
