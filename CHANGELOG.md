@@ -56,7 +56,7 @@ AIGC:
   `ahead` 归 0；本地 `mooncakes-0.3.5`/`fist-final-review-20260929` 按惯例不外推）。`release.yml` run 36648312524
   = meta/build-js/release **success**，Release `v0.3.5` published 2026-09-30T00:03:17Z、资产 `fist-mbt-js-v0.3.5.zip` 376617B
   （与 v0.3.4 那发的资产形状与数量一致；两个 native job 红但都带 `continue-on-error`，native zip 历来没上过）
-  ⇒ **公网安装线与注册表现在同号同码**，§7 那条"下一轮该 push"的建议就此闭合。
+  ⇒ **公网安装线与注册表现在同号同码**；同一判据 `e2e_irm_line.py` push 后跑三次——两次归「链路侧」红（一次 raw 与 release-assets CDN 都不通，同刻 `curl` 对照回 `exit=56/HTTP=000`；一次 raw 已通、对照回 `200/18795B`，那 18795B 正好证明线上那份安装器已是带 R14 的新版 ⇒ push 生效可证），第三次 **两档全 PASS**：`0.3.5`、`fist-mbt-js-v0.3.5.zip`、`fist (PATH)`、`POSIX shim, LF` 四针齐，沙箱里 `FIST-Mbt v0.3.5 | doctor=0`⇒ 公网线这格不只是「已发布」，是**判据已验收**，§7 那条"下一轮该 push"的建议就此闭合。
   权威 CI run 36648283575 两条新读数：js 轨 **success**（其中 `Format check` 是 09-28 两次红之后首次转绿 = BUG-118 的门生效了）；
   native 轨 **failure**，唯一红格 `Test (native, j=1)`（`Check (native)` 绿 ⇒ 编得过、测试不过），且同格 09-28 起已连红三次
   ⇒ **不是本轮引入**，但它与 AGENTS 声明的"native 非权威门槛"互相矛盾（这一步没挂 `continue-on-error`）——
