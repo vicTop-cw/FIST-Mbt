@@ -1,6 +1,6 @@
 # 2026-10-01 · BUG-130 定因轮汇报（native 门槛的根在依赖的 FFI）
 
-- 盖章：2026-10-01T03:01:00Z（写盘瞬间的 UTC，不是手敲）
+- 盖章：2026-10-01T03:20:18Z（写盘瞬间的 UTC，不是手敲）
 - 任务包：目标 = BUG-130 定因（不是修复）；边界 = 只动文档面 + 新判据 + 账本，**不动 `src/` 产品码、不动 CI 定义**；验收 = 权威面读数 + JS 全量 + 守卫族全 rc=0。
 
 ## 结果摘要
@@ -15,6 +15,9 @@
 4. **文档旧口径 4 份同步改正**（AGENTS / README / README_EN / ARCHITECTURE），并按 R4「豁免条目失效即红」的设计删掉
    `check_test_sync` 里四条已失效的 `317` 豁免，同批改写该判据 `--selftest` 夹具基线 ⇒ 八格对照重新全过。
 5. **账本净增两号**：BUG-133（high / OPEN）+ BUG-134（low / OPEN）。账本现 **133 条**（9 DUPLICATE / 4 FALSE_POSITIVE / 116 FIXED / 4 OPEN）；OPEN 逐条点名 = BUG-130, BUG-132, BUG-133, BUG-134（计数从 `## BUG-nn …` 抬头反解，不是数小记）
+6. **push 之后按原计划读回权威 CI**（`47b88ff`，两远端 fast-forward）：run 36808812351『FIST CI — Build + Test』= `check + test (js, ubuntu)`=success；`check + test (native, ubuntu)`=failure（红格逐字 `#8 Test (native, j=1)=failure`）；`nightly self-check`=skipped ⇒ 整发 failure；
+  run 36808812320『CI』= `check + test (js, windows)`=success / `check + test (js, ubuntu)`=success；`check + test (native, ubuntu)`=failure（红格逐字 `#7 Test (native)=failure`） ⇒ 整发 failure
+   ⇒ 权威面的 js 臂 3 格 success（那一臂挂着判据族），native 2 格仍红且红格逐字未变 —— 本轮交付不动产品码，这条「不变」就是要的记录。
 
 ## 资源消耗（从产物文件反解，不手算）
 
@@ -51,7 +54,7 @@
 2. 上游动作（可另开任务）：给 `mizchi/sqlite` 提 issue，附本轮机理行号 + 探针脚本 + crashes=3/12（sigsegv 1、sigabort 2、ok 9，读数出自 WSL ubuntu 侧；Windows 侧该判据显式拒绝出数，见下） 读数——这是唯一能让 native 臂真正转绿的路。
 3. BUG-134 的修法很轻（`resolved_path` 改真绝对 + 新增 `server_cwd`，白盒断言反向写严），下一轮可并入一个小修复批。
 4. 撤销 `FIST_GITHUB_TOKEN`（HKCU），定因不再需要它；后续若要做上游 issue，再按需用一次性细粒度 token。
-5. 不要跑 `scripts/cleanup_artifacts.py` 清 `temp/`：本轮账本/报告逐字引用的证据文件都在里面（当前 0/11 缺失）。
+5. 不要跑 `scripts/cleanup_artifacts.py` 清 `temp/`：本轮账本/报告逐字引用的证据文件都在里面（当前 0/13 缺失）。
 
 ## 超额内容（做了但任务包没要求）
 
@@ -84,6 +87,8 @@
 | JS 全量（权威门槛） | `temp/js_after_b130.log` | 现存（1063 字节） |
 | 写账本用的脚本（幂等键 + --verify） | `temp/b130_ledger.py` | 现存（15735 字节） |
 | 守卫族复跑的逐格 rc 读数 | `temp/b130_guards.log` | 现存（3703 字节） |
+| push 后权威 CI 回读（逐 job 结论） | `temp/b130_readback2.txt` | 现存（668 字节） |
+| CI 回读取数脚本（token 不进 argv） | `temp/b130_ci_readback.py` | 现存（2718 字节） |
 
 再生命令（任一文件被回收后）：
 - CI 面：`python temp/b130_ci_probe.py`（token 从 `HKCU\Environment` 读、写临时 `--config` 文件、结束删除；不落 argv）

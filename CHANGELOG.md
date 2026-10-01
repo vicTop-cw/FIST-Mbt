@@ -13,7 +13,7 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
-## v0.3.5 (mooncakes 已发布 / GitHub Release 未发布) - BUG-130 定因：native 门槛的根在依赖的 FFI，不在本仓逻辑（盖章 2026-10-01T03:01:00Z）
+## v0.3.5 (mooncakes 已发布 / GitHub Release 未发布) - BUG-130 定因：native 门槛的根在依赖的 FFI，不在本仓逻辑（盖章 2026-10-01T03:20:18Z）
 
 ### 本轮性质：定因（不是修复）——BUG-130 从「没人解释的门」变成「定因在依赖侧」
 
@@ -45,6 +45,10 @@ AIGC:
   随之删掉 `scripts/check_test_sync.py` 里四条已失效的 `317` 豁免（R4「豁免条目失效即红」是设计），
   并把该判据 `--selftest` 的夹具基线换成新口径形状 ⇒ 八格对照重新全过。
 - **验证面**：JS 全量（权威门槛）572/572；守卫族复跑 **17 格** ⇒ **全 rc=0**（逐格 rc 的读数在 `temp/b130_guards.log`，末次 total=17/fails=0，调用面与 `ci.yml` 各步逐字对齐，含 `gen_plugins --check/--selftest`、cl7、doc-surface(+selftest)、test-sync(+selftest)、scripts-index、demo-isolation(+selftest)、ps-encoding、entry-paths、store-tables-wired、badge、tools-sync、release-asset-names）；`check_publish_payload` 现回 PASS 发布载荷面干净：将随包公开 557 件，其中未被 git 跟踪的 0 件（另有 18 件点号条目 moon 本来就不打包）。
+- **push 之后权威 CI 回读**（`47b88ff`，两远端各一次 fast-forward、无 force）：run 36808812351『FIST CI — Build + Test』= `check + test (js, ubuntu)`=success；`check + test (native, ubuntu)`=failure（红格逐字 `#8 Test (native, j=1)=failure`）；`nightly self-check`=skipped ⇒ 整发 failure；
+  run 36808812320『CI』= `check + test (js, windows)`=success / `check + test (js, ubuntu)`=success；`check + test (native, ubuntu)`=failure（红格逐字 `#7 Test (native)=failure`） ⇒ 整发 failure
+  ⇒ CI 的 js 臂（那一臂挂着判据族 = 本地这 17 格的权威面同族）3 格 success，native 两臂仍各死在自己那个老步骤（本轮 2 格红）
+  —— 本轮没动 `src/` 与 `.github/workflows/`，**红格逐字不变**本身就是「与本轮改动无因果」的第二发读数。
 - 账本现 **133 条**（9 DUPLICATE / 4 FALSE_POSITIVE / 116 FIXED / 4 OPEN）；OPEN 逐条点名 = BUG-130, BUG-132, BUG-133, BUG-134（计数从 `## BUG-nn …` 抬头反解，不是数小记）
 
 ## v0.3.5 (mooncakes 已发布 / GitHub Release 未发布) - BUG-128 出路①执行：版本号前进一位 + 注册表载荷逐件对表（盖章 2026-09-29T10:44:53Z）
