@@ -86,7 +86,9 @@ You can browse and install extra skills here:
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
 > Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
 > **JS 后端**：`moon test --target js` = **572/572**（2026-09-28 Windows 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并）。
-> **Native 后端**：上一轮在 Windows + WSL(Linux) 通过 317/317；本轮未复跑 native，不据旧数宣称双端同版全绿。
+> **Native 后端**：2026-10-01 在 WSL(Linux ubuntu-22.04) 实测 `moon test --target native -j 1` = **572/572**（工作树带既往构建残留时）；
+> 同一 commit 的 `git archive HEAD` **干净树**上同一条命令必崩，根因见账本 BUG-133（依赖的 native FFI），
+> 崩没崩由 `scripts/blackbox/e2e_native_heap_probe.py` 说话，不据任何旧数宣称双端同版全绿。
 
 `src/store/store_sqlite.mbt` 依赖 `mizchi/sqlite`（native stub），其 `stub.c` 用尖括号 `#include <sqlite3.h>` 并 `#pragma comment(lib, "sqlite3.lib")` 链接系统 SQLite。
 
@@ -96,7 +98,11 @@ You can browse and install extra skills here:
   2. 编译/链接前在**同一会话**加载 `Enter-VsDevShell`（VS Build Tools）并追加 `INCLUDE`/`LIB` 指向该目录（注册表 User 级环境变量会被 moon 自发现的 MSVC 环境覆盖，不生效）；
   3. 之后 `moon test --target native` 即可通过。缺失时 `stub.c` 报 `fatal error C1083: 无法打开包括文件 "sqlite3.h"` / `LNK1104: sqlite3.lib`。
   一键装载上述环境（自动探测 VS + sqlite-dev）：`pwsh ./scripts/native-env.ps1`；
-  Windows native **并行**跑全量测试偶发 `0xc0000374`（堆损坏/竞态），建议 `moon test --target native -j 1` 串行（可降低但不保证消除，实测偶仍复现于 server.whitebox）；**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 572/572）**，见 README「已知边界」。
+  Windows native 并行跑全量测试偶发 `0xc0000374`（堆损坏）—— **旧口径里「并行竞态、`-j 1` 串行可降低」两句已被 2026-10-01 实测推翻**：
+  崩因是 `mizchi/sqlite@0.3.1` 的 native FFI 把 C 侧裸指针当 MoonBit 对象回传（BUG-133），**单进程也崩**，CI 的 `-j 1` 臂与不带旗的臂
+  每次同红，串行不改变概率；判据 `python scripts/blackbox/e2e_native_heap_probe.py --runs 12`（探针不含本仓业务码，
+  2026-10-01 实测 3/12 崩：`munmap_chunk(): invalid pointer` / `free(): invalid pointer`），崩没崩由那条判据说话，
+  不在这里抄读数。**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 572/572）**，见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
 
 ## MCP Server
 

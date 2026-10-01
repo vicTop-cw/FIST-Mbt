@@ -57,14 +57,13 @@ MUST_CARRY = [
 ]
 
 # R1 豁免表：(相对路径用 / 分隔, 被豁免的数字, 理由)。条目失效即红。
+# 2026-10-01：四条 `317`（native 轨旧数）豁免全部删除——那四条声明已被本轮实测读数替换
+# （AGENTS.md / README.md / README_EN.md / ARCHITECTURE.md 现在写的都是「WSL native 572/572，但干净树必崩，见 BUG-133」），
+# 保留豁免就会撞 R4「条目已失效」。
 EXEMPT = [
-    ("README.md", "317", "native 轨上一轮实测，本轮未复跑（见该句原文与「已知边界」）"),
-    ("AGENTS.md", "317", "同上：native 轨旧数，作者已声明不据旧数宣称双端同版全绿"),
     ("docs/deliverable.md", "233", "R43 交付行的当轮实测数（交付清单逐行是各轮记录）"),
     ("docs/polish-plan.md", "148", "标题自述「初稿」的规划快照，描述的是当时的底子"),
     ("docs/features/F008-evolve.md", "148", "已勾 `- [x] AC-2` 是该特性轮的验收记录，非现状断言"),
-    ("README_EN.md", "317", "native 轨旧数（该句已同时声明本轮未复跑，不许读成双端同版全绿）"),
-    ("ARCHITECTURE.md", "317", "native 轨上一轮实测，本轮未复跑（同一句已写明 JS 端 453/453 才是权威门槛）"),
     ("BACKLOG.md", "295", "done 行的 R107 当轮实测数（待办队列的历史列，不是现状断言）"),
 ]
 
@@ -230,16 +229,17 @@ def _pair(n):
 def selftest() -> int:
     total = "439"
     base = {
-        "README.md": _pair(total) + "\n> Native 后端上一轮测试 " + _pair("317") + "，本轮未复跑",
-        "AGENTS.md": _pair(total) + "\n> Native 后端上一轮 " + _pair("317"),
+        "README.md": _pair(total) + "\n> Native 后端" + _pair(total) + "（工作树带构建残留时）；干净树同一命令必崩，见 BUG-133",
+        "AGENTS.md": _pair(total) + "\n> Native 后端" + _pair(total) + "，干净树必崩（BUG-133），不据任何旧数宣称双端同版全绿",
         "docs/deliverable.md": f"测试 **{total} 项全绿**\n| 43 测试数单一真源 | 当轮实测（233/233 全绿）|",
         "docs/agent-map.md": f"**{total} 项全绿**",
         "scripts/scoring_rubric.md": f"（{total} 全绿）",
         "docs/polish-plan.md": "已 148 全绿却 continue-on-error",
         "docs/features/F008-evolve.md": "- [x] AC-2: `moon test --target js` 全量 148/148 无回归",
         # 豁免表条目必须在夹具里各有一条声明——否则 R4 会判"豁免失效"（这是设计，不是噪声）
-        "README_EN.md": "native track last verified with 317/317 tests green, not re-run",
-        "ARCHITECTURE.md": "JS 端 439/439 全绿；Native 端上一轮 Windows+WSL 317/317 全绿，本轮未复跑",
+        # 2026-10-01：四条 native 旧数（317）豁免已随现状声明一起改掉，夹具里不再出现"另一套数"的 native 句
+        "README_EN.md": "the native track measures " + total + "/" + total + " but dies on a clean tree (BUG-133)",
+        "ARCHITECTURE.md": "JS 端 439/439 全绿；Native 端 439/439（WSL，带构建残留的工作树），干净树必崩 ⇒ 不当门槛",
         "BACKLOG.md": "done(R107 那轮 295/295 全绿)",
         "docs/other.md": "无关文字：测试 105/104 是引文，1986/1997 是年份",
         "memory/2026-09-26.md": "当日记录写 406/406（历史面豁免）",

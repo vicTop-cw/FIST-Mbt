@@ -13,6 +13,40 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.5 (mooncakes 已发布 / GitHub Release 未发布) - BUG-130 定因：native 门槛的根在依赖的 FFI，不在本仓逻辑（盖章 2026-10-01T03:01:00Z）
+
+### 本轮性质：定因（不是修复）——BUG-130 从「没人解释的门」变成「定因在依赖侧」
+
+- **读数来源是权威面不是本机**：owner 配了只读 `FIST_GITHUB_TOKEN`（`HKCU\Environment`，len=93，全程不回显、不进 argv），
+  于是取到 CI 作业日志正文。run 36656890998（@ `4d83a94`）`Test (native, j=1)` 那一步逐字：`Failed to run the test: /home/runner/work/FIST-Mbt/FIST-Mbt/_build/native/debug/test/src/engine/engine.blackbox_test.exe` ／ `The test executable exited with signal: 11 (SIGSEGV) (core dumped)`
+  ⇒ **不是断言失败，是测试二进制被信号打死**；BUG-130 入账时那句「匿名取不到崩溃细节」到此闭合。
+- **三条排除都做了实测**：① 工具链同版本——CI 的 js 作业自述 `moonc v0.10.14+7d59c7ec9 (2026-09-18) ~/.moon/bin/moonc`，与本机 WSL 的 `moon version --all` 逐字相同，
+  「CI 装了更新后端把 native 编坏」不成立；② 依赖同版本——`moon.mod` 是精确版本（`mizchi/sqlite@0.3.1`），CI 下载日志与本地 `.mooncakes` 同一批；
+  ③ 并行不是因——本轮从权威面取到 34 格 native 作业读数（34 次运行，覆盖 17 个 commit × 两条 workflow），
+  `Test (native)`（ci.yml，17 格全 failure）、`Test (native, j=1)`（fist-ci.yml，17 格全 failure） —— 两臂**无一 success** ⇒ 「`-j 1` 串行可降低」这条旧口径被读面否掉。
+- **复现条件是「哪棵树」而不是「哪个用例」**：工作树（带既往构建残留 `_build/`）里 `moon test --target native -j 1` = **572/572**（rc=0）；
+  同一 commit 的 `git archive HEAD` 干净树同一条命令必崩，第一次崩在 `src/ops/ops.blackbox_test.exe`（signal 11），
+  重跑变成 `munmap_chunk(): invalid pointer` + signal 6 ⇒ 崩点会移动，形态是 glibc 报非法 free。逐文件/逐索引二分都钉不住：
+  `ops_pipeline_test.mbt` 上一轮单独 SIGABRT、同命令重跑 16/16 全过，engine 的 19 个黑盒文件单独跑全过而 CI 死的是它的 union 产物。
+- **根因另立 BUG-133**（`mizchi/sqlite@0.3.1` 的 native FFI：`stub.c:18-29`/`:79-87` 把 `sqlite3*` / `sqlite3_stmt*` 裸指针直接当
+  MoonBit 对象回传，全包 `moonbit_make_external_object` 零命中；`stub.c:148`/`:298`/`:321` 三个函数 C 回 `const char*` 而声明成 `-> Bytes`，
+  包内注释 `stub.c:200-203` 自认这条路是 UB）。registry 里 0.3.1 已是最新版（`~/.moon/registry/index/user/mizchi/sqlite.index` 全量列出），
+  没有「升一版就好」这条路。
+- **新增常驻判据** `scripts/blackbox/e2e_native_heap_probe.py`：生成的探针只调该依赖的公开 API、一行 FIST 业务码都不含，
+  连跑 N 次按退出码分格并报 glibc 原文。本轮实测 **crashes=3/12（sigsegv 1、sigabort 2、ok 9，读数出自 WSL ubuntu 侧；Windows 侧该判据显式拒绝出数，见下）**。判据方向刻意反向：**0/N 才许把 native 臂当常规门槛**，
+  在那之前任何 `continue-on-error` 都算遮钉住的缺陷 ⇒ 交 owner 裁决，本轮不自决改 CI。
+  Windows 侧该判据 `return 3` 拒绝出数（不是「没问题」）；Windows 的同类现象是 AGENTS 里既有的 `0xc0000374` 记录，本轮未在 Windows 复跑判据。
+- **顺手抓一条工具面缺陷（BUG-134）**：走 `report_bug` 落账时回执 `bug_id="BUG-1"`、`resolved_path="."`，
+  实写的是 Qoder 插件运行目录那本账（`~/.qoder-cn/plugins/data/fist-mbt-local/workdir/memory/bugs.md`），不是仓库根这本。
+  自述承诺「绝对 + normalize」而实现回的是相对路径 ⇒ 调用面从回执**看不出**写错了轨（BUG-5 的 FIXED 只兑现了「有没有这个键」那半）。
+  本轮因此用脚本写仓库账（`temp/b130_ledger.py`，带幂等回收键 + `--verify`），并把这条入账。
+- **旧口径就地改正（4 份文档同步）**：AGENTS/README/README_EN/ARCHITECTURE 里「native 上一轮 317/317、本轮未复跑」与
+  「并行偶发 `0xc0000374`、`-j 1` 串行可降低」两句都被实测推翻——单进程探针也崩、`-j 1` 臂每次必崩 ⇒ 与并行竞态无关、串行不降低概率。
+  随之删掉 `scripts/check_test_sync.py` 里四条已失效的 `317` 豁免（R4「豁免条目失效即红」是设计），
+  并把该判据 `--selftest` 的夹具基线换成新口径形状 ⇒ 八格对照重新全过。
+- **验证面**：JS 全量（权威门槛）572/572；守卫族复跑 **17 格** ⇒ **全 rc=0**（逐格 rc 的读数在 `temp/b130_guards.log`，末次 total=17/fails=0，调用面与 `ci.yml` 各步逐字对齐，含 `gen_plugins --check/--selftest`、cl7、doc-surface(+selftest)、test-sync(+selftest)、scripts-index、demo-isolation(+selftest)、ps-encoding、entry-paths、store-tables-wired、badge、tools-sync、release-asset-names）；`check_publish_payload` 现回 PASS 发布载荷面干净：将随包公开 557 件，其中未被 git 跟踪的 0 件（另有 18 件点号条目 moon 本来就不打包）。
+- 账本现 **133 条**（9 DUPLICATE / 4 FALSE_POSITIVE / 116 FIXED / 4 OPEN）；OPEN 逐条点名 = BUG-130, BUG-132, BUG-133, BUG-134（计数从 `## BUG-nn …` 抬头反解，不是数小记）
+
 ## v0.3.5 (mooncakes 已发布 / GitHub Release 未发布) - BUG-128 出路①执行：版本号前进一位 + 注册表载荷逐件对表（盖章 2026-09-29T10:44:53Z）
 
 - **版本真源三处同步（owner 裁决的代价那一格，逐字改）**：`moon.mod` `0.3.4→0.3.5`、

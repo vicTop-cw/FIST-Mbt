@@ -205,7 +205,9 @@ fist doctor        # 5 项健康检查
 - **Native 目标**：系统 SQLite 开发库（sqlite3.h + sqlite3.lib）。一键装载：`pwsh ./scripts/native-env.ps1`
 
 > **JS 后端**：`moon test --target js` = **572/572**（2026-09-29 Windows 实测，含一源四态 cl7、模型路由与外部执行器合并（4 工具 + 24 项回归锁）、BUG-4/18 与三轮自我迭代回归锁 BUG-19/21/24/31/36）。
-> **Native 后端**：上一轮在 Windows + WSL(Linux) 通过 317/317；本轮四模式流水线未复跑 native，故不据旧数宣称双端同版全绿，见「已知边界」。
+> **Native 后端**：2026-10-01 在 WSL ubuntu-22.04 实测 `moon test --target native -j 1` = **572/572**（与 JS 同数，工作树含上几轮构建残留时）；
+> 同一 commit 的 `git archive HEAD` **干净树**上同一条命令必崩（native 测试二进制被信号打死），根因在依赖的 native FFI，
+> 见账本 BUG-133 与判据 `scripts/blackbox/e2e_native_heap_probe.py`；上一版这句写的是「native 未复跑」，就此作废。边界条款见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
 
 ## 架构
 
