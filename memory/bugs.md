@@ -2443,6 +2443,37 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
   且 `fist-ci.yml` 里**没有任何 `schedule:` 触发** ⇒ 这道「每日自检」永不可能运行，
   每次运行里 `nightly self-check: skipped` 不是「定时轨没到点」，是**条件恒假**。另立 BUG-132，不并到本条。
 
+### 追记(2026-10-01T02:27:45Z / BUG-130)
+- 本轮定因面（2026-10-01，owner 配的只读 token 取到日志原文））本条从「未定因」升级为「定因在依赖侧」，逐条读数如下，旧正文一字不改：
+- **CI 日志原文拿到了**（`GET /repos/vicTop-cw/FIST-Mbt/actions/jobs/109703045365/logs`，带 owner 配在
+  `HKCU\Environment` 的 `FIST_GITHUB_TOKEN`（只读，len=93，全程不回显、不进 argv、不进 URL 明文；302 到 Azure 签名 URL
+  的第二发**必须不带** Authorization，带了反而 401））。run 36656890998（@ `4d83a94`）第 8 步 `Test (native, j=1)` 逐字三行：
+  `Failed to run the test: /home/runner/work/FIST-Mbt/FIST-Mbt/_build/native/debug/test/src/engine/engine.blackbox_test.exe`
+  ／`The test executable exited with signal: 11 (SIGSEGV) (core dumped)`／`##[error]Process completed with exit code 255.`
+  ⇒ **不是断言失败**，是测试二进制被信号打死；本条原先那句「拿不到崩溃细节」到此闭合。
+- **三条排除都是实测**：① 工具链同版本——权威 CI 的 js 作业里那步 `moon version --all`（BUG-118 留的自述）回
+  `moon 0.1.20260920 / moonc v0.10.14+7d59c7ec9 / moonrun 0.1.20260920`，与本机 Windows 和 WSL 的 `moon version --all` **逐字相同**
+  ⇒ 「CI 装了更新的后端把 native 编坏」这条**不成立**；② 依赖同版本——`moon.mod` 是精确版本，CI 下载日志点名的
+  `async@0.22.3 / x@0.5.5 / mcp@0.17.4 / mooncry@0.13.1 / sqlite@0.3.1` 与本地 `.mooncakes` 同一批；③ 并行不是因——
+  `-j 1` 那一臂（fist-ci.yml）与不带旗那一臂（ci.yml）**每次**都红，本轮 34 格 native 作业读数里无一绿过。
+- **本机可复现，且复现条件不是「哪个用例」而是「哪棵树」**：仓库工作树（有 `_build`、有上几轮残留的 `*.db`）里
+  `moon test --target native -j 1` = **572/572 全过**；同一 commit 用 `git archive HEAD` 解一棵干净树（无 `_build`、无残留 db、无 `temp/`）
+  跑同一条命令 = **崩**，第一次崩在 `src/ops/ops.blackbox_test.exe`（signal 11），重跑一次变成
+  `munmap_chunk(): invalid pointer` + `signal: 6 (SIGABRT) (core dumped)` ⇒ 崩点在包之间移动、形态是 glibc 报的非法 free。
+- **二分面证明「钉一个用例」这条路在此缺陷上不存在**：逐文件单跑，`ops_pipeline_test.mbt` 与 `ops_selfdrive_test.mbt` 各崩过一次
+  （rc=255 / SIGABRT），但把同一条命令原样重跑，`ops_pipeline_test.mbt` **16/16 全过**，再按 `-i` 逐索引 0..15 单跑也 16 格全 0；
+  engine 侧 19 个黑盒文件逐个单跑**全部单独通过**，而 CI 里死的正是 engine 的 union 产物。
+- **根因面另立 BUG-133 那条**（`mizchi/sqlite@0.3.1` 的 native FFI：`stub.c:18-29`/`:79-87` 把 `sqlite3*` / `sqlite3_stmt*`
+  裸指针直接当 MoonBit 抽象类型的值回传，全包 `moonbit_make_external_object` 零命中；`stub.c:148`/`:298`/`:321` 三个函数 C 侧回
+  `const char*` 而 `sqlite_native.mbt:90`/`:230`/`:240` 声明成 `-> Bytes`，包内注释 `stub.c:200-203` 自认这条路是 UB）。
+- **常驻判据已落仓**：`scripts/blackbox/e2e_native_heap_probe.py` 生成的探针只用该依赖的公开 API、一行 FIST 业务码都不含。实跑 `python scripts/blackbox/e2e_native_heap_probe.py --runs 12`（WSL ubuntu-22.04，仓库根）= **crashes=3/12**（sigsegv 1 + sigabort 2 + ok 9）；
+  同一探针在干净树的另一轮读数是 5/12（1 次 rc=139 + 4 次 rc=134）。判据方向刻意反向：**0/12 才许把 native 臂当常规门槛**，
+  在此之前任何 `continue-on-error` 都属「遮钉住的缺陷」，交 owner 裁决，本条不自决。
+- **本轮推翻一条旧口径**：AGENTS.md 原写「Windows native **并行**跑全量偶发 `0xc0000374`，建议 `-j 1` 串行（可降低但不保证消除）」——
+  实测单进程探针（无并发）就 3/12 崩、CI 的 `-j 1` 臂每次都崩 ⇒ **串行不降低概率**，且这一类与并行竞态无关；已就地改该句措辞。
+- **本条状态仍 OPEN**，但性质变了：不再是「没人解释的门」，而是「定因清楚、出路要裁决」。要 owner 点的三格见
+  本轮报告 §后续建议（CI native 臂：保持红 / 挂 continue-on-error / 换成只跑判据）。
+
 ## BUG-131 [2026-09-30T00:50:05Z] [medium] FIXED
 - summary: cl7 插件态投影引用的启动参数真源文件名由『本机未跟踪残留』决定 ⇒ 同一棵 HEAD 本机绿、CI 红（我 2026-09-30 push 124a20a 之后 ci.yml 的 Plugin-form guard cl7 那一步就是红的）
 - detail: 发现面：owner 授权 push 之后按既有口径拿权威 CI 当验收。09-28 的 ci.yml js/ubuntu job 是 success []，我这次 push 后同一 job 的失败步骤名 = 『Plugin-form guard cl7 —— 一源四态的第四态漂移或生成投影里有手写残留』。本机复跑 cl7 却 PASS ⇒ 『本机绿 / CI 红』这一型先怀疑尺子的输入面，不怀疑被测。
@@ -2490,3 +2521,45 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
 证据（本轮实测，非自述）：grep -rn 'refs/heads' .github/workflows ⇒ 唯一命中 fist-ci.yml:85；grep -rn 'schedule|cron:' .github/workflows ⇒ 只有 fist-bug-sync.yml:4-6；git symbolic-ref refs/remotes/origin/HEAD ⇒ refs/remotes/origin/master；匿名 Actions API 逐 job 读数（run 36653784771 等）里 `nightly self-check` 恒 skipped
 - reported_by: fist-mbt-native-gate-audit-0d7b7115
 
+## BUG-133 [2026-10-01T02:27:45Z] [high] OPEN
+- summary: native 后端 FFI 内存安全缺陷：`mizchi/sqlite@0.3.1` 把 C 侧裸指针（`sqlite3*` / `sqlite3_stmt*`）当 MoonBit 对象回传，另有三个函数 C 回 `const char*` 而声明成 `-> Bytes`，实测把 native 测试二进制打成 SIGSEGV/SIGABRT（glibc 报非法 free）
+- detail: 三层证据都可复跑（2026-10-01，WSL ubuntu-22.04 + `moon 0.1.20260920 / moonc v0.10.14+7d59c7ec9`，与权威 CI 的 js 作业自述逐字同版本）。
+  机理面（读包源码，行号可核）：`.mooncakes/mizchi/sqlite/stub.c:18-29` 的 `sqlite_open` 直接 `return db`（`sqlite3*`）、
+  `:79-87` 的 `sqlite_prepare` 直接 `return stmt`（`sqlite3_stmt*`），而 `sqlite_native.mbt:352-380` 把这些值存进 MoonBit 结构体当对象用；
+  `grep -c moonbit_make_external_object .mooncakes/mizchi/sqlite/stub.c` = **0**（MoonBit native 侧包 C 指针的正规做法一次都没用）⇒ 运行时按
+  MoonBit 对象头去标记/释放一个非堆起点的指针。类型面：C 侧 `stub.c:148` `sqlite_errmsg`、`:298` `sqlite_db_filename`、`:321` `sqlite_expanded_sql`
+  都回 `const char*`（后两个还写进 `static char xxx_buffer[N]` 静态缓冲），声明侧 `sqlite_native.mbt:90`/`:230`/`:240` 却都是 `-> Bytes`
+  （`Bytes` 要读长度前缀）——包内注释 `stub.c:200-203` 自己写着「passed back as moonbit_bytes_t is UB — Bytes reads a length prefix」，
+  但这条纪律只修了 `sqlite_column_name`，其余三个仍违例。复现面：`scripts/blackbox/e2e_native_heap_probe.py` 的探针只调它的公开 API
+  （`Database::open` / `exec` / `prepare` / `Statement::bind` / `execute` / `query` / `step` / `column` / `finalize` / `close`），300 轮开关库 + 分配压力，
+  实跑 `python scripts/blackbox/e2e_native_heap_probe.py --runs 12`（WSL ubuntu-22.04，仓库根）= **crashes=3/12**（sigsegv 1 + sigabort 2 + ok 9），两种 glibc 原文都出现过：`munmap_chunk(): invalid pointer` 与 `free(): invalid pointer`；崩溃那几次连 `PROBE DONE` 都没打出来。
+  后果面：这就是 BUG-130 那条 CI native 臂恒红的根，也是本仓 AGENTS 里那条「Windows native 偶发 `0xc0000374`（堆损坏）」的同族——
+  单进程、无并发也崩，所以旧口径里「并行竞态、串行可降低」两句都不成立。
+  为什么不是「等升级就好」：registry 里 `mizchi/sqlite` 的可选版本 = 0.1.0/0.1.1/0.1.2/0.1.3/0.2.0/0.2.1/0.2.2/0.2.3/0.2.4/0.3.0/**0.3.1**
+  （读自 `~/.moon/registry/index/user/mizchi/sqlite.index`），0.3.1 就是最新，没有可退的修复版。
+  为什么不能用「改测试」消掉：崩点在用例之间随机移动——同一命令上一轮 `ops_pipeline_test.mbt` 单独 SIGABRT、下一轮同命令 16/16 全过，
+  engine 的 19 个黑盒文件单独跑全过而 union 产物在 CI 必死；把它「测到绿」只会把内存安全面再次藏起来。
+  转正前置（机器可检）：`python scripts/blackbox/e2e_native_heap_probe.py --runs 12` 回到 **crashes=0/12**（判据自身 exit 0）。这条是本仓 native 门槛唯一的消音判据——
+  在它回到 0/12 之前，native 臂的任何宽容（`continue-on-error` / 摘步骤）都算遮钉住的缺陷，须 owner 裁决。
+  绕行面（消费方视角，不改依赖）：native 产物要稳就得让 sqlite 句柄活满进程生命周期（不 close、不重复 open 同一路径），
+  本仓 store 层的 `SqliteStore::open` + `clear()` 幂等清库正是「反复开关」的形状，代价与可行性未测，先挂在这条里不当结论。
+- reported_by: bug130-rootcause-lane
+
+## BUG-134 [2026-10-01T02:27:45Z] [low] OPEN
+- summary: resolved_path 回显不是绝对路径——`report_bug`/`bug_list` 的自述承诺「绝对 + normalize」，实现与自家白盒测的是**规范化相对路径**，导致写错轨时调用面从回执看不出来
+- detail: 声明面：`src/server/server.mbt` 里这两个工具的描述都写「返回值含 resolved_path（绝对 + normalize 后的落点）」，
+  BUG-5 的修复建议原文也写着「补 `resolved_path`（绝对 + normalize 后），让落点可审」（`memory/bugs.md` BUG-5 条目内，那条现为 FIXED）。
+  实现面：`src/server/bugreport.mbt:330-331` / `:430` 只是 `bug_resolve_path(project_dir)` 的原样回显，
+  自家白盒 `src/server/bugreport_test.mbt:170` 的断言就是「规范化后的**相对**路径」（注释逐字这么写），`:180` 只校 `contains("bug_c5")`。
+  实测代价（本轮真事）：Qoder 插件连接器的进程 cwd 是 `~/.qoder-cn/plugins/data/fist-mbt-local/workdir`，
+  我用 `project_dir="."` 走 `report_bug`，回执 `{bug_id: "BUG-1", path: "./memory/bugs.md", resolved_path: "."}` ——
+  编号从 1 起 ⇒ 写的是**插件 workdir 那本账**（`~/.qoder-cn/plugins/data/fist-mbt-local/workdir/memory/bugs.md`，10:09:17 落盘、4579 字节），
+  不是仓库根这本（写本条时盘面 131 条、最大号 132，仓库账未被触碰，对本条摘要短语 `grep -c` = 0 命中）；
+  而从回执本身**判断不出**这一层：`resolved_path` 给的是 `.`，既不是绝对路径，也没有把「相对哪个根」说出来。
+  与既有条目的分工：BUG-5 已经把「project_dir 契约两套不统一」入账并 FIXED，本条只钉它没盖住的那半格——
+  **回显必须能独立审落轨**（绝对路径，或至少同时回显 server cwd 与账本绝对落点），否则「账写在哪条轨上」永远只能靠事后全盘搜索。
+  活证据（可复跑）：`bug_list(project_dir=".")` 与 `bug_list(project_dir="FIST-Mbt")` 的 count 差就是 cwd 漂移的读数（本轮实测：
+  前者回 1 条（插件账），后者回 0 条）；仓库那本账要用 `python -c` 直读 `memory/bugs.md` 抬头才取得到。
+  建议修法（不动调用面语义）：`resolved_path` 改成真的绝对 + normalize，并新增 `server_cwd` 字段；白盒断言从 `contains("相对名")`
+  换成「以盘符/根开头 + 与 `scripts/blackbox/e2e_native_heap_probe.py` 之类调用面直读的路径逐字相等」。
+- reported_by: bug130-rootcause-lane
