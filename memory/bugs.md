@@ -2474,6 +2474,17 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
 - **本条状态仍 OPEN**，但性质变了：不再是「没人解释的门」，而是「定因清楚、出路要裁决」。要 owner 点的三格见
   本轮报告 §后续建议（CI native 臂：保持红 / 挂 continue-on-error / 换成只跑判据）。
 
+### 追记(2026-10-01T03:17:57Z / BUG-130)
+- 定因落地 push 之后的权威 CI 读数（定因那笔 commit `47b88ff` push 之后；两远端都只做了 fast-forward、无 force）：
+  run 36808812351『FIST CI — Build + Test』= `check + test (js, ubuntu)`=success / `check + test (native, ubuntu)`=failure（红格逐字 `#8 Test (native, j=1)=failure`） / `nightly self-check`=skipped ⇒ 整发 **failure**；
+  run 36808812320『CI』= `check + test (js, windows)`=success / `check + test (js, ubuntu)`=success / `check + test (native, ubuntu)`=failure（红格逐字 `#7 Test (native)=failure`） ⇒ 整发 **failure**；
+  ⇒ **本轮零改动于 `src/` 与 `.github/workflows/`，native 仍死在同名步骤**——这条红与定因轮的文件改动无因果，
+    与 BUG-133 的机理读数（探针零 FIST 业务码也崩，`crashes` 见 `scripts/blackbox/e2e_native_heap_probe.py`）方向一致。
+- 两发的 **js 臂都 success** ⇒ 权威面上的判据步骤全过（CI 的 js 作业里跑的就是本地这一族守卫，只是步数不等同：CI 还多跑 store-isolation / heartbeat e2e / cli-flag probe / cleanliness 等）；
+  `nightly self-check` 仍 `skipped`，是 BUG-132 那条恒假条件的又一发读数（不改判）。
+- 取数面：`python temp/b130_ci_readback.py 47b88ff`（token 只从 `HKCU\Environment` 读、写 curl `--config` 临时文件、结束删除，不进 argv 不打印）；读数原件 `temp/b130_readback2.txt`。
+- 本条状态仍 **OPEN**：出路三选一（native 臂保持红 / 挂 `continue-on-error` / 改跑判据当门）在 owner 手上，按金条四不自决改共享 CI 定义。
+
 ## BUG-131 [2026-09-30T00:50:05Z] [medium] FIXED
 - summary: cl7 插件态投影引用的启动参数真源文件名由『本机未跟踪残留』决定 ⇒ 同一棵 HEAD 本机绿、CI 红（我 2026-09-30 push 124a20a 之后 ci.yml 的 Plugin-form guard cl7 那一步就是红的）
 - detail: 发现面：owner 授权 push 之后按既有口径拿权威 CI 当验收。09-28 的 ci.yml js/ubuntu job 是 success []，我这次 push 后同一 job 的失败步骤名 = 『Plugin-form guard cl7 —— 一源四态的第四态漂移或生成投影里有手写残留』。本机复跑 cl7 却 PASS ⇒ 『本机绿 / CI 红』这一型先怀疑尺子的输入面，不怀疑被测。
