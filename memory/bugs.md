@@ -2591,6 +2591,13 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
 - ⇒ **0/N 只说明这一支样本没抽中**。前置收紧成两格（两格都要满足，缺一不算修好）：① `python scripts/blackbox/e2e_native_heap_probe.py --runs 12` 连跑数发都 0 崩溃（抽检面，决定 CI 的 `Native heap gate (BUG-133 探针当门)` 放不放行）；② **`git archive HEAD` 干净树**上 `moon test --target native` 全量通过（即 CI 的 `Test (native)` 那一步不再被信号打死）—— 这一格才是本缺陷的失效面，它以前是恒红且崩点随机移动，所以只有它绿了才叫修好。
 - 记账口径不变：本条仍是 native 门槛的**唯一根因单**；BUG-130 盖 FIXED 不覆盖本条（两单的关闭条件本来就不同，混在一起才会遮缺陷）。CI 里「门绿而全量仍被信号打死」不是新缺陷，是 ① 的抽检性质，两个 workflow 的注释都写了这条读法。
 
+
+### 追记(2026-10-02T02:07:06Z / BUG-133)
+- J11 落地 push 之后的权威 CI 读数（`af5d513`，只追加、上文一字不改）：
+  · run 36953707904『FIST CI — Build + Test』conclusion=failure ⇒ check + test (js, ubuntu)=success、check + test (native, ubuntu)=failure 红格[#9 Test (native, j=1)=failure]、nightly self-check=skipped
+  · run 36953707891『CI』conclusion=failure ⇒ check + test (js, ubuntu)=success、check + test (js, windows)=success、check + test (native, ubuntu)=failure 红格[#8 Test (native)=failure]
+  ⇒ 读数形状与前两发逐字相同：**js 两臂 success、native 两臂红在 `Test (native` / `Test (native, j=1)` 那一格**（门那一步又绿了 = 12 抽没抽中，见上一段追记的抽检口径）。本轮改动全在文档面与判据面（`src/` 零改动），js/ubuntu 那一步 success 就是「J11 进了 CI 的文档面那格且没把守卫跑红」的调用面证据。
+
 ## BUG-134 [2026-10-01T02:27:45Z] [low] OPEN
 - summary: resolved_path 回显不是绝对路径——`report_bug`/`bug_list` 的自述承诺「绝对 + normalize」，实现与自家白盒测的是**规范化相对路径**，导致写错轨时调用面从回执看不出来
 - detail: 声明面：`src/server/server.mbt` 里这两个工具的描述都写「返回值含 resolved_path（绝对 + normalize 后的落点）」，
