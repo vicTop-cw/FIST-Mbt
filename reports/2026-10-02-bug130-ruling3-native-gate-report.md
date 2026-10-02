@@ -40,8 +40,9 @@ BUG-130 入账时的主张是「**会红且没人解释**」，不是「native �
 
 1. 若日后有人删掉这两道门，**没有常驻判据会红**（只有 native 全量自己的崩会红，_legibility_ 消失而无人认领）。
    建议下一轮把它做成 `check_doc_surface` 的一条 J 规则（「文档声称的 CI 门步骤必须在两个 workflow 里存在」）。
-2. 抽检门的检出率没标定：`--runs 12` 下 0 崩溃的概率看起来不小（本轮真出现过 0/12）。要更高置信只能加大 N，
-   代价是两臂各 ~3.5 分钟起——留给 owner 取舍，本轮不自决加时长。
+2. 抽检门的检出率没标定，且**这一发 CI 两臂的门都是绿的**（#7 / #8 success ⇒ 12 抽没抽中），本机同尺同会话也出现过 0/12。
+   要更高置信只能加大 N，代价按 12 跑 ≈3.5 分钟比例往上乘——留给 owner 取舍，本轮不自决加时长。
+   缓解：全量那一格现在自带 `::error::`，所以「门漏检」不再等于「红没人解释」。
 3. BUG-132（nightly 恒假条件）与 BUG-134（resolved_path 自述）仍在 OPEN，与本轮无因果。
 4. 证据件都在 `temp/`，会被 `scripts/cleanup_artifacts.py` 回收；再生命令写进账本追记那一段。
 
@@ -54,6 +55,30 @@ BUG-130 入账时的主张是「**会红且没人解释**」，不是「native �
 ## 超额内容
 
 本轮只做了裁决③本体 + 判据自证加固 + 文档同步；未新建第 18 格守卫、未加 CI 时长、未动 nightly 臂（BUG-132 仍等裁决）。
+
+## 补记（同轮第二笔 `24c30f8`）：全量那一格的红也带根因，BUG-130 盖章
+
+上一笔推完之后读权威 CI，得到的是**半成品**：门那一步两臂都绿（`ci.yml` #7 / `fist-ci.yml` #8），
+红仍然落在 `Test (native)` #8 与 `Test (native, j=1)` #9 —— 与入账时同一个格子、同一个 rc=255。
+于是把这两步本身改成「rc 透传 + 非零时打一条 `::error::`」：
+
+```bash
+rc=0
+moon test --target native || rc=$?      # GHA 默认 bash -e，直接 rc=$? 会在非零那支先退出
+if [ "$rc" -ne 0 ]; then echo "::error::BUG-133 的读面…"; fi
+exit "$rc"                              # 红照原样传，注解不放宽门槛
+```
+
+本机两态对照（`temp/b130_shell_logic.txt`）：注入 rc=139 ⇒ 注解打印 **且** 步骤以 139 退出；注入 rc=0 ⇒ 无注解、以 0 退出。
+盖章后的权威 CI（`temp/b130_annot_24c30f8_v3.txt`，逐字引 failure 级注解）：
+『BUG-133 的读面：native 测试二进制以 rc=255 收场（既往形态 = 被信号打死 / core dumped）。…门绿只代表这一次 12 抽没抽中』
+—— 两臂各一条，另有 job/步骤结论 6 格照旧（js 两臂 success、native 两臂 failure、nightly skipped）。
+
+**BUG-130 已盖章 FIXED**（`### FIXED(2026-10-02T01:20:21Z / BUG-130)`），OPEN 4→3 = BUG-132 / BUG-133 / BUG-134。
+盖章走的是 **md 真源面**而不是 `bug_fix` RPC：本会话连上的 connector 其 server cwd 不指向本仓
+（`bug_list` 回显 `path=./memory/bugs.md`，返回的两条 OPEN 是**别的项目**的台账条目），RPC 两次 `MCP error -32603` 且盘上零写入
+⇒ 由 `temp/b130_fixed_stamp.py` 落抬头 + 小记，前置门含「两远端 `rev-list --count <远端>..HEAD` = 0」与
+「反解到 2 条 BUG-133 注解」（少一条就拒写）。投影随账走：`gen_plugins.py` 回执 = 133 条入账 / 117 已修 / 3 待修，cl7 重跑 PASS。
 
 ## 来源
 
