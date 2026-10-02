@@ -105,7 +105,7 @@ AIGC:
   「JS 轨=实测 / native 轨=旧数」共存形状（否则 R4 判"失效豁免"，那条负向门是设计不是噪声）。
 - 读数：JS 全量 **573/573**（`temp/js_b134_take2.log`，`moon_rc=0`）、`moon fmt --check` no work、守卫族 17 格 `total=17 fails=0`
   （含 `test-sync --selftest`、`check_badge` 读徽章 `tests-573%2F573`、cl7）。`src/` 改动 4 个文件（`bugreport.mbt`/`bugreport_resolve.mbt`/`server.mbt`/`pkg.generated.mbti`）+ 测试 1 个。
-- **盖章（同轮第二笔）**：`### FIXED(2026-10-02T02:39:29Z / BUG-134)` 走 md 真源面（`bug_fix` RPC 面指向另一本台账，前一轮已实锤），
+- **盖章（同轮第二笔）**：`### FIXED(2026-10-02T02:39:29Z / BUG-134)` 走 md 真源面（`bug_fix` RPC 面指向另一本台账，前一轮已实锤 ⇒ 不拿它盖本仓的章），由 `temp/b134_fixed_stamp.py` 写抬头 + 小记。前置门含「两远端 rev-list=0」「JS 573/573 且 rc=0」「守卫族 total=17 fails=0」「调用面探针正向 + 两态对照都在场」「CI 两条 js job 都 success」；投影随之 `BUG-1~134 共 133 条入账 = 118 已修 / 9 重复并入 / 4 误报 / **2 待修（BUG-132, BUG-133）**`，cl7 重跑 PASS。 收尾一格代码整理：`bug_server_cwd()` 从前在一份回执里被调两次（`resolved_path` 与 `server_cwd` 各取一次）⇒ 改成一次取数两处用（两个键必须出自同一次观测，否则回执内部自己就可能对不上）；复测 JS 仍 573/573（`temp/js_b134_take3.log`）、探针 PASS、守卫族 17 格 fails=0，盖章后那发权威 CI 的 js/ubuntu 与 js/windows 都 success ⇒ 投影重生成后的 cl7 在 CI 上也绿（这格曾单独红过，就是 BUG-131）。
 
 ## v0.3.5 (mooncakes 已发布 / GitHub Release 未发布) - BUG-128 出路①执行：版本号前进一位 + 注册表载荷逐件对表（盖章 2026-09-29T10:44:53Z）
 
