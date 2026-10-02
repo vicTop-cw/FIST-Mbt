@@ -83,6 +83,7 @@ BUG-134 的形状不是"少了一个字段"，而是**主张与实现之间那�
 - 台账从 3 待修降到 2（BUG-132 等 owner 裁决、BUG-133 根在依赖），投影随之重生成：
   `gen_plugins` 回执 `133 条入账 = 118 已修 / 9 重复并入 / 4 误报 / 2 待修`，cl7 重跑 PASS，守卫族再跑 `total=17 fails=0`。
 - 上面缺口 #1（"盖章要走 md 面并写明是哪一面"）到此闭合；缺口 #2（插件运行时副本没同步）与 #3（协议面只跑了 `.` 形态）仍然开着。
+- 盖章之后又读了一发 CI（`temp/b134_stamp_readback.txt`）：js/ubuntu 与 js/windows 都 success ⇒ 投影重生成后的 cl7 在 CI 上也绿（这格曾经单独红过，就是 BUG-131）；native 两臂同形红在 `Test (native` / `Test (native, j=1)`，那是 BUG-133 的读数面。代码侧收尾把 `bug_server_cwd()` 从「一份回执里调两次」改成「一次取数两处用」——两个键必须出自同一次观测，否则回执内部自己就可能对不上；复测 `moon test --target js` = 573/573（`temp/js_b134_take3.log`）、探针 PASS、守卫族 17 格 fails=0。
 
 ## 来源
 
