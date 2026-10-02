@@ -327,8 +327,13 @@ pub fn report_bug(
   m.set("id", Json::string(bug_id))
   m.set("status", Json::string("OPEN"))
   m.set("path", Json::string(path))
-  // BUG-5 fix: 补 resolved_path（绝对 + normalize），让落点可审
-  m.set("resolved_path", Json::string(bug_resolve_path(project_dir)))
+  // BUG-134：resolved_path 从此是**绝对**落点（BUG-5 的自述一直这么写，实现却回显相对路径）；
+  // server_cwd 同批回显，调用方拿两者一比就知道账写进了哪本台账（插件连接器的 cwd 不是仓库根时尤其必要）。
+  m.set(
+    "resolved_path",
+    Json::string(bug_abs_path(bug_server_cwd(), project_dir)),
+  )
+  m.set("server_cwd", Json::string(bug_server_cwd()))
   m.set("project_dir", Json::string(project_dir))
   m.set(
     "task_namespace",
@@ -427,7 +432,8 @@ pub fn bug_list(project_dir : String) -> Result[Json, String] {
     Json::object({
       "path": Json::string(path),
       "project_dir": Json::string(project_dir),
-      "resolved_path": Json::string(bug_resolve_path(project_dir)),
+      "resolved_path": Json::string(bug_abs_path(bug_server_cwd(), project_dir)),
+      "server_cwd": Json::string(bug_server_cwd()),
       "count": Json::number(entries.length().to_double()),
       "bugs": Json::array(entries),
     }),

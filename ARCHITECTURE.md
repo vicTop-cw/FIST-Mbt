@@ -78,7 +78,7 @@ evolve_distill            蒸馏成 [principle] 原则写入 DGM，4-AI 门禁�
 
 ## 四、设计要点
 
-1. **纯 MoonBit，零运行时依赖**：无 Python/Rust 包装；JS + Native 双端交叉编译：JS 端 `moon test --target js` = 572/572（本轮 Windows 实测，权威门槛）；Native 端 2026-10-01 WSL 实测同为 572/572，但同一 commit 的干净树（`git archive HEAD`）上 native 测试二进制必崩，根因在依赖的 FFI（账本 BUG-133），故不拿 native 数当门槛（`moon update && moon run cmd/cli` 即用）。CI 的 native 两条臂按 2026-10-01 owner 裁决③改成「常驻判据当门 + 门后才跑全量」：门 `Native heap gate (BUG-133 探针当门)` 跑 `scripts/blackbox/e2e_native_heap_probe.py`（零本仓业务码），只有 `crashes=0/12` 才放行——把「没人解释的红」换成「有读数、有前置的红」，测试步骤未删所以覆盖会自己回来。
+1. **纯 MoonBit，零运行时依赖**：无 Python/Rust 包装；JS + Native 双端交叉编译：JS 端 `moon test --target js` = 573/573（本轮 Windows 实测，权威门槛）；Native 端 2026-10-01 WSL 实测同为 572/572，但同一 commit 的干净树（`git archive HEAD`）上 native 测试二进制必崩，根因在依赖的 FFI（账本 BUG-133），故不拿 native 数当门槛（`moon update && moon run cmd/cli` 即用）。CI 的 native 两条臂按 2026-10-01 owner 裁决③改成「常驻判据当门 + 门后才跑全量」：门 `Native heap gate (BUG-133 探针当门)` 跑 `scripts/blackbox/e2e_native_heap_probe.py`（零本仓业务码），只有 `crashes=0/12` 才放行——把「没人解释的红」换成「有读数、有前置的红」，测试步骤未删所以覆盖会自己回来。
 2. **状态机正确性优先**：九态状态机 + 非法迁移拦截（未认领直接 plan/execute 报错）+ 父任务自动上卷，正确性敏感逻辑由强类型保证、易单测。
 3. **验证可计算化**：Omega 语料门禁（schema+fingerprint，accuracy<100% 一票否决）与 evolve 注入式评分均不依赖 LLM 自评，杜绝"自己给自己打分"。
 4. **跨平台可复现**：SQLite 双后端（JS 走 node:sqlite，Native 走 mizchi/sqlite + `-lsqlite3`），specs/心跳均持久化、跨进程可读；native 侧的堆损坏不是并行竞态——`-j 1` 串行同样崩（单进程也崩，2026-10-01 实测推翻旧口径），根因与判据见账本 BUG-133 与该判据条目，README/AGENTS 已按此自曝边界，产品运行时不受影响。

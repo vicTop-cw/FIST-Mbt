@@ -86,7 +86,28 @@ AIGC:
   `bug_fix` RPC 两次 `MCP error -32603` 且盘上零写入 ⇒ 抬头与小记由 `temp/b130_fixed_stamp.py` 落 md（含未推 commit 数 = 0 的前置门），
   投影随之 `BUG-1~134 共 133 条入账 = 117 已修 / 9 重复并入 / 4 误报 / **3 待修（BUG-132, BUG-133, BUG-134）**`，cl7 重跑 PASS。
 
+### 补记(2026-10-02T02:44:19Z / BUG-134 修)：`resolved_path` 从此真的是绝对落点，顺带暴露两条"红着没人读"的旧账
+
+- **修的是主张而不是观感**：`report_bug`/`bug_list` 的自述从 BUG-5 起就写「绝对 + normalize 后的落点」，
+  实现回显的却是**相对 server cwd 的规范化路径** ⇒ 账写进了哪本台账，从回执本身判不出来（账本里逐字记着那次实锤：
+  `resolved_path: "."`，编号从 BUG-1 起 ⇒ 写的是插件 workdir 那本账）。现在 `resolved_path` 走 `bug_abs_path(server_cwd, project_dir)`，
+  并同批回显 `server_cwd`；取不到 cwd 时退回相对形态，而"退回"这件事由 `server_cwd` 是空串自己说话（不新造一个布尔旗）。
+- **白盒断言从"钉成假的"翻成"钉住主张"**：`bugreport_test.mbt` 里那条注释逐字写着「规范化后的**相对**路径」，
+  它把上面那句谎供了两年；现断言改成 `resolved_path` 以 `server_cwd` 开头 + `bug_list` 与 `report_bug` 回执逐字相等，
+  另补纯函数四形状格 `bug134_abs_path_shapes`（含负向对照：cwd 空串必须原样回相对，不许拼一条**看着像**绝对的路径）。
+- **调用面才算数**：`temp/b134_callsite_probe.py` 真起 `node cli.js serve`（cwd 刻意换到 `temp/b134_callsite_cwd`、`FIST_DB_PATH` 改道），
+  从 MCP `tools/call` 读回执逐字对表；该探针自带两态对照（`--selftest`：修复前形状 3 条违例都在、修复后 0 违例），
+  否则"正向绿"证明不了它能红。
+- **顺手挖出两条同族旧账**：① `bug_resolve_path` 从前用 `replace` —— MoonBit 的 `replace` **只换第一处**，
+  `E:\a\b` 规范化成 `E:/a\b`；过去的输入全是至多一个反斜杠的相对串，所以一直没红（改 `replace_all`）。
+  ② 测试总数从 572 变 573 之后，`check_test_sync` 一次点出 23 条现状主张，其中 4 条是 **native 轨 2026-10-01 的实测数**
+  —— 那 4 条**不许**跟着翻（native 本轮没复跑，改数＝伪造测量记录），走 `EXEMPT` 逐条点名并把夹具改成
+  「JS 轨=实测 / native 轨=旧数」共存形状（否则 R4 判"失效豁免"，那条负向门是设计不是噪声）。
+- 读数：JS 全量 **573/573**（`temp/js_b134_take2.log`，`moon_rc=0`）、`moon fmt --check` no work、守卫族 17 格 `total=17 fails=0`
+  （含 `test-sync --selftest`、`check_badge` 读徽章 `tests-573%2F573`、cl7）。`src/` 改动 4 个文件（`bugreport.mbt`/`bugreport_resolve.mbt`/`server.mbt`/`pkg.generated.mbti`）+ 测试 1 个。
+
 ## v0.3.5 (mooncakes 已发布 / GitHub Release 未发布) - BUG-128 出路①执行：版本号前进一位 + 注册表载荷逐件对表（盖章 2026-09-29T10:44:53Z）
+
 
 - **版本真源三处同步（owner 裁决的代价那一格，逐字改）**：`moon.mod` `0.3.4→0.3.5`、
   `src/server/server.mbt::project_version`、`cmd/cli/help_topics.mbt::FIST_VERSION` —— R11 判据 +

@@ -166,17 +166,28 @@ test "bug5_report_bug_returns_resolved_path" {
     Ok(x) => x
     Err(m) => abort(m)
   }
-  // resolved_path 存在且是规范化后的相对路径
+  // BUG-134：resolved_path 必须是**绝对**落点（此前这条断言写的是「规范化后的相对路径」，
+  // 把工具自述里「绝对 + normalize」那句钉成了假的）。cwd 取不到时退回相对形态，由 server_cwd 空串说话。
   let resolved = bug_str(j, "resolved_path")
+  let cwd = bug_str(j, "server_cwd")
   assert_true(resolved.contains("bug_c5"))
   assert_false(resolved.contains("\\")) // 反斜杠已规范化
+  if cwd == "" {
+    // 宿主给不出 cwd（本机 js/node 与 native 都不该走到这支）——那就必须看得见，不许静默当绝对
+    assert_eq(resolved, d)
+  } else {
+    assert_true(resolved.has_prefix(cwd + "/"))
+    assert_true(cwd.length() > 1)
+  }
   let pd = bug_str(j, "project_dir")
   assert_eq(pd, d)
-  // bug_list 也带 resolved_path
+  // bug_list 也带 resolved_path，且与 report_bug 同一支尺
   let lj = match bug_list(d) {
     Ok(x) => x
     Err(m) => abort(m)
   }
+  assert_eq(bug_str(lj, "resolved_path"), resolved)
+  assert_eq(bug_str(lj, "server_cwd"), cwd)
   assert_true(bug_str(lj, "resolved_path").contains("bug_c5"))
   assert_eq(bug_str(lj, "project_dir"), d)
 }
@@ -332,4 +343,16 @@ test "bug4_run_check_workdir_ok" {
   assert_true(
     run_check_workdir_ok("E:/IDEProjects/AI/Cypy", "E:/IDEProjects/AI/Cypy"),
   )
+}
+
+///|
+/// BUG-134：`bug_abs_path` 是纯函数（不碰宿主），四种形状缺一不可——
+/// Windows 反斜杠 cwd / 带尾斜杠的 cwd + `dir="."` / 相对段带尾斜杠 / 宿主给不出 cwd 的退路。
+/// 最后一支是成对的：cwd 为空时必须原样回相对形态，不许拼出一条**看着像**绝对落点的串。
+test "bug134_abs_path_shapes" {
+  assert_eq(bug_abs_path("E:\\repo", "temp/bug_c5"), "E:/repo/temp/bug_c5")
+  assert_eq(bug_abs_path("/srv/app/", "."), "/srv/app")
+  assert_eq(bug_abs_path("/srv/app", "sub/"), "/srv/app/sub")
+  assert_eq(bug_abs_path("", "temp/bug_c5"), "temp/bug_c5")
+  assert_false(bug_abs_path("", "temp/bug_c5").has_prefix("/"))
 }

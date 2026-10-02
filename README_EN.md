@@ -6,12 +6,12 @@
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-572%2F572-brightgreen)](./src)
+[![Tests](https://img.shields.io/badge/tests-573%2F573-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
 **FIST-Mbt** is an **AI commander task-orchestration foundation** rewritten in **pure MoonBit** and exposed as an **MCP Server** — not another agent framework, but an autonomous system that keeps itself moving: the full lifecycle `publish → claim → plan → execute → submit → verify → archive`, plus self-driving review loops, DGM evolution sampling, Omega strong verification, and cross-process watchdog — all surfaced as **129 MCP tools** to any MCP client (Claude Desktop / Cursor / a custom JSON-RPC client).
 
-**Why MoonBit**: task orchestration is inherently correctness-sensitive (state machine, permission matrix, append-only audit, recursive decomposition). MoonBit's strong typing, zero runtime dependencies, and JS+Native cross-compilation let this logic pass **572/572 tests on the JS target** (Windows + Linux CI, measured 2026-09-29) — reproducible on any machine. `moon update && moon test --target js -j 1` and you are up; no Python environment hell.
+**Why MoonBit**: task orchestration is inherently correctness-sensitive (state machine, permission matrix, append-only audit, recursive decomposition). MoonBit's strong typing, zero runtime dependencies, and JS+Native cross-compilation let this logic pass **573/573 tests on the JS target** (Windows + Linux CI, measured 2026-10-02) — reproducible on any machine. `moon update && moon test --target js -j 1` and you are up; no Python environment hell.
 
 > It polished itself to a deliverable state using its **own** self-driving + recursive-decomposition pipeline — evidence: `docs/selfdrive-walkthrough.md`.
 > "It says so itself" is not evidence: the narrative / proof surface of this project is the companion repository **fist-evidence** <https://github.com/vicTop-cw/fist-evidence> — see the Evidence section below.
@@ -23,7 +23,7 @@
 ```bash
 moon update                    # first run: refresh registry index (all deps are public)
 moon check
-moon test --target js -j 1     # → Total tests: 572, passed: 572, failed: 0
+moon test --target js -j 1     # → Total tests: 573, passed: 573, failed: 0
 python scripts/patch_esm_main.py            # ESM shim: moonc ≥0.10.14 emits ESM, the SQLite JS stub uses CJS require
 node _build/js/debug/build/cmd/cli/cli.js serve   # start the MCP server (STDIO) — `serve` is mandatory, bare run only prints help
 ```
@@ -83,7 +83,7 @@ The core value is **recursive decomposition of complex tasks made observable and
 - self-driving review, watchdog, sagas, and circuit breakers keep long-running autonomous pipelines from stalling or cascading;
 - self-evolution closes the loop: the tool absorbs what works from each verified delivery.
 
-Everything is reproducible: one command re-runs the 572-test JS suite, the smoke test, and the full capability-chain demo.
+Everything is reproducible: one command re-runs the 573-test JS suite, the smoke test, and the full capability-chain demo.
 
 ---
 
@@ -107,9 +107,9 @@ Pure MoonBit; no Rust/C wrappers. Protocol layer: [`colmugx/mcp`](https://moonca
 
 ## Testing
 
-- **572/572** tests green on the JS backend (Windows; first measured 2026-09-28, re-confirmed 2026-09-29 on this working tree). The native track measured **572/572** on WSL (Linux, ubuntu-22.04) on 2026-10-01 **with build residue in the working tree**, but the *same commit* checked out clean (`git archive HEAD`) makes the native test binary die on a signal — root cause is the dependency's native FFI (ledger BUG-133), and `scripts/blackbox/e2e_native_heap_probe.py` is the judge for whether that is still true. Do not read either number as a dual-target green. Since R107 the suite includes **property tests** (`moonbitlang/core/quickcheck`): random inputs validate invariants (slice arity/prefix, difficulty monotonicity, Task transition discipline claim/execute/reopen/split/submit/reject) with fixed seeds. Since R109 a **transition-contract guard** (`tx_contract`, Design by Contract: precondition/invariant/postcondition read-only pre-check — any failure rejects the batch, state A stays stable, nothing persisted). Since R111 a **feedback convergence** tool (`eval_feedback`, Evaluator-Optimizer schema: free-text feedback normalized into Defects/Evidence/Fix/Acceptance with a deterministic pass/fail verdict) — reproducible on any machine.
+- **573/573** tests green on the JS backend (Windows; first measured 2026-09-28, re-confirmed 2026-09-29 on this working tree). The native track measured **572/572** on WSL (Linux, ubuntu-22.04) on 2026-10-01 **with build residue in the working tree**, but the *same commit* checked out clean (`git archive HEAD`) makes the native test binary die on a signal — root cause is the dependency's native FFI (ledger BUG-133), and `scripts/blackbox/e2e_native_heap_probe.py` is the judge for whether that is still true. Do not read either number as a dual-target green. Since R107 the suite includes **property tests** (`moonbitlang/core/quickcheck`): random inputs validate invariants (slice arity/prefix, difficulty monotonicity, Task transition discipline claim/execute/reopen/split/submit/reject) with fixed seeds. Since R109 a **transition-contract guard** (`tx_contract`, Design by Contract: precondition/invariant/postcondition read-only pre-check — any failure rejects the batch, state A stays stable, nothing persisted). Since R111 a **feedback convergence** tool (`eval_feedback`, Evaluator-Optimizer schema: free-text feedback normalized into Defects/Evidence/Fix/Acceptance with a deterministic pass/fail verdict) — reproducible on any machine.
 - CI three tracks (js ubuntu / native ubuntu / js windows) with live badges. Both native arms carry a `Native heap gate (BUG-133 探针当门)` step **before** the full native suite (owner ruling ③, 2026-10-01): it runs that same judge (`--selftest` + `--runs 12`) and only `crashes=0/12` lets the suite run; the red text names BUG-133 and its unblocking condition instead of leaving an unexplained signal-death. The suite step was not deleted, so coverage self-restores once the dependency is fixed.
-- Guard family: `check_tools_sync` (129 tools aligned) / `check_test_sync` (572 aligned — sweeps **every** current-state doc, not a 4-file whitelist; `--selftest` proves the judge itself can go red) / `check_badge` / `check_scripts_index` / `map_verify` / `cleanup --check` (repo cleanliness gate).
+- Guard family: `check_tools_sync` (129 tools aligned) / `check_test_sync` (573 aligned — sweeps **every** current-state doc, not a 4-file whitelist; `--selftest` proves the judge itself can go red) / `check_badge` / `check_scripts_index` / `map_verify` / `cleanup --check` (repo cleanliness gate).
 
 ---
 
@@ -128,7 +128,7 @@ It is the physical form of this project's own rule "evidence ladder at least L4 
 ## Known Boundaries (honest notes)
 
 - JS backend prints Node's `ExperimentalWarning: SQLite is an experimental feature` on Node ≥ 24 — harmless, ignorable.
-- Windows native test may rarely hit `0xc0000374` (heap race in the local native SQLite stub) even with `-j 1`; the authoritative stability gate is the JS backend (Node ≥ 24, 572/572 measured on Windows).
+- Windows native test may rarely hit `0xc0000374` (heap race in the local native SQLite stub) even with `-j 1`; the authoritative stability gate is the JS backend (Node ≥ 24, 573/573 measured on Windows).
 
 ---
 
