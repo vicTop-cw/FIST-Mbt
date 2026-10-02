@@ -164,6 +164,22 @@ jobs:
       - name: Check (native)
         run: moon check --target native
 
+      # 2026-10-01 owner 裁决 BUG-130 出路③：native 测试轨改由常驻判据当门，不再让无人解释的红当读数。
+      # 这一步原先是 `moon test --target native`，从 09-28 起恒红在
+      # `Failed to run the test: …engine.blackbox_test.exe` + `exited with signal: 11 (SIGSEGV) (core dumped)`，
+      # 日志里没有原因（账本 BUG-130）。定因结论：根在依赖侧的 native FFI（BUG-133），不在本仓逻辑。
+      # 现在这一步跑「只调该依赖公开 API、零本仓业务码」的探针，把同一个失效面变成可数的读数；
+      # 判据方向**刻意反向**：crashes=0/12 才 exit 0 ⇒ 下一步的全量 native 测试才会跑（步骤不删，
+      # 免得留「以后要记得改回来」的债）；缺陷在场时红话逐字点名 BUG-133 与它的转正前置。
+      # 先跑 --selftest：它含一格「明知编译不过的探针必须被构建门拒掉」，posix + moon 在场才真跑，
+      # 不在场会显式打 SKIPPED（这一格没跑到）—— 尺子自己坏了就不许拿它的读数当 native 结论。
+      # 读法两种都算解释过：门红 = BUG-133 在场；**门绿而下一步 Test (native) 仍被信号打死** = 12 次抽检
+      # 没抽中（同一支尺、同一次会话连跑两发给出过 3/12 与 0/12 两端 ⇒ 0/N 是抽样性质），不是又冒出一条新缺陷。
+      - name: Native heap gate (BUG-133 探针当门)
+        run: |
+          python3 scripts/blackbox/e2e_native_heap_probe.py --selftest
+          python3 scripts/blackbox/e2e_native_heap_probe.py --runs 12
+
       - name: Test (native)
         run: moon test --target native
 

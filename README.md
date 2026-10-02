@@ -208,6 +208,8 @@ fist doctor        # 5 项健康检查
 > **Native 后端**：2026-10-01 在 WSL ubuntu-22.04 实测 `moon test --target native -j 1` = **572/572**（与 JS 同数，工作树含上几轮构建残留时）；
 > 同一 commit 的 `git archive HEAD` **干净树**上同一条命令必崩（native 测试二进制被信号打死），根因在依赖的 native FFI，
 > 见账本 BUG-133 与判据 `scripts/blackbox/e2e_native_heap_probe.py`；上一版这句写的是「native 未复跑」，就此作废。边界条款见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
+> **CI 的 native 臂已按 2026-10-01 owner 裁决③改造**：两条臂都在全量测试前挂 `Native heap gate (BUG-133 探针当门)`，
+> 跑的就是上面那支判据；红话逐字点名 BUG-133，`crashes=0/12` 才放行全量测试（测试步骤没删，依赖修好后这一臂自己恢复覆盖）。
 
 ## 架构
 

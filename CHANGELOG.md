@@ -51,6 +51,26 @@ AIGC:
   —— 本轮没动 `src/` 与 `.github/workflows/`，**红格逐字不变**本身就是「与本轮改动无因果」的第二发读数。
 - 账本现 **133 条**（9 DUPLICATE / 4 FALSE_POSITIVE / 116 FIXED / 4 OPEN）；OPEN 逐条点名 = BUG-130, BUG-132, BUG-133, BUG-134（计数从 `## BUG-nn …` 抬头反解，不是数小记）
 
+### 补记(2026-10-02T01:04:53Z / 裁决③ 落地)——CI 的 native 臂改由常驻判据当门（owner 指示「按照你说的修复」）
+
+- 改动面只有**两个 workflow + 一支判据 + 文档**，`src/` 零改动：`Native heap gate (BUG-133 探针当门)` 挂在 `Test (native)` 之前（ci.yml），
+  `Native heap gate (BUG-133 探针当门)` 挂在 `Test (native, j=1)` 之前（fist-ci.yml，并按退出码四档各写一条 `::error::`）；
+  **测试步骤没删** ⇒ 依赖侧修好后 native 全量覆盖自己回来。fist-ci 取数写成 `rc=0; cmd || rc=$?`：
+  GHA 默认 `bash -e`，`cmd; rc=$?` 会在非零那支先退出、case 分流根本走不到。
+- 判据自身补两处硬（都是「判据坏了会顶替产品报案」那一型）：预编译门 ⇒ `RC_RULER=4`；
+  **输出通道 + rc 隔离**——Windows 默认 cp936 控制台上打印 `⇒` 抛 UnicodeEncodeError，脚本崩在结论行之前留下
+  rc=1，而 1 在契约里是「缺陷在场」；`selftest_rc=1` ⇒ 修复后 `selftest_default_console_rc=0`，现在未捕获异常一律归 4、`SystemExit(3)` 原样透传。
+  `SELFTEST OK（rc 分解 5 格 + 计数口径正负对照 2 支 + rc 隔离对照 2 支（判据自身崩⇒4 / 拒绝出数⇒3 原样透传）+ 构建门 1 格：真跑 OK（故意喂编译不过的探针 ⇒ rc=255，没被数成崩溃））`
+- **同一支尺给出过 0/N 与 N/N 两端**（同一棵工作树、缺陷全程没动）：**同一次会话连跑两发** = `3/12`（rc=1）与
+  `0/12`（rc=0，`temp/b130_probe12_v2.log`）；另有 `0/12`（rc=0，`temp/b130_probe12.log`）与定因轮那发 `3/12`，
+  收口复跑 `0/12`（rc=0，最终版尺子）⇒ `crashes=0/12` 是**抽检**不是消音判据。
+  据此把 BUG-133 的转正前置收紧成两格（① 抽检连发都 0 崩溃 + ② `git archive HEAD` 干净树上 `moon test --target native`
+  全量通过；native 侧的通过数不在这里写死，本轮没让它绿过），
+  并把这条性质写进两个 workflow 的注释：「门绿而全量仍被信号打死」不是新缺陷，是抽检没抽中。
+- 权威门槛不变：JS `572/572`（本轮复跑），本地守卫族 17 格全 rc=0（fails=0）；账本抬头 133 条。
+  本条主张（「会红且没人解释」）兑现后 BUG-130 走 `bug_fix` 盖章 FIXED，**推迟到 push 之后**拿权威 CI 那一格的步骤名当证据；
+  native 崩溃那一半仍由 BUG-133 承载（两单关闭条件本来就不同，混在一起才会遮缺陷）。
+
 ## v0.3.5 (mooncakes 已发布 / GitHub Release 未发布) - BUG-128 出路①执行：版本号前进一位 + 注册表载荷逐件对表（盖章 2026-09-29T10:44:53Z）
 
 - **版本真源三处同步（owner 裁决的代价那一格，逐字改）**：`moon.mod` `0.3.4→0.3.5`、

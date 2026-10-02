@@ -2485,6 +2485,17 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
 - 取数面：`python temp/b130_ci_readback.py 47b88ff`（token 只从 `HKCU\Environment` 读、写 curl `--config` 临时文件、结束删除，不进 argv 不打印）；读数原件 `temp/b130_readback2.txt`。
 - 本条状态仍 **OPEN**：出路三选一（native 臂保持红 / 挂 `continue-on-error` / 改跑判据当门）在 owner 手上，按金条四不自决改共享 CI 定义。
 
+### 追记(2026-10-02T01:02:46Z / BUG-130)
+- owner 裁决③ 落地：CI 的 native 臂改由常驻判据当门（owner 2026-10-02 指示「按照你说的修复」= 三选一里的第③条；本段落盘时 HEAD=`0462263`）：
+  改的是两个 workflow 各一步：`Native heap gate (BUG-133 探针当门)` 挂在 `Test (native)` **之前**（ci.yml），`Native heap gate (BUG-133 探针当门)` 挂在 `Test (native, j=1)` **之前**（fist-ci.yml）；跑的都是 `scripts/blackbox/e2e_native_heap_probe.py`（`--selftest` + `--runs 12`）。**测试步骤一个都没删** ⇒ 依赖侧修好后全量覆盖自己回来，不留「记得改回来」的债。
+  ci.yml 的门按 rc 硬拦（非零即红）；fist-ci.yml 的门按 rc 四档各写一条 `::error::`（0 放行 / 1 点名 BUG-133 / 3 判据拒绝出数 / 其它=尺子坏了），且取数写成 `rc=0; cmd || rc=$?`——GHA 默认 `bash -e`，`cmd; rc=$?` 会在非零那支先退出、case 分流永远走不到（那等于四档读数只剩一档能说话）。
+- 这条单自己的主张已兑现：入账时红的是「**会红且没人解释**」那半（本条 detail 第 4 段），不是「native 有崩溃」那半——崩溃那一半从 2026-10-01 起由 BUG-133 承载。现在门红会逐字点名 BUG-133 与其前置，门绿则全量测试照跑，两种红都读得出归属 ⇒ 本条的关闭证据 = 这两个步骤 + 下面这组读数；**盖章 FIXED 推迟到 push 之后**，拿权威 CI 里那一格的步骤名当证据（读数写进下一段追记），不靠「native 绿了」关闭（那一格属于 BUG-133）。
+- 硬化尺子的读数（同一棵工作树、WSL ubuntu-22.04，全部从盘上件反解，脚本里没抄过任何一个 crashes 数）：**同一次会话里连跑两发**（`temp/b130_probe12_v2.log`，尺子 sha 前缀 `ae26376d692362e5`）= crashes=3/12（rc=1）与 crashes=0/12（rc=0）——**N/N 与 0/N 两端在同一支尺、同一次会话里都出现了**；另有 `temp/b130_probe12.log` = crashes=0/12（rc=0，TALLY {'ok': 12}）与定因轮那发 `temp/b130_run_probe.log` = crashes=3/12。⇒ `--runs 12` 是**抽检门**，不是消音判据（收紧后的前置写进 BUG-133 的追记，见下）。
+- 收口复跑（最终版尺子，sha 前缀 `2be90ea4fcd28762`；与上面那版之间只动过说明文字与 VERDICT 文案，分格/计数路径未改）：`temp/b130_probe_final.log` = crashes=0/12（rc=0），自检行 `SELFTEST OK（rc 分解 5 格 + 计数口径正负对照 2 支 + rc 隔离对照 2 支（判据自身崩⇒4 / 拒绝出数⇒3 原样透传）+ 构建门 1 格：真跑 OK（故意喂编译不过的探针 ⇒ rc=255，没被数成崩溃））`。
+- 尺子自身两处补硬（都是「判据坏了会顶替产品报案」那一型）：① 预编译门 + `RC_RULER=4`，`temp/b130_probe12_v2.log` 里那一行 `SELFTEST OK（rc 分解 5 格 + 计数口径正负对照 2 支 + rc 隔离对照 2 支（判据自身崩⇒4 / 拒绝出数⇒3 原样透传）+ 构建门 1 格：真跑 OK（故意喂编译不过的探针 ⇒ rc=255，没被数成崩溃））` 就是这一格的真跑回执；② 输出通道与 rc 隔离：Windows 默认 cp936 控制台上打印 `⇒` 会抛 UnicodeEncodeError，脚本崩在结论行之前留下 **rc=1**，而 1 在本契约里是「缺陷在场」——`temp/b130_win_probe_check.txt` 存的就是修复前那一发（`selftest_rc=1`），修复后同一命令 `temp/b130_gbk_after_fix.log` = `SELFTEST OK` + rc=0（另有拒绝出数那一支 `runs_rc=3`）。现在判据的任何未捕获异常一律归 4，`SystemExit(3)` 原样透传，`--selftest` 里这两支是成对对照。
+- Windows 侧仍不出数（不拿没跑成当跑过）：`拒绝出数：本判据要 POSIX 上的 native 工具链（Windows 侧先装载 scripts/native-env.ps1，或在 WSL 里跑）。没跑成 ≠ 跑过。`（runs_rc=3）；低样本两支存档 `temp/b130_probe_selftest2.log` = crashes=2/2、`temp/b130_probe_selftest3.log` = crashes=1/2。
+- 证据件在 `temp/`（会被 `scripts/cleanup_artifacts.py` 回收）；再生命令：`MSYS_NO_PATHCONV=1 wsl -- bash /mnt/e/IDEProjects/AI/FIST-Mbt/temp/b130_probe12_v2.sh`（12 跑两发）与 `python scripts/blackbox/e2e_native_heap_probe.py --selftest`。
+
 ## BUG-131 [2026-09-30T00:50:05Z] [medium] FIXED
 - summary: cl7 插件态投影引用的启动参数真源文件名由『本机未跟踪残留』决定 ⇒ 同一棵 HEAD 本机绿、CI 红（我 2026-09-30 push 124a20a 之后 ci.yml 的 Plugin-form guard cl7 那一步就是红的）
 - detail: 发现面：owner 授权 push 之后按既有口径拿权威 CI 当验收。09-28 的 ci.yml js/ubuntu job 是 success []，我这次 push 后同一 job 的失败步骤名 = 『Plugin-form guard cl7 —— 一源四态的第四态漂移或生成投影里有手写残留』。本机复跑 cl7 却 PASS ⇒ 『本机绿 / CI 红』这一型先怀疑尺子的输入面，不怀疑被测。
@@ -2555,6 +2566,11 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
   绕行面（消费方视角，不改依赖）：native 产物要稳就得让 sqlite 句柄活满进程生命周期（不 close、不重复 open 同一路径），
   本仓 store 层的 `SqliteStore::open` + `clear()` 幂等清库正是「反复开关」的形状，代价与可行性未测，先挂在这条里不当结论。
 - reported_by: bug130-rootcause-lane
+
+### 追记(2026-10-02T01:02:46Z / BUG-133)
+- 转正前置被自家读数打回：`0/N` 是抽检，不是消音判据：抬头里那条「机器可检的转正前置 = `--runs 12` 回到 crashes=0/12」被自家读数打回——**同一次会话里连跑两发**（`temp/b130_probe12_v2.log`，同一支尺、同一棵工作树）给出 crashes=3/12（rc=1）与 crashes=0/12（rc=0），**N/N 与 0/N 两端都出现了**，缺陷全程没动过；另有 `temp/b130_probe12.log` = crashes=0/12 与定因轮 `temp/b130_run_probe.log` = crashes=3/12。
+- ⇒ **0/N 只说明这一支样本没抽中**。前置收紧成两格（两格都要满足，缺一不算修好）：① `python scripts/blackbox/e2e_native_heap_probe.py --runs 12` 连跑数发都 0 崩溃（抽检面，决定 CI 的 `Native heap gate (BUG-133 探针当门)` 放不放行）；② **`git archive HEAD` 干净树**上 `moon test --target native` 全量通过（即 CI 的 `Test (native)` 那一步不再被信号打死）—— 这一格才是本缺陷的失效面，它以前是恒红且崩点随机移动，所以只有它绿了才叫修好。
+- 记账口径不变：本条仍是 native 门槛的**唯一根因单**；BUG-130 盖 FIXED 不覆盖本条（两单的关闭条件本来就不同，混在一起才会遮缺陷）。CI 里「门绿而全量仍被信号打死」不是新缺陷，是 ① 的抽检性质，两个 workflow 的注释都写了这条读法。
 
 ## BUG-134 [2026-10-01T02:27:45Z] [low] OPEN
 - summary: resolved_path 回显不是绝对路径——`report_bug`/`bug_list` 的自述承诺「绝对 + normalize」，实现与自家白盒测的是**规范化相对路径**，导致写错轨时调用面从回执看不出来
