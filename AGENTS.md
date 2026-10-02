@@ -92,6 +92,8 @@ You can browse and install extra skills here:
 > **2026-10-01 owner 裁决③已落地**：CI 两条 native 臂（`ci.yml` `Test (native)` / `fist-ci.yml` `Test (native, j=1)`）前面
 > 各挂一道同名门 `Native heap gate (BUG-133 探针当门)`，跑的就是上面那支判据（`--selftest` + `--runs 12`）；
 > 只有 `crashes=0/12` 才放行全量测试。**步骤没删**，所以依赖侧修好后这一臂自己恢复覆盖，不需要再来改 workflow。
+> 2026-10-02 那发权威 CI 是「门绿（#7/#8）而 `Test (native…` 红（#8/#9）」⇒ 全量那一格也补了一条 `::error::`
+> 把根因与「门绿 ≠ 已修」写进 annotations，**退出码照原样传**（不挂 `continue-on-error`，红还是红）。
 
 `src/store/store_sqlite.mbt` 依赖 `mizchi/sqlite`（native stub），其 `stub.c` 用尖括号 `#include <sqlite3.h>` 并 `#pragma comment(lib, "sqlite3.lib")` 链接系统 SQLite。
 

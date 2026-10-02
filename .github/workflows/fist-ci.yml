@@ -95,7 +95,13 @@ jobs:
           esac
 
       - name: Test (native, j=1)
-        run: moon test --target native -j 1
+        run: |
+          rc=0
+          moon test --target native -j 1 || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::BUG-133 的读面：native 测试二进制没跑完就退场（rc=$rc，既往形态是被信号打死 + core dumped）。门在这一发是绿的，只代表这次 12 抽没抽中（同一支尺、同一次会话连跑两发给出过 3/12 与 0/12）⇒ 不据此写「native 已修」；关闭条件见账本 BUG-133（抽检连发 0 崩溃 + git archive HEAD 干净树全量通过）。"
+          fi
+          exit "$rc"
 
   # ---------- Nightly self-check on main ----------
   # 仅 push 到 main 时触发（PR 不跑 nightly 巡检）

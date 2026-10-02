@@ -181,7 +181,15 @@ jobs:
           python3 scripts/blackbox/e2e_native_heap_probe.py --runs 12
 
       - name: Test (native)
-        run: moon test --target native
+        # 这一步的红**照原样退出**（exit "$rc"，不加 continue-on-error），只是补一条 ::error:: 将根因与
+        # 「门绿 ≠ 已修」的读法写进 annotations——2026-10-02 那发权威 CI 就是门绿（#7）而这一格红（#8）。
+        run: |
+          rc=0
+          moon test --target native || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::BUG-133 的读面：native 测试二进制以 rc=$rc 收场（既往形态 = 被信号打死 / core dumped）。上面是 moon 的原文与门那一步的 TALLY；**门绿只代表这一次 12 抽没抽中**（同一支尺同一次会话连跑两发给出过 3/12 与 0/12），不代表已修。关闭条件见账本 BUG-133：抽检连发 0 崩溃 + `git archive HEAD` 干净树全量通过。"
+          fi
+          exit "$rc"
 
   check-windows-js:
     name: check + test (js, windows)
