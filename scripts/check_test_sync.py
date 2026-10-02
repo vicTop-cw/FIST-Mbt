@@ -65,6 +65,13 @@ EXEMPT = [
     ("docs/polish-plan.md", "148", "标题自述「初稿」的规划快照，描述的是当时的底子"),
     ("docs/features/F008-evolve.md", "148", "已勾 `- [x] AC-2` 是该特性轮的验收记录，非现状断言"),
     ("BACKLOG.md", "295", "done 行的 R107 当轮实测数（待办队列的历史列，不是现状断言）"),
+    # 2026-10-02（BUG-134 那笔把 JS 轨从 572 推到 573）：下面四条是 **native 轨**在 2026-10-01 WSL 的实测读数。
+    # 它们不是"忘了同步"——native 本轮没复跑，把 572 改成 573 等于伪造一次没发生过的测量；
+    # 而且这四句的主张本身就带着「干净树必崩、见 BUG-133」的限定，改数会把限定一起改没。
+    ("AGENTS.md", "572", "Native 后端 2026-10-01 WSL 实测数（同句自述「工作树带既往构建残留时」，JS 轨另一条已同步到实测）"),
+    ("ARCHITECTURE.md", "572", "要点 1 里「Native 端 2026-10-01 WSL 实测同为 572/572」那一半，同行 JS 端已等于实测"),
+    ("README.md", "572", "「Native 后端」条目的 2026-10-01 WSL 实测数（JS 后端条目另写，已等于实测）"),
+    ("README_EN.md", "572", "Native 轨 2026-10-01 WSL 读数（同句写明 with build residue + BUG-133 限定）"),
 ]
 
 # 历史记录类别：整路径豁免（按日期追加，改写即伪造历史）
@@ -228,9 +235,13 @@ def _pair(n):
 
 def selftest() -> int:
     total = "439"
+    # 2026-10-02（BUG-134 那笔）：现状面里 **JS 轨 = 实测数**、**native 轨 = 2026-10-01 WSL 旧数 572**，
+    # 两条主张共存。夹具照这个形状写（否则 EXEMPT 的四条 native 条目在夹具里就是"失效豁免"，
+    # R4 会当场判 baseline-clean 不绿 —— 那是设计，不是噪声）。
+    native_old = "572"
     base = {
-        "README.md": _pair(total) + "\n> Native 后端" + _pair(total) + "（工作树带构建残留时）；干净树同一命令必崩，见 BUG-133",
-        "AGENTS.md": _pair(total) + "\n> Native 后端" + _pair(total) + "，干净树必崩（BUG-133），不据任何旧数宣称双端同版全绿",
+        "README.md": _pair(total) + "\n> Native 后端" + _pair(native_old) + "（工作树带构建残留时）；干净树同一命令必崩，见 BUG-133",
+        "AGENTS.md": _pair(total) + "\n> Native 后端" + _pair(native_old) + "，干净树必崩（BUG-133），不据任何旧数宣称双端同版全绿",
         "docs/deliverable.md": f"测试 **{total} 项全绿**\n| 43 测试数单一真源 | 当轮实测（233/233 全绿）|",
         "docs/agent-map.md": f"**{total} 项全绿**",
         "scripts/scoring_rubric.md": f"（{total} 全绿）",
@@ -238,8 +249,8 @@ def selftest() -> int:
         "docs/features/F008-evolve.md": "- [x] AC-2: `moon test --target js` 全量 148/148 无回归",
         # 豁免表条目必须在夹具里各有一条声明——否则 R4 会判"豁免失效"（这是设计，不是噪声）
         # 2026-10-01：四条 native 旧数（317）豁免已随现状声明一起改掉，夹具里不再出现"另一套数"的 native 句
-        "README_EN.md": "the native track measures " + total + "/" + total + " but dies on a clean tree (BUG-133)",
-        "ARCHITECTURE.md": "JS 端 439/439 全绿；Native 端 439/439（WSL，带构建残留的工作树），干净树必崩 ⇒ 不当门槛",
+        "README_EN.md": "the native track measured " + native_old + "/" + native_old + " tests on WSL but dies on a clean tree (BUG-133)",
+        "ARCHITECTURE.md": "JS 端 439/439 全绿；Native 端 572/572（WSL，带构建残留的工作树），干净树必崩 ⇒ 不当门槛",
         "BACKLOG.md": "done(R107 那轮 295/295 全绿)",
         "docs/other.md": "无关文字：测试 105/104 是引文，1986/1997 是年份",
         "memory/2026-09-26.md": "当日记录写 406/406（历史面豁免）",

@@ -5,12 +5,12 @@
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-572%2F572-brightgreen)](./src)
+[![Tests](https://img.shields.io/badge/tests-573%2F573-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
 **FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **129 个 MCP 工具** 暴露给任意 MCP 客户端。
 
-**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 572 项测试全绿、跨环境可复现。
+**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 573 项测试全绿、跨环境可复现。
 
 > 它用**它自己的**自驱式 + 递归拆解把自己打磨到了可交付态——完整自我迭代证据见 `docs/selfdrive-walkthrough.md`，CLI `python scripts/fist.py call project_standards` 可一键拉取本项目遵守的 AI 开发规范。
 > 「它说自己有效」不算证据：本项目的**叙事与实证面**在伴生仓 **fist-evidence** <https://github.com/vicTop-cw/fist-evidence>——三组受控实验 + 十份真实项目驱动实例（覆盖八项目），报告/日志/裁判测试一字可回溯（详见「资源」节）。
@@ -32,7 +32,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 1. ✅ MCP 工具注册了？ → `server.mbt` instrumented_tool 块
 2. ✅ CLI 封装到位？ → `scripts/fist.py call <tool>` 或独立 `scripts/xxx.py`
 3. ✅ Skill 文档写了？ → `docs/xxx-skill.md`
-4. ✅ `moon test` 全绿？ → 572/572 零回归（`--target js`，本轮 Windows 实测）
+4. ✅ `moon test` 全绿？ → 573/573 零回归（`--target js`，本轮 Windows 实测）
 5. ✅ 交付物过 `output_validate` L4 硬门？ → verdict=pass
 6. ✅ README / AGENTS.md 计数同步？ → 工具数、测试数
 7. ✅ 插件态已重生成且与真源一致？ → `python scripts/gen_plugins.py && python scripts/check_plugin_sync.py`（cl7）
@@ -91,7 +91,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 # 1. 构建 + 测试
 moon update            # 首次：刷新 registry 索引
 moon build --target js cmd/cli
-moon test --target js  # → Total tests: 572, passed: 572, failed: 0
+moon test --target js  # → Total tests: 573, passed: 573, failed: 0
 
 # 2. 启动 MCP Server（STDIO）
 python scripts/patch_esm_main.py  # ESM shim（moonc ≥0.10.14 输出 ESM，sqlite JS 桩用 CJS）
@@ -204,7 +204,7 @@ fist doctor        # 5 项健康检查
 - **Node.js ≥ 24**（JS 目标必需，SQLite JS 后端依赖 node:sqlite）
 - **Native 目标**：系统 SQLite 开发库（sqlite3.h + sqlite3.lib）。一键装载：`pwsh ./scripts/native-env.ps1`
 
-> **JS 后端**：`moon test --target js` = **572/572**（2026-09-29 Windows 实测，含一源四态 cl7、模型路由与外部执行器合并（4 工具 + 24 项回归锁）、BUG-4/18 与三轮自我迭代回归锁 BUG-19/21/24/31/36）。
+> **JS 后端**：`moon test --target js` = **573/573**（2026-10-02 Windows 实测，含一源四态 cl7、模型路由与外部执行器合并（4 工具 + 24 项回归锁）、BUG-4/18 与三轮自我迭代回归锁 BUG-19/21/24/31/36）。
 > **Native 后端**：2026-10-01 在 WSL ubuntu-22.04 实测 `moon test --target native -j 1` = **572/572**（与 JS 同数，工作树含上几轮构建残留时）；
 > 同一 commit 的 `git archive HEAD` **干净树**上同一条命令必崩（native 测试二进制被信号打死），根因在依赖的 native FFI，
 > 见账本 BUG-133 与判据 `scripts/blackbox/e2e_native_heap_probe.py`；上一版这句写的是「native 未复跑」，就此作废。边界条款见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。

@@ -11,6 +11,8 @@ import {
 }
 
 // Values
+pub fn bug_abs_path(String, String) -> String
+
 pub fn bug_fix(String, Array[String], evidence~ : String, ts~ : String) -> Result[Json, String]
 
 pub fn bug_list(String) -> Result[Json, String]
@@ -20,6 +22,8 @@ pub fn bug_list_with_links(String, (String) -> String) -> Result[Json, String]
 pub fn bug_mark_status(String, String, String, dup_of? : String, evidence? : String, ts~ : String) -> Result[Json, String]
 
 pub fn bug_resolve_path(String) -> String
+
+pub fn bug_server_cwd() -> String
 
 pub fn distill_principle_goal(String) -> String
 
