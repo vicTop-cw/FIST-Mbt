@@ -105,6 +105,7 @@ AIGC:
   「JS 轨=实测 / native 轨=旧数」共存形状（否则 R4 判"失效豁免"，那条负向门是设计不是噪声）。
 - 读数：JS 全量 **573/573**（`temp/js_b134_take2.log`，`moon_rc=0`）、`moon fmt --check` no work、守卫族 17 格 `total=17 fails=0`
   （含 `test-sync --selftest`、`check_badge` 读徽章 `tests-573%2F573`、cl7）。`src/` 改动 4 个文件（`bugreport.mbt`/`bugreport_resolve.mbt`/`server.mbt`/`pkg.generated.mbti`）+ 测试 1 个。
+- **盖章（同轮第二笔）**：`### FIXED(2026-10-02T02:39:29Z / BUG-134)` 走 md 真源面（`bug_fix` RPC 面指向另一本台账，前一轮已实锤），
 
 ## v0.3.5 (mooncakes 已发布 / GitHub Release 未发布) - BUG-128 出路①执行：版本号前进一位 + 注册表载荷逐件对表（盖章 2026-09-29T10:44:53Z）
 

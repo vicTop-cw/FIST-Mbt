@@ -2598,7 +2598,7 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
   · run 36953707891『CI』conclusion=failure ⇒ check + test (js, ubuntu)=success、check + test (js, windows)=success、check + test (native, ubuntu)=failure 红格[#8 Test (native)=failure]
   ⇒ 读数形状与前两发逐字相同：**js 两臂 success、native 两臂红在 `Test (native` / `Test (native, j=1)` 那一格**（门那一步又绿了 = 12 抽没抽中，见上一段追记的抽检口径）。本轮改动全在文档面与判据面（`src/` 零改动），js/ubuntu 那一步 success 就是「J11 进了 CI 的文档面那格且没把守卫跑红」的调用面证据。
 
-## BUG-134 [2026-10-01T02:27:45Z] [low] OPEN
+## BUG-134 [2026-10-01T02:27:45Z] [low] FIXED
 - summary: resolved_path 回显不是绝对路径——`report_bug`/`bug_list` 的自述承诺「绝对 + normalize」，实现与自家白盒测的是**规范化相对路径**，导致写错轨时调用面从回执看不出来
 - detail: 声明面：`src/server/server.mbt` 里这两个工具的描述都写「返回值含 resolved_path（绝对 + normalize 后的落点）」，
   BUG-5 的修复建议原文也写着「补 `resolved_path`（绝对 + normalize 后），让落点可审」（`memory/bugs.md` BUG-5 条目内，那条现为 FIXED）。
@@ -2616,3 +2616,11 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
   建议修法（不动调用面语义）：`resolved_path` 改成真的绝对 + normalize，并新增 `server_cwd` 字段；白盒断言从 `contains("相对名")`
   换成「以盘符/根开头 + 与 `scripts/blackbox/e2e_native_heap_probe.py` 之类调用面直读的路径逐字相等」。
 - reported_by: bug130-rootcause-lane
+
+### FIXED(2026-10-02T02:39:29Z / BUG-134)
+- 条目里写的修法被逐字执行：`resolved_path` 改成真的绝对 + normalize，并新增 `server_cwd` 字段；白盒断言从「规范化后的相对路径」翻向「以 server_cwd 开头 + 两笔回执逐字相等」（那条断言从前是自述的共犯——它把「绝对」这句承诺钉成了假的）。取数用 `@env.current_dir()`（`moonbitlang/core/env`，src/server 早就 import）⇒ 零新增依赖、零新增 C 桩，不往 BUG-133 那类 FFI 面上加东西。
+- evidence: 调用面真跑 MCP（`node cli.js serve`，cwd 刻意换到 `temp/b134_callsite_cwd`、`FIST_DB_PATH` 改道），逐字回执：`{"path":"./memory/bugs.md","project_dir":".","resolved_path":"E:/IDEProjects/AI/FIST-Mbt/temp/b134_callsite_cwd","server_cwd":"E:/IDEProjects/AI/FIST-Mbt/temp/b134_callsite_cwd","count":0,"bugs":[],"open_with_linked_done":0,"note":"open_with_linked_done>0 ⇒ 账本抬头与任务库当前状态互相矛盾：要么该条已修完但抬头没改 FIXED（记账规则允许就地改抬头），要么修复单被误标完成。linked_task_status 取自任务库实时状态，空串=该条目没有关联修复单或任务已不存在。"}`
+  正向：`PASS BUG-134 调用面：resolved_path 是绝对落点、server_cwd 等于真 spawn cwd、且明确不等于仓库根` ／ 反向对照：`SELFTEST OK（两态对照：旧形状 3 条违例都在、新形状 0 违例）`（旧形状 3 条违例全在 ⇒ 这把尺能红）
+- 顺带修掉一条只在绝对路径下才现形的缺陷：`bug_resolve_path` 从前用 `String.replace`（MoonBit 语义＝只换**首个**匹配）⇒ `E:\a\b` 规范化成 `E:/a\b`；旧输入全是至多一个反斜杠的相对串所以一直不红，是新白盒断言第一次跑就当场打死它（`src/server/bugreport_test.mbt:174 FAILED: true is not false`）才暴露。已改 `replace_all`。
+- 权威 CI（同笔 push `8e028af` 的读数，原件 `temp/b134_readback.txt`）：run 36956419257『CI』= js/ubuntu **success**、js/windows **success**、native/ubuntu failure 红格 `#8 Test (native)=failure`；run 36956418476『FIST CI — Build + Test』= js/ubuntu **success**、native/ubuntu failure 红格 `#9 Test (native, j=1)=failure`、nightly self-check skipped —— 两条 js 臂 success 就是「573 这套测试与 23 条文档主张在 CI 上也自洽」的那一格；native 两臂照旧红在全量那一步，属 BUG-133 的读数面，不在本单关闭条件里
+- 盖章走的是 **md 真源面**而不是 `bug_fix` RPC（connector 的 server cwd 不指向本仓，上一轮已实锤），前置门含「两远端 rev-list --count <远端>..HEAD = 0」「JS 尾行 573/573 且 rc=0」「守卫族 total=17 fails=0」「调用面探针两格都在场」「CI 两条 js job 都 success」。
