@@ -71,6 +71,19 @@ BUG-134 的形状不是"少了一个字段"，而是**主张与实现之间那�
 
 只做了 BUG-134 本体 + 它顺带暴露的 `replace` 缺陷 + 测试数搬家（判据要求的既有义务）。未新建第 18 格守卫、未动 workflow、未动 native 臂、未碰插件运行时副本。
 
+## 补记（同轮第二笔）：盖章与投影
+
+- `### FIXED(2026-10-02T02:39:29Z / BUG-134)` 已落 **md 真源面**（`bug_fix` RPC 面指向另一本台账 ⇒ 不拿它盖本仓的章），
+  由 `temp/b134_fixed_stamp.py` 写抬头 + 小记。**五道前置门**全过才落盘：JS 尾行 573/573 且 `moon_rc=0`、
+  守卫族 `total=17 fails=0`、调用面探针正向 PASS 与 `--selftest` 两态对照都在场、两远端 `rev-list --count <远端>..HEAD = 0`、
+  CI 两条 js job 都 success。
+- 盖章后的权威 CI（`temp/b134_readback.txt`，run 36956419257『CI』/ 36956418476『FIST CI』）：
+  js/ubuntu 与 js/windows 全 success；native 两臂仍红在 `#8 Test (native)` / `#9 Test (native, j=1)` —— 那是 BUG-133 的读数面，
+  **不在本单关闭条件里**，所以本单盖 FIXED 不覆盖它（两单关闭条件不同，混在一起才会遮缺陷）。
+- 台账从 3 待修降到 2（BUG-132 等 owner 裁决、BUG-133 根在依赖），投影随之重生成：
+  `gen_plugins` 回执 `133 条入账 = 118 已修 / 9 重复并入 / 4 误报 / 2 待修`，cl7 重跑 PASS，守卫族再跑 `total=17 fails=0`。
+- 上面缺口 #1（"盖章要走 md 面并写明是哪一面"）到此闭合；缺口 #2（插件运行时副本没同步）与 #3（协议面只跑了 `.` 形态）仍然开着。
+
 ## 来源
 
 `memory/bugs.md` BUG-134 条目（含 BUG-5 原始建议那句「绝对 + normalize」）、`temp/js_b134_take2.log`、
