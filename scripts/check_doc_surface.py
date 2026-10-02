@@ -63,6 +63,16 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = Path(__file__).resolve().parent.parent  # 从 scripts/ 或 temp/ 运行都指向仓库根
+
+
+def rel_posix(p) -> str:
+    """违例文案里的路径一律 POSIX 分隔。
+    账本/报告要**逐字**引用判据回执，而 `str(Path.relative_to(...))` 在 Windows 上打印
+    `scripts\\README.md`、在 CI 上打印 `scripts/README.md` ⇒ 同一支尺两种文案，对表时只能靠猜。
+    （名字不叫 `rel`：`is_plugin_surface` 里已有一个同名的局部相对路径变量。）"""
+    return Path(p).relative_to(ROOT).as_posix()
+
+
 SERVER = ROOT / "src" / "server" / "server.mbt"
 PS_MBT = ROOT / "src" / "server" / "project_standards.mbt"
 CANON = ROOT / "AI-DEVELOPMENT-STANDARD.md"  # 规范性正文：与 README/AGENTS 同级，放仓库根
@@ -219,7 +229,7 @@ def j6_standard_consistency():
     if "canonical_doc" not in ps_src:
         problems.append("J6 机器投影未下发 canonical_doc 指针（调用方无从知道正文在哪）")
     if not CANON.exists():
-        problems.append(f"J6 规范性正文缺失：{CANON.relative_to(ROOT)}（规范必须单文件成文）")
+        problems.append(f"J6 规范性正文缺失：{rel_posix(CANON)}（规范必须单文件成文）")
         return problems
     ctxt = CANON.read_text(encoding="utf-8")
     miss = [x for x in ids if x not in ctxt]
@@ -255,7 +265,7 @@ def j7_stale_wording():
             for needle in STALE_NEEDLES:
                 if needle in line:
                     problems.append(
-                        f"J7 {p.relative_to(ROOT)}:{i} 残留旧口径「{needle}」（当前承诺必须写四态；"
+                        f"J7 {rel_posix(p)}:{i} 残留旧口径「{needle}」（当前承诺必须写四态；"
                         "若是历史陈述请移入 memory/ 或 reports/）"
                     )
     return problems
@@ -302,12 +312,12 @@ def j8_template_params():
             unknown = sorted({k for k in keys if k not in reg[name]["props"]})
             if unknown:
                 problems.append(
-                    f"J8 {tpl.relative_to(ROOT)}:{line} {name}(...) 用了未声明参数 {unknown}"
+                    f"J8 {rel_posix(tpl)}:{line} {name}(...) 用了未声明参数 {unknown}"
                     f"（_instrument 只校验 required，未知键静默丢弃=写了等于没验）"
                 )
             missing = sorted(k for k in reg[name]["required"] if k not in keys)
             if missing:
-                problems.append(f"J8 {tpl.relative_to(ROOT)}:{line} {name}(...) 缺必填参数 {missing}")
+                problems.append(f"J8 {rel_posix(tpl)}:{line} {name}(...) 缺必填参数 {missing}")
         for line_no, line in enumerate(text.splitlines(), 1):
             cells = [c.strip() for c in line.split("|")]
             if len(cells) < 3 or not cells[1].startswith("`"):
@@ -320,7 +330,7 @@ def j8_template_params():
             for tok in re.findall(r"`([a-z_][a-z0-9_]*)`", cells[2]):
                 if tok not in reg[tool]["props"]:
                     problems.append(
-                        f"J8 {tpl.relative_to(ROOT)}:{line_no} 参数表里 {tool} 的 `{tok}` 未在该工具 schema 声明（契约说谎）"
+                        f"J8 {rel_posix(tpl)}:{line_no} 参数表里 {tool} 的 `{tok}` 未在该工具 schema 声明（契约说谎）"
                     )
     return problems
 
@@ -426,7 +436,7 @@ def j10_range_claims(paths=None):
                 for i, line in enumerate(p.read_text(encoding="utf-8").splitlines())
                 if "check_doc_surface" in line for n in RE_J_CLAIM.findall(line)]
         if hits:
-            out[str(p.relative_to(ROOT))] = hits
+            out[rel_posix(p)] = hits
     return out
 
 
@@ -453,6 +463,98 @@ def j10_range_problems(claims, impl_max):
 def j10_range_consistency():
     impl = implemented_j_rules()
     return j10_range_problems(j10_range_claims(), max(impl) if impl else 0)
+
+
+# ---- J11 CI 门步骤 ↔ 规范面/账本 三向对表（BUG-130 裁决③ 的执行面不许被悄悄删掉）----
+# 上一轮自己写进报告的缺口：「若日后有人删掉这两道门，没有常驻判据会红（只有 native 全量自己的崩会红，
+# legibility 消失而无人认领）」。锚不是「文档里提没提」，而是**账本上 BUG-133 还 OPEN**——
+# 门是那张单「红必须可解释」的执行面；单转 FIXED 后这一格自然失效（合法态），不许留恒红判据。
+WORKFLOWS = (ROOT / ".github" / "workflows" / "ci.yml",
+             ROOT / ".github" / "workflows" / "fist-ci.yml")
+BUGS_MD = ROOT / "memory" / "bugs.md"
+SCRIPTS_DOC = ROOT / "scripts" / "README.md"
+GATE_NEEDLE = "heap gate"
+SUITE_PREFIX = "Test (native"
+GATE_GUARANTEE_BUG = "133"
+RE_STEP_NAME = re.compile(r"^\s*- name: (.+?)\s*$", re.M)
+RE_BACKTICK_ANY = re.compile(r"`([^`\n]+)`")
+RE_HEAD_STATUS = re.compile(r"^## BUG-(\d+) \[[^\]]*\] \[[^\]]*\] (\w+)", re.M)
+
+
+def workflow_step_names(text):
+    return RE_STEP_NAME.findall(text)
+
+
+def bug_status(ledger_text, num):
+    for n, st in RE_HEAD_STATUS.findall(ledger_text):
+        if n == num:
+            return st
+    return None
+
+
+def doc_gate_claims(doc_texts):
+    """规范面里用反引号点名门步骤的**逐字串**（不放宽成前缀——前缀会把改名漂移送进盲区）。"""
+    return [(label, m.group(1)) for label, text in doc_texts.items()
+            for m in RE_BACKTICK_ANY.finditer(text) if GATE_NEEDLE in m.group(1)]
+
+
+def j11_gate_problems(wf_steps, gate_status, claims):
+    """纯判据核心：喂 workflow 步名序列 / BUG-133 抬头状态 / 规范面点名的门步名 ⇒ 出违例。
+
+    三面各自能红：门被删（账还 OPEN）、门被挪到全量之后、规范面点名的步名与 CI 里的不一致、
+    两条臂的步名互不相同、账本读不到那条单（先判尺子）、解析不到任何 `- name:`（解析器饿死）。
+    """
+    if gate_status is None:
+        return [f"FATAL J11 账本里读不到 BUG-{GATE_GUARANTEE_BUG} 抬头（先判尺子坏，再判被测面）"]
+    if not wf_steps:
+        return [f"FATAL J11 一个 workflow 都没读到（应有 {len(WORKFLOWS)} 份）——扫描面空转"]
+    actual, problems = {}, []
+    for label, names in wf_steps.items():
+        if not names:
+            problems.append(f"J11 {label}: 解析不到任何 `- name:` 步骤（先判解析器饿死）")
+            continue
+        gates = [i for i, n in enumerate(names) if GATE_NEEDLE in n]
+        suites = [i for i, n in enumerate(names) if n.startswith(SUITE_PREFIX)]
+        if not suites:
+            problems.append(f"J11 {label}: 没有以 `{SUITE_PREFIX}` 开头的步骤 ⇒ 扫描口径坏了，本格不作数")
+            continue
+        if not gates:
+            if gate_status == "OPEN":
+                problems.append(
+                    f"J11 {label}: BUG-{GATE_GUARANTEE_BUG} 仍 OPEN，native 门步骤却被删了 ⇒ 回到"
+                    "「会红且没人解释」那副老样子（裁决③ 的执行面消失）")
+            continue
+        if len(gates) > 1:
+            problems.append(f"J11 {label}: 门步骤命中 {len(gates)} 次（期望 1；重复挂门让人分不清哪一步是门）")
+        if gate_status == "OPEN" and gates[0] > min(suites):
+            problems.append(
+                f"J11 {label}: 门在第 {gates[0] + 1} 步、全量测试在第 {min(suites) + 1} 步 ⇒ 门挂到了它要拦的那一步**之后**，等于没挂")
+        for g in gates:
+            actual.setdefault(names[g], []).append(label)
+    if gate_status == "OPEN":
+        if len(actual) > 1:
+            problems.append(f"J11 两条臂的门步骤名不一致：{sorted(actual)} ⇒ 规范面只能点名一个，另一个是漂移")
+        elif actual and not (set(actual) & {c for _, c in claims}):
+            problems.append(
+                f"J11 规范面没有一处逐字点名 CI 里的门步骤（实际名={sorted(actual)}）⇒ 「文档说的门」与「CI 里的门」无从对表")
+    for label, c in claims:
+        if c not in actual:
+            problems.append(f"J11 {label} 逐字点名的门步骤「{c}」在 workflow 里不存在（改名或摘门都会让这句主张悬空）")
+    return problems
+
+
+def j11_ci_gate_steps(wf_texts=None, ledger_text=None, doc_texts=None):
+    if wf_texts is None:
+        wf_texts = {p.name: p.read_text(encoding="utf-8") for p in WORKFLOWS if p.exists()}
+    if ledger_text is None:
+        ledger_text = BUGS_MD.read_text(encoding="utf-8")
+    if doc_texts is None:
+        doc_texts = {rel_posix(p): p.read_text(encoding="utf-8")
+                     for p in (README, AGENTS, CANON, SCRIPTS_DOC) if p.exists()}
+    return j11_gate_problems(
+        {label: workflow_step_names(t) for label, t in wf_texts.items()},
+        bug_status(ledger_text, GATE_GUARANTEE_BUG),
+        doc_gate_claims(doc_texts))
 
 
 # ---- J4 子判据：注册表发布版本只能有一处自述（BUG-30 建议①，编号不扩，免得 J10 范围自述说谎）----
@@ -604,6 +706,43 @@ def j_selftest():
         fails.append("J10 在真实现状面上就红了：" + j10_real[0])
     if not j10_range_claims():
         fails.append("J10 现状规范表面一处范围声明都没有 —— 扫描面对象选错了")
+    # J11（BUG-130 裁决③ 的门）：合成违例五支 + 合法态一支 + 现状不红一支。
+    # 少任何一支，这格就退化成「只在门被删且文档也跟着删时才红」的半个判据。
+    gname = "Native heap gate (BUG-133 探针当门)"
+    wf_ok = {"ci.yml": ["Checkout", gname, "Test (native)"],
+             "fist-ci.yml": ["Checkout", gname, "Test (native, j=1)"]}
+    clm_ok = [("README.md", gname), ("AGENTS.md", gname)]
+    if not any("门步骤却被删了" in p for p in j11_gate_problems(
+            {"ci.yml": ["Checkout", "Test (native)"], "fist-ci.yml": wf_ok["fist-ci.yml"]},
+            "OPEN", clm_ok)):
+        fails.append("J11 抓不到『OPEN 时门被删』→ 裁决③ 的执行面消失没人知道")
+    if not any("之后" in p for p in j11_gate_problems(
+            {"ci.yml": ["Checkout", "Test (native)", gname], "fist-ci.yml": wf_ok["fist-ci.yml"]},
+            "OPEN", clm_ok)):
+        fails.append("J11 抓不到『门挪到全量测试之后』（顺序倒置等于没挂）")
+    if not any("不存在" in p for p in j11_gate_problems(
+            wf_ok, "OPEN", [("scripts/README.md", "Native heap gate")])):
+        fails.append("J11 抓不到『规范面步名与 CI 逐字不等』（前缀式点名会放过改名漂移）")
+    if not any("不一致" in p for p in j11_gate_problems(
+            {"ci.yml": ["Checkout", gname, "Test (native)"],
+             "fist-ci.yml": ["Checkout", "Native heap gate v2", "Test (native, j=1)"]},
+            "OPEN", clm_ok)):
+        fails.append("J11 抓不到『两臂门步骤名互异』（文档只能点名一个，另一个悬空）")
+    if j11_gate_problems({"ci.yml": ["Checkout", "Test (native)"],
+                          "fist-ci.yml": ["Checkout", "Test (native, j=1)"]}, "FIXED", []):
+        fails.append("J11 在合法态（BUG-133 已 FIXED、门已撤、文档不再点名）误红 —— 恒红判据不可信")
+    if not any("读不到 BUG-" in p for p in j11_gate_problems(wf_ok, None, clm_ok)):
+        fails.append("J11 账本读不到那条单时不红（先判尺子坏，再判被测面）")
+    if not j11_gate_problems({"ci.yml": [], "fist-ci.yml": []}, "OPEN", []):
+        fails.append("J11 解析不到任何 `- name:` 时不红（解析器饿死）")
+    j11_real = j11_ci_gate_steps()
+    if j11_real:
+        fails.append("J11 在真实现状面上就红了（先判尺子，再判被测）：" + j11_real[0])
+    # 标签分隔符也是判据契约的一部分：账本/报告要**逐字**引用违例文案，
+    # 而 Windows 上 `str(relative_to(...))` 打印 `scripts\README.md`、CI 上打印 `scripts/README.md`
+    # ⇒ 同一支尺两种文案，对表只能靠猜（这条在 POSIX 上恒真，所以它考的是实现而不是现状面）。
+    if rel_posix(SCRIPTS_DOC) != "scripts/README.md":
+        fails.append(f"J11 扫描面标签随平台变（rel_posix 回 {rel_posix(SCRIPTS_DOC)}）⇒ 逐字引用在两台上对不上")
     # J4 子判据（BUG-30）：注册表发布版本只能有一处权威自述。四条对照缺一不可——
     # 两处打架必红、权威被删空必红、扫描面空转必红、单处自述不许误红。
     if not any("另写一处" in p for p in publication_problems(
@@ -684,7 +823,8 @@ def main(argv):
         print(f"SELFTEST OK: 真源解析到 {n} 个工具，"
               + "/".join(f"J{r}" for r in rules) + " 对合成违例均发红"
               "（反向对照含『干净输入不得误红』『英文不算契约』『分工写清不得误红』"
-              "『两面一致不误红』，防空转含『分工清单落空必红』『空扫描必红』『解析器饿死必红』）")
+              "『两面一致不误红』『J11 合法态（单已 FIXED＋门已撤＋文档不再点名）不误红』，"
+              "防空转含『分工清单落空必红』『空扫描必红』『解析器饿死必红』『J11 账本读不到那条单必红』）")
         return 0
 
     agents_txt = AGENTS.read_text(encoding="utf-8")
@@ -727,6 +867,7 @@ def main(argv):
     problems += j8_template_params()
     problems += j9_return_contract()
     problems += j10_range_consistency()
+    problems += j11_ci_gate_steps()
 
     if problems:
         print(f"FAIL 文档面不一致（真源 {n} 工具 / moon.mod {mv}）：")
@@ -736,7 +877,8 @@ def main(argv):
     print(
         f"PASS 文档面一致：{n} 工具在 AGENTS/README 逐个可查、分组和={n}、当前自述版本={mv}、"
         "J6 规范正文↔投影一致、J7 无旧口径、J8 模板调用面契约干净、"
-        "J9 返回契约（必查清单 + 歧义键分工 + 棘轮）未退化、J10 判据范围自述==实现"
+        "J9 返回契约（必查清单 + 歧义键分工 + 棘轮）未退化、J10 判据范围自述==实现、"
+        "J11 CI native 门步骤↔账本/规范面 三向对表"
     )
     return 0
 

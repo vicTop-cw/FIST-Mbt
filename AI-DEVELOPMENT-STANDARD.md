@@ -12,7 +12,7 @@
 | 真源（single source） | 核心逻辑唯一手写处。FIST-Mbt 的真源语言 = MoonBit。 |
 | 四态 | 同一功能的四种形态：**MCP**（工具）/ **CLI**（薄封装脚本）/ **Skill**（何时用·怎么用·怎么闭环）/ **Plugin**（宿主插件目录，**生成投影**非手写）。 |
 | 投影 | 由脚本从真源生成、禁止手改的产物（`scripts/gen_plugins.py` → 四宿主插件目录）。 |
-| 守卫族 | 把规范转成可执行判据的 CI 脚本：`check_tools_sync` / `check_test_sync` / `check_badge` / `check_scripts_index` / `check_plugin_sync`(cl7) / `check_doc_surface`(J1-J10：含 J9 工具描述返回契约、J10 判据范围自述==实现)。 |
+| 守卫族 | 把规范转成可执行判据的 CI 脚本：`check_tools_sync` / `check_test_sync` / `check_badge` / `check_scripts_index` / `check_plugin_sync`(cl7) / `check_doc_surface`(J1-J11：含 J9 工具描述返回契约、J10 判据范围自述==实现、J11 CI native 门步骤↔账本/规范面对表)。 |
 | 证据梯 | L1 报告自述 < L2 工具消息 < L3 测试退出码 < L4 文件系统实际产物（`output_validate`）< L5 Omega 复验。**验收下限 = L4。** |
 | 账本 | `memory/bugs.md`：追加式缺陷账本，无关闭 API ⇒ 用 `### FIXED(...)` / `### NOT-FIXED(...)` 段落表达状态。 |
 
