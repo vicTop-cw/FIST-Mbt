@@ -2401,7 +2401,7 @@ M1 造未跟踪未忽略件必红 / M2 造被现成 `*.log` 规则挡住的件�
 自证踩到的两个坑也写进了判据正文：① 守卫源码里不许出现完整 token 形状（我一开始把假串直接写进字面量，
 P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红」在开发期必然失败（新守卫自己未跟踪）⇒ 换成更强的 G1'（红面与未跟踪面双向对齐、不许幻影红），而不是删门或放宽阈值。
 
-## BUG-130 [2026-09-30T00:07:57Z] [medium] OPEN
+## BUG-130 [2026-09-30T00:07:57Z] [medium] FIXED
 - summary: push 后拿权威 CI 当验收，抓到一条自 09-28 起持续红、且匿名取不到定因、账本无人认领的门：ci.yml 的 native 测试轨（步骤名 Test (native, j=1)）
 - detail: 发现面：owner 授权 push，于是按既有口径把『推送后的 CI 运行』当关闭证据（不是本机自述）。
 实测（匿名 Actions API，只 GET、不带凭据、不读 .env）：run 36648283575
@@ -2495,6 +2495,25 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
 - 尺子自身两处补硬（都是「判据坏了会顶替产品报案」那一型）：① 预编译门 + `RC_RULER=4`，`temp/b130_probe12_v2.log` 里那一行 `SELFTEST OK（rc 分解 5 格 + 计数口径正负对照 2 支 + rc 隔离对照 2 支（判据自身崩⇒4 / 拒绝出数⇒3 原样透传）+ 构建门 1 格：真跑 OK（故意喂编译不过的探针 ⇒ rc=255，没被数成崩溃））` 就是这一格的真跑回执；② 输出通道与 rc 隔离：Windows 默认 cp936 控制台上打印 `⇒` 会抛 UnicodeEncodeError，脚本崩在结论行之前留下 **rc=1**，而 1 在本契约里是「缺陷在场」——`temp/b130_win_probe_check.txt` 存的就是修复前那一发（`selftest_rc=1`），修复后同一命令 `temp/b130_gbk_after_fix.log` = `SELFTEST OK` + rc=0（另有拒绝出数那一支 `runs_rc=3`）。现在判据的任何未捕获异常一律归 4，`SystemExit(3)` 原样透传，`--selftest` 里这两支是成对对照。
 - Windows 侧仍不出数（不拿没跑成当跑过）：`拒绝出数：本判据要 POSIX 上的 native 工具链（Windows 侧先装载 scripts/native-env.ps1，或在 WSL 里跑）。没跑成 ≠ 跑过。`（runs_rc=3）；低样本两支存档 `temp/b130_probe_selftest2.log` = crashes=2/2、`temp/b130_probe_selftest3.log` = crashes=1/2。
 - 证据件在 `temp/`（会被 `scripts/cleanup_artifacts.py` 回收）；再生命令：`MSYS_NO_PATHCONV=1 wsl -- bash /mnt/e/IDEProjects/AI/FIST-Mbt/temp/b130_probe12_v2.sh`（12 跑两发）与 `python scripts/blackbox/e2e_native_heap_probe.py --selftest`。
+
+### FIXED(2026-10-02T01:20:21Z / BUG-130)
+- evidence: 裁决③ 落地两笔（`87e2650` 挂门 + `24c30f8` 给全量那一格补根因注解），两笔都已 fast-forward 推到 origin(GitHub) 与 gitcode（`git rev-list --count <远端>..HEAD` = 0），无 force、无删标签。
+  本单主张的是「**会红且没人解释**」那一半；现在两种红都读得出归属，逐字引用权威 CI 的 failure 注解（两臂各一条，原件 `temp/b130_annot_24c30f8_v3.txt`）：
+  · 注解原文：『BUG-133 的读面：native 测试二进制以 rc=255 收场（既往形态 = 被信号打死 / core dumped）。上面是 moon 的原文与门那一步的 TALLY；**门绿只代表这一次 12 抽没抽中**（同一支尺同一次会话连跑两发给出过 3/12 与 0/12），不代表已修。关闭条件见账本 BUG-133：抽检连发 0 崩溃 + pax_global_header00006660000000000000000000000064152576024630014524gustar00rootroot0000000000000052 comment=24c30f8a1b029b97cc1733e34dc88522ad1834d7』
+  · 注解原文：『BUG-133 的读面：native 测试二进制没跑完就退场（rc=255，既往形态是被信号打死 + core dumped）。门在这一发是绿的，只代表这次 12 抽没抽中（同一支尺、同一次会话连跑两发给出过 3/12 与 0/12）⇒ 不据此写「native 已修」；关闭条件见账本 BUG-133（抽检连发 0 崩溃 + git archive HEAD 干净树全量通过）。』
+  同一发的 job/步骤读数（全部从那份原件反解）：
+  · run 36949925504『CI』整发 failure
+  · run 36949925443『FIST CI — Build + Test』整发 failure
+  · job `check + test (native, ubuntu)` = failure，红格逐字 `#8 Test (native)=failure`
+  · job `check + test (js, windows)` = success
+  · job `check + test (js, ubuntu)` = success
+  · job `check + test (js, ubuntu)` = success
+  · job `check + test (native, ubuntu)` = failure，红格逐字 `#9 Test (native, j=1)=failure`
+  · job `nightly self-check` = skipped
+  ⇒ 两条 native 臂的**门那一步都是绿的**（门在 `Test (native…` 之前），红仍在全量那一格但带注解与 rc；
+- 本机判据面：`--selftest` 四组全过（含构建门真跑与 rc 隔离成对对照），同一次会话两发 12 跑给出 3/12 与 0/12 两端 ⇒ 0/N 是抽检，native 崩溃那一半仍由 BUG-133 承载，其前置已收紧成两格（抽检连发 0 崩溃 + `git archive HEAD` 干净树全量通过）。
+- 验收面（本轮复跑）：JS 全量 = 572/572（failed=0，`temp/js_after_b130.log`）；本地守卫族 17 格全 rc=0（fails=0，`temp/b130_guards.log`）；cl7 四宿主投影一致。
+- 盖章走的是 **md 真源面**：本会话连上的 connector 其 server cwd 不指向本仓（`bug_list` 回显 `path=./memory/bugs.md` 且两条 OPEN 是别的项目的台账条目），`bug_fix` RPC 两次 `MCP error -32603`，盘上未产生任何本仓写入（抬头仍 OPEN 时才动手）⇒ 若任务库/DB 面另有这条的旧行，那一面没跟着翻，差异如实记在这里。
 
 ## BUG-131 [2026-09-30T00:50:05Z] [medium] FIXED
 - summary: cl7 插件态投影引用的启动参数真源文件名由『本机未跟踪残留』决定 ⇒ 同一棵 HEAD 本机绿、CI 红（我 2026-09-30 push 124a20a 之后 ci.yml 的 Plugin-form guard cl7 那一步就是红的）
