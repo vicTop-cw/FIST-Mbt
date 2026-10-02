@@ -329,11 +329,10 @@ pub fn report_bug(
   m.set("path", Json::string(path))
   // BUG-134：resolved_path 从此是**绝对**落点（BUG-5 的自述一直这么写，实现却回显相对路径）；
   // server_cwd 同批回显，调用方拿两者一比就知道账写进了哪本台账（插件连接器的 cwd 不是仓库根时尤其必要）。
-  m.set(
-    "resolved_path",
-    Json::string(bug_abs_path(bug_server_cwd(), project_dir)),
-  )
-  m.set("server_cwd", Json::string(bug_server_cwd()))
+  // 一次取数两处用：两个键必须出自同一次观测，否则回执内部自己就可能对不上。
+  let cwd = bug_server_cwd()
+  m.set("resolved_path", Json::string(bug_abs_path(cwd, project_dir)))
+  m.set("server_cwd", Json::string(cwd))
   m.set("project_dir", Json::string(project_dir))
   m.set(
     "task_namespace",
@@ -428,12 +427,14 @@ pub fn bug_list(project_dir : String) -> Result[Json, String] {
     Some(s) => s
   }
   let entries = bug_parse(text)
+  // 同 report_bug：两个键出自同一次观测，回执内部才不可能自相矛盾
+  let cwd = bug_server_cwd()
   Ok(
     Json::object({
       "path": Json::string(path),
       "project_dir": Json::string(project_dir),
-      "resolved_path": Json::string(bug_abs_path(bug_server_cwd(), project_dir)),
-      "server_cwd": Json::string(bug_server_cwd()),
+      "resolved_path": Json::string(bug_abs_path(cwd, project_dir)),
+      "server_cwd": Json::string(cwd),
       "count": Json::number(entries.length().to_double()),
       "bugs": Json::array(entries),
     }),
