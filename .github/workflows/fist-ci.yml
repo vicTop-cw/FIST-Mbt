@@ -73,7 +73,27 @@ jobs:
       - name: Check (native)
         run: moon check --target native
 
-      # -j 1 串行跑 native 测试（native sqlite3 在并发下可能不稳定）
+      # 2026-10-01 owner 裁决 BUG-130 出路③（与 ci.yml 同形，读数口径也相同）：
+      # 这一步原来叫 `Test (native, j=1)`，恒红在 signal 11 (SIGSEGV) 上，日志里没有原因。
+      # 定因在依赖侧的 native FFI（账本 BUG-133），本仓逻辑无因果 ⇒ 用常驻判据当门：
+      # 判据按退出码分四档（0=全跑完 / 1=有崩溃 / 3=平台不给量 / 4=探针自己编译不过=尺子坏了），
+      # 只有 0 才放行下一步的 native 全量测试——**上游修好后这一步自己就绿，不需要再来改 workflow**。
+      # `rc=0` 取数写成 `|| rc=$?`：GHA 默认 `bash -e`，直接 `cmd; rc=$?` 会在 cmd 非零时先退出、
+      # 下面的 case 分流根本走不到（那等于四档读数只剩一档能说话）。
+      # 两种红都解释过：门红 = BUG-133 在场；门绿而下一步 `Test (native, j=1)` 仍被信号打死 = 12 次抽检没抽中
+      # （同一支尺、同一次会话连跑两发给出过 3/12 与 0/12 两端），不是新缺陷——0/N 是抽样性质，见判据 docstring 与账本 BUG-133 追记。
+      - name: Native heap gate (BUG-133 探针当门)
+        run: |
+          python3 scripts/blackbox/e2e_native_heap_probe.py --selftest
+          rc=0
+          python3 scripts/blackbox/e2e_native_heap_probe.py --runs 12 || rc=$?
+          case $rc in
+            0) exit 0 ;;
+            1) echo "::error::BUG-133 在场（mizchi/sqlite native FFI 内存安全缺陷；上面是探针的 TALLY/VERDICT 原文）。native 全量测试按 2026-10-01 裁决③ 挂在这道门之后，本臂恢复全量测试的前置 = 判据回到 crashes=0/12；BUG-133 的关闭条件另在账本（依赖侧修好 + 干净树 native 全量通过），0/N 只说明这一支样本没抽中。"; exit 1 ;;
+            3) echo "::error::判据拒绝出数（rc=3：平台或工具链不给量），这不是「native 没问题」也不是「产品坏了」。"; exit 1 ;;
+            *) echo "::error::尺子坏了（rc=$rc：4=探针自己编译不过）。红的是判据，不是产品——先修判据再读 native 面。"; exit 1 ;;
+          esac
+
       - name: Test (native, j=1)
         run: moon test --target native -j 1
 

@@ -89,6 +89,9 @@ You can browse and install extra skills here:
 > **Native 后端**：2026-10-01 在 WSL(Linux ubuntu-22.04) 实测 `moon test --target native -j 1` = **572/572**（工作树带既往构建残留时）；
 > 同一 commit 的 `git archive HEAD` **干净树**上同一条命令必崩，根因见账本 BUG-133（依赖的 native FFI），
 > 崩没崩由 `scripts/blackbox/e2e_native_heap_probe.py` 说话，不据任何旧数宣称双端同版全绿。
+> **2026-10-01 owner 裁决③已落地**：CI 两条 native 臂（`ci.yml` `Test (native)` / `fist-ci.yml` `Test (native, j=1)`）前面
+> 各挂一道同名门 `Native heap gate (BUG-133 探针当门)`，跑的就是上面那支判据（`--selftest` + `--runs 12`）；
+> 只有 `crashes=0/12` 才放行全量测试。**步骤没删**，所以依赖侧修好后这一臂自己恢复覆盖，不需要再来改 workflow。
 
 `src/store/store_sqlite.mbt` 依赖 `mizchi/sqlite`（native stub），其 `stub.c` 用尖括号 `#include <sqlite3.h>` 并 `#pragma comment(lib, "sqlite3.lib")` 链接系统 SQLite。
 
@@ -101,8 +104,11 @@ You can browse and install extra skills here:
   Windows native 并行跑全量测试偶发 `0xc0000374`（堆损坏）—— **旧口径里「并行竞态、`-j 1` 串行可降低」两句已被 2026-10-01 实测推翻**：
   崩因是 `mizchi/sqlite@0.3.1` 的 native FFI 把 C 侧裸指针当 MoonBit 对象回传（BUG-133），**单进程也崩**，CI 的 `-j 1` 臂与不带旗的臂
   每次同红，串行不改变概率；判据 `python scripts/blackbox/e2e_native_heap_probe.py --runs 12`（探针不含本仓业务码，
-  2026-10-01 实测 3/12 崩：`munmap_chunk(): invalid pointer` / `free(): invalid pointer`），崩没崩由那条判据说话，
-  不在这里抄读数。**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 572/572）**，见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
+  崩没崩由那条判据说话，不在这里抄读数），但**它是抽检不是关闭条件**：同一支尺、同一次会话里连跑两发
+  就给出过 `3/12` 与 `0/12` 两端（2026-10-02 WSL，逐跑 rc 分解见账本 BUG-133 追记）⇒ `crashes=0/N` 只说明
+  "这一支样本没抽中"，不许据此写「native 已修」；BUG-133 的关闭条件因此是两格（抽检连发 0 崩溃 + 干净树全量通过）。
+  退出码是契约（`0` 全跑完 / `1` 有崩溃 / `3` 平台或工具链不给量、拒绝出数 / `4` 尺子自己坏了——含判据未捕获异常，
+  绝不冒用 `1` 那一档）。**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 572/572）**，见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
 
 ## MCP Server
 
