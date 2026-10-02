@@ -38,8 +38,12 @@ BUG-130 入账时的主张是「**会红且没人解释**」，不是「native �
 
 ## 缺口与风险
 
-1. 若日后有人删掉这两道门，**没有常驻判据会红**（只有 native 全量自己的崩会红，_legibility_ 消失而无人认领）。
-   建议下一轮把它做成 `check_doc_surface` 的一条 J 规则（「文档声称的 CI 门步骤必须在两个 workflow 里存在」）。
+1. ~~若日后有人删掉这两道门，没有常驻判据会红~~ **同轮已闭合**：`check_doc_surface` 扩到 **J11 CI native 门步骤↔账本/规范面 三向对表**
+   —— 锚是账本上 `BUG-133` 抬头仍 OPEN（那时门不许消失、不许挪到 `Test (native` 之后、规范面逐字点名的步名必须等于 CI 里的步名；
+   单转 FIXED 后这一格自然失效，不留恒红）。承重证明 `temp/b130_j11_prove.py` 四格实测：
+   A 摘门 ⇒ 红、B 门挪到全量之后 ⇒ 红（第 29 步 vs 第 28 步）、C 规范面步名漂成短形 ⇒ 红、**D 现状 ⇒ 0 违例**；
+   `--selftest` 里这七支（含合法态不误红 + 账本读不到单必红 + 解析器饿死必红）都在正文，`SELFTEST OK` 行的清单从正文反解。
+   声明面同步：AGENTS / `AI-DEVELOPMENT-STANDARD` §1 表格 / `templates/pipeline_mode_tidy.md` 三处 J1-J10 → **J1-J11**（J10 会抓滞后）。
 2. 抽检门的检出率没标定，且**这一发 CI 两臂的门都是绿的**（#7 / #8 success ⇒ 12 抽没抽中），本机同尺同会话也出现过 0/12。
    要更高置信只能加大 N，代价按 12 跑 ≈3.5 分钟比例往上乘——留给 owner 取舍，本轮不自决加时长。
    缓解：全量那一格现在自带 `::error::`，所以「门漏检」不再等于「红没人解释」。
@@ -80,8 +84,31 @@ exit "$rc"                              # 红照原样传，注解不放宽门�
 ⇒ 由 `temp/b130_fixed_stamp.py` 落抬头 + 小记，前置门含「两远端 `rev-list --count <远端>..HEAD` = 0」与
 「反解到 2 条 BUG-133 注解」（少一条就拒写）。投影随账走：`gen_plugins.py` 回执 = 133 条入账 / 117 已修 / 3 待修，cl7 重跑 PASS。
 
+## 补记（同轮第三笔）：J11 常驻判据落地，顺带钉掉判据文案的平台相关形状
+
+缺口 #1 已在同一轮做成常驻判据，另有一处跨缺陷被顺手挖出来：
+
+- **J11 的锚不是「文档提没提门」，而是账本上 `BUG-133` 抬头仍 OPEN** ⇒ 单转 FIXED 后这一格自然失效（不留恒红判据），
+  这是它和 J4/J6-J10 的分工差别，也是 `--selftest` 里必须有一支「合法态不误红」的原因。
+- 承重证明 `temp/b130_j11_prove.py` 的变异打在**真 YAML** 上（读 `ci.yml` 全文做摘门/挪序/步名漂移三种手术），
+  不喂合成字符串 —— 否则证明的是解析器，不是门还站在原地。
+- **J11 落盘当场抓到本会话自己写的文档**（比任何合成变异都硬的活证据）：给 `scripts/README.md` 补 J11 说明时
+  把描述性词组 heap gate 用反引号裹了 ⇒ 判据按「规范面逐字点名的步名」处理它，全量 rc=1，回执
+  `J11 scripts/README.md 逐字点名的门步骤「heap gate」在 workflow 里不存在`。修法改文档不改判据
+  （反引号在本仓从此只用于**与 CI 步名逐字相等**的串），复跑 rc=0。
+- **判据违例文案里的路径分隔符原本是平台相关的**：`str(p.relative_to(ROOT))` 在 Windows 打印 `scripts\README.md`、
+  在 CI 打印 `scripts/README.md`。这条不在任何判据射程内，只在报告要**逐字**引用回执时才暴露（本轮 C 格回执就是这样露出来的）。
+  修法：单一出口 `rel_posix()`，J6/J7/J8/J10/J11 共七处标签一起走它，并给 `--selftest` 补一支平台无关的机制格
+  （`rel_posix(SCRIPTS_DOC) == "scripts/README.md"`，在 POSIX 上恒真 ⇒ 它考实现，不考现状）。
+  成因值得记：证明脚本自己另写了一遍枚举器（复制尺子时把上一轮的实现细节当主张抄过去），已改为调 `C.rel_posix`。
+- 一处自纠：CHANGELOG.md 追加 J11 bullet 时 `old_string` 又选中了下一条 bullet 的首行（同型**第四次**复发，
+  前三次分别在本轮与既往两轮）⇒ `git diff HEAD` 抓出后原样复原，最终该文件 `+5 / -0`。
+  已把「追加 bullet 时 `old_string` 只含本条末尾」当作动作约束写进日志，而不只是记一条教训。
+- 复跑读数：`check_doc_surface --selftest` rc=0 / 全量 rc=0；守卫族 `total=17 fails=0`（含 `gen_plugins --check` 与 cl7）；
+  J11 承重证明 `PROVE OK（4 格：三支变异必红 + 现状不误红；账本状态取数面 BUG-133=OPEN）`。
+
 ## 来源
 
 `memory/bugs.md` 的 BUG-130 / BUG-133 追记（同一次反解的两处渲染）、`temp/b130_probe12.log`、
 `temp/b130_probe12_v2.log`、`temp/b130_run_probe.log`、`temp/b130_win_probe_check.txt`、
-`temp/b130_gbk_after_fix.log`、`temp/js_after_b130.log`、`temp/b130_guards.log`、两个 workflow 文件本身。
+`temp/b130_gbk_after_fix.log`、`temp/js_after_b130.log`、`temp/b130_guards.log`、`temp/b130_j11_prove.txt`（J11 四格承重回执）、两个 workflow 文件本身。

@@ -75,6 +75,13 @@ AIGC:
   （红照原样传，注解只补根因；本机两态验过：注入 139 ⇒ 注解 + 以 139 退出，注入 0 ⇒ 无注解、以 0 退出）。
   盖章后的权威 CI：failure 级注解原文两条都在（『BUG-133 的读面：native 测试二进制以 rc=255 收场…门绿只代表这一次 12 抽没抽中』），
   原件 `temp/b130_annot_24c30f8_v3.txt`。
+- **同轮补上报告里自己点的缺口**：`check_doc_surface` 扩到 **J1-J11**，新格 J11 把「CI native 门步骤」钉成三向对表
+  （账上 `BUG-133` 仍 OPEN ⇒ 门不许被删、不许挪到 `Test (native` 之后、规范面逐字点名的步名必须等于 workflow 里的步名；
+  单转 FIXED 后这一格自然失效，不留恒红判据）。承重证明四格实测 A 摘门/B 顺序倒置/C 步名漂移 三支必红 + D 现状 0 违例，
+  `--selftest` 的清单仍从自检正文反解；声明面三处（AGENTS / 规范正文表格 / `pipeline_mode_tidy` 模板）同步到 J1-J11，
+  本地守卫族 17 格仍全 rc=0。同轮钉掉一处只在逐字引用时才露的形状：判据违例文案的路径分隔符原本随平台变
+  （`str(relative_to(...))` ⇒ Windows `scripts\README.md` / CI `scripts/README.md`），改走单一出口 `rel_posix()` 共七处，
+  `--selftest` 补一支平台无关的机制格（POSIX 上恒真 ⇒ 考实现不考现状）。
 - **盖章走的是 md 真源面**：本会话连上的 connector 其 server cwd 不指向本仓（`bug_list` 回显 `path=./memory/bugs.md` 而两条 OPEN 是别的项目的台账条目），
   `bug_fix` RPC 两次 `MCP error -32603` 且盘上零写入 ⇒ 抬头与小记由 `temp/b130_fixed_stamp.py` 落 md（含未推 commit 数 = 0 的前置门），
   投影随之 `BUG-1~134 共 133 条入账 = 117 已修 / 9 重复并入 / 4 误报 / **3 待修（BUG-132, BUG-133, BUG-134）**`，cl7 重跑 PASS。
