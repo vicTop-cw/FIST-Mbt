@@ -126,7 +126,7 @@ curl.exe --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://raw.githubus
 > 诚实的边界（2026-09-29 更新）：这条换掉的是「取脚本」这一步的传输工具，并把 R12 那条「重试只许对准传输层错误」的规矩搬到这一发上（`--retry 5 --retry-delay 2 --retry-all-errors`——本机实测的失效形态是**同一个 URL 有些连接被 RST、有些拿到 200**，单发不成立；`--retry-all-errors` 是必需的，因为 curl 默认只对"响应前"的连接错误重试）。安装器**内部**那两发（取 `moon.mod` 定版本、取资产 zip）以前只有 .NET 单栈，是「脚本取回来了、红在内部那一发」的真来源——现已同样接上 curl 兜底臂（判据 R12 + R14；承重证据 `python scripts/blackbox/e2e_transport_stack_fallback.py`：同一镜像三格，".NET 抛传输层错误 + 有 curl" 装通、同样条件剥掉 curl 必红、干净安装不误伤）。链路**整断**时两条栈一起红，那种情况只剩 `-LocalZip` 离线线。
 
 # 离线 / 内网线（两条公网线都被中间盒挡住时的出路；开关真源 = `install_onecmd.ps1` 的 `param()`）
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\blackbox\install_onecmd.ps1 -LocalZip C:\path\to\fist-mbt-js-v0.3.5.zip
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\blackbox\install_onecmd.ps1 -LocalZip C:\path\to\fist-mbt-js-v0.3.6.zip
 # 或指一个内网镜像（与 GitHub Release 同形状：`<Base>/releases/download/<ver>/<asset>`，且 `<Base>/moon.mod` 必须可读）
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\blackbox\install_onecmd.ps1 -BaseUrl http://内网镜像:端口
 
