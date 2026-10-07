@@ -67,6 +67,16 @@ owner 三选一里选 **c（删作业）** 已执行，并把这一类缺陷转�
 - 判据 J12 + 三处声明面同步 + `scripts/README.md` 记账——owner 批的是「删作业」，把这一类做成常驻判据是方案里的配套件。
 - 盖章小记的逐 job 结论从读数反解（原本只列 job 名）：收口自查发现证据不足以独立复核，属于本单自己补齐的。
 
+## 补记（盖章提交 `eb65298` / tag `b132-fixed-20261007` 自身的权威 CI）
+
+盖章那一发只动了台账与投影，所以这一格考的是「**有没有把别的臂带崩**」，读数逐 job 抄自 `temp/b132_final_readback.txt`：
+
+- CI（run 37558531687）：`check + test (js, ubuntu)`=success；`check + test (js, windows)`=success；`check + test (native, ubuntu)`=failure（红格 #8 Test (native)=failure）。FIST CI — Build + Test（run 37558531629）：`check + test (js, ubuntu)`=success；`check + test (native, ubuntu)`=failure（红格 #9 Test (native, j=1)=failure）。
+- 三条自证都过了：job 名单里 `nightly` 命中 **0** 次（BUG-132 的关闭面在终态树上仍然成立）、
+  js 两臂 3 条读数全 success、红格只有 #8 Test (native)=failure/#9 Test (native, j=1)=failure 即 BUG-133 那条 native 读面。
+- 所以本轮终态：**台账 OPEN 只剩 BUG-133（上游 `mizchi/sqlite@0.3.1` 的 native FFI）**，
+  本仓侧没有待修项；native 两臂继续由常驻门 `Native heap gate (BUG-133 探针当门)` 说话，不需要再改 workflow。
+
 ## 来源
 
 - 账本条目 `memory/bugs.md` BUG-132（发现于 BUG-130 审计轮，`reported_by: fist-mbt-native-gate-audit-0d7b7115`）。
