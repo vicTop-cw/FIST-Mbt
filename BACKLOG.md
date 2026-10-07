@@ -44,3 +44,13 @@
 | - | colmugx/mcp 已依赖（fist-mbt MCP 协议库），保留 | competition/§六 | done | - |
 
 > 去重说明：competition/§四 与 five-directions/§一、future-roadmap 各方向的重复项（如 quickcheck、mizchi/llm、ARCHITECTURE、self_search、英文 README）已按主题合并为单行；状态以当前源码/记忆库是否确认实现为准，未确认一律 pending，待逐项核对后再转 done 或删除。| F094 | 多管家协作 · 同项目文件级并行协调层（file_binds 表 + file_bind/release/status 三工具 + 构建互斥 + worktree 终态；硬前置=BUG-119 心跳跨进程修复，见 improvement-plan §P0′） | spec（未来扩展） | TBD | [docs/features/F094-multi-butler-file-binds.md](docs/features/F094-multi-butler-file-binds.md) |
+
+## 发布事实（机器可读标记，`scripts/check_doc_surface.py` 的 J13 从这里反解）
+
+下面三行是 GitHub Release 的**匿名权威读数**（`GET /repos/vicTop-cw/FIST-Mbt/releases?per_page=100`，
+http=200，2026-10-07 实测；读数原件 `temp/b135_release_evidence.txt`）。J13 用它反查 CHANGELOG 各节标题里的
+状态短语有没有落后于事实——**发布时刻由读数来，新增一发 Release 就补一行标记**，别让人去猜哪一节该改。
+
+<!-- release-fact: v0.3.5 github-published=2026-09-30T00:03:17Z asset=fist-mbt-js-v0.3.5.zip bytes=376617 -->
+<!-- release-fact: v0.3.4 github-published=2026-09-28T17:25:12Z asset=fist-mbt-js-v0.3.4.zip bytes=372836 -->
+<!-- release-fact: v0.3.3 github-published=2026-09-28T11:57:48Z asset=fist-mbt-js-v0.3.3.zip bytes=372163 -->
