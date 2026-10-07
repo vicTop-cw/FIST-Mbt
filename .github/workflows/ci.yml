@@ -86,6 +86,15 @@ jobs:
           python3 scripts/check_ps_encoding.py --selftest
           python3 scripts/check_ps_encoding.py
 
+      - name: Py-stdout encoding guard (BUG-138：本机红必须看得见，不许崩在结论行之前)
+        shell: bash
+        # 扫描面从本 workflow 反解：凡被 CI 调用、会 print 且正文含非 ASCII 的 .py，必须自带
+        # sys.stdout/stderr 的 UTF-8 重配。缺了它，Windows 复跑时 print 的 ⇒ 会抛 UnicodeEncodeError，
+        # 留下 traceback + rc=1——而 1 恰是「缺陷在场」那一档，判据自己的崩冒用了被测的退出码。
+        run: |
+          python3 scripts/check_py_stdout_encoding.py --selftest
+          python3 scripts/check_py_stdout_encoding.py
+
       - name: Entry-list guard (BUG-93/101：现状面不得指退役入口；Popen argv 必须带 serve)
         shell: bash
         run: |
@@ -129,6 +138,16 @@ jobs:
         run: |
           moon build --target js cmd/cli
           python3 scripts/blackbox/e2e_heartbeat_xproc.py
+
+      - name: Reserve cross-process guard (BUG-136：预订的互斥必须打到两个真进程)
+        shell: bash
+        # 缺陷本体只在「A 的读与 B 的读都早于彼此的写」时现形，单进程结构上造不出这个窗口；
+        # 另一半崩因（没有 busy_timeout ⇒ `Error: database is locked` 未捕获打死 server）要两个连接才撞得到。
+        # 六格硬门：0 轮双成功 / 拒方必带 held_by / 每 scope 库里恰 1 行 / 续期不误拒 / 活体不被夺 / 过期可让渡。
+        run: |
+          moon build --target js cmd/cli
+          python3 scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js
+          python3 scripts/blackbox/e2e_reserve_xproc.py
 
       - name: CLI call-site probe (BUG-106/114：旗、退出码、版本自述必须打到入口面)
         shell: bash

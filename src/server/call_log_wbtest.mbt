@@ -70,3 +70,18 @@ test "call_log_wrapper_ok_and_err_logged" {
   assert_true(err_seen)
   assert_true(ns_fall_bk)
 }
+
+///|
+/// BUG-137 caller 优先级：环境盖章 > 调用方自述 > 空串，三档缺一不可（成对：空串环境值不许吞掉自述）。
+/// 为什么这条锁必须存在：过去 caller 只从 `args.created_by` 取，而绝大多数工具没这个入参
+/// ⇒ 根库 call_log 最近 800 行 caller 全空（实测读数见账本 BUG-137），仲裁类工具的身份因此不可审。
+test "cl_caller_from_env 三档优先级与空串回退" {
+  assert_eq(
+    caller_from_env(Some("steward_top"), "self_reported"),
+    "steward_top",
+  )
+  assert_eq(caller_from_env(None, "self_reported"), "self_reported")
+  assert_eq(caller_from_env(Some(""), "self_reported"), "self_reported")
+  assert_eq(caller_from_env(None, ""), "")
+  assert_eq(caller_from_env(Some("steward_top"), ""), "steward_top")
+}

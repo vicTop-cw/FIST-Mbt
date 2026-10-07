@@ -54,6 +54,88 @@ pub fn MemoryStore::rsv_list(
   out
 }
 
+// —— BUG-136：跨进程裁决的预订（rsv_try_*）——
+
+///|
+/// 预订裁决结果。`agent`/`ttl_until` 一律是**库里现值**（conflict 时即 held_by），
+/// 不是调用方想要的那个值——回执不许由请求反推。
+pub struct RsvOutcome {
+  reserved : Bool
+  /// reserved | renewed | taken_over | conflict
+  action : String
+  /// 仅 taken_over 非空：被让渡掉的原持有者
+  prev_agent : String
+  agent : String
+  ttl_until : String
+}
+
+///|
+/// 裁决规则**单一真源**：给定写前快照与本次请求，判「该不该写」＋动作标签。
+/// 两个后端都从这里取标签，SQLite 侧的 `ON CONFLICT ... WHERE` 编码的是同一条规则
+/// （`reservations.agent = excluded.agent OR reservations.ttl_until < excluded.created_at`）。
+/// 同持有者排在过期之前：自己续一条已过期的预订，报 renewed 而不是 taken_over（与旧口径逐字一致）。
+pub fn rsv_action(
+  prev : (String, String, String)?,
+  agent : String,
+  now : String,
+) -> (Bool, String) {
+  match prev {
+    None => (true, "reserved")
+    Some((owner, _, _)) if owner == agent => (true, "renewed")
+    Some((_, ttl, _)) if ttl < now => (true, "taken_over")
+    _ => (false, "conflict")
+  }
+}
+
+///|
+/// 内存后端：按裁决写预订，**写后回读**收口。
+/// 旧形状（先 rsv_get 判空再无条件 rsv_set）在跨进程下会双方都读到空闲、双方都写成功；
+/// 内存后端本来没有那个窗口，但两后端必须同一形状，否则单测永远绿而 SQLite 红（BUG-85/BUG-79 的旧例）。
+pub fn MemoryStore::rsv_try_set(
+  self : MemoryStore,
+  scope~ : String,
+  agent~ : String,
+  ttl_until~ : String,
+  created_at~ : String,
+) -> Result[RsvOutcome, String] {
+  let prev = self.rsv_get(scope)
+  let (may_write, action) = rsv_action(prev, agent, created_at)
+  let prev_agent = match prev {
+    Some((o, _, _)) if action == "taken_over" => o
+    _ => ""
+  }
+  if may_write {
+    ignore(self.rsv_set(scope~, agent~, ttl_until~, created_at~))
+  }
+  // 结论以库里的现值为准：内存后端在这里必然与请求一致，写成回读是为了两后端同构
+  match self.rsv_get(scope) {
+    Some((owner, ttl, _)) if owner == agent =>
+      Ok(RsvOutcome::{
+        reserved: true,
+        action,
+        prev_agent,
+        agent,
+        ttl_until: ttl,
+      })
+    Some((owner, ttl, _)) =>
+      Ok(RsvOutcome::{
+        reserved: false,
+        action: "conflict",
+        prev_agent: "",
+        agent: owner,
+        ttl_until: ttl,
+      })
+    None =>
+      Ok(RsvOutcome::{
+        reserved: false,
+        action: "conflict",
+        prev_agent: "",
+        agent: "",
+        ttl_until: "",
+      })
+  }
+}
+
 // —— 执行者能力注册（Marketplace 雏形跨进程持久化，R31）——
 
 ///|

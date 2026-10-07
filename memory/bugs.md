@@ -2663,3 +2663,137 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
 - 改动面：`CHANGELOG.md` 定因节标题的状态短语就地校正（下一节 BUG-128 那处**不动**，它的标题戳早于权威 published，当时是真话）；`BACKLOG.md` 末尾加三行机器可读 `release-fact:` 标记（v0.3.3/v0.3.4/v0.3.5 的 published 时刻 + 资产名 + 字节数，原件 `temp/b135_release_evidence.txt`，匿名 GET http=200）；`scripts/check_doc_surface.py` 加 J13；四处声明面 J1-J12 → J1-J13（AGENTS / AI-DEVELOPMENT-STANDARD §1 / pipeline_mode_tidy 模板 / scripts/README）。
 - 两条自纠（本轮实跑暴露，同族老坑新面）：① 补丁脚本的**非 raw 三引号串**里两处 `\n` 没转义，落成真空行 ⇒ `py_compile` 拦下，但它在 `os.replace` **之后**才跑 ⇒ 结论是落盘脚本的编译门要么排在写盘前，要么写完立刻编译并回滚，别把「崩在写盘前」当默认保障（上一单正是靠这点没毁档，这次却已经写进去了）；② 我新写的 scripts/README J13 说明里顺手带上发布版本号 ⇒ **J4 立刻红**「另写一处发布版本」，删掉版本字面量改指权威面（与上一单被 J11 抓 backtick 同型：尺子先照到自己）。
 - J10 也照例在第一跑就红（「声明 J1-J12 < 实现最高 J13 —— 声明滞后」）⇒ 加判据不改声明这条路走不通，这条同样是实跑不是推演。
+## BUG-136 [2026-10-07T07:02:42Z] [high] FIXED
+- summary: `reserve_scope` 的原语在**两个进程打同一个库**时会先把 server 打死（逐字 `Error: database is locked`，未捕获 ⇒ rc=1），活着的那次又丢互斥（同一 scope 双方都拿到 reserved=true）——F094「文件级并行协调层」要复用的正是这条原语，其验收格「两进程同时 bind 恰好一成一拒」在现码上不可能成立
+- detail: 发现面：owner 问 F094（docs/features/F094-multi-butler-file-binds.md）值不值得做，我去测它脚下这条承重墙。
+  探针 `temp/rsv_xproc_probe.py`（管子照抄 BUG-119 的 `scripts/blackbox/e2e_heartbeat_xproc.py`：
+  两个真 `node cli.js serve` + 同一个 `FIST_DB_PATH` 隔离库 `temp/rsv-xproc.db` + 沙箱每次清场），
+  每轮用 Barrier 让两进程在同一道闸上同时下手同一 scope。**三次运行的逐字读数**（不做合并、不取平均）：
+  ① run1（RSV_ROUNDS=20）：双成功=1，一成一拒且带持锁者=1，拒方无持锁者=1，双方被拒=0，**进程被打死=17**；
+  ② run2（RSV_ROUNDS=3）：双成功=1，一成一拒且带持锁者=2，进程死=0；
+  ③ run3（RSV_ROUNDS=20，带 stderr 转储）：双成功=0，一成一拒=1，拒方无持锁者=1（实为 25s 未回执），**进程死=1**，
+     崩因逐字 = `Error: database is locked | at _M0FP26mizchi6sqlite9js__apply (_build/js/debug/build/cmd/cli/cli.js:1221:81)
+     | at _M0MP26mizchi6sqlite17NodeStatementSync11run_2einner`，原件 `temp/rsv_xproc_crash_A.txt`。
+  两个症状是两个根因，不是一个：
+  **A（打死）**：`store_sqlite.mbt:25-26` 只开了 `journal_mode=WAL` + `synchronous=NORMAL`，**全仓没有 `busy_timeout`**
+  （`grep -rn busy_timeout src` 零命中）⇒ 并发写立刻拿 SQLITE_BUSY；而 `mizchi/sqlite` 的 js 桥**没有任何 try/catch**
+  （`grep -n "try\|catch" .mooncakes/mizchi/sqlite/sqlite_js.mbt` 零命中），`Statement::execute`（`sqlite_js.mbt:358-362`）
+  是 `stmt.run(...) |> ignore; true`——即「无条件返回 true，异常一路穿透」。这与 BUG-94 记录的是同一把机制
+  （当时是 prepare 遇缺表抛异常打死 server），只是换了触发条件：那次是单进程缺表，这次是双进程撞锁。
+  **B（丢互斥）**：`server.mbt:4072-4095` 的形状是先 `engine.rsv_get` 判「空闲/过期」再 `engine.rsv_set` 写，
+  而 `rsv_set` 是 `INSERT ... ON CONFLICT(scope) DO UPDATE SET ...`（`store_sqlite.mbt:707`）——**裁决在调用侧的旧读上，
+  不在数据库里**。两进程都读到「空闲」就都写、都回 reserved=true，表里只剩最后一笔，另一个 agent 以为自己占住了作用域。
+  这正是 BUG-79 记过的同一类（那次是 release 侧「删 0 行也报已释放」，修法选了「删前先读回」——读回对 release 够用，
+  对 set 不够，因为 set 的竞态窗口在**读与写之间**）。run1/run2 各出现过 1 轮双成功，是时序相关的抽检，
+  **因此「本轮双成功=0」不能当关闭条件**；关闭条件是常驻判据的六格全绿（见出路 C）。
+  调用面现状（读根库 `call_log`，本轮实测）：reserve_scope=40 / reserve_check=41 / reserve_release=6 / conflicts_check=2，
+  且最后一次调用停在 2026-09-28T04:17Z ⇒ 这条面此前只在同进程演示里跑过，跨进程形态从未被压过，所以两个症状都不是新长出来的。
+  建议出路：A) 打开 `PRAGMA busy_timeout`（崩因那一半，两行）；
+  B) 把裁决交给数据库——单语句 `INSERT ... ON CONFLICT(scope) DO UPDATE SET ... WHERE reservations.agent = excluded.agent
+     OR reservations.ttl_until < excluded.created_at`（抢不到就是 0 行），**写后回读**比对持有者来决定回执，
+     不再用调用前的读做写；内存后端与 SQLite 后端必须给同一种结论（BUG-85 的旧例：两后端两种语义，单测永远绿）；
+     注意「纯 INSERT 不带 conflict 子句」这条路**不能用**——它会撞 A 那个抛异常形态，把一次正常冲突变成 server 崩溃。
+  C) 常驻判据 `scripts/blackbox/e2e_reserve_xproc.py` 六格硬门：无进程死 / 0 轮双成功 / 每次拒绝带 held_by /
+     库里行数==轮数 / 同 agent 续期不误拒 / 过期绑定可让渡（后两格是「修复不许改松」的反向对照）。
+- reported_by: fist-mbt-reserve-xproc-probe-b136
+
+### FIXED(2026-10-07T12:50:57Z / BUG-136)
+- 两半各自落地，各自有门：
+  **A（打死那一半）** `src/store/store_sqlite.mbt` 的 `open` 里，紧挨既有 WAL/synchronous 两行补
+  `PRAGMA busy_timeout=5000`——撞锁改成**等**而不是抛。（5000ms 与本仓 RPC 探针 25s 超时之间留 5 倍余量。）
+  **B（丢互斥那一半）** 新裁决原语 `rsv_try_set`：单语句
+  `INSERT INTO reservations ... ON CONFLICT(scope) DO UPDATE SET ... WHERE reservations.agent = excluded.agent
+  OR reservations.ttl_until < excluded.created_at`，抢不到就是 0 行；结论一律**写后回读**库里现值。
+  裁决规则做成纯函数 `rsv_action`（内存/SQLite 两后端共用同一个标签源，同持有者排在过期之前，与旧口径逐字一致），
+  `server.mbt` 的 reserve_scope 退化成只渲染结论的薄面——**互斥不再由调用侧那次旧读决定**。
+  落点：`src/store/store_rsv.mbt`（内存 + RsvOutcome + rsv_action）/`src/store/store_sqlite.mbt`（SQLite + 写后回读收口）/
+  `src/store/store.mbt`（StoreBackend 分发）/`src/engine/engine_rsv.mbt`（转发）/`src/server/server.mbt`（工具面）。
+- 一处**修法上的自我修正**值得留在账上：第一版我留了「写前已看见活体持有者就不发这笔写」的短路，
+  于是那条 SQL 的 WHERE **永远走不到**——摘掉 WHERE 做变异，`moon test --target js src/store` 仍 25/25 全绿。
+  去掉短路后同一支变异必红：`rsv_try_set：空闲/活体冲突/续期/过期让渡，两后端逐字段一致` 红在
+  `store_rsv_test.mbt:213` 的「`true` is not false」（原件 `temp/b136_bear_proof.log`）。
+  「跳过」看起来与内存后端一致、还省一次写，代价是把判据架在不存在的路径上——这类短路从此按空门处理。
+- evidence（承重证明两棵树各跑同一支 `scripts/blackbox/e2e_reserve_xproc.py`，读数逐字）：
+  ① `git archive HEAD` 旧码树（`temp/b136_headtree`，build rc=0）⇒ **rc=1，1 绿 5 红**：
+     双成功=1/20、行数=5≠20、⑤⑥红在逐字 `Error: database is locked | at
+     _M0FP26mizchi6sqlite9js__apply ... NodeStatementSync.run`（原件 `temp/b136_judge_headtree.log`）。
+  ② 带修复的工作树 ⇒ **rc=0，6/6 绿**：并发双绑 20 轮 双成功=0、一成一拒且带 held_by=20、库里行数=20
+     （原件 `temp/b136_judge_after.log`，产物 sha 见该日志首行）。
+  ③ 单位面新增两测：`rsv_action` 四分支 + 「自己那条已过期时报 renewed 而非 taken_over」的边界；
+     `rsv_try_set` 两后端逐字段一致（含「冲突之后库里持有者不许被抹掉」）。
+  ④ 全量：`moon test --target js` = **576/576**（本轮起点 573，+2 store 测 +1 server 白盒测），
+     原件 `temp/b136_js_full3.log`；守卫族 `total=20 fails=0`（新增两步见下）。
+  ⑤ 常驻面：`scripts/blackbox/e2e_reserve_xproc.py`（六格 + 基数门：格子集合与声明逐字不等即判「尺子坏了」；
+     样本量写死 20，不接环境变量——能一键降到 1 的压测门不是门），已挂 `ci.yml` js-ubuntu
+     「Reserve cross-process guard」，并在 `scripts/README.md` 登记（`check_scripts_index` 绿）。
+- 顺带收掉同一条探针牵出的另两类（各自独立成卡，见 BUG-137/BUG-138）：`fist://map` 资源正文那句
+  「MCP 层 102 工具」就地改成不带数目的写法并补常驻判据 **J14**（计数自述 + CLI 帮助的分组数字之和 + 组数，
+  三样都必须等于真源注册表；三面反解、空扫描必自拒），声明面同步到 `J1-J14`。
+- 边界（不许读成已修好一切）：`rsv_set`（无条件覆盖）仍保留给 release 路径与既有测试夹具；
+  F094 的 Phase 1 仍未排期，owner 2026-10-07 采纳的是「先修承重墙、不建三工具」这条方向，
+  变化只在于——它的验收格「两进程同时 bind 恰好一成一拒」从**不可能成立**变成**有常驻判据守着**。
+
+## BUG-137 [2026-10-07T12:50:57Z] [medium] FIXED
+- summary: 根库 `fist-mbt.db` 的 `call_log` 里 **caller 一列不可审**——全史 6956 行中 6596 行为空串，
+  且**最近 800 行 100% 为空**（本轮实测，不是早期遗留、是当下还在发生）。根因是 `_log_call` 只从
+  `args.created_by` 取身份，那是**调用方自报**，而绝大多数工具根本没有这个入参 ⇒ 等于没记
+- detail: 发现面：owner 问 F094（多管家文件级协调）值不值得做，我去读调用面数准备裁决。
+  三条机器可检读数（`sqlite3` 只读连打根库，`mode=ro&immutable=1`，不改一字节）：
+  ① `select count(*) from call_log` = 6956；
+  ② `select caller,count(*) group by caller` = ('',6596) / human_steward 228 / selfdrive 72 / dag 16 /
+     human 13 / enhance 12 / atomcode-glm 6 / lzc-loop 2；
+  ③ 最近 800 行 caller 全空。
+  为什么这条比看上去重要：F094 那类仲裁原语（预订/冲突检测）的承重件就是「谁」——身份认不出，
+  锁只是自报家门，事后也无法回答「是谁在什么时候占了哪个作用域」。而它同样是 BUG-136 的邻居：
+  两进程并发 `reserve_scope` 时，`held_by` 报出来的名字若无人能盖章，冲突结论就不可复核。
+  修法照本仓既有政策（BUG-33 时间戳服务端盖章、BUG-90 `FIST_DB_PATH`、`FIST_RUN_CHECK_ALLOW` 同族）：
+  新增纯函数 `caller_from_env(env_value, created_by)`，优先级 **进程环境 `FIST_CALLER` > 调用方自述
+  `created_by` > 空串**；环境变量只由运维侧注入，调用面传参不许自我扩权。
+- reported_by: fist-mbt-reserve-xproc-probe-b136
+
+### FIXED(2026-10-07T12:50:57Z / BUG-137)
+- evidence: ① 白盒锁 `src/server/call_log_wbtest.mbt::cl_caller_from_env 三档优先级与空串回退`，
+    五断言含成对反向（空串环境值不许吞掉调用方自述；None 与 Some("") 必须同走一档）。
+  ② 全量 `moon test --target js` = 576/576（`temp/b136_js_full3.log`）。
+  ③ 落点 `src/server/server.mbt`（`_log_call` 调用 `caller_from_env(@env.get_env_var("FIST_CALLER"), ...)`）。
+- 边界与后续（不许读成身份问题已全部解决）：**注入点不在本仓可自证范围**——四宿主各自启动 server 时的
+  环境由用户机器决定，仓库侧 `.mcp.dev.json` 只能给一个固定值，而这条判据要的是**每个 agent 一个身份**。
+  故修复之后，若运维侧不注入 `FIST_CALLER`，caller 仍会是空串或 `created_by` 自述——区别只在于
+  「空串现在是一个有含义的结论（两侧都没有）」而不是「代码没记」。已把注入面挂进 BACKLOG 作为待办行。
+
+## BUG-138 [2026-10-07T12:50:57Z] [medium] FIXED
+- summary: **被 CI 调用的 22 份 `scripts/**.py` 里有 7 份缺 BUG-58 那段 stdout/stderr UTF-8 重配**，
+  于是在 Windows 默认 cp936 控制台上「守卫一红就崩在结论行之前」——拿到 traceback + rc=1，而 1 恰是
+  「缺陷在场」那一档：判据自己的崩冒用了被测的退出码
+- detail: 发现面两次打到我自己：① `python scripts/check_publish_payload.py` 打 VIOLATION 时
+  `UnicodeEncodeError: 'gbk' codec can't encode character '\u21d2'`（崩在 `print("VIOLATION " + p)`，
+  原件见本轮 `temp/b136_guards.log` 末尾）；② 守卫族跑器 `temp/b130_run_guards.py` 同一位置同样崩，
+  导致那一轮**没读完 17 格**就退出。两次都不是产品坏，是尺子坏——而且是最坏的一种：它把「有红」
+  显示成「跑不动」，读起来像环境问题。
+  普查口径（本轮实测，脚本正文含非 ASCII + 出现 `print(` + 不含 `reconfigure`）：
+  正式脚本 56 份里 **38 份**缺闸；其中被 `.github/workflows/*.yml` 反解调用的 **22 份里 7 份缺**
+  （`check_demo_isolation`/`check_entry_paths`/`check_publish_payload`/`check_release_asset_names`/
+  `cleanup_artifacts`/`patch_esm_main`/`blackbox/e2e_heartbeat_xproc`）。
+- reported_by: fist-mbt-reserve-xproc-probe-b136
+
+### FIXED(2026-10-07T12:50:57Z / BUG-138)
+- 修法不是逐份手改，而是**把族清单做成反解**：新常驻判据 `scripts/check_py_stdout_encoding.py` 的扫描面
+  从 `.github/workflows/*.yml` 正则反解 `scripts/**.py`（手写族名必然落后于新增脚本——J10/BUG-122 的老账），
+  判「被 CI 调用 + 会 print + 正文含非 ASCII ⇒ 必须含 `sys.stdout.reconfigure`」；缺则 E1 红。
+  纯 ASCII 面**不判红只出 E2 预告**（把今天不坏的当现状违例=自己的尺子打回现状面），
+  workflow 点名盘上不存在的脚本判 E0/rc=2，扫描面里一份「该带闸」的都解析不到判 FATAL/rc=2。
+  `--selftest` 五格全部在合成正文上跑（不碰盘上文件）：G1 带闸不误红 / M1 摘闸必红 /
+  M2 纯 ASCII 只预告且不判红 / M3 空扫描必自拒 / M4 悬空点名必红。实测 `SELFTEST OK`。
+- evidence: ① 补闸那 7 份的补丁是脚本化的，逐文件断言「末条顶层 import 括号配平 + 下一行非缩进 +
+    插完 `compile()` 过」，任一不合就**整批不落盘**（第一版锚点算错，把全部 7 份都拒了——那是锚错不是码错）。
+  ② 调用面复查（关键一格，光 compile 过不算）：不带任何 `PYTHONIOENCODING` 跑
+  `python scripts/check_publish_payload.py --selftest` ⇒ **rc=0**，且 M1 那格当场造出未跟踪件、
+  逐字打印了含 `⇒` 的 VIOLATION 文案（修复前同一发是 UnicodeEncodeError + rc=1）。
+  ③ `python scripts/check_py_stdout_encoding.py` = `PASS ... 23 份该带闸 / 全部带闸`
+    （23 = 原 22 + 这一步自己进 CI 后新增的一份）；`check_scripts_index` 绿（已登记）。
+  ④ 权威 CI `ci.yml` JS 轨新增「Py-stdout encoding guard」一步，先 `--selftest` 再全量。
+- 残余面（诚实记，不当已关闭）：非 CI 调用面仍有 **31 份**缺闸（demo/selfdrive/verify 一族）。
+  它们今天进不了这道门，是因为扫描面按「CI 调用」界定——把它们也收进射程要么扩扫描面、要么给它们补闸，
+  这一格交给 owner 裁决（成本：一次机械补闸 + 判据扫描面换成「全部正式脚本」，但那时 E2 预告会变成常态噪声，
+  需要先把「预告」与「违例」两档在退出码上分开）。已挂 BACKLOG 待办行。
+

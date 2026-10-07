@@ -24,6 +24,13 @@ pub fn SqliteStore::open(db_path : String) -> SqliteStore? {
         // 启用 WAL 模式提升并发读写性能
         s.exec_if_ok("PRAGMA journal_mode=WAL")
         s.exec_if_ok("PRAGMA synchronous=NORMAL")
+        // BUG-136：WAL 只解决「读写不互斥」，不解决「写写撞锁」。没有 busy_timeout 时，
+        // 第二个写连接立刻拿 SQLITE_BUSY，而 `mizchi/sqlite` 的 js 桥不 catch（`Statement::execute`
+        // 是 `stmt.run(...) |> ignore; true`），异常一路穿透 ⇒ **server 进程 rc=1 死掉**
+        // （实测两进程并发 reserve_scope：20 轮里 17 轮打死对端，逐字 `Error: database is locked`）。
+        // busy_timeout 让撞锁方**等**而不是抛；这把闸是任何跨进程协调（F094 的文件绑定层）的前提。
+        // 5000ms 与本仓 RPC 调用面的 25s 探针超时之间留了 5 倍余量，且远小于一次工具调用的可接受等待。
+        s.exec_if_ok("PRAGMA busy_timeout=5000")
         Some(s)
       } else {
         db.close()
@@ -736,6 +743,95 @@ pub fn SqliteStore::rsv_set(
         }
       }
     }
+  }
+}
+
+///|
+/// SQLite 后端：按裁决写预订——**抢不到就是 0 行，不是异常**（BUG-136）。
+/// 与旧 `rsv_set`（无条件 `ON CONFLICT DO UPDATE SET`）的区别在 `WHERE`：
+/// 只有「本来就是我的」或「现持有者的 TTL 已过期」才覆盖，二者都由**数据库**判，
+/// 不由调用方写前那次读判（`excluded.created_at` 就是本次请求的服务端盖章时刻）。
+/// 纯 `INSERT` 不带 conflict 子句这条路不能用：约束冲突会撞上面那个抛异常形态，
+/// 把一次正常冲突变成 server 崩溃。结论一律取**写后回读**，与内存后端同构。
+pub fn SqliteStore::rsv_try_set(
+  self : SqliteStore,
+  scope~ : String,
+  agent~ : String,
+  ttl_until~ : String,
+  created_at~ : String,
+) -> Result[RsvOutcome, String] {
+  let prev = self.rsv_get(scope)
+  // 标签取自写前快照，只用于**播报动作名**；结论一律由下面那条语句 + 写后回读定。
+  // 刻意不留「写前已见活体持有者就不发这笔写」的短路：那等于把裁决权交回调用侧那次旧读
+  // （缺陷本体），而且 SQL 的 WHERE 永远不会被执行——实测摘掉 WHERE 后单测仍全绿，就是这条短路把判据架空了。
+  let (_, action) = rsv_action(prev, agent, created_at)
+  let prev_agent = match prev {
+    Some((o, _, _)) if action == "taken_over" => o
+    _ => ""
+  }
+  let sql = "INSERT INTO reservations (scope, agent, ttl_until, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(scope) DO UPDATE SET agent=excluded.agent, ttl_until=excluded.ttl_until, created_at=excluded.created_at WHERE reservations.agent = excluded.agent OR reservations.ttl_until < excluded.created_at"
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) =>
+      match db.prepare(sql) {
+        None => Err("rsv_try_set prepare failed")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))),
+          )
+          ignore(
+            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent))),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, ttl_until)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              4,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, created_at)),
+            ),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
+          Ok(self.rsv_outcome_after_write(scope, action, prev_agent, agent~))
+        }
+      }
+  }
+}
+
+///|
+/// 写后回读收口：库里现在是谁，回执就是谁（结论不许由请求反推）。
+/// `None`（表读空）只可能来自库不可用/坏针，此时如实报 conflict 且 held_by 为空串——
+/// 工具面把它报出去，比伪造一次 reserved 诚实。
+fn SqliteStore::rsv_outcome_after_write(
+  self : SqliteStore,
+  scope : String,
+  action : String,
+  prev_agent : String,
+  agent~ : String,
+) -> RsvOutcome {
+  match self.rsv_get(scope) {
+    Some((owner, ttl, _)) if owner == agent =>
+      RsvOutcome::{ reserved: true, action, prev_agent, agent, ttl_until: ttl, }
+    Some((owner, ttl, _)) =>
+      RsvOutcome::{
+        reserved: false,
+        action: "conflict",
+        prev_agent: "",
+        agent: owner,
+        ttl_until: ttl,
+      }
+    None =>
+      RsvOutcome::{
+        reserved: false,
+        action: "conflict",
+        prev_agent: "",
+        agent: "",
+        ttl_until: "",
+      }
   }
 }
 

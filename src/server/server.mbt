@@ -673,7 +673,7 @@ fn map_json() -> Json {
       "omega": Json::string("Ω-check 项目结构/回传五段式校验"),
       "ops": Json::string("运维：心跳/看门狗/heal/清理"),
       "server": Json::string(
-        "MCP 层 102 工具 + 3 resources + 2 prompts + call_log 注入",
+        "MCP 层工具注册面（逐个清单看同资源的 `tool_groups` 与各宿主 SKILL.md，注册表真源在本文件）+ 3 resources + 2 prompts + call_log 注入",
       ),
       "decompose": Json::string("递归拆解规格"),
       "executor": Json::string("执行器"),
@@ -755,6 +755,19 @@ fn overview_json() -> Json {
 /// 调前记录 args、调后记录结果/耗时，并 best-effort 写 call_log，绝不改动原结果。
 
 ///|
+/// caller 的优先级（纯函数，便于白盒判据——与 `SqliteStore::db_path_from_env` 同形状）：
+/// 进程环境 `FIST_CALLER` > 调用方自述 `created_by` > 空串。
+/// BUG-137：过去只有第二档，而 `created_by` 是**调用方自己填的**，且绝大多数工具没这个入参
+/// ⇒ 根库 call_log 的 caller 实测最近 800 行全为空串。仲裁类工具（预订/冲突检测）的身份是承重件，
+/// 认不出是谁，锁就只是自报家门。环境变量只由运维侧注入，调用面传参不许自我扩权。
+fn caller_from_env(env_value : String?, created_by : String) -> String {
+  match env_value {
+    Some(c) => if c.is_empty() { created_by } else { c }
+    None => created_by
+  }
+}
+
+///|
 /// 进程内注入全局 handler 的自动日志（best-effort，任何失败均被吞掉，不影响工具调用）。
 /// seq 用单调递增计数器（跨全部工具严格递增，供回放定位/排序，非主键）。
 /// 规避 @env.now().to_int() 对 UInt64 毫秒做 32 位截断产生的负值/1970 错乱排序。
@@ -770,7 +783,15 @@ fn _log_call(
   ok : Bool,
   runtime_ms : Int,
 ) -> Unit {
-  let caller = get_str(args, "created_by", default="")
+  // BUG-137：caller 过去只从 `args.created_by` 取——那是**调用方自报**，而绝大多数工具没有这个
+  // 入参，于是根库 call_log 最近 800 行的 caller 全为空串（实测读数见账本）。
+  // 身份在仲裁类工具（预订/冲突检测）里是承重件：认不出是谁，锁就只是自报家门。
+  // 改成服务端盖章，优先级逐字照 `FIST_DB_PATH`/`FIST_RUN_CHECK_ALLOW` 那一族的做法：
+  // 进程环境 > 调用方自述 > 空串。环境变量只由运维侧注入，调用面传参不能自我扩权。
+  let caller = caller_from_env(
+    @env.get_env_var("FIST_CALLER"),
+    get_str(args, "created_by", default=""),
+  )
   // ns 缺失时回退 project_dir，实现多项目（兄弟项目）可追溯分组
   let mut ns = get_str(
     args,
@@ -4069,62 +4090,27 @@ pub async fn run_server() -> Unit {
       let agent = get_str(args, "agent")
       let ttl_until = get_str(args, "ttl_until")
       let now = now_default()
-      match engine.rsv_get(scope) {
-        // 空闲（无预订，或原预订已过期）→ 抢占
-        None => {
-          let r = engine.rsv_set(scope~, agent~, ttl_until~, created_at=now)
-          match r {
-            Ok(_) =>
-              Ok(
-                @mcp.ToolResult::text(
-                  Json::object({
-                    "scope": Json::string(scope),
-                    "agent": Json::string(agent),
-                    "ttl_until": Json::string(ttl_until),
-                    "reserved": Json::boolean(true),
-                    "action": Json::string("reserved"),
-                  }).stringify(),
-                ),
-              )
-            Err(e) => Err(@mcp_types.ToolError(e))
-          }
-        }
-        Some((owner, ot, _)) if owner == agent || ot < now => {
-          // 同 agent 续期，或原持有者已超时 → 让渡/续期
-          let r = engine.rsv_set(scope~, agent~, ttl_until~, created_at=now)
-          match r {
-            Ok(_) =>
-              Ok(
-                @mcp.ToolResult::text(
-                  Json::object({
-                    "scope": Json::string(scope),
-                    "agent": Json::string(agent),
-                    "ttl_until": Json::string(ttl_until),
-                    "reserved": Json::boolean(true),
-                    "action": Json::string(
-                      if owner == agent {
-                        "renewed"
-                      } else {
-                        "taken_over"
-                      },
-                    ),
-                    "prev_agent": Json::string(owner),
-                  }).stringify(),
-                ),
-              )
-            Err(e) => Err(@mcp_types.ToolError(e))
-          }
-        }
-        Some((owner, ot, _)) =>
+      // BUG-136：这里过去是「先 rsv_get 判空闲、再无条件 rsv_set」——两个进程都读到空闲
+      // 就都写成功，两边都拿到 reserved=true 而表里只剩最后一笔。裁决交回后端，工具面只渲染结论。
+      match engine.rsv_try_set(scope~, agent~, ttl_until~, created_at=now) {
+        Err(e) => Err(@mcp_types.ToolError(e))
+        Ok(o) =>
           Ok(
             @mcp.ToolResult::text(
               Json::object({
                 "scope": Json::string(scope),
-                "reserved": Json::boolean(false),
-                "held_by": Json::string(owner),
-                "ttl_until": Json::string(ot),
+                "agent": Json::string(if o.reserved { agent } else { o.agent }),
+                "ttl_until": Json::string(o.ttl_until),
+                "reserved": Json::boolean(o.reserved),
+                "action": Json::string(o.action),
+                "prev_agent": Json::string(o.prev_agent),
+                "held_by": Json::string(if o.reserved { "" } else { o.agent }),
                 "reason": Json::string(
-                  "该作用域已被其他 agent 活体预订",
+                  if o.reserved {
+                    ""
+                  } else {
+                    "该作用域已被其他 agent 活体预订"
+                  },
                 ),
               }).stringify(),
             ),

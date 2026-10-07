@@ -171,6 +171,37 @@ AIGC:
   native 两臂照旧红在 `Test (native`＝BUG-133 的读面，与本单无关。
 - 台账计数（抬头状态，从 `memory/bugs.md` 现算）：OPEN 1 / FIXED 120。
 
+## v0.3.5 (mooncakes 已发布 / GitHub Release 已发布) - BUG-136/137/138：预订原子性 + 调用方身份 + CI 侧 stdout 编码闸（盖章 2026-10-07T12:50:57Z）
+
+### 本轮性质：F094 承重墙修复——不建三工具，先把「互斥不可证」「身份不可审」「守卫自己会崩」三块打牢
+
+- **起因**：owner 问 F094（多管家文件级协调）值不值得做。读调用面数准备裁决 ⇒ 发现三块承重墙没修好：
+  ① `reserve_scope` 的互斥由调用侧那次旧读决定（读-后-写 ⇒ 并发必丢互斥，实测 20 轮 2 进程双绑成功率 50%）；
+  ② `call_log.caller` 全史 6956 行中 6596 行为空串、最近 800 行 100% 空（身份只靠调用方自报，绝大多数工具没这个入参）；
+  ③ `fist://map` 资源正文写着「MCP 层 102 工具」而真源 129（ shipped-but-unguarded 假计数）。
+  裁决：**不建 F094 Phase 1–4**（价值低），先把三块修好 ⇒ F094 的验收格「两进程同时 bind 恰好一成一拒」从不可能成立变成有常驻判据守着。
+- **BUG-136（预订原子性）**：A 半——`PRAGMA busy_timeout=5000` 补在 `store_sqlite.mbt::open`，撞锁改成等而不是抛。
+  B 半——新裁决原语 `rsv_try_set`：单语句 `INSERT ... ON CONFLICT(scope) DO UPDATE SET ... WHERE agent = excluded.agent OR ttl_until < excluded.created_at`，
+  抢不到就是 0 行；结论一律写后回读。裁决规则做成纯函数 `rsv_action`（内存/SQLite 两后端共用同一标签源）。
+  修法上的自我修正：第一版留了「写前已看见活体持有者就不发这笔写」的短路 ⇒ SQL 的 WHERE 永远走不到 ⇒ 变异测试绿在不存在的路径上。
+  去掉短路后同一支变异必红（`store_rsv_test.mbt:213`）。**「跳过」看起来省一次写，代价是把判据架在空门上——这类短路从此按空门处理。**
+- **BUG-137（调用方身份）**：新增纯函数 `caller_from_env(env_value, created_by)`，优先级 `FIST_CALLER` 环境变量 > `created_by` 自述 > 空串。
+  白盒锁 5 断言含成对反向。注入点不在本仓可自证范围（四宿主启动环境由用户机器决定），已挂 BACKLOG 待办行。
+- **BUG-138（CI 侧 stdout 编码闸）**：被 CI 调用的 22 份 `scripts/**.py` 里 7 份缺 BUG-58 那段 UTF-8 重配 ⇒ 守卫一红就崩在结论行之前。
+  修法不是逐份手改，而是新常驻判据 `scripts/check_py_stdout_encoding.py`：扫描面从 `.github/workflows/*.yml` 反解（手写族名必然落后），
+  `--selftest` 五格（G1 带闸不误红 / M1 摘闸必红 / M2 纯 ASCII 只预告 / M3 空扫描必自拒 / M4 悬空点名必红）。残余面 31 份非 CI 脚本挂 BACKLOG。
+- **J14（工具计数自述三面互相对表）**：`check_doc_surface.py` 新增 J14——`src/server/server.mbt` / `cmd/cli/help_topics.mbt` / `ARCHITECTURE.md`
+  三面的计数自述 + CLI 帮助的分组数字之和 + 分组数，都必须等于真源注册表（129）。三面反解、空扫描必自拒。
+  `fist://map` 资源正文那句「MCP 层 102 工具」就地改成不带数目的写法。声明面同步到 `J1-J14`。
+- 落点：`src/store/store_rsv.mbt` / `src/store/store_sqlite.mbt` / `src/store/store.mbt` / `src/engine/engine_rsv.mbt` /
+  `src/server/server.mbt` / `src/store/store_rsv_test.mbt` / `src/server/call_log_wbtest.mbt` /
+  `scripts/blackbox/e2e_reserve_xproc.py`（新常驻判据）/ `scripts/check_py_stdout_encoding.py`（新常驻判据）/
+  `scripts/check_doc_surface.py`（J14）/ `.github/workflows/ci.yml`（+2 步）/ 7 份脚本补 stdout 闸。
+- evidence：① `moon test --target js` = **576/576**（+2 store 测 +1 server 白盒测）；
+  ② 承重证明两棵树各跑 `e2e_reserve_xproc.py`：旧码树 rc=1（1 绿 5 红，`database is locked`），带修复树 rc=0（6/6 绿）；
+  ③ 守卫族 20 步全绿（含新增 2 步）；④ `check_plugin_sync` 绿（129 工具 / v0.3.5 / 4 宿主 56 文件）。
+- 台账计数（抬头状态）：OPEN 1（BUG-133）/ FIXED 123 / 总卡 137。
+
 ## v0.3.5 (mooncakes 已发布 / GitHub Release 未发布) - BUG-128 出路①执行：版本号前进一位 + 注册表载荷逐件对表（盖章 2026-09-29T10:44:53Z）
 
 

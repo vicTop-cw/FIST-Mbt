@@ -18,6 +18,8 @@ pub fn insert_execution(@sqlite.Database, ExecutionRecord) -> Result[Unit, Strin
 
 pub fn list_all_executions(@sqlite.Database) -> Array[ExecutionRecord]
 
+pub fn rsv_action((String, String, String)?, String, String) -> (Bool, String)
+
 pub fn specs_table_sql() -> String
 
 // Errors
@@ -62,6 +64,7 @@ pub fn MemoryStore::rsv_get(Self, String) -> (String, String, String)?
 pub fn MemoryStore::rsv_list(Self) -> Array[(String, String, String)]
 pub fn MemoryStore::rsv_release(Self, String, String) -> Bool
 pub fn MemoryStore::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[String, String]
+pub fn MemoryStore::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[RsvOutcome, String]
 pub fn MemoryStore::update_spec_status(Self, String, String, String, String) -> Result[Unit, String]
 pub fn MemoryStore::update_task(Self, @core.Task) -> Result[Unit, String]
 pub fn MemoryStore::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
@@ -80,6 +83,14 @@ pub fn MultiStore::ns_list(Self) -> Array[String]
 pub fn MultiStore::ns_stats(Self) -> Json
 pub fn MultiStore::open(Self, ns~ : String, data_dir~ : String) -> Bool
 pub fn MultiStore::safe_ns(String) -> String?
+
+pub struct RsvOutcome {
+  reserved : Bool
+  action : String
+  prev_agent : String
+  agent : String
+  ttl_until : String
+}
 
 pub struct SpecRecord {
   id : String
@@ -131,6 +142,7 @@ pub fn SqliteStore::rsv_get(Self, String) -> (String, String, String)?
 pub fn SqliteStore::rsv_list(Self) -> Array[(String, String, String)]
 pub fn SqliteStore::rsv_release(Self, String, String) -> Bool
 pub fn SqliteStore::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[String, String]
+pub fn SqliteStore::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[RsvOutcome, String]
 pub fn SqliteStore::update_spec_status(Self, String, String, String, String) -> Result[Unit, String]
 pub fn SqliteStore::update_task(Self, @core.Task) -> Result[Unit, String]
 pub fn SqliteStore::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
@@ -171,6 +183,7 @@ pub fn StoreBackend::rsv_get(Self, String) -> (String, String, String)?
 pub fn StoreBackend::rsv_list(Self) -> Array[(String, String, String)]
 pub fn StoreBackend::rsv_release(Self, String, String) -> Bool
 pub fn StoreBackend::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[String, String]
+pub fn StoreBackend::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[RsvOutcome, String]
 pub fn StoreBackend::set_namespace(Self, String) -> Unit
 pub fn StoreBackend::sqlite(SqliteStore) -> Self
 pub fn StoreBackend::sqlite_store(Self) -> SqliteStore?
