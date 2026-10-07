@@ -2547,7 +2547,7 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
    反向对照实测：内存里把候选顺序打回旧口径 ⇒ `格5 候选表首位是 .mcp.json…` + `格5b 两份候选都在时取到了 .mcp.json`
    双红 rc=2；新顺序 rc=0。（第一版期望值写成 MCP_CANDIDATES[0]，与实现同公式＝恒真判据，被这条对照当场抓出。）
 ⑤ 没在这条出口里的两格要说清：仓库根那份未跟踪的 .mcp.json 是**本机 MCP 连接器在读的配置**，   按原样保留未动（删/跟踪都属 owner 的开放决定），投影已不依赖它；   同轮 CI 面上仍红的 native 轨 `Test (native)` 属 BUG-130（OPEN，等 owner 选门怎么改），不由本条顺带关闭。
-## BUG-132 [2026-09-30T01:40:06Z] [medium] OPEN
+## BUG-132 [2026-09-30T01:40:06Z] [medium] FIXED
 - summary: `.github/workflows/fist-ci.yml` 的 `nightly self-check` 是道**条件恒假的死门**：守卫写 `refs/heads/main` 而本仓默认分支是 `master`，且全仓没有 `schedule:` 触发⇒ 每次运行里的 `nightly self-check: skipped` 不是『定时轨没到点』，是『永不可能运行』
 - detail: 发现面：查 BUG-130 时逐 job 读 CI 结论，每次都看到 `nightly self-check: skipped`。我一开始把它读成『schedule 轨在 push 事件里不触发』（这是常见形状，也确实是它字面的意图），但那样就没有任何一次运行会跑它——于是去读守卫条件本身。
 机器可检的三条（全部本轮实测，非自述）：
@@ -2561,6 +2561,15 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
 另记一条与判据相关的经验（不是缺陷，是给下一个查 CI 的人）：匿名可读 `GET /repos/<owner>/<repo>/check-runs/<job_id>/annotations`，拿得到 failure 级原文（BUG-130 那两臂的 `Process completed with exit code 255.` 就是这么来的）；而 `/actions/jobs/<id>/logs` 匿名必 403 ⇒ 想拿退出码不必等 token。
 证据（本轮实测，非自述）：grep -rn 'refs/heads' .github/workflows ⇒ 唯一命中 fist-ci.yml:85；grep -rn 'schedule|cron:' .github/workflows ⇒ 只有 fist-bug-sync.yml:4-6；git symbolic-ref refs/remotes/origin/HEAD ⇒ refs/remotes/origin/master；匿名 Actions API 逐 job 读数（run 36653784771 等）里 `nightly self-check` 恒 skipped
 - reported_by: fist-mbt-native-gate-audit-0d7b7115
+
+### FIXED(2026-10-07T01:34:26Z / BUG-132)
+- owner 裁决 c 执行：nightly 空壳作业已删（owner 2026-10-02「按照你的建议做」= 三选一里的 c：删作业；a 只把 main 改成 master 救不活——那道 job 挂在恒红的 native 臂后面照旧 skipped，b 补 schedule + 写真正文不在本单诉求里，native 读数面已由裁决③的常驻判据承担）。
+- evidence: 关闭条件读的是**权威 CI 的 job 名单**——run 37557287008『CI』=failure、run 37557286720『FIST CI — Build + Test』=failure；本轮读数里出现的 job 名 = ['check + test (js, ubuntu)', 'check + test (js, windows)', 'check + test (native, ubuntu)']，`nightly self-check` 命中 **0** 次；逐 job 结论（同一发读数按 run 反解，不是回忆）——CI（run 37557287008）：`check + test (js, ubuntu)`=success；`check + test (js, windows)`=success；`check + test (native, ubuntu)`=failure（红格 #8 Test (native)=failure）　FIST CI — Build + Test（run 37557286720）：`check + test (js, ubuntu)`=success；`check + test (native, ubuntu)`=failure（红格 #9 Test (native, j=1)=failure）（条目原文那句「每次运行里的 `nightly self-check: skipped` 不是『定时轨没到点』，是『永不可能运行』」到此消解：现在不是它红不红的问题，而是那个会骗读数的绿灯位没了）。
+- 改动面：`.github/workflows/fist-ci.yml` 删掉 `nightly:` 整块，原地留墓碑注释（旧形状、为什么删、恢复命令 `git show d8c24eb:.github/workflows/fist-ci.yml`、别再在 `if:` 里钉分支名）。
+- 同轮把这一类缺陷做成常驻判据 **J12**（`check_doc_surface.py`：workflow 代码面里 `if:` 出现 refs/heads/ 引用即红，口径不比对默认分支名——钉在 `if:` 里的分支名本身就是成因；扫描面从目录派生、剔注释后再看，R9 的「自家注释喂针」老坑当场防住）。承重证明 `temp/b132_j12_prove.py` 四格：A 格变异样本取自 **git 历史里那道真死门原文**（回执逐字 `J12 .github/workflows/fist-ci.yml@d8c24eb:111 在 if: 守卫里钉了分支引用 ['refs/heads/main']`）、B 现状不误红、C 注释与 tag 守卫不喂针、D 空扫描必自拒。
+- 自纠一条（盖章这一刻才暴露，值得入账）：A 格的变异样本从前取 `git show HEAD:<path>`，而 **本单的修复提交把 HEAD 推过了删除点**——HEAD 那份里 `refs/heads/main` 只剩墓碑注释形态，剔注释后判据不再报红，A 格当场红给自己看（不是尺子坏，是取样面被自己的修复吃掉了）。现已改为**从墓碑注释反解 rev**（那条恢复命令本身就是取样锚，恢复指针与取样来源同源，不会各走各的），并加一条取样面自检：样本**代码面**里必须真有 refs/heads，取不到就 REFUSE 而不是让这一格退化成恒红或恒绿。同族教训：复跑不许拿起手盘上那份旧证据当锚——连 rev 都不能是「当前 HEAD」这种会被自己改动的量。
+- 声明面三处同步 J1-J11 → J1-J12（AGENTS / AI-DEVELOPMENT-STANDARD §1 / pipeline_mode_tidy 模板）；只加判据不改声明时 J10 会当场红——本轮第一跑就红了，这条是实跑不是推演。
+- 盖章走 **md 真源面**而不是 `bug_fix` RPC（connector 的 server cwd 不指向本仓，前两轮已实锤），五道前置门：CI job 名单里 nightly 命中 0 次 / 两条 js job 仍 success / J12 承重证明四格 rc=0 / 守卫族 total=17 fails=0 / 两远端 rev-list --count = 0。
 
 ## BUG-133 [2026-10-01T02:27:45Z] [high] OPEN
 - summary: native 后端 FFI 内存安全缺陷：`mizchi/sqlite@0.3.1` 把 C 侧裸指针（`sqlite3*` / `sqlite3_stmt*`）当 MoonBit 对象回传，另有三个函数 C 回 `const char*` 而声明成 `-> Bytes`，实测把 native 测试二进制打成 SIGSEGV/SIGABRT（glibc 报非法 free）
