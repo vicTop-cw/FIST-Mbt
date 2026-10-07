@@ -2633,7 +2633,7 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
 - 顺带修掉一条只在绝对路径下才现形的缺陷：`bug_resolve_path` 从前用 `String.replace`（MoonBit 语义＝只换**首个**匹配）⇒ `E:\a\b` 规范化成 `E:/a\b`；旧输入全是至多一个反斜杠的相对串所以一直不红，是新白盒断言第一次跑就当场打死它（`src/server/bugreport_test.mbt:174 FAILED: true is not false`）才暴露。已改 `replace_all`。
 - 权威 CI（同笔 push `8e028af` 的读数，原件 `temp/b134_readback.txt`）：run 36956419257『CI』= js/ubuntu **success**、js/windows **success**、native/ubuntu failure 红格 `#8 Test (native)=failure`；run 36956418476『FIST CI — Build + Test』= js/ubuntu **success**、native/ubuntu failure 红格 `#9 Test (native, j=1)=failure`、nightly self-check skipped —— 两条 js 臂 success 就是「573 这套测试与 23 条文档主张在 CI 上也自洽」的那一格；native 两臂照旧红在全量那一步，属 BUG-133 的读数面，不在本单关闭条件里
 - 盖章走的是 **md 真源面**而不是 `bug_fix` RPC（connector 的 server cwd 不指向本仓，上一轮已实锤），前置门含「两远端 rev-list --count <远端>..HEAD = 0」「JS 尾行 573/573 且 rc=0」「守卫族 total=17 fails=0」「调用面探针两格都在场」「CI 两条 js job 都 success」。
-## BUG-135 [2026-10-07T02:05:27Z] [low] OPEN
+## BUG-135 [2026-10-07T02:05:27Z] [low] FIXED
 - summary: `CHANGELOG.md:16` 的 v0.3.5 小节标题仍自述「GitHub Release 未发布」，而匿名权威读数里 v0.3.5 早在 2026-09-30T00:03:17Z 就发布（资产 `fist-mbt-js-v0.3.5.zip`，376617B），且 `BACKLOG.md:15` 自己就记着这条读数 ⇒ 这是一句**写下时就已为假**的现状主张（那一节的标题戳是 2026-10-01T03:20:18Z）
 - detail: 发现面：owner 问「还有什么要修的」，我扫现状面上的状态短语时撞见的。
   机器可检的四条（全部本轮实测，非自述）：
@@ -2657,3 +2657,9 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
   两支反向对照（戳早于 published 不误红 / 权威面没有该版本号则这一格不作数），权威面或标题枚举为空 ⇒ FATAL 自拒。
 - reported_by: fist-mbt-doc-surface-audit-b135
 
+### FIXED(2026-10-07T02:20:48Z / BUG-135)
+- BUG-135 的假主张已就地校正，且这一类从此有常驻判据 J13（owner 2026-10-07「按照你的建议全部修复」= 我方案里的第 1 条：改主张 + 补常驻判据；第 2 条我自己就写了「不建议扩 J12」，第 3 条要新立单等裁决，都不在本单里顺手做）。
+- evidence: 六道前置门全过才落这一笔——① `check_doc_surface.py --selftest` 绿且 `SELFTEST OK` 行点名 J13（那份清单从自检正文反解，写了对照才会报）；② 全量 rc=0 且 PASS 行带「J13 发布状态短语↔BACKLOG release-fact 对表」；③ 承重证明 `temp/b135_j13_prove.py` 四格 OK，A 格样本是**校正前那发提交 99c9e84 的真 CHANGELOG**（回执逐字 `J13 标题自述 v0.3.5「GitHub Release 未发布」，但标题盖章戳 2026-10-01T03:20:18Z 晚于权威面 published 2026-09-30T00:03:17Z`）；④ 守卫族 total=17 fails=0；⑤ 权威 CI 的 js 臂读数 [('check + test (js, ubuntu)', 'success'), ('check + test (js, ubuntu)', 'success'), ('check + test (js, ubuntu)', 'success'), ('check + test (js, ubuntu)', 'success'), ('check + test (js, windows)', 'success')]——**判据在 CI 里跑绿才是调用面证据**（ci.yml 先 `--selftest` 再全量）；⑥ 两远端 `rev-list --count <remote>/master..HEAD` = 0。
+- 改动面：`CHANGELOG.md` 定因节标题的状态短语就地校正（下一节 BUG-128 那处**不动**，它的标题戳早于权威 published，当时是真话）；`BACKLOG.md` 末尾加三行机器可读 `release-fact:` 标记（v0.3.3/v0.3.4/v0.3.5 的 published 时刻 + 资产名 + 字节数，原件 `temp/b135_release_evidence.txt`，匿名 GET http=200）；`scripts/check_doc_surface.py` 加 J13；四处声明面 J1-J12 → J1-J13（AGENTS / AI-DEVELOPMENT-STANDARD §1 / pipeline_mode_tidy 模板 / scripts/README）。
+- 两条自纠（本轮实跑暴露，同族老坑新面）：① 补丁脚本的**非 raw 三引号串**里两处 `\n` 没转义，落成真空行 ⇒ `py_compile` 拦下，但它在 `os.replace` **之后**才跑 ⇒ 结论是落盘脚本的编译门要么排在写盘前，要么写完立刻编译并回滚，别把「崩在写盘前」当默认保障（上一单正是靠这点没毁档，这次却已经写进去了）；② 我新写的 scripts/README J13 说明里顺手带上发布版本号 ⇒ **J4 立刻红**「另写一处发布版本」，删掉版本字面量改指权威面（与上一单被 J11 抓 backtick 同型：尺子先照到自己）。
+- J10 也照例在第一跑就红（「声明 J1-J12 < 实现最高 J13 —— 声明滞后」）⇒ 加判据不改声明这条路走不通，这条同样是实跑不是推演。

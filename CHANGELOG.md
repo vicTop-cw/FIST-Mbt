@@ -161,6 +161,16 @@ AIGC:
   标记里的资产名版本与标记版本打架也红。为什么它不在 J7 里：J7 管规范性表面的旧口径，CHANGELOG 是豁免面——
   这一类的形状是「状态短语 + 时间戳 + 权威读数」，得单独一支尺。
 
+### 补记(2026-10-07T02:21:04Z / BUG-135 盖章)：假主张已就地校正，这一类从此有常驻判据
+
+- 六道前置门全过才盖章（① 自检绿且 `SELFTEST OK` 行点名 J13 ② 全量 rc=0 且 PASS 行带 J13
+  ③ 承重证明四格 OK、A 格样本＝校正前那发提交 `99c9e84` 的真 CHANGELOG ④ 守卫族 total=17 fails=0
+  ⑤ 权威 CI 的 js 臂全 success ⑥ 两远端 `rev-list --count` = 0），逐字回执见 `memory/bugs.md` 的
+  `### FIXED(2026-10-07T02:20:48Z / BUG-135)`。
+- 逐 job 结论（按 run 反解自 temp/b135_readback.txt）——CI（run 37561285645）：`check + test (js, ubuntu)`=success；`check + test (js, windows)`=success；`check + test (native, ubuntu)`=failure（红格 #8 Test (native)=failure）　FIST CI — Build + Test（run 37561285648）：`check + test (js, ubuntu)`=success；`check + test (native, ubuntu)`=failure（红格 #9 Test (native, j=1)=failure）。判据在 CI 的 js 臂里跑绿才算调用面证据（ci.yml 那一步是先 `--selftest` 再全量），
+  native 两臂照旧红在 `Test (native`＝BUG-133 的读面，与本单无关。
+- 台账计数（抬头状态，从 `memory/bugs.md` 现算）：OPEN 1 / FIXED 120。
+
 ## v0.3.5 (mooncakes 已发布 / GitHub Release 未发布) - BUG-128 出路①执行：版本号前进一位 + 注册表载荷逐件对表（盖章 2026-09-29T10:44:53Z）
 
 
