@@ -103,42 +103,14 @@ jobs:
           fi
           exit "$rc"
 
-  # ---------- Nightly self-check on main ----------
-  # 仅 push 到 main 时触发（PR 不跑 nightly 巡检）
-  # 依赖 test-js + test-native 都通过
-  nightly:
-    name: nightly self-check
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    needs: [test-js, test-native]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js 24
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
-      - name: Install system deps (sqlite3)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev build-essential
-
-      - name: Install MoonBit toolchain
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
-
-      - name: Refresh registry
-        run: moon update
-
-      - name: Build native
-        run: moon build --target native
-
-      # 预留：native target 跑 run_check / issue_scan 自驱巡检
-      # run_check 在 native 下能真实访问 sqlite3 存储层，更完整
-      - name: Run native self-check (skeleton)
-        run: |
-          echo "// TODO: moon run --target native cmd/cli"
-          echo "// → MCP call tools/call run_check / tools/call issue_scan"
-          echo "// native target 下 sqlite3 真实可用，巡检覆盖更全"
+  # ---------- 2026-10-02 owner 裁决 BUG-132 出路 c：删掉 nightly self-check 空壳作业 ----------
+  # 它从前长这样：`nightly:` + `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`
+  # + `needs: [test-js, test-native]`，正文最后一步是三条 `echo "// TODO:…"`。
+  # 本仓默认分支是 master，且这个 workflow 没有 `schedule:` ⇒ 条件恒假，每次运行读到的
+  # `nightly self-check: skipped` 不是「定时轨没到点」而是「永不可能运行」；
+  # 出路 a（只把 main 改成 master）也救不活它——`needs` 挂在恒红的 native 臂后面，照旧 skipped。
+  # native 的读数面现在由两条臂前面的常驻判据 `Native heap gate (BUG-133 探针当门)` 承担，
+  # 测试步骤没删 ⇒ 上游修好后覆盖自己回来，不需要这道空壳位。
+  # 要恢复：`git show d8c24eb:.github/workflows/fist-ci.yml`（删除前最后一版全文），
+  # 但**别再写 `if:` 钉 `refs/heads/<分支>`**——分支过滤交回 `on:`，钉分支名的守卫由
+  # `scripts/check_doc_surface.py` 的 J12 判红（恒假条件的门比没有门更坏：它占一个「绿灯位」骗读数的人）。

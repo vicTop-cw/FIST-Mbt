@@ -44,6 +44,16 @@
   J10 判据范围自述 == 实际实现（BUG-84）：AGENTS/模板/插件真源里"J1-JN"式的范围声明，
      与本脚本 `def jN_…` / `---- JN` 反解出的实现上界比对——少写=声明滞后，多写=幻影判据，
      两个方向都判红；扫描面为空、实现侧解析不到、两面一致却红，同样判红。
+  J11 CI native 门步骤 ↔ 账本/规范面 三向对表（BUG-130 裁决③ 的执行面不许被悄悄删掉）：
+     锚是账本上 BUG-133 抬头仍 OPEN ⇒ 每条 native 臂必须有且只有一道名字含 heap gate 的门、
+     门必须挂在全量测试步骤**之前**、规范面反引号逐字点名的步名必须**等于** workflow 里的步名；
+     单转 FIXED 后这一格自然失效（不留恒红判据）。尺子自保三支：账本读不到那条单 / 一份 workflow 都没读到 /
+     某份 workflow 解析不到 `- name:` ⇒ 一律 FATAL，不拿"没抓到"当"没问题"。
+  J12 CI 的 `if:` 守卫里不许钉分支名（BUG-132：恒假条件的门比没有门更坏）：
+     `if:` 出现 `refs/heads/<分支>` 即红——分支名一变那道门就**永不可能运行**，而读数里它长得像
+     「未触发所以正常」的绿灯位。分支过滤交回 `on.push.branches`（那里写错最多是少跑，不会伪装成一道门）。
+     扫描面从 `.github/workflows/*.yml` 目录派生（手写清单必然落后于新增 workflow），
+     且**先看剔掉注释之后的代码面**（墓碑注释里正当性地引用着旧条件，不剔就是自家注释喂回针——R9 的旧坑）。
 
 设计约束：不改被校验的文档、不写库、纯只读。
 """
@@ -557,6 +567,60 @@ def j11_ci_gate_steps(wf_texts=None, ledger_text=None, doc_texts=None):
         doc_gate_claims(doc_texts))
 
 
+# ---- J12 CI 的 `if:` 守卫里不许钉分支名（BUG-132：恒假条件的门比没有门更坏）----
+# 本仓实测过的形状：`if: github.event_name == 'push' && github.ref == 'refs/heads/main'`，
+# 而默认分支是 master、该 workflow 又没有 `schedule:` ⇒ 这道作业**永不可能运行**，
+# 每次读数里它却长得像一个「未触发所以正常」的绿灯位——下一个人（或下一个 agent）会读成"定时轨还没到点"。
+# 口径刻意不去比对"哪个才是默认分支"（那要读 git 或调 API，两台机器取面不同、CI 上还不一定有 origin/HEAD）：
+# 钉在 `if:` 里的分支名本身就是成因，与它当前叫什么无关。分支过滤交回 `on.push.branches`
+# ——那里写错最坏是少跑一次，不会伪装成一道门。
+WORKFLOW_DIR = ROOT / ".github" / "workflows"
+RE_IF_LINE = re.compile(r"^\s*(?:-\s*)?if:\s*(.*)$")
+RE_REF_HEADS = re.compile(r"refs/heads/[A-Za-z0-9._/-]+")
+
+
+def j12_code_face(text):
+    """逐行剔掉注释（整行 `#` 与行尾 ` #…`），只留代码面。
+    不剔就会被自家注释喂回针——本仓删掉 nightly 后留的墓碑注释里正当引用着旧条件（R9 的旧坑同型）。"""
+    out = []
+    for line in text.splitlines():
+        if line.lstrip().startswith("#"):
+            out.append("")
+            continue
+        cut = re.split(r"\s#", line, maxsplit=1)
+        out.append(cut[0])
+    return out
+
+
+def j12_workflow_texts(paths=None):
+    """扫描面从目录派生，不手写文件名清单（手写清单必然落后于新增 workflow，J4/BUG-68 同族教训）。"""
+    files = sorted(paths or list(WORKFLOW_DIR.glob("*.yml")) + list(WORKFLOW_DIR.glob("*.yaml")))
+    return {p.name: p.read_text(encoding="utf-8", errors="replace") for p in files}
+
+
+def j12_if_ref_guard_problems(wf_texts):
+    if not wf_texts:
+        return ["FATAL J12 一个 workflow 都没读到（扫描面空转 ≠ 没有问题）"]
+    problems = []
+    for label, text in wf_texts.items():
+        for i, line in enumerate(j12_code_face(text), 1):
+            m = RE_IF_LINE.match(line)
+            if not m:
+                continue
+            hit = RE_REF_HEADS.findall(m.group(1))
+            if hit:
+                problems.append(
+                    f"J12 {label}:{i} 在 if: 守卫里钉了分支引用 {sorted(set(hit))} ⇒ 分支名一变这道门就恒假，"
+                    "而它在读数里长得像「未触发所以正常」（BUG-132 的形状）；分支过滤交回 on.push.branches，"
+                    "if: 只留事件条件"
+                )
+    return problems
+
+
+def j12_ci_if_ref_guards():
+    return j12_if_ref_guard_problems(j12_workflow_texts())
+
+
 # ---- J4 子判据：注册表发布版本只能有一处自述（BUG-30 建议①，编号不扩，免得 J10 范围自述说谎）----
 # 与 J4 主判据的分工要说清：J4 管「文档自述的本项目版本 == moon.mod」，那说的是**代码版本**；
 # 「注册表上到底发布到哪个版本」是另一件事，本机没有复核通道（WebFetch 被策略拦过，实测不可达）。
@@ -743,6 +807,24 @@ def j_selftest():
     # ⇒ 同一支尺两种文案，对表只能靠猜（这条在 POSIX 上恒真，所以它考的是实现而不是现状面）。
     if rel_posix(SCRIPTS_DOC) != "scripts/README.md":
         fails.append(f"J11 扫描面标签随平台变（rel_posix 回 {rel_posix(SCRIPTS_DOC)}）⇒ 逐字引用在两台上对不上")
+    # J12（BUG-132 恒假门）：五支缺一不可——钉分支必红、只在注释里不红、行尾注释不喂针、
+    # tag 守卫这类合法形态不误红、空扫描必自拒；再加现状不红 + 枚举器没饿死。
+    if not any("钉了分支引用" in p for p in j12_if_ref_guard_problems(
+            {"x.yml": "jobs:\n  n:\n    if: github.event_name == 'push' && github.ref == 'refs/heads/main'\n"})):
+        fails.append("J12 抓不到『if: 里钉 refs/heads/<分支>』→ BUG-132 那类恒假门会重犯")
+    if j12_if_ref_guard_problems(
+            {"x.yml": "# 旧条件写法是 github.ref == 'refs/heads/main'\njobs:\n  n:\n    if: github.event_name == 'pull_request'\n"}):
+        fails.append("J12 被自家注释喂回针（剔注释之前就算守卫）→ 墓碑注释会把判据变成恒红")
+    if j12_if_ref_guard_problems(
+            {"x.yml": "jobs:\n  n:\n    - name: x  # 见 refs/heads/main 的旧事\n      if: startsWith(github.ref, 'refs/tags/')\n"}):
+        fails.append("J12 对 tag 触发或行尾注释里的 refs/ 误红（恒红判据不可信）")
+    if not any("一个 workflow 都没读到" in p for p in j12_if_ref_guard_problems({})):
+        fails.append("J12 扫描面空转时不红（没抓到 ≠ 没有问题）")
+    if len(j12_workflow_texts()) < 4:
+        fails.append(f"J12 枚举器饿死：只读到 {len(j12_workflow_texts())} 份 workflow")
+    j12_real = j12_ci_if_ref_guards()
+    if j12_real:
+        fails.append("J12 在真实现状面上就红了（先判尺子，再判 CI）：" + j12_real[0])
     # J4 子判据（BUG-30）：注册表发布版本只能有一处权威自述。四条对照缺一不可——
     # 两处打架必红、权威被删空必红、扫描面空转必红、单处自述不许误红。
     if not any("另写一处" in p for p in publication_problems(
@@ -823,8 +905,10 @@ def main(argv):
         print(f"SELFTEST OK: 真源解析到 {n} 个工具，"
               + "/".join(f"J{r}" for r in rules) + " 对合成违例均发红"
               "（反向对照含『干净输入不得误红』『英文不算契约』『分工写清不得误红』"
-              "『两面一致不误红』『J11 合法态（单已 FIXED＋门已撤＋文档不再点名）不误红』，"
-              "防空转含『分工清单落空必红』『空扫描必红』『解析器饿死必红』『J11 账本读不到那条单必红』）")
+              "『两面一致不误红』『J11 合法态（单已 FIXED＋门已撤、文档不再点名）不误红』"
+              "『J12 注释里的 refs/heads 与 tag 守卫不误红』，"
+              "防空转含『分工清单落空必红』『空扫描必红』『解析器饿死必红』『J11 账本读不到那条单必红』"
+              "『J12 一份 workflow 都没读到必自拒』）")
         return 0
 
     agents_txt = AGENTS.read_text(encoding="utf-8")
@@ -868,6 +952,7 @@ def main(argv):
     problems += j9_return_contract()
     problems += j10_range_consistency()
     problems += j11_ci_gate_steps()
+    problems += j12_ci_if_ref_guards()
 
     if problems:
         print(f"FAIL 文档面不一致（真源 {n} 工具 / moon.mod {mv}）：")
@@ -878,7 +963,7 @@ def main(argv):
         f"PASS 文档面一致：{n} 工具在 AGENTS/README 逐个可查、分组和={n}、当前自述版本={mv}、"
         "J6 规范正文↔投影一致、J7 无旧口径、J8 模板调用面契约干净、"
         "J9 返回契约（必查清单 + 歧义键分工 + 棘轮）未退化、J10 判据范围自述==实现、"
-        "J11 CI native 门步骤↔账本/规范面 三向对表"
+        "J11 CI native 门步骤↔账本/规范面 三向对表、J12 CI 的 if: 不钉分支名（恒假门）"
     )
     return 0
 
