@@ -288,6 +288,22 @@ pub fn StoreBackend::rsv_set(
 }
 
 ///|
+/// 后端统一：按裁决写预订（BUG-136）。抢不到就抢不到，绝不覆盖别人的活体预订；
+/// 两个后端返回同一种结论（旧例 BUG-85：同名方法两种语义，单测永远绿而线上红）。
+pub fn StoreBackend::rsv_try_set(
+  self : StoreBackend,
+  scope~ : String,
+  agent~ : String,
+  ttl_until~ : String,
+  created_at~ : String,
+) -> Result[RsvOutcome, String] {
+  match self {
+    Mem(m) => m.rsv_try_set(scope~, agent~, ttl_until~, created_at~)
+    Sql(s) => s.rsv_try_set(scope~, agent~, ttl_until~, created_at~)
+  }
+}
+
+///|
 /// 后端统一：查询某作用域预订。
 pub fn StoreBackend::rsv_get(
   self : StoreBackend,

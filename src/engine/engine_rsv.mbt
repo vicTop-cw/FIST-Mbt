@@ -14,6 +14,18 @@ pub fn FistEngine::rsv_set(
 }
 
 ///|
+/// 按裁决抢预订（BUG-136）：互斥由后端定，工具面只渲染结论——不许在这里先读后写。
+pub fn FistEngine::rsv_try_set(
+  self : FistEngine,
+  scope~ : String,
+  agent~ : String,
+  ttl_until~ : String,
+  created_at~ : String,
+) -> Result[@store.RsvOutcome, String] {
+  self.store.rsv_try_set(scope~, agent~, ttl_until~, created_at~)
+}
+
+///|
 pub fn FistEngine::rsv_get(
   self : FistEngine,
   scope : String,

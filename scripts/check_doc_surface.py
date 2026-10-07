@@ -713,6 +713,77 @@ def j13_release_status_consistency():
     return j13_release_status_problems(backlog, ch)
 
 
+# ---- J14 工具计数自述 ↔ 真源（BUG-136 附带抓到的：`fist://map` 资源正文写着「MCP 层 102 工具」，
+# 而真源注册表是 129——这一面此前没人比过：check_tools_sync 第 3 条只管 README/AGENTS/deliverable/
+# scoring_rubric，J3 只管 README 的分组和，资源正文与 CLI 帮助文案两头都空着）。
+# 为什么这类特别坏：它长得像事实、读起来像介绍，而且**在发货面上**（资源随插件态分发）。
+J14_FACES = (
+    ("src/server/server.mbt", "MCP 资源面"),
+    ("cmd/cli/help_topics.mbt", "CLI 帮助面"),
+    ("ARCHITECTURE.md", "架构自述面"),
+)
+J14_HELP = "cmd/cli/help_topics.mbt"
+RE_J14_CLAIM = re.compile(
+    r"(\d{2,4})\s*(?:个\s*)?(?:MCP\s*)?工具|(\d{2,4})\s*MCP\s*tools"
+)
+RE_J14_GROUP = re.compile(r'^\s*"\s*\[[A-Za-z][A-Za-z0-9 -]*\s+(\d+)\]', re.M)
+RE_J14_GROUPN = re.compile(r"\((\d+) groups\)")
+
+
+def j14_count_problems(texts, n):
+    """纯判定：{相对路径: 正文} → 违例清单。自述数字 != 真源计数即红；
+    三面一处都解析不到 ⇒ FATAL 自拒（扫描面饿死被读成"没有问题"是这类尺子最常见的死法）。"""
+    problems = []
+    hits = 0
+    for rel, label in J14_FACES:
+        text = texts.get(rel, "")
+        for m in RE_J14_CLAIM.finditer(text):
+            got = m.group(1) or m.group(2)
+            hits += 1
+            if int(got) != n:
+                line = text[: m.start()].count("\n") + 1
+                problems.append(
+                    f"J14 {label}（{rel}:{line}）自述「{m.group(0)}」，真源注册表是 {n} 个"
+                    " ⇒ 计数搬家时这一面没人跟着改")
+    if hits == 0:
+        faces = ", ".join(r for r, _ in J14_FACES)
+        problems.append(f"FATAL J14 三面（{faces}）一处工具计数自述都没解析到 ⇒ 判据饿死，不报绿")
+    return problems
+
+
+def j14_help_group_problems(help_text, n):
+    """CLI 帮助把工具摊成分组行：分组数字之和 == 真源、且标题里那句「(N groups)」== 实际组数。
+    与 J3 对 README 的同口径——标题数字对了不代表正文跟上（BUG-22 的原型）。"""
+    nums = [int(x) for x in RE_J14_GROUP.findall(help_text)]
+    if len(nums) < 2:
+        return [f"FATAL J14 {J14_HELP} 只解析到 {len(nums)} 个分组数字 ⇒ 分组面读不到，和数无意义"]
+    problems = []
+    s = sum(nums)
+    if s != n:
+        problems.append(
+            f"J14 {J14_HELP} 分组数字之和={s}（{len(nums)} 组），与真源 {n} 不符"
+            " ⇒ 添了工具只改标题行，正文分组表没跟上")
+    declared = [int(x) for x in RE_J14_GROUPN.findall(help_text)]
+    for d in declared:
+        if d != len(nums):
+            problems.append(
+                f"J14 {J14_HELP} 标题自述「({d} groups)」，实际解析到 {len(nums)} 组 ⇒ 分组数也是主张")
+    if not declared:
+        problems.append(f"FATAL J14 {J14_HELP} 里没有「(N groups)」这句自述 ⇒ 对照面消失，判据读不到东西")
+    return problems
+
+
+def j14_tool_count_claims():
+    texts = {}
+    for rel, _label in J14_FACES:
+        p = ROOT / rel
+        texts[rel] = p.read_text(encoding="utf-8", errors="replace") if p.is_file() else ""
+    n = len(set(RE_TOOL.findall(SERVER.read_text(encoding="utf-8", errors="replace"))))
+    problems = j14_count_problems(texts, n)
+    problems += j14_help_group_problems(texts.get(J14_HELP, ""), n)
+    return problems
+
+
 # ---- J4 子判据：注册表发布版本只能有一处自述（BUG-30 建议①，编号不扩，免得 J10 范围自述说谎）----
 # 与 J4 主判据的分工要说清：J4 管「文档自述的本项目版本 == moon.mod」，那说的是**代码版本**；
 # 「注册表上到底发布到哪个版本」是另一件事，本机没有复核通道（WebFetch 被策略拦过，实测不可达）。
@@ -943,6 +1014,30 @@ def j_selftest():
     j13_real = j13_release_status_consistency()
     if j13_real:
         fails.append("J13 在真实现状面上就红了（先判尺子，再判被测）：" + j13_real[0])
+    # J14：计数自述与分组和两面都要有"错必红 + 对不误红 + 读不到必自拒"三件套
+    J14_TXT_OK = 'let x = "MCP 层 129 工具"\n'
+    if j14_count_problems({"src/server/server.mbt": J14_TXT_OK}, 129):
+        fails.append("J14 对正确的计数自述误红 → 现状面会被自己的尺子打回")
+    if not any("真源注册表是" in p for p in j14_count_problems(
+            {"src/server/server.mbt": 'let x = "MCP 层 102 工具"'}, 129)):
+        fails.append("J14 对『资源面数字落后于真源』不敏感 → BUG-136 那类漂移会重犯")
+    if not any("判据饿死" in p for p in j14_count_problems(
+            {"src/server/server.mbt": "没有计数", "cmd/cli/help_topics.mbt": "", "ARCHITECTURE.md": ""}, 129)):
+        fails.append("J14 三面全空时不自拒 → 扫描面失效被读成没有问题")
+    J14_HELP_OK = '  "  [Lifecycle 14] a\\n" +\n  "  [Query 2] b\\n"'
+    if j14_help_group_problems(J14_HELP_OK + '  "  === 16 MCP tools (2 groups) ==="', 16):
+        fails.append("J14 对正确的分组和/分组数误红")
+    if not any("分组数字之和" in p for p in j14_help_group_problems(
+            J14_HELP_OK + '  "  === 17 MCP tools (2 groups) ==="', 17)):
+        fails.append("J14 对『分组和落后于真源』不敏感 → BUG-22 的同型漂移照不到")
+    if not any("标题自述「(3 groups)」" in p for p in j14_help_group_problems(
+            J14_HELP_OK + '  "  === 16 MCP tools (3 groups) ==="', 16)):
+        fails.append("J14 对『标题组数与实际不符』不敏感")
+    if not any("只解析到" in p for p in j14_help_group_problems('"no groups here"', 129)):
+        fails.append("J14 分组面读不到时不自拒 → 和数门成了空门")
+    j14_real = j14_tool_count_claims()
+    if j14_real:
+        fails.append("J14 在真实现状面上就红了（先判尺子，再判被测）：" + j14_real[0])
     # J4 子判据（BUG-30）：注册表发布版本只能有一处权威自述。四条对照缺一不可——
     # 两处打架必红、权威被删空必红、扫描面空转必红、单处自述不许误红。
     if not any("另写一处" in p for p in publication_problems(
@@ -1073,6 +1168,7 @@ def main(argv):
     problems += j11_ci_gate_steps()
     problems += j12_ci_if_ref_guards()
     problems += j13_release_status_consistency()
+    problems += j14_tool_count_claims()
 
     if problems:
         print(f"FAIL 文档面不一致（真源 {n} 工具 / moon.mod {mv}）：")
@@ -1083,7 +1179,7 @@ def main(argv):
         f"PASS 文档面一致：{n} 工具在 AGENTS/README 逐个可查、分组和={n}、当前自述版本={mv}、"
         "J6 规范正文↔投影一致、J7 无旧口径、J8 模板调用面契约干净、"
         "J9 返回契约（必查清单 + 歧义键分工 + 棘轮）未退化、J10 判据范围自述==实现、"
-        "J11 CI native 门步骤↔账本/规范面 三向对表、J12 CI 的 if: 不钉分支名（恒假门）、J13 发布状态短语↔BACKLOG release-fact 对表"
+        "J11 CI native 门步骤↔账本/规范面 三向对表、J12 CI 的 if: 不钉分支名（恒假门）、J13 发布状态短语↔BACKLOG release-fact 对表、J14 工具计数自述与 CLI 分组和↔真源对表"
     )
     return 0
 

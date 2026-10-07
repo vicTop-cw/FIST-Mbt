@@ -44,7 +44,11 @@
 | - | colmugx/posoco 参考 Agent 框架六边形架构设计 | competition/§六 | pending | - |
 | - | colmugx/mcp 已依赖（fist-mbt MCP 协议库），保留 | competition/§六 | done | - |
 
-> 去重说明：competition/§四 与 five-directions/§一、future-roadmap 各方向的重复项（如 quickcheck、mizchi/llm、ARCHITECTURE、self_search、英文 README）已按主题合并为单行；状态以当前源码/记忆库是否确认实现为准，未确认一律 pending，待逐项核对后再转 done 或删除。| F094 | 多管家协作 · 同项目文件级并行协调层（file_binds 表 + file_bind/release/status 三工具 + 构建互斥 + worktree 终态；硬前置=BUG-119 心跳跨进程修复，见 improvement-plan §P0′） | spec（未来扩展） | TBD | [docs/features/F094-multi-butler-file-binds.md](docs/features/F094-multi-butler-file-binds.md) |
+| P2 | `FIST_CALLER` 环境变量注入面：四宿主 `.mcp.json` / 启动文档给出注入示例，让 `call_log.caller` 从「空串=两侧都没有」变成真实身份 | BUG-137 边界（上报即收口，注入点不在本仓可自证范围） | pending | memory/bugs.md BUG-137 |
+| P3 | 非 CI 调用面 31 份 `scripts/**.py` 补 stdout UTF-8 闸 + `check_py_stdout_encoding` 扫描面扩到「全部正式脚本」 | BUG-138 残余面（CI 侧 23 份已收口，非 CI 侧 31 份未带闸；扩面前需先把 E2 预告与 E1 违例在退出码上分开） | pending | memory/bugs.md BUG-138 |
+| F094 | 多管家协作 · 同项目文件级并行协调层（file_binds 表 + file_bind/release/status 三工具 + 构建互斥 + worktree 终态） | spec（未来扩展）；**承重墙已修（BUG-136 预订原子性 + BUG-137 调用方身份 + J14 计数自述），Phase 1 仍不排期**——owner 2026-10-07 采纳「先修承重墙、不建三工具」方向，验收格「两进程同时 bind 恰好一成一拒」从不可能成立变成有常驻判据守着 | TBD | [docs/features/F094-multi-butler-file-binds.md](docs/features/F094-multi-butler-file-binds.md) |
+
+> 去重说明：competition/§四 与 five-directions/§一、future-roadmap 各方向的重复项（如 quickcheck、mizchi/llm、ARCHITECTURE、self_search、英文 README）已按主题合并为单行；状态以当前源码/记忆库是否确认实现为准，未确认一律 pending，待逐项核对后再转 done 或删除。
 
 ## 发布事实（机器可读标记，`scripts/check_doc_surface.py` 的 J13 从这里反解）
 
