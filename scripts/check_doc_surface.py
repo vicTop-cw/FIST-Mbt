@@ -55,6 +55,14 @@
      扫描面从 `.github/workflows/*.yml` 目录派生（手写清单必然落后于新增 workflow），
      且**先看剔掉注释之后的代码面**（墓碑注释里正当性地引用着旧条件，不剔就是自家注释喂回针——R9 的旧坑）。
 
+  J13 CHANGELOG 标题里的发布状态短语不许落后于 BACKLOG 的 release-fact 读数（BUG-135）：
+     形状是「标题写 GitHub Release 未发布」+「标题的盖章戳」+「权威面的 published 时刻」三者对不上——
+     豁免历史文件是对的（历史不许改写），但「未发布」是现在时断言，戳晚于事实那一刻起它就在骗读者，
+     而骗得最像真的位置恰恰是标题。权威面做成 BACKLOG 里机器可读的 `release-fact:` 标记
+     （现成散文写的是「与本条同一版本号」，那不是可解析锚，判据不猜版本归属）。
+     两支反向对照（戳早于 published 不误红 / 权威面没记这一版则这一格不作数），
+     两面任一为空 ⇒ FATAL 自拒；标记自身残缺、同版本两条、版本与资产名打架也都判红。
+
 设计约束：不改被校验的文档、不写库、纯只读。
 """
 import inspect
@@ -621,6 +629,90 @@ def j12_ci_if_ref_guards():
     return j12_if_ref_guard_problems(j12_workflow_texts())
 
 
+# ---- J13 CHANGELOG 的发布状态短语 ↔ BACKLOG 的 release-fact 读数（BUG-135：短语落后于事实）----
+# 为什么单立一支：CHANGELOG 在 J3/J4 的 HISTORICAL 豁免面里（历史不许改写），J7 又只管规范性表面的旧口径
+# ⇒「历史文件里的**现在时**状态短语」是个真空。违例形状：标题写着「GitHub Release 未发布」，
+#   而权威面记着同一版本号的 published 时刻**早于**标题的盖章戳——那句话从落盘起就是假的。
+# 反向的那一半同样重要：标题戳早于 published 时它是真话（本仓 CHANGELOG 里就有一处，属于历史准确），
+#   豁免历史 ≠ 连「戳晚于事实」那一档也放过，判据只抓后者。
+CHANGELOG_MD = ROOT / "CHANGELOG.md"
+RELEASE_UNPUBLISHED_NEEDLE = "GitHub Release 未发布"
+RE_FACT_VERSION = re.compile(r"release-fact:\s*v?(\d+\.\d+\.\d+)")
+RE_FACT_PUBLISHED = re.compile(r"github-published=(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)")
+RE_FACT_ASSET = re.compile(r"asset=fist-mbt-js-v(\d+\.\d+\.\d+)\.zip")
+RE_HEAD_LINE = re.compile(r"^## v([^\n]*)$", re.M)
+RE_HEAD_VER = re.compile(r"^## v(\d+\.\d+\.\d+)")
+RE_HEAD_STAMP = re.compile(r"盖章 (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)")
+
+
+def j13_release_facts(backlog_text):
+    """从 BACKLOG 的 `release-fact:` 标记反解 {版本: published 时刻}，顺带查标记自身是否自洽。"""
+    facts, problems = {}, []
+    for raw in backlog_text.splitlines():
+        if "release-fact:" not in raw:
+            continue
+        line = raw.strip()
+        mv, mp = RE_FACT_VERSION.search(line), RE_FACT_PUBLISHED.search(line)
+        if not (mv and mp):
+            problems.append(f"J13 release-fact 标记残缺（版本或 github-published 解析不到）：{line[:120]}")
+            continue
+        ver, pub = mv.group(1), mp.group(1)
+        ma = RE_FACT_ASSET.search(line)
+        if ma and ma.group(1) != ver:
+            problems.append(f"J13 标记自相矛盾：版本 {ver} 的资产名写的是 v{ma.group(1)}")
+        if ver in facts:
+            problems.append(f"J13 版本 {ver} 有两条 release-fact 标记（{facts[ver]} / {pub}）"
+                            "⇒ 权威面自相矛盾，判据不猜哪条正")
+            continue
+        facts[ver] = pub
+    return facts, problems
+
+
+def j13_heading_claims(changelog_text):
+    """返回 (标题行总数, [(版本号, 盖章戳, 片段)])——只取含「未发布」短语的那几行标题。"""
+    claims = []
+    heads = RE_HEAD_LINE.findall(changelog_text)
+    for h in heads:
+        if RELEASE_UNPUBLISHED_NEEDLE not in h:
+            continue
+        full = "## v" + h
+        mv, ms = RE_HEAD_VER.search(full), RE_HEAD_STAMP.search(h)
+        claims.append((mv.group(1) if mv else None, ms.group(1) if ms else None, full[:90]))
+    return len(heads), claims
+
+
+def j13_release_status_problems(backlog_text, changelog_text):
+    """纯判定：喂合成两面即可考这把尺；真实现状面走 j13_release_status_consistency()。"""
+    facts, problems = j13_release_facts(backlog_text)
+    if not facts:
+        problems.append("FATAL J13 BACKLOG 里读不到任何合法 release-fact 标记"
+                        "（权威面空转 ≠ 没有落后于事实的自述；把标记删空来消解违例也不是修法）")
+        return problems
+    n_heads, claims = j13_heading_claims(changelog_text)
+    if n_heads == 0:
+        problems.append("FATAL J13 CHANGELOG 里一行 `## v` 标题都没解析到（扫描面饿死，不拿没抓到当没问题）")
+        return problems
+    for ver, stamp, snippet in claims:
+        if not ver or not stamp:
+            problems.append(f"J13 标题含「{RELEASE_UNPUBLISHED_NEEDLE}」却读不到版本号或「盖章 <ISO>」"
+                            f"⇒ 无法与权威面对表：{snippet}")
+            continue
+        if ver not in facts:
+            continue  # 权威面没记这一版 ⇒ 这一格不作数（不弃权：上面两支 FATAL 已保证两面都非空）
+        if stamp > facts[ver]:
+            problems.append(
+                f"J13 标题自述 v{ver}「{RELEASE_UNPUBLISHED_NEEDLE}」，但标题盖章戳 {stamp} "
+                f"晚于权威面 published {facts[ver]} ⇒ 那句话从落盘起就是假的（BUG-135 的形状）；"
+                "改标题的状态短语，或按读数补 BACKLOG 的 release-fact 标记")
+    return problems
+
+
+def j13_release_status_consistency():
+    backlog = BACKLOG.read_text(encoding="utf-8", errors="replace") if BACKLOG.is_file() else ""
+    ch = CHANGELOG_MD.read_text(encoding="utf-8", errors="replace") if CHANGELOG_MD.is_file() else ""
+    return j13_release_status_problems(backlog, ch)
+
+
 # ---- J4 子判据：注册表发布版本只能有一处自述（BUG-30 建议①，编号不扩，免得 J10 范围自述说谎）----
 # 与 J4 主判据的分工要说清：J4 管「文档自述的本项目版本 == moon.mod」，那说的是**代码版本**；
 # 「注册表上到底发布到哪个版本」是另一件事，本机没有复核通道（WebFetch 被策略拦过，实测不可达）。
@@ -825,6 +917,32 @@ def j_selftest():
     j12_real = j12_ci_if_ref_guards()
     if j12_real:
         fails.append("J12 在真实现状面上就红了（先判尺子，再判 CI）：" + j12_real[0])
+    # J13（BUG-135 状态短语落后于权威读数）：六支缺一不可——落后必红、戳早不误红、
+    # 权威面没记这版不作数、权威面空必自拒、标题枚举空必自拒、标记自相矛盾必红；再加现状不红。
+    J13_FACT = ("<!-- release-fact: v9.9.9 github-published=2026-09-30T00:03:17Z "
+                "asset=fist-mbt-js-v9.9.9.zip bytes=1 -->")
+    J13_HEAD_LATE = "## v9.9.9 (mooncakes 已发布 / GitHub Release 未发布) - 合成节（盖章 2026-10-01T03:20:18Z）"
+    J13_HEAD_EARLY = "## v9.9.9 (mooncakes 已发布 / GitHub Release 未发布) - 合成节（盖章 2026-09-29T10:44:53Z）"
+    J13_HEAD_OTHER = "## v8.8.8 (mooncakes 已发布 / GitHub Release 未发布) - 合成节（盖章 2026-10-01T03:20:18Z）"
+    if not any("晚于权威面 published" in p for p in j13_release_status_problems(J13_FACT, J13_HEAD_LATE)):
+        fails.append("J13 抓不到『标题状态短语晚于权威 published』→ BUG-135 那类假主张会重犯")
+    if j13_release_status_problems(J13_FACT, J13_HEAD_EARLY):
+        fails.append("J13 对『标题戳早于 published（当时为真）』误红 → 历史陈述被判成违例，恒红判据不可信")
+    if j13_release_status_problems(J13_FACT, J13_HEAD_OTHER):
+        fails.append("J13 对『权威面没记这一版』误红 → 没有权威读数时该格不作数，不该拿它当违例")
+    if not any("release-fact 标记" in p for p in j13_release_status_problems("", J13_HEAD_LATE)):
+        fails.append("J13 权威面为空时不自拒 → 删掉 BACKLOG 的标记就能骗过判据")
+    if not any("扫描面饿死" in p for p in j13_release_status_problems(J13_FACT, "# 没有标题的一行")):
+        fails.append("J13 标题枚举为空时不自拒 → 扫描面饿死被读成没有问题")
+    J13_DUP = J13_FACT + "\n" + J13_FACT.replace("2026-09-30", "2026-10-05")
+    if not any("两条 release-fact 标记" in p for p in j13_release_status_problems(J13_DUP, J13_HEAD_LATE)):
+        fails.append("J13 对权威面自相矛盾（同版本两条标记）不敏感 → 对表只能靠猜")
+    J13_BADASSET = J13_FACT.replace("v9.9.9.zip", "v0.0.0.zip")
+    if not any("资产名写的是" in p for p in j13_release_status_problems(J13_BADASSET, "")):
+        fails.append("J13 对『标记里版本与资产名版本打架』不敏感 → 标记本身错了没人管")
+    j13_real = j13_release_status_consistency()
+    if j13_real:
+        fails.append("J13 在真实现状面上就红了（先判尺子，再判被测）：" + j13_real[0])
     # J4 子判据（BUG-30）：注册表发布版本只能有一处权威自述。四条对照缺一不可——
     # 两处打架必红、权威被删空必红、扫描面空转必红、单处自述不许误红。
     if not any("另写一处" in p for p in publication_problems(
@@ -908,7 +1026,8 @@ def main(argv):
               "『两面一致不误红』『J11 合法态（单已 FIXED＋门已撤、文档不再点名）不误红』"
               "『J12 注释里的 refs/heads 与 tag 守卫不误红』，"
               "防空转含『分工清单落空必红』『空扫描必红』『解析器饿死必红』『J11 账本读不到那条单必红』"
-              "『J12 一份 workflow 都没读到必自拒』）")
+              "『J12 一份 workflow 都没读到必自拒』『J13 标题戳早于权威 published 不误红』"
+              "『J13 权威面没记这一版不作数』『J13 release-fact 标记缺失或自相矛盾必红』）")
         return 0
 
     agents_txt = AGENTS.read_text(encoding="utf-8")
@@ -953,6 +1072,7 @@ def main(argv):
     problems += j10_range_consistency()
     problems += j11_ci_gate_steps()
     problems += j12_ci_if_ref_guards()
+    problems += j13_release_status_consistency()
 
     if problems:
         print(f"FAIL 文档面不一致（真源 {n} 工具 / moon.mod {mv}）：")
@@ -963,7 +1083,7 @@ def main(argv):
         f"PASS 文档面一致：{n} 工具在 AGENTS/README 逐个可查、分组和={n}、当前自述版本={mv}、"
         "J6 规范正文↔投影一致、J7 无旧口径、J8 模板调用面契约干净、"
         "J9 返回契约（必查清单 + 歧义键分工 + 棘轮）未退化、J10 判据范围自述==实现、"
-        "J11 CI native 门步骤↔账本/规范面 三向对表、J12 CI 的 if: 不钉分支名（恒假门）"
+        "J11 CI native 门步骤↔账本/规范面 三向对表、J12 CI 的 if: 不钉分支名（恒假门）、J13 发布状态短语↔BACKLOG release-fact 对表"
     )
     return 0
 

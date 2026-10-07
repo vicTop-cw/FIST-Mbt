@@ -2633,3 +2633,27 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
 - 顺带修掉一条只在绝对路径下才现形的缺陷：`bug_resolve_path` 从前用 `String.replace`（MoonBit 语义＝只换**首个**匹配）⇒ `E:\a\b` 规范化成 `E:/a\b`；旧输入全是至多一个反斜杠的相对串所以一直不红，是新白盒断言第一次跑就当场打死它（`src/server/bugreport_test.mbt:174 FAILED: true is not false`）才暴露。已改 `replace_all`。
 - 权威 CI（同笔 push `8e028af` 的读数，原件 `temp/b134_readback.txt`）：run 36956419257『CI』= js/ubuntu **success**、js/windows **success**、native/ubuntu failure 红格 `#8 Test (native)=failure`；run 36956418476『FIST CI — Build + Test』= js/ubuntu **success**、native/ubuntu failure 红格 `#9 Test (native, j=1)=failure`、nightly self-check skipped —— 两条 js 臂 success 就是「573 这套测试与 23 条文档主张在 CI 上也自洽」的那一格；native 两臂照旧红在全量那一步，属 BUG-133 的读数面，不在本单关闭条件里
 - 盖章走的是 **md 真源面**而不是 `bug_fix` RPC（connector 的 server cwd 不指向本仓，上一轮已实锤），前置门含「两远端 rev-list --count <远端>..HEAD = 0」「JS 尾行 573/573 且 rc=0」「守卫族 total=17 fails=0」「调用面探针两格都在场」「CI 两条 js job 都 success」。
+## BUG-135 [2026-10-07T02:05:27Z] [low] OPEN
+- summary: `CHANGELOG.md:16` 的 v0.3.5 小节标题仍自述「GitHub Release 未发布」，而匿名权威读数里 v0.3.5 早在 2026-09-30T00:03:17Z 就发布（资产 `fist-mbt-js-v0.3.5.zip`，376617B），且 `BACKLOG.md:15` 自己就记着这条读数 ⇒ 这是一句**写下时就已为假**的现状主张（那一节的标题戳是 2026-10-01T03:20:18Z）
+- detail: 发现面：owner 问「还有什么要修的」，我扫现状面上的状态短语时撞见的。
+  机器可检的四条（全部本轮实测，非自述）：
+  ① 权威读数：匿名 `GET /repos/vicTop-cw/FIST-Mbt/releases?per_page=100`（http=200，原件 `temp/b135_release_evidence.txt`）给三发 release，
+     逐资产行 = `v0.3.5` / 2026-09-30T00:03:17Z / fist-mbt-js-v0.3.5.zip / 376617B；`v0.3.4` / 2026-09-28T17:25:12Z / 372836B；
+     `v0.3.3` / 2026-09-28T11:57:48Z / 372163B。
+  ② 违例面：`grep -c "GitHub Release 未发布" CHANGELOG.md` = 2，分别是 :16（BUG-130 定因节，标题带「盖章 2026-10-01T03:20:18Z」）
+     与 :146（BUG-128 出路①节，「盖章 2026-09-29T10:44:53Z」）。**:146 不算违例**——它的标题戳早于 published 时刻约 13 小时，
+     那句话当时是真的；而 :16 落盘时 release 已存在约 27 小时，是假主张。**这条区分是判据的边界，不是我的偏好**。
+  ③ 权威面早有其文：`BACKLOG.md:15` 的 P1 done 段逐字写着「GitHub Release 出到与本条同一版本号…（实测 published 2026-09-30T00:03:17Z、376617B）」
+     ⇒ 不是「没人知道发布过」，是同一仓里两处自述互相打架，而读者看不到哪条新。
+  ④ 为什么没有守卫拦它：CHANGELOG 在 `check_doc_surface.py:102` 的 `HISTORICAL` 豁免面里（J3/J4 都不比它），
+     J7 的「规范性表面禁旧口径」也不含它 ⇒ 「历史文件里的**状态短语**」是真空。豁免本身是对的（历史不许改写），
+     但「未发布」是现在时断言：一旦落后于事实就在骗读者，而骗得最像真的位置恰恰是标题。
+  后果：读者或下游 agent 从标题读到「GitHub Release 未发布」，会得出「公网安装线不可用，只能走源码或注册表」——
+  而 README:116/124/134 那几条首选安装线走的是 GitHub master raw + Release 资产兜底，误读要么把人推去「再发一发 Release」这种没人要的动作，
+  要么让人以为文档那两条线是空头支票。
+  建议出路：a) 就地校正 :16 标题的状态短语，并在同节补记写清「校正于何日、依据哪条读数、为什么 :146 不动」；
+  b) 把这一类做成常驻判据 **J13**：发布时刻的权威面做成 BACKLOG 里**机器可读的 `release-fact:` 标记**（现成散文里那句「同一版本号」不是可解析锚），
+  判据要求「CHANGELOG 标题含『GitHub Release 未发布』⇒ 该版本号的标题戳不得晚于权威面的 published 时刻」；
+  两支反向对照（戳早于 published 不误红 / 权威面没有该版本号则这一格不作数），权威面或标题枚举为空 ⇒ FATAL 自拒。
+- reported_by: fist-mbt-doc-surface-audit-b135
+
