@@ -1,6 +1,6 @@
 # FIST-Mbt 使用文档（USAGE）
 
-> 版本：`vicTop-cw/fist-mbt@0.3.5`（MoonBit，MCP Server）
+> 版本：`vicTop-cw/fist-mbt@0.3.6`（MoonBit，MCP Server）
 > 日期：2026-09-12 ｜ 定位：**实操调用手册**。README.md 是项目概览，本文件是「如何真正用它」的手把手文档，
 > 全部示例均来自本机实机运行（JSON-RPC over STDIO）的真实输出，非凭空构造。
 >
