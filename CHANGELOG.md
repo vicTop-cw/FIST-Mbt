@@ -107,6 +107,42 @@ AIGC:
   （含 `test-sync --selftest`、`check_badge` 读徽章 `tests-573%2F573`、cl7）。`src/` 改动 4 个文件（`bugreport.mbt`/`bugreport_resolve.mbt`/`server.mbt`/`pkg.generated.mbti`）+ 测试 1 个。
 - **盖章（同轮第二笔）**：`### FIXED(2026-10-02T02:39:29Z / BUG-134)` 走 md 真源面（`bug_fix` RPC 面指向另一本台账，前一轮已实锤 ⇒ 不拿它盖本仓的章），由 `temp/b134_fixed_stamp.py` 写抬头 + 小记。前置门含「两远端 rev-list=0」「JS 573/573 且 rc=0」「守卫族 total=17 fails=0」「调用面探针正向 + 两态对照都在场」「CI 两条 js job 都 success」；投影随之 `BUG-1~134 共 133 条入账 = 118 已修 / 9 重复并入 / 4 误报 / **2 待修（BUG-132, BUG-133）**`，cl7 重跑 PASS。 收尾一格代码整理：`bug_server_cwd()` 从前在一份回执里被调两次（`resolved_path` 与 `server_cwd` 各取一次）⇒ 改成一次取数两处用（两个键必须出自同一次观测，否则回执内部自己就可能对不上）；复测 JS 仍 573/573（`temp/js_b134_take3.log`）、探针 PASS、守卫族 17 格 fails=0，盖章后那发权威 CI 的 js/ubuntu 与 js/windows 都 success ⇒ 投影重生成后的 cl7 在 CI 上也绿（这格曾单独红过，就是 BUG-131）。
 
+### 补记(2026-10-07T01:39:39Z / BUG-132 裁决 c 落地)：删掉恒 skipped 的 nightly 空壳，并把「恒假门」做成常驻判据 J12
+
+- **三选一的取舍在哪**：a) 把 `if:` 里的 `refs/heads/main` 改成本仓真默认分支 `master`；b) 补 `schedule:` 触发并把
+  `Run native self-check (skeleton)` 那三条 `echo // TODO` 写成实体命令；c) 删作业。
+  **a 救不活这道门**——它 `needs: [test-js, test-native]`，而 native 臂按 2026-10-01 裁决③ 挂在 BUG-133 探针当门上、
+  现状就是红的，改了 ref 条件照旧 `skipped`；b 是「新造一条巡检轨」，不在本单诉求里（native 读数面已由裁决③ 的常驻判据承担）；
+  c 对应账本自己那句「留着恒 skipped 的空壳是最坏的一档」⇒ 选 c。owner「按照你的建议做」= 批整个方案，含同轮把这一类做成判据。
+- **关闭条件读的是读数不是自述**：权威 CI 的 **job 名单里那个名字消失** —— 逐 job 结论 CI（run 37557287008）：`check + test (js, ubuntu)`=success；`check + test (js, windows)`=success；`check + test (native, ubuntu)`=failure（红格 #8 Test (native)=failure）　FIST CI — Build + Test（run 37557286720）：`check + test (js, ubuntu)`=success；`check + test (native, ubuntu)`=failure（红格 #9 Test (native, j=1)=failure）（条目原文那句「每次运行里的 `nightly self-check: skipped` 不是『定时轨没到点』，是『永不可能运行』」到此消解：现在不是它红不红的问题，而是那个会骗读数的绿灯位没了）。
+- **改动面**：`.github/workflows/fist-ci.yml` 删 `nightly:` 整块，原地留墓碑注释（旧形状逐字、为什么删、
+  恢复命令 `git show d8c24eb:.github/workflows/fist-ci.yml`、以及「别再在 `if:` 里钉分支名」）。
+- **同轮把这一类缺陷做成常驻判据 J12**（`scripts/check_doc_surface.py`）：workflow **代码面**（剔整行/行尾注释后）里
+  `if:` 出现 `refs/heads/` 引用即红。口径刻意不比对「本仓默认分支叫什么」——钉在 `if:` 里的分支名本身就是成因；
+  扫描面从 `.github/workflows/*.yml|yaml` 目录派生（手写清单必然落后于新增 workflow），空扫描必 FATAL。
+  **J10 在加完 J12 的第一跑就红了**（「声明 J1-J11 < 实现最高 J12 —— 声明滞后」），于是三处声明面同步 J1-J11 → J1-J12
+  （AGENTS / AI-DEVELOPMENT-STANDARD §1 / `templates/pipeline_mode_tidy.md`）；这条是实跑不是推演。
+- **承重证明四格**（`temp/b132_j12_prove.py`，回执 `temp/b132_j12_prove_out.txt`）：A 格变异样本取自 **git 历史里那道真死门原文**、
+  B 现状不误红、C 注释与 tag 守卫不喂针、D 空扫描必自拒。
+- 自纠四条（都是本轮实测暴露，不是假想敌）：
+  ① **A 格的取样锚被自己的修复吃掉**：从前写 `git show HEAD:<path>`，而本单的修复提交把 HEAD 推过了删除点 ⇒ HEAD 那份里
+     `refs/heads/main` 只剩墓碑注释形态，剔注释后判据不报红、A 格当场红给自己看。现改为**从墓碑注释反解 rev**
+     （恢复命令本身就是取样锚，同源不会各走各的）+ 取样面自检（样本代码面必须真有 refs/heads，否则 REFUSE 不退化成恒红/恒绿）。
+     同族教训：复跑不许拿起手盘上那份旧证据当锚——连 rev 都不能是「当前 HEAD」这种会被自己改动的量。
+  ② 盖章脚本里 `sh("rev-parse", "HEAD")` 少传了程序名 `"git"` ⇒ `FileNotFoundError`。崩在**写盘之前**，账本没被半写
+     （这点是关键：追加型写入器一旦崩在 write 之后就是毁档）；修法是让 `sh()` 的每个调用点都点名程序。
+  ③ 盖章小记第一版只列了 job **名**、没列**结论** ⇒ 读者看不出两条 js 臂是绿的；平铺时 `js, ubuntu` 在两条 workflow 里
+     各出现一次、像重复项。现按 run 分组逐臂点名（内容从 `temp/b132_readback.txt` 反解，不手写）。
+  ④ 两次 `Edit` 落空才成：Read 的显示与该文件真实字节有出入（`repr` 里是「C 注释与 tag 守卫不喂针」，显示成「C 注释不喂针」），
+     而正文里的字面 `\n` 被我当换行传 ⇒ 含转义序列的源码改动改用脚本 + `count==1` 断言 + `py_compile`。
+  ⑤ **记账脚本自己的「落盘后检查」连错两版**（两版都是检查自己红，不是内容错）：
+     第一版要求三件产物都含**盖章戳** ⇒ 红在当日日志上（它记的是本轮动作，本就不该含那个串）；
+     第二版改成要求日志含**本轮写盘瞬间的戳** ⇒ 幂等复跑必假红——那个戳是上一轮 `now()` 的值，本轮已经前进了。
+     这正是账本里记过的老规则「断言不许含会被重跑改变的量」，这次栽在**我自己写的检查**上；
+     终版按件分派：文档比盖章戳（跨轮不变）、日志只比日期，秒级戳的在场交给写入那一次的形状检查负责。
+- **台账**：`2026-10-07T01:34:26Z` 盖章后为 OPEN 1 条 / FIXED 119 条（抬头状态计数）；投影已按新台账重生成（四宿主），
+  守卫族 `total=17 fails=0`，JS 全量 573/573 无回归（本轮未动 `src/`，产物面读数沿用同批 `temp/js_b134_take3.log`）。
+
 ## v0.3.5 (mooncakes 已发布 / GitHub Release 未发布) - BUG-128 出路①执行：版本号前进一位 + 注册表载荷逐件对表（盖章 2026-09-29T10:44:53Z）
 
 
