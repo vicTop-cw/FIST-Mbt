@@ -201,6 +201,22 @@ pub fn FistEngine::omega_latest(
 
 // —— 门禁 ——
 
+/// 占位符规整：把字符串拆成 Char 数组，剔除所有非字母数字的字符（空白/标点/全角标点），
+/// 再转小写。MoonBit 用 `String::to_array()` 拿到 `Array[Char]`（同 evolve.mbt 的做法）。
+fn placeholder_normalize(s : String) -> String {
+  let out : Array[String] = []
+  for c in s.to_lower().to_array() {
+    let is_cjk = c.to_int() >= 0x4E00 && c.to_int() <= 0x9FFF
+    let is_ascii_alnum = (c.to_int() >= 0x30 && c.to_int() <= 0x39) ||
+      (c.to_int() >= 0x41 && c.to_int() <= 0x5A) ||
+      (c.to_int() >= 0x61 && c.to_int() <= 0x7A)
+    if is_cjk || is_ascii_alnum {
+      out.push(c.to_string())
+    }
+  }
+  out.join("")
+}
+
 ///|
 /// 预执行审计门禁（P2 BACKLOG「Pre-execution audit gate」）：
 /// 在 `can_execute` 通过之后、`execute()` 迁移之前插入，拦截「空交付物」与「占位符交付物」——
@@ -221,12 +237,15 @@ pub fn FistEngine::audit_execute_gate(
   }
   // 占位符检测：把常见 fake-GREEN 词规整后比对（大小写/空白/标点容忍）。
   // 只判「整串等于占位符」这种确定性问题，不做语义判定，避免过度拦截。
-  let lowered = trimmed.to_lower()
+  // R10 修：旧实现只 to_lower，注释里承诺的「空白/标点容忍」落了空——`"Done ."` / `"完成！"`
+  // 这类「占位符 + 杂散空白/标点」能绕过。现在把全串拆成字符后剔除所有非字母数字的字符，
+  // 再做大小写归一，与规整后的占位符词表比对。
+  let stripped = placeholder_normalize(trimmed)
   let placeholder_words : Array[String] = [
-    "done", "完成", "ok", "yes", "通过", "finished", "done.", "ok.", "完成。",
+    "done", "完成", "ok", "yes", "通过", "finished",
   ]
   for w in placeholder_words {
-    if lowered == w {
+    if stripped == w {
       return Err(
         "预执行审计门禁：deliverable 是占位符 [" +
         trimmed +
