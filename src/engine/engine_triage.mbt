@@ -43,8 +43,10 @@ fn ranking(x : String) -> Int {
 fn truncate(s : String, max : Int) -> String {
   if s.length() <= max {
     s
-  } else {
+  } else if max > 0 && max <= s.length() {
     s.substring(start=0, end=max) + "…"
+  } else {
+    s
   }
 }
 
@@ -75,9 +77,11 @@ fn skill_keys(skill : String) -> Array[String] {
   if skill == "" {
     []
   } else {
-    skill.split(",").map(fn(s) { s.trim().to_string() }).filter(
-      fn(s) { s != "" },
-    ).collect()
+    skill
+    .split(",")
+    .map(fn(s) { s.trim().to_string() })
+    .filter(fn(s) { s != "" })
+    .collect()
   }
 }
 
@@ -239,9 +243,7 @@ pub fn FistEngine::triage(
         // 真实 DAG 前驱（复用 R39 gradient_dag 建边）——"就绪原因"看得见
         "depends_on": Json::array(r.depends_on.map(fn(s) { Json::string(s) })),
         // skill 命中（skill 为空时为空数组，零回归）
-        "skill_hits": Json::array(
-          r.skill_hits.map(fn(s) { Json::string(s) }),
-        ),
+        "skill_hits": Json::array(r.skill_hits.map(fn(s) { Json::string(s) })),
       }),
     )
   }

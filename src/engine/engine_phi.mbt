@@ -135,7 +135,9 @@ pub fn phi_accrual(
   for iv in intervals {
     sum = sum + iv.to_double()
   }
-  let mu = sum / win.to_double()
+  // R1 bugfind：unprotected-division——`win` 理论上可为 0，用哨兵兜底（0 时 μ 回退 0，与指数回退分支配合）
+  let win_safe = if win > 0 { win } else { 1 }
+  let mu = sum / win_safe.to_double()
   // 样本方差（Bessel 校正，n>1）→ σ
   let mut sq = 0.0
   for iv in intervals {

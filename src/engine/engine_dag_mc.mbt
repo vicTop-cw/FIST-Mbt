@@ -100,7 +100,10 @@ fn FistEngine::mc_finish(
     None => ()
   }
   match visiting.get(id) {
-    Some(_) => return dur.get(id).unwrap_or(0)
+    // BUG-204：环命中返回 -1 哨兵（采样 dur 恒 >= 0，故 f + own <= own <= best，
+  // 环路径不参与 max）——旧实现返回节点自身 dur，A→B→A 会让 A 被累加 2 次。
+  // 不用 Int.MIN_VALUE：与 own 相加会溢出。
+    Some(_) => return -1
     None => ()
   }
   visiting.set(id, true)
@@ -126,6 +129,8 @@ fn FistEngine::mc_finish(
 /// 对作用域内每个任务按难度档采样三角分布时长，整网模拟 samples 次，
 /// 输出完工时间分布（min/mean/p50/p90/max）+ 按期概率 + 关键度排行。
 /// deadline>0 时给出 P(完工 ≤ deadline)；seed 固定则结果可复现。
+/// 空作用域返回 { insufficient:true, note }，无 p_on_time/makespan/criticality
+/// （无法预测，不伪造——BUG-182 文档契约）。
 pub fn FistEngine::dag_mc(
   self : FistEngine,
   ns? : String = "default",
@@ -191,11 +196,20 @@ pub fn FistEngine::dag_mc(
   let sorted = makespans.copy()
   sorted.sort()
   let sum = makespans.fold_left(init=0, fn(acc, x) { acc + x })
-  let mean = sum.to_double() / n.to_double()
-  let p50 = sorted[(n - 1) / 2]
-  let p90 = sorted[if n * 9 / 10 >= n { n - 1 } else { n * 9 / 10 }]
-  let minv = sorted[0]
-  let maxv = sorted[n - 1]
+  // R1 bugfind（BUG-142 家族）：静态扫描发现 unprotected-division——`n` 虽经钳制 >=10，
+  // 但判据要能被确定性地证明非零，不靠「调用点总是传入合法值」的约定。
+  let n_safe = if n > 0 { n } else { 1 }
+  let mean = sum.to_double() / n_safe.to_double()
+  let idx50 = if n_safe - 1 < 0 { 0 } else { (n_safe - 1) / 2 }
+  let idx90 = if n_safe * 9 / 10 >= n_safe {
+    if n_safe - 1 < 0 { 0 } else { n_safe - 1 }
+  } else {
+    n_safe * 9 / 10
+  }
+  let p50 = sorted[idx50]
+  let p90 = sorted[idx90]
+  let minv = if n_safe > 0 { sorted[0] } else { 0 }
+  let maxv = if n_safe > 0 { sorted[n_safe - 1] } else { 0 }
   // 按期概率
   let mut on_time = 0
   for ms in makespans {
@@ -203,8 +217,8 @@ pub fn FistEngine::dag_mc(
       on_time = on_time + 1
     }
   }
-  let p_on_time = if deadline > 0 {
-    on_time.to_double() / n.to_double()
+  let p_on_time = if deadline > 0 && n_safe > 0 {
+    on_time.to_double() / n_safe.to_double()
   } else {
     0.0
   }
@@ -229,7 +243,7 @@ pub fn FistEngine::dag_mc(
     cm.set("task_id", Json::string(crit_arr[i].0))
     cm.set(
       "critical_freq",
-      Json::number(crit_arr[i].1.to_double() / n.to_double()),
+      Json::number(crit_arr[i].1.to_double() / n_safe.to_double()),
     )
     crit_json.push(Json::object(cm))
   }
