@@ -8,6 +8,8 @@ import {
 }
 
 // Values
+pub fn all_hats() -> Array[Hat]
+
 pub fn all_modes() -> Array[Json]
 
 pub fn can_archive(Role) -> Bool
@@ -24,7 +26,11 @@ pub fn cleanup_archived(@engine.FistEngine, String, retention_days? : Int) -> Re
 
 pub fn complexity_band_of_tier(String) -> (Int, Int)
 
+pub fn debate_summary(Array[HatVerdict], Double) -> DebateSummary
+
 pub fn default_mode() -> PipelineMode
+
+pub fn default_threshold() -> Double
 
 pub fn enforce(action~ : String, role~ : Role) -> Result[Unit, String]
 
@@ -35,6 +41,22 @@ pub fn explore_plan(String, Int, Array[String], Array[Array[String]], Bool) -> J
 pub fn file_scope_conflicts(Array[Array[String]]) -> Array[String]
 
 pub fn file_scopes_disjoint(Array[Array[String]]) -> Bool
+
+pub fn hat_color(Hat) -> String
+
+pub fn hat_defaults() -> Array[Hat]
+
+pub fn hat_forbid(Hat) -> String
+
+pub fn hat_id(Hat) -> String
+
+pub fn hat_name_zh(Hat) -> String
+
+pub fn hat_output_keys(Hat) -> Array[String]
+
+pub fn hat_role(Hat) -> String
+
+pub fn hat_verdict(String, String, String) -> HatVerdict
 
 pub fn heal_stale_tasks(@engine.FistEngine, Heartbeat, String, timeout_sec? : Int, ns? : String) -> Result[Array[String], String]
 
@@ -66,6 +88,10 @@ pub fn mode_short(PipelineMode) -> String
 
 pub fn mode_template_path(String) -> String
 
+pub fn parse_hat(String) -> Result[Hat, String]
+
+pub fn parse_hats(Array[String]) -> Result[Array[Hat], String]
+
 pub fn parse_mode(String) -> Result[PipelineMode, String]
 
 pub fn pipeline_tick(@engine.FistEngine, String, String, ns? : String, timeout_sec? : Int, phase? : String, prompt_name? : String, mode? : String) -> Result[Json, String]
@@ -94,6 +120,8 @@ pub fn selfdrive_review_ready(String, ns~ : String) -> Result[Json, String]
 
 pub fn selfdrive_review_tick(String, ns~ : String, review_every~ : Int) -> Result[Json, String]
 
+pub fn valid_verdict(HatVerdict) -> Result[Unit, String]
+
 pub fn validate_loop_steps(Array[String]) -> String?
 
 pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String, cold_start? : Bool, project_dir? : String, omega_strong_verify? : Bool, omega_split_n? : Int, omega_spec? : Json?, selfdrive_project_dir? : String, selfdrive_review_every? : Int, autodispatch? : Bool, autodispatch_want? : String, phi_gate? : Bool, phi_threshold? : Int, mode? : String, flush_bug_queue? : Bool) -> Result[Json, String]
@@ -118,6 +146,29 @@ pub fn AuditLog::entries(Self) -> Array[AuditEntry]
 pub fn AuditLog::new() -> Self
 pub fn AuditLog::record(Self, action~ : String, actor~ : String, task_id~ : String, detail? : String, now~ : String) -> Unit
 pub fn AuditLog::to_json(Self) -> Json
+
+pub struct DebateSummary {
+  total : Int
+  agree : Int
+  rate : Double
+  threshold : Double
+  pass : Bool
+}
+
+pub enum Hat {
+  White
+  Red
+  Black
+  Yellow
+  Green
+  Blue
+}
+
+pub struct HatVerdict {
+  hat_id : String
+  verdict : String
+  evidence : String
+}
 
 pub struct Heartbeat {
   signals : Map[String, String]

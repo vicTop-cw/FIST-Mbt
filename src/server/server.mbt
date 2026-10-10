@@ -65,6 +65,33 @@ let exec_reg : @executor.ExecutorRegistry = @executor.ExecutorRegistry::new()
 let loop_reg : @ops.LoopRegistry = @ops.LoopRegistry::new()
 
 ///|
+/// 六顶帽辩论的单场会话（R118 P1-b）。verdicts 是该 session 下已登记的帽子判决。
+struct DebateSession {
+  topic : String
+  hats : Array[String]
+  threshold : Double
+  verdicts : Array[@ops.HatVerdict]
+  created_at : String
+}
+
+///|
+/// 六顶帽辩论进程内会话注册表。**不落库**：跨进程 / server 重启即失（诚实标注）。
+/// 模仿 LoopRegistry 的内部可变性模式（模块级 let 持有，字段可变）。
+struct DebateRegistry {
+  sessions : Map[String, DebateSession]
+}
+
+///|
+fn DebateRegistry::new() -> DebateRegistry {
+  { sessions: Map([]) }
+}
+
+///|
+/// 进程内六顶帽辩论会话表。重启即失，跨进程不可见——需要持久结论请把
+/// `debate_verdict` 的输出记入 memory/YYYY-MM-DD.md 或 call_log。
+let debate_sessions : DebateRegistry = DebateRegistry::new()
+
+///|
 /// 统计各执行者（assignee）当前的活跃负载：其名下"非终态"（未完成/未归档）任务数。
 /// 供 executor_route 做负载均衡。
 fn executor_loads(e : @engine.FistEngine) -> Map[String, Int] {
@@ -1030,6 +1057,124 @@ pub fn instrumented_tool(
     input_schema,
     _instrument(name, input_schema, handler),
   )
+}
+
+// ---------------------------------------------------------------------------
+// 六顶帽辩论（R118 P1-b）：进程内会话态 + JSON 序列化 + 帽字符串解析
+// 单一真源仍是 src/ops/ops_hats.mbt；本文件只做 IO/序列化，不重复帽子语义。
+// ---------------------------------------------------------------------------
+
+///|
+/// 今日日期键 `yyyyMMdd`（复用 _civil_from_days，与 now_default 同源）。
+fn debate_day_key() -> String {
+  let total_sec = @env.now().to_int64() / 1000L
+  let days = (total_sec / 86400L).to_int()
+  let (y, m, d) = _civil_from_days(days)
+  "\{y}\{_pad2(m)}\{_pad2(d)}"
+}
+
+///|
+/// 生成 session_id：`debate-<yyyyMMdd>-<nnn>`，nnn 为当天递增序号（服务端盖章，不接受调用方注入）。
+fn debate_next_session_id() -> String {
+  let day = debate_day_key()
+  let prefix = "debate-" + day + "-"
+  let mut n = 0
+  for k in debate_sessions.sessions.keys() {
+    if k.starts_with(prefix) {
+      n = n + 1
+    }
+  }
+  let seq = n + 1
+  let nnn = if seq < 10 {
+    "00" + seq.to_string()
+  } else if seq < 100 {
+    "0" + seq.to_string()
+  } else {
+    seq.to_string()
+  }
+  prefix + nnn
+}
+
+///|
+/// 拆分帽参数字符串：支持英文逗号 / 中文顿号 / 中文逗号，逐段 trim，空段忽略。
+fn split_hat_items(s : String) -> Array[String] {
+  let out : Array[String] = []
+  let mut sb = StringBuilder()
+  for ch in s {
+    if ch == ',' || ch == '、' || ch == '，' {
+      let t = sb.to_string().trim().to_string()
+      if t != "" {
+        out.push(t)
+      }
+      sb = StringBuilder()
+    } else {
+      sb.write_char(ch)
+    }
+  }
+  let last = sb.to_string().trim().to_string()
+  if last != "" {
+    out.push(last)
+  }
+  out
+}
+
+///|
+/// 解析帽参数为 Hat 数组；空串回退默认三帽。任一非法即整批 Err（避免半桶结论）。
+fn parse_hat_args(s : String) -> Result[Array[@ops.Hat], String] {
+  if s.trim().is_empty() {
+    return Ok(@ops.hat_defaults())
+  }
+  let items = split_hat_items(s)
+  if items.is_empty() {
+    return Ok(@ops.hat_defaults())
+  }
+  @ops.parse_hats(items)
+}
+
+///|
+/// 帽子元数据 → Json（hat_list / debate_convene 共用）。
+fn hat_meta_json(h : @ops.Hat) -> Json {
+  Json::object({
+    "id": Json::string(@ops.hat_id(h)),
+    "name": Json::string(@ops.hat_name_zh(h)),
+    "role": Json::string(@ops.hat_role(h)),
+    "color": Json::string(@ops.hat_color(h)),
+    "forbid": Json::string(@ops.hat_forbid(h)),
+    "output_keys": Json::array(
+      @ops.hat_output_keys(h).map(fn(k) { Json::string(k) }),
+    ),
+  })
+}
+
+///|
+/// HatVerdict → Json（ops_hats 未提供 to_json，此处补齐；语义仍由 ops_hats 定义）。
+fn hat_verdict_json(v : @ops.HatVerdict) -> Json {
+  Json::object({
+    "hat_id": Json::string(v.hat_id),
+    "verdict": Json::string(v.verdict),
+    "evidence": Json::string(v.evidence),
+  })
+}
+
+///|
+/// DebateSummary → Json。
+fn debate_summary_json(s : @ops.DebateSummary) -> Json {
+  Json::object({
+    "total": Json::number(s.total.to_double()),
+    "agree": Json::number(s.agree.to_double()),
+    "rate": Json::number(s.rate),
+    "threshold": Json::number(s.threshold),
+    "pass": Json::boolean(s.pass),
+  })
+}
+
+///|
+/// 按 session_id 取会话；不存在返回错误文案（统一出口）。
+fn debate_get_session(session_id : String) -> Result[DebateSession, String] {
+  match debate_sessions.sessions.get(session_id) {
+    Some(s) => Ok(s)
+    None => Err("debate session not found: " + session_id)
+  }
 }
 
 ///|
@@ -6357,6 +6502,175 @@ pub async fn run_server() -> Unit {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
+    },
+  )
+
+  s1 = instrumented_tool(
+    s1,
+    "hat_list",
+    "列出六顶思考帽（White/Red/Black/Yellow/Green/Blue）的 role/color/forbid/output_keys 与默认三帽（White/Black/Yellow）。纯计算只读。",
+    schema({}, []),
+    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      // 跨包枚举只能经函数构造（MoonBit 下 @ops.Hat 只读），故用 all_hats() 枚举六帽。
+      let hats : Array[@ops.Hat] = @ops.all_hats()
+      let arr = hats.map(fn(h) { hat_meta_json(h) })
+      let defaults = @ops.hat_defaults().map(fn(h) {
+        Json::string(@ops.hat_id(h))
+      })
+      let m : Map[String, Json] = Map([])
+      m.set("hats", Json::array(arr))
+      m.set("defaults", Json::array(defaults))
+      m.set("count", Json::number(arr.length().to_double()))
+      Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "debate_convene",
+    "发起一次六顶帽辩论（in-memory 会话）。参数：topic(必填,议题)、hats(可选,逗号/顿号分隔的帽 id，缺省 [white,black,yellow])、threshold(可选,收敛阈值,缺省 0.6)。返回 session_id（debate-<yyyyMMdd>-<nnn>）+ 已注册的帽子。会话态进程内保存，重启即失（诚实标注）。",
+    schema(
+      {
+        "topic": string_prop("议题（必填）"),
+        "hats": string_prop(
+          "帽子 id，逗号/中文顿号分隔（可选，缺省 white,black,yellow）",
+        ),
+        "threshold": number_prop(
+          "收敛阈值（可选，缺省 0.6；<=0 或 >1 回退默认）",
+        ),
+      },
+      ["topic"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let topic = get_str(args, "topic")
+      if topic.trim().is_empty() {
+        return Err(@mcp_types.ToolError("topic 不能为空"))
+      }
+      let hats_raw = get_str(args, "hats")
+      let threshold = get_double(
+        args,
+        "threshold",
+        default=@ops.default_threshold(),
+      )
+      let th = if threshold > 0.0 && threshold <= 1.0 {
+        threshold
+      } else {
+        @ops.default_threshold()
+      }
+      let parsed = match parse_hat_args(hats_raw) {
+        Ok(hs) => hs
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
+      let hat_ids = parsed.map(fn(h) { @ops.hat_id(h) })
+      let sid = debate_next_session_id()
+      let sess : DebateSession = {
+        topic: topic,
+        hats: hat_ids,
+        threshold: th,
+        verdicts: [],
+        created_at: now_default(),
+      }
+      debate_sessions.sessions.set(sid, sess)
+      let meta = parsed.map(fn(h) { hat_meta_json(h) })
+      let m : Map[String, Json] = Map([])
+      m.set("session_id", Json::string(sid))
+      m.set("topic", Json::string(topic))
+      m.set("hats", Json::array(meta))
+      m.set("threshold", Json::number(th))
+      m.set("created_at", Json::string(sess.created_at))
+      m.set(
+        "note",
+        Json::string("进程内会话态，重启即失；跨进程不可见"),
+      )
+      Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "debate_register",
+    "给指定 session 注册一条帽子判决。参数：session_id(必填)、hat_id(必填)、verdict(必填,该帽视角的论点,pass/reject/abstain)、evidence(必填,证据)。返回该 session 当前已注册的判决列表 + 当前 rate/pass。verdict/evidence 为空拒绝（valid_verdict）。",
+    schema(
+      {
+        "session_id": string_prop("会话 id（必填）"),
+        "hat_id": string_prop("帽子 id（必填）：white|red|black|yellow|green|blue"),
+        "verdict": string_prop(
+          "该帽视角的论点（必填）：pass/reject/abstain",
+        ),
+        "evidence": string_prop("证据（必填非空）"),
+      },
+      ["session_id", "hat_id", "verdict", "evidence"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let session_id = get_str(args, "session_id")
+      if session_id.trim().is_empty() {
+        return Err(@mcp_types.ToolError("session_id 不能为空"))
+      }
+      let hat_id_raw = get_str(args, "hat_id")
+      if hat_id_raw.trim().is_empty() {
+        return Err(@mcp_types.ToolError("hat_id 不能为空"))
+      }
+      let verdict = get_str(args, "verdict")
+      let evidence = get_str(args, "evidence")
+      let cur = match debate_get_session(session_id) {
+        Ok(s) => s
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
+      let hat_id = match @ops.parse_hat(hat_id_raw) {
+        Ok(h) => @ops.hat_id(h)
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
+      let v : @ops.HatVerdict = @ops.hat_verdict(hat_id, verdict, evidence)
+      match @ops.valid_verdict(v) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
+        Ok(_) => ()
+      }
+      cur.verdicts.push(v)
+      debate_sessions.sessions.set(session_id, cur)
+      let summary = @ops.debate_summary(cur.verdicts, cur.threshold)
+      let arr = cur.verdicts.map(fn(x) { hat_verdict_json(x) })
+      let m : Map[String, Json] = Map([])
+      m.set("session_id", Json::string(session_id))
+      m.set("registered", Json::number(cur.verdicts.length().to_double()))
+      m.set("verdicts", Json::array(arr))
+      m.set("summary", debate_summary_json(summary))
+      Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "debate_verdict",
+    "对指定 session 做收敛判决：rate = 帽子中 agree 的比例（agree = verdict 为 pass 的帽子数），pass = rate >= threshold（缺省 0.6）。**终态门是用户**（本工具只给收敛读数，不自动判定议题通过/否决）。参数：session_id(必填)、threshold(可选覆盖会话阈值)。返回 summary。",
+    schema(
+      {
+        "session_id": string_prop("会话 id（必填）"),
+        "threshold": number_prop(
+          "收敛阈值（可选，覆盖会话阈值；<=0 或 >1 回退默认 0.6）",
+        ),
+      },
+      ["session_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let session_id = get_str(args, "session_id")
+      if session_id.trim().is_empty() {
+        return Err(@mcp_types.ToolError("session_id 不能为空"))
+      }
+      let cur = match debate_get_session(session_id) {
+        Ok(s) => s
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
+      let override_th = get_double(args, "threshold", default=-1.0)
+      let summary = @ops.debate_summary(cur.verdicts, override_th)
+      let m : Map[String, Json] = Map([])
+      m.set("session_id", Json::string(session_id))
+      m.set("summary", debate_summary_json(summary))
+      m.set("terminal_gate", Json::string("user"))
+      m.set(
+        "anti_drift",
+        Json::array([
+          Json::string("evolve_critic"),
+          Json::string("goal_drift_check"),
+        ]),
+      )
+      Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
     },
   )
 

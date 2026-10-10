@@ -197,3 +197,35 @@ test "hats: valid_verdict 正/负路径" {
     _ => false
   })
 }
+
+///|
+test "hats: all_hats() 返回 6 顶且 id 互不相同" {
+  let hs = all_hats()
+  assert_eq(hs.length(), 6)
+  let ids : Array[String] = hs.map(fn(h) { hat_id(h) })
+  assert_eq(ids.length(), 6)
+  assert_eq(ids[0], "white")
+  assert_eq(ids[1], "red")
+  assert_eq(ids[2], "black")
+  assert_eq(ids[3], "yellow")
+  assert_eq(ids[4], "green")
+  assert_eq(ids[5], "blue")
+  // 两两 id 不同（去重后仍 6 个）
+  let seen : Array[String] = []
+  for id in ids {
+    if not(seen.contains(id)) {
+      seen.push(id)
+    }
+  }
+  assert_eq(seen.length(), 6)
+}
+
+test "hats: hat_verdict() 构造字段与入参一致" {
+  let v = hat_verdict("white", "pass", "数据支撑")
+  assert_eq(v.hat_id, "white")
+  assert_eq(v.verdict, "pass")
+  assert_eq(v.evidence, "数据支撑")
+  let v2 = hat_verdict("black", "reject", "")
+  assert_eq(v2.hat_id, "black")
+  assert_eq(v2.evidence, "")
+}
