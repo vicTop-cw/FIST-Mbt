@@ -203,10 +203,11 @@ pub fn FistEngine::omega_latest(
 
 ///|
 /// 预执行审计门禁（P2 BACKLOG「Pre-execution audit gate」）：
-/// 在 `can_execute` 通过之后、`execute()` 迁移之前插入，拦截「空交付物」——
-/// BUG-29「已完成但无交付物」的病灶形状：执行者写了空串/纯空白 deliverable，账本记「完成」
-/// 但没有任何产物可核。判据仅一条：deliverable trim 后非空；否则拒绝执行并给出纠偏提示。
-/// 只拦确定性问题（空交付物），不做过度拦截；零回归（正常交付物一定非空）。
+/// 在 `can_execute` 通过之后、`execute()` 迁移之前插入，拦截「空交付物」与「占位符交付物」——
+/// 「已完成但无交付物」的病灶形状：执行者写了空串/纯空白/「done」/「完成」/「ok」这类占位符
+/// deliverable，账本记「完成」但没有任何产物可核。判据两条：
+///   ① deliverable trim 后非空；② 非纯占位符（如 "done"/"完成"/"ok"/"yes"/"通过"，大小写不敏感；不做全角归一化）。
+/// 只拦确定性问题，不做过度拦截；零回归（正常交付物一定含具体改动/路径/验证信息）。
 pub fn FistEngine::audit_execute_gate(
   self : FistEngine,
   task_id : String,
@@ -215,8 +216,23 @@ pub fn FistEngine::audit_execute_gate(
   let trimmed = deliverable.trim().to_owned()
   if trimmed.is_empty() {
     return Err(
-      "预执行审计门禁：deliverable 为空——BUG-29「已完成但无交付物」防线。请写清改动/路径/验证后再 execute",
+      "预执行审计门禁：deliverable 为空。请写清改动/路径/验证后再 execute",
     )
+  }
+  // 占位符检测：把常见 fake-GREEN 词规整后比对（大小写/空白/标点容忍）。
+  // 只判「整串等于占位符」这种确定性问题，不做语义判定，避免过度拦截。
+  let lowered = trimmed.to_lower()
+  let placeholder_words : Array[String] = [
+    "done", "完成", "ok", "yes", "通过", "finished", "done.", "ok.", "完成。",
+  ]
+  for w in placeholder_words {
+    if lowered == w {
+      return Err(
+        "预执行审计门禁：deliverable 是占位符 [" +
+        trimmed +
+        "]，没有可核产物。请写清改动/路径/验证后再 execute",
+      )
+    }
   }
   Ok(())
 }

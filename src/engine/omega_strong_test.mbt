@@ -486,3 +486,41 @@ test "omega_audit_gate_non_empty_passes" {
     Err(m) => abort("正常交付物不应被拒: \{m}")
   }
 }
+
+///|
+/// 预执行审计门禁 Round 8 扩展：占位符交付物（fake-GREEN 形状）被拒。
+/// 「done」/「完成」/「ok」/「yes」/「通过」这类词整串等于时，账本记完成但无产物可核，
+/// 正是 BUG-29 done_no_artifact 病灶形状；大小写/标点容忍。
+test "omega_audit_gate_placeholder_rejected" {
+  let e = os_engine()
+  let id = os_publish(e)
+  ignore(e.claim(task_id=id, assignee="exec_1", now="2026-09-17T12:00:00Z"))
+  let placeholders : Array[String] = [
+    "done", "Done", "DONE", "完成", "ok", "OK", "yes", "Yes", "通过",
+    "done.", "ok.", "完成。",
+  ]
+  for ph in placeholders {
+    let r = e.execute(task_id=id, deliverable=ph, now="2026-09-17T12:01:00Z")
+    match r {
+      Err(m) => assert_true(m.contains("占位符"))
+      Ok(_) => abort("占位符交付物不应通过审计门禁: [" + ph + "]")
+    }
+  }
+}
+
+///|
+/// 预执行审计门禁 Round 8 扩展：含具体信息但带占位符字样的交付物仍放行（不过度拦截）。
+test "omega_audit_gate_placeholder_in_sentence_passes" {
+  let e = os_engine()
+  let id = os_publish(e)
+  ignore(e.claim(task_id=id, assignee="exec_1", now="2026-09-17T13:00:00Z"))
+  match
+    e.execute(
+      task_id=id,
+      deliverable="改完 src/x.mbt，测试通过，附 3 条",
+      now="2026-09-17T13:01:00Z",
+    ) {
+    Ok(_) => ()
+    Err(m) => abort("含具体信息的交付物不应被拒: \{m}")
+  }
+}

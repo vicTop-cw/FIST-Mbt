@@ -155,7 +155,13 @@ test "task_triage 能力偏好路由：want 命中的候选排头部" {
 /// 完成一条根任务（无子任务，直接闭环）。
 fn complete_root(e : @engine.FistEngine, tid : String) -> Unit {
   ignore(e.claim(task_id=tid, assignee="x", now="2026-09-05T10:06:00Z"))
-  ignore(e.execute(task_id=tid, deliverable="done", now="2026-09-05T10:07:00Z"))
+  ignore(
+    e.execute(
+      task_id=tid,
+      deliverable="完成 src/triage_impl.mbt：新增 depends_on 暴露 + 3 条测试",
+      now="2026-09-05T10:07:00Z",
+    ),
+  )
   ignore(e.submit(task_id=tid, now="2026-09-05T10:08:00Z"))
   ignore(e.verify(task_id=tid, verifier="v", now="2026-09-05T10:09:00Z"))
 }
