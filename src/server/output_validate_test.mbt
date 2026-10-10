@@ -373,9 +373,7 @@ test "ov_14_external_ok_but_stdout_has_not_contains_fail" {
     d,
     artifacts,
     ov_ext_stdout(
-      "moon_test",
-      true,
-      "The test executable exited with signal: 6 (SIGABRT)\nTotal tests: 645, passed: 645, failed: 0.",
+      "moon_test", true, "The test executable exited with signal: 6 (SIGABRT)\nTotal tests: 645, passed: 645, failed: 0.",
     ),
     "",
     require_evidence=false,
@@ -400,9 +398,7 @@ test "ov_15_external_ok_and_stdout_satisfies_contains_pass" {
     d,
     artifacts,
     ov_ext_stdout(
-      "moon_test",
-      true,
-      "Total tests: 645, passed: 645, failed: 0.",
+      "moon_test", true, "Total tests: 645, passed: 645, failed: 0.",
     ),
     "",
     require_evidence=false,
@@ -426,7 +422,9 @@ test "ov_16_external_ok_and_stdout_no_forbidden_pass" {
   let r = output_validate(
     d,
     artifacts,
-    ov_ext_stdout("moon_test", true, "Total tests: 645, passed: 645, failed: 0."),
+    ov_ext_stdout(
+      "moon_test", true, "Total tests: 645, passed: 645, failed: 0.",
+    ),
     "",
     require_evidence=false,
   )

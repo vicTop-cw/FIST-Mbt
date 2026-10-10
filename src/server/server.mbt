@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 134 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 135 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -5787,6 +5787,29 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace")
       let ns2 = if ns.is_empty() { "default" } else { ns }
       match model_router_status_impl(pd, ns=ns2) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "model_auth_status",
+    "查模型路由的认证/Star 门状态（只读，零副作用）：gate 三态（gate_enabled/free_pool_unlocked/verdict）+ pinned_key/attestation/login 是否配置 + TTL/签发年龄 + 池状态（pools 复用 model_router_status）。默认未配置 Star 门时 gate_enabled=false、free_pool_unlocked=true 零回归。参数：project_dir(必填)、namespace(可选默认 default)。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录（必填，相对 server 进程 cwd）",
+        ),
+        "namespace": string_prop("命名空间（可选，默认 default）"),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let pd = get_str(args, "project_dir")
+      let ns = get_str(args, "namespace")
+      let ns2 = if ns.is_empty() { "default" } else { ns }
+      match model_auth_status_impl(pd, ns=ns2) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }

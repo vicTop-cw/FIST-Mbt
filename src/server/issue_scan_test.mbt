@@ -252,17 +252,14 @@ test "lint_10_guard_function_direct" {
   // guarded: 守卫在前一行
   // prev_lines 只放**命中行之前**的代码行；本函数从最近一行往回扫。
   // 守卫在 rows[0] 的**上一行**：`if rows.is_empty() { return -1 }`
-  let prev_guarded : Array[String] = [
-    "  if rows.is_empty() { return -1 }",
-  ]
+  let prev_guarded : Array[String] = ["  if rows.is_empty() { return -1 }"]
   // 上一行有 is_empty() 守卫应判 guarded
   assert_true(
     scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_guarded),
   )
   // 无守卫：上一行只是声明
   let prev_unguarded : Array[String] = [
-    "fn unguarded(): Int {",
-    "  let rows : Array[Int] = []",
+    "fn unguarded(): Int {", "  let rows : Array[Int] = []",
   ]
   assert_eq(
     scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_unguarded),
@@ -270,10 +267,7 @@ test "lint_10_guard_function_direct" {
   )
   // 跨函数守卫应被停：上一行是 `fn ` 边界
   let prev_cross_fn : Array[String] = [
-    "  let rows : Array[Int] = []",
-    "  if rows.is_empty() { return -1 }",
-    "}",
-    "fn next(): Int {",
+    "  let rows : Array[Int] = []", "  if rows.is_empty() { return -1 }", "}", "fn next(): Int {",
   ]
   assert_eq(
     scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_cross_fn),
@@ -281,20 +275,13 @@ test "lint_10_guard_function_direct" {
   )
   // unguarded: 前一函数里的守卫跨了 `fn` 边界，不应算
   let unguarded_lines : Array[String] = [
-    "fn guarded(): Int {",
-    "  let rows : Array[Int] = []",
-    "  if rows.is_empty() { return -1 }",
-    "  rows[0]",
-    "}",
-    "fn unguarded(): Int {",
-    "  let rows : Array[Int] = []",
-    "  rows[0]",
+    "fn guarded(): Int {", "  let rows : Array[Int] = []", "  if rows.is_empty() { return -1 }",
+    "  rows[0]", "}", "fn unguarded(): Int {", "  let rows : Array[Int] = []", "  rows[0]",
     "}",
   ]
   // 第 8 行 rows[0]（unguarded）：只应看第 7/6/5 行，见到 `fn ` 边界应停
   let prev_for_8 : Array[String] = [
-    "fn unguarded(): Int {",
-    "  let rows : Array[Int] = []",
+    "fn unguarded(): Int {", "  let rows : Array[Int] = []",
   ]
   assert_eq(
     scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_for_8),

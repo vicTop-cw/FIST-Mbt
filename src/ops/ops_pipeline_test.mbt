@@ -95,6 +95,19 @@ fn pl_str(j : Json, key : String) -> String {
 }
 
 ///|
+/// 读 JSON 布尔字段（缺失返回 false，fail-closed）。
+fn pl_bool(j : Json, key : String) -> Bool {
+  match j {
+    Object(m) =>
+      match m.get(key) {
+        Some(v) => v.as_bool().unwrap_or(false)
+        None => false
+      }
+    _ => abort("应返回 JSON 对象")
+  }
+}
+
+///|
 /// 读 JSON 数组字段长度（缺失返回 -1）。
 fn pl_arr_len(j : Json, key : String) -> Int {
   match j {
@@ -440,4 +453,69 @@ test "pipeline_16_backlog_does_not_stack_new_round" {
   )
   assert_eq(pl_count(e, "cron-auto"), 1)
   assert_eq(wd_action(j2), "wait")
+}
+
+///|
+/// Tool Use Rubric 判定（P1）：含结束标记 → true。
+test "pipeline_17_rubric_detect_true" {
+  assert_eq(pipeline_has_rubric("正文……\n<!-- TOOL_USE_RUBRIC_END -->\n"), true)
+}
+
+///|
+/// Tool Use Rubric 判定：不含结束标记 → false。
+test "pipeline_18_rubric_detect_false_no_mark" {
+  assert_eq(pipeline_has_rubric("正文……无标记"), false)
+}
+
+///|
+/// Tool Use Rubric 判定：空串 fail-closed。
+test "pipeline_19_rubric_detect_false_empty" {
+  assert_eq(pipeline_has_rubric(""), false)
+}
+
+///|
+/// prompt_ready 阶段：提示词含 rubric → 回执 `tool_use_rubric=true` 且 action=prompt_pending。
+test "pipeline_20_prompt_ready_with_rubric" {
+  let dir = pl_dir("pl_c20_rubric_yes")
+  let content = "# 任务\n\n<!-- TOOL_USE_RUBRIC_END -->\n"
+  pl_prompt(dir, "20260921.08.00.00.md", content)
+  pl_set_state(dir, "Creating")
+  let e = wd_sqlite_engine("temp/pl_c20.db")
+  let j = match
+    pipeline_tick(
+      e,
+      dir,
+      "2026-09-21T08:00:00+08:00",
+      ns="cron-auto",
+      phase="prompt_ready",
+      prompt_name="20260921.08.00.00.md",
+    ) {
+    Ok(x) => x
+    Err(m) => abort(m)
+  }
+  assert_eq(wd_action(j), "prompt_pending")
+  assert_eq(pl_bool(j, "tool_use_rubric"), true)
+}
+
+///|
+/// prompt_ready 阶段：提示词缺 rubric → 回执 `tool_use_rubric=false`（fail-open 记录，不阻断发布）。
+test "pipeline_21_prompt_ready_without_rubric" {
+  let dir = pl_dir("pl_c21_rubric_no")
+  pl_prompt(dir, "20260921.09.00.00.md", "# 任务\n\n无 rubric")
+  pl_set_state(dir, "Creating")
+  let e = wd_sqlite_engine("temp/pl_c21.db")
+  let j = match
+    pipeline_tick(
+      e,
+      dir,
+      "2026-09-21T09:00:00+08:00",
+      ns="cron-auto",
+      phase="prompt_ready",
+      prompt_name="20260921.09.00.00.md",
+    ) {
+    Ok(x) => x
+    Err(m) => abort(m)
+  }
+  assert_eq(wd_action(j), "prompt_pending")
+  assert_eq(pl_bool(j, "tool_use_rubric"), false)
 }

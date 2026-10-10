@@ -77,9 +77,10 @@
    - （客观可验证判据：如 编译零错误 / 测试全过 / 指定命令退出码 0）
    ```
 
-5. **落盘** `Gen_Prompts/yyyyMMdd.HH.mm.ss.md`（同名冲突则秒数 +1 重试一次）。
-6. 写成功后：`Pending` 覆盖写入 `currentState.txt`，本轮结束。
-7. 任何一步失败 → **不写脏数据**：不留半截文件、不用占位内容顶替、不覆盖已有文件；将 `currentState.txt` 恢复为进入前的值（冷启动场景则删除该文件），如实上报后退出。
+5. **追加 Tool Use Rubric 硬规则段（必做，缺即违规）**：把 `templates/tool_use_rubric.md` 全文**原样追加**到提示词末尾，不得改写、不得删节。该段让被驱动的 agent 在调用 MCP 工具前有一份确定性清单可查（降 tool 幻觉）。追加后**自检**：确认提示词含 `<!-- TOOL_USE_RUBRIC_END -->` 标记；缺则视为生成失败（回到 step 3 重做）。
+6. **落盘** `Gen_Prompts/yyyyMMdd.HH.mm.ss.md`（同名冲突则秒数 +1 重试一次）。
+7. 写成功后：`Pending` 覆盖写入 `currentState.txt`，本轮结束。
+8. 任何一步失败 → **不写脏数据**：不留半截文件、不用占位内容顶替、不覆盖已有文件；将 `currentState.txt` 恢复为进入前的值（冷启动场景则删除该文件），如实上报后退出。
 
 #### 分支 B — 领取任务（Pending → 执行 → 报告 → Closed）
 
