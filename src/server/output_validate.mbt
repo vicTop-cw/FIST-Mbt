@@ -234,6 +234,30 @@ fn check_file_artifact(
 }
 
 ///|
+/// 对 external artifact 的 **stdout 内容** 应用 spec 声明的 contains/not_contains 不变量。
+/// 返回 "" = 通过；否则给可直接回给调用方的失败原因。
+/// BUG-143：此前外部检查只看 ok/code，stdout 里的 invariant 被静默忽略——
+/// 进程退出 0 不代表产出有效（moon test SIGABRT 仍 exit 0，见 BUG-142）。
+fn check_external_invariants(stdout : String, spec : ArtifactSpec) -> String {
+  if !spec.contains.is_empty() {
+    if !stdout.contains(spec.contains) {
+      let shown = if stdout.length() > 120 {
+        stdout.substring(start=0, end=120) + "..."
+      } else {
+        stdout
+      }
+      return "stdout 缺少必需字符串 \"\{spec.contains}\"（当前: \"\{shown}\"）"
+    }
+  }
+  if !spec.not_contains.is_empty() {
+    if stdout.contains(spec.not_contains) {
+      return "stdout 含禁止字符串 \"\{spec.not_contains}\"（进程可能已崩溃却仍退出 0）"
+    }
+  }
+  ""
+}
+
+///|
 /// 对 external artifact（check_key 引用外部已跑的 run_check 结果）做检查。
 /// external_results 形如 { "moon_test": { ok: true, code: 0, ... }, ... }。
 fn check_external_artifact(
@@ -262,13 +286,39 @@ fn check_external_artifact(
         Some(String(s)) => s == "passed" || s == "ok" || s == "true"
         _ => false
       }
+      // BUG-143（P1「Did it work?」）：外部检查不能只看 ok/code——
+      // 进程可能退出 0 但产出无效（moon test SIGABRT 仍 exit 0，BUG-142）。
+      // 若 spec 声明了 contains/not_contains，则必须对 **stdout 实际内容** 做同样校验；
+      // 否则这些 invariant 被静默忽略（同 BUG-31 病灶：拼了 key 却没人读它）。
       match ok_val {
-        true =>
-          {
-            artifact: "external:" + key,
-            ok: true,
-            detail: "OK（外部检查 passed）",
+        true => {
+          // 先对 stdout 应用 invariant（有则硬门；没有则退回只看 ok）
+          let stdout = match m.get("stdout") {
+            Some(String(s)) => s
+            _ => ""
           }
+          let inv_err = check_external_invariants(stdout, spec)
+          if inv_err != "" {
+            {
+              artifact: "external:" + key,
+              ok: false,
+              detail: inv_err,
+            }
+          } else {
+            let extra = if !spec.contains.is_empty() {
+              "；stdout contains=\"\{spec.contains}\""
+            } else if !spec.not_contains.is_empty() {
+              "；stdout not_contains=\"\{spec.not_contains}\""
+            } else {
+              ""
+            }
+            {
+              artifact: "external:" + key,
+              ok: true,
+              detail: "OK（外部检查 passed）\{extra}",
+            }
+          }
+        }
         false => {
           let stderr = match m.get("stderr") {
             Some(String(s)) =>

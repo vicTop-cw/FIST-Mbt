@@ -3986,7 +3986,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "task_triage",
-    "下一步该做啥（推荐式挑选 + 能力偏好路由）：对指定命名空间（namespace 缺省全量）把『待领取且依赖已满足』的任务按 能力匹配(want)→优先级(高>中>低)→重要度(高>中>低)→深度(叶可执行单元优先)→id 排出序，并给出一条 suggestion（此刻建议先领哪条及理由），供 agent 无需全量扫描。难度标签直接复用拆解时的『难度梯度 …:易/中/难』标记。参数：namespace(可选)、agent(调用方身份，可审计)、want 能力关键词(可选，命中者排头部，Marketplookup 雏形)。返回 { count, ns, agent, want, tasks:[...], suggestion? }。",
+    "下一步该做啥（推荐式挑选 + 能力偏好路由 + skill 命中度路由）：对指定命名空间（namespace 缺省全量）把『待领取且依赖已满足』的任务按 能力匹配(want)→skill 命中度(skill 非空时)→优先级(高>中>低)→重要度(高>中>低)→深度(叶可执行单元优先)→id 排出序，并给出一条 suggestion（此刻建议先领哪条及理由），供 agent 无需全量扫描。难度标签直接复用拆解时的『难度梯度 …:易/中/难』标记。参数：namespace(可选)、agent(调用方身份，可审计)、want 能力关键词(可选，命中者排头部，Marketplookup 雏形)、skill(可选，逗号分隔 skill 关键词，非空时按 skill 命中度排在能力匹配之后、优先级之前，并在 suggestion 里给建议 mode；空串=不做 skill 路由零回归)。返回 { count, ns, agent, want, skill, tasks:[...], suggestion? }。",
     schema(
       {
         "namespace": string_prop(
@@ -3998,6 +3998,9 @@ pub async fn run_server() -> Unit {
         "want": string_prop(
           "能力关键词(可选)：命中该关键词的可领取任务排头部(按能力路由)",
         ),
+        "skill": string_prop(
+          "skill 关键词(可选，逗号分隔)：非空时按 skill 命中度排在能力匹配之后、优先级之前，并在 suggestion 里给建议 mode；空=不做 skill 路由",
+        ),
       },
       [],
     ),
@@ -4005,7 +4008,8 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace")
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
-      let j = engine.triage(ns, agent, want)
+      let skill = get_str(args, "skill")
+      let j = engine.triage(ns, agent, want, skill~)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )

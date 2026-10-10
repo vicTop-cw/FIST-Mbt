@@ -2895,3 +2895,7 @@ BUG-141：`sync_db_lessons`（src/server/evolve_lesson.mbt L71-76）条件由 `a
 
 建议：AGENTS.md 与 AI-DEVELOPMENT-STANDARD.md §7 补一句「判绿读汇总行，不信 exit 0」；判据脚本凡以 `moon test` 收口的，都改为解析汇总行 + 检查无 `SIGABRT|core dumped|signal:`。
 
+## BUG-143 [2026-10-10T13:24:16Z] [high] OPEN
+- summary: output_validate 对 external check_key 静默忽略 stdout 的 contains/not_contains 不变量（只看 ok/code，进程 exit 0 即放行）
+- detail: `output_validate` 对 `check_key` 引用 external_results 的检查项，只看 `ok/code`，**静默忽略 spec 声明的 `stdout` 不变量 contains/not_contains**——external_results 里明明有 stdout 字段，却从未被读过（同 BUG-31 病灶：拼了 key 却没人读它）。后果：`moon test` 这类进程"退出 0 但产出无效"（BUG-142 家族：SIGABRT 仍 exit 0）时，output_validate 会对外部检查项放行，判据形同虚设。旧代码 `true => { artifact, ok:true, detail:"OK（外部检查 passed）" }` 只判 ok_val，未读 stdout。已实现修复（待终审）：`src/server/output_validate.mbt` 新增 `check_external_invariants(stdout, spec)` 对 stdout 应用 contains/not_contains；`check_external_artifact` 在 ok 分支先跑 invariant、不满足即 ok=false。发现途径：方向四 skill 路由子代理在做 Did-it-work 验证链收口时顺手撞到。
+
