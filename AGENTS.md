@@ -240,7 +240,7 @@ You can browse and install extra skills here:
 | `project_health` | 项目健康卡（R68）：单次调用看全项目健康——聚合 in_flight(执行中+已领取+拆分中)/ready(待领取)/done(已完成)/blocked(已暂停+已打回)/reviewing(待验收)/archived 计数 + 健康等级(empty/attention/stalled/healthy) + blocked_tasks;可接 namespace 过滤（支柱①"一眼看全项目"） |
 | `health_check` | 四金信号健康巡检（R102，Google SRE Book 2016「Monitoring Distributed Systems」蒸馏）：project_health 从"一个等级"升级为"四个信号"——latency（最近已完成任务完成周期 created_at→updated_at 秒，p50/p90 百分位，<3 条 insufficient，SRE 用百分位不用均值）/ traffic（活跃需求 in_flight+ready）/ errors（失败率 已打回+已暂停/总数 >0.3 attention）/ saturation（积压率 待领取/总数——SRE 先行指标：系统先积压后坏，>0.5 attention 预警）；grade=最差信号（healthy/attention/idle）；纯计算只读不写库 |
 | `reserve_scope` / `reserve_check` / `reserve_release` | 作用域预订（拿来主义：Interlinked 文件预订 → 多 agent 并发编辑冲突预防） |
-| `task_triage` | 下一步推荐：可领取任务按 能力匹配(want)→优先级→重要度→深度 排行 + suggestion（agent 无需全量扫描即知下一单；want 为能力路由，Marketplookup 雏形）。每条含真实 DAG 依赖 `depends_on`（复用 dag_depend/gradient_dag 建边，"下一单"就绪前驱可见） |
+| `task_triage` | 下一步推荐：可领取任务按 能力匹配(want)→**skill 命中度(skill 非空时)**→优先级→重要度→深度 排行 + suggestion（agent 无需全量扫描即知下一单；want 为能力路由，Marketplookup 雏形）。每条含真实 DAG 依赖 `depends_on`（复用 dag_depend/gradient_dag 建边，"下一单"就绪前驱可见）。`skill` 可选（逗号分隔 skill 关键词，R§5.2-4）：非空时按 skill 命中度排在能力匹配之后、优先级之前，并在 suggestion 给 `skill`（命中关键词）与 `mode`（SKILL→MODE 建议的开发模式，如 `tdd`→`fix_and_merge`）；空串=不做 skill 路由零回归 |
 
 ### 自我记忆与自进化（11，F/G 新增强化）
 | 工具 | 说明 |
