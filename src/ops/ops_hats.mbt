@@ -40,6 +40,13 @@ pub fn hat_defaults() -> Array[Hat] {
 }
 
 ///|
+/// 六顶全量枚举。**跨包必需**（MoonBit 下 `@ops.Hat` 只读，只能函数构造）：
+/// `src/server` 的 hat_list 需要遍历全部 6 顶，不能字面量构造枚举。
+pub fn all_hats() -> Array[Hat] {
+  [White, Red, Black, Yellow, Green, Blue]
+}
+
+///|
 /// 帽子字符串 → Hat。非法值返回 Err。与 ops_modes::parse_mode 同约定：
 /// 大小写敏感（trim 后逐字匹配），"WHITE" 视为非法而非静默转小写。
 pub fn parse_hat(s : String) -> Result[Hat, String] {
@@ -183,6 +190,13 @@ pub struct HatVerdict {
   pub hat_id : String
   pub verdict : String // pass | reject | abstain
   pub evidence : String
+}
+
+///|
+/// 构造一条帽子判决。**跨包构造必需**：MoonBit 下跨包 struct/enum 只读，
+/// 只能用函数构造，不能 `{ hat_id: ... }` 字面量（与 @engine.FistEngine::new 同约定）。
+pub fn hat_verdict(hat_id : String, verdict : String, evidence : String) -> HatVerdict {
+  { hat_id: hat_id, verdict: verdict, evidence: evidence }
 }
 
 ///|
