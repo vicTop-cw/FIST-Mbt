@@ -2797,3 +2797,42 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
   这一格交给 owner 裁决（成本：一次机械补闸 + 判据扫描面换成「全部正式脚本」，但那时 E2 预告会变成常态噪声，
   需要先把「预告」与「违例」两档在退出码上分开）。已挂 BACKLOG 待办行。
 
+## BUG-139 [2026-10-10T05:20:32Z] [high] FIXED
+- summary: check_tools_sync R3b 无历史记录豁免：把 CHANGELOG.md 旧版本段与已作废的 improvement-plan-20260929.md 的历史 129 工具数当「当前态声明」比对，导致 guard 恒红，逼人在「伪造历史」与「guard 红」之间二选一
+- detail: 真源 `scripts/check_tools_sync.py`：
+- `HISTORY_DIRS = ("memory/", "reports/", "docs/superpowers/")`（L89）——只排除这三类，`tracked_docs()`（L97-112）据此筛「现状面文档」。
+- 但 `CHANGELOG.md` 是 append-only 历史账（除最新未发布段外全是历史截面），`docs/improvement-plan-20260929.md` 是已被 `docs/improvement-plan-20261010.md` 取代的旧计划——两者都不在 HISTORY_DIRS，R3b（L177-187）把其中历史写下的「129 个工具」当当前态比对，n=130 时恒报 `R3b <file>:<ln> 声明 129 个工具，实测注册 130`。
+
+触发场景（2026-10-10 实测）：mcp_config_scaffold 上线后工具数 129→130，四宿主插件态经 gen_plugins.py 真跑重投影、所有「当前态」文档（README/README_EN/README.mbt/ARCHITECTURE/USAGE/AGENTS/deliverable/scoring_rubric/cmd-cli help_topics）同步为 130，历史段按「不篡改历史」原则保留 129。结果 `gen_plugins.py --check`/`check_plugin_sync.py`/`check_doc_surface.py` 三守卫全绿，唯独 `check_tools_sync.py` exit=1，仅剩两条 R3b 命中：`CHANGELOG.md:367`、`docs/improvement-plan-20260929.md:136`——**恰好都是点名要保留的历史行**。判据把历史文件纳入扫描面，与「历史不篡改」原则直接冲突。
+
+与 BUG-68（HISTORY_DIRS 同口径，当时只覆盖 memory/reports/superpowers）同族：那一次排除面按当时已知历史面写死，没料到 CHANGELOG（append-only）与「旧版 improvement-plan」也会成历史面。
+
+修复方向（待评估）：
+1. 把 `CHANGELOG.md` 加入历史面，或只扫其「当前版本段」（`## v<current> (unreleased)` 及之后），跳过旧版本段——这是最语义正确的修法，但需在判据内解析 CHANGELOG 版本段边界。
+2. 对 `docs/improvement-plan-*.md` 做「按日期取最新，旧者视为历史」的规则（若同日多份需额外规则）。
+3. 保守：把上述两文件（或两类）直接并入 HISTORY_DIRS——改动最小，但与 check_test_sync 共享该常量，需确认不误伤。
+
+不修则每次工具数增长都会撞上这条假红，且唯一出路是伪造历史（改旧版本段工具数），这与「文档即实现/历史可回溯」相悖。
+
+--selftest 需补反向对照：干净输入（历史 129 + 当前态 130）不误红；违例输入（当前态写错数）仍必红。判据范围自述同步更新。
+- reported_by: orchestrator
+
+
+
+### FIXED(2026-10-10T05:30:27Z / BUG-139)
+- evidence: 改了真源 `scripts/check_tools_sync.py`：新增 `changelog_current_section()`（CHANGELOG 只扫最顶部 `## v...` 段，append-only 历史截面豁免）、`latest_improvement_plan()`（`docs/improvement-plan-YYYYMMDD.md` 按日期取最新，旧者豁免）、`current_state_text()`（把豁免并入 R3b/R7 前）。两条原命中 `R3b CHANGELOG.md:367 声明 129` 与 `R3b docs/improvement-plan-20260929.md:136 声明 129` 均已消失；`python scripts/check_tools_sync.py --selftest` = `SELFTEST PASS 8 个变体`（含反向对照：历史 129 不误红、当前段写 128/999 仍必红、无 `## v` 标题按历史面跳过、iplan 旧者豁免/最新者不豁免）。历史 129 一律保留未改，未伪造历史。锁钉：`changelog-current-stale-reds`/`iplan-current-stale-reds`/`changelog-hist-wild-number-exempt`/`latest-improvement-plan-picks-max` 四支反向/正向对照。
+## BUG-140 [2026-10-10T06:32:34Z] [high] FIXED
+- summary: evolve_asset_register 只写内存 Archive::add，不调 evolve_upsert 落库 → 重启即失，inject 检索不到 [asset]
+- detail: `evolve_asset_register` 处理器（src/server/server.mbt:3186-3209）在 `@evolve.Artifact::create` 之后只调 `@evolve.Archive::add(evolve_arc, art)`（进程内存档案库），**从未调用 `evolve_store.evolve_upsert` 落库**。对比同族：`src/evolve/lesson.mbt:68` 的 `evolve_lesson_persist` 与 `src/server/evolve_distill.mbt:60` 的 evolve_distill 都调用 `s.evolve_upsert(...)` 写 `evolve_artifacts` 表；只有 asset_register 缺这一步。证据链（实测，非推断）：① 调用 `evolve_asset_register` 返回合法 asset_id（`asset-diag-probe-2026-10-10T06:11:00Z`）且 `call_log` 表落 seq=43；② 同一 `fist-mbt.db` 的 `call_log` 表能读到 seq 43/44/45（证明 WAL 可读、写的是本库）；③ 但 `evolve_artifacts` 表仍只有 16 行（全为 `[lesson]`/`[principle]`），**0 条 `[asset]`**；④ 递归扫全仓所有 `*.db` 均 0 条 `[asset]`。影响：D4「生态 skill 仅经 `evolve_asset_register` 注册」的注册在进程重启后即丢，`plan`/`claim` 的 `inject` 检索不到任何 `[asset]`；`scripts/check_skill_inject.py` S3 判据因档案面 0 条 `[asset]` 自拒 exit 2（判据诚实，未假绿）。真源修复建议：在 `Archive::add` 之后追加 `evolve_store.evolve_upsert(id~, parent_id="", goal~, note~, code~, score~, parts_json="{}", created_at~)`（`SqliteStore.evolve_upsert` 签名见 src/store/store_sqlite.mbt:503-513，调用范式见 src/evolve/lesson.mbt:64-77）。
+- reported_by: commander
+
+## BUG-141 [2026-10-10T06:43:36Z] [high] FIXED
+- summary: sync_db_lessons 只回灌 [lesson]，[asset] 永不进内存 Archive → 重启后 plan/claim 的 inject 检索不到已落库资产
+- detail: `src/server/evolve_lesson.mbt:66-82` 的 `sync_db_lessons(arc, store)` 是**唯一**的「SQLite → 内存 Archive」回灌函数（`s.evolve_list()` 在 src 下仅此一处生产消费；memory_test.mbt:359/583 与 omega_strong_test.mbt:440 只是测试）。它在 L73 用 `if a.goal.has_prefix("[lesson]")` 过滤，**只加载 `[lesson]` 资产，从不加载 `[asset]`**。而注入路径 `server.mbt:646-648` 的 `lookup_injected_assets(inject)` 读的是**内存** `evolve_arc`（`lookup_injected_assets_in(evolve_arc, inject)`，L609），L647 才临时 `sync_db_lessons`。后果：BUG-140 修好后 `[asset]` 能落库（`evolve_artifacts` 表有行），但**新起的 server 进程**只把 `[lesson]` 回灌进 arc，`[asset]` 永不进内存 → `plan`/`claim` 的 `inject` 检索不到任何资产，D4「生态 skill 仅经 evolve_asset_register 注册、plan/claim 可 inject」跨进程失效（同一进程内 arc 仍含本次会话注册的资产，掩盖了缺口）。证据：读 `sync_db_lessons` L73 的 `has_prefix("[lesson]")` 过滤 + 全 src grep `evolve_list()` 只 4 处（1 生产 3 测试）+ `lookup_injected_assets` 走内存 arc。修复建议：在 `sync_db_lessons` 里放宽为「`[lesson]` 或 `[asset]` 前缀都回灌」（或新增 `sync_db_assets` 并同批调用），保持幂等按 id 去重，返回新同步条数。
+- reported_by: commander
+
+
+
+### FIXED(2026-10-10T06:58:44Z / BUG-140, BUG-141)
+- evidence: BUG-140：`evolve_asset_register` 现在在 `@evolve.Archive::add` 之后同步调 `evolve_store.evolve_upsert(id~, parent_id="", goal~, note~, code~, score~, parts_json="{}", created_at=ts)`（src/server/server.mbt L3208-3226）。L4 实证：`moon check --target js src/server` 0 errors、`moon test --target js src/server` 171/171；用 `temp/fix140-sub140.db`（FIST_DB_PATH 改道，全新进程）注册 `asset-code-review-probe-...`，返回 JSON 含 asset_id，sqlite `evolve_artifacts` 表真实落到一行 `[asset]` 记录；`tools/list` 返回 134 个工具且 4 个六顶帽工具（hat_list/debate_convene/debate_register/debate_verdict）在位。修复前 `Archive::add` 只进内存，重启即失。
+BUG-141：`sync_db_lessons`（src/server/evolve_lesson.mbt L71-76）条件由 `a.goal.has_prefix("[lesson]")` 扩为 `|| a.goal.has_prefix("[asset]")`，使 `evolve_asset_register` 落库的外部资产在重启后回灌进内存 Archive、plan/claim 的 inject 可检索。新增白盒锁 `src/server/fist-mbt_wbtest.mbt` 的 `sync_db_lessons 让 DB 中的 [asset] 资产对新进程 inject 可见（BUG-141）`：把 `[asset]code-review` 只写 DB（不经内存 arc），同步后断言 `n1==1`、`arc.len()==1`、`arc.get(id) is Some(_)`、`lookup_injected_assets_in(arc,"code-review")` 含 note 子串——旧代码必红。L4 实证：live `fist-mbt.db` 经 `evolve_asset_register` 注册 8 条 `[asset]` 资产（code-review/plan/requesting-code-review/research-paper-writing/spike/subagent-driven-development/systematic-debugging/tdd），只读 sqlite 查询 `WHERE goal LIKE '[asset]%'` count=8，id 均为 `asset-<name>-2026-10-10T06:56-57Z`；`scripts/check_skill_inject.py` 由 exit 2（档案面空自拒）转为 exit 0（PASS：8 条 [asset] 全部 asset_id 可反查且 note/code 非空可注入）。改动均已 `git add` 未 commit；备份 `temp/fist-mbt.db.backup-b141-3f648518/` 已留；live server（PID 47984）未受影响、持续存活。
