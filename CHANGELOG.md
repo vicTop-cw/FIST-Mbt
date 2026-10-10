@@ -13,6 +13,18 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.6 (scoring.mbt 落地，打通自进化闭环) - 2026-10-11
+
+### 本轮性质：功能新增（P0 待办「创建 scoring.mbt」从 pending → done）
+
+- **新增 `src/omega/scoring.mbt`**：Ω-spec 分项质量评分模块，输出 `ScoreResult`（coverage / fingerprint_ok / schema_ok / accuracy / score / pass）。
+  公开 API：`calc_coverage(laws, tests)`、`spec_scoring(spec, total, passed)`、`spec_scoring_str(spec_str, total, passed)`、`score_to_json(result)`。
+  权重：coverage×30 + fingerprint×30 + schema×20 + accuracy×20（满分 100）；`pass = accuracy>=100.0 && score>=70.0`。
+- **新增 `src/omega/scoring_test.mbt`**：8 条白盒测试，覆盖 coverage（满/半/空 laws）、scoring_perfect、bad_fingerprint（篡改 laws 后 fingerprint 失效）、bad_schema（缺 definition）、zero_accuracy、bad_json（fail-closed 不 panic）、no_batch（total=0 不 panic）。
+- **回归**：`moon test --target js` 全量 **645/645 通过**（上轮基线 636 + 9 条新用例），零回归。
+- **BACKLOG.md** 同步更新：`创建 scoring.mbt P0` 从 `pending` → `done`。
+- **与既有 API 分工**：`spec.mbt` 的 `verify_fingerprint` / `validate_schema` 负责布尔判定，本模块做分项评分与加权汇总，供自进化采样使用。
+
 ## v0.3.5 (mooncakes 已发布 / GitHub Release 已发布) - BUG-130 定因：native 门槛的根在依赖的 FFI，不在本仓逻辑（盖章 2026-10-01T03:20:18Z；本节标题的状态短语于 2026-10-07 校正，依据见同节「补记(2026-10-07T02:06:59Z / BUG-135 修)」）
 
 ### 本轮性质：定因（不是修复）——BUG-130 从「没人解释的门」变成「定因在依赖侧」

@@ -2881,3 +2881,17 @@ BUG-141：`sync_db_lessons`（src/server/evolve_lesson.mbt L71-76）条件由 `a
 - **commit**：`46cecaa` `fix(issue_scan): guard-aware filter now scans prev lines backward within function scope`（2 files changed, 410 insertions）。
 - **口径**：本条为**证据留痕**，不开新 BUG 抬头（因为缺陷本体不在业务代码里，而是扫描器能力缺口，已由本次直接补齐）。如需在账本里作为独立缺陷条目，可后续单独上报。
 
+## BUG-142 [2026-10-10T10:20:25Z] [high] OPEN
+- summary: moon test 崩溃仍返回 exit 0——判绿不可只看退出码，须读 Total tests 汇总行
+- detail: 实测（moon 0.1.20260920 (914d7da 2026-09-20)，WSL Ubuntu-22.04 干净树）：当 `moon test --target native` 的一个测试可执行文件被信号打死时，**moon test 自身的退出码仍是 0**。
+
+复现路径：`git archive HEAD` 干净树上 `src/server/bugreport_test.mbt` 两条测试（`bug8_bug11_task_ns_echo_and_id_alias`、`ledger_status_vocabulary_parses_duplicate_of`）只 `create_dir(d + "/memory")` 不先建父目录 `d`，native 的 `moonbitlang/x/fs::create_dir` 是单层 mkdir（嵌套不支持）→ 静默失败（被 `catch { _ => () }` 吞掉）→ 随后写入不存在目录 → Err → `abort` → `PanicError` → **SIGABRT**。
+
+三条独立进程用 `echo "TRUE_RC=$?"` 实测：**退出码 0**，而日志明明白白写着 `The test executable exited with signal: 6 (SIGABRT)`、`core dumped`、`PanicError`、`failed to run test for target Native`。
+
+这与 AGENTS.md「退出码是契约」的口径冲突：在该口径下 exit 0 被读成「全绿」，而这里 exit 0 掩盖了一次真实崩溃。任何只查 `$LASTEXITCODE` 判绿的脚本/CI 会把 SIGABRT 判成通过 = **假的绿**。
+
+正确判据：以 `Total tests: N, passed: N, failed: 0` 汇总行为准（本次干净树真实读数 636/636，`failed: 0`；文档里记的「633/633」是增量缓存 `_build` 口径，全新 `_build` 是 636）。exit 0 只能作为必要条件，不能作为充分条件。
+
+建议：AGENTS.md 与 AI-DEVELOPMENT-STANDARD.md §7 补一句「判绿读汇总行，不信 exit 0」；判据脚本凡以 `moon test` 收口的，都改为解析汇总行 + 检查无 `SIGABRT|core dumped|signal:`。
+
