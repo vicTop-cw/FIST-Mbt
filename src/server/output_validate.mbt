@@ -258,6 +258,73 @@ fn check_external_invariants(stdout : String, spec : ArtifactSpec) -> String {
 }
 
 ///|
+/// 简单解析十进制整数（非负，可含前后空白；解析失败返回 None）。
+/// 与 ops_selfdrive 的 sd_parse_int 同型（MoonBit core 未提供 String::parse_int）。
+fn ov_parse_int(raw : String) -> Int? {
+  // 去掉末尾句号（moon 汇总行末尾 "0." 常见）
+  let mut s = raw.trim().to_string()
+  if s.ends_with(".") {
+    s = s.substring(start=0, end=s.length() - 1).to_string()
+  }
+  if s.is_empty() {
+    return None
+  }
+  let mut v = 0
+  for c in s {
+    if c < '0' || c > '9' {
+      return None
+    }
+    v = v * 10 + (c.to_int() - '0'.to_int())
+  }
+  Some(v)
+}
+
+///|
+/// BUG-142（自动 gate）：当 check_key 名含 `moon_test`/`moon test` 时，
+/// 自动解析 stdout 的 `Total tests: N, passed: M, failed: K` 汇总行，
+/// failed>0 直接 fail——**不需要调用方显式声明 contains**。
+/// 实测：`moon test` 进程被信号打死仍 exit 0（SIGABRT），只看退出码是假的绿。
+/// 找不到汇总行 → 提示调用方检查 stdout；找到且 failed=0 → 通过。
+/// 返回 "" = 通过；否则给可直接回给调用方的失败原因。
+fn check_moon_test_summary(stdout : String) -> String {
+  let lines = stdout.split("\n")
+  let mut found = false
+  let mut failed = 0
+  let mut total = 0
+  for ln in lines {
+    let line = ln.trim().to_owned()
+    if line.starts_with("Total tests:") {
+      found = true
+      // 形如 "Total tests: 645, passed: 645, failed: 0."（末尾可带句号）
+      for field in line.split(",") {
+        let f = field.trim().to_owned()
+        if f.starts_with("failed:") {
+          let v = f.substring(start=7).trim().to_owned()
+          match ov_parse_int(v) {
+            Some(n) => failed = n
+            None => ()
+          }
+        } else if f.starts_with("Total tests:") {
+          let v = f.substring(start=12).trim().to_owned()
+          match ov_parse_int(v) {
+            Some(n) => total = n
+            None => ()
+          }
+        }
+      }
+    }
+  }
+  if not(found) {
+    return "moon test stdout 缺 `Total tests:` 汇总行——无法判绿（BUG-142：进程可能崩溃却仍 exit 0）"
+  }
+  if failed > 0 {
+    return "moon test 汇总行 failed=" + failed.to_string() + "（total=" +
+      total.to_string() + "）——按 BUG-142 判定失败，不信 exit 0"
+  }
+  ""
+}
+
+///|
 /// 对 external artifact（check_key 引用外部已跑的 run_check 结果）做检查。
 /// external_results 形如 { "moon_test": { ok: true, code: 0, ... }, ... }。
 fn check_external_artifact(
@@ -298,8 +365,18 @@ fn check_external_artifact(
             _ => ""
           }
           let inv_err = check_external_invariants(stdout, spec)
-          if inv_err != "" {
-            { artifact: "external:" + key, ok: false, detail: inv_err, }
+          // BUG-142：key 名含 moon_test / moon test 时自动解析汇总行，
+          // 不依赖调用方记得声明 contains="failed: 0"。
+          let key_low = key.to_lower()
+          let moon_err = if key_low.contains("moon_test") ||
+            key_low.contains("moon test") {
+            check_moon_test_summary(stdout)
+          } else {
+            ""
+          }
+          let combined = if inv_err != "" { inv_err } else { moon_err }
+          if combined != "" {
+            { artifact: "external:" + key, ok: false, detail: combined, }
           } else {
             let extra = if !spec.contains.is_empty() {
               "；stdout contains=\"\{spec.contains}\""

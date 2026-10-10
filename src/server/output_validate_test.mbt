@@ -191,10 +191,11 @@ test "ov_7_external_artifact_ok" {
     Json::object({ "path": Json::string("main.mbt") }),
     Json::object({ "check_key": Json::string("moon_test") }),
   ]
+  // BUG-142：moon_test 需带汇总行（进程可能崩溃仍 exit 0，只给 ok=true 不算判绿）
   let r = output_validate(
     d,
     artifacts,
-    ov_ext("moon_test", true),
+    ov_ext_stdout("moon_test", true, "Total tests: 645, passed: 645, failed: 0."),
     "",
     require_evidence=false,
   )
@@ -295,10 +296,12 @@ test "ov_12_mixed_all_pass" {
     Json::object({ "check_key": Json::string("issue_scan") }),
   ]
   let ext = Json::object({
+    // BUG-142：moon_test 需带 stdout 汇总行
     "moon_test": Json::object({
       "ok": Json::boolean(true),
       "code": Json::number(0.0),
       "stderr": Json::string(""),
+      "stdout": Json::string("Total tests: 645, passed: 645, failed: 0."),
     }),
     "issue_scan": Json::object({
       "ok": Json::boolean(true),
@@ -425,6 +428,98 @@ test "ov_16_external_ok_and_stdout_no_forbidden_pass" {
     ov_ext_stdout(
       "moon_test", true, "Total tests: 645, passed: 645, failed: 0.",
     ),
+    "",
+    require_evidence=false,
+  )
+  assert_true(r.is_ok())
+  assert_eq(ov_verdict(r), "pass")
+}
+
+///|
+/// 测试 17（BUG-142 自动 gate）：ok=true + stdout 汇总 failed=0 且调用方未声明 contains → pass
+/// 场景：调用方只传 check_key="moon_test"，不给任何 contains/not_contains——
+/// 系统应**自动**解析汇总行确认 failed=0（BUG-142：不能只信 exit 0）。
+test "ov_17_moon_auto_gate_failed0_pass" {
+  let d = ov_dir("ov_c17")
+  ov_write(d, "main.mbt", "fn main() {}\n")
+  let artifacts : Array[Json] = [
+    Json::object({ "path": Json::string("main.mbt") }),
+    Json::object({
+      "check_key": Json::string("moon_test"),
+    }),
+  ]
+  let r = output_validate(
+    d,
+    artifacts,
+    ov_ext_stdout("moon_test", true, "Total tests: 645, passed: 645, failed: 0."),
+    "",
+    require_evidence=false,
+  )
+  assert_true(r.is_ok())
+  assert_eq(ov_verdict(r), "pass")
+}
+
+///|
+/// 测试 18（BUG-142 自动 gate）：ok=true + stdout 汇总 failed>0 → fail（无需显式 contains）
+test "ov_18_moon_auto_gate_failed_gt0_fail" {
+  let d = ov_dir("ov_c18")
+  ov_write(d, "main.mbt", "fn main() {}\n")
+  let artifacts : Array[Json] = [
+    Json::object({ "path": Json::string("main.mbt") }),
+    Json::object({
+      "check_key": Json::string("moon_test"),
+    }),
+  ]
+  let r = output_validate(
+    d,
+    artifacts,
+    ov_ext_stdout("moon_test", true, "Total tests: 645, passed: 643, failed: 2."),
+    "",
+    require_evidence=false,
+  )
+  assert_true(r.is_ok())
+  assert_eq(ov_verdict(r), "fail")
+}
+
+///|
+/// 测试 19（BUG-142 自动 gate）：ok=true + stdout 缺汇总行 → fail
+/// 场景：进程 exit 0 但 stdout 为空或没有 Total tests（SIGABRT 可能整块吞掉 stdout）。
+test "ov_19_moon_auto_gate_no_summary_fail" {
+  let d = ov_dir("ov_c19")
+  ov_write(d, "main.mbt", "fn main() {}\n")
+  let artifacts : Array[Json] = [
+    Json::object({ "path": Json::string("main.mbt") }),
+    Json::object({
+      "check_key": Json::string("moon_test"),
+    }),
+  ]
+  let r = output_validate(
+    d,
+    artifacts,
+    ov_ext_stdout("moon_test", true, "Building...\nCompiling..."),
+    "",
+    require_evidence=false,
+  )
+  assert_true(r.is_ok())
+  assert_eq(ov_verdict(r), "fail")
+}
+
+///|
+/// 测试 20（BUG-142 自动 gate）：key 非 moon_test 时不做自动解析（回归：不误伤其它外部检查）
+test "ov_20_non_moon_key_no_auto_gate" {
+  let d = ov_dir("ov_c20")
+  ov_write(d, "main.mbt", "fn main() {}\n")
+  let artifacts : Array[Json] = [
+    Json::object({ "path": Json::string("main.mbt") }),
+    Json::object({
+      "check_key": Json::string("linter_check"),
+    }),
+  ]
+  // stdout 里有 Total tests 但 key 不匹配，不应触发自动 gate
+  let r = output_validate(
+    d,
+    artifacts,
+    ov_ext_stdout("linter_check", true, "Total tests: 645, passed: 643, failed: 2."),
     "",
     require_evidence=false,
   )
