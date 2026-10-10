@@ -30,4 +30,5 @@ import {
   "colmugx/mcp@0.17.4",
   "moonbitlang/async@0.22.3",
   "moonbitlang/x@0.5.5",
+  "cc06b/mooncry@0.13.1",
 }
