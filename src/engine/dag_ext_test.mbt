@@ -1237,3 +1237,137 @@ fn b20_share_sum(j : Json) -> Int {
   }
   sum
 }
+
+///|
+/// BUG-165：progress=0 且已消耗预算 >0 → 燃尽率不可计算，不得静默归零判 OK，须预警。
+test "progress_gate：BUG-165 进度 0% 但有消耗 → ESCALATE 且 burn_rate=-1.0" {
+  let e = FistEngine::new()
+  let t = @core.Task::new(
+    id="P1",
+    project_dir="/proj/demo",
+    description="[难度梯度 1/1:中] 进行中任务",
+    parent_id="",
+    created_at="2026-01-01T00:00:00Z",
+    depends_on=[],
+  )
+  ignore(e.store.create_task(t))
+  // 认领 → 非待领取（已开工），progress 仍 0，started_weight=2（中档）
+  ignore(e.claim(task_id="P1", assignee="exec_1", now="2026-09-05T10:01:00Z"))
+  let j = e.progress_gate("P1", 5, 0)
+  match j.value("progress") {
+    Some(Number(n, ..)) => assert_eq(n, 0.0)
+    _ => abort("progress 应 0: " + j.stringify())
+  }
+  match j.value("burn_rate") {
+    Some(Number(n, ..)) =>
+      if n != -1.0 {
+        abort("burn_rate 应为 sentinel -1.0: " + j.stringify())
+      }
+    _ => abort("burn_rate 缺失: " + j.stringify())
+  }
+  match j.value("verdict") {
+    Some(String(v)) =>
+      if v == "OK" {
+        abort("BUG-165：progress=0 有消耗不得判 OK: " + j.stringify())
+      }
+    _ => abort("verdict 缺失: " + j.stringify())
+  }
+  match j.value("action") {
+    Some(String(a)) =>
+      if not(a.contains("不可计算")) {
+        abort("action 应说明燃尽率不可计算: " + a)
+      }
+    _ => abort("action 缺失: " + j.stringify())
+  }
+}
+
+///|
+/// BUG-166：budget<=0 须回显真实负数（不得被抹成 0），且回执带齐文档承诺字段。
+test "progress_gate：BUG-166 负预算回显实收值并带齐契约字段" {
+  let e = progress_gate_engine()
+  let j = e.progress_gate("P", -5, 0)
+  match j.value("ok") {
+    Some(x) =>
+      match x.as_bool() {
+        Some(b) => assert_eq(b, false)
+        None => abort("ok 非布尔: " + j.stringify())
+      }
+    _ => abort("ok 缺失: " + j.stringify())
+  }
+  match j.value("budget") {
+    Some(Number(n, ..)) =>
+      if n != -5.0 {
+        abort(
+          "budget 应回显实收 -5（BUG-166 旧实现抹成 0）: " +
+          j.stringify(),
+        )
+      }
+    _ => abort("budget 缺失: " + j.stringify())
+  }
+  match j.value("verdict") {
+    Some(String(v)) => assert_eq(v, "rejected")
+    _ => abort("verdict 应为 rejected: " + j.stringify())
+  }
+  match j.value("action") {
+    Some(String(a)) =>
+      if not(a.contains("必须为正")) {
+        abort("action 应说明预算须为正: " + a)
+      }
+    _ => abort("action 缺失: " + j.stringify())
+  }
+  // 文档承诺字段齐备（spent/remaining/progress/burn_rate/remaining_work/projection）
+  for key in ["spent", "remaining", "progress", "burn_rate", "remaining_work"] {
+    if j.value(key) is None {
+      abort("字段缺失 " + key + ": " + j.stringify())
+    }
+  }
+  match j.value("projection") {
+    Some(Object(o)) =>
+      if o.get("linear") is None || o.get("conservative") is None {
+        abort("projection 缺 linear/conservative: " + j.stringify())
+      }
+    _ => abort("projection 缺失: " + j.stringify())
+  }
+}
+
+///|
+/// BUG-169：progress=1 且已超支 → verdict 不得为 OK，须与 action（负为超支）一致。
+test "progress_gate：BUG-169 已完成但超支 → ESCALATE 而非 OK" {
+  // 复用 progress_gate_engine 并把 C2/P 全部验收 → progress=1.0
+  let e = progress_gate_engine()
+  ignore(e.claim(task_id="C2", assignee="exec_1", now="2026-09-05T10:05:00Z"))
+  ignore(e.execute(task_id="C2", deliverable="y", now="2026-09-05T10:06:00Z"))
+  ignore(e.submit(task_id="C2", now="2026-09-05T10:07:00Z"))
+  ignore(e.verify(task_id="C2", verifier="ver_1", now="2026-09-05T10:08:00Z"))
+  ignore(e.claim(task_id="P", assignee="exec_1", now="2026-09-05T10:09:00Z"))
+  ignore(e.execute(task_id="P", deliverable="z", now="2026-09-05T10:10:00Z"))
+  ignore(e.submit(task_id="P", now="2026-09-05T10:11:00Z"))
+  ignore(e.verify(task_id="P", verifier="ver_1", now="2026-09-05T10:12:00Z"))
+  // budget=10、spent_override=15 → remaining=-5（超支），progress=1.0
+  let j = e.progress_gate("P", 10, 15)
+  match j.value("progress") {
+    Some(Number(n, ..)) => assert_eq(n, 1.0)
+    _ => abort("progress 应 1.0: " + j.stringify())
+  }
+  match j.value("remaining") {
+    Some(Number(n, ..)) =>
+      if n != -5.0 {
+        abort("remaining 应 -5: " + j.stringify())
+      }
+    _ => abort("remaining 缺失: " + j.stringify())
+  }
+  match j.value("verdict") {
+    Some(String(v)) =>
+      if v == "OK" {
+        abort("BUG-169：已完成但超支不得判 OK: " + j.stringify())
+      }
+    _ => abort("verdict 缺失: " + j.stringify())
+  }
+  match j.value("action") {
+    Some(String(a)) =>
+      if not(a.contains("超支")) {
+        abort("action 应说明超支: " + a)
+      }
+    _ => abort("action 缺失: " + j.stringify())
+  }
+}

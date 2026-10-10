@@ -4564,7 +4564,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "progress_gate",
-    "进度预算路由门控（R88，PROGROUTER arXiv 2608.25992 蒸馏）：对任务子树按已消耗预算(难度权重 易/中/难→1/2/3，自动估算或手动注入 spent) 与 完成进度(已完成+已归档/子树任务数) 做双路径剩余成本预测——线性=燃尽率×剩余工作量、保守=1.2×线性，元门控给决策 OK(预算充足继续) / CAUTION(线性可行但缓冲不足，建议降档缩范围) / ESCALATE(线性已超支，建议追加预算或暂停)——计划性增强：预算×进度在线体检，先预警后决策。参数：task_id(必)、budget(总预算，必)、spent(可选手动注入已消耗，缺省按难度权重自动估算)。返回 {ok, task_id, budget, spent, remaining, progress, burn_rate, projection:{linear, conservative}, verdict, action, basis}。",
+    "进度预算路由门控（R88，PROGROUTER arXiv 2608.25992 蒸馏）：对任务子树按已消耗预算(难度权重 易/中/难→1/2/3，自动估算或手动注入 spent) 与 完成进度(已完成+已归档/子树任务数) 做双路径剩余成本预测——线性=燃尽率×剩余工作量、保守=1.2×线性，元门控给决策 OK(预算充足继续) / CAUTION(线性可行但缓冲不足，建议降档缩范围) / ESCALATE(线性已超支，建议追加预算或暂停)；非法预算(budget<=0) 整笔拒绝并回 verdict=rejected(ok=false)——计划性增强：预算×进度在线体检，先预警后决策。参数：task_id(必)、budget(总预算，必)、spent(可选手动注入已消耗，缺省按难度权重自动估算)。返回 {ok, task_id, budget, spent, remaining, progress, burn_rate, projection:{linear, conservative}, verdict, action, basis}。",
     schema(
       {
         "task_id": string_prop(

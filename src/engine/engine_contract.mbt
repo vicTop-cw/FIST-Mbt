@@ -43,7 +43,10 @@ fn contract_try(
     "complete" => task.complete(completed_by~)
     "archive" => task.archive()
     "mark_decomposing" => task.mark_decomposing()
-    _ => Err("未知动作: " + action)
+    // 未知动作：不做前置拒绝，让控制流走到 postcondition 分支
+    // （契约表无该动作定义 → phase=postcondition, verdict=rejected；BUG-168）。
+    // 返回身份副本（Ok(task)），不改变任务值。
+    _ => Ok(task)
   }
 }
 
@@ -99,10 +102,17 @@ pub fn FistEngine::transition_contract(
 ) -> Json {
   match self.get_task(task_id) {
     None =>
+      // BUG-167：任务不存在属前置（precondition）失败，回执须带五段齐全的契约件字段，
+      // 与 precondition/invariant/postcondition/all_pass 分支同构（phase/verdict/reasons/target_state/state_stable）。
       Json::object({
         "ok": Json::boolean(false),
         "task_id": Json::string(task_id),
         "action": Json::string(action),
+        "phase": Json::string("precondition"),
+        "verdict": Json::string("rejected"),
+        "reasons": Json::array([Json::string("任务不存在: " + task_id)]),
+        "target_state": Json::string(""),
+        "state_stable": Json::boolean(true),
         "note": Json::string("任务不存在: " + task_id),
       })
     Some(t) =>
@@ -147,7 +157,9 @@ pub fn FistEngine::transition_contract(
                   "action": Json::string(action),
                   "phase": Json::string("postcondition"),
                   "verdict": Json::string("rejected"),
-                  "reasons": Json::array([Json::string("动作无契约定义")]),
+                  "reasons": Json::array([
+                    Json::string("动作无契约定义: " + action),
+                  ]),
                   "target_state": Json::string(""),
                   "state_stable": Json::boolean(true),
                   "note": Json::string(
