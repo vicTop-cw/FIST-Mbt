@@ -197,11 +197,18 @@ fn bug_parse(text : String) -> Array[Json] {
 
 ///|
 /// 解析非负整数（bug 序号用；解析失败返回 0）。
+/// R12-R2（BUG-215）：加 Int 溢出哨兵——MoonBit Int 为 32 位，异常长数字串
+/// 会在 `acc * 10 + d` 处溢出并静默绕回。阈值 2e8（*10 后 2e9 < 2^31），
+/// 超过即 break（返回已累积部分，不产出乱数）。
 fn bug_parse_int(s : String) -> Int {
+  let int_safe : Int = 200_000_000
   let mut acc : Int = 0
   for c in s {
     let ci = c.to_int()
     if ci >= 48 && ci <= 57 {
+      if acc >= int_safe {
+        break
+      }
       acc = acc * 10 + ci - 48
     } else {
       break

@@ -148,14 +148,21 @@ fn sd_recent_reports(project_dir : String, k : Int) -> Array[String] {
 
 ///|
 /// 简单解析十进制整数（非负，可含前后空白；解析失败返回 None）。
+/// R12-R2（BUG-215）：加 Int 溢出哨兵——MoonBit Int 为 32 位，异常长数字串
+/// 会在 `v * 10 + d` 处溢出并静默绕回。阈值 2e8（*10 后 2e9 < 2^31），
+/// 超过即返回 None（调用方视为解析失败，不产出乱数）。
 fn sd_parse_int(raw : String) -> Int? {
   let s = raw.trim().to_string()
   if s.is_empty() {
     return None
   }
+  let int_safe : Int = 200_000_000
   let mut v = 0
   for c in s {
     if c < '0' || c > '9' {
+      return None
+    }
+    if v >= int_safe {
       return None
     }
     v = v * 10 + (c.to_int() - '0'.to_int())
