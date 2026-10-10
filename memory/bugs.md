@@ -2903,3 +2903,25 @@ BUG-141：`sync_db_lessons`（src/server/evolve_lesson.mbt L71-76）条件由 `a
 
 ### FIXED(2026-10-10T13:34:24Z / BUG-143)
 - evidence: 真源改动落 dc6525f：src/server/output_validate.mbt 新增 check_external_invariants(stdout,spec) 对 stdout 应用 contains/not_contains，check_external_artifact 的 ok 分支先跑 invariant、不满足即 ok=false；配套 output_validate_test.mbt 补 117 行测试。锁钉住：HEAD ad13992 全量 JS 653/653 passed failed:0（以汇总行为准，非 exit 0）；四必需守卫 check_tools_sync/check_doc_surface/check_plugin_sync/check_publish_payload 全 RC=0；check_plugin_sync 报 4 宿主/134 工具/v0.3.6 对齐。
+## BUG-144 [2026-10-10T14:16:51Z] [low] FIXED
+- summary: loop_tick 返回的 next_mode 是「刚完成」那一步的模式，不是「下一步」——名字与语义相反，误导调用方
+- detail: `src/ops/ops_loop.mbt:181` 的 `let next_mode = lp.steps[lp.current_idx]` 在 `:182` 的 `next_idx = (current_idx+1) % len` 自增**之前**取值，所以返回的是**当前（即刚推进完的）**那一步的 mode；而 `loop_after.current_idx` 已前进到下一步。命名 `next_mode` 与语义相反。
+
+实测：steps=[bugfind,fix_and_merge,polish,verify]，首次 tick 后返回 `next_mode="bugfind"`、`current_idx=1`（应报 `fix_and_merge`）。调用方若按 `next_mode` 决定「下一步执行什么模式」，会重复执行刚做完的那一步。
+
+ops_loop_wbtest.mbt:135 `assert_eq(r1.next_mode, "advance")` 把该行为固化成了「返回当前步」的测试，说明这是实现口径而非笔误，但字段名与工具描述（「返回 next_mode」）都指向「下一步」，属命名/契约不一致。
+
+建议：要么把字段改成 `completed_mode`/`current_mode` 并同步 wbtest 与 server.mbt 描述，要么改为在自增后取 `lp.steps[next_idx]`。
+
+
+
+### FIXED(2026-10-10T14:22:47Z / BUG-144)
+- evidence: src/ops/ops_loop.mbt:181 改为「先算 next_idx 再取 steps[next_idx]」，使 next_mode 反映「下一步」而非「刚完成」那一步（原实现在自增前取 current_idx）；ops_loop_wbtest.mbt 断言同步更新为 r1.next_mode=='verify'/next_step_idx=1/next_round=0、r2.next_mode=='advance'/next_step_idx=0/next_round=1，与新语义一致；moon test --target js -p src/ops = 168/168 通过（以 Total tests/passed/failed 汇总行为准，EXIT=0）。
+## BUG-145 [2026-10-10T14:34:20Z] [low] OPEN
+- summary: state_flow_ascii 的 in_flow 标签「待领取→待验收」与计数不一致（计数含「已完成」5 态，标签只覆盖 4 态）
+- detail: src/server/board_ascii.mbt:434 `in_flow_names = ["待领取","已领取","执行中","待验收","已完成"]`（5 态），但 ASCII 输出标签写「在流任务（待领取→待验收）：」（第 464 行），按字面只覆盖 4 态、应排除「已完成」。已完成=已验证有交付物、待归档的终态任务，被计入「在流」与标签矛盾。工具描述泛写「在流任务数」无歧义消解。测试 board_ascii_test.mbt:557-561 只断言 `infl >= 1`，未钉定义。
+
+## BUG-146 [2026-10-10T14:34:21Z] [low] OPEN
+- summary: ops_pipeline.mbt:378 注释称 rubric 缺失 fail-closed，实现实为 fail-open（仍置 Pending 仍发布，只给提示）
+- detail: src/ops/ops_pipeline.mbt:378 注释「否则 fail-closed」，但 388-419 实现是 fail-open：`tool_use_rubric=false` 时仍写 state="Pending"、仍返回 Ok，只把提示写进 message（「生成方应回分支 A 重做」）并置 tool_use_rubric=false。测试 ops_pipeline_test.mbt:505-523 `pipeline_21_prompt_ready_without_rubric` 钉的正是 fail-open（断言 tool_use_rubric=false 且不报错）——测试对、代码对、注释撒谎。另：pipeline_has_rubric 只查结束标记 `<!-- TOOL_USE_RUBRIC_END -->`，标记存在但无真实 rubric 正文时仍报 true（spoof 可过），属弱判据。
+

@@ -458,7 +458,10 @@ test "pipeline_16_backlog_does_not_stack_new_round" {
 ///|
 /// Tool Use Rubric 判定（P1）：含结束标记 → true。
 test "pipeline_17_rubric_detect_true" {
-  assert_eq(pipeline_has_rubric("正文……\n<!-- TOOL_USE_RUBRIC_END -->\n"), true)
+  assert_eq(
+    pipeline_has_rubric("正文……\n<!-- TOOL_USE_RUBRIC_END -->\n"),
+    true,
+  )
 }
 
 ///|

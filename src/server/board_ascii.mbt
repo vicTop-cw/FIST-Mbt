@@ -461,7 +461,7 @@ pub fn render_state_flow_ascii(
     sb.write_string("(空)")
   }
   sb.write_string(
-    "\n在流任务（待领取→待验收）：" + in_flow.to_string(),
+    "\n在流任务（待领取→已完成）：" + in_flow.to_string(),
   )
   Json::object({
     "ascii": Json::string(sb.to_string()),

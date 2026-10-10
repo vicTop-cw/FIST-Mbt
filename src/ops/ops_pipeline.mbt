@@ -380,7 +380,9 @@ pub fn pipeline_tick(
         let prompt_content = match safe_read_text(ppath) {
           Some(c) => c
           None =>
-            return Err("读提示词文件失败，无法做 rubric 自检: " + ppath)
+            return Err(
+              "读提示词文件失败，无法做 rubric 自检: " + ppath,
+            )
         }
         let has_rubric = pipeline_has_rubric(prompt_content)
         if !pipeline_write(state_path, "Pending") {
