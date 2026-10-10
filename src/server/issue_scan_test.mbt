@@ -209,3 +209,126 @@ test "lint_7_no_high_hits_left_in_src_omega_bug15" {
   }
   assert_eq(high, 0)
 }
+
+///|
+/// 守卫感知过滤回归（2026-10-10）：`if is_empty()` / `if length() > N` 之后的
+/// rows[0] / substring(0,N) 应被就地过滤；无守卫的同形代码仍须命中——证明
+/// 「消噪」不是「不扫了」。
+test "lint_8_guard_filter_keeps_real_hits_drops_guarded" {
+  let d = lint_dir("lint_c8")
+  @fs.write_string_to_file(
+    d + "/sample.mbt",
+    "fn guarded(): Int {\n" +
+    "  let rows : Array[Int] = []\n" +
+    "  if rows.is_empty() { return -1 }\n" +
+    "  rows[0]\n" +
+    "}\n" +
+    "fn unguarded(): Int {\n" +
+    "  let rows : Array[Int] = []\n" +
+    "  rows[0]\n" +
+    "}\n",
+    encoding="utf8",
+  ) catch {
+    _ => ()
+  }
+  let r = issue_scan(d, "", 100)
+  assert_true(r.is_ok())
+  let j = match r {
+    Ok(x) => x
+    Err(_) => return
+  }
+  let items = lint_findings(j)
+  // 只应命中 unguarded 那一行（第 8 行），guarded 的第 4 行被过滤
+  assert_true(items.length() >= 1)
+  for f in items {
+    assert_eq(lint_line(f), 8)
+  }
+}
+
+///|
+/// 单测：scan_finding_guarded 直接行为——守卫行在上一行应判 guarded=true；
+/// 无守卫应判 false。绕过整文件集成，直接测函数。
+test "lint_10_guard_function_direct" {
+  // guarded: 守卫在前一行
+  // prev_lines 只放**命中行之前**的代码行；本函数从最近一行往回扫。
+  // 守卫在 rows[0] 的**上一行**：`if rows.is_empty() { return -1 }`
+  let prev_guarded : Array[String] = [
+    "  if rows.is_empty() { return -1 }",
+  ]
+  // 上一行有 is_empty() 守卫应判 guarded
+  assert_true(
+    scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_guarded),
+  )
+  // 无守卫：上一行只是声明
+  let prev_unguarded : Array[String] = [
+    "fn unguarded(): Int {",
+    "  let rows : Array[Int] = []",
+  ]
+  assert_eq(
+    scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_unguarded),
+    false,
+  )
+  // 跨函数守卫应被停：上一行是 `fn ` 边界
+  let prev_cross_fn : Array[String] = [
+    "  let rows : Array[Int] = []",
+    "  if rows.is_empty() { return -1 }",
+    "}",
+    "fn next(): Int {",
+  ]
+  assert_eq(
+    scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_cross_fn),
+    false,
+  )
+  // unguarded: 前一函数里的守卫跨了 `fn` 边界，不应算
+  let unguarded_lines : Array[String] = [
+    "fn guarded(): Int {",
+    "  let rows : Array[Int] = []",
+    "  if rows.is_empty() { return -1 }",
+    "  rows[0]",
+    "}",
+    "fn unguarded(): Int {",
+    "  let rows : Array[Int] = []",
+    "  rows[0]",
+    "}",
+  ]
+  // 第 8 行 rows[0]（unguarded）：只应看第 7/6/5 行，见到 `fn ` 边界应停
+  let prev_for_8 : Array[String] = [
+    "fn unguarded(): Int {",
+    "  let rows : Array[Int] = []",
+  ]
+  assert_eq(
+    scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_for_8),
+    false,
+  )
+}
+
+///|
+/// substring 守卫回归：`if s.length() > 8` 之后的 substring(0,8) 应被过滤；
+/// 无守卫的 substring(0,8) 仍须命中。
+test "lint_9_substring_guard_filter" {
+  let d = lint_dir("lint_c9")
+  @fs.write_string_to_file(
+    d + "/sample.mbt",
+    "fn guarded(s : String) -> String {\n" +
+    "  if s.length() > 8 { s.substring(start=0, end=8) } else { s }\n" +
+    "}\n" +
+    "fn unguarded(s : String) -> String {\n" +
+    "  s.substring(start=0, end=8)\n" +
+    "}\n",
+    encoding="utf8",
+  ) catch {
+    _ => ()
+  }
+  let r = issue_scan(d, "", 100)
+  assert_true(r.is_ok())
+  let j = match r {
+    Ok(x) => x
+    Err(_) => return
+  }
+  let items = lint_findings(j)
+  // 第 2 行（guarded）被过滤；只剩第 5 行（unguarded）s.substring
+  assert_true(items.length() >= 1)
+  for f in items {
+    assert_eq(lint_line(f), 5)
+  }
+}

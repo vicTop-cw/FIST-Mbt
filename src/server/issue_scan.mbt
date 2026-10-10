@@ -252,6 +252,243 @@ fn scan_match_lines(
   out
 }
 
+// ============================================================================
+// 守卫感知过滤（2026-10-10 打磨）：原规则只做行级模式匹配，不识别上下文守卫，
+// 于是 `if rows.is_empty() { … } else { rows[0] }`、`if s.length() > 8 { s.substring(0,8) }`
+// 这类**有守卫**的高危形态也被上报。逐条甄别是 agent 的活，但"明显有守卫"的命中等价于
+// 常量时间就能消掉的假阳性——把它们就地过滤，让 issue_scan 的回声更接近真实缺陷面。
+// 只对 substring-overrun / unprotected-division / index-out-of-bounds / string-index 四档做
+// 守卫过滤；div-by-zero（字面量除零）不参与，`/ 0` 没有"守得住"的上下文。
+// ============================================================================
+
+///|
+/// 是否为标识符字符（字母/数字/下划线）。MoonBit 标识符允许 ASCII 字母与数字、
+/// 下划线；判定不做 unicode 展开，保守（够用即可）。
+fn scan_is_ident_char(c : Char) -> Bool {
+  let o = c.to_int()
+  (o >= 65 && o <= 90) || (o >= 97 && o <= 122) || (o >= 48 && o <= 57) || c == '_'
+}
+
+///|
+/// 从 code 行里提取被除的变量名（`/ total` → "total"，`/ n` → "n"）；找不到返回 ""。
+fn scan_div_var(code : String) -> String {
+  let cs = code.to_array()
+  let n = cs.length()
+  let mut slash = -1
+  let mut i = 0
+  while i < n {
+    if cs[i] == '/' {
+      slash = i
+    }
+    i = i + 1
+  }
+  if slash < 0 || slash + 1 >= n {
+    return ""
+  }
+  // 跳过 '/=' 或 `//`（不可能是除数场景）
+  if slash + 1 < n && cs[slash + 1] == '=' {
+    return ""
+  }
+  if slash + 1 < n && cs[slash + 1] == '/' {
+    return ""
+  }
+  let mut j = slash + 1
+  while j < n && cs[j] == ' ' {
+    j = j + 1
+  }
+  let mut k = j
+  while k < n && not(scan_is_ident_char(cs[k])) {
+    k = k + 1
+  }
+  // k 之后才是变量（或字面量数字）；变量允许字母/数字/下划线
+  let mut e = k
+  while e < n && scan_is_ident_char(cs[e]) {
+    e = e + 1
+  }
+  if e > k {
+    String::from_array(cs[k:e])
+  } else {
+    ""
+  }
+}
+
+///|
+/// 从 code 行里提取 substring 的目标（`.substring(` 前的表达式尾部，如 `a.id` / `s`）；
+/// 找不到返回 ""。
+fn scan_substring_target(code : String) -> String {
+  let cs = code.to_array()
+  let n = cs.length()
+  // 找 "substring" 出现位置
+  let pat = "substring".to_array()
+  let mut idx = -1
+  let mut i = 0
+  while i < n - 8 {
+    if scan_matches_at(cs, pat, i) {
+      idx = i
+      break
+    }
+    i = i + 1
+  }
+  if idx < 0 {
+    return ""
+  }
+  // 往前找 "(" 前的表达式终点（"xxx.substring(" → xxx）
+  let mut j = idx - 1
+  if j >= 0 && cs[j] == '.' {
+    j = j - 1
+  }
+  let mut k = j
+  while k >= 0 {
+    let o = cs[k].to_int()
+    let ok = (o >= 65 && o <= 90) || (o >= 97 && o <= 122) || (o >= 48 && o <= 57) || cs[k] == '_'
+    if ok {
+      k = k - 1
+    } else {
+      break
+    }
+  }
+  if j > k {
+    String::from_array(cs[k + 1:j + 1])
+  } else {
+    ""
+  }
+}
+
+///|
+/// 在 prev 行里找该 var 是否被 `is_empty()` 守卫（同形 `if var.is_empty()` / `var.is_empty()`）。
+fn scan_guard_is_empty(prev : String, vn : String) -> Bool {
+  let t = prev.trim().to_string()
+  if t.is_empty() {
+    return false
+  }
+  if vn.is_empty() {
+    return false
+  }
+  t.contains(vn + ".is_empty()") || t.contains(vn + ".length() == 0") ||
+  t.contains(vn + ".length() <= 0")
+}
+
+///|
+/// 在 prev 行里找该 var 是否被 `length() > N` / `length() >= N` 守卫。
+fn scan_guard_length_above(prev : String, vn : String) -> Bool {
+  let t = prev.trim().to_string()
+  if t.is_empty() {
+    return false
+  }
+  if vn.is_empty() {
+    return false
+  }
+  t.contains(vn + ".length() >") || t.contains(vn + ".length() >= ") ||
+  t.contains(".length() >") || t.contains(".length() >= ")
+}
+
+///|
+/// 在 prev 行里找 `if total <= 0` / `if total == 0` / `if n <= 0` 这类零值守卫。
+/// 不要求变量名匹配（常见于函数入口的总量校验），只认"零值判断 + return/fallback"形状。
+fn scan_guard_zero(prev : String) -> Bool {
+  let t = prev.trim().to_string()
+  if t.is_empty() {
+    return false
+  }
+  t.contains("<= 0") || t.contains("== 0") || t.contains("< 1") || t.contains("is_empty()") ||
+  t.contains("<= 0.0") || t.contains("== 0.0")
+}
+
+///|
+/// 判定一条命中是否被**明显**上下文守卫（5 行内可判，只做保守过滤——拿不准就保留）。
+pub fn scan_finding_guarded(
+  code : String,
+  rule : String,
+  prev_lines : Array[String],
+) -> Bool {
+  let vn = if rule == "unprotected-division" {
+    scan_div_var(code)
+  } else {
+    if rule == "substring-overrun" {
+      scan_substring_target(code)
+    } else {
+      ""
+    }
+  }
+  // prev_lines 里**越靠后越接近命中行**（调用方按 hit_idx 往回到 0 顺序压栈）。
+  // 因此从后往前扫：先看离命中最近的守卫，遇 `fn ` 边界（函数开头）即停。
+  let n = prev_lines.length()
+  let mut i = n - 1
+  while i >= 0 {
+    let p = prev_lines[i]
+    let t = p.trim().to_string()
+    i = i - 1
+    if t.is_empty() {
+      continue
+    }
+    if rule == "unprotected-division" {
+      if scan_guard_zero(t) {
+        return true
+      }
+      if not(vn.is_empty()) && scan_guard_is_empty(t, vn) {
+        return true
+      }
+    } else if rule == "substring-overrun" {
+      if not(vn.is_empty()) && scan_guard_length_above(t, vn) {
+        return true
+      }
+      // `if var.length() > N` 常写成 `if t.length() > 200` 一行内
+      if t.contains("if ") && t.contains(".length() >") {
+        return true
+      }
+      if t.contains("if ") && t.contains(".length() >= ") {
+        return true
+      }
+      if t.starts_with("fn ") {
+        return false
+      }
+    } else if rule == "index-out-of-bounds" || rule == "string-index" {
+      // 数组守卫只在同一函数体内生效：见到 `fn ` 行说明跨过了函数边界，
+      // 此时应停；但**函数体内的守卫**（`if rows.is_empty()`）要在它之前扫到。
+      if t.contains("is_empty()") {
+        return true
+      }
+      if t.starts_with("fn ") {
+        return false
+      }
+      // 同一行上的守卫（`if rows.is_empty() { rows[0] }`）：直接看当前 code 行
+      if code.contains("is_empty()") {
+        return true
+      }
+    }
+  }
+  false
+}
+
+///|
+/// 对整批 findings 做守卫过滤：返回没被守卫的（即真待判）那些。
+fn scan_filter_guarded(
+  findings : Array[ScanFinding],
+  file_content : Array[String],
+) -> Array[ScanFinding] {
+  let out : Array[ScanFinding] = []
+  for hit in findings {
+    let ln = hit.line
+    let prev_start = if ln - 6 < 1 { 1 } else { ln - 6 }
+    let prev_end = ln - 1
+    let prev_lines : Array[String] = []
+    if prev_end >= prev_start {
+      let mut i = prev_start - 1
+      while i <= prev_end - 1 {
+        if i >= 0 && i < file_content.length() {
+          prev_lines.push(file_content[i])
+        }
+        i = i + 1
+      }
+    }
+    if scan_finding_guarded(hit.code, hit.rule, prev_lines) {
+      continue
+    }
+    out.push(hit)
+  }
+  out
+}
+
 ///|
 /// 跳过不应扫描的目录/文件（构建产物、依赖、版本库、数据库、接口快照）。
 fn scan_skip(path : String) -> Bool {
@@ -384,6 +621,56 @@ pub fn issue_scan(
       dedup.push(hit)
     }
   }
+  // 守卫感知过滤（2026-10-10）：`if is_empty()` / `if length() > N` 等明显守卫后的
+  // index-out-of-bounds / substring-overrun / unprotected-division 是常量时间能判定的
+  // 假阳性——就地过滤，让 issue_scan 的回声更接近真实缺陷面。
+  let guarded_filtered : Array[ScanFinding] = []
+  for hit in dedup {
+    let fc = match mem_read(hit.file) {
+      None => continue
+      Some(c) => c
+    }
+    let raw_lines = fc.split("\n")
+    let fc_lines : Array[String] = []
+    for l in raw_lines {
+      fc_lines.push(l.to_string())
+    }
+    // 守卫判定只看**同一函数体内、命中行之前**的行；跨 `fn ` 边界的守卫不算。
+    // 从命中行往回扫，遇到 `fn ` 行（函数开头）或文件头即停。
+    let hit_idx = hit.line - 1
+    let prev_window : Array[String] = []
+    if hit_idx > 0 {
+      let mut i = hit_idx - 1
+      let stopped = false
+      while i >= 0 && not(stopped) {
+        let line_str = fc_lines[i]
+        if line_str.trim().to_string().starts_with("fn ") {
+          break
+        }
+        prev_window.push(line_str)
+        i = i - 1
+        // 守卫通常距命中不超过 6 行，超了就不看
+        if prev_window.length() >= 6 {
+          break
+        }
+      }
+    }
+    // 当前行本身也可能含守卫（`if rows.is_empty() { rows[0] }`）
+    let hit_line = if hit_idx >= 0 && hit_idx < fc_lines.length() {
+      fc_lines[hit_idx]
+    } else {
+      ""
+    }
+    let guard_window : Array[String] = [hit_line]
+    if scan_finding_guarded(hit.code, hit.rule, guard_window) {
+      continue
+    }
+    if scan_finding_guarded(hit.code, hit.rule, prev_window) {
+      continue
+    }
+    guarded_filtered.push(hit)
+  }
+  let dedup = guarded_filtered
   // 严重度聚合
   let high = dedup.filter(fn(h : ScanFinding) { h.severity == "high" }).length()
   let medium = dedup
