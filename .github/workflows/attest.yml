@@ -1,0 +1,138 @@
+# attest.yml —— Star 门 · 授权签名清单发布（方向二 P1-a，D1=签名清单+TTL）
+#
+# 模型：fist-mbt 不实时查 GitHub（证伪 A 里被绕过的脆弱设计），而是：
+#   1) 本 workflow 定期拉取 stargazer 列表；
+#   2) 用仓库 secrets 里的 Ed25519 私钥对「授权名单 + 签发时间戳」签名；
+#   3) 把 { list, issued_at, ttl_seconds, public_key, signature } 发布到 GitHub Pages；
+#   4) fist-mbt 侧拉取清单，用 public_key 验签 + 校验 login ∈ 名单 + 校验 (now - issued_at) <= ttl_seconds。
+#
+# 诚实边界（见 docs/improvement-plan-20261010.md §3.2）：
+#   - 客户端验签的清单可被「用户自己改本地缓存」绕过 —— 这是弱门禁/仪式感门禁，不是强门禁。
+#   - 要强门禁必须自建服务端网关（计划里列为远期、需用户自备主机）。
+#   - 「算力由 GitHub 承担」的准确表述：GitHub 只承担【证明发布】（本 workflow + Pages）；
+#     推理算力在用户自己的厂商免费端点上。
+#
+# 依赖：
+#   repo secrets:
+#     ED25519_PRIVATE_KEY_HEX : 32 字节私钥的 hex（seed）。生成：
+#        python -c "import nacl.signing;print(nacl.signing.SigningKey.generate().encode().hex())"
+#     对应公钥会由 workflow 计算并写进清单。
+#   repo 设置需开启 Pages（Deploy from branch 或 GitHub Actions 均可，推荐 Actions）。
+
+name: Star gate attestation
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"          # 每 6 小时一次（TTL 兜底刷新）
+  workflow_dispatch: {}            # 手动触发
+  watch:                           # 有人 star/unstar 时立刻刷新
+    types: [started]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: star-gate-attest
+  cancel-in-progress: false
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & sign attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ED25519_PRIVATE_KEY_HEX: ${{ secrets.ED25519_PRIVATE_KEY_HEX }}
+        run: |
+          python - <<'PY'
+          import os, json, time, base64, urllib.request, nacl.signing, nacl.encoding
+
+          token = os.environ["GH_TOKEN"]
+          key_hex = os.environ["ED25519_PRIVATE_KEY_HEX"]
+          if not key_hex:
+              raise SystemExit("MISSING ED25519_PRIVATE_KEY_HEX in repo secrets")
+          seed = bytes.fromhex(key_hex)
+          if len(seed) != 32:
+              raise SystemExit("ED25519_PRIVATE_KEY_HEX must be 32 bytes (64 hex chars)")
+
+          # 拉 stargazer 列表（分页）
+          logins = []
+          page = 1
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+          while True:
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}/stargazers?per_page=100&page={page}",
+                  headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+              )
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  batch = json.load(r)
+              if not batch:
+                  break
+              logins.extend(u["login"] for u in batch if isinstance(u, dict) and u.get("login"))
+              if len(batch) < 100:
+                  break
+              page += 1
+              if page > 500:
+                  break
+
+          logins = sorted(set(logins))
+          issued_at = int(time.time())
+          ttl_seconds = 6 * 3600  # 与 cron 间隔一致；用户取消 star 后最多 ttl 内仍可解锁
+
+          signing_key = nacl.signing.SigningKey(seed)
+          public_key_hex = signing_key.verify_key.encode(hex=True)
+          canonical = json.dumps({"list": logins, "issued_at": issued_at, "ttl_seconds": ttl_seconds},
+                                 sort_keys=True, separators=(",", ":")).encode("utf-8")
+          sig = signing_key.sign(canonical).signature
+
+          payload = {
+              "format": "fist-star-gate-attestation/v1",
+              "repo": repo,
+              "list": logins,
+              "issued_at": issued_at,
+              "ttl_seconds": ttl_seconds,
+              "public_key_hex": public_key_hex,
+              "signature_hex": sig.hex(),
+              "algorithm": "ed25519",
+          }
+          os.makedirs("_attest", exist_ok=True)
+          with open("_attest/attestation.json", "w") as f:
+              json.dump(payload, f, indent=2)
+          print(f"attested {len(logins)} stargazers, ttl={ttl_seconds}s, pubkey={public_key_hex[:16]}…")
+          PY
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _attest
+
+      - uses: actions/deploy-pages@v4
+
+  # 自证：验签自己签的清单必须通过（防止 workflow 改坏了没人知道）
+  selfcheck:
+    needs: attest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: _attest
+      - name: Verify signature
+        run: |
+          python - <<'PY'
+          import json, nacl.signing
+          with open("_attest/attestation.json") as f:
+              p = json.load(f)
+          canon = json.dumps({"list": p["list"], "issued_at": p["issued_at"], "ttl_seconds": p["ttl_seconds"]},
+                             sort_keys=True, separators=(",", ":")).encode("utf-8")
+          pub = nacl.signing.VerifyKey(bytes.fromhex(p["public_key_hex"]))
+          try:
+              pub.verify(canon, bytes.fromhex(p["signature_hex"]))
+              print("SELFTEST OK: signature valid")
+          except Exception as e:
+              raise SystemExit(f"SELFTEST FAILED: {e}")
+          PY
