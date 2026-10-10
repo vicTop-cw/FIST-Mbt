@@ -548,7 +548,7 @@ test "state_flow_ascii_shows_lifecycle" {
     _ => abort("ascii 缺失")
   }
   // 合法迁移图（一行流程）在
-  assert_true(ascii.contains("待领取 → 已领取 → 执行中"))
+  assert_true(ascii.contains("待领取 → 已领取 → 拆分中 → 执行中"))
   assert_true(ascii.contains("已打回→执行中"))
   // 当前分布（含已打回/重派分支）
   assert_true(ascii.contains("执行中="))
