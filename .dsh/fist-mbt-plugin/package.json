@@ -1,0 +1,18 @@
+{
+  "name": "@victop/fist-mbt",
+  "version": "0.3.6",
+  "private": true,
+  "type": "module",
+  "description": "FIST-Mbt MCP server integration — task orchestration and self-driving loops",
+  "author": {"name": "vicTop"},
+  "repository": "https://github.com/vicTop-cw/fist-mbt",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "meta": {
+    "title": "FIST-Mbt",
+    "description": "FIST 指挥官任务编排与自驱流水线：129 个 MCP 工具 + 记忆沉淀闭环，v0.3.6"
+  }
+}
