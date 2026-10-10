@@ -95,6 +95,26 @@ pub async fn laya_probe_available(String, Array[String], String, Int) -> Result[
 
 pub fn lookup_injected_assets_in(@evolve.Archive, String) -> Json
 
+pub fn mcp_config_scaffold_impl(String, String, Array[String]) -> Result[Json, String]
+
+pub let mcp_cred_key_hits : Array[String]
+
+pub let mcp_cred_value_hits : Array[String]
+
+pub let mcp_env_whitelist : Array[String]
+
+pub let mcp_form_field_whitelist : Array[String]
+
+pub fn mcs_collect_unknown_keys(Json) -> Array[String]
+
+pub fn mcs_filter_env(Json, Array[String]) -> Result[Map[String, String], String]
+
+pub fn mcs_pretty(Json) -> String
+
+pub fn mcs_scan_credentials(Json) -> Result[String, String]
+
+pub fn mcs_valid_server_name(String) -> Bool
+
 pub fn memory_consolidate(String, String, String, String, String) -> Result[Json, String]
 
 pub fn memory_gc_all(String, Int) -> Json
@@ -146,6 +166,10 @@ pub fn selfdrive_round_tick(Json) -> Json
 // Errors
 
 // Types and methods
+type DebateRegistry
+
+type DebateSession
+
 type RcPath
 
 type ScanFinding

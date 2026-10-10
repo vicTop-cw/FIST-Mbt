@@ -17,24 +17,32 @@ test "hats: parse_hat 正/负路径" {
   }
   assert_true(all_ok)
   // trim 合法（前后空白不影响）
-  assert_true(match parse_hat(" white ") {
-    Ok(Hat::White) => true
-    _ => false
-  })
+  assert_true(
+    match parse_hat(" white ") {
+      Ok(Hat::White) => true
+      _ => false
+    },
+  )
   // 大写被拒（与 ops_modes::parse_mode 同约定：大小写敏感）
-  assert_true(match parse_hat("WHITE") {
-    Err(_) => true
-    _ => false
-  })
+  assert_true(
+    match parse_hat("WHITE") {
+      Err(_) => true
+      _ => false
+    },
+  )
   // 非法值
-  assert_true(match parse_hat("pink") {
-    Err(_) => true
-    _ => false
-  })
-  assert_true(match parse_hat("") {
-    Err(_) => true
-    _ => false
-  })
+  assert_true(
+    match parse_hat("pink") {
+      Err(_) => true
+      _ => false
+    },
+  )
+  assert_true(
+    match parse_hat("") {
+      Err(_) => true
+      _ => false
+    },
+  )
 }
 
 ///|
@@ -45,12 +53,15 @@ test "hats: parse_hats 整批拒" {
     Err(_) => assert_false(true)
   }
   // 混入非法 → 整批 Err
-  assert_true(match parse_hats(["white", "pink"]) {
-    Err(_) => true
-    _ => false
-  })
+  assert_true(
+    match parse_hats(["white", "pink"]) {
+      Err(_) => true
+      _ => false
+    },
+  )
 }
 
+///|
 fn hat_ids_of(arr : Array[Hat]) -> Array[String] {
   let out : Array[String] = []
   for i = 0; i < arr.length(); i = i + 1 {
@@ -74,7 +85,12 @@ test "hats: 默认帽集三顶" {
 /// 六顶帽子角色指令与禁做事项全部非空（模板真源不能有空洞）。
 test "hats: 六帽角色与禁做非空" {
   let hats = [
-    Hat::White, Hat::Red, Hat::Black, Hat::Yellow, Hat::Green, Hat::Blue,
+    Hat::White,
+    Hat::Red,
+    Hat::Black,
+    Hat::Yellow,
+    Hat::Green,
+    Hat::Blue,
   ]
   let mut nonempty = true
   for i = 0; i < hats.length(); i = i + 1 {
@@ -102,7 +118,12 @@ test "hats: 六帽角色与禁做非空" {
 /// 帽子角色指令互相不同（防同质化：六帽不许说同一句话）。
 test "hats: 六帽角色互不相同" {
   let hats = [
-    Hat::White, Hat::Red, Hat::Black, Hat::Yellow, Hat::Green, Hat::Blue,
+    Hat::White,
+    Hat::Red,
+    Hat::Black,
+    Hat::Yellow,
+    Hat::Green,
+    Hat::Blue,
   ]
   let mut distinct = true
   for i = 0; i < hats.length(); i = i + 1 {
@@ -121,9 +142,9 @@ test "hats: debate_summary 阈值判定" {
   // 三帽两帽 pass → rate 0.667 >= 0.6 → pass
   let s1 = debate_summary(
     [
-      { hat_id: "white", verdict: "pass", evidence: "数据 A" },
-      { hat_id: "black", verdict: "pass", evidence: "风险 B" },
-      { hat_id: "yellow", verdict: "reject", evidence: "收益 C" },
+      { hat_id: "white", verdict: "pass", evidence: "数据 A", },
+      { hat_id: "black", verdict: "pass", evidence: "风险 B", },
+      { hat_id: "yellow", verdict: "reject", evidence: "收益 C", },
     ],
     0.6,
   )
@@ -135,9 +156,9 @@ test "hats: debate_summary 阈值判定" {
   // 三帽只一帽 pass → rate 0.33 < 0.6 → 不放行
   let s2 = debate_summary(
     [
-      { hat_id: "white", verdict: "pass", evidence: "x" },
-      { hat_id: "black", verdict: "reject", evidence: "y" },
-      { hat_id: "yellow", verdict: "abstain", evidence: "z" },
+      { hat_id: "white", verdict: "pass", evidence: "x", },
+      { hat_id: "black", verdict: "reject", evidence: "y", },
+      { hat_id: "yellow", verdict: "abstain", evidence: "z", },
     ],
     0.6,
   )
@@ -152,7 +173,7 @@ test "hats: debate_summary 阈值判定" {
 
   // threshold 非法 → 回退默认 0.6
   let s4 = debate_summary(
-    [{ hat_id: "white", verdict: "pass", evidence: "a" }],
+    [{ hat_id: "white", verdict: "pass", evidence: "a", }],
     -1.0,
   )
   assert_eq(s4.threshold, 0.6)
@@ -160,9 +181,9 @@ test "hats: debate_summary 阈值判定" {
   // 全 pass → rate 1.0
   let s5 = debate_summary(
     [
-      { hat_id: "white", verdict: "pass", evidence: "a" },
-      { hat_id: "black", verdict: "pass", evidence: "b" },
-      { hat_id: "yellow", verdict: "pass", evidence: "c" },
+      { hat_id: "white", verdict: "pass", evidence: "a", },
+      { hat_id: "black", verdict: "pass", evidence: "b", },
+      { hat_id: "yellow", verdict: "pass", evidence: "c", },
     ],
     0.6,
   )
@@ -174,28 +195,39 @@ test "hats: debate_summary 阈值判定" {
 /// 单帽结论校验：evidence 空或 verdict 非法必须拒。
 test "hats: valid_verdict 正/负路径" {
   // 合法
-  assert_true(match valid_verdict({ hat_id: "white", verdict: "pass", evidence: "e" }) {
-    Ok(_) => true
-    _ => false
-  })
-  assert_true(match valid_verdict({ hat_id: "black", verdict: "reject", evidence: "e" }) {
-    Ok(_) => true
-    _ => false
-  })
-  assert_true(match valid_verdict({ hat_id: "red", verdict: "abstain", evidence: "e" }) {
-    Ok(_) => true
-    _ => false
-  })
+  assert_true(
+    match valid_verdict({ hat_id: "white", verdict: "pass", evidence: "e", }) {
+      Ok(_) => true
+      _ => false
+    },
+  )
+  assert_true(
+    match
+      valid_verdict({ hat_id: "black", verdict: "reject", evidence: "e", }) {
+      Ok(_) => true
+      _ => false
+    },
+  )
+  assert_true(
+    match valid_verdict({ hat_id: "red", verdict: "abstain", evidence: "e", }) {
+      Ok(_) => true
+      _ => false
+    },
+  )
   // evidence 空 → 拒
-  assert_true(match valid_verdict({ hat_id: "white", verdict: "pass", evidence: " " }) {
-    Err(_) => true
-    _ => false
-  })
+  assert_true(
+    match valid_verdict({ hat_id: "white", verdict: "pass", evidence: " ", }) {
+      Err(_) => true
+      _ => false
+    },
+  )
   // verdict 非法 → 拒
-  assert_true(match valid_verdict({ hat_id: "white", verdict: "maybe", evidence: "e" }) {
-    Err(_) => true
-    _ => false
-  })
+  assert_true(
+    match valid_verdict({ hat_id: "white", verdict: "maybe", evidence: "e", }) {
+      Err(_) => true
+      _ => false
+    },
+  )
 }
 
 ///|
@@ -220,6 +252,7 @@ test "hats: all_hats() 返回 6 顶且 id 互不相同" {
   assert_eq(seen.length(), 6)
 }
 
+///|
 test "hats: hat_verdict() 构造字段与入参一致" {
   let v = hat_verdict("white", "pass", "数据支撑")
   assert_eq(v.hat_id, "white")

@@ -6,11 +6,23 @@ import {
 }
 
 // Values
+pub fn hex_decode(String) -> Result[Bytes, String]
+
+pub fn hex_encode(Bytes) -> String
+
 pub fn iso_to_secs(String) -> Int
 
 pub fn router_restore(Json, config? : Json) -> (ModelRouter, Array[String])
 
 pub fn secs_to_iso(Int) -> String
+
+pub fn star_canonical(Array[String], Int64, Int64) -> String
+
+pub fn star_gate_policy(String, String, String, Int64) -> StarGatePolicyResult
+
+pub fn star_gate_verify(String, String, Int64) -> StarGateOutcome
+
+pub fn star_gate_verify_pinned(String, String, Int64, String) -> StarGateOutcome
 
 // Errors
 
@@ -77,6 +89,32 @@ pub struct RouterConfig {
 pub fn RouterConfig::default() -> Self
 pub fn RouterConfig::from_json(Json) -> (Self, Array[String])
 pub fn RouterConfig::to_json(Self) -> Json
+
+type StarAttestData
+
+pub struct StarGateOutcome {
+  verdict : StarVerdict
+  reason : String
+  list_count : Int
+  now_epoch : Int64
+}
+
+pub struct StarGatePolicyResult {
+  gate_enabled : Bool
+  free_pool_unlocked : Bool
+  note : String
+  verdict : StarVerdict?
+} derive(Eq, @debug.Debug)
+pub fn StarGatePolicyResult::to_json(Self) -> Json
+
+pub enum StarVerdict {
+  Unreadable
+  BadFormat
+  BadSignature
+  Stale
+  NoSuchUser
+  Valid
+} derive(Eq, Show, @debug.Debug)
 
 // Type aliases
 

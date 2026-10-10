@@ -60,9 +60,9 @@ test "hat_list：白帽元数据字段齐全，6 顶帽子 id 互不相同" {
   assert_eq(get_str(j, "color"), "#9e9e9e")
   assert_eq(get_str(j, "forbid").length() > 0, true)
   assert_eq(get_array(j, "output_keys").length(), 2)
-  let ids : Array[String] = wb_hats(
-    ["white", "red", "black", "yellow", "green", "blue"],
-  ).map(fn(h) { @ops.hat_id(h) })
+  let ids : Array[String] = wb_hats([
+    "white", "red", "black", "yellow", "green", "blue",
+  ]).map(fn(h) { @ops.hat_id(h) })
   assert_eq(ids.length(), 6)
   assert_eq(ids[1], "red")
   assert_eq(ids[5], "blue")
@@ -100,16 +100,13 @@ test "parse_hat_args：空串回退默认三帽；非法串整批 Err；WHITE �
 test "debate_next_session_id：格式 debate-yyyyMMdd-nnn 且同日递增" {
   // 预置一条今天的会话，验证 nnn 递增（服务端盖章，不接受调用方注入）
   let day = debate_day_key()
-  debate_sessions.sessions.set(
-    "debate-" + day + "-001",
-    {
-      topic: "seed",
-      hats: ["white"],
-      threshold: 0.6,
-      verdicts: [],
-      created_at: "2026-01-01T00:00:00Z",
-    },
-  )
+  debate_sessions.sessions.set("debate-" + day + "-001", {
+    topic: "seed",
+    hats: ["white"],
+    threshold: 0.6,
+    verdicts: [],
+    created_at: "2026-01-01T00:00:00Z",
+  })
   let sid = debate_next_session_id()
   let prefix = "debate-" + day + "-"
   assert_eq(sid.starts_with(prefix), true)
@@ -127,7 +124,10 @@ test "hat_verdict_json / debate_summary_json：键与数值完整" {
   assert_eq(get_str(vj, "verdict"), "pass")
   assert_eq(get_str(vj, "evidence"), "有数据支撑")
   // DebateSummary 只能经函数产出（跨包只读），此处由 debate_summary 得到后序列化
-  let vs = [@ops.hat_verdict("white", "pass", "a"), @ops.hat_verdict("black", "reject", "b")]
+  let vs = [
+    @ops.hat_verdict("white", "pass", "a"),
+    @ops.hat_verdict("black", "reject", "b"),
+  ]
   let s = @ops.debate_summary(vs, 0.6)
   let sj = debate_summary_json(s)
   assert_eq(get_int(sj, "total"), 2)
@@ -138,9 +138,18 @@ test "hat_verdict_json / debate_summary_json：键与数值完整" {
 
 ///|
 test "valid_verdict：evidence 为空拒绝、verdict 非法拒绝" {
-  assert_eq(@ops.valid_verdict(@ops.hat_verdict("white", "pass", "")).is_err(), true)
-  assert_eq(@ops.valid_verdict(@ops.hat_verdict("white", "maybe", "有证据")).is_err(), true)
-  assert_eq(@ops.valid_verdict(@ops.hat_verdict("black", "reject", "有反例")).is_ok(), true)
+  assert_eq(
+    @ops.valid_verdict(@ops.hat_verdict("white", "pass", "")).is_err(),
+    true,
+  )
+  assert_eq(
+    @ops.valid_verdict(@ops.hat_verdict("white", "maybe", "有证据")).is_err(),
+    true,
+  )
+  assert_eq(
+    @ops.valid_verdict(@ops.hat_verdict("black", "reject", "有反例")).is_ok(),
+    true,
+  )
 }
 
 ///|
@@ -189,7 +198,10 @@ test "会话流：convene 登记 → register 收敛 → verdict 输出 summary"
   debate_sessions.sessions.set(sid, sess)
   let got = match debate_get_session(sid) {
     Ok(x) => x
-    Err(_) => { assert_eq(true, false); sess }
+    Err(_) => {
+      assert_eq(true, false)
+      sess
+    }
   }
   assert_eq(got.verdicts.length(), 3)
   let summary = @ops.debate_summary(got.verdicts, -1.0)

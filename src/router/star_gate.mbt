@@ -62,7 +62,7 @@ fn star_outcome(
   list_count : Int,
   now_epoch : Int64,
 ) -> StarGateOutcome {
-  { verdict, reason, list_count, now_epoch }
+  { verdict, reason, list_count, now_epoch, }
 }
 
 ///|
@@ -74,7 +74,11 @@ fn star_outcome(
 /// 前提（重要）：login 只含 ASCII 字母/数字/连字符（GitHub 用户名规则），因此
 ///   **不需要** JSON 字符串转义（`"` `\` 与控制字符都不可能出现在 login 里）。若未来放开该约束，
 ///   必须同步改成与 `json.dumps(ensure_ascii=True)` 等价的转义实现，否则验签会静默失败。
-pub fn star_canonical(list : Array[String], issued_at : Int64, ttl_seconds : Int64) -> String {
+pub fn star_canonical(
+  list : Array[String],
+  issued_at : Int64,
+  ttl_seconds : Int64,
+) -> String {
   let buf = StringBuilder::new(size_hint=64)
   buf.write_string("{\"issued_at\":")
   buf.write_string(issued_at.to_string())
@@ -108,7 +112,7 @@ pub fn hex_encode(b : Bytes) -> String {
 
 ///|
 /// 从已解析的 Json 里提取验签所需字段。任一字段缺失或类型不符 → None（调用方按 BadFormat 处理）。
-fn star_extract_fields(j : Json) -> Option[StarAttestData] {
+fn star_extract_fields(j : Json) -> StarAttestData? {
   let list = match j.value("list") {
     Some(Array(items)) => {
       let out : Array[String] = []
@@ -138,7 +142,7 @@ fn star_extract_fields(j : Json) -> Option[StarAttestData] {
     Some(String(s)) => s
     _ => return None
   }
-  Some({ list, issued_at, ttl_seconds, public_key_hex, signature_hex })
+  Some({ list, issued_at, ttl_seconds, public_key_hex, signature_hex, })
 }
 
 ///|
@@ -149,6 +153,7 @@ fn star_extract_fields(j : Json) -> Option[StarAttestData] {
 ///   ④ now_epoch > issued_at + ttl_seconds        → Stale
 ///   ⑤ user_login ∉ list                          → NoSuchUser
 ///   ⑥ 全过                                       → Valid
+
 ///|
 /// 钉死期望公钥后的 Star 门验证（消除「公钥自指」弱点，见 plan §3.2 第 6 点）。
 ///
@@ -166,9 +171,15 @@ pub fn star_gate_verify_pinned(
   now_epoch : Int64,
   expected_public_key_hex : String,
 ) -> StarGateOutcome {
-  star_gate_verify_impl(attestation_json, user_login, now_epoch, Some(expected_public_key_hex))
+  star_gate_verify_impl(
+    attestation_json,
+    user_login,
+    now_epoch,
+    Some(expected_public_key_hex),
+  )
 }
 
+///|
 pub fn star_gate_verify(
   attestation_json : String,
   user_login : String,
@@ -177,16 +188,18 @@ pub fn star_gate_verify(
   star_gate_verify_impl(attestation_json, user_login, now_epoch, None)
 }
 
+///|
 /// 共享实现：`expected_public_key_hex` 为 `None` 走原自指路径（零回归），`Some(exp)` 走钉死路径。
 fn star_gate_verify_impl(
   attestation_json : String,
   user_login : String,
   now_epoch : Int64,
-  expected_public_key_hex : Option[String],
+  expected_public_key_hex : String?,
 ) -> StarGateOutcome {
   // ① 语法层失败：字符串不是合法 JSON，什么都读不出来，直接 Unreadable（不吞错，原因写进 reason）
   let j : Json = @json.parse(attestation_json) catch {
-    e => return star_outcome(Unreadable, "JSON 解析失败: \{e}", 0, now_epoch)
+    e =>
+      return star_outcome(Unreadable, "JSON 解析失败: \{e}", 0, now_epoch)
   }
   // ② 格式与算法先验：不是本门产物就不该继续判，避免把别的东西误当成有效证明
   //    （BadFormat 也覆盖字段缺失/类型错：见 star_extract_fields 返回 None 的分支）
@@ -194,12 +207,21 @@ fn star_gate_verify_impl(
     Some(String(f)) if f == "fist-star-gate-attestation/v1" => ()
     _ =>
       return star_outcome(
-        BadFormat, "format 必须是 fist-star-gate-attestation/v1", 0, now_epoch,
+        BadFormat,
+        "format 必须是 fist-star-gate-attestation/v1",
+        0,
+        now_epoch,
       )
   }
   match j.value("algorithm") {
     Some(String(a)) if a == "ed25519" => ()
-    _ => return star_outcome(BadFormat, "algorithm 必须是 ed25519", 0, now_epoch)
+    _ =>
+      return star_outcome(
+        BadFormat,
+        "algorithm 必须是 ed25519",
+        0,
+        now_epoch,
+      )
   }
   let data = match star_extract_fields(j) {
     Some(d) => d
@@ -234,33 +256,55 @@ fn star_gate_verify_impl(
     Ok(b) => b
     Err(e) =>
       return star_outcome(
-        BadSignature, "public_key_hex 不是合法 hex: \{e}", data.list.length(), now_epoch,
+        BadSignature,
+        "public_key_hex 不是合法 hex: \{e}",
+        data.list.length(),
+        now_epoch,
       )
   }
   let sig = match hex_decode(data.signature_hex) {
     Ok(b) => b
     Err(e) =>
       return star_outcome(
-        BadSignature, "signature_hex 不是合法 hex: \{e}", data.list.length(), now_epoch,
+        BadSignature,
+        "signature_hex 不是合法 hex: \{e}",
+        data.list.length(),
+        now_epoch,
       )
   }
   let msg = canonical.to_bytes()
   if not(@mooncry.ed25519_verify(pub_key, msg, sig)) {
     return star_outcome(
-      BadSignature, "Ed25519 验签失败（清单可能被篡改）", data.list.length(), now_epoch,
+      BadSignature,
+      "Ed25519 验签失败（清单可能被篡改）",
+      data.list.length(),
+      now_epoch,
     )
   }
   // ④ 时间层：now == issued_at + ttl 仍有效（严格大于才过期）
   if now_epoch > data.issued_at + data.ttl_seconds {
     return star_outcome(
-      Stale, "清单已过期（now > issued_at + ttl_seconds）", data.list.length(), now_epoch,
+      Stale,
+      "清单已过期（now > issued_at + ttl_seconds）",
+      data.list.length(),
+      now_epoch,
     )
   }
   // ⑤ 名单：验签通过只说明「这份清单确实是持私钥方签的」，但用户可能不在名单里
   if not(data.list.contains(user_login)) {
-    return star_outcome(NoSuchUser, "user_login 不在授权名单里", data.list.length(), now_epoch)
+    return star_outcome(
+      NoSuchUser,
+      "user_login 不在授权名单里",
+      data.list.length(),
+      now_epoch,
+    )
   }
-  star_outcome(Valid, "验签通过，login 在名单内且未过期", data.list.length(), now_epoch)
+  star_outcome(
+    Valid,
+    "验签通过，login 在名单内且未过期",
+    data.list.length(),
+    now_epoch,
+  )
 }
 
 ///|
@@ -272,3 +316,84 @@ fn star_gate_verify_impl(
 ///   3. 顺序与可诊断性匹配：Unreadable（语法）→ BadFormat（结构）→ BadSignature（密码学）→
 ///      Stale（时间）→ NoSuchUser（身份）→ Valid，是按「问题离输入越近越先报」排列，
 ///      报错时能一眼看出问题发生在哪一层，便于日志审计。
+
+///|
+/// Star 门路由门禁策略（纯计算、零 IO）。env 读取在 IO 层（model_router_ops）做完后把值传进来，
+/// 本函数只做三态判定，可在 router 包内单测（star_gate_wbtest）。
+///
+/// 三态：
+///   - `pinned_key_hex` 为空 → **门未启用**，`free_pool_unlocked=true`（保持现状不设门），note 是告警；
+///   - `pinned_key_hex` 非空但 `attestation_json` 为空 → **门启用但 fail-closed**，`free_pool_unlocked=false`；
+///   - 两者齐备 → 走 `star_gate_verify_pinned`，按 verdict 决定放行/拦截。
+///
+/// 为什么「未配置」放行而不是 fail-closed：这是单用户本地工具，默认没设公钥时若 fail-closed
+/// 会直接把免费池锁死（等价于「装完就不能用」），是不可接受的默认降级。正确做法是把选择权交给
+/// 部署者——**想用 Star 门才配置公钥**；未配置只打明显告警（note 会进 model_route 的 warnings）。
+pub struct StarGatePolicyResult {
+  /// 是否启用 Star 门（是否配置了钉死公钥）
+  gate_enabled : Bool
+  /// 免费池是否解锁（可放行）
+  free_pool_unlocked : Bool
+  /// 人可读说明（未启用时是告警，启用未放行时是失败原因）
+  note : String
+  /// 验签 verdict（门未启用或未提供 attestation 时缺省）
+  verdict : StarVerdict?
+} derive(Eq, Debug)
+
+///|
+pub fn StarGatePolicyResult::to_json(self : StarGatePolicyResult) -> Json {
+  let v = match self.verdict {
+    Some(x) => Json::string(x.to_string())
+    None => Json::null()
+  }
+  Json::object({
+    "gate_enabled": Json::boolean(self.gate_enabled),
+    "free_pool_unlocked": Json::boolean(self.free_pool_unlocked),
+    "note": Json::string(self.note),
+    "verdict": v,
+  })
+}
+
+///|
+pub fn star_gate_policy(
+  pinned_key_hex : String,
+  attestation_json : String,
+  user_login : String,
+  now_epoch : Int64,
+) -> StarGatePolicyResult {
+  if pinned_key_hex.is_empty() {
+    return {
+      gate_enabled: false,
+      free_pool_unlocked: true,
+      note: "Star 门未启用：未配置钉死公钥（FIST_STAR_GATE_PUBKEY_HEX）。免费池保持现状不设门；要启用请配置公钥并传入 attestation",
+      verdict: None,
+    }
+  }
+  if attestation_json.is_empty() {
+    return {
+      gate_enabled: true,
+      free_pool_unlocked: false,
+      note: "Star 门已启用但未提供 attestation（fail-closed，未放行）：请从 GitHub Pages 拉取 attestation.json 后传入",
+      verdict: None,
+    }
+  }
+  let o = star_gate_verify_pinned(
+    attestation_json, user_login, now_epoch, pinned_key_hex,
+  )
+  match o.verdict {
+    Valid =>
+      {
+        gate_enabled: true,
+        free_pool_unlocked: true,
+        note: "Star 门验签通过：" + o.reason,
+        verdict: Some(o.verdict),
+      }
+    _ =>
+      {
+        gate_enabled: true,
+        free_pool_unlocked: false,
+        note: "Star 门未放行：" + o.reason,
+        verdict: Some(o.verdict),
+      }
+  }
+}

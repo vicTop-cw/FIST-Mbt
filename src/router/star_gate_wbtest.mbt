@@ -61,7 +61,10 @@ fn sg_attest_json(
 test "star_canonical 逐字节匹配 attest.yml 的 json.dumps(sort_keys=True)" {
   let list : Array[String] = ["octocat", "alice"]
   let c = star_canonical(list, 1000000000L, 21600L)
-  inspect(c, content="{\"issued_at\":1000000000,\"list\":[\"octocat\",\"alice\"],\"ttl_seconds\":21600}")
+  inspect(
+    c,
+    content="{\"issued_at\":1000000000,\"list\":[\"octocat\",\"alice\"],\"ttl_seconds\":21600}",
+  )
 }
 
 ///|
@@ -76,14 +79,17 @@ test "hex_decode / hex_encode 往返 + 正负路径" {
   let raw : Bytes = b"\xde\xad\xbe\xef"
   inspect(hex_encode(raw), content="deadbeef")
   if hex_decode("deadbeef") is Ok(_) {
+
   } else {
     fail("合法 hex 应 Ok")
   }
   if hex_decode("abc") is Err(_) {
+
   } else {
     fail("奇数长度 hex 应 Err")
   }
   if hex_decode("zz") is Err(_) {
+
   } else {
     fail("非 hex 字符应 Err")
   }
@@ -198,8 +204,11 @@ test "star_gate_verify_pinned 公钥不符 → BadSignature（reason 点明钉�
   inspect(o.verdict, content="BadSignature")
   inspect(o.list_count, content="1")
   if o.reason.contains("钉死") {
+
   } else {
-    fail("pinned 公钥不符的 reason 应点明「钉死」，实际: \{o.reason}")
+    fail(
+      "pinned 公钥不符的 reason 应点明「钉死」，实际: \{o.reason}",
+    )
   }
 }
 
@@ -211,8 +220,11 @@ test "star_gate_verify_pinned 空期望公钥 → BadSignature（fail-closed，�
   inspect(o.verdict, content="BadSignature")
   inspect(o.list_count, content="1")
   if o.reason.contains("fail-closed") {
+
   } else {
-    fail("空期望公钥的 reason 应点明 fail-closed，实际: \{o.reason}")
+    fail(
+      "空期望公钥的 reason 应点明 fail-closed，实际: \{o.reason}",
+    )
   }
 }
 
@@ -222,4 +234,79 @@ test "star_gate_verify_pinned 公钥一致 + login 不在名单 → NoSuchUser�
   let j = sg_sign_attest(list, 1000L, 10000L)
   let o = star_gate_verify_pinned(j, "mallory", 1001L, sg_known_pk_hex)
   inspect(o.verdict, content="NoSuchUser")
+}
+
+///|
+/// 路由门禁策略（star_gate_policy）的白盒锁。
+/// 覆盖三态 + 未放行两种子判定：未启用（放行+告警）/ 启用无 attestation（fail-closed）/
+/// 启用齐备（按 verdict：Valid 放行、BadSignature/NoSuchUser 拦截）。
+
+///|
+test "star_gate_policy 未配置公钥 → 门未启用 + 放行 + 告警" {
+  let p = star_gate_policy("", "", "octocat", 1000L)
+  inspect(p.gate_enabled, content="false")
+  inspect(p.free_pool_unlocked, content="true")
+  if p.note.contains("未启用") &&
+    p.note.contains("FIST_STAR_GATE_PUBKEY_HEX") {
+
+  } else {
+    fail(
+      "未配置公钥的 note 应点明「未启用」与 env 名，实际: \{p.note}",
+    )
+  }
+}
+
+///|
+test "star_gate_policy 配置公钥但无 attestation → 门启用 + fail-closed 拦截" {
+  let p = star_gate_policy(sg_known_pk_hex, "", "octocat", 1000L)
+  inspect(p.gate_enabled, content="true")
+  inspect(p.free_pool_unlocked, content="false")
+  if p.note.contains("fail-closed") {
+
+  } else {
+    fail(
+      "启用无 attestation 的 note 应点明 fail-closed，实际: \{p.note}",
+    )
+  }
+}
+
+///|
+test "star_gate_policy 齐备且验签通过 → 放行，verdict=Valid" {
+  let list : Array[String] = ["octocat", "alice"]
+  let j = sg_sign_attest(list, 1000L, 10000L)
+  let p = star_gate_policy(sg_known_pk_hex, j, "alice", 1001L)
+  inspect(p.gate_enabled, content="true")
+  inspect(p.free_pool_unlocked, content="true")
+  inspect(p.verdict, content="Some(Valid)")
+  if p.note.contains("验签通过") {
+
+  } else {
+    fail("放行的 note 应点明「验签通过」，实际: \{p.note}")
+  }
+}
+
+///|
+test "star_gate_policy 齐备但公钥不符 → 拦截，verdict=BadSignature" {
+  let list : Array[String] = ["octocat"]
+  let j = sg_sign_attest(list, 1000L, 10000L)
+  let other_pk = "1".repeat(64)
+  let p = star_gate_policy(other_pk, j, "octocat", 1001L)
+  inspect(p.gate_enabled, content="true")
+  inspect(p.free_pool_unlocked, content="false")
+  inspect(p.verdict, content="Some(BadSignature)")
+  if p.note.contains("未放行") {
+
+  } else {
+    fail("拦截的 note 应点明「未放行」，实际: \{p.note}")
+  }
+}
+
+///|
+test "star_gate_policy 齐备但 login 不在名单 → 拦截，verdict=NoSuchUser" {
+  let list : Array[String] = ["octocat"]
+  let j = sg_sign_attest(list, 1000L, 10000L)
+  let p = star_gate_policy(sg_known_pk_hex, j, "mallory", 1001L)
+  inspect(p.gate_enabled, content="true")
+  inspect(p.free_pool_unlocked, content="false")
+  inspect(p.verdict, content="Some(NoSuchUser)")
 }

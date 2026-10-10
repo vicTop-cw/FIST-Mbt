@@ -15,34 +15,17 @@
 /// 不许放真值）。`FIST_*_TOKEN` 等名字看着像凭据，但它们是**环境变量名**，
 /// 值走进程环境——这与 `FIST_PROJECT_DIR` / `FIST_DB_PATH` 是同一类通道。
 pub let mcp_env_whitelist : Array[String] = [
-  "FIST_PROJECT_DIR",
-  "FIST_DB_PATH",
-  "FIST_GITHUB_ENABLED",
-  "FIST_GITHUB_REPO",
-  "FIST_GITHUB_TOKEN",
-  "FIST_GITCODE_TOKEN",
-  "FIST_GITCODE_PROJECT_ID",
-  "FIST_MODEL_API_BASE",
-  "FIST_MODEL_API_KEY",
-  "FIST_RUN_CHECK_ALLOW",
-  "FIST_SELF_OPENAI_BASE",
-  "FIST_SELF_OPENAI_KEY",
-  "ANTHROPIC_API_KEY",
-  "OPENAI_API_KEY",
-  "OPENAI_BASE_URL",
+  "FIST_PROJECT_DIR", "FIST_DB_PATH", "FIST_GITHUB_ENABLED", "FIST_GITHUB_REPO",
+  "FIST_GITHUB_TOKEN", "FIST_GITCODE_TOKEN", "FIST_GITCODE_PROJECT_ID", "FIST_MODEL_API_BASE",
+  "FIST_MODEL_API_KEY", "FIST_RUN_CHECK_ALLOW", "FIST_SELF_OPENAI_BASE", "FIST_SELF_OPENAI_KEY",
+  "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL",
 ]
 
 ///|
 /// 目标项目 MCP 配置表单字段白名单（HTML 配置页只会产出这些；其它键忽略并回显）。
 pub let mcp_form_field_whitelist : Array[String] = [
-  "serverName",
-  "command",
-  "args",
-  "cwd",
-  "toolCallTimeoutMs",
-  "failOnStartupError",
-  "reconnect",
-  "env",
+  "serverName", "command", "args", "cwd", "toolCallTimeoutMs", "failOnStartupError",
+  "reconnect", "env",
 ]
 
 ///|
@@ -50,32 +33,27 @@ pub let mcp_form_field_whitelist : Array[String] = [
 /// 覆盖 `api_key` / `apiKey` / `API_KEY` / `token` / `secret` / `authorization` /
 /// `bearer` / `password` 等形态。
 pub let mcp_cred_key_hits : Array[String] = [
-  "api_key",
-  "apikey",
-  "token",
-  "secret",
-  "authorization",
-  "bearer",
-  "password",
+  "api_key", "apikey", "token", "secret", "authorization", "bearer", "password",
 ]
 
 ///|
 /// 凭据形状判据（值前缀 / 长令牌形状）：命中即视为真值泄漏。
 pub let mcp_cred_value_hits : Array[String] = [
   "sk-", // OpenAI/Anthropic 风格 API key
-  "bearer ", // "Bearer yyy"
-  "ghp_", // GitHub personal access token
-  "github_pat_", // GitHub fine-grained PAT
-  "glpat-", // GitLab PAT
-  "aiza", // Google API key（AIza...）
-  "ya29.", // Google OAuth
-  "xoxb-", // Slack bot token
-  "xoxp-", // Slack user token
-  "pk_live_", // Stripe live
-  "rk_live_", // Stripe restricted
+   "bearer ", // "Bearer yyy"
+   "ghp_", // GitHub personal access token
+   "github_pat_", // GitHub fine-grained PAT
+   "glpat-", // GitLab PAT
+   "aiza", // Google API key（AIza...）
+   "ya29.", // Google OAuth
+   "xoxb-", // Slack bot token
+   "xoxp-", // Slack user token
+   "pk_live_", // Stripe live
+   "rk_live_", // Stripe restricted
 ]
 
 ///|
+
 ///|
 /// 2 空格缩进的漂亮打印（`Json::stringify()` 是紧凑形态；MCP 配置要人可读，
 /// 但不引入额外依赖，故内联一个最小实现）。对象键按插入序输出，
@@ -151,10 +129,14 @@ fn mcs_hex4(n : Int) -> String {
   let mut out = ""
   while rem > 0 {
     let d = rem % 16
-    out = hex.substring(start=d, end=d+1) + out
+    out = hex.substring(start=d, end=d + 1) + out
     rem = rem / 16
   }
-  if out.length() >= 4 { out } else { "0".repeat(4 - out.length()) + out }
+  if out.length() >= 4 {
+    out
+  } else {
+    "0".repeat(4 - out.length()) + out
+  }
 }
 
 ///|
@@ -168,8 +150,8 @@ fn mcs_lower(s : String) -> String {
     let cs = c.to_string()
     let mut replaced = false
     for i in 0..<26 {
-      if upper.substring(start=i, end=i+1) == cs {
-        out = out + lower.substring(start=i, end=i+1)
+      if upper.substring(start=i, end=i + 1) == cs {
+        out = out + lower.substring(start=i, end=i + 1)
         replaced = true
         break
       }
@@ -236,21 +218,24 @@ fn mcs_get_timeout(form : Json, key : String) -> Result[Int, String] {
     Json::Object(map) =>
       match map.get(key) {
         None => Ok(30000)
-        Some(Json::Number(n, ..)) =>
-          {
-            let v = n.to_int()
-            if n != v.to_double() {
-              Err("toolCallTimeoutMs 必须是整数（收到 " + n.to_string() + "）")
-            } else if v < 1 || v > 600000 {
-              Err(
-                "toolCallTimeoutMs 必须在 1..600000 之间（收到 " +
-                v.to_string() +
-                "）",
-              )
-            } else {
-              Ok(v)
-            }
+        Some(Json::Number(n, ..)) => {
+          let v = n.to_int()
+          if n != v.to_double() {
+            Err(
+              "toolCallTimeoutMs 必须是整数（收到 " +
+              n.to_string() +
+              "）",
+            )
+          } else if v < 1 || v > 600000 {
+            Err(
+              "toolCallTimeoutMs 必须在 1..600000 之间（收到 " +
+              v.to_string() +
+              "）",
+            )
+          } else {
+            Ok(v)
           }
+        }
         Some(_) => Err("toolCallTimeoutMs 必须是整数")
       }
     _ => Ok(30000)
@@ -305,6 +290,7 @@ pub fn mcs_scan_credentials(j : Json) -> Result[String, String] {
   mcs_scan_credentials_ex(j, false)
 }
 
+///|
 /// 带 `in_env` 标记的递归主体（外部只调 `mcs_scan_credentials`）。
 fn mcs_scan_credentials_ex(j : Json, in_env : Bool) -> Result[String, String] {
   match j {
@@ -384,32 +370,31 @@ fn mcs_redact(s : String) -> String {
 /// 收集 form 里的未知键（不在白名单内的顶层键；`unknown_keys` 只回显给 HTML 页调试用）。
 pub fn mcs_collect_unknown_keys(form : Json) -> Array[String] {
   match form {
-    Json::Object(map) =>
-      {
-        let out : Array[String] = []
-        for (k, _v) in map {
-          let mut known = false
-          for w in mcp_form_field_whitelist {
-            if k == w {
-              known = true
-            }
-          }
-          if !known {
-            out.push(k)
+    Json::Object(map) => {
+      let out : Array[String] = []
+      for (k, _v) in map {
+        let mut known = false
+        for w in mcp_form_field_whitelist {
+          if k == w {
+            known = true
           }
         }
-        out
+        if !known {
+          out.push(k)
+        }
       }
+      out
+    }
     _ => []
   }
 }
 
 ///|
 /// 环境变量对象的键白名单过滤：非白名单键收集进 `unknown_env_keys`。
-pub fn mcs_filter_env(form : Json, unknown_env_keys : Array[String]) -> Result[
-  Map[String, String],
-  String,
-] {
+pub fn mcs_filter_env(
+  form : Json,
+  unknown_env_keys : Array[String],
+) -> Result[Map[String, String], String] {
   let out : Map[String, String] = Map([])
   match form {
     Json::Object(map) =>
@@ -441,11 +426,14 @@ fn mcs_get_reconnect_int(form : Json, key : String, default : Int) -> Int {
   match form {
     Json::Object(map) =>
       match map.get(key) {
-        Some(Json::Number(n, ..)) =>
-          {
-            let v = n.to_int()
-            if v <= 0 { default } else { v }
+        Some(Json::Number(n, ..)) => {
+          let v = n.to_int()
+          if v <= 0 {
+            default
+          } else {
+            v
           }
+        }
         _ => default
       }
     _ => default
@@ -471,7 +459,9 @@ pub fn mcp_config_scaffold_impl(
   // 非法 JSON 直接拒
   let form = @json.parse(form_json) catch {
     _ =>
-      return Err("form_json 不是合法 JSON：请检查引号/逗号配平（可用 JSON.parse 先验一遍）")
+      return Err(
+        "form_json 不是合法 JSON：请检查引号/逗号配平（可用 JSON.parse 先验一遍）",
+      )
   }
 
   // 顶层必须是对象
@@ -531,18 +521,22 @@ pub fn mcp_config_scaffold_impl(
       mcs_get_bool(form, "failOnStartupError", false),
     ),
     "reconnect": Json::object({
-      "intervalMs": Json::number(mcs_get_reconnect_int(mcs_field(form, "reconnect"), "intervalMs", 500).to_double()),
-      "maxRetries": Json::number(mcs_get_reconnect_int(mcs_field(form, "reconnect"), "maxRetries", 30).to_double()),
-      "delayMs": Json::number(mcs_get_reconnect_int(mcs_field(form, "reconnect"), "delayMs", 30000).to_double()),
+      "intervalMs": Json::number(
+        mcs_get_reconnect_int(mcs_field(form, "reconnect"), "intervalMs", 500).to_double(),
+      ),
+      "maxRetries": Json::number(
+        mcs_get_reconnect_int(mcs_field(form, "reconnect"), "maxRetries", 30).to_double(),
+      ),
+      "delayMs": Json::number(
+        mcs_get_reconnect_int(mcs_field(form, "reconnect"), "delayMs", 30000).to_double(),
+      ),
     }),
     "env": Json::object(env_json),
   })
 
   let servers : Map[String, Json] = Map([])
   servers.set(server_name, server_conf)
-  let root = Json::object({
-    "mcpServers": Json::object(servers),
-  })
+  let root = Json::object({ "mcpServers": Json::object(servers) })
 
   // —— 返回体（json 是可直接落盘的漂亮打印正文，密钥值不回显）——
   let notes : Array[String] = [
@@ -559,9 +553,7 @@ pub fn mcp_config_scaffold_impl(
     "project_dir": Json::string(project_dir),
     "target_file": Json::string("fist.mcp.json"),
     "json": Json::string(mcs_pretty(root)),
-    "unknown_keys": Json::array(
-      unknown_keys.map(fn(s) { Json::string(s) }),
-    ),
+    "unknown_keys": Json::array(unknown_keys.map(fn(s) { Json::string(s) })),
     "notes": Json::array(notes.map(fn(s) { Json::string(s) })),
   })
   Ok(out)

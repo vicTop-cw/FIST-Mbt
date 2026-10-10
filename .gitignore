@@ -2,6 +2,9 @@
 _build/
 /target/
 .mooncakes/
+# `moon vendor` 落盘的依赖实体副本（如 vendor/mizchi-sqlite-fixed/）——工具生成的依赖物化，
+# 不是本仓资产，`moon publish` 不得打包（check_publish_payload 点名过 P1）。
+/vendor/
 .moonagent/
 # build/test logs
 *.log
