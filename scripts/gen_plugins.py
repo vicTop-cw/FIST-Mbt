@@ -156,6 +156,7 @@ def ledger_status(bugs_txt):
     return counts, problems
 
 # 宿主插件名（各宿主市场的目录名）
+HOSTS = ("atomcode", "codearts", "deepseek-harness", "claude")
 SKILL_MAIN = "fist-mbt"
 SKILL_COMMANDER = "fist-commander"
 README_DOC = ROOT / "README.md"  # BUG-67：分组表唯一真源
@@ -262,6 +263,21 @@ def inject_after_frontmatter(body: str, header: str) -> str:
         die("SKILL.md frontmatter 未闭合")
     cut = end + 4  # 含闭合 `---` 与其后换行
     return body[:cut] + "\n" + header + body[cut:].lstrip("\n")
+
+
+def copy_assets(base: Path) -> None:
+    """把仓库根 `assets/` 按字节复制到每个宿主目录的 `plugins/<host>/assets/`。
+
+    与 SKILL.md/references 不同：assets 是**字节资产**，不做占位符渲染——
+    真源字节长什么样，投影就是什么样（「单一真源 + 投影可重跑」）。
+    目标已存在同名文件时覆盖为源字节；`copytree(dirs_exist_ok=True)`
+    使重复运行幂等（宿主目录先整体清空再重建，故不会有旧文件残余）。
+    """
+    src = ROOT / "assets"
+    if not src.is_dir():
+        return
+    for host in HOSTS:
+        shutil.copytree(src, base / host / "assets", dirs_exist_ok=True)
 
 
 def write_skill(dest_dir: Path, src_file: Path, host: str, vals: dict,
@@ -453,6 +469,9 @@ MCP 启动参数以仓库根 `{MCP_NAME}` 为准（{vals['TOOL_COUNT']} 工具 /
 """,
     )
 
+    # ⑤ 末尾：assets/ 字节复制到每个宿主目录（单一真源，投影可重跑）
+    copy_assets(base)
+
 
 def tree_digest(base: Path) -> dict:
     out = {}
@@ -595,7 +614,7 @@ def main() -> int:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
     target = ROOT / "plugins"
-    for host in ("atomcode", "codearts", "deepseek-harness", "claude"):
+    for host in HOSTS:
         d = target / host
         if d.exists():
             shutil.rmtree(d)
