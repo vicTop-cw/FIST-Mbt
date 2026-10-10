@@ -63,6 +63,16 @@
      两支反向对照（戳早于 published 不误红 / 权威面没记这一版则这一格不作数），
      两面任一为空 ⇒ FATAL 自拒；标记自身残缺、同版本两条、版本与资产名打架也都判红。
 
+  J14 工具计数自述 ↔ 真源对表（BUG-136）：src/server/server.mbt 资源正文、cmd/cli/help_topics.mbt
+       CLI 帮助面、ARCHITECTURE.md 架构自述面三处里的 `N 个工具`/`N MCP tools` 类计数主张，
+       必须等于 server.mbt 注册表真源计数；CLI 帮助面的分组数字之和与标题「(N groups)」
+       自述也须与真源一致。三面一处都解析不到 ⇒ FATAL 自拒（扫描面饿死不等于没问题）。
+
+  J15 docs/ 归档文档文件名日期前缀（R12 新增）：docs/ 目录下每个 .md 文件名必须
+      `YYYY-MM-DD-` 开头——docs/ 是评估/决策归档面（如 2026-10-10-mizchi-llm-eval.md），
+      文件名不带日期戳时读者无从判断这条评估是哪个时间点做出的。目录里一份 .md 都
+      枚举不到 ⇒ FATAL 自拒（删空目录骗不过）。
+
 设计约束：不改被校验的文档、不写库、纯只读。
 """
 import inspect
@@ -784,6 +794,50 @@ def j14_tool_count_claims():
     return problems
 
 
+# ---- J15 文档文件名日期前缀规范（R12 新增）：docs/ 里带日期戳的文件必须 YYYY-MM-DD- 开头 ----
+# 为什么要有：docs/ 是评估/决策归档目录（如 2026-10-10-mizchi-llm-eval.md），
+# 文件名带日期（如 improvement-plan-20260929.md 里的 20260929）却不用 `YYYY-MM-DD-` 前缀时，
+# 读者无从按时间排序归档，也无法一眼判断这条评估是哪个时间点做出的。
+# 纯参考文档（deliverable.md / evolve.md / laya.md 这类不带日期语义的技能/契约说明）不在此列——
+# 它们不是「某个时间点的决策」，是持续有效的规范面。
+# 已确立的归档约定 `improvement-plan-YYYYMMDD.md` / `improvement-proposals-YYYYMMDD.md` 亦豁免——
+# 它有自己的命名族（前缀固定 + 日期内嵌），且被 40+ 处引用，改名代价远超收益。
+# 判据：枚举 ROOT/docs/*.md，凡文件名里含 `\d{4,8}` 形态的日期数字、却不以 `^\d{4}-\d{2}-\d{2}-` 开头、
+# 也不属于上述已确立归档约定 ⇒ 即红。
+# 反幻影：docs/ 里一份 .md 都枚举不到 ⇒ FATAL（扫描面饿死不等于没问题）。
+RE_J15_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
+RE_J15_EMBEDDED = re.compile(r"\d{4,8}")
+RE_J15_LEGACY = re.compile(r"^(improvement-plan|improvement-proposals)-\d{8}\.md$")
+
+
+def j15_docs_date_prefix_problems(paths=None):
+    """纯判定：文件名数组 → 违例清单。空数组时自拒（FATAL 先判枚举器坏）。"""
+    problems = []
+    if not paths:
+        return ["FATAL J15 docs/ 一份 .md 都枚举不到 ⇒ 扫描面饿死，判据空转（删空目录骗不过）"]
+    for p in paths:
+        name = p.name
+        # 纯参考文档（不带日期数字）豁免——它们不是时间锚点档案
+        if not RE_J15_EMBEDDED.search(name):
+            continue
+        # 已确立归档约定豁免（improvement-plan/proposals 族）
+        if RE_J15_LEGACY.match(name):
+            continue
+        if not RE_J15_DATE.match(name):
+            problems.append(
+                f"J15 {name} 文件名含日期数字但未用 `YYYY-MM-DD-` 前缀 ⇒ 归档文档失去时间锚点，"
+                "回溯性审查无从按时间排序这条评估/决策")
+    return problems
+
+
+def j15_docs_date_prefix_consistency():
+    d = ROOT / "docs"
+    if not d.is_dir():
+        return ["FATAL J15 docs/ 目录不存在 ⇒ 评估归档面缺失"]
+    files = sorted(d.glob("*.md"))
+    return j15_docs_date_prefix_problems(files)
+
+
 # ---- J4 子判据：注册表发布版本只能有一处自述（BUG-30 建议①，编号不扩，免得 J10 范围自述说谎）----
 # 与 J4 主判据的分工要说清：J4 管「文档自述的本项目版本 == moon.mod」，那说的是**代码版本**；
 # 「注册表上到底发布到哪个版本」是另一件事，本机没有复核通道（WebFetch 被策略拦过，实测不可达）。
@@ -1038,6 +1092,21 @@ def j_selftest():
     j14_real = j14_tool_count_claims()
     if j14_real:
         fails.append("J14 在真实现状面上就红了（先判尺子，再判被测）：" + j14_real[0])
+    # J15（文档文件名日期前缀）：三支缺一不可——缺前缀必红、带前缀不误红、扫描面空必自拒。
+    if not any("未用 `YYYY-MM-DD-` 前缀" in p for p in j15_docs_date_prefix_problems(
+            [Path("2026-10-10-x.md"), Path("decision-20260929.md")])):
+        fails.append("J15 抓不到『文件名缺日期前缀』→ 归档文档时间锚点丢失无人管")
+    if j15_docs_date_prefix_problems(
+            [Path("improvement-plan-20260929.md"), Path("2026-10-10-x.md")]):
+        fails.append("J15 误红已确立归档约定（improvement-plan/proposals 族）→ 恒红判据不可信")
+    if j15_docs_date_prefix_problems(
+            [Path("2026-10-10-x.md"), Path("2026-09-01-y.md")]):
+        fails.append("J15 对带日期前缀的文件误红 → 恒红判据不可信")
+    if not any("扫描面饿死" in p for p in j15_docs_date_prefix_problems([])):
+        fails.append("J15 扫描面为空时不自拒 → 删空 docs/ 就能骗过判据")
+    j15_real = j15_docs_date_prefix_consistency()
+    if j15_real:
+        fails.append("J15 在真实现状面上就红了（先判尺子，再判被测）：" + j15_real[0])
     # J4 子判据（BUG-30）：注册表发布版本只能有一处权威自述。四条对照缺一不可——
     # 两处打架必红、权威被删空必红、扫描面空转必红、单处自述不许误红。
     if not any("另写一处" in p for p in publication_problems(
@@ -1169,6 +1238,7 @@ def main(argv):
     problems += j12_ci_if_ref_guards()
     problems += j13_release_status_consistency()
     problems += j14_tool_count_claims()
+    problems += j15_docs_date_prefix_consistency()
 
     if problems:
         print(f"FAIL 文档面不一致（真源 {n} 工具 / moon.mod {mv}）：")
@@ -1179,7 +1249,7 @@ def main(argv):
         f"PASS 文档面一致：{n} 工具在 AGENTS/README 逐个可查、分组和={n}、当前自述版本={mv}、"
         "J6 规范正文↔投影一致、J7 无旧口径、J8 模板调用面契约干净、"
         "J9 返回契约（必查清单 + 歧义键分工 + 棘轮）未退化、J10 判据范围自述==实现、"
-        "J11 CI native 门步骤↔账本/规范面 三向对表、J12 CI 的 if: 不钉分支名（恒假门）、J13 发布状态短语↔BACKLOG release-fact 对表、J14 工具计数自述与 CLI 分组和↔真源对表"
+        "J11 CI native 门步骤↔账本/规范面 三向对表、J12 CI 的 if: 不钉分支名（恒假门）、J13 发布状态短语↔BACKLOG release-fact 对表、J14 工具计数自述与 CLI 分组和↔真源对表、J15 docs/ 归档文档文件名日期前缀"
     )
     return 0
 
