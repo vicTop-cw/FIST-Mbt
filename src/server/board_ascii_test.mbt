@@ -572,3 +572,43 @@ test "state_flow_ascii_empty_store" {
   assert_true(ascii.contains("(空)"))
   assert_eq(sf_num(j, "in_flow"), 0)
 }
+
+///|
+/// 属性测试：`board_ascii`/`state_flow_ascii`/`status_summary` 三视角在随机任务集上
+/// 都能渲染出非空 ascii，且 total_tasks 与输入数组长度一致（BUG-29 计数守恒）。
+/// 用确定性 xorshift PRNG 生成伪随机任务描述。
+test "property_ascii_views_consistency_seeded" {
+  for seed in 0..<8 {
+    // 确定性 PRNG（xorshift）
+    let mut x = if seed == 0 { 1 } else { seed }
+    let mut tasks : Array[@core.Task] = []
+    for _i in 0..<12 {
+      x = x ^ (x << 13)
+      x = x ^ (x >> 17)
+      x = x ^ (x << 5)
+      let n = if x < 0 { -x } else { x % 1000 }
+      tasks = tasks + [@core.Task::new(
+        id="PX" + n.to_string(),
+        project_dir="/proj/prop",
+        description="属性测试任务 " + n.to_string(),
+        created_at="2026-01-04T00:00:00Z",
+        depends_on=[],
+      )]
+    }
+    let board = render_board_ascii(tasks, "")
+    let state = render_state_flow_ascii(tasks, "")
+    let summary = render_status_summary(tasks, ["default"], "0.3.8")
+    match board.value("ascii") {
+      Some(Json::String(s)) => assert_true(s.length() > 0)
+      _ => abort("board ascii 缺失")
+    }
+    match state.value("ascii") {
+      Some(Json::String(s)) => assert_true(s.length() > 0)
+      _ => abort("state ascii 缺失")
+    }
+    match summary.value("total_tasks") {
+      Some(Json::Number(n, ..)) => assert_eq(n.to_int(), tasks.length())
+      _ => abort("status_summary total_tasks 缺失")
+    }
+  }
+}
