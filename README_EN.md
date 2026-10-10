@@ -9,7 +9,7 @@
 [![Tests](https://img.shields.io/badge/tests-573%2F573-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
-**FIST-Mbt** is an **AI commander task-orchestration foundation** rewritten in **pure MoonBit** and exposed as an **MCP Server** — not another agent framework, but an autonomous system that keeps itself moving: the full lifecycle `publish → claim → plan → execute → submit → verify → archive`, plus self-driving review loops, DGM evolution sampling, Omega strong verification, and cross-process watchdog — all surfaced as **129 MCP tools** to any MCP client (Claude Desktop / Cursor / a custom JSON-RPC client).
+**FIST-Mbt** is an **AI commander task-orchestration foundation** rewritten in **pure MoonBit** and exposed as an **MCP Server** — not another agent framework, but an autonomous system that keeps itself moving: the full lifecycle `publish → claim → plan → execute → submit → verify → archive`, plus self-driving review loops, DGM evolution sampling, Omega strong verification, and cross-process watchdog — all surfaced as **130 MCP tools** to any MCP client (Claude Desktop / Cursor / a custom JSON-RPC client).
 
 **Why MoonBit**: task orchestration is inherently correctness-sensitive (state machine, permission matrix, append-only audit, recursive decomposition). MoonBit's strong typing, zero runtime dependencies, and JS+Native cross-compilation let this logic pass **573/573 tests on the JS target** (Windows + Linux CI, measured 2026-10-02) — reproducible on any machine. `moon update && moon test --target js -j 1` and you are up; no Python environment hell.
 
@@ -38,7 +38,7 @@ node _build/js/debug/build/cmd/cli/cli.js serve   # start the MCP server (STDIO)
 **One-command self-check (for reviewers):**
 
 ```bash
-python scripts/mcp_smoke.py    # → PASS tools/list → 129 tools … MCP-SMOKE PASS
+python scripts/mcp_smoke.py    # → PASS tools/list → 130 tools … MCP-SMOKE PASS
 python scripts/award_demo.py   # → MCP-AWARD-DEMO PASS (capability chain, ends with cleanup → CLEAN)
 ```
 
@@ -98,7 +98,7 @@ FIST-Mbt/
 ├── src/engine/       # FistEngine business logic + DAG ext + decomposition
 ├── src/ops/          # operations: audit, heartbeat, heal, watchdog, cleanup
 ├── src/omega/        # explainable spec/gate/check
-└── src/server/       # MCP assembly: 129 tools + 3 resources + 2 prompts
+└── src/server/       # MCP assembly: 130 tools + 3 resources + 2 prompts
 ```
 
 Pure MoonBit; no Rust/C wrappers. Protocol layer: [`colmugx/mcp`](https://mooncakes.io/colmugx/mcp) (Apache-2.0, protocol 2026-07-28). Domain core (`core/store/engine`) is separated from the protocol layer for clean unit testing.
@@ -109,7 +109,7 @@ Pure MoonBit; no Rust/C wrappers. Protocol layer: [`colmugx/mcp`](https://moonca
 
 - **573/573** tests green on the JS backend (Windows; first measured 2026-09-28, re-confirmed 2026-09-29 on this working tree). The native track measured **572/572** on WSL (Linux, ubuntu-22.04) on 2026-10-01 **with build residue in the working tree**, but the *same commit* checked out clean (`git archive HEAD`) makes the native test binary die on a signal — root cause is the dependency's native FFI (ledger BUG-133), and `scripts/blackbox/e2e_native_heap_probe.py` is the judge for whether that is still true. Do not read either number as a dual-target green. Since R107 the suite includes **property tests** (`moonbitlang/core/quickcheck`): random inputs validate invariants (slice arity/prefix, difficulty monotonicity, Task transition discipline claim/execute/reopen/split/submit/reject) with fixed seeds. Since R109 a **transition-contract guard** (`tx_contract`, Design by Contract: precondition/invariant/postcondition read-only pre-check — any failure rejects the batch, state A stays stable, nothing persisted). Since R111 a **feedback convergence** tool (`eval_feedback`, Evaluator-Optimizer schema: free-text feedback normalized into Defects/Evidence/Fix/Acceptance with a deterministic pass/fail verdict) — reproducible on any machine.
 - CI three tracks (js ubuntu / native ubuntu / js windows) with live badges. Both native arms carry a `Native heap gate (BUG-133 探针当门)` step **before** the full native suite (owner ruling ③, 2026-10-01): it runs that same judge (`--selftest` + `--runs 12`) and only `crashes=0/12` lets the suite run; the red text names BUG-133 and its unblocking condition instead of leaving an unexplained signal-death. The suite step was not deleted, so coverage self-restores once the dependency is fixed.
-- Guard family: `check_tools_sync` (129 tools aligned) / `check_test_sync` (573 aligned — sweeps **every** current-state doc, not a 4-file whitelist; `--selftest` proves the judge itself can go red) / `check_badge` / `check_scripts_index` / `map_verify` / `cleanup --check` (repo cleanliness gate).
+- Guard family: `check_tools_sync` (130 tools aligned) / `check_test_sync` (573 aligned — sweeps **every** current-state doc, not a 4-file whitelist; `--selftest` proves the judge itself can go red) / `check_badge` / `check_scripts_index` / `map_verify` / `cleanup --check` (repo cleanliness gate).
 
 ---
 
