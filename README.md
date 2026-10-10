@@ -8,7 +8,7 @@
 [![Tests](https://img.shields.io/badge/tests-573%2F573-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
-**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **135 个 MCP 工具** 暴露给任意 MCP 客户端。
+**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **136 个 MCP 工具** 暴露给任意 MCP 客户端。
 
 **为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 573 项测试全绿、跨环境可复现。
 
@@ -39,7 +39,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 
 ---
 
-## 功能全景（135 个 MCP 工具）
+## 功能全景（136 个 MCP 工具）
 
 ### 生命周期（14）
 `publish` · `publish_parallel` · `plan` · `claim` · `execute` · `submit` · `verify` · `reject` · `retry` · `pause` · `resume` · `reopen_task` · `archive` · `delete`
@@ -62,8 +62,8 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 ### 衍生（3）
 `atgc_old_compile` · `atgc_old_run` · `atgc_old_talk`
 
-### 看板·DAG·规划（22）
-`dag_critical_path` · `dag_parallelism` · `dag_ascii` · `dag_check` · `dag_ready` · `dag_sort` · `dag_depend` · `dag_publish` · `dag_slack` · `dag_schedule` · `dag_cost_route` · `dag_mc` · `plan_revise` · `goal_drift_check` · `board_ascii` · `status_summary` · `project_health` · `health_check` · `reserve_scope` · `reserve_check` · `reserve_release` · `task_triage`
+### 看板·DAG·规划（23）
+`dag_critical_path` · `dag_parallelism` · `dag_ascii` · `dag_check` · `dag_ready` · `dag_sort` · `dag_depend` · `dag_publish` · `dag_slack` · `dag_schedule` · `dag_cost_route` · `dag_mc` · `plan_revise` · `goal_drift_check` · `board_ascii` · `state_flow_ascii` · `status_summary` · `project_health` · `health_check` · `reserve_scope` · `reserve_check` · `reserve_release` · `task_triage`
 
 ### 自我记忆·自进化（11）
 `memory_consolidate` · `memory_gc` · `memory_link` · `evolve_distill` · `evolve_lesson` · `evolve_critic` · `evolve_sample` · `evolve_snapshot` · `evolve_submit` · `evolve_asset_register` · `task_challenge`
@@ -104,7 +104,7 @@ node _build/js/debug/build/cmd/cli/cli.js serve   # 必须带 serve：裸跑只�
 FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 # 4. CLI 通用网关（一源四态·CLI 形态）
-python scripts/fist.py list-tools                     # 列出 135 个工具（实测 tools/list）
+python scripts/fist.py list-tools                     # 列出 136 个工具（实测 tools/list）
 python scripts/fist.py call project_standards          # AI 开发规范
 python scripts/fist.py call store_open --namespace scratch --scratch true
 python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path":"moon.mod","contains":"vicTop-cw"}]'

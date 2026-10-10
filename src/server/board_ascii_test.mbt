@@ -418,6 +418,15 @@ fn b29_num(j : Json, key : String) -> Int {
 }
 
 ///|
+/// 读顶层整数字段（state_flow 用，缺失返回 0 fail-open）
+fn sf_num(j : Json, key : String) -> Int {
+  match j.value(key) {
+    Some(Json::Number(n, ..)) => n.to_int()
+    _ => 0
+  }
+}
+
+///|
 /// 读顶层布尔字段
 fn b29_bool(j : Json, key : String) -> Bool {
   match j.value(key) {
@@ -508,4 +517,58 @@ test "BUG-29：棘轮——残留数等于基线不报警，高出基线即 proj
   let h2 = render_project_health(clean, "0.3.0")
   assert_eq(b29_num(h2, "done_no_artifact"), 0)
   assert_eq(ph_grade(h2), "healthy")
+}
+
+///|
+/// 状态流转 ASCII：合法迁移图 + 当前分布 + 在流计数。
+test "state_flow_ascii_shows_lifecycle" {
+  let e = ba_engine()
+  let root = ba_publish(e, "状态流转测试根任务")
+  ignore(e.claim(task_id=root, assignee="leader_a", now="2026-09-25T11:00:00Z"))
+  match
+    e.plan_deep(
+      task_id=root,
+      split_n=2,
+      by="leader_a",
+      now="2026-09-25T11:01:00Z",
+    ) {
+    Ok(_) => ()
+    Err(m) => abort("plan_deep failed: \{m}")
+  }
+  let children = e.children_of(root)
+  assert_true(children.length() >= 2)
+  let c0 = children[0].get_id()
+  ignore(e.claim(task_id=c0, assignee="exec_1", now="2026-09-25T11:02:00Z"))
+  ignore(
+    e.execute(task_id=c0, deliverable="成果 v1", now="2026-09-25T11:03:00Z"),
+  )
+  let j = render_state_flow_ascii(e.list_all(), "")
+  let ascii = match j.value("ascii") {
+    Some(Json::String(s)) => s
+    _ => abort("ascii 缺失")
+  }
+  // 合法迁移图（一行流程）在
+  assert_true(ascii.contains("待领取 → 已领取 → 执行中"))
+  assert_true(ascii.contains("已打回→执行中"))
+  // 当前分布（含已打回/重派分支）
+  assert_true(ascii.contains("执行中="))
+  assert_true(ascii.contains("待领取="))
+  // 在流任务 ≥ 1
+  let infl = match j.value("in_flow") {
+    Some(Json::Number(n, ..)) => n.to_int()
+    _ => abort("in_flow 缺失")
+  }
+  assert_true(infl >= 1)
+}
+
+///|
+/// 状态流转 ASCII：空仓 → 当前分布 (空)，在流 = 0。
+test "state_flow_ascii_empty_store" {
+  let j = render_state_flow_ascii([], "nosuch")
+  let ascii = match j.value("ascii") {
+    Some(Json::String(s)) => s
+    _ => abort("ascii 缺失")
+  }
+  assert_true(ascii.contains("(空)"))
+  assert_eq(sf_num(j, "in_flow"), 0)
 }
