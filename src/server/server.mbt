@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 129 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 130 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -5515,6 +5515,53 @@ pub async fn run_server() -> Unit {
       let icl = get_bool(args, "include_checklist", default=true)
       let ptype2 = if ptype.is_empty() { "moontbit_mcp" } else { ptype }
       Ok(@mcp.ToolResult::text(project_standards(ptype2, icl).stringify()))
+    },
+  )
+
+  // ===== mcp_config_scaffold：MCP 配置偏好 → 可落盘 fist.mcp.json 正文（方向一 P0-b）=====
+  // 目标项目把 HTML 配置页产出的 form_json 交给本工具，服务端校验并返回可落盘正文，
+  // 落盘由调用方（agent / 安装器）做——HTML 写不了文件，本工具也不代写目标项目文件。
+  s1 = instrumented_tool(
+    s1,
+    "mcp_config_scaffold",
+    "MCP 配置脚手架：把目标项目「MCP 设置偏好」form（HTML 配置页产出）服务端校验并返回可落盘的 `fist.mcp.json` 正文。**本工具不写目标项目文件**——落盘由调用方（agent / 安装器）做，HTML 写不了文件。参数：project_dir(可选，目标项目目录；缺省取服务端 FIST_PROJECT_DIR 或 .)、form_json(必填，HTML 配置页产出的偏好 JSON 文本)。字段白名单：serverName(默认 fist-mbt，^[A-Za-z0-9_-]{1,32}$，非法拒)、command(默认 fist-mbt，黑盒路径优先=安装器 shim)、args(数组默认 [])、cwd(默认 .)、toolCallTimeoutMs(整数默认 30000，1..600000 否则拒)、failOnStartupError(默认 false)、reconnect(默认 {\"intervalMs\":500,\"maxRetries\":30,\"delayMs\":30000})、env(只允许白名单环境变量名 FIST_PROJECT_DIR/FIST_DB_PATH/FIST_GITHUB_TOKEN/FIST_GITHUB_REPO/FIST_GITCODE_TOKEN/FIST_GITCODE_PROJECT_ID/FIST_MODEL_API_BASE 等；FIST_PROJECT_DIR 默认 .)。**硬门（负路径必须拒）**：form_json 里任何键值出现凭据形状就整笔拒绝——键名匹配 api_key/token/secret/authorization/bearer/password，或值匹配 sk- 前缀 / Bearer 前缀 / ghp_ / glpat- / AIza 等长令牌形状。正确姿势：配置里只写环境变量名占位（如 {\"FIST_MODEL_API_KEY\":\"$FIST_MODEL_API_KEY\"}），真值走环境变量。返回 {project_dir, target_file: \"fist.mcp.json\", json: <可落盘正文，2 空格缩进>, unknown_keys: [...], notes: [...]}；密钥值不回显进 json。未知字段忽略并回显 unknown_keys（供 HTML 页调试）。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "目标项目目录（可选；缺省取服务端 FIST_PROJECT_DIR 或 .）",
+        ),
+        "form_json": string_prop(
+          "HTML 配置页产出的偏好 JSON 文本（必填）",
+        ),
+      },
+      ["form_json"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let form_json = get_json_text(args, "form_json")
+      let project_dir_arg = get_str(args, "project_dir")
+      let project_dir =
+        if project_dir_arg.is_empty() {
+          match @env.get_env_var("FIST_PROJECT_DIR") {
+            Some(p) => if p.is_empty() { "." } else { p }
+            None => "."
+          }
+        } else {
+          project_dir_arg
+        }
+      // 未知键先收集（纯函数，便于白盒与调试）；JSON 不合法时由 impl 整笔拒绝
+      let unknown_keys : Array[String] = try {
+        let parsed_form = @json.parse(form_json)
+        match parsed_form {
+          Json::Object(_) => mcs_collect_unknown_keys(parsed_form)
+          _ => []
+        }
+      } catch {
+        _ => []
+      }
+      match mcp_config_scaffold_impl(form_json, project_dir, unknown_keys) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
     },
   )
 
