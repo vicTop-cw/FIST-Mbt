@@ -59,9 +59,10 @@ pub fn do_evolve_lesson(
 }
 
 ///|
-/// 把 SQLite 中已沉淀的 [lesson] 教训回灌进内存 Archive（幂等，按 id 去重）。
-/// 目的：Omega 打回自动回流（engine 侧仅落库）写入的教训，经此同步后在同一进程内
-/// 对立于 `evolve_snapshot`/`dead_ends`/plan·claim 的 `inject` 可见。
+/// 把 SQLite 中已沉淀的 [lesson] 教训与 [asset] 外部资产回灌进内存 Archive（幂等，按 id 去重）。
+/// 目的：Omega 打回自动回流（engine 侧仅落库）写入的教训、以及 `evolve_asset_register`
+/// 落库的外部资产，经此同步后在同一进程内对立于 `evolve_snapshot`/`dead_ends`/plan·claim
+/// 的 `inject` 可见。
 /// 返回本次新同步条数。
 fn sync_db_lessons(arc : @evolve.Archive, store : @store.SqliteStore?) -> Int {
   let mut n = 0
@@ -70,7 +71,9 @@ fn sync_db_lessons(arc : @evolve.Archive, store : @store.SqliteStore?) -> Int {
     Some(s) =>
       for j in s.evolve_list() {
         let a = @evolve.Artifact::from_json(j)
-        if a.goal.has_prefix("[lesson]") {
+        // BUG-141：不只回灌 [lesson]，也要回灌 [asset]——[asset] 已能落库，但新起的
+        // server 进程若不回灌，plan/claim 的 inject 仍检索不到资产（跨进程失效）。
+        if a.goal.has_prefix("[lesson]") || a.goal.has_prefix("[asset]") {
           if arc.get(a.id) is None {
             @evolve.Archive::add(arc, a)
             n = n + 1

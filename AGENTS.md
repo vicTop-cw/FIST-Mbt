@@ -114,7 +114,7 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**130 tools** + 3 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**134 tools** + 3 resources + 2 prompts）：
 
 ### 生命周期（14）
 | 工具 | 说明 |
@@ -323,6 +323,14 @@ You can browse and install extra skills here:
 | `model_router_status` | 只读查当前路由状态：每模型 `used/limit/usage_pct/share_pct/over_threshold/exhausted` + 当前档位 + 切换次数 + 状态文件路径与 `exists`。不改配额、不落盘 |
 | `model_router_reset` | 清窗口：所有模型 `used`/`window_start` 归零（等价"这 5 小时重新开始"），档位与游标保持；`hard=true` 连档位/游标/切换计数一起复位 |
 | `executor_run` | 把任务真交给外部编码执行器（宿主命令能力，**默认收紧**）：`executor` 只接受登记表 `aider \| atomcode`，argv 形状固定在 `src/executor/cli_argv.mbt`（不经 shell ⇒ 提示词里的 `;` `$()` 反引号都只是**一个** argv 元素），可执行文件名由登记表推导 ⇒ 调用方无法注入任意命令。`model` 留空则先向路由器要一个模型并记账（路由↔执行器接线点）；`dry_run=true`（新增可选参数）只回显 argv、**一个进程都不起**；native 构建返回明确拒绝。密钥只来自 server 进程环境变量，本仓库不读 `.env`、不回显 key。参数：`project_dir`(必填)、`executor`(必填)、`prompt`(必填非空且不含 NUL)、`model`(可选)、`namespace`(可选)、`timeout_ms`(可选默认 180000)、`dry_run`(可选默认 false) |
+
+### 六顶帽 · 辩论裁决（4，R118 P1-b，`src/ops/ops_hats.mbt` 真源）
+| 工具 | 说明 |
+|---|---|
+| `hat_list` | 列出六顶思考帽（White/Red/Black/Yellow/Green/Blue）的 role/color/forbid/output_keys 与默认三帽（White/Black/Yellow）。纯计算只读 |
+| `debate_convene` | 发起一次六顶帽辩论（in-memory 会话）：`topic`(必填)、`hats`(可选，缺省 white,black,yellow)、`threshold`(可选，缺省 0.6)；返回 `session_id`（`debate-<yyyyMMdd>-<nnn>`）+ 已注册帽子。会话态进程内保存、重启即失（诚实标注） |
+| `debate_register` | 给指定 session 注册一条帽子判决：`session_id`/`hat_id`/`verdict`(pass/reject/abstain)/`evidence`(必填非空，`valid_verdict` 拒绝空值)；返回该 session 已注册判决列表 + 当前 rate/pass |
+| `debate_verdict` | 对指定 session 做收敛判决：`rate` = 帽子中 agree 的比例（agree = verdict 为 pass 的帽子数），`pass = rate >= threshold`（缺省 0.6）。**终态门是用户**——本工具只给收敛读数，不自动判定议题通过/否决。返回 summary（含 `terminal_gate=user` 与 `anti_drift` 清单） |
 
 Resources: `fist://map`, `fist://principles`, `fist://overview`
 ### 一源四态 · 插件态（生成投影，非手写）

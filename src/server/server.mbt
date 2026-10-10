@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 130 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 134 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -3205,6 +3205,24 @@ pub async fn run_server() -> Unit {
         created_at=ts,
       )
       @evolve.Archive::add(evolve_arc, art)
+      // BUG-140：外部资产注册必须同步落库 evolve_artifacts，否则重启即失、inject 检索不到 [asset]。
+      // 范式严格对齐 src/evolve/lesson.mbt:64-77 的 evolve_lesson_persist（store 为 None = 内存态，跳过）。
+      ignore(
+        match evolve_store {
+          None => Err("evolve_store 未打开（内存态，未落库）")
+          Some(s) =>
+            s.evolve_upsert(
+              id=asset_id,
+              parent_id="",
+              goal~,
+              note~,
+              code~,
+              score~,
+              parts_json="{}",
+              created_at=ts,
+            )
+        },
+      )
       Ok(@mcp.ToolResult::text(art.to_json().stringify()))
     },
   )
