@@ -111,6 +111,24 @@ fn pipeline_marker(prompt_name : String) -> String {
 }
 
 ///|
+/// Tool Use Rubric 的结束标记（与 templates/tool_use_rubric.md 一致）。
+/// 任何工具或判据脚本都以它判断「是否已注入硬规则段」。
+const RUBRIC_END_MARK : String = "<!-- TOOL_USE_RUBRIC_END -->"
+
+///|
+/// 判断一份提示词是否已注入 Tool Use Rubric 硬规则段。
+/// 判据：正文含 `<!-- TOOL_USE_RUBRIC_END -->` 结束标记。
+/// 目的：让 pipeline 分支 A 生成的提示词可被程序化自检（不靠 LLM 目测），
+/// 也是 run_check 判据脚本的确定性锚点——`grep -q TOOL_USE_RUBRIC_END` 就是真值。
+/// 空串返回 false（fail-closed）。
+pub fn pipeline_has_rubric(prompt_content : String) -> Bool {
+  if prompt_content.is_empty() {
+    return false
+  }
+  prompt_content.contains(RUBRIC_END_MARK)
+}
+
+///|
 /// 在命名空间内扫描某提示词已发布的任务。
 /// 返回 (活跃任务, 该提示词任务总数, 最近一次出现的状态词)。
 /// 活跃 = 待领取 / 已领取 / 拆分中 / 执行中 / 待验收。
@@ -356,26 +374,45 @@ pub fn pipeline_tick(
             ),
           )
         }
+        // Tool Use Rubric 自检（P1「Tool Use Rubric」）：prompt_ready 阶段必须确认
+        // 提示词已注入硬规则段（含 RUBRIC_END_MARK），否则 fail-closed。
+        // 这是模板里 step 5「追加后自检」的程序化兜底——不靠 LLM 目测。
+        let prompt_content = match safe_read_text(ppath) {
+          Some(c) => c
+          None =>
+            return Err("读提示词文件失败，无法做 rubric 自检: " + ppath)
+        }
+        let has_rubric = pipeline_has_rubric(prompt_content)
         if !pipeline_write(state_path, "Pending") {
           return Err("写入 currentState.txt 失败: " + state_path)
         }
         Ok(
           pj_set(
-            pj_make(
-              state_in,
-              "Pending",
-              "prompt_pending",
-              ns_final,
-              "提示词已落盘，状态置 Pending，等待发布执行",
-              Some(pf),
-              Some(ppath),
-              None,
-              None,
-              None,
-              None,
+            pj_set(
+              pj_make(
+                state_in,
+                "Pending",
+                "prompt_pending",
+                ns_final,
+                if has_rubric {
+                  "提示词已落盘且 Tool Use Rubric 已注入，状态置 Pending，等待发布执行"
+                } else {
+                  "提示词已落盘但未注入 Tool Use Rubric（缺 " +
+                  RUBRIC_END_MARK +
+                  "），状态仍置 Pending（生成方应回分支 A 重做）"
+                },
+                Some(pf),
+                Some(ppath),
+                None,
+                None,
+                None,
+                None,
+              ),
+              "mode",
+              Json::string(effective_mode),
             ),
-            "mode",
-            Json::string(effective_mode),
+            "tool_use_rubric",
+            Json::boolean(has_rubric),
           ),
         )
       }

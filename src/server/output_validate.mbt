@@ -299,11 +299,7 @@ fn check_external_artifact(
           }
           let inv_err = check_external_invariants(stdout, spec)
           if inv_err != "" {
-            {
-              artifact: "external:" + key,
-              ok: false,
-              detail: inv_err,
-            }
+            { artifact: "external:" + key, ok: false, detail: inv_err, }
           } else {
             let extra = if !spec.contains.is_empty() {
               "；stdout contains=\"\{spec.contains}\""

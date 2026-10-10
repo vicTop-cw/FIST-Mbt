@@ -433,3 +433,89 @@ fn mr_read_text(path : String) -> String {
     _ => ""
   }
 }
+
+///|
+/// `model_auth_status`（ma_*）—— 只读认证/Star 门状态查询的回归锁。
+/// 判定逻辑走纯计算 `mr_auth_gate`（合成值直传，**不污染真实 env**，CI 上可复现）；
+/// `ma_4` 再走一次 impl 端到端，锁"零副作用"那一半。
+/// 锁三档：默认未配置零回归 / 只配公钥 fail-closed / 坏 attestation 不崩溃。
+
+///|
+test "ma_1_默认未配置：gate_enabled=false、free_pool_unlocked=true、verdict 空" {
+  let g = mr_auth_gate("", "", "", 0L)
+  assert_false(mo_bool(g, "gate_enabled"))
+  assert_true(mo_bool(g, "free_pool_unlocked"))
+  assert_false(mo_bool(g, "pinned_key_configured"))
+  assert_false(mo_bool(g, "attestation_present"))
+  assert_false(mo_bool(g, "user_login_configured"))
+  assert_eq(mo_str(g, "verdict"), "")
+  assert_true(mo_str(g, "note").contains("FIST_STAR_GATE_PUBKEY_HEX"))
+  // 没有 attestation 可解析，TTL 与签发年龄都必须给 0（不是 0L 占位的伪读数）
+  assert_eq(mo_int(g, "ttl_seconds"), 0)
+  assert_eq(mo_int(g, "attestation_age_seconds"), 0)
+}
+
+///|
+test "ma_2_只配 pinned key 无 attestation：门启用但 fail-closed" {
+  let g = mr_auth_gate("deadbeef", "", "vicTop-cw", 1000L)
+  assert_true(mo_bool(g, "gate_enabled"))
+  assert_false(mo_bool(g, "free_pool_unlocked"))
+  assert_true(mo_bool(g, "pinned_key_configured"))
+  assert_false(mo_bool(g, "attestation_present"))
+  assert_true(mo_bool(g, "user_login_configured"))
+  // 未提供 attestation ⇒ verdict 缺省（gate 的 verdict 空串），TTL/年龄仍是 0
+  assert_eq(mo_str(g, "verdict"), "")
+  assert_eq(mo_int(g, "ttl_seconds"), 0)
+  assert_eq(mo_int(g, "attestation_age_seconds"), 0)
+}
+
+///|
+test "ma_3_伪造/残缺 attestation：verdict 归 unreadable 或 bad_format 且不崩溃" {
+  // ① 根本不是 JSON → Unreadable
+  let g1 = mr_auth_gate("deadbeef", "<<<不是JSON>>>", "vicTop-cw", 1000L)
+  assert_true(mo_bool(g1, "gate_enabled"))
+  assert_false(mo_bool(g1, "free_pool_unlocked"))
+  assert_eq(mo_str(g1, "verdict"), "unreadable")
+  // ② 合法 JSON 但 format 非本门格式 → BadFormat
+  let g2 = mr_auth_gate(
+    "deadbeef", "{\"format\":\"other/v9\",\"issued_at\":100,\"ttl_seconds\":1}",
+    "vicTop-cw", 1000L,
+  )
+  assert_eq(mo_str(g2, "verdict"), "bad_format")
+  // ③ format 对但缺字段 → BadFormat，且 TTL/年龄读不到给 0（不崩溃）
+  let g3 = mr_auth_gate(
+    "deadbeef", "{\"format\":\"fist-star-gate-attestation/v1\",\"algorithm\":\"ed25519\"}",
+    "vicTop-cw", 1000L,
+  )
+  assert_eq(mo_str(g3, "verdict"), "bad_format")
+  assert_eq(mo_int(g3, "ttl_seconds"), 0)
+  assert_eq(mo_int(g3, "attestation_age_seconds"), 0)
+  // ④ 有效字段齐备但签名非法 → bad_signature（钉死公钥 ≠ 清单公钥路径）
+  let g4 = mr_auth_gate(
+    "aaaapinned",
+    "{\"format\":\"fist-star-gate-attestation/v1\",\"algorithm\":\"ed25519\"," +
+    "\"list\":[\"vicTop-cw\"],\"issued_at\":10,\"ttl_seconds\":999," +
+    "\"public_key_hex\":\"zz\",\"signature_hex\":\"zz\"}",
+    "vicTop-cw",
+    1000L,
+  )
+  assert_eq(mo_str(g4, "verdict"), "bad_signature")
+  assert_false(mo_bool(g4, "free_pool_unlocked"))
+}
+
+///|
+test "ma_4_impl 端到端零副作用：不建状态文件、gate 与 pools 都在位" {
+  let d = mo_prep("ma4")
+  let path = "temp/mo_ops/memory/model-router-ma4.json"
+  must_not_exist(path)
+  let j = mo_unwrap(model_auth_status_impl(d, ns="ma4"))
+  assert_true(mo_bool(j, "ok"))
+  let gate = mo_get(j, "gate")
+  // 默认未配置 Star 门（本测试不设 env，CI 上三个 FIST_STAR_GATE_* 均为空）
+  assert_false(mo_bool(gate, "gate_enabled"))
+  assert_true(mo_bool(gate, "free_pool_unlocked"))
+  let pools = mo_get(j, "pools")
+  assert_true(mo_get(pools, "exists") != Json::null())
+  // 零副作用：只读查询不得落任何状态文件
+  must_not_exist(path)
+}

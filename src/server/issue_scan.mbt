@@ -266,7 +266,10 @@ fn scan_match_lines(
 /// 下划线；判定不做 unicode 展开，保守（够用即可）。
 fn scan_is_ident_char(c : Char) -> Bool {
   let o = c.to_int()
-  (o >= 65 && o <= 90) || (o >= 97 && o <= 122) || (o >= 48 && o <= 57) || c == '_'
+  (o >= 65 && o <= 90) ||
+  (o >= 97 && o <= 122) ||
+  (o >= 48 && o <= 57) ||
+  c == '_'
 }
 
 ///|
@@ -340,7 +343,10 @@ fn scan_substring_target(code : String) -> String {
   let mut k = j
   while k >= 0 {
     let o = cs[k].to_int()
-    let ok = (o >= 65 && o <= 90) || (o >= 97 && o <= 122) || (o >= 48 && o <= 57) || cs[k] == '_'
+    let ok = (o >= 65 && o <= 90) ||
+      (o >= 97 && o <= 122) ||
+      (o >= 48 && o <= 57) ||
+      cs[k] == '_'
     if ok {
       k = k - 1
     } else {
@@ -364,7 +370,8 @@ fn scan_guard_is_empty(prev : String, vn : String) -> Bool {
   if vn.is_empty() {
     return false
   }
-  t.contains(vn + ".is_empty()") || t.contains(vn + ".length() == 0") ||
+  t.contains(vn + ".is_empty()") ||
+  t.contains(vn + ".length() == 0") ||
   t.contains(vn + ".length() <= 0")
 }
 
@@ -378,8 +385,10 @@ fn scan_guard_length_above(prev : String, vn : String) -> Bool {
   if vn.is_empty() {
     return false
   }
-  t.contains(vn + ".length() >") || t.contains(vn + ".length() >= ") ||
-  t.contains(".length() >") || t.contains(".length() >= ")
+  t.contains(vn + ".length() >") ||
+  t.contains(vn + ".length() >= ") ||
+  t.contains(".length() >") ||
+  t.contains(".length() >= ")
 }
 
 ///|
@@ -390,8 +399,12 @@ fn scan_guard_zero(prev : String) -> Bool {
   if t.is_empty() {
     return false
   }
-  t.contains("<= 0") || t.contains("== 0") || t.contains("< 1") || t.contains("is_empty()") ||
-  t.contains("<= 0.0") || t.contains("== 0.0")
+  t.contains("<= 0") ||
+  t.contains("== 0") ||
+  t.contains("< 1") ||
+  t.contains("is_empty()") ||
+  t.contains("<= 0.0") ||
+  t.contains("== 0.0")
 }
 
 ///|
@@ -403,12 +416,10 @@ pub fn scan_finding_guarded(
 ) -> Bool {
   let vn = if rule == "unprotected-division" {
     scan_div_var(code)
+  } else if rule == "substring-overrun" {
+    scan_substring_target(code)
   } else {
-    if rule == "substring-overrun" {
-      scan_substring_target(code)
-    } else {
-      ""
-    }
+    ""
   }
   // prev_lines 里**越靠后越接近命中行**（调用方按 hit_idx 往回到 0 顺序压栈）。
   // 因此从后往前扫：先看离命中最近的守卫，遇 `fn ` 边界（函数开头）即停。

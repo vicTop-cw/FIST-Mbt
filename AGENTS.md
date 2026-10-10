@@ -127,7 +127,7 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**134 tools** + 3 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**135 tools** + 3 resources + 2 prompts）：
 
 ### 生命周期（14）
 | 工具 | 说明 |
@@ -329,9 +329,10 @@ You can browse and install extra skills here:
 | `gitcode_flush_plan` | 为每条 pending bug 生成一条 curl 命令（GitCode API v4 + `PRIVATE-TOKEN` header），**不执行任何网络调用**；外部拿到后手动/脚本执行，成功后调 `gitcode_queue_mark_sent` 回写 |
 | `gitcode_queue_mark_sent` | 标记一批 `bug_ids` 已同步 GitCode（写 sent_at + gitcode_issue_iid），幂等安全 |
 
-### 模型路由 · 外部执行器（4，合并自兄弟项目 fist-model-router 与 FIST 的 aider/atomcode 执行器）
+### 模型路由 · 外部执行器（5，合并自兄弟项目 fist-model-router 与 FIST 的 aider/atomcode 执行器）
 | 工具 | 说明 |
 |---|---|
+| `model_auth_status` | 只读查模型路由的认证/Star 门状态（**零副作用**：不改配额、不落盘、不推进轮询游标、不 pick）：`gate` 三态（`gate_enabled`/`free_pool_unlocked`/`verdict`）+ `pinned_key_configured`/`attestation_present`/`user_login_configured`（env **只回显"配没配"，绝不回显密钥本体**）+ `ttl_seconds`/`attestation_age_seconds` + `pools`（复用 `model_router_status` 的返回 JSON 原样嵌入，它 Err 时 `pools={"error":…}` 但整体仍 `ok=true`）。默认未配置 Star 门 → `gate_enabled=false`/`free_pool_unlocked=true` 零回归。参数：`project_dir`(必填)、`namespace`(可选默认 default)。真源 `src/router/star_gate.mbt` + `src/server/model_router_ops.mbt`。白盒锁 `src/server/model_router_ops_wbtest.mbt`(ma_1~4，含默认零回归/fail-closed/坏 attestation 不崩溃/零副作用四锁) |
 | `model_route` | 模型配额路由决策（免费优先 + 达 `threshold_pct`(默认95%) 自动切付费 + 付费耗尽回退免费 + 每模型独立 5h 滚动窗口）。参数：`project_dir`(必填，相对、拒绝对称/盘符/`..`)、`namespace`(可选默认 default，**每个 ns 一份独立配额账**)、`record_model`(可选：给名则 `used+1` 后再决策，留空=只问不消耗)、`config_json`(可选：RouterConfig JSON 文本覆盖池定义，同名模型已用配额保留；**非法 JSON 直接报错不静默回落**)。状态落盘 `{project_dir}/memory/model-router-{ns}.json` 跨进程复现；**只问不消耗＝零副作用**（不记账/不推进游标/`persisted=false`；给了 config_json 池定义时只播种定义不播种用量，BUG-62）；`namespace` 只允许字母数字`_`-`-`，非法值显式拒绝（BUG-64）；**时间戳服务端盖章，调用面无 `now` 参数**（BUG-33 政策）；两池皆不可用 → `ok=false` 显式失败，绝不静默改用别的模型。**Star 门（D1=A 完整接入）**：默认未配置即不设门（`star_gate.gate_enabled=false`，零回归）；要启用设 server 进程环境变量 `FIST_STAR_GATE_PUBKEY_HEX`（钉死 Ed25519 公钥 hex）/`FIST_STAR_GATE_ATTESTATION_JSON`（GitHub Pages 拉到的 attestation 正文）/`FIST_STAR_GATE_USER_LOGIN`（授权名单内 login）；启用未验签通过 → `ok=false` + `star_gate.free_pool_unlocked=false`（fail-closed，不 pick/不记账）。回执恒带 `star_gate` 字段。真源 `src/router`（纯计算零 IO，含 `star_gate_policy` 三态判定）+ `src/server/model_router_ops.mbt`（IO 层只做 env 读取 + 短路）。白盒锁 `src/router/model_router_wbtest.mbt`(rt_1~15，含 rt_14 越界游标点名、rt_15 池内环形扫描) / `router_state_wbtest.mbt`(rs_1~6，rs_6 补 rs_3 的假绿) / `src/router/star_gate_wbtest.mbt`(星门 9 锁，含 pinned 四锁 + `star_gate_policy` 三态五锁) / `src/server/model_router_ops_wbtest.mbt`(mo_1~10，mo_6/mo_8/mo_9 钉查询零副作用、mo_7 钉 ns 校验、mo_10 钉 Star 门默认未启用零回归) / `src/server/server_r3_wbtest.mbt`(BUG-63 config_json 对象形态) / `src/server/issue_scan_wbtest.mbt`(BUG-72 字面量/注释降噪成对锁) |
 | `model_router_status` | 只读查当前路由状态：每模型 `used/limit/usage_pct/share_pct/over_threshold/exhausted` + 当前档位 + 切换次数 + 状态文件路径与 `exists`。不改配额、不落盘 |
 | `model_router_reset` | 清窗口：所有模型 `used`/`window_start` 归零（等价"这 5 小时重新开始"），档位与游标保持；`hard=true` 连档位/游标/切换计数一起复位 |

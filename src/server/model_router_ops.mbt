@@ -281,6 +281,111 @@ fn model_router_status_impl(
 }
 
 ///|
+/// Star 门验签 verdict → 小写下划线串（契约要求 String）。用 `to_string()` 做映射，
+/// 避免 server 包跨包 match 枚举变体；未知值原样回传（不静默吞）。
+fn mr_verdict_str(v : @router.StarVerdict?) -> String {
+  match v {
+    None => ""
+    Some(x) =>
+      match x.to_string() {
+        "Valid" => "valid"
+        "Stale" => "stale"
+        "BadSignature" => "bad_signature"
+        "BadFormat" => "bad_format"
+        "Unreadable" => "unreadable"
+        "NoSuchUser" => "no_such_user"
+        _ => x.to_string()
+      }
+  }
+}
+
+///|
+/// 从 attestation JSON 里读一个 Int64 字段（ttl_seconds / issued_at）。
+/// 读不到/解析失败一律回 0L，**不许崩溃**（`model_auth_status` 是只读查询，坏 attestation
+/// 由 `star_gate_policy` 判定为 unreadable/bad_format，这里只负责"能读到多少是多少"）。
+fn mr_att_int64(attestation : String, key : String) -> Int64 {
+  if attestation.is_empty() {
+    return 0L
+  }
+  let j : Json = @json.parse(attestation) catch { _ => return 0L }
+  match j.value(key) {
+    Some(Number(n, ..)) => n.to_int64()
+    _ => 0L
+  }
+}
+
+///|
+/// 认证/Star 门状态（纯计算、零 IO）：调用方已把 env 值读好并传入，便于白盒测试
+/// 用合成值直接钉住默认态 / fail-closed / 坏 attestation 三档，不污染真实 env。
+/// `gate` 是返回契约里的那一块；`pools` 由 impl 另调 `model_router_status_impl` 拼上。
+fn mr_auth_gate(
+  pinned_key : String,
+  attestation : String,
+  user_login : String,
+  now : Int64,
+) -> Json {
+  let gate = @router.star_gate_policy(pinned_key, attestation, user_login, now)
+  let ttl = mr_att_int64(attestation, "ttl_seconds")
+  let issued = mr_att_int64(attestation, "issued_at")
+  // 读不到 issued_at 时 age 给 0（不给一个"now - 0"的伪读数）；now 早于签发（时钟回拨）也夹到 0
+  let age = if issued <= 0L {
+    0L
+  } else {
+    let d = now - issued
+    if d < 0L {
+      0L
+    } else {
+      d
+    }
+  }
+  mr_obj([
+    ("gate_enabled", Json::boolean(gate.gate_enabled)),
+    ("free_pool_unlocked", Json::boolean(gate.free_pool_unlocked)),
+    ("verdict", Json::string(mr_verdict_str(gate.verdict))),
+    ("note", Json::string(gate.note)),
+    // env 只回显"配没配"，**绝不回显密钥本体**（与 mr_env 的注释同一条纪律）
+    ("pinned_key_configured", Json::boolean(!pinned_key.is_empty())),
+    ("attestation_present", Json::boolean(!attestation.is_empty())),
+    ("user_login_configured", Json::boolean(!user_login.is_empty())),
+    ("ttl_seconds", Json::number(ttl.to_double())),
+    ("attestation_age_seconds", Json::number(age.to_double())),
+  ])
+}
+
+///|
+/// 只读查询：模型路由的认证/Star 门当前状态（工具 `model_auth_status` 的实现体）。
+/// **零副作用**：不改配额、不落盘、不推进轮询游标、不做任何模型 pick（也不调 `model_route_impl`）。
+/// `pools` 直接复用 `model_router_status_impl` 的返回 JSON 原样嵌入；它 Err 时 pools 给
+/// `{"error": e}` 但**整体仍 Ok**——排障场景里"gate 能不能看到"比"池状态读没读到"更重要。
+/// Star 门完全未配置（默认态）时 gate_enabled=false / free_pool_unlocked=true，零回归。
+pub fn model_auth_status_impl(
+  project_dir : String,
+  ns~ : String,
+) -> Result[Json, String] {
+  if !bug_project_dir_ok(project_dir) {
+    return Err(
+      "model_auth_status: 非法 project_dir（拒绝绝对路径/穿越/盘符）",
+    )
+  }
+  match mr_check_ns(ns) {
+    Some(msg) => return Err("model_auth_status: " + msg)
+    None => ()
+  }
+  let now = @env.now().to_int64() / 1000L
+  let gate = mr_auth_gate(
+    mr_env("FIST_STAR_GATE_PUBKEY_HEX"),
+    mr_env("FIST_STAR_GATE_ATTESTATION_JSON"),
+    mr_env("FIST_STAR_GATE_USER_LOGIN"),
+    now,
+  )
+  let pools = match model_router_status_impl(project_dir, ns~) {
+    Ok(j) => j
+    Err(e) => Json::object({ "error": Json::string(e) })
+  }
+  Ok(mr_obj([("ok", Json::boolean(true)), ("gate", gate), ("pools", pools)]))
+}
+
+///|
 /// 清窗口（配额与窗口起点归零）。hard=true 连档位/游标/切换计数一起复位。
 fn model_router_reset_impl(
   project_dir : String,
