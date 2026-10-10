@@ -316,3 +316,120 @@ test "ov_12_mixed_all_pass" {
   assert_true(r.is_ok())
   assert_eq(ov_verdict(r), "pass")
 }
+
+///|
+/// 构造带 stdout 的 external_results（模拟 run_check 有输出）。
+fn ov_ext_stdout(key : String, ok : Bool, stdout : String) -> Json {
+  let inner : Map[String, Json] = Map([])
+  inner.set("ok", Json::boolean(ok))
+  inner.set("code", Json::number(if ok { 0.0 } else { 1.0 }))
+  inner.set("stderr", Json::string(""))
+  inner.set("stdout", Json::string(stdout))
+  let outer : Map[String, Json] = Map([])
+  outer.set(key, Json::object(inner))
+  Json::object(outer)
+}
+
+///|
+/// 测试 13（BUG-143 / P1「Did it work?」）：ok=true 但 stdout 缺必需串 → fail
+/// 场景：moon test SIGABRT 仍 exit 0（BUG-142），stdout 没有 "failed: 0"，
+///      但 ok=true —— 旧实现只看 ok 会假 pass。
+test "ov_13_external_ok_but_stdout_missing_contains_fail" {
+  let d = ov_dir("ov_c13")
+  ov_write(d, "main.mbt", "fn main() {}\n")
+  let artifacts : Array[Json] = [
+    Json::object({ "path": Json::string("main.mbt") }),
+    Json::object({
+      "check_key": Json::string("moon_test"),
+      "contains": Json::string("failed: 0"),
+    }),
+  ]
+  // ok=true 但 stdout 没有 "failed: 0"（模拟崩溃却 exit 0）
+  let r = output_validate(
+    d,
+    artifacts,
+    ov_ext_stdout("moon_test", true, "Total tests: 645, passed: 645"),
+    "",
+    require_evidence=false,
+  )
+  assert_true(r.is_ok())
+  assert_eq(ov_verdict(r), "fail")
+}
+
+///|
+/// 测试 14（BUG-143）：ok=true 但 stdout 含禁止串 → fail
+/// 场景：stdout 残留 "SIGABRT" / "core dumped"，进程却 exit 0。
+test "ov_14_external_ok_but_stdout_has_not_contains_fail" {
+  let d = ov_dir("ov_c14")
+  ov_write(d, "main.mbt", "fn main() {}\n")
+  let artifacts : Array[Json] = [
+    Json::object({ "path": Json::string("main.mbt") }),
+    Json::object({
+      "check_key": Json::string("moon_test"),
+      "not_contains": Json::string("SIGABRT"),
+    }),
+  ]
+  let r = output_validate(
+    d,
+    artifacts,
+    ov_ext_stdout(
+      "moon_test",
+      true,
+      "The test executable exited with signal: 6 (SIGABRT)\nTotal tests: 645, passed: 645, failed: 0.",
+    ),
+    "",
+    require_evidence=false,
+  )
+  assert_true(r.is_ok())
+  assert_eq(ov_verdict(r), "fail")
+}
+
+///|
+/// 测试 15（BUG-143）：ok=true + stdout 满足 contains → pass（正样本）
+test "ov_15_external_ok_and_stdout_satisfies_contains_pass" {
+  let d = ov_dir("ov_c15")
+  ov_write(d, "main.mbt", "fn main() {}\n")
+  let artifacts : Array[Json] = [
+    Json::object({ "path": Json::string("main.mbt") }),
+    Json::object({
+      "check_key": Json::string("moon_test"),
+      "contains": Json::string("failed: 0"),
+    }),
+  ]
+  let r = output_validate(
+    d,
+    artifacts,
+    ov_ext_stdout(
+      "moon_test",
+      true,
+      "Total tests: 645, passed: 645, failed: 0.",
+    ),
+    "",
+    require_evidence=false,
+  )
+  assert_true(r.is_ok())
+  assert_eq(ov_verdict(r), "pass")
+}
+
+///|
+/// 测试 16（BUG-143）：ok=true + stdout 不满足 not_contains → pass（正样本）
+test "ov_16_external_ok_and_stdout_no_forbidden_pass" {
+  let d = ov_dir("ov_c16")
+  ov_write(d, "main.mbt", "fn main() {}\n")
+  let artifacts : Array[Json] = [
+    Json::object({ "path": Json::string("main.mbt") }),
+    Json::object({
+      "check_key": Json::string("moon_test"),
+      "not_contains": Json::string("SIGABRT"),
+    }),
+  ]
+  let r = output_validate(
+    d,
+    artifacts,
+    ov_ext_stdout("moon_test", true, "Total tests: 645, passed: 645, failed: 0."),
+    "",
+    require_evidence=false,
+  )
+  assert_true(r.is_ok())
+  assert_eq(ov_verdict(r), "pass")
+}
