@@ -206,6 +206,9 @@ test "bug8_bug11_task_ns_echo_and_id_alias" {
     _ => ()
   }
   let d = "temp/bug_c8"
+  @fs.create_dir(d) catch {
+    _ => ()
+  }
   @fs.create_dir(d + "/memory") catch {
     _ => ()
   }
@@ -287,6 +290,9 @@ test "ledger_status_vocabulary_parses_duplicate_of" {
     _ => ()
   }
   let d = "temp/bug_c_ledger"
+  @fs.create_dir(d) catch {
+    _ => ()
+  }
   @fs.create_dir(d + "/memory") catch {
     _ => ()
   }
