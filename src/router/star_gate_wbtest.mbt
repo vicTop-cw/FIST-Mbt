@@ -171,3 +171,55 @@ test "star_gate_verify public_key_hex 非 hex → BadSignature" {
   inspect(o.verdict, content="BadSignature")
   inspect(o.list_count, content="1")
 }
+
+///|
+/// 钉死入口（star_gate_verify_pinned）的白盒锁。
+/// 覆盖三态：公钥一致 → 与原入口同判定；公钥不符 → BadSignature（reason 点明「钉死」）；
+/// 空期望公钥 → fail-closed BadSignature。
+
+///|
+test "star_gate_verify_pinned 公钥一致 == star_gate_verify（零回归等价）" {
+  let list : Array[String] = ["octocat"]
+  let j = sg_sign_attest(list, 1000L, 10000L)
+  let a = star_gate_verify(j, "octocat", 1001L)
+  let b = star_gate_verify_pinned(j, "octocat", 1001L, sg_known_pk_hex)
+  inspect(a.verdict, content="Valid")
+  inspect(b.verdict, content="Valid")
+  inspect(b.list_count, content="1")
+}
+
+///|
+test "star_gate_verify_pinned 公钥不符 → BadSignature（reason 点明钉死）" {
+  let list : Array[String] = ["octocat"]
+  // payload 用的是 sg_known_pk_hex；期望公钥给另一个合法 hex（64 个 0）
+  let j = sg_sign_attest(list, 1000L, 10000L)
+  let other_pk = "0".repeat(64)
+  let o = star_gate_verify_pinned(j, "octocat", 1001L, other_pk)
+  inspect(o.verdict, content="BadSignature")
+  inspect(o.list_count, content="1")
+  if o.reason.contains("钉死") {
+  } else {
+    fail("pinned 公钥不符的 reason 应点明「钉死」，实际: \{o.reason}")
+  }
+}
+
+///|
+test "star_gate_verify_pinned 空期望公钥 → BadSignature（fail-closed，不退化）" {
+  let list : Array[String] = ["octocat"]
+  let j = sg_sign_attest(list, 1000L, 10000L)
+  let o = star_gate_verify_pinned(j, "octocat", 1001L, "")
+  inspect(o.verdict, content="BadSignature")
+  inspect(o.list_count, content="1")
+  if o.reason.contains("fail-closed") {
+  } else {
+    fail("空期望公钥的 reason 应点明 fail-closed，实际: \{o.reason}")
+  }
+}
+
+///|
+test "star_gate_verify_pinned 公钥一致 + login 不在名单 → NoSuchUser（钉死不改变后续判定）" {
+  let list : Array[String] = ["octocat"]
+  let j = sg_sign_attest(list, 1000L, 10000L)
+  let o = star_gate_verify_pinned(j, "mallory", 1001L, sg_known_pk_hex)
+  inspect(o.verdict, content="NoSuchUser")
+}

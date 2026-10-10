@@ -149,10 +149,40 @@ fn star_extract_fields(j : Json) -> Option[StarAttestData] {
 ///   ④ now_epoch > issued_at + ttl_seconds        → Stale
 ///   ⑤ user_login ∉ list                          → NoSuchUser
 ///   ⑥ 全过                                       → Valid
+///|
+/// 钉死期望公钥后的 Star 门验证（消除「公钥自指」弱点，见 plan §3.2 第 6 点）。
+///
+/// 原 `star_gate_verify` 用**清单 payload 里自带的** `public_key_hex` 验签（见下面 ③ 步），
+/// 该公钥与被验签的内容同源 → 对能改写 Pages/CI 产物的攻击者不构成认证（可换成自己的密钥对）。
+/// 本入口把期望公钥**离线钉死**：
+///   - `expected_public_key_hex` 非空且 == payload 的 `public_key_hex` → 用该公钥（= expected）验签，正常判定；
+///   - `expected_public_key_hex` 非空但 != payload 的 `public_key_hex` → 直接 `BadSignature`（reason 点明「钉死不符」）；
+///   - `expected_public_key_hex` 为空字符串 → **fail-closed** 返回 `BadSignature`，不静默退化为自指路径。
+///
+/// TTL / 名单判定与 `star_gate_verify` 完全一致；本入口是纯新增，原入口签名与语义不变。
+pub fn star_gate_verify_pinned(
+  attestation_json : String,
+  user_login : String,
+  now_epoch : Int64,
+  expected_public_key_hex : String,
+) -> StarGateOutcome {
+  star_gate_verify_impl(attestation_json, user_login, now_epoch, Some(expected_public_key_hex))
+}
+
 pub fn star_gate_verify(
   attestation_json : String,
   user_login : String,
   now_epoch : Int64,
+) -> StarGateOutcome {
+  star_gate_verify_impl(attestation_json, user_login, now_epoch, None)
+}
+
+/// 共享实现：`expected_public_key_hex` 为 `None` 走原自指路径（零回归），`Some(exp)` 走钉死路径。
+fn star_gate_verify_impl(
+  attestation_json : String,
+  user_login : String,
+  now_epoch : Int64,
+  expected_public_key_hex : Option[String],
 ) -> StarGateOutcome {
   // ① 语法层失败：字符串不是合法 JSON，什么都读不出来，直接 Unreadable（不吞错，原因写进 reason）
   let j : Json = @json.parse(attestation_json) catch {
@@ -181,8 +211,25 @@ pub fn star_gate_verify(
         now_epoch,
       )
   }
-  // ③ 密码学层：重建 canonical 并用清单自带的公钥验签。签名不可信 → 后面 TTL/名单都无意义
+  // ③ 密码学层：先过钉死门（若配置了期望公钥），再重建 canonical 验签。签名不可信 → 后面 TTL/名单都无意义
   let canonical = star_canonical(data.list, data.issued_at, data.ttl_seconds)
+  match expected_public_key_hex {
+    Some(exp) if exp == "" =>
+      return star_outcome(
+        BadSignature,
+        "未配置钉死的期望公钥（空值拒绝，fail-closed）",
+        data.list.length(),
+        now_epoch,
+      )
+    Some(exp) if exp != data.public_key_hex =>
+      return star_outcome(
+        BadSignature,
+        "清单 public_key_hex 与钉死的期望公钥不符（可能是别处签发的清单）",
+        data.list.length(),
+        now_epoch,
+      )
+    _ => ()
+  }
   let pub_key = match hex_decode(data.public_key_hex) {
     Ok(b) => b
     Err(e) =>
