@@ -402,3 +402,70 @@ pub fn render_health_check(tasks : Array[@core.Task], ns : String) -> Json {
     ),
   })
 }
+
+///|
+/// 状态流转 ASCII（P2 Dashboard「状态流转」）：把 Task 生命周期画成一行流程，
+/// 让 agent 一次读到「合法迁移图 + 当前任务分布」。返回 { ascii, counts, in_flow }。
+/// 与 board_ascii（按状态分组）、dag_ascii（依赖结构）、status_summary（脉冲）互补。
+pub fn render_state_flow_ascii(
+  tasks : Array[@core.Task],
+  ns_filter : String,
+) -> Json {
+  let flow = "待领取 → 已领取 → 执行中 → 待验收 → 已完成 → 已归档\n" +
+    "                    │         │\n" +
+    "                    ▼         ▼\n" +
+    "              已暂停→已领取  已打回→执行中\n" +
+    "                   (重派)       (重试)"
+  let bucket : Map[String, Int] = Map([])
+  for t in tasks {
+    if ns_filter == "" || t.ns == ns_filter {
+      let st = t.status_to_string()
+      if st == "" { continue }
+      match bucket.get(st) {
+        Some(n) => bucket.set(st, n + 1)
+        None => bucket.set(st, 1)
+      }
+    }
+  }
+  let counts : Map[String, Json] = Map([])
+  for (k, v) in bucket {
+    counts.set(k, Json::number(v.to_double()))
+  }
+  let in_flow_names = ["待领取", "已领取", "执行中", "待验收", "已完成"]
+  let mut in_flow = 0
+  for name in in_flow_names {
+    match bucket.get(name) {
+      Some(n) => in_flow = in_flow + n
+      None => ()
+    }
+  }
+  let sb = StringBuilder()
+  sb.write_string(flow)
+  sb.write_string("\n\n当前分布：")
+  let order : Array[String] = [
+    "待领取", "已领取", "拆分中", "执行中", "待验收", "已打回",
+    "已完成", "已暂停", "已归档",
+  ]
+  let mut first = true
+  for st in order {
+    match bucket.get(st) {
+      Some(n) => {
+        if !first { sb.write_string("  ") }
+        sb.write_string(st + "=" + n.to_string())
+        first = false
+      }
+      None => ()
+    }
+  }
+  if first {
+    sb.write_string("(空)")
+  }
+  sb.write_string(
+    "\n在流任务（待领取→待验收）：" + in_flow.to_string(),
+  )
+  Json::object({
+    "ascii": Json::string(sb.to_string()),
+    "counts": Json::object(counts),
+    "in_flow": Json::number(in_flow.to_double()),
+  })
+}

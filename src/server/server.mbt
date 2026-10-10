@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 135 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 136 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -3832,6 +3832,17 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace")
       let board = render_board_ascii(engine.list_all(), ns)
       Ok(@mcp.ToolResult::text(board.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "state_flow_ascii",
+    "返回状态流转 ASCII：把 Task 生命周期画成一行合法迁移图（待领取→已领取→执行中→待验收→已完成→已归档，含已暂停重派 / 已打回重试分支）+ 当前各状态计数 + 在流任务数。与 board_ascii（按状态分组）、dag_ascii（依赖结构）、status_summary（脉冲）互补。参数：namespace(可选，空=全部命名空间)。返回 { ascii, counts:{状态:数量}, in_flow }。",
+    schema({ "namespace": string_prop("命名空间(默认全部)") }, []),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace")
+      let flow = render_state_flow_ascii(engine.list_all(), ns)
+      Ok(@mcp.ToolResult::text(flow.stringify()))
     },
   )
   s1 = instrumented_tool(
