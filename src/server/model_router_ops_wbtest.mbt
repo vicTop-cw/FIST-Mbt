@@ -407,6 +407,27 @@ test "mo_9_查询逐字节不改写状态文件，消耗才改写" {
 }
 
 ///|
+
+///|
+/// Star 门接入锁（mo_10）：默认未配置 `FIST_STAR_GATE_PUBKEY_HEX` 时必须保持现状——
+/// 回执带 `star_gate` 字段、`gate_enabled=false`、`free_pool_unlocked=true`、`ok=true`，
+/// 且 `warnings` 仍为零（不污染既有零警告语义）。判定逻辑本身由 star_gate_wbtest 的
+/// policy 五锁覆盖；本锁只钉「接线 + 零回归」这一半。
+test "mo_10_Star门默认未启用：回执带 star_gate 且不拦免费池" {
+  let d = mo_prep("mo10")
+  let j = mo_unwrap(model_route_impl(d, ns="mo10", config=mo_cfg(1, 1)))
+  assert_true(mo_bool(j, "ok"))
+  let g = mo_get(j, "star_gate")
+  assert_false(mo_bool(g, "gate_enabled"))
+  assert_true(mo_bool(g, "free_pool_unlocked"))
+  if mo_str(g, "note").contains("FIST_STAR_GATE_PUBKEY_HEX") {
+
+  } else {
+    fail("未配置的 note 应点明 env 名，实际: \{mo_str(g, "note")}")
+  }
+}
+
+///|
 fn mr_read_text(path : String) -> String {
   @fs.read_file_to_string(path, encoding="utf8") catch {
     _ => ""

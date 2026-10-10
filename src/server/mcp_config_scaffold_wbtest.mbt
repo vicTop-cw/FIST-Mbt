@@ -36,14 +36,17 @@ fn mcs_run_err(
   keyword : String,
 ) -> Unit {
   match mcp_config_scaffold_impl(form_json, project_dir, unknown_keys) {
-    Ok(_) => abort("应当整笔拒绝但拿到 Ok（负路径漏了：要求含「" + keyword + "」）")
+    Ok(_) =>
+      abort(
+        "应当整笔拒绝但拿到 Ok（负路径漏了：要求含「" +
+        keyword +
+        "」）",
+      )
     Err(e) =>
-      {
-        mcs_test_must(
-          e.contains(keyword),
-          "拒绝原因应含「" + keyword + "」，实际：" + e,
-        )
-      }
+      mcs_test_must(
+        e.contains(keyword),
+        "拒绝原因应含「" + keyword + "」，实际：" + e,
+      )
   }
 }
 
@@ -66,9 +69,7 @@ fn mcs_arr(j : Json, key : String) -> Array[Json] {
 ///|
 /// 从返回体的 `json` 字段里取 mcpServers.<name> 的某字段，返回紧凑 stringify（便于 contains 断言）。
 fn mcs_server_field(text : String, name : String, key : String) -> String {
-  let j = @json.parse(text) catch {
-    _ => Json::object({})
-  }
+  let j = @json.parse(text) catch { _ => Json::object({}) }
   match j.value("mcpServers") {
     Some(Json::Object(servers)) =>
       match servers.get(name) {
@@ -111,7 +112,10 @@ test "mcs-正-空form拿默认值" {
     "默认 failOnStartupError 应为 false",
   )
   // 漂亮打印：正文必须带换行与 2 空格缩进（不能是紧凑单行）
-  mcs_test_must(body.contains("\n  "), "正文应为 2 空格缩进的漂亮打印")
+  mcs_test_must(
+    body.contains("\n  "),
+    "正文应为 2 空格缩进的漂亮打印",
+  )
   mcs_test_must(!body.contains("\\n"), "正文不应是紧凑 stringify")
 }
 
@@ -138,13 +142,28 @@ test "mcs-正-填serverName与command与cwd与env" {
     "toolCallTimeoutMs 应为 60000",
   )
   let env_field = mcs_server_field(body, "my-mcp", "env")
-  mcs_test_must(env_field.contains("FIST_PROJECT_DIR"), "env 应含 FIST_PROJECT_DIR")
-  mcs_test_must(env_field.contains("$FIST_MODEL_API_KEY"), "env 应含 $FIST_MODEL_API_KEY 占位")
+  mcs_test_must(
+    env_field.contains("FIST_PROJECT_DIR"),
+    "env 应含 FIST_PROJECT_DIR",
+  )
+  mcs_test_must(
+    env_field.contains("$FIST_MODEL_API_KEY"),
+    "env 应含 $FIST_MODEL_API_KEY 占位",
+  )
   // FIST_PROJECT_DIR 已显式给 "."，不得再覆盖为 "."（此处同值，仅断言键存在）
   let rc = mcs_server_field(body, "my-mcp", "reconnect")
-  mcs_test_must(rc.contains("\"intervalMs\":1000"), "reconnect.intervalMs 应为 1000")
-  mcs_test_must(rc.contains("\"maxRetries\":5"), "reconnect.maxRetries 应为 5")
-  mcs_test_must(rc.contains("\"delayMs\":70000"), "reconnect.delayMs 应为 70000")
+  mcs_test_must(
+    rc.contains("\"intervalMs\":1000"),
+    "reconnect.intervalMs 应为 1000",
+  )
+  mcs_test_must(
+    rc.contains("\"maxRetries\":5"),
+    "reconnect.maxRetries 应为 5",
+  )
+  mcs_test_must(
+    rc.contains("\"delayMs\":70000"),
+    "reconnect.delayMs 应为 70000",
+  )
 }
 
 ///|
@@ -158,30 +177,18 @@ test "mcs-正-args空数组与默认FIST_PROJECT_DIR" {
     "args 显式空数组应保持空数组",
   )
   let env_field = mcs_server_field(body, "fist-mbt", "env")
-  mcs_test_must(env_field.contains("\"FIST_PROJECT_DIR\":\".\""), "默认 env 应补 FIST_PROJECT_DIR=.")
+  mcs_test_must(
+    env_field.contains("\"FIST_PROJECT_DIR\":\".\""),
+    "默认 env 应补 FIST_PROJECT_DIR=.",
+  )
 }
 
 ///|
 /// 负：serverName 含非法字符（. / 空格 / /）→ 拒
 test "mcs-负-serverName含非法字符" {
-  mcs_run_err(
-    "{\"serverName\":\"fist.mbt\"}",
-    "",
-    [],
-    "serverName",
-  )
-  mcs_run_err(
-    "{\"serverName\":\"fist mbt\"}",
-    "",
-    [],
-    "serverName",
-  )
-  mcs_run_err(
-    "{\"serverName\":\"fist/mbt\"}",
-    "",
-    [],
-    "serverName",
-  )
+  mcs_run_err("{\"serverName\":\"fist.mbt\"}", "", [], "serverName")
+  mcs_run_err("{\"serverName\":\"fist mbt\"}", "", [], "serverName")
+  mcs_run_err("{\"serverName\":\"fist/mbt\"}", "", [], "serverName")
   mcs_run_err(
     "{\"serverName\":\"abc123456789012345678901234567890abc\"}",
     "",
@@ -193,30 +200,10 @@ test "mcs-负-serverName含非法字符" {
 ///|
 /// 负：toolCallTimeoutMs 非整数 / 越界 → 拒
 test "mcs-负-toolCallTimeoutMs非法" {
-  mcs_run_err(
-    "{\"toolCallTimeoutMs\":0}",
-    "",
-    [],
-    "toolCallTimeoutMs",
-  )
-  mcs_run_err(
-    "{\"toolCallTimeoutMs\":700000}",
-    "",
-    [],
-    "toolCallTimeoutMs",
-  )
-  mcs_run_err(
-    "{\"toolCallTimeoutMs\":30000.5}",
-    "",
-    [],
-    "toolCallTimeoutMs",
-  )
-  mcs_run_err(
-    "{\"toolCallTimeoutMs\":\"30000\"}",
-    "",
-    [],
-    "toolCallTimeoutMs",
-  )
+  mcs_run_err("{\"toolCallTimeoutMs\":0}", "", [], "toolCallTimeoutMs")
+  mcs_run_err("{\"toolCallTimeoutMs\":700000}", "", [], "toolCallTimeoutMs")
+  mcs_run_err("{\"toolCallTimeoutMs\":30000.5}", "", [], "toolCallTimeoutMs")
+  mcs_run_err("{\"toolCallTimeoutMs\":\"30000\"}", "", [], "toolCallTimeoutMs")
 }
 
 ///|
@@ -225,33 +212,13 @@ test "mcs-负-toolCallTimeoutMs非法" {
 /// 真值只走 server 进程环境变量（见「mcs-正-env内API_KEY名字放行」）。
 test "mcs-负-凭据键必拒" {
   // ① 键名 api_key（顶层，不是 env 内）
-  mcs_run_err(
-    "{\"api_key\":\"x\"}",
-    "",
-    [],
-    "凭据形状",
-  )
+  mcs_run_err("{\"api_key\":\"x\"}", "", [], "凭据形状")
   // ② 键名 token（顶层）
-  mcs_run_err(
-    "{\"token\":\"x\"}",
-    "",
-    [],
-    "凭据形状",
-  )
+  mcs_run_err("{\"token\":\"x\"}", "", [], "凭据形状")
   // ③ 键名 password（顶层）
-  mcs_run_err(
-    "{\"password\":\"hunter2\"}",
-    "",
-    [],
-    "凭据形状",
-  )
+  mcs_run_err("{\"password\":\"hunter2\"}", "", [], "凭据形状")
   // ④ 键名 secret（大小写变体，顶层）
-  mcs_run_err(
-    "{\"SecretKey\":\"x\"}",
-    "",
-    [],
-    "凭据形状",
-  )
+  mcs_run_err("{\"SecretKey\":\"x\"}", "", [], "凭据形状")
   // ⑤ env 内的 **嵌套对象**里的凭据键仍要拒（env 判据①只对 env 的直接键名跳过）
   mcs_run_err(
     "{\"env\":{\"creds\":{\"api_key\":\"sk-123\"}}}",
@@ -304,55 +271,40 @@ test "mcs-负-凭据值必拒" {
 ///|
 /// 负（硬门）：字面键 `"token":` 出现在 args / 顶层 → 拒（覆盖字面键判据）
 test "mcs-负-字面token键" {
-  mcs_run_err(
-    "{\"args\":[\"token\"],\"env\":{}}",
-    "",
-    [],
-    "凭据形状",
-  )
+  mcs_run_err("{\"args\":[\"token\"],\"env\":{}}", "", [], "凭据形状")
 }
 
 ///|
 /// 负：form_json 非法 JSON / 空字符串 / 顶层非对象 → 拒
 test "mcs-负-非法JSON与空字符串" {
-  mcs_run_err(
-    "{not json}",
-    "",
-    [],
-    "不是合法 JSON",
-  )
-  mcs_run_err(
-    "",
-    "",
-    [],
-    "不能为空",
-  )
-  mcs_run_err(
-    "   ",
-    "",
-    [],
-    "不能为空",
-  )
-  mcs_run_err(
-    "[1,2,3]",
-    "",
-    [],
-    "顶层必须是 JSON 对象",
-  )
+  mcs_run_err("{not json}", "", [], "不是合法 JSON")
+  mcs_run_err("", "", [], "不能为空")
+  mcs_run_err("   ", "", [], "不能为空")
+  mcs_run_err("[1,2,3]", "", [], "顶层必须是 JSON 对象")
 }
 
 ///|
 /// 未知字段：忽略不崩，回显 unknown_keys
 test "mcs-未知字段回显不崩" {
   let form = "{\"serverName\":\"fist-mbt\",\"mysteryField\":\"hello\",\"another\":1}"
-  let keys = mcs_collect_unknown_keys(@json.parse(form) catch { _ => Json::object({}) })
-  mcs_test_must(keys.length() == 2, "应收集到 2 个未知键，实际 " + keys.length().to_string())
+  let keys = mcs_collect_unknown_keys(
+    @json.parse(form) catch {
+      _ => Json::object({})
+    },
+  )
+  mcs_test_must(
+    keys.length() == 2,
+    "应收集到 2 个未知键，实际 " + keys.length().to_string(),
+  )
   let j = mcs_run(form, "proj-w", keys)
   let uk = mcs_arr(j, "unknown_keys")
   mcs_test_must(uk.length() == 2, "unknown_keys 应回显 2 项")
   // 主体仍然正常生成
   let body = mcs_str(j, "json")
-  mcs_test_must(body.contains("\"mcpServers\""), "含未知键时仍应产出正文")
+  mcs_test_must(
+    body.contains("\"mcpServers\""),
+    "含未知键时仍应产出正文",
+  )
 }
 
 ///|
@@ -362,12 +314,21 @@ test "mcs-env非白名单键忽略并提示" {
   let j = mcs_run(form, "proj-v", [])
   let body = mcs_str(j, "json")
   let env_field = mcs_server_field(body, "fist-mbt", "env")
-  mcs_test_must(env_field.contains("FIST_PROJECT_DIR"), "env 应含白名单键")
-  mcs_test_must(!env_field.contains("MY_CUSTOM_VAR"), "env 不应含非白名单键")
+  mcs_test_must(
+    env_field.contains("FIST_PROJECT_DIR"),
+    "env 应含白名单键",
+  )
+  mcs_test_must(
+    !env_field.contains("MY_CUSTOM_VAR"),
+    "env 不应含非白名单键",
+  )
   let notes = mcs_str(j, "notes").to_string()
   // notes 是数组，用 stringify 后的全文判读
   let full = j.stringify()
-  mcs_test_must(full.contains("非白名单键"), "notes 应点名非白名单键")
+  mcs_test_must(
+    full.contains("非白名单键"),
+    "notes 应点名非白名单键",
+  )
   let _ = notes
 }
 
@@ -377,17 +338,22 @@ test "mcs-project_dir缺省回退" {
   // impl 层直接回显传入的 project_dir；工具层才做 env 回退（在 server.mbt 注册处）。
   // 这里锁的是「空 project_dir 也不崩，正文正常产出」。
   let j = mcs_run("{}", "", [])
-  mcs_test_must(mcs_str(j, "project_dir") == "", "impl 层应回显原值（env 回退在工具层）")
+  mcs_test_must(
+    mcs_str(j, "project_dir") == "",
+    "impl 层应回显原值（env 回退在工具层）",
+  )
   let body = mcs_str(j, "json")
-  mcs_test_must(body.contains("\"mcpServers\""), "空 project_dir 也应产出正文")
+  mcs_test_must(
+    body.contains("\"mcpServers\""),
+    "空 project_dir 也应产出正文",
+  )
 }
 
 ///|
 /// 正（缺陷 2 回归锁）：env **内**的 `*_API_KEY` 是环境变量**名字**，不是凭据——
 /// 键名判据①在 env 内跳过，值必须是 `$NAME` 占位；两项都必须出现在生成的 json 里。
 test "mcs-正-env内API_KEY名字放行" {
-  let form =
-    "{\"env\":{\"ANTHROPIC_API_KEY\":\"$ANTHROPIC_API_KEY\",\"OPENAI_API_KEY\":\"$OPENAI_API_KEY\"}}"
+  let form = "{\"env\":{\"ANTHROPIC_API_KEY\":\"$ANTHROPIC_API_KEY\",\"OPENAI_API_KEY\":\"$OPENAI_API_KEY\"}}"
   let j = mcs_run(form, "proj-a", [])
   let body = mcs_str(j, "json")
   let env_field = mcs_server_field(body, "fist-mbt", "env")
@@ -403,10 +369,7 @@ test "mcs-正-env内API_KEY名字放行" {
     env_field.contains("$ANTHROPIC_API_KEY"),
     "值应为 $NAME 占位（不许回显真值）",
   )
-  mcs_test_must(
-    !env_field.contains("sk-"),
-    "env 值不得含 sk- 形状",
-  )
+  mcs_test_must(!env_field.contains("sk-"), "env 值不得含 sk- 形状")
 }
 
 ///|

@@ -58,7 +58,8 @@ pub fn parse_hat(s : String) -> Result[Hat, String] {
     "yellow" => Ok(Yellow)
     "green" => Ok(Green)
     "blue" => Ok(Blue)
-    _ => Err("未知帽子: " + t + ", 可选: white|red|black|yellow|green|blue")
+    _ =>
+      Err("未知帽子: " + t + ", 可选: white|red|black|yellow|green|blue")
   }
 }
 
@@ -195,8 +196,12 @@ pub struct HatVerdict {
 ///|
 /// 构造一条帽子判决。**跨包构造必需**：MoonBit 下跨包 struct/enum 只读，
 /// 只能用函数构造，不能 `{ hat_id: ... }` 字面量（与 @engine.FistEngine::new 同约定）。
-pub fn hat_verdict(hat_id : String, verdict : String, evidence : String) -> HatVerdict {
-  { hat_id: hat_id, verdict: verdict, evidence: evidence }
+pub fn hat_verdict(
+  hat_id : String,
+  verdict : String,
+  evidence : String,
+) -> HatVerdict {
+  { hat_id, verdict, evidence, }
 }
 
 ///|
@@ -219,8 +224,15 @@ pub fn default_threshold() -> Double {
 ///|
 /// 聚合多帽结论：算 agree/rate/pass。threshold <= 0 时回退默认；total == 0 时 pass=false。
 /// 只把 verdict == "pass" 计入 agree，abstain 与 reject 都不算达成一致。
-pub fn debate_summary(verdicts : Array[HatVerdict], threshold : Double) -> DebateSummary {
-  let th = if threshold > 0.0 && threshold <= 1.0 { threshold } else { default_threshold() }
+pub fn debate_summary(
+  verdicts : Array[HatVerdict],
+  threshold : Double,
+) -> DebateSummary {
+  let th = if threshold > 0.0 && threshold <= 1.0 {
+    threshold
+  } else {
+    default_threshold()
+  }
   let total = verdicts.length()
   let mut agree = 0
   for i = 0; i < total; i = i + 1 {
@@ -233,7 +245,7 @@ pub fn debate_summary(verdicts : Array[HatVerdict], threshold : Double) -> Debat
   } else {
     agree.to_double() / total.to_double()
   }
-  { total: total, agree: agree, rate: rate, threshold: th, pass: rate >= th }
+  { total, agree, rate, threshold: th, pass: rate >= th, }
 }
 
 ///|

@@ -83,7 +83,7 @@ struct DebateRegistry {
 
 ///|
 fn DebateRegistry::new() -> DebateRegistry {
-  { sessions: Map([]) }
+  { sessions: Map([]), }
 }
 
 ///|
@@ -5702,15 +5702,14 @@ pub async fn run_server() -> Unit {
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let form_json = get_json_text(args, "form_json")
       let project_dir_arg = get_str(args, "project_dir")
-      let project_dir =
-        if project_dir_arg.is_empty() {
-          match @env.get_env_var("FIST_PROJECT_DIR") {
-            Some(p) => if p.is_empty() { "." } else { p }
-            None => "."
-          }
-        } else {
-          project_dir_arg
+      let project_dir = if project_dir_arg.is_empty() {
+        match @env.get_env_var("FIST_PROJECT_DIR") {
+          Some(p) => if p.is_empty() { "." } else { p }
+          None => "."
         }
+      } else {
+        project_dir_arg
+      }
       // 未知键先收集（纯函数，便于白盒与调试）；JSON 不合法时由 impl 整笔拒绝
       let unknown_keys : Array[String] = try {
         let parsed_form = @json.parse(form_json)
@@ -5732,7 +5731,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "model_route",
-    "模型路由决策（免费优先 + 达阈值切付费 + 每模型 5h 滚动窗口）。纯决策来自 src/router（确定性、可单测），用量状态落盘 {project_dir}/memory/model-router-{ns}.json 跨进程复现。**时间戳由服务端盖章，不接受调用方注入 now**（BUG-33 政策）；两池皆耗尽时显式 ok=false，绝不静默改用别的模型。**只问不消耗（不给 record_model）＝零副作用**：不记账、不推进轮询游标、不给模型盖窗口起点，返回 persisted=false 与 mode=query-only（BUG-62：旧实现连查询也落盘，两次相同查询会换模型、5h 窗口没人使用就开始倒计时）。唯一例外是**只播种定义不播种用量**：显式给了 config_json 的池定义时，在决策之前把池形状写进状态文件（否则 executor_run 自动记账那一笔不带 config，只能拿默认池，自定义模型名走「未在任何池中配置」，配额形同虚设）。namespace 只允许字母/数字/_/-（空=default）：写不进盘的 ns 会被显式拒绝，不再静默失去配额约束（BUG-64）。参数：project_dir(必填，相对路径)、namespace(可选默认 default)、record_model(可选：给模型名则先记账再决策，用于执行器真实用完一次)、config_json(可选：RouterConfig 的 JSON **文本或对象均可**（BUG-63：给对象时按其文本走同一条校验，不再被静默当成没传），覆盖池定义；同名模型的已用配额保留；**非法 JSON 直接报错，不静默回落默认池**)（注：本工具不含任何密钥，凭据只来自 server 进程环境变量）。",
+    "模型路由决策（免费优先 + 达阈值切付费 + 每模型 5h 滚动窗口）。纯决策来自 src/router（确定性、可单测），用量状态落盘 {project_dir}/memory/model-router-{ns}.json 跨进程复现。**时间戳由服务端盖章，不接受调用方注入 now**（BUG-33 政策）；两池皆耗尽时显式 ok=false，绝不静默改用别的模型。**只问不消耗（不给 record_model）＝零副作用**：不记账、不推进轮询游标、不给模型盖窗口起点，返回 persisted=false 与 mode=query-only（BUG-62：旧实现连查询也落盘，两次相同查询会换模型、5h 窗口没人使用就开始倒计时）。唯一例外是**只播种定义不播种用量**：显式给了 config_json 的池定义时，在决策之前把池形状写进状态文件（否则 executor_run 自动记账那一笔不带 config，只能拿默认池，自定义模型名走「未在任何池中配置」，配额形同虚设）。namespace 只允许字母/数字/_/-（空=default）：写不进盘的 ns 会被显式拒绝，不再静默失去配额约束（BUG-64）。**Star 门（D1=A 完整接入）**：默认未配置即不设门（保持现状，`star_gate.gate_enabled=false`）；要启用请设 server 进程环境变量 `FIST_STAR_GATE_PUBKEY_HEX`（钉死的 Ed25519 公钥 hex）、`FIST_STAR_GATE_ATTESTATION_JSON`（GitHub Pages 拉到的 attestation JSON 正文）、`FIST_STAR_GATE_USER_LOGIN`（须在授权名单里的 GitHub login）。启用后未验签通过 → 回执 `ok=false`、`star_gate.free_pool_unlocked=false`（fail-closed，不 pick、不记账、不推进轮询游标）。回执恒带 `star_gate` 字段（gate_enabled/free_pool_unlocked/note/verdict）；判定逻辑纯计算在 src/router（star_gate_wbtest 可单测）。参数：project_dir(必填，相对路径)、namespace(可选默认 default)、record_model(可选：给模型名则先记账再决策，用于执行器真实用完一次)、config_json(可选：RouterConfig 的 JSON **文本或对象均可**（BUG-63：给对象时按其文本走同一条校验，不再被静默当成没传），覆盖池定义；同名模型的已用配额保留；**非法 JSON 直接报错，不静默回落默认池**)（注：本工具不含任何密钥，凭据只来自 server 进程环境变量）。",
     schema(
       {
         "project_dir": string_prop(
@@ -6581,7 +6580,7 @@ pub async fn run_server() -> Unit {
       let hat_ids = parsed.map(fn(h) { @ops.hat_id(h) })
       let sid = debate_next_session_id()
       let sess : DebateSession = {
-        topic: topic,
+        topic,
         hats: hat_ids,
         threshold: th,
         verdicts: [],
@@ -6609,7 +6608,9 @@ pub async fn run_server() -> Unit {
     schema(
       {
         "session_id": string_prop("会话 id（必填）"),
-        "hat_id": string_prop("帽子 id（必填）：white|red|black|yellow|green|blue"),
+        "hat_id": string_prop(
+          "帽子 id（必填）：white|red|black|yellow|green|blue",
+        ),
         "verdict": string_prop(
           "该帽视角的论点（必填）：pass/reject/abstain",
         ),

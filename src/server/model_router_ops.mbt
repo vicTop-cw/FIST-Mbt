@@ -114,6 +114,16 @@ fn mr_config_gives_pools(config : Json) -> Bool {
 }
 
 ///|
+/// 读环境变量（Star 门配置源）。不存在一律回空串，由 `star_gate_policy` 判定语义
+/// （空公钥 = 门未启用；空 attestation = 启用但 fail-closed）。本文件只读，不打印值。
+fn mr_env(name : String) -> String {
+  match @env.get_env_var(name) {
+    Some(v) => v
+    None => ""
+  }
+}
+
+///|
 /// 决策 + 可选记账 + 落盘（工具 `model_route` 的实现体）。时间戳服务端盖章。
 fn model_route_impl(
   project_dir : String,
@@ -132,6 +142,35 @@ fn model_route_impl(
   }
   let now = now_default()
   let (r, warns) = @router.router_restore(mr_read(project_dir, ns), config~)
+  // Star 门（D1=A 完整接入）：从 env 读钉死公钥 / attestation / login，交给纯策略函数判定。
+  //   未配置公钥 → 门未启用（保持现状不设门），状态见回执的 `star_gate` 字段（note 即告警，
+  //     不进 `warnings`——既有 mo_2 锁定了默认路径 warnings==0，零回归）；
+  //   启用但未放行 → 下方硬门短路（不 pick、不记账、不推进轮询游标）。
+  // env 读取是本 IO 层唯一做的事；判定逻辑零 IO 在 src/router（star_gate_wbtest 可单测）。
+  let gate = @router.star_gate_policy(
+    mr_env("FIST_STAR_GATE_PUBKEY_HEX"),
+    mr_env("FIST_STAR_GATE_ATTESTATION_JSON"),
+    mr_env("FIST_STAR_GATE_USER_LOGIN"),
+    @env.now().to_int64() / 1000L,
+  )
+  if gate.gate_enabled && not(gate.free_pool_unlocked) {
+    return Ok(
+      mr_obj([
+        ("ok", Json::boolean(false)),
+        ("stamped_at", Json::string(now)),
+        ("decision", Json::null()),
+        (
+          "mode",
+          Json::string(
+            "query-only（Star 门拦截：未验签通过，未进行 pick）",
+          ),
+        ),
+        ("warnings", mr_warn_arr(warns)),
+        ("star_gate", gate.to_json()),
+        ("state_path", Json::string(mr_state_path(project_dir, ns))),
+      ]),
+    )
+  }
   // BUG-61/62：只有**真消耗**（调用方给了 record_model）才推进账本并落盘。
   // 旧实现连"只问不消耗"的查询也 mr_save ⇒ pick 推进过的轮询游标、以及 pick 顺手盖上的
   // window_start（5h 窗口没人使用就开始倒计时）都被写进了账，两次相同查询还会换模型。
@@ -157,6 +196,7 @@ fn model_route_impl(
     ("decision", dec.to_json()),
     ("usage", r.usage_report()),
     ("warnings", mr_warn_arr(warns)),
+    ("star_gate", gate.to_json()),
     ("persisted", Json::boolean(persisted)),
     (
       "mode",
