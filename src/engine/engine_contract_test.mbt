@@ -187,3 +187,55 @@ test "tx_contract：reopen on 已归档 前置拒绝" {
     None => abort("task missing")
   }
 }
+
+///|
+/// BUG-167：任务不存在 → precondition 拒绝，回执须带齐契约件五字段
+/// （phase/verdict/reasons/target_state/state_stable），而非只有 note。
+test "tx_contract：BUG-167 任务不存在回执契约件字段齐全" {
+  let e = contract_engine("tc_r109_t7.db")
+  let j = e.transition_contract("NOPE", "execute")
+  match j.value("ok") {
+    Some(x) =>
+      match x.as_bool() {
+        Some(b) => assert_eq(b, false)
+        None => abort("ok 非布尔: " + j.stringify())
+      }
+    _ => abort("ok 缺失: " + j.stringify())
+  }
+  assert_eq(cx_phase(j), "precondition")
+  assert_eq(cx_verdict(j), "rejected")
+  let reasons = cx_reasons(j)
+  assert_eq(reasons.length(), 1)
+  assert_eq(reasons[0], "任务不存在: NOPE")
+  assert_eq(cx_target(j), "")
+  match j.value("state_stable") {
+    Some(x) =>
+      match x.as_bool() {
+        Some(b) => assert_eq(b, true)
+        None => abort("state_stable 非布尔: " + j.stringify())
+      }
+    _ => abort("state_stable 缺失: " + j.stringify())
+  }
+}
+
+///|
+/// BUG-168：未知动作不得被前置拦截成 precondition，而应走到 postcondition 拒绝
+/// （契约表无该动作定义）。旧实现 contract_try 的 `_` 分支提前 Err，
+/// 使 postcondition-None 分支成为不可达死代码。
+test "tx_contract：BUG-168 未知动作 postcondition 拒绝（非 precondition）" {
+  let e = contract_engine("tc_r109_t8.db")
+  let id = publish_croot(e)
+  let j = e.transition_contract(id, "bogus_action")
+  assert_eq(cx_verdict(j), "rejected")
+  assert_eq(cx_phase(j), "postcondition")
+  let reasons = cx_reasons(j)
+  assert_eq(reasons.length(), 1)
+  if not(reasons[0].contains("动作无契约定义")) {
+    abort("reasons 应说明动作无契约定义: " + j.stringify())
+  }
+  // 回稳：库中任务仍为待领取（只读预检不落库）
+  match e.get_task(id) {
+    Some(t) => assert_eq(t.status_to_string(), "待领取")
+    None => abort("task missing")
+  }
+}

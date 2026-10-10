@@ -879,14 +879,6 @@ pub fn FistEngine::progress_gate(
       })
     Some(_) => ()
   }
-  if budget <= 0 {
-    return Json::object({
-      "ok": Json::boolean(false),
-      "task_id": Json::string(task_id),
-      "budget": Json::number(0.0),
-      "note": Json::string("budget 必须为正"),
-    })
-  }
   let ids = self.subtree_ids(task_id)
   let mut total = 0
   let mut done = 0
@@ -916,18 +908,69 @@ pub fn FistEngine::progress_gate(
   }
   let spent = if spent_override > 0 { spent_override } else { started_weight }
   let remaining = (budget - spent).to_double()
-  // 燃尽率：每单位进度消耗的预算（未开工时为 0）
-  let burn = if progress > 0.0 { spent.to_double() / progress } else { 0.0 }
+  // 燃尽率：每单位进度消耗的预算。progress=0 且 spent>0 时燃尽率不可计算（未定义）→
+  // 用 sentinel -1.0 表示，绝不静默归零（BUG-165：归零会让 verdict 恒 OK，掩盖已消耗预算）。
+  let burn = if progress > 0.0 {
+    spent.to_double() / progress
+  } else if spent > 0 {
+    -1.0
+  } else {
+    0.0
+  }
   let remaining_work = 1.0 - progress
   let linear = burn * remaining_work
   let conservative = linear * 1.2
-  let (verdict, action) = if progress >= 1.0 {
+  if budget <= 0 {
+    return Json::object({
+      "ok": Json::boolean(false),
+      "task_id": Json::string(task_id),
+      "budget": Json::number(budget.to_double()),
+      "spent": Json::number(spent.to_double()),
+      "remaining": Json::number(remaining),
+      "progress": Json::number(progress),
+      "burn_rate": Json::number(burn),
+      "remaining_work": Json::number(remaining_work),
+      "projection": Json::object({
+        "linear": Json::number(linear),
+        "conservative": Json::number(conservative),
+      }),
+      "verdict": Json::string("rejected"),
+      "action": Json::string(
+        "非法预算：budget 必须为正（实收 " +
+        budget.to_string() +
+        "）",
+      ),
+      "note": Json::string("budget 必须为正"),
+      "basis": Json::string(
+        "进度预算路由门控（PROGROUTER arXiv2608.25992 蒸馏）：预算须为正，非法输入整笔拒绝、状态回稳。",
+      ),
+    })
+  }
+  // BUG-165：progress=0 且有消耗 → 燃尽率不可计算，不得静默归零判 OK，须预警（CAUTION/ESCALATE）。
+  // BUG-169：progress>=1 且已超支 → verdict 不得为 OK，须与 action（负为超支）一致。
+  let (verdict, action) = if progress <= 0.0 && spent > 0 {
     (
-      "OK",
-      "已完成，预算结余 " +
-      (budget - spent).to_string() +
-      "（负为超支）",
+      "ESCALATE",
+      "进度 0% 但已消耗预算 " +
+      spent.to_string() +
+      "，燃尽率不可计算（建议追加预算或暂停复核）",
     )
+  } else if progress >= 1.0 {
+    if remaining < 0.0 {
+      (
+        "ESCALATE",
+        "已完成但预算超支，结余 " +
+        (budget - spent).to_string() +
+        "（负为超支）",
+      )
+    } else {
+      (
+        "OK",
+        "已完成，预算结余 " +
+        (budget - spent).to_string() +
+        "（负为超支）",
+      )
+    }
   } else if linear <= remaining && conservative <= remaining {
     ("OK", "继续推进（按当前燃尽率预算充足）")
   } else if linear <= remaining {
