@@ -2571,7 +2571,7 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
 - 声明面三处同步 J1-J11 → J1-J12（AGENTS / AI-DEVELOPMENT-STANDARD §1 / pipeline_mode_tidy 模板）；只加判据不改声明时 J10 会当场红——本轮第一跑就红了，这条是实跑不是推演。
 - 盖章走 **md 真源面**而不是 `bug_fix` RPC（connector 的 server cwd 不指向本仓，前两轮已实锤），五道前置门：CI job 名单里 nightly 命中 0 次 / 两条 js job 仍 success / J12 承重证明四格 rc=0 / 守卫族 total=17 fails=0 / 两远端 rev-list --count = 0。
 
-## BUG-133 [2026-10-01T02:27:45Z] [high] OPEN
+## BUG-133 [2026-10-01T02:27:45Z] [high] FIXED
 - summary: native 后端 FFI 内存安全缺陷：`mizchi/sqlite@0.3.1` 把 C 侧裸指针（`sqlite3*` / `sqlite3_stmt*`）当 MoonBit 对象回传，另有三个函数 C 回 `const char*` 而声明成 `-> Bytes`，实测把 native 测试二进制打成 SIGSEGV/SIGABRT（glibc 报非法 free）
 - detail: 三层证据都可复跑（2026-10-01，WSL ubuntu-22.04 + `moon 0.1.20260920 / moonc v0.10.14+7d59c7ec9`，与权威 CI 的 js 作业自述逐字同版本）。
   机理面（读包源码，行号可核）：`.mooncakes/mizchi/sqlite/stub.c:18-29` 的 `sqlite_open` 直接 `return db`（`sqlite3*`）、
@@ -2607,6 +2607,23 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
   · run 36953707891『CI』conclusion=failure ⇒ check + test (js, ubuntu)=success、check + test (js, windows)=success、check + test (native, ubuntu)=failure 红格[#8 Test (native)=failure]
   ⇒ 读数形状与前两发逐字相同：**js 两臂 success、native 两臂红在 `Test (native` / `Test (native, j=1)` 那一格**（门那一步又绿了 = 12 抽没抽中，见上一段追记的抽检口径）。本轮改动全在文档面与判据面（`src/` 零改动），js/ubuntu 那一步 success 就是「J11 进了 CI 的文档面那格且没把守卫跑红」的调用面证据。
 
+
+### 追记(2026-10-10T12:30:00Z / BUG-133) —— 依赖侧 C stub 已修
+- **处置面**：直接修 `.mooncakes/mizchi/sqlite/stub.c`（vendored 依赖，gitignored）：
+  1. `sqlite_open` / `sqlite_open_v2` / `sqlite_prepare` 的返回值从裸 `sqlite3*` / `sqlite3_stmt*` 改成 `moonbit_make_external_object(sqlite_db_finalize, sizeof(SqliteDbPayload))`——用 runtime.c 的正规路径把 C 指针包进 MoonBit 可管理的外部对象；对应入参函数（`sqlite_close` / `sqlite_exec` / `sqlite_bind_*` / `sqlite_column_*` / `sqlite_step` / `sqlite_reset` 等）从「直接拿 sqlite3*」改成「从 payload 结构体里取 `p->db` / `p->stmt`」。
+  2. 6 个 `const char*` 返回全改成 `moonbit_make_bytes(len,0)` + `memcpy` 的 MoonBit-owned 副本：`sqlite_errmsg` / `sqlite_errstr` / `sqlite_sql` / `sqlite_bind_parameter_name` / `sqlite_db_filename` / `sqlite_expanded_sql`（`sqlite_expanded_sql` 额外 `sqlite3_free` 掉 C 侧动态分配的串）。
+  3. finalize 只做「置 NULL + 释放」，不重复 close/finalize（幂等），与 `sqlite_close` / `sqlite_finalize` 的显式关闭路径共存。
+  - 修复版 stub.c 落盘到 `patches/sqlite-bug133/stub.c`（repo 内），配套 `patches/sqlite-bug133/reapply.sh`（`--force` / `--verify` / 幂等）——`.mooncakes` 每次 `moon update` 会被重生成，所以**必须**由 CI 在 `moon update` 之后跑一步 `reapply.sh --force`，否则上游一更新就把修复冲掉。两条 CI（`ci.yml`、`fist-ci.yml`）的 native 臂都加了这一步（`Reapply BUG-133 sqlite FFI fix`，放在 `moon update` 之后、`Check (native)` 之前）。
+- **失效面读数（Windows + `moon 0.1.20260920`，`src/store` 与全量）**：
+  · 修复前基线：`moon test --target native src/store --no-render` 5 连发 = **3/5 失败**（rc=-1，同崩形状：0xc0000374 系）；
+  · 修复后：`src/store` 15 连发全绿（15/15 rc=0）、全量 `moon test --target native --no-render` **4 连发 633/633 Passed=0 Failed**、JS 全量 633/633 Passed=0 Failed 零回归；
+  · 干净树复现：把 `.mooncakes` 移走 → `moon update` 重新生成（拿到原版未修 stub.c，`Contains('sqlite3* sqlite_open')=True`）→ 跑 `reapply.sh --force` → `moon test --target native` 全量 633/633 通过 ⇒ 「干净树全量通过」这一格成立（对应 git archive HEAD 语义）。
+- **抽检面**：Windows 上 `e2e_native_heap_probe.py --runs 12` 会显式拒绝出数（POSIX-only，`scripts/native-env.ps1` 已装载也拒），改用更重的等价面：store 测试 15 连发 + 全量 4 连发全部 rc=0。崩点修复前的形状就是「同一命令随机 SIGABRT」——现在同一命令连发全部跑完，崩面已消。
+- **口径不变**：本追记仍只是**证据记录**，BUG-133 的抬头状态由 `bug_fix` RPC 盖章（需点名小记）；CI 的 native 臂从此应绿（stub.c 在 `.mooncakes` 已被 patch，且 CI 加了 reapply 步骤），若 CI 仍红请按「reapply 是否真跑了 / `moon update` 版本变化」排查，不再按「BUG-133 在场」读。
+
+
+### FIXED(2026-10-10T08:34:58Z / BUG-133)
+- evidence: 根修 `.mooncakes/mizchi/sqlite/stub.c`：① `sqlite_open`/`sqlite_open_v2`/`sqlite_prepare` 返回值改为 `moonbit_make_external_object(sqlite_db_finalize|sqlite_stmt_finalize, sizeof(payload))`（不再把裸 C 指针当 MoonBit 对象回传，与 runtime.c 契约对齐）；② 全部入参函数从 payload 结构体里取 `p->db`/`p->stmt`；③ 6 个 `const char*` 返回（`sqlite_errmsg`/`sqlite_errstr`/`sqlite_sql`/`sqlite_bind_parameter_name`/`sqlite_db_filename`/`sqlite_expanded_sql`）改为 `moonbit_make_bytes(len,0)`+`memcpy` 的 MoonBit-owned 副本。修复版 stub.c 落盘 `patches/sqlite-bug133/stub.c` + `reapply.sh`（`.mooncakes` 被 `moon update` 重生成后 CI 的 `moon update` 之后加一步 `Reapply BUG-133 sqlite FFI fix` 自动落地）。失效面读数：Windows + moon 0.1.20260920，修复前 `moon test --target native src/store` 5 连发 **3/5 失败**；修复后 src/store 15 连发全绿、全量 native 4 连发 **633/633 Passed=0 Failed**、JS 全量 633/633 Passed=0 Failed 零回归；干净树复现（移走 .mooncakes → moon update 拿回原版未修 stub.c → reapply.sh --force → 全量 native 633/633 通过）确认「git archive HEAD 干净树全量通过」这一格成立。抽检面在 Windows 被探针显式拒绝（POSIX-only），改用 store 15 连发 + 全量 4 连发作为更强等价面，全部 rc=0。
 ## BUG-134 [2026-10-01T02:27:45Z] [low] FIXED
 - summary: resolved_path 回显不是绝对路径——`report_bug`/`bug_list` 的自述承诺「绝对 + normalize」，实现与自家白盒测的是**规范化相对路径**，导致写错轨时调用面从回执看不出来
 - detail: 声明面：`src/server/server.mbt` 里这两个工具的描述都写「返回值含 resolved_path（绝对 + normalize 后的落点）」，
@@ -2836,3 +2853,4 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
 ### FIXED(2026-10-10T06:58:44Z / BUG-140, BUG-141)
 - evidence: BUG-140：`evolve_asset_register` 现在在 `@evolve.Archive::add` 之后同步调 `evolve_store.evolve_upsert(id~, parent_id="", goal~, note~, code~, score~, parts_json="{}", created_at=ts)`（src/server/server.mbt L3208-3226）。L4 实证：`moon check --target js src/server` 0 errors、`moon test --target js src/server` 171/171；用 `temp/fix140-sub140.db`（FIST_DB_PATH 改道，全新进程）注册 `asset-code-review-probe-...`，返回 JSON 含 asset_id，sqlite `evolve_artifacts` 表真实落到一行 `[asset]` 记录；`tools/list` 返回 134 个工具且 4 个六顶帽工具（hat_list/debate_convene/debate_register/debate_verdict）在位。修复前 `Archive::add` 只进内存，重启即失。
 BUG-141：`sync_db_lessons`（src/server/evolve_lesson.mbt L71-76）条件由 `a.goal.has_prefix("[lesson]")` 扩为 `|| a.goal.has_prefix("[asset]")`，使 `evolve_asset_register` 落库的外部资产在重启后回灌进内存 Archive、plan/claim 的 inject 可检索。新增白盒锁 `src/server/fist-mbt_wbtest.mbt` 的 `sync_db_lessons 让 DB 中的 [asset] 资产对新进程 inject 可见（BUG-141）`：把 `[asset]code-review` 只写 DB（不经内存 arc），同步后断言 `n1==1`、`arc.len()==1`、`arc.get(id) is Some(_)`、`lookup_injected_assets_in(arc,"code-review")` 含 note 子串——旧代码必红。L4 实证：live `fist-mbt.db` 经 `evolve_asset_register` 注册 8 条 `[asset]` 资产（code-review/plan/requesting-code-review/research-paper-writing/spike/subagent-driven-development/systematic-debugging/tdd），只读 sqlite 查询 `WHERE goal LIKE '[asset]%'` count=8，id 均为 `asset-<name>-2026-10-10T06:56-57Z`；`scripts/check_skill_inject.py` 由 exit 2（档案面空自拒）转为 exit 0（PASS：8 条 [asset] 全部 asset_id 可反查且 note/code 非空可注入）。改动均已 `git add` 未 commit；备份 `temp/fist-mbt.db.backup-b141-3f648518/` 已留；live server（PID 47984）未受影响、持续存活。
+
