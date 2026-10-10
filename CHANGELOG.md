@@ -13,6 +13,22 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.7 (BUG-143：external 检查应用 stdout 不变量 + triage skill 路由) - 2026-10-11
+
+### 本轮性质：修复（P1「Did it work?」落地）+ 功能新增（task_triage 的 skill 参数）
+
+- **修复 BUG-143（P1「Did it work?」）**：`output_validate` 对 `check_key` 引用 external_results 的检查项，**只看 `ok/code`，静默忽略 spec 声明的 `stdout` 不变量 contains/not_contains**（同 BUG-31 病灶：拼了 key 却没人读它）。后果：`moon test` 这类进程「退出 0 但产出无效」（BUG-142 家族：SIGABRT 仍 exit 0）时，output_validate 会放行。
+  - `src/server/output_validate.mbt`：新增 `check_external_invariants(stdout, spec)`，`check_external_artifact` 的 ok 分支先跑 invariant、不满足即 `ok=false`。
+- **新增测试 `ov_13..ov_16`**：`ov_13` ok=true 但 stdout 缺 "failed: 0" → fail；`ov_14` ok=true 但 stdout 含 "SIGABRT" → fail；`ov_15`/`ov_16` 正样本 → pass。
+- **triage skill 路由**（P1「Tool Use Rubric」前置）：`task_triage` 新增 `skill` 参数——逗号分隔 skill 关键词，非空时按 skill 命中度排在能力匹配之后、优先级之前，并在 suggestion 里给建议的开发模式（SKILL→MODE 建议表）；空串=不做 skill 路由零回归。
+  - `src/engine/engine_triage.mbt`：修正 `.lowercase()` → `.to_lower()`（MoonBit String 无该方法）、`skill_keys` 加 `.to_string()`/`.collect()`（`trim()` 返回 StringRef）。
+  - `src/engine/engine_triage_skill_test.mbt`：新增 skill 路由测试。
+  - `src/server/server.mbt`：task_triage 增加 `skill` 参数透传。
+  - `docs/task-triage-skill.md`：新增 skill 文档。
+- **回归**：`moon test --target js` / `--target native` 全量 **653/653 通过**（上轮基线 645 + 8 条新用例），零回归。
+- **7 项项目守卫全 PASS**：check_tools_sync / check_doc_surface / check_plugin_sync / check_host_installable / check_model_auth_no_key / check_skill_inject / check_publish_payload。
+- **memory/bugs.md**：入账 BUG-143（high, OPEN）。
+
 ## v0.3.6 (scoring.mbt 落地，打通自进化闭环) - 2026-10-11
 
 ### 本轮性质：功能新增（P0 待办「创建 scoring.mbt」从 pending → done）
