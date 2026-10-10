@@ -13,6 +13,36 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.8 (R12-P1：12 轮六相流水线 Round 1 [推进→寻虫→修复→打磨→验证]) - 2026-10-11
+
+### 本轮性质：隐患清扫（issue_scan 23 条 medium 复核）+ BUG-142 收口（moon test 判绿自动 gate）
+
+- **Round 1 [推进]：发布根任务 T0r560**——修复 issue_scan 发现的 23 条 medium 级隐患，涉及
+  `engine_dag_mc` / `engine_phi` / `engine_eval` / `engine_triage` / `omega/spec` /
+  `executor/registry` 等。判据：issue_scan 复扫 + JS 全量 678/678 不回归。
+
+- **Round 1 [寻虫→修复]：6 处真实隐患加确定性守卫（commit `ae273bd`）**：
+  (1) `engine_dag_mc` 三处除法 `n` 可能 0 → `n_safe` 哨兵；
+  (2) `engine_phi` `win` 可能 0 → `win_safe` 哨兵；
+  (3) `executor/registry` `need` 可能空 → `need_safe` 哨兵；
+  (4) `omega/spec` 两处 `unsafe_get` → `get().unwrap_or('\u0000')`；
+  (5) `engine_eval` substring 显式加 `length>=2` 守卫；
+  (6) `engine_triage` truncate 双守卫 `max>0 && max<=s.length()`。
+  其余 17 条经逐条复核判为假阳性（已有 `total>0` / `is_some()` / `starts_with` 等前置守卫，
+  静态扫描看不到）。全量 JS **686/686** 通过。
+
+- **BUG-142 收口（commit `3fbda56`）**：`moon test` 进程被 SIGABRT 打死仍 exit 0——
+  旧 `output_validate` 只看 `ok/code`，调用方不显式声明 `contains="failed: 0"` 就被静默放行。
+  新增 `check_moon_test_summary(stdout)`：当 `check_key` 名含 `moon_test` / `moon test` 时，
+  **自动**解析 stdout 的 `Total tests: N, passed: M, failed: K` 汇总行——failed>0 或
+  找不到汇总行一律 fail。新增 `ov_parse_int`（MoonBit core 无 `String::parse_int`，
+  与 `ops_selfdrive` 的 `sd_parse_int` 同型）并自动去末尾句号。配套 4 条新测试
+  （ov_17~ov_20）+ 修 2 条旧测试（ov_7 / ov_12 需带汇总行），全量 **690/690** 通过。
+  三面守卫绿（check_doc_surface / check_tools_sync / check_plugin_sync）。
+  **BUG-142 状态：OPEN → FIXED**（本仓账本 213 条中唯一 OPEN 条目）。
+
+- **Round 1 [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
+
 ## v0.3.8 (R8-R10 迭代：预执行审计门禁占位符拦截 + 文档面守卫 J15) - 2026-10-11
 
 ### 本轮性质：功能加固（审计门禁扩展）+ 判据扩展（check_doc_surface J15）
