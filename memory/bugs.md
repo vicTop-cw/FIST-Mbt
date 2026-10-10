@@ -2854,3 +2854,30 @@ P2 就打到守卫自己）⇒ 改成运行时拼接；② G1「干净不误红�
 - evidence: BUG-140：`evolve_asset_register` 现在在 `@evolve.Archive::add` 之后同步调 `evolve_store.evolve_upsert(id~, parent_id="", goal~, note~, code~, score~, parts_json="{}", created_at=ts)`（src/server/server.mbt L3208-3226）。L4 实证：`moon check --target js src/server` 0 errors、`moon test --target js src/server` 171/171；用 `temp/fix140-sub140.db`（FIST_DB_PATH 改道，全新进程）注册 `asset-code-review-probe-...`，返回 JSON 含 asset_id，sqlite `evolve_artifacts` 表真实落到一行 `[asset]` 记录；`tools/list` 返回 134 个工具且 4 个六顶帽工具（hat_list/debate_convene/debate_register/debate_verdict）在位。修复前 `Archive::add` 只进内存，重启即失。
 BUG-141：`sync_db_lessons`（src/server/evolve_lesson.mbt L71-76）条件由 `a.goal.has_prefix("[lesson]")` 扩为 `|| a.goal.has_prefix("[asset]")`，使 `evolve_asset_register` 落库的外部资产在重启后回灌进内存 Archive、plan/claim 的 inject 可检索。新增白盒锁 `src/server/fist-mbt_wbtest.mbt` 的 `sync_db_lessons 让 DB 中的 [asset] 资产对新进程 inject 可见（BUG-141）`：把 `[asset]code-review` 只写 DB（不经内存 arc），同步后断言 `n1==1`、`arc.len()==1`、`arc.get(id) is Some(_)`、`lookup_injected_assets_in(arc,"code-review")` 含 note 子串——旧代码必红。L4 实证：live `fist-mbt.db` 经 `evolve_asset_register` 注册 8 条 `[asset]` 资产（code-review/plan/requesting-code-review/research-paper-writing/spike/subagent-driven-development/systematic-debugging/tdd），只读 sqlite 查询 `WHERE goal LIKE '[asset]%'` count=8，id 均为 `asset-<name>-2026-10-10T06:56-57Z`；`scripts/check_skill_inject.py` 由 exit 2（档案面空自拒）转为 exit 0（PASS：8 条 [asset] 全部 asset_id 可反查且 note/code 非空可注入）。改动均已 `git add` 未 commit；备份 `temp/fist-mbt.db.backup-b141-3f648518/` 已留；live server（PID 47984）未受影响、持续存活。
 
+## 追记(2026-10-10T17:20:00Z) —— [寻虫-修复-打磨-验证] 闭环证据留痕（BUG-133 之后新一轮）
+
+- **背景**：上一轮已把 140 条 open bug 全清（含 BUG-133 sqlite FFI 修复），OPEN=0。本轮目标是以 issue_scan 扫 `src/` 90 条命中 + open bug 清单逐条甄别真缺陷 vs 假阳性，并修复**扫描器自身缺 guard-awareness** 的能力缺口。
+- **① 寻虫结论（2 个 subagent 分工审计）**：
+  - substring-overrun 13 处：**0 真实缺陷**——全部有 `length()` 守卫或字面量范围安全（`"A"[0]`、`"0123456789"[d]` 等）；
+  - index-out-of-bounds / string-index / unprotected-division：**0 真实缺陷**——所有 `rows[0]` / `arr[0]` / `data[0]` 前都有 `is_empty()` 或 `length() < 19` / `n>=10` clamp 守卫；
+  - unwrap / unsafe-get / possible-overflow / ignore：**0 真实缺陷**——`unwrap` 前有 `is_some()` / `Some` 模式匹配，overflow 是 `* 10` 有界循环（受输入长度约束）。
+  - **结论：90 条命中全是假阳性**，因为扫描器**不知道守卫存在**——它按行匹配 `rows[0]` 模式，不看前一行有没有 `if rows.is_empty() { return }`。
+- **② 修复（真源 = 扫描器自身，不是业务代码）**：`src/server/issue_scan.mbt` 的 `scan_finding_guarded`：
+  - **反向迭代** prev_lines（原为正向，导致 `fn ` 边界在第一行就 break，后面的守卫永远看不见）；
+  - **`fn ` 边界即停**（`return false`），防止跨函数误判；
+  - **集成层只传同函数体内的前几行**（`prev_window` 由命中行往回走到 `fn ` 为止），不再把整文件塞进去；
+  - **当前行也查**（同行守卫 `if rows.is_empty() { rows[0] }`）；
+  - `scan_finding_guarded` 从 `priv` 改为 `pub` 以便单测。
+- **③ 打磨**：新增 3 个回归测试（`src/server/issue_scan_test.mbt`）：
+  - `lint_8_guard_filter_keeps_real_hits_drops_guarded`（数组守卫：只留第 8 行 unguarded，压掉第 4 行 guarded）；
+  - `lint_9_substring_guard_filter`（substring 守卫：只留第 5 行 unguarded）；
+  - `lint_10_guard_function_direct`（`scan_finding_guarded` 直接单测：含守卫→true、跨 `fn`→false）。
+- **④ 验证（证据梯 L4，全实测）**：
+  - `moon test --target js --no-render src/server` → **176/176 Passed=0 Failed**；
+  - `moon test --target js --no-render`（全量）→ **636/636 Passed=0 Failed**；
+  - `pwsh ./scripts/native-env.ps1 -Run "moon test --target native --no-render"`（全量 native）→ **636/636 Passed=0 Failed**；
+  - CLI 实测（`python scripts/issue_scan.py`）：`temp/lint_test_guard` 4→2（只剩 unguarded 第 8 行）、`temp/lint_test_sub` 2→1（只剩 unguarded 第 5 行）；
+  - `issue_scan src`：**total=64、high=0、med=23、low=41**——剩余均为字面量范围安全 / doc 注释误报 / 有界循环 possible-overflow，已人工甄别为**非真实缺陷**。
+- **commit**：`46cecaa` `fix(issue_scan): guard-aware filter now scans prev lines backward within function scope`（2 files changed, 410 insertions）。
+- **口径**：本条为**证据留痕**，不开新 BUG 抬头（因为缺陷本体不在业务代码里，而是扫描器能力缺口，已由本次直接补齐）。如需在账本里作为独立缺陷条目，可后续单独上报。
+
