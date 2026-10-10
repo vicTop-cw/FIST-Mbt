@@ -194,6 +194,14 @@ fn parse_simple_double(s : String) -> Double {
   let mut found_dot : Bool = false
   let mut negative : Bool = false
   let mut i : Int = 0
+  // R12-R2：Int 溢出哨兵。MoonBit Int 为 32 位（-2^31 ~ 2^31-1，最大 2,147,483,647）。
+  // 成本字段若被写入异常大字符串（如 "999999999999999999999"）会在
+  // `integer_part * 10 + d` 处溢出并**静默**产出乱数——溢出后继续累加会绕回。
+  // 关键：守卫必须**在乘法之前**判定，否则 `integer_part=214748364` 时 *10 即越界。
+  // 阈值取 2e8（*10 后 = 2e9 < 2^31），余量足够所有真实成本（< 1e8）。
+  let int_safe : Int = 200_000_000
+  let mut int_over = false
+  let mut int_double : Double = 0.0
   // 跳过前导空格
   while i < s.length() {
     let c = s[i]
@@ -210,11 +218,20 @@ fn parse_simple_double(s : String) -> Double {
   while i < s.length() {
     let c = s[i]
     if c >= '0' && c <= '9' {
+      let d = (c - '0').to_int()
       if found_dot {
-        fractional_part = fractional_part * 10 + (c - '0').to_int()
-        fractional_digits = fractional_digits + 1
+        // 小数部分最多 15 位（再多会被除数 1e15 归一），超过则停止累加
+        if fractional_digits < 15 {
+          fractional_part = fractional_part * 10 + d
+          fractional_digits = fractional_digits + 1
+        }
+      } else if int_over {
+        int_double = int_double * 10.0 + d.to_double()
+      } else if integer_part < int_safe {
+        integer_part = integer_part * 10 + d
       } else {
-        integer_part = integer_part * 10 + (c - '0').to_int()
+        int_over = true
+        int_double = integer_part.to_double() * 10.0 + d.to_double()
       }
       i = i + 1
     } else if c == '.' && !found_dot {
@@ -224,7 +241,8 @@ fn parse_simple_double(s : String) -> Double {
       break
     }
   }
-  let mut result : Double = integer_part.to_double()
+  let int_res : Double = if int_over { int_double } else { integer_part.to_double() }
+  let mut result : Double = int_res
   if fractional_digits > 0 {
     let mut divisor : Double = 1.0
     let mut j : Int = 0
