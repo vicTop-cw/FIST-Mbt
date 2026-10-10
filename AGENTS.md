@@ -112,6 +112,18 @@ You can browse and install extra skills here:
   退出码是契约（`0` 全跑完 / `1` 有崩溃 / `3` 平台或工具链不给量、拒绝出数 / `4` 尺子自己坏了——含判据未捕获异常，
   绝不冒用 `1` 那一档）。**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 573/573）**，见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
 
+> **BUG-133 已在依赖侧修复（2026-10-10）**：`mizchi/sqlite` 的 `stub.c` 已改写成
+> `moonbit_make_external_object` 包装裸 `sqlite3*` / `sqlite3_stmt*`，并把 6 处 `const char*` 返回改成
+> `moonbit_make_bytes` 副本。修复版落在 `patches/sqlite-bug133/stub.c`（repo 内），配套
+> `patches/sqlite-bug133/reapply.sh`（`--force` / `--verify` / 幂等）。
+> **为什么不能只改 `.mooncakes`**：它在 `.gitignore` 里，`moon update` 会重生成——所以 CI 两条 native 臂
+> 在 `moon update` 之后、`Check (native)` 之前都加了一步 `Reapply BUG-133 sqlite FFI fix`
+> （`bash patches/sqlite-bug133/reapply.sh --force`），保证依赖一更新就把修复落回来。
+> 本地装完依赖后同样跑一次 `bash patches/sqlite-bug133/reapply.sh` 再 `moon test --target native`。
+> 实测读数（Windows + `moon 0.1.20260920`）：修复前 `moon test --target native src/store` 5 连发 3 次失败；
+> 修复后 src/store 15 连发 + 全量 native 4 连发全部 633/633 通过（JS 同版本 633/633 零回归）。
+> 探针在 Windows 会拒绝出数（POSIX-only），故抽检面以「同命令连发全绿」为等价面。
+
 ## MCP Server
 
 本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**134 tools** + 3 resources + 2 prompts）：

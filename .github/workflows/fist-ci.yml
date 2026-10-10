@@ -70,6 +70,12 @@ jobs:
       - name: Refresh registry
         run: moon update
 
+      # BUG-133（2026-10-10 修）：依赖侧 `mizchi/sqlite` 的 stub.c 是 native FFI 内存安全缺陷的根
+      #（C 回裸 sqlite3*/sqlite3_stmt*，另有 6 处 const char* 被当成 Bytes）。修法是把 repo 内的
+      # `patches/sqlite-bug133/stub.c` 落回 `.mooncakes/`——`.mooncakes` 每次 `moon update` 会被重生成。
+      - name: Reapply BUG-133 sqlite FFI fix
+        run: bash patches/sqlite-bug133/reapply.sh --force
+
       - name: Check (native)
         run: moon check --target native
 
