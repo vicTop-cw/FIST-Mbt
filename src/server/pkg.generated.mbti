@@ -125,6 +125,8 @@ pub fn memory_gc_one(String, String, Int) -> Json
 
 pub fn memory_link(String, String, String, String) -> Result[Json, String]
 
+pub fn model_auth_status_impl(String, ns~ : String) -> Result[Json, String]
+
 pub fn output_validate(String, Array[Json], Json, String, require_evidence? : Bool) -> Result[Json, String]
 
 pub fn project_standards(String, Bool) -> Json
@@ -160,6 +162,8 @@ pub fn run_check_workdir_in_project(String, String) -> Bool
 pub fn run_check_workdir_ok(String, String) -> Bool
 
 pub async fn run_server() -> Unit
+
+pub fn scan_finding_guarded(String, String, Array[String]) -> Bool
 
 pub fn selfdrive_round_tick(Json) -> Json
 

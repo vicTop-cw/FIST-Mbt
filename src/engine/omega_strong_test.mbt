@@ -446,3 +446,43 @@ test "omega 打回自动落 [lesson] 教训（spec 打回 + 复验打回 + 超�
   assert_true(join.contains("成果未达标"))
   assert_true(join.contains("[lesson] omega.escalated"))
 }
+
+///|
+/// 预执行审计门禁：空交付物被拒（BUG-29 done_no_artifact 防线）。
+test "omega_audit_gate_empty_deliverable_rejected" {
+  let e = os_engine()
+  let id = os_publish(e)
+  ignore(e.claim(task_id=id, assignee="exec_1", now="2026-09-17T10:00:00Z"))
+  let r = e.execute(task_id=id, deliverable="", now="2026-09-17T10:01:00Z")
+  match r {
+    Err(m) => assert_true(m.contains("预执行审计门禁"))
+    Ok(_) => abort("空交付物不应通过审计门禁")
+  }
+  // 纯空白同样拒绝
+  let r2 = e.execute(
+    task_id=id,
+    deliverable="   \n\t  ",
+    now="2026-09-17T10:02:00Z",
+  )
+  match r2 {
+    Err(m) => assert_true(m.contains("预执行审计门禁"))
+    Ok(_) => abort("纯空白交付物不应通过审计门禁")
+  }
+}
+
+///|
+/// 预执行审计门禁：正常交付物放行。
+test "omega_audit_gate_non_empty_passes" {
+  let e = os_engine()
+  let id = os_publish(e)
+  ignore(e.claim(task_id=id, assignee="exec_1", now="2026-09-17T11:00:00Z"))
+  match
+    e.execute(
+      task_id=id,
+      deliverable="改了 src/foo.mbt：新增 bar 函数，附 3 条测试",
+      now="2026-09-17T11:01:00Z",
+    ) {
+    Ok(_) => ()
+    Err(m) => abort("正常交付物不应被拒: \{m}")
+  }
+}

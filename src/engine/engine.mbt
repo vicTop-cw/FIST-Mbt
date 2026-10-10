@@ -184,6 +184,12 @@ pub fn FistEngine::execute(
           "非法执行: 任务处于 [\{t.status_to_string()}]。出路：\{@core.Task::execute_exit_hint(st)}",
         )
       }
+      // 预执行审计门禁（P2 BACKLOG）：can_execute 通过后、execute 迁移前插入。
+      // 拦「空交付物」（BUG-29 done_no_artifact 防线）。
+      match self.audit_execute_gate(task_id, deliverable) {
+        Err(e) => return Err(e)
+        Ok(_) => ()
+      }
       let c = match t.execute() {
         Ok(x) => x
         Err(e) => return Err("执行失败: \{e}")

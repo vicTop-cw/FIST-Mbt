@@ -199,7 +199,27 @@ pub fn FistEngine::omega_latest(
   found
 }
 
-// —— 门禁（仅对强验证任务生效） ——
+// —— 门禁 ——
+
+///|
+/// 预执行审计门禁（P2 BACKLOG「Pre-execution audit gate」）：
+/// 在 `can_execute` 通过之后、`execute()` 迁移之前插入，拦截「空交付物」——
+/// BUG-29「已完成但无交付物」的病灶形状：执行者写了空串/纯空白 deliverable，账本记「完成」
+/// 但没有任何产物可核。判据仅一条：deliverable trim 后非空；否则拒绝执行并给出纠偏提示。
+/// 只拦确定性问题（空交付物），不做过度拦截；零回归（正常交付物一定非空）。
+pub fn FistEngine::audit_execute_gate(
+  self : FistEngine,
+  task_id : String,
+  deliverable : String,
+) -> Result[Unit, String] {
+  let trimmed = deliverable.trim().to_owned()
+  if trimmed.is_empty() {
+    return Err(
+      "预执行审计门禁：deliverable 为空——BUG-29「已完成但无交付物」防线。请写清改动/路径/验证后再 execute",
+    )
+  }
+  Ok(())
+}
 
 ///|
 /// 执行前门禁：强验证任务必须先有「已通过」语料；默认关闭的任务直接放行。
