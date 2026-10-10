@@ -132,13 +132,16 @@ test "loop_tick: 空 steps 立即停止" {
 test "loop_tick: 单步推进 2-steps 环" {
   let lp = loop_create("lp", ["advance", "verify"], "t0")
   let r1 = loop_tick(lp, "t1")
-  assert_eq(r1.next_mode, "advance")
+  // BUG-144: next_mode 是「下一步」要执行的 mode = steps[next_step_idx]。
+  // steps=["advance","verify"]，当前 idx=0，推进后 idx=1，下一步应为 "verify"。
+  assert_eq(r1.next_mode, "verify")
   assert_eq(r1.next_step_idx, 1)
   assert_eq(r1.next_round, 0)
   assert_true(not(r1.should_stop))
 
   let r2 = loop_tick(r1.loop_after, "t2")
-  assert_eq(r2.next_mode, "verify")
+  // 上一步后 idx=1，推进后 idx=0，下一步回到 "advance"，同时走满一圈 round+1。
+  assert_eq(r2.next_mode, "advance")
   assert_eq(r2.next_step_idx, 0)
   assert_eq(r2.next_round, 1)
 }

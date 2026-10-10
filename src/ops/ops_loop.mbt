@@ -178,8 +178,10 @@ pub fn loop_tick(
     }
   }
 
-  let next_mode = lp.steps[lp.current_idx]
+  // BUG-144: 先算 next_idx（下一步下标），再取下一步的 mode。
+  // 旧实现先取当前 idx 的 mode（即「刚完成」那一步），与字段名/工具描述相反。
   let next_idx = (lp.current_idx + 1) % lp.steps.length()
+  let next_mode = lp.steps[next_idx]
   let mut next_round = lp.round
   if next_idx == 0 {
     next_round = next_round + 1
