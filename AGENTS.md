@@ -114,7 +114,7 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**129 tools** + 3 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**130 tools** + 3 resources + 2 prompts）：
 
 ### 生命周期（14）
 | 工具 | 说明 |
@@ -173,7 +173,7 @@ You can browse and install extra skills here:
 | `selfdrive_parse_next_tasks` | 解析报告里的任务清单 |
 | `selfdrive_pick_next` | 按 triage 能力推荐取走顶部并认领（无人值守按能力自续推） |
 
-### 运维 · 日志 / 缺陷 / 成本 / 调度（15）
+### 运维 · 日志 / 缺陷 / 成本 / 调度（16）
 | 工具 | 说明 |
 |---|---|
 | `call_log` | 调用日志查询（时间戳/seq/项目分组） |
@@ -196,6 +196,7 @@ You can browse and install extra skills here:
 | `loop_create` | 创建组合环（Phase 6）：preset=full-iterate/fix-iterate/build-verify 或自定义 steps，注册到进程内 LoopRegistry |
 | `loop_tick` | 推进一环（Phase 6）：取当前 steps[idx] → 返回 next_mode / next_round / should_stop / stop_reason |
 | `loop_status` | 查询组合环状态（Phase 6）：name 空=列出所有已注册环，name 指定=单环完整 JSON |
+| `mcp_config_scaffold` | MCP 配置脚手架（cl1）：把目标项目 `project_dir` + `form_json` 平铺字段（serverName/command/args/cwd/toolCallTimeoutMs/failOnStartupError/reconnect/env）交服务端校验（含 `mcp_env_whitelist` 凭据硬门）后返回**可落盘的 `fist.mcp.json` 正文**；不代写目标项目文件，落盘由 agent/安装器做。纯计算只读 + 返回 JSON，白盒锁 `src/server/mcp_config_scaffold_wbtest.mbt`。 |
 
 ### 衍生子项目 · ATGC-old（3）
 | 工具 | 说明 |
