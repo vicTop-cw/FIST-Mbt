@@ -40,6 +40,40 @@ test "sync_db_lessons 让 DB 中的 [lesson] 教训对 inject 与 dead_ends 进�
 }
 
 ///|
+test "sync_db_lessons 让 DB 中的 [asset] 资产对新进程 inject 可见（BUG-141）" {
+  let db = "temp/sync_db_lessons_asset_wbtest.db"
+  match @store.SqliteStore::open(db) {
+    None => abort("open asset sync db failed")
+    Some(store) => {
+      // 模拟一条 evolve_asset_register 落库的 [asset]（仅落 DB，不经内存 Archive）
+      ignore(
+        store.evolve_upsert(
+          id="asset-code-review-b141test",
+          parent_id="",
+          goal="[asset]code-review",
+          note="前置提交代码审查清单",
+          code="docs/code-review.md",
+          score=0.7,
+          parts_json="{}",
+          created_at="2026-10-10T07:00:00Z",
+        ),
+      )
+      let arc = @evolve.Archive::new("b141-asset-sync")
+      // BUG-141 的抓锁：旧代码只回灌 [lesson]，[asset] 被漏掉 → 以下 n1==1 与 Some 断言必红
+      let n1 = sync_db_lessons(arc, Some(store))
+      assert_eq(n1, 1)
+      assert_eq(@evolve.Archive::len(arc), 1)
+      assert_true(arc.get("asset-code-review-b141test") is Some(_))
+      // inject：按来源名命中资产（跨进程检索的落点）
+      let inj = lookup_injected_assets_in(arc, "code-review").stringify()
+      assert_true(inj.contains("前置提交代码审查清单"))
+      // 幂等：重复同步不重复计数
+      assert_eq(sync_db_lessons(arc, Some(store)), 0)
+    }
+  }
+}
+
+///|
 /// 取 moon.mod 里 `version = \"x.y.z\"` 的声明值（逐字符状态机；无关键字返回空串）。
 /// 用 Array[Char] + 字面量比较（沿用 engine.mbt::extract_difficulty 的既有惯用法），
 /// 而不是在测试里写嵌套转义——转义写错会让守卫自己变成假绿。
