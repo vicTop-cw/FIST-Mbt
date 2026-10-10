@@ -11,7 +11,7 @@
 
 name = "vicTop-cw/fist-mbt"
 
-version = "0.3.6"
+version = "0.3.8"
 
 readme = "README.mbt.md"
 
@@ -32,3 +32,4 @@ import {
   "moonbitlang/x@0.5.5",
   "cc06b/mooncry@0.13.1",
   }
+

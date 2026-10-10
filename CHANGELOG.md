@@ -13,6 +13,40 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.8 (R8-R10 迭代：预执行审计门禁占位符拦截 + 文档面守卫 J15) - 2026-10-11
+
+### 本轮性质：功能加固（审计门禁扩展）+ 判据扩展（check_doc_surface J15）
+
+- **预执行审计门禁扩展（Round 8，commit `2f6de16`）**：`audit_execute_gate` 新增**占位符交付物拦截**——
+  旧实现只拦「trim 后为空」这种显式空串，而 `"done"` / `"完成"` / `"ok"` / `"yes"` / `"通过"` 这类
+  fake-GREEN 占位符能写出「账本记完成但无产物可核」的红账本（BUG-9 的病灶形状）。现在：
+  (1) trim 后为空 ⇒ Err；(2) 整串规整后等于任一占位符词（大小写/空白/标点容忍）⇒ Err；
+  (3) 含具体信息的真实交付物仍放行（零误伤）。配套 2 条测试：占位符 13 变体全拒、占位符在句子里仍放行。
+
+- **Round 8 顺带修好 3 处测试夹具**：`engine_challenge_test.mbt` / `engine_triage_test.mbt` /
+  `dag_ext_test.mbt` 里 `complete_root`/`ch_complete`/`plan_revise_engine` 三个 helper 的
+  `deliverable="done"/"ok"` 改成真实交付物描述——加门禁后这些假夹具被门禁反推红（门禁生效的副作用）。
+
+- **文档面守卫扩展 J15（Round 9，commit `c6e0058`）**：`check_doc_surface` 新增 J15——
+  **docs/ 归档文档文件名日期前缀**。判据：枚举 `docs/*.md`，凡文件名含日期数字却不以
+  `YYYY-MM-DD-` 前缀开头 ⇒ 红。纯参考文档（deliverable.md / evolve.md / laya.md 等不带日期数字）豁免；
+  已确立归档约定 `improvement-plan-YYYYMMDD.md` / `improvement-proposals-YYYYMMDD.md` 豁免。
+  反幻影：目录里一份 .md 都枚举不到 ⇒ FATAL 自拒。`--selftest` 新增 4 支对照。
+  声明面三处同步 J1-J14 → J1-J15（AGENTS / AI-DEVELOPMENT-STANDARD §1 / pipeline_mode_tidy 模板）。
+
+- **寻虫 Round 10（commit `ac0df8f`）**：手动复核 `audit_execute_gate` 发现注释承诺
+  「空白/标点容忍」但实现只 `.to_lower()` —— `"Done ."` / `"完成！"` / `"ok!!"` / `"O.K."`
+  这类「占位符 + 杂散空白/标点」能绕过门禁。新增 `placeholder_normalize(s)`：
+  把 String 转 `Array[Char]`，剔除所有非字母数字字符（CJK 字母与 ASCII 字母数字保留），再 `to_lower()`。
+  占位符词表去掉冗余标点变体（`"done."` 等规整后自然命中）。配套 2 条测试：
+  9 种杂散空白/标点的占位符全拒 + 真实交付物含中文标点仍放行。
+
+### 回归
+
+- `moon test --target js --no-render src/engine/omega_strong_test.mbt` = 12/12 通过（10 旧 + 2 新）
+- `python scripts/check_doc_surface.py` = PASS（真源 136 工具 / moon.mod 0.3.8 / J1-J15 全绿）
+- `python scripts/check_doc_surface.py --selftest` = SELFTEST OK（J1-J15 对合成违例均发红）
+
 ## v0.3.7 (BUG-143：external 检查应用 stdout 不变量 + triage skill 路由) - 2026-10-11
 
 ### 本轮性质：修复（P1「Did it work?」落地）+ 功能新增（task_triage 的 skill 参数）
