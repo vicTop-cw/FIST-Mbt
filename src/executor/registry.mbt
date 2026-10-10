@@ -132,7 +132,9 @@ pub fn ability_coverage(ab : Array[String], need : Array[String]) -> Double {
       }
     }
   }
-  hit.to_double() / need.length().to_double()
+  // R1 bugfind：unprotected-division——`need` 可为空（调用方误传空能力集）
+  let need_safe = if need.length() > 0 { need.length() } else { 1 }
+  hit.to_double() / need_safe.to_double()
 }
 
 ///|

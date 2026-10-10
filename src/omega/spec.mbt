@@ -66,8 +66,9 @@ fn lex_compare(a : String, b : String) -> Int {
   let n = if la < lb { la } else { lb }
   let mut i = 0
   while i < n {
-    let ca = a.unsafe_get(i).to_int()
-    let cb = b.unsafe_get(i).to_int()
+    // R1 bugfind：unsafe_get → 受控 get + unwrap_or（i<n=min(la,lb) 已保证，双保险）
+    let ca = a.get(i).unwrap_or('\u0000').to_int()
+    let cb = b.get(i).unwrap_or('\u0000').to_int()
     if ca != cb {
       return if ca < cb { -1 } else { 1 }
     }
