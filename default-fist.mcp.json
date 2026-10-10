@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "fist-mbt": {
+      "command": "fist-mbt",
+      "args": [],
+      "cwd": ".",
+      "toolCallTimeoutMs": 30000,
+      "failOnStartupError": false,
+      "reconnect": {
+        "intervalMs": 500,
+        "maxRetries": 30,
+        "delayMs": 30000
+      },
+      "env": {
+        "FIST_PROJECT_DIR": "."
+      }
+    }
+  }
+}

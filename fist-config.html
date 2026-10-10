@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FIST-Mbt · 目标项目 MCP 配置</title>
+<!--
+  fist-config.html —— FIST-Mbt「目标项目」MCP 设置偏好配置页（纯静态单文件，无 CDN、无外部依赖）。
+  用途：在目标项目目录下打开本页，填好偏好，生成 fist.mcp.json（MCP 客户端读的配置）。
+  原则：
+    1. 本页不写文件（HTML 无文件权限）。生成的是 JSON 正文，由 agent/安装器落盘为目标项目的 fist.mcp.json。
+    2. 凭据不进配置。env 里只填「环境变量名」，真值走运行环境变量（见 mcp_config_scaffold 的凭据硬门）。
+    3. command 优先黑盒路径 fist-mbt（安装器 shim），而不是本仓绝对路径。
+  校验由 mcp_config_scaffold 工具在服务端做；本页只负责产出 form_json。
+-->
+<style>
+  :root { --ink:#1c1e21; --accent:#c8102e; --bg:#f7f7f8; --card:#fff; --line:#e4e4e7; --ok:#2e7d32; --bad:#b3261e; --muted:#6b7280; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; color:var(--ink); background:var(--bg); }
+  header { display:flex; align-items:center; gap:14px; padding:18px 26px; background:#111; color:#fff; }
+  header .logo { width:38px; height:38px; flex:0 0 38px; }
+  header h1 { font-size:17px; margin:0; font-weight:600; }
+  header p { margin:2px 0 0; font-size:12px; color:#bbb; }
+  main { max-width:1000px; margin:24px auto; padding:0 18px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:16px; }
+  .card h2 { margin:0 0 4px; font-size:15px; }
+  .card .sub { margin:0 0 14px; font-size:12.5px; color:var(--muted); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px 16px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:12.5px; color:var(--muted); font-weight:600; }
+  .field label code { background:#eee; padding:1px 4px; border-radius:4px; font-size:11px; }
+  input, select, textarea { font:inherit; padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  input:focus, select:focus, textarea:focus { outline:2px solid var(--accent); outline-offset:0; border-color:transparent; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .row.reconnect { border-top:1px dashed var(--line); padding-top:12px; margin-top:12px; }
+  button { font:inherit; padding:8px 14px; border:0; border-radius:6px; cursor:pointer; font-weight:600; }
+  .btn-primary { background:var(--accent); color:#fff; }
+  .btn-primary:hover { background:#a30d26; }
+  .btn-ghost { background:#eee; color:var(--ink); }
+  .btn-ghost:hover { background:#e0e0e3; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; background:#eee; color:var(--muted); }
+  textarea.out { width:100%; min-height:300px; font:12.5px/1.5 ui-monospace,Consolas,monospace; background:#0f1419; color:#e6edf3; border-radius:8px; border:0; padding:12px; white-space:pre; }
+  .note { font-size:12px; color:var(--muted); margin-top:8px; }
+  .note strong { color:var(--bad); }
+  .kbd { font-size:12px; }
+  footer { text-align:center; color:var(--muted); font-size:12px; padding:20px 0 40px; }
+  #copyToast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#111; color:#fff; padding:8px 16px; border-radius:6px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  #copyToast.show { opacity:1; }
+</style>
+</head>
+<body>
+
+<header>
+  <!-- 拳头 logo（内联，与 assets/fist-logo.svg 同形） -->
+  <svg class="logo" viewBox="0 0 64 64" role="img" aria-label="FIST logo">
+    <g fill="currentColor">
+      <!-- 四指收拢 -->
+      <rect x="12" y="22" width="34" height="26" rx="6"/>
+      <rect x="10" y="14" width="8" height="34" rx="4"/>
+      <rect x="22" y="10" width="8" height="38" rx="4"/>
+      <rect x="34" y="10" width="8" height="38" rx="4"/>
+      <rect x="46" y="14" width="8" height="34" rx="4"/>
+      <!-- 拇指 -->
+      <path d="M8 40 q-6 2 -5 9 q1 6 8 7 l16 3 q7 1 8 -6 q1 -6 -5 -8 z"/>
+    </g>
+  </svg>
+  <div>
+    <h1>FIST-Mbt · 目标项目 MCP 配置</h1>
+    <p>生成 <code>fist.mcp.json</code> —— 目标项目接入 fist-mbt 的一次性配置</p>
+  </div>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>① 连接偏好</h2>
+    <p class="sub">这些字段会写进目标项目 <code>fist.mcp.json</code> 的 <code>mcpServers.&lt;serverName&gt;</code>。</p>
+    <div class="grid">
+      <div class="field">
+        <label>serverName <code>serverName</code></label>
+        <input id="serverName" value="fist-mbt" maxlength="32" pattern="[A-Za-z0-9_-]+" title="仅字母/数字/下划线/连字符，≤32 字符">
+        <span class="note kbd">正则 <code>^[A-Za-z0-9_-]{1,32}$</code></span>
+      </div>
+      <div class="field">
+        <label>command <code>command</code></label>
+        <input id="command" value="fist-mbt">
+        <span class="note kbd">默认 <code>fist-mbt</code>（安装器 shim，黑盒路径优先）。填本仓绝对路径会导致换机失效。</span>
+      </div>
+      <div class="field">
+        <label>cwd <code>cwd</code></label>
+        <input id="cwd" value=".">
+        <span class="note kbd"><code>.</code> = 目标项目根目录</span>
+      </div>
+      <div class="field">
+        <label>toolCallTimeoutMs <code>toolCallTimeoutMs</code></label>
+        <input id="toolCallTimeoutMs" type="number" value="30000" min="1" max="600000">
+        <span class="note kbd">1..600000，默认 30000</span>
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:14px">
+      <label>args <code>args</code>（JSON 数组）</label>
+      <input id="args" value="[]">
+      <span class="note kbd">如 <code>["serve","--ns","default"]</code>；留空数组表示启动默认模式</span>
+    </div>
+
+    <div class="field" style="margin-top:14px">
+      <label>failOnStartupError <code>failOnStartupError</code></label>
+      <div class="row">
+        <select id="failOnStartupError">
+          <option value="false">false（推荐：启动失败不阻塞宿主）</option>
+          <option value="true">true（启动失败即报错）</option>
+        </select>
+        <span class="badge">默认 false</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>② 重连策略 <code>reconnect</code></h2>
+    <p class="sub">断线重连参数，缺省即可。</p>
+    <div class="grid row reconnect" style="border-top:0;margin-top:0;padding-top:0">
+      <div class="field">
+        <label>intervalMs <code>intervalMs</code></label>
+        <input id="reconnectIntervalMs" type="number" value="500" min="100">
+      </div>
+      <div class="field">
+        <label>maxRetries <code>maxRetries</code></label>
+        <input id="reconnectMaxRetries" type="number" value="30" min="0">
+      </div>
+      <div class="field">
+        <label>delayMs <code>delayMs</code></label>
+        <input id="reconnectDelayMs" type="number" value="30000" min="0">
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>③ 环境变量（只填「名称」，不填真值）</h2>
+    <p class="sub">
+      <strong style="color:var(--bad)">凭据不进配置。</strong>
+      这里填的是 <code>env</code> 里的<b>环境变量名 → 占位/取值</b>；真正的密钥只来自运行环境变量。
+      若你把 <code>api_key</code>/<code>token</code>/<code>secret</code> 之类直接写进值，
+      <code>mcp_config_scaffold</code> 会<b>整笔拒绝</b>（凭据硬门）。
+    </p>
+    <div id="envList">
+      <!-- env 行由 JS 渲染 -->
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn-ghost" id="addEnv">+ 加一行环境变量</button>
+      <span class="note">常用：<code>FIST_PROJECT_DIR</code>（目标项目根，默认 <code>.</code>）、<code>FIST_DB_PATH</code>（台账库路径）、GitHub/GitCode 同步令牌等。</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>④ 生成</h2>
+    <p class="sub">点「生成并预览」产出 <code>form_json</code>（交给 <code>mcp_config_scaffold</code> 服务端校验）与目标项目 <code>fist.mcp.json</code> 正文。落盘由 agent/安装器做。</p>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn-primary" id="gen">生成并预览</button>
+      <button class="btn-ghost" id="copy">复制 fist.mcp.json</button>
+      <button class="btn-ghost" id="copyForm">复制 form_json</button>
+      <button class="btn-ghost" id="reset">重置默认</button>
+    </div>
+    <textarea class="out" id="out" readonly placeholder="点「生成并预览」后，这里显示 fist.mcp.json 正文（可落盘）。"></textarea>
+    <p class="note">
+      校验流程：把 <code>form_json</code> 传给 <code>mcp_config_scaffold</code>（服务端校验 + 凭据硬门），
+      它返回 <b>可落盘的 <code>fist.mcp.json</code> 正文</b>与 <code>unknown_keys</code>；
+      落盘为目标项目根目录的 <code>fist.mcp.json</code>。
+    </p>
+  </section>
+
+</main>
+
+<footer>
+  FIST-Mbt · 目标项目配置页 · 纯静态单文件 · 无 CDN · <code>fist-config.html</code>
+</footer>
+
+<div id="copyToast">已复制</div>
+
+<script>
+  // 环境变量白名单（与 mcp_config_scaffold 的 mcp_env_whitelist 严格一致）
+  var ENV_WHITELIST = [
+    "FIST_PROJECT_DIR", "FIST_DB_PATH",
+    "FIST_GITHUB_ENABLED", "FIST_GITHUB_TOKEN", "FIST_GITHUB_REPO",
+    "FIST_GITCODE_TOKEN", "FIST_GITCODE_PROJECT_ID",
+    "FIST_MODEL_API_BASE", "FIST_MODEL_API_KEY", "FIST_RUN_CHECK_ALLOW",
+    "FIST_SELF_OPENAI_BASE", "FIST_SELF_OPENAI_KEY",
+    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL"
+  ];
+  var DEFAULT_ENVS = [["FIST_PROJECT_DIR", "."]];
+
+  function renderEnv() {
+    var list = document.getElementById("envList");
+    list.innerHTML = "";
+    var rows = window.__envRows || JSON.parse(JSON.stringify(DEFAULT_ENVS));
+    rows.forEach(function (pair, i) {
+      var div = document.createElement("div");
+      div.className = "row";
+      div.style.marginBottom = "8px";
+      var sel = document.createElement("select");
+      sel.dataset.idx = i;
+      ENV_WHITELIST.forEach(function (n) {
+        var o = document.createElement("option");
+        o.value = n; o.textContent = n;
+        if (n === pair[0]) o.selected = true;
+        sel.appendChild(o);
+      });
+      var inp = document.createElement("input");
+      inp.dataset.idx = i; inp.value = pair[1]; inp.placeholder = "值（如 . 或 $ENV_NAME 或留空）";
+      inp.style.flex = "1";
+      var del = document.createElement("button");
+      del.className = "btn-ghost"; del.textContent = "✕";
+      del.onclick = function () { rows.splice(i, 1); window.__envRows = rows; renderEnv(); };
+      div.appendChild(sel); div.appendChild(inp); div.appendChild(del);
+      list.appendChild(div);
+      sel.onchange = inp.oninput = function () { rows[+this.dataset.idx][sel === this ? 0 : 1] = this.value; window.__envRows = rows; };
+    });
+    window.__envRows = rows;
+  }
+  renderEnv();
+
+  document.getElementById("addEnv").onclick = function () {
+    window.__envRows.push(["FIST_PROJECT_DIR", ""]); renderEnv();
+  };
+
+  function collect() {
+    var env = {};
+    (window.__envRows || []).forEach(function (p) { if (p[0] && p[1] !== "") env[p[0]] = p[1]; });
+    return {
+      serverName: document.getElementById("serverName").value.trim(),
+      command: document.getElementById("command").value.trim(),
+      args: safeArray(document.getElementById("args").value),
+      cwd: document.getElementById("cwd").value.trim() || ".",
+      toolCallTimeoutMs: clampInt(document.getElementById("toolCallTimeoutMs").value, 1, 600000, 30000),
+      failOnStartupError: document.getElementById("failOnStartupError").value === "true",
+      reconnect: {
+        intervalMs: clampInt(document.getElementById("reconnectIntervalMs").value, 100, 600000, 500),
+        maxRetries: clampInt(document.getElementById("reconnectMaxRetries").value, 0, 1000, 30),
+        delayMs: clampInt(document.getElementById("reconnectDelayMs").value, 0, 600000, 30000)
+      },
+      env: env
+    };
+  }
+  function safeArray(s) { try { var a = JSON.parse(s); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+  function clampInt(v, lo, hi, dflt) { var n = parseInt(v, 10); if (isNaN(n)) return dflt; return Math.max(lo, Math.min(hi, n)); }
+
+  function serverEntry(f) {
+    var entry = { command: f.command, args: f.args, cwd: f.cwd };
+    if (f.toolCallTimeoutMs !== 30000) entry.toolCallTimeoutMs = f.toolCallTimeoutMs;
+    if (f.failOnStartupError) entry.failOnStartupError = true;
+    if (f.reconnect.intervalMs !== 500 || f.reconnect.maxRetries !== 30 || f.reconnect.delayMs !== 30000) entry.reconnect = f.reconnect;
+    if (Object.keys(f.env).length) entry.env = f.env;
+    return entry;
+  }
+
+  function render() {
+    var f = collect();
+    var formJson = f;               // 传给 mcp_config_scaffold 的 form_json —— 平铺字段（serverName/command/args/cwd/toolCallTimeoutMs/failOnStartupError/reconnect/env）
+    var config = { mcpServers: {} };
+    config.mcpServers[f.serverName || "fist-mbt"] = serverEntry(f);
+    document.getElementById("out").value = JSON.stringify(config, null, 2);
+    window.__formJson = formJson;
+    window.__configJson = config;
+  }
+
+  document.getElementById("gen").onclick = render;
+  document.getElementById("copy").onclick = function () { copyText(JSON.stringify(window.__configJson || {}, null, 2)); };
+  document.getElementById("copyForm").onclick = function () { copyText(JSON.stringify(window.__formJson || {}, null, 2)); };
+  document.getElementById("reset").onclick = function () {
+    window.__envRows = JSON.parse(JSON.stringify(DEFAULT_ENVS));
+    document.getElementById("serverName").value = "fist-mbt";
+    document.getElementById("command").value = "fist-mbt";
+    document.getElementById("cwd").value = ".";
+    document.getElementById("args").value = "[]";
+    document.getElementById("toolCallTimeoutMs").value = "30000";
+    document.getElementById("failOnStartupError").value = "false";
+    document.getElementById("reconnectIntervalMs").value = "500";
+    document.getElementById("reconnectMaxRetries").value = "30";
+    document.getElementById("reconnectDelayMs").value = "30000";
+    renderEnv(); render();
+  };
+  function copyText(t) {
+    var done = function () { var el = document.getElementById("copyToast"); el.classList.add("show"); setTimeout(function () { el.classList.remove("show"); }, 900); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done);
+    else { var ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); done(); }
+  }
+</script>
+</body>
+</html>

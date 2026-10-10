@@ -51,3 +51,9 @@ dist/
 # BUG-131 之后投影已按跟踪面优先解析，这里再把它挡在 ignore 面 ⇒ `git status` 与「工作树 − .gitignore」两面都干净。
 # 只锚仓库根（plugins/claude/.mcp.json 是跟踪件，不许被这条规则盖住）。
 /.mcp.json
+
+# 目标项目「使用态」配置（由 fist-config.html 生成 / mcp_config_scaffold 落盘）——
+# 只在仓库根锚，避免 check_publish_payload 把「用户在本仓试跑生成的配置」当未跟踪文件点名。
+# 注意 default-fist.mcp.json 是「模板」，必须进发布包，不许被这条规则盖住。
+/.fist.mcp.json
+/fist.mcp.json
