@@ -25,7 +25,13 @@ fn ch_publish(e : @engine.FistEngine, desc : String) -> String {
 ///|
 fn ch_complete(e : @engine.FistEngine, id : String) -> Unit {
   ignore(e.claim(task_id=id, assignee="exec_1", now="2026-09-05T10:01:00Z"))
-  ignore(e.execute(task_id=id, deliverable="done", now="2026-09-05T10:02:00Z"))
+  ignore(
+    e.execute(
+      task_id=id,
+      deliverable="完成 src/challenge_impl.mbt：新增 task_challenge 路径 + 3 条测试",
+      now="2026-09-05T10:02:00Z",
+    ),
+  )
   ignore(e.submit(task_id=id, now="2026-09-05T10:03:00Z"))
   match e.verify(task_id=id, verifier="ver_1", now="2026-09-05T10:04:00Z") {
     Ok(_) => ()

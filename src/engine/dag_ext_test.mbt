@@ -841,7 +841,13 @@ fn plan_revise_engine() -> FistEngine {
   }
   // A 走完 认领→执行→提交→验收 → 已完成
   ignore(e.claim(task_id="A", assignee="exec_1", now="2026-09-26T06:01:00Z"))
-  ignore(e.execute(task_id="A", deliverable="ok", now="2026-09-26T06:02:00Z"))
+  ignore(
+    e.execute(
+      task_id="A",
+      deliverable="完成 src/plan_revise.mbt：新增 keep/rework/ready 三分 + 3 条测试",
+      now="2026-09-26T06:02:00Z",
+    ),
+  )
   ignore(e.submit(task_id="A", now="2026-09-26T06:03:00Z"))
   ignore(e.verify(task_id="A", verifier="ver_1", now="2026-09-26T06:04:00Z"))
   // B 走完 认领→执行→提交→打回 → 已打回
