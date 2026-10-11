@@ -165,14 +165,21 @@ pub fn FistEngine::triage(
 ) -> Json {
   let keys = skill_keys(skill)
   let rows : Array[TriageRow] = []
-  for t in self.list_all() {
+  // R12-R7 性能：与 ready_tasks 同款——deps_satisfied 逐条 DB 读，
+  // 这里一次遍历建 completed 映射，O(1) 判依赖。
+  let all_tasks = self.list_all()
+  let completed : Map[String, Bool] = Map([])
+  for t in all_tasks {
+    completed.set(t.get_id(), t.get_status().is_completed())
+  }
+  for t in all_tasks {
     if namespace != "" && t.ns != namespace {
       continue
     }
     if not(t.get_status().is_pending()) {
       continue
     }
-    if not(self.deps_satisfied(t.get_id())) {
+    if not(deps_ready_memo(t.depends_on, completed)) {
       continue
     }
     let lab : String = triage_label_of(t.description)
