@@ -87,9 +87,16 @@ pub fn FistEngine::critical_path(self : FistEngine) -> Array[String] {
 ///|
 /// 当前可并行执行的任务数：状态为待领取且依赖已满足的任务数。
 pub fn FistEngine::parallelism(self : FistEngine) -> Int {
+  // R12-R7 性能：与 ready_tasks 同款——deps_satisfied 逐条 DB 读，
+  // 这里一次遍历建 completed 映射，O(1) 判依赖。
+  let tasks = self.list_all()
+  let completed : Map[String, Bool] = Map([])
+  for t in tasks {
+    completed.set(t.get_id(), t.get_status().is_completed())
+  }
   let mut n = 0
-  for t in self.list_all() {
-    if t.get_status().is_pending() && self.deps_satisfied(t.get_id()) {
+  for t in tasks {
+    if t.get_status().is_pending() && deps_ready_memo(t.depends_on, completed) {
       n = n + 1
     }
   }
@@ -683,6 +690,30 @@ fn budget_scope_json(root : String, ns : String, count : Int) -> Json {
 }
 
 ///|
+/// BUG-209：非 DAG（不在 slack_map、不参与依赖边）的任务按其 parent_id 父链深归 stage，
+/// 而不是一律归 level 0——level 0 是真正根任务层，孤立任务混入会虚增该层权重与份额。
+fn FistEngine::parent_chain_depth(self : FistEngine, id : String) -> Int {
+  let mut depth = 0
+  let mut cur = id
+  let mut hops = 0
+  while hops < 10000 {
+    match self.get_task(cur) {
+      None => break
+      Some(t) =>
+        match t.parent_id {
+          Some(p) if p != cur && p != "" => {
+            cur = p
+            depth = depth + 1
+          }
+          _ => break
+        }
+    }
+    hops = hops + 1
+  }
+  depth
+}
+
+///|
 /// 预算按依赖图阶段切分（R81，ZEBRA 背包水填充蒸馏简化版）：给定总预算，
 /// 按任务 DAG 阶段（slack 分析的 earliest 层级 0..makespan）切分——每阶段基础份额 =
 /// 该阶段任务数 × 难度权重（难3/中2/易1，复用难度档单一来源；无难度标记按 1），
@@ -704,14 +735,25 @@ pub fn FistEngine::budget_split_by_dag(
   ns? : String = "",
 ) -> Json {
   if budget <= 0 {
+    // BUG-180：rejected 分支此前不回 makespan/scope，与 ok/insufficient 分支不同构
+    //（文档承诺所有分支都带这两个字段）。rejected 因未取数而无统计，故 makespan:0、
+    // scoped_task_count:0 是诚实的回显，不是硬编码假值。
+    let reject_note = if budget < 0 {
+      "负预算只会切出负份额，那不是预算而是赤字"
+    } else {
+      "0 预算无法按比例切分份额（份额=比例×总预算，分母为零不成立）"
+    }
     return Json::object({
       "stages": Json::array([]),
       "total_budget": Json::number(budget.to_double()),
+      "makespan": Json::number(0.0),
       "verdict": Json::string("rejected"),
+      "scope": budget_scope_json(root, ns, 0),
       "note": Json::string(
         "budget 必须是正整数（收到 " +
         budget.to_string() +
-        "）：负预算只会切出负份额，那不是预算而是赤字",
+        "）：" +
+        reject_note,
       ),
     })
   }
@@ -742,6 +784,9 @@ pub fn FistEngine::budget_split_by_dag(
     return Json::object({
       "stages": Json::array([]),
       "total_budget": Json::number(budget.to_double()),
+      // BUG-184：未取数（根任务不存在），makespan=0 是诚实的"无数据"回显，
+      // 与 scope_ids 为空的 insufficient 分支（L827-838）同构。
+      "makespan": Json::number(0.0),
       "verdict": Json::string("insufficient"),
       "scope": budget_scope_json(root, ns, 0),
       "note": Json::string(
@@ -762,7 +807,12 @@ pub fn FistEngine::budget_split_by_dag(
     if not(in_scope.get(t.get_id()).unwrap_or(false)) {
       continue
     }
-    let lv = level_of.get(t.get_id()).unwrap_or(0)
+    let lv = match level_of.get(t.get_id()) {
+      // BUG-209：slack_map 之外（无依赖边）的任务旧行为一律归 level 0，
+      // 与真正根任务挤同 stage；改按 parent_id 父链深归 stage（parent_chain_depth）。
+      Some(l) => l
+      None => self.parent_chain_depth(t.get_id())
+    }
     let lab = triage_label_of(t.description)
     let w = if lab == "难" { 3 } else if lab == "中" { 2 } else { 1 }
     stage_weight.set(lv, stage_weight.get(lv).unwrap_or(0) + w)
@@ -872,9 +922,31 @@ pub fn FistEngine::progress_gate(
 ) -> Json {
   match self.get_task(task_id) {
     None =>
+      // BUG-183：任务不存在分支须与文档承诺的字段集（11 字段）同构，不能只回 3 字段。
+      // 无子树可统计 → spent/progress/burn_rate 为 0，linear=0、conservative=0（复用正常分支公式
+      // 线性=燃尽率×剩余工作量、保守=1.2×线性）；verdict="rejected" + basis="task not found"
+      // 明确区分「任务不存在」与「预算问题」（后者 verdict 同为 rejected 但 basis/action 不同）。
       return Json::object({
         "ok": Json::boolean(false),
         "task_id": Json::string(task_id),
+        "budget": Json::number(budget.to_double()),
+        "spent": Json::number(0.0),
+        "remaining": Json::number(budget.to_double()),
+        "progress": Json::number(0.0),
+        "burn_rate": Json::number(0.0),
+        // BUG-186：BUG-183 补丁只对齐了文档 11 字段，漏了对齐 sibling 分支——L956-979 rejected 与
+        // L1015-1033 正常分支都带 remaining_work（=1-progress），None 分支是函数内唯一缺失者。
+        // 无子树可测 → progress 视为 0 → remaining_work 无意义，诚实回 0.0（与 note 分支同构）。
+        "remaining_work": Json::number(0.0),
+        "projection": Json::object({
+          "linear": Json::number(0.0),
+          "conservative": Json::number(0.0),
+        }),
+        "verdict": Json::string("rejected"),
+        "action": Json::string(
+          "任务不存在，无法做进度预算路由门控",
+        ),
+        "basis": Json::string("task not found"),
         "note": Json::string("任务不存在: " + task_id),
       })
     Some(_) => ()
@@ -1085,7 +1157,11 @@ pub fn FistEngine::plan_revise(
               match cat.get(d) {
                 Some("rework") => dep_rework = true
                 Some("keep") => ()
-                _ => dep_undone = true
+                // BUG-206：d 是根任务（计划容器）时不入 cat 桶，cat.get 恒 None；
+                // 旧 `_ => dep_undone = true` 把"根已完成"误判成"依赖未做"，
+                // 让所有挂根的子任务恒落 ""（待再跑）。根任务能到这里说明它已完成，
+                // 故直接视为 done。
+                _ => if d == root_task_id { () } else { dep_undone = true }
               }
             } else {
               // 子树外依赖：按真实状态判定是否完成
