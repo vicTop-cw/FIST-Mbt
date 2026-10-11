@@ -95,7 +95,7 @@ pub fn loop_create(
 }
 
 ///|
-/// 3 个内置预设环（开箱即用）
+/// 5 个内置预设环（开箱即用）
 pub fn preset_loop(name : String) -> Result[(Array[String], String), String] {
   match name.to_lower() {
     "fix-iterate" =>
@@ -119,11 +119,25 @@ pub fn preset_loop(name : String) -> Result[(Array[String], String), String] {
           "四模式流水线迭代：推进到寻虫到修复到验证",
         ),
       )
+    "perf-iterate" =>
+      Ok(
+        (
+          ["advance", "polish", "verify", "advance"],
+          "R12-R4 算子扩展：推进（性能优化）到打磨到验证到再推进，持续性能迭代",
+        ),
+      )
+    "scan-fix-verify" =>
+      Ok(
+        (
+          ["bugfind", "fix_and_merge", "verify"],
+          "R12-R4 算子扩展：扫描到修复到验证，把一次发现的 bug 家族彻底收口",
+        ),
+      )
     _ =>
       Err(
         "unknown preset loop: " +
         name +
-        ". available: fix-iterate, build-verify, full-iterate",
+        ". available: fix-iterate, build-verify, full-iterate, perf-iterate, scan-fix-verify",
       )
   }
 }
@@ -192,7 +206,9 @@ pub fn loop_tick(
   let mut stop_reason = ""
 
   // 1. max_rounds 硬上限
-  if next_round > lp.max_rounds {
+  // BUG-203：off-by-one——next_round 是「下一步将进入」的轮号，
+  // max_rounds 是轮数上限，故 >= 才算越界（旧 > 让 max_rounds=1 实际跑 2 轮）。
+  if next_round >= lp.max_rounds {
     should_stop = true
     stop_reason = "max_rounds_hit: round " +
       next_round.to_string() +

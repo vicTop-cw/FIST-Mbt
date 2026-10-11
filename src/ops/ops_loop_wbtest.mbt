@@ -74,6 +74,34 @@ test "preset_loop: full-iterate" {
 }
 
 ///|
+test "preset_loop: perf-iterate（R12-R4 算子扩展）" {
+  match preset_loop("perf-iterate") {
+    Ok((steps, desc)) => {
+      assert_eq(steps.length(), 4)
+      assert_eq(steps[0], "advance")
+      assert_eq(steps[1], "polish")
+      assert_eq(steps[2], "verify")
+      assert_eq(steps[3], "advance")
+      assert_true(desc.contains("性能"))
+    }
+    _ => assert_true(false)
+  }
+}
+
+///|
+test "preset_loop: scan-fix-verify（R12-R4 算子扩展）" {
+  match preset_loop("scan-fix-verify") {
+    Ok((steps, _)) => {
+      assert_eq(steps.length(), 3)
+      assert_eq(steps[0], "bugfind")
+      assert_eq(steps[1], "fix_and_merge")
+      assert_eq(steps[2], "verify")
+    }
+    _ => assert_true(false)
+  }
+}
+
+///|
 test "preset_loop: 未知名称" {
   match preset_loop("no-such-loop") {
     Err(_) => assert_true(true)
