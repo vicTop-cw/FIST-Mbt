@@ -385,6 +385,9 @@ pub fn FistEngine::dag_slack_analysis(self : FistEngine) -> Json {
     "critical": Json::array(critical.map(fn(s) { Json::string(s) })),
     "slack_map": Json::object(slack_map),
     "cycle": Json::array(cycle.map(fn(s) { Json::string(s) })),
+    // R12-R10 性能：把 topo order 一并回传，省掉 `dag_cost_route` 里的
+    // 第二次 `dag_topo_order()`（那又是一次全库 read + Kahn 遍历）。
+    "order": Json::array(order.map(fn(s) { Json::string(s) })),
   })
 }
 
@@ -538,7 +541,21 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
 /// critical_path→slack→schedule→suggest→cost_route。
 pub fn FistEngine::dag_cost_route(self : FistEngine) -> Json {
   let slack = self.dag_slack_analysis()
-  let (order, _cycle) = self.dag_topo_order()
+  // R12-R10 性能：`dag_slack_analysis` 现已在返回里带上 topo order（见 slack_analysis 结果），
+  // 直接复用，省掉一次 `dag_topo_order()`（那又是一次全库 read + Kahn 遍历）。
+  let order = match slack.value("order") {
+    Some(Json::Array(arr)) =>
+      arr.filter_map(fn(v) {
+        match v {
+          Json::String(s) => Some(s)
+          _ => None
+        }
+      })
+    _ => {
+      let (o, _c) = self.dag_topo_order()
+      o
+    }
+  }
   // 执行者注册表：候选顺序按注册顺序（executor_list 稳定）
   let reg_names : Array[String] = []
   let reg_abl : Map[String, Array[String]] = Map([])
