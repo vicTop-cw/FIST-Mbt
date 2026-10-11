@@ -172,8 +172,12 @@ pub fn Archive::best(self : Archive) -> Artifact? {
   if self.is_empty() {
     return None
   }
-  let mut b = self.all()[0]
-  for a in self.all() {
+  // R12-R11 性能：旧代码把 `self.all()` 调两次（一次取 [0]、一次进 for）。
+  // `Archive::all` 是把 Map 展开成 Array（O(N)），两次 = 2N 次迭代。
+  // 一次取好，循环里复用。
+  let all = self.all()
+  let mut b = all[0]
+  for a in all {
     if a.score > b.score {
       b = a
     }
