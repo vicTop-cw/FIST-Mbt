@@ -115,6 +115,30 @@ AIGC:
 
 - **Round 4 [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
 
+## v0.3.8 (R12-P5：Round 5 [推进→寻虫→修复]：dag_mc 消除 5000×N 次 DB 读 + iso_to_secs 上界检查) - 2026-10-11
+
+### 本轮性质：性能提升（延续 R3 主题）+ 新发现的 Int32 溢出（上界缺失）
+
+- **Round 5 [推进] commit `efb138f`（T0r564）**：`mc_finish` 递归里每次调
+  `self.get_task(id)`（SqliteStore 下是 DB 查询），5000 样本 × N 任务 =
+  最多 **100 万次 DB 读**。预计算 `deps: Map[String, Array[String]]`
+  传入递归，每样本零 DB 访问。语义等价（`mc_scope_tasks` 已载入内存，
+  `depends_on` 不变）。环保护（BUG-204）与 memo 化语义保持不变。
+  全量 **714/714**。
+
+- **Round 5 [寻虫] commit `ab9be6c`（BUG-217）**：`ops_ts.mbt`
+  `days * 86400 + hour * 3600 + min * 60 + sec` —— `if year < 2024`
+  只有下界没有上界，year=9999 时 days = 2,910,875，*86400 = 2.51e11，
+  远超 Int32 → 静默绕回乱数。心跳超时判定、归档保留期比较等
+  全部依赖 `iso_to_secs`。
+
+- **Round 5 [修复]**：对称加 `if year > 2091 { return -1 }` 上界。
+  2091 最坏 case 24820*86400 ≈ 2.14e9 < 2^31-1，2092 起越界。
+  配套 7 条 wbtest 测试，全量 **721/721** 通过。
+  **BUG-217 状态：OPEN → FIXED**（证据 commit `ab9be6c`）。
+
+- **Round 5 [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
+
 ## v0.3.8 (R8-R10 迭代：预执行审计门禁占位符拦截 + 文档面守卫 J15) - 2026-10-11
 
 ### 本轮性质：功能加固（审计门禁扩展）+ 判据扩展（check_doc_surface J15）
