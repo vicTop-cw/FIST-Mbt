@@ -165,6 +165,22 @@ AIGC:
 
 - **Round 6 [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
 
+## v0.3.8 (R12-P7：Round 7 [推进]：DAG 依赖判断三处消除逐条 DB 读) - 2026-10-11
+
+### 本轮性质：性能提升（延续 R6，把 R5 dag_mc deps 映射模式推广到全部 DAG 遍历）
+
+- **Round 7 [推进] commit `36710d6` + `149eea3` + `935e5a5`（T0r566）**：
+  `FistEngine::deps_satisfied` 内部对每个依赖调 `store.get_task`（SqliteStore 下
+  是 DB 读），三个调用方（`ready_tasks` / `parallelism` / `task_triage`）都是
+  "逐任务调 deps_satisfied"模式 → **N×(1+D) 次 DB 读**。
+  修复：新增 `pub fn deps_ready_memo(dep_ids, completed)`，
+  调用方各**一次遍历**建 `Map[String, Bool]`（id → 是否已完成），
+  O(1) Map 查询判依赖满足，零 DB 读。
+  语义完全等价（依赖不存在 → Map 查不到 → false，与 get_task None → false 一致）。
+  全量 **725/725** 通过。
+
+- **Round 7 [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
+
 ## v0.3.8 (R8-R10 迭代：预执行审计门禁占位符拦截 + 文档面守卫 J15) - 2026-10-11
 
 ### 本轮性质：功能加固（审计门禁扩展）+ 判据扩展（check_doc_surface J15）
