@@ -28,16 +28,24 @@
    `retention_days * 86400` 无上界。retention_days=30000 时
    *86400 = 2.59e9 **溢出 Int32（绕回不是 panic）**，产生负阈值，
    所有归档任务被误清 → **数据丢失**。
+3. **`gen_plugins.py:245`**（BUG-220）——
+   f-string 表达式部分含反斜杠 `re.findall(r'\\{\\{[A-Z_]+\\}\\}')`。
+   **PEP 701 在 Python 3.12 才允许 f-string 表达式部分含反斜杠**。
+   本机默认 `python` = 3.11.8 → SyntaxError，脚本跑不起来。
+   修复：把 `re.findall(...)` 提到 f-string 外。
 
 ## 三、fix_and_merge（修复）— commit `486e874` + `3444a70`
 
 - **BUG-218**：`if y > 2037 { return -1 }`（model_router 用 1970 epoch，
   与 ops_ts 的 BUG-217 用 2024 参考不同口径，故安全年份边界不同）。
-  配套 3 条 wbtest（2037 合法 / 2038 溢出 -1 / 9999 -1）。
+  配套 3 条 wbtest（2037 合法 / 2038 溢出 -1 / 9999 -1）。commit `486e874`。
 - **BUG-219**：`if retention_days > 24855 { return Err }`。
   24855*86400 = 2,147,472,000 < 2^31-1（2,147,483,647），24856 起溢出。
-  配套 3 条 wbtest（30000→Err / -1→Err / 30→Ok）。
-- **BUG-217/218/219 状态：OPEN → FIXED**（3 笔 bug_fix 落小记）。
+  配套 3 条 wbtest（30000→Err / -1→Err / 30→Ok）。commit `3444a70` + `f839893`。
+- **BUG-220**：把 `gen_plugins.py:245` 的 `re.findall(...)` 提到 f-string 外。
+  commit `7edc4ce`。
+- **BUG-218/219/220 状态：OPEN → FIXED**（3 笔 bug_fix 落小记）。
+- 本轮 bug 账本：0 OPEN，总 220 条（197 已修 / 16 重复 / 7 误报）。
 
 ## 四、polish（打磨）
 
