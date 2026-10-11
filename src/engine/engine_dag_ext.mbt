@@ -245,7 +245,10 @@ fn FistEngine::dag_topo_order(
   self : FistEngine,
 ) -> (Array[String], Array[String]) {
   let ids : Array[String] = []
-  for t in self.list_all() {
+  // R12-R9 性能：旧代码把 `list_all()` 调了两次（一次取 ids、一次建边），
+  // SqliteStore 下每次都是全库读。改一次遍历：把 Task 暂存，两次循环共用。
+  let tasks_all = self.list_all()
+  for t in tasks_all {
     ids.push(t.get_id())
   }
   let indeg : Map[String, Int] = Map([])
@@ -255,7 +258,7 @@ fn FistEngine::dag_topo_order(
     deps_of.set(id, [])
   }
   // 建前置→后继边：任务 t 依赖 d（d 是 t 的前置）→ 边 d→t；indeg[t]++（t 的前置数）
-  for t in self.list_all() {
+  for t in tasks_all {
     for d in t.depends_on {
       deps_of.set(d, deps_of.get(d).unwrap_or([]) + [t.get_id()])
       let cur = indeg.get(t.get_id()).unwrap_or(0)
