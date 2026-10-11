@@ -248,18 +248,25 @@ pub fn FistEngine::dag_mc(
   for t in tasks {
     crit_arr.push((t.get_id(), critical_hits.get(t.get_id()).unwrap_or(0)))
   }
-  for i = 0; i < crit_arr.length(); i = i + 1 {
+  // R12-R9 性能：旧实现对**全量 N 个任务**做完整选择排序（O(N²)）。
+  // 但下游只用 top 10（crit_json 只 push 前 10 名），所以只需**部分选择**：
+  // 每轮只把当前最大值移到前段，k=top_k 次即止，O(k×N)。
+  let top_k = if crit_arr.length() > 10 { 10 } else { crit_arr.length() }
+  for i = 0; i < top_k; i = i + 1 {
+    let mut best_idx = i
     for j = i + 1; j < crit_arr.length(); j = j + 1 {
-      if crit_arr[j].1 > crit_arr[i].1 {
-        let tmp = crit_arr[i]
-        crit_arr[i] = crit_arr[j]
-        crit_arr[j] = tmp
+      if crit_arr[j].1 > crit_arr[best_idx].1 {
+        best_idx = j
       }
+    }
+    if best_idx != i {
+      let tmp = crit_arr[i]
+      crit_arr[i] = crit_arr[best_idx]
+      crit_arr[best_idx] = tmp
     }
   }
   let crit_json : Array[Json] = []
-  let top = if crit_arr.length() > 10 { 10 } else { crit_arr.length() }
-  for i = 0; i < top; i = i + 1 {
+  for i = 0; i < top_k; i = i + 1 {
     let cm = Map::new()
     cm.set("task_id", Json::string(crit_arr[i].0))
     cm.set(
