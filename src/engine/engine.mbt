@@ -436,6 +436,30 @@ pub fn FistEngine::children_of(
 }
 
 ///|
+/// R12-R8 性能：`children_of` 每查一个父任务都 `list_tasks()`（全库遍历），
+/// 在 `subtree_ids`/`plan_exec_order` 这类"按子树递归遍历"里是 **O(N×M)**
+/// （N=子树大小，M=全库任务数）——与 R7 的 `deps_satisfied` N×(1+D) 同款病灶。
+/// 这里**一次 `list_tasks()` 建出 parent→children 索引**，之后每次查都是 O(1) Map。
+/// 遍历型调用方（`subtree_ids` 等）先用它取索引，再在索引上递归。
+/// pub 以便 `engine_dag_ext` / `server` 复用。
+pub fn FistEngine::children_index(
+  self : FistEngine,
+) -> Map[String, Array[String]] {
+  let idx : Map[String, Array[String]] = Map([])
+  for t in self.store.list_tasks() {
+    match t.get_parent() {
+      Some(p) => {
+        let cur = idx.get(p).unwrap_or([]).copy()
+        cur.push(t.get_id())
+        idx.set(p, cur)
+      }
+      None => ()
+    }
+  }
+  idx
+}
+
+///|
 /// 是否为「非叶节点且所有直接子任务都已完成」
 pub fn FistEngine::all_subtasks_completed(
   self : FistEngine,
@@ -1343,16 +1367,17 @@ pub fn extract_difficulty(desc : String) -> String {
 /// id/depth/难度档/依赖/状态）。供 agent 拆解后拿到即可照单执行——"一张计划、
 /// 一目了然"，而非再全库去翻。纯读、无副作用。
 pub fn FistEngine::plan_exec_order(self : FistEngine, root_id : String) -> Json {
+  // R12-R8 性能：旧实现每层每节点调 `children_of`（每次全库 list_tasks）。
+  // 这里一次建索引，BFS 里全部 O(1) Map 查。
+  let cidx = self.children_index()
   let all_ids : Array[String] = []
-  let mut frontier : Array[String] = self
-    .children_of(root_id)
-    .map(fn(t) { t.get_id() })
+  let mut frontier : Array[String] = cidx.get(root_id).unwrap_or([])
   while not(frontier.is_empty()) {
     let next : Array[String] = []
     for id in frontier {
       all_ids.push(id)
-      for c in self.children_of(id) {
-        next.push(c.get_id())
+      for kid in cidx.get(id).unwrap_or([]) {
+        next.push(kid)
       }
     }
     frontier = next

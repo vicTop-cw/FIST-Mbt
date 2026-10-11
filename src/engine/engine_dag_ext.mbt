@@ -893,12 +893,16 @@ pub fn FistEngine::budget_split_by_dag(
 ///|
 /// 收集 task_id 的子树 id（自身 + 全部 parent_id 后代，BFS；复用 children_of）。
 fn FistEngine::subtree_ids(self : FistEngine, root : String) -> Array[String] {
+  // R12-R8 性能：旧实现每个节点调 `children_of(pid)`（每查一次全库 list_tasks），
+  // 子树 N 节点 = O(N×M)。这里一次建 children 索引，遍历中全部走 Map。
+  let idx = self.children_index()
   let out : Array[String] = [root]
   let mut i = 0
   while i < out.length() {
     let pid = out[i]
-    for c in self.children_of(pid) {
-      out.push(c.get_id())
+    let kids = idx.get(pid).unwrap_or([])
+    for kid in kids {
+      out.push(kid)
     }
     i = i + 1
   }
