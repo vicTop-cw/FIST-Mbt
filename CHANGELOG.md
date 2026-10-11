@@ -213,6 +213,34 @@ AIGC:
 
 - **全量测试 728/728 通过**（Round 7 末 726 → 本轮 +2：BUG-221/222 各 1 条）。
 
+## v0.3.8 (R12-P9：Round 9 [寻虫→修复]：DAG 底座三处消除 list_all 重复读 + criticality 部分选择) - 2026-10-11
+
+### 本轮性质：DAG 调度底座逐点排查全库读翻倍，Monte Carlo 关键度排行 O(N²)→O(10N)
+
+- **dag_topo_order 一次 `list_all()` 替代两次（BUG-223，commit `1301c1d`）**：
+  旧 Kahn 构建把 `list_all()` 调两次（一次取 ids、一次建边）。SqliteStore 下每次
+  都是全库读，N=2079 时多 2079 次 DB 读。`dag_topo_order` 是
+  `dag_slack_analysis` / `dag_cost_route` / `dag_schedule` / `dag_sort` 的底座，
+  一次调用被 N 次消费，修复收益放大。
+
+- **dag_slack_analysis 一次 `list_all()`（BUG-224，commit `2243408`）**：
+  PERT/CPM 瓶颈分析取 ids 与建 reverse 边两循环共用一次读。
+  `dag_slack_analysis` 是 `dag_cost_route` / `dag_schedule` 的底座，收益放大。
+
+- **dag_schedule 一次 `list_all()`（BUG-225，commit `2243408`）**：
+  排程视图取 ids 与统计执行者负载两循环共用一次读。
+
+- **dag_mc criticality top-10 改部分选择 O(N²)→O(10N)（commit `9261583`）**：
+  旧实现对全量 N 任务做完整选择排序，但下游只用前 10 名。改为部分选择：
+  每轮只把当前最大值移到前段，k=10 次即止。N=2079 时旧 2.1M 比较 → 新 20K；
+  N=10000 时旧 50M → 新 100K。等价性：同 `>`（非 `>=`）平局偏前，
+  top-10 结果与顺序不变。
+
+- **Round 9 顺带排查 `issue_scan` 23 条 medium 级隐患**：`unprotected-division`
+  `substring-overrun` 等命中多为**已守卫的假阳性**（`total > 0` / `max <= s.length()` /
+  `int_safe` 前置守卫等），无需改动；`secs-overflow` 规则本轮 0 命中——说明
+  R7 加的 `* 86400` 守卫覆盖到位。
+
 ## v0.3.8 (R8-R10 迭代：预执行审计门禁占位符拦截 + 文档面守卫 J15) - 2026-10-11
 
 ### 本轮性质：功能加固（审计门禁扩展）+ 判据扩展（check_doc_surface J15）
