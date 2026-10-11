@@ -92,6 +92,29 @@ AIGC:
   未新增 BUG。
 - **Round 3 [修复] [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
 
+## v0.3.8 (R12-P4：Round 4 [推进→寻虫→修复]：preset_loop 算子扩展 + evolve_summary_line score 钳制) - 2026-10-11
+
+### 本轮性质：算子扩展（用户显式要求）+ 新发现的一处 Double→Int panic
+
+- **Round 4 [推进] commit `129416f`（T0r563）**：`preset_loop` 从 3 个扩到 5 个，
+  新增 `perf-iterate`（性能迭代环：advance→polish→verify→advance）与
+  `scan-fix-verify`（扫描→修复→验证环：bugfind→fix_and_merge→verify）。
+  动机：R3 dag_mc 性能优化与 R2 BUG-215 同型家族修复都是这两类工作的实例，
+  但预设里没有对应开箱环。配套 2 条 wbtest 测试，全量 **709/709**。
+
+- **Round 4 [寻虫] commit `253ca24`（BUG-216）**：`evolve.mbt:429`
+  `(a.score * 1000.0).to_int().to_double() / 1000.0` —— MoonBit `Double.to_int()`
+  在 |值| > 2^31-1 时 **panic**。`Artifact.score` 文档标注 [0,1] 但
+  `evolve_submit` 未钳制输入，理论上可传 score=3000000（*1000 = 3e9 > 2^31）。
+  score 为 NaN 时 `.to_int()` 行为未定义。
+
+- **Round 4 [修复]**：显示 clamp 到 [0, 2_000_000]（*1000 后 2e9 < 2^31），
+  NaN 或负值回退 0。配套 5 条 wbtest 测试
+  （正常/极大 3e6/NaN/负值/恰好 2e6 阈值），全量 **714/714** 通过。
+  **BUG-216 状态：OPEN → FIXED**（证据 commit `253ca24`）。
+
+- **Round 4 [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
+
 ## v0.3.8 (R8-R10 迭代：预执行审计门禁占位符拦截 + 文档面守卫 J15) - 2026-10-11
 
 ### 本轮性质：功能加固（审计门禁扩展）+ 判据扩展（check_doc_surface J15）
