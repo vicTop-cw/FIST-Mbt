@@ -139,6 +139,32 @@ AIGC:
 
 - **Round 5 [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
 
+## v0.3.8 (R12-P6：Round 6 [推进→寻虫→修复]：board_ascii 消除重复 getter + `*86400` 溢出家族 3 连收) - 2026-10-11
+
+### 本轮性质：性能提升（延续 R5）+ Int32 溢出家族（BUG-217/218/219 一次性收口）
+
+- **Round 6 [推进] commit `00626a7`（T0r565）**：`board_ascii` `append_group` 内
+  `t.get_id()` 被调用 2-3 次、`t.get_description()` 被调用 2 次
+  （SqliteStore 下都是 DB 读），2079 任务 → 多出约 2079 次 DB 读。
+  修复：各取一次复用。语义完全等价。全量 **721/721**。
+
+- **Round 6 [寻虫] commit `486e874`（BUG-218）**：`model_router.iso_to_secs`
+  Y2038 溢出——`days_from_civil*86400` 在 Int32 下溢出。
+  `y > 9999` 形同虚设（days*86400 早在 2038 就溢出）。
+  修复：`if y > 2037`（2037-12-31 → 24836*86400 ≈ 2.15e9 < 2^31-1）。
+  配套 3 条 wbtest。
+
+- **Round 6 [寻虫] commit `3444a70`（BUG-219）**：`ops_cleanup`
+  `retention_days * 86400` 无上界——30000 天时 2.59e9 **溢出 Int32（绕回不是 panic）**，
+  产生负阈值 → 误清归档任务 → **数据丢失**。
+  修复：`if retention_days > 24855 { return Err }`。
+  配套 3 条 wbtest（commit `f839893`）。
+
+- **Round 6 [修复]**：BUG-218 / BUG-219 各加 3 条 wbtest，
+  全量 **725/725** 通过（+4）。
+
+- **Round 6 [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
+
 ## v0.3.8 (R8-R10 迭代：预执行审计门禁占位符拦截 + 文档面守卫 J15) - 2026-10-11
 
 ### 本轮性质：功能加固（审计门禁扩展）+ 判据扩展（check_doc_surface J15）
