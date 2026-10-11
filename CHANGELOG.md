@@ -70,6 +70,28 @@ AIGC:
 
 - **Round 2 [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
 
+## v0.3.8 (R12-P3：Round 3 [推进]：dag_mc 预计算 tier_cache 消除重复难度解析) - 2026-10-11
+
+### 本轮性质：Monte Carlo 模拟主循环内的循环不变式外提（性能）
+
+- **Round 3 [推进] commit `69ca1dc`（T0r562）**：`engine_dag_mc.mbt` 主循环
+  `for s = 0; s < n` 内，每个样本对每个任务重复调用 `extract_difficulty`
+  （含正则/字符串扫描）+ `mc_durations`。默认 samples=1000、上限 5000，
+  任务数 N 常见 50-200，最坏 **5000×200 = 100 万次重复难度解析**。
+  修复：把这两个纯函数调用提到 `for s` 之前，用 `tier_cache` 数组
+  （`(id, a, m, b)` 三元组）缓存；内层循环只做一次三角形采样。
+  - 数组替代 Map：避免 String 哈希（旧代码每样本建 Map）
+  - 每样本减少 N 次字符串扫描
+  - 语义等价：`mc_durations` 是纯函数，`mc_tri_sample(state,...)` 与
+    `state` 更新顺序一致（遍历顺序相同）
+- **Round 3 [寻虫] bugfind**：issue_scan 复扫（71 findings）逐条复核——
+  7 处 unprotected-division（`n_safe`/`win_safe`/`need_safe`/`total > 0` 守卫）、
+  15 处 substring-overrun（`length() > N` 守卫）、1 处 unwrapped-unwrap
+  （`is_some()` 守卫）、22 处 possible-overflow（3 处 R12-R2 已修）
+  全部为静态扫描假阳性——R1/R2 加的守卫 issue_scan 的文本模式匹配看不到。
+  未新增 BUG。
+- **Round 3 [修复] [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
+
 ## v0.3.8 (R8-R10 迭代：预执行审计门禁占位符拦截 + 文档面守卫 J15) - 2026-10-11
 
 ### 本轮性质：功能加固（审计门禁扩展）+ 判据扩展（check_doc_surface J15）
