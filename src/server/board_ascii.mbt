@@ -128,18 +128,23 @@ fn append_group(
     for _k = 0; _k < t.depth; _k = _k + 1 {
       indent = indent + "· "
     }
-    let short_id = if t.get_id().length() > 10 {
-      t.get_id().substring(start=0, end=10)
+    let tid = t.get_id()
+    let short_id = if tid.length() > 10 {
+      tid.substring(start=0, end=10)
     } else {
-      t.get_id()
+      tid
     }
-    let mut desc = t.get_description()
+    // R12-R6 性能：`t.get_description()` 对 SqliteStore 是 DB 读，这里只取一次。
+    // 旧代码在同一行里调了两次（一次给 desc 截断，一次给 extract_difficulty），
+    // 等于每任务 2 次 DB 读；2079 任务 → 多出 2079 次 DB 读。
+    let full_desc = t.get_description()
+    let mut desc = full_desc
     if desc.length() > 40 {
       desc = desc.substring(start=0, end=40) + "…"
     }
     // R55：看板每行标注自身难度档（复用 pub extract_difficulty 单一来源，支柱①②"一目了然+复用"）
     let mut diff_note = ""
-    let raw_diff = @engine.extract_difficulty(t.get_description())
+    let raw_diff = @engine.extract_difficulty(full_desc)
     let diff_label = if raw_diff.contains("难") {
       "难"
     } else if raw_diff.contains("中") {
@@ -411,16 +416,18 @@ pub fn render_state_flow_ascii(
   tasks : Array[@core.Task],
   ns_filter : String,
 ) -> Json {
-  let flow = "待领取 → 已领取 → 执行中 → 待验收 → 已完成 → 已归档\n" +
-    "                    │         │\n" +
-    "                    ▼         ▼\n" +
-    "              已暂停→已领取  已打回→执行中\n" +
-    "                   (重派)       (重试)"
+  let flow = "待领取 → 已领取 → 拆分中 → 执行中 → 待验收 → 已完成 → 已归档\n" +
+    "                         │         │\n" +
+    "                         ▼         ▼\n" +
+    "                   已暂停→已领取  已打回→执行中\n" +
+    "                        (恢复)       (重试)"
   let bucket : Map[String, Int] = Map([])
   for t in tasks {
     if ns_filter == "" || t.ns == ns_filter {
       let st = t.status_to_string()
-      if st == "" { continue }
+      if st == "" {
+        continue
+      }
       match bucket.get(st) {
         Some(n) => bucket.set(st, n + 1)
         None => bucket.set(st, 1)
@@ -431,7 +438,11 @@ pub fn render_state_flow_ascii(
   for (k, v) in bucket {
     counts.set(k, Json::number(v.to_double()))
   }
-  let in_flow_names = ["待领取", "已领取", "执行中", "待验收", "已完成"]
+  // in_flow = ready(待领取) + in_flight(已领取/拆分中/执行中，对齐 project_health) + reviewing(待验收)；
+  // 「已完成」是终态不计入。
+  let in_flow_names = [
+    "待领取", "已领取", "拆分中", "执行中", "待验收",
+  ]
   let mut in_flow = 0
   for name in in_flow_names {
     match bucket.get(name) {
@@ -450,7 +461,9 @@ pub fn render_state_flow_ascii(
   for st in order {
     match bucket.get(st) {
       Some(n) => {
-        if !first { sb.write_string("  ") }
+        if !first {
+          sb.write_string("  ")
+        }
         sb.write_string(st + "=" + n.to_string())
         first = false
       }
@@ -461,7 +474,8 @@ pub fn render_state_flow_ascii(
     sb.write_string("(空)")
   }
   sb.write_string(
-    "\n在流任务（待领取→已完成）：" + in_flow.to_string(),
+    "\n在流任务（待领取/已领取/拆分中/执行中/待验收）：" +
+    in_flow.to_string(),
   )
   Json::object({
     "ascii": Json::string(sb.to_string()),
