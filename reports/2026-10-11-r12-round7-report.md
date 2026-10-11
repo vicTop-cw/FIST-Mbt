@@ -50,11 +50,26 @@ pub fn deps_ready_memo(
 
 ## 二、bugfind（寻虫）
 
-本轮 advance 阶段顺带确认了无新 bug（`deps_ready_memo` 语义等价，
-不存在新的边界条件）。上一轮 R6 已把 BUG-217/218/219/220 全部收口，
-本轮无 OPEN bug。
+advance 阶段发现 **issue_scan 漏掉了 `* 86400` 家族**：
+`possible-overflow` 规则只匹配 `* 10` / `to_int()*`，
+而 BUG-217/218/219 的 `* 86400` 模式（一天 86400 秒是大系数，
+超过 24855 天即溢出 Int32）从未被自动扫描捕获。
+这是"寻虫工具自身漏虫"——`issue_scan` 是 bugfind 阶段的主工具，
+它漏掉这个家族意味着后续轮次会反复踩同一坑。
 
 ## 三、fix_and_merge（修复）
+
+新增第 11 条规则 `secs-overflow`（medium）：
+- pattern: `["* 86400", "*86400"]`
+- 说明：加天数上界守卫（如 `if days > 24855`），或改用 Int64
+
+配套测试 `issue_scan_secs_overflow_test.mbt`（建 temp/lint_secs 夹具
+注入 `days * 86400`，断言 by_rule 统计含 secs-overflow）。
+全量 726/726 通过。
+
+现有 3 处 `* 86400` 已全部守卫（ops_ts.mbt:57 由 BUG-217 修复、
+ops_cleanup.mbt:25 由 BUG-219 修复、model_router.mbt:259 由 BUG-218 修复），
+守卫感知过滤正确地不报它们——规则生效但不误报，正是我们要的。
 
 三处 DAG 遍历统一为同款优化，代码收敛在 `deps_ready_memo` 单一来源。
 
