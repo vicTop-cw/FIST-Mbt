@@ -5,12 +5,12 @@
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-573%2F573-brightgreen)](./src)
+[![Tests](https://img.shields.io/badge/tests-737%2F737-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
-**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **136 个 MCP 工具** 暴露给任意 MCP 客户端。
+**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **140 个 MCP 工具** 暴露给任意 MCP 客户端。
 
-**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 573 项测试全绿、跨环境可复现。
+**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 737 项测试全绿、跨环境可复现。
 
 > 它用**它自己的**自驱式 + 递归拆解把自己打磨到了可交付态——完整自我迭代证据见 `docs/selfdrive-walkthrough.md`，CLI `python scripts/fist.py call project_standards` 可一键拉取本项目遵守的 AI 开发规范。
 > 「它说自己有效」不算证据：本项目的**叙事与实证面**在伴生仓 **fist-evidence** <https://github.com/vicTop-cw/fist-evidence>——三组受控实验 + 十份真实项目驱动实例（覆盖八项目），报告/日志/裁判测试一字可回溯（详见「资源」节）。
@@ -32,14 +32,14 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 1. ✅ MCP 工具注册了？ → `server.mbt` instrumented_tool 块
 2. ✅ CLI 封装到位？ → `scripts/fist.py call <tool>` 或独立 `scripts/xxx.py`
 3. ✅ Skill 文档写了？ → `docs/xxx-skill.md`
-4. ✅ `moon test` 全绿？ → 573/573 零回归（`--target js`，本轮 Windows 实测）
+4. ✅ `moon test` 全绿？ → 737/737 零回归（`--target js`，本轮 Windows 实测）
 5. ✅ 交付物过 `output_validate` L4 硬门？ → verdict=pass
 6. ✅ README / AGENTS.md 计数同步？ → 工具数、测试数
 7. ✅ 插件态已重生成且与真源一致？ → `python scripts/gen_plugins.py && python scripts/check_plugin_sync.py`（cl7）
 
 ---
 
-## 功能全景（136 个 MCP 工具）
+## 功能全景（140 个 MCP 工具）
 
 ### 生命周期（14）
 `publish` · `publish_parallel` · `plan` · `claim` · `execute` · `submit` · `verify` · `reject` · `retry` · `pause` · `resume` · `reopen_task` · `archive` · `delete`
@@ -62,8 +62,8 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 ### 衍生（3）
 `atgc_old_compile` · `atgc_old_run` · `atgc_old_talk`
 
-### 看板·DAG·规划（23）
-`dag_critical_path` · `dag_parallelism` · `dag_ascii` · `dag_check` · `dag_ready` · `dag_sort` · `dag_depend` · `dag_publish` · `dag_slack` · `dag_schedule` · `dag_cost_route` · `dag_mc` · `plan_revise` · `goal_drift_check` · `board_ascii` · `state_flow_ascii` · `status_summary` · `project_health` · `health_check` · `reserve_scope` · `reserve_check` · `reserve_release` · `task_triage`
+### 看板·DAG·规划（27）
+`dag_critical_path` · `dag_parallelism` · `dag_ascii` · `dag_check` · `dag_ready` · `dag_sort` · `dag_depend` · `dag_publish` · `dag_slack` · `dag_schedule` · `dag_cost_route` · `dag_mc` · `plan_revise` · `goal_drift_check` · `board_ascii` · `state_flow_ascii` · `status_summary` · `project_health` · `health_check` · `reserve_scope` · `reserve_check` · `reserve_release` · `lock_acquire` · `lock_renew` · `lock_release` · `lock_status` · `task_triage`
 
 ### 自我记忆·自进化（11）
 `memory_consolidate` · `memory_gc` · `memory_link` · `evolve_distill` · `evolve_lesson` · `evolve_critic` · `evolve_sample` · `evolve_snapshot` · `evolve_submit` · `evolve_asset_register` · `task_challenge`
@@ -94,7 +94,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 # 1. 构建 + 测试
 moon update            # 首次：刷新 registry 索引
 moon build --target js cmd/cli
-moon test --target js  # → Total tests: 573, passed: 573, failed: 0
+moon test --target js  # → Total tests: 737, passed: 737, failed: 0
 
 # 2. 启动 MCP Server（STDIO）
 python scripts/patch_esm_main.py  # ESM shim（moonc ≥0.10.14 输出 ESM，sqlite JS 桩用 CJS）
@@ -104,7 +104,7 @@ node _build/js/debug/build/cmd/cli/cli.js serve   # 必须带 serve：裸跑只�
 FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 # 4. CLI 通用网关（一源四态·CLI 形态）
-python scripts/fist.py list-tools                     # 列出 136 个工具（实测 tools/list）
+python scripts/fist.py list-tools                     # 列出 140 个工具（实测 tools/list）
 python scripts/fist.py call project_standards          # AI 开发规范
 python scripts/fist.py call store_open --namespace scratch --scratch true
 python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path":"moon.mod","contains":"vicTop-cw"}]'
@@ -207,7 +207,7 @@ fist doctor        # 5 项健康检查
 - **Node.js ≥ 24**（JS 目标必需，SQLite JS 后端依赖 node:sqlite）
 - **Native 目标**：系统 SQLite 开发库（sqlite3.h + sqlite3.lib）。一键装载：`pwsh ./scripts/native-env.ps1`
 
-> **JS 后端**：`moon test --target js` = **573/573**（2026-10-02 Windows 实测，含一源四态 cl7、模型路由与外部执行器合并（4 工具 + 24 项回归锁）、BUG-4/18 与三轮自我迭代回归锁 BUG-19/21/24/31/36）。
+> **JS 后端**：`moon test --target js` = **737/737**（2026-10-11 Windows 实测，含一源四态 cl7、模型路由与外部执行器合并、BUG-4/18 与三轮自我迭代回归锁、lock_* 分布式文件锁回归锁）。
 > **Native 后端**：2026-10-01 在 WSL ubuntu-22.04 实测 `moon test --target native -j 1` = **572/572**（与 JS 同数，工作树含上几轮构建残留时）；
 > 同一 commit 的 `git archive HEAD` **干净树**上同一条命令必崩（native 测试二进制被信号打死），根因在依赖的 native FFI，
 > 见账本 BUG-133 与判据 `scripts/blackbox/e2e_native_heap_probe.py`；上一版这句写的是「native 未复跑」，就此作废。边界条款见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。

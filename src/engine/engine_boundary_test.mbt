@@ -116,19 +116,20 @@ struct BpRng {
   state : Int
 }
 
+///|
 fn bp_rng(seed : Int) -> BpRng {
-  { state: if seed == 0 { 1 } else { seed } }
+  { state: if seed == 0 { 1 } else { seed }, }
 }
 
 ///|
 /// 推进并返回下一个非负整数（xorshift32）。
-fn bp_next(self : BpRng) -> (Int, BpRng) {
+fn BpRng::bp_next(self : BpRng) -> (Int, BpRng) {
   let mut x = self.state
   x = x ^ (x << 13)
   x = x ^ (x >> 17)
   x = x ^ (x << 5)
   let nx = if x < 0 { -x } else { x }
-  (nx, { state: x })
+  (nx, { state: x, })
 }
 
 ///|

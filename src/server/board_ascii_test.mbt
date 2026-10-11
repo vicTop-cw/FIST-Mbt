@@ -548,7 +548,9 @@ test "state_flow_ascii_shows_lifecycle" {
     _ => abort("ascii 缺失")
   }
   // 合法迁移图（一行流程）在
-  assert_true(ascii.contains("待领取 → 已领取 → 拆分中 → 执行中"))
+  assert_true(
+    ascii.contains("待领取 → 已领取 → 拆分中 → 执行中"),
+  )
   assert_true(ascii.contains("已打回→执行中"))
   // 当前分布（含已打回/重派分支）
   assert_true(ascii.contains("执行中="))
@@ -587,13 +589,16 @@ test "property_ascii_views_consistency_seeded" {
       x = x ^ (x >> 17)
       x = x ^ (x << 5)
       let n = if x < 0 { -x } else { x % 1000 }
-      tasks = tasks + [@core.Task::new(
-        id="PX" + n.to_string(),
-        project_dir="/proj/prop",
-        description="属性测试任务 " + n.to_string(),
-        created_at="2026-01-04T00:00:00Z",
-        depends_on=[],
-      )]
+      tasks = tasks +
+        [
+          @core.Task::new(
+            id="PX" + n.to_string(),
+            project_dir="/proj/prop",
+            description="属性测试任务 " + n.to_string(),
+            created_at="2026-01-04T00:00:00Z",
+            depends_on=[],
+          ),
+        ]
     }
     let board = render_board_ascii(tasks, "")
     let state = render_state_flow_ascii(tasks, "")

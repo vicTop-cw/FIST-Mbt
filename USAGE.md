@@ -141,7 +141,7 @@ def rpc(method, **payload):
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
 ```
-→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（本机 `tools/list` 实测：**136 个 MCP 工具**）
+→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（本机 `tools/list` 实测：**140 个 MCP 工具**）
 
 **Step 2 · 发布一个根任务**
 ```json
@@ -166,7 +166,7 @@ def rpc(method, **payload):
 
 ---
 
-## 6. 136 个 MCP 工具手册
+## 6. 140 个 MCP 工具手册
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
@@ -572,7 +572,7 @@ moon publish
 
 ## 12. 一句话总结
 
-FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（本机 `tools/list` 实测 **136 个 MCP 工具**）。
+FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（本机 `tools/list` 实测 **140 个 MCP 工具**）。
 对 AI 客户端而言：**pub/claim/plan + spec 深拆 → 子任务闭环 → verify 上卷 → archive**，
 一路 `tools/call` 即可完成多智能体任务的发布、认领、拆分、执行、验收、归档全生命周期管理。
 

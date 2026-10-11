@@ -117,7 +117,8 @@ const RUBRIC_END_MARK : String = "<!-- TOOL_USE_RUBRIC_END -->"
 
 ///|
 /// 判断一份提示词是否已注入 Tool Use Rubric 硬规则段。
-/// 判据：正文含 `<!-- TOOL_USE_RUBRIC_END -->` 结束标记。
+/// 判据：正文含 `<!-- TOOL_USE_RUBRIC_END -->` 结束标记，且结束标记之外存在
+/// 非空正文（防 spoof：只贴一个结束标记而无真实规则段也判 false）。
 /// 目的：让 pipeline 分支 A 生成的提示词可被程序化自检（不靠 LLM 目测），
 /// 也是 run_check 判据脚本的确定性锚点——`grep -q TOOL_USE_RUBRIC_END` 就是真值。
 /// 空串返回 false（fail-closed）。
@@ -125,7 +126,10 @@ pub fn pipeline_has_rubric(prompt_content : String) -> Bool {
   if prompt_content.is_empty() {
     return false
   }
-  prompt_content.contains(RUBRIC_END_MARK)
+  if !prompt_content.contains(RUBRIC_END_MARK) {
+    return false
+  }
+  !prompt_content.replace(old=RUBRIC_END_MARK, new="").trim().is_empty()
 }
 
 ///|
@@ -375,8 +379,10 @@ pub fn pipeline_tick(
           )
         }
         // Tool Use Rubric 自检（P1「Tool Use Rubric」）：prompt_ready 阶段必须确认
-        // 提示词已注入硬规则段（含 RUBRIC_END_MARK），否则 fail-closed。
-        // 这是模板里 step 5「追加后自检」的程序化兜底——不靠 LLM 目测。
+        // 提示词已注入硬规则段（含 RUBRIC_END_MARK）。
+        // 注意：此处实现为 fail-open——未检测到 rubric 时仍写 state="Pending"、返回 Ok，
+        // 仅把提示写进 message 并置 tool_use_rubric=false，让生成方回分支 A 重做，
+        // 而非直接拒绝（fail-closed）。这是模板里 step 5「追加后自检」的程序化兜底——不靠 LLM 目测。
         let prompt_content = match safe_read_text(ppath) {
           Some(c) => c
           None =>

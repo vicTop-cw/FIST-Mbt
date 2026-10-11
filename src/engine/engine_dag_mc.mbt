@@ -107,8 +107,8 @@ fn FistEngine::mc_finish(
   }
   match visiting.get(id) {
     // BUG-204：环命中返回 -1 哨兵（采样 dur 恒 >= 0，故 f + own <= own <= best，
-  // 环路径不参与 max）——旧实现返回节点自身 dur，A→B→A 会让 A 被累加 2 次。
-  // 不用 Int.MIN_VALUE：与 own 相加会溢出。
+    // 环路径不参与 max）——旧实现返回节点自身 dur，A→B→A 会让 A 被累加 2 次。
+    // 不用 Int.MIN_VALUE：与 own 相加会溢出。
     Some(_) => return -1
     None => ()
   }
@@ -223,7 +223,11 @@ pub fn FistEngine::dag_mc(
   let mean = sum.to_double() / n_safe.to_double()
   let idx50 = if n_safe - 1 < 0 { 0 } else { (n_safe - 1) / 2 }
   let idx90 = if n_safe * 9 / 10 >= n_safe {
-    if n_safe - 1 < 0 { 0 } else { n_safe - 1 }
+    if n_safe - 1 < 0 {
+      0
+    } else {
+      n_safe - 1
+    }
   } else {
     n_safe * 9 / 10
   }

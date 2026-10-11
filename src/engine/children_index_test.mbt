@@ -1,3 +1,4 @@
+///|
 /// children_index_test.mbt —— R12-R8 bugfind：验证 children_index 与 children_of 语义等价
 /// （旧 children_of 每查一次全库 list_tasks；新 children_index 一次建索引 O(1) 查）。
 test "children_index 与 children_of 语义等价" {

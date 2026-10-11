@@ -58,12 +58,13 @@ fn tsk_skill_hits(j : Json, id : String) -> Array[String] {
   for row in tsk_tasks(j) {
     if tsk_id(row) == id {
       return match row.value("skill_hits") {
-        Some(Array(h)) => h.map(fn(v) {
-          match v {
-            String(s) => s
-            _ => abort("skill_hits 元素非字符串")
-          }
-        })
+        Some(Array(h)) =>
+          h.map(fn(v) {
+            match v {
+              String(s) => s
+              _ => abort("skill_hits 元素非字符串")
+            }
+          })
         _ => abort("skill_hits 缺失: " + row.stringify())
       }
     }

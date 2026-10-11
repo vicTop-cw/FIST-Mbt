@@ -48,3 +48,47 @@ pub fn FistEngine::rsv_list(
 ) -> Array[(String, String, String)] {
   self.store.rsv_list()
 }
+
+// —— 分布式文件锁（引擎层转发到 StoreBackend）——
+
+///|
+pub fn FistEngine::locks_upsert(
+  self : FistEngine,
+  lock : @store.FileLock,
+) -> Unit {
+  self.store.locks_upsert(lock)
+}
+
+///|
+pub fn FistEngine::locks_get(
+  self : FistEngine,
+  scope : String,
+) -> @store.FileLock? {
+  self.store.locks_get(scope)
+}
+
+///|
+pub fn FistEngine::locks_list(self : FistEngine) -> Array[@store.FileLock] {
+  self.store.locks_list()
+}
+
+///|
+pub fn FistEngine::locks_release(
+  self : FistEngine,
+  scope : String,
+  agent : String,
+) -> Bool {
+  self.store.locks_release(scope, agent)
+}
+
+///|
+pub fn FistEngine::locks_sweep(self : FistEngine, now : String) -> Int {
+  self.store.locks_sweep(now)
+}
+
+///|
+pub fn FistEngine::lock_violations_list(
+  self : FistEngine,
+) -> Array[@store.LockViolation] {
+  self.store.lock_violations_list()
+}

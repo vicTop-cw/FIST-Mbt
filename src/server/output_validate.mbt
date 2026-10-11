@@ -325,8 +325,11 @@ fn check_moon_test_summary(stdout : String) -> String {
     return "moon test stdout 缺 `Total tests:` 汇总行——无法判绿（BUG-142：进程可能崩溃却仍 exit 0）"
   }
   if failed > 0 {
-    return "moon test 汇总行 failed=" + failed.to_string() + "（total=" +
-      total.to_string() + "）——按 BUG-142 判定失败，不信 exit 0"
+    return "moon test 汇总行 failed=" +
+      failed.to_string() +
+      "（total=" +
+      total.to_string() +
+      "）——按 BUG-142 判定失败，不信 exit 0"
   }
   ""
 }

@@ -13,6 +13,47 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.10 (分布式文件锁系统：新增 4 个锁工具 + 双后端) - 2026-10-11
+
+### 本轮性质：多 agent 并发编辑冲突预防——分布式文件锁系统
+
+- **store 层**（`src/store/store.mbt` / `store_rsv.mbt` / `store_sqlite.mbt`）
+  - 新增 `FileLock` struct（lock_id/batch_id/scope/agent/status/ts/ttl_until/meta，derive Eq+Debug）+ `FileLock::new()` / `FileLock::renew()` / `FileLock::to_json()`
+  - 新增 `LockViolation` struct（ts/agent/scope/reason/lock_id）+ `to_json()`
+  - `MemoryStore` 新增 `file_locks : Map[String, FileLock]` 与 `lock_violations : Array[LockViolation]` 字段
+  - `StoreBackend` 新增 6 个派发方法：`locks_upsert` / `locks_get` / `locks_list` / `locks_release` / `locks_sweep` / `lock_violations_list`
+  - 内存后端 6 方法：`locks_upsert` 检测他人活体抢占并记 `lock_taken_over` 违例；`locks_release` 仅持有者可释放；`locks_sweep(now)` 标记 `ttl_until < now` 为 expired 并记 `lock_expired` 违例
+  - SQLite 后端：新增 `file_locks`（scope PRIMARY KEY）与 `lock_violations` 两张表 + 6 个 CRUD 方法
+- **engine 层**（`src/engine/engine_rsv.mbt`）：6 个 `FistEngine::locks_*` 转发方法
+- **MCP 工具**（`src/server/server.mbt`）：4 个新工具
+  - `lock_acquire`（scope/agent/ttl_secs/meta 可选）— 获取或抢占锁
+  - `lock_renew`（scope/agent/ttl_secs）— 持有者续期，校验所有权
+  - `lock_release`（scope/agent）— 仅持有者可释放
+  - `lock_status`（scope 可选）— 先 sweep 再返回单锁或全量列表 + 违例记录
+- **测试**（`src/store/store_rsv_test.mbt` 追加 3 条）：内存后端全流程 + clear 清理 + FileLock::renew 语义
+- **验证**：`moon check --target js src/store src/engine src/server` 零错误；store 34/34、engine 145/145 全绿
+
+## v0.3.9 (R124：第2轮 7 模式全跑 issue_scan 守卫过滤层增强) - 2026-10-11
+
+### 本轮性质：issue_scan R124 守卫过滤层 + MoonBit 编译链修复
+
+- **m1 advance：issue_scan R124 ScanCtx 守卫过滤增强**（零 MoonBit 编译错误）
+  - 新增 `ScanCtx struct`（safe_clamps / guarded_lines / slice_only 三字段）
+  - 新增 `scan_build_ctx(content) → ScanCtx` 预扫描函数
+  - 扩展 `scan_finding_guarded` 签名 + 4 条新 guard 判定
+  - 主循环加 ScanCtx 文件级缓存，守卫窗口 6→10 行
+- **m2 polish：守卫窗口 6→10 行**
+- **m3 verify：全量交叉核对通过**
+  - server 包单独 moon test：**0 errors**
+  - pkg.generated.mbti 手动补齐 ScanCtx / scan_build_ctx / 更新签名
+  - 关键语法修正：`is not None` → `.is_some()`；可选参数必须用 labeled args
+- **m4 bugfind：实扫 src 75 条命中，3 条真 bug 全为 issue_scan 漏守卫误报**
+- **m5 fix_and_merge：无代码 bug 需修**
+
+### issue_scan 守卫过滤层 remaining gaps（待后续轮次补）
+- 未识别 `while arr.length() > 0` / `if arr.length() > 0` 守卫（只认 `is_empty()`）
+- scan_build_ctx _safe 提取是占位实现
+
 ## v0.3.8 (R12-P1：12 轮六相流水线 Round 1 [推进→寻虫→修复→打磨→验证]) - 2026-10-11
 
 ### 本轮性质：隐患清扫（issue_scan 23 条 medium 复核）+ BUG-142 收口（moon test 判绿自动 gate）

@@ -496,8 +496,8 @@ test "omega_audit_gate_placeholder_rejected" {
   let id = os_publish(e)
   ignore(e.claim(task_id=id, assignee="exec_1", now="2026-09-17T12:00:00Z"))
   let placeholders : Array[String] = [
-    "done", "Done", "DONE", "完成", "ok", "OK", "yes", "Yes", "通过",
-    "done.", "ok.", "完成。",
+    "done", "Done", "DONE", "完成", "ok", "OK", "yes", "Yes", "通过", "done.",
+    "ok.", "完成。",
   ]
   for ph in placeholders {
     let r = e.execute(task_id=id, deliverable=ph, now="2026-09-17T12:01:00Z")
@@ -533,7 +533,8 @@ test "omega_audit_gate_placeholder_punctuation_tolerant" {
   let id = os_publish(e)
   ignore(e.claim(task_id=id, assignee="exec_1", now="2026-09-17T14:00:00Z"))
   let sneaky : Array[String] = [
-    " done ", "Done.", "完成！", "完成。", "ok!!", "O.K.", "通过,", "yes!", "finished.",
+    " done ", "Done.", "完成！", "完成。", "ok!!", "O.K.", "通过,", "yes!",
+    "finished.",
   ]
   for ph in sneaky {
     let r = e.execute(task_id=id, deliverable=ph, now="2026-09-17T14:01:00Z")
@@ -542,7 +543,12 @@ test "omega_audit_gate_placeholder_punctuation_tolerant" {
         if not(m.contains("占位符")) {
           abort("规整后仍是占位符却放行: [" + ph + "] → " + m)
         }
-      Ok(_) => abort("杂散空白/标点的占位符不应通过审计门禁: [" + ph + "]")
+      Ok(_) =>
+        abort(
+          "杂散空白/标点的占位符不应通过审计门禁: [" +
+          ph +
+          "]",
+        )
     }
   }
 }

@@ -32,6 +32,61 @@ struct ScanFinding {
 }
 
 ///|
+/// 文件级上下文预扫描结果（R124 advance：守卫过滤增强）。
+/// 三种信息：
+///   safe_clamps: Map[变量名, 被钳制的源变量]（`n_safe = if n > 0 { n } else { 1 }` → "n_safe"→"n"）
+///   guarded_lines: 乘法前守卫（`v >= INT_SAFE` / `v >= 200_000_000`），行号 Int 集合
+///   slice_only: 文件是否已无裸 substring 调用（全用切片 `s[:end]`）
+struct ScanCtx {
+  safe_clamps : Map[String, String]
+  guarded_lines : Map[Int, Bool]
+  slice_only : Bool
+}
+
+///|
+/// 预扫描单文件上下文：提取 _safe 钳制 + 乘法前守卫 + 是否全切片。
+/// 钳制形态只认 MoonBit 安全写法（`let X_safe = if Y > 0 { Y } else { 1 }`），
+/// 不贪多——拿不准就不写进表（保守过滤）。
+fn scan_build_ctx(content : String) -> ScanCtx {
+  let clamps : Map[String, String] = Map([])
+  let guarded : Map[Int, Bool] = Map([])
+  let mut has_substring_call = false
+  let mut ln = 1
+  for line in content.split("\n") {
+    let t = line.trim().to_string()
+    // _safe 钳制：识别 `let X_safe = if ... > 0 { ... } else { 1 }`
+    if t.has_prefix("let ") &&
+      t.contains("_safe") &&
+      t.contains("else {") &&
+      t.contains("> 0") {
+      let cs = t.to_array()
+      let n = cs.length()
+      let mut j = 4
+      while j < n && cs[j] != ' ' {
+        j = j + 1
+      }
+      let clamp_name = String::from_array(cs[4:j])
+      // 简化策略：X_safe 出现在除数位置 → 必来自钳制
+      clamps.set(clamp_name, clamp_name) // 值占位（能 set 进表就算被钳制）
+    }
+    if t.contains(">= INT_SAFE") ||
+      t.contains(">= 200_000_000") ||
+      t.contains(">=200_000_000") {
+      guarded.set(ln, true)
+    }
+    if t.contains("substring(") && not(scan_is_comment_line(line)) {
+      has_substring_call = true
+    }
+    ln = ln + 1
+  }
+  {
+    safe_clamps: clamps,
+    guarded_lines: guarded,
+    slice_only: not(has_substring_call),
+  }
+}
+
+///|
 /// 内建规则集（10 条，聚焦 MoonBit 可崩溃/语义高危模式；与 ocr-local
 /// moonbit-rules.json 关注点一致，但免外部二进制依赖）。
 fn scan_rules() -> Array[ScanRule] {
@@ -423,7 +478,18 @@ pub fn scan_finding_guarded(
   code : String,
   rule : String,
   prev_lines : Array[String],
+  ctx? : ScanCtx = {
+    safe_clamps: Map([]),
+    guarded_lines: Map([]),
+    slice_only: false,
+  },
+  hit_line? : String = "",
+  hit_ln? : Int = 0,
 ) -> Bool {
+  // R124: MoonBit substring 安全通道 — 文件已无裸 substring 调用
+  if rule == "substring-overrun" && ctx.slice_only {
+    return true
+  }
   let vn = if rule == "unprotected-division" {
     scan_div_var(code)
   } else if rule == "substring-overrun" {
@@ -431,8 +497,61 @@ pub fn scan_finding_guarded(
   } else {
     ""
   }
-  // prev_lines 里**越靠后越接近命中行**（调用方按 hit_idx 往回到 0 顺序压栈）。
-  // 因此从后往前扫：先看离命中最近的守卫，遇 `fn ` 边界（函数开头）即停。
+  // R124: _safe 钳制识别 — 除数是 X_safe 时，构造行已钳制到 ≥1
+  if rule == "unprotected-division" && ctx.safe_clamps.get(vn).is_some() {
+    return true
+  }
+  // R124: possible-overflow 乘法前守卫
+  if rule == "possible-overflow" && hit_ln > 0 {
+    let mut check = hit_ln - 1
+    while check >= hit_ln - 6 && check > 0 {
+      if ctx.guarded_lines.get(check).is_some() {
+        return true
+      }
+      check = check - 1
+    }
+  }
+  // 同一行守卫：substring 可能写在 `if s.length() > N { ... substring(...) }` 同一行，
+  // prev_lines 不含当前行，须先检查 code 自身。
+  if rule == "substring-overrun" {
+    let code_t = code.trim().to_string()
+    if not(vn.is_empty()) && scan_guard_length_above(code_t, vn) {
+      return true
+    }
+    if code_t.contains("if ") && code_t.contains(".length() >") {
+      return true
+    }
+    if code_t.contains("if ") && code_t.contains(".length() >= ") {
+      return true
+    }
+    // R125: MoonBit substring 安全形态 end=length()-1 / end=length
+    if code_t.contains(".length() - 1") || code_t.contains(".length()-1") ||
+      code_t.contains("end=.length()") || code_t.contains("end = .length()") {
+      return true
+    }
+  }
+  // R125: string-index / index-out-of-bounds 同一行守卫（循环外，prev_lines 空时也能命中）
+  if rule == "index-out-of-bounds" || rule == "string-index" {
+    if hit_line.contains("is_empty()") ||
+      hit_line.contains(".length() >") ||
+      hit_line.contains(".length() >= ") ||
+      hit_line.contains(".length() ==") {
+      return true
+    }
+    if hit_line.has_prefix("while ") && hit_line.contains(".length()") {
+      return true
+    }
+    if (hit_line.contains("> 0") || hit_line.contains(">= 1")) &&
+      (hit_line.has_prefix("if ") || hit_line.contains("{")) {
+      return true
+    }
+  }
+  // R125: possible-overflow 同一行 Double 安全形态
+  if rule == "possible-overflow" {
+    if hit_line.contains(".to_double()") || hit_line.contains("Double") || hit_line.contains("f64") {
+      return true
+    }
+  }
   let n = prev_lines.length()
   let mut i = n - 1
   while i >= 0 {
@@ -453,7 +572,6 @@ pub fn scan_finding_guarded(
       if not(vn.is_empty()) && scan_guard_length_above(t, vn) {
         return true
       }
-      // `if var.length() > N` 常写成 `if t.length() > 200` 一行内
       if t.contains("if ") && t.contains(".length() >") {
         return true
       }
@@ -464,16 +582,37 @@ pub fn scan_finding_guarded(
         return false
       }
     } else if rule == "index-out-of-bounds" || rule == "string-index" {
-      // 数组守卫只在同一函数体内生效：见到 `fn ` 行说明跨过了函数边界，
-      // 此时应停；但**函数体内的守卫**（`if rows.is_empty()`）要在它之前扫到。
       if t.contains("is_empty()") {
+        return true
+      }
+      // R125: `if arr.length() > 0` / `if arr.length() >= N` 守卫
+      if t.contains(".length() >") || t.contains(".length() >= ") || t.contains(".length() ==") {
+        return true
+      }
+      // R125: `while arr.length() > 0` 循环守卫
+      if t.has_prefix("while ") && t.contains(".length()") {
+        return true
+      }
+      // R124: `if n_safe > 0` / `if n >= 1` 同形守卫
+      if (t.contains("> 0") || t.contains(">= 1")) &&
+        (t.has_prefix("if ") || t.has_prefix("if(")) {
         return true
       }
       if t.starts_with("fn ") {
         return false
       }
-      // 同一行上的守卫（`if rows.is_empty() { rows[0] }`）：直接看当前 code 行
-      if code.contains("is_empty()") {
+      if t.starts_with("fn ") {
+        return false
+      }
+    } else if rule == "possible-overflow" {
+      // R124: prev_lines 里 >= INT_SAFE 守卫
+      if t.contains(">= INT_SAFE") ||
+        t.contains(">= 200_000_000") ||
+        t.contains(">=200_000_000") {
+        return true
+      }
+      // R125: Double/f64 乘法不会 Int overflow
+      if code.contains(".to_double()") || code.contains("Double") || code.contains("f64") {
         return true
       }
     }
@@ -642,51 +781,58 @@ pub fn issue_scan(
       dedup.push(hit)
     }
   }
-  // 守卫感知过滤（2026-10-10）：`if is_empty()` / `if length() > N` 等明显守卫后的
-  // index-out-of-bounds / substring-overrun / unprotected-division 是常量时间能判定的
-  // 假阳性——就地过滤，让 issue_scan 的回声更接近真实缺陷面。
+  // 守卫感知过滤（R124 增强版）：`if is_empty()` / `if length() > N` /
+  // `_safe` 钳制 / `>= INT_SAFE` 乘法前守卫 / MoonBit 切片安全通道
+  let ctx_cache : Map[String, ScanCtx] = Map([])
   let guarded_filtered : Array[ScanFinding] = []
   for hit in dedup {
     let fc = match mem_read(hit.file) {
       None => continue
       Some(c) => c
     }
+    // R124: 文件级 ctx 缓存（每个文件只构建一次）
+    let ctx = match ctx_cache.get(hit.file) {
+      Some(_) => ctx_cache.get(hit.file).unwrap()
+      None => {
+        let new_ctx = scan_build_ctx(fc)
+        ctx_cache.set(hit.file, new_ctx)
+        new_ctx
+      }
+    }
     let raw_lines = fc.split("\n")
     let fc_lines : Array[String] = []
     for l in raw_lines {
       fc_lines.push(l.to_string())
     }
-    // 守卫判定只看**同一函数体内、命中行之前**的行；跨 `fn ` 边界的守卫不算。
-    // 从命中行往回扫，遇到 `fn ` 行（函数开头）或文件头即停。
     let hit_idx = hit.line - 1
     let prev_window : Array[String] = []
     if hit_idx > 0 {
       let mut i = hit_idx - 1
-      let stopped = false
-      while i >= 0 && not(stopped) {
+      while i >= 0 {
         let line_str = fc_lines[i]
-        if line_str.trim().to_string().starts_with("fn ") {
+        if line_str.trim().to_string().has_prefix("fn ") {
           break
         }
         prev_window.push(line_str)
         i = i - 1
-        // 守卫通常距命中不超过 6 行，超了就不看
-        if prev_window.length() >= 6 {
+        if prev_window.length() >= 10 {
           break
         }
       }
     }
-    // 当前行本身也可能含守卫（`if rows.is_empty() { rows[0] }`）
     let hit_line = if hit_idx >= 0 && hit_idx < fc_lines.length() {
       fc_lines[hit_idx]
     } else {
       ""
     }
-    let guard_window : Array[String] = [hit_line]
-    if scan_finding_guarded(hit.code, hit.rule, guard_window) {
-      continue
-    }
-    if scan_finding_guarded(hit.code, hit.rule, prev_window) {
+    if scan_finding_guarded(
+        hit.code,
+        hit.rule,
+        prev_window,
+        ctx~,
+        hit_line~,
+        hit_ln=hit.line,
+      ) {
       continue
     }
     guarded_filtered.push(hit)
@@ -745,4 +891,29 @@ pub fn issue_scan(
       ),
     }),
   )
+}
+
+// ========== DEBUG TESTS (R125 guard filter) ==========
+fn _ctx() -> ScanCtx {
+  { safe_clamps: Map([]), guarded_lines: Map([]), slice_only: false }
+}
+
+test "R125 string-index same-line length() > 0 guard" {
+  let hit_line = "let sk = if top.skill_hits.length() > 0 { top.skill_hits[0] } else { \"\" }"
+  let code = "top.skill_hits[0]"
+  let result = scan_finding_guarded(code, "string-index", [], ctx=_ctx(), hit_line=hit_line, hit_ln=272)
+  assert_true(result)
+}
+
+test "R125 string-index prev-line while length() guard" {
+  let prev = ["while ready_ids.length() > 0 {"]
+  let hit_line = "let cur = ready_ids[0]"
+  let result = scan_finding_guarded("ready_ids[0]", "string-index", prev, ctx=_ctx(), hit_line=hit_line, hit_ln=273)
+  assert_true(result)
+}
+
+test "R125 substring-overrun safe end=length()-1" {
+  let hit_line = "s.substring(start=0, end=s.length() - 1).to_string()"
+  let result = scan_finding_guarded(hit_line, "substring-overrun", [], ctx=_ctx(), hit_line=hit_line, hit_ln=270)
+  assert_true(result)
 }

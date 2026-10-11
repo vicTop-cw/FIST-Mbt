@@ -365,3 +365,40 @@ test "rt_15_同档仍有健康模型时不许跳档（环形扫描要真的扫�
   assert_eq(d2.model_name, "p1")
   assert_eq(r2.current_tier, Paid)
 }
+
+///|
+/// rt_16 —— 「付费耗尽回退免费」分支**正向锁**（2026-10-11 终审发现此前零覆盖：grep `fallback`
+/// 在 src/router 与 src/server 测试面零命中；rt_5 只锁了反向——free 也满时不许**假**回退）。
+/// 场景：起点错开 1h 直接摆状态（rt_15 同款手法；**不能**靠 record 自然演化——切档选中
+/// paid-a 的那一刻 pick 就给 paid-a 盖窗口起点，与 free-a 同起点永远同窗过期，首版就红在
+/// `window_reset_check` 返回 2 而非 1）。rt_at(0,6) 时 free-a 距起点恰 5h（≥窗口）重置为
+/// 可用、paid-a 距起点 4h（<窗口）保持耗尽 ⇒ Paid 档无可用模型而免费池已恢复，必须真的回退。
+test "rt_16_付费耗尽且免费已恢复_必须回退免费" {
+  let r = ModelRouter::from_config({
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [
+      ModelQuota::new(name="free-a", tier=Free, limit=1, used=1, window_start=rt_at(0, 1)),
+    ],
+    paid_models: [
+      ModelQuota::new(name="paid-a", tier=Paid, limit=1, used=1, window_start=rt_at(0, 2)),
+    ],
+  })
+  r.current_tier = Paid
+  // 铺垫：此刻双池皆尽 → 显式不可用，档位保持 Paid（rt_5 反向，不假回退）
+  let d_ex = r.pick(now=rt_at(0, 3))
+  assert_eq(d_ex.available, false)
+  assert_eq(r.current_tier, Paid)
+  // 6h 时点：free-a 距起点 5h（≥窗口）重置为可用（0/1），paid-a 距起点 4h（<窗口）保持耗尽
+  assert_eq(r.window_reset_check(now=rt_at(0, 6)), 1)
+  let d = r.pick(now=rt_at(0, 6))
+  // 正向主断言：paid 耗尽 + free 有容量 ⇒ 回退免费，switched/档位/计数/reason 全对齐
+  assert_eq(d.model_name, "free-a")
+  assert_eq(d.tier, Free)
+  assert_eq(d.switched, true)
+  assert_eq(r.current_tier, Free)
+  assert_eq(r.switch_count, 1) // 本例只发生 paid→free 一次切换
+  assert_true(d.reason.contains("fallback to free"))
+  // 回退后档位语义自洽：current_model 报真在用的 free-a（BUG-56），不是耗尽的 paid-a
+  assert_eq(r.current_model().unwrap().name, "free-a")
+}

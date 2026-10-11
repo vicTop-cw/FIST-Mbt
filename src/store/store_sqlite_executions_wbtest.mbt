@@ -9,16 +9,19 @@ test "sse_01_normal_double" {
   assert_true((v - 3.14).abs() < 0.000000001)
 }
 
+///|
 test "sse_02_negative" {
   let v = parse_simple_double("-42.5")
   assert_true((v + 42.5).abs() < 0.000000001)
 }
 
+///|
 test "sse_03_leading_spaces" {
   let v = parse_simple_double("  123")
   assert_true((v - 123.0).abs() < 0.000000001)
 }
 
+///|
 /// 大数：超过 Int32 阈值（2e9）不应绕回。旧实现溢出为负值或乱数。
 test "sse_04_large_integer_no_overflow" {
   let v = parse_simple_double("3000000000")
@@ -27,6 +30,7 @@ test "sse_04_large_integer_no_overflow" {
   assert_true((v - 3000000000.0).abs() < 1.0)
 }
 
+///|
 /// 超大数：连续很多位整数部分，仍不应溢出为 0 或负。
 test "sse_05_very_large_integer" {
   let v = parse_simple_double("999999999999999999999999")
@@ -34,6 +38,7 @@ test "sse_05_very_large_integer" {
   assert_true(v > 100000000000000000000.0)
 }
 
+///|
 /// 空串 / 纯符号 → 0（旧行为不回归）
 test "sse_06_empty_and_sign_only" {
   let v1 = parse_simple_double("")

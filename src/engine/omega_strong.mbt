@@ -201,6 +201,7 @@ pub fn FistEngine::omega_latest(
 
 // —— 门禁 ——
 
+///|
 /// 占位符规整：把字符串拆成 Char 数组，剔除所有非字母数字的字符（空白/标点/全角标点），
 /// 再转小写。MoonBit 用 `String::to_array()` 拿到 `Array[Char]`（同 evolve.mbt 的做法）。
 fn placeholder_normalize(s : String) -> String {

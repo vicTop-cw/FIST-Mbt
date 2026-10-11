@@ -241,7 +241,11 @@ fn parse_simple_double(s : String) -> Double {
       break
     }
   }
-  let int_res : Double = if int_over { int_double } else { integer_part.to_double() }
+  let int_res : Double = if int_over {
+    int_double
+  } else {
+    integer_part.to_double()
+  }
   let mut result : Double = int_res
   if fractional_digits > 0 {
     let mut divisor : Double = 1.0

@@ -168,3 +168,89 @@ pub fn MemoryStore::executor_clear(self : MemoryStore) -> Bool {
   self.executors.clear()
   true
 }
+
+// —— 分布式文件锁（内存后端）——
+
+///|
+/// 内存后端：把锁写入（按 scope 唯一，覆盖旧值；旧锁若 active 且非本人且未过期则记违例）。
+pub fn MemoryStore::locks_upsert(self : MemoryStore, lock : FileLock) -> Unit {
+  match self.file_locks.get(lock.scope) {
+    Some(old) if old.status == "active" &&
+      old.agent != lock.agent &&
+      old.ttl_until >= lock.ts =>
+      self.lock_violations.push(LockViolation::{
+        ts: lock.ts,
+        agent: lock.agent,
+        scope: lock.scope,
+        reason: "lock_taken_over",
+        lock_id: old.lock_id,
+      })
+    _ => ()
+  }
+  self.file_locks.set(lock.scope, lock)
+}
+
+///|
+/// 内存后端：查询某 scope 的锁（不存在返回 None）。
+pub fn MemoryStore::locks_get(self : MemoryStore, scope : String) -> FileLock? {
+  self.file_locks.get(scope)
+}
+
+///|
+/// 内存后端：列出全部锁。
+pub fn MemoryStore::locks_list(self : MemoryStore) -> Array[FileLock] {
+  let out : Array[FileLock] = []
+  self.file_locks.each(fn(_, l) { out.push(l) })
+  out
+}
+
+///|
+/// 内存后端：释放某 scope 的锁（仅持有者可释放；不存在或非持有者返回 false）。
+pub fn MemoryStore::locks_release(
+  self : MemoryStore,
+  scope : String,
+  agent : String,
+) -> Bool {
+  match self.file_locks.get(scope) {
+    Some(l) if l.agent == agent => {
+      let released = FileLock::{ ..l, status: "released", }
+      self.file_locks.set(scope, released)
+      true
+    }
+    _ => false
+  }
+}
+
+///|
+/// 内存后端：清理过期锁（status=active 且 ttl_until < now → 标记 expired，记违例）。
+/// 返回被清理的锁数量。
+pub fn MemoryStore::locks_sweep(self : MemoryStore, now : String) -> Int {
+  let mut count = 0
+  let scopes = self.file_locks.keys()
+  for scope in scopes {
+    match self.file_locks.get(scope) {
+      Some(l) if l.status == "active" && l.ttl_until < now => {
+        let expired = FileLock::{ ..l, status: "expired", }
+        self.file_locks.set(scope, expired)
+        self.lock_violations.push(LockViolation::{
+          ts: now,
+          agent: l.agent,
+          scope: l.scope,
+          reason: "lock_expired",
+          lock_id: l.lock_id,
+        })
+        count = count + 1
+      }
+      _ => ()
+    }
+  }
+  count
+}
+
+///|
+/// 内存后端：列出违例记录。
+pub fn MemoryStore::lock_violations_list(
+  self : MemoryStore,
+) -> Array[LockViolation] {
+  self.lock_violations
+}

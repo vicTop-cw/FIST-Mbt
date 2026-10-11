@@ -2,6 +2,7 @@ import {
   "vicTop-cw/fist-mbt/src/engine",
   "vicTop-cw/fist-mbt/src/server",
   "moonbitlang/async",
+  "moonbitlang/async/js_async",
   "moonbitlang/core/env",
 }
 
@@ -10,5 +11,9 @@ pkgtype(kind: "executable")
 supported_targets = "js+native"
 
 options(
+  targets: {
+    "upgrade_native.mbt": [ "native" ],
+    "upgrade_js.mbt": [ "js" ],
+  },
   link: { "native": { "cc-link-flags": "-lsqlite3" } },
 )

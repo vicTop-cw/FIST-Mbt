@@ -101,6 +101,10 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     "CREATE TABLE IF NOT EXISTS call_log (id INTEGER PRIMARY KEY AUTOINCREMENT, seq INTEGER, ts TEXT, tool TEXT, caller TEXT, ns TEXT, params_json TEXT, result_json TEXT, ok INTEGER, runtime_ms INTEGER)",
     "CREATE TABLE IF NOT EXISTS reservations (scope TEXT PRIMARY KEY, agent TEXT NOT NULL DEFAULT '', ttl_until TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS executors (name TEXT PRIMARY KEY, abilities_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT '')",
+    // 分布式文件锁：scope 为主键，同一作用域只保留最新一笔
+    "CREATE TABLE IF NOT EXISTS file_locks (scope TEXT PRIMARY KEY, lock_id TEXT NOT NULL DEFAULT '', batch_id TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', ts TEXT NOT NULL DEFAULT '', ttl_until TEXT NOT NULL DEFAULT '', meta TEXT NOT NULL DEFAULT '')",
+    // 锁违例记录（过期未续 / 被抢占），追加式
+    "CREATE TABLE IF NOT EXISTS lock_violations (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', lock_id TEXT NOT NULL DEFAULT '')",
     // BUG-94：executions 过去**不在**建表清单里，只在**写**路径上 ensure
     // （record_execution 调 ensure_executions_table）。读路径 `cost_stats` 直接
     // prepare `FROM executions` ⇒ 新库（没写过任何执行记录）上一次 cost_stats 就
@@ -1038,6 +1042,341 @@ pub fn SqliteStore::executor_clear(self : SqliteStore) -> Bool {
     Some(db) => ignore(db.exec("DELETE FROM executors"))
   }
   true
+}
+
+// —— 分布式文件锁（SQLite 后端）——
+
+///|
+/// SQLite 后端：upsert 一把锁（按 scope 主键；旧锁 active 且非本人且未过期 → 记违例）。
+pub fn SqliteStore::locks_upsert(self : SqliteStore, lock : FileLock) -> Unit {
+  match self.db {
+    None => ()
+    Some(db) => {
+      // 先查旧锁，判断是否需要记违例
+      let prev = self.locks_get(lock.scope)
+      let need_violation = match prev {
+        Some(old) if old.status == "active" &&
+          old.agent != lock.agent &&
+          old.ttl_until >= lock.ts => true
+        _ => false
+      }
+      if need_violation {
+        let v_sql = "INSERT INTO lock_violations (ts, agent, scope, reason, lock_id) VALUES (?, ?, ?, ?, ?)"
+        match db.prepare(v_sql) {
+          None => ()
+          Some(stmt) => {
+            ignore(
+              stmt.bind(
+                1,
+                @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.ts)),
+              ),
+            )
+            ignore(
+              stmt.bind(
+                2,
+                @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.agent)),
+              ),
+            )
+            ignore(
+              stmt.bind(
+                3,
+                @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.scope)),
+              ),
+            )
+            ignore(
+              stmt.bind(
+                4,
+                @sqlite.SqlValue::Text(
+                  @encoding.encode(UTF8, "lock_taken_over"),
+                ),
+              ),
+            )
+            ignore(
+              stmt.bind(
+                5,
+                @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.lock_id)),
+              ),
+            )
+            ignore(stmt.execute())
+            stmt.finalize()
+          }
+        }
+      }
+      let sql = "INSERT INTO file_locks (scope, lock_id, batch_id, agent, status, ts, ttl_until, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(scope) DO UPDATE SET lock_id=excluded.lock_id, batch_id=excluded.batch_id, agent=excluded.agent, status=excluded.status, ts=excluded.ts, ttl_until=excluded.ttl_until, meta=excluded.meta"
+      match db.prepare(sql) {
+        None => ()
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.scope)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.lock_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.batch_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              4,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.agent)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              5,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.status)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              6,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.ts)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              7,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.ttl_until)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              8,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.meta)),
+            ),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
+        }
+      }
+    }
+  }
+}
+
+///|
+/// SQLite 后端：查询某 scope 的锁（不存在返回 None）。
+pub fn SqliteStore::locks_get(self : SqliteStore, scope : String) -> FileLock? {
+  match self.db {
+    None => None
+    Some(db) => {
+      let sql = "SELECT lock_id, batch_id, scope, agent, status, ts, ttl_until, meta FROM file_locks WHERE scope = ?"
+      match db.prepare(sql) {
+        None => None
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))),
+          )
+          let r : FileLock? = if stmt.step() {
+            Some(FileLock::{
+              lock_id: str_from_bytes(stmt.column_text(0)),
+              batch_id: str_from_bytes(stmt.column_text(1)),
+              scope: str_from_bytes(stmt.column_text(2)),
+              agent: str_from_bytes(stmt.column_text(3)),
+              status: str_from_bytes(stmt.column_text(4)),
+              ts: str_from_bytes(stmt.column_text(5)),
+              ttl_until: str_from_bytes(stmt.column_text(6)),
+              meta: str_from_bytes(stmt.column_text(7)),
+            })
+          } else {
+            None
+          }
+          stmt.finalize()
+          r
+        }
+      }
+    }
+  }
+}
+
+///|
+/// SQLite 后端：列出全部锁。
+pub fn SqliteStore::locks_list(self : SqliteStore) -> Array[FileLock] {
+  let out : Array[FileLock] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT lock_id, batch_id, scope, agent, status, ts, ttl_until, meta FROM file_locks ORDER BY ts"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          while stmt.step() {
+            out.push(FileLock::{
+              lock_id: str_from_bytes(stmt.column_text(0)),
+              batch_id: str_from_bytes(stmt.column_text(1)),
+              scope: str_from_bytes(stmt.column_text(2)),
+              agent: str_from_bytes(stmt.column_text(3)),
+              status: str_from_bytes(stmt.column_text(4)),
+              ts: str_from_bytes(stmt.column_text(5)),
+              ttl_until: str_from_bytes(stmt.column_text(6)),
+              meta: str_from_bytes(stmt.column_text(7)),
+            })
+          }
+          stmt.finalize()
+          out
+        }
+      }
+    }
+  }
+}
+
+///|
+/// SQLite 后端：释放某 scope 的锁（仅持有者可释放）。
+pub fn SqliteStore::locks_release(
+  self : SqliteStore,
+  scope : String,
+  agent : String,
+) -> Bool {
+  match self.db {
+    None => false
+    Some(db) => {
+      let sql = "UPDATE file_locks SET status='released' WHERE scope = ? AND agent = ?"
+      match db.prepare(sql) {
+        None => false
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))),
+          )
+          ignore(
+            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent))),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
+          // SQLite changes() via prepare is not directly exposed; use a follow-up check
+          match self.locks_get(scope) {
+            Some(l) if l.status == "released" && l.agent == agent => true
+            _ => false
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// SQLite 后端：清理过期锁（active 且 ttl_until < now → expired + 记违例）。
+pub fn SqliteStore::locks_sweep(self : SqliteStore, now : String) -> Int {
+  match self.db {
+    None => 0
+    Some(db) => {
+      // 先找出所有过期的 active 锁
+      let expired : Array[FileLock] = []
+      let sel_sql = "SELECT lock_id, batch_id, scope, agent, status, ts, ttl_until, meta FROM file_locks WHERE status = 'active' AND ttl_until < ?"
+      match db.prepare(sel_sql) {
+        None => ()
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, now))),
+          )
+          while stmt.step() {
+            expired.push(FileLock::{
+              lock_id: str_from_bytes(stmt.column_text(0)),
+              batch_id: str_from_bytes(stmt.column_text(1)),
+              scope: str_from_bytes(stmt.column_text(2)),
+              agent: str_from_bytes(stmt.column_text(3)),
+              status: str_from_bytes(stmt.column_text(4)),
+              ts: str_from_bytes(stmt.column_text(5)),
+              ttl_until: str_from_bytes(stmt.column_text(6)),
+              meta: str_from_bytes(stmt.column_text(7)),
+            })
+          }
+          stmt.finalize()
+        }
+      }
+      let mut count = 0
+      for l in expired {
+        let upd_sql = "UPDATE file_locks SET status='expired' WHERE scope = ? AND status = 'active'"
+        match db.prepare(upd_sql) {
+          None => ()
+          Some(stmt) => {
+            ignore(
+              stmt.bind(
+                1,
+                @sqlite.SqlValue::Text(@encoding.encode(UTF8, l.scope)),
+              ),
+            )
+            ignore(stmt.execute())
+            stmt.finalize()
+          }
+        }
+        let v_sql = "INSERT INTO lock_violations (ts, agent, scope, reason, lock_id) VALUES (?, ?, ?, ?, ?)"
+        match db.prepare(v_sql) {
+          None => ()
+          Some(stmt) => {
+            ignore(
+              stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, now))),
+            )
+            ignore(
+              stmt.bind(
+                2,
+                @sqlite.SqlValue::Text(@encoding.encode(UTF8, l.agent)),
+              ),
+            )
+            ignore(
+              stmt.bind(
+                3,
+                @sqlite.SqlValue::Text(@encoding.encode(UTF8, l.scope)),
+              ),
+            )
+            ignore(
+              stmt.bind(
+                4,
+                @sqlite.SqlValue::Text(@encoding.encode(UTF8, "lock_expired")),
+              ),
+            )
+            ignore(
+              stmt.bind(
+                5,
+                @sqlite.SqlValue::Text(@encoding.encode(UTF8, l.lock_id)),
+              ),
+            )
+            ignore(stmt.execute())
+            stmt.finalize()
+          }
+        }
+        count = count + 1
+      }
+      count
+    }
+  }
+}
+
+///|
+/// SQLite 后端：列出违例记录。
+pub fn SqliteStore::lock_violations_list(
+  self : SqliteStore,
+) -> Array[LockViolation] {
+  let out : Array[LockViolation] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT ts, agent, scope, reason, lock_id FROM lock_violations ORDER BY ts"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          while stmt.step() {
+            out.push(LockViolation::{
+              ts: str_from_bytes(stmt.column_text(0)),
+              agent: str_from_bytes(stmt.column_text(1)),
+              scope: str_from_bytes(stmt.column_text(2)),
+              reason: str_from_bytes(stmt.column_text(3)),
+              lock_id: str_from_bytes(stmt.column_text(4)),
+            })
+          }
+          stmt.finalize()
+          out
+        }
+      }
+    }
+  }
 }
 
 // —— executions 表（执行元数据，供成本统计使用）——
