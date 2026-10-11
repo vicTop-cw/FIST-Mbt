@@ -242,7 +242,8 @@ def render(text: str, vals: dict) -> str:
         if not k.startswith("_"):
             out = out.replace("{{" + k + "}}", v)
     if "{{" in out:
-        die(f"正文残留未替换占位符：{[s for s in re.findall(r'\\{\\{[A-Z_]+\\}\\}', out)]}")
+        remaining = re.findall(r"\{\{[A-Z_]+\}\}", out)
+        die(f"正文残留未替换占位符：{remaining}")
     return out
 
 
