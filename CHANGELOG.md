@@ -257,6 +257,18 @@ AIGC:
 - **遗留项**：Round 9 报告 §七 里明确记录的 `dag_cost_route` 重复拓扑序，本轮
   关闭；DAG 底座性能收敛主线完成。
 
+## v0.3.8 (R12-P11：Round 11 [寻虫→修复]：Archive::best 双 all() 消除) - 2026-10-11
+
+### 本轮性质：DGM 档案库的重复 O(N) Map 展开
+
+- **`Archive::best` 一次 `self.all()`（BUG-227，commit `9863c9a`）**：
+  旧代码把 `self.all()` 调两次（一次取 `[0]`、一次进 for）。`Archive::all` 是把
+  `self.items`（Map）展开成 Array（O(N)），两次 = 2N 次迭代。DGM 档案库条目多时
+  （数百产物）浪费明显。修复：一次取好、循环里复用。evolve 包 32/32 通过。
+
+- **全包回归**：engine 149 / evolve 32 / server 199 / ops / store / core
+  合计 **600/600 通过**。
+
 ## v0.3.8 (R8-R10 迭代：预执行审计门禁占位符拦截 + 文档面守卫 J15) - 2026-10-11
 
 ### 本轮性质：功能加固（审计门禁扩展）+ 判据扩展（check_doc_surface J15）
