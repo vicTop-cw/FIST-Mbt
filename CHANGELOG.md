@@ -189,6 +189,30 @@ AIGC:
 
 - **Round 7 [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
 
+## v0.3.8 (R12-P8：Round 8 [寻虫→修复]：BUG-221/222 双收口) - 2026-10-11
+
+### 本轮性质：同型函数漏守卫 + 子树遍历全库扫描，双病灶一次清理
+
+- **BUG-221 [修复] commit `1142b17`**：`output_validate.mbt` 的 `ov_parse_int` 与
+  `ops_selfdrive.mbt` 的 `sd_parse_int` 是同型函数（十进制字符串 → Int），但
+  `ov_parse_int` **缺 `sd_parse_int` 的 `int_safe` 上界守卫**（200_000_000）。
+  长数字串（如 `max_findings=99999999999`）在 `v = v * 10 + d` 上溢出 Int32
+  而不报错。修复：加同款守卫，超 `int_safe` 返回 None；函数改 `pub`；
+  新增 `output_validate_overflow_test.mbt` 验证 11 位 9 触发 None、
+  3 位正常数字仍可解析。
+
+- **BUG-222 [修复] commit `ed82f5d`**：`children_of(task_id)` 每查一个父任务
+  都 `store.list_tasks()`（全库遍历）。在 `subtree_ids`（`progress_gate` /
+  `cost_budget_split` / `plan_revise` 等都要走）和 `plan_exec_order` 这类
+  "按子树递归遍历"里是 **O(N×M)**（N=子树大小、M=全库任务数）——
+  与 R7 已修的 `deps_satisfied` N×(1+D) 同款病灶。修复：
+  `engine.mbt` 新增 `pub fn children_index() -> Map[String, Array[String]]`
+  （一次 `list_tasks()` 建 parent→children 索引，O(1) 查）；
+  `subtree_ids` 与 `plan_exec_order` 改用索引（O(N+M)）。
+  新增 `children_index_test.mbt` 验证与 `children_of` 语义等价。
+
+- **全量测试 728/728 通过**（Round 7 末 726 → 本轮 +2：BUG-221/222 各 1 条）。
+
 ## v0.3.8 (R8-R10 迭代：预执行审计门禁占位符拦截 + 文档面守卫 J15) - 2026-10-11
 
 ### 本轮性质：功能加固（审计门禁扩展）+ 判据扩展（check_doc_surface J15）
