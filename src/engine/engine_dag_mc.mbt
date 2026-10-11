@@ -162,15 +162,23 @@ pub fn FistEngine::dag_mc(
   for t in tasks {
     critical_hits.set(t.get_id(), 0)
   }
+  // R12-R3 性能：`extract_difficulty` 与 `mc_durations` 与样本无关，提前算一次。
+  // 旧代码把它放在 `for s` 内，导致 5000 样本 × N 任务的**重复难度解析**——
+  // 每个任务每样本都做一遍正则/字符串扫描。预计算后每样本只做一次三角形采样。
+  // 用 `(t.get_id(), a, m, b)` 三元组数组，避免 Map 的 String 哈希开销。
+  let tier_cache : Array[(String, Int, Int, Int)] = []
+  for t in tasks {
+    let tier = extract_difficulty(t.description)
+    let (a, m, b) = mc_durations(tier)
+    tier_cache.push((t.get_id(), a, m, b))
+  }
   for s = 0; s < n; s = s + 1 {
     let mut state = seed + s * 7919
     let dur : Map[String, Int] = Map([])
-    for t in tasks {
-      let tier = extract_difficulty(t.description)
-      let (a, m, b) = mc_durations(tier)
+    for (tid, a, m, b) in tier_cache {
       let (s2, d) = mc_tri_sample(state, a, m, b)
       state = s2
-      dur.set(t.get_id(), d)
+      dur.set(tid, d)
     }
     let memo : Map[String, Int] = Map([])
     let visiting : Map[String, Bool] = Map([])
