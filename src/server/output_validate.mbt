@@ -260,7 +260,10 @@ fn check_external_invariants(stdout : String, spec : ArtifactSpec) -> String {
 ///|
 /// 简单解析十进制整数（非负，可含前后空白；解析失败返回 None）。
 /// 与 ops_selfdrive 的 sd_parse_int 同型（MoonBit core 未提供 String::parse_int）。
-fn ov_parse_int(raw : String) -> Int? {
+/// R12-R8 bugfind（BUG-221）：**补上 sd_parse_int 已有的 int_safe 上界守卫**——
+/// 旧实现缺守卫，长数字串（如 max_findings=999999999999）在
+/// `v = v * 10 + d` 上溢出 Int32 而不报错（绕回/精度丢失）。
+pub fn ov_parse_int(raw : String) -> Int? {
   // 去掉末尾句号（moon 汇总行末尾 "0." 常见）
   let mut s = raw.trim().to_string()
   if s.ends_with(".") {
@@ -269,9 +272,13 @@ fn ov_parse_int(raw : String) -> Int? {
   if s.is_empty() {
     return None
   }
+  let int_safe : Int = 200_000_000
   let mut v = 0
   for c in s {
     if c < '0' || c > '9' {
+      return None
+    }
+    if v >= int_safe {
       return None
     }
     v = v * 10 + (c.to_int() - '0'.to_int())
