@@ -88,12 +88,18 @@ fn FistEngine::mc_scope_tasks(
 ///|
 /// 单样本内：以 id 结尾的最长完成时间（沿 depends_on 回溯；memo 化 DFS，含环保护）。
 /// dur 为该样本各任务时长。返回 finish(id) = max(finish(dep)) + dur(id)。
+///
+/// R12-R5 性能：`deps` 参数传入预计算的 `Map[String, Array[String]]`，
+/// 避免在 5000 样本 × N 任务下每次递归都调用 `self.get_task(id)`（SqliteStore
+/// 下是 DB 查询）。`mc_scope_tasks` 已把作用域任务载入内存，`depends_on`
+/// 在该次调用内不变，故只构建一次。
 fn FistEngine::mc_finish(
   self : FistEngine,
   id : String,
   dur : Map[String, Int],
   memo : Map[String, Int],
   visiting : Map[String, Bool],
+  deps : Map[String, Array[String]],
 ) -> Int {
   match memo.get(id) {
     Some(v) => return v
@@ -109,10 +115,10 @@ fn FistEngine::mc_finish(
   visiting.set(id, true)
   let own = dur.get(id).unwrap_or(0)
   let mut best = own
-  match self.get_task(id) {
-    Some(t) =>
-      for d in t.depends_on {
-        let f = self.mc_finish(d, dur, memo, visiting)
+  match deps.get(id) {
+    Some(arr) =>
+      for d in arr {
+        let f = self.mc_finish(d, dur, memo, visiting, deps)
         if f + own > best {
           best = f + own
         }
@@ -172,6 +178,13 @@ pub fn FistEngine::dag_mc(
     let (a, m, b) = mc_durations(tier)
     tier_cache.push((t.get_id(), a, m, b))
   }
+  // R12-R5 性能：把 depends_on 预计算成 `Map[String, Array[String]]`，样本循环外只建一次。
+  // 旧代码在 `mc_finish` 递归里每次调 `self.get_task(id)`——SqliteStore 下是 DB 查询，
+  // 5000 样本 × N 任务 = 最多 100 万次 DB 读。预计算后每样本零 DB 访问。
+  let deps : Map[String, Array[String]] = Map([])
+  for t in tasks {
+    deps.set(t.get_id(), t.depends_on)
+  }
   for s = 0; s < n; s = s + 1 {
     let mut state = seed + s * 7919
     let dur : Map[String, Int] = Map([])
@@ -184,7 +197,7 @@ pub fn FistEngine::dag_mc(
     let visiting : Map[String, Bool] = Map([])
     let mut ms = 0
     for t in tasks {
-      let f = self.mc_finish(t.get_id(), dur, memo, visiting)
+      let f = self.mc_finish(t.get_id(), dur, memo, visiting, deps)
       if f > ms {
         ms = f
       }
