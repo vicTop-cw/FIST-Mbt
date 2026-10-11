@@ -221,6 +221,13 @@ pub fn FistEngine::execute_with_meta(
   rate_limited? : Bool = false,
   failure_reason? : String = "",
 ) -> Result[@core.Task, String] {
+  // 0. 预执行审计门禁必须真正前置（BUG-147）：gate 在 record_execution 之前。
+  // 否则空 deliverable 时 execute 的 gate 拒绝返回 Err，但 executions 已写入一行
+  // 幽灵元数据，cost_stats 会 double-count。空交付物直接返回 Err，不落任何元数据。
+  match self.audit_execute_gate(task_id, deliverable) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
   // 1. 写入执行元数据（独立事务，失败不阻塞主流程）
   ignore(
     self.store.record_execution(
@@ -1385,13 +1392,39 @@ pub fn FistEngine::ready_tasks(
 ) -> Array[@core.Task] {
   let target = if ns_filter == "" { "default" } else { ns_filter }
   let tasks = self.store.list_tasks_in(target)
+  // R12-R7 性能：`deps_satisfied` 对每个任务及其每个依赖都调 `store.get_task`
+  // （SqliteStore 下是 DB 读）。对 N 任务 × D 依赖，旧代码是 N×(1+D) 次 DB 读。
+  // 这里**一次遍历**建出 `completed` 映射（id → 是否已完成），
+  // 之后依赖满足判断全部走内存 Map。
+  let completed : Map[String, Bool] = Map([])
+  for t in tasks {
+    completed.set(t.get_id(), t.get_status().is_completed())
+  }
   let ready : Array[@core.Task] = []
   for t in tasks {
-    if t.get_status().is_pending() && self.deps_satisfied(t.get_id()) {
+    if t.get_status().is_pending() && deps_ready_memo(t.depends_on, completed) {
       ready.push(t)
     }
   }
   ready
+}
+
+/// 判断 `dep_ids` 是否全部在 `completed` 映射中为已完成。
+/// 供 `ready_tasks` 在 O(1) Map 查询下做依赖判断（替代逐条 `store.get_task`）。
+fn deps_ready_memo(
+  dep_ids : Array[String],
+  completed : Map[String, Bool],
+) -> Bool {
+  for tid in dep_ids {
+    let done = match completed.get(tid) {
+      Some(b) => b
+      None => false
+    }
+    if not(done) {
+      return false
+    }
+  }
+  true
 }
 
 ///|
