@@ -426,7 +426,13 @@ fn evolve_summary_line(a : Artifact) -> String {
   } else {
     a.id
   }
-  let sc = (a.score * 1000.0).to_int().to_double() / 1000.0
+  // R12-R4 bugfind：`(a.score * 1000.0).to_int()` 在 MoonBit Double→Int 转换时，
+  // 若 |a.score*1000| > 2^31-1 会 panic。`evolve_submit` 未钳制 score，
+  // 理论上可传 >2.1e6 的值。这里显式 clamp 到 [0, 2_000_000]（*1000 后 < 2^31），
+  // 并保留 3 位小数展示语义。
+  let sc_raw = if a.score.is_nan() || a.score < 0.0 { 0.0 } else { a.score }
+  let sc_clamped = if sc_raw > 2_000_000.0 { 2_000_000.0 } else { sc_raw }
+  let sc = (sc_clamped * 1000.0).to_int().to_double() / 1000.0
   "[\{short} score=\{sc} ] \{a.goal}"
 }
 
