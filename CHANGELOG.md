@@ -179,6 +179,14 @@ AIGC:
   语义完全等价（依赖不存在 → Map 查不到 → false，与 get_task None → false 一致）。
   全量 **725/725** 通过。
 
+- **Round 7 [寻虫] commit `cd4086e`**：发现 `issue_scan` 的 `possible-overflow`
+  规则只匹配 `* 10` / `to_int()*`，**漏掉 BUG-217/218/219 的 `* 86400` 家族**
+  （一天 86400 秒是大系数，超过 24855 天即溢出 Int32）。
+  修复：新增第 11 条规则 `secs-overflow`（medium），
+  pattern `["* 86400", "*86400"]`。配套测试建 temp/lint_secs 夹具
+  注入 `days * 86400`，断言 by_rule 含 secs-overflow。全量 **726/726** 通过。
+  现有 3 处 `* 86400` 已由 BUG-217/218/219 修复（守卫感知过滤正确地不误报）。
+
 - **Round 7 [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
 
 ## v0.3.8 (R8-R10 迭代：预执行审计门禁占位符拦截 + 文档面守卫 J15) - 2026-10-11
