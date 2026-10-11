@@ -43,6 +43,33 @@ AIGC:
 
 - **Round 1 [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
 
+## v0.3.8 (R12-P2：Round 2 [推进→寻虫→修复]：parse_simple_double/sd_parse_int/bug_parse_int 溢出哨兵) - 2026-10-11
+
+### 本轮性质：issue_scan possible-overflow 族真实溢出点收口（3 处同型解析器）
+
+- **Round 2 [推进] commit `da11717`（T0r561）**：`parse_simple_double`
+  （`store_sqlite_executions.mbt`，SQLite cost 文本字段解析）加 Int 溢出哨兵——
+  MoonBit Int 为 32 位，异常长数字串在 `integer_part * 10 + d` 处溢出并静默绕回
+  成乱数。**关键**：守卫必须**在乘法之前**判定（否则 `214748364 * 10` 即越界）。
+  阈值取 2e8（*10 后 2e9 < 2^31）。新增 `int_double` Double 累积兜底 + 小数 15 位上限。
+  配套 `store_sqlite_executions_wbtest.mbt` 6 条白盒测试（sse_01~sse_06），
+  全量 **696/696** 通过。
+
+- **Round 2 [寻虫] commit `4b29152`（BUG-215）**：issue_scan possible-overflow
+  再命中 2 处同型解析器：
+  - `ops_selfdrive.mbt:161` `sd_parse_int` `v = v * 10 + digit`
+  - `server/bugreport.mbt:205` `bug_parse_int` `acc = acc * 10 + ci - 48`
+  真实触发面：`sd_parse_int` 读 memory 目录计数文件（如 reviewed_count），
+  异常写入即溢出；`bug_parse_int` 解析 bug 序号（当前 < 1000，风险低但同族）。
+
+- **Round 2 [修复]**：`sd_parse_int` `v >= 2e8 → None`；`bug_parse_int`
+  `acc >= 2e8 → break`（返回已累积部分）。配套 11 条白盒测试
+  （sdp_01~06 覆盖合法/trim/空串/超大数/阈值边界；bp_01~05 覆盖合法/非数字
+  break/空串/超大数/阈值边界），全量 **707/707** 通过（+11）。
+  **BUG-215 状态：OPEN → FIXED**（证据 commit `4b29152`）。
+
+- **Round 2 [打磨]：本 CHANGELOG 新增段 + 报告落盘**（见 `reports/`）。
+
 ## v0.3.8 (R8-R10 迭代：预执行审计门禁占位符拦截 + 文档面守卫 J15) - 2026-10-11
 
 ### 本轮性质：功能加固（审计门禁扩展）+ 判据扩展（check_doc_surface J15）
