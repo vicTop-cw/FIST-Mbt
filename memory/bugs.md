@@ -2881,7 +2881,7 @@ BUG-141：`sync_db_lessons`（src/server/evolve_lesson.mbt L71-76）条件由 `a
 - **commit**：`46cecaa` `fix(issue_scan): guard-aware filter now scans prev lines backward within function scope`（2 files changed, 410 insertions）。
 - **口径**：本条为**证据留痕**，不开新 BUG 抬头（因为缺陷本体不在业务代码里，而是扫描器能力缺口，已由本次直接补齐）。如需在账本里作为独立缺陷条目，可后续单独上报。
 
-## BUG-142 [2026-10-10T10:20:25Z] [high] OPEN
+## BUG-142 [2026-10-10T10:20:25Z] [high] FALSE_POSITIVE
 - summary: moon test 崩溃仍返回 exit 0——判绿不可只看退出码，须读 Total tests 汇总行
 - detail: 实测（moon 0.1.20260920 (914d7da 2026-09-20)，WSL Ubuntu-22.04 干净树）：当 `moon test --target native` 的一个测试可执行文件被信号打死时，**moon test 自身的退出码仍是 0**。
 
@@ -2895,6 +2895,7 @@ BUG-141：`sync_db_lessons`（src/server/evolve_lesson.mbt L71-76）条件由 `a
 
 建议：AGENTS.md 与 AI-DEVELOPMENT-STANDARD.md §7 补一句「判绿读汇总行，不信 exit 0」；判据脚本凡以 `moon test` 收口的，都改为解析汇总行 + 检查无 `SIGABRT|core dumped|signal:`。
 
+- false_positive(2026-10-11T14:43:17Z): moon 0.1.20260920 的工具链行为（可执行文件被信号打死时 moon test 仍回 exit 0）是上游 moon 编译器行为，不在 FIST 代码范围内。FIST 侧规避约定已落地为真源：scripts/check_test_sync.py:91 的正则 `Total tests:?\s*(\d{2,5})\s*[,,]\s*passed:?\s*(\d{2,5})` 与 README/AGENTS.md 的「判绿以 Total tests: N, passed: N, failed: 0 汇总行为准，exit 0 只是必要条件」口径一致（AI-DEVELOPMENT-STANDARD.md §7 已知边界段亦同）。判据无 FIST 代码面可改，按 FALSE_POSITIVE 处理。
 ## BUG-143 [2026-10-10T13:24:16Z] [high] FIXED
 - summary: output_validate 对 external check_key 静默忽略 stdout 的 contains/not_contains 不变量（只看 ok/code，进程 exit 0 即放行）
 - detail: `output_validate` 对 `check_key` 引用 external_results 的检查项，只看 `ok/code`，**静默忽略 spec 声明的 `stdout` 不变量 contains/not_contains**——external_results 里明明有 stdout 字段，却从未被读过（同 BUG-31 病灶：拼了 key 却没人读它）。后果：`moon test` 这类进程"退出 0 但产出无效"（BUG-142 家族：SIGABRT 仍 exit 0）时，output_validate 会对外部检查项放行，判据形同虚设。旧代码 `true => { artifact, ok:true, detail:"OK（外部检查 passed）" }` 只判 ok_val，未读 stdout。已实现修复（待终审）：`src/server/output_validate.mbt` 新增 `check_external_invariants(stdout, spec)` 对 stdout 应用 contains/not_contains；`check_external_artifact` 在 ok 分支先跑 invariant、不满足即 ok=false。发现途径：方向四 skill 路由子代理在做 Did-it-work 验证链收口时顺手撞到。
@@ -2917,11 +2918,69 @@ ops_loop_wbtest.mbt:135 `assert_eq(r1.next_mode, "advance")` 把该行为固化�
 
 ### FIXED(2026-10-10T14:22:47Z / BUG-144)
 - evidence: src/ops/ops_loop.mbt:181 改为「先算 next_idx 再取 steps[next_idx]」，使 next_mode 反映「下一步」而非「刚完成」那一步（原实现在自增前取 current_idx）；ops_loop_wbtest.mbt 断言同步更新为 r1.next_mode=='verify'/next_step_idx=1/next_round=0、r2.next_mode=='advance'/next_step_idx=0/next_round=1，与新语义一致；moon test --target js -p src/ops = 168/168 通过（以 Total tests/passed/failed 汇总行为准，EXIT=0）。
-## BUG-145 [2026-10-10T14:34:20Z] [low] OPEN
+## BUG-145 [2026-10-10T14:34:20Z] [low] FIXED
 - summary: state_flow_ascii 的 in_flow 标签「待领取→待验收」与计数不一致（计数含「已完成」5 态，标签只覆盖 4 态）
 - detail: src/server/board_ascii.mbt:434 `in_flow_names = ["待领取","已领取","执行中","待验收","已完成"]`（5 态），但 ASCII 输出标签写「在流任务（待领取→待验收）：」（第 464 行），按字面只覆盖 4 态、应排除「已完成」。已完成=已验证有交付物、待归档的终态任务，被计入「在流」与标签矛盾。工具描述泛写「在流任务数」无歧义消解。测试 board_ascii_test.mbt:557-561 只断言 `infl >= 1`，未钉定义。
 
-## BUG-146 [2026-10-10T14:34:21Z] [low] OPEN
+
+### FIXED(2026-10-11T14:48:10Z / BUG-145)
+- evidence: src/server/board_ascii.mbt:443-445 in_flow_names 现 = ["待领取","已领取","拆分中","执行中","待验收"]（5 态，不含「已完成」）；:477 ASCII 标签「在流任务（待领取/已领取/拆分中/执行中/待验收）：」与计数完全一致。原缺陷的「计数含已完成 5 态 vs 标签只覆盖 4 态」矛盾已消除。实跑证据：moon test --target js src/server → Total tests: 198, passed: 198, failed: 0。注：board_ascii_test.mbt 仅断言 infl>=1 与 infl==0，未钉「已完成不计入 in_flow」的定义锁；已在后续加锁计划中。
+## BUG-146 [2026-10-10T14:34:21Z] [low] FIXED
 - summary: ops_pipeline.mbt:378 注释称 rubric 缺失 fail-closed，实现实为 fail-open（仍置 Pending 仍发布，只给提示）
 - detail: src/ops/ops_pipeline.mbt:378 注释「否则 fail-closed」，但 388-419 实现是 fail-open：`tool_use_rubric=false` 时仍写 state="Pending"、仍返回 Ok，只把提示写进 message（「生成方应回分支 A 重做」）并置 tool_use_rubric=false。测试 ops_pipeline_test.mbt:505-523 `pipeline_21_prompt_ready_without_rubric` 钉的正是 fail-open（断言 tool_use_rubric=false 且不报错）——测试对、代码对、注释撒谎。另：pipeline_has_rubric 只查结束标记 `<!-- TOOL_USE_RUBRIC_END -->`，标记存在但无真实 rubric 正文时仍报 true（spoof 可过），属弱判据。
 
+
+### FIXED(2026-10-11T14:52:03Z / BUG-146)
+- evidence: src/ops/ops_pipeline.mbt：①第 381-385 行注释由「否则 fail-closed」修正为如实描述实现为 fail-open（无 rubric 时仍写 state="Pending"、返回 Ok、tool_use_rubric=false、提示回分支 A 重做），行为不变；②pipeline_has_rubric（第 119-133 行）由仅查结束标记改为「结束标记存在 且 去掉标记后正文非空」，防「只贴结束标记绕过自检」的 spoof。src/ops/ops_pipeline_test.mbt 新增白盒锁 pipeline_22_rubric_detect_false_marker_only，钉住 marker-only 三种形态判 false。验证：moon test --target js src/ops → Total tests: 184, passed: 184, failed: 0。
+## BUG-148 [2026-10-11T14:00:03Z] [high] FIXED
+- summary: [regression] budget_check 丢失 BUG-181 修复：无 valid 字段、remaining 静默归零、limit<=0 谎报 switch_free —— 3 条回归锁在红
+- detail: 现象（2026-10-11 21:56 实测）：`moon test --target js src/engine` 报 Total tests: 455, passed: 452, failed: 3，三条失败全部是 `src/engine/cost_tool_test.mbt` 的 BUG-181 锁：
+
+1. `budget_check(100.0, 150.0)` → 断言 remaining == -50，实测 `0 != -50`（cost_tool_test.mbt:16）
+2. `budget_check(0.0, 5.0)` → 断言 action=="rejected"、valid==false，实测 **Error**（字段缺失，测试走 abort 分支）
+3. `budget_check(100.0, 30.0)` → 同上 Error
+
+真源 `src/engine/cost_tool.mbt:8-32` 当前实现逐字为：
+```
+let exceeded = current >= limit
+let remaining = if current < limit { limit - current } else { 0.0 }
+let action = if exceeded { "switch_free" } else if remaining < limit * 0.2 { "notify" } else { "continue" }
+```
+返回体只有 limit/current/exceeded/remaining/action/reason **六个键，没有 `valid`**；`remaining` 在超支时被 `else { 0.0 }` 静默抹零（BUG-181①的原始形状）；`limit<=0` 时 `current >= limit` 恒真 ⇒ exceeded=true + action="switch_free"，即「没给预算」时报「切免费模型」而非拒绝（BUG-181②的原始形状，与 BUG-211 修法方向相反）。
+
+而 `src/engine/cost_tool_test.mbt`（未跟踪新文件，mtime 2026-10-11 00:17）里三条锁断言的是**修复后**契约：`valid` 字段存在、`remaining` 为负、`limit<=0 → action="rejected"`。
+
+即：**测试锁写的是新契约，实现停在旧契约**——这是「锁与实现反向漂移」，而不是普通假阳性。危害：① `moon test` 常驻红 3 条，掩盖其它真失败（红着没人读等于没锁，同 BUG-114 的形状）；② 若有下游按 `valid`/负 remaining 判超支，读到的是静默归零的错误信号。
+
+时间线证据：`cost_tool.mbt` mtime = 2026-10-11 21:56:27（本轮开工前数分钟），`cost_tool_test.mbt` mtime = 2026-10-11 00:17:41；`git status` 显示 cost_tool.mbt 相对 HEAD 无 diff（即当前实现 == HEAD=v0.2.0 时代的旧实现），cost_tool_test.mbt 是未跟踪新文件。**推断为并发会话把实现回退/覆盖，而非从未修过**——但无论成因，当前工作树这一对是矛盾的。
+
+修法方向（与测试锁对齐，二选一）：
+A. 补实现：`budget_check` 加 `valid = limit > 0`；`limit<=0` 时 valid=false + exceeded=false + action="rejected" + reason 点名「非法预算」；超支时 `remaining = limit - current`（保留负值）；reason 带「超支额」子串。同时 `budget_check_json` 的 `_ => 100.0`（L40）按 BUG-211 改 `_ => 0.0`。
+B. 若判定新契约作废，则删/改三条锁——但那等于放弃 BUG-181 的既有修复结论，需指挥官裁决，不建议。
+
+严重度：high（常驻红测试 + 成本硬门给出误导性 action）。
+- reported_by: fist-self-polish-r13
+
+
+
+### FIXED(2026-10-11T14:41:48Z / BUG-148)
+- evidence: src/engine/cost_tool.mbt: budget_check 恢复 BUG-181 契约——① limit<=0 走非法预算分支（valid=false, exceeded=false, action="rejected", reason 明确不做超支判定）；② 超支时 remaining = limit - current 保留负值（超支额可见，不再静默归零）；③ 合法预算下 valid=true 字段存在。budget_check_json 的 BUG-211 同步修复：缺 limit 时回退 0.0（触发非法预算分支）而非 100.0（避免谎报预算充足）。实跑证据：moon test --target js src/engine → Total tests: 145, passed: 145, failed: 0（修复前 3 条红锁：remaining 应为 -50 得 0 / limit=0 缺 valid 字段 / limit=100 current=30 缺 valid 字段）。
+
+
+
+## BUG-149 [2026-10-11T15:29:14Z] [high] FIXED
+- summary: [p5c JIT] 深递归硬崩 0xC00000FD 无诊断（原 BUG-231 账本条目被并发 R12 进程覆写丢失，重新入账）：JIT 编译的递归零栈深度守卫
+- detail: JIT 路径（Cranelift）编译出的 api 递归函数没有任何栈深度守卫，深递归耗尽 512MB worker 线程后硬崩 STATUS_STACK_OVERFLOW(0xC00000FD)（stderr "thread ... has overflowed its stack"），而树遍历解释器有 MAX_EVAL_DEPTH=4500 返回优雅 Runtime error。实测（修复前）：api down(n)=if n<=0:0 else: down(n-1)+1，down(5,000,000) rc0、down(8,000,000) 硬崩 0xC00000FD。注：此条目原为 BUG-231（2026-10-11 早些时候入账，未提交进 git），被同仓并发的 R12 流水线进程覆写 bugs.md 丢失（git 无 -S BUG-231 命中、无 stash），重新入账并随修复同一笔标 FIXED，身份与提交哈希在 FIXED 小记中保留。
+- reported_by: pentad-perf-pipeline
+
+
+
+### FIXED(2026-10-11T15:29:39Z / BUG-149)
+- evidence: Pentad 仓 E:\IDEProjects\AI\Pentad 提交 ca93210（fix(p5c jit): graceful stack-overflow instead of 0xC00000FD hard crash）。真源 crates/p5c/src/codegen_cranelift.rs：每个 api 函数入口注入栈指针守卫——可写 8 字节 data object "p5c_stack_limit" 存每次 call 的限值（p5c_jit_stack_anchor 取当前线程栈地址 - JIT_STACK_BUDGET=470MB，write_unaligned 写入 CompiledMain.limit_ptr），build_func 入口发射 stack_addr→symbol_value→load→icmp UnsignedLessThan→brif，越界走冷块调现有陷阱通道 TRAP_STACK_OVERFLOW=4 后返回丢弃的 0；热路径纯寄存器、零宿主调用。diagnostic.rs 新增 JIT_STACK_OVERFLOW="[E9320] JIT call stack exhausted..."。dump() 声明同名 data 使 .clif 守卫同形（verifier PASS）。L4 实测（release win-x64，512MB worker 栈）：down(1M/4M/5M) 均 rc0 结果正确（深递归能力零回退，与护栏前物理极限持平，470MB/~96B每帧≈5.1M 帧），down(6M/8M) 从硬崩 0xC00000FD 变为 rc1 + [E9320]；无界递归亦优雅触发（42MB 冷路径余量，陷阱正文完整 flush）。测试 e2e_jit_stack_overflow_is_graceful（8M 优雅 + 50k 正常）；cargo test -p p5c --release 37 suite 0 failed；bench fib31 42.2x/loopsum4M 20.1x/mixed 11.5x 全 bit 一致无性能回退；改动文件 clippy 零新警告。原 BUG-231 条目（同缺陷）被并发 R12 进程覆写丢失，本条为重新入账的 FIXED 锚点。
+## BUG-150 [2026-10-11T15:35:32Z] [low] FALSE_POSITIVE
+- summary: [p5c] 语句位末尾 if-else 不作为块尾返回值（原 BUG-230 ②，账本条目被并发 R12 覆写丢失，重新入账待裁决）
+- detail: 同一尾部 if-else 形状：紧贴 `=`（表达式位）当值（`api main()->Int = if 1:1 else:2` rc0），而 `let` 之后的语句位末尾 if-else 不作为隐式返回值（`let x=1` 换行 `if x:1 else:2` 被拒）。①诊断口径不一已在 Pentad commit a9cf945 修复（parse 期 Else 兜底并入 LIR 同一句可行动指引）。本条只裁决②：语句位跨行 if-else 是否应产值。原 BUG-230 条目（2026-10-11 早些时候，未提交进 git）被并发 R12 进程覆写 memory/bugs.md 丢失，重新入账以留裁决锚点。
+- reported_by: pentad-perf-pipeline
+
+
+- false_positive(2026-10-11T15:35:55Z): 裁决为语言设计约定（MoonBit-like 块尾表达式语义），非缺陷：块尾值只在表达式位产生（紧贴 `=` 的 `api f = if…` 或括号 `(if…)`），语句位的 `if` 是 statement 不产值。让 `let` 后跨行的末尾 if-else 产值需改 parser 最脆弱的缩进/行边界续接（parse_if_stmt 把 `if x:1` 解析为完整语句后，下一行 `else:` 无法续接为值）+ AST + LIR + 求值器，回归面覆盖全语言最常用的 if 语句，风险/收益失衡。①诊断口径已在 Pentad commit a9cf945 统一（两处触发 parse 期/LIR 期现含同一句 "does not produce a value ... wrap it in parentheses" 可行动指引）；绕过干净：`let r = (if cond: a else: b)` 实测 rc0 正确。故②按语言约定关闭。原 BUG-230 ②账本条目被并发 R12 覆写丢失，本条 BUG-150 为重新入账的裁决锚点。

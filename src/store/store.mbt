@@ -33,6 +33,10 @@ pub struct MemoryStore {
   reservations : Map[String, (String, String, String)]
   // 执行者能力注册（Marketplace 雏形持久化，R31）：name -> (abilities_json, created_at)
   executors : Map[String, (String, String)]
+  // 分布式文件锁：scope -> FileLock
+  file_locks : Map[String, FileLock]
+  // 锁违例记录（过期未续 / 被抢占）
+  lock_violations : Array[LockViolation]
 }
 
 ///|
@@ -44,7 +48,96 @@ pub fn MemoryStore::new() -> MemoryStore {
     call_logs: [],
     reservations: Map([]),
     executors: Map([]),
+    file_locks: Map([]),
+    lock_violations: [],
   }
+}
+
+// —— 分布式文件锁类型（FileLock / LockViolation）——
+
+///|
+/// 文件锁记录（跨后端统一结构）。
+pub struct FileLock {
+  pub lock_id : String
+  pub batch_id : String
+  pub scope : String
+  pub agent : String
+  /// active / expired / released / violated
+  pub status : String
+  pub ts : String
+  pub ttl_until : String
+  pub meta : String
+} derive(Eq, Debug)
+
+///|
+/// 便捷构造。
+pub fn FileLock::new(
+  lock_id~ : String,
+  batch_id~ : String,
+  scope~ : String,
+  agent~ : String,
+  status? : String = "active",
+  ts? : String = "",
+  ttl_until? : String = "",
+  meta? : String = "",
+) -> FileLock {
+  { lock_id, batch_id, scope, agent, status, ts, ttl_until, meta, }
+}
+
+///|
+/// 续期：返回同锁的新 ttl_until + ts，status 重置为 active。
+pub fn FileLock::renew(
+  self : FileLock,
+  ttl_until~ : String,
+  ts~ : String,
+) -> FileLock {
+  {
+    lock_id: self.lock_id,
+    batch_id: self.batch_id,
+    scope: self.scope,
+    agent: self.agent,
+    status: "active",
+    ts,
+    ttl_until,
+    meta: self.meta,
+  }
+}
+
+///|
+/// FileLock → JSON（供 MCP 工具输出）。
+pub fn FileLock::to_json(self : FileLock) -> Json {
+  Json::object({
+    "lock_id": Json::string(self.lock_id),
+    "batch_id": Json::string(self.batch_id),
+    "scope": Json::string(self.scope),
+    "agent": Json::string(self.agent),
+    "status": Json::string(self.status),
+    "ts": Json::string(self.ts),
+    "ttl_until": Json::string(self.ttl_until),
+    "meta": Json::string(self.meta),
+  })
+}
+
+///|
+/// 锁违例记录。
+pub struct LockViolation {
+  pub ts : String
+  pub agent : String
+  pub scope : String
+  pub reason : String
+  pub lock_id : String
+} derive(Eq, Debug)
+
+///|
+/// LockViolation → JSON。
+pub fn LockViolation::to_json(self : LockViolation) -> Json {
+  Json::object({
+    "ts": Json::string(self.ts),
+    "agent": Json::string(self.agent),
+    "scope": Json::string(self.scope),
+    "reason": Json::string(self.reason),
+    "lock_id": Json::string(self.lock_id),
+  })
 }
 
 ///|
@@ -161,6 +254,9 @@ impl Store for MemoryStore with fn clear(self) {
   self.reservations.clear()
   // 执行者能力注册也在清空范围（防测试/scratch 注册跨次残留，R31）
   self.executors.clear()
+  // 文件锁与违例记录也在清空范围
+  self.file_locks.clear()
+  self.lock_violations.clear()
 }
 
 ///|
@@ -370,6 +466,65 @@ pub fn StoreBackend::executor_clear(self : StoreBackend) -> Bool {
   match self {
     Mem(m) => m.executor_clear()
     Sql(s) => s.executor_clear()
+  }
+}
+
+// —— 分布式文件锁（StoreBackend 统一分发）——
+
+///|
+pub fn StoreBackend::locks_upsert(self : StoreBackend, lock : FileLock) -> Unit {
+  match self {
+    Mem(m) => m.locks_upsert(lock)
+    Sql(s) => s.locks_upsert(lock)
+  }
+}
+
+///|
+pub fn StoreBackend::locks_get(
+  self : StoreBackend,
+  scope : String,
+) -> FileLock? {
+  match self {
+    Mem(m) => m.locks_get(scope)
+    Sql(s) => s.locks_get(scope)
+  }
+}
+
+///|
+pub fn StoreBackend::locks_list(self : StoreBackend) -> Array[FileLock] {
+  match self {
+    Mem(m) => m.locks_list()
+    Sql(s) => s.locks_list()
+  }
+}
+
+///|
+pub fn StoreBackend::locks_release(
+  self : StoreBackend,
+  scope : String,
+  agent : String,
+) -> Bool {
+  match self {
+    Mem(m) => m.locks_release(scope, agent)
+    Sql(s) => s.locks_release(scope, agent)
+  }
+}
+
+///|
+pub fn StoreBackend::locks_sweep(self : StoreBackend, now : String) -> Int {
+  match self {
+    Mem(m) => m.locks_sweep(now)
+    Sql(s) => s.locks_sweep(now)
+  }
+}
+
+///|
+pub fn StoreBackend::lock_violations_list(
+  self : StoreBackend,
+) -> Array[LockViolation] {
+  match self {
+    Mem(m) => m.lock_violations_list()
+    Sql(s) => s.lock_violations_list()
   }
 }
 

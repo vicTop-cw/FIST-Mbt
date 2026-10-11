@@ -262,3 +262,112 @@ test "rsv_try_set：空闲/活体冲突/续期/过期让渡，两后端逐字段
     }
   }
 }
+
+// —— 分布式文件锁双后端测试 ——
+
+///|
+test "locks 内存后端：获取/释放/续期/过期清理/违例记录" {
+  let b = @store.StoreBackend::memory()
+  let ts = "2026-10-11T10:00:00Z"
+  // ① 获取锁
+  let l1 = @store.FileLock::new(
+    lock_id="lock-1",
+    batch_id="batch-1",
+    scope="src/a.mbt",
+    agent="exec_1",
+    status="active",
+    ts~,
+    ttl_until="2026-10-11T11:00:00Z",
+    meta="",
+  )
+  b.locks_upsert(l1)
+  match b.locks_get("src/a.mbt") {
+    Some(l) => {
+      assert_eq(l.lock_id, "lock-1")
+      assert_eq(l.agent, "exec_1")
+      assert_eq(l.status, "active")
+    }
+    None => abort("src/a.mbt 应有锁")
+  }
+  // ② 他人抢占 active 锁 → 记违例
+  let l2 = @store.FileLock::new(
+    lock_id="lock-2",
+    batch_id="batch-1",
+    scope="src/a.mbt",
+    agent="exec_2",
+    status="active",
+    ts="2026-10-11T10:30:00Z",
+    ttl_until="2026-10-11T12:00:00Z",
+    meta="",
+  )
+  b.locks_upsert(l2)
+  let violations = b.lock_violations_list()
+  assert_eq(violations.length(), 1)
+  assert_eq(violations[0].reason, "lock_taken_over")
+  assert_eq(violations[0].lock_id, "lock-1")
+  // ③ 非持有者释放失败
+  assert_false(b.locks_release("src/a.mbt", "exec_1"))
+  // ④ 持有者释放成功
+  assert_true(b.locks_release("src/a.mbt", "exec_2"))
+  match b.locks_get("src/a.mbt") {
+    Some(l) => assert_eq(l.status, "released")
+    None => abort("src/a.mbt 应有 released 锁记录")
+  }
+  // ⑤ 过期清理
+  let l3 = @store.FileLock::new(
+    lock_id="lock-3",
+    batch_id="batch-2",
+    scope="src/b.mbt",
+    agent="exec_3",
+    status="active",
+    ts="2026-10-11T08:00:00Z",
+    ttl_until="2026-10-11T09:00:00Z",
+    meta="",
+  )
+  b.locks_upsert(l3)
+  let swept = b.locks_sweep("2026-10-11T10:00:00Z")
+  assert_eq(swept, 1)
+  match b.locks_get("src/b.mbt") {
+    Some(l) => assert_eq(l.status, "expired")
+    None => abort("src/b.mbt 应有 expired 锁记录")
+  }
+  let violations2 = b.lock_violations_list()
+  assert_eq(violations2.length(), 2)
+  assert_eq(violations2[1].reason, "lock_expired")
+}
+
+///|
+test "locks clear() 会一并清空锁与违例" {
+  let b = @store.StoreBackend::memory()
+  let l = @store.FileLock::new(
+    lock_id="lock-1",
+    batch_id="b1",
+    scope="src/x.mbt",
+    agent="a",
+    ts="2026-10-11T10:00:00Z",
+    ttl_until="2026-10-11T11:00:00Z",
+  )
+  b.locks_upsert(l)
+  b.clear()
+  assert_true(b.locks_get("src/x.mbt") is None)
+  assert_eq(b.lock_violations_list().length(), 0)
+}
+
+///|
+test "locks FileLock::renew 重置 ttl 与 status" {
+  let l = @store.FileLock::new(
+    lock_id="lock-1",
+    batch_id="b1",
+    scope="src/y.mbt",
+    agent="a",
+    status="expired",
+    ts="2026-10-11T08:00:00Z",
+    ttl_until="2026-10-11T09:00:00Z",
+  )
+  let r = l.renew(ttl_until="2026-10-11T12:00:00Z", ts="2026-10-11T10:00:00Z")
+  assert_eq(r.lock_id, "lock-1")
+  assert_eq(r.agent, "a")
+  assert_eq(r.status, "active")
+  assert_eq(r.ttl_until, "2026-10-11T12:00:00Z")
+  assert_eq(r.ts, "2026-10-11T10:00:00Z")
+}

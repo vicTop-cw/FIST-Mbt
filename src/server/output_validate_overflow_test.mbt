@@ -1,3 +1,4 @@
+///|
 /// output_validate_overflow_test.mbt —— R12-R8 bugfind：验证 ov_parse_int 的 int_safe
 /// 上界守卫（BUG-221：旧实现缺守卫，长数字串溢出 Int32）。
 /// 该函数是文件私有，故测试放在同包（server）内。

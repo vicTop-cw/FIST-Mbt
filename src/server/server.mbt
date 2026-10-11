@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 136 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 140 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -4365,6 +4365,194 @@ pub async fn run_server() -> Unit {
       )
     },
   )
+  // —— 分布式文件锁（4 个工具：acquire / renew / release / status）——
+  s1 = instrumented_tool(
+    s1,
+    "lock_acquire",
+    "获取文件作用域锁。参数：lock_id、batch_id、scope、agent、ttl_until、ts(可选，默认当前时间)、meta(可选)。若作用域已被他人持有且未过期，旧锁记为违例(lock_taken_over)。",
+    schema(
+      {
+        "lock_id": string_prop("锁唯一 id（必填）"),
+        "batch_id": string_prop("批次 id（必填）"),
+        "scope": string_prop("作用域，文件/目录路径（必填）"),
+        "agent": string_prop("持有者（必填）"),
+        "ttl_until": string_prop("锁过期时间 ISO 字符串（必填）"),
+        "ts": string_prop("获取时间戳（可选，默认当前时间）"),
+        "meta": string_prop("元数据 JSON 字符串（可选）"),
+      },
+      ["lock_id", "batch_id", "scope", "agent", "ttl_until"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let lock_id = get_str(args, "lock_id")
+      let batch_id = get_str(args, "batch_id")
+      let scope = get_str(args, "scope")
+      let agent = get_str(args, "agent")
+      let ttl_until = get_str(args, "ttl_until")
+      let ts = get_str(args, "ts", default=now_default())
+      let meta = get_str(args, "meta", default="")
+      let lock = @store.FileLock::new(
+        lock_id~,
+        batch_id~,
+        scope~,
+        agent~,
+        status="active",
+        ts~,
+        ttl_until~,
+        meta~,
+      )
+      engine.locks_upsert(lock)
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "lock_id": Json::string(lock_id),
+            "scope": Json::string(scope),
+            "agent": Json::string(agent),
+            "status": Json::string("active"),
+            "ttl_until": Json::string(ttl_until),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "lock_renew",
+    "续期文件锁。参数：lock_id、scope、agent、ttl_until(新过期时间)、ts(可选)。仅持有者可续；找不到锁或非持有者返回错误。",
+    schema(
+      {
+        "lock_id": string_prop("锁 id（必填）"),
+        "scope": string_prop("作用域（必填）"),
+        "agent": string_prop("持有者（必填）"),
+        "ttl_until": string_prop("新的过期时间 ISO 字符串（必填）"),
+        "ts": string_prop("续期时间戳（可选，默认当前时间）"),
+      },
+      ["lock_id", "scope", "agent", "ttl_until"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let lock_id = get_str(args, "lock_id")
+      let scope = get_str(args, "scope")
+      let agent = get_str(args, "agent")
+      let ttl_until = get_str(args, "ttl_until")
+      let ts = get_str(args, "ts", default=now_default())
+      match engine.locks_get(scope) {
+        None => Err(@mcp_types.ToolError("lock not found for scope: " + scope))
+        Some(l) if l.agent != agent =>
+          Err(@mcp_types.ToolError("lock held by another agent: " + l.agent))
+        Some(l) => {
+          let renewed = l.renew(ttl_until~, ts~)
+          engine.locks_upsert(renewed)
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "lock_id": Json::string(lock_id),
+                "scope": Json::string(scope),
+                "agent": Json::string(agent),
+                "status": Json::string("active"),
+                "ttl_until": Json::string(ttl_until),
+              }).stringify(),
+            ),
+          )
+        }
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "lock_release",
+    "释放文件锁。参数：scope、agent。仅持有者可释放，返回 released:bool。",
+    schema(
+      {
+        "scope": string_prop("作用域（必填）"),
+        "agent": string_prop("持有者（必填）"),
+      },
+      ["scope", "agent"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let scope = get_str(args, "scope")
+      let agent = get_str(args, "agent")
+      let ok = engine.locks_release(scope, agent)
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "scope": Json::string(scope),
+            "released": Json::boolean(ok),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "lock_status",
+    "查询文件锁状态。参数：scope(可选)。不传 scope 返回全部锁 + 违例记录 + 过期清理数。",
+    schema(
+      {
+        "scope": string_prop("作用域（可选）"),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let now = now_default()
+      // 每次查询都先扫一遍过期锁
+      let swept = engine.locks_sweep(now)
+      let violations = engine.lock_violations_list()
+      let maybe_scope = match args {
+        Object(map) =>
+          match map.get("scope") {
+            Some(String(s)) => Some(s)
+            _ => None
+          }
+        _ => None
+      }
+      match maybe_scope {
+        Some(scope) =>
+          match engine.locks_get(scope) {
+            None =>
+              Ok(
+                @mcp.ToolResult::text(
+                  Json::object({
+                    "scope": Json::string(scope),
+                    "locked": Json::boolean(false),
+                    "swept": Json::number(swept.to_double()),
+                    "violations_count": Json::number(
+                      violations.length().to_double(),
+                    ),
+                  }).stringify(),
+                ),
+              )
+            Some(l) =>
+              Ok(
+                @mcp.ToolResult::text(
+                  Json::object({
+                    "scope": Json::string(scope),
+                    "locked": Json::boolean(l.status == "active"),
+                    "lock": l.to_json(),
+                    "swept": Json::number(swept.to_double()),
+                    "violations_count": Json::number(
+                      violations.length().to_double(),
+                    ),
+                  }).stringify(),
+                ),
+              )
+          }
+        None => {
+          let locks = engine.locks_list()
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "locks": Json::array(locks.map(fn(l) { l.to_json() })),
+                "violations": Json::array(violations.map(fn(v) { v.to_json() })),
+                "swept": Json::number(swept.to_double()),
+                "violations_count": Json::number(
+                  violations.length().to_double(),
+                ),
+              }).stringify(),
+            ),
+          )
+        }
+      }
+    },
+  )
   s1 = instrumented_tool(
     s1,
     "dag_check",
@@ -5002,7 +5190,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "report_bug",
-    "上报一个运行时 bug：追加到 {project_dir}/memory/bugs.md（OPEN 状态账本）。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（**绝对** + normalize 后的落点）与 server_cwd（server 进程自己的工作目录，同样规范化成正斜杠）——BUG-134：这一句从前是真的悬空（实现回显的是相对 server cwd 的规范化路径，账写进哪本台账从回执本身判不出来），现在两者同批回显，一比就知道有没有写错轨；server_cwd 为空串表示宿主取不到 cwd，此时 resolved_path 退回相对形态，别当绝对落点读。参数：project_dir(必填)、summary(必填)、detail(可选)、severity(可选 open/critical/high/medium/low)、ref_call_id(可选，指向 call_log 的 seq)、reported_by(可选)、publish_task(可选默认false)：为 true 时同时把'修复 bug: <summary>'发布为独立根任务，供自驱/定时流水线认领修复，形成上报→修复闭环；task_ns(可选，缺省 bugs)：修复单落到哪个命名空间——想与本批次任务树同库对账就显式传它，否则默认落在 ns `bugs`（那是另一棵树，按批次 ns 查会查不到，BUG-8）；auto_push(可选默认false)：上报后立即尝试推送到远端 issue 系统——GitHub 优先，失败自动切 GitCode fallback；remote_fallback(可选默认 '[\"github\",\"gitcode\"]')：远端 fallback 顺序 JSON 数组字符串，auto_push=true 时生效。返回 {bug_id, id, status, path, resolved_path, server_cwd, project_dir, task_namespace, task_id?, auto_push?}：**bug_id 与 id 是同一个编号的两个键**（BUG-11：写侧只发 bug_id、读侧 bug_list 只发 id，按任一侧字段名对账的另一侧会静默拿到 null）；task_namespace 回显修复单实际落在哪个 ns（未发单时是空串，不是 'bugs'）。**账本状态**（OPEN/FIXED/DUPLICATE/FALSE_POSITIVE）写在条目抬头，改它走 `bug_fix`（标修好，同一笔落 ### FIXED 小记）或 `bug_mark_status`（改判 OPEN/DUPLICATE/FALSE_POSITIVE）——BUG-9 之前这里写着「本模块不提供关闭 API」，账本因此只写不销；对外那句「X 条待修 / Y 条已修」只从抬头状态反解，不是数小记条数。",
+    "上报一个运行时 bug：追加到 {project_dir}/memory/bugs.md（OPEN 状态账本）。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（**绝对** + normalize 后的落点）与 server_cwd（server 进程自己的工作目录，同样规范化成正斜杠）——BUG-134：这一句从前是真的悬空（实现回显的是相对 server cwd 的规范化路径，账写进哪本台账从回执本身判不出来），现在两者同批回显，一比就知道有没有写错轨；server_cwd 为空串表示宿主取不到 cwd，此时 resolved_path 退回相对形态，别当绝对落点读。参数：project_dir(必填)、summary(必填)、detail(可选)、severity(可选 critical/high/medium/low)、ref_call_id(可选，指向 call_log 的 seq)、reported_by(可选)、publish_task(可选默认false)：为 true 时同时把'修复 bug: <summary>'发布为独立根任务，供自驱/定时流水线认领修复，形成上报→修复闭环；task_ns(可选，缺省 bugs)：修复单落到哪个命名空间——想与本批次任务树同库对账就显式传它，否则默认落在 ns `bugs`（那是另一棵树，按批次 ns 查会查不到，BUG-8）；auto_push(可选默认false)：上报后立即尝试推送到远端 issue 系统——GitHub 优先，失败自动切 GitCode fallback；remote_fallback(可选默认 '[\"github\",\"gitcode\"]')：远端 fallback 顺序 JSON 数组字符串，auto_push=true 时生效。返回 {bug_id, id, status, path, resolved_path, server_cwd, project_dir, task_namespace, task_id?, auto_push?}：**bug_id 与 id 是同一个编号的两个键**（BUG-11：写侧只发 bug_id、读侧 bug_list 只发 id，按任一侧字段名对账的另一侧会静默拿到 null）；task_namespace 回显修复单实际落在哪个 ns（未发单时是空串，不是 'bugs'）。**账本状态**（OPEN/FIXED/DUPLICATE/FALSE_POSITIVE）写在条目抬头，改它走 `bug_fix`（标修好，同一笔落 ### FIXED 小记）或 `bug_mark_status`（改判 OPEN/DUPLICATE/FALSE_POSITIVE）——BUG-9 之前这里写着「本模块不提供关闭 API」，账本因此只写不销；对外那句「X 条待修 / Y 条已修」只从抬头状态反解，不是数小记条数。",
     schema(
       {
         "project_dir": string_prop(
@@ -6742,4 +6930,3 @@ pub async fn run_server() -> Unit {
 pub fn get_version() -> String {
   project_version
 }
-

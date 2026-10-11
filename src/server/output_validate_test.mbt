@@ -195,7 +195,9 @@ test "ov_7_external_artifact_ok" {
   let r = output_validate(
     d,
     artifacts,
-    ov_ext_stdout("moon_test", true, "Total tests: 645, passed: 645, failed: 0."),
+    ov_ext_stdout(
+      "moon_test", true, "Total tests: 645, passed: 645, failed: 0.",
+    ),
     "",
     require_evidence=false,
   )
@@ -444,14 +446,14 @@ test "ov_17_moon_auto_gate_failed0_pass" {
   ov_write(d, "main.mbt", "fn main() {}\n")
   let artifacts : Array[Json] = [
     Json::object({ "path": Json::string("main.mbt") }),
-    Json::object({
-      "check_key": Json::string("moon_test"),
-    }),
+    Json::object({ "check_key": Json::string("moon_test") }),
   ]
   let r = output_validate(
     d,
     artifacts,
-    ov_ext_stdout("moon_test", true, "Total tests: 645, passed: 645, failed: 0."),
+    ov_ext_stdout(
+      "moon_test", true, "Total tests: 645, passed: 645, failed: 0.",
+    ),
     "",
     require_evidence=false,
   )
@@ -466,14 +468,14 @@ test "ov_18_moon_auto_gate_failed_gt0_fail" {
   ov_write(d, "main.mbt", "fn main() {}\n")
   let artifacts : Array[Json] = [
     Json::object({ "path": Json::string("main.mbt") }),
-    Json::object({
-      "check_key": Json::string("moon_test"),
-    }),
+    Json::object({ "check_key": Json::string("moon_test") }),
   ]
   let r = output_validate(
     d,
     artifacts,
-    ov_ext_stdout("moon_test", true, "Total tests: 645, passed: 643, failed: 2."),
+    ov_ext_stdout(
+      "moon_test", true, "Total tests: 645, passed: 643, failed: 2.",
+    ),
     "",
     require_evidence=false,
   )
@@ -489,9 +491,7 @@ test "ov_19_moon_auto_gate_no_summary_fail" {
   ov_write(d, "main.mbt", "fn main() {}\n")
   let artifacts : Array[Json] = [
     Json::object({ "path": Json::string("main.mbt") }),
-    Json::object({
-      "check_key": Json::string("moon_test"),
-    }),
+    Json::object({ "check_key": Json::string("moon_test") }),
   ]
   let r = output_validate(
     d,
@@ -511,15 +511,15 @@ test "ov_20_non_moon_key_no_auto_gate" {
   ov_write(d, "main.mbt", "fn main() {}\n")
   let artifacts : Array[Json] = [
     Json::object({ "path": Json::string("main.mbt") }),
-    Json::object({
-      "check_key": Json::string("linter_check"),
-    }),
+    Json::object({ "check_key": Json::string("linter_check") }),
   ]
   // stdout 里有 Total tests 但 key 不匹配，不应触发自动 gate
   let r = output_validate(
     d,
     artifacts,
-    ov_ext_stdout("linter_check", true, "Total tests: 645, passed: 643, failed: 2."),
+    ov_ext_stdout(
+      "linter_check", true, "Total tests: 645, passed: 643, failed: 2.",
+    ),
     "",
     require_evidence=false,
   )

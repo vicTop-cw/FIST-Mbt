@@ -50,7 +50,9 @@ fn is_notification_message(message : String) -> Bool {
 }
 
 ///|
-async fn run_stdio_target(s1 : @mcp.MCPServer) -> Unit {
+async fn run_stdio_target(s : @mcp.MCPServer) -> Unit {
+  // 挂载 mcpconftest 嵌入层的 mcpcf.* 内部工具（ops_init/run_batch/verify/watchdog/report/circuit/review）
+  let s1 = embed_mcpcf_tools(s)
   let stdin_web = js_stdin_web().wait() catch {
     _ => {
       js_eprintline("fist-mbt: cannot bridge process.stdin")

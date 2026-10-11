@@ -477,6 +477,15 @@ test "pipeline_19_rubric_detect_false_empty" {
 }
 
 ///|
+/// Tool Use Rubric 判定（BUG-146 反 spoof 锁）：仅结束标记（夹空白/换行）但无真实正文
+/// 不得判 true——否则只贴一个结束标记就能绕过自检。
+test "pipeline_22_rubric_detect_false_marker_only" {
+  assert_eq(pipeline_has_rubric("<!-- TOOL_USE_RUBRIC_END -->"), false)
+  assert_eq(pipeline_has_rubric("  \n<!-- TOOL_USE_RUBRIC_END -->\n  "), false)
+  assert_eq(pipeline_has_rubric("\n\n<!-- TOOL_USE_RUBRIC_END -->\n\n"), false)
+}
+
+///|
 /// prompt_ready 阶段：提示词含 rubric → 回执 `tool_use_rubric=true` 且 action=prompt_pending。
 test "pipeline_20_prompt_ready_with_rubric" {
   let dir = pl_dir("pl_c20_rubric_yes")

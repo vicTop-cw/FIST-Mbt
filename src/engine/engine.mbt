@@ -1434,6 +1434,7 @@ pub fn FistEngine::ready_tasks(
   ready
 }
 
+///|
 /// 判断 `dep_ids` 是否全部在 `completed` 映射中为已完成。
 /// 供 `ready_tasks` / `parallelism` 在 O(1) Map 查询下做依赖判断
 /// （替代逐条 `store.get_task`）。pub 以便 `engine_dag_ext` 复用。

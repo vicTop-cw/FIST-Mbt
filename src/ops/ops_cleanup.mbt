@@ -20,7 +20,9 @@ pub fn cleanup_archived(
   }
   // retention_days 上限：使 retention_days*86400 <= Int32 上界，即 <= 24855 天
   if retention_days > 24855 {
-    return Err("cleanup: 保留期过大（>24855 天，会溢出 32 位秒数）")
+    return Err(
+      "cleanup: 保留期过大（>24855 天，会溢出 32 位秒数）",
+    )
   }
   let threshold = now_s - retention_days * 86400
   let removed : Array[String] = []

@@ -163,7 +163,15 @@ pub fn run_check_workdir_ok(String, String) -> Bool
 
 pub async fn run_server() -> Unit
 
-pub fn scan_finding_guarded(String, String, Array[String]) -> Bool
+pub struct ScanCtx {
+  safe_clamps: Map[String, String]
+  guarded_lines: Map[Int, Bool]
+  slice_only: Bool
+}
+
+pub fn scan_build_ctx(String) -> ScanCtx
+
+pub fn scan_finding_guarded(String, String, Array[String], ScanCtx?, String?, Int?) -> Bool
 
 pub fn selfdrive_round_tick(Json) -> Json
 

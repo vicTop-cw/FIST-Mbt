@@ -1,10 +1,15 @@
+///|
 /// issue_scan_secs_overflow_test.mbt —— R12-R7 bugfind：验证 issue_scan 的 secs-overflow
 /// 规则存在（BUG-217/218/219 教训：*86400 是 Int32 溢出重灾区，旧规则只匹配 * 10）。
 test "secs-overflow 规则存在且可统计" {
   // 建独立用例目录，注入一个含 * 86400 的 .mbt 文件
-  @fs.create_dir("temp") catch { _ => () }
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
   let d = "temp/lint_secs"
-  @fs.create_dir(d) catch { _ => () }
+  @fs.create_dir(d) catch {
+    _ => ()
+  }
   let body = "/// overflow case\n" +
     "pub fn f(days: Int) -> Int {\n" +
     "  days * 86400\n" +

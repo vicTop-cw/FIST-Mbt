@@ -1,5 +1,8 @@
 .DS_Store
 _build/
+_build_mcpcf/
+_proj_vools/
+moon.mod.bak-mcpcf
 /target/
 .mooncakes/
 # `moon vendor` 落盘的依赖实体副本（如 vendor/mizchi-sqlite-fixed/）——工具生成的依赖物化，

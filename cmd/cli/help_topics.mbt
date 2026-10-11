@@ -8,7 +8,7 @@ pub fn list_topics() -> String {
   let v = FIST_VERSION
   "FIST-Mbt Help  v" +
   v +
-  "  (136 MCP tools)\n" +
+  "  (140 MCP tools)\n" +
   "\n" +
   "Usage: fist help <topic>\n" +
   "Topics: overview / cli / tools / mcp / plugins / install\n" +
@@ -23,7 +23,7 @@ pub fn help_overview() -> String {
   " ===\n" +
   "\n" +
   "Pure MoonBit AI commander orchestration, exposed as MCP Server.\n" +
-  "136 MCP tools / 3 resources / 2 prompts.\n" +
+  "140 MCP tools / 3 resources / 2 prompts.\n" +
   "\n" +
   "Lifecycle: publish -> plan -> claim -> execute -> submit -> verify -> archive\n" +
   "Self-drive: selfdrive_init -> review -> publish_next -> triage\n" +
@@ -53,13 +53,13 @@ pub fn help_tools() -> String {
   let v = FIST_VERSION
   "=== " +
   v +
-  "  136 MCP tools (14 groups) ===\n" +
+  "  140 MCP tools (14 groups) ===\n" +
   "\n" +
   "  [Lifecycle 14] publish publish_parallel plan claim execute submit verify reject retry pause resume reopen_task archive delete\n" +
   "  [Query 2] list get\n" +
   "  [Ops 14] task_plan_deep conflicts_check heartbeat heal watchdog_tick task_cleanup phi_accrual saga_register saga_rollback saga_repair circuit_fail circuit_succeed circuit_status tx_contract\n" +
   "  [Ops-Log-Bug-Cost 21] call_log bug_list bug_fix bug_mark_status report_bug issue_scan eval_feedback run_check output_validate project_standards schedule pipeline_tick cost_stats cost_budget_check cost_budget_split progress_gate laya_decide loop_create loop_tick loop_status mcp_config_scaffold\n" +
-  "  [Board-DAG 23] dag_critical_path dag_parallelism dag_ascii dag_check dag_ready dag_sort dag_depend dag_publish dag_slack dag_schedule dag_cost_route dag_mc plan_revise goal_drift_check board_ascii state_flow_ascii status_summary project_health health_check reserve_scope reserve_check reserve_release task_triage\n" +
+  "  [Board-DAG 27] dag_critical_path dag_parallelism dag_ascii dag_check dag_ready dag_sort dag_depend dag_publish dag_slack dag_schedule dag_cost_route dag_mc plan_revise goal_drift_check board_ascii state_flow_ascii status_summary project_health health_check reserve_scope reserve_check reserve_release lock_acquire lock_renew lock_release lock_status task_triage\n" +
   "  [Selfdrive 9] selfdrive_init selfdrive_append selfdrive_get selfdrive_export_tasks selfdrive_review_tick selfdrive_review_ready selfdrive_publish_next selfdrive_parse_next_tasks selfdrive_pick_next\n" +
   "  [Marketplace 5] executor_register executor_route executor_auction executor_clear selfdrive_dispatch\n" +
   "  [Memory-Evolve 11] memory_consolidate memory_gc memory_link evolve_submit evolve_sample evolve_snapshot evolve_distill evolve_lesson evolve_critic evolve_asset_register task_challenge\n" +
