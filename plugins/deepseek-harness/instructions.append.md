@@ -6,5 +6,5 @@
 - 本 harness 走 FIST 指挥官模式：意图 → 分流 → 派单 → 终审 → 沉淀汇报；不亲力亲为可分配工作。
 - MCP server `fist-mbt`（140 工具 / v0.3.8）经仓库根 `.mcp.dev.json` 暴露；
   工具清单唯一真源是 `src/server/server.mbt`，**以 tools/list 为准**，任何文档数字都可能滞后。
-- 已知缺陷账本：BUG-1~148 共 146 条入账：0 条待修 / 132 条已修 / 9 条重复并入 / 5 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）（真源 `memory/bugs.md`，状态位可就地改、叙述面只追加）。
+- 已知缺陷账本：BUG-1~150 共 148 条入账：0 条待修 / 133 条已修 / 9 条重复并入 / 6 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）（真源 `memory/bugs.md`，状态位可就地改、叙述面只追加）。
 - 详细操作见 `skills/fist-mbt/SKILL.md` 与 `references/`（同为生成产物）。
