@@ -241,6 +241,22 @@ AIGC:
   `int_safe` 前置守卫等），无需改动；`secs-overflow` 规则本轮 0 命中——说明
   R7 加的 `* 86400` 守卫覆盖到位。
 
+## v0.3.8 (R12-P10：Round 10 [寻虫→修复]：dag_slack_analysis 回传 order，消除 dag_cost_route 重复 Kahn) - 2026-10-11
+
+### 本轮性质：Round 9 遗留项收口——跨函数重复拓扑序的最后一处
+
+- **dag_slack_analysis 返回里新增 `order` 字段（BUG-226，commit `f086d98`）**：
+  `dag_cost_route` 之前调 `dag_slack_analysis()`（内部跑 `dag_topo_order()` 一次）
+  后又直接调 `dag_topo_order()`——重复一次全库 read + 一次 Kahn 遍历。
+  修复：`dag_slack_analysis` 把 topo order 一并回传（新增 `order` 字段），
+  `dag_cost_route` 直接解析复用，带 fallback（解析失败再回退 `dag_topo_order()`，
+  防外部旧调用）。至此 DAG 调度底座 **`dag_topo_order` / `dag_slack_analysis` /
+  `dag_schedule` / `dag_cost_route` 四函数内的 `list_all()` 与 `dag_topo_order()`
+  调用全部收敛为一次**。
+
+- **遗留项**：Round 9 报告 §七 里明确记录的 `dag_cost_route` 重复拓扑序，本轮
+  关闭；DAG 底座性能收敛主线完成。
+
 ## v0.3.8 (R8-R10 迭代：预执行审计门禁占位符拦截 + 文档面守卫 J15) - 2026-10-11
 
 ### 本轮性质：功能加固（审计门禁扩展）+ 判据扩展（check_doc_surface J15）
