@@ -111,6 +111,16 @@ fn scan_rules() -> Array[ScanRule] {
       why: "空集合取单例元素可能返回默认/越界，须判空",
       hint: "用 get(0) Option 语义或先判空",
     },
+    {
+      // R12-R7 bugfind（BUG-217/218/219 教训）：`*86400` 是 Int32 溢出重灾区——
+      // 一天 86400 秒是大系数，任何天数×86400 超过 24855 天就溢出。
+      // 旧 `possible-overflow` 只匹配 `* 10`/`to_int()*`，漏掉了这个家族。
+      id: "secs-overflow",
+      severity: "medium",
+      pattern: ["* 86400", "*86400"],
+      why: "Int32 下 days*86400 超过 24855 天（约 68 年）即溢出（绕回不是 panic），timestamp 函数是重灾区（Y2038 问题）",
+      hint: "加天数上界守卫（如 if days > 24855 兜底），或改用 Int64",
+    },
   ]
   r
 }
