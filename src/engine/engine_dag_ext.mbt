@@ -300,7 +300,10 @@ fn FistEngine::dag_topo_order(
 pub fn FistEngine::dag_slack_analysis(self : FistEngine) -> Json {
   let (order, cycle) = self.dag_topo_order()
   let ids : Array[String] = []
-  for t in self.list_all() {
+  // R12-R9 性能：与 dag_topo_order 同款——旧代码把 list_all() 调两次
+  //（一次取 ids、一次建 reverse 边）。一次读、两循环共用。
+  let tasks_all = self.list_all()
+  for t in tasks_all {
     ids.push(t.get_id())
   }
   // earliest: 前向——依赖全就绪的最早开始
@@ -338,7 +341,7 @@ pub fn FistEngine::dag_slack_analysis(self : FistEngine) -> Json {
   for id in ids {
     rev.set(id, [])
   }
-  for t in self.list_all() {
+  for t in tasks_all {
     for d in t.depends_on {
       rev.set(d, rev.get(d).unwrap_or([]) + [t.get_id()])
     }
@@ -396,7 +399,9 @@ pub fn FistEngine::dag_slack_analysis(self : FistEngine) -> Json {
 pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
   let slack = self.dag_slack_analysis()
   let ids : Array[String] = []
-  for t in self.list_all() {
+  // R12-R9 性能：同款双 list_all()——一次取 ids、一次统计负载。一次读、两循环共用。
+  let tasks_all = self.list_all()
+  for t in tasks_all {
     ids.push(t.get_id())
   }
   // 负载感知：统计各已注册执行者名下活跃（未完成未归档）任务数
@@ -408,7 +413,7 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
   for n in reg_names {
     load.set(n, 0)
   }
-  for t in self.list_all() {
+  for t in tasks_all {
     match t.assignee {
       Some(a) =>
         if load.contains(a) {
