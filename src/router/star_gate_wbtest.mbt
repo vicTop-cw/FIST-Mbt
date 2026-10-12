@@ -310,3 +310,30 @@ test "star_gate_policy 齐备但 login 不在名单 → 拦截，verdict=NoSuchU
   inspect(p.free_pool_unlocked, content="false")
   inspect(p.verdict, content="Some(NoSuchUser)")
 }
+
+///|
+test "star_gate_release_default_pubkey_hex 是合法 Ed25519 公钥（64 hex / 32 字节）" {
+  let hex = star_release_default_pubkey_hex
+  if hex.length() != 64 {
+    fail(
+      "发布默认公钥必须是 64 hex 字符，实际长度 \{hex.length()}：\{hex}",
+    )
+  }
+  match hex_decode(hex) {
+    Ok(b) =>
+      if b.length() != 32 {
+        fail(
+          "发布默认公钥解码后不是 32 字节：长度 \{b.length()}",
+        )
+      }
+    Err(e) => fail("发布默认公钥 hex 解码失败：\{e}")
+  }
+}
+
+///|
+test "star_gate_release_default_pubkey_hex 与发布模板 .mcp.example.json 钉死值一致" {
+  // 单一真源锁：路由侧常量必须 == 发布模板里 FIST_STAR_GATE_PUBKEY_HEX 的值。
+  // 换钥必须同步改这两处 + 仓库 secret ED25519_PRIVATE_KEY_HEX，否则验签不过全员锁死。
+  let template_pinned_hex = "01773e6ed3ff3fceaaf545a3f26a9627a0e91e736e6a3ed353ac3d6bb5a3f32a"
+  assert_eq(star_release_default_pubkey_hex, template_pinned_hex)
+}

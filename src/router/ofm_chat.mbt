@@ -68,6 +68,15 @@ pub fn build_ofm_chat_request_json(
     Some(n) => body.set("max_tokens", Json::number(n.to_double()))
     None => ()
   }
+  // 实读校正（2026-10-12 实机）：不带 response_format 时免费模型常回 markdown 围栏 + 多行 JSON，
+  // 模型把真换行写进 content 会**破坏外层回体的 JSON 信封**（整包 unparseable，
+  // ofm_response 判 `OFM 回体不是合法 JSON`，executor_run 整个失败）。带
+  // `response_format={"type":"json_object"}` 后回体是**单行、无围栏**的干净 JSON，信封不再被破坏。
+  // 该参数是 OpenAI 兼容标准位，多数网关接受；不接受者会显式报错，不会被静默忽略。
+  body.set(
+    "response_format",
+    Json::object({ "type": Json::string("json_object") }),
+  )
   Ok(Json::object(body).stringify())
 }
 

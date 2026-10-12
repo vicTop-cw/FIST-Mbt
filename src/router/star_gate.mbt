@@ -111,6 +111,24 @@ pub fn hex_encode(b : Bytes) -> String {
 }
 
 ///|
+/// 发布模板默认钉死的 Star 门公钥（Ed25519 公钥 hex，64 个 hex 字符）——**单一真源**。
+///
+/// `.mcp.example.json`（发布模板）里的 `FIST_STAR_GATE_PUBKEY_HEX` 必须等于本常量：部署态由此
+/// **默认开启 Star 门**，未提供有效 attestation 的用户（含未 star）免费池保持锁定
+/// （`star_gate_policy`：`pinned_key_hex` 非空 + `attestation_json` 空 → `gate_enabled=true`、
+/// `free_pool_unlocked=false`，fail-closed）。
+///
+/// 为什么公钥可以公开入库：公钥**不是**秘密；对应私钥由 owner 以仓库 secret
+/// `ED25519_PRIVATE_KEY_HEX` 保管（见 `.github/workflows/attest.yml`），**本仓绝不**含私钥。
+/// `attest.yml` 已用该私钥对「授权名单 + issued_at + ttl_seconds」做 Ed25519 签名并发布
+/// `_attest/attestation.json`；客户端用本公钥钉死验签（`star_gate_verify_pinned`）。
+///
+/// 换钥纪律：换本常量与换 `ED25519_PRIVATE_KEY_HEX` 必须**同步**，否则 attestation 验签不过、
+/// 全员锁死。默认未配置 env 时 `star_gate_policy` 保持「不设门」零回归（本地开发态）；
+/// 走发布模板部署态则由模板把这个公钥带进去 → 门默认开启。
+pub let star_release_default_pubkey_hex : String = "01773e6ed3ff3fceaaf545a3f26a9627a0e91e736e6a3ed353ac3d6bb5a3f32a"
+
+///|
 /// 从已解析的 Json 里提取验签所需字段。任一字段缺失或类型不符 → None（调用方按 BadFormat 处理）。
 fn star_extract_fields(j : Json) -> StarAttestData? {
   let list = match j.value("list") {
