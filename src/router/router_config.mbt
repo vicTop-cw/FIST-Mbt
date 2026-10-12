@@ -55,13 +55,46 @@ pub fn RouterConfig::from_json(json : Json) -> (RouterConfig, Array[String]) {
         "paid_pool",
         w1,
       )
+      // P0.1：OFM 外部端点。坏类型进 warnings 而非静默采纳（与 window_seconds 同纪律）。
+      // 这里**只读端点**：密钥不在此处解析，也不存在于 RouterConfig（见 to_json 注释）。
+      // 注意必须把端点警告**拼到 w2 之后再返回**：w1/w2 已经是在本函数早前快照的 warns 上
+      // 展开的，回头再往局部 `warns` 追加会丢掉（cfg_ofm_4 实测抓到过这条）。
+      let (ofm_endpoint, ofm_warns) = match m.get("ofm_endpoint") {
+        Some(Json::String(s)) => (s.trim().to_owned(), [])
+        Some(Json::Null) => ("", [])
+        Some(_) => ("", ["ofm_endpoint 非字符串，按未配置处理"])
+        None => ("", [])
+      }
       (
-        { window_seconds: ws2, threshold_pct: tp2, free_models, paid_models, },
-        w2,
+        {
+          window_seconds: ws2,
+          threshold_pct: tp2,
+          free_models,
+          paid_models,
+          ofm_endpoint,
+        },
+        w2 + ofm_warns,
       )
     }
     Json::Null => (d, []) // null = 没给配置，不算违例、不产噪音 warning
     _ => (d, ["配置不是 JSON 对象，整体回落默认配置"])
+  }
+}
+
+///|
+/// 读单模型的 `lane` 渠道元数据（P0.1）。返回 (lane, warnings)。
+/// 缺字段/null → 空串（未标注，语义是"未知"，不算违例）；坏类型 → 空串 + warning。
+/// 绝不猜一个渠道名填进去——猜错渠道比留空更危险（会把请求打到别的上游）。
+fn parse_lane(
+  v : Json?,
+  field : String,
+  name : String,
+) -> (String, Array[String]) {
+  match v {
+    Some(Json::String(s)) => (s.trim().to_owned(), [])
+    Some(Json::Null) | None => ("", [])
+    Some(_) =>
+      ("", [field + "." + name + " lane 非字符串，按未标注处理"])
   }
 }
 
@@ -98,6 +131,8 @@ fn parse_pool(
             if name == "" {
               w = w + [field + " 含缺 name 的条目，已跳过"]
             } else {
+              let (lane_v, lane_w) = parse_lane(mm.get("lane"), field, name)
+              w = w + lane_w
               let limit = match mm.get("limit") {
                 Some(Json::Number(n, ..)) =>
                   if n.to_int() < 0 {
@@ -124,7 +159,7 @@ fn parse_pool(
                 }
                 None => if tier == Free { 100 } else { 50 }
               }
-              out = out + [ModelQuota::new(name~, tier~, limit~)]
+              out = out + [ModelQuota::new(name~, tier~, limit~, lane=lane_v)]
             }
           }
           _ => w = w + [field + " 含非对象条目，已跳过"]
@@ -146,12 +181,38 @@ fn parse_pool(
 }
 
 ///|
-/// 配置导出（供 skill/文档展示当前生效档位；不含密钥）
+/// 配置导出（供 skill/文档展示当前生效档位）。
+///
+/// **投影面硬纪律（P0.1 白盒锁）**：本函数的输出会被四态投影到 skill/插件目录，
+/// 因此**不含、也永不许含任何凭据**。`ofm_endpoint` 是端点地址（非密钥），可以投影；
+/// `FIST_OFM_KEY` / `ofm_api_key` 一律只存在于进程环境变量，结构体里根本没有这个字段，
+/// 所以本函数没有可泄漏的路径——这条由 `router_config_wbtest.mbt` 的 cfg_ofm_1（凭据形状
+/// 扫描）与 cfg_ofm_2（顶层键集合钉死）两条锁钉住。
 pub fn RouterConfig::to_json(self : RouterConfig) -> Json {
   Json::object({
     "window_seconds": Json::number(self.window_seconds.to_double()),
     "threshold_pct": Json::number(self.threshold_pct),
     "free_pool": Json::array(self.free_models.map(fn(m) { m.to_json() })),
     "paid_pool": Json::array(self.paid_models.map(fn(m) { m.to_json() })),
+    "ofm_endpoint": Json::string(self.ofm_endpoint),
   })
+}
+
+///|
+/// OFM 端点解析（P0.1，纯计算零 IO）：**env 非空则 env 赢**，否则用 config_json 的值，
+/// 两者皆空 → 空串（未配置）。
+///
+/// 为什么 env 优先：端点属部署环境事实（同机端口可能被改），而 config_json 会随四态
+/// 投影进库、进插件目录；让 env 覆盖可以不改仓库文件就完成部署改道。
+/// 返回空串**不表示"默认端点"**——调用方必须显式处理"未配置"，不得静默回落某个地址。
+pub fn resolve_ofm_endpoint(
+  config_value : String,
+  env_value : String,
+) -> String {
+  let e = env_value.trim().to_owned()
+  if e != "" {
+    e
+  } else {
+    config_value.trim().to_owned()
+  }
 }

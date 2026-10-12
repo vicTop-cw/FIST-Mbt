@@ -94,6 +94,8 @@ pub fn parse_hats(Array[String]) -> Result[Array[Hat], String]
 
 pub fn parse_mode(String) -> Result[PipelineMode, String]
 
+pub fn pipeline_has_rubric(String) -> Bool
+
 pub fn pipeline_tick(@engine.FistEngine, String, String, ns? : String, timeout_sec? : Int, phase? : String, prompt_name? : String, mode? : String) -> Result[Json, String]
 
 pub fn preset_loop(String) -> Result[(Array[String], String), String]

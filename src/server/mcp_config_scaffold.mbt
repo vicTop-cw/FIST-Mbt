@@ -16,9 +16,15 @@
 /// 值走进程环境——这与 `FIST_PROJECT_DIR` / `FIST_DB_PATH` 是同一类通道。
 pub let mcp_env_whitelist : Array[String] = [
   "FIST_PROJECT_DIR", "FIST_DB_PATH", "FIST_GITHUB_ENABLED", "FIST_GITHUB_REPO",
-  "FIST_GITHUB_TOKEN", "FIST_GITCODE_TOKEN", "FIST_GITCODE_PROJECT_ID", "FIST_MODEL_API_BASE",
+  "FIST_GITHUB_TOKEN", "FIST_GITCODE_ENABLED", "FIST_GITCODE_TOKEN", "FIST_GITCODE_PROJECT_ID",
+  "FIST_MODEL_API_BASE",
   "FIST_MODEL_API_KEY", "FIST_RUN_CHECK_ALLOW", "FIST_SELF_OPENAI_BASE", "FIST_SELF_OPENAI_KEY",
-  "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL",
+  // P0.5：OFM 外部服务接线。端点走 env 可让部署改道不改仓库文件（见 resolve_ofm_endpoint）；
+  // 密钥 FIST_OFM_KEY 只作为**环境变量名**白名单，值永远走进程环境、绝不进配置投影面。
+   "FIST_OFM_ENDPOINT", "FIST_OFM_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL",
+  // 模型路由 Star 门（D1=A）：启用时钉死 Ed25519 公钥 hex + GitHub Pages attestation 正文 +
+  // 授权 login 名单；三者均以环境变量名入白名单，真值走进程环境、绝不进配置投影面。
+  "FIST_STAR_GATE_PUBKEY_HEX", "FIST_STAR_GATE_ATTESTATION_JSON", "FIST_STAR_GATE_USER_LOGIN",
 ]
 
 ///|

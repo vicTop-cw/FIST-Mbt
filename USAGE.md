@@ -446,6 +446,61 @@ def rpc(method, **payload):
 | `executor_clear` | 清空全部执行者能力注册（重置/整洁） | 无 |
 | `selfdrive_dispatch` | 能力路由自动派单：triage 取顶部 → 确定所需能力（显式 want 或从描述自动抽取）→ 按能力路由认领给最佳执行者（无匹配回退 agent） | namespace(选) agent(选) want(选) |
 
+### 6.15 模型路由 · OFM 外部服务接线（配置与环境变量）
+
+模型路由工具（`model_route` / `model_auth_status` / `model_router_status` / `model_router_reset`
+/ `executor_run`）支持把部分 lane 的请求转发到**外部 OFM 服务**（OpenAI 兼容端点）。本小节只讲
+**接线配置**——它属于「配置即文档」的可复现面；工具调用见 §6 与 AGENTS.md。
+
+#### 接线点在哪（`src/router/router_config.mbt` 真源）
+
+| 配置字段 | 语义 | 取值纪律 |
+|---|---|---|
+| `RouterConfig.ofm_endpoint` | OFM 服务 base URL | 默认空串 = **未配置**（不硬编码端点）；env `FIST_OFM_ENDPOINT` 优先于 config 值 |
+| `ModelQuota.lane` | 模型渠道元数据（如 zen / kilo / eac） | 空 = **未知**，绝不默认路由到某一渠道；lane 由配置显式声明 |
+| `free_pool` 每模型 `provider/lane` | 标记模型归属与渠道 | 与上面同一纪律 |
+
+#### 环境变量（**只走 env，绝不进配置**）
+
+| 变量名 | 用途 |
+|---|---|
+| `FIST_OFM_ENDPOINT` | 覆盖 config 里的 OFM 端点 |
+| `FIST_OFM_KEY` | OFM Bearer 密钥 |
+
+密钥纪律（`mcp_env_whitelist` 凭据硬门 + 投影面无密钥形状）：
+
+- `FIST_OFM_ENDPOINT` / `FIST_OFM_KEY` **只作为环境变量名**进白名单；值永远从进程环境读。
+- `RouterConfig` **刻意无密钥字段** ⇒ 配置投影进 skill/插件目录**不可能**带出密钥。
+- `default-fist.mcp.json` 的 env 模板只放**空值占位**（如 `"FIST_OFM_ENDPOINT": ""`），由用户填。
+
+#### 3 分钟接线 bootstrap
+
+```pwsh
+# 1) 设端点与密钥（env-only）
+$env:FIST_OFM_ENDPOINT = "http://127.0.0.1:18899/v1"
+$env:FIST_OFM_KEY = "<你的 OFM key>"
+
+# 2) 拉可用模型清单（服务在线时；未鉴权会回 401）
+Invoke-RestMethod -Uri "http://127.0.0.1:18899/v1/models" -Headers @{ Authorization = "Bearer $env:FIST_OFM_KEY" }
+```
+
+拿到清单后，把选定的模型 ID 写进 `free_pool` 并给每条 `lane` 一个显式值；空 `lane` 保持未标注，
+不要从 id 猜。
+
+> **联调状态（诚实标注）**：配置与 env 接线层 + **`executor_run` 的 OFM HTTP 通道**均已实现
+> 并被白盒锁钉住（`src/router/router_config_wbtest.mbt` 的 `cfg_ofm_1..5`、`ofm_models_wbtest.mbt`
+> 的 `ofm_m_1..5`、`ofm_chat_wbtest.mbt` 的 `ofm_c_1..6`、`ofm_failure_wbtest.mbt` 的
+> `ofm_f_1..6`、`ofm_response_wbtest.mbt` 的 `ofm_r_1..7`）。**请求链路已可用并经端到端实测**
+> （2026-10-12：`executor_run(executor="ofm", dry_run=true)` 只回显 URL+请求体不发网络请求；
+> 真跑时路由记账 + 失败按 `classify_ofm_failure` 归因）。**已知遗留**：OFM 上游
+> `/v1/chat/completions` 对全部 8 个模型返回的 HTTP 500 `atomcode is not defined` **已定位并修复**：
+> 根因是 DSH 的 `dsh-our-free-model` 插件 `src/adapter.js` **漏声明 `const atomcode =
+> isAtomcodeEntry(entry)`**（lane 分派处用了裸 `atomcode`），已在该文件补上并让 `wire` 判定含
+> `atomcode`（原文件备份 `adapter.js.bak-20261012-atomcode`，`node --check` 通过）。**修复需重启 DSH
+> 才生效**（宿主进程缓存了旧模块）；重启后 `/chat/completions` 应回真 200。故目前**仍未拿到真实 200
+> 成功正文**——上面第 2 步此时用于**枚举模型**，成功路径解析器为防御性编码、未对真实 200 验证
+> （待 DSH 重启后复验）。
+
 ## 7. 端到端真实闭环（本机实录）
 
 干净目录下启动 server（新库），完整跑一遍「发布→认领→拆分→3 子任务闭环→父验收→归档→查询」：

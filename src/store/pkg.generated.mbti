@@ -39,6 +39,29 @@ pub struct ExecutionRecord {
   created_at : String
 }
 
+pub struct FileLock {
+  lock_id : String
+  batch_id : String
+  scope : String
+  agent : String
+  status : String
+  ts : String
+  ttl_until : String
+  meta : String
+} derive(Eq, @debug.Debug)
+pub fn FileLock::new(lock_id~ : String, batch_id~ : String, scope~ : String, agent~ : String, status? : String, ts? : String, ttl_until? : String, meta? : String) -> Self
+pub fn FileLock::renew(Self, ttl_until~ : String, ts~ : String) -> Self
+pub fn FileLock::to_json(Self) -> Json
+
+pub struct LockViolation {
+  ts : String
+  agent : String
+  scope : String
+  reason : String
+  lock_id : String
+} derive(Eq, @debug.Debug)
+pub fn LockViolation::to_json(Self) -> Json
+
 pub struct MemoryStore {
   tasks : Map[String, @core.Task]
   specs : Map[String, SpecRecord]
@@ -46,6 +69,8 @@ pub struct MemoryStore {
   call_logs : Array[Json]
   reservations : Map[String, (String, String, String)]
   executors : Map[String, (String, String)]
+  file_locks : Map[String, FileLock]
+  lock_violations : Array[LockViolation]
 }
 pub fn MemoryStore::clear(Self) -> Unit
 pub fn MemoryStore::create_task(Self, @core.Task) -> Result[Unit, String]
@@ -58,6 +83,12 @@ pub fn MemoryStore::get_task(Self, String) -> @core.Task?
 pub fn MemoryStore::list_specs_by_task(Self, String) -> Array[SpecRecord]
 pub fn MemoryStore::list_tasks(Self) -> Array[@core.Task]
 pub fn MemoryStore::list_tasks_in(Self, String) -> Array[@core.Task]
+pub fn MemoryStore::lock_violations_list(Self) -> Array[LockViolation]
+pub fn MemoryStore::locks_get(Self, String) -> FileLock?
+pub fn MemoryStore::locks_list(Self) -> Array[FileLock]
+pub fn MemoryStore::locks_release(Self, String, String) -> Bool
+pub fn MemoryStore::locks_sweep(Self, String) -> Int
+pub fn MemoryStore::locks_upsert(Self, FileLock) -> Unit
 pub fn MemoryStore::new() -> Self
 pub fn MemoryStore::recent_call_logs(Self, limit? : Int) -> Array[Json]
 pub fn MemoryStore::rsv_get(Self, String) -> (String, String, String)?
@@ -132,6 +163,12 @@ pub fn SqliteStore::list_saga_actions(Self, String, String) -> Array[(Int, Strin
 pub fn SqliteStore::list_specs_by_task(Self, String) -> Array[SpecRecord]
 pub fn SqliteStore::list_tasks(Self) -> Array[@core.Task]
 pub fn SqliteStore::list_tasks_in(Self, String) -> Array[@core.Task]
+pub fn SqliteStore::lock_violations_list(Self) -> Array[LockViolation]
+pub fn SqliteStore::locks_get(Self, String) -> FileLock?
+pub fn SqliteStore::locks_list(Self) -> Array[FileLock]
+pub fn SqliteStore::locks_release(Self, String, String) -> Bool
+pub fn SqliteStore::locks_sweep(Self, String) -> Int
+pub fn SqliteStore::locks_upsert(Self, FileLock) -> Unit
 pub fn SqliteStore::mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int]) -> Result[Unit, String]
 pub fn SqliteStore::new() -> Self?
 pub fn SqliteStore::open(String) -> Self?
@@ -174,6 +211,12 @@ pub fn StoreBackend::list_saga_actions(Self, String, String) -> Array[(Int, Stri
 pub fn StoreBackend::list_specs_by_task(Self, String) -> Array[SpecRecord]
 pub fn StoreBackend::list_tasks(Self) -> Array[@core.Task]
 pub fn StoreBackend::list_tasks_in(Self, String) -> Array[@core.Task]
+pub fn StoreBackend::lock_violations_list(Self) -> Array[LockViolation]
+pub fn StoreBackend::locks_get(Self, String) -> FileLock?
+pub fn StoreBackend::locks_list(Self) -> Array[FileLock]
+pub fn StoreBackend::locks_release(Self, String, String) -> Bool
+pub fn StoreBackend::locks_sweep(Self, String) -> Int
+pub fn StoreBackend::locks_upsert(Self, FileLock) -> Unit
 pub fn StoreBackend::mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int]) -> Result[Unit, String]
 pub fn StoreBackend::memory() -> Self
 pub fn StoreBackend::read_heartbeat(Self, String) -> (String, String, String)
