@@ -113,3 +113,20 @@ test "ofm_c_6_可选参数 None 不写字段_不写显式 null" {
     Err(e) => abort("不应 Err：\{e}")
   }
 }
+
+///|
+test "ofm_c_7_请求恒带 response_format_json_object_防信封被多行 JSON 破坏" {
+  let req = ofm_c_req("m", "user", "hi")
+  let out = build_ofm_chat_request_json(req)
+  match out {
+    Ok(s) => {
+      if not(s.contains("response_format")) {
+        abort("请求体应恒带 response_format：\{s}")
+      }
+      if not(s.contains("json_object")) {
+        abort("response_format.type 应为 json_object：\{s}")
+      }
+    }
+    Err(e) => abort("不应 Err：\{e}")
+  }
+}

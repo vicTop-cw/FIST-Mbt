@@ -10,7 +10,10 @@
       "env": {
         "FIST_PROJECT_DIR": ".",
         "_note_native_needs_sqlite3_dll": "Windows native 版若报 sqlite3.dll 缺失，需装 sqlite3 运行库到 PATH 或同目录",
-        "_note_js_needs_node_24_plus": "JS 版需 Node.js >= 24（用 node fist-mbt.js 运行，支持 returnArrays）"
+        "_note_js_needs_node_24_plus": "JS 版需 Node.js >= 24（用 node fist-mbt.js 运行，支持 returnArrays）",
+        "_note_star_gate_default_on": "Star 门默认开启（发布模板默认值）：未提供有效 attestation 验签的用户，免费模型池保持锁定（fail-closed），对上游呈现『我们有限制』的姿态。本公钥 = src/router/star_gate.mbt 的 star_release_default_pubkey_hex，两者必须一致；对应私钥由仓库 secret ED25519_PRIVATE_KEY_HEX 保管，本仓不含私钥。",
+        "FIST_STAR_GATE_PUBKEY_HEX": "01773e6ed3ff3fceaaf545a3f26a9627a0e91e736e6a3ed353ac3d6bb5a3f32a",
+        "_note_star_gate_unlock": "解锁步骤：1) 拉取仓库 _attest/attestation.json 正文（attest.yml 用 ED25519_PRIVATE_KEY_HEX 每 6h 签发）；2) 设置 FIST_STAR_GATE_ATTESTATION_JSON=<该正文>；3) 设置 FIST_STAR_GATE_USER_LOGIN=<你的 GitHub login，须在授权名单内>。三者齐备才放行免费池。"
       }
     }
   }
