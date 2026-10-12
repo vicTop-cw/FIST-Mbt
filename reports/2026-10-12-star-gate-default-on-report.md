@@ -47,3 +47,44 @@
 - `src/router/star_gate.mbt`（新增 `star_release_default_pubkey_hex`）、`src/router/star_gate_wbtest.mbt`（2 条新锁）、`src/router/ofm_chat.mbt`（恒带 `response_format`）、`src/router/ofm_chat_wbtest.mbt`（`ofm_c_7`）、`.mcp.example.json`（发布模板 env 默认值）。
 - `memory/2026-10-12.md`「2026-10-12 二发」段。
 - 真源文件：`src/router/model_router.mbt`、`src/server/model_router_ops.mbt`、`.github/workflows/attest.yml`、`src/router/ofm_response.mbt`、`src/server/ofm_http_js.mbt`（只读勘察，未改）。
+
+---
+
+## 三发追加 · 复核 → 发布 v0.3.8 → 更新本地命令
+
+### 结果摘要
+- **提交**：✅ 对齐 `cmd/cli/help_topics.mbt` 的 `FIST_VERSION` 到 `moon.mod` 的 0.3.8（`df40607`），修 `check_release_asset_names` R11；合并 origin 领先提交生成 `99b94e5`，master 推到 origin（`5f19832..99b94e5`）与 gitcode；打带注解 tag `v0.3.8`（`bb2009b8`→`df40607`）推到 origin。
+- **发布**：⚠️ `release.yml` run #6 失败 —— `build-js` 红在 `Build JS target`（`moon build --target js`），`build-native-linux` 红在 `Build native`，`build-native-windows` 红在 `Install MoonBit`，`release` skipped ⇒ **GitHub Release 未产出**（API `releases/tags/v0.3.8` = 404，latest 仍 v0.3.5）。
+- **本地命令**：✅ `install_onecmd.ps1 -Version 0.3.8 -LocalZip` 用本地打包的 v0.3.8 资产装到本机，实测 `fist version` = `FIST-Mbt v0.3.8`（旧 v0.3.0 已备份保留）。
+
+### 关键证据（不据自述）
+- `moon test --target js -j 1` = **Total tests: 799, passed: 799, failed: 0**。
+- 本地 `moon build --target js`（CI 同命令全量）= **Finished, 15 tasks, cli.js 产出** ⇒ **代码不是 CI 红的元凶**。
+- 真实产物 `node cli.js -V` = `FIST-Mbt v0.3.8`、`--help` 版本面 `v0.3.8`（**先 `python scripts/patch_esm_main.py`**，否则首行是 `file:///...`，会让 cli_flag_probe 假红）。
+- API 逐 job 拆解（`actions/runs/38238264053/jobs`）：`Install MoonBit` / `Refresh registry` 已绿 ⇒ R8/R9 那两格已过，**问题在真正的构建步**，不再是"runner 上没有 moon"。
+- 版本差：本地 moon **0.1.20260920**（AGENTS.md 与全量测试用的验证版本）vs release.yml `MOON_VERSION: 'latest'` + `install/unix.sh` ⇒ **疑似 `latest` moon 在 Linux 上的回归/新弃用提错**，但**未闭环**：匿名读日志 `actions/jobs/{id}/logs` = **403**、`workflow_dispatch` = **401**（无 GitHub token），拿不到失败步 `::error::` 正文。
+
+### 资源消耗
+- 一次 tag 发布触发 4 个 job（meta 绿 / build-js / build-native-linux / build-native-windows 红 / release skipped）；本地多次 `moon build`、`moon test`、一次 JS 打包 + 一次本地安装；若干 GitHub API 只读调用。
+
+### 任务分配记录
+- 本会话：复核 + 版本对齐 + 合并推主 + tag 发布 + 失败定位 + 本地打包安装 + 记忆/报告沉淀。**未动**并发会话文件（`README.md` / `src/server/*` / `docs/*-20261012.md`）。
+
+### 遗留风险
+- **GitHub Release v0.3.8 未产出**：安装横幅/离线线仍指向不存在的 `fist-mbt-js-v0.3.8.zip` 公网资产；tag 已推但无资产。
+- `check_release_asset_names` **R13 仍红**：README 资产名字面量 0.3.6（README 属并发会话文件）。
+- `check_doc_surface` **J15** + `check_publish_payload` **3×P1**：3 份 `docs/*-20261012.md` 未入库未 ignore，`moon publish` 会公开出去。
+- 并发会话的 `src/server/fist-mbt_wbtest.mbt` 的 `project_version` 锁面仍未收口。
+
+### 后续建议
+1. **钉 moon 版本**：release.yml `MOON_VERSION: 'latest'` → `0.1.20260920`（与 ci.yml / 本地验证面同源），再打一次 tag 触发。
+2. **或拿 GitHub token** 读 run #6 `build-js` 的 `Build JS target` 失败步 `::error::` 正文，确认是 moon 回归还是代码在 Linux 上才触发。
+3. 在拿到失败日志前，**别改 release.yml 之外的东西猜**。
+
+### 超额内容
+- 额外产出一份**本地可用的 v0.3.8 资产**（`_release/fist-mbt-js-v0.3.8.zip`，gitignored）让本地命令先升级到位，不阻塞公网 Release。
+- 发现 `build_release.ps1` 自己读陈旧的 `_release/VERSION` 而不是 `moon.mod`（与 R11 同族漂移），本轮手动绕过。
+
+### 来源
+- `cmd/cli/help_topics.mbt`（`FIST_VERSION` 0.3.6→0.3.8）、`memory/2026-10-12.md`「三发 · 复核 + 发布 v0.3.8」段。
+- `.github/workflows/release.yml`（`MOON_VERSION: latest` L25、`install/unix.sh` L67）、`scripts/blackbox/install_onecmd.ps1`（`-LocalZip` 布局）、`scripts/blackbox/build_release.ps1`（`-SkipNative` / 陈旧 `_release/VERSION`）。
