@@ -1,0 +1,48 @@
+name: Sync from GitCode
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check sync flag on GitCode
+        id: flag
+        run: |
+          git clone --depth 1 --branch master https://gitcode.com/VictorTop/Fist-Mbt.git /tmp/check
+          if [ -f /tmp/check/.sync-to-github ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync GitCode to GitHub (add-only, GitCode as source)
+        if: steps.flag.outputs.enabled == 'true'
+        run: |
+          set -e
+          git clone --no-single-branch https://gitcode.com/VictorTop/Fist-Mbt.git /tmp/repo
+          cd /tmp/repo
+          git remote add gh "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git fetch gh
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          # 1) 用 GitHub 版 .github/workflows 完全替换本地（保留 CI 配置，避免创建新 workflow 被 GitHub 安全机制拒绝）
+          git rm -r --cached .github/workflows >/dev/null 2>&1 || true
+          rm -rf .github/workflows
+          git checkout "gh/master" -- .github/workflows >/dev/null 2>&1 || true
+          git add .github/workflows
+          git commit -m "chore: preserve GitHub workflow files (add-only sync)" >/dev/null 2>&1 || true
+          # 2) 推送所有 GitCode 分支：GitCode 为源，覆盖 GitHub 同名分支；GitHub 独有分支保留
+          for b in $(git for-each-ref --format='%(refname:short)' refs/heads); do
+            git push --force gh "$b:$b" 2>&1 || echo "push failed on $b"
+          done
+          # 3) 默认分支映射：GitCode master -> GitHub master
+          git push --force gh "master:master" 2>&1 || echo "push failed on default branch"
+          # 4) 标签只增不删（GitHub 已存在的同名标签会拒绝，保留 GitHub 版）
+          git push gh --tags 2>&1 || true
