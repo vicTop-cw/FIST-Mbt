@@ -1,0 +1,161 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/hat"
+
+// Values
+pub fn blocking_divergences(Array[Divergence]) -> Array[Divergence]
+
+pub fn build_plan(String, HatConfig) -> HatPlan
+
+pub fn build_report(String, HatConfig, Array[HatReport], Int) -> HatVerdictReport
+
+pub fn converge(Array[HatReport], HatPolicy, Int) -> ConvergeResult
+
+pub fn count_by_kind(Array[Divergence]) -> Map[String, Int]
+
+pub fn debate_pair(String, String, String, Int) -> DebatePair
+
+pub fn default_config(String) -> HatConfig
+
+pub fn default_policy() -> HatPolicy
+
+pub fn divergence(String, String, String, String, Int) -> Divergence
+
+pub fn element_task(String, HexaElement) -> ElementTask
+
+pub fn extract_divergences(Array[HatReport]) -> Array[Divergence]
+
+pub fn golddigger() -> HexaElement
+
+pub fn hat_report(String, String, Double, String, Array[String], String) -> HatReport
+
+pub fn hat_to_hexa(String) -> String
+
+pub fn hexa_defaults() -> Array[String]
+
+pub fn hexa_elements() -> Array[HexaElement]
+
+pub fn hexa_for_id(String) -> Result[HexaElement, String]
+
+pub fn hexa_hat_id(String) -> String
+
+pub fn nova() -> HexaElement
+
+pub fn nucleus() -> HexaElement
+
+pub fn parse_config_json(String) -> Result[HatConfig, String]
+
+pub fn pulse() -> HexaElement
+
+pub fn resolve_element_id(String) -> Result[String, String]
+
+pub fn resolve_elements(Array[String]) -> Result[Array[String], String]
+
+pub fn stargazer() -> HexaElement
+
+pub fn valid_hat_id(String) -> Bool
+
+pub fn valid_hexa_id(String) -> Bool
+
+pub fn valid_report(HatReport) -> Result[Unit, String]
+
+pub fn wallbreaker() -> HexaElement
+
+// Errors
+
+// Types and methods
+pub struct ConvergeResult {
+  round : Int
+  max_rounds : Int
+  agree : Int
+  total : Int
+  rate : Double
+  threshold : Double
+  status : String
+  blocking : Int
+  blockers : Array[String]
+  should_iterate : Bool
+  terminal_gate : String
+}
+pub fn ConvergeResult::next_round_hint(Self) -> String
+
+pub struct DebatePair {
+  left : String
+  right : String
+  issue : String
+  rounds : Int
+}
+
+pub struct Divergence {
+  kind : String
+  left : String
+  right : String
+  detail : String
+  severity : Int
+}
+
+pub struct ElementTask {
+  element_id : String
+  lane : String
+  temperature : Double
+  max_tokens : Int
+  output_schema : Array[String]
+  prompt : String
+  executor_hint : String
+  dry_run_shape : String
+}
+
+pub struct HatConfig {
+  topic : String
+  elements : Array[HexaElement]
+  policy : HatPolicy
+}
+
+pub struct HatPlan {
+  topic : String
+  config : HatConfig
+  tasks : Array[ElementTask]
+  debate_pairs : Array[DebatePair]
+  nucleus : ElementTask
+}
+
+pub struct HatPolicy {
+  max_rounds : Int
+  converge_threshold : Double
+  auto_select_hats : Bool
+  debate_enabled : Bool
+}
+
+pub struct HatReport {
+  element_id : String
+  verdict : String
+  confidence : Double
+  evidence : String
+  outcomes : Array[String]
+  raw : String
+}
+
+pub struct HatVerdictReport {
+  topic : String
+  status : String
+  convergence : ConvergeResult
+  divergences : Array[Divergence]
+  reports : Array[HatReport]
+  should_iterate : Bool
+  terminal_gate : String
+  markdown : String
+}
+
+pub struct HexaElement {
+  id : String
+  hat_id : String
+  name_zh : String
+  lane : String
+  temperature : Double
+  max_tokens : Int
+  output_schema : Array[String]
+  role : String
+}
+
+// Type aliases
+
+// Traits
