@@ -12,7 +12,9 @@
         "delayMs": 30000
       },
       "env": {
-        "FIST_PROJECT_DIR": "."
+        "FIST_PROJECT_DIR": ".",
+        "FIST_OFM_ENDPOINT": "",
+        "FIST_OFM_KEY": ""
       }
     }
   }

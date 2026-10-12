@@ -38,26 +38,32 @@ pub fn ModelTier::from_string(s : String) -> ModelTier? {
 
 ///|
 /// 单模型配额追踪（limit<=0 表示无限配额）
+///
+/// `lane`：OFM 渠道维度元数据（P0.1，如 zen/kilo/eac）。空串 = 未标注渠道，
+/// 语义是「未知」而不是「默认渠道」——调用方不得把空 lane 当成某个具体渠道路由。
 pub struct ModelQuota {
   name : String
   tier : ModelTier
   limit : Int
   mut used : Int
   mut window_start : String
+  lane : String
 } derive(Eq, Debug)
 
 ///|
+/// 构造入口。`lane` 必须走这里传入：字段非 `pub`，跨包不得直接构造/改字段。
 pub fn ModelQuota::new(
   name~ : String,
   tier~ : ModelTier,
   limit? : Int = 0,
   used? : Int = 0,
   window_start? : String = "",
+  lane? : String = "",
 ) -> ModelQuota {
   // used/window_start 作为构造参数而非"建完再改"：跨包不得改 mut 字段（MoonBit 只允许
   // 定义包内改），状态恢复必须能在 src/server 里做，所以把入口做成构造函数。
   let u = if used < 0 { 0 } else { used }
-  { name, tier, limit, used: u, window_start, }
+  { name, tier, limit, used: u, window_start, lane: lane.trim().to_owned(), }
 }
 
 ///|
@@ -104,25 +110,82 @@ pub fn ModelQuota::to_json(self : ModelQuota) -> Json {
     "usage_pct": Json::number(self.usage_pct()),
     "exhausted": Json::boolean(self.is_exhausted()),
     "window_start": Json::string(self.window_start),
+    "lane": Json::string(self.lane),
   })
 }
 
 ///|
-/// 路由配置（窗口长度 / 切换阈值 / 两个模型池）
+/// 路由配置（窗口长度 / 切换阈值 / 两个模型池 / OFM 端点）
+///
+/// `ofm_endpoint`（P0.1）：dsh-our-free-model 外部服务的 OpenAI 兼容 base（如
+/// `http://127.0.0.1:18899/v1`）。空串 = 未配置。
+///
+/// **本结构体刻意没有 API key 字段**：配置会被四态投影到 skill/插件目录，密钥一旦进结构体
+/// 就会进投影。密钥只从进程环境变量读（`FIST_OFM_KEY`），由 `src/server` 层注入。
 pub struct RouterConfig {
   window_seconds : Int
   threshold_pct : Double
   free_models : Array[ModelQuota]
   paid_models : Array[ModelQuota]
+  ofm_endpoint : String
 } derive(Eq, Debug)
 
 ///|
 /// 默认配置：与源项目 config/fist-model-router.json 同形的**样例默认值**（不含任何密钥）。
 /// 真实部署请用 `model_router_config` 覆盖池与限额。
+///
+/// `ofm_endpoint` 默认**空串 = 未配置**：P0.1 只做结构扩展，不改变任何现有路由行为
+/// （零回归）。真正启用 OFM 由部署侧给 env/config，绝不在代码里硬编码一个"看起来能用"
+/// 的端点——那会让「没配 OFM」和「配了 OFM」在读数上无法区分。
+///
+/// `free_models` 已是**真实 OFM 模型 ID**（2026-10-12 实机 GET `{ofm_endpoint}/models` 拉到的
+/// 8 个 `owned_by=our-free-model` 的 free 模型），替换掉原先的 AtomGit 样例；`lane="ofm"`
+/// 是把「同属外部 OFM 通道」这一**已核实事实**标出来，不是从 id 猜 SenseNova 的 zen/kilo/eac。
 pub fn RouterConfig::default() -> RouterConfig {
   let free = [
-    ModelQuota::new(name="AtomGit-qwen3.8-27b", tier=Free, limit=100),
-    ModelQuota::new(name="AtomGit-glm5.3-flash", tier=Free, limit=100),
+    ModelQuota::new(
+      name="ling-3.1-flash-free",
+      tier=Free,
+      limit=100,
+      lane="ofm",
+    ),
+    ModelQuota::new(
+      name="mimo-v2.6-flash-free",
+      tier=Free,
+      limit=100,
+      lane="ofm",
+    ),
+    ModelQuota::new(
+      name="muse-spark-1.2-contributor-free",
+      tier=Free,
+      limit=100,
+      lane="ofm",
+    ),
+    ModelQuota::new(
+      name="muse-spark-1.3-contributor-free",
+      tier=Free,
+      limit=100,
+      lane="ofm",
+    ),
+    ModelQuota::new(
+      name="nemotron-3.5-lightning-free",
+      tier=Free,
+      limit=100,
+      lane="ofm",
+    ),
+    ModelQuota::new(
+      name="step-5-preview-free",
+      tier=Free,
+      limit=100,
+      lane="ofm",
+    ),
+    ModelQuota::new(
+      name="longcat-2.5-preview-free",
+      tier=Free,
+      limit=100,
+      lane="ofm",
+    ),
+    ModelQuota::new(name="space-bunny-free", tier=Free, limit=100, lane="ofm"),
   ]
   let paid = [
     ModelQuota::new(name="longcat/LongCat-2.0", tier=Paid, limit=50),
@@ -135,6 +198,7 @@ pub fn RouterConfig::default() -> RouterConfig {
     threshold_pct: 95.0,
     free_models: free,
     paid_models: paid,
+    ofm_endpoint: "",
   }
 }
 

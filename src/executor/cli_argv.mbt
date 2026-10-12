@@ -10,9 +10,11 @@
 ///   - 模型名/工作目录来自配置或任务，不硬编码任何密钥；密钥只在进程环境变量里（本仓库不读 .env）。
 
 ///|
-/// 已支持的外部 CLI 执行器（注册表；`executor_run` 工具按此校验）
+/// 已支持的外部执行器（注册表；`executor_run` 工具按此校验）。
+/// `aider` / `atomcode` 走本地 CLI spawn；`ofm` 走 HTTP 通道（`executor_run_impl` 分流，
+/// 不经 `build_command`）——CLI spawn 保留，HTTP 是**并存第二通道**。
 pub fn external_executors() -> Array[String] {
-  ["aider", "atomcode"]
+  ["aider", "atomcode", "ofm"]
 }
 
 ///|
@@ -142,6 +144,11 @@ pub fn build_command(
         Ok(a) => Ok(("atomcode", a))
         Err(e) => Err(e)
       }
+    "ofm" =>
+      Err(
+        "ofm 走 HTTP 通道（POST {ofm_endpoint}/chat/completions），不经 build_command；" +
+        "由 executor_run_impl 分流到 ofm_execute_http，这里不造 argv",
+      )
     _ =>
       Err(
         "未知执行器 '" +

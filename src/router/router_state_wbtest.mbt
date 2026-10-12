@@ -120,7 +120,7 @@ test "rs_3_坏状态逐项兜底且不静默" {
   }
   let (r2, w2) = router_restore(Json::number(3.0))
   assert_eq(r2.current_tier, Free)
-  assert_eq(r2.config.free_models.length(), 2)
+  assert_eq(r2.config.free_models.length(), 8)
   assert_true(w2.length() >= 1)
   let (cfgd, wd) = RouterConfig::from_json(Json::null())
   assert_eq(wd.length(), 0)

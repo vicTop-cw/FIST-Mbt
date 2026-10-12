@@ -78,6 +78,7 @@ fn st_pool(j : Json?, tier : ModelTier) -> (Array[ModelQuota], Array[String]) {
                     limit=if limit < 0 { 0 } else { limit },
                     used~,
                     window_start=st_str(m, "window_start"),
+                    lane=st_str(m, "lane"),
                   ),
                 ]
             }
@@ -114,6 +115,9 @@ fn merge_usage(
           limit=d.limit,
           used=u,
           window_start=w,
+          // lane 属**定义**（渠道归属），不是用量——必须跟着 config 定义走，
+          // 不能沿用 prev（改了渠道就该按新渠道算，否则用量会记到旧渠道头上）。
+          lane=d.lane,
         ),
       ]
   }
@@ -191,6 +195,8 @@ pub fn router_restore(
     threshold_pct: tp,
     free_models: final_free,
     paid_models: final_paid,
+    // 端点属部署环境配置，不随用量状态走：一律以调用方 config 为准（状态文件里不存端点）。
+    ofm_endpoint: cfg.ofm_endpoint,
   }
   let r = ModelRouter::from_config(merged)
   let tier_str = st_str(sm, "current_tier")

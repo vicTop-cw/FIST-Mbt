@@ -18,6 +18,8 @@ pub fn batch_verify(Array[(String, String)]) -> Json
 
 pub fn batch_verify_fix(Array[Json], max_rounds? : Int) -> Json
 
+pub fn calc_coverage(Array[String], Json) -> Double
+
 pub fn canonical_json(Json) -> String
 
 pub fn check_expected(Json, Json) -> (Bool, String)
@@ -48,6 +50,12 @@ pub fn regex_lite(String, String) -> Bool
 
 pub fn run_tests(Json, (Json) -> Result[Json, String]) -> Array[Json]
 
+pub fn score_to_json(ScoreResult) -> Json
+
+pub fn spec_scoring(Json, Int, Int) -> ScoreResult
+
+pub fn spec_scoring_str(String, Int, Int) -> Json
+
 pub fn summarize(Array[Json]) -> Json
 
 pub fn validate_full(String) -> Json
@@ -63,6 +71,7 @@ pub fn verify_single_spec(String, String) -> Json
 // Errors
 
 // Types and methods
+type ScoreResult
 
 // Type aliases
 

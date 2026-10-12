@@ -36,6 +36,8 @@ pub fn ch_desc(String, String, String) -> String
 
 pub fn challenge_strategies() -> Array[String]
 
+pub fn deps_ready_memo(Array[String], Map[String, Bool]) -> Bool
+
 pub fn extract_difficulty(String) -> String
 
 pub fn gate_enabled(@core.Task) -> Bool
@@ -84,8 +86,10 @@ pub struct FistEngine {
 }
 pub fn FistEngine::all_subtasks_completed(Self, @core.Task) -> Bool
 pub fn FistEngine::archive(Self, task_id~ : String, by~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::audit_execute_gate(Self, String, String) -> Result[Unit, String]
 pub fn FistEngine::budget_split_by_dag(Self, Int, root? : String, ns? : String) -> Json
 pub fn FistEngine::challenge(Self, task_id~ : String, by~ : String, factor? : Int, strat? : String, now~ : String, critic? : @evolve.Archive?) -> Result[Json, String]
+pub fn FistEngine::children_index(Self) -> Map[String, Array[String]]
 pub fn FistEngine::children_of(Self, String) -> Array[@core.Task]
 pub fn FistEngine::circuit_fail(Self, ns? : String, circuit~ : String, now_secs~ : Int, window_secs? : Int, threshold? : Int, recovery_secs? : Int) -> Json
 pub fn FistEngine::circuit_status(Self, ns? : String, circuit~ : String, now_secs~ : Int, probe_limit? : Int) -> Json
@@ -119,6 +123,12 @@ pub fn FistEngine::heartbeat_backend(Self) -> String
 pub fn FistEngine::list_all(Self) -> Array[@core.Task]
 pub fn FistEngine::list_by_status(Self, @core.TaskStatus) -> Array[@core.Task]
 pub fn FistEngine::list_in_ns(Self, String) -> Array[@core.Task]
+pub fn FistEngine::lock_violations_list(Self) -> Array[@store.LockViolation]
+pub fn FistEngine::locks_get(Self, String) -> @store.FileLock?
+pub fn FistEngine::locks_list(Self) -> Array[@store.FileLock]
+pub fn FistEngine::locks_release(Self, String, String) -> Bool
+pub fn FistEngine::locks_sweep(Self, String) -> Int
+pub fn FistEngine::locks_upsert(Self, @store.FileLock) -> Unit
 pub fn FistEngine::new(store? : @store.StoreBackend) -> Self
 pub fn FistEngine::omega_auto_lesson(Self, Int, String, String, String, String) -> Bool
 pub fn FistEngine::omega_count(Self, String, String, String) -> Int
@@ -134,7 +144,7 @@ pub fn FistEngine::omega_verify_gate(Self, String) -> Result[Unit, String]
 pub fn FistEngine::open_sqlite(String) -> Self?
 pub fn FistEngine::parallelism(Self) -> Int
 pub fn FistEngine::pause_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
-pub fn FistEngine::pick_next(Self, String, String, String, String) -> Json
+pub fn FistEngine::pick_next(Self, String, String, String, String, skill? : String) -> Json
 pub fn FistEngine::plan(Self, task_id~ : String, split_n? : Int, by~ : String, now~ : String) -> Result[Array[String], String]
 pub fn FistEngine::plan_deep(Self, task_id~ : String, split_n? : Int, by~ : String, spec? : Json?, now~ : String, omega_strong_verify? : Bool, gradient? : Bool, calibrate? : Array[Double]?, gradient_dag? : Bool, reinject_context? : Bool, boundary_probe? : Bool) -> Result[Json, String]
 pub fn FistEngine::plan_exec_order(Self, String) -> Json
@@ -171,7 +181,7 @@ pub fn FistEngine::store_write_saga_action(Self, ns? : String, root_task_id~ : S
 pub fn FistEngine::submit(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::topo_sort(Self, Array[String]) -> Array[String]
 pub fn FistEngine::transition_contract(Self, String, String, assignee? : String, completed_by? : String) -> Json
-pub fn FistEngine::triage(Self, String, String, String) -> Json
+pub fn FistEngine::triage(Self, String, String, String, skill? : String) -> Json
 pub fn FistEngine::verify(Self, task_id~ : String, verifier~ : String, now~ : String, docs_check? : Bool) -> Result[@core.Task, String]
 
 type TriageRow

@@ -17,6 +17,7 @@ fn rt_router(free_limit : Int, paid_limit : Int) -> ModelRouter {
     threshold_pct: 95.0,
     free_models: [ModelQuota::new(name="free-a", tier=Free, limit=free_limit)],
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=paid_limit)],
+    ofm_endpoint: "",
   }
   ModelRouter::from_config(cfg)
 }
@@ -81,6 +82,7 @@ test "rt_4_空池不 panic：current_model=None 且决策显式不可用" {
     threshold_pct: 95.0,
     free_models: [],
     paid_models: [],
+    ofm_endpoint: "",
   }
   let r = ModelRouter::from_config(cfg)
   assert_eq(r.current_model(), None)
@@ -188,7 +190,7 @@ test "rt_10_配置逐字段兜底：坏值回落默认且必须留 warning" {
   let (cfg2, warns2) = RouterConfig::from_json(bad)
   assert_eq(cfg2.window_seconds, 18000)
   assert_eq(cfg2.threshold_pct, 95.0)
-  assert_eq(cfg2.free_models.length(), 2)
+  assert_eq(cfg2.free_models.length(), 8)
   assert_eq(cfg2.paid_models.length(), 4)
   assert_true(warns2.length() >= 4)
 
@@ -256,6 +258,7 @@ test "rt_13_current_model 报真在用的模型而不是游标位（BUG-56 成�
       ModelQuota::new(name="free-b", tier=Free, limit=10),
     ],
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=10)],
+    ofm_endpoint: "",
   }
   let r = ModelRouter::from_config(cfg)
   let d = r.pick(now=rt_at(0, 1))
@@ -305,6 +308,7 @@ test "rt_14_越界游标取模后 current_model 必须点名（补 rt_12 的弱�
       ModelQuota::new(name="paid-a", tier=Paid, limit=7),
       ModelQuota::new(name="paid-b", tier=Paid, limit=7),
     ],
+    ofm_endpoint: "",
   })
   r.current_tier = Paid
   r.paid_idx = 98 // 98 % 2 = 0
@@ -341,6 +345,7 @@ test "rt_15_同档仍有健康模型时不许跳档（环形扫描要真的扫�
       ModelQuota::new(name="free-ok", tier=Free, limit=10),
     ],
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=10)],
+    ofm_endpoint: "",
   }
   let r = ModelRouter::from_config(cfg)
   r.free_idx = 0 // 游标正好停在耗尽那一格
@@ -360,6 +365,7 @@ test "rt_15_同档仍有健康模型时不许跳档（环形扫描要真的扫�
       ModelQuota::new(name="f2", tier=Free, limit=1, used=1),
     ],
     paid_models: [ModelQuota::new(name="p1", tier=Paid, limit=10)],
+    ofm_endpoint: "",
   })
   let d2 = r2.pick(now=rt_at(0, 1))
   assert_eq(d2.model_name, "p1")
@@ -378,11 +384,24 @@ test "rt_16_付费耗尽且免费已恢复_必须回退免费" {
     window_seconds: 18000,
     threshold_pct: 95.0,
     free_models: [
-      ModelQuota::new(name="free-a", tier=Free, limit=1, used=1, window_start=rt_at(0, 1)),
+      ModelQuota::new(
+        name="free-a",
+        tier=Free,
+        limit=1,
+        used=1,
+        window_start=rt_at(0, 1),
+      ),
     ],
     paid_models: [
-      ModelQuota::new(name="paid-a", tier=Paid, limit=1, used=1, window_start=rt_at(0, 2)),
+      ModelQuota::new(
+        name="paid-a",
+        tier=Paid,
+        limit=1,
+        used=1,
+        window_start=rt_at(0, 2),
+      ),
     ],
+    ofm_endpoint: "",
   })
   r.current_tier = Paid
   // 铺垫：此刻双池皆尽 → 显式不可用，档位保持 Paid（rt_5 反向，不假回退）

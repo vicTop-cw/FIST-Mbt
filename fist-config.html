@@ -3,15 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FIST-Mbt · 目标项目 MCP 配置</title>
+<title>FIST-Mbt · 目标项目配置（连接 + 环境 + 运行时开关/策略）</title>
 <!--
-  fist-config.html —— FIST-Mbt「目标项目」MCP 设置偏好配置页（纯静态单文件，无 CDN、无外部依赖）。
-  用途：在目标项目目录下打开本页，填好偏好，生成 fist.mcp.json（MCP 客户端读的配置）。
+  fist-config.html —— FIST-Mbt「目标项目」接入配置页（纯静态单文件，无 CDN、无外部依赖）。
+  用途：在目标项目目录下打开本页，填好偏好，产出两份产物：
+    A. fist.mcp.json      —— MCP 客户端读的连接配置（连接字段 + env 环境变量名）。
+    B. fist-runtime.json  —— 运行时策略预设（不进 MCP 配置；覆盖模式/拆解开关/看门狗/六顶帽/
+                              模型路由预设），由 agent 把它的每个开关落到对应工具调用的参数上。
   原则：
-    1. 本页不写文件（HTML 无文件权限）。生成的是 JSON 正文，由 agent/安装器落盘为目标项目的 fist.mcp.json。
-    2. 凭据不进配置。env 里只填「环境变量名」，真值走运行环境变量（见 mcp_config_scaffold 的凭据硬门）。
+    1. 本页不写文件（HTML 无文件权限）。生成的是 JSON 正文，由 agent/安装器落盘。
+    2. 凭据不进配置。env 里只填「环境变量名」；真值走运行环境变量（mcp_config_scaffold 凭据硬门）。
     3. command 优先黑盒路径 fist-mbt（安装器 shim），而不是本仓绝对路径。
-  校验由 mcp_config_scaffold 工具在服务端做；本页只负责产出 form_json。
+    4. 运行时开关（gradient/phi_gate/hats 等）不是 MCP 配置字段，是工具调用参数 ——
+       所以它们单独落在 fist-runtime.json，不塞进 fist.mcp.json。
+  校验：fist.mcp.json 由 mcp_config_scaffold 工具在服务端校验；fist-runtime.json 是给 agent 的
+  预设契约（本页在「应用清单」里逐条给落到哪个工具的哪个参数）。
 -->
 <style>
   :root { --ink:#1c1e21; --accent:#c8102e; --bg:#f7f7f8; --card:#fff; --line:#e4e4e7; --ok:#2e7d32; --bad:#b3261e; --muted:#6b7280; }
@@ -21,7 +27,7 @@
   header .logo { width:38px; height:38px; flex:0 0 38px; }
   header h1 { font-size:17px; margin:0; font-weight:600; }
   header p { margin:2px 0 0; font-size:12px; color:#bbb; }
-  main { max-width:1000px; margin:24px auto; padding:0 18px; }
+  main { max-width:1080px; margin:24px auto; padding:0 18px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:16px; }
   .card h2 { margin:0 0 4px; font-size:15px; }
   .card .sub { margin:0 0 14px; font-size:12.5px; color:var(--muted); }
@@ -40,9 +46,22 @@
   .btn-ghost:hover { background:#e0e0e3; }
   .badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; background:#eee; color:var(--muted); }
   textarea.out { width:100%; min-height:300px; font:12.5px/1.5 ui-monospace,Consolas,monospace; background:#0f1419; color:#e6edf3; border-radius:8px; border:0; padding:12px; white-space:pre; }
+  textarea.out.small { min-height:160px; }
   .note { font-size:12px; color:var(--muted); margin-top:8px; }
   .note strong { color:var(--bad); }
   .kbd { font-size:12px; }
+  .switches { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:8px 14px; }
+  .sw { display:flex; align-items:flex-start; gap:8px; font-size:13px; padding:7px 9px; border:1px solid var(--line); border-radius:7px; background:#fafafa; }
+  .sw input[type="checkbox"] { width:16px; height:16px; margin:2px 0 0; accent-color:var(--accent); }
+  .sw label { font-weight:600; color:var(--ink); }
+  .sw small { display:block; color:var(--muted); font-size:11.5px; line-height:1.4; margin-top:2px; }
+  pre.plan { background:#0f1419; color:#9ecbff; padding:12px; border-radius:8px; font:12.5px/1.55 ui-monospace,Consolas,monospace; white-space:pre-wrap; word-break:break-word; }
+  .hats { display:flex; flex-wrap:wrap; gap:8px; }
+  .hat { display:flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid var(--line); border-radius:16px; font-size:12.5px; background:#fafafa; }
+  .hat input { accent-color:var(--accent); }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:760px){ .two { grid-template-columns:1fr; } }
+  .divider { border-top:1px dashed var(--line); margin:16px 0; }
   footer { text-align:center; color:var(--muted); font-size:12px; padding:20px 0 40px; }
   #copyToast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#111; color:#fff; padding:8px 16px; border-radius:6px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; }
   #copyToast.show { opacity:1; }
@@ -54,19 +73,17 @@
   <!-- 拳头 logo（内联，与 assets/fist-logo.svg 同形） -->
   <svg class="logo" viewBox="0 0 64 64" role="img" aria-label="FIST logo">
     <g fill="currentColor">
-      <!-- 四指收拢 -->
       <rect x="12" y="22" width="34" height="26" rx="6"/>
       <rect x="10" y="14" width="8" height="34" rx="4"/>
       <rect x="22" y="10" width="8" height="38" rx="4"/>
       <rect x="34" y="10" width="8" height="38" rx="4"/>
       <rect x="46" y="14" width="8" height="34" rx="4"/>
-      <!-- 拇指 -->
       <path d="M8 40 q-6 2 -5 9 q1 6 8 7 l16 3 q7 1 8 -6 q1 -6 -5 -8 z"/>
     </g>
   </svg>
   <div>
-    <h1>FIST-Mbt · 目标项目 MCP 配置</h1>
-    <p>生成 <code>fist.mcp.json</code> —— 目标项目接入 fist-mbt 的一次性配置</p>
+    <h1>FIST-Mbt · 目标项目配置</h1>
+    <p>生成 <code>fist.mcp.json</code>（连接 + 环境）与 <code>fist-runtime.json</code>（模式/开关/看门狗/六顶帽/路由预设）</p>
   </div>
 </header>
 
@@ -74,7 +91,7 @@
 
   <section class="card">
     <h2>① 连接偏好</h2>
-    <p class="sub">这些字段会写进目标项目 <code>fist.mcp.json</code> 的 <code>mcpServers.&lt;serverName&gt;</code>。</p>
+    <p class="sub">写进目标项目 <code>fist.mcp.json</code> 的 <code>mcpServers.&lt;serverName&gt;</code>。</p>
     <div class="grid">
       <div class="field">
         <label>serverName <code>serverName</code></label>
@@ -140,32 +157,123 @@
     <p class="sub">
       <strong style="color:var(--bad)">凭据不进配置。</strong>
       这里填的是 <code>env</code> 里的<b>环境变量名 → 占位/取值</b>；真正的密钥只来自运行环境变量。
-      若你把 <code>api_key</code>/<code>token</code>/<code>secret</code> 之类直接写进值，
-      <code>mcp_config_scaffold</code> 会<b>整笔拒绝</b>（凭据硬门）。
+      白名单与服务端 <code>mcp_config_scaffold</code> 的 <code>mcp_env_whitelist</code> 严格一致；
+      若你把 <code>api_key</code>/<code>token</code>/<code>secret</code> 之类直接写进值，服务端会<b>整笔拒绝</b>。
     </p>
-    <div id="envList">
-      <!-- env 行由 JS 渲染 -->
-    </div>
+    <div id="envList"><!-- env 行由 JS 渲染 --></div>
     <div class="row" style="margin-top:12px">
       <button class="btn-ghost" id="addEnv">+ 加一行环境变量</button>
-      <span class="note">常用：<code>FIST_PROJECT_DIR</code>（目标项目根，默认 <code>.</code>）、<code>FIST_DB_PATH</code>（台账库路径）、GitHub/GitCode 同步令牌等。</span>
+      <span class="note">常用：<code>FIST_PROJECT_DIR</code>（目标项目根）、<code>FIST_DB_PATH</code>（台账库）、<code>FIST_OFM_ENDPOINT</code>/<code>FIST_OFM_KEY</code>（外部服务接线）、GitHub/GitCode 同步令牌等。</span>
     </div>
   </section>
 
   <section class="card">
-    <h2>④ 生成</h2>
-    <p class="sub">点「生成并预览」产出 <code>form_json</code>（交给 <code>mcp_config_scaffold</code> 服务端校验）与目标项目 <code>fist.mcp.json</code> 正文。落盘由 agent/安装器做。</p>
+    <h2>④ 运行时策略预设（不进 MCP 配置 → 生成 <code>fist-runtime.json</code>）</h2>
+    <p class="sub">
+      这些开关<b>不是</b> <code>fist.mcp.json</code> 的字段，而是各工具的<b>调用参数</b>（服务端不读它们的环境变量）。
+      本页把选中的开关聚成一份 <code>fist-runtime.json</code>，并在「应用清单」里逐条给出<b>落到哪个工具的哪个参数</b>，
+      agent 拿到后据此构造真实的工具调用。
+    </p>
+
+    <h3 style="font-size:13px;margin:4px 0 8px">4.1 自驱模式策略 <code>selfdrive.mode</code></h3>
+    <p class="sub" style="margin-bottom:8px">7 种开发模式的真源 <code>src/ops/ops_modes.mbt</code>；<code>mode_list</code> 可查每条约束，<code>mode_templates</code> 可查模板存在性。</p>
+    <div class="grid">
+      <div class="field">
+        <label>开发模式 <code>mode</code></label>
+        <select id="mode"></select>
+        <span class="note kbd">polish/tidy 模式禁发布新功能；fix_and_merge 需 GitHub token</span>
+      </div>
+      <div class="field">
+        <label>拆分数 <code>split_n</code></label>
+        <input id="splitN" type="number" value="3" min="1" max="20">
+        <span class="note kbd">传给 <code>task_plan_deep</code> / <code>plan</code></span>
+      </div>
+    </div>
+
+    <h3 style="font-size:13px;margin:14px 0 8px">4.2 拆解开关 <code>selfdrive.plan_deep</code></h3>
+    <p class="sub" style="margin-bottom:8px">全部传 <code>task_plan_deep</code>，默认全关零回归。</p>
+    <div class="switches">
+      <label class="sw"><input type="checkbox" id="gradient"><span><label>gradient</label><small>子任务带难度梯度 + LADDER「更简单变体→先易后逆推」自举提示</small></span></label>
+      <label class="sw"><input type="checkbox" id="gradientDag"><span><label>gradient_dag</label><small>难度梯度 + 显式 DAG 依赖边（<code>dag_depend</code> 建边）</small></span></label>
+      <label class="sw"><input type="checkbox" id="reinjectCtx"><span><label>reinject_context</label><small>把父计划+剩余兄弟回注进子任务描述，防上下文漂移</small></span></label>
+      <label class="sw"><input type="checkbox" id="boundaryProbe"><span><label>boundary_probe</label><small>追加『边界审视叶』+ 边界四问（空输入/极值/非法输入/资源极限）</small></span></label>
+      <label class="sw"><input type="checkbox" id="pdOmega"><span><label>omega_strong_verify</label><small>每个子任务带 <code>omega:required</code>，走语料驱动强验证</small></span></label>
+      <label class="sw"><input type="checkbox" id="layaAuto"><span><label>laya_auto</label><small>交 Laya 决策（冷启动选档/功能路由），无 Laya 走内建规则回退</small></span></label>
+    </div>
+
+    <h3 style="font-size:13px;margin:14px 0 8px">4.3 看门狗自驱 <code>selfdrive.watchdog_enabled</code> + <code>watchdog</code></h3>
+    <p class="sub" style="margin-bottom:8px">「是否开 watchdog 自驱」= 是否让 agent 周期性调 <code>watchdog_tick</code>。关了就是手动 tick。</p>
+    <div class="switches">
+      <label class="sw"><input type="checkbox" id="watchdogEnabled"><span><label>开 watchdog 自驱</label><small>周期调 <code>watchdog_tick</code>；关=手动/不跑</small></span></label>
+      <label class="sw"><input type="checkbox" id="coldStart"><span><label>cold_start</label><small>冷启动：不依赖既有心跳历史</small></span></label>
+      <label class="sw"><input type="checkbox" id="wdOmega"><span><label>omega_strong_verify</label><small>看门狗侧同时开启强验证</small></span></label>
+      <label class="sw"><input type="checkbox" id="autodispatch"><span><label>autodispatch</label><small>自动把顶部待领取任务按能力/负载认领给最佳执行者</small></span></label>
+      <label class="sw"><input type="checkbox" id="phiGate"><span><label>phi_gate</label><small>心跳超时改用 Phi Accrual 概率式判活（<code>phi_accrual</code>）</small></span></label>
+      <label class="sw"><input type="checkbox" id="flushBug"><span><label>flush_bug_queue</label><small>同步时把待同步缺陷队列推一次（仅 GitHub/GitCode 启用时）</small></span></label>
+    </div>
+    <div class="grid" style="margin-top:10px">
+      <div class="field"><label>tick 间隔秒 <code>tick_every_seconds</code></label><input id="wdEvery" type="number" value="60" min="10" max="86400"><span class="note kbd">定时任务调度间隔（外部 schedule 用）</span></div>
+      <div class="field"><label>单次 tick 超时 <code>timeout_sec</code></label><input id="wdTimeout" type="number" value="60" min="1" max="3600"><span class="note kbd">传 <code>watchdog_tick</code></span></div>
+      <div class="field"><label>审视轮间隔 <code>selfdrive_review_every</code></label><input id="wdReviewEvery" type="number" value="0" min="0" max="50"><span class="note kbd">每 N 拍一次自驱审视，0=不自动</span></div>
+      <div class="field"><label>omega 拆分数 <code>omega_split_n</code></label><input id="wdOmegaSplitN" type="number" value="2" min="1" max="10"><span class="note kbd">强验证下的拆分数</span></div>
+      <div class="field"><label>phi 阈值 <code>phi_threshold</code></label><input id="phiThreshold" type="number" value="8" min="1" max="20"><span class="note kbd">φ≥此值判 suspect（默认 8，原论文口径）</span></div>
+    </div>
+
+    <h3 style="font-size:13px;margin:14px 0 8px">4.4 进阶变体（Challenger）<code>selfdrive.challenge</code></h3>
+    <div class="grid">
+      <label class="sw"><input type="checkbox" id="critic"><span><label>critic 防漂移门禁</label><small>挑战题发布前过 <code>critic_review</code>，策略漂移自动降档</small></span></label>
+      <div class="field"><label>难度系数 <code>factor</code></label><input id="factor" type="number" value="1" min="1" max="10"><span class="note kbd">传 <code>task_challenge</code>；进阶变体是「由易到难」自推进序列</span></div>
+    </div>
+
+    <h3 style="font-size:13px;margin:14px 0 8px">4.5 六顶思维帽 · 多 agent 策略 <code>selfdrive.hats</code></h3>
+    <p class="sub" style="margin-bottom:8px">六顶帽真源 <code>src/ops/ops_hats.mbt</code>；<code>debate_convene</code> 发起、<code>debate_register</code> 登记判决、<code>debate_verdict</code> 收敛；终态门是用户。</p>
     <div class="row" style="margin-bottom:10px">
+      <label class="sw" style="width:auto"><input type="checkbox" id="hatsEnabled"><span><label>自驱使用六顶思维帽多 agent 策略</label><small>开=每轮决策前并发几顶帽独立判读再收敛；关=单 agent 直线跑</small></span></label>
+      <div class="field" style="min-width:180px"><label>通过阈值 <code>threshold</code></label><input id="hatsThreshold" type="number" value="0.6" min="0" max="1" step="0.05"><span class="note kbd">默认 0.6（agree 比例）</span></div>
+    </div>
+    <div class="hats" id="hats"></div>
+
+    <h3 style="font-size:13px;margin:14px 0 8px">4.6 模型路由预设 <code>router</code></h3>
+    <p class="sub" style="margin-bottom:8px">路由真源 <code>src/router</code>；env 面（端点/密钥/Star 门）在「③ 环境变量」里配，这里只给<b>调用参数预设</b>（<code>model_route</code> 的 <code>config_json</code>）。</p>
+    <div class="grid">
+      <div class="field"><label>切换阈值 % <code>threshold_pct</code></label><input id="thresholdPct" type="number" value="95" min="1" max="100"><span class="note kbd">达此占比自动切付费，默认 95</span></div>
+      <div class="field"><label>免费池模型 <code>free_pool</code>（逗号分隔）</label><input id="freePool" value="" placeholder="如 mimo-v2.6-flash-free, ling-3.1-flash-free"><span class="note kbd">空=用内置免费池；<code>model_router_status</code> 可查实际</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>⑤ 生成</h2>
+    <p class="sub">点「生成并预览」产出 A) <code>form_json</code>（交 <code>mcp_config_scaffold</code> 校验）+ B) <code>fist-runtime.json</code>（运行时预设）+ C) 应用清单（开关→工具参数）。落盘由 agent/安装器做。</p>
+    <div class="row" style="margin-bottom:12px">
       <button class="btn-primary" id="gen">生成并预览</button>
       <button class="btn-ghost" id="copy">复制 fist.mcp.json</button>
       <button class="btn-ghost" id="copyForm">复制 form_json</button>
+      <button class="btn-ghost" id="copyRuntime">复制 fist-runtime.json</button>
+      <button class="btn-ghost" id="copyPlan">复制应用清单</button>
       <button class="btn-ghost" id="reset">重置默认</button>
     </div>
-    <textarea class="out" id="out" readonly placeholder="点「生成并预览」后，这里显示 fist.mcp.json 正文（可落盘）。"></textarea>
+
+    <div class="two">
+      <div>
+        <div class="note" style="margin:0 0 4px">A) <code>fist.mcp.json</code>（连接 + 环境，可落盘）</div>
+        <textarea class="out" id="out" readonly placeholder="点「生成并预览」后显示 fist.mcp.json 正文。"></textarea>
+      </div>
+      <div>
+        <div class="note" style="margin:0 0 4px">B) <code>fist-runtime.json</code>（运行时策略预设）</div>
+        <textarea class="out" id="outRuntime" readonly placeholder="显示 fist-runtime.json 正文。"></textarea>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="note" style="margin:0 0 4px">C) 应用清单 —— 每个开关落到哪个工具的哪个参数</div>
+    <pre class="plan" id="plan">点「生成并预览」后显示。</pre>
+
     <p class="note">
       校验流程：把 <code>form_json</code> 传给 <code>mcp_config_scaffold</code>（服务端校验 + 凭据硬门），
-      它返回 <b>可落盘的 <code>fist.mcp.json</code> 正文</b>与 <code>unknown_keys</code>；
-      落盘为目标项目根目录的 <code>fist.mcp.json</code>。
+      它返回<b>可落盘的 <code>fist.mcp.json</code> 正文</b>与 <code>unknown_keys</code>；
+      落盘为目标项目根目录的 <code>fist.mcp.json</code>。<code>fist-runtime.json</code> 按「应用清单」
+      落到对应的 <code>task_plan_deep</code> / <code>watchdog_tick</code> / <code>task_challenge</code> /
+      <code>debate_convene</code> / <code>model_route</code> 调用参数上。
     </p>
   </section>
 
@@ -179,15 +287,52 @@
 
 <script>
   // 环境变量白名单（与 mcp_config_scaffold 的 mcp_env_whitelist 严格一致）
-  var ENV_WHITELIST = [
-    "FIST_PROJECT_DIR", "FIST_DB_PATH",
-    "FIST_GITHUB_ENABLED", "FIST_GITHUB_TOKEN", "FIST_GITHUB_REPO",
-    "FIST_GITCODE_TOKEN", "FIST_GITCODE_PROJECT_ID",
-    "FIST_MODEL_API_BASE", "FIST_MODEL_API_KEY", "FIST_RUN_CHECK_ALLOW",
-    "FIST_SELF_OPENAI_BASE", "FIST_SELF_OPENAI_KEY",
-    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL"
+  var ENV_GROUPS = [
+    ["通用", ["FIST_PROJECT_DIR", "FIST_DB_PATH"]],
+    ["外部执行器 · 模型路由", ["FIST_MODEL_API_BASE", "FIST_MODEL_API_KEY", "FIST_OFM_ENDPOINT", "FIST_OFM_KEY"]],
+    ["GitHub · GitCode 同步", ["FIST_GITHUB_ENABLED", "FIST_GITHUB_REPO", "FIST_GITHUB_TOKEN", "FIST_GITCODE_ENABLED", "FIST_GITCODE_TOKEN", "FIST_GITCODE_PROJECT_ID"]],
+    ["Star 门（模型路由）", ["FIST_STAR_GATE_PUBKEY_HEX", "FIST_STAR_GATE_ATTESTATION_JSON", "FIST_STAR_GATE_USER_LOGIN"]],
+    ["自驱评审模型", ["FIST_SELF_OPENAI_BASE", "FIST_SELF_OPENAI_KEY"]],
+    ["其它", ["FIST_RUN_CHECK_ALLOW", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL"]]
   ];
+  var ENV_WHITELIST = [].concat.apply([], ENV_GROUPS.map(function (g) { return g[1]; }));
   var DEFAULT_ENVS = [["FIST_PROJECT_DIR", "."]];
+
+  var MODES = [
+    ["advance", "持续开发新功能（默认）"],
+    ["polish", "打磨完善（禁新功能）"],
+    ["verify", "API 枚举与文档自洽验证"],
+    ["bugfind", "寻虫：issue_scan + 边界语料"],
+    ["fix_and_merge", "修 issues + 合并分支（需 GitHub token）"],
+    ["tidy", "项目打扫清整（禁新增代码）"],
+    ["explore", "探索：按复杂度自选模式"]
+  ];
+  var HATS = [
+    ["white", "白帽 · 客观事实"],
+    ["red", "红帽 · 直觉情绪"],
+    ["black", "黑帽 · 风险批判"],
+    ["yellow", "黄帽 · 乐观价值"],
+    ["green", "绿帽 · 创造新解"],
+    ["blue", "蓝帽 · 过程掌控"]
+  ];
+
+  // ---------- env 渲染 ----------
+  function envSelect(i, current) {
+    var sel = document.createElement("select");
+    sel.dataset.idx = i;
+    ENV_GROUPS.forEach(function (g) {
+      var og = document.createElement("optgroup");
+      og.label = g[0];
+      g[1].forEach(function (n) {
+        var o = document.createElement("option");
+        o.value = n; o.textContent = n;
+        if (n === current) o.selected = true;
+        og.appendChild(o);
+      });
+      sel.appendChild(og);
+    });
+    return sel;
+  }
 
   function renderEnv() {
     var list = document.getElementById("envList");
@@ -197,14 +342,7 @@
       var div = document.createElement("div");
       div.className = "row";
       div.style.marginBottom = "8px";
-      var sel = document.createElement("select");
-      sel.dataset.idx = i;
-      ENV_WHITELIST.forEach(function (n) {
-        var o = document.createElement("option");
-        o.value = n; o.textContent = n;
-        if (n === pair[0]) o.selected = true;
-        sel.appendChild(o);
-      });
+      var sel = envSelect(i, pair[0]);
       var inp = document.createElement("input");
       inp.dataset.idx = i; inp.value = pair[1]; inp.placeholder = "值（如 . 或 $ENV_NAME 或留空）";
       inp.style.flex = "1";
@@ -213,16 +351,41 @@
       del.onclick = function () { rows.splice(i, 1); window.__envRows = rows; renderEnv(); };
       div.appendChild(sel); div.appendChild(inp); div.appendChild(del);
       list.appendChild(div);
-      sel.onchange = inp.oninput = function () { rows[+this.dataset.idx][sel === this ? 0 : 1] = this.value; window.__envRows = rows; };
+      sel.onchange = function () { rows[+this.dataset.idx][0] = this.value; window.__envRows = rows; };
+      inp.oninput = function () { rows[+this.dataset.idx][1] = this.value; window.__envRows = rows; };
     });
     window.__envRows = rows;
   }
   renderEnv();
-
   document.getElementById("addEnv").onclick = function () {
     window.__envRows.push(["FIST_PROJECT_DIR", ""]); renderEnv();
   };
 
+  // ---------- 静态选项渲染 ----------
+  (function () {
+    var m = document.getElementById("mode");
+    MODES.forEach(function (p) {
+      var o = document.createElement("option");
+      o.value = p[0]; o.textContent = p[1];
+      if (p[0] === "advance") o.selected = true;
+      m.appendChild(o);
+    });
+    var h = document.getElementById("hats");
+    HATS.forEach(function (p) {
+      var lab = document.createElement("label");
+      lab.className = "hat";
+      var cb = document.createElement("input");
+      cb.type = "checkbox"; cb.value = p[0]; cb.className = "hatCb";
+      if (p[0] === "white" || p[0] === "black" || p[0] === "yellow") cb.checked = true;
+      var dot = document.createElement("span");
+      dot.style.width = "10px"; dot.style.height = "10px"; dot.style.borderRadius = "50%";
+      dot.style.background = p[0] === "white" ? "#c7c7c7" : p[0] === "red" ? "#c8102e" : p[0] === "black" ? "#1c1e21" : p[0] === "yellow" ? "#e0a800" : p[0] === "green" ? "#2e7d32" : "#1565c0";
+      lab.appendChild(cb); lab.appendChild(dot); lab.appendChild(document.createTextNode(p[1]));
+      h.appendChild(lab);
+    });
+  })();
+
+  // ---------- 收集 ----------
   function collect() {
     var env = {};
     (window.__envRows || []).forEach(function (p) { if (p[0] && p[1] !== "") env[p[0]] = p[1]; });
@@ -241,8 +404,82 @@
       env: env
     };
   }
+
+  function collectRuntime() {
+    var hats = [];
+    document.querySelectorAll("#hats .hatCb").forEach(function (cb) { if (cb.checked) hats.push(cb.value); });
+    var fp = document.getElementById("freePool").value.split(",").map(function (s) { return s.trim(); }).filter(function (s) { return s !== ""; });
+    return {
+      selfdrive: {
+        mode: document.getElementById("mode").value,
+        split_n: clampInt(document.getElementById("splitN").value, 1, 20, 3),
+        watchdog_enabled: document.getElementById("watchdogEnabled").checked,
+        watchdog_tick_every_seconds: clampInt(document.getElementById("wdEvery").value, 10, 86400, 60),
+        watchdog: {
+          timeout_sec: clampInt(document.getElementById("wdTimeout").value, 1, 3600, 60),
+          cold_start: document.getElementById("coldStart").checked,
+          omega_strong_verify: document.getElementById("wdOmega").checked,
+          omega_split_n: clampInt(document.getElementById("wdOmegaSplitN").value, 1, 10, 2),
+          selfdrive_review_every: clampInt(document.getElementById("wdReviewEvery").value, 0, 50, 0),
+          autodispatch: document.getElementById("autodispatch").checked,
+          phi_gate: document.getElementById("phiGate").checked,
+          phi_threshold: clampInt(document.getElementById("phiThreshold").value, 1, 20, 8),
+          flush_bug_queue: document.getElementById("flushBug").checked
+        },
+        plan_deep: {
+          gradient: document.getElementById("gradient").checked,
+          gradient_dag: document.getElementById("gradientDag").checked,
+          reinject_context: document.getElementById("reinjectCtx").checked,
+          boundary_probe: document.getElementById("boundaryProbe").checked,
+          omega_strong_verify: document.getElementById("pdOmega").checked,
+          laya_auto: document.getElementById("layaAuto").checked
+        },
+        challenge: {
+          critic: document.getElementById("critic").checked,
+          factor: clampInt(document.getElementById("factor").value, 1, 10, 1)
+        },
+        hats: {
+          multi_agent: document.getElementById("hatsEnabled").checked,
+          hats: hats,
+          threshold: clampFloat(document.getElementById("hatsThreshold").value, 0, 1, 0.6)
+        }
+      },
+      router: {
+        threshold_pct: clampInt(document.getElementById("thresholdPct").value, 1, 100, 95),
+        free_pool: fp
+      }
+    };
+  }
+
+  // ---------- 应用清单：开关 → 工具参数 ----------
+  function applyPlan(rt) {
+    var L = [];
+    var sd = rt.selfdrive, wd = sd.watchdog, pd = sd.plan_deep;
+    var pdSw = [];
+    ["gradient", "gradient_dag", "reinject_context", "boundary_probe", "omega_strong_verify", "laya_auto"].forEach(function (k) {
+      if (pd[k]) pdSw.push(k + "=true");
+    });
+    L.push("1) task_plan_deep(task_id=<root>, split_n=" + sd.split_n + (pdSw.length ? ", " + pdSw.join(", ") : "") + ")");
+    L.push("2) 模式语义约束：mode=" + sd.mode + "（对照 mode_list 的 constraints / forbidden_tools；模板 templates/pipeline_mode_" + sd.mode + ".md）");
+    if (sd.watchdog_enabled) {
+      var w = ["timeout_sec=" + wd.timeout_sec, "omega_split_n=" + wd.omega_split_n, "selfdrive_review_every=" + wd.selfdrive_review_every, "phi_threshold=" + wd.phi_threshold];
+      ["cold_start", "omega_strong_verify", "autodispatch", "phi_gate", "flush_bug_queue"].forEach(function (k) { if (wd[k]) w.push(k + "=true"); });
+      L.push("3) 看门狗自驱：每 " + sd.watchdog_tick_every_seconds + "s 调一次 watchdog_tick(" + w.join(", ") + ")");
+    } else {
+      L.push("3) 看门狗自驱：关闭（手动/不跑 watchdog_tick）");
+    }
+    if (sd.challenge.critic) L.push("4) task_challenge(task_id=<已完成任务>, factor=" + sd.challenge.factor + ", critic=true)");
+    else if (sd.challenge.factor !== 1) L.push("4) task_challenge(task_id=<已完成任务>, factor=" + sd.challenge.factor + ")");
+    if (sd.hats.multi_agent) L.push("5) debate_convene(topic=<待裁决议题>, hats=[" + sd.hats.hats.join(", ") + "], threshold=" + sd.hats.threshold + ")（六顶帽多 agent：debate_register 登记判决 → debate_verdict 收敛；终态门是用户）");
+    var r = rt.router;
+    if (r.free_pool.length || r.threshold_pct !== 95) L.push("6) model_route(project_dir=<目标项目>, config_json=" + JSON.stringify({ threshold_pct: r.threshold_pct, free_pool: r.free_pool }) + ")");
+    return L.join("\n");
+  }
+
+  // ---------- 渲染 ----------
   function safeArray(s) { try { var a = JSON.parse(s); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
   function clampInt(v, lo, hi, dflt) { var n = parseInt(v, 10); if (isNaN(n)) return dflt; return Math.max(lo, Math.min(hi, n)); }
+  function clampFloat(v, lo, hi, dflt) { var n = parseFloat(v); if (isNaN(n)) return dflt; return Math.max(lo, Math.min(hi, n)); }
 
   function serverEntry(f) {
     var entry = { command: f.command, args: f.args, cwd: f.cwd };
@@ -255,17 +492,25 @@
 
   function render() {
     var f = collect();
-    var formJson = f;               // 传给 mcp_config_scaffold 的 form_json —— 平铺字段（serverName/command/args/cwd/toolCallTimeoutMs/failOnStartupError/reconnect/env）
+    var formJson = f; // form_json：只有白名单字段（serverName/command/args/cwd/toolCallTimeoutMs/failOnStartupError/reconnect/env）
     var config = { mcpServers: {} };
     config.mcpServers[f.serverName || "fist-mbt"] = serverEntry(f);
     document.getElementById("out").value = JSON.stringify(config, null, 2);
     window.__formJson = formJson;
     window.__configJson = config;
+
+    var rt = collectRuntime();
+    document.getElementById("outRuntime").value = JSON.stringify(rt, null, 2);
+    document.getElementById("plan").textContent = applyPlan(rt);
+    window.__runtimeJson = rt;
+    window.__plan = applyPlan(rt);
   }
 
   document.getElementById("gen").onclick = render;
   document.getElementById("copy").onclick = function () { copyText(JSON.stringify(window.__configJson || {}, null, 2)); };
   document.getElementById("copyForm").onclick = function () { copyText(JSON.stringify(window.__formJson || {}, null, 2)); };
+  document.getElementById("copyRuntime").onclick = function () { copyText(JSON.stringify(window.__runtimeJson || {}, null, 2)); };
+  document.getElementById("copyPlan").onclick = function () { copyText(window.__plan || ""); };
   document.getElementById("reset").onclick = function () {
     window.__envRows = JSON.parse(JSON.stringify(DEFAULT_ENVS));
     document.getElementById("serverName").value = "fist-mbt";
@@ -277,8 +522,25 @@
     document.getElementById("reconnectIntervalMs").value = "500";
     document.getElementById("reconnectMaxRetries").value = "30";
     document.getElementById("reconnectDelayMs").value = "30000";
-    renderEnv(); render();
+    renderEnv();
+    document.getElementById("mode").value = "advance";
+    document.getElementById("splitN").value = "3";
+    ["gradient", "gradientDag", "reinjectCtx", "boundaryProbe", "pdOmega", "layaAuto", "watchdogEnabled", "coldStart", "wdOmega", "autodispatch", "phiGate", "flushBug", "critic", "hatsEnabled"].forEach(function (id) { document.getElementById(id).checked = false; });
+    document.getElementById("wdEvery").value = "60";
+    document.getElementById("wdTimeout").value = "60";
+    document.getElementById("wdReviewEvery").value = "0";
+    document.getElementById("wdOmegaSplitN").value = "2";
+    document.getElementById("phiThreshold").value = "8";
+    document.getElementById("factor").value = "1";
+    document.getElementById("hatsThreshold").value = "0.6";
+    document.getElementById("thresholdPct").value = "95";
+    document.getElementById("freePool").value = "";
+    document.querySelectorAll("#hats .hatCb").forEach(function (cb) {
+      cb.checked = (cb.value === "white" || cb.value === "black" || cb.value === "yellow");
+    });
+    render();
   };
+
   function copyText(t) {
     var done = function () { var el = document.getElementById("copyToast"); el.classList.add("show"); setTimeout(function () { el.classList.remove("show"); }, 900); };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done);

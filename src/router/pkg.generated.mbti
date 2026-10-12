@@ -6,11 +6,23 @@ import {
 }
 
 // Values
+pub fn build_ofm_chat_request_json(OfmChatRequest) -> Result[String, String]
+
+pub fn build_ofm_chat_request_json_simple(String, String) -> Result[String, String]
+
+pub fn classify_ofm_failure(Int, String) -> OfmFailure
+
 pub fn hex_decode(String) -> Result[Bytes, String]
 
 pub fn hex_encode(Bytes) -> String
 
 pub fn iso_to_secs(String) -> Int
+
+pub fn parse_ofm_chat_response(String, Int) -> OfmChatResponse
+
+pub fn parse_ofm_models(String) -> Result[Array[OfmModel], String]
+
+pub fn resolve_ofm_endpoint(String, String) -> String
 
 pub fn router_restore(Json, config? : Json) -> (ModelRouter, Array[String])
 
@@ -33,9 +45,10 @@ pub struct ModelQuota {
   limit : Int
   mut used : Int
   mut window_start : String
+  lane : String
 } derive(Eq, @debug.Debug)
 pub fn ModelQuota::is_exhausted(Self) -> Bool
-pub fn ModelQuota::new(name~ : String, tier~ : ModelTier, limit? : Int, used? : Int, window_start? : String) -> Self
+pub fn ModelQuota::new(name~ : String, tier~ : ModelTier, limit? : Int, used? : Int, window_start? : String, lane? : String) -> Self
 pub fn ModelQuota::remaining(Self) -> Int
 pub fn ModelQuota::to_json(Self) -> Json
 pub fn ModelQuota::usage_pct(Self) -> Double
@@ -70,6 +83,42 @@ pub enum ModelTier {
 pub fn ModelTier::from_string(String) -> Self?
 pub fn ModelTier::to_string(Self) -> String
 
+pub struct OfmChatMessage {
+  role : String
+  content : String
+} derive(Eq, Show, @debug.Debug)
+
+pub struct OfmChatRequest {
+  model : String
+  messages : Array[OfmChatMessage]
+  temperature : Double?
+  max_tokens : Int?
+} derive(Eq, Show, @debug.Debug)
+
+pub struct OfmChatResponse {
+  http_status : Int
+  is_error : Bool
+  error_message : String
+  error_type : String
+  content : String
+  raw : String
+} derive(Eq, Show, @debug.Debug)
+
+pub enum OfmFailure {
+  InvalidCredential
+  RateLimit
+  UpstreamDown
+  NetworkError
+  BadRequest
+  Unknown
+} derive(Eq, Show, @debug.Debug)
+pub fn OfmFailure::label(Self) -> String
+
+pub struct OfmModel {
+  id : String
+  owned_by : String
+} derive(Eq, Show, @debug.Debug)
+
 pub struct RouteDecision {
   model_name : String
   tier : ModelTier
@@ -85,6 +134,7 @@ pub struct RouterConfig {
   threshold_pct : Double
   free_models : Array[ModelQuota]
   paid_models : Array[ModelQuota]
+  ofm_endpoint : String
 } derive(Eq, @debug.Debug)
 pub fn RouterConfig::default() -> Self
 pub fn RouterConfig::from_json(Json) -> (Self, Array[String])

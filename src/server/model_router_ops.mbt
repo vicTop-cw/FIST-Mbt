@@ -422,8 +422,180 @@ fn model_router_reset_impl(
 }
 
 ///|
+/// OFM 通道：真实 POST `{ofm_endpoint}/chat/completions`（CLI spawn 保留，本通道**并存**）。
+/// `executor=="ofm"` 时由 `executor_run_impl` 分流到此，不经 `build_command`。
+/// 端点 env 优先、config 兜底（复用 `resolve_ofm_endpoint`）；密钥只在 server 进程环境变量里，
+/// 本层读进 fetch 头、**不回显**；`dry_run=true` 只回显将发送的请求体，一个网络请求都不发。
+/// 失败走 `classify_ofm_failure` 归因（status<=0 → NetworkError，401 → InvalidCredential，
+/// 5xx → UpstreamDown），不猜、不降级、不静默成功。
+async fn ofm_execute_http(
+  project_dir : String,
+  ns~ : String,
+  prompt~ : String,
+  model~ : String,
+  timeout_ms : Int,
+  dry_run : Bool,
+  route_json : Json,
+  routed_by_pool : Bool,
+) -> Json {
+  let fail = fn(msg : String, extra : Array[(String, Json)]) -> Json {
+    mr_obj(
+      [
+        ("ok", Json::boolean(false)),
+        ("executor", Json::string("ofm")),
+        ("error", Json::string(msg)),
+      ] +
+      extra,
+    )
+  }
+  let head : Array[(String, Json)] = [
+    ("executor", Json::string("ofm")),
+    ("model", Json::string(model)),
+    ("route", route_json),
+  ]
+  let (r, _warns) = @router.router_restore(
+    mr_read(project_dir, ns),
+    config=Json::null(),
+  )
+  let endpoint = @router.resolve_ofm_endpoint(
+    r.config.ofm_endpoint,
+    mr_env("FIST_OFM_ENDPOINT"),
+  )
+  if endpoint.is_empty() {
+    return fail(
+      "ofm: OFM 端点未配置（设 FIST_OFM_ENDPOINT 或 config.ofm_endpoint，均空则拒绝）",
+      head,
+    )
+  }
+  let body = match @router.build_ofm_chat_request_json_simple(model, prompt) {
+    Err(e) =>
+      return fail("ofm: 请求体构建失败（fail-closed）：" + e, head)
+    Ok(b) => b
+  }
+  let url = ofm_chat_url(endpoint)
+  if dry_run {
+    return mr_obj(
+      [("ok", Json::boolean(true))] +
+      head +
+      [
+        ("executed", Json::boolean(false)),
+        ("dry_run", Json::boolean(true)),
+        ("quota_touched", Json::boolean(false)),
+        ("url", Json::string(url)),
+        ("request_body", Json::string(body)),
+        (
+          "hint",
+          Json::string(
+            "dry_run 未发任何网络请求；密钥只从 server 进程环境变量读，不在此回显",
+          ),
+        ),
+      ],
+    )
+  }
+  let call_res = ofm_chat_http(url, body, timeout_ms)
+  let (http_status, raw_body, net_error) = match call_res {
+    Err(e) => (0, "", e)
+    Ok(j) =>
+      match j {
+        Json::Object(m) =>
+          (
+            mr_json_int(m, "status"),
+            mr_json_str(m, "body"),
+            mr_json_str(m, "error"),
+          )
+        _ => (0, "", "ofm_chat_http 返回体非对象")
+      }
+  }
+  // status==0 且带网络错误文本：没拿到 HTTP 响应（网络/超时/DNS），解析它归因
+  let to_parse = if http_status == 0 && net_error.length() > 0 {
+    net_error
+  } else {
+    raw_body
+  }
+  let resp = @router.parse_ofm_chat_response(to_parse, http_status)
+  let fail_kind = @router.classify_ofm_failure(http_status, resp.error_type)
+  let quota_note = if routed_by_pool {
+    match mr_record_only(project_dir, ns~, model) {
+      Ok(_) => "recorded(\{model})"
+      Err(e) => "record_failed: \{e}"
+    }
+  } else {
+    "not_routed(调用方显式指定 model，不代记账)"
+  }
+  if resp.is_error {
+    return mr_obj(
+      [("ok", Json::boolean(false))] +
+      head +
+      [
+        ("executed", Json::boolean(true)),
+        ("quota", Json::string(quota_note)),
+        ("http_status", Json::number(http_status.to_double())),
+        ("error_type", Json::string(resp.error_type)),
+        ("error", Json::string(resp.error_message)),
+        ("failure_kind", Json::string(fail_kind.label())),
+        (
+          "hint",
+          Json::string(
+            "OFM 通道未拿到成功正文（上游/网络/凭据）。故障面见 failure_kind；" +
+            "key 只在 server 进程环境变量里，本回执不回显。",
+          ),
+        ),
+      ],
+    )
+  }
+  mr_obj(
+    [("ok", Json::boolean(true))] +
+    head +
+    [
+      ("executed", Json::boolean(true)),
+      ("quota", Json::string(quota_note)),
+      ("http_status", Json::number(http_status.to_double())),
+      ("content", Json::string(resp.content)),
+      (
+        "hint",
+        Json::string(
+          "OFM 通道返回成功正文；仍是外部模型输出，按证据梯 L4 用 output_validate 到文件系统验证",
+        ),
+      ),
+    ],
+  )
+}
+
+///|
+/// 把端点规范化成 `{endpoint}/chat/completions`（端点已带该后缀则不重复拼接）。
+fn ofm_chat_url(endpoint : String) -> String {
+  let ep = endpoint.trim().to_owned()
+  if ep.ends_with("/chat/completions") {
+    return ep
+  }
+  if ep.ends_with("/") {
+    return ep + "chat/completions"
+  }
+  ep + "/chat/completions"
+}
+
+///|
+/// 读 Json 对象的 Int 字段。
+fn mr_json_int(m : Map[String, Json], key : String) -> Int {
+  match m.get(key) {
+    Some(Json::Number(n, ..)) => n.to_int()
+    _ => 0
+  }
+}
+
+///|
+/// 读 Json 对象的 String 字段。
+fn mr_json_str(m : Map[String, Json], key : String) -> String {
+  match m.get(key) {
+    Some(Json::String(s)) => s
+    _ => ""
+  }
+}
+
+///|
 /// 用路由结果跑外部执行器（工具 `executor_run` 的实现体）。
 /// 没显式给 model 时，先向路由器要一个模型并记账 —— 路由↔执行器的接线点。
+/// `executor=="ofm"` 走并存 HTTP 通道（见 `ofm_execute_http`），其余走 CLI spawn。
 /// 可执行文件名由 src/executor 的登记表推导（调用方无法注入任意命令）。
 /// dry_run=true 只回显"将执行的 argv"、一个进程都不起 —— 宿主命令能力默认收紧，
 /// 先可审后执行；真跑的开关留在调用方显式去掉 dry_run。
@@ -511,6 +683,19 @@ async fn executor_run_impl(
             )
         }
     }
+  }
+  // OFM 走并存 HTTP 通道（不经 build_command / spawn）；CLI spawn（aider/atomcode）保留。
+  if executor == "ofm" {
+    return ofm_execute_http(
+      project_dir,
+      ns~,
+      prompt~,
+      model=chosen,
+      timeout_ms,
+      dry_run,
+      route_json,
+      routed_by_pool,
+    )
   }
   let (bin, args) = match
     @executor.build_command(

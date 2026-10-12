@@ -35,6 +35,8 @@ options(
     "laya_js.mbt": [ "js" ],
     "github_native.mbt": [ "native" ],
     "github_js.mbt": [ "js" ],
+    "ofm_http_native.mbt": [ "native" ],
+    "ofm_http_js.mbt": [ "js" ],
   },
   link: { "native": { "cc-link-flags": "-lsqlite3" } },
 )
