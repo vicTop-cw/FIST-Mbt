@@ -38,3 +38,29 @@
 - `templates/tool_use_rubric.md` + 7 份 `templates/pipeline_mode_*.md`。
 - 测试锁：`ops_selfdrive_test.mbt:444`、`ops_pipeline_test.mbt:489/513`、`self_search_test.mbt`(8 测)、`board_ascii_test.mbt`。
 - `BACKLOG.md`（本轮 4 行状态翻账，commit 见下一提交）。
+
+---
+
+## 续记（同会话后续轮次，commits aa050f6 / eb379b6）
+
+报告主体写就后，同目标继续盘 BACKLOG/SHIP-PLAN，又落三笔——此处补全使「报告 == 实现」：
+
+### ① P0 async/x 升级：blocked → **done**（第 5 处漂移，`aa050f6`）
+旧 blocked 理由三前提逐一实测推翻：
+- 「需工具链 ≥0.1.20260921（现 0.1.20260904）」**双错**——现值实为 `0.1.20260920`；且 `git show HEAD:moon.mod` 坐实 HEAD 早已声明 `async@0.22.3` + `x@0.5.5`（不是仅工作区状态），升级目标版本**早已提交落定**。
+- 现有工具链即可编译：本地 `moon build --target js` 15 tasks up-to-date + 全量 `moon test --target js` **811/811**；WSL 隔离副本（CI 同版 nightly `0.1.20261012`）构建日志逐条 `Using cached moonbitlang/async@0.22.3 / x@0.5.5`。
+- 「Headers breaking change」对本仓**零影响**：`@async` 全仓 11 处命中**均为 `@js_async`**（extern FFI 的 `Promise`/`ReadableStream`），一处未用 0.22.x 的 cancellation / `TaskGroup.add_defer` / `is_cancellation_error` 破坏面（grep 零使用面）。
+- 原「moon upgrade 需交互 TTY」是升级**手段**之虑，非目标未达之据。
+
+### ② release-fact 段「下面三行」→「下面各行」（我引入的声明滞后，`eb379b6`）
+上几轮加 v0.3.8 那行后该段实为 4 行，而正文写「下面三行」——正是本仓「写死一个数就是下一颗漂移雷」的靶形（J10 同族：判据/自述必须等于实现）。去计数化，并注明 v0.3.8 行是「迁移修复后首发实测」读数来源。
+
+### ③ SHIP-PLAN G7「CI 自动发布接 GitCode」：确认**真未实现，但不盲落**（`eb379b6` 记账）
+- `grep gitcode .github/workflows/release.yml` 零命中 ⇒ G7 确未做，且落在我可动的 `.github/` 干净面。
+- 只读探测：`GITCODE_TOKEN`（User 作用域，24 位）打 `gitcode.com/api/v4/{user,projects/VictorTop%2FFist-Mbt,releases}` **三端点全 404**——token scope 或 base-url 形状未知。
+- **决策**：不往 release.yml 塞一条「每 tag 必跑、未实测、不可逆」的发布步——同时违反金条八（未实测不自证）与金条四（不可逆发布留确认，执行权在用户）。待 owner 给可用 GitCode API 端点/scope 再落。这是本目标**唯一剩下的、落在我干净面的真未实现项**，卡点是外部凭据/API 事实，不在我可自证范围。
+
+### 翻账总账（截至 `eb379b6`，均已推 origin+gitcode）
+done：P0 async/x、P1 Agent Contract、P1 Tool Use Rubric、P2 Dashboard/ASCII（4 项，逐项追到调用点/注册点/测试锁三层坐实）。
+保持 pending 但精确化：P3 self_search（模块在、零调用者，缺入库接线，标「勿重复建」）。
+确认未实现且不动：P2 ARCHITECTURE/core-diff/Pre-exec-gate、P3 里程碑/策略集/LTL/符号引擎/Scoring 闭环/差异化、F094、P0 native 巡检（BUG-133 关闭条件未达）、SHIP-PLAN G7（外部 API 事实缺口）——均在并发会话占用面或需 owner 拍板/外部凭据，非本轮可安全落地范围。
