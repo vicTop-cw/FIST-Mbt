@@ -53,6 +53,18 @@
 | G7 | **CI 自动发布未接 GitCode** | GitHub Actions release.yml 只写了 GitHub | 加 GitCode upload step |
 | G8 | **6 个单模式无法串联循环** | 现有 `PipelineMode` 是单次语义约束，没有编排层 | Phase 6 新增 `PipelineLoop` 编排层与配套 MCP 工具（`loop_create` / `loop_tick` / `loop_status`，2026-09-28 已交付；当前工具总数以 `server.mbt` 注册表为准，由 `check_tools_sync` 对表） |
 
+#### Gap 复核（2026-10-13，WSL2 + 真实公网 Release 实测；只更新本轮拿到证据的格，其余留原状）
+
+| # | 复核结论 | 一手读数 |
+|---|---|---|
+| G1 | **已闭合**——公网 Release 真产出（本表写就时确实一发都没有） | `fist-mbt-js-v0.3.8.zip` 429290B `state=uploaded`，直链 HTTP 200；`published_at=2026-10-13T06:19:06Z`（机器可读锚在 `BACKLOG.md` 的 release-fact 行）。卡点不是"没发布"而是**新版 moon 拒绝旧 `.mooncakes/<dep>/moon.mod.json`** ⇒ `build-js` rc=255 ⇒ release skip；已由 `scripts/migrate_mooncakes_modjson.sh`（循环 build→就地 fmt→重试）根治 |
+| G2 | 脚本在场（本表写就后要补的实测） | `scripts/blackbox/install_onecmd.ps1` 存在，Windows 侧真跑通装到 `fist version` = v0.3.8 |
+| G5 | **功能面已实测通过；网络面受本机环境限制未测**（不许读成"Linux 公网 curl\|bash 端到端已验") | WSL2(root/node v25.2.1/python3/curl/unzip) 走 `FIST_LOCAL_ZIP` 跑完 install.sh 后半段：`INSTALL_RC=0`、自检两格 ✅、`fist`/`fist-mbt version` = v0.3.8、无扩展名 shim 首行 `#!/usr/bin/env bash`(R5 POSIX 可见)、ESM `createRequire` 注入 1 处、**`node fist-mbt.js serve` 在 Linux 真起且 `tools/list` 回 163 工具**；装出产物 **md5 `985f2209c51e1ae9afbdb7e1a507aebd` 与 Windows 侧 `_release/js`、`_build/.../cli.js`、本机已装三处逐字节相同** ⇒ "Linux 同等实现"最硬那格通过。未测部分：WSL 直连 `github.com`(下载主机) **25s 超时**（`api.github.com` / `objects.githubusercontent.com` 都通 ⇒ 是路由/代理面，本机 WSL 不走 Windows 系统代理） |
+| G5 附带 | **R6「200≠拿到文件」在 Linux 侧同样现形，且证明换源逻辑真的执行** | 走真下载线时源1 `gitcode.com/…/releases/download/…zip` 回 **HTTP 403 + 正文 `{"error…`**，install.sh 正确判"给的不是 zip"并换源 ⇒ 本表 §0 拍板的"GitCode 主源"第一档其实一直取不到资产，全靠 fallback GitHub 兜住；主源真要有货需 G7 落地 |
+| G7 | **仍未实现，且刻意不盲落** | `grep gitcode .github/workflows/release.yml` 零命中。只读探测：`GITCODE_TOKEN` 打 `gitcode.com/api/v4/*` 全 404；`api.gitcode.com/api/v5/user` 200（login=VictorTop）但 `/api/v5/projects/VictorTop%2FFist-Mbt`、`/api/v5/projects`、`…/releases` 全 404 ⇒ 项目/release 端点形状未知或 token 无 scope。不在 release.yml 加"每 tag 必跑、未实测、不可逆"的发布步（未实测不自证 + 不可逆发布留确认），待可用 API 事实与 owner 拍板 |
+
+> 另记一格潜在坑（本轮踩到的是**自己的测试**，非产品）：仓库**没有 `.gitattributes`**。`install.sh` 的 git blob 实测**纯 LF（CR=0）** ⇒ 用户 `curl | bash` 拿到的没问题；但本机 `core.autocrlf=true` 把 Windows 工作树副本转成 **CRLF（CR=260）**，谁要是**从 Windows 工作树直接把 `.sh` 拿到 Linux/WSL 跑**就会炸在 `line 15: $'\r': command not found` + `set: pipefail: invalid option`（我 step7/step9 两次假警报即此因）。建议补 `.gitattributes`（`*.sh text eol=lf`、`*.ps1 text eol=crlf`），与本仓既有 `check_ps_encoding`（BUG-88）互补。
+
 ---
 
 ## §2 分阶段实施计划
