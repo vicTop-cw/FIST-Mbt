@@ -9,6 +9,8 @@
       "timeout_ms": 30000,
       "env": {
         "FIST_PROJECT_DIR": ".",
+        "FIST_CALLER": "human_steward",
+        "_note_caller": "BUG-137：call_log.caller 的身份真源是**进程环境变量 FIST_CALLER**（优先级 环境 > 调用方自述 created_by > 空串）。多 agent/多管家同库时，每个 agent 启动 server 前都应注入各自身份（如 `atomcode-glm` / `selfdrive` / `human_steward`），否则 caller 落空串——预订/冲突裁决（reserve_scope、F094 那类仲裁原语）的『谁占的』就无法事后复核。这里给的是模板占位示例值，请按部署方替换；`.mcp.dev.json` 那类固定启动参数只能给一个值，做不到每 agent 一身份，需运维侧注入。",
         "_note_native_needs_sqlite3_dll": "Windows native 版若报 sqlite3.dll 缺失，需装 sqlite3 运行库到 PATH 或同目录",
         "_note_js_needs_node_24_plus": "JS 版需 Node.js >= 24（用 node fist-mbt.js 运行，支持 returnArrays）",
         "_note_star_gate_default_on": "Star 门默认开启（发布模板默认值）：未提供有效 attestation 验签的用户，免费模型池保持锁定（fail-closed），对上游呈现『我们有限制』的姿态。本公钥 = src/router/star_gate.mbt 的 star_release_default_pubkey_hex，两者必须一致；对应私钥由仓库 secret ED25519_PRIVATE_KEY_HEX 保管，本仓不含私钥。",
