@@ -32,8 +32,15 @@ WSL 实测（同 CI 版 nightly moon，`git archive HEAD` 干净副本，逐文�
 （`Int32` 溢出类缺陷的守门就是这条）。此后本地与 CI 的 fmt 面同源，这条红永久消失。
 **B. 钉版本面**：把 ci.yml / fist-ci.yml 的 `Install MoonBit toolchain` 从 latest 钉到
 `0.1.20260920`——**实测此路不通**：`cli.moonbitlang.com/binaries/<具体版本号>/` 一律 S3 403
-（只有 latest / nightly 可取），详见 memory/2026-10-13「钉版证伪」段。故 B 实际不可行，
-除非自建 moon 二进制镜像。⇒ **实际只剩 A**。
+（只有 latest / nightly 可取；2026-10-13 复验 0.1.20260920 / 0.1.20261012 均 403、latest / nightly 均 206），
+且安装脚本 `CLI_MOONBIT="https://cli.moonbitlang.com"` 是**硬编码常量**（unix.sh L108，
+不可环境变量覆盖）⇒ 无法指向自建镜像。详见 memory/2026-10-13「钉版证伪」段。
+**B′. 自建镜像面（2026-10-13 追加实测，同样不通）**：本地 `~/.moon` 确有完整的 0.1.20260920
+（544MB：bin/lib/include/registry/share），但它是 **Windows 二进制**——WSL 实测解包后
+`bin/moon` 在 Linux 下 `No such file or directory`（Windows 的 `moon.exe` Linux 不可执行）。
+要产出 Linux 版 0.1.20260920 tarball，得先有一台 Linux 机器装上该版本（而 WSL 里只能装到
+nightly，官方不提供旧版）⇒ 镜像的素材本地不存在，除非另找一台机器提前装存档。
+⇒ **实际只剩 A**。
 
 ## 边界（不许读成"CI 全绿只差这一步"）
 
@@ -44,6 +51,8 @@ Format 是**当前唯一挡住守卫族（含 HTTP 契约自证那一步）的�
 
 ## 来源
 - WSL 实测：`temp/fmt_probe_direct.txt`（nightly moon `0.1.20261012` 逐文件 diff 原文）
+- WSL 镜像探测：`temp/mirror_probe_direct.txt`（本地 `~/.moon` 是 Windows 二进制、Linux 下不可执行）
 - CI 实证：#271 js,ubuntu `Format check` failure、#271 js,windows **success**（迁移步生效的对照）
-- 版本事实：本地 `moon 0.1.20260920`；`cli.moonbitlang.com/binaries/<version>/` S3 403（钉版不通）
+- 版本事实：本地 `moon 0.1.20260920`；`cli.moonbitlang.com/binaries/<version>/` S3 403（钉版不通，
+  复验 0.1.20260920 / 0.1.20261012 = 403、latest / nightly = 206）；安装脚本 `CLI_MOONBIT` 硬编码（L108）
 - 归属：`git log -1` 显示 `atgc*` 两文件基线提交 `4cf2a41`、`subcmd.mbt` 最后提交 `2426a66` 且当前 ` M`
