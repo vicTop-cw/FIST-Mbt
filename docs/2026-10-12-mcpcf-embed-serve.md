@@ -16,12 +16,18 @@
 
 native 与 js 双端均通过 `tools/list`（147 工具含 7 个 mcpcf.*）+ 实操验证：
 
-| 项 | native (cmd/main main.exe) | js (cmd/cli cli.js) |
+| 项 | native (cmd/cli cli.exe) | js (cmd/cli cli.js) |
 |---|---|---|
 | tools/list 含 7 个 mcpcf.* | PASS | PASS |
 | mcpcf.ops_init | sqlite 后端 ok | sqlite 后端 ok |
 | mcpcf.run_batch | T0 创建 ok | T0 创建 ok |
 | mcpcf.report | - | total=1 查询 ok |
+
+> 入口注记（2026-10-13 补）：本表 native 端当时以 cmd/main 构建（该入口其后已退役）。
+> 现役发布入口统一为 cmd/cli，且它**同时支持 native 与 js 两端**
+> （cmd/cli/moon.pkg 的 supported_targets = "js+native"）；本表已按现役入口改写，
+> 实测 moon build cmd/cli --target native rc=0、产物 _build/native/debug/build/cmd/cli/cli.exe。
+> 历史构建命令见本文件「相关命令」的注记。
 
 ## JS 端启动须知（重要）
 
@@ -41,6 +47,10 @@ native 与 js 双端均通过 `tools/list`（147 工具含 7 个 mcpcf.*）+ 实
 ## 相关命令
 
 ```
-moon build cmd/main --target native   # native 端 serve：_build/native/debug/build/cmd/main/main.exe
-moon build cmd/cli --target js        # js 端 serve：_build/js/debug/build/cmd/cli/cli.js
-```
+moon build cmd/cli --target native   # native 端 serve：_build/native/debug/build/cmd/cli/cli.exe
+moon build cmd/cli --target js       # js 端 serve：_build/js/debug/build/cmd/cli/cli.js
+`
+
+> 注（2026-10-13）：上面的 native 行原以退役入口 cmd/main 构建（产物落在该包目录下的可执行文件）——
+> cmd/main 已退役，现役入口统一为 cmd/cli（supported_targets = "js+native"，两端同一入口）。
+> 两行均已按现役入口实测：--target native rc=0 ⇒ …/cmd/cli/cli.exe；--target js ⇒ …/cmd/cli/cli.js。``
