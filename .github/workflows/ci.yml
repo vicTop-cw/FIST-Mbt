@@ -32,6 +32,15 @@ jobs:
       # 没给 ci.yml 挂，结果 Check 这一步就把后面 25 步全 skip 掉（含 HTTP 契约自证那一步）。
       # 教训：依赖图是**每步之前**的公共前置，不是某条臂的局部问题——修一处不修另一处等于没修。
       # 老版 moon（本地 0.1.20260920）首轮 build 即过 ⇒ 这里是无损 no-op。
+      # 2026-10-13 第二次 master 坏状态实录（server/pkg.generated.mbti 声明了 4 个源里没有的 pub fn ⇒
+      # 干净树 moon check 报 unbound 20 errors，而 CI 红在 Migrate 步且 skip 其后全部步）。
+      # 本判据放在 Migrate **之前** —— 上轮实测：挂在 Migrate 之后的判据会被 skip（恰在最需要它出声时）。
+      - name: MBTI sync guard (.mbti 接口声明 ↔ 源定义；第二次 master 坏状态形状)
+        shell: bash
+        run: |
+          python3 scripts/check_mbti_sync.py --selftest
+          python3 scripts/check_mbti_sync.py
+
       - name: Migrate mooncakes dep manifests (新版 moon 拒旧 moon.mod.json，check/test 全线的公共前置)
         shell: bash
         run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
