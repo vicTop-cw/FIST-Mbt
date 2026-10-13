@@ -49,6 +49,7 @@ jobs:
         run: |
           moon build --target js cmd/cli
           python3 scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js
+          python3 scripts/blackbox/e2e_http_contract.py --selftest
           python3 scripts/blackbox/e2e_http_contract.py
 
       - name: Format check (BUG-118：格式门住在权威 CI，不只在狗食轨)
