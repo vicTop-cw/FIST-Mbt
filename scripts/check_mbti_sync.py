@@ -44,8 +44,24 @@ if hasattr(sys.stderr, "reconfigure"):
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MBTI_NAME = "pkg.generated.mbti"
-PAT_PUB_FN = re.compile(r"^\s*pub fn (\w+)")
-# `moon info` 生成的接口面在同一模块里只声明 pub 项；本判据只取 pub fn 这一形状。
+# `moon info` 的接口面只列 pub 项。本判据按**形状**分别收集并比对（2026-10-13 扩展：
+# 先只在 `pub fn` 上做实，随后预判"健康树零误报"通过后扩到 6 种形状）。
+# 形状 → (.mbti 里的声明正则, 源 .mbt 里的定义正则)
+#   源侧允许 `pub` / `pub(all)` / 无前缀三种写法（`.mbti` 只列 pub 项，但源码里可能写 pub(all)）。
+SHAPES = {
+    "fn":     (re.compile(r"^\s*pub fn (\w+)"),
+               re.compile(r"^\s*(?:pub(?:\(all\))? )?fn (\w+)")),
+    "struct": (re.compile(r"^\s*pub (?:all\()?struct (\w+)"),
+               re.compile(r"^\s*(?:pub(?:\(all\))? )?struct (\w+)")),
+    "enum":   (re.compile(r"^\s*pub (?:all\()?enum (\w+)"),
+               re.compile(r"^\s*(?:pub(?:\(all\))? )?enum (\w+)")),
+    "const":  (re.compile(r"^\s*pub const (\w+)"),
+               re.compile(r"^\s*(?:pub(?:\(all\))? )?const (\w+)")),
+    "let":    (re.compile(r"^\s*pub let (\w+)"),
+               re.compile(r"^\s*(?:pub(?:\(all\))? )?let (\w+)")),
+    "trait":  (re.compile(r"^\s*pub trait (\w+)"),
+               re.compile(r"^\s*(?:pub(?:\(all\))? )?trait (\w+)")),
+}
 
 
 def tracked(root=None):
@@ -63,18 +79,39 @@ def tracked(root=None):
     return files
 
 
-def collect_pub_fn(text):
-    out = set()
-    for l in text.splitlines():
-        m = PAT_PUB_FN.match(l)
-        if m:
-            out.add(m.group(1))
+def collect_decls(text):
+    """从 .mbti 正文收集 {形状: {声明名}}（只认 .mbti 侧正则）。"""
+    out = {}
+    for shape, (pat, _) in SHAPES.items():
+        names = set()
+        for l in text.splitlines():
+            m = pat.match(l)
+            if m:
+                names.add(m.group(1))
+        out[shape] = names
+    return out
+
+
+def collect_defs(text):
+    """从源 .mbt 正文收集 {形状: {定义名}}（只认源侧正则，允许 pub(all)/无前缀）。"""
+    out = {}
+    for shape, (_, pat) in SHAPES.items():
+        names = set()
+        for l in text.splitlines():
+            m = pat.match(l)
+            if m:
+                names.add(m.group(1))
+        out[shape] = names
     return out
 
 
 def judge(pkg_decls, pkg_defs):
-    """pkg_decls = {pkg_dir: {声明名}}；pkg_defs = {pkg_dir: {源里的 pub fn 名}}。
-    返回 (问题列表, 检查过的声明数)。"""
+    """pkg_decls = {pkg_dir: {形状: {声明名}}}；pkg_defs = {pkg_dir: {形状: {定义名}}}。
+    返回 (问题列表, 检查过的声明数)。
+
+    形状逐个比（2026-10-13 从 pub fn 单形状扩到 6 种）：先只在 fn 上做实，
+    随后经"健康树零误报"预判（`temp/feasibility_shapes.py`：struct 57 / enum 21 /
+    const 12 / let 5 / trait 2 在健康树里缺口均为 0）才扩面。"""
     problems = []
     n = 0
     for d in sorted(pkg_decls):
@@ -84,15 +121,17 @@ def judge(pkg_decls, pkg_defs):
         defs = pkg_defs.get(d)
         if defs is None:
             continue      # 无 .mbt 的包：本轮不判（如历史遗留的 omega/pkg.generated.mbti）
-        miss = pkg_decls[d] - defs
-        for name in sorted(miss):
-            n += 1   # 缺的也算检查过（否则防空转门会失效）
-            problems.append(
-                "M1 %s/%s 声明了 `pub fn %s`，但同包 .mbt 里找不到该定义 "
-                "——接口面声明了但实现未提交（干净树 moon check 会报 unbound）"
-                % (d, MBTI_NAME, name)
-            )
-        n += len(pkg_decls[d] & defs)
+        for shape in sorted(SHAPES):
+            a = pkg_decls[d].get(shape, set())
+            b = defs.get(shape, set())
+            for name in sorted(a - b):
+                n += 1   # 缺的也算检查过（否则防空转门会失效）
+                problems.append(
+                    "M1 %s/%s 声明了 `pub %s %s`，但同包 .mbt 里找不到该定义 "
+                    "——接口面声明了但实现未提交（干净树 moon check 会报 unbound/not found）"
+                    % (d, MBTI_NAME, shape, name)
+                )
+            n += len(a & b)
     return problems, n
 
 
@@ -113,41 +152,57 @@ def selftest():
             return set(), 0
 
     # 1) 干净：声明与定义齐备 ⇒ 0 违例
-    p, n = safe_judge("clean-no-false-positive", {'src/a': {'foo', 'bar'}}, {'src/a': {'foo', 'bar', 'baz'}})
+    p, n = safe_judge("clean-no-false-positive",
+                      {'src/a': {'fn': {'foo', 'bar'}}}, {'src/a': {'fn': {'foo', 'bar', 'baz'}}})
     cell("clean-no-false-positive", len(p) == 0, True)
     print("  ok  clean-no-false-positive（%d 条声明，0 违例）" % n)
 
-    # 2) 合成违例：声明多一个 ⇒ 必红
-    p, n = safe_judge("synthetic-violation-caught", {'src/a': {'foo', 'ghost'}}, {'src/a': {'foo'}})
+    # 2) 合成违例：fn 声明多一个 ⇒ 必红
+    p, n = safe_judge("synthetic-violation-caught",
+                      {'src/a': {'fn': {'foo', 'ghost'}}}, {'src/a': {'fn': {'foo'}}})
     cell("synthetic-violation-caught", any('ghost' in x for x in p), True)
     print("  ok  synthetic-violation-caught（%s）" % (p[0][:76] if p else "未编制"))
 
+    # 2b) 扩展形状的合成违例：struct 声明多一个 ⇒ 必红（证明 6 形状面各自可红）
+    p, n = safe_judge("struct-violation-caught",
+                      {'src/a': {'struct': {'Foo'}, 'fn': set()}}, {'src/a': {'struct': set(), 'fn': set()}})
+    cell("struct-violation-caught", any('struct Foo' in x for x in p), True)
+    print("  ok  struct-violation-caught（扩展形状可红）")
+
     # 3) 真实形状：本轮 HEAD 的 4 个缺符号 ⇒ 必红（用真实名字）
-    real = {'src/server': {'do_evolve_asset_register_with_search', 'parse_search_lines',
-                           'register_supervisor_tools', 'self_search_runner_default'},
-            }
-    p, n = safe_judge("real-shape-4-symbols-caught", real, {'src/server': set()})
+    real = {'src/server': {'fn': {'do_evolve_asset_register_with_search', 'parse_search_lines',
+                                  'register_supervisor_tools', 'self_search_runner_default'}}}
+    p, n = safe_judge("real-shape-4-symbols-caught", real, {'src/server': {'fn': set()}})
     cell("real-shape-4-symbols-caught", len(p) == 4, True)
     print("  ok  real-shape-4-symbols-caught（master 第二次坏状态原形：4 个符号全点名）")
 
-    # 4) 非 pub 的内部函数不进 .mbti ⇒ 不得被当缺定义（本判据只收集 pub fn，天然不误红）
-    p, n = safe_judge("private-fn-not-considered", {'src/a': {'foo'}}, {'src/a': {'foo'}})
+    # 4) 非 pub 的内部函数不进 .mbti ⇒ 不得被当缺定义（本判据只收集 pub 项，天然不误红）
+    p, n = safe_judge("private-fn-not-considered",
+                      {'src/a': {'fn': {'foo'}}}, {'src/a': {'fn': {'foo'}}})
     cell("private-fn-not-considered", len(p) == 0, True)
     print("  ok  private-fn-not-considered")
 
     # 5) 无 .mbt 的包不判（omega 那类历史遗留）
-    p, n = safe_judge("no-mbt-package-skipped", {'omega': {'x'}}, {})
+    p, n = safe_judge("no-mbt-package-skipped", {'omega': {'fn': {'x'}}}, {})
     cell("no-mbt-package-skipped", len(p) == 0 and n == 0, True)
     print("  ok  no-mbt-package-skipped（无 .mbt 的包不参与）")
 
-    # 6) 口径守卫：本判据只收 `pub fn`（内部 fn 不进 .mbti）。
-    #    变异实测暴露过这处覆盖缺口：把正则放宽成 `(?:pub )?fn` 时，上面 5 格全绿 ⇒ 判据变假绿。
-    got_pub = collect_pub_fn("pub fn a() -> Unit\nfn b() -> Unit\n  fn c() -> Unit\n")
+    # 6) 口径守卫：.mbti 侧只收 `pub fn`（内部 fn 不进 .mbti）。
+    #    变异实测暴露过这处覆盖缺口：把 .mbti 侧正则放宽成 `(?:pub )?fn` 时，上面各格全绿 ⇒ 判据变假绿。
+    got_pub = collect_decls("pub fn a() -> Unit\nfn b() -> Unit\n  fn c() -> Unit\n")["fn"]
     cell("only-pub-fn-collected", got_pub == {"a"}, True)
-    print("  ok  only-pub-fn-collected（只收 `pub fn a`，内部 fn 不入声明集）")
+    print("  ok  only-pub-fn-collected（.mbti 侧只收 `pub fn a`，内部 fn 不入声明集）")
+
+    # 6b) 源侧允许 `pub(all)`：collect_defs 必须认得 `pub(all) struct Foo` 这类写法，
+    #     否则真定义会被当成"缺失"而误红（这是扩到 6 形状后新增的误报面）。
+    src = 'pub(all) struct Foo {\n}\npub fn bar() -> Unit\nstruct Baz {\n}\n'
+    dsrc = collect_defs(src)
+    cell("src-pub-all-recognized", dsrc["struct"] == {"Foo", "Baz"}, True)
+    print("  ok  src-pub-all-recognized（源侧 pub(all)/无前缀都认，防扩展误红）")
 
     # 7) 缺声明必须计入 n（否则"判据空转"门会失效：全缺时把 n 算成 0 就自拒不报红了）。
-    _, n_miss = safe_judge("missing-counted-in-n", {'src/z': {'ghost'}}, {'src/z': set()})
+    _, n_miss = safe_judge("missing-counted-in-n",
+                           {'src/z': {'fn': {'ghost'}}}, {'src/z': {'fn': set()}})
     cell("missing-counted-in-n", n_miss >= 1, True)
     print("  ok  missing-counted-in-n（缺的也算检查过，防空转门失效）")
 
@@ -157,7 +212,8 @@ def selftest():
         for nm, why in bad_cells:
             print("  - %s：%s" % (nm, why))
         return 1
-    print("SELFTEST OK（%d 格：干净不误红 / 合成违例必红 / 真实 4 符号必红 / 私有函数不误 / 无 .mbt 包跳过 / 只收 pub fn / 缺额计入空转门）"
+    print("SELFTEST OK（%d 格：干净不误红 / 合成违例必红 / 扩展形状(struct)可红 / 真实 4 符号必红 / "
+          "私有函数不误 / 无 .mbt 包跳过 / .mbti 侧只收 pub fn / 源侧认 pub(all) / 缺额计入空转门）"
           % len(cells))
     return 0
 
@@ -186,7 +242,7 @@ def main():
 
     pkg_decls = {}
     for p in mbti:
-        pkg_decls[os.path.dirname(p)] = collect_pub_fn(read_tracked(p))
+        pkg_decls[os.path.dirname(p)] = collect_decls(read_tracked(p))
 
     pkg_defs = {}
     for f in files:
@@ -195,7 +251,9 @@ def main():
         d = os.path.dirname(f)
         if d not in pkg_decls:
             continue
-        pkg_defs.setdefault(d, set()).update(collect_pub_fn(read_tracked(f)))
+        cur = pkg_defs.setdefault(d, {})
+        for shape, names in collect_defs(read_tracked(f)).items():
+            cur.setdefault(shape, set()).update(names)
 
     # 尺子坏了必须自报（不可冒用 1 那一档）：judge() 自身若抛（如实现被改成直接下标而缺包），
     # 那是判据异常，不是"接口面有缺陷"。变异实测正是靠这一格把「去掉 .get 保护」那一处抓住。
@@ -206,15 +264,15 @@ def main():
                          % (type(e).__name__, e))
 
     if n == 0:
-        raise SystemExit("FATAL 全仓 .mbti 里一条 pub fn 声明都没有 —— 判据空转，拒绝报绿")
+        raise SystemExit("FATAL 全仓 .mbti 里一条 pub 声明都没有 —— 判据空转，拒绝报绿")
     if problems:
-        print("FAIL .mbti 接口声明 ↔ 源定义 一致性守卫（扫 %d 份 .mbti、%d 条 pub fn 声明）："
-              % (len(pkg_decls), n))
+        print("FAIL .mbti 接口声明 ↔ 源定义 一致性守卫（扫 %d 份 .mbti、%d 条 pub 声明、%d 种形状）："
+              % (len(pkg_decls), n, len(SHAPES)))
         for x in problems:
             print("  - " + x)
         return 1
-    print("PASS .mbti 接口声明 ↔ 源定义一致：%d 份 .mbti 的 %d 条 pub fn 声明在同包 .mbt 里都有定义"
-          % (len(pkg_decls), n))
+    print("PASS .mbti 接口声明 ↔ 源定义一致：%d 份 .mbti 的 %d 条 pub 声明（%d 种形状）在同包 .mbt 里都有定义"
+          % (len(pkg_decls), n, len(SHAPES)))
     return 0
 
 
