@@ -15,6 +15,11 @@ WSL 实测（同 CI 版 nightly moon，`git archive HEAD` 干净副本，逐文�
 
 ⇒ 本机 `moon fmt` 对这些文件"无改动"与 CI "报未格式化"**两者都正确**，差别只在工具链版本。
 
+**追加实测（2026-10-13，决定 owner 可选空间）**：同版 nightly 下
+`moon check --target js` **rc=0** 而 `moon fmt --check` **rc=255**，且把 `Int` 改成 `Int32` 后 check **仍 rc=0**
+⇒ **`check` 与 `fmt` 的标准不一致**（fmt 单方面要求规范化、check 两种都收）。
+这意味着这不是"代码有错"而是"两把尺不同步"，owner 除"全仓重排"外还有**低风险落法**（见下方 A′ 三条）。
+
 ## 为什么不该由本轮顺手"修掉"
 
 1. **`Int` → `Int32` 是语义改动不是格式**：本仓账本记过 `Int32` 溢出类缺陷（BUG-218 secs overflow 同族），
@@ -41,6 +46,22 @@ WSL 实测（同 CI 版 nightly moon，`git archive HEAD` 干净副本，逐文�
 要产出 Linux 版 0.1.20260920 tarball，得先有一台 Linux 机器装上该版本（而 WSL 里只能装到
 nightly，官方不提供旧版）⇒ 镜像的素材本地不存在，除非另找一台机器提前装存档。
 ⇒ **实际只剩 A**。
+
+**A′. A 的低风险变体（2026-10-13 追加实测：`check` 与 `fmt` 的标准不一致）**：
+WSL 同版 nightly 实测三支读数——`moon check --target js` **rc=0**（CI #271 亦实证 success）、
+`moon fmt --check` **rc=255**（CI #271 实证 failure）、把 `Int` 改成 `Int32` 后 `moon check` **仍 rc=0**。
+⇒ 新版 **`fmt` 单方面要求类型规范化（`Int`→`Int32`）、而 `check` 对两种写法都接受**——这不是"代码错"，
+是两把尺的标准不一致。故 owner 其实有三条落法，风险从低到高：
+1. **降 fmt 门强度**（最低风险）：`moon fmt --check` 只作**信息步**（失败不阻断，或只对本次改动文件
+   作 `fmt --check`），并把「nightly fmt 与本地 fmt 标准不同步」写进步骤注释——保住守卫族继续跑，
+   代价是 fmt 面暂时弱化；
+2. **只对本次 diff 面 fmt**：CI 里对 `git diff --name-only` 出的 `.mbt` 逐个 `moon fmt --check`，
+   存量基线文件（`atgc*`、`subcmd.mbt`）不进判据 ⇒ 新代码仍受格式约束，存量不受版本差牵连；
+3. **全面 A**（最高风险但最彻底）：用 nightly `moon fmt` 全仓重排并提交，含 `Int→Int32` 的
+   FFI 签名改动，提交前必须跑全量 `moon test --target js` 守 `Int32` 溢出类缺陷（本仓有 BUG-218 同族账）。
+本报告只把这三条摆出与读数并列，**落哪条属 owner 裁决**（金条四：改共享 CI 定义与公共基线不改是"方案+预案"）。
+> 注：`grep -icE "error"` 在 check 日志里数到 162 行，那是把 warning 文本里的 "error" 字样也算进去了
+> 的噪声；判绿只按 **rc=0** 与 `moon check` 的汇总行，不按 grep 计数——写在这里免得后来者被那个数误导。
 
 ## 边界（不许读成"CI 全绿只差这一步"）
 
