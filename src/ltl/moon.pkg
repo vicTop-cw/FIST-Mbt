@@ -1,0 +1,6 @@
+import {
+  "moonbitlang/core/json",
+  "moonbitlang/core/builtin",
+}
+
+supported_targets = "js+native"

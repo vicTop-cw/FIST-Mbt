@@ -1,0 +1,26 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/diff"
+
+// Values
+pub fn diff_lines(String, String) -> Array[DiffOp]
+
+pub fn diff_stats(Array[DiffOp]) -> (Int, Int, Int)
+
+pub fn render_json(Array[DiffOp]) -> String
+
+pub fn render_unified(Array[DiffOp]) -> String
+
+// Errors
+
+// Types and methods
+pub enum DiffOp {
+  Equal(String)
+  Insert(String)
+  Delete(String)
+}
+pub fn DiffOp::kind(Self) -> String
+pub fn DiffOp::text(Self) -> String
+
+// Type aliases
+
+// Traits

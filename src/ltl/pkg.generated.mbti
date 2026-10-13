@@ -1,0 +1,56 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/ltl"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn atom(String) -> LtlFormula
+
+pub fn evaluate(LtlFormula, Array[State]) -> Verdict
+
+pub fn eventually(LtlFormula) -> LtlFormula
+
+pub fn formula_to_string(LtlFormula) -> String
+
+pub fn globally(LtlFormula) -> LtlFormula
+
+pub fn implies(LtlFormula, LtlFormula) -> LtlFormula
+
+pub fn ltl_true() -> LtlFormula
+
+pub fn monitor_step(LtlFormula, Array[State]) -> Verdict
+
+pub fn states_to_json(Array[State]) -> String
+
+pub fn verdict_to_string(Verdict) -> String
+
+// Errors
+
+// Types and methods
+pub enum LtlFormula {
+  Atom(String)
+  Not(LtlFormula)
+  And(LtlFormula, LtlFormula)
+  Or(LtlFormula, LtlFormula)
+  Next(LtlFormula)
+  Until(LtlFormula, LtlFormula)
+}
+
+pub struct State {
+  atoms : Map[String, Bool]
+}
+pub fn State::get(Self, String) -> Bool
+pub fn State::new() -> Self
+pub fn State::set(Self, String, Bool) -> Self
+
+pub enum Verdict {
+  Hold
+  Violated
+  Unknown
+} derive(Eq, @debug.Debug)
+
+// Type aliases
+
+// Traits
