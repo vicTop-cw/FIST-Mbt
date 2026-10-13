@@ -27,6 +27,8 @@ pub fn bug_server_cwd() -> String
 
 pub fn distill_principle_goal(String) -> String
 
+pub fn do_evolve_asset_register_with_search(String, String, String, Double, String, runner? : ((String, Array[String]) -> Result[String, String])?) -> Result[Json, String]
+
 pub fn do_evolve_distill(@evolve.Archive, @store.SqliteStore?, String, String, Double, String) -> Json
 
 pub fn do_evolve_lesson(@evolve.Archive, @store.SqliteStore?, String, String, String, String, score? : Double) -> Json
@@ -137,7 +139,11 @@ pub fn output_validate(String, Array[Json], Json, String, require_evidence? : Bo
 
 pub fn ov_parse_int(String) -> Int?
 
+pub fn parse_search_lines(String) -> Array[@evolve.SearchCandidate]
+
 pub fn project_standards(String, Bool) -> Json
+
+pub fn register_supervisor_tools(@colmugx/mcp/server.MCPServer) -> @colmugx/mcp/server.MCPServer
 
 pub fn render_board_ascii(Array[@core.Task], String) -> Json
 
@@ -175,6 +181,8 @@ pub async fn run_server() -> Unit
 
 pub fn scan_finding_guarded(String, String, Array[String], ctx? : ScanCtx, hit_line? : String, hit_ln? : Int) -> Bool
 
+pub fn self_search_runner_default() -> ((String, Array[String]) -> Result[String, String])?
+
 pub fn selfdrive_round_tick(Json) -> Json
 
 // Errors
@@ -191,6 +199,10 @@ type ScanCtx
 type ScanFinding
 
 type ScanRule
+
+type SupervisorGuidance
+
+type SupervisorGuidanceRegistry
 
 // Type aliases
 
