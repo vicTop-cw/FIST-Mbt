@@ -14,6 +14,8 @@
 #
 # 依赖：
 #   repo secrets:
+#     STAR_GATE_PAT            : 可读 stargazers 的 PAT（classic，scope 含 user；默认
+#                                github.token 会被 403，2026-10-13 实跑现形）
 #     ED25519_PRIVATE_KEY_HEX : 32 字节私钥的 hex（seed）。生成：
 #        python -c "import nacl.signing;print(nacl.signing.SigningKey.generate().encode().hex())"
 #     对应公钥会由 workflow 计算并写进清单。
@@ -55,7 +57,10 @@ jobs:
 
       - name: Build & sign attestation
         env:
-          GH_TOKEN: ${{ github.token }}
+          # 默认 github.token 拿 stargazers 会 403（2026-10-13 实跑 run#4 现形：
+          # 装好 PyNaCl、密钥校验全过，死在 GET /stargazers HTTP 403 Forbidden）。
+          # 改用 repo secret `STAR_GATE_PAT`（classic PAT，scope 含 user，可读 stargazers）。
+          GH_TOKEN: ${{ secrets.STAR_GATE_PAT }}
           ED25519_PRIVATE_KEY_HEX: ${{ secrets.ED25519_PRIVATE_KEY_HEX }}
         run: |
           python - <<'PY'
