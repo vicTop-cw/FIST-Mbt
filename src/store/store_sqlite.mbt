@@ -105,6 +105,8 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     "CREATE TABLE IF NOT EXISTS file_locks (scope TEXT PRIMARY KEY, lock_id TEXT NOT NULL DEFAULT '', batch_id TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', ts TEXT NOT NULL DEFAULT '', ttl_until TEXT NOT NULL DEFAULT '', meta TEXT NOT NULL DEFAULT '')",
     // 锁违例记录（过期未续 / 被抢占），追加式
     "CREATE TABLE IF NOT EXISTS lock_violations (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', lock_id TEXT NOT NULL DEFAULT '')",
+    // 项目助理登记（multi-agent-lock v3 阶段2）：agent 为主键，同一助理一行
+    "CREATE TABLE IF NOT EXISTS assistant_reg (agent TEXT PRIMARY KEY, mode TEXT NOT NULL DEFAULT 'all', is_primary INTEGER NOT NULL DEFAULT 0, registered_at TEXT NOT NULL DEFAULT '', heartbeat_at TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active')",
     // BUG-94：executions 过去**不在**建表清单里，只在**写**路径上 ensure
     // （record_execution 调 ensure_executions_table）。读路径 `cost_stats` 直接
     // prepare `FROM executions` ⇒ 新库（没写过任何执行记录）上一次 cost_stats 就
@@ -699,6 +701,11 @@ impl Store for SqliteStore with fn clear(self) {
       // Saga 补偿登记也在清空范围（防测试/scratch 补偿登记跨次残留，R92）
       ignore(db.exec("DELETE FROM saga_log"))
       ignore(db.exec("DELETE FROM circuit_breakers"))
+      // 助理登记也在清空范围（与 MemoryStore 对齐，防测试/scratch 助理跨次残留）
+      ignore(db.exec("DELETE FROM assistant_reg"))
+      // 文件锁与锁违例记录也在清空范围（与 MemoryStore 对齐，BUG-151）
+      ignore(db.exec("DELETE FROM file_locks"))
+      ignore(db.exec("DELETE FROM lock_violations"))
     }
   }
 }
@@ -1350,6 +1357,54 @@ pub fn SqliteStore::locks_sweep(self : SqliteStore, now : String) -> Int {
 }
 
 ///|
+/// SQLite 后端：追加一条违例记录。
+pub fn SqliteStore::lock_violations_push(
+  self : SqliteStore,
+  v : LockViolation,
+) -> Unit {
+  match self.db {
+    None => ()
+    Some(db) => {
+      let sql = "INSERT INTO lock_violations (ts, agent, scope, reason, lock_id) VALUES (?, ?, ?, ?, ?)"
+      match db.prepare(sql) {
+        None => ()
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, v.ts))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, v.agent)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, v.scope)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              4,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, v.reason)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              5,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, v.lock_id)),
+            ),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
+        }
+      }
+    }
+  }
+}
+
+///|
 /// SQLite 后端：列出违例记录。
 pub fn SqliteStore::lock_violations_list(
   self : SqliteStore,
@@ -1376,6 +1431,173 @@ pub fn SqliteStore::lock_violations_list(
         }
       }
     }
+  }
+}
+
+// —— 项目助理登记（SQLite 后端，multi-agent-lock v3 阶段2 精简版）——
+
+///|
+/// SQLite 后端：写入/覆盖一个助理登记（幂等）。
+pub fn SqliteStore::assistant_upsert(
+  self : SqliteStore,
+  reg : AssistantReg,
+) -> Unit {
+  match self.db {
+    None => ()
+    Some(db) => {
+      let sql = "INSERT INTO assistant_reg (agent, mode, is_primary, registered_at, heartbeat_at, status) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(agent) DO UPDATE SET mode=excluded.mode, is_primary=excluded.is_primary, registered_at=excluded.registered_at, heartbeat_at=excluded.heartbeat_at, status=excluded.status"
+      match db.prepare(sql) {
+        None => ()
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, reg.agent)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, reg.mode)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Int(if reg.is_primary { 1 } else { 0 }),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              4,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, reg.registered_at)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              5,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, reg.heartbeat_at)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              6,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, reg.status)),
+            ),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
+        }
+      }
+    }
+  }
+}
+
+///|
+/// SQLite 后端：查询某 agent 的助理登记（不存在返回 None）。
+pub fn SqliteStore::assistant_get(
+  self : SqliteStore,
+  agent : String,
+) -> AssistantReg? {
+  match self.db {
+    None => None
+    Some(db) => {
+      let sql = "SELECT agent, mode, is_primary, registered_at, heartbeat_at, status FROM assistant_reg WHERE agent = ?"
+      match db.prepare(sql) {
+        None => None
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent))),
+          )
+          let out : AssistantReg? = if stmt.step() {
+            self.assistant_from_row(stmt)
+          } else {
+            None
+          }
+          stmt.finalize()
+          out
+        }
+      }
+    }
+  }
+}
+
+///|
+/// SQLite 后端：列出全部助理登记。
+pub fn SqliteStore::assistant_list(self : SqliteStore) -> Array[AssistantReg] {
+  let out : Array[AssistantReg] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT agent, mode, is_primary, registered_at, heartbeat_at, status FROM assistant_reg ORDER BY registered_at"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          while stmt.step() {
+            match self.assistant_from_row(stmt) {
+              Some(r) => out.push(r)
+              None => ()
+            }
+          }
+          stmt.finalize()
+          out
+        }
+      }
+    }
+  }
+}
+
+///|
+/// SQLite 后端：改某 agent 登记的 status（不存在返回 false）。
+pub fn SqliteStore::assistant_set_status(
+  self : SqliteStore,
+  agent : String,
+  status : String,
+) -> Bool {
+  match self.db {
+    None => false
+    Some(db) => {
+      let sql = "UPDATE assistant_reg SET status = ? WHERE agent = ?"
+      match db.prepare(sql) {
+        None => false
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, status))),
+          )
+          ignore(
+            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent))),
+          )
+          let changed = stmt.execute()
+          stmt.finalize()
+          let _ = changed
+          match self.assistant_get(agent) {
+            Some(r) => r.status == status
+            None => false
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 行 -> AssistantReg（列序与上面 SELECT 一致；解析失败返回 None，不让单行坏数据打死调用方）。
+fn SqliteStore::assistant_from_row(
+  self : SqliteStore,
+  stmt : @sqlite.Statement,
+) -> AssistantReg? {
+  let _ = self
+  match
+    (try? AssistantReg::{
+      agent: str_from_bytes(stmt.column_text(0)),
+      mode: str_from_bytes(stmt.column_text(1)),
+      is_primary: stmt.column_int(2) == 1,
+      registered_at: str_from_bytes(stmt.column_text(3)),
+      heartbeat_at: str_from_bytes(stmt.column_text(4)),
+      status: str_from_bytes(stmt.column_text(5)),
+    }) {
+    Ok(r) => Some(r)
+    Err(_) => None
   }
 }
 

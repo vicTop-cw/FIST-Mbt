@@ -374,11 +374,14 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
     "mcpcf.ops_init",
     "Initialize the embedded FIST engine (SQLite preferred, memory fallback). Parameters: data_dir (optional, overrides MCPCONFTEST_DATA_DIR). Returns backend and db path.",
     Json::object({
-      "data_dir": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string(
-          "Optional data directory; defaults to MCPCONFTEST_DATA_DIR or %LOCALAPPDATA%\\mcpconftest\\data",
-        ),
+      "type": Json::string("object"),
+      "properties": Json::object({
+        "data_dir": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string(
+            "Optional data directory; defaults to MCPCONFTEST_DATA_DIR or %LOCALAPPDATA%\\mcpconftest\\data",
+          ),
+        }),
       }),
     }),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
@@ -389,23 +392,26 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
     "mcpcf.run_batch",
     "Publish a root inspection batch task to the embedded FIST engine. Parameters: project_dir, description, created_by (default human_steward), ns (default default). Returns the new task id.",
     Json::object({
-      "project_dir": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string("Project directory for this batch"),
-      }),
-      "description": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string("Batch description"),
-      }),
-      "created_by": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string(
-          "Creator role; must be human_steward or human",
-        ),
-      }),
-      "ns": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string("Namespace (default default)"),
+      "type": Json::string("object"),
+      "properties": Json::object({
+        "project_dir": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string("Project directory for this batch"),
+        }),
+        "description": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string("Batch description"),
+        }),
+        "created_by": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string(
+            "Creator role; must be human_steward or human",
+          ),
+        }),
+        "ns": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string("Namespace (default default)"),
+        }),
       }),
     }),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
@@ -416,17 +422,20 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
     "mcpcf.verify",
     "Verify (accept) a task in the embedded FIST engine. Parameters: task_id, verifier (default mcpconftest), docs_check (optional boolean).",
     Json::object({
-      "task_id": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string("Task id to verify"),
-      }),
-      "verifier": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string("Verifier name"),
-      }),
-      "docs_check": Json::object({
-        "type": Json::string("boolean"),
-        "description": Json::string("Run docs gate during verification"),
+      "type": Json::string("object"),
+      "properties": Json::object({
+        "task_id": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string("Task id to verify"),
+        }),
+        "verifier": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string("Verifier name"),
+        }),
+        "docs_check": Json::object({
+          "type": Json::string("boolean"),
+          "description": Json::string("Run docs gate during verification"),
+        }),
       }),
     }),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
@@ -437,17 +446,20 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
     "mcpcf.circuit",
     "Query or operate a circuit breaker in the embedded FIST engine. Parameters: circuit, action (status|fail|succeed), ns (default default).",
     Json::object({
-      "circuit": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string("Circuit name"),
-      }),
-      "action": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string("status (default), fail, or succeed"),
-      }),
-      "ns": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string("Namespace (default default)"),
+      "type": Json::string("object"),
+      "properties": Json::object({
+        "circuit": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string("Circuit name"),
+        }),
+        "action": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string("status (default), fail, or succeed"),
+        }),
+        "ns": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string("Namespace (default default)"),
+        }),
       }),
     }),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
@@ -458,9 +470,12 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
     "mcpcf.report",
     "Generate an inspection task report from the embedded FIST engine. Parameters: ns (default default). Returns per-status counts and task list.",
     Json::object({
-      "ns": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string("Namespace (default default)"),
+      "type": Json::string("object"),
+      "properties": Json::object({
+        "ns": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string("Namespace (default default)"),
+        }),
       }),
     }),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
@@ -471,15 +486,18 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
     "mcpcf.review",
     "Review tasks in the embedded FIST engine. Parameters: task_id (optional), status (optional; list tasks by status), or omit both to list all tasks.",
     Json::object({
-      "task_id": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string("Specific task id to inspect"),
-      }),
-      "status": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string(
-          "Filter by status, e.g. 待领取/执行中/已完成",
-        ),
+      "type": Json::string("object"),
+      "properties": Json::object({
+        "task_id": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string("Specific task id to inspect"),
+        }),
+        "status": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string(
+            "Filter by status, e.g. 待领取/执行中/已完成",
+          ),
+        }),
       }),
     }),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
@@ -490,13 +508,16 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
     "mcpcf.watchdog",
     "Watchdog health check of the embedded FIST engine. Parameters: circuit (optional, include circuit status), ns (default default). Returns backend, task count, optional circuit state.",
     Json::object({
-      "circuit": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string("Optional circuit name to report"),
-      }),
-      "ns": Json::object({
-        "type": Json::string("string"),
-        "description": Json::string("Namespace (default default)"),
+      "type": Json::string("object"),
+      "properties": Json::object({
+        "circuit": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string("Optional circuit name to report"),
+        }),
+        "ns": Json::object({
+          "type": Json::string("string"),
+          "description": Json::string("Namespace (default default)"),
+        }),
       }),
     }),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {

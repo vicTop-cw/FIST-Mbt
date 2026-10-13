@@ -1,0 +1,142 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/claimguard"
+
+// Values
+pub fn admit(ClaimGuardState, Array[ClaimGuardState]) -> AdmitReport
+
+pub fn admit_after_yield(ClaimGuardState, Array[ClaimGuardState], String) -> AdmitReport
+
+pub fn admit_ok(ClaimGuardState, Array[ClaimGuardState]) -> Bool
+
+pub fn advise_yield(ReconcileAllReport) -> String?
+
+pub fn blind_spot_holds(Bool, Bool) -> Bool
+
+pub fn claim_all(ClaimGuardState, Array[String], String) -> Result[Unit, String]
+
+pub fn claim_item(ClaimGuardState, String, String) -> ClaimVerdict
+
+pub fn conflict_scoreboard(ReconcileAllReport) -> Map[String, Int]
+
+pub fn decide_claim(String?, String) -> ClaimVerdict
+
+pub fn holder_of(ClaimGuardState, String) -> String?
+
+pub fn make_guard() -> ClaimGuardState
+
+pub fn may_proceed(ClaimGuardState, String, String) -> Bool
+
+pub fn may_proceed_full(ClaimGuardState, String, Array[String], String, Bool, Bool) -> Bool
+
+pub fn may_proceed_sematic(ClaimGuardState, String, Array[String], String) -> Bool
+
+pub fn may_reconcile_all_ok(Array[ClaimGuardState]) -> Bool
+
+pub fn may_reconcile_ok(ClaimGuardState, ClaimGuardState) -> Bool
+
+pub fn negotiate_admit(ClaimGuardState, Array[ClaimGuardState], Int) -> NegotiateReport
+
+pub fn negotiate_admit_priority(ClaimGuardState, Array[ClaimGuardState], Int, Map[String, Int]) -> NegotiateReport
+
+pub fn negotiate_plan(ClaimGuardState, Array[ClaimGuardState], Int, Map[String, Int]) -> NegotiatePlan
+
+pub fn overlapping_tag(Array[String], Array[String]) -> String?
+
+pub fn peer_yield(ClaimGuardState, String) -> ClaimGuardState
+
+pub fn reconcile_all(Array[ClaimGuardState]) -> ReconcileAllReport
+
+pub fn reconcile_all_summary(Array[ClaimGuardState]) -> (Int, Int)
+
+pub fn reconcile_id_conflicts(ClaimGuardState, ClaimGuardState) -> Map[String, (String, String)]
+
+pub fn reconcile_semantic_conflicts(ClaimGuardState, ClaimGuardState) -> Array[CrossCollision]
+
+pub fn reconcile_summary(ClaimGuardState, ClaimGuardState) -> (Int, Int)
+
+pub fn release_all(ClaimGuardState, Array[String], String) -> Unit
+
+pub fn release_item(ClaimGuardState, String, String) -> ClaimVerdict
+
+pub fn schedule_admit(Array[ClaimGuardState], Array[ClaimGuardState], Int, Map[String, Int]) -> ScheduleReport
+
+pub fn scopes_disjoint(Array[String], Array[String]) -> Bool
+
+pub fn semantic_collision(ClaimGuardState, String, Array[String], String) -> Bool
+
+pub fn set_tags(ClaimGuardState, String, Array[String]) -> Unit
+
+pub fn snapshot(ClaimGuardState) -> Map[String, String]
+
+pub fn tags_of(ClaimGuardState, String) -> Array[String]
+
+pub fn tags_overlap(Array[String], Array[String]) -> Bool
+
+// Errors
+
+// Types and methods
+pub struct AdmitReport {
+  ok : Bool
+  colliding_agents : Array[String]
+  id_conflicts : Array[IdConflict]
+  semantic_conflicts : Array[CrossCollision]
+}
+
+pub struct ClaimGuardState {
+  holders : Map[String, String]
+  tags : Map[String, Array[String]]
+}
+
+pub enum ClaimVerdict {
+  Claimed
+  Renewed
+  Denied
+  Released
+}
+
+pub struct CrossCollision {
+  item_a : String
+  agent_a : String
+  item_b : String
+  agent_b : String
+  tag : String
+}
+
+pub struct IdConflict {
+  item : String
+  agent_a : String
+  agent_b : String
+}
+
+pub struct NegotiatePlan {
+  report : NegotiateReport
+  priority_cost : Int
+  freed_for_proposed : Array[String]
+}
+
+pub struct NegotiateReport {
+  ok : Bool
+  yielded : Array[String]
+  admit : AdmitReport
+}
+
+pub struct ReconcileAllReport {
+  id_conflicts : Array[IdConflict]
+  semantic_conflicts : Array[CrossCollision]
+}
+
+pub struct ScheduleReport {
+  admitted : Array[ScheduledAdmit]
+  rejected : Array[String]
+  total_priority_cost : Int
+  scene : Array[ClaimGuardState]
+}
+
+pub struct ScheduledAdmit {
+  agent : String
+  plan : NegotiatePlan
+}
+
+// Type aliases
+
+// Traits

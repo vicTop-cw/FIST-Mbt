@@ -615,3 +615,24 @@ pub fn Task::to_json(self : Task) -> Json {
   m.set("is_leaf", Json::boolean(self.is_leaf()))
   Json::object(m)
 }
+
+///|
+/// 追加（覆盖）任务描述并更新时间戳；返回带新 description 的副本。
+/// 供超级管家 supervisor_task_upsert 使用——只改文本，不动状态机。
+pub fn Task::with_description(
+  self : Task,
+  description : String,
+  now : String,
+) -> Task {
+  { ..self, description, updated_at: now, }
+}
+
+///|
+/// 覆盖任务优先级（易/中/难一类的中文档位文本）并更新时间戳。
+pub fn Task::with_priority(
+  self : Task,
+  priority : String,
+  now : String,
+) -> Task {
+  { ..self, priority, updated_at: now, }
+}

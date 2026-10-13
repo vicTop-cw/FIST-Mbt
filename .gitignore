@@ -43,6 +43,12 @@ _cron_tmp_sends.jsonl
 # blackbox release artifacts
 _release/
 memory/bugs_pending_github.json
+# runtime state & scratch (2026-10-13 维护提交排除项)
+/memory/model-router-default.json
+/fist-runtime.json
+/logs/
+/.mcp.json.bak-*
+/temp_*.txt
 
 # 构建产物
 dist/

@@ -97,23 +97,19 @@ pub fn spec_scoring(spec : Json, total : Int, passed : Int) -> ScoreResult {
   // coverage
   let coverage = calc_coverage(laws, tests)
   // accuracy
-  let accuracy = if total <= 0 { 0.0 } else { passed.to_double() / total.to_double() * 100.0 }
+  let accuracy = if total <= 0 {
+    0.0
+  } else {
+    passed.to_double() / total.to_double() * 100.0
+  }
   // 加权
-  let score =
-    coverage * 30.0 +
+  let score = coverage * 30.0 +
     (if fp_ok { 30.0 } else { 0.0 }) +
     (if schema_ok { 20.0 } else { 0.0 }) +
-    (accuracy / 100.0 * 20.0)
+    accuracy / 100.0 * 20.0
   // pass 门槛：accuracy 必须 100% 且 score >= 70（其余分项决定是否满分）
   let pass = accuracy >= 100.0 && score >= 70.0
-  {
-    coverage: coverage,
-    fingerprint_ok: fp_ok,
-    schema_ok: schema_ok,
-    accuracy: accuracy,
-    score: score,
-    pass: pass,
-  }
+  { coverage, fingerprint_ok: fp_ok, schema_ok, accuracy, score, pass, }
 }
 
 ///|

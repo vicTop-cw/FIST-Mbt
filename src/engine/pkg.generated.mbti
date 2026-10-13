@@ -86,6 +86,11 @@ pub struct FistEngine {
 }
 pub fn FistEngine::all_subtasks_completed(Self, @core.Task) -> Bool
 pub fn FistEngine::archive(Self, task_id~ : String, by~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::assistant_active_primary(Self) -> @store.AssistantReg?
+pub fn FistEngine::assistant_get(Self, String) -> @store.AssistantReg?
+pub fn FistEngine::assistant_list(Self) -> Array[@store.AssistantReg]
+pub fn FistEngine::assistant_set_status(Self, String, String) -> Bool
+pub fn FistEngine::assistant_upsert(Self, @store.AssistantReg) -> Unit
 pub fn FistEngine::audit_execute_gate(Self, String, String) -> Result[Unit, String]
 pub fn FistEngine::budget_split_by_dag(Self, Int, root? : String, ns? : String) -> Json
 pub fn FistEngine::challenge(Self, task_id~ : String, by~ : String, factor? : Int, strat? : String, now~ : String, critic? : @evolve.Archive?) -> Result[Json, String]
@@ -124,6 +129,7 @@ pub fn FistEngine::list_all(Self) -> Array[@core.Task]
 pub fn FistEngine::list_by_status(Self, @core.TaskStatus) -> Array[@core.Task]
 pub fn FistEngine::list_in_ns(Self, String) -> Array[@core.Task]
 pub fn FistEngine::lock_violations_list(Self) -> Array[@store.LockViolation]
+pub fn FistEngine::lock_violations_record(Self, ts~ : String, agent~ : String, scope~ : String, reason~ : String, lock_id~ : String) -> Unit
 pub fn FistEngine::locks_get(Self, String) -> @store.FileLock?
 pub fn FistEngine::locks_list(Self) -> Array[@store.FileLock]
 pub fn FistEngine::locks_release(Self, String, String) -> Bool
@@ -179,10 +185,20 @@ pub fn FistEngine::store_write_heartbeat(Self, agent_id~ : String, task_id~ : St
 pub fn FistEngine::store_write_heartbeat_interval(Self, task_id~ : String, interval_sec~ : Int, ts~ : String) -> Result[Unit, String]
 pub fn FistEngine::store_write_saga_action(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, created_at~ : String) -> Result[Unit, String]
 pub fn FistEngine::submit(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::supervisor_kill_apply_pause(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::supervisor_kill_plan(Self, task_id~ : String, by~ : String, reason~ : String, force? : Bool, apply_pause? : Bool, now? : String) -> Json
+pub fn FistEngine::supervisor_reminder_tick(Self, now~ : String, stale_hours? : Int, pending_hours? : Int) -> Json
+pub fn FistEngine::supervisor_status(Self, ns_filter? : String) -> Json
+pub fn FistEngine::supervisor_task_tree(Self, String) -> Result[Json, String]
+pub fn FistEngine::supervisor_task_upsert(Self, project_dir~ : String, by~ : String, Array[Json], now~ : String, ns? : String) -> Json
 pub fn FistEngine::topo_sort(Self, Array[String]) -> Array[String]
 pub fn FistEngine::transition_contract(Self, String, String, assignee? : String, completed_by? : String) -> Json
 pub fn FistEngine::triage(Self, String, String, String, skill? : String) -> Json
 pub fn FistEngine::verify(Self, task_id~ : String, verifier~ : String, now~ : String, docs_check? : Bool) -> Result[@core.Task, String]
+
+type SupervisorGate
+
+type SupervisorUpsertItem
 
 type TriageRow
 

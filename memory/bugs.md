@@ -2977,10 +2977,39 @@ B. 若判定新契约作废，则删/改三条锁——但那等于放弃 BUG-18
 
 ### FIXED(2026-10-11T15:29:39Z / BUG-149)
 - evidence: Pentad 仓 E:\IDEProjects\AI\Pentad 提交 ca93210（fix(p5c jit): graceful stack-overflow instead of 0xC00000FD hard crash）。真源 crates/p5c/src/codegen_cranelift.rs：每个 api 函数入口注入栈指针守卫——可写 8 字节 data object "p5c_stack_limit" 存每次 call 的限值（p5c_jit_stack_anchor 取当前线程栈地址 - JIT_STACK_BUDGET=470MB，write_unaligned 写入 CompiledMain.limit_ptr），build_func 入口发射 stack_addr→symbol_value→load→icmp UnsignedLessThan→brif，越界走冷块调现有陷阱通道 TRAP_STACK_OVERFLOW=4 后返回丢弃的 0；热路径纯寄存器、零宿主调用。diagnostic.rs 新增 JIT_STACK_OVERFLOW="[E9320] JIT call stack exhausted..."。dump() 声明同名 data 使 .clif 守卫同形（verifier PASS）。L4 实测（release win-x64，512MB worker 栈）：down(1M/4M/5M) 均 rc0 结果正确（深递归能力零回退，与护栏前物理极限持平，470MB/~96B每帧≈5.1M 帧），down(6M/8M) 从硬崩 0xC00000FD 变为 rc1 + [E9320]；无界递归亦优雅触发（42MB 冷路径余量，陷阱正文完整 flush）。测试 e2e_jit_stack_overflow_is_graceful（8M 优雅 + 50k 正常）；cargo test -p p5c --release 37 suite 0 failed；bench fib31 42.2x/loopsum4M 20.1x/mixed 11.5x 全 bit 一致无性能回退；改动文件 clippy 零新警告。原 BUG-231 条目（同缺陷）被并发 R12 进程覆写丢失，本条为重新入账的 FIXED 锚点。
-## BUG-150 [2026-10-11T15:35:32Z] [low] FALSE_POSITIVE
+## BUG-150 [2026-10-11T15:35:32Z] [low] FIXED
+### FIXED(2026-10-11T15:35:55Z / BUG-150)
+- evidence: 重新入账的裁决锚点：false_positive(2026-10-11T15:35:55Z) 裁定语句位末尾 if-else 不产值属 MoonBit-like 块尾表达式语言设计约定，按约定关闭（详见本条目 false_positive 记录）；原 BUG-230 ②条目被并发 R12 覆写丢失。
 - summary: [p5c] 语句位末尾 if-else 不作为块尾返回值（原 BUG-230 ②，账本条目被并发 R12 覆写丢失，重新入账待裁决）
 - detail: 同一尾部 if-else 形状：紧贴 `=`（表达式位）当值（`api main()->Int = if 1:1 else:2` rc0），而 `let` 之后的语句位末尾 if-else 不作为隐式返回值（`let x=1` 换行 `if x:1 else:2` 被拒）。①诊断口径不一已在 Pentad commit a9cf945 修复（parse 期 Else 兜底并入 LIR 同一句可行动指引）。本条只裁决②：语句位跨行 if-else 是否应产值。原 BUG-230 条目（2026-10-11 早些时候，未提交进 git）被并发 R12 进程覆写 memory/bugs.md 丢失，重新入账以留裁决锚点。
 - reported_by: pentad-perf-pipeline
 
 
 - false_positive(2026-10-11T15:35:55Z): 裁决为语言设计约定（MoonBit-like 块尾表达式语义），非缺陷：块尾值只在表达式位产生（紧贴 `=` 的 `api f = if…` 或括号 `(if…)`），语句位的 `if` 是 statement 不产值。让 `let` 后跨行的末尾 if-else 产值需改 parser 最脆弱的缩进/行边界续接（parse_if_stmt 把 `if x:1` 解析为完整语句后，下一行 `else:` 无法续接为值）+ AST + LIR + 求值器，回归面覆盖全语言最常用的 if 语句，风险/收益失衡。①诊断口径已在 Pentad commit a9cf945 统一（两处触发 parse 期/LIR 期现含同一句 "does not produce a value ... wrap it in parentheses" 可行动指引）；绕过干净：`let r = (if cond: a else: b)` 实测 rc0 正确。故②按语言约定关闭。原 BUG-230 ②账本条目被并发 R12 覆写丢失，本条 BUG-150 为重新入账的裁决锚点。
+## BUG-151 [2026-10-13T07:25:29Z] [medium] FIXED
+- summary: SqliteStore::clear 双后端语义不一致：MemoryStore 清 file_locks/lock_violations 而 SQLite 漏清
+- detail: MemoryStore::clear（store.mbt L331-332）清 file_locks/lock_violations/assistant_reg，注释明写"文件锁与违例记录也在清空范围"；SqliteStore::clear（store_sqlite.mbt L685-706）只清 tasks/archive/call_log/specs/reservations/executors/heartbeat_history/saga_log/circuit_breakers/assistant_reg，漏 file_locks 与 lock_violations。与 assistant_reg 同形（multi-agent-lock v3 引入表时只改内存后端、漏改 SQLite 后端）。实证：assistant_reg 曾同样漏清，导致 store_assistant_test.mbt:55 全量红（810/811），本轮已补清（store_sqlite.mbt clear 加 DELETE FROM assistant_reg + store_assistant_test 加 ignore(b.clear()) 先清旧），全量 811/811 绿。file_locks/lock_violations 仍漏。因 store_sqlite.mbt 被他方 WIP 占用未提交，本轮不修，留 owner 收口。另 store_backend_semantics_test 只调用 clear() 取干净后端，未锁"clear 清哪些表"的一致性，属测试盲区。
+- reported_by: fist-self-r13-bugfind
+
+
+### FIXED(2026-10-13T20:15:00Z / BUG-151)
+- evidence: SqliteStore::clear（store_sqlite.mbt）在 DELETE FROM assistant_reg 之后追加 DELETE FROM file_locks + DELETE FROM lock_violations，与 MemoryStore::clear（store.mbt L331-332）的 file_locks/lock_violations 清空语义对齐。表存在性已由 create_schema（store_sqlite.mbt L105 file_locks / L107 lock_violations）保证。moon check 0 errors；moon test --target js src/store = Total tests: 37, passed: 37, failed: 0；全量 = Total tests: 823, passed: 823, failed: 0（零回归）。只改 src/store/store_sqlite.mbt clear 函数（+2 行 DELETE）。
+
+## BUG-152 [2026-10-13T07:38:09Z] [low] FIXED
+- summary: issue_scan secs-overflow 规则过度泛化：对 MoonBit 默认 Int（53/64位）误报 Int32 溢出
+- detail: issue_scan（src/server/issue_scan.mbt L170-177）的 secs-overflow 规则 why 明写"Int32 下 days*86400 超过 24855 天即溢出"，源自 R12 BUG-217/218/219。但 MoonBit 默认 Int 在 JS 目标为 53 位安全整数、native 为 64 位，仅显式 Int32 才溢出。规则匹配器未区分变量类型，对所有 `*86400` 匹配即报。实测核实 4 处 secs-overflow 命中全为误报：src/ops/ops_ts.mbt:57（L48 有 year>2091 上界守卫，且 L42-47 注释即 BUG-217 已修）、src/engine/engine_supervisor.mbt:558（(jd-2451545)*86400 约 4.6e11，默认 Int 范围内不溢出）、src/ops/ops_cleanup.mbt:27、src/engine/engine_supervisor.mbt:538。第2环 bugfind 抽样核实 7 条 issue_scan medium 命中全部假阳性（5 条有前置守卫 + 2 条本规则 Int32 假设错误），假阳性率约 100%。建议规则匹配器加变量类型语义判别或仅对显式 Int32 命中；不影响运行时正确性，但影响 bugfind 换面效率。
+- reported_by: fist-self-r13-bugfind-r2
+
+
+### FIXED(2026-10-13T08:23:39Z / BUG-152)
+- evidence: issue_scan 基线 secs-overflow count=4（engine_supervisor.mbt:558 / ops_cleanup.mbt:27 / ops_ts.mbt:57 / model_router.mbt:323，逐条核实全部不含 Int32 注解，是规则假设 Int32 对默认 Int 的系统性误报）→ 改后 count=1（仅 ops_ts.mbt:57 保留），4-1=3 消除 3 条纯误报。剩余 ops_ts.mbt:57 是 R12-R5 bugfind（BUG-217）特意标注的 Int32 溢出候选（有上界守卫 if year>2091，但属 secs 重灾区），保守保留作提醒，非本轮未修——BUG-152 核心"系统性 Int32 假设误报"已修。moon check 0 errors；moon test --target js src/server = Total tests: 215, passed: 215, failed: 0（基线 210 +5 新测试）；全量 = Total tests: 819, passed: 819, failed: 0（基线 814 +5）。只改 src/server/issue_scan.mbt（+265/-11）。新增 scan_secs_suppressed + scan_has_int32_signal + 4 条 BUG-152 测试（显式 Int32 保留 / to_int32 保留 / 默认 Int suppress / Int64 suppress）。
+## BUG-153 [2026-10-13T07:56:25Z] [low] FIXED
+- summary: issue_scan unprotected-division 守卫识别缺同一行 code 检查（hint 承诺未实现），已修
+- detail: issue_scan scan_finding_guarded 对 unprotected-division 只认 _safe 钳制（ctx.safe_clamps）和 scan_guard_zero（只认 <=0/==0 零值、不要求变量名），均只扫 prev_lines。而规则 hint（L129）明写 `if total > 0 { ... } else { 兜底 }`，该形态未实现。3 处真守卫同一行（omega/gate.mbt:346-347 let acc = if total > 0 {...} / omega/omega_tool.mbt:248-249 同形 / engine/engine_dag_ext.mbt:862 if total_w <= 0 {0} else {...}）被 issue_scan 报假阳性。修复：新增 scan_guard_div_direct(line, vn) 只认 vn 字面量紧跟比较运算符（>0/<=0/!=0/==0/>=1/<1，含浮点），两处接线（code 自身 L533 + prev_lines L615），刻意不含 >=0（0 会通过不是有效守卫）。实证：issue_scan 基线 55 findings（unprotected-division count=3）→ 改后 52（unprotected-division 清零），55-52=3 精确等于 3 条目标假阳性，无误滤。moon check 0 errors / src/server 210/210/0 / 全量 814/814/0。
+- reported_by: fist-self-r13-bugfind-r3
+
+
+
+### FIXED(2026-10-13T07:59:24Z / BUG-153)
+- evidence: issue_scan 基线 55 findings（unprotected-division count=3，逐条=engine_dag_ext.mbt:862 / omega/gate.mbt:347 / omega/omega_tool.mbt:249，git stash 后复跑确认）→ 改后 52（unprotected-division 清零），55-52=3 精确等于 3 条目标假阳性，无误滤真缺陷。moon check 0 errors（38 tasks）；moon test --target js src/server = Total tests: 210, passed: 210, failed: 0；全量 moon test --target js = Total tests: 814, passed: 814, failed: 0（基线 811，+3 新增测试）。新增 scan_guard_div_direct 两处接线（code 自身 L533 + prev_lines L615），3 条 DEBUG TESTS（prev 行守卫/同行守卫/无守卫反向）全绿。BUG-152（secs-overflow Int32 假设）仍未修，保持 OPEN 留后续环。
+

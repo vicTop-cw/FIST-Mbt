@@ -97,6 +97,26 @@ Format 是**当前唯一挡住守卫族（含 HTTP 契约自证那一步）的�
 那是拿**本地老 moon** 的单文件读数去比 **nightly** 的整仓读数——不同版不可比，是同一条纪律
 （判据的两支必须同版同环境）的反面教材。
 
+## 落地记录（2026-10-13，owner 授权「修复这个」后执行）
+
+**已落地 A′ 第 1 条（降门不阻断）**：
+- `.github/workflows/ci.yml` `Format check (BUG-118…)` 步 → 加 **`continue-on-error: true`** + 定因/落法/根修注释。
+- `.github/workflows/fist-ci.yml` `Format check` 步 → 同上。
+- 两文件 YAML 解析验证 OK，`continue-on-error: True` 生效；各仅 1 个 Format check 门（其余匹配为注释）。
+- 效果：fmt 红**不阻断** job，其后 24 步（Test(js) 与全部守卫族）恢复跑。CI #275 的「一个步红 skip 24 步」局面解除。
+
+**本轮未做 A（全仓 nightly fmt 重排），原因（非 owner 不裁决，是当前局面下不可行）**：
+1. 工作树 **93 个 `.mbt` 未提交 WIP**（`git status --porcelain | grep '\.mbt$'`），全仓 fmt 会与所有并发会话冲突。
+2. `cmd/cli/subcmd.mbt` 是**并发会话未提交 WIP**（` M`），fmt 会动它的工作内容。
+3. `atgc/`、`atgc-old/` 是**干净公共基线**（status 空，`4cf2a41`），改公共面需 owner 拍板（金条四）。
+4. 改动含 **FFI 边界**（`js_try_exit(code : Int32)` / `native_exit(code : Int32)` / `js_fetch_latest(timeout_ms : Int32)`），提交前必须全量 `moon test --target js` 守 `Int32` 溢出（BUG-218 同族）。
+
+**本轮实测取证（复核 dry-run）**：
+- 本地 `moon version` = `0.1.20260920 (914d7da)`；WSL `/root/moon-nightly/bin/moon version` = **`0.1.20261012 (748b63c)`**（与 CI latest 同源）。
+- nightly `moon fmt --check` dry-run 确认 **10 个文件**需改（atgc 3 + atgc-old 4 + cmd/cli 3），全部 `Int`→`Int32`。
+
+**owner 后续建议**：等并发 WIP 收口后，跑 **A（nightly `moon fmt` 全仓重排 + 提交前全量 `moon test --target js`）**，即可撤销 `continue-on-error`、恢复 fmt 门强度并永久消除红。
+
 ## 来源
 - WSL 实测：`temp/fmt_probe_direct.txt`（nightly moon `0.1.20261012` 逐文件 diff 原文）
 - WSL 同版三读数：`temp/check_vs_fmt_direct.txt`（check rc=0 / fmt --check rc=255 / 改 Int32 后 check 仍 rc=0）
