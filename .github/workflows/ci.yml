@@ -39,6 +39,18 @@ jobs:
       - name: Check (js)
         run: moon check --target js
 
+      # 2026-10-13 位置修正（本步原先挂在 CLI call-site probe 之后 = 第 25 位）：
+      # CI #275/#276 实证 `Format check` 一个步红就 skip 其后 24 步 ⇒ 本自证**从不执行**，
+      # 「挂了但没跑」等于没挂。移到 Format 之前，让它在**唯一能保证被执行**的位置起真桥。
+      # 只动我自己加的步的位置，不碰 owner 面的 Format 门（那条红的落法属 owner 裁决）。
+      # 前置：上一步 Check(js) 已触发依赖解包；本步自带 build + ESM patch（幂等）。
+      - name: HTTP contract self-proof (fist-mbt-api：契约只登记被真实服务的端点，不跑=假承诺)
+        shell: bash
+        run: |
+          moon build --target js cmd/cli
+          python3 scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js
+          python3 scripts/blackbox/e2e_http_contract.py
+
       - name: Format check (BUG-118：格式门住在权威 CI，不只在狗食轨)
         shell: bash
         # 把打这条红用的工具链版本留在日志里：BUG-118 的未定案项是"两条轨的 moon 版本不同形"，
@@ -168,17 +180,6 @@ jobs:
         run: |
           python3 scripts/cli_flag_probe.py --selftest
           python3 scripts/cli_flag_probe.py
-
-      - name: HTTP contract self-proof (fist-mbt-api：契约只登记被真实服务的端点，不跑=假承诺)
-        shell: bash
-        # docs/openapi/fist.yaml 的活体判据。六个臂缺一即红：A 起桥 / B /tools 剥壳且
-        # 带 inputSchema（自描述驱动是契约立身之本）/ C 真调只读工具出 ok=true（钉住桥
-        # 替调用方补齐 _meta 那格）/ D body 非对象必须 400 / E 未知工具 502 且桥不崩 /
-        # F 老 /mcp 通用口零回归。台账改道 temp/，端口取 OS 空闲（不写死，避免 CI 自撞）。
-        run: |
-          moon build --target js cmd/cli
-          python3 scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js
-          python3 scripts/blackbox/e2e_http_contract.py
 
       - name: Cleanliness guard (仓库整洁，仅交付库 fist-mbt.db)
         shell: bash
