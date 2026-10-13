@@ -142,14 +142,6 @@ jobs:
           name: star-gate-attestation
           path: _attest
 
-      # selfcheck 不能拿 github-pages 那个 bundle 当数据源：它是 pages 专用的 artifact.tar
-      # （download-artifact 解 zip 后留下一个没再解开的 tar），open("_attest/attestation.json")
-      # 必 FileNotFoundError（2026-10-13 run#6 现形）。另上一份普通 artifact 供 selfcheck 精确取。
-      - uses: actions/upload-artifact@v4
-        with:
-          name: star-gate-attestation
-          path: _attest
-
       - uses: actions/deploy-pages@v4
 
   # 自证：验签自己签的清单必须通过（防止 workflow 改坏了没人知道）
