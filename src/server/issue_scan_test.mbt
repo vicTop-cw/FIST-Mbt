@@ -152,10 +152,12 @@ test "lint_5_comment_lines_are_not_matched_bug15" {
     Err(_) => return
   }
   let items = lint_findings(j)
-  // 注释行 1/2/3 一条都不该出现；只允许真实代码行（第 6 行）命中
+  // 注释行 1/2/3 一条都不该出现；允许代码行（fn/let/rows）命中
+  // （含 2026-10-13 ocr-local 融合规则 moonbit-long-function "fn " 等泛 needle）
   assert_true(items.length() >= 1)
   for f in items {
-    assert_eq(lint_line(f), 6)
+    let ln = lint_line(f)
+    assert_true(ln != 1 && ln != 2 && ln != 3)
   }
   assert_true(items.any(fn(f) { mem_str(f, "severity") == "high" }))
 }
@@ -238,10 +240,13 @@ test "lint_8_guard_filter_keeps_real_hits_drops_guarded" {
     Err(_) => return
   }
   let items = lint_findings(j)
-  // 只应命中 unguarded 那一行（第 8 行），guarded 的第 4 行被过滤
+  // 守卫过滤语义：index-out-of-bounds 只应命中 unguarded 第 8 行，guarded 第 4 行被过滤；
+  // ocr-local 融合规则（"fn " 等泛 needle）命中定义行不干扰本守卫语义
   assert_true(items.length() >= 1)
   for f in items {
-    assert_eq(lint_line(f), 8)
+    if mem_str(f, "rule") == "index-out-of-bounds" {
+      assert_eq(lint_line(f), 8)
+    }
   }
 }
 
@@ -313,9 +318,11 @@ test "lint_9_substring_guard_filter" {
     Err(_) => return
   }
   let items = lint_findings(j)
-  // 第 2 行（guarded）被过滤；只剩第 5 行（unguarded）s.substring
+  // 守卫过滤语义：substring-overrun 只应命中 unguarded 第 5 行，guarded 第 2 行被过滤
   assert_true(items.length() >= 1)
   for f in items {
-    assert_eq(lint_line(f), 5)
+    if mem_str(f, "rule") == "substring-overrun" {
+      assert_eq(lint_line(f), 5)
+    }
   }
 }

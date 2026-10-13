@@ -173,8 +173,166 @@ fn scan_rules() -> Array[ScanRule] {
       id: "secs-overflow",
       severity: "medium",
       pattern: ["* 86400", "*86400"],
-      why: "Int32 下 days*86400 超过 24855 天（约 68 年）即溢出（绕回不是 panic），timestamp 函数是重灾区（Y2038 问题）",
-      hint: "加天数上界守卫（如 if days > 24855 兜底），或改用 Int64",
+      why: "仅显式 Int32 时 days*86400 超过 24855 天（约 68 年）即溢出（Y2038 问题，绕回不是 panic）；MoonBit 默认 Int 在 JS 为 53 位安全整数（~9e15）、native 为 64 位（~9.2e18），需 days>1e11 才溢出，正常代码不可能，故仅对显式 Int32 报警",
+      hint: "显式 Int32 的 secs 计算须加天数上界守卫（如 if days > 24855 兜底）或改用 Int64；默认 Int 无需处理",
+    },
+    // ===== 档 1：ocr-local moonbit-rules.json 的 20 条规则融合（2026-10-13 ocr-local 融入 bugfind）=====
+    // 内建自 ocr-local 的 MoonBit 规则集（E:\IDEProjects\AI\ocr-local\rules\moonbit-rules.json 的
+    // name/severity/pattern 投影）。pattern 取其稳定字面量 needle（子串匹配，免 regex 依赖）；
+    // 语义与外部文件一致，同名外部规则可通过 rules_file 覆盖内建（见 scan_merge_rules）。
+    {
+      id: "moonbit-result-discard",
+      severity: "low",
+      pattern: ["ignore("],
+      why: "ignore() 丢弃 Result 返回值，错误被静默吞掉（ocr-local moonbit-result-discard；与内建 ignored-error 家族重叠）",
+      hint: "改用 match 捕获或确认调用无失败语义",
+    },
+    {
+      id: "moonbit-map-set-no-rebind",
+      severity: "low",
+      pattern: [".set("],
+      why: "Map.set() 返回新 Map，未重绑定则变更丢失（ocr-local moonbit-map-set-no-rebind；语义需读上下文确认重绑定）",
+      hint: "`let map2 = map.set(k, v)` 并重绑定使用",
+    },
+    {
+      id: "moonbit-noop-assignment",
+      severity: "low",
+      pattern: [": self."],
+      why: "字段自赋值无效果（ocr-local moonbit-noop-assignment）",
+      hint: "确认更新源字段而非自身赋值",
+    },
+    {
+      id: "moonbit-string-interpolation-escape",
+      severity: "low",
+      pattern: ["\\{"],
+      why: "字符串插值反斜杠转义错误（ocr-local moonbit-string-interpolation-escape）",
+      hint: "插值用 `{expr}` 不加反斜杠",
+    },
+    {
+      id: "moonbit-array-index-bounds",
+      severity: "low",
+      pattern: ["[i]", "[idx]", "[index]", "[k]"],
+      why: "数组变量下标无越界守卫（ocr-local moonbit-array-index-bounds；与内建 index-out-of-bounds 家族重叠）",
+      hint: "用 get(i) Option 语义或先 length() 校验",
+    },
+    {
+      id: "moonbit-race-condition",
+      severity: "low",
+      pattern: ["await"],
+      why: "可变共享态跨 async 边界，并发交错可能损坏状态（ocr-local moonbit-race-condition；await 使用点提示性）",
+      hint: "用原子/锁或避免跨边界共享可变态",
+    },
+    {
+      id: "moonbit-unsafe-unwrap",
+      severity: "low",
+      pattern: ["unsafe_get("],
+      why: "unsafe_get 越过越界检查，越界 panic（ocr-local moonbit-unsafe-unwrap）",
+      hint: "改用 get() Option 语义",
+    },
+    {
+      id: "moonbit-async-main",
+      severity: "low",
+      pattern: ["fn main() : Future"],
+      why: "async main 返回 Future 无人 poll，异步体永不执行（ocr-local moonbit-async-main）",
+      hint: "配置运行时 poll 或改用同步入口",
+    },
+    {
+      id: "moonbit-private-field-leak",
+      severity: "low",
+      pattern: ["password", "secret", "token"],
+      why: "敏感字段可能被公开导出（ocr-local moonbit-private-field-leak）",
+      hint: "敏感字段保持私有或加密存储",
+    },
+    {
+      id: "moonbit-path-traversal",
+      severity: "low",
+      pattern: ["@fs.open(", "@fs.write(", "@fs.read("],
+      why: "文件路径由拼接构造，可穿越目录（ocr-local moonbit-path-traversal）",
+      hint: "用 @fs.join_path 校验 ../ 穿越",
+    },
+    {
+      id: "moonbit-json-injection",
+      severity: "low",
+      pattern: ["Json::string("],
+      why: "JSON 字符串由拼接构造，可破坏 JSON 结构（ocr-local moonbit-json-injection）",
+      hint: "用 Json::object 构造或转义特殊字符",
+    },
+    {
+      id: "moonbit-divide-by-zero",
+      severity: "low",
+      pattern: ["/ 0"],
+      why: "变量除零 panic（ocr-local moonbit-divide-by-zero，与内建 div-by-zero 家族重叠）",
+      hint: "先判除数 != 0",
+    },
+    {
+      id: "moonbit-floating-point-equality",
+      severity: "low",
+      pattern: ["== 0.", "== 1.", "== 2.", "== 3."],
+      why: "浮点相等比较因精度不可靠（ocr-local moonbit-floating-point-equality）",
+      hint: "用 (x - target).abs() < epsilon",
+    },
+    {
+      id: "moonbit-long-function",
+      severity: "info",
+      pattern: ["fn "],
+      why: "超长函数难测难维护（ocr-local moonbit-long-function；子串近似 fn 定义行，行数精确判定见 OCR 双轨）",
+      hint: "按职责拆分长函数",
+    },
+    {
+      id: "moonbit-resource-leak",
+      severity: "low",
+      pattern: ["::open("],
+      why: "资源打开未关闭，泄漏（ocr-local moonbit-resource-leak）",
+      hint: "用 using 块或显式 close",
+    },
+    {
+      id: "moonbit-integer-overflow",
+      severity: "low",
+      pattern: ["* 100000", "* 1000000", "* 10000000"],
+      why: "大数乘法可能溢出（ocr-local moonbit-integer-overflow）",
+      hint: "用 Int64 或检查语义",
+    },
+    {
+      id: "moonbit-dead-code",
+      severity: "low",
+      pattern: ["abort("],
+      why: "abort 之后代码不可达（ocr-local moonbit-dead-code）",
+      hint: "确认 abort 之后无必要代码",
+    },
+    {
+      id: "moonbit-empty-match",
+      severity: "low",
+      pattern: ["_ => ()"],
+      why: "catch-all 匹配空转，隐藏逻辑错误（ocr-local moonbit-empty-match）",
+      hint: "逐变体处理而非 catch-all 吞掉",
+    },
+    {
+      id: "moonbit-match-exhaustive",
+      severity: "low",
+      pattern: ["match "],
+      why: "match 可能非穷尽，运行时对未处理变体 panic（ocr-local moonbit-match-exhaustive；穷尽性需编译期保证，子串提示性）",
+      hint: "补全所有枚举变体分支",
+    },
+    {
+      id: "moonbit-shared-mutable",
+      severity: "low",
+      pattern: ["let mut "],
+      why: "可变局部派生自字段，变更不回写（ocr-local moonbit-shared-mutable）",
+      hint: "直接改字段或重绑定回写",
+    },
+    {
+      id: "moonbit-overly-broad-catch",
+      severity: "low",
+      pattern: ["catch {"],
+      why: "catch-all 捕获吞掉错误，错误被静默（ocr-local moonbit-overly-broad-catch）",
+      hint: "按错误类型分分支处理",
+    },
+    {
+      id: "moonbit-unused-variable",
+      severity: "info",
+      pattern: ["let "],
+      why: "未使用变量（ocr-local 清洁代码族；子串近似 let 声明点，实际使用性需人工/编译器复核）",
+      hint: "删除未使用变量",
     },
   ]
   r
@@ -473,6 +631,85 @@ fn scan_guard_zero(prev : String) -> Bool {
 }
 
 ///|
+/// 在一条行（prev 行或 code 自身）里找除数变量 `vn` 的**直接守卫**形态：
+/// `if <vn> > 0` / `if <vn> <= 0` / `if <vn> != 0` / `if <vn> == 0` / `if <vn> >= 1` 等。
+/// BUG-152：unprotected-division 的 hint 明写 `` `if total > 0 { ... } else { 兜底 }` ``，
+/// 实现须同步认这一形态，否则 hint 承诺了却把真守卫代码报成假阳性。
+/// 只认 `vn` 字面量紧跟比较运算符的形状，避免把同函数里无关的 `if` 行误判。
+fn scan_guard_div_direct(line : String, vn : String) -> Bool {
+  let t = line.trim().to_string()
+  if t.is_empty() || vn.is_empty() {
+    return false
+  }
+  t.contains(vn + " > 0") ||
+  t.contains(vn + " >0") ||
+  t.contains(vn + " > 0.0") ||
+  t.contains(vn + " >0.0") ||
+  t.contains(vn + " >= 1") ||
+  t.contains(vn + " >=1") ||
+  t.contains(vn + " >= 1.0") ||
+  t.contains(vn + " <= 0") ||
+  t.contains(vn + " <=0") ||
+  t.contains(vn + " <= 0.0") ||
+  t.contains(vn + " <=0.0") ||
+  t.contains(vn + " < 1") ||
+  t.contains(vn + " <1") ||
+  t.contains(vn + " != 0") ||
+  t.contains(vn + " !=0") ||
+  t.contains(vn + " == 0") ||
+  t.contains(vn + " ==0") ||
+  t.contains(vn + " == 0.0") ||
+  t.contains(vn + " ==0.0")
+}
+
+///|
+/// BUG-152：secs-overflow 的类型语境判定——该行/上下文是否**显式 Int32**。
+/// MoonBit 默认 `Int` 在 JS 目标为 53 位安全整数（~9e15）、native 为 64 位（~9.2e18），
+/// `days*86400` 需 days>1e11 才溢出（约 3.3 千年），正常代码不可能；只有显式 `Int32`
+/// （32 位，最大 21 亿）才在 days>24855（约 68 年，Y2038 问题）时溢出。故仅显式 Int32
+/// 应保留为真阳性，默认 Int / Int64 / Double / f64 一律 suppress。
+/// 只查 code 自身 + prev_lines 近几行即可（secs 计算类型由上下文变量决定）。
+/// 匹配 `Int32` 用精确子串，避免把默认 `Int` 误判成 Int32 信号。
+fn scan_has_int32_signal(s : String) -> Bool {
+  s.contains("Int32") ||
+  s.contains(".to_int32()") ||
+  s.contains("Int32.of") ||
+  s.contains("Int32.new") ||
+  s.contains("Int32::")
+}
+
+///|
+/// BUG-152：判定 secs-overflow 命中是否应被 suppress（返回 true = 假阳性，过滤掉）。
+/// 顺序：Int64/Double/f64 注解 → 不溢出，suppress；显式 Int32 信号 → 真阳性保留；
+/// 两者皆无 → 默认 Int，正常代码不会溢出，suppress。
+/// prev_lines 用 `scan_code_part` 去注释后匹配，避免把注释散文里的「Int32」误当类型注解
+/// （实测 `ops_ts.mbt` 的 `days*86400` 上下文注释反复提「Int32 上界」，裸子串会误判成真阳性）。
+fn scan_secs_suppressed(code : String, prev_lines : Array[String]) -> Bool {
+  if code.contains("Int64") || code.contains("Double") || code.contains("f64") {
+    return true
+  }
+  if scan_has_int32_signal(code) {
+    return false
+  }
+  let mut k = prev_lines.length() - 1
+  while k >= 0 {
+    let p = prev_lines[k]
+    k = k - 1
+    if p.is_empty() {
+      continue
+    }
+    let cp = scan_code_part(p)
+    if cp.contains("Int64") || cp.contains("Double") || cp.contains("f64") {
+      return true
+    }
+    if scan_has_int32_signal(cp) {
+      return false
+    }
+  }
+  true
+}
+
+///|
 /// 判定一条命中是否被**明显**上下文守卫（5 行内可判，只做保守过滤——拿不准就保留）。
 pub fn scan_finding_guarded(
   code : String,
@@ -501,6 +738,14 @@ pub fn scan_finding_guarded(
   if rule == "unprotected-division" && ctx.safe_clamps.get(vn).is_some() {
     return true
   }
+  // BUG-152: unprotected-division 直接守卫识别 — hint `if total > 0 { ... } else { 兜底 }`
+  // 守卫常与除法**同一行**（`let acc = if total > 0 { passed / total * 100 } else { 0.0 }`），
+  // prev_lines 不含当前行，故先查 code 自身。
+  if rule == "unprotected-division" && not(vn.is_empty()) {
+    if scan_guard_div_direct(code, vn) {
+      return true
+    }
+  }
   // R124: possible-overflow 乘法前守卫
   if rule == "possible-overflow" && hit_ln > 0 {
     let mut check = hit_ln - 1
@@ -525,8 +770,10 @@ pub fn scan_finding_guarded(
       return true
     }
     // R125: MoonBit substring 安全形态 end=length()-1 / end=length
-    if code_t.contains(".length() - 1") || code_t.contains(".length()-1") ||
-      code_t.contains("end=.length()") || code_t.contains("end = .length()") {
+    if code_t.contains(".length() - 1") ||
+      code_t.contains(".length()-1") ||
+      code_t.contains("end=.length()") ||
+      code_t.contains("end = .length()") {
       return true
     }
   }
@@ -548,9 +795,17 @@ pub fn scan_finding_guarded(
   }
   // R125: possible-overflow 同一行 Double 安全形态
   if rule == "possible-overflow" {
-    if hit_line.contains(".to_double()") || hit_line.contains("Double") || hit_line.contains("f64") {
+    if hit_line.contains(".to_double()") ||
+      hit_line.contains("Double") ||
+      hit_line.contains("f64") {
       return true
     }
+  }
+  // BUG-152: secs-overflow 规则原假设 Int32，对 MoonBit 默认 Int 系统性误报。
+  // 类型语境由 code 自身 + prev_lines 决定：显式 Int32 → 真阳性保留（false）；
+  // 默认 Int / Int64 / Double / f64 → 不溢出 → suppress（true）。
+  if rule == "secs-overflow" {
+    return scan_secs_suppressed(code, prev_lines)
   }
   let n = prev_lines.length()
   let mut i = n - 1
@@ -566,6 +821,10 @@ pub fn scan_finding_guarded(
         return true
       }
       if not(vn.is_empty()) && scan_guard_is_empty(t, vn) {
+        return true
+      }
+      // BUG-152: prev 行的直接守卫 `if total > 0 {` / `if total_w <= 0 {`
+      if not(vn.is_empty()) && scan_guard_div_direct(t, vn) {
         return true
       }
     } else if rule == "substring-overrun" {
@@ -586,7 +845,9 @@ pub fn scan_finding_guarded(
         return true
       }
       // R125: `if arr.length() > 0` / `if arr.length() >= N` 守卫
-      if t.contains(".length() >") || t.contains(".length() >= ") || t.contains(".length() ==") {
+      if t.contains(".length() >") ||
+        t.contains(".length() >= ") ||
+        t.contains(".length() ==") {
         return true
       }
       // R125: `while arr.length() > 0` 循环守卫
@@ -612,7 +873,9 @@ pub fn scan_finding_guarded(
         return true
       }
       // R125: Double/f64 乘法不会 Int overflow
-      if code.contains(".to_double()") || code.contains("Double") || code.contains("f64") {
+      if code.contains(".to_double()") ||
+        code.contains("Double") ||
+        code.contains("f64") {
         return true
       }
     }
@@ -745,6 +1008,133 @@ fn scan_file(path : String, rules : Array[ScanRule]) -> Array[ScanFinding] {
 }
 
 ///|
+/// 从 ocr-local 的 regex pattern 提取稳定字面量 needle（子串近似，免 regex 依赖）。
+/// 策略：扫描 pattern，收集连续字母数字片段，取最长者；`\w` `\s` `\d` 等 regex 类跳过。
+/// 例：`ignore\s*\(\s*\w+` → "ignore"；`@fs\.(open|write|read)\s*\(` → "open"。
+fn scan_regex_to_needle(re : String) -> String {
+  let cs = re.to_array()
+  let n = cs.length()
+  let mut best = ""
+  let mut cur = ""
+  let mut i = 0
+  while i < n {
+    let c = cs[i]
+    let o = c.to_int()
+    let alnum = (o >= 65 && o <= 90) ||
+      (o >= 97 && o <= 122) ||
+      (o >= 48 && o <= 57)
+    if alnum {
+      cur = cur + c.to_string()
+    } else {
+      if cur.length() > best.length() {
+        best = cur
+      }
+      cur = ""
+    }
+    i = i + 1
+  }
+  if cur.length() > best.length() {
+    best = cur
+  }
+  best
+}
+
+///|
+/// 从外部规则 JSON 文本（ocr-local moonbit-rules.json 风格：顶层 `rules` 数组，
+/// 每条含 name/severity/pattern/why/description）解析为 ScanRule 表。
+/// 非法 JSON / 缺字段 / 解析出 0 条 → Err；pattern 经 scan_regex_to_needle 转 needle。
+fn scan_parse_external_rules(
+  json_text : String,
+) -> Result[Array[ScanRule], String] {
+  let parsed : Json = @json.parse(json_text) catch {
+    e =>
+      return Err("issue_scan: 外部规则 JSON 解析失败: " + e.to_string())
+  }
+  let arr = match parsed {
+    Json::Object(m) =>
+      match m.get("rules") {
+        None => return Err("issue_scan: 外部规则缺 rules 数组")
+        Some(Json::Array(a)) => a
+        Some(_) => return Err("issue_scan: rules 不是数组")
+      }
+    _ => return Err("issue_scan: 外部规则顶层不是 JSON 对象")
+  }
+  let out : Array[ScanRule] = []
+  for r in arr {
+    let obj = match r {
+      Json::Object(m) => m
+      _ => continue
+    }
+    let name = match obj.get("name") {
+      Some(Json::String(s)) => s
+      _ => continue
+    }
+    let sev = match obj.get("severity") {
+      Some(Json::String(s)) => s
+      _ => "medium"
+    }
+    let pat = match obj.get("pattern") {
+      Some(Json::String(s)) => s
+      _ => continue
+    }
+    let why = match obj.get("why") {
+      Some(Json::String(s)) => s
+      _ => ""
+    }
+    let hint = match obj.get("description") {
+      Some(Json::String(s)) => s
+      _ => ""
+    }
+    let needle = scan_regex_to_needle(pat)
+    if needle.length() < 2 {
+      continue
+    }
+    out.push({ id: name, severity: sev, pattern: [needle], why, hint, })
+  }
+  if out.is_empty() {
+    return Err("issue_scan: 外部规则解析出 0 条可用规则")
+  }
+  Ok(out)
+}
+
+///|
+/// 读取并解析外部规则文件。路径先过 scan_dir_ok（拒绝对称/穿越/盘符），
+/// 再 mem_read 读内容交给 scan_parse_external_rules。
+fn scan_load_external_rules(path : String) -> Result[Array[ScanRule], String] {
+  if not(scan_dir_ok(path)) {
+    return Err(
+      "issue_scan: 非法规则文件路径（拒绝绝对路径/穿越/盘符）: " +
+      path,
+    )
+  }
+  let content = match mem_read(path) {
+    None => return Err("issue_scan: 无法读取外部规则文件: " + path)
+    Some(c) => c
+  }
+  scan_parse_external_rules(content)
+}
+
+///|
+/// 内建 + 外部规则合并：同名（id 相同）外部规则覆盖内建，其余外部规则追加。
+/// 内建规则若被外部覆盖则不再单独出现（避免同 id 双条）。
+fn scan_merge_rules(
+  builtin : Array[ScanRule],
+  external : Array[ScanRule],
+) -> Array[ScanRule] {
+  let out : Array[ScanRule] = []
+  for b in builtin {
+    let dup = external.filter(fn(e : ScanRule) { e.id == b.id })
+    if dup.is_empty() {
+      out.push(b)
+    }
+  }
+  for e in external {
+    out.push(e)
+  }
+  out
+}
+
+///|
 /// 规则驱动源码扫描主入口：递归收集 {dir} 下 .mbt 文件，对每条规则逐行匹配。
 /// 返回 {scanned_files, findings, by_severity, by_rule}；findings 可直接喂给
 /// report_bug（summary = "\[rule:id\] file:line code"）。
@@ -759,10 +1149,16 @@ pub fn issue_scan(
       "issue_scan: 非法目录（拒绝绝对路径/穿越/盘符）: " + dir,
     )
   }
-  // 外部规则文件（ocr-local moonbit-rules.json 风格）暂不解析，保留参数占位；
-  // 内置规则集始终生效。
-  let _ = rules_file
-  let rules = scan_rules()
+  // 外部规则文件（ocr-local moonbit-rules.json 风格）：非空则真实读取 + 解析 + 合并，
+  // 同名外部规则覆盖内建（档 2 ocr-local 融入 bugfind）；空串走内建，行为与改造前完全一致。
+  let rules = if rules_file.length() > 0 {
+    match scan_load_external_rules(rules_file) {
+      Ok(ext) => scan_merge_rules(scan_rules(), ext)
+      Err(e) => return Err(e)
+    }
+  } else {
+    scan_rules()
+  }
   let files : Array[String] = []
   scan_collect(dir, include_tests, files)
   let findings : Array[ScanFinding] = []
@@ -894,26 +1290,175 @@ pub fn issue_scan(
 }
 
 // ========== DEBUG TESTS (R125 guard filter) ==========
+
+///|
 fn _ctx() -> ScanCtx {
-  { safe_clamps: Map([]), guarded_lines: Map([]), slice_only: false }
+  { safe_clamps: Map([]), guarded_lines: Map([]), slice_only: false, }
 }
 
+///|
 test "R125 string-index same-line length() > 0 guard" {
   let hit_line = "let sk = if top.skill_hits.length() > 0 { top.skill_hits[0] } else { \"\" }"
   let code = "top.skill_hits[0]"
-  let result = scan_finding_guarded(code, "string-index", [], ctx=_ctx(), hit_line=hit_line, hit_ln=272)
+  let result = scan_finding_guarded(
+    code,
+    "string-index",
+    [],
+    ctx=_ctx(),
+    hit_line~,
+    hit_ln=272,
+  )
   assert_true(result)
 }
 
+///|
 test "R125 string-index prev-line while length() guard" {
   let prev = ["while ready_ids.length() > 0 {"]
   let hit_line = "let cur = ready_ids[0]"
-  let result = scan_finding_guarded("ready_ids[0]", "string-index", prev, ctx=_ctx(), hit_line=hit_line, hit_ln=273)
+  let result = scan_finding_guarded(
+    "ready_ids[0]",
+    "string-index",
+    prev,
+    ctx=_ctx(),
+    hit_line~,
+    hit_ln=273,
+  )
   assert_true(result)
 }
 
+///|
 test "R125 substring-overrun safe end=length()-1" {
   let hit_line = "s.substring(start=0, end=s.length() - 1).to_string()"
-  let result = scan_finding_guarded(hit_line, "substring-overrun", [], ctx=_ctx(), hit_line=hit_line, hit_ln=270)
+  let result = scan_finding_guarded(
+    hit_line,
+    "substring-overrun",
+    [],
+    ctx=_ctx(),
+    hit_line~,
+    hit_ln=270,
+  )
+  assert_true(result)
+}
+
+///|
+test "R125 unprotected-division prev-line if total > 0 direct guard" {
+  let prev = ["  let passed = score_sum", "  if total > 0 {"]
+  let code = "    let acc = passed / total * 100"
+  let result = scan_finding_guarded(
+    code,
+    "unprotected-division",
+    prev,
+    ctx=_ctx(),
+    hit_line=code,
+    hit_ln=346,
+  )
+  assert_true(result)
+}
+
+///|
+test "R125 unprotected-division same-line if total_w <= 0 direct guard" {
+  let code = "  let share = if total_w <= 0 { 0 } else { budget * w / total_w }"
+  let result = scan_finding_guarded(
+    code,
+    "unprotected-division",
+    [],
+    ctx=_ctx(),
+    hit_line=code,
+    hit_ln=862,
+  )
+  assert_true(result)
+}
+
+///|
+test "R125 unprotected-division no guard not filtered" {
+  let prev = ["  let passed = score_sum", "  let total = count"]
+  let code = "    let acc = passed / total * 100"
+  let result = scan_finding_guarded(
+    code,
+    "unprotected-division",
+    prev,
+    ctx=_ctx(),
+    hit_line=code,
+    hit_ln=346,
+  )
+  assert_true(not(result))
+}
+
+///|
+/// BUG-152: secs-overflow 显式 Int32 是真阳性，guard 应返回 false（不过滤）。
+test "BUG-152 secs-overflow explicit Int32 keeps finding" {
+  let code = "  let t = (days : Int32) * 86400"
+  let result = scan_finding_guarded(
+    code,
+    "secs-overflow",
+    [],
+    ctx=_ctx(),
+    hit_line=code,
+    hit_ln=120,
+  )
+  assert_true(not(result))
+}
+
+///|
+/// BUG-152: secs-overflow 含 `.to_int32()` 是真阳性，guard 应返回 false。
+test "BUG-152 secs-overflow to_int32 keeps finding" {
+  let code = "  let t = days.to_int32() * 86400"
+  let result = scan_finding_guarded(
+    code,
+    "secs-overflow",
+    [],
+    ctx=_ctx(),
+    hit_line=code,
+    hit_ln=121,
+  )
+  assert_true(not(result))
+}
+
+///|
+/// BUG-152: secs-overflow 默认 Int（无 Int32 注解）是假阳性，guard 应返回 true（suppress）。
+test "BUG-152 secs-overflow default Int suppressed" {
+  let code = "  let t = days * 86400 + hour * 3600"
+  let result = scan_finding_guarded(
+    code,
+    "secs-overflow",
+    [],
+    ctx=_ctx(),
+    hit_line=code,
+    hit_ln=122,
+  )
+  assert_true(result)
+}
+
+///|
+/// BUG-152: secs-overflow 含 Int64 注解不会溢出，guard 应返回 true（suppress）。
+test "BUG-152 secs-overflow Int64 suppressed" {
+  let code = "  let t = (days : Int64) * 86400L + 86400"
+  let result = scan_finding_guarded(
+    code,
+    "secs-overflow",
+    [],
+    ctx=_ctx(),
+    hit_line=code,
+    hit_ln=123,
+  )
+  assert_true(result)
+}
+
+///|
+/// BUG-152: prev_lines 里「Int32」只出现在注释散文（非类型注解）时不应误判为真阳性。
+test "BUG-152 secs-overflow Int32 only in comment suppressed" {
+  let prev = [
+    "  // 24820*86400 ≈ 2.14e9 < 2^31-1，已越过 Int32 上界", "  if year > 2091 {",
+    "    return -1", "  }",
+  ]
+  let code = "  days * 86400 + hour * 3600 + min * 60 + sec"
+  let result = scan_finding_guarded(
+    code,
+    "secs-overflow",
+    prev,
+    ctx=_ctx(),
+    hit_line=code,
+    hit_ln=124,
+  )
   assert_true(result)
 }
