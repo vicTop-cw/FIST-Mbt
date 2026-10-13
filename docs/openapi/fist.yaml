@@ -1,0 +1,213 @@
+openapi: 3.0.3
+
+# fist-mbt-api —— 多语言接入 HTTP 契约 v1（计划 A 项定版）
+#
+# 出处：docs/fist-mbt-multilang-sdk-plan-20261012.md §2.2「契约定版：OpenAPI 3.x 单文件」。
+# 计划 §2.2 那张「任务/路由/锁/帽子」端点表是**草案**，本文件刻意**只写被真实服务的端点**——
+# 照草案写未实现的端点就是本仓 BUG-214 的「描述承诺 vs 实现」落差形状（J9 管的同族）。
+# 逐条实现状态在下方 x-implementation，全部 2026-10-13 本机实测（bridge 起在 3137，
+# 回执原件见本节末「实测读数」）。
+#
+# 谁该用这个契约：MoonBit 生态外的语言（Python / Rust / C# / Go / JS……）。
+# 计划 §3 的口径是「语言侧 20 行以内封装即可」——前提就是**别再手抄 JSON-RPC 信封**，
+# 所以下面 `/tools` 与 `/tools/{name}/call` 都做了剥壳（x-unwrapping）。
+# 通用 JSON-RPC 口 `/mcp` 与 `/events` SSE 是既有面，一并如实登记。
+#
+# 实测读数（2026-10-13，scripts/fist-mbt-http.py）：
+#   GET  /health                   200 {"status":"ok","product":"FIST-Mbt","transport":"http"}
+#   GET  /tools                    200 {"tools":[…163 项]}，首项 name=get
+#   POST /tools/mode_list/call     200 {ok:true, result:…, data:{constraints,description,…}}
+#   POST /tools/get/call           502 {"error":{"code":-32000,"message":"task not found: …"}}
+#        ↑ 业务失败走 JSON-RPC error，不是 MCP 的 result.isError ⇒ 落 502（本 server 的实现选择）
+#   POST /tools/no_such_tool_xyz/call 502（未知工具同走 error 通道，不崩）
+#   POST /tools/mode_list/call body=[1,2]  400 Invalid JSON body…（body 必须是对象）
+#   POST /mcp {"method":"tools/list"}      200 result.tools=163（老口零回归）
+#   GET  /events                   既有 SSE（本次未改，不在此承诺事件 schema）
+
+info:
+  title: FIST-Mbt HTTP API（fist-mbt-api）
+  version: "1.0.0"
+  description: |
+    非 MoonBit 语言接入 FIST-Mbt 的统一入口。传输 = REST + JSON + SSE。
+    两个通用透传端点（`/tools`、`/tools/{name}/call`）覆盖全部 MCP 工具面，
+    语言侧无需为每个工具写映射，也不必碰 JSON-RPC 信封。
+
+    **实现状态见 `x-implementation`**；版本号规则：端点语义破坏才升 major，
+    新增工具/新增可选字段不升版（契约描述的是形状，不是清单）。
+
+servers:
+  - url: http://127.0.0.1:3137
+    description: 本机默认（FIST_MCP_PORT 或位置参数改端口；只绑 127.0.0.1，非对外服务）
+
+paths:
+  /health:
+    get:
+      summary: 健康检查
+      operationId: health
+      x-implementation: served
+      responses:
+        "200":
+          description: 桥活着
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, product, transport]
+                properties:
+                  status: { type: string, example: ok }
+                  product: { type: string, example: FIST-Mbt }
+                  transport: { type: string, example: http }
+
+  /tools:
+    get:
+      summary: 工具清单（REST 面，已剥 JSON-RPC 信封）
+      description: |
+        映射 MCP `tools/list`。返回 `{tools:[…]}`，每项含 `name` / `description` /
+        `inputSchema`——`inputSchema` 就是 `/tools/{name}/call` 的请求体 schema，
+        所以**客户端可由本端点自描述驱动**，不必硬编码参数表。
+        工具**数量不在契约里承诺**（以本端点实测为准；写死一个数就是漂移雷）。
+      operationId: listTools
+      x-implementation: served
+      x-unwrapping: 取 MCP 响应的 result.tools 作为 body.tools，其余信封丢弃
+      responses:
+        "200":
+          description: 工具清单
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tools]
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      type: object
+                      required: [name]
+                      properties:
+                        name: { type: string }
+                        description: { type: string }
+                        inputSchema:
+                          type: object
+                          additionalProperties: true
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
+  /tools/{name}/call:
+    post:
+      summary: 调用一个工具（请求体 = 该工具的 arguments）
+      description: |
+        映射 MCP `tools/call`：桥把 body 原样塞进 `arguments`，并**替调用方补齐**
+        `params._meta`（协议版本 / clientCapabilities / clientInfo）——这server 走
+        MCP 2026-07-28 形状、缺 `_meta` 直接拒，HTTP 侧不该要求每个语言手抄这段。
+
+        回执剥壳规则（确定性，见 x-unwrapping）：`data` 是便利而非替换，
+        `result` **永远原样保留**，需要原始形状时读它。
+      operationId: callTool
+      x-implementation: served
+      x-unwrapping: |
+        result.content 只有 1 块、type=text、且该 text 是合法 JSON 时 ⇒ 解析后放 data；
+        否则不出 data（纯文本回执不硬造）。isError=true 时 out.ok=false 且 HTTP 422
+        （注：本 server 当前用 JSON-RPC error 承载业务失败，落 502 —— 实测读数见文件头）
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: 工具名（取值来自 GET /tools）
+          schema: { type: string }
+      requestBody:
+        required: true
+        description: 该工具的 arguments 对象；无参工具传 `{}`
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: 调用成功（ok=true）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, result]
+                properties:
+                  ok: { type: boolean, example: true }
+                  data:
+                    description: 剥壳后的工具正文（正文非 JSON 时缺席）
+                    nullable: true
+                  result:
+                    type: object
+                    description: MCP tools/call 原始 result（含 content / isError 等）
+                    additionalProperties: true
+        "400":
+          description: 请求体不是合法 JSON 对象（如传了数组/标量）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: |
+            工具回执 isError=true（**本 server 当前不产出此形状**，见 x-unwrapping 注；
+            登记以覆盖 MCP 标准分支，不代表已实测）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ToolResult" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
+  /mcp:
+    post:
+      summary: 通用 JSON-RPC 口（既有能力，未随本契约改动）
+      description: |
+        原样转发一条 JSON-RPC 请求给 stdio MCP server。需要 `_meta` 时自行带上
+        （本口**不**自动补，与 `/tools/{name}/call` 的差别就在这一处）。
+        新接入优先用 `/tools*` 两个口；`/mcp` 留给需要 resources/prompts 等非工具面的场景。
+      operationId: jsonRpc
+      x-implementation: pre-existing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [method]
+              properties:
+                jsonrpc: { type: string, example: "2.0" }
+                id: { type: integer }
+                method: { type: string, example: tools/list }
+                params: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: JSON-RPC 回执（原样，不剥壳）
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400":
+          description: 请求体非法 JSON / 非对象 / 缺 method
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
+components:
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          oneOf:
+            - type: string
+            - type: object
+              description: JSON-RPC error 对象（code / message）时原样透传
+    ToolResult:
+      type: object
+      required: [ok, result]
+      properties:
+        ok: { type: boolean, example: false }
+        result: { type: object, additionalProperties: true }
+  responses:
+    UpstreamError:
+      description: >
+        桥拿不到可用回执（server 未起 / 断连 / 超时 / 工具返回 JSON-RPC error，
+        含未知工具名与「业务失败走 error 通道」两类）。body 的 error 字段带原始原因。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
