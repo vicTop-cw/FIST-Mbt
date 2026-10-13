@@ -32,6 +32,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WF_GLOB = os.path.join(ROOT, ".github", "workflows", "*.yml")
 SCRIPTS_DIR = os.path.join(ROOT, "scripts")
+DOCS_EXAMPLES_DIR = os.path.join(ROOT, "docs", "examples")
 RE_SCRIPT = re.compile(r"scripts/[\w\-/]+\.py")
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -53,13 +54,24 @@ def ci_script_faces():
 def all_script_faces():
     """全部正式脚本面（BACKLOG P3 扩面）：glob 而非反解，所以带连字符的文件名
     （`scripts/fist-mbt-http.py`）也在面上——CI 反解的正则 `scripts/[\\w/]+\\.py` 认不出
-    连字符，那一格只有 glob 兜得住。测试用临时脚本落 temp/，不在 scripts/ 下，天然排除。"""
+    连字符，那一格只有 glob 兜得住。测试用临时脚本落 temp/，不在 scripts/ 下，天然排除。
+
+    2026-10-13 再扩：`docs/examples/**/*.py` 也在面上。触发点是我自己新加的
+    `docs/examples/python/http_client.py`——它有中文 print，落在这把尺的老扫描面之外
+    （只 walk scripts/）⇒ 同一条 BUG-138 风险在 examples 面没人守。目录不存在就跳过
+    （不误红、也不因缺目录而 FATAL，CI 面不依赖它）。
+    **排除 `_` 前缀临时脚本**：与 `check_scripts_index` 的「_ 前缀=即用即清、不要求登记」同口径。
+    实测触发点——扩面后 `--all` 抓到 `scripts/_tmp_boundary_omega.py`（未跟踪临时件）缺闸报红，
+    那是把临时件错当正式面判的假红，不是产品坏；临时件本就即用即清，不纳入编码闸义务。"""
     out = []
-    for dp, _dn, fn in os.walk(SCRIPTS_DIR):
-        for f in sorted(fn):
-            if f.endswith(".py"):
-                out.append(
-                    os.path.relpath(os.path.join(dp, f), ROOT).replace(os.sep, "/"))
+    for base in (SCRIPTS_DIR, DOCS_EXAMPLES_DIR):
+        if not os.path.isdir(base):
+            continue
+        for dp, _dn, fn in os.walk(base):
+            for f in sorted(fn):
+                if f.endswith(".py") and not f.startswith("_"):
+                    out.append(
+                        os.path.relpath(os.path.join(dp, f), ROOT).replace(os.sep, "/"))
     return sorted(out)
 
 
