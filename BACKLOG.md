@@ -52,9 +52,9 @@
 
 ## 发布事实（机器可读标记，`scripts/check_doc_surface.py` 的 J13 从这里反解）
 
-下面三行是 GitHub Release 的**匿名权威读数**（`GET /repos/vicTop-cw/FIST-Mbt/releases?per_page=100`，
-http=200，2026-10-07 实测；读数原件 `temp/b135_release_evidence.txt`）。J13 用它反查 CHANGELOG 各节标题里的
-状态短语有没有落后于事实——**发布时刻由读数来，新增一发 Release 就补一行标记**，别让人去猜哪一节该改。
+下面各行是 GitHub Release 的**匿名权威读数**（`GET /repos/vicTop-cw/FIST-Mbt/releases?per_page=100`，
+http=200，2026-10-07 实测；读数原件 `temp/b135_release_evidence.txt`；v0.3.8 那行为 2026-10-13 迁移修复后首发实测）。
+J13 用它反查 CHANGELOG 各节标题里的状态短语有没有落后于事实——**发布时刻由读数来，新增一发 Release 就补一行标记**（这里刻意不写「共 N 行」——写死数字就是下一颗漂移雷），别让人去猜哪一节该改。
 
 <!-- release-fact: v0.3.8 github-published=2026-10-13T06:19:06Z asset=fist-mbt-js-v0.3.8.zip bytes=429290 -->
 <!-- release-fact: v0.3.5 github-published=2026-09-30T00:03:17Z asset=fist-mbt-js-v0.3.5.zip bytes=376617 -->
