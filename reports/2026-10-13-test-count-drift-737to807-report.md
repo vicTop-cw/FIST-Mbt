@@ -1,17 +1,20 @@
-# 2026-10-13 · 测试总数漂移定因与第一批修复报告（737 → 807）
+# 2026-10-13 · 测试总数漂移定因与修复报告（737 → 807）
 
 ## 结果摘要
 
 **一句话**：`check_test_sync` 在干净树（CI 检出面）长期红 **31 条 R1 + 5 条 R2**，真因是文档自述 **737**
-（2026-10-11 旧读数）而 HEAD 实测 **807**；本轮修掉**4 个干净面文件**，把违例压到 **R1=23 / R2=4**。
+（2026-10-11 旧读数）而 HEAD 实测 **807**；本轮两批处置把违例压到 **R1=15 / R2=4**。
 
 | 项 | 数值 |
 |---|---|
 | 修复前（干净树） | R1=31 / R2=5 |
-| 修复后（干净树） | **R1=23 / R2=4** |
-| 本批修复 | `docs/agent-map.md` / `docs/SHIP-PLAN-BLACKBOX-v2.md` / `docs/evolve.md` / `docs/atgc-selfdrive-demo.md`（6 行） |
+| 第一批后（4 个干净面文件改数） | R1=23 / R2=4 |
+| 第二批后（6 条 EXEMPT 登记） | **R1=15 / R2=4** |
+| 剩余 15 条 | **全在 7 个并发会话 WIP 面**（见「结构性限制」节） |
 
-提交 `e51d57c`，双远端同步。
+提交：`e51d57c`（第一批 4 文件 6 行）、`52ded47`（第二批 6 条豁免 + 夹具扩展），双远端同步。
+
+**两批合计清掉 16 条 R1 + 1 条 R2**，且 `--selftest` 保持 **rc=0 PASS**（8 变体各自命中自己指名的判据）。
 
 ## 定因：为什么是 807 而不是 737（对照实验）
 
@@ -39,7 +42,19 @@
 |---|---|---|---|
 | A 干净面 + 现状断言 | `docs/agent-map.md` / `docs/SHIP-PLAN-BLACKBOX-v2.md` / `docs/evolve.md` / `docs/atgc-selfdrive-demo.md` | **本批修** | worktree==HEAD，不含他人 WIP；语义是"当前/现状"谓词 |
 | B 现状断言但在 WIP 面 | README.md / README_EN.md / README.mbt.md / AGENTS.md / ARCHITECTURE.md / `docs/deliverable.md` / `scripts/scoring_rubric.md` | **留待其 owner** | 均为并发会话未提交面（7 个）；提交会连带他人 WIP——本会话纪律禁止 |
-| C 当轮实测记录 | `BACKLOG.md`（811/737/86/23/62）、`docs/improvement-plan-20261010.md:86` | **另条处置** | 改写即伪造历史；按判据自述应走 `EXEMPT` 逐条点名（口径决定） |
+| C 当轮实测记录 | `BACKLOG.md`（811/737/86/23/62）、`docs/improvement-plan-20261010.md:86` | **第二批已处置：登记 EXEMPT** | 改写即伪造历史；判据 docstring L12 明确 prescribe「合法的历史数必须逐条点名」 |
+
+**C 类的处置（第二批，`52ded47`）**：按判据自述的机制登记 6 条豁免，而不是改写历史行——
+`BACKLOG.md` 的 811/737/86/23/62 五条 + `docs/improvement-plan-20261010.md` 的 737 一条。
+其中 `86`（`src/router` 单包）、`23`/`62`（`check_py_stdout_encoding` 的 CI 面/--all 面自检读数）
+**本就不是全量测试总数声明**，属判据窄口径的过度捕获面；登记豁免是"不误伤"，收窄正则那条
+影响面更大（改判据本体）⇒ 留 owner。
+
+**R4 连带面（判据的设计要求）**：每条 EXEMPT 必须在 selftest 夹具里有对应声明，否则判「豁免失效」。
+故同步扩夹具（BACKLOG 夹具五行 + 新增 improvement-plan 夹具条目）。调试中踩到**两处夹具自身缺陷**
+并修正：① 先写成字面反斜杠 n 的单行串（`collect_claims` 按行扫，只认第 1 行）；
+② 用了 `RX_KEY` 不认的「通过」措辞（RX_KEY = `测试|用例|全绿|passed|test`）。两处都属
+"判据自己的夹具坏了"那一档，留档防后来者重犯。
 
 **C 类需要单独说明**：`BACKLOG.md:47/48` 的 `86/86`（`src/router` 单包）、`23/23`、`62/62`
 （守卫脚本自检面）都**不是全量测试总数**，但 `check_test_sync` 的窄口径（`N/N` + 同行测试语义词）
@@ -62,6 +77,17 @@
 - 边界：只动 4 个干净面 docs；`README.md` / `README_EN.md` / `README.mbt.md` / `AGENTS.md` /
   `ARCHITECTURE.md` / `docs/deliverable.md` / `scripts/scoring_rubric.md` / `BACKLOG.md` /
   `docs/improvement-plan-20261010.md` 一律未碰。
+
+## 结构性限制（为什么 R1=15 / R2=4 是当前可达的下界）
+
+干净树终审（新 HEAD `52ded47`）剩余 **15 条 R1 全在这 7 个文件**：
+`README.md` / `README_EN.md` / `README.mbt.md` / `AGENTS.md` / `ARCHITECTURE.md` /
+`docs/deliverable.md` / `scripts/scoring_rubric.md`。
+
+**这 7 个全部是并发会话的未提交 WIP 面**（` M`）。本会话纪律禁止连带提交他人 WIP，故：
+只要它们的 WIP 未落地，`check_test_sync` 与 `check_badge`（README 徽章同写 737）**就一直红**——
+这不是"我的修法无效"，而是"干净面已修尽、剩余须由其 owner 收口"的结构性下界。
+**唯一能同时转绿的时机**是那份 WIP 落地时：由那一方（或下一轮的我）把 737→807 与徽章一起改。
 
 ## 遗留风险
 
