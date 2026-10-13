@@ -265,6 +265,13 @@ jobs:
         shell: pwsh
         run: moon update
 
+      # 同一颗雷（CI #270 实证：windows 臂 Check (js) 红在 .mooncakes\mizchi\sqlite 的
+      # moon.mod.json is no longer supported）。windows-latest 自带 Git Bash，用 bash 跑同一支
+      # 迁移器（内含 build 探针，exit 0 即依赖图已通）。老版 moon 首轮即过 = 无损 no-op。
+      - name: Migrate mooncakes dep manifests (新版 moon 拒旧 moon.mod.json，与 js/native 臂同雷)
+        shell: bash
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
+
       - name: Check (js)
         shell: pwsh
         run: moon check --target js
