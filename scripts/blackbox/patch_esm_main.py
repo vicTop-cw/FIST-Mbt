@@ -12,6 +12,14 @@ mizchi/sqlite 内部 `require("node:sqlite")` 抛 "require is not defined in ES 
 路径缺省时自动定位 <repo>/_build/js/debug/build/cmd/cli/cli.js。
 任何 runner(demo.ps1 / mcp_smoke.py)在 `moon build` 后先调用本脚本再启动 server。
 """
+
+# BUG-138 残余面：Windows 默认 cp936 控制台下，中文结论一红就崩在 print 里，
+# traceback + rc=1 会被读成「缺陷在场」那一档——那是尺子自己坏了。先把两条流钉 UTF-8。
+import sys as _sys
+if hasattr(_sys.stdout, "reconfigure"):
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(_sys.stderr, "reconfigure"):
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import os
 import sys
 

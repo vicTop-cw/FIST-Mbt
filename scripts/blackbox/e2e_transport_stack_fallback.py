@@ -27,6 +27,14 @@ A 与 B 的**唯一差别**是兜底臂可用性；两格同态 ⇒ 变量没起
 前置不满足（非 Windows / 真安装目录没产物 ⇒ 镜像无处取材）⇒ rc=3 并报缺什么，跳过不算通过。
 用法：python scripts/blackbox/e2e_transport_stack_fallback.py
 """
+
+# BUG-138 残余面：Windows 默认 cp936 控制台下，中文结论一红就崩在 print 里，
+# traceback + rc=1 会被读成「缺陷在场」那一档——那是尺子自己坏了。先把两条流钉 UTF-8。
+import sys as _sys
+if hasattr(_sys.stdout, "reconfigure"):
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(_sys.stderr, "reconfigure"):
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import importlib.util
 import io
 import os
