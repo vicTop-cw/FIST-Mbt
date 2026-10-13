@@ -27,6 +27,15 @@ jobs:
           # 从公开 mooncakes registry 拉取；无私有依赖
           MOON_REGISTRY_UPDATE: "1"
 
+      # 2026-10-13 CI #98 实证：`Check (js)` 红在 Failed to resolve the module dependency graph
+      # ——同一颗雷我为 release.yml 修过（scripts/migrate_mooncakes_modjson.sh），却按「最小改动」
+      # 没给 ci.yml 挂，结果 Check 这一步就把后面 25 步全 skip 掉（含 HTTP 契约自证那一步）。
+      # 教训：依赖图是**每步之前**的公共前置，不是某条臂的局部问题——修一处不修另一处等于没修。
+      # 老版 moon（本地 0.1.20260920）首轮 build 即过 ⇒ 这里是无损 no-op。
+      - name: Migrate mooncakes dep manifests (新版 moon 拒旧 moon.mod.json，check/test 全线的公共前置)
+        shell: bash
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
+
       - name: Check (js)
         run: moon check --target js
 
