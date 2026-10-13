@@ -15,6 +15,14 @@ AGENTS.md/README.md 的工具表（由 `check_tools_sync` 的 J1/J2 钉住「逐
 Usage:
   python scripts/gen_help_docs.py
 """
+
+# BUG-138 残余面：Windows 默认 cp936 控制台下，中文结论一红就崩在 print 里，
+# traceback + rc=1 会被读成「缺陷在场」那一档——那是尺子自己坏了。先把两条流钉 UTF-8。
+import sys as _sys
+if hasattr(_sys.stdout, "reconfigure"):
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(_sys.stderr, "reconfigure"):
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import re, os, sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))

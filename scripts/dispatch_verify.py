@@ -9,6 +9,14 @@
   并执行 cleanup 保持整洁（仅本仓库独立验证，不并入交付自检链）。
 用法：moon build --target js cmd/cli && python scripts/dispatch_verify.py
 """
+
+# BUG-138 残余面：Windows 默认 cp936 控制台下，中文结论一红就崩在 print 里，
+# traceback + rc=1 会被读成「缺陷在场」那一档——那是尺子自己坏了。先把两条流钉 UTF-8。
+import sys as _sys
+if hasattr(_sys.stdout, "reconfigure"):
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(_sys.stderr, "reconfigure"):
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import json, os, subprocess
 from datetime import datetime, timezone
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))

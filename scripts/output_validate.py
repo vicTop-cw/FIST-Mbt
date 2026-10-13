@@ -25,6 +25,14 @@ scripts/output_validate.py — 产出物验证 CLI（一源四态 · CLI 形态�
     - 四态对齐：同一 output_validate 工具可通过 MCP 协议、本 CLI 脚本、skill 文档或宿主插件态调用，
       三者共享相同的 MoonBit 实现与 JSON schema。
 """
+
+# BUG-138 残余面：Windows 默认 cp936 控制台下，中文结论一红就崩在 print 里，
+# traceback + rc=1 会被读成「缺陷在场」那一档——那是尺子自己坏了。先把两条流钉 UTF-8。
+import sys as _sys
+if hasattr(_sys.stdout, "reconfigure"):
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(_sys.stderr, "reconfigure"):
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import json
 import os
 import subprocess

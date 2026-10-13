@@ -3,6 +3,14 @@
 """scripts/lesson_chain_selfdrive.py — 演示【失败回流闭环】: 用 fist-mbt 自身跑一次"打回→记录lesson"完整链路。
 发布 omega 任务 → 语料审核打回 → 随即 evolve_lesson 归档 [lesson] → evolve_snapshot 可见教训。
 证明"会犯错→可演绎"闭环成立(人工串联; 自动串联列为中期项)。"""
+
+# BUG-138 残余面：Windows 默认 cp936 控制台下，中文结论一红就崩在 print 里，
+# traceback + rc=1 会被读成「缺陷在场」那一档——那是尺子自己坏了。先把两条流钉 UTF-8。
+import sys as _sys
+if hasattr(_sys.stdout, "reconfigure"):
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(_sys.stderr, "reconfigure"):
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import json, os, subprocess, sys
 from datetime import datetime, timezone
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))

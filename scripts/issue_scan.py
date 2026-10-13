@@ -17,6 +17,14 @@ scripts/issue_scan.py — 规则驱动源码扫描 CLI（一源四态 · CLI 形
     - 与 mcp_smoke.py 同款 ESM shim 注入（moonc ≥0.10.14 输出 ESM，mizchi/sqlite 用 CJS）。
     - 无绝对路径硬编码：dir 为相对路径参数；main.js 用候选探测。
 """
+
+# BUG-138 残余面：Windows 默认 cp936 控制台下，中文结论一红就崩在 print 里，
+# traceback + rc=1 会被读成「缺陷在场」那一档——那是尺子自己坏了。先把两条流钉 UTF-8。
+import sys as _sys
+if hasattr(_sys.stdout, "reconfigure"):
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(_sys.stderr, "reconfigure"):
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import json
 import os
 import subprocess

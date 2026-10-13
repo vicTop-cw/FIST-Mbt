@@ -18,6 +18,14 @@ drift_similarity 一一对应，改任一侧都要重跑本脚本并同步 MoonB
   insufficient = 任一侧 token 数 < MIN_TOKENS（空描述/纯模板桩不参与判定）
   判据         = drift > 0.7 → drift_suspect；兄弟 jaccard ≥ 0.7 → redundant_suspect
 """
+
+# BUG-138 残余面：Windows 默认 cp936 控制台下，中文结论一红就崩在 print 里，
+# traceback + rc=1 会被读成「缺陷在场」那一档——那是尺子自己坏了。先把两条流钉 UTF-8。
+import sys as _sys
+if hasattr(_sys.stdout, "reconfigure"):
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(_sys.stderr, "reconfigure"):
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import json
 import re
 import sqlite3

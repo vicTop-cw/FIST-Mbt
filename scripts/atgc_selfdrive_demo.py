@@ -23,6 +23,14 @@ scripts/atgc_selfdrive_demo.py — fist-mbt 旗舰 DEMO：自驱式 + Omega 强�
 说明：所有 arg 名/返回值 schema 依据 src/server/server.mbt 的 tools 声明；若个别 MCP 调用
 报错，脚本会在 stderr/退出码暴露，需按真实错误修正流程后重跑（不猜测、不静默）。
 """
+
+# BUG-138 残余面：Windows 默认 cp936 控制台下，中文结论一红就崩在 print 里，
+# traceback + rc=1 会被读成「缺陷在场」那一档——那是尺子自己坏了。先把两条流钉 UTF-8。
+import sys as _sys
+if hasattr(_sys.stdout, "reconfigure"):
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(_sys.stderr, "reconfigure"):
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import json
 import os
 import subprocess
