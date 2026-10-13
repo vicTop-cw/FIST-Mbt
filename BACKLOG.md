@@ -40,7 +40,7 @@
 | P3 | Saga 补偿事务 + durable action log：并发动作前写 append-only 日志、失败按 LIFO 补偿 | five-directions/§一 | done(saga_register/saga_rollback 已落地：saga_log 表 + LIFO 幂等补偿序列，R92 见调研档 20260926.saga-compensation.md) | - |
 | P3 | Scoring 驱动的自动进化闭环（mutation/skill_lib/curriculum）无人值守自进化 | future-roadmap/远 | done(2026-10-13：新建 `src/evolve/curriculum.mbt`，L41 核心组件三件套：① curriculum：四阶段课程（L1入门→L4精通），`next_level`/`can_graduate`/`curriculum_progress`/`standard_curriculum`，按评分驱动阶段进阶；② mutation：5 种变异算子（Rewrite/Simplify/Generalize/Specialize/Combine）+ `mutation_prompt` 生成变异指令 + `select_mutation` 按评分选策略（低分 Simplify→高分 Specialize）；③ skill_lib：`SkillEntry` struct + `is_distillable`(≥0.85 且非空 note) + `distill_skill` + `tag_skill` 关键词打标。一体化决策 `evolve_decision(score) -> (level, mutation, distillable)`。20 条白盒测试全绿。) | - |
 | P3 | 与 moonclaw/posoco/官方 MCP SDK 差异化共处：定位"完整 MCP Server+编排+自进化" | future-roadmap/远 | pending | - |
-| - | gaato/github API 客户端，供 self_search 模块使用 | competition/§六 | pending | - |
+| - | gaato/github API 客户端，供 self_search 模块使用 | competition/§六 | done(2026-10-13：新建 `src/evolve/github_client.mbt`，纯计算零网络。`GhRepo`/`GhCode` struct + `repo_search_url`/`code_search_url`/`topic_search_url` 构造 API URL（per_page 钳制 1~100）+ `parse_repo_search`/`parse_code_search` 解析 GitHub JSON 响应（容错）+ `repos_to_candidates`/`code_to_candidates` 转 self_search.SearchCandidate + `distill_repo_search`/`distill_code_search` 一站式（parse→转候选→distill 去重过滤）+ `curl_repo_search` 生成 curl 命令（token 不回显）。HTTP 执行由外部注入。16 条白盒测试全绿。) | - |
 | - | colmugx/posoco 参考 Agent 框架六边形架构设计 | competition/§六 | pending | - |
 | - | colmugx/mcp 已依赖（fist-mbt MCP 协议库），保留 | competition/§六 | done | - |
 
