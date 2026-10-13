@@ -86,7 +86,7 @@ curl 示例是**真 Linux 端到端**（WSL2 内起桥 + WSL 原生 curl/bash �
 1. 资源化端点（若确要 `POST /tasks/submit` 一族）：先定「arguments 来源」约定（body 平铺 vs `{arguments:{}}` 包裹），
    再逐个映射，并把 `x-implementation` 从 `planned` 改 `served` 时才对外宣传——保持 yaml「只写服务着的面」这条纪律。
 2. `422` 与 `502` 的边界要么在 server 侧把业务失败统一走 `result.isError`（则 422 成实测），要么把 yaml 该分支降级为注释；别长期挂"登记但未实测"。
-3. `requests` / `fetch` / `HttpClient` 三格若也想要，落点同样在 `docs/examples/<lang>/`（计划 §4），每格都应先跑通再入库。
+3. `requests` / `HttpClient` 两格若也想要，落点同样在 `docs/examples/<lang>/`（计划 §4），每格都应先跑通再入库。**`fetch` 格已补**（本报告提交后同批：`docs/examples/fetch/http_api.mjs`，Node v25 真跑 `FETCH-EXAMPLE PASS`、`[1] 163 工具 / get 参数 [task_id]`、`[2] ok=true 7 模式`）⇒ 现 curl / python(requests 同形 urllib) / fetch 三门语言示例均实测可消费，唯 requests 专用版与 C# HttpClient 未落（`http_client.py` 已是标准库 urllib 版，等价于 requests 那格的消费证明）。
 4. `check_py_stdout_encoding` 的 `_` 前缀豁免与 `check_scripts_index` 已是同一条纪律——可考虑抽出成共用的「正式脚本面」定义，避免第三把尺再各自发明一遍口径。
 5. CI 可挂一次「契约自证」：起桥 → 跑 `docs/examples/curl/http_api.sh` → 断言 `CURL-EXAMPLE PASS`。这是本契约唯一会随实现漂移而无声失效的点。
 
