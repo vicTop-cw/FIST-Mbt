@@ -80,3 +80,41 @@ test "ofm_m_5_解析层绝不产出 lane 字段" {
     Err(e) => abort("不应 Err：\{e}")
   }
 }
+
+///|
+/// `filter_unhealthy_models`：过滤掉黑名单中的模型，保留健康模型。
+test "ofm_m_6_过滤已知 502 模型" {
+  let models = [
+    { id: "good-model", owned_by: "A", },
+    { id: "bad-502-model", owned_by: "B", },
+    { id: "another-good", owned_by: "C", },
+  ]
+  let blacklist = ["bad-502-model"]
+  let filtered = filter_unhealthy_models(models, blacklist)
+  assert_eq(filtered.length(), 2)
+  assert_eq(filtered[0].id, "good-model")
+  assert_eq(filtered[1].id, "another-good")
+}
+
+///|
+test "ofm_m_7_空黑名单_原样返回_不误伤" {
+  let models = [{ id: "m1", owned_by: "A", }]
+  let filtered = filter_unhealthy_models(models, [])
+  assert_eq(filtered.length(), 1)
+  assert_eq(filtered[0].id, "m1")
+}
+
+///|
+test "ofm_m_8_精确匹配_不匹配前缀或子串" {
+  let models = [
+    { id: "model-v1", owned_by: "A", },
+    { id: "model-v1-beta", owned_by: "B", },
+  ]
+  // 只过滤 "model-v1"，"model-v1-beta" 应保留（精确匹配）
+  let filtered = filter_unhealthy_models(models, ["model-v1"])
+  assert_eq(filtered.length(), 1)
+  assert_eq(filtered[0].id, "model-v1-beta")
+  // is_model_unhealthy 同样精确匹配
+  assert_eq(is_model_unhealthy("model-v1", ["model-v1"]), true)
+  assert_eq(is_model_unhealthy("model-v1-beta", ["model-v1"]), false)
+}
