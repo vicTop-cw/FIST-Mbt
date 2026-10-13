@@ -105,13 +105,18 @@ def collect_defs(text):
     return out
 
 
-def judge(pkg_decls, pkg_defs):
+def judge(pkg_decls, pkg_defs, wt_defs=None):
     """pkg_decls = {pkg_dir: {形状: {声明名}}}；pkg_defs = {pkg_dir: {形状: {定义名}}}。
     返回 (问题列表, 检查过的声明数)。
 
     形状逐个比（2026-10-13 从 pub fn 单形状扩到 6 种）：先只在 fn 上做实，
     随后经"健康树零误报"预判（`temp/feasibility_shapes.py`：struct 57 / enum 21 /
-    const 12 / let 5 / trait 2 在健康树里缺口均为 0）才扩面。"""
+    const 12 / let 5 / trait 2 在健康树里缺口均为 0）才扩面。
+
+    `wt_defs`（可选）= 同一形状结构、取自**工作树磁盘**的定义集。给了它就能在红文案里
+    **分流出路**（2026-10-13 加）：「实现已在工作树、只是没提交」vs「跟踪面与工作树都找不到 ⇒ 真缺失」
+    —— 前者出路是 commit，后者出路是写实现；两者文案相同会让读的人走错方向（本会话就踩过：
+    工作树明明有实现，却按"未实现"去找代码）。不给 wt_defs 时保持原文案（向后兼容）。"""
     problems = []
     n = 0
     for d in sorted(pkg_decls):
@@ -126,10 +131,18 @@ def judge(pkg_decls, pkg_defs):
             b = defs.get(shape, set())
             for name in sorted(a - b):
                 n += 1   # 缺的也算检查过（否则防空转门会失效）
+                hint = "接口面声明了但实现未提交（干净树 moon check 会报 unbound/not found）"
+                if wt_defs is not None:
+                    wt_b = (wt_defs.get(d) or {}).get(shape, set())
+                    if name in wt_b:
+                        hint = ("**实现已在工作树磁盘上、只是没进跟踪面** ⇒ 出路是 `git add` 该文件并提交"
+                                "（不是缺实现）；判据按跟踪面判，故此处仍红")
+                    else:
+                        hint = ("**跟踪面与工作树磁盘都找不到该定义** ⇒ 出路是补实现"
+                                "（或从 .mbti 里撤掉这条声明）")
                 problems.append(
-                    "M1 %s/%s 声明了 `pub %s %s`，但同包 .mbt 里找不到该定义 "
-                    "——接口面声明了但实现未提交（干净树 moon check 会报 unbound/not found）"
-                    % (d, MBTI_NAME, shape, name)
+                    "M1 %s/%s 声明了 `pub %s %s`，但同包 .mbt 里找不到该定义 ——%s"
+                    % (d, MBTI_NAME, shape, name, hint)
                 )
             n += len(a & b)
     return problems, n
@@ -206,6 +219,20 @@ def selftest():
     cell("missing-counted-in-n", n_miss >= 1, True)
     print("  ok  missing-counted-in-n（缺的也算检查过，防空转门失效）")
 
+    # 8) 出路分流（2026-10-13 新增）：给了 wt_defs 时，红文案必须区分
+    #    「实现在工作树、未提交」与「跟踪面+工作树都找不到 ⇒ 真缺失」——两者出路不同
+    #    （commit vs 补实现），文案相同会让读者走错方向。
+    p_none = judge({'src/a': {'fn': {'ghost'}}}, {'src/a': {'fn': set()}}, wt_defs={'src/a': {'fn': set()}})[0]
+    p_wt = judge({'src/a': {'fn': {'ghost'}}}, {'src/a': {'fn': set()}}, wt_defs={'src/a': {'fn': {'ghost'}}})[0]
+    cell("hint-split-not-in-wt", any('都找不到该定义' in x for x in p_none), True)
+    print("  ok  hint-split-not-in-wt（工作树也没有 ⇒ 报'出路是补实现'）")
+    cell("hint-split-in-wt-uncommitted", any('已在工作树磁盘上、只是没进跟踪面' in x for x in p_wt), True)
+    print("  ok  hint-split-in-wt-uncommitted（工作树有 ⇒ 报'出路是 git add 并提交'）")
+    # 不给 wt_defs 时保持向后兼容（原文案）
+    p_compat = judge({'src/a': {'fn': {'ghost'}}}, {'src/a': {'fn': set()}})[0]
+    cell("hint-compat-without-wt", any('接口面声明了但实现未提交' in x for x in p_compat), True)
+    print("  ok  hint-compat-without-wt（不给 wt_defs 时保持原文案）")
+
     bad_cells = [(nm, why) for nm, ok, why in cells if not ok]
     if bad_cells:
         print("SELFTEST FAIL：")
@@ -213,7 +240,8 @@ def selftest():
             print("  - %s：%s" % (nm, why))
         return 1
     print("SELFTEST OK（%d 格：干净不误红 / 合成违例必红 / 扩展形状(struct)可红 / 真实 4 符号必红 / "
-          "私有函数不误 / 无 .mbt 包跳过 / .mbti 侧只收 pub fn / 源侧认 pub(all) / 缺额计入空转门）"
+          "私有函数不误 / 无 .mbt 包跳过 / .mbti 侧只收 pub 项 / 源侧认 pub(all) / 缺额计入空转门 / "
+          "**出路分流两格（工作树有=未提交 / 工作树无=真缺失）+ 向后兼容一格**）"
           % len(cells))
     return 0
 
@@ -255,10 +283,29 @@ def main():
         for shape, names in collect_defs(read_tracked(f)).items():
             cur.setdefault(shape, set()).update(names)
 
+    # 工作树磁盘上的定义集（用于红文案的出路分流）：只在包目录里枚举 *.mbt。
+    # 只读、不写；读不到的单个文件跳过（不影响判据主体判定）。
+    wt_defs = {}
+    for d in pkg_decls:
+        absd = os.path.join(ROOT, d)
+        if not os.path.isdir(absd):
+            continue
+        cur = wt_defs.setdefault(d, {})
+        for fn in os.listdir(absd):
+            if not fn.endswith(".mbt"):
+                continue
+            try:
+                with open(os.path.join(absd, fn), encoding="utf-8", errors="replace") as f:
+                    txt = f.read()
+            except OSError:
+                continue
+            for shape, names in collect_defs(txt).items():
+                cur.setdefault(shape, set()).update(names)
+
     # 尺子坏了必须自报（不可冒用 1 那一档）：judge() 自身若抛（如实现被改成直接下标而缺包），
     # 那是判据异常，不是"接口面有缺陷"。变异实测正是靠这一格把「去掉 .get 保护」那一处抓住。
     try:
-        problems, n = judge(pkg_decls, pkg_defs)
+        problems, n = judge(pkg_decls, pkg_defs, wt_defs=wt_defs)
     except Exception as e:
         raise SystemExit("FATAL 判据自身异常（%s: %s）—— 尺子坏了，先修判据再读读数"
                          % (type(e).__name__, e))
