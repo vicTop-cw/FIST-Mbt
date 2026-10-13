@@ -6,6 +6,8 @@ import {
 }
 
 // Values
+pub fn append_retry_prompt(String) -> Result[String, String]
+
 pub fn build_ofm_chat_request_json(OfmChatRequest) -> Result[String, String]
 
 pub fn build_ofm_chat_request_json_simple(String, String) -> Result[String, String]
@@ -18,6 +20,8 @@ pub fn hex_encode(Bytes) -> String
 
 pub fn iso_to_secs(String) -> Int
 
+pub fn ofm_reserve_max_tokens(Int, Int) -> Result[Int, String]
+
 pub fn parse_ofm_chat_response(String, Int) -> OfmChatResponse
 
 pub fn parse_ofm_models(String) -> Result[Array[OfmModel], String]
@@ -27,6 +31,8 @@ pub fn resolve_ofm_endpoint(String, String) -> String
 pub fn router_restore(Json, config? : Json) -> (ModelRouter, Array[String])
 
 pub fn secs_to_iso(Int) -> String
+
+pub fn should_retry_on_invalid_json(OfmChatResponse) -> Bool
 
 pub fn star_canonical(Array[String], Int64, Int64) -> String
 

@@ -148,3 +148,88 @@ test "ofm_c_8_max_tokens 余量预留_不越硬上限" {
   assert_eq(ofm_reserve_max_tokens(-1, 10).is_err(), true)
   assert_eq(ofm_reserve_max_tokens(100, -1).is_err(), true)
 }
+
+///|
+/// `should_retry_on_invalid_json`：只在回体不可解析时返回 true。
+test "ofm_c_9_非 JSON 回体才触发二次重试" {
+  let unparseable = {
+    http_status: 200,
+    is_error: true,
+    error_message: "不是合法 JSON",
+    error_type: "unparseable",
+    content: "",
+    raw: "<html>502</html>",
+  }
+  assert_eq(should_retry_on_invalid_json(unparseable), true)
+  // 其他 error_type 不触发（手动构造新结构体，不用更新语法）
+  let empty = {
+    http_status: 200,
+    is_error: true,
+    error_message: "空",
+    error_type: "empty_body",
+    content: "",
+    raw: "",
+  }
+  assert_eq(should_retry_on_invalid_json(empty), false)
+  let bad_shape = {
+    http_status: 200,
+    is_error: true,
+    error_message: "形状错",
+    error_type: "bad_error_shape",
+    content: "",
+    raw: "",
+  }
+  assert_eq(should_retry_on_invalid_json(bad_shape), false)
+  // 成功回体不触发
+  let ok = {
+    http_status: 200,
+    is_error: false,
+    error_message: "",
+    error_type: "",
+    content: "hello",
+    raw: "{\"choices\":[]}",
+  }
+  assert_eq(should_retry_on_invalid_json(ok), false)
+}
+
+///|
+/// `append_retry_prompt`：在请求体 messages 末尾追加 system 提示。
+test "ofm_c_10_追加重试提示到请求体" {
+  let req = ofm_c_req("m", "user", "hi")
+  let body = build_ofm_chat_request_json(req).unwrap()
+  let new_body = append_retry_prompt(body).unwrap()
+  // 新请求体仍应可解析
+  let parsed = @json.parse(new_body) catch {
+    _ => abort("追加后请求体不可解析")
+  }
+  match parsed {
+    Json::Object(m) =>
+      match m.get("messages") {
+        Some(Json::Array(arr)) => {
+          // 原 1 条 + 新 system 提示 = 2 条
+          assert_eq(arr.length(), 2)
+          // 最后一条是 system 提示
+          match arr[1] {
+            Json::Object(msg) => {
+              let role = match msg.get("role") {
+                Some(Json::String(s)) => s
+                _ => abort("role 不是字符串")
+              }
+              assert_eq(role, "system")
+              let content = match msg.get("content") {
+                Some(Json::String(s)) => s
+                _ => abort("content 不是字符串")
+              }
+              assert_eq(content.contains("合法 JSON"), true)
+            }
+            _ => abort("最后一条不是对象")
+          }
+        }
+        _ => abort("messages 不是数组")
+      }
+    _ => abort("不是 JSON 对象")
+  }
+  // fail-closed：非法输入 → Err
+  assert_eq(append_retry_prompt("not json").is_err(), true)
+  assert_eq(append_retry_prompt("{\"a\":1}").is_err(), true) // 缺少 messages
+}
