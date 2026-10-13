@@ -421,3 +421,48 @@ test "rt_16_付费耗尽且免费已恢复_必须回退免费" {
   // 回退后档位语义自洽：current_model 报真在用的 free-a（BUG-56），不是耗尽的 paid-a
   assert_eq(r.current_model().unwrap().name, "free-a")
 }
+
+///|
+/// 502 健康探测：`pick` 传入黑名单时，必须跳过已知不健康的模型选下一个健康的。
+test "rt_health_1_pick 跳过黑名单模型" {
+  let cfg = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [
+      ModelQuota::new(name="bad-502", tier=Free, limit=10),
+      ModelQuota::new(name="good-1", tier=Free, limit=10),
+    ],
+    paid_models: [],
+    ofm_endpoint: "",
+  }
+  let r = ModelRouter::from_config(cfg)
+  // 黑名单第一个模型 → 应选第二个
+  let d = r.pick(now=rt_at(0, 1), unhealthy_ids=["bad-502"])
+  assert_eq(d.available, true)
+  assert_eq(d.model_name, "good-1")
+  // 空黑名单 → 正常选第一个（零回归）
+  let r2 = ModelRouter::from_config(cfg)
+  let d2 = r2.pick(now=rt_at(0, 1), unhealthy_ids=[])
+  assert_eq(d2.model_name, "bad-502")
+  // 全在黑名单 → 显式不可用，不静默给空名以外的假成功
+  let r3 = ModelRouter::from_config(cfg)
+  let d3 = r3.pick(now=rt_at(0, 1), unhealthy_ids=["bad-502", "good-1"])
+  assert_eq(d3.available, false)
+  assert_eq(d3.model_name, "")
+}
+
+///|
+/// 502 健康探测：精确匹配，子串/前缀不误伤。
+test "rt_health_2_黑名单精确匹配不误伤前缀" {
+  let cfg = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [ModelQuota::new(name="model-v1", tier=Free, limit=10)],
+    paid_models: [],
+    ofm_endpoint: "",
+  }
+  let r = ModelRouter::from_config(cfg)
+  // 黑名单是 "model"（前缀）不应命中 "model-v1"
+  let d = r.pick(now=rt_at(0, 1), unhealthy_ids=["model"])
+  assert_eq(d.model_name, "model-v1")
+}

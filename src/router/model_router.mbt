@@ -340,11 +340,12 @@ pub fn secs_to_iso(secs : Int) -> String {
 }
 
 ///|
-/// 池内第一个可用模型下标（环形扫描：未达阈值且未耗尽）；空池/全不可用 → None
+/// 池内第一个可用模型下标（环形扫描：未达阈值且未耗尽且**不在黑名单**）；空池/全不可用 → None
 fn pool_pick(
   pool : Array[ModelQuota],
   start_idx : Int,
   threshold : Double,
+  unhealthy_ids? : Array[String] = [],
 ) -> Int? {
   let n = pool.length()
   if n == 0 {
@@ -357,7 +358,9 @@ fn pool_pick(
     // 却切到付费档（白花钱 + switch_count 假增长）。负数绕回仍要保留（% 与被除数同号）。
     let idx = ((start_idx + i) % n + n) % n
     let m = pool[idx]
-    if m.usage_pct() < threshold && !m.is_exhausted() {
+    if m.usage_pct() < threshold &&
+      !m.is_exhausted() &&
+      !is_model_unhealthy(m.name, unhealthy_ids) {
       return Some(idx)
     }
     i = i + 1
@@ -458,8 +461,12 @@ pub fn ModelRouter::window_reset_check(
 /// 选型（只决策不消耗配额）。全部不可用 → available=false 的决策，绝不静默返回空名。
 /// 这里是 last_pick 的**唯一登记点**（BUG-56）：所有成功分支都归一到这一个 choke point，
 /// 免得每条分支各写一遍、漏一条就又是一个"报告与实际不一致"的缺陷。
-pub fn ModelRouter::pick(self : ModelRouter, now~ : String) -> RouteDecision {
-  let d = self.pick_inner(now~)
+pub fn ModelRouter::pick(
+  self : ModelRouter,
+  now~ : String,
+  unhealthy_ids? : Array[String] = [],
+) -> RouteDecision {
+  let d = self.pick_inner(now~, unhealthy_ids~)
   if d.available && !d.model_name.is_empty() {
     self.last_pick = d.model_name
   }
@@ -467,7 +474,11 @@ pub fn ModelRouter::pick(self : ModelRouter, now~ : String) -> RouteDecision {
 }
 
 ///|
-fn ModelRouter::pick_inner(self : ModelRouter, now~ : String) -> RouteDecision {
+fn ModelRouter::pick_inner(
+  self : ModelRouter,
+  now~ : String,
+  unhealthy_ids? : Array[String] = [],
+) -> RouteDecision {
   let _ = self.window_reset_check(now~)
   let th = self.config.threshold_pct
   let free = self.config.free_models
@@ -475,7 +486,7 @@ fn ModelRouter::pick_inner(self : ModelRouter, now~ : String) -> RouteDecision {
   let nxt = secs_to_iso(iso_to_secs(now) + self.config.window_seconds)
   match self.current_tier {
     Free =>
-      match pool_pick(free, self.free_idx, th) {
+      match pool_pick(free, self.free_idx, th, unhealthy_ids~) {
         Some(idx) => {
           self.free_idx = (idx + 1) % free.length()
           if free[idx].window_start == "" {
@@ -491,7 +502,7 @@ fn ModelRouter::pick_inner(self : ModelRouter, now~ : String) -> RouteDecision {
           }
         }
         None =>
-          match pool_pick(paid, self.paid_idx, th) {
+          match pool_pick(paid, self.paid_idx, th, unhealthy_ids~) {
             Some(idx) => {
               self.current_tier = Paid
               self.switch_count = self.switch_count + 1
@@ -524,7 +535,7 @@ fn ModelRouter::pick_inner(self : ModelRouter, now~ : String) -> RouteDecision {
           }
       }
     Paid =>
-      match pool_pick(paid, self.paid_idx, th) {
+      match pool_pick(paid, self.paid_idx, th, unhealthy_ids~) {
         Some(idx) => {
           self.paid_idx = (idx + 1) % paid.length()
           if paid[idx].window_start == "" {
@@ -540,7 +551,7 @@ fn ModelRouter::pick_inner(self : ModelRouter, now~ : String) -> RouteDecision {
           }
         }
         None =>
-          match pool_pick(free, self.free_idx, th) {
+          match pool_pick(free, self.free_idx, th, unhealthy_ids~) {
             Some(idx) => {
               self.current_tier = Free
               self.switch_count = self.switch_count + 1

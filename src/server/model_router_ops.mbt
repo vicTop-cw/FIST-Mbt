@@ -114,6 +114,35 @@ fn mr_config_gives_pools(config : Json) -> Bool {
 }
 
 ///|
+/// 从环境变量读取逗号分隔的不健康模型黑名单（如 `FIST_OFM_UNHEALTHY_MODELS`）。
+/// 空串 / 不存在 → 空数组（不误伤任何模型）。
+fn mr_unhealthy_models() -> Array[String] {
+  let raw = mr_env("FIST_OFM_UNHEALTHY_MODELS").trim().to_string()
+  if raw.is_empty() {
+    return []
+  }
+  let out : Array[String] = []
+  let mut buf = ""
+  for i = 0; i < raw.length(); i = i + 1 {
+    let c = raw[i]
+    if c == ',' {
+      let s = buf.trim().to_string()
+      if !s.is_empty() {
+        out.push(s)
+      }
+      buf = ""
+    } else {
+      buf = buf + c.to_string()
+    }
+  }
+  let last = buf.trim().to_string()
+  if !last.is_empty() {
+    out.push(last)
+  }
+  out
+}
+
+///|
 /// 读环境变量（Star 门配置源）。不存在一律回空串，由 `star_gate_policy` 判定语义
 /// （空公钥 = 门未启用；空 attestation = 启用但 fail-closed）。本文件只读，不打印值。
 fn mr_env(name : String) -> String {
@@ -180,10 +209,11 @@ fn model_route_impl(
   // 拿默认池，自定义模型名走"未在任何池中配置"分支，配额形同虚设（本文件反复拦的静默降级族）。
   let seeds_pools = !consuming && mr_config_gives_pools(config)
   let seed_res = if seeds_pools { mr_save(r, project_dir, ns) } else { Ok(()) }
+  let unhealthy_ids = mr_unhealthy_models()
   let dec = if consuming {
     r.record_call(model=record_model, now~)
   } else {
-    r.pick(now~)
+    r.pick(now~, unhealthy_ids~)
   }
   let save_res = if consuming { mr_save(r, project_dir, ns) } else { seed_res }
   let persisted = match save_res {
@@ -513,6 +543,33 @@ async fn ofm_execute_http(
     raw_body
   }
   let resp = @router.parse_ofm_chat_response(to_parse, http_status)
+  // 非 JSON 二次重试：回体不可解析时，追加 system 提示后重发一次
+  let (http_status, resp) = if @router.should_retry_on_invalid_json(resp) {
+    match @router.append_retry_prompt(body) {
+      Ok(body2) => {
+        let call_res2 = ofm_chat_http(url, body2, timeout_ms)
+        let (hs2, rb2, ne2) = match call_res2 {
+          Err(e) => (0, "", e)
+          Ok(j) =>
+            match j {
+              Json::Object(m) =>
+                (
+                  mr_json_int(m, "status"),
+                  mr_json_str(m, "body"),
+                  mr_json_str(m, "error"),
+                )
+              _ => (0, "", "ofm_chat_http 返回体非对象")
+            }
+        }
+        let tp2 = if hs2 == 0 && ne2.length() > 0 { ne2 } else { rb2 }
+        let resp2 = @router.parse_ofm_chat_response(tp2, hs2)
+        (hs2, resp2)
+      }
+      Err(_) => (http_status, resp)
+    }
+  } else {
+    (http_status, resp)
+  }
   let fail_kind = @router.classify_ofm_failure(http_status, resp.error_type)
   let quota_note = if routed_by_pool {
     match mr_record_only(project_dir, ns~, model) {
