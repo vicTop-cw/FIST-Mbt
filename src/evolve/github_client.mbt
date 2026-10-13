@@ -238,6 +238,39 @@ pub fn distill_code_search(json_text : String) -> Array[SearchCandidate] {
 }
 
 ///|
+/// 把 SearchCandidate 数组转成 TSV 行文本（name\ttitle\tsource\tmechanism），
+/// 供 run_external_search 的行解析器消费。纯计算，不碰 IO。
+///   - portable=false 的候选也输出（让下游 distill 决定过滤，不在这里硬编码门槛）
+///   - 字段内含 Tab 替换为空格，防止破坏行解析
+pub fn candidates_to_tsv_lines(cands : Array[SearchCandidate]) -> String {
+  let lines : Array[String] = []
+  for c in cands {
+    let name = c.name.replace(old="\t", new=" ")
+    let title = c.title.replace(old="\t", new=" ")
+    let source = c.source.replace(old="\t", new=" ")
+    let mech = c.mechanism.replace(old="\t", new=" ")
+    lines.push(name + "\t" + title + "\t" + source + "\t" + mech)
+  }
+  lines.join("\n")
+}
+
+///|
+/// 端到端：GitHub 仓库搜索 JSON → TSV 行（可直接喂 run_external_search 的行解析器）
+pub fn repo_search_to_tsv(json_text : String) -> String {
+  let repos = parse_repo_search(json_text)
+  let cands = repos_to_candidates(repos)
+  candidates_to_tsv_lines(cands)
+}
+
+///|
+/// 端到端：GitHub 代码搜索 JSON → TSV 行
+pub fn code_search_to_tsv(json_text : String) -> String {
+  let codes = parse_code_search(json_text)
+  let cands = code_to_candidates(codes)
+  candidates_to_tsv_lines(cands)
+}
+
+///|
 /// 生成 curl 命令（供外部执行，不内置网络）
 ///   - token 留空则不带 Authorization header（匿名，限流 60/h）
 ///   - 不回显 token 本体
