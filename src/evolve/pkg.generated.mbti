@@ -2,6 +2,7 @@
 package "vicTop-cw/fist-mbt/src/evolve"
 
 import {
+  "moonbitlang/core/debug",
   "vicTop-cw/fist-mbt/src/store",
 }
 
@@ -9,6 +10,8 @@ import {
 pub fn analyze_candidate(String, String, String, String) -> SearchCandidate
 
 pub fn assess_portability(SearchCandidate) -> Bool
+
+pub fn can_graduate(Double, CurriculumLevel) -> Bool
 
 pub fn coverage(Array[String], Array[String]) -> Double
 
@@ -18,9 +21,21 @@ pub fn critic_most_similar(Archive, String) -> (String, String, Double)?
 
 pub fn critic_review(Archive, String, Double, threshold? : Double) -> Json
 
+pub fn curriculum_progress(Double) -> Double
+
+pub fn decision_to_string(CurriculumLevel, MutationKind, Bool) -> String
+
+pub fn derive_skill_name(String, String) -> String
+
 pub fn distill_candidates(Array[SearchCandidate]) -> Array[SearchCandidate]
 
+pub fn distill_skill(String, String, String, Double) -> SkillEntry?
+
+pub fn evolve_decision(Double) -> (CurriculumLevel, MutationKind, Bool)
+
 pub fn evolve_lesson_persist(@store.SqliteStore?, id~ : String, String, String, String, String, score? : Double) -> Bool
+
+pub fn is_distillable(Double, String) -> Bool
 
 pub fn is_duplicate_candidate(SearchCandidate, SearchCandidate) -> Bool
 
@@ -32,6 +47,10 @@ pub fn lesson_goal(String) -> String
 
 pub fn lesson_ts_part(String) -> String
 
+pub fn mutation_prompt(MutationKind, String, String) -> String
+
+pub fn next_level(Double) -> CurriculumLevel
+
 pub fn run_external_search(String, Array[String], runner? : ((String, Array[String]) -> Result[String, String])?) -> Result[String, String]
 
 pub fn score_accept(Double, threshold? : Double) -> Bool
@@ -41,6 +60,14 @@ pub fn score_artifact(Double, Bool, Bool, Double) -> Double
 pub fn score_of_lesson(Double) -> Double
 
 pub fn score_rank(Double) -> String
+
+pub fn select_mutation(Double) -> MutationKind
+
+pub fn standard_curriculum() -> Array[CurriculumItem]
+
+pub fn suggest_next_goal(Double) -> String
+
+pub fn tag_skill(SkillEntry, Array[String]) -> SkillEntry
 
 pub fn tokens(String) -> Array[String]
 
@@ -83,12 +110,41 @@ pub fn Artifact::from_json(Json) -> Self
 pub fn Artifact::to_json(Self) -> Json
 pub fn Artifact::with_children(Self, Int) -> Self
 
+pub struct CurriculumItem {
+  level : CurriculumLevel
+  goal : String
+  min_score : Double
+}
+
+pub enum CurriculumLevel {
+  L1
+  L2
+  L3
+  L4
+} derive(Eq, @debug.Debug)
+
+pub enum MutationKind {
+  Rewrite
+  Simplify
+  Generalize
+  Specialize
+  Combine
+} derive(Eq, @debug.Debug)
+
 pub struct SearchCandidate {
   name : String
   title : String
   source : String
   mechanism : String
   portable : Bool
+}
+
+pub struct SkillEntry {
+  name : String
+  description : String
+  source_artifact_id : String
+  score : Double
+  tags : Array[String]
 }
 
 // Type aliases

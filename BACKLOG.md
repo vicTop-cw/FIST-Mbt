@@ -38,7 +38,7 @@
 | P3 | 毫秒级符号逻辑引擎按布尔约束拦截 planned action | five-directions/§一 | done(2026-10-13：新建 `src/symbolic/` 包。`BoolExpr` enum（Var/Const/Not/And/Or/Implies/Iff）+ Tseitin CNF 编码（线性规模）+ DPLL SAT 求解器（单位传播+纯文字消元+MOMS 启发式分裂）。API：`is_satisfiable`/`is_tautology`/`entails`(蕴含验证)/`is_contradictory`(多约束矛盾检测)/`expr_to_string`/`check_constraints_json`。用于执行前拦截矛盾/不可能动作。12 条白盒测试全绿。) | - |
 | P3 | Phi Accrual 概率式检测：按心跳历史分布算 φ 值替代固定 timeout | five-directions/§一 | done(phi_accrual 原语 R89 + watchdog phi_gate 端到端 R90：heartbeat_history 表持久化间隔，watchdog_tick phi_gate=true 用 φ 判活默认关闭零回归；实测静默100s/间隔5s φ≈8.7 判死而固定600不判) | commit(2f6e4c7 后 R90) |
 | P3 | Saga 补偿事务 + durable action log：并发动作前写 append-only 日志、失败按 LIFO 补偿 | five-directions/§一 | done(saga_register/saga_rollback 已落地：saga_log 表 + LIFO 幂等补偿序列，R92 见调研档 20260926.saga-compensation.md) | - |
-| P3 | Scoring 驱动的自动进化闭环（mutation/skill_lib/curriculum）无人值守自进化 | future-roadmap/远 | pending | - |
+| P3 | Scoring 驱动的自动进化闭环（mutation/skill_lib/curriculum）无人值守自进化 | future-roadmap/远 | done(2026-10-13：新建 `src/evolve/curriculum.mbt`，L41 核心组件三件套：① curriculum：四阶段课程（L1入门→L4精通），`next_level`/`can_graduate`/`curriculum_progress`/`standard_curriculum`，按评分驱动阶段进阶；② mutation：5 种变异算子（Rewrite/Simplify/Generalize/Specialize/Combine）+ `mutation_prompt` 生成变异指令 + `select_mutation` 按评分选策略（低分 Simplify→高分 Specialize）；③ skill_lib：`SkillEntry` struct + `is_distillable`(≥0.85 且非空 note) + `distill_skill` + `tag_skill` 关键词打标。一体化决策 `evolve_decision(score) -> (level, mutation, distillable)`。20 条白盒测试全绿。) | - |
 | P3 | 与 moonclaw/posoco/官方 MCP SDK 差异化共处：定位"完整 MCP Server+编排+自进化" | future-roadmap/远 | pending | - |
 | - | gaato/github API 客户端，供 self_search 模块使用 | competition/§六 | pending | - |
 | - | colmugx/posoco 参考 Agent 框架六边形架构设计 | competition/§六 | pending | - |
