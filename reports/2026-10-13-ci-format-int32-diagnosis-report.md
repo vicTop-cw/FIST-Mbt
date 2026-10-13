@@ -51,29 +51,57 @@ nightly，官方不提供旧版）⇒ 镜像的素材本地不存在，除非另
 WSL 同版 nightly 实测三支读数——`moon check --target js` **rc=0**（CI #271 亦实证 success）、
 `moon fmt --check` **rc=255**（CI #271 实证 failure）、把 `Int` 改成 `Int32` 后 `moon check` **仍 rc=0**。
 ⇒ 新版 **`fmt` 单方面要求类型规范化（`Int`→`Int32`）、而 `check` 对两种写法都接受**——这不是"代码错"，
-是两把尺的标准不一致。故 owner 其实有三条落法，风险从低到高：
-1. **降 fmt 门强度**（最低风险）：`moon fmt --check` 只作**信息步**（失败不阻断，或只对本次改动文件
-   作 `fmt --check`），并把「nightly fmt 与本地 fmt 标准不同步」写进步骤注释——保住守卫族继续跑，
+是两把尺的标准不一致。故 owner 的落法实为两条有效（第三条已证伪，见下），风险从低到高：
+1. **降 fmt 门强度**（最低风险）：`moon fmt --check` 只作**信息步**（失败不阻断），并把
+   「nightly fmt 与本地 fmt 标准不同步」写进步骤注释——保住守卫族（含 HTTP 契约自证等 24 步）继续跑，
    代价是 fmt 面暂时弱化；
-2. **只对本次 diff 面 fmt**：CI 里对 `git diff --name-only` 出的 `.mbt` 逐个 `moon fmt --check`，
-   存量基线文件（`atgc*`、`subcmd.mbt`）不进判据 ⇒ 新代码仍受格式约束，存量不受版本差牵连；
+2. ~~只对本次 diff 面 fmt~~ **已证伪（同版受控实验）**：`moon fmt --check` 的最小粒度是**包**不是文件
+   （help 原文：`[PATH]` = "files **selecting their containing package**"；传 `codon.mbt` 实测输出列了
+   `atgc-old` 整包四个文件）⇒ 存量文件散布多包内，按包检查仍被带红。
 3. **全面 A**（最高风险但最彻底）：用 nightly `moon fmt` 全仓重排并提交，含 `Int→Int32` 的
    FFI 签名改动，提交前必须跑全量 `moon test --target js` 守 `Int32` 溢出类缺陷（本仓有 BUG-218 同族账）。
-本报告只把这三条摆出与读数并列，**落哪条属 owner 裁决**（金条四：改共享 CI 定义与公共基线不改是"方案+预案"）。
+本报告只把落法与读数并列，**落哪条属 owner 裁决**（金条四：改共享 CI 定义与公共基线是"方案+预案"）。
 > 注：`grep -icE "error"` 在 check 日志里数到 162 行，那是把 warning 文本里的 "error" 字样也算进去了
 > 的噪声；判绿只按 **rc=0** 与 `moon check` 的汇总行，不按 grep 计数——写在这里免得后来者被那个数误导。
 
 ## 边界（不许读成"CI 全绿只差这一步"）
 
-本轮已把**另一颗雷**（新版 moon 拒 `.mooncakes/moon.mod.json`）在全部四个执行面排掉
-（ci.yml js/native/windows + fist-ci js/native，迁移步 CI 实证 success、windows 臂整个 job success）。
-Format 是**当前唯一挡住守卫族（含 HTTP 契约自证那一步）的红**，但它不是本轮引入、
-也不是迁移器能修的——它是工具链升级决策，按金条四留在 owner。
+本轮已把**两颗同源雷**排掉：
+1. **新版 moon 拒 `.mooncakes/moon.mod.json`**——迁移器挂进全部四个执行面（ci.yml js/native/windows +
+   fist-ci js/native），CI 实证各臂 `Migrate` 步 success、windows 臂整个 job success。
+2. **native 双臂 `Reapply BUG-133` 长期红**——本轮 WSL 实测定因为**步序错**（不是 nightly 不兼容）：
+   `moon update` 之后 `.mooncakes` **根本不存在**（依赖惰性解包），reapply 找不到 `stub.c` 必 rc=1；
+   而在能触发解包的 `migrate`（内含 `moon check`）之后，reapply rc=0、`--verify` rc=0。
+   两处臂已改为 `migrate → reapply → check`，**CI #275 / #105 实证 native 臂全绿**
+   （Migrate ✅ / Reapply ✅ / Check(native) ✅ / Native heap gate ✅）。
+   ⚠️ 这条同时推翻了我同日早些时候写进注释的「migrate 须在 Reapply 之后」——注释已同步纠正，
+   留这段记录防后来者再按那句反话改回去。
+
+Format 是**当前唯一挡住守卫族（含 HTTP 契约自证那一步）的红**：CI #275 实证它一个步红就 skip 其后
+**24 步**（Test(js) 到 Cleanliness guard 全没跑）。
+
+**A′ 第 2 条（diff-scoped fmt）经同版受控实验**证伪**（temp/fmt_scope_direct.txt + fmt_scope2_direct.txt）**：
+`moon fmt --check <单文件>` 对**所有**文件都 rc=255；help 原文写明 `[PATH]` 是
+「packages, files **selecting their containing package**」⇒ 传文件 = 检查它**所在的整包**，
+最小粒度是包不是文件。实测传 `atgc-old/codon.mbt` 时输出列的是 `atgc-old` 整包四个文件。
+且我上一轮"codon 无需改动"的读数本身有污染（那次测完未还原就接着测下一个文件）——
+同版对照里 in-place `moon fmt atgc-old/codon.mbt` **确实改动了该文件**（"实为需要改动"）。
+⇒ 存量文件散布在多个包内，按包检查仍会被带红 ⇒ 该路不可行，A′ 只剩第 1 条（降门）与第 3 条（全面 A）。
+**这条自我纠错留档的原因**：我先前在报告里写"文件级 check 实测可行（atgc_base rc=0）"，
+那是拿**本地老 moon** 的单文件读数去比 **nightly** 的整仓读数——不同版不可比，是同一条纪律
+（判据的两支必须同版同环境）的反面教材。
 
 ## 来源
 - WSL 实测：`temp/fmt_probe_direct.txt`（nightly moon `0.1.20261012` 逐文件 diff 原文）
+- WSL 同版三读数：`temp/check_vs_fmt_direct.txt`（check rc=0 / fmt --check rc=255 / 改 Int32 后 check 仍 rc=0）
 - WSL 镜像探测：`temp/mirror_probe_direct.txt`（本地 `~/.moon` 是 Windows 二进制、Linux 下不可执行）
-- CI 实证：#271 js,ubuntu `Format check` failure、#271 js,windows **success**（迁移步生效的对照）
+- WSL 步序实测：`temp/reapply_order_direct.txt`（update 后 .mooncakes 不存在 ⇒ reapply rc=1；
+  migrate 后 stub.c 出现 ⇒ reapply rc=0、verify rc=0）
+- WSL fmt 粒度受控实验（同版 nightly）：`temp/fmt_scope_direct.txt`（整仓/单文件/无害文件三支全 255）、
+  `temp/fmt_scope2_direct.txt`（help 原文 `[PATH]`=选所在包；实测传 codon.mbt 输出列 atgc-old 整包四文件；
+  in-place fmt 证明该文件实需改动 ⇒ 我先前"无需改动"的读数有污染）
+- CI 实证：#275 / #105 native 臂**全绿**（步序修正后）、js,windows success（迁移生效）、
+  js,ubuntu `Format check` failure 且 skip 其后 24 步
 - 版本事实：本地 `moon 0.1.20260920`；`cli.moonbitlang.com/binaries/<version>/` S3 403（钉版不通，
   复验 0.1.20260920 / 0.1.20261012 = 403、latest / nightly = 206）；安装脚本 `CLI_MOONBIT` 硬编码（L108）
 - 归属：`git log -1` 显示 `atgc*` 两文件基线提交 `4cf2a41`、`subcmd.mbt` 最后提交 `2426a66` 且当前 ` M`
