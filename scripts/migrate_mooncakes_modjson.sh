@@ -43,6 +43,26 @@ while [ "$i" -lt "$MAX_ITER" ]; do
   if [ -z "${path:-}" ]; then
     echo "migrate: 第 $i 轮撞到**非迁移**错误，原样透传（绝不吞掉真错误）："
     printf '%s\n' "$out" | tail -n 15
+    # 根因分流（2026-10-13 加，连续三轮 CI 实证促成）：本步是"依赖图/编译"这条链上的**第一个
+    # 会红的步**，于是多种彼此无关的坏状态都在这里现身，而 print 的 `Failed to calculate build plan`
+    # 极易被读成"依赖迁移问题"。按错误文本分流指路，省得读的人走错方向：
+    #   ① Cannot find import '<本地包>'      ⇒ 跟踪面缺包目录（跑 check_pkg_imports.py）
+    #   ② Error: [4021/4032/4015/4024] …      ⇒ .mbti 声明了源里没有的符号（跑 check_mbti_sync.py）
+    #   ③ is no longer supported              ⇒ 依赖清单旧格式（本脚本本该处理；走到这里说明 grep 失灵）
+    #   ④ 其它 Error: [xxxx]                  ⇒ 源码编译错误（按文件:行 去修）
+    echo "migrate: ── 根因分流（按错误文本指路，别把编译/跟踪面问题读成依赖迁移问题）──"
+    if printf '%s\n' "$out" | grep -qE "Cannot find import '[^']+'"; then
+      echo "migrate:   ⇒ [跟踪面缺包目录] 报错含 'Cannot find import <本地包>'：某个 moon.pkg import 了"
+      echo "migrate:     跟踪面里不存在的包目录 ⇒ 跑 python scripts/check_pkg_imports.py 会点名是谁"
+    elif printf '%s\n' "$out" | grep -qE "Error: \[(4021|4032|4015|4024)\]"; then
+      echo "migrate:   ⇒ [接口面声明了但实现不存在] 报错含 unbound/not found 类错误码：某个"
+      echo "migrate:     pkg.generated.mbti 声明了源里找不到的符号 ⇒ 跑 python scripts/check_mbti_sync.py"
+      echo "migrate:     会点名是谁（若提示'已在工作树、只是没进跟踪面'，出路是 git add 并提交）"
+    elif printf '%s\n' "$out" | grep -q "is no longer supported"; then
+      echo "migrate:   ⇒ [依赖清单旧格式] 报错含 is no longer supported：本脚本的 grep 没抓到路径 ⇒ 看上面原文"
+    else
+      echo "migrate:   ⇒ [源码编译错误] 上面原文里 `Error: [xxxx]` 点的文件:行 就是根因，直接去修那一处"
+    fi
     exit 1
   fi
   if [ ! -d "$path" ]; then
