@@ -65,6 +65,18 @@ EXEMPT = [
     ("docs/polish-plan.md", "148", "标题自述「初稿」的规划快照，描述的是当时的底子"),
     ("docs/features/F008-evolve.md", "148", "已勾 `- [x] AC-2` 是该特性轮的验收记录，非现状断言"),
     ("BACKLOG.md", "295", "done 行的 R107 当轮实测数（待办队列的历史列，不是现状断言）"),
+    # 2026-10-13：下面六条是本轮把本判据跑在**干净树**（=CI 检出面）时暴露的合法历史数/局部读数。
+    # 判据自述（docstring L12）明确 prescribe：「合法的历史数/别的 target 必须在 EXEMPT 表里逐条点名」，
+    # 故按机制登记而不是去改写历史行。前五条在 BACKLOG 的 done 行里（与上面 295 那条同型：待办队列的
+    # 历史列）；第六条是日期快照型规划文档（与 docs/polish-plan.md 的 148 同型）。
+    # 另注：`86`/`23`/`62` 三条本就不是「全量测试总数」声明（分别是单包读数与脚本自检面读数），
+    # 属判据窄口径的过度捕获面——登记豁免是**不误伤**，收窄正则那条另议（改判据影响面更大，留 owner）。
+    ("BACKLOG.md", "811", "L11 done 行的对表翻账当轮**全量**实测数（该轮真跑出过 811；改写成今日 807 即伪造一次没发生的测量）"),
+    ("BACKLOG.md", "737", "L12 done 行（scoring.mbt 落地那轮）的 JS 全量当轮实测数"),
+    ("BACKLOG.md", "86", "L47 done 行里 `moon test --target js src/router` 的**单包**读数（非全量总数声明）"),
+    ("BACKLOG.md", "23", "L48 done 行里 `check_py_stdout_encoding --selftest` 的 CI 面自检读数（脚本自检面，非全量测试）"),
+    ("BACKLOG.md", "62", "L48 done 行里同一步 --all 面的自有读数（脚本自检面，非全量测试）"),
+    ("docs/improvement-plan-20261010.md", "737", "日期快照型规划文档里的当轮 JS 读数（与 docs/polish-plan.md 的 148 同型）"),
     # 2026-10-02（BUG-134 那笔把 JS 轨从 572 推到 573）：下面四条是 **native 轨**在 2026-10-01 WSL 的实测读数。
     # 它们不是"忘了同步"——native 本轮没复跑，把 572 改成 573 等于伪造一次没发生过的测量；
     # 而且这四句的主张本身就带着「干净树必崩、见 BUG-133」的限定，改数会把限定一起改没。
@@ -251,7 +263,16 @@ def selftest() -> int:
         # 2026-10-01：四条 native 旧数（317）豁免已随现状声明一起改掉，夹具里不再出现"另一套数"的 native 句
         "README_EN.md": "the native track measured " + native_old + "/" + native_old + " tests on WSL but dies on a clean tree (BUG-133)",
         "ARCHITECTURE.md": "JS 端 439/439 全绿；Native 端 572/572（WSL，带构建残留的工作树），干净树必崩 ⇒ 不当门槛",
-        "BACKLOG.md": "done(R107 那轮 295/295 全绿)",
+        "BACKLOG.md": (
+            "done(R107 那轮 295/295 全绿)\n"
+            "done(翻账全量测试 811/811 全绿)\n"
+            "done(单包 `src/router` 测试 86/86 全绿)\n"
+            "done(脚本自检面测试 CI 面 23/23、--all 面 62/62 全绿)\n"
+            "done(另一 done 行 JS 全量测试 737/737 全绿)"
+        ),
+        # 本轮新登记的 EXEMPT 条目必须在夹具里各有声明（R4 的设计如此，见上），
+        # 否则 baseline-clean 会因"豁免失效"而红。此份供 improvement-plan 的 737 那条用。
+        "docs/improvement-plan-20261010.md": "日期快照型规划文档：当轮 JS 全量测试 737/737 全绿（非现状断言）",
         "docs/other.md": "无关文字：测试 105/104 是引文，1986/1997 是年份",
         "memory/2026-09-26.md": "当日记录写 406/406（历史面豁免）",
         "reports/2026-09-26-x.md": "报告写 406/406（历史面豁免）",
