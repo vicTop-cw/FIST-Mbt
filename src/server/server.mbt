@@ -7257,6 +7257,38 @@ pub async fn run_server() -> Unit {
     },
   )
 
+  // 档4 boundary_probe：边界输入建议生成器（纯计算，不 spawn 不跑测试）
+  s1 = instrumented_tool(
+    s1,
+    "boundary_probe",
+    "边界输入建议生成器（bugfind 寻虫的第四步前置能力）：给定 finding（rule/code/line/file），按规则类型路由返回该位置的边界输入建议数组（空/极值/负下标/并发交错/元字符注入/路径穿越等），每条带 confirmed=false——调用方把 input 喂给 run_check，能触发 panic/崩溃才回写 confirmed=true。纯计算，零副作用零依赖，与 issue_scan/ocr_scan 形成『扫描 → 边界构造 → 真实验证』三段闭环，治弱语料下的 Goodhart 下界（atgc-merge 归因报告机理 1/2）。参数：rule(必填，规则 id 或关键词，如 divide-by-zero / string-index / race-condition / json-injection / path-traversal)、code(必填，代码片段)、line(可选，行号字符串)、file(可选，文件路径)。",
+    schema(
+      {
+        "rule": string_prop(
+          "规则 id / 关键词（必填）：divide-by-zero、string-index、array-index、substring、unsafe-unwrap、unsafe_get、empty-match、match-non-exhaustive、potential-overflow、secs-overflow、race-condition、json-injection、path-traversal、float-equal、resource-leak、async_main 等",
+        ),
+        "code": string_prop("代码片段（必填）"),
+        "line": string_prop("行号字符串（可选）"),
+        "file": string_prop("文件路径（可选）"),
+      },
+      ["rule", "code"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let rule = get_str(args, "rule")
+      let code = get_str(args, "code")
+      let line = get_str(args, "line")
+      let file = get_str(args, "file")
+      if rule == "" || code == "" {
+        let m : Map[String, Json] = Map([])
+        m.set("ok", Json::boolean(false))
+        m.set("error", Json::string("rule 与 code 均为必填"))
+        return Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
+      }
+      let j = boundary_probe(rule, code, line, file)
+      Ok(@mcp.ToolResult::text(j.stringify()))
+    },
+  )
+
   // HexaMind 六元自驱决策三工具（hat_run / hat_merge / hat_debate，真源 src/hat）。
   s1 = embed_hexa_tools(s1)
 

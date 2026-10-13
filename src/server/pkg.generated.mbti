@@ -11,6 +11,10 @@ import {
 }
 
 // Values
+pub fn boundary_probe(String, String, String, String) -> Json
+
+pub fn boundary_probe_by_code(String, String) -> Json
+
 pub fn bug_abs_path(String, String) -> String
 
 pub fn bug_fix(String, Array[String], evidence~ : String, ts~ : String) -> Result[Json, String]
@@ -93,6 +97,8 @@ pub fn github_webhook_parse(String) -> Result[Json, String]
 
 pub fn instrumented_tool(@colmugx/mcp/server.MCPServer, String, String, Json, async (Json) -> Result[@tool.ToolResult, @types.MCPError]) -> @colmugx/mcp/server.MCPServer
 
+pub fn is_ocr_subcmd(String) -> Bool
+
 pub fn issue_scan(String, String, Int, include_tests? : Bool) -> Result[Json, String]
 
 pub async fn laya_decide_external(String, Array[String], String, String, Int) -> Result[Json, String]
@@ -132,6 +138,18 @@ pub fn memory_gc_one(String, String, Int) -> Json
 pub fn memory_link(String, String, String, String) -> Result[Json, String]
 
 pub fn model_auth_status_impl(String, ns~ : String) -> Result[Json, String]
+
+pub fn ocr_build_args(project_dir~ : String, subcmd~ : String, path? : String, rules_file? : String) -> Result[Array[String], String]
+
+pub fn ocr_missing_hint() -> String
+
+pub fn ocr_plan(String, subcmd~ : String, path? : String, rules_file? : String, dry_run? : Bool) -> Json
+
+pub fn ocr_probe_binary(String) -> String?
+
+pub async fn ocr_scan_impl(String, subcmd~ : String, path? : String, rules_file? : String, timeout_ms? : Int, dry_run? : Bool) -> Json
+
+pub fn ocr_subcmds() -> Array[String]
 
 pub async fn ofm_chat_http(String, String, Int) -> Result[Json, String]
 
