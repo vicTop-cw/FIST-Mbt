@@ -53,8 +53,8 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 ### 自驱闭环（9）
 `selfdrive_init` · `selfdrive_append` · `selfdrive_get` · `selfdrive_export_tasks` · `selfdrive_review_tick` · `selfdrive_review_ready` · `selfdrive_publish_next` · `selfdrive_parse_next_tasks` · `selfdrive_pick_next`
 
-### 运维·验证·规范（23）
-`call_log` · `bug_list` · `bug_fix` · `bug_mark_status` · `report_bug` · `issue_scan` · `ocr_scan` · `eval_feedback` · `run_check` · `output_validate` · `project_standards` · `text_diff` · `schedule` · `pipeline_tick` · `cost_stats` · `cost_budget_check` · `cost_budget_split` · `progress_gate` · `laya_decide` · `loop_create` · `loop_tick` · `loop_status` · `mcp_config_scaffold`
+### 运维·验证·规范（24）
+`call_log` · `bug_list` · `bug_fix` · `bug_mark_status` · `report_bug` · `issue_scan` · `ocr_scan` · `boundary_probe` · `eval_feedback` · `run_check` · `output_validate` · `project_standards` · `text_diff` · `schedule` · `pipeline_tick` · `cost_stats` · `cost_budget_check` · `cost_budget_split` · `progress_gate` · `laya_decide` · `loop_create` · `loop_tick` · `loop_status` · `mcp_config_scaffold`
 
 ### 模型路由·外部执行器（5）
 `model_auth_status` · `model_route` · `model_router_status` · `model_router_reset` · `executor_run`

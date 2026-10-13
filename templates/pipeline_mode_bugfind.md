@@ -16,7 +16,7 @@
 
 - **issue_scan 高危规则先扫**：先用 FIST-Mbt 内建的 31 条 MoonBit 高危规则扫描（内建 11 条 + ocr-local 外部 20 条：除零、空数组下标、unwrap 风险、空指针、资源泄漏等），把已有的静态命中作为第一手候选。
 - **ocr_scan 双轨互补**：调用 `ocr_scan`（open-code-review CLI 封装，见第五节）对关键路径做面向边界条件的 code review——与 issue_scan 去重后合并候选。若回执 `ocr_available=false`（OCR 二进制未安装/非 windows-x64），显式降级为只用 issue_scan，并在汇报里标注 `ocr_available=false`，绝不静默跳过。
-- **补边界 case 测试语料**：对每个 issue_scan 命中或 ocr 建议，构造 1-2 条非常规输入（空串、超长串、负数、零、边界值、并发交错），写成可执行的测试片段或伪代码记录。
+- **补边界 case 测试语料**：对每个 issue_scan 命中或 ocr 建议，先调 `boundary_probe` 拿规则路由建议（按规则类型自动给空/极值/负下标/并发交错/元字符注入/路径穿越等），再据此构造 1-2 条非常规输入，写成可执行的测试片段或伪代码记录。
 - **moon test 跑验证**：把边界 case 集成到临时测试文件或直接构造运行环境，跑一遍确认哪些 case 真正能触发异常。
 - **report_bug 入账**：确认能复现的 bug，调用 `report_bug` 上报（`severity` 按"能否触发 panic/崩溃/数据污染"分级，`publish_task` 建议设 `true` 让后续自动发布修复任务）。
 
@@ -46,7 +46,7 @@
 - **第二步：ocr_scan 双轨扫描** —— 调用 `ocr_scan({ "project_dir": "<目标项目根目录>", "subcmd": "files", "dry_run": false })` 让 open-code-review CLI 真跑一遍文件扫描（`files` 子命令返回候选文件清单；要对指定文件做真 review 用 `subcmd="delegate"` + `path` 逗号分隔）。
   > **备注**：`ocr_scan` 已集成（真源 `src/server/ocr_scan.mbt`）。**平台约束**：OCR 二进制是宿主依赖（windows-x64 only），未安装时回执 `ocr_available=false`——此时**显式降级**为只用 issue_scan + 自造边界 case，并在汇报里标注 `ocr_available=false`，不得静默跳过。安全面：`dry_run=true` 只回显将执行的 argv（一个进程都不起），先审后跑；argv 不经 shell。
 - **第二步b：合并去重** —— 把 issue_scan 命中与 ocr_scan 候选按 `(file, rule/topic)` 去重后合成候选清单，避免双轨重复上报。
-- **第三步：构造边界 case + run_check 验证** —— 对每个 findings，构造非常规输入调用 `run_check` 跑一次；能触发 panic/崩溃/异常行为的即确认为真 bug。
+- **第三步：构造边界 case + run_check 验证** —— 对每个 findings，先调 `boundary_probe`（真源 `src/server/boundary_probe.mbt`，纯计算不执行）按规则类型路由生成边界输入建议（空/极值/负下标/并发交错/元字符注入/路径穿越），再把这些建议的 `input` 喂给 `run_check` 跑一次；能触发 panic/崩溃/异常行为的即回写 `confirmed=true` 并确认为真 bug。`boundary_probe` 只生成建议不执行、`confirmed` 恒 false——**判真伪靠 run_check 实测**，不许把建议当结论。
 - **第四步：moon test 回归确认** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["test"], "workdir": "<目标项目根目录>", "timeout_ms": 180000 })`，确认边界 case 没污染已有测试。
 - **第五步：report_bug 入账** —— 对所有确认的真 bug，逐条调用 `report_bug({ "project_dir": "...", "summary": "[bugfind:rule_id] file:line: description", "severity": "medium|high|critical", "publish_task": true })`，让 FIST-Mbt 自动发布修复根任务进入后续 `fix_and_merge` 队列。
 
