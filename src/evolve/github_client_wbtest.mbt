@@ -136,3 +136,47 @@ test "curl_repo_search 带 token 不回显" {
   assert_true(cmd.contains("Authorization"))
   assert_false(cmd.contains("secret123"))
 }
+
+///|
+test "candidates_to_tsv_lines 输出 TSV 格式" {
+  let cands = [
+    analyze_candidate("o/r", "o/r", "gh", "extract reusable"),
+    analyze_candidate("a/b", "a/b", "gh-code", "extract p.mbt"),
+  ]
+  let tsv = candidates_to_tsv_lines(cands)
+  let lines = tsv.split("\n").to_array()
+  assert_eq(lines.length(), 2)
+  let parts = lines[0].split("\t").to_array()
+  assert_eq(parts.length(), 4)
+  assert_eq(parts[0], "o/r")
+  assert_eq(parts[2], "gh")
+}
+
+///|
+test "candidates_to_tsv_lines 替换 Tab 防破坏" {
+  let cands = [analyze_candidate("a\tb", "t", "gh", "mech")]
+  let tsv = candidates_to_tsv_lines(cands)
+  let lines = tsv.split("\n").to_array()
+  let parts = lines[0].split("\t").to_array()
+  // name 里的 Tab 被替换成空格，所以 parts 仍是 4 个
+  assert_eq(parts.length(), 4)
+}
+
+///|
+test "repo_search_to_tsv 端到端" {
+  let json = "{\"items\":[{\"full_name\":\"o/r\",\"description\":\"extract parser\",\"stargazers_count\":10,\"language\":\"MoonBit\",\"html_url\":\"\",\"topics\":[]}]}"
+  let tsv = repo_search_to_tsv(json)
+  let lines = tsv.split("\n").to_array()
+  assert_eq(lines.length(), 1)
+  assert_true(lines[0].contains("o/r"))
+  assert_true(lines[0].contains("gh"))
+}
+
+///|
+test "code_search_to_tsv 端到端" {
+  let json = "{\"items\":[{\"repository\":{\"full_name\":\"o/r\"},\"path\":\"p.mbt\",\"html_url\":\"\",\"score\":1.0}]}"
+  let tsv = code_search_to_tsv(json)
+  let lines = tsv.split("\n").to_array()
+  assert_eq(lines.length(), 1)
+  assert_true(lines[0].contains("gh-code"))
+}

@@ -13,6 +13,14 @@ pub fn assess_portability(SearchCandidate) -> Bool
 
 pub fn can_graduate(Double, CurriculumLevel) -> Bool
 
+pub fn candidates_to_tsv_lines(Array[SearchCandidate]) -> String
+
+pub fn code_search_to_tsv(String) -> String
+
+pub fn code_search_url(String, per_page? : Int) -> String
+
+pub fn code_to_candidates(Array[GhCode]) -> Array[SearchCandidate]
+
 pub fn coverage(Array[String], Array[String]) -> Double
 
 pub fn critic_dup_sim() -> Double
@@ -21,6 +29,8 @@ pub fn critic_most_similar(Archive, String) -> (String, String, Double)?
 
 pub fn critic_review(Archive, String, Double, threshold? : Double) -> Json
 
+pub fn curl_repo_search(String, token? : String) -> String
+
 pub fn curriculum_progress(Double) -> Double
 
 pub fn decision_to_string(CurriculumLevel, MutationKind, Bool) -> String
@@ -28,6 +38,10 @@ pub fn decision_to_string(CurriculumLevel, MutationKind, Bool) -> String
 pub fn derive_skill_name(String, String) -> String
 
 pub fn distill_candidates(Array[SearchCandidate]) -> Array[SearchCandidate]
+
+pub fn distill_code_search(String) -> Array[SearchCandidate]
+
+pub fn distill_repo_search(String) -> Array[SearchCandidate]
 
 pub fn distill_skill(String, String, String, Double) -> SkillEntry?
 
@@ -51,6 +65,16 @@ pub fn mutation_prompt(MutationKind, String, String) -> String
 
 pub fn next_level(Double) -> CurriculumLevel
 
+pub fn parse_code_search(String) -> Array[GhCode]
+
+pub fn parse_repo_search(String) -> Array[GhRepo]
+
+pub fn repo_search_to_tsv(String) -> String
+
+pub fn repo_search_url(String, per_page? : Int, sort? : String) -> String
+
+pub fn repos_to_candidates(Array[GhRepo]) -> Array[SearchCandidate]
+
 pub fn run_external_search(String, Array[String], runner? : ((String, Array[String]) -> Result[String, String])?) -> Result[String, String]
 
 pub fn score_accept(Double, threshold? : Double) -> Bool
@@ -70,6 +94,8 @@ pub fn suggest_next_goal(Double) -> String
 pub fn tag_skill(SkillEntry, Array[String]) -> SkillEntry
 
 pub fn tokens(String) -> Array[String]
+
+pub fn topic_search_url(String, per_page? : Int) -> String
 
 pub fn unigrams(String) -> Array[String]
 
@@ -122,6 +148,22 @@ pub enum CurriculumLevel {
   L3
   L4
 } derive(Eq, @debug.Debug)
+
+pub struct GhCode {
+  repository : String
+  path : String
+  html_url : String
+  score : Double
+}
+
+pub struct GhRepo {
+  full_name : String
+  description : String
+  stargazers_count : Int
+  language : String
+  html_url : String
+  topics : Array[String]
+}
 
 pub enum MutationKind {
   Rewrite
