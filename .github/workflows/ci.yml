@@ -162,6 +162,7 @@ jobs:
         # 这条常驻 e2e 起两个真 `node cli.js serve`，锁「无心跳行不等于首拍即死」与跨进程心跳可见
         run: |
           moon build --target js cmd/cli
+          python3 scripts/blackbox/e2e_heartbeat_xproc.py --selftest
           python3 scripts/blackbox/e2e_heartbeat_xproc.py
 
       - name: Reserve cross-process guard (BUG-136：预订的互斥必须打到两个真进程)
