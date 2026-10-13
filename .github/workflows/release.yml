@@ -77,7 +77,13 @@ jobs:
 
       - name: Build JS target
         run: |
-          moon build --target js
+          # 2026-10-13 run#6 红在此步（`moon build --target js` 退出 255）：moon 0.1.20261012+
+          # 拒绝依赖图里旧格式的 `.mooncakes/<dep>/moon.mod.json`（`is no longer supported`），
+          # 而 `.mooncakes/` 在 .gitignore、由 `moon update` 重生成 ⇒ 本机老版 moon 复现不出来
+          # （与 BUG-112 同形：只在 runner 现形）。迁移器就地 fmt 每个被判过期的依赖目录，
+          # 循环到 build 收敛（惰性解包决定不能一次性 find）——WSL 隔离副本（CI 同版 moon）实测
+          # 3 轮 rc=0、幂等复跑 no-op。脚本内部就跑 build，exit 0 时产物已在 _build/。
+          bash scripts/migrate_mooncakes_modjson.sh
           python3 scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js
 
       - name: Package JS artifact
@@ -114,7 +120,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev sqlite3
 
       - name: Build native
-        run: moon build --target native
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon build --target native"
 
       - name: Package native artifact
         run: |
