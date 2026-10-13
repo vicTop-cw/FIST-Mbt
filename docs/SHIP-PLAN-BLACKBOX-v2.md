@@ -63,7 +63,7 @@
 | G5 附带 | **R6「200≠拿到文件」在 Linux 侧同样现形，且证明换源逻辑真的执行** | 走真下载线时源1 `gitcode.com/…/releases/download/…zip` 回 **HTTP 403 + 正文 `{"error…`**，install.sh 正确判"给的不是 zip"并换源 ⇒ 本表 §0 拍板的"GitCode 主源"第一档其实一直取不到资产，全靠 fallback GitHub 兜住；主源真要有货需 G7 落地 |
 | G7 | **仍未实现，且刻意不盲落** | `grep gitcode .github/workflows/release.yml` 零命中。只读探测：`GITCODE_TOKEN` 打 `gitcode.com/api/v4/*` 全 404；`api.gitcode.com/api/v5/user` 200（login=VictorTop）但 `/api/v5/projects/VictorTop%2FFist-Mbt`、`/api/v5/projects`、`…/releases` 全 404 ⇒ 项目/release 端点形状未知或 token 无 scope。不在 release.yml 加"每 tag 必跑、未实测、不可逆"的发布步（未实测不自证 + 不可逆发布留确认），待可用 API 事实与 owner 拍板 |
 
-> 另记一格潜在坑（本轮踩到的是**自己的测试**，非产品）：仓库**没有 `.gitattributes`**。`install.sh` 的 git blob 实测**纯 LF（CR=0）** ⇒ 用户 `curl | bash` 拿到的没问题；但本机 `core.autocrlf=true` 把 Windows 工作树副本转成 **CRLF（CR=260）**，谁要是**从 Windows 工作树直接把 `.sh` 拿到 Linux/WSL 跑**就会炸在 `line 15: $'\r': command not found` + `set: pipefail: invalid option`（我 step7/step9 两次假警报即此因）。建议补 `.gitattributes`（`*.sh text eol=lf`、`*.ps1 text eol=crlf`），与本仓既有 `check_ps_encoding`（BUG-88）互补。
+> 另记一格潜在坑（本轮踩到的是**自己的测试**，非产品）：仓库**没有 `.gitattributes`**。`install.sh` 的 git blob 实测**纯 LF（CR=0）** ⇒ 用户 `curl | bash` 拿到的没问题；但本机 `core.autocrlf=true` 把 Windows 工作树副本转成 **CRLF（CR=260）**，谁要是**从 Windows 工作树直接把 `.sh` 拿到 Linux/WSL 跑**就会炸在 `line 15: $'\r': command not found` + `set: pipefail: invalid option`（我 step7/step9 两次假警报即此因）。**已落地**（commit `6bba279`）：`.gitattributes` 把 `*.sh`/`*.mjs` 钉 `text eol=lf`。刻意**不给 `*.ps1` 加 `eol=crlf`**（PS 两种行尾都能解析，且工作树现状不一 `install.ps1`=CR225 / `install_onecmd.ps1`=CR0，钉了会即时刷脏其中一边、污染他人在提交面）——`.ps1` 编码归既有 `check_ps_encoding`（BUG-88）管。决定性反证：WSL 全新 clone + 强制 `core.autocrlf=true` 重新 checkout `install.sh` 仍 CR=0 ⇒ `eol=lf` 扛住 autocrlf。加前后 `git status` 脏数不变、`-- *.sh *.mjs` 零翻脏。
 
 ---
 
