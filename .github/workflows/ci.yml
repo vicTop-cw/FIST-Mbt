@@ -160,6 +160,17 @@ jobs:
           python3 scripts/cli_flag_probe.py --selftest
           python3 scripts/cli_flag_probe.py
 
+      - name: HTTP contract self-proof (fist-mbt-api：契约只登记被真实服务的端点，不跑=假承诺)
+        shell: bash
+        # docs/openapi/fist.yaml 的活体判据。六个臂缺一即红：A 起桥 / B /tools 剥壳且
+        # 带 inputSchema（自描述驱动是契约立身之本）/ C 真调只读工具出 ok=true（钉住桥
+        # 替调用方补齐 _meta 那格）/ D body 非对象必须 400 / E 未知工具 502 且桥不崩 /
+        # F 老 /mcp 通用口零回归。台账改道 temp/，端口取 OS 空闲（不写死，避免 CI 自撞）。
+        run: |
+          moon build --target js cmd/cli
+          python3 scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js
+          python3 scripts/blackbox/e2e_http_contract.py
+
       - name: Cleanliness guard (仓库整洁，仅交付库 fist-mbt.db)
         shell: bash
         run: python3 scripts/cleanup_artifacts.py && python3 scripts/cleanup_artifacts.py --check
