@@ -1,0 +1,22 @@
+# .gitattributes —— 行尾策略（2026-10-13 加，源自 G5 Linux 安装实测踩到的坑）
+#
+# 为什么需要：Windows 侧 `core.autocrlf=true` 会把 checkout 出的文本转成 CRLF。`.sh` 一旦被
+# 从 Windows 工作树直接拿到 Linux/WSL 跑，第一行 shebang 后面那个 `\r` 就让 bash 报
+# `line 15: $'\r': command not found` + `set: pipefail: invalid option`（本轮实测两次打到：
+# step7/step9 误跑 `install.sh` 的工作树副本，读数一度被当成产品 bug，实为 checkout 行尾）。
+# 关键：仓库里 `.sh` 的 **git blob 本来就全是 LF**（`git cat-file blob HEAD:…` 逐个实测 CR=0），
+# 用户 `curl | bash` / `git clone` 在 Linux 上拿到的没问题——炸的只是「Windows 工作树副本」这条路。
+# 用 `eol=lf` 钉死跨 shell 执行的脚本，使任何 autocrlf 配置都无法把它转成 CRLF。
+#
+# 安全边界（刻意窄，先判「会不会让现有文件翻脏」再落）：
+#   · 只列 blob 实测纯 LF 的三类（.sh 3 个 / .mjs 2 个 blob 待验，见下）——加 eol 规则前先确认
+#     不会触发 renormalize 把已在跟踪的文件刷成"脏"，那会污染并发会话的未提交工作树。
+#   · **不给 *.ps1 加 eol=crlf**：PowerShell 两种行尾都能解析，且工作树里各文件现状不一
+#     （install.ps1=CR225、install_onecmd.ps1=CR0），钉 eol 会即时把其中一边刷脏、动到别人未提交面。
+#     .ps1 的编码闸另有常驻判据 `scripts/check_ps_encoding.py`（BUG-88：纯 ASCII 或带 UTF-8 BOM）管，
+#     不归行尾策略管。
+#   · 不加 `* text=auto`：那是全仓 renormalize，必然波及并发会话 140+ 未提交文件，不可接受。
+
+# 跨 shell 执行的脚本：一律 LF（Linux/mac 上 bash 直接跑，CRLF 会炸）
+*.sh    text eol=lf
+*.mjs   text eol=lf
