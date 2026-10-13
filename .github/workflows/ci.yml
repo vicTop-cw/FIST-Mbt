@@ -203,10 +203,22 @@ jobs:
       - name: Refresh registry (first build)
         run: moon update
 
+      # 2026-10-13 WSL 实测（同 CI 版 nightly）：`moon update` 之后 `.mooncakes` **根本不存在**
+      # （依赖惰性解包，update 只拉注册表索引）⇒ 此时 reapply 找不到 `.mooncakes/mizchi/sqlite/stub.c`
+      # 必然 rc=1（原生报错原文："找不到目标 stub.c（先跑 moon update 让依赖落地）"——注释里那句
+      # "先跑 moon update" 本身就是误因，update 并不解包）。必须在**能触发解包**的步骤之后：
+      # 实测 migrate（内含 `moon check`，同时把旧 moon.mod.json 迁到新格式）跑完 stub.c 才出现，
+      # 此后 reapply rc=0、--verify rc=0。故顺序 = migrate → reapply → check。
+      # （这推翻了我同日早些时候写进 fist-ci.yml 的"migrate 须在 Reapply 之后"——实测是反的，同步改。）
+      - name: Migrate mooncakes dep manifests (先解包：moon check 触发依赖落地 + 迁旧 moon.mod.json)
+        shell: bash
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target native"
+
       # BUG-133（2026-10-10 修）：依赖侧 `mizchi/sqlite` 的 stub.c 是 native FFI 内存安全缺陷的根
       #（C 回裸 sqlite3*/sqlite3_stmt*，另有 6 处 const char* 被当成 Bytes）。修法是把 repo 内的
       # `patches/sqlite-bug133/stub.c`（已用 moonbit_make_external_object + moonbit_make_bytes 包好）
       # 落回 `.mooncakes/`——`.mooncakes` 每次 `moon update` 会被重生成，所以必须是本步而非改依赖目录。
+      # 前置：依赖必须先被解包（上一步的 check 干了这事），否则本步找不到目标文件。
       - name: Reapply BUG-133 sqlite FFI fix
         run: bash patches/sqlite-bug133/reapply.sh --force
 
