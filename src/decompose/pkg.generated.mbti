@@ -10,13 +10,36 @@ pub fn difficulty_label(Int, Int) -> String
 
 pub fn difficulty_label_from(Double) -> String
 
+pub fn generate_milestones(parent_desc~ : String, Int) -> MilestonePlan
+
+pub fn milestone_ascii(MilestonePlan) -> String
+
+pub fn milestone_plan_to_json(MilestonePlan) -> String
+
+pub fn milestone_progress(MilestonePlan, Array[Bool]) -> Double
+
+pub fn refine_milestone(Milestone, Int) -> Array[String]
+
 pub fn simpler_variant_hint(String) -> String
 
 pub fn spec_hash_of(Json?) -> String
 
+pub fn validate_milestone_plan(MilestonePlan) -> (Bool, String)
+
 // Errors
 
 // Types and methods
+pub struct Milestone {
+  index : Int
+  title : String
+  description : String
+  depends_on : Array[Int]
+}
+
+pub struct MilestonePlan {
+  milestones : Array[Milestone]
+  total : Int
+}
 
 // Type aliases
 
