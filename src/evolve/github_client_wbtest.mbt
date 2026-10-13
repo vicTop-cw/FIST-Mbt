@@ -180,3 +180,27 @@ test "code_search_to_tsv 端到端" {
   assert_eq(lines.length(), 1)
   assert_true(lines[0].contains("gh-code"))
 }
+
+///|
+test "github_json_to_tsv 自动识别仓库搜索" {
+  let json = "{\"items\":[{\"full_name\":\"o/r\",\"description\":\"extract parser\",\"stargazers_count\":10,\"language\":\"MoonBit\",\"html_url\":\"\",\"topics\":[]}]}"
+  let tsv = github_json_to_tsv(json)
+  let lines = tsv.split("\n").to_array()
+  assert_eq(lines.length(), 1)
+  assert_true(lines[0].contains("gh"))
+}
+
+///|
+test "github_json_to_tsv 自动识别代码搜索" {
+  let json = "{\"items\":[{\"repository\":{\"full_name\":\"o/r\"},\"path\":\"p.mbt\",\"html_url\":\"\",\"score\":1.0}]}"
+  let tsv = github_json_to_tsv(json)
+  let lines = tsv.split("\n").to_array()
+  assert_eq(lines.length(), 1)
+  assert_true(lines[0].contains("gh-code"))
+}
+
+///|
+test "github_json_to_tsv 空 JSON 返回空串" {
+  let tsv = github_json_to_tsv("{}")
+  assert_eq(tsv, "")
+}
