@@ -122,9 +122,17 @@ jobs:
           print(f"attested {len(logins)} stargazers, ttl={ttl_seconds}s, pubkey={public_key_hex[:16]}…")
           PY
 
+      # Pages served URL 要对齐文档承诺的 `/_attest/attestation.json`：upload-pages-artifact
+      # 把 path 指向目录的**内容**当站点根发布，直接 path: _attest 会让清单落在站点根
+      # （…/FIST-Mbt/attestation.json），与 star_gate.mbt 注释、.mcp.example.json 解锁说明、
+      # reports 里写的 `_attest/attestation.json` 全对不上（照抄的人 404，2026-10-13 实测现形）。
+      # staging 一层再上传，served 路径即带 _attest/ 前缀。
+      - name: Stage Pages bundle
+        run: mkdir -p pages_out/_attest && cp _attest/attestation.json pages_out/_attest/
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: _attest
+          path: pages_out
 
       # selfcheck 不能拿 github-pages 那个 bundle 当数据源：它是 pages 专用的 artifact.tar
       # （download-artifact 解 zip 后留下一个没再解开的 tar），open("_attest/attestation.json")
