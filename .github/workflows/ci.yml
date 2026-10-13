@@ -91,9 +91,12 @@ jobs:
         # 扫描面从本 workflow 反解：凡被 CI 调用、会 print 且正文含非 ASCII 的 .py，必须自带
         # sys.stdout/stderr 的 UTF-8 重配。缺了它，Windows 复跑时 print 的 ⇒ 会抛 UnicodeEncodeError，
         # 留下 traceback + rc=1——而 1 恰是「缺陷在场」那一档，判据自己的崩冒用了被测的退出码。
+        # --all 把面扩到全部正式脚本（BACKLOG P3 / BUG-138 残余面）：非 CI 调用面的脚本被人手跑
+        # 得更多，同样会在本机崩；纯 ASCII 面只出 E2 预告不计退出码，所以扩面不误伤今天不坏的脚本。
         run: |
           python3 scripts/check_py_stdout_encoding.py --selftest
           python3 scripts/check_py_stdout_encoding.py
+          python3 scripts/check_py_stdout_encoding.py --all
 
       - name: Entry-list guard (BUG-93/101：现状面不得指退役入口；Popen argv 必须带 serve)
         shell: bash

@@ -7,17 +7,20 @@
 （判据自己的崩冒用了被测的退出码；`e2e_native_heap_probe` 为此专门设了 4 号档）。
 2026-10-07 本机实测两次打到：`check_publish_payload.py` 打 VIOLATION 时崩、守卫族跑器同一位置崩。
 
-扫描面**从 workflow 反解**（`.github/workflows/*.yml` 里出现的 `scripts/**.py`），不手写清单——
-手写的族名必然落后于新增的脚本（J10/BUG-122 的老账）。CI 在 Linux UTF-8 下这段是无损 no-op，
-所以这条判据保护的是**本机复跑守卫时那条红能不能被看见**。
+扫描面**默认从 workflow 反解**（`.github/workflows/*.yml` 里出现的 `scripts/**.py`），不手写清单——
+手写的族名必然落后于新增的脚本（J10/BUG-122 的老账）。`--all` 把扫描面扩到**全部正式脚本**
+（glob `scripts/**/*.py`，BUG-138 追记的残余面：非 CI 调用面同样会在本机崩，而且更常被人手跑）。
+CI 在 Linux UTF-8 下这段是无损 no-op，所以这条判据保护的是**本机复跑时那条红能不能被看见**。
 
-判据：被 CI 调用 + 会 `print` + 正文含非 ASCII ⇒ 必须含 `sys.stdout.reconfigure` 那两行。
-`reconfigure` 的兄弟面（纯 ASCII 脚本、不 print 的脚本）不误红。
+判据：会 `print` + 正文含非 ASCII ⇒ 必须含 `sys.stdout.reconfigure` 那两行。
+兄弟面（纯 ASCII 脚本、不 print 的脚本）不误红，只出 E2 预告——**预告不计入退出码**，
+这样「扩面」不会把今天根本不坏的东西判成违例（BACKLOG P3 扩面前提）。
 
 退出码：0=PASS / 1=违例 / 2=判据无法自证（扫描面空、CI 指到不存在的脚本、全部脚本都不 print）。
 
 用法：
-    python scripts/check_py_stdout_encoding.py            # 全量
+    python scripts/check_py_stdout_encoding.py            # CI 面（从 workflow 反解）
+    python scripts/check_py_stdout_encoding.py --all      # 全部正式脚本
     python scripts/check_py_stdout_encoding.py --selftest # 考这把尺自己
 """
 import glob
@@ -28,7 +31,8 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WF_GLOB = os.path.join(ROOT, ".github", "workflows", "*.yml")
-RE_SCRIPT = re.compile(r"scripts/[\w/]+\.py")
+SCRIPTS_DIR = os.path.join(ROOT, "scripts")
+RE_SCRIPT = re.compile(r"scripts/[\w\-/]+\.py")
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -44,6 +48,19 @@ def ci_script_faces():
         for m in RE_SCRIPT.finditer(t):
             found.add(m.group(0))
     return sorted(found)
+
+
+def all_script_faces():
+    """全部正式脚本面（BACKLOG P3 扩面）：glob 而非反解，所以带连字符的文件名
+    （`scripts/fist-mbt-http.py`）也在面上——CI 反解的正则 `scripts/[\\w/]+\\.py` 认不出
+    连字符，那一格只有 glob 兜得住。测试用临时脚本落 temp/，不在 scripts/ 下，天然排除。"""
+    out = []
+    for dp, _dn, fn in os.walk(SCRIPTS_DIR):
+        for f in sorted(fn):
+            if f.endswith(".py"):
+                out.append(
+                    os.path.relpath(os.path.join(dp, f), ROOT).replace(os.sep, "/"))
+    return sorted(out)
 
 
 def needs_gate(text):
@@ -90,11 +107,11 @@ def evaluate(rel_paths, reader):
     return problems, notes, scanned, gated
 
 
-def real_problems():
-    faces = ci_script_faces()
+def real_problems(scan_all=False):
+    faces = all_script_faces() if scan_all else ci_script_faces()
     if not faces:
-        return (["FATAL workflow 里反解不到任何 scripts/*.py ⇒ 扫描面为空，判据无从生效"],
-                [], 0, 0)
+        return (["FATAL %s 扫描面反解不到任何 scripts/*.py ⇒ 判据无从生效"
+                 % ("--all" if scan_all else "workflow")], [], 0, 0)
 
     def reader(rel):
         p = os.path.join(ROOT, rel.replace("/", os.sep))
@@ -137,31 +154,66 @@ def selftest():
     real, _, scanned_n, gated_n = real_problems()
     if real:
         fails.append("现状面就红（先判尺子，再判被测）：" + real[0])
+    # M5（BACKLOG P3 扩面）：--all 面必须是 CI 面的超集——CI 点名的脚本若掉出全量面，
+    # 说明 glob 与反解两把尺对不上，扩面就是纸面扩面。
+    wide = all_script_faces()
+    narrow = ci_script_faces()
+    lost = [r for r in narrow if r not in wide]
+    if lost:
+        fails.append("M5 --all 面不含 CI 点名脚本 %s → 两把尺对不上，扩面是假的" % lost)
+    real_all, _, wn, wg = real_problems(scan_all=True)
+    if real_all:
+        fails.append("--all 现状面就红（先判尺子，再判被测）：" + real_all[0])
+    if wn <= scanned_n:
+        fails.append("M5b --all 面该带闸数 %d 不大于 CI 面 %d → 扩面没真的扩" % (wn, scanned_n))
+    # M6：直接调 main() 走 PASS/FAIL 两条 print 分支——selftest 若只测纯函数 evaluate，
+    # 就照不到输出行的格式化 bug（本轮真在 PASS 行写错过占位符，TypeError 崩在结论行，
+    # 恰是这条守卫自己该防的「崩在结论行之前」——尺子先于被测坏掉）。
+    import contextlib
+    for argv in (["check_py_stdout_encoding.py"],
+                 ["check_py_stdout_encoding.py", "--all"]):
+        old = sys.argv
+        try:
+            sys.argv = argv
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = main()
+            if rc != 0:
+                fails.append("M6 main(%s) 返回 %d ≠ 0（现状面本该全绿）" % (argv[1:], rc))
+            if "PASS" not in buf.getvalue():
+                fails.append("M6 main(%s) 没打出 PASS 行" % (argv[1:],))
+        except Exception as e:
+            fails.append("M6 main(%s) 抛异常（输出行格式化坏了？）：%s" % (argv[1:], e))
+        finally:
+            sys.argv = old
     if fails:
         print("SELFTEST FAIL：")
         for f in fails:
             print("  - " + f)
         return 2
-    print("SELFTEST OK：扫描面从 workflow 反解（%d 份候选，其中该带闸 %d 份、已带 %d 份），"
-          "M1 摘闸必红 / G1 带闸不误红 / M2 纯 ASCII 只预告不判红 / M3 空扫描必自拒 / "
-          "M4 悬空点名必红" % (len(ci_script_faces()), scanned_n, gated_n))
+    print("SELFTEST OK：CI 面从 workflow 反解（%d 份候选，该带闸 %d 份、已带 %d 份），"
+          "--all 面 glob 全量（%d 份候选，该带闸 %d 份）；M1 摘闸必红 / G1 带闸不误红 / "
+          "M2 纯 ASCII 只预告不判红 / M3 空扫描必自拒 / M4 悬空点名必红 / M5 扩面超集且现状不红 / "
+          "M6 main() 两档实调（照出输出行格式化 bug）"
+          % (len(narrow), scanned_n, gated_n, len(wide), wn))
     return 0
 
 
 def main() -> int:
     if "--selftest" in sys.argv:
         return selftest()
-    problems, notes, scanned, gated = real_problems()
+    scan_all = "--all" in sys.argv
+    problems, notes, scanned, gated = real_problems(scan_all=scan_all)
     for n in notes:
         print("  " + n)
+    scope = "--all 全部正式脚本" if scan_all else "CI 侧（workflow 反解）"
     if problems:
-        print("FAIL CI 侧脚本的 stdout 编码闸（该带闸 %d 份 / 已带 %d 份）：" % (scanned, gated))
+        print("FAIL %s的 stdout 编码闸（该带闸 %d 份 / 已带 %d 份）：" % (scope, scanned, gated))
         for p in problems:
             print("  - " + p)
         return 2 if any(p.startswith("FATAL") or p.startswith("E0") for p in problems) else 1
-    print("PASS CI 侧脚本的 stdout 编码闸齐备：%d 份该带闸 / 全部带闸（扫描面从 workflow 反解 %d 份，"
-          "另有 %d 份纯 ASCII 面出了预告）"
-          % (scanned, gated, len(notes)))
+    print("PASS %s的 stdout 编码闸齐备：该带闸 %d 份 / 已带 %d 份，另有 %d 份纯 ASCII 面出了预告"
+          % (scope, scanned, gated, len(notes)))
     return 0
 
 
