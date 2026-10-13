@@ -51,7 +51,15 @@ if [[ ! -f "$FIXED_STUB" ]]; then
 fi
 
 if [[ ! -f "$TARGET_STUB" ]]; then
-  fail "找不到目标 stub.c：$TARGET_STUB（先跑 moon update 让依赖落地）"
+  # 2026-10-13 实测纠正（CI #271 就红在这句上）：原提示写"先跑 moon update 让依赖落地"是**误因**——
+  # `moon update` 只更新注册表索引，`.mooncakes` 依赖是**惰性解包**的，update 之后目录**根本不存在**
+  # （WSL 同版 nightly 实测：update 后 `.mooncakes` 与 `mizchi/sqlite` 与 `stub.c` 三者皆 NO）。
+  # 真正能触发解包的是 `moon check` / `moon build`。故 CI 里的正确顺序是
+  # `moon update → (moon check 触发解包) → reapply`，本脚本必须跟在能解包的步骤之后。
+  fail "找不到目标 stub.c：$TARGET_STUB
+  ⇒ 依赖尚未解包。注意：**先跑 moon update 不够**（update 只更新注册表索引，不落地依赖目录）；
+    请先跑一次能触发解包的构建，例如 \`moon check --target native\`（或 \`moon build --target native\`），
+    之后 .mooncakes/mizchi/sqlite/ 才会出现。CI 顺序见 ci.yml / fist-ci.yml 的 native 臂：migrate → reapply → check。"
 fi
 
 # --verify 只校验、不写
