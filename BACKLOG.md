@@ -45,7 +45,7 @@
 | - | colmugx/mcp 已依赖（fist-mbt MCP 协议库），保留 | competition/§六 | done | - |
 
 | P2 | `FIST_CALLER` 环境变量注入面：四宿主 `.mcp.json` / 启动文档给出注入示例，让 `call_log.caller` 从「空串=两侧都没有」变成真实身份 | BUG-137 边界（上报即收口，注入点不在本仓可自证范围） | pending | memory/bugs.md BUG-137 |
-| P3 | 非 CI 调用面 31 份 `scripts/**.py` 补 stdout UTF-8 闸 + `check_py_stdout_encoding` 扫描面扩到「全部正式脚本」 | BUG-138 残余面（CI 侧 23 份已收口，非 CI 侧 31 份未带闸；扩面前需先把 E2 预告与 E1 违例在退出码上分开） | pending | memory/bugs.md BUG-138 |
+| P3 | 非 CI 调用面 `scripts/**.py` 补 stdout UTF-8 闸 + `check_py_stdout_encoding` 扫描面扩到「全部正式脚本」 | BUG-138 残余面 | done(2026-10-13：实测非 CI 面 **32 份**缺闸（账上原写 31，数字已漂），全量补齐（`import sys as _sys` 自带 + ast 跳 docstring/`__future__` 定插入点 + 每份 py_compile 复验，两份带 `from __future__` 的 `check_desc_enum_sync.py`/`score_gate.py` 插错即 SyntaxError）；守卫加 `--all`（glob 全量面，兜住反解正则漏的连字符名如 `scripts/fist-mbt-http.py`）+ 自证格 M5（--all 必为 CI 面超集且扩面后现状仍不红）/M6（直接调 main() 走真输出行——补格前 main 的 PASS 行写错过占位符抛 TypeError 崩在结论行，正是本守卫自己要防的「尺子先于被测坏掉」）；E2 预告与 E1 违例本就分列、预告不计退出码，扩面前提已满足；挂进 ci.yml「Py-stdout encoding guard」三条（--selftest→CI 面→--all 面）。读数：CI 面 23/23、--all 面 62/62 全绿) | commit `f8b84e9`（补 32 份闸）+ `71e95d7`（--all + M5/M6 + 登记 `js_serve_preload.mjs` 收 R62 恒红 + ci.yml 扩面） |
 | F094 | 多管家协作 · 同项目文件级并行协调层（file_binds 表 + file_bind/release/status 三工具 + 构建互斥 + worktree 终态） | spec（未来扩展）；**承重墙已修（BUG-136 预订原子性 + BUG-137 调用方身份 + J14 计数自述），Phase 1 仍不排期**——owner 2026-10-07 采纳「先修承重墙、不建三工具」方向，验收格「两进程同时 bind 恰好一成一拒」从不可能成立变成有常驻判据守着 | TBD | [docs/features/F094-multi-butler-file-binds.md](docs/features/F094-multi-butler-file-binds.md) |
 
 > 去重说明：competition/§四 与 five-directions/§一、future-roadmap 各方向的重复项（如 quickcheck、mizchi/llm、ARCHITECTURE、self_search、英文 README）已按主题合并为单行；状态以当前源码/记忆库是否确认实现为准，未确认一律 pending，待逐项核对后再转 done 或删除。
