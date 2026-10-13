@@ -29,21 +29,29 @@ nightly moon 不兼容；改正为 `migrate → reapply → check` 后，CI 上*
 （"migrate 须在 Reapply 之后，否则被盖回"）——实测是反的：reapply 只覆写 `stub.c` 一个文件，
 不会盖回被迁移的清单格式。
 
-## 对 BUG-133 关闭条件的意义（不许读成"BUG-133 已修"）
+## 对 BUG-133 关闭条件的意义（两格已在同一次会话内达成）
 
-账本 BUG-133 的关闭条件写成**两格**：
-1. `e2e_native_heap_probe --runs 12` **连发 0 崩溃**；
-2. `git archive HEAD` **干净树**上 `moon test --target native` 全量通过。
+账本 BUG-133 的关闭条件写成**两格**：①`e2e_native_heap_probe --runs 12` **连发 0 崩溃**；
+②`git archive HEAD` **干净树**上 `moon test --target native` 全量通过。
 
-本发 CI 同时满足**外观上的两格**（`crashes=0/12` + checkout 干净树 `807/807`）。
-但按本仓既有纪律，`0/N` 是**抽样性质、不是关闭条件**——同一支尺、同一次会话连跑两发
-给出过 `3/12` 与 `0/12` 两端（BUG-133 追记）。所以本报告只写：
-- **CI 侧两格首次同时达成**（这是新事实，此前因 reapply 失败从未跑到）；
-- **不写"BUG-133 已关闭"**——关闭仍需连发抽检 0 崩溃的稳定性证据，以及账本/规范面的三向对表
-  （J11 那格：账上 BUG-133 仍 OPEN 时门不许删/不许挪位置；单转 FIXED 后该格自然失效）。
-- 另有一条**本轮未验**的差异要如实标：CI 干净树通过 ≠ `git archive HEAD` 那份干净树通过
-  （CI 用 `actions/checkout`，两者对 gitignored 面的处理相同，但 BUG-133 追记点名的是 `git archive`；
-  建议 owner 或该面补一发 `git archive` 变体抽检）。**故本报告不宣称关闭条件全达成，只报 CI 侧首达。**
+**本轮在同一次 WSL 会话、同一棵 `git archive HEAD` 干净树上把两格都测了**（此前从未如此成对测过）：
+
+| 格 | 读数（原件） |
+|---|---|
+| ① 连发抽检 0 崩溃 | 第 1/2/3 发均 `rc=0`、`TALLY {'ok': 12} ｜ crashes=0/12`（`temp/probe_repeat_direct.txt`） |
+| ② 干净树 native 全量通过 | `moon test --target native` **rc=0**、**`Total tests: 807, passed: 807, failed: 0`**、SIGSEGV/core-dumped 命中 **0**（`temp/archive_native_direct.txt`） |
+
+干净树的确按账本点名的 `git archive HEAD` 形状构造（第 2 行实测 `树里 .mooncakes 存在? NO`），
+并按修正后的顺序走完 `moon update → migrate(moon check 触发解包) → reapply(BUG-133 stub 修复)
+→ moon test --target native`，其中 `reapply --verify` 回 `OK: 目标已是 BUG-133 修复版`。
+
+**账本现状**：`memory/bugs.md` 的 `## BUG-133 … [high] FIXED`（抬头已是 FIXED，非本轮所改——
+该文件是并发会话的未提交面，本轮未碰）。**故本报告不再写"关闭条件未闭"这种已过时的判断**；
+但也不宣称"本轮关闭了 BUG-133"——这两格是**首次成对实测达成**，而账本转 FIXED 的动作另有其人/其时。
+两件事分开记：**证据面（本报告）**与**账本状态面（FIXED，他人所改）**各归各。
+
+**同时修正**：本报告初稿曾写「CI 干净树通过 ≠ `git archive HEAD` 干净树通过，建议补 archive 变体」——
+该建议**本轮已执行完毕**（上表第②格即 `git archive` 变体读数），故该疑虑已消。
 
 ## 资源消耗
 
@@ -73,10 +81,12 @@ nightly moon 不兼容；改正为 `migrate → reapply → check` 后，CI 上*
 
 1. **Format 门落法**（owner）：①降为信息步（最低风险，立即解锁 22 步守卫族）；②全面重排并全量测试守
    `Int32` 溢出（最彻底）。B/B′/diff-scoped 三条已实测证伪。
-2. **补 `git archive` 变体抽检**：把 BUG-133 关闭条件第二格从"CI checkout 干净树"推进到"`git archive` 干净树"
-   （账本点名的形状），据此再考虑是否转 FIXED。
-3. **给 `Reapply BUG-133` 加一条自证**：脚本应显式区分"目标不存在（依赖未解包）"与"不是修复版"两种失败
-   ——本轮的红正是前者，而原注释把原因写反了，后来者容易再被误导。
+2. ~~补 `git archive` 变体抽检~~ **本轮已执行完毕**（两格均在 `git archive HEAD` 干净树上达成，
+   见「对 BUG-133 关闭条件的意义」表）。若账本已转 FIXED，则 J11 那一格（"账上仍 OPEN 时门不许删/挪位"）
+   自然失效——本轮 `check_doc_surface` 实测 **PASS、无 J11 命中**，与该口径一致。
+3. **给 `Reapply BUG-133` 加一条自证**（已做一半）：本轮已把"目标不存在（依赖未解包）"与"不是修复版"
+   两种失败的**提示文案**分清（`5b7fac0`，含"update 并不解包"的正解与 CI 正确顺序指引）；
+   仍未加的是**程序化**区分（如按退出码分流 1=未解包 / 2=非修复版），那属可选增强。
 4. `e2e_native_heap_probe` 的 `VERDICT` 文案已自带"0/N 不等于已修"的诚实标注，这条纪律保持。
 
 ## 超额内容
@@ -90,5 +100,11 @@ nightly moon 不兼容；改正为 `migrate → reapply → check` 后，CI 上*
   日志落盘 `temp/ci_old_native.log`、`temp/ci_native278.log`。
 - WSL 步序实测：`temp/reapply_order_direct.txt`（update 后 .mooncakes 不存在 ⇒ reapply rc=1；
   migrate 后 stub.c 出现 ⇒ reapply rc=0、verify rc=0）。
-- 代码改动：`.github/workflows/ci.yml`、`.github/workflows/fist-ci.yml`（提交 `6a3bea4`）。
+- 代码改动：`.github/workflows/ci.yml`、`.github/workflows/fist-ci.yml`（提交 `6a3bea4`）；
+  `patches/sqlite-bug133/reapply.sh` 失败提示纠正（提交 `5b7fac0`）。
 - 账本口径：`memory/bugs.md` BUG-133（两格关闭条件、`0/N` 是抽样性质、J11 三向对表）。
+- BUG-133 两格成对实测原件（WSL 同版 nightly 0.1.20261012，`git archive HEAD` 干净树）：
+  `temp/archive_native_direct.txt`（第二格：rc=0 / 807/807 / 信号命中 0）、
+  `temp/probe_repeat_direct.txt`（第一格：连发 3 发均 crashes=0/12）。
+- 本轮 `check_doc_surface` 实测 **PASS**（J11 无命中，与账本已 FIXED 的口径一致）；
+  该守卫此前多轮 FAIL 于 J14/J15，现已由并发会话收口——本报告只如实记录该时点读数。
