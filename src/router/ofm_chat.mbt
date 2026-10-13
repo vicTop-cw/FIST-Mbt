@@ -81,6 +81,52 @@ pub fn build_ofm_chat_request_json(
 }
 
 ///|
+/// 判断 OFM 响应是否需要二次重试（回体不是合法 JSON 时）。
+/// 重试条件：HTTP 成功（2xx）但回体解析失败 → 上游网关可能把非 JSON 塞进 200 回体。
+/// 纯计算零 IO。
+pub fn should_retry_on_invalid_json(resp : OfmChatResponse) -> Bool {
+  resp.is_error && resp.error_type == "unparseable"
+}
+
+///|
+/// 在 OFM 请求体 JSON 的 messages 末尾追加一条 system 提示「请只返回合法 JSON」，
+/// 用于二次重试时引导模型输出可解析的 JSON。
+///
+/// fail-closed：输入不是合法 JSON / 不是对象 / 没有 messages 数组 → `Err`。
+pub fn append_retry_prompt(body : String) -> Result[String, String] {
+  let parsed = @json.parse(body) catch {
+    _ => return Err("请求体不是合法 JSON")
+  }
+  match parsed {
+    Json::Object(m) =>
+      match m.get("messages") {
+        Some(Json::Array(msgs)) => {
+          let new_msgs : Array[Json] = []
+          for msg in msgs {
+            new_msgs.push(msg)
+          }
+          new_msgs.push(
+            Json::object({
+              "role": Json::string("system"),
+              "content": Json::string(
+                "请只返回合法 JSON，不要添加 markdown 围栏或其他格式。",
+              ),
+            }),
+          )
+          let new_body = Map::new()
+          for k, v in m {
+            new_body[k] = v
+          }
+          new_body["messages"] = Json::array(new_msgs)
+          Ok(Json::object(new_body).stringify())
+        }
+        _ => Err("请求体缺少 messages 数组")
+      }
+    _ => Err("请求体不是 JSON 对象")
+  }
+}
+
+///|
 /// `max_tokens` 余量：从模型的**硬上限**里预留 `margin` 个 token，返回要写进请求体的 `max_tokens`。
 /// 为什么要留余量：把 `max_tokens` 直接填成硬上限时，模型常在 JSON 写到一半被 token 天花板硬切断，
 /// 回体变**半截 JSON** → `ofm_response` 判「回体不是合法 JSON」→ `executor_run` 整发失败。
