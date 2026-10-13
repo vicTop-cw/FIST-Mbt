@@ -37,6 +37,8 @@ pub struct MemoryStore {
   file_locks : Map[String, FileLock]
   // 锁违例记录（过期未续 / 被抢占）
   lock_violations : Array[LockViolation]
+  // 项目助理登记（multi-agent-lock v3 阶段2）：agent -> AssistantReg
+  assistant_reg : Map[String, AssistantReg]
 }
 
 ///|
@@ -50,6 +52,7 @@ pub fn MemoryStore::new() -> MemoryStore {
     executors: Map([]),
     file_locks: Map([]),
     lock_violations: [],
+    assistant_reg: Map([]),
   }
 }
 
@@ -127,6 +130,76 @@ pub struct LockViolation {
   pub reason : String
   pub lock_id : String
 } derive(Eq, Debug)
+
+///|
+/// 便捷构造（LockViolation 字段对外只读，跨包经此构造）。
+pub fn LockViolation::new(
+  ts~ : String,
+  agent~ : String,
+  scope~ : String,
+  reason~ : String,
+  lock_id~ : String,
+) -> LockViolation {
+  { ts, agent, scope, reason, lock_id, }
+}
+
+///|
+/// 项目助理登记（multi-agent-lock v3 阶段2 精简版）。
+pub struct AssistantReg {
+  pub agent : String
+  /// all | lock_keeper | reaper | sheriff | auditor（逗号分隔）
+  pub mode : String
+  /// 1=主助理（有 kill 权，本阶段仅登记），0=副助理
+  pub is_primary : Bool
+  pub registered_at : String
+  pub heartbeat_at : String
+  /// active | dead | resigned
+  pub status : String
+} derive(Eq, Debug)
+
+///|
+/// AssistantReg → JSON（供 MCP 工具输出）。
+pub fn AssistantReg::to_json(self : AssistantReg) -> Json {
+  Json::object({
+    "agent": Json::string(self.agent),
+    "mode": Json::string(self.mode),
+    "is_primary": Json::boolean(self.is_primary),
+    "registered_at": Json::string(self.registered_at),
+    "heartbeat_at": Json::string(self.heartbeat_at),
+    "status": Json::string(self.status),
+  })
+}
+
+///|
+/// 便捷构造（AssistantReg 字段对外只读，跨包经此构造/更新）。
+pub fn AssistantReg::new(
+  agent~ : String,
+  mode~ : String,
+  is_primary~ : Bool,
+  registered_at~ : String,
+  heartbeat_at~ : String,
+  status~ : String,
+) -> AssistantReg {
+  { agent, mode, is_primary, registered_at, heartbeat_at, status, }
+}
+
+///|
+/// 助理选举裁决**单一真源**：给定现有 active 主助理与本次请求，判「能否当选」+动作标签。
+/// 两个后端共用（SQLite 侧语义一致）。cutoff 为心跳新鲜线（ISO 字符串，字典序比较）。
+/// 返回 (ok, action, prev_agent)：action ∈ elected / renewed / taken_over / conflict。
+pub fn assistant_claim_action(
+  prev : AssistantReg?,
+  agent : String,
+  now : String,
+  cutoff : String,
+) -> (Bool, String, String) {
+  match prev {
+    None => (true, "elected", "")
+    Some(r) if r.agent == agent => (true, "renewed", "")
+    Some(r) if r.heartbeat_at < cutoff => (true, "taken_over", r.agent)
+    Some(r) => (false, "conflict", r.agent)
+  }
+}
 
 ///|
 /// LockViolation → JSON。
@@ -257,6 +330,7 @@ impl Store for MemoryStore with fn clear(self) {
   // 文件锁与违例记录也在清空范围
   self.file_locks.clear()
   self.lock_violations.clear()
+  self.assistant_reg.clear()
 }
 
 ///|
@@ -525,6 +599,61 @@ pub fn StoreBackend::lock_violations_list(
   match self {
     Mem(m) => m.lock_violations_list()
     Sql(s) => s.lock_violations_list()
+  }
+}
+
+// —— 项目助理登记（StoreBackend 统一分发，multi-agent-lock v3 阶段2）——
+
+///|
+pub fn StoreBackend::assistant_upsert(
+  self : StoreBackend,
+  reg : AssistantReg,
+) -> Unit {
+  match self {
+    Mem(m) => m.assistant_upsert(reg)
+    Sql(s) => s.assistant_upsert(reg)
+  }
+}
+
+///|
+pub fn StoreBackend::assistant_get(
+  self : StoreBackend,
+  agent : String,
+) -> AssistantReg? {
+  match self {
+    Mem(m) => m.assistant_get(agent)
+    Sql(s) => s.assistant_get(agent)
+  }
+}
+
+///|
+pub fn StoreBackend::assistant_list(self : StoreBackend) -> Array[AssistantReg] {
+  match self {
+    Mem(m) => m.assistant_list()
+    Sql(s) => s.assistant_list()
+  }
+}
+
+///|
+pub fn StoreBackend::assistant_set_status(
+  self : StoreBackend,
+  agent : String,
+  status : String,
+) -> Bool {
+  match self {
+    Mem(m) => m.assistant_set_status(agent, status)
+    Sql(s) => s.assistant_set_status(agent, status)
+  }
+}
+
+///|
+pub fn StoreBackend::lock_violations_push(
+  self : StoreBackend,
+  v : LockViolation,
+) -> Unit {
+  match self {
+    Mem(m) => m.lock_violations_push(v)
+    Sql(s) => s.lock_violations_push(v)
   }
 }
 

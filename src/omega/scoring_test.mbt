@@ -18,18 +18,21 @@ fn mk_spec(laws : Array[String], tests : Json) -> String {
     "tests": tests,
   })
   let fp = compute_fingerprint(skeleton)
-  canonical_json(Json::object({
-    "op": Json::string("task_report"),
-    "version": Json::string("1.0"),
-    "definition": Json::object({
-      "signature": Json::string("sig"),
-      "note": Json::string("n"),
+  canonical_json(
+    Json::object({
+      "op": Json::string("task_report"),
+      "version": Json::string("1.0"),
+      "definition": Json::object({
+        "signature": Json::string("sig"),
+        "note": Json::string("n"),
+      }),
+      "preconditions": Json::array([]),
+      "laws": laws_arr,
+      "tests": tests,
+      "fingerprint": Json::string(fp),
     }),
-    "preconditions": Json::array([]),
-    "laws": laws_arr,
-    "tests": tests,
-    "fingerprint": Json::string(fp),
-  }))}
+  )
+}
 
 ///|
 /// coverage 全覆盖（3 条 laws 全部被 tests 引用）→ 1.0
@@ -50,9 +53,7 @@ test "scoring_coverage_full" {
 /// coverage 半覆盖（1/3）→ 0.3333
 test "scoring_coverage_partial" {
   let laws : Array[String] = ["L1", "L2", "L3"]
-  let tests = Json::array([
-    Json::object({ "uses": Json::string("L1") }),
-  ])
+  let tests = Json::array([Json::object({ "uses": Json::string("L1") })])
   let c = calc_coverage(laws, tests)
   assert_true(c < 0.4)
   assert_true(c > 0.3)
@@ -70,10 +71,16 @@ test "scoring_coverage_empty_laws" {
 test "scoring_perfect" {
   let spec_str = mk_spec(
     ["L1"],
-    Json::array([Json::object({ "input": Json::string("x"), "expected": Json::string("ok"), "uses": Json::string("L1") })]),
+    Json::array([
+      Json::object({
+        "input": Json::string("x"),
+        "expected": Json::string("ok"),
+        "uses": Json::string("L1"),
+      }),
+    ]),
   )
   let j = spec_scoring_str(spec_str, 4, 4)
-  
+
   let s = match j.value("score") {
     Some(Number(n, ..)) => n
     _ => -1.0
@@ -83,7 +90,7 @@ test "scoring_perfect" {
     Some(False) => false
     _ => false
   }
-    assert_eq(s, 100.0)
+  assert_eq(s, 100.0)
   assert_true(pass)
 }
 
@@ -92,7 +99,13 @@ test "scoring_perfect" {
 test "scoring_bad_fingerprint" {
   let spec_str = mk_spec(
     ["L1"],
-    Json::array([Json::object({ "input": Json::string("x"), "expected": Json::string("ok"), "uses": Json::string("L1") })]),
+    Json::array([
+      Json::object({
+        "input": Json::string("x"),
+        "expected": Json::string("ok"),
+        "uses": Json::string("L1"),
+      }),
+    ]),
   )
   // 篡改：把 laws 里 L1 换成 L2，fingerprint 就失效
   let tampered = spec_str.replace(old="L1", new="L2")
@@ -128,7 +141,13 @@ test "scoring_bad_schema" {
 test "scoring_zero_accuracy" {
   let spec_str = mk_spec(
     ["L1"],
-    Json::array([Json::object({ "input": Json::string("x"), "expected": Json::string("ok"), "uses": Json::string("L1") })]),
+    Json::array([
+      Json::object({
+        "input": Json::string("x"),
+        "expected": Json::string("ok"),
+        "uses": Json::string("L1"),
+      }),
+    ]),
   )
   let j = spec_scoring_str(spec_str, 4, 0)
   let acc = match j.value("accuracy") {

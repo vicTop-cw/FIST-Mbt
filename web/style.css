@@ -1,0 +1,250 @@
+/* fist-mbt Dashboard · style.css
+   复用 fist-config.html 的设计语言（同名同色系 CSS 变量），零外部依赖。 */
+
+:root {
+  --ink:#1c1e21;
+  --accent:#c8102e;
+  --bg:#f7f7f8;
+  --card:#fff;
+  --line:#e4e4e7;
+  --ok:#16a34a;
+  --bad:#dc2626;
+  --muted:#6b7280;
+  --panel:#0f1419;          /* 代码/描述块底色 */
+  --radius:10px;
+  --mono:ui-monospace,Consolas,"Cascadia Mono",monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink:#e6edf3;
+    --bg:#0d1117;
+    --card:#161b22;
+    --line:#30363d;
+    --muted:#8b949e;
+    --ok:#3fb950;
+    --bad:#f85149;
+  }
+}
+
+* { box-sizing:border-box; }
+
+body {
+  margin:0;
+  font:14px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  color:var(--ink);
+  background:var(--bg);
+}
+
+/* ---------- 头部 ---------- */
+header {
+  display:flex;
+  align-items:center;
+  gap:16px;
+  padding:16px 22px;
+  background:#111;
+  color:#fff;
+  flex-wrap:wrap;
+}
+header .logo { width:36px; height:36px; flex:0 0 36px; color:#fff; }
+header h1 { font-size:17px; margin:0; font-weight:600; }
+header p { margin:2px 0 0; font-size:12px; color:#bbb; }
+header .title { flex:1; min-width:220px; }
+header .controls { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+header .ctl { display:flex; align-items:center; gap:6px; font-size:12.5px; color:#ddd; }
+header .ctl select {
+  font:inherit; padding:6px 8px; border:1px solid #333; border-radius:6px;
+  background:#1a1a1a; color:#fff; max-width:220px;
+}
+header .ctl.auto input { accent-color:var(--accent); }
+
+/* ---------- 按钮 ---------- */
+.btn {
+  font:inherit; padding:7px 14px; border:0; border-radius:6px;
+  cursor:pointer; font-weight:600;
+}
+.btn-primary { background:var(--accent); color:#fff; }
+.btn-primary:hover { background:#a30d26; }
+.btn-ghost { background:#eee; color:var(--ink); }
+.btn-ghost:hover { background:#e0e0e3; }
+
+/* ---------- 主体 ---------- */
+main { max-width:1400px; margin:18px auto; padding:0 16px; }
+
+/* 状态计数条 */
+.status-bar {
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+  margin-bottom:14px;
+}
+.stat {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:3px 12px; border:1px solid var(--line); border-radius:16px;
+  font-size:12.5px; background:var(--card);
+}
+.stat b { font-size:13px; }
+.stat.total { border-style:dashed; }
+
+/* 双列布局：树 + 详情 */
+.layout {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(320px,0.9fr);
+  gap:16px;
+  align-items:start;
+}
+@media (max-width:960px) {
+  .layout { grid-template-columns:1fr; }
+}
+
+/* 卡片 */
+.card {
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:14px 16px;
+}
+.card h2 { margin:0 0 10px; font-size:14px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.card h2 .sub { font-size:11.5px; color:var(--muted); font-weight:400; }
+
+/* ---------- 任务树 ---------- */
+#task-tree { min-height:280px; }
+
+.node { position:relative; }
+.node .node-row {
+  display:flex; align-items:center; gap:8px;
+  padding:6px 10px; margin:2px 0;
+  border:1px solid var(--line); border-radius:7px;
+  background:var(--card);
+  cursor:pointer; flex-wrap:wrap;
+  position:relative;
+}
+/* 深度缩进（行内 margin-left，连接线用 ::before 伪元素） */
+.node-row .indent { flex:0 0 auto; }
+
+.node-row:hover { border-color:var(--accent); }
+.node-row.active {
+  border-color:var(--accent);
+  box-shadow:0 0 0 1px var(--accent);
+}
+
+/* 等宽 id 字体 */
+.node-row .id {
+  font:700 12px var(--mono);
+  color:var(--ink);
+}
+.node-row .desc {
+  flex:1; min-width:140px;
+  color:var(--ink); font-size:12.5px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  opacity:.85;
+}
+.node-row .meta { font-size:11px; color:var(--muted); white-space:nowrap; }
+.node-row .leaf-tag {
+  font-size:10px; padding:1px 5px; border-radius:8px;
+  background:#eee; color:var(--muted);
+}
+.node-row .depth-tag { font-size:10px; color:var(--muted); }
+
+/* 折叠三角 */
+.twist {
+  display:inline-block; width:14px; text-align:center;
+  color:var(--muted); font-size:11px; flex:0 0 14px;
+}
+
+/* ---------- 状态徽章 ---------- */
+.badge {
+  display:inline-block; padding:1px 8px; border-radius:10px;
+  font-size:11px; font-weight:600; color:#fff; white-space:nowrap;
+}
+.st-待领取  { background:#6b7280; }
+.st-已领取  { background:#2563eb; }
+.st-拆分中  { background:#d97706; }
+.st-待验收  { background:#7c3aed; }
+.st-已完成  { background:#16a34a; }
+.st-已打回  { background:#dc2626; }
+.st-已暂停  { background:#ca8a04; }
+.st-已归档  { background:#374151; }
+/* 英文兜底 */
+.st-PENDING   { background:#6b7280; }
+.st-CLAIMED   { background:#2563eb; }
+.st-RUNNING   { background:#2563eb; }
+.st-SPLITTING { background:#d97706; }
+.st-REVIEW    { background:#7c3aed; }
+.st-COMPLETED { background:#16a34a; }
+.st-FAILED    { background:#dc2626; }
+.st-ARCHIVED  { background:#374151; }
+/* 未知状态走灰色兜底 */
+.badge.st-unknown { background:#6b7280; }
+
+/* ---------- 详情面板 ---------- */
+#detail-panel table { width:100%; border-collapse:collapse; font-size:12.5px; }
+#detail-panel th, #detail-panel td {
+  text-align:left; padding:6px 8px;
+  border-bottom:1px solid var(--line); vertical-align:top;
+}
+#detail-panel th { color:var(--muted); font-size:11.5px; font-weight:600; width:90px; }
+#detail-panel pre.desc {
+  background:var(--panel); color:#e6edf3;
+  padding:12px; border-radius:8px;
+  font:12.5px/1.6 var(--mono);
+  white-space:pre-wrap; word-break:break-word;
+  max-height:320px; overflow:auto;
+  margin:6px 0 0;
+}
+#detail-panel h3 {
+  margin:14px 0 6px; font-size:13px;
+}
+.chip {
+  display:inline-block; padding:1px 8px; border-radius:10px;
+  font-size:11px; background:#eee; color:var(--ink);
+  margin-right:6px; cursor:pointer;
+  border:1px solid var(--line);
+}
+.chip:hover { background:#ddd; }
+.logfail { color:var(--bad); }
+#detail-panel .log-table { max-height:340px; overflow:auto; }
+
+/* ---------- 错误条 ---------- */
+.error-bar {
+  display:flex; align-items:center; gap:12px;
+  margin:14px 0 0; padding:10px 14px;
+  background:var(--bad); color:#fff;
+  border-radius:8px; font-size:13px;
+}
+.error-bar.hidden { display:none; }
+.error-bar .btn-ghost { margin-left:auto; padding:2px 8px; font-size:12px; }
+
+/* ---------- 空态 ---------- */
+.empty { color:var(--muted); font-size:12.5px; padding:18px 0; text-align:center; }
+.muted { color:var(--muted); font-size:12px; }
+
+/* ---------- 页脚 ---------- */
+footer {
+  display:flex; align-items:center; justify-content:center; gap:16px;
+  flex-wrap:wrap;
+  color:var(--muted); font-size:12px;
+  padding:20px 16px 40px;
+}
+footer .sse { display:inline-flex; align-items:center; gap:6px; }
+.lamp { display:inline-block; width:9px; height:9px; border-radius:50%; }
+.lamp-open { background:var(--ok); box-shadow:0 0 4px var(--ok); }
+.lamp-off  { background:var(--muted); }
+.lamp-err  { background:var(--bad); box-shadow:0 0 4px var(--bad); }
+
+/* ---------- Toast（详情加载失败轻提示） ---------- */
+#toast {
+  position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+  background:#111; color:#fff; padding:8px 16px; border-radius:6px;
+  font-size:13px; opacity:0; transition:opacity .2s;
+  pointer-events:none; z-index:10;
+}
+#toast.show { opacity:1; }
+
+/* ---------- 窄屏降级 ---------- */
+@media (max-width:640px) {
+  header { padding:12px 14px; }
+  main { margin:10px auto; padding:0 10px; }
+  .card { padding:10px 12px; }
+  .node-row { padding:5px 6px; }
+  .node-row .desc { min-width:100px; }
+  footer { gap:8px; }
+}

@@ -16,6 +16,7 @@
 ///   {"$assert":"exists",  "key":"..."}                   key/成员/子串 存在
 ///   {"$assert":"range",   "min":0, "max":10}             范围检查
 ///   {"$assert":"eq",      "value":X}                     精确相等
+///   {"$assert":"custom",  "rules":[{op,field?,value},..]} 用户自定义不变量集（合取）
 /// 另支持 "field" 键：先提取 actual[field] 再断言。
 /// 未含 "$assert" 的 expected 保持精确相等语义（向后兼容）。
 fn json_or(v : Json?, default : Json) -> Json {
@@ -211,7 +212,101 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
       let ok = canonical_json(actual) == canonical_json(target)
       (ok, "eq: '\{actual.stringify()}' == '\{target.stringify()}' -> \{ok}")
     }
+    "custom" => {
+      // 用户自定义不变量集：rules 数组，每条 {op, field?, value} 声明式约束。
+      // 全部规则通过才算通过（合取语义），逐条短路返回第一条失败详情。
+      let rules = match expected.value("rules") {
+        Some(Array(a)) => a
+        _ => return (false, "custom: rules 字段缺失或非数组")
+      }
+      if rules.length() == 0 {
+        return (false, "custom: rules 为空数组")
+      }
+      let details : Array[String] = []
+      let mut all_ok = true
+      for rule in rules {
+        if !all_ok {
+          break
+        }
+        let (ok, detail) = check_custom_rule(actual, rule)
+        if !ok {
+          all_ok = false
+        }
+        details.push(detail)
+      }
+      (all_ok, "custom: \{details.join("; ")} -> \{all_ok}")
+    }
     _ => (false, "未知断言类型 \{kind}")
+  }
+}
+
+///|
+/// 单条自定义不变量规则检查。规则形如：
+///   {"op":"eq","field":"score","value":90}
+///   {"op":"gte","field":"score","value":0}
+///   {"op":"contains","field":"msg","value":"OK"}
+///   {"op":"regex","field":"name","value":"^test"}
+///   {"op":"type","field":"x","value":"int"}
+///   {"op":"exists","field":"key"}
+/// 不传 field 则对 actual 整体应用 op。
+fn check_custom_rule(actual : Json, rule : Json) -> (Bool, String) {
+  let op = match rule.value("op") {
+    Some(String(s)) => s
+    _ => return (false, "规则缺 op 字段")
+  }
+  // 可选 field 提取
+  let target = match rule.value("field") {
+    Some(String(f)) =>
+      match actual.value(f) {
+        Some(v) => v
+        None => return (false, "字段缺失: '\{f}'")
+      }
+    _ => actual
+  }
+  let value = json_or(rule.value("value"), Json::null())
+  match op {
+    "eq" => {
+      let ok = canonical_json(target) == canonical_json(value)
+      (ok, "eq '\{target.stringify()}' == '\{value.stringify()}' -> \{ok}")
+    }
+    "neq" => {
+      let ok = canonical_json(target) != canonical_json(value)
+      (ok, "neq '\{target.stringify()}' != '\{value.stringify()}' -> \{ok}")
+    }
+    "gt" | "gte" | "lt" | "lte" =>
+      match (as_number(target), as_number(value)) {
+        (Some(t), Some(v)) => {
+          let ok = match op {
+            "gt" => t > v
+            "gte" => t >= v
+            "lt" => t < v
+            _ => t <= v
+          }
+          (ok, "\{op} \{t} vs \{v} -> \{ok}")
+        }
+        _ => (false, "\{op}: 无法转数值")
+      }
+    "contains" => {
+      let sub = text_of(value)
+      let ok = text_of(target).contains(sub)
+      (ok, "contains '\{sub}' in '\{text_of(target)}' -> \{ok}")
+    }
+    "regex" => {
+      let pat = text_of(value)
+      let ok = regex_lite(text_of(target), pat)
+      (ok, "regex '\{pat}' on '\{text_of(target)}' -> \{ok}")
+    }
+    "type" => {
+      let want = text_of(value).to_lower()
+      let ok = type_names(target).contains(want)
+      (ok, "type '\{text_of(target)}' is \{want} -> \{ok}")
+    }
+    "exists" => {
+      let key = text_of(value)
+      let ok = exists_check(target, key)
+      (ok, "exists '\{key}' -> \{ok}")
+    }
+    _ => (false, "未知自定义 op: \{op}")
   }
 }
 

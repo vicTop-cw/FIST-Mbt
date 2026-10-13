@@ -47,15 +47,15 @@ pub fn diff_lines(old : String, new : String) -> Array[DiffOp] {
   let m = new_lines.length()
   // LCS DP 表：dp[i][j] = old[0..i] 与 new[0..j] 的 LCS 长度
   let dp : Array[Array[Int]] = []
-  for i in 0..=n {
+  for i in 0..<=n {
     let row : Array[Int] = []
-    for _j in 0..=m {
+    for _j in 0..<=m {
       row.push(0)
     }
     dp.push(row)
   }
-  for i in 1..=n {
-    for j in 1..=m {
+  for i in 1..<=n {
+    for j in 1..<=m {
       if old_lines[i - 1] == new_lines[j - 1] {
         dp[i][j] = dp[i - 1][j - 1] + 1
       } else {

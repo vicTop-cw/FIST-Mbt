@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>fist-mbt Dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <!-- FIST logo（内联 SVG，与 fist-config.html 同形） -->
+  <svg class="logo" viewBox="0 0 64 64" role="img" aria-label="FIST logo">
+    <g fill="currentColor">
+      <rect x="12" y="22" width="34" height="26" rx="6"/>
+      <rect x="10" y="14" width="8" height="34" rx="4"/>
+      <rect x="22" y="10" width="8" height="38" rx="4"/>
+      <rect x="34" y="10" width="8" height="38" rx="4"/>
+      <rect x="46" y="14" width="8" height="34" rx="4"/>
+      <path d="M8 40 q-6 2 -5 9 q1 6 8 7 l16 3 q7 1 8 -6 q1 -6 -5 -8 z"/>
+    </g>
+  </svg>
+  <div class="title">
+    <h1>fist-mbt Dashboard</h1>
+    <p>一源五态 · 态5 Web 管理面板 · M0 任务看板</p>
+  </div>
+  <div class="controls">
+    <label class="ctl">
+      <span>命名空间</span>
+      <select id="ns-select"></select>
+    </label>
+    <button id="refresh" class="btn btn-primary" title="立即刷新任务与状态">刷新</button>
+    <label class="ctl auto">
+      <input type="checkbox" id="auto-refresh" checked>
+      <span>自动刷新</span>
+    </label>
+  </div>
+</header>
+
+<main>
+  <!-- 顶部状态计数条 -->
+  <div id="status-bar" class="status-bar"><span class="muted">加载中…</span></div>
+
+  <div class="layout">
+    <!-- 任务树区 -->
+    <section class="card tree-card">
+      <h2>任务树 / DAG <span class="sub">按深度缩进 · 点击行查看详情</span></h2>
+      <div id="task-tree"><div class="empty">加载中…</div></div>
+    </section>
+
+    <!-- 详情面板 -->
+    <aside class="card detail-card">
+      <h2 id="detail-title">任务详情</h2>
+      <div id="detail-panel"><div class="empty">← 在左侧选择一个任务查看详情</div></div>
+    </aside>
+  </div>
+
+  <!-- 错误条 -->
+  <div id="error-bar" class="error-bar hidden">
+    <span id="error-msg"></span>
+    <button class="btn btn-ghost" id="error-close">✕</button>
+  </div>
+</main>
+
+<footer>
+  <span>fist-mbt Dashboard · M0 任务看板 · 零依赖原生 SPA</span>
+  <span id="updated-at">未更新</span>
+  <span class="sse">
+    <span id="sse-lamp" class="lamp lamp-off"></span>
+    <span id="sse-label">SSE 未连接</span>
+  </span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

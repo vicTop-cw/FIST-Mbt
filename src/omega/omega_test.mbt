@@ -261,6 +261,55 @@ test "check_report_format 五段式校验" {
 }
 
 ///|
+test "gate custom 不变量集：全部通过" {
+  let actual = parse("{\"score\":90,\"name\":\"test_user\",\"active\":true}")
+  let expected = parse(
+    "{\"$assert\":\"custom\",\"rules\":[{\"op\":\"gte\",\"field\":\"score\",\"value\":0},{\"op\":\"lte\",\"field\":\"score\",\"value\":100},{\"op\":\"type\",\"field\":\"name\",\"value\":\"string\"},{\"op\":\"contains\",\"field\":\"name\",\"value\":\"test\"}]}",
+  )
+  let (ok, _) = check_expected(actual, expected)
+  assert_eq(ok, true)
+}
+
+///|
+test "gate custom 不变量集：第一条失败短路" {
+  let actual = parse("{\"score\":150,\"name\":\"test_user\"}")
+  let expected = parse(
+    "{\"$assert\":\"custom\",\"rules\":[{\"op\":\"lte\",\"field\":\"score\",\"value\":100},{\"op\":\"type\",\"field\":\"name\",\"value\":\"string\"}]}",
+  )
+  let (ok, detail) = check_expected(actual, expected)
+  assert_eq(ok, false)
+  check_string(detail, "lte")
+}
+
+///|
+test "gate custom 不变量集：无 field 对整体应用" {
+  let actual = Json::number(42.0)
+  let expected = parse(
+    "{\"$assert\":\"custom\",\"rules\":[{\"op\":\"gt\",\"value\":0},{\"op\":\"lt\",\"value\":100}]}",
+  )
+  let (ok, _) = check_expected(actual, expected)
+  assert_eq(ok, true)
+}
+
+///|
+test "gate custom 不变量集：空 rules 拒绝" {
+  let (ok, _) = check_expected(
+    Json::null(),
+    parse("{\"$assert\":\"custom\",\"rules\":[]}"),
+  )
+  assert_eq(ok, false)
+}
+
+///|
+test "gate custom 不变量集：未知 op 拒绝" {
+  let (ok, _) = check_expected(
+    Json::number(1.0),
+    parse("{\"$assert\":\"custom\",\"rules\":[{\"op\":\"weird\",\"value\":1}]}"),
+  )
+  assert_eq(ok, false)
+}
+
+///|
 fn check_string(text : String, sub : String) -> Unit {
   if !text.contains(sub) {
     abort("detail 缺 '\{sub}': \{text}")
