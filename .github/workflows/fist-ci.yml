@@ -30,6 +30,13 @@ jobs:
       - name: Refresh registry
         run: moon update
 
+      # 2026-10-13 CI #98/#99 实证：`Check (js)` 红在 Failed to resolve the module dependency graph
+      # ——新版 moon（latest）拒 .mooncakes/<dep>/moon.mod.json 旧格式清单。同一颗雷在 release.yml
+      # 已由 scripts/migrate_mooncakes_modjson.sh 修好，本文件漏挂 ⇒ Check 一步红、后面全 skip。
+      # 依赖图是每步之前的公共前置，修一处不修另一处等于没修。老版 moon 首轮即过 = 无损 no-op。
+      - name: Migrate mooncakes dep manifests (新版 moon 拒旧 moon.mod.json，check/test 的公共前置)
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
+
       - name: Check (js)
         run: moon check --target js
 
@@ -75,6 +82,11 @@ jobs:
       # `patches/sqlite-bug133/stub.c` 落回 `.mooncakes/`——`.mooncakes` 每次 `moon update` 会被重生成。
       - name: Reapply BUG-133 sqlite FFI fix
         run: bash patches/sqlite-bug133/reapply.sh --force
+
+      # 与 js 臂同一颗雷（新版 moon 拒 .mooncakes/<dep>/moon.mod.json）。必须放在 Reapply
+      # BUG-133 **之后**——reapply 重写 .mooncakes 里的依赖文件，先迁移会被它盖回去。
+      - name: Migrate mooncakes dep manifests (native 臂同雷；须在 Reapply BUG-133 之后)
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target native"
 
       - name: Check (native)
         run: moon check --target native
