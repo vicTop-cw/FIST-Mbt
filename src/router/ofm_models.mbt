@@ -60,3 +60,44 @@ pub fn parse_ofm_models(body : String) -> Result[Array[OfmModel], String] {
   }
   Ok(out)
 }
+
+///|
+/// 502 健康探测：从模型清单中过滤掉已知不健康（如频繁 502）的模型。
+/// `unhealthy_ids` 是调用方维护的黑名单（如从配置/观测面读取），精确匹配模型 `id`。
+/// 纯计算零 IO。空黑名单 = 原样返回。
+pub fn filter_unhealthy_models(
+  models : Array[OfmModel],
+  unhealthy_ids : Array[String],
+) -> Array[OfmModel] {
+  if unhealthy_ids.is_empty() {
+    return models
+  }
+  let out : Array[OfmModel] = []
+  for m in models {
+    let mut is_bad = false
+    for id in unhealthy_ids {
+      if id == m.id {
+        is_bad = true
+        break
+      }
+    }
+    if not(is_bad) {
+      out.push(m)
+    }
+  }
+  out
+}
+
+///|
+/// 判断单个模型是否在黑名单中。纯计算。
+pub fn is_model_unhealthy(
+  model_id : String,
+  unhealthy_ids : Array[String],
+) -> Bool {
+  for id in unhealthy_ids {
+    if id == model_id {
+      return true
+    }
+  }
+  false
+}
