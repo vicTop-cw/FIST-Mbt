@@ -56,6 +56,7 @@
 http=200，2026-10-07 实测；读数原件 `temp/b135_release_evidence.txt`）。J13 用它反查 CHANGELOG 各节标题里的
 状态短语有没有落后于事实——**发布时刻由读数来，新增一发 Release 就补一行标记**，别让人去猜哪一节该改。
 
+<!-- release-fact: v0.3.8 github-published=2026-10-13T06:19:06Z asset=fist-mbt-js-v0.3.8.zip bytes=429290 -->
 <!-- release-fact: v0.3.5 github-published=2026-09-30T00:03:17Z asset=fist-mbt-js-v0.3.5.zip bytes=376617 -->
 <!-- release-fact: v0.3.4 github-published=2026-09-28T17:25:12Z asset=fist-mbt-js-v0.3.4.zip bytes=372836 -->
 <!-- release-fact: v0.3.3 github-published=2026-09-28T11:57:48Z asset=fist-mbt-js-v0.3.3.zip bytes=372163 -->
