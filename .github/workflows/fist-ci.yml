@@ -77,16 +77,20 @@ jobs:
       - name: Refresh registry
         run: moon update
 
+      # 2026-10-13 WSL 实测纠正（我先前在本文件写的"migrate 须在 Reapply 之后"是**反的**）：
+      # `moon update` 之后 `.mooncakes` 根本不存在（依赖惰性解包）⇒ reapply 找不到 stub.c 必 rc=1。
+      # 实测：migrate（内含 `moon check`，既解包又迁旧 moon.mod.json）跑完 stub.c 才出现，
+      # 此后 reapply rc=0、--verify rc=0。故正确顺序 = migrate → reapply → check。
+      # （reapply 覆盖的是 `.mooncakes/mizchi/sqlite/stub.c` 一个文件，不会盖回被迁移的清单格式。）
+      - name: Migrate mooncakes dep manifests (先解包：moon check 触发依赖落地 + 迁旧 moon.mod.json)
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target native"
+
       # BUG-133（2026-10-10 修）：依赖侧 `mizchi/sqlite` 的 stub.c 是 native FFI 内存安全缺陷的根
       #（C 回裸 sqlite3*/sqlite3_stmt*，另有 6 处 const char* 被当成 Bytes）。修法是把 repo 内的
       # `patches/sqlite-bug133/stub.c` 落回 `.mooncakes/`——`.mooncakes` 每次 `moon update` 会被重生成。
+      # 前置：依赖必须先被上一步解包，否则目标 stub.c 不存在（脚本会 fail-loud 明确报出来）。
       - name: Reapply BUG-133 sqlite FFI fix
         run: bash patches/sqlite-bug133/reapply.sh --force
-
-      # 与 js 臂同一颗雷（新版 moon 拒 .mooncakes/<dep>/moon.mod.json）。必须放在 Reapply
-      # BUG-133 **之后**——reapply 重写 .mooncakes 里的依赖文件，先迁移会被它盖回去。
-      - name: Migrate mooncakes dep manifests (native 臂同雷；须在 Reapply BUG-133 之后)
-        run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target native"
 
       - name: Check (native)
         run: moon check --target native
