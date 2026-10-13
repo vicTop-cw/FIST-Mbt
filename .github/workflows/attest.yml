@@ -14,6 +14,8 @@
 #
 # 依赖：
 #   repo secrets:
+#     STAR_GATE_PAT            : 可读 stargazers 的 PAT（classic，scope 含 user；默认
+#                                github.token 会被 403，2026-10-13 实跑现形）
 #     ED25519_PRIVATE_KEY_HEX : 32 字节私钥的 hex（seed）。生成：
 #        python -c "import nacl.signing;print(nacl.signing.SigningKey.generate().encode().hex())"
 #     对应公钥会由 workflow 计算并写进清单。
@@ -43,9 +45,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # attest.yml 全程 import nacl（签发 + selfcheck 验签），而 ubuntu-latest 不自带 PyNaCl——
+      # 不装则 python 步骤直接 ModuleNotFoundError。此前 secret/Pages 一直没配，本 workflow
+      # 从未真跑到这一步，所以这个依赖缺口从没现形（2026-10-13 实跑暴露并修）。
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyNaCl
+        run: python -m pip install --quiet pynacl
+
       - name: Build & sign attestation
         env:
-          GH_TOKEN: ${{ github.token }}
+          # 默认 github.token 拿 stargazers 会 403（2026-10-13 实跑 run#4 现形：
+          # 装好 PyNaCl、密钥校验全过，死在 GET /stargazers HTTP 403 Forbidden）。
+          # 改用 repo secret `STAR_GATE_PAT`（classic PAT，scope 含 user，可读 stargazers）。
+          GH_TOKEN: ${{ secrets.STAR_GATE_PAT }}
           ED25519_PRIVATE_KEY_HEX: ${{ secrets.ED25519_PRIVATE_KEY_HEX }}
         run: |
           python - <<'PY'
@@ -84,7 +99,9 @@ jobs:
           ttl_seconds = 6 * 3600  # 与 cron 间隔一致；用户取消 star 后最多 ttl 内仍可解锁
 
           signing_key = nacl.signing.SigningKey(seed)
-          public_key_hex = signing_key.verify_key.encode(hex=True)
+          # 2026-10-13 实跑 run#5 现形：当前 PyNaCl 的 encode() 没有 hex= 关键字参数
+          # （TypeError: Encodable.encode() got an unexpected keyword argument 'hex'），用 encoder= 显式传。
+          public_key_hex = signing_key.verify_key.encode(encoder=nacl.encoding.HexEncoder).decode()
           canonical = json.dumps({"list": logins, "issued_at": issued_at, "ttl_seconds": ttl_seconds},
                                  sort_keys=True, separators=(",", ":")).encode("utf-8")
           sig = signing_key.sign(canonical).signature
@@ -109,6 +126,14 @@ jobs:
         with:
           path: _attest
 
+      # selfcheck 不能拿 github-pages 那个 bundle 当数据源：它是 pages 专用的 artifact.tar
+      # （download-artifact 解 zip 后留下一个没再解开的 tar），open("_attest/attestation.json")
+      # 必 FileNotFoundError（2026-10-13 run#6 现形）。另上一份普通 artifact 供 selfcheck 精确取。
+      - uses: actions/upload-artifact@v4
+        with:
+          name: star-gate-attestation
+          path: _attest
+
       - uses: actions/deploy-pages@v4
 
   # 自证：验签自己签的清单必须通过（防止 workflow 改坏了没人知道）
@@ -117,9 +142,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install PyNaCl
+        run: python -m pip install --quiet pynacl
       - uses: actions/download-artifact@v4
         with:
-          name: github-pages
+          name: star-gate-attestation
           path: _attest
       - name: Verify signature
         run: |
