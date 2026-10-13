@@ -61,6 +61,56 @@ META = {
 }
 ROUNDS = 20  # 样本量写死，不接环境变量：能一键降到 1 的压测门不是门
 RESULTS = []
+# 六格的声明（模块级：main() 的基数门与 selftest() 的集合一致性对照共用，避免两处各写一遍）
+EXPECTED = [
+    "1 并发双绑恰好一成一拒（0 轮双成功）",
+    "2 被拒方拿到持锁者信息，且无一轮异形",
+    "3 每个 scope 库里恰 1 行",
+    "4 同 agent 续期成功且报 renewed",
+    "5 活体持有者不被串行夺走",
+    "6 过期绑定可让渡（taken_over + prev_agent）",
+]
+
+
+# ---------------------------------------------------------------- 六格的纯判定
+# 抽成纯函数的理由（BUG-50 / J10：「判据必须先证明自己会红」）：判定若埋在 main() 的实时
+# 回执里，`--selftest` 就只能靠"起两个真进程跑 20 轮"来验 —— 真进程一起不来判据自己先崩，
+# 自检就退化成"链通不通"，**验不出"某支判据会不会红"**。纯函数让每格都能喂合成回执。
+def p_rounds_no_double_success(both_ok, rounds):
+    """格 1：并发双绑 0 轮双成功（每轮恰一成一拒才合格）。"""
+    return both_ok == 0
+
+
+def p_loser_has_holder_and_no_anomaly(loser_no_holder, both_refused, proc_dead):
+    """格 2：被拒方拿到持锁者信息，且无一轮"双方都被拒/拒方无持锁者/进程死"异形。"""
+    return loser_no_holder == 0 and both_refused == 0 and proc_dead == 0
+
+
+def p_exactly_one_row(n_rows, rounds):
+    """格 3：每个 scope 库里恰 1 行（多行=双写成功，0 行=全失败）。"""
+    return n_rows == rounds
+
+
+def p_renew_same_agent(r4):
+    """格 4：同 agent 续期成功且报 renewed（不许把正常路径误拒）。"""
+    return r4.get("reserved") is True and r4.get("action") == "renewed"
+
+
+def p_live_holder_not_stolen(r5, holder):
+    """格 5：活体持有者不被串行夺走（防修复把正常路径改松）。"""
+    return r5.get("reserved") is not True and r5.get("held_by") == holder
+
+
+def p_expired_takeover(r6, prev_agent):
+    """格 6：过期绑定可让渡且报 taken_over + prev_agent。"""
+    return (r6.get("reserved") is True
+            and r6.get("action") == "taken_over"
+            and r6.get("prev_agent") == prev_agent)
+
+
+def arms_consistent(names, declared):
+    """格子集合与声明逐字一致（不等即判「判据坏了，不是产品坏了」）。"""
+    return sorted(names) == sorted(declared)
 
 
 def say(k, v):
@@ -259,19 +309,20 @@ def main():
         % (both_ok, refused_with_holder, loser_no_holder, both_refused, proc_dead))
 
     arm("1 并发双绑恰好一成一拒（0 轮双成功）",
-        both_ok == 0, "双成功=%d/%d；一成一拒=%d" % (both_ok, ROUNDS, refused_with_holder))
+        p_rounds_no_double_success(both_ok, ROUNDS),
+        "双成功=%d/%d；一成一拒=%d" % (both_ok, ROUNDS, refused_with_holder))
     arm("2 被拒方拿到持锁者信息，且无一轮异形",
-        loser_no_holder == 0 and both_refused == 0 and proc_dead == 0,
+        p_loser_has_holder_and_no_anomaly(loser_no_holder, both_refused, proc_dead),
         "拒方无持锁者=%d，双方被拒=%d，进程死=%d" % (loser_no_holder, both_refused, proc_dead))
     n_rows = len(db_rows("select scope from reservations where scope like 'temp/f094/%'"))
-    arm("3 每个 scope 库里恰 1 行", n_rows == ROUNDS, "行数=%d 期望=%d" % (n_rows, ROUNDS))
+    arm("3 每个 scope 库里恰 1 行", p_exactly_one_row(n_rows, ROUNDS), "行数=%d 期望=%d" % (n_rows, ROUNDS))
 
     # ---- 4) 同 agent 续期不许误拒 ----
     s4 = "temp/f094/renew.mbt"
     a.call("reserve_scope", {"scope": s4, "agent": "xA", "ttl_until": future()})
     r4 = a.call("reserve_scope", {"scope": s4, "agent": "xA", "ttl_until": future()})
     arm("4 同 agent 续期成功且报 renewed",
-        r4.get("reserved") is True and r4.get("action") == "renewed",
+        p_renew_same_agent(r4),
         json.dumps(r4, ensure_ascii=False)[:180])
 
     # ---- 5) 活体持有者不许被他人夺走（这一格在现状码上是绿的，防修复把它改松）----
@@ -279,7 +330,7 @@ def main():
     a.call("reserve_scope", {"scope": s5, "agent": "xA", "ttl_until": future()})
     r5 = b.call("reserve_scope", {"scope": s5, "agent": "xB", "ttl_until": future()})
     arm("5 活体持有者不被串行夺走",
-        r5.get("reserved") is not True and r5.get("held_by") == "xA",
+        p_live_holder_not_stolen(r5, "xA"),
         json.dumps(r5, ensure_ascii=False)[:180])
 
     # ---- 6) TTL 过期后允许让渡（现语义不许被修复改掉）----
@@ -287,21 +338,12 @@ def main():
     a.call("reserve_scope", {"scope": s6, "agent": "xA", "ttl_until": past()})
     r6 = b.call("reserve_scope", {"scope": s6, "agent": "xB", "ttl_until": future()})
     arm("6 过期绑定可让渡（taken_over + prev_agent）",
-        r6.get("reserved") is True and r6.get("action") == "taken_over"
-        and r6.get("prev_agent") == "xA",
+        p_expired_takeover(r6, "xA"),
         json.dumps(r6, ensure_ascii=False)[:180])
 
     a.kill(), b.kill()
-    EXPECTED = [
-        "1 并发双绑恰好一成一拒（0 轮双成功）",
-        "2 被拒方拿到持锁者信息，且无一轮异形",
-        "3 每个 scope 库里恰 1 行",
-        "4 同 agent 续期成功且报 renewed",
-        "5 活体持有者不被串行夺走",
-        "6 过期绑定可让渡（taken_over + prev_agent）",
-    ]
     got = [n for n, _ in RESULTS]
-    if sorted(got) != sorted(EXPECTED):
+    if not arms_consistent(got, EXPECTED):
         print("RSV-XPROC FAIL: 判据格子集合与声明不符 got=%s ——判据坏了，不是产品坏了" % got,
               flush=True)
         return 1
@@ -313,5 +355,68 @@ def main():
     return 0
 
 
+def selftest() -> int:
+    """BUG-50 / J10：判据必须先证明自己会红。
+
+    每格都是"合成回执喂进纯判定函数 → 要求它给对答案"，**不起真进程、不碰库/库文件**。
+    格子的清单与 PASS 行的判据范围一律从实现反解（不手写计数）。
+    """
+    rounds = 20
+    cases = []
+
+    def case(name, got, want):
+        cases.append((name, bool(got) is bool(want), "got=%s want=%s" % (got, want)))
+
+    # 格 1：0 轮双成功
+    case("G1-ok-0双成功", p_rounds_no_double_success(0, rounds), True)
+    case("G1-red-1轮双成功", p_rounds_no_double_success(1, rounds), False)
+    case("G1-red-全双成功", p_rounds_no_double_success(rounds, rounds), False)
+    # 格 2：拒方有持锁者 + 无异形
+    case("G2-ok-全带持锁者", p_loser_has_holder_and_no_anomaly(0, 0, 0), True)
+    case("G2-red-拒方无持锁者", p_loser_has_holder_and_no_anomaly(1, 0, 0), False)
+    case("G2-red-双方被拒", p_loser_has_holder_and_no_anomaly(0, 1, 0), False)
+    case("G2-red-进程死", p_loser_has_holder_and_no_anomaly(0, 0, 1), False)
+    # 格 3：恰 N 行
+    case("G3-ok-恰20行", p_exactly_one_row(20, rounds), True)
+    case("G3-red-0行", p_exactly_one_row(0, rounds), False)
+    case("G3-red-多行(双写成功)", p_exactly_one_row(40, rounds), False)
+    # 格 4：同 agent 续期
+    case("G4-ok-renewed", p_renew_same_agent({"reserved": True, "action": "renewed"}), True)
+    case("G4-red-误拒", p_renew_same_agent({"reserved": False, "action": "conflict"}), False)
+    case("G4-red-reserved真但action非renewed", p_renew_same_agent({"reserved": True, "action": "reserved"}), False)
+    # 格 5：活体不被夺
+    case("G5-ok-held_by他方且未reserved", p_live_holder_not_stolen({"reserved": False, "held_by": "xA"}, "xA"), True)
+    case("G5-red-被夺走", p_live_holder_not_stolen({"reserved": True, "held_by": "xB"}, "xA"), False)
+    case("G5-red-held_by错人", p_live_holder_not_stolen({"reserved": False, "held_by": "xZ"}, "xA"), False)
+    # 格 6：过期让渡
+    case("G6-ok-taken_over带prev", p_expired_takeover(
+        {"reserved": True, "action": "taken_over", "prev_agent": "xA"}, "xA"), True)
+    case("G6-red-非taken_over", p_expired_takeover(
+        {"reserved": True, "action": "reserved", "prev_agent": "xA"}, "xA"), False)
+    case("G6-red-prev_agent错", p_expired_takeover(
+        {"reserved": True, "action": "taken_over", "prev_agent": "xZ"}, "xA"), False)
+    case("G6-red-未让渡", p_expired_takeover(
+        {"reserved": False, "action": "taken_over", "prev_agent": "xA"}, "xA"), False)
+    # 格子集合一致（判据坏了那一档）
+    case("ARM-ok-逐字一致", arms_consistent(list(EXPECTED), EXPECTED), True)
+    case("ARM-red-少一格", arms_consistent(EXPECTED[:-1], EXPECTED), False)
+    case("ARM-red-多一格", arms_consistent(EXPECTED + ["X"], EXPECTED), False)
+    case("ARM-red-改名", arms_consistent([x + "!" for x in EXPECTED], EXPECTED), False)
+
+    bad = [(n, why) for n, ok, why in cases if not ok]
+    if bad:
+        print("SELFTEST FAIL：")
+        for n, why in bad:
+            print("  - %s：%s" % (n, why))
+        return 1
+    print("SELFTEST OK（%d 格：六格各含正/反/边界对照 + 格子集合一致性 4 格；"
+          "格子清单从实现反解，非手写）" % len(cases))
+    print("  说明：本自检**不起真进程、不碰库**，只考判定函数会不会红；"
+          "两条真进程那条链由无参数运行负责。")
+    return 0
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--selftest"]:
+        sys.exit(selftest())
     sys.exit(main())

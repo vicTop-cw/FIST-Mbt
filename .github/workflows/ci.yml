@@ -172,6 +172,7 @@ jobs:
         run: |
           moon build --target js cmd/cli
           python3 scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js
+          python3 scripts/blackbox/e2e_reserve_xproc.py --selftest
           python3 scripts/blackbox/e2e_reserve_xproc.py
 
       - name: CLI call-site probe (BUG-106/114：旗、退出码、版本自述必须打到入口面)
