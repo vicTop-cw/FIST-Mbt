@@ -126,6 +126,15 @@ jobs:
           python3 scripts/check_entry_paths.py --selftest
           python3 scripts/check_entry_paths.py
 
+      # 2026-10-13 master 坏状态实录（src/server/moon.pkg import src/diff 但 src/diff/ 未跟踪 ⇒
+      # moon check 崩 "Cannot find import"，而 CI 红在 Migrate 步且 skip 其后 21 步）。
+      # 本步把该形状判据化：本地包 import 指向的目录必须在跟踪面存在。
+      - name: Package-import guard (本地包 import ↔ 跟踪面目录 存在性；master 坏状态形状)
+        shell: bash
+        run: |
+          python3 scripts/check_pkg_imports.py --selftest
+          python3 scripts/check_pkg_imports.py
+
       - name: Spawn-plane isolation guard (BUG-122：demo/自检脚本裸跑不许写仓库根自举台账)
         shell: bash
         run: |

@@ -56,6 +56,20 @@ You can browse and install extra skills here:
 - Try to keep deprecated blocks in file called `deprecated.mbt` in each
   directory.
 
+### Commit gate（提交门禁 · 本仓强制标准）
+
+- **提交前必须运行 `moon fmt`**：所有代码改动（新增/修改的 `.mbt` 文件）在
+  `git commit` 之前必须执行 `moon fmt`（全仓或至少对改动文件），并确认
+  `moon fmt --check` 返回 0，未格式化不得提交。
+- 严禁跳过格式化直接提交：CI 的 `moon fmt --check` 门会把未格式化代码判红
+  （rc=255）。
+- 版本差异说明：本地钉版 moon（0.1.20260920）与 CI nightly（0.1.20261012）
+  是两代 moon fmt，输出可能不一致。以本地 `moon fmt` 落盘 + `moon fmt --check`
+  通过为准；并发 WIP 收口后跑一次 nightly 全仓重排，统一风格后即可撤销
+  `continue-on-error`、恢复 fmt 门强度。
+- 标准提交流程：`moon fmt` → `moon info && moon fmt`（同步 `.mbti`）→
+  `moon test --target js` 全绿 → `git commit`。
+
 ## Tooling
 
 - `moon fmt` is used to format your code properly.
@@ -127,7 +141,7 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**140 tools** + 3 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**152 tools** + 3 resources + 2 prompts）：
 
 ### 生命周期（14）
 | 工具 | 说明 |
@@ -194,7 +208,7 @@ You can browse and install extra skills here:
 | `bug_fix` | 批量标 FIXED：**同一笔**改抬头 + 落一条点名整批的 `### FIXED(<盖章时间> / BUG-a, BUG-b)` 小记（evidence 必填非空；幂等重跑；终态之间不互跳）。为什么不给"只改抬头"的路：记账规则把两者做成互锁硬门，分两次调用中间态就是 gen_plugins 拒绝产出的红账本 |
 | `bug_mark_status` | 改判单条抬头状态（OPEN/DUPLICATE/FALSE_POSITIVE；**FIXED 一律拒**，走 `bug_fix`）。DUPLICATE 必须带 `dup_of` 且主编号合法（禁自指/禁链）；FALSE_POSITIVE 可选 `evidence` 追加一行立据。返回含 `from_status`/`changed`（同状态幂等 no-op） |
 | `report_bug` | 上报缺陷 |
-| `issue_scan` | 规则驱动源码扫描（打磨收尾引入）：递归收集目录下 .mbt 文件，内建 10 条 MoonBit 高危规则逐行匹配（除零/空数组下标/无保护 unwrap/unsafe_get/无保护整除/substring 越界/ignore 丢错/字符串下标/潜在溢出/空集合单例），产出 findings（rule/severity/file/line/code）+ by_severity/by_rule 聚合；命中可直接喂 `report_bug` 形成"扫描→上报→修复"闭环——免外部二进制、无绝对路径硬编码，MCP/CLI/skill 三态复用并随插件态分发四宿主；`include_tests`（默认 false）只扫产品代码跳过 `_test/_wbtest` 以降噪 |
+| `issue_scan` | 规则驱动源码扫描（打磨收尾引入）：递归收集目录下 .mbt 文件，内建 11 条 + ocr-local 外部 20 条 = **31 条** MoonBit 高危规则逐行匹配（内建：除零/空数组下标/无保护 unwrap/unsafe_get/无保护整除/substring 越界/ignore 丢错/字符串下标/潜在溢出/空集合单例/secs 溢出；外部：result-discard/map-set-no-rebind/noop-assignment/插值转义/match 非穷尽/数组下标/unsafe_unwrap/async_main/敏感字段泄漏/路径穿越/JSON 注入/浮点相等/竞态/资源泄漏/大数溢出/abort 死代码/空 match/长函数/共享可变），产出 findings（rule/severity/file/line/code）+ by_severity/by_rule 聚合；命中可直接喂 `report_bug` 形成"扫描→上报→修复"闭环——免外部二进制、无绝对路径硬编码，MCP/CLI/skill 三态复用并随插件态分发四宿主；`rules_file` 可传外部规则 JSON（同名覆盖内建），`include_tests`（默认 false）只扫产品代码跳过 `_test/_wbtest` 以降噪；配套 `ocr_scan` 做 OCR LLM review 双轨互补 |
 | `eval_feedback` | 反馈收敛（R111，Evaluator-Optimizer schema 蒸馏：Anthropic E/O + Self-Refine 2303.17651 + Reflexion 2303.11366 + zubi.ai 四段式）——自由文本反馈归一为 Defects/Evidence/Fix/Acceptance 四段式契约 + 确定性 verdict（无缺陷且 acceptance 非空 → pass 可收敛；否则 fail + 缺证据/缺修复/缺段标注）；纯计算只读不写库，与 plan_revise 反馈修订互补 |
 | `run_check` | 端到端自检（构建/测试/MCP 冒烟） |
 | `output_validate` | 交付物硬门验证（R113）：对 artifacts 数组逐件验——path/check_key 二选一；path→文件存在/非空/invariant(contains/not_contains/min_chars)；check_key→external_results 字典引用，取 ok/code/stderr；返回 verdict(pass/fail)/passed/failed/checks，require_evidence=true 时强制非空 evidence |
@@ -205,6 +219,7 @@ You can browse and install extra skills here:
 | `cost_budget_split` | 预算按依赖图阶段切分（R81，ZEBRA 背包水填充蒸馏简化版）：给定总预算按任务 DAG 阶段(slack earliest 层级)切分——每阶段份额=阶段难度权重(难3/中2/易1)占总量比例×总预算(余数补最大权重阶段)，返回 { stages:[{level,tasks,difficulty_sum,share}], total_budget, makespan, note }——瓶颈阶段占额可见，超支先预警 |
 | `progress_gate` | 进度预算路由门控（R88，PROGROUTER arXiv 2608.25992 蒸馏）：对任务子树按已消耗预算(难度权重 易/中/难→1/2/3，自动估算或手动注入 spent)与完成进度(已完成+已归档/子树任务数)做双路径剩余成本预测——线性=燃尽率×剩余工作量、保守=1.2×线性，元门控给决策 OK(预算充足继续)/CAUTION(线性可行但缓冲不足，建议降档缩范围)/ESCALATE(线性已超支，建议追加预算或暂停)——预算×进度在线体检，先预警后决策 |
 | `project_standards` | AI 项目开发规范（R116，机器投影；规范性正文真源 = `AI-DEVELOPMENT-STANDARD.md`）：通用 5 条（文档即实现/**一源四态**/确定性优先/增量零回归/自我迭代）+ FIST 专项 5 条（用自身能力迭代/**四态必须对齐**/证据梯至少 L4/重任务先拆 DAG/工具命名即文档）；附 7 项四态 checklist（cl1-mcp-exists → cl6-doc-sync → **cl7-plugin-forms-sync**），可直接喂 output_validate 当验收门禁。纯计算零依赖。白盒锁：`src/server/project_standards_wbtest.mbt`（此前该工具零覆盖）。 |
+| `text_diff` | 文本 diff（LCS 最长公共子序列）：按行对比 old/new 两段文本，返回操作序列（equal/insert/delete）。用于报告对比、测试输出 diff、AI 交付物变更审查等场景。纯计算零副作用。参数：old(必填，旧文本)、new(必填，新文本)、format(可选，unified|json|stats，默认 unified)。unified=类 git diff 格式（ +/- 前缀）；json=结构化数组 [{kind,text}]；stats={equal,insert,delete} 计数。真源 `src/diff/diff.mbt`，8 条白盒测试在 `src/diff/diff_test.mbt`。 |
 | `laya_decide` | Laya 决策（冷启动选档/功能路由 + 确定性回退）：有 Laya→sidecar 决定难度/拆分数/机制选择；无 Laya→降级到内建规则式决策分支（laya_route 纯计算：按任务描述关键词对机制族打分选 feature_route + 复杂度启发式给 split_n）。研发方向「功能太多难决策 / 复杂多任务不知用哪些功能」的落点 |
 | `loop_create` | 创建组合环（Phase 6）：preset=full-iterate/fix-iterate/build-verify 或自定义 steps，注册到进程内 LoopRegistry |
 | `loop_tick` | 推进一环（Phase 6）：取当前 steps[idx] → 返回 next_mode / next_round / should_stop / stop_reason |
@@ -347,6 +362,15 @@ You can browse and install extra skills here:
 | `debate_convene` | 发起一次六顶帽辩论（in-memory 会话）：`topic`(必填)、`hats`(可选，缺省 white,black,yellow)、`threshold`(可选，缺省 0.6)；返回 `session_id`（`debate-<yyyyMMdd>-<nnn>`）+ 已注册帽子。会话态进程内保存、重启即失（诚实标注） |
 | `debate_register` | 给指定 session 注册一条帽子判决：`session_id`/`hat_id`/`verdict`(pass/reject/abstain)/`evidence`(必填非空，`valid_verdict` 拒绝空值)；返回该 session 已注册判决列表 + 当前 rate/pass |
 | `debate_verdict` | 对指定 session 做收敛判决：`rate` = 帽子中 agree 的比例（agree = verdict 为 pass 的帽子数），`pass = rate >= threshold`（缺省 0.6）。**终态门是用户**——本工具只给收敛读数，不自动判定议题通过/否决。返回 summary（含 `terminal_gate=user` 与 `anti_drift` 清单） |
+
+### 项目助理（5，multi-agent-lock v3 阶段2 精简版，`src/store/store_assistant.mbt` 真源）
+| 工具 | 说明 |
+|---|---|
+| `assistant_claim` | 项目助理选举：无 active 主助理则当选(elected)；本人重复调用则续任(renewed)；主助理心跳陈旧则接管(taken_over，旧主记 `lock_violations` force_takeover)；主助理心跳新鲜则拒绝(conflict)。参数：`agent`(必填)、`heartbeat_ttl_sec`(可选，默认 300)。裁决单一真源 `store.assistant_claim_action` |
+| `assistant_status` | 查询助理全景：现任主助理 + 全部登记 + 锁违例统计（纯读不写） |
+| `assistant_sweep` | 清扫拍：释放 TTL 过期文件锁（复用 `locks_sweep`）+ 心跳陈旧超 `stale_secs`(默认600) 的助理标 dead |
+| `assistant_resign` | 助理主动退位（status=resigned；锁不阻塞，靠 TTL + 清扫拍兜底） |
+| `assistant_heartbeat` | 助理心跳：刷新自己的 `heartbeat_at`（未注册者显式报错） |
 
 Resources: `fist://map`, `fist://principles`, `fist://overview`
 ### 一源四态 · 插件态（生成投影，非手写）

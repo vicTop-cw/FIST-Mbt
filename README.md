@@ -8,7 +8,7 @@
 [![Tests](https://img.shields.io/badge/tests-737%2F737-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
-**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **140 个 MCP 工具** 暴露给任意 MCP 客户端。
+**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **146 个 MCP 工具** 暴露给任意 MCP 客户端。
 
 **为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 737 项测试全绿、跨环境可复现。
 
@@ -39,7 +39,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 
 ---
 
-## 功能全景（140 个 MCP 工具）
+## 功能全景（146 个 MCP 工具）
 
 ### 生命周期（14）
 `publish` · `publish_parallel` · `plan` · `claim` · `execute` · `submit` · `verify` · `reject` · `retry` · `pause` · `resume` · `reopen_task` · `archive` · `delete`
@@ -53,8 +53,8 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 ### 自驱闭环（9）
 `selfdrive_init` · `selfdrive_append` · `selfdrive_get` · `selfdrive_export_tasks` · `selfdrive_review_tick` · `selfdrive_review_ready` · `selfdrive_publish_next` · `selfdrive_parse_next_tasks` · `selfdrive_pick_next`
 
-### 运维·验证·规范（21）
-`call_log` · `bug_list` · `bug_fix` · `bug_mark_status` · `report_bug` · `issue_scan` · `eval_feedback` · `run_check` · `output_validate` · `project_standards` · `schedule` · `pipeline_tick` · `cost_stats` · `cost_budget_check` · `cost_budget_split` · `progress_gate` · `laya_decide` · `loop_create` · `loop_tick` · `loop_status` · `mcp_config_scaffold`
+### 运维·验证·规范（23）
+`call_log` · `bug_list` · `bug_fix` · `bug_mark_status` · `report_bug` · `issue_scan` · `ocr_scan` · `eval_feedback` · `run_check` · `output_validate` · `project_standards` · `text_diff` · `schedule` · `pipeline_tick` · `cost_stats` · `cost_budget_check` · `cost_budget_split` · `progress_gate` · `laya_decide` · `loop_create` · `loop_tick` · `loop_status` · `mcp_config_scaffold`
 
 ### 模型路由·外部执行器（5）
 `model_auth_status` · `model_route` · `model_router_status` · `model_router_reset` · `executor_run`
@@ -86,6 +86,9 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 ### 六顶帽 · 辩论裁决（4）
 `hat_list` · `debate_convene` · `debate_register` · `debate_verdict`
 
+### 项目助理（5）
+`assistant_claim` · `assistant_status` · `assistant_sweep` · `assistant_resign` · `assistant_heartbeat`
+
 ---
 
 ## 快速开始
@@ -104,7 +107,7 @@ node _build/js/debug/build/cmd/cli/cli.js serve   # 必须带 serve：裸跑只�
 FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 # 4. CLI 通用网关（一源四态·CLI 形态）
-python scripts/fist.py list-tools                     # 列出 140 个工具（实测 tools/list）
+python scripts/fist.py list-tools                     # 列出 145 个工具（实测 tools/list）
 python scripts/fist.py call project_standards          # AI 开发规范
 python scripts/fist.py call store_open --namespace scratch --scratch true
 python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path":"moon.mod","contains":"vicTop-cw"}]'
@@ -171,7 +174,7 @@ fist doctor        # 5 项健康检查
 | `python scripts/award_demo.py` | 能力链全通：publish → plan → claim → execute → verify → archive，结尾自动 cleanup |
 | `python scripts/atgc_selfdrive_demo.py` | 自驱闭环：selfdrive_init → review_tick → publish_next → pick_next |
 | `python scripts/scratch_verify.py` | 递归拆解正确性：task_plan_deep 产出的 DAG 能被 dag_ready 正确消费 |
-| `python scripts/issue_scan.py src` | 四态对齐：CLI 扫描 → 10 条 MoonBit 高危规则 → findings 可喂 report_bug |
+| `python scripts/issue_scan.py src` | 四态对齐：CLI 扫描 → 31 条 MoonBit 高危规则（11 内建 + 20 ocr-local）→ findings 可喂 report_bug |
 | `python scripts/fist.py call project_standards` | AI 开发规范基线（R116）：10 条通用+FIST 强制规范 + 7 项四态 checklist；正文真源 `AI-DEVELOPMENT-STANDARD.md` |
 | `python scripts/gen_plugins.py` | 一源四态·插件态生成：真源 → atomcode/codearts/deepseek-harness/claude 四宿主投影 |
 | `python scripts/check_plugin_sync.py` | cl7 守卫：四宿主插件目录必须等于真源投影（手改/漏重生成/数字漂移即红） |
@@ -243,9 +246,10 @@ fist doctor        # 5 项健康检查
 
 - **MochaCakes**: `vicTop-cw/fist-mbt`（注册表上实际发布到哪个版本**只在 BACKLOG 的 P1 条目自述一处**；本行刻意不写版本号——
   写死就会和 BACKLOG 的发布记录双向漂移，这是 BUG-30 的原始形状。要当场核对就跑 `moon view vicTop-cw/fist-mbt --versions`）
-- **GitHub**: https://github.com/vicTop-cw/FIST-Mbt
-- **GitCode 镜像**: https://gitcode.com/VictorTop/Fist-Mbt （`master` + 标签与 GitHub 同步发布；
-  本机 `git remote gitcode` 配的是 HTTPS 取 / `pushurl` 走 `git@gitcode.com:…` 推，凭据只来自环境变量）
+- **GitCode（同步源）**: https://gitcode.com/VictorTop/Fist-Mbt —— **同步/发布只需推 GitCode 即可**：
+  GitHub 镜像由 CI 自动同步（GitCode 根目录 `.sync-to-github` 开关控制，只增不删，以 GitCode 为源覆盖同名分支），无需手动推送 GitHub；
+  本机 `git remote gitcode` 配的是 HTTPS 取 / `pushurl` 走 `git@gitcode.com:…` 推，凭据只来自环境变量
+- **GitHub（镜像）**: https://github.com/vicTop-cw/FIST-Mbt —— 由 GitCode 自动同步，勿直接改动
 - **fist-evidence**（实证伴生仓 · 本项目的叙事与证据面）: https://github.com/vicTop-cw/fist-evidence —— 本系统三组受控实验
   （A/B 编排对照 / 三方合并裁决 / 复杂度阶梯含幻觉实锤）+ 十份真实项目驱动实例（覆盖八项目，总表在该仓 `cases/cases.md`）
   的原始证据链，报告/日志/裁判测试一字可回溯（原件在该仓 `stories/experiment-0*.md` 与 `stories/evidence/`——**该路径属伴生仓，本仓无 `stories/` 目录**）；
