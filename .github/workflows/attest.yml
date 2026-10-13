@@ -99,7 +99,9 @@ jobs:
           ttl_seconds = 6 * 3600  # 与 cron 间隔一致；用户取消 star 后最多 ttl 内仍可解锁
 
           signing_key = nacl.signing.SigningKey(seed)
-          public_key_hex = signing_key.verify_key.encode(hex=True)
+          # 2026-10-13 实跑 run#5 现形：当前 PyNaCl 的 encode() 没有 hex= 关键字参数
+          # （TypeError: Encodable.encode() got an unexpected keyword argument 'hex'），用 encoder= 显式传。
+          public_key_hex = signing_key.verify_key.encode(encoder=nacl.encoding.HexEncoder).decode()
           canonical = json.dumps({"list": logins, "issued_at": issued_at, "ttl_seconds": ttl_seconds},
                                  sort_keys=True, separators=(",", ":")).encode("utf-8")
           sig = signing_key.sign(canonical).signature
