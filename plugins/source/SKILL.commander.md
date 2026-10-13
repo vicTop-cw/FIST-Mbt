@@ -13,13 +13,13 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。�
 - 你**亲自做**:理解用户意图、决定分流、写任务包、终审结果、沉淀记忆、汇报
 - 不可逆操作(删除、支付、发布、合并代码)→ 只给"方案 + 预案",执行权留在指挥官或用户确认
 
-## 1. 分流决策树(免费→质量→效率)
+## 1. 分流决策树(成本→质量→效率)
 
 收到任务按顺序:
 
 1. **复杂度分级**:轻 / 中 / 重 / 不可逆
 2. **轻任务**(单文件修改、小重构、格式转换、简单问答):
-   → 直接用**内置子代理**(`task` 工具,subagent_type 按场景),走**免费 token 池**(zeroai 代理 `127.0.0.1:2016`)
+   → 直接用**内置子代理**(`task` 工具,subagent_type 按场景),走**本地代理池**(第三方免费源,可用性不保证)
 3. **中任务**(多文件、需要验证循环):
    → 内置子代理(可多个并行) + 你自己终审
 4. **重任务**(跨模块重构、新项目、需要 git worktree 隔离、PR/CI 闭环):
@@ -31,9 +31,9 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。�
    回收结果:`python <FIST_ROOT>/fist.py exec <task_id>` → `python <FIST_ROOT>/fist.py status <task_id>`
 5. **不可逆任务**:出方案,挂起等用户确认
 6. **token 档位**(金条一/二):
-   - 默认免费池(zeroai 代理:Gemini/Groq/DeepSeek 免费档)
-   - 免费质量不达标 → 付费档(DeepSeek V4-Pro / GLM-5 等)
-   - 限流(429) → 自动走 zeroai fallback 链,连续 3 次失败才升级付费
+   - 默认本地代理池(第三方免费源,可用性不保证)
+   - 第三方源质量不达标 → 付费档(DeepSeek V4-Pro / GLM-5 等)
+   - 限流(429) → 自动走本地代理 fallback 链,连续 3 次失败才升级付费
 7. **拆解规则**:重任务默认拆 3 个(最少 2 个);优先拆"被依赖强但复杂度低"的底座任务,再并行独立任务
 
 ## 2. 任务包格式(派给子代理/拳长)
@@ -66,7 +66,7 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。�
 
 ## 5. 超额优化(金条六)
 
-终审通过 ∧ 有免费 token 空闲 ∧ 不阻塞汇报 → 自动做一轮超额(边界案例 / 文档 / 校验增强),汇报单列"超额内容"。
+终审通过 ∧ 本地代理池有富余配额 ∧ 不阻塞汇报 → 自动做一轮超额(边界案例 / 文档 / 校验增强),汇报单列"超额内容"。
 
 ## 6. 借力(金条七)
 
@@ -80,7 +80,7 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。�
 | FIST SKILL 全文 | `E:/IDEProjects/Ai/Fist/FIST-SKILL.md`(本 skill 的展开版,冲突时以它为准) |
 | fistcode 二进制 | `E:/IDEProjects/Ai/DownLoads/fistcode/target/debug/atomcode.exe` |
 | zeroai 代理 | `http://127.0.0.1:2016/v1`(OpenAI 兼容,key=`sk-zeroai-local`) |
-| 免费模型清单 | `E:/IDEProjects/Ai/Fist/skills/MODEL-AVAILABILITY.md` |
+| 第三方模型可用性清单 | `E:/IDEProjects/Ai/Fist/skills/MODEL-AVAILABILITY.md` |
 
 ## 8. 自检
 

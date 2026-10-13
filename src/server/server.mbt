@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 140 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 152 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -255,6 +255,23 @@ fn now_default() -> String {
   // @env.now() 返回 UInt64 毫秒；直接用 Int64 做整数运算，避免 .to_int()
   // 对 UInt64 的 32 位截断（1790 亿级别毫秒被截成负值，导致 1969 时间戳）。
   let ms = @env.now().to_int64()
+  let total_sec = ms / 1000L
+  let sec = (total_sec % 60L).to_int()
+  let min = (total_sec / 60L % 60L).to_int()
+  let hour = (total_sec / 3600L % 24L).to_int()
+  let days = (total_sec / 86400L).to_int()
+  let (y, m, d) = _civil_from_days(days)
+  "\{y}-\{_pad2(m)}-\{_pad2(d)}T\{_pad2(hour)}:\{_pad2(min)}:\{_pad2(sec)}Z"
+}
+
+///|
+/// 把 now_default 格式（YYYY-MM-DDTHH:MM:SSZ）的时间戳回退 secs 秒，
+/// 返回同格式字符串。供心跳新鲜线 / 陈旧线计算（字典序比较成立）。
+fn iso_minus_secs(iso : String, secs : Int) -> String {
+  let ms = @env.now().to_int64() - secs.to_int64() * 1000L
+  if ms < 0L {
+    return "0000-00-00T00:00:00Z"
+  }
   let total_sec = ms / 1000L
   let sec = (total_sec % 60L).to_int()
   let min = (total_sec / 60L % 60L).to_int()
@@ -2425,16 +2442,48 @@ pub async fn run_server() -> Unit {
             flush_result.set("any_success", Json::boolean(gh_ok || gc_ok))
           }
 
+          // bugfind 模式的 require_ocr 预检：probe OCR 二进制，把可达性注入回执（纯读探测，不 spawn）
+          let ocr_cap : Map[String, Json] = Map([])
+          if mode == "bugfind" {
+            let pd_ocr = get_str(args, "project_dir")
+            let actual_dir_ocr = if pd_ocr.is_empty() { "." } else { pd_ocr }
+            match ocr_probe_binary(actual_dir_ocr) {
+              Some(b) => {
+                ocr_cap.set("available", Json::boolean(true))
+                ocr_cap.set("binary", Json::string(b))
+              }
+              None => {
+                ocr_cap.set("available", Json::boolean(false))
+                ocr_cap.set(
+                  "note",
+                  Json::string(
+                    "OCR 二进制不可用（windows-x64 only，宿主依赖）；bugfind 显式降级为只用 issue_scan，回执 ocr_available=false",
+                  ),
+                )
+              }
+            }
+          }
+
           // 只在 auto_flush=true 时才合并 flush_result，保证默认路径字节级一致
-          let final_json = if auto_flush {
+          let final_json = if auto_flush || mode == "bugfind" {
             match j {
               Object(m) => {
-                m.set("flush_bug_queue", Json::object(flush_result))
+                if auto_flush {
+                  m.set("flush_bug_queue", Json::object(flush_result))
+                }
+                if mode == "bugfind" {
+                  m.set("ocr_capability", Json::object(ocr_cap))
+                }
                 Json::object(m)
               }
               _ => {
                 let mm : Map[String, Json] = Map([])
-                mm.set("flush_bug_queue", Json::object(flush_result))
+                if auto_flush {
+                  mm.set("flush_bug_queue", Json::object(flush_result))
+                }
+                if mode == "bugfind" {
+                  mm.set("ocr_capability", Json::object(ocr_cap))
+                }
                 mm.set("original", j)
                 Json::object(mm)
               }
@@ -2492,7 +2541,43 @@ pub async fn run_server() -> Unit {
           prompt_name~,
           mode~,
         ) {
-        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Ok(j) => {
+          let final_json = if mode == "bugfind" {
+            // bugfind 的 require_ocr 预检：probe 二进制并注入回执（纯读探测，不 spawn）
+            let ocr_cap : Map[String, Json] = Map([])
+            let pd_ocr = if project_dir.is_empty() { "." } else { project_dir }
+            match ocr_probe_binary(pd_ocr) {
+              Some(b) => {
+                ocr_cap.set("available", Json::boolean(true))
+                ocr_cap.set("binary", Json::string(b))
+              }
+              None => {
+                ocr_cap.set("available", Json::boolean(false))
+                ocr_cap.set(
+                  "note",
+                  Json::string(
+                    "OCR 二进制不可用（windows-x64 only，宿主依赖）；bugfind 显式降级为只用 issue_scan，回执 ocr_available=false",
+                  ),
+                )
+              }
+            }
+            match j {
+              Object(m) => {
+                m.set("ocr_capability", Json::object(ocr_cap))
+                Json::object(m)
+              }
+              _ => {
+                let mm : Map[String, Json] = Map([])
+                mm.set("ocr_capability", Json::object(ocr_cap))
+                mm.set("original", j)
+                Json::object(mm)
+              }
+            }
+          } else {
+            j
+          }
+          Ok(@mcp.ToolResult::text(final_json.stringify()))
+        }
         Err(e) => Err(@mcp_types.ToolError(e))
       }
     },
@@ -3171,7 +3256,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "evolve_asset_register",
-    "DGM 演化·注册一个可选外部资产（如 code-review / superpowers 类 skill 库）：作为 Artifact 归档进档案库，goal 用 [asset]<来源名> 便于 plan/claim 的 inject 按关键词检索，note 放可注入提示词、code 放来源路径/URL。返回产物 JSON；asset_id 可省略（自动生成，避免与既有产物 id 冲突）。",
+    "DGM 演化·注册一个可选外部资产（如 code-review / superpowers 类 skill 库）：作为 Artifact 归档进档案库，goal 用 [asset]<来源名> 便于 plan/claim 的 inject 按关键词检索，note 放可注入提示词、code 放来源路径/URL。返回产物 JSON（含 id/goal/note/code/score/created_at，另带 portable_candidates：可移植外部资产候选数组，由 src/evolve/self_search.mbt 的 analyze_candidate/assess_portability/distill_candidates 蒸馏；未配置 FIST_SELF_SEARCH_CMD 时为空数组，零回归）；asset_id 可省略（自动生成，避免与既有产物 id 冲突）。",
     schema(
       {
         "source": string_prop(
@@ -3192,38 +3277,23 @@ pub async fn run_server() -> Unit {
       if source == "" || note == "" || code == "" {
         return Err(@mcp_types.ToolError("source/note/code 均为必填"))
       }
-      let goal = "[asset]\{source}"
-      let asset_id = "asset-\{source}-\{ts}"
-      let art = @evolve.Artifact::create(
-        id=asset_id,
-        parent_id=None,
-        goal~,
-        note~,
-        code~,
-        score~,
-        parts=Map([]),
-        created_at=ts,
-      )
-      @evolve.Archive::add(evolve_arc, art)
-      // BUG-140：外部资产注册必须同步落库 evolve_artifacts，否则重启即失、inject 检索不到 [asset]。
-      // 范式严格对齐 src/evolve/lesson.mbt:64-77 的 evolve_lesson_persist（store 为 None = 内存态，跳过）。
-      ignore(
-        match evolve_store {
-          None => Err("evolve_store 未打开（内存态，未落库）")
-          Some(s) =>
-            s.evolve_upsert(
-              id=asset_id,
-              parent_id="",
-              goal~,
-              note~,
-              code~,
-              score~,
-              parts_json="{}",
-              created_at=ts,
-            )
-        },
-      )
-      Ok(@mcp.ToolResult::text(art.to_json().stringify()))
+      // 接线点（R13 polish，P3 self_search 入库半）：把注入的执行器交给
+      // @evolve.run_external_search，命中后经 analyze_candidate / assess_portability /
+      // distill_candidates 蒸馏出可移植外部资产候选，回执追加 `portable_candidates`。
+      // 未配置搜索命令（FIST_SELF_SEARCH_CMD 缺省）→ runner=None → 跳过搜索，**零回归**。
+      let default_runner = self_search_runner_default()
+      match
+        do_evolve_asset_register_with_search(
+          source,
+          note,
+          code,
+          score,
+          ts,
+          runner=default_runner,
+        ) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
     },
   )
   s1 = instrumented_tool(
@@ -4485,12 +4555,7 @@ pub async fn run_server() -> Unit {
     s1,
     "lock_status",
     "查询文件锁状态。参数：scope(可选)。不传 scope 返回全部锁 + 违例记录 + 过期清理数。",
-    schema(
-      {
-        "scope": string_prop("作用域（可选）"),
-      },
-      [],
-    ),
+    schema({ "scope": string_prop("作用域（可选）") }, []),
     async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let now = now_default()
       // 每次查询都先扫一遍过期锁
@@ -4553,6 +4618,182 @@ pub async fn run_server() -> Unit {
       }
     },
   )
+  // —— 项目助理（multi-agent-lock v3 阶段2 精简版：claim / status / sweep / resign / heartbeat）——
+  s1 = instrumented_tool(
+    s1,
+    "assistant_claim",
+    "项目助理选举：无 active 主助理则当选(elected)；本人重复调用则续任(renewed)；主助理心跳陈旧则接管(taken_over，旧主记 lock_violations force_takeover)；主助理心跳新鲜则拒绝(conflict)。参数：agent、heartbeat_ttl_sec(可选，默认300，心跳超过该秒数视为陈旧)。",
+    schema(
+      {
+        "agent": string_prop("助理身份（必填）"),
+        "heartbeat_ttl_sec": string_prop(
+          "心跳新鲜线秒数（可选，默认 300）",
+        ),
+      },
+      ["agent"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let agent = get_str(args, "agent")
+      let ttl = get_int(args, "heartbeat_ttl_sec", default=300)
+      let now = now_default()
+      let cutoff = iso_minus_secs(now, ttl)
+      let prev = engine.assistant_active_primary()
+      let (ok, action, prev_agent) = @store.assistant_claim_action(
+        prev, agent, now, cutoff,
+      )
+      if ok {
+        engine.assistant_upsert(
+          @store.AssistantReg::new(
+            agent~,
+            mode="all",
+            is_primary=true,
+            registered_at=now,
+            heartbeat_at=now,
+            status="active",
+          ),
+        )
+        if action == "taken_over" {
+          engine.lock_violations_record(
+            ts=now,
+            agent=prev_agent,
+            scope="assistant",
+            reason="force_takeover",
+            lock_id=agent,
+          )
+        }
+      }
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "agent": Json::string(agent),
+            "elected": Json::boolean(ok),
+            "action": Json::string(action),
+            "prev_agent": Json::string(prev_agent),
+            "is_primary": Json::boolean(ok),
+            "heartbeat_at": Json::string(now),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "assistant_status",
+    "查询项目助理全景：现任主助理 + 全部登记 + 锁违例统计（纯读，不写入）。参数：无。",
+    schema({}, []),
+    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let regs = engine.assistant_list()
+      let primary = engine.assistant_active_primary()
+      let violations = engine.lock_violations_list()
+      let mut takeover_count = 0
+      for v in violations {
+        if v.reason == "force_takeover" {
+          takeover_count = takeover_count + 1
+        }
+      }
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "primary": match primary {
+              Some(r) => r.to_json()
+              None => Json::null()
+            },
+            "assistants": Json::array(regs.map(fn(r) { r.to_json() })),
+            "takeover_count": Json::number(takeover_count.to_double()),
+            "violations_count": Json::number(violations.length().to_double()),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "assistant_sweep",
+    "助理清扫拍：释放 TTL 过期的文件锁（复用 locks_sweep）+ 把心跳陈旧且超过 stale_secs 的助理标为 dead。参数：stale_secs(可选，默认600)。",
+    schema(
+      {
+        "stale_secs": string_prop(
+          "助理心跳陈旧线秒数（可选，默认 600）",
+        ),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let stale = get_int(args, "stale_secs", default=600)
+      let now = now_default()
+      let cutoff = iso_minus_secs(now, stale)
+      let swept_locks = engine.locks_sweep(now)
+      let mut marked_dead = 0
+      for r in engine.assistant_list() {
+        if r.status == "active" && r.heartbeat_at < cutoff {
+          ignore(engine.assistant_set_status(r.agent, "dead"))
+          marked_dead = marked_dead + 1
+        }
+      }
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "swept_locks": Json::number(swept_locks.to_double()),
+            "assistants_marked_dead": Json::number(marked_dead.to_double()),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "assistant_resign",
+    "助理主动退位：把自己的登记标为 resigned（锁不阻塞，靠 TTL + 清扫拍兜底）。参数：agent。",
+    schema({ "agent": string_prop("助理身份（必填）") }, ["agent"]),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let agent = get_str(args, "agent")
+      let ok = engine.assistant_set_status(agent, "resigned")
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "agent": Json::string(agent),
+            "resigned": Json::boolean(ok),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "assistant_heartbeat",
+    "助理心跳：刷新自己的 heartbeat_at（防助理自己死了占着位）。参数：agent。",
+    schema({ "agent": string_prop("助理身份（必填）") }, ["agent"]),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let agent = get_str(args, "agent")
+      let now = now_default()
+      match engine.assistant_get(agent) {
+        None => Err(@mcp_types.ToolError("assistant not registered: " + agent))
+        Some(r) => {
+          engine.assistant_upsert(
+            @store.AssistantReg::new(
+              agent=r.agent,
+              mode=r.mode,
+              is_primary=r.is_primary,
+              registered_at=r.registered_at,
+              heartbeat_at=now,
+              status=r.status,
+            ),
+          )
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "agent": Json::string(agent),
+                "heartbeat_at": Json::string(now),
+                "status": Json::string(r.status),
+              }).stringify(),
+            ),
+          )
+        }
+      }
+    },
+  )
+  // —— 超级管家专属工具（supervisor_ 前缀：状态/树/终止方案/引导/任务列表）——
+  s1 = register_supervisor_tools(s1)
   s1 = instrumented_tool(
     s1,
     "dag_check",
@@ -5886,6 +6127,43 @@ pub async fn run_server() -> Unit {
     },
   )
 
+  // ===== text_diff：文本 diff（LCS），用于报告对比/测试输出 diff/交付物变更审查 =====
+  s1 = instrumented_tool(
+    s1,
+    "text_diff",
+    "文本 diff（LCS 最长公共子序列）：按行对比 old/new 两段文本，返回操作序列（equal/insert/delete）。用于报告对比、测试输出 diff、AI 交付物变更审查等场景。纯计算零副作用。参数：old(必填，旧文本)、new(必填，新文本)、format(可选，unified|json|stats，默认 unified)。unified=类 git diff 格式（ +/- 前缀）；json=结构化数组 [{kind,text}]；stats={equal,insert,delete} 计数。",
+    schema(
+      {
+        "old": string_prop("旧文本（必填）"),
+        "new": string_prop("新文本（必填）"),
+        "format": string_prop(
+          "输出格式（可选，unified|json|stats，默认 unified）",
+        ),
+      },
+      ["old", "new"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let old = get_str(args, "old")
+      let new = get_str(args, "new")
+      let fmt = get_str(args, "format")
+      let fmt2 = if fmt.is_empty() { "unified" } else { fmt }
+      let ops = @diff.diff_lines(old, new)
+      let out = match fmt2 {
+        "json" => @diff.render_json(ops)
+        "stats" => {
+          let (eq, ins, del) = @diff.diff_stats(ops)
+          Json::object({
+            "equal": Json::number(eq.to_double()),
+            "insert": Json::number(ins.to_double()),
+            "delete": Json::number(del.to_double()),
+          }).stringify()
+        }
+        _ => @diff.render_unified(ops)
+      }
+      Ok(@mcp.ToolResult::text(out))
+    },
+  )
+
   // ===== mcp_config_scaffold：MCP 配置偏好 → 可落盘 fist.mcp.json 正文（方向一 P0-b）=====
   // 目标项目把 HTML 配置页产出的 form_json 交给本工具，服务端校验并返回可落盘正文，
   // 落盘由调用方（agent / 安装器）做——HTML 写不了文件，本工具也不代写目标项目文件。
@@ -6046,14 +6324,14 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "executor_run",
-    "把任务交给外部编码执行器真跑（宿主命令能力，默认收紧）：执行器名**只能**是已登记集合 aider | atomcode，argv 形状由 src/executor/cli_argv.mbt 固定（不经过 shell，提示词里的 ; $() 反引号都只是字面量），可执行文件名由登记表推导——调用方无法借本工具注入任意命令。model 留空时先向 model_route 要一个模型并记账（路由↔执行器接线点）；无可用模型直接失败不猜模型。结果 ok=false 时附可诊断 error/hint，绝不静默成功。参数：project_dir(必填)、executor(必填 aider|atomcode)、prompt(必填，非空且不含 NUL)、model(可选，留空则路由决定)、namespace(可选)、timeout_ms(可选默认 180000)、dry_run(可选默认 false：只回显将执行的 argv、一个进程都不起，先审后跑)（注：时间戳由服务端盖章）。执行需 js/node 运行时；native 构建返回明确拒绝。",
+    "把任务交给外部执行器真跑（宿主命令能力，默认收紧）：执行器名**只能**是已登记集合 aider | atomcode | ofm。aider/atomcode 走本地 CLI spawn（argv 形状由 src/executor/cli_argv.mbt 固定，不经过 shell，提示词里的 ; $() 反引号都只是字面量，可执行文件名由登记表推导——调用方无法借本工具注入任意命令）；**ofm 走并存 HTTP 通道**（`executor_run_impl` 按 `executor` 分流，不经 build_command）：真 POST `{ofm_endpoint}/chat/completions`，端点 env `FIST_OFM_ENDPOINT` 优先、`config.ofm_endpoint` 兜底，`Authorization: Bearer` 的 key 只在 server 进程环境变量里读、**回执绝不回显**，失败按 `classify_ofm_failure` 归因（网络/401/5xx/其他）。model 留空时先向 model_route 要一个模型并记账（路由↔执行器接线点）；无可用模型直接失败不猜模型。结果 ok=false 时附可诊断 error/hint/failure_kind，绝不静默成功。参数：project_dir(必填)、executor(必填 aider|atomcode|ofm)、prompt(必填，非空且不含 NUL)、model(可选，留空则路由决定)、namespace(可选)、timeout_ms(可选默认 180000)、dry_run(可选默认 false：CLI 通道只回显将执行的 argv、OFM 通道只回显将发送的请求体 URL，一个进程/一个网络请求都不起，先审后跑)（注：时间戳由服务端盖章）。执行需 js/node 运行时；native 构建返回明确拒绝。",
     schema(
       {
         "project_dir": string_prop(
           "项目目录（必填，相对 server 进程 cwd；作为执行器工作目录）",
         ),
         "executor": string_prop(
-          "执行器名（必填，只接受 aider | atomcode）",
+          "执行器名（必填，只接受 aider | atomcode | ofm；ofm 走 HTTP 通道）",
         ),
         "prompt": string_prop(
           "任务描述（必填，作为 --message/-p 的字面量参数）",
@@ -6068,7 +6346,7 @@ pub async fn run_server() -> Unit {
           "可选：子进程超时毫秒（默认 180000）",
         ),
         "dry_run": bool_prop(
-          "可选（默认 false）：true 时只回显将执行的 argv，不启动任何外部进程——先审后跑",
+          "可选（默认 false）：true 时只回显将执行的 argv（CLI）或将发送的请求体+URL（ofm），不起任何进程、不发任何网络请求——先审后跑",
         ),
       },
       ["project_dir", "executor", "prompt"],
@@ -6920,6 +7198,67 @@ pub async fn run_server() -> Unit {
       Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
     },
   )
+
+  // ocr_scan：ocr-local OCR CLI 集成（bugfind require_ocr 的真实能力落点）
+  s1 = instrumented_tool(
+    s1,
+    "ocr_scan",
+    "OCR 代码审查扫描（ocr-local open-code-review CLI 集成，与 issue_scan 形成『内建规则 + OCR LLM review』双轨寻虫，bugfind 的 require_ocr 约束键的真实能力）。封装 opencodereview.exe 的 scan/files/delegate/rules 子命令，argv 形状由 src/server/ocr_scan.mbt 固定（不经过 shell，提示词/路径只作为字面量参数），project_dir 过防御校验（拒绝对称/穿越/盘符），二进制只由 env FIST_OCR_BIN 或固定相邻模式给出（调用方不能注入任意命令）。平台约束：OCR 二进制是宿主依赖（windows-x64 only），不随本仓发布；native 构建返回 unsupported_target 形状的明确拒绝；不可用时显式降级为『只用 issue_scan』，回执含 ocr_available=false，绝不静默成功。参数：project_dir(必填，相对 server 进程 cwd)、subcmd(必填 scan|files|delegate|rules)、path(可选，delegate/rules 必填；scan 逗号分隔)、rules_file(可选，OCR 规则 JSON)、timeout_ms(可选默认 180000)、dry_run(可选默认 false：只回显将执行的 argv，一个进程都不起，先审后跑)。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录（必填，相对 server 进程 cwd；拒绝绝对路径/穿越/盘符）",
+        ),
+        "subcmd": string_prop(
+          "子命令（必填，只接受 scan | files | delegate | rules）",
+        ),
+        "path": string_prop(
+          "可选：文件/目录路径（delegate/rules 必填；scan/files 逗号分隔）",
+        ),
+        "rules_file": string_prop("可选：OCR 规则 JSON 路径"),
+        "timeout_ms": int_prop(
+          "可选：子进程超时毫秒（默认 180000）",
+        ),
+        "dry_run": bool_prop(
+          "可选（默认 false）：true 时只回显将执行的 argv，不起任何进程——先审后跑",
+        ),
+      },
+      ["project_dir", "subcmd"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let subcmd = get_str(args, "subcmd")
+      let path = get_str(args, "path")
+      let rules_file = get_str(args, "rules_file")
+      let tm = match args {
+        Json::Object(m) =>
+          match m.get("timeout_ms") {
+            Some(Json::Number(n, ..)) => {
+              let v = n.to_int()
+              if v > 0 {
+                v
+              } else {
+                180000
+              }
+            }
+            _ => 180000
+          }
+        _ => 180000
+      }
+      let j = ocr_scan_impl(
+        project_dir,
+        subcmd~,
+        path~,
+        rules_file~,
+        timeout_ms=tm,
+        dry_run=get_bool(args, "dry_run", default=false),
+      )
+      Ok(@mcp.ToolResult::text(j.stringify()))
+    },
+  )
+
+  // HexaMind 六元自驱决策三工具（hat_run / hat_merge / hat_debate，真源 src/hat）。
+  s1 = embed_hexa_tools(s1)
 
   // 默认 stdio 传输（MCP 标准模式）。
   run_stdio_target(s1)

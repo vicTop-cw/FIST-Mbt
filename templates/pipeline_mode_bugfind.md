@@ -14,8 +14,8 @@
 
 ## 二、核心动作（必须做什么）
 
-- **issue_scan 高危规则先扫**：先用 FIST-Mbt 内建的 10 条 MoonBit 高危规则扫描（除零、空数组下标、unwrap 风险、空指针、资源泄漏等），把已有的静态命中作为第一手候选。
-- **open-code-review 躬身入局版**（预留接口）：调用 `ocr-cli` 对关键路径做面向边界条件的 code review（见第五节）——如果 `ocr-cli` 未集成，跳过此步走 fallback。
+- **issue_scan 高危规则先扫**：先用 FIST-Mbt 内建的 31 条 MoonBit 高危规则扫描（内建 11 条 + ocr-local 外部 20 条：除零、空数组下标、unwrap 风险、空指针、资源泄漏等），把已有的静态命中作为第一手候选。
+- **ocr_scan 双轨互补**：调用 `ocr_scan`（open-code-review CLI 封装，见第五节）对关键路径做面向边界条件的 code review——与 issue_scan 去重后合并候选。若回执 `ocr_available=false`（OCR 二进制未安装/非 windows-x64），显式降级为只用 issue_scan，并在汇报里标注 `ocr_available=false`，绝不静默跳过。
 - **补边界 case 测试语料**：对每个 issue_scan 命中或 ocr 建议，构造 1-2 条非常规输入（空串、超长串、负数、零、边界值、并发交错），写成可执行的测试片段或伪代码记录。
 - **moon test 跑验证**：把边界 case 集成到临时测试文件或直接构造运行环境，跑一遍确认哪些 case 真正能触发异常。
 - **report_bug 入账**：确认能复现的 bug，调用 `report_bug` 上报（`severity` 按"能否触发 panic/崩溃/数据污染"分级，`publish_task` 建议设 `true` 让后续自动发布修复任务）。
@@ -42,9 +42,10 @@
 
 ## 五、FIST 工具链调用顺序
 
-- **第一步：issue_scan 高危规则扫描** —— 调用 `issue_scan({ "dir": "<目标项目根目录>/src", "max_findings": 50, "include_tests": true })`，拿到内建 10 条规则的静态命中（如除零、空数组下标、unwrap 风险、资源泄漏等）。
-- **第二步：open-code-review（预留接口）** —— 调用 `ocr-cli({ "project_dir": "<目标项目根目录>", "focus": "boundary" })` 对关键路径做面向边界条件的 code review。
-  > **备注**：`ocr-cli` 躬身入局版（open-code-review CLI）**尚未集成**到 FIST-Mbt。当前 fallback：跳过此步，仅用 issue_scan 命中 + 自造边界 case 生成作为替代。等 ocr-cli 集成后，把其输出与 issue_scan 合并去重后再往下走。
+- **第一步：issue_scan 高危规则扫描** —— 调用 `issue_scan({ "dir": "<目标项目根目录>/src", "max_findings": 50, "include_tests": true })`，拿到内建 31 条规则（11 内建 + 20 ocr-local 外部）的静态命中（如除零、空数组下标、unwrap 风险、资源泄漏等）。
+- **第二步：ocr_scan 双轨扫描** —— 调用 `ocr_scan({ "project_dir": "<目标项目根目录>", "subcmd": "files", "dry_run": false })` 让 open-code-review CLI 真跑一遍文件扫描（`files` 子命令返回候选文件清单；要对指定文件做真 review 用 `subcmd="delegate"` + `path` 逗号分隔）。
+  > **备注**：`ocr_scan` 已集成（真源 `src/server/ocr_scan.mbt`）。**平台约束**：OCR 二进制是宿主依赖（windows-x64 only），未安装时回执 `ocr_available=false`——此时**显式降级**为只用 issue_scan + 自造边界 case，并在汇报里标注 `ocr_available=false`，不得静默跳过。安全面：`dry_run=true` 只回显将执行的 argv（一个进程都不起），先审后跑；argv 不经 shell。
+- **第二步b：合并去重** —— 把 issue_scan 命中与 ocr_scan 候选按 `(file, rule/topic)` 去重后合成候选清单，避免双轨重复上报。
 - **第三步：构造边界 case + run_check 验证** —— 对每个 findings，构造非常规输入调用 `run_check` 跑一次；能触发 panic/崩溃/异常行为的即确认为真 bug。
 - **第四步：moon test 回归确认** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["test"], "workdir": "<目标项目根目录>", "timeout_ms": 180000 })`，确认边界 case 没污染已有测试。
 - **第五步：report_bug 入账** —— 对所有确认的真 bug，逐条调用 `report_bug({ "project_dir": "...", "summary": "[bugfind:rule_id] file:line: description", "severity": "medium|high|critical", "publish_task": true })`，让 FIST-Mbt 自动发布修复根任务进入后续 `fix_and_merge` 队列。
@@ -66,11 +67,11 @@
 [bugfind] <本地时间>
 module: <本轮聚焦模块>
 issue_scan_hits: <静态命中条数>
-ocr_hits: <ocr-cli 输出条数 或 skipped（未集成）>
+ocr_hits: <ocr_scan 候选条数；ocr_available=false 时为 0>
 boundary_cases: <自造边界 case 数>
 confirmed_bugs: <可复现的真 bug 数>
 bugs_reported: <report_bug 条数>
-note: <规则详情、复现摘要、ocr-cli 集成状态>
+note: <规则详情、复现摘要、ocr_available 状态（true/false 及降级说明）>
 ```
 
 *（内容由AI生成，仅供参考）*
@@ -79,22 +80,33 @@ note: <规则详情、复现摘要、ocr-cli 集成状态>
 ## Tool Use Rubric（工具使用硬规则段 · 硬规则 = 违反即执行失败）
 
 **可用工具清单**（只许用这些，未列出的工具一律不得调用）：
-- 任务：publish / plan / 	ask_plan_deep / claim / xecute / submit / erify / eject / etry / pause / esume / eopen_task
+- 任务：publish / plan / 	ask_plan_deep / claim / xecute / submit / erify / 
+eject / 
+etry / pause / 
+esume / 
+eopen_task
 - 依赖与调度：dag_depend / dag_ready / dag_check / dag_slack / dag_schedule / 	ask_triage / xecutor_route / dag_cost_route
-- 交付验证：un_check / output_validate
-- 缺陷：issue_scan / eport_bug / ug_list / ug_fix / ug_mark_status
+- 交付验证：
+un_check / output_validate
+- 缺陷：issue_scan / ocr_scan / 
+eport_bug / ug_list / ug_fix / ug_mark_status
 - 记忆/演进：selfdrive_get / selfdrive_append / memory_consolidate / volve_lesson / volve_distill / volve_submit
 
 **硬规则**（违反任何一条 = 本轮执行失败）：
-1. 先读后写：修改任何文件前必须先 ead；不 read 就 write/edit = 违规。
+1. 先读后写：修改任何文件前必须先 
+ead；不 read 就 write/edit = 违规。
 2. 报告不是证据：任何「已完成」声明，必须先 output_validate 拿到 L4 产物状态层证据。
 3. 判绿读汇总行，不信 exit 0：moon test 类结果看 Total tests: N, passed: N, failed: 0（BUG-142）。
 4. 路径防御：project_dir 只接受相对路径，拒绝绝对路径 / .. 穿越 / 盘符。
 5. 工具名大小写敏感，调错名 = 空回，禁止「换一个名字试试」。
 6. 一次只做一个动作，失败即安全退出。
-7. 不得自造判据：un_check 的 cmd 必须在白名单内，禁止 shell 拼接。
-8. 失败必须留痕：eject / eport_bug 必须写清 reason / evidence。
+7. 不得自造判据：
+un_check 的 cmd 必须在白名单内，禁止 shell 拼接。
+8. 失败必须留痕：
+eject / 
+eport_bug 必须写清 reason / evidence。
 
-**执行收尾必做清单**（顺序固定）：xecute → output_validate → submit →（被 reject 则 read 原因→etry→重复前三步）。
+**执行收尾必做清单**（顺序固定）：xecute → output_validate → submit →（被 reject 则 read 原因→
+etry→重复前三步）。
 
 <!-- TOOL_USE_RUBRIC_END -->
