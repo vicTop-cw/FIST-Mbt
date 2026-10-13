@@ -80,6 +80,12 @@ WSL 同版 nightly 实测三支读数——`moon check --target js` **rc=0**（C
 Format 是**当前唯一挡住守卫族（含 HTTP 契约自证那一步）的红**：CI #275 实证它一个步红就 skip 其后
 **24 步**（Test(js) 到 Cleanliness guard 全没跑）。
 
+**已就位的对策（`64101be`，本轮执行）**：把 **HTTP 契约自证步从第 25 位移到 `Check (js)` 之后、
+`Format check` 之前**（只移我自己加的步，不碰 owner 面的 Format 门）。CI #277 实证新位置生效：
+`Migrate ✅ → Check(js) ✅ → **HTTP contract self-proof ✅** → Format ✗`——该自证**首次在真实 runner 上
+真跑通过**（此前它挂在 Format 之后，被 skip、从不执行；「挂了但没跑 = 没挂」）。
+仍被 Format 挡住的是它**之后**的 22 步（Test(js) 与全部守卫族）——那部分要等 Format 门的落法定下来。
+
 **A′ 第 2 条（diff-scoped fmt）经同版受控实验**证伪**（temp/fmt_scope_direct.txt + fmt_scope2_direct.txt）**：
 `moon fmt --check <单文件>` 对**所有**文件都 rc=255；help 原文写明 `[PATH]` 是
 「packages, files **selecting their containing package**」⇒ 传文件 = 检查它**所在的整包**，
