@@ -36,6 +36,8 @@ pub fn star_gate_verify(String, String, Int64) -> StarGateOutcome
 
 pub fn star_gate_verify_pinned(String, String, Int64, String) -> StarGateOutcome
 
+pub let star_release_default_pubkey_hex : String
+
 // Errors
 
 // Types and methods

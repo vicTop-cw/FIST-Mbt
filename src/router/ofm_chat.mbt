@@ -81,6 +81,25 @@ pub fn build_ofm_chat_request_json(
 }
 
 ///|
+/// `max_tokens` 余量：从模型的**硬上限**里预留 `margin` 个 token，返回要写进请求体的 `max_tokens`。
+/// 为什么要留余量：把 `max_tokens` 直接填成硬上限时，模型常在 JSON 写到一半被 token 天花板硬切断，
+/// 回体变**半截 JSON** → `ofm_response` 判「回体不是合法 JSON」→ `executor_run` 整发失败。
+/// 留出余量让它在到达硬上限前收口，是 `response_format` 之外的另一道弱缓解（真正的修在 HTTP 层重试）。
+///
+/// fail-closed：`limit ≤ 0`（视为无上限信息，不猜）、`margin < 0` → `Err`。
+/// 纯计算零 IO。下限 1（`margin ≥ limit` 时仍给最小 token 数），上限恒 ≤ `limit`。
+pub fn ofm_reserve_max_tokens(limit : Int, margin : Int) -> Result[Int, String] {
+  if limit <= 0 {
+    return Err("limit 非法：\{limit}")
+  }
+  if margin < 0 {
+    return Err("margin 非法：\{margin}")
+  }
+  let raw = limit - margin
+  Ok(if raw < 1 { 1 } else { raw })
+}
+
+///|
 /// 便捷入口（供 `src/server` 的 OFM 通道用，省去跨包构造非 pub 字段）：一条 user 提问
 /// → 完整请求体 JSON。`temperature`/`max_tokens` 走 None（不写字段），fail-closed 照旧。
 pub fn build_ofm_chat_request_json_simple(

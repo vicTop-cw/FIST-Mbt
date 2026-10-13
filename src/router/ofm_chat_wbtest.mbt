@@ -130,3 +130,21 @@ test "ofm_c_7_请求恒带 response_format_json_object_防信封被多行 JSON �
     Err(e) => abort("不应 Err：\{e}")
   }
 }
+
+///|
+/// `ofm_reserve_max_tokens`：从硬上限预留余量，避免回体被 token 天花板截断成半截 JSON。
+test "ofm_c_8_max_tokens 余量预留_不越硬上限" {
+  // 100 上限留 10 → 90（严格小于硬上限，不给截断留空间）
+  assert_eq(ofm_reserve_max_tokens(100, 10).unwrap(), 90)
+  // 余量 0 = 满额直传（合法，调用方自己担责）
+  assert_eq(ofm_reserve_max_tokens(100, 0).unwrap(), 100)
+  // 余量 ≥ 上限 → 下限 1（不能写出 0 或负数）
+  assert_eq(ofm_reserve_max_tokens(5, 10).unwrap(), 1)
+  assert_eq(ofm_reserve_max_tokens(3, 99).unwrap(), 1)
+  // 余量 1 → 恒为 上限-1，绝不等于硬上限
+  assert_eq(ofm_reserve_max_tokens(2048, 1).unwrap(), 2047)
+  // fail-closed：limit ≤ 0、margin < 0 → Err，不静默回落
+  assert_eq(ofm_reserve_max_tokens(0, 10).is_err(), true)
+  assert_eq(ofm_reserve_max_tokens(-1, 10).is_err(), true)
+  assert_eq(ofm_reserve_max_tokens(100, -1).is_err(), true)
+}
