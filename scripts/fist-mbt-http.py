@@ -265,10 +265,78 @@ class Handler(BaseHTTPRequestHandler):
                 "transport": "http",
             })
             return
+        if self.path == "/tools":
+            # 契约 v1（docs/openapi/fist.yaml）：工具清单的 REST 面。
+            # 与 /mcp 的区别是本端点**替调用方剥掉 JSON-RPC 外壳**，非 MoonBit 语言
+            # 只需 HTTP 能力即可接（计划 §3「语言侧 20 行以内封装」的前提就是别再抄信封）。
+            resp = bridge.send("tools/list", {})
+            if resp is None:
+                self._json_response({"error": "No response from server"}, status=502)
+                return
+            if "error" in resp:
+                self._json_response({"error": resp["error"]}, status=502)
+                return
+            tools = (resp.get("result") or {}).get("tools")
+            if tools is None:
+                self._json_response(
+                    {"error": "tools/list 响应缺少 result.tools"}, status=502)
+                return
+            self._json_response({"tools": tools})
+            return
         if self.path == "/events":
             self._handle_sse()
             return
         self._json_response({"error": "Not found"}, status=404)
+
+    def _handle_tool_call(self, name: str) -> None:
+        """契约 v1 的 `POST /tools/{name}/call`：body 就是该工具的 arguments 对象。
+
+        剥壳规则（确定性，见 docs/openapi/fist.yaml 的 x-unwrapping）：
+        MCP `tools/call` 的正文在 `result.content[*].text`；若**只有 1 块、type=text
+        且该 text 本身是合法 JSON**，就把它解析后放进 `data`（多数工具的正文就是这个），
+        `result` 始终原样保留——剥壳是便利，不是替换，调用方永远能拿到原始形状。
+        """
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+        try:
+            arguments = json.loads(raw or "{}")
+        except json.JSONDecodeError as e:
+            self._json_response({"error": f"Invalid JSON body: {e}"}, status=400)
+            return
+        if not isinstance(arguments, dict):
+            self._json_response(
+                {"error": "body 必须是 JSON 对象（该工具的 arguments）"}, status=400)
+            return
+        resp = bridge.send("tools/call", {"name": name, "arguments": arguments})
+        _publish("request", {"method": "tools/call", "name": name, "ts": time.time()})
+        if resp is None:
+            self._json_response({"error": "No response from server"}, status=502)
+            return
+        if "error" in resp:
+            self._json_response({"error": resp["error"]}, status=502)
+            return
+        result = resp.get("result") or {}
+        out = {"ok": not result.get("isError", False), "result": result}
+        content = result.get("content")
+        if isinstance(content, list) and len(content) == 1 and content[0].get("type") == "text":
+            try:
+                out["data"] = json.loads(content[0]["text"])
+            except (json.JSONDecodeError, KeyError):
+                pass  # 正文不是 JSON（纯文本回执）就不硬造 data
+        if result.get("isError"):
+            self._json_response(out, status=422)
+            return
+        self._json_response(out)
+
+    def _route_rest(self) -> bool:
+        """把 REST 契约端点从通用 JSON-RPC 口里分出来；命中返回 True。"""
+        parts = [p for p in self.path.split("?")[0].split("/") if p]
+        if parts == ["tools"]:
+            return False  # 由 do_GET 处理
+        if len(parts) == 3 and parts[0] == "tools" and parts[2] == "call":
+            self._handle_tool_call(parts[1])
+            return True
+        return False
 
     def _handle_sse(self) -> None:
         """GET /events: Server-Sent Events stream."""
@@ -304,6 +372,9 @@ class Handler(BaseHTTPRequestHandler):
             log.info("SSE subscriber disconnected (total: %d)", len(_subscribers))
 
     def do_POST(self) -> None:
+        # 契约 v1 的 REST 口优先（/tools/{name}/call）；剩下的仍走通用 JSON-RPC /mcp。
+        if self._route_rest():
+            return
         if self.path != "/mcp":
             self._json_response({"error": "Not found"}, status=404)
             return
