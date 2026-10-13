@@ -49,6 +49,8 @@ pub fn evolve_decision(Double) -> (CurriculumLevel, MutationKind, Bool)
 
 pub fn evolve_lesson_persist(@store.SqliteStore?, id~ : String, String, String, String, String, score? : Double) -> Bool
 
+pub fn github_json_to_tsv(String) -> String
+
 pub fn is_distillable(Double, String) -> Bool
 
 pub fn is_duplicate_candidate(SearchCandidate, SearchCandidate) -> Bool

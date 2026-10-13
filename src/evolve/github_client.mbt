@@ -271,6 +271,23 @@ pub fn code_search_to_tsv(json_text : String) -> String {
 }
 
 ///|
+/// 把 run_external_search 的原始输出（curl 返回的 GitHub JSON 文本）
+/// 直接转成 self_search 可消费的 TSV 行。
+///   - 自动判断是仓库搜索还是代码搜索 JSON（看 items[0] 是否含 full_name 顶层字段）
+///   - 解析失败或空 items → 返回空串（下游 distill 得到空数组，零回归）
+pub fn github_json_to_tsv(json_text : String) -> String {
+  let repos = parse_repo_search(json_text)
+  if repos.length() > 0 {
+    return repo_search_to_tsv(json_text)
+  }
+  let codes = parse_code_search(json_text)
+  if codes.length() > 0 {
+    return code_search_to_tsv(json_text)
+  }
+  ""
+}
+
+///|
 /// 生成 curl 命令（供外部执行，不内置网络）
 ///   - token 留空则不带 Authorization header（匿名，限流 60/h）
 ///   - 不回显 token 本体
