@@ -25,7 +25,7 @@ SHIP-PLAN-BLACKBOX-v2 的 Gap 清单 G5（「WSL2 未实测——Linux 安装脚
 
 ## 后续建议
 1. 若要坐实「Linux 公网 curl|bash 端到端」：在能直连 github.com 的 Linux（或配了代理的 WSL）上跑 `install.sh` 不带 `FIST_LOCAL_ZIP`；本机受网络限制只能测功能面。
-2. 加 `.gitattributes`（`*.sh text eol=lf`、`*.ps1 text eol=crlf`）——同时消掉「工作树 CRLF 的 .sh 在 Linux 炸」这一类环境相关假警报，且与本仓已有的 `check_ps_encoding`（BUG-88）互补。
+2. ~~加 `.gitattributes`~~ **本轮已落地**（commit `6bba279`）：`*.sh`/`*.mjs` 钉 `text eol=lf`。刻意**不给 `.ps1` 加 `eol=crlf`**——PowerShell 两种行尾都能解析，且工作树现状不一（`install.ps1` CR=225、`install_onecmd.ps1` CR=0），钉了会即时刷脏其中一边、污染并发会话未提交面；`.ps1` 编码归 `check_ps_encoding`（BUG-88）管。不加 `* text=auto`（全仓 renormalize 必波及 140+ 未提交文件）。**决定性反证已过**：WSL 里全新 clone + 强制 `core.autocrlf=true` 重新 checkout `install.sh` 仍 **CR=0** ⇒ `eol=lf` 扛得住 autocrlf，G5 踩到的 CRLF 根因根治。安全实测：加 attributes 前后 `git status` 脏数不变（145→145），`-- *.sh *.mjs` 零翻脏。
 3. G5 之后，SHIP-PLAN 剩余 Gap 只有 **G7「CI 自动发布接 GitCode」**（本轮已探：GitCode v5 只认 `/user`，项目/releases 端点 404，且不可逆发布步需 owner 拍板 + 可用 API 事实，见 memory 2026-10-13 G7 段）。
 
 ## 超额内容
