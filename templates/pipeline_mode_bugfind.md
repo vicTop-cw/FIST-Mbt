@@ -80,17 +80,17 @@ note: <规则详情、复现摘要、ocr_available 状态（true/false 及降级
 ## Tool Use Rubric（工具使用硬规则段 · 硬规则 = 违反即执行失败）
 
 **可用工具清单**（只许用这些，未列出的工具一律不得调用）：
-- 任务：publish / plan / 	ask_plan_deep / claim / xecute / submit / erify / 
+- 任务：publish / plan / task_plan_deep / claim / execute / submit / verify / 
 eject / 
 etry / pause / 
 esume / 
 eopen_task
-- 依赖与调度：dag_depend / dag_ready / dag_check / dag_slack / dag_schedule / 	ask_triage / xecutor_route / dag_cost_route
+- 依赖与调度：dag_depend / dag_ready / dag_check / dag_slack / dag_schedule / task_triage / executor_route / dag_cost_route
 - 交付验证：
 un_check / output_validate
 - 缺陷：issue_scan / ocr_scan / 
-eport_bug / ug_list / ug_fix / ug_mark_status
-- 记忆/演进：selfdrive_get / selfdrive_append / memory_consolidate / volve_lesson / volve_distill / volve_submit
+eport_bug / bug_list / bug_fix / bug_mark_status
+- 记忆/演进：selfdrive_get / selfdrive_append / memory_consolidate / evolve_lesson / evolve_distill / evolve_submit
 
 **硬规则**（违反任何一条 = 本轮执行失败）：
 1. 先读后写：修改任何文件前必须先 
@@ -106,7 +106,7 @@ un_check 的 cmd 必须在白名单内，禁止 shell 拼接。
 eject / 
 eport_bug 必须写清 reason / evidence。
 
-**执行收尾必做清单**（顺序固定）：xecute → output_validate → submit →（被 reject 则 read 原因→
+**执行收尾必做清单**（顺序固定）：execute → output_validate → submit →（被 reject 则 read 原因→
 etry→重复前三步）。
 
 <!-- TOOL_USE_RUBRIC_END -->

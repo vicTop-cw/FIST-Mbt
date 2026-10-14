@@ -76,22 +76,22 @@ note: <打磨要点、失败项、遗留问题>
 ## Tool Use Rubric（工具使用硬规则段 · 硬规则 = 违反即执行失败）
 
 **可用工具清单**（只许用这些，未列出的工具一律不得调用）：
-- 任务：publish / plan / 	ask_plan_deep / claim / xecute / submit / erify / eject / etry / pause / esume / eopen_task
-- 依赖与调度：dag_depend / dag_ready / dag_check / dag_slack / dag_schedule / 	ask_triage / xecutor_route / dag_cost_route
-- 交付验证：un_check / output_validate
-- 缺陷：issue_scan / eport_bug / ug_list / ug_fix / ug_mark_status
-- 记忆/演进：selfdrive_get / selfdrive_append / memory_consolidate / volve_lesson / volve_distill / volve_submit
+- 任务：publish / plan / task_plan_deep / claim / execute / submit / verify / reject / retry / pause / resume / reopen_task
+- 依赖与调度：dag_depend / dag_ready / dag_check / dag_slack / dag_schedule / task_triage / executor_route / dag_cost_route
+- 交付验证：run_check / output_validate
+- 缺陷：issue_scan / report_bug / bug_list / bug_fix / bug_mark_status
+- 记忆/演进：selfdrive_get / selfdrive_append / memory_consolidate / evolve_lesson / evolve_distill / evolve_submit
 
 **硬规则**（违反任何一条 = 本轮执行失败）：
-1. 先读后写：修改任何文件前必须先 ead；不 read 就 write/edit = 违规。
+1. 先读后写：修改任何文件前必须先 read；不 read 就 write/edit = 违规。
 2. 报告不是证据：任何「已完成」声明，必须先 output_validate 拿到 L4 产物状态层证据。
 3. 判绿读汇总行，不信 exit 0：moon test 类结果看 Total tests: N, passed: N, failed: 0（BUG-142）。
 4. 路径防御：project_dir 只接受相对路径，拒绝绝对路径 / .. 穿越 / 盘符。
 5. 工具名大小写敏感，调错名 = 空回，禁止「换一个名字试试」。
 6. 一次只做一个动作，失败即安全退出。
-7. 不得自造判据：un_check 的 cmd 必须在白名单内，禁止 shell 拼接。
-8. 失败必须留痕：eject / eport_bug 必须写清 reason / evidence。
+7. 不得自造判据：run_check 的 cmd 必须在白名单内，禁止 shell 拼接。
+8. 失败必须留痕：reject / report_bug 必须写清 reason / evidence。
 
-**执行收尾必做清单**（顺序固定）：xecute → output_validate → submit →（被 reject 则 read 原因→etry→重复前三步）。
+**执行收尾必做清单**（顺序固定）：execute → output_validate → submit →（被 reject 则 read 原因→retry→重复前三步）。
 
 <!-- TOOL_USE_RUBRIC_END -->
