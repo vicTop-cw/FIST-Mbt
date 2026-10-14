@@ -347,8 +347,14 @@ fn run_doctor() -> Unit {
               } else {
                 let kid_id = kids[0].get_id()
                 let _ = e4.claim(task_id=kid_id, assignee="w", now~)
+                // 审计门禁(R10)会拒绝 "done"/"完成"/"ok" 等占位符交付物，
+                // 闭环探针须用真实交付物，否则 execute 被拒导致 [4/5] 恒红。
                 let ex = match
-                  e4.execute(task_id=kid_id, deliverable="done", now~) {
+                  e4.execute(
+                    task_id=kid_id,
+                    deliverable="doctor 闭环探针：七态机最小闭环通过",
+                    now~,
+                  ) {
                   Err(_) => false
                   Ok(_) =>
                     match e4.submit(task_id=kid_id, now~) {
