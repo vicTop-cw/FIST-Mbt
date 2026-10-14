@@ -795,6 +795,34 @@ async fn executor_run_impl(
         }
     }
   }
+  // P1.1：从路由回执取备用链 + 最大重试次数（env FIST_MODEL_MAX_RETRIES 默认 1）
+  let mut fallback_models : Array[String] = []
+  let mut max_retries = 1
+  let env_retries = mr_env("FIST_MODEL_MAX_RETRIES")
+  if env_retries != "" {
+    let parsed = bug_parse_int(env_retries)
+    if parsed > 0 {
+      max_retries = parsed
+    }
+  }
+  match route_json {
+    Json::Object(m) =>
+      match m.get("decision") {
+        Some(Json::Object(d)) =>
+          match d.get("fallback_chain") {
+            Some(Json::Array(arr)) =>
+              for item in arr {
+                match item {
+                  Json::String(s) => fallback_models = fallback_models + [s]
+                  _ => ()
+                }
+              }
+            _ => ()
+          }
+        _ => ()
+      }
+    _ => ()
+  }
   // OFM 走并存 HTTP 通道（不经 build_command / spawn）；CLI spawn（aider/atomcode）保留。
   if executor == "ofm" {
     return ofm_execute_http(
@@ -847,77 +875,124 @@ async fn executor_run_impl(
       ],
     )
   }
-  let res = run_check_external(bin, args, project_dir, timeout_ms)
-  let head : Array[(String, Json)] = [
-    ("executor", Json::string(executor)),
-    ("binary", Json::string(bin)),
-    ("model", Json::string(chosen)),
-    ("route", route_json),
-  ]
-  match res {
-    Err(e) =>
-      mr_obj(
-        [("ok", Json::boolean(false))] +
-        head +
-        [
-          ("executed", Json::boolean(false)),
-          ("exit_code", Json::number(-1.0)),
-          ("error", Json::string(e)),
-          ("hint", Json::string(@executor.executor_missing_hint(executor))),
-        ],
-      )
-    Ok(j) => {
-      // BUG-61：进程真起来的一方才记账（Err 分支是 ENOENT 一类，没起进程就不消耗）。
-      // 这正是 AGENTS.md 与工具描述承诺的"model 留空则先要一个模型并记账"。
-      let quota_note = if routed_by_pool {
-        match mr_record_only(project_dir, ns~, chosen) {
-          Ok(_) => "recorded(\{chosen})"
-          Err(e) => "record_failed: \{e}"
+  // P1.1：备用模型自动切换（CLI 通道）。主选失败且备用链还有候选时换模型重试，
+  // 最多 `max_retries` 次（env FIST_MODEL_MAX_RETRIES）。每次重试把失败模型记一次配额账。
+  let mut attempt_model = chosen
+  let mut attempt_idx = -1
+  let mut retried : Array[String] = []
+  let mut should_retry = true
+  while should_retry {
+    should_retry = false
+    let (bin, args) = if attempt_idx < 0 {
+      (bin, args)
+    } else {
+      match
+        @executor.build_command(
+          executor~,
+          prompt~,
+          model=attempt_model,
+          workdir=project_dir,
+        ) {
+        Err(e) => return fail(e, [("model", Json::string(attempt_model))])
+        Ok(v) => v
+      }
+    }
+    let res = run_check_external(bin, args, project_dir, timeout_ms)
+    let head : Array[(String, Json)] = [
+        ("executor", Json::string(executor)),
+        ("binary", Json::string(bin)),
+        ("model", Json::string(attempt_model)),
+        ("route", route_json),
+      ] +
+      [("retried", Json::array(retried.map(fn(x) { Json::string(x) })))]
+    match res {
+      Err(e) =>
+        // 进程没起来（ENOENT 一类）不消耗配额，所以重试无需记账
+        if attempt_idx + 1 < max_retries &&
+          attempt_idx + 1 < fallback_models.length() {
+          retried = retried + [attempt_model]
+          attempt_idx = attempt_idx + 1
+          attempt_model = fallback_models[attempt_idx]
+          should_retry = true
+        } else {
+          return mr_obj(
+            [("ok", Json::boolean(false))] +
+            head +
+            [
+              ("executed", Json::boolean(false)),
+              ("exit_code", Json::number(-1.0)),
+              ("error", Json::string(e)),
+              ("hint", Json::string(@executor.executor_missing_hint(executor))),
+            ],
+          )
         }
-      } else {
-        "not_routed(调用方显式指定 model，不代记账)"
+      Ok(j) => {
+        let jm : Map[String, Json] = match j {
+          Json::Object(mm) => mm
+          _ => Map([])
+        }
+        let okk = match jm.get("ok") {
+          Some(Json::True) => true
+          _ => false
+        }
+        let code = match jm.get("code") {
+          Some(Json::Number(n, ..)) => n.to_int()
+          _ => -1
+        }
+        let errtxt = match jm.get("error") {
+          Some(Json::String(s)) => s
+          _ => ""
+        }
+        let stderrtxt = match jm.get("stderr") {
+          Some(Json::String(s)) => s
+          _ => ""
+        }
+        let tail = if !errtxt.is_empty() { errtxt } else { stderrtxt }
+        // 进程真起来的一方才记账（BUG-61：Err 分支是 ENOENT，没起进程就不消耗）
+        if !okk &&
+          attempt_idx + 1 < max_retries &&
+          attempt_idx + 1 < fallback_models.length() {
+          if routed_by_pool {
+            let _ = mr_record_only(project_dir, ns~, attempt_model)
+          }
+          retried = retried + [attempt_model]
+          attempt_idx = attempt_idx + 1
+          attempt_model = fallback_models[attempt_idx]
+          should_retry = true
+        } else {
+          // 最终尝试（成功或已用尽重试）：记账并返回
+          let quota_note = if routed_by_pool {
+            match mr_record_only(project_dir, ns~, attempt_model) {
+              Ok(_) => "recorded(\{attempt_model})"
+              Err(e) => "record_failed: \{e}"
+            }
+          } else {
+            "not_routed(调用方显式指定 model，不代记账)"
+          }
+          let hint = if okk {
+            "外部执行器返回 0；成果仍需按证据梯 L4 用 output_validate 到文件系统验证（报告不是证据）"
+          } else {
+            @executor.executor_missing_hint(executor)
+          }
+          return mr_obj(
+            [("ok", Json::boolean(okk))] +
+            head +
+            [
+              ("executed", Json::boolean(true)),
+              ("quota", Json::string(quota_note)),
+              ("exit_code", Json::number(code.to_double())),
+              (
+                "cost_estimate",
+                Json::number(if executor == "atomcode" { 0.0 } else { -1.0 }),
+              ),
+              ("error_tail", Json::string(tail)),
+              ("hint", Json::string(hint)),
+            ],
+          )
+        }
       }
-      let jm : Map[String, Json] = match j {
-        Json::Object(mm) => mm
-        _ => Map([])
-      }
-      let okk = match jm.get("ok") {
-        Some(Json::True) => true
-        _ => false
-      }
-      let code = match jm.get("code") {
-        Some(Json::Number(n, ..)) => n.to_int()
-        _ => -1
-      }
-      let errtxt = match jm.get("error") {
-        Some(Json::String(s)) => s
-        _ => ""
-      }
-      let stderrtxt = match jm.get("stderr") {
-        Some(Json::String(s)) => s
-        _ => ""
-      }
-      let tail = if !errtxt.is_empty() { errtxt } else { stderrtxt }
-      let hint = if okk {
-        "外部执行器返回 0；成果仍需按证据梯 L4 用 output_validate 到文件系统验证（报告不是证据）"
-      } else {
-        @executor.executor_missing_hint(executor)
-      }
-      mr_obj(
-        [("ok", Json::boolean(okk))] +
-        head +
-        [
-          ("executed", Json::boolean(true)),
-          ("quota", Json::string(quota_note)),
-          ("exit_code", Json::number(code.to_double())),
-          (
-            "cost_estimate",
-            Json::number(if executor == "atomcode" { 0.0 } else { -1.0 }),
-          ),
-          ("error_tail", Json::string(tail)),
-          ("hint", Json::string(hint)),
-        ],
-      )
     }
   }
+  // 不可达（每个分支要么 return，要么把 should_retry 置 true 继续循环）
+  mr_obj([("ok", Json::boolean(false)), ("error", Json::string("unreachable"))])
 }
