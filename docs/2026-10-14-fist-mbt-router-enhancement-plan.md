@@ -84,9 +84,9 @@ AIGC:
 
 | 增强项 | 优先级 | 状态 | 影响面 |
 |---|---|---|---|
-| 3 性价比选型 | P1 | ✅ 已实现于 v0.4.x | src/router schema + server ops |
-| 1 自动切换备用模型 | P1 | ⚠️ 半实现（fallback_chain 就绪，executor 接线+冷却待编码） | src/router + src/executor + ops |
-| 2 laya 判断路由 | P2 | ✅ 已实现（2026-10-14） | src/router + src/server ops + laya 接口 |
+| 3 性价比选型 | P1 | ✅ 已实现（2026-10-14，commit 42478cd） | src/router schema + server ops |
+| 1 自动切换备用模型 | P1 | ✅ 已实现（2026-10-14，commit 42478cd + 927c14b + 75757d5） | src/router + src/server ops |
+| 2 laya 判断路由 | P2 | ✅ 已实现（2026-10-14，commit 1b5d36f） | src/router + src/server ops + laya 接口 |
 
 三项均不影响 v0.3.8/v0.4.x 确定性路由基线，可独立合入。
 
@@ -101,5 +101,11 @@ AIGC:
 - `RouterConfig::from_json` 支持 `free_pool` / `paid_pool` / `ofm_endpoint` / `use_laya`
 - `should_retry_on_invalid_json` + `append_retry_prompt` 用于 OFM 回体不可解析时的二次重试
 - `filter_unhealthy_models` + `is_model_unhealthy` 精确匹配黑名单过滤
-- **待办**：executor_run 接入 `fallback_chain` 重试循环 + 冷却/自动摘除（P1.1 半实现，fallback_chain 已就绪，接线与冷却待编码）
+- `ModelQuota` 已含 `cooldown_until`（ISO，""=无冷却）+ `mark_failure()` / `in_cooldown()` 方法
+- `ModelRouter::mark_failure()` 遍历两池标记失败冷却（跨包可调用）
+- `pool_pick` 跳过冷却中的模型（新增 `now~` 参数）
+- `router_state` 全链透传 `cooldown_until`（from_json / merge_usage / reset_windows / to_state）
+- server `mr_record_failure()`：读 env `FIST_MODEL_COOLDOWN_SECS`（默认 300 秒）后标记冷却
+- `executor_run` CLI 通道重试循环：`fallback_chain` 逐个尝试、`retried` 数组回执、
+  每个失败分支都记配额（进程真起来那记）并标记冷却
 *（内容由AI生成，仅供参考）*
