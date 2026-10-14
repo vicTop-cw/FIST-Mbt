@@ -754,6 +754,11 @@ RE_J14_CLAIM = re.compile(
 )
 RE_J14_GROUP = re.compile(r'^\s*"\s*\[[A-Za-z][A-Za-z0-9 -]*\s+(\d+)\]', re.M)
 RE_J14_GROUPN = re.compile(r"\((\d+) groups\)")
+# J16：抓 `"  [Group N] name1 name2 …` 这一行的**组名与工具名串**。
+# 组名允许字母数字/空格/连字符（如 Six-Hats-Debate / Ops-Log-Bug-Cost）；
+# 工具名串抓到行尾 `\n" +` 之前的反斜杠为止（mbt 字符串拼接的边界）。
+RE_J16_HELP_ENTRY = re.compile(
+    r'^\s*"\s*\[[A-Za-z][A-Za-z0-9 -]*\s+\d+\]\s*([^\\"]*?)\s*(?:\\n)?"', re.M)
 
 
 def j14_count_problems(texts, n):
@@ -799,14 +804,46 @@ def j14_help_group_problems(help_text, n):
     return problems
 
 
+# J16（2026-10-14 新增）：CLI 帮助分组表里的**逐个工具名** == 真源集合。
+# 为什么单立一格：J14 只判「分组数字之和」与「组数」——表里把 `publish` 写成 `publsh`
+# （或漏列一个、多列一个）时，**数字和仍然对**，J14 全绿。这正是"手写清单"的典型漂移面：
+# 分组**归类**是人工知识（哪个工具属哪组真源给不出），但**集合**必须与真源一致。
+# 三个方向都判：真源有而表里没有（漏/拼错）、表里有而真源没有（多/拼错）、两边空集 ⇒ 自拒。
+def j16_help_tool_names_problems(help_text, tools):
+    """返回违例清单。tools = 真源工具名（list/set）。"""
+    if not tools:
+        return ["FATAL J16 真源工具集合为空 ⇒ 判据无法自证，不报绿"]
+    listed = set()
+    for m in RE_J16_HELP_ENTRY.finditer(help_text):
+        listed |= set(m.group(1).split())
+    if not listed:
+        return [f"FATAL J16 {J14_HELP} 分组表一个工具名都没解析到 ⇒ 判据饿死，不报绿"]
+    real = set(tools)
+    problems = []
+    miss = sorted(real - listed)
+    extra = sorted(listed - real)
+    if miss:
+        problems.append(
+            f"J16 {J14_HELP} 分组表漏列/拼错 {len(miss)} 个真源工具："
+            + ", ".join(miss[:8]) + ("…" if len(miss) > 8 else "")
+            + " ⇒ 数字和对不代表名字对（手写清单漂移）")
+    if extra:
+        problems.append(
+            f"J16 {J14_HELP} 分组表出现 {len(extra)} 个非真源工具名（拼错或已退役）："
+            + ", ".join(extra[:8]) + ("…" if len(extra) > 8 else ""))
+    return problems
+
+
 def j14_tool_count_claims():
     texts = {}
     for rel, _label in J14_FACES:
         p = ROOT / rel
         texts[rel] = p.read_text(encoding="utf-8", errors="replace") if p.is_file() else ""
-    n = len(real_tools())
+    tools = real_tools()
+    n = len(tools)
     problems = j14_count_problems(texts, n)
     problems += j14_help_group_problems(texts.get(J14_HELP, ""), n)
+    problems += j16_help_tool_names_problems(texts.get(J14_HELP, ""), tools)
     return problems
 
 
