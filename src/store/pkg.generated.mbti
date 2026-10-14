@@ -20,6 +20,8 @@ pub fn insert_execution(@sqlite.Database, ExecutionRecord) -> Result[Unit, Strin
 
 pub fn list_all_executions(@sqlite.Database) -> Array[ExecutionRecord]
 
+pub fn lock_acquire_action(FileLock?, String, String) -> (Bool, String)
+
 pub fn rsv_action((String, String, String)?, String, String) -> (Bool, String)
 
 pub fn specs_table_sql() -> String
@@ -66,6 +68,15 @@ pub fn FileLock::new(lock_id~ : String, batch_id~ : String, scope~ : String, age
 pub fn FileLock::renew(Self, ttl_until~ : String, ts~ : String) -> Self
 pub fn FileLock::to_json(Self) -> Json
 
+pub struct LockAcquireOutcome {
+  granted : Bool
+  action : String
+  prev_agent : String
+  agent : String
+  ttl_until : String
+  violation_logged : Bool
+} derive(@debug.Debug)
+
 pub struct LockViolation {
   ts : String
   agent : String
@@ -108,6 +119,7 @@ pub fn MemoryStore::locks_get(Self, String) -> FileLock?
 pub fn MemoryStore::locks_list(Self) -> Array[FileLock]
 pub fn MemoryStore::locks_release(Self, String, String) -> Bool
 pub fn MemoryStore::locks_sweep(Self, String) -> Int
+pub fn MemoryStore::locks_try_acquire(Self, FileLock) -> LockAcquireOutcome
 pub fn MemoryStore::locks_upsert(Self, FileLock) -> Unit
 pub fn MemoryStore::new() -> Self
 pub fn MemoryStore::recent_call_logs(Self, limit? : Int) -> Array[Json]
@@ -193,6 +205,7 @@ pub fn SqliteStore::locks_get(Self, String) -> FileLock?
 pub fn SqliteStore::locks_list(Self) -> Array[FileLock]
 pub fn SqliteStore::locks_release(Self, String, String) -> Bool
 pub fn SqliteStore::locks_sweep(Self, String) -> Int
+pub fn SqliteStore::locks_try_acquire(Self, FileLock) -> LockAcquireOutcome
 pub fn SqliteStore::locks_upsert(Self, FileLock) -> Unit
 pub fn SqliteStore::mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int]) -> Result[Unit, String]
 pub fn SqliteStore::new() -> Self?
@@ -246,6 +259,7 @@ pub fn StoreBackend::locks_get(Self, String) -> FileLock?
 pub fn StoreBackend::locks_list(Self) -> Array[FileLock]
 pub fn StoreBackend::locks_release(Self, String, String) -> Bool
 pub fn StoreBackend::locks_sweep(Self, String) -> Int
+pub fn StoreBackend::locks_try_acquire(Self, FileLock) -> LockAcquireOutcome
 pub fn StoreBackend::locks_upsert(Self, FileLock) -> Unit
 pub fn StoreBackend::mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int]) -> Result[Unit, String]
 pub fn StoreBackend::memory() -> Self

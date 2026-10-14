@@ -78,13 +78,35 @@ def fail(msg):
     sys.exit(1)
 
 
-RE_TOOL = re.compile(r'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"')
+RE_TOOL = re.compile(r'instrumented_tool\(\s*\w+\s*,\s*"([^"]+)"')
+# mcpcf_embed.mbt 走链式 `s.tool("mcpcf.xxx", …)`（不是 instrumented_tool）⇒ 单扫 instrumented_tool 会漏这 7 个。
+RE_TOOL_CHAIN = re.compile(r'\b\w+\.tool\(\s*"([^"]+)"')
+SERVER_DIR = Path(__file__).resolve().parent.parent / "src" / "server"
+
+
+def registry_tool_names():
+    """工具名真源 = `src/server/*.mbt`（非测试文件）里**两种注册形态的并集**：
+       ① `instrumented_tool(<var>, "name", …)`   ② 链式 `<var>.tool("name", …)`（mcpcf_embed.mbt）。
+
+    **为什么不再只扫 server.mbt（2026-10-14 实测）**：工具注册已被拆进独立文件
+    （`supervisor_tools.mbt` 8 个、`hat_hexa_tools.mbt` 3 个、`mcpcf_embed.mbt` 7 个），
+    只扫 server.mbt 得到 148、而运行态 tools/list 是 166 ⇒ 本冒烟在健康树上误报 FAIL，
+    且把"数量不等"与"缺 publish"挤进同一句（publish 明明在场却被报"缺 publish"）。
+    这延续 BUG-67 的教训：不硬编码数量，但**反解口径要跟着真源搬家**。
+    注：文档面（AGENTS/README 计数）的同步属 `check_tools_sync` 的收口批次（并发会话正在改文档），
+    本冒烟只管"运行态 ↔ 源码真源"对表，不碰文档数字。"""
+    names = set()
+    for f in sorted(SERVER_DIR.glob("*.mbt")):
+        if f.name.endswith(("_test.mbt", "_wbtest.mbt")):
+            continue
+        text = f.read_text(encoding="utf-8")
+        names |= set(RE_TOOL.findall(text))
+        names |= set(RE_TOOL_CHAIN.findall(text))
+    return names
 
 
 def registry_tool_count():
-    """工具数真源：src/server/server.mbt 的注册点（与 check_tools_sync 逐字同口径）。"""
-    src = Path(__file__).resolve().parent.parent / "src" / "server" / "server.mbt"
-    return len(set(RE_TOOL.findall(src.read_text(encoding="utf-8"))))
+    return len(registry_tool_names())
 
 
 def main():
@@ -117,9 +139,23 @@ def main():
         # 而且过期方式是"自检通过/自检失败"这种假信号。改成直接读真源同一口径。
         expected = registry_tool_count()
         if expected < 100:
-            fail(f"server.mbt 只解析到 {expected} 个工具（<100 视为解析失效，不出假绿）")
-        if len(tools) != expected or "publish" not in tools:
-            fail(f"tools/list 异常（共 {len(tools)} 个工具，期望 {expected}，缺 publish）")
+            fail(f"src/server/*.mbt 只解析到 {expected} 个工具（<100 视为解析失效，不出假绿）")
+        # 两件事必须分开判：数量不等是"注册表漂移"，缺 publish 是"入口工具丢失"。
+        # 2026-10-14 实测过一次混判的代价：运行态 166 vs 只扫 server.mbt 得 148（18 个工具已拆到
+        # supervisor_tools/hat_hexa/mcpcf_embed 等文件）⇒ 报出"缺 publish"，而 publish 明明在场，
+        # 读的人被文案带去查一个不存在的问题。混判=误导，宁可多打一行。
+        if len(tools) != expected:
+            missing = sorted(set(registry_tool_names()) - set(tools))
+            extra = sorted(set(tools) - set(registry_tool_names()))
+            detail = []
+            if missing:
+                detail.append(f"真源有、运行态缺（{len(missing)}）：{', '.join(missing[:8])}")
+            if extra:
+                detail.append(f"运行态有、真源无（{len(extra)}）：{', '.join(extra[:8])}")
+            fail(f"tools/list 数量与真源不一致：运行态 {len(tools)} vs 真源 {expected}；"
+                 + "；".join(detail))
+        if "publish" not in tools:
+            fail("tools/list 缺 publish（入口工具丢失，与数量无关）")
         print(f"PASS tools/list → {len(tools)} 个工具（含 publish/selfdrive_publish_next 等）")
 
         # Step 1b · issue_scan（打磨收尾新增：找目标项目潜问题）

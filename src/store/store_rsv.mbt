@@ -172,7 +172,56 @@ pub fn MemoryStore::executor_clear(self : MemoryStore) -> Bool {
 // —— 分布式文件锁（内存后端）——
 
 ///|
+/// 锁层复用预订层裁决真源的前置归一：把锁的写前快照折成 `rsv_action` 的输入。
+/// 非 `active`（released / expired / violated）一律视作「无人持锁」→ `None`，
+/// 于是「复用一条已释放/已扫出的行」走 `reserved`，与预订层同一形状。
+fn lock_prev_for_action(prev : FileLock?) -> (String, String, String)? {
+  match prev {
+    Some(l) if l.status == "active" => Some((l.agent, l.ttl_until, l.ts))
+    _ => None
+  }
+}
+
+///|
+/// 锁层「该不该写」的裁决：**逐字委托 `rsv_action`**，不另写谓词。
+///
+///   - 为什么必须有这一层（BUG-145 / 多 agent 锁机制报告 R24·R25）：`locks_upsert` 原先
+///     自带一段手写 forked 谓词，只决定「要不要追加一条 `lock_taken_over` 违例」，
+///     随后**无条件覆盖写**——把 `rsv_action` 本应回的 `(false, "conflict")` 丢弃了。
+///     后果是 `lock_acquire` 恒回 active：A 持 live 锁时 B 照样「拿到」同一把锁，
+///     而设计文档 v3 的 lk2 明确要求「A 持锁后 B `lock_acquire` → granted=false, blocked_by=A」。
+///   - 单一真源纪律：冲突矩阵只写在 `rsv_action` 一处（同持有者排在过期之前那条亦然），
+///     本函数只做形状归一，因此预订层与锁层不可能各自漂移。
+///   - `now` 传本次请求的时间戳（与旧 forked 谓词的 `lock.ts` 同一口径）。
+pub fn lock_acquire_action(
+  prev : FileLock?,
+  agent : String,
+  now : String,
+) -> (Bool, String) {
+  rsv_action(lock_prev_for_action(prev), agent, now)
+}
+
+///|
+/// 锁获取裁决结果（与 `RsvOutcome` 同一纪律：结论来自**写后回读**，不由请求反推）。
+pub struct LockAcquireOutcome {
+  granted : Bool
+  /// reserved | renewed | taken_over | conflict
+  action : String
+  /// 仅 taken_over 非空：被让渡掉的原持有者
+  prev_agent : String
+  /// 库里现值：granted 时是自己，conflict 时即现持有者（held_by）
+  agent : String
+  /// 库里现值的 ttl_until
+  ttl_until : String
+  /// 本次是否留下了一条违例记录（conflict 记 lock_denied）
+  violation_logged : Bool
+} derive(Debug)
+
+///|
 /// 内存后端：把锁写入（按 scope 唯一，覆盖旧值；旧锁若 active 且非本人且未过期则记违例）。
+///
+/// **这是底层原语，不是互斥门**：它永远落库（last-write-wins），只在覆盖他人 live 锁时
+/// 留一条 `lock_taken_over` 事后审计。要「抢不到就拒」请用 `locks_try_acquire`。
 pub fn MemoryStore::locks_upsert(self : MemoryStore, lock : FileLock) -> Unit {
   match self.file_locks.get(lock.scope) {
     Some(old) if old.status == "active" &&
@@ -188,6 +237,63 @@ pub fn MemoryStore::locks_upsert(self : MemoryStore, lock : FileLock) -> Unit {
     _ => ()
   }
   self.file_locks.set(lock.scope, lock)
+}
+
+///|
+/// 内存后端：按裁决抢锁（BUG-145）——**抢不到就是拒绝，不是覆盖**。
+/// 形状与 `rsv_try_set` 逐字同构：写前快照过 `lock_acquire_action`（委托 `rsv_action`）
+/// 定标签，结论一律由**写后回读**定——回执不许由请求反推。
+/// conflict 时落一条 `lock_denied` 违例（拒夺审计），锁行**不动**，现持有者原样保住。
+pub fn MemoryStore::locks_try_acquire(
+  self : MemoryStore,
+  lock : FileLock,
+) -> LockAcquireOutcome {
+  let prev = self.locks_get(lock.scope)
+  let (may_write, action) = lock_acquire_action(prev, lock.agent, lock.ts)
+  let prev_agent = match prev {
+    Some(o) if action == "taken_over" => o.agent
+    _ => ""
+  }
+  if may_write {
+    self.file_locks.set(lock.scope, lock)
+  }
+  match self.locks_get(lock.scope) {
+    Some(l) if l.agent == lock.agent =>
+      LockAcquireOutcome::{
+        granted: true,
+        action,
+        prev_agent,
+        agent: lock.agent,
+        ttl_until: l.ttl_until,
+        violation_logged: false,
+      }
+    Some(l) => {
+      self.lock_violations.push(LockViolation::{
+        ts: lock.ts,
+        agent: lock.agent,
+        scope: lock.scope,
+        reason: "lock_denied",
+        lock_id: lock.lock_id,
+      })
+      LockAcquireOutcome::{
+        granted: false,
+        action: "conflict",
+        prev_agent: "",
+        agent: l.agent,
+        ttl_until: l.ttl_until,
+        violation_logged: true,
+      }
+    }
+    None =>
+      LockAcquireOutcome::{
+        granted: false,
+        action: "conflict",
+        prev_agent: "",
+        agent: "",
+        ttl_until: "",
+        violation_logged: false,
+      }
+  }
 }
 
 ///|

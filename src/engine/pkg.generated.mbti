@@ -134,6 +134,7 @@ pub fn FistEngine::locks_get(Self, String) -> @store.FileLock?
 pub fn FistEngine::locks_list(Self) -> Array[@store.FileLock]
 pub fn FistEngine::locks_release(Self, String, String) -> Bool
 pub fn FistEngine::locks_sweep(Self, String) -> Int
+pub fn FistEngine::locks_try_acquire(Self, @store.FileLock) -> @store.LockAcquireOutcome
 pub fn FistEngine::locks_upsert(Self, @store.FileLock) -> Unit
 pub fn FistEngine::new(store? : @store.StoreBackend) -> Self
 pub fn FistEngine::omega_auto_lesson(Self, Int, String, String, String, String) -> Bool

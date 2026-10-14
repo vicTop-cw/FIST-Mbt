@@ -724,3 +724,172 @@ test "locks_try_acquire: 两后端同构 —— 同序列同结论" {
     }
   }
 }
+
+///|
+// —— SQLite 后端 locks_try_acquire（BUG-145 回归锁：拒绝型互斥必须在持久化库上成立）——
+// 队友的「两后端同构」用例只跑了 memory()，下面补 SQLite 这一侧的硬断言——
+// 尤其「他人 live 锁 → granted=false、锁行不被覆盖、落一条 lock_denied」。
+
+test "locks_try_acquire: SQLite 后端 首取成功" {
+  let db = "temp/lock_try_sqlite_fresh.db"
+  match @store.SqliteStore::open(db) {
+    None => abort("sqlite open failed: \{db}")
+    Some(s) => ignore(s.clear())
+  }
+  let s = match @store.SqliteStore::open(db) {
+    None => abort("sqlite reopen failed: \{db}")
+    Some(s) => s
+  }
+  let b = @store.StoreBackend::sqlite(s)
+  let lock = @store.FileLock::new(
+    lock_id="l1",
+    batch_id="b1",
+    scope="src/a.mbt",
+    agent="exec_1",
+    status="active",
+    ts="2026-10-11T10:00:00Z",
+    ttl_until="2026-10-11T11:00:00Z",
+  )
+  let o = b.locks_try_acquire(lock)
+  assert_true(o.granted)
+  assert_eq(o.action, "reserved")
+  assert_eq(o.agent, "exec_1")
+  assert_eq(o.prev_agent, "")
+  assert_false(o.violation_logged)
+}
+
+///|
+test "locks_try_acquire: SQLite 后端 他人 live 锁 → granted=false + lock_denied + 锁行不动" {
+  let db = "temp/lock_try_sqlite_conflict.db"
+  match @store.SqliteStore::open(db) {
+    None => abort("sqlite open failed: \{db}")
+    Some(s) => ignore(s.clear())
+  }
+  let s = match @store.SqliteStore::open(db) {
+    None => abort("sqlite reopen failed: \{db}")
+    Some(s) => s
+  }
+  let b = @store.StoreBackend::sqlite(s)
+  // exec_1 先持有一把 live 锁
+  b.locks_upsert(
+    @store.FileLock::new(
+      lock_id="l1",
+      batch_id="b1",
+      scope="src/a.mbt",
+      agent="exec_1",
+      status="active",
+      ts="2026-10-11T08:00:00Z",
+      ttl_until="2026-10-11T12:00:00Z",
+    ),
+  )
+  // exec_2 抢同一把 → 必须被拒（这是 BUG-145 修复的核心契约）
+  let l2 = @store.FileLock::new(
+    lock_id="l2",
+    batch_id="b1",
+    scope="src/a.mbt",
+    agent="exec_2",
+    status="active",
+    ts="2026-10-11T10:00:00Z",
+    ttl_until="2026-10-11T12:00:00Z",
+  )
+  let o = b.locks_try_acquire(l2)
+  assert_false(o.granted)
+  assert_eq(o.action, "conflict")
+  assert_true(o.violation_logged)
+  assert_eq(o.agent, "exec_1") // 库里现值仍是 exec_1
+  // 锁行未被覆盖：持有者仍是 exec_1、lock_id 仍是 l1（旧形状会让 exec_2 也 reserved）
+  match b.locks_get("src/a.mbt") {
+    Some(l) => {
+      assert_eq(l.agent, "exec_1")
+      assert_eq(l.lock_id, "l1")
+    }
+    None => abort("SQLite 锁行不应消失")
+  }
+  // 恰好一条 lock_denied 违例
+  let v = b.lock_violations_list()
+  assert_eq(v.length(), 1)
+  assert_eq(v[0].reason, "lock_denied")
+}
+
+///|
+test "locks_try_acquire: SQLite 后端 旧主 TTL 已过 → taken_over + 覆盖为 exec_2" {
+  let db = "temp/lock_try_sqlite_takeover.db"
+  match @store.SqliteStore::open(db) {
+    None => abort("sqlite open failed: \{db}")
+    Some(s) => ignore(s.clear())
+  }
+  let s = match @store.SqliteStore::open(db) {
+    None => abort("sqlite reopen failed: \{db}")
+    Some(s) => s
+  }
+  let b = @store.StoreBackend::sqlite(s)
+  b.locks_upsert(
+    @store.FileLock::new(
+      lock_id="l1",
+      batch_id="b1",
+      scope="src/a.mbt",
+      agent="exec_1",
+      status="active",
+      ts="2026-10-11T08:00:00Z",
+      ttl_until="2026-10-11T09:00:00Z", // 在 10:00 之前已过期
+    ),
+  )
+  let l2 = @store.FileLock::new(
+    lock_id="l2",
+    batch_id="b1",
+    scope="src/a.mbt",
+    agent="exec_2",
+    status="active",
+    ts="2026-10-11T10:00:00Z",
+    ttl_until="2026-10-11T12:00:00Z",
+  )
+  let o = b.locks_try_acquire(l2)
+  assert_true(o.granted)
+  assert_eq(o.action, "taken_over")
+  assert_eq(o.prev_agent, "exec_1")
+  assert_eq(o.agent, "exec_2")
+  assert_false(o.violation_logged)
+  match b.locks_get("src/a.mbt") {
+    Some(l) => assert_eq(l.agent, "exec_2")
+    None => abort("SQLite 锁行应被接管")
+  }
+}
+
+///|
+test "locks_try_acquire: SQLite 后端 已释放锁 → reserved 复用行" {
+  let db = "temp/lock_try_sqlite_released.db"
+  match @store.SqliteStore::open(db) {
+    None => abort("sqlite open failed: \{db}")
+    Some(s) => ignore(s.clear())
+  }
+  let s = match @store.SqliteStore::open(db) {
+    None => abort("sqlite reopen failed: \{db}")
+    Some(s) => s
+  }
+  let b = @store.StoreBackend::sqlite(s)
+  b.locks_upsert(
+    @store.FileLock::new(
+      lock_id="l1",
+      batch_id="b1",
+      scope="src/a.mbt",
+      agent="exec_1",
+      status="active",
+      ts="2026-10-11T08:00:00Z",
+      ttl_until="2026-10-11T12:00:00Z",
+    ),
+  )
+  assert_true(b.locks_release("src/a.mbt", "exec_1"))
+  let l2 = @store.FileLock::new(
+    lock_id="l2",
+    batch_id="b1",
+    scope="src/a.mbt",
+    agent="exec_2",
+    status="active",
+    ts="2026-10-11T10:00:00Z",
+    ttl_until="2026-10-11T12:00:00Z",
+  )
+  let o = b.locks_try_acquire(l2)
+  assert_true(o.granted)
+  assert_eq(o.action, "reserved")
+  assert_eq(o.agent, "exec_2")
+}
