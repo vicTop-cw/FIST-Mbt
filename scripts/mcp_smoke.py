@@ -28,6 +28,14 @@ from pathlib import Path
 import subprocess
 import sys
 
+# 工具注册真源的单一实现（此前 5 处复制；漏改即假绿/互掐）。
+import importlib.util as _ilu
+
+_ir_spec = _ilu.spec_from_file_location(
+    "_tool_registry", Path(__file__).resolve().parent / "_tool_registry.py")
+_tool_registry = _ilu.module_from_spec(_ir_spec)
+_ir_spec.loader.exec_module(_tool_registry)
+
 NODE = os.environ.get("FIST_NODE", "node")
 # BUG-122：README/USAGE/agent-map/deliverable 四处都教人**裸跑**这份自检或 demo，而不带 FIST_DB_PATH 时
 # 服务端会把演示数据写进仓库根的自举台账 fist-mbt.db（每裸跑一次多一条任务与若干调用行）。
@@ -85,24 +93,12 @@ SERVER_DIR = Path(__file__).resolve().parent.parent / "src" / "server"
 
 
 def registry_tool_names():
-    """工具名真源 = `src/server/*.mbt`（非测试文件）里**两种注册形态的并集**：
-       ① `instrumented_tool(<var>, "name", …)`   ② 链式 `<var>.tool("name", …)`（mcpcf_embed.mbt）。
+    """工具名真源 —— **委托给单一实现** `scripts/_tool_registry.py`（2026-10-14 收口）。
 
-    **为什么不再只扫 server.mbt（2026-10-14 实测）**：工具注册已被拆进独立文件
-    （`supervisor_tools.mbt` 8 个、`hat_hexa_tools.mbt` 3 个、`mcpcf_embed.mbt` 7 个），
-    只扫 server.mbt 得到 148、而运行态 tools/list 是 166 ⇒ 本冒烟在健康树上误报 FAIL，
-    且把"数量不等"与"缺 publish"挤进同一句（publish 明明在场却被报"缺 publish"）。
-    这延续 BUG-67 的教训：不硬编码数量，但**反解口径要跟着真源搬家**。
-    注：文档面（AGENTS/README 计数）的同步属 `check_tools_sync` 的收口批次（并发会话正在改文档），
-    本冒烟只管"运行态 ↔ 源码真源"对表，不碰文档数字。"""
-    names = set()
-    for f in sorted(SERVER_DIR.glob("*.mbt")):
-        if f.name.endswith(("_test.mbt", "_wbtest.mbt")):
-            continue
-        text = f.read_text(encoding="utf-8")
-        names |= set(RE_TOOL.findall(text))
-        names |= set(RE_TOOL_CHAIN.findall(text))
-    return names
+    本函数曾在 5 个消费者里各写一份；工具注册一搬家（从 server.mbt 拆到 supervisor_tools/
+    hat_hexa/mcpcf_embed），漏改处会假绿或互掐。本冒烟只管"运行态 ↔ 源码真源"对表，不碰文档数字。
+    返回 set（调用方用集合差算 missing/extra）。"""
+    return set(_tool_registry.real_tools())
 
 
 def registry_tool_count():
