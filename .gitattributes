@@ -20,3 +20,12 @@
 # 跨 shell 执行的脚本：一律 LF（Linux/mac 上 bash 直接跑，CRLF 会炸）
 *.sh    text eol=lf
 *.mjs   text eol=lf
+
+# 模板/提示词面：一律 LF，且把字节当文本钉死（2026-10-14 加，源自模板 353 处裸 CR 普查）
+#   `templates/` 是**发给 agent 的提示词**，曾因 autocrlf + 转义序列解释混入裸 CR：
+#   7 份 pipeline_mode_*.md 的 `\r` 吃掉了 `reject` 的 r、`\t` 吃掉 `task_plan_deep` 的 t，
+#   导致提示词里工具名错字母（`eject`/`ask_plan_deep`），执行者调不到工具。
+#   判据 `scripts/check_template_ctrl.py` 按**字节**点名（T1：只放行 LF/TAB）。
+#   钉 `text eol=lf` 后：① git 存 LF 不再被 autocrlf 转成 CRLF 掩盖改动；② checkout 一律 LF，
+#   裸 CR 无法从 Windows 工作树重新进入。安全边界：只列 templates/*.md，不加 `* text=auto`。
+templates/*.md  text eol=lf
