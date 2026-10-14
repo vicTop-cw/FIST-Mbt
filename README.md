@@ -83,11 +83,17 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 ### Omega 强验证（6）
 `omega_spec_create` · `omega_spec_review` · `omega_result_verify` · `omega_status` · `omega_verify` · `omega_verify_fix`
 
-### 六顶帽 · 辩论裁决（4）
-`hat_list` · `debate_convene` · `debate_register` · `debate_verdict`
+### 六顶帽 · 辩论裁决（7）
+`hat_list` · `debate_convene` · `debate_register` · `debate_verdict` · `hat_run` · `hat_debate` · `hat_merge`
+
+### 超级管家专属工具（8）
+`supervisor_status` · `supervisor_task_tree` · `supervisor_kill_plan`（只出方案不执行）· `supervisor_prompt_inject` · `supervisor_prompt_list` · `supervisor_prompt_consume` · `supervisor_task_upsert` · `supervisor_reminder_tick`
 
 ### 项目助理（5）
 `assistant_claim` · `assistant_status` · `assistant_sweep` · `assistant_resign` · `assistant_heartbeat`
+
+### 嵌入式 MCPCf 内部工具（7）
+`mcpcf.ops_init` · `mcpcf.circuit` · `mcpcf.report` · `mcpcf.review` · `mcpcf.run_batch` · `mcpcf.verify` · `mcpcf.watchdog`
 
 ---
 
@@ -178,6 +184,9 @@ fist doctor        # 5 项健康检查
 | `python scripts/fist.py call project_standards` | AI 开发规范基线（R116）：10 条通用+FIST 强制规范 + 7 项四态 checklist；正文真源 `AI-DEVELOPMENT-STANDARD.md` |
 | `python scripts/gen_plugins.py` | 一源四态·插件态生成：真源 → atomcode/codearts/deepseek-harness/claude 四宿主投影 |
 | `python scripts/check_plugin_sync.py` | cl7 守卫：四宿主插件目录必须等于真源投影（手改/漏重生成/数字漂移即红） |
+| `python scripts/check_model_auth_no_key.py` | 凭据形状守卫：config_json/HTML/default-fist.mcp.json 里禁止出现 `api_key`/`Bearer`/`sk-` 值形状（对齐 BUG-127） |
+| `python scripts/check_host_installable.py` | 宿主可装守卫：deepseek-harness 宿主侧真的能装上（补 cl7「等于投影」却「装不上」的旧边界） |
+| `python scripts/check_skill_inject.py` | 注入命中守卫：evolve_asset_register 注入路径可测命中（plan/claim 传了 `inject` 时 `injected_assets` 非空才算命中） |
 
 更多 walkthrough 见 `docs/selfdrive-walkthrough.md`、`docs/issue-scan-skill.md`、`docs/output-validate-skill.md`。
 
