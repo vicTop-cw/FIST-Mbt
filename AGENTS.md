@@ -141,7 +141,7 @@ You can browse and install extra skills here:
 
 ## MCP Server
 
-本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**152 tools** + 3 resources + 2 prompts）：
+本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server（**140+ 个 MCP 工具** + 3 resources + 2 prompts）：
 
 ### 生命周期（14）
 | 工具 | 说明 |
