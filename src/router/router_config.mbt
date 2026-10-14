@@ -65,6 +65,13 @@ pub fn RouterConfig::from_json(json : Json) -> (RouterConfig, Array[String]) {
         Some(_) => ("", ["ofm_endpoint 非字符串，按未配置处理"])
         None => ("", [])
       }
+      // P2：laya 判断路由开关。缺字段/null → false（零回归）；坏类型 → false + warning。
+      let (use_laya, use_laya_warns) = match m.get("use_laya") {
+        Some(Json::True) => (true, [])
+        Some(Json::False) => (false, [])
+        Some(Json::Null) | None => (false, [])
+        Some(_) => (false, ["use_laya 非布尔，按 false 处理"])
+      }
       (
         {
           window_seconds: ws2,
@@ -72,8 +79,9 @@ pub fn RouterConfig::from_json(json : Json) -> (RouterConfig, Array[String]) {
           free_models,
           paid_models,
           ofm_endpoint,
+          use_laya,
         },
-        w2 + ofm_warns,
+        w2 + ofm_warns + use_laya_warns,
       )
     }
     Json::Null => (d, []) // null = 没给配置，不算违例、不产噪音 warning
@@ -195,6 +203,7 @@ pub fn RouterConfig::to_json(self : RouterConfig) -> Json {
     "free_pool": Json::array(self.free_models.map(fn(m) { m.to_json() })),
     "paid_pool": Json::array(self.paid_models.map(fn(m) { m.to_json() })),
     "ofm_endpoint": Json::string(self.ofm_endpoint),
+    "use_laya": Json::boolean(self.use_laya),
   })
 }
 

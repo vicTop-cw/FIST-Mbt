@@ -6264,7 +6264,17 @@ pub async fn run_server() -> Unit {
         Ok(j) => j
       }
       let ns2 = if ns.is_empty() { "default" } else { ns }
-      match model_route_impl(pd, ns=ns2, record_model=rec, config=cfgj) {
+      // P2：use_laya 开关为真时，向 laya 软性档位建议；假/未知 → 零副作用（""）。
+      let (cfg_router, _w) = @router.RouterConfig::from_json(cfgj)
+      let laya_hint = if cfg_router.use_laya { mr_laya_tier_hint() } else { "" }
+      let impl_res = model_route_impl(
+        pd,
+        ns=ns2,
+        record_model=rec,
+        config=cfgj,
+        laya_hint~,
+      )
+      match impl_res {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }

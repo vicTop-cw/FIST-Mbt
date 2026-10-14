@@ -128,6 +128,8 @@ pub struct RouterConfig {
   free_models : Array[ModelQuota]
   paid_models : Array[ModelQuota]
   ofm_endpoint : String
+  // P2：laya 判断路由开关。默认 false（零回归）；开启后 pick 接受 laya_prefer_tier 软性提示。
+  use_laya : Bool
 } derive(Eq, Debug)
 
 ///|
@@ -199,6 +201,7 @@ pub fn RouterConfig::default() -> RouterConfig {
     free_models: free,
     paid_models: paid,
     ofm_endpoint: "",
+    use_laya: false,
   }
 }
 
@@ -211,6 +214,8 @@ pub struct RouteDecision {
   switched : Bool
   next_switch_at : String
   available : Bool
+  /// P2：laya 参与时标注 `laya:<tier>`（如 laya:paid），未参与 = 空串
+  laya_reason : String
 } derive(Eq, Debug)
 
 ///|
@@ -222,6 +227,7 @@ pub fn RouteDecision::to_json(self : RouteDecision) -> Json {
     "switched": Json::boolean(self.switched),
     "available": Json::boolean(self.available),
     "next_switch_at": Json::string(self.next_switch_at),
+    "laya_reason": Json::string(self.laya_reason),
   })
 }
 
@@ -465,8 +471,9 @@ pub fn ModelRouter::pick(
   self : ModelRouter,
   now~ : String,
   unhealthy_ids? : Array[String] = [],
+  laya_prefer_tier? : String = "",
 ) -> RouteDecision {
-  let d = self.pick_inner(now~, unhealthy_ids~)
+  let d = self.pick_inner(now~, unhealthy_ids~, laya_prefer_tier~)
   if d.available && !d.model_name.is_empty() {
     self.last_pick = d.model_name
   }
@@ -478,12 +485,57 @@ fn ModelRouter::pick_inner(
   self : ModelRouter,
   now~ : String,
   unhealthy_ids? : Array[String] = [],
+  laya_prefer_tier? : String = "",
 ) -> RouteDecision {
   let _ = self.window_reset_check(now~)
   let th = self.config.threshold_pct
   let free = self.config.free_models
   let paid = self.config.paid_models
   let nxt = secs_to_iso(iso_to_secs(now) + self.config.window_seconds)
+  // P2：laya 软性档位提示——先试提示档位，配额硬约束仍在，不破。
+  // 档位字符串大小写归一（laya sidecar 可能返回 "Free"/"Paid"，from_string 只收小写）。
+  if laya_prefer_tier != "" {
+    let hint_norm = match laya_prefer_tier.trim().to_string() {
+      "Free" | "FREE" => "free"
+      "Paid" | "PAID" => "paid"
+      other => other
+    }
+    match ModelTier::from_string(hint_norm) {
+      None => ()
+      Some(t) => {
+        let hint_pool = if t == Free { free } else { paid }
+        let hint_idx = if t == Free { self.free_idx } else { self.paid_idx }
+        match pool_pick(hint_pool, hint_idx, th, unhealthy_ids~) {
+          None => () // 提示档位无容量 → 回落正常逻辑
+          Some(idx) => {
+            let was_switch = self.current_tier != t
+            if was_switch {
+              self.switch_count = self.switch_count + 1
+              self.last_switch_at = now
+            }
+            self.current_tier = t
+            if t == Free {
+              self.free_idx = (idx + 1) % free.length()
+            } else {
+              self.paid_idx = (idx + 1) % paid.length()
+            }
+            if hint_pool[idx].window_start == "" {
+              hint_pool[idx].window_start = now
+            }
+            return {
+              model_name: hint_pool[idx].name,
+              tier: t,
+              reason: "laya prefer \{t.to_string()} tier",
+              switched: was_switch,
+              next_switch_at: nxt,
+              available: true,
+              laya_reason: "laya:" + t.to_string(),
+            }
+          }
+        }
+      }
+    }
+  }
   match self.current_tier {
     Free =>
       match pool_pick(free, self.free_idx, th, unhealthy_ids~) {
@@ -499,6 +551,7 @@ fn ModelRouter::pick_inner(
             switched: false,
             next_switch_at: nxt,
             available: true,
+            laya_reason: "",
           }
         }
         None =>
@@ -519,6 +572,7 @@ fn ModelRouter::pick_inner(
                 switched: true,
                 next_switch_at: nxt,
                 available: true,
+                laya_reason: "",
               }
             }
             None => {
@@ -530,6 +584,7 @@ fn ModelRouter::pick_inner(
                 switched: false,
                 next_switch_at: "",
                 available: false,
+                laya_reason: "",
               }
             }
           }
@@ -548,6 +603,7 @@ fn ModelRouter::pick_inner(
             switched: false,
             next_switch_at: nxt,
             available: true,
+            laya_reason: "",
           }
         }
         None =>
@@ -568,6 +624,7 @@ fn ModelRouter::pick_inner(
                 switched: true,
                 next_switch_at: nxt,
                 available: true,
+                laya_reason: "",
               }
             }
             None => {
@@ -579,6 +636,7 @@ fn ModelRouter::pick_inner(
                 switched: false,
                 next_switch_at: "",
                 available: false,
+                laya_reason: "",
               }
             }
           }
@@ -620,6 +678,7 @@ pub fn ModelRouter::record_call(
       switched: d.switched,
       next_switch_at: d.next_switch_at,
       available: d.available,
+      laya_reason: d.laya_reason,
     }
   }
 }
@@ -647,6 +706,7 @@ pub fn ModelRouter::force_switch(
         switched: false,
         next_switch_at: "",
         available: false,
+        laya_reason: "",
       }
     }
     Some(idx) => {
@@ -678,6 +738,7 @@ pub fn ModelRouter::force_switch(
           iso_to_secs(now) + self.config.window_seconds,
         ),
         available: true,
+        laya_reason: "",
       }
     }
   }

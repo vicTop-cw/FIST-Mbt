@@ -18,6 +18,7 @@ fn rt_router(free_limit : Int, paid_limit : Int) -> ModelRouter {
     free_models: [ModelQuota::new(name="free-a", tier=Free, limit=free_limit)],
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=paid_limit)],
     ofm_endpoint: "",
+    use_laya: false,
   }
   ModelRouter::from_config(cfg)
 }
@@ -83,6 +84,7 @@ test "rt_4_空池不 panic：current_model=None 且决策显式不可用" {
     free_models: [],
     paid_models: [],
     ofm_endpoint: "",
+    use_laya: false,
   }
   let r = ModelRouter::from_config(cfg)
   assert_eq(r.current_model(), None)
@@ -259,6 +261,7 @@ test "rt_13_current_model 报真在用的模型而不是游标位（BUG-56 成�
     ],
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=10)],
     ofm_endpoint: "",
+    use_laya: false,
   }
   let r = ModelRouter::from_config(cfg)
   let d = r.pick(now=rt_at(0, 1))
@@ -309,6 +312,7 @@ test "rt_14_越界游标取模后 current_model 必须点名（补 rt_12 的弱�
       ModelQuota::new(name="paid-b", tier=Paid, limit=7),
     ],
     ofm_endpoint: "",
+    use_laya: false,
   })
   r.current_tier = Paid
   r.paid_idx = 98 // 98 % 2 = 0
@@ -346,6 +350,7 @@ test "rt_15_同档仍有健康模型时不许跳档（环形扫描要真的扫�
     ],
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=10)],
     ofm_endpoint: "",
+    use_laya: false,
   }
   let r = ModelRouter::from_config(cfg)
   r.free_idx = 0 // 游标正好停在耗尽那一格
@@ -366,6 +371,7 @@ test "rt_15_同档仍有健康模型时不许跳档（环形扫描要真的扫�
     ],
     paid_models: [ModelQuota::new(name="p1", tier=Paid, limit=10)],
     ofm_endpoint: "",
+    use_laya: false,
   })
   let d2 = r2.pick(now=rt_at(0, 1))
   assert_eq(d2.model_name, "p1")
@@ -402,6 +408,7 @@ test "rt_16_付费耗尽且免费已恢复_必须回退免费" {
       ),
     ],
     ofm_endpoint: "",
+    use_laya: false,
   })
   r.current_tier = Paid
   // 铺垫：此刻双池皆尽 → 显式不可用，档位保持 Paid（rt_5 反向，不假回退）
@@ -434,6 +441,7 @@ test "rt_health_1_pick 跳过黑名单模型" {
     ],
     paid_models: [],
     ofm_endpoint: "",
+    use_laya: false,
   }
   let r = ModelRouter::from_config(cfg)
   // 黑名单第一个模型 → 应选第二个
@@ -460,9 +468,134 @@ test "rt_health_2_黑名单精确匹配不误伤前缀" {
     free_models: [ModelQuota::new(name="model-v1", tier=Free, limit=10)],
     paid_models: [],
     ofm_endpoint: "",
+    use_laya: false,
   }
   let r = ModelRouter::from_config(cfg)
   // 黑名单是 "model"（前缀）不应命中 "model-v1"
   let d = r.pick(now=rt_at(0, 1), unhealthy_ids=["model"])
   assert_eq(d.model_name, "model-v1")
+}
+
+///|
+/// P2-1：laya 提示 paid 且当前 free → 切到 paid，laya_reason 标注
+test "lp_1_laya_hint_paid_switches_when_current_free" {
+  let cfg = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [ModelQuota::new(name="free-a", tier=Free, limit=5)],
+    paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=5)],
+    ofm_endpoint: "",
+    use_laya: true,
+  }
+  let r = ModelRouter::from_config(cfg)
+  let d = r.pick(now=rt_at(0, 1), laya_prefer_tier="Paid")
+  assert_eq(d.model_name, "paid-a")
+  assert_eq(d.tier, Paid)
+  assert_eq(d.switched, true)
+  assert_eq(d.laya_reason, "laya:paid")
+  let s = d.to_json().stringify()
+  assert_true(s.contains("laya:paid"))
+}
+
+///|
+/// P2-2：laya 提示 free 且当前 free → 同档，标注 laya:free
+test "lp_2_laya_hint_free_already_on_free" {
+  let cfg = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [ModelQuota::new(name="free-a", tier=Free, limit=5)],
+    paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=5)],
+    ofm_endpoint: "",
+    use_laya: true,
+  }
+  let r = ModelRouter::from_config(cfg)
+  let d = r.pick(now=rt_at(0, 1), laya_prefer_tier="Free")
+  assert_eq(d.model_name, "free-a")
+  assert_eq(d.tier, Free)
+  assert_eq(d.switched, false)
+  assert_eq(d.laya_reason, "laya:free")
+}
+
+///|
+/// P2-3：laya 提示档位无容量 → 不破配额，回落正常逻辑（laya_reason 空串）
+test "lp_3_laya_hint_tier_exhausted_falls_back" {
+  // paid 池已耗尽（used=limit=1）→ laya 建议 paid 但无容量
+  let cfg = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [ModelQuota::new(name="free-a", tier=Free, limit=5)],
+    paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=1, used=1)],
+    ofm_endpoint: "",
+    use_laya: true,
+  }
+  let r = ModelRouter::from_config(cfg)
+  let d = r.pick(now=rt_at(0, 1), laya_prefer_tier="paid")
+  // 回落正常逻辑：当前是 Free，free 池有容量 → 选 free-a
+  assert_eq(d.model_name, "free-a")
+  assert_eq(d.tier, Free)
+  assert_eq(d.laya_reason, "")
+}
+
+///|
+/// P2-4：laya 提示非法档位字符串 → 静默回落正常逻辑，不 panic
+test "lp_4_laya_hint_invalid_tier_silent_fallback" {
+  let cfg = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [ModelQuota::new(name="free-a", tier=Free, limit=5)],
+    paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=5)],
+    ofm_endpoint: "",
+    use_laya: true,
+  }
+  let r = ModelRouter::from_config(cfg)
+  let d = r.pick(now=rt_at(0, 1), laya_prefer_tier="banana")
+  // 非法档位：走正常逻辑，选当前档位模型
+  assert_eq(d.model_name, "free-a")
+  assert_eq(d.laya_reason, "")
+}
+
+///|
+/// P2-5：空提示字符串 == 未提示（stringify 相等证明零回归）
+test "lp_5_empty_hint_zero_regression" {
+  let cfg = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [ModelQuota::new(name="free-a", tier=Free, limit=5)],
+    paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=5)],
+    ofm_endpoint: "",
+    use_laya: false,
+  }
+  let r = ModelRouter::from_config(cfg)
+  let d1 = r.pick(now=rt_at(0, 1))
+  let d2 = r.pick(now=rt_at(0, 1), laya_prefer_tier="")
+  assert_eq(d1.to_json().stringify(), d2.to_json().stringify())
+}
+
+///|
+/// P2-6：RouterConfig.use_laya 默认 false；from_json 解析 true/false/null/garbage
+test "lp_6_routerconfig_uselaya_field" {
+  let d = RouterConfig::default()
+  assert_eq(d.use_laya, false)
+  // true
+  let (c1, w1) = RouterConfig::from_json(
+    qj([("use_laya", Json::boolean(true))]),
+  )
+  assert_eq(c1.use_laya, true)
+  assert_eq(w1.length(), 0)
+  // false
+  let (c2, w2) = RouterConfig::from_json(
+    qj([("use_laya", Json::boolean(false))]),
+  )
+  assert_eq(c2.use_laya, false)
+  assert_eq(w2.length(), 0)
+  // null
+  let (c3, w3) = RouterConfig::from_json(qj([("use_laya", Json::null())]))
+  assert_eq(c3.use_laya, false)
+  assert_eq(w3.length(), 0)
+  // garbage → false + warning
+  let (c4, w4) = RouterConfig::from_json(
+    qj([("use_laya", Json::string("yes"))]),
+  )
+  assert_eq(c4.use_laya, false)
+  assert_eq(w4.length(), 1)
 }

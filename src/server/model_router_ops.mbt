@@ -153,12 +153,66 @@ fn mr_env(name : String) -> String {
 }
 
 ///|
+/// P2：laya 软性档位提示（probe → tier 选择 → 解析 answers.tier）。
+/// 任一环节失败/超时 → 返回 ""（静默回落，零回归）。返回 "Free" 或 "Paid"（与 laya sidecar 口径）。
+async fn mr_laya_tier_hint() -> String {
+  let cmd = "python"
+  let args = ["scripts/laya_decide.py"]
+  let workdir = "."
+  let avail = match laya_probe_cached(cmd, args, workdir, 1000) {
+    Ok(a) => a
+    Err(_) => false
+  }
+  if not(avail) {
+    return ""
+  }
+  let questions = Json::object({
+    "tier": Json::object({
+      "choices": Json::array([Json::string("Free"), Json::string("Paid")]),
+      "description": Json::string(
+        "建议路由档位：Free=免费池优先，Paid=付费池优先",
+      ),
+    }),
+  })
+  let input = Json::object({
+    "context": Json::string("model-router 软性档位建议"),
+    "questions": questions,
+    "model": Json::string("english"),
+  }).stringify()
+  match laya_decide_external(cmd, args, workdir, input, 3000) {
+    Err(_) => ""
+    Ok(j) =>
+      match j {
+        Json::Object(m) =>
+          match m.get("answers") {
+            Some(Json::Object(am)) =>
+              match am.get("tier") {
+                Some(Json::String(s)) => {
+                  let t = s.trim().to_owned()
+                  if t == "Free" || t == "Paid" {
+                    t
+                  } else {
+                    ""
+                  }
+                }
+                Some(_) => ""
+                None => ""
+              }
+            _ => ""
+          }
+        _ => ""
+      }
+  }
+}
+
+///|
 /// 决策 + 可选记账 + 落盘（工具 `model_route` 的实现体）。时间戳服务端盖章。
 fn model_route_impl(
   project_dir : String,
   ns~ : String,
   record_model? : String = "",
   config? : Json = Json::null(),
+  laya_hint? : String = "",
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err(
@@ -213,7 +267,7 @@ fn model_route_impl(
   let dec = if consuming {
     r.record_call(model=record_model, now~)
   } else {
-    r.pick(now~, unhealthy_ids~)
+    r.pick(now~, unhealthy_ids~, laya_prefer_tier=laya_hint)
   }
   let save_res = if consuming { mr_save(r, project_dir, ns) } else { seed_res }
   let persisted = match save_res {

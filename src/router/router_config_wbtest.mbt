@@ -29,14 +29,15 @@ test "cfg_ofm_2_投影面顶层键集合被钉死_新增字段须显式登记" {
     Json::Object(m) => m
     _ => abort("to_json 应回对象")
   }
-  if m.keys().length() != 5 {
+  if m.keys().length() != 6 {
     abort(
-      "投影面顶层键数 != 5（got \{m.keys().length()}），新增字段必须显式进此锁",
+      "投影面顶层键数 != 6（got \{m.keys().length()}），新增字段必须显式进此锁",
     )
   }
   for
     k in [
       "window_seconds", "threshold_pct", "free_pool", "paid_pool", "ofm_endpoint",
+      "use_laya",
     ] {
     if !m.contains(k) {
       abort("投影面缺字段 '\{k}'")
