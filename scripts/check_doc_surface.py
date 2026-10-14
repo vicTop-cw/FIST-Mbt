@@ -743,10 +743,15 @@ def j13_release_status_consistency():
 # 而真源注册表是 129——这一面此前没人比过：check_tools_sync 第 3 条只管 README/AGENTS/deliverable/
 # scoring_rubric，J3 只管 README 的分组和，资源正文与 CLI 帮助文案两头都空着）。
 # 为什么这类特别坏：它长得像事实、读起来像介绍，而且**在发货面上**（资源随插件态分发）。
+# 2026-10-14 追加一面：templates/tool_use_rubric.md 是 pipeline 提示词模板（"原样追加到提示词末尾"），
+# 它告诉被驱动的 agent「本项目暴露 N 个工具」——上一版写「134 个工具」而真源 166，agent 被告知少 32 个，
+# 削弱 tool 幻觉防护的确定性清单基础。计数主张在提示词注入面上，J8 只对调用参数、J3 只对 README 分组和，
+# 两头都不看这句 ⇒ 单独进 J14_FACES。
 J14_FACES = (
     ("src/server/server.mbt", "MCP 资源面"),
     ("cmd/cli/help_topics.mbt", "CLI 帮助面"),
     ("ARCHITECTURE.md", "架构自述面"),
+    ("templates/tool_use_rubric.md", "提示词模板计数面"),
 )
 J14_HELP = "cmd/cli/help_topics.mbt"
 RE_J14_CLAIM = re.compile(
@@ -778,7 +783,7 @@ def j14_count_problems(texts, n):
                     " ⇒ 计数搬家时这一面没人跟着改")
     if hits == 0:
         faces = ", ".join(r for r, _ in J14_FACES)
-        problems.append(f"FATAL J14 三面（{faces}）一处工具计数自述都没解析到 ⇒ 判据饿死，不报绿")
+        problems.append(f"FATAL J14 各面（{faces}）一处工具计数自述都没解析到 ⇒ 判据饿死，不报绿")
     return problems
 
 
