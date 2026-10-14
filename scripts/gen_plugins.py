@@ -209,7 +209,15 @@ def tool_groups(n: int) -> str:
     ]
     total = sum(int(x) for x in pairs)
     if total != n:
-        die(f"README 分组和 {total} != 注册表实测 {n} ⇒ 拒绝投影（先修 README）")
+        # 提示语方向（2026-10-14 实测教训）：原先只写「先修 README」——但本轮的真实场景是
+        # **README 对、注册表真源读错**（工具注册拆到多文件后真源扫描面没跟上：README 写 166、
+        # 真源只扫 server.mbt 得 148）。照原提示改 README 会把正确的 166 改回错值（反向指引）。
+        # 故先把"先核真源扫描面"摆在前面，并给出两侧数字，让读者自己判断哪边错。
+        die(f"README 分组和 {total} != 注册表实测 {n} ⇒ 拒绝投影。"
+            f"**先核真源扫描面**：`scripts/_tool_registry.real_tools()` 是否覆盖了"
+            f"`src/server/*.mbt` 全部注册点（含链式 `.tool(...)` 形态）——"
+            f"若真源读少了，错的是真源不是 README（此时改 README 会把正确值改回错值）。"
+            f"确认真源无误后，才轮到核 README 分组和。")
     return "、".join(f"{nm} {ct}" for nm, ct in zip(names, pairs))
 
 
