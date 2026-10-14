@@ -42,7 +42,7 @@
 
 ## 五、FIST 工具链调用顺序
 
-- **第一步：project_standards（cl6-doc-sync）** —— 调用 `project_standards({ "project_type": "moonbit-mcp", "include_checklist": true })` 拿到 7 项四态 checklist 作为整改清单。该工具**只下发规范、不做扫描**（无 `project_dir`/`dry_run` 参数）；文档同步的实际判据由 `python scripts/check_doc_surface.py`（J1-J15，含 J9 返回契约、J10 范围自述、J11 CI 门步骤对表、J12 CI 触发条件不钉分支名与 J13 发布状态短语↔`release-fact` 对表、J14 计数自述↔真源对表、J15 docs/ 归档文档文件名日期前缀）给出。
+- **第一步：project_standards（cl6-doc-sync）** —— 调用 `project_standards({ "project_type": "moonbit-mcp", "include_checklist": true })` 拿到 7 项四态 checklist 作为整改清单。该工具**只下发规范、不做扫描**（无 `project_dir`/`dry_run` 参数）；文档同步的实际判据由 `python scripts/check_doc_surface.py`（J1-J16，含 J9 返回契约、J10 范围自述、J11 CI 门步骤对表、J12 CI 触发条件不钉分支名与 J13 发布状态短语↔`release-fact` 对表、J14 计数自述↔真源对表、J15 docs/ 归档文档文件名日期前缀）给出。
 - **第二步：moon fmt 统一风格** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["fmt"], "workdir": "<目标项目根目录>", "timeout_ms": 60000 })`，让格式化工具自动处理风格不一致。
 - **第三步：moon info 盘点依赖** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["info"], "workdir": "<目标项目根目录>", "timeout_ms": 30000 })`，检查项目依赖状态，识别可能的未使用 crate。
 - **第四步：dead code 扫描** —— 调用 `run_check({ "task_id": "<本轮任务 id>", "cmd": "moon", "args": ["check", "--warn"], "workdir": "<目标项目根目录>", "timeout_ms": 120000 })`，从编译器告警里筛出 dead code（未使用函数、未使用导入）。
@@ -79,22 +79,33 @@ note: <清整要点、文档自洽发现、遗留问题>
 ## Tool Use Rubric（工具使用硬规则段 · 硬规则 = 违反即执行失败）
 
 **可用工具清单**（只许用这些，未列出的工具一律不得调用）：
-- 任务：publish / plan / 	ask_plan_deep / claim / xecute / submit / erify / eject / etry / pause / esume / eopen_task
+- 任务：publish / plan / 	ask_plan_deep / claim / xecute / submit / erify / 
+eject / 
+etry / pause / 
+esume / 
+eopen_task
 - 依赖与调度：dag_depend / dag_ready / dag_check / dag_slack / dag_schedule / 	ask_triage / xecutor_route / dag_cost_route
-- 交付验证：un_check / output_validate
-- 缺陷：issue_scan / eport_bug / ug_list / ug_fix / ug_mark_status
+- 交付验证：
+un_check / output_validate
+- 缺陷：issue_scan / 
+eport_bug / ug_list / ug_fix / ug_mark_status
 - 记忆/演进：selfdrive_get / selfdrive_append / memory_consolidate / volve_lesson / volve_distill / volve_submit
 
 **硬规则**（违反任何一条 = 本轮执行失败）：
-1. 先读后写：修改任何文件前必须先 ead；不 read 就 write/edit = 违规。
+1. 先读后写：修改任何文件前必须先 
+ead；不 read 就 write/edit = 违规。
 2. 报告不是证据：任何「已完成」声明，必须先 output_validate 拿到 L4 产物状态层证据。
 3. 判绿读汇总行，不信 exit 0：moon test 类结果看 Total tests: N, passed: N, failed: 0（BUG-142）。
 4. 路径防御：project_dir 只接受相对路径，拒绝绝对路径 / .. 穿越 / 盘符。
 5. 工具名大小写敏感，调错名 = 空回，禁止「换一个名字试试」。
 6. 一次只做一个动作，失败即安全退出。
-7. 不得自造判据：un_check 的 cmd 必须在白名单内，禁止 shell 拼接。
-8. 失败必须留痕：eject / eport_bug 必须写清 reason / evidence。
+7. 不得自造判据：
+un_check 的 cmd 必须在白名单内，禁止 shell 拼接。
+8. 失败必须留痕：
+eject / 
+eport_bug 必须写清 reason / evidence。
 
-**执行收尾必做清单**（顺序固定）：xecute → output_validate → submit →（被 reject 则 read 原因→etry→重复前三步）。
+**执行收尾必做清单**（顺序固定）：xecute → output_validate → submit →（被 reject 则 read 原因→
+etry→重复前三步）。
 
 <!-- TOOL_USE_RUBRIC_END -->
