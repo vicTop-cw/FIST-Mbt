@@ -738,3 +738,45 @@ test "fc_3_fallback_chain_filters_unhealthy" {
   let chain = compute_fallback_chain(cfg, "free-a", unhealthy_ids=["free-b"])
   assert_eq(chain.length(), 0)
 }
+
+///|
+/// P1.1 冷却锁：mark_failure 写入冷却截止；in_cooldown 判定 now<cool_until。
+test "cd_1_mark_failure_and_in_cooldown" {
+  let now = rt_at(0, 0) // 2026-09-23T16:00:00Z
+  let cool = secs_to_iso(iso_to_secs(now) + 300)
+  let q = ModelQuota::new(name="free-a", tier=Free, limit=5)
+  q.mark_failure(cool)
+  assert_true(q.in_cooldown(now))
+  assert_false(q.in_cooldown(secs_to_iso(iso_to_secs(now) + 301)))
+  // 空冷却截止 → 永不在冷却
+  let q2 = ModelQuota::new(name="free-b", tier=Free, limit=5)
+  assert_false(q2.in_cooldown(now))
+}
+
+///|
+/// P1.1 冷却锁：ModelRouter::mark_failure 能找到池内模型并写入；返回 false 表示不在池里。
+test "cd_2_model_router_mark_failure" {
+  let r = rt_router(5, 5)
+  let now = rt_at(0, 0)
+  let cool = secs_to_iso(iso_to_secs(now) + 60)
+  assert_true(r.mark_failure("free-a", cool))
+  assert_false(r.mark_failure("no-such", cool))
+  assert_true(r.config.free_models[0].in_cooldown(now))
+  assert_false(r.config.paid_models[0].in_cooldown(now))
+}
+
+///|
+/// P1.1 冷却锁：pool_pick 会跳过冷却中的模型，选下一个。
+test "cd_3_pool_pick_skips_cooldown" {
+  let now = rt_at(0, 0)
+  let cool = secs_to_iso(iso_to_secs(now) + 60)
+  let q0 = ModelQuota::new(name="free-a", tier=Free, limit=5)
+  let q1 = ModelQuota::new(name="free-b", tier=Free, limit=5)
+  q0.mark_failure(cool)
+  let pool = [q0, q1]
+  let idx = pool_pick(pool, 0, 95.0, now~)
+  match idx {
+    Some(i) => assert_eq(i, 1)
+    None => abort("冷却后应仍有备用模型")
+  }
+}

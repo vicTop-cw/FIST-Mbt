@@ -337,6 +337,32 @@ fn mr_record_only(
 }
 
 ///|
+/// P1.1：给某模型标记失败冷却（不消耗配额）。冷却时长从 env `FIST_MODEL_COOLDOWN_SECS`
+/// 取（默认 300 秒）。模型不在池里则返回 Err，调用方按"静默跳过"处理。
+fn mr_record_failure(
+  project_dir : String,
+  ns~ : String,
+  model : String,
+) -> Result[Unit, String] {
+  let env_secs = mr_env("FIST_MODEL_COOLDOWN_SECS")
+  let mut secs = 300
+  if env_secs != "" {
+    let parsed = bug_parse_int(env_secs)
+    if parsed > 0 {
+      secs = parsed
+    }
+  }
+  let now_secs = @router.iso_to_secs(now_default())
+  let cool_until = @router.secs_to_iso(now_secs + secs)
+  let (r, _warns) = @router.router_restore(mr_read(project_dir, ns))
+  let found = r.mark_failure(model, cool_until)
+  if not(found) {
+    return Err("模型 \"" + model + "\" 不在任何池中，未标记冷却")
+  }
+  mr_save(r, project_dir, ns)
+}
+
+///|
 /// 只读状态查询（不改配额、不落盘）
 fn model_router_status_impl(
   project_dir : String,
@@ -907,9 +933,11 @@ async fn executor_run_impl(
       [("retried", Json::array(retried.map(fn(x) { Json::string(x) })))]
     match res {
       Err(e) =>
-        // 进程没起来（ENOENT 一类）不消耗配额，所以重试无需记账
+        // 进程没起来（ENOENT 一类）不消耗配额，所以重试无需记账；
+        // 但模型可靠性已受疑 → 标记冷却（P1.1 冷却/自动摘除）
         if attempt_idx + 1 < max_retries &&
           attempt_idx + 1 < fallback_models.length() {
+          let _ = mr_record_failure(project_dir, ns~, attempt_model)
           retried = retried + [attempt_model]
           attempt_idx = attempt_idx + 1
           attempt_model = fallback_models[attempt_idx]
@@ -955,6 +983,7 @@ async fn executor_run_impl(
           if routed_by_pool {
             let _ = mr_record_only(project_dir, ns~, attempt_model)
           }
+          let _ = mr_record_failure(project_dir, ns~, attempt_model)
           retried = retried + [attempt_model]
           attempt_idx = attempt_idx + 1
           attempt_model = fallback_models[attempt_idx]
