@@ -55,6 +55,23 @@ def resolve_root_mcp(root: Path) -> Path:
 ROOT_MCP = resolve_root_mcp(ROOT)
 
 RE_TOOL = re.compile(r'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"')
+# BUG-157 同族（2026-10-14）：与 gen_plugins / check_tools_sync / check_doc_surface 同口径。
+# 只扫 server.mbt 会得 148，而投影已是 166 ⇒ J6 会把正确的投影判成"不符"（实测：17 个投影重生成后
+# 本守卫仍报 tools=166 与实测 148 不符）。真源扫描面必须跟着工具注册的拆分一起扩。
+RE_TOOL_CHAIN = re.compile(r'\b\w+\.tool\(\s*"([^"]+)"')
+SERVER_DIR = ROOT / "src" / "server"
+
+
+def real_tools():
+    """工具注册真源 = src/server/*.mbt（排除 _test/_wbtest）里两种注册形态的并集。"""
+    names = set()
+    for f in sorted(SERVER_DIR.glob("*.mbt")):
+        if f.name.endswith(("_test.mbt", "_wbtest.mbt")):
+            continue
+        text = f.read_text(encoding="utf-8")
+        names |= set(RE_TOOL.findall(text))
+        names |= set(RE_TOOL_CHAIN.findall(text))
+    return sorted(names)
 RE_VERSION = re.compile(r'^version\s*=\s*"([^"]+)"', re.M)
 
 
@@ -106,7 +123,7 @@ def main() -> int:
     if not SERVER.exists():
         print(f"FATAL 真源缺失 {SERVER}（判据无法自证）")
         return 2
-    tools = sorted(set(RE_TOOL.findall(SERVER.read_text(encoding="utf-8"))))
+    tools = real_tools()
     n = len(tools)
     # J7 反幻影：解析退化时绝不给绿灯
     if n <= 100:

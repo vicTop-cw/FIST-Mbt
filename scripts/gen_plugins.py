@@ -69,6 +69,24 @@ ROOT_MCP = resolve_root_mcp(ROOT)
 MCP_NAME = ROOT_MCP.name  # 投影正文里引用的真源文件名（BUG-86：随搬家走，不钉死）
 
 RE_TOOL = re.compile(r'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"')
+# BUG-157 同族（2026-10-14）：工具注册已从 server.mbt 拆到 supervisor_tools.mbt / hat_hexa_tools.mbt /
+# mcpcf_embed.mbt 等，只扫 server.mbt 得 148 而运行态 166 ⇒ 投影与守卫会拿旧口径互掐
+# （实测：README 分组和 166 != 注册表 148 ⇒ gen_plugins FATAL、cl7 红）。
+# 与 check_tools_sync / check_doc_surface 同一条口径：扫 src/server/*.mbt（排除测试）+ 两种注册形态并集。
+RE_TOOL_CHAIN = re.compile(r'\b\w+\.tool\(\s*"([^"]+)"')
+SERVER_DIR = ROOT / "src" / "server"
+
+
+def real_tools():
+    """工具注册真源 = src/server/*.mbt（排除 _test/_wbtest）里两种注册形态的并集。"""
+    names = set()
+    for f in sorted(SERVER_DIR.glob("*.mbt")):
+        if f.name.endswith(("_test.mbt", "_wbtest.mbt")):
+            continue
+        text = f.read_text(encoding="utf-8")
+        names |= set(RE_TOOL.findall(text))
+        names |= set(RE_TOOL_CHAIN.findall(text))
+    return sorted(names)
 RE_VERSION = re.compile(r'^version\s*=\s*"([^"]+)"', re.M)
 RE_BUG_HEAD = re.compile(r"^## BUG-(\d+)\b", re.M)
 RE_FIXED = re.compile(r"^### FIXED\(", re.M)
@@ -198,7 +216,7 @@ def measure() -> dict:
     for p in (SERVER, MOON_MOD, BUGS, ROOT_MCP, SOURCE / "SKILL.md"):
         if not p.exists():
             die(f"缺真源 {p.relative_to(ROOT)}")
-    tools = sorted(set(RE_TOOL.findall(SERVER.read_text(encoding="utf-8"))))
+    tools = real_tools()
     n = len(tools)
     # 反幻影哨兵：解析不到东西时绝不生成"看似正常"的插件（空真源=判据坏了）
     if n <= 100:
