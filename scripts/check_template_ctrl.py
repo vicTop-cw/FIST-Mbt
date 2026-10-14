@@ -3,8 +3,11 @@
 r"""scripts/check_template_ctrl.py — 模板/提示词文件「无裸控制字符」守卫。
 
 **为什么需要它（2026-10-14 普查实测）**：`templates/` 是**发给 agent 的提示词面**。普查发现
-**8 份模板含裸控制字符**（pipeline_mode_* ×7 + pipeline_meta_prompt + tool_use_rubric），
-成因是这些文件曾经过一次**转义序列解释**——`\t` `\r` `\b` `\e` `\v` 被当成控制字符吃掉首字母：
+**9 份模板含裸控制字符**（pipeline_mode_* ×7 + pipeline_meta_prompt + tool_use_rubric），
+**其中 7 份 pipeline_mode_*.md 是真缺陷**（git blob 里确有裸 CR，已被后续修复提交归零），
+**pipeline_meta_prompt / tool_use_rubric 是 autocrlf 假象**（blob 本是 LF，工作树 CR 是 checkout 注入，
+见判据 T1 的 CRLF 容忍说明）。真缺陷的成因是这些文件曾经过一次**转义序列解释**——
+`\t` `\r` `\b` `\e` `\v` 被当成控制字符吃掉首字母：
 
     task_plan_deep  ->  <TAB>ask_plan_deep      （t 被 TAB 吃掉）
     reject / retry  ->  <CR>eject / <CR>etry    （r 被 CR 吃掉）
@@ -16,9 +19,14 @@ r"""scripts/check_template_ctrl.py — 模板/提示词文件「无裸控制字�
 调错名 = 空回）。这正是"文档即实现"面的实质缺陷。
 
 **判据**（窄口径，只判确定性问题）：
-  T1 `templates/**/*.md` 的字节里不得含裸控制字符（除 LF 与 TAB）。
-    白名单：`\n`(0x0a) 换行；`\t`(0x09) 制表符（Markdown 表格/缩进合法用途，本判据放行）。
-    判红：`\r`(0x0d) / `\b`(0x08) / `\v`(0x0b) / `\f`(0x0c) / `\x1b`(0x1b) 及其它 C0 控制字符。
+  T1 `templates/**/*.md` 的字节里不得含**裸**控制字符（除 LF 与 TAB）。
+    白名单：`\n`(0x0a) 换行；`\t`(0x09) 制表符（Markdown 表格/缩进合法用途，本判据放行）；
+    **`\r\n`(CRLF) 行尾**——Windows 侧 `core.autocrlf=true` 会把 checkout 出的文本转成 CRLF，
+    这是工作树注入的合法行尾、不是真实缺陷，判据容忍（只跳过 CR，LF 照常换行计数）。
+    判红：**裸 `\r`**(0x0d，后不接 LF) / `\b`(0x08) / `\v`(0x0b) / `\f`(0x0c) / `\x1b`(0x1b) 及其它 C0 控制字符。
+    注：2026-10-14 普查后发现 `pipeline_meta_prompt.md` / `tool_use_rubric.md` 的 git blob 本是 LF，
+    工作树里那 159/53 个 `\r` 全是 autocrlf checkout 假象（不是提交缺陷），本判据据此放宽 CRLF；
+    配套 `templates/*.md  text eol=lf`（.gitattributes）从源头钉死，双保险。
   T2 防空转：一份 .md 都枚举不到 ⇒ FATAL（判据空转 ≠ 没问题）。
 
 **为什么不自动修**：修复需判断"这个控制字符原本该是哪个字母"（如 `\t` 处可能是 `task_*` 也可能是别的词），
@@ -64,7 +72,8 @@ def md_files():
 
 
 def scan(path):
-    """返回 (违例列表, 该文件字节数)。违例 = (行号, 列号, 字符码, 上下文)。"""
+    """返回 (违例列表, 该文件字节数)。违例 = (行号, 列号, 字符码, 上下文)。
+    容忍 CRLF：0x0d 后紧跟 0x0a 视为 autocrlf 注入的合法行尾，跳过；只判"裸"控制字符。"""
     raw = open(path, "rb").read()
     problems = []
     line = 1
@@ -73,6 +82,9 @@ def scan(path):
         if b == 0x0a:
             line += 1
             col = 0
+            continue
+        # CRLF：CR 后紧跟 LF => 合法行尾（Windows autocrlf checkout 注入），不判红
+        if b == 0x0d and i + 1 < len(raw) and raw[i + 1] == 0x0a:
             continue
         col += 1
         if b in ALLOWED:
@@ -118,6 +130,20 @@ def selftest():
         cell("tab-allowed", all(x[2] != 0x09 for x in p), True)
         print("  ok  tab-allowed（TAB 在放行白名单里，不被判红）")
 
+        # CRLF（Windows autocrlf checkout 注入的合法行尾）必须被容忍
+        crlf = os.path.join(d, "crlf.md")
+        open(crlf, "wb").write("正常\r\n文本\r\n".encode("utf-8"))
+        p, n = scan(crlf)
+        cell("crlf-tolerated", len(p) == 0, True)
+        print("  ok  crlf-tolerated（CRLF 合法行尾被容忍，0 违例；%d 字节）" % n)
+
+        # 裸 CR（后不接 LF）仍必须被点名（用两个裸 CR 考计数，单靠一个区分不出"被抓"和"被吞"）
+        bare = os.path.join(d, "bare_cr.md")
+        open(bare, "wb").write("eject\retry\reject".encode("utf-8"))
+        p, n = scan(bare)
+        cell("bare-cr-caught", len(p) >= 2 and all(x[2] == 0x0d for x in p), True)
+        print("  ok  bare-cr-caught（裸 CR 仍被抓：%d 个违例）" % len(p))
+
         # 空扫描面自拒（由 main 判，这里考枚举函数）
         cell("md-enum-nonempty", len(md_files()) > 0, True)
         print("  ok  md-enum-nonempty（templates/ 枚举到 %d 份 .md）" % len(md_files()))
@@ -131,7 +157,8 @@ def selftest():
         for n, w in badc:
             print("  - %s：%s" % (n, w))
         return 1
-    print("SELFTEST OK（%d 格：干净不误红 / CR 必红 / ESC+VT 必红 / TAB 放行 / 枚举非空）" % len(cells))
+    print("SELFTEST OK（%d 格：干净不误红 / CR 必红 / ESC+VT 必红 / TAB 放行 / CRLF 容忍 / 裸CR 必红 / 枚举非空）"
+          % len(cells))
     return 0
 
 
