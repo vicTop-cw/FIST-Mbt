@@ -81,7 +81,7 @@ pub fn ModelRouter::force_switch(Self, tier~ : ModelTier, now~ : String) -> Rout
 pub fn ModelRouter::from_config(RouterConfig) -> Self
 pub fn ModelRouter::hard_reset(Self) -> Unit
 pub fn ModelRouter::new() -> Self
-pub fn ModelRouter::pick(Self, now~ : String, unhealthy_ids? : Array[String]) -> RouteDecision
+pub fn ModelRouter::pick(Self, now~ : String, unhealthy_ids? : Array[String], laya_prefer_tier? : String) -> RouteDecision
 pub fn ModelRouter::record_call(Self, model~ : String, now~ : String) -> RouteDecision
 pub fn ModelRouter::reset_windows(Self) -> Unit
 pub fn ModelRouter::to_state(Self) -> Json
@@ -138,6 +138,7 @@ pub struct RouteDecision {
   switched : Bool
   next_switch_at : String
   available : Bool
+  laya_reason : String
 } derive(Eq, @debug.Debug)
 pub fn RouteDecision::to_json(Self) -> Json
 
@@ -147,6 +148,7 @@ pub struct RouterConfig {
   free_models : Array[ModelQuota]
   paid_models : Array[ModelQuota]
   ofm_endpoint : String
+  use_laya : Bool
 } derive(Eq, @debug.Debug)
 pub fn RouterConfig::default() -> Self
 pub fn RouterConfig::from_json(Json) -> (Self, Array[String])
