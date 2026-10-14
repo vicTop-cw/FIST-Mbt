@@ -32,6 +32,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+# 工具注册真源的**单一实现**（见 real_tools() 的说明：此前 5 处复制，漏改即假绿/互掐）。
+# 用 importlib 从文件路径加载（脚本名带下划线前缀，不是包）。
+import importlib.util as _ilu
+
+_ir_spec = _ilu.spec_from_file_location(
+    "_tool_registry", Path(__file__).resolve().parent / "_tool_registry.py")
+_tool_registry = _ilu.module_from_spec(_ir_spec)
+_ir_spec.loader.exec_module(_tool_registry)
+
 ROOT = Path(__file__).resolve().parent.parent
 SERVER = ROOT / "src" / "server" / "server.mbt"
 SERVER_DIR = ROOT / "src" / "server"
@@ -86,18 +95,15 @@ RE_TOOL_SHAPE = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\(")
 
 
 def real_tools():
-    """工具注册真源 = `src/server/*.mbt`（排除 _test/_wbtest）里两种注册形态的并集：
-       ① `instrumented_tool(<var>, "name", …)`   ② 链式 `<var>.tool("name", …)`（mcpcf_embed.mbt）
-    2026-10-14 起从「只扫 server.mbt」扩到全包：那时工具注册已拆到 supervisor_tools.mbt(8)/
-    hat_hexa_tools.mbt(3)/mcpcf_embed.mbt(7)，只扫 server.mbt 得 148 而运行态 166（差 18）。"""
-    names = set()
-    for f in sorted(SERVER_DIR.glob("*.mbt")):
-        if f.name.endswith(("_test.mbt", "_wbtest.mbt")):
-            continue
-        text = f.read_text(encoding="utf-8")
-        names |= set(RE_TOOL.findall(text))
-        names |= set(RE_TOOL_CHAIN.findall(text))
-    return sorted(names)
+    """工具注册真源 —— **委托给单一实现** `scripts/_tool_registry.py`（2026-10-14 收口）。
+
+    收口原因（实测两次）：本函数曾在 5 个消费者里各写一份
+    （check_tools_sync / check_doc_surface / check_plugin_sync / gen_plugins / mcp_smoke）。
+    工具注册一搬家（从 server.mbt 拆到 supervisor_tools/hat_hexa/mcpcf_embed），
+    5 处里漏改 2 处就会 ①假绿（拿旧口径自洽）或 ②互掐（生成器产 166、守卫判 148）。
+    现在只有 `_tool_registry.real_tools()` 一处实现，口径：src/server/*.mbt（排除测试）里
+    `instrumented_tool(<var>,"name",…)` 与链式 `<var>.tool("name",…)` 的并集。"""
+    return _tool_registry.real_tools()
 
 
 # BUG-71：resources / prompts 此前**零守卫**（六守卫只管工具名与总数），

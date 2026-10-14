@@ -27,6 +27,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+# 工具注册真源的单一实现（此前 5 处复制；漏改即假绿/与生成器互掐）。
+import importlib.util as _ilu
+
+_ir_spec = _ilu.spec_from_file_location(
+    "_tool_registry", Path(__file__).resolve().parent / "_tool_registry.py")
+_tool_registry = _ilu.module_from_spec(_ir_spec)
+_ir_spec.loader.exec_module(_tool_registry)
+
 # BUG-58：GBK 控制台下中文判据文案会乱码/崩（不可读的守卫等于没有守卫）。
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -63,15 +71,11 @@ SERVER_DIR = ROOT / "src" / "server"
 
 
 def real_tools():
-    """工具注册真源 = src/server/*.mbt（排除 _test/_wbtest）里两种注册形态的并集。"""
-    names = set()
-    for f in sorted(SERVER_DIR.glob("*.mbt")):
-        if f.name.endswith(("_test.mbt", "_wbtest.mbt")):
-            continue
-        text = f.read_text(encoding="utf-8")
-        names |= set(RE_TOOL.findall(text))
-        names |= set(RE_TOOL_CHAIN.findall(text))
-    return sorted(names)
+    """工具注册真源 —— **委托给单一实现** `scripts/_tool_registry.py`（2026-10-14 收口）。
+    本函数曾在 5 个消费者里各写一份；漏改处会假绿或与生成器互掐（实测过两次）。"""
+    return _tool_registry.real_tools()
+
+
 RE_VERSION = re.compile(r'^version\s*=\s*"([^"]+)"', re.M)
 
 

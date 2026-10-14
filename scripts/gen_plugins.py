@@ -34,6 +34,14 @@ import sys
 import tempfile
 from pathlib import Path
 
+# 工具注册真源的单一实现（此前 5 处复制；漏改即假绿或与 cl7 守卫互掐）。
+import importlib.util as _ilu
+
+_ir_spec = _ilu.spec_from_file_location(
+    "_tool_registry", Path(__file__).resolve().parent / "_tool_registry.py")
+_tool_registry = _ilu.module_from_spec(_ir_spec)
+_ir_spec.loader.exec_module(_tool_registry)
+
 # BUG-58：守卫的“红”必须是判据红。Windows 默认 GBK 控制台下，中文结论里的 ↔ 等字符
 # 会让 print 直接 UnicodeEncodeError——拿到 traceback 而不是 verdict，本地就等于“守卫不可信”。
 # 统一把 stdout/stderr 钉成 UTF-8（CI 在 Linux UTF-8 下是无损 no-op）。
@@ -78,15 +86,13 @@ SERVER_DIR = ROOT / "src" / "server"
 
 
 def real_tools():
-    """工具注册真源 = src/server/*.mbt（排除 _test/_wbtest）里两种注册形态的并集。"""
-    names = set()
-    for f in sorted(SERVER_DIR.glob("*.mbt")):
-        if f.name.endswith(("_test.mbt", "_wbtest.mbt")):
-            continue
-        text = f.read_text(encoding="utf-8")
-        names |= set(RE_TOOL.findall(text))
-        names |= set(RE_TOOL_CHAIN.findall(text))
-    return sorted(names)
+    """工具注册真源 —— **委托给单一实现** `scripts/_tool_registry.py`（2026-10-14 收口）。
+
+    本函数曾在 5 个消费者里各写一份；工具注册一搬家（从 server.mbt 拆到 supervisor_tools/
+    hat_hexa/mcpcf_embed），漏改处会假绿或与本守卫/生成器互掐（实测：投影产 166 而 cl7 判 148）。"""
+    return _tool_registry.real_tools()
+
+
 RE_VERSION = re.compile(r'^version\s*=\s*"([^"]+)"', re.M)
 RE_BUG_HEAD = re.compile(r"^## BUG-(\d+)\b", re.M)
 RE_FIXED = re.compile(r"^### FIXED\(", re.M)
