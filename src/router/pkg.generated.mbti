@@ -14,6 +14,8 @@ pub fn build_ofm_chat_request_json_simple(String, String) -> Result[String, Stri
 
 pub fn classify_ofm_failure(Int, String) -> OfmFailure
 
+pub fn compute_fallback_chain(RouterConfig, String, unhealthy_ids? : Array[String]) -> Array[String]
+
 pub fn filter_unhealthy_models(Array[OfmModel], Array[String]) -> Array[OfmModel]
 
 pub fn hex_decode(String) -> Result[Bytes, String]
@@ -38,6 +40,8 @@ pub fn secs_to_iso(Int) -> String
 
 pub fn should_retry_on_invalid_json(OfmChatResponse) -> Bool
 
+pub fn sort_by_cost_performance(Array[ModelQuota]) -> Unit
+
 pub fn star_canonical(Array[String], Int64, Int64) -> String
 
 pub fn star_gate_policy(String, String, String, Int64) -> StarGatePolicyResult
@@ -58,9 +62,16 @@ pub struct ModelQuota {
   mut used : Int
   mut window_start : String
   lane : String
+  price_per_call : Double
+  price_per_1k : Double
+  rank : Int
+  mut cooldown_until : String
 } derive(Eq, @debug.Debug)
+pub fn ModelQuota::cost_performance(Self) -> Double
+pub fn ModelQuota::in_cooldown(Self, String) -> Bool
 pub fn ModelQuota::is_exhausted(Self) -> Bool
-pub fn ModelQuota::new(name~ : String, tier~ : ModelTier, limit? : Int, used? : Int, window_start? : String, lane? : String) -> Self
+pub fn ModelQuota::mark_failure(Self, String) -> Unit
+pub fn ModelQuota::new(name~ : String, tier~ : ModelTier, limit? : Int, used? : Int, window_start? : String, lane? : String, price_per_call? : Double, price_per_1k? : Double, rank? : Int, cooldown_until? : String) -> Self
 pub fn ModelQuota::remaining(Self) -> Int
 pub fn ModelQuota::to_json(Self) -> Json
 pub fn ModelQuota::usage_pct(Self) -> Double
@@ -80,6 +91,7 @@ pub fn ModelRouter::current_model(Self) -> ModelQuota?
 pub fn ModelRouter::force_switch(Self, tier~ : ModelTier, now~ : String) -> RouteDecision
 pub fn ModelRouter::from_config(RouterConfig) -> Self
 pub fn ModelRouter::hard_reset(Self) -> Unit
+pub fn ModelRouter::mark_failure(Self, String, String) -> Bool
 pub fn ModelRouter::new() -> Self
 pub fn ModelRouter::pick(Self, now~ : String, unhealthy_ids? : Array[String], laya_prefer_tier? : String) -> RouteDecision
 pub fn ModelRouter::record_call(Self, model~ : String, now~ : String) -> RouteDecision
@@ -138,6 +150,7 @@ pub struct RouteDecision {
   switched : Bool
   next_switch_at : String
   available : Bool
+  fallback_chain : Array[String]
   laya_reason : String
 } derive(Eq, @debug.Debug)
 pub fn RouteDecision::to_json(Self) -> Json

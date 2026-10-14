@@ -79,6 +79,7 @@ fn st_pool(j : Json?, tier : ModelTier) -> (Array[ModelQuota], Array[String]) {
                     used~,
                     window_start=st_str(m, "window_start"),
                     lane=st_str(m, "lane"),
+                    cooldown_until=st_str(m, "cooldown_until"),
                   ),
                 ]
             }
@@ -101,10 +102,12 @@ fn merge_usage(
   for d in defs {
     let mut u = 0
     let mut w = ""
+    let mut c = ""
     for p in prev {
       if p.name == d.name {
         u = p.used
         w = p.window_start
+        c = p.cooldown_until
       }
     }
     out = out +
@@ -118,6 +121,7 @@ fn merge_usage(
           // lane 属**定义**（渠道归属），不是用量——必须跟着 config 定义走，
           // 不能沿用 prev（改了渠道就该按新渠道算，否则用量会记到旧渠道头上）。
           lane=d.lane,
+          cooldown_until=c,
         ),
       ]
   }
@@ -248,6 +252,7 @@ pub fn ModelRouter::reset_windows(self : ModelRouter) -> Unit {
     for m in pool {
       m.used = 0
       m.window_start = ""
+      m.cooldown_until = ""
     }
   }
 }

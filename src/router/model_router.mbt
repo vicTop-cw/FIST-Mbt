@@ -54,6 +54,8 @@ pub struct ModelQuota {
   price_per_1k : Double
   /// P1.3：质量排名（数值越大越强），0 = 未知/不参与
   rank : Int
+  /// P1.1：冷却截止（ISO 8601），"" = 无冷却
+  mut cooldown_until : String
 } derive(Eq, Debug)
 
 ///|
@@ -68,6 +70,7 @@ pub fn ModelQuota::new(
   price_per_call? : Double = 0.0,
   price_per_1k? : Double = 0.0,
   rank? : Int = 0,
+  cooldown_until? : String = "",
 ) -> ModelQuota {
   // used/window_start 作为构造参数而非"建完再改"：跨包不得改 mut 字段（MoonBit 只允许
   // 定义包内改），状态恢复必须能在 src/server 里做，所以把入口做成构造函数。
@@ -82,6 +85,7 @@ pub fn ModelQuota::new(
     price_per_call,
     price_per_1k,
     rank,
+    cooldown_until,
   }
 }
 
@@ -133,6 +137,27 @@ pub fn ModelQuota::cost_performance(self : ModelQuota) -> Double {
 }
 
 ///|
+/// P1.1：标记失败冷却。`cooldown_until_iso` = 冷却截止 ISO；"" 表示立即清除冷却。
+/// 非 pub 字段的 mut 只能在定义包内改，故做成包内 pub 方法，跨包经此调用。
+pub fn ModelQuota::mark_failure(
+  self : ModelQuota,
+  cooldown_until_iso : String,
+) -> Unit {
+  self.cooldown_until = cooldown_until_iso
+}
+
+///|
+/// P1.1：是否在冷却期（now_iso 早于 cooldown_until）。cooldown_until 为空视为无冷却。
+pub fn ModelQuota::in_cooldown(self : ModelQuota, now_iso : String) -> Bool {
+  if self.cooldown_until == "" {
+    return false
+  }
+  let now_secs = iso_to_secs(now_iso)
+  let cool_secs = iso_to_secs(self.cooldown_until)
+  now_secs < cool_secs
+}
+
+///|
 pub fn ModelQuota::to_json(self : ModelQuota) -> Json {
   Json::object({
     "name": Json::string(self.name),
@@ -148,6 +173,7 @@ pub fn ModelQuota::to_json(self : ModelQuota) -> Json {
     "price_per_1k": Json::number(self.price_per_1k),
     "rank": Json::number(self.rank.to_double()),
     "cost_performance": Json::number(self.cost_performance()),
+    "cooldown_until": Json::string(self.cooldown_until),
   })
 }
 
@@ -486,6 +512,7 @@ fn pool_pick(
   pool : Array[ModelQuota],
   start_idx : Int,
   threshold : Double,
+  now~ : String,
   unhealthy_ids? : Array[String] = [],
 ) -> Int? {
   let n = pool.length()
@@ -501,6 +528,7 @@ fn pool_pick(
     let m = pool[idx]
     if m.usage_pct() < threshold &&
       !m.is_exhausted() &&
+      !m.in_cooldown(now) &&
       !is_model_unhealthy(m.name, unhealthy_ids) {
       return Some(idx)
     }
@@ -536,6 +564,25 @@ pub fn ModelRouter::from_config(config : RouterConfig) -> ModelRouter {
     last_reason: "",
     last_pick: "",
   }
+}
+
+///|
+/// P1.1：标记某模型进入冷却。`cooldown_until_iso` = 冷却截止（ISO），"" 表示清除冷却。
+pub fn ModelRouter::mark_failure(
+  self : ModelRouter,
+  model_name : String,
+  cooldown_until_iso : String,
+) -> Bool {
+  let mut found = false
+  for pool in [self.config.free_models, self.config.paid_models] {
+    for m in pool {
+      if m.name == model_name {
+        m.mark_failure(cooldown_until_iso)
+        found = true
+      }
+    }
+  }
+  found
 }
 
 ///|
@@ -659,7 +706,7 @@ fn ModelRouter::pick_inner(
       Some(t) => {
         let hint_pool = if t == Free { free } else { paid }
         let hint_idx = if t == Free { self.free_idx } else { self.paid_idx }
-        match pool_pick(hint_pool, hint_idx, th, unhealthy_ids~) {
+        match pool_pick(hint_pool, hint_idx, th, now~, unhealthy_ids~) {
           None => () // 提示档位无容量 → 回落正常逻辑
           Some(idx) => {
             let was_switch = self.current_tier != t
@@ -697,7 +744,7 @@ fn ModelRouter::pick_inner(
   }
   match self.current_tier {
     Free =>
-      match pool_pick(free, self.free_idx, th, unhealthy_ids~) {
+      match pool_pick(free, self.free_idx, th, now~, unhealthy_ids~) {
         Some(idx) => {
           self.free_idx = (idx + 1) % free.length()
           if free[idx].window_start == "" {
@@ -715,7 +762,7 @@ fn ModelRouter::pick_inner(
           }
         }
         None =>
-          match pool_pick(paid, self.paid_idx, th, unhealthy_ids~) {
+          match pool_pick(paid, self.paid_idx, th, now~, unhealthy_ids~) {
             Some(idx) => {
               self.current_tier = Paid
               self.switch_count = self.switch_count + 1
@@ -752,7 +799,7 @@ fn ModelRouter::pick_inner(
           }
       }
     Paid =>
-      match pool_pick(paid, self.paid_idx, th, unhealthy_ids~) {
+      match pool_pick(paid, self.paid_idx, th, now~, unhealthy_ids~) {
         Some(idx) => {
           self.paid_idx = (idx + 1) % paid.length()
           if paid[idx].window_start == "" {
@@ -770,7 +817,7 @@ fn ModelRouter::pick_inner(
           }
         }
         None =>
-          match pool_pick(free, self.free_idx, th, unhealthy_ids~) {
+          match pool_pick(free, self.free_idx, th, now~, unhealthy_ids~) {
             Some(idx) => {
               self.current_tier = Free
               self.switch_count = self.switch_count + 1
@@ -862,7 +909,7 @@ pub fn ModelRouter::force_switch(
   } else {
     self.config.paid_models
   }
-  match pool_pick(pool, 0, th) {
+  match pool_pick(pool, 0, th, now~) {
     None => {
       self.last_reason = "target tier \{tier.to_string()} 无可用模型，保持原档位"
       {
@@ -941,6 +988,7 @@ pub fn ModelRouter::usage_report(self : ModelRouter) -> Json {
       ),
       "exhausted": Json::boolean(m.is_exhausted()),
       "window_start": Json::string(m.window_start),
+      "cooldown_until": Json::string(m.cooldown_until),
     })
   }
   let cur = self.current_model()
