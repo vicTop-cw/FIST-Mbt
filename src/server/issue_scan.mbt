@@ -191,8 +191,11 @@ fn scan_rules() -> Array[ScanRule] {
       id: "moonbit-map-set-no-rebind",
       severity: "low",
       pattern: [".set("],
-      why: "Map.set() 返回新 Map，未重绑定则变更丢失（ocr-local moonbit-map-set-no-rebind；语义需读上下文确认重绑定）",
-      hint: "`let map2 = map.set(k, v)` 并重绑定使用",
+      // BUG-156：旧 why「Map.set() 返回新 Map」是**事实错误**——MoonBit 核心 Map 是可变 map，
+      // .set() 原地变更并返回 Unit（实证锁：src/executor/map_probe_test.mbt）。丢弃返回值是正常用法，
+      // 绑定 Unit 才是作者误当函数式 API 的可疑信号。本规则是 ocr-local 启发式提示，非确定性缺陷检测器。
+      why: "MoonBit 核心 `Map` 是可变 map，`.set()` 原地变更并返回 `Unit`（实证：`src/executor/map_probe_test.mbt` 丢弃返回值后仍读到值）；本规则是 ocr-local 启发式，只在调用点疑似期待函数式语义时提示，需读上下文确认（BUG-156）",
+      hint: "`.set()` 返回值是 `Unit`；正常用法是忽略返回值（原地变更）。若返回值被绑定/使用，说明作者可能误当函数式 API——改用 `m.set(k, v)` 语句式调用",
     },
     {
       id: "moonbit-noop-assignment",
