@@ -101,6 +101,12 @@ def extract_paths(text):
             continue
         if "/" not in cand and not cand.endswith(PATH_EXT):
             continue                     # 顶层单个名字：太易误报，不认
+        # **模板/占位形态不认**（2026-10-14 全仓扫描实测的误捕面）：计划文档常写
+        # `docs/<tool>-skill.md` / `memory/research/*.md` / `docs/<lang>/` 这类**形态说明**
+        # 而不是具体落点。它们不是"忘了交付"，是全仓误捕噪音（本轮 12 条全是它）。
+        # 判据：路径任一片段含 `<...>` 或 `*` ⇒ 形态说明，跳过。
+        if "<" in cand or ">" in cand or "*" in cand:
+            continue
         if cand not in out:
             out.append(cand)
     return out
@@ -143,6 +149,11 @@ def selftest():
     got2 = extract_paths("`/abs/x.mbt`、`other/x.mbt`、`moon check`、`FIST_WEB_PORT`")
     cell("extract-rejects-foreign", got2 == [], True)
     print("  ok  extract-rejects-foreign（绝对路径/非仓内/裸命令名都不认）")
+
+    # 2c) **模板/占位形态不认**（全仓扫描实测的误捕面：12 条 `docs/<tool>-skill.md`、`memory/research/*.md`）
+    got2c = extract_paths("按 `docs/<tool>-skill.md` 写文档；归档到 `memory/research/*.md`；示例放 `docs/examples/<lang>/`")
+    cell("extract-rejects-placeholder", got2c == [], True)
+    print("  ok  extract-rejects-placeholder（`<...>`/`*` 形态说明不认——它不是落点）")
 
     # 2b) 绝对路径单独一格（变异实测发现上面那格抓不住"绝对路径拦截被去掉"：
     #     因为去掉拦截后 `/abs/x.mbt` 仍不以 TOP_DIRS 开头 ⇒ 被下一道闸拦掉，格仍绿）
