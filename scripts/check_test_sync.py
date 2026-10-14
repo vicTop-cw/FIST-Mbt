@@ -84,6 +84,18 @@ EXEMPT = [
     ("ARCHITECTURE.md", "572", "要点 1 里「Native 端 2026-10-01 WSL 实测同为 572/572」那一半，同行 JS 端已等于实测"),
     ("README.md", "572", "「Native 后端」条目的 2026-10-01 WSL 实测数（JS 后端条目另写，已等于实测）"),
     ("README_EN.md", "572", "Native 轨 2026-10-01 WSL 读数（同句写明 with build residue + BUG-133 限定）"),
+    # 2026-10-14（本轮把全站从 737→1033 收口时登记的合法非全量读数）：
+    # 判据自述 prescribe「合法的历史数/别的 target 必须在 EXEMPT 表里逐条点名」。逐条判性质后：
+    #  - atgc-selfdrive-demo / evolve 两处 807：**该轮交付当时的全量读数**（文档正文是那一轮的交付叙述，
+    #    非现状断言面——与 docs/polish-plan.md 的 148、improvement-plan 的 737 同型）
+    #  - F094 的 12、BACKLOG L36 的 50：**单包读数**（`moon test <某包>` 的局部数，不是全量总数）
+    #  - BACKLOG L16 的 807：pending 行「决定：现在不建」里引述的**当时背景数**（非现状断言）
+    #  四处都不是"忘了同步"——改写成 1033 等于把历史行改成本轮的读数，伪造一次当时没发生的测量。
+    ("BACKLOG.md", "807", "L16 pending 行（native 侧自驱巡检，owner 决定不建）里引述的当时背景数"),
+    ("BACKLOG.md", "50", "L36 done 行里 Omega gate 策略自定义那轮的**单包**读数（非全量总数声明）"),
+    ("docs/atgc-selfdrive-demo.md", "807", "该轮交付叙述里的当轮全量读数（交付记录，非现状断言面）"),
+    ("docs/evolve.md", "807", "同型交付叙述：那轮改动后的当轮全量读数（非现状断言面）"),
+    ("docs/features/F094-multi-butler-file-binds-positioning.md", "12", "F094 定位文档里该特性轮的**单包**读数（非全量总数声明）"),
 ]
 
 # 历史记录类别：整路径豁免（按日期追加，改写即伪造历史）

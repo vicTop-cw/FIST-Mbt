@@ -60,6 +60,15 @@ pub fn FistEngine::locks_upsert(
 }
 
 ///|
+/// 按裁决抢锁（BUG-145）：互斥由后端定，工具面只渲染结论——不许在这里先读后写。
+pub fn FistEngine::locks_try_acquire(
+  self : FistEngine,
+  lock : @store.FileLock,
+) -> @store.LockAcquireOutcome {
+  self.store.locks_try_acquire(lock)
+}
+
+///|
 pub fn FistEngine::locks_get(
   self : FistEngine,
   scope : String,

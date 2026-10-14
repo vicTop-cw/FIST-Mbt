@@ -4439,7 +4439,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "lock_acquire",
-    "获取文件作用域锁。参数：lock_id、batch_id、scope、agent、ttl_until、ts(可选，默认当前时间)、meta(可选)。若作用域已被他人持有且未过期，旧锁记为违例(lock_taken_over)。",
+    "获取文件作用域锁（拒绝型互斥，BUG-145：与设计文档 v3 的 lk2 同口径）。参数：lock_id、batch_id、scope、agent、ttl_until、ts(可选，默认当前时间)、meta(可选)。返回 {granted, action, scope, lock_id, agent, prev_agent, blocked_by, held_by, ttl_until, violation_logged}——granted=true 表示拿到独占（action=reserved 空闲首取 / renewed 本人续 / taken_over 旧主 TTL 已过并附 prev_agent）；granted=false 表示被他人 live 持有、锁行未改动，此时 action=conflict 且 blocked_by=现持有者。歧义键分工：agent 与 held_by 是**同一含义**（库里现值：granted 时是自己、conflict 时是现持有者），blocked_by 只在 granted=false 时非空。violation_logged=true 表示已落一条 lock_denied 拒夺审计。互斥由后端裁决，调用方只渲染结论。",
     schema(
       {
         "lock_id": string_prop("锁唯一 id（必填）"),
@@ -4470,15 +4470,24 @@ pub async fn run_server() -> Unit {
         ttl_until~,
         meta~,
       )
-      engine.locks_upsert(lock)
+      // BUG-145：走 locks_try_acquire（复用 rsv_action 的裁决），不再走 locks_upsert
+      // ——后者是 last-write-wins 的底层原语，恒「拿到」，与设计文档 lk2 的
+      // 「A 持锁后 B 应 granted=false」相反；且先读后写的竞态窗口只有跨进程才暴露。
+      let o = engine.locks_try_acquire(lock)
+      let blocked_by = if o.granted { "" } else { o.agent }
       Ok(
         @mcp.ToolResult::text(
           Json::object({
-            "lock_id": Json::string(lock_id),
+            "granted": Json::boolean(o.granted),
+            "action": Json::string(o.action),
             "scope": Json::string(scope),
-            "agent": Json::string(agent),
-            "status": Json::string("active"),
-            "ttl_until": Json::string(ttl_until),
+            "lock_id": Json::string(lock_id),
+            "agent": Json::string(o.agent),
+            "prev_agent": Json::string(o.prev_agent),
+            "blocked_by": Json::string(blocked_by),
+            "held_by": Json::string(blocked_by),
+            "ttl_until": Json::string(o.ttl_until),
+            "violation_logged": Json::boolean(o.violation_logged),
           }).stringify(),
         ),
       )
@@ -4487,7 +4496,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "lock_renew",
-    "续期文件锁。参数：lock_id、scope、agent、ttl_until(新过期时间)、ts(可选)。仅持有者可续；找不到锁或非持有者返回错误。",
+    "续期文件锁。参数：lock_id、scope、agent、ttl_until(新过期时间)、ts(可选)。仅持有者可续。返回 {lock_id, scope, granted, action, agent, ttl_until, violation_logged}——granted=true 续期成功（action=renewed，库里现值已按新 ttl 落定）；granted=false 时锁**未被改动**、agent=库里现持有者（即 blocked_by），action 说明原因。三条拒绝路径都是显式错误：scope 无锁 / 锁已非 active（released、expired、violated——已失效的锁不许靠续期复活，要重取走 lock_acquire）/ 现持有者不是本人。写入走 locks_try_acquire 的数据库级裁决（BUG-145），不在这里先读后写。",
     schema(
       {
         "lock_id": string_prop("锁 id（必填）"),
@@ -4506,19 +4515,32 @@ pub async fn run_server() -> Unit {
       let ts = get_str(args, "ts", default=now_default())
       match engine.locks_get(scope) {
         None => Err(@mcp_types.ToolError("lock not found for scope: " + scope))
+        // 已失效的锁不许靠续期复活：那等于绕过 TTL 让旧主长期占位（锁机制报告 R22 的形状）
+        Some(l) if l.status != "active" =>
+          Err(
+            @mcp_types.ToolError(
+              "lock is " + l.status + " (not active) for scope: " + scope,
+            ),
+          )
         Some(l) if l.agent != agent =>
           Err(@mcp_types.ToolError("lock held by another agent: " + l.agent))
         Some(l) => {
           let renewed = l.renew(ttl_until~, ts~)
-          engine.locks_upsert(renewed)
+          // 与 lock_acquire 同一个写通道（BUG-145 + 提案 G：acquire/renew 不再两套规则）。
+          // 旧形状「先 locks_get 判本人 → 再 locks_upsert 无条件覆盖」在两次调用之间
+          // 有人插队的窗口里会把覆盖写落到**别人**的锁行上；改走数据库级裁决后，
+          // 那笔写在 agent 已换人时被拒（0 行），回执如实报 conflict 且现持有者可查。
+          let o = engine.locks_try_acquire(renewed)
           Ok(
             @mcp.ToolResult::text(
               Json::object({
                 "lock_id": Json::string(lock_id),
                 "scope": Json::string(scope),
-                "agent": Json::string(agent),
-                "status": Json::string("active"),
-                "ttl_until": Json::string(ttl_until),
+                "granted": Json::boolean(o.granted),
+                "action": Json::string(o.action),
+                "agent": Json::string(o.agent),
+                "ttl_until": Json::string(o.ttl_until),
+                "violation_logged": Json::boolean(o.violation_logged),
               }).stringify(),
             ),
           )

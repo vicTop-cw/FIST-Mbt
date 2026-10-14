@@ -40,7 +40,7 @@ FIST-Mbt 已经是**事实上的六边形架构**，只是没有显式标注：
 | 模块 | 职责 |
 |------|------|
 | `src/evolve/` | DGM 档案库 + scoring + curriculum + mutation + self_search |
-| `src/dag/` | DAG 关键路径/PERT/Monte Carlo 排程 |
+| `src/engine/engine_dag_ext.mbt` `engine_dag_mc.mbt` | DAG 关键路径/PERT/Monte Carlo 排程 |
 | `src/ops/` | 开发模式 + 六顶帽辩论 + 调度 |
 | `src/router/` | 模型路由 + Star 门 + 故障分类 |
 | `src/symbolic/` | 布尔逻辑 + SAT 求解 |

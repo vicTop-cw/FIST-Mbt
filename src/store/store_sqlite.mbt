@@ -1170,6 +1170,204 @@ pub fn SqliteStore::locks_upsert(self : SqliteStore, lock : FileLock) -> Unit {
 }
 
 ///|
+/// SQLite 后端：落一条锁违例（`lock_violations` 的唯一写入形状，供本文件内复用）。
+fn SqliteStore::lock_violation_insert(
+  self : SqliteStore,
+  ts : String,
+  agent : String,
+  scope : String,
+  reason : String,
+  lock_id : String,
+) -> Unit {
+  match self.db {
+    None => ()
+    Some(db) => {
+      let sql = "INSERT INTO lock_violations (ts, agent, scope, reason, lock_id) VALUES (?, ?, ?, ?, ?)"
+      match db.prepare(sql) {
+        None => ()
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ts))),
+          )
+          ignore(
+            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent))),
+          )
+          ignore(
+            stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, scope))),
+          )
+          ignore(
+            stmt.bind(4, @sqlite.SqlValue::Text(@encoding.encode(UTF8, reason))),
+          )
+          ignore(
+            stmt.bind(
+              5,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock_id)),
+            ),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
+        }
+      }
+    }
+  }
+}
+
+///|
+/// SQLite 后端：按裁决抢锁（BUG-145）——**抢不到就是 0 行，不是覆盖**（BUG-136 同形）。
+/// 与 `rsv_try_set` 同一形状，三处要点逐字对齐：
+///   1. 互斥由**数据库**在 `ON CONFLICT ... WHERE` 里判，不由调用方写前那次读判
+///      （「先读后写」的竞态窗口正是缺陷本体：两进程都读到空闲、都以为拿到了锁）；
+///   2. 刻意**不留**「写前已见活体持有者就不发这笔写」的短路——那等于把裁决权交回
+///      调用侧那次旧读，而且 SQL 的 WHERE 永远不会被执行（照 BUG-136 的同族教训）；
+///   3. 结论一律取**写后回读**：库里现在是谁，回执就是谁。
+/// `WHERE` 编码的是 `lock_acquire_action`→`rsv_action` 同一条规则：
+///   `agent = excluded.agent`（同持有者续，排在过期之前）
+///   `OR status <> 'active'`（复用一条已释放/已扫出的行——预订表没有这一维，锁表有）
+///   `OR ttl_until < excluded.ts`（旧主 TTL 已过，可让渡）
+pub fn SqliteStore::locks_try_acquire(
+  self : SqliteStore,
+  lock : FileLock,
+) -> LockAcquireOutcome {
+  let prev = self.locks_get(lock.scope)
+  // 标签取自写前快照，只用于**播报动作名**；结论一律由下面那条语句 + 写后回读定。
+  let (may_write, action) = lock_acquire_action(prev, lock.agent, lock.ts)
+  let prev_agent = match prev {
+    Some(o) if action == "taken_over" => o.agent
+    _ => ""
+  }
+  let sql = "INSERT INTO file_locks (scope, lock_id, batch_id, agent, status, ts, ttl_until, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(scope) DO UPDATE SET lock_id=excluded.lock_id, batch_id=excluded.batch_id, agent=excluded.agent, status=excluded.status, ts=excluded.ts, ttl_until=excluded.ttl_until, meta=excluded.meta WHERE file_locks.agent = excluded.agent OR file_locks.status <> 'active' OR file_locks.ttl_until < excluded.ts"
+  ignore(may_write) // 与 rsv_try_set 同一纪律：本地裁决不决定发不发这笔写，只决定动作名
+  match self.db {
+    None =>
+      LockAcquireOutcome::{
+        granted: false,
+        action: "conflict",
+        prev_agent: "",
+        agent: "",
+        ttl_until: "",
+        violation_logged: false,
+      }
+    Some(db) =>
+      match db.prepare(sql) {
+        None =>
+          // prepare 失败＝尺子那头的库不可用，如实报未授予，绝不冒认一次 granted
+          LockAcquireOutcome::{
+            granted: false,
+            action: "conflict",
+            prev_agent: "",
+            agent: "",
+            ttl_until: "",
+            violation_logged: false,
+          }
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.scope)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.lock_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.batch_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              4,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.agent)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              5,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.status)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              6,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.ts)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              7,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.ttl_until)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              8,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.meta)),
+            ),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
+          self.lock_outcome_after_write(lock.scope, action, prev_agent, lock~)
+        }
+      }
+  }
+}
+
+///|
+/// 写后回读收口（与 `rsv_outcome_after_write` 同一条纪律：结论不许由请求反推）。
+/// 库里现在是自己 → granted + 播报写前算出的动作名；是别人 → conflict 并落一条
+/// `lock_denied` 违例（拒夺审计），锁行没被改动，现持有者原样保住。
+fn SqliteStore::lock_outcome_after_write(
+  self : SqliteStore,
+  scope : String,
+  action : String,
+  prev_agent : String,
+  lock~ : FileLock,
+) -> LockAcquireOutcome {
+  match self.locks_get(scope) {
+    Some(l) if l.agent == lock.agent =>
+      LockAcquireOutcome::{
+        granted: true,
+        action,
+        prev_agent,
+        agent: lock.agent,
+        ttl_until: l.ttl_until,
+        violation_logged: false,
+      }
+    Some(l) => {
+      self.lock_violation_insert(
+        lock.ts,
+        lock.agent,
+        scope,
+        "lock_denied",
+        lock.lock_id,
+      )
+      LockAcquireOutcome::{
+        granted: false,
+        action: "conflict",
+        prev_agent: "",
+        agent: l.agent,
+        ttl_until: l.ttl_until,
+        violation_logged: true,
+      }
+    }
+    None =>
+      // 表读空只可能来自库不可用/坏针——如实报未授予，比伪造一次 granted 诚实
+      LockAcquireOutcome::{
+        granted: false,
+        action: "conflict",
+        prev_agent: "",
+        agent: "",
+        ttl_until: "",
+        violation_logged: false,
+      }
+  }
+}
+
+///|
 /// SQLite 后端：查询某 scope 的锁（不存在返回 None）。
 pub fn SqliteStore::locks_get(self : SqliteStore, scope : String) -> FileLock? {
   match self.db {

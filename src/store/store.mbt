@@ -554,6 +554,19 @@ pub fn StoreBackend::locks_upsert(self : StoreBackend, lock : FileLock) -> Unit 
 }
 
 ///|
+/// 后端统一：按裁决抢锁（BUG-145）——被他人 live 持有时**拒绝**，不覆盖。
+/// 两后端必须同一形状（先读后写只在单进程测不出竞态，BUG-85/79 的旧例）。
+pub fn StoreBackend::locks_try_acquire(
+  self : StoreBackend,
+  lock : FileLock,
+) -> LockAcquireOutcome {
+  match self {
+    Mem(m) => m.locks_try_acquire(lock)
+    Sql(s) => s.locks_try_acquire(lock)
+  }
+}
+
+///|
 pub fn StoreBackend::locks_get(
   self : StoreBackend,
   scope : String,
