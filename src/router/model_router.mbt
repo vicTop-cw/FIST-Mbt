@@ -48,6 +48,12 @@ pub struct ModelQuota {
   mut used : Int
   mut window_start : String
   lane : String
+  /// P1.3：单次调用价格（美元），0 = 未知/免费，不参与性价比比较
+  price_per_call : Double
+  /// P1.3：每 1k token 价格（美元），0 = 未知
+  price_per_1k : Double
+  /// P1.3：质量排名（数值越大越强），0 = 未知/不参与
+  rank : Int
 } derive(Eq, Debug)
 
 ///|
@@ -59,11 +65,24 @@ pub fn ModelQuota::new(
   used? : Int = 0,
   window_start? : String = "",
   lane? : String = "",
+  price_per_call? : Double = 0.0,
+  price_per_1k? : Double = 0.0,
+  rank? : Int = 0,
 ) -> ModelQuota {
   // used/window_start 作为构造参数而非"建完再改"：跨包不得改 mut 字段（MoonBit 只允许
   // 定义包内改），状态恢复必须能在 src/server 里做，所以把入口做成构造函数。
   let u = if used < 0 { 0 } else { used }
-  { name, tier, limit, used: u, window_start, lane: lane.trim().to_owned(), }
+  {
+    name,
+    tier,
+    limit,
+    used: u,
+    window_start,
+    lane: lane.trim().to_owned(),
+    price_per_call,
+    price_per_1k,
+    rank,
+  }
 }
 
 ///|
@@ -100,6 +119,20 @@ pub fn ModelQuota::is_exhausted(self : ModelQuota) -> Bool {
 }
 
 ///|
+/// P1.3：性价比评分 = rank / (price_per_call + price_per_1k + 1)。价格或排名未知（=0）返回 0.0，
+/// 表示"不参与性价比比较"（保持原顺序）。分母 +1 避免免费模型（价格 0）除以零。
+pub fn ModelQuota::cost_performance(self : ModelQuota) -> Double {
+  if self.price_per_call <= 0.0 && self.price_per_1k <= 0.0 {
+    return 0.0
+  }
+  if self.rank <= 0 {
+    return 0.0
+  }
+  let denom = self.price_per_call + self.price_per_1k + 1.0
+  self.rank.to_double() / denom
+}
+
+///|
 pub fn ModelQuota::to_json(self : ModelQuota) -> Json {
   Json::object({
     "name": Json::string(self.name),
@@ -111,7 +144,104 @@ pub fn ModelQuota::to_json(self : ModelQuota) -> Json {
     "exhausted": Json::boolean(self.is_exhausted()),
     "window_start": Json::string(self.window_start),
     "lane": Json::string(self.lane),
+    "price_per_call": Json::number(self.price_per_call),
+    "price_per_1k": Json::number(self.price_per_1k),
+    "rank": Json::number(self.rank.to_double()),
+    "cost_performance": Json::number(self.cost_performance()),
   })
+}
+
+///|
+/// P1.3：按性价比降序排列一个池（原地）。性价比相同（含未知=0）保持原相对顺序（稳定排序）。
+pub fn sort_by_cost_performance(pool : Array[ModelQuota]) -> Unit {
+  let n = pool.length()
+  // 简单稳定插入排序（池通常 4-8 个，无必要引入快排）
+  let mut i = 1
+  while i < n {
+    let key = pool[i]
+    let kcp = key.cost_performance()
+    let mut j = i
+    while j > 0 {
+      let prev = pool[j - 1]
+      if prev.cost_performance() < kcp {
+        pool[j] = prev
+        j = j - 1
+      } else {
+        break
+      }
+    }
+    pool[j] = key
+    i = i + 1
+  }
+}
+
+///|
+/// P1.1/P1.3：计算备用链——同档位按性价比排序，然后另一档位（同纪律），
+/// 过滤 unhealthy、已耗尽。返回模型名字符串数组。
+pub fn compute_fallback_chain(
+  config : RouterConfig,
+  primary : String,
+  unhealthy_ids? : Array[String] = [],
+) -> Array[String] {
+  let cur_tier = find_tier(config, primary)
+  let first_pool = if cur_tier == Free {
+    config.free_models
+  } else {
+    config.paid_models
+  }
+  let second_pool = if cur_tier == Free {
+    config.paid_models
+  } else {
+    config.free_models
+  }
+  let ordered_first = sort_pool_copy(first_pool, unhealthy_ids~)
+  let ordered_second = sort_pool_copy(second_pool, unhealthy_ids~)
+  let mut chain : Array[String] = []
+  for m in ordered_first {
+    if m.name != primary &&
+      !is_model_unhealthy(m.name, unhealthy_ids) &&
+      !m.is_exhausted() {
+      chain = chain + [m.name]
+    }
+  }
+  for m in ordered_second {
+    if !is_model_unhealthy(m.name, unhealthy_ids) && !m.is_exhausted() {
+      chain = chain + [m.name]
+    }
+  }
+  chain
+}
+
+///|
+/// 找模型所在档位；找不到返回 Free（保守）
+fn find_tier(config : RouterConfig, name : String) -> ModelTier {
+  for m in config.free_models {
+    if m.name == name {
+      return Free
+    }
+  }
+  for m in config.paid_models {
+    if m.name == name {
+      return Paid
+    }
+  }
+  Free
+}
+
+///|
+/// 按性价比排序后的副本（只取未耗尽且不在黑名单的模型）
+fn sort_pool_copy(
+  pool : Array[ModelQuota],
+  unhealthy_ids? : Array[String] = [],
+) -> Array[ModelQuota] {
+  let mut kept : Array[ModelQuota] = []
+  for m in pool {
+    if !is_model_unhealthy(m.name, unhealthy_ids) && !m.is_exhausted() {
+      kept = kept + [m]
+    }
+  }
+  sort_by_cost_performance(kept)
+  kept
 }
 
 ///|
@@ -214,6 +344,8 @@ pub struct RouteDecision {
   switched : Bool
   next_switch_at : String
   available : Bool
+  /// P1.1：备用链——主选失败时的有序候选模型名
+  fallback_chain : Array[String]
   /// P2：laya 参与时标注 `laya:<tier>`（如 laya:paid），未参与 = 空串
   laya_reason : String
 } derive(Eq, Debug)
@@ -227,6 +359,9 @@ pub fn RouteDecision::to_json(self : RouteDecision) -> Json {
     "switched": Json::boolean(self.switched),
     "available": Json::boolean(self.available),
     "next_switch_at": Json::string(self.next_switch_at),
+    "fallback_chain": Json::array(
+      self.fallback_chain.map(fn(x) { Json::string(x) }),
+    ),
     "laya_reason": Json::string(self.laya_reason),
   })
 }
@@ -474,10 +609,29 @@ pub fn ModelRouter::pick(
   laya_prefer_tier? : String = "",
 ) -> RouteDecision {
   let d = self.pick_inner(now~, unhealthy_ids~, laya_prefer_tier~)
-  if d.available && !d.model_name.is_empty() {
-    self.last_pick = d.model_name
+  // P1.1：备用链在 pick 统一登记（单一 choke point，避免各分支重复计算）
+  let d2 = if d.available && !d.model_name.is_empty() {
+    {
+      model_name: d.model_name,
+      tier: d.tier,
+      reason: d.reason,
+      switched: d.switched,
+      next_switch_at: d.next_switch_at,
+      available: d.available,
+      fallback_chain: compute_fallback_chain(
+        self.config,
+        d.model_name,
+        unhealthy_ids~,
+      ),
+      laya_reason: d.laya_reason,
+    }
+  } else {
+    d
   }
-  d
+  if d2.available && !d2.model_name.is_empty() {
+    self.last_pick = d2.model_name
+  }
+  d2
 }
 
 ///|
@@ -530,6 +684,11 @@ fn ModelRouter::pick_inner(
               next_switch_at: nxt,
               available: true,
               laya_reason: "laya:" + t.to_string(),
+              fallback_chain: compute_fallback_chain(
+                self.config,
+                hint_pool[idx].name,
+                unhealthy_ids~,
+              ),
             }
           }
         }
@@ -552,6 +711,7 @@ fn ModelRouter::pick_inner(
             next_switch_at: nxt,
             available: true,
             laya_reason: "",
+            fallback_chain: [],
           }
         }
         None =>
@@ -573,6 +733,7 @@ fn ModelRouter::pick_inner(
                 next_switch_at: nxt,
                 available: true,
                 laya_reason: "",
+                fallback_chain: [],
               }
             }
             None => {
@@ -585,6 +746,7 @@ fn ModelRouter::pick_inner(
                 next_switch_at: "",
                 available: false,
                 laya_reason: "",
+                fallback_chain: [],
               }
             }
           }
@@ -604,6 +766,7 @@ fn ModelRouter::pick_inner(
             next_switch_at: nxt,
             available: true,
             laya_reason: "",
+            fallback_chain: [],
           }
         }
         None =>
@@ -625,6 +788,7 @@ fn ModelRouter::pick_inner(
                 next_switch_at: nxt,
                 available: true,
                 laya_reason: "",
+                fallback_chain: [],
               }
             }
             None => {
@@ -637,6 +801,7 @@ fn ModelRouter::pick_inner(
                 next_switch_at: "",
                 available: false,
                 laya_reason: "",
+                fallback_chain: [],
               }
             }
           }
@@ -678,6 +843,7 @@ pub fn ModelRouter::record_call(
       switched: d.switched,
       next_switch_at: d.next_switch_at,
       available: d.available,
+      fallback_chain: d.fallback_chain,
       laya_reason: d.laya_reason,
     }
   }
@@ -707,6 +873,7 @@ pub fn ModelRouter::force_switch(
         next_switch_at: "",
         available: false,
         laya_reason: "",
+        fallback_chain: [],
       }
     }
     Some(idx) => {
@@ -738,6 +905,7 @@ pub fn ModelRouter::force_switch(
           iso_to_secs(now) + self.config.window_seconds,
         ),
         available: true,
+        fallback_chain: compute_fallback_chain(self.config, pool[idx].name),
         laya_reason: "",
       }
     }
