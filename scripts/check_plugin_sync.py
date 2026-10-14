@@ -117,6 +117,24 @@ HOST_ENTRIES = {
 
 
 def main() -> int:
+    # 工具真源收口自检（2026-10-14）：本守卫已在 CI 的 Plugin-form guard 步里跑，
+    # 而它依赖 `_tool_registry.real_tools()` 取真源。若该单一实现的"5 个消费者都接上"
+    # 收口被破坏（有人把本地实现塞回来 / 断掉加载），本守卫会拿错口径去比投影，
+    # 红面看起来像"插件漂移"而真因在收口 —— 故先把 `_tool_registry --selftest` 跑一遍，
+    # 它红了就直接报"真源模块自检失败"（比让红面误导到插件面更早、更准）。
+    r = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve().parent / "_tool_registry.py"), "--selftest"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    if r.returncode != 0:
+        out = (r.stdout or "") + (r.stderr or "")
+        print("FATAL 工具真源模块自检失败（`scripts/_tool_registry.py --selftest`）——")
+        print("      插件态比对的真源口径不可信，先修收口再读本守卫的结论：")
+        for line in out.strip().splitlines()[-8:]:
+            print("      " + line)
+        return 2
+
     # Windows 控制台默认 cp936：守卫一旦要打印中文子进程输出就会 UnicodeEncodeError 崩掉
     # （崩溃的守卫等于没有守卫）。先把自身输出钉成 UTF-8，再给子进程同样的环境变量。
     try:
