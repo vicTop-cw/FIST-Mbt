@@ -127,6 +127,16 @@ jobs:
           python3 scripts/check_ps_encoding.py --selftest
           python3 scripts/check_ps_encoding.py
 
+      - name: Template control-char guard (templates/*.md 禁裸控制字符——裸 CR 会吃掉工具名首字母)
+        shell: bash
+        # 2026-10-14 普查：7 份 pipeline_mode_*.md 曾因转义序列解释混入裸 CR，把 task_plan_deep 吃成
+        # ask_plan_deep、reject 吃成 eject ⇒ 执行者调不到工具。判据只判"裸"控制字符：CRLF 是
+        # Windows autocrlf checkout 注入的合法行尾，被容忍；配套 .gitattributes `templates/*.md text eol=lf`
+        # 从源头钉 checkout 行尾（双保险）。
+        run: |
+          python3 scripts/check_template_ctrl.py --selftest
+          python3 scripts/check_template_ctrl.py
+
       - name: Py-stdout encoding guard (BUG-138：本机红必须看得见，不许崩在结论行之前)
         shell: bash
         # 扫描面从本 workflow 反解：凡被 CI 调用、会 print 且正文含非 ASCII 的 .py，必须自带
@@ -171,6 +181,24 @@ jobs:
         run: |
           python3 scripts/check_release_asset_names.py --selftest
           python3 scripts/check_release_asset_names.py
+
+      - name: Model-auth-no-key guard (config_json/HTML/default-fist.mcp.json 禁 api_key/Bearer/sk- 形状)
+        shell: bash
+        run: |
+          python3 scripts/check_model_auth_no_key.py --selftest
+          python3 scripts/check_model_auth_no_key.py
+
+      - name: Host-installable guard (deepseek-harness 宿主侧真的能装上)
+        shell: bash
+        run: |
+          python3 scripts/check_host_installable.py --selftest
+          python3 scripts/check_host_installable.py
+
+      - name: Skill-inject guard (evolve_asset_register 注入路径可测命中)
+        shell: bash
+        run: |
+          python3 scripts/check_skill_inject.py --selftest
+          python3 scripts/check_skill_inject.py
 
       - name: Self-described surface guard (BUG-104：resources/prompts/版本 自述面判据的 12 支对照)
         shell: bash
