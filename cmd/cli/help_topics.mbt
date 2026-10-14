@@ -10,7 +10,7 @@ pub fn list_topics() -> String {
   let v = FIST_VERSION
   "FIST-Mbt Help  v" +
   v +
-  "  (148 MCP tools)\n" +
+  "  (166 MCP tools)\n" +
   "\n" +
   "Usage: fist help <topic>\n" +
   "Topics: overview / cli / tools / mcp / plugins / install\n" +
@@ -25,7 +25,7 @@ pub fn help_overview() -> String {
   " ===\n" +
   "\n" +
   "Pure MoonBit AI commander orchestration, exposed as MCP Server.\n" +
-  "148 MCP tools / 3 resources / 2 prompts.\n" +
+  "166 MCP tools / 3 resources / 2 prompts.\n" +
   "\n" +
   "Lifecycle: publish -> plan -> claim -> execute -> submit -> verify -> archive\n" +
   "Self-drive: selfdrive_init -> review -> publish_next -> triage\n" +
@@ -55,7 +55,7 @@ pub fn help_tools() -> String {
   let v = FIST_VERSION
   "=== " +
   v +
-  "  148 MCP tools (15 groups) ===\n" +
+  "  166 MCP tools (17 groups) ===\n" +
   "\n" +
   "  [Lifecycle 14] publish publish_parallel plan claim execute submit verify reject retry pause resume reopen_task archive delete\n" +
   "  [Query 2] list get\n" +
@@ -68,8 +68,10 @@ pub fn help_tools() -> String {
   "  [GitHub-GitCode 12] github_env_check github_queue_status github_flush_plan github_flush_execute github_queue_mark_sent github_issue_close github_issue_comment github_issue_webhook_parse gitcode_env_check gitcode_queue_status gitcode_flush_plan gitcode_queue_mark_sent\n" +
   "  [Model-Router 5] model_auth_status model_route model_router_status model_router_reset executor_run\n" +
   "  [Omega 6] omega_spec_create omega_spec_review omega_result_verify omega_status omega_verify omega_verify_fix\n" +
-  "  [Six-Hats-Debate 4] hat_list debate_convene debate_register debate_verdict\n" +
+  "  [Six-Hats-Debate 7] hat_list debate_convene debate_register debate_verdict hat_run hat_debate hat_merge\n" +
   "  [Assistant 5] assistant_claim assistant_status assistant_sweep assistant_resign assistant_heartbeat\n" +
+  "  [Supervisor 8] supervisor_status supervisor_task_tree supervisor_kill_plan supervisor_prompt_inject supervisor_prompt_list supervisor_prompt_consume supervisor_task_upsert supervisor_reminder_tick\n" +
+  "  [MCPCf-Embed 7] mcpcf.ops_init mcpcf.circuit mcpcf.report mcpcf.review mcpcf.run_batch mcpcf.verify mcpcf.watchdog\n" +
   "  [Other 8] store_open store_list store_close audit_permission audit_log atgc_old_compile atgc_old_run atgc_old_talk\n" +
   "  [Modes 2] mode_list mode_templates\n" +
   "\n" +

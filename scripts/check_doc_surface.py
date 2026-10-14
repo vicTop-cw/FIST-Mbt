@@ -119,8 +119,14 @@ BACKLOG = ROOT / "BACKLOG.md"
 # J4 允许保留旧版本号的文件（历史陈述/计划/日志），不与"当前自述"混判
 HISTORICAL = re.compile(r"^(CHANGELOG\.md|.*[/\\](memory|reports)[/\\].*)$")
 
-RE_TOOL = re.compile(r"instrumented_tool\(\s*s1\s*,\s*\"([^\"]+)\"")
-RE_BACKTICK = re.compile(r"`([a-z_][a-z_0-9]*)`")
+RE_TOOL = re.compile(r'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"')
+# BUG-157 同族（2026-10-14）：工具注册已从 server.mbt 拆到 supervisor_tools.mbt / hat_hexa_tools.mbt /
+# mcpcf_embed.mbt 等，只扫 server.mbt 得 148 而运行态 166 ⇒ J1/J14 会拿旧口径自洽（假绿）。
+# 与 check_tools_sync 同一条口径：扫 src/server/*.mbt（排除测试）+ 两种注册形态的并集。
+RE_TOOL_CHAIN = re.compile(r'\b\w+\.tool\(\s*"([^"]+)"')
+RE_BACKTICK = re.compile(r"`([a-z_][a-z_0-9.]*)`")
+# BUG-157 同族：原口径 `([a-z_][a-z_0-9]*)` 不含 `.` ⇒ `mcpcf.circuit` 这类带点工具名
+# （mcpcf_embed.mbt 的 7 个）在文档里**永远匹配不上**，J2 会恒报"未逐个列出"。
 RE_SELFVER = re.compile(r"vicTop-cw/fist-mbt@(\d+\.\d+\.\d+)")
 
 # J6：规则 id 形状（r1-doc-as-impl / f2-four-forms-aligned / cl7-plugin-forms-sync）
@@ -143,7 +149,16 @@ RE_TOOL_BLOCK_START = re.compile(r"instrumented_tool\(\s*s1\s*,\s*\"([a-z_0-9]+)
 
 
 def real_tools():
-    return sorted(set(RE_TOOL.findall(SERVER.read_text(encoding="utf-8"))))
+    """工具注册真源 = src/server/*.mbt（排除 _test/_wbtest）两种注册形态的并集。
+    2026-10-14 起从「只扫 server.mbt」扩到全包（见 RE_TOOL_CHAIN 处注释：BUG-157 同族）。"""
+    names = set()
+    for f in sorted((ROOT / "src" / "server").glob("*.mbt")):
+        if f.name.endswith(("_test.mbt", "_wbtest.mbt")):
+            continue
+        text = f.read_text(encoding="utf-8")
+        names |= set(RE_TOOL.findall(text))
+        names |= set(RE_TOOL_CHAIN.findall(text))
+    return sorted(names)
 
 
 def moon_version():
@@ -788,7 +803,7 @@ def j14_tool_count_claims():
     for rel, _label in J14_FACES:
         p = ROOT / rel
         texts[rel] = p.read_text(encoding="utf-8", errors="replace") if p.is_file() else ""
-    n = len(set(RE_TOOL.findall(SERVER.read_text(encoding="utf-8", errors="replace"))))
+    n = len(real_tools())
     problems = j14_count_problems(texts, n)
     problems += j14_help_group_problems(texts.get(J14_HELP, ""), n)
     return problems

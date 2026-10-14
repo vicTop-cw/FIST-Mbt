@@ -34,6 +34,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SERVER = ROOT / "src" / "server" / "server.mbt"
+SERVER_DIR = ROOT / "src" / "server"
 AGENTS = ROOT / "AGENTS.md"
 README = ROOT / "README.md"
 DELIV = ROOT / "docs" / "deliverable.md"
@@ -42,6 +43,12 @@ OPS_MODES = ROOT / "src" / "ops" / "ops_modes.mbt"
 TEMPLATES = sorted((ROOT / "templates").glob("pipeline_mode_*.md"))
 
 RE_TOOL = re.compile(r'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"')
+# BUG-153 同族：2026-10-14 实测运行态 tools/list = 166，而真源只扫 server.mbt 得 148 ⇒ 差 18 个
+# （supervisor_tools.mbt 8 / hat_hexa_tools.mbt 3 走 instrumented_tool；mcpcf_embed.mbt 7 走链式
+# `s.tool("name", ...)`）。工具注册已从 server.mbt 拆成多文件，判据的扫描面没跟上 ⇒ 文档面
+# 被迫对 148 自洽、运行态却是 166，"少写"型漂移（L33 翻账要求"连同工具数一起翻"就是卡在这）。
+# 修法：扫描面扩到 src/server/*.mbt（排除测试），并纳入两种注册形态的**并集**。
+RE_TOOL_CHAIN = re.compile(r'\b\w+\.tool\(\s*"([^"]+)"')
 RE_BACKTICK = re.compile(r"`([\w\-]+)`")
 RE_FORBIDDEN_BODY = re.compile(
     r"fn mode_forbidden_tools\([^)]*\).*?\n\}", re.S
@@ -79,7 +86,18 @@ RE_TOOL_SHAPE = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\(")
 
 
 def real_tools():
-    return sorted(set(RE_TOOL.findall(SERVER.read_text(encoding="utf-8"))))
+    """工具注册真源 = `src/server/*.mbt`（排除 _test/_wbtest）里两种注册形态的并集：
+       ① `instrumented_tool(<var>, "name", …)`   ② 链式 `<var>.tool("name", …)`（mcpcf_embed.mbt）
+    2026-10-14 起从「只扫 server.mbt」扩到全包：那时工具注册已拆到 supervisor_tools.mbt(8)/
+    hat_hexa_tools.mbt(3)/mcpcf_embed.mbt(7)，只扫 server.mbt 得 148 而运行态 166（差 18）。"""
+    names = set()
+    for f in sorted(SERVER_DIR.glob("*.mbt")):
+        if f.name.endswith(("_test.mbt", "_wbtest.mbt")):
+            continue
+        text = f.read_text(encoding="utf-8")
+        names |= set(RE_TOOL.findall(text))
+        names |= set(RE_TOOL_CHAIN.findall(text))
+    return sorted(names)
 
 
 # BUG-71：resources / prompts 此前**零守卫**（六守卫只管工具名与总数），
