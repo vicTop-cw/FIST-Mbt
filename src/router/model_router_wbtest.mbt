@@ -599,3 +599,142 @@ test "lp_6_routerconfig_uselaya_field" {
   assert_eq(c4.use_laya, false)
   assert_eq(w4.length(), 1)
 }
+
+///|
+/// P1.3-1：cost_performance = rank/(price+1)；价格或排名未知 → 0（不参与比较）
+test "cp_1_cost_performance_formula" {
+  let m1 = ModelQuota::new(
+    name="a",
+    tier=Paid,
+    limit=10,
+    rank=5,
+    price_per_call=1.0,
+  )
+  // 5 / (1.0 + 1.0) = 2.5
+  assert_eq(m1.cost_performance(), 2.5)
+  let m2 = ModelQuota::new(
+    name="b",
+    tier=Paid,
+    limit=10,
+    rank=9,
+    price_per_call=3.0,
+  )
+  // 9 / (3.0 + 1.0) = 2.25 → 便宜高质 wins
+  assert_eq(m2.cost_performance(), 2.25)
+  // 未知价格 → 0
+  let m3 = ModelQuota::new(name="c", tier=Free, limit=10, rank=5)
+  assert_eq(m3.cost_performance(), 0.0)
+  // 未知排名 → 0
+  let m4 = ModelQuota::new(name="d", tier=Paid, limit=10, price_per_call=1.0)
+  assert_eq(m4.cost_performance(), 0.0)
+}
+
+///|
+/// P1.3-2：sort_by_cost_performance 同 tier 内按性价比降序
+test "cp_2_sort_by_cost_performance" {
+  let a = ModelQuota::new(
+    name="cheap-good",
+    tier=Paid,
+    limit=10,
+    rank=5,
+    price_per_call=1.0,
+  )
+  let b = ModelQuota::new(
+    name="pricey-good",
+    tier=Paid,
+    limit=10,
+    rank=9,
+    price_per_call=3.0,
+  )
+  let c = ModelQuota::new(
+    name="mid",
+    tier=Paid,
+    limit=10,
+    rank=4,
+    price_per_call=2.0,
+  )
+  let pool = [b, a, c]
+  let sorted = sort_pool_copy(pool)
+  assert_eq(sorted[0].name, "cheap-good")
+  assert_eq(sorted[1].name, "pricey-good")
+  assert_eq(sorted[2].name, "mid")
+}
+
+///|
+/// P1.1-1：compute_fallback_chain 同档位→另一档位，过滤主选/耗尽/unhealthy
+test "fc_1_compute_fallback_chain" {
+  let cfg = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [
+      ModelQuota::new(name="free-a", tier=Free, limit=5),
+      ModelQuota::new(name="free-b", tier=Free, limit=1, used=1),
+    ],
+    paid_models: [
+      ModelQuota::new(
+        name="paid-a",
+        tier=Paid,
+        limit=5,
+        rank=5,
+        price_per_call=1.0,
+      ),
+      ModelQuota::new(
+        name="paid-b",
+        tier=Paid,
+        limit=5,
+        rank=9,
+        price_per_call=3.0,
+      ),
+    ],
+    ofm_endpoint: "",
+    use_laya: false,
+  }
+  // 主选 = free-a；free-b 已耗尽 → 链 = paid-a(2.5) > paid-b(2.25)
+  let chain = compute_fallback_chain(cfg, "free-a")
+  assert_eq(chain.length(), 2)
+  assert_eq(chain[0], "paid-a")
+  assert_eq(chain[1], "paid-b")
+}
+
+///|
+/// P1.1-2：pick 回执带 fallback_chain，含主选被过滤
+test "fc_2_route_decision_has_fallback_chain" {
+  let cfg = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [
+      ModelQuota::new(name="free-a", tier=Free, limit=5),
+      ModelQuota::new(name="free-b", tier=Free, limit=5),
+    ],
+    paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=5)],
+    ofm_endpoint: "",
+    use_laya: false,
+  }
+  let r = ModelRouter::from_config(cfg)
+  let d = r.pick(now=rt_at(0, 1))
+  assert_eq(d.model_name, "free-a")
+  // 备用链 = 同档位 free-b + 另一档位 paid-a
+  assert_eq(d.fallback_chain.length(), 2)
+  assert_eq(d.fallback_chain[0], "free-b")
+  assert_eq(d.fallback_chain[1], "paid-a")
+  let s = d.to_json().stringify()
+  assert_true(s.contains("free-b"))
+}
+
+///|
+/// P1.1-3：unhealthy 黑名单从 fallback_chain 中剔除
+test "fc_3_fallback_chain_filters_unhealthy" {
+  let cfg = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [
+      ModelQuota::new(name="free-a", tier=Free, limit=5),
+      ModelQuota::new(name="free-b", tier=Free, limit=5),
+    ],
+    paid_models: [],
+    ofm_endpoint: "",
+    use_laya: false,
+  }
+  let chain = compute_fallback_chain(cfg, "free-a", unhealthy_ids=["free-b"])
+  assert_eq(chain.length(), 0)
+}

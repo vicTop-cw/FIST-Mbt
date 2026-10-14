@@ -111,6 +111,26 @@ fn parse_lane(
 /// 不再像源项目那样在空池上索引 [0] 而 panic）。坏元素跳过并记 warning。
 /// warning 必须**随返回值传出**：MoonBit 的 `a + [x]` 产生新数组，就地 mut 绑定不会回传调用方
 /// （第一版在 parse_pool 里 append 后丢弃，导致坏配置静默通过——rt_10 钉住这条）。
+fn parse_opt_double(v : Json?, field : String) -> (Double, Array[String]) {
+  match v {
+    None => (0.0, [])
+    Some(Json::Null) => (0.0, [])
+    Some(Json::Number(n, ..)) => (n, [])
+    Some(_) => (0.0, [field + " 非数字，按 0 处理"])
+  }
+}
+
+///|
+fn parse_opt_int(v : Json?, field : String) -> (Int, Array[String]) {
+  match v {
+    None => (0, [])
+    Some(Json::Null) => (0, [])
+    Some(Json::Number(n, ..)) => (n.to_int(), [])
+    Some(_) => (0, [field + " 非数字，按 0 处理"])
+  }
+}
+
+///|
 fn parse_pool(
   v : Json?,
   tier : ModelTier,
@@ -141,6 +161,22 @@ fn parse_pool(
             } else {
               let (lane_v, lane_w) = parse_lane(mm.get("lane"), field, name)
               w = w + lane_w
+              // P1.3：性价比字段可选，缺/null → 0（不参与比较），坏类型 → warning
+              let (ppc, ppc_w) = parse_opt_double(
+                mm.get("price_per_call"),
+                field + "." + name + " price_per_call",
+              )
+              w = w + ppc_w
+              let (pp1k, pp1k_w) = parse_opt_double(
+                mm.get("price_per_1k"),
+                field + "." + name + " price_per_1k",
+              )
+              w = w + pp1k_w
+              let (rk, rk_w) = parse_opt_int(
+                mm.get("rank"),
+                field + "." + name + " rank",
+              )
+              w = w + rk_w
               let limit = match mm.get("limit") {
                 Some(Json::Number(n, ..)) =>
                   if n.to_int() < 0 {
@@ -167,7 +203,18 @@ fn parse_pool(
                 }
                 None => if tier == Free { 100 } else { 50 }
               }
-              out = out + [ModelQuota::new(name~, tier~, limit~, lane=lane_v)]
+              out = out +
+                [
+                  ModelQuota::new(
+                    name~,
+                    tier~,
+                    limit~,
+                    lane=lane_v,
+                    price_per_call=ppc,
+                    price_per_1k=pp1k,
+                    rank=rk,
+                  ),
+                ]
             }
           }
           _ => w = w + [field + " 含非对象条目，已跳过"]
