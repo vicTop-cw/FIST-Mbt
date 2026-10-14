@@ -3028,3 +3028,11 @@ B. 若判定新契约作废，则删/改三条锁——但那等于放弃 BUG-18
 - guard_gap: `check_doc_surface.py` J14 扫描面缺 `dist/fist-mbt.js`；若纳入，现在就会红（148≠166），故需先修 dist/ 再扩面，或由 owner 决定删除该遗留产物。
 - reported_by: fist-self-round108-dist-toolcount-audit
 - fix_options: ① 重建 `dist/fist-mbt.js`（需 build cmd/cli JS + bundle，产出大 diff，属 owner 决定）；② 从 git 跟踪中删除 `dist/fist-mbt.js`（若非当前分发面，遗留产物应退役）；③ 扩 J14 扫 dist/ 并先修计数（三选一，均需 owner 裁决，本条目不代修）
+
+
+## BUG-156 [2026-10-14T19:00:30Z] [low] OPEN
+- summary: [bugfind:issue_scan-map-set-premise] `moonbit-map-set-no-rebind` 规则前提错误——MoonBit `Map([])` 是可变 map，`.set()` **原地生效**，规则纯模式匹配 `.set(` 对有效生产代码误报
+- detail: 规则 `src/server/issue_scan.mbt:191-196` 的 `why` 写「Map.set() 返回新 Map，未重绑定则变更丢失（ocr-local moonbit-map-set-no-rebind；语义需读上下文确认重绑定）」，`pattern: [".set("]` 纯子串匹配任意 `.set(` 调用。但 **2026-10-14 实测铁证该前提错误**：临时白盒测试 `let m : Map[String, Int] = Map([]); m.set("k", 42); m.get("k")` 返回 `Some(42)` —— `Map([])` 创建的是可变 map，`.set()` 原地生效，未重绑定不丢失变更。故该规则对有效生产代码误报：`src/core/core_principle.mbt:74-76`（`Principle::to_json` 三段 `m.set(...)` 后 `Json::object(m)`）实测返回 `{"index":1,"title":"...","body":"..."}` **非空对象**，却被该规则命中。全量 issue_scan（src 8 稳定模块）该规则命中 62 条，均为低严重度但多数是误报，稀释扫描器可信度。
+- why-not-fixed: 规则 `why` 已自称「语义需读上下文确认重绑定」——作者知其为启发式提示、非确定性缺陷检测器；但 `why` 里「Map.set() 返回新 Map」这一**事实陈述**不成立（可变 Map 的 set 原地生效），应按实测修正为「Map([]) 可变 map set 原地生效；仅不可变 set 返回新 map」，或把 pattern 收窄到不可变 set 上下文。
+- evidence: 临时测试（已删，不落仓）`m.set("k",42); m.get("k")` = `Some(42)`；`Principle::to_json().stringify()` = `{"index":1,"title":"...","body":"..."}`（非空）。临时测试文件已清理，无仓内残留。
+- 与 BUG-15 关系：BUG-15（FIXED）修的是 high 档规则命中注释/自身字面量（high 精确率 0/8）；本条是 **low 档规则前提错误**（语义假设错）——两个独立缺陷面，BUG-15 的修不覆盖本条。
