@@ -88,9 +88,15 @@ def real_tools():
 RE_RESOURCE = re.compile(r"s1\.resource\(")
 RE_PROMPT = re.compile(r"s1\.prompt\(")
 
-# 现状面里"本项目有多少个工具"的声明形状（窄口径，避免吃进 "36 native tools" 这类旁述）
+# 现状面里"本项目有多少个工具"的声明形状（窄口径，避免吃进 "36 native tools" 这类旁述）。
+# 支持两种形态：
+#   精确式  "148 个 MCP 工具" / "148 MCP 工具" / "148 工具注册" / "工具 148 个" → 必须等于实测
+#   下限式  "140+ 个 MCP 工具" / "140+ MCP 工具" / "140+ 工具注册" / "工具 140+ 个" → 只需实测 ≥ 下限
+# 下限式治「写死一个数就是下一颗漂移雷」：加工具不必改文档，减到下限以下才红；
+# 下限超过实测即虚报（overclaim），照样判红，不许靠模糊化掩盖虚报。
 RE_TOOL_CLAIM = re.compile(
-    r"(\d+)\s*个\s*MCP\s*工具|(\d+)\s*MCP\s*工具|(\d+)\s*工具注册|工具\s*(\d+)\s*个"
+    r"(?<!\.)(\d+)\+?\s*个\s*MCP\s*工具|(?<!\.)(\d+)\+?\s*MCP\s*工具|"
+    r"(?<!\.)(\d+)\+?\s*工具注册|工具\s*(?<!\.)(\d+)\+?\s*个"
 )
 # 三元组："120 tools + 3 resources + 2 prompts"
 RE_TRIPLE = re.compile(
@@ -153,7 +159,9 @@ def tracked_docs():
 
 
 def surface_claims(text):
-    """抽出一份文档里的工具总数声明与三元组声明。"""
+    """抽出一份文档里的工具总数声明与三元组声明。
+    claims 每项为 (num, is_floor, ln, snippet)：is_floor=True 表示下限式 `N+`（只需实测≥N）。
+    triples 每项为 (tools, resources, prompts, ln)：三元组恒为精确式（哨兵面不模糊化）。"""
     claims, triples = [], []
     for ln, line in enumerate(text.splitlines(), 1):
         for m in RE_TRIPLE.finditer(line):
@@ -161,17 +169,27 @@ def surface_claims(text):
         for m in RE_TOOL_CLAIM.finditer(line):
             num = next((g for g in m.groups() if g), None)
             if num:
-                claims.append((int(num), ln, line.strip()[:60]))
+                is_floor = "+" in m.group(0)
+                claims.append((int(num), is_floor, ln, line.strip()[:60]))
     return claims, triples
 
 
 def check_r3b_r7(rel, text, n, res_n, prompt_n):
     """对单份文档的「当前态声明」做 R3b（工具总数）/R7（三元组）比对，返回违例列表。
+    R3b 支持两种声明形态：
+      - 精确式 `N 个 MCP 工具` → 必须等于实测 n（写死数字必腐烂，不推荐新写）；
+      - 下限式 `N+ 个 MCP 工具` → 只需 n >= N（下限超过实测即虚报，判红）。
+    下限式治「写死一个数就是下一颗漂移雷」：加工具不必改文档，减到下限以下才红。
     纯函数，--selftest 直接用合成正文考它（不需要真仓库）。"""
     problems = []
     claims, triples = surface_claims(text)
-    for num, ln, snippet in claims:
-        if num != n:
+    for num, is_floor, ln, snippet in claims:
+        if is_floor:
+            if n < num:
+                problems.append(
+                    f"R3b {rel}:{ln} 下限声明 {num}+ 个工具，实测仅 {n}（下限超过实测＝虚报）—— {snippet}"
+                )
+        elif num != n:
             problems.append(
                 f"R3b {rel}:{ln} 声明 {num} 个工具，实测注册 {n} —— {snippet}"
             )
@@ -233,15 +251,21 @@ def main():
     if missing:
         problems.append(f"server 注册但 AGENTS 未列出 ({len(missing)}): " + ", ".join(missing))
 
-    # 3) 各文档工具总数 == 实测
-    re_near = re.compile(rf"MCP 工具[\s\S]{{0,30}}?{re.escape(str(n))}")
+    # 3) 四份现状面必须各有一处与实测一致的工具总数自述（反幻影：宣称描述 MCP server 却
+    #    不告诉读者工具有几个，等于让读者去猜规模）。接受两种形态：
+    #    - 精确式  "148 个 MCP 工具" → 等于实测 n
+    #    - 下限式  "140+ 个 MCP 工具" → n >= 下限（下限超过实测即虚报，不算一致）
     for path in (README, AGENTS, DELIV, RUBRIC):
-        txt = path.read_text(encoding="utf-8")
-        ok = (f"{n} 个 MCP 工具" in txt) or (f"{n} tools" in txt) \
-            or (f"工具 {n}" in txt) or (f"（{n} 工具" in txt) \
-            or (f"{n} MCP 工具" in txt) or bool(re_near.search(txt))
+        claims, _ = surface_claims(path.read_text(encoding="utf-8"))
+        ok = any(
+            (n >= num and is_floor) or (num == n and not is_floor)
+            for num, is_floor, _, _ in claims
+        )
         if not ok:
-            problems.append(f"{path.name} 缺少工具总数 {n} 的表述")
+            problems.append(
+                f"{path.name} 缺少与实测 {n} 一致的工具总数自述"
+                f"（精确值 {n} 或 ≤{n} 的下限式 N+；下限超过实测即虚报）"
+            )
 
     # 3b) 全量现状面的"工具总数声明"必须等于实测（BUG-71 同族：只要求"出现过"的判据，
     #     文档里再写一个错数照样绿 —— ARCHITECTURE.md 的 104 就是这么活下来的）
@@ -327,8 +351,13 @@ def main():
 
 
 def _tools_line(num):
-    """合成一条工具总数声明（形状对齐 RE_TOOL_CLAIM 的「N 个 MCP 工具」）。"""
+    """合成一条精确式工具总数声明（形状对齐 RE_TOOL_CLAIM 的「N 个 MCP 工具」）。"""
     return f"共 **{num} 个 MCP 工具**（现状面声明）"
+
+
+def _tools_floor_line(num):
+    """合成一条下限式工具总数声明（形状对齐 RE_TOOL_CLAIM 的「N+ 个 MCP 工具」）。"""
+    return f"共 **{num}+ 个 MCP 工具**（下限式声明，实测 ≥{num} 即过）"
 
 
 def selftest():
@@ -406,6 +435,39 @@ def selftest():
         "iplan-current-clean",
         "docs/improvement-plan-20261010.md",
         _tools_line(130),
+        want_none="R3b",
+    ):
+        return 1
+
+    # 7a) 下限式达标：实测 130 ≥ 下限 100 → 不误红（加工具不必改文档）
+    if not run_case(
+        "floor-pass-below-measured",
+        "docs/improvement-plan-20261010.md",
+        _tools_floor_line(100),
+        want_none="R3b",
+    ):
+        return 1
+    # 7b) 下限式超过实测：实测 130 < 下限 150 → 必红（下限式不许当虚报遮羞布）
+    if not run_case(
+        "floor-overclaim-reds",
+        "docs/improvement-plan-20261010.md",
+        _tools_floor_line(150),
+        want="R3b docs/improvement-plan-20261010.md",
+    ):
+        return 1
+    # 7c) 下限式边界相等：实测 130 == 下限 130 → 不误红（>= 语义含等号）
+    if not run_case(
+        "floor-equal-boundary",
+        "docs/improvement-plan-20261010.md",
+        _tools_floor_line(130),
+        want_none="R3b",
+    ):
+        return 1
+    # 7d) 下限式「N+ MCP 工具」（无「个」）也认，且与精确式同段并存时各自独立判
+    if not run_case(
+        "floor-alt-shape-and-mixed",
+        "docs/improvement-plan-20261010.md",
+        "以 **120+ MCP 工具** 暴露；另有精确口径 **130 个 MCP 工具**",
         want_none="R3b",
     ):
         return 1
