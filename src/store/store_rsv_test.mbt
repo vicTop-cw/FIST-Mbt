@@ -371,3 +371,356 @@ test "locks FileLock::renew 重置 ttl 与 status" {
   assert_eq(r.ttl_until, "2026-10-11T12:00:00Z")
   assert_eq(r.ts, "2026-10-11T10:00:00Z")
 }
+
+///|
+// —— lock_acquire_action 纯函数（BUG-145：锁层委托 rsv_action，单一真源）——
+
+test "lock_acquire_action: 无前置锁 → (true, reserved)" {
+  let (ok, action) = @store.lock_acquire_action(
+    None,
+    "a",
+    "2026-10-11T10:00:00Z",
+  )
+  assert_true(ok)
+  assert_eq(action, "reserved")
+}
+
+///|
+test "lock_acquire_action: 同持有者 → (true, renewed)，即使他人 TTL 已过也排在过期之前" {
+  let prev = @store.FileLock::new(
+    lock_id="l1",
+    batch_id="b1",
+    scope="s",
+    agent="a",
+    status="active",
+    ts="2026-10-11T08:00:00Z",
+    ttl_until="2026-10-11T09:00:00Z",
+  )
+  // TTL 已过（09:00 < 10:00），但同持有者排在过期之前 → renewed 而非 taken_over
+  let (ok, action) = @store.lock_acquire_action(
+    Some(prev),
+    "a",
+    "2026-10-11T10:00:00Z",
+  )
+  assert_true(ok)
+  assert_eq(action, "renewed")
+}
+
+///|
+test "lock_acquire_action: 他人 TTL 已过 → (true, taken_over)" {
+  let prev = @store.FileLock::new(
+    lock_id="l1",
+    batch_id="b1",
+    scope="s",
+    agent="a",
+    status="active",
+    ts="2026-10-11T08:00:00Z",
+    ttl_until="2026-10-11T09:00:00Z",
+  )
+  let (ok, action) = @store.lock_acquire_action(
+    Some(prev),
+    "b",
+    "2026-10-11T10:00:00Z",
+  )
+  assert_true(ok)
+  assert_eq(action, "taken_over")
+}
+
+///|
+test "lock_acquire_action: 他人 live 锁 → (false, conflict)" {
+  let prev = @store.FileLock::new(
+    lock_id="l1",
+    batch_id="b1",
+    scope="s",
+    agent="a",
+    status="active",
+    ts="2026-10-11T08:00:00Z",
+    ttl_until="2026-10-11T12:00:00Z",
+  )
+  let (ok, action) = @store.lock_acquire_action(
+    Some(prev),
+    "b",
+    "2026-10-11T10:00:00Z",
+  )
+  assert_false(ok)
+  assert_eq(action, "conflict")
+}
+
+///|
+test "lock_acquire_action: 已释放锁 → (true, reserved)" {
+  let prev = @store.FileLock::new(
+    lock_id="l1",
+    batch_id="b1",
+    scope="s",
+    agent="a",
+    status="released",
+    ts="2026-10-11T08:00:00Z",
+    ttl_until="2026-10-11T12:00:00Z",
+  )
+  let (ok, action) = @store.lock_acquire_action(
+    Some(prev),
+    "b",
+    "2026-10-11T10:00:00Z",
+  )
+  assert_true(ok)
+  assert_eq(action, "reserved")
+}
+
+///|
+// —— locks_try_acquire 集成（拒绝型互斥：抢不到就是拒，不覆盖）——
+
+test "locks_try_acquire: 首取成功" {
+  let b = @store.StoreBackend::memory()
+  let lock = @store.FileLock::new(
+    lock_id="l1",
+    batch_id="b1",
+    scope="src/a.mbt",
+    agent="exec_1",
+    status="active",
+    ts="2026-10-11T10:00:00Z",
+    ttl_until="2026-10-11T11:00:00Z",
+  )
+  let o = b.locks_try_acquire(lock)
+  assert_true(o.granted)
+  assert_eq(o.action, "reserved")
+  assert_eq(o.agent, "exec_1")
+  assert_eq(o.prev_agent, "")
+  assert_false(o.violation_logged)
+}
+
+///|
+test "locks_try_acquire: 他人 live 锁 → granted=false + lock_denied 审计 + 锁行不动" {
+  let b = @store.StoreBackend::memory()
+  // 先让 exec_1 持有 live 锁
+  let l1 = @store.FileLock::new(
+    lock_id="l1",
+    batch_id="b1",
+    scope="src/a.mbt",
+    agent="exec_1",
+    status="active",
+    ts="2026-10-11T08:00:00Z",
+    ttl_until="2026-10-11T12:00:00Z",
+  )
+  b.locks_upsert(l1)
+  // exec_2 抢同一把 → 必须被拒
+  let l2 = @store.FileLock::new(
+    lock_id="l2",
+    batch_id="b1",
+    scope="src/a.mbt",
+    agent="exec_2",
+    status="active",
+    ts="2026-10-11T10:00:00Z",
+    ttl_until="2026-10-11T12:00:00Z",
+  )
+  let o = b.locks_try_acquire(l2)
+  assert_false(o.granted)
+  assert_eq(o.action, "conflict")
+  assert_true(o.violation_logged)
+  assert_eq(o.agent, "exec_1") // 库里现值仍是 exec_1
+  // 锁行未被覆盖：持有者仍是 exec_1，不是 exec_2
+  match b.locks_get("src/a.mbt") {
+    Some(l) => {
+      assert_eq(l.agent, "exec_1")
+      assert_eq(l.lock_id, "l1")
+    }
+    None => abort("锁行不应消失")
+  }
+  // 违例记录
+  let v = b.lock_violations_list()
+  assert_eq(v.length(), 1)
+  assert_eq(v[0].reason, "lock_denied")
+}
+
+///|
+test "locks_try_acquire: 旧主 TTL 已过 → granted=true + taken_over + prev_agent" {
+  let b = @store.StoreBackend::memory()
+  let l1 = @store.FileLock::new(
+    lock_id="l1",
+    batch_id="b1",
+    scope="src/a.mbt",
+    agent="exec_1",
+    status="active",
+    ts="2026-10-11T08:00:00Z",
+    ttl_until="2026-10-11T09:00:00Z",
+  )
+  b.locks_upsert(l1)
+  // exec_2 在 10:00 抢（l1 TTL 09:00 已过）
+  let l2 = @store.FileLock::new(
+    lock_id="l2",
+    batch_id="b1",
+    scope="src/a.mbt",
+    agent="exec_2",
+    status="active",
+    ts="2026-10-11T10:00:00Z",
+    ttl_until="2026-10-11T12:00:00Z",
+  )
+  let o = b.locks_try_acquire(l2)
+  assert_true(o.granted)
+  assert_eq(o.action, "taken_over")
+  assert_eq(o.prev_agent, "exec_1")
+  assert_eq(o.agent, "exec_2")
+  assert_false(o.violation_logged)
+  // 锁行已被覆盖为 exec_2
+  match b.locks_get("src/a.mbt") {
+    Some(l) => assert_eq(l.agent, "exec_2")
+    None => abort("锁行应存在")
+  }
+}
+
+///|
+test "locks_try_acquire: 同持有者续取 → renewed" {
+  let b = @store.StoreBackend::memory()
+  let l1 = @store.FileLock::new(
+    lock_id="l1",
+    batch_id="b1",
+    scope="src/a.mbt",
+    agent="exec_1",
+    status="active",
+    ts="2026-10-11T08:00:00Z",
+    ttl_until="2026-10-11T09:00:00Z",
+  )
+  b.locks_upsert(l1)
+  // exec_1 自己续取（即使 TTL 已过，同持有者排在过期之前）
+  let l2 = @store.FileLock::new(
+    lock_id="l2",
+    batch_id="b1",
+    scope="src/a.mbt",
+    agent="exec_1",
+    status="active",
+    ts="2026-10-11T10:00:00Z",
+    ttl_until="2026-10-11T12:00:00Z",
+  )
+  let o = b.locks_try_acquire(l2)
+  assert_true(o.granted)
+  assert_eq(o.action, "renewed")
+  assert_eq(o.prev_agent, "")
+  assert_eq(o.agent, "exec_1")
+}
+
+///|
+test "locks_try_acquire: 已释放锁 → reserved" {
+  let b = @store.StoreBackend::memory()
+  let l1 = @store.FileLock::new(
+    lock_id="l1",
+    batch_id="b1",
+    scope="src/a.mbt",
+    agent="exec_1",
+    status="active",
+    ts="2026-10-11T08:00:00Z",
+    ttl_until="2026-10-11T12:00:00Z",
+  )
+  b.locks_upsert(l1)
+  assert_true(b.locks_release("src/a.mbt", "exec_1"))
+  // exec_2 复用已释放的行
+  let l2 = @store.FileLock::new(
+    lock_id="l2",
+    batch_id="b1",
+    scope="src/a.mbt",
+    agent="exec_2",
+    status="active",
+    ts="2026-10-11T10:00:00Z",
+    ttl_until="2026-10-11T12:00:00Z",
+  )
+  let o = b.locks_try_acquire(l2)
+  assert_true(o.granted)
+  assert_eq(o.action, "reserved")
+  assert_eq(o.agent, "exec_2")
+}
+
+///|
+// —— 两后端同构（BUG-145 回归锁：SQLite 与 Memory 对同一序列给出同结论）——
+
+test "locks_try_acquire: 两后端同构 —— 同序列同结论" {
+  let scenarios = [
+    "fresh", // 无前置
+     "same-renew", // 同持有者续
+     "expired-take", // 他人 TTL 已过
+     "live-conflict", // 他人 live
+     "released-take", // 已释放
+  ]
+  for s in scenarios {
+    let b = @store.StoreBackend::memory()
+    // 按场景种前置锁
+    if s == "fresh" {
+      // 不种
+    } else if s == "same-renew" || s == "live-conflict" {
+      b.locks_upsert(
+        @store.FileLock::new(
+          lock_id="l1",
+          batch_id="b1",
+          scope="s",
+          agent="a",
+          status="active",
+          ts="2026-10-11T08:00:00Z",
+          ttl_until="2026-10-11T12:00:00Z",
+        ),
+      )
+    } else if s == "expired-take" {
+      b.locks_upsert(
+        @store.FileLock::new(
+          lock_id="l1",
+          batch_id="b1",
+          scope="s",
+          agent="a",
+          status="active",
+          ts="2026-10-11T08:00:00Z",
+          ttl_until="2026-10-11T09:00:00Z",
+        ),
+      )
+    } else if s == "released-take" {
+      b.locks_upsert(
+        @store.FileLock::new(
+          lock_id="l1",
+          batch_id="b1",
+          scope="s",
+          agent="a",
+          status="active",
+          ts="2026-10-11T08:00:00Z",
+          ttl_until="2026-10-11T12:00:00Z",
+        ),
+      )
+      ignore(b.locks_release("s", "a"))
+    }
+    let agent = if s == "same-renew" { "a" } else { "b" }
+    let ts = if s == "expired-take" {
+      "2026-10-11T10:00:00Z"
+    } else {
+      "2026-10-11T10:00:00Z"
+    }
+    let o = b.locks_try_acquire(
+      @store.FileLock::new(
+        lock_id="l2",
+        batch_id="b1",
+        scope="s",
+        agent~,
+        status="active",
+        ts~,
+        ttl_until="2026-10-11T12:00:00Z",
+      ),
+    )
+    // 断言 granted 与 action 一致（两后端都走 lock_acquire_action→rsv_action）
+    match s {
+      "fresh" => {
+        assert_true(o.granted)
+        assert_eq(o.action, "reserved")
+      }
+      "same-renew" => {
+        assert_true(o.granted)
+        assert_eq(o.action, "renewed")
+      }
+      "expired-take" => {
+        assert_true(o.granted)
+        assert_eq(o.action, "taken_over")
+      }
+      "live-conflict" => {
+        assert_false(o.granted)
+        assert_eq(o.action, "conflict")
+      }
+      "released-take" => {
+        assert_true(o.granted)
+        assert_eq(o.action, "reserved")
+      }
+      _ => ()
+    }
+  }
+}
