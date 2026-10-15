@@ -450,7 +450,7 @@ test "selfdrive_9_publish_next_surfaces_errors" {
     "# 审视报告\n\n## Next Tasks\n- [自驱任务A]\n- [自驱任务B]\n",
   )
   let e = sd_engine("temp/sd_c9.db")
-  // BUG-216：ns="default" 被 publish_parallel 硬拒（并行发布仅限定时/自驱 ns），
+  // BUG-217：ns="default" 被 publish_parallel 硬拒（并行发布仅限定时/自驱 ns），
   // 是确定性失败路径——必须回执 publish_errors，不得静默折叠进 skipped。
   let j = match
     selfdrive_publish_next(
@@ -523,7 +523,7 @@ test "selfdrive_b82_export_stamp_成对" {
 }
 
 ///|
-/// BUG-218 回归锁：selfdrive_memory_init 写入失败必须回执，不得静默丢弃。
+/// BUG-219 回归锁：selfdrive_memory_init 写入失败必须回执，不得静默丢弃。
 /// 构造：把 memory 造成普通文件 —— create_dir 失败、四件套写入全部失败。
 /// 期望：created/skipped 为空、errors 含 4 项、note 明示"部分就绪"。
 test "selfdrive_218_memory_init_surfaces_write_errors" {

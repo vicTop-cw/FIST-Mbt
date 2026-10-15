@@ -217,7 +217,7 @@ pub fn selfdrive_memory_init(
   sd_ensure_dir(sd_reviews_dir(project_dir))
   let created : Array[String] = []
   let skipped : Array[String] = []
-  // BUG-218：初始化写入失败此前既不进 created 也不进 skipped，被静默丢弃
+  // BUG-219：初始化写入失败此前既不进 created 也不进 skipped，被静默丢弃
   // （函数仍返回 Ok，调用方误以为"四件套已就绪"，实则文件缺失）。
   // 与 selfdrive_publish_next（BUG-217）同族：捕获错误、单独累积、回执给调用方。
   let errors : Array[String] = []
