@@ -170,6 +170,23 @@ fn mc_suffix_from(
 }
 
 ///|
+/// 最近秩分位索引：n 个有序样本（升序）取 p 分位（0..100）应用的 0-based 索引。
+/// BUG-206：旧公式 p50 用 (n-1)/2、p90 用 n*9/10，两条取法不对称——p90 比最近秩
+/// ceil(p*n/100)-1 恒高 1，系统性高估 p90 一个样本值。这里统一为 (n-1)*p/100。
+pub fn mc_percentile_index(n : Int, p : Int) -> Int {
+  if n <= 0 {
+    return 0
+  }
+  if p < 0 {
+    return 0
+  }
+  if p >= 100 {
+    return n - 1
+  }
+  (n - 1) * p / 100
+}
+
+///|
 /// Monte Carlo 概率式完工预测（R94，Van Slyke 1963 首倡 MCS 求网络完工分布）。
 /// 对作用域内每个任务按难度档采样三角分布时长，整网模拟 samples 次，
 /// 输出完工时间分布（min/mean/p50/p90/max）+ 按期概率 + 关键度排行。
@@ -285,16 +302,9 @@ pub fn FistEngine::dag_mc(
   // 但判据要能被确定性地证明非零，不靠「调用点总是传入合法值」的约定。
   let n_safe = if n > 0 { n } else { 1 }
   let mean = sum.to_double() / n_safe.to_double()
-  let idx50 = if n_safe - 1 < 0 { 0 } else { (n_safe - 1) / 2 }
-  let idx90 = if n_safe * 9 / 10 >= n_safe {
-    if n_safe - 1 < 0 {
-      0
-    } else {
-      n_safe - 1
-    }
-  } else {
-    n_safe * 9 / 10
-  }
+  // BUG-206：p50/p90 同一口径 mc_percentile_index（最近秩 (n-1)*p/100）。
+  let idx50 = mc_percentile_index(n_safe, 50)
+  let idx90 = mc_percentile_index(n_safe, 90)
   let p50 = sorted[idx50]
   let p90 = sorted[idx90]
   let minv = if n_safe > 0 { sorted[0] } else { 0 }

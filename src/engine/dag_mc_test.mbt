@@ -146,3 +146,31 @@ test "dag_mc：samples 下限钳制（<10 按 10）" {
     abort("samples 应钳到 10: " + j.stringify())
   }
 }
+
+///|
+/// BUG-206 回归锁：p90 分位索引与 p50 同一最近秩口径 (n-1)*p/100。
+/// 旧公式 p50 用 (n-1)/2、p90 用 n*9/10，两条取法不对称——p90 恒比最近秩高 1
+/// （n=1000 时旧代码取 sorted[900]，最近秩应为 sorted[899]）。
+test "mc_percentile_index：p50/p90 同一口径 (n-1)*p（BUG-206）" {
+  assert_eq(@engine.mc_percentile_index(1000, 50), 499)
+  assert_eq(@engine.mc_percentile_index(1000, 90), 899)
+  assert_eq(@engine.mc_percentile_index(10, 50), 4)
+  assert_eq(@engine.mc_percentile_index(10, 90), 8)
+  assert_eq(@engine.mc_percentile_index(100, 90), 89)
+}
+
+///|
+/// BUG-206 边界：n<=0 / p 越界时不得越界访问。
+test "mc_percentile_index：边界退化" {
+  assert_eq(@engine.mc_percentile_index(0, 50), 0)
+  assert_eq(@engine.mc_percentile_index(1, 90), 0)
+  assert_eq(@engine.mc_percentile_index(1000, 0), 0)
+  assert_eq(@engine.mc_percentile_index(1000, 100), 999)
+  // 单调性：p 越大索引越大（同 n）
+  for p = 10; p <= 90; p = p + 10 {
+    if @engine.mc_percentile_index(500, p + 10) <
+      @engine.mc_percentile_index(500, p) {
+      abort("p 增大索引应单调不减: p=" + p.to_string())
+    }
+  }
+}
