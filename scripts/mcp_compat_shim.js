@@ -24,10 +24,19 @@
 //   node scripts/mcp_compat_shim.js                       # 默认连 dist/fist-mbt.js serve
 //   node scripts/mcp_compat_shim.js --server node dist/fist-mbt.js serve
 //
-// 客户端侧 .mcp.json 示例：
-//   "command": "node",
-//   "args": ["<repo>/scripts/mcp_compat_shim.js"],
-//   "env": { "FIST_DB_PATH": "<你的库路径>" }
+// 客户端侧 .mcp.json 示例（Claude Desktop / Claude Code，把 shim 作为 MCP server 启动）：
+// {
+//   "mcpServers": {
+//     "fist-mbt": {
+//       "command": "node",
+//       "args": ["<repo绝对路径>/scripts/mcp_compat_shim.js", "--server", "node", "<repo绝对路径>/dist/fist-mbt.js", "serve"],
+//       "env": { "FIST_DB_PATH": "<你的库路径>" }
+//     }
+//   }
+// }
+// 说明：
+//   - 不传 --server 时默认连同仓 dist/fist-mbt.js serve
+//   - FIST_DB_PATH 用于隔离演示/正式台账；不设则落在仓库根的 fist-mbt.db（不建议）
 
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
