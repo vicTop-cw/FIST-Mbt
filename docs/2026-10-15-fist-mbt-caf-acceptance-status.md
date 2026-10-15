@@ -2,8 +2,10 @@
 
 > 用途：把 CAF 四条验收标准的当前验证状态、证据来源、脚本路径归拢成一份可复用依据。
 > 更新者：caf-agent
-> 更新日期：2026-10-15（Goal-2 Round 18）
+> 更新日期：2026-10-15（Goal-2 Round 21）
 > 对应计划：`docs/2026-10-14-fist-mbt-router-caf-learning-plan.md` 的验收标准 §
+
+> **R21 更新**：标准 4 的测试数从 135 → **138**（新增 2 条 caf_stats 锁测试 + 1 条高频测试，锁住并发 agent R17 加的 `total>0` 守卫）。全仓回归 **1115/1115**（基线 1112 + 3 条新增测试）。BUG-193（router_config is_finite 编译错误）已由并发 agent 修复并 FIXED。
 
 ## 四条验收标准与当前状态
 
