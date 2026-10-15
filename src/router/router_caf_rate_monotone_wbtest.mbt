@@ -60,3 +60,94 @@ test "caf_rate_1_重排后成功率不低于base" {
     )
   }
 }
+
+///|
+/// R46 · 标准 2 的 A/B 端到端真源锁（补齐 CAF 验收状态 L44「⚠ Python 预演 → 真源」缺口）。
+/// caf_cost_1/2 与 caf_rate_1 分别锁了「成本决胜」与「成功率不降」，但**未锁 A/B 整体对比**——
+/// 标准 2 要求「开启后成功率不降**且**成本不增」，需端到端比较 A（关闭 CAF 原序选首）与 B（开启 CAF 重排选首）。
+///
+/// 场景：free-a 邻域内 rate 0.5（1 ok + 1 fail）cost 0.1；free-b 邻域内 rate 1.0（1 ok）cost 0.1。
+/// A 组按原序选 free-a；B 组 caf_soft_reorder 后选 free-b（rate 更高且 cost 不增）。
+fn caf_ab_stats_lookup(
+  stats : Array[CafModelStats],
+  model : String,
+) -> (Double, Double) {
+  for s in stats {
+    if s.model == model {
+      let rate = if s.total > 0 {
+        s.success.to_double() / s.total.to_double()
+      } else {
+        0.0
+      }
+      return (rate, s.avg_cost)
+    }
+  }
+  abort("stats 里找不到模型 " + model)
+}
+
+///|
+test "caf_ab_1_开启后成功率不降成本不增" {
+  let h = caf_feature_hash("ab test context")
+  let mem = CafMemory::new()
+  mem.push(
+    CafRecord::new(
+      feature_hash=h,
+      model="free-a",
+      ok=true,
+      cost=0.1,
+      ts="2026-10-15T10:00:00Z",
+    ),
+  )
+  mem.push(
+    CafRecord::new(
+      feature_hash=h,
+      model="free-a",
+      ok=false,
+      cost=0.1,
+      ts="2026-10-15T11:00:00Z",
+    ),
+  )
+  mem.push(
+    CafRecord::new(
+      feature_hash=h,
+      model="free-b",
+      ok=true,
+      cost=0.1,
+      ts="2026-10-15T12:00:00Z",
+    ),
+  )
+  let stats = caf_stats(mem.all())
+  let candidates : Array[String] = ["free-a", "free-b"]
+  // A 组（关闭 CAF，按原序选首）= free-a
+  let (a_rate, a_cost) = caf_ab_stats_lookup(stats, "free-a")
+  // B 组（开启 CAF，caf_soft_reorder 后选首）= 应重排到 free-b
+  let reordered = caf_soft_reorder(candidates, stats)
+  if reordered.length() != 2 {
+    abort("应返回 2 个候选，实际 " + reordered.length().to_string())
+  }
+  if reordered[0] != "free-b" {
+    abort(
+      "标准 2 违约：重排首位应为 rate 1.0 的 free-b，实际 " +
+      reordered[0],
+    )
+  }
+  let (b_rate, b_cost) = caf_ab_stats_lookup(stats, reordered[0])
+  // 标准 2 核心：开启后成功率不降（B rate ≥ A rate）
+  if b_rate < a_rate {
+    abort(
+      "开启后成功率下降：" +
+      b_rate.to_string() +
+      " < " +
+      a_rate.to_string(),
+    )
+  }
+  // 标准 2 核心：开启后成本不增（B cost ≤ A cost）
+  if b_cost > a_cost {
+    abort(
+      "开启后成本增加：" +
+      b_cost.to_string() +
+      " > " +
+      a_cost.to_string(),
+    )
+  }
+}
