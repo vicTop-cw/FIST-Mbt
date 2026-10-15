@@ -16,8 +16,9 @@
 // 实测（2026-10-15 Windows，发布版 dist/fist-mbt.js = 148 工具 / v0.3.8）：
 //   - 标准协议 2025-06-18 与 2024-11-05 都能完成 initialize 握手
 //   - tools/list / tools/call / resources/list / resources/read / prompts/list 均正常返回
-//   - ping 由本 shim 拦截直接回 {}（server 侧 colmugx/mcp@0.17.4 已移除该方法）
-//   - 可选 MCP 特性未实现（server 侧）：logging/setLevel、completion/complete 返回 -32601，非 shim 问题
+//   - shim 拦截并直接回 {result:{}} 的方法（server 侧未实现）：ping / logging/setLevel / completion/complete（后者回空 values）
+//   - stderr 走 stdio 'inherit'，server 的 stderr 直通终端（无需额外透传）
+//   - 子进程被 signal 终止时 shim 退出非零（不再 `code ?? 0` 误报成功）
 //
 // 用法（MCP 客户端把 command 指向本 shim）：
 //   node scripts/mcp_compat_shim.js                       # 默认连 dist/fist-mbt.js serve
@@ -54,7 +55,14 @@ child.on('error', (err) => {
   console.error('[shim] server spawn failed:', err.message);
   process.exit(1);
 });
-child.on('exit', (code) => process.exit(code ?? 0));
+child.on('exit', (code, signal) => {
+  // signal 崩溃时 code 为 null，旧写法 `code ?? 0` 会误报成功退出——必须非零
+  if (signal) {
+    console.error(`[shim] server terminated by signal ${signal}`);
+    process.exit(1);
+  }
+  process.exit(code ?? 1);
+});
 
 // id -> 客户端请求的协议版本（用于响应回写）
 const pendingInits = new Map();
@@ -95,6 +103,17 @@ stdinRl.on('line', (line) => {
     // fist-mbt server（colmugx/mcp@0.17.4）已移除 ping，直连会吃 -32601；
     // 标准 MCP 客户端用它做健康检查。此处直接回空 result，不转发。
     process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: {} }) + '\n');
+    return;
+  } else if (msg.method === 'logging/setLevel') {
+    // MCP 可选特性：server 未实现 logging。返回空结果告知客户端"已接受"（无害 no-op，
+    // server 本来就不发 notifications/message），比 -32601 更友好。
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: {} }) + '\n');
+    return;
+  } else if (msg.method === 'completion/complete') {
+    // MCP 可选特性：server 未实现 completion。返回空补全列表（合法响应）。
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0', id: msg.id, result: { completion: { values: [] } },
+    }) + '\n');
     return;
   } else if (msg.id !== undefined) {
     // 非通知请求（有 id，期待响应）都要补 _meta，否则 -32602；
