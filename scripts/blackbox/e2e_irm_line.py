@@ -264,12 +264,31 @@ def run_line(cmd_line, env, box, tag):
     return r.returncode, out, path
 
 
+def _is_wsl_bash():
+    # 检测 bash 是否是 WSL (C:\\Windows\\system32\\bash.exe)；WSL bash 不应为 POSIX shim 行为面
+    try:
+        import ctypes, winreg  # noqa: E402
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\bash.exe") as k:
+            p = winreg.QueryValue(k, "").lower()
+            return "system32" in p or "windows" in p
+    except Exception:  # noqa: BLE001
+        return False
+
 def probe(env, box, label, sbin=None):
     """默认走 PATH；沙箱档必须**点名沙箱那一份**——否则沙箱里没装成时会摸到真用户面的旧产物，
-    把"根本没装上"读成"装成了旧版本"（BUG-117 的第二个形态）。"""
-    exe = os.path.join(sbin, "fist").replace("\\", "/") if sbin else "fist"
-    script = ("if [ -x '%s' ]; then echo '%s'; '%s' version 2>/dev/null; "
-              "'%s' doctor >/dev/null 2>&1; echo doctor=$?; else echo 'MISSING %s'; fi") % (exe, exe, exe, exe, exe)
+    把"根本没装上"读成"装成了旧版本"（BUG-117 的第二个形态）。
+    BUG-185 修：裸词（无 sbin）改用 command -v 代替 [ -x 'fist' ]；WSL bash 拒出行为面。"""
+    if sbin:
+        exe = os.path.join(sbin, "fist").replace("\\", "/")
+        script = ("if [ -x '%s' ]; then echo '%s'; '%s' version 2>/dev/null; "
+                  "'%s' doctor >/dev/null 2>&1; echo doctor=$?; else echo 'MISSING %s'; fi") % (exe, exe, exe, exe, exe)
+    else:
+        if _is_wsl_bash():
+            print("  %-14s WSL bash 检测到（PATH 可寻但不能用于 POSIX shim 行为面），跳过探针" % label)
+            return "SKIP: WSL bash"
+        exe = "fist"
+        script = ("if command -v '%s' >/dev/null 2>&1; then echo '%s'; '%s' version 2>/dev/null; "
+                  "'%s' doctor >/dev/null 2>&1; echo doctor=$?; else echo 'MISSING %s'; fi") % (exe, exe, exe, exe, exe)
     r = subprocess.run(["bash", "-c", script],
                        capture_output=True, text=True, encoding="utf-8", errors="replace",
                        cwd=box, env=env, timeout=300)
@@ -428,10 +447,27 @@ def sandbox():
     return exit_code
 
 
+def _userprofile_redirected():
+    """检测 USERPROFILE/LOCALAPPDATA 是否被 sandbox/agent 框架重定向。
+    BUG-186：重定向环境里 --real 会改写真实 shim 与 HKCU PATH，在此拒绝执行。"""
+    try:
+        import ctypes, winreg  # noqa: E402
+        buf = ctypes.create_unicode_buffer(260)
+        ctypes.windll.shell32.SHGetFolderPathW(None, 0x0028, None, 0, buf)  # CSIDL_PROFILE
+        real_user = buf.value.rstrip("\\").lower()
+        env_user = os.environ.get("USERPROFILE", "").rstrip("\\").lower()
+        return env_user != "" and real_user != "" and env_user != real_user
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def real():
     line, url, bare = documented_line()
     if bare:
         print("README 还是裸形 ⇒ 真面档拒绝执行（那是已知会红的 BUG-113 形）")
+        return 2
+    if _userprofile_redirected():
+        print("环境变量 USERPROFILE/LOCALAPPDATA 被重定向 ⇒ --real 会污染真实用户环境，拒绝执行")
         return 2
     js = os.path.join(REAL_DEST, "fist-mbt.js")
     before = sha8(js)
