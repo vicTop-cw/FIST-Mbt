@@ -450,3 +450,64 @@ test "caf_memory_to_json" {
     _ => assert_true(false)
   }
 }
+
+///|
+/// P2 端到端集成：push → knn_search → knn_stats → soft_reorder 全流程
+/// 模拟一个 CAF 记忆已积累多轮反馈的场景，验证决策融合链路可通。
+test "caf_p2_pipeline_integration" {
+  let mem = CafMemory::new(max_size=50)
+  let ctx = "summarize large document"
+  let h = caf_feature_hash(ctx)
+  // 三模型积累：m_gpt 高成功率/高成本，m_claude 中成功率/低成本，m_gemini 低成功率
+  for i in 0..<3 {
+    mem.push(
+      CafRecord::new(feature_hash=h, model="m_gpt", ok=true, cost=0.5, ts="t"),
+    )
+  }
+  for i in 0..<5 {
+    mem.push(
+      CafRecord::new(
+        feature_hash=h,
+        model="m_claude",
+        ok=true,
+        cost=0.1,
+        ts="t",
+      ),
+    )
+  }
+  for i in 0..<4 {
+    mem.push(
+      CafRecord::new(
+        feature_hash=h,
+        model="m_gemini",
+        ok=false,
+        cost=0.05,
+        ts="t",
+      ),
+    )
+  }
+
+  // knn_search：全部命中（编辑距离 0）
+  let nb = mem.knn_search(ctx, 12)
+  assert_eq(nb.length(), 12)
+
+  // knn_stats：按模型聚合
+  let stats = mem.knn_stats(ctx, 12)
+  assert_eq(stats.length(), 3)
+  // m_gpt 与 m_claude 同率(1.0)，成本升序 → m_claude(0.1) 先于 m_gpt(0.5)
+  assert_eq(stats[0].model, "m_claude")
+  assert_eq(stats[0].total, 5)
+  assert_eq(stats[0].success, 5)
+  assert_eq(stats[1].model, "m_gpt")
+  assert_eq(stats[1].success, 3)
+  // m_gemini 成功率 0 应排最后
+  assert_eq(stats[2].model, "m_gemini")
+  assert_eq(stats[2].success, 0)
+
+  // soft_reorder：给定候选集，高成功率优先，同率时低成本优先
+  let candidates : Array[String] = ["m_gemini", "m_gpt", "m_claude"]
+  let reordered = caf_soft_reorder(candidates, stats)
+  assert_eq(reordered[0], "m_claude") // 同率 1.0 且成本更低 → 第一
+  assert_eq(reordered[1], "m_gpt") // 同率 1.0 成本 0.5 → 次位
+  assert_eq(reordered[2], "m_gemini") // 成功率 0 → 最后
+}
