@@ -113,7 +113,10 @@ fn sd_round_count(project_dir : String) -> Int {
   } else {
     return 0
   }
-  let names = @fs.read_dir(dir) catch { _ => return 0 }
+  // BUG-221：目录已验证存在，read_dir 失败是真正的 I/O 错误，不得静默返回 0。
+  let names = @fs.read_dir(dir) catch {
+    _ => abort("sd_round_count: read_dir failed for \{dir}")
+  }
   let mut n = 0
   for name in names {
     if is_meta_prompt_name(name) {
@@ -135,7 +138,10 @@ fn sd_recent_reports(project_dir : String, k : Int) -> Array[String] {
   } else {
     return []
   }
-  let names = @fs.read_dir(dir) catch { _ => return [] }
+  // BUG-221：目录已验证存在，read_dir 失败是真正的 I/O 错误，不得静默返回空数组。
+  let names = @fs.read_dir(dir) catch {
+    _ => abort("sd_recent_reports: read_dir failed for \{dir}")
+  }
   let valid : Array[String] = []
   for name in names {
     if is_meta_prompt_name(name) {
@@ -251,16 +257,11 @@ pub fn selfdrive_memory_init(
     " 项，详见 errors）"
   }
   Ok(
-    sd_json(
-      "init",
-      note,
-      ns,
-      [
-        ("created", Json::array(created.map(fn(s) { Json::string(s) }))),
-        ("skipped", Json::array(skipped.map(fn(s) { Json::string(s) }))),
-        ("errors", Json::array(errors.map(fn(s) { Json::string(s) }))),
-      ],
-    ),
+    sd_json("init", note, ns, [
+      ("created", Json::array(created.map(fn(s) { Json::string(s) }))),
+      ("skipped", Json::array(skipped.map(fn(s) { Json::string(s) }))),
+      ("errors", Json::array(errors.map(fn(s) { Json::string(s) }))),
+    ]),
   )
 }
 
@@ -684,7 +685,9 @@ pub fn selfdrive_publish_next(
       mode_tag +
       "\n\n" +
       sd_agent_contract(tasks[i])
-    let new_id = try_publish_one(engine, ns, desc, now, project_dir, publish_errors)
+    let new_id = try_publish_one(
+      engine, ns, desc, now, project_dir, publish_errors,
+    )
     match new_id {
       Some(id) => {
         published.push(tasks[i])
