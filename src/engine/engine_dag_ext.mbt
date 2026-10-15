@@ -42,9 +42,9 @@ fn FistEngine::longest_chain_ending(
     Some(c) => return c
     None => ()
   }
-  // 环保护：当前 DFS 路径上已出现过则直接返回自身，避免无限递归
+  // 环保护：当前 DFS 路径上已出现过则返回空（不再沿环回溯，避免产出重复节点）
   match visiting.get(id) {
-    Some(_) => return [id]
+    Some(_) => return []
     None => ()
   }
   visiting.set(id, true)

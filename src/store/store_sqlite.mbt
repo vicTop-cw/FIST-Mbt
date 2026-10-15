@@ -306,24 +306,17 @@ fn _array_to_json(arr : Array[String]) -> String {
 
 ///|
 fn _json_to_array(json : String) -> Array[String] {
-  let trimmed = json.trim()
-  if trimmed == "" || trimmed == "[]" {
-    return []
+  let parsed = @json.parse(json) catch { _ => Json::null() }
+  match parsed {
+    Json::Array(arr) =>
+      arr.map(fn(v) {
+        match v {
+          Json::String(s) => s
+          _ => ""
+        }
+      })
+    _ => []
   }
-  let inner = trimmed[1:trimmed.length() - 1]
-  if inner == "" {
-    return []
-  }
-  let parts = inner.split(",")
-  let out : Array[String] = []
-  for p in parts {
-    let raw = p.trim()
-    let stripped = if raw.length() >= 2 { raw[1:raw.length() - 1] } else { raw }
-    if stripped != "" {
-      out.push(stripped.to_string())
-    }
-  }
-  out
 }
 
 ///|
@@ -1643,6 +1636,27 @@ pub fn SqliteStore::assistant_upsert(
   match self.db {
     None => ()
     Some(db) => {
+      // BUG-157 修复：单主不变量——如果当前 agent 抢主 (is_primary=1)，
+      // 先把所有其他 agent 的 is_primary 清零，再 upsert 当前行。
+      // SQLite 的 INSERT...ON CONFLICT(agent) 只表达"同一行幂等"，
+      // 无法保证"全局只许一个 is_primary=1"，必须显式抢占。
+      if reg.is_primary {
+        let clear_sql = "UPDATE assistant_reg SET is_primary=0 WHERE is_primary=1 AND agent != ?"
+        match db.prepare(clear_sql) {
+          None => ()
+          Some(clear_stmt) => {
+            ignore(
+              clear_stmt.bind(
+                1,
+                @sqlite.SqlValue::Text(@encoding.encode(UTF8, reg.agent)),
+              ),
+            )
+            ignore(clear_stmt.execute())
+            clear_stmt.finalize()
+          }
+        }
+      }
+
       let sql = "INSERT INTO assistant_reg (agent, mode, is_primary, registered_at, heartbeat_at, status) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(agent) DO UPDATE SET mode=excluded.mode, is_primary=excluded.is_primary, registered_at=excluded.registered_at, heartbeat_at=excluded.heartbeat_at, status=excluded.status"
       match db.prepare(sql) {
         None => ()
@@ -2106,11 +2120,26 @@ pub fn SqliteStore::write_heartbeat_interval(
           stmt.finalize()
           if exec_ok {
             // 裁剪：每任务只留最近 1000 条（防无限增长）
-            ignore(
-              db.exec(
-                "DELETE FROM heartbeat_history WHERE task_id = '\{task_id}' AND id NOT IN (SELECT id FROM heartbeat_history WHERE task_id = '\{task_id}' ORDER BY id DESC LIMIT 1000)",
-              ),
-            )
+            let prune_sql = "DELETE FROM heartbeat_history WHERE task_id = ? AND id NOT IN (SELECT id FROM heartbeat_history WHERE task_id = ? ORDER BY id DESC LIMIT 1000)"
+            match db.prepare(prune_sql) {
+              None => ()
+              Some(prune_stmt) => {
+                ignore(
+                  prune_stmt.bind(
+                    1,
+                    @sqlite.SqlValue::Text(@encoding.encode(UTF8, task_id)),
+                  ),
+                )
+                ignore(
+                  prune_stmt.bind(
+                    2,
+                    @sqlite.SqlValue::Text(@encoding.encode(UTF8, task_id)),
+                  ),
+                )
+                ignore(prune_stmt.execute())
+                prune_stmt.finalize()
+              }
+            }
             Ok(())
           } else {
             Err("sqlite 写入心跳间隔失败: \{task_id}")
