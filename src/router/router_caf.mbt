@@ -46,7 +46,10 @@ pub struct CafMemory {
 
 ///|
 pub fn CafMemory::new(max_size? : Int = 10000) -> CafMemory {
-  { records: Array::make(max_size, None), max_size, head: 0, count: 0, }
+  // BUG-188：max_size<=0 会让 records 成为空数组，push 时 records[0] 越界 panic。
+  // 收敛到至少 1，使环形缓冲在任何输入下都可用。
+  let m = if max_size <= 0 { 1 } else { max_size }
+  { records: Array::make(m, None), max_size: m, head: 0, count: 0, }
 }
 
 ///|
