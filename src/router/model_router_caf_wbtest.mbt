@@ -235,3 +235,68 @@ test "caf_dry_3_dry_run 关闭 CAF 时零回归" {
     abort("关闭 CAF 时 picked 应等于 base")
   }
 }
+
+///|
+/// P2c §2.3 回写通路的前置真源：CafMemory::push 必须**真的**更新 count，
+/// 且 push 后的记录必须能被 knn_stats 聚合、被 pick_caf_dry_run 消费。
+/// 若 push 的 `self : CafMemory` 值接收导致 count/head 不传播（MoonBit 严格值语义），
+/// 则 §2.3 的 `caf_memory.push(...)` 回写形同虚设——本条锁就是要钉死这一格。
+test "caf_loop_1_记忆可写可读闭环（§2.3 回写通路真源）" {
+  let mem = CafMemory::new()
+  if mem.count != 0 {
+    abort("初始 count 应为 0")
+  }
+  let h = caf_feature_hash("loop context")
+  mem.push(
+    CafRecord::new(
+      feature_hash=h,
+      model="free-a",
+      ok=false,
+      cost=1.0,
+      ts="2026-10-15T10:00:00Z",
+    ),
+  )
+  if mem.count != 1 {
+    abort("push 1 次后 count 应为 1，实际 " + mem.count.to_string())
+  }
+  mem.push(
+    CafRecord::new(
+      feature_hash=h,
+      model="free-a",
+      ok=false,
+      cost=1.0,
+      ts="2026-10-15T11:00:00Z",
+    ),
+  )
+  mem.push(
+    CafRecord::new(
+      feature_hash=h,
+      model="free-b",
+      ok=true,
+      cost=1.0,
+      ts="2026-10-15T12:00:00Z",
+    ),
+  )
+  if mem.count != 3 {
+    abort("3 次 push 后 count 应为 3，实际 " + mem.count.to_string())
+  }
+  // 记忆可读：knn_stats 聚合出 free-a / free-b 两条统计
+  let stats = mem.knn_stats("loop context", 10)
+  if stats.length() != 2 {
+    abort("knn_stats 应聚合出 2 条，实际 " + stats.length().to_string())
+  }
+  // 记忆驱动决策：dry_run 应重排到 free-b（100% 成功 vs free-a 0%）
+  let r = mrc_router(true)
+  let dr = r.pick_caf_dry_run(
+    now=mrc_now(),
+    caf_memory=mem,
+    context="loop context",
+    k=10,
+  )
+  if !dr.reordered {
+    abort("记忆应驱动重排")
+  }
+  if dr.picked.model_name != "free-b" {
+    abort("应重排到 free-b，实际 " + dr.picked.model_name)
+  }
+}
