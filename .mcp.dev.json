@@ -3,7 +3,7 @@
     "fist-mbt": {
       "command": "node",
       "args": ["_build/js/debug/build/cmd/cli/cli.js", "serve"],
-      "timeout_ms": 30000,
+      "timeout_ms": 120000,
       "disabled": false
     }
   }
