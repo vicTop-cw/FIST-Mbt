@@ -237,3 +237,17 @@ test "caf_pref_one_below_boundary_pref" {
   assert_eq(result[0], "m_free")
   assert_eq(result[1], "m_mid")
 }
+
+///|
+/// R44 · 全角空白归一化（U+3000 全角空格）。
+/// R42 的 is_ws_byte 只认 4 个 ASCII 空白字节；中文输入场景下全角空格同样起分隔作用，
+/// 未归一化会导致同一语义输入产生不同 hash（碎片化同族）。
+/// 钉死：全角空格被 trim，归一化后与纯 ASCII 输入的 hash 一致。
+test "caf_norm_5_全角空白归一化" {
+  // 直接粘贴 U+3000 全角空格，避开 escape 语法差异
+  let s = "　python　"
+  assert_eq(caf_normalize_context(s), "python")
+  let h_ascii = caf_feature_hash(caf_normalize_context("python"))
+  let h_zenkaku = caf_feature_hash(caf_normalize_context(s))
+  assert_eq(h_ascii, h_zenkaku)
+}
