@@ -136,7 +136,9 @@ pub fn render_json(ops : Array[DiffOp]) -> String {
 }
 
 ///|
-/// JSON 字符串转义（最小集：引号、反斜杠、换行、回车、制表符）。
+/// JSON 字符串转义（引号、反斜杠、\n/\r/\t + 全部控制字符 U+0000–U+001F → \u00XX）。
+/// **BUG-216**：旧实现只转义 5 个字符，控制字符原样拼进 JSON 字符串，
+/// 违反 RFC 8259 §7（U+0000–U+001F 必须转义），text_diff format=json 因此可产出无效 JSON。
 fn json_escape(s : String) -> String {
   let out : Array[String] = []
   for ch in s {
@@ -146,10 +148,36 @@ fn json_escape(s : String) -> String {
       '\n' => out.push("\\n")
       '\r' => out.push("\\r")
       '\t' => out.push("\\t")
-      _ => out.push(ch.to_string())
+      _ =>
+        // 控制字符（< 0x20）转义为 \u00XX（大写十六进制、4 位补齐）
+        if ch.to_int() < 0x20 {
+          out.push("\\u" + hex4(ch.to_int()))
+        } else {
+          out.push(ch.to_string())
+        }
     }
   }
   out.join("")
+}
+
+///|
+/// 4 位大写十六进制（0x0000–0x001F 专用）。
+fn hex4(code : Int) -> String {
+  let digits : Array[Char] = [
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
+  ]
+  let out : Array[Char] = []
+  let mut v = code
+  for _i in 0..<4 {
+    out.push(digits[v % 16])
+    v = v / 16
+  }
+  // 倒序拼回
+  let mut s = ""
+  for idx in 0..<4 {
+    s = s + out[3 - idx].to_string()
+  }
+  s
 }
 
 ///|
