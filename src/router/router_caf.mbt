@@ -32,7 +32,7 @@ pub fn CafRecord::new(
   cost~ : Double,
   ts~ : String,
 ) -> CafRecord {
-  { feature_hash, model, ok, cost, ts }
+  { feature_hash, model, ok, cost, ts, }
 }
 
 ///|
@@ -45,8 +45,8 @@ pub struct CafMemory {
 } derive(Debug)
 
 ///|
-pub fn CafMemory::new(max_size~ : Int = 10000) -> CafMemory {
-  { records: Array::make(max_size, None), max_size, head: 0, count: 0 }
+pub fn CafMemory::new(max_size? : Int = 10000) -> CafMemory {
+  { records: Array::make(max_size, None), max_size, head: 0, count: 0, }
 }
 
 ///|
@@ -77,7 +77,10 @@ pub fn CafMemory::all(self : CafMemory) -> Array[CafRecord] {
 
 ///|
 /// 按特征哈希检索：返回所有匹配记录
-pub fn CafMemory::find(self : CafMemory, feature_hash~ : Int) -> Array[CafRecord] {
+pub fn CafMemory::find(
+  self : CafMemory,
+  feature_hash~ : Int,
+) -> Array[CafRecord] {
   let mut out : Array[CafRecord] = []
   let mut i = 0
   while i < self.max_size {
@@ -113,7 +116,9 @@ pub fn caf_stats(records : Array[CafRecord]) -> Array[CafModelStats] {
     for i in 0..<model_names.length() {
       if model_names[i] == rec.model {
         model_totals[i] = model_totals[i] + 1
-        if rec.ok { model_success[i] = model_success[i] + 1 }
+        if rec.ok {
+          model_success[i] = model_success[i] + 1
+        }
         model_cost_sum[i] = model_cost_sum[i] + rec.cost
         found = true
         break
@@ -129,14 +134,15 @@ pub fn caf_stats(records : Array[CafRecord]) -> Array[CafModelStats] {
 
   let mut out : Array[CafModelStats] = []
   for i in 0..<model_names.length() {
-    out = out + [
-      {
-        model: model_names[i],
-        total: model_totals[i],
-        success: model_success[i],
-        avg_cost: model_cost_sum[i] / model_totals[i].to_double(),
-      },
-    ]
+    out = out +
+      [
+        {
+          model: model_names[i],
+          total: model_totals[i],
+          success: model_success[i],
+          avg_cost: model_cost_sum[i] / model_totals[i].to_double(),
+        },
+      ]
   }
   // 按成功率降序、成本升序排列（sort_by 返回 Int：负=前者在前）
   out.sort_by(fn(a, b) -> Int {
@@ -156,12 +162,10 @@ pub fn caf_stats(records : Array[CafRecord]) -> Array[CafModelStats] {
       } else {
         1
       }
+    } else if a.avg_cost < b.avg_cost {
+      -1
     } else {
-      if a.avg_cost < b.avg_cost {
-        -1
-      } else {
-        1
-      }
+      1
     }
   })
   out
