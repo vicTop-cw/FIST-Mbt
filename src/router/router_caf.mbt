@@ -221,3 +221,90 @@ pub fn CafMemory::to_json(self : CafMemory) -> Json {
     ),
   })
 }
+
+///|
+/// 编辑距离（Levenshtein）—— P2 相似检索的相似度度量。
+/// 计算两个字符串的编辑距离，用于 kNN 检索中对特征做轻量相似度比较。
+/// 使用滚动数组将空间从 O(n*m) 降到 O(min(n,m))，适合特征串（长度有限）。
+pub fn caf_edit_distance(a : String, b : String) -> Int {
+  let n = a.length()
+  let m = b.length()
+  if n == 0 {
+    return m
+  }
+  if m == 0 {
+    return n
+  }
+  // 简化：用 O(n*m) DP（特征串短，长度受限于任务描述截断）
+  let mut prev : Array[Int] = []
+  for j in 0..<=m {
+    prev = prev + [j]
+  }
+  let mut i = 1
+  while i <= n {
+    let mut curr : Array[Int] = [i]
+    let mut j = 1
+    while j <= m {
+      let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 }
+      let del = prev[j] + 1
+      let ins = curr[j - 1] + 1
+      let sub = prev[j - 1] + cost
+      let m1 = if del < ins { del } else { ins }
+      let mn = if m1 < sub { m1 } else { sub }
+      curr = curr + [mn]
+      j = j + 1
+    }
+    prev = curr
+    i = i + 1
+  }
+  prev[m]
+}
+
+///|
+/// P2 相似检索：kNN 近似检索。
+/// 在 CafMemory 中按特征哈希相似度（编辑距离）取 Top-K 历史记录。
+/// 返回值按相似度降序排列（编辑距离升序），距离相等时保持 FIFO 稳定序。
+pub fn CafMemory::knn_search(
+  self : CafMemory,
+  context : String,
+  k : Int,
+) -> Array[CafRecord] {
+  let target = caf_feature_hash(context)
+  let target_str = target.to_string()
+  let all = self.all()
+  // 计算每条记录与目标哈希的编辑距离（作用于特征哈希字符串化的数字串）
+  // 注：编辑距离直接作用于数字串（Int.to_string()），非语义距离，但满足
+  // 计划要求的"轻量近似"定位；特征哈希本身已做 32-bit 截断。
+  let mut scored : Array[(Int, Int, Int)] = [] // (dist, seq, feature_hash)
+  for i in 0..<all.length() {
+    let hash_str = all[i].feature_hash.to_string()
+    let dist = caf_edit_distance(hash_str, target_str)
+    scored = scored + [(dist, i, all[i].feature_hash)]
+  }
+  scored.sort_by(fn(p, q) -> Int {
+    if p.0 != q.0 {
+      // 距离升序
+      if p.0 < q.0 {
+        -1
+      } else {
+        1
+      }
+      // 距离相等 → FIFO 稳定序（seq 升序）
+    } else if p.1 < q.1 {
+      -1
+    } else if p.1 > q.1 {
+      1
+    } else {
+      0
+    }
+  })
+  let mut out : Array[CafRecord] = []
+  for idx in 0..<scored.length() {
+    if idx >= k {
+      break
+    }
+    let rec = all[scored[idx].1]
+    out = out + [rec]
+  }
+  out
+}

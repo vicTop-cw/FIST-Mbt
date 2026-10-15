@@ -244,6 +244,79 @@ test "caf_memory_full_buffer_eviction" {
 }
 
 ///|
+/// P2：编辑距离基础正确性（Levenshtein）
+test "caf_edit_distance_basic" {
+  // 相同字符串 → 0
+  assert_eq(caf_edit_distance("abc", "abc"), 0)
+  // 空 vs 非空 → 非空长度
+  assert_eq(caf_edit_distance("", "abc"), 3)
+  assert_eq(caf_edit_distance("abc", ""), 3)
+  // 单字符替换 → 1
+  assert_eq(caf_edit_distance("cat", "cut"), 1)
+  // 单字符删除 → 1
+  assert_eq(caf_edit_distance("kitten", "kitchen"), 2)
+}
+
+///|
+/// P2：kNN 检索返回 Top-K 且按相似度排序
+test "caf_knn_search_topk" {
+  let mem = CafMemory::new(max_size=100)
+  // 3 条不同 context 的记录
+  mem.push(
+    CafRecord::new(
+      feature_hash=caf_feature_hash("easy python"),
+      model="m1",
+      ok=true,
+      cost=0.1,
+      ts="t1",
+    ),
+  )
+  mem.push(
+    CafRecord::new(
+      feature_hash=caf_feature_hash("hard java"),
+      model="m2",
+      ok=true,
+      cost=0.2,
+      ts="t2",
+    ),
+  )
+  mem.push(
+    CafRecord::new(
+      feature_hash=caf_feature_hash("easy python"),
+      model="m3",
+      ok=false,
+      cost=0.3,
+      ts="t3",
+    ),
+  )
+  // 对 easy python 检索，应优先命中 feature_hash 完全相同的两条
+  let k1 = mem.knn_search("easy python", 1)
+  assert_eq(k1.length(), 1)
+  // 完全相等 → 编辑距离 0
+  assert_eq(k1[0].feature_hash, caf_feature_hash("easy python"))
+
+  // k=2 时返回两条最近的
+  let k2 = mem.knn_search("easy python", 2)
+  assert_eq(k2.length(), 2)
+}
+
+///|
+/// P2：kNN 检索边界——k=0 返回空，k > records 返回全部
+test "caf_knn_search_boundary" {
+  let mem = CafMemory::new(max_size=10)
+  mem.push(
+    CafRecord::new(feature_hash=1, model="m", ok=true, cost=0.0, ts="t1"),
+  )
+  // k=0 → 空
+  assert_eq(mem.knn_search("ctx", 0).length(), 0)
+  // k 大于 records 数 → 全部
+  assert_eq(mem.knn_search("ctx", 99).length(), 1)
+  // 空 memory → 空
+  let empty = CafMemory::new(max_size=10)
+  assert_eq(empty.knn_search("ctx", 5).length(), 0)
+}
+
+///|
 test "caf_feature_hash_idempotent" {
   let h1 = caf_feature_hash("hello world")
   let h2 = caf_feature_hash("hello world")
