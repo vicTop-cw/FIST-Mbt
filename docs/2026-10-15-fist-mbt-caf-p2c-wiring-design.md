@@ -5,6 +5,9 @@
 - 阻塞：`src/server/model_router_ops.mbt` 被并发 agent WIP
 - 本文档：精确说明 P2c 接线的**最小改动集**，等 WIP 释放后照此实施
 
+> **进度（Round 26）**：§2.1（RouterConfig 加 `use_caf_memory`）**已实施**（commit `7b5d96f`）。
+> 剩余 §2.2（pick 钩子）与 §2.3（回写 + status）依赖 `model_router_ops.mbt` 释放（并发 agent WIP）。
+
 ## 1. 目标
 
 让 CAF 记忆层真正**参与路由决策**，而不仅是静态记忆：
