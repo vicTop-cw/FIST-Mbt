@@ -12,10 +12,11 @@ scripts/test_shim_handshake.py — 发布版协议兼容 shim（mcp_compat_shim.
 1. initialize（2025-06-18 与 2024-11-05 两档）
 2. notifications/initialized（无 id 通知，透传）
 3. tools/list
-4. resources/list
-5. ping（shim stub）
-6. logging/setLevel（shim stub，Round 124 A1）
-7. completion/complete（shim stub，Round 124 A1）
+4. tools/call（真实调用 status_summary——验证能列**且**能调）
+5. resources/list
+6. ping（shim stub）
+7. logging/setLevel（shim stub，Round 124 A1）
+8. completion/complete（shim stub，Round 124 A1）
 
 用法：
     python scripts/test_shim_handshake.py
@@ -143,13 +144,29 @@ def run_handshake(client, version: str) -> list:
     tools = (r or {}).get("result", {}).get("tools", [])
     check("tools/list", len(tools) > 0, f"{len(tools)} 个工具")
 
-    # 4. resources/list
+    # 4. tools/call（真实调用——只列不调等于没用）
+    client.send({
+        "jsonrpc": "2.0", "id": 21, "method": "tools/call",
+        "params": {"name": "status_summary", "arguments": {}},
+    })
+    r = client.recv()
+    call_result = (r or {}).get("result", {})
+    call_text = ""
+    content = call_result.get("content", [])
+    if isinstance(content, list) and content:
+        call_text = str(content[0].get("text", ""))[:80]
+    check("tools/call (status_summary)",
+          bool(call_result) and "content" in call_result
+          and call_result.get("isError") is not True,
+          call_text)
+
+    # 5. resources/list
     client.send({"jsonrpc": "2.0", "id": 3, "method": "resources/list"})
     r = client.recv()
     resources = (r or {}).get("result", {}).get("resources", [])
     check("resources/list", len(resources) > 0, f"{len(resources)} 个资源")
 
-    # 5. 可选方法（shim stub）
+    # 6. 可选方法（shim stub）
     for i, (method, params) in enumerate(OPTIONAL_METHODS, start=10):
         client.send({
             "jsonrpc": "2.0", "id": i, "method": method, "params": params,
