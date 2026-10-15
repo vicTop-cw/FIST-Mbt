@@ -13,7 +13,7 @@ AIGC:
 
 # 2026-10-14 FIST-Mbt 路由学习计划：ACRouter C-A-F 轻量移植（执行反馈记忆）
 
-> 状态：**进行中**（P1 反馈记账与记忆表已实现 2026-10-15；P2 核心算法已实现、接线与决策融合待办，2026-10-15 更新）
+> 状态：**P1 + P2a + P2b 完成，P2c 接线待并发收口**（2026-10-15 Round 8-10 更新：加 `CAF_EDIT_MAX_LEN=256` 长度守卫 + 属性测试 131 全绿 + 性能基准验证 + 接线设计文档落盘；唯一遗留项 P2c wiring 因 `src/server/model_router_ops.mbt` 被并发 agent WIP 阻塞，设计文档见 `docs/2026-10-15-fist-mbt-caf-p2c-wiring-design.md`）
 > 真源：`src/router/`（决策与状态 schema）+ `src/server/model_router_ops.mbt`（记账与进程生命周期）+ `src/executor/`（成功/失败信号）
 > 依据：基于 v0.3.8→v0.4.x 增量源码核查 + ACRouter（Agent-as-a-Router，arXiv:2606.22902）C-A-F 学习路由思想
 
