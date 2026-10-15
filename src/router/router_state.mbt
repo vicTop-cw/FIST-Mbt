@@ -38,9 +38,15 @@ fn st_str(m : Map[String, Json], key : String) -> String {
 }
 
 ///|
+/// JSON Number → Int 的读取（BUG-192：越界/NaN 不 panic，回落到默认）。
 fn st_int(m : Map[String, Json], key : String, default~ : Int) -> Int {
   match m.get(key) {
-    Some(Json::Number(n, ..)) => n.to_int()
+    Some(Json::Number(n, ..)) =>
+      if n != n || n < -2_000_000_000.0 || n > 2_000_000_000.0 {
+        default
+      } else {
+        n.to_int()
+      }
     _ => default
   }
 }

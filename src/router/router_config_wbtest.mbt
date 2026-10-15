@@ -141,3 +141,44 @@ test "cfg_ofm_6_默认 free_pool 是真实 OFM 模型且 lane 显式为 ofm" {
     }
   }
 }
+
+///|
+/// BUG-192 回归：`config_json` 里的大数/NaN 不 panic，越界字段回落默认 + 进 warnings。
+/// 旧代码 `Some(Json::Number(n, ..)) => n.to_int()` 对 1e300 会饱和（BUG-26 实测），
+/// 或按旧 R12-R4 口径 panic；两类都不许崩。
+test "cfg_192_超大数值与 NaN 不 panic 且回落默认" {
+  // window_seconds 超大
+  let (cfg, warns) = RouterConfig::from_json(
+    qj([
+      ("window_seconds", Json::number(99999999999.0)),
+      ("free_pool", Json::array([])),
+      ("paid_pool", Json::array([])),
+    ]),
+  )
+  assert_eq(cfg.window_seconds, RouterConfig::default().window_seconds)
+  if warns.length() == 0 {
+    abort("越界 window_seconds 必须进 warnings")
+  }
+  // limit 超大（pool 内的 rank / limit 都走 parse_opt_int / 安全转换）
+  let (cfg2, warns2) = RouterConfig::from_json(
+    qj([
+      (
+        "free_pool",
+        Json::array([
+          qj([
+            ("name", qs("m1")),
+            ("limit", Json::number(99999999999.0)),
+            ("rank", Json::number(99999999999.0)),
+          ]),
+        ]),
+      ),
+      ("paid_pool", Json::array([])),
+    ]),
+  )
+  // 越界 limit → 0（无限），越界 rank → 0
+  assert_eq(cfg2.free_models[0].limit, 0)
+  assert_eq(cfg2.free_models[0].rank, 0)
+  if warns2.length() == 0 {
+    abort("越界 limit/rank 必须进 warnings")
+  }
+}
