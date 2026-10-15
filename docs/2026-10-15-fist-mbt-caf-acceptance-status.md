@@ -9,13 +9,15 @@
 
 > **R29 更新**：标准 3 的**纯计算部分**已落地（commit `54f172c`）——`ModelRouter::pick_caf_dry_run` 返回 `CafDryRun {base, picked, reordered, basis, top_k}`，形状对齐预期产物 `{suggestion, basis:[{model, rate, avg_cost, count}]}`。新增 `apply_caf` 纯函数（从 `pick_caf` 拆出，不重跑 pick、不推进游标）与 `clone_for_peek`/`clone_pools`（零副作用 probe，pool 深拷贝）。配套 3 条白盒锁（caf_dry_1 零副作用 / caf_dry_2 对照语义 / caf_dry_3 零回归），router 156/156 全绿。**剩余接线点**：server 层 `model_router_ops.mbt` 的 dry_run 分支调用 `pick_caf_dry_run`（仍被并发 agent WIP 占用）。
 
+> **R37 更新**：标准 3 的纯计算侧**补上 JSON 输出层**（commit `?`）——新增 `caf_dry_run_to_json(dr : CafDryRun) : Json`（`src/router/router_caf_dryrun_json.mbt`），输出标准 3 预期形状 `{"suggestion", "base", "reordered", "top_k", "basis":[{model,rate,avg_cost,count}]}`。接线时 server 层直接用本函数把 `CafDryRun` 转 JSON，**不必在 server 层手搓 JSON**（避免形状漂移）。`rate` = success/total（total=0 时 0），`count` = total，与 `CafMemory::to_json` 的 by_model 聚合口径一致。配套 2 条白盒锁（caf_dj_1 标准 3 形状 / caf_dj_2 basis 字段不变量），router 177/177 全绿，全仓 1183/1183。**剩余**：仍是 server 层接线。**阻塞解除后接线成本进一步降低**：`pick_caf_dry_run` 返回 CafDryRun → `caf_dry_run_to_json` 直接出标准 3 JSON。
+
 ## 四条验收标准与当前状态
 
 | # | 验收标准 | 状态 | 验证方式 | 关键证据 | 脚本/测试 | 时间 |
 |---|---|---|---|---|---|---|
 | 1 | 离线回放可复现（历史记录回放 → 按成功率排序的模型优先级） | ✅ 已验 | Python 模拟 + `output_validate` l4-pass | 简单任务→`m_free`（rate 0.93），复杂任务→`m_premium`（rate 1.0） | `scripts/caf_offline_replay.py`（3/3 通过） | 2026-10-15 R12（commit `c45d6d6`） |
 | 2 | 开启后不增成本且成功率不降（A/B 对比） | ✅ 已验（预演） | Python A/B 模拟 + `output_validate` l4-pass | A 率 0.59 / 成本 2.00 → B 率 0.63 / 成本 2.00（+0.04/+0.00） | `scripts/caf_p2c_ab_preflight.py`（2/2 通过） | 2026-10-15 R16（commit `3c72c27`） |
-| 3 | dry_run 可预览（返回建议模型 + 历史依据） | ✅ 纯计算已落地 / 📋 server 接线待做 | `pick_caf_dry_run` 白盒锁 + MoonBit 测试 | `CafDryRun {base, picked, reordered, basis, top_k}`（`src/router/model_router_caf.mbt`） | `src/router/model_router_caf_wbtest.mbt` caf_dry_1~3（3/3 通过） | 2026-10-15 R29（commit `54f172c`） |
+| 3 | dry_run 可预览（返回建议模型 + 历史依据） | ✅ 纯计算已落地（含 JSON 输出层） / 📋 server 接线待做 | `pick_caf_dry_run` 白盒锁 + MoonBit 测试 | `CafDryRun {base, picked, reordered, basis, top_k}`（`src/router/model_router_caf.mbt`）+ `caf_dry_run_to_json` 输出 `{suggestion, base, reordered, top_k, basis:[{model,rate,avg_cost,count}]}`（`src/router/router_caf_dryrun_json.mbt`） | `src/router/model_router_caf_wbtest.mbt` caf_dry_1~3（3/3 通过）+ `src/router/router_caf_dryrun_json_wbtest.mbt` caf_dj_1~2（2/2 通过） | 2026-10-15 R29（`54f172c`）/ R37（JSON 输出层） |
 | 4 | 零回归基线（`use_caf_memory=false` 时行为与 v0.3.8 完全一致） | ✅ 已验 | MoonBit 白盒测试 | 空记忆 → `caf_soft_reorder` 返回原序；`caf_knn_stats_empty_neighborhood` 返回空 | `src/router/router_caf_wbtest.mbt`（135/135 全绿） | 2026-10-15 R13（commit `bd46d39`） |
 
 ## 四条标准的验证证据链
@@ -58,6 +60,7 @@
 - **现状**：`model_router_ops.mbt` 被并发 agent WIP 占用（R18 时 26 文件 WIP）
 - **解除条件**：并发 agent 完成 WIP → 实施 P2c → 用真源跑 dry_run 预览
 - **预期产物**：`dry_run=true` 时返回 `{"suggestion": "m_mid", "basis": [{"model": "m_mid", "rate": 0.9, "avg_cost": 0.1, "count": 3}, ...]}` 形状
+- **接线提示**：纯计算侧已就绪——`pick_caf_dry_run` 返回 `CafDryRun` 后，直接 `caf_dry_run_to_json(dr)` 即得标准 3 形状 JSON（含 `suggestion`/`base`/`reordered`/`top_k`/`basis`），server 层无需手搓 JSON。接线仅需在 `model_router_ops.mbt` 的 dry_run 分支调 `pick_caf_dry_run` + `caf_dry_run_to_json`。
 
 ## 相关脚本与测试
 
