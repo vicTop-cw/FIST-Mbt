@@ -206,6 +206,48 @@ pub fn FistEngine::dag_ascii(self : FistEngine, ns~ : String) -> String {
 }
 
 ///|
+/// BUG-213：从 `from` 出发沿 depends_on 链 BFS，判断 `target` 是否可达。
+/// 用于 dag_depend 建边前的传递环检测：若 `dep_id` 已（传递）依赖 `task_id`，
+/// 再给 `task_id` 加一条 `dep_id` 依赖就成环。
+/// 纯读 store；已访问集合用 Map[String,Bool] 兜底（不做 Set 依赖）。
+fn FistEngine::dag_reaches(
+  self : FistEngine,
+  from : String,
+  target : String,
+) -> Bool {
+  if from == target {
+    return true
+  }
+  let visited : Map[String, Bool] = Map([])
+  let mut queue : Array[String] = [from]
+  while queue.length() > 0 {
+    let cur = queue[0]
+    let rest : Array[String] = []
+    for i = 1; i < queue.length(); i = i + 1 {
+      rest.push(queue[i])
+    }
+    queue = rest
+    if visited.get(cur).unwrap_or(false) {
+      continue
+    }
+    visited.set(cur, true)
+    match self.store.get_task(cur) {
+      Some(t) =>
+        for d in t.depends_on {
+          if d == target {
+            return true
+          }
+          if not(visited.get(d).unwrap_or(false)) {
+            queue = queue + [d]
+          }
+        }
+      None => ()
+    }
+  }
+  false
+}
+
+///|
 /// 显式给任务追加一条前置依赖（构建 DAG 依赖边，不只靠 plan_deep 隐式父子）。
 /// 校验：task 与 dep 均存在、非同一任务、且不会形成直接自环；去重追加并落库。
 /// 返回追加后的任务 JSON。失败返回 Err（含人语原因）。
@@ -225,6 +267,12 @@ pub fn FistEngine::dag_depend(
   let _dep = match self.store.get_task(dep_id) {
     None => return Err("依赖任务 \{dep_id} 不存在")
     Some(d) => d
+  }
+  // BUG-213：传递环检测——若 task_id 是 dep_id 的（传递）依赖，加这条边即成环
+  if self.dag_reaches(dep_id, task_id) {
+    return Err(
+      "拒绝成环依赖: \{task_id} 依赖 \{dep_id} 会形成传递环（\{dep_id} 已传递依赖 \{task_id}）",
+    )
   }
   // 已存在则幂等返回现任务
   if task.depends_on.contains(dep_id) {
