@@ -174,3 +174,61 @@ test "mc_percentile_index：边界退化" {
     }
   }
 }
+
+///|
+/// 读 makespan.min。
+fn mc_span_min(j : Json) -> Double {
+  match j.value("makespan") {
+    Some(Object(m)) =>
+      match m.get("min") {
+        Some(Number(n, ..)) => n
+        _ => abort("缺 makespan.min: " + j.stringify())
+      }
+    _ => abort("缺 makespan: " + j.stringify())
+  }
+}
+
+///|
+/// 读 makespan.max。
+fn mc_span_max(j : Json) -> Double {
+  match j.value("makespan") {
+    Some(Object(m)) =>
+      match m.get("max") {
+        Some(Number(n, ..)) => n
+        _ => abort("缺 makespan.max: " + j.stringify())
+      }
+    _ => abort("缺 makespan: " + j.stringify())
+  }
+}
+
+///|
+/// BUG-208 回归锁：seed=0（xorshift32 唯一年轻态）不得退化为单点分布。
+/// 旧代码 `state = seed + s*7919` 未校验 seed，seed=0 时首个样本 state=0 →
+/// mc_xorshift(0)=(0,0) → u=0 → 每任务时长恒取下界 a → 全部 samples 相同，
+/// min==max 却照常返回一份像样的分布 JSON（比报错更危险）。修复后 state 钳到
+/// [1,0x7fffffff]，seed=0 恢复为合法随机序列，与 seed=1 走不同序列。
+test "dag_mc：seed=0 不退化（BUG-208）" {
+  let e = @engine.FistEngine::new()
+  mc_mk(e, "A", "MC 任务 A [难度梯度 中]", []) // 三角分布 (3,5,8)
+  let j0 = e.dag_mc(seed=0, samples=100)
+  let j1 = e.dag_mc(seed=1, samples=100)
+  // 修复后 seed=0 应有方差（中档任务 (3,5,8)，100 样本时 min 接近 3、max 接近 8）
+  let min0 = mc_span_min(j0)
+  let max0 = mc_span_max(j0)
+  if max0 - min0 <= 1 {
+    abort(
+      "seed=0 不应退化为单点分布: min=\{min0} max=\{max0} j=" +
+      j0.stringify(),
+    )
+  }
+  // 旧代码下 seed=0 与 seed=1 均值可能碰巧不同；这里锁"seed=0 与 seed=1 各回各分布"，
+  // 关键点是 seed=0 本身非退化（上一条），此条只做补充信号。
+  let m0 = mc_meanspan(j0)
+  let m1 = mc_meanspan(j1)
+  if m0 < 3.0 || m0 > 8.0 {
+    abort("seed=0 均值应落在三角分布支撑内 (3,8): \{m0}")
+  }
+  if m1 < 3.0 || m1 > 8.0 {
+    abort("seed=1 均值应落在三角分布支撑内 (3,8): \{m1}")
+  }
+}
