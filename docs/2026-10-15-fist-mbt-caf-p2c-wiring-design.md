@@ -19,6 +19,22 @@
 >
 > 剩余 §2.3 的**回写**（`executor_run` 后 `caf_memory.push`）与 **status 展示**仍依赖
 > `model_router_ops.mbt` 释放（并发 agent WIP）。
+>
+> **进度（Round 30-31）**：
+> - **R30（commit `132fcca`）** 新增 `caf_loop_1_记忆可写可读闭环`，钉死 §2.3 回写的真源前提：
+>   `CafMemory::push` 的签名虽是值接收 `self : CafMemory`，但 `count`/`head` 改动**实测传播**
+>   到调用方（0→1→3）——因此 server 层 `executor_run` 后调 `caf_memory.push(...)` 真的能写入，
+>   同一份 memory 再传给 `pick_caf_dry_run` 就能让决策从 free-a 重排到 free-b。router 157/157 全绿。
+> - **R31（commit `2a669ef`）** P2c 与 P2d 在 router 层**统一**：新增 `caf_reorder_combined`，
+>   `pick_caf` / `apply_caf` / `pick_caf_dry_run` 都加
+>   `caf_default_preference? : Array[String] = []` 与 `caf_min_evidences? : Int = 10`。
+>   偏好为空 → 纯 `caf_soft_reorder`（与 R29 完全一致，零回归）；偏好非空 → `caf_soft_reorder_with_preference`
+>   （记忆充足退化成功率排序、记忆不足按偏好冷启动）。3 条新锁 `caf_pref_1~3`，router 160/160 全绿。
+>
+> **剩余接线**：只剩 server 层两处——① `RouterConfig` 加 `caf_default_preference` /
+> `caf_min_evidences` 字段（`src/router/model_router.mbt`，本轮未动，因该文件并发 agent 也有改动面）；
+> ② `model_router_ops.mbt` 里 `executor_run` 后 `caf_memory.push` + 把 config 字段透传给 `pick_caf` +
+> status 展示 CAF 统计。两处都等并发 agent WIP 收口。
 
 ## 1. 目标
 
