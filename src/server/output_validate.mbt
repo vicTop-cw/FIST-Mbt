@@ -99,6 +99,33 @@ fn artifact_spec_errors(a : Json) -> String {
       if has_path && has_key {
         return "path 与 check_key 二选一，不能同时给（两条检查路径语义不同）"
       }
+      // BUG-209：键名合法 ≠ 值型合法。min_chars 必须是 Number、contains/not_contains
+      // 必须是 String——否则 parse_artifact 静默降级成默认值（0/""），invariant 变空检查，
+      // verdict 仍 pass（与 BUG-31「未知键静默忽略」同族）。这里把值型也立成硬门。
+      let mc = match m.get("min_chars") {
+        Some(Number(_, ..)) => true
+        Some(_) => false
+        None => true
+      }
+      if not(mc) {
+        return "min_chars 必须是数字（Number），不能是字符串/布尔/null——否则会被静默当成 0、不检查字符数"
+      }
+      let cc = match m.get("contains") {
+        Some(String(_)) => true
+        Some(_) => false
+        None => true
+      }
+      if not(cc) {
+        return "contains 必须是字符串（String），不能是数字/布尔/null——否则会被静默当成空串、不检查 invariant"
+      }
+      let nc = match m.get("not_contains") {
+        Some(String(_)) => true
+        Some(_) => false
+        None => true
+      }
+      if not(nc) {
+        return "not_contains 必须是字符串（String），不能是数字/布尔/null——否则会被静默当成空串、不检查 invariant"
+      }
       ""
     }
     _ => "不是 JSON 对象"

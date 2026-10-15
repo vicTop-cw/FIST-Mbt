@@ -526,3 +526,41 @@ test "ov_20_non_moon_key_no_auto_gate" {
   assert_true(r.is_ok())
   assert_eq(ov_verdict(r), "pass")
 }
+
+///|
+/// 测试 21（BUG-209 键名+值型双向防御）：min_chars 传字符串、contains 传数字
+/// 都是「类型错」——键名合法但值型不符，必须 fail，不得静默降级成空 invariant。
+test "ov_21_invariant_wrong_type_fail" {
+  let d = ov_dir("ov_c21")
+  ov_write(d, "main.mbt", "fn main() -> Int { 42 }\n")
+  // min_chars 应为 Number，传 String → spec_err 应拒绝
+  let a1 : Array[Json] = [
+    Json::object({
+      "path": Json::string("main.mbt"),
+      "min_chars": Json::string("100"),
+    }),
+  ]
+  let r1 = output_validate(d, a1, Json::object({}), "", require_evidence=false)
+  assert_true(r1.is_ok())
+  assert_eq(ov_verdict(r1), "fail")
+  // contains 应为 String，传 Number → spec_err 应拒绝
+  let a2 : Array[Json] = [
+    Json::object({
+      "path": Json::string("main.mbt"),
+      "contains": Json::number(42.0),
+    }),
+  ]
+  let r2 = output_validate(d, a2, Json::object({}), "", require_evidence=false)
+  assert_true(r2.is_ok())
+  assert_eq(ov_verdict(r2), "fail")
+  // not_contains 应为 String，传 Number → spec_err 应拒绝
+  let a3 : Array[Json] = [
+    Json::object({
+      "path": Json::string("main.mbt"),
+      "not_contains": Json::number(7.0),
+    }),
+  ]
+  let r3 = output_validate(d, a3, Json::object({}), "", require_evidence=false)
+  assert_true(r3.is_ok())
+  assert_eq(ov_verdict(r3), "fail")
+}
