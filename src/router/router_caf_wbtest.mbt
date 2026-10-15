@@ -111,6 +111,40 @@ test "caf_stats_grouping" {
 }
 
 ///|
+/// BUG-173 回归：完全相等（rate + avg_cost 均同）时 sort_by 必须遵守严格弱序，
+/// 不崩溃、不无限循环，且用 model 字典序做确定性 tiebreak。
+test "caf_stats_equal_rate_equal_cost_tiebreak" {
+  let records : Array[CafRecord] = [
+    CafRecord::new(feature_hash=1, model="m1", ok=true, cost=0.2, ts="t1"),
+    CafRecord::new(feature_hash=1, model="m2", ok=true, cost=0.2, ts="t2"),
+    CafRecord::new(feature_hash=1, model="m3", ok=true, cost=0.2, ts="t3"),
+  ]
+  let stats = caf_stats(records)
+  assert_eq(stats.length(), 3)
+  // 完全相等 → model 字典序 tiebreak：m1 < m2 < m3
+  assert_eq(stats[0].model, "m1")
+  assert_eq(stats[1].model, "m2")
+  assert_eq(stats[2].model, "m3")
+  // 全部 rate=1.0, avg_cost=0.2
+  assert_eq(stats[0].success, 1)
+  assert_eq(stats[0].total, 1)
+  assert_true((stats[0].avg_cost - 0.2).abs() < 0.000000001)
+}
+
+///|
+/// BUG-173 补充回归：单条记录不崩溃。
+test "caf_stats_single_record" {
+  let records : Array[CafRecord] = [
+    CafRecord::new(feature_hash=1, model="only", ok=false, cost=0.0, ts="t1"),
+  ]
+  let stats = caf_stats(records)
+  assert_eq(stats.length(), 1)
+  assert_eq(stats[0].model, "only")
+  assert_eq(stats[0].success, 0)
+  assert_eq(stats[0].total, 1)
+}
+
+///|
 test "caf_feature_hash_idempotent" {
   let h1 = caf_feature_hash("hello world")
   let h2 = caf_feature_hash("hello world")

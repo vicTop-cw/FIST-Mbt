@@ -148,6 +148,9 @@ pub fn caf_stats(records : Array[CafRecord]) -> Array[CafModelStats] {
       ]
   }
   // 按成功率降序、成本升序排列（sort_by 返回 Int：负=前者在前）
+  // BUG-173：原实现在 rate_a==rate_b && avg_cost_a==avg_cost_b 时恒返回 1（非 0），
+  // 违反严格弱序（自反性 cmp(a,a)!=0 / 反对称性），可致 sort_by 未定义行为。
+  // 修复：三档比较（< / > / 0），完全相等时按 model 字典序做确定性 tiebreak。
   out.sort_by(fn(a, b) -> Int {
     let rate_a = if a.total > 0 {
       a.success.to_double() / a.total.to_double()
@@ -159,16 +162,20 @@ pub fn caf_stats(records : Array[CafRecord]) -> Array[CafModelStats] {
     } else {
       0.0
     }
-    if rate_a != rate_b {
-      if rate_a > rate_b {
-        -1
-      } else {
-        1
-      }
+    if rate_a > rate_b {
+      -1
+    } else if rate_a < rate_b {
+      1
     } else if a.avg_cost < b.avg_cost {
       -1
-    } else {
+    } else if a.avg_cost > b.avg_cost {
       1
+    } else if a.model < b.model {
+      -1
+    } else if a.model > b.model {
+      1
+    } else {
+      0
     }
   })
   out
