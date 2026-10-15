@@ -317,6 +317,73 @@ test "caf_knn_search_boundary" {
 }
 
 ///|
+/// O(count) 优化正确性：count < max_size 时 all() 仍返回全部 count 条，不丢不重。
+test "caf_memory_all_sparse_count" {
+  let mem = CafMemory::new(max_size=1000)
+  mem.push(
+    CafRecord::new(feature_hash=1, model="m", ok=true, cost=0.1, ts="t1"),
+  )
+  mem.push(
+    CafRecord::new(feature_hash=2, model="m", ok=true, cost=0.2, ts="t2"),
+  )
+  mem.push(
+    CafRecord::new(feature_hash=3, model="m", ok=true, cost=0.3, ts="t3"),
+  )
+  // count=3 << max_size=1000，all() 应只返回 3 条，且 FIFO 顺序正确
+  let all = mem.all()
+  assert_eq(all.length(), 3)
+  assert_eq(all[0].feature_hash, 1)
+  assert_eq(all[1].feature_hash, 2)
+  assert_eq(all[2].feature_hash, 3)
+  // find() 同源优化，命中唯一
+  assert_eq(mem.find(feature_hash=2).length(), 1)
+  assert_eq(mem.find(feature_hash=2)[0].ts, "t2")
+}
+
+///|
+/// P2：knn_stats 返回 Top-K 邻域按模型的成功率与平均成本统计
+test "caf_knn_stats_by_model" {
+  let mem = CafMemory::new(max_size=100)
+  // 同一 context，两个不同模型，不同成败
+  let ctx = "hello world task"
+  mem.push(
+    CafRecord::new(
+      feature_hash=caf_feature_hash(ctx),
+      model="m1",
+      ok=true,
+      cost=0.1,
+      ts="t1",
+    ),
+  )
+  mem.push(
+    CafRecord::new(
+      feature_hash=caf_feature_hash(ctx),
+      model="m2",
+      ok=false,
+      cost=0.2,
+      ts="t2",
+    ),
+  )
+  mem.push(
+    CafRecord::new(
+      feature_hash=caf_feature_hash(ctx),
+      model="m1",
+      ok=true,
+      cost=0.3,
+      ts="t3",
+    ),
+  )
+  let stats = mem.knn_stats(ctx, 3)
+  assert_eq(stats.length(), 2) // 两个 model
+  // m1 成功率 1.0 排在前面
+  assert_eq(stats[0].model, "m1")
+  assert_eq(stats[0].total, 2)
+  assert_eq(stats[0].success, 2)
+  assert_eq(stats[1].model, "m2")
+  assert_eq(stats[1].success, 0)
+}
+
+///|
 test "caf_feature_hash_idempotent" {
   let h1 = caf_feature_hash("hello world")
   let h2 = caf_feature_hash("hello world")

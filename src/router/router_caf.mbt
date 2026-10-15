@@ -64,12 +64,13 @@ pub fn CafMemory::push(self : CafMemory, rec : CafRecord) -> Unit {
 
 ///|
 /// 遍历所有有效记录
+/// O(count) 而非 O(max_size)：count << max_size 时避免全环扫描。
 pub fn CafMemory::all(self : CafMemory) -> Array[CafRecord] {
   let mut out : Array[CafRecord] = []
+  let start = (self.head + self.max_size - self.count) % self.max_size
   let mut i = 0
-  while i < self.max_size {
-    let r = self.records[(self.head + i) % self.max_size]
-    match r {
+  while i < self.count {
+    match self.records[(start + i) % self.max_size] {
       Some(rec) => out = out + [rec]
       None => ()
     }
@@ -80,14 +81,16 @@ pub fn CafMemory::all(self : CafMemory) -> Array[CafRecord] {
 
 ///|
 /// 按特征哈希检索：返回所有匹配记录
+/// O(count) 而非 O(max_size)。
 pub fn CafMemory::find(
   self : CafMemory,
   feature_hash~ : Int,
 ) -> Array[CafRecord] {
   let mut out : Array[CafRecord] = []
+  let start = (self.head + self.max_size - self.count) % self.max_size
   let mut i = 0
-  while i < self.max_size {
-    match self.records[(self.head + i) % self.max_size] {
+  while i < self.count {
+    match self.records[(start + i) % self.max_size] {
       Some(rec) if rec.feature_hash == feature_hash => out = out + [rec]
       _ => ()
     }
@@ -307,4 +310,15 @@ pub fn CafMemory::knn_search(
     out = out + [rec]
   }
   out
+}
+
+///|
+/// P2 决策融合数据源：对 Top-K 邻域按模型统计成功率与平均成本。
+/// 复用 caf_stats（成功率降序 + 成本升序），供 pick 软性排序钩子消费。
+pub fn CafMemory::knn_stats(
+  self : CafMemory,
+  context : String,
+  k : Int,
+) -> Array[CafModelStats] {
+  caf_stats(self.knn_search(context, k))
 }
