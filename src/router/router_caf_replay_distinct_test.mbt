@@ -207,16 +207,70 @@ test "caf_c1_5_混合邻域排列不变" {
   }
   // 首位恒为 rate 1.0 的 m_premium（邻域内，与输入顺序无关）
   if r_base[0] != "m_premium" || r_perm[0] != "m_premium" {
-    abort("排列性质违约：首位应恒为 m_premium，实际 base=" + r_base[0] + " perm=" + r_perm[0])
+    abort(
+      "排列性质违约：首位应恒为 m_premium，实际 base=" +
+      r_base[0] +
+      " perm=" +
+      r_perm[0],
+    )
   }
   // 末位恒为无依据的 m_unknown（邻域外，恒排有依据之后）
   if r_base[2] != "m_unknown" || r_perm[2] != "m_unknown" {
-    abort("排列性质违约：末位应恒为 m_unknown，实际 base=" + r_base[2] + " perm=" + r_perm[2])
+    abort(
+      "排列性质违约：末位应恒为 m_unknown，实际 base=" +
+      r_base[2] +
+      " perm=" +
+      r_perm[2],
+    )
   }
   // 完整序列逐位置一致（R47 教训：半开区间 `0..<len`，闭区间含 len 会越界）
   for i in 0..<r_base.length() {
     if r_base[i] != r_perm[i] {
-      abort("排列性质违约：位置 " + i.to_string() + " base=" + r_base[i] + " perm=" + r_perm[i])
+      abort(
+        "排列性质违约：位置 " +
+        i.to_string() +
+        " base=" +
+        r_base[i] +
+        " perm=" +
+        r_perm[i],
+      )
     }
+  }
+}
+
+///|
+/// R49 · 标准 1 排列性质**无邻域**真源锁（补 caf_c1_4/5 未覆盖的分支）。
+///
+/// `caf_soft_reorder` 有一分支：**都不在邻域 → 保留原始顺序**。
+/// caf_c1_4 锁「都在邻域」、caf_c1_5 锁「混合邻域」，本锁锁「都不在邻域」。
+/// **注意**：此分支的排列性质是**恒等映射**（reorder(x) == x），不是「置换不变」——
+/// 因为候选都无依据时系统不该自作主张重排，应把决策交还确定性路由的原始顺序。
+test "caf_c1_6_无邻域保留原始顺序" {
+  let mem = c1_mem()
+  let stats = caf_stats(mem.all())
+  let base : Array[String] = ["m_unknown", "m_a", "m_b"]
+  let r = caf_soft_reorder(base, stats)
+  if r.length() != 3 {
+    abort("应返回 3 个候选，实际 " + r.length().to_string())
+  }
+  // 恒等映射：输出 == 输入（逐位置）
+  for i in 0..<r.length() {
+    if r[i] != base[i] {
+      abort("无邻域应保留原始顺序：位置 " + i.to_string() + " 应 " + base[i] + " 实际 " + r[i])
+    }
+  }
+  // 反向输入（m_b 在前）：仍保原序（恒等，非置换不变）
+  let rev : Array[String] = ["m_b", "m_a", "m_unknown"]
+  let r2 = caf_soft_reorder(rev, stats)
+  for i in 0..<r2.length() {
+    if r2[i] != rev[i] {
+      abort("无邻域反向输入应保原序：位置 " + i.to_string() + " 应 " + rev[i] + " 实际 " + r2[i])
+    }
+  }
+  // 单元素候选（边界）
+  let single : Array[String] = ["m_unknown"]
+  let r3 = caf_soft_reorder(single, stats)
+  if r3.length() != 1 || r3[0] != "m_unknown" {
+    abort("单元素无邻域候选应保原序，实际 " + r3.to_string())
   }
 }
