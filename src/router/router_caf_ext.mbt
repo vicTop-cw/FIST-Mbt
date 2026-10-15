@@ -107,7 +107,7 @@ pub fn caf_normalize_context(context : String) -> String {
 
 ///|
 fn is_ws_byte(b : Int) -> Bool {
-  b == 32 || b == 9 || b == 10 || b == 13
+  b == 32 || b == 9 || b == 10 || b == 13 || b == 0x3000
 }
 
 ///|
