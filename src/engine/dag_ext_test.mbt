@@ -47,6 +47,41 @@ test "critical_path: 空仓库返回空数组" {
 }
 
 ///|
+test "critical_path: 成环依赖不产生重复节点" {
+  let e = FistEngine::new()
+  // A -> B -> C -> A（人为造环）
+  let specs : Array[(String, Array[String])] = [
+    ("A", ["C"]),
+    ("B", ["A"]),
+    ("C", ["B"]),
+  ]
+  for s in specs {
+    let (id, deps) = s
+    let t = @core.Task::new(
+      id~,
+      project_dir="/proj/cyc",
+      description="cycle \{id}",
+      parent_id="",
+      created_at="2026-01-01T00:00:00Z",
+      depends_on=deps,
+    )
+    ignore(e.store.create_task(t))
+  }
+  let cp = e.critical_path()
+  // 环保护不得产生重复节点
+  let seen : Map[String, Bool] = Map([])
+  let mut dup = false
+  for id in cp {
+    if seen.contains(id) {
+      dup = true
+      break
+    }
+    seen.set(id, true)
+  }
+  assert_false(dup)
+}
+
+///|
 test "topo_sort: Kahn 依赖先输出(同批稳定按输入序)" {
   let e = dag_test_engine()
   // A 无依赖；B→A；C→B；D→A；E→D。输入乱序输入。
