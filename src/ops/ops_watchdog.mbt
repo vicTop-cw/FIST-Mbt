@@ -212,6 +212,26 @@ fn tick_json(
 /// 返回 JSON：{ action, active, healed, healed_tasks, new_task_id,
 ///             previous_task_id, blocked, detail, omega }，
 ///             action ∈ waiting / restarted / advanced / idle。
+
+///|
+/// BUG-166：判断 ISO 时间戳 b 是否比 a「更新」（更晚完成）。用秒数比较；任一侧
+/// 解析失败（空串/非法 ISO）保守返回 false（不覆盖既有选择），保证续轮链不下跳。
+fn watchdog_ts_newer(a : String, b : String) -> Bool {
+  let sa = iso_to_secs(a)
+  let sb = iso_to_secs(b)
+  if sa < 0 || sb < 0 {
+    return false
+  }
+  sb > sa
+}
+
+///|
+/// BUG-166：续轮选 prev_task 时，b 是否比 a「更新」（等价于 `watchdog_ts_newer`）。
+fn watchdog_newer_task(a : @core.Task, b : @core.Task) -> Bool {
+  watchdog_ts_newer(a.get_updated_at(), b.get_updated_at())
+}
+
+///|
 pub fn watchdog_tick(
   engine : @engine.FistEngine,
   now : String,
@@ -282,7 +302,16 @@ pub fn watchdog_tick(
         None => true
       }
       if is_root && !t.deliverable.has_prefix(@engine.advance_mark_prefix()) {
-        pending_advance = Some(t)
+        // BUG-166：续轮选 prev_task 不能依赖 list_in_ns 的未定义顺序——
+        // SqliteStore 无 ORDER BY、MemoryStore 走 Map.each（皆插入序），多个未标记
+        // 完成根任务时无条件覆盖会串错续轮链。显式保留「最近完成的一条」。
+        let is_newer = match pending_advance {
+          Some(prev) => watchdog_newer_task(prev, t)
+          None => true
+        }
+        if is_newer {
+          pending_advance = Some(t)
+        }
       }
     }
   }
