@@ -564,3 +564,25 @@ test "ov_21_invariant_wrong_type_fail" {
   assert_true(r3.is_ok())
   assert_eq(ov_verdict(r3), "fail")
 }
+
+///|
+/// 测试 22（BUG-211 假绿另一入口）：`Total tests: 0, passed: 0, failed: 0.`
+/// 是「一个测试都没跑」的空套件——旧实现只查 failed>0，把 total=0 当全绿。
+/// 空包/构建漏收集/汇总被截断在 0 之前，都可能喂出这一行。
+test "ov_22_moon_test_total_zero_fail" {
+  let d = ov_dir("ov_c22")
+  ov_write(d, "main.mbt", "fn main() {}\n")
+  let artifacts : Array[Json] = [
+    Json::object({ "check_key": Json::string("moon_test") }),
+  ]
+  // ok=true、exit 0、汇总行 failed=0 —— 但 total=0，等于没跑测试
+  let r = output_validate(
+    d,
+    artifacts,
+    ov_ext_stdout("moon_test", true, "Total tests: 0, passed: 0, failed: 0."),
+    "",
+    require_evidence=false,
+  )
+  assert_true(r.is_ok())
+  assert_eq(ov_verdict(r), "fail")
+}

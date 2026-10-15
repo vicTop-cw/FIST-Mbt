@@ -351,6 +351,12 @@ fn check_moon_test_summary(stdout : String) -> String {
   if not(found) {
     return "moon test stdout 缺 `Total tests:` 汇总行——无法判绿（BUG-142：进程可能崩溃却仍 exit 0）"
   }
+  // BUG-211：`Total tests: 0, passed: 0, failed: 0.` 是「一个测试都没跑」的空套件——
+  // failed=0 只看失败数，把 total=0 也当成全绿，是 BUG-142 假绿的又一入口
+  // （空包/构建漏收集测试/汇总被截断在 0 之前都可能喂出这一行）。
+  if total == 0 {
+    return "moon test 汇总行 total=0——没有跑任何测试（passed=0 不算证据），按 BUG-211 判定失败"
+  }
   if failed > 0 {
     return "moon test 汇总行 failed=" +
       failed.to_string() +
