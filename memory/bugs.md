@@ -3045,11 +3045,3 @@ B. 若判定新契约作废，则删/改三条锁——但那等于放弃 BUG-18
 
 ### FIXED(2026-10-15T11:40:42Z / BUG-210)
 - evidence: 改动 src/server/board_ascii.mbt L119-128：比较器补 else if a.created_at > b.created_at { 1 } 显式分支，全等时以 a.get_id().compare(b.get_id()) 升序收尾（与 dag_ascii L190、triage_rest L150 的 id tiebreak 模式一致）；src/server/board_ascii_test.mbt 加「board_ascii 组内全等任务按 id 升序（BUG-210）」回归锁——两次 publish 传同一 now 造 T0/T0r2 全等对，split 断言 T0(乙) 必渲染于 T0r2(甲) 之前。moon check --target js 0 errors；moon test --target js src/server 全绿 280/280。commit 9cd2fa7。
-
-## BUG-214 [2026-10-15T12:31:00Z] [high] FIXED
-- summary: [ops_pipeline] pipeline_tick auto 分支 heal_stale_tasks_from_store 失败被 Err(_) => [] 静默吞掉，违反同处注释「结果随返回上报」契约——BUG-185/186 同族第三例
-- detail: src/ops/ops_pipeline.mbt L503-507（auto 分支）原写法为 match heal_stale_tasks_from_store(engine, now, timeout_sec~, ns=ns_final) { Ok(l) => l; Err(_) => [] }，Err 分支直接丢弃错误，返回 JSON 只剩 healed: []，与「无超时任务」不可区分；而同处 L502 注释明确承诺「结果随返回上报」。当前 ops_heal.mbt L91-151 所有路径均返回 Ok（Err 不可达），故属契约违背而非即时故障；一旦 ops_heal 扩展出 Err 分支（如 reopen 失败），失败将被静默吞掉。同族：BUG-185（ops_watchdog.mbt，已用 heal_error 注入 detail 修复）、BUG-186（ops_heal reopen_task 吞）。
-- fix_options: 照 BUG-185 模式：auto 分支捕获 heal_error : String?，Err(e) => { heal_error = Some(e); [] }；返回装配处（L561-566）pj_set 注入 "heal_error"，仅 Some 时出现（成功路径不泄漏）。回归锁：pipeline_23 断言 healed 键存在且成功路径不泄漏 heal_error。
-
-### FIXED(2026-10-15T12:52:27Z / BUG-214)
-- evidence: commit aa85c3f：src/ops/ops_pipeline.mbt auto 分支（L504-510）新增 `let mut heal_error : String? = None`，Err 分支由 `Err(_) => []` 改为 `Err(e) => { heal_error = Some(e); [] }`；返回装配处（L562-566）`pj_set` 注入 "heal_error"（仅 Some 时出现，成功路径不泄漏）。src/ops/ops_pipeline_test.mbt 新增 pipeline_23 回归锁：healed 键存在、成功路径 heal_error 为 null。验证：moon test --target js src/ops 190/190 全绿（修复前 189/189）。
