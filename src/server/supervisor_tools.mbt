@@ -57,7 +57,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
       { "namespace": string_prop("命名空间(可选，默认全部)") },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       Ok(
         @mcp.ToolResult::text(
@@ -72,7 +72,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
     "supervisor_task_tree",
     "超级管家·任务树状态与进度：从 root_id 递归聚合子树，每节点带 subtree_done/subtree_total 完成度与 summary 所需字段。纯读。参数：root_id(必填)。",
     schema({ "root_id": string_prop("根任务 id（必填）") }, ["root_id"]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let root_id = get_str(args, "root_id")
       match engine.supervisor_task_tree(root_id) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
@@ -97,7 +97,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
       },
       ["task_id", "by", "reason"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let by = get_str(args, "by")
       let reason = get_str(args, "reason")
@@ -127,7 +127,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
       },
       ["target", "prompt"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let target = get_str(args, "target")
       let prompt = get_str(args, "prompt")
       let ns = get_str(args, "namespace", default="default")
@@ -166,7 +166,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let target = get_str(args, "target")
       let include_consumed = get_str(args, "include_consumed") == "true"
       let items = supervisor_guidance_list(target~, include_consumed~)
@@ -193,7 +193,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
       },
       ["guidance_id"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let id = get_str(args, "guidance_id")
       match supervisor_guidance_consume(id~) {
         None => Err(@mcp_types.ToolError("guidance not found: \{id}"))
@@ -234,7 +234,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
       },
       ["project_dir", "by", "items"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let by = get_str(args, "by")
       let ns = get_str(args, "namespace", default="default")
@@ -278,7 +278,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let now = get_str(args, "now", default=now_default())
       let stale_h = str_to_int(get_str(args, "stale_hours"), 24)
       let pending_h = str_to_int(get_str(args, "pending_hours"), 48)
@@ -449,6 +449,11 @@ fn str_to_int(s : String, dft : Int) -> Int {
   if s == "" {
     return dft
   }
+  // BUG-187：同族 4 个解析器（sd_parse_int / ov_parse_int / bugreport.mbt:204 /
+  // store_sqlite_executions.mbt:202）都用 int_safe 上界守卫，本函数是漏网。
+  // 长数字串（如 stale_hours=99999999999999999999）在 `v = v*10 + d` 上溢出 Int
+  // （JS target 静默精度丢失、native panic），这里复用同一上界并回退默认值。
+  let int_safe : Int = 200_000_000
   let mut v = 0
   let mut neg = false
   let mut i = 0
@@ -459,6 +464,9 @@ fn str_to_int(s : String, dft : Int) -> Int {
   for j in i..<s.length() {
     let d = s[j].to_int() - 48
     if d < 0 || d > 9 {
+      return dft
+    }
+    if v >= int_safe {
       return dft
     }
     v = v * 10 + d
