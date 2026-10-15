@@ -154,6 +154,12 @@ pub fn ModelQuota::in_cooldown(self : ModelQuota, now_iso : String) -> Bool {
   }
   let now_secs = iso_to_secs(now_iso)
   let cool_secs = iso_to_secs(self.cooldown_until)
+  // 冷却截止超 Y2038 时 iso_to_secs 溢出返回 -1（BUG-206）：此时 `now_secs < cool_secs`
+  // 会因 `now < -1` 恒为 false，导致冷却形同虚设。fail-open 放行（模型可被再次采用），
+  // 让下一次 mark_failure 用合法时间戳自然重置冷却；比永久锁死可恢复。
+  if cool_secs <= 0 {
+    return false
+  }
   now_secs < cool_secs
 }
 
