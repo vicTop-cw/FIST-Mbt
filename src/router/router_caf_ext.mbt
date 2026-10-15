@@ -70,3 +70,48 @@ pub fn caf_soft_reorder_with_preference(
   }
   result
 }
+
+///|
+/// 接线前置 · context 归一化（trim 首尾空白 + ASCII lowercase）。
+///
+/// 问题：`caf_feature_hash` 直接对 `context[i].to_int()` 做多项式 hash，**大小写与空白敏感**——
+/// `"PYTHON"` / `"python"` / `"  python  "` 三个语义等价串会得到**完全不同**的 hash，
+/// 进而落在 `knn_search` 的**不同编辑距离邻域**，导致同一类任务把记忆写进三条不相连的桶，
+/// 记忆碎片化、命中率下降。
+///
+/// 契约：接线时用 `caf_feature_hash(caf_normalize_context(ctx))` 代替 `caf_feature_hash(ctx)`，
+/// 使语义等价的输入收敛到同一 hash → 命中同一邻域。
+///
+/// 零回归性质：输入已归一化时 `caf_normalize_context` 是恒等（幂等）。
+/// 空串与纯空白 → 空串（安全，不 panic）。
+///
+/// 设计文档：docs/2026-10-15-fist-mbt-caf-p2c-wiring-design.md §2.3（接线层归一化）。
+pub fn caf_normalize_context(context : String) -> String {
+  let len = context.length()
+  let mut start = 0
+  while start < len && is_ws_byte(context[start].to_int()) {
+    start = start + 1
+  }
+  let mut end = len
+  while end > start && is_ws_byte(context[end - 1].to_int()) {
+    end = end - 1
+  }
+  let mut out : String = ""
+  let mut i = start
+  while i < end {
+    out = out + to_lower_byte(context[i].to_int())
+    i = i + 1
+  }
+  out
+}
+
+///|
+fn is_ws_byte(b : Int) -> Bool {
+  b == 32 || b == 9 || b == 10 || b == 13
+}
+
+///|
+fn to_lower_byte(b : Int) -> String {
+  let lc = if b >= 65 && b <= 90 { b + 32 } else { b }
+  Char::from_int(lc).to_string()
+}
