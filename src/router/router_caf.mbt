@@ -228,7 +228,7 @@ pub fn CafMemory::to_json(self : CafMemory) -> Json {
 ///|
 /// 编辑距离（Levenshtein）—— P2 相似检索的相似度度量。
 /// 计算两个字符串的编辑距离，用于 kNN 检索中对特征做轻量相似度比较。
-/// 使用滚动数组将空间从 O(n*m) 降到 O(min(n,m))，适合特征串（长度有限）。
+/// 空间 O(m)（滚动 prev/curr 两行），时间 O(n*m)；特征串短（数字串），可接受。
 pub fn caf_edit_distance(a : String, b : String) -> Int {
   let n = a.length()
   let m = b.length()
@@ -272,6 +272,10 @@ pub fn CafMemory::knn_search(
   context : String,
   k : Int,
 ) -> Array[CafRecord] {
+  // 防御：负 k 无意义，返回空
+  if k <= 0 {
+    return []
+  }
   let target = caf_feature_hash(context)
   let target_str = target.to_string()
   let all = self.all()
