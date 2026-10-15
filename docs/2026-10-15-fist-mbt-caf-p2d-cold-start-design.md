@@ -31,6 +31,15 @@
 > **剩余（§2.3 接线）**：`model_router_ops.mbt` 里把 config 字段透传给 `pick_caf` +
 > `executor_run` 后 `caf_memory.push` + status 展示 `caf_memory_status_text`。仅剩
 > `model_router_ops.mbt`（并发 agent WIP）一处，待释放后照 §2.3 收口。
+>
+> **Round 34 更新**：`caf_soft_reorder_with_preference` 补 3 条边界锁（commit `6059b5f`）——
+> ① 空候选集 + 非空偏好 + 空记忆 → 返回空不 panic；② `min_evidences=0` 语义钉死
+> （stats 非空即视为证据充足 → 退化成功率排序，等价「0 = any evidence counts」）；
+> ③ 全零 stats（`total=0`）+ `min_evidences=10` → `evidence_total=0` 走偏好路径
+> （记忆「有记录但全零」仍按不足处理）。配套 `caf_memory_status_text` 2 条边界锁
+> （单模型多条聚合整数除法截断；全失败记录不产出 NaN/Inf）。
+> router 169/169，全仓 1174/1174 全绿。`issue_scan src/router` 634 findings 全 low/info
+> （0 high/0 medium），`min_evidences=0` 语义经锁验证与文档一致，无需改实现。
 
 > **A/B 预演（Round 25）**：`scripts/caf_p2d_coldstart_ab.py` 验证冷启动偏好的**场景依赖**性质：
 > - **成本敏感场景**：baseline（选最便宜的）最优，每成功成本 2.000。**P2d 反而不优**（2.703）。
