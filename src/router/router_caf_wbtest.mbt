@@ -174,6 +174,76 @@ test "caf_feature_hash_very_long_no_overflow" {
 }
 
 ///|
+/// 环形缓冲回绕测试：push 超过 max_size 后，all() 仍按 FIFO 顺序返回最近记录。
+test "caf_memory_wraparound_order" {
+  let mem = CafMemory::new(max_size=3)
+  mem.push(
+    CafRecord::new(feature_hash=0, model="m", ok=true, cost=0.0, ts="t0"),
+  )
+  mem.push(
+    CafRecord::new(feature_hash=1, model="m", ok=true, cost=0.0, ts="t1"),
+  )
+  mem.push(
+    CafRecord::new(feature_hash=2, model="m", ok=true, cost=0.0, ts="t2"),
+  )
+  // 满 3 条，继续 push 触发回绕
+  mem.push(
+    CafRecord::new(feature_hash=3, model="m", ok=true, cost=0.0, ts="t3"),
+  )
+  mem.push(
+    CafRecord::new(feature_hash=4, model="m", ok=true, cost=0.0, ts="t4"),
+  )
+  let all = mem.all()
+  assert_eq(all.length(), 3)
+  // 回绕后仍按 FIFO：最旧的 t2 在前
+  assert_eq(all[0].feature_hash, 2)
+  assert_eq(all[1].feature_hash, 3)
+  assert_eq(all[2].feature_hash, 4)
+}
+
+///|
+/// 单元素环形缓冲（max_size=1）：退化边界，push 应覆盖旧值。
+test "caf_memory_single_slot" {
+  let mem = CafMemory::new(max_size=1)
+  mem.push(
+    CafRecord::new(feature_hash=1, model="a", ok=true, cost=0.1, ts="t1"),
+  )
+  mem.push(
+    CafRecord::new(feature_hash=2, model="b", ok=false, cost=0.2, ts="t2"),
+  )
+  let all = mem.all()
+  assert_eq(all.length(), 1)
+  // 只有最新一条
+  assert_eq(all[0].feature_hash, 2)
+  assert_eq(all[0].model, "b")
+  assert_eq(mem.count, 1)
+}
+
+///|
+/// 满缓冲覆盖测试：count==max_size 时 push，应覆盖最旧且 count 不增长。
+test "caf_memory_full_buffer_eviction" {
+  let mem = CafMemory::new(max_size=2)
+  mem.push(
+    CafRecord::new(feature_hash=1, model="m", ok=true, cost=0.0, ts="t1"),
+  )
+  mem.push(
+    CafRecord::new(feature_hash=2, model="m", ok=true, cost=0.0, ts="t2"),
+  )
+  // 满缓冲（count=2）
+  assert_eq(mem.count, 2)
+  mem.push(
+    CafRecord::new(feature_hash=3, model="m", ok=true, cost=0.0, ts="t3"),
+  )
+  // count 不增长
+  assert_eq(mem.count, 2)
+  let all = mem.all()
+  assert_eq(all.length(), 2)
+  // 最旧 t1 被覆盖
+  assert_eq(all[0].feature_hash, 2)
+  assert_eq(all[1].feature_hash, 3)
+}
+
+///|
 test "caf_feature_hash_idempotent" {
   let h1 = caf_feature_hash("hello world")
   let h2 = caf_feature_hash("hello world")
