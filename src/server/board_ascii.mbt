@@ -346,8 +346,12 @@ pub fn render_health_check(tasks : Array[@core.Task], ns : String) -> Json {
       ),
     })
   } else {
-    let p50 = done_cycles[n * 50 / 100]
-    let p90 = done_cycles[n * 90 / 100]
+    // BUG-207：p50/p90 索引用最近秩口径 (n-1)*p/100（复用 @engine.mc_percentile_index）。
+    // 旧代码 `done_cycles[n*50/100]` / `done_cycles[n*90/100]` 比最近秩恒高 1（升序数组里
+    // 读偏高一个元素），系统性**高估** latency 的 p50 与 p90。现有测试只用 3 个相同周期
+    // （全 120s）的任务，n*50/100 与 (n-1)*50/100 恰好相等，掩盖了偏差。
+    let p50 = done_cycles[@engine.mc_percentile_index(n, 50)]
+    let p90 = done_cycles[@engine.mc_percentile_index(n, 90)]
     Json::object({
       "verdict": Json::string("ok"),
       "count": Json::number(n.to_double()),
