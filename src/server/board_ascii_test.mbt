@@ -160,6 +160,66 @@ test "health_check：healthy + latency 百分位——3 完成 1 待领取，p50
 }
 
 ///|
+/// 读 health_check latency 信号中的数值字段（p50_secs / p90_secs）。
+fn hc_latency_num(j : Json, key : String) -> Double {
+  let obj = match j.value("signals") {
+    Some(Object(o)) => o
+    _ => abort("signals 缺失: " + j.stringify())
+  }
+  let sj = match obj.get("latency") {
+    Some(x) => x
+    _ => abort("latency 缺失: " + j.stringify())
+  }
+  match sj.value(key) {
+    Some(Json::Number(n, ..)) => n
+    _ => abort("\{key} 缺失: " + j.stringify())
+  }
+}
+
+///|
+/// BUG-207 回归锁：latency 的 p50/p90 必须用最近秩口径 (n-1)*p/100，
+/// 旧代码 `done_cycles[n*50/100]` / `done_cycles[n*90/100]` 比最近秩恒高 1，
+/// 在升序数组里读偏高一个元素，系统性高估 latency。
+/// 本测试用 10 个**互不相同**的完成周期，旧代码读出的 p50=60/p90=100 与判据锁定值
+/// p50=50/p90=90 必然不符；既有测试用 3 个相同周期（全 120s）恰好掩盖了偏差。
+test "health_check：latency p50/p90 用最近秩 (n-1)*p（BUG-207）" {
+  let e = ba_engine()
+  // 10 个已完成任务，完成周期 10..100 秒（升序，互不相同）。
+  // sorted cycles = [10,20,...,100]；最近秩：p50=index 4=50s，p90=index 8=90s。
+  let updated_at : Array[String] = [
+    "2026-09-25T10:00:10Z", "2026-09-25T10:00:20Z", "2026-09-25T10:00:30Z", "2026-09-25T10:00:40Z",
+    "2026-09-25T10:00:50Z", "2026-09-25T10:01:00Z", "2026-09-25T10:01:10Z", "2026-09-25T10:01:20Z",
+    "2026-09-25T10:01:30Z", "2026-09-25T10:01:40Z",
+  ]
+  for i = 0; i < updated_at.length(); i = i + 1 {
+    let t = @core.Task::from_db(
+      "HC_\{i}",
+      None,
+      "/proj/board",
+      "default",
+      "中",
+      "中",
+      1,
+      1,
+      "已完成",
+      Some("exec_1"),
+      "health latency \{i}",
+      "",
+      "2026-09-25T10:00:00Z",
+      updated_at[i],
+      Some("ver_1"),
+      "",
+      [],
+    )
+    ignore(e.store.create_task(t))
+  }
+  let j = render_health_check(e.list_all(), "default")
+  assert_eq(hc_signal_verdict(j, "latency"), "ok")
+  assert_eq(hc_latency_num(j, "p50_secs").to_int(), 50)
+  assert_eq(hc_latency_num(j, "p90_secs").to_int(), 90)
+}
+
+///|
 test "board_ascii 按状态分组 + 深度缩进 + 状态合计" {
   let e = ba_engine()
   let root = ba_publish(e, "Omega 看板根任务")
