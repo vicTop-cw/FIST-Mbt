@@ -57,6 +57,30 @@
 > 563 warnings, 0 errors），`moon test --target js` 全绿（1158/1158），
 > 依赖侧 BUG-133 修复 + 并发 WIP 的 3 errors 已清，全仓回归恢复——之前只能跑
 > `src/router` 子集的门禁约束解除。
+>
+> **进度（Round 33）**：**§2.1 剩余部分（`RouterConfig` 两字段）已落地**——给 `RouterConfig`
+> 加 `caf_default_preference : Array[String]`（默认 `[]`，零回归）与 `caf_min_evidences : Int`
+> （默认 10），同步 `default()` / `from_json`（缺字段→默认，坏类型→默认 + warning）/
+> `to_json` / `clone_pools` / `router_state` merge，并一次性补齐 20 处 wbtest 构造点
+> （`model_router_wbtest` 17 + `model_router_caf_wbtest` 2 + `router_config_wbtest` 1）。
+> **RouterConfig 字段改动面的真实读数**：全仓 `use_caf_memory:` 构造点 **24 处**（含 1 处
+> `default()` 定义 + 1 处 `router_config_wbtest` 字符串断言），其中 **20 处**是真正要补的
+> wbtest 构造点；regex 一次性 20/20 命中。**R32 报的「36 处」是误判**（把不同维度重复相加）。
+> 配套 2 条验证锁 `caf_cfg_1`（默认值 + JSON 往返）/ `caf_cfg_2`（偏好字段从 config 读出
+> 并透传 `pick_caf`），并更新 `cfg_ofm_2` 的顶层键集合锁（7→9，新字段须显式登记）。
+> router 164/164 全绿。
+>
+> **§2.3 接线的 router 侧前提现已齐备**：字段已存在且可 JSON 往返、可被读出透传给
+> `pick_caf`/`apply_caf`/`pick_caf_dry_run`。server 层接线只需——① `executor_run` 后
+> `caf_memory.push(...)`；② 把 `config.caf_default_preference` / `config.caf_min_evidences`
+> 透传给 `pick_caf`；③ status 展示用 `caf_memory_status_text`。**全部等
+> `model_router_ops.mbt` 释放**（并发 agent WIP）。
+>
+> **Round 33 教训 · 构造点批量替换要 dry-run**：`moon check` 前先用 regex 统计匹配数
+> 确认覆盖（本轮 dry-run 20/20，直接替换）；`Json` 无 `Int` 构造子，整数解析须用
+> `Json::Number(n, ..)` → `n.to_int()`（沿用 BUG-26 的饱和语义，caf_min_evidences 属
+> 上限型 Int，饱和不 panic）。替换后 `caf_cfg_2` 首个断言首跑失败——偏好==base 时
+> 不 reordered，属**断言写错**而非代码错，已改为偏好 != base（free-b）再断言。
 
 ## 1. 目标
 
