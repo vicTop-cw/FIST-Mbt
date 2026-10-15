@@ -77,3 +77,13 @@ archive                  ✓ 已归档
 - 任务库 `temp/shim-selfdrive`（T0r609 完整闭环记录）
 - 探针 `temp/shim_probe6.py`
 - 记忆：`memory/2026-10-15.md`（Round 124 条目）
+
+## 追加：独立验证并发 agent 的 BUG-162 修复
+
+在 Round 124 报告已写完后（12:21 左右），并发 agent 提交了 `7759781 perf(issue_scan): <30s budget (BUG-18)`，并把 BUG-162 标 FIXED。
+
+**独立验证结果**：
+- `moon test --target js` → **`Total tests: 1058, passed: 1058, failed: 0`**（复现并发 agent 声称的 1058/1058）
+- MCP 侧 `issue_scan` **仍超时**——MCP server 跑的是发布版 dist（旧代码），不含 src 修复；需重发布才生效
+
+**结论**：BUG-162 的 src 侧修复已由我独立确认；发布版生效需等 `moon publish`（依赖并发 agent 的工具收口）。
