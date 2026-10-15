@@ -504,10 +504,14 @@ pub fn pipeline_tick(
   } else {
     // ---- 阶段二：auto 自动推进 ----
     // 先做一次心跳超时回滚（仅供无人值守场景），结果随返回上报
+    let mut heal_error : String? = None
     let healed = match
       heal_stale_tasks_from_store(engine, now, timeout_sec~, ns=ns_final) {
       Ok(l) => l
-      Err(_) => []
+      Err(e) => {
+        heal_error = Some(e)
+        []
+      }
     }
     let healed_json = Json::array(healed.map(fn(s) { Json::string(s) }))
     let j = match state_in {
@@ -559,7 +563,11 @@ pub fn pipeline_tick(
         )
     }
     let j2 = pj_set(j, "healed", healed_json)
-    Ok(pj_set(j2, "mode", Json::string(effective_mode)))
+    let j3 = match heal_error {
+      Some(e) => pj_set(j2, "heal_error", Json::string(e))
+      None => j2
+    }
+    Ok(pj_set(j3, "mode", Json::string(effective_mode)))
   }
 }
 
