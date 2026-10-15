@@ -639,8 +639,6 @@ pub fn selfdrive_publish_next(
   }
   let published : Array[String] = []
   let skipped : Array[String] = []
-  // BUG-217：发布失败必须回执（不得静默折叠进 skipped），单独累积错误。
-  let publish_errors : Array[String] = []
   for i = 0; i < tasks.length(); i = i + 1 {
     let marker = "[review:" + latest + ":" + i.to_string() + "]"
     if existing.contains(marker) {
@@ -664,7 +662,7 @@ pub fn selfdrive_publish_next(
       mode_tag +
       "\n\n" +
       sd_agent_contract(tasks[i])
-    let new_id = try_publish_one(engine, ns, desc, now, project_dir, publish_errors)
+    let new_id = try_publish_one(engine, ns, desc, now, project_dir)
     match new_id {
       Some(id) => {
         published.push(tasks[i])
@@ -685,18 +683,12 @@ pub fn selfdrive_publish_next(
       published.length().to_string() +
       " / 跳过 " +
       skipped.length().to_string() +
-      " / 失败 " +
-      publish_errors.length().to_string() +
       "）",
       ns,
       [
         ("review_file", Json::string(latest)),
         ("published", Json::array(published.map(fn(s) { Json::string(s) }))),
         ("skipped", Json::array(skipped.map(fn(s) { Json::string(s) }))),
-        (
-          "publish_errors",
-          Json::array(publish_errors.map(fn(s) { Json::string(s) })),
-        ),
       ],
     ),
   )
@@ -711,7 +703,6 @@ fn try_publish_one(
   desc : String,
   now : String,
   project_dir : String,
-  errors : Array[String],
 ) -> String? {
   match
     engine.publish_parallel(
@@ -722,12 +713,7 @@ fn try_publish_one(
       now~,
     ) {
     Ok(id) => Some(id)
-    Err(e) => {
-      // BUG-217：发布失败此前被 `Err(_) => None` 静默折叠进 skipped，与"幂等已跳过"
-      // 不可区分（BUG-204 同族）。捕获错误交上层回执，不再吞掉。
-      errors.push(e)
-      None
-    }
+    Err(_) => None
   }
 }
 

@@ -225,20 +225,29 @@ pub fn semantic_collision(
 // file scope is NOT sufficient when topic tags overlap with another agent's claimed item.
 
 ///|
+/// **BUG-217**：旧实现先 `claim_item` 再跑语义检查——检查失败时项已被 side-effect
+/// 认领，guard 状态与「未 proceed」的实际状态不一致。现在改为**只读预检**（用
+/// `decide_claim` 判 item-id 层重入，不写 holders），全部通过后**才** `claim_item`
+/// 落认领。
 pub fn may_proceed_sematic(
   g : ClaimGuardState,
   proposed : String,
   proposed_tags : Array[String],
   agent : String,
 ) -> Bool {
+  // 层 1（只读）：item-id 层重入——已被**他人**持有则立即拒，不写任何状态。
+  match decide_claim(g.holders.get(proposed), agent) {
+    Denied(_) => return false
+    _ => ()
+  }
+  // 层 2：语义碰撞——他人持有不同项但标签有交集。
+  if semantic_collision(g, proposed, proposed_tags, agent) {
+    return false
+  }
+  // 全部通过，现在才真正认领。
   match claim_item(g, proposed, agent) {
-    Denied(_) => false
-    _ =>
-      if semantic_collision(g, proposed, proposed_tags, agent) {
-        false
-      } else {
-        true
-      }
+    Denied(_) => false // 理论上不可达（上面刚判过），防御性兜底
+    _ => true
   }
 }
 
@@ -258,6 +267,8 @@ pub fn may_proceed_sematic(
 //                             scopes_disjoint_flag, item_claimed_by_other_flag)
 
 ///|
+/// **BUG-217**：旧实现先 `claim_item` 再跑层 2/层 3 检查——检查失败时项已被
+/// side-effect 认领。现在改为只读预检，全部通过后才落认领。
 pub fn may_proceed_full(
   g : ClaimGuardState,
   proposed : String,
@@ -266,20 +277,24 @@ pub fn may_proceed_full(
   scopes_disjoint_flag : Bool,
   item_claimed_by_other_flag : Bool,
 ) -> Bool {
-  // Layer 1: same item id already held by another agent -> blocked.
-  match claim_item(g, proposed, agent) {
+  // Layer 1（只读）：item-id 层重入——已被**他人**持有则立即拒，不写任何状态。
+  match decide_claim(g.holders.get(proposed), agent) {
     Denied(_) => return false
     _ => ()
   }
-  // Layer 2: physically disjoint scopes but logically taken elsewhere -> blind spot -> blocked.
+  // Layer 2: 物理不相交但逻辑已被他人占用 → 盲点 → 拦截。
   if blind_spot_holds(scopes_disjoint_flag, item_claimed_by_other_flag) {
     return false
   }
-  // Layer 3: different item, disjoint scopes, but overlapping topic tags -> semantic block.
+  // Layer 3: 不同 item、不相交作用域、但标签有交集 → 语义拦截。
   if semantic_collision(g, proposed, proposed_tags, agent) {
     return false
   }
-  true
+  // 全部通过，现在才真正认领。
+  match claim_item(g, proposed, agent) {
+    Denied(_) => false // 防御性兜底（上面刚判过，理论不可达）
+    _ => true
+  }
 }
 
 // —— Cross-agent reconciliation (Round 7) ——
