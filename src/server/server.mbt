@@ -2657,15 +2657,9 @@ pub async fn run_server() -> Unit {
         None => ()
       }
       let now = now_default()
-      // max_rounds 默认 5（get_int 默认 3，不能直接用）
-      let max_rounds = match args {
-        Object(m) =>
-          match m.get("max_rounds") {
-            Some(Number(n, ..)) => n.to_int()
-            _ => 5
-          }
-        _ => 5
-      }
+      // max_rounds 默认 5（get_int 默认 3，不能直接用）——用 get_int 覆盖默认值，
+      // 复用其 Int32 域饱和守卫（BUG-194：1e300 不再被静默接受成 Int max）。
+      let max_rounds = get_int(args, "max_rounds", default=5)
       // stop_on_goal / stop_on_exceeded 默认 true（get_bool 默认 false）
       let stop_on_goal = match args {
         Object(m) =>
@@ -2687,22 +2681,12 @@ pub async fn run_server() -> Unit {
           }
         _ => true
       }
-      let baseline_test_count = match args {
-        Object(m) =>
-          match m.get("baseline_test_count") {
-            Some(Number(n, ..)) => n.to_int()
-            _ => 0
-          }
-        _ => 0
-      }
-      let baseline_open_bug_count = match args {
-        Object(m) =>
-          match m.get("baseline_open_bug_count") {
-            Some(Number(n, ..)) => n.to_int()
-            _ => 0
-          }
-        _ => 0
-      }
+      let baseline_test_count = get_int(args, "baseline_test_count", default=0)
+      let baseline_open_bug_count = get_int(
+        args,
+        "baseline_open_bug_count",
+        default=0,
+      )
       let lp = @ops.loop_create(
         name,
         steps,
