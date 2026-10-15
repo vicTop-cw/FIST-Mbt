@@ -251,3 +251,29 @@ test "caf_norm_5_全角空白归一化" {
   let h_zenkaku = caf_feature_hash(caf_normalize_context(s))
   assert_eq(h_ascii, h_zenkaku)
 }
+
+///|
+/// R45 · 中间空白保留语义（接线前置语义契约）。
+/// R42 契约说「trim 首尾 + lowercase」，但未锁「中间空白保留」——
+/// 接线方可能误以为 normalize 删除所有空白，把 "caf model" 拼成 "cafmodel"（破坏语义）。
+/// 钉死：中间空白（ASCII 空格 / 全角空格）一律保留，normalize 只 trim 首尾。
+
+///|
+/// 中间 ASCII 空格保留：trim 首尾但不删中间
+test "caf_norm_6_中间空白保留" {
+  assert_eq(caf_normalize_context("Py Thon"), "py thon")
+  assert_eq(caf_normalize_context("a  b"), "a  b")
+  assert_eq(caf_normalize_context("  a b  "), "a b")
+}
+
+///|
+/// 中间全角空格保留：全角空格在中间不被删除，只在首尾被 trim
+test "caf_norm_7_全角空格中间保留" {
+  // 直接粘贴 U+3000 全角空格（避开 escape 语法差异）
+  let s = "　Py　Thon　"
+  assert_eq(caf_normalize_context(s), "py　thon")
+  // 归一化后 hash 与「ASCII 空格版本」不同（全角空格非 ASCII 空白，中间保留）
+  let h_zen = caf_feature_hash(caf_normalize_context("　py　thon　"))
+  let h_ascii = caf_feature_hash(caf_normalize_context("py thon"))
+  assert_true(h_zen != h_ascii)
+}
