@@ -80,9 +80,13 @@ pub fn difficulty_label(idx : Int, split_n : Int) -> String {
   let total = if split_n < 1 { 1 } else { split_n }
   let pos = if idx < 1 { 1 } else if idx > split_n { split_n } else { idx }
   let third = (total + 2) / 3
+  // BUG-189：第三档边界原用 `third * 2`，当 total=4 时 third=2、边界=4，
+  // 而 pos 最大也是 4，"难" 档整段不可达（实测 split_n=4 只产出 [易, 中]）。
+  // 改用 ceil(2*total/3) = (2*total+2)/3：total=4 时边界=3，pos=4 落入"难"。
+  let hard_boundary = (total * 2 + 2) / 3
   if pos <= third {
     "易"
-  } else if pos > third * 2 {
+  } else if pos > hard_boundary {
     "难"
   } else {
     "中"
