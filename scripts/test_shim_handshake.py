@@ -17,6 +17,7 @@ scripts/test_shim_handshake.py — 发布版协议兼容 shim（mcp_compat_shim.
 6. ping（shim stub）
 7. logging/setLevel（shim stub，Round 124 A1）
 8. completion/complete（shim stub，Round 124 A1）
+9. 畸形输入健壮性：缺 protocolVersion / 缺 params / 非 JSON / 空行 / 通知
 
 用法：
     python scripts/test_shim_handshake.py
@@ -100,6 +101,11 @@ class Client:
         self.proc.stdin.write(json.dumps(obj) + "\n")
         self.proc.stdin.flush()
 
+    def send_raw(self, line):
+        """发原始字符串（测试非 JSON 输入用）。"""
+        self.proc.stdin.write(line + "\n")
+        self.proc.stdin.flush()
+
     def recv(self, timeout=10):
         try:
             line = self.q.get(timeout=timeout)
@@ -179,6 +185,51 @@ def run_handshake(client, version: str) -> list:
     return results
 
 
+def run_robustness(client):
+    """畸形输入健壮性：缺 protocolVersion / 缺 params / 非 JSON / 空行 / 通知。
+
+    server 侧返回的 -32700 之类标准 JSON-RPC 错误视为"不崩"即 PASS；
+    只有 shim 进程死掉、或响应结构完全异常才算 FAIL。
+    """
+    results = []
+    def check(name, ok, detail=""):
+        results.append((name, bool(ok), detail))
+        print(f"  [{'PASS' if ok else 'FAIL'}] {name}: {detail}")
+
+    # 1. initialize 缺 protocolVersion（shim 应默认 MCP_PROTOCOL_VERSION 回写）
+    client.send({
+        "jsonrpc": "2.0", "id": 10, "method": "initialize",
+        "params": {"capabilities": {}, "clientInfo": {"name": "no-pv", "version": "1"}},
+    })
+    r = client.recv()
+    pv = (r or {}).get("result", {}).get("protocolVersion", "")
+    check("initialize 缺 protocolVersion", bool(pv), f"回写 protocolVersion={pv}")
+
+    # 2. 有 id 的请求缺 params（shim 应补 _meta）
+    client.send({"jsonrpc": "2.0", "id": 11, "method": "tools/list"})
+    r = client.recv()
+    n = len((r or {}).get("result", {}).get("tools", []))
+    check("请求缺 params（补 _meta）", n > 0, f"{n} 个工具")
+
+    # 3. 非 JSON（server 应回 -32700，shim 不崩）
+    client.send_raw("not-json-at-all")
+    r = client.recv()
+    code = (r or {}).get("error", {}).get("code", "")
+    check("非 JSON（server -32700）", code == -32700, f"error.code={code}")
+
+    # 4. 空行（shim 应忽略）
+    client.send_raw("")
+    check("空行（忽略）", True, "无响应")
+
+    # 5. notifications/initialized（无 id，应透传/丢弃，无响应）
+    client.send({
+        "jsonrpc": "2.0", "method": "notifications/initialized",
+    })
+    check("notifications/initialized", True, "无响应")
+
+    return results
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--server", nargs="+", default=None,
@@ -211,6 +262,12 @@ def main():
         ok_this = all(r[1] for r in results)
         all_ok = all_ok and ok_this
         print()
+
+    print("--- 畸形输入健壮性 ---")
+    robust_results = run_robustness(client)
+    ok_robust = all(r[1] for r in robust_results)
+    all_ok = all_ok and ok_robust
+    print()
 
     proc.kill()
     try:
