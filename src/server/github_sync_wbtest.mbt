@@ -261,3 +261,24 @@ test "BUG-220_queue_write_failure_surfaces" {
   let r2 = github_queue_mark_sent(d, [], Map([]))
   assert_true(r2.is_err())
 }
+
+///|
+/// BUG-224 回归锁：队列里混入一条 bug_id 为空的行（github_queue_append 会拒绝写，
+/// 只能直接落盘模拟历史损坏/手改），github_flush_plan 必须把它排除在 plan 之外。
+/// 否则 flush_execute 侧按 plan_arr 长度去索引"被过滤后"的 bug_ids 会越界 panic。
+test "BUG-224_flush_plan_skips_empty_bug_id" {
+  let d = "temp/gh_b224"
+  b35_reset(d)
+  let good = "{\"bug_id\":\"BUG-OK\",\"summary\":\"正常\",\"detail\":\"x\",\"severity\":\"high\",\"github_repo\":\"vicTop-cw/fist-mbt\"}"
+  let bad = "{\"bug_id\":\"\",\"summary\":\"无锚点\",\"detail\":\"x\",\"severity\":\"high\",\"github_repo\":\"vicTop-cw/fist-mbt\"}"
+  let _ = mem_write(gq_path(d), good + "\n" + bad + "\n")
+  let plan = b35_ok(github_flush_plan(d, 10), "flush_plan")
+  let items = b35_items(plan, "flush_plan")
+  // 只有带非空 bug_id 的那条能进 plan——空 bug_id 行必须被排除
+  assert_eq(items.length(), 1)
+  let bid = match items[0].value("bug_id") {
+    Some(String(s)) => s
+    _ => abort("plan 项缺 bug_id: " + items[0].stringify())
+  }
+  assert_eq(bid, "BUG-OK")
+}
