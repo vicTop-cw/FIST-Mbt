@@ -100,12 +100,12 @@ pub fn CafMemory::find(
 }
 
 ///|
-/// 模型维度的成功率与成本统计
+/// 模型维度的成功率与成本统计（决策融合消费面）
 pub struct CafModelStats {
-  model : String
-  total : Int
-  success : Int
-  avg_cost : Double
+  pub model : String
+  pub total : Int
+  pub success : Int
+  pub avg_cost : Double
 } derive(Debug)
 
 ///|
@@ -321,4 +321,72 @@ pub fn CafMemory::knn_stats(
   k : Int,
 ) -> Array[CafModelStats] {
   caf_stats(self.knn_search(context, k))
+}
+
+///|
+/// P2 决策融合核心：软性重排候选模型。
+/// 根据 Top-K 邻域统计，把"成功率显著占优 / 成本更低"的模型提前。
+/// - 只在候选集内重排，不增删模型，不破配额硬约束。
+/// - stats 为空或候选为空 → 原样返回（零回归基线）。
+/// - 未出现在邻域统计中的候选保持原相对顺序（稳定序）。
+pub fn caf_soft_reorder(
+  candidates : Array[String],
+  stats : Array[CafModelStats],
+) -> Array[String] {
+  if candidates.is_empty() || stats.is_empty() {
+    return candidates
+  }
+  // 为每个候选计算 (in_neighborhood, rate, avg_cost, 原始位置)
+  let mut scored : Array[(String, Bool, Double, Double, Int)] = []
+  for i in 0..<candidates.length() {
+    let mut in_nb = false
+    let mut rate = 0.0
+    let mut cost = 0.0
+    for s in stats {
+      if s.model == candidates[i] {
+        in_nb = true
+        rate = s.success.to_double() / s.total.to_double()
+        cost = s.avg_cost
+        break
+      }
+    }
+    scored = scored + [(candidates[i], in_nb, rate, cost, i)]
+  }
+  scored.sort_by(fn(a, b) -> Int {
+    // 邻域内的排前面
+    if a.1 && !b.1 {
+      -1
+    } else if !a.1 && b.1 {
+      1
+    } else if a.1 && b.1 {
+      // 都在邻域 → 成功率降序 → 成本升序 → 稳定序
+      if a.2 > b.2 {
+        -1
+      } else if a.2 < b.2 {
+        1
+      } else if a.3 < b.3 {
+        -1
+      } else if a.3 > b.3 {
+        1
+      } else if a.4 < b.4 {
+        -1
+      } else if a.4 > b.4 {
+        1
+      } else {
+        0
+      }
+      // 都不在邻域 → 原始顺序
+    } else if a.4 < b.4 {
+      -1
+    } else if a.4 > b.4 {
+      1
+    } else {
+      0
+    }
+  })
+  let mut out : Array[String] = []
+  for s in scored {
+    out = out + [s.0]
+  }
+  out
 }
