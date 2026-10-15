@@ -218,3 +218,23 @@ pub struct RouterConfig {
 | 测试行数（src/router_wbtest） | ~60 行（5 条测试） |
 | 接线行数（model_router_ops） | ~10 行（P2c wiring 里加） |
 | 全仓测试数 | 1115 → ~1120（+5） |
+
+---
+
+## 进度 · Round 35（2026-10-15）
+
+**§2.3 server 接线仍阻塞**：审计并发 agent 的 `model_router_ops.mbt` WIP diff（4/9），
+改动为 `ends_with`→`has_suffix`（字符串 API）与 `build_command(..., workdir="")`，
+**完全无关 CAF 接线区域**；但同文件多 agent 混改有 commit 污染风险，故 R35 放弃介入。
+改为钉接线的**契约前置**：
+
+- **新增 2 条契约锁**（`caf_cfg_3~4`，`src/router/model_router_caf_wbtest.mbt`）：
+  - `caf_cfg_3`：`caf_default_preference` 坏类型（String）→ 降级 `[]` + warning，正常 min 不牵连
+  - `caf_cfg_4`：`caf_min_evidences` 坏类型（String）→ 降级默认 10 + warning
+- **意义**：R33 的 `from_json` 已实现坏类型降级但无锁；接线依赖此健壮性（config 类型不对不得 panic）。
+  锁双向区分：正确降级通过 / panic 或静默坏值即红。
+- **验证**：router **171/171**，全仓 **1176/1176**，0 errors。
+
+**接线建议（R36 起）**：CAF 逻辑放独立文件 `src/server/model_router_caf_ops.mbt`，只加最少调用点；
+提交用 `git commit --only <path>` 防共享 repo commit 污染（R35 已实际踩到：误提交并发 agent 3 文件，
+已回滚）。
