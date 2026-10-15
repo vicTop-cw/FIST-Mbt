@@ -300,3 +300,74 @@ test "caf_loop_1_记忆可写可读闭环（§2.3 回写通路真源）" {
     abort("应重排到 free-b，实际 " + dr.picked.model_name)
   }
 }
+
+///|
+/// P2c+P2d 统一：默认偏好为空时，行为与 R29 完全一致（零回归）。
+test "caf_pref_1_默认偏好为空时行为与无偏好一致" {
+  let r = mrc_router(true)
+  let dr_no = r.pick_caf_dry_run(
+    now=mrc_now(),
+    caf_memory=mrc_memory(),
+    context="test context",
+    k=10,
+  )
+  let dr_empty = r.pick_caf_dry_run(
+    now=mrc_now(),
+    caf_memory=mrc_memory(),
+    context="test context",
+    k=10,
+    caf_default_preference=[],
+    caf_min_evidences=10,
+  )
+  if dr_no.reordered != dr_empty.reordered {
+    abort("偏好为空时 reordered 应一致")
+  }
+  if dr_no.picked.model_name != dr_empty.picked.model_name {
+    abort("偏好为空时 picked 应一致")
+  }
+}
+
+///|
+/// P2c+P2d 统一：记忆不足时按冷启动偏好重排（base=free-a 但偏好 free-b → 切到 free-b）。
+test "caf_pref_2_记忆不足按冷启动偏好重排" {
+  let mem = CafMemory::new() // 空记忆，stats=0 < min_evidences=10
+  let r = mrc_router(true)
+  let dr = r.pick_caf_dry_run(
+    now=mrc_now(),
+    caf_memory=mem,
+    context="pref context",
+    k=10,
+    caf_default_preference=["free-b"],
+    caf_min_evidences=10,
+  )
+  if !dr.reordered {
+    abort("记忆不足且偏好 free-b 时应重排到 free-b")
+  }
+  if dr.picked.model_name != "free-b" {
+    abort("应选偏好 free-b，实际 " + dr.picked.model_name)
+  }
+}
+
+///|
+/// P2c+P2d 统一：记忆充足时偏好退化为成功率排序——即使偏好指定 free-a，
+/// 若 free-b 证据更优，仍应选 free-b（真实证据优先于冷启动偏好）。
+test "caf_pref_3_记忆充足时偏好退化为成功率排序" {
+  let r = mrc_router(true)
+  let dr = r.pick_caf_dry_run(
+    now=mrc_now(),
+    caf_memory=mrc_memory(),
+    context="test context",
+    k=10,
+    caf_default_preference=["free-a"],
+    caf_min_evidences=1, // mrc_memory 有 3 条 ≥ 1，视为记忆充足
+  )
+  if !dr.reordered {
+    abort("记忆充足时应重排")
+  }
+  if dr.picked.model_name != "free-b" {
+    abort(
+      "记忆充足应选证据更优的 free-b，而不是偏好 free-a，实际 " +
+      dr.picked.model_name,
+    )
+  }
+}
