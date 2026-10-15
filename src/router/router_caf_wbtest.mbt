@@ -511,3 +511,69 @@ test "caf_p2_pipeline_integration" {
   assert_eq(reordered[1], "m_gpt") // 同率 1.0 成本 0.5 → 次位
   assert_eq(reordered[2], "m_gemini") // 成功率 0 → 最后
 }
+
+///|
+/// 属性测试（随机化寻虫）：不变量验证。
+/// 1. all() 长度 <= max_size（环形淘汰不越界）
+/// 2. knn_search k=0 → 空；k>count → 返回 count（不越界）
+/// 3. caf_soft_reorder 是候选集的置换（元素不变，仅顺序变）
+test "caf_property_random_invariants" {
+  // 简单 LCG 伪随机（可复现）
+  let mut seed = 42
+  let max_size = 7
+  let mem = CafMemory::new(max_size~)
+  let models : Array[String] = ["a", "b", "c"]
+
+  // 随机 push 30 条，远超 max_size 触发 FIFO 淘汰
+  for i in 0..<30 {
+    seed = (seed * 1103515245 + 12345).land(0x7FFFFFFF)
+    let model_idx = seed % 3
+    let ok = seed / 3 % 2 == 0
+    let hash = seed / 7 % 1000
+    let cost = (seed % 100).to_double() / 100.0
+    mem.push(
+      CafRecord::new(
+        feature_hash=hash,
+        model=models[model_idx],
+        ok~,
+        cost~,
+        ts=i.to_string(),
+      ),
+    )
+  }
+
+  // 不变量 1: all() 长度 <= max_size
+  let all = mem.all()
+  assert_true(all.length() <= max_size)
+  // 环形淘汰后 count 应等于 max_size（塞满）
+  assert_eq(mem.count, max_size)
+
+  // 不变量 2a: k=0 → 空
+  assert_eq(mem.knn_search("ctx", 0).length(), 0)
+  // 不变量 2b: k>count → 返回 count（不越界）
+  let nb = mem.knn_search("test context", 100)
+  assert_true(nb.length() <= mem.count)
+
+  // 不变量 3: soft_reorder 是候选集的置换
+  let stats = mem.knn_stats("test context", 100)
+  let candidates : Array[String] = ["a", "b", "c"]
+  let reordered = caf_soft_reorder(candidates, stats)
+  assert_eq(reordered.length(), 3)
+  let mut found_a = false
+  let mut found_b = false
+  let mut found_c = false
+  for r in reordered {
+    if r == "a" {
+      found_a = true
+    }
+    if r == "b" {
+      found_b = true
+    }
+    if r == "c" {
+      found_c = true
+    }
+  }
+  assert_true(found_a)
+  assert_true(found_b)
+  assert_true(found_c)
+}
