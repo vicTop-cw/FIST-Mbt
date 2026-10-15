@@ -44,6 +44,8 @@ pub fn gate_enabled(@core.Task) -> Bool
 
 pub fn gate_mark() -> String
 
+pub fn mc_percentile_index(Int, Int) -> Int
+
 pub fn omega_author_prefix() -> String
 
 pub fn omega_clean_slice(String) -> String
