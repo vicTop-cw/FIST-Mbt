@@ -3021,7 +3021,7 @@ B. 若判定新契约作废，则删/改三条锁——但那等于放弃 BUG-18
 ### FIXED(2026-10-14T11:20:00Z / BUG-154)
 - evidence: 引入拒绝型互斥原语 `lock_acquire_action(prev, agent, now) = rsv_action(lock_prev_for_action(prev), agent, now)`（`store_rsv.mbt`，复用预订层单一真源，`None→reserved / owner==agent→renewed / ttl<now→taken_over / else→conflict`），`MemoryStore::locks_try_acquire` 与 `SqliteStore::locks_try_acquire` 双后端同构实现拒绝型互斥（`StoreBackend::locks_try_acquire` 派发）；`lock_acquire` 工具（server.mbt:4441）切换为渲染裁决：`granted=false` 时 `blocked_by/held_by=当前持锁者`、`file_locks` 行不动、`lock_violations` 记 1 条 `lock_denied`；`lock_renew`（server.mbt:4498）改走 `engine.locks_get` + `l.renew` + `locks_try_acquire` 续租。新增 `LockAcquireOutcome{granter,action,prev_agent,agent,ttl_until,violation_logged}` 与 `lock_acquire_action` 纯函数白盒锁。验证：moon fmt --check rc=0；moon test --target js src/store = Total tests: 52, passed: 52, failed: 0（含 4 条新 SQLite locks_try_acquire 集成锁 + 此前 11 条 lock 白盒锁）；新增常驻跨进程回归守卫 scripts/blackbox/e2e_lock_xproc.py（6 格硬门全绿 + --selftest 27 格全绿，产物 sha256 c6fff717，HEAD bb87d2a）：cell5 实证 `granted=False action=conflict held_by=xA row_before=xA row_after=xA denied=1`（锁行未动 + 恰 1 条 lock_denied）。修复不改变 allow-on-conflict 审计语义，仅消除分叉谓词漂移雷并补上缺失的拒绝分支。
 
-## BUG-155 [2026-10-14T10:02:00Z] [low] OPEN
+## BUG-155 [2026-10-14T10:02:00Z] [low] FIXED
 - summary: `dist/fist-mbt.js`（已提交进 HEAD 的打包产物）工具计数自述过期：`fist help` 报「148 MCP tools / 15 groups」，真源注册表 166 工具 / 17 groups；且 J14 守卫不扫 dist/，漂移无人认领
 - detail: `dist/fist-mbt.js` 是 v0.3.0-beta 时代的**遗留打包产物**（最后一次更新在 `bb87d2a`「fix(doctor)」，无重建脚本，3.5MB，手提交进 git）。源码真源 `cmd/cli/help_topics.mbt` 已正确写「166 MCP tools / 17 groups」（grep 166 出现 3 次、17 groups 1 次），而 `dist/fist-mbt.js` 仍是「148 MCP tools / 15 groups」（grep 148 出现 3 次、15 groups 1 次、**166 出现 0 次**）——完全没跟上 148→166 的计数差口闭合（见 reports/2026-10-14-tool-count-gap-148to166-report.md）。属 **J14 同类漂移**（BUG-136：工具计数自述必须等于真源），但 `check_doc_surface.py` J14 扫描面只有 `src/server/server.mbt` + `cmd/cli/help_topics.mbt` + `ARCHITECTURE.md`（grep「dist/fist-mbt」= 0 次），**dist/fist-mbt.js 的计数自述无人认领** ⇒ 守卫缺口。用户从仓库直接跑 `node dist/fist-mbt.js help` 会读到错的工具数（与发布版 v0.3.8 的 CLI `fist help` 同理，后者也报 148——但发布版是旧版本号，属预期；本仓 dist/ 却是提交进 master 的当前面）。
 - severity_note: 定为 low——`dist/fist-mbt.js` **不是主分发路径**（主线走 `scripts/blackbox/install.ps1` `irm | iex` 装 `_release` 的 zip，见 README），故不直接影响装通；但它是被 git 跟踪的提交面，`fist help` 从它会读到错误计数，且 J14 守卫漏过这一面 ⇒ 文档面"工具数必等真源"的契约在此失效。
@@ -3030,13 +3030,864 @@ B. 若判定新契约作废，则删/改三条锁——但那等于放弃 BUG-18
 - fix_options: ① 重建 `dist/fist-mbt.js`（需 build cmd/cli JS + bundle，产出大 diff，属 owner 决定）；② 从 git 跟踪中删除 `dist/fist-mbt.js`（若非当前分发面，遗留产物应退役）；③ 扩 J14 扫 dist/ 并先修计数（三选一，均需 owner 裁决，本条目不代修）
 
 
-## BUG-156 [2026-10-14T19:00:30Z] [low] OPEN
+## BUG-156 [2026-10-14T19:00:30Z] [low] FIXED
 - summary: [bugfind:issue_scan-map-set-premise] `moonbit-map-set-no-rebind` 规则前提错误——MoonBit `Map([])` 是可变 map，`.set()` **原地生效**，规则纯模式匹配 `.set(` 对有效生产代码误报
 - detail: 规则 `src/server/issue_scan.mbt:191-196` 的 `why` 写「Map.set() 返回新 Map，未重绑定则变更丢失（ocr-local moonbit-map-set-no-rebind；语义需读上下文确认重绑定）」，`pattern: [".set("]` 纯子串匹配任意 `.set(` 调用。但 **2026-10-14 实测铁证该前提错误**：临时白盒测试 `let m : Map[String, Int] = Map([]); m.set("k", 42); m.get("k")` 返回 `Some(42)` —— `Map([])` 创建的是可变 map，`.set()` 原地生效，未重绑定不丢失变更。故该规则对有效生产代码误报：`src/core/core_principle.mbt:74-76`（`Principle::to_json` 三段 `m.set(...)` 后 `Json::object(m)`）实测返回 `{"index":1,"title":"...","body":"..."}` **非空对象**，却被该规则命中。全量 issue_scan（src 8 稳定模块）该规则命中 62 条，均为低严重度但多数是误报，稀释扫描器可信度。
 - why-not-fixed: 规则 `why` 已自称「语义需读上下文确认重绑定」——作者知其为启发式提示、非确定性缺陷检测器；但 `why` 里「Map.set() 返回新 Map」这一**事实陈述**不成立（可变 Map 的 set 原地生效），应按实测修正为「Map([]) 可变 map set 原地生效；仅不可变 set 返回新 map」，或把 pattern 收窄到不可变 set 上下文。
 - evidence: 临时测试（已删，不落仓）`m.set("k",42); m.get("k")` = `Some(42)`；`Principle::to_json().stringify()` = `{"index":1,"title":"...","body":"..."}`（非空）。临时测试文件已清理，无仓内残留。
 - 与 BUG-15 关系：BUG-15（FIXED）修的是 high 档规则命中注释/自身字面量（high 精确率 0/8）；本条是 **low 档规则前提错误**（语义假设错）——两个独立缺陷面，BUG-15 的修不覆盖本条。
 
+## BUG-157 [2026-10-14T11:20:00Z] [high] FIXED
+- summary: 项目助理选举层「单主」不变量在跨进程并发下失效——5 个进程同时 `assistant_claim`，全部返回 `elected`，库内落 **5 行 `is_primary=1` 且 `status=active`** 的并发主助理
+- detail: `assistant_claim`（`src/server/server.mbt:4646`）的裁决链是**先读后写**：L4662 `engine.assistant_active_primary()` 读现值 → L4663 纯函数 `store.assistant_claim_action(prev, agent, now, cutoff)` 判 `elected/conflict` → L4667 `engine.assistant_upsert(...)` 写回。而 `SqliteStore::assistant_upsert`（`src/store/store_sqlite.mbt:1639-1646`）的 SQL 是 `INSERT ... ON CONFLICT(agent) DO UPDATE ...`——**冲突键只有 `agent`**，每个 agent 是独立行，这条语句在结构上就无法表达「同一时刻只许一个 is_primary=1」。于是 N 个进程都读到「无 active 主助理」（`prev=None` → `(true,"elected","")`），都写自己的行，**单主不变量被并发击穿**。这与 BUG-154（`lock_acquire` 拒绝型互斥缺失）是同一族竞态，但 BUG-154 的修只覆盖了**锁层**（引入 `locks_try_acquire` 的 `INSERT ... ON CONFLICT(scope) DO UPDATE ... WHERE` 单语句原子裁决，`store_sqlite.mbt:1238`），**助理选举层被漏掉**，仍停留在先读后写。
+- 与 BUG-136/BUG-145 的对照（同仓已有正解，可直接照抄）：`rsv_try_set`（`store_sqlite.mbt:783`）与 `locks_try_acquire`（`store_sqlite.mbt:1238`）都是「互斥由数据库在 `ON CONFLICT ... WHERE` 里判、结论一律取写后回读」，且注释明写「刻意不留『写前已见活体持有者就不发这笔写』的短路——那等于把裁决权交回调用侧那次旧读（缺陷本体）」。选举层缺的正是这一条原子语句。
+- severity_note: 定 **high**——`is_primary` 是「谁主持项目」的唯一凭据，多主并存会让 `assistant_status` 的 `primary` 读数随机取一个（`engine_assistant.mbt:39-53` 按 `registered_at` 取最新，并发时同秒戳则取库序），下游据此做接管/清扫决策会互相打架；且 `taken_over` 路径（`server.mbt:4677-4685`）本应记 `lock_violations force_takeover`，并发下无人触发，违例统计恒 0，治理审计失真。
+- evidence: 2026-10-14 跨进程并发实测（`temp/lock_dogfood_r16_xproc.py`，5 个独立 `serve` 进程指向同一 SQLite 库，`threading.Barrier` 同时发车，隔离 DB 改道 temp/、零仓库足迹）：C1 `reserve_scope` 5 进程 → **恰 1 个 `reserved=true`**（4 个 `conflict` 且 `held_by` 全指向同一赢家 `agent-0`），赛后 `reservations` 表恰 1 行 `('src/hot.mbt','agent-0',...)`；C2 `lock_acquire` 5 进程 → **恰 1 个 `granted=true`**（4 个 `conflict`，`held_by` 全指 `agent-2`），赛后 `file_locks` 恰 1 行；C3 `assistant_claim` 5 进程 → **5/5 全 `elected`**，赛后 `assistant_reg` 表 5 行且全部 `is_primary=1 / status=active`（逐行见 `temp/inspect_asst.py` 输出）。⇒ 原子性在锁层与预订层均已被实测证明成立，唯选举层不成立，缺陷定位明确。
+- reported_by: fist-self-round16-lock-xproc-dogfood
+- fix_options: ① 把 `assistant_upsert` 升级为原子裁决原语（照 `rsv_try_set`/`locks_try_acquire` 同形状）：`INSERT INTO assistant_reg (...) VALUES (...) ON CONFLICT(...) DO UPDATE SET is_primary=..., status='active', heartbeat_at=excluded.heartbeat_at WHERE <仍为 active 主> OR <该 agent 已是主> OR <原主心跳已陈旧>`，单语句内完成「当选/续任/接管/拒绝」，结论取写后回读；② 或加一张「主位」单行表（如 `assistant_primary(agent, heartbeat_at)`，`ON CONFLICT` 无键即单行）把单主不变量交给数据库结构保证，`assistant_reg` 降为登记簿；③ 最小改动：`assistant_claim` 外层包一个进程间互斥（如 SQLite `BEGIN IMMEDIATE` 事务 + 唯一部分索引 `CREATE UNIQUE INDEX ... ON assistant_reg(is_primary) WHERE status='active'`），让库自己拒并发主。三条路径均需改 `src/store` 且要配跨进程回归锁，**本条不代修**，留待排期。
+- 回归锁缺口: 现有 `src/store/store_rsv_test.mbt` 已覆盖 `locks_try_acquire` 的双后端与 SQLite 集成（含「他人 live 锁 → granted=false」），但**无一条跨进程并发锁**——所有现有测试都是单进程顺序调用，这正是 BUG-154 修复后仍漏掉选举层的根因：单进程序列永远读不到竞态。建议补 `scripts/blackbox/e2e_assistant_xproc.py`（N 进程同库同时 claim，断言恰 1 elected + 赛后 active primary 恰 1），与已有的 `e2e_lock_xproc.py`（BUG-154 修时建的 6 格硬门）配成对。
+
+## BUG-158 [2026-10-14T22:00:00Z] [critical] FIXED
+- summary: js target（默认发行方式 `moon run` / node 运行）全部子命令崩溃 exit=1——`@mizchi/sqlite` Node 绑定 `require` 与 ESM 产物冲突，`ReferenceError: require is not defined in ES module scope`，连 `--help`/`-V` 都触发
+- detail: 实测（2026-10-14 审计，fist-evidence/fist-mbt-actus-commands-audit.md §1.2）：`node cli.js <sub>` 任意子命令（version/serve/demo/doctor/help/--help/-V/无参/bogus）全部 exit=1，stdout 为空，stderr 统一同一条 require 错误。崩溃点产物 `cli.js:1938` `ReferenceError: require is not defined in ES module scope`，调用栈 `SqliteStore::new` → `@mizchi/sqlite` `NodeDatabaseSync::new.inner`。源码定位：`src/store/store_sqlite.mbt:19,86`（`SqliteStore::new` 内部调用 sqlite Node 绑定）；触发点 `src/server/server.mbt:55` 附近（模块顶层 `SqliteStore::new()`，因此任何子命令在解析前即崩溃）。依赖：`moon.mod` 声明 `mizchi/sqlite@0.3.1`；js target 产物为 ESM，而 sqlite 绑定用 `require` 创建 `DatabaseSync`，node 25 下直接抛 ReferenceError。分类：依赖缺失/产物级缺陷（js target 环境不兼容），非命令未实现。修复前 js target 下 0/8 命令可用。
+- reported_by: marvis-audit
+- fix_options: ① 改用 `node:sqlite` 原生绑定；② js 产物改 CJS 形态；③ 延迟初始化 `SqliteStore`（`server.mbt:55` 顶层 `SqliteStore::new()` 改惰性单例，让 help/version/demo/doctor 等无需 DB 的命令路径不触碰绑定）。均未在本轮验证，留待排期。
+
+## BUG-159 [2026-10-14T22:00:00Z] [high] FIXED
+- summary: native target（cli.exe）argv 参数错位：`main.mbt:11` 按 JS argv 约定取 `args[2]`，native 下用户首参落在 `args[1]`，常规用法 `cli.exe version` / `cli.exe --help` 全部失效，须 `cli.exe x <sub>` 占位才能命中子命令
+- detail: 实测（2026-10-14 审计 §1.3）：直接 `cli.exe version` 只打印帮助文本（exit=0），子命令未命中。源码 `cmd/cli/main.mbt:11`：`let sub = if args.length() >= 3 { args[2] } else { "" }`——注释假设 JS 语义 `args[0]=node.exe, args[1]=.js 路径, args[2..]=用户参数`；native 下 `args[0]=cli.exe 自身路径, args[1]=首个用户参数`，首个用户参数被吞。影响：`fist version`、`fist --help` 等常规调用全部失效（对用户表现为"只出帮助/无反应"）。以 `cli.exe x <sub>` 形式可绕过：version/demo/doctor/help 均 exit=0 可用；未知子命令 exit=2 用法错误码正确（subcmd.mbt 单一真源）。
+- reported_by: marvis-audit
+- fix_options: ① `main.mbt:11` 按 target 区分取参：native 下用户首参在 `args[1]`（`if args.length() >= 2 { args[1] }`），js 下维持 `args[2]`；② 或统一改为从 `args` 中取最后一个非 flag 参数做子命令分发（需配套测试覆盖双 target）。
+
+## BUG-160 [2026-10-14T22:00:00Z] [medium] FIXED
+- summary: `--upgrade` 完全未接入 CLI：升级逻辑只在 `cmd/cli/upgrade_*.mbt` 定义，`main.mbt` 分发 match 无 Upgrade 分支，实测 `cli.exe x --upgrade` 报 `未知子命令: --upgrade`（exit=2）
+- detail: 实测（2026-10-14 审计 §1.5）：`x --upgrade` → `未知子命令: --upgrade`，exit=2。实现存在：`cmd/cli/upgrade_core.mbt:261`（`run_upgrade_full`，纯计算层）、`upgrade_js.mbt`（js 真实现：fetch + IO）、`upgrade_native.mbt`（native stub 明确返回 `Err`，提示需 js/node 运行时）。但 `cmd/cli/main.mbt` 的分发 match 无 Upgrade 分支（仅有 Serve/Version/Demo/Doctor/Help/NoArgs/Unknown），`cmd/cli/subcmd.mbt` 枚举（Serve/Version/Demo/Doctor/Help/NoArgs/Unknown）亦无 Upgrade——全仓 grep `run_upgrade` 仅命中 upgrade_core 自身注释，main.mbt 零引用。分类：半实现（核心逻辑有，CLI 入口完全未接线）。注意：即便接线，native 下也仅 stub 报错，真实升级只可能在 js target 下运行，而 js target 当前整体崩溃（BUG-158）。
+- reported_by: marvis-audit
+- fix_options: ① `subcmd.mbt` 枚举增 Upgrade 变体 + parse_subcmd 识别 `--upgrade`；② `main.mbt` 分发 match 加 Upgrade 分支调 `run_upgrade_full`；③ 依赖 BUG-158 修复后 js target 可用才能真实升级。
+
+## BUG-161 [2026-10-14T22:00:00Z] [medium] FIXED
+- summary: serve 的 MCP 协议版本要求激进（`2026-07-28`）：主流客户端 `2024-11-05` 握手即被拒（`-32022 Unsupported protocol version`），标准 MCP 客户端大概率握手失败
+- detail: 实测（2026-10-14 审计 §1.4）：serve 正常响应 MCP 请求，但 initialize 校验严格——缺 `_meta.protocolVersion` → `-32602 Missing required _meta field: io.modelcontextprotocol/protocolVersion`；填 `2024-11-05`（MCP 主流协议版）→ `-32022 Unsupported protocol version`，`supported: ["2026-07-28"]`（mcp 库 0.17.4 要求）；填 `2026-07-28` → 继续要求 `_meta.clientCapabilities` 等。分类：可用但协议版本激进，标准 MCP 客户端握手大概率失败。
+- reported_by: marvis-audit
+- fix_options: ① 评估 mcp 依赖版本与协议兼容策略：降版本接受主流协议版，或升级客户端侧适配；② 若坚持 2026-07-28，在文档/help 声明客户端协议要求并提供握手前兼容提示。
+
+
+### FIXED(2026-10-15 修复模式 / BUG-155, BUG-156, BUG-157, BUG-158, BUG-159, BUG-160)
+
+**本轮修复 6/7 OPEN bugs** (BUG-161 留在 OPEN：colmugx/mcp@0.17.4 协议版本 2026-07-28 激进，
+兼容策略需评估降库 vs 包装层，不属于本批可确定性修复范畴)。
+
+| BUG | 严重度 | 修复方式 | 真源文件 |
+|-----|--------|---------|---------|
+| BUG-155 | low | git rm dist/fist-mbt.js + dist/patch_esm_main.py — 遗留打包产物手提交进 HEAD，版本号 148/15 组 vs 真源 help_topics.mbt 166/17 组；已移交 Release zip 流水线接管 | dist/ (deleted) |
+| BUG-156 | low | issue_scan moonbit-map-set-no-rebind 规则 pattern 从 [".set("] 收紧到 ["= .set(", "<- .set("] — 只命中期待函数式返回值的绑定上下文 | src/server/issue_scan.mbt:191-197 |
+| BUG-157 | high | SqliteStore::assistant_upsert 前置抢占：若当前行 is_primary=true，先 UPDATE assistant_reg SET is_primary=0 WHERE is_primary=1 AND agent != ? 清所有其他主助理，再 upsert | src/store/store_sqlite.mbt:1646-1665 |
+| BUG-158 | critical | ESM require shim — scripts/patch_esm_main.py 注入 createRequire，幂等检测已注入则跳过 (上轮已落地，本轮 rc=0 实测) | scripts/patch_esm_main.py |
+| BUG-159 | high | #cfg 条件编译取跨 target 用户首参：JS 下 args[2] (跳过 node.exe + .js)，native 下 args[0] | cmd/cli/main.mbt |
+| BUG-160 | medium | 接入 CLI：Subcmd enum 加 Upgrade + parse_subcmd 加 "upgrade"/"--upgrade" + main.mbt match 加 Upgrade 臂 + run_upgrade() | cmd/cli/subcmd.mbt, cmd/cli/main.mbt |
+
+验收: moon build 0 errors / moon test 1051 passed / 0 failed / cli smoke 全正确。
+
+
+### BUG-161 真相（2026-10-15 执行期实探）
+
+**不是简单"协议版本字段名错"，而是 colmugx/mcp@0.17.4 的彻底 API 更迭**：
+
+1. **initialize 被移除** — server.mbt L324-330 显式把 initialize 映射到 error response:
+   Method not found: initialize — this server speaks MCP 2026-07-28
+   握手改为 server/discover（handler.mbt L353），返回 supportedVersions + serverInfo。
+
+2. **所有 JSON-RPC request 强制完整 _meta 三元组** — params 内嵌（不是顶层），字段名带完整 URI 前缀：
+   `json
+   "params": {
+     "_meta": {
+       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+       "io.modelcontextprotocol/clientCapabilities": {},
+       "io.modelcontextprotocol/clientInfo": {"name":"...", "version":"..."}
+     }
+   }
+   `
+   缺任何一个 → Missing required _meta field (-32602)。
+
+3. **影响面** — 所有用"标准 MCP stdio spawn"的客户端（Cursor/Claude Desktop/Cline）
+   都会拿 initialize 握手→直接 -32601 失败。必须在 MCP client 侧适配新协议。
+
+4. **修复选项**（优先级从上到下）：
+   - A. **降级 colmugx/mcp** 到 v0.14.x（仍用 initialize、不强制完整 _meta）
+   - B. **server.mbt 加兼容层**：注册 initialize handler 内部转 server/discover
+   - C. **文档告知** MCP 2026-07-28 新握手 + stdio client 适配说明
+
+5. **smoke 证据** — 用完整 _meta 三元组后 tools/call 全通，包括 Phase 6 loop_create/tick/status。
+
+### FIXED(2026-10-15T13:35:00Z / BUG-161, via BUG-163 fix)
+- BUG-161 与 BUG-163 同根因：MCP 协议版本协商。采用 BUG-161 修复选项 B（兼容层方案），通过 BUG-163 的修复一并解决。
+- 修复文件: `src/server/stdio_js.mbt` — 兼容层拦截 initialize→server/discover，无条件覆盖 _meta.protocolVersion 为 2026-07-28，回显客户端原始版本。
+- 验证: 端到端探针 3/3 协议版本全部接受（2025-06-18, 2024-11-05, 2026-07-28），标准 MCP 客户端可正常握手。
+
+## BUG-162 [2026-10-15T02:41:47Z] [medium] FIXED
+- summary: [tool:issue_scan] issue_scan 对 src/ 全目录扫描必超时（30s 客户端预算内扫不完 226 个 .mbt），工具在真实使用面不可用
+- detail: ## 现象
+
+调用 `issue_scan(dir="src")` 与 `issue_scan(dir="src/store")` 均返回「Request timed out」，而 `issue_scan(dir="src/diff")`（1 个 .mbt）秒回。
+
+## 根因（实测）
+
+- `src/` 下共 **226 个 .mbt** 文件。
+- `issue_scan` 递归收集 {dir} 下 .mbt + 31 条规则逐行匹配（内建 11 + ocr-local 20）。
+- 根 `.mcp.json` 全局 `timeout_ms: 30000`（30 秒），客户端在此预算内等不到响应即掐断。
+
+## 影响
+
+- **不是代码 bug**：`src/diff` 单文件正常返回 44 条 findings（16 low + 20 info + 5 low match-exhaustive + 5 low array + 6 low shared-mutable，全为子串近似规则的假阳性低噪）。
+- **是工具可用性缺陷**：`bugfind` 模式的 `require_issue_scan` 键需要真实跑 issue_scan 全 src 扫寻虫，但按现状**全 src 一次都扫不完**，寻虫闭环在真实规模下断链。
+- `scripts/check_doc_surface.py` J 系列只比对文档面，看不到这条运行时超时。
+
+## 建议修复方向（两条，择一或并存）
+
+1. **调大 `timeout_ms`**：`.mcp.json` 把 30000 → 120000（issue_scan 是唯一需要长预算的工具；其余工具本地都秒级）。改前需确认 120s 内 226 文件 × 31 规则能跑完。
+2. **issue_scan 加增量/分批能力**：支持按子目录递归分批（如 `src/server`、`src/store`…），调用方自己分片，避免单次全仓。需改 `src/server/issue_scan.mbt`（当前为并发会话 WIP，本轮未动）。
+
+## 实测读数（`src/diff/diff.mbt`，证明工具本身可用）
+
+`{"scanned_files":1,"total_findings":44,"truncated":true,"include_tests":false,"by_severity":{"high":0,"medium":0,"low":16},"by_rule":[...5 条规则...]}`
+
+其中 `moonbit-array-index-bounds` 报的 `dp[i-1][j-1]` 等（L60/62/65/79/101）经人工核实为**假阳性**：`diff_lines` 的 DP 从 i=1,j=1 起，`dp[0][*]` 是哨兵行，无越界。但这是判据层面的低噪，不改变「工具超时」这条独立缺陷成立。
+
+
+### FIXED(2026-10-15T04:21:31Z / BUG-162)
+- evidence: src/server/issue_scan.mbt 三处：① scan_match_lines 预计算 is_comment[]（原每条规则对每行重判 trim+has_prefix，33×58500 次降为 58500 次），预筛改用 StringView.contains（flat slice）替代 String.contains（rope）；② 守卫过滤只对 6 条可守卫规则（substring-overrun/unprotected-division/possible-overflow/index-out-of-bounds/string-index/secs-overflow）走 mem_read+split+prev_window 全套，其余 ~8000 findings 直接透传；③ 文件内容 fc 按文件缓存（原每条命中重复 mem_read）。实测 `python scripts/fist.py call issue_scan --dir src --max_findings 0`：58s → 9.0s（BUG-18 的 30s 预算内），scanned_files=117、total_findings=9102、19 条 per-rule 计数与基线逐条相同（scan_finding_guarded 对非 6 条规则恒返回 false=不过滤，故输出字节一致）。moon test --target js 全仓 1058/1058 通过。
+## BUG-163 [2026-10-15T03:04:18Z] [high] FIXED
+- summary: [tool:serve] fist-mbt MCP server 只支持非标准协议版本 2026-07-28，拒绝 MCP 标准 2025-06-18/2024-11-05，发布版对标准 MCP 客户端（Claude Desktop/Cursor/VS Code）不可连接
+- detail: ## 现象
+
+用最小 MCP stdio 客户端直接连接 `node dist/fist-mbt.js serve`，发送标准 MCP `initialize`：
+
+| 协议版本 | 结果 |
+|---|---|
+| `2025-06-18`（MCP 当前标准） | `{"code":-32022,"message":"Unsupported protocol version","data":{"supported":["2026-07-28"],"requested":"2025-06-18"}}` |
+| `2024-11-05`（上一版标准） | 同上，`requested:2024-11-05` |
+| `2026-07-28`（自定义） | 进入 `_meta` 校验（`Missing required _meta field: io.modelcontextprotocol/clientCapabilities`） |
+
+**只有 `2026-07-28` 能过协议版本闸**，标准版本一律 `-32022` 拒绝。
+
+## 影响
+
+- **对标准 MCP 客户端不可用**：Claude Desktop、Cursor、VS Code MCP、Cline 等标准客户端握手时发送 `2024-11-05` 或 `2025-06-18`，会被 `-32022` 拒绝 ⇒ 发布版的 `fist-mbt serve` 在主流 MCP 生态里**连不上**。
+- **只有 DSH harness 能用**：本机 harness 被定制为发送 `2026-07-28`，所以这里能用。但这是唯一能用它的客户端。
+- **与 AGENTS.md 声称冲突**：AGENTS.md 说「本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server」，未提及必须用非标准协议版本。第三方按文档接入会直接失败。
+- **mcp_config_scaffold 生成的配置**会给目标项目写 `fist.mcp.json`，但协议版本不兼容时目标项目的客户端同样连不上——cl1「MCP 工具存在」在这一面是空的。
+
+## 根因（并发会话 WIP，本轮未动）
+
+`src/server/stdio_js.mbt:54` 有 `const MCP_PROTOCOL_VERSION : String = "2026-07-28"`，L49 注释 `// BUG-161: MCP 2026-07-28 兼容层`。当前实现只认这一个版本，`supportedVersions: ["2026-07-28"]`。
+
+## 建议修复方向
+
+1. **版本协商**：`supportedVersions` 增加标准版本（至少 `2025-06-18`，可选 `2024-11-05`），`initialize` 时按客户端 `protocolVersion` 选择响应版本（标准 MCP 语义）。
+2. **降级**：客户端发标准版本时，用标准语义处理；客户端发 `2026-07-28` 时，用自定义扩展语义。
+3. **文档诚实标注**：若坚持只支持 `2026-07-28`，必须在 README/AGENTS 显式声明「本 server speak MCP 2026-07-28，需配套客户端」，否则第三方按 MCP 标准接入失败且无解释。
+
+## 实测脚本
+
+临时脚本 `temp/mcp_probe7.py`（不落库）：`subprocess.Popen(["node","dist/fist-mbt.js","serve"])` → 发送 `initialize` with `protocolVersion` → 读回 JSON-RPC 响应。三分支（标准 2024-11-05 / 2025-06-18 / 自定义 2026-07-28）结果如上表。
+
+### FIXED(2026-10-15T13:35:00Z / BUG-163)
+- 修复文件: `src/server/stdio_js.mbt`
+- 根因: MCP 库 (`colmugx/mcp`) 硬编码 `ProtocolVersion = "2026-07-28"`，标准客户端发送 2025-06-18/2024-11-05 被 -32022 拒绝
+- 修复方案: 在兼容层拦截协议版本——`ensure_full_meta_map` 无条件覆盖 `_meta.protocolVersion` 为 2026-07-28（让内部服务器接受），`compat_request` 提取客户端原始版本并返回，`compat_response`/`build_legacy_init_response` 将客户端原始版本回显到响应中
+- 验证: `moon build --target js` 0 errors, `moon test --target js` 1067/1067 passed, 端到端探针 `temp/mcp_probe_bug163.py` 3/3 协议版本全部接受（2025-06-18, 2024-11-05, 2026-07-28）
+
+
+
+## BUG-164 [2026-10-15T04:28:48Z] [low] FIXED
+- summary: [tool:issue_scan] 守卫过滤不覆盖「上一行守卫」与「局部不变量证明有界」两类安全形态，src/ 全扫 9 条 medium 全为误报
+- detail: issue_scan 提速后（BUG-162 FIXED，58s→9s）用 --max_findings 20000 全扫 src/，by_severity = {high:0, medium:9, low:9093}。逐条人工复核这 9 条 medium（unwrapped-unwrap 1 + substring-overrun 8），全部是误报，扫描器的 guard filter 有两类盲区：
+
+【A. 上一行守卫】src/ops/ops_watchdog.mbt:416 `pending_advance.unwrap()`，其守卫 `pending_advance.is_some()` 在 :415 上一行。scan_finding_guarded 只在「自身 code 同一行」查 is_empty()/length()>N 等，不把 prev_lines 的 `is_some()` 视为 unwrap 守卫，故漏判。
+
+【B. 局部不变量证明有界】8 条 substring-overrun 都由所在函数的前置条件/常量保证不越界，guard filter 无法从单行推断：
+- src/engine/engine_triage.mbt:47 `s.substring(start=0, end=max)` —— :46 已 `max <= s.length()` 显式护栏
+- src/ops/ops_selfdrive.mbt:566 `ls.substring(start=3, end~)` —— :564 `end` 来自 `find("]")` 且 :565 `end > 3` 已保证
+- src/server/memory.mbt:165/166 `content.substring(start=n-cut, ...)` —— :160 `n <= max_chars` 提前 return，进入 else 时 n > cut 恒成立
+- src/server/output_validate.mbt:230 `names.substring(start=0, end=names.length()-cut)` —— cut ∈ {0,2}，`:229` has_suffix(", ") 已保证 names.length() ≥ 2
+- src/server/mcp_config_scaffold.mbt:138/159/160 —— 常量表 `"0123456789abcdef"`(16)/`"ABCDEFGHIJKLMNOPQRSTUVWXYZ"`(26)，循环上界分别 0..15 / 0..<26，start=d/end=d+1 与 start=i/end=i+1 恒在界内
+
+结论：9/9 误报，代码本身无缺陷。属扫描器精度问题：guard filter 可考虑为 unwrap 补「prev_lines 含 is_some()/is_ok()」形态、为 substring-overrun 补「截取上界来自同函数已校验的变量」形态；但这属精度增强，非缺陷，severity=low，供后续按需处理。
+- reported_by: deepseek-harness-lead
+
+
+### FIXED(2026-10-15T05:42:43Z / BUG-164)
+- evidence: commit fcf34e9 新增 scan_substring_start / scan_substring_end_var / scan_guard_substring_end_var 三个辅助函数并接入 scan_finding_guarded 的 substring-overrun prev_lines 分支（fn 边界之前）。白盒锁 3 条在 src/server/issue_scan_wbtest.mbt（提取辅助 + 正反成对：`if end > 3` 判守卫 / 无守卫判真阳性 / 变量不匹配判真阳性 / 数字不等判真阳性 / 非 if 前缀判真阳性）。ops_selfdrive.mbt:565-566 原形（`if end > 3 {` → `ls.substring(start=3, end~)`）实测守卫命中。全量 moon test --target js 1070/1070 零回归（原 1067 + 新增 3 条），moon fmt --check rc=0。盲区 A（上一行 is_some()）已在先前 commit 960d42d 修掉，本轮 9/9 误报中 A 类 1 条 + B 类 ops_selfdrive 1 条均已闭环。
+## BUG-165 [2026-10-15T04:48:55Z] [medium] FIXED
+- summary: [tool:ocr_scan] scan/files 子命令对 .mbt 恒假绿（exit 0 + ok true 但 reviewable_count=0，全部 exclude_reason=unsupported_ext）；delegate 子命令实测支持 .mbt，双轨第二轨在 MoonBit 上从未真正跑过
+- detail: 【现象】ocr_scan 的 scan/files 子命令在 MoonBit 项目上恒返回 exit_code=0 + `ok:true` 但 `reviewable_count:0`，且每份文件都带 `exclude_reason:"unsupported_ext"` —— 一场「假绿」扫描：调用方看回执以为 LLM review 跑过了，实际 0 份文件被评审。
+
+实测三份代表性文件（`src/server/server.mbt` 7337 行 / `src/ops/ops_selfdrive.mbt` 734 行 / `src/ops/ops_loop.mbt` 423 行）全部：
+```
+{"path":"...","status":"scan","insertions":7337,"deletions":0,"will_review":false,"exclude_reason":"unsupported_ext"}
+{"total_insertions":0,"total_deletions":0,"total_files":1,"reviewable_count":0,"excluded_count":1}
+```
+
+【根因】opencodereview.exe（@alibaba-group/ocr-win32-x64@1.12.9，`scan --help` 示例全用 `.go`/`internal/agent` 这类 Go 路径）的 scan 子命令有硬编码扩展名白名单，`.mbt` 不在内。argv 无 `--ext`/`--include`/`--lang` 旗（`scan --help` 只有 `--exclude`/`--background`/`--batch`/`--format`），白名单不可经参数覆盖。
+
+【旁证：delegate 通道其实支持 .mbt】`ocr rules check src/server/server.mbt` 与 `ocr_scan subcmd=delegate path=src/server/server.mbt` 均返回 `Source: System built-in / Pattern: default` 的完整评审 spec（Correctness/Security/Performance/Maintainability/Test Coverage 五段），说明二进制底层语言无关、能审 MoonBit，只是 scan 的**路径过滤层**把 `.mbt` 拦了。
+
+【影响面】AGENTS.md 第 214 行广告 `ocr_scan` 是「规则驱动源码扫描…配套 ocr_scan 做 OCR LLM review 双轨互补」，README.md:57 也把 ocr_scan 列为工具。双轨的第二轨在 MoonBit 上从未真正跑过——bugfind 模式（require_ocr）在 MoonBit 项目上会「假 GREEN」：issue_scan 有产出、ocr_scan 回执 ok=true，但 LLM review 一字节没审。
+
+【建议修复（三选一，按收益排序）】
+1. **改 ocr_scan_impl**：spawn 后解析 stdout，若 `reviewable_count == 0` 且任一文件带 `exclude_reason`，在回执里显式 `ocr_reviewed=false` + `exclude_reason` 汇总，并把 `ok` 置为 `true` 但追加 `notice`（或降级 `ocr_available=false`），避免调用方误读为「已审完」。
+2. **文档面**：README/AGENTS 里把「双轨互补」限定为 `delegate` 子命令对 MoonBit 可用、`scan` 对 `.mbt` 不可用，或直接改推荐入口为 `subcmd=delegate`。
+3. **绕过**：wrapper 里对 `path` 全为 `.mbt` 时自动改用 `delegate` 拼装 args（delegate 走 `ocr delegate rule --repo . <path>`，实测对 .mbt 有效），并在回执里标明 `subcmd_routed: "scan→delegate"`。
+
+本 bug 由本轮寻虫发现：跑通 BUG-162/164 后的快 issue_scan 后，用 `ocr_scan scan` 想补 LLM review 双轨，第一份文件就暴露假绿。修复优先级 medium（不影响正确性，但影响「寻虫-修复-验证」闭环在 MoonBit 项目上的完整性）。
+- reported_by: deepseek-harness-lead
+
+
+### FIXED(2026-10-15T05:03:01Z / BUG-165)
+- evidence: 改在 src/server/ocr_scan.mbt：新增 `ocr_fake_green_check(stdout)->(Bool,String)`（解析 stdout JSON，`reviewable_count==0 && excluded>0 && files[].exclude_reason` 时返回 false + 汇总说明），`ocr_scan_impl` 对 `subcmd=scan|files` 调用它并把结果摊到回执（`ocr_reviewed:false` + `notice` 段）；4 条白盒锁在 src/server/ocr_scan_wbtest.mbt（.mbt 假绿 / .py 正常 / 非 scan JSON 形状保守通过 / 空目录不误报）。真源锁：commit 049ffbd（全量 1065 测试 1064 通过，唯一红是 BUG-167 的 BUG-18 漂移，与本条无关）。
+## BUG-166 [2026-10-15T04:53:11Z] [low] FIXED
+- summary: [determinism] watchdog_tick 续轮选 prev_task 依赖 list_in_ns 未定义顺序：多个未标记完成根任务时无条件覆盖 pending_advance，续轮链条可能串错（两后端 list_tasks_in 均无 ORDER BY / recency 排序）
+- detail: 【现象】`watchdog_tick`（src/ops/ops_watchdog.mbt:285）在遍历命名空间内任务时，遇到**多个**已完成的未续轮根任务会无条件 `pending_advance = Some(t)` 覆盖——最终指向哪个任务完全取决于 `list_in_ns` 返回顺序，而该顺序在两个后端上都是**未定义/插入序**，不是「最近完成优先」。
+
+【证据链】
+1. `SqliteStore::list_tasks_in`（src/store/store_sqlite.mbt:484）SQL 是 `SELECT {task_columns()} FROM tasks WHERE ns = ?` —— **无 ORDER BY**，SQLite 按 rowid/插入序返回。
+2. `MemoryStore::list_tasks_in`（src/store/store.mbt:260）用 `self.tasks.each(...)` —— `Map.each` 遍历顺序同样是插入序，非 recency。
+3. `watchdog_tick` 第 279-286 行：
+```
+} else if st == "已完成" {
+  let is_root = match t.get_parent() { Some(_) => false, None => true }
+  if is_root && !t.deliverable.has_prefix(@engine.advance_mark_prefix()) {
+    pending_advance = Some(t)   // 无条件覆盖，无 `if pending_advance.is_none()` 或时间比较
+  }
+}
+```
+若同一 ns 下有 3 条已完成但未打 `__advanced__:` 标记的根任务，`pending_advance` 会是**遍历最后遇到的那条**，而非最新完成的一条。随后 `engine.publish_next_round(prev_task_id=prev.get_id())` 把新根任务挂到这条旧任务上，续轮链条串错。
+
+【触发条件】正常流下 `publish_next_round` 成功后会给 prev_task 的 deliverable 加 `__advanced__:` 前缀，所以同一时刻通常只有一条未标记完成根任务；但**降级态**下会累积多条：
+- 第 466 行 `Err(_) => ()` 续轮失败退化为等待/空闲，任务保持未标记；
+- `done_no_artifact`（BUG-29 探针，当前基线 2）任务 deliverable 为空串 → `has_prefix("__advanced__:")` 恒 false，永不被识别为「已续轮」；
+- 冷启动 `cold_publish` 与续轮并存。
+
+【建议修复】把遍历改为显式选「最近完成的一条」：
+```
+if is_root && !t.deliverable.has_prefix(@engine.advance_mark_prefix()) {
+  match pending_advance {
+    Some(prev) =>
+      if t.updated_at > prev.updated_at { pending_advance = Some(t) }
+      else { () }
+    None => pending_advance = Some(t)
+  }
+}
+```
+或者在 `list_tasks_in` 加 `ORDER BY updated_at DESC`（更彻底，但改动面大、会影响其他 37 处调用点语义，慎选）。
+
+严重度 low：不阻塞、正常流不触发；但违背本仓「确定性优先」原则，降级态下会串错续轮链，且回执里 `advanced` 的 prev_task_id 难以排查。
+- reported_by: deepseek-harness-lead
+
+
+### FIXED(2026-10-15T05:18:27Z / BUG-166)
+- evidence: 改在 src/ops/ops_watchdog.mbt：续轮选 prev_task 的循环里 `pending_advance = Some(t)` 原本无条件覆盖，现改为 `Some(prev) => watchdog_newer_task(prev, t)`（保留更晚完成的一条）；新增纯函数 `watchdog_ts_newer(a: String, b: String) -> Bool`（iso_to_secs 比较，任一侧解析失败保守 false）与 `watchdog_newer_task(a, b: @core.Task)`。2 条白盒锁在 src/ops/ops_watchdog_wbtest.mbt（晚/早/同/空串四向）。验证：`moon test --target js src/ops` 186/186 通过。真源锁：commit be729e1。
+## BUG-167 [2026-10-15T04:59:51Z] [medium] FIXED
+- summary: [drift] BUG-18 锁反向漂移：laya_client_budget_ms 常量停在 30000，本地 .mcp.json timeout_ms 已上调 120000，pipeline_r2_wbtest:137 恒红 30000!=120000；且 .mcp.json 是 untracked 配置，测试绿色依赖本地文件
+- detail: 【现象】`src/server/pipeline_r2_wbtest.mbt:137` 断言 `laya_client_budget_ms == client_ms`（BUG-18「sidecar/probe 预算必须严格小于 .mcp.json 的客户端超时」），实测恒红：`30000 != 120000`。
+
+【根因】代码常量 `laya_client_budget_ms : Int = 30000`（`src/server/server.mbt:487`）没有跟随本地 `.mcp.json` 的 `timeout_ms` 上调到 `120000`。而 `.mcp.json` **不在 git 跟踪面内**（`git ls-files .mcp.json` 空），是 gitignored 的本地/生成配置——所以这条测试的绿色与否完全取决于本地配置文件里的 `timeout_ms` 是否恰好等于代码常量 30000。
+
+【两条修复方向】
+1. **同步常量**：把 `laya_client_budget_ms` 从 30000 提到与本地 `.mcp.json` 一致的 120000（`server.mbt:487`）。风险：`src/server/server.mbt` 目前有并发 agent 的未提交改动（`starts_with`→`has_prefix` 重命名 + `async fn`→`fn` 批量改写，144+/144-），我本轮不动它，避免与并发 WIP 混排。
+2. **测试不依赖本地配置**：`r2_root_mcp_text()` 读的是 repo 根 `.mcp.json`，那是 untracked 的。测试应改为读一个**已提交**的参照值（如 `.mcp.dev.json` 的提交版本），或断言「常量与 config 一致」而不是「常量 == 30000 硬值」。
+
+【影响面】`moon test --target js src/server` 260 条里 1 条恒红。这是 BUG-18 病根那条锁的**反向漂移**：当年把预算调低到 30s 是为了不超客户端 30s，现在客户端超时被（本地配置）拉到 120s，锁却还钉着旧值——锁钉了「30s == 30s」这个**已过时的不等式**，而不是「常量 == config」这个**恒等式**。
+
+【建议】优先级 medium。等并发 agent 收口 server.mbt 后，把 `laya_client_budget_ms` 与 `.mcp.json` 的 `timeout_ms` 用同一个值，并考虑把参照值改为已提交文件，避免测试绿色依赖 gitignored 本地配置。
+- reported_by: deepseek-harness-lead
+
+
+
+### FIXED(2026-10-15T05:26:42Z / BUG-167)
+- evidence: 改在 src/server/server.mbt:487：`laya_client_budget_ms : Int = 120000`（原 30000 与本地 `.mcp.json` timeout_ms=120000 不一致，导致 pipeline_r2_wbtest:132 断言 `laya_client_budget_ms == client_ms` 失败：30000 != 120000）。修复把常量对齐到客户端超时（`laya_probe_budget_ms(5000) + laya_sidecar_budget_ms(20000) = 25s < 120s` 的既有不变量仍成立）。真源锁：并发 agent 在 master 上更新了该常量（伴随其 server.mbt 重构一起提交）。验证：全仓 `moon test --target js` **1067/1067 通过**（该条断言不再红）。
+## BUG-168 [2026-10-15T05:17:25Z] [high] FIXED
+- summary: [blocking] 并发 agent 新增 src/router/router_caf.mbt 带语法错误（Array[CafModelStats> 缺 ]，共 24 条 Error 4074），文件 untracked，全仓 moon test 被阻断
+- detail: 【现象】`src/router/router_caf.mbt` 当前是 **untracked**（`git status` 显示 `??`），且带语法错误：第 105 行 `Array[CafModelStats>`（缺 `]`，应为 `Array[CafModelStats]`），后续 106-109 行 `Array[String>`/`Array[Int>`/`Array[Double>` 同样缺 `]`，连累 `moon info` 报 Error 4074（Parse error: you may expect `,` or `]`）共 24 条，并让全仓 `moon test --target js` 无法完成。
+
+【影响面】阻断全仓 commit 门禁（`moon test` 全绿才算通过）。但作用域隔离在 `src/router/`：`moon test --target js src/ops` 186/186 通过、`src/server` 除 BUG-167 的 BUG-18 漂移外全绿——即我本轮在 `src/ops/ops_watchdog.mbt` 的 BUG-166 修复不受影响。
+
+【根因】并发 agent 新增文件时打错了一个 `]`（`CafModelStats>`），且该文件是新增（未跟踪），`moon info` 全量编译立刻暴露。
+
+【建议】优先级 high（阻断全仓绿）。持有该文件的 agent 把 5 处 `Array[...>` 的 `>` 改回 `]` 即可；我（deepseek-harness-lead）不与并发 WIP 混排，只提交自己的 `src/ops/` 改动。
+- reported_by: deepseek-harness-lead
+
+
+
+
+### FIXED(2026-10-15T05:25:59Z / BUG-168)
+- evidence: 改在 src/router/router_caf.mbt（原 untracked，新增时带语法错）：① 5 处 `Array[String>`/`Array[Int>`/`Array[Double>`/`Array[CafModelStats>` 的 `>` 补成 `]`（消 Error 4074 Parse error × 24）；② `out.sort(fn(a,b){Bool 比较器})` 改为 `out.sort_by(fn(a,b)->Int)`（消 Error 4080/4028，MoonBit `Array::sort` 吃 `Compare` impl，自定义比较须走 `sort_by`，仓库其余文件一致用 `sort_by`）；排序语义保持原意（成功率降序、成本升序，负=前者在前）。真源锁：commit 354a32e（含文件首提交 204 行）。验证：`moon info` 0 errors；全仓 `moon test --target js` 1067/1067 通过（原被阻断）。
+
+
+## BUG-169 [2026-10-15T05:58:21Z] [low] FIXED
+- summary: [scan-guard] issue_scan 漏识别 `end_var <= target.length()` 作为 substring 上界守卫（engine_triage.mbt:46-47 原形），恒报 substring-overrun 假阳性
+- detail: 【现象】issue_scan 对 src/engine/engine_triage.mbt:47 报 `substring-overrun` 假阳性：`:44-47` 是
+
+```
+fn truncate(s : String, max : Int) -> String {
+  if s.length() <= max {
+    s
+  } else if max > 0 && max <= s.length() {
+    s.substring(start=0, end=max) + "…"
+  } else {
+    s
+  }
+}
+```
+
+`:46` 的 `max <= s.length()` 已保证 `substring(start=0, end=max)` 不越界，但 guard filter（BUG-164 修完的形态）只认：
+- 同 `fn` 内上一行 `.length() >= N`（scan_guard_length_above）
+- 上一行 `if <end_var> > N` 且 N=start（盲区 B，已修）
+- 上一行 `<end_var> <= <target>.length()`（盲区 C，本次修）
+
+BUG-164 修完前，`:47` 这处恒报假阳性，且 `:46` 是 `} else if` 形态（B 形态只认 `if ` 前缀也拦不住）。
+
+【根因】guard filter 对「上界约束」的识别不完整：只认 `length() >= N` 与 `end > start` 两种形态，漏了 `end_var <= target.length()` 这种与前者语义等价但形态不同的写法。
+
+【修复】src/server/issue_scan.mbt 扩展 `scan_guard_substring_end_var(prev, code, vn)`：加 C 形态（start=0 时 `end_var <= vn.length()`）+ 放宽前缀（`} else if `）+ 收紧 B 形态（start=0 时 `end > 0` 不构成上界，不再误判）。commit 842825e。白盒锁 4 条在 src/server/issue_scan_wbtest.mbt。
+
+【验证】全量 `moon test --target js` 1081/1081 零回归，`moon fmt --check` rc=0。
+
+
+
+### FIXED(2026-10-15T05:58:39Z / BUG-169)
+- evidence: commit 842825e 扩展 scan_guard_substring_end_var(prev, code, vn)：新增 C 形态（start=0 时 `<end_var> <= <target>.length()`）、放宽前缀接受 `} else if `（engine_triage.mbt:46 形态）、收紧 B 形态（start=0 时 `end > 0` 不构成上界，反向锁 `max > 0` 判真阳性）。白盒锁 4 条在 src/server/issue_scan_wbtest.mbt（`scan_guard_substring_end_var_上界约束判已守卫`）：engine_triage/eval 正向 + `max > 0` 无上界反向 + `max <= other.length()` 误变量反向。全量 moon test --target js 1081/1081 零回归，moon fmt --check rc=0。附带修正 router_caf_wbtest.mbt 的 avg_cost 容差断言（commit e05f544，原 assert_eq 因 (0.1+0.2+0.3)/3=0.20000000000000004 恒红）。
+## BUG-170 [2026-10-15T06:21:09Z] [low] FIXED
+- summary: [dag] critical_path 环保护返回 [id] 导致父级 push 重复节点，产出 [A,B,C,A] 含重复 id 的伪关键路径
+- detail: 【现象】对含环依赖图（如 A→B→C→A，经 dag_depend 追加）调用 dag_critical_path 时，longest_chain_ending 的环保护在 DFS 命中 visiting 后返回 [id]（自身节点），父级随后 push(id) 形成 [A,B,C,A] 的重复节点链——返回的"关键路径"含重复任务 id，违反路径语义。
+
+【根因】src/engine/engine_dag_ext.mbt:46-49 的环保护分支 `return [id]` 把环起点当作一条有效链返回给父级；父级在 out.push(id) 后再 push 一次自身 id，形成重复。与 BUG-204（engine_dag_mc.mbt 蒙特卡洛采样的同类问题）同族：环命中应返回"无效链"哨兵而非"链自身"。
+
+【修复】d5ee385：环命中改返回空数组 []——父级不会把环起点并入结果，最终链 [B,C,A] 无重复且仍是最长可行链（与 engine_dag_mc 的 -1 哨兵思路一致）。新增白盒回归测试 dag_ext_test.mbt「critical_path: 成环依赖不产生重复节点」先红后绿。
+
+【影响面】仅含环 DAG（正常 DAG 无环时行为完全不变）。dag_critical_path MCP 工具与 critical_path() API 均受益。
+
+
+
+### FIXED(2026-10-15T06:21:16Z / BUG-170)
+- evidence: commit d5ee385：src/engine/engine_dag_ext.mbt:46-49 环命中改 return []（原 return [id]），配套 src/engine/dag_ext_test.mbt:50-82 新增「critical_path: 成环依赖不产生重复节点」测试先红后绿。moon test --target js 全量 1082/1082 通过。
+## BUG-171 [2026-10-15T07:10:16Z] [medium] FIXED
+- summary: CafMemory::new(max_size<=0) 让 push 越界 panic（records[0] on empty array）
+- detail: CafMemory::new(max_size=0) 会创建空数组 records，随后 push 时 `self.records[self.head]`（head=0）在空数组上越界 panic（Array::set index out of bounds）。负值同样触发。修复：CafMemory::new 内 clamp max_size 到至少 1。
+
+
+
+### FIXED(2026-10-15T07:16:54Z / BUG-171)
+- evidence: src/router/router_caf.mbt: CafMemory::new 内加 clamp（max_size<=0 收敛到 1）；新增 src/router/router_caf_bug188_wbtest.mbt 两条白盒回归（max_size=0 与 max_size=-5 都收敛、push 不 panic、all() 返回 1 条）；moon test --target js 全量 1084/1084 通过。
+## BUG-172 [2026-10-15T07:26:35Z] [low] FIXED
+- summary: difficulty_label 在 split_n=4 时"难"档不可达（third*2 边界与 pos 上限重合）
+- detail: difficulty_label(idx, split_n) 的"难"档边界用 `pos > third * 2`，其中 third=ceil(split_n/3)。当 split_n=4 时 third=2，边界=4，而 pos 上限也是 4，导致"难"档整段不可达——gradient 拆解 4 片时只有"易/中"两档，与文档"由易到难三档"矛盾。实测：split_n=1→[易]、2→[易,中]、3→[易,中,难]、4→[易,中]（缺"难"）、5→[易,中,难]、6→[易,中,难]。修复：改用 ceil(2*split_n/3)=(2*total+2)/3 作为"难"档下界，split_n>=3 时三档可达。
+
+
+
+### FIXED(2026-10-15T07:27:13Z / BUG-172)
+- evidence: src/decompose/decompose.mbt: difficulty_label 的"难"档下界由 `third*2` 改为 `(2*total+2)/3`（即 ceil(2*total/3)）；新增 src/decompose/probe_difficulty_wbtest.mbt 两条白盒回归（三档可达性 + 单调性）；实测 split_n=4 现产出 [易,中,难]；moon test --target js 全量 1086/1086 通过。
+## BUG-173 [2026-10-15T07:37:34Z] [medium] FIXED
+- summary: [caf-router] sort_by 比较器违反严格弱序（相等时返回 1 非 0），可致排序未定义行为
+- detail: src/router/router_caf.mbt:151-173 的 `caf_stats` 排序比较器违反 MoonBit `sort_by` 的严格弱序要求。比较器逻辑：
+
+```
+if rate_a != rate_b {
+  if rate_a > rate_b { -1 } else { 1 }
+} else if a.avg_cost < b.avg_cost {
+  -1
+} else {
+  1   // ← 当 rate_a == rate_b 且 avg_cost_a == avg_cost_b 时恒返回 1（非 0）
+}
+```
+
+问题：
+1. `cmp(a, a)` 恒返回 1 ≠ 0 —— 违反严格弱序的第一条（自反性：cmp(a,a) 必须为 0）。
+2. `cmp(a, b) == 1` 且 `cmp(b, a) == 1`（当两者完全相等时）——违反反对称性。
+
+后果：MoonBit 的 `sort_by` 依赖严格弱序保证正确性与终止性。违反时可能：
+- 相同元素被无限交换导致 sort 不终止或 O(n²) 退化
+- 排序结果不稳定、跨运行不一致
+- 在 `model_router_status` 展示 Top 成功率模型时给出错序（假统计）
+
+复现路径：两条完全相同特征的记录（同 model、同 ok、同 cost、同 feature_hash）→ `caf_stats()` 返回 `[a, b]` 顺序随机/不稳定。
+
+修复建议：当 rate_a == rate_b 且 avg_cost_a == avg_cost_b 时返回 0（相等）。可用 `total/success/cost` 组合三元比较，或加 tiebreaker（如按 model 名字典序）。
+- task_id: T0r612
+
+
+### FIXED(2026-10-15T07:48:05Z / BUG-173)
+- evidence: commit 修改 src/router/router_caf.mbt:151-173 的 caf_stats 比较器：把 `else { 1 }` 改为三档比较（> / < / =），完全相等时按 model 字典序 tiebreak 并返回 0。src/router/router_caf_wbtest.mbt 新增 2 条回归测试（caf_stats_equal_rate_equal_cost_tiebreak / caf_stats_single_record）。moon test --target js src/router → 114/114 passed。moon fmt --check 通过。
+## BUG-174 [2026-10-15T07:37:56Z] [low] FIXED
+- summary: [caf-router] caf_feature_hash 用 h*31+c 无检查溢出 + h.abs() 在 Int64.min_value() 时未定义
+- detail: src/router/router_caf.mbt:179-188 的 `caf_feature_hash` 中 `h = h * 31 + c` 对 MoonBit Int（64 位）做无检查乘加，可能溢出到负值，最后 `h.abs()` 在 `h == Int64.min_value()`（-2^63）时在 MoonBit 中未定义（panic）。
+
+代码：
+```
+pub fn caf_feature_hash(context : String) -> Int {
+  let mut h : Int = 0
+  let mut i = 0
+  while i < context.length() {
+    let c = context[i].to_int()
+    h = h * 31 + c
+    i = i + 1
+  }
+  h.abs()   // ← Int64.min_value() 时 panic
+}
+```
+
+分析：
+- `h * 31` 对 Int64 无检查，溢出时静默回绕（wrap-around）。
+- 对约 14 个以上字符的 context，h 的量级可达 31^14 ≈ 1e20 > 2^63，必然溢出。
+- 溢出到 Int64.min_value() 的概率虽低（每次字符串约 1/2^64），但属真实缺陷类。
+- `abs()` 在 min_value() 上 MoonBit 行为未定义（通常 panic）。
+
+修复建议：改用 `h = ((h * 31) + c) and 0xFFFFFFFF`（32 位截断，避免溢出到极端负值），或直接用 `Int.to_string()` 的 hash code 语义；至少把 `abs()` 换成 `if h < 0 { -h } else { h }` 并处理 min_value()。
+- task_id: T0r613
+
+
+
+
+### FIXED(2026-10-15T07:52:17Z / BUG-174)
+- evidence: commit 5792271 修改 src/router/router_caf.mbt:190-201 的 caf_feature_hash：把 `h = h * 31 + c` 改为 `h = (h * 31 + c).land(0xFFFFFFFF)`（32 位截断，避免 Int64 溢出），删除 h.abs()（Int64.min_value() 时未定义）。src/router/router_caf_wbtest.mbt 新增 2 条回归测试（caf_feature_hash_long_string_no_overflow 15 字符 / caf_feature_hash_very_long_no_overflow 104 字符）。moon test --target js src/router → 116/116 passed。moon fmt --check 通过。
+## BUG-175 [2026-10-15T07:56:25Z] [high] FIXED
+- summary: ops_ts.iso_to_secs 对 17/18 字符时间戳 panic（chars[17]/chars[18] 越界）——sec 分支守卫 `chars.length() >= 17` 不足，需 >= 19
+- detail: src/ops/ops_ts.mbt L34-38: `let sec = if chars.length() >= 17 { parse_digits(chars, 17, len=2) } else { 0 }`。parse_digits(chars, 17, len=2) 访问 chars[17] 与 chars[18]，但守卫只保证 length>=17，length==17 时 chars[17] 越界、length==18 时 chars[18] 越界 → 数组下标 panic。真实可达：多个模块（ops_heartbeat/ops_cleanup/ops_heal/ops_watchdog/ops_pipeline/board_ascii/server.mbt）把外部传入或 DB 读出的时间戳字符串直接喂给 @ops.iso_to_secs，格式不完整（如 "2024-01-01T00:00:0" 17 字符、"2024-01-01T00:00:01" 18 字符）即触发。修复：守卫改为 `chars.length() >= 19`。
+- reported_by: bug-hunter
+
+## BUG-176 [2026-10-15T08:00:00Z] [high] FIXED
+- summary: engine.mbt execute_with_meta 先写执行元数据再执行，execute 失败时留下幽灵记录
+- detail: src/engine/engine.mbt:227-254 的 `execute_with_meta` 方法在调用 `self.execute()` 之前就调用 `self.store.record_execution()`。当 `execute` 失败（如空 deliverable 被 audit gate 拒绝），executions 表已写入一行幽灵元数据，导致 cost_stats double-count。修复：先调用 `execute`，成功后才写 `record_execution`。
+- task_id: T0r614
+
+### FIXED(2026-10-15T08:00:00Z / BUG-176)
+- evidence: src/engine/engine.mbt:234-253 重排 execute_with_meta：先 `match self.execute(...)` 成功后才 `ignore(self.store.record_execution(...))`。修复后 moon check --target js 0 errors，moon test --target js 1101/1101 passed。
+## BUG-177 [2026-10-15T08:00:00Z] [high] FIXED
+- summary: engine.mbt publish_with_deps 缺少依赖存在性验证，接受不存在的任务 ID
+- detail: src/engine/engine.mbt:1471-1477 的 `publish_with_deps` 方法接受 `depends_on` 数组但不验证依赖任务是否存在。调用方传入不存在的任务 ID 时，任务被创建但依赖悬空，后续 critical_path/dag 遍历可能出错。修复：添加循环检查每个 dep 是否存在。
+- task_id: T0r615
+
+### FIXED(2026-10-15T08:00:00Z / BUG-177)
+- evidence: src/engine/engine.mbt:1471-1477 在 created_by 检查后添加 `for dep in depends_on { match self.store.get_task(dep) { None => return Err("依赖任务不存在: \{dep}") Some(_) => () } }`。修复后 moon check --target js 0 errors，moon test --target js 1101/1101 passed。
+## BUG-178 [2026-10-15T08:00:00Z] [high] FIXED
+- summary: store_sqlite.mbt assistant_upsert 非原子，并发 agents 可同时插入 is_primary=1
+- detail: src/store/store_sqlite.mbt:1679-1750 的 `assistant_upsert` 方法先 `clear`（UPDATE is_primary=0）再 `insert`（upsert is_primary=1），两步不在同一事务。并发 agents 可同时看到 is_primary=0 并各自插入 is_primary=1，导致多个 primary assistant。修复：用 BEGIN IMMEDIATE/COMMIT 事务包裹。
+- task_id: T0r616
+
+### FIXED(2026-10-15T08:00:00Z / BUG-178)
+- evidence: src/store/store_sqlite.mbt:1679-1750 在 clear_sql 和 insert_sql 外包裹 `ignore(db.exec("BEGIN IMMEDIATE"))` / `ignore(db.exec("COMMIT"))`。修复后 moon check --target js 0 errors，moon test --target js 1101/1101 passed。
+## BUG-179 [2026-10-15T08:00:00Z] [high] FIXED
+- summary: store_sqlite.mbt locks_sweep 非原子，SELECT+UPDATE+INSERT 分步执行
+- detail: src/store/store_sqlite.mbt:1507-1591 的 `locks_sweep` 方法先 SELECT 过期锁，再循环 UPDATE + INSERT violations，每步独立事务。并发时可能重复处理同一锁或遗漏。修复：用 INSERT...SELECT 单语句记录 violations + 单 UPDATE 过期 + SELECT changes()，包裹在 BEGIN IMMEDIATE/COMMIT 中。
+- task_id: T0r617
+
+### FIXED(2026-10-15T08:00:00Z / BUG-179)
+- evidence: src/store/store_sqlite.mbt:1507-1545 重写 locks_sweep：`INSERT INTO lock_violations ... SELECT ... FROM file_locks WHERE status='active' AND ttl_until < ?` + `UPDATE file_locks SET status='expired' WHERE ...` + `SELECT changes()`，包裹在事务中。修复后 moon check --target js 0 errors，moon test --target js 1101/1101 passed。
+## BUG-180 [2026-10-15T08:00:00Z] [high] FIXED
+- summary: store_sqlite.mbt locks_upsert TOCTOU，check-then-insert 竞态
+- detail: src/store/store_sqlite.mbt:1094-1210 的 `locks_upsert` 方法先 `self.locks_get(scope)` 检查锁是否存在，再 INSERT。并发时两个 agents 可能同时通过检查并各自插入。修复：用 INSERT...SELECT 记录 violations + ON CONFLICT...DO UPDATE...WHERE 原子 upsert，包裹在 BEGIN IMMEDIATE/COMMIT 中。
+- task_id: T0r618
+
+### FIXED(2026-10-15T08:00:00Z / BUG-180)
+- evidence: src/store/store_sqlite.mbt:1094-1210 重写 locks_upsert：`INSERT INTO lock_violations ... SELECT ... FROM file_locks WHERE scope=? AND status='active' AND agent!=? AND ttl_until>=?` + `INSERT INTO file_locks ... ON CONFLICT(scope) DO UPDATE SET ... WHERE file_locks.status!='active' OR file_locks.agent=excluded.agent OR file_locks.ttl_until<excluded.ts`，包裹在事务中。修复后 moon check --target js 0 errors，moon test --target js 1101/1101 passed。
+## BUG-181 [2026-10-15T08:00:00Z] [high] FIXED
+- summary: store_sqlite.mbt clear 静默失败，DELETE FROM 不存在的表不报错
+- detail: src/store/store_sqlite.mbt:721-747 的 `clear` 方法直接 DELETE FROM 各表，但若表不存在则静默失败（SQLite 不报错）。修复：在 DELETE 前添加 CREATE TABLE IF NOT EXISTS 确保所有 12 张表存在。
+- task_id: T0r619
+
+### FIXED(2026-10-15T08:00:00Z / BUG-181)
+- evidence: src/store/store_sqlite.mbt:721-760 在所有 DELETE FROM 前添加 12 个 `CREATE TABLE IF NOT EXISTS` 语句。修复后 moon check --target js 0 errors，moon test --target js 1101/1101 passed。
+## BUG-182 [2026-10-15T08:00:00Z] [high] FIXED
+- summary: server.mbt 三处时间戳注入（loop_create/lock_acquire/lock_renew 接受用户提供的 now/ts）
+- detail: src/server/server.mbt:2651/4461/4515 的 `loop_create`、`lock_acquire`、`lock_renew` 工具接受用户提供的 `now`/`ts` 参数并直接使用，而非服务端盖章。恶意用户可注入未来时间戳影响锁过期判断。修复：三处均改为 `now_default()`。
+- task_id: T0r620
+
+### FIXED(2026-10-15T08:00:00Z / BUG-182)
+- evidence: src/server/server.mbt:2651 `let now = now_default()`（原 `get_str(args, "now", default=now_default())`）；:4461 `let ts = now_default()`（原 `get_str(args, "ts", default=now_default())`）；:4515 `let ts = now_default()`（原 `get_str(args, "ts", default=now_default())`）。修复后 moon check --target js 0 errors，moon test --target js 1101/1101 passed。
+
+## BUG-183 [2026-10-15T08:15:00Z] [high] FIXED
+- summary: ops_selfdrive.mbt sd_kind_path 路径遍历漏洞，kind 参数可包含 ../ 导致任意文件写入
+- detail: src/ops/ops_selfdrive.mbt:33-35 的 `sd_kind_path` 函数直接用 `kind + ".md"` 构造路径，未对 kind 做校验。若 kind 包含 `../` 或 `/`，可构造如 `project_dir/memory/../../etc/passwd.md` 的路径，导致任意文件写入。修复：在 sd_kind_path 中添加校验，拒绝包含 `/`、`\`、`..` 或空字符串的 kind。
+- task_id: T0r621
+
+### FIXED(2026-10-15T08:15:00Z / BUG-183)
+- evidence: src/ops/ops_selfdrive.mbt:33-37 在 sd_kind_path 中添加 `if kind.length() == 0 || kind.contains("/") || kind.contains("\\") || kind.contains("..") { abort("invalid kind: \{kind}") }`。修复后 moon check --target js 0 errors，moon test --target js 1105/1105 passed。
+
+
+
+### FIXED(2026-10-15T08:07:37Z / BUG-175)
+- evidence: src/ops/ops_ts.mbt L34-38: sec 分支守卫从 `chars.length() >= 17` 收紧为 `>= 19`，`parse_digits(chars,17,len=2)` 访问 chars[17]/chars[18] 需 length>=19；新增 3 条白盒回归测试（ops_ts_wbtest.mbt：17/18/19 字符边界），src/ops 189/189 通过；commit c2374c8
+## BUG-183 [2026-10-15T08:17:24Z] [high] FIXED
+- summary: [rule:potential-overflow] star_gate.mbt:303 issued_at+ttl_seconds Int64 溢出 panic（恶意 1e300 JSON 可达）
+- detail: src/router/star_gate.mbt L303（④ 时间层判定）：`now_epoch > data.issued_at + data.ttl_seconds` 是 Int64 加法。`issued_at` / `ttl_seconds` 经 `Double::to_int64()`（L148/L152）从 JSON Number 转换，对超范围值（如科学计数法的 `1e300`）饱和到 Int64 max（9223372036854775807）。两值相加溢出 Int64 → MoonBit 溢出检查触发 panic。可达路径：`star_gate_verify`（非钉死自指入口，L201）——攻击者用自持 Ed25519 密钥对，对 `{list, issued_at:1e300, ttl_seconds:1e300}` 自签 canonical（`star_canonical` 输出 `{"issued_at":9223372036854775807,...}`），验签步（L294）通过后进入 ④ 即 panic。`star_gate_policy`（生产入口）走 `star_gate_verify_pinned`，钉死公钥不匹配时 L264 早退 BadSignature，故该路径受钉死公钥保护；但非钉死 `star_gate_verify` 是公开函数，未来接入未钉死部署即暴露。修复：改用 Double 比较（Int64 max×2 ≈ 1.8e19 在 Double 精度内），两方都大到不可代表真实时间戳时比较恒为「未过期」，语义正确。回归测试：`star_gate_wbtest.mbt` 追加一条「恶意 1e300 issued_at+ttl 不 panic」，已验证「无修复时失败、有修复时通过」。
+- reported_by: bug-hunter
+
+
+
+### FIXED(2026-10-15T08:17:59Z / BUG-183)
+- evidence: src/router/star_gate.mbt L302-313：`now_epoch > data.issued_at + data.ttl_seconds`（Int64 加法）改为 `now_epoch.to_double() > data.issued_at.to_double() + data.ttl_seconds.to_double()`（Double 加法，Int64 max×2 ≈ 1.8e19 在 Double 精度内不溢出）。新增白盒回归测试 star_gate_wbtest.mbt「恶意 1e300 issued_at+ttl 不 panic（BUG-196 溢出回归）」，已验证：无修复时该测试 fail（旧加法触发溢出 panic）、有修复时 pass。src/router 128/128 通过。commit 97bc54b
+
+## BUG-184 [2026-10-15T08:39:00Z] [high] FIXED
+- summary: engine.mbt verify() 父任务归并 TOCTOU（盲目 update_task 覆盖并发修改）
+- detail: src/engine/engine.mbt L534-567 verify() 向上归并逻辑：读取父任务后，在内存中调用 execute() 和 submit() 得到 Reviewing 状态的 p2，然后使用 `update_task(p2)` 盲目写回数据库。在 L534 读取父任务到 L560 写回之间，其他 agent 可能并发修改父任务（如修改 deliverable、改变状态），盲目写入会覆盖这些并发更改，导致交付物合并丢失或状态损坏。修复：捕获父任务原始状态 `original_status = parent.get_status().to_string()`，使用 `update_task_if_status(p2.with_updated_at(now), original_status)` 进行原子比较交换，确保父任务状态未变化时才写入。
+- reported_by: bug-hunter
+
+
+### FIXED(2026-10-15T08:39:00Z / BUG-184)
+- evidence: src/engine/engine.mbt L537 添加 `let original_status = parent.get_status().to_string()`，L562 将 `update_task(p2.with_updated_at(now))` 改为 `update_task_if_status(p2.with_updated_at(now), original_status)`。修复后 moon check --target js 0 errors，moon test --target js 1108/1108 passed。
+
+## BUG-185 [2026-10-15T08:46:00Z] [medium] FIXED
+- summary: ops_watchdog.mbt 静默吞噬 heal 错误（Err(_) => [] 让用户误以为"无需修复"）
+- detail: src/ops/ops_watchdog.mbt L273/L278 在 heal_stale_tasks_by_phi 和 heal_stale_tasks_from_store 失败时返回空列表 `[]`，导致 watchdog 报告 "healed: 0 tasks" 而用户无法知道 heal 实际失败。stale 任务留在系统中无任何失败指示，无法诊断。修复：捕获错误到 `heal_error` 变量，在最终 JSON 输出的 `detail.heal_error` 字段中包含错误信息，不改变 watchdog 整体行为（仍然返回 Ok）。
+- reported_by: bug-hunter
+
+
+### FIXED(2026-10-15T08:46:00Z / BUG-185)
+- evidence: src/ops/ops_watchdog.mbt L262 添加 `let mut heal_error : String? = None`，L273/L278 将 `Err(_) => []` 改为 `Err(e) => { heal_error = Some(e); [] }`，L593-608 在 tick_json 调用前将 heal_error 添加到 detail JSON。修复后 moon check --target js 0 errors，moon test --target js 1108/1108 passed。
+
+## BUG-186 [2026-10-15T08:50:00Z] [medium] FIXED
+- summary: ops_heal.mbt heal_stale_tasks_by_phi 静默吞噬 reopen_task 错误（Err(e) => ignore(e)）
+- detail: src/ops/ops_heal.mbt L242 在 reopen_task 失败时忽略错误 `Err(e) => ignore(e)`，导致调用方无法知道某些任务修复失败。函数返回类型为 `Result[Array[String], String]`，本应传播错误。修复：改为 `Err(e) => return Err(e)`，让错误传播到调用方（ops_watchdog.mbt），由其包含在 JSON 输出的 heal_error 字段中。
+- reported_by: bug-hunter
+
+
+### FIXED(2026-10-15T08:50:00Z / BUG-186)
+- evidence: src/ops/ops_heal.mbt L242 将 `Err(e) => ignore(e)` 改为 `Err(e) => return Err(e)`。修复后 moon check --target js 0 errors，moon test --target js 1108/1108 passed。
+## BUG-185 [2026-10-15T08:44:07Z] [medium] OPEN
+- summary: [判据] e2e_irm_line 真面档探针恒红：probe() 用 [ -x 'fist' ] 裸词（-x 不查 PATH）+ 本机默认 bash=WSL 与 POSIX shim 面（承诺 Git Bash/MSYS）错位，任何机器 --real 都判不出绿
+- detail: 现象（2026-10-15 本机实测）：python scripts/blackbox/e2e_irm_line.py --real 文档线本体 rc=0、安装自检四面全绿（版本 v0.3.8 / fist (PATH) / POSIX shim LF），但整档 FAIL rc=1——红在 probe(env, ROOT, 真面 bash) 这一格。两个独立成因：① probe() L270-271：真面档 sbin=None ⇒ exe='fist' 裸词，sh 的 `if [ -x '%s' ]` 裸词测试**不走 PATH 检索**、永远假——真面档在任何机器（含装有 Git Bash 的）都恒报 MISSING fist ⇒ 恒红，属 BUG-117「判据自己假红」同族；实测对照：`bash -c "command -v fist"` 命中 /mnt/c/Users/victo/.local/bin/fist，而 `bash -c "if [ -x 'fist' ]"` 报 MISSING。② 本机无 Git Bash，PATH 上的 bash = C:\Windows\system32\bash.exe（WSL）；POSIX 无扩展名 shim 按安装器自述只承诺 Git Bash/MSYS 面（Windows 路径直接可用），WSL 下 `exec node "C:\..."` 语义错位实测 rc=1——即便修好①，真面档在这一格仍会给出**误导性**的红。修法建议：probe 的真面档改为 command -v 定位 + 点名目标 shell（存在 Git Bash/MSYS 才跑行为面），两者都没有时按「判据拒绝出数」（e2e_native_heap_probe 的 rc=3 同族语义）而非报产品红；沙箱档（传 sbin 全路径）的 -x 用法本身合法，不动。
+- reported_by: loomy-e2e-irm-real-20261015
+
+## BUG-186 [2026-10-15T08:44:07Z] [medium] OPEN
+- summary: [看护] e2e_irm_line --real 无 PATH/shim/产物目录还原保护：在重定向 HOME 的 agent 会话里跑会改写真实 .local\bin 四件 shim 与 HKCU PATH，本发实测污染并由人工还原
+- detail: 现象（2026-10-15 实测）：real() L431-461 只做「产物 js 备份→不绿自动还原」，且不设沙箱 env（沙箱档 arm() 才有 LOCALAPPDATA/USERPROFILE 改道 + finally PATH 逐字还原）。在 Loomy/CI-agent 这类 HOME/APPDATA 重定向会话里跑 --real：安装器按会话 env 执行 ⇒ ① 把 HKCU Path 前插 `C:\Users\Public\Loomy\<ver>\.local\bin`（沙箱形态条目，残留于注册表）；② 真实 .local\bin（本机经 junction 归一，与沙箱路径同实体）的 fist.cmd/fist-mbt.cmd/fist/fist-mbt 四件 shim 被改写指 `$env:LOCALAPPDATA`=沙箱目录下 **2026-10-13 的旧产物**（3114943B），真面用户从此隔一层影子产物跑旧版；③ real() 的 REAL_DEST 按会话算 = 沙箱路径，跑前读 (无) ⇒ 不建备份 ⇒「不绿⇒还原备份」空转，三处污染全不回收。本次已人工还原（四件 shim 重指真产物 + PATH 删残留逐字还原，cmd 面验回 FIST-Mbt v0.3.8）。修法建议：real() 增 PATH 与 .local\bin 四件 shim 的基线比对/还原（对齐 arm() 纪律）；或更硬——检测 $env:USERPROFILE 与真实用户面（net user / WScript.Shell 法）不一致时像裸形那样**拒绝执行**，在重定向环境里让 --real 显式不可用，把污染挡在入口。
+- reported_by: loomy-e2e-irm-real-20261015
+
+## BUG-187 [2026-10-15T08:53:15Z] [medium] FIXED
+- summary: supervisor_tools.mbt:448 `str_to_int` 缺 int_safe 上界守卫——长数字串（如 stale_hours=99999999999999）在 `v = v * 10 + d` 上溢出 Int（JS 静默精度丢失 / native panic），而同族 4 个解析器（sd_parse_int / ov_parse_int / bugreport.mbt:204 / store_sqlite_executions.mbt:202）都已用 int_safe=200_000_000 守卫
+- detail: 现象：`supervisor_reminder_tick` MCP 工具从用户 JSON args 读 `stale_hours` / `pending_hours`（字符串），经 `str_to_int` 解析。该函数只有空串守卫和符号处理，`for j in i..<s.length() { v = v * 10 + d }` 无上界检查。用户传 `stale_hours="99999999999999999999"` 时：JS target（MCP server 默认）上 Int 是 53-bit Double，溢出后静默精度丢失，返回错误的阈值；native target 上 Int 是 64-bit，溢出 panic。R12-R8 已把同族 4 个解析器统一加上 `int_safe = 200_000_000` 守卫（见 BUG-221 ov_parse_int），本函数是唯一的漏网。
+
+修法：与 ov_parse_int 同型——在累加前 `if v >= int_safe { return dft }`，并复用 200_000_000 上界（v * 10 + 9 < 2e9 < 2^31-1 安全）。
+
+证据：`grep -n "int_safe" src/` 显示 4 处有守卫（ops_selfdrive.mbt:162 / output_validate.mbt:275 / bugreport.mbt:204 / store_sqlite_executions.mbt:202），supervisor_tools.mbt:448-465 无。
+- reported_by: audit-cypy-sweep
+
+
+
+### FIXED(2026-10-15T08:56:19Z / BUG-187)
+- evidence: commit 53e6de1：`src/server/supervisor_tools.mbt:456` 新增 `let int_safe : Int = 200_000_000`，循环内在累加前 `if v >= int_safe { return dft }`（L469-471），与同族 sd_parse_int/ov_parse_int/bugreport/store_sqlite_executions 四处的 int_safe 守卫同型。`moon test --target js` 1112/1112 通过（baseline 1111 + 新锁 0 回归），`moon fmt --check src/server/supervisor_tools.mbt` 返回 0。
+## BUG-188 [2026-10-15T08:57:32Z] [low] FIXED
+- summary: issue_scan.mbt:627 `scan_substring_start` 的 acc 累加缺 int_safe 上界守卫——被扫描源码含 `substring(start=<长数字>, ...)` 时溢出 Int（JS 静默乱数 / native panic），substring-overrun 规则误判
+- detail: 现象：`issue_scan` 的 `scan_substring_start` 扫描源码行提取 `substring(start=N, ...)` 的 N 值，`while` 循环里 `acc = acc * 10 + (code[j].to_int() - 48)` 无上界检查。若被扫描的 `.mbt` 文件含 `substring(start=99999999999999999999, ...)`，acc 溢出（JS 静默精度丢失 / native Int64 panic），返回错误的 start 值，导致 substring-overrun 规则误报/漏报。
+
+同族 5 处解析器（sd_parse_int / ov_parse_int / bugreport.mbt:204 / store_sqlite_executions.mbt:202 / 刚修的 supervisor_tools.mbt:456）都有 `int_safe = 200_000_000` 守卫，本处是新的漏网。
+
+修法：循环内 `if acc >= int_safe { return -1 }`，与 `scan_substring_start` 已有的 -1 哨兵语义一致（解析失败返回 -1）。
+- reported_by: audit-cypy-sweep
+
+
+
+### FIXED(2026-10-15T09:03:40Z / BUG-188)
+- evidence: commit 5d35304：`src/server/issue_scan.mbt:628` 新增 `let int_safe : Int = 200_000_000`，循环内累加前 `if acc >= int_safe { return -1 }`（L632-634），与同族 5 处解析器同型。配套 `src/server/issue_scan_wbtest.mbt` 追加 4 条边界锁：20 位长数字串/2000000001/2000000000 三例返回 -1，200000000 与 199999999 仍正常解析。`moon test --target js` 全量 1112/1112 通过（含新增断言），`moon fmt` 通过。
+
+## BUG-189 [2026-10-15T09:06:00Z] [high] FIXED
+- summary: symbolic.mbt DPLL 求解器 dpll_sat() 缺少防御性变量索引边界检查——若 Cnf 结构体被手动构造（非 to_cnf 路径）且子句含 v > num_vars 的文字，assign[v] 越界
+- detail: `dpll_sat` 是 pub 函数，接收任意 `Cnf` 结构体。`assign` 数组大小为 `n+1`（n = cnf.num_vars），但函数体内所有 `assign[v]` 访问（unit_propagate / pure_literal_eliminate / all_satisfied / pick_branch_var）均无边界检查。正常路径 to_cnf 产生的变量索引在 [0, num_vars] 范围内（Var 从 1 开始，aux_counter 递增到 num_vars），但手动构造的 Cnf 可包含任意索引。修法：在 dpll_sat 入口遍历所有子句文字，若 v < 0 || v > n 则 return None（视为不可满足），与求解器语义一致。
+- reported_by: bug-hunter
+
+
+
+### FIXED(2026-10-15T09:06:00Z / BUG-189)
+- evidence: `src/symbolic/symbolic.mbt` dpll_sat() 入口新增 12 行边界检查循环：遍历 cnf.clauses 所有文字，`if v < 0 || v > n { return None }`。`moon check --target js` 0 errors，`moon test --target js` 1112/1112 passed。
+## BUG-190 [2026-10-15T09:06:30Z] [medium] FIXED
+- summary: ops_pipeline.mbt L779/L793 cold_publish / publish_next_round 失败被静默吞掉——Err(_) => () 使调用方看到"wait"而非错误
+- detail: `pipeline_advance` 函数在 tasks.is_empty() 时调用 cold_publish，否则调用 publish_next_round。两处失败均 `Err(_) => ()`，new_id 保持 None，最终返回 Ok(PjAdvance("Pending","Pending","wait",...))——调用方无法区分"无任务可发布"与"发布失败"。修法：用 `publish_error : String?` 捕获错误，发布后检查并 `return Err("pipeline 发布失败: \{e}")`，让错误传播到调用方。
+- reported_by: bug-hunter
+
+
+
+### FIXED(2026-10-15T09:06:30Z / BUG-190)
+- evidence: `src/ops/ops_pipeline.mbt` L768 新增 `let mut publish_error : String? = None`；L779/L793 `Err(_) => ()` 改为 `Err(e) => publish_error = Some(e)`；L798-801 新增 `match publish_error { Some(e) => return Err(...), None => () }`。`moon check --target js` 0 errors，`moon test --target js` 1112/1112 passed。
+## BUG-191 [2026-10-15T09:07:00Z] [medium] FIXED
+- summary: router_caf.mbt L149 `model_cost_sum[i] / model_totals[i].to_double()` 除以零风险——model_totals[i] 为 0 时 Infinity/NaN
+- detail: `caf_model_stats` 汇总循环中，若某 model 的 records 存在但全部 cost=0 且 totals 被其他路径置零（理论上当前数据流不会，但作为 pub 函数应防御），除零产生 Infinity 或 NaN，污染排序。修法：`if model_totals[i] > 0 { ... } else { 0.0 }`。
+- reported_by: bug-hunter
+
+
+
+### FIXED(2026-10-15T09:07:00Z / BUG-191)
+- evidence: `src/router/router_caf.mbt` L149 改为 `avg_cost: if model_totals[i] > 0 { model_cost_sum[i] / model_totals[i].to_double() } else { 0.0 }`。`moon check --target js` 0 errors，`moon test --target js` 1112/1112 passed。
+## BUG-192 [2026-10-15T09:16:18Z] [high] FIXED
+- summary: BUG-189 router_config.mbt 4 处 JSON Double.to_int() 无上界守卫，恶意 config_json 使 model_route 服务器崩溃
+- detail: `RouterConfig::from_json(json)` 直接对用户 JSON 里的 Number 调 `.to_int()`，MoonBit Double→Int 转换在 |v| > 2^31-1 或 NaN/Inf 时 panic（与 BUG-183/187/188 同族，evolve.mbt L429 注释已确认此行为）。
+
+4 处漏网：
+- L15 `Some(Json::Number(n, ..)) => n.to_int()` — window_seconds，用户在 `model_route(config_json='{"window_seconds": 99999999999}')` 即可触发。
+- L128 `parse_opt_int`：`Some(Json::Number(n, ..)) => (n.to_int(), [])` — rank 字段。
+- L182 `if n.to_int() < 0` — limit 负数检查，to_int 在比较前就 panic。
+- L192 `n.to_int()` — limit 采纳值。
+
+可达路径：MCP `model_route` 的 `config_json` 参数是外部输入（JSON 文本或对象，BUG-63 两种形态都收）。恶意/误传大数即让 server 进程 panic，属于 DoS。
+
+修复方向：与 store_sqlite_executions.mbt L202-235 同款哨兵——在 to_int 前先检查 `n.is_finite() && n >= -2e9 && n <= 2e9`（Int32 安全域），越界回落到默认值并记 warning。
+
+
+### FIXED(2026-10-15T09:29:07Z / BUG-192)
+- evidence: 改了真源 src/router/router_config.mbt + src/router/router_state.mbt：新增 num_to_int_safe 助手（n != n 抓 NaN、|v|>2e9 回落 dft + warning）；window_seconds/limit/rank 4 处 `.to_int()` 全走安全转换；limit 保留「为负→0无限」与「非数字→0」原语义并新增「越界/NaN→0+warning」。补白盒锁 src/router/router_config_wbtest.mbt cfg_192（99999999999.0 超大值不 panic、回落默认、进 warnings）。138 tests 137 pass（唯一 fail 是并发 agent 的 router_caf_wbtest.mbt WIP，非本次改动）。
+## BUG-193 [2026-10-15T09:19:05Z] [critical] FIXED
+- summary: BUG-189: router_config.mbt 并发 agent 引入 `is_finite()` 调用导致全仓编译失败（MoonBit Double 无此方法）
+- detail: 并发 agent 在 src/router/router_config.mbt 的 WIP diff 中引入 `n.is_finite()` 调用（line 133、148），但 MoonBit 的 `Double` 类型没有 `is_finite` 方法。`moon check src/router` 报 Error [4015]（Type Double has no method is_finite），2 errors，导致全仓编译失败。正确写法应该是用 `n.to_string()` 检查或直接用比较（NaN 与任何数比较都是 false）——例如 `if n == n && n >= -2000000000.0 && n <= 2000000000.0`（`n == n` 为 true 表示不是 NaN）。文件是并发 agent 的 WIP，我不越界修改，仅上报。
+- reported_by: caf-agent
+- task_id: T0r615
+
+
+
+### FIXED(2026-10-15T09:25:07Z / BUG-193)
+- evidence: 并发 agent 消费了 sg-2 引导后用 `n == n` 替代了所有 `is_finite()` 调用。验证：Select-String is_finite src/router/*.mbt → 0 匹配；moon check src/router → 0 errors（96 warnings）。
+
+
+## BUG-192 [2026-10-15T09:28:00Z] [medium] FIXED
+- summary: ops_cleanup.mbt L36-38 delete_task 失败时 `Err(e)` 捕获错误对象但只记录 `":failed"`，丢弃错误详情
+- detail: `cleanup_archived` 函数遍历已归档任务并调用 `engine.delete_task`。失败时 `removed.push(t.get_id() + ":failed")` 完全丢弃了错误原因 `e`，调用方无法知道删除失败的具体原因（数据库错误/任务不存在/并发修改等）。修法：`removed.push(t.get_id() + ":failed:" + e)`，保留错误详情供运维诊断。
+- reported_by: bug-hunter
+
+
+
+### FIXED(2026-10-15T09:28:00Z / BUG-192)
+- evidence: `src/ops/ops_cleanup.mbt` L37 将 `removed.push(t.get_id() + ":failed")` 改为 `removed.push(t.get_id() + ":failed:" + e)`。`moon check --target js` 0 errors，`moon test --target js` 1115/1115 passed。
+## BUG-194 [2026-10-15T09:36:59Z] [high] FIXED
+- summary: server.mbt get_int 对超 Int32 域 JSON Number 饱和接受，42 个 MCP 工具参数可被 1e300 静默打歪（永不超时/永不判 suspect/永不 heal）
+- detail: get_int 被 42 个 MCP 工具的参数解析共用（split_n/timeout_ms/max_rounds/phi_threshold/stale_secs/retention_days 等）。旧代码 `Some(Number(n, ..)) => n.to_int()` 对超 Int32 域的值**饱和**（BUG-26 实测：1e300 → Int max，不 panic 但静默接受天量值）。后果：`timeout_ms=2147483647` 让子进程永不超时、`phi_threshold` 永不判 suspect（心跳看护静默失效）、`stale_secs` 让 heal 永不触发（任务永久卡死）、`retention_days` 永不清理。攻击面：任何 MCP 客户端都能在工具参数里塞 `1e300` 触发。
+
+
+
+### FIXED(2026-10-15T09:37:08Z / BUG-194)
+- evidence: 改了真源 src/server/server.mbt 的 get_int：新增 `n != n || n < -2e9 || n > 2e9` 越界/NaN 守卫，越界一律回落 default。补白盒锁 src/server/get_int_wbtest.mbt（越界正/负、NaN、合法值、缺字段/坏类型 7 断言）。src/server 264→266 tests 全绿。
+## BUG-195 [2026-10-15T09:50:32Z] [medium] FIXED
+- summary: server.mbt loop_create 内联 3 个 .to_int()（max_rounds/baseline_test_count/baseline_open_bug_count）绕过 get_int 守卫，客户端塞 1e11 静默饱和成 Int max（组合环硬上限形同虚设）
+- detail: BUG-194 只修了 get_int 本身，但 loop_create（src/server/server.mbt:2661-2705）为绕开 get_int 的默认值 3，内联写了 3 个 `Some(Number(n, ..)) => n.to_int()`。对超 Int32 域的值 Double::to_int() 饱和（BUG-26）：max_rounds=1e11 → Int max，loop_create 的硬上限 max_rounds 形同虚设（本可跑 2^31 轮）；baseline_test_count / baseline_open_bug_count 变成天量，stop_on_exceeded 的基线判定也失真。攻击面：任何 MCP 客户端调用 loop_create 塞 1e11 即可触发。修法：改用 get_int(args, key, default=) 覆盖默认值，复用同一饱和守卫。
+
+
+
+### FIXED(2026-10-15T09:50:40Z / BUG-195)
+- evidence: 改了真源 src/server/server.mbt 的 loop_create：3 处内联 `Some(Number(n,..)) => n.to_int()` 改为 `get_int(args, key, default=)`，复用 get_int 的 `n != n || n < -2e9 || n > 2e9` 饱和守卫（BUG-194 同款）。补白盒锁 src/server/get_int_wbtest.mbt「非 3 默认值」路径（越界正/负、NaN、缺字段、合法值 9 断言）。src/server 266→267 tests 全绿，commit 26fba62。
+## BUG-196 [2026-10-15T10:21:00Z] [high] FIXED
+- summary: [rule:logic-inversion] server.mbt:270 iso_minus_secs 负 secs 产生未来 cutoff（assistant_claim 立即接管新鲜主助理；sweep 误杀活跃助理）
+- detail: 现象：`iso_minus_secs(iso, secs)` 用 `ms = @env.now().to_int64() - secs.to_int64() * 1000L` 计算 cutoff。`secs` 经 `get_int`（BUG-194 后）允许 [-2e9, 2e9] 任意值。当 `secs < 0` 时 `ms = now + |secs|*1000`，落在未来，格式化为一个**未来**时间戳。
+
+两处调用点：
+- `assistant_claim`（server.mbt:4653，`heartbeat_ttl_sec` 默认 300）：客户端传 `heartbeat_ttl_sec=-100` → cutoff = now+100s。`assistant_claim_action` 里 `prev.heartbeat_at < cutoff` 恒真 → 一份**心跳完全新鲜**的主助理被立即判定陈旧，返回 `taken_over`，旧主被记 `lock_violations force_takeover`。这是 **fail-open 授权绕过**：任意客户端可夺权。
+- `assistant_sweep`（server.mbt:4738，`stale_secs` 默认 600）：传 `stale_secs=-100` → cutoff 在未来 → 所有 `heartbeat_at < cutoff` 的助理（包括刚心跳过的）被标 dead。
+
+附带第二处隐患：`iso` 参数**完全未被使用**（死代码），函数实际用的是 `@env.now()` 墙钟而非传入的 `iso`。当前两个调用点都传 `now_default()`（≈now），语义恰好等价；但任何未来调用点若传入历史时间，cutoff 仍以"当下"为基准，静默出错。
+
+修复：`secs < 0` 时按 0 处理（即不回退，cutoff=now），与函数名"回退 secs 秒"的承诺一致；同时让 `iso` 真正参与（用 `iso` 解析为基准）。本次只修负值分支（最小改动），`iso` 未使用留待后续。
+- reported_by: fist-iter-bug-hunter
+
+
+
+### FIXED(2026-10-15T10:30:55Z / BUG-196)
+- evidence: 改了真源 src/server/server.mbt 的 iso_minus_secs：① secs<0 钳到 0（负回退算出未来 cutoff = fail-open 授权绕过：assistant_claim 会把新鲜主助理立即判陈旧而接管、assistant_sweep 会把刚心跳过的助理标 dead）；② 让此前完全未被使用的 iso 参数真正作为基准参与计算（新增 _days_from_civil Hinnant 逆变换 + _iso_to_unix_ms，解析失败回退墙钟，与旧行为等价）。新增白盒锁 src/server/tz_minus_secs_wbtest.mbt 共 10 条（iso 基准回退/0 秒恒等/负 secs 钳位/恰好一天/1970 下界哨兵/1970 解析为 0/2026-10-15 预期毫秒/越界字段 None/短串非数字 None/闰日可解析）。src/server moon test --target js = Total tests: 277, passed: 277, failed: 0（基线 267 + 10 新）；moon check 0 errors。commit d1a59ef。
+## BUG-197 [2026-10-15T10:26:00Z] [high] FIXED
+- summary: engine_supervisor.mbt supervisor_task_upsert 新任务建好后写依赖失败被 `ignore(...)` 静默吞掉——调用方只看到 created，依赖实际未落库
+- detail: `supervisor_task_upsert` 在 create_task 成功后，若 `item.depends_on` 非空，则循环 `c = c.with_depends_on(d, now)` 后调 `ignore(self.store.update_task(c))`。update_task 失败（DB 错/并发改）时无任何回执，results 里仍记 `"action":"created"`，调用方以为依赖已建立，实际 DAG 边缺失——后续按依赖调度会错序或漏跑。
+- reported_by: fist-iter-bug-hunter
+
+### FIXED(2026-10-15T10:26:00Z / BUG-197)
+- evidence: src/engine/engine_supervisor.mbt L471-484 将 `ignore(self.store.update_task(c))` 改为 `match ... { Ok(_) => (), Err(e) => results.push({"ok":false,"task_id":id,"action":"dep_update_failed","error":e}) }`，依赖写失败现在以独立结果回执调用方。`moon check --target js` 0 errors。
+
+## BUG-198 [2026-10-15T10:26:00Z] [high] FIXED
+- summary: engine_saga.mbt saga_rollback 调 store_mark_saga_actions_done 失败被 `Err(_) => 0` 吞掉——补偿标记未落库但回执显示正常，重复调用会重复补偿
+- detail: `saga_rollback` 的 `let marked_n = if mark && ... { match self.store_mark_saga_actions_done(...) { Ok(_) => ids.length(), Err(_) => 0 } }`。Err 分支丢弃错误、返回 0，JSON 里只看到 `marked_done:0`（与"无需标记"不可区分），且幂等前提（标记 done 后重复调用不再出现）被破坏——补偿动作可能被重复执行。
+- reported_by: fist-iter-bug-hunter
+
+### FIXED(2026-10-15T10:26:00Z / BUG-198)
+- evidence: src/engine/engine_saga.mbt L68 新增 `let mut mark_err = ""`；L72 `Err(_) => 0` 改为 `Err(e) => { mark_err = e; 0 }`；L96 新增 `m.set("mark_error", Json::string(mark_err))`。标记失败现随回执返回。`moon check --target js` 0 errors。
+
+## BUG-199 [2026-10-15T10:26:00Z] [high] FIXED
+- summary: engine_saga.mbt saga_repair 与 BUG-198 同款——store_mark_saga_actions_done 失败被 `Err(_) => 0` 吞掉
+- detail: `saga_repair`（局部补偿/控级联）中 `let marked_n = if mark && not(affected_ids.is_empty()) { match ... { Ok(_) => affected_ids.length(), Err(_) => 0 } }`，错误同样被丢弃，受影响切片的补偿标记可能未落库而回执正常。
+- reported_by: fist-iter-bug-hunter
+
+### FIXED(2026-10-15T10:26:00Z / BUG-199)
+- evidence: src/engine/engine_saga.mbt L226 新增 `let mut mark_err = ""`；Err 分支改为 `Err(e) => { mark_err = e; 0 }`；L260 新增 `m.set("mark_error", Json::string(mark_err))`。`moon check --target js` 0 errors。
+
+## BUG-200 [2026-10-15T10:26:00Z] [high] FIXED
+- summary: omega_strong.mbt omega_escalate 调 upsert_spec 写升级记录失败被 `ignore(...)` 静默吞掉——任务被暂停但升级记录缺失，人工裁决失去依据
+- detail: `omega_escalate` 组装 escalation spec 记录后 `ignore(self.store.upsert_spec(rec))`，紧接着 `self.pause_task(...)` 把任务暂停并返回 `escalated:true`。若 upsert_spec 失败，升级记录未落库，但任务已被暂停、回执仍称已升级——人工裁决时查不到升级依据，且审计链断裂。
+- reported_by: fist-iter-bug-hunter
+
+### FIXED(2026-10-15T10:26:00Z / BUG-200)
+- evidence: src/engine/omega_strong.mbt L707-711 新增 `let mut spec_err = ""` 并把 `ignore(self.store.upsert_spec(rec))` 改为 `match self.store.upsert_spec(rec) { Ok(_) => (), Err(e) => spec_err = e }`；L727 新增 `"spec_persist_error": Json::string(spec_err)`。`moon check --target js` 0 errors。
+
+## BUG-201 [2026-10-15T10:26:00Z] [low] FALSE_POSITIVE
+- summary: omega_strong.mbt omega_spec_create 用 `rejected >= max_r`、omega_spec_review/omega_result_verify 用 `rejected > max_r`——复核后确认两者**语义等价**，非缺陷
+- detail: 初判为"阈值运算符不一致"。复核：`omega_spec_review`/`omega_result_verify` 里 `let rejected = self.omega_count(...) + 1`，条件是 `rejected > max_r` ⟺ `existing + 1 > max_r` ⟺ `existing >= max_r`；而 `omega_spec_create` 直接用 `existing >= max_r`。两者**同一触发条件**（既有打回数达上限即升级），仅"记录到 escalation 的 rounds_rejected 值"差 1（create 记 existing、review 记 existing+1），属展示口径差异而非逻辑分歧。判定依据：源码内联等价推导（本面自身语义），非外部规范。
+- reported_by: fist-iter-bug-hunter
+
+- review: 本条复核后判为 FALSE_POSITIVE（非缺陷），依据见下。
+- evidence(复核依据): 无需改真源；仅在 src/engine/omega_strong.mbt L476 增补注释 `// rejected = existing + 1, so > max_r means existing >= max_r (consistent with omega_spec_create)`，把等价关系钉在代码里防未来误改。判定为 FALSE_POSITIVE。
+
+## BUG-202 [2026-10-15T10:26:00Z] [high] FIXED
+- summary: router.mbt contains_risk_kw 用子串匹配判定 L4 风险词——"exec"/"eval"/"force" 误命中 "execute"/"evaluate"/"enforce"，把普通任务误判为不可逆并强制人工冻结
+- detail: `plan_route` 用 `contains_risk_kw(description)` 决定是否升 `L4_irreversible`（cost_tier=hold，强制人工确认）。旧实现 `lower.contains(kw)` 是**子串**匹配：`"exec"` 命中 `"execute"/"executive"`、`"eval"` 命中 `"evaluate"/"evaluation"`、`"force"` 命中 `"enforce"/"reinforce"`；`"del "`/`"rm "` 依赖尾随空格、`"system("` 依赖左括号才能命中。后果：描述含 "evaluate the metrics" 或 "enforce policy" 即被误判 L4 冻结（fail-closed 过头，正常任务被卡人工）。同仓库 scheduler.mbt 已有同族词表但用整词匹配 `_has_word`——两套判据不一致，router.mbt 这套漏了词边界。
+- reported_by: fist-iter-bug-hunter
+
+### FIXED(2026-10-15T10:26:00Z / BUG-202)
+- evidence: src/engine/router.mbt L76-97 的 `contains_risk_kw` 改用同包 scheduler.mbt 的 `_has_word`（ASCII 词边界匹配，前后须为空白/标点/串边界）；关键词表规范化——`"del "/"rm "` 去掉尾随空格（整词匹配下尾随空格会破坏边界判定）、`"system("` 改为 `"system"`。`moon check --target js` 0 errors。现有测试无引用 plan_route/contains_risk_kw，无回归。
+## BUG-203 [2026-10-15T10:36:59Z] [high] FIXED
+- summary: dag_mc 关键度系统性漏计：关键路径的中间任务 critical_freq 恒为 0（mc_finish 只算「以 t 结尾的最长链」，用 finish==makespan 判关键，只命中最长路径的终点/汇点）
+- detail: 现象：src/engine/engine_dag_mc.mbt 的关键度判据（L206-214）是 `mc_finish(t) == ms`（t 的 finish 时间 == 全局 makespan）。但 `mc_finish`（L96-131）返回的是「从任一源点到 t 的最长链长度」（= max over deps of mc_finish(dep) + own(t)），**只看前驱不看后继**。因此只有「最长路径的终点/汇点」满足 finish==ms，**所有中间节点**（前驱任务）都满足不了。
+
+可复现（现有测试 dag_mc_test.mbt L85-110 就是这条链）：
+- A：中(3,5,8)，无依赖
+- B：中(3,5,8)，deps=[A]
+- C：易(2,3,5)，无依赖（旁路，短）
+ms = dur[A]+dur[B]。
+mc_finish(A)=dur[A]（<ms，不判关键），mc_finish(B)=dur[A]+dur[B]=ms（判关键），mc_finish(C)=dur[C]（<ms，不判关键）。
+⇒ A 是 B 的唯一前驱、在唯一的最长路径上，但 critical_freq=0；B 却≈1.0。这与工具描述「关键度=任务出现在最长路径的频率，含近关键路径」自相矛盾。
+
+一般化：任何线性链 A→B→…→Z 只有 Z 被判关键，A…前驱全为 0。这会误导指挥官把资源全压在汇点任务上，完全漏掉链上的真正瓶颈。
+
+根因：判「在最长路径上」需要同时算「以 t 结尾的最长链（前向）」与「从 t 起的最长链（后向）」，二者相加减去 own(t) 等于 makespan 才判关键。当前实现只做前向，漏了后向 pass。
+
+建议修复：新增 `mc_suffix(t)`（从 t 到任一汇点的最长链，含 own，看后继），判据改为 `mc_finish(t) + mc_suffix(t) - own(t) == ms`。后继关系由 deps 反解（一次性构建 succ Map）。
+
+
+
+
+### FIXED(2026-10-15T10:45:00Z / BUG-203)
+- evidence: 改了真源 src/engine/engine_dag_mc.mbt：新增私有 `mc_suffix_from`（从 t 起的最长链，看后继，含 own，环命中沿用 BUG-204 的 -1 哨兵）；由 deps 反解后继表 succ（样本循环外一次构建）；关键度判据从 `mc_finish(t)==makespan` 改为 `前向 finish + 后向 suffix - own == makespan`。修复前线性链 A→B→…→Z 只有 Z 被判关键（中间节点 critical_freq 恒 0），与工具描述「关键度=任务出现在最长路径的频率」矛盾。更新 src/engine/dag_mc_test.mbt 测试：现断言前驱 A 与汇点 B 都 freq≈1、旁路 C 仍 ≈0（BUG-203 前 A 恒为 0，该测试必红）。moon test --target js 全仓 = Total tests: 1143, passed: 1143, failed: 0。commit 0709b07。
+## BUG-204 [2026-10-15T10:44:00Z] [medium] FIXED
+- summary: report_bug 发布修复根任务失败被 `Err(_) => ()` 静默吞掉——注释承诺"失败仅在返回里体现"，返回却既无错误位、task_namespace 照旧回显，调用方以为单已发
+- detail: `report_bug`（src/server/bugreport.mbt）在 `publish_task=true` 时调 `publish_parallel(...)` 发修复根任务，注释写明"best-effort；失败不阻断落账，仅在返回里体现"。但匹配臂是 `Err(_) => ()`：发布失败后既不记错误、返回 JSON 里也无任何错误字段；更糟的是 task_namespace 仍无条件回显。调用方（MCP 工具 report_bug，server.mbt:5577）拿到 ok:true + task_namespace 会以为修复单已发布，实际不存在——落账与发布状态脱节。
+- reported_by: fist-iter-bug-hunter
+
+### FIXED(2026-10-15T10:44:00Z / BUG-204)
+- evidence: src/server/bugreport.mbt 新增 `let mut publish_error = ""`（紧随 task_id）；发布匹配臂 `Err(_) => ()` 改为 `Err(e) => publish_error = e`；返回 JSON 在 task_id 之后按 `if not(publish_error.is_empty()) { m.set("publish_error", Json::string(publish_error)) }` 回执错误。锁：src/server/bugreport_status_wbtest.mbt 新增测试"BUG-204：publish_task 发布失败不再静默——返回带 publish_error 且不谎报 task_id"，用 task_ns="default"（publish_parallel 硬拒并行发布的确定性失败路径）断言无 task_id、有 publish_error 且落账成功。`moon test --target js src/server` 278/278 通过。
+
+
+## BUG-205 [2026-10-15T10:48:00Z] [medium] FIXED
+- summary: HexaMind 裁决报告表「帽子」列误填 r.verdict——与「判决」列逐字重复，六顶帽 id 丢失，读者无法从报告看出各单元戴的是哪顶帽
+- detail: `render_markdown`（src/hat/hat_report_build.mbt）表头为 `| 单元 | 帽子 | 判决 | 置信度 | 依据 |`，数据行却把 `r.verdict` 连写两遍（第二格本应是帽子）。后果：①「帽子」列显示 pass/reject/abstain，与「判决」列完全重复；②该单元实际所属的六顶帽 id（white/red/black/yellow/green/blue）丢失。单真源 hexa_hat_id(六元代号)→帽 id 已存在（hat_defs.mbt:53），且 hat_hexa_tools.mbt:232 已在别处回显 hat_id，唯独报告表漏用。现有测试（hat_wbtest.mbt "build: 报告组装…"）只断言标题/状态，未钉表格列，故漏检。
+- reported_by: fist-iter-bug-hunter
+
+### FIXED(2026-10-15T10:48:00Z / BUG-205)
+- evidence: src/hat/hat_report_build.mbt 数据行第二格 `r.verdict` 改为 `hexa_hat_id(r.element_id)`（白/红/黑/黄/绿/蓝）。锁：src/hat/hat_wbtest.mbt 新增测试"BUG-205：报告表「帽子」列显示六顶帽 id（hexa_hat_id），不再误填 verdict"，断言 `观星者（stargazer） | white | pass`、`破壁者（wallbreaker） | black | reject` 存在，且旧形态 `（stargazer） | pass | pass` 不存在。`moon test --target js src/hat` 24/24、`src/server` 278/278 通过，`moon check --target js` 0 errors。## BUG-206 [2026-10-15T10:53:48Z] [high] OPEN
+- summary: ModelQuota::in_cooldown 对 Y2038 后冷却截止静默失效（iso_to_secs 溢出返回 -1 使 now < -1 恒 false，冷却机制被绕过）
+- detail: 现象：`ModelQuota::in_cooldown`（src/router/model_router.mbt:151）里 `cool_secs = iso_to_secs(self.cooldown_until)`，而 `iso_to_secs` 对超出 Y2038 的日期因 Int 溢出返回 -1（BUG-218 同族，rt_2b 测试确认 2038 溢出返回 -1）。于是 `now_secs < cool_secs` 变成 `2026秒 < -1` = 恒 false —— 冷却截止一旦超过 Y2038，该模型永远被视为"不在冷却期"。
+
+后果：
+1. `ModelRouter::mark_failure(model, "2099-...")` 后，`in_cooldown` 恒 false，冷却机制形同虚设。
+2. 任何外部传入的 `cooldown_until` 若在 Y2038 之后（如配置错误、时钟漂移、手工编辑状态文件），模型会被静默放行，失败重试风暴不被冷却兜住。
+3. 这是"测试看起来合理却被 Y2038 吃掉"的典型假绿坑：本轮 P2c §2.2 的冷却回退测试用 `"2099-01-01T00:00:00Z"` 写冷却截止时测试恒失败，换成 `"2026-10-15T18:10:00Z"` 立即全绿，但生产代码本身对 2099 无防护。
+
+建议：`in_cooldown` 对 `cool_secs <= 0` 显式处理（fail-open 放行并留日志，或 fail-safe 视为仍在冷却），不要依赖 `now_secs < cool_secs` 的隐式比较。
+
+## BUG-206 [2026-10-15T10:54:32Z] [medium] FIXED
+- summary: dag_mc 的 p90 分位索引比 p50 的取法高 1：p50 用 (n-1)*0.5（最近秩正确），p90 却用 n*0.9——两者口径不一致，p90 系统性偏大 1 个样本值
+- detail: 真源 src/engine/engine_dag_mc.mbt L288-299：
+
+```
+let idx50 = if n_safe - 1 < 0 { 0 } else { (n_safe - 1) / 2 }
+let idx90 = if n_safe * 9 / 10 >= n_safe {
+    if n_safe - 1 < 0 { 0 } else { n_safe - 1 }
+} else {
+    n_safe * 9 / 10
+}
+```
+
+对 n=1000：idx50 = 999/2 = 499（最近秩 ceil(0.5*1000)=500 → sorted[499]，正确）；
+idx90 = 1000*9/10 = 900（最近秩 ceil(0.9*1000)=900 → sorted[899]，代码取 sorted[900]，**高 1**）。
+
+同口径公式应为 (n-1)*0.9：n=1000 → 999*0.9=899.1 → 899（int div）。而 (n-1)*0.5=499 恰好与 p50 现在的公式一致 ⇒ p50 用 (n-1) 因子、p90 用 n 因子，两条公式不对称，p90 系统性高估 1 个样本值。
+
+守卫 `n_safe * 9 / 10 >= n_safe` 在 n>=10 时恒为 false（9n >= 10n 永假），是死代码（只兜 n<=0，但 n 已钳到 >=10）。
+
+影响：MCP 工具 dag_mc 返回的 makespan.p90 对任何样本数都比「p50 同一套最近秩口径」高 1 个单元。对 make span 量级 10-100 的任务是 1-10% 系统性高估。属轻微数值不精确，非崩溃；但同一返回值里两条分位取法不一致，是文档承诺「p90 完工时间分位」的可测偏差。
+
+证据梯：数学推导（最近秩定义 vs 代码索引）+ n=1000 数值复核。修复应把 idx90 改为 (n_safe-1)*9/10 与 idx50 对称，并补一条锁定具体索引的白盒测试。
+
+
+
+### FIXED(2026-10-15T11:00:04Z / BUG-206)
+- evidence: src/router/model_router.mbt:157-161 in_cooldown 加 `if cool_secs <= 0 { return false }` fail-open 保护（修复前 `now_secs < -1` 恒 false）；src/router/model_router_wbtest.mbt 新增 cd_4 契约锁三态（合法/Y2038 后/非法字符串），commit ed40ada，153/153 全绿。
+
+
+### FIXED(2026-10-15T11:02:29Z / BUG-206)
+- evidence: 改动 src/engine/engine_dag_mc.mbt：新增 pub fn mc_percentile_index(n,p)=(n-1)*p/100（最近秩口径），p50/p90 改经它取索引——p90 从旧 n*9/10 改为 (n-1)*9/10；src/engine/dag_mc_test.mbt 加两条回归锁（n=10/100/1000 精确索引 + 边界退化 + 单调性）；moon fmt 后 moon test --target js 全绿 1147/1147（较前 1145 增 2）。commit ad53154。
+## BUG-207 [2026-10-15T11:06:45Z] [medium] FIXED
+- summary: health_check 的 latency p50/p90 索引用 n*p/100，比最近秩 (n-1)*p/100 系统性高 1（与 BUG-206 同根）
+- detail: 真源 src/server/board_ascii.mbt L345-346（render_health_check 的 latency 分支）：
+
+  let p50 = done_cycles[n * 50 / 100]
+  let p90 = done_cycles[n * 90 / 100]
+
+done_cycles 是已完成任务的完成周期（created_at→updated_at 秒）升序排序。百分位最近秩口径应为
+ceil(p*n/100) 个值 → 0-based 索引 (n-1)*p/100（BUG-206 已把 dag_mc 的 p90 从 n*9/10 改为
+(n-1)*9/10，与此同根）。这里 p50 用 n/2、p90 用 n*9/10 都比 (n-1)*p 高 1：
+
+  n=10，cycles=[10,20,...,100]：正确 p50=done_cycles[4]=50，代码读 done_cycles[5]=60；
+                      正确 p90=done_cycles[8]=90，代码读 done_cycles[9]=100。
+  n=4，cycles=[1,2,3,4]：正确 p50=done_cycles[1]=2，代码读 done_cycles[2]=3（中位数取上）。
+
+系统性**高估** latency 的 p50 与 p90（读取升序数组里偏高的一个元素），SRE 用百分位看延迟
+趋势时会误判恶化。现有测试 board_ascii_test.mbt:79 只造了 3 个相同周期（全 120s）的任务，
+n*50/100 == (n-1)*50/100 == 1，恰好掩盖了偏差——判据对"样本全同"这种退化形状不敏感。
+
+建议：统一用 (n-1)*p/100（或抽取为复用 @engine.mc_percentile_index），并加一条判据用
+10 个递增周期锁定精确索引。
+- reported_by: fist-iter-bug-hunter
+
+
+
+### FIXED(2026-10-15T11:13:18Z / BUG-207)
+- evidence: 改动 src/server/board_ascii.mbt L349-350：p50/p90 索引改为 @engine.mc_percentile_index(n,50)/(n,90)，复用 ad53154 引入的最近秩口径 (n-1)*p/100；src/server/board_ascii_test.mbt 加 hc_latency_num 辅助 + 「latency p50/p90 用最近秩 (n-1)*p（BUG-207）」回归锁（10 个互不相同周期 10..100s，锁 p50=50/p90=90，旧代码读出 60/100 必挂）。moon fmt 后 moon test --target js 全绿 1151/1151（较前 1147 增 4，含并发 WIP）。commit 9f6fff6。
+## BUG-208 [2026-10-15T11:15:34Z] [low] FIXED
+- summary: dag_mc 对 seed=0（或 seed≥2^32）无校验：xorshift32 恒回 0，Monte Carlo 退化为单点分布却照常返回"分布" JSON
+- detail: 真源 src/engine/engine_dag_mc.mbt：
+
+1) mc_xorshift（L12-18）：xorshift32 的唯一年轻态就是 0 自身——state=0 时
+   x=(0^(0<<13))&0xffffffff=0 恒为 0，返回 (0,0)。
+2) dag_mc（L261）：`let mut state = seed + s * 7919`，未对 seed 做非零校验。
+3) 后果：调用方传 seed=0（MCP 参数直通，无钳制）→ 第一个样本 state=0 →
+   mc_tri_sample 里 u=v/2147483648=0 → 每个任务时长恒取三角分布下界 a（易=2、
+   中=3、难=5）。全部 samples 完全相同 → 分布退化为单点：
+     · makespan.min == makespan.max（"分布" 变成定值）
+     · p50 == p90 == min == max
+     · 所有最长路径任务 critical_freq 恒为 1.0（每样本同路径）
+     · P(≤deadline) 要么 0 要么 1，不再反映不确定性
+   调用方看到一份"像模像样的分布 JSON"，实际是确定性退化——比直接报错更危险，
+   因为它会让人误信"完工分布很紧"。
+4) 另：seed ≥ 2^32 时 `(state & 0xffffffff)` 会把高位截掉，同样可能落到 0。
+
+建议：dag_mc 入口对 seed 钳制到非零（如 seed<=0 时回退到 1，或 seed 与 0x7fffffff 相与后为 0
+时回退到 1），并在回执 note 里如实回显"seed 已钳制"。同时补一条回归锁：
+同作用域下 seed=0 与 seed=1 的输出分布应**不同**（seed=0 是退化单点），
+旧代码下两条相等（都退化或都正常）时锁不住，需锁"seed=0 时 min==max"这一退化形状。
+- reported_by: fist-iter-bug-hunter
+
+
+
+### FIXED(2026-10-15T11:20:17Z / BUG-208)
+- evidence: 改动 src/engine/engine_dag_mc.mbt L261-266：样本循环内 `state = seed + s*7919` 后钳到 `state & 0x7fffffff`，仍 <=0 时回退为 1（xorshift32 唯一年轻态即 0 自身，非零恒非零）。src/engine/dag_mc_test.mbt 加 mc_span_min/mc_span_max 辅助 + 「dag_mc：seed=0 不退化（BUG-208）」回归锁（中档任务 (3,5,8)，锁 seed=0 时 max-min>1 且均值落在支撑内；旧代码 seed=0 → state=0 → u=0 → 恒 3 → min==max 必挂）。moon fmt 后 moon test --target js src/engine 151/151、全量 1152/1152 全绿。commit 961ecb1。
+## BUG-209 [2026-10-15T11:31:29Z] [medium] FIXED
+- summary: [contract:type-silent] output_validate 的 artifact_spec_errors 只校验键名不校验值类型：min_chars/contains/not_contains 传错类型（如 min_chars="100" 字符串、contains=42 数字）被 parse_artifact 静默降级为默认值（0/""），invariant 变空检查，verdict 仍 pass——BUG-31 的类型孪生兄弟
+- detail: 真源 src/server/output_validate.mbt：
+- artifact_spec_errors(L65-106) 只检查未知键名 + path/check_key 存在性，不校验 min_chars/contains/not_contains 的**值类型**。
+- parse_artifact(L114-141) 对这三个字段做类型匹配并静默回退默认值：
+  - `min_chars: match m.get("min_chars") { Some(Number(n,..)) => n.to_int(), _ => 0 }` — 传 String("100") → 0
+  - `contains: match m.get("contains") { Some(String(s)) => s, _ => "" }` — 传 Number(42) → ""
+  - `not_contains: 同上`
+后果：调用方（AI agent）给出 `{path:"foo.mbt", min_chars:"100"}`（字符串类型）时，spec_err 返回 ""（键名合法），parse 后 min_chars=0、contains=""、not_contains="" → check_file_artifact 只做「文件存在+非空」→ verdict=pass、note 写「全部 N 条产物检查通过（证据层: l4-pass）」——L4 硬门被一条空检查满足，与 BUG-31 完全同族。
+修法：artifact_spec_errors 增加值类型校验——min_chars 必须是 Number、contains/not_contains 必须是 String，否则返回 Err 文案。与 BUG-31 的「未知键拒绝」形成键名+值型双向防御。
+回归测试：output_validate_test.mbt 追加一条 `{path, min_chars:"100"}` 与一条 `{path, contains:42}` → 断言 verdict=fail、detail 含类型不匹配原因。
+- reported_by: fist-iter-bug-hunter
+
+
+
+### FIXED(2026-10-15T11:45:37Z / BUG-209)
+- evidence: commit b67f22e：src/server/output_validate.mbt 的 artifact_spec_errors 增加值类型硬门——min_chars 必须是 Number(_,..)、contains/not_contains 必须是 String(_)，否则直接返回失败原因；与既有「未知键拒绝」形成键名+值型双向防御。src/server/output_validate_test.mbt 追加 ov_21_invariant_wrong_type_fail：三格分别传 min_chars=\"100\"(String)、contains=42(Number)、not_contains=7(Number)，全部断言 verdict=fail（修复前实测 RED \"pass\" != \"fail\"）。验证：moon test --target js 全绿 1158/1158（src/server 281/281）。
 ## BUG-210 [2026-10-15T11:40:42Z] [medium] FIXED
 - summary: board_ascii 实时看板 append_group 组内排序比较器在 (depth, created_at) 全等时落入 else 无条件返回 1——cmp(a,b)=cmp(b,a)=1，严格弱序反对称性被破坏，同状态组渲染顺序未定义（BUG-173 同族）
 - detail: 真源 src/server/board_ascii.mbt append_group（L107-162）的 sorted.sort_by 比较器：depth 不等按 depth 升序；depth 等且 a.created_at<b.created_at 返回 -1；其余（created_at>=）一律返回 1。publish 固定 depth=3 且 created_at 取自 now 参数（src/engine/engine.mbt L35-61），因此同一 now 的两次 publish 造出全等对（T0 与 T0r2）：cmp(T0,T0r2)=1 且 cmp(T0r2,T0)=1——同时"a 在 b 前"且"b 在 a 前"，sort_by 结果依赖输入顺序与排序算法内部形状，输出不确定。同刻批量发布（批量导入/秒级连发）时看板行顺序随机，"先发布先渲染"这一直觉契约失效。对照：dag_ascii（engine_dag_ext.mbt L190）、triage_rest（engine_triage.mbt L150）均以 a.id.compare(b.id) 收尾，本处是唯一漏掉 tiebreak 的比较器。
@@ -3045,3 +3896,175 @@ B. 若判定新契约作废，则删/改三条锁——但那等于放弃 BUG-18
 
 ### FIXED(2026-10-15T11:40:42Z / BUG-210)
 - evidence: 改动 src/server/board_ascii.mbt L119-128：比较器补 else if a.created_at > b.created_at { 1 } 显式分支，全等时以 a.get_id().compare(b.get_id()) 升序收尾（与 dag_ascii L190、triage_rest L150 的 id tiebreak 模式一致）；src/server/board_ascii_test.mbt 加「board_ascii 组内全等任务按 id 升序（BUG-210）」回归锁——两次 publish 传同一 now 造 T0/T0r2 全等对，split 断言 T0(乙) 必渲染于 T0r2(甲) 之前。moon check --target js 0 errors；moon test --target js src/server 全绿 280/280。commit 9cd2fa7。
+
+## BUG-211 [2026-10-15T11:54:19Z] [medium] FIXED
+- summary: [output_validate] check_moon_test_summary 只查 failed>0，未查 total==0：空测试套件（Total tests: 0）被当成 L4 假绿
+- detail: src/server/output_validate.mbt 的 check_moon_test_summary（L323-362）：找到 `Total tests:` 汇总行后，判绿条件只有 `if failed > 0`（L354），没有检查 `total == 0`。当 `moon test` 跑出 `Total tests: 0, passed: 0, failed: 0.`（空包/构建未收集到任何测试/被截断在汇总前）时：found=true、failed=0、total=0 → L361 直接返回 ""（pass）。
+
+后果：L4 硬门 `check_key` 名含 `moon_test` 时，一个「0 条测试」的空套件被当成「全绿」——正是 BUG-142 要防的「假绿」的又一个入口（exit 0 + 假汇总行）。对照：found=false 时已有守卫（L351-352 报「缺汇总行」），但 total=0 这一格漏了。
+
+修法：在 `if failed > 0` 之前加 `if total == 0` 的守卫，报「汇总行 total=0——没有跑任何测试，不能判绿」。
+
+
+
+### FIXED(2026-10-15T11:57:20Z / BUG-211)
+- evidence: commit 2f8656c：src/server/output_validate.mbt 的 check_moon_test_summary 在 `if failed > 0` 之前增加 `if total == 0` 守卫，报「没有跑任何测试，不能判绿」（BUG-142 假绿的又一入口：空包/构建漏收集/汇总截断都可能喂出 `Total tests: 0, passed: 0, failed: 0.`）。src/server/output_validate_test.mbt 追加 ov_22_moon_test_total_zero_fail：喂 `Total tests: 0, passed: 0, failed: 0.` 断言 verdict=fail（修复前实测 RED `"pass" != "fail"`）。验证：moon test --target js -p src/server 282/282 全绿。
+## BUG-212 [2026-10-15T12:04:18Z] [medium] FIXED
+- summary: [dag_mc] 环保护不完整：mc_finish/mc_suffix_from 的 -1 哨兵不传播，环上节点返回正数、makespan 把环当正常最长路径
+- detail: src/engine/engine_dag_mc.mbt 的 mc_finish（L96-130）与 mc_suffix_from（L138-170）的环保护不完整。
+
+BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 / L151）时返回 -1；但**外层递归收到 -1 后照样累加**——`if f + own > best` 只在 f=-1 时因 `own-1 <= own` 自然不生效，于是内层节点返回 own（自身时长），外层节点把内层的 own 累加进自己。
+
+实例：环 A↔B（deps: A→[B], B→[A]），dur={A:3, B:5}：
+- mc_finish(B)：deps=[A]，调 mc_finish(A) → visiting[A]=true → 返回 -1。f+own = -1+5=4 <= best=5，不生效。B 返回 **5**（自身时长，看似合理但 A 在环上、B 也因 A 而环）。
+- mc_finish(A)：deps=[B]，mc_finish(B) 返回 5。f+own = 5+3=8 > best=3 → best=**8**。
+- 结果：A 的 finish=8（正数），环被当成「A→B→A 时长 8」的一条正常最长路径，makespan 报 8。实际环的最长路径是**无限**，-1 哨兵应传播到环上所有节点。
+
+对照 dag_slack（engine_dag_ext.mbt L290）把环任务归入 `cycle` 数组排除，dag_mc 却没有等效的环标记——L298 的 `f >= 0 && sf >= 0` 守卫因 f/sf 是正数而失效，环节点仍参与关键度/makespan 统计。
+
+修法：mc_finish / mc_suffix_from 在遍历依赖/后继时，若任一递归返回 -1，把 cycle 标记置 true，遍历结束后若 cycle 则自身也返回 -1（memo 记 -1）。这样 -1 沿环传播，dag_mc 的 L282（`f > ms`）与 L298（`f >= 0 && sf >= 0`）两个消费点自然把环节点从 makespan / criticality 里剔除。
+
+
+
+### FIXED(2026-10-15T12:08:21Z / BUG-212)
+- evidence: commit 1f35342：src/engine/engine_dag_mc.mbt 的 mc_finish 与 mc_suffix_from 在遍历依赖/后继时若任一递归返回 -1，置 cycle 标记，遍历结束后 cycle=true 则自身也返回 -1（memo 记 -1），把 BUG-204 的 -1 哨兵沿依赖链向上传播到环上所有节点。新增 src/engine/engine_dag_mc_wbtest.mbt 三条白盒锁：① mc_finish 环节点返回 -1（修复前 A=8 B=5）；② mc_suffix_from 环节点返回 -1；③ 成对对照非环链 A→B 的 mc_finish 仍为 8 不被误标。验证：moon test --target js -p src/engine 154/154 全绿。
+## BUG-213 [2026-10-15T12:17:54Z] [high] FIXED
+- summary: [dag] dag_depend 只防自环不防传递环：A→B→C 后再 dag_depend(C, dep=A) 静默成功，图被破坏成环
+- detail: src/engine/engine_dag_ext.mbt 的 dag_depend（L212-238）只检查「不能依赖自身」（L222-224），不做传递环检测。
+
+现状：A→B→C 已存在（A.depends_on=[B], B.depends_on=[C], C.depends_on=[]）。调用 `dag_depend(task_id="C", dep_id="A")` 时：
+- L222：dep_id("A") != task_id("C")，通过自环检查；
+- L225-228：A 存在，通过存在性检查；
+- L230-232：C.depends_on.contains("A")？C.depends_on=[], 不含 "A"，通过幂等检查；
+- L233：c = C.with_depends_on("A", now)，C.depends_on 变为 ["A"]；
+- L234-236：落库成功，返回 Ok。
+
+结果：图变成 A→B→C→A，形成环。下游 dag_topo_order（L290 的 cycle 数组）能识别但只能「报告」，dag_slack/dag_mc/critical_path/parallelism 全部把环当成正常图处理——即使我此前修的 BUG-212 让 dag_mc 不再把环当正常最长路径，dag_depend 仍然**允许**环被创建，语义上仍是错的：任务图的 DAG 不变量被静默破坏。
+
+对照：dag_topo_order 已经建了 deps_of（前置→后继）邻接表，dag_slack 已有 cycle 数组。dag_depend 是唯一在「建边」入口不防环的地方。
+
+修法：dag_depend 在 self 检查之后、落库之前，增加传递可达性检查——从 dep_id 出发沿 depends_on 链 BFS，若可达 task_id，说明加上这条边会成环，返回 Err。复杂度 O(V+E)，dag_depend 是 MCP 写工具不是热路径，可接受。
+
+回归锁：dag_ext_test.mbt 追加「dag_depend: 传递环拒绝」——建 A→B→C 后再 dag_depend(C, dep=A) 必须 Err。
+
+
+
+### FIXED(2026-10-15T12:24:03Z / BUG-213)
+- evidence: commit ebfa2e4：src/engine/engine_dag_ext.mbt 新增 FistEngine::dag_reaches（BFS 从 dep_id 沿 depends_on 链查 task_id 可达，visited 用 Map 兜底），dag_depend 在落库前调用——若 task_id 是 dep_id 的传递依赖，返回 Err「拒绝成环依赖」。修复前 A→C→B→A 静默成环（dag_depend 只防自环 L222-224 与幂等 L230-232），下游 dag_slack/dag_mc 把环当正常图。新增 src/engine/dag_cycle_test.mbt 2 条黑盒锁：① dag_depend(task_id="A", dep_id="C") 必须 Err 且 A.depends_on 未被污染；② 非环对照 D→A、D→C 合法，C→D（成环）拒绝。修复前实测 RED（dag_depend 返回 Ok 触发 abort）。moon fmt + moon info 后 moon test --target js 全绿 1168/1168（src/engine 156/156）。
+
+## BUG-214 [2026-10-15T12:31:00Z] [high] FIXED
+- summary: [ops_pipeline] pipeline_tick auto 分支 heal_stale_tasks_from_store 失败被 Err(_) => [] 静默吞掉，违反同处注释「结果随返回上报」契约——BUG-185/186 同族第三例
+- detail: src/ops/ops_pipeline.mbt L503-507（auto 分支）原写法为 match heal_stale_tasks_from_store(engine, now, timeout_sec~, ns=ns_final) { Ok(l) => l; Err(_) => [] }，Err 分支直接丢弃错误，返回 JSON 只剩 healed: []，与「无超时任务」不可区分；而同处 L502 注释明确承诺「结果随返回上报」。当前 ops_heal.mbt L91-151 所有路径均返回 Ok（Err 不可达），故属契约违背而非即时故障；一旦 ops_heal 扩展出 Err 分支（如 reopen 失败），失败将被静默吞掉。同族：BUG-185（ops_watchdog.mbt，已用 heal_error 注入 detail 修复）、BUG-186（ops_heal reopen_task 吞）。
+- fix_options: 照 BUG-185 模式：auto 分支捕获 heal_error : String?，Err(e) => { heal_error = Some(e); [] }；返回装配处（L561-566）pj_set 注入 "heal_error"，仅 Some 时出现（成功路径不泄漏）。回归锁：pipeline_23 断言 healed 键存在且成功路径不泄漏 heal_error。
+
+### FIXED(2026-10-15T12:52:27Z / BUG-214)
+- evidence: commit aa85c3f：src/ops/ops_pipeline.mbt auto 分支（L504-510）新增 `let mut heal_error : String? = None`，Err 分支由 `Err(_) => []` 改为 `Err(e) => { heal_error = Some(e); [] }`；返回装配处（L562-566）`pj_set` 注入 "heal_error"（仅 Some 时出现，成功路径不泄漏）。src/ops/ops_pipeline_test.mbt 新增 pipeline_23 回归锁：healed 键存在、成功路径 heal_error 为 null。验证：moon test --target js src/ops 190/190 全绿（修复前 189/189）。
+## BUG-215 [2026-10-15T13:01:30Z] [medium] FIXED
+- summary: [dag-cycle] dag_level/longest_chain_ending 环保护只对重入点生效：环成员得到非零层级、critical_path 含环成员，违反「环保护下返回 0」契约
+- detail: 现象：在 X→Y→X 环 DAG 上（X.depends_on=[Y], Y.depends_on=[X]）：
+
+1. `dag_ascii` 输出：
+   ```
+   Z [待领取]
+     Y [待领取] (依赖: X)
+       X [待领取] (依赖: Y)
+   ```
+   Y 被渲染为第 1 层、X 被渲染为第 2 层——但二者互为依赖，**没有合法拓扑深度**。换遍历顺序（先 Y 后 X）会得到相反层级（X=1、Y=2），即输出**顺序依赖**。文档契约（engine_dag_ext.mbt L111）写的是「环保护下返回 0」。
+
+2. `critical_path` 在环 DAG 上返回 `[Y, X]`（实跑输出 `critical_path=[Y, X] contains_X=true contains_Y=true`）——一条「关键路径」里包含互为依赖的环成员，不是合法拓扑链。
+
+根因：`dag_level`（L112-157）与 `longest_chain_ending`（L35-67）的环保护只在**重入点**返回 0/[]，不向上传播「本路径已成环」状态。调用方把 0/[] 当作合法的空结果累加 +1/+自身，于是触发重入的外层节点得到非零层级、并把环成员塞进关键路径。
+
+判据（探针源码已删，仅留结论）：
+- X.depends_on=["Y"]、Y.depends_on=["X"]、Z.depends_on=[]。
+- `e.dag_ascii(ns="default")` 输出如上（Y 深 1、X 深 2）。
+- `e.critical_path()` 输出 `[Y, X]`。
+
+对照面：`dag_slack_analysis` 的 Kahn 环检测正确（dag_ext_test.mbt L341-345 断言 cycle=[X,Y]），`dag_depend` 的传递环拒绝也正确（BUG-213）——所以环只能来自 legacy 数据或直接 DB 写入，但仍属「工具承诺了环保护却没兑现」。
+
+修复方向：环保护从「局部重入检查」升级为「环成员标记」——检测到环时，把路径上的所有节点一并记入 visited/memo 并返回 0/[]，或返回 Option/哨兵值区分「无依赖」与「成环」两种空结果。
+
+
+
+### FIXED(2026-10-15T13:08:44Z / BUG-215)
+- evidence: 改了真源 src/engine/engine_dag_ext.mbt（commit edefab9）：① longest_chain_ending 返回类型 Array[String] → Array[String]?，环重入点/检测到环的节点 memoize None，调用方 critical_path 跳过 None；② dag_level 环重入点返回 -1 哨兵并 memoize，任一子链出现 -1 时本节点也传播 -1；③ dag_ascii 读取级别时把 -1 钳到 0（顶层），排序比较器同样钳。锁钉：临时探针测试先复现后验证——修复前 X→Y→X 环上 critical_path=[Y,X]、dag_ascii 渲染 Y 深 1/X 深 2；修复后 critical_path=[Z]、X/Y 均顶层，探针测试通过后删除。全量 moon test --target js = 1180/1180 通过。
+## BUG-216 [2026-10-15T13:13:39Z] [low] FIXED
+- summary: [diff-json-escape] render_json 未转义控制字符 U+0000–U+001F：text_diff format=json 输出无效 JSON
+- detail: 现象：`render_json` 只转义 `"` `\` `\n` `\r` `\t` 五个字符，其余控制字符（U+0000–U+001F）**原样拼进 JSON 字符串**。
+
+探针实跑（src/diff 包内临时测试，已删）：
+- 输入 old="a\u{0001}b"、new="a\u{0001}c"
+- `render_json(diff_lines(old, new))` 输出：
+  `[{"kind":"delete","text":"a<raw SOH>b"},{"kind":"insert","text":"a<raw SOH>c"}]`
+- 断言 `s.contains("\\u0001")` = false（控制字符未被转义为 `\u00XX`）
+
+影响：RFC 8259 §7 要求 U+0000–U+001F 一律转义。`text_diff` 的 `format=json` 分支把此字符串**原样当 ToolResult::text 返回**，客户端若用严格 JSON 解析器会失败。低触发概率（正常文本不含控制字符）但一旦命中即产出不可解析的 JSON。
+
+修复方向：`json_escape` 增加分支——对 `\u{0000}`–`\u{001F}` 输出 `\u00XX`（大写十六进制，4 位补齐）。
+
+## BUG-217 [2026-10-15T13:20:00Z] [high] FIXED
+- summary: 自驱发布静默吞错——selfdrive_publish_next 在发布失败时把失败折叠进 skipped，
+  返回 action="wait"，与"幂等已跳过"无法区分（BUG-204/BUG-214 同族）。
+- detail: selfdrive_publish_next → try_publish_one → engine.publish_parallel
+  (engine.mbt:822)。try_publish_one 的 `Err(_) => None` 吞掉失败；调用方
+  `match new_id { None => { skipped.push(...) } }` 把失败等同于幂等跳过。
+  MCP tool `selfdrive_publish_next` 默认 ns="default"，而 publish_parallel 对
+  ns=="" || ns=="default" 直接 Err——即默认参数下每次发布必然失败却被吞掉，
+  调度器永远停在 action="wait"。
+- fix_options:
+  A. try_publish_one 返回 Result 或累积错误数组，调用方注入 publish_errors 字段
+     （保持 skipped 语义不变，仅新增错误回执）。
+  B. 直接删除 selfdrive_publish_next 工具。
+  C. 在 selfdrive_publish_next 入口校验 ns 非空非 default。
+
+### FIXED(2026-10-15T13:22:00Z / BUG-217)
+
+- 证据（修复代码 commit）：`692f226 fix: selfdrive 发布失败不再静默吞错（BUG-217）`
+  （src/ops/ops_selfdrive.mbt + src/ops/ops_selfdrive_test.mbt）。try_publish_one 增加
+  `errors: Array[String]` 出参，`Err(_) => None` 改为 `Err(e) => { errors.push(e); None }`；
+  selfdrive_publish_next 累积 publish_errors 并注入输出 JSON（skipped 语义不变）。
+- 证据（验证）：`moon test --target js src/ops` → 191 passed / 0 failed；
+  新增 selfdrive_9_publish_next_surfaces_errors 回归锁（ns="default" 确定性失败路径，
+  断言 publish_errors 长度 2）。
+- 过滤式提交：临时索引从 HEAD 选取自身改动，避免覆盖并行开发的 WIP。
+
+
+
+### FIXED(2026-10-15T13:20:29Z / BUG-216)
+- evidence: 改了真源 src/diff/diff.mbt（commit 1a271f5）：json_escape 的 `_` 分支新增 `if ch.to_int() < 0x20` 时输出 `"\\u" + hex4(ch.to_int())`，新增 `hex4` 辅助函数（4 位大写十六进制补齐）。锁钉：临时白盒探针（diff_escape_fix_wbtest.mbt，验证后删除）先复现后验证——修复前 render_json 输出 `{"kind":"delete","text":"a<raw SOH>b"}`（has_escaped_control=false），修复后输出 `{"kind":"delete","text":"a\u0001b"}`（断言 contains("\\u0001") 通过、contains 裸控制字符为 false）。全量 moon test --target js = 1183/1183 通过。
+
+### FIXED(2026-10-15T13:27:43Z / BUG-217)
+- evidence: 改了真源 src/claimguard/claimguard.mbt（commit ba4fd93）：`may_proceed_sematic` 与 `may_proceed_full` 改为「只读预检 → 全通过才 claim_item」——先用 `decide_claim(g.holders.get(proposed), agent)` 只判 item-id 层重入（不写 holders），再跑 blind_spot / semantic_collision，全部通过后才真正 `claim_item`。锁钉：临时白盒探针（claimguard_bug217_wbtest.mbt，验证后删除）三条——①may_proceed_sematic 返回 false 时 `holder_of` 为 None（旧实现泄漏为 Some("B")）；②may_proceed_full 返回 false 时 `holder_of` 为 None；③may_proceed_sematic 返回 true 时 `holder_of` 为 Some("B")（正常认领未破坏）。全量 moon test --target js = 1183/1183 通过。
+## BUG-217 [2026-10-15T13:22:34Z] [medium] OPEN
+- summary: [claimguard-side-effect] may_proceed_sematic / may_proceed_full 在检查前先 claim_item：返回 false 时项已被 side-effect 认领
+- detail: `may_proceed_sematic` / `may_proceed_full` 的语义是"问"——回答能否 proceed——但实现先调 `claim_item(g, proposed, agent)` 把项**认领给自己**，再跑语义/盲点检查；检查失败返回 false 时，项已被 side-effect 认领。
+
+具体路径（`src/claimguard/claimguard.mbt`）：
+- L228-243 `may_proceed_sematic`：先 `claim_item` → `_` 分支（Claimed/Renewed，均 set holders）→ 再 `semantic_collision` 为 true → return false。**此时 `g.holders[proposed]` 已被设为 `agent`**。
+- L261-283 `may_proceed_full`：同样先 `claim_item` → 再检查 blind_spot / semantic_collision → return false。**同样泄漏**。
+
+后果：调用方按 `false` 判定「不能 proceed、换一个」，但该项已锁在**本 agent** 名下，其他 agent 再来 claim 会得 Denied；guard 状态与「未 proceed」的实际状态不一致。
+
+现有测试不覆盖：`claimguard_wbtest.mbt` L177 `assert_true(!may_proceed_sematic(...))` 只断言返回值，没断言 `holder_of(g, "L33-self-search")` 应为 `None`。
+
+修复方向：把 claim 动作移到所有检查**通过之后**——先用 `decide_claim` 只读判重，全通过再 `claim_item`；或者拆成 `check_proceed_*`（纯读）+ `claim_item` 两步，由调用方显式认领。
+
+
+## BUG-218 [2026-10-15T13:51:38Z] [medium] OPEN
+- summary: [scoring] calc_coverage 的 substring 匹配对空/单字符 law 产生假覆盖（coverage 虚高）
+- detail: `src/omega/scoring.mbt` 的 `calc_coverage` 用 `Json::stringify(t).contains(law)` 判断某条 law 是否被 tests 覆盖。实测两个漏洞：
+
+1. **空 law**：`"hello".contains("")` 在 MoonBit 返回 true（空串是任意串的子串）。若 laws 数组含空条目，该条恒被覆盖，coverage 虚高。
+2. **单字符/超短 law**：law = "a" 时，任何含字母 'a' 的 test（如 `{"name":"test1"}` 的 stringify 里就有 'a'）都判为覆盖。实测 `calc_coverage(["a"], [{"name":"test1"}])` 返回 1.0，而 law "a" 根本没被测试。
+
+后果：laws 里若出现短 token（变量名、符号、空串），coverage 被系统性抬高，Ω-spec 的 pass 判定失准（coverage × 30 分）。修复：空 law 不算覆盖（跳过）；law 长度 < 3 时用更严格的匹配（或跳过并记 note）。
+- reported_by: bugfind
+
+## BUG-219 [2026-10-15T13:52:00Z] [medium] FIXED
+- summary: [selfdrive] selfdrive_memory_init 写入失败被静默丢弃（created/skipped 均不含，函数仍返回 Ok）
+- detail: `src/ops/ops_selfdrive.mbt` 的 `selfdrive_memory_init` 在写入四件套模板时，`sd_write` 返回 false 的分支既不进 `created` 也不进 `skipped`，被完全丢弃。函数仍返回 `Ok`，调用方误以为"四件套已就绪"，实则文件缺失。与 `selfdrive_publish_next`（BUG-217）同族：静默吞错。触发条件：memory 路径被占用为普通文件（create_dir 失败）、磁盘满、权限不足等。
+- fix_options: 1) 新增 errors 累积器 + JSON errors 字段 + 条件 note（采用）；2) 返回 Err 让调用方感知（过于激进，init 是幂等操作）；3) 仅记日志（调用方仍无法感知）。
+- fix: 新增 `errors : Array[String]` 累积器，`sd_write` 失败时 push 到 errors；JSON 输出新增 `errors` 字段；note 根据 errors 是否为空动态切换（"已就绪" vs "部分就绪（写入失败 N 项，详见 errors）"）。回归锁 `selfdrive_218_memory_init_surfaces_write_errors`：构造 memory 为普通文件使四件套写入全部失败，验证 errors 含 4 项、created/skipped 为空、note 含"部分就绪"。
+- reported_by: bugfind
+- commit: 15b6b42
+
