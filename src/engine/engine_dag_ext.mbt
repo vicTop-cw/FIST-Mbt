@@ -32,19 +32,26 @@ fn dag_join_deps(deps : Array[String]) -> String {
 ///|
 /// 求以 id 结尾的最长依赖链（沿 depends_on 边回溯；memo 化 DFS，含环保护）。
 /// 返回序列按依赖先后排列（最底层依赖在前，id 自身在后）。
+/// **BUG-215**：环保护从「局部重入检查」升级为「环成员标记」——返回 `None` 表示
+/// 「本路径已成环」，调用方（critical_path）不得把环成员计入关键路径。
+/// 旧实现返回 `[]`，与「无依赖(合法空链)」不可区分，导致 X→Y→X 环上
+/// `critical_path` 返回 `[Y, X]`（实跑验证）。现在环成员一律 `None`。
 fn FistEngine::longest_chain_ending(
   self : FistEngine,
   id : String,
-  memo : Map[String, Array[String]],
+  memo : Map[String, Array[String]?],
   visiting : Map[String, Bool],
-) -> Array[String] {
+) -> Array[String]? {
   match memo.get(id) {
     Some(c) => return c
     None => ()
   }
-  // 环保护：当前 DFS 路径上已出现过则返回空（不再沿环回溯，避免产出重复节点）
+  // 环保护：当前 DFS 路径上已出现过则返回 None（不再沿环回溯，并把环成员标记为 None）
   match visiting.get(id) {
-    Some(_) => return []
+    Some(_) => {
+      memo.set(id, None)
+      return None
+    }
     None => ()
   }
   visiting.set(id, true)
@@ -53,30 +60,37 @@ fn FistEngine::longest_chain_ending(
     None => []
   }
   let mut best : Array[String] = []
+  let mut in_cycle = false
   for d in deps {
-    let chain = self.longest_chain_ending(d, memo, visiting)
-    if chain.length() > best.length() {
-      best = chain
+    match self.longest_chain_ending(d, memo, visiting) {
+      Some(chain) => if chain.length() > best.length() { best = chain }
+      None => in_cycle = true
     }
   }
   visiting.remove(id)
+  if in_cycle {
+    // 有后继返回 None（环成员），本节点也是环成员——向上传播
+    memo.set(id, None)
+    return None
+  }
   let out = best.copy()
   out.push(id)
-  memo.set(id, out)
-  out
+  memo.set(id, Some(out))
+  Some(out)
 }
 
 ///|
 /// 关键路径：全图中按 depends_on 建图后的最长依赖链（任务 id 序列）。
 /// 多条等长链取先遇到的一条；空仓库返回空数组。
+/// **BUG-215**：环成员被 `longest_chain_ending` 标记为 None，此处不再计入。
 pub fn FistEngine::critical_path(self : FistEngine) -> Array[String] {
-  let memo : Map[String, Array[String]] = Map([])
+  let memo : Map[String, Array[String]?] = Map([])
   let visiting : Map[String, Bool] = Map([])
   let mut best : Array[String] = []
   for t in self.list_all() {
-    let chain = self.longest_chain_ending(t.id, memo, visiting)
-    if chain.length() > best.length() {
-      best = chain
+    match self.longest_chain_ending(t.id, memo, visiting) {
+      Some(chain) => if chain.length() > best.length() { best = chain }
+      None => ()
     }
   }
   best
@@ -109,6 +123,10 @@ pub fn FistEngine::parallelism(self : FistEngine) -> Int {
 /// 计算任务在 DAG 中的层级（缩进深度）：
 /// 取「parent_id 父链深度」与「depends_on 依赖链深度」的较大者。
 /// 父/依赖不在本命名空间内则不计入；环保护下返回 0。
+/// **BUG-215**：环保护从「重入点返回 0」升级为「环成员一律 -1 哨兵」——
+/// 让调用方（dag_ascii）能区分「无依赖(0)」与「成环(-1)」，并在渲染面把 -1 收敛为 0。
+/// 旧实现只在重入点返回 0，触发重入的外层节点仍累加 +1，X→Y→X 环被渲染成
+/// X 深 2、Y 深 1（顺序依赖）。现在环成员统一 -1，渲染面钳到 0（顶层）。
 fn FistEngine::dag_level(
   self : FistEngine,
   id : String,
@@ -121,11 +139,16 @@ fn FistEngine::dag_level(
     None => ()
   }
   match visiting.get(id) {
-    Some(_) => return 0
+    Some(_) => {
+      // 环保护：重入点返回 -1 哨兵并 memoize（标记该节点为环成员）
+      memo.set(id, -1)
+      return -1
+    }
     None => ()
   }
   visiting.set(id, true)
   let mut level = 0
+  let mut in_cycle = false
   match self.get_task(id) {
     Some(t) => {
       // 子任务按 parent_id 归组：父任务存在则至少缩进一层
@@ -133,7 +156,9 @@ fn FistEngine::dag_level(
         Some(p) =>
           if members.contains(p) && p != id {
             let pl = self.dag_level(p, members, memo, visiting)
-            if pl + 1 > level {
+            if pl < 0 {
+              in_cycle = true
+            } else if pl + 1 > level {
               level = pl + 1
             }
           }
@@ -143,7 +168,9 @@ fn FistEngine::dag_level(
       for d in t.depends_on {
         if d != id && members.contains(d) {
           let dl = self.dag_level(d, members, memo, visiting)
-          if dl + 1 > level {
+          if dl < 0 {
+            in_cycle = true
+          } else if dl + 1 > level {
             level = dl + 1
           }
         }
@@ -152,8 +179,9 @@ fn FistEngine::dag_level(
     None => ()
   }
   visiting.remove(id)
-  memo.set(id, level)
-  level
+  let final_level = if in_cycle { -1 } else { level }
+  memo.set(id, final_level)
+  final_level
 }
 
 ///|
@@ -161,6 +189,8 @@ fn FistEngine::dag_level(
 /// 层级由 parent_id（子任务归组）与 depends_on（依赖深度）共同决定，
 /// 同层任务按 id 字典序稳定输出；跨命名空间的父/依赖不计入缩进。
 /// 每行格式：<缩进><id> [<状态>]（有依赖时追加 " (依赖: a,b)"），行尾换行。
+/// **BUG-215**：`dag_level` 对环成员返回 -1 哨兵，此处钳到 0（顶层），
+/// 让环成员不被渲染成「看似有合法深度」的中间层。
 pub fn FistEngine::dag_ascii(self : FistEngine, ns~ : String) -> String {
   let target = if ns == "" { "default" } else { ns }
   let tasks = self.store.list_tasks_in(target)
@@ -177,11 +207,11 @@ pub fn FistEngine::dag_ascii(self : FistEngine, ns~ : String) -> String {
   let sorted = tasks.copy()
   sorted.sort_by(fn(a, b) {
     let la = match levels.get(a.id) {
-      Some(l) => l
+      Some(l) => if l < 0 { 0 } else { l }
       None => 0
     }
     let lb = match levels.get(b.id) {
-      Some(l) => l
+      Some(l) => if l < 0 { 0 } else { l }
       None => 0
     }
     if la != lb {
@@ -193,7 +223,7 @@ pub fn FistEngine::dag_ascii(self : FistEngine, ns~ : String) -> String {
   let mut out = ""
   for t in sorted {
     let lvl = match levels.get(t.id) {
-      Some(l) => l
+      Some(l) => if l < 0 { 0 } else { l }
       None => 0
     }
     let mut line = dag_indent(lvl) + t.id + " [" + t.status_to_string() + "]"
