@@ -41,6 +41,8 @@ pub fn score_to_json(s : ScoreResult) -> Json {
 ///|
 /// 计算 coverage：被 tests 至少覆盖 1 次的 laws 比例（0.0..1.0）。
 /// laws 为空时返回 1.0（无法律可覆盖，视为完全覆盖）。
+/// BUG-218：空 law 与单字符 law 不进分母也不计覆盖——`contains("")` 恒 true、
+/// 单字符 law 在任意含该字母的 test 里都被误判为覆盖（实测 "a" 配 `{"name":"test1"}` 得 1.0）。
 pub fn calc_coverage(laws : Array[String], tests : Json) -> Double {
   if laws.is_empty() {
     return 1.0
@@ -50,7 +52,13 @@ pub fn calc_coverage(laws : Array[String], tests : Json) -> Double {
     _ => []
   }
   let mut covered = 0
+  let mut countable = 0
   for law in laws {
+    if law.length() < 2 {
+      // BUG-218：长度 < 2 的 law 无法用 substring 可靠判定覆盖（空串恒真 / 单字符误匹配），跳过。
+      continue
+    }
+    countable = countable + 1
     for t in test_arr {
       let tstr = Json::stringify(t)
       if tstr.contains(law) {
@@ -59,7 +67,12 @@ pub fn calc_coverage(laws : Array[String], tests : Json) -> Double {
       }
     }
   }
-  covered.to_double() / laws.length().to_double()
+  if countable <= 0 {
+    // 全部 laws 都因过短被跳过：无可判定覆盖的 law，按"无法律可覆盖"处理（与 laws 空同语义）。
+    1.0
+  } else {
+    covered.to_double() / countable.to_double()
+  }
 }
 
 ///|

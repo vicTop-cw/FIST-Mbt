@@ -67,6 +67,23 @@ test "scoring_coverage_empty_laws" {
 }
 
 ///|
+/// BUG-218：空 law 与单字符 law 不计覆盖（`contains("")` 恒真 / "a" 在任意含该字母的 test 里误匹配）。
+test "scoring_coverage_short_law_skip" {
+  let tests = Json::array([Json::object({ "name": Json::string("test1") })])
+  // 全短 law：无可判定覆盖 → 1.0（同"无法律可覆盖"语义）
+  let c_all_short = calc_coverage(["", "a", "x"], tests)
+  assert_true(c_all_short == 1.0)
+  // 混合：短 law 被跳过，正常 law 判覆盖
+  let c_mixed = calc_coverage(["", "a", "L1"], tests)
+  // 分母只算 "L1"（1 条），test 里无 "L1" → 0.0
+  assert_true(c_mixed == 0.0)
+  // 混合 + 命中
+  let c_hit = calc_coverage(["", "a", "test1"], tests)
+  // 分母只算 "test1"，test 里含 "test1" → 1.0
+  assert_true(c_hit == 1.0)
+}
+
+///|
 /// 全合格 spec：schema 通过 + fingerprint 通过 + 100% accuracy → score=100, pass=true
 test "scoring_perfect" {
   let spec_str = mk_spec(
