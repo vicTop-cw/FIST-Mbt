@@ -19,10 +19,18 @@
 > 新增 3 条白盒锁 caf_pref_1~3（零回归 / 记忆不足按偏好重排 / 记忆充足退化为证据排序），
 > router 160/160 全绿。
 >
-> **剩余（§2.3 接线）**：`RouterConfig` 加 `caf_default_preference` / `caf_min_evidences`
-> 字段（`src/router/model_router.mbt`）+ `model_router_ops.mbt` 里把 config 字段透传给
-> `pick_caf`。两处都在并发 agent WIP 上（`model_router.mbt` 本轮已提交 ed40ada 后释放，
-> 字段属独立改动需再等；`model_router_ops.mbt` 仍 ` M`），待释放后照 §2.3 收口。
+> **Round 33 更新**：`RouterConfig` 加 `caf_default_preference` / `caf_min_evidences`
+> 字段**已落地**（commit `c54fe68`）——`struct` + `default()`（默认 `[]`/10，零回归）+
+> `from_json`（缺字段→默认，坏类型→默认 + warning）+ `to_json` + `clone_pools` +
+> `router_state` merge 全链路透传；一次性补齐 20 处 wbtest 构造点（regex 20/20 命中），
+> 更新 `cfg_ofm_2` 顶层键集合锁（7→9），新增 `caf_cfg_1`（默认值 + JSON 往返）/
+> `caf_cfg_2`（偏好字段从 config 读出并透传 `pick_caf`）。router 164/164 全绿。
+> 字段的 JSON 投影面 = `caf_default_preference: ["模型名", …]`（`Array[String]`，Json::Array of
+> Json::String）与 `caf_min_evidences: <Int>`（Json::Number，沿用 BUG-26 的 `to_int()` 饱和语义）。
+>
+> **剩余（§2.3 接线）**：`model_router_ops.mbt` 里把 config 字段透传给 `pick_caf` +
+> `executor_run` 后 `caf_memory.push` + status 展示 `caf_memory_status_text`。仅剩
+> `model_router_ops.mbt`（并发 agent WIP）一处，待释放后照 §2.3 收口。
 
 > **A/B 预演（Round 25）**：`scripts/caf_p2d_coldstart_ab.py` 验证冷启动偏好的**场景依赖**性质：
 > - **成本敏感场景**：baseline（选最便宜的）最优，每成功成本 2.000。**P2d 反而不优**（2.703）。
