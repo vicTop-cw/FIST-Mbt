@@ -441,6 +441,37 @@ test "selfdrive_7_publish_next_idempotent" {
 }
 
 ///|
+test "selfdrive_9_publish_next_surfaces_errors" {
+  let dir = sd_dir("sd_c9_publish_err")
+  ignore(selfdrive_memory_init(dir, ns="sd-test"))
+  sd_review(
+    dir,
+    "20260920.14.00.00.md",
+    "# 审视报告\n\n## Next Tasks\n- [自驱任务A]\n- [自驱任务B]\n",
+  )
+  let e = sd_engine("temp/sd_c9.db")
+  // BUG-216：ns="default" 被 publish_parallel 硬拒（并行发布仅限定时/自驱 ns），
+  // 是确定性失败路径——必须回执 publish_errors，不得静默折叠进 skipped。
+  let j = match
+    selfdrive_publish_next(
+      e,
+      dir,
+      ns="default",
+      now="2026-09-23T11:00:00+08:00",
+      max_tasks=5,
+    ) {
+    Ok(x) => x
+    Err(m) => abort(m)
+  }
+  assert_eq(sd_str(j, "action"), "wait")
+  assert_eq(sd_arr_len(j, "published"), 0)
+  assert_eq(sd_arr_len(j, "publish_errors"), 2)
+  assert_eq(sd_arr_len(j, "skipped"), 2)
+  assert_eq(e.list_in_ns("default").length(), 0)
+  assert_true(sd_arr_item(j, "publish_errors", 0).contains("并行发布仅限"))
+}
+
+///|
 test "selfdrive_8_agent_contract_fields" {
   // 纯函数契约生成：必须含 7 个字段标记，且 Objective 回填任务原文
   let c = sd_agent_contract("做一个自驱任务")
@@ -489,4 +520,33 @@ test "selfdrive_b82_export_stamp_成对" {
   }
   assert_true(head2.contains("缺失"))
   assert_false(head2.contains("导出时间：now"))
+}
+
+///|
+/// BUG-218 回归锁：selfdrive_memory_init 写入失败必须回执，不得静默丢弃。
+/// 构造：把 memory 造成普通文件 —— create_dir 失败、四件套写入全部失败。
+/// 期望：created/skipped 为空、errors 含 4 项、note 明示"部分就绪"。
+test "selfdrive_218_memory_init_surfaces_write_errors" {
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
+  let dir = "temp/sd_c218_init_err"
+  @fs.create_dir(dir) catch {
+    _ => ()
+  }
+  @fs.remove_file(dir + "/memory") catch {
+    _ => ()
+  }
+  @fs.write_string_to_file(dir + "/memory", "x", encoding="utf8") catch {
+    _ => abort("构造 fixture 失败：memory 无法落为普通文件")
+  }
+  let j = match selfdrive_memory_init(dir, ns="sd-test") {
+    Ok(x) => x
+    Err(m) => abort(m)
+  }
+  assert_eq(sd_str(j, "action"), "init")
+  assert_eq(sd_arr_len(j, "created"), 0)
+  assert_eq(sd_arr_len(j, "skipped"), 0)
+  assert_eq(sd_arr_len(j, "errors"), 4)
+  assert_true(sd_str(j, "note").contains("部分就绪"))
 }

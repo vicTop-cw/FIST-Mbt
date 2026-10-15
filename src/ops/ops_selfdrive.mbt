@@ -31,6 +31,12 @@ fn sd_memory_dir(project_dir : String) -> String {
 ///|
 /// memory 四件套路径。
 fn sd_kind_path(project_dir : String, kind : String) -> String {
+  if kind.length() == 0 ||
+    kind.contains("/") ||
+    kind.contains("\\") ||
+    kind.contains("..") {
+    abort("invalid kind: \{kind}")
+  }
   join_path(sd_memory_dir(project_dir), kind + ".md")
 }
 
@@ -211,6 +217,10 @@ pub fn selfdrive_memory_init(
   sd_ensure_dir(sd_reviews_dir(project_dir))
   let created : Array[String] = []
   let skipped : Array[String] = []
+  // BUG-218：初始化写入失败此前既不进 created 也不进 skipped，被静默丢弃
+  // （函数仍返回 Ok，调用方误以为"四件套已就绪"，实则文件缺失）。
+  // 与 selfdrive_publish_next（BUG-217）同族：捕获错误、单独累积、回执给调用方。
+  let errors : Array[String] = []
   let files = [
     (
       "product.md", "# 产品目标（Product）\n\n- 为什么做：\n- 给谁用：\n- 成功标准：\n",
@@ -229,16 +239,26 @@ pub fn selfdrive_memory_init(
       skipped.push(name)
     } else if sd_write(p, tpl) {
       created.push(name)
+    } else {
+      errors.push(name)
     }
+  }
+  let note = if errors.length() == 0 {
+    "memory 四件套已就绪（已存在项跳过，不覆盖）"
+  } else {
+    "memory 四件套部分就绪（写入失败 " +
+    errors.length().to_string() +
+    " 项，详见 errors）"
   }
   Ok(
     sd_json(
       "init",
-      "memory 四件套已就绪（已存在项跳过，不覆盖）",
+      note,
       ns,
       [
         ("created", Json::array(created.map(fn(s) { Json::string(s) }))),
         ("skipped", Json::array(skipped.map(fn(s) { Json::string(s) }))),
+        ("errors", Json::array(errors.map(fn(s) { Json::string(s) }))),
       ],
     ),
   )
@@ -356,7 +376,7 @@ pub fn selfdrive_export_tasks(
   for t in tasks {
     let desc = t.description
     let short = if desc.length() > 200 {
-      desc.substring(start=0, end=200) + "..."
+      desc[0:200].to_string() + "..."
     } else {
       desc
     }
@@ -371,7 +391,7 @@ pub fn selfdrive_export_tasks(
     )
   }
   let p = sd_kind_path(project_dir, "task")
-  if sd_write(p, lines.fold_left(init="", fn(acc, l) { acc + l })) {
+  if sd_write(p, lines.fold(init="", fn(acc, l) { acc + l })) {
     Ok(
       sd_json(
         "export_tasks",
@@ -548,17 +568,17 @@ pub fn selfdrive_parse_next_tasks(
   let out : Array[String] = []
   for line in content.split("\n") {
     let l = line.trim()
-    if l.starts_with("## ") {
+    if l.has_prefix("## ") {
       in_section = l.contains("Next Tasks") || l.contains("Next Task")
       continue
     }
     if !in_section {
       continue
     }
-    if l.starts_with("- [x]") || l.starts_with("- [X]") {
+    if l.has_prefix("- [x]") || l.has_prefix("- [X]") {
       continue
     }
-    if l.starts_with("- [") {
+    if l.has_prefix("- [") {
       let ls = l.to_string()
       match ls.find("]") {
         Some(end) =>
@@ -639,6 +659,8 @@ pub fn selfdrive_publish_next(
   }
   let published : Array[String] = []
   let skipped : Array[String] = []
+  // BUG-217：发布失败必须回执（不得静默折叠进 skipped），单独累积错误。
+  let publish_errors : Array[String] = []
   for i = 0; i < tasks.length(); i = i + 1 {
     let marker = "[review:" + latest + ":" + i.to_string() + "]"
     if existing.contains(marker) {
@@ -662,7 +684,7 @@ pub fn selfdrive_publish_next(
       mode_tag +
       "\n\n" +
       sd_agent_contract(tasks[i])
-    let new_id = try_publish_one(engine, ns, desc, now, project_dir)
+    let new_id = try_publish_one(engine, ns, desc, now, project_dir, publish_errors)
     match new_id {
       Some(id) => {
         published.push(tasks[i])
@@ -671,7 +693,7 @@ pub fn selfdrive_publish_next(
       }
       None => {
         skipped.push(tasks[i])
-        break
+        continue
       }
     }
   }
@@ -683,12 +705,18 @@ pub fn selfdrive_publish_next(
       published.length().to_string() +
       " / 跳过 " +
       skipped.length().to_string() +
+      " / 失败 " +
+      publish_errors.length().to_string() +
       "）",
       ns,
       [
         ("review_file", Json::string(latest)),
         ("published", Json::array(published.map(fn(s) { Json::string(s) }))),
         ("skipped", Json::array(skipped.map(fn(s) { Json::string(s) }))),
+        (
+          "publish_errors",
+          Json::array(publish_errors.map(fn(s) { Json::string(s) })),
+        ),
       ],
     ),
   )
@@ -703,6 +731,7 @@ fn try_publish_one(
   desc : String,
   now : String,
   project_dir : String,
+  errors : Array[String],
 ) -> String? {
   match
     engine.publish_parallel(
@@ -713,7 +742,12 @@ fn try_publish_one(
       now~,
     ) {
     Ok(id) => Some(id)
-    Err(_) => None
+    Err(e) => {
+      // BUG-217：发布失败此前被 `Err(_) => None` 静默折叠进 skipped，与"幂等已跳过"
+      // 不可区分（BUG-204 同族）。捕获错误交上层回执，不再吞掉。
+      errors.push(e)
+      None
+    }
   }
 }
 
