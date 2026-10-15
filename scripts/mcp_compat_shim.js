@@ -37,6 +37,30 @@
 // 说明：
 //   - 不传 --server 时默认连同仓 dist/fist-mbt.js serve
 //   - FIST_DB_PATH 用于隔离演示/正式台账；不设则落在仓库根的 fist-mbt.db（不建议）
+//
+// A7 · 标准客户端可直接落盘的 fist.mcp.json（由发布版 mcp_config_scaffold 校验生成，
+//      只写环境变量名占位，真值走 server 进程环境变量——不写密钥、不写 token）：
+// {
+//   "mcpServers": {
+//     "fist-mbt": {
+//       "command": "node",
+//       "args": [
+//         "<repo绝对路径>/scripts/mcp_compat_shim.js",
+//         "--server",
+//         "node",
+//         "<repo绝对路径>/dist/fist-mbt.js",
+//         "serve"
+//       ],
+//       "cwd": "<repo绝对路径>",
+//       "toolCallTimeoutMs": 60000,
+//       "failOnStartupError": false,
+//       "reconnect": { "intervalMs": 500, "maxRetries": 30, "delayMs": 30000 },
+//       "env": { "FIST_DB_PATH": "<你的库路径>", "FIST_PROJECT_DIR": "<repo绝对路径>" }
+//     }
+//   }
+// }
+// 用 `mcp_config_scaffold`（工具名 mcp_config_scaffold）传入上面的偏好即可生成同款正文；
+// 它会把未知字段回显到 unknown_keys 供调试，但**拒绝**含 api_key/token/secret 形状的表单。
 
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
