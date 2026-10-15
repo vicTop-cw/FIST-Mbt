@@ -681,15 +681,26 @@ fn scan_substring_end_var(code : String) -> String {
 }
 
 ///|
-/// BUG-164 盲区 B：substring 的 `end` 常来自 `match s.find("]") { Some(end) => ... }` 的绑定，
-/// 守卫写在**上一行** `if end > N`（N = start 参数）。识别这一形态，把该类假阳性过滤掉。
-/// 只认 `if <end_var> > N` / `if <end_var> >= N` 形状，避免误伤无关变量比较。
-fn scan_guard_substring_end_var(prev : String, code : String) -> Bool {
+/// BUG-164 盲区 B/C：substring 的 `end` 常来自局部变量（如 `match s.find("]") { Some(end) => ... }`），
+/// 守卫写在**上一行**。识别两种形态，把该类假阳性过滤掉：
+///   B 形态：`if <end_var> > N` / `if <end_var> >= N`（N = start 参数）
+///   C 形态：`<end_var> <= <target>.length()`（end 被目标长度上界约束）
+/// 只认 `if ` 前缀 + 变量名精确匹配，避免误伤无关比较。
+fn scan_guard_substring_end_var(
+  prev : String,
+  code : String,
+  vn : String,
+) -> Bool {
   let t = prev.trim().to_string()
   if t.is_empty() {
     return false
   }
-  if not(t.has_prefix("if ")) {
+  // 守卫形态：`if ...` / `} else if ...`（engine_triage.mbt:46 是 else-if 分支）
+  let is_cond = t.has_prefix("if ") ||
+    t.has_prefix("if(") ||
+    t.contains(" else if ") ||
+    t.contains("else if ")
+  if not(is_cond) {
     return false
   }
   let start_n = scan_substring_start(code)
@@ -701,10 +712,27 @@ fn scan_guard_substring_end_var(prev : String, code : String) -> Bool {
     return false
   }
   let ns = start_n.to_string()
-  t.contains(ev + " > " + ns) ||
-  t.contains(ev + " >" + ns) ||
-  t.contains(ev + " >= " + ns) ||
-  t.contains(ev + " >=" + ns)
+  // B 形态：`if end > 3` / `if end >= 3`——只认 start≥1（start=0 时 `end>0` 不构成上界，见反向锁）
+  // 该形态用于 `find()` 绑定的 end 变量（天然有界），`end > start` 才能保证不越界。
+  let b_hit = start_n >= 1 &&
+    (
+      t.contains(ev + " > " + ns) ||
+      t.contains(ev + " >" + ns) ||
+      t.contains(ev + " >= " + ns) ||
+      t.contains(ev + " >=" + ns)
+    )
+  if b_hit {
+    return true
+  }
+  // C 形态：`max <= s.length()`（engine_triage.mbt:46 `} else if max > 0 && max <= s.length() {`）
+  // 该形态在 start=0 时保证 end_var ≥ 0 且 end_var ≤ length，substring 不越界。
+  if start_n == 0 && not(vn.is_empty()) {
+    let len_ref = vn + ".length()"
+    if t.contains(ev + " <= " + len_ref) || t.contains(ev + "<=" + len_ref) {
+      return true
+    }
+  }
+  false
 }
 
 ///|
@@ -999,8 +1027,8 @@ pub fn scan_finding_guarded(
       if t.contains("if ") && t.contains(".length() >= ") {
         return true
       }
-      // BUG-164 盲区 B：`end` 来自 `match s.find(...)` 绑定的局部变量，守卫是上一行 `if end > N`
-      if scan_guard_substring_end_var(t, code) {
+      // BUG-164 盲区 B/C：`end` 来自局部变量，守卫是上一行 `if end > N` 或 `<end_var> <= <target>.length()`
+      if scan_guard_substring_end_var(t, code, vn) {
         return true
       }
       if t.has_prefix("fn ") {
