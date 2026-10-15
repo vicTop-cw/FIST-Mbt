@@ -625,3 +625,34 @@ test "caf_edit_distance_properties" {
     assert_true(d_ac <= d_ab + d_bc)
   }
 }
+
+///|
+/// 长度守卫：长字符串截断到 CAF_EDIT_MAX_LEN，防止 O(n*m) 爆炸。
+/// 1. 截断后短串行为不变（回归基线）
+/// 2. 超长串不 panic 且返回有限值
+/// 3. 与短串的相似度比较仍可用
+test "caf_edit_distance_length_guard" {
+  // 1. 短串回归：未截断路径不受影响
+  assert_eq(caf_edit_distance("abc", "abd"), 1)
+  assert_eq(caf_edit_distance("", ""), 0)
+  assert_eq(caf_edit_distance("kitten", "sitting"), 3)
+
+  // 2. 超长串不 panic 且返回有限值
+  // 构造长串
+  let mut long_a = ""
+  for i in 0..<1000 {
+    long_a = long_a + "a"
+  }
+  let mut long_b = ""
+  for i in 0..<1000 {
+    long_b = long_b + "b"
+  }
+  let d = caf_edit_distance(long_a, long_b)
+  assert_true(d >= 0)
+  assert_true(d <= CAF_EDIT_MAX_LEN)
+
+  // 3. 超长串与短串比较
+  let d2 = caf_edit_distance(long_a, "a")
+  assert_true(d2 >= 0)
+  assert_true(d2 <= CAF_EDIT_MAX_LEN)
+}
