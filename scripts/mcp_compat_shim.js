@@ -76,6 +76,32 @@ child.on('exit', (code, signal) => {
 // id -> 客户端请求的协议版本（用于响应回写）
 const pendingInits = new Map();
 
+// id -> 请求超时计时器（A4：server 长时间不响应时回 -32000，避免客户端永久挂起）
+const pendingTimers = new Map();
+// A4：默认 30s；可用环境变量 FIST_SHIM_TIMEOUT_MS 覆盖（测试/长任务用）
+const REQUEST_TIMEOUT_MS = parseInt(process.env.FIST_SHIM_TIMEOUT_MS || '30000', 10);
+
+function armTimeout(id) {
+  // 同一 id 重复转发（罕见）先清掉旧计时器
+  clearTimeout(pendingTimers.get(id));
+  const t = setTimeout(() => {
+    pendingTimers.delete(id);
+    pendingInits.delete(id);
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0', id,
+      error: { code: -32000, message: `Request timed out after ${REQUEST_TIMEOUT_MS}ms (shim A4 timeout)` },
+    }) + '\n');
+  }, REQUEST_TIMEOUT_MS);
+  // 计时器不阻止进程退出（server 死掉时 shim 也能立即 exit）
+  t.unref?.();
+  pendingTimers.set(id, t);
+}
+
+function disarmTimeout(id) {
+  const t = pendingTimers.get(id);
+  if (t) { clearTimeout(t); pendingTimers.delete(id); }
+}
+
 // 给 params 补 _meta 三元组（fist-mbt server 每个请求都强制要求）
 function ensureMeta(params, isInit) {
   params = params || {};
@@ -130,6 +156,8 @@ stdinRl.on('line', (line) => {
     msg.params = ensureMeta(msg.params, false);
   }
   // notifications/* 无 id，不需要响应，也无需补 _meta，原样透传
+  // A4：有 id 的请求启动超时计时器（通知不计时）
+  if (msg.id !== undefined) armTimeout(msg.id);
   child.stdin.write(JSON.stringify(msg) + '\n');
 });
 
@@ -139,6 +167,9 @@ childRl.on('line', (line) => {
   if (!line.trim()) return;
   let resp;
   try { resp = JSON.parse(line); } catch { process.stdout.write(line + '\n'); return; }
+
+  // A4：收到响应（不管 id 是否 pendingInits），解除超时计时器
+  disarmTimeout(resp.id);
 
   if (pendingInits.has(resp.id)) {
     const clientPV = pendingInits.get(resp.id);
