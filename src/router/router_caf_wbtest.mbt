@@ -577,3 +577,51 @@ test "caf_property_random_invariants" {
   assert_true(found_b)
   assert_true(found_c)
 }
+
+///|
+/// 属性测试：caf_edit_distance 数学性质
+/// 1. 自反性：d(a,a)==0
+/// 2. 对称性：d(a,b)==d(b,a)
+/// 3. 基例：d(a,"")==len(a)
+/// 4. 三角不等式：d(a,c) <= d(a,b)+d(b,c)
+test "caf_edit_distance_properties" {
+  // 自反性
+  assert_eq(caf_edit_distance("abc", "abc"), 0)
+  assert_eq(caf_edit_distance("12345", "12345"), 0)
+  assert_eq(caf_edit_distance("", ""), 0)
+
+  // 对称性
+  let pairs : Array[(String, String)] = [
+    ("abc", "abd"),
+    ("kitten", "sitting"),
+    ("12345", "54321"),
+    ("", "abc"),
+    ("abc", ""),
+    ("aaa", "bbb"),
+  ]
+  for p in pairs {
+    let d1 = caf_edit_distance(p.0, p.1)
+    let d2 = caf_edit_distance(p.1, p.0)
+    assert_eq(d1, d2)
+  }
+
+  // 基例
+  assert_eq(caf_edit_distance("hello", ""), 5)
+  assert_eq(caf_edit_distance("", "hello"), 5)
+  assert_eq(caf_edit_distance("a", ""), 1)
+
+  // 三角不等式
+  let triples : Array[(String, String, String)] = [
+    ("abc", "abd", "xyz"),
+    ("kitten", "sitting", "satin"),
+    ("1234", "1235", "2235"),
+    ("", "a", "ab"),
+    ("same", "same", "diff"),
+  ]
+  for t in triples {
+    let d_ac = caf_edit_distance(t.0, t.2)
+    let d_ab = caf_edit_distance(t.0, t.1)
+    let d_bc = caf_edit_distance(t.1, t.2)
+    assert_true(d_ac <= d_ab + d_bc)
+  }
+}
