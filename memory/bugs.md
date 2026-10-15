@@ -4103,4 +4103,12 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - reported_by: bugfind
 - commit: 56633bc
 
+## BUG-224 [2026-10-15T15:20:00Z] [high] FIXED
+- summary: [github_flush_execute] 按 plan_arr 长度索引被过滤后的 bug_ids，越界 panic（工具崩溃拖垮整个 server turn）
+- detail: `src/server/server.mbt` 的 `github_flush_execute` 里，`bug_ids`/`curl_cmds` 只收集 `bug_id` 与 `curl_command` 均非空的 plan 项（L6691 `if !bid.is_empty() && !cmd.is_empty()`），而 `github_flush_plan`（`github_sync.mbt` L198-299）对队列行**无条件**产出 plan 项——当某行的 `bug_id` 为空（`github_queue_append` 会拒绝写，但历史损坏行/手工改文件/旧版本队列可产生）时，plan 项数 > bug_ids 数。结果组装第二循环 `while i2 < plan_arr.length() { let bid2 = bug_ids[i2] ... }`（L6789/L6791）以 plan_arr 长度为界直接索引 bug_ids，一旦 i2 达到 bug_ids.length() 即越界 panic；第一循环 `bug_ids[i1]`（L6739）仅以 results_arr 长度为护栏，同为脆弱写法。MoonBit 数组越界是 panic 而非可回执的 Err，会直接终止整个 MCP 工具调用（server turn 崩溃）。
+- fix_options: 1) 消费端按 bug_ids.length() 迭代 + 上游 flush_plan 排除空 bug_id 行（纵深防御，采用）；2) 仅改消费端循环边界（上游仍产出不可追踪的 plan 项）；3) 仅改上游过滤（消费端仍对其它畸形输入脆弱）。
+- fix: ① 上游 `github_flush_plan`：计算 bug_id 后 `if bug_id.is_empty() { continue }`，保证 plan 里每条都带非空 bug_id（空行既无法 mark_sent、issue 正文也无 bug 锚点）。② 消费端 `github_flush_execute`：第二循环边界改为 `while i2 < bug_ids.length()`；第一循环护栏补 `&& i1 < bug_ids.length()`。回归锁 `BUG-224_flush_plan_skips_empty_bug_id`：直接落盘"一条合法 + 一条空 bug_id"的队列，断言 `github_flush_plan` 只产出 1 条且 bug_id=BUG-OK（空行被排除）。`moon test --target js src/server` 286/286 绿。
+- reported_by: bugfind
+- commit: 44bb8da
+
 
