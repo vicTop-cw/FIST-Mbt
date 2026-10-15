@@ -29,15 +29,15 @@ test "cfg_ofm_2_投影面顶层键集合被钉死_新增字段须显式登记" {
     Json::Object(m) => m
     _ => abort("to_json 应回对象")
   }
-  if m.keys().length() != 7 {
+  if m.keys().length() != 9 {
     abort(
-      "投影面顶层键数 != 7（got \{m.keys().length()}），新增字段必须显式进此锁",
+      "投影面顶层键数 != 9（got \{m.keys().length()}），新增字段必须显式进此锁",
     )
   }
   for
     k in [
       "window_seconds", "threshold_pct", "free_pool", "paid_pool", "ofm_endpoint",
-      "use_laya", "use_caf_memory",
+      "use_laya", "use_caf_memory", "caf_default_preference", "caf_min_evidences",
     ] {
     if !m.contains(k) {
       abort("投影面缺字段 '\{k}'")
@@ -224,6 +224,8 @@ test "cfg_caf_3_use_caf_memory坏类型回落 false + warning" {
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: true,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let m = match roundtrip.to_json() {
     Json::Object(m) => m

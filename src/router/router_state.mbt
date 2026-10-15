@@ -209,6 +209,8 @@ pub fn router_restore(
     ofm_endpoint: cfg.ofm_endpoint,
     use_laya: cfg.use_laya,
     use_caf_memory: cfg.use_caf_memory,
+    caf_default_preference: cfg.caf_default_preference,
+    caf_min_evidences: cfg.caf_min_evidences,
   }
   let r = ModelRouter::from_config(merged)
   let tier_str = st_str(sm, "current_tier")

@@ -218,6 +218,8 @@ pub struct RouterConfig {
   ofm_endpoint : String
   use_laya : Bool
   use_caf_memory : Bool
+  caf_default_preference : Array[String]
+  caf_min_evidences : Int
 } derive(Eq, @debug.Debug)
 pub fn RouterConfig::default() -> Self
 pub fn RouterConfig::from_json(Json) -> (Self, Array[String])
