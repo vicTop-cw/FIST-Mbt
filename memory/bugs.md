@@ -4050,7 +4050,7 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 修复方向：把 claim 动作移到所有检查**通过之后**——先用 `decide_claim` 只读判重，全通过再 `claim_item`；或者拆成 `check_proceed_*`（纯读）+ `claim_item` 两步，由调用方显式认领。
 
 
-## BUG-218 [2026-10-15T13:51:38Z] [medium] OPEN
+## BUG-218 [2026-10-15T13:51:38Z] [medium] FIXED
 - summary: [scoring] calc_coverage 的 substring 匹配对空/单字符 law 产生假覆盖（coverage 虚高）
 - detail: `src/omega/scoring.mbt` 的 `calc_coverage` 用 `Json::stringify(t).contains(law)` 判断某条 law 是否被 tests 覆盖。实测两个漏洞：
 
@@ -4060,6 +4060,9 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 后果：laws 里若出现短 token（变量名、符号、空串），coverage 被系统性抬高，Ω-spec 的 pass 判定失准（coverage × 30 分）。修复：空 law 不算覆盖（跳过）；law 长度 < 3 时用更严格的匹配（或跳过并记 note）。
 - reported_by: bugfind
 
+
+### FIXED(2026-10-15T13:55:57Z / BUG-218)
+- evidence: src/omega/scoring.mbt calc_coverage：空 law 与单字符 law 跳过不计覆盖（分母只算 length>=2 的 law；全部跳过时回 1.0）；scoring_test.mbt 新增 scoring_coverage_short_law_skip 锁（全短=1.0 / 混合未命中=0.0 / 混合命中=1.0 三态）；moon test --target js 全量 1197/1197 绿。
 ## BUG-219 [2026-10-15T13:52:00Z] [medium] FIXED
 - summary: [selfdrive] selfdrive_memory_init 写入失败被静默丢弃（created/skipped 均不含，函数仍返回 Ok）
 - detail: `src/ops/ops_selfdrive.mbt` 的 `selfdrive_memory_init` 在写入四件套模板时，`sd_write` 返回 false 的分支既不进 `created` 也不进 `skipped`，被完全丢弃。函数仍返回 `Ok`，调用方误以为"四件套已就绪"，实则文件缺失。与 `selfdrive_publish_next`（BUG-217）同族：静默吞错。触发条件：memory 路径被占用为普通文件（create_dir 失败）、磁盘满、权限不足等。
@@ -4067,4 +4070,13 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 新增 `errors : Array[String]` 累积器，`sd_write` 失败时 push 到 errors；JSON 输出新增 `errors` 字段；note 根据 errors 是否为空动态切换（"已就绪" vs "部分就绪（写入失败 N 项，详见 errors）"）。回归锁 `selfdrive_218_memory_init_surfaces_write_errors`：构造 memory 为普通文件使四件套写入全部失败，验证 errors 含 4 项、created/skipped 为空、note 含"部分就绪"。
 - reported_by: bugfind
 - commit: 15b6b42
+
+## BUG-220 [2026-10-15T14:07:00Z] [high] FIXED
+- summary: [github_sync] github_queue_append / github_queue_mark_sent 队列写入失败被静默丢弃（let _ = 丢弃 Bool 返回值）
+- detail: `src/server/github_sync.mbt` 的 `github_queue_append`（L110）和 `github_queue_mark_sent`（L343）使用 `let _ = mem_write(...)` 完全丢弃写入结果。`mem_write` 返回 `Bool`（失败返回 false），但 `let _ =` 丢弃了该信号——写入失败时函数仍返回 `Ok(Json::object(mm))`，调用方误以为已持久化，实则队列数据丢失。与 BUG-217/219 同族（静默吞错），但后果更远：队列丢失导致 bug 同步静默失败，且无回执可查。触发条件：磁盘满、权限不足、路径被占用为目录等。
+- fix_options: 1) 检查 mem_write 返回值，失败时返回 Err（采用）；2) 在 JSON 输出中加 errors 字段（调用方可能不检查）；3) 仅记日志（调用方仍无法感知）。
+- fix: 将 `let _ = mem_write(...)` 改为 `if !mem_write(...) { return Err("...: 队列写入失败") }`。回归锁 `BUG-220_queue_write_failure_surfaces`：构造队列路径为目录使写入必然失败，验证两个函数都返回 Err。
+- reported_by: bugfind
+- commit: 92e41e0
+
 
