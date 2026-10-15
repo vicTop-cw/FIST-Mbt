@@ -29,15 +29,15 @@ test "cfg_ofm_2_投影面顶层键集合被钉死_新增字段须显式登记" {
     Json::Object(m) => m
     _ => abort("to_json 应回对象")
   }
-  if m.keys().length() != 6 {
+  if m.keys().length() != 7 {
     abort(
-      "投影面顶层键数 != 6（got \{m.keys().length()}），新增字段必须显式进此锁",
+      "投影面顶层键数 != 7（got \{m.keys().length()}），新增字段必须显式进此锁",
     )
   }
   for
     k in [
       "window_seconds", "threshold_pct", "free_pool", "paid_pool", "ofm_endpoint",
-      "use_laya",
+      "use_laya", "use_caf_memory",
     ] {
     if !m.contains(k) {
       abort("投影面缺字段 '\{k}'")
@@ -180,5 +180,57 @@ test "cfg_192_超大数值与 NaN 不 panic 且回落默认" {
   assert_eq(cfg2.free_models[0].rank, 0)
   if warns2.length() == 0 {
     abort("越界 limit/rank 必须进 warnings")
+  }
+}
+
+///|
+test "cfg_caf_1_use_caf_memory_true 解析为 true" {
+  let (cfg, _) = RouterConfig::from_json(
+    qj([("use_caf_memory", Json::boolean(true))]),
+  )
+  if not(cfg.use_caf_memory) {
+    abort("use_caf_memory: true 应解析为 true")
+  }
+}
+
+///|
+test "cfg_caf_2_use_caf_memory缺省为 false" {
+  let (cfg, warns) = RouterConfig::from_json(Json::object({}))
+  if cfg.use_caf_memory {
+    abort("缺字段应默认 false")
+  }
+  if warns.length() != 0 {
+    abort("缺字段不应产 warning")
+  }
+}
+
+///|
+test "cfg_caf_3_use_caf_memory坏类型回落 false + warning" {
+  let (cfg, warns) = RouterConfig::from_json(
+    qj([("use_caf_memory", qs("yes"))]),
+  )
+  if cfg.use_caf_memory {
+    abort("坏类型应回落 false")
+  }
+  if warns.length() == 0 {
+    abort("坏类型必须进 warnings")
+  }
+  // to_json 双向：true 应序列化为 true
+  let roundtrip : RouterConfig = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [],
+    paid_models: [],
+    ofm_endpoint: "",
+    use_laya: false,
+    use_caf_memory: true,
+  }
+  let m = match roundtrip.to_json() {
+    Json::Object(m) => m
+    _ => abort("to_json 应回对象")
+  }
+  match m.get("use_caf_memory") {
+    Some(Json::True) => ()
+    _ => abort("use_caf_memory=true 应序列化为 Json::True")
   }
 }
