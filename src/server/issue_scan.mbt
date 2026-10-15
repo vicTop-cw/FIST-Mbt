@@ -1158,25 +1158,33 @@ fn scan_is_test_file(p : String) -> Bool {
 ///|
 /// 递归收集目录下待扫描文件（目录→递归；文件且 .mbt→收集）。
 /// include_tests=false（默认）跳过测试文件。
+/// BUG-222：read_dir 失败（目录不存在/不可读）必须回执 Err，不得静默返回空结果，
+/// 否则 issue_scan 会返回 scanned_files=0 的"假干净"结果误导调用方。
 fn scan_collect(
   dir : String,
   include_tests : Bool,
   out : Array[String],
-) -> Unit {
-  let names = @fs.read_dir(dir) catch { _ => return }
+) -> Result[Unit, String] {
+  let names = @fs.read_dir(dir) catch {
+    _ => return Err("issue_scan: 无法读取目录（不存在或不可读）: " + dir)
+  }
   for name in names {
     let p = mem_join(dir, name)
     if scan_skip(p) {
       continue
     }
     if scan_detect_dir(p) {
-      scan_collect(p, include_tests, out)
+      match scan_collect(p, include_tests, out) {
+        Ok(_) => ()
+        Err(e) => return Err(e)
+      }
     } else if p.has_suffix(".mbt") {
       if include_tests || not(scan_is_test_file(p)) {
         out.push(p)
       }
     }
   }
+  Ok(())
 }
 
 ///|
@@ -1369,7 +1377,10 @@ pub fn issue_scan(
     scan_rules()
   }
   let files : Array[String] = []
-  scan_collect(dir, include_tests, files)
+  match scan_collect(dir, include_tests, files) {
+    Ok(_) => ()
+    Err(e) => return Err(e)
+  }
   let findings : Array[ScanFinding] = []
   for f in files {
     for hit in scan_file(f, rules) {
