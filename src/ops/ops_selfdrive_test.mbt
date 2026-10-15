@@ -441,6 +441,37 @@ test "selfdrive_7_publish_next_idempotent" {
 }
 
 ///|
+test "selfdrive_9_publish_next_surfaces_errors" {
+  let dir = sd_dir("sd_c9_publish_err")
+  ignore(selfdrive_memory_init(dir, ns="sd-test"))
+  sd_review(
+    dir,
+    "20260920.14.00.00.md",
+    "# 审视报告\n\n## Next Tasks\n- [自驱任务A]\n- [自驱任务B]\n",
+  )
+  let e = sd_engine("temp/sd_c9.db")
+  // BUG-217：ns="default" 被 publish_parallel 硬拒（并行发布仅限定时/自驱 ns），
+  // 是确定性失败路径——必须回执 publish_errors，不得静默折叠进 skipped。
+  let j = match
+    selfdrive_publish_next(
+      e,
+      dir,
+      ns="default",
+      now="2026-09-23T11:00:00+08:00",
+      max_tasks=5,
+    ) {
+    Ok(x) => x
+    Err(m) => abort(m)
+  }
+  assert_eq(sd_str(j, "action"), "wait")
+  assert_eq(sd_arr_len(j, "published"), 0)
+  assert_eq(sd_arr_len(j, "publish_errors"), 2)
+  assert_eq(sd_arr_len(j, "skipped"), 2)
+  assert_eq(e.list_in_ns("default").length(), 0)
+  assert_true(sd_arr_item(j, "publish_errors", 0).contains("并行发布仅限"))
+}
+
+///|
 test "selfdrive_8_agent_contract_fields" {
   // 纯函数契约生成：必须含 7 个字段标记，且 Objective 回填任务原文
   let c = sd_agent_contract("做一个自驱任务")
