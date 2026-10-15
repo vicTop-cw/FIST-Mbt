@@ -69,3 +69,15 @@ dist/
 # 注意 default-fist.mcp.json 是「模板」，必须进发布包，不许被这条规则盖住。
 /.fist.mcp.json
 /fist.mcp.json
+
+
+
+# Round 120: 仓库根目录的临时产物（`*.log` 规则不覆盖，`moon publish` 会把它们公开出去）
+/_build_err.txt
+/_test_out.txt
+/stdout.txt
+/stderr.txt
+/verr.txt
+/vout.txt
+/me.txt
+/fist-mbt-light-worktree.zip
