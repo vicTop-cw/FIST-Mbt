@@ -137,3 +137,49 @@ test "caf_c1_3_两种任务类型严格区分" {
     )
   }
 }
+
+///|
+/// R47 · 标准 1「候选集置换不变」真源锁（补齐 CAF 验收状态 L32 声明未锁的缺口）。
+///
+/// 验收文档声明「排列性质：排序结果对候选集置换保持不变」，但 caf_c1_1/2/3 只锁了
+/// **上下文区分度**，未锁**排列性质**。若 `caf_soft_reorder` 依赖输入顺序（如按数组下标
+/// 隐式参与排序），置换候选集会让回放优先级漂移 → 标准 1「离线回放可复现」违约。
+///
+/// 前提：候选都是有依据模型且 rate 互不相同（无 tie）→ 排序由 rate 决定，与输入顺序无关。
+/// tie 时的 FIFO 稳定由 R13 `caf_soft_reorder_tie_stable` 锁，不在本锁范围。
+test "caf_c1_4_候选集置换不变" {
+  let mem = c1_mem()
+  // 全量聚合，保证 m_free（rate 0.667）与 m_premium（rate 1.0）都在 stats 里
+  let stats = caf_stats(mem.all())
+  let base : Array[String] = ["m_free", "m_premium"]
+  let perm : Array[String] = ["m_premium", "m_free"]
+  let r_base = caf_soft_reorder(base, stats)
+  let r_perm = caf_soft_reorder(perm, stats)
+  if r_base.length() != 2 {
+    abort("应返回 2 个候选，实际 " + r_base.length().to_string())
+  }
+  // 排列性质核心：首位恒为 rate 更高的 m_premium（与输入顺序无关）
+  if r_base[0] != "m_premium" || r_perm[0] != "m_premium" {
+    abort(
+      "排列性质违约：首位应恒为 m_premium，实际 base=" +
+      r_base[0] +
+      " perm=" +
+      r_perm[0],
+    )
+  }
+  // 完整序列一致（逐位置比对，Array 用 == 依赖语言实现，这里显式循环更稳）。
+  // 注意：MoonBit 半开区间 `0..<len`（不遍历 len），闭区间 `0..=len-1` 才含 len-1；
+  // 写成 `0..<=2` 会遍历 0,1,2 三次 → 第 3 次 r_base[2] 越界 panic。
+  for i in 0..<r_base.length() {
+    if r_base[i] != r_perm[i] {
+      abort(
+        "排列性质违约：位置 " +
+        i.to_string() +
+        " base=" +
+        r_base[i] +
+        " perm=" +
+        r_perm[i],
+      )
+    }
+  }
+}
