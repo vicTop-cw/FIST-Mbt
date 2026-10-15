@@ -302,10 +302,10 @@ test "lint_9_substring_guard_filter" {
   @fs.write_string_to_file(
     d + "/sample.mbt",
     "fn guarded(s : String) -> String {\n" +
-    "  if s.length() > 8 { s.substring(start=0, end=8) } else { s }\n" +
+    "  if s.length() > 8 { s[0:8].to_string() } else { s }\n" +
     "}\n" +
     "fn unguarded(s : String) -> String {\n" +
-    "  s.substring(start=0, end=8)\n" +
+    "  s[0:8].to_string()\n" +
     "}\n",
     encoding="utf8",
   ) catch {
@@ -326,3 +326,14 @@ test "lint_9_substring_guard_filter" {
     }
   }
 }
+
+///|
+/// BUG-222 回归锁：目标目录不存在（或不可读）时，issue_scan 必须返回 Err，
+/// 而不是 Ok(scanned_files=0) 的"假干净"结果误导调用方。
+/// 该目录从不会被创建，因此必然不存在。
+test "lint_10_missing_dir_returns_err" {
+  let d = "temp/lint_bug222_missing_dir"
+  let r = issue_scan(d, "", 100)
+  assert_true(r.is_err())
+}
+
