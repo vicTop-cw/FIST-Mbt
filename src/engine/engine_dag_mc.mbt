@@ -115,10 +115,17 @@ fn FistEngine::mc_finish(
   visiting.set(id, true)
   let own = dur.get(id).unwrap_or(0)
   let mut best = own
+  // BUG-212：BUG-204 的 -1 哨兵只在「自身被重入」时生效，外层收到 -1 后照样累加内层 own
+  // （`f + own > best` 对 f=-1 因 own-1 <= own 不生效），于是环 A↔B 的 A 把 B 的 own 累进 best，
+  // makespan 把环当正常最长路径。这里把 -1 沿依赖链向上传播：任一后继在环上 → 自身也在环上。
+  let mut cycle = false
   match deps.get(id) {
     Some(arr) =>
       for d in arr {
         let f = self.mc_finish(d, dur, memo, visiting, deps)
+        if f == -1 {
+          cycle = true
+        }
         if f + own > best {
           best = f + own
         }
@@ -126,6 +133,10 @@ fn FistEngine::mc_finish(
     None => ()
   }
   visiting.remove(id)
+  if cycle {
+    memo.set(id, -1)
+    return -1
+  }
   memo.set(id, best)
   best
 }
@@ -154,10 +165,15 @@ fn mc_suffix_from(
   visiting.set(id, true)
   let own = dur.get(id).unwrap_or(0)
   let mut best = own
+  // BUG-212：同 mc_finish——-1 哨兵必须沿后继链向上传播，否则环上节点返回正数。
+  let mut cycle = false
   match succ.get(id) {
     Some(arr) =>
       for s in arr {
         let f = mc_suffix_from(s, dur, memo_suf, visiting, succ)
+        if f == -1 {
+          cycle = true
+        }
         if f + own > best {
           best = f + own
         }
@@ -165,6 +181,10 @@ fn mc_suffix_from(
     None => ()
   }
   visiting.remove(id)
+  if cycle {
+    memo_suf.set(id, -1)
+    return -1
+  }
   memo_suf.set(id, best)
   best
 }
