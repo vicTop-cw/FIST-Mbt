@@ -145,6 +145,35 @@ test "caf_stats_single_record" {
 }
 
 ///|
+/// BUG-174 回归：长字符串（>14 字符，原实现会溢出到 Int64.min_value()）不崩溃，
+/// 且返回哈希值恒非负（32 位截断保证）。
+test "caf_feature_hash_long_string_no_overflow" {
+  // 15 个字符足够触发原始 h*31+c 溢出（31^14 ≈ 1e20 > 2^63）
+  let long1 = "aaaaaaaaaaaaaaa" // 15 字符
+  let long2 = "zzzzzzzzzzzzzzz" // 15 字符
+  let h1 = caf_feature_hash(long1)
+  let h2 = caf_feature_hash(long2)
+  // 不崩溃即通过；同时验证返回值非负（原 h.abs() 在 min_value() 时 panic）
+  assert_true(h1 >= 0)
+  assert_true(h2 >= 0)
+  // 幂等性仍成立
+  assert_eq(h1, caf_feature_hash(long1))
+  // 不同内容大概率不同哈希
+  assert_true(h1 != h2)
+}
+
+///|
+/// BUG-174 补充：超长字符串（100 字符）也不崩溃，返回非负。
+test "caf_feature_hash_very_long_no_overflow" {
+  let mut long = ""
+  for _ in 0..<4 {
+    long = long + "abcdefghijklmnopqrstuvwxyz"
+  } // 104 字符
+  let h = caf_feature_hash(long)
+  assert_true(h >= 0)
+}
+
+///|
 test "caf_feature_hash_idempotent" {
   let h1 = caf_feature_hash("hello world")
   let h2 = caf_feature_hash("hello world")
