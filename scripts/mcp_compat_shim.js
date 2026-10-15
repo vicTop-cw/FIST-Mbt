@@ -15,8 +15,9 @@
 //
 // 实测（2026-10-15 Windows，发布版 dist/fist-mbt.js = 148 工具 / v0.3.8）：
 //   - 标准协议 2025-06-18 与 2024-11-05 都能完成 initialize 握手
-//   - tools/list / tools/call / resources/list 均正常返回
-//   - 已知 server 侧限制：`ping` 返回 -32601 Method not found（colmugx/mcp 移除），非 shim 问题
+//   - tools/list / tools/call / resources/list / resources/read / prompts/list 均正常返回
+//   - ping 由本 shim 拦截直接回 {}（server 侧 colmugx/mcp@0.17.4 已移除该方法）
+//   - 可选 MCP 特性未实现（server 侧）：logging/setLevel、completion/complete 返回 -32601，非 shim 问题
 //
 // 用法（MCP 客户端把 command 指向本 shim）：
 //   node scripts/mcp_compat_shim.js                       # 默认连 dist/fist-mbt.js serve
@@ -90,6 +91,11 @@ stdinRl.on('line', (line) => {
     // 改写为 server/discover（server 已移除标准 initialize）
     msg.method = 'server/discover';
     msg.params = ensureMeta(msg.params, true);
+  } else if (msg.method === 'ping') {
+    // fist-mbt server（colmugx/mcp@0.17.4）已移除 ping，直连会吃 -32601；
+    // 标准 MCP 客户端用它做健康检查。此处直接回空 result，不转发。
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: {} }) + '\n');
+    return;
   } else if (msg.id !== undefined) {
     // 非通知请求（有 id，期待响应）都要补 _meta，否则 -32602；
     // ping 这类无 params 的方法也要补 params，否则 server 解析不到 _meta
