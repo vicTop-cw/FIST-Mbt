@@ -119,8 +119,14 @@ fn append_group(
       }
     } else if a.created_at < b.created_at {
       -1
-    } else {
+    } else if a.created_at > b.created_at {
       1
+    } else {
+      // BUG-210：depth 与 created_at 全等时按 id 升序收尾。旧实现落入此分支返回 1，
+      // 导致 cmp(a,b)=cmp(b,a)=1——严格弱序反对称性被破坏，排序结果未定义。
+      // id 全序 tiebreak 同时保证同刻批量发布任务的输出确定性
+      //（与 dag_ascii L190、triage_rest L150 的 id 收尾模式一致）。
+      a.get_id().compare(b.get_id())
     }
   })
   for t in sorted {
