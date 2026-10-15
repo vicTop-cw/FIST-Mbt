@@ -109,6 +109,22 @@ test "scan_substring_start_and_end_var_提取 start 与 end 变量名" {
   assert_eq(scan_substring_start("s.substring(end=5)"), -1)
   assert_eq(scan_substring_end_var("s.substring(start=0, end=5)"), "")
   assert_eq(scan_substring_end_var("no substring here"), "")
+  // BUG-188：长数字串在 acc = acc*10 + d 上溢出 Int，按解析失败返回 -1（不静默乱数）
+  assert_eq(
+    scan_substring_start("s.substring(start=99999999999999999999, end~)"),
+    -1,
+  )
+  assert_eq(scan_substring_start("s.substring(start=2000000001, end~)"), -1)
+  // 守卫在下一轮迭代触发：acc 到 200000000（9 位）仍有效，2000000000（10 位）即拒
+  assert_eq(
+    scan_substring_start("s.substring(start=200000000, end~)"),
+    200000000,
+  )
+  assert_eq(scan_substring_start("s.substring(start=2000000000, end~)"), -1)
+  assert_eq(
+    scan_substring_start("s.substring(start=199999999, end~)"),
+    199999999,
+  )
 }
 
 ///|

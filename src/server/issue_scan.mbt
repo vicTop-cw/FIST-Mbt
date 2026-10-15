@@ -621,9 +621,17 @@ fn scan_substring_start(code : String) -> Int {
       if code[pos] < '0' || code[pos] > '9' {
         return -1
       }
+      // BUG-188：同族 5 处解析器（sd_parse_int / ov_parse_int / bugreport.mbt:204 /
+      // store_sqlite_executions.mbt:202 / supervisor_tools.mbt:456）都有 int_safe 上界
+      // 守卫，本函数漏网。被扫描源码含 `substring(start=<长数字>, ...)` 时
+      // `acc = acc * 10 + d` 溢出 Int（JS 静默乱数 / native panic），按解析失败返回 -1。
+      let int_safe : Int = 200_000_000
       let mut acc : Int = 0
       let mut j = pos
       while j < code.length() && code[j] >= '0' && code[j] <= '9' {
+        if acc >= int_safe {
+          return -1
+        }
         acc = acc * 10 + (code[j].to_int() - 48)
         j = j + 1
       }
