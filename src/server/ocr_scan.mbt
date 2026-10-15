@@ -313,6 +313,75 @@ pub fn ocr_plan(
 }
 
 ///|
+/// 假绿检测（BUG-165）：scan/files 子命令对不在二进制扩展名白名单内的文件
+/// （如 .mbt）会返回 exit_code=0 + ok=true 但 `reviewable_count:0`、且每份文件带
+/// `exclude_reason:"unsupported_ext"` —— 调用方看回执以为 LLM review 跑过了，
+/// 实际 0 份文件被评审。此函数解析 stdout，返回 (是否真有文件被评审, 说明文本)。
+/// 解析失败保守返回 (true, "")，不误报。
+fn ocr_fake_green_check(stdout : String) -> (Bool, String) {
+  if stdout.trim().is_empty() {
+    return (true, "")
+  }
+  let j = @json.parse(stdout) catch { _ => return (true, "") }
+  match j {
+    Json::Object(m) => {
+      let reviewable = match m.get("reviewable_count") {
+        Some(Json::Number(n, ..)) => n.to_int()
+        _ => -1
+      }
+      let excluded = match m.get("excluded_count") {
+        Some(Json::Number(n, ..)) => n.to_int()
+        _ => 0
+      }
+      if reviewable < 0 {
+        // 不是 scan/files 的 JSON 形状（如 delegate/rules 的 markdown），不判定
+        return (true, "")
+      }
+      if reviewable > 0 {
+        return (true, "")
+      }
+      if excluded <= 0 {
+        return (true, "")
+      }
+      // reviewable_count == 0 且 excluded > 0：收集 exclude_reason 计数
+      let reason_counts : Map[String, Int] = Map([])
+      match m.get("files") {
+        Some(Json::Array(a)) =>
+          for item in a {
+            match item {
+              Json::Object(f) =>
+                match f.get("exclude_reason") {
+                  Some(Json::String(r)) => {
+                    let prev = match reason_counts.get(r) {
+                      Some(n) => n
+                      None => 0
+                    }
+                    reason_counts.set(r, prev + 1)
+                  }
+                  _ => ()
+                }
+              _ => ()
+            }
+          }
+        _ => ()
+      }
+      if reason_counts.is_empty() {
+        return (true, "")
+      }
+      let parts : Array[String] = []
+      for kv in reason_counts {
+        parts.push("\{kv.0}(\{kv.1} 份)")
+      }
+      let prefix = "scan/files 回执 reviewable_count=0 但 excluded_count="
+      let suffix = "：全部文件被二进制扩展名白名单拦下（"
+      let tail = "），LLM review 未真正执行"
+      (false, prefix + excluded.to_string() + suffix + parts.join("，") + tail)
+    }
+    _ => (true, "")
+  }
+}
+
+///|
 /// ocr_scan 主入口（async）：先走 ocr_plan（校验/argv/探测），再 spawn 真实进程。
 /// dry_run=true 或校验失败时直接把 plan 回执返回，一个进程都不起。
 pub async fn ocr_scan_impl(
@@ -393,6 +462,13 @@ pub async fn ocr_scan_impl(
       } else {
         []
       }
+      // BUG-165：scan/files 对白名单外扩展名（如 .mbt）会假绿——回执 ok=true 但
+      // reviewable_count=0。这里把假绿显式摊到回执上，调用方不再误读为「已审完」。
+      let (reviewed, fake_notice) = if subcmd == "scan" || subcmd == "files" {
+        ocr_fake_green_check(stdout)
+      } else {
+        (true, "")
+      }
       ocr_obj(
         [
           ("ok", Json::boolean(okk)),
@@ -404,7 +480,13 @@ pub async fn ocr_scan_impl(
           ("stderr", Json::string(stderr)),
           ("error", Json::string(errtxt)),
           ("args", args_json),
+          ("ocr_reviewed", Json::boolean(reviewed)),
         ] +
+        (if fake_notice == "" {
+          []
+        } else {
+          [("notice", Json::string(fake_notice))]
+        }) +
         [("files", Json::array(files.map(fn(f) { Json::string(f) })))],
       )
     }

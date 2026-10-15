@@ -176,3 +176,48 @@ test "ocr_plan_dry_run_argv" {
   }
   assert_eq(first, "scan")
 }
+
+///|
+test "ocr_fake_green_check_mbt_excluded" {
+  // BUG-165：scan 对 .mbt 假绿——reviewable_count=0 且 excluded>0 + exclude_reason
+  let s = "{\"files\":[{\"path\":\"src/server/server.mbt\",\"status\":\"scan\",\"insertions\":7337,\"deletions\":0,\"will_review\":false,\"exclude_reason\":\"unsupported_ext\"}],\"total_insertions\":0,\"total_deletions\":0,\"total_files\":1,\"reviewable_count\":0,\"excluded_count\":1}"
+  let (reviewed, notice) = ocr_fake_green_check(s)
+  assert_false(reviewed)
+  assert_true(notice.contains("unsupported_ext"))
+  assert_true(notice.contains("1"))
+  assert_true(notice.contains("未真正执行"))
+}
+
+///|
+test "ocr_fake_green_check_py_reviewed" {
+  // .py 正常：reviewable_count=1 → 不判假绿
+  let s = "{\"files\":[{\"path\":\"scripts/mcp_smoke.py\",\"status\":\"scan\",\"insertions\":221,\"deletions\":0,\"will_review\":true}],\"total_insertions\":221,\"total_deletions\":0,\"total_files\":1,\"reviewable_count\":1,\"excluded_count\":0}"
+  let (reviewed, notice) = ocr_fake_green_check(s)
+  assert_true(reviewed)
+  assert_eq(notice, "")
+}
+
+///|
+test "ocr_fake_green_check_bad_shape_passthrough" {
+  // 非 scan/files JSON 形状（如 delegate 的 markdown）、空输出、非法 JSON → 不判定，保守通过
+  let (r1, n1) = ocr_fake_green_check("")
+  assert_true(r1)
+  assert_eq(n1, "")
+  let (r2, n2) = ocr_fake_green_check("not json at all")
+  assert_true(r2)
+  assert_eq(n2, "")
+  let (r3, n3) = ocr_fake_green_check(
+    "### Rule Group 1\n\n#### Correctness\nIs the logic correct?",
+  )
+  assert_true(r3)
+  assert_eq(n3, "")
+}
+
+///|
+test "ocr_fake_green_check_empty_dir_no_fp" {
+  // reviewable=0 但 excluded=0（空目录）→ 不判假绿，避免误报
+  let s = "{\"files\":[],\"total_files\":0,\"reviewable_count\":0,\"excluded_count\":0}"
+  let (reviewed, notice) = ocr_fake_green_check(s)
+  assert_true(reviewed)
+  assert_eq(notice, "")
+}
