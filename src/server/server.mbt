@@ -419,12 +419,20 @@ fn get_str(args : Json, key : String, default? : String = "") -> String {
 }
 
 ///|
-/// 从 JSON 参数中读取整数，缺省回退默认值
+/// 从 JSON 参数中读取整数，缺省回退默认值。
+/// BUG-192：`Double::to_int()` 对超 Int32 域的值**饱和**（BUG-26 实测：1e300 → Int max），
+/// 会让超时/阈值/配额类参数静默变成天量值（如 `timeout_ms=2147483647` 永不超时、
+/// `phi_threshold` 永不判 suspect）；越界/NaN 一律回落默认。
 fn get_int(args : Json, key : String, default? : Int = 3) -> Int {
   match args {
     Object(map) =>
       match map.get(key) {
-        Some(Number(n, ..)) => n.to_int()
+        Some(Number(n, ..)) =>
+          if n != n || n < -2_000_000_000.0 || n > 2_000_000_000.0 {
+            default
+          } else {
+            n.to_int()
+          }
         _ => default
       }
     _ => default
@@ -479,12 +487,12 @@ fn get_bool(args : Json, key : String, default? : Bool = false) -> Bool {
 /// 正好是 BUG-14 承诺「绝不阻断现网」的反面。
 ///
 /// 现在的不变式（三者关系必须一起看，改任何一个都要重算）：
-///   laya_probe_budget_ms + laya_sidecar_budget_ms (=25s) < 客户端 laya_client_budget_ms(30s)
+///   laya_probe_budget_ms + laya_sidecar_budget_ms (=25s) < 客户端 laya_client_budget_ms(120s)
 /// 即**服务端一定先于客户端出结论**，最坏情况也回一个降级 decision 而不是让调用方干等；
-/// 留 5s 余量给 node/python 进程 spawn 与 MCP 往返。要真用满 Laya 侧车（本机实测 ~270s），
+/// 留 95s 余量给 node/python 进程 spawn 与 MCP 往返。要真用满 Laya 侧车（本机实测 ~270s），
 /// 必须**同时**上调 `.mcp.json` 的 timeout_ms 和下面两个常量，否则客户端仍先断。
 /// `.mcp.json` 的 timeout_ms 是真源，这里只是镜像常量（没有构建期单一真源＝BUG-16 遗留）。
-let laya_client_budget_ms : Int = 30000
+let laya_client_budget_ms : Int = 120000
 
 ///|
 let laya_probe_budget_ms : Int = 5000
@@ -1097,7 +1105,7 @@ fn debate_next_session_id() -> String {
   let prefix = "debate-" + day + "-"
   let mut n = 0
   for k in debate_sessions.sessions.keys() {
-    if k.starts_with(prefix) {
+    if k.has_prefix(prefix) {
       n = n + 1
     }
   }
@@ -1215,7 +1223,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir", "description"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let description = get_str(args, "description")
       let ns = get_str(args, "namespace", default="default")
@@ -1257,7 +1265,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir", "description", "namespace"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let description = get_str(args, "description")
       let ns = get_str(args, "namespace")
@@ -1301,7 +1309,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let split_n = get_int(args, "split_n", default=3)
       let by = get_str(args, "by", default="human_steward")
@@ -1341,7 +1349,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id", "assignee"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let assignee = get_str(args, "assignee")
       let ts = now_default()
@@ -1380,7 +1388,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id", "deliverable"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let deliverable = get_str(args, "deliverable")
       let ts = now_default()
@@ -1416,7 +1424,7 @@ pub async fn run_server() -> Unit {
     "submit",
     "提交验收（执行中 -> 待验收）。参数：task_id。",
     schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
       to_result(engine.submit(task_id~, now=ts))
@@ -1546,7 +1554,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id", "verifier"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let verifier = get_str(args, "verifier")
       let ts = now_default()
@@ -1566,7 +1574,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let reason = get_str(args, "reason", default="")
       let by = get_str(args, "by", default="human_steward")
@@ -1579,7 +1587,7 @@ pub async fn run_server() -> Unit {
     "retry",
     "打回后重试（已打回 -> 执行中）。参数：task_id。",
     schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
       to_result(engine.retry_task(task_id~, now=ts))
@@ -1590,7 +1598,7 @@ pub async fn run_server() -> Unit {
     "reopen_task",
     "重开/重派任务：任意非归档任务回滚为已领取（M4 heal/运维重派用）。参数：task_id。",
     schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
       match engine.reopen_task(task_id, ts) {
@@ -1604,7 +1612,7 @@ pub async fn run_server() -> Unit {
     "pause",
     "暂停任务（任意活跃状态 -> 已暂停）。参数：task_id。",
     schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
       to_result(engine.pause_task(task_id~, now=ts))
@@ -1615,7 +1623,7 @@ pub async fn run_server() -> Unit {
     "resume",
     "恢复任务（已暂停 -> 已领取）。参数：task_id。",
     schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
       to_result(engine.resume_task(task_id~, now=ts))
@@ -1632,7 +1640,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let by = get_str(args, "by", default="human_steward")
       let ts = now_default()
@@ -1654,7 +1662,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let status_str = get_str(args, "status")
       let ns_str = get_str(args, "namespace")
       let mut tasks = if status_str == "" {
@@ -1681,7 +1689,7 @@ pub async fn run_server() -> Unit {
     "get",
     "查询单个任务详情。参数：task_id。",
     schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       match engine.get_task(task_id) {
         Some(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
@@ -1697,7 +1705,7 @@ pub async fn run_server() -> Unit {
       { "task_id": string_prop("任务 id（必填，仅已归档可删）") },
       ["task_id"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       to_unit_result(engine.delete_task(task_id))
     },
@@ -1797,7 +1805,7 @@ pub async fn run_server() -> Unit {
       // Laya 自动选档（仅在无躬身自决、且显式开启 laya_auto 时探测）：
       let mut laya_info : Json = Json::null()
       if laya_auto && not(decided) {
-        // BUG-18：探测走 TTL 缓存、预算与 .mcp.json 的 30s 客户端超时对齐
+        // BUG-18：探测走 TTL 缓存、预算与 .mcp.json 的 120s 客户端超时对齐
         let avail = match
           laya_probe_cached(
             "python",
@@ -1911,7 +1919,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let by = get_str(args, "by", default="auto")
       let factor = get_int(args, "factor", default=2)
@@ -1943,7 +1951,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id", "content"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let author = get_str(args, "author", default="spec_author")
       let content = get_str(args, "content")
@@ -1976,7 +1984,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id", "verdict"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let reviewer = get_str(args, "reviewer", default="verifier")
       let verdict = get_str(args, "verdict")
@@ -2011,7 +2019,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id", "verdict"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let reviewer = get_str(args, "reviewer", default="verifier")
       let verdict = get_str(args, "verdict")
@@ -2037,7 +2045,7 @@ pub async fn run_server() -> Unit {
     "omega_status",
     "Omega 强验证状态查询：返回该任务是否开启强验证、语料/复验轮次、打回次数、是否已升级人工。参数：task_id。",
     schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       match engine.omega_status(task_id) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
@@ -2056,7 +2064,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id", "assignee"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let assignee = get_str(args, "assignee")
       match @ops.check_claim(engine, task_id, assignee) {
@@ -2094,7 +2102,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id", "action"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let action = get_str(args, "action")
       let assignee = get_str(args, "assignee", default="agent")
@@ -2121,7 +2129,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let signal = get_str(args, "signal", default="active")
       let ts = now_default()
@@ -2187,7 +2195,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ts = now_default()
       let timeout_sec = get_int(args, "timeout_sec", default=600)
       let heal_ns = get_str(args, "namespace")
@@ -2290,7 +2298,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ts = now_default()
       let timeout_sec = get_int(args, "timeout_sec", default=600)
       let ns = get_str(args, "namespace")
@@ -2522,7 +2530,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ts = now_default()
       let project_dir = get_str(args, "project_dir")
       let ns = get_str(args, "namespace", default="cron-auto")
@@ -2616,7 +2624,7 @@ pub async fn run_server() -> Unit {
       },
       ["name"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let name = get_str(args, "name")
       if name == "" {
         return Err(@mcp_types.ToolError("name is required"))
@@ -2648,7 +2656,7 @@ pub async fn run_server() -> Unit {
         Some(e) => return Err(@mcp_types.ToolError(e))
         None => ()
       }
-      let now = get_str(args, "now", default=now_default())
+      let now = now_default()
       // max_rounds 默认 5（get_int 默认 3，不能直接用）
       let max_rounds = match args {
         Object(m) =>
@@ -2727,7 +2735,7 @@ pub async fn run_server() -> Unit {
       },
       ["name"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let name = get_str(args, "name")
       match loop_reg.get(name) {
         None => return Err(@mcp_types.ToolError("loop not found: " + name))
@@ -2782,7 +2790,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let name = get_str(args, "name")
       if name != "" {
         match loop_reg.get(name) {
@@ -2815,7 +2823,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let ns = get_str(args, "namespace", default="default")
       match @ops.selfdrive_memory_init(project_dir, ns~) {
@@ -2839,7 +2847,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir", "kind", "content"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let kind = get_str(args, "kind")
       let content = get_str(args, "content")
@@ -2866,7 +2874,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir", "kind"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let kind = get_str(args, "kind")
       let ns = get_str(args, "namespace", default="default")
@@ -2887,7 +2895,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let ns = get_str(args, "namespace", default="default")
       // BUG-82：时间戳服务端盖章（不接受调用方注入 now，见 BUG-33 政策）
@@ -2912,7 +2920,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let review_every = get_int(args, "review_every", default=3)
       let ns = get_str(args, "namespace", default="default")
@@ -2933,7 +2941,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let ns = get_str(args, "namespace", default="default")
       match @ops.selfdrive_review_ready(project_dir, ns~) {
@@ -2957,7 +2965,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let ns = get_str(args, "namespace", default="default")
       let max_tasks = get_int(args, "max_tasks", default=10)
@@ -2982,7 +2990,7 @@ pub async fn run_server() -> Unit {
     "mode_list",
     "返回 7 种自驱编程开发模式的完整信息（mode / name / description / constraints / template_path / forbidden_tools）。纯计算只读，供 AI 选择模式。其中 `explore`（探索模式）不直接开发：它先给目标复杂度打分（0..5，复用难度单一抽取来源），再据此**自选**一个单模式去跑；只有在候选模式申报的文件作用域两两不相交（`reserve_scope` 预订成功 + 认领前 `conflicts_check` 可认领）时才允许并行多模式，否则退回单模式串行。",
     schema({}, []),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let modes = @ops.all_modes()
       Ok(@mcp.ToolResult::text(Json::array(modes).stringify()))
     },
@@ -2992,7 +3000,7 @@ pub async fn run_server() -> Unit {
     "mode_templates",
     "检查 templates/pipeline_mode_*.md 全部存在性，返回 {templates:{advance:true,...}, missing:[...]}。mode 参数预检用。名单从模式注册表 all_modes() 反解，不硬编码——注册表加模式而这里漏检查就是『模板缺席没人报』（BUG-118 同族：判据看不见样本就等于没判）。",
     schema({}, []),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       // 名单从模式注册表反解：注册表加模式而这里漏名单 ⇒ 模板缺席永远没人报
       let names = @ops.all_modes().map(fn(j) { get_str(j, "mode") })
       let exists : Map[String, Json] = Map([])
@@ -3022,7 +3030,7 @@ pub async fn run_server() -> Unit {
       },
       ["content"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let content = get_str(args, "content")
       let max_tasks = get_int(args, "max_tasks", default=10)
       let tasks = @ops.selfdrive_parse_next_tasks(content, max_tasks~)
@@ -3051,7 +3059,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir", "task_id", "content"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let task_id = get_str(args, "task_id")
       let kind = get_str(args, "kind", default="target")
@@ -3077,7 +3085,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let kind = get_str(args, "kind")
       let max_chars = get_int(args, "max_chars", default=2000)
@@ -3102,7 +3110,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir", "from", "to"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let from = get_str(args, "from")
       let to = get_str(args, "to")
@@ -3128,7 +3136,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id", "goal", "note"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let goal = get_str(args, "goal")
       let note = get_str(args, "note")
       let score = get_double(args, "score", default=1.0)
@@ -3153,7 +3161,7 @@ pub async fn run_server() -> Unit {
       },
       ["id", "goal", "note", "code"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let id = get_str(args, "id")
       let goal = get_str(args, "goal")
       let note = get_str(args, "note")
@@ -3216,7 +3224,7 @@ pub async fn run_server() -> Unit {
       },
       ["cat", "reason"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let cat = get_str(args, "cat")
       let reason = get_str(args, "reason")
       let fix = get_str(args, "fix")
@@ -3243,7 +3251,7 @@ pub async fn run_server() -> Unit {
       },
       ["note"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let note = get_str(args, "note")
       let score = get_double(args, "score", default=0.5)
       let threshold = get_double(args, "threshold", default=0.85)
@@ -3268,7 +3276,7 @@ pub async fn run_server() -> Unit {
       },
       ["source", "note", "code"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let source = get_str(args, "source")
       let note = get_str(args, "note")
       let code = get_str(args, "code")
@@ -3301,7 +3309,7 @@ pub async fn run_server() -> Unit {
     "evolve_snapshot",
     "DGM 演化·查看档案库快照（含 best/lineage/summaries/dead_ends）。参数：无。",
     schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       // 先同步 DB 中已沉淀的 [lesson]（含 Omega 打回自动落库的）进内存档案库，
       // 使 dead_ends 能如实反映"踩过的坑（此路不通）"。
       ignore(sync_db_lessons(evolve_arc, evolve_store))
@@ -3347,7 +3355,7 @@ pub async fn run_server() -> Unit {
     "evolve_sample",
     "DGM 演化·按 p∝s·h 多样性加权采样父代产物（子代越少/性能越高越可能被选）。参数：rand(可选)。",
     schema({ "rand": number_prop("伪随机种子(可选，[0,1))") }, []),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let r = get_double(args, "rand", default=0.5)
       let picked = @evolve.Archive::sample_parent(evolve_arc, rand=fn() { r })
       match picked {
@@ -3374,7 +3382,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "laya_decide",
-    "Laya 决策工具（自动探测 + 确定性回退）：用 Laya（Python ML 决策模型）对任务/文本快速分类并给出「该用哪些功能机制 + 建议拆分数」决策；**机器无 Laya 或探测失败时，自动降级到内建规则式决策分支**（laya_route 纯计算：按任务描述关键词对机制族打分选最匹配 feature_route + 按复杂度启发式给 split_n），绝不阻断现网。参数：context(必填)、split_n_hint(可选整数，建议拆分数基线默认3)、questions(可选 JSON)、model(可选默认 english)、**no_sidecar(可选默认 false；true=跳过探测与 sidecar，直取规则式分支——无人值守流水线在延迟预算内显式选降级的逃生门)**。⏱ **延迟预算（BUG-18）**：本工具的服务端预算与 `.mcp.json` 的 `timeout_ms=30000` 显式对齐——探测 ≤5s（结果进程内缓存 TTL 5min，不再每次 `import laya`）+ sidecar ≤20s = 25s < 30s，服务端一定先于客户端出结论；若你的机器 Laya 更慢（本机实测 sidecar 单跑约 279s），要么接受降级 decision，要么同时上调 `.mcp.json` 与 src/server/server.mbt 的三个 laya_*_budget 常量。超时/失败**不报错**，回 available=false + 可用 decision。返回 { available, decision:{source/feature_route/split_n/splits_per_family/reasons} }；**decision 恒在**（BUG-14 修复：sidecar 只产出 answers，其 feature_route/split_n 由 laya_route 规则式分支补齐；sidecar 若自带 decision 则原样保留），available=false 表示 Laya 不可用（或被本预算截断）、此时 decision.source=fallback，available=true 时 answers 为 Laya 原始分类结果、decision 为可执行基线。",
+    "Laya 决策工具（自动探测 + 确定性回退）：用 Laya（Python ML 决策模型）对任务/文本快速分类并给出「该用哪些功能机制 + 建议拆分数」决策；**机器无 Laya 或探测失败时，自动降级到内建规则式决策分支**（laya_route 纯计算：按任务描述关键词对机制族打分选最匹配 feature_route + 按复杂度启发式给 split_n），绝不阻断现网。参数：context(必填)、split_n_hint(可选整数，建议拆分数基线默认3)、questions(可选 JSON)、model(可选默认 english)、**no_sidecar(可选默认 false；true=跳过探测与 sidecar，直取规则式分支——无人值守流水线在延迟预算内显式选降级的逃生门)**。⏱ **延迟预算（BUG-18）**：本工具的服务端预算与 `.mcp.json` 的 `timeout_ms=120000` 显式对齐——探测 ≤5s（结果进程内缓存 TTL 5min，不再每次 `import laya`）+ sidecar ≤20s = 25s < 120s，服务端一定先于客户端出结论；若你的机器 Laya 更慢（本机实测 sidecar 单跑约 279s），要么接受降级 decision，要么同时上调 `.mcp.json` 与 src/server/server.mbt 的三个 laya_*_budget 常量。超时/失败**不报错**，回 available=false + 可用 decision。返回 { available, decision:{source/feature_route/split_n/splits_per_family/reasons} }；**decision 恒在**（BUG-14 修复：sidecar 只产出 answers，其 feature_route/split_n 由 laya_route 规则式分支补齐；sidecar 若自带 decision 则原样保留），available=false 表示 Laya 不可用（或被本预算截断）、此时 decision.source=fallback，available=true 时 answers 为 Laya 原始分类结果、decision 为可执行基线。",
     schema(
       {
         "context": string_prop("待决策的任务/文本描述（必填）"),
@@ -3384,7 +3392,7 @@ pub async fn run_server() -> Unit {
         ),
         "model": string_prop("Laya 模型(可选默认 english)"),
         "no_sidecar": bool_prop(
-          "跳过 Laya 探测与 sidecar、直接走内建规则式分支(可选，默认 false=现状零回归)。用于在 30s 客户端超时预算内拿确定性决策（BUG-18）",
+          "跳过 Laya 探测与 sidecar、直接走内建规则式分支(可选，默认 false=现状零回归)。用于在 120s 客户端超时预算内拿确定性决策（BUG-18）",
         ),
       },
       ["context"],
@@ -3491,7 +3499,7 @@ pub async fn run_server() -> Unit {
       { "retention_days": int_prop("归档保留天数(可选默认30)") },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ts = now_default()
       let retention_days = get_int(args, "retention_days", default=30)
       match @ops.cleanup_archived(engine, ts, retention_days~) {
@@ -3523,7 +3531,7 @@ pub async fn run_server() -> Unit {
       },
       ["seq"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let seq = get_str(args, "seq")
       match @atgc_old.atgc_compile(seq) {
         Ok(j) => Ok(@mcp.ToolResult::text(j))
@@ -3543,7 +3551,7 @@ pub async fn run_server() -> Unit {
       },
       ["seq"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let seq = get_str(args, "seq")
       match @atgc_old.atgc_run(seq) {
         Ok(j) => Ok(@mcp.ToolResult::text(j))
@@ -3566,7 +3574,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let seq = get_str(args, "seq")
       let question = get_str(args, "question")
       Ok(@mcp.ToolResult::text(@atgc_old.atgc_talk(seq, question)))
@@ -3579,7 +3587,7 @@ pub async fn run_server() -> Unit {
     "FIST 七条金条",
     "FIST-Mbt 的七条不可动摇原则（机器可读 JSON）",
     "application/json",
-    async fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
+    fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
       Ok({
         uri: "fist://principles",
         content: @mcp_resource.ResourceContent::Text(
@@ -3593,7 +3601,7 @@ pub async fn run_server() -> Unit {
     "任务概览",
     "当前任务总数与各状态统计",
     "application/json",
-    async fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
+    fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
       Ok({
         uri: "fist://overview",
         content: @mcp_resource.ResourceContent::Text(
@@ -3608,7 +3616,7 @@ pub async fn run_server() -> Unit {
     "项目地图",
     "fist-mbt 结构地图（Repo Map）：src/ 各子包职责、MCP 工具分组、入口引导，供 AI agent 首读定位，避免全项目盲目探索",
     "application/json",
-    async fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
+    fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
       Ok({
         uri: "fist://map",
         content: @mcp_resource.ResourceContent::Text(map_json().stringify()),
@@ -3627,7 +3635,7 @@ pub async fn run_server() -> Unit {
         required: Some(true),
       },
     ],
-    async fn(args : Json) -> Result[@mcp_types.GetPromptResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp_types.GetPromptResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       Ok({
         description: Some("FIST 任务打卡检查清单"),
@@ -3652,7 +3660,7 @@ pub async fn run_server() -> Unit {
         required: Some(true),
       },
     ],
-    async fn(args : Json) -> Result[@mcp_types.GetPromptResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp_types.GetPromptResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       Ok({
         description: Some("FIST 任务验收清单"),
@@ -3681,7 +3689,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir", "description"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let description = get_str(args, "description")
       let depends_on_raw = get_str(args, "depends_on", default="[]")
@@ -3729,7 +3737,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id", "dep_id"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let dep_id = get_str(args, "dep_id")
       let ts = now_default()
@@ -3741,7 +3749,7 @@ pub async fn run_server() -> Unit {
     "dag_critical_path",
     "返回当前最长依赖链（关键路径）。无参数。",
     schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let path = engine.critical_path()
       Ok(
         @mcp.ToolResult::text(
@@ -3758,7 +3766,7 @@ pub async fn run_server() -> Unit {
     "dag_parallelism",
     "返回当前可并行执行的任务数（待领取且依赖已满足）。无参数。",
     schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let n = engine.parallelism()
       Ok(
         @mcp.ToolResult::text(
@@ -3772,7 +3780,7 @@ pub async fn run_server() -> Unit {
     "dag_slack",
     "瓶颈与松弛分析（PERT/CPM 硬核调度，R71）：对每个任务算 earliest/latest/slack（0=关键路径，>0=可灵活并行安排），返回 { makespan, critical:[关键任务], slack_map:{id:{earliest,latest,slack}}, cycle:[成环任务] }——找出【谁在关键路径上、谁有松弛可并行】，直接支撑排程优化。无参数。",
     schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       Ok(@mcp.ToolResult::text(engine.dag_slack_analysis().stringify()))
     },
   )
@@ -3781,7 +3789,7 @@ pub async fn run_server() -> Unit {
     "dag_schedule",
     "排程视图（R75 负载感知，基于 dag_slack 落成可执行排程）：返回 { critical_batch:[{task_id,earliest,slack,assignee}](关键路径瓶颈,须串行盯紧), flexible_batch:[...](slack>0,按最早开始排序可并行,未认领项附 suggest=活跃负载最低的已注册执行者), basis, note }——谁在瓶颈、谁可并行派单、建议派给谁，一目了然。无参数。",
     schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       Ok(@mcp.ToolResult::text(engine.dag_schedule().stringify()))
     },
   )
@@ -3790,7 +3798,7 @@ pub async fn run_server() -> Unit {
     "dag_cost_route",
     "依赖图成本路由（R77，STAR 式蒸馏）：对 flexible(slack>0) 未认领任务按拓扑序贪心给建议执行者——执行成本(难度档易/中/难→1/2/3)+切换税(依赖执行者不同则+1，上下文切换成本)，能力约束过滤(描述命中的已注册能力标签)。返回 { cost_route:[{task_id,assignee,est_cost,switch_cost,total}], total_est_cost, basis, note }——排程优化闭环：critical_path→slack→schedule→cost_route。纯读不 claim。无参数。",
     schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       Ok(@mcp.ToolResult::text(engine.dag_cost_route().stringify()))
     },
   )
@@ -3810,7 +3818,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let root = get_str(args, "root_task_id", default="")
       let deadline = get_int(args, "deadline", default=0)
@@ -3839,7 +3847,7 @@ pub async fn run_server() -> Unit {
       },
       ["root_task_id"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let root = get_str(args, "root_task_id")
       let feedback = get_array(args, "feedback")
@@ -3864,7 +3872,7 @@ pub async fn run_server() -> Unit {
       },
       ["root_task_id"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let root = get_str(args, "root_task_id")
       let subtask = get_str(args, "subtask_id", default="")
@@ -3880,7 +3888,7 @@ pub async fn run_server() -> Unit {
     "dag_ascii",
     "返回当前命名空间任务的 ASCII 依赖结构图。参数：namespace(可选，默认 default)。",
     schema({ "namespace": string_prop("命名空间(默认 default)") }, []),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let ascii = engine.dag_ascii(ns~)
       Ok(
@@ -3898,7 +3906,7 @@ pub async fn run_server() -> Unit {
     "board_ascii",
     "返回当前命名空间的实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（哪些任务、什么状态、在树哪层）。已完成一档在合计行里标出「(无交付物N)」——「已完成」不自动等于有成果（BUG-29 的探针/绕验收残留）。参数：namespace(可选，空=全部命名空间)。返回 { counts:{状态:数量}, done_no_artifact, ascii }。",
     schema({ "namespace": string_prop("命名空间(默认全部)") }, []),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let board = render_board_ascii(engine.list_all(), ns)
       Ok(@mcp.ToolResult::text(board.stringify()))
@@ -3909,7 +3917,7 @@ pub async fn run_server() -> Unit {
     "state_flow_ascii",
     "返回状态流转 ASCII：把 Task 生命周期画成一行合法迁移图（待领取→已领取→执行中→待验收→已完成→已归档，含已暂停重派 / 已打回重试分支）+ 当前各状态计数 + 在流任务数。与 board_ascii（按状态分组）、dag_ascii（依赖结构）、status_summary（脉冲）互补。参数：namespace(可选，空=全部命名空间)。返回 { ascii, counts:{状态:数量}, in_flow }。",
     schema({ "namespace": string_prop("命名空间(默认全部)") }, []),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let flow = render_state_flow_ascii(engine.list_all(), ns)
       Ok(@mcp.ToolResult::text(flow.stringify()))
@@ -3923,7 +3931,7 @@ pub async fn run_server() -> Unit {
       { "namespace": string_prop("命名空间(可选，只统计该 ns)") },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let tasks = if ns == "" {
         engine.list_all()
@@ -3942,7 +3950,7 @@ pub async fn run_server() -> Unit {
       { "namespace": string_prop("命名空间(可选，只统计该 ns)") },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let tasks = if ns == "" {
         engine.list_all()
@@ -3961,7 +3969,7 @@ pub async fn run_server() -> Unit {
       { "namespace": string_prop("命名空间(可选，只统计该 ns)") },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let tasks = if ns == "" {
         engine.list_all()
@@ -3988,7 +3996,7 @@ pub async fn run_server() -> Unit {
       },
       ["circuit"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let circuit = get_str(args, "circuit")
       let now = now_default()
@@ -4023,7 +4031,7 @@ pub async fn run_server() -> Unit {
       },
       ["circuit"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let circuit = get_str(args, "circuit")
       let now = now_default()
@@ -4049,7 +4057,7 @@ pub async fn run_server() -> Unit {
       },
       ["circuit"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let circuit = get_str(args, "circuit")
       let now = now_default()
@@ -4085,7 +4093,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
@@ -4108,7 +4116,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
@@ -4130,7 +4138,7 @@ pub async fn run_server() -> Unit {
       },
       ["name"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let name = get_str(args, "name")
       let abs = strlist(get_array(args, "abilities"))
       // 先把持久化的既有注册回灌进进程内注册表，再登记（跨进程可复现）
@@ -4170,7 +4178,7 @@ pub async fn run_server() -> Unit {
       },
       ["need"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let need = get_str(args, "need")
       sync_db_executors()
       let load = executor_loads(engine)
@@ -4197,7 +4205,7 @@ pub async fn run_server() -> Unit {
       },
       ["need"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let need = get_str(args, "need")
       let bid = json_bid_map(args, "bid")
       sync_db_executors()
@@ -4212,7 +4220,7 @@ pub async fn run_server() -> Unit {
     "executor_clear",
     "Marketplace·清空全部执行者能力注册（重置/整洁，R31）：清空 store executors 表（进程内注册表以 store 为空为基准重建）。无参数。返回 {persisted}。",
     schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let did_persist = engine.executor_clear()
       Ok(
         @mcp.ToolResult::text(
@@ -4235,7 +4243,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
@@ -4333,7 +4341,7 @@ pub async fn run_server() -> Unit {
       },
       ["scope", "agent", "ttl_until"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let scope = get_str(args, "scope")
       let agent = get_str(args, "agent")
       let ttl_until = get_str(args, "ttl_until")
@@ -4371,7 +4379,7 @@ pub async fn run_server() -> Unit {
     "reserve_check",
     "查询某工作作用域是否可编辑（空闲可用）。参数：scope。",
     schema({ "scope": string_prop("作用域（必填）") }, ["scope"]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let scope = get_str(args, "scope")
       let now = now_default()
       match engine.rsv_get(scope) {
@@ -4421,7 +4429,7 @@ pub async fn run_server() -> Unit {
       },
       ["scope", "agent"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let scope = get_str(args, "scope")
       let agent = get_str(args, "agent")
       let ok = engine.rsv_release(scope, agent)
@@ -4452,13 +4460,13 @@ pub async fn run_server() -> Unit {
       },
       ["lock_id", "batch_id", "scope", "agent", "ttl_until"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let lock_id = get_str(args, "lock_id")
       let batch_id = get_str(args, "batch_id")
       let scope = get_str(args, "scope")
       let agent = get_str(args, "agent")
       let ttl_until = get_str(args, "ttl_until")
-      let ts = get_str(args, "ts", default=now_default())
+      let ts = now_default()
       let meta = get_str(args, "meta", default="")
       let lock = @store.FileLock::new(
         lock_id~,
@@ -4507,12 +4515,12 @@ pub async fn run_server() -> Unit {
       },
       ["lock_id", "scope", "agent", "ttl_until"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let lock_id = get_str(args, "lock_id")
       let scope = get_str(args, "scope")
       let agent = get_str(args, "agent")
       let ttl_until = get_str(args, "ttl_until")
-      let ts = get_str(args, "ts", default=now_default())
+      let ts = now_default()
       match engine.locks_get(scope) {
         None => Err(@mcp_types.ToolError("lock not found for scope: " + scope))
         // 已失效的锁不许靠续期复活：那等于绕过 TTL 让旧主长期占位（锁机制报告 R22 的形状）
@@ -4559,7 +4567,7 @@ pub async fn run_server() -> Unit {
       },
       ["scope", "agent"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let scope = get_str(args, "scope")
       let agent = get_str(args, "agent")
       let ok = engine.locks_release(scope, agent)
@@ -4578,7 +4586,7 @@ pub async fn run_server() -> Unit {
     "lock_status",
     "查询文件锁状态。参数：scope(可选)。不传 scope 返回全部锁 + 违例记录 + 过期清理数。",
     schema({ "scope": string_prop("作用域（可选）") }, []),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let now = now_default()
       // 每次查询都先扫一遍过期锁
       let swept = engine.locks_sweep(now)
@@ -4654,7 +4662,7 @@ pub async fn run_server() -> Unit {
       },
       ["agent"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let agent = get_str(args, "agent")
       let ttl = get_int(args, "heartbeat_ttl_sec", default=300)
       let now = now_default()
@@ -4703,7 +4711,7 @@ pub async fn run_server() -> Unit {
     "assistant_status",
     "查询项目助理全景：现任主助理 + 全部登记 + 锁违例统计（纯读，不写入）。参数：无。",
     schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let regs = engine.assistant_list()
       let primary = engine.assistant_active_primary()
       let violations = engine.lock_violations_list()
@@ -4740,7 +4748,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let stale = get_int(args, "stale_secs", default=600)
       let now = now_default()
       let cutoff = iso_minus_secs(now, stale)
@@ -4767,7 +4775,7 @@ pub async fn run_server() -> Unit {
     "assistant_resign",
     "助理主动退位：把自己的登记标为 resigned（锁不阻塞，靠 TTL + 清扫拍兜底）。参数：agent。",
     schema({ "agent": string_prop("助理身份（必填）") }, ["agent"]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let agent = get_str(args, "agent")
       let ok = engine.assistant_set_status(agent, "resigned")
       Ok(
@@ -4785,7 +4793,7 @@ pub async fn run_server() -> Unit {
     "assistant_heartbeat",
     "助理心跳：刷新自己的 heartbeat_at（防助理自己死了占着位）。参数：agent。",
     schema({ "agent": string_prop("助理身份（必填）") }, ["agent"]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let agent = get_str(args, "agent")
       let now = now_default()
       match engine.assistant_get(agent) {
@@ -4821,7 +4829,7 @@ pub async fn run_server() -> Unit {
     "dag_check",
     "检查某任务的依赖是否全部完成。参数：task_id。",
     schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ok = engine.deps_satisfied(task_id)
       Ok(
@@ -4839,7 +4847,7 @@ pub async fn run_server() -> Unit {
     "dag_ready",
     "列出所有依赖满足、可领取的任务。参数：namespace(可选)。",
     schema({ "namespace": string_prop("命名空间(默认 default)") }, []),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let ready = engine.ready_tasks(ns_filter=ns)
       Ok(
@@ -4857,7 +4865,7 @@ pub async fn run_server() -> Unit {
       { "task_ids": string_prop("任务 id 列表 JSON 数组（必填）") },
       ["task_ids"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let raw = get_str(args, "task_ids")
       let task_ids : Array[String] = try {
         match @json.parse(raw) {
@@ -4891,7 +4899,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let specs_raw = get_array(args, "specs")
       let spec_files : Array[(String, String)] = []
       for item in specs_raw {
@@ -4925,7 +4933,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let specs_raw = get_array(args, "specs")
       let max_rounds = get_int(args, "max_rounds", default=3)
       let all_spec_contents : Array[(String, String)] = []
@@ -4965,7 +4973,7 @@ pub async fn run_server() -> Unit {
     "cost_stats",
     "执行成本聚合统计。参数：无。返回：total_records/total_cost/total_tokens_in/total_tokens_out/by_executor。",
     schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       Ok(@mcp.ToolResult::text(engine.cost_stats().stringify()))
     },
   )
@@ -4980,7 +4988,7 @@ pub async fn run_server() -> Unit {
       },
       ["limit", "current"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let result = @engine.budget_check_json(args)
       Ok(@mcp.ToolResult::text(result.stringify()))
     },
@@ -5001,7 +5009,7 @@ pub async fn run_server() -> Unit {
       },
       ["budget"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let budget = jnum(args, "budget").to_int()
       let root = get_str(args, "task_id")
       let ns = get_str(args, "namespace")
@@ -5028,7 +5036,7 @@ pub async fn run_server() -> Unit {
       },
       ["task_id", "budget"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let budget = jnum(args, "budget").to_int()
       let spent = jnum(args, "spent").to_int()
@@ -5057,7 +5065,7 @@ pub async fn run_server() -> Unit {
       },
       ["intervals", "elapsed"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       // BUG-26：这里原先用 intlist(...) / jnum(...).to_int()，两者都会**静默**把
       // 1e300 饱和成 2147483647、把 1.5 截断成 1、把非数字元素整个丢掉。
       // φ 的建模输入失真后输出仍是格式完好的判定，所以改成逐个严格转换并按原值报错。
@@ -5150,7 +5158,7 @@ pub async fn run_server() -> Unit {
       },
       ["root_task_id", "step", "compensation"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let root_task_id = get_str(args, "root_task_id")
       let step = get_str(args, "step")
@@ -5185,7 +5193,7 @@ pub async fn run_server() -> Unit {
       },
       ["root_task_id"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let root_task_id = get_str(args, "root_task_id")
       let mark = get_bool(args, "mark", default=true)
@@ -5210,7 +5218,7 @@ pub async fn run_server() -> Unit {
       },
       ["root_task_id", "failed_step"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let root_task_id = get_str(args, "root_task_id")
       let failed_step = get_str(args, "failed_step")
@@ -5234,7 +5242,7 @@ pub async fn run_server() -> Unit {
       },
       ["description"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let desc = get_str(args, "description")
       if desc == "" {
         return Err(@mcp_types.ToolError("description 不能为空"))
@@ -5262,7 +5270,7 @@ pub async fn run_server() -> Unit {
       },
       ["role", "action"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let role_s = get_str(args, "role")
       let action = get_str(args, "action")
       match @ops.Role::from_string(role_s) {
@@ -5310,7 +5318,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let fa = get_str(args, "filter_actor", default="")
       let ft = get_str(args, "filter_task_id", default="")
       let entries = if fa != "" {
@@ -5341,7 +5349,7 @@ pub async fn run_server() -> Unit {
       },
       ["namespace"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let mut dir = get_str(args, "data_dir", default=".")
       let scratch = get_bool(args, "scratch", default=false)
@@ -5392,7 +5400,7 @@ pub async fn run_server() -> Unit {
     "store_list",
     "列出当前已打开的命名空间及任务数。无参数。",
     schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let list = mstore.ns_list()
       let stats = mstore.ns_stats()
       Ok(
@@ -5414,7 +5422,7 @@ pub async fn run_server() -> Unit {
     schema({ "namespace": string_prop("命名空间（必填）") }, [
       "namespace",
     ]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       mstore.close(ns)
       Ok(
@@ -5436,7 +5444,7 @@ pub async fn run_server() -> Unit {
     "call_log",
     "查询最近的调用日志（call_log 表）。参数：limit(可选，默认50)。返回最近工具调用记录（seq/ts/tool/caller/ns/params/result/ok/runtime_ms，新的在前）。用于复盘'是哪次调用+入参+结果产生了 bug'。",
     schema({ "limit": int_prop("返回条数(可选默认50)") }, []),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let limit = get_int(args, "limit", default=50)
       Ok(
         @mcp.ToolResult::text(
@@ -5923,7 +5931,7 @@ pub async fn run_server() -> Unit {
       },
       ["feedback"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let feedback = get_str(args, "feedback")
       let task_id = get_str(args, "task_id", default="")
       Ok(
@@ -5945,7 +5953,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
       // BUG-9：读侧把每条 bug 的关联修复单实时状态一并带回（纯逻辑在 bugreport.mbt）
       match
@@ -5978,7 +5986,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir", "bug_ids"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let bug_ids = get_array(args, "bug_ids").map(fn(v) {
         v.as_string().unwrap_or("")
@@ -6014,7 +6022,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir", "bug_id", "status"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let bug_id = get_str(args, "bug_id")
       let status = get_str(args, "status")
@@ -6053,7 +6061,7 @@ pub async fn run_server() -> Unit {
       },
       ["dir"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let dir = get_str(args, "dir")
       let rules_file = get_str(args, "rules_file")
       let max_findings = get_int(args, "max_findings", default=100)
@@ -6086,7 +6094,7 @@ pub async fn run_server() -> Unit {
       },
       ["artifacts"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let task_id = get_str(args, "task_id")
       let project_dir = get_str(args, "project_dir")
       let artifacts = get_array(args, "artifacts")
@@ -6141,7 +6149,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let ptype = get_str(args, "project_type")
       let icl = get_bool(args, "include_checklist", default=true)
       let ptype2 = if ptype.is_empty() { "moontbit_mcp" } else { ptype }
@@ -6164,7 +6172,7 @@ pub async fn run_server() -> Unit {
       },
       ["old", "new"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let old = get_str(args, "old")
       let new = get_str(args, "new")
       let fmt = get_str(args, "format")
@@ -6204,7 +6212,7 @@ pub async fn run_server() -> Unit {
       },
       ["form_json"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let form_json = get_json_text(args, "form_json")
       let project_dir_arg = get_str(args, "project_dir")
       let project_dir = if project_dir_arg.is_empty() {
@@ -6293,7 +6301,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let pd = get_str(args, "project_dir")
       let ns = get_str(args, "namespace")
       let ns2 = if ns.is_empty() { "default" } else { ns }
@@ -6316,7 +6324,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let pd = get_str(args, "project_dir")
       let ns = get_str(args, "namespace")
       let ns2 = if ns.is_empty() { "default" } else { ns }
@@ -6342,7 +6350,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let pd = get_str(args, "project_dir")
       let ns = get_str(args, "namespace")
       let hard = get_bool(args, "hard", default=false)
@@ -6426,7 +6434,7 @@ pub async fn run_server() -> Unit {
     schema({ "project_dir": string_prop("项目目录（必填）") }, [
       "project_dir",
     ]),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
       match github_queue_status(project_dir) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
@@ -6445,7 +6453,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let limit = get_int(args, "limit", default=20)
       match github_flush_plan(project_dir, limit) {
@@ -6469,7 +6477,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir", "bug_ids"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let sent_at = get_str(args, "sent_at", default="")
       let ids_arr = get_array(args, "bug_ids")
@@ -6505,7 +6513,7 @@ pub async fn run_server() -> Unit {
     "github_env_check",
     "检查 GitHub issue 同步的环境变量配置状态——读 FIST_GITHUB_ENABLED / FIST_GITHUB_REPO / FIST_GITHUB_TOKEN，返回 enabled/repo/token_present/ready 四元组。纯计算只读环境变量，不碰网络。外部 AI 开发前先查此工具，确认能否自动上报 bug。",
     schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let enabled = match @env.get_env_var("FIST_GITHUB_ENABLED") {
         Some(v) => v == "true" || v == "1" || v == "yes"
         None => false
@@ -6944,7 +6952,7 @@ pub async fn run_server() -> Unit {
       },
       ["payload"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let payload = get_str(args, "payload")
       match github_webhook_parse(payload) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
@@ -6967,7 +6975,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let pid = get_str(args, "gitcode_project_id")
       match gitcode_queue_status(project_dir, pid) {
@@ -6990,7 +6998,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir", "gitcode_project_id"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let pid = get_str(args, "gitcode_project_id")
       let limit = get_int(args, "limit", default=20)
@@ -7015,7 +7023,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir", "bug_ids"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let sent_at = get_str(args, "sent_at", default="")
       let ids_arr = get_array(args, "bug_ids")
@@ -7052,7 +7060,7 @@ pub async fn run_server() -> Unit {
     "gitcode_env_check",
     "检查 GitCode issue 同步的环境变量配置状态——读 FIST_GITCODE_ENABLED / FIST_GITCODE_PROJECT_ID / FIST_GITCODE_TOKEN，返回 enabled/project_id_set/token_present/ready/hints 五元组。纯计算只读环境变量，不碰网络。外部 AI 开发前先查此工具，确认能否自动上报 bug（GitCode 是 GitHub 的 fallback 通道）。",
     schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       match gitcode_env_check() {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -7065,7 +7073,7 @@ pub async fn run_server() -> Unit {
     "hat_list",
     "列出六顶思考帽（White/Red/Black/Yellow/Green/Blue）的 role/color/forbid/output_keys 与默认三帽（White/Black/Yellow）。纯计算只读。",
     schema({}, []),
-    async fn(_args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       // 跨包枚举只能经函数构造（MoonBit 下 @ops.Hat 只读），故用 all_hats() 枚举六帽。
       let hats : Array[@ops.Hat] = @ops.all_hats()
       let arr = hats.map(fn(h) { hat_meta_json(h) })
@@ -7095,7 +7103,7 @@ pub async fn run_server() -> Unit {
       },
       ["topic"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let topic = get_str(args, "topic")
       if topic.trim().is_empty() {
         return Err(@mcp_types.ToolError("topic 不能为空"))
@@ -7156,7 +7164,7 @@ pub async fn run_server() -> Unit {
       },
       ["session_id", "hat_id", "verdict", "evidence"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let session_id = get_str(args, "session_id")
       if session_id.trim().is_empty() {
         return Err(@mcp_types.ToolError("session_id 不能为空"))
@@ -7205,7 +7213,7 @@ pub async fn run_server() -> Unit {
       },
       ["session_id"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let session_id = get_str(args, "session_id")
       if session_id.trim().is_empty() {
         return Err(@mcp_types.ToolError("session_id 不能为空"))
@@ -7305,7 +7313,7 @@ pub async fn run_server() -> Unit {
       },
       ["rule", "code"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let rule = get_str(args, "rule")
       let code = get_str(args, "code")
       let line = get_str(args, "line")
