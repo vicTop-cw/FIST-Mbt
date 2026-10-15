@@ -88,21 +88,43 @@ test "dag_mc：关键度——最长路径任务 freq≈1，旁路易任务不�
   mc_mk(e, "B", "MC 任务 B [难度梯度 中]", ["A"]) // A→B 链，B 总是最长路径终点
   mc_mk(e, "C", "MC 任务 C [难度梯度 易]", []) // 旁路，时长 2-5，永不超过 A→B 链
   let j = e.dag_mc(seed=7)
-  if mc_top_crit(j) != "B" {
-    abort("关键路径终点应为 B: " + j.stringify())
+  // BUG-203 前：A（B 的唯一前驱、在唯一最长路径上）critical_freq 恒为 0，只有 B 被判关键。
+  // 修复后 A、B 都应在最长路径上（freq≈1），C 旁路不应被判关键（freq≈0）。
+  let fa = mc_crit_freq(j, "A")
+  let fb = mc_crit_freq(j, "B")
+  let fc = mc_crit_freq(j, "C")
+  if fa < 0.9 {
+    abort("A（最长路径中间节点）关键频率应≈1.0: \{fa}")
   }
-  // B 的 critical_freq 应≈1.0
+  if fb < 0.9 {
+    abort("B（最长路径终点）关键频率应≈1.0: \{fb}")
+  }
+  if fc > 0.1 {
+    abort("C（旁路易任务）不应被判关键: \{fc}")
+  }
+}
+
+///|
+/// 读 criticality 中指定 task_id 的 critical_freq（找不到返回 -1.0）。
+fn mc_crit_freq(j : Json, id : String) -> Double {
+  let result : Array[Double] = [-1.0]
   match j.value("criticality") {
     Some(Array(a)) =>
-      match a[0].value("critical_freq") {
-        Some(Number(n, ..)) =>
-          if n < 0.9 {
-            abort("B 关键频率应≈1.0: \{n}")
-          }
-        _ => abort("缺 critical_freq: " + j.stringify())
+      for i = 0; i < a.length(); i = i + 1 {
+        match a[i].value("task_id") {
+          Some(String(s)) =>
+            if s == id {
+              match a[i].value("critical_freq") {
+                Some(Number(n, ..)) => result[0] = n
+                _ => result[0] = -1.0
+              }
+            }
+          _ => ()
+        }
       }
-    _ => abort("缺 criticality: " + j.stringify())
+    _ => ()
   }
+  result[0]
 }
 
 ///|

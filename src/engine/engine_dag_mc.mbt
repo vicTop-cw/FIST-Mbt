@@ -131,6 +131,45 @@ fn FistEngine::mc_finish(
 }
 
 ///|
+/// 从 id 起的最长链长度（含 own，**看后继**）：own + max over succ(id) of mc_suffix_from(succ)。
+/// mc_finish 只算前驱，单独用它判「在最长路径上」会漏掉最长路径的**中间节点**
+/// （BUG-203：线性链 A→B 只有 B 被判关键，A 明明在唯一最长路径上却 critical_freq=0）。
+/// 关键度判据必须前向+后向相加减 own == makespan，故补这个后向 pass。
+fn mc_suffix_from(
+  id : String,
+  dur : Map[String, Int],
+  memo_suf : Map[String, Int],
+  visiting : Map[String, Bool],
+  succ : Map[String, Array[String]],
+) -> Int {
+  match memo_suf.get(id) {
+    Some(v) => return v
+    None => ()
+  }
+  match visiting.get(id) {
+    // 环命中返回 -1 哨兵（与 mc_finish 的 BUG-204 同口径），环路径不参与 max。
+    Some(_) => return -1
+    None => ()
+  }
+  visiting.set(id, true)
+  let own = dur.get(id).unwrap_or(0)
+  let mut best = own
+  match succ.get(id) {
+    Some(arr) =>
+      for s in arr {
+        let f = mc_suffix_from(s, dur, memo_suf, visiting, succ)
+        if f + own > best {
+          best = f + own
+        }
+      }
+    None => ()
+  }
+  visiting.remove(id)
+  memo_suf.set(id, best)
+  best
+}
+
+///|
 /// Monte Carlo 概率式完工预测（R94，Van Slyke 1963 首倡 MCS 求网络完工分布）。
 /// 对作用域内每个任务按难度档采样三角分布时长，整网模拟 samples 次，
 /// 输出完工时间分布（min/mean/p50/p90/max）+ 按期概率 + 关键度排行。
@@ -185,6 +224,22 @@ pub fn FistEngine::dag_mc(
   for t in tasks {
     deps.set(t.get_id(), t.depends_on)
   }
+  // BUG-203：后继关系由 deps 反解（t 是 d 的前驱 ⇔ d 是 t 的后继），供后向 pass 用。
+  let succ : Map[String, Array[String]] = Map([])
+  for t in tasks {
+    succ.set(t.get_id(), [])
+  }
+  for (_tid, arr) in deps {
+    for d in arr {
+      let cur = succ.get(d).unwrap_or([])
+      let ns = Array::make(cur.length() + 1, "")
+      for i = 0; i < cur.length(); i = i + 1 {
+        ns[i] = cur[i]
+      }
+      ns[cur.length()] = _tid
+      succ.set(d, ns)
+    }
+  }
   for s = 0; s < n; s = s + 1 {
     let mut state = seed + s * 7919
     let dur : Map[String, Int] = Map([])
@@ -203,9 +258,18 @@ pub fn FistEngine::dag_mc(
       }
     }
     makespans.push(ms)
+    // BUG-203 判据：t 在最长路径上 ⇔ 前向 finish + 后向 suffix - own == makespan。
+    // 只判 `finish == ms` 会漏掉最长路径的中间节点（前驱），把关键度系统性错报。
+    let memo_suf : Map[String, Int] = Map([])
+    let visiting_suf : Map[String, Bool] = Map([])
+    for t in tasks {
+      ignore(mc_suffix_from(t.get_id(), dur, memo_suf, visiting_suf, succ))
+    }
     for t in tasks {
       let f = memo.get(t.get_id()).unwrap_or(0)
-      if f == ms {
+      let sf = memo_suf.get(t.get_id()).unwrap_or(0)
+      let own = dur.get(t.get_id()).unwrap_or(0)
+      if ms > 0 && f >= 0 && sf >= 0 && f + sf - own == ms {
         critical_hits.set(
           t.get_id(),
           critical_hits.get(t.get_id()).unwrap_or(0) + 1,
@@ -216,7 +280,7 @@ pub fn FistEngine::dag_mc(
   // 统计：排序取分位
   let sorted = makespans.copy()
   sorted.sort()
-  let sum = makespans.fold_left(init=0, fn(acc, x) { acc + x })
+  let sum = makespans.fold(init=0, fn(acc, x) { acc + x })
   // R1 bugfind（BUG-142 家族）：静态扫描发现 unprotected-division——`n` 虽经钳制 >=10，
   // 但判据要能被确定性地证明非零，不靠「调用点总是传入合法值」的约定。
   let n_safe = if n > 0 { n } else { 1 }
