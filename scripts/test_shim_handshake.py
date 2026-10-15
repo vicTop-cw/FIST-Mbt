@@ -258,6 +258,52 @@ def run_robustness(client):
     return results
 
 
+def run_boundary(client):
+    """边界输入健壮性（boundary_probe 建议）：元字符/引号/Unicode 注入。
+
+    server 侧返回标准 JSON-RPC 错误（-32600 等）视为"正确拒绝"即 PASS；
+    只有 shim 进程死掉或返回异常才算 FAIL。
+    """
+    results = []
+    def check(name, ok, detail=""):
+        results.append((name, bool(ok), detail))
+        print(f"  [{'PASS' if ok else 'FAIL'}] {name}: {detail}")
+
+    # 1. 元字符注入：capabilities.experimental 含引号/反斜杠/换行
+    client.send({
+        "jsonrpc": "2.0", "id": 51, "method": "initialize",
+        "params": {
+            "capabilities": {"experimental": {"note": 'a"b\\c\nd\te'}},
+            "clientInfo": {"name": "inj", "version": "1"},
+        },
+    })
+    r = client.recv()
+    name = (r or {}).get("result", {}).get("serverInfo", {}).get("name", "")
+    check("元字符注入 capabilities",
+          name == "fist-mbt" or (r or {}).get("error") is not None,
+          f"serverInfo={name or (r or {}).get('error',{}).get('code','?')}")
+
+    # 2. 未转义引号（原始字符串，shim 透传 → server 解析失败）
+    client.send_raw('{"jsonrpc":"2.0","id":52,"method":"initialize",'
+                    '"params":{"capabilities":{},"clientInfo":{"name":"bad"quote","version":"1"}}}')
+    r = client.recv()
+    code = (r or {}).get("error", {}).get("code", "")
+    check("未转义引号（server -32600）", code in (-32600, -32700), f"error.code={code}")
+
+    # 3. Unicode 控制字符
+    client.send({
+        "jsonrpc": "2.0", "id": 53, "method": "initialize",
+        "params": {"capabilities": {}, "clientInfo": {"name": "\u0000\u001f\ufffd", "version": "1"}},
+    })
+    r = client.recv()
+    name = (r or {}).get("result", {}).get("serverInfo", {}).get("name", "")
+    check("Unicode 控制字符 clientInfo.name",
+          name == "fist-mbt" or (r or {}).get("error") is not None,
+          f"serverInfo={name or (r or {}).get('error',{}).get('code','?')}")
+
+    return results
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--server", nargs="+", default=None,
@@ -295,6 +341,12 @@ def main():
     robust_results = run_robustness(client)
     ok_robust = all(r[1] for r in robust_results)
     all_ok = all_ok and ok_robust
+    print()
+
+    print("--- 边界输入（boundary_probe 建议）---")
+    boundary_results = run_boundary(client)
+    ok_boundary = all(r[1] for r in boundary_results)
+    all_ok = all_ok and ok_boundary
     print()
 
     proc.kill()
