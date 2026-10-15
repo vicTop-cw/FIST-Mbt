@@ -98,3 +98,51 @@ test "caf_pref_duplicate_preference" {
   assert_eq(result[0], "m_mid")
   assert_eq(result[1], "m_free")
 }
+
+///|
+/// P2d-8 空候选集安全：候选集空 + 非空偏好 + 空记忆 → 返回空，不 panic
+test "caf_pref_empty_candidates_safe" {
+  let candidates : Array[String] = []
+  let stats : Array[CafModelStats] = []
+  let result = caf_soft_reorder_with_preference(
+    candidates,
+    stats,
+    ["m_free"],
+    10,
+  )
+  assert_eq(result.length(), 0)
+}
+
+///|
+/// P2d-9 min_evidences=0 语义：stats 非空即视为证据充足 → 退化到成功率排序
+/// （文档：0 = any evidence counts）
+test "caf_pref_zero_min_evidences_any_counts" {
+  let candidates : Array[String] = ["m_free", "m_mid"]
+  // m_mid 成功率 100% → 退化到成功率排序后应排第一（即使偏好是 m_free）
+  let stats : Array[CafModelStats] = [
+    { model: "m_free", total: 1, success: 0, avg_cost: 1.0, },
+    { model: "m_mid", total: 1, success: 1, avg_cost: 2.0, },
+  ]
+  let result = caf_soft_reorder_with_preference(
+    candidates,
+    stats,
+    ["m_free"],
+    0,
+  )
+  assert_eq(result[0], "m_mid")
+}
+
+///|
+/// P2d-10 全零 stats 仍按记忆不足处理：stats 有记录但 total 全 0 + min_evidences=10
+/// → evidence_total=0 < 10 → 走偏好路径
+test "caf_pref_zero_evidence_insufficient" {
+  let candidates : Array[String] = ["m_free", "m_mid"]
+  let stats : Array[CafModelStats] = [
+    { model: "m_free", total: 0, success: 0, avg_cost: 1.0, },
+    { model: "m_mid", total: 0, success: 0, avg_cost: 2.0, },
+  ]
+  let pref : Array[String] = ["m_mid"]
+  let result = caf_soft_reorder_with_preference(candidates, stats, pref, 10)
+  assert_eq(result[0], "m_mid")
+  assert_eq(result[1], "m_free")
+}

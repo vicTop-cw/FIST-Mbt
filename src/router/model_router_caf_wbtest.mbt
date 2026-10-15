@@ -436,6 +436,82 @@ test "caf_status_2_按模型聚合成功率与均成本" {
 }
 
 ///|
+/// caf_status_3：单模型多条记录聚合（整数除法 200/3=66%，验证整除截断不 panic）。
+test "caf_status_3_单模型多条记录" {
+  let mem = CafMemory::new()
+  let mut i = 0
+  mem.push(
+    CafRecord::new(
+      feature_hash=i,
+      model="free-a",
+      ok=true,
+      cost=0.1,
+      ts="2026-10-15T00:00:00Z",
+    ),
+  )
+  i = i + 1
+  mem.push(
+    CafRecord::new(
+      feature_hash=i,
+      model="free-a",
+      ok=true,
+      cost=0.1,
+      ts="2026-10-15T00:00:01Z",
+    ),
+  )
+  i = i + 1
+  mem.push(
+    CafRecord::new(
+      feature_hash=i,
+      model="free-a",
+      ok=false,
+      cost=0.1,
+      ts="2026-10-15T00:00:02Z",
+    ),
+  )
+  let text = caf_memory_status_text(mem)
+  if !text.contains("3 条记录") || !text.contains("1 个模型") {
+    abort("应报告 3 条记录 1 个模型，实际 \{text}")
+  }
+  if !text.contains("free-a：2/3 成功 (66%)") {
+    abort("free-a 应聚合为 2/3 66%，实际 \{text}")
+  }
+}
+
+///|
+/// caf_status_4：全失败记录不产出 NaN/除零（cnt>0 守卫的边界）。
+test "caf_status_4_全失败记录不产出NaN" {
+  let mem = CafMemory::new()
+  let mut i = 0
+  mem.push(
+    CafRecord::new(
+      feature_hash=i,
+      model="free-a",
+      ok=false,
+      cost=0.1,
+      ts="2026-10-15T00:00:00Z",
+    ),
+  )
+  i = i + 1
+  mem.push(
+    CafRecord::new(
+      feature_hash=i,
+      model="free-b",
+      ok=false,
+      cost=0.2,
+      ts="2026-10-15T00:00:01Z",
+    ),
+  )
+  let text = caf_memory_status_text(mem)
+  if text.contains("NaN") || text.contains("Inf") || text.contains("inf") {
+    abort("不应产出 NaN/Inf，实际 \{text}")
+  }
+  if !text.contains("free-a：0/1 成功 (0%)") {
+    abort("free-a 应聚合为 0/1 0%，实际 \{text}")
+  }
+}
+
+///|
 /// R33：RouterConfig 新增 caf_default_preference / caf_min_evidences 后钉死默认值与 JSON 往返，
 /// 防止字段只进 struct 而漏进 from_json/to_json（R32 教训：字段改动面大，必须有锁兜底）。
 test "caf_cfg_1_新字段默认值与JSON往返" {
