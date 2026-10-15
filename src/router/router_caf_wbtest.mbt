@@ -781,8 +781,8 @@ test "caf_stats_high_frequency_single_model" {
   assert_eq(stats.length(), 1)
   assert_eq(stats[0].model, "hot")
   assert_eq(stats[0].total, 100)
-  // 100 条中 ok = 2/3 ≈ 67 条
-  assert_eq(stats[0].success, 67)
+  // 100 条中 ok = (i%3 != 0)：每 3 组 2 true，33 组=66 true，余 i=99 (99%3=0) → false，总计 66
+  assert_eq(stats[0].success, 66)
   // avg_cost 不 panic（守卫分支不触发，走正常分支）
   assert_true(stats[0].avg_cost > 0.0)
 }
