@@ -300,7 +300,9 @@ pub fn gitcode_queue_mark_sent(
   }
 
   let lines = updated.map(fn(j : Json) { j.stringify() })
-  let _ = mem_write(gq_path(project_dir), lines.join("\n") + "\n")
+  if !mem_write(gq_path(project_dir), lines.join("\n") + "\n") {
+    return Err("gitcode_queue_mark_sent: 队列写入失败")
+  }
 
   let mm : Map[String, Json] = Map([])
   mm.set("marked", Json::number(marked.to_double()))
@@ -354,7 +356,9 @@ pub fn gitcode_queue_mark_sent_batch(
   }
 
   let lines = updated.map(fn(j : Json) { j.stringify() })
-  let _ = mem_write(gq_path(project_dir), lines.join("\n") + "\n")
+  if !mem_write(gq_path(project_dir), lines.join("\n") + "\n") {
+    return Err("gitcode_queue_mark_sent_batch: 队列写入失败")
+  }
 
   let mm : Map[String, Json] = Map([])
   mm.set("marked", Json::number(marked.to_double()))
@@ -479,7 +483,9 @@ pub fn gitcode_queue_append(
     Some(s) => s
   }
   mem_ensure_dir(mem_dir(project_dir))
-  let _ = mem_write(gq_path(project_dir), old + entry_json.stringify() + "\n")
+  if !mem_write(gq_path(project_dir), old + entry_json.stringify() + "\n") {
+    return Err("gitcode_queue_append: 队列写入失败")
+  }
 
   let mm : Map[String, Json] = Map([])
   mm.set("bug_id", Json::string(bug_id))

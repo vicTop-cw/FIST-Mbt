@@ -633,3 +633,46 @@ test "gc-21: flush_plan curl URL 格式正确（POST gitcode.com api v4）" {
   assert_true(cmd.contains("curl -sS -X POST"))
   assert_true(cmd.contains("https://gitcode.com/api/v4/projects/777/issues"))
 }
+
+// =====================================================================
+// Test 22：BUG-223 —— 队列写入失败必须回执 Err（三个写路径）
+// =====================================================================
+
+///|
+/// BUG-223 回归锁：把队列文件路径占位为目录，使 mem_write 必然失败。
+/// append / mark_sent / mark_sent_batch 三条写路径都必须返回 Err，
+/// 而不是返回 Ok 的"假成功"。
+test "gc-22: 队列写入失败必须回执 Err（BUG-223）" {
+  let d = "temp/gc_b223_write_fail"
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
+  @fs.create_dir(d) catch {
+    _ => ()
+  }
+  mem_ensure_dir(mem_dir(d))
+  let qp = gq_path(d)
+  @fs.remove_file(qp) catch {
+    _ => ()
+  }
+  @fs.create_dir(qp) catch {
+    _ => ()
+  }
+
+  let r1 = gitcode_queue_append(
+    d,
+    "GC-B223",
+    "s",
+    "d",
+    "high",
+    "2026-10-15T14:30:00+08:00",
+    "999",
+    [],
+  )
+  assert_true(r1.is_err())
+  let r2 = gitcode_queue_mark_sent(d, "GC-B223", "1")
+  assert_true(r2.is_err())
+  let r3 = gitcode_queue_mark_sent_batch(d, ["GC-B223"], Map([]))
+  assert_true(r3.is_err())
+}
+
