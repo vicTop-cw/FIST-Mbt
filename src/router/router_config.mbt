@@ -77,6 +77,37 @@ pub fn RouterConfig::from_json(json : Json) -> (RouterConfig, Array[String]) {
         Some(Json::Null) | None => (false, [])
         Some(_) => (false, ["use_caf_memory 非布尔，按 false 处理"])
       }
+      // P2d：CAF 冷启动偏好模型列表（有序）。缺字段/null → []（零回归）；坏类型 → [] + warning。
+      let (caf_default_preference, caf_default_preference_warns) = match
+        m.get("caf_default_preference") {
+        Some(Json::Array(items)) => {
+          let mut models : Array[String] = []
+          let mut bad = false
+          for it in items {
+            match it {
+              Json::String(s) => models = models + [s]
+              _ => bad = true
+            }
+          }
+          (
+            models,
+            if bad {
+              ["caf_default_preference 含非字符串元素，已忽略"]
+            } else {
+              []
+            },
+          )
+        }
+        Some(Json::Null) | None => ([], [])
+        Some(_) => ([], ["caf_default_preference 非数组，按空处理"])
+      }
+      // P2d：视为「记忆充足」的最小证据数。缺字段/null → 10（零回归）；坏类型 → 10 + warning。
+      let (caf_min_evidences, caf_min_evidences_warns) = match
+        m.get("caf_min_evidences") {
+        Some(Json::Number(n, ..)) => (n.to_int(), [])
+        Some(Json::Null) | None => (10, [])
+        Some(_) => (10, ["caf_min_evidences 非整数，按 10 处理"])
+      }
       (
         {
           window_seconds: ws2,
@@ -86,8 +117,15 @@ pub fn RouterConfig::from_json(json : Json) -> (RouterConfig, Array[String]) {
           ofm_endpoint,
           use_laya,
           use_caf_memory,
+          caf_default_preference,
+          caf_min_evidences,
         },
-        w2 + ofm_warns + use_laya_warns + use_caf_memory_warns,
+        w2 +
+        ofm_warns +
+        use_laya_warns +
+        use_caf_memory_warns +
+        caf_default_preference_warns +
+        caf_min_evidences_warns,
       )
     }
     Json::Null => (d, []) // null = 没给配置，不算违例、不产噪音 warning
@@ -297,6 +335,10 @@ pub fn RouterConfig::to_json(self : RouterConfig) -> Json {
     "ofm_endpoint": Json::string(self.ofm_endpoint),
     "use_laya": Json::boolean(self.use_laya),
     "use_caf_memory": Json::boolean(self.use_caf_memory),
+    "caf_default_preference": Json::array(
+      self.caf_default_preference.map(fn(s) { Json::string(s) }),
+    ),
+    "caf_min_evidences": Json::number(self.caf_min_evidences.to_double()),
   })
 }
 

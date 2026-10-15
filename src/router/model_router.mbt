@@ -294,6 +294,11 @@ pub struct RouterConfig {
   use_laya : Bool
   // P2c：CAF 记忆路由开关。默认 false（零回归）；开启后 pick 用 caf_soft_reorder 软性排序。
   use_caf_memory : Bool
+  // P2c/P2d：CAF 冷启动偏好模型列表（有序）。默认空 = 零回归，`pick_caf` 走纯 `caf_soft_reorder`；
+  // 非空时走 `caf_soft_reorder_with_preference`（记忆充足退化成功率排序、记忆不足按偏好冷启动）。
+  caf_default_preference : Array[String]
+  // P2d：视为「记忆充足」的最小证据数。默认 10；0 表示任何证据都算充足。
+  caf_min_evidences : Int
 } derive(Eq, Debug)
 
 ///|
@@ -367,6 +372,8 @@ pub fn RouterConfig::default() -> RouterConfig {
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
 }
 

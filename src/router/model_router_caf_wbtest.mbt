@@ -25,6 +25,8 @@ fn mrc_router(use_caf : Bool) -> ModelRouter {
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: use_caf,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   ModelRouter::from_config(cfg)
 }
@@ -141,6 +143,8 @@ test "caf_pick_4_重排第一名在冷却期则回退" {
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: true,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let r = ModelRouter::from_config(cfg)
   let pool = r.active_pool()
@@ -428,5 +432,98 @@ test "caf_status_2_按模型聚合成功率与均成本" {
   }
   if !text.contains("free-a") || !text.contains("均成本") {
     abort("应含均成本，实际 \{text}")
+  }
+}
+
+///|
+/// R33：RouterConfig 新增 caf_default_preference / caf_min_evidences 后钉死默认值与 JSON 往返，
+/// 防止字段只进 struct 而漏进 from_json/to_json（R32 教训：字段改动面大，必须有锁兜底）。
+test "caf_cfg_1_新字段默认值与JSON往返" {
+  let d = RouterConfig::default()
+  if not(d.caf_default_preference.is_empty()) {
+    abort("默认偏好应为空（零回归）")
+  }
+  if d.caf_min_evidences != 10 {
+    abort("默认 min_evidences 应为 10")
+  }
+  let (back, warns) = RouterConfig::from_json(d.to_json())
+  if warns.length() != 0 {
+    abort("往返不应产生警告，got \{warns.length()}")
+  }
+  if not(back.caf_default_preference.is_empty()) {
+    abort("往返后偏好应仍为空")
+  }
+  if back.caf_min_evidences != 10 {
+    abort("往返后 min_evidences 应为 10")
+  }
+  let cfg2 : RouterConfig = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [],
+    paid_models: [],
+    ofm_endpoint: "",
+    use_laya: false,
+    use_caf_memory: true,
+    caf_default_preference: ["free-a", "free-b"],
+    caf_min_evidences: 3,
+  }
+  let (back2, warns2) = RouterConfig::from_json(cfg2.to_json())
+  if warns2.length() != 0 {
+    abort("带偏好往返不应警告，got \{warns2.length()}")
+  }
+  if back2.caf_default_preference != ["free-a", "free-b"] {
+    abort("往返后偏好应保留，实际 \{back2.caf_default_preference}")
+  }
+  if back2.caf_min_evidences != 3 {
+    abort("往返后 min_evidences 应为 3")
+  }
+}
+
+///|
+/// R33：RouterConfig 的偏好字段可被 server 层读出并透传给 pick_caf
+/// （server 层接线的 router 侧前提）。
+test "caf_cfg_2_偏好字段从config读出并传给pick_caf" {
+  let cfg : RouterConfig = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [
+      ModelQuota::new(name="free-a", tier=Free, limit=10),
+      ModelQuota::new(name="free-b", tier=Free, limit=10),
+    ],
+    paid_models: [],
+    ofm_endpoint: "",
+    use_laya: false,
+    use_caf_memory: true,
+    caf_default_preference: ["free-b"],
+    caf_min_evidences: 1,
+  }
+  let r = ModelRouter::from_config(cfg)
+  let dr1 = r.pick_caf_dry_run(
+    now=mrc_now(),
+    caf_memory=CafMemory::new(),
+    context="pref context",
+    k=10,
+    caf_default_preference=cfg.caf_default_preference,
+    caf_min_evidences=cfg.caf_min_evidences,
+  )
+  if !dr1.reordered || dr1.picked.model_name != "free-b" {
+    abort(
+      "空记忆应冷启动选偏好 free-b（base 是 free-a），实际 " +
+      dr1.picked.model_name,
+    )
+  }
+  let dr2 = r.pick_caf_dry_run(
+    now=mrc_now(),
+    caf_memory=mrc_memory(),
+    context="test context",
+    k=10,
+    caf_default_preference=cfg.caf_default_preference,
+    caf_min_evidences=cfg.caf_min_evidences,
+  )
+  if dr2.picked.model_name != "free-b" {
+    abort(
+      "记忆充足应选证据更优的 free-b，实际 " +
+      dr2.picked.model_name,
+    )
   }
 }

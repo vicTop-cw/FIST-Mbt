@@ -20,6 +20,8 @@ fn rt_router(free_limit : Int, paid_limit : Int) -> ModelRouter {
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   ModelRouter::from_config(cfg)
 }
@@ -87,6 +89,8 @@ test "rt_4_空池不 panic：current_model=None 且决策显式不可用" {
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let r = ModelRouter::from_config(cfg)
   assert_eq(r.current_model(), None)
@@ -265,6 +269,8 @@ test "rt_13_current_model 报真在用的模型而不是游标位（BUG-56 成�
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let r = ModelRouter::from_config(cfg)
   let d = r.pick(now=rt_at(0, 1))
@@ -317,6 +323,8 @@ test "rt_14_越界游标取模后 current_model 必须点名（补 rt_12 的弱�
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   })
   r.current_tier = Paid
   r.paid_idx = 98 // 98 % 2 = 0
@@ -356,6 +364,8 @@ test "rt_15_同档仍有健康模型时不许跳档（环形扫描要真的扫�
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let r = ModelRouter::from_config(cfg)
   r.free_idx = 0 // 游标正好停在耗尽那一格
@@ -378,6 +388,8 @@ test "rt_15_同档仍有健康模型时不许跳档（环形扫描要真的扫�
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   })
   let d2 = r2.pick(now=rt_at(0, 1))
   assert_eq(d2.model_name, "p1")
@@ -416,6 +428,8 @@ test "rt_16_付费耗尽且免费已恢复_必须回退免费" {
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   })
   r.current_tier = Paid
   // 铺垫：此刻双池皆尽 → 显式不可用，档位保持 Paid（rt_5 反向，不假回退）
@@ -450,6 +464,8 @@ test "rt_health_1_pick 跳过黑名单模型" {
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let r = ModelRouter::from_config(cfg)
   // 黑名单第一个模型 → 应选第二个
@@ -478,6 +494,8 @@ test "rt_health_2_黑名单精确匹配不误伤前缀" {
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let r = ModelRouter::from_config(cfg)
   // 黑名单是 "model"（前缀）不应命中 "model-v1"
@@ -496,6 +514,8 @@ test "lp_1_laya_hint_paid_switches_when_current_free" {
     ofm_endpoint: "",
     use_laya: true,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let r = ModelRouter::from_config(cfg)
   let d = r.pick(now=rt_at(0, 1), laya_prefer_tier="Paid")
@@ -518,6 +538,8 @@ test "lp_2_laya_hint_free_already_on_free" {
     ofm_endpoint: "",
     use_laya: true,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let r = ModelRouter::from_config(cfg)
   let d = r.pick(now=rt_at(0, 1), laya_prefer_tier="Free")
@@ -539,6 +561,8 @@ test "lp_3_laya_hint_tier_exhausted_falls_back" {
     ofm_endpoint: "",
     use_laya: true,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let r = ModelRouter::from_config(cfg)
   let d = r.pick(now=rt_at(0, 1), laya_prefer_tier="paid")
@@ -559,6 +583,8 @@ test "lp_4_laya_hint_invalid_tier_silent_fallback" {
     ofm_endpoint: "",
     use_laya: true,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let r = ModelRouter::from_config(cfg)
   let d = r.pick(now=rt_at(0, 1), laya_prefer_tier="banana")
@@ -578,6 +604,8 @@ test "lp_5_empty_hint_zero_regression" {
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let r = ModelRouter::from_config(cfg)
   let d1 = r.pick(now=rt_at(0, 1))
@@ -703,6 +731,8 @@ test "fc_1_compute_fallback_chain" {
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   // 主选 = free-a；free-b 已耗尽 → 链 = paid-a(2.5) > paid-b(2.25)
   let chain = compute_fallback_chain(cfg, "free-a")
@@ -725,6 +755,8 @@ test "fc_2_route_decision_has_fallback_chain" {
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let r = ModelRouter::from_config(cfg)
   let d = r.pick(now=rt_at(0, 1))
@@ -751,6 +783,8 @@ test "fc_3_fallback_chain_filters_unhealthy" {
     ofm_endpoint: "",
     use_laya: false,
     use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
   }
   let chain = compute_fallback_chain(cfg, "free-a", unhealthy_ids=["free-b"])
   assert_eq(chain.length(), 0)

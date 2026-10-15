@@ -225,6 +225,8 @@ fn clone_pools(config : RouterConfig) -> RouterConfig {
     ofm_endpoint: config.ofm_endpoint,
     use_laya: config.use_laya,
     use_caf_memory: config.use_caf_memory,
+    caf_default_preference: config.caf_default_preference,
+    caf_min_evidences: config.caf_min_evidences,
   }
 }
 
