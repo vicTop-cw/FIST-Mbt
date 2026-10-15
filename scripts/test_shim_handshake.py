@@ -171,6 +171,23 @@ def run_handshake(client, version: str) -> list:
     r = client.recv()
     resources = (r or {}).get("result", {}).get("resources", [])
     check("resources/list", len(resources) > 0, f"{len(resources)} 个资源")
+    if resources:
+        uri = resources[0].get("uri", "fist://map")
+        client.send({
+            "jsonrpc": "2.0", "id": 31, "method": "resources/read",
+            "params": {"uri": uri},
+        })
+        r = client.recv()
+        contents = (r or {}).get("result", {}).get("contents", [])
+        check("resources/read",
+              len(contents) > 0 and len(str(contents[0])) > 50,
+              f"{uri} → {len(str(contents[0])) if contents else 0} 字符")
+
+    # 5b. prompts/list
+    client.send({"jsonrpc": "2.0", "id": 41, "method": "prompts/list"})
+    r = client.recv()
+    prompts = (r or {}).get("result", {}).get("prompts", [])
+    check("prompts/list", len(prompts) > 0, f"{len(prompts)} 个 prompt")
 
     # 6. 可选方法（shim stub）
     for i, (method, params) in enumerate(OPTIONAL_METHODS, start=10):
