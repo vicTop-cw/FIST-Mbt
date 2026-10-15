@@ -248,6 +248,84 @@ fn _civil_from_days(z : Int) -> (Int, Int, Int) {
 }
 
 ///|
+/// 公历 (y, m, d) → Unix 日起算天数（Howard Hinnant 的 days_from_civil，_civil_from_days 的逆）。
+/// 仅供 _iso_to_unix_ms 使用，年份已由调用方钳到 [1970, 9999]。
+fn _days_from_civil(y : Int, m : Int, d : Int) -> Int {
+  let y2 = if m <= 2 { y - 1 } else { y }
+  let era = y2 / 400
+  let yoe = y2 - era * 400
+  let mp = if m > 2 { m - 3 } else { m + 9 }
+  let doy = (153 * mp + 2) / 5 + d - 1
+  let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+  era * 146097 + doe - 719468
+}
+
+///|
+/// 解析 `YYYY-MM-DDTHH:MM:SS` 起始的时间戳为 Unix 毫秒（Int64）；解析失败返回 None。
+/// 长度 < 19（完整 "YYYY-MM-DDTHH:MM:SS"）即不可解析；年份钳到 [1970, 9999]（ISO 时间戳在
+/// 1970 前没有现实意义，且 _civil_from_days 只对 z>=0 成立）。
+fn _iso_to_unix_ms(iso : String) -> Int64? {
+  if iso.length() < 19 {
+    return None
+  }
+  let digit = fn(a : Int) -> Int? {
+    let c = iso[a].to_int()
+    if c >= 48 && c <= 57 {
+      Some(c - 48)
+    } else {
+      None
+    }
+  }
+  let all : Array[Int?] = [
+    digit(0),
+    digit(1),
+    digit(2),
+    digit(3), // 年
+    digit(5),
+    digit(6), // 月
+    digit(8),
+    digit(9), // 日
+    digit(11),
+    digit(12), // 时
+    digit(14),
+    digit(15), // 分
+    digit(17),
+    digit(18), // 秒
+  ]
+  if all.any(fn(o) { o is None }) {
+    return None
+  }
+  let v = fn(o : Int?) -> Int {
+    match o {
+      Some(x) => x
+      None => 0
+    }
+  }
+  let year = v(all[0]) * 1000 + v(all[1]) * 100 + v(all[2]) * 10 + v(all[3])
+  let mon = v(all[4]) * 10 + v(all[5])
+  let day = v(all[6]) * 10 + v(all[7])
+  let hour = v(all[8]) * 10 + v(all[9])
+  let min = v(all[10]) * 10 + v(all[11])
+  let sec = v(all[12]) * 10 + v(all[13])
+  if year < 1970 ||
+    year > 9999 ||
+    mon < 1 ||
+    mon > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour > 23 ||
+    min > 59 ||
+    sec > 59 {
+    return None
+  }
+  let total_sec = _days_from_civil(year, mon, day).to_int64() * 86400L +
+    hour.to_int64() * 3600L +
+    min.to_int64() * 60L +
+    sec.to_int64()
+  Some(total_sec * 1000L)
+}
+
+///|
 /// 默认时间戳：取真实墙钟时间（UTC，毫秒级），格式化为
 /// `YYYY-MM-DDTHH:MM:SSZ`。避免省略 now 参数时共享一个冻结时钟，
 /// 使心跳/陈旧检测/清理/审计与真实时间对齐（不再硬编码 2026-09-05）。
@@ -268,7 +346,17 @@ fn now_default() -> String {
 /// 把 now_default 格式（YYYY-MM-DDTHH:MM:SSZ）的时间戳回退 secs 秒，
 /// 返回同格式字符串。供心跳新鲜线 / 陈旧线计算（字典序比较成立）。
 fn iso_minus_secs(iso : String, secs : Int) -> String {
-  let ms = @env.now().to_int64() - secs.to_int64() * 1000L
+  // BUG-196：`secs` 经 get_int 允许负值。负回退会算出**未来** cutoff（fail-open 授权绕过：
+  // assistant_claim 会把一份心跳完全新鲜的主助理立即判陈旧而接管；assistant_sweep 会把
+  // 刚心跳过的助理标 dead）。按 0 钳位——"回退 0 秒"即 cutoff=基准时间，符合函数名承诺。
+  let s = if secs < 0 { 0 } else { secs }
+  // BUG-196：`iso` 参数此前**完全未被使用**（死代码，实际以墙钟 @env.now() 为基准）。
+  // 现真正作为基准参与计算：iso 可解析则以其为准，不可解析回退墙钟（与旧行为等价）。
+  let base_ms = match _iso_to_unix_ms(iso) {
+    Some(v) => v
+    None => @env.now().to_int64()
+  }
+  let ms = base_ms - s.to_int64() * 1000L
   if ms < 0L {
     return "0000-00-00T00:00:00Z"
   }
