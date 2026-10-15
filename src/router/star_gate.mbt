@@ -300,7 +300,13 @@ fn star_gate_verify_impl(
     )
   }
   // ④ 时间层：now == issued_at + ttl 仍有效（严格大于才过期）
-  if now_epoch > data.issued_at + data.ttl_seconds {
+  // BUG-196：issued_at / ttl_seconds 来自恶意 JSON 的 `1e300` 时 `Double::to_int64()` 饱和到
+  // Int64 max，`issued_at + ttl_seconds` 溢出 Int64 触发 panic（可达路径：`star_gate_verify` 的
+  // 非钉死自指入口——攻击者可自签 payload 走通 ③ 步）。改用 Double 加法比较：Int64 max×2 ≈
+  // 1.8e19 远在 Double 精度内，两方都大到不可代表真实时间戳时比较恒为「未过期」，语义正确。
+  let stale = now_epoch.to_double() >
+    data.issued_at.to_double() + data.ttl_seconds.to_double()
+  if stale {
     return star_outcome(
       Stale,
       "清单已过期（now > issued_at + ttl_seconds）",

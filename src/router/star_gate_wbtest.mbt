@@ -337,3 +337,24 @@ test "star_gate_release_default_pubkey_hex 与发布模板 .mcp.example.json 钉
   let template_pinned_hex = "01773e6ed3ff3fceaaf545a3f26a9627a0e91e736e6a3ed353ac3d6bb5a3f32a"
   assert_eq(star_release_default_pubkey_hex, template_pinned_hex)
 }
+
+///|
+test "star_gate_verify 恶意 1e300 issued_at+ttl 不 panic（BUG-196 溢出回归）" {
+  // 旧代码：`issued_at + ttl_seconds`（Int64）在两边都饱和到 Int64 max 时溢出 → panic。
+  // 构造一份自签的合法 attestation，但 JSON 里 issued_at/ttl_seconds 写 1e300（科学计数法 →
+  // 解析为 Double），走通验签步后触发④时间层的加法溢出路径。
+  let list : Array[String] = ["octocat"]
+  let big = 9223372036854775807L
+  // canonical 使用 to_int64() 的饱和值（Int64 max），与 star_extract_fields 的产物一致
+  let canonical = star_canonical(list, big, big)
+  let sig = @mooncry.ed25519_sign(sg_seed, canonical.to_bytes())
+  let pk = @mooncry.ed25519_public_key(sg_seed)
+  let j = "{\"format\":\"fist-star-gate-attestation/v1\",\"algorithm\":\"ed25519\",\"list\":[\"octocat\"],\"issued_at\":1e300,\"ttl_seconds\":1e300,\"public_key_hex\":\"" +
+    hex_encode(pk) +
+    "\",\"signature_hex\":\"" +
+    hex_encode(sig) +
+    "\"}"
+  let o = star_gate_verify(j, "octocat", 1000L)
+  // 修复后：改用 Double 比较，1e300+1e300 远大于 1000 → 未过期；login 在名单内 → Valid
+  inspect(o.verdict, content="Valid")
+}
