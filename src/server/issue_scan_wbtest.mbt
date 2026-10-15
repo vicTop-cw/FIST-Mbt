@@ -121,13 +121,14 @@ test "scan_guard_substring_end_var_if end大于 start 判已守卫" {
     ["if end > 3 {"],
   )
   assert_true(guarded)
-  // 命名变量：`if end_pos > 0` + `substring(start=0, end=end_pos)`
+  // 命名变量：`if end_pos > 0` + `substring(start=0, end=end_pos)`——start=0 时
+  // `end > 0` 只保证 end≥1，不构成上界（end 可能巨大），**不**判已守卫（盲区 C 收紧）。
   let guarded_named = scan_finding_guarded(
     "let s2 = s.substring(start=0, end=end_pos)",
     "substring-overrun",
     ["if end_pos > 0 {"],
   )
-  assert_true(guarded_named)
+  assert_false(guarded_named)
   // `>=` 形态
   let guarded_ge = scan_finding_guarded(
     "let s2 = s.substring(start=5, end=end_pos)",
@@ -205,4 +206,37 @@ test "scan_unwrap_receiver_提取接收者" {
   // 没有 `.unwrap(` 时返回空串
   assert_eq(scan_unwrap_receiver("let a = 1"), "")
   assert_eq(scan_unwrap_receiver(".unwrap()"), "")
+}
+
+///|
+/// BUG-164 盲区 C：`max <= s.length()`（上一行）守卫 `substring(start=0, end=max)`（engine_triage.mbt:46-47 原形）。
+test "scan_guard_substring_end_var_上界约束判已守卫" {
+  // engine_triage.mbt:44-47 原形：`} else if max > 0 && max <= s.length() {` → `s.substring(start=0, end=max)`
+  let triage_guarded = scan_finding_guarded(
+    "s.substring(start=0, end=max) + \"…\"",
+    "substring-overrun",
+    ["} else if max > 0 && max <= s.length() {"],
+  )
+  assert_true(triage_guarded)
+  // engine_eval.mbt:19-20 原形：`if s.length() >= 2 {` → `s.substring(start=2, end=s.length())`
+  let eval_guarded = scan_finding_guarded(
+    "out.push(s.substring(start=2, end=s.length()))",
+    "substring-overrun",
+    ["if s.length() >= 2 {"],
+  )
+  assert_true(eval_guarded)
+  // 反向：无长度上界约束时仍判真阳性
+  let unguarded = scan_finding_guarded(
+    "s.substring(start=0, end=max)",
+    "substring-overrun",
+    ["} else if max > 0 {"],
+  )
+  assert_false(unguarded)
+  // 反向：约束的是**别的**字符串长度（`max <= other.length()`）不误豁免
+  let wrong_target = scan_finding_guarded(
+    "s.substring(start=0, end=max)",
+    "substring-overrun",
+    ["} else if max <= other.length() {"],
+  )
+  assert_false(wrong_target)
 }
