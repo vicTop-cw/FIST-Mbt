@@ -35,6 +35,28 @@
 > `caf_min_evidences` 字段（`src/router/model_router.mbt`，本轮未动，因该文件并发 agent 也有改动面）；
 > ② `model_router_ops.mbt` 里 `executor_run` 后 `caf_memory.push` + 把 config 字段透传给 `pick_caf` +
 > status 展示 CAF 统计。两处都等并发 agent WIP 收口。
+>
+> **进度（Round 32）**：status 展示的**纯计算部分**落地（`caf_memory_status_text`，
+> `src/router/model_router_caf.mbt`）——把 `CafMemory` 渲染成按模型聚合的可读文本
+> （`<模型>：<成功>/<总数> 成功 (<成功率>%)，均成本 <avg>`），空记忆渲染为「0 条记录」。
+> 与 `pick_caf_dry_run` 同模式：接线前先把纯计算放好，server 层 `model_route` /
+> `model_router_status` 只需调用它即可让 CAF 记忆状态可观测。配套 2 条白盒锁
+> `caf_status_1~2`，router 162/162 全绿。
+>
+> **Round 32 教训（RouterConfig 字段改动面）**：尝试给 `RouterConfig` 加
+> `caf_default_preference` / `caf_min_evidences` 时发现**侵入面过大**——全仓
+> `window_seconds:` 构造点 24 处、仅 `use_caf_memory` 字段就在 3 个 wbtest 里出现 36 次，
+> 且构造形状不一（block literal / 内联 `from_config({...})` / 变量名各异），regex 只匹配到
+> 20/36。已**回退**该改动，把它列为独立子任务，与 §2.3 server 接线一起做（届时一次性改
+> 构造点 + 接线，避免两次都撞 wbtest）。
+> **给后续实施者的建议**：与其逐个补 36 处，不如先给 wbtest 引入一个集中构造 helper
+> （如 `rt_cfg(...)` / `mrc_cfg(...)`），测试统一走 helper，将来再加字段只改一处；
+> 但这是 wbtest 重构，应与接线分开提交。
+>
+> **Round 32 额外确认**：并发 agent 收口后全仓编译 0 errors（`moon info` 报告
+> 563 warnings, 0 errors），`moon test --target js` 全绿（1158/1158），
+> 依赖侧 BUG-133 修复 + 并发 WIP 的 3 errors 已清，全仓回归恢复——之前只能跑
+> `src/router` 子集的门禁约束解除。
 
 ## 1. 目标
 

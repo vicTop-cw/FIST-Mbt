@@ -371,3 +371,62 @@ test "caf_pref_3_记忆充足时偏好退化为成功率排序" {
     )
   }
 }
+
+///|
+/// caf_status_1：空记忆渲染为「0 条记录」，不崩溃、不产出 NaN 百分比。
+test "caf_status_1_空记忆渲染为 0 条记录" {
+  let mem = CafMemory::new()
+  let text = caf_memory_status_text(mem)
+  if !text.contains("0 条记录") {
+    abort("空记忆应显示 0 条记录，实际 \{text}")
+  }
+}
+
+///|
+/// caf_status_2：有记录时按模型聚合出成功率与均成本。
+test "caf_status_2_按模型聚合成功率与均成本" {
+  let mem = CafMemory::new()
+  let mut i = 0
+  mem.push(
+    CafRecord::new(
+      feature_hash=i,
+      model="free-a",
+      ok=true,
+      cost=0.1,
+      ts="2026-10-15T00:00:00Z",
+    ),
+  )
+  i = i + 1
+  mem.push(
+    CafRecord::new(
+      feature_hash=i,
+      model="free-a",
+      ok=false,
+      cost=0.1,
+      ts="2026-10-15T00:00:01Z",
+    ),
+  )
+  i = i + 1
+  mem.push(
+    CafRecord::new(
+      feature_hash=i,
+      model="free-b",
+      ok=true,
+      cost=0.2,
+      ts="2026-10-15T00:00:02Z",
+    ),
+  )
+  let text = caf_memory_status_text(mem)
+  if !text.contains("3 条记录") || !text.contains("2 个模型") {
+    abort("应报告 3 条记录 2 个模型，实际 \{text}")
+  }
+  if !text.contains("free-a：1/2 成功 (50%)") {
+    abort("free-a 应聚合为 1/2 50%，实际 \{text}")
+  }
+  if !text.contains("free-b：1/1 成功 (100%)") {
+    abort("free-b 应聚合为 1/1 100%，实际 \{text}")
+  }
+  if !text.contains("free-a") || !text.contains("均成本") {
+    abort("应含均成本，实际 \{text}")
+  }
+}
