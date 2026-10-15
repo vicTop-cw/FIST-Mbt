@@ -229,9 +229,26 @@ pub fn CafMemory::to_json(self : CafMemory) -> Json {
 /// 编辑距离（Levenshtein）—— P2 相似检索的相似度度量。
 /// 计算两个字符串的编辑距离，用于 kNN 检索中对特征做轻量相似度比较。
 /// 空间 O(m)（滚动 prev/curr 两行），时间 O(n*m)；特征串短（数字串），可接受。
+///
+/// 性能守卫：特征哈希串为 32-bit Int（至多 10 字符），但调用方可能误传长 context。
+/// 超过 `CAF_EDIT_MAX_LEN` 时截断，避免 O(n*m) 爆炸（如 10^4 字符会 O(10^8) 不可接受）。
+pub const CAF_EDIT_MAX_LEN : Int = 256
+
+///|
 pub fn caf_edit_distance(a : String, b : String) -> Int {
-  let n = a.length()
-  let m = b.length()
+  // 长度守卫：截断到 CAF_EDIT_MAX_LEN，防止长字符串 O(n*m) 爆炸
+  let a_s = if a.length() > CAF_EDIT_MAX_LEN {
+    a.substring(start=0, end=CAF_EDIT_MAX_LEN)
+  } else {
+    a
+  }
+  let b_s = if b.length() > CAF_EDIT_MAX_LEN {
+    b.substring(start=0, end=CAF_EDIT_MAX_LEN)
+  } else {
+    b
+  }
+  let n = a_s.length()
+  let m = b_s.length()
   if n == 0 {
     return m
   }
@@ -248,7 +265,7 @@ pub fn caf_edit_distance(a : String, b : String) -> Int {
     let mut curr : Array[Int] = [i]
     let mut j = 1
     while j <= m {
-      let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 }
+      let cost = if a_s[i - 1] == b_s[j - 1] { 0 } else { 1 }
       let del = prev[j] + 1
       let ins = curr[j - 1] + 1
       let sub = prev[j - 1] + cost
