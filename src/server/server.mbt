@@ -6734,7 +6734,9 @@ pub async fn run_server() -> Unit {
       let sent_at_now = "flushed-by-github_flush_execute"
       let mut i1 = 0
       while i1 < plan_arr.length() {
-        if i1 < results_arr.length() {
+        // BUG-224：bug_ids 是过滤掉空 bug_id/curl_command 后的数组，可能比 plan_arr 短，
+        // 必须同时以 bug_ids.length() 为界，否则 bug_ids[i1] 越界 panic。
+        if i1 < results_arr.length() && i1 < bug_ids.length() {
           let res_json = results_arr[i1]
           let bug_id = bug_ids[i1]
           let ok_bool = match res_json {
@@ -6786,7 +6788,9 @@ pub async fn run_server() -> Unit {
       // 组装返回
       let result_obj : Array[Json] = []
       let mut i2 = 0
-      while i2 < plan_arr.length() {
+      // BUG-224：bug_ids 可能比 plan_arr 短（plan 里的空 bug_id 行被过滤），
+      // 必须按 bug_ids 长度迭代，否则 bug_ids[i2] 越界 panic 拖垮整个 server turn。
+      while i2 < bug_ids.length() {
         let pm : Map[String, Json] = Map([])
         let bid2 = bug_ids[i2]
         pm.set("bug_id", Json::string(bid2))

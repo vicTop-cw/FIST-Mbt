@@ -224,6 +224,12 @@ pub fn github_flush_plan(
           Some(String(s)) => s
           _ => ""
         }
+        // BUG-224：bug_id 为空的行不可追踪——既无法 mark_sent，issue 正文也没有 bug 锚点。
+        // 若照常进 plan，flush_execute 侧按 plan_arr 长度去索引"被过滤后"的 bug_ids 会越界 panic
+        // （工具 panic 会拖垮整个 server turn）。在此直接跳过，保证 plan 里每条都带非空 bug_id。
+        if bug_id.is_empty() {
+          continue
+        }
         let summary = match m.get("summary") {
           Some(String(s)) => s
           _ => ""
