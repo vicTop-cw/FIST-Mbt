@@ -48,3 +48,29 @@ test "iso_to_secs: 短字符串返回 -1" {
   let s = iso_to_secs("2024")
   assert_eq(s, -1)
 }
+
+///|
+/// R13-R1 bugfind（BUG-175）：sec 分支守卫原为 `length >= 17`，
+/// 但 parse_digits(chars, 17, len=2) 访问 chars[17] 与 chars[18]——
+/// 17 字符时 chars[17] 越界、18 字符时 chars[18] 越界 → 数组下标 panic。
+/// 收紧到 >= 19 后，length<19 一律按 sec=0 处理，不 panic。
+test "iso_to_secs: 17 字符（截在秒段前）不 panic，sec 按 0" {
+  // "2024-01-01T00:00:" = 17 字符；旧守卫 17>=17 通过 → chars[17] 越界 panic。
+  // 修复后 sec=0，结果为 day=1 * 86400 + 0 = 86400
+  let s = iso_to_secs("2024-01-01T00:00:")
+  assert_eq(s, 86400)
+}
+
+///|
+test "iso_to_secs: 18 字符（秒段缺一位）不 panic，sec 按 0" {
+  // "2024-01-01T00:00:0" = 18 字符；旧守卫 18>=17 通过 → chars[18] 越界 panic。
+  let s = iso_to_secs("2024-01-01T00:00:0")
+  assert_eq(s, 86400)
+}
+
+///|
+test "iso_to_secs: 19 字符完整时间戳秒段正常解析" {
+  // "2024-01-01T00:00:01" = 19 字符（索引 0..18）；守卫 >= 19 通过，sec=1。
+  let s = iso_to_secs("2024-01-01T00:00:01")
+  assert_eq(s, 86401)
+}
