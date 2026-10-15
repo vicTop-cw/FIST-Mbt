@@ -4095,4 +4095,12 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - reported_by: bugfind
 - commit: 2ca94f2
 
+## BUG-223 [2026-10-15T15:10:00Z] [medium] FIXED
+- summary: [github_gitcode] gitcode_queue_append / gitcode_queue_mark_sent / gitcode_queue_mark_sent_batch 队列写入失败被静默丢弃（let _ = 丢弃 mem_write 返回值）
+- detail: `src/server/github_gitcode.mbt` 三处写路径用 `let _ = mem_write(gq_path(project_dir), ...)` 完全丢弃写入结果（append L482 / mark_sent L303 / mark_sent_batch L357）。`mem_write` 失败返回 false，但函数仍返回 `Ok(Json::object(...))` 并报告 `marked`/`exists` 成功。写失败（磁盘满、目录被删、权限变更）时 `sent_at`/`gitcode_issue_iid` 标记未落盘，后续 `gitcode_queue_pending` 仍视其为 pending → 重复创建/发送 issue，且调用方无感知。与 BUG-220（github_sync 同款）同族，两文件口径不一致。
+- fix_options: 1) 检查 mem_write 返回值，失败返回 Err（采用）；2) JSON 加 errors 字段（调用方可能不检查）；3) 仅记日志（调用方仍无法感知）。
+- fix: 三处均改为 `if !mem_write(...) { return Err("gitcode_queue_xxx: 队列写入失败") }`。回归锁 `gc-22`：把队列路径占位为目录使 mem_write 必然失败，断言 append / mark_sent / mark_sent_batch 三路径都 `is_err()`。`moon test --target js src/server` 285/285 绿。
+- reported_by: bugfind
+- commit: 56633bc
+
 
