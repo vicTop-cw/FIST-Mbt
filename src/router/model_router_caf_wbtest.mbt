@@ -603,3 +603,58 @@ test "caf_cfg_2_偏好字段从config读出并传给pick_caf" {
     )
   }
 }
+
+///|
+/// R35：钉死 from_json 对 caf_default_preference 坏类型的降级契约——非数组 → 空偏好 + warning
+/// （server 层接线依赖：config JSON 字段类型不对不得 panic，须可安全降级）。
+test "caf_cfg_3_坏类型偏好降级默认" {
+  let bad : Json = {
+    "window_seconds": Json::number(18000.0),
+    "threshold_pct": Json::number(95.0),
+    "free_models": Json::array([]),
+    "paid_models": Json::array([]),
+    "ofm_endpoint": Json::string(""),
+    "use_laya": Json::boolean(false),
+    "use_caf_memory": Json::boolean(false),
+    "caf_default_preference": Json::string("oops"),
+    "caf_min_evidences": Json::number(3.0),
+  }
+  let (back, warns) = RouterConfig::from_json(bad)
+  if not(back.caf_default_preference.is_empty()) {
+    abort(
+      "坏类型偏好应降级为空，实际 \{back.caf_default_preference}",
+    )
+  }
+  if warns.length() == 0 {
+    abort("坏类型偏好应产生 warning，实际 0 条")
+  }
+  // 同一份 JSON 里正常的 min_evidences 不被坏偏好牵连
+  if back.caf_min_evidences != 3 {
+    abort("正常 min_evidences 应保留 3，实际 \{back.caf_min_evidences}")
+  }
+}
+
+///|
+/// R35：钉死 from_json 对 caf_min_evidences 坏类型的降级契约——非数字 → 默认 10 + warning。
+test "caf_cfg_4_坏类型min_evidences降级默认" {
+  let bad : Json = {
+    "window_seconds": Json::number(18000.0),
+    "threshold_pct": Json::number(95.0),
+    "free_models": Json::array([]),
+    "paid_models": Json::array([]),
+    "ofm_endpoint": Json::string(""),
+    "use_laya": Json::boolean(false),
+    "use_caf_memory": Json::boolean(false),
+    "caf_default_preference": Json::array([]),
+    "caf_min_evidences": Json::string("abc"),
+  }
+  let (back, warns) = RouterConfig::from_json(bad)
+  if back.caf_min_evidences != 10 {
+    abort(
+      "坏类型 min_evidences 应降级默认 10，实际 \{back.caf_min_evidences}",
+    )
+  }
+  if warns.length() == 0 {
+    abort("坏类型 min_evidences 应产生 warning，实际 0 条")
+  }
+}
