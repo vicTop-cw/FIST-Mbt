@@ -14,9 +14,15 @@ pub fn build_ofm_chat_request_json(OfmChatRequest) -> Result[String, String]
 
 pub fn build_ofm_chat_request_json_simple(String, String) -> Result[String, String]
 
+pub fn caf_dry_run_to_json(CafDryRun) -> Json
+
 pub fn caf_edit_distance(String, String) -> Int
 
 pub fn caf_feature_hash(String) -> Int
+
+pub fn caf_memory_dump(CafMemory) -> Json
+
+pub fn caf_memory_load(Json) -> (CafMemory, Array[String])
 
 pub fn caf_memory_status_text(CafMemory) -> String
 
