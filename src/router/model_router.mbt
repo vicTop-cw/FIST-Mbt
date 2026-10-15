@@ -286,6 +286,8 @@ pub struct RouterConfig {
   ofm_endpoint : String
   // P2：laya 判断路由开关。默认 false（零回归）；开启后 pick 接受 laya_prefer_tier 软性提示。
   use_laya : Bool
+  // P2c：CAF 记忆路由开关。默认 false（零回归）；开启后 pick 用 caf_soft_reorder 软性排序。
+  use_caf_memory : Bool
 } derive(Eq, Debug)
 
 ///|
@@ -358,6 +360,7 @@ pub fn RouterConfig::default() -> RouterConfig {
     paid_models: paid,
     ofm_endpoint: "",
     use_laya: false,
+    use_caf_memory: false,
   }
 }
 

@@ -69,6 +69,14 @@ pub fn RouterConfig::from_json(json : Json) -> (RouterConfig, Array[String]) {
         Some(Json::Null) | None => (false, [])
         Some(_) => (false, ["use_laya 非布尔，按 false 处理"])
       }
+      // P2c：CAF 记忆路由开关。缺字段/null → false（零回归）；坏类型 → false + warning。
+      let (use_caf_memory, use_caf_memory_warns) = match
+        m.get("use_caf_memory") {
+        Some(Json::True) => (true, [])
+        Some(Json::False) => (false, [])
+        Some(Json::Null) | None => (false, [])
+        Some(_) => (false, ["use_caf_memory 非布尔，按 false 处理"])
+      }
       (
         {
           window_seconds: ws2,
@@ -77,8 +85,9 @@ pub fn RouterConfig::from_json(json : Json) -> (RouterConfig, Array[String]) {
           paid_models,
           ofm_endpoint,
           use_laya,
+          use_caf_memory,
         },
-        w2 + ofm_warns + use_laya_warns,
+        w2 + ofm_warns + use_laya_warns + use_caf_memory_warns,
       )
     }
     Json::Null => (d, []) // null = 没给配置，不算违例、不产噪音 warning
@@ -287,6 +296,7 @@ pub fn RouterConfig::to_json(self : RouterConfig) -> Json {
     "paid_pool": Json::array(self.paid_models.map(fn(m) { m.to_json() })),
     "ofm_endpoint": Json::string(self.ofm_endpoint),
     "use_laya": Json::boolean(self.use_laya),
+    "use_caf_memory": Json::boolean(self.use_caf_memory),
   })
 }
 

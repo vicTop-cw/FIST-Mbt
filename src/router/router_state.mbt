@@ -208,6 +208,7 @@ pub fn router_restore(
     // 端点属部署环境配置，不随用量状态走：一律以调用方 config 为准（状态文件里不存端点）。
     ofm_endpoint: cfg.ofm_endpoint,
     use_laya: cfg.use_laya,
+    use_caf_memory: cfg.use_caf_memory,
   }
   let r = ModelRouter::from_config(merged)
   let tier_str = st_str(sm, "current_tier")
