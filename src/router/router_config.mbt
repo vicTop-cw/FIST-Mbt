@@ -11,15 +11,12 @@ pub fn RouterConfig::from_json(json : Json) -> (RouterConfig, Array[String]) {
   let mut warns : Array[String] = []
   match json {
     Json::Object(m) => {
-      let ws = match m.get("window_seconds") {
-        Some(Json::Number(n, ..)) => n.to_int()
-        Some(_) => {
-          warns = warns +
-            ["window_seconds 非数字，回落默认 \{d.window_seconds}"]
-          d.window_seconds
-        }
-        None => d.window_seconds
-      }
+      let (ws, ws_warns) = num_to_int_safe(
+        m.get("window_seconds"),
+        "window_seconds",
+        d.window_seconds,
+      )
+      warns = warns + ws_warns
       let ws2 = if ws > 0 {
         ws
       } else {
@@ -121,12 +118,38 @@ fn parse_opt_double(v : Json?, field : String) -> (Double, Array[String]) {
 }
 
 ///|
+/// JSON Number → Int 的安全转换（BUG-192）。
+/// `Double::to_int()` 对超界值**饱和**（BUG-26 实测：1e300 → Int max），带小数值被截断；
+/// 这里显式收窄到 Int32 安全域，越界/NaN 一律回落 `dft` 并记 warning。
+fn num_to_int_safe(
+  v : Json?,
+  field : String,
+  dft : Int,
+) -> (Int, Array[String]) {
+  match v {
+    None | Some(Json::Null) => (dft, [])
+    Some(Json::Number(n, ..)) =>
+      if n != n || n < -2_000_000_000.0 || n > 2_000_000_000.0 {
+        (dft, ["\{field} 数值越界或 NaN，按默认 \{dft} 处理"])
+      } else {
+        (n.to_int(), [])
+      }
+    Some(_) => (dft, ["\{field} 非数字，按默认 \{dft} 处理"])
+  }
+}
+
+///|
 fn parse_opt_int(v : Json?, field : String) -> (Int, Array[String]) {
   match v {
     None => (0, [])
     Some(Json::Null) => (0, [])
-    Some(Json::Number(n, ..)) => (n.to_int(), [])
-    Some(_) => (0, [field + " 非数字，按 0 处理"])
+    Some(Json::Number(n, ..)) =>
+      if n != n || n < -2_000_000_000.0 || n > 2_000_000_000.0 {
+        (0, ["\{field} 数值越界或 NaN，按 0 处理"])
+      } else {
+        (n.to_int(), [])
+      }
+    Some(_) => (0, ["\{field} 非数字，按 0 处理"])
   }
 }
 
@@ -177,9 +200,23 @@ fn parse_pool(
                 field + "." + name + " rank",
               )
               w = w + rk_w
+              let dft_limit = if tier == Free { 100 } else { 50 }
+              // BUG-192：limit 走 num_to_int_safe，越界/NaN 不 panic。
+              // 缺字段/Null → 默认（与旧 None 分支一致）；非数字/越界 → 0 无限（与旧 Some(_)/负值一致）。
               let limit = match mm.get("limit") {
+                None => dft_limit
+                Some(Json::Null) => dft_limit
                 Some(Json::Number(n, ..)) =>
-                  if n.to_int() < 0 {
+                  if n != n || n > 2_000_000_000.0 {
+                    w = w +
+                      [
+                        field +
+                        "." +
+                        name +
+                        " limit 数值越界或 NaN，按无限(0)处理",
+                      ]
+                    0
+                  } else if n < 0.0 {
                     w = w +
                       [
                         field +
@@ -201,7 +238,6 @@ fn parse_pool(
                     ]
                   0
                 }
-                None => if tier == Free { 100 } else { 50 }
               }
               out = out +
                 [
