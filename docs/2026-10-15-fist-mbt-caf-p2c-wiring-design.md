@@ -16,18 +16,33 @@
 
 ## 2. 最小改动集（按文件）
 
-### 2.1 `src/router/router_config.mbt`
+### 2.1 `src/router/model_router.mbt`（**RouterConfig 真源所在，非 router_config.mbt**）
 
 ```moonbit
-// 加一个配置项
+// 既有 struct（line 281）：
+pub struct RouterConfig {
+  window_seconds : Int
+  threshold_pct : Double
+  free_models : Array[ModelQuota]
+  paid_models : Array[ModelQuota]
+  ofm_endpoint : String
+  use_laya : Bool        // ← 既有字段，Bool 默认 false
+} derive(Eq, Debug)
+
+// P2c 加一个配置项（与 use_laya 同款形态）：
 pub struct RouterConfig {
   // ... 既有字段 ...
   // CAF 记忆开关：默认关闭（零回归），开启后 pick 用 caf_soft_reorder 软性排序
-  use_caf_memory : Bool? = None,
+  use_caf_memory : Bool,
 }
 ```
 
-- **必须保持 `Bool?`**：与既有 `laya_prefer_tier?` 同款形态，None = 未配置 = 关闭 = 零回归。
+- **用 `Bool` 而非 `Bool?`**：与既有 `use_laya` 保持**同款形态**（既有字段是 `Bool`，混用两种形态会让 `from_json`/`to_json` 的解析/序列化逻辑分裂）。默认 `false` = 零回归。
+- **同步改动点**（同文件内）：
+  - `RouterConfig::default()`（line 302）加 `use_caf_memory: false`
+  - `RouterConfig::from_json()`（`src/router/router_config.mbt:9`）解析 `"use_caf_memory"`（true/false/null/garbage → 与 `use_laya` 同口径）
+  - `RouterConfig::to_json()`（`src/router/router_config.mbt:246`）序列化该字段
+- **注意**：`router_config.mbt` 只含 `from_json`/`to_json` 两个**方法**，struct 定义在 `model_router.mbt`。改字段时不要漏掉任何一边，否则 `.mbti` 与调用面会脱钩。
 
 ### 2.2 `src/router/model_router.mbt`（pick 钩子）
 
