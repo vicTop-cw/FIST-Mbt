@@ -183,15 +183,20 @@ pub fn caf_stats(records : Array[CafRecord]) -> Array[CafModelStats] {
 
 ///|
 /// 计算简单特征哈希
+///
+/// BUG-174：原实现 `h = h * 31 + c` 在 Int64 上无检查，约 14 字符以上的 context
+/// 必然溢出到极端负值；`h.abs()` 在 `h == Int64.min_value()` 时 MoonBit 未定义（panic）。
+/// 修复：每步用 `and 0xFFFFFFFF` 截断到 32 位无符号范围（0..2^32-1），
+/// 使 h 恒为非负且不会溢出到极端负值，从而无需 `abs()`。
 pub fn caf_feature_hash(context : String) -> Int {
   let mut h : Int = 0
   let mut i = 0
   while i < context.length() {
     let c = context[i].to_int()
-    h = h * 31 + c
+    h = (h * 31 + c).land(0xFFFFFFFF)
     i = i + 1
   }
-  h.abs()
+  h
 }
 
 ///|
