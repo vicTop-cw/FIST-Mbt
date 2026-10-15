@@ -37,3 +37,24 @@ test "BUG-192：get_int 缺字段/坏类型回落默认" {
   assert_eq(get_int(Json::object({ "k": Json::null() }), "k", default=3), 3)
   assert_eq(get_int(Json::string("not object"), "k", default=3), 3)
 }
+
+///|
+/// BUG-195：loop_create 曾内联 3 个 `.to_int()`（max_rounds / baseline_test_count /
+/// baseline_open_bug_count），绕过 get_int 守卫；现改用 get_int 覆盖默认值。
+/// 这里锁非 3 默认值（5 / 0）在越界/NaN 下也回落正确默认，不静默变成 Int max。
+test "BUG-195：get_int 非 3 默认值（5/0）在越界时回落正确默认" {
+  // max_rounds 默认 5：越界回落 5，不饱和为 Int max（1e300 不可写，用 1e11）
+  assert_eq(get_int(gi_int(99999999999.0), "k", default=5), 5)
+  assert_eq(get_int(gi_int(-99999999999.0), "k", default=5), 5)
+  // baseline_* 默认 0
+  assert_eq(get_int(gi_int(99999999999.0), "k", default=0), 0)
+  assert_eq(get_int(gi_int(-99999999999.0), "k", default=0), 0)
+  // NaN（0.0/0.0 是合法 NaN 源，编译不报错）
+  let nan_j = Json::object({ "k": Json::number(0.0 / 0.0) })
+  assert_eq(get_int(nan_j, "k", default=5), 5)
+  // 缺字段/坏类型
+  assert_eq(get_int(Json::object({}), "k", default=5), 5)
+  assert_eq(get_int(Json::object({}), "k", default=0), 0)
+  // 合法值仍按新默认读取
+  assert_eq(get_int(gi_int(9.0), "k", default=5), 9)
+}
