@@ -4079,4 +4079,12 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - reported_by: bugfind
 - commit: 92e41e0
 
+## BUG-221 [2026-10-15T14:16:00Z] [medium] FIXED
+- summary: [selfdrive] sd_round_count / sd_recent_reports read_dir 失败被静默转为默认值
+- detail: `src/ops/ops_selfdrive.mbt` 的 `sd_round_count`（L116）和 `sd_recent_reports`（L138）在 `path_exists` + `safe_is_dir` 验证目录存在后，`@fs.read_dir` 失败被 `catch { _ => return 0 }` / `catch { _ => return [] }` 静默转为默认值。调用方无法区分"目录为空"和"目录不可读"（权限不足、I/O 错误等）。与 BUG-217/219/220 同族（静默吞错）。
+- fix_options: 1) abort 抛错让调用方感知（采用）；2) 返回 Result 类型（需改签名，影响调用方）；3) 记日志后返回默认值（调用方仍无法感知）。
+- fix: `catch { _ => abort("...: read_dir failed for \{dir}") }`。目录已验证存在，read_dir 失败是真正的 I/O 错误，不应静默返回默认值。
+- reported_by: bugfind
+- commit: 2ec9cb2
+
 
