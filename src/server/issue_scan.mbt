@@ -735,6 +735,44 @@ fn scan_secs_suppressed(code : String, prev_lines : Array[String]) -> Bool {
 }
 
 ///|
+/// BUG-164 盲区 A：从 `X.unwrap()` 里取出接收者表达式 X（取 `.unwrap(` 之前最后一个
+/// 标识符/点链，如 `pending_advance.unwrap()` → `pending_advance`）。
+fn scan_unwrap_receiver(code : String) -> String {
+  let pos = code.find(".unwrap(")
+  match pos {
+    None => ""
+    Some(idx) => {
+      if idx == 0 {
+        return ""
+      }
+      let mut i = idx - 1
+      let mut start = idx
+      // 向回收集标识符字符 + 点链（`a.b.unwrap()` 也要能取到 `a.b`）
+      while i >= 0 {
+        let c = code[i]
+        let ok = (c >= 'a' && c <= 'z') ||
+          (c >= 'A' && c <= 'Z') ||
+          (c >= '0' && c <= '9') ||
+          c == '_' ||
+          c == '.'
+        if not(ok) {
+          break
+        }
+        start = i
+        i = i - 1
+      }
+      let r = code.substring(start~, end=idx).to_string()
+      // 跳过末尾多余的点（`.unwrap(` 前的 `.` 归属方法调用）
+      if r.has_suffix(".") {
+        r.substring(start=0, end=r.length() - 1).to_string()
+      } else {
+        r
+      }
+    }
+  }
+}
+
+///|
 /// 判定一条命中是否被**明显**上下文守卫（5 行内可判，只做保守过滤——拿不准就保留）。
 pub fn scan_finding_guarded(
   code : String,
@@ -889,6 +927,15 @@ pub fn scan_finding_guarded(
       }
       if t.has_prefix("fn ") {
         return false
+      }
+    } else if rule == "unwrapped-unwrap" {
+      // BUG-164 盲区 A：`X.unwrap()` 的守卫常写在**上一行** `if X.is_some() { ... }`
+      // 或 `match X { Some(_) => ... }`，prev_lines 里识别到即豁免。
+      let rc = scan_unwrap_receiver(code)
+      if not(rc.is_empty()) {
+        if t.contains(rc) && (t.contains("is_some()") || t.contains("is_ok()")) {
+          return true
+        }
       }
     } else if rule == "possible-overflow" {
       // R124: prev_lines 里 >= INT_SAFE 守卫
@@ -1210,12 +1257,13 @@ pub fn issue_scan(
   let guarded_filtered : Array[ScanFinding] = []
   for hit in dedup {
     // BUG-162 优化：只有少数规则会被守卫豁免（substring-overrun / unprotected-division /
-    // possible-overflow / index-out-of-bounds / string-index / secs-overflow），
+    // unwrapped-unwrap / possible-overflow / index-out-of-bounds / string-index / secs-overflow），
     // 其余规则（unused-variable、match-exhaustive、long-function、json-injection 等
     // 占全量 findings 大头）的命中直接透传，免掉 mem_read + split + prev_window 三件套。
     if not(
         hit.rule == "substring-overrun" ||
         hit.rule == "unprotected-division" ||
+        hit.rule == "unwrapped-unwrap" ||
         hit.rule == "possible-overflow" ||
         hit.rule == "index-out-of-bounds" ||
         hit.rule == "string-index" ||

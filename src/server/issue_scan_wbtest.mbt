@@ -60,9 +60,72 @@ test "scan_match_lines_整行注释与字面量两道降噪同时生效" {
     why: "空数组下标",
     hint: "先判空",
   }
-  let hits = scan_match_lines(content, rule, "sample.mbt")
+  let hits = scan_match_lines(content, [rule], "sample.mbt")
   // 只有第 5 行（真正的代码行）能留下：doc 注释被 scan_is_comment_line 挡，
   // 第 3 行的字面量被本轮的 scan_outside_literal 挡
   assert_eq(hits.length(), 1)
   assert_eq(hits[0].line, 5)
+}
+
+///|
+/// BUG-164 盲区 A：`X.unwrap()` 的守卫写在**上一行**（`if X.is_some()`），
+/// 扫描器此前不认上一行守卫、把受保护 unwrap 误报为 unwrapped-unwrap。
+test "scan_unwrap_guard_上一行 is_some 守卫必须豁免" {
+  let guarded = scan_finding_guarded(
+    "let prev = pending_advance.unwrap()",
+    "unwrapped-unwrap",
+    ["if pending_advance.is_some() {"],
+  )
+  assert_true(guarded)
+  // is_ok() 同样算守卫（Result 侧）
+  let guarded_ok = scan_finding_guarded(
+    "let v = r.unwrap()",
+    "unwrapped-unwrap",
+    ["if r.is_ok() {"],
+  )
+  assert_true(guarded_ok)
+  // 点链接收者：`a.b.unwrap()` 要能被上一行的 `a.b.is_some()` 覆盖
+  let guarded_chain = scan_finding_guarded(
+    "let x = cfg.opt.unwrap()",
+    "unwrapped-unwrap",
+    ["if cfg.opt.is_some() {"],
+  )
+  assert_true(guarded_chain)
+}
+
+///|
+/// BUG-164 盲区 A 的反向成对：无守卫的裸 unwrap 仍必须判为真阳性（不可因提速而漏检）。
+test "scan_unwrap_guard_裸 unwrap 仍判真阳性" {
+  let unguarded = scan_finding_guarded(
+    "let prev = pending_advance.unwrap()",
+    "unwrapped-unwrap",
+    [],
+  )
+  assert_false(unguarded)
+  // 上一行守卫的是**别的**变量（`other.is_some()`），不能误豁免
+  let wrong_var = scan_finding_guarded(
+    "let prev = pending_advance.unwrap()",
+    "unwrapped-unwrap",
+    ["if other.is_some() {"],
+  )
+  assert_false(wrong_var)
+  // 上一行只有 `fn ` 边界，没有守卫
+  let fn_boundary = scan_finding_guarded(
+    "let prev = pending_advance.unwrap()",
+    "unwrapped-unwrap",
+    ["fn helper() -> Unit {"],
+  )
+  assert_false(fn_boundary)
+}
+
+///|
+/// scan_unwrap_receiver 自身：从各种形态的 `.unwrap()` 里取出接收者。
+test "scan_unwrap_receiver_提取接收者" {
+  assert_eq(scan_unwrap_receiver("pending_advance.unwrap()"), "pending_advance")
+  assert_eq(scan_unwrap_receiver("let v = r.unwrap()"), "r")
+  assert_eq(scan_unwrap_receiver("cfg.opt.unwrap()"), "cfg.opt")
+  assert_eq(scan_unwrap_receiver("let a = x.unwrap()"), "x")
+  // 没有 `.unwrap(` 时返回空串
+  assert_eq(scan_unwrap_receiver("let a = 1"), "")
+  assert_eq(scan_unwrap_receiver(".unwrap()"), "")
 }
