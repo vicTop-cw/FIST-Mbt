@@ -146,3 +146,50 @@ test "caf_pref_zero_evidence_insufficient" {
   assert_eq(result[0], "m_mid")
   assert_eq(result[1], "m_free")
 }
+
+///|
+/// R42 接线前置 · context 归一化契约。
+/// caf_norm_1/2 证明：语义等价串经 caf_normalize_context 后 hash 一致 → 命中同一 knn 邻域。
+/// caf_norm_3 证明：未归一化时 hash 碎片化（确认接线必须归一化）。
+/// caf_norm_4 钉死空串与纯空白 → 空串安全（不 panic）。
+
+///|
+/// 大小写不敏感：归一化后 "PYTHON" 与 "python" hash 一致。
+test "caf_norm_1_大小写归一后hash一致" {
+  let a = caf_feature_hash(caf_normalize_context("PYTHON"))
+  let b = caf_feature_hash(caf_normalize_context("python"))
+  let c = caf_feature_hash(caf_normalize_context("Python"))
+  assert_eq(a, b)
+  assert_eq(a, c)
+}
+
+///|
+/// 空白不敏感：归一化后 "  python  " 与 "python" hash 一致。
+test "caf_norm_2_空白归一后hash一致" {
+  let a = caf_feature_hash(caf_normalize_context("  python  "))
+  let b = caf_feature_hash(caf_normalize_context("python"))
+  let c = caf_feature_hash(caf_normalize_context("\tPython\n"))
+  assert_eq(a, b)
+  assert_eq(a, c)
+}
+
+///|
+/// 未归一化 hash 碎片化：语义等价但字面不同的串 hash 不同，
+/// 会落在 knn_search 的不同编辑距离邻域 → 接线必须经 caf_normalize_context。
+test "caf_norm_3_未归一化hash碎片化" {
+  assert_true(caf_feature_hash("PYTHON") != caf_feature_hash("python"))
+  assert_true(caf_feature_hash("  python  ") != caf_feature_hash("python"))
+}
+
+///|
+/// 空串与纯空白安全：归一化返回空串，不 panic。
+test "caf_norm_4_空串与纯空白安全" {
+  assert_eq(caf_normalize_context(""), "")
+  assert_eq(caf_normalize_context("   "), "")
+  assert_eq(caf_normalize_context("\t\n  "), "")
+  // 幂等：归一化后再归一化不变
+  assert_eq(
+    caf_normalize_context(caf_normalize_context("  Fix Bug  ")),
+    "fix bug",
+  )
+}
