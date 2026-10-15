@@ -656,3 +656,85 @@ test "caf_edit_distance_length_guard" {
   assert_true(d2 >= 0)
   assert_true(d2 <= CAF_EDIT_MAX_LEN)
 }
+
+///|
+/// 平局稳定性：soft_reorder 遇到相同 rate + 相同 cost 时保持原始顺序（FIFO stable）。
+/// 这是严格弱排序的最后一格——排序器必须稳定，否则同样的输入在不同调用下会给出不同结果。
+test "caf_soft_reorder_tie_stable" {
+  // 三个模型全部相同 rate 和 cost → 保持原序
+  let candidates : Array[String] = ["m_a", "m_b", "m_c"]
+  let stats : Array[CafModelStats] = [
+    { model: "m_a", total: 10, success: 5, avg_cost: 0.1, },
+    { model: "m_b", total: 10, success: 5, avg_cost: 0.1, },
+    { model: "m_c", total: 10, success: 5, avg_cost: 0.1, },
+  ]
+  let ordered = caf_soft_reorder(candidates, stats)
+  assert_eq(ordered[0], "m_a")
+  assert_eq(ordered[1], "m_b")
+  assert_eq(ordered[2], "m_c")
+}
+
+///|
+/// 混合邻域：部分候选在邻域内、部分不在 → 邻域优先（按 rate desc → cost asc），非邻域保持原序。
+test "caf_soft_reorder_mixed_neighborhood" {
+  let candidates : Array[String] = ["m_out1", "m_hi", "m_out2", "m_lo"]
+  // m_hi 在邻域且高成功率；m_lo 在邻域但低成功率；m_out1/m_out2 不在邻域
+  let stats : Array[CafModelStats] = [
+    { model: "m_hi", total: 10, success: 9, avg_cost: 0.5, },
+    { model: "m_lo", total: 10, success: 1, avg_cost: 0.01, },
+  ]
+  let ordered = caf_soft_reorder(candidates, stats)
+  // 邻域优先：m_hi 高成功率排第一，m_lo 排第二
+  assert_eq(ordered[0], "m_hi")
+  assert_eq(ordered[1], "m_lo")
+  // 非邻域保持原序：m_out1 在 m_out2 之前
+  assert_eq(ordered[2], "m_out1")
+  assert_eq(ordered[3], "m_out2")
+}
+
+///|
+/// k > 记录数：knn_search 的 k 大于记忆表记录数时返回全部记录（不越界、不重复）。
+test "caf_knn_search_k_greater_than_records" {
+  let mem = CafMemory::new(max_size=100)
+  mem.push(
+    CafRecord::new(
+      feature_hash=caf_feature_hash("task"),
+      model="m1",
+      ok=true,
+      cost=0.1,
+      ts="2026-10-15T12:00:00Z",
+    ),
+  )
+  mem.push(
+    CafRecord::new(
+      feature_hash=caf_feature_hash("other"),
+      model="m2",
+      ok=false,
+      cost=0.2,
+      ts="2026-10-15T12:01:00Z",
+    ),
+  )
+  // k=50 > 记录数 2
+  let results = mem.knn_search("task", 50)
+  assert_eq(results.length(), 2)
+  // k=0 与负数防御
+  let none = mem.knn_search("task", 0)
+  assert_eq(none.length(), 0)
+  let neg = mem.knn_search("task", -1)
+  assert_eq(neg.length(), 0)
+}
+
+///|
+/// 空邻域：记忆表为空时 knn_stats 返回空数组（零回归），soft_reorder 返回原序。
+test "caf_knn_stats_empty_neighborhood" {
+  let mem = CafMemory::new(max_size=100)
+  let stats = mem.knn_stats("some_context", 5)
+  assert_eq(stats.length(), 0)
+
+  // 空记忆 + 非空候选 → soft_reorder 零回归
+  let candidates : Array[String] = ["a", "b", "c"]
+  let ordered = caf_soft_reorder(candidates, [])
+  assert_eq(ordered[0], "a")
+  assert_eq(ordered[1], "b")
+  assert_eq(ordered[2], "c")
+}
