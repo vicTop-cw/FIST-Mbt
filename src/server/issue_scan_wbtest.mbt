@@ -94,6 +94,83 @@ test "scan_unwrap_guard_上一行 is_some 守卫必须豁免" {
 }
 
 ///|
+/// BUG-164 盲区 B 辅助：`substring(start=N, end~)` / `substring(start=N, end=<var>)` 的 start 与 end 变量名提取。
+test "scan_substring_start_and_end_var_提取 start 与 end 变量名" {
+  // `end~` 简写 → end 变量名是 end
+  assert_eq(scan_substring_start("ls.substring(start=3, end~).trim()"), 3)
+  assert_eq(scan_substring_end_var("ls.substring(start=3, end~).trim()"), "end")
+  // `end=<var>` 命名变量
+  assert_eq(scan_substring_start("s.substring(start=0, end=end_pos)"), 0)
+  assert_eq(
+    scan_substring_end_var("s.substring(start=0, end=end_pos)"),
+    "end_pos",
+  )
+  // 无 start= 时返回 -1，无 end~ / end= 时返回空串
+  assert_eq(scan_substring_start("s.substring(end=5)"), -1)
+  assert_eq(scan_substring_end_var("s.substring(start=0, end=5)"), "")
+  assert_eq(scan_substring_end_var("no substring here"), "")
+}
+
+///|
+/// BUG-164 盲区 B：`if end > 3`（上一行）守卫 `substring(start=3, end~)` 应被判为已守卫（假阳性过滤）。
+test "scan_guard_substring_end_var_if end大于 start 判已守卫" {
+  // 端变量守卫：`if end > 3` + `substring(start=3, end~)`（ops_selfdrive.mbt:565-566 原形）
+  let guarded = scan_finding_guarded(
+    "let desc = ls.substring(start=3, end~).trim().to_string()",
+    "substring-overrun",
+    ["if end > 3 {"],
+  )
+  assert_true(guarded)
+  // 命名变量：`if end_pos > 0` + `substring(start=0, end=end_pos)`
+  let guarded_named = scan_finding_guarded(
+    "let s2 = s.substring(start=0, end=end_pos)",
+    "substring-overrun",
+    ["if end_pos > 0 {"],
+  )
+  assert_true(guarded_named)
+  // `>=` 形态
+  let guarded_ge = scan_finding_guarded(
+    "let s2 = s.substring(start=5, end=end_pos)",
+    "substring-overrun",
+    ["if end_pos >= 5 {"],
+  )
+  assert_true(guarded_ge)
+}
+
+///|
+/// BUG-164 盲区 B 的反向成对：守卫缺失 / 守卫变量不匹配 / 不是 if 前缀时仍判真阳性。
+test "scan_guard_substring_end_var_无守卫或变量不匹配判真阳性" {
+  // 无守卫
+  let unguarded = scan_finding_guarded(
+    "let desc = ls.substring(start=3, end~).trim().to_string()",
+    "substring-overrun",
+    [],
+  )
+  assert_false(unguarded)
+  // 守卫的是**别的**变量（`if other > 3`），不能误豁免
+  let wrong_var = scan_finding_guarded(
+    "let desc = ls.substring(start=3, end~).trim().to_string()",
+    "substring-overrun",
+    ["if other > 3 {"],
+  )
+  assert_false(wrong_var)
+  // 数字不等（`if end > 5` 而 start=3）——不匹配就不算守卫
+  let wrong_n = scan_finding_guarded(
+    "let desc = ls.substring(start=3, end~).trim().to_string()",
+    "substring-overrun",
+    ["if end > 5 {"],
+  )
+  assert_false(wrong_n)
+  // 没有 `if ` 前缀（如 `end > 3` 裸表达式）不识别
+  let no_if = scan_finding_guarded(
+    "let desc = ls.substring(start=3, end~).trim().to_string()",
+    "substring-overrun",
+    ["end > 3"],
+  )
+  assert_false(no_if)
+}
+
+///|
 /// BUG-164 盲区 A 的反向成对：无守卫的裸 unwrap 仍必须判为真阳性（不可因提速而漏检）。
 test "scan_unwrap_guard_裸 unwrap 仍判真阳性" {
   let unguarded = scan_finding_guarded(

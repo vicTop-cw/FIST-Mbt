@@ -609,6 +609,105 @@ fn scan_substring_target(code : String) -> String {
 }
 
 ///|
+/// BUG-164 盲区 B 辅助：提取 `substring(start=N, ...)` 的 start 整数值；找不到返回 -1。
+fn scan_substring_start(code : String) -> Int {
+  match code.find("start=") {
+    None => -1
+    Some(idx) => {
+      let pos = idx + 6
+      if pos >= code.length() {
+        return -1
+      }
+      if code[pos] < '0' || code[pos] > '9' {
+        return -1
+      }
+      let mut acc : Int = 0
+      let mut j = pos
+      while j < code.length() && code[j] >= '0' && code[j] <= '9' {
+        acc = acc * 10 + (code[j].to_int() - 48)
+        j = j + 1
+      }
+      acc
+    }
+  }
+}
+
+///|
+/// BUG-164 盲区 B 辅助：提取 `end~`（简写，end 变量名即 end）或 `end=<var>` 的 end 变量名；找不到返回 ""。
+fn scan_substring_end_var(code : String) -> String {
+  match code.find("end~") {
+    Some(_) => "end"
+    None =>
+      match code.find("end=") {
+        None => ""
+        Some(idx) => {
+          let pos = idx + 4
+          if pos >= code.length() {
+            return ""
+          }
+          let mut j = pos
+          let start = pos
+          // 变量名首字符须为字母或下划线；`end=5` 这类字面整数不算变量名。
+          if j >= code.length() {
+            return ""
+          }
+          let o0 = code[j].to_int()
+          let first_ok = (o0 >= 65 && o0 <= 90) ||
+            (o0 >= 97 && o0 <= 122) ||
+            code[j] == '_'
+          if not(first_ok) {
+            return ""
+          }
+          while j < code.length() {
+            let o = code[j].to_int()
+            let ok = (o >= 65 && o <= 90) ||
+              (o >= 97 && o <= 122) ||
+              (o >= 48 && o <= 57) ||
+              code[j] == '_'
+            if ok {
+              j = j + 1
+            } else {
+              break
+            }
+          }
+          if j > start {
+            code.substring(start~, end=j).to_string()
+          } else {
+            ""
+          }
+        }
+      }
+  }
+}
+
+///|
+/// BUG-164 盲区 B：substring 的 `end` 常来自 `match s.find("]") { Some(end) => ... }` 的绑定，
+/// 守卫写在**上一行** `if end > N`（N = start 参数）。识别这一形态，把该类假阳性过滤掉。
+/// 只认 `if <end_var> > N` / `if <end_var> >= N` 形状，避免误伤无关变量比较。
+fn scan_guard_substring_end_var(prev : String, code : String) -> Bool {
+  let t = prev.trim().to_string()
+  if t.is_empty() {
+    return false
+  }
+  if not(t.has_prefix("if ")) {
+    return false
+  }
+  let start_n = scan_substring_start(code)
+  if start_n < 0 {
+    return false
+  }
+  let ev = scan_substring_end_var(code)
+  if ev.is_empty() {
+    return false
+  }
+  let ns = start_n.to_string()
+  t.contains(ev + " > " + ns) ||
+  t.contains(ev + " >" + ns) ||
+  t.contains(ev + " >= " + ns) ||
+  t.contains(ev + " >=" + ns)
+}
+
+///|
 /// 在 prev 行里找该 var 是否被 `is_empty()` 守卫（同形 `if var.is_empty()` / `var.is_empty()`）。
 fn scan_guard_is_empty(prev : String, vn : String) -> Bool {
   let t = prev.trim().to_string()
@@ -898,6 +997,10 @@ pub fn scan_finding_guarded(
         return true
       }
       if t.contains("if ") && t.contains(".length() >= ") {
+        return true
+      }
+      // BUG-164 盲区 B：`end` 来自 `match s.find(...)` 绑定的局部变量，守卫是上一行 `if end > N`
+      if scan_guard_substring_end_var(t, code) {
         return true
       }
       if t.has_prefix("fn ") {
