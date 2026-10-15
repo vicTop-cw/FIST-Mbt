@@ -26,6 +26,8 @@ pub fn caf_memory_load(Json) -> (CafMemory, Array[String])
 
 pub fn caf_memory_status_text(CafMemory) -> String
 
+pub fn caf_normalize_context(String) -> String
+
 pub fn caf_soft_reorder(Array[String], Array[CafModelStats]) -> Array[String]
 
 pub fn caf_soft_reorder_with_preference(Array[String], Array[CafModelStats], Array[String], Int) -> Array[String]
