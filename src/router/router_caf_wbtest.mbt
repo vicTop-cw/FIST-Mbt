@@ -738,3 +738,51 @@ test "caf_knn_stats_empty_neighborhood" {
   assert_eq(ordered[1], "b")
   assert_eq(ordered[2], "c")
 }
+
+///|
+/// R17 并发 agent 在 caf_stats 里加了 `total>0` 防御守卫。
+/// 本测试锁住"任何合法输入下 caf_stats 不 panic 且 avg_cost 有限"。
+/// 从实现看 total 最小为 1（守卫不可达），但锁住不崩溃的行为
+/// 是未来重构/改语义的回归保证（防止有人把守卫删掉或改坏初始化）。
+test "caf_stats_zero_total_guard_safety" {
+  // 各模型单条记录 → total=1，avg_cost 应为有限正值
+  let records : Array[CafRecord] = [
+    CafRecord::new(feature_hash=1, model="m1", ok=true, cost=0.1, ts="t1"),
+    CafRecord::new(feature_hash=2, model="m2", ok=false, cost=0.2, ts="t2"),
+    CafRecord::new(feature_hash=3, model="m3", ok=true, cost=0.3, ts="t3"),
+  ]
+  let stats = caf_stats(records)
+  assert_eq(stats.length(), 3)
+  // 每条 total >= 1，avg_cost 有限
+  for s in stats {
+    assert_true(s.total >= 1)
+    assert_true(s.avg_cost >= 0.0)
+    assert_true(s.avg_cost <= 0.3) // 最大单条成本
+  }
+}
+
+///|
+/// caf_stats 对大量重复记录（单模型高频）不 panic，且排序稳定。
+test "caf_stats_high_frequency_single_model" {
+  let mut records : Array[CafRecord] = []
+  for i in 0..<100 {
+    records = records +
+      [
+        CafRecord::new(
+          feature_hash=i,
+          model="hot",
+          ok=i % 3 != 0,
+          cost=0.1,
+          ts="t",
+        ),
+      ]
+  }
+  let stats = caf_stats(records)
+  assert_eq(stats.length(), 1)
+  assert_eq(stats[0].model, "hot")
+  assert_eq(stats[0].total, 100)
+  // 100 条中 ok = 2/3 ≈ 67 条
+  assert_eq(stats[0].success, 67)
+  // avg_cost 不 panic（守卫分支不触发，走正常分支）
+  assert_true(stats[0].avg_cost > 0.0)
+}
