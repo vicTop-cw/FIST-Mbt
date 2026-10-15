@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FIST-Mbt Dashboard</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+header h1 { font-size: 20px; font-weight: 600; color: #f0f6fc; }
+header span { color: #8b949e; font-size: 14px; }
+.container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 16px; }
+.stat-card .num { font-size: 28px; font-weight: 700; color: #58a6ff; }
+.stat-card .label { font-size: 12px; color: #8b949e; text-transform: uppercase; margin-top: 4px; }
+.signal-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 24px; padding: 12px; background: #161b22; border: 1px solid #30363d; border-radius: 6px; }
+.signal-item { text-align: center; padding: 8px; }
+.signal-item .tag { font-size: 11px; color: #8b949e; margin-bottom: 2px; }
+.signal-item .val { font-size: 14px; font-weight: 600; }
+.val-ok { color: #3fb950; } .val-warn { color: #d29922; } .val-err { color: #f85149; }
+.tasks-panel { background: #161b22; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; }
+.tasks-panel h2 { font-size: 14px; font-weight: 600; padding: 12px 16px; border-bottom: 1px solid #30363d; background: #21262d; }
+.legend { display: flex; gap: 16px; padding: 8px 16px; border-bottom: 1px solid #21262d; font-size: 12px; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 4px; display: inline-block; }
+.task-list { max-height: 50vh; overflow-y: auto; }
+.task-row { display: flex; align-items: center; padding: 8px 16px; border-bottom: 1px solid #21262d; font-size: 13px; cursor: pointer; }
+.task-row:hover { background: #1c2129; }
+.task-row .stat { width: 60px; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; text-align: center; margin-right: 12px; } .st-pending { background: #21262d; color: #8b949e; } .st-claimed { background: #0e442a; color: #3fb950; } .st-exec { background: #0e442a; color: #58a6ff; } .st-review { background: #492d00; color: #d29922; } .st-done { background: #0e442a; color: #3fb950; } .st-rejected { background: #5a1e1e; color: #f85149; } .st-paused { background: #21262d; color: #8b949e; } .st-archived { opacity: 0.5; }
+.task-row .id { color: #8b949e; width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-row .desc { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c9d1d9; margin-left: 8px; }
+.footer { text-align: center; padding: 24px; color: #484f58; font-size: 12px; }
+.error-msg { background: #5a1e1e; color: #f85149; padding: 8px 16px; border-radius: 6px; margin-bottom: 12px; display: none; }
+.loading { text-align: center; padding: 24px; color: #8b949e; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ FIST-Mbt Dashboard</h1>
+  <span>Live — <span id="update-time">—</span></span>
+</header>
+<div class="container">
+  <div id="error-box" class="error-msg"></div>
+  <div class="stats" id="stats">
+    <div class="stat-card"><div class="num" id="s-total">—</div><div class="label">Total Tasks</div></div>
+    <div class="stat-card"><div class="num" id="s-inflight">—</div><div class="label">In Flight</div></div>
+    <div class="stat-card"><div class="num" id="s-ready">—</div><div class="label">Ready</div></div>
+    <div class="stat-card"><div class="num" id="s-done">—</div><div class="label">Done</div></div>
+    <div class="stat-card"><div class="num" id="s-blocked">—</div><div class="label">Blocked</div></div>
+    <div class="stat-card"><div class="num" id="s-grade">—</div><div class="label">Grade</div></div>
+  </div>
+  <div class="signal-row" id="signals"></div>
+  <div class="tasks-panel">
+    <h2>📋 Task Board</h2>
+    <div class="legend">
+      <span class="legend-item"><span class="legend-dot" style="background:#8b949e"></span>待领取</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#3fb950"></span>已领取</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span>执行中</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#d29922"></span>待验收</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#3fb950"></span>已完成</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#f85149"></span>已打回</span>
+    </div>
+    <div id="task-list" class="task-list"><div class="loading">Loading tasks...</div></div>
+  </div>
+</div>
+<div class="footer">FIST-Mbt v0.3.8 — Data via MCP tools</div>
+
+<script>
+const STATUS_MAP = {
+  "待领取": "st-pending", "已领取": "st-claimed", "执行中": "st-exec",
+  "待验收": "st-review", "已完成": "st-done", "已打回": "st-rejected",
+  "已暂停": "st-paused", "已归档": "st-archived",
+};
+
+async function mcpCall(tool, args) {
+  const resp = await fetch("/api/mcp/call", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tool, arguments: args }),
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const data = await resp.json();
+  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+  if (data.result?.content?.[0]?.text) return JSON.parse(data.result.content[0].text);
+  return data.result;
+}
+
+async function loadDashboard() {
+  const box = document.getElementById("error-box");
+  box.style.display = "none";
+  try {
+    const [health, summary] = await Promise.all([
+      mcpCall("health_check", {}),
+      mcpCall("status_summary", {}),
+    ]);
+    document.getElementById("update-time").textContent = new Date().toLocaleTimeString("zh-CN");
+    if (health) {
+      document.getElementById("s-total").textContent = health.total_tasks ?? "—";
+      document.getElementById("s-grade").textContent = (health.grade || "—").toUpperCase();
+      document.getElementById("s-grade").style.color = health.grade === "healthy" ? "#3fb950" : health.grade === "attention" ? "#d29922" : "#f85149";
+      const sigs = health.signals || {};
+      const sigHtml = ["latency", "traffic", "errors", "saturation"].map(k => {
+        const s = sigs[k] || {};
+        const verdict = s.verdict || "?";
+        return `<div class="signal-item"><div class="tag">${k.toUpperCase()}</div><div class="val val-${verdict === "ok" ? "ok" : "warn"}">${verdict.toUpperCase()}</div></div>`;
+      }).join("");
+      document.getElementById("signals").innerHTML = sigHtml;
+    }
+    if (summary) {
+      const bs = summary.by_status || {};
+      document.getElementById("s-inflight").textContent = (bs["执行中"]||0)+(bs["已领取"]||0);
+      document.getElementById("s-ready").textContent = bs["待领取"]??"—";
+      document.getElementById("s-done").textContent = bs["已完成"]??"—";
+      document.getElementById("s-blocked").textContent = (bs["已暂停"]||0)+(bs["已打回"]||0);
+    }
+  } catch (e) {
+    box.textContent = "Error: " + e.message;
+    box.style.display = "block";
+  }
+  // Task list via status_summary if available, else fallback text
+  try {
+    const summary2 = await mcpCall("status_summary", {});
+    const bs = summary2.by_status || {};
+    const allStatuses = ["待领取","已领取","执行中","待验收","已完成","已打回","已暂停","已归档"];
+    // Show status counts as task board
+    let html = "";
+    for (const st of allStatuses) {
+      const cnt = bs[st] || 0;
+      if (cnt === 0) continue;
+      html += `<div class="task-row"><span class="stat ${STATUS_MAP[st]||"st-pending"}">${cnt}</span><span class="id" style="width:auto;flex:1">${st}</span><span class="desc">${cnt} tasks</span></div>`;
+    }
+    html += `<div class="task-row" style="opacity:0.6;font-size:11px;color:#8b949e;border-bottom:none"><span class="stat" style="width:60px"></span><span class="id">Total: ${summary2.total_tasks||"?"}</span></div>`;
+    document.getElementById("task-list").innerHTML = html || '<div class="loading">No tasks</div>';
+  } catch (e) {
+    document.getElementById("task-list").innerHTML = `<div class="error-msg" style="display:block">${e.message}</div>`;
+  }
+}
+
+loadDashboard();
+setInterval(loadDashboard, 30000);
+</script>
+</body>
+</html>

@@ -3036,3 +3036,12 @@ B. 若判定新契约作废，则删/改三条锁——但那等于放弃 BUG-18
 - why-not-fixed: 规则 `why` 已自称「语义需读上下文确认重绑定」——作者知其为启发式提示、非确定性缺陷检测器；但 `why` 里「Map.set() 返回新 Map」这一**事实陈述**不成立（可变 Map 的 set 原地生效），应按实测修正为「Map([]) 可变 map set 原地生效；仅不可变 set 返回新 map」，或把 pattern 收窄到不可变 set 上下文。
 - evidence: 临时测试（已删，不落仓）`m.set("k",42); m.get("k")` = `Some(42)`；`Principle::to_json().stringify()` = `{"index":1,"title":"...","body":"..."}`（非空）。临时测试文件已清理，无仓内残留。
 - 与 BUG-15 关系：BUG-15（FIXED）修的是 high 档规则命中注释/自身字面量（high 精确率 0/8）；本条是 **low 档规则前提错误**（语义假设错）——两个独立缺陷面，BUG-15 的修不覆盖本条。
+
+## BUG-210 [2026-10-15T11:40:42Z] [medium] FIXED
+- summary: board_ascii 实时看板 append_group 组内排序比较器在 (depth, created_at) 全等时落入 else 无条件返回 1——cmp(a,b)=cmp(b,a)=1，严格弱序反对称性被破坏，同状态组渲染顺序未定义（BUG-173 同族）
+- detail: 真源 src/server/board_ascii.mbt append_group（L107-162）的 sorted.sort_by 比较器：depth 不等按 depth 升序；depth 等且 a.created_at<b.created_at 返回 -1；其余（created_at>=）一律返回 1。publish 固定 depth=3 且 created_at 取自 now 参数（src/engine/engine.mbt L35-61），因此同一 now 的两次 publish 造出全等对（T0 与 T0r2）：cmp(T0,T0r2)=1 且 cmp(T0r2,T0)=1——同时"a 在 b 前"且"b 在 a 前"，sort_by 结果依赖输入顺序与排序算法内部形状，输出不确定。同刻批量发布（批量导入/秒级连发）时看板行顺序随机，"先发布先渲染"这一直觉契约失效。对照：dag_ascii（engine_dag_ext.mbt L190）、triage_rest（engine_triage.mbt L150）均以 a.id.compare(b.id) 收尾，本处是唯一漏掉 tiebreak 的比较器。
+- 触发条件: 同状态组内 >=2 个任务 (depth, created_at) 全等——publish 同刻批量发布即满足（depth 恒 3，created_at 同 now）
+- reported_by: fist-iter-bug-hunter
+
+### FIXED(2026-10-15T11:40:42Z / BUG-210)
+- evidence: 改动 src/server/board_ascii.mbt L119-128：比较器补 else if a.created_at > b.created_at { 1 } 显式分支，全等时以 a.get_id().compare(b.get_id()) 升序收尾（与 dag_ascii L190、triage_rest L150 的 id tiebreak 模式一致）；src/server/board_ascii_test.mbt 加「board_ascii 组内全等任务按 id 升序（BUG-210）」回归锁——两次 publish 传同一 now 造 T0/T0r2 全等对，split 断言 T0(乙) 必渲染于 T0r2(甲) 之前。moon check --target js 0 errors；moon test --target js src/server 全绿 280/280。commit 9cd2fa7。

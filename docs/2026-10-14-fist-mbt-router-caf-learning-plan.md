@@ -13,7 +13,7 @@ AIGC:
 
 # 2026-10-14 FIST-Mbt 路由学习计划：ACRouter C-A-F 轻量移植（执行反馈记忆）
 
-> 状态：**P1 + P2a + P2b 完成，P2c 接线待并发收口**（2026-10-15 Round 8-10 更新：加 `CAF_EDIT_MAX_LEN=256` 长度守卫 + 属性测试 131 全绿 + 性能基准验证 + 接线设计文档落盘；唯一遗留项 P2c wiring 因 `src/server/model_router_ops.mbt` 被并发 agent WIP 阻塞，设计文档见 `docs/2026-10-15-fist-mbt-caf-p2c-wiring-design.md`）
+> 状态：**P1 + P2a + P2b 完成，P2c §2.1 配置项 + §2.2 pick_caf 软性重排钩子 + 验收标准 3 dry_run 纯计算 + P2d 冷启动偏好统一 已完成**（2026-10-15 Round 8-10 更新：加 `CAF_EDIT_MAX_LEN=256` 长度守卫 + 属性测试 131 全绿 + 性能基准验证 + 接线设计文档落盘；**Round 27 更新**：`ModelRouter::pick_caf` 软性重排钩子在 `src/router/model_router_caf.mbt` 实施并提交 `4b3b168`，4 条回归锁 152/152 全绿；调试中发现 `iso_to_secs` 对 Y2038 后日期溢出返回 -1 的 BUG-218 同类陷阱，测试冷却截止须在 Y2038 内；唯一遗留项 P2c §2.3 回写+status wiring 因 `src/server/model_router_ops.mbt` 被并发 agent WIP 阻塞，设计文档见 `docs/2026-10-15-fist-mbt-caf-p2c-wiring-design.md`；**Round 28-31 更新**：BUG-206（Y2038 冷却失效）修复 `ed40ada`、验收标准 3 dry_run 纯计算 `54f172c`、caf_loop_1 回写通路真源 `132fcca`、P2c+P2d 统一（`caf_reorder_combined` + `caf_default_preference`/`caf_min_evidences` 透传）`2a669ef`，router 160/160 全绿；server 层 §2.3 接线仍等 `model_router_ops.mbt` 释放）
 > **P2d 追加（Round 22-23）**：冷启动启发式 `caf_soft_reorder_with_preference` 已在 `src/router/router_caf_ext.mbt` 实施（7 测试 145/145，全仓 1124 零回归），接线待 P2c 释放后统一接入。设计见 `docs/2026-10-15-fist-mbt-caf-p2d-cold-start-design.md`
 > 真源：`src/router/`（决策与状态 schema）+ `src/server/model_router_ops.mbt`（记账与进程生命周期）+ `src/executor/`（成功/失败信号）
 > 依据：基于 v0.3.8→v0.4.x 增量源码核查 + ACRouter（Agent-as-a-Router，arXiv:2606.22902）C-A-F 学习路由思想
