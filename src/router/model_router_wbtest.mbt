@@ -797,3 +797,30 @@ test "cd_3_pool_pick_skips_cooldown" {
     None => abort("冷却后应仍有备用模型")
   }
 }
+
+///|
+/// BUG-206：Y2038 后冷却截止静默失效（iso_to_secs 溢出返回 -1）。
+/// 契约：①合法日期正常冷却；②Y2038 后日期 fail-open 放行（不锁死模型，不崩溃）；
+/// ③非法字符串同样放行，绝不把坏时间戳当"永冷却"。
+test "cd_4_Y2038 后冷却截止不锁死模型（BUG-206）" {
+  let now = rt_at(0, 0)
+  // ① 合法冷却截止（now + 60s）→ 在冷却期
+  let ok = secs_to_iso(iso_to_secs(now) + 60)
+  let q = ModelQuota::new(name="free-a", tier=Free, limit=5)
+  q.mark_failure(ok)
+  if !q.in_cooldown(now) {
+    abort("合法冷却截止应处于冷却期")
+  }
+  // ② Y2038 后冷却截止 → 放行（不锁死、不崩溃）
+  let q2 = ModelQuota::new(name="free-b", tier=Free, limit=5)
+  q2.mark_failure("2099-01-01T00:00:00Z")
+  if q2.in_cooldown(now) {
+    abort("Y2038 后冷却截止不应锁死模型")
+  }
+  // ③ 非法冷却截止字符串 → 放行
+  let q3 = ModelQuota::new(name="free-c", tier=Free, limit=5)
+  q3.mark_failure("not-a-date")
+  if q3.in_cooldown(now) {
+    abort("非法冷却截止不应锁死模型")
+  }
+}
