@@ -42,14 +42,28 @@ pub fn ModelRouter::pick_caf(
   k~ : Int,
   unhealthy_ids? : Array[String] = [],
   laya_prefer_tier? : String = "",
+  caf_default_preference? : Array[String] = [],
+  caf_min_evidences? : Int = 10,
 ) -> (RouteDecision, Bool) {
   let d = self.pick(now~, unhealthy_ids~, laya_prefer_tier~)
-  self.apply_caf(d, now~, caf_memory~, context~, k~, unhealthy_ids~)
+  self.apply_caf(
+    d,
+    now~,
+    caf_memory~,
+    context~,
+    k~,
+    unhealthy_ids~,
+    caf_default_preference~,
+    caf_min_evidences~,
+  )
 }
 
 ///|
 /// 在已有 pick 决策 d 之上做 CAF 软性重排（纯函数，不再重新 pick，不推进游标）。
 /// 供 pick_caf 与 pick_caf_dry_run 共用，确保两者的"应用 CAF"路径完全一致。
+/// caf_default_preference 为空时行为与 R29 完全一致（纯 caf_soft_reorder，零回归）；
+/// 非空时在记忆不足（evidence_total < caf_min_evidences）时按偏好做冷启动重排
+/// （P2d 接线，见 docs/2026-10-15-fist-mbt-caf-p2d-cold-start-design.md §2.3）。
 pub fn ModelRouter::apply_caf(
   self : ModelRouter,
   d : RouteDecision,
@@ -58,6 +72,8 @@ pub fn ModelRouter::apply_caf(
   context~ : String,
   k~ : Int,
   unhealthy_ids? : Array[String] = [],
+  caf_default_preference? : Array[String] = [],
+  caf_min_evidences? : Int = 10,
 ) -> (RouteDecision, Bool) {
   if !self.config.use_caf_memory {
     return (d, false)
@@ -71,7 +87,9 @@ pub fn ModelRouter::apply_caf(
   }
   let candidates = pool.map(fn(m) { m.name })
   let stats = caf_memory.knn_stats(context, k)
-  let reordered = caf_soft_reorder(candidates, stats)
+  let reordered = caf_reorder_combined(
+    candidates, stats, caf_default_preference, caf_min_evidences,
+  )
   if reordered.length() == 0 || reordered[0] == d.model_name {
     return (d, false)
   }
@@ -127,6 +145,8 @@ pub fn ModelRouter::pick_caf_dry_run(
   context~ : String,
   k~ : Int,
   unhealthy_ids? : Array[String] = [],
+  caf_default_preference? : Array[String] = [],
+  caf_min_evidences? : Int = 10,
 ) -> CafDryRun {
   let probe = self.clone_for_peek()
   let base = probe.pick(now~, unhealthy_ids~)
@@ -137,6 +157,8 @@ pub fn ModelRouter::pick_caf_dry_run(
     context~,
     k~,
     unhealthy_ids~,
+    caf_default_preference~,
+    caf_min_evidences~,
   )
   {
     base,
@@ -203,5 +225,27 @@ fn clone_pools(config : RouterConfig) -> RouterConfig {
     ofm_endpoint: config.ofm_endpoint,
     use_laya: config.use_laya,
     use_caf_memory: config.use_caf_memory,
+  }
+}
+
+///|
+/// P2c+P2d 统一重排入口：把"是否启用冷启动偏好"的决定收敛到一处。
+/// - preference 为空（默认）→ 纯 caf_soft_reorder，行为与 R29 完全一致（零回归）。
+/// - preference 非空 → 交给 caf_soft_reorder_with_preference：记忆充足时它内部
+///   退化为 caf_soft_reorder，记忆不足时按偏好做冷启动重排。
+/// 这样 server 层接线时无需判断分支，把 config 的 caf_default_preference /
+/// caf_min_evidences 直接透传即可。
+fn caf_reorder_combined(
+  candidates : Array[String],
+  stats : Array[CafModelStats],
+  preference : Array[String],
+  min_evidences : Int,
+) -> Array[String] {
+  if preference.is_empty() {
+    caf_soft_reorder(candidates, stats)
+  } else {
+    caf_soft_reorder_with_preference(
+      candidates, stats, preference, min_evidences,
+    )
   }
 }
