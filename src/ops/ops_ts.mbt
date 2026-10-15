@@ -31,7 +31,10 @@ pub fn iso_to_secs(s : String) -> Int {
   let day = parse_digits(chars, 8, len=2)
   let hour = parse_digits(chars, 11, len=2)
   let min = parse_digits(chars, 14, len=2)
-  let sec = if chars.length() >= 17 {
+  // R13-R1 bugfind（BUG-175）：秒段 parse_digits(chars,17,len=2) 会访问 chars[17] 与 chars[18]，
+  // 守卫 `length >= 17` 只保证 chars[17] 安全（length==17 时 chars[17] 已越界，length==18 时 chars[18] 越界）。
+  // 收紧到 `>= 19`：完整 "YYYY-MM-DDTHH:MM:SS" 恰好 19 字符；length<19 一律按无秒段处理（sec=0）。
+  let sec = if chars.length() >= 19 {
     parse_digits(chars, 17, len=2)
   } else {
     0
