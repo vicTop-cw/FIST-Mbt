@@ -1,9 +1,14 @@
 # CAF P2d 设计文档 · 冷启动启发式
 
-> 状态：📋 已设计（未实施）
-> 依赖：P2c wiring（实施后接线）；不阻塞 P2c（纯函数层独立实现）
+> 状态：✅ **已实施**（2026-10-15 Goal-2 Round 23）
+> 依赖：P2c wiring（实施后接线，`model_router_ops.mbt` 仍 WIP）；不阻塞 P2c（纯函数层独立实现）
 > 更新者：caf-agent
-> 更新日期：2026-10-15（Goal-2 Round 22）
+> 更新日期：2026-10-15（Goal-2 Round 23 实施）
+
+> **实施记录（Round 23）**：用独立文件 `src/router/router_caf_ext.mbt` 实施（零冲突，不碰并发 agent WIP 的 `router_caf.mbt`）。
+> 新增 `caf_soft_reorder_with_preference` + 7 条测试（`src/router/router_caf_ext_wbtest.mbt`）。
+> 验证：`src/router` 145/145（138+7），全仓 1124/1124 零回归。
+> 剩余：接线到 `model_router_ops.mbt` 的 P2c wiring 中（依赖 P2c 释放）。
 
 ## 0. 问题陈述
 
