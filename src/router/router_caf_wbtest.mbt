@@ -384,6 +384,38 @@ test "caf_knn_stats_by_model" {
 }
 
 ///|
+/// P2：caf_soft_reorder 把邻域内高成功率模型提前，未在邻域的保持稳定序。
+test "caf_soft_reorder_prioritizes_high_rate" {
+  // 构造 CafModelStats（手动）
+  let stats : Array[CafModelStats] = [
+    { model: "m2", total: 10, success: 9, avg_cost: 0.2, },
+    { model: "m1", total: 10, success: 2, avg_cost: 0.1, },
+  ]
+  let candidates : Array[String] = ["m1", "m3", "m2"]
+  let out = caf_soft_reorder(candidates, stats)
+  // m2（成功率 0.9）提前，m3（不在邻域）保持中间
+  assert_eq(out[0], "m2")
+  assert_eq(out[1], "m1")
+  assert_eq(out[2], "m3")
+}
+
+///|
+/// P2：caf_soft_reorder 零回归基线——空 stats 或空候选原样返回。
+test "caf_soft_reorder_empty_baseline" {
+  let candidates : Array[String] = ["a", "b", "c"]
+  // 空 stats → 原样
+  let empty_stats : Array[CafModelStats] = []
+  let out1 = caf_soft_reorder(candidates, empty_stats)
+  assert_eq(out1[0], "a")
+  assert_eq(out1[1], "b")
+  assert_eq(out1[2], "c")
+  // 空候选 → 原样
+  let empty_candidates : Array[String] = []
+  let stats = [{ model: "a", total: 1, success: 1, avg_cost: 0.1, }]
+  assert_eq(caf_soft_reorder(empty_candidates, stats).length(), 0)
+}
+
+///|
 test "caf_feature_hash_idempotent" {
   let h1 = caf_feature_hash("hello world")
   let h2 = caf_feature_hash("hello world")
