@@ -4087,4 +4087,12 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - reported_by: bugfind
 - commit: 2ec9cb2
 
+## BUG-222 [2026-10-15T14:22:00Z] [high] FIXED
+- summary: [issue_scan] scan_collect 的 read_dir 失败被静默吞掉，导致 issue_scan 对不存在/不可读目录返回 Ok(scanned_files=0) 的"假干净"结果
+- detail: `src/server/issue_scan.mbt` 的 `scan_collect`（递归收集待扫描文件）在 `@fs.read_dir(dir)` 失败时 `catch { _ => return }` 静默返回，`out` 保持为空。主入口 `issue_scan` 只做 `scan_dir_ok` 校验（拒绝空串/`..`/绝对路径/盘符），**并不校验目录是否存在或可读**。因此 `issue_scan("no_such_dir", "", 100)` 会返回 `Ok({scanned_files: 0, total_findings: 0, by_severity: {high:0,medium:0,low:0}})`——与"扫了目录但确实无命中"完全无法区分，调用方（bugfind/OCR-local 融入流程）会误判为"干净"。与 BUG-217/219/220/221 同族（静默吞错）。
+- fix_options: 1) scan_collect 改返回 `Result[Unit, String]`，read_dir 失败回执 Err 并由 issue_scan 透传（采用）；2) 仅在 issue_scan 内补一次根目录存在性校验（只能覆盖根目录，嵌套目录仍吞错）；3) abort 抛错（MCP 面向工具不宜 panic）。
+- fix: `scan_collect` 签名改为 `-> Result[Unit, String]`，`catch { _ => return Err("issue_scan: 无法读取目录（不存在或不可读）: " + dir) }`，递归处 match 透传 Err，末尾 `Ok(())`；`issue_scan` 用 match 透传 Err。回归锁 `lint_10_missing_dir_returns_err`：对必然不存在的 `temp/lint_bug222_missing_dir` 调用，断言 `is_err()`。`moon test --target js src/server` 284/284 绿。
+- reported_by: bugfind
+- commit: 2ca94f2
+
 
