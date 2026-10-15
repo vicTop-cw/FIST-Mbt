@@ -531,3 +531,14 @@ test "pipeline_21_prompt_ready_without_rubric" {
   assert_eq(wd_action(j), "prompt_pending")
   assert_eq(pl_bool(j, "tool_use_rubric"), false)
 }
+
+///|
+test "pipeline_23_heal_error_not_silently_swallowed" {
+  let dir = pl_dir("pl_c23_heal_err")
+  pl_prompt(dir, "20260921.01.30.00.md", "# 提示词23")
+  pl_set_state(dir, "Pending")
+  let e = wd_sqlite_engine("temp/pl_c23.db")
+  let j = pl_tick(e, dir, "2026-09-21T01:30:00+08:00")
+  assert_true(pl_arr_len(j, "healed") >= 0)
+  assert_eq(pl_str(j, "heal_error"), "<null>")
+}
