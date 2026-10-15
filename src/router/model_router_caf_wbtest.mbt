@@ -160,3 +160,78 @@ test "caf_pick_4_重排第一名在冷却期则回退" {
     abort("应回退到 free-a，实际 " + d.model_name)
   }
 }
+
+///|
+/// P2c §2.3 前置：pick_caf_dry_run 的零副作用承诺。
+/// dry_run 之后，原路由器的游标 / 选中模型 / 配额 window_start 都必须原样不动。
+test "caf_dry_1_dry_run 零副作用（游标/配额不被污染）" {
+  let r = mrc_router(true)
+  let free_idx_before = r.free_idx
+  let ws_before = r.config.free_models[0].window_start
+  let last_pick_before = r.last_pick
+  let dr = r.pick_caf_dry_run(
+    now=mrc_now(),
+    caf_memory=mrc_memory(),
+    context="test context",
+    k=10,
+  )
+  if r.free_idx != free_idx_before {
+    abort("dry_run 不应推进 free_idx")
+  }
+  if r.last_pick != last_pick_before {
+    abort("dry_run 不应改动 last_pick")
+  }
+  if r.config.free_models[0].window_start != ws_before {
+    abort("dry_run 不应写 window_start")
+  }
+  if !dr.reordered {
+    abort("应命中重排（记忆显示 free-b 100%）")
+  }
+}
+
+///|
+/// P2c §2.3 前置：dry_run 的对照语义。
+/// base 是纯 pick（游标 0 → free-a），picked 是 CAF 重排（free-b），basis 非空。
+test "caf_dry_2_dry_run 返回 base/picked 对照与历史依据" {
+  let r = mrc_router(true)
+  let dr = r.pick_caf_dry_run(
+    now=mrc_now(),
+    caf_memory=mrc_memory(),
+    context="test context",
+    k=10,
+  )
+  if dr.base.model_name != "free-a" {
+    abort("base 应为 free-a，实际 " + dr.base.model_name)
+  }
+  if dr.picked.model_name != "free-b" {
+    abort("picked 应为 free-b，实际 " + dr.picked.model_name)
+  }
+  if !dr.reordered {
+    abort("应报告发生了重排")
+  }
+  if dr.basis.length() == 0 {
+    abort("basis 不应为空")
+  }
+  if dr.top_k != 10 {
+    abort("top_k 应为 10，实际 " + dr.top_k.to_string())
+  }
+}
+
+///|
+/// P2c §2.3 前置：dry_run 的零回归。
+/// use_caf_memory=false 时 picked == base 且 reordered=false。
+test "caf_dry_3_dry_run 关闭 CAF 时零回归" {
+  let r = mrc_router(false)
+  let dr = r.pick_caf_dry_run(
+    now=mrc_now(),
+    caf_memory=mrc_memory(),
+    context="test context",
+    k=10,
+  )
+  if dr.reordered {
+    abort("关闭 CAF 时不应重排")
+  }
+  if dr.picked.model_name != dr.base.model_name {
+    abort("关闭 CAF 时 picked 应等于 base")
+  }
+}

@@ -67,6 +67,14 @@ pub let star_release_default_pubkey_hex : String
 // Errors
 
 // Types and methods
+pub struct CafDryRun {
+  base : RouteDecision
+  picked : RouteDecision
+  reordered : Bool
+  basis : Array[CafModelStats]
+  top_k : Int
+} derive(@debug.Debug)
+
 pub struct CafMemory {
   records : Array[CafRecord?]
   max_size : Int
@@ -129,6 +137,7 @@ pub struct ModelRouter {
   mut last_pick : String
 } derive(Eq, @debug.Debug)
 pub fn ModelRouter::active_pool(Self) -> Array[ModelQuota]
+pub fn ModelRouter::apply_caf(Self, RouteDecision, now~ : String, caf_memory~ : CafMemory, context~ : String, k~ : Int, unhealthy_ids? : Array[String]) -> (RouteDecision, Bool)
 pub fn ModelRouter::current_model(Self) -> ModelQuota?
 pub fn ModelRouter::force_switch(Self, tier~ : ModelTier, now~ : String) -> RouteDecision
 pub fn ModelRouter::from_config(RouterConfig) -> Self
@@ -137,6 +146,7 @@ pub fn ModelRouter::mark_failure(Self, String, String) -> Bool
 pub fn ModelRouter::new() -> Self
 pub fn ModelRouter::pick(Self, now~ : String, unhealthy_ids? : Array[String], laya_prefer_tier? : String) -> RouteDecision
 pub fn ModelRouter::pick_caf(Self, now~ : String, caf_memory~ : CafMemory, context~ : String, k~ : Int, unhealthy_ids? : Array[String], laya_prefer_tier? : String) -> (RouteDecision, Bool)
+pub fn ModelRouter::pick_caf_dry_run(Self, now~ : String, caf_memory~ : CafMemory, context~ : String, k~ : Int, unhealthy_ids? : Array[String]) -> CafDryRun
 pub fn ModelRouter::record_call(Self, model~ : String, now~ : String) -> RouteDecision
 pub fn ModelRouter::reset_windows(Self) -> Unit
 pub fn ModelRouter::to_state(Self) -> Json
