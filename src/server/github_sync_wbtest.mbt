@@ -61,8 +61,8 @@ fn extract_data_arg(cmd : String) -> Result[String, String] {
   }
   let rest = cmd.substring(start=at, end=cmd.length())
   let wrapped = rest.length() >= 2 &&
-    rest.starts_with("'") &&
-    rest.ends_with("'")
+    rest.has_prefix("'") &&
+    rest.has_suffix("'")
   if !wrapped {
     return Err("--data 值不是完整的单引号包装: " + rest)
   }
@@ -225,4 +225,39 @@ test "BUG-35/87：shell_quote 与 token 占位符不得篡改载荷" {
   // BUG-87：占位符逐字交给 shell——`$` 与 `{` 只能拆开拼，写成字面量会被当成插值
   let ph = "$" + "{FIST_GITHUB_TOKEN}"
   assert_eq(token_placeholder(), ph)
+}
+
+///|
+/// BUG-220 回归锁：github_queue_append / github_queue_mark_sent 队列写入失败必须回执。
+/// 构造：把队列文件路径造成普通目录 —— write_string_to_file 写入目录必然失败。
+/// 期望：两个函数都返回 Err，不得静默返回 Ok。
+test "BUG-220_queue_write_failure_surfaces" {
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
+  let d = "temp/gh_b220_write_fail"
+  @fs.create_dir(d) catch {
+    _ => ()
+  }
+  mem_ensure_dir(mem_dir(d))
+  let qp = gq_path(d)
+  @fs.remove_file(qp) catch {
+    _ => ()
+  }
+  @fs.create_dir(qp) catch {
+    _ => ()
+  }
+  let r1 = github_queue_append(
+    d,
+    "BUG-TEST",
+    "s",
+    "d",
+    "high",
+    "2026-10-15T14:00:00+08:00",
+    "owner/repo",
+    [],
+  )
+  assert_true(r1.is_err())
+  let r2 = github_queue_mark_sent(d, [], Map([]))
+  assert_true(r2.is_err())
 }

@@ -107,7 +107,10 @@ pub fn github_queue_append(
     Some(s) => s
   }
   mem_ensure_dir(mem_dir(project_dir))
-  let _ = mem_write(gq_path(project_dir), old + entry_json.stringify() + "\n")
+  // BUG-220：队列写入失败必须回执，不得静默丢弃（let _ = 丢弃 Bool 返回值）。
+  if !mem_write(gq_path(project_dir), old + entry_json.stringify() + "\n") {
+    return Err("github_queue_append: 队列写入失败")
+  }
 
   let mm : Map[String, Json] = Map([])
   mm.set("bug_id", Json::string(bug_id))
@@ -340,7 +343,10 @@ pub fn github_queue_mark_sent(
     }
   }
   let lines = updated.map(fn(j : Json) { j.stringify() })
-  let _ = mem_write(gq_path(project_dir), lines.join("\n") + "\n")
+  // BUG-220：队列写入失败必须回执，不得静默丢弃（let _ = 丢弃 Bool 返回值）。
+  if !mem_write(gq_path(project_dir), lines.join("\n") + "\n") {
+    return Err("github_queue_mark_sent: 队列写入失败")
+  }
 
   let mm : Map[String, Json] = Map([])
   mm.set("marked", Json::number(marked.to_double()))
@@ -665,20 +671,20 @@ pub fn github_webhook_parse(payload : String) -> Result[Json, String] {
   }
   let trimmed = body.trim().to_owned()
   let mm : Map[String, Json] = Map([])
-  if trimmed.starts_with("@fist-bot reopen ") {
-    let rest = trimmed.substring(start=17)
+  if trimmed.has_prefix("@fist-bot reopen ") {
+    let rest = trimmed[17:].to_string()
     let task_id = rest.trim().to_owned()
     mm.set("action", Json::string("reopen"))
     mm.set("task_id", Json::string(task_id))
     mm.set("raw", Json::string(trimmed))
-  } else if trimmed.starts_with("@fist-bot challenge") {
+  } else if trimmed.has_prefix("@fist-bot challenge") {
     mm.set("action", Json::string("challenge"))
     mm.set("raw", Json::string(trimmed))
-  } else if trimmed.starts_with("@fist-bot close") {
+  } else if trimmed.has_prefix("@fist-bot close") {
     mm.set("action", Json::string("close"))
     mm.set("raw", Json::string(trimmed))
-  } else if trimmed.starts_with("@fist-bot blocked ") {
-    let rest = trimmed.substring(start=18)
+  } else if trimmed.has_prefix("@fist-bot blocked ") {
+    let rest = trimmed[18:].to_string()
     let reason = rest.trim().to_owned()
     mm.set("action", Json::string("blocked"))
     mm.set("reason", Json::string(reason))
