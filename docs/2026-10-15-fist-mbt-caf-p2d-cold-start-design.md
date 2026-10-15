@@ -238,3 +238,37 @@ pub struct RouterConfig {
 **接线建议（R36 起）**：CAF 逻辑放独立文件 `src/server/model_router_caf_ops.mbt`，只加最少调用点；
 提交用 `git commit --only <path>` 防共享 repo commit 污染（R35 已实际踩到：误提交并发 agent 3 文件，
 已回滚）。
+
+---
+
+## 进度 · Round 36（2026-10-15）
+
+**§2.3 server 接线仍阻塞**（`model_router_ops.mbt` 4/9，工作树 89+ 文件）。改为完成接线的**持久化前置**。
+
+**发现缺口**：`CafMemory::to_json` 是**聚合快照**（total/count/by_model），不含原始 records，
+只能展示、**无法恢复记忆**；`from_json` 全库 0 匹配。即接线完成后 server 重启会丢光 CAF 记忆。
+
+**新增逐条持久化层**（独立文件，不碰并发域）：
+
+| 函数 | 作用 | 关键契约 |
+|---|---|---|
+| `caf_memory_dump(mem) : Json` | 逐条导出（时间序）+ `max_size` | 保留原始记录可完整往返 |
+| `caf_memory_load(json) : (CafMemory, Array[String])` | 从逐条 JSON 恢复 | 坏类型降级 + warning，绝不 panic |
+
+**格式**（与 `model-router-{ns}.json` 同形态，落盘 `memory/model-router-caf-{ns}.json`）：
+```json
+{ "max_size": Int,
+  "records": [ { "feature_hash": Int, "model": Str, "ok": Bool,
+                 "cost": Double, "ts": Str }, ... ] }
+```
+
+**恢复顺序守恒**：`load` 用 `new(max_size)` + 逐条 `push`；因 `push` 后 `all()` 从 index 0 遍历，
+只要 `dump` 按 `all()` 序导出、`load` 按序 `push`，恢复后 `all()` 序一致。
+
+**验证**：router **175/175**，全仓 **1180/1180**，0 errors。新增 4 条往返锁
+（空 / 多条逐字段 / records 坏类型 / 坏字段单条跳过）。
+
+**落盘未接**：本层是纯计算序列化（不碰文件 IO，避免与并发 agent server IO 冲突）。
+
+**R37 首选接线序**：`executor_run` 前 `caf_memory_load` 恢复 → 后 `caf_memory_dump` 落盘 →
+status 工具用 `caf_memory_status_text`（已有）展示。
