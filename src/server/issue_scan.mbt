@@ -190,7 +190,7 @@ fn scan_rules() -> Array[ScanRule] {
     {
       id: "moonbit-map-set-no-rebind",
       severity: "low",
-      pattern: [".set("],
+      pattern: ["= .set(", "<- .set("],
       // BUG-156：旧 why「Map.set() 返回新 Map」是**事实错误**——MoonBit 核心 Map 是可变 map，
       // .set() 原地变更并返回 Unit（实证锁：src/executor/map_probe_test.mbt）。丢弃返回值是正常用法，
       // 绑定 Unit 才是作者误当函数式 API 的可疑信号。本规则是 ocr-local 启发式提示，非确定性缺陷检测器。
@@ -349,7 +349,7 @@ fn scan_rules() -> Array[ScanRule] {
 /// 只跳「整行是注释」的行，行尾注释不在本轮范围内（需要 token 级判定，另开 issue）。
 fn scan_is_comment_line(line : StringView) -> Bool {
   let t = line.trim()
-  t.starts_with("///") || t.starts_with("//")
+  t.has_prefix("///") || t.has_prefix("//")
 }
 
 ///|
@@ -428,59 +428,81 @@ fn scan_code_part(line : StringView) -> String {
 /// 已知局限（一律保守少报，不误报）：多行字符串/未闭合字面量会丢掉行尾余下部分；
 /// 插值 `\{a / 0}` 里的代码按字面量内容放过。
 fn scan_outside_literal(line : StringView, needle : String) -> Bool {
-  let cs = scan_code_part(line).to_array()
-  let pat = needle.to_array()
-  let n = cs.length()
-  if pat.is_empty() || pat.length() > n {
-    return false
-  }
-  let mut i = 0
-  while i < n {
-    if scan_matches_at(cs, pat, i) {
-      return true
-    }
-    i = i + 1
-  }
-  false
+  // BUG-162 优化：旧实现把代码部分和 needle 各转成 `Array[Char]`，再手工做 O(n×m)
+  // 逐位置前缀比对——扫全 src/ 时是几十万次分配 + 字符级循环。
+  // 这里语义就是"代码部分（已丢弃字面量内容与行尾注释）里是否出现 needle"，
+  // 与 `String::contains` 完全等价，直接用内建快速子串搜索，免掉两次数组分配。
+  scan_code_part(line).contains(needle)
 }
 
 ///|
 /// 逐行匹配一条规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
+
+///|
+/// 逐行匹配全部规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
+/// 输出按规则在规则表中的顺序分组，与旧「规则外循环」次序一致。
+/// BUG-162 优化：每行只做一次 `to_owned` + 一次 `code_part`（字面量感知的代码区）计算，
+/// 全规则共享，把旧实现里随规则数线性放大的重复 `split`/字面量扫描归并到一次。
 fn scan_match_lines(
   content : String,
-  rule : ScanRule,
+  rules : Array[ScanRule],
   file : String,
 ) -> Array[ScanFinding] {
+  // BUG-162 优化：`split` 返回一次性 `Iter`，先物化成数组（length() 会耗尽 Iter）。
+  // 整行注释判定只做一次（旧实现里每条规则对每行都重判一遍 trim+has_prefix）。
+  let lines = content.split("\n").to_array()
+  let n = lines.length()
+  let is_comment : Array[Bool] = Array::make(n, false)
+  let code : Array[String] = Array::make(n, "")
+  let mut ci = 0
+  while ci < n {
+    is_comment[ci] = scan_is_comment_line(lines[ci])
+    ci = ci + 1
+  }
   let out : Array[ScanFinding] = []
-  let mut ln = 1
-  for line in content.split("\n") {
-    let mut hit = false
-    if not(scan_is_comment_line(line)) {
-      for needle in rule.pattern {
-        // BUG-72：只算字面量之外的命中（文案里的 `substring(` 不是调用）
-        if scan_outside_literal(line, needle) {
-          hit = true
-          break
+  // 规则外层 × 行内层，保持规则主序输出（与旧实现次序一致）
+  let mut r = 0
+  while r < rules.length() {
+    let rule = rules[r]
+    let mut l = 0
+    while l < n {
+      if not(is_comment[l]) {
+        let ls = lines[l]
+        let mut hit = false
+        for needle in rule.pattern {
+          // 代码区是整行的一个子串 ⇒ 整行连裸子串都不含 needle，代码区必然也不含。
+          // 用 `StringView` 的快速子串搜索（flat slice，远快于 `String` 的 rope 搜索）；
+          // 绝大多数 (行, needle) 在此直接短路，不进入字面量感知扫描、也不做任何分配。
+          if ls.contains(needle) {
+            if code[l].length() == 0 {
+              code[l] = scan_code_part(ls)
+            }
+            if code[l].contains(needle) {
+              hit = true
+              break
+            }
+          }
+        }
+        if hit {
+          out.push({
+            rule: rule.id,
+            severity: rule.severity,
+            file,
+            line: l + 1,
+            code: ls.trim().to_owned(),
+          })
         }
       }
+      l = l + 1
     }
-    if hit {
-      out.push({
-        rule: rule.id,
-        severity: rule.severity,
-        file,
-        line: ln,
-        code: line.trim().to_string(),
-      })
-    }
-    ln = ln + 1
+    r = r + 1
   }
   out
 }
 
 // ============================================================================
 // 守卫感知过滤（2026-10-10 打磨）：原规则只做行级模式匹配，不识别上下文守卫，
-// 于是 `if rows.is_empty() { … } else { rows[0] }`、`if s.length() > 8 { s.substring(0,8) }`
+// 于是 `if rows.is_empty() { … } else { rows[0] }`、`if s.length() > 8 { s[0:8].to_string() }`
 // 这类**有守卫**的高危形态也被上报。逐条甄别是 agent 的活，但"明显有守卫"的命中等价于
 // 常量时间就能消掉的假阳性——把它们就地过滤，让 issue_scan 的回声更接近真实缺陷面。
 // 只对 substring-overrun / unprotected-division / index-out-of-bounds / string-index 四档做
@@ -840,7 +862,7 @@ pub fn scan_finding_guarded(
       if t.contains("if ") && t.contains(".length() >= ") {
         return true
       }
-      if t.starts_with("fn ") {
+      if t.has_prefix("fn ") {
         return false
       }
     } else if rule == "index-out-of-bounds" || rule == "string-index" {
@@ -862,10 +884,10 @@ pub fn scan_finding_guarded(
         (t.has_prefix("if ") || t.has_prefix("if(")) {
         return true
       }
-      if t.starts_with("fn ") {
+      if t.has_prefix("fn ") {
         return false
       }
-      if t.starts_with("fn ") {
+      if t.has_prefix("fn ") {
         return false
       }
     } else if rule == "possible-overflow" {
@@ -1002,10 +1024,8 @@ fn scan_file(path : String, rules : Array[ScanRule]) -> Array[ScanFinding] {
     return []
   }
   let out : Array[ScanFinding] = []
-  for r in rules {
-    for f in scan_match_lines(content, r, path) {
-      out.push(f)
-    }
+  for f in scan_match_lines(content, rules, path) {
+    out.push(f)
   }
   out
 }
@@ -1182,12 +1202,38 @@ pub fn issue_scan(
   }
   // 守卫感知过滤（R124 增强版）：`if is_empty()` / `if length() > N` /
   // `_safe` 钳制 / `>= INT_SAFE` 乘法前守卫 / MoonBit 切片安全通道
+  // BUG-162 优化：文件级缓存 —— 同一文件的多条命中共享一次读盘 + 一次按行拆分，
+  // 否则 json-injection（1334 条）这类高频命中的文件会被反复读盘、反复 split。
   let ctx_cache : Map[String, ScanCtx] = Map([])
+  let lines_cache : Map[String, Array[String]] = Map([])
+  let fc_cache : Map[String, String] = Map([])
   let guarded_filtered : Array[ScanFinding] = []
   for hit in dedup {
-    let fc = match mem_read(hit.file) {
-      None => continue
+    // BUG-162 优化：只有少数规则会被守卫豁免（substring-overrun / unprotected-division /
+    // possible-overflow / index-out-of-bounds / string-index / secs-overflow），
+    // 其余规则（unused-variable、match-exhaustive、long-function、json-injection 等
+    // 占全量 findings 大头）的命中直接透传，免掉 mem_read + split + prev_window 三件套。
+    if not(
+        hit.rule == "substring-overrun" ||
+        hit.rule == "unprotected-division" ||
+        hit.rule == "possible-overflow" ||
+        hit.rule == "index-out-of-bounds" ||
+        hit.rule == "string-index" ||
+        hit.rule == "secs-overflow",
+      ) {
+      guarded_filtered.push(hit)
+      continue
+    }
+    let fc = match fc_cache.get(hit.file) {
       Some(c) => c
+      None =>
+        match mem_read(hit.file) {
+          None => continue
+          Some(c) => {
+            fc_cache.set(hit.file, c)
+            c
+          }
+        }
     }
     // R124: 文件级 ctx 缓存（每个文件只构建一次）
     let ctx = match ctx_cache.get(hit.file) {
@@ -1198,10 +1244,16 @@ pub fn issue_scan(
         new_ctx
       }
     }
-    let raw_lines = fc.split("\n")
-    let fc_lines : Array[String] = []
-    for l in raw_lines {
-      fc_lines.push(l.to_string())
+    let fc_lines : Array[String] = match lines_cache.get(hit.file) {
+      Some(ls) => ls
+      None => {
+        let ls : Array[String] = []
+        for l in fc.split("\n") {
+          ls.push(l.to_owned())
+        }
+        lines_cache.set(hit.file, ls)
+        ls
+      }
     }
     let hit_idx = hit.line - 1
     let prev_window : Array[String] = []
@@ -1237,16 +1289,26 @@ pub fn issue_scan(
     guarded_filtered.push(hit)
   }
   let dedup = guarded_filtered
-  // 严重度聚合
-  let high = dedup.filter(fn(h : ScanFinding) { h.severity == "high" }).length()
-  let medium = dedup
-    .filter(fn(h : ScanFinding) { h.severity == "medium" })
-    .length()
-  let low = dedup.filter(fn(h : ScanFinding) { h.severity == "low" }).length()
+  // 严重度聚合（单次遍历，替代旧的三次全量 filter）
+  let mut high = 0
+  let mut medium = 0
+  let mut low = 0
+  // 按规则聚合（单次遍历计数，替代旧的逐规则全量 filter）
+  let rule_counts : Map[String, Int] = Map([])
+  for h in dedup {
+    if h.severity == "high" {
+      high = high + 1
+    } else if h.severity == "medium" {
+      medium = medium + 1
+    } else {
+      low = low + 1
+    }
+    rule_counts.set(h.rule, rule_counts.get(h.rule).unwrap_or(0) + 1)
+  }
   // 按规则聚合
   let by_rule : Array[Json] = []
   for r in rules {
-    let cnt = dedup.filter(fn(h : ScanFinding) { h.rule == r.id }).length()
+    let cnt = rule_counts.get(r.id).unwrap_or(0)
     if cnt > 0 {
       by_rule.push(
         Json::object({
