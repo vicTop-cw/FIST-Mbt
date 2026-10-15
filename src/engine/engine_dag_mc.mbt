@@ -258,7 +258,16 @@ pub fn FistEngine::dag_mc(
     }
   }
   for s = 0; s < n; s = s + 1 {
+    // BUG-208：xorshift32 的唯一年轻态就是 0 自身——state=0 时恒回 (0,0)，u 恒为 0，
+    // 每个任务时长退化为三角分布下界 a，全部 samples 相同 → "分布" 退化为单点
+    // （min==max、p50==p90、critical_freq 恒 1.0），调用方却看到一份像样的分布 JSON。
+    // seed 由 MCP 参数直通，无钳制；seed=0 或 seed≥2^32（`& 0xffffffff` 截掉高位）都会落到 0。
+    // 这里把 state 钳制到 [1, 0x7fffffff]，非零时 xorshift 恒非零。
     let mut state = seed + s * 7919
+    state = state & 0x7fffffff
+    if state <= 0 {
+      state = 1
+    }
     let dur : Map[String, Int] = Map([])
     for (tid, a, m, b) in tier_cache {
       let (s2, d) = mc_tri_sample(state, a, m, b)
