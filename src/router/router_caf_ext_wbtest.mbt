@@ -193,3 +193,47 @@ test "caf_norm_4_空串与纯空白安全" {
     "fix bug",
   )
 }
+
+///|
+/// R43 接线前置 · min_evidences 分界契约（成对互补锁）。
+/// caf_pref_exact_boundary_reorder：total == min_evidences → 走重排（真源用 `>=`）。
+/// caf_pref_one_below_boundary_pref：total = min_evidences - 1 → 走偏好（`<` 语义）。
+/// 两锁一起钉死接线时 min_evidences 参数的分界语义：恰好达标走数据，差一档走偏好。
+
+///|
+/// 恰好边界：evidence_total == min_evidences → 记忆「够」→ 走成功率重排（偏好被忽略）
+test "caf_pref_exact_boundary_reorder" {
+  let candidates : Array[String] = ["m_free", "m_mid"]
+  // total = 2 恰好等于 min_evidences = 2 → 走重排（非偏好）
+  let stats : Array[CafModelStats] = [
+    { model: "m_free", total: 1, success: 0, avg_cost: 1.0, },
+    { model: "m_mid", total: 1, success: 1, avg_cost: 2.0, },
+  ]
+  let result = caf_soft_reorder_with_preference(
+    candidates,
+    stats,
+    ["m_free"],
+    2,
+  )
+  // 偏好是 m_free，但走重排后 m_mid 排第一
+  assert_eq(result[0], "m_mid")
+  assert_eq(result[1], "m_free")
+}
+
+///|
+/// 差一档边界：evidence_total = min_evidences - 1 → 记忆「不够」→ 走偏好
+test "caf_pref_one_below_boundary_pref" {
+  let candidates : Array[String] = ["m_free", "m_mid"]
+  // total = 1 < min_evidences = 2 → 走偏好，偏好 m_free 排第一
+  let stats : Array[CafModelStats] = [
+    { model: "m_free", total: 1, success: 0, avg_cost: 1.0, },
+  ]
+  let result = caf_soft_reorder_with_preference(
+    candidates,
+    stats,
+    ["m_free"],
+    2,
+  )
+  assert_eq(result[0], "m_free")
+  assert_eq(result[1], "m_mid")
+}
