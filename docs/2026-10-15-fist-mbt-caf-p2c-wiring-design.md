@@ -5,8 +5,20 @@
 - 阻塞：`src/server/model_router_ops.mbt` 被并发 agent WIP
 - 本文档：精确说明 P2c 接线的**最小改动集**，等 WIP 释放后照此实施
 
-> **进度（Round 26）**：§2.1（RouterConfig 加 `use_caf_memory`）**已实施**（commit `7b5d96f`）。
-> 剩余 §2.2（pick 钩子）与 §2.3（回写 + status）依赖 `model_router_ops.mbt` 释放（并发 agent WIP）。
+> **进度（Round 27）**：§2.1（RouterConfig 加 `use_caf_memory`）**已实施**（commit `7b5d96f`）；
+> §2.2（pick_caf 软性重排钩子）**已实施**（commit `4b3b168`，落地形态为 `ModelRouter::pick_caf` 扩展
+> 而非内嵌 `pick`，实现见 `src/router/model_router_caf.mbt`，4 回归锁 152/152 全绿）。
+>
+> **进度（Round 29）**：标准 3 的**纯计算部分**已落地（commit `54f172c`）——新增
+> `CafDryRun` + `ModelRouter::pick_caf_dry_run`（零副作用 peek）+ `apply_caf`（从 `pick_caf` 拆出的
+> 纯重排函数）+ `clone_for_peek`/`clone_pools`（pool 深拷贝 probe）。配套 3 条白盒锁
+> `caf_dry_1~3`（落在 `src/router/model_router_caf_wbtest.mbt`，与 §2.2 测试同文件，
+> 而非本文档 §2.4 原写的 `router_caf_wbtest.mbt`——那是并发 agent 的 WIP 域，避免抢占），
+> router 156/156 全绿。server 层接线时只需：把 `caf_memory` 从进程内存传入 `pick_caf_dry_run`，
+> 再把返回的 `CafDryRun` 序列化为 `{suggestion, basis}` 即可，无额外 router 层改动。
+>
+> 剩余 §2.3 的**回写**（`executor_run` 后 `caf_memory.push`）与 **status 展示**仍依赖
+> `model_router_ops.mbt` 释放（并发 agent WIP）。
 
 ## 1. 目标
 
