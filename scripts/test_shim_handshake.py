@@ -188,6 +188,17 @@ def run_handshake(client, version: str) -> list:
     r = client.recv()
     prompts = (r or {}).get("result", {}).get("prompts", [])
     check("prompts/list", len(prompts) > 0, f"{len(prompts)} 个 prompt")
+    if prompts:
+        name = prompts[0].get("name", "fist:verify")
+        client.send({
+            "jsonrpc": "2.0", "id": 42, "method": "prompts/get",
+            "params": {"name": name},
+        })
+        r = client.recv()
+        msgs = (r or {}).get("result", {}).get("messages", [])
+        check("prompts/get",
+              len(msgs) > 0 and bool(msgs[0].get("role")),
+              f"{name} → {len(msgs)} messages")
 
     # 6. 可选方法（shim stub）
     for i, (method, params) in enumerate(OPTIONAL_METHODS, start=10):
