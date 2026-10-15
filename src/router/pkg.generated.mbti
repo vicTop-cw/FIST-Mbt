@@ -18,6 +18,8 @@ pub fn caf_edit_distance(String, String) -> Int
 
 pub fn caf_feature_hash(String) -> Int
 
+pub fn caf_memory_status_text(CafMemory) -> String
+
 pub fn caf_soft_reorder(Array[String], Array[CafModelStats]) -> Array[String]
 
 pub fn caf_soft_reorder_with_preference(Array[String], Array[CafModelStats], Array[String], Int) -> Array[String]

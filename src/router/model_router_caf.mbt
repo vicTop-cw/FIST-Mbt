@@ -249,3 +249,52 @@ fn caf_reorder_combined(
     )
   }
 }
+
+///|
+/// P2c §2.3 status 展示的纯计算部分：把 CafMemory 渲染成可读文本。
+/// server 层 `model_route` / `model_router_status` 接线时调用本函数即可让
+/// CAF 记忆状态可观测（接线前先有可观测性，否则记忆在积累也看不见），
+/// 无需直接访问记忆内部结构。
+/// - 空记忆 → `"CAF 记忆：空（0 条记录）"`
+/// - 有记录 → 按模型聚合：`<模型>：<成功>/<总数> 成功 (<成功率>%)，均成本 <avg>`
+pub fn caf_memory_status_text(mem : CafMemory) -> String {
+  let all = mem.all()
+  let n = all.length()
+  if n == 0 {
+    return "CAF 记忆：空（0 条记录）"
+  }
+  let mut models : Array[String] = []
+  let mut model_cnt : Array[Int] = []
+  let mut model_ok : Array[Int] = []
+  let mut model_cost : Array[Double] = []
+  for rec in all {
+    let mut idx = -1
+    for i in 0..<models.length() {
+      if models[i] == rec.model {
+        idx = i
+        break
+      }
+    }
+    if idx < 0 {
+      models = models + [rec.model]
+      model_cnt = model_cnt + [1]
+      model_ok = model_ok + [if rec.ok { 1 } else { 0 }]
+      model_cost = model_cost + [rec.cost]
+    } else {
+      model_cnt[idx] = model_cnt[idx] + 1
+      model_ok[idx] = model_ok[idx] + (if rec.ok { 1 } else { 0 })
+      model_cost[idx] = model_cost[idx] + rec.cost
+    }
+  }
+  let mut lines : Array[String] = []
+  for i in 0..<models.length() {
+    let cnt = model_cnt[i]
+    let okn = model_ok[i]
+    let pct = if cnt > 0 { okn * 100 / cnt } else { 0 }
+    let avg = if cnt > 0 { model_cost[i] / cnt.to_double() } else { 0.0 }
+    lines = lines +
+      ["\{models[i]}：\{okn}/\{cnt} 成功 (\{pct}%)，均成本 \{avg}"]
+  }
+  "CAF 记忆：\{n} 条记录，\{models.length()} 个模型\n" +
+  lines.join("\n")
+}
