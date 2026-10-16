@@ -734,6 +734,19 @@ fn laya_auto_fail(reason : String) -> Json {
 }
 
 ///|
+/// executor_register 的持久化结果归一（BUG-232 修复）：此前 `persisted` 被硬编码 true，
+/// 而 `engine.executor_save` 的 Result 被 `ignore()` 吞掉——写盘失败（Err）时回执仍谎报
+/// `persisted:true`，进程内注册表看似成功、store 里却没有，重启后 `executor_route` 读不到
+/// （与 BUG-230「状态变更未落库却展示内存新状态」同族）。纯函数：Ok→(true, "")，
+/// Err→(false, 错误原文)，便于白盒回归锁。
+fn executor_persist_note(res : Result[String, String]) -> (Bool, String) {
+  match res {
+    Ok(_) => (true, "")
+    Err(e) => (false, e)
+  }
+}
+
+///|
 /// 项目自述版本（BUG-16 修复：对外版本单一真源）。
 /// 此前 status_summary / project_health / fist://overview 三处各写一遍上一版版本号字面量，
 /// 升版时漏改 → 对外自述落后一整版（违反规范 r1「文档即实现」/ r2「一源四态·单真源优先」；
@@ -4248,7 +4261,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "executor_register",
-    "Marketplace·执行者能力注册（Dynamic/Marketplace 雏形，R30）：为执行者登记能力标签集合（如 [编排,json]），供 executor_route 按任务所需能力做专长路由。参数：name 执行者标识(必)、abilities 能力标签数组(可选)。返回 {name, abilities, executors}。",
+    "Marketplace·执行者能力注册（Dynamic/Marketplace 雏形，R30）：为执行者登记能力标签集合（如 [编排,json]），供 executor_route 按任务所需能力做专长路由。参数：name 执行者标识(必)、abilities 能力标签数组(可选)。返回 {name, abilities, executors, persisted}；persisted 如实反映能力标签是否已落 store（跨重启可复现），写盘失败时 persisted=false 并附 persist_error（BUG-232：不再谎报落库）。",
     schema(
       {
         "name": string_prop("执行者标识（如 executor-A，必填）"),
@@ -4266,24 +4279,25 @@ pub async fn run_server() -> Unit {
       ignore(exec_reg.add_ability(name, abs))
       // 持久化：与 store executors 表对齐（跨 server 重启仍可被 executor_route 读到）
       let ts = now_default()
-      ignore(
+      // BUG-232：写盘 Result 此前被 ignore() 吞掉且 persisted 硬编码 true，失败时回执谎报落库。
+      // 现捕获 Result，persisted 如实反映，失败原因经 persist_error 透出（非空才出现，成功路径零回归）。
+      let (persisted, persist_error) = executor_persist_note(
         engine.executor_save(
           name~,
           abilities_json=ab_to_json(abs),
           created_at=ts,
         ),
       )
-      Ok(
-        @mcp.ToolResult::text(
-          Json::object({
-            "name": Json::string(name),
-            "abilities": Json::array(abs.map(fn(s) { Json::string(s) })),
-            "executors": Json::number(exec_reg.list().length().to_double()),
-            "persisted": Json::boolean(true),
-            "ok": Json::boolean(true),
-          }).stringify(),
-        ),
-      )
+      let m : Map[String, Json] = Map([])
+      m.set("name", Json::string(name))
+      m.set("abilities", Json::array(abs.map(fn(s) { Json::string(s) })))
+      m.set("executors", Json::number(exec_reg.list().length().to_double()))
+      m.set("persisted", Json::boolean(persisted))
+      if persist_error != "" {
+        m.set("persist_error", Json::string(persist_error))
+      }
+      m.set("ok", Json::boolean(true))
+      Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
     },
   )
   s1 = instrumented_tool(
