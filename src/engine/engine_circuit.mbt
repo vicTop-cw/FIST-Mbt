@@ -34,7 +34,7 @@ pub fn FistEngine::circuit_fail(
       ("closed", nf, 0)
     }
   }
-  ignore(
+  let persist_error = cb_persist_note(
     self.store.cb_save(
       ns,
       circuit,
@@ -48,7 +48,17 @@ pub fn FistEngine::circuit_fail(
       now_secs.to_string(),
     ),
   )
-  cb_json(circuit, new_state, new_failures, w, thr, rec, new_opened, now_secs)
+  cb_json(
+    circuit,
+    new_state,
+    new_failures,
+    w,
+    thr,
+    rec,
+    new_opened,
+    now_secs,
+    persist_error=persist_error,
+  )
 }
 
 ///|
@@ -71,7 +81,7 @@ pub fn FistEngine::circuit_succeed(
   } else {
     ("closed", 0, 0)
   }
-  ignore(
+  let persist_error = cb_persist_note(
     self.store.cb_save(
       ns,
       circuit,
@@ -85,7 +95,17 @@ pub fn FistEngine::circuit_succeed(
       now_secs.to_string(),
     ),
   )
-  cb_json(circuit, new_state, new_failures, w, thr, rec, new_opened, now_secs)
+  cb_json(
+    circuit,
+    new_state,
+    new_failures,
+    w,
+    thr,
+    rec,
+    new_opened,
+    now_secs,
+    persist_error=persist_error,
+  )
 }
 
 ///|
@@ -111,37 +131,47 @@ pub fn FistEngine::circuit_status(
     None => ("closed", 0, 60, 3, 30, 0, 0)
     Some(r) => r
   }
-  // ① Open 到期 → Half-Open，并把"已放行探测数"清零
-  let (eff_state, eff_failures) = if state == "open" &&
-    opened_at > 0 &&
-    now_secs - opened_at >= rec {
-    ignore(
-      self.store.cb_save(
-        ns,
-        circuit,
-        "half_open",
-        0,
-        w,
-        thr,
-        rec,
-        opened_at,
-        now_secs,
-        now_secs.to_string(),
-      ),
-    )
-    ("half_open", 0)
-  } else {
-    (state, failures)
-  }
+  // ① Open 到期 → Half-Open，并把"已放行探测数"清零（迁移写失败留痕，BUG-230）
+  let (eff_state, eff_failures, migrate_note) =
+    if state == "open" && opened_at > 0 && now_secs - opened_at >= rec {
+      let note = cb_persist_note(
+        self.store.cb_save(
+          ns,
+          circuit,
+          "half_open",
+          0,
+          w,
+          thr,
+          rec,
+          opened_at,
+          now_secs,
+          now_secs.to_string(),
+        ),
+      )
+      ("half_open", 0, note)
+    } else {
+      (state, failures, "")
+    }
   if eff_state != "half_open" {
-    cb_json(circuit, eff_state, eff_failures, w, thr, rec, opened_at, now_secs)
+    cb_json(
+      circuit,
+      eff_state,
+      eff_failures,
+      w,
+      thr,
+      rec,
+      opened_at,
+      now_secs,
+      persist_error=migrate_note,
+    )
   } else {
     // ② 探测丢失（一个恢复窗内没有任何上报）⇒ 配额重置
     let stale = rec > 0 && last_ts > 0 && now_secs - last_ts >= rec
     let granted = if stale { 0 } else { eff_failures }
     // probe_limit<=0 = 运维侧显式关掉节流（回到"半开全放行"的旧行为，要在返回体里看得见）
     if probe_limit <= 0 || granted < probe_limit {
-      ignore(
+      // 配额自增写失败留痕（BUG-230），与迁移写错误合并进同一字段
+      let probe_note = cb_persist_note(
         self.store.cb_save(
           ns,
           circuit,
@@ -165,6 +195,7 @@ pub fn FistEngine::circuit_status(
         opened_at,
         now_secs,
         probe_limit~,
+        persist_error=cb_note_join(migrate_note, probe_note),
       )
     } else {
       // 配额用尽：仍半开、仍记着 opened_at（等探测结果或下一个恢复窗），但对调用方快速失败
@@ -178,9 +209,31 @@ pub fn FistEngine::circuit_status(
         opened_at,
         now_secs,
         probe_limit~,
+        persist_error=migrate_note,
         deny=true,
       )
     }
+  }
+}
+
+///|
+/// 归一持久化结果为错误留痕串（BUG-230）：Ok→""（无错不留痕），Err→错误原文。
+fn cb_persist_note(res : Result[Unit, String]) -> String {
+  match res {
+    Ok(_) => ""
+    Err(e) => e
+  }
+}
+
+///|
+/// 合并两处写盘留痕（BUG-230）：都空→""，一空取另一，都非空→"a；b"。
+fn cb_note_join(a : String, b : String) -> String {
+  if a == "" {
+    b
+  } else if b == "" {
+    a
+  } else {
+    "\{a}；\{b}"
   }
 }
 
@@ -196,6 +249,7 @@ fn cb_json(
   now_secs : Int,
   probe_limit? : Int = 1,
   deny? : Bool = false,
+  persist_error? : String = "",
 ) -> Json {
   let allow = state != "open" && not(deny)
   // 半开态下 failures 复用为"已放行探测数"，另给显式字段，免得读侧按失败数解释
@@ -217,5 +271,9 @@ fn cb_json(
       "熔断器三态（Nygard Release It! 2007 / Fowler / Azure 蒸馏）：Closed 放行 / Open fail-fast 拒绝 / Half-Open 只放行 probe_limit 次探测（默认 1），探测成功回 Closed、失败回 Open；半开态下 failures=probes_granted（已放行探测数，不是失败数），配额用尽即 allow_call=false，超过一个 recovery 窗无上报则重置。",
     ),
   )
+  // BUG-230：写盘失败错误留痕（非空才出字段，无错时回执形态零回归）
+  if persist_error != "" {
+    m.set("persist_error", Json::string(persist_error))
+  }
   Json::object(m)
 }
