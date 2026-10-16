@@ -892,53 +892,34 @@ fn map_json() -> Json {
       "executor": Json::string("执行器"),
     }),
     "tool_groups": Json::object({
-      "生命周期(14)": Json::string(
+      "生命周期": Json::string(
         "publish/publish_parallel/plan/claim/execute/submit/verify/reject/retry/pause/resume/reopen_task/archive/delete",
       ),
-      "查询(2)": Json::string("list/get"),
-      "运维(14)": Json::string(
-        "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback/saga_repair/circuit_fail/circuit_succeed/circuit_status/tx_contract",
+      "查询": Json::string("list/get"),
+      "运维": Json::string(
+        "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback/saga_repair/circuit_fail/succeed/status/tx_contract",
       ),
-      "运维·日志/缺陷/成本/调度(24)": Json::string(
-        "call_log/bug_list/bug_fix/bug_mark_status/report_bug/issue_scan/ocr_scan/boundary_probe/eval_feedback/run_check/output_validate/project_standards/text_diff/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide/loop_create/loop_tick/loop_status/mcp_config_scaffold",
+      "运维·日志/缺陷/成本/调度": Json::string(
+        "call_log/bug_list/report_bug/eval_feedback/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide/loop_create/loop_tick/loop_status",
       ),
-      "看板/脉冲/预订/推荐+DAG(27)": Json::string(
-        "dag_critical_path/dag_parallelism/dag_ascii/dag_check/dag_ready/dag_sort/dag_depend/dag_publish/dag_slack/dag_schedule/dag_cost_route/dag_mc/plan_revise/goal_drift_check/board_ascii/state_flow_ascii/status_summary/project_health/health_check/reserve_scope/reserve_check/reserve_release/lock_acquire/lock_renew/lock_release/lock_status/task_triage",
+      "看板/脉冲/预订/推荐+DAG": Json::string(
+        "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish/slack/schedule/cost_route/mc/plan_revise/goal_drift_check + board_ascii + status_summary + project_health/health_check + reserve_scope/check/release + task_triage",
       ),
-      "自驱(9)": Json::string(
-        "selfdrive_init/selfdrive_append/selfdrive_get/selfdrive_export_tasks/selfdrive_review_tick/selfdrive_review_ready/selfdrive_publish_next/selfdrive_parse_next_tasks/selfdrive_pick_next",
+      "自驱": Json::string(
+        "selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks + selfdrive_pick_next + selfdrive_dispatch",
       ),
-      "Marketplace·能力路由(5)": Json::string(
-        "executor_register/executor_route/executor_auction/executor_clear/selfdrive_dispatch",
+      "记忆与自进化": Json::string(
+        "memory_consolidate/gc/link + evolve_submit/sample/snapshot/distill/lesson/critic/asset_register + task_challenge",
       ),
-      "记忆与自进化(11)": Json::string(
-        "memory_consolidate/memory_gc/memory_link/evolve_submit/evolve_sample/evolve_snapshot/evolve_distill/evolve_lesson/evolve_critic/evolve_asset_register/task_challenge",
+      "Marketplace·能力路由": Json::string(
+        "executor_register/auction/route/clear + selfdrive_dispatch（能力登记/置信度拍卖/专长+负载路由/重置/自动派单，R30-R33/R87）",
       ),
-      "GitHub/GitCode 同步(12)": Json::string(
-        "github_env_check/github_queue_status/github_flush_plan/github_flush_execute/github_queue_mark_sent/github_issue_close/github_issue_comment/github_issue_webhook_parse/gitcode_env_check/gitcode_queue_status/gitcode_flush_plan/gitcode_queue_mark_sent",
+      "审计权限": Json::string("audit_permission/log"),
+      "多租户": Json::string("store_open/list/close"),
+      "强验证": Json::string(
+        "omega_spec_create/review/result_verify/status/verify/verify_fix",
       ),
-      "模型路由·外部执行器(5)": Json::string(
-        "model_auth_status/model_route/model_router_status/model_router_reset/executor_run",
-      ),
-      "强验证(6)": Json::string(
-        "omega_spec_create/omega_spec_review/omega_result_verify/omega_status/omega_verify/omega_verify_fix",
-      ),
-      "六顶帽·辩论(7)": Json::string(
-        "hat_list/debate_convene/debate_register/debate_verdict/hat_run/hat_debate/hat_merge",
-      ),
-      "项目助理(5)": Json::string(
-        "assistant_claim/assistant_status/assistant_sweep/assistant_resign/assistant_heartbeat",
-      ),
-      "超级管家(8)": Json::string(
-        "supervisor_status/supervisor_task_tree/supervisor_kill_plan/supervisor_prompt_inject/supervisor_prompt_list/supervisor_prompt_consume/supervisor_task_upsert/supervisor_reminder_tick",
-      ),
-      "嵌入式 MCPCf(7)": Json::string(
-        "mcpcf.ops_init/mcpcf.circuit/mcpcf.report/mcpcf.review/mcpcf.run_batch/mcpcf.verify/mcpcf.watchdog",
-      ),
-      "多租户/审计/ATGC-old(8)": Json::string(
-        "store_open/store_list/store_close/audit_permission/audit_log/atgc_old_compile/atgc_old_run/atgc_old_talk",
-      ),
-      "开发模式(2)": Json::string("mode_list/mode_templates"),
+      "衍生·ATGC-old": Json::string("atgc_old_compile/run/talk"),
     }),
     "entry": Json::string(
       "先读 README.md + ARCHITECTURE.md + docs/agent-map.md 定位；加/改工具到 src/server/server.mbt；动存储到 src/store/store_sqlite.mbt",

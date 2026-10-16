@@ -3556,6 +3556,9 @@ pub fn caf_feature_hash(context : String) -> Int {
 
 ### FIXED(2026-10-15T08:50:00Z / BUG-186)
 - evidence: src/ops/ops_heal.mbt L242 将 `Err(e) => ignore(e)` 改为 `Err(e) => return Err(e)`。修复后 moon check --target js 0 errors，moon test --target js 1108/1108 passed。
+
+### FIXED(2026-10-16T12:52:15Z / BUG-185, BUG-186)
+- evidence: commit 20846a4（HEAD 链上）fix(e2e_irm)：①BUG-185 probe() 裸词档（sbin=None）由 `[ -x 'fist' ]`（-x 不查 PATH 恒 MISSING）改为 `command -v fist` 做 POSIX shell 发现；新增 _is_wsl_bash() 用 winreg 查 App Paths\bash.exe 判 system32/windows 命中则返回 SKIP: WSL bash 而非误报 MISSING（修"本机默认 bash=WSL 与 POSIX shim 行为面错位"）；沙箱档 sbin 给定时保留 -x（正确）。②BUG-186 新增 _userprofile_redirected()：用 SHGetFolderPathW 取 CSIDL_PROFILE 与 env USERPROFILE 比对，不一致即判重定向环境、`--real` 前 rc=2 拒绝执行，杜绝改写真实 .local\bin shim 与 HKCU PATH；并保留"跑前备份产物、不绿自动还原"既有保护。脚本 504 行含 PATH 逐字还原/备份/FAIL 如实上报。修改面仅 scripts/blackbox/e2e_irm_line.py（+40/-4），-W error py_compile 干净。已提交未走记账。
 ## BUG-185 [2026-10-15T08:44:07Z] [medium] OPEN
 - summary: [判据] e2e_irm_line 真面档探针恒红：probe() 用 [ -x 'fist' ] 裸词（-x 不查 PATH）+ 本机默认 bash=WSL 与 POSIX shim 面（承诺 Git Bash/MSYS）错位，任何机器 --real 都判不出绿
 - detail: 现象（2026-10-15 本机实测）：python scripts/blackbox/e2e_irm_line.py --real 文档线本体 rc=0、安装自检四面全绿（版本 v0.3.8 / fist (PATH) / POSIX shim LF），但整档 FAIL rc=1——红在 probe(env, ROOT, 真面 bash) 这一格。两个独立成因：① probe() L270-271：真面档 sbin=None ⇒ exe='fist' 裸词，sh 的 `if [ -x '%s' ]` 裸词测试**不走 PATH 检索**、永远假——真面档在任何机器（含装有 Git Bash 的）都恒报 MISSING fist ⇒ 恒红，属 BUG-117「判据自己假红」同族；实测对照：`bash -c "command -v fist"` 命中 /mnt/c/Users/victo/.local/bin/fist，而 `bash -c "if [ -x 'fist' ]"` 报 MISSING。② 本机无 Git Bash，PATH 上的 bash = C:\Windows\system32\bash.exe（WSL）；POSIX 无扩展名 shim 按安装器自述只承诺 Git Bash/MSYS 面（Windows 路径直接可用），WSL 下 `exec node "C:\..."` 语义错位实测 rc=1——即便修好①，真面档在这一格仍会给出**误导性**的红。修法建议：probe 的真面档改为 command -v 定位 + 点名目标 shell（存在 Git Bash/MSYS 才跑行为面），两者都没有时按「判据拒绝出数」（e2e_native_heap_probe 的 rc=3 同族语义）而非报产品红；沙箱档（传 sbin 全路径）的 -x 用法本身合法，不动。
@@ -4038,6 +4041,12 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 
 ### FIXED(2026-10-15T13:27:43Z / BUG-217)
 - evidence: 改了真源 src/claimguard/claimguard.mbt（commit ba4fd93）：`may_proceed_sematic` 与 `may_proceed_full` 改为「只读预检 → 全通过才 claim_item」——先用 `decide_claim(g.holders.get(proposed), agent)` 只判 item-id 层重入（不写 holders），再跑 blind_spot / semantic_collision，全部通过后才真正 `claim_item`。锁钉：临时白盒探针（claimguard_bug217_wbtest.mbt，验证后删除）三条——①may_proceed_sematic 返回 false 时 `holder_of` 为 None（旧实现泄漏为 Some("B")）；②may_proceed_full 返回 false 时 `holder_of` 为 None；③may_proceed_sematic 返回 true 时 `holder_of` 为 Some("B")（正常认领未破坏）。全量 moon test --target js = 1183/1183 通过。
+
+### FIXED(2026-10-16T12:50:56Z / BUG-217)
+- evidence: commit ba4fd93（HEAD 链上）fix(claimguard)：may_proceed_sematic / may_proceed_full 改为只读预检——先 decide_claim(g.holders.get(proposed), agent) 判 item-id 层重入（不写 holders），再跑 blind_spot_holds / semantic_collision 语义层，全部通过后才 claim_item 落认领；claim_item 返回 Denied 时保留防御性兜底。src/claimguard/claimguard.mbt:227-252（sematic）/ :269-298（full）带 BUG-217 注释点名旧实现副作用。工作树对 src/claimguard/ 无 WIP，已提交未走记账。
+
+### FIXED(2026-10-16T14:34:09Z / BUG-217)
+- evidence: claimguard.mbt 已实现「只读预检后落认领」：may_proceed_sematic(L232-252) 与 may_proceed_full(L272-298) 都先跑只读层1 decide_claim / 层2 blind_spot_holds / 层3 semantic_collision，全部通过后才调 claim_item 落认领；claim_item 调用在 L248 与 L294，位于所有检查之后。已读源码核实 L239/L281(decide_claim)、L244/L286(blind_spot_holds)、L290(semantic_collision) 均无写 holders 副作用。账本抬头已从 OPEN 更正为 FIXED。
 ## BUG-217 [2026-10-15T13:22:34Z] [medium] OPEN
 - summary: [claimguard-side-effect] may_proceed_sematic / may_proceed_full 在检查前先 claim_item：返回 false 时项已被 side-effect 认领
 - detail: `may_proceed_sematic` / `may_proceed_full` 的语义是"问"——回答能否 proceed——但实现先调 `claim_item(g, proposed, agent)` 把项**认领给自己**，再跑语义/盲点检查；检查失败返回 false 时，项已被 side-effect 认领。
@@ -4242,4 +4251,105 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 三处均改为 `match engine.store_delete_heartbeat(task_id=t.get_id()) { Ok(_) => (); Err(_) => delete_failed_ids.push(t.get_id()) }`，新增 `delete_failed_ids? : Array[String] = []` 可选参数（默认空数组，既有调用方零改动）。调用面透传：`ops_watchdog.mbt` 声明 `delete_failed` 并传入两处调用 + detail 注入 `heartbeat_delete_failed_ids`；`ops_pipeline.mbt` 声明 `heal_delete_failed` 并传入 + 条件注入 `heal_delete_failed`（非空才出现，零回归）；`server.mbt` heal 工具声明 `delete_failed` 并传入 + 回执注入 `delete_failed` + 工具描述同步。`heal_stale_tasks_by_phi` 附带修复 `Err(_) => ()` → `Err(e) => return Err(e)`（同函数内 reopen 失败静默吞错）。回归锁 `ops_heal_wbtest.mbt`：钉住 `ignore(engine.store_delete_heartbeat` 清零、`Err(_) => delete_failed_ids.push(t.get_id())` 出现 3 次、`delete_failed_ids? : Array[String] = []` 出现 3 次。`moon test --target js` 1254/1254 全绿。
 - reported_by: bugfind
 - commit: 98744c5
+
+
+
+## BUG-241 [2026-10-16T12:58:07Z] [medium] FIXED
+- summary: [记账] 缺陷编号撞车致 bug_fix/bug_mark_status 只闭环首条，同号第二条永远 OPEN（BUG-185/186/217 实测）
+- detail: 现象：memory/bugs.md 里 BUG-185、BUG-186、BUG-217 各存在**两条独立条目**，编号相同但 ts/summary/reported_by 不同：
+- BUG-185 ① 10/15 08:46 FIXED（ops_watchdog 静默吞噬 heal 错误） / ② 10/15 08:44 OPEN（e2e_irm_line 真面档探针恒红）
+- BUG-186 ① 10/15 08:50 FIXED（ops_heal 静默吞噬 reopen_task 错误） / ② 10/15 08:44 OPEN（e2e_irm_line --real 无还原保护）
+- BUG-217 ① 10/15 13:20 FIXED（selfdrive_publish_next 静默吞错） / ② 10/15 13:22 OPEN（claimguard may_proceed_sematic 副作用）
+即同一个 BUG-n 编号被复用两次，首次用于「静默吞错」族、第二次（晚数分钟）用于完全无关的另一缺陷。
+
+复现：对已由 commit 修复的 ② 条调用 `bug_fix(["BUG-217"])` / `bug_fix(["BUG-185","BUG-186"])`，返回恒为 `heading_changed=0`、`already_fixed=N`——**真正待闭环的那条没被改**，只因首条恰好已 FIXED。
+
+根因（两处）：
+① 编号分配撞号——report_bug 侧把同一个 BUG-n 分给了两条不同缺陷（疑为编号分配器并发/未去重）；
+② 条目定位只取首条——src/server/bugreport.mbt:723 `let idx = bug_header_line(lines, want)`（bug_mark_status :595 同款）在撞号时命中**首个**匹配 `## BUG-n` 行，第二条永远不可达。
+
+影响：缺陷记账闭环失能——`bug_list` 的 open_with_linked_done、`bug_fix` 的 heading_changed 都是错的，「还剩几条没修」数不准；已提交修复（ba4fd93 / 20846a4）无法走 bug_fix 落账，形成与 BUG-9「只写不销」同族的账实不符。
+
+修复方向（供参考，bugreport.mbt 已被并发 WIP 占用未由本上报修改）：bug_fix/bug_mark_status 在撞号时应报「编号重复」告警而非静默取首条，或要求按 ts 消歧；report_bug 编号分配需在写入前对账本做同号去重/回退。
+- reported_by: bugfind
+
+
+### FIXED(2026-10-16T14:45:49Z / BUG-241)
+- evidence: 根因：bug_header_line(src/server/bugreport.mbt:516-528) 只返回首个命中行；当 BUG-217 等编号在 bugs.md 存在多条独立条目时，bug_fix 只改首条，真正待闭环的那条永久 OPEN。修复：新增 bug_header_lines 返回全部命中行，bug_fix 改为逐条遍历改判（named 去重、insert_at 取末条末尾）。moon test --target js src/server = 316/316 pass（新增 BUG-241 白盒测试验证同号两条 217 都被改判 heading_changed=2、各自保留原 ts/sev、小记只落一次且落在末条之后、邻居正文不被吞）；全量 moon test --target js = 1259/1259 pass。文件：src/server/bugreport.mbt(+bug_header_lines/-single-match) + src/server/bugreport_status_wbtest.mbt(+BUG-241 测试)。
+## BUG-242 [2026-10-16T12:58:23Z] [high] OPEN
+- summary: [Pentad/DEMO-08] spawn(&lt;actor 实例&gt;) 被运行时拒绝：'spawn() requires an actor type name, got Struct'，而该 demo 与文档期望传实例
+- detail: 复现：`p5c run DEMO/08_concurrency/concurrency.p5` → exit 1，stderr `Runtime error: spawn() requires an actor type name, got Struct`。`Counter` 已正确声明为 `api @actor Counter:`（concurrency.p5:39），构造函数 `api Counter::new() -> Counter = Counter { n: 0 }`（:48）返回实例；demo 以 `let c = spawn(Counter.new())`（:55，另 :74/:114/:224 同形）调用，期望输出 `<Counter actor ref>`。运行时只接受「actor 类型名」而拒绝实例值。证据：e2e_golden 判据中 DEMO/08 为 RUNFAIL（RUNFAIL=4→2 后仍红），`p5c check` 却绿（静态检查未覆盖该语义）。影响：整个 @actor/spawn 发货面跑不通。发现轮：p5c 组合流水线 R1（清整/寻虫），复现于 2026-10-16。DEMO/09 已由本次提交修复缺 fetch_url 桩，同族但不同因。
+- reported_by: pentad-combo-r1
+- **更正与拆解（2026-10-16 R3 深挖，原归因不准确）**：原抬头把「运行时拒绝实例」当作缺陷，**这是错的**——
+  规范真源明确 `spawn` 收**类型名**：`SYNTAX.md:2890` / `14-并发actor-async.md:19` 写 `let c = spawn(Counter)`，
+  `GRAMMAR.md:260` 写 `'let' <id> '=' 'spawn' '(' <name> ')'`，且 `SYNTAX.md:4290` 把「收非名字实参」
+  列为规范**负例**（`requires an actor type name, got Str`）。真正缺陷拆成两条：
+  - **(a) 预扫描命名 bug【已修，commit `7df6716`】**：BUG-91 的体定义提升把 `api @actor X:` 内的
+    `__handle` 拼成宿主限定名 **`X::__handle`**（`parser/api.rs:363`），而 `eval/stmts.rs` 预扫描只认裸名
+    `__handle` ⇒ `actor_handles` 恒空 ⇒ `spawn(X)` 查不到协议钩子、**静默降级**为 `Value::Stream`，
+    `print(spawn(X))` 打 `<stream: 0 events>` 而非 actor 引用（违约 §14.1）。该 bug 被 demo 的
+    `spawn(X.new())` 先撞参数校验而掩盖。已修（两种命名都收，限定名以自身前缀为归属，与顺序无关），
+    并落回归锁 `crates/p5c/tests/e2e_actor_spawn.rs`（单 actor + 多 actor 归属）。`cargo test --workspace` 54 suite 0 failed。
+  - **(b) actor 引用是否该带消息队列【OPEN，待 owner 裁决】**：`eval/stmts.rs:807-810` 记录了明确的设计
+    决定（T0r527）——「actor 消息在 send 时已被 `__handle` 同步消费，**消息不排队**」⇒ `for <- c` 迭代产出空序列。
+    但 `DEMO/08_concurrency` 的 §3 期望 `send("inc")` 后 `try_recv()` 得 `Some("inc")`（依赖已修的 Stream 回退
+    残留行为），修 (a) 后该 demo 现报 `Property or method not found: try_recv`。两条语义**互斥**：
+    要么给 `Value::Actor` 加 mailbox 并同步 send 入队，要么按 T0r527 更新 demo 的 §3。**未擅自改语义**，
+    留待 owner 裁决。附带：`eval/calls.rs` 里那条广告 `spawn(Counter.new())` 的注释与紧邻实现自相矛盾，
+    已在同批 commit 改为规范形态（该注释很可能是 demo 写错的来源）。
+
+## BUG-243 [2026-10-16T12:58:27Z] [high] FIXED
+- summary: [Pentad/DEMO-01] @duck X 与 @interface X 同名被判「duplicate type definition」，鸭子类型 demo 因此整份不可 check/run
+- detail: 复现：`p5c check DEMO/01_types/interface_duck.p5` → rc=1，首行 `duplicate type definition: Comparable`（`Hashable` 同因）。源码：:61 `api @interface Comparable:` 与 :180 `api @duck Comparable:`（:80 `@interface Hashable` / :183 `@duck Hashable`）。该 demo 的意图正是「接口（@interface）与鸭子类型（@duck）并存」：:187 `api @function sort<T <: Comparable>(xs)` 用接口约束、:190 `dedup_duck<T <: Hashable>` 用 duck 约束、:201 `print(conforms(Int, Comparable))`。当前编译器把 @interface 与 @duck 视为同一类型命名空间 → 重复定义，整个 demo 无法 check/run（e2e_golden 中 DEMO/01 为 RUNFAIL，也是 pin 表里剩余的 1 红）。影响：§19 duck typing 发货面不可用。发现轮：p5c 组合流水线 R1。
+- reported_by: pentad-combo-r1
+
+
+### FIXED(2026-10-16T13:13:58Z / BUG-243)
+- evidence: 根因是 DEMO 而非判据。规范真源：SYNTAX/09-类型系统.md §9.7「`@duck` 是**约束谓词**，不是类型」、§9.7.1 专门列表对比 @interface（类型）/@duck（约束）。同名会让**同一处约束语法** `<T <: X>`（§2 的 max<T <: Comparable> 与 §6 的 sort<T <: Comparable>）与 `conforms(T, X)` 无法消歧 ⇒ static_check.rs 的重名拒绝是**正确**的。修复（Pentad commit 658c8e7）：DEMO/01_types/interface_duck.p5 把 duck 侧改名为 ComparableDuck/HashableDuck（与该文件 §7 既有的 RenderableDuck 同后缀约定），接口侧不动，并加注释写明二者不得同名。证据：demo 由 rc=1（duplicate type definition: Comparable）→ rc=0 跑到哨兵 'DEMO interface_duck OK'；重生成 DEMO pin 表（生成器 .fist-night/r19r3_mkdemo.py）由 19 绿/1 红 → **20 绿/0 红**；e2e_golden RUNFAIL 2→1（仅余 08_concurrency，属 BUG-242(b) 的 actor 消息队列设计问题）；cargo test --workspace 54 suite 0 failed。遗留新缺陷另记：§6 的 `conforms(Int, ComparableDuck)` 期望 True 实得 False（Int 在 :69 已实现 compare，§9.7 承诺该编译期查询）——归 duck 一致性检查未实现，已另立案。
+## BUG-244 [2026-10-16T12:58:35Z] [medium] OPEN
+- summary: [Pentad/DEMO-10] 标记反射半实现：has_tag 祖先链 / is_subtag / tags_of 全链枚举恒 False/[]，与 §16.5 文档承诺矛盾（5 处）
+- detail: 复现（`p5c run DEMO/10_markers/markers.p5`，该 demo 已由本次提交修掉重复定义 Point → 现 rc=0 可跑完），但 §9 标记反射的输出与源码内联「期望输出」矛盾：① :199 `has_tag(Point, @type)` 期望 True（祖先链），实得 False；② :203 `is_subtag(@infix, @method)` 期望 True，实得 False；③ :204 `is_subtag(@struct, @type)` 期望 True，实得 False；④ :207 `tags_of(@infix)` 期望 4 元组 `(@infix, @instance_method, @method, @function)`，实得 `[]`；⑤ :254 `func_tags` 同 ④ 实得 `[]`。（:195 tag_of=@struct、:198/200 has_tag @struct/@function、:214/218 tag/add、:257/258 均正确。）影响：标记反射（§16.5）只实现了「自身标记/直接判定」，**祖先链与子标记关系与全链枚举未实现**，导致这些 API 在文档承诺的语义上恒假。证伪即冻结基准：因输出与文档矛盾，本轮**故意未为该 demo 落 golden**，避免把 bug 冻成基准。发现轮：p5c 组合流水线 R1。
+- reported_by: pentad-combo-r1
+- **R5 深挖：实现前先撞到「规范自相矛盾」，故本轮未动代码（避免猜着实现错的标记树）**。定位：三处根因同一——求值器**没有标记树**：`eval/builtins.rs` 的 `has_tag`(:880) 只查类型**自身**标记不 walk 祖先；`is_subtag`(:914) 却按**类型名**查 `type_markers`，而 §16.5 与 demo 传的是**标记名**（`@infix`/`@method`）⇒ 恒 False；`tags_of`(:943) 同样查 `type_markers[标记名]` ⇒ 恒 `[]`。规范是有的：`SYNTAX/16` §16.1 给出整棵树、§16.5 明确规则（`has_tag` 沿任一父链多父 DFS；`is_subtag(a,b)`＝a 在 b 的祖先链上；`tags_of` 出全链），`07-运算符.md:88` 复述 `@infix ⇒ @instance_method ⇒ @method ⇒ @function`。**冲突点**：§16.1 的 ASCII 树把 `@type` 画在 `@function` 之下（缩进与 `@lambda`/`@method` 同级），按该树 walk 祖先得 `has_tag(Point, @function) = True`；而 `DEMO/10_markers/markers.p5:200` 明确断言 **False**（:199 断言 `has_tag(Point,@type)=True`）。二者不可同时成立 ⇒ 要么树里 `@type` 应为 `@immortal` 的**兄弟**而非 `@function` 的子节点（则 199/200 同时成立），要么 demo 的 200 行期望要改。另：树含**重复抽象节点名**（`@special` 出现在 @function 与 @type 下各一次；`@immutable`/`@mutable` 在 @var 与 @mortal 下各一次），按「名字→父」的简单表会歧义，实现需按**路径**建树。**建议 owner 先裁决 200 行与树的一致性**，再实现；本条目保持 OPEN。附：本轮顺带实测 `tags_of(@infix)` 期望串 `(@infix, @instance_method, @method, @function)` **不含** `@immortal`/`@mark` ⇒ 反射的「全链」定义应排除 ○ 抽象节点，这点也需写进规范。
+
+## BUG-245 [2026-10-16T12:58:40Z] [medium] OPEN
+- summary: [Pentad/DEMO-09] @derived 变更后未正确重算（12≠13）且 `__get` 魔术钩子在 print 未生效（Cell{value:42}≠42）
+- detail: 复现（`p5c run DEMO/09_reactive/reactive.p5`；该 demo 的 `undefined function: fetch_url` 已由本次提交补桩修复 → 现 rc=0 跑到哨兵 `DEMO reactive OK`），但输出与源码内联「期望输出」矛盾 3 处：① :72 `print(sum)` 期望 **13**（a 变化触发 @derived 重算），实得 **12** → @derived 依赖变更后未重算/重算不全；② :110 `print(custom_cell)` 期望 **42**（`__get` 触发依赖登记并取值），实得 **`Cell{value: 42}`**；③ :113 `print(custom_cell)` 期望 **100**，实得 **`Cell{value: 100}`** → `__get` 魔术钩子在 `print` 调用点未生效（打印了结构体表示）。（:46/47/51/59/63/70/74/84/90/224 等均正确。）影响：@derived 反应式重算与 `__get` 派发两条主线在半实现状态，demo 无法作为正确性基准。因输出与文档矛盾，本轮**故意未落 golden**。注：同族 §19.3 magic hook 正由其他 agent 在 p5c src 推进，可能重叠。发现轮：p5c 组合流水线 R1。
+- reported_by: pentad-combo-r1
+
+
+## BUG-246 [2026-10-16T13:14:04Z] [medium] FIXED
+- summary: [Pentad/DEMO-01] duck 侧 `conforms(Int, Duck)` 恒 False：Int 已实现 duck 声明的 compare，§9.7 承诺应为 True
+- detail: 复现：`p5c run DEMO/01_types/interface_duck.p5`（该 demo 的重名问题已由 commit 658c8e7 修复，现 rc=0 跑完全程），§6「编译期查询」一行的输出与源码内联期望矛盾：:206 `print(conforms(Int, ComparableDuck));  // 期望输出：True（bool）` 实得 **False**。而 `Int` 已实现 compare：同文件 :69 `api Int::compare(self, other: Int) -> Int = ...`；`@duck ComparableDuck` 的成员正是 `api compare(self, other: Self) -> Int`（:180-181）。规范依据：SYNTAX/09-类型系统.md §9.7 表「反射 | `conforms(T, Duck)` 编译期查询」，且 §9.7「满足判定 = 隐式结构化：类型 T 满足 Duck ⟺ T 具备声明的全部成员且签名兼容，**无需**显式声明 / impl」⇒ 此处应为 True。影响：duck 侧的 `conforms` 查询（鸭子类型唯一对外反射面）恒假，与 §9.7.1 宣称的「编译期消解、零成本」承诺不可自证。同族：BUG-244（标记反射 has_tag/is_subtag/tags_of 半实现）、BUG-245（@derived 重算 + __get 未生效）——共同形态是「编译器/解释器反射面未实现却已在文档与 demo 中被断言」。发现轮：p5c 组合流水线 R4（寻虫），复现于 2026-10-16。因输出与文档矛盾，**故意未为该 demo 落 golden**。
+- reported_by: pentad-combo-r1
+
+
+
+### FIXED(2026-10-16T13:33:53Z / BUG-246)
+- evidence: 根因：`eval/builtins.rs` 的 `conforms_check` 只查 `self.interfaces`，且 `conforms` 内建在名字未登记为 interface 时提前 `return false` ⇒ `conforms(T, @duck)` 恒 false。规范依据：SYNTAX/09 §9.7「@duck 是**约束谓词**（不是类型）」「满足判定 = 隐式结构化：T 满足 Duck ⟺ T 具备声明的全部成员，**无需**显式声明/impl」；§9.7.1 列表指出与 @interface 的满足判定**同构**、唯一差别是「默认实现：duck 不支持」。修复（Pentad commit 5783c1c）：`conforms_check` 增加 duck 支（satisfies 闭包带 allow_defaults：interface=true / duck=false），`conforms` 内建接受 interface 或 duck 任一登记。验证：DEMO/01_types/interface_duck.p5 §6 `conforms(Int, ComparableDuck)` 由 False→**True**（该 demo 16 条内联期望现全部吻合）；定向探针区分正确（有成员 True / 缺成员 False / interface 默认实现 True 而同形 duck 为 False）。回归锁 +3 条 `eval/tests/g2.rs`：`test_conforms_duck_structural_satisfaction`、`test_conforms_duck_negative_missing_member`、`test_conforms_duck_has_no_default_impl_unlike_interface`。证据：cargo test --workspace 54 suite 0 failed（lib 358→361）；DEMO 判据复跑 PASS=14 FAIL=0 UNREGISTERED=5 RUNFAIL=1（与修复前同）。
+## BUG-247 [2026-10-16T13:40:19Z] [medium] FIXED
+- summary: [Pentad/判据基建] 唯一外部 golden 判据只在 WSL 可用：WSL 卡死时判据"跑不起来"易被读成"判据绿"，且无原生回退
+- detail: 现象：`scripts/e2e_golden.sh` 是本项目**唯一不可被模型自圆其说**的外部判据，但它是 bash 脚本，Windows 上只能经 WSL 互操作运行。实测（2026-10-16 R5）：一次判据运行在 WSL 下**挂起 10 分钟且没有任何 p5c 子进程**（bash 进程存活、`raw="$("$BIN" run "$src" 2>&1)"` 卡住不再推进），当时另有进程在跑 `wsl which p5c`。危害不在"跑得慢"，而在**语义混淆**：判据"跑不起来"与判据"绿"在汇报里极易被混为一谈——当时我只能靠手工复刻脚本逻辑才拿到判定。次生问题：脚本在 Windows 检出后是 CRLF（已由 R1 的 `.gitattributes *.sh eol=lf` 修，见 commit 0696410），但那只解决"能跑"，不解决"WSL 卡住时跑不了"。修复（commit 20050e6）：新增 `scripts/e2e_golden.ps1`（同语义的原生 PowerShell 镜像）+ `scripts/check_judge_parity.ps1`（跑两份实现要求 summary 逐字一致；bash 缺失=显式 SKIP，bash 超时=NOTE 并以 ps1 判定为准、exit 0，绝不把环境故障报成判据红，但一定打印）。证据：同树两版均报 PASS=14 FAIL=0 UNREGISTERED=5 RUNFAIL=1 (20 demos) exit 0；平价检查打印 OK；漂移检测逻辑负例验证通过（两串不等⇒FATAL）。两个调用坑已写进脚本注释防回归：Start-Process 用数组传参给 pwsh 会丢参数起成交互式 REPL；WSL 无视 -WorkingDirectory 起在 /root，必须在 bash -c 内 cd。
+- reported_by: pentad-combo-r1
+
+
+
+### FIXED(2026-10-16T13:40:23Z / BUG-247)
+- evidence: Pentad commit 20050e6（3 files, +247）：① 新增 `scripts/e2e_golden.ps1` —— 与 `.sh` 同语义的原生 PowerShell 镜像（同 strip_debug 前缀、同 [TS] 时间戳归一、同 4 字节 0xDEADBEEF 哨兵、同 .p5→.out golden 映射、无 golden=UNREG、run 失败=RUNFAIL、空 golden=WARN、同 summary 行与退出码 0/1/空转 1），不依赖 WSL/bash；② 新增 `scripts/check_judge_parity.ps1` —— 跑两份实现并要求 `summary:` 行逐字一致；bash 不存在⇒显式 SKIP(exit 0)，bash 超时(WSL 挂起的实测形态)⇒NOTE + 以 ps1 判定为准、exit 0（环境故障不得报成判据红）但一定打印，不静默；两者都出结果且不一致⇒exit 1；③ `.sh` 头部加"原生镜像 + 必须同步"说明。验证：同树两版均 PASS=14 FAIL=0 UNREGISTERED=5 RUNFAIL=1 (20 demos) exit 0；`check_judge_parity.ps1` 打印 OK；漂移检测负例（两串不同）确认 FATAL 分支逻辑成立；cargo test --workspace 54 suite 0 failed（本轮仅动脚本）。附带把两个调用坑写进脚本注释防回归：Start-Process 数组传参给 pwsh 会丢参数成为交互式 REPL；WSL 无视 -WorkingDirectory 起在 /root，须在 bash -c 内 cd。
+## BUG-248 [2026-10-16T13:55:47Z] [medium] DUPLICATE →BUG-165
+- summary: [ocr-scan] 双轨 LLM review 臂对 MoonBit 项目完全无效：.mbt/.mbti 不在 opencodereview 扩展名白名单，scan/files 回执 reviewable_count 恒 0 / excluded_count=N（实测 src/engine 54/54、单文件 1/1，全 unsupported_ext），与『内建规则 + OCR LLM review 双轨互补』文档承诺矛盾，寻虫只剩 issue_scan 单轨
+- detail: opencodereview.exe（ocr-local 二进制）的扩展名白名单不含 MoonBit 的 .mbt/.mbti，导致 ocr_scan 的 LLM review 臂对全 MoonBit 项目零产出。
+
+实测证据（FIST-Mbt 2026-10-16，moon 0.1.20260920）：
+1) `ocr_scan(subcmd=scan, path=src/engine, project_dir=.)` 回执：total_files=54, reviewable_count=0, excluded_count=54，全部 exclude_reason="unsupported_ext"，notice="LLM review 未真正执行"。argv 形如 ["scan","--repo",".","--preview","--format","json","--path","src/engine"]。
+2) `ocr_scan(subcmd=files, path=src/engine/engine_archive_force.mbt, project_dir=.)` 回执：total_files=1, reviewable_count=0, excluded_count=1，同一 exclude_reason="unsupported_ext"。
+
+矛盾点：工具描述与 AGENTS.md「寻虫」段声明 `ocr_scan` 与 `issue_scan` 形成『内建规则 + OCR LLM review』双轨寻虫互补；实际上双轨的第二臂（LLM review）对本项目所有源文件都因扩展名被拦，寻虫实际只剩 issue_scan 单轨。`issue_scan` 内建 31 条规则虽可用（本轮实测扫 src/ 得 9578 finding，high=0），但缺 LLM 语义 review 这一档。
+
+影响：bugfind 模式 require_ocr 约束在此项目上形同虚设（判据可"扫"却无 review 产出），外部 AI 用它做寻虫时会误以为已获得 LLM review 覆盖。
+
+建议方向：① 在 src/server/ocr_scan.mbt 的 argv 构造处为 .mbt/.mbti 补扩展名映射或改用 files/delegate 直指文件；② 或确认 opencodereview 是否支持自定义 include 扩展名参数；③ 至少在工具描述与 AGENTS.md 明确"当前 .mbt 不在 OCR 白名单，双轨退化为单轨"以避免外部 AI 误判覆盖。
+
+
+
 
