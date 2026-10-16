@@ -205,6 +205,30 @@ fn jnum(j : Json, key : String) -> Double {
 }
 
 ///|
+/// BUG-228：把队列标记 `Result` 归一回执 JSON——Ok→`{ok,channel,marked,total}`；
+/// Err→`{ok:false,channel,queue_mark_error}`。供 report_bug auto_push 两处标记调用点
+/// 并入 remote_push 子图：本地队列写入失败必须在回执里可见，不得静默吞错。
+pub fn queue_mark_receipt(channel : String, res : Result[Json, String]) -> Json {
+  match res {
+    Ok(j) => {
+      let m : Map[String, Json] = Map([])
+      m.set("ok", Json::boolean(true))
+      m.set("channel", Json::string(channel))
+      m.set("marked", Json::number(jnum(j, "marked")))
+      m.set("total", Json::number(jnum(j, "total")))
+      Json::object(m)
+    }
+    Err(e) => {
+      let m : Map[String, Json] = Map([])
+      m.set("ok", Json::boolean(false))
+      m.set("channel", Json::string(channel))
+      m.set("queue_mark_error", Json::string(e))
+      Json::object(m)
+    }
+  }
+}
+
+///|
 /// 任务→所需能力自动抽取（R33）：扫任务描述里出现的「已注册执行者能力标签」，
 /// 取最长命中的那个作 need（最具体）。没命中返回空串（调用方回退 agent / 空 want）。
 fn auto_need(desc : String) -> String {
@@ -5737,18 +5761,20 @@ pub async fn run_server() -> Unit {
                             Some(Number(n, ..)) => n.to_int()
                             _ => -1
                           }
+                          github_ok = true
+                          let mm : Map[String, Json] = Map([])
+                          mm.set("ok", Json::boolean(true))
                           if issue_number > 0 {
-                            let _ = github_queue_mark_sent(
+                            let github_mark_res = github_queue_mark_sent(
                               project_dir,
                               [bug_id],
                               Map([(bug_id, issue_number)]),
                               sent_at=ts,
                             )
-                          }
-                          github_ok = true
-                          let mm : Map[String, Json] = Map([])
-                          mm.set("ok", Json::boolean(true))
-                          if issue_number > 0 {
+                            mm.set(
+                              "queue_mark",
+                              queue_mark_receipt("github", github_mark_res),
+                            )
                             mm.set(
                               "issue_url",
                               Json::string(
@@ -5922,18 +5948,20 @@ pub async fn run_server() -> Unit {
                               }
                             _ => ""
                           }
+                          let mm : Map[String, Json] = Map([])
+                          mm.set("ok", Json::boolean(true))
+                          mm.set("fallback_used", Json::string("gitcode"))
                           if !iid.is_empty() {
-                            let _ = gitcode_queue_mark_sent_batch(
+                            let gitcode_mark_res = gitcode_queue_mark_sent_batch(
                               project_dir,
                               [bug_id],
                               Map([(bug_id, iid)]),
                               sent_at=ts,
                             )
-                          }
-                          let mm : Map[String, Json] = Map([])
-                          mm.set("ok", Json::boolean(true))
-                          mm.set("fallback_used", Json::string("gitcode"))
-                          if !iid.is_empty() {
+                            mm.set(
+                              "queue_mark",
+                              queue_mark_receipt("gitcode", gitcode_mark_res),
+                            )
                             mm.set(
                               "issue_url",
                               Json::string(
