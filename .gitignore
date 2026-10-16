@@ -81,3 +81,36 @@ dist/
 /vout.txt
 /me.txt
 /fist-mbt-light-worktree.zip
+
+# Round 261: 发布载荷面清整（check_publish_payload BUG-127 红面）——
+# `moon publish` 打包面=工作树−.gitignore，这些本地临时/工作产物会被公开出去。
+# 逐文件/前缀精确点名，不整目录挡：reports/memory/docs-archive 各有已跟踪合法内容，
+# 整挡会让将来合法新增也进不了包。
+/_tmp_*.py
+/backup/
+/requirements.txt
+/check_output.txt
+/atgc/codon_lab.py
+/docs/archive/README.md
+/memory/plan-ofm-fallback-retry.md
+/reports/2026-10-15-round27-caf-pick-hook-report.md
+/reports/2026-10-16-fist-mbt-self-iter-sweep.md
+/reports/2026-10-16-future-plan.md
+/scripts/bug161_smoke.py
+/scripts/check_bytes.py
+/scripts/check_line_endings.py
+/scripts/dev_loop.py
+/scripts/fix_ledger.py
+/scripts/fix_router_caf.py
+/scripts/fix_router_caf2.py
+/scripts/phase6_smoke.py
+/scripts/pol_keeper_prompt.md
+/scripts/pol_keeper_wrapper.ps1
+/scripts/warn_stats.py
+/zhi_*.py
+# Round 261b：并发 ofm-caf agent 新加的临时脚本（未跟踪）——挡 publish 泄漏，防下一发 P1 事故。
+/scripts/fist_mbt_mcp_client.py
+# Round 8 polish (marvis)：仓库根临时测试输出（`moon test`/构建脚本生成的中间产物，非本仓资产）
+/build_js_out.txt
+/chk_out.txt
+/dag_test_out.txt
