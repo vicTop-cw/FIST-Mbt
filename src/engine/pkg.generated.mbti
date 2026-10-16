@@ -88,6 +88,7 @@ pub struct FistEngine {
 }
 pub fn FistEngine::all_subtasks_completed(Self, @core.Task) -> Bool
 pub fn FistEngine::archive(Self, task_id~ : String, by~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::archive_force(Self, task_id~ : String, by~ : String, force~ : Bool, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::assistant_active_primary(Self) -> @store.AssistantReg?
 pub fn FistEngine::assistant_get(Self, String) -> @store.AssistantReg?
 pub fn FistEngine::assistant_list(Self) -> Array[@store.AssistantReg]
