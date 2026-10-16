@@ -37,17 +37,17 @@ fn text_of(v : Json) -> String {
 ///|
 /// 正则降级匹配：pattern 语义采用简化规则
 /// - 以 ^ 开头、$ 结尾（长度>2）→ 精确相等（剥掉锚点）
-/// - 以 ^ 开头 → 前缀匹配
-/// - 以 $ 结尾 → 后缀匹配
+/// - 以 ^ 开头（长度>1）→ 前缀匹配
+/// - 以 $ 结尾（长度>1）→ 后缀匹配
 /// - 否则 → 包含匹配（对应 Python re.search 的“存在即匹配”）
 pub fn regex_lite(actual : String, pattern : String) -> Bool {
   if pattern.has_prefix("^") && pattern.has_suffix("$") && pattern.length() > 2 {
     return actual == pattern[1:pattern.length() - 1].to_owned()
   }
-  if pattern.has_prefix("^") {
+  if pattern.has_prefix("^") && pattern.length() > 1 {
     return actual.has_prefix(pattern[1:pattern.length()].to_owned())
   }
-  if pattern.has_suffix("$") {
+  if pattern.has_suffix("$") && pattern.length() > 1 {
     return actual.has_suffix(pattern[0:pattern.length() - 1].to_owned())
   }
   actual.contains(pattern)
