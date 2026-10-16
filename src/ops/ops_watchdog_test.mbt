@@ -122,6 +122,23 @@ fn wd_str_array(j : Json, key : String) -> Array[String] {
 }
 
 ///|
+/// 读出 detail 子对象里的字符串字段（缺失返回 ""）。
+fn wd_detail_str(j : Json, key : String) -> String {
+  match j {
+    Object(m) =>
+      match m.get("detail") {
+        Some(Object(dm)) =>
+          match dm.get(key) {
+            Some(String(s)) => s
+            _ => ""
+          }
+        _ => ""
+      }
+    _ => ""
+  }
+}
+
+///|
 /// 调用 tick 并断言成功。
 fn wd_tick_ok(
   e : @engine.FistEngine,
@@ -671,6 +688,26 @@ test "watchdog D-4: 冷启动幂等 — 已有任务后 cold_start=true 不再�
   // 没有重复发布，action 为 idle 或 waiting（取决于 active_ids 分类）
   assert_eq(wd_action(j2) != "advanced", true)
   assert_eq(e.list_in_ns("cron-auto").length(), 1)
+}
+
+///|
+test "watchdog D-4b: 冷启动失败须在 detail.cold_start_error 披露原因（BUG-225）" {
+  let e = wd_sqlite_engine("watchdog_d4b.db")
+  // default 命名空间拒绝冷启动 -> cold_publish 返回 Err
+  let j = wd_tick_ok(
+    e,
+    "2026-09-17T10:00:00Z",
+    ns="default",
+    next_description="不应被发布到 default",
+    cold_start=true,
+  )
+  // 仍退化为 idle（D-3 语义零回归），但失败原因不能再被静默吞掉
+  assert_eq(wd_action(j), "idle")
+  assert_eq(wd_detail_str(j, "cold_start_error").length() > 0, true)
+  // 未进入冷启动分支（无失败）时不应出现该字段，避免误报
+  let j2 = wd_tick_ok(e, "2026-09-17T10:02:00Z", ns="cron-auto")
+  assert_eq(wd_action(j2), "idle")
+  assert_eq(wd_detail_str(j2, "cold_start_error"), "")
 }
 
 ///|

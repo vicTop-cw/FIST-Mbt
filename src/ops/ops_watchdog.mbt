@@ -546,7 +546,23 @@ pub fn watchdog_tick(
             ),
           )
         }
-        Err(_) => () // 冷启动失败退化为空闲，不 panic
+        Err(e) => {
+          // BUG-225：冷启动发布失败不能静默吞掉——否则调用方只看到 action="idle"，
+          // 无法区分「无任务可发布」与「冷启动失败」（default 命名空间拒绝冷启动、
+          // 已有任务拒绝重复发布、或 DB/IO 瞬时错误）。与上方 publish_next_round
+          // 失败分支保持一致，把原因并入 detail.cold_start_error 供调用方判别；
+          // 仍退化为 idle，保持 D-3/D-4 既有语义零回归。
+          let new_m : Map[String, Json] = Map([])
+          match detail {
+            Object(m) =>
+              for k, v in m {
+                new_m.set(k, v)
+              }
+            _ => ()
+          }
+          new_m.set("cold_start_error", Json::string(e))
+          detail = Json::object(new_m)
+        }
       }
     }
   }
