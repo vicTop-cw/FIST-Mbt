@@ -590,9 +590,10 @@ fn get_bool(args : Json, key : String, default? : Bool = false) -> Bool {
 }
 
 ///|
-/// BUG-235：把「用户入参解析失败」的原因注入回执对象——仅在 msg 非空时注入，
+/// BUG-235：把「被静默吞掉的失败」原因注入回执对象——仅在 msg 非空时注入，
 /// 成功路径零回归（msg 为空直接原样返回）。回执非对象时包一层
 /// {"original": ..., key: msg} 兜底，保证失败信息不丢。
+/// BUG-236 起复用同一注入口：persist_error / search_error 也走这里。
 fn add_parse_error_field(j : Json, key : String, msg : String) -> Json {
   if msg == "" {
     return j
@@ -3464,7 +3465,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "evolve_asset_register",
-    "DGM 演化·注册一个可选外部资产（如 code-review / superpowers 类 skill 库）：作为 Artifact 归档进档案库，goal 用 [asset]<来源名> 便于 plan/claim 的 inject 按关键词检索，note 放可注入提示词、code 放来源路径/URL。返回产物 JSON（含 id/goal/note/code/score/created_at，另带 portable_candidates：可移植外部资产候选数组，由 src/evolve/self_search.mbt 的 analyze_candidate/assess_portability/distill_candidates 蒸馏；未配置 FIST_SELF_SEARCH_CMD 时为空数组，零回归）；asset_id 可省略（自动生成，避免与既有产物 id 冲突）。",
+    "DGM 演化·注册一个可选外部资产（如 code-review / superpowers 类 skill 库）：作为 Artifact 归档进档案库，goal 用 [asset]<来源名> 便于 plan/claim 的 inject 按关键词检索，note 放可注入提示词、code 放来源路径/URL。返回产物 JSON（含 id/goal/note/code/score/created_at，另带 portable_candidates：可移植外部资产候选数组，由 src/evolve/self_search.mbt 的 analyze_candidate/assess_portability/distill_candidates 蒸馏；未配置 FIST_SELF_SEARCH_CMD 时为空数组，零回归）；asset_id 可省略（自动生成，避免与既有产物 id 冲突）。落库 evolve_artifacts 失败时回执附 persist_error 说明原因（BUG-236：不再静默吞掉）；注入搜索执行器后检索失败附 search_error。",
     schema(
       {
         "source": string_prop(

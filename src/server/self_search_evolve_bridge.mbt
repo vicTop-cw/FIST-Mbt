@@ -100,7 +100,9 @@ pub fn self_search_runner_default() -> ((String, Array[String]) -> Result[
 ///   2. **新增**：把注入的搜索执行器 `runner?` 交给 `run_external_search` 做外部检索，
 ///      命中后经 `analyze_candidate` → `assess_portability`（analyze 内部） →
 ///      `distill_candidates`（去重 + 过滤不可移植 + 按 source 稳定排序）蒸馏出可移植候选；
-///   3. 回执追加 `portable_candidates` 键（未注入 runner 时为空数组，零回归）。
+///   3. 回执追加 `portable_candidates` 键（未注入 runner 时为空数组，零回归）；
+///      落库失败时回执附 `persist_error`、注入 runner 后搜索失败附
+///      `search_error`（BUG-236：仅失败时出现，成功路径零回归）。
 /// 签名保持与 `evolve_asset_register` 工具参数同形，便于白盒测试直接注入 mock runner。
 /// 同步实现：注册（Archive + SQLite）与外部检索（文件读 / mock）都是同步 IO。
 pub fn do_evolve_asset_register_with_search(
@@ -128,10 +130,11 @@ pub fn do_evolve_asset_register_with_search(
   )
   @evolve.Archive::add(evolve_arc, art)
   // BUG-140：外部资产注册必须同步落库 evolve_artifacts，否则重启即失、inject 检索不到 [asset]。
-  ignore(
-    match evolve_store {
-      None => Err("evolve_store 未打开（内存态，未落库）")
-      Some(s) =>
+  // BUG-236：落库结果必须留痕——失败（含 store 未打开）时回执附 persist_error，不再静默吞掉。
+  let persist_error = match evolve_store {
+    None => "evolve_store 未打开（内存态，未落库）"
+    Some(s) =>
+      match
         s.evolve_upsert(
           id=asset_id,
           parent_id="",
@@ -141,12 +144,15 @@ pub fn do_evolve_asset_register_with_search(
           score~,
           parts_json="{}",
           created_at=ts,
-        )
-    },
-  )
-  // 自搜索接线：注入 runner 才执行；未注入 → 跳过（run_external_search 返回 Err，静默降级）。
-  let candidates = match runner {
-    None => []
+        ) {
+        Ok(_) => ""
+        Err(e) => e
+      }
+  }
+  // 自搜索接线：注入 runner 才执行；未注入 → 跳过（零回归）。
+  // BUG-236：注入后搜索失败（如搜索源不可读）回执附 search_error，不再静默降级为空候选。
+  let (candidates, search_error) = match runner {
+    None => ([], "")
     Some(r) =>
       match
         @evolve.run_external_search(
@@ -154,8 +160,8 @@ pub fn do_evolve_asset_register_with_search(
           [source, code],
           runner=Some(r),
         ) {
-        Ok(raw) => @evolve.distill_candidates(parse_search_lines(raw))
-        Err(_) => []
+        Ok(raw) => (@evolve.distill_candidates(parse_search_lines(raw)), "")
+        Err(e) => ([], e)
       }
   }
   let base = art.to_json()
@@ -167,5 +173,7 @@ pub fn do_evolve_asset_register_with_search(
     }
     _ => base
   }
+  let enriched = add_parse_error_field(enriched, "persist_error", persist_error)
+  let enriched = add_parse_error_field(enriched, "search_error", search_error)
   Ok(enriched)
 }
