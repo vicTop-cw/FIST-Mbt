@@ -4132,10 +4132,13 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 
 
 
-## BUG-227 [2026-10-16T02:13:56Z] [medium] OPEN
+## BUG-227 [2026-10-16T02:13:56Z] [medium] FIXED
 - summary: [self-cleanup] 已暂停任务无归档清理路径，410 条无主僵尸永久堆积致 project_health 恒 attention
 - detail: 清扫 2026-10-16 轮次（R120）：fist-mbt 项目任务库 569 条，其中已暂停 410 条（397 条 assignee 为空、分布在历史命名空间 r3verify=141/stdalign=136/enhance-e2e=72/dag-verify=16/atgc-selfdrive=14/polish=10 等）。尝试 archive 清理被拒：archive 的合法前态仅「已完成」，已暂停任务无 resume→空完成→归档 的合法清理链（resume 到已领取后仍无法归档；无 cancel/批量归档工具）。导致全库 1535 条已暂停僵尸永久堆积，project_health 恒 attention、saturation 无法回落。缺一条「已暂停僵尸批量清理」路径（如 resume 后 force_archive，或按 namespace/assignee 空 批量归档 API）。本轮已完成 134 条已完成任务归档（done 524→391, archived 49→182），唯 410 已暂停无法清理。
 
+
+### FIXED(2026-10-16T07:43:00Z / BUG-227)
+- evidence: commit d5033f0（master）：archive 工具新增 force 可选参数，放行已暂停/已打回僵尸任务直接归档。改动：src/core/core_task.mbt Task::archive_force（force=false 与 archive 同义零回归；force=true 放行 已完成/已暂停/已打回，在流态仍拒并给 pause 出路文案）；src/engine/engine_archive_force.mbt FistEngine::archive_force 旁路（新文件不动 engine.mbt 主流程，权限同门 human_steward/human，store 层零改动）；src/server/server.mbt 既有 archive 工具加 bool_prop force 参数（不新增工具，工具计数守卫零影响）。白盒锁 src/core/core_task_force_wbtest.mbt 4 条（同义锚/三滞留态放行/五在流态拒/已归档终态拒）。提交门禁：moon fmt + moon info + moon test --target js = Total tests: 1247, passed: 1247, failed: 0。注：运行中 MCP server 仍为旧构建，force 参数随下次 dist 构建生效。
 ## BUG-228 [2026-10-16T03:30:26Z] [high] FIXED
 - summary: [server] report_bug auto_push 远端建号成功后本地队列标记写入失败被静默丢弃，下轮 sync 重复建号
 - detail: server.mbt report_bug auto_push 两处队列标记调用点（github L5776、gitcode L5963）以 `let _ =` 丢弃 Result[Json, String]；被调 github_queue_mark_sent（github_sync.mbt L308）与 gitcode_queue_mark_sent_batch（github_gitcode.mbt L317）在本地队列写入失败时 return Err("…: 队列写入失败")（BUG-220 已修），但调用点丢弃 Err 后回执仍报 github.ok:true / gitcode.ok:true 并带 issue_url，本地 JSONL 队列未标记 sent，下轮 sync 对同一 bug 重复建号，GitHub/GitCode 出现重复 issue。同型调用点（github_mark_sent 工具封装、flush_execute、gitcode_mark_sent 工具封装）均正确归一，唯 auto_push 两处遗漏。
@@ -4206,6 +4209,25 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 捕获 `let ok = engine.assistant_set_status(r.agent, "dead")`，`marked_dead` 只在 ok 为真时递增，失败计入新计数器 `mark_failed`；回执改用可变 `Map[String, Json]` 构造（复用 BUG-232 executor_save 的惯用法），基础字段 swept_locks / assistants_marked_dead 如实反映，`if mark_failed > 0` 时条件注入 `assistants_mark_failed` 计数——成功路径零回归。同步更新 `assistant_sweep` 工具描述。回归锁 `assistant_sweep_wbtest.mbt`：钉住 `ignore(engine.assistant_set_status` 清零、Bool 捕获存在、条件注入存在、工具描述同步。`moon test --target js src/server` 311/311 全绿（基线 307）。
 - reported_by: bugfind
 - commit: 0e511a0
+## BUG-238 [2026-10-16T07:16:10Z] [high] FIXED
+- summary: [rule:executor-model-mismatch] executor_run(atomcode) 路由的模型名与 atomcode provider 命名空间不兼容，HTTP 400 Unsupported model
+- detail: 实测（2026-10-16）：
+- `executor_run(executor=atomcode, model=ling-3.1-flash-free)` → exit 1，atomcode stderr: `HTTP 400 Unsupported model (model=ling-3.1-flash-free)`
+- `executor_run(executor=atomcode, model=mimo-v2.6-flash-free)` → 同样 exit 1
+- 本地 `atomcode --version` rc=0，`atomcode -p ... -y`（不带 --model，用 config 默认 longcat/LongCat-2.0）rc=0 成功回复
+
+根因：FIST `model_route` 的模型池（ling-3.1-flash-free / mimo-v2.6-flash-free 等）是 FIST 自己的命名空间，被直接塞进 atomcode 的 `--model` 参数；而 atomcode 的 provider 配置（~/.atomcode/config.toml）用的是 longcat/deepseek/Kimi 等独立命名空间。两套模型名不通，executor_run 对 atomcode 恒失败。
+
+影响：外部执行器通道（R30 合并自 fist-model-router）对 atomcode 不可用；aider 走同一 model_route 可能同样受影响。
+
+建议修复方向：executor_run 在 CLI 通道下应使用 atomcode config 的 default_model，或提供 model 命名空间映射（FIST 模型名 → atomcode provider/model），而不是把路由池名直接塞 --model。
+- ref_call: 0
+- task_id: T0r619
+
+
+
+### FIXED(2026-10-16T07:31:58Z / BUG-238)
+- evidence: 改了真源：src/executor/cli_argv.mbt 的 atomcode_argv（model 空→省略 --model，走 atomcode config 默认档）+ src/server/model_router_ops.mbt 的 executor_run_impl（chosen.is_empty() && executor != "atomcode" 才走 FIST 路由）。锁钉住：cli_argv_test.mbt ca_8（空模型省略 --model 白盒锁）；实测 atomcode model=LongCat-2.0 / 不带 --model 均 rc=0，model=ling-3.1-flash-free / mimo-v2.6-flash-free 仍 HTTP 400（修复前根因）。全量 moon test --target js 1247/1247 通过零回归。
 
 ## BUG-239 [2026-10-16T15:57:07Z] [high] FIXED
 - summary: [server] github_flush_execute 的 github_queue_mark_sent 失败被静默吞成空 marked_sent 对象，回执 executed:true 谎报队列已标记
@@ -4213,3 +4235,11 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 改为元组捕获 `let (mark_json, mark_sent_error) = match mark_res { Ok(j) => (j, ""); Err(e) => (Json::object(Map([])), e) }`（复用 BUG-232 executor_save 的 `(persisted, persist_error)` 惯用法），回执在 `mark_sent_error != ""` 时条件注入 `marked_sent_error` 字段（非空才出现，成功路径零回归）。同步更新 `github_flush_execute` 工具描述，声明标记失败时回执附 `marked_sent_error`。回归锁 `github_flush_wbtest.mbt`：钉住旧静默吞错模式 `Err(_) => Json::object(Map([]))` 清零、元组捕获存在、条件注入存在、工具描述同步。`moon test --target js src/server` 315/315 全绿（基线 311）。
 - reported_by: bugfind
 - commit: 99cf2a6
+
+## BUG-240 [2026-10-16T16:30:00Z] [high] FIXED
+- summary: [ops] ops_heal 三个看护函数 ignore(store_delete_heartbeat) 静默吞掉 SQLite 删除失败，回执仍报 healed 成功
+- detail: `src/ops/ops_heal.mbt` 的 `heal_stale_tasks` / `heal_stale_tasks_from_store` / `heal_stale_tasks_by_phi` 在 reopen 成功后调 `ignore(engine.store_delete_heartbeat(task_id=t.get_id()))` 清理持久化心跳行，SQLite 删除失败被静默吞掉——回执仍报 `healed` 成功，无任何字段指示清理失败。残留过期心跳行会让下一轮 `heal_stale_tasks_from_store`（以持久化心跳表为判活依据）把已回滚任务误判为「仍在执行」，错过下一次回滚窗口。与 BUG-204/217/225-239「静默吞错 / 回执说谎」同族。
+- fix: 三处均改为 `match engine.store_delete_heartbeat(task_id=t.get_id()) { Ok(_) => (); Err(_) => delete_failed_ids.push(t.get_id()) }`，新增 `delete_failed_ids? : Array[String] = []` 可选参数（默认空数组，既有调用方零改动）。调用面透传：`ops_watchdog.mbt` 声明 `delete_failed` 并传入两处调用 + detail 注入 `heartbeat_delete_failed_ids`；`ops_pipeline.mbt` 声明 `heal_delete_failed` 并传入 + 条件注入 `heal_delete_failed`（非空才出现，零回归）；`server.mbt` heal 工具声明 `delete_failed` 并传入 + 回执注入 `delete_failed` + 工具描述同步。`heal_stale_tasks_by_phi` 附带修复 `Err(_) => ()` → `Err(e) => return Err(e)`（同函数内 reopen 失败静默吞错）。回归锁 `ops_heal_wbtest.mbt`：钉住 `ignore(engine.store_delete_heartbeat` 清零、`Err(_) => delete_failed_ids.push(t.get_id())` 出现 3 次、`delete_failed_ids? : Array[String] = []` 出现 3 次。`moon test --target js` 1254/1254 全绿。
+- reported_by: bugfind
+- commit: 98744c5
+
