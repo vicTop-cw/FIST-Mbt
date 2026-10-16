@@ -4127,4 +4127,9 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - reported_by: bugfind
 - commit: d65c2ec
 
-
+## BUG-228 [2026-10-16T03:30:26Z] [high] FIXED
+- summary: [server] report_bug auto_push 远端建号成功后本地队列标记写入失败被静默丢弃，下轮 sync 重复建号
+- detail: server.mbt report_bug auto_push 两处队列标记调用点（github L5776、gitcode L5963）以 `let _ =` 丢弃 Result[Json, String]；被调 github_queue_mark_sent（github_sync.mbt L308）与 gitcode_queue_mark_sent_batch（github_gitcode.mbt L317）在本地队列写入失败时 return Err("…: 队列写入失败")（BUG-220 已修），但调用点丢弃 Err 后回执仍报 github.ok:true / gitcode.ok:true 并带 issue_url，本地 JSONL 队列未标记 sent，下轮 sync 对同一 bug 重复建号，GitHub/GitCode 出现重复 issue。同型调用点（github_mark_sent 工具封装、flush_execute、gitcode_mark_sent 工具封装）均正确归一，唯 auto_push 两处遗漏。
+- fix: 抽出纯函数 queue_mark_receipt(channel, res) -> Json 归一回执（Ok→{ok,channel,marked,total}；Err→{ok:false,channel,queue_mark_error}），auto_push 两处标记调用点捕获 Result 并将回执并入 remote_push 子图（auto_push.github.queue_mark / auto_push.gitcode.queue_mark）随响应回传；新增回归锁 queue_mark_receipt_wbtest.mbt 钉住 Ok/Err 双分支。moon test --target js src/server 全绿（288/288）。
+- reported_by: bugfind
+- commit: cb3f27f708b91bcca49926d7dc0c38ec009485ed
