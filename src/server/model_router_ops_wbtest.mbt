@@ -519,3 +519,19 @@ test "ma_4_impl 端到端零副作用：不建状态文件、gate 与 pools 都�
   // 零副作用：只读查询不得落任何状态文件
   must_not_exist(path)
 }
+
+///|
+test "bug229_重试分支记账冷却不留静默吞错" {
+  // mr_retry_note：Ok→""，Err→"model: err"
+  assert_eq(mr_retry_note("m1", Ok(())), "")
+  assert_eq(mr_retry_note("m1", Err("disk full")), "m1: disk full")
+  // mr_opt_arr_field：空数组→[]（不出字段），非空→出字段
+  assert_eq(mr_opt_arr_field("k", []).length(), 0)
+  assert_eq(mr_opt_arr_field("k", ["a"]).length(), 1)
+  // mr_record_failure：模型不在池中→Ok(())（不报错）
+  let d = mo_prep("bug229")
+  match mr_record_failure(d, "nonexistent_model", ns="bug229") {
+    Ok(_) => ()
+    Err(e) => abort("不在池中的模型应返回 Ok，实际 Err: " + e)
+  }
+}

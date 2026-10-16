@@ -87,6 +87,16 @@ fn mr_warn_arr(warns : Array[String]) -> Json {
 }
 
 ///|
+/// 非空才出字段：空数组→`[]`（不给回执塞 `"key": []` 噪音）。
+fn mr_opt_arr_field(key : String, arr : Array[String]) -> Array[(String, Json)] {
+  if arr.is_empty() {
+    []
+  } else {
+    [(key, mr_warn_arr(arr))]
+  }
+}
+
+///|
 /// config_json 文本 → Json。空串=不覆盖（`Json::null()`）；非法 JSON 一律 Err。
 /// 这里绝不"解析失败就当没传"：调用方以为覆盖了池定义、实际却用默认池跑，
 /// 是最难查的一类静默降级（与 BUG-31/33/43 同族）。
@@ -338,7 +348,8 @@ fn mr_record_only(
 
 ///|
 /// P1.1：给某模型标记失败冷却（不消耗配额）。冷却时长从 env `FIST_MODEL_COOLDOWN_SECS`
-/// 取（默认 300 秒）。模型不在池里则返回 Err，调用方按"静默跳过"处理。
+/// 取（默认 300 秒）。模型不在池中→无操作返回 Ok（防御性，正常路径不会触发）；
+/// 落盘失败返回 Err，调用方必须回执，不得静默吞错（BUG-229）。
 fn mr_record_failure(
   project_dir : String,
   ns~ : String,
@@ -357,9 +368,19 @@ fn mr_record_failure(
   let (r, _warns) = @router.router_restore(mr_read(project_dir, ns))
   let found = r.mark_failure(model, cool_until)
   if not(found) {
-    return Err("模型 \"" + model + "\" 不在任何池中，未标记冷却")
+    return Ok(())
   }
   mr_save(r, project_dir, ns)
+}
+
+///|
+/// BUG-229：把重试分支的记账/冷却 `Result` 归一成回执字符串（Ok→""；Err→"model: err"）。
+/// 重试分支不得再用 `let _ =` 丢弃：落盘失败必须留痕。
+fn mr_retry_note(model : String, res : Result[Unit, String]) -> String {
+  match res {
+    Ok(_) => ""
+    Err(e) => "\{model}: \{e}"
+  }
 }
 
 ///|
@@ -907,6 +928,8 @@ async fn executor_run_impl(
   let mut attempt_idx = -1
   let mut retried : Array[String] = []
   let mut should_retry = true
+  // BUG-229：重试分支的记账/冷却 Err 留痕（不得 `let _ =` 静默吞错）
+  let mut cooldown_errors : Array[String] = []
   while should_retry {
     should_retry = false
     let (bin, args) = if attempt_idx < 0 {
@@ -937,7 +960,13 @@ async fn executor_run_impl(
         // 但模型可靠性已受疑 → 标记冷却（P1.1 冷却/自动摘除）
         if attempt_idx + 1 < max_retries &&
           attempt_idx + 1 < fallback_models.length() {
-          let _ = mr_record_failure(project_dir, ns~, attempt_model)
+          let note = mr_retry_note(
+            attempt_model,
+            mr_record_failure(project_dir, ns~, attempt_model),
+          )
+          if note != "" {
+            cooldown_errors = cooldown_errors + [note]
+          }
           retried = retried + [attempt_model]
           attempt_idx = attempt_idx + 1
           attempt_model = fallback_models[attempt_idx]
@@ -946,6 +975,7 @@ async fn executor_run_impl(
           return mr_obj(
             [("ok", Json::boolean(false))] +
             head +
+            mr_opt_arr_field("cooldown_errors", cooldown_errors) +
             [
               ("executed", Json::boolean(false)),
               ("exit_code", Json::number(-1.0)),
@@ -983,7 +1013,13 @@ async fn executor_run_impl(
           if routed_by_pool {
             let _ = mr_record_only(project_dir, ns~, attempt_model)
           }
-          let _ = mr_record_failure(project_dir, ns~, attempt_model)
+          let note = mr_retry_note(
+            attempt_model,
+            mr_record_failure(project_dir, ns~, attempt_model),
+          )
+          if note != "" {
+            cooldown_errors = cooldown_errors + [note]
+          }
           retried = retried + [attempt_model]
           attempt_idx = attempt_idx + 1
           attempt_model = fallback_models[attempt_idx]
@@ -1006,6 +1042,7 @@ async fn executor_run_impl(
           return mr_obj(
             [("ok", Json::boolean(okk))] +
             head +
+            mr_opt_arr_field("cooldown_errors", cooldown_errors) +
             [
               ("executed", Json::boolean(true)),
               ("quota", Json::string(quota_note)),
