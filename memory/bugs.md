@@ -4206,3 +4206,10 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 捕获 `let ok = engine.assistant_set_status(r.agent, "dead")`，`marked_dead` 只在 ok 为真时递增，失败计入新计数器 `mark_failed`；回执改用可变 `Map[String, Json]` 构造（复用 BUG-232 executor_save 的惯用法），基础字段 swept_locks / assistants_marked_dead 如实反映，`if mark_failed > 0` 时条件注入 `assistants_mark_failed` 计数——成功路径零回归。同步更新 `assistant_sweep` 工具描述。回归锁 `assistant_sweep_wbtest.mbt`：钉住 `ignore(engine.assistant_set_status` 清零、Bool 捕获存在、条件注入存在、工具描述同步。`moon test --target js src/server` 311/311 全绿（基线 307）。
 - reported_by: bugfind
 - commit: 0e511a0
+
+## BUG-239 [2026-10-16T15:57:07Z] [high] FIXED
+- summary: [server] github_flush_execute 的 github_queue_mark_sent 失败被静默吞成空 marked_sent 对象，回执 executed:true 谎报队列已标记
+- detail: `src/server/server.mbt` 的 `github_flush_execute` handler 在 force 刷批后调 `github_queue_mark_sent` 标记本地 JSONL 队列已发送，`match mark_res { Ok(j) => j; Err(_) => Json::object(Map([])) }` 把队列写入失败（非法 project_dir / 队列写失败，github_sync.mbt L308-353 的 Err 路径，BUG-220 已修）静默吞成空对象——回执仍报 `executed:true` 且 `marked_sent` 为空对象，无任何字段指示标记失败，下轮 sync 对同一批 bug 重复建号，GitHub 出现重复 issue。与同族兄弟处理器（issue_close/issue_comment 如实透错、BUG-228 auto_push 两处、BUG-235 queue_mark_sent 工具封装）不一致，唯 flush_execute 遗漏。与 BUG-225~238「静默吞错 / 回执说谎」同族。
+- fix: 改为元组捕获 `let (mark_json, mark_sent_error) = match mark_res { Ok(j) => (j, ""); Err(e) => (Json::object(Map([])), e) }`（复用 BUG-232 executor_save 的 `(persisted, persist_error)` 惯用法），回执在 `mark_sent_error != ""` 时条件注入 `marked_sent_error` 字段（非空才出现，成功路径零回归）。同步更新 `github_flush_execute` 工具描述，声明标记失败时回执附 `marked_sent_error`。回归锁 `github_flush_wbtest.mbt`：钉住旧静默吞错模式 `Err(_) => Json::object(Map([]))` 清零、元组捕获存在、条件注入存在、工具描述同步。`moon test --target js src/server` 315/315 全绿（基线 311）。
+- reported_by: bugfind
+- commit: 99cf2a6
