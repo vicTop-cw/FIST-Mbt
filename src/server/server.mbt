@@ -590,6 +590,28 @@ fn get_bool(args : Json, key : String, default? : Bool = false) -> Bool {
 }
 
 ///|
+/// BUG-235：把「用户入参解析失败」的原因注入回执对象——仅在 msg 非空时注入，
+/// 成功路径零回归（msg 为空直接原样返回）。回执非对象时包一层
+/// {"original": ..., key: msg} 兜底，保证失败信息不丢。
+fn add_parse_error_field(j : Json, key : String, msg : String) -> Json {
+  if msg == "" {
+    return j
+  }
+  match j {
+    Object(m) => {
+      m.set(key, Json::string(msg))
+      Json::object(m)
+    }
+    _ => {
+      let mm : Map[String, Json] = Map([])
+      mm.set(key, Json::string(msg))
+      mm.set("original", j)
+      Json::object(mm)
+    }
+  }
+}
+
+///|
 /// BUG-18（Round 2 修复）：Laya sidecar 的**延迟预算对齐**。
 ///
 /// 病灶（活证据 temp/r2_laya_before.json + .err）：本机 `laya_decide` 一次真实调用
@@ -6648,14 +6670,14 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "github_queue_mark_sent",
-    "标记一批 bug_id 已同步至 GitHub issue（写入 sent_at + github_issue_number）。curl 执行成功后调此工具回写队列，幂等安全。参数：project_dir(必填)、bug_ids(必填数组)、sent_at(可选，缺省自动回退)、issue_numbers(可选 JSON 对象)。",
+    "标记一批 bug_id 已同步至 GitHub issue（写入 sent_at + github_issue_number）。curl 执行成功后调此工具回写队列，幂等安全。参数：project_dir(必填)、bug_ids(必填数组)、sent_at(可选，缺省自动回退)、issue_numbers(可选 JSON 对象)。非法 JSON 时回执附 issue_numbers_error 说明原因（BUG-235：不再静默丢弃）。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
         "bug_ids": array_prop("已同步的 bug_id 数组（必填）"),
         "sent_at": string_prop("同步时间戳 ISO 格式（可选）"),
         "issue_numbers": string_prop(
-          "bug_id->issue_number 映射 JSON 对象（可选）",
+          "bug_id->issue_number 映射 JSON 对象（可选），非法 JSON 时回执附 issue_numbers_error",
         ),
       },
       ["project_dir", "bug_ids"],
@@ -6666,27 +6688,39 @@ pub async fn run_server() -> Unit {
       let ids_arr = get_array(args, "bug_ids")
       let bug_ids = ids_arr.map(fn(v) { v.as_string().unwrap_or("") })
       let issue_nums_raw = get_str(args, "issue_numbers")
-      let issue_numbers = if issue_nums_raw.is_empty() {
-        Map([])
+      // BUG-235：issue_numbers 非法 JSON 此前被静默吞成空 Map——映射被丢弃，
+      // sent_at 照写、github_issue_number 被清空，回执无任何提示。
+      // 现捕获解析失败原因，经 issue_numbers_error 透出（非空才出现）。
+      let issue_numbers : Map[String, Int] = Map([])
+      let issue_numbers_error = if issue_nums_raw.is_empty() {
+        ""
       } else {
-        let m = Map([])
-        let j = @json.parse(issue_nums_raw) catch { _ => Json::object(Map([])) }
-        match j {
-          Object(om) => {
+        let parsed = @json.parse(issue_nums_raw) catch { _ => Json::null() }
+        match parsed {
+          Json::Object(om) => {
             for (k, v) in om {
               match v {
-                Number(n, ..) => m.set(k, n.to_int())
+                Number(n, ..) => issue_numbers.set(k, n.to_int())
                 _ => ()
               }
             }
-            m
+            ""
           }
-          _ => Map([])
+          _ => "issue_numbers 非法 JSON，已忽略（github_issue_number 不会回写）"
         }
       }
       match
         github_queue_mark_sent(project_dir, bug_ids, issue_numbers, sent_at~) {
-        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Ok(j) =>
+          Ok(
+            @mcp.ToolResult::text(
+              add_parse_error_field(
+                j,
+                "issue_numbers_error",
+                issue_numbers_error,
+              ).stringify(),
+            ),
+          )
         Err(e) => Err(@mcp_types.ToolError(e))
       }
     },
@@ -7198,14 +7232,14 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "gitcode_queue_mark_sent",
-    "标记一批 bug_id 已同步至 GitCode issue（写入 sent_at + gitcode_issue_iid）。curl 执行成功后调此工具回写队列，幂等安全。参数：project_dir(必填)、bug_ids(必填数组)、sent_at(可选，缺省自动回退)、gitcode_issue_iids(可选 JSON 对象：bug_id → iid 映射)。",
+    "标记一批 bug_id 已同步至 GitCode issue（写入 sent_at + gitcode_issue_iid）。curl 执行成功后调此工具回写队列，幂等安全。参数：project_dir(必填)、bug_ids(必填数组)、sent_at(可选，缺省自动回退)、gitcode_issue_iids(可选 JSON 对象：bug_id → iid 映射)。非法 JSON 时回执附 gitcode_issue_iids_error 说明原因（BUG-235：不再静默丢弃）。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
         "bug_ids": array_prop("已同步的 bug_id 数组（必填）"),
         "sent_at": string_prop("同步时间戳 ISO 格式（可选）"),
         "gitcode_issue_iids": string_prop(
-          "bug_id→gitcode_issue_iid 映射 JSON 对象（可选）",
+          "bug_id→gitcode_issue_iid 映射 JSON 对象（可选），非法 JSON 时回执附 gitcode_issue_iids_error",
         ),
       },
       ["project_dir", "bug_ids"],
@@ -7216,28 +7250,40 @@ pub async fn run_server() -> Unit {
       let ids_arr = get_array(args, "bug_ids")
       let bug_ids = ids_arr.map(fn(v) { v.as_string().unwrap_or("") })
       let iids_raw = get_str(args, "gitcode_issue_iids")
-      let iids_map = if iids_raw.is_empty() {
-        Map([])
+      // BUG-235：gitcode_issue_iids 非法 JSON 此前被静默吞成空 Map——iid 映射被丢弃，
+      // sent_at 照写、gitcode_issue_iid 不回写，回执无任何提示。
+      // 现捕获解析失败原因，经 gitcode_issue_iids_error 透出（非空才出现）。
+      let iids_map : Map[String, String] = Map([])
+      let gitcode_issue_iids_error = if iids_raw.is_empty() {
+        ""
       } else {
-        let m : Map[String, String] = Map([])
-        let j = @json.parse(iids_raw) catch { _ => Json::object(Map([])) }
-        match j {
-          Object(om) => {
+        let parsed = @json.parse(iids_raw) catch { _ => Json::null() }
+        match parsed {
+          Json::Object(om) => {
             for (k, v) in om {
               match v {
-                String(s) => m.set(k, s)
-                Number(n, ..) => m.set(k, n.to_int().to_string())
+                String(s) => iids_map.set(k, s)
+                Number(n, ..) => iids_map.set(k, n.to_int().to_string())
                 _ => ()
               }
             }
-            m
+            ""
           }
-          _ => Map([])
+          _ => "gitcode_issue_iids 非法 JSON，已忽略（gitcode_issue_iid 不会回写）"
         }
       }
       match
         gitcode_queue_mark_sent_batch(project_dir, bug_ids, iids_map, sent_at~) {
-        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Ok(j) =>
+          Ok(
+            @mcp.ToolResult::text(
+              add_parse_error_field(
+                j,
+                "gitcode_issue_iids_error",
+                gitcode_issue_iids_error,
+              ).stringify(),
+            ),
+          )
         Err(e) => Err(@mcp_types.ToolError(e))
       }
     },
