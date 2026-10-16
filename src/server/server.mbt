@@ -3301,7 +3301,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "evolve_submit",
-    "DGM 演化·归档一个产物（Artifact）：把本轮设计/代码/目标加入档案库，自动递增父代子代数。参数：id、goal、note、code、score、parent_id(可选)、parts(可选 JSON 对象)。",
+    "DGM 演化·归档一个产物（Artifact）：把本轮设计/代码/目标加入档案库，自动递增父代子代数。参数：id、goal、note、code、score、parent_id(可选)、parts(可选 JSON 对象)。非法 JSON 时回执附 parts_error 说明原因（BUG-234：不再静默丢弃）。",
     schema(
       {
         "id": string_prop("产物 id（必填，唯一）"),
@@ -3310,7 +3310,7 @@ pub async fn run_server() -> Unit {
         "code": string_prop("实现内容（必填）"),
         "score": number_prop("可计算评分(默认0)"),
         "parent_id": string_prop("父产物 id（可选）"),
-        "parts": string_prop("评分分项 JSON(可选)"),
+        "parts": string_prop("评分分项 JSON(可选)，非法 JSON 时回执附 parts_error"),
       },
       ["id", "goal", "note", "code"],
     ),
@@ -3323,17 +3323,24 @@ pub async fn run_server() -> Unit {
       let parent_id = get_str(args, "parent_id", default="")
       let parts_raw = get_str(args, "parts", default="{}")
       let ts = now_default()
-      let parts : Map[String, Double] = Map([])
-      let parsed = @json.parse(parts_raw) catch { _ => Json::object(Map([])) }
-      match parsed {
-        Object(pm) =>
-          for (k, v) in pm {
-            match v {
-              Number(n, ..) => parts.set(k, n)
-              _ => ()
+      // BUG-234：parts 解析失败此前被静默吞成空对象——用户传了非法 JSON 时
+      // parts 被丢弃，回执无任何提示。现捕获解析结果，失败原因经 parts_error
+      // 透出（非空才出现，成功路径零回归）。
+      let (parts, parts_error) = {
+        let parts_inner : Map[String, Double] = Map([])
+        let parsed = @json.parse(parts_raw) catch { _ => Json::null() }
+        match parsed {
+          Json::Object(pm) => {
+            for (k, v) in pm {
+              match v {
+                Number(n, ..) => parts_inner.set(k, n)
+                _ => ()
+              }
             }
+            (parts_inner, "")
           }
-        _ => ()
+          _ => (parts_inner, "parts 非法 JSON，已忽略")
+        }
       }
       let art = @evolve.Artifact::create(
         id~,
@@ -3359,7 +3366,25 @@ pub async fn run_server() -> Unit {
         )
       }
       @evolve.Archive::add(evolve_arc, art)
-      Ok(@mcp.ToolResult::text(art.to_json().stringify()))
+      // BUG-234：parts 解析失败回执（非空才出现，成功路径零回归）
+      let art_json = art.to_json()
+      let final_json = if parts_error != "" {
+        match art_json {
+          Object(m) => {
+            m.set("parts_error", Json::string(parts_error))
+            Json::object(m)
+          }
+          _ => {
+            let mm : Map[String, Json] = Map([])
+            mm.set("parts_error", Json::string(parts_error))
+            mm.set("original", art_json)
+            Json::object(mm)
+          }
+        }
+      } else {
+        art_json
+      }
+      Ok(@mcp.ToolResult::text(final_json.stringify()))
     },
   )
   s1 = instrumented_tool(
