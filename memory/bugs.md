@@ -4185,3 +4185,10 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 将 `let parts = ...` 改为 `let (parts, parts_error) = ...`，捕获解析结果，失败时 `parts_error` 为错误信息；在回执 `final_json` 构造后追加后处理——`parts_error != ""` 时向回执 Map 注入 `parts_error` 字段（非空才出现，成功路径零回归）。同步更新 `evolve_submit` 工具描述，声明非法 JSON 时回执附 `parts_error`。回归锁 `evolve_parts_wbtest.mbt`：钉住 server.mbt 不再有 `let parts : Map[String, Double] = Map([])` 静默吞错模式（源码文本锁）、`parts_error` 回执逻辑存在、工具描述同步提及。`moon test --target js src/server` 299/299 全绿（基线 296）。
 - reported_by: bugfind
 - commit: d84f5f4
+
+## BUG-235 [2026-10-16T06:31:00Z] [high] FIXED
+- summary: [server] github_queue_mark_sent / gitcode_queue_mark_sent 的 issue_numbers / gitcode_issue_iids 解析失败被静默吞成空 Map，用户传了非法 JSON 时映射被丢弃（github 侧还会把已回写的 github_issue_number 清空），回执无任何提示
+- detail: `src/server/server.mbt` 的 `github_queue_mark_sent` handler 解析 `issue_numbers` 参数时，`@json.parse(issue_nums_raw)` 的 `catch { _ => Json::object(Map([])) }` 把解析失败静默转成空对象（形状不符亦同），随后 `github_queue_mark_sent` 对命中 bug_id 一律 `m.set("github_issue_number", Json::null())`——映射被丢弃，sent_at 照写、issue_number 被清空（数据丢失），回执仅 marked/total，无字段指示解析失败。`gitcode_queue_mark_sent` handler 对 `gitcode_issue_iids` 同构（iid 不回写，回执无提示）。与 BUG-233/234「静默吞错」同族。
+- fix: 抽出包级 helper `add_parse_error_field(j, key, msg)`（msg 非空才注入回执对象，非对象时包 `{"original":..., key:msg}` 兜底）；两个 handler 改为先 `let <map> : Map[...] = Map([])` 再 `let <x>_error = if raw.is_empty() { "" } else { 解析成功返回 ""，失败返回错误串 }`（就地填充 map），回执经 `add_parse_error_field(j, "issue_numbers_error"/"gitcode_issue_iids_error", err)` 透出（非空才出现，成功路径零回归）。同步更新两个工具描述，声明非法 JSON 时回执附对应字段。回归锁 `queue_mark_sent_wbtest.mbt`：钉住 server.mbt 不再有 `let issue_numbers = if issue_nums_raw.is_empty() {` 与 `let j = @json.parse(iids_raw) catch { _ => Json::object(Map([])) }` 静默吞错模式（源码文本锁），并校验 helper 与两个 *_error 字段存在、工具描述同步。`moon test --target js src/server` 303/303 全绿（基线 299）。
+- reported_by: bugfind
+- commit: 818f42d
