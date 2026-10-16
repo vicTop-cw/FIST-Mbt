@@ -4178,3 +4178,10 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 将 `let omega_spec = ...` 改为 `let (omega_spec, omega_spec_error) = ...`，捕获 `Result` 的 `Err(e)` 分支为 `(None, e)`；在回执 `final_json` 构造后追加后处理——`omega_spec_error != ""` 时向回执 Map 注入 `omega_spec_error` 字段（非空才出现，成功路径零回归）。同步更新 `omega_spec` 工具描述，声明非法 JSON 时回执附 `omega_spec_error`。回归锁 `omega_spec_wbtest.mbt`：钉住 server.mbt 不再有裸 `Err(_) => None`（源码文本锁）、`omega_spec_error` 回执逻辑存在、工具描述同步提及。`moon test --target js src/server` 296/296 全绿（基线 293）。
 - reported_by: bugfind
 - commit: 5f846ba
+
+## BUG-234 [2026-10-16T06:22:00Z] [high] FIXED
+- summary: [server] evolve_submit 的 parts 解析失败被静默吞成空对象，用户传了非法 JSON 时 parts 被丢弃，回执无任何提示
+- detail: `src/server/server.mbt` 的 `evolve_submit` handler 解析 `parts` 参数时，`@json.parse(parts_raw)` 的 `catch { _ => Json::object(Map([])) }` 把解析失败静默转成空对象——用户传了非法 JSON parts 时，parts 被丢弃，artifact 创建成功但评分分项为空，回执中无任何字段指示 parts 被拒绝。与 BUG-233「静默吞错」同族。
+- fix: 将 `let parts = ...` 改为 `let (parts, parts_error) = ...`，捕获解析结果，失败时 `parts_error` 为错误信息；在回执 `final_json` 构造后追加后处理——`parts_error != ""` 时向回执 Map 注入 `parts_error` 字段（非空才出现，成功路径零回归）。同步更新 `evolve_submit` 工具描述，声明非法 JSON 时回执附 `parts_error`。回归锁 `evolve_parts_wbtest.mbt`：钉住 server.mbt 不再有 `let parts : Map[String, Double] = Map([])` 静默吞错模式（源码文本锁）、`parts_error` 回执逻辑存在、工具描述同步提及。`moon test --target js src/server` 299/299 全绿（基线 296）。
+- reported_by: bugfind
+- commit: d84f5f4
