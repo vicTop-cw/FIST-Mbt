@@ -4136,6 +4136,13 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - summary: [self-cleanup] 已暂停任务无归档清理路径，410 条无主僵尸永久堆积致 project_health 恒 attention
 - detail: 清扫 2026-10-16 轮次（R120）：fist-mbt 项目任务库 569 条，其中已暂停 410 条（397 条 assignee 为空、分布在历史命名空间 r3verify=141/stdalign=136/enhance-e2e=72/dag-verify=16/atgc-selfdrive=14/polish=10 等）。尝试 archive 清理被拒：archive 的合法前态仅「已完成」，已暂停任务无 resume→空完成→归档 的合法清理链（resume 到已领取后仍无法归档；无 cancel/批量归档工具）。导致全库 1535 条已暂停僵尸永久堆积，project_health 恒 attention、saturation 无法回落。缺一条「已暂停僵尸批量清理」路径（如 resume 后 force_archive，或按 namespace/assignee 空 批量归档 API）。本轮已完成 134 条已完成任务归档（done 524→391, archived 49→182），唯 410 已暂停无法清理。
 
+## BUG-228 [2026-10-16T03:30:26Z] [high] FIXED
+- summary: [server] report_bug auto_push 远端建号成功后本地队列标记写入失败被静默丢弃，下轮 sync 重复建号
+- detail: server.mbt report_bug auto_push 两处队列标记调用点（github L5776、gitcode L5963）以 `let _ =` 丢弃 Result[Json, String]；被调 github_queue_mark_sent（github_sync.mbt L308）与 gitcode_queue_mark_sent_batch（github_gitcode.mbt L317）在本地队列写入失败时 return Err("…: 队列写入失败")（BUG-220 已修），但调用点丢弃 Err 后回执仍报 github.ok:true / gitcode.ok:true 并带 issue_url，本地 JSONL 队列未标记 sent，下轮 sync 对同一 bug 重复建号，GitHub/GitCode 出现重复 issue。同型调用点（github_mark_sent 工具封装、flush_execute、gitcode_mark_sent 工具封装）均正确归一，唯 auto_push 两处遗漏。
+- fix: 抽出纯函数 queue_mark_receipt(channel, res) -> Json 归一回执（Ok→{ok,channel,marked,total}；Err→{ok:false,channel,queue_mark_error}），auto_push 两处标记调用点捕获 Result 并将回执并入 remote_push 子图（auto_push.github.queue_mark / auto_push.gitcode.queue_mark）随响应回传；新增回归锁 queue_mark_receipt_wbtest.mbt 钉住 Ok/Err 双分支。moon test --target js src/server 全绿（288/288）。
+- reported_by: bugfind
+- commit: cb3f27f708b91bcca49926d7dc0c38ec009485ed
+
 ## BUG-229 [2026-10-16T04:16:53Z] [high] FIXED
 - summary: [server] 模型路由重试分支的记账/冷却 `Result` 被 `let _ =` 静默丢弃，写盘失败时回执无留痕
 - detail: `src/server/model_router_ops.mbt` 的 `executor_run_impl` 重试链路有两处 `let _ =` 丢弃点：(a) Err 分支（进程未起来，ENOENT 一类，L958-961）重试前调 `mr_record_failure(project_dir, ns~, attempt_model)` 记冷却账；(b) Ok-but-!okk 分支（进程起来了但执行失败，L1008-1020）重试前调 `mr_record_only`（`routed_by_pool` 时）与 `mr_record_failure` 记账。被调函数对「模型不在池中」返回 `Ok(())`（合法静默跳过，L370-372 守卫），但 `mr_save` 本地 JSON 落盘失败时返回 `Err("写入路由状态失败：…")`（L68-75）；调用点 `let _ =` 把两类结果一视同仁丢弃——落盘失败时回执仍报 `ok:true`/`executed:true` 且不带任何错误线索，调用方无法区分「未记账（不在池中）」与「记账写盘失败」，模型可靠性账本静默丢失。同函数最终尝试分支（L1030-1034 quota_note）已按同族规范把记账 Err 并入回执，唯重试分支两处遗漏。
