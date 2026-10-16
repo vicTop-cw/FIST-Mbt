@@ -4133,3 +4133,10 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 抽出纯函数 queue_mark_receipt(channel, res) -> Json 归一回执（Ok→{ok,channel,marked,total}；Err→{ok:false,channel,queue_mark_error}），auto_push 两处标记调用点捕获 Result 并将回执并入 remote_push 子图（auto_push.github.queue_mark / auto_push.gitcode.queue_mark）随响应回传；新增回归锁 queue_mark_receipt_wbtest.mbt 钉住 Ok/Err 双分支。moon test --target js src/server 全绿（288/288）。
 - reported_by: bugfind
 - commit: cb3f27f708b91bcca49926d7dc0c38ec009485ed
+
+## BUG-229 [2026-10-16T04:16:53Z] [high] FIXED
+- summary: [server] 模型路由重试分支的记账/冷却 `Result` 被 `let _ =` 静默丢弃，写盘失败时回执无留痕
+- detail: `src/server/model_router_ops.mbt` 的 `executor_run_impl` 重试链路有两处 `let _ =` 丢弃点：(a) Err 分支（进程未起来，ENOENT 一类，L958-961）重试前调 `mr_record_failure(project_dir, ns~, attempt_model)` 记冷却账；(b) Ok-but-!okk 分支（进程起来了但执行失败，L1008-1020）重试前调 `mr_record_only`（`routed_by_pool` 时）与 `mr_record_failure` 记账。被调函数对「模型不在池中」返回 `Ok(())`（合法静默跳过，L370-372 守卫），但 `mr_save` 本地 JSON 落盘失败时返回 `Err("写入路由状态失败：…")`（L68-75）；调用点 `let _ =` 把两类结果一视同仁丢弃——落盘失败时回执仍报 `ok:true`/`executed:true` 且不带任何错误线索，调用方无法区分「未记账（不在池中）」与「记账写盘失败」，模型可靠性账本静默丢失。同函数最终尝试分支（L1030-1034 quota_note）已按同族规范把记账 Err 并入回执，唯重试分支两处遗漏。
+- fix: 两处丢弃点改为 `mr_retry_note(model, res)` 归一（Ok→"" 不留痕、Err→"model: err"，L379-384）并累加进 `cooldown_errors : Array[String]`（L926-927 声明）；函数两处出口——Err 分支的失败返回（L970-973）与最终尝试返回（L1043-1046）——均经 `mr_opt_arr_field("cooldown_errors", cooldown_errors)`（L91-97）把非空错误数组并入回执 JSON，空数组不出字段（既有回执形态零回归）。回归锁 `bug229_重试分支记账冷却不留静默吞错`（model_router_ops_wbtest.mbt）钉住 `mr_retry_note` Ok/Err 双分支、`mr_opt_arr_field` 空/非空语义、`mr_record_failure` 不在池中返回 `Ok(())`。`moon test --target js src/server` 全绿（289/289）。
+- reported_by: bugfind
+- commit: 676ce7a17c7ad1f6d0fa7819667fb646085cc799
