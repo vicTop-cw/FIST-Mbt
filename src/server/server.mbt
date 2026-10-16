@@ -1793,23 +1793,19 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "archive",
-    "归档任务（仅限人类指挥官）。参数：task_id、by 操作者、force 可选（true 时放行已暂停/已打回僵尸任务直接归档，BUG-227 清扫路径；在流态仍拒）。",
+    "归档任务（仅限人类指挥官）。参数：task_id、by 操作者。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
         "by": string_prop("操作者(默认 human_steward)"),
-        "force": bool_prop(
-          "强制归档(可选默认false)：放行已暂停/已打回滞留态，在流态(已领取/执行中/待验收)仍拒",
-        ),
       },
       ["task_id"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let by = get_str(args, "by", default="human_steward")
-      let force = get_bool(args, "force")
       let ts = now_default()
-      to_result(engine.archive_force(task_id~, by~, force~, now=ts))
+      to_result(engine.archive(task_id~, by~, now=ts))
     },
   )
   s1 = instrumented_tool(
@@ -6787,7 +6783,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "github_flush_execute",
-    "一键执行 github_flush_plan 生成的 curl 命令，直接在队列上发 GitHub issue。硬门控——force 必须显式为 true 才执行，防误操作。JS target 下真实执行 curl；native target 返回跳过提示。成功后自动回写 github_queue_mark_sent（从 curl 返回解析 issue.number）。参数：project_dir(必填)、force(必填=true 才执行)、limit(可选默认 10)、timeout_ms(可选默认 15000)。",
+    "一键执行 github_flush_plan 生成的 curl 命令，直接在队列上发 GitHub issue。硬门控——force 必须显式为 true 才执行，防误操作。JS target 下真实执行 curl；native target 返回跳过提示。成功后自动回写 github_queue_mark_sent（从 curl 返回解析 issue.number）；标记失败时回执附 marked_sent_error。参数：project_dir(必填)、force(必填=true 才执行)、limit(可选默认 10)、timeout_ms(可选默认 15000)。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -6943,9 +6939,12 @@ pub async fn run_server() -> Unit {
         issue_numbers,
         sent_at=sent_at_now,
       )
-      let mark_json = match mark_res {
-        Ok(j) => j
-        Err(_) => Json::object(Map([]))
+      // BUG-239：队列标记失败此前被静默吞成空对象——回执 executed:true 却无任何
+      // 标记失败提示，与兄弟处理器（issue_close/issue_comment 如实透错）不一致。
+      // 现捕获失败原因，经 marked_sent_error 透出（非空才出现，成功路径零回归）。
+      let (mark_json, mark_sent_error) = match mark_res {
+        Ok(j) => (j, "")
+        Err(e) => (Json::object(Map([])), e)
       }
       // 组装返回
       let result_obj : Array[Json] = []
@@ -6988,6 +6987,9 @@ pub async fn run_server() -> Unit {
       mm.set("succeeded", Json::number(succeeded.to_double()))
       mm.set("failed", Json::number((total - succeeded).to_double()))
       mm.set("marked_sent", mark_json)
+      if mark_sent_error != "" {
+        mm.set("marked_sent_error", Json::string(mark_sent_error))
+      }
       mm.set("results", Json::array(result_obj))
       Ok(@mcp.ToolResult::text(Json::object(mm).stringify()))
     },
