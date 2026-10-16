@@ -69,16 +69,12 @@ fn pipeline_state(project_dir : String) -> String {
   match safe_read_text(pipeline_state_path(project_dir)) {
     None => "absent"
     Some(raw) =>
-      if raw.contains("Creating") {
-        "Creating"
-      } else if raw.contains("Pending") {
-        "Pending"
-      } else if raw.contains("Running") {
-        "Running"
-      } else if raw.contains("Closed") {
-        "Closed"
-      } else {
-        "invalid"
+      match raw.trim() {
+        "Creating" => "Creating"
+        "Pending" => "Pending"
+        "Running" => "Running"
+        "Closed" => "Closed"
+        _ => "invalid"
       }
   }
 }
@@ -505,8 +501,15 @@ pub fn pipeline_tick(
     // ---- 阶段二：auto 自动推进 ----
     // 先做一次心跳超时回滚（仅供无人值守场景），结果随返回上报
     let mut heal_error : String? = None
+    let heal_delete_failed : Array[String] = []
     let healed = match
-      heal_stale_tasks_from_store(engine, now, timeout_sec~, ns=ns_final) {
+      heal_stale_tasks_from_store(
+        engine,
+        now,
+        timeout_sec~,
+        ns=ns_final,
+        delete_failed_ids=heal_delete_failed,
+      ) {
       Ok(l) => l
       Err(e) => {
         heal_error = Some(e)
@@ -563,9 +566,19 @@ pub fn pipeline_tick(
         )
     }
     let j2 = pj_set(j, "healed", healed_json)
+    // BUG-240：回滚成功但清理心跳失败的条目点名披露（非空才注入，零回归）
+    let j2b = if heal_delete_failed.is_empty() {
+      j2
+    } else {
+      pj_set(
+        j2,
+        "heal_delete_failed",
+        Json::array(heal_delete_failed.map(fn(s) { Json::string(s) })),
+      )
+    }
     let j3 = match heal_error {
-      Some(e) => pj_set(j2, "heal_error", Json::string(e))
-      None => j2
+      Some(e) => pj_set(j2b, "heal_error", Json::string(e))
+      None => j2b
     }
     Ok(pj_set(j3, "mode", Json::string(effective_mode)))
   }
@@ -778,6 +791,7 @@ fn advance_from_pending(
   let desc = content + "\n\n<!-- " + pipeline_marker(pf) + " -->"
   let tasks = engine.list_in_ns(ns)
   let mut new_id : String? = None
+  let mut publish_error : String? = None
   if tasks.is_empty() {
     match
       engine.cold_publish(
@@ -788,7 +802,7 @@ fn advance_from_pending(
         now~,
       ) {
       Ok(i) => new_id = Some(i)
-      Err(_) => ()
+      Err(e) => publish_error = Some(e)
     }
   } else {
     match find_pending_advance(engine, ns) {
@@ -802,10 +816,14 @@ fn advance_from_pending(
             now~,
           ) {
           Ok(i) => new_id = Some(i)
-          Err(_) => ()
+          Err(e) => publish_error = Some(e)
         }
       None => ()
     }
+  }
+  match publish_error {
+    Some(e) => return Err("pipeline 发布失败: \{e}")
+    None => ()
   }
   match new_id {
     Some(i) => {
@@ -882,20 +900,36 @@ fn advance_from_running(
   }
   match pipeline_report_of(project_dir, pf) {
     Some(rp) => {
-      ignore(pipeline_write(state_path, "Closed"))
-      pj_make(
-        "Running",
-        "Closed",
-        "closed",
-        ns,
-        "报告已落盘，本轮闭环（状态置 Closed）",
-        Some(pf),
-        None,
-        None,
-        Some(rp),
-        None,
-        None,
-      )
+      let write_ok = pipeline_write(state_path, "Closed")
+      if write_ok {
+        pj_make(
+          "Running",
+          "Closed",
+          "closed",
+          ns,
+          "报告已落盘，本轮闭环（状态置 Closed）",
+          Some(pf),
+          None,
+          None,
+          Some(rp),
+          None,
+          None,
+        )
+      } else {
+        pj_make(
+          "Running",
+          "Closed",
+          "closed",
+          ns,
+          "报告已落盘，状态写入失败",
+          Some(pf),
+          None,
+          None,
+          Some(rp),
+          None,
+          None,
+        )
+      }
     }
     None => {
       let started = match safe_read_text(started_path) {
