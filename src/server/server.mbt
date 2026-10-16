@@ -721,6 +721,19 @@ fn laya_ensure_decision(
 }
 
 ///|
+/// task_plan_deep 的 laya_auto 分支专用（BUG-231 修复）：Laya 未生效时给出**可见原因**，
+/// 避免把「探测失败 / sidecar 调用失败」与「本机未安装 Laya」混为一谈——旧写法
+/// 把 Err 分支吞成 ()，失败原因整条丢弃，laya_info 停在 null，调用方只看到 `laya: null`，
+/// 无法区分「没装」还是「装了但调用挂了」（静默吞错家族；对照兄弟 handler laya_decide
+/// 在 Err 分支把 reason 透出的写法）。available 恒 false；纯函数，便于白盒回归锁。
+fn laya_auto_fail(reason : String) -> Json {
+  Json::object({
+    "available": Json::boolean(false),
+    "reason": Json::string(reason),
+  })
+}
+
+///|
 /// 项目自述版本（BUG-16 修复：对外版本单一真源）。
 /// 此前 status_summary / project_health / fist://overview 三处各写一遍上一版版本号字面量，
 /// 升版时漏改 → 对外自述落后一整版（违反规范 r1「文档即实现」/ r2「一源四态·单真源优先」；
@@ -1853,7 +1866,7 @@ pub async fn run_server() -> Unit {
           "是否为『spec 没写的域外行为』补一个 owner(默认 false 零回归，atgc-merge 归因报告机理 1/2)：开启后本层切片末尾追加一条『边界审视叶』(全局输入域 owner，须对空输入/极值/非法输入/资源极限逐项给用例或声明不适用)，并给其余每条叶挂『边界四问』提示，整棵树递归下钻均继承。用于治『验收锚定+弱语料』：语料只断言做了没时，执行体会理性地停在判据边界上。",
         ),
         "laya_auto": bool_prop(
-          "是否开启 Laya 自动选档(默认 false)。开启后探测 Laya，可用则按 difficulty.score 自动定 split_n（递归层数交给 Laya 推断）并附决策；不可用回退 split_n 默认值。⚠ 本机若 laya 可 import 但 predict 慢/卡（无内部超时），开启会拉长每次拆解耗时，故默认关闭按需开启。显式传 decide_split_n 则忽略 Laya(躬身自决优先)",
+          "是否开启 Laya 自动选档(默认 false)。开启后探测 Laya，可用则按 difficulty.score 自动定 split_n（递归层数交给 Laya 推断）并附决策；不可用回退 split_n 默认值。⚠ 本机若 laya 可 import 但 predict 慢/卡（无内部超时），开启会拉长每次拆解耗时，故默认关闭按需开启。显式传 decide_split_n 则忽略 Laya(躬身自决优先)。返回体 laya 字段：选档成功为 sidecar 原始对象(含 auto_split_n)；探测失败/sidecar 调用失败则为 {available:false, reason:…}（BUG-231：两类失败原因都留痕，不再与『本机未安装 Laya』混同）",
         ),
         "decide_split_n": int_prop(
           "躬身自决拆分数(可选)：显式传入即以 agent 自决为准，跳过 Laya sidecar；缺省沿用 split_n/laya_auto 逻辑",
@@ -1926,7 +1939,13 @@ pub async fn run_server() -> Unit {
             laya_probe_budget_ms,
           ) {
           Ok(a) => a
-          Err(_) => false
+          Err(e) => {
+            // BUG-231：探测失败原因此前被 Err(_) 吞掉，调用方只看到 laya=null。
+            laya_info = laya_auto_fail(
+              "Laya 探测失败: \{e}，已回退 split_n 默认值",
+            )
+            false
+          }
         }
         if avail {
           match engine.get_task(task_id) {
@@ -1961,7 +1980,12 @@ pub async fn run_server() -> Unit {
                   obj.set("context", Json::string(parent.description))
                   laya_info = Json::object(obj)
                 }
-                Err(_) => ()
+                Err(e) =>
+                  // BUG-231：sidecar 调用失败此前被裸 Err 分支静默吞掉，
+                  // laya_info 停在 null，与「本机未安装 Laya」不可区分。
+                  laya_info = laya_auto_fail(
+                    "laya sidecar 调用失败: \{e}，已回退 split_n 默认值",
+                  )
               }
             None => ()
           }
