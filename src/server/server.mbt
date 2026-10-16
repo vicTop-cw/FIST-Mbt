@@ -44,6 +44,22 @@ let audit : @ops.AuditLog = @ops.AuditLog::new()
 let mstore : @store.MultiStore = @store.MultiStore::new(data_dir=".")
 
 ///|
+/// 多租户引擎路由：按 ns 返回对应持久化引擎（M5 库级物理隔离闭环）。
+/// - "" / "default" → 模块级默认引擎（默认库 fist-mbt.db，完全向后兼容）
+/// - 其他合法 ns → mstore.get(ns) 命中的独立库引擎（{data_dir}/{ns}.db 库级隔离）；
+///   该 ns 尚未 open 时回退默认引擎（与 MultiStore 惰性语义一致，调用方应先用 store_open）
+fn engine_for_ns(ns : String) -> @engine.FistEngine {
+  if ns == "" || ns == "default" {
+    engine
+  } else {
+    match mstore.get(ns) {
+      Some(s) => @engine.FistEngine::new(store=@store.StoreBackend::sqlite(s))
+      None => engine
+    }
+  }
+}
+
+///|
 /// DGM 档案库（进程内 Archive，演化/自驱机制状态容器）。
 /// SQLite 持久化能力已在 store 层（evolve_artifacts 表 + evolve_upsert/list）就绪；
 /// 本进程 Archive 用于 MCP 工具的实时采样/查重/新颖性/谱系演示与编排。
@@ -892,34 +908,53 @@ fn map_json() -> Json {
       "executor": Json::string("执行器"),
     }),
     "tool_groups": Json::object({
-      "生命周期": Json::string(
+      "生命周期(14)": Json::string(
         "publish/publish_parallel/plan/claim/execute/submit/verify/reject/retry/pause/resume/reopen_task/archive/delete",
       ),
-      "查询": Json::string("list/get"),
-      "运维": Json::string(
-        "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback/saga_repair/circuit_fail/succeed/status/tx_contract",
+      "查询(2)": Json::string("list/get"),
+      "运维(14)": Json::string(
+        "task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback/saga_repair/circuit_fail/circuit_succeed/circuit_status/tx_contract",
       ),
-      "运维·日志/缺陷/成本/调度": Json::string(
-        "call_log/bug_list/report_bug/eval_feedback/run_check/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide/loop_create/loop_tick/loop_status",
+      "运维·日志/缺陷/成本/调度(24)": Json::string(
+        "call_log/bug_list/bug_fix/bug_mark_status/report_bug/issue_scan/ocr_scan/boundary_probe/eval_feedback/run_check/output_validate/project_standards/text_diff/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide/loop_create/loop_tick/loop_status/mcp_config_scaffold",
       ),
-      "看板/脉冲/预订/推荐+DAG": Json::string(
-        "dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish/slack/schedule/cost_route/mc/plan_revise/goal_drift_check + board_ascii + status_summary + project_health/health_check + reserve_scope/check/release + task_triage",
+      "看板/脉冲/预订/推荐+DAG(27)": Json::string(
+        "dag_critical_path/dag_parallelism/dag_ascii/dag_check/dag_ready/dag_sort/dag_depend/dag_publish/dag_slack/dag_schedule/dag_cost_route/dag_mc/plan_revise/goal_drift_check/board_ascii/state_flow_ascii/status_summary/project_health/health_check/reserve_scope/reserve_check/reserve_release/lock_acquire/lock_renew/lock_release/lock_status/task_triage",
       ),
-      "自驱": Json::string(
-        "selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks + selfdrive_pick_next + selfdrive_dispatch",
+      "自驱(9)": Json::string(
+        "selfdrive_init/selfdrive_append/selfdrive_get/selfdrive_export_tasks/selfdrive_review_tick/selfdrive_review_ready/selfdrive_publish_next/selfdrive_parse_next_tasks/selfdrive_pick_next",
       ),
-      "记忆与自进化": Json::string(
-        "memory_consolidate/gc/link + evolve_submit/sample/snapshot/distill/lesson/critic/asset_register + task_challenge",
+      "Marketplace·能力路由(5)": Json::string(
+        "executor_register/executor_route/executor_auction/executor_clear/selfdrive_dispatch",
       ),
-      "Marketplace·能力路由": Json::string(
-        "executor_register/auction/route/clear + selfdrive_dispatch（能力登记/置信度拍卖/专长+负载路由/重置/自动派单，R30-R33/R87）",
+      "记忆与自进化(11)": Json::string(
+        "memory_consolidate/memory_gc/memory_link/evolve_submit/evolve_sample/evolve_snapshot/evolve_distill/evolve_lesson/evolve_critic/evolve_asset_register/task_challenge",
       ),
-      "审计权限": Json::string("audit_permission/log"),
-      "多租户": Json::string("store_open/list/close"),
-      "强验证": Json::string(
-        "omega_spec_create/review/result_verify/status/verify/verify_fix",
+      "GitHub/GitCode 同步(12)": Json::string(
+        "github_env_check/github_queue_status/github_flush_plan/github_flush_execute/github_queue_mark_sent/github_issue_close/github_issue_comment/github_issue_webhook_parse/gitcode_env_check/gitcode_queue_status/gitcode_flush_plan/gitcode_queue_mark_sent",
       ),
-      "衍生·ATGC-old": Json::string("atgc_old_compile/run/talk"),
+      "模型路由·外部执行器(5)": Json::string(
+        "model_auth_status/model_route/model_router_status/model_router_reset/executor_run",
+      ),
+      "强验证(6)": Json::string(
+        "omega_spec_create/omega_spec_review/omega_result_verify/omega_status/omega_verify/omega_verify_fix",
+      ),
+      "六顶帽·辩论(7)": Json::string(
+        "hat_list/debate_convene/debate_register/debate_verdict/hat_run/hat_debate/hat_merge",
+      ),
+      "项目助理(5)": Json::string(
+        "assistant_claim/assistant_status/assistant_sweep/assistant_resign/assistant_heartbeat",
+      ),
+      "超级管家(8)": Json::string(
+        "supervisor_status/supervisor_task_tree/supervisor_kill_plan/supervisor_prompt_inject/supervisor_prompt_list/supervisor_prompt_consume/supervisor_task_upsert/supervisor_reminder_tick",
+      ),
+      "嵌入式 MCPCf(7)": Json::string(
+        "mcpcf.ops_init/mcpcf.circuit/mcpcf.report/mcpcf.review/mcpcf.run_batch/mcpcf.verify/mcpcf.watchdog",
+      ),
+      "多租户/审计/ATGC-old(8)": Json::string(
+        "store_open/store_list/store_close/audit_permission/audit_log/atgc_old_compile/atgc_old_run/atgc_old_talk",
+      ),
+      "开发模式(2)": Json::string("mode_list/mode_templates"),
     }),
     "entry": Json::string(
       "先读 README.md + ARCHITECTURE.md + docs/agent-map.md 定位；加/改工具到 src/server/server.mbt；动存储到 src/store/store_sqlite.mbt",
@@ -1390,7 +1425,7 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace", default="default")
       let created_by = get_str(args, "created_by", default="human_steward")
       let ts = now_default()
-      let r = engine.publish(
+      let r = engine_for_ns(ns).publish(
         project_dir~,
         description~,
         created_by~,
@@ -1433,7 +1468,7 @@ pub async fn run_server() -> Unit {
       let created_by = get_str(args, "created_by", default="selfdrive")
       let ts = now_default()
       match
-        engine.publish_parallel(
+        engine_for_ns(ns).publish_parallel(
           ns~,
           description~,
           created_by~,
@@ -1507,6 +1542,9 @@ pub async fn run_server() -> Unit {
         "inject": string_prop(
           "可选：逗号分隔的档案库资产 keywords，按 goal 子串检索命中资产并追加到返回",
         ),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
       },
       ["task_id", "assignee"],
     ),
@@ -1515,7 +1553,8 @@ pub async fn run_server() -> Unit {
       let assignee = get_str(args, "assignee")
       let ts = now_default()
       let inject = get_str(args, "inject")
-      match engine.claim(task_id~, assignee~, now=ts) {
+      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      match eng.claim(task_id~, assignee~, now=ts) {
         Err(e) => Err(@mcp_types.ToolError(e))
         Ok(t) => {
           if inject == "" {
@@ -1546,6 +1585,9 @@ pub async fn run_server() -> Unit {
         "duration_ms": int_prop("执行耗时毫秒(可选默认0)"),
         "rate_limited": bool_prop("是否被限流(可选默认false)"),
         "failure_reason": string_prop("失败原因(可选)"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库）",
+        ),
       },
       ["task_id", "deliverable"],
     ),
@@ -1553,6 +1595,7 @@ pub async fn run_server() -> Unit {
       let task_id = get_str(args, "task_id")
       let deliverable = get_str(args, "deliverable")
       let ts = now_default()
+      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
       // 提取可选执行元数据（向后兼容：无元数据时行为同旧版 execute）
       let executor = get_str(args, "executor", default="manual")
       let model = get_str(args, "model", default="")
@@ -1564,7 +1607,7 @@ pub async fn run_server() -> Unit {
       let failure_reason = get_str(args, "failure_reason", default="")
       // 调用 execute_with_meta：同时写入 executions 表 + 流转任务状态
       to_result(
-        engine.execute_with_meta(
+        eng.execute_with_meta(
           task_id~,
           deliverable~,
           now=ts,
@@ -1584,11 +1627,20 @@ pub async fn run_server() -> Unit {
     s1,
     "submit",
     "提交验收（执行中 -> 待验收）。参数：task_id。",
-    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库）",
+        ),
+      },
+      ["task_id"],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
-      to_result(engine.submit(task_id~, now=ts))
+      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      to_result(eng.submit(task_id~, now=ts))
     },
   )
   s1 = instrumented_tool(
@@ -3919,7 +3971,7 @@ pub async fn run_server() -> Unit {
         _ => []
       }
       let id = match
-        engine.publish_with_deps(
+        engine_for_ns(ns).publish_with_deps(
           project_dir~,
           description~,
           depends_on~,
@@ -4067,7 +4119,7 @@ pub async fn run_server() -> Unit {
       let feedback = get_array(args, "feedback")
       Ok(
         @mcp.ToolResult::text(
-          engine.plan_revise(root, feedback~, ns~).stringify(),
+          engine_for_ns(ns).plan_revise(root, feedback~, ns~).stringify(),
         ),
       )
     },
@@ -4092,7 +4144,7 @@ pub async fn run_server() -> Unit {
       let subtask = get_str(args, "subtask_id", default="")
       Ok(
         @mcp.ToolResult::text(
-          engine.goal_drift_check(root, subtask_id=subtask, ns~).stringify(),
+          engine_for_ns(ns).goal_drift_check(root, subtask_id=subtask, ns~).stringify(),
         ),
       )
     },
@@ -4104,7 +4156,7 @@ pub async fn run_server() -> Unit {
     schema({ "namespace": string_prop("命名空间(默认 default)") }, []),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
-      let ascii = engine.dag_ascii(ns~)
+      let ascii = engine_for_ns(ns).dag_ascii(ns~)
       Ok(
         @mcp.ToolResult::text(
           Json::object({
@@ -4122,7 +4174,7 @@ pub async fn run_server() -> Unit {
     schema({ "namespace": string_prop("命名空间(默认全部)") }, []),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
-      let board = render_board_ascii(engine.list_all(), ns)
+      let board = render_board_ascii(engine_for_ns(ns).list_all(), ns)
       Ok(@mcp.ToolResult::text(board.stringify()))
     },
   )
@@ -4133,7 +4185,7 @@ pub async fn run_server() -> Unit {
     schema({ "namespace": string_prop("命名空间(默认全部)") }, []),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
-      let flow = render_state_flow_ascii(engine.list_all(), ns)
+      let flow = render_state_flow_ascii(engine_for_ns(ns).list_all(), ns)
       Ok(@mcp.ToolResult::text(flow.stringify()))
     },
   )
@@ -4148,9 +4200,9 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let tasks = if ns == "" {
-        engine.list_all()
+        engine_for_ns(ns).list_all()
       } else {
-        engine.list_all().filter(fn(t) { t.ns == ns })
+        engine_for_ns(ns).list_all().filter(fn(t) { t.ns == ns })
       }
       let j = render_status_summary(tasks, mstore.ns_list(), project_version)
       Ok(@mcp.ToolResult::text(j.stringify()))
@@ -4167,9 +4219,9 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let tasks = if ns == "" {
-        engine.list_all()
+        engine_for_ns(ns).list_all()
       } else {
-        engine.list_all().filter(fn(t) { t.ns == ns })
+        engine_for_ns(ns).list_all().filter(fn(t) { t.ns == ns })
       }
       let j = render_project_health(tasks, project_version)
       Ok(@mcp.ToolResult::text(j.stringify()))
@@ -4186,9 +4238,9 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let tasks = if ns == "" {
-        engine.list_all()
+        engine_for_ns(ns).list_all()
       } else {
-        engine.list_all().filter(fn(t) { t.ns == ns })
+        engine_for_ns(ns).list_all().filter(fn(t) { t.ns == ns })
       }
       let j = render_health_check(tasks, if ns == "" { "all" } else { ns })
       Ok(@mcp.ToolResult::text(j.stringify()))
@@ -4252,7 +4304,7 @@ pub async fn run_server() -> Unit {
       let secs = @ops.iso_to_secs(now)
       Ok(
         @mcp.ToolResult::text(
-          engine.circuit_succeed(ns~, circuit~, now_secs=secs).stringify(),
+          engine_for_ns(ns).circuit_succeed(ns~, circuit~, now_secs=secs).stringify(),
         ),
       )
     },
@@ -4312,7 +4364,7 @@ pub async fn run_server() -> Unit {
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
       let skill = get_str(args, "skill")
-      let j = engine.triage(ns, agent, want, skill~)
+      let j = engine_for_ns(ns).triage(ns, agent, want, skill~)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
@@ -4335,7 +4387,7 @@ pub async fn run_server() -> Unit {
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
       let ts = now_default()
-      let j = engine.pick_next(ns, agent, want, ts)
+      let j = engine_for_ns(ns).pick_next(ns, agent, want, ts)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
@@ -4465,7 +4517,7 @@ pub async fn run_server() -> Unit {
       let ts = now_default()
       sync_db_executors()
       // 1. 取顶部可领取任务
-      let tr = engine.triage(ns, agent, want)
+      let tr = engine_for_ns(ns).triage(ns, agent, want)
       let sug = match tr.value("suggestion") {
         Some(Json::Object(o)) => o
         _ => Map([])
@@ -4490,7 +4542,7 @@ pub async fn run_server() -> Unit {
         )
       }
       // 2. 能力决定派给谁：显式 want 优先，否则从任务描述自动抽取所需能力（R33 免手传）
-      let desc = match engine.get_task(task_id) {
+      let desc = match engine_for_ns(ns).get_task(task_id) {
         Some(t) => t.get_description()
         None => ""
       }
@@ -4509,7 +4561,7 @@ pub async fn run_server() -> Unit {
         agent
       }
       // 3. 认领（0 状态迁移：待领取→已领取）
-      match engine.claim(task_id~, assignee~, now=ts) {
+      match engine_for_ns(ns).claim(task_id~, assignee~, now=ts) {
         Err(e) =>
           Ok(
             @mcp.ToolResult::text(
@@ -5070,7 +5122,7 @@ pub async fn run_server() -> Unit {
     schema({ "namespace": string_prop("命名空间(默认 default)") }, []),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
-      let ready = engine.ready_tasks(ns_filter=ns)
+      let ready = engine_for_ns(ns).ready_tasks(ns_filter=ns)
       Ok(
         @mcp.ToolResult::text(
           Json::array(ready.map(fn(t) { t.to_json() })).stringify(),
@@ -5236,7 +5288,7 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace")
       Ok(
         @mcp.ToolResult::text(
-          engine.budget_split_by_dag(budget, root~, ns~).stringify(),
+          engine_for_ns(ns).budget_split_by_dag(budget, root~, ns~).stringify(),
         ),
       )
     },
@@ -5387,7 +5439,7 @@ pub async fn run_server() -> Unit {
       let compensation = get_str(args, "compensation")
       let now = now_default()
       match
-        engine.saga_register(
+        engine_for_ns(ns).saga_register(
           ns~,
           root_task_id~,
           step~,
@@ -5418,7 +5470,7 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace", default="default")
       let root_task_id = get_str(args, "root_task_id")
       let mark = get_bool(args, "mark", default=true)
-      match engine.saga_rollback(ns~, root_task_id, mark~) {
+      match engine_for_ns(ns).saga_rollback(ns~, root_task_id, mark~) {
         Err(m) => Err(@mcp_types.ToolError(m))
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
       }
@@ -5444,7 +5496,7 @@ pub async fn run_server() -> Unit {
       let root_task_id = get_str(args, "root_task_id")
       let failed_step = get_str(args, "failed_step")
       let mark = get_bool(args, "mark", default=true)
-      match engine.saga_repair(ns~, root_task_id, failed_step~, mark~) {
+      match engine_for_ns(ns).saga_repair(ns~, root_task_id, failed_step~, mark~) {
         Err(m) => Err(@mcp_types.ToolError(m))
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
       }
