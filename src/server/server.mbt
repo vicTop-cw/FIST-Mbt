@@ -4079,7 +4079,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "circuit_fail",
-    "熔断器·上报失败（R104，Nygard Release It! 2007 / Fowler / Azure 蒸馏）：外部调用失败后上报并推进三态状态机——Closed 窗口内失败计数达阈值 → Open（fail-fast 拒绝）；Half-Open 探测失败 → 回 Open 重启恢复定时器。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、window_secs 失败窗口秒（可选默认 60）、threshold 失败阈值（可选默认 3）、recovery_secs 恢复秒（可选默认 30）、namespace（可选默认 default）。返回 { circuit, state, failures, probes_granted, probe_limit, window_secs, threshold, recovery_secs, opened_at, allow_call, note }——allow_call=false 即调用方应立即快速失败。",
+    "熔断器·上报失败（R104，Nygard Release It! 2007 / Fowler / Azure 蒸馏）：外部调用失败后上报并推进三态状态机——Closed 窗口内失败计数达阈值 → Open（fail-fast 拒绝）；Half-Open 探测失败 → 回 Open 重启恢复定时器。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、window_secs 失败窗口秒（可选默认 60）、threshold 失败阈值（可选默认 3）、recovery_secs 恢复秒（可选默认 30）、namespace（可选默认 default）。返回 { circuit, state, failures, probes_granted, probe_limit, window_secs, threshold, recovery_secs, opened_at, allow_call, note, persist_error? }——allow_call=false 即调用方应立即快速失败；persist_error 仅在持久化写盘失败（BUG-230）时出现，非空即「状态变更未落库」，调用方不得把本次回执当作已持久化。",
     schema(
       {
         "circuit": string_prop(
@@ -4119,7 +4119,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "circuit_succeed",
-    "熔断器·上报成功（R104）：外部调用成功后回灌——Closed 复位计数；Half-Open 探测成功 → Closed（恢复，节流配额随之解除）。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、namespace（可选默认 default）。返回 { circuit, state, failures, probes_granted, probe_limit, window_secs, threshold, recovery_secs, opened_at, allow_call, note }。",
+    "熔断器·上报成功（R104）：外部调用成功后回灌——Closed 复位计数；Half-Open 探测成功 → Closed（恢复，节流配额随之解除）。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、namespace（可选默认 default）。返回 { circuit, state, failures, probes_granted, probe_limit, window_secs, threshold, recovery_secs, opened_at, allow_call, note, persist_error? }。persist_error 仅在持久化写盘失败（BUG-230）时出现，非空即「状态变更未落库」，调用方不得把本次回执当作已持久化。",
     schema(
       {
         "circuit": string_prop("熔断器名（必填）"),
@@ -4142,7 +4142,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "circuit_status",
-    "熔断器·查询状态（R104）：查三态并做 Half-Open 到期判定——Open 且 elapsed≥recovery_secs → 转 Half-Open（**只放行 probe_limit 次探测，默认 1**，配额用尽即 allow_call=false 继续快速失败；BUG-34：旧实现全量透传，与本句承诺相反）。探测结果由 circuit_succeed/circuit_fail 上报；拿到配额却长时间不上报时，超过一个 recovery 窗自动重置配额（否则一次被吞掉的探测会把半开态永久锁死）。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、namespace（可选默认 default）、probe_limit 半开探测配额（可选默认 1，<=0 视为不节流）。返回 { circuit, state, failures, probes_granted, probe_limit, window_secs, threshold, recovery_secs, opened_at, allow_call, note }。半开态下 failures 即 probes_granted（已放行探测数），不要按失败数解释。",
+    "熔断器·查询状态（R104）：查三态并做 Half-Open 到期判定——Open 且 elapsed≥recovery_secs → 转 Half-Open（**只放行 probe_limit 次探测，默认 1**，配额用尽即 allow_call=false 继续快速失败；BUG-34：旧实现全量透传，与本句承诺相反）。探测结果由 circuit_succeed/circuit_fail 上报；拿到配额却长时间不上报时，超过一个 recovery 窗自动重置配额（否则一次被吞掉的探测会把半开态永久锁死）。参数：circuit 熔断器名（必填）（注：时间戳一律由服务端盖章，不接受调用方注入 now）、namespace（可选默认 default）、probe_limit 半开探测配额（可选默认 1，<=0 视为不节流）。返回 { circuit, state, failures, probes_granted, probe_limit, window_secs, threshold, recovery_secs, opened_at, allow_call, note, persist_error? }。半开态下 failures 即 probes_granted（已放行探测数），不要按失败数解释。persist_error 仅在持久化写盘失败（BUG-230，迁移写与配额自增写的错误合并）时出现，非空即「状态变更未落库」，调用方不得把本次回执当作已持久化。",
     schema(
       {
         "circuit": string_prop("熔断器名（必填）"),
