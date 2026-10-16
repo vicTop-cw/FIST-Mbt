@@ -19,9 +19,16 @@ class FistClient:
     def __init__(self, cwd=None, debug=False):
         self.cwd = cwd or PROJ
         self.debug = debug
+        # BUG-124：serve 的子进程必须拿到 FIST_DB_PATH 显式改道针，
+        # 否则裸跑会写仓库根自举台账 fist-mbt.db（temp/ 已 gitignore，不污染根）。
+        env = dict(os.environ)
+        if not env.get("FIST_DB_PATH"):
+            tmpdir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "temp")
+            os.makedirs(tmpdir, exist_ok=True)
+            env["FIST_DB_PATH"] = os.path.join(tmpdir, "fist_mbt_mcp_client.db")
         self.p = subprocess.Popen(
             ["node", JS, "serve"],
-            cwd=self.cwd,
+            cwd=self.cwd, env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", bufsize=1
         )
