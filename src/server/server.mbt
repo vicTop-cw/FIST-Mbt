@@ -4941,7 +4941,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "assistant_sweep",
-    "助理清扫拍：释放 TTL 过期的文件锁（复用 locks_sweep）+ 把心跳陈旧且超过 stale_secs 的助理标为 dead。参数：stale_secs(可选，默认600)。",
+    "助理清扫拍：释放 TTL 过期的文件锁（复用 locks_sweep）+ 把心跳陈旧且超过 stale_secs 的助理标为 dead。参数：stale_secs(可选，默认600)。标 dead 失败（assistant_set_status 返回 false）时回执附 assistants_mark_failed 计数（BUG-237：不再静默吞掉、不再虚报 assistants_marked_dead）。",
     schema(
       {
         "stale_secs": string_prop(
@@ -4956,20 +4956,32 @@ pub async fn run_server() -> Unit {
       let cutoff = iso_minus_secs(now, stale)
       let swept_locks = engine.locks_sweep(now)
       let mut marked_dead = 0
+      let mut mark_failed = 0
       for r in engine.assistant_list() {
         if r.status == "active" && r.heartbeat_at < cutoff {
-          ignore(engine.assistant_set_status(r.agent, "dead"))
-          marked_dead = marked_dead + 1
+          // BUG-237：assistant_set_status 返回读回验证过的真实结果，不再 ignore 吞掉。
+          let ok = engine.assistant_set_status(r.agent, "dead")
+          if ok {
+            marked_dead = marked_dead + 1
+          } else {
+            mark_failed = mark_failed + 1
+          }
         }
       }
-      Ok(
-        @mcp.ToolResult::text(
-          Json::object({
-            "swept_locks": Json::number(swept_locks.to_double()),
-            "assistants_marked_dead": Json::number(marked_dead.to_double()),
-          }).stringify(),
-        ),
+      let m : Map[String, Json] = Map([])
+      m.set("swept_locks", Json::number(swept_locks.to_double()))
+      m.set(
+        "assistants_marked_dead",
+        Json::number(marked_dead.to_double()),
       )
+      // BUG-237：标记失败计数仅在非零时出现，成功路径零回归。
+      if mark_failed > 0 {
+        m.set(
+          "assistants_mark_failed",
+          Json::number(mark_failed.to_double()),
+        )
+      }
+      Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
     },
   )
   s1 = instrumented_tool(
