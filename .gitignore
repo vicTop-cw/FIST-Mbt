@@ -108,3 +108,5 @@ dist/
 /scripts/pol_keeper_wrapper.ps1
 /scripts/warn_stats.py
 /zhi_*.py
+# Round 261b：并发 ofm-caf agent 新加的临时脚本（未跟踪）——挡 publish 泄漏，防下一发 P1 事故。
+/scripts/fist_mbt_mcp_client.py
