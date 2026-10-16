@@ -4164,3 +4164,10 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 新增纯函数 `laya_auto_fail(reason : String) -> Json`（恒 `{available:false, reason}`）；探测 `Err(e)` 与 sidecar `Err(e)` 两处改为把原因写进 `laya_info`（「Laya 探测失败: {e}，已回退 split_n 默认值」/「laya sidecar 调用失败: {e}，已回退 split_n 默认值」），使两类失败均可见且与「未安装」区分。`laya` 字段仍在 `laya_auto && !decided` 时才出现（关闭该开关的调用方零回归）；probe Ok(false)（未安装）仍保持 `laya: null`（描述已声明「不可用回退」）。同步更新 `task_plan_deep` 的 `laya_auto` 参数描述，声明失败时 `laya` 为 `{available:false, reason:…}`。回归锁 `laya_auto_wbtest.mbt`：钉住 `laya_auto_fail` 恒 available=false + reason 透出 + 空原因也成型，并对 server.mbt 源码文本加锁（`= laya_auto_fail(` 调用点 ≥2、不再有裸 `Err(_) => ()`）。`moon test --target js src/server` 291/291 全绿（基线 289）。
 - reported_by: bugfind
 - commit: d90f80d9c177cdb1f357a342326cb2f26709654d
+
+## BUG-232 [2026-10-16T06:01:00Z] [high] FIXED
+- summary: [server] executor_register 把能力标签持久化的 Result 用 ignore() 吞掉、回执 `persisted` 硬编码 true，写盘失败仍谎报落库（重启后 executor_route 读不到）
+- detail: `src/server/server.mbt` 的 `executor_register` handler 先 `ignore(exec_reg.add_ability(...))` 登记进程内注册表，再 `ignore(engine.executor_save(...))` 落 store，然后回执恒 `"persisted": Json::boolean(true)`。`engine.executor_save` 返回 `Result[String, String]`（store 双后端 executors 表写盘），Err 时被 `ignore()` 整条丢弃：进程内注册表看似成功、store 里却没有，server 重启后 `executor_route`（依赖 executors 表）读不到该执行者——回执却谎报 `persisted:true`，调用方无从察觉（与 BUG-228/229/230「状态变更未落库却展示内存新状态」同族；对照同文件 model_router_ops.mbt L320-323 的 `persist_error` 先例）。
+- fix: 新增纯函数 `executor_persist_note(res : Result[String, String]) -> (Bool, String)`（Ok→(true,"") 无错不留痕；Err→(false, 错误原文)）；handler 改为捕获 `engine.executor_save` 的 Result，`persisted` 如实反映落库结果，写盘失败时附 `persist_error`（非空才出现，成功路径零回归）；回执由 `Json::object({...})` 改为 Map 组装以支持条件字段。同步更新 `executor_register` 工具描述，声明 `persisted`/`persist_error` 语义。回归锁 `executor_register_wbtest.mbt`：钉住 `executor_persist_note` Ok/Err 双分支（含空原因），并对 server.mbt 源码文本加锁（`= executor_persist_note(` 调用点 ≥1、硬编码 `"persisted": Json::boolean(true),` 已归零、`persist_error` 透出）。`moon test --target js src/server` 293/293 全绿（基线 291）。
+- reported_by: bugfind
+- commit: dd10fe7fe32c465c147ffdd9c439ef74fc5cc9e5
