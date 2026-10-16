@@ -4119,4 +4119,12 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - reported_by: bugfind
 - commit: 7cb897f
 
+## BUG-226 [2026-10-16T01:00:00Z] [medium] FIXED
+- summary: [regex_lite] 单字符 "^" 或 "$" 作为 pattern 会匹配任意字符串（prefix/suffix 分支缺 length>1 守卫）
+- detail: `src/omega/gate.mbt` 的 `regex_lite`（L43-54）是 Ω-gate 的"regex"断言降级实现。其分支语义为：`^...$`（长度>2）→ 精确相等；`^` 开头 → 前缀匹配；`$` 结尾 → 后缀匹配；否则 → 包含匹配。问题在于 prefix/suffix 分支只检查锚点前缀/后缀，不检查剥锚点后是否仍有内容。当 pattern 恰为单字符 `"^"` 时，`pattern.has_prefix("^")` 为真，`pattern[1:pattern.length()]` = `pattern[1:1]` = 空串，`actual.has_prefix("")` 对所有字符串返回 true；单字符 `""$"` 同理（`pattern[0:0]` = 空串 → `has_suffix("")` = true）。组合分支已有 `length() > 2` 守卫（剥两个锚点后至少 1 字符），但 prefix/suffix 分支遗漏了等价的 `length() > 1` 守卫。影响面：Ω-gate 跑批时若 spec 的 regex 断言 pattern 被误写为单字符 "^" 或 "$"（如用户意图是精确匹配 "^" 这个字面量、或从模板/截断逻辑产生），则该断言对所有 actual 恒为 true——**假阳性放行**，使本该失败的用例被静默通过，gate 失去拦截能力。gate.mbt L128（regex 断言入口）、L296（另一处 regex_lite 调用）均受影响。现有测试 omega_test.mbt L119-124 覆盖了正常前后缀与组合锚点，但未覆盖单字符锚点退化。
+- fix_options: 1) prefix/suffix 分支各加 `&& pattern.length() > 1` 守卫，与组合分支的 `length() > 2` 对齐（采用，最小改动、零回归——正常 pattern 长度均>1）；2) 在入口处对单字符 "^"/"$" 特判返回 false（等价但分散逻辑）；3) 把锚点剥取改为先判长度再切片（可读性改动较大）。
+- fix: prefix 分支改为 `if pattern.has_prefix("^") && pattern.length() > 1`，suffix 分支改为 `if pattern.has_suffix("$") && pattern.length() > 1`；单字符锚点自然降级到末尾 `actual.contains(pattern)` 分支（"^"/"$" 作为普通子串，仅当 actual 恰好含该字符时 true，符合直觉）。同步更新 doc 注释。回归锁 `gate regex_lite 单字符锚点 ^ / $ 不应匹配一切（BUG-226）`：断言 `regex_lite("anything","^")`=false、`regex_lite("anything","$")`=false、`regex_lite("","^")`=false、`regex_lite("","$")`=false。`moon test --target js src/omega` 52/52 绿。
+- reported_by: bugfind
+- commit: d65c2ec
+
 
