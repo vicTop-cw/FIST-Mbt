@@ -4199,3 +4199,10 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 两处改为捕获结果：`let persist_error = match evolve_store { None => "evolve_store 未打开（内存态，未落库）", Some(s) => match s.evolve_upsert(...) { Ok(_) => "", Err(e) => e } }`；`let (candidates, search_error) = match runner { None => ([], ""), Some(r) => match run_external_search(...) { Ok(raw) => (distill(...), ""), Err(e) => ([], e) } }`。回执经 `add_parse_error_field`（BUG-235 引入的包级 helper，注释同步泛化）注入 persist_error / search_error——仅失败时出现，成功路径零回归。同步更新桥接文件头文档与 `evolve_asset_register` 工具描述。回归锁 `evolve_asset_register_wbtest.mbt`：钉住桥接文件不再有 `ignore(\n    match evolve_store {` 静默模式、persist_error/search_error 捕获与注入存在、工具描述同步。`moon test --target js src/server` 307/307 全绿（基线 303）。
 - reported_by: bugfind
 - commit: 880d440
+
+## BUG-237 [2026-10-16T07:02:00Z] [medium] FIXED
+- summary: [server] assistant_sweep 把 assistant_set_status 的读回验证结果 ignore 吞掉后无条件 marked_dead + 1，回执 assistants_marked_dead 把未真正标成 dead 的助理也计入——回执说谎
+- detail: `src/server/server.mbt` 的 `assistant_sweep` handler（L4958-4964）对每个心跳陈旧且超过 stale_secs 的 active 助理执行 `ignore(engine.assistant_set_status(r.agent, "dead"))` 后无条件 `marked_dead = marked_dead + 1`。但 `assistant_set_status` 返回的是**读回验证过的真实结果**：MemoryStore 在 agent 不存在时返回 false（store_assistant.mbt:34-46）；SqliteStore 在 db 未打开、prepare 失败、读回 None、或读回 status != requested（并发改动，如助理自己心跳复活）时返回 false（store_sqlite.mbt:1821-1850）。因此 set_status 返回 false 时助理**并未**被标成 dead，回执却仍计入 marked_dead——回执谎报。与平行的 `assistant_resign`（L4982-4987）正确透出 `"resigned": Json::boolean(ok)` 形成对比。与 BUG-225~236「静默吞错 / 回执说谎」同族。
+- fix: 捕获 `let ok = engine.assistant_set_status(r.agent, "dead")`，`marked_dead` 只在 ok 为真时递增，失败计入新计数器 `mark_failed`；回执改用可变 `Map[String, Json]` 构造（复用 BUG-232 executor_save 的惯用法），基础字段 swept_locks / assistants_marked_dead 如实反映，`if mark_failed > 0` 时条件注入 `assistants_mark_failed` 计数——成功路径零回归。同步更新 `assistant_sweep` 工具描述。回归锁 `assistant_sweep_wbtest.mbt`：钉住 `ignore(engine.assistant_set_status` 清零、Bool 捕获存在、条件注入存在、工具描述同步。`moon test --target js src/server` 311/311 全绿（基线 307）。
+- reported_by: bugfind
+- commit: 0e511a0
