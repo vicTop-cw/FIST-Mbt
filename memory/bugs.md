@@ -3545,6 +3545,9 @@ pub fn caf_feature_hash(context : String) -> Int {
 ### FIXED(2026-10-15T08:46:00Z / BUG-185)
 - evidence: src/ops/ops_watchdog.mbt L262 添加 `let mut heal_error : String? = None`，L273/L278 将 `Err(_) => []` 改为 `Err(e) => { heal_error = Some(e); [] }`，L593-608 在 tick_json 调用前将 heal_error 添加到 detail JSON。修复后 moon check --target js 0 errors，moon test --target js 1108/1108 passed。
 
+
+### FIXED(2026-10-16T02:00:21Z / BUG-185)
+- evidence: Commit 20846a4: scripts/blackbox/e2e_irm_line.py probe() bare-path changed from [ -x 'fist' ] (never searches PATH) to command -v; WSL bash detection added via _is_wsl_bash() registry check; _userprofile_redirected() guard added to prevent env pollution. python -W error -m py_compile clean.
 ## BUG-186 [2026-10-15T08:50:00Z] [medium] FIXED
 - summary: ops_heal.mbt heal_stale_tasks_by_phi 静默吞噬 reopen_task 错误（Err(e) => ignore(e)）
 - detail: src/ops/ops_heal.mbt L242 在 reopen_task 失败时忽略错误 `Err(e) => ignore(e)`，导致调用方无法知道某些任务修复失败。函数返回类型为 `Result[Array[String], String]`，本应传播错误。修复：改为 `Err(e) => return Err(e)`，让错误传播到调用方（ops_watchdog.mbt），由其包含在 JSON 输出的 heal_error 字段中。
@@ -4127,12 +4130,11 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - reported_by: bugfind
 - commit: d65c2ec
 
-## BUG-228 [2026-10-16T03:30:26Z] [high] FIXED
-- summary: [server] report_bug auto_push 远端建号成功后本地队列标记写入失败被静默丢弃，下轮 sync 重复建号
-- detail: server.mbt report_bug auto_push 两处队列标记调用点（github L5776、gitcode L5963）以 `let _ =` 丢弃 Result[Json, String]；被调 github_queue_mark_sent（github_sync.mbt L308）与 gitcode_queue_mark_sent_batch（github_gitcode.mbt L317）在本地队列写入失败时 return Err("…: 队列写入失败")（BUG-220 已修），但调用点丢弃 Err 后回执仍报 github.ok:true / gitcode.ok:true 并带 issue_url，本地 JSONL 队列未标记 sent，下轮 sync 对同一 bug 重复建号，GitHub/GitCode 出现重复 issue。同型调用点（github_mark_sent 工具封装、flush_execute、gitcode_mark_sent 工具封装）均正确归一，唯 auto_push 两处遗漏。
-- fix: 抽出纯函数 queue_mark_receipt(channel, res) -> Json 归一回执（Ok→{ok,channel,marked,total}；Err→{ok:false,channel,queue_mark_error}），auto_push 两处标记调用点捕获 Result 并将回执并入 remote_push 子图（auto_push.github.queue_mark / auto_push.gitcode.queue_mark）随响应回传；新增回归锁 queue_mark_receipt_wbtest.mbt 钉住 Ok/Err 双分支。moon test --target js src/server 全绿（288/288）。
-- reported_by: bugfind
-- commit: cb3f27f708b91bcca49926d7dc0c38ec009485ed
+
+
+## BUG-227 [2026-10-16T02:13:56Z] [medium] OPEN
+- summary: [self-cleanup] 已暂停任务无归档清理路径，410 条无主僵尸永久堆积致 project_health 恒 attention
+- detail: 清扫 2026-10-16 轮次（R120）：fist-mbt 项目任务库 569 条，其中已暂停 410 条（397 条 assignee 为空、分布在历史命名空间 r3verify=141/stdalign=136/enhance-e2e=72/dag-verify=16/atgc-selfdrive=14/polish=10 等）。尝试 archive 清理被拒：archive 的合法前态仅「已完成」，已暂停任务无 resume→空完成→归档 的合法清理链（resume 到已领取后仍无法归档；无 cancel/批量归档工具）。导致全库 1535 条已暂停僵尸永久堆积，project_health 恒 attention、saturation 无法回落。缺一条「已暂停僵尸批量清理」路径（如 resume 后 force_archive，或按 namespace/assignee 空 批量归档 API）。本轮已完成 134 条已完成任务归档（done 524→391, archived 49→182），唯 410 已暂停无法清理。
 
 ## BUG-229 [2026-10-16T04:16:53Z] [high] FIXED
 - summary: [server] 模型路由重试分支的记账/冷却 `Result` 被 `let _ =` 静默丢弃，写盘失败时回执无留痕
@@ -4140,3 +4142,11 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 两处丢弃点改为 `mr_retry_note(model, res)` 归一（Ok→"" 不留痕、Err→"model: err"，L379-384）并累加进 `cooldown_errors : Array[String]`（L926-927 声明）；函数两处出口——Err 分支的失败返回（L970-973）与最终尝试返回（L1043-1046）——均经 `mr_opt_arr_field("cooldown_errors", cooldown_errors)`（L91-97）把非空错误数组并入回执 JSON，空数组不出字段（既有回执形态零回归）。回归锁 `bug229_重试分支记账冷却不留静默吞错`（model_router_ops_wbtest.mbt）钉住 `mr_retry_note` Ok/Err 双分支、`mr_opt_arr_field` 空/非空语义、`mr_record_failure` 不在池中返回 `Ok(())`。`moon test --target js src/server` 全绿（289/289）。
 - reported_by: bugfind
 - commit: 676ce7a17c7ad1f6d0fa7819667fb646085cc799
+
+## BUG-230 [2026-10-16T04:53:00Z] [high] FIXED
+- summary: [engine] 熔断器四处 cb_save 写盘 Result 被 ignore() 静默吞错，状态变更未落库时回执仍展示内存新状态
+- detail: `src/engine/engine_circuit.mbt` 的 circuit_fail（L37-60）、circuit_succeed（L84-107）、circuit_status（Open→Half-Open 迁移写 L134-154、半开配额自增写 L172-199）四处 `self.store.cb_save(...)` 返回 `Result[Unit, String]` 均被 `ignore(...)` 丢弃。SQLite 写盘失败（磁盘满/目录被删/权限变更/并发锁竞争）时，回执 `cb_json` 仍按内存中的 new_state/new_failures 组装并报 `allow_call`/`state`，调用方无法区分「已落库」与「状态变更丢失」——熔断器状态机可能反复重放同一迁移（如 Open→Half-Open 每次查询都尝试迁移）、半开配额未持久化导致重启后配额错乱。与 BUG-228/229 同族（Result 被静默丢弃）。
+- fix_options: 1) 写盘失败错误留痕并并入回执（采用）；2) 上抛 Err 改签名（破坏既有调用契约，MCP 工具不宜 panic）；3) 仅日志不留 JSON（调用方不可编程判别）。
+- fix: 新增纯函数 `cb_persist_note(res : Result[Unit, String]) -> String`（Ok→"" 无错不留痕、Err→错误原文）与 `cb_note_join(a, b)`（合并两处写盘留痕，都空→""，一空取另一，都非空→"a；b"）；`cb_json` 增加 `persist_error? : String = ""` 形参，非空才 `m.set("persist_error", ...)`（空时回执形态零回归）。四处 `ignore(...)` 改为捕获 Result：circuit_fail/succeed 单写点直接归一；circuit_status 迁移写与配额自增写分别归一后经 `cb_note_join` 合并进同一 persist_error 字段（三条出口分支均透传）。同步更新 server.mbt 三个工具（circuit_fail/circuit_succeed/circuit_status）描述，声明 `persist_error?` 语义（非空即「状态变更未落库」）。回归锁 `bug230_熔断器写盘不留静默吞错`（engine_circuit_wbtest.mbt）：钉住 cb_persist_note Ok/Err、cb_note_join 四种组合，并断言 Mem 后端成功路径不出 persist_error 字段。`moon test --target js src/engine` 157/157、`moon test --target js src/server` 289/289 全绿。
+- reported_by: bugfind
+- commit: 300cfb60f2567a539afc70ccf1648e1bc19026bc
