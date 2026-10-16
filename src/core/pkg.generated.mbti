@@ -76,6 +76,7 @@ pub struct Task {
   depends_on : Array[String]
 } derive(Eq, @debug.Debug)
 pub fn Task::archive(Self) -> Result[Self, String]
+pub fn Task::archive_force(Self, force~ : Bool) -> Result[Self, String]
 pub fn Task::claim(Self, assignee~ : String) -> Result[Self, String]
 pub fn Task::complete(Self, completed_by~ : String) -> Result[Self, String]
 pub fn Task::execute(Self) -> Result[Self, String]

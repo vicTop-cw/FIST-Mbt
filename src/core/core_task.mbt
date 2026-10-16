@@ -457,6 +457,26 @@ pub fn Task::archive(self : Task) -> Result[Task, String] {
 }
 
 ///|
+/// 强制归档（BUG-227）：force=true 时放行 已完成/已暂停/已打回 三类滞留态直接入档，
+/// 供运维清扫无主积压任务；force=false 时与 Task::archive 完全同义（零回归）。
+/// 已领取/执行中/待验收 等在流状态不放行——它们可能仍被活跃 agent 持有，
+/// 强制归档会吞掉在途工作；请先 pause 落到已暂停再走本路径。
+pub fn Task::archive_force(self : Task, force~ : Bool) -> Result[Task, String] {
+  if not(force) {
+    return self.archive()
+  }
+  match self.status {
+    Completed | Paused | Rejected => Ok({ ..self, status: Archived, })
+    _ =>
+      Err(
+        "force archive 仅支持 [已完成/已暂停/已打回]，当前是 [" +
+        self.status.to_string() +
+        "]；在流状态请先 pause 再强制归档",
+      )
+  }
+}
+
+///|
 /// 任意非归档状态 -> 已领取（被打回重做）
 pub fn Task::reopen(self : Task) -> Result[Task, String] {
   match self.status {

@@ -1793,19 +1793,23 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "archive",
-    "归档任务（仅限人类指挥官）。参数：task_id、by 操作者。",
+    "归档任务（仅限人类指挥官）。参数：task_id、by 操作者、force 可选（true 时放行已暂停/已打回僵尸任务直接归档，BUG-227 清扫路径；在流态仍拒）。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
         "by": string_prop("操作者(默认 human_steward)"),
+        "force": bool_prop(
+          "强制归档(可选默认false)：放行已暂停/已打回滞留态，在流态(已领取/执行中/待验收)仍拒",
+        ),
       },
       ["task_id"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let by = get_str(args, "by", default="human_steward")
+      let force = get_bool(args, "force")
       let ts = now_default()
-      to_result(engine.archive(task_id~, by~, now=ts))
+      to_result(engine.archive_force(task_id~, by~, force~, now=ts))
     },
   )
   s1 = instrumented_tool(
