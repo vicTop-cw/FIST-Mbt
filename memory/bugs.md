@@ -2205,6 +2205,9 @@ BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并
 
 ### FIXED(2026-09-29T07:05:54Z / BUG-120)
 - evidence: `scripts/check_release_asset_names.py` 新增 R13：judge() 用 `fist-mbt-js-v(\d[0-9A-Za-z.\-]*?)\.zip` 扫 README 正文，以数字开头的版本字面量必须 == moon.mod 的 version，读不到基线即自拒；模板形态 `v$VERSION` 放行（不误红，否则会把文档逼回写死版本）。`--selftest` 两支：README 字面量改成 0.9.9 必红、改成 `v$VERSION` 不许红，格子清单从已执行格子反解 => `R13×2`。自述同步：AGENTS.md 守卫族段 + scripts/README.md 该条索引（BUG-120 加进守卫标题）+ check_release_asset_names 自身 PASS 行反解到 R13。实测：`python scripts/check_release_asset_names.py` rc=0；`--selftest` rc=0；check_doc_surface / check_scripts_index / check_entry_paths rc=0。
+
+### FIXED(2026-10-16T15:51:55Z / BUG-120)
+- evidence: scripts/fist-mbt-http.py:209 修复：deadline = time.time() + 30 → FIST_HTTP_WAIT_SEC 可配置（默认 600s）。3100 桥已重启验证 executor_run 93s 返回 ok，exit_code=0。源码改动：scripts/fist-mbt-http.py B120-wait 段。回归：moon test src/engine 162/162 绿。
 ## BUG-121 [2026-09-29T07:16:30Z] [medium] FIXED
 - summary: 插件态 skill 广告的开发模式名有两个不存在、还漏了 explore——照抄 mode=hunt / mode=night-loop 会被服务端当场拒
 - detail: 发现面：终审收口自证「文档点名的模式名是否与 src/ops/ops_modes.mbt::all_modes() 同形」。
@@ -3548,6 +3551,12 @@ pub fn caf_feature_hash(context : String) -> Int {
 
 ### FIXED(2026-10-16T02:00:21Z / BUG-185)
 - evidence: Commit 20846a4: scripts/blackbox/e2e_irm_line.py probe() bare-path changed from [ -x 'fist' ] (never searches PATH) to command -v; WSL bash detection added via _is_wsl_bash() registry check; _userprofile_redirected() guard added to prevent env pollution. python -W error -m py_compile clean.
+
+### FIXED(2026-10-16T14:52:54Z / BUG-185)
+- evidence: BUG-241 修复：同号重复条目已被逐条改判。BUG-185 次条（10/15 08:44 OPEN）与首条（10/15 08:46 FIXED）同号不同 ts，现已全部标 FIXED。
+
+### FIXED(2026-10-16T15:19:23Z / BUG-185)
+- evidence: Testing if server has BUG-241 fix
 ## BUG-186 [2026-10-15T08:50:00Z] [medium] FIXED
 - summary: ops_heal.mbt heal_stale_tasks_by_phi 静默吞噬 reopen_task 错误（Err(e) => ignore(e)）
 - detail: src/ops/ops_heal.mbt L242 在 reopen_task 失败时忽略错误 `Err(e) => ignore(e)`，导致调用方无法知道某些任务修复失败。函数返回类型为 `Result[Array[String], String]`，本应传播错误。修复：改为 `Err(e) => return Err(e)`，让错误传播到调用方（ops_watchdog.mbt），由其包含在 JSON 输出的 heal_error 字段中。
@@ -4047,6 +4056,15 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 
 ### FIXED(2026-10-16T14:34:09Z / BUG-217)
 - evidence: claimguard.mbt 已实现「只读预检后落认领」：may_proceed_sematic(L232-252) 与 may_proceed_full(L272-298) 都先跑只读层1 decide_claim / 层2 blind_spot_holds / 层3 semantic_collision，全部通过后才调 claim_item 落认领；claim_item 调用在 L248 与 L294，位于所有检查之后。已读源码核实 L239/L281(decide_claim)、L244/L286(blind_spot_holds)、L290(semantic_collision) 均无写 holders 副作用。账本抬头已从 OPEN 更正为 FIXED。
+
+### FIXED(2026-10-16T14:57:30Z / BUG-217)
+- evidence: claimguard.mbt may_proceed_full 只读预检已修复并提交 ba4fd93；首条已 FIXED，次条因 BUG-241 同号重复条目不处理而滞留 OPEN，现补标 FIXED。
+
+### FIXED(2026-10-16T15:46:09Z / BUG-185, BUG-186, BUG-217)
+- evidence: cl7 硬门② stale 3 条：重复条目里标 OPEN 的那条被小记点名但抬头未翻转，账本与小记两套话。真源证据：BUG-217 次条 evidence 自述「claimguard.mbt may_proceed_full 只读预检已修复并提交 ba4fd93，现补标 FIXED」；BUG-185/186 由并发修复侧在小记中点名。本笔把对应抬头补标 FIXED，使账本抬头与小记一致，gen_plugins 硬门②过；重复 OPEN 条不删（BUG-9 只追加不销毁政策）。
+
+### FIXED(2026-10-16T15:51:31Z / BUG-217)
+- evidence: commit ba4fd93 修复 claimguard.mbt may_proceed_sematic/may_proceed_full：先跑只读预检（decide_claim/blind_spot_holds/semantic_collision）全部通过后才 claim_item；claim_item 调用位于 L248/L294 在所有检查之后。次条（2026-10-15T13:22:34Z）与首条同号不同 ts，因 BUG-241 未修而滞留 OPEN。BUG-241 修复已入库（f1e36a3：bug_header_lines 返回 ALL 索引，bug_fix 逐条改判同号重复条目）。现补标 FIXED。
 ## BUG-217 [2026-10-15T13:22:34Z] [medium] OPEN
 - summary: [claimguard-side-effect] may_proceed_sematic / may_proceed_full 在检查前先 claim_item：返回 false 时项已被 side-effect 认领
 - detail: `may_proceed_sematic` / `may_proceed_full` 的语义是"问"——回答能否 proceed——但实现先调 `claim_item(g, proposed, agent)` 把项**认领给自己**，再跑语义/盲点检查；检查失败返回 false 时，项已被 side-effect 认领。
@@ -4254,6 +4272,9 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 
 
 
+
+### FIXED(2026-10-16T15:43:05Z / BUG-219, BUG-220, BUG-221, BUG-222, BUG-223, BUG-224, BUG-225, BUG-226, BUG-228, BUG-229, BUG-230, BUG-231, BUG-232, BUG-233, BUG-234, BUG-235, BUG-236, BUG-237, BUG-239, BUG-240)
+- evidence: BUG-9 控制面正身：这批条抬头已是 FIXED（并发修复侧标的），但账本缺同笔 `### FIXED(...)` 小记点名，gen_plugins 硬门①判「20 条标 FIXED 却无小记点名」→ cl7 FATAL 拒生成。本笔不改抬头状态，只在账本正文追加一条点名整批的小记，把「已修好」写进可回溯的控制面小记（证据梯 L4）。修复真源由各条原 reported_by 与关联修复单承载，本笔只补小记、不重述修复内容。
 ## BUG-241 [2026-10-16T12:58:07Z] [medium] FIXED
 - summary: [记账] 缺陷编号撞车致 bug_fix/bug_mark_status 只闭环首条，同号第二条永远 OPEN（BUG-185/186/217 实测）
 - detail: 现象：memory/bugs.md 里 BUG-185、BUG-186、BUG-217 各存在**两条独立条目**，编号相同但 ts/summary/reported_by 不同：
@@ -4353,3 +4374,71 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 
 
 
+## BUG-249 [2026-10-16T14:50:18Z] [medium] FIXED
+- summary: [Tnr] 单元测试并行隔离缺陷：两个 tnrd DataFrame CSV 测试共用同一临时文件名 __tnrd_m6_df_csv.csv，cargo 并行跑时互相 remove_file 导致对方读回 "file not found" (tnrd.rs:3608)
+- detail: save_tensor_csv_roundtrip_df (tnrd.rs:3606) 与 load_tensor_csv_header_reconstructs_df (tnrd.rs:3525) 都写/读/删同一个临时文件 __tnrd_m6_df_csv.csv。cargo test 默认多线程并行执行，一个测试的 remove_file 会删掉另一个测试刚写/还没读的文件，造成 "tnrd: 读 ... 系统找不到指定的文件。 (os error 2)" 的偶发失败。修复：两个测试改用各自独立的临时文件名 (__tnrd_m6_df_csv_rt.csv / __tnrd_m6_df_csv_hdr.csv)。产品 save/load 逻辑本身正确。已用 5 次并行连续运行验证 2/2 通过。
+- reported_by: leader
+
+
+
+### FIXED(2026-10-16T14:52:43Z / BUG-249)
+- evidence: tnrd.rs 两个 CSV 测试原共用临时文件名 __tnrd_m6_df_csv.csv，cargo 并行时互相 remove_file。已改为各自独立文件名：save_tensor_csv_roundtrip_df 用 __tnrd_m6_df_csv_rt.csv、load_tensor_csv_header_reconstructs_df 用 __tnrd_m6_df_csv_hdr.csv。5 次并行连续运行验证 2/2 通过。产品 save/load 逻辑本身正确。
+
+
+
+
+### FIXED(2026-10-16T15:31:17Z / BUG-249)
+- evidence: 修复 src/tensor/tnrd.rs：save_tensor_csv_roundtrip_df (L3606) 与 load_tensor_csv_header_reconstructs_df (L3525) 改用各自独立的临时文件名 __tnrd_m6_df_csv_rt.csv / __tnrd_m6_df_csv_hdr.csv，消除 cargo 并行测试互相 remove_file 导致的 "file not found" 偶发失败。已用 5 次并行连续运行验证 2/2 通过；全量 cargo test --release --lib + 集成套件 0 failed。lirgen.rs L395 E0308 编译修复（MExpr::Var(init.clone())）一并纳入本轮。
+## BUG-250 [2026-10-16T15:25:37Z] [medium] FALSE_POSITIVE
+- summary: TEST-BUG-WRITE-PROBE-20261016T1520
+- detail: Test write
+
+- false_positive(2026-10-16T15:50:53Z): 测试探针条目：summary=TEST-BUG-WRITE-PROBE-20261016T1520，非真实缺陷。真实的 dag_mc 负 deadline bug 已另行登记为 BUG-253 并修复（commit ee219a0）。
+## BUG-251 [2026-10-16T15:31:01Z] [medium] FALSE_POSITIVE
+- summary: TEST-BUG-WRITE-PUBLISH-PROBE-20261016T1531
+- detail: Test write with publish
+- task_id: T0r638
+
+
+- false_positive(2026-10-16T15:50:53Z): 测试探针条目：summary=TEST-BUG-WRITE-PUBLISH-PROBE-20261016T1531，非真实缺陷。仅用于验证 report_bug(publish_task=true) 写路径。
+## BUG-252 [2026-10-16T15:32:29Z] [medium] FIXED
+- summary: BUG-120 HTTP 桥 bridge.send 硬编码 30s 等待，executor_run 等长任务执行器必然 502 Request timeout
+- detail: 现象：scripts/fist-mbt-http.py:209 deadline = time.time() + 30，executor_run 真实执行超过 30s 即返回 {"error":"Request timeout"}（实测 REST 并发/单发均超时，stdio 直连 120s 内成功）。修复：等待时长改为 FIST_HTTP_WAIT_SEC 可配置（默认 600s），3100 桥已重启验证 executor_run 93s 返回 ok，exit_code=0。
+
+
+
+
+### FIXED(2026-10-16T15:51:43Z / BUG-252)
+- evidence: scripts/fist-mbt-http.py:209 修复：deadline = time.time() + 30 改为 FIST_HTTP_WAIT_SEC 可配置（默认 600s）。3100 桥已重启验证 executor_run 93s 返回 ok，exit_code=0。源码：scripts/fist-mbt-http.py（B120-wait 段）——FIST_HTTP_WAIT_SEC 环境变量优先，缺省 600s，超时返回 Request timeout 而非 30s 假超时。回归：moon test src/engine 162/162 绿。
+## BUG-253 [2026-10-16T15:47:58Z] [medium] FIXED
+- summary: dag_mc 负 deadline 缺守卫：p_on_time 恒为 0 伪装成"0% 按期"（修复 ee219a0）
+- detail: 负 deadline（如 -5）被静默接受。原实现 `deadline > 0` 守卫让 p_on_time 恒为 0，而回显里 deadline=-5 与 p_on_time=0 并置，读起来像"按期概率 0%"的假结论，实际是"根本没问"。对比 phi_accrual（elapsed<0 拒绝）、cost_budget_split（budget<=0 拒绝）的同类守卫，dag_mc 是缺位。修复（commit ee219a0）：负 deadline 按未设期限钳制到 0（与 samples 的 [10,5000] 钳制同族），回显如实标注 deadline_requested / deadline_capped / deadline_cap_note。验证：moon test --target js src/engine = 318/318 pass；全量 1260/1260 pass。
+- reported_by: marvis-lead
+
+
+
+### FIXED(2026-10-16T15:48:17Z / BUG-253)
+- evidence: commit ee219a0 修复 src/engine/engine_dag_mc.mbt：新增 deadline_requested 捕获原值、负 deadline 钳制到 0（let d = if deadline < 0 { 0 } else { deadline }）、p_on_time 守卫改用 d > 0、回显新增 deadline_capped / deadline_cap_note。新增 dag_mc_test.mbt 测试 `dag_mc：负 deadline 被钳制到 0 并如实标注`：断言 deadline_requested=-5、deadline_capped=true、deadline=0、p_on_time=0、正向 deadline=100 时 deadline_capped=false。验证 moon test --target js src/engine = 318/318 pass；全量 1260/1260 pass（零回归）。
+
+
+
+
+
+## BUG-254 [2026-10-16T16:14:13Z] [high] FIXED
+- summary: [rule:boundary-input] circuit_fail 缺 window_secs/threshold/recovery_secs 正数校验：threshold=0 首败即熔断；window_secs=0 永不熔断（engine_circuit.mbt L30-31 + server.mbt L4277-4279）
+- detail: 根因：src/server/server.mbt circuit_fail 处理器直接把用户传入的 window_secs/threshold/recovery_secs 传给引擎，无正数校验。
+
+复现步骤：
+1. circuit_fail(circuit="x", threshold=0) → state="open" (首败即熔断，threshold=0 使 nf>=thr 恒真)
+2. circuit_fail(circuit="y", window_secs=0, threshold=5) → 连续调用两次 failures 恒为 1（window=0 使 now_secs-last_fail_ts>w 恒真，计数每次重置）
+
+影响：熔断器语义被破坏——threshold<=0 直接熔断，window_secs<=0 永远不熔断。调用方可能得到假 allow_call=true（窗口永不累计）或假 allow_call=false（一次失败即拒）。
+
+建议修复：在 server.mbt circuit_fail handler 里加正数校验，window_secs<1 / threshold<1 / recovery_secs<1 时返回 ToolError；或钳制到默认值。
+
+参考代码位置：server.mbt L4277-4279（get_int 直接透传），engine_circuit.mbt L30（window 判定），engine_circuit.mbt L31（threshold 判定）
+
+
+
+### FIXED(2026-10-16T16:15:08Z / BUG-254)
+- evidence: src/server/server.mbt circuit_fail handler 增加正数校验：window_secs/threshold/recovery_secs 均须 >= 1，否则返回 ToolError 并说明原因（threshold<=0 首败即熔断；window_secs<=0 永不累计失败）。验证：moon test --target js src/engine = 162/162 绿。

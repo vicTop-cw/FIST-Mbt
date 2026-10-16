@@ -3995,28 +3995,31 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_depend",
-    "给任务追加一条前置依赖（显式构建 DAG 依赖边，不只靠 plan_deep 隐式父子；供 dag_check/ready/critical_path/ascii 使用）。参数：task_id 任务(必经)、dep_id 前置依赖任务 id(必经)。幂等去重；校验两任务存在且非自身。返回追加后的任务 JSON。",
+    "给任务追加一条前置依赖（显式构建 DAG 依赖边，不只靠 plan_deep 隐式父子；供 dag_check/ready/critical_path/ascii 使用）。参数：task_id 任务(必经)、dep_id 前置依赖任务 id(必经)、namespace(可选默认 default)。幂等去重；校验两任务存在且非自身。返回追加后的任务 JSON。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
         "dep_id": string_prop("前置依赖任务 id（必填）"),
+        "namespace": string_prop("命名空间（可选默认 default）"),
       },
       ["task_id", "dep_id"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let dep_id = get_str(args, "dep_id")
+      let ns = get_str(args, "namespace", default="default")
       let ts = now_default()
-      to_result(engine.dag_depend(task_id~, dep_id~, now=ts))
+      to_result(engine_for_ns(ns).dag_depend(task_id~, dep_id~, now=ts))
     },
   )
   s1 = instrumented_tool(
     s1,
     "dag_critical_path",
-    "返回当前最长依赖链（关键路径）。无参数。",
-    schema({}, []),
-    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      let path = engine.critical_path()
+    "返回当前最长依赖链（关键路径）。参数：namespace(可选默认 default)。",
+    schema({ "namespace": string_prop("命名空间（可选默认 default）") }, []),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let path = engine_for_ns(ns).critical_path()
       Ok(
         @mcp.ToolResult::text(
           Json::object({
@@ -4030,10 +4033,11 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_parallelism",
-    "返回当前可并行执行的任务数（待领取且依赖已满足）。无参数。",
-    schema({}, []),
-    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      let n = engine.parallelism()
+    "返回当前可并行执行的任务数（待领取且依赖已满足）。参数：namespace(可选默认 default)。",
+    schema({ "namespace": string_prop("命名空间（可选默认 default）") }, []),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let n = engine_for_ns(ns).parallelism()
       Ok(
         @mcp.ToolResult::text(
           Json::object({ "parallelism": Json::number(n.to_double()) }).stringify(),
@@ -4044,28 +4048,31 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_slack",
-    "瓶颈与松弛分析（PERT/CPM 硬核调度，R71）：对每个任务算 earliest/latest/slack（0=关键路径，>0=可灵活并行安排），返回 { makespan, critical:[关键任务], slack_map:{id:{earliest,latest,slack}}, cycle:[成环任务] }——找出【谁在关键路径上、谁有松弛可并行】，直接支撑排程优化。无参数。",
-    schema({}, []),
-    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      Ok(@mcp.ToolResult::text(engine.dag_slack_analysis().stringify()))
+    "瓶颈与松弛分析（PERT/CPM 硬核调度，R71）：对每个任务算 earliest/latest/slack（0=关键路径，>0=可灵活并行安排），返回 { makespan, critical:[关键任务], slack_map:{id:{earliest,latest,slack}}, cycle:[成环任务] }——找出【谁在关键路径上、谁有松弛可并行】，直接支撑排程优化。参数：namespace(可选默认 default)。",
+    schema({ "namespace": string_prop("命名空间（可选默认 default）") }, []),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      Ok(@mcp.ToolResult::text(engine_for_ns(ns).dag_slack_analysis().stringify()))
     },
   )
   s1 = instrumented_tool(
     s1,
     "dag_schedule",
-    "排程视图（R75 负载感知，基于 dag_slack 落成可执行排程）：返回 { critical_batch:[{task_id,earliest,slack,assignee}](关键路径瓶颈,须串行盯紧), flexible_batch:[...](slack>0,按最早开始排序可并行,未认领项附 suggest=活跃负载最低的已注册执行者), basis, note }——谁在瓶颈、谁可并行派单、建议派给谁，一目了然。无参数。",
-    schema({}, []),
-    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      Ok(@mcp.ToolResult::text(engine.dag_schedule().stringify()))
+    "排程视图（R75 负载感知，基于 dag_slack 落成可执行排程）：返回 { critical_batch:[{task_id,earliest,slack,assignee}](关键路径瓶颈,须串行盯紧), flexible_batch:[...](slack>0,按最早开始排序可并行,未认领项附 suggest=活跃负载最低的已注册执行者), basis, note }——谁在瓶颈、谁可并行派单、建议派给谁，一目了然。参数：namespace(可选默认 default)。",
+    schema({ "namespace": string_prop("命名空间（可选默认 default）") }, []),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      Ok(@mcp.ToolResult::text(engine_for_ns(ns).dag_schedule().stringify()))
     },
   )
   s1 = instrumented_tool(
     s1,
     "dag_cost_route",
-    "依赖图成本路由（R77，STAR 式蒸馏）：对 flexible(slack>0) 未认领任务按拓扑序贪心给建议执行者——执行成本(难度档易/中/难→1/2/3)+切换税(依赖执行者不同则+1，上下文切换成本)，能力约束过滤(描述命中的已注册能力标签)。返回 { cost_route:[{task_id,assignee,est_cost,switch_cost,total}], total_est_cost, basis, note }——排程优化闭环：critical_path→slack→schedule→cost_route。纯读不 claim。无参数。",
-    schema({}, []),
-    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      Ok(@mcp.ToolResult::text(engine.dag_cost_route().stringify()))
+    "依赖图成本路由（R77，STAR 式蒸馏）：对 flexible(slack>0) 未认领任务按拓扑序贪心给建议执行者——执行成本(难度档易/中/难→1/2/3)+切换税(依赖执行者不同则+1，上下文切换成本)，能力约束过滤(描述命中的已注册能力标签)。返回 { cost_route:[{task_id,assignee,est_cost,switch_cost,total}], total_est_cost, basis, note }——排程优化闭环：critical_path→slack→schedule→cost_route。纯读不 claim。参数：namespace(可选默认 default)。",
+    schema({ "namespace": string_prop("命名空间（可选默认 default）") }, []),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      Ok(@mcp.ToolResult::text(engine_for_ns(ns).dag_cost_route().stringify()))
     },
   )
   s1 = instrumented_tool(
@@ -4092,8 +4099,8 @@ pub async fn run_server() -> Unit {
       let seed = get_int(args, "seed", default=42)
       Ok(
         @mcp.ToolResult::text(
-          engine
-          .dag_mc(ns~, root_task_id=root, deadline~, samples~, seed~)
+          engine_for_ns(ns)
+          .dag_mc(root_task_id=root, deadline~, samples~, seed~)
           .stringify(),
         ),
       )
@@ -4270,6 +4277,27 @@ pub async fn run_server() -> Unit {
       let w = get_int(args, "window_secs", default=60)
       let thr = get_int(args, "threshold", default=3)
       let rec = get_int(args, "recovery_secs", default=30)
+      // BUG-254：三个参数须为正——threshold<=0 首败即熔断；window_secs<=0 永不累计失败
+      let bad : Array[String] = []
+      if w < 1 {
+        bad.push("window_secs=" + w.to_string() + "（须 >= 1）")
+      }
+      if thr < 1 {
+        bad.push("threshold=" + thr.to_string() + "（须 >= 1）")
+      }
+      if rec < 1 {
+        bad.push("recovery_secs=" + rec.to_string() + "（须 >= 1）")
+      }
+      if not(bad.is_empty()) {
+        return Err(
+          @mcp_types.ToolError(
+            "circuit_fail: 参数须为正 " +
+            rq_join(bad) +
+            "。BUG-254：threshold<=0 会让首败即熔断（nf>=thr 恒真），" +
+            "window_secs<=0 会让计数每次重置（now-last_fail>w 恒真）——熔断器语义被破坏。",
+          ),
+        )
+      }
       Ok(
         @mcp.ToolResult::text(
           engine
@@ -5100,11 +5128,18 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_check",
-    "检查某任务的依赖是否全部完成。参数：task_id。",
-    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+    "检查某任务的依赖是否全部完成。参数：task_id(必填)、namespace(可选默认 default)。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "namespace": string_prop("命名空间（可选默认 default）"),
+      },
+      ["task_id"],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
-      let ok = engine.deps_satisfied(task_id)
+      let ns = get_str(args, "namespace", default="default")
+      let ok = engine_for_ns(ns).deps_satisfied(task_id)
       Ok(
         @mcp.ToolResult::text(
           Json::object({
@@ -5133,13 +5168,17 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_sort",
-    "对任务列表按依赖深度拓扑排序。参数：task_ids(JSON 数组)。",
+    "对任务列表按依赖深度拓扑排序。参数：task_ids(JSON 数组，必填)、namespace(可选默认 default)。",
     schema(
-      { "task_ids": string_prop("任务 id 列表 JSON 数组（必填）") },
+      {
+        "task_ids": string_prop("任务 id 列表 JSON 数组（必填）"),
+        "namespace": string_prop("命名空间（可选默认 default）"),
+      },
       ["task_ids"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let raw = get_str(args, "task_ids")
+      let ns = get_str(args, "namespace", default="default")
       let task_ids : Array[String] = try {
         match @json.parse(raw) {
           Json::Array(a) => a.map(fn(v) { v.as_string().unwrap_or("") })
@@ -5148,7 +5187,7 @@ pub async fn run_server() -> Unit {
       } catch {
         _ => []
       }
-      let sorted = engine.topo_sort(task_ids)
+      let sorted = engine_for_ns(ns).topo_sort(task_ids)
       Ok(
         @mcp.ToolResult::text(
           Json::object({
