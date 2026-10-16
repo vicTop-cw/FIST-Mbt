@@ -4171,3 +4171,10 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 新增纯函数 `executor_persist_note(res : Result[String, String]) -> (Bool, String)`（Ok→(true,"") 无错不留痕；Err→(false, 错误原文)）；handler 改为捕获 `engine.executor_save` 的 Result，`persisted` 如实反映落库结果，写盘失败时附 `persist_error`（非空才出现，成功路径零回归）；回执由 `Json::object({...})` 改为 Map 组装以支持条件字段。同步更新 `executor_register` 工具描述，声明 `persisted`/`persist_error` 语义。回归锁 `executor_register_wbtest.mbt`：钉住 `executor_persist_note` Ok/Err 双分支（含空原因），并对 server.mbt 源码文本加锁（`= executor_persist_note(` 调用点 ≥1、硬编码 `"persisted": Json::boolean(true),` 已归零、`persist_error` 透出）。`moon test --target js src/server` 293/293 全绿（基线 291）。
 - reported_by: bugfind
 - commit: dd10fe7fe32c465c147ffdd9c439ef74fc5cc9e5
+
+## BUG-233 [2026-10-16T06:10:00Z] [high] FIXED
+- summary: [server] pipeline_tick 的 omega_spec 解析失败被 Err(_) => None 静默吞掉，用户传了非法 spec 时回执无任何提示，watchdog 静默丢 spec 跑默认逻辑
+- detail: `src/server/server.mbt` 的 `pipeline_tick` handler 解析 `omega_spec` 参数时，`@omega.parse_spec(omega_spec_str)` 返回 `Result[Json, String]`，但 `Err(_) => None` 把错误整条丢弃——用户传了非法 JSON spec 时，`omega_spec` 变成 `None`（与不传时完全等价），watchdog 静默丢 spec 跑默认逻辑，回执中无任何字段指示 spec 被拒绝。用户以为 spec 生效（laws 作切割依据、fingerprint 作验收基准），实际被静默忽略（与 BUG-228/229/230/231/232「静默吞错」同族）。
+- fix: 将 `let omega_spec = ...` 改为 `let (omega_spec, omega_spec_error) = ...`，捕获 `Result` 的 `Err(e)` 分支为 `(None, e)`；在回执 `final_json` 构造后追加后处理——`omega_spec_error != ""` 时向回执 Map 注入 `omega_spec_error` 字段（非空才出现，成功路径零回归）。同步更新 `omega_spec` 工具描述，声明非法 JSON 时回执附 `omega_spec_error`。回归锁 `omega_spec_wbtest.mbt`：钉住 server.mbt 不再有裸 `Err(_) => None`（源码文本锁）、`omega_spec_error` 回执逻辑存在、工具描述同步提及。`moon test --target js src/server` 296/296 全绿（基线 293）。
+- reported_by: bugfind
+- commit: 5f846ba
