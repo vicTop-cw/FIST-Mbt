@@ -2418,7 +2418,7 @@ pub async fn run_server() -> Unit {
           "Omega 强验证拆分数(可选默认3)：每层子任务数",
         ),
         "omega_spec": string_prop(
-          "可选 Omega spec JSON(可选)：laws 作切割依据，fingerprint 作验收基准",
+          "可选 Omega spec JSON(可选)：laws 作切割依据，fingerprint 作验收基准。非法 JSON 时回执附 omega_spec_error 说明原因（BUG-233：不再静默丢弃）。",
         ),
         "selfdrive_project_dir": string_prop(
           "自驱式编程整合(可选)：提供时会探测该项目的记忆审视轮，结果挂到 detail.selfdrive（报告先行）",
@@ -2473,12 +2473,15 @@ pub async fn run_server() -> Unit {
       let phi_threshold = get_int(args, "phi_threshold", default=8)
       let mode = get_str(args, "mode")
       let flush_bug_queue = get_bool(args, "flush_bug_queue", default=false)
-      let omega_spec = if omega_spec_str == "" {
-        None
+      // BUG-233：omega_spec 解析失败此前被静默吞成 None——用户传了非法 spec
+      // 时回执无任何提示，watchdog 静默丢 spec 跑默认逻辑。现捕获 Result，失败原因经
+      // omega_spec_error 透出（非空才出现，成功路径零回归）。
+      let (omega_spec, omega_spec_error) = if omega_spec_str == "" {
+        (None, "")
       } else {
         match @omega.parse_spec(omega_spec_str) {
-          Ok(j) => Some(j)
-          Err(_) => None
+          Ok(j) => (Some(j), "")
+          Err(e) => (None, e)
         }
       }
       match
@@ -2647,6 +2650,23 @@ pub async fn run_server() -> Unit {
             }
           } else {
             j
+          }
+          // BUG-233：omega_spec 解析失败回执（非空才出现，成功路径零回归）
+          let final_json = if omega_spec_error != "" {
+            match final_json {
+              Object(m) => {
+                m.set("omega_spec_error", Json::string(omega_spec_error))
+                Json::object(m)
+              }
+              _ => {
+                let mm : Map[String, Json] = Map([])
+                mm.set("omega_spec_error", Json::string(omega_spec_error))
+                mm.set("original", final_json)
+                Json::object(mm)
+              }
+            }
+          } else {
+            final_json
           }
           Ok(@mcp.ToolResult::text(final_json.stringify()))
         }
