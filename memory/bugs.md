@@ -4192,3 +4192,10 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 抽出包级 helper `add_parse_error_field(j, key, msg)`（msg 非空才注入回执对象，非对象时包 `{"original":..., key:msg}` 兜底）；两个 handler 改为先 `let <map> : Map[...] = Map([])` 再 `let <x>_error = if raw.is_empty() { "" } else { 解析成功返回 ""，失败返回错误串 }`（就地填充 map），回执经 `add_parse_error_field(j, "issue_numbers_error"/"gitcode_issue_iids_error", err)` 透出（非空才出现，成功路径零回归）。同步更新两个工具描述，声明非法 JSON 时回执附对应字段。回归锁 `queue_mark_sent_wbtest.mbt`：钉住 server.mbt 不再有 `let issue_numbers = if issue_nums_raw.is_empty() {` 与 `let j = @json.parse(iids_raw) catch { _ => Json::object(Map([])) }` 静默吞错模式（源码文本锁），并校验 helper 与两个 *_error 字段存在、工具描述同步。`moon test --target js src/server` 303/303 全绿（基线 299）。
 - reported_by: bugfind
 - commit: 818f42d
+
+## BUG-236 [2026-10-16T06:42:00Z] [high] FIXED
+- summary: [server] evolve_asset_register 的 evolve_upsert 落库失败被 ignore 静默吞掉、注入搜索执行器后搜索失败被 Err(_) => [] 静默降级，回执均无提示——落库失败直接违背 BUG-140「必须同步落库，否则重启即失」不变量
+- detail: `src/server/self_search_evolve_bridge.mbt` 的 `do_evolve_asset_register_with_search` 有两处静默吞错：(1) `ignore(match evolve_store { ... s.evolve_upsert(...) })` 把落库 Result 整个丢弃，store 未打开或 SQLite 写失败时资产只在内存 Archive、重启即失，回执（art.to_json() + portable_candidates）无任何字段指示未落库；(2) 注入 runner 后 `run_external_search` 的 `Err(_) => []` 把搜索失败（如 FIST_SELF_SEARCH_PATH 不可读）降级为空候选，与「确实无候选」不可区分。与 BUG-235「静默吞错」同族。
+- fix: 两处改为捕获结果：`let persist_error = match evolve_store { None => "evolve_store 未打开（内存态，未落库）", Some(s) => match s.evolve_upsert(...) { Ok(_) => "", Err(e) => e } }`；`let (candidates, search_error) = match runner { None => ([], ""), Some(r) => match run_external_search(...) { Ok(raw) => (distill(...), ""), Err(e) => ([], e) } }`。回执经 `add_parse_error_field`（BUG-235 引入的包级 helper，注释同步泛化）注入 persist_error / search_error——仅失败时出现，成功路径零回归。同步更新桥接文件头文档与 `evolve_asset_register` 工具描述。回归锁 `evolve_asset_register_wbtest.mbt`：钉住桥接文件不再有 `ignore(\n    match evolve_store {` 静默模式、persist_error/search_error 捕获与注入存在、工具描述同步。`moon test --target js src/server` 307/307 全绿（基线 303）。
+- reported_by: bugfind
+- commit: 880d440
