@@ -402,3 +402,118 @@ test "BUG-88：severity 闭集里每个值都能写出被账本文法读得的�
     Ok(_) => abort("闭集外的 severity 被放行")
   }
 }
+
+///|
+test "BUG-204：publish_task 发布失败不再静默——返回带 publish_error 且不谎报 task_id" {
+  let d = b9_seed()
+  let eng = @engine.FistEngine::new()
+  // task_ns="default" 被 publish_parallel 硬拒（并行发布仅限定时/自驱 ns），
+  // 是一条确定性失败路径：best-effort 落账仍成功，但发布必须显式回执错误。
+  let r = report_bug(
+    d,
+    "发布失败回执探针",
+    detail="task_ns=default 触发 publish_parallel Err",
+    severity="medium",
+    ref_call_id="",
+    reported_by="wbtest",
+    publish_task=true,
+    task_ns="default",
+    eng,
+    now="2026-10-15T12:00:00Z",
+  )
+  match r {
+    Err(m) =>
+      abort("report_bug 不该整笔失败（best-effort 落账）: " + m)
+    Ok(j) =>
+      match j {
+        Object(m) => {
+          // 发布失败 ⇒ 不得回显 task_id（回显即谎报单已发）
+          let has_tid = match m.get("task_id") {
+            Some(_) => true
+            _ => false
+          }
+          assert_true(!has_tid, msg="发布失败却回了 task_id")
+          // 失败必须显式体现在返回里（函数注释承诺"仅在返回里体现"）
+          let pe = match m.get("publish_error") {
+            Some(String(s)) => s
+            _ => ""
+          }
+          assert_true(pe != "", msg="发布失败未回执 publish_error")
+        }
+        _ => abort("report_bug 返回非对象")
+      }
+  }
+  // best-effort：落账不受发布失败影响，条目仍在
+  assert_true(b9_read(d).contains("发布失败回执探针"))
+}
+
+///|
+/// 造一本含**同号两条独立条目**的临时账本（BUG-241 复现底座）：
+/// `## BUG-217 [ts1] [high] OPEN` 与 `## BUG-217 [ts2] [medium] OPEN` 并存，
+/// 模拟历史上同号不同 ts/summary 重复记账的真实形状（BUG-185/186/217 均有）。
+fn b241_seed() -> String {
+  let d = "temp/bug241_dup"
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
+  @fs.create_dir(d) catch {
+    _ => ()
+  }
+  mem_ensure_dir(mem_dir(d))
+  let body = "## BUG-217 [2026-10-15T13:20:00Z] [high] OPEN\n- summary: 首条（selfdrive 静默吞错）\n\n" +
+    "## BUG-903 [2026-09-27T00:00:00Z] [low] OPEN\n- summary: 邻居，正文不得被吞\n\n" +
+    "## BUG-217 [2026-10-15T13:22:34Z] [medium] OPEN\n- summary: 次条（claimguard 副作用）\n\n"
+  let _ = mem_write(bug_file_path(d), body)
+  d
+}
+
+///|
+/// BUG-241：同号多条独立条目时 `bug_fix` 必须逐条改判，而不是只改首条。
+/// 旧实现 `bug_header_line` 只取首个命中 ⇒ 真正待闭环的那条（此处次条）永久 OPEN。
+/// 修复后：heading_changed=2（两条都被改）、named 去重只点一次号、小记落在最后一条之后。
+test "BUG-241：同号重复条目被逐条标 FIXED，不再只改首条" {
+  let d = b241_seed()
+  let r = match
+    bug_fix(
+      d,
+      ["BUG-217"],
+      evidence="claimguard.mbt may_proceed_full 只读预检（commit ba4fd93）",
+      ts="2026-10-16T14:35:00Z",
+    ) {
+    Ok(j) => j
+    Err(m) => abort("bug_fix 失败: " + m)
+  }
+  // 两条同号条目都应被改判 ⇒ heading_changed=2（旧实现此处=1）
+  assert_eq(b9_int(r, "heading_changed"), 2)
+  assert_eq(b9_int(r, "already_fixed"), 0)
+  let text = b9_read(d)
+  // 两条 217 都变成 FIXED（按抬头行数统计）
+  assert_eq(b9_status_count(text, "FIXED"), 2)
+  // 邻居 BUG-903 保持 OPEN，正文不被吞
+  assert_eq(b9_status_count(text, "OPEN"), 1)
+  assert_true(text.contains("summary: 邻居，正文不得被吞"))
+  // 两条 217 各自保留了原 ts/sev 抬头（不能互相覆盖）
+  assert_true(text.contains("## BUG-217 [2026-10-15T13:20:00Z] [high] FIXED"))
+  assert_true(text.contains("## BUG-217 [2026-10-15T13:22:34Z] [medium] FIXED"))
+  // named 去重：只点一次号，不出现 BUG-217, BUG-217
+  // 小记应落在**最后一条**更新条目之后（旧实现在首条之后，会把次条正文挤到小记之前）
+  // 用「次条 FIXED」到文件尾的片段检查，避免跨条目误判
+  let parts = text
+    .split("## BUG-217 [2026-10-15T13:22:34Z] [medium] FIXED")
+    .to_array()
+  let after = if parts.length() == 2 { parts[1] } else { "" }
+  assert_true(after.contains("### FIXED(2026-10-16T14:35:00Z / BUG-217)"))
+  assert_true(after.contains("- evidence: claimguard.mbt may_proceed_full 只读预检"))
+  assert_true(!after.contains("BUG-217, BUG-217"))
+  // 首条 FIXED 与次条 FIXED 之间的片段**不得**含小记头（旧实现在此，会挤到次条正文之前）
+  // 正确行为：小记落在次条之后，不在两条之间
+  let middle = text
+    .split("## BUG-217 [2026-10-15T13:20:00Z] [high] FIXED")
+    .to_array()
+  let after_first = if middle.length() == 2 { middle[1] } else { "" }
+  let between = after_first
+    .split("## BUG-217 [2026-10-15T13:22:34Z] [medium] FIXED")
+    .to_array()
+  let mid_seg = if between.length() == 2 { between[0] } else { "" }
+  assert_true(!mid_seg.contains("### FIXED(2026-10-16T14:35:00Z / BUG-217)"))
+}
