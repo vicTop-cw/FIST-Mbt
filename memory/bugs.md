@@ -4111,4 +4111,12 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - reported_by: bugfind
 - commit: 44bb8da
 
+## BUG-225 [2026-10-16T00:50:00Z] [medium] FIXED
+- summary: [watchdog_tick] 冷启动发布失败被静默吞掉（`Err(_) => ()`），调用方只看到 action="idle"，无法区分「无任务可发布」与「冷启动失败」
+- detail: `src/ops/ops_watchdog.mbt` 的 `watchdog_tick` 冷启动分支（`else if cold_start`）在 `engine.cold_publish(...)` 返回 Err 时执行 `Err(_) => ()`，既不留痕也不上报，直接落到函数末尾默认分支，返回 `action = if active_ids 非空 { "waiting" } else { "idle" }`。冷启动场景下 active_ids 必为空，故调用方（定时任务/ops_loop）拿到的恒为 `action="idle"`，与「作用域内确实无任务可发布」的正常空闲**完全不可区分**。触发面：default 命名空间拒绝冷启动、已有任务拒绝重复发布（幂等）、以及 DB/IO 瞬时错误（多 agent 并发下 DB 锁竞争尤其现实）。同函数兄弟分支（`publish_next_round` 续轮失败）已按同一族规范把错误并入 `detail.advance_error`（并发开发中刚落地的修复），冷启动分支属遗漏，构成"静默吞错 -> 误导性 idle 回执"。
+- fix_options: 1) 保持 idle 退化语义（D-3/D-4 既有测试锁定），仅把失败原因并入 `detail.cold_start_error`，与兄弟分支 `advance_error` 一致（采用，零回归）；2) 直接 `return Err(...)` 上抛（会破坏 D-3/D-4 期望的 idle 退化语义，且 default 命名空间拒绝属策略性拒绝而非故障，不宜一律上抛）；3) 仅加日志不留 JSON（调用方仍不可编程判别）。
+- fix: 冷启动分支 `Err(_) => ()` 改为 `Err(e) => { ... new_m.set("cold_start_error", Json::string(e)); detail = Json::object(new_m) }`，镜像上方续轮失败分支的 `advance_error` 写法（逐键复制现有 detail 后追加错误键）。回归锁 `watchdog D-4b`：default 命名空间 + cold_start=true 时断言 `action` 仍为 `idle`（D-3 语义零回归）且 `detail.cold_start_error` 非空；另断言未进入冷启动分支（无失败）时该字段为空，防误报。`moon test --target js src/ops` 193/193 绿。
+- reported_by: bugfind
+- commit: 7cb897f
+
 
