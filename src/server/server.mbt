@@ -1793,19 +1793,23 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "archive",
-    "归档任务（仅限人类指挥官）。参数：task_id、by 操作者。",
+    "归档任务（仅限人类指挥官）。参数：task_id、by 操作者、force 可选（true 时放行已暂停/已打回僵尸任务直接归档，BUG-227 清扫路径；在流态仍拒）。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
         "by": string_prop("操作者(默认 human_steward)"),
+        "force": bool_prop(
+          "强制归档(可选默认false)：放行已暂停/已打回滞留态，在流态(已领取/执行中/待验收)仍拒",
+        ),
       },
       ["task_id"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let by = get_str(args, "by", default="human_steward")
+      let force = get_bool(args, "force")
       let ts = now_default()
-      to_result(engine.archive(task_id~, by~, now=ts))
+      to_result(engine.archive_force(task_id~, by~, force~, now=ts))
     },
   )
   s1 = instrumented_tool(
@@ -2357,7 +2361,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "heal",
-    "no_signal 看护（AO watchdog）：心跳超时静默的活跃任务（执行中/已领取/拆分中）回滚为已领取待重派。参数：timeout_sec(可选默认600)、namespace(可选)。**namespace 不传时扫全库所有命名空间**（BUG-81：多 ns 共用同一个 fist-mbt.db，一次不带 ns 的 heal 会把别的轮次的在途任务一并 reopen，而 reopen 不署名 ⇒ 枝干 assignee 被清空）；只想看护自己这一批就显式传 ns。返回 { healed, count, scope, namespace, backend, heartbeat_source, message }，scope 明说这次是全库还是单 ns（时间戳一律服务端盖章，不接受调用方注入 now）。**判活以持久化心跳表为准**（BUG-119）：没有心跳行不等于「已静默」，此时退到任务行的 `updated_at`（claim/execute/reopen 都会盖章它）——距最后一次活动超过 timeout_sec 才回滚，进程重启后的第一拍不再把在途任务一律打死。",
+    "no_signal 看护（AO watchdog）：心跳超时静默的活跃任务（执行中/已领取/拆分中）回滚为已领取待重派。参数：timeout_sec(可选默认600)、namespace(可选)。**namespace 不传时扫全库所有命名空间**（BUG-81：多 ns 共用同一个 fist-mbt.db，一次不带 ns 的 heal 会把别的轮次的在途任务一并 reopen，而 reopen 不署名 ⇒ 枝干 assignee 被清空）；只想看护自己这一批就显式传 ns。返回 { healed, count, scope, namespace, backend, heartbeat_source, skipped, delete_failed, message }，scope 明说这次是全库还是单 ns（时间戳一律服务端盖章，不接受调用方注入 now）。**判活以持久化心跳表为准**（BUG-119）：没有心跳行不等于「已静默」，此时退到任务行的 `updated_at`（claim/execute/reopen 都会盖章它）——距最后一次活动超过 timeout_sec 才回滚，进程重启后的第一拍不再把在途任务一律打死。**skipped** 列出判死但回滚不了的条目；**delete_failed** 列出回滚成功但清理心跳失败的条目（BUG-240：残留心跳行会让下一轮看护把已回滚任务误判为「仍在执行」，故不得静默吞掉）。",
     schema(
       {
         "timeout_sec": int_prop("超时秒数(可选默认600)"),
@@ -2372,6 +2376,7 @@ pub async fn run_server() -> Unit {
       let timeout_sec = get_int(args, "timeout_sec", default=600)
       let heal_ns = get_str(args, "namespace")
       let skipped : Array[String] = []
+      let delete_failed : Array[String] = []
       match
         @ops.heal_stale_tasks_from_store(
           engine,
@@ -2379,6 +2384,7 @@ pub async fn run_server() -> Unit {
           timeout_sec~,
           ns=heal_ns,
           skipped_ids=skipped,
+          delete_failed_ids=delete_failed,
         ) {
         Ok(healed) =>
           Ok(
@@ -2401,6 +2407,11 @@ pub async fn run_server() -> Unit {
                 "heartbeat_source": Json::string("sqlite-heartbeats"),
                 // 判死但回滚不了的条目（如「已领取」不可 reopen）必须点名，不能只让 healed 变少
                 "skipped": Json::array(skipped.map(fn(s) { Json::string(s) })),
+                // BUG-240：回滚成功但清理心跳失败的条目必须点名——残留心跳行会让下一轮
+                // 看护把已回滚任务误判为「仍在执行」，回执不能只报 healed 成功。
+                "delete_failed": Json::array(
+                  delete_failed.map(fn(s) { Json::string(s) }),
+                ),
                 "message": Json::string("超时静默任务已回滚待重派"),
               }).stringify(),
             ),
@@ -3333,7 +3344,9 @@ pub async fn run_server() -> Unit {
         "code": string_prop("实现内容（必填）"),
         "score": number_prop("可计算评分(默认0)"),
         "parent_id": string_prop("父产物 id（可选）"),
-        "parts": string_prop("评分分项 JSON(可选)，非法 JSON 时回执附 parts_error"),
+        "parts": string_prop(
+          "评分分项 JSON(可选)，非法 JSON 时回执附 parts_error",
+        ),
       },
       ["id", "goal", "note", "code"],
     ),
@@ -4970,16 +4983,10 @@ pub async fn run_server() -> Unit {
       }
       let m : Map[String, Json] = Map([])
       m.set("swept_locks", Json::number(swept_locks.to_double()))
-      m.set(
-        "assistants_marked_dead",
-        Json::number(marked_dead.to_double()),
-      )
+      m.set("assistants_marked_dead", Json::number(marked_dead.to_double()))
       // BUG-237：标记失败计数仅在非零时出现，成功路径零回归。
       if mark_failed > 0 {
-        m.set(
-          "assistants_mark_failed",
-          Json::number(mark_failed.to_double()),
-        )
+        m.set("assistants_mark_failed", Json::number(mark_failed.to_double()))
       }
       Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
     },
@@ -6719,7 +6726,8 @@ pub async fn run_server() -> Unit {
             }
             ""
           }
-          _ => "issue_numbers 非法 JSON，已忽略（github_issue_number 不会回写）"
+          _ =>
+            "issue_numbers 非法 JSON，已忽略（github_issue_number 不会回写）"
         }
       }
       match
@@ -6728,9 +6736,7 @@ pub async fn run_server() -> Unit {
           Ok(
             @mcp.ToolResult::text(
               add_parse_error_field(
-                j,
-                "issue_numbers_error",
-                issue_numbers_error,
+                j, "issue_numbers_error", issue_numbers_error,
               ).stringify(),
             ),
           )
@@ -7288,7 +7294,8 @@ pub async fn run_server() -> Unit {
             }
             ""
           }
-          _ => "gitcode_issue_iids 非法 JSON，已忽略（gitcode_issue_iid 不会回写）"
+          _ =>
+            "gitcode_issue_iids 非法 JSON，已忽略（gitcode_issue_iid 不会回写）"
         }
       }
       match
@@ -7297,9 +7304,7 @@ pub async fn run_server() -> Unit {
           Ok(
             @mcp.ToolResult::text(
               add_parse_error_field(
-                j,
-                "gitcode_issue_iids_error",
-                gitcode_issue_iids_error,
+                j, "gitcode_issue_iids_error", gitcode_issue_iids_error,
               ).stringify(),
             ),
           )

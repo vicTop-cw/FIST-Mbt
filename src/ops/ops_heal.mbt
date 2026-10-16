@@ -40,6 +40,7 @@ pub fn heal_stale_tasks(
   now : String,
   timeout_sec? : Int = 600,
   ns? : String = "",
+  delete_failed_ids? : Array[String] = [],
 ) -> Result[Array[String], String] {
   let healed : Array[String] = []
   let now_s = iso_to_secs(now)
@@ -68,8 +69,10 @@ pub fn heal_stale_tasks(
       match engine.reopen_task(t.get_id(), now) {
         Ok(_) => {
           hb.clear(t.get_id())
-          // SQLite 持久化删除（失败仅忽略）
-          ignore(engine.store_delete_heartbeat(task_id=t.get_id()))
+          match engine.store_delete_heartbeat(task_id=t.get_id()) {
+            Ok(_) => ()
+            Err(_) => delete_failed_ids.push(t.get_id())
+          }
           healed.push(t.get_id())
         }
         Err(e) => return Err(e)
@@ -87,13 +90,15 @@ pub fn heal_stale_tasks(
 ///
 /// - `ns` 为空串时按默认命名空间处理（与 store 语义一致）；
 /// - `now` 或心跳时间戳无法解析时保守判定为「不 stale」（不误伤）；
-/// - 所有 store 写失败均忽略，保证本函数幂等、可被任意频率安全调用。
+/// - reopen 失败的 task 走 `skipped_ids` 点名披露（BUG-119），清理心跳失败走
+///   `delete_failed_ids` 点名披露（BUG-240）——两者都保证本函数幂等、可被任意频率安全调用。
 pub fn heal_stale_tasks_from_store(
   engine : @engine.FistEngine,
   now : String,
   timeout_sec? : Int = 600,
   ns? : String = "default",
   skipped_ids? : Array[String] = [],
+  delete_failed_ids? : Array[String] = [],
 ) -> Result[Array[String], String] {
   let healed : Array[String] = []
   let now_s = iso_to_secs(now)
@@ -136,8 +141,12 @@ pub fn heal_stale_tasks_from_store(
     if stale {
       match engine.reopen_task(t.get_id(), now) {
         Ok(_) => {
-          // 清理持久化心跳（失败仅忽略）
-          ignore(engine.store_delete_heartbeat(task_id=t.get_id()))
+          // BUG-240：清理持久化心跳失败过去被静默吞掉，回执仍报 healed——
+          // 残留心跳行会让下一轮 from_store 把已回滚任务误判为「仍在执行」。
+          match engine.store_delete_heartbeat(task_id=t.get_id()) {
+            Ok(_) => ()
+            Err(_) => delete_failed_ids.push(t.get_id())
+          }
           healed.push(t.get_id())
         }
         // BUG-119 附带：判死但回滚不了（如「已领取」不可 reopen）过去被静默吞掉，
@@ -172,6 +181,7 @@ pub fn heal_stale_tasks_by_phi(
   ns? : String = "default",
   timeout_sec? : Int = 600,
   no_history_ids? : Array[String] = [],
+  delete_failed_ids? : Array[String] = [],
 ) -> Result[Array[String], String] {
   let healed : Array[String] = []
   let now_s = iso_to_secs(now)
@@ -236,10 +246,14 @@ pub fn heal_stale_tasks_by_phi(
     if stale {
       match engine.reopen_task(t.get_id(), now) {
         Ok(_) => {
-          ignore(engine.store_delete_heartbeat(task_id=t.get_id()))
+          // BUG-240：与 from_store 同源——清理心跳失败必须点名，不得静默吞掉。
+          match engine.store_delete_heartbeat(task_id=t.get_id()) {
+            Ok(_) => ()
+            Err(_) => delete_failed_ids.push(t.get_id())
+          }
           healed.push(t.get_id())
         }
-        Err(_) => ()
+        Err(e) => return Err(e)
       }
     }
   }

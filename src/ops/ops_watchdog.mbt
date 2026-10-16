@@ -259,6 +259,8 @@ pub fn watchdog_tick(
   // R90：phi_gate=true 时用概率怀疑度 φ 判活（默认关闭零回归），否则既有固定 timeout。
   // BUG-27：φ 分支缺间隔历史时内部回落到同一个 timeout_sec，两条路径的恢复能力可比。
   let phi_no_history : Array[String] = []
+  let delete_failed : Array[String] = []
+  let mut heal_error : String? = None
   let healed = if phi_gate {
     match
       heal_stale_tasks_by_phi(
@@ -268,14 +270,28 @@ pub fn watchdog_tick(
         ns=heal_ns,
         timeout_sec~,
         no_history_ids=phi_no_history,
+        delete_failed_ids=delete_failed,
       ) {
       Ok(l) => l
-      Err(_) => []
+      Err(e) => {
+        heal_error = Some(e)
+        []
+      }
     }
   } else {
-    match heal_stale_tasks_from_store(engine, now, timeout_sec~, ns=heal_ns) {
+    match
+      heal_stale_tasks_from_store(
+        engine,
+        now,
+        timeout_sec~,
+        ns=heal_ns,
+        delete_failed_ids=delete_failed,
+      ) {
       Ok(l) => l
-      Err(_) => []
+      Err(e) => {
+        heal_error = Some(e)
+        []
+      }
     }
   }
   // ---- 2. 扫描作用域内任务，分类活跃 / 阻塞 / 待续轮 ----
@@ -419,6 +435,11 @@ pub fn watchdog_tick(
         "phi_gate=false：全部按固定 timeout_sec 判活"
       },
     ),
+    // BUG-240：回滚成功但清理持久化心跳失败的条目必须点名——残留心跳行会让下一轮
+    // from_store 把已回滚任务误判为「仍在执行」，回执不得只报 healed 成功。
+    "heartbeat_delete_failed_ids": Json::array(
+      delete_failed.map(fn(s) { Json::string(s) }),
+    ),
     "selfdrive": sd_detail,
     "ready_dispatch_preview": ready_preview,
     "autodispatch": Json::null(),
@@ -492,7 +513,18 @@ pub fn watchdog_tick(
             ),
           )
         }
-        Err(_) => () // 续轮失败退化为等待/空闲，不 panic
+        Err(e) => {
+          let new_m : Map[String, Json] = Map([])
+          match detail {
+            Object(m) =>
+              for k, v in m {
+                new_m.set(k, v)
+              }
+            _ => ()
+          }
+          new_m.set("advance_error", Json::string(e))
+          detail = Json::object(new_m)
+        }
       }
     } else if cold_start {
       // 冷启动：无已完成根任务时，发布首个任务
@@ -576,24 +608,32 @@ pub fn watchdog_tick(
       heal_ns, next_created_by, autodispatch_want, now,
     )
     let detail_new = match detail {
-      Object(m) =>
-        Json::object({
-          "namespace": m.get("namespace").unwrap_or(Json::null()),
-          "scanned": m.get("scanned").unwrap_or(Json::null()),
-          "active_tasks": m.get("active_tasks").unwrap_or(Json::null()),
-          "blocked_detail": m.get("blocked_detail").unwrap_or(Json::null()),
-          "meta_prompt_path": m.get("meta_prompt_path").unwrap_or(Json::null()),
-          "meta_prompt_used": m.get("meta_prompt_used").unwrap_or(Json::null()),
-          "phi_gate": m.get("phi_gate").unwrap_or(Json::null()),
-          "selfdrive": m.get("selfdrive").unwrap_or(Json::null()),
-          "ready_dispatch_preview": m
-          .get("ready_dispatch_preview")
-          .unwrap_or(Json::null()),
-          "autodispatch": ad,
-        })
+      Object(m) => {
+        let new_m : Map[String, Json] = Map([])
+        for k, v in m {
+          new_m.set(k, v)
+        }
+        new_m.set("autodispatch", ad)
+        Json::object(new_m)
+      }
       _ => detail
     }
     detail = detail_new
+  }
+  match heal_error {
+    Some(e) =>
+      detail = match detail {
+        Object(m) => {
+          let new_m : Map[String, Json] = Map([])
+          for k, v in m {
+            new_m.set(k, v)
+          }
+          new_m.set("heal_error", Json::string(e))
+          Json::object(new_m)
+        }
+        _ => detail
+      }
+    None => ()
   }
   Ok(
     tick_json(
