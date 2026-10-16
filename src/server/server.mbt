@@ -1508,6 +1508,14 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let split_n = get_int(args, "split_n", default=3)
+      if split_n < 1 {
+        return Err(
+          @mcp_types.ToolError(
+            "plan: split_n=" + split_n.to_string() +
+            "（须 >= 1）。拆分数量不能为 0 或负——引擎按位置切分时 0 或负会产出空子任务数组。",
+          ),
+        )
+      }
       let by = get_str(args, "by", default="human_steward")
       let ts = now_default()
       let inject = get_str(args, "inject")
@@ -2082,6 +2090,14 @@ pub async fn run_server() -> Unit {
             None => ()
           }
         }
+      }
+      if split_n < 1 {
+        return Err(
+          @mcp_types.ToolError(
+            "task_plan_deep: split_n=" + split_n.to_string() +
+            "（须 >= 1）。拆分数量不能为 0 或负——引擎按位置切分时 0 或负会产出空子任务树。",
+          ),
+        )
       }
       let base = match
         engine.plan_deep(
