@@ -1,4 +1,4 @@
-﻿/// FIST-Mbt MCP server: 暴露 169 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 170 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -6647,6 +6647,50 @@ pub async fn run_server() -> Unit {
   )
   s1 = instrumented_tool(
     s1,
+    "soldier_route",
+    "兵种 → 路由联动（§8.3）：把任务关键词映射到 8 兵种，并给出该兵种对应的**模型池档位提示**与理由文案——特种兵/炮兵 → paid 池（重任务/高价值），侦查兵/骑兵/通信兵 → free 池（轻任务/便宜快速），工兵/医疗兵/后勤兵 → free 池（通用/中端）。这是 `model_route` 软性提示的展示层映射：`tier_hint` 可直接作为 `model_route(soldier=…)` / `(pool_label=…)` 的提示输入；配额硬约束（threshold/耗尽/冷却/黑名单）仍强制，提示档位无容量自动回落正常逻辑。**展示层，非协议枚举**：协议与存储零改动。参数：keywords(可选，任务描述关键词，逗号/空格分隔，缺省工兵)、soldier(可选，直接指定兵种名，非空时跳过关键词匹配)。返回 {soldier, pool_label, tier_hint, reason, mission, model_tier, count, types}。",
+    schema(
+      {
+        "keywords": string_prop(
+          "任务描述关键词（可选，逗号/空格分隔，缺省工兵）",
+        ),
+        "soldier": string_prop(
+          "直接指定兵种名（可选，非空时跳过关键词匹配）",
+        ),
+      },
+      [],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let keywords = get_str(args, "keywords")
+      let soldier_arg = get_str(args, "soldier")
+      let soldier = if soldier_arg.is_empty() {
+        @display.soldier_type_of(keywords)
+      } else {
+        soldier_arg
+      }
+      let pool_label = @display.pool_label_of(soldier)
+      let tier_hint = @router.pool_label_tier_hint(pool_label)
+      let reason = @router.soldier_label_reason(soldier)
+      let mission = @display.soldier_mission(soldier)
+      let model_tier = @display.soldier_model_tier(soldier)
+      let types : Array[Json] = @display.soldier_types().map(fn(s) {
+        Json::string(s)
+      })
+      let out = Json::object({
+        "soldier": Json::string(soldier),
+        "pool_label": Json::string(pool_label),
+        "tier_hint": Json::string(tier_hint),
+        "reason": Json::string(reason),
+        "mission": Json::string(mission),
+        "model_tier": Json::string(model_tier),
+        "count": Json::int(@display.soldier_type_count()),
+        "types": Json::array(types),
+      })
+      Ok(@mcp.ToolResult::text(out.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
     "staff_label_of",
     "参谋线展示层（§8.1 参谋线：非 *长，参谋军职，挂靠 Leader 体系）：把协议角色名/关键词映射到 6 参谋军职——侦察参谋（Searcher 情报搜集）、后勤参谋（Allocator 资源分配）、验收宪兵（Verifier 交付验收）、监察参谋（Observer 状态监察）、训练教官（SpecAuthor 规范编写）、军务文书（Recorder 记录归档，默认）。**参谋军职不是协议角色**，只是展示层标签；协议与存储零改动。参数：role(可选，协议角色名或自由文本关键词，缺省军务文书)、title(可选，直接指定参谋军职名，非空时跳过关键词匹配)。返回 {title, duty, hierarchy, count, titles}。",
     schema(
@@ -6734,7 +6778,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "model_route",
-    "模型路由决策（免费优先 + 达阈值切付费 + 每模型 5h 滚动窗口）。纯决策来自 src/router（确定性、可单测），用量状态落盘 {project_dir}/memory/model-router-{ns}.json 跨进程复现。**时间戳由服务端盖章，不接受调用方注入 now**（BUG-33 政策）；两池皆耗尽时显式 ok=false，绝不静默改用别的模型。**只问不消耗（不给 record_model）＝零副作用**：不记账、不推进轮询游标、不给模型盖窗口起点，返回 persisted=false 与 mode=query-only（BUG-62：旧实现连查询也落盘，两次相同查询会换模型、5h 窗口没人使用就开始倒计时）。唯一例外是**只播种定义不播种用量**：显式给了 config_json 的池定义时，在决策之前把池形状写进状态文件（否则 executor_run 自动记账那一笔不带 config，只能拿默认池，自定义模型名走「未在任何池中配置」，配额形同虚设）。namespace 只允许字母/数字/_/-（空=default）：写不进盘的 ns 会被显式拒绝，不再静默失去配额约束（BUG-64）。**Star 门（D1=A 完整接入）**：默认未配置即不设门（保持现状，`star_gate.gate_enabled=false`）；要启用请设 server 进程环境变量 `FIST_STAR_GATE_PUBKEY_HEX`（钉死的 Ed25519 公钥 hex）、`FIST_STAR_GATE_ATTESTATION_JSON`（GitHub Pages 拉到的 attestation JSON 正文）、`FIST_STAR_GATE_USER_LOGIN`（须在授权名单里的 GitHub login）。启用后未验签通过 → 回执 `ok=false`、`star_gate.free_pool_unlocked=false`（fail-closed，不 pick、不记账、不推进轮询游标）。回执恒带 `star_gate` 字段（gate_enabled/free_pool_unlocked/note/verdict）；判定逻辑纯计算在 src/router（star_gate_wbtest 可单测）。参数：project_dir(必填，相对路径)、namespace(可选默认 default)、record_model(可选：给模型名则先记账再决策，用于执行器真实用完一次)、config_json(可选：RouterConfig 的 JSON **文本或对象均可**（BUG-63：给对象时按其文本走同一条校验，不再被静默当成没传），覆盖池定义；同名模型的已用配额保留；**非法 JSON 直接报错，不静默回落默认池**)（注：本工具不含任何密钥，凭据只来自 server 进程环境变量）。",
+    "模型路由决策（免费优先 + 达阈值切付费 + 每模型 5h 滚动窗口）。纯决策来自 src/router（确定性、可单测），用量状态落盘 {project_dir}/memory/model-router-{ns}.json 跨进程复现。**时间戳由服务端盖章，不接受调用方注入 now**（BUG-33 政策）；两池皆耗尽时显式 ok=false，绝不静默改用别的模型。**只问不消耗（不给 record_model）＝零副作用**：不记账、不推进轮询游标、不给模型盖窗口起点，返回 persisted=false 与 mode=query-only（BUG-62：旧实现连查询也落盘，两次相同查询会换模型、5h 窗口没人使用就开始倒计时）。唯一例外是**只播种定义不播种用量**：显式给了 config_json 的池定义时，在决策之前把池形状写进状态文件（否则 executor_run 自动记账那一笔不带 config，只能拿默认池，自定义模型名走「未在任何池中配置」，配额形同虚设）。namespace 只允许字母/数字/_/-（空=default）：写不进盘的 ns 会被显式拒绝，不再静默失去配额约束（BUG-64）。**Star 门（D1=A 完整接入）**：默认未配置即不设门（保持现状，`star_gate.gate_enabled=false`）；要启用请设 server 进程环境变量 `FIST_STAR_GATE_PUBKEY_HEX`（钉死的 Ed25519 公钥 hex）、`FIST_STAR_GATE_ATTESTATION_JSON`（GitHub Pages 拉到的 attestation JSON 正文）、`FIST_STAR_GATE_USER_LOGIN`（须在授权名单里的 GitHub login）。启用后未验签通过 → 回执 `ok=false`、`star_gate.free_pool_unlocked=false`（fail-closed，不 pick、不记账、不推进轮询游标）。回执恒带 `star_gate` 字段（gate_enabled/free_pool_unlocked/note/verdict）；判定逻辑纯计算在 src/router（star_gate_wbtest 可单测）。参数：project_dir(必填，相对路径)、namespace(可选默认 default)、record_model(可选：给模型名则先记账再决策，用于执行器真实用完一次)、config_json(可选：RouterConfig 的 JSON **文本或对象均可**（BUG-63：给对象时按其文本走同一条校验，不再被静默当成没传），覆盖池定义；同名模型的已用配额保留；**非法 JSON 直接报错，不静默回落默认池**)。**§8.3 路由联动**：可选 `soldier`（兵种名）或 `pool_label`（池标签）作为 pick 的**软性档位提示**——特种兵/炮兵导向付费池、其余兵种导向免费池；配额硬约束（threshold/耗尽/冷却/黑名单）仍强制，提示档位无容量自动回落正常逻辑。回执额外回显 `soldier` / `pool_label` / `tier_hint` 三字段供面板「兵种分布」视图消费；两者皆空 = 零回归。（注：本工具不含任何密钥，凭据只来自 server 进程环境变量）。",
     schema(
       {
         "project_dir": string_prop(
@@ -6748,6 +6792,12 @@ pub async fn run_server() -> Unit {
         ),
         "config_json": string_prop(
           "RouterConfig 的 JSON（文本或对象均可，BUG-63），如 {\"window_seconds\":18000,\"threshold_pct\":95,\"free_pool\":[{\"name\":\"x\",\"limit\":10}],\"paid_pool\":[]}；非法字段回落默认并写进 warnings",
+        ),
+        "soldier": string_prop(
+          "可选：兵种名（display 层 8 兵种之一，如 特种兵/炮兵/侦查兵/骑兵/通信兵/医疗兵/后勤兵/工兵）。给了则按 §8.3 路由联动解析池标签并作为 pick 的软性档位提示；未给 pool_label 时用它解析。空=零回归",
+        ),
+        "pool_label": string_prop(
+          "可选：直接给池标签（如 paid-premium / paid-flagship / free-fast / free-general），非空时覆盖 soldier 的解析结果。软性提示，配额硬约束仍在；提示档位无容量自动回落正常逻辑。空=零回归",
         ),
       },
       ["project_dir"],
@@ -6765,12 +6815,16 @@ pub async fn run_server() -> Unit {
       // P2：use_laya 开关为真时，向 laya 软性档位建议；假/未知 → 零副作用（""）。
       let (cfg_router, _w) = @router.RouterConfig::from_json(cfgj)
       let laya_hint = if cfg_router.use_laya { mr_laya_tier_hint() } else { "" }
+      let soldier = get_str(args, "soldier")
+      let pool_label = get_str(args, "pool_label")
       let impl_res = model_route_impl(
         pd,
         ns=ns2,
         record_model=rec,
         config=cfgj,
         laya_hint~,
+        soldier~,
+        pool_label~,
       )
       match impl_res {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
