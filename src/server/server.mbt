@@ -6605,6 +6605,46 @@ pub async fn run_server() -> Unit {
       Ok(@mcp.ToolResult::text(out.stringify()))
     },
   )
+  s1 = instrumented_tool(
+    s1,
+    "soldier_type_of",
+    "士兵分类展示层（§8.2 兵种 × 模型档位 × 攻坚任务类型）：把任务关键词映射到 8 兵种之一——侦查兵（情报/调研/搜索）、炮兵（重构/算法/攻坚）、特种兵（高价值/紧急/架构）、医疗兵（修复/故障/抢救）、通信兵（消息/汇报/提醒）、后勤兵（整理/分配/归档）、工兵（环境/依赖/脚本，默认）、骑兵（短平快/高频/批量）。**展示层，非协议枚举**：协议层仍只有 Executor 一个角色，兵种只是展示标签，协议与存储零改动。参数：keywords(可选，任务描述关键词，逗号/空格分隔，缺省工兵)、soldier(可选，直接指定兵种名，非空时跳过关键词匹配)。返回 {soldier, pool_label, mission, model_tier, count, types}。",
+    schema(
+      {
+        "keywords": string_prop(
+          "任务描述关键词（可选，逗号/空格分隔，缺省工兵）",
+        ),
+        "soldier": string_prop(
+          "直接指定兵种名（可选，非空时跳过关键词匹配）",
+        ),
+      },
+      [],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let keywords = get_str(args, "keywords")
+      let soldier_arg = get_str(args, "soldier")
+      let soldier = if soldier_arg.is_empty() {
+        @display.soldier_type_of(keywords)
+      } else {
+        soldier_arg
+      }
+      let pool_label = @display.pool_label_of(soldier)
+      let mission = @display.soldier_mission(soldier)
+      let model_tier = @display.soldier_model_tier(soldier)
+      let types : Array[Json] = @display.soldier_types().map(fn(s) {
+        Json::string(s)
+      })
+      let out = Json::object({
+        "soldier": Json::string(soldier),
+        "pool_label": Json::string(pool_label),
+        "mission": Json::string(mission),
+        "model_tier": Json::string(model_tier),
+        "count": Json::int(@display.soldier_type_count()),
+        "types": Json::array(types),
+      })
+      Ok(@mcp.ToolResult::text(out.stringify()))
+    },
+  )
 
   // ===== mcp_config_scaffold：MCP 配置偏好 → 可落盘 fist.mcp.json 正文（方向一 P0-b）=====
   // 目标项目把 HTML 配置页产出的 form_json 交给本工具，服务端校验并返回可落盘正文，
