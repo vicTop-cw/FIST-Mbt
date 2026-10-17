@@ -357,10 +357,20 @@ fn FistEngine::dag_topo_order(
     ready_ids = rest
     order.push(cur)
     // cur 的后继（以 cur 为前置的任务）：前置完成 -> 后继入度-1
-    for nxt in deps_of.get(cur).unwrap_or([]) {
-      let nd = indeg.get(nxt).unwrap_or(0)
+    // BUG-253：Kahn invariant —— deps_of/indeg 已对全部 ids 显式初始化（见上方 L334-337），
+    // 循环内 get 不应为 None；旧 unwrap_or 默认值会静默吞掉漏初始化的后继导致拓扑序不完整，
+    // 改为显式 crash 暴露 invariant 违背（对应昨夜 unsafe-scan P2 建议）。
+    let cur_deps = match deps_of.get(cur) {
+      Some(v) => v
+      None => abort("Kahn: 未初始化的后继 \{cur}")
+    }
+    for nxt in cur_deps {
+      let nd = match indeg.get(nxt) {
+        Some(v) => v
+        None => abort("Kahn: 未初始化的入度 \{nxt}")
+      }
       indeg.set(nxt, nd - 1)
-      if indeg.get(nxt).unwrap_or(0) == 0 {
+      if nd == 1 {
         ready_ids = ready_ids + [nxt]
       }
     }
@@ -907,7 +917,10 @@ pub fn FistEngine::budget_split_by_dag(
     in_scope.set(id, true)
   }
   for t in self.list_all() {
-    if not(in_scope.get(t.get_id()).unwrap_or(false)) {
+    // BUG-253：明确区分「未登记(false)」与「显式排除(false)」——scope_ids 之外返回 None，
+    // 用 `!= Some(true)` 语义等价于旧 unwrap_or(false) 且不会因未来追加 false 条目静默反转
+    //（对应昨夜 unsafe-scan P1 建议）。
+    if in_scope.get(t.get_id()) != Some(true) {
       continue
     }
     let lv = match level_of.get(t.get_id()) {
