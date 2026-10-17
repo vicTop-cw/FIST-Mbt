@@ -2332,7 +2332,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "tx_contract",
-    "迁移契约检查（R109，Design by Contract 蒸馏：Bertrand Meyer Eiffel 1986/1997 precondition/invariant/postcondition 三件套 + PMAT ch59 work-item 契约先例）：对 (task, action) 做只读预检——precondition（前置状态合法，复用 Task 迁移语义）/ invariant（领域不变量在迁移后成立：IN-1 id 非空 / IN-2 K 值 depth≥1 / IN-3 split_n≥1 / IN-4 身份保持 id/project_dir/ns / IN-5 assignee 纪律，claim/reopen 除外）/ postcondition（目标态=文档化目标态）。任一失败 → verdict=rejected 整笔拒绝、状态 A 回稳（不落库）；全部通过 → verdict=allowed。纯计算只读不写库（决策建议，执行权在调用方）。参数：task_id、action（claim/split/execute/submit/reject/retry/pause/resume/reopen/complete/archive/mark_decomposing）、assignee(可选默认 agent，claim 用)、completed_by(可选默认 human_steward，complete 用)。返回 { ok, task_id, action, phase, verdict, reasons, target_state, state_stable, note }。",
+    "迁移契约检查（R109，Design by Contract 蒸馏：Bertrand Meyer Eiffel 1986/1997 precondition/invariant/postcondition 三件套 + PMAT ch59 work-item 契约先例）：对 (task, action) 做只读预检——precondition（前置状态合法，复用 Task 迁移语义）/ invariant（领域不变量在迁移后成立：IN-1 id 非空 / IN-2 K 值 depth≥1 / IN-3 split_n≥1 / IN-4 身份保持 id/project_dir/ns / IN-5 assignee 纪律，claim/reopen 除外）/ postcondition（目标态=文档化目标态）。任一失败 → verdict=rejected 整笔拒绝、状态 A 回稳（不落库）；全部通过 → verdict=allowed。纯计算只读不写库（决策建议，执行权在调用方）。参数：task_id、action（claim/split/execute/submit/reject/retry/pause/resume/reopen/complete/archive/mark_decomposing）、assignee(可选默认 agent，claim 用)、completed_by(可选默认 human_steward，complete 用)、force(可选默认 false：action=archive 时建模 BUG-227 强制归档路径，放行 已暂停/已打回 非流态僵尸任务)。返回 { ok, task_id, action, phase, verdict, reasons, target_state, state_stable, note }。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -2345,6 +2345,9 @@ pub async fn run_server() -> Unit {
         "completed_by": string_prop(
           "验收身份(可选，complete 用，默认 human_steward)",
         ),
+        "force": bool_prop(
+          "是否按 force 语义预检(可选，默认 false)：action=archive 时建模 BUG-227 强制归档路径——放行 已暂停/已打回 非流态僵尸任务（在流态仍拒）",
+        ),
       },
       ["task_id", "action"],
     ),
@@ -2353,10 +2356,17 @@ pub async fn run_server() -> Unit {
       let action = get_str(args, "action")
       let assignee = get_str(args, "assignee", default="agent")
       let completed_by = get_str(args, "completed_by", default="human_steward")
+      let force = get_bool(args, "force", default=false)
       Ok(
         @mcp.ToolResult::text(
           engine
-          .transition_contract(task_id, action, assignee~, completed_by~)
+          .transition_contract(
+            task_id,
+            action,
+            assignee~,
+            completed_by~,
+            force~,
+          )
           .stringify(),
         ),
       )
