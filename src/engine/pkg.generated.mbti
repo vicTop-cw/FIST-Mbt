@@ -196,7 +196,7 @@ pub fn FistEngine::supervisor_status(Self, ns_filter? : String) -> Json
 pub fn FistEngine::supervisor_task_tree(Self, String) -> Result[Json, String]
 pub fn FistEngine::supervisor_task_upsert(Self, project_dir~ : String, by~ : String, Array[Json], now~ : String, ns? : String) -> Json
 pub fn FistEngine::topo_sort(Self, Array[String]) -> Array[String]
-pub fn FistEngine::transition_contract(Self, String, String, assignee? : String, completed_by? : String) -> Json
+pub fn FistEngine::transition_contract(Self, String, String, assignee? : String, completed_by? : String, force? : Bool) -> Json
 pub fn FistEngine::triage(Self, String, String, String, skill? : String) -> Json
 pub fn FistEngine::verify(Self, task_id~ : String, verifier~ : String, now~ : String, docs_check? : Bool) -> Result[@core.Task, String]
 
