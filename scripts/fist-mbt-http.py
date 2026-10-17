@@ -206,7 +206,10 @@ class MCPBridge:
         except BrokenPipeError:
             return {"error": "Server disconnected"}
         # Wait for response with matching id
-        deadline = time.time() + 30
+        # BUG-120：硬编码 30s 导致 executor_run 等长任务执行器必超时（502 Request timeout）。
+        # 修复：等待时长改为可配置，默认 600s（兼容 30s 内的原语义；长任务用默认即够）。
+        wait_sec = float(os.environ.get("FIST_HTTP_WAIT_SEC", "600"))
+        deadline = time.time() + wait_sec
         while time.time() < deadline:
             try:
                 msg = _response_queue.get(timeout=0.5)
