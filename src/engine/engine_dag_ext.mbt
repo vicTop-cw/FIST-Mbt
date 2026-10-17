@@ -257,6 +257,9 @@ fn FistEngine::dag_reaches(
       rest.push(queue[i])
     }
     queue = rest
+    // BUG-253: visited 不变量——纯本函数写入（仅 visited.set(cur, true)），
+    // 单线程模型下无并发污染；首次访问时 get 返回 None → unwrap_or(false) 语义安全
+    // （对应昨日 unsafe-scan P3 建议：保留现状，注释说明不变量）。
     if visited.get(cur).unwrap_or(false) {
       continue
     }
