@@ -6583,23 +6583,23 @@ pub async fn run_server() -> Unit {
         Json::string(s)
       })
       let out = Json::object({
-        "level": Json::int(level),
+        "level": Json::number(level.to_double()),
         "role": if role.is_empty() {
           Json::null()
         } else {
           Json::string(role)
         },
-        "leaf": Json::bool(leaf),
+        "leaf": Json::boolean(leaf),
         "rank": Json::string(rank),
-        "rank_index": Json::int(
+        "rank_index": Json::number(
           if level >= 0 && level < @display.officer_levels() {
-            level
+            level.to_double()
           } else {
-            -1
+            (-1).to_double()
           },
         ),
-        "is_officer": Json::bool(@display.is_officer(level)),
-        "officer_levels": Json::int(@display.officer_levels()),
+        "is_officer": Json::boolean(@display.is_officer(level)),
+        "officer_levels": Json::number(@display.officer_levels().to_double()),
         "table": Json::array(table),
       })
       Ok(@mcp.ToolResult::text(out.stringify()))
@@ -6639,7 +6639,7 @@ pub async fn run_server() -> Unit {
         "pool_label": Json::string(pool_label),
         "mission": Json::string(mission),
         "model_tier": Json::string(model_tier),
-        "count": Json::int(@display.soldier_type_count()),
+        "count": Json::number(@display.soldier_type_count().to_double()),
         "types": Json::array(types),
       })
       Ok(@mcp.ToolResult::text(out.stringify()))
@@ -6683,7 +6683,7 @@ pub async fn run_server() -> Unit {
         "reason": Json::string(reason),
         "mission": Json::string(mission),
         "model_tier": Json::string(model_tier),
-        "count": Json::int(@display.soldier_type_count()),
+        "count": Json::number(@display.soldier_type_count().to_double()),
         "types": Json::array(types),
       })
       Ok(@mcp.ToolResult::text(out.stringify()))
@@ -6721,7 +6721,7 @@ pub async fn run_server() -> Unit {
         "title": Json::string(title),
         "duty": Json::string(duty),
         "hierarchy": Json::string(hierarchy),
-        "count": Json::int(@display.staff_title_count()),
+        "count": Json::number(@display.staff_title_count().to_double()),
         "titles": Json::array(titles),
       })
       Ok(@mcp.ToolResult::text(out.stringify()))
