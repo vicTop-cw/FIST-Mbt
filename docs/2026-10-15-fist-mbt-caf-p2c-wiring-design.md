@@ -17,6 +17,13 @@
 > router 156/156 全绿。server 层接线时只需：把 `caf_memory` 从进程内存传入 `pick_caf_dry_run`，
 > 再把返回的 `CafDryRun` 序列化为 `{suggestion, basis}` 即可，无额外 router 层改动。
 >
+> **进度（Round 43，commit `c2feb31`）**：§2.3 的 **server 层接线已落地**——`model_route` 新增
+> `dry_run`/`context` 参数，`model_route_impl` 在 Star 门之后、`consuming` 之前短路返回零副作用
+> dry_run 预览（读 `memory/model-router-caf-{ns}.json` → `pick_caf_dry_run` → `caf_dry_run_to_json`），
+> `use_caf_memory=false` 显式拒绝；默认路径逐字节不动。配套 `caf_dr_1~5` 白盒锁；
+> `moon test --target js src/server` 321/321/0，全仓 1297/1297。**唯一剩余**：`executor_run` 成功后
+> `caf_memory.push` 回写（本段下半）——否则 CAF 状态文件永为空、dry_run 恒返回空 basis。
+>
 > 剩余 §2.3 的**回写**（`executor_run` 后 `caf_memory.push`）与 **status 展示**仍依赖
 > `model_router_ops.mbt` 释放（并发 agent WIP）。
 >
