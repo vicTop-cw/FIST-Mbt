@@ -1,0 +1,29 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/display"
+
+// Values
+pub fn commissar_rank() -> String
+
+pub fn is_officer(Int) -> Bool
+
+pub fn leaf_label(Int) -> String
+
+pub fn marshal_rank() -> String
+
+pub fn officer_levels() -> Int
+
+pub fn officer_table() -> Array[String]
+
+pub fn rank_of(Int) -> String
+
+pub fn role_label(String, Int) -> String
+
+pub fn soldier_rank() -> String
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

@@ -9,6 +9,7 @@ import {
   "vicTop-cw/fist-mbt/src/router",
   "vicTop-cw/fist-mbt/src/hat",
   "vicTop-cw/fist-mbt/src/diff",
+  "vicTop-cw/fist-mbt/src/display",
   "vicTop-cw/fist-mbt/atgc-old" @atgc_old,
   "colmugx/mcp",
   "colmugx/mcp/protocol/types" @mcp_types,
