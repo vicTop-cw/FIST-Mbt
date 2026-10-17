@@ -1511,7 +1511,8 @@ pub async fn run_server() -> Unit {
       if split_n < 1 {
         return Err(
           @mcp_types.ToolError(
-            "plan: split_n=" + split_n.to_string() +
+            "plan: split_n=" +
+            split_n.to_string() +
             "（须 >= 1）。拆分数量不能为 0 或负——引擎按位置切分时 0 或负会产出空子任务数组。",
           ),
         )
@@ -2094,7 +2095,8 @@ pub async fn run_server() -> Unit {
       if split_n < 1 {
         return Err(
           @mcp_types.ToolError(
-            "task_plan_deep: split_n=" + split_n.to_string() +
+            "task_plan_deep: split_n=" +
+            split_n.to_string() +
             "（须 >= 1）。拆分数量不能为 0 或负——引擎按位置切分时 0 或负会产出空子任务树。",
           ),
         )
@@ -4032,7 +4034,10 @@ pub async fn run_server() -> Unit {
     s1,
     "dag_critical_path",
     "返回当前最长依赖链（关键路径）。参数：namespace(可选默认 default)。",
-    schema({ "namespace": string_prop("命名空间（可选默认 default）") }, []),
+    schema(
+      { "namespace": string_prop("命名空间（可选默认 default）") },
+      [],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let path = engine_for_ns(ns).critical_path()
@@ -4050,7 +4055,10 @@ pub async fn run_server() -> Unit {
     s1,
     "dag_parallelism",
     "返回当前可并行执行的任务数（待领取且依赖已满足）。参数：namespace(可选默认 default)。",
-    schema({ "namespace": string_prop("命名空间（可选默认 default）") }, []),
+    schema(
+      { "namespace": string_prop("命名空间（可选默认 default）") },
+      [],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       let n = engine_for_ns(ns).parallelism()
@@ -4065,17 +4073,27 @@ pub async fn run_server() -> Unit {
     s1,
     "dag_slack",
     "瓶颈与松弛分析（PERT/CPM 硬核调度，R71）：对每个任务算 earliest/latest/slack（0=关键路径，>0=可灵活并行安排），返回 { makespan, critical:[关键任务], slack_map:{id:{earliest,latest,slack}}, cycle:[成环任务] }——找出【谁在关键路径上、谁有松弛可并行】，直接支撑排程优化。参数：namespace(可选默认 default)。",
-    schema({ "namespace": string_prop("命名空间（可选默认 default）") }, []),
+    schema(
+      { "namespace": string_prop("命名空间（可选默认 default）") },
+      [],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
-      Ok(@mcp.ToolResult::text(engine_for_ns(ns).dag_slack_analysis().stringify()))
+      Ok(
+        @mcp.ToolResult::text(
+          engine_for_ns(ns).dag_slack_analysis().stringify(),
+        ),
+      )
     },
   )
   s1 = instrumented_tool(
     s1,
     "dag_schedule",
     "排程视图（R75 负载感知，基于 dag_slack 落成可执行排程）：返回 { critical_batch:[{task_id,earliest,slack,assignee}](关键路径瓶颈,须串行盯紧), flexible_batch:[...](slack>0,按最早开始排序可并行,未认领项附 suggest=活跃负载最低的已注册执行者), basis, note }——谁在瓶颈、谁可并行派单、建议派给谁，一目了然。参数：namespace(可选默认 default)。",
-    schema({ "namespace": string_prop("命名空间（可选默认 default）") }, []),
+    schema(
+      { "namespace": string_prop("命名空间（可选默认 default）") },
+      [],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       Ok(@mcp.ToolResult::text(engine_for_ns(ns).dag_schedule().stringify()))
@@ -4085,7 +4103,10 @@ pub async fn run_server() -> Unit {
     s1,
     "dag_cost_route",
     "依赖图成本路由（R77，STAR 式蒸馏）：对 flexible(slack>0) 未认领任务按拓扑序贪心给建议执行者——执行成本(难度档易/中/难→1/2/3)+切换税(依赖执行者不同则+1，上下文切换成本)，能力约束过滤(描述命中的已注册能力标签)。返回 { cost_route:[{task_id,assignee,est_cost,switch_cost,total}], total_est_cost, basis, note }——排程优化闭环：critical_path→slack→schedule→cost_route。纯读不 claim。参数：namespace(可选默认 default)。",
-    schema({ "namespace": string_prop("命名空间（可选默认 default）") }, []),
+    schema(
+      { "namespace": string_prop("命名空间（可选默认 default）") },
+      [],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
       Ok(@mcp.ToolResult::text(engine_for_ns(ns).dag_cost_route().stringify()))
@@ -4167,7 +4188,9 @@ pub async fn run_server() -> Unit {
       let subtask = get_str(args, "subtask_id", default="")
       Ok(
         @mcp.ToolResult::text(
-          engine_for_ns(ns).goal_drift_check(root, subtask_id=subtask, ns~).stringify(),
+          engine_for_ns(ns)
+          .goal_drift_check(root, subtask_id=subtask, ns~)
+          .stringify(),
         ),
       )
     },
@@ -4348,7 +4371,9 @@ pub async fn run_server() -> Unit {
       let secs = @ops.iso_to_secs(now)
       Ok(
         @mcp.ToolResult::text(
-          engine_for_ns(ns).circuit_succeed(ns~, circuit~, now_secs=secs).stringify(),
+          engine_for_ns(ns)
+          .circuit_succeed(ns~, circuit~, now_secs=secs)
+          .stringify(),
         ),
       )
     },
@@ -5551,7 +5576,8 @@ pub async fn run_server() -> Unit {
       let root_task_id = get_str(args, "root_task_id")
       let failed_step = get_str(args, "failed_step")
       let mark = get_bool(args, "mark", default=true)
-      match engine_for_ns(ns).saga_repair(ns~, root_task_id, failed_step~, mark~) {
+      match
+        engine_for_ns(ns).saga_repair(ns~, root_task_id, failed_step~, mark~) {
         Err(m) => Err(@mcp_types.ToolError(m))
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
       }
@@ -6523,6 +6549,60 @@ pub async fn run_server() -> Unit {
         _ => @diff.render_unified(ops)
       }
       Ok(@mcp.ToolResult::text(out))
+    },
+  )
+
+  // ===== rank_of：军衔体系展示层（docs/2026-10-12-fist-mbt-web-dashboard-plan.md §8.1）=====
+  // 协议层不感知军衔；本工具只是展示层标签，由 rank_of(任务层级) 动态定级，协议与存储零改动。
+  s1 = instrumented_tool(
+    s1,
+    "rank_of",
+    "军衔体系展示层（§8.1 完整 *长 总表）：由任务层级 L 得展示军衔——L=0 司令 / L=1 军长 / L=2 师长 / L=3 旅长 / L=4 团长 / L=5 营长 / L=6 连长 / L=7 排长；越界回退士兵；叶子恒为士兵。**协议层不感知军衔**：除统帅/士兵/政委外，所有 *长 在协议层一律映射为 Leader 角色，军衔只是展示层标签，协议与存储零改动。当前默认 root depth=3 实际生效 4 档（司令→军长→师长→士兵），旅长及以下占位（调大 depth 自动激活）。参数：level(必填，任务层级 L，0..7)、role(可选，协议角色 HumanSteward/Reminder/Executor/Leader，缺省按 level 定级)、leaf(可选，true 时强制士兵)。返回 {level, role, rank, rank_index, is_officer, table, officer_levels}。",
+    schema(
+      {
+        "level": int_prop("任务层级 L（必填，0..7）"),
+        "role": string_prop(
+          "协议角色（可选，HumanSteward/Reminder/Executor/Leader）",
+        ),
+        "leaf": bool_prop("是否叶子（可选，true 时强制士兵）"),
+      },
+      ["level"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let level = get_int(args, "level")
+      let role = get_str(args, "role")
+      let leaf = get_bool(args, "leaf")
+      let rank = if leaf {
+        @display.leaf_label(level)
+      } else if role.is_empty() {
+        @display.rank_of(level)
+      } else {
+        @display.role_label(role, level)
+      }
+      let table : Array[Json] = @display.officer_table().map(fn(s) {
+        Json::string(s)
+      })
+      let out = Json::object({
+        "level": Json::int(level),
+        "role": if role.is_empty() {
+          Json::null()
+        } else {
+          Json::string(role)
+        },
+        "leaf": Json::bool(leaf),
+        "rank": Json::string(rank),
+        "rank_index": Json::int(
+          if level >= 0 && level < @display.officer_levels() {
+            level
+          } else {
+            -1
+          },
+        ),
+        "is_officer": Json::bool(@display.is_officer(level)),
+        "officer_levels": Json::int(@display.officer_levels()),
+        "table": Json::array(table),
+      })
+      Ok(@mcp.ToolResult::text(out.stringify()))
     },
   )
 
