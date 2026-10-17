@@ -1,4 +1,4 @@
-﻿# FIST-Mbt
+# FIST-Mbt
 
 > **fist-mbt — the project manager for AI self-driven development.**
 > Only two things are polished as first-class objects: **self-driving** and **recursive decomposition** —
@@ -98,7 +98,7 @@ FIST-Mbt/
 ├── src/engine/       # FistEngine business logic + DAG ext + decomposition
 ├── src/ops/          # operations: audit, heartbeat, heal, watchdog, cleanup
 ├── src/omega/        # explainable spec/gate/check
-└── src/server/       # MCP assembly: 169 tools + 3 resources + 2 prompts
+└── src/server/       # MCP assembly: 170 tools + 3 resources + 2 prompts
 ```
 
 Pure MoonBit; no Rust/C wrappers. Protocol layer: [`colmugx/mcp`](https://mooncakes.io/colmugx/mcp) (Apache-2.0, protocol 2026-07-28). Domain core (`core/store/engine`) is separated from the protocol layer for clean unit testing.

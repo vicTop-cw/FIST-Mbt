@@ -223,6 +223,8 @@ fn model_route_impl(
   record_model? : String = "",
   config? : Json = Json::null(),
   laya_hint? : String = "",
+  soldier? : String = "",
+  pool_label? : String = "",
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err(
@@ -274,10 +276,25 @@ fn model_route_impl(
   let seeds_pools = !consuming && mr_config_gives_pools(config)
   let seed_res = if seeds_pools { mr_save(r, project_dir, ns) } else { Ok(()) }
   let unhealthy_ids = mr_unhealthy_models()
+  // §8.3 路由联动：兵种（display 层 8 兵种）→ 池标签 → pick 的软性档位提示。
+  // 给 soldier 没给 pool_label 时，用 display 的 pool_label_of 解析；两者皆空 = 零回归。
+  let resolved_soldier = soldier
+  let resolved_pool = if pool_label != "" {
+    pool_label
+  } else if resolved_soldier != "" {
+    @display.pool_label_of(resolved_soldier)
+  } else {
+    ""
+  }
   let dec = if consuming {
     r.record_call(model=record_model, now~)
   } else {
-    r.pick(now~, unhealthy_ids~, laya_prefer_tier=laya_hint)
+    r.pick(
+      now~,
+      unhealthy_ids~,
+      laya_prefer_tier=laya_hint,
+      soldier_label=resolved_pool,
+    )
   }
   let save_res = if consuming { mr_save(r, project_dir, ns) } else { seed_res }
   let persisted = match save_res {
@@ -289,6 +306,18 @@ fn model_route_impl(
     ("stamped_at", Json::string(now)),
     ("decision", dec.to_json()),
     ("usage", r.usage_report()),
+    ("soldier", Json::string(resolved_soldier)),
+    ("pool_label", Json::string(resolved_pool)),
+    (
+      "tier_hint",
+      Json::string(
+        if resolved_pool == "" {
+          ""
+        } else {
+          @router.pool_label_tier_hint(resolved_pool)
+        },
+      ),
+    ),
     ("warnings", mr_warn_arr(warns)),
     ("star_gate", gate.to_json()),
     ("persisted", Json::boolean(persisted)),
@@ -723,10 +752,10 @@ async fn ofm_execute_http(
 /// 把端点规范化成 `{endpoint}/chat/completions`（端点已带该后缀则不重复拼接）。
 fn ofm_chat_url(endpoint : String) -> String {
   let ep = endpoint.trim().to_owned()
-  if ep.ends_with("/chat/completions") {
+  if ep.has_suffix("/chat/completions") {
     return ep
   }
-  if ep.ends_with("/") {
+  if ep.has_suffix("/") {
     return ep + "chat/completions"
   }
   ep + "/chat/completions"
@@ -800,7 +829,14 @@ async fn executor_run_impl(
   // 只有"模型是路由器给的"才需要在真跑后记账；调用方显式指定 model 属越池覆盖，
   // 由调用方自己负责，不替它动配额账。
   let mut routed_by_pool = false
-  if chosen.is_empty() {
+  // BUG-238：atomcode 不走 FIST 模型路由。FIST `model_route` 的池名
+  // （ling-3.1-flash-free / mimo-v2.6-flash-free 等）是 FIST 自己的命名空间，
+  // 与 atomcode provider 命名空间（longcat/deepseek/Kimi，见 ~/.atomcode/config.toml）
+  // 两套不通——把 FIST 池名塞进 atomcode 的 `--model` 会让它恒吃
+  // `HTTP 400 Unsupported model`。故 model 留空时**跳过路由**、chosen 保持空串，
+  // 由 `cli_argv.atomcode_argv` 省略 `--model`，让 atomcode 走自身 config 的
+  // default_model。aider 不同（空模型=绕过路由决策，维持拒绝），仍走路由。
+  if chosen.is_empty() && executor != "atomcode" {
     match model_route_impl(project_dir, ns~) {
       Err(e) => return fail(e, [])
       Ok(j) =>
@@ -884,12 +920,7 @@ async fn executor_run_impl(
     )
   }
   let (bin, args) = match
-    @executor.build_command(
-      executor~,
-      prompt~,
-      model=chosen,
-      workdir=project_dir,
-    ) {
+    @executor.build_command(executor~, prompt~, model=chosen, workdir="") {
     Err(e) => return fail(e, [("model", Json::string(chosen))])
     Ok(v) => v
   }
@@ -940,7 +971,7 @@ async fn executor_run_impl(
           executor~,
           prompt~,
           model=attempt_model,
-          workdir=project_dir,
+          workdir="",
         ) {
         Err(e) => return fail(e, [("model", Json::string(attempt_model))])
         Ok(v) => v
@@ -1011,7 +1042,13 @@ async fn executor_run_impl(
           attempt_idx + 1 < max_retries &&
           attempt_idx + 1 < fallback_models.length() {
           if routed_by_pool {
-            let _ = mr_record_only(project_dir, ns~, attempt_model)
+            let note = mr_retry_note(
+              attempt_model,
+              mr_record_only(project_dir, ns~, attempt_model),
+            )
+            if note != "" {
+              cooldown_errors = cooldown_errors + [note]
+            }
           }
           let note = mr_retry_note(
             attempt_model,
