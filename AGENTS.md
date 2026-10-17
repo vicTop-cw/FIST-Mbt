@@ -203,7 +203,7 @@ You can browse and install extra skills here:
 | `selfdrive_parse_next_tasks` | 解析报告里的任务清单 |
 | `selfdrive_pick_next` | 按 triage 能力推荐取走顶部并认领（无人值守按能力自续推） |
 
-### 运维 · 日志 / 缺陷 / 成本 / 调度（16）
+### 运维 · 日志 / 缺陷 / 成本 / 调度（26）
 | 工具 | 说明 |
 |---|---|
 | `call_log` | 调用日志查询（时间戳/seq/项目分组） |
@@ -225,6 +225,9 @@ You can browse and install extra skills here:
 | `project_standards` | AI 项目开发规范（R116，机器投影；规范性正文真源 = `AI-DEVELOPMENT-STANDARD.md`）：通用 5 条（文档即实现/**一源四态**/确定性优先/增量零回归/自我迭代）+ FIST 专项 5 条（用自身能力迭代/**四态必须对齐**/证据梯至少 L4/重任务先拆 DAG/工具命名即文档）；附 7 项四态 checklist（cl1-mcp-exists → cl6-doc-sync → **cl7-plugin-forms-sync**），可直接喂 output_validate 当验收门禁。纯计算零依赖。白盒锁：`src/server/project_standards_wbtest.mbt`（此前该工具零覆盖）。 |
 | `text_diff` | 文本 diff（LCS 最长公共子序列）：按行对比 old/new 两段文本，返回操作序列（equal/insert/delete）。用于报告对比、测试输出 diff、AI 交付物变更审查等场景。纯计算零副作用。参数：old(必填，旧文本)、new(必填，新文本)、format(可选，unified|json|stats，默认 unified)。unified=类 git diff 格式（ +/- 前缀）；json=结构化数组 [{kind,text}]；stats={equal,insert,delete} 计数。真源 `src/diff/diff.mbt`，8 条白盒测试在 `src/diff/diff_test.mbt`。 |
 | `laya_decide` | Laya 决策（冷启动选档/功能路由 + 确定性回退）：有 Laya→sidecar 决定难度/拆分数/机制选择；无 Laya→降级到内建规则式决策分支（laya_route 纯计算：按任务描述关键词对机制族打分选 feature_route + 复杂度启发式给 split_n）。研发方向「功能太多难决策 / 复杂多任务不知用哪些功能」的落点 |
+| `rank_of` | 军衔体系展示层（§8.1 完整 *长 总表）：由任务层级 L 得展示军衔——L=0 司令 / L=1 军长 / L=2 师长 / L=3 旅长 / L=4 团长 / L=5 营长 / L=6 连长 / L=7 排长；越界回退士兵；叶子恒为士兵。**协议层不感知军衔**：除统帅/士兵/政委外，所有 *长 在协议层一律映射为 Leader 角色，军衔只是展示层标签，协议与存储零改动。当前默认 root depth=3 实际生效 4 档（司令→军长→师长→士兵），旅长及以下占位（调大 depth 自动激活）。参数：level(必填，任务层级 L，0..7)、role(可选，协议角色 HumanSteward/Reminder/Executor/Leader，缺省按 level 定级)、leaf(可选，true 时强制士兵)。返回 {level, role, rank, rank_index, is_officer, officer_levels, table}。真源 `src/display/rank.mbt`，9 条测试在 `src/display/rank_test.mbt` |
+| `soldier_type_of` | 士兵分类展示层（§8.2 兵种 × 模型档位 × 攻坚任务类型）：把任务关键词映射到 8 兵种之一——侦查兵（情报/调研/搜索）、炮兵（重构/算法/攻坚）、特种兵（高价值/紧急/架构）、医疗兵（修复/故障/抢救）、通信兵（消息/汇报/提醒）、后勤兵（整理/分配/归档）、工兵（环境/依赖/脚本，默认）、骑兵（短平快/高频/批量）。**展示层，非协议枚举**：协议层仍只有 Executor 一个角色，兵种只是展示标签，协议与存储零改动。参数：keywords(可选，任务描述关键词，逗号/空格分隔，缺省工兵)、soldier(可选，直接指定兵种名，非空时跳过关键词匹配)。返回 {soldier, pool_label, mission, model_tier, count, types}。真源 `src/display/soldier.mbt`，8 条测试在 `src/display/soldier_test.mbt` |
+| `staff_label_of` | 参谋线展示层（§8.1 参谋线：非 *长，参谋军职，挂靠 Leader 体系）：把协议角色名/关键词映射到 6 参谋军职——侦察参谋（Searcher 情报搜集）、后勤参谋（Allocator 资源分配）、验收宪兵（Verifier 交付验收）、监察参谋（Observer 状态监察）、训练教官（SpecAuthor 规范编写）、军务文书（Recorder 记录归档，默认）。**参谋军职不是协议角色**，只是展示层标签；协议与存储零改动。参数：role(可选，协议角色名或自由文本关键词，缺省军务文书)、title(可选，直接指定参谋军职名，非空时跳过关键词匹配)。返回 {title, duty, hierarchy, count, titles}。真源 `src/display/staff.mbt`，6 条测试在 `src/display/staff_test.mbt` |
 | `loop_create` | 创建组合环（Phase 6）：preset=full-iterate/fix-iterate/build-verify 或自定义 steps，注册到进程内 LoopRegistry |
 | `loop_tick` | 推进一环（Phase 6）：取当前 steps[idx] → 返回 next_mode / next_round / should_stop / stop_reason |
 | `loop_status` | 查询组合环状态（Phase 6）：name 空=列出所有已注册环，name 指定=单环完整 JSON |
