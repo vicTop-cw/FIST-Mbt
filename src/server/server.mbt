@@ -6645,6 +6645,44 @@ pub async fn run_server() -> Unit {
       Ok(@mcp.ToolResult::text(out.stringify()))
     },
   )
+  s1 = instrumented_tool(
+    s1,
+    "staff_label_of",
+    "参谋线展示层（§8.1 参谋线：非 *长，参谋军职，挂靠 Leader 体系）：把协议角色名/关键词映射到 6 参谋军职——侦察参谋（Searcher 情报搜集）、后勤参谋（Allocator 资源分配）、验收宪兵（Verifier 交付验收）、监察参谋（Observer 状态监察）、训练教官（SpecAuthor 规范编写）、军务文书（Recorder 记录归档，默认）。**参谋军职不是协议角色**，只是展示层标签；协议与存储零改动。参数：role(可选，协议角色名或自由文本关键词，缺省军务文书)、title(可选，直接指定参谋军职名，非空时跳过关键词匹配)。返回 {title, duty, hierarchy, count, titles}。",
+    schema(
+      {
+        "role": string_prop(
+          "协议角色名或关键词（可选，缺省军务文书）",
+        ),
+        "title": string_prop(
+          "直接指定参谋军职名（可选，非空时跳过关键词匹配）",
+        ),
+      },
+      [],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let role_arg = get_str(args, "role")
+      let title_arg = get_str(args, "title")
+      let title = if title_arg.is_empty() {
+        @display.staff_label(role_arg)
+      } else {
+        title_arg
+      }
+      let duty = @display.staff_duty(title)
+      let hierarchy = @display.staff_hierarchy(title)
+      let titles : Array[Json] = @display.staff_titles().map(fn(s) {
+        Json::string(s)
+      })
+      let out = Json::object({
+        "title": Json::string(title),
+        "duty": Json::string(duty),
+        "hierarchy": Json::string(hierarchy),
+        "count": Json::int(@display.staff_title_count()),
+        "titles": Json::array(titles),
+      })
+      Ok(@mcp.ToolResult::text(out.stringify()))
+    },
+  )
 
   // ===== mcp_config_scaffold：MCP 配置偏好 → 可落盘 fist.mcp.json 正文（方向一 P0-b）=====
   // 目标项目把 HTML 配置页产出的 form_json 交给本工具，服务端校验并返回可落盘正文，
