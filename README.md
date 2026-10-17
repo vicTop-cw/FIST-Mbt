@@ -271,7 +271,7 @@ fist doctor        # 5 项健康检查
 
 | 里程碑 | 日期 | 内容 |
 |---|---|---|
-| M8 | 2026-09 | 36 MCP 工具 + 77/77 测试；文档体系（README/CHANGELOG/USAGE）全面更新到 0.2.0 |
+| M8 | 2026-09 | 36+ MCP 工具 + 77/77 测试；文档体系（README/CHANGELOG/USAGE）全面更新到 0.2.0 |
 | 四模式流水线 Round 1~3 | 2026-10-15 | 自迭代收口：一源四态 cl7 + 模型路由与外部执行器合并 + 多管家/supervisor + web 面板 M0 + 五语言接入示例 |
 | Unsafe 扫描 | 2026-10-17 | `engine_dag_ext` / `issue_scan` / `issue_scan_wbtest` 三文件裸 `.unwrap()`/`unsafe_get()`/`expect()` 零命中；`unwrap_or` 3 处中高风险（P1: `budget_split_by_dag` L910 语义反转） |
 | Engine 回归 | 2026-10-17 | `moon test --target js src/engine` 162/162 全绿 |
