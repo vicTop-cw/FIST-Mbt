@@ -414,15 +414,9 @@ pub fn FistEngine::dag_mc(
     )
   }
   m.set("deadline", Json::number(d.to_double()))
-  m.set(
-    "deadline_requested",
-    Json::number(deadline_requested.to_double()),
-  )
+  m.set("deadline_requested", Json::number(deadline_requested.to_double()))
   if deadline_requested < 0 {
-    m.set(
-      "deadline_capped",
-      Json::boolean(true),
-    )
+    m.set("deadline_capped", Json::boolean(true))
     m.set(
       "deadline_cap_note",
       Json::string(
