@@ -6788,7 +6788,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "model_route",
-    "模型路由决策（免费优先 + 达阈值切付费 + 每模型 5h 滚动窗口）。纯决策来自 src/router（确定性、可单测），用量状态落盘 {project_dir}/memory/model-router-{ns}.json 跨进程复现。**时间戳由服务端盖章，不接受调用方注入 now**（BUG-33 政策）；两池皆耗尽时显式 ok=false，绝不静默改用别的模型。**只问不消耗（不给 record_model）＝零副作用**：不记账、不推进轮询游标、不给模型盖窗口起点，返回 persisted=false 与 mode=query-only（BUG-62：旧实现连查询也落盘，两次相同查询会换模型、5h 窗口没人使用就开始倒计时）。唯一例外是**只播种定义不播种用量**：显式给了 config_json 的池定义时，在决策之前把池形状写进状态文件（否则 executor_run 自动记账那一笔不带 config，只能拿默认池，自定义模型名走「未在任何池中配置」，配额形同虚设）。namespace 只允许字母/数字/_/-（空=default）：写不进盘的 ns 会被显式拒绝，不再静默失去配额约束（BUG-64）。**Star 门（D1=A 完整接入）**：默认未配置即不设门（保持现状，`star_gate.gate_enabled=false`）；要启用请设 server 进程环境变量 `FIST_STAR_GATE_PUBKEY_HEX`（钉死的 Ed25519 公钥 hex）、`FIST_STAR_GATE_ATTESTATION_JSON`（GitHub Pages 拉到的 attestation JSON 正文）、`FIST_STAR_GATE_USER_LOGIN`（须在授权名单里的 GitHub login）。启用后未验签通过 → 回执 `ok=false`、`star_gate.free_pool_unlocked=false`（fail-closed，不 pick、不记账、不推进轮询游标）。回执恒带 `star_gate` 字段（gate_enabled/free_pool_unlocked/note/verdict）；判定逻辑纯计算在 src/router（star_gate_wbtest 可单测）。参数：project_dir(必填，相对路径)、namespace(可选默认 default)、record_model(可选：给模型名则先记账再决策，用于执行器真实用完一次)、config_json(可选：RouterConfig 的 JSON **文本或对象均可**（BUG-63：给对象时按其文本走同一条校验，不再被静默当成没传），覆盖池定义；同名模型的已用配额保留；**非法 JSON 直接报错，不静默回落默认池**)。**§8.3 路由联动**：可选 `soldier`（兵种名）或 `pool_label`（池标签）作为 pick 的**软性档位提示**——特种兵/炮兵导向付费池、其余兵种导向免费池；配额硬约束（threshold/耗尽/冷却/黑名单）仍强制，提示档位无容量自动回落正常逻辑。回执额外回显 `soldier` / `pool_label` / `tier_hint` 三字段供面板「兵种分布」视图消费；两者皆空 = 零回归。（注：本工具不含任何密钥，凭据只来自 server 进程环境变量）。",
+    "模型路由决策（免费优先 + 达阈值切付费 + 每模型 5h 滚动窗口）。纯决策来自 src/router（确定性、可单测），用量状态落盘 {project_dir}/memory/model-router-{ns}.json 跨进程复现。**时间戳由服务端盖章，不接受调用方注入 now**（BUG-33 政策）；两池皆耗尽时显式 ok=false，绝不静默改用别的模型。**只问不消耗（不给 record_model）＝零副作用**：不记账、不推进轮询游标、不给模型盖窗口起点，返回 persisted=false 与 mode=query-only（BUG-62：旧实现连查询也落盘，两次相同查询会换模型、5h 窗口没人使用就开始倒计时）。唯一例外是**只播种定义不播种用量**：显式给了 config_json 的池定义时，在决策之前把池形状写进状态文件（否则 executor_run 自动记账那一笔不带 config，只能拿默认池，自定义模型名走「未在任何池中配置」，配额形同虚设）。namespace 只允许字母/数字/_/-（空=default）：写不进盘的 ns 会被显式拒绝，不再静默失去配额约束（BUG-64）。**Star 门（D1=A 完整接入）**：默认未配置即不设门（保持现状，`star_gate.gate_enabled=false`）；要启用请设 server 进程环境变量 `FIST_STAR_GATE_PUBKEY_HEX`（钉死的 Ed25519 公钥 hex）、`FIST_STAR_GATE_ATTESTATION_JSON`（GitHub Pages 拉到的 attestation JSON 正文）、`FIST_STAR_GATE_USER_LOGIN`（须在授权名单里的 GitHub login）。启用后未验签通过 → 回执 `ok=false`、`star_gate.free_pool_unlocked=false`（fail-closed，不 pick、不记账、不推进轮询游标）。回执恒带 `star_gate` 字段（gate_enabled/free_pool_unlocked/note/verdict）；判定逻辑纯计算在 src/router（star_gate_wbtest 可单测）。参数：project_dir(必填，相对路径)、namespace(可选默认 default)、record_model(可选：给模型名则先记账再决策，用于执行器真实用完一次)、config_json(可选：RouterConfig 的 JSON **文本或对象均可**（BUG-63：给对象时按其文本走同一条校验，不再被静默当成没传），覆盖池定义；同名模型的已用配额保留；**非法 JSON 直接报错，不静默回落默认池**)。**§8.3 路由联动**：可选 `soldier`（兵种名）或 `pool_label`（池标签）作为 pick 的**软性档位提示**——特种兵/炮兵导向付费池、其余兵种导向免费池；配额硬约束（threshold/耗尽/冷却/黑名单）仍强制，提示档位无容量自动回落正常逻辑。回执额外回显 `soldier` / `pool_label` / `tier_hint` 三字段供面板「兵种分布」视图消费；两者皆空 = 零回归。**CAF 预览（§2.3 / 验收标准 3）**：`dry_run=true` 时走 CAF 记忆软性重排做**零副作用预览**——返回建议模型 + 历史依据（`decision.suggestion` / `decision.basis`），绝不记账、不推进轮询游标、不写任何状态文件（`persisted=false`、`mode=caf-dry-run（零副作用…）`），仅 `config.use_caf_memory=true` 时有效；未开启时显式拒绝（不静默降级回普通查询）。`context` 用于 kNN 特征化。（注：本工具不含任何密钥，凭据只来自 server 进程环境变量）。",
     schema(
       {
         "project_dir": string_prop(
@@ -6809,6 +6809,12 @@ pub async fn run_server() -> Unit {
         "pool_label": string_prop(
           "可选：直接给池标签（如 paid-premium / paid-flagship / free-fast / free-general），非空时覆盖 soldier 的解析结果。软性提示，配额硬约束仍在；提示档位无容量自动回落正常逻辑。空=零回归",
         ),
+        "dry_run": bool_prop(
+          "可选（默认 false）：true 时按 CAF 记忆软性重排做零副作用预览（返回建议模型 + 历史依据 basis），仅 config.use_caf_memory=true 时有效；false=零回归，走普通路由决策",
+        ),
+        "context": string_prop(
+          "可选：用于 kNN 特征化的请求上下文（dry_run=true 时生效），默认空串",
+        ),
       },
       ["project_dir"],
     ),
@@ -6827,6 +6833,8 @@ pub async fn run_server() -> Unit {
       let laya_hint = if cfg_router.use_laya { mr_laya_tier_hint() } else { "" }
       let soldier = get_str(args, "soldier")
       let pool_label = get_str(args, "pool_label")
+      let dry_run = get_bool(args, "dry_run")
+      let context = get_str(args, "context")
       let impl_res = model_route_impl(
         pd,
         ns=ns2,
@@ -6835,6 +6843,8 @@ pub async fn run_server() -> Unit {
         laya_hint~,
         soldier~,
         pool_label~,
+        dry_run~,
+        context~,
       )
       match impl_res {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))

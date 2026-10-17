@@ -51,6 +51,34 @@ fn mr_read(project_dir : String, ns : String) -> Json {
 }
 
 ///|
+/// CAF 记忆状态文件路径（与 mr_state_path 同一条命名空间校验口径）。
+/// dry_run 预览只读它、绝不创建（文件不存在 = 空记忆，零回归）。
+fn mr_caf_state_path(project_dir : String, ns : String) -> String {
+  let safe_ns = if ns.is_empty() { "default" } else { ns }
+  project_dir + "/memory/model-router-caf-" + safe_ns + ".json"
+}
+
+///|
+/// 读 CAF 记忆状态；文件不存在/读失败/非法 JSON 一律回 Json::null()，
+/// 由 `caf_memory_load` 降级成空记忆 + warning，绝不 panic。
+/// 与 `mr_read` 同款"坏状态不删"纪律：坏记忆是证据，留给 `caf_memory_load` 计数告警。
+fn mr_caf_read(project_dir : String, ns : String) -> Json {
+  let raw = @fs.read_file_to_string(
+    mr_caf_state_path(project_dir, ns),
+    encoding="utf8",
+  ) catch {
+    _ => ""
+  }
+  if raw.is_empty() {
+    Json::null()
+  } else {
+    @json.parse(raw) catch {
+      _ => Json::null()
+    }
+  }
+}
+
+///|
 /// 写状态（建 memory/ 目录；失败返回 Err，绝不静默）
 fn mr_save(
   r : @router.ModelRouter,
@@ -225,6 +253,8 @@ fn model_route_impl(
   laya_hint? : String = "",
   soldier? : String = "",
   pool_label? : String = "",
+  dry_run? : Bool = false,
+  context? : String = "",
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err(
@@ -263,6 +293,48 @@ fn model_route_impl(
         ("warnings", mr_warn_arr(warns)),
         ("star_gate", gate.to_json()),
         ("state_path", Json::string(mr_state_path(project_dir, ns))),
+      ]),
+    )
+  }
+  // CAF dry_run 预览（§2.3 最后一格，验收标准 3）：零副作用 peek，返回建议模型 + 历史依据。
+  // 必须在此短路返回——否则 dry_run 会推进 pick 的轮询游标、给模型盖 window_start、
+  // 甚至被"播种池定义"路径写一个 model-router-{ns}.json，全部违背"零副作用预览"承诺。
+  // config.use_caf_memory=false 时**显式拒绝**（不静默降级回普通查询：调用方以为在看
+  // CAF 建议、实际却拿到了非 CAF 决策，是 BUG-31 同族的最难查静默降级）。
+  if dry_run {
+    if not(r.config.use_caf_memory) {
+      return Err(
+        "model_route: dry_run=true 但 config.use_caf_memory=false，CAF 未开启",
+      )
+    }
+    let caf_path = mr_caf_state_path(project_dir, ns)
+    let (mem, caf_warns) = @router.caf_memory_load(mr_caf_read(project_dir, ns))
+    let dr = r.pick_caf_dry_run(
+      now~,
+      caf_memory=mem,
+      context~,
+      k=32,
+      unhealthy_ids=mr_unhealthy_models(),
+      caf_default_preference=r.config.caf_default_preference,
+      caf_min_evidences=r.config.caf_min_evidences,
+    )
+    return Ok(
+      mr_obj([
+        ("ok", Json::boolean(true)),
+        ("stamped_at", Json::string(now)),
+        ("context", Json::string(context)),
+        ("persisted", Json::boolean(false)),
+        ("decision", @router.caf_dry_run_to_json(dr)),
+        ("warnings", mr_warn_arr(warns + caf_warns)),
+        ("star_gate", gate.to_json()),
+        (
+          "mode",
+          Json::string(
+            "caf-dry-run（零副作用：不记账、不推进游标、不写状态文件）",
+          ),
+        ),
+        ("state_path", Json::string(mr_state_path(project_dir, ns))),
+        ("caf_state_path", Json::string(caf_path)),
       ]),
     )
   }
