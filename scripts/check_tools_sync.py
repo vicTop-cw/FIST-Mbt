@@ -136,7 +136,11 @@ HISTORY_DIRS = ("memory/", "reports/", "docs/superpowers/")
 # 其它规则对 CHANGELOG 的检查。与 check_test_sync 的豁免口径不共用常量（那边早已
 # 通过自己的 HISTORY_FILES=("CHANGELOG.md",) 把整份 CHANGELOG 排除），两边各自演进。
 RE_CHANGELOG_H2 = re.compile(r"^##\s+v[^\n]*", re.M)
-RE_IPLAN = re.compile(r"^docs/improvement-plan-(\d{8})\.md$")
+# BUG-261：豁免口径须认 docs/archive/ 前缀——归档的历史计划（docs/archive/
+# improvement-plan-*.md）与根目录同族，日期旧于现状面即豁免。此前正则只匹配
+# ^docs/improvement-plan-，归档版本整份被当现状面比对，逼人伪造历史
+# （实测 docs/archive/improvement-plan-20260929.md:136 写 129，被 166 判红）。
+RE_IPLAN = re.compile(r"^docs/(?:archive/)?improvement-plan-(\d{8})\.md$")
 
 
 def changelog_current_section(txt):
@@ -444,6 +448,25 @@ def selftest():
         "docs/improvement-plan-20260929.md",
         _tools_line(129),
         want_none="R3b",
+    ):
+        return 1
+    # 5a) BUG-261：同族，但文件落在 docs/archive/ 归档目录——RE_IPLAN 若不认
+    #     archive/ 前缀，归档的历史计划就漏掉豁免、整份被当现状面比对。这是实测红面
+    #     （docs/archive/improvement-plan-20260929.md:136 写 129）的原始形状。
+    if not run_case(
+        "iplan-archive-old-exempt",
+        "docs/archive/improvement-plan-20260929.md",
+        _tools_line(129),
+        want_none="R3b",
+    ):
+        return 1
+    # 5b) 反向对照：archive/ 里最新日期的计划仍是现状面——写错数（128）必红，
+    #     豁免只给「非最新」，不因落 archive/ 就一刀切放行。
+    if not run_case(
+        "iplan-archive-current-stale-reds",
+        "docs/archive/improvement-plan-20261010.md",
+        _tools_line(128),
+        want="R3b docs/archive/improvement-plan-20261010.md",
     ):
         return 1
     # 6) 反向对照：最新日期（20261010）写错数（128）仍必红

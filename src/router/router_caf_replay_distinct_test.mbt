@@ -256,7 +256,14 @@ test "caf_c1_6_无邻域保留原始顺序" {
   // 恒等映射：输出 == 输入（逐位置）
   for i in 0..<r.length() {
     if r[i] != base[i] {
-      abort("无邻域应保留原始顺序：位置 " + i.to_string() + " 应 " + base[i] + " 实际 " + r[i])
+      abort(
+        "无邻域应保留原始顺序：位置 " +
+        i.to_string() +
+        " 应 " +
+        base[i] +
+        " 实际 " +
+        r[i],
+      )
     }
   }
   // 反向输入（m_b 在前）：仍保原序（恒等，非置换不变）
@@ -264,7 +271,14 @@ test "caf_c1_6_无邻域保留原始顺序" {
   let r2 = caf_soft_reorder(rev, stats)
   for i in 0..<r2.length() {
     if r2[i] != rev[i] {
-      abort("无邻域反向输入应保原序：位置 " + i.to_string() + " 应 " + rev[i] + " 实际 " + r2[i])
+      abort(
+        "无邻域反向输入应保原序：位置 " +
+        i.to_string() +
+        " 应 " +
+        rev[i] +
+        " 实际 " +
+        r2[i],
+      )
     }
   }
   // 单元素候选（边界）

@@ -109,7 +109,7 @@ test "debate_next_session_id：格式 debate-yyyyMMdd-nnn 且同日递增" {
   })
   let sid = debate_next_session_id()
   let prefix = "debate-" + day + "-"
-  assert_eq(sid.starts_with(prefix), true)
+  assert_eq(sid.has_prefix(prefix), true)
   assert_eq(sid.length(), prefix.length() + 3)
   assert_eq(sid, prefix + "002")
   // 编号必须是 3 位（个位数补零）

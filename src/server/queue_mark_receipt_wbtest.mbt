@@ -7,8 +7,8 @@
 ///   1) Ok 路径：ok=true / channel / marked / total 原样带回
 ///   2) Err 路径：ok=false / channel / queue_mark_error 含原始错误串（如「队列写入失败」）
 ///
-///|
 
+///|
 fn qmr_str(j : Json, key : String) -> String {
   match j {
     Object(m) =>
@@ -20,6 +20,7 @@ fn qmr_str(j : Json, key : String) -> String {
   }
 }
 
+///|
 fn qmr_bool(j : Json, key : String) -> Bool {
   match j {
     Object(m) =>
@@ -31,6 +32,7 @@ fn qmr_bool(j : Json, key : String) -> Bool {
   }
 }
 
+///|
 fn qmr_num(j : Json, key : String) -> Double {
   match j {
     Object(m) =>
@@ -42,6 +44,7 @@ fn qmr_num(j : Json, key : String) -> Double {
   }
 }
 
+///|
 test "bug228_queue_mark_receipt_ok" {
   let ok_json = Json::object(
     Map([("marked", Json::number(1.0)), ("total", Json::number(3.0))]),
@@ -53,6 +56,7 @@ test "bug228_queue_mark_receipt_ok" {
   assert_true(qmr_num(r, "total") == 3.0)
 }
 
+///|
 test "bug228_queue_mark_receipt_err" {
   let r = queue_mark_receipt(
     "gitcode",

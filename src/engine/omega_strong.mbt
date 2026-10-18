@@ -473,6 +473,7 @@ pub fn FistEngine::omega_spec_review(
     }
   } else {
     let rejected = self.omega_count(task_id, "spec", "rejected") + 1
+    // rejected = existing + 1, so > max_r means existing >= max_r (consistent with omega_spec_create)
     if rejected > max_r {
       return Ok(
         self.omega_escalate(task_id, "spec", rejected, max_r, reason, now),
@@ -603,6 +604,7 @@ pub fn FistEngine::omega_result_verify(
     }
   } else {
     let rejected = self.omega_count(task_id, "result", "rejected") + 1
+    // rejected = existing + 1, so > max_r means existing >= max_r (consistent with omega_spec_create)
     if rejected > max_r {
       return Ok(
         self.omega_escalate(task_id, "result", rejected, max_r, reason, now),
@@ -702,7 +704,11 @@ fn FistEngine::omega_escalate(
     created_at=now,
     updated_at=now,
   )
-  ignore(self.store.upsert_spec(rec))
+  let mut spec_err = ""
+  match self.store.upsert_spec(rec) {
+    Ok(_) => ()
+    Err(e) => spec_err = e
+  }
   let paused = match self.pause_task(task_id~, now~) {
     Ok(_) => true
     Err(_) => false
@@ -718,6 +724,7 @@ fn FistEngine::omega_escalate(
     "reason": Json::string(reason),
     "needs_human_review": Json::boolean(true),
     "task_paused": Json::boolean(paused),
+    "spec_persist_error": Json::string(spec_err),
     "learned_lesson": Json::boolean(learned),
     "next_action": Json::string("human_review"),
     "escalated": Json::boolean(true),

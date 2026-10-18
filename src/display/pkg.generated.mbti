@@ -14,11 +14,33 @@ pub fn officer_levels() -> Int
 
 pub fn officer_table() -> Array[String]
 
+pub fn pool_label_of(String) -> String
+
 pub fn rank_of(Int) -> String
 
 pub fn role_label(String, Int) -> String
 
+pub fn soldier_mission(String) -> String
+
+pub fn soldier_model_tier(String) -> String
+
 pub fn soldier_rank() -> String
+
+pub fn soldier_type_count() -> Int
+
+pub fn soldier_type_of(String) -> String
+
+pub fn soldier_types() -> Array[String]
+
+pub fn staff_duty(String) -> String
+
+pub fn staff_hierarchy(String) -> String
+
+pub fn staff_label(String) -> String
+
+pub fn staff_title_count() -> Int
+
+pub fn staff_titles() -> Array[String]
 
 // Errors
 

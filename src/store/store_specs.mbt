@@ -19,13 +19,13 @@ pub fn specs_table_sql() -> String {
 ///|
 /// 语料 / 复验记录（跨后端统一结构）。
 pub struct SpecRecord {
-  pub id : String
-  pub task_id : String
-  pub spec_type : String
-  pub content : String
-  pub status : String
-  pub created_at : String
-  pub updated_at : String
+  id : String
+  task_id : String
+  spec_type : String
+  content : String
+  status : String
+  created_at : String
+  updated_at : String
 } derive(Eq, Debug)
 
 ///|

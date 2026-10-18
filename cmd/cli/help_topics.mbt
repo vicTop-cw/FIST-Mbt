@@ -95,7 +95,12 @@ pub fn help_mcp() -> String {
   "Full JSON file: see _release/.mcp.json.example\n" +
   "\n" +
   "Prereq: Node.js >=24, fist in PATH\n" +
-  "Clients: Claude Desktop, VSCode MCP, Trae"
+  "Clients: Claude Desktop, VSCode MCP, Trae\n" +
+  "\n" +
+  "Protocol: MCP 2026-07-28 required (colmugx/mcp@0.17.4 hard pin).\n" +
+  "If your client fails handshake with -32022 Unsupported protocol version,\n" +
+  "it speaks an older protocol (e.g. 2024-11-05); upgrade the client or use\n" +
+  "one supporting 2026-07-28. Upstream mcp lib 0.15+ moved to this version."
 }
 
 ///|

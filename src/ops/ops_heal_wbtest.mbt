@@ -47,7 +47,10 @@ fn ops_heal_read_or_abort(path : String) -> String {
   }
   match content {
     Some(c) => c
-    None => abort("不可读 \{path}（测试必须在项目根跑）——该守卫无法自证")
+    None =>
+      abort(
+        "不可读 \{path}（测试必须在项目根跑）——该守卫无法自证",
+      )
   }
 }
 
@@ -60,7 +63,10 @@ test "BUG-240：store_delete_heartbeat 不再被 ignore 静默吞掉（源码文
 ///|
 test "BUG-240：三处清理心跳失败均点名进 delete_failed_ids（源码文本锁）" {
   let src = ops_heal_read_or_abort("src/ops/ops_heal.mbt")
-  assert_eq(ops_heal_count(src, "Err(_) => delete_failed_ids.push(t.get_id())"), 3)
+  assert_eq(
+    ops_heal_count(src, "Err(_) => delete_failed_ids.push(t.get_id())"),
+    3,
+  )
 }
 
 ///|

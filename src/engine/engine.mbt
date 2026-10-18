@@ -97,6 +97,9 @@ pub fn FistEngine::plan(
       if !st.can_split() {
         return Err("非法拆分: 任务处于 [\{parent.status_to_string()}]")
       }
+      if split_n < 1 {
+        return Err("split_n 必须 >= 1")
+      }
       // 标记父任务进入拆分中
       match parent.split() {
         Ok(p2) =>
@@ -152,7 +155,7 @@ pub fn FistEngine::claim(
         Err(e) => return Err(e)
       }
       let c3 = c.with_updated_at(now)
-      match self.store.update_task(c3) {
+      match self.store.update_task_if_status(c3, "待领取") {
         Ok(_) => ()
         Err(e) => return Err("认领落库失败: \{e}")
       }
@@ -228,7 +231,12 @@ pub fn FistEngine::execute_with_meta(
     Err(e) => return Err(e)
     Ok(_) => ()
   }
-  // 1. 写入执行元数据（独立事务，失败不阻塞主流程）
+  // 1. 主任务状态流转（先执行，成功后才写元数据，避免幽灵记录）
+  match self.execute(task_id~, deliverable~, now~) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  // 2. 写入执行元数据（execute 成功后才落盘，失败不阻塞主流程）
   ignore(
     self.store.record_execution(
       task_id~,
@@ -243,8 +251,18 @@ pub fn FistEngine::execute_with_meta(
       created_at=now,
     ),
   )
-  // 2. 主任务状态流转
-  self.execute(task_id~, deliverable~, now~)
+  Ok(
+    self.store
+    .get_task(task_id)
+    .unwrap_or(
+      @core.Task::new(
+        id=task_id,
+        project_dir="",
+        description="",
+        created_at=now,
+      ),
+    ),
+  )
 }
 
 ///|
@@ -527,6 +545,7 @@ pub fn FistEngine::verify(
           match self.store.get_task(pid) {
             Some(parent) =>
               if self.all_subtasks_completed(parent) {
+                let original_status = parent.get_status().to_string()
                 let pe = match parent.execute() {
                   Ok(x) => x
                   Err(_) => parent
@@ -550,7 +569,11 @@ pub fn FistEngine::verify(
                 }
                 match pe.submit() {
                   Ok(p2) => {
-                    match self.store.update_task(p2.with_updated_at(now)) {
+                    match
+                      self.store.update_task_if_status(
+                        p2.with_updated_at(now),
+                        original_status,
+                      ) {
                       Ok(_) => ()
                       Err(e) => return Err("父任务归并落库失败: \{e}")
                     }
@@ -583,18 +606,14 @@ pub fn FistEngine::archive(
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
     Some(t) => {
+      if !t.get_status().is_completed() {
+        return Err(
+          "仅已完成任务可归档，当前状态: \{t.status_to_string()}",
+        )
+      }
       let c = match t.archive() {
         Ok(x) => x
-        Err(e) =>
-          // 未完成则先核验通过再归档
-          match t.complete(completed_by=by) {
-            Ok(c1) =>
-              match c1.archive() {
-                Ok(c2) => c2
-                Err(e2) => return Err(e2)
-              }
-            Err(e2) => return Err(e2)
-          }
+        Err(e) => return Err(e)
       }
       let c2 = c.with_updated_at(now)
       match self.store.update_task(c2) {
@@ -1467,6 +1486,12 @@ pub fn FistEngine::publish_with_deps(
 ) -> Result[String, String] {
   if created_by != "human_steward" && created_by != "human" {
     return Err("publish 仅限人类指挥官")
+  }
+  for dep in depends_on {
+    match self.store.get_task(dep) {
+      None => return Err("依赖任务不存在: \{dep}")
+      Some(_) => ()
+    }
   }
   // 根任务 id 全局唯一：T0 被占用时顺延 T0r2/T0r3
   let id = self.first_free_root_id()

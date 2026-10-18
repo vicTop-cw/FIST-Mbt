@@ -462,3 +462,27 @@ test "build: 报告组装（含 status / 分歧表 / 终审门），非法报告
   assert_true(r.markdown.contains("终审门"))
   assert_eq(r.terminal_gate, "user")
 }
+
+///|
+test "BUG-205：报告表「帽子」列显示六顶帽 id（hexa_hat_id），不再误填 verdict" {
+  let cfg = default_config("议题")
+  let rs = [
+    rep("stargazer", "pass", 0.8, ["数据"]),
+    rep("wallbreaker", "reject", 0.8, ["风险"]),
+  ]
+  let r = build_report(cfg.topic, cfg, rs, 1)
+  // 观星者=stargazer→白帽(white)；破壁者=wallbreaker→黑帽(black)
+  assert_true(
+    r.markdown.contains("观星者（stargazer） | white | pass"),
+    msg="「帽子」列应显示 white",
+  )
+  assert_true(
+    r.markdown.contains("破壁者（wallbreaker） | black | reject"),
+    msg="「帽子」列应显示 black",
+  )
+  // 回归钉：旧实现把 verdict 连写两遍，帽子列 == 判决列
+  assert_true(
+    !r.markdown.contains("（stargazer） | pass | pass"),
+    msg="「帽子」列不得再等于 verdict",
+  )
+}

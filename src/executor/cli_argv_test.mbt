@@ -35,10 +35,45 @@ test "ca_2_空提示词与空模型必须 Err（不得静默走默认档）" {
   assert_true(@executor.aider_argv(prompt="", model="m") is Err(_))
   assert_true(@executor.aider_argv(prompt="x", model="") is Err(_))
   assert_true(@executor.aider_argv(prompt="x", model="   ") is Err(_))
-  assert_true(@executor.atomcode_argv(prompt="x", model="") is Err(_))
   assert_true(
     @executor.aider_argv(prompt="含 NUL \u0000 的输入", model="m") is Err(_),
   )
+}
+
+///|
+/// BUG-238（2026-10-16）：atomcode 空模型**不再 Err**——省略 `--model` 走
+/// atomcode 自己 config 的 default_model。原锁「空模型必须 Err」与本修复
+/// 方向相反，契约随真实缺陷修订：FIST 模型池名与 atomcode provider 命名
+/// 空间两套不通，恒塞 FIST 池名 = 恒吃 HTTP 400 Unsupported model。
+test "ca_8_atomcode 空模型省略 --model 走执行器默认档（BUG-238）" {
+  // 空模型 → Ok 且 argv 不含 --model（atomcode 用自己 config 默认档）
+  let a = ca_unwrap(@executor.atomcode_argv(prompt="做 X", model=""))
+  assert_false(a.contains("--model"))
+  // 空白模型（trim 后为空）同样省略
+  let b = ca_unwrap(@executor.atomcode_argv(prompt="做 X", model="   "))
+  assert_false(b.contains("--model"))
+  // 顺序仍稳定：-p 在首、-y 在、无 -C（空 workdir）
+  assert_eq(a[0], "-p")
+  assert_true(a.contains("-y"))
+  assert_false(a.contains("-C"))
+  // 非空模型仍原样下发 --model（显式选择不被吞）
+  let c = ca_unwrap(
+    @executor.atomcode_argv(prompt="做 X", model="longcat/LongCat-2.0"),
+  )
+  assert_true(c.contains("--model"))
+  // 组合：空模型 + workdir + auto_yes=false，各段顺序保持
+  let d = ca_unwrap(
+    @executor.atomcode_argv(
+      prompt="做 X",
+      model="",
+      workdir="wd",
+      auto_yes=false,
+    ),
+  )
+  assert_eq(d[0], "-p")
+  assert_true(d.contains("-C"))
+  assert_false(d.contains("-y"))
+  assert_false(d.contains("--model"))
 }
 
 ///|

@@ -34,7 +34,7 @@ pub fn embed_hexa_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
       },
       ["config_json"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       match hat_run_impl(args) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -58,7 +58,7 @@ pub fn embed_hexa_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
       },
       ["topic", "reports_json"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       match hat_merge_impl(args) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -82,7 +82,7 @@ pub fn embed_hexa_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
       },
       ["left", "right"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       match hat_debate_impl(args) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))

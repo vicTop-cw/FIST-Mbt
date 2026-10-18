@@ -90,8 +90,17 @@ pub fn aider_argv(
 }
 
 ///|
-/// atomcode argv（不含可执行文件名）：-p <prompt> -C <project_dir> -y --model <model>
+/// atomcode argv（不含可执行文件名）：-p <prompt> [-C <project_dir>] [-y] [--model <model>]
 /// workdir~ 为空时不下发 -C（由 spawn 的 cwd 决定），避免把空串当路径传下去。
+///
+/// BUG-238（2026-10-16）：model~ 为**空**时**省略 --model**，atomcode 走自己
+/// config.toml 的 default_model（如 longcat/LongCat-2.0）。为什么允许空：
+/// FIST `model_route` 的模型池名（ling-3.1-flash-free 等）与 atomcode provider
+/// 命名空间（longcat/deepseek/Kimi）**两套名字不通**，把 FIST 池名直接塞
+/// `--model` 会让 atomcode 恒吃 `HTTP 400 Unsupported model`。server 层在
+/// 未配置模型映射时应传空串走执行器默认档；显式传非空模型名仍原样下发
+/// （命名空间正确性由调用方自担）。aider 不同：空模型 = 绕过路由决策，
+/// 维持拒绝不变（见 aider_argv）。
 pub fn atomcode_argv(
   prompt~ : String,
   model~ : String,
@@ -101,9 +110,6 @@ pub fn atomcode_argv(
   if !prompt_ok(prompt) {
     return Err("atomcode: -p 提示词不能为空或含 NUL 字符")
   }
-  if model.trim().length() == 0 {
-    return Err("atomcode: --model 不能为空")
-  }
   let mut args : Array[String] = ["-p", prompt]
   if workdir.length() > 0 {
     args = args + ["-C", workdir]
@@ -111,7 +117,9 @@ pub fn atomcode_argv(
   if auto_yes {
     args = args + ["-y"]
   }
-  args = args + ["--model", model]
+  if model.trim().length() > 0 {
+    args = args + ["--model", model]
+  }
   Ok(args)
 }
 

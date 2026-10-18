@@ -114,3 +114,11 @@ dist/
 /build_js_out.txt
 /chk_out.txt
 /dag_test_out.txt
+
+# Round 262 (marvis security)：敏感文件兜底——防未来 .env / 私钥误入 git 与发布包
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx

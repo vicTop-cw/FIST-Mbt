@@ -65,10 +65,14 @@ pub fn FistEngine::saga_rollback(
     lifo.push(pending[i])
   }
   let ids = lifo.map(fn(t) { t.0 })
+  let mut mark_err = ""
   let marked_n = if mark && not(ids.is_empty()) {
     match self.store_mark_saga_actions_done(ns~, root_task_id~, ids~) {
       Ok(_) => ids.length()
-      Err(_) => 0
+      Err(e) => {
+        mark_err = e
+        0
+      }
     }
   } else {
     0
@@ -89,6 +93,7 @@ pub fn FistEngine::saga_rollback(
   m.set("pending_count", Json::number(lifo.length().to_double()))
   m.set("pending", Json::array(steps))
   m.set("marked_done", Json::number(marked_n.to_double()))
+  m.set("mark_error", Json::string(mark_err))
   m.set(
     "note",
     Json::string(
@@ -218,6 +223,7 @@ pub fn FistEngine::saga_repair(
           keep.push(r)
         }
       }
+      let mut mark_err = ""
       let marked_n = if mark && not(affected_ids.is_empty()) {
         match
           self.store_mark_saga_actions_done(
@@ -226,7 +232,10 @@ pub fn FistEngine::saga_repair(
             ids=affected_ids,
           ) {
           Ok(_) => affected_ids.length()
-          Err(_) => 0
+          Err(e) => {
+            mark_err = e
+            0
+          }
         }
       } else {
         0
@@ -248,6 +257,7 @@ pub fn FistEngine::saga_repair(
       m.set("compensate", Json::array(comp))
       m.set("keep", Json::array(kp))
       m.set("marked_done", Json::number(marked_n.to_double()))
+      m.set("mark_error", Json::string(mark_err))
       m.set(
         "note",
         Json::string(

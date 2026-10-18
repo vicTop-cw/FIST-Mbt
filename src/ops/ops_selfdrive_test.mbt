@@ -445,9 +445,7 @@ test "selfdrive_9_publish_next_surfaces_errors" {
   let dir = sd_dir("sd_c9_publish_err")
   ignore(selfdrive_memory_init(dir, ns="sd-test"))
   sd_review(
-    dir,
-    "20260920.14.00.00.md",
-    "# 审视报告\n\n## Next Tasks\n- [自驱任务A]\n- [自驱任务B]\n",
+    dir, "20260920.14.00.00.md", "# 审视报告\n\n## Next Tasks\n- [自驱任务A]\n- [自驱任务B]\n",
   )
   let e = sd_engine("temp/sd_c9.db")
   // BUG-217：ns="default" 被 publish_parallel 硬拒（并行发布仅限定时/自驱 ns），
@@ -468,7 +466,9 @@ test "selfdrive_9_publish_next_surfaces_errors" {
   assert_eq(sd_arr_len(j, "publish_errors"), 2)
   assert_eq(sd_arr_len(j, "skipped"), 2)
   assert_eq(e.list_in_ns("default").length(), 0)
-  assert_true(sd_arr_item(j, "publish_errors", 0).contains("并行发布仅限"))
+  assert_true(
+    sd_arr_item(j, "publish_errors", 0).contains("并行发布仅限"),
+  )
 }
 
 ///|

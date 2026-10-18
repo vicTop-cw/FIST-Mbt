@@ -150,7 +150,7 @@ pub fn Archive::sample_parent(
     let h = 1.0 / (1.0 + a.children.to_double())
     weights.push(s * h)
   }
-  let total = weights.fold_left(init=0.0, fn(acc, w) { acc + w })
+  let total = weights.fold(init=0.0, fn(acc, w) { acc + w })
   if total <= 0.0 {
     return Some(cands[0])
   }
@@ -425,11 +425,7 @@ pub fn Archive::dead_ends(self : Archive, limit? : Int = 8) -> Array[String] {
 ///|
 /// 单行摘要（id 前 8 位 + score + goal）。
 fn evolve_summary_line(a : Artifact) -> String {
-  let short = if a.id.length() > 8 {
-    a.id.substring(start=0, end=8)
-  } else {
-    a.id
-  }
+  let short = if a.id.length() > 8 { a.id[0:8].to_string() } else { a.id }
   // R12-R4 bugfind：`(a.score * 1000.0).to_int()` 在 MoonBit Double→Int 转换时，
   // 若 |a.score*1000| > 2^31-1 会 panic。`evolve_submit` 未钳制 score，
   // 理论上可传 >2.1e6 的值。这里显式 clamp 到 [0, 2_000_000]（*1000 后 < 2^31），

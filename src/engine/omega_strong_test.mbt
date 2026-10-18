@@ -439,7 +439,7 @@ test "omega 打回自动落 [lesson] 教训（spec 打回 + 复验打回 + 超�
   let join = s
     .evolve_list()
     .map(fn(j) { j.stringify() })
-    .fold_left(init="", fn(a, x) { a + x })
+    .fold(init="", fn(a, x) { a + x })
   assert_true(join.contains("[lesson] omega.spec_rejected"))
   assert_true(join.contains("验收标准不量化"))
   assert_true(join.contains("[lesson] omega.result_rejected"))

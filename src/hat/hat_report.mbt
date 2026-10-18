@@ -8,17 +8,17 @@
 ///|
 /// 一个单元的报告。
 pub struct HatReport {
-  pub element_id : String
+  element_id : String
   // 六元代号（stargazer/.../nucleus）
-  pub verdict : String
+  verdict : String
   // pass | reject | abstain
-  pub confidence : Double
+  confidence : Double
   // 0..1，该单元对自己结论的置信度
-  pub evidence : String
+  evidence : String
   // 必填非空：该视角的依据/理由
-  pub outcomes : Array[String]
+  outcomes : Array[String]
   // 该单元产出的结构化条目（facts / risks / benefits / alternatives ...）
-  pub raw : String
+  raw : String
   // 原始文本（可空，用于回溯）
 }
 

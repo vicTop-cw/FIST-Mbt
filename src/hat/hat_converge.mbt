@@ -11,24 +11,24 @@
 ///|
 /// 收敛结果。
 pub struct ConvergeResult {
-  pub round : Int
-  pub max_rounds : Int
-  pub agree : Int
+  round : Int
+  max_rounds : Int
+  agree : Int
   // verdict == pass 的单元数
-  pub total : Int
+  total : Int
   // 参与统计的单元数（不含 abstain）
-  pub rate : Double
+  rate : Double
   // agree / total
-  pub threshold : Double
-  pub status : String
+  threshold : Double
+  status : String
   // converged | partial | diverged
-  pub blocking : Int
+  blocking : Int
   // 阻止收敛的分歧（verdict_conflict）数量
-  pub blockers : Array[String]
+  blockers : Array[String]
   // 阻止收敛的分歧详情
-  pub should_iterate : Bool
+  should_iterate : Bool
   // 建议再迭代（status=partial 且 round < max_rounds）
-  pub terminal_gate : String
+  terminal_gate : String
   // 恒 "user"
 }
 

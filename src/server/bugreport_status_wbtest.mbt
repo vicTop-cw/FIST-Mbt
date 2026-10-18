@@ -503,7 +503,9 @@ test "BUG-241：同号重复条目被逐条标 FIXED，不再只改首条" {
     .to_array()
   let after = if parts.length() == 2 { parts[1] } else { "" }
   assert_true(after.contains("### FIXED(2026-10-16T14:35:00Z / BUG-217)"))
-  assert_true(after.contains("- evidence: claimguard.mbt may_proceed_full 只读预检"))
+  assert_true(
+    after.contains("- evidence: claimguard.mbt may_proceed_full 只读预检"),
+  )
   assert_true(!after.contains("BUG-217, BUG-217"))
   // 首条 FIXED 与次条 FIXED 之间的片段**不得**含小记头（旧实现在此，会挤到次条正文之前）
   // 正确行为：小记落在次条之后，不在两条之间

@@ -188,9 +188,9 @@ pub fn hat_output_keys(h : Hat) -> Array[String] {
 /// 单顶帽子的结论。verdict ∈ {pass, reject, abstain}；evidence 必填非空。
 /// 字段全部 pub：跨包（`src/server` 的 debate_* 工具）需构造与读取。
 pub struct HatVerdict {
-  pub hat_id : String
-  pub verdict : String // pass | reject | abstain
-  pub evidence : String
+  hat_id : String
+  verdict : String // pass | reject | abstain
+  evidence : String
 }
 
 ///|
@@ -208,11 +208,11 @@ pub fn hat_verdict(
 /// 多帽一致性聚合结果（确定性计算，不含 LLM 自评）。
 /// rate = agree / total；pass = rate >= threshold。
 pub struct DebateSummary {
-  pub total : Int
-  pub agree : Int // verdict == pass 的帽子数
-  pub rate : Double
-  pub threshold : Double
-  pub pass : Bool // rate >= threshold，仅表示视角一致性，不代用户裁决
+  total : Int
+  agree : Int // verdict == pass 的帽子数
+  rate : Double
+  threshold : Double
+  pass : Bool // rate >= threshold，仅表示视角一致性，不代用户裁决
 }
 
 ///|
