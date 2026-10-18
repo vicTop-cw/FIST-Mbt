@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 166 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 170 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -42,6 +42,22 @@ let audit : @ops.AuditLog = @ops.AuditLog::new()
 ///|
 /// 模块级多库管理器（M5 多租户：namespace 隔离的持久化，内部可变性模式）。
 let mstore : @store.MultiStore = @store.MultiStore::new(data_dir=".")
+
+///|
+/// 多租户引擎路由：按 ns 返回对应持久化引擎（M5 库级物理隔离闭环）。
+/// - "" / "default" → 模块级默认引擎（默认库 fist-mbt.db，完全向后兼容）
+/// - 其他合法 ns → mstore.get(ns) 命中的独立库引擎（{data_dir}/{ns}.db 库级隔离）；
+///   该 ns 尚未 open 时回退默认引擎（与 MultiStore 惰性语义一致，调用方应先用 store_open）
+fn engine_for_ns(ns : String) -> @engine.FistEngine {
+  if ns == "" || ns == "default" {
+    engine
+  } else {
+    match mstore.get(ns) {
+      Some(s) => @engine.FistEngine::new(store=@store.StoreBackend::sqlite(s))
+      None => engine
+    }
+  }
+}
 
 ///|
 /// DGM 档案库（进程内 Archive，演化/自驱机制状态容器）。
@@ -1409,7 +1425,7 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace", default="default")
       let created_by = get_str(args, "created_by", default="human_steward")
       let ts = now_default()
-      let r = engine.publish(
+      let r = engine_for_ns(ns).publish(
         project_dir~,
         description~,
         created_by~,
@@ -1452,7 +1468,7 @@ pub async fn run_server() -> Unit {
       let created_by = get_str(args, "created_by", default="selfdrive")
       let ts = now_default()
       match
-        engine.publish_parallel(
+        engine_for_ns(ns).publish_parallel(
           ns~,
           description~,
           created_by~,
@@ -1492,6 +1508,15 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let split_n = get_int(args, "split_n", default=3)
+      if split_n < 1 {
+        return Err(
+          @mcp_types.ToolError(
+            "plan: split_n=" +
+            split_n.to_string() +
+            "（须 >= 1）。拆分数量不能为 0 或负——引擎按位置切分时 0 或负会产出空子任务数组。",
+          ),
+        )
+      }
       let by = get_str(args, "by", default="human_steward")
       let ts = now_default()
       let inject = get_str(args, "inject")
@@ -1526,6 +1551,9 @@ pub async fn run_server() -> Unit {
         "inject": string_prop(
           "可选：逗号分隔的档案库资产 keywords，按 goal 子串检索命中资产并追加到返回",
         ),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
       },
       ["task_id", "assignee"],
     ),
@@ -1534,7 +1562,8 @@ pub async fn run_server() -> Unit {
       let assignee = get_str(args, "assignee")
       let ts = now_default()
       let inject = get_str(args, "inject")
-      match engine.claim(task_id~, assignee~, now=ts) {
+      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      match eng.claim(task_id~, assignee~, now=ts) {
         Err(e) => Err(@mcp_types.ToolError(e))
         Ok(t) => {
           if inject == "" {
@@ -1565,6 +1594,9 @@ pub async fn run_server() -> Unit {
         "duration_ms": int_prop("执行耗时毫秒(可选默认0)"),
         "rate_limited": bool_prop("是否被限流(可选默认false)"),
         "failure_reason": string_prop("失败原因(可选)"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库）",
+        ),
       },
       ["task_id", "deliverable"],
     ),
@@ -1572,6 +1604,7 @@ pub async fn run_server() -> Unit {
       let task_id = get_str(args, "task_id")
       let deliverable = get_str(args, "deliverable")
       let ts = now_default()
+      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
       // 提取可选执行元数据（向后兼容：无元数据时行为同旧版 execute）
       let executor = get_str(args, "executor", default="manual")
       let model = get_str(args, "model", default="")
@@ -1583,7 +1616,7 @@ pub async fn run_server() -> Unit {
       let failure_reason = get_str(args, "failure_reason", default="")
       // 调用 execute_with_meta：同时写入 executions 表 + 流转任务状态
       to_result(
-        engine.execute_with_meta(
+        eng.execute_with_meta(
           task_id~,
           deliverable~,
           now=ts,
@@ -1603,11 +1636,20 @@ pub async fn run_server() -> Unit {
     s1,
     "submit",
     "提交验收（执行中 -> 待验收）。参数：task_id。",
-    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库）",
+        ),
+      },
+      ["task_id"],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
-      to_result(engine.submit(task_id~, now=ts))
+      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      to_result(eng.submit(task_id~, now=ts))
     },
   )
   s1 = instrumented_tool(
@@ -2050,6 +2092,15 @@ pub async fn run_server() -> Unit {
           }
         }
       }
+      if split_n < 1 {
+        return Err(
+          @mcp_types.ToolError(
+            "task_plan_deep: split_n=" +
+            split_n.to_string() +
+            "（须 >= 1）。拆分数量不能为 0 或负——引擎按位置切分时 0 或负会产出空子任务树。",
+          ),
+        )
+      }
       let base = match
         engine.plan_deep(
           task_id~,
@@ -2281,7 +2332,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "tx_contract",
-    "迁移契约检查（R109，Design by Contract 蒸馏：Bertrand Meyer Eiffel 1986/1997 precondition/invariant/postcondition 三件套 + PMAT ch59 work-item 契约先例）：对 (task, action) 做只读预检——precondition（前置状态合法，复用 Task 迁移语义）/ invariant（领域不变量在迁移后成立：IN-1 id 非空 / IN-2 K 值 depth≥1 / IN-3 split_n≥1 / IN-4 身份保持 id/project_dir/ns / IN-5 assignee 纪律，claim/reopen 除外）/ postcondition（目标态=文档化目标态）。任一失败 → verdict=rejected 整笔拒绝、状态 A 回稳（不落库）；全部通过 → verdict=allowed。纯计算只读不写库（决策建议，执行权在调用方）。参数：task_id、action（claim/split/execute/submit/reject/retry/pause/resume/reopen/complete/archive/mark_decomposing）、assignee(可选默认 agent，claim 用)、completed_by(可选默认 human_steward，complete 用)。返回 { ok, task_id, action, phase, verdict, reasons, target_state, state_stable, note }。",
+    "迁移契约检查（R109，Design by Contract 蒸馏：Bertrand Meyer Eiffel 1986/1997 precondition/invariant/postcondition 三件套 + PMAT ch59 work-item 契约先例）：对 (task, action) 做只读预检——precondition（前置状态合法，复用 Task 迁移语义）/ invariant（领域不变量在迁移后成立：IN-1 id 非空 / IN-2 K 值 depth≥1 / IN-3 split_n≥1 / IN-4 身份保持 id/project_dir/ns / IN-5 assignee 纪律，claim/reopen 除外）/ postcondition（目标态=文档化目标态）。任一失败 → verdict=rejected 整笔拒绝、状态 A 回稳（不落库）；全部通过 → verdict=allowed。纯计算只读不写库（决策建议，执行权在调用方）。参数：task_id、action（claim/split/execute/submit/reject/retry/pause/resume/reopen/complete/archive/mark_decomposing）、assignee(可选默认 agent，claim 用)、completed_by(可选默认 human_steward，complete 用)、force(可选默认 false：action=archive 时建模 BUG-227 强制归档路径，放行 已暂停/已打回 非流态僵尸任务)。返回 { ok, task_id, action, phase, verdict, reasons, target_state, state_stable, note }。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
@@ -2294,6 +2345,9 @@ pub async fn run_server() -> Unit {
         "completed_by": string_prop(
           "验收身份(可选，complete 用，默认 human_steward)",
         ),
+        "force": bool_prop(
+          "是否按 force 语义预检(可选，默认 false)：action=archive 时建模 BUG-227 强制归档路径——放行 已暂停/已打回 非流态僵尸任务（在流态仍拒）",
+        ),
       },
       ["task_id", "action"],
     ),
@@ -2302,10 +2356,17 @@ pub async fn run_server() -> Unit {
       let action = get_str(args, "action")
       let assignee = get_str(args, "assignee", default="agent")
       let completed_by = get_str(args, "completed_by", default="human_steward")
+      let force = get_bool(args, "force", default=false)
       Ok(
         @mcp.ToolResult::text(
           engine
-          .transition_contract(task_id, action, assignee~, completed_by~)
+          .transition_contract(
+            task_id,
+            action,
+            assignee~,
+            completed_by~,
+            force~,
+          )
           .stringify(),
         ),
       )
@@ -3938,7 +3999,7 @@ pub async fn run_server() -> Unit {
         _ => []
       }
       let id = match
-        engine.publish_with_deps(
+        engine_for_ns(ns).publish_with_deps(
           project_dir~,
           description~,
           depends_on~,
@@ -3962,28 +4023,34 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_depend",
-    "给任务追加一条前置依赖（显式构建 DAG 依赖边，不只靠 plan_deep 隐式父子；供 dag_check/ready/critical_path/ascii 使用）。参数：task_id 任务(必经)、dep_id 前置依赖任务 id(必经)。幂等去重；校验两任务存在且非自身。返回追加后的任务 JSON。",
+    "给任务追加一条前置依赖（显式构建 DAG 依赖边，不只靠 plan_deep 隐式父子；供 dag_check/ready/critical_path/ascii 使用）。参数：task_id 任务(必经)、dep_id 前置依赖任务 id(必经)、namespace(可选默认 default)。幂等去重；校验两任务存在且非自身。返回追加后的任务 JSON。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
         "dep_id": string_prop("前置依赖任务 id（必填）"),
+        "namespace": string_prop("命名空间（可选默认 default）"),
       },
       ["task_id", "dep_id"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let dep_id = get_str(args, "dep_id")
+      let ns = get_str(args, "namespace", default="default")
       let ts = now_default()
-      to_result(engine.dag_depend(task_id~, dep_id~, now=ts))
+      to_result(engine_for_ns(ns).dag_depend(task_id~, dep_id~, now=ts))
     },
   )
   s1 = instrumented_tool(
     s1,
     "dag_critical_path",
-    "返回当前最长依赖链（关键路径）。无参数。",
-    schema({}, []),
-    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      let path = engine.critical_path()
+    "返回当前最长依赖链（关键路径）。参数：namespace(可选默认 default)。",
+    schema(
+      { "namespace": string_prop("命名空间（可选默认 default）") },
+      [],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let path = engine_for_ns(ns).critical_path()
       Ok(
         @mcp.ToolResult::text(
           Json::object({
@@ -3997,10 +4064,14 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_parallelism",
-    "返回当前可并行执行的任务数（待领取且依赖已满足）。无参数。",
-    schema({}, []),
-    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      let n = engine.parallelism()
+    "返回当前可并行执行的任务数（待领取且依赖已满足）。参数：namespace(可选默认 default)。",
+    schema(
+      { "namespace": string_prop("命名空间（可选默认 default）") },
+      [],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let n = engine_for_ns(ns).parallelism()
       Ok(
         @mcp.ToolResult::text(
           Json::object({ "parallelism": Json::number(n.to_double()) }).stringify(),
@@ -4011,28 +4082,44 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_slack",
-    "瓶颈与松弛分析（PERT/CPM 硬核调度，R71）：对每个任务算 earliest/latest/slack（0=关键路径，>0=可灵活并行安排），返回 { makespan, critical:[关键任务], slack_map:{id:{earliest,latest,slack}}, cycle:[成环任务] }——找出【谁在关键路径上、谁有松弛可并行】，直接支撑排程优化。无参数。",
-    schema({}, []),
-    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      Ok(@mcp.ToolResult::text(engine.dag_slack_analysis().stringify()))
+    "瓶颈与松弛分析（PERT/CPM 硬核调度，R71）：对每个任务算 earliest/latest/slack（0=关键路径，>0=可灵活并行安排），返回 { makespan, critical:[关键任务], slack_map:{id:{earliest,latest,slack}}, cycle:[成环任务] }——找出【谁在关键路径上、谁有松弛可并行】，直接支撑排程优化。参数：namespace(可选默认 default)。",
+    schema(
+      { "namespace": string_prop("命名空间（可选默认 default）") },
+      [],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      Ok(
+        @mcp.ToolResult::text(
+          engine_for_ns(ns).dag_slack_analysis().stringify(),
+        ),
+      )
     },
   )
   s1 = instrumented_tool(
     s1,
     "dag_schedule",
-    "排程视图（R75 负载感知，基于 dag_slack 落成可执行排程）：返回 { critical_batch:[{task_id,earliest,slack,assignee}](关键路径瓶颈,须串行盯紧), flexible_batch:[...](slack>0,按最早开始排序可并行,未认领项附 suggest=活跃负载最低的已注册执行者), basis, note }——谁在瓶颈、谁可并行派单、建议派给谁，一目了然。无参数。",
-    schema({}, []),
-    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      Ok(@mcp.ToolResult::text(engine.dag_schedule().stringify()))
+    "排程视图（R75 负载感知，基于 dag_slack 落成可执行排程）：返回 { critical_batch:[{task_id,earliest,slack,assignee}](关键路径瓶颈,须串行盯紧), flexible_batch:[...](slack>0,按最早开始排序可并行,未认领项附 suggest=活跃负载最低的已注册执行者), basis, note }——谁在瓶颈、谁可并行派单、建议派给谁，一目了然。参数：namespace(可选默认 default)。",
+    schema(
+      { "namespace": string_prop("命名空间（可选默认 default）") },
+      [],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      Ok(@mcp.ToolResult::text(engine_for_ns(ns).dag_schedule().stringify()))
     },
   )
   s1 = instrumented_tool(
     s1,
     "dag_cost_route",
-    "依赖图成本路由（R77，STAR 式蒸馏）：对 flexible(slack>0) 未认领任务按拓扑序贪心给建议执行者——执行成本(难度档易/中/难→1/2/3)+切换税(依赖执行者不同则+1，上下文切换成本)，能力约束过滤(描述命中的已注册能力标签)。返回 { cost_route:[{task_id,assignee,est_cost,switch_cost,total}], total_est_cost, basis, note }——排程优化闭环：critical_path→slack→schedule→cost_route。纯读不 claim。无参数。",
-    schema({}, []),
-    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      Ok(@mcp.ToolResult::text(engine.dag_cost_route().stringify()))
+    "依赖图成本路由（R77，STAR 式蒸馏）：对 flexible(slack>0) 未认领任务按拓扑序贪心给建议执行者——执行成本(难度档易/中/难→1/2/3)+切换税(依赖执行者不同则+1，上下文切换成本)，能力约束过滤(描述命中的已注册能力标签)。返回 { cost_route:[{task_id,assignee,est_cost,switch_cost,total}], total_est_cost, basis, note }——排程优化闭环：critical_path→slack→schedule→cost_route。纯读不 claim。参数：namespace(可选默认 default)。",
+    schema(
+      { "namespace": string_prop("命名空间（可选默认 default）") },
+      [],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      Ok(@mcp.ToolResult::text(engine_for_ns(ns).dag_cost_route().stringify()))
     },
   )
   s1 = instrumented_tool(
@@ -4059,8 +4146,8 @@ pub async fn run_server() -> Unit {
       let seed = get_int(args, "seed", default=42)
       Ok(
         @mcp.ToolResult::text(
-          engine
-          .dag_mc(ns~, root_task_id=root, deadline~, samples~, seed~)
+          engine_for_ns(ns)
+          .dag_mc(root_task_id=root, deadline~, samples~, seed~)
           .stringify(),
         ),
       )
@@ -4086,7 +4173,7 @@ pub async fn run_server() -> Unit {
       let feedback = get_array(args, "feedback")
       Ok(
         @mcp.ToolResult::text(
-          engine.plan_revise(root, feedback~, ns~).stringify(),
+          engine_for_ns(ns).plan_revise(root, feedback~, ns~).stringify(),
         ),
       )
     },
@@ -4111,7 +4198,9 @@ pub async fn run_server() -> Unit {
       let subtask = get_str(args, "subtask_id", default="")
       Ok(
         @mcp.ToolResult::text(
-          engine.goal_drift_check(root, subtask_id=subtask, ns~).stringify(),
+          engine_for_ns(ns)
+          .goal_drift_check(root, subtask_id=subtask, ns~)
+          .stringify(),
         ),
       )
     },
@@ -4123,7 +4212,7 @@ pub async fn run_server() -> Unit {
     schema({ "namespace": string_prop("命名空间(默认 default)") }, []),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
-      let ascii = engine.dag_ascii(ns~)
+      let ascii = engine_for_ns(ns).dag_ascii(ns~)
       Ok(
         @mcp.ToolResult::text(
           Json::object({
@@ -4141,7 +4230,7 @@ pub async fn run_server() -> Unit {
     schema({ "namespace": string_prop("命名空间(默认全部)") }, []),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
-      let board = render_board_ascii(engine.list_all(), ns)
+      let board = render_board_ascii(engine_for_ns(ns).list_all(), ns)
       Ok(@mcp.ToolResult::text(board.stringify()))
     },
   )
@@ -4152,7 +4241,7 @@ pub async fn run_server() -> Unit {
     schema({ "namespace": string_prop("命名空间(默认全部)") }, []),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
-      let flow = render_state_flow_ascii(engine.list_all(), ns)
+      let flow = render_state_flow_ascii(engine_for_ns(ns).list_all(), ns)
       Ok(@mcp.ToolResult::text(flow.stringify()))
     },
   )
@@ -4167,9 +4256,9 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let tasks = if ns == "" {
-        engine.list_all()
+        engine_for_ns(ns).list_all()
       } else {
-        engine.list_all().filter(fn(t) { t.ns == ns })
+        engine_for_ns(ns).list_all().filter(fn(t) { t.ns == ns })
       }
       let j = render_status_summary(tasks, mstore.ns_list(), project_version)
       Ok(@mcp.ToolResult::text(j.stringify()))
@@ -4186,9 +4275,9 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let tasks = if ns == "" {
-        engine.list_all()
+        engine_for_ns(ns).list_all()
       } else {
-        engine.list_all().filter(fn(t) { t.ns == ns })
+        engine_for_ns(ns).list_all().filter(fn(t) { t.ns == ns })
       }
       let j = render_project_health(tasks, project_version)
       Ok(@mcp.ToolResult::text(j.stringify()))
@@ -4205,9 +4294,9 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
       let tasks = if ns == "" {
-        engine.list_all()
+        engine_for_ns(ns).list_all()
       } else {
-        engine.list_all().filter(fn(t) { t.ns == ns })
+        engine_for_ns(ns).list_all().filter(fn(t) { t.ns == ns })
       }
       let j = render_health_check(tasks, if ns == "" { "all" } else { ns })
       Ok(@mcp.ToolResult::text(j.stringify()))
@@ -4237,6 +4326,27 @@ pub async fn run_server() -> Unit {
       let w = get_int(args, "window_secs", default=60)
       let thr = get_int(args, "threshold", default=3)
       let rec = get_int(args, "recovery_secs", default=30)
+      // BUG-254：三个参数须为正——threshold<=0 首败即熔断；window_secs<=0 永不累计失败
+      let bad : Array[String] = []
+      if w < 1 {
+        bad.push("window_secs=" + w.to_string() + "（须 >= 1）")
+      }
+      if thr < 1 {
+        bad.push("threshold=" + thr.to_string() + "（须 >= 1）")
+      }
+      if rec < 1 {
+        bad.push("recovery_secs=" + rec.to_string() + "（须 >= 1）")
+      }
+      if not(bad.is_empty()) {
+        return Err(
+          @mcp_types.ToolError(
+            "circuit_fail: 参数须为正 " +
+            rq_join(bad) +
+            "。BUG-254：threshold<=0 会让首败即熔断（nf>=thr 恒真），" +
+            "window_secs<=0 会让计数每次重置（now-last_fail>w 恒真）——熔断器语义被破坏。",
+          ),
+        )
+      }
       Ok(
         @mcp.ToolResult::text(
           engine
@@ -4271,7 +4381,9 @@ pub async fn run_server() -> Unit {
       let secs = @ops.iso_to_secs(now)
       Ok(
         @mcp.ToolResult::text(
-          engine.circuit_succeed(ns~, circuit~, now_secs=secs).stringify(),
+          engine_for_ns(ns)
+          .circuit_succeed(ns~, circuit~, now_secs=secs)
+          .stringify(),
         ),
       )
     },
@@ -4331,7 +4443,7 @@ pub async fn run_server() -> Unit {
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
       let skill = get_str(args, "skill")
-      let j = engine.triage(ns, agent, want, skill~)
+      let j = engine_for_ns(ns).triage(ns, agent, want, skill~)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
@@ -4354,7 +4466,7 @@ pub async fn run_server() -> Unit {
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
       let ts = now_default()
-      let j = engine.pick_next(ns, agent, want, ts)
+      let j = engine_for_ns(ns).pick_next(ns, agent, want, ts)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
@@ -4484,7 +4596,7 @@ pub async fn run_server() -> Unit {
       let ts = now_default()
       sync_db_executors()
       // 1. 取顶部可领取任务
-      let tr = engine.triage(ns, agent, want)
+      let tr = engine_for_ns(ns).triage(ns, agent, want)
       let sug = match tr.value("suggestion") {
         Some(Json::Object(o)) => o
         _ => Map([])
@@ -4509,7 +4621,7 @@ pub async fn run_server() -> Unit {
         )
       }
       // 2. 能力决定派给谁：显式 want 优先，否则从任务描述自动抽取所需能力（R33 免手传）
-      let desc = match engine.get_task(task_id) {
+      let desc = match engine_for_ns(ns).get_task(task_id) {
         Some(t) => t.get_description()
         None => ""
       }
@@ -4528,7 +4640,7 @@ pub async fn run_server() -> Unit {
         agent
       }
       // 3. 认领（0 状态迁移：待领取→已领取）
-      match engine.claim(task_id~, assignee~, now=ts) {
+      match engine_for_ns(ns).claim(task_id~, assignee~, now=ts) {
         Err(e) =>
           Ok(
             @mcp.ToolResult::text(
@@ -5067,11 +5179,18 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_check",
-    "检查某任务的依赖是否全部完成。参数：task_id。",
-    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+    "检查某任务的依赖是否全部完成。参数：task_id(必填)、namespace(可选默认 default)。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "namespace": string_prop("命名空间（可选默认 default）"),
+      },
+      ["task_id"],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
-      let ok = engine.deps_satisfied(task_id)
+      let ns = get_str(args, "namespace", default="default")
+      let ok = engine_for_ns(ns).deps_satisfied(task_id)
       Ok(
         @mcp.ToolResult::text(
           Json::object({
@@ -5089,7 +5208,7 @@ pub async fn run_server() -> Unit {
     schema({ "namespace": string_prop("命名空间(默认 default)") }, []),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
-      let ready = engine.ready_tasks(ns_filter=ns)
+      let ready = engine_for_ns(ns).ready_tasks(ns_filter=ns)
       Ok(
         @mcp.ToolResult::text(
           Json::array(ready.map(fn(t) { t.to_json() })).stringify(),
@@ -5100,13 +5219,17 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_sort",
-    "对任务列表按依赖深度拓扑排序。参数：task_ids(JSON 数组)。",
+    "对任务列表按依赖深度拓扑排序。参数：task_ids(JSON 数组，必填)、namespace(可选默认 default)。",
     schema(
-      { "task_ids": string_prop("任务 id 列表 JSON 数组（必填）") },
+      {
+        "task_ids": string_prop("任务 id 列表 JSON 数组（必填）"),
+        "namespace": string_prop("命名空间（可选默认 default）"),
+      },
       ["task_ids"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let raw = get_str(args, "task_ids")
+      let ns = get_str(args, "namespace", default="default")
       let task_ids : Array[String] = try {
         match @json.parse(raw) {
           Json::Array(a) => a.map(fn(v) { v.as_string().unwrap_or("") })
@@ -5115,7 +5238,7 @@ pub async fn run_server() -> Unit {
       } catch {
         _ => []
       }
-      let sorted = engine.topo_sort(task_ids)
+      let sorted = engine_for_ns(ns).topo_sort(task_ids)
       Ok(
         @mcp.ToolResult::text(
           Json::object({
@@ -5255,7 +5378,7 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace")
       Ok(
         @mcp.ToolResult::text(
-          engine.budget_split_by_dag(budget, root~, ns~).stringify(),
+          engine_for_ns(ns).budget_split_by_dag(budget, root~, ns~).stringify(),
         ),
       )
     },
@@ -5406,7 +5529,7 @@ pub async fn run_server() -> Unit {
       let compensation = get_str(args, "compensation")
       let now = now_default()
       match
-        engine.saga_register(
+        engine_for_ns(ns).saga_register(
           ns~,
           root_task_id~,
           step~,
@@ -5437,7 +5560,7 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace", default="default")
       let root_task_id = get_str(args, "root_task_id")
       let mark = get_bool(args, "mark", default=true)
-      match engine.saga_rollback(ns~, root_task_id, mark~) {
+      match engine_for_ns(ns).saga_rollback(ns~, root_task_id, mark~) {
         Err(m) => Err(@mcp_types.ToolError(m))
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
       }
@@ -5463,7 +5586,8 @@ pub async fn run_server() -> Unit {
       let root_task_id = get_str(args, "root_task_id")
       let failed_step = get_str(args, "failed_step")
       let mark = get_bool(args, "mark", default=true)
-      match engine.saga_repair(ns~, root_task_id, failed_step~, mark~) {
+      match
+        engine_for_ns(ns).saga_repair(ns~, root_task_id, failed_step~, mark~) {
         Err(m) => Err(@mcp_types.ToolError(m))
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
       }
@@ -6438,6 +6562,182 @@ pub async fn run_server() -> Unit {
     },
   )
 
+  // ===== rank_of：军衔体系展示层（docs/2026-10-12-fist-mbt-web-dashboard-plan.md §8.1）=====
+  // 协议层不感知军衔；本工具只是展示层标签，由 rank_of(任务层级) 动态定级，协议与存储零改动。
+  s1 = instrumented_tool(
+    s1,
+    "rank_of",
+    "军衔体系展示层（§8.1 完整 *长 总表）：由任务层级 L 得展示军衔——L=0 司令 / L=1 军长 / L=2 师长 / L=3 旅长 / L=4 团长 / L=5 营长 / L=6 连长 / L=7 排长；越界回退士兵；叶子恒为士兵。**协议层不感知军衔**：除统帅/士兵/政委外，所有 *长 在协议层一律映射为 Leader 角色，军衔只是展示层标签，协议与存储零改动。当前默认 root depth=3 实际生效 4 档（司令→军长→师长→士兵），旅长及以下占位（调大 depth 自动激活）。参数：level(必填，任务层级 L，0..7)、role(可选，协议角色 HumanSteward/Reminder/Executor/Leader，缺省按 level 定级)、leaf(可选，true 时强制士兵)。返回 {level, role, rank, rank_index, is_officer, table, officer_levels}。",
+    schema(
+      {
+        "level": int_prop("任务层级 L（必填，0..7）"),
+        "role": string_prop(
+          "协议角色（可选，HumanSteward/Reminder/Executor/Leader）",
+        ),
+        "leaf": bool_prop("是否叶子（可选，true 时强制士兵）"),
+      },
+      ["level"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let level = get_int(args, "level")
+      let role = get_str(args, "role")
+      let leaf = get_bool(args, "leaf")
+      let rank = if leaf {
+        @display.leaf_label(level)
+      } else if role.is_empty() {
+        @display.rank_of(level)
+      } else {
+        @display.role_label(role, level)
+      }
+      let table : Array[Json] = @display.officer_table().map(fn(s) {
+        Json::string(s)
+      })
+      let out = Json::object({
+        "level": Json::number(level.to_double()),
+        "role": if role.is_empty() {
+          Json::null()
+        } else {
+          Json::string(role)
+        },
+        "leaf": Json::boolean(leaf),
+        "rank": Json::string(rank),
+        "rank_index": Json::number(
+          if level >= 0 && level < @display.officer_levels() {
+            level.to_double()
+          } else {
+            (-1).to_double()
+          },
+        ),
+        "is_officer": Json::boolean(@display.is_officer(level)),
+        "officer_levels": Json::number(@display.officer_levels().to_double()),
+        "table": Json::array(table),
+      })
+      Ok(@mcp.ToolResult::text(out.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "soldier_type_of",
+    "士兵分类展示层（§8.2 兵种 × 模型档位 × 攻坚任务类型）：把任务关键词映射到 8 兵种之一——侦查兵（情报/调研/搜索）、炮兵（重构/算法/攻坚）、特种兵（高价值/紧急/架构）、医疗兵（修复/故障/抢救）、通信兵（消息/汇报/提醒）、后勤兵（整理/分配/归档）、工兵（环境/依赖/脚本，默认）、骑兵（短平快/高频/批量）。**展示层，非协议枚举**：协议层仍只有 Executor 一个角色，兵种只是展示标签，协议与存储零改动。参数：keywords(可选，任务描述关键词，逗号/空格分隔，缺省工兵)、soldier(可选，直接指定兵种名，非空时跳过关键词匹配)。返回 {soldier, pool_label, mission, model_tier, count, types}。",
+    schema(
+      {
+        "keywords": string_prop(
+          "任务描述关键词（可选，逗号/空格分隔，缺省工兵）",
+        ),
+        "soldier": string_prop(
+          "直接指定兵种名（可选，非空时跳过关键词匹配）",
+        ),
+      },
+      [],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let keywords = get_str(args, "keywords")
+      let soldier_arg = get_str(args, "soldier")
+      let soldier = if soldier_arg.is_empty() {
+        @display.soldier_type_of(keywords)
+      } else {
+        soldier_arg
+      }
+      let pool_label = @display.pool_label_of(soldier)
+      let mission = @display.soldier_mission(soldier)
+      let model_tier = @display.soldier_model_tier(soldier)
+      let types : Array[Json] = @display.soldier_types().map(fn(s) {
+        Json::string(s)
+      })
+      let out = Json::object({
+        "soldier": Json::string(soldier),
+        "pool_label": Json::string(pool_label),
+        "mission": Json::string(mission),
+        "model_tier": Json::string(model_tier),
+        "count": Json::number(@display.soldier_type_count().to_double()),
+        "types": Json::array(types),
+      })
+      Ok(@mcp.ToolResult::text(out.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "soldier_route",
+    "兵种 → 路由联动（§8.3）：把任务关键词映射到 8 兵种，并给出该兵种对应的**模型池档位提示**与理由文案——特种兵/炮兵 → paid 池（重任务/高价值），侦查兵/骑兵/通信兵 → free 池（轻任务/便宜快速），工兵/医疗兵/后勤兵 → free 池（通用/中端）。这是 `model_route` 软性提示的展示层映射：`tier_hint` 可直接作为 `model_route(soldier=…)` / `(pool_label=…)` 的提示输入；配额硬约束（threshold/耗尽/冷却/黑名单）仍强制，提示档位无容量自动回落正常逻辑。**展示层，非协议枚举**：协议与存储零改动。参数：keywords(可选，任务描述关键词，逗号/空格分隔，缺省工兵)、soldier(可选，直接指定兵种名，非空时跳过关键词匹配)。返回 {soldier, pool_label, tier_hint, reason, mission, model_tier, count, types}。",
+    schema(
+      {
+        "keywords": string_prop(
+          "任务描述关键词（可选，逗号/空格分隔，缺省工兵）",
+        ),
+        "soldier": string_prop(
+          "直接指定兵种名（可选，非空时跳过关键词匹配）",
+        ),
+      },
+      [],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let keywords = get_str(args, "keywords")
+      let soldier_arg = get_str(args, "soldier")
+      let soldier = if soldier_arg.is_empty() {
+        @display.soldier_type_of(keywords)
+      } else {
+        soldier_arg
+      }
+      let pool_label = @display.pool_label_of(soldier)
+      let tier_hint = @router.pool_label_tier_hint(pool_label)
+      let reason = @router.soldier_label_reason(soldier)
+      let mission = @display.soldier_mission(soldier)
+      let model_tier = @display.soldier_model_tier(soldier)
+      let types : Array[Json] = @display.soldier_types().map(fn(s) {
+        Json::string(s)
+      })
+      let out = Json::object({
+        "soldier": Json::string(soldier),
+        "pool_label": Json::string(pool_label),
+        "tier_hint": Json::string(tier_hint),
+        "reason": Json::string(reason),
+        "mission": Json::string(mission),
+        "model_tier": Json::string(model_tier),
+        "count": Json::number(@display.soldier_type_count().to_double()),
+        "types": Json::array(types),
+      })
+      Ok(@mcp.ToolResult::text(out.stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "staff_label_of",
+    "参谋线展示层（§8.1 参谋线：非 *长，参谋军职，挂靠 Leader 体系）：把协议角色名/关键词映射到 6 参谋军职——侦察参谋（Searcher 情报搜集）、后勤参谋（Allocator 资源分配）、验收宪兵（Verifier 交付验收）、监察参谋（Observer 状态监察）、训练教官（SpecAuthor 规范编写）、军务文书（Recorder 记录归档，默认）。**参谋军职不是协议角色**，只是展示层标签；协议与存储零改动。参数：role(可选，协议角色名或自由文本关键词，缺省军务文书)、title(可选，直接指定参谋军职名，非空时跳过关键词匹配)。返回 {title, duty, hierarchy, count, titles}。",
+    schema(
+      {
+        "role": string_prop(
+          "协议角色名或关键词（可选，缺省军务文书）",
+        ),
+        "title": string_prop(
+          "直接指定参谋军职名（可选，非空时跳过关键词匹配）",
+        ),
+      },
+      [],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let role_arg = get_str(args, "role")
+      let title_arg = get_str(args, "title")
+      let title = if title_arg.is_empty() {
+        @display.staff_label(role_arg)
+      } else {
+        title_arg
+      }
+      let duty = @display.staff_duty(title)
+      let hierarchy = @display.staff_hierarchy(title)
+      let titles : Array[Json] = @display.staff_titles().map(fn(s) {
+        Json::string(s)
+      })
+      let out = Json::object({
+        "title": Json::string(title),
+        "duty": Json::string(duty),
+        "hierarchy": Json::string(hierarchy),
+        "count": Json::number(@display.staff_title_count().to_double()),
+        "titles": Json::array(titles),
+      })
+      Ok(@mcp.ToolResult::text(out.stringify()))
+    },
+  )
+
   // ===== mcp_config_scaffold：MCP 配置偏好 → 可落盘 fist.mcp.json 正文（方向一 P0-b）=====
   // 目标项目把 HTML 配置页产出的 form_json 交给本工具，服务端校验并返回可落盘正文，
   // 落盘由调用方（agent / 安装器）做——HTML 写不了文件，本工具也不代写目标项目文件。
@@ -6488,7 +6788,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "model_route",
-    "模型路由决策（免费优先 + 达阈值切付费 + 每模型 5h 滚动窗口）。纯决策来自 src/router（确定性、可单测），用量状态落盘 {project_dir}/memory/model-router-{ns}.json 跨进程复现。**时间戳由服务端盖章，不接受调用方注入 now**（BUG-33 政策）；两池皆耗尽时显式 ok=false，绝不静默改用别的模型。**只问不消耗（不给 record_model）＝零副作用**：不记账、不推进轮询游标、不给模型盖窗口起点，返回 persisted=false 与 mode=query-only（BUG-62：旧实现连查询也落盘，两次相同查询会换模型、5h 窗口没人使用就开始倒计时）。唯一例外是**只播种定义不播种用量**：显式给了 config_json 的池定义时，在决策之前把池形状写进状态文件（否则 executor_run 自动记账那一笔不带 config，只能拿默认池，自定义模型名走「未在任何池中配置」，配额形同虚设）。namespace 只允许字母/数字/_/-（空=default）：写不进盘的 ns 会被显式拒绝，不再静默失去配额约束（BUG-64）。**Star 门（D1=A 完整接入）**：默认未配置即不设门（保持现状，`star_gate.gate_enabled=false`）；要启用请设 server 进程环境变量 `FIST_STAR_GATE_PUBKEY_HEX`（钉死的 Ed25519 公钥 hex）、`FIST_STAR_GATE_ATTESTATION_JSON`（GitHub Pages 拉到的 attestation JSON 正文）、`FIST_STAR_GATE_USER_LOGIN`（须在授权名单里的 GitHub login）。启用后未验签通过 → 回执 `ok=false`、`star_gate.free_pool_unlocked=false`（fail-closed，不 pick、不记账、不推进轮询游标）。回执恒带 `star_gate` 字段（gate_enabled/free_pool_unlocked/note/verdict）；判定逻辑纯计算在 src/router（star_gate_wbtest 可单测）。参数：project_dir(必填，相对路径)、namespace(可选默认 default)、record_model(可选：给模型名则先记账再决策，用于执行器真实用完一次)、config_json(可选：RouterConfig 的 JSON **文本或对象均可**（BUG-63：给对象时按其文本走同一条校验，不再被静默当成没传），覆盖池定义；同名模型的已用配额保留；**非法 JSON 直接报错，不静默回落默认池**)（注：本工具不含任何密钥，凭据只来自 server 进程环境变量）。",
+    "模型路由决策（免费优先 + 达阈值切付费 + 每模型 5h 滚动窗口）。纯决策来自 src/router（确定性、可单测），用量状态落盘 {project_dir}/memory/model-router-{ns}.json 跨进程复现。**时间戳由服务端盖章，不接受调用方注入 now**（BUG-33 政策）；两池皆耗尽时显式 ok=false，绝不静默改用别的模型。**只问不消耗（不给 record_model）＝零副作用**：不记账、不推进轮询游标、不给模型盖窗口起点，返回 persisted=false 与 mode=query-only（BUG-62：旧实现连查询也落盘，两次相同查询会换模型、5h 窗口没人使用就开始倒计时）。唯一例外是**只播种定义不播种用量**：显式给了 config_json 的池定义时，在决策之前把池形状写进状态文件（否则 executor_run 自动记账那一笔不带 config，只能拿默认池，自定义模型名走「未在任何池中配置」，配额形同虚设）。namespace 只允许字母/数字/_/-（空=default）：写不进盘的 ns 会被显式拒绝，不再静默失去配额约束（BUG-64）。**Star 门（D1=A 完整接入）**：默认未配置即不设门（保持现状，`star_gate.gate_enabled=false`）；要启用请设 server 进程环境变量 `FIST_STAR_GATE_PUBKEY_HEX`（钉死的 Ed25519 公钥 hex）、`FIST_STAR_GATE_ATTESTATION_JSON`（GitHub Pages 拉到的 attestation JSON 正文）、`FIST_STAR_GATE_USER_LOGIN`（须在授权名单里的 GitHub login）。启用后未验签通过 → 回执 `ok=false`、`star_gate.free_pool_unlocked=false`（fail-closed，不 pick、不记账、不推进轮询游标）。回执恒带 `star_gate` 字段（gate_enabled/free_pool_unlocked/note/verdict）；判定逻辑纯计算在 src/router（star_gate_wbtest 可单测）。参数：project_dir(必填，相对路径)、namespace(可选默认 default)、record_model(可选：给模型名则先记账再决策，用于执行器真实用完一次)、config_json(可选：RouterConfig 的 JSON **文本或对象均可**（BUG-63：给对象时按其文本走同一条校验，不再被静默当成没传），覆盖池定义；同名模型的已用配额保留；**非法 JSON 直接报错，不静默回落默认池**)。**§8.3 路由联动**：可选 `soldier`（兵种名）或 `pool_label`（池标签）作为 pick 的**软性档位提示**——特种兵/炮兵导向付费池、其余兵种导向免费池；配额硬约束（threshold/耗尽/冷却/黑名单）仍强制，提示档位无容量自动回落正常逻辑。回执额外回显 `soldier` / `pool_label` / `tier_hint` 三字段供面板「兵种分布」视图消费；两者皆空 = 零回归。**CAF 预览（§2.3 / 验收标准 3）**：`dry_run=true` 时走 CAF 记忆软性重排做**零副作用预览**——返回建议模型 + 历史依据（`decision.suggestion` / `decision.basis`），绝不记账、不推进轮询游标、不写任何状态文件（`persisted=false`、`mode=caf-dry-run（零副作用…）`），仅 `config.use_caf_memory=true` 时有效；未开启时显式拒绝（不静默降级回普通查询）。`context` 用于 kNN 特征化。（注：本工具不含任何密钥，凭据只来自 server 进程环境变量）。",
     schema(
       {
         "project_dir": string_prop(
@@ -6502,6 +6802,18 @@ pub async fn run_server() -> Unit {
         ),
         "config_json": string_prop(
           "RouterConfig 的 JSON（文本或对象均可，BUG-63），如 {\"window_seconds\":18000,\"threshold_pct\":95,\"free_pool\":[{\"name\":\"x\",\"limit\":10}],\"paid_pool\":[]}；非法字段回落默认并写进 warnings",
+        ),
+        "soldier": string_prop(
+          "可选：兵种名（display 层 8 兵种之一，如 特种兵/炮兵/侦查兵/骑兵/通信兵/医疗兵/后勤兵/工兵）。给了则按 §8.3 路由联动解析池标签并作为 pick 的软性档位提示；未给 pool_label 时用它解析。空=零回归",
+        ),
+        "pool_label": string_prop(
+          "可选：直接给池标签（如 paid-premium / paid-flagship / free-fast / free-general），非空时覆盖 soldier 的解析结果。软性提示，配额硬约束仍在；提示档位无容量自动回落正常逻辑。空=零回归",
+        ),
+        "dry_run": bool_prop(
+          "可选（默认 false）：true 时按 CAF 记忆软性重排做零副作用预览（返回建议模型 + 历史依据 basis），仅 config.use_caf_memory=true 时有效；false=零回归，走普通路由决策",
+        ),
+        "context": string_prop(
+          "可选：用于 kNN 特征化的请求上下文（dry_run=true 时生效），默认空串",
         ),
       },
       ["project_dir"],
@@ -6519,12 +6831,20 @@ pub async fn run_server() -> Unit {
       // P2：use_laya 开关为真时，向 laya 软性档位建议；假/未知 → 零副作用（""）。
       let (cfg_router, _w) = @router.RouterConfig::from_json(cfgj)
       let laya_hint = if cfg_router.use_laya { mr_laya_tier_hint() } else { "" }
+      let soldier = get_str(args, "soldier")
+      let pool_label = get_str(args, "pool_label")
+      let dry_run = get_bool(args, "dry_run")
+      let context = get_str(args, "context")
       let impl_res = model_route_impl(
         pd,
         ns=ns2,
         record_model=rec,
         config=cfgj,
         laya_hint~,
+        soldier~,
+        pool_label~,
+        dry_run~,
+        context~,
       )
       match impl_res {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))

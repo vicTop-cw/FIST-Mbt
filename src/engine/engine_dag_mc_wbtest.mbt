@@ -8,16 +8,26 @@
 
 ///|
 /// 造引擎 + 一张 dur 表（环 A↔B，时长 A=3 / B=5）。
-fn mcw_cycle_setup() -> (FistEngine, Map[String, Int], Map[String, Array[String]]) {
+fn mcw_cycle_setup() -> (
+  FistEngine,
+  Map[String, Int],
+  Map[String, Array[String]],
+) {
   let e = FistEngine::new()
   // 直接建 store 行（绕过 publish 的深度/默认值约束），用 depends_on 造双向环
   let ta = @core.Task::new(
-    id="A", project_dir="/proj/mcw", description="A",
-    created_at="2026-01-01T00:00:00Z", depends_on=["B"],
+    id="A",
+    project_dir="/proj/mcw",
+    description="A",
+    created_at="2026-01-01T00:00:00Z",
+    depends_on=["B"],
   )
   let tb = @core.Task::new(
-    id="B", project_dir="/proj/mcw", description="B",
-    created_at="2026-01-01T00:00:00Z", depends_on=["A"],
+    id="B",
+    project_dir="/proj/mcw",
+    description="B",
+    created_at="2026-01-01T00:00:00Z",
+    depends_on=["A"],
   )
   ignore(e.store.create_task(ta))
   ignore(e.store.create_task(tb))
@@ -68,12 +78,18 @@ test "BUG-212：环上节点的 mc_suffix_from 必须为 -1" {
 test "BUG-212 成对：非环节点的 mc_finish 不误标 -1" {
   let e = FistEngine::new()
   let ta = @core.Task::new(
-    id="X", project_dir="/proj/mcw", description="X",
-    created_at="2026-01-01T00:00:00Z", depends_on=["Y"],
+    id="X",
+    project_dir="/proj/mcw",
+    description="X",
+    created_at="2026-01-01T00:00:00Z",
+    depends_on=["Y"],
   )
   let tb = @core.Task::new(
-    id="Y", project_dir="/proj/mcw", description="Y",
-    created_at="2026-01-01T00:00:00Z", depends_on=[],
+    id="Y",
+    project_dir="/proj/mcw",
+    description="Y",
+    created_at="2026-01-01T00:00:00Z",
+    depends_on=[],
   )
   ignore(e.store.create_task(ta))
   ignore(e.store.create_task(tb))

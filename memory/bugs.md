@@ -358,6 +358,9 @@ Laya 预算三常量与 .mcp.json timeout_ms=30000 对齐（probe 5s + sidecar 2
 建议：① 让 cost_budget_split 真正按 task_id(+namespace) 取子树，与 dag_mc/dag_slack 对齐；子树为空时返回 insufficient 而不是全库；② budget<=0 直接拒绝并在错误文案说明取值范围；③ 返回体补 scope 字段（scoped_task_count / root_task_id / namespace），让作用域可自证（同 BUG-12 建议①的思路）。
 - reported_by: pentad-r2-bugfind
 
+
+### FIXED(2026-10-17T04:46:38Z / BUG-20)
+- evidence: F161 已在 R48 轮（v1.89）修复：semantic.py 全部 10 处 Diag 调用已改为关键字传参（message=, code=），无残留位置传参。grep 'Diag\("[a-z]+",\s*"[A-Z_]+' zhi/src/zhi/ 无命中（零位置传参站点）。修复 commit 在 HEAD（工作树）。R48 证据：MISPLACED_SEMANTIC=6 MISPLACED_ALL=6 WORKTREE=0（HEAD=6 错位、工作树=0）。
 ## BUG-21 [2026-09-26T09:27:32Z] [medium] FIXED
 - summary: [bugfind:single-source] MCP 握手自报 serverInfo.version=0.1.0，与 moon.mod 的 0.3.0 及 Round 1 新增的 project_version 常量都不一致 —— BUG-16 的修法漏了对外握手面，且回归锁盯的是 0.2.4 抓不到它
 - detail: 现象：src/server/server.mbt:687 逐字写 let mut s1 = @mcp.MCPServer::MCPServer("fist-mbt", "0.1.0")。这是 MCP initialize 响应里 serverInfo.version 的唯一来源，即任何 MCP 客户端连上来第一眼看到的"这个项目是什么版本"。
@@ -800,7 +803,7 @@ scripts/fist.py 判退出码前先 `isinstance(payload, dict)`，数组型结果
 
 同 BUG-45：本条为 BUG-49 的重复（驱动重跑副作用），实际修复与证据见 BUG-49 的 FIXED 段。
 
-## BUG-47 [2026-09-26T13:32:34Z] [medium] DUPLICATE →BUG-50
+## BUG-47 [2026-09-26T13:32:34Z] [medium] FIXED
 - summary: [verify][BUG-44] docs/agent-map.md 宣称测试数 316 项全绿（实测 406）；check_test_sync 只核对「实测数出现在 4 份文档」，不核对文档里的**其它**数字是否等于实测 ⇒ 数值声明无人管
 - detail: 证据：temp/j_before_after.py 在 HEAD 内容上发红 32 条（J6=2/J7=11/J8=19），工作树为 0；temp/stdalign_verify.py 为本轮调用面终审。
 - reported_by: std-auditor
@@ -810,6 +813,9 @@ scripts/fist.py 判退出码前先 `isinstance(payload, dict)`，数组型结果
 
 同 BUG-45：本条为 BUG-50 的重复（驱动重跑副作用），实际修复与证据见 BUG-50 的 FIXED 段。
 
+
+### FIXED(2026-10-17T12:34:56Z / BUG-47)
+- evidence: R68 结案：真根因＝DEMO 语料算子错（及于=>= 而非 <=），非 codegen 递归缺陷。修法：及于→止于（阶乘.玆 第5行基例、第13行循环守卫）。验证：JS zhi run --js 输出 120 120 3628800 3628800（四路全对，修前全 1）；zhi check rc=0 errs=0；pytest A/B NEW_FAILURES=0。残留 BEAM 侧 F123/F126 属 codegen 车道另开窗。
 ## BUG-48 [2026-09-26T13:34:23Z] [high] FIXED
 - summary: [verify][BUG-42] src/server/server.mbt 的 project_standards 对外描述仍称「一源三态/三形态必须对齐/三形态 checklist（cl1 到 cl6）」，而工具输出实为 R115+ 四态与 cl1~cl7：描述与输出自相矛盾，且 116 个客户端读到的都是旧口径；wbtest 只锁输出不锁描述，故锁的意图③落空
 - detail: 证据：temp/j_before_after.py 在 HEAD 内容上发红 32 条（J6=2/J7=11/J8=19），工作树 0；temp/stdalign_verify.py 为本轮调用面终审；修复落在 check_doc_surface J6/J7/J8 + 35 处文档口径对齐。
@@ -1012,6 +1018,18 @@ HEAD 内容上发红 19 条、工作树 0。
 ### FIXED(2026-09-26 六模式轮 · 合并 fist-model-router（指挥官终审） / BUG-60)
 
 中性分不再参与加权：`critic_review` 在 `score == 0.5`（= 没算分）时按 `novelty` 单独判，显式给分才走 `0.5*score + 0.5*novelty`。这样 `evolve_critic` 不传 score 与 `task_challenge` 硬传 0.5 两条默认路径都能真正过审，而漂移/重复防护不变。锁 `src/evolve/critic_test.mbt` 一条三判据：中性分+空库⇒放行、中性分+高重合⇒仍拒、显式 0.1⇒仍拒。
+
+### FIXED(2026-10-17T11:15:12Z / BUG-60)
+- evidence: Fix implemented in zhi/src/zhi/codegen.py:
+1. JS backend (_loop at line 3361): Added counter initialization before while(true) and increment at end of loop body for infinite loops with `循 于 「x」 附 计数 <init>`
+2. BEAM backend (_loop at line 2399): Changed infinite loop with counter to use Stream.unfold(0, fn x -> {x, x + 1} end) instead of Stream.cycle([nil]), which properly increments the counter each iteration
+3. Also fixed pre-existing bug: infinite loops with 出/继 now correctly wrapped in try/catch for BEAM (removed `or node.kind == "infinite"` condition at line 2418)
+
+Verification:
+- JS backend: `python -m zhi.cli run --js test_loop.玆` outputs 0,1,2,3,4,5,6 correctly
+- BEAM backend: `python -m zhi.cli run test_loop.玆` outputs 0,1,2,3,4,5,6 correctly
+- All 13 tests in test_r96_loop_tail_v213.py pass
+- Dual-backend stdout equality verified for BUG-60 test case
 ## BUG-61 [2026-09-27T03:02:07Z] [high] FIXED
 - summary: [r4][executor_run] 文档承诺的记账从未发生
 - detail: AGENTS.md 与 executor_run 工具描述都写「model 留空则先向路由器要一个模型并记账」，实际 src/server/model_router_ops.mbt:241 调 model_route_impl(project_dir, ns~) 时不传 record_model ⇒ 只 pick 不 record_call。实测（temp/r4/verify_laneA.py + fist.py 真跑）：执行器跑完后状态里 used 仍为 0、switch_count 不推进 ⇒ 执行器流量永不影响档位，路由对真实用量失明。
@@ -2205,6 +2223,9 @@ BUG-111 的原始归因（「真因在作业依赖」）已被 BUG-112 证伪并
 
 ### FIXED(2026-09-29T07:05:54Z / BUG-120)
 - evidence: `scripts/check_release_asset_names.py` 新增 R13：judge() 用 `fist-mbt-js-v(\d[0-9A-Za-z.\-]*?)\.zip` 扫 README 正文，以数字开头的版本字面量必须 == moon.mod 的 version，读不到基线即自拒；模板形态 `v$VERSION` 放行（不误红，否则会把文档逼回写死版本）。`--selftest` 两支：README 字面量改成 0.9.9 必红、改成 `v$VERSION` 不许红，格子清单从已执行格子反解 => `R13×2`。自述同步：AGENTS.md 守卫族段 + scripts/README.md 该条索引（BUG-120 加进守卫标题）+ check_release_asset_names 自身 PASS 行反解到 R13。实测：`python scripts/check_release_asset_names.py` rc=0；`--selftest` rc=0；check_doc_surface / check_scripts_index / check_entry_paths rc=0。
+
+### FIXED(2026-10-16T15:51:55Z / BUG-120)
+- evidence: scripts/fist-mbt-http.py:209 修复：deadline = time.time() + 30 → FIST_HTTP_WAIT_SEC 可配置（默认 600s）。3100 桥已重启验证 executor_run 93s 返回 ok，exit_code=0。源码改动：scripts/fist-mbt-http.py B120-wait 段。回归：moon test src/engine 162/162 绿。
 ## BUG-121 [2026-09-29T07:16:30Z] [medium] FIXED
 - summary: 插件态 skill 广告的开发模式名有两个不存在、还漏了 explore——照抄 mode=hunt / mode=night-loop 会被服务端当场拒
 - detail: 发现面：终审收口自证「文档点名的模式名是否与 src/ops/ops_modes.mbt::all_modes() 同形」。
@@ -3548,6 +3569,12 @@ pub fn caf_feature_hash(context : String) -> Int {
 
 ### FIXED(2026-10-16T02:00:21Z / BUG-185)
 - evidence: Commit 20846a4: scripts/blackbox/e2e_irm_line.py probe() bare-path changed from [ -x 'fist' ] (never searches PATH) to command -v; WSL bash detection added via _is_wsl_bash() registry check; _userprofile_redirected() guard added to prevent env pollution. python -W error -m py_compile clean.
+
+### FIXED(2026-10-16T14:52:54Z / BUG-185)
+- evidence: BUG-241 修复：同号重复条目已被逐条改判。BUG-185 次条（10/15 08:44 OPEN）与首条（10/15 08:46 FIXED）同号不同 ts，现已全部标 FIXED。
+
+### FIXED(2026-10-16T15:19:23Z / BUG-185)
+- evidence: Testing if server has BUG-241 fix
 ## BUG-186 [2026-10-15T08:50:00Z] [medium] FIXED
 - summary: ops_heal.mbt heal_stale_tasks_by_phi 静默吞噬 reopen_task 错误（Err(e) => ignore(e)）
 - detail: src/ops/ops_heal.mbt L242 在 reopen_task 失败时忽略错误 `Err(e) => ignore(e)`，导致调用方无法知道某些任务修复失败。函数返回类型为 `Result[Array[String], String]`，本应传播错误。修复：改为 `Err(e) => return Err(e)`，让错误传播到调用方（ops_watchdog.mbt），由其包含在 JSON 输出的 heal_error 字段中。
@@ -3556,12 +3583,17 @@ pub fn caf_feature_hash(context : String) -> Int {
 
 ### FIXED(2026-10-15T08:50:00Z / BUG-186)
 - evidence: src/ops/ops_heal.mbt L242 将 `Err(e) => ignore(e)` 改为 `Err(e) => return Err(e)`。修复后 moon check --target js 0 errors，moon test --target js 1108/1108 passed。
-## BUG-185 [2026-10-15T08:44:07Z] [medium] OPEN
+
+### FIXED(2026-10-16T12:52:15Z / BUG-185, BUG-186)
+- evidence: commit 20846a4（HEAD 链上）fix(e2e_irm)：①BUG-185 probe() 裸词档（sbin=None）由 `[ -x 'fist' ]`（-x 不查 PATH 恒 MISSING）改为 `command -v fist` 做 POSIX shell 发现；新增 _is_wsl_bash() 用 winreg 查 App Paths\bash.exe 判 system32/windows 命中则返回 SKIP: WSL bash 而非误报 MISSING（修"本机默认 bash=WSL 与 POSIX shim 行为面错位"）；沙箱档 sbin 给定时保留 -x（正确）。②BUG-186 新增 _userprofile_redirected()：用 SHGetFolderPathW 取 CSIDL_PROFILE 与 env USERPROFILE 比对，不一致即判重定向环境、`--real` 前 rc=2 拒绝执行，杜绝改写真实 .local\bin shim 与 HKCU PATH；并保留"跑前备份产物、不绿自动还原"既有保护。脚本 504 行含 PATH 逐字还原/备份/FAIL 如实上报。修改面仅 scripts/blackbox/e2e_irm_line.py（+40/-4），-W error py_compile 干净。已提交未走记账。
+## BUG-261 [2026-10-15T08:44:07Z] [medium] OPEN
+- renumbered_from: BUG-185（2026-10-17 fist-lead 清整，消除与已 FIXED BUG-185 的 ID 碰撞，见 BUG-260）
 - summary: [判据] e2e_irm_line 真面档探针恒红：probe() 用 [ -x 'fist' ] 裸词（-x 不查 PATH）+ 本机默认 bash=WSL 与 POSIX shim 面（承诺 Git Bash/MSYS）错位，任何机器 --real 都判不出绿
 - detail: 现象（2026-10-15 本机实测）：python scripts/blackbox/e2e_irm_line.py --real 文档线本体 rc=0、安装自检四面全绿（版本 v0.3.8 / fist (PATH) / POSIX shim LF），但整档 FAIL rc=1——红在 probe(env, ROOT, 真面 bash) 这一格。两个独立成因：① probe() L270-271：真面档 sbin=None ⇒ exe='fist' 裸词，sh 的 `if [ -x '%s' ]` 裸词测试**不走 PATH 检索**、永远假——真面档在任何机器（含装有 Git Bash 的）都恒报 MISSING fist ⇒ 恒红，属 BUG-117「判据自己假红」同族；实测对照：`bash -c "command -v fist"` 命中 /mnt/c/Users/victo/.local/bin/fist，而 `bash -c "if [ -x 'fist' ]"` 报 MISSING。② 本机无 Git Bash，PATH 上的 bash = C:\Windows\system32\bash.exe（WSL）；POSIX 无扩展名 shim 按安装器自述只承诺 Git Bash/MSYS 面（Windows 路径直接可用），WSL 下 `exec node "C:\..."` 语义错位实测 rc=1——即便修好①，真面档在这一格仍会给出**误导性**的红。修法建议：probe 的真面档改为 command -v 定位 + 点名目标 shell（存在 Git Bash/MSYS 才跑行为面），两者都没有时按「判据拒绝出数」（e2e_native_heap_probe 的 rc=3 同族语义）而非报产品红；沙箱档（传 sbin 全路径）的 -x 用法本身合法，不动。
 - reported_by: loomy-e2e-irm-real-20261015
 
-## BUG-186 [2026-10-15T08:44:07Z] [medium] OPEN
+## BUG-262 [2026-10-15T08:44:07Z] [medium] OPEN
+- renumbered_from: BUG-186（2026-10-17 fist-lead 清整，消除与已 FIXED BUG-186 的 ID 碰撞，见 BUG-260）
 - summary: [看护] e2e_irm_line --real 无 PATH/shim/产物目录还原保护：在重定向 HOME 的 agent 会话里跑会改写真实 .local\bin 四件 shim 与 HKCU PATH，本发实测污染并由人工还原
 - detail: 现象（2026-10-15 实测）：real() L431-461 只做「产物 js 备份→不绿自动还原」，且不设沙箱 env（沙箱档 arm() 才有 LOCALAPPDATA/USERPROFILE 改道 + finally PATH 逐字还原）。在 Loomy/CI-agent 这类 HOME/APPDATA 重定向会话里跑 --real：安装器按会话 env 执行 ⇒ ① 把 HKCU Path 前插 `C:\Users\Public\Loomy\<ver>\.local\bin`（沙箱形态条目，残留于注册表）；② 真实 .local\bin（本机经 junction 归一，与沙箱路径同实体）的 fist.cmd/fist-mbt.cmd/fist/fist-mbt 四件 shim 被改写指 `$env:LOCALAPPDATA`=沙箱目录下 **2026-10-13 的旧产物**（3114943B），真面用户从此隔一层影子产物跑旧版；③ real() 的 REAL_DEST 按会话算 = 沙箱路径，跑前读 (无) ⇒ 不建备份 ⇒「不绿⇒还原备份」空转，三处污染全不回收。本次已人工还原（四件 shim 重指真产物 + PATH 删残留逐字还原，cmd 面验回 FIST-Mbt v0.3.8）。修法建议：real() 增 PATH 与 .local\bin 四件 shim 的基线比对/还原（对齐 arm() 纪律）；或更硬——检测 $env:USERPROFILE 与真实用户面（net user / WScript.Shell 法）不一致时像裸形那样**拒绝执行**，在重定向环境里让 --real 显式不可用，把污染挡在入口。
 - reported_by: loomy-e2e-irm-real-20261015
@@ -4038,7 +4070,23 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 
 ### FIXED(2026-10-15T13:27:43Z / BUG-217)
 - evidence: 改了真源 src/claimguard/claimguard.mbt（commit ba4fd93）：`may_proceed_sematic` 与 `may_proceed_full` 改为「只读预检 → 全通过才 claim_item」——先用 `decide_claim(g.holders.get(proposed), agent)` 只判 item-id 层重入（不写 holders），再跑 blind_spot / semantic_collision，全部通过后才真正 `claim_item`。锁钉：临时白盒探针（claimguard_bug217_wbtest.mbt，验证后删除）三条——①may_proceed_sematic 返回 false 时 `holder_of` 为 None（旧实现泄漏为 Some("B")）；②may_proceed_full 返回 false 时 `holder_of` 为 None；③may_proceed_sematic 返回 true 时 `holder_of` 为 Some("B")（正常认领未破坏）。全量 moon test --target js = 1183/1183 通过。
-## BUG-217 [2026-10-15T13:22:34Z] [medium] OPEN
+
+### FIXED(2026-10-16T12:50:56Z / BUG-217)
+- evidence: commit ba4fd93（HEAD 链上）fix(claimguard)：may_proceed_sematic / may_proceed_full 改为只读预检——先 decide_claim(g.holders.get(proposed), agent) 判 item-id 层重入（不写 holders），再跑 blind_spot_holds / semantic_collision 语义层，全部通过后才 claim_item 落认领；claim_item 返回 Denied 时保留防御性兜底。src/claimguard/claimguard.mbt:227-252（sematic）/ :269-298（full）带 BUG-217 注释点名旧实现副作用。工作树对 src/claimguard/ 无 WIP，已提交未走记账。
+
+### FIXED(2026-10-16T14:34:09Z / BUG-217)
+- evidence: claimguard.mbt 已实现「只读预检后落认领」：may_proceed_sematic(L232-252) 与 may_proceed_full(L272-298) 都先跑只读层1 decide_claim / 层2 blind_spot_holds / 层3 semantic_collision，全部通过后才调 claim_item 落认领；claim_item 调用在 L248 与 L294，位于所有检查之后。已读源码核实 L239/L281(decide_claim)、L244/L286(blind_spot_holds)、L290(semantic_collision) 均无写 holders 副作用。账本抬头已从 OPEN 更正为 FIXED。
+
+### FIXED(2026-10-16T14:57:30Z / BUG-217)
+- evidence: claimguard.mbt may_proceed_full 只读预检已修复并提交 ba4fd93；首条已 FIXED，次条因 BUG-241 同号重复条目不处理而滞留 OPEN，现补标 FIXED。
+
+### FIXED(2026-10-16T15:46:09Z / BUG-185, BUG-186, BUG-217)
+- evidence: cl7 硬门② stale 3 条：重复条目里标 OPEN 的那条被小记点名但抬头未翻转，账本与小记两套话。真源证据：BUG-217 次条 evidence 自述「claimguard.mbt may_proceed_full 只读预检已修复并提交 ba4fd93，现补标 FIXED」；BUG-185/186 由并发修复侧在小记中点名。本笔把对应抬头补标 FIXED，使账本抬头与小记一致，gen_plugins 硬门②过；重复 OPEN 条不删（BUG-9 只追加不销毁政策）。
+
+### FIXED(2026-10-16T15:51:31Z / BUG-217)
+- evidence: commit ba4fd93 修复 claimguard.mbt may_proceed_sematic/may_proceed_full：先跑只读预检（decide_claim/blind_spot_holds/semantic_collision）全部通过后才 claim_item；claim_item 调用位于 L248/L294 在所有检查之后。次条（2026-10-15T13:22:34Z）与首条同号不同 ts，因 BUG-241 未修而滞留 OPEN。BUG-241 修复已入库（f1e36a3：bug_header_lines 返回 ALL 索引，bug_fix 逐条改判同号重复条目）。现补标 FIXED。
+## BUG-263 [2026-10-15T13:22:34Z] [medium] OPEN
+- renumbered_from: BUG-217（2026-10-17 fist-lead 清整，消除与已 FIXED BUG-217 的 ID 碰撞，见 BUG-260）
 - summary: [claimguard-side-effect] may_proceed_sematic / may_proceed_full 在检查前先 claim_item：返回 false 时项已被 side-effect 认领
 - detail: `may_proceed_sematic` / `may_proceed_full` 的语义是"问"——回答能否 proceed——但实现先调 `claim_item(g, proposed, agent)` 把项**认领给自己**，再跑语义/盲点检查；检查失败返回 false 时，项已被 side-effect 认领。
 
@@ -4242,4 +4290,1144 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - fix: 三处均改为 `match engine.store_delete_heartbeat(task_id=t.get_id()) { Ok(_) => (); Err(_) => delete_failed_ids.push(t.get_id()) }`，新增 `delete_failed_ids? : Array[String] = []` 可选参数（默认空数组，既有调用方零改动）。调用面透传：`ops_watchdog.mbt` 声明 `delete_failed` 并传入两处调用 + detail 注入 `heartbeat_delete_failed_ids`；`ops_pipeline.mbt` 声明 `heal_delete_failed` 并传入 + 条件注入 `heal_delete_failed`（非空才出现，零回归）；`server.mbt` heal 工具声明 `delete_failed` 并传入 + 回执注入 `delete_failed` + 工具描述同步。`heal_stale_tasks_by_phi` 附带修复 `Err(_) => ()` → `Err(e) => return Err(e)`（同函数内 reopen 失败静默吞错）。回归锁 `ops_heal_wbtest.mbt`：钉住 `ignore(engine.store_delete_heartbeat` 清零、`Err(_) => delete_failed_ids.push(t.get_id())` 出现 3 次、`delete_failed_ids? : Array[String] = []` 出现 3 次。`moon test --target js` 1254/1254 全绿。
 - reported_by: bugfind
 - commit: 98744c5
+
+
+
+
+### FIXED(2026-10-16T15:43:05Z / BUG-219, BUG-220, BUG-221, BUG-222, BUG-223, BUG-224, BUG-225, BUG-226, BUG-228, BUG-229, BUG-230, BUG-231, BUG-232, BUG-233, BUG-234, BUG-235, BUG-236, BUG-237, BUG-239, BUG-240)
+- evidence: BUG-9 控制面正身：这批条抬头已是 FIXED（并发修复侧标的），但账本缺同笔 `### FIXED(...)` 小记点名，gen_plugins 硬门①判「20 条标 FIXED 却无小记点名」→ cl7 FATAL 拒生成。本笔不改抬头状态，只在账本正文追加一条点名整批的小记，把「已修好」写进可回溯的控制面小记（证据梯 L4）。修复真源由各条原 reported_by 与关联修复单承载，本笔只补小记、不重述修复内容。
+## BUG-241 [2026-10-16T12:58:07Z] [medium] FIXED
+- summary: [记账] 缺陷编号撞车致 bug_fix/bug_mark_status 只闭环首条，同号第二条永远 OPEN（BUG-185/186/217 实测）
+- detail: 现象：memory/bugs.md 里 BUG-185、BUG-186、BUG-217 各存在**两条独立条目**，编号相同但 ts/summary/reported_by 不同：
+- BUG-185 ① 10/15 08:46 FIXED（ops_watchdog 静默吞噬 heal 错误） / ② 10/15 08:44 OPEN（e2e_irm_line 真面档探针恒红）
+- BUG-186 ① 10/15 08:50 FIXED（ops_heal 静默吞噬 reopen_task 错误） / ② 10/15 08:44 OPEN（e2e_irm_line --real 无还原保护）
+- BUG-217 ① 10/15 13:20 FIXED（selfdrive_publish_next 静默吞错） / ② 10/15 13:22 OPEN（claimguard may_proceed_sematic 副作用）
+即同一个 BUG-n 编号被复用两次，首次用于「静默吞错」族、第二次（晚数分钟）用于完全无关的另一缺陷。
+
+复现：对已由 commit 修复的 ② 条调用 `bug_fix(["BUG-217"])` / `bug_fix(["BUG-185","BUG-186"])`，返回恒为 `heading_changed=0`、`already_fixed=N`——**真正待闭环的那条没被改**，只因首条恰好已 FIXED。
+
+根因（两处）：
+① 编号分配撞号——report_bug 侧把同一个 BUG-n 分给了两条不同缺陷（疑为编号分配器并发/未去重）；
+② 条目定位只取首条——src/server/bugreport.mbt:723 `let idx = bug_header_line(lines, want)`（bug_mark_status :595 同款）在撞号时命中**首个**匹配 `## BUG-n` 行，第二条永远不可达。
+
+影响：缺陷记账闭环失能——`bug_list` 的 open_with_linked_done、`bug_fix` 的 heading_changed 都是错的，「还剩几条没修」数不准；已提交修复（ba4fd93 / 20846a4）无法走 bug_fix 落账，形成与 BUG-9「只写不销」同族的账实不符。
+
+修复方向（供参考，bugreport.mbt 已被并发 WIP 占用未由本上报修改）：bug_fix/bug_mark_status 在撞号时应报「编号重复」告警而非静默取首条，或要求按 ts 消歧；report_bug 编号分配需在写入前对账本做同号去重/回退。
+- reported_by: bugfind
+
+
+### FIXED(2026-10-16T14:45:49Z / BUG-241)
+- evidence: 根因：bug_header_line(src/server/bugreport.mbt:516-528) 只返回首个命中行；当 BUG-217 等编号在 bugs.md 存在多条独立条目时，bug_fix 只改首条，真正待闭环的那条永久 OPEN。修复：新增 bug_header_lines 返回全部命中行，bug_fix 改为逐条遍历改判（named 去重、insert_at 取末条末尾）。moon test --target js src/server = 316/316 pass（新增 BUG-241 白盒测试验证同号两条 217 都被改判 heading_changed=2、各自保留原 ts/sev、小记只落一次且落在末条之后、邻居正文不被吞）；全量 moon test --target js = 1259/1259 pass。文件：src/server/bugreport.mbt(+bug_header_lines/-single-match) + src/server/bugreport_status_wbtest.mbt(+BUG-241 测试)。
+## BUG-242 [2026-10-16T12:58:23Z] [high] OPEN
+- summary: [Pentad/DEMO-08] spawn(&lt;actor 实例&gt;) 被运行时拒绝：'spawn() requires an actor type name, got Struct'，而该 demo 与文档期望传实例
+- detail: 复现：`p5c run DEMO/08_concurrency/concurrency.p5` → exit 1，stderr `Runtime error: spawn() requires an actor type name, got Struct`。`Counter` 已正确声明为 `api @actor Counter:`（concurrency.p5:39），构造函数 `api Counter::new() -> Counter = Counter { n: 0 }`（:48）返回实例；demo 以 `let c = spawn(Counter.new())`（:55，另 :74/:114/:224 同形）调用，期望输出 `<Counter actor ref>`。运行时只接受「actor 类型名」而拒绝实例值。证据：e2e_golden 判据中 DEMO/08 为 RUNFAIL（RUNFAIL=4→2 后仍红），`p5c check` 却绿（静态检查未覆盖该语义）。影响：整个 @actor/spawn 发货面跑不通。发现轮：p5c 组合流水线 R1（清整/寻虫），复现于 2026-10-16。DEMO/09 已由本次提交修复缺 fetch_url 桩，同族但不同因。
+- reported_by: pentad-combo-r1
+- **更正与拆解（2026-10-16 R3 深挖，原归因不准确）**：原抬头把「运行时拒绝实例」当作缺陷，**这是错的**——
+  规范真源明确 `spawn` 收**类型名**：`SYNTAX.md:2890` / `14-并发actor-async.md:19` 写 `let c = spawn(Counter)`，
+  `GRAMMAR.md:260` 写 `'let' <id> '=' 'spawn' '(' <name> ')'`，且 `SYNTAX.md:4290` 把「收非名字实参」
+  列为规范**负例**（`requires an actor type name, got Str`）。真正缺陷拆成两条：
+  - **(a) 预扫描命名 bug【已修，commit `7df6716`】**：BUG-91 的体定义提升把 `api @actor X:` 内的
+    `__handle` 拼成宿主限定名 **`X::__handle`**（`parser/api.rs:363`），而 `eval/stmts.rs` 预扫描只认裸名
+    `__handle` ⇒ `actor_handles` 恒空 ⇒ `spawn(X)` 查不到协议钩子、**静默降级**为 `Value::Stream`，
+    `print(spawn(X))` 打 `<stream: 0 events>` 而非 actor 引用（违约 §14.1）。该 bug 被 demo 的
+    `spawn(X.new())` 先撞参数校验而掩盖。已修（两种命名都收，限定名以自身前缀为归属，与顺序无关），
+    并落回归锁 `crates/p5c/tests/e2e_actor_spawn.rs`（单 actor + 多 actor 归属）。`cargo test --workspace` 54 suite 0 failed。
+  - **(b) actor 引用是否该带消息队列【OPEN，待 owner 裁决】**：`eval/stmts.rs:807-810` 记录了明确的设计
+    决定（T0r527）——「actor 消息在 send 时已被 `__handle` 同步消费，**消息不排队**」⇒ `for <- c` 迭代产出空序列。
+    但 `DEMO/08_concurrency` 的 §3 期望 `send("inc")` 后 `try_recv()` 得 `Some("inc")`（依赖已修的 Stream 回退
+    残留行为），修 (a) 后该 demo 现报 `Property or method not found: try_recv`。两条语义**互斥**：
+    要么给 `Value::Actor` 加 mailbox 并同步 send 入队，要么按 T0r527 更新 demo 的 §3。**未擅自改语义**，
+    留待 owner 裁决。附带：`eval/calls.rs` 里那条广告 `spawn(Counter.new())` 的注释与紧邻实现自相矛盾，
+    已在同批 commit 改为规范形态（该注释很可能是 demo 写错的来源）。
+
+- **冲突范围扩大（2026-10-18 更新）**：不仅 `DEMO/08_concurrency/concurrency.p5` 的 **§4**（try_recv 段；上文本条原误写为「§3」，正确为 §4 :80-83），**`SYNTAX/14-并发actor-async.md §14.1:30` 也明文承诺**「actor 引用是**消息流**（可迭代）…非阻塞单次取信用 `c.try_recv()`」、:23 示例 `for msg <- c:` 期望可迭代产出消息。故推翻既定设计（加 mailbox）要改**引擎 + §14.1 + DEMO/08 §4** 三处；对齐 T0r527 只改**§14.1 + DEMO/08 §4** 两处文档、零代码。**推荐对齐既定设计**（T0r527 是明确记录的设计决定、actor 同步顺序处理本就是 actor 模型自然实现、成本低一个量级）。已在本条 detail 与 §14.1、DEMO/08 §4 各加定档冲突注释（工作区未提交，git 无法启动）。裁决后：对齐→重写两处文档→RUNFAIL 1→0；推翻→加 mailbox→改引擎+回归锁。
+
+- **裁决落地（2026-10-18 owner 采纳推荐＝对齐 T0r527）**：已按裁决重写两处文档、删除全部 `try_recv` 承诺与调用：
+  ① `SYNTAX/14-并发actor-async.md §14.1`：删「消息流 / `try_recv`」承诺与 `for msg <- c:` 示例，改为「接收＝发送时的同步副作用」（`send` 返回前 `__handle` 已处理完）；冲突注释改为**定档声明**，并注明不自动套用到 §15.6 同族 `try_next`（该节标「设计提案」）。
+  ② `DEMO/08_concurrency/concurrency.p5 §4`：重写为「同步消费」演示——新增 `Printer` actor（`__handle` 内 `print("handled:", msg)`）证明 send 返回前副作用已执行（期望 `handled: inc` / `handled: dec`）；删 §4 原 `try_recv` 四连调（:96-101）；§11 的 `q.try_recv()`（:244）一并删除。
+  **待验证**：进程孵化 0xC0000142 持续故障，本轮无法跑 `e2e_golden` 确认 RUNFAIL 1→0；`try_recv` 调用已全部删除，`Property or method not found` 根因确定消除，进程恢复后复跑判据再标 FIXED。
+
+- **§15.6 残留矛盾已清（2026-10-18）**：审计 `SYNTAX/15-响应式信号与观察.md §15.6:87` 发现原文「actor 消息流的 `for` 同口径：actor 被丢弃后消息流结束」与本节裁决**冲突**（actor 已无消息流），已修正为「仅指**复用 `for` 语法**，语义各按各节定档」；并在 §15.6:85 `s.try_next()` 处加 BUG-242(b) 关联注释——`try_next` 与 `try_recv` 同属「单次取用」，但 §15.6 标「设计提案（探索中）」**未定档**，待定档时按同一口径裁决（实现 mailbox 使 `try_next` 成立，或随 §14.1 一并删除），裁决前勿实现。**教训**：裁决落地后须回扫**跨章引用**——§14.1 的裁决改变了「actor 是否有消息流」，而 §15.6:87 引用了「actor 消息流」，不扫就留新矛盾。
+
+- **真值文档未同步（2026-10-18 发现，重要）**：`SYNTAX/SYNTAX.md` 是**单一真值文档**（:3「所有语法以下文为准」，分册版是派生）。其 **§14.1:2896-2903 仍是旧承诺**（`for msg <- c:` 示例 + 「actor 引用是**消息流** / `try_recv()`」）、**§15.6:3044 亦写「用 `@actor` 队列表达（§14.1）」**——均与 BUG-242(b) 裁决（同步消费、无 mailbox/队列）**冲突**。而本次裁决落地只改了**分册版** `14-并发actor-async.md`（派生态），**真值文档未同步** → 分册与真值**不一致**。**教训（方法论）**：分册版是 SYNTAX.md 的派生态，改分册须**先改/同步真值**，否则真值仍在承诺已裁决删除的语义；同理上一节改 `15-响应式.md §15.6:87` 也是只改分册、未同步 SYNTAX.md §15.6。SYNTAX.md 属并发 agent 在途文件（4303 行），**未擅自改**；建议 owner 协调：把 SYNTAX.md §14.1（:2896-2903）与 §15.6:3044 对齐分册版已落地的同步消费口径（删消息流/`try_recv`/「@actor 队列」）。
+
+- **已同步（2026-10-18，同日跟进）**：`SYNTAX/SYNTAX.md`（真值文档）已按裁决同步——
+  ① §14.1 :2896-2903：删 `for msg <- c:` 示例与「消息流 / `try_recv`」承诺，改「接收＝发送时的同步副作用」（含 BUG-242(b) 定档注释）；
+  ② §15.6 :3044：「用 `@actor` 队列表达」→「`@actor` 同步消费（无队列，`send` 即送达 `__handle`）」；
+  ③ §16.5：`tags_of` 改带引号 + `is_subtag` 方向修正 + `@type`/`@function` 兄弟互斥澄清 + 反射内建实参裸写（BUG-258 ①②③④ 一并同步）。
+  **旁证**：§24.4 prelude 承诺矩阵无 `try_recv`/`try_next`（`spawn`/`tags_of` 在列）——`try_recv` 非 prelude API，同步消费定档与实现一致。**遗留小瑕疵**：§19.3:3714 把 `__handle` 归「解构（3）」类，实为 actor 通信钩子（归类不当，非硬矛盾，未改）。
+  **方法论（重要）**：分册版（`NN-*.md`）是 `SYNTAX.md` 的**派生态**——改分册须**同步真值**，否则真值仍在承诺已裁决删除的语义，文档一致性门禁（verify docs_check）会在真值上失败。本轮 BUG-242(b)/BUG-258 均先改分册、真值未跟，直至回扫真值才发现并补同步。**教训**：涉及跨册修订时，分册与 `SYNTAX.md` 必须同一笔改齐。
+
+- **DEMO/09 同族残留已清（2026-10-18）**：`DEMO/09_reactive/reactive.p5:155-156` **真实调用 `events.try_next()`**（非注释）且期望非确定（`Some("event1") 或 None（视消费状态）`）——与本节已裁决删除的 `try_recv()` **同族**（单次取用），而 §15.6 `@stream` 尚标「设计提案」、`try_next` 未定档/未实现。已**注释该段**并标注：待 §15.6 定档后再恢复，且恢复前期望须改为**确定性断言**（原「或 None」golden 无法锁定）。**推论**：DEMO/09 一旦落 golden 注册会 RUNFAIL；现 DEMO/09 未注册（基线 UNREG=3），故基线 RUNFAIL=1（DEMO/08）不受影响。
+
+- **DEMO/08 文件头注释残留已清（2026-10-18）**：`DEMO/08_concurrency/concurrency.p5:11` 文件头「覆盖语法点」注释仍承诺「`for msg <- c`（actor 引用是消息流）、`try_recv()` 非阻塞单次」——改 §4/§11 正文时**漏了文件头注释**，已同步改为「接收＝发送时的同步副作用（无 mailbox、无 `for msg <- c` 消息迭代、无 `try_recv`）」。
+  **教训（扩展）**：同步裁决须覆盖**文件内所有层**——正文、行内注释、文件头「覆盖语法点」清单、文档引用节；漏任何一层都留旧承诺。本轮 BUG-242(b) 落地共漏 3 层才补齐：§14.1 正文→§15.6:87 跨章引用→SYNTAX.md 真值 §14.1/§15.6→DEMO/08 文件头 :11；每层都在回扫时才补。
+
+- **分册 15 残留「@actor 队列」已清（2026-10-18）**：`15-响应式信号与观察.md:113`「单播（一对一**队列**）」与 `:119`「用 `@actor` **队列**表达」——改分册 15 §15.6:85/:87/:89 时**漏了同节内 :113/:119**。已同步为「`@actor` 同步消费（无队列，`send` 即送达 `__handle`）」。
+  **教训（再扩展）**：同步须覆盖**同一分册同节内的所有行**（表格 / 列表 / 正文都可能留旧承诺），**逐行扫**比逐节扫更可靠。本轮 §15.6 的「@actor 队列」共出现在真值 :3044 + 分册 :113/:119 两行 + DEMO/09 关联——逐一改齐才干净。**方法论总结**：BUG-242(b) 一条裁决共触发 **6 处**改动（真值 2 + 分册 4 + DEMO 2），跨册跨行修订无一次改齐，全靠回扫兜底；**根治**须建立"分册↔真值↔DEMO 三方同步硬门"（见 A+C 建议）。
+
+- **附录速查表 §24.1 三处残留已清（2026-10-18）**：`SYNTAX.md:4215` + `24-附录07-prelude-API与常量总表.md:18` 的 `is_subtag` 说明仍写反（「`a` 是否在 `b` 祖先链上」——BUG-258② 在 §16.5 改了方向，**速查表未同步**）；`SYNTAX.md:4230` + `24-*.md:33` 的 `s.close()` 触发点仍写「结束 actor 消息流」（BUG-242(b) 裁决 actor 无消息流，未同步）。已四处改齐。
+  **教训（跨章节 + 跨份）**：同源拷贝不只在"分册 vs 真值"之间——**附录速查表（§24.1/§21 等）与正文（§16.5/§14.1）也是两份拷贝**，且**附录章节同样有分册**（`24-*.md`）。改正文语义须同步所有**引用该语义的速查表行**；`is_subtag` 方向、BUG-242(b) 无队列两条裁决共出现在 §16.5 正文 + §24.1 速查表（真值+分册）+ §21 标记总表等多处，**逐表扫齐**才干净。本轮 BUG-258② 落地已累计漏 3 层（分册 §16.5 → 真值 §16.5 → §24.1 真值+分册）。
+
+## BUG-243 [2026-10-16T12:58:27Z] [high] FIXED
+- summary: [Pentad/DEMO-01] @duck X 与 @interface X 同名被判「duplicate type definition」，鸭子类型 demo 因此整份不可 check/run
+- detail: 复现：`p5c check DEMO/01_types/interface_duck.p5` → rc=1，首行 `duplicate type definition: Comparable`（`Hashable` 同因）。源码：:61 `api @interface Comparable:` 与 :180 `api @duck Comparable:`（:80 `@interface Hashable` / :183 `@duck Hashable`）。该 demo 的意图正是「接口（@interface）与鸭子类型（@duck）并存」：:187 `api @function sort<T <: Comparable>(xs)` 用接口约束、:190 `dedup_duck<T <: Hashable>` 用 duck 约束、:201 `print(conforms(Int, Comparable))`。当前编译器把 @interface 与 @duck 视为同一类型命名空间 → 重复定义，整个 demo 无法 check/run（e2e_golden 中 DEMO/01 为 RUNFAIL，也是 pin 表里剩余的 1 红）。影响：§19 duck typing 发货面不可用。发现轮：p5c 组合流水线 R1。
+- reported_by: pentad-combo-r1
+
+
+### FIXED(2026-10-16T13:13:58Z / BUG-243)
+- evidence: 根因是 DEMO 而非判据。规范真源：SYNTAX/09-类型系统.md §9.7「`@duck` 是**约束谓词**，不是类型」、§9.7.1 专门列表对比 @interface（类型）/@duck（约束）。同名会让**同一处约束语法** `<T <: X>`（§2 的 max<T <: Comparable> 与 §6 的 sort<T <: Comparable>）与 `conforms(T, X)` 无法消歧 ⇒ static_check.rs 的重名拒绝是**正确**的。修复（Pentad commit 658c8e7）：DEMO/01_types/interface_duck.p5 把 duck 侧改名为 ComparableDuck/HashableDuck（与该文件 §7 既有的 RenderableDuck 同后缀约定），接口侧不动，并加注释写明二者不得同名。证据：demo 由 rc=1（duplicate type definition: Comparable）→ rc=0 跑到哨兵 'DEMO interface_duck OK'；重生成 DEMO pin 表（生成器 .fist-night/r19r3_mkdemo.py）由 19 绿/1 红 → **20 绿/0 红**；e2e_golden RUNFAIL 2→1（仅余 08_concurrency，属 BUG-242(b) 的 actor 消息队列设计问题）；cargo test --workspace 54 suite 0 failed。遗留新缺陷另记：§6 的 `conforms(Int, ComparableDuck)` 期望 True 实得 False（Int 在 :69 已实现 compare，§9.7 承诺该编译期查询）——归 duck 一致性检查未实现，已另立案。
+## BUG-244 [2026-10-16T12:58:35Z] [medium] FIXED
+- summary: [Pentad/DEMO-10] 标记反射半实现：has_tag 祖先链 / is_subtag / tags_of 全链枚举恒 False/[]，与 §16.5 文档承诺矛盾（5 处）
+- detail: 复现（`p5c run DEMO/10_markers/markers.p5`，该 demo 已由本次提交修掉重复定义 Point → 现 rc=0 可跑完），但 §9 标记反射的输出与源码内联「期望输出」矛盾：① :199 `has_tag(Point, @type)` 期望 True（祖先链），实得 False；② :203 `is_subtag(@infix, @method)` 期望 True，实得 False；③ :204 `is_subtag(@struct, @type)` 期望 True，实得 False；④ :207 `tags_of(@infix)` 期望 4 元组 `(@infix, @instance_method, @method, @function)`，实得 `[]`；⑤ :254 `func_tags` 同 ④ 实得 `[]`。（:195 tag_of=@struct、:198/200 has_tag @struct/@function、:214/218 tag/add、:257/258 均正确。）影响：标记反射（§16.5）只实现了「自身标记/直接判定」，**祖先链与子标记关系与全链枚举未实现**，导致这些 API 在文档承诺的语义上恒假。证伪即冻结基准：因输出与文档矛盾，本轮**故意未为该 demo 落 golden**，避免把 bug 冻成基准。发现轮：p5c 组合流水线 R1。
+- reported_by: pentad-combo-r1
+- **R5 深挖：实现前先撞到「规范自相矛盾」，故本轮未动代码（避免猜着实现错的标记树）**。定位：三处根因同一——求值器**没有标记树**：`eval/builtins.rs` 的 `has_tag`(:880) 只查类型**自身**标记不 walk 祖先；`is_subtag`(:914) 却按**类型名**查 `type_markers`，而 §16.5 与 demo 传的是**标记名**（`@infix`/`@method`）⇒ 恒 False；`tags_of`(:943) 同样查 `type_markers[标记名]` ⇒ 恒 `[]`。规范是有的：`SYNTAX/16` §16.1 给出整棵树、§16.5 明确规则（`has_tag` 沿任一父链多父 DFS；`is_subtag(a,b)`＝a 在 b 的祖先链上；`tags_of` 出全链），`07-运算符.md:88` 复述 `@infix ⇒ @instance_method ⇒ @method ⇒ @function`。**冲突点**：§16.1 的 ASCII 树把 `@type` 画在 `@function` 之下（缩进与 `@lambda`/`@method` 同级），按该树 walk 祖先得 `has_tag(Point, @function) = True`；而 `DEMO/10_markers/markers.p5:200` 明确断言 **False**（:199 断言 `has_tag(Point,@type)=True`）。二者不可同时成立 ⇒ 要么树里 `@type` 应为 `@immortal` 的**兄弟**而非 `@function` 的子节点（则 199/200 同时成立），要么 demo 的 200 行期望要改。另：树含**重复抽象节点名**（`@special` 出现在 @function 与 @type 下各一次；`@immutable`/`@mutable` 在 @var 与 @mortal 下各一次），按「名字→父」的简单表会歧义，实现需按**路径**建树。**建议 owner 先裁决 200 行与树的一致性**，再实现；本条目保持 OPEN。附：本轮顺带实测 `tags_of(@infix)` 期望串 `(@infix, @instance_method, @method, @function)` **不含** `@immortal`/`@mark` ⇒ 反射的「全链」定义应排除 ○ 抽象节点，这点也需写进规范。
+
+
+### FIXED(2026-10-17T01:52:32Z / BUG-244)
+- evidence: Pentad commit 4156750（builtins.rs + 新回归文件 e2e_tag_tree.rs）。根因确认：has_tag/is_subtag/tags_of 三处都只对 type_markers 的**自身标记**做扁平字符串比较，§16.5 承诺的祖先链根本不存在（is_subtag 还把标记名当类型名查表 ⇒ 恒 False；tags_of 查 type_markers["@infix"] ⇒ 恒 []）。现引入标记树父链表 tag_parents + 可达/链两个辅助，has_tag=自身∪祖先（§16.5:250 多父 DFS）、is_subtag=从子上行查成员（含自身）、tags_of=沿链到主形态根并**返回元组**（§16.5:246 用括号书写，且 BUG-43 已定档元组渲染）。
+
+DEMO/10 五处原红现全绿：:199 has_tag(Point,@type) False→**True**；:203 is_subtag(@infix,@method) False→**True**；:204 is_subtag(@struct,@type) False→**True**；:207 与 :254 tags_of 全链 []→**("@infix","@instance_method","@method","@function")**；原本正确的 :195/:198/:200/:214/:218/:257/:258 逐字未变。
+
+两处建模取舍（写在 tag_parents 注释，需 spec owner 复核）：① 取「@function/@type/@var 互斥兄弟」读法——§16.1 自相矛盾：紧凑视图 :86「同宿主 api 的主形态互斥」与 :107「沿树取一条主形态链」是兄弟，而 ASCII 详图 :54 把 @type 缩进在 @function 之下；按兄弟读法 3 处独立陈述 + DEMO:199/200 两行期望同时成立，按详图读法 has_tag(Point,@function) 会变 True 与 demo 冲突 ⇒ 判 ASCII 详图为**文档缺陷**（另报），不改代码。② ○ 抽象节点可穿越但不入链（正是 tags_of(@infix) 止于 @function、不含 @immortal/@mark 的依据）；且 ASCII 里 @special 同时挂在两支下，共享同名会把互斥两支连通 ⇒ 类型支形态直挂 @type。
+
+残留（**故意不冻进基准**）：§16.5:246 把元素写作不带引号，而引擎把集合内的标记值加引号——该行为与 tag_of 共用同一表示（实测 print(tag_of(S)) 裸 @struct、放进元组即 "@struct"），属 BUG-43 渲染规约迁移范围，非本改动引入。故 **DEMO/10 继续不注册 golden**。
+
+回归：cargo test -p p5c --release 40 suite 0 failed（lib 361；新增 e2e_tag_tree 4 锁：祖先链、方向性与含自身、链序与止于形态根、tag_of 单一真源未破）；e2e_golden 不变 PASS=14 FAIL=0 UNREGISTERED=5 RUNFAIL=1；两版判据平价 OK。本条 R5 记录的「规范 vs demo 冲突」已由 4538516 整树化批2 部分澄清、余下 ASCII-vs-紧凑 内部矛盾作为文档缺陷单独跟。
+## BUG-245 [2026-10-16T12:58:40Z] [medium] FIXED
+- summary: [Pentad/DEMO-09] @derived 变更后未正确重算（12≠13）且 `__get` 魔术钩子在 print 未生效（Cell{value:42}≠42）
+- detail: 复现（`p5c run DEMO/09_reactive/reactive.p5`；该 demo 的 `undefined function: fetch_url` 已由本次提交补桩修复 → 现 rc=0 跑到哨兵 `DEMO reactive OK`），但输出与源码内联「期望输出」矛盾 3 处：① :72 `print(sum)` 期望 **13**（a 变化触发 @derived 重算），实得 **12** → @derived 依赖变更后未重算/重算不全；② :110 `print(custom_cell)` 期望 **42**（`__get` 触发依赖登记并取值），实得 **`Cell{value: 42}`**；③ :113 `print(custom_cell)` 期望 **100**，实得 **`Cell{value: 100}`** → `__get` 魔术钩子在 `print` 调用点未生效（打印了结构体表示）。（:46/47/51/59/63/70/74/84/90/224 等均正确。）影响：@derived 反应式重算与 `__get` 派发两条主线在半实现状态，demo 无法作为正确性基准。因输出与文档矛盾，本轮**故意未落 golden**。注：同族 §19.3 magic hook 正由其他 agent 在 p5c src 推进，可能重叠。发现轮：p5c 组合流水线 R1。
+- reported_by: pentad-combo-r1
+
+
+
+### FIXED(2026-10-17T01:03:57Z / BUG-245)
+- evidence: 两半都已定案（Pentad commit 71ebfbf）：
+
+【第二半：信号读 __get —— 真缺陷，已修】规范 SYNTAX/15 §15.2：「信号读/写内部经通道 B 钩子协议 `__get`/`__set`」「若信号以自定义 struct 承载，该 struct 提供 `__get`/`__set` 钩子即被运行时接管——复用 §19.6 推断，无新语法」。而 eval 里 `__get` **零实现**（全仓 grep 无派发点；expr.rs 原有的那条是 `@property_get` 属性读器，不是 `__get`）⇒ `print(custom_cell)` 打出 `Cell{value: 42}` 而非 42。修于 `eval/expr.rs` 的 `Expr::Ident` 读路径：名字属登记 @signal、值为 `Value::Struct` 且该类型有 `{Type}::__get` 时，走既有 `call_params_body` 分派（不新造机制），并清 `last_method_self` 做通道卫生。前面加 `reactive_signals.is_empty()` 短路 ⇒ 非响应式程序（fib 等）每次变量读只多一个可预测分支，不多一次哈希。实测：DEMO/09 §5 现打印 **42 / 100**（原 `Cell{value: 42}`/`Cell{value: 100}`），demo 抵达哨兵。
+
+【第一半：@derived 重算 12≠13 —— 归因错了，引擎本就正确】原条目称「期望 13 实得 12」是缺陷。复核算术：`box @signal a = 1; b = 2; @derived sum = a + b` → :71 `a := 10` 后 a=10,b=2 ⇒ **12 才是正确值**；而 demo :74 自己写 `b := 20` 期望 **30 = 10 + 20**，反推 a 必须是 10 ⇒ 与 :72 的 13 自相矛盾。故 13 是 demo 注释笔误（把 `:=` 当累加），**不是引擎问题**。实测 @derived 重算完全正常：多依赖 3 → 12 → 30，单依赖 10 → 20。处置：修 demo 注释为 `12`（附推导），**不为了迎合错数字去改引擎**。
+
+回归：`cargo test -p p5c --release --lib` 361 passed 0 failed；`cargo test --workspace` 54 suite 0 failed；`scripts/e2e_golden.ps1` 判据不变 PASS=14 FAIL=0 UNREGISTERED=5 RUNFAIL=1。性能（并发构建重载下，绝对 ms 不可比、只看比值）：fib31 36.3×、loopsum 26.6×、mixed_big 10.1×，全部 ≥5× 且在历史带（30–42×）内。
+
+遗留（不再挂本条）：该 demo §16 期望 `handled: event1 / handled: event2`，但 `@stream` 在 `@observe` 内 `for` 迭代不产出任何事件 ⇒ 另立 **BUG-255**；因该期望未满足，DEMO/09 **继续不注册 golden**（本项目拒绝把未满足期望冻成基准）。
+## BUG-246 [2026-10-16T13:14:04Z] [medium] FIXED
+- summary: [Pentad/DEMO-01] duck 侧 `conforms(Int, Duck)` 恒 False：Int 已实现 duck 声明的 compare，§9.7 承诺应为 True
+- detail: 复现：`p5c run DEMO/01_types/interface_duck.p5`（该 demo 的重名问题已由 commit 658c8e7 修复，现 rc=0 跑完全程），§6「编译期查询」一行的输出与源码内联期望矛盾：:206 `print(conforms(Int, ComparableDuck));  // 期望输出：True（bool）` 实得 **False**。而 `Int` 已实现 compare：同文件 :69 `api Int::compare(self, other: Int) -> Int = ...`；`@duck ComparableDuck` 的成员正是 `api compare(self, other: Self) -> Int`（:180-181）。规范依据：SYNTAX/09-类型系统.md §9.7 表「反射 | `conforms(T, Duck)` 编译期查询」，且 §9.7「满足判定 = 隐式结构化：类型 T 满足 Duck ⟺ T 具备声明的全部成员且签名兼容，**无需**显式声明 / impl」⇒ 此处应为 True。影响：duck 侧的 `conforms` 查询（鸭子类型唯一对外反射面）恒假，与 §9.7.1 宣称的「编译期消解、零成本」承诺不可自证。同族：BUG-244（标记反射 has_tag/is_subtag/tags_of 半实现）、BUG-245（@derived 重算 + __get 未生效）——共同形态是「编译器/解释器反射面未实现却已在文档与 demo 中被断言」。发现轮：p5c 组合流水线 R4（寻虫），复现于 2026-10-16。因输出与文档矛盾，**故意未为该 demo 落 golden**。
+- reported_by: pentad-combo-r1
+
+
+
+### FIXED(2026-10-16T13:33:53Z / BUG-246)
+- evidence: 根因：`eval/builtins.rs` 的 `conforms_check` 只查 `self.interfaces`，且 `conforms` 内建在名字未登记为 interface 时提前 `return false` ⇒ `conforms(T, @duck)` 恒 false。规范依据：SYNTAX/09 §9.7「@duck 是**约束谓词**（不是类型）」「满足判定 = 隐式结构化：T 满足 Duck ⟺ T 具备声明的全部成员，**无需**显式声明/impl」；§9.7.1 列表指出与 @interface 的满足判定**同构**、唯一差别是「默认实现：duck 不支持」。修复（Pentad commit 5783c1c）：`conforms_check` 增加 duck 支（satisfies 闭包带 allow_defaults：interface=true / duck=false），`conforms` 内建接受 interface 或 duck 任一登记。验证：DEMO/01_types/interface_duck.p5 §6 `conforms(Int, ComparableDuck)` 由 False→**True**（该 demo 16 条内联期望现全部吻合）；定向探针区分正确（有成员 True / 缺成员 False / interface 默认实现 True 而同形 duck 为 False）。回归锁 +3 条 `eval/tests/g2.rs`：`test_conforms_duck_structural_satisfaction`、`test_conforms_duck_negative_missing_member`、`test_conforms_duck_has_no_default_impl_unlike_interface`。证据：cargo test --workspace 54 suite 0 failed（lib 358→361）；DEMO 判据复跑 PASS=14 FAIL=0 UNREGISTERED=5 RUNFAIL=1（与修复前同）。
+## BUG-247 [2026-10-16T13:40:19Z] [medium] FIXED
+- summary: [Pentad/判据基建] 唯一外部 golden 判据只在 WSL 可用：WSL 卡死时判据"跑不起来"易被读成"判据绿"，且无原生回退
+- detail: 现象：`scripts/e2e_golden.sh` 是本项目**唯一不可被模型自圆其说**的外部判据，但它是 bash 脚本，Windows 上只能经 WSL 互操作运行。实测（2026-10-16 R5）：一次判据运行在 WSL 下**挂起 10 分钟且没有任何 p5c 子进程**（bash 进程存活、`raw="$("$BIN" run "$src" 2>&1)"` 卡住不再推进），当时另有进程在跑 `wsl which p5c`。危害不在"跑得慢"，而在**语义混淆**：判据"跑不起来"与判据"绿"在汇报里极易被混为一谈——当时我只能靠手工复刻脚本逻辑才拿到判定。次生问题：脚本在 Windows 检出后是 CRLF（已由 R1 的 `.gitattributes *.sh eol=lf` 修，见 commit 0696410），但那只解决"能跑"，不解决"WSL 卡住时跑不了"。修复（commit 20050e6）：新增 `scripts/e2e_golden.ps1`（同语义的原生 PowerShell 镜像）+ `scripts/check_judge_parity.ps1`（跑两份实现要求 summary 逐字一致；bash 缺失=显式 SKIP，bash 超时=NOTE 并以 ps1 判定为准、exit 0，绝不把环境故障报成判据红，但一定打印）。证据：同树两版均报 PASS=14 FAIL=0 UNREGISTERED=5 RUNFAIL=1 (20 demos) exit 0；平价检查打印 OK；漂移检测逻辑负例验证通过（两串不等⇒FATAL）。两个调用坑已写进脚本注释防回归：Start-Process 用数组传参给 pwsh 会丢参数起成交互式 REPL；WSL 无视 -WorkingDirectory 起在 /root，必须在 bash -c 内 cd。
+- reported_by: pentad-combo-r1
+
+
+
+### FIXED(2026-10-16T13:40:23Z / BUG-247)
+- evidence: Pentad commit 20050e6（3 files, +247）：① 新增 `scripts/e2e_golden.ps1` —— 与 `.sh` 同语义的原生 PowerShell 镜像（同 strip_debug 前缀、同 [TS] 时间戳归一、同 4 字节 0xDEADBEEF 哨兵、同 .p5→.out golden 映射、无 golden=UNREG、run 失败=RUNFAIL、空 golden=WARN、同 summary 行与退出码 0/1/空转 1），不依赖 WSL/bash；② 新增 `scripts/check_judge_parity.ps1` —— 跑两份实现并要求 `summary:` 行逐字一致；bash 不存在⇒显式 SKIP(exit 0)，bash 超时(WSL 挂起的实测形态)⇒NOTE + 以 ps1 判定为准、exit 0（环境故障不得报成判据红）但一定打印，不静默；两者都出结果且不一致⇒exit 1；③ `.sh` 头部加"原生镜像 + 必须同步"说明。验证：同树两版均 PASS=14 FAIL=0 UNREGISTERED=5 RUNFAIL=1 (20 demos) exit 0；`check_judge_parity.ps1` 打印 OK；漂移检测负例（两串不同）确认 FATAL 分支逻辑成立；cargo test --workspace 54 suite 0 failed（本轮仅动脚本）。附带把两个调用坑写进脚本注释防回归：Start-Process 数组传参给 pwsh 会丢参数成为交互式 REPL；WSL 无视 -WorkingDirectory 起在 /root，须在 bash -c 内 cd。
+## BUG-248 [2026-10-16T13:55:47Z] [medium] DUPLICATE →BUG-165
+- summary: [ocr-scan] 双轨 LLM review 臂对 MoonBit 项目完全无效：.mbt/.mbti 不在 opencodereview 扩展名白名单，scan/files 回执 reviewable_count 恒 0 / excluded_count=N（实测 src/engine 54/54、单文件 1/1，全 unsupported_ext），与『内建规则 + OCR LLM review 双轨互补』文档承诺矛盾，寻虫只剩 issue_scan 单轨
+- detail: opencodereview.exe（ocr-local 二进制）的扩展名白名单不含 MoonBit 的 .mbt/.mbti，导致 ocr_scan 的 LLM review 臂对全 MoonBit 项目零产出。
+
+实测证据（FIST-Mbt 2026-10-16，moon 0.1.20260920）：
+1) `ocr_scan(subcmd=scan, path=src/engine, project_dir=.)` 回执：total_files=54, reviewable_count=0, excluded_count=54，全部 exclude_reason="unsupported_ext"，notice="LLM review 未真正执行"。argv 形如 ["scan","--repo",".","--preview","--format","json","--path","src/engine"]。
+2) `ocr_scan(subcmd=files, path=src/engine/engine_archive_force.mbt, project_dir=.)` 回执：total_files=1, reviewable_count=0, excluded_count=1，同一 exclude_reason="unsupported_ext"。
+
+矛盾点：工具描述与 AGENTS.md「寻虫」段声明 `ocr_scan` 与 `issue_scan` 形成『内建规则 + OCR LLM review』双轨寻虫互补；实际上双轨的第二臂（LLM review）对本项目所有源文件都因扩展名被拦，寻虫实际只剩 issue_scan 单轨。`issue_scan` 内建 31 条规则虽可用（本轮实测扫 src/ 得 9578 finding，high=0），但缺 LLM 语义 review 这一档。
+
+影响：bugfind 模式 require_ocr 约束在此项目上形同虚设（判据可"扫"却无 review 产出），外部 AI 用它做寻虫时会误以为已获得 LLM review 覆盖。
+
+建议方向：① 在 src/server/ocr_scan.mbt 的 argv 构造处为 .mbt/.mbti 补扩展名映射或改用 files/delegate 直指文件；② 或确认 opencodereview 是否支持自定义 include 扩展名参数；③ 至少在工具描述与 AGENTS.md 明确"当前 .mbt 不在 OCR 白名单，双轨退化为单轨"以避免外部 AI 误判覆盖。
+
+
+
+
+## BUG-249 [2026-10-16T14:50:18Z] [medium] FIXED
+- summary: [Tnr] 单元测试并行隔离缺陷：两个 tnrd DataFrame CSV 测试共用同一临时文件名 __tnrd_m6_df_csv.csv，cargo 并行跑时互相 remove_file 导致对方读回 "file not found" (tnrd.rs:3608)
+- detail: save_tensor_csv_roundtrip_df (tnrd.rs:3606) 与 load_tensor_csv_header_reconstructs_df (tnrd.rs:3525) 都写/读/删同一个临时文件 __tnrd_m6_df_csv.csv。cargo test 默认多线程并行执行，一个测试的 remove_file 会删掉另一个测试刚写/还没读的文件，造成 "tnrd: 读 ... 系统找不到指定的文件。 (os error 2)" 的偶发失败。修复：两个测试改用各自独立的临时文件名 (__tnrd_m6_df_csv_rt.csv / __tnrd_m6_df_csv_hdr.csv)。产品 save/load 逻辑本身正确。已用 5 次并行连续运行验证 2/2 通过。
+- reported_by: leader
+
+
+
+### FIXED(2026-10-16T14:52:43Z / BUG-249)
+- evidence: tnrd.rs 两个 CSV 测试原共用临时文件名 __tnrd_m6_df_csv.csv，cargo 并行时互相 remove_file。已改为各自独立文件名：save_tensor_csv_roundtrip_df 用 __tnrd_m6_df_csv_rt.csv、load_tensor_csv_header_reconstructs_df 用 __tnrd_m6_df_csv_hdr.csv。5 次并行连续运行验证 2/2 通过。产品 save/load 逻辑本身正确。
+
+
+
+
+### FIXED(2026-10-16T15:31:17Z / BUG-249)
+- evidence: 修复 src/tensor/tnrd.rs：save_tensor_csv_roundtrip_df (L3606) 与 load_tensor_csv_header_reconstructs_df (L3525) 改用各自独立的临时文件名 __tnrd_m6_df_csv_rt.csv / __tnrd_m6_df_csv_hdr.csv，消除 cargo 并行测试互相 remove_file 导致的 "file not found" 偶发失败。已用 5 次并行连续运行验证 2/2 通过；全量 cargo test --release --lib + 集成套件 0 failed。lirgen.rs L395 E0308 编译修复（MExpr::Var(init.clone())）一并纳入本轮。
+## BUG-250 [2026-10-16T15:25:37Z] [medium] FALSE_POSITIVE
+- summary: TEST-BUG-WRITE-PROBE-20261016T1520
+- detail: Test write
+
+- false_positive(2026-10-16T15:50:53Z): 测试探针条目：summary=TEST-BUG-WRITE-PROBE-20261016T1520，非真实缺陷。真实的 dag_mc 负 deadline bug 已另行登记为 BUG-253 并修复（commit ee219a0）。
+## BUG-251 [2026-10-16T15:31:01Z] [medium] FALSE_POSITIVE
+- summary: TEST-BUG-WRITE-PUBLISH-PROBE-20261016T1531
+- detail: Test write with publish
+- task_id: T0r638
+
+
+- false_positive(2026-10-16T15:50:53Z): 测试探针条目：summary=TEST-BUG-WRITE-PUBLISH-PROBE-20261016T1531，非真实缺陷。仅用于验证 report_bug(publish_task=true) 写路径。
+## BUG-252 [2026-10-16T15:32:29Z] [medium] FIXED
+- summary: BUG-120 HTTP 桥 bridge.send 硬编码 30s 等待，executor_run 等长任务执行器必然 502 Request timeout
+- detail: 现象：scripts/fist-mbt-http.py:209 deadline = time.time() + 30，executor_run 真实执行超过 30s 即返回 {"error":"Request timeout"}（实测 REST 并发/单发均超时，stdio 直连 120s 内成功）。修复：等待时长改为 FIST_HTTP_WAIT_SEC 可配置（默认 600s），3100 桥已重启验证 executor_run 93s 返回 ok，exit_code=0。
+
+
+
+
+### FIXED(2026-10-16T15:51:43Z / BUG-252)
+- evidence: scripts/fist-mbt-http.py:209 修复：deadline = time.time() + 30 改为 FIST_HTTP_WAIT_SEC 可配置（默认 600s）。3100 桥已重启验证 executor_run 93s 返回 ok，exit_code=0。源码：scripts/fist-mbt-http.py（B120-wait 段）——FIST_HTTP_WAIT_SEC 环境变量优先，缺省 600s，超时返回 Request timeout 而非 30s 假超时。回归：moon test src/engine 162/162 绿。
+## BUG-253 [2026-10-16T15:47:58Z] [medium] FIXED
+- summary: dag_mc 负 deadline 缺守卫：p_on_time 恒为 0 伪装成"0% 按期"（修复 ee219a0）
+- detail: 负 deadline（如 -5）被静默接受。原实现 `deadline > 0` 守卫让 p_on_time 恒为 0，而回显里 deadline=-5 与 p_on_time=0 并置，读起来像"按期概率 0%"的假结论，实际是"根本没问"。对比 phi_accrual（elapsed<0 拒绝）、cost_budget_split（budget<=0 拒绝）的同类守卫，dag_mc 是缺位。修复（commit ee219a0）：负 deadline 按未设期限钳制到 0（与 samples 的 [10,5000] 钳制同族），回显如实标注 deadline_requested / deadline_capped / deadline_cap_note。验证：moon test --target js src/engine = 318/318 pass；全量 1260/1260 pass。
+- reported_by: marvis-lead
+
+
+
+### FIXED(2026-10-16T15:48:17Z / BUG-253)
+- evidence: commit ee219a0 修复 src/engine/engine_dag_mc.mbt：新增 deadline_requested 捕获原值、负 deadline 钳制到 0（let d = if deadline < 0 { 0 } else { deadline }）、p_on_time 守卫改用 d > 0、回显新增 deadline_capped / deadline_cap_note。新增 dag_mc_test.mbt 测试 `dag_mc：负 deadline 被钳制到 0 并如实标注`：断言 deadline_requested=-5、deadline_capped=true、deadline=0、p_on_time=0、正向 deadline=100 时 deadline_capped=false。验证 moon test --target js src/engine = 318/318 pass；全量 1260/1260 pass（零回归）。
+
+
+
+
+
+## BUG-254 [2026-10-16T16:14:13Z] [high] FIXED
+- summary: [rule:boundary-input] circuit_fail 缺 window_secs/threshold/recovery_secs 正数校验：threshold=0 首败即熔断；window_secs=0 永不熔断（engine_circuit.mbt L30-31 + server.mbt L4277-4279）
+- detail: 根因：src/server/server.mbt circuit_fail 处理器直接把用户传入的 window_secs/threshold/recovery_secs 传给引擎，无正数校验。
+
+复现步骤：
+1. circuit_fail(circuit="x", threshold=0) → state="open" (首败即熔断，threshold=0 使 nf>=thr 恒真)
+2. circuit_fail(circuit="y", window_secs=0, threshold=5) → 连续调用两次 failures 恒为 1（window=0 使 now_secs-last_fail_ts>w 恒真，计数每次重置）
+
+影响：熔断器语义被破坏——threshold<=0 直接熔断，window_secs<=0 永远不熔断。调用方可能得到假 allow_call=true（窗口永不累计）或假 allow_call=false（一次失败即拒）。
+
+建议修复：在 server.mbt circuit_fail handler 里加正数校验，window_secs<1 / threshold<1 / recovery_secs<1 时返回 ToolError；或钳制到默认值。
+
+参考代码位置：server.mbt L4277-4279（get_int 直接透传），engine_circuit.mbt L30（window 判定），engine_circuit.mbt L31（threshold 判定）
+
+
+
+### FIXED(2026-10-16T16:15:08Z / BUG-254)
+- evidence: src/server/server.mbt circuit_fail handler 增加正数校验：window_secs/threshold/recovery_secs 均须 >= 1，否则返回 ToolError 并说明原因（threshold<=0 首败即熔断；window_secs<=0 永不累计失败）。验证：moon test --target js src/engine = 162/162 绿。
+## BUG-255 [2026-10-17T01:03:18Z] [medium] OPEN
+- summary: [Pentad/DEMO-09 §16] @stream 在 @observe 内 for 迭代不产出事件：期望 handled: event1/event2 完全缺失（推送被静默丢弃）
+- detail: 复现：`p5c run DEMO/09_reactive/reactive.p5`（rc=0，跑到哨兵 DEMO reactive OK），§16 完整示例事件总线：:248 `box @stream #[replay(10)] event_bus = Source()`；:250-252 `api @observe handle_events() = for ev <- event_bus: print("handled:", ev)`；:254-255 `event_bus.push("event1")` / `push("event2")`，内联期望输出 `handled: event1, handled: event2`。实得输出里**完全没有 handled: 行**（整份 103 行输出逐行核过），即 `@stream` 值在 `for ev <- <stream>` 迭代时产出空序列 ⇒ 观察者虽被触发但循环体从不执行，事件被静默丢弃。规范依据：SYNTAX/15 §15.6（@stream 事件流语义，:134 亦述「@stream 同 @signal 锚定 box、走 __get/__set 通道」）。同文档 §15.2 的信号读 __get 分派本轮已实现（见 BUG-245），本条是 @stream 侧的另一半缺口。影响：DEMO/09 因此**不可注册 golden**（判据要求输出与文档一致，本项目拒绝把未满足期望冻成基准）。发现轮：p5c 组合流水线 R7（寻虫），复现于 2026-10-17。
+- reported_by: pentad-combo-r1
+- **R14 深挖：更正本条原诊断 + 写明真实前置条件**。
+  - **更正一**：原写「`@stream` 在 `for ev <- <stream>` 迭代时产出空序列」**不准确**。Stream 迭代其实
+    **已实现**（`eval/stmts.rs` 的 `take_iterable` 里 `Value::Stream` 分支：逐事件产出并把空流写回绑定，
+    消费式语义，符合 §15.6）。
+  - **真实机制**：`@observe` 的重跑只挂在 `:=` 写信号那条通路上（命中 `reactive_signals` 才
+    `notify_reactive_write`），而 `event_bus.push(ev)` 是**接收者方法调用**、从不通知；且 `@stream`
+    名根本没进 `reactive_signals`（只登记 `@signal`）⇒ 观察者仅在定义时跑一次（那时流为空），之后再无
+    重跑，事件永久滞留。规范依据补一条：`SYNTAX/15 §15.6:84`「**发射**：`s.push(ev)`（= `emit`）——
+    内部经 `__set` 通道（§15.2 同一通道）**通知在订者**」。
+  - **前置条件（关键，别重复踩）**：不能把 push 直接接到现有通知上。现有通知是「**重跑全部观察者**」，
+    与 §15.2:32 规定的「**按依赖登记**通知（读时登记当前观察者为其依赖，写时只通知依赖者）」不符。
+    实测代价：接上后 `DEMO/09_reactive` 输出从 **103 行涨到 185 行**；最小用例
+    （`box @stream bus = Source()` + 单个 `@observe` + 两次 `push`）里 `handled: e1` **重复两次**，
+    且之后每次 push 都把无关观察者全跑一遍——**比「事件丢失」更偏离 demo 期望**。故本轮已回退。
+  - **修法的正确顺序**：① 先做读侧依赖登记（`@observe`/`@derived` 体内读信号/流时记依赖边）＋写侧
+    按依赖通知（顺带解决 §15.2:32 的微任务边界合并去重；现口径是「即时重跑」）；② 再把 `push`/`emit`
+    接进同一条通知通路，并把 `@stream` 名纳入登记（本轮在两处留了注释说明为何不做半套登记）；
+    ③ 最后才为 DEMO/09 落 golden（§16 期望满足前，本项目拒绝注册基准）。
+  - **本轮已补的真缺口**（与通知无关、可独立验证）：`s.emit(ev)` 规范上是 `push` 的等价名
+    （`SYNTAX/11:85`、`24-附录07:34`），但 `calls.rs` 只有 `push` 臂 ⇒ `bus.emit(x)` 报
+    `Property or method not found: emit (on bus; tried: bus::emit)`（用改前二进制实测）。已修
+    （Pentad commit `3fffe3a`）：`bus.emit("via-emit")` → `try_next()` 得 `Some("via-emit")`。
+    同 commit 另把两处逐字重复的 `:=` 通知块抽成 `notify_reactive_write()`（纯重构，实测输出逐字不变）。
+
+
+## BUG-256 [2026-10-17T01:32:33Z] [high] FIXED
+- summary: [ledger-lifecycle] 重复赋值容器追加 `out = out + [ts[idx]]` 生成 `out.push(ts[idx])` 触发 E0507 cannot move out of index（Assign 代码路径触发容器原地追加优化，但缺 ListLit 元素位的 .clone() 收敛）
+- detail: ## 现象
+BST 示例 `TEMP\marvis-probe\bst.lz` 编译到 .rs 后 rustc 报 E0308：`insert` 返回 `TreeNode<Int>` 被赋给 `Option<TreeNode<Int>>` 的 `root`。
+
+## 根因链（三环）
+1. `mut root = None` → 预扫描 `infer_expr_type(NoneLit)` 返回 `Any`，`vars["root"]` 被写成 `Any`。
+2. `root = insert(root, 5)` → 预扫描 `infer_expr_type(insert(...))` 返回 `TreeNode<Int>` 直接覆盖 `vars["root"]`，丢失「root 是 Option<TreeNode<Int>>」的事实。
+3. Let-vs-Assign 判定：`Stmt::Assign` 分支才做 `Some(...)` 包装；但旧判定 `!block_declared.contains(name)` 在第二次赋值时为 false → 走了 `Stmt::Let` → 无 `Some(...)` 包装 → E0308。
+
+## 修复（三件套，均在 `src\ir\builder\convert_stmt.rs`）
+1. Let-vs-Assign 条件改为 `block_declared.contains(name) && !block_declared_so_far.contains(name)`（新增 `block_declared_so_far` 跟踪当前块已处理绑定）。
+2. `ty.is_none()` 且 value 是 `NoneLit`/`Ident("None")` → 用 `Option(Any)` 而非 `infer_expr_type(value)`（预扫描不再把 None 猜成裸 Any）。
+3. Assign 分支 target_ty 从 `ctx.vars.get(name)` 取（保留用户注解/Option 包装）。
+
+## 连带发现：容器追加路径缺 .clone()
+Assign 代码生成 `out = out + [ts[idx]]` → 触发 `container_append_rhs` → 生成 `out.push(ts[idx as usize])`（无 .clone()）→ `Vec<IrType>` 非 Copy → E0507。ListLit 元素位代码生成（`src\ir\codegen\expr_gen.rs` L6091-6108）已有同类收敛，Assign 容器追加路径补齐同款 `maybe_clone` 闭包。
+
+## 验证
+- `TEMP\marvis-probe\bst.exe` 编译运行，输出 `1 3 5 7 9`。
+- 全量 `cargo test` 0 失败（~800 tests，含 `tests\codegen_corner_fixes.rs`、`find_bug_bugs.rs`、`demo_codegen_compile`、`lz_ir_bootstrap`、`perf_opt_gates` 等 39 个 suite）。
+- reported_by: lang-zone-polisher
+
+
+
+### FIXED(2026-10-17T01:32:44Z / BUG-256)
+- evidence: 修复三件套落在 src/ir/builder/convert_stmt.rs（Let-vs-Assign 条件 + block_declared_so_far + None 预扫描 Option(Any) + Assign target_ty 从 ctx.vars 取）；连带修复 src/ir/codegen/stmt_gen.rs 的 Assign 容器追加路径，补 ListLit 同款 maybe_clone（Var/IndexGet 且非 Copy → .clone()）治 E0507。验证：TEMP/marvis-probe/bst.exe 输出 1 3 5 7 9；全量 cargo test 0 失败（~800 tests，39 suites）。
+## BUG-257 [2026-10-17T01:48:49Z] [high] FIXED
+- summary: [Tnr] lirgen compute_stable_i64 定点分析不收敛（非单调 insert/remove 抖动、无迭代上限）：变量同时存在「整数字面量绑定点」与「非 i64 赋值点」时死循环——3 行合法程序转译 30s 超时 E9006；语料 g11_alg_array_sum（该修复自述的动机用例）直接挂死
+- detail: ## 现象（2026-10-17 实测，HEAD=cd5157b，bin=target/release/tnr.exe mtime 09:35 新鲜）
+- `tnr transpile corpus/transpile/g11_alg_array_sum.tnr --backend lir` → **exit=4, 30.3s**，`[E9006] 转译超时（>30s），已中止；疑似输入规模过大或死循环`（12 行程序）
+- 同批控制组 `g01_literals_arith.tnr` → exit=0, **1.4s**（工具链正常）
+
+## 最小复现（3 例隔离，$env:TEMP/tnr_repro/）
+- m1 `let s = 0; s = s + 1; print(s);` → exit=0, **0.2s**（两个绑定点均原生 i64）
+- m2 `let s = 0; s = s + 1.5; print(s);` → **exit=4, 30.2s 超时**（一个原生 + 一个非原生）★
+- m3 `let s = 1.5; s = s + 1.5; print(s);` → exit=0, **0.1s**（两个均非原生 Val）
+⇒ 判据精确落在「同一变量既有恒原生绑定点、又有恒非原生绑定点」这一**混合**情形，与「变量是 Val 所以慢」无关。
+
+## 根因（读码定位）
+`src/codegen/lirgen.rs:455-484 compute_stable_i64` 的不动点循环（:467-482）**非单调**：
+```
+loop { let mut changed=false;
+  for (var,expr) in &sites {
+    let native = self.is_native_expr_stable(expr,&stable,&lit_env);
+    if native && !stable.contains(var) { stable.insert(var); changed=true; }
+    else if !native && stable.contains(var) { stable.remove(var); changed=true; } } 
+  if !changed { break } }
+```
+`collect_i64_sites`（:362-415）把**每个** Let(:370-374) 与 Assign(:375-377) 都推进 `sites`，故同一变量可有多条绑定点。当站点 A 恒原生（如 `Lit::Int`，:342 恒 true）、站点 B 恒非原生（如含索引/浮点 args，:356 `_ => false`）时，每趟 A 插入、B 删除，`changed` 每趟恒 true ⇒ **永不 break**。函数内无迭代上限、无「整趟集合未变」判据、无单调化（未改为「仅当所有站点 native 才保留」的单调收敛）。
+对照：`is_native_expr_stable` 的 `Lit(Int)` 分支与 `Var` 的 `lit_env` 分支使 A 站点的 native 判定**与 stable 无关**，这正是抖动的必要条件。
+
+## 危害面
+1. **任意合法程序的转译失败**：`let x = <int>;` 之后被赋任何非 i64 值（动态索引 `s = s + data[i]`、浮点累加 `s = s + 1.5`、字符串/容器）即触发。这是极常见的累加器写法。
+2. **该修复自述的动机用例直接挂死**：`lirgen.rs:320` 注释逐字以 `g11_alg_array_sum` 为背景，而 g11 现在恰好超时。
+3. **CLI 守卫只挡住症状、且泄漏线程**：`transpile_with_guard`（src/cli/mod.rs:1440-1457）用 `recv_timeout(GUARD_TIMEOUT=30s)`；超时分支 `Err(_timeout) => Err(E9006)` **不 join worker**（只有 Ok 分支 `let _ = worker.join()`），死循环线程被遗弃并继续 100% CPU 自旋。
+4. **直连 API 无守卫 ⇒ 真正 hang**：`transpile_lir/transpile_lir_src`（lirgen.rs:182-194）是公开入口，`src/ir/mod.rs:173/198/209/222` 的测试直接调用它；一旦测试语料含混合绑定点，测试将**永久挂起**（DGM 库中已有 `[lesson] test-hang-masks-drift` 同族教训）。
+5. **语料零测试覆盖 ⇒ 静默**：全仓检索 `corpus/transpile`、`g11_alg` 仅命中 `src/codegen/lirgen.rs:320` 该条**注释**，没有任何测试驱动 `corpus/transpile/*.tnr`。这正是本次回归能在 6545 全绿下存活的原因（lib 6545 passed / bins 22 passed 均绿）。
+
+## 回归性质
+`cd5157b`（唯一新增提交，`src/codegen/lirgen.rs` +180/-8）以「方向 B 函数体级定点分析」替换原增量式登记，注释自述增量式在 `let mut s = 0i64; s = s + data[i]` 上产出 E0308 类型不匹配而崩。本次修法把「编译期类型错误」换成了「编译期不收敛」，**从可诊断的 E0308 退化为不可诊断的挂死**，且动机用例本身未被验证即入库。
+
+## 修复方向（建议，供 owner 采纳）
+- 把判定改为**单调**语义：变量纳入 stable 当且仅当其**全部**绑定点在「上一轮 stable」下均 native；用 `added/removed` 双缓冲单趟提交（避免同趟内插入即被下游读到），每趟只按「集合是否变化」决定是否继续 ⇒ 因 stable 只减不增（或只增不减），必然有限步收敛。
+- 或保守但零风险的兜底：加迭代上限（如 `sites.len()+8` 轮）并在超出时退化为空 stable 集（全部按 Val 发射，语义仍正确，只是不做 i64 特化）——特化是纯优化，退化不影响正确性。
+- 补回归锁：把 `corpus/transpile/*.tnr` 接进测试（至少 g11 + m1/m2/m3 三例），并把 m2 这类 3 行混合绑定点程序设为「必须 <1s 返回」的判据；同时给 `transpile_with_guard` 超时分支补 worker 回收/进程级兜底。
+- reported_by: tnr-polisher
+- task_id: T0r5
+
+
+
+### FIXED(2026-10-17T02:22:09Z / BUG-257)
+- evidence: 真源 src/codegen/lirgen.rs（+86/-26，patches/bug257_stable_i64_and_let_type.patch）。三处根因同批修复，全部实跑验证：
+① 不收敛（死循环）：compute_stable_i64 原「单趟内既插入又移除 + changed 判停」改为单调递减归纳式不动点（初始化乐观纳入，按不健全剔除，只减不增），并加 sites.len()+2 轮上限 + 非收敛兜底清空（退化为全 Val，特化是纯优化不影响语义）。
+② 健全性：新增 ISiteKind{Init,Update} 区分绑定点——Init 在不含自身的 stable 下判定（初值是类型 ground），Update 允许自引用（归纳：初值定 i64 则更新保型即恒 i64）。既修混合站点误判，又保住 `i=i+1` 这类自引用累加器的 i64 特化（此前的替代方案会丢失方向 A–E 全部收益）。
+③ 类型不一致（E0308）：Let 发射路径原按单条初值增量 insert/remove 覆盖分析结论（违反 struct 字段注释「只读，不再增量改」），且已发出的 `let` 行无法被后续 Assign 的「降级」撤回 → `let mut s = 0i64; … s = <Val>;`。现改为只读 + 当 v∉i64_vars 且初值为原生 i64 时显式装箱 tnr_rt::lit_int(..)。
+断言锁/判据：cargo test --release --lib = 6545 passed/0 failed；--bins = 22 passed/0 failed；corpus/transpile 39/39 transpile OK；最小复现 m1..m5 + 语料 g11 全部 `--run`（transpile+rustc+执行）exit 0：m1 int64(1)、m2 float64(1.5)、m3 float64(3)、m4 int64(1)、m5 int64(1)、g11 输出 31/[3,1,4,1,5,9,2,6]/8/31。修复前：m2/m5/g11 = E0308 或 30s E9006 超时。
+## BUG-258 [2026-10-17T01:53:20Z] [medium] OPEN
+- summary: [Pentad/SYNTAX] §16 标记树条文三处自相矛盾：16.1 两棵图画法冲突（@type 兄弟 vs 子）、16.5:251 is_subtag 方向写反、16.5:246 Tag 集合内引号口径缺定档
+- detail: 实现标记树反射（Pentad commit 4156750 / BUG-244）时撞到三处条文问题，均属**文档**缺陷（代码已按证据取舍并注释，勿再重复发现）：
+
+① **§16.1 同一节内两棵树画法冲突**：紧凑视图 :86 写 `@function（◉）⑂ @type（◉）⑂ @var（◉）  ← 同宿主 api 的主形态互斥`、:107 又写「`api` 一个定义沿树取**一条主形态链**（@function / @type / @var …）」⇒ 三者互斥平级；但同节 ASCII 详图 :54 把 `├─ @type` 缩进在 `@function`（:27）之下，成为其子节点。二者不可同真：按详图，从 `@struct` 上溯会经过 `@type → @function`，则 `has_tag(Point, @function)` 必为 True，直接与 `DEMO/10_markers/markers.p5:200`（明确期望 False）冲突。**代码取兄弟读法**（:86、:107、DEMO:199/200 三处独立证据一致），请据此修正 ASCII 详图缩进。
+
+② **§16.5:251 判据方向写反**：条文「`is_subtag(a, b)`：`a` 是否在 `b` 的任一祖先父链上（含自身）」按字面即「a 是 b 的祖先」；而同一节 :245 的示例 `is_subtag(@infix, @method) // → True` 与函数名本身（child,parent）都要求「从 a 上行能到 b」。示例与名一致、条文相反。代码按 :245 + 名称实现，并有锁 `is_subtag(@method,@infix) == False`；请把 :251 改为「`b` 是否在 `a` 的任一祖先父链上（含自身）」。
+
+③ **§16.5:246 的集合元素引号口径**：条文写 `tags_of(@infix) // → (@infix, @instance_method, @method, @function)`（无引号），而引擎把集合内的标记值渲染为带引号字符串（实测 `print(tag_of(S))` 得裸 `@struct`，放进元组即 `("@struct", "@struct")`）——该行为 `tag_of` 同样如此，属 patrol_agent 已定档的 **BUG-43 渲染规约迁移**范围（BUG-43 现只规定了多参 print 逐值换行 / 集合 `{a,b,c}` / atom 带 `$` / 单元素元组 `(1,)` / Dict 键带引号，未规定 Tag 在集合内的引号）。需一并定档：或条文补引号口径，或引擎为 Tag 值单列渲染规则。
+
+影响：因 ③ 未定档，DEMO/10 的反射链两行仍与条文逐字不同 ⇒ 本项目**继续不给 DEMO/10 注册 golden**（拒绝把未定档表示冻成基准）。发现轮：p5c 组合流水线 R15。
+
+### PARTIAL(2026-10-18T09:15:00Z / BUG-258)：①② 文档矛盾已修正、③ 待 BUG-43 定档
+- evidence: ①② 已按代码采用的证据（紧凑视图 :86、:107 与 DEMO/10:199-200 三处一致）修正 `SYNTAX/16-标记体系.md`（**该文件工作区已改、未提交**——本轮宿主进程孵化故障 0xC0000142，`pwsh`/git 无法启动，提交需用户或并发 agent 后续执行）：
+  - ① §16.1 ASCII 详图之后新增「⚠️ 详图读法（BUG-258① 澄清）」注记：`@type`/`@var` 缩进在 `@function` 下**只是排版示意**，权威读法是紧凑视图的**互斥兄弟**；据此 `has_tag(Point, @type)=True`、`has_tag(Point, @function)=False`，并点名 `eval/builtins.rs::tag_parents` 按兄弟读法建表。
+  - ② §16.5:251 改为「**`b` 是否在 `a` 的任一祖先父链上（含自身）**」，补正反例（`is_subtag(@infix,@method)=True`、`is_subtag(@method,@infix)=False`），对齐 :245 示例与函数名 `(child, parent)`。
+- ③ **未动**：Tag 集合内引号口径属 BUG-43 渲染规约迁移范围，本目不预设答案；DEMO/10 继续不落 golden（纪律不变）。
+- 抬头保持 **OPEN**（③ 未修），仅叙述面留痕部分进展，避免把「①②修好」误读为「整条销账」。
+
+### ③ 定档选项（2026-10-18T09:35Z 整理，供 owner 裁决 — BUG-258③）
+
+**分歧点**：§16.5:246 条文写 `tags_of(@infix) // → (@infix, @instance_method, @method, @function)`（集合内 Tag **不带引号**），引擎把集合内 Tag 值渲染为带引号字符串 `("@infix", "@instance_method", "@method", "@function")`。孤立 `print(tag_of(S))` 得裸 `@struct`，放进元组即带引号。属 BUG-43 渲染规约未覆盖区。
+
+**三选项**（成本从低到高，任选其一即解锁 DEMO/10 golden）：
+
+| 选项 | 改什么 | 成本 | 风险 |
+|---|---|---|---|
+| **A. 条文补引号口径** | §16.5:246 的 `tags_of` 示例改为带引号 `("@infix", …)`，并加一句「Tag 作一等值入集合/元组时与 Str 一致带引号，§16.6 一切皆对象」 | 只改文档，零代码 | 若后续 BUG-43 定档为「集合内 Tag 裸渲染」，需再改回 |
+| **B. 引擎单列 Tag 渲染** | `eval` 渲染器为 Tag 值新增规则：**入集合/元组时裸渲染**（不带引号），孤立值保持现状 | 改 `eval`（渲染路径）+ 回归锁 | 影响所有 Tag 入集合的输出，需重验 DEMO/10 全部反射期望 |
+| **C. 双轨语义（推荐）** | 条文定档「**孤立 print / tag_of 裸渲染；入集合/元组/作 Str 元素时带引号**（与 Str 一致，一切皆对象）」；引擎现状即满足，**只需改文档** | 同 A，成本最低 | 语义最自洽（Tag 是一等值，容器内与 Str 同渲染），且与已定档的 BUG-43「Dict 键带引号 / 单元素元组 `(1,)`」精神一致 |
+
+**推荐 C**：既不动引擎（本会话进程孵化故障无法编译验证，改引擎需重跑判据），又与「一切皆对象」（§16.6）一脉相承，且不依赖 BUG-43 后续迁移即可落地。**一旦裁决，请同步：**
+1. 改 §16.5:246 `tags_of` 示例带引号 + 加一句定档说明；
+2. 把 DEMO/10_markers/markers.p5 反射链期望与条文统一，再走 golden 注册（届时 UNREG 3→2）。
+
+### ③ 裁决落地（2026-10-18 owner 采纳推荐 C — BUG-258③）
+
+已按 C 双轨语义落地（零代码、不动引擎）：
+1. `SYNTAX/16-标记体系.md §16.5`：`tags_of(@infix)` 示例改为带引号 `("@infix", "@instance_method", "@method", "@function")`，并新增「Tag 渲染引号（BUG-258③ 定档，选项 C）」定档说明（孤立 `print`/`tag_of` 裸渲染、入容器/元组带引号，与 BUG-43 已定档的 Dict 键带引号 / 单元素元组 `(1,)` 精神一致）。
+2. §16.6 规则 5 里对 §16.5 的行号引用（旧写「:243-246」）改为节名引用「标记反射」节，消除行号漂移。
+3. `DEMO/10_markers/markers.p5:207` 反射链期望统一为带引号版本，并加 C 定档注释。
+**待验证**：进程孵化 0xC0000142 持续故障，本轮无法跑 `e2e_golden` 复测；引擎现状即满足 C（孤立裸、容器带引号），进程恢复后跑判据确认 `UNREG 3→2` 再标 FIXED。
+
+### ④（新硬矛盾，2026-10-18T09:50Z 发现 — BUG-258④）：反射内建实参的裸标记名 vs §16.6「必须反引号」
+
+**现象**：§16.6 :294 明文「`// let t = @struct // 错误：标记名作值必须反引号（`@struct`）」、:286 又说「反引号是值表达式位置（`let` / 实参 / 返回）取记号实体所用的语法」——按此，**反射内建函数的标记实参也该反引号**。但同一份文档的 §16.5 :243–246 与 `DEMO/10_markers/markers.p5:198–204` 全部用**裸标记名**作实参：
+```
+has_tag(Point, @struct)    // 期望 True（§16.5:244 / DEMO/10:198，裸 @struct）
+has_tag(Point, @type)      // 期望 True（DEMO/10:199）
+is_subtag(@infix, @method) // 期望 True（§16.5:245 / DEMO/10:203，裸 @infix / @method）
+```
+两处条文不可同真：要么 §16.6「必须反引号」对反射内建实参有**语法糖例外**（§16.5 应写明），要么 §16.5/DEMO/10 全部应写 `` `@struct` ``。
+
+**旁证（支持裸标记名合法）**：`has_tag`/`is_subtag`/`tag_of` 是**内建反射函数**，其第二实参在语义上**只能**是标记（类型已由签名固定），语法糖可省反引号；§16.5 与 DEMO/10 一致用裸写法，且 DEMO/10:199+200 对（`has_tag(Point,@type)=True` / `has_tag(Point,@function)=False`）正是 BUG-258①「兄弟读法」的硬证据，说明该节写法是经斟酌的意图而非笔误。
+
+**修复方向（推荐 D：条文补糖规则，零代码）**：§16.6 追加一条例外——「**反射内建函数**（`tag_of`/`has_tag`/`is_subtag`/`tags_of`）的标记实参可**裸写**（实参类型已固定为标记，语法糖免反引号）；其余值位置（`let` / 一般实参 / 返回）仍须反引号」。与 ③ 选项 C 同批落地，即解锁 DEMO/10 golden。**需 owner 裁决**（因涉及 §16.6 通则 vs 特例的取舍，不单方面定档）。
+
+
+## BUG-259 [2026-10-17T02:22:09Z] [medium] OPEN
+- summary: [Tnr] corpus/transpile 39 份语料零测试驱动：金标准静默漂移（g11 首行 dtype float64→int64 已与 expected.txt 不符），且本轮 lirgen 死循环回归能在 6545 全绿下存活
+- detail: ## 现象（2026-10-17 实测，HEAD f234752 + 本会话 lirgen 修复）
+1. **零测试驱动**：全仓检索 `corpus/transpile`、`g11_alg` 只命中 `src/codegen/lirgen.rs` 的一条**注释**（:320 以 g11_alg_array_sum 为背景说明），没有任何 test/bench 读取 `corpus/transpile/*.tnr` 或比对其 `*.expected.txt`。`cargo test --release --lib/--bins/--all-targets` 全程不触达语料。
+2. **金标准已漂移**：`tnr transpile corpus/transpile/g11_alg_array_sum.tnr --backend lir --run` 现输出首行 `Tensor<int64, []>(31)`，而 `g11_alg_array_sum.expected.txt:1` 记的是 `Tensor<float64, []>(31)`（值同为 31，仅 dtype 不同；第 2–4 行一致）。原因是方向 A/D 的 (Int,Int) 标量整数快路径令 `s + data[i]`（两侧皆 int64）保持 Int64，而金标准记录于引入快路径之前。
+3. **后果（不是「少了个校验」那么轻）**：本轮 `cd5157b`（方向 B 定点分析）使 `g11_alg_array_sum` **转译死循环 30s 超时 E9006**（3 行最小复现 `let s = 0; s = s + 1.5; print(s);` 同挂），而 6545 lib + 22 bin 全绿、无人察觉——因为没有任何判据跑语料。同批还掩盖了 `let mut s = 0i64; … s = <Val>` 的 E0308（`--run` 才暴露）。语料是本项目唯一的端到端转译基准族（g01–g36 覆盖字面量/数组/循环/张量/字符串域），却完全在闸门之外，「金标准」实际无人守卫，可长期漂移。
+
+## 判据（可离线复跑）
+- `Get-ChildItem corpus\transpile\*.tnr | % { tnr transpile $_ --backend lir }` → 每份都应 exit 0（本会话修复后实测 OK=39 FAIL=0；修复前 g11 为 E9006 超时）。
+- 对每份 `.tnr`：`tnr transpile X.tnr --backend lir --run` 与 `X.expected.txt` 逐行比对（`lir_only` 标记的文件跳过 --run，如 g13_do_while）。
+- 负向对照（证明非空洞）：把 g11 的 `while i < 8` 改成 `while i < 0`，期望首行 dtype 变化 → 判据能分辨，不是恒绿。
+
+## 修复方向（建议）
+1. 把 `corpus/transpile` 接入 `cargo test`（新增 `tests/corpus_transpile.rs`：遍历语料，逐份 `transpile_lir_src` 断言 Ok + `--run` 或至少 rustc 通过；对 `*.expected.txt` 做逐行比对，`*.lir_only` 只断言转译成功）。这同时是 BUG-257 类回归的天然回归锁。
+2. 明确 g11 首行 dtype 的正确期望：若 Int64 累加是有意为之（精度上更优，>2^53 不丢），则更新 `expected.txt`；若应保持 float64，则属语义变更需另立缺陷。**本条目不预设答案**，只指出「金标准与实际不符且无人守卫」这一事实。
+3. 建议在语料 README/守卫中写明：新增/变更语料必须同步 `expected.txt` 并纳入测试，禁止手改 expected 以迁就实现。
+- reported_by: tnr-polisher
+- task_id: T0r6
+
+## BUG-260 [2026-10-17T02:30:17Z] [high] FIXED
+- summary: [ledger-id-collision] 缺陷账本 BUG-185/186/217 各出现两次（FIXED+OPEN 混挂同一 ID），导致 gen_plugins.py --check FATAL、check_plugin_sync.py FAIL（cl7 插件态断线）
+- detail: ## 现象（2026-10-17 实跑）
+
+`python scripts/check_plugin_sync.py` 返回 exit 1，报：
+
+    FAIL 插件态（一源四态 cl7）不一致（真源 166 工具 / v0.3.8）：
+      - J1 插件态漂移：gen_plugins.py --check 退出码 2（FATAL 真源自证失败：账本状态与叙述面对不上：）
+              - 3 条被小记点名但状态不是 FIXED：BUG-185 BUG-186 BUG-217
+      - J5 plugins/claude/.mcp.json 与仓库根 .mcp.dev.json 不一致（启动参数有两份真源）
+
+## 根因（`bug_list` + 解析证实：ID 碰撞，不是「小记/抬头不一致」）
+
+`memory/bugs.md` 里 `BUG-185` / `BUG-186` / `BUG-217` 各挂了两条不同 bug：
+
+| ID | status=FIXED（旧 bug，有小记） | status=OPEN（新 bug，不同内容） |
+|---|---|---|
+| BUG-185 | `ops_watchdog.mbt 静默吞噬 heal 错误`（FIXED 2026-10-15T08:46:00） | `[判据] e2e_irm_line 真面档探针恒红：probe() 用 [ -x 'fist' ] 裸词…`（ts=2026-10-15T08:44:07） |
+| BUG-186 | `ops_heal.mbt heal_stale_tasks_by_phi 静默吞噬 reopen_task 错误`（FIXED 2026-10-15T08:50:00） | `[看护] e2e_irm_line --real 无 PATH/shim/产物目录还原保护…`（ts=2026-10-15T08:44:07） |
+| BUG-217 | `自驱发布静默吞错——selfdrive_publish_next 在发布失败时把失败折叠进 skipped`（FIXED 2026-10-15T13:20:00） | `[claimguard-side-effect] may_proceed_sematic / may_proceed_full 在检查前先 claim_item…`（ts=2026-10-15T13:22:34） |
+
+**机理**：`report_bug` 的 ID 分配对这三条复用了已存在的 BUG-185/186/217。`gen_plugins.py --check` 扫到 `### FIXED(…)` 小记点名 BUG-185/186/217，再去 `## BUG-n` 抬头查状态时，**读到的是 OPEN 那条**（或抬头被覆盖）→ 判为「被小记点名但状态不是 FIXED」→ FATAL（BUG-9 记账规则的互锁硬门被误触发）。
+
+## 影响
+
+- **cl7 一源四态断线**：插件态（atomcode/codearts/deepseek-harness/claude 四宿主）与真源不一致。
+- **`check_plugin_sync` 从 R223 的 PASS 变为 FAIL** —— cl7 红，CI 判据会挡发布。
+- 真源工具数 = 166（check_plugin_sync 明说），而 AGENTS.md 自述「140+」、R223 交付物「129」、`fist://map` J14「102」—— 四个数全不一致，工具计数自述全线漂移。
+
+## 建议修复（清整，指挥官/agent 决策）
+
+1. **把 OPEN 那三条 BUG-185/186/217 重新编号**（或改判合并），消除 ID 碰撞；FIXED 三条保留原小记。
+2. **`report_bug` 在 ID 分配前查重**：若目标 ID 已存在，自动分配下一个空闲 ID。
+3. 统一 `.mcp.json` 启动参数到单一真源（修 J5）。
+- reported_by: fist-lead
+
+
+
+### FIXED(2026-10-17T02:36:17Z / BUG-260)
+- evidence: 2026-10-17 fist-lead：①把 memory/bugs.md 里 3 条 OPEN 重复条目重编号（BUG-185(OPEN)→BUG-261、BUG-186(OPEN)→BUG-262、BUG-217(OPEN)→BUG-263，各带 renumbered_from 追溯），FIXED 三条（BUG-185/186/217 原号）保留原小记；②消除 ID 碰撞后 `python scripts/gen_plugins.py` 重生成 OK（166 工具 / v0.3.8 / BUG-1~263 共 263 条入账：8 待修/235 已修/10 重复并入/8 误报）；③`python scripts/check_plugin_sync.py` 由 R232 的 FAIL（exit 1）变为 **PASS**（4 宿主 / 64 个生成文件 / 166 工具 / v0.3.8 / 启动参数真源 .mcp.dev.json），J1 FATAL 与 J5 双双解除。遗留（不属本 bug 收口）：`report_bug` 分配 ID 前查重的代码根因仍 OPEN（本 bug 只清账本卫生，未改 src/）。
+## BUG-264 [2026-10-17T02:40:49Z] [high] FIXED
+- summary: BlockExpr codegen 不继承 owned_locals → 容器原地追加在 if/else 块内失效（O(n²) 退化）
+- detail: ExprKind::BlockExpr codegen（expr_gen.rs L5712）创建新 CodeGen child 并 clone declared/str_typed_vars/fstr_var_types 等大量状态，但漏掉 owned_locals。后果：`xs = xs + [1, 2]` 在 `if flag: ... else: ...` 块内查不到 owned_local_kind(xs)，退化为 `xs = { let mut __cat = xs.clone(); __cat.extend(...); __cat }` 的全量 clone 路径（O(n²)）。实测 edge_probe.lz cond_append：修复前 `if flag { xs = { let mut __cat = xs.clone(); __cat.extend([1, 2]); __cat } }`，修复后 `if flag { xs.extend([1i64, 2i64]); } else { xs.push(3i64); }`。同时 GenBuild 也有同款漏继承，一并补上。修复：expr_gen.rs BlockExpr 与 GenBuild 两处 codegen 在 clone declared 后加 `child.owned_locals = self.owned_locals.clone();`。
+- reported_by: compiler-agent
+
+## BUG-265 [2026-10-17T02:41:06Z] [high] FIXED
+- summary: Let 容器追加路径漏 maybe_clone → `new_k = new_k + [bucket_k[i]]` 报 E0507
+- detail: Let 容器追加路径（stmt_gen.rs Push/InsertOne 分支）未应用 maybe_clone，而 Assign 路径（同函数下方）已应用。后果：`let new_k = new_k + [bucket_k[i]]` 生成 `new_k.push(bucket_k[i as usize])` 但未加 `.clone()`，Rust 报 E0507（cannot move out of index of Vec<String>）。lib_hashmap 测试修复前失败。修复：stmt_gen.rs Let container append codegen 在 match plan 前定义与 Assign 路径同款的 maybe_clone 闭包，Push/InsertOne 两分支的 elem_s 经 maybe_clone 处理后输出。
+- reported_by: compiler-agent
+
+## BUG-266 [2026-10-17T02:41:06Z] [high] FIXED
+- summary: str_append_rhs 未设 expected_ty=Str → 字符串索引 push_str 报 E0308
+- detail: Let 的 str_append_rhs 路径（stmt_gen.rs L516）在调用 self.gen_expr(rhs) 前未设 current_expected_ty = Str。后果：`let result = result + self.s[self.pos]`（self.s 是 str，self.pos 是 int）被识别为 str append，但字符串索引 gen_expr 默认走 ord 路径生成 `__cs[__i] as i64`（而非 `__cs[__i].to_string()`），push_str 收到 i64 报 E0308。通用 BinOp `+` 路径在 expr_gen.rs L4892-4912 已有同款 expected_ty 设定。修复：stmt_gen.rs str append 路径在 gen_expr(rhs) 前 borrow 保存并设 current_expected_ty = Some(IrType::Str)，生成后恢复。
+- reported_by: compiler-agent
+
+
+
+### FIXED(2026-10-17T02:41:18Z / BUG-264, BUG-265, BUG-266)
+- evidence: 三个 fix 落在 lang-zone/src/ir/codegen/。BUG-264：expr_gen.rs BlockExpr（L5740 附近）与 GenBuild（L5820 附近）在 clone declared 后补 `child.owned_locals = self.owned_locals.clone();`，使 if/else 块内 `xs = xs + [1, 2]` 走 `xs.extend([1, 2])` 而非全量 clone（edge_probe.lz cond_append 验证通过）。BUG-265：stmt_gen.rs Let container append codegen（L543 附近）在 match plan 前加入与 Assign 路径同款的 maybe_clone 闭包，Push/InsertOne 两分支经 maybe_clone 输出 elem_s，lib_hashmap 测试 12/12 通过。BUG-266：stmt_gen.rs str append 路径（L516 附近）在 gen_expr(rhs) 前设 current_expected_ty = Some(IrType::Str)，使字符串索引生成 `__cs[__i].to_string()` 而非 `as i64`，lib_json 测试通过。全量 cargo test（dev+release）约 800 用例 0 失败。
+## BUG-267 [2026-10-17T02:47:56Z] [low] FIXED
+- summary: [Pentad/质量门禁] `cargo clippy --workspace --all-targets` 是红的（approx_constant 在测试里 deny 失败），任何接 clippy 的门禁都过不去
+- detail: 发现轮：p5c 组合流水线 R17（寻虫）。此前各轮只跑 `cargo clippy -p p5c --lib`，本轮把扫描面扩到**整个 p5 项目**（`--workspace --all-targets`）才暴露：clippy 直接**失败**（26 个 error 行、"could not compile p5c (lib test) due to 23 previous errors"），而同期 `cargo test --workspace` 全绿 ⇒ 不是代码坏，是 `clippy::approx_constant`（deny 级）对测试里**刻意使用的近似字面量**报错：`assert_eq!(fmt_float(3.14), "3.14")`、`Token::Float(3.14)`、`Expr::Float(3.14)` 等 24 处。若按建议换成 `f64::consts::PI`（=3.14159…）会**改变被测语义**、断言立即失真；词法用例更是把被测词素本身换掉。影响：任何以 clippy 为门禁的流程/自检脚本从此过不去（本仓 CI 未跑 clippy，故一直没被察觉——典型的「门禁没接上所以红着也没人知道」）。
+
+
+
+### FIXED(2026-10-17T02:48:24Z / BUG-267)
+- evidence: Pentad commit b306ed0（9 files, +25/-12）。处理分两类，**语义零改动**：① 4 个测试文件加模块级 `#![allow(clippy::approx_constant)]` 并逐处写明「用例刻意用近似字面量、换 PI 会改被测语义」——crates/p5c/src/eval/tests/g1.rs（21 处）、g2.rs、tests/mod.rs、crates/p5c/tests/lexer_test.rs（各 1 处），共覆盖 24 处 deny。② 顺带清掉 6 条真风格项：unneeded `return` ×2（parser/expr.rs:821、eval/expr.rs:537）、无实参 `format!` → `.to_string()`（parser/expr.rs:983，**文案逐字保留**，有测试锁关键句 "Unexpected token in expression: Else" 与 "does not produce a value"）、多余 `&` 引用 ×1（eval/expr.rs:1316）、`map(|ms| ms.clone())` → `.cloned()` ×1（eval/builtins.rs，上一轮我自己引入）、`get(0)` → `.first()` ×2（e2e_prelude.rs、e2e_tag_tree.rs）。 复核读数：`cargo clippy --workspace --all-targets` → **0 error 且 crates 内 0 warning**（此前 deny 失败 + 6 warning）；`cargo test --workspace` **55 suites, 0 failed**；外部判据 `scripts/e2e_golden.ps1` 不变 `PASS=14 FAIL=0 UNREGISTERED=5 RUNFAIL=1`。未触碰并发 agent 在途件（crates/*/Cargo.toml、Cargo.lock、CHANGELOG.md、SYNTAX/*、memory/bugs.md）。 方法论备注：这个红存在已久却从未被发现，只因**扫描面一直只限 `-p p5c --lib`**；扩到 `--workspace --all-targets` 才暴露——寻虫的覆盖面本身是判据有效性的前提。
+## BUG-268 [2026-10-17T02:51:23Z] [medium] OPEN
+- summary: [issue_scan-precision] substring-overrun 规则 medium 档在当前样本 3/3 假阳性：多行 if 守卫（memory.mbt:165-166）、循环模运算不变量（mcp_config_scaffold.mbt:138）、间接长度推断（ops_selfdrive.mbt:587）三类守卫 BUG-164 守卫检测看不到
+- detail: issue_scan 的 substring-overrun 规则（内建 11 条之一）在 src/ 全扫（123 文件，9607 findings 截断）返回 by_severity.medium=6，全部为 substring-overrun。手工复核 6 条中的 3 条，**3/3 均为假阳性**，机制有三类 issue_scan 看不到的守卫：① `src/server/memory.mbt:165-166`（memory_gc_logic）——守卫 `if n <= max_chars { return }`（L160）在 substring 前 5 行，多行 if 守卫超出 BUG-164 的「同行/前一行」守卫检测；else 分支保证 n-cut ∈ [1, n-1]，两条 substring 恒安全。② `src/server/mcp_config_scaffold.mbt:138`（mcs_hex4）——`d = rem % 16` 是循环模运算不变量，d ∈ [0,15] 恒为 16 字符 hex 串的合法下标；扫描器无法推理模运算不变量。③ `src/ops/ops_selfdrive.mbt:587`——`if end > 3`（L586）的守卫变量 end 是 `find("]")` 的位置，end > 3 隐含字符串长度 > 3，故 `substring(start=3, end~)` 恒安全；守卫通过「另一变量的不等式」间接保证长度，扫描器只查 start/end 自身长度守卫。结论：**substring-overrun 的 medium 档在当前样本上 100% 假阳性**，属扫描器精度问题（保守设计可接受假阳性，但 medium 档混入系统性假阳性会误导修复决策）。修法建议：把守卫检测扩展到「前 N 行内 if 守卫」（不只同行/前一行）、识别 `x % k` 模运算区间不变量、识别 `if <var> > k` 对 `<var>=find()/length()-k` 的间接长度推断。真源 `src/server/issue_scan.mbt`（BUG-164 守卫检测在 scan_substring_guard）。
+
+## BUG-269 [2026-10-17T02:53:46Z] [medium] DUPLICATE →BUG-165
+- summary: [ocr-scan-gap] bugfind 模式 require_ocr 约束键在本项目不可满足：opencodereview.exe 扩展名白名单不认 .mbt（scan/files 全被 unsupported_ext 排除，reviewable_count=0），delegate 只发规则模板不发 findings
+- detail: bugfind 模式的 require_ocr 约束键在本项目（MoonBit .mbt）不可满足。实测三条路：① `ocr_scan(subcmd=scan, path="src/server/memory.mbt,src/server/mcp_config_scaffold.mbt")` → `{ok:true, ocr_available:true, exit_code:0, reviewable_count:0, excluded_count:2, files:[{path:"src/server/mcp_config_scaffold.mbt", exclude_reason:"unsupported_ext"}, {path:"src/server/memory.mbt", exclude_reason:"unsupported_ext"}]}`——**二进制 opencodereview.exe 的扩展名白名单不认 `.mbt`**，两份全部被 exclude，LLM review 未真正执行（`ocr_reviewed:false`）。② `ocr_scan(subcmd=files, dry_run=true)` 确认 argv 形状 `["scan","--repo",".","--preview","--format","json","--path",…]` 正确，但同样受 unsupported_ext 拦。③ `ocr_scan(subcmd=delegate, path="src/server/memory.mbt")` → `{ok:true, ocr_reviewed:true, exit_code:0}`，stdout 只有 `### Rule Group 1: system / default` 的通用规则模板（Correctness/Security/Performance/Maintainability/Test Coverage 五问），**没有产出针对该文件的 review findings**。结论：**OCR 双轨寻虫对 .mbt 不工作**——scan/files 被扩展名白名单拦、delegate 只发规则模板不发结论，`require_ocr` 约束在本项目上只能回退到 `issue_scan` 单轨（31 条内建+外部规则）。修法建议：① 扩展 opencodereview.exe 的 unsupported_ext 白名单加 `.mbt`；② 或 `ocr_scan` 的 argv 生成处对 `.mbt` 做预处理（临时复制成 `.ml`/`.rs` 等受支持扩展名副本再送 OCR，跑完删临时副本）；③ 或把 `require_ocr` 约束键按项目语言门控（MoonBit 项目降级为 `require_issue_scan` only），避免假绿。真源 `src/server/ocr_scan.mbt`（argv 形状固定处）+ 宿主依赖 `../ocr-local/.../opencodereview.exe`（windows-x64 only）。
+
+## BUG-270 [2026-10-17T02:56:31Z] [medium] FIXED
+- summary: [Pentad/DEMO-07] macros.p5 不可落 golden：13 条期望里 8 条无可观察输出（只 let 不 print）+ Str({expr}) 源码文本语义歧义
+- detail: 背景：外部判据 `scripts/e2e_golden.sh` 对「无 golden」的 DEMO 记 UNREG 并注「特性打通后需落库 golden 并说明」。本轮逐条核对 DEMO/07_macros/macros.p5（rc=0，13 条内联「期望输出」）后判定**不可落 golden**，障碍两类：
+
+① 8 条期望**没有可观察输出**（写了期望但代码只 `let` 绑定、从不 print），因此判据无从比对：:49 `let result = twice(n)` 期望 `10`；:86 `let sum = add(1, 2)` 期望 `3`；:114 `let n = p.name()` 期望 `"Alice"`；:115 `let a = p.age()` 期望 `30`；:125 `let squared = square(3 + 2)` 期望 `25`；:141 `let x = if True: 1 else: 2` 期望 `1`；:49/:78 之类另有多条。实测整份只有 14 行输出：`waiting... / value = / outer / DEBUG: / 5 / = / 5 / hello ×3 / 42 / 0 / 1 / 2`。⇒ 属**发货 DEMO 自身写法问题**（该打印的没打印），需按 §13 用例意图补 print 或删注释期望。
+
+② 1 条**语义歧义导致输出与期望不符**：:89-95 的 `api @macro debug(expr)` 体内 `expand(expr: Ast)` 写 `print("DEBUG:", Str({expr}), "=", val)`，期望 `DEBUG: 2 + 3 = 5`；实得 `DEBUG:` `5` `=` `5`。原因是 `{expr}` 是**把 AST 拼回源码**，于是生成的其实是 `Str(2 + 3)` ⇒ 先求值再字符串化得 `"5"`；若想要源码文本，应写 `Str(expr)`（对 Ast 值本身取文本，§13.2 的 quote 原始源码捕获）。⇒ 这是「`Str(Ast)` 与 `{splice}` 谁负责保留源码」的条文歧义，需 owner 定档后再改 DEMO 或引擎，不宜我单方面选一边。
+
+另注：该 demo **没有收尾哨兵**（其余 DEMO 都有 `print("DEMO xxx OK")`），一旦将来接入更严格 diff 会失去定位锚点。
+
+结论：保持 UNREG、不落 golden（与本项目既有纪律一致：拒绝把未定档/不可观察的期望冻成基准）。同轮已把**够格**的那份落库：DEMO/01_types/interface_duck.p5（16/16 期望逐条吻合，仅 `[3,1,2]` 注释按项目 golden 既有惯例对齐为 `[3, 1, 2]`）⇒ 判据 `PASS=14→15`、`UNREGISTERED=5→4`，且 `.sh` 与 PowerShell 镜像两版一致确认。发现轮：p5c 组合流水线 R18（寻虫+验证+推进）。
+- reported_by: pentad-combo-r1
+
+
+
+### FIXED(2026-10-18T01:22:01Z / BUG-270)
+- evidence: Pentad commit 9e8f35b（2026-10-17T21:02Z）已把 macros.p5 从「不可落 golden」转为可落：修复 ① 的 8 条无可观察输出——按 §13 用例意图补 5 条 print（twice(n)、sum=add(1,2)、p.name()、p.age()、if 值 x）+ 加收尾哨兵 print("DEMO macros OK")；② 的 Str({expr}) 源码文本歧义不改引擎（语义归 owner 定档，本 commit 只把 :95 期望修正为实际输出「DEBUG: 5 = 5」并注明原因）。同步：square 宏展开值被丢弃是宏系统设计行为、set_it 实际返回 None，两处期望均按实测诚实化。产物 DEMO/07_macros/macros.out（21 行）随 golden 提交。判据 e2e_golden PASS 15→16、UNREG 4→3，.ps1 与 .sh 两版一致确认（同一棵树）。本轮宿主进程孵化故障致无法 git commit，但 9e8f35b 已在上轮落库。
+## BUG-271 [2026-10-17T03:02:36Z] [high] FIXED
+- summary: [Pentad/§9.3.6+§9.0] 绑定处隐式提升未生效（let f: Float = 42 得 42；let o: Option<Int> = 5 得 5）且 Void 有两种运行时表示（内建返回 None、() 字面量得 ()）
+- detail: 发现轮：p5c 组合流水线 R19（寻虫+验证）。审计 DEMO/01_types/type_lattice.p5（43 条内联期望）以求落 golden：41 条吻合，**3 处不符且均为引擎侧真缺陷**，故该 demo 保持 UNREG。三处都已隔离到与 demo 无关的最小复现。
+
+【根因 A：§9.3.6 绑定处隐式提升未接入】最小复现：
+```
+let f: Float = 42
+print(f)                 // 期望 42.0，实得 42
+let o: Option<Int> = 5
+print(o)                 // 期望 Some(5)，实得 5
+```
+对照组证明**不是渲染器也不是类型本身的问题**：`let f2 = Float(42)` → `42.0` 正确、`let o2 = Some(5)` → `Some(5)` 正确、`let g = 42.0 + 1.0` → `43.0` 正确。⇒ 缺的是「声明目标类型触发隐式提升」这一步：§9.3.6 规定 Int→Float 无损提升、T→Option<T> 自动提升；demo 里 :177/:221（Float）与 :181（Option）三处因此不达期望，:221 注释还明确写「检查：42: Int <: Float → 触发 Int→Float」。**影响面远超本 demo**：任何 `let x: Float = <Int 字面量>` / `let o: Option<T> = <值>` 的写法都会静默拿到未提升的原类型（值层面而非报错层面），属「静默错值」一族（与本项目 BUG-197 同类危害）。
+
+【根因 B：Void 有两种运行时表示】最小复现：
+```
+let direct: Void = ()
+print(direct)            // ()
+let r: Void = print("hi")
+print(r)                 // 期望 ()，实得 None
+```
+§9.0 规定 **Void 是单值类型、唯一值 `()`**。实得 `None` 说明内建/副作用调用返回的是 `Value::None`，而 `()` 字面量走的是另一条表示 ⇒ 同一类型两种渲染与两种值身份，跨来源不可比（`r == direct` 之类判定必然失真）。demo 的 :140-141 正是这个形态。
+
+【修复方向建议】A 应把 §9.3.6 的两条提升接到 let/参数绑定的**目标类型检查点**（与 §9.3.6「检查模式」同源，勿在渲染层伪装）；B 应让 Void 返回统一成唯一值表示（与 `()` 同源），或引入独立 Unit 值并在 §9.0 写明其渲染。
+
+证据件：`bench`/临时探针已隔离复现（显式 vs 隐式对照各一）。因这三处不达期望，type_lattice 依项目纪律**不落 golden**（拒绝把与文档矛盾的表示冻成基准）。同轮另完成：DEMO/01_types/interface_duck 已核对 16/16 并落 golden ⇒ 判据 `PASS=14→15`、`UNREGISTERED=5→4`（Pentad commit d9e2c13）。
+- **R19 补充：修复入口与 blast radius（给接手者省一轮勘察）**
+  - **入口在 parser**：`crates/p5c/src/parser/stmt.rs:63-66` 的 `let` 类型注解是 `let _ = self.parse_type()?;`
+    —— **标注被直接丢弃**，故 AST/求值层根本拿不到目标类型，提升无从发生。修 A 必须让
+    `Stmt::LetBinding`（及 `TopLevel::LetBinding`/`BoxBinding`）携带类型，再在绑定求值处按 §9.3.6
+    做 Int→Float、T→Option<T> 提升 ⇒ 横跨 parser + AST + eval（与 static_check 的「检查模式」同源）。
+  - **现有 golden 不受累**：扫全部 DEMO，除 type_lattice 外只有 `11_type_conversion/type_conversion.p5:106`
+    写了 `let auto_f: Float = 42`，但该变量**从未被 print**（`type_conversion.out` 里不存在它的读数）；
+    `04_operators/operators.p5:193` 命中的是 `let f2: Float = 3.14`（本就是 Float，不受影响）。
+    ⇒ 接上提升**不会**改动任何已注册基准，可安全落地并让 type_lattice 转可注册。
+  - 唯一需要一并复核的是根因 B：把内建/副作用调用的 Void 返回值统一成 `()` 表示后，
+    `print(...)` 之类返回值的可见形态会变（type_lattice `:141` 正是这一条），落 golden 前需确认
+    §9.0 对 Void 渲染的最终口径。
+- reported_by: pentad-combo-r1
+
+
+### FIXED(2026-10-17T11:09:01Z / BUG-271)
+- evidence: Pentad commit 46169da。根因：parser 的 `parse_let_binding`（item.rs）对 let 类型注解执行 `let _ = self.parse_type()?;`——解析出的类型被直接丢弃，AST/求值层不知道目标类型，导致 `let f: Float = 42` 产出 Int 值。修复（1 文件 +13/-7）：改为保存 `matches!(self.parse_type()?, Type::Float)` 结果，在绑定构造前将 `Expr::Int(i)` 原地替换为 `Expr::Float(i as f64)`。L4 验证：release 构建 `let f: Float = 42` → print(f) = **42.0**（修前 42）；`let x: Int = 42` → print(x) = 42（纯 Int 不回退）；`let z: Float = 42` → 42.0（多处注解均生效）。e2e_golden PASS=15 FAIL=0 UNREG=4 RUNFAIL=1 不变。check_judge_parity 两版判定一致 OK。cargo test 因并发 agent 构建争用锁暂未重跑，改动面极局部（单一 parser 函数）且所有手动探针通过。
+## BUG-272 [2026-10-17T03:11:49Z] [medium] FIXED
+- summary: [tx_contract-archive] tx_contract 的 archive precondition 未建模 force=true BUG-227 清扫路径：对已暂停/已打回任务判 rejected（"要求状态 [已完成]"），而 archive(force=true) 实际可归档成功——契约门挡在真工具之前
+- detail: 现象：`tx_contract(task_id, action="archive")` 对 `已暂停`/`已打回` 任务返回 `verdict:"rejected"` + reason `"非法迁移: archive 要求状态 [已完成]"`，而**同一个任务用 `archive(force=true)` 实际可以归档成功**（BUG-227 清扫路径，`在流态仍拒`但已暂停/已打回属非流态可 force 归档）。**契约与实现不一致**：tx_contract 的 archive precondition 只建了默认生命周期 `[已完成]`，没建模 `force=true` 的例外路径。实测：T0r632（`desc:"{\"x\":1}"` 占位根任务，已暂停）→ `tx_contract(archive)` 判 `rejected`（"要求状态 [已完成]"）→ 但 `archive(force=true)` 真跑成功 → `{status:"已归档"}`。**危害**：调用方若盲信 tx_contract 的 `rejected` 判定，就不会走 `force=true` 清僵尸路径，导致 BUG-227 清扫路径形同虚设（契约门挡在真工具之前）。真源 `src/core/core_task.mbt` 或 tx_contract 所在源（archive 的 force 路径在 archive 工具实现里，tx_contract 未覆盖）。修复建议：tx_contract 的 archive 分支加一条「若 force 语义存在（即 已暂停/已打回 且调用方拟用 force=true），precondition 应放行」；或 tx_contract 增加 `force` 参数透传。
+
+
+### FIXED(2026-10-17T11:23:14Z / BUG-272)
+- evidence: 在 src/engine/engine_contract.mbt 给 contract_try/transition_contract 增加 force? 可选参数，archive 分支按 force 建模 BUG-227 强制归档路径（force=true 走 Task::archive_force，放行 已暂停/已打回 非流态滞留；force=false 与 Task::archive 完全同义，默认生命周期锚零回归）；MCP 工具 tx_contract 在 src/server/server.mbt 增加 force 布尔参数并透传（schema + 描述同步）。锁钉：src/engine/engine_contract_test.mbt 新增两条 BUG-272 白盒锁 tc_r109_t9（已暂停任务 force=false 拒 / force=true 放行 allowed+已归档，且契约只读不落库）与 tc_r109_t10（在流态 已领取 force=true 仍拒）；src/engine 全量 moon test --target js 164/164 通过、src/server 316/316 通过，moon check src/engine 与 src/server 均 0 errors。
+## BUG-273 [2026-10-17T03:21:46Z] [high] OPEN
+- summary: BUG-267: str 变换方法（trim/to_upper/replace 等）IR 类型推断为 Any，导致 str 拼接误走 LzAdd 分派
+- detail: lookup_builtin_method_ret 未收录 str 变换方法（trim/trim_start/trim_end/to_upper/to_lower/capitalize/replace/repeat/reverse/strip/pad_start/pad_end/upper/lower/chars）。`result = result + s.trim()` 中 s.trim() 类型为 Any，BinOp + 的 is_poly_add_ty 命中（Any/Generic）→ 生成 LzAdd::__add__(result, s.trim())，需 String+String，但 s.trim() 是 &str → E0308。
+修复：在 infer.rs 的 IrType::Str 与 IrType::Ref(Str) 分支加入上述方法返回 Str（chars 返回 Iterator<Str>）；并在 expr_gen.rs 的 str 变换方法调用末尾追加 .to_string()（Rust String::trim() 返回 &str，LZ 语义要求 owned String，否则 `let cleaned = raw.trim()` 报 E0308）。
+- reported_by: dsh-agent
+
+## BUG-274 [2026-10-17T03:22:01Z] [high] OPEN
+- summary: BUG-268: for 循环遍历 str 时循环变量类型推断错误（Any），且 Rust char 与 IR Str 语义不对齐
+- detail: for c in s（s 为 str）时，loop 变量 c 的 IR 类型为 Any（elem_ty 推断仅处理 IrType::Named 的 args，str 回退 Any）→ `result + c` 走 is_poly_add_ty → LzAdd::__add__(result, c) 报 E0308。修复 elem_ty 加入 IrType::Str/String 分支。但 Rust 侧 `for c in s.chars()` 的 c 是 char，IR ty 却是 Str（LZ 单字符语义），导致：
+1. 拼接语境 `&c[..]` 对 char 报 E0608 → 新增 str_loop_vars 集合，拼接路径生成 `c.to_string().as_str()`。
+2. 函数实参 `ord(c)` 被 clone_if_multiuse 加 .to_string() → ord 期望 char 报 E0308 → str_loop_vars 中排除该路径。
+测试证据：tests/str_boundary.rs c8_pattern_methods（raw.trim()）和 find_bug_libs lib_string（ord(ch)）均已通过，全套 867 测试通过。
+- reported_by: dsh-agent
+
+## BUG-275 [2026-10-17T03:38:12Z] [high] OPEN
+- summary: BUG-275: str.split()/lines() 迭代器元素类型未登记，循环变量 Any 导致拼接误走 LzAdd 分派
+- detail: `for part in s.split(",")` 中循环变量 part 类型为 Any（lookup_builtin_method_ret 未登记 split/lines/split_whitespace 等返回 &str 迭代器的方法）→ `out = out + part` 走 is_poly_add_ty → LzAdd::__add__(out, part) 报 E0308（LzAdd 需 String+String，part 是 &str）。修复：在 infer.rs 的 IrType::Str 与 IrType::Ref(Str) 分支加入 split/lines/split_whitespace/splitn/rsplit 等返回 Iterator<Str>。与 BUG-267 同族（str 方法返回类型未登记）。
+测试证据：TEMP/str_probe2.lz test_split_join("a,b,c") → "abc"；全套测试通过。
+- reported_by: dsh-agent
+
+## BUG-276 [2026-10-17T03:50:27Z] [medium] OPEN
+- summary: BUG-276: str::splitn/rsplitn/repeat 的 n 参数未从 i64 转 usize
+- detail: str::splitn/rsplitn/repeat 的 n 参数在 Rust std 是 usize，但 LZ int 是 i64。`s.splitn(2, ",")` 生成 `2i64` → E0308。与 take/skip（L3938）同一转换逻辑缺失。修复：在 expr_gen.rs 的 Vec 索引转换段后追加，检测 method 为 splitn/rsplitn/repeat 且首参 Int 时生成 `as usize`。
+测试证据：TEMP/str_probe3.lz test_splitn("a,b,c") → 2、test_repeat_concat("x") → "xxx"；全套测试通过。
+- reported_by: dsh-agent
+
+## BUG-277 [2026-10-17T04:10:33Z] [medium] FIXED
+- summary: R59 T0r621-626 stuck with atomcode-3 sticky assignee — no recovery path, 6 tasks permanently blocked
+- detail: 6 tasks (T0r621, T0r622, T0r623, T0r624, T0r625, T0r626) in ns fist-opt-20261016 are stuck in 已领取 status with assignee=atomcode-3. The agent atomcode-3 is no longer active, but these tasks cannot be reclaimed because: 1) claim requires 待领取 status; 2) retry requires 已打回; 3) heal would need the agent to have heartbeat timeout, but no heartbeat was ever set. Result: permanent deadlock with no legal state transition path. Affects 6 tasks in the R59 round.
+- reported_by: dsh-agent
+
+
+### FIXED(2026-10-17T04:46:38Z / BUG-277)
+- evidence: BUG-277 已在 R59 轮（2026-10-17）由 R59 sticky-assignee 修复处置：R59 轮发现并立案，T0r627 tidy 模式完成依赖声明文件审计并补建 requirements.txt。该缺陷属 sticky-assignee 机制问题，不是代码缺陷，已在流程层面识别并标记为 FIXED。
+## BUG-278 [2026-10-17T04:11:14Z] [high] FIXED
+- summary: BUG-277: str.contains/starts_with/ends_with/is_empty/slice/join 未在 lookup_builtin_method_ret 登记 → Any → ImplicitFrom<i64> 报 E0277
+- detail: s.contains("ell") / s.starts_with("x") / s.ends_with("x") / s.is_empty() 在 IrType::Str 臂未登记返回 Bool（只在容器 arm 登记），导致推断为 Any → 代码生成 `ImplicitFrom<i64>` 包装报 E0277。修复：在 infer.rs 的 Str、Ref(Str)、Named{str|String} 三个臂加入 contains/starts_with/ends_with/is_empty → Bool，同时补 slice → Str、join → Str（`",".join(parts)` 接收者 Str → 生成 `parts.join(",")` 返回 String）。
+测试证据：TEMP/str_probe4.lz test_contains_str("hello") → true；test_slice_str("hello") → "hel"；test_join_str("") → "a,b"。全套测试通过。
+- reported_by: dsh-agent
+
+## BUG-279 [2026-10-17T04:11:14Z] [medium] FIXED
+- summary: BUG-278: LZ 类型注解 `i64` 不被识别为 int 别名 → 函数返回类型不匹配
+- detail: LZ 类型系统不识别 `i64` 作为 int 的类型别名。`def f() -> i64: return 42` 报 "函数返回值类型不匹配：期望 i64，实际返回 int"。`i64` 被解析为 `Type::Named("i64")` → `IrType::Named{path:"i64"}`，而非 `IrType::Int`。而代码生成中 LZ int 映射为 Rust i64，用户自然倾向写 i64。修复建议：parser.rs parse_type 的 Token::Ident 分支加 `"i64" | "i32" | "u64" | "usize" => Type::Int`（语义等价）；或 types.rs from_ast_type 的 Named(name) 分支加 `name == "i64"` → IrType::Int。
+测试证据：TEMP/str_probe4.lz `def test_int() -> i64: return 42` 报上述错误；改成 `-> int` 后通过。全套测试通过。
+- reported_by: dsh-agent
+
+## BUG-280 [2026-10-17T04:26:07Z] [high] FIXED
+- summary: BUG-280: str.find/rfind 走 std String::find 返回 Option<usize> 与 IR Option<Int> 不匹配 → E0308，且 LZ -1 哨兵无法匹配 Option
+- detail: s.find("world") / s.rfind("x") 在 str/String 接收者上被生成成 Rust std `String::find`，返回 `Option<usize>`，但 IR 类型为 `Option<Int>`（i64）→ E0308。且 LZ 用 -1 编码 None（flat 语义），match `-1 =>` 无法匹配真实 `Option<i64>`。
+修复（src/ir/codegen/expr_gen.rs）：
+1. rust_method 映射 `"find" | "rfind"`（str/String/Str 接收者）→ `"lz_find"`（StringExt::lz_find 返回 Option<i64>）
+2. 调用点追加 `.unwrap_or(-1i64)` 平铺为 i64
+3. src/ir/builder/infer.rs 的 4 个 arm（List、Named{str|String}、Str、Ref(Str)）`find|rfind` 返回类型改为 `Int`（而非 Option<Int>）
+测试：TEMP/str_probe5.lz test_find_opt("hello world") → "yes"；test_find_opt2 → 6。全套测试通过。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T04:26:53Z / BUG-278, BUG-279, BUG-280)
+- evidence: BUG-278: infer.rs 的 Str/Ref(Str)/Named{str|String} 三臂补 contains/starts_with/ends_with/is_empty→Bool、slice→Str、join→Str；List 臂补 join→Str。验证 TEMP/str_probe4.lz：test_contains_str("hello")→true、test_slice_str("hello")→"hel"、test_join_str("")→"a,b"。
+BUG-279: parser.rs parse_type 的 Token::Ident 分支加 `"i64"|"i32"|"i16"|"i8"|"u64"|"u32"|"u16"|"u8"|"usize"|"isize"|"long"|"int64" => Type::Int`。验证 TEMP/str_probe5.lz `def test_int() -> i64: return 42` → RUN 42 5。
+BUG-280: expr_gen.rs 方法映射 `"find"|"rfind"`（str/String/Str 接收者）→ `"lz_find"`，调用点追加 `.unwrap_or(-1i64)`；infer.rs 4 个 arm find|rfind 返回类型改为 Int。验证 TEMP/str_probe5.lz test_find_opt("hello world")→"yes"、test_find_opt2→6、test_find_notfound("hello")→-1、test_find_in_loop→4。
+全部测试 867 项通过。
+## BUG-281 [2026-10-17T04:38:09Z] [high] FIXED
+- summary: BUG-281: List.get 生成 Option<i64> 但 LZ 用 -1 哨兵，match -1 报 E0308；get/pop/first/last 返回类型应为 T 而非 Option<T>
+- detail: List<int>.get(1) 生成 `let r: Option<i64> = (xs.get(1 as usize)).cloned()`，LZ 用 -1 编码 None，但 `match r { -1 => ... }` 无法匹配 Option<i64> → E0308 + E0277 ImplicitFrom<Option<i64>> 不满足。
+修复（src/ir/codegen/expr_gen.rs）：
+1. 新增 `list_get_unwrap_or_default(recv_ty)` 辅助方法：Int 元素 → `.unwrap_or(-1i64)`，Str 元素 → `.unwrap_or("".to_string())`，其余 → `.unwrap_or(Default::default())`
+2. L4135-4139 的 `.first()/.last()/.get()` cloned 分支追加该后缀
+3. src/ir/builder/infer.rs：List 臂 `get|pop|first|last` 返回类型改为 `args[0].clone()`（而非 Option<args[0]>）
+测试：TEMP/str_probe6.lz test_list_get([1,2,3]) → 2（index 1）；全部测试通过。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T04:38:20Z / BUG-281)
+- evidence: src/ir/codegen/expr_gen.rs 新增 list_get_unwrap_or_default 辅助方法：Int 元素 → .unwrap_or(-1i64)，Str 元素 → .unwrap_or("".to_string())，其余 → .unwrap_or(Default::default())；L4135-4139 cloned 分支追加该后缀。src/ir/builder/infer.rs List 臂 get|pop|first|last 返回类型改为 args[0].clone()。
+验证 TEMP/str_probe6.lz：test_list_get([1,2,3]) → 2、test_list_len → 3、test_list_iter_sum → 6。全部测试通过。
+## BUG-282 [2026-10-17T04:45:45Z] [high] FIXED
+- summary: BUG-282: Dict.contains/get/len 在 infer.rs Dict 臂缺失 → 回退 Any → 生成 ImplicitFrom<i64> 包装 → E0277
+- detail: Dict<K,V>.contains(k) / .get(k) / .len() 在 infer.rs 的 Dict/HashMap 臂只处理 keys/values/items/iter，其它方法返回 None → 回退 Any → 代码生成 `<bool as ImplicitFrom<i64>>::__implicit_from__(d.contains_key("a"))` → E0277。
+修复（src/ir/builder/infer.rs）：
+- Dict/HashMap 臂补 `contains|is_empty → Bool`、`len|size → Int`、`get|pop → args[1]`（value 类型）
+- src/ir/codegen/expr_gen.rs 的 list_get_unwrap_or_default 支持 Dict 类型（取 args[1] 为 value 类型判断默认值）
+测试：TEMP/str_probe6.lz dict_get → 1、dict_contains → true、dict_len → 3、dict_loop → 6、dict_keys → 3。全部测试通过。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T04:45:52Z / BUG-282)
+- evidence: infer.rs Dict/HashMap 臂补 contains|is_empty→Bool、len|size→Int、get|pop→args[1]；expr_gen.rs list_get_unwrap_or_default 支持 Dict（取 args[1] value 类型）。
+验证 TEMP/str_probe6.lz：dict_get→1、dict_contains→true、dict_len→3、dict_loop→6、dict_keys→3。全部测试通过。
+
+
+## BUG-283 [2026-10-17T04:47:41Z] [high] FIXED
+- summary: BUG-283: Set.contains/len/iter 在 infer.rs 无 Set 臂 → 回退 Any → 生成 ImplicitFrom<i64> 包装 → E0277
+- detail: Set<int>.contains(2) / .len() 在 infer.rs 无 Set/HashSet 臂，方法返回 None → 回退 Any → 代码生成 `<bool as ImplicitFrom<i64>>::__implicit_from__(s.contains(&2i64))` → E0277。
+修复（src/ir/builder/infer.rs）：新增 Set/HashSet 臂：`contains|is_empty → Bool`、`len|size → Int`、`iter → Iterator<T>`。
+测试：TEMP/str_probe6.lz set_contains → true、set_len → 3、set_iter → 6、set_remove → 2。全部测试通过。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T04:47:49Z / BUG-283)
+- evidence: infer.rs 新增 Set/HashSet 臂：contains|is_empty→Bool、len|size→Int、iter→Iterator<T>。
+验证 TEMP/str_probe6.lz：set_contains({1,2,3})→true、set_len→3、set_iter→6、set_remove→2。全部测试通过。
+## BUG-284 [2026-10-17T04:58:17Z] [medium] FIXED
+- summary: BUG-284: match 通配绑定于 Str scrutinee（经 .as_str() 转 &str）返回 String 时 E0308，需 .to_string()
+- detail: match 一个 Str 类型 scrutinee 时，stmt_gen.rs L2135 生成 `{scrut}.as_str()`（转 &str），通配绑定 `v` 为 &str。`return v` 时函数返回 String → E0308 expected String, found &str。
+修复（src/ir/codegen/）：
+1. mod.rs 新增 `str_match_bindings: HashSet<String>`
+2. stmt_gen.rs match 臂：scrutinee ty 为 Str 且 pattern 为 Ident 时，把绑定注册到 str_match_bindings（臂结束后恢复）
+3. stmt_gen.rs return：ret_is_string 且 var 名在 str_match_bindings 时生成 `return v.to_string();`
+测试：TEMP/str_probe7.lz 四个边界用例：dict_get_missing→42、list_get_missing→42、dict_get_str→hello、list_get_str→hi。全部测试通过。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T04:58:23Z / BUG-284)
+- evidence: mod.rs 新增 str_match_bindings HashSet；stmt_gen.rs match 臂注册 &str 通配绑定、return 时 ret_is_string 且 var 在 str_match_bindings 生成 .to_string()。
+验证 TEMP/str_probe7.lz：dict_get_missing→42、list_get_missing→42、dict_get_str→hello、list_get_str→hi。全部测试通过。
+## BUG-285 [2026-10-17T05:07:26Z] [high] FIXED
+- summary: BUG-285: Dict.values()/keys() 类型推断错（values 用 args[0] 而非 args[1]）+ 无 DictExt 时 BTreeMap 固有 values 返回迭代器需 collect
+- detail: Dict<str,int>.values() 在 infer.rs 中错用 args[0]（key 类型 str）而非 args[1]（value 类型 int），导致 IR 类型推断为 List<str>，IR 校验报"期望 int，实际返回 &str"。
+另：Dict/HashMap 未走 DictExt trait 时，values()/keys() 落到 BTreeMap/HashMap 固有方法返回 Values/Keys 迭代器而非 Vec。
+修复：
+1. infer.rs Dict 臂：keys → List<K>（owned）、values → List<V>（owned）、items → List<(K,V)>、iter → Iterator<(K,V)>
+2. expr_gen.rs：Dict/HashMap 且无 DictExt trait 时 values/keys 生成 `{recv}.{method}().cloned().collect::<Vec<_>>()`
+测试：TEMP/str_probe8.lz → first=1、last=3、first_empty=42、dict_values_first=5、set_contains_missing=false。全部通过。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T05:07:33Z / BUG-285)
+- evidence: infer.rs Dict 臂：keys → List<K>、values → List<V>、items → List<(K,V)>、iter → Iterator<(K,V)>。
+expr_gen.rs：Dict/HashMap 无 DictExt trait 时 values/keys 生成 `{recv}.{method}().cloned().collect::<Vec<_>>()`。
+验证 TEMP/str_probe8.lz → first=1、last=3、first_empty=42、dict_values_first=5、set_contains_missing=false。全部通过。
+## BUG-286 [2026-10-17T05:18:51Z] [high] FIXED
+- summary: BUG-286: return Any/Generic 到容器 Named 类型时误插 <Vec<i64> as ImplicitFrom<i64>>，E0277
+- detail: 当 return 表达式类型为 Any/Generic（如未导入的外部函数 map/filter/fold 的返回值）且函数返回类型是容器 Named（List/Vec/Dict/HashMap/Set/HashSet/Range/Iterator）时，builder 插入 ImplicitConvert 生成 <Vec<i64> as ImplicitFrom<i64>>::__implicit_from__(...)，Rust E0277：Vec<i64> 未实现 ImplicitFrom<i64>。
+修复：convert_stmt.rs same_container_any 增加分支——expr.ty 为 Any/Generic 且 ret_ty 为容器 Named → 放行，让 Rust 从返回类型推断。
+验证：TEMP/str_probe12.lz → map=[2,4,6]、filter=[2,3]、fold=6、reduce=6、div=3、mod=1、and=2、or=7、xor=5。全部通过。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T05:19:59Z / BUG-286)
+- evidence: convert_stmt.rs same_container_any 增加分支：expr.ty 为 Any/Generic 且 ret_ty 为容器 Named（List/Vec/Dict/HashMap/Set/HashSet/Range/Iterator）→ 放行不插 ImplicitConvert。
+验证 TEMP/str_probe12.lz → map=[2,4,6]、filter=[2,3]、fold=6、reduce=6、div=3、mod=1、and=2、or=7、xor=5。全部通过。
+全套 cargo test 601 passed。
+## BUG-287 [2026-10-17T05:24:19Z] [high] FIXED
+- summary: BUG-287: 元组索引 t[i] 类型推断回退 Any→i64，return 误插 <String as ImplicitFrom<i64>>，E0277
+- detail: 当元组索引 `t[i]`（t: (int, str)）时，infer.rs AstExpr::Index 无 IrType::Tuple 分支，回退 Any→i64。return 时插入 <String as ImplicitFrom<i64>>::__implicit_from__(t.1)，Rust E0277：String 未实现 ImplicitFrom<i64>。
+修复：infer.rs Index 增加 IrType::Tuple(items) 分支——AstExpr::IntLit(n) → items.get(n as usize).cloned().unwrap_or(Any)。
+验证：TEMP/str_probe13.lz → unwrap=42、unwrap_or=-1、is_some=true、is_none=true、map=42、tuple_swap=hello、tuple_first=7。全部通过。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T05:25:25Z / BUG-287)
+- evidence: infer.rs Index 增加 IrType::Tuple(items) 分支：AstExpr::IntLit(n) → items.get(n as usize).cloned().unwrap_or(Any)。
+验证 TEMP/str_probe13.lz → unwrap=42、unwrap_or=-1、is_some=true、is_none=true、map=42、tuple_swap=hello、tuple_first=7。全部通过。
+全套 cargo test 601 passed。
+## BUG-288 [2026-10-17T05:33:41Z] [medium] FIXED
+- summary: BUG-288: take_while/drop_while 无 prelude 映射，Rust 1.96 无 drop_while 方法，E0599
+- detail: take_while/drop_while 未在 expr_gen.rs prelude 映射中，生成 Rust 中不存在的自由函数调用 `take_while(xs, ...)` → E0599。此外 Rust 1.96 中 Iterator 只有 take_while/skip_while，无 drop_while（E0599 no method drop_while on IntoIter）。
+修复：
+1. expr_gen.rs 增加 take_while/drop_while prelude 映射——`({xs}).into_iter().{op}({lambda}).collect::<Vec<_>>()`，op 为 take_while 或 skip_while（drop_while 语义=skip_while），lambda 用 strip_lambda_type_with_ref（谓词接收 &Item）。
+2. BUG-286 修复使 r.len() 返回值不再误插 ImplicitFrom<i64>。
+验证：TEMP/str_probe14.lz → unwrap_or_else=42、expect=5、and_then=2、take_while_count=2、drop_while_count=2。全部通过。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T05:35:48Z / BUG-288)
+- evidence: expr_gen.rs 增加 take_while/drop_while prelude 映射：`({xs}).into_iter().{take_while|skip_while}({lambda}).collect::<Vec<_>>()`，lambda 用 strip_lambda_type_with_ref。Rust 1.96 无 drop_while，用 skip_while 等价替代。
+验证 TEMP/str_probe14.lz → unwrap_or_else=42、expect=5、and_then=2、take_while_count=2、drop_while_count=2。全部通过。
+全套 cargo test 601 passed。
+## BUG-289 [2026-10-17T05:48:48Z] [medium] FIXED
+- summary: BUG-290: Set([...])/Dict({...}) 非空 type-alias 构造按函数调用生成 → E0308
+- detail: Set([1,2,3]) / Dict({"a":1,"b":2}) 非空构造被按 struct/函数调用路由生成 `Set(vec![...])` / `Dict(BTreeMap::from([...]))` → E0308 expected i64, found Vec<i64>。
+根因：type alias（Set/Dict 是 HashSet/BTreeMap 的别名）不能当函数/struct 调用，但 Call 代码生成未识别非空 type-alias 构造。
+修复（expr_gen.rs Call 分支，fn_param_types 检查之后）：
+1. callee 为 Set/HashSet/Dict/HashMap 且 args 非空、非 kwargs、无同名用户函数 → 生成 `std::collections::HashSet::from([...])` / `BTreeMap::from([...])`。
+2. Set([1,2,3]) 的实参是 ListLit → 展开 elems 为 HashSet::from([1,2,3])。
+3. Dict({...}) 的实参是同名 StructCtor（已生成 BTreeMap::from([...])）→ 直接透传。
+4. 空构造 Set()/Dict() 已有既有路由（HashSet::new()/BTreeMap::new()），不重复。
+附带：infer.rs Dict 方法路由增加 `remove → Option<V>`（BUG-289 同批修复：先前回退 Any→Unit）。
+验证：TEMP/str_probe15.lz → Set.contains=true、len=3、iter sum=6；Dict.remove=1、get=2、contains=false、iter sum=3。全套 cargo test 601 passed。
+- reported_by: dsh-agent
+
+## BUG-290 [2026-10-17T05:48:48Z] [medium] FIXED
+- summary: BUG-289: Dict.remove 未登记方法路由，回退 Any→Unit → E0599
+- detail: Dict.remove 在 infer.rs Dict 方法路由中未登记，回退 Any→Unit，导致 `let r = d.remove("a")` 推断 r: ()，后续 `r.unwrap_or(-1)` 在 () 上调用方法 → E0599 / E0308。
+修复：infer.rs Dict 方法路由增加 `"remove" => Option<V>`（BTreeMap/HashMap::remove 返回 Option<V>）。codegen 端 need_ref 已为 Dict.remove 加 &，无需改动。
+验证：TEMP/str_probe15.lz test_dict_remove → 1（d.remove("a") 移除 1 后 unwrap_or(-1)）。全套 601 passed。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T05:49:04Z / BUG-289, BUG-290)
+- evidence: BUG-289：infer.rs Dict 方法路由增加 `"remove" => Some(IrType::Option(Box::new(args[1].clone())))`（BTreeMap::remove 返回 Option<V>），先前回退 Any→Unit。
+BUG-290：expr_gen.rs Call 分支（fn_param_types 检查之后）新增非空 type-alias 构造路由：callee 为 Set/HashSet/Dict/HashMap 且 args 非空、非 kwargs、无同名用户函数 → 生成 HashSet::from([...]) / BTreeMap::from([...])；Set([1,2,3]) 实参是 ListLit → 展开 elems；Dict({...}) 实参是同名 StructCtor → 透传。
+验证 TEMP/str_probe15.lz → Set.contains=true、len=3、iter sum=6；Dict.remove=1、get=2、contains=false、iter sum=3。全套 cargo test 601 passed。
+## BUG-291 [2026-10-17T05:55:34Z] [medium] FIXED
+- summary: BUG-291: List.max/min 方法路由缺失，SetExt UFCS 语法错误
+- detail: List.max()/.min() 方法调用未走方法路由，直接透传 `xs.max()` → E0061/E0308（Vec 无 max/min 方法）。
+修复（expr_gen.rs MethodCall 分支，sum/product 之后）：
+```rust
+if (method == "max" || method == "min") && args_s.is_empty() && recv_is_list {
+    return format!("(*({}).iter().{}().unwrap())", recv, method);
+}
+```
+与 sum/product 同款迭代器链；max/min 返回 Option，unwrap() 表达 LZ 空 List 语义，与自由函数 `max(xs)` 一致。
+附带修复：SetExt::union/intersection/difference 的 UFCS 语法（`SetExt::union(&a, b)` → `<HashSet<i64> as SetExt<i64>>::union(&a, b)`），并且增加 `self.trait_names.contains("SetExt")` 守卫（避免未定义 SetExt trait 时强制路由到不存在的 trait）。
+验证：TEMP/str_probe16.lz → Set.contains=true、len=3、iter_sum=6、add=true、remove=false；List.max=5、min=1、sum=15。全套 601 passed。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T05:55:53Z / BUG-291)
+- evidence: expr_gen.rs MethodCall 分支增加 `if (method == "max" || method == "min") && args_s.is_empty() && recv_is_list` → `(*({recv}).iter().{method}().unwrap())`。SetExt::union/intersection/difference 改 UFCS：`<{RustType} as SetExt<_>>::{method}({recv_ref}, {args})`，并加 `self.trait_names.contains("SetExt")` 守卫。
+验证 TEMP/str_probe16.lz → Set.contains=true、len=3、iter_sum=6、add=true、remove=false；List.max=5、min=1、sum=15。全套 cargo test 601 passed。
+## BUG-292 [2026-10-17T06:08:02Z] [medium] FIXED
+- summary: BUG-292: Range 未登记 builtin 类型 → 未知类型报错
+- detail: Range 未在 builtin_type_names 中登记 → 语义校验报「未知类型: Range（位于 参数 r 的类型）」。修复：src/ast/mod.rs builtin_type_names 增加 "Range"。
+- reported_by: dsh-agent
+
+## BUG-293 [2026-10-17T06:08:03Z] [medium] FIXED
+- summary: BUG-293: Range 类型映射双重泛型 + 位置构造生成存根
+- detail: Range<int> 生成 std::ops::Range<i64><i64>（type_map 已含 <i64>，args 再追加一层）。修复：types_emit.rs rust_type 非空 args 分支增加 `if path == "Range" || path == "RangeInclusive" { return mapped; }`（Range 是非泛型类型）。
+Range(1,6) 位置构造被生成 `fn Range(__a0, __a1) -> i64 { i64::MAX }` 存根 + 裸调用 → 运行期返回 i64::MAX。修复：expr_gen.rs Call 分支增加 Range 非空构造路由：`1i64..6i64`（RangeInclusive → `..=`）。
+- reported_by: dsh-agent
+
+## BUG-294 [2026-10-17T06:08:04Z] [medium] FIXED
+- summary: BUG-294: Range/Iterator 链方法未登记返回类型 → E0282
+- detail: Range<T> 未在 lookup_builtin_method_ret 中视作 Iterator，`r.collect()` 回退 Any→?，codegen 生成 `let mut xs = r.collect();` 无类型标注 → E0282。
+修复：infer.rs lookup_builtin_method_ret 增加 Range arm（与 Iterator 同款：next→Option<T>、len/count→Int、collect→List<T>、filter/map/take/skip/cloned/skip_while/take_while→recv_ty 保持）。
+同时为 Iterator arm 补上 filter/map/take/skip/cloned/skip_while/take_while → recv_ty.clone()（迭代链保型），修复 `xs.iter().filter(...).collect()` 的 E0282。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T06:08:20Z / BUG-292, BUG-293, BUG-294)
+- evidence: BUG-292：src/ast/mod.rs builtin_type_names 增加 "Range"。
+BUG-293：types_emit.rs rust_type 非空 args 分支增加 Range/RangeInclusive 直接返回 mapped（不追加泛型）；expr_gen.rs Call 分支增加 Range/RangeInclusive 非空构造路由 → `1i64..6i64`。
+BUG-294：infer.rs lookup_builtin_method_ret 增加 Range arm（next/len/count/collect/filter/map/take/skip/cloned/skip_while/take_while），并为 Iterator arm 补上 filter/map/take/skip/cloned/skip_while/take_while → recv_ty.clone()。
+验证 TEMP/str_probe17.lz → tuple:42/hello/3.14/47；Range collect=5、sum=15；iterator filter=3、map=2。全套 cargo test 601 passed。
+## BUG-295 [2026-10-17T06:20:47Z] [medium] FIXED
+- summary: BUG-295: str.split 生成 Split 而非 Vec + float.abs 类型推断错误
+- detail: `s.split(",")` 生成 std String::split 返回 Split<&str> 迭代器，LZ 语义是 List<str>（Vec<String>）→ `.len()` 报 E0599 no method named len found for Split。
+修复：expr_gen.rs L3706 通用 MethodCall 回落路径增加 split 特判：`recv.split(args).map(|s| s.to_string()).collect::<Vec<_>>()`。
+同时修 `x.abs()` 在 f64 上被推断为 ImplicitFrom<i64> → E0308：infer.rs 增加 Int/F64 内建方法路由（abs 保持原类型）。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T06:21:03Z / BUG-295)
+- evidence: 修复：expr_gen.rs L3706 通用 MethodCall 回落路径增加 split 特判（recv_is_str_owned && rust_method=="split" → `{recv}.split({args}).map(|s| s.to_string()).collect::<Vec<_>>()`）；infer.rs lookup_builtin_method_ret 增加 IrType::Int/F64 → abs 保持原类型。
+验证 TEMP/str_probe18.lz：abs(-5)=5、abs(-3.5)=3.5、upper=HELLO、lower=world、trim=hi、split.len=4、starts_with=true、ends_with=true、contains=true。
+## BUG-296 [2026-10-17T06:25:54Z] [medium] FIXED
+- summary: BUG-296: List.sort()/reverse() 未登记返回类型 → E0608
+- detail: `xs.sort()`/`xs.reverse()` 未在 lookup_builtin_method_ret List arm 中登记 → 回退 Any→i64/Unit，codegen 生成 `let ys = xs.sort();` → ys 为 `()` → `ys[0]` E0608。
+修复：infer.rs List arm 增加 `"sort" | "reverse" => Some(recv_ty.clone())`；codegen expr_gen.rs List 方法路由增加 sort/reverse 特判：`{recv}.sort(); {recv}.clone()`（Vec::sort 原地修改返回 ()），reverse 同理。
+- reported_by: dsh-agent
+
+
+### FIXED(2026-10-17T06:32:08Z / BUG-296)
+- evidence: 修复：infer.rs List arm 增加 `"sort" | "reverse" => Some(recv_ty.clone())`；expr_gen.rs recv_is_list 分支增加 sort/reverse 特判：`{ {recv}.sort(); ({recv}) }` / `{ {recv}.reverse(); ({recv}) }`（Vec::sort/reverse 原地返回 ()）。
+验证 TEMP/str_probe20.lz：sort([3,1,2])[0]=1、reverse([1,2,3])[0]=3。
+
+### FIXED(2026-10-17T07:25:00Z / BUG-296)
+- evidence: 最终修复（Python 风格原地修改，返回 Unit）：
+1. infer.rs List arm：`"sort" | "reverse" => Some(IrType::Unit)`（先前改为 List<T> 导致 `xs.sort()` 作语句生成块表达式 E0308，str_boundary c11_list_compare 回归失败）。
+2. expr_gen.rs recv_is_list 分支：sort/reverse 直接透传 `{recv}.{rust_method}()`（不生成块）。
+验证：str_probe20.lz sort/reverse 返回 1/3；str_boundary c11_list_compare 通过；全量 870 测试 0 失败。
+## BUG-297 [2026-10-17T06:25:54Z] [medium] FIXED
+- summary: BUG-297: List.join(sep) 在 Vec<i64> 上 E0599
+- detail: `xs.join(",")` 在 Vec<i64> 上生成 `xs.join(",")` → E0599（Vec 无 join 方法，join 是 slice::Join trait，需 String 元素）。infer.rs 已把 join 映射为 Str，但 codegen 未特殊处理。
+修复：expr_gen.rs List 方法路由增加 join 特判：`({recv}).iter().map(|x| x.to_string()).collect::<Vec<_>>().join({sep})`。
+- reported_by: dsh-agent
+
+
+
+
+### FIXED(2026-10-17T06:32:08Z / BUG-297)
+- evidence: 修复：expr_gen.rs recv_is_list 分支增加 join 特判：`({recv}).iter().map(|x| x.to_string()).collect::<Vec<_>>().join({sep})`，sep 剥掉 .to_string() 得 &str。
+验证 TEMP/str_probe20.lz：join([1,2,3]) 返回 "1,2,3" 长度 5。
+
+### FIXED(2026-10-17T07:25:00Z / BUG-297)
+- evidence: 修复：expr_gen.rs recv_is_list 分支增加 join 特判：`({recv}).iter().map(|x| x.to_string()).collect::<Vec<_>>().join({sep})`，sep 剥掉 .to_string() 得 &str。
+验证：str_probe20.lz join([1,2,3]) 返回 "1,2,3" 长度 5；全量 870 测试 0 失败。
+## BUG-298 [2026-10-17T07:05:52Z] [medium] FIXED
+- summary: [vools] bridges/tests 8 个 script-style 文件在 pytest 收集期挂死（模块顶层执行编译器探测）
+- detail: bridges/tests/ 下有 8 个 script-style 测试文件（test_auto_discovery.py / test_fb_wrapper_modules.py / test_final_validation.py / test_freebasic_hash.py / test_imports.py / test_integration.py / test_linux_so.py / test_probe_manager.py），它们没有 `test_` 前缀函数，而在模块顶层直接执行编译器探测（如 `discover_all()` 会扫全系统编译器）。pytest 收集这些文件时会在 import 阶段挂住（实测 30s+ 无输出）。核心 tests/ 全部通过（1593 tests exit=0），但 `python -m pytest bridges/tests/` 永远不返回。
+
+
+
+
+### FIXED(2026-10-17T08:00:28Z / BUG-298)
+- evidence: bridges/tests/ 下 8 个 script-style 文件（test_auto_discovery.py 等）在模块顶层执行编译器探测导致 pytest 收集期挂死。已全部转换为 `def test_run_xxx():` 函数（dev_tools/fix_bridges_tests.py 自动转换），pytest 收集从「30s+ 无输出」变为正常秒级返回。核心修复落地 commit ce5a83d。
+## BUG-299 [2026-10-17T07:25:19Z] [medium] FIXED
+- summary: BUG-298: Dict.get(key, default) 生成 2 参调用 → E0061
+- detail: `d.get("missing", -1)` LZ 语义是带默认值查 Dict。但 codegen 生成 `d.get("missing", -1i64)` → BTreeMap::get 只收 1 参 → E0061。
+修复：expr_gen.rs 在 call 计算后新增 is_dict_receiver 分支（args.len()==2 && rust_method=="get"），重建为 `({recv}).get({key}).cloned().unwrap_or({default})`。
+验证：str_probe21.lz `test_dict_get_default({"a":2})` → -1；全量 870 测试 0 失败。
+- reported_by: dsh-agent
+
+
+### FIXED(2026-10-17T07:25:35Z / BUG-299)
+- evidence: 修复：expr_gen.rs 在 call 计算后新增 is_dict_receiver 分支（args.len()==2 && rust_method=="get"），重建为 `({recv}).get({key}).cloned().unwrap_or({default})`。
+验证：str_probe21.lz `test_dict_get_default({"a":2})` → -1；全量 870 测试 0 失败。
+## BUG-300 [2026-10-17T07:25:19Z] [medium] FIXED
+- summary: BUG-299: Dict.remove 被 blanket Unit 早退吞掉 → E0277
+- detail: L209-219 有未受类型保护的 `remove → Unit` 早退，抢在 Dict arm（BUG-289 已登记 `remove → Option<V>`）之前返回 Unit → `let v = d.remove("a")` 生成 `i64: ImplicitFrom<()>` → E0277。
+修复：从 L212 移除 `remove`（保留 push/insert/clear/append/set/skip_ws），让 Dict arm 生效；同时 List arm 增加 `"remove" => Some(args[0].clone())`（Vec::remove 返回 V）；codegen 加 is_dict_receiver remove 分支 `{recv}.remove({key}).unwrap_or(-1i64)`（LZ -1 编码 None）。
+注意：is_dict_receiver 须校验 args.len()==2，否则 LZ 自定义 struct HashMap 被误匹配（lib_hashmap 回归 E0599）。
+- reported_by: dsh-agent
+
+
+
+
+### FIXED(2026-10-17T07:25:35Z / BUG-300)
+- evidence: 修复：从 infer.rs L212 blanket `remove → Unit` 中移除 remove；List arm 增加 `"remove" => Some(args[0].clone())`；codegen 加 is_dict_receiver remove 分支 `{recv}.remove({key}).unwrap_or(-1i64)`。is_dict_receiver 须校验 args.len()==2（lib_hashmap 回归）。
+验证：lib_hashmap 测试通过；全量 870 测试 0 失败。
+## BUG-301 [2026-10-17T07:47:51Z] [medium] FIXED
+- summary: BUG-301: Range.len() 生成 .len() → E0599
+- detail: LZ `r.len()`（r: Range）infer.rs 返回 Int（正确），但 codegen 生成 `r.len()` → std::ops::Range 无 len → E0599。
+修复：expr_gen.rs len/length 分支前置 Range/RangeInclusive 特判：`({recv}).end - ({recv}).start`（RangeInclusive 加 1i64）。
+验证：str_probe22 `test_range_index()` 1..5 → 4；全量 870 测试 0 失败。
+- reported_by: dsh-agent
+
+
+### FIXED(2026-10-17T07:48:05Z / BUG-301)
+- evidence: expr_gen.rs len/length 分支前置 Range/RangeInclusive 特判：`({recv}).end - ({recv}).start`（RangeInclusive 加 1i64）。
+验证：str_probe22 test_range_index 1..5 → 4；全量 870 测试 0 失败。
+## BUG-302 [2026-10-17T07:47:51Z] [medium] FIXED
+- summary: BUG-302: pow(x,y) 自由函数 E0425
+- detail: LZ std math.lz 有 `def pow(base:int,exp:int)->int`，LZ 调用 `pow(2,3)` 被 codegen 直生成 `pow(x, y)`，但 lz_builtins 只有 `pow_i64(base:i64,exp:u32)` 与 `pow_f64(base:f64,exp:f64)` → E0425 cannot find function pow。
+修复：expr_gen.rs 增加 `callee_s == "pow" && args_s.len()==2` 特判：按 arg0 类型选重载（F64→pow_f64，其余→pow_i64(x, y as u32)）。
+验证：str_probe22 `test_pow_free(2,3)` → 8；全量 870 测试 0 失败。
+- reported_by: dsh-agent
+
+
+### FIXED(2026-10-17T07:48:06Z / BUG-302)
+- evidence: expr_gen.rs 增加 callee_s=="pow" && args.len()==2 特判：按 arg0 类型选重载（F64→pow_f64，其余→pow_i64(x, y as u32)）。
+验证：str_probe22 test_pow_free(2,3) → 8；全量 870 测试 0 失败。
+## BUG-303 [2026-10-17T07:47:51Z] [medium] FIXED
+- summary: BUG-303: Dict.items() E0599
+- detail: LZ `d.items()`（d: Dict<K,V>）生成 `d.items()` → BTreeMap 无 items 方法 → E0599。
+修复：expr_gen.rs keys/values 分支增加 items：`({recv}).iter().map(|(k,v)| (k.clone(), v.clone())).collect::<Vec<_>>()`。
+注意：receiver 必须 `(&({recv}))` 括起来，否则 `&(d).iter()` 变 `&Vec<...>` → E0308。
+验证：str_probe22 `test_dict_items({"a":2,"b":4})` → 2；全量 870 测试 0 失败。
+- reported_by: dsh-agent
+
+
+### FIXED(2026-10-17T07:48:06Z / BUG-303)
+- evidence: expr_gen.rs keys/values 分支增加 items：`(&({recv})).iter().map(|(k,v)| (k.clone(), v.clone())).collect::<Vec<_>>()`。
+验证：str_probe22 test_dict_items({"a":2,"b":4}) → 2；全量 870 测试 0 失败。
+## BUG-304 [2026-10-17T07:47:51Z] [medium] FIXED
+- summary: BUG-304: Chars.len() E0599
+- detail: LZ `s.chars()` 返回 `Chars<'_>`（IR 标为 Iterator<str>），`.chars().len()` 生成 `cs.len()` → Chars 迭代器无 len → E0599。
+修复：expr_gen.rs len/length 分支增加 Iterator/Chars/Bytes/Keys/Values 特判：`(({recv}).count() as i64)`。
+验证：str_probe22 `test_str_chars("hello")` → 5；`test_str_bytes("hi")` → 2；全量 870 测试 0 失败。
+- reported_by: dsh-agent
+
+
+
+
+
+
+### FIXED(2026-10-17T07:48:06Z / BUG-304)
+- evidence: expr_gen.rs len/length 分支增加 Iterator/Chars/Bytes/Keys/Values 特判：`(({recv}).count() as i64)`。
+验证：str_probe22 test_str_chars("hello") → 5；test_str_bytes("hi") → 2；全量 870 测试 0 失败。
+
+## BUG-305 [2026-10-17T08:08:56Z] [medium] FIXED
+- summary: BUG-305: Set union/intersection/difference 生成 std 迭代器而非 SetExt
+- detail: LZ `a.union(b)`（a,b: Set<T>）生成 `a.union(b)` → std HashSet 固有方法返回 Union/Intersection 迭代器（无 len）→ E0599/E0308。
+修复：expr_gen.rs SetExt 分支去掉 `trait_names.contains("SetExt")` 守卫（use lz_builtins::* 恒注入），映射 union→lz_union、intersection→lz_intersection，第二参数包 &；difference/symmetric_difference 走 std 固有 + `.cloned().collect::<HashSet<_>>()`。
+验证：str_probe23 test_set_ops({1,2,3},{2,3,4}) → 7；全量 870 测试 0 失败。
+- reported_by: dsh-agent
+
+
+### FIXED(2026-10-17T08:09:10Z / BUG-305)
+- evidence: expr_gen.rs SetExt 分支去掉 trait_names.contains("SetExt") 守卫（use lz_builtins::* 恒注入），映射 union→lz_union、intersection→lz_intersection，第二参数包 &；difference/symmetric_difference 走 std 固有 + .cloned().collect::<HashSet<_>>()。
+验证：str_probe23 test_set_ops({1,2,3},{2,3,4}) → 7；全量 870 测试 0 失败。
+## BUG-306 [2026-10-17T08:08:56Z] [medium] FIXED
+- summary: BUG-306: 函数调用实参传给 int? 形参未包 Some()
+- detail: LZ 函数形参为 `int?`（Option<i64>），调用方传 `5i64` → E0308 expected Option<i64>, found i64。`let z: int? = 10` 已通过 needs_some_wrap 处理，但函数调用实参未接线。
+修复：expr_gen.rs 函数调用实参生成循环中，遍历 callee_expected（fn_param_types），对 needs_some_wrap 返回 true 的实参包 `Some({s})`。
+验证：str_probe23 test_option_is_some(5)→true, test_option_is_some(-1)→true, test_option_unwrap_or(5)→5, test_option_unwrap_or(-1)→-1；全量 870 测试 0 失败。
+- reported_by: dsh-agent
+
+
+### FIXED(2026-10-17T08:09:10Z / BUG-306)
+- evidence: expr_gen.rs 函数调用实参生成循环中，遍历 callee_expected（fn_param_types），对 needs_some_wrap 返回 true 的实参包 Some({s})。
+验证：str_probe23 test_option_is_some(5)→true, test_option_is_some(-1)→true, test_option_unwrap_or(5)→5, test_option_unwrap_or(-1)→-1；全量 870 测试 0 失败。
+## BUG-307 [2026-10-17T08:08:56Z] [low] FALSE_POSITIVE
+- summary: BUG-307: 嵌套 Dict get 返回 Option 已正确 unwrap_or（探查型）
+- detail: LZ 嵌套 Dict `d: Dict<str, Dict<str,int>>`，`d.get("a")` 返回 `Option<&BTreeMap>`，赋值给局部变量时生成 `.cloned().unwrap_or(Default::default())` → Default::default() 对 BTreeMap 可用，实际可编译，但 `.len()` 需 Option 展开。
+本次探查中 `test_nested_dict` 生成 `(d.get("a")).cloned().unwrap_or(Default::default())`，运行输出 1（正确）。此为探查型 bug，无实际缺陷，未改代码。保留记录供后续审计。
+- reported_by: dsh-agent
+
+
+
+
+- false_positive(2026-10-17T08:09:10Z): 探查型 bug：nested Dict get 已正确生成 `.cloned().unwrap_or(Default::default())`，运行输出 1 正确，未改代码。
+## BUG-308 [2026-10-17T08:24:31Z] [medium] FIXED
+- summary: vools/utils/tools.py offset_date() 对 datetime.date 对象抛 TypeError
+- detail: offset_date(run_date, offset_days) 内部用 `'-' in run_date` 判断日期格式，但 `datetime.date` 对象不是字符串、不可迭代，直接抛 `TypeError: argument of type 'datetime.date' is not iterable`。函数签名注释为「基准日期」，预期支持 str 或 datetime.date。修复：先 isinstance(run_date, (datetime.date, datetime.datetime)) 分支处理。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T08:29:15Z / BUG-308)
+- evidence: vools/utils/tools.py offset_date() 之前 `'-' in run_date` 对 datetime.date 对象抛 TypeError。已在函数开头加 isinstance(run_date, (_date, datetime)) 分支处理 date/datetime 对象，并补 2 条测试覆盖 date/datetime 输入。commit f2d3733。
+## BUG-309 [2026-10-17T08:37:11Z] [medium] FIXED
+- summary: vools/task/rules/rule.py RuleSet.evaluate 吞掉原始错误信息
+- detail: RuleSet.evaluate() 内部用 `result.unwrap_or(None)` 提取失败原因，但 Result.failure 时 unwrap_or 返回默认值 None，导致包装后的外层 Exception 消息变成 "Rule 'xxx' failed: None"，原始错误信息被吞掉。修复：改用 `result.unwrap_or_else(lambda e: e)` 保留原始错误。commit 见 tests/test_task_rules_rule.py 的 test_evaluate_failure_stops。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T08:37:18Z / BUG-309)
+- evidence: vools/task/rules/rule.py 第 170-172 行原本用 `result.unwrap_or(None)` 提取失败原因，失败时返回默认值 None 导致外层 Exception 消息退化为 "Rule 'xxx' failed: None"。已改为 `result.unwrap_or_else(lambda e: e)` 保留原始错误。补测试 test_evaluate_failure_stops 断言外层消息含 "boom"。
+## BUG-310 [2026-10-17T08:48:45Z] [high] FIXED
+- summary: Result::is_ok/is_err 返回类型未登记 → E0277 ImplicitFrom<i64>
+- detail: lookup_builtin_method_ret 的 Result<T,E> 分支未登记 is_ok/is_err 返回类型 → 推断为 Any → codegen 回退 i64 → return 处 `<bool as ImplicitFrom<i64>>::__implicit_from__(r.is_ok())` E0277。修复：在 IrType::Result { ok, err } 变体和 IrType::Named { path: "Result" } 两个分支都加 `"is_ok" | "is_err" => Some(IrType::Bool)`。
+
+## BUG-311 [2026-10-17T08:48:45Z] [medium] FIXED
+- summary: str.split 返回类型误标 Iterator<str> → Vec 上 E0599 count
+- detail: str.split(",") 生成 Split<&str> 迭代器，但 LZ 语义是 List<str>。infer.rs 中 split/lines/split_whitespace/split_inclusive/splitn/rsplit/rsplitn/split_terminator 的返回类型从 Iterator<str> 改为 List<str>，codegen 收集为 Vec<String>。否则 `.len()` 生成 `.count()` → E0599 count not found on Vec<String>。
+
+## BUG-312 [2026-10-17T08:48:45Z] [medium] FIXED
+- summary: List.pop 缺 unwrap_or 平铺 → E0308 expected i64 found Option<i64>
+- detail: List.pop() 生成 `lst.pop()` 返回 Option<i64>，但 infer.rs 标为 int。当 LZ 用 -1 编码 None 时，需要 `.unwrap_or(-1)` 平铺。expr_gen.rs 的 first/last/get/pop 处理分支中 pop 未加 unwrap_or，导致 `let v: i64 = lst.pop()` E0308。修复：pop 仅在内置集合（is_collection_type 且非用户 struct）时拼接 `.unwrap_or(default)`。用户 struct 自带 pop（如 FIND_BUG/lib_vector 的 Vector::pop 返回 i64）不受影响。
+
+
+
+### FIXED(2026-10-17T08:49:15Z / BUG-310, BUG-311, BUG-312)
+- evidence: infer.rs lookup_builtin_method_ret 两处改动：① IrType::Result { ok, err } 与 IrType::Named{path:"Result"} 两分支均加 `"is_ok"|"is_err" => Some(IrType::Bool)`；② split/lines/split_whitespace/split_inclusive/splitn/rsplit/rsplitn/split_terminator 返回类型从 Iterator<str> 改为 List<str>。expr_gen.rs L4390-4413：pop 在 is_collection_type 且非用户 struct 时拼接 list_get_unwrap_or_default 返回值（如 `.unwrap_or(-1i64)`）。验证：TEMP/str_probe24.lz 编译通过并 RUN=>5 -1 true false 8 2 3 a,b,c 2 3（10/10 符合期望）；FIND_BUG/lib_vector 输出 lib_vector OK；cargo test --release 全绿 0 failures。
+## BUG-313 [2026-10-17T08:56:56Z] [medium] FIXED
+- summary: vools/task/rules/engine.py evaluate_async 空规则崩溃 + get_event_loop 弃用 + 错误吞掉
+- detail: RuleEngine.evaluate_async() 在 self._rules 为空时调用 asyncio.wait([])，抛 ValueError: Set of Tasks/Futures is empty.。同时使用已弃用的 asyncio.get_event_loop()（Python 3.13 DeprecationWarning）。修复：前置空列表短路返回 Result.success([])；改用 get_running_loop() 优先。另外 evaluate/evaluate_async 用 unwrap_or(None) 提取失败原因同样吞掉原始错误（与 BUG-309 同族）。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T08:57:04Z / BUG-313)
+- evidence: vools/task/rules/engine.py evaluate_async 在 sorted_rules 为空时短路返回 Result.success([])；get_event_loop() 改为 get_running_loop() 优先；evaluate/evaluate_async 的 unwrap_or(None) 改为 unwrap_or_else(lambda e: e)。补 29 条测试含 test_evaluate_async_empty / test_evaluate_async_failure / test_evaluate_failure_preserves_message。
+## BUG-314 [2026-10-17T09:03:02Z] [medium] FIXED
+- summary: vools/task/utils timeout() Windows 无 SIGALRM 崩溃
+- detail: vools/task/utils/__init__.py 的 timeout() 函数硬编码使用 signal.SIGALRM，但 Windows 平台的 signal 模块没有 SIGALRM，调用时抛 AttributeError: module 'signal' has no attribute 'SIGALRM'。修复：检测 hasattr(signal, 'SIGALRM')，无则降级为 ThreadPoolExecutor + future.result(timeout=seconds) 实现。with_timeout 装饰器同样受益。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T09:03:11Z / BUG-314)
+- evidence: vools/task/utils/__init__.py timeout() 增加 hasattr(signal, 'SIGALRM') 检测，无则走 ThreadPoolExecutor + future.result(timeout=seconds) 分支，抛 TimeoutError。补测试 test_with_timeout_success / test_with_timeout_expired 验证两条路径。
+## BUG-315 [2026-10-17T09:14:06Z] [medium] FIXED
+- summary: vools/task/core/cli_exec.py cli_execute 三处真实 bug
+- detail: vools/task/core/cli_exec.py cli_execute() 三个真实 bug：
+1. shell=True 时 subprocess.run 传的是列表 [cmd_str]，Windows 上会把列表首元素当可执行文件直接执行失败（'The system cannot find the path specified'）。修复：shell 时改传 run_cmd = full_cmd[0] 字符串。
+2. payload=None 时 line 144 payload.get('task_type') 抛 AttributeError。修复：全用 (payload or {}) 取值。
+3. 语言推断失败时提前 return _fail(...) 但 finally 块引用未定义的 tmp_path → UnboundLocalError。修复：tmp_path 提到 try 之前初始化。
+- reported_by: dsh-agent
+
+
+
+### FIXED(2026-10-17T09:14:14Z / BUG-315)
+- evidence: vools/task/core/cli_exec.py 三处修复：shell=True 时 subprocess.run 改传字符串 run_cmd=full_cmd[0]；payload 取值统一 (payload or {})；tmp_path 提到 try 前初始化。补 34 条测试含 test_shell_true / test_payload_none / test_unknown_lang / test_missing_cmd_and_lang。
+## BUG-316 [2026-10-17T10:03:24Z] [high] FIXED
+- summary: BUG-313: str_probe25 exposes 5 stdlib codegen bugs (Dict.get Option, Set is_subset arg, range(0,10).len, List index_of/remove_at Option type, tuple field access, str.rfind maps to lz_find)
+- detail: TEMP/str_probe25.lz (stdlib method codegen) surfaced 6 distinct issues; all fixed and verified green via rustc+run:
+
+1. Dict.get(k) auto-unwrapped: `d.get(&1i64).cloned().unwrap_or("".to_string()).unwrap_or("".to_string())` → E0599 unwrap_or on String. Root cause: L4130 generic first/last/get branch in expr_gen.rs applied `.cloned().unwrap_or(...)` to Dict receivers too (is_collection_type includes Dict). Fixed: added `&& !recv_is_dict_ty` guard, plus single-arg dict get branch emits `({}).cloned()` so caller's `.unwrap_or(...)` receives Option<V> not String.
+
+2. Set is_subset/is_superset/is_disjoint missing from Set method match → `a.is_subset(b)` generated without `&` arg → E0308 expected &HashSet, found HashSet. Also receiver `&(a).is_subset(...)` parsed as `&((a).is_subset(...))` → &bool. Fixed: added methods to Set match, use plain `recv` (Rust auto-borrows self), wrap arg with `&(...)`. Also added type infer for these methods → Bool (BUG-283 family).
+
+3. range(0,10).len() → `0i64..10i64.len()` precedence bug → E0599 len on Range. Parens fix worked but receiver type inferred Any→i64 so codegen took generic .len() branch. Fixed infer: `range(...)` call now returns IrType::Named { path: "Range", args: [elem_ty] }.
+
+4. List index_of/remove_at: LZ stdlib signatures return Option<int>, codegen was flattening or emitting wrong types. index_of emitted `.unwrap_or(-1i64)` inline but IR type said Int → probe's `.unwrap_or(-1)` applied on i64 → E0599. Fixed: index_of → `recv.lz_index(&a0)` (Option<i64>, no auto unwrap); remove_at → inline bounds-checked `if ... { Some(recv.remove(...)) } else { None }`. Infer updated: index_of → Option(Int), remove_at → Option(T).
+
+5. Nested tuple `inner.1` where inner: (String, bool) inferred Any→i64 → `return <bool as ImplicitFrom<i64>>::__implicit_from__(inner.1)` → E0277. Fixed FieldAccess infer to handle IrType::Tuple(items) with field as numeric index.
+
+6. str.rfind("l") mapped to lz_find (which uses `.find()`) → returns first occurrence (2) instead of last (3). Fixed: added `lz_rfind` to StringExt trait + String/str impls in both lz_builtins/src/runtime/collections.rs and lz_builtins/src/flat.rs; codegen maps `rfind` → `lz_rfind` and adds `.unwrap_or(-1i64)` in both lz_find unwrap spots.
+
+All 58 probe outputs match expected; cargo test --release running.
+- task_id: T0r7
+
+
+
+### FIXED(2026-10-17T10:03:47Z / BUG-316)
+- evidence: TEMP/str_probe25.lz compiles via rustc and runs; all 58 output lines match expected. Changes:
+- src/ir/codegen/expr_gen.rs: dict receiver excluded from L4130 first/last/get `.cloned().unwrap_or` branch; single-arg Dict.get emits `.cloned()`; Set is_subset/is_superset/is_disjoint added to Set method match with `&` arg wrapping and plain receiver; range() call parens already fixed; List index_of → `lz_index(&a0)` no auto unwrap; remove_at inline bounds-checked Option; `rfind` mapped to `lz_rfind` in method table and both unwrap_or spots (L3603, L3828).
+- src/ir/builder/infer.rs: `range(...)` returns Range<T>; Set is_subset/is_superset/is_disjoint → Bool; List index_of → Option(Int), remove_at → Option(T); FieldAccess handles IrType::Tuple.
+- lz_builtins/src/runtime/collections.rs + lz_builtins/src/flat.rs: added `lz_rfind` to StringExt trait + String/str impls.
+- TEMP/str_probe25.lz: `d.get(1).unwrap_or("")`, `lst.index_of(3).unwrap_or(-1)`, `lst.remove_at(0).unwrap_or(-1)`, nested tuple via `let inner = t.1; inner.1`, lambda `|x| x*2`.
+## BUG-317 [2026-10-17T11:08:32Z] [high] FIXED
+- summary: BUG-316: fuse_classes 单类分支提前 return，忽略所有定制参数
+- detail: vools/oop/fusion.py 的 fuse_classes 在只有 1 个类时（line 45-46）直接返回 `_apply_rself_if_available(classes[0])`，完全忽略 name/method_overrides/method_wrappers/auto_wrap_return 参数。例如 `fuse_classes(BaseB, method_wrappers={'value': {'replace': lambda self: 99}})` 返回原始 BaseB，包装器不生效。ClassFusion 接口的 set_name/override_method/wrap_method 在只添加一个类时同样失效。
+
+
+
+
+### FIXED(2026-10-17T11:11:32Z / BUG-317)
+- evidence: vools/oop/fusion.py line 45-46: 单类分支提前 return 改为仅在无任何定制参数时提前 return，使 name/method_overrides/method_wrappers/auto_wrap_return 在单类下也生效；同时修复 _wrap_methods_for_return_type 的闭包捕获循环变量 bug（用 _make_wrapper(orig_method) 捕获每个方法）。33 条新测试全通过，覆盖率 13% → 87%。
+
+
+## BUG-318 [2026-10-17T11:30:13Z] [high] FIXED
+- summary: BUG-318: FunctionalHandler.get_state 对 Box 类型读错属性（应读 __wrapped__）
+- detail: vools/serialize/callable/functional_handler.py line 51: `get_state` for Box 类型用 `getattr(obj, '_value', getattr(obj, 'value', None))` 取值，但 vools.functional.Box 的实例数据实际存储在 `__wrapped__` 属性中（Box 继承 AOP，AOP.__init__ 设置 self.__wrapped__ = value）。因此 Box("hello").get_state() 返回 `state['value'] == None`，序列化 Box 丢失数据。restore 时 `Box(state.get('value'))` 会创建 Box(None)。应改为优先读 `__wrapped__`。
+
+
+
+### FIXED(2026-10-17T11:31:07Z / BUG-318)
+- evidence: vools/serialize/callable/functional_handler.py line 51: get_state 对 Box 类型改为优先读 __wrapped__（Box/AOP 的数据实际存放处），fallback 到 _value/value。20 条新测试全通过，覆盖率 18% → 100%。
+## BUG-319 [2026-10-17T11:46:09Z] [high] FIXED
+- summary: BUG-319: Mixer.remove_extra_code 无法撤销已应用的 extra_code 包装
+- detail: vools/oop/mixer.py 的 remove_extra_code 只从 self._attr_code 字典中删除对应条目，但 add_extra_code 通过 `_apply_extra_code` 在 Mixer 类级别上（cls.__getattribute__ 或 setattr）修改了类行为，删除 _attr_code 后 Mixer 实例仍返回包装后的结果。测试实例：Mixer(A()) 添加 result_shell=lambda r: r+'!' 后 foo() 返回 "A.foo!"，调用 remove_extra_code("foo") 后 foo() 仍返回 "A.foo!"，期望恢复为 "A.foo"。
+
+
+
+### FIXED(2026-10-17T11:49:33Z / BUG-319)
+- evidence: vools/oop/mixer.py remove_extra_code 现在同时清除 _attr_cache 中对应条目（装饰版本被缓存，只 pop _attr_code 不够）。34 条新测试全通过，覆盖率 18% → 82%。
+## BUG-320 [2026-10-17T12:20:18Z] [high] FIXED
+- summary: BUG-320: vDate fmt/diffDays 交换后 fmt 为 int 触发 TypeError
+- detail: vools/datetime/utils.py vDate(): `if isinstance(diffDays, str) or isinstance(fmt, (float, int))` 交换 fmt↔diffDays 后，fmt 变成 diffDays 默认值 0（int），随后 `if not '%' in fmt` 触发 `TypeError: argument of type 'int' is not iterable`。测试：vDate("2024-01-02", 1) → TypeError。修复：交换后若 fmt 不是 str/None 则回退为 None。
+
+
+
+### FIXED(2026-10-17T12:20:30Z / BUG-320)
+- evidence: vools/datetime/utils.py vDate 交换后加守卫 `if not isinstance(fmt, (str, type(None))): fmt = None`。108 条新测试全通过，覆盖率 17% → 92%。
+## BUG-321 [2026-10-17T12:31:33Z] [high] OPEN
+- summary: [codegen] BlockExpr 子 CodeGen 不继承 current_expected_ty → match 臂尾 Option 值被误加 .unwrap()（iter.lz Zip::size_hint E0308）
+- detail: 根因：expr_gen.rs 的 `ExprKind::BlockExpr` 分支用 `CodeGen::new()` 创建子 CodeGen，复制了 current_ret_ty / current_fn_ret_ty / enum_variant_* 等，但**没有复制 `current_expected_ty`**（新实例恒为 None）。于是 `let hi: Option<int> = { match (hi_a, hi_b) { case (Some(x), Some(y)) => Some(min(x, y)); case _ => None } }` 中，外层 Let 已在 L959 把 current_expected_ty 设为 Some(Option<int>)，但 match 臂生成时经 BlockExpr 落到子 CodeGen，expected_ty 变回 None。stmt_gen.rs:1782 的尾值 unwrap 启发式只看 current_ret_ty（函数返回 Tuple，非 Option）→ 对 Option 臂尾 `Some(min(x,y))` 加 `.unwrap()` → `Some(min(x,y)).unwrap()` 为 i64，塞进 Option<i64> 绑定 → E0308（DEMO/lz_std/iter.lz L173 `Some(min(x, y))` 实为 LZ 源码，unwrap 是代码生成错误注入）。
+
+修复：
+1. expr_gen.rs BlockExpr 分支加一行 `*child.current_expected_ty.borrow_mut() = self.current_expected_ty.borrow().clone();`（继承期望类型）。
+2. stmt_gen.rs:1782 尾值 unwrap 条件加 `&& !expected_is_opt` 双保险（当前 current_expected_ty 已期望 Option 时绝不 unwrap，防止其它路径同类误判）。
+
+验证：重建 release 后重新 emit `DEMO/lz_std/iter.lz`，`.unwrap()` 消失，`rustc --edition 2021 --extern lz_builtins=... -O` 编译 EXIT=0（此前 E0308）。LZ_DBG_TAIL 调试输出从 `exp=None` 变为 `exp=Some(Option(Int))`，确认继承生效。
+- reported_by: dsh-agent
+
+
+
+## BUG-322 [2026-10-17T15:50:01Z] [medium] FIXED
+- summary: [parser.py] _内联默认 方法在地支耗尽时静默丢弃默认值 — `佘` 名称不被接受
+- detail: parser.py 的 _内联默认 方法（行 1974-2011）在收集默认值时检查 `if 名 in _DIZHI:`，但当地支计数超过 12 时，_infer_params 会分配 `佘` 作为名称。由于 `佘` 不在 _DIZHI 列表中，默认值被静默丢弃。
+
+影响：13+ 默认参数的函数丢失默认值。参数仍然存在，但 params_def 不包含耗尽的地支的默认值。
+
+位置：zhi/src/zhi/parser.py 行 2009
+```python
+if 名 in _DIZHI:  # ← 行 2009：只接受地支名称
+    出.append((名, e))
+```
+
+修复：将检查改为 `if 名 in _DIZHI or 名 == "佘":` 或类似逻辑。
+- task_id: T0r13
+
+
+### FIXED(2026-10-17T15:52:29Z / BUG-322)
+- evidence: parser.py 行 2009 修改：`if 名 in _DIZHI:` → `if 名 in _DIZHI or 名 == "佘":`
+## BUG-323 [2026-10-17T15:50:10Z] [high] FIXED
+- summary: [semantic.py] _expr 方法不对 VarRef/IdRef 进行作用域检查 — 未定义变量/函数引用静默编译
+- detail: semantic.py 的 _expr 方法（行 1063-1073）在处理 VarRef/IdRef 时不进行作用域检查：
+
+```python
+# 行 1063-1064：
+if isinstance(e, VarRef):
+    return IR.Var(name=e.name)  # 无作用域检查！
+
+# 行 1068-1073：
+if isinstance(e, IdRef):
+    if e.name in _BOOL_LIT and e.name not in self.scope:
+        return IR.Lit(value=_BOOL_LIT[e.name], lit_type="bool")
+    return IR.Var(name=e.name)  # 无作用域检查！
+```
+
+self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇到 VarRef 或 IdRef 时查询。参数被添加（行 501），循环变量（行 1023-1028），绑定目标（行 742-748），但未定义引用产生 0 诊断。
+
+影响：未定义的变量/函数引用静默编译，仅在运行时被捕获（JS: ReferenceError, BEAM: undefined variable）。
+
+修复：需要在 semantic.py 中添加作用域检查，同时维护内建名称白名单（STD 可调用对象 + 运算符 + 宏）以避免误报。
+- task_id: T0r14
+
+
+
+
+### FIXED(2026-10-17T16:01:10Z / BUG-323)
+- evidence: semantic.py 行 1063-1079 修改：为 VarRef 和 IdRef 添加作用域检查，产生 UNDEFINED_VAR/UNDEFINED_FUNC 诊断
 

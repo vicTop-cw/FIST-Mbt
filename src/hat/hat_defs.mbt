@@ -26,19 +26,19 @@
 /// 一个 HexaMind 单元（一顶帽 + 一份模型策略 + 一份输出契约）。
 /// 字段全部 pub：跨包（`src/server` 的 hat_* 工具）需构造与读取。
 pub struct HexaElement {
-  pub id : String
+  id : String
   // 六元代号：stargazer | pulse | wallbreaker | golddigger | nova | nucleus
-  pub hat_id : String
+  hat_id : String
   // 对应六顶帽 id：white | red | black | yellow | green | blue（对齐 ops_hats）
-  pub name_zh : String
+  name_zh : String
   // 中文代号
-  pub lane : String
+  lane : String
   // 模型车道：free_pool | paid_pool | balanced（交给 model_route 分池）
-  pub temperature : Double
-  pub max_tokens : Int
-  pub output_schema : Array[String]
+  temperature : Double
+  max_tokens : Int
+  output_schema : Array[String]
   // 该元必须逐项给出的字段
-  pub role : String
+  role : String
   // 角色指令（六顶帽基础角色 + 六元强化），可直接拼进发给 subagent 的 prompt
 }
 

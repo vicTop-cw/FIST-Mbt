@@ -1166,7 +1166,10 @@ fn scan_collect(
   out : Array[String],
 ) -> Result[Unit, String] {
   let names = @fs.read_dir(dir) catch {
-    _ => return Err("issue_scan: 无法读取目录（不存在或不可读）: " + dir)
+    _ =>
+      return Err(
+        "issue_scan: 无法读取目录（不存在或不可读）: " + dir,
+      )
   }
   for name in names {
     let p = mem_join(dir, name)
@@ -1435,7 +1438,7 @@ pub fn issue_scan(
     }
     // R124: 文件级 ctx 缓存（每个文件只构建一次）
     let ctx = match ctx_cache.get(hit.file) {
-      Some(_) => ctx_cache.get(hit.file).unwrap()
+      Some(c) => c
       None => {
         let new_ctx = scan_build_ctx(fc)
         ctx_cache.set(hit.file, new_ctx)

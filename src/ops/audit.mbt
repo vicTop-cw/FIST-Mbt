@@ -16,11 +16,11 @@
 ///|
 /// 审计单条记录
 pub struct AuditEntry {
-  pub ts : String
-  pub action : String
-  pub actor : String
-  pub task_id : String
-  pub detail : String
+  ts : String
+  action : String
+  actor : String
+  task_id : String
+  detail : String
 } derive(Eq, Debug)
 
 ///|

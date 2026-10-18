@@ -29,6 +29,7 @@ fn contract_try(
   action : String,
   assignee : String,
   completed_by : String,
+  force : Bool,
 ) -> Result[@core.Task, String] {
   match action {
     "claim" => task.claim(assignee~)
@@ -41,7 +42,9 @@ fn contract_try(
     "resume" => task.resume_task()
     "reopen" => task.reopen()
     "complete" => task.complete(completed_by~)
-    "archive" => task.archive()
+    // BUG-272：archive 建模 BUG-227 强制归档路径。force=true 时走 Task::archive_force，
+    // 放行 已暂停/已打回 非流态僵尸任务（在流态仍拒）；force=false 与 Task::archive 完全同义（默认生命周期锚）。
+    "archive" => if force { task.archive_force(force~) } else { task.archive() }
     "mark_decomposing" => task.mark_decomposing()
     // 未知动作：不做前置拒绝，让控制流走到 postcondition 分支
     // （契约表无该动作定义 → phase=postcondition, verdict=rejected；BUG-168）。
@@ -99,6 +102,7 @@ pub fn FistEngine::transition_contract(
   action : String,
   assignee? : String = "agent",
   completed_by? : String = "human_steward",
+  force? : Bool = false,
 ) -> Json {
   match self.get_task(task_id) {
     None =>
@@ -116,7 +120,7 @@ pub fn FistEngine::transition_contract(
         "note": Json::string("任务不存在: " + task_id),
       })
     Some(t) =>
-      match contract_try(t, action, assignee, completed_by) {
+      match contract_try(t, action, assignee, completed_by, force) {
         Err(msg) =>
           Json::object({
             "ok": Json::boolean(true),

@@ -216,8 +216,9 @@ pub fn loop_tick(
       lp.max_rounds.to_string()
   }
 
-  // 2. goal_reached
-  if !should_stop && lp.stop_on_goal {
+  // 2. goal_reached（BUG-162：首轮 round=0 时一律不让 goal_reached 停，
+  //    因为调用方很可能还没跑过 verify 步骤、项目健康度是手工填的占位值）
+  if !should_stop && lp.stop_on_goal && next_round > 0 {
     let g = project_health_grade.to_lower()
     if g == "healthy" && blocked_tasks == 0 {
       should_stop = true
@@ -226,7 +227,8 @@ pub fn loop_tick(
   }
 
   // 3. exceeded（test 上 10%+ 或 open bug 下 50%+）
-  if !should_stop && lp.stop_on_exceeded {
+  //    BUG-162：同样首轮跳过（baseline 可能是 0 或手工占位）
+  if !should_stop && lp.stop_on_exceeded && next_round > 0 {
     let mut exceeded_hit = false
     if lp.baseline_test_count > 0 {
       let growth : Double = (current_test_count - lp.baseline_test_count).to_double() /

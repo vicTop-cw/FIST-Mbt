@@ -54,6 +54,8 @@ pub fn parse_ofm_chat_response(String, Int) -> OfmChatResponse
 
 pub fn parse_ofm_models(String) -> Result[Array[OfmModel], String]
 
+pub fn pool_label_tier_hint(String) -> String
+
 pub fn resolve_ofm_endpoint(String, String) -> String
 
 pub fn router_restore(Json, config? : Json) -> (ModelRouter, Array[String])
@@ -61,6 +63,8 @@ pub fn router_restore(Json, config? : Json) -> (ModelRouter, Array[String])
 pub fn secs_to_iso(Int) -> String
 
 pub fn should_retry_on_invalid_json(OfmChatResponse) -> Bool
+
+pub fn soldier_label_reason(String) -> String
 
 pub fn sort_by_cost_performance(Array[ModelQuota]) -> Unit
 
@@ -154,7 +158,7 @@ pub fn ModelRouter::from_config(RouterConfig) -> Self
 pub fn ModelRouter::hard_reset(Self) -> Unit
 pub fn ModelRouter::mark_failure(Self, String, String) -> Bool
 pub fn ModelRouter::new() -> Self
-pub fn ModelRouter::pick(Self, now~ : String, unhealthy_ids? : Array[String], laya_prefer_tier? : String) -> RouteDecision
+pub fn ModelRouter::pick(Self, now~ : String, unhealthy_ids? : Array[String], laya_prefer_tier? : String, soldier_label? : String) -> RouteDecision
 pub fn ModelRouter::pick_caf(Self, now~ : String, caf_memory~ : CafMemory, context~ : String, k~ : Int, unhealthy_ids? : Array[String], laya_prefer_tier? : String, caf_default_preference? : Array[String], caf_min_evidences? : Int) -> (RouteDecision, Bool)
 pub fn ModelRouter::pick_caf_dry_run(Self, now~ : String, caf_memory~ : CafMemory, context~ : String, k~ : Int, unhealthy_ids? : Array[String], caf_default_preference? : Array[String], caf_min_evidences? : Int) -> CafDryRun
 pub fn ModelRouter::record_call(Self, model~ : String, now~ : String) -> RouteDecision

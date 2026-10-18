@@ -61,15 +61,15 @@ pub fn MemoryStore::new() -> MemoryStore {
 ///|
 /// 文件锁记录（跨后端统一结构）。
 pub struct FileLock {
-  pub lock_id : String
-  pub batch_id : String
-  pub scope : String
-  pub agent : String
+  lock_id : String
+  batch_id : String
+  scope : String
+  agent : String
   /// active / expired / released / violated
-  pub status : String
-  pub ts : String
-  pub ttl_until : String
-  pub meta : String
+  status : String
+  ts : String
+  ttl_until : String
+  meta : String
 } derive(Eq, Debug)
 
 ///|
@@ -124,11 +124,11 @@ pub fn FileLock::to_json(self : FileLock) -> Json {
 ///|
 /// 锁违例记录。
 pub struct LockViolation {
-  pub ts : String
-  pub agent : String
-  pub scope : String
-  pub reason : String
-  pub lock_id : String
+  ts : String
+  agent : String
+  scope : String
+  reason : String
+  lock_id : String
 } derive(Eq, Debug)
 
 ///|
@@ -146,15 +146,15 @@ pub fn LockViolation::new(
 ///|
 /// 项目助理登记（multi-agent-lock v3 阶段2 精简版）。
 pub struct AssistantReg {
-  pub agent : String
+  agent : String
   /// all | lock_keeper | reaper | sheriff | auditor（逗号分隔）
-  pub mode : String
+  mode : String
   /// 1=主助理（有 kill 权，本阶段仅登记），0=副助理
-  pub is_primary : Bool
-  pub registered_at : String
-  pub heartbeat_at : String
+  is_primary : Bool
+  registered_at : String
+  heartbeat_at : String
   /// active | dead | resigned
-  pub status : String
+  status : String
 } derive(Eq, Debug)
 
 ///|
@@ -235,6 +235,30 @@ impl Store for MemoryStore with fn update_task(self, task) {
   }
   self.tasks.set(task.get_id(), task)
   Ok(())
+}
+
+///|
+pub fn MemoryStore::update_task_if_status(
+  self : MemoryStore,
+  task : @core.Task,
+  expected_status : String,
+) -> Result[Unit, String] {
+  match self.tasks.get(task.get_id()) {
+    None => Err("task not found: \{task.get_id()}")
+    Some(current) =>
+      if current.get_status().to_string() == expected_status {
+        self.tasks.set(task.get_id(), task)
+        Ok(())
+      } else {
+        Err(
+          "状态不匹配，期望 [" +
+          expected_status +
+          "]，当前 [" +
+          current.get_status().to_string() +
+          "]",
+        )
+      }
+  }
 }
 
 ///|
@@ -394,6 +418,18 @@ impl Store for StoreBackend with fn update_task(self, task) {
   match self {
     Mem(m) => m.update_task(task)
     Sql(s) => s.update_task(task)
+  }
+}
+
+///|
+pub fn StoreBackend::update_task_if_status(
+  self : StoreBackend,
+  task : @core.Task,
+  expected_status : String,
+) -> Result[Unit, String] {
+  match self {
+    Mem(m) => m.update_task_if_status(task, expected_status)
+    Sql(s) => s.update_task_if_status(task, expected_status)
   }
 }
 

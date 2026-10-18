@@ -277,6 +277,41 @@ fn sort_pool_copy(
 }
 
 ///|
+/// 兵种池标签 → 档位提示（§8.3 路由联动；展示层标签的纯函数映射，不引入协议枚举）。
+/// 特种兵/炮兵走付费池（重任务/高价值），其余兵种走免费池（轻任务/通用）。
+/// 未知标签保守回退免费池（便宜优先，与默认策略一致，零回归）。
+pub fn pool_label_tier_hint(label : String) -> String {
+  let l = label.trim().to_lower()
+  // 池标签形态（paid-premium / paid-flagship）与兵种名形态（特种兵 / 炮兵）都认；
+  // §8.3 只把「重任务/高价值」两兵种导向付费池，其余一律免费池（便宜优先）。
+  if l.contains("paid") || l.contains("特种") || l.contains("炮兵") {
+    "paid"
+  } else {
+    "free"
+  }
+}
+
+///|
+/// 兵种/池标签 → 路由提示理由文案（供决策 reason 与面板「兵种分布」视图消费）。
+/// 标签直接复用 display 层 `soldier_type_of` 的 8 兵种名；未识别走通用文案。
+pub fn soldier_label_reason(label : String) -> String {
+  match label {
+    "特种兵" =>
+      "特种兵：白名单专属最强模型（高价值/紧急/架构）"
+    "炮兵" => "炮兵：付费旗舰池重任务（大重构/算法攻坚）"
+    "侦查兵" =>
+      "侦查兵：免费池便宜快速模型（情报搜集/调研）"
+    "骑兵" => "骑兵：免费池低延迟中端模型（短平快/高频）"
+    "通信兵" => "通信兵：免费池快速模型（消息/汇报/提醒）"
+    "医疗兵" =>
+      "医疗兵：免费池中端模型（错误修复/故障恢复）"
+    "后勤兵" => "后勤兵：免费池通用模型（整理/分配/归档）"
+    "工兵" => "工兵：免费池通用模型（环境/依赖/脚本）"
+    _ => "通用：免费池通用模型（默认）"
+  }
+}
+
+///|
 /// 路由配置（窗口长度 / 切换阈值 / 两个模型池 / OFM 端点）
 ///
 /// `ofm_endpoint`（P0.1）：dsh-our-free-model 外部服务的 OpenAI 兼容 base（如
@@ -670,8 +705,14 @@ pub fn ModelRouter::pick(
   now~ : String,
   unhealthy_ids? : Array[String] = [],
   laya_prefer_tier? : String = "",
+  soldier_label? : String = "",
 ) -> RouteDecision {
-  let d = self.pick_inner(now~, unhealthy_ids~, laya_prefer_tier~)
+  let d = self.pick_inner(
+    now~,
+    unhealthy_ids~,
+    laya_prefer_tier~,
+    soldier_label~,
+  )
   // P1.1：备用链在 pick 统一登记（单一 choke point，避免各分支重复计算）
   let d2 = if d.available && !d.model_name.is_empty() {
     {
@@ -698,11 +739,68 @@ pub fn ModelRouter::pick(
 }
 
 ///|
+/// 软性档位提示的统一实现（§8.3 把 laya 提示与兵种提示收敛到同一路径，避免两套复制）。
+/// 先试提示档位池：有容量则按它 pick 并登记切换；无容量返回 None 让调用方回落正常逻辑。
+/// 配额硬约束（usage_pct < threshold、未耗尽、不在冷却、不在黑名单）一律由 `pool_pick` 强制，
+/// 软性提示不破任何硬约束。返回 None 时不改动 current_tier / 游标 / window_start。
+fn ModelRouter::pick_with_hint(
+  self : ModelRouter,
+  tier : ModelTier,
+  now~ : String,
+  unhealthy_ids~ : Array[String],
+  reason : String,
+  laya_reason : String,
+) -> RouteDecision? {
+  let th = self.config.threshold_pct
+  let pool = if tier == Free {
+    self.config.free_models
+  } else {
+    self.config.paid_models
+  }
+  let idx0 = if tier == Free { self.free_idx } else { self.paid_idx }
+  let nxt = secs_to_iso(iso_to_secs(now) + self.config.window_seconds)
+  match pool_pick(pool, idx0, th, now~, unhealthy_ids~) {
+    None => None
+    Some(idx) => {
+      let was_switch = self.current_tier != tier
+      if was_switch {
+        self.switch_count = self.switch_count + 1
+        self.last_switch_at = now
+      }
+      self.current_tier = tier
+      if tier == Free {
+        self.free_idx = (idx + 1) % pool.length()
+      } else {
+        self.paid_idx = (idx + 1) % pool.length()
+      }
+      if pool[idx].window_start == "" {
+        pool[idx].window_start = now
+      }
+      Some({
+        model_name: pool[idx].name,
+        tier,
+        reason,
+        switched: was_switch,
+        next_switch_at: nxt,
+        available: true,
+        laya_reason,
+        fallback_chain: compute_fallback_chain(
+          self.config,
+          pool[idx].name,
+          unhealthy_ids~,
+        ),
+      })
+    }
+  }
+}
+
+///|
 fn ModelRouter::pick_inner(
   self : ModelRouter,
   now~ : String,
   unhealthy_ids? : Array[String] = [],
   laya_prefer_tier? : String = "",
+  soldier_label? : String = "",
 ) -> RouteDecision {
   let _ = self.window_reset_check(now~)
   let th = self.config.threshold_pct
@@ -719,43 +817,38 @@ fn ModelRouter::pick_inner(
     }
     match ModelTier::from_string(hint_norm) {
       None => ()
-      Some(t) => {
-        let hint_pool = if t == Free { free } else { paid }
-        let hint_idx = if t == Free { self.free_idx } else { self.paid_idx }
-        match pool_pick(hint_pool, hint_idx, th, now~, unhealthy_ids~) {
+      Some(t) =>
+        match
+          self.pick_with_hint(
+            t,
+            now~,
+            unhealthy_ids~,
+            "laya prefer \{t.to_string()} tier",
+            "laya:" + t.to_string(),
+          ) {
           None => () // 提示档位无容量 → 回落正常逻辑
-          Some(idx) => {
-            let was_switch = self.current_tier != t
-            if was_switch {
-              self.switch_count = self.switch_count + 1
-              self.last_switch_at = now
-            }
-            self.current_tier = t
-            if t == Free {
-              self.free_idx = (idx + 1) % free.length()
-            } else {
-              self.paid_idx = (idx + 1) % paid.length()
-            }
-            if hint_pool[idx].window_start == "" {
-              hint_pool[idx].window_start = now
-            }
-            return {
-              model_name: hint_pool[idx].name,
-              tier: t,
-              reason: "laya prefer \{t.to_string()} tier",
-              switched: was_switch,
-              next_switch_at: nxt,
-              available: true,
-              laya_reason: "laya:" + t.to_string(),
-              fallback_chain: compute_fallback_chain(
-                self.config,
-                hint_pool[idx].name,
-                unhealthy_ids~,
-              ),
-            }
-          }
+          Some(d) => return d
         }
-      }
+    }
+  }
+  // §8.3 路由联动：兵种/池标签软性档位提示（配额硬约束仍在，与 laya 提示同一路径）。
+  // 兵种只是展示层标签，此处仅消费池标签字符串，不引入协议枚举。
+  if soldier_label != "" {
+    let hint_tier = pool_label_tier_hint(soldier_label)
+    match ModelTier::from_string(hint_tier) {
+      None => ()
+      Some(t) =>
+        match
+          self.pick_with_hint(
+            t,
+            now~,
+            unhealthy_ids~,
+            "soldier \{soldier_label} prefer \{t.to_string()} tier",
+            "soldier:" + soldier_label,
+          ) {
+          None => () // 提示档位无容量 → 回落正常逻辑
+          Some(d) => return d
+        }
     }
   }
   match self.current_tier {

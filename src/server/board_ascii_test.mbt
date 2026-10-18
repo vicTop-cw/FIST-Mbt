@@ -377,6 +377,7 @@ test "status_summary 支持 namespace 过滤：只统计该 ns" {
   }
 }
 
+///|
 /// BUG-210 回归锁：同状态组内 (depth, created_at) 全等的任务必须按 id 升序确定性渲染。
 /// publish 固定 depth=3 且 created_at 取自 now 参数：两次 publish 传同一 now 即造出
 /// 全等对（T0 与 T0r2）。旧比较器在全等时两方向都返回 1（cmp(a,b)=cmp(b,a)=1，

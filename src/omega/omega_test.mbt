@@ -124,6 +124,7 @@ test "gate regex_lite 前中后缀匹配" {
   assert_eq(regex_lite("fail", "OK"), false)
 }
 
+///|
 test "gate regex_lite 单字符锚点 ^ / $ 不应匹配一切（BUG-226）" {
   assert_eq(regex_lite("anything", "^"), false)
   assert_eq(regex_lite("anything", "$"), false)

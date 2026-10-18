@@ -51,6 +51,10 @@ test "engine_doctor_closed_loop_regression" {
     Err(m) => abort("verify(kid): \{m}")
     Ok(_) => ()
   }
+  match e.verify(task_id=root_id, verifier="leader", now~) {
+    Err(m) => abort("verify(root): \{m}")
+    Ok(_) => ()
+  }
   match e.archive(task_id=root_id, by="human_steward", now~) {
     Err(m) => abort("archive(root): \{m}")
     Ok(_) => ()

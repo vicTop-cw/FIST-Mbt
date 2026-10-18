@@ -221,6 +221,11 @@ pub fn FistEngine::dag_mc(
   samples? : Int = 1000,
   seed? : Int = 42,
 ) -> Json {
+  // BUG-250：负 deadline 过去被静默接受——`deadline > 0` 守卫让 p_on_time 恒为 0，
+  // 而回显里 deadline=-5 与 p_on_time=0 并置，读起来像"按期概率 0%"，实际是"根本没问"。
+  // 与 samples 同族做**边界钳制**：负值→0（=未设期限，不计算 p_on_time），回显如实标注。
+  let deadline_requested = deadline
+  let d = if deadline < 0 { 0 } else { deadline }
   let tasks = self.mc_scope_tasks(ns, root_task_id)
   if tasks.is_empty() {
     let im = Map::new()
@@ -341,11 +346,11 @@ pub fn FistEngine::dag_mc(
   // 按期概率
   let mut on_time = 0
   for ms in makespans {
-    if deadline > 0 && ms <= deadline {
+    if d > 0 && ms <= d {
       on_time = on_time + 1
     }
   }
-  let p_on_time = if deadline > 0 && n_safe > 0 {
+  let p_on_time = if d > 0 && n_safe > 0 {
     on_time.to_double() / n_safe.to_double()
   } else {
     0.0
@@ -408,7 +413,20 @@ pub fn FistEngine::dag_mc(
       ),
     )
   }
-  m.set("deadline", Json::number(deadline.to_double()))
+  m.set("deadline", Json::number(d.to_double()))
+  m.set("deadline_requested", Json::number(deadline_requested.to_double()))
+  if deadline_requested < 0 {
+    m.set("deadline_capped", Json::boolean(true))
+    m.set(
+      "deadline_cap_note",
+      Json::string(
+        "deadline 为负（\{deadline_requested}）：已按未设期限钳制到 0，不计算 p_on_time。" +
+        "负期限没有实际含义——`deadline > 0` 才问 P(≤deadline)，负值回 p_on_time=0 会读成「0% 按期」的假结论。",
+      ),
+    )
+  } else {
+    m.set("deadline_capped", Json::boolean(false))
+  }
   m.set("p_on_time", Json::number(p_on_time))
   m.set("makespan", Json::object(mk))
   m.set("criticality", Json::array(crit_json))

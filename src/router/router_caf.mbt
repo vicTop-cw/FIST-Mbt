@@ -146,7 +146,11 @@ pub fn caf_stats(records : Array[CafRecord]) -> Array[CafModelStats] {
           model: model_names[i],
           total: model_totals[i],
           success: model_success[i],
-          avg_cost: model_cost_sum[i] / model_totals[i].to_double(),
+          avg_cost: if model_totals[i] > 0 {
+            model_cost_sum[i] / model_totals[i].to_double()
+          } else {
+            0.0
+          },
         },
       ]
   }

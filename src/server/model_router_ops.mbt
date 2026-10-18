@@ -51,6 +51,34 @@ fn mr_read(project_dir : String, ns : String) -> Json {
 }
 
 ///|
+/// CAF 记忆状态文件路径（与 mr_state_path 同一条命名空间校验口径）。
+/// dry_run 预览只读它、绝不创建（文件不存在 = 空记忆，零回归）。
+fn mr_caf_state_path(project_dir : String, ns : String) -> String {
+  let safe_ns = if ns.is_empty() { "default" } else { ns }
+  project_dir + "/memory/model-router-caf-" + safe_ns + ".json"
+}
+
+///|
+/// 读 CAF 记忆状态；文件不存在/读失败/非法 JSON 一律回 Json::null()，
+/// 由 `caf_memory_load` 降级成空记忆 + warning，绝不 panic。
+/// 与 `mr_read` 同款"坏状态不删"纪律：坏记忆是证据，留给 `caf_memory_load` 计数告警。
+fn mr_caf_read(project_dir : String, ns : String) -> Json {
+  let raw = @fs.read_file_to_string(
+    mr_caf_state_path(project_dir, ns),
+    encoding="utf8",
+  ) catch {
+    _ => ""
+  }
+  if raw.is_empty() {
+    Json::null()
+  } else {
+    @json.parse(raw) catch {
+      _ => Json::null()
+    }
+  }
+}
+
+///|
 /// 写状态（建 memory/ 目录；失败返回 Err，绝不静默）
 fn mr_save(
   r : @router.ModelRouter,
@@ -223,6 +251,10 @@ fn model_route_impl(
   record_model? : String = "",
   config? : Json = Json::null(),
   laya_hint? : String = "",
+  soldier? : String = "",
+  pool_label? : String = "",
+  dry_run? : Bool = false,
+  context? : String = "",
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err(
@@ -264,6 +296,48 @@ fn model_route_impl(
       ]),
     )
   }
+  // CAF dry_run 预览（§2.3 最后一格，验收标准 3）：零副作用 peek，返回建议模型 + 历史依据。
+  // 必须在此短路返回——否则 dry_run 会推进 pick 的轮询游标、给模型盖 window_start、
+  // 甚至被"播种池定义"路径写一个 model-router-{ns}.json，全部违背"零副作用预览"承诺。
+  // config.use_caf_memory=false 时**显式拒绝**（不静默降级回普通查询：调用方以为在看
+  // CAF 建议、实际却拿到了非 CAF 决策，是 BUG-31 同族的最难查静默降级）。
+  if dry_run {
+    if not(r.config.use_caf_memory) {
+      return Err(
+        "model_route: dry_run=true 但 config.use_caf_memory=false，CAF 未开启",
+      )
+    }
+    let caf_path = mr_caf_state_path(project_dir, ns)
+    let (mem, caf_warns) = @router.caf_memory_load(mr_caf_read(project_dir, ns))
+    let dr = r.pick_caf_dry_run(
+      now~,
+      caf_memory=mem,
+      context~,
+      k=32,
+      unhealthy_ids=mr_unhealthy_models(),
+      caf_default_preference=r.config.caf_default_preference,
+      caf_min_evidences=r.config.caf_min_evidences,
+    )
+    return Ok(
+      mr_obj([
+        ("ok", Json::boolean(true)),
+        ("stamped_at", Json::string(now)),
+        ("context", Json::string(context)),
+        ("persisted", Json::boolean(false)),
+        ("decision", @router.caf_dry_run_to_json(dr)),
+        ("warnings", mr_warn_arr(warns + caf_warns)),
+        ("star_gate", gate.to_json()),
+        (
+          "mode",
+          Json::string(
+            "caf-dry-run（零副作用：不记账、不推进游标、不写状态文件）",
+          ),
+        ),
+        ("state_path", Json::string(mr_state_path(project_dir, ns))),
+        ("caf_state_path", Json::string(caf_path)),
+      ]),
+    )
+  }
   // BUG-61/62：只有**真消耗**（调用方给了 record_model）才推进账本并落盘。
   // 旧实现连"只问不消耗"的查询也 mr_save ⇒ pick 推进过的轮询游标、以及 pick 顺手盖上的
   // window_start（5h 窗口没人使用就开始倒计时）都被写进了账，两次相同查询还会换模型。
@@ -274,10 +348,25 @@ fn model_route_impl(
   let seeds_pools = !consuming && mr_config_gives_pools(config)
   let seed_res = if seeds_pools { mr_save(r, project_dir, ns) } else { Ok(()) }
   let unhealthy_ids = mr_unhealthy_models()
+  // §8.3 路由联动：兵种（display 层 8 兵种）→ 池标签 → pick 的软性档位提示。
+  // 给 soldier 没给 pool_label 时，用 display 的 pool_label_of 解析；两者皆空 = 零回归。
+  let resolved_soldier = soldier
+  let resolved_pool = if pool_label != "" {
+    pool_label
+  } else if resolved_soldier != "" {
+    @display.pool_label_of(resolved_soldier)
+  } else {
+    ""
+  }
   let dec = if consuming {
     r.record_call(model=record_model, now~)
   } else {
-    r.pick(now~, unhealthy_ids~, laya_prefer_tier=laya_hint)
+    r.pick(
+      now~,
+      unhealthy_ids~,
+      laya_prefer_tier=laya_hint,
+      soldier_label=resolved_pool,
+    )
   }
   let save_res = if consuming { mr_save(r, project_dir, ns) } else { seed_res }
   let persisted = match save_res {
@@ -289,6 +378,18 @@ fn model_route_impl(
     ("stamped_at", Json::string(now)),
     ("decision", dec.to_json()),
     ("usage", r.usage_report()),
+    ("soldier", Json::string(resolved_soldier)),
+    ("pool_label", Json::string(resolved_pool)),
+    (
+      "tier_hint",
+      Json::string(
+        if resolved_pool == "" {
+          ""
+        } else {
+          @router.pool_label_tier_hint(resolved_pool)
+        },
+      ),
+    ),
     ("warnings", mr_warn_arr(warns)),
     ("star_gate", gate.to_json()),
     ("persisted", Json::boolean(persisted)),
@@ -723,10 +824,10 @@ async fn ofm_execute_http(
 /// 把端点规范化成 `{endpoint}/chat/completions`（端点已带该后缀则不重复拼接）。
 fn ofm_chat_url(endpoint : String) -> String {
   let ep = endpoint.trim().to_owned()
-  if ep.ends_with("/chat/completions") {
+  if ep.has_suffix("/chat/completions") {
     return ep
   }
-  if ep.ends_with("/") {
+  if ep.has_suffix("/") {
     return ep + "chat/completions"
   }
   ep + "/chat/completions"
@@ -800,7 +901,14 @@ async fn executor_run_impl(
   // 只有"模型是路由器给的"才需要在真跑后记账；调用方显式指定 model 属越池覆盖，
   // 由调用方自己负责，不替它动配额账。
   let mut routed_by_pool = false
-  if chosen.is_empty() {
+  // BUG-238：atomcode 不走 FIST 模型路由。FIST `model_route` 的池名
+  // （ling-3.1-flash-free / mimo-v2.6-flash-free 等）是 FIST 自己的命名空间，
+  // 与 atomcode provider 命名空间（longcat/deepseek/Kimi，见 ~/.atomcode/config.toml）
+  // 两套不通——把 FIST 池名塞进 atomcode 的 `--model` 会让它恒吃
+  // `HTTP 400 Unsupported model`。故 model 留空时**跳过路由**、chosen 保持空串，
+  // 由 `cli_argv.atomcode_argv` 省略 `--model`，让 atomcode 走自身 config 的
+  // default_model。aider 不同（空模型=绕过路由决策，维持拒绝），仍走路由。
+  if chosen.is_empty() && executor != "atomcode" {
     match model_route_impl(project_dir, ns~) {
       Err(e) => return fail(e, [])
       Ok(j) =>
@@ -884,12 +992,7 @@ async fn executor_run_impl(
     )
   }
   let (bin, args) = match
-    @executor.build_command(
-      executor~,
-      prompt~,
-      model=chosen,
-      workdir=project_dir,
-    ) {
+    @executor.build_command(executor~, prompt~, model=chosen, workdir="") {
     Err(e) => return fail(e, [("model", Json::string(chosen))])
     Ok(v) => v
   }
@@ -940,7 +1043,7 @@ async fn executor_run_impl(
           executor~,
           prompt~,
           model=attempt_model,
-          workdir=project_dir,
+          workdir="",
         ) {
         Err(e) => return fail(e, [("model", Json::string(attempt_model))])
         Ok(v) => v
@@ -1011,7 +1114,13 @@ async fn executor_run_impl(
           attempt_idx + 1 < max_retries &&
           attempt_idx + 1 < fallback_models.length() {
           if routed_by_pool {
-            let _ = mr_record_only(project_dir, ns~, attempt_model)
+            let note = mr_retry_note(
+              attempt_model,
+              mr_record_only(project_dir, ns~, attempt_model),
+            )
+            if note != "" {
+              cooldown_errors = cooldown_errors + [note]
+            }
           }
           let note = mr_retry_note(
             attempt_model,

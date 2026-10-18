@@ -82,6 +82,44 @@ test "dag_mc：确定性可复现 + 按期概率随 deadline 单调（宽松 dea
 }
 
 ///|
+/// BUG-250：负 deadline 过去被静默接受——`deadline > 0` 守卫让 p_on_time 恒为 0，
+/// 回显里 deadline=-5 与 p_on_time=0 并置，读起来像"0% 按期"的假结论。
+/// 修复后：负值按未设期限钳制到 0，`deadline_capped=true` 如实标注，p_on_time 不计算（恒 0）。
+test "dag_mc：负 deadline 被钳制到 0 并如实标注，不伪装成 0% 按期" {
+  let e = @engine.FistEngine::new()
+  mc_mk(e, "A", "MC 任务 A [难度梯度 中]", [])
+  mc_mk(e, "B", "MC 任务 B [难度梯度 难]", ["A"])
+  let j = e.dag_mc(deadline=-5, seed=7)
+  // deadline_requested 如实回显调用方给的 -5
+  match j.value("deadline_requested") {
+    Some(Number(n, ..)) =>
+      if n != -5.0 {
+        abort("deadline_requested 应回显 -5: " + j.stringify())
+      }
+    _ => abort("缺 deadline_requested: " + j.stringify())
+  }
+  // deadline_capped 必须 true
+  match j.value("deadline_capped") {
+    Some(True) => ()
+    _ => abort("负 deadline 应标注 deadline_capped=true: " + j.stringify())
+  }
+  // 有效 deadline 钳制到 0，p_on_time 不计算（恒 0）
+  if mc_num(j, "deadline") != 0.0 {
+    abort("负 deadline 应钳制到 0: " + j.stringify())
+  }
+  if mc_num(j, "p_on_time") != 0.0 {
+    abort("未设期限 p_on_time 应为 0: " + j.stringify())
+  }
+  // 正向对照：deadline=100 应该 deadline_capped=false
+  let j2 = e.dag_mc(deadline=100, seed=7)
+  match j2.value("deadline_capped") {
+    Some(False) => ()
+    Some(True) => abort("正向 deadline 不应标 capped: " + j2.stringify())
+    _ => abort("缺 deadline_capped: " + j2.stringify())
+  }
+}
+
+///|
 test "dag_mc：关键度——最长路径任务 freq≈1，旁路易任务不被判关键" {
   let e = @engine.FistEngine::new()
   mc_mk(e, "A", "MC 任务 A [难度梯度 中]", [])

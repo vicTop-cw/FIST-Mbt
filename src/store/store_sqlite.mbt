@@ -441,6 +441,49 @@ impl Store for SqliteStore with fn update_task(self, task) {
 }
 
 ///|
+pub fn SqliteStore::update_task_if_status(
+  self : SqliteStore,
+  task : @core.Task,
+  expected_status : String,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ? WHERE id = ? AND status = ?"
+      match db.prepare(sql) {
+        None => Err("sqlite prepare 失败: update_task_if_status")
+        Some(stmt) => {
+          SqliteStore::bind_task_update_values(stmt, task)
+          ignore(
+            stmt.bind(
+              17,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, task.get_id())),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              18,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, expected_status)),
+            ),
+          )
+          let exec_ok = stmt.execute()
+          stmt.finalize()
+          if exec_ok {
+            Ok(())
+          } else {
+            Err(
+              "状态不匹配或任务不存在: \{task.get_id()} (期望 [" +
+              expected_status +
+              "])",
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
 impl Store for SqliteStore with fn list_tasks(self) {
   let out : Array[@core.Task] = []
   match self.db {
@@ -679,24 +722,72 @@ impl Store for SqliteStore with fn clear(self) {
   match self.db {
     None => ()
     Some(db) => {
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT NOT NULL DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority INTEGER NOT NULL DEFAULT 0, importance INTEGER NOT NULL DEFAULT 0, depth INTEGER NOT NULL DEFAULT 0, split_n INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'Creating', assignee TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT NOT NULL DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT '', depends_on TEXT NOT NULL DEFAULT '[]')",
+        ),
+      )
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS archive (id TEXT PRIMARY KEY, task_json TEXT NOT NULL DEFAULT '', archived_at TEXT NOT NULL DEFAULT '')",
+        ),
+      )
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS call_log (id INTEGER PRIMARY KEY AUTOINCREMENT, seq INTEGER, ts TEXT, tool TEXT, caller TEXT, ns TEXT, params_json TEXT, result_json TEXT, ok INTEGER, runtime_ms INTEGER)",
+        ),
+      )
+      ignore(self.ensure_specs_table())
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS reservations (scope TEXT PRIMARY KEY, agent TEXT NOT NULL DEFAULT '', ttl_until TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '')",
+        ),
+      )
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS executors (name TEXT PRIMARY KEY, abilities_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT '')",
+        ),
+      )
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS heartbeat_history (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL DEFAULT '', interval_sec INTEGER NOT NULL DEFAULT 0, ts TEXT NOT NULL DEFAULT '')",
+        ),
+      )
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS saga_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ns TEXT NOT NULL DEFAULT 'default', root_task_id TEXT NOT NULL DEFAULT '', step TEXT NOT NULL DEFAULT '', task_id TEXT NOT NULL DEFAULT '', compensation TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT '', UNIQUE(ns, root_task_id, step))",
+        ),
+      )
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS circuit_breakers (ns TEXT NOT NULL DEFAULT 'default', circuit TEXT NOT NULL DEFAULT '', state TEXT NOT NULL DEFAULT 'closed', failures INTEGER NOT NULL DEFAULT 0, window_secs INTEGER NOT NULL DEFAULT 60, threshold INTEGER NOT NULL DEFAULT 3, recovery_secs INTEGER NOT NULL DEFAULT 30, opened_at INTEGER NOT NULL DEFAULT 0, last_fail_ts INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT '', PRIMARY KEY (ns, circuit))",
+        ),
+      )
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS assistant_reg (agent TEXT PRIMARY KEY, mode TEXT NOT NULL DEFAULT 'all', is_primary INTEGER NOT NULL DEFAULT 0, registered_at TEXT NOT NULL DEFAULT '', heartbeat_at TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active')",
+        ),
+      )
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS file_locks (scope TEXT PRIMARY KEY, lock_id TEXT NOT NULL DEFAULT '', batch_id TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', ts TEXT NOT NULL DEFAULT '', ttl_until TEXT NOT NULL DEFAULT '', meta TEXT NOT NULL DEFAULT '')",
+        ),
+      )
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS lock_violations (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', lock_id TEXT NOT NULL DEFAULT '')",
+        ),
+      )
       ignore(db.exec("DELETE FROM tasks"))
       ignore(db.exec("DELETE FROM archive"))
       ignore(db.exec("DELETE FROM call_log"))
-      // 与 MemoryStore 语义对齐：清空时同时清空语料 / 复验 / 升级账本
-      ignore(self.ensure_specs_table())
       ignore(db.exec("DELETE FROM specs"))
-      // 作用域预订也在清空范围（防测试/scratch 预订跨次残留）
       ignore(db.exec("DELETE FROM reservations"))
-      // 执行者能力注册也在清空范围（防测试/scratch 注册跨次残留，R31）
       ignore(db.exec("DELETE FROM executors"))
-      // 心跳间隔历史也在清空范围（防测试/scratch 间隔史跨次残留，R90）
       ignore(db.exec("DELETE FROM heartbeat_history"))
-      // Saga 补偿登记也在清空范围（防测试/scratch 补偿登记跨次残留，R92）
       ignore(db.exec("DELETE FROM saga_log"))
       ignore(db.exec("DELETE FROM circuit_breakers"))
-      // 助理登记也在清空范围（与 MemoryStore 对齐，防测试/scratch 助理跨次残留）
       ignore(db.exec("DELETE FROM assistant_reg"))
-      // 文件锁与锁违例记录也在清空范围（与 MemoryStore 对齐，BUG-151）
       ignore(db.exec("DELETE FROM file_locks"))
       ignore(db.exec("DELETE FROM lock_violations"))
     }
@@ -1052,57 +1143,58 @@ pub fn SqliteStore::locks_upsert(self : SqliteStore, lock : FileLock) -> Unit {
   match self.db {
     None => ()
     Some(db) => {
-      // 先查旧锁，判断是否需要记违例
-      let prev = self.locks_get(lock.scope)
-      let need_violation = match prev {
-        Some(old) if old.status == "active" &&
-          old.agent != lock.agent &&
-          old.ttl_until >= lock.ts => true
-        _ => false
-      }
-      if need_violation {
-        let v_sql = "INSERT INTO lock_violations (ts, agent, scope, reason, lock_id) VALUES (?, ?, ?, ?, ?)"
-        match db.prepare(v_sql) {
-          None => ()
-          Some(stmt) => {
-            ignore(
-              stmt.bind(
-                1,
-                @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.ts)),
-              ),
-            )
-            ignore(
-              stmt.bind(
-                2,
-                @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.agent)),
-              ),
-            )
-            ignore(
-              stmt.bind(
-                3,
-                @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.scope)),
-              ),
-            )
-            ignore(
-              stmt.bind(
-                4,
-                @sqlite.SqlValue::Text(
-                  @encoding.encode(UTF8, "lock_taken_over"),
-                ),
-              ),
-            )
-            ignore(
-              stmt.bind(
-                5,
-                @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.lock_id)),
-              ),
-            )
-            ignore(stmt.execute())
-            stmt.finalize()
-          }
+      ignore(db.exec("BEGIN IMMEDIATE"))
+      let v_sql = "INSERT INTO lock_violations (ts, agent, scope, reason, lock_id) SELECT ?, ?, ?, 'lock_taken_over', ? FROM file_locks WHERE scope = ? AND status = 'active' AND agent != ? AND ttl_until >= ?"
+      match db.prepare(v_sql) {
+        None => ()
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.ts)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.agent)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.scope)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              4,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.lock_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              5,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.scope)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              6,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.agent)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              7,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, lock.ts)),
+            ),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
         }
       }
-      let sql = "INSERT INTO file_locks (scope, lock_id, batch_id, agent, status, ts, ttl_until, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(scope) DO UPDATE SET lock_id=excluded.lock_id, batch_id=excluded.batch_id, agent=excluded.agent, status=excluded.status, ts=excluded.ts, ttl_until=excluded.ttl_until, meta=excluded.meta"
+      let sql = "INSERT INTO file_locks (scope, lock_id, batch_id, agent, status, ts, ttl_until, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(scope) DO UPDATE SET lock_id=excluded.lock_id, batch_id=excluded.batch_id, agent=excluded.agent, status=excluded.status, ts=excluded.ts, ttl_until=excluded.ttl_until, meta=excluded.meta WHERE file_locks.status != 'active' OR file_locks.agent = excluded.agent OR file_locks.ttl_until < excluded.ts"
       match db.prepare(sql) {
         None => ()
         Some(stmt) => {
@@ -1158,6 +1250,7 @@ pub fn SqliteStore::locks_upsert(self : SqliteStore, lock : FileLock) -> Unit {
           stmt.finalize()
         }
       }
+      ignore(db.exec("COMMIT"))
     }
   }
 }
@@ -1465,83 +1558,44 @@ pub fn SqliteStore::locks_sweep(self : SqliteStore, now : String) -> Int {
   match self.db {
     None => 0
     Some(db) => {
-      // 先找出所有过期的 active 锁
-      let expired : Array[FileLock] = []
-      let sel_sql = "SELECT lock_id, batch_id, scope, agent, status, ts, ttl_until, meta FROM file_locks WHERE status = 'active' AND ttl_until < ?"
-      match db.prepare(sel_sql) {
+      ignore(db.exec("BEGIN IMMEDIATE"))
+      let v_sql = "INSERT INTO lock_violations (ts, agent, scope, reason, lock_id) SELECT ?, agent, scope, 'lock_expired', lock_id FROM file_locks WHERE status = 'active' AND ttl_until < ?"
+      match db.prepare(v_sql) {
         None => ()
         Some(stmt) => {
           ignore(
             stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, now))),
           )
-          while stmt.step() {
-            expired.push(FileLock::{
-              lock_id: str_from_bytes(stmt.column_text(0)),
-              batch_id: str_from_bytes(stmt.column_text(1)),
-              scope: str_from_bytes(stmt.column_text(2)),
-              agent: str_from_bytes(stmt.column_text(3)),
-              status: str_from_bytes(stmt.column_text(4)),
-              ts: str_from_bytes(stmt.column_text(5)),
-              ttl_until: str_from_bytes(stmt.column_text(6)),
-              meta: str_from_bytes(stmt.column_text(7)),
-            })
+          ignore(
+            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, now))),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
+        }
+      }
+      let upd_sql = "UPDATE file_locks SET status='expired' WHERE status = 'active' AND ttl_until < ?"
+      match db.prepare(upd_sql) {
+        None => ()
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, now))),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
+        }
+      }
+      let count_sql = "SELECT changes()"
+      let mut count = 0
+      match db.prepare(count_sql) {
+        None => ()
+        Some(stmt) => {
+          if stmt.step() {
+            count = stmt.column_int(0)
           }
           stmt.finalize()
         }
       }
-      let mut count = 0
-      for l in expired {
-        let upd_sql = "UPDATE file_locks SET status='expired' WHERE scope = ? AND status = 'active'"
-        match db.prepare(upd_sql) {
-          None => ()
-          Some(stmt) => {
-            ignore(
-              stmt.bind(
-                1,
-                @sqlite.SqlValue::Text(@encoding.encode(UTF8, l.scope)),
-              ),
-            )
-            ignore(stmt.execute())
-            stmt.finalize()
-          }
-        }
-        let v_sql = "INSERT INTO lock_violations (ts, agent, scope, reason, lock_id) VALUES (?, ?, ?, ?, ?)"
-        match db.prepare(v_sql) {
-          None => ()
-          Some(stmt) => {
-            ignore(
-              stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, now))),
-            )
-            ignore(
-              stmt.bind(
-                2,
-                @sqlite.SqlValue::Text(@encoding.encode(UTF8, l.agent)),
-              ),
-            )
-            ignore(
-              stmt.bind(
-                3,
-                @sqlite.SqlValue::Text(@encoding.encode(UTF8, l.scope)),
-              ),
-            )
-            ignore(
-              stmt.bind(
-                4,
-                @sqlite.SqlValue::Text(@encoding.encode(UTF8, "lock_expired")),
-              ),
-            )
-            ignore(
-              stmt.bind(
-                5,
-                @sqlite.SqlValue::Text(@encoding.encode(UTF8, l.lock_id)),
-              ),
-            )
-            ignore(stmt.execute())
-            stmt.finalize()
-          }
-        }
-        count = count + 1
-      }
+      ignore(db.exec("COMMIT"))
       count
     }
   }
@@ -1636,10 +1690,12 @@ pub fn SqliteStore::assistant_upsert(
   match self.db {
     None => ()
     Some(db) => {
+      ignore(db.exec("BEGIN IMMEDIATE"))
       // BUG-157 修复：单主不变量——如果当前 agent 抢主 (is_primary=1)，
       // 先把所有其他 agent 的 is_primary 清零，再 upsert 当前行。
       // SQLite 的 INSERT...ON CONFLICT(agent) 只表达"同一行幂等"，
       // 无法保证"全局只许一个 is_primary=1"，必须显式抢占。
+      // 事务包裹保证 clear + insert 原子性，防止并发抢主时双写 is_primary=1。
       if reg.is_primary {
         let clear_sql = "UPDATE assistant_reg SET is_primary=0 WHERE is_primary=1 AND agent != ?"
         match db.prepare(clear_sql) {
@@ -1701,6 +1757,7 @@ pub fn SqliteStore::assistant_upsert(
           stmt.finalize()
         }
       }
+      ignore(db.exec("COMMIT"))
     }
   }
 }

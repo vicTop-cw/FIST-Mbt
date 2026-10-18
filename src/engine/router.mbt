@@ -77,17 +77,17 @@ fn contains_risk_kw(desc : String) -> Bool {
   let lower = desc.to_lower()
   let kws = [
     // 数据/资源删除与破坏
-    "delete", "del ", "rm ", "drop", "truncate", "destroy", "purge", "wipe", "format",
+    "delete", "del", "rm", "drop", "truncate", "destroy", "purge", "wipe", "format",
     "reset", "force", "overwrite", "replace",
     // 发布/部署
      "publish", "deploy",
     // 任意代码执行
-     "exec", "eval", "system(", "shutdown", "halt", "reboot", "restart",
+     "exec", "eval", "system", "shutdown", "halt", "reboot", "restart",
     // 权限变更
      "grant", "revoke", "chmod", "chown",
   ]
   for kw in kws {
-    if lower.contains(kw.to_lower()) {
+    if _has_word(lower, kw.to_lower()) {
       return true
     }
   }

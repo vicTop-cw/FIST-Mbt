@@ -384,7 +384,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       tool_ops_init(args)
     },
   )
@@ -414,7 +414,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       tool_run_batch(args)
     },
   )
@@ -438,7 +438,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       tool_verify(args)
     },
   )
@@ -462,7 +462,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       tool_circuit(args)
     },
   )
@@ -478,7 +478,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       tool_report(args)
     },
   )
@@ -500,7 +500,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       tool_review(args)
     },
   )
@@ -520,7 +520,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       tool_watchdog(args)
     },
   )
