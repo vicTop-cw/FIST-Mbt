@@ -335,4 +335,172 @@ test "lint_10_missing_dir_returns_err" {
   let d = "temp/lint_bug222_missing_dir"
   let r = issue_scan(d, "", 100)
   assert_true(r.is_err())
+
+  // ---------------------------------------------------------------------------
+  // BUG-268：substring-overrun medium 档假阳性消除（三类守卫）+ 真阳性保留
+  // ---------------------------------------------------------------------------
+
+}
+
+///|
+/// 断言 items 中 rule=="substring-overrun" 的命中里不存在 file 与 code 都匹配的那条。
+/// code 为 contains 匹配（容忍行号漂移），file 为 has_suffix（容忍相对路径前缀）。
+fn lint_268_no_medium(
+  items : Array[Json],
+  file_suffix : String,
+  code_frag : String,
+) -> Unit {
+  for f in items {
+    let is_sub = mem_str(f, "rule") == "substring-overrun" &&
+      mem_str(f, "severity") == "medium"
+    if not(is_sub) {
+      continue
+    }
+    let fp = match f.value("file") {
+      Some(String(s)) => s.has_suffix(file_suffix)
+      _ => false
+    }
+    if fp && mem_str(f, "code").contains(code_frag) {
+      abort(
+        "BUG-268 假阳性未消除：" +
+        file_suffix +
+        " 仍报 substring-overrun: " +
+        mem_str(f, "code"),
+      )
+    }
+  }
+}
+
+///|
+/// BUG-268 形态 D：多行 if-else 长度守卫（memory_gc_logic 形状）。
+/// prev_lines 故意用**生产路径的倒序近邻窗口**（最近行在前）——这正是原实现的盲区：
+/// `} else {` 出现在 `if n <= max_chars {` **之前**，前向 else 扫描会漏判。
+test "lint_11_bug268_multiline_ifelse_length_fp_eliminated" {
+  let code = "content.substring(start=n - cut, end=n),"
+  let prev : Array[String] = [
+    "    (", "    let cut = if max_chars < 0 { 0 } else { max_chars }", "  } else {",
+    "    (content, \"\")", "  if n <= max_chars {", "  let n = content.length()",
+    "pub fn memory_gc_logic(content : String, max_chars : Int) {",
+  ]
+  assert_true(
+    scan_finding_guarded(code, "substring-overrun", prev),
+    msg="BUG-268 形态 D：倒序窗口下的多行 if-else 守卫应被识别",
+  )
+  // 无 else 分支（或守卫与长度无关）的同形代码仍须判为未守卫
+  let unguarded : Array[String] = [
+    "    (", "    let cut = max_chars", "  ", "  let n = content.length()", "pub fn memory_gc_logic(content : String, max_chars : Int) {",
+  ]
+  assert_eq(
+    scan_finding_guarded(
+      "content.substring(start=n - cut, end=n)", "substring-overrun", unguarded,
+    ),
+    false,
+  )
+}
+
+///|
+/// BUG-268 形态 A：模运算不变量（mcs_hex4 形状）。`d = rem % 16` 使 d ∈ [0,15]，
+/// 恒为 16 字符 hex 串的合法下标。
+test "lint_12_bug268_mod_invariant_fp_eliminated" {
+  let code = "out = hex.substring(start=d, end=d + 1) + out"
+  let prev : Array[String] = [
+    "    let d = rem % 16", "  while rem > 0 {", "  let mut out = \"\"", "  let mut rem = n",
+    "  let hex = \"0123456789abcdef\"", "fn mcs_hex4(n : Int) -> String {",
+  ]
+  assert_true(
+    scan_finding_guarded(code, "substring-overrun", prev),
+    msg="BUG-268 形态 A：`x % k` 模运算区间应被识别",
+  )
+  // 无模运算定义时不得豁免
+  assert_eq(
+    scan_finding_guarded(
+      "out = hex.substring(start=d, end=d + 1) + out",
+      "substring-overrun",
+      ["    let d = n - 3", "  let hex = \"0123456789abcdef\""],
+    ),
+    false,
+  )
+}
+
+///|
+/// BUG-268 形态 B/C：`end` 来自 `find("]")` 的位置，守卫 `if end > 3` 通过
+/// 另一变量的不等式间接保证 `substring(start=3, end~)` 安全（ops_selfdrive 形状）。
+test "lint_13_bug268_find_endvar_fp_eliminated" {
+  let code = "let desc = ls.substring(start=3, end~).trim().to_string()"
+  let prev : Array[String] = [
+    "          if end > 3 {", "        Some(end) =>", "      match ls.find(\"]\") {",
+    "    let ls = l.to_string()",
+  ]
+  assert_true(
+    scan_finding_guarded(code, "substring-overrun", prev),
+    msg="BUG-268 形态 B/C：find() 位置守卫应被识别",
+  )
+}
+
+///|
+/// BUG-268 负向锁：真越界 substring 不得因上述三类守卫被误豁免。
+test "lint_14_bug268_true_positive_still_hits" {
+  // 有 is_empty 守卫（不相关）但 substring 无长度守卫 → 仍应命中
+  let d = lint_dir("lint_c14")
+  @fs.write_string_to_file(
+    d + "/sample.mbt",
+    "fn risky(s : String, t : String) -> String {\n" +
+    "  let rows : Array[Int] = []\n" +
+    "  if rows.is_empty() { return t }\n" +
+    "  let cut = max_chars\n" +
+    "  let n = s.length()\n" +
+    "  s.substring(start=n - cut, end=n)\n" +
+    "}\n",
+    encoding="utf8",
+  ) catch {
+    _ => ()
+  }
+  let r = issue_scan(d, "", 100)
+  assert_true(r.is_ok())
+  let j = match r {
+    Ok(x) => x
+    Err(_) => return
+  }
+  let items = lint_findings(j)
+  assert_true(
+    items.any(fn(f) {
+      mem_str(f, "rule") == "substring-overrun" &&
+      mem_str(f, "code").contains("s.substring(start=n - cut, end=n)")
+    }),
+    msg="无守卫的真越界 substring 仍须命中",
+  )
+}
+
+///|
+/// BUG-268 端到端：对真实样本点所在目录做 issue_scan，确认三个已知假阳性已消除。
+/// 只按 file 后缀 + code 片段匹配（不钉行号），行号漂移不误红。
+test "lint_15_bug268_real_samples_no_fp" {
+  let r_server = issue_scan("src/server", "", 300)
+  assert_true(r_server.is_ok())
+  let j_server = match r_server {
+    Ok(x) => x
+    Err(_) => return
+  }
+  assert_true(mem_int(j_server, "scanned_files") > 0)
+  // memory_gc_logic（形态 D）
+  lint_268_no_medium(lint_findings(j_server), "memory.mbt", "start=n - cut")
+  // mcs_hex4（形态 A）
+  lint_268_no_medium(
+    lint_findings(j_server),
+    "mcp_config_scaffold.mbt",
+    "start=d",
+  )
+  let r_ops = issue_scan("src/ops", "", 300)
+  assert_true(r_ops.is_ok())
+  let j_ops = match r_ops {
+    Ok(x) => x
+    Err(_) => return
+  }
+  assert_true(mem_int(j_ops, "scanned_files") > 0)
+  // selfdrive（形态 B/C）
+  lint_268_no_medium(
+    lint_findings(j_ops),
+    "ops_selfdrive.mbt",
+    "substring(start=3, end~)",
+  )
 }
