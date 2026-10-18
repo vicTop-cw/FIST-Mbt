@@ -1409,13 +1409,16 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "publish",
-    "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)。返回 {task_id, namespace, message}，其中 namespace 是任务**实际落在**的 ns（BUG-23：过去只回 task_id，把键名写成 ns 会静默落进 default 而无从发现）。参数名逐字对 inputSchema：与本工具已声明参数同根（互为子串）的错名（ns/desc/project 这类）直接拒绝，不做静默忽略。",
+    "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)、level 任务层级（可选，0..7，默认 6 连长级；上游显式声明 x级 则覆盖）。返回 {task_id, namespace, message}，其中 namespace 是任务**实际落在**的 ns（BUG-23：过去只回 task_id，把键名写成 ns 会静默落进 default 而无从发现）。参数名逐字对 inputSchema：与本工具已声明参数同根（互为子串）的错名（ns/desc/project 这类）直接拒绝，不做静默忽略。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
         "description": string_prop("任务描述（必填）"),
         "namespace": string_prop("命名空间(默认 default)"),
         "created_by": string_prop("创建者身份(默认 human_steward)"),
+        "level": int_prop(
+          "任务层级 L（可选，0..7，默认 6 连长级）",
+        ),
       },
       ["project_dir", "description"],
     ),
@@ -1424,11 +1427,13 @@ pub async fn run_server() -> Unit {
       let description = get_str(args, "description")
       let ns = get_str(args, "namespace", default="default")
       let created_by = get_str(args, "created_by", default="human_steward")
+      let level = get_int(args, "level", default=6)
       let ts = now_default()
       let r = engine_for_ns(ns).publish(
         project_dir~,
         description~,
         created_by~,
+        level~,
         now=ts,
         ns~,
       )
@@ -2390,7 +2395,11 @@ pub async fn run_server() -> Unit {
         Ok(j) => {
           // 复验打回同理补落根库教训（evolve_snapshot dead_ends 全局可检索）
           if verdict != "pass" {
-            let why = if reason == "" { "成果未达标（未附原因）" } else { reason }
+            let why = if reason == "" {
+              "成果未达标（未附原因）"
+            } else {
+              reason
+            }
             ignore(
               @evolve.evolve_lesson_persist(
                 evolve_store,
@@ -4103,7 +4112,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_publish",
-    "发布带依赖关系的根任务。参数：project_dir、description、depends_on(依赖任务 id JSON 数组)、namespace、created_by。",
+    "发布带依赖关系的根任务。参数：project_dir、description、depends_on(依赖任务 id JSON 数组)、namespace、created_by、level(任务层级，可选，0..7，默认 6 连长级)。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -4111,6 +4120,9 @@ pub async fn run_server() -> Unit {
         "depends_on": string_prop("依赖任务 id 列表 JSON 数组(可选)"),
         "namespace": string_prop("命名空间(默认 default)"),
         "created_by": string_prop("创建者身份(默认 human_steward)"),
+        "level": int_prop(
+          "任务层级 L（可选，0..7，默认 6 连长级）",
+        ),
       },
       ["project_dir", "description"],
     ),
@@ -4120,6 +4132,7 @@ pub async fn run_server() -> Unit {
       let depends_on_raw = get_str(args, "depends_on", default="[]")
       let ns = get_str(args, "namespace", default="default")
       let created_by = get_str(args, "created_by", default="human_steward")
+      let level = get_int(args, "level", default=6)
       let ts = now_default()
       let depends_on : Array[String] = try {
         match @json.parse(depends_on_raw) {
@@ -4135,6 +4148,7 @@ pub async fn run_server() -> Unit {
           description~,
           depends_on~,
           created_by~,
+          level~,
           now=ts,
           ns~,
         ) {
@@ -6694,11 +6708,12 @@ pub async fn run_server() -> Unit {
   )
 
   // ===== rank_of：军衔体系展示层（docs/2026-10-12-fist-mbt-web-dashboard-plan.md §8.1）=====
-  // 协议层不感知军衔；本工具只是展示层标签，由 rank_of(任务层级) 动态定级，协议与存储零改动。
+  // 协议层不感知军衔；本工具只是展示层标签，由 rank_of(Task.level) 动态定级，协议与存储零改动。
+  // 层级默认连长级（level=6），上游可显式声明 x级；level 与 depth 严格分离（depth 不是军衔来源）。
   s1 = instrumented_tool(
     s1,
     "rank_of",
-    "军衔体系展示层（§8.1 完整 *长 总表）：由任务层级 L 得展示军衔——L=0 司令 / L=1 军长 / L=2 师长 / L=3 旅长 / L=4 团长 / L=5 营长 / L=6 连长 / L=7 排长；越界回退士兵；叶子恒为士兵。**协议层不感知军衔**：除统帅/士兵/政委外，所有 *长 在协议层一律映射为 Leader 角色，军衔只是展示层标签，协议与存储零改动。当前默认 root depth=3 实际生效 4 档（司令→军长→师长→士兵），旅长及以下占位（调大 depth 自动激活）。参数：level(必填，任务层级 L，0..7)、role(可选，协议角色 HumanSteward/Reminder/Executor/Leader，缺省按 level 定级)、leaf(可选，true 时强制士兵)。返回 {level, role, rank, rank_index, is_officer, table, officer_levels}。",
+    "军衔体系展示层（§8.1 完整 *长 总表）：由任务层级 L 得展示军衔——L=0 司令 / L=1 军长 / L=2 师长 / L=3 旅长 / L=4 团长 / L=5 营长 / L=6 连长 / L=7 排长；越界回退士兵；叶子恒为士兵。**协议层不感知军衔**：除统帅/士兵/政委外，所有 *长 在协议层一律映射为 Leader 角色，军衔只是展示层标签，协议与存储零改动。**默认连长级**：任务 `level` 默认 6（连长），上游可显式声明 `x级`（0..7）；子任务 `level = 父级 + 1` 封顶 7（连长→排长→士兵）。`level` 与 `depth` 严格分离（depth 仍是树深/缩进/`is_leaf` 判据，不是军衔来源）；`rank_of(L)` 映射表不变。**旧库迁移**：全仓首次引入幂等 `ensure_level_column`（`PRAGMA table_info` 探测 + `ALTER TABLE ADD COLUMN level INTEGER NOT NULL DEFAULT 6`），旧库自动回填 6。参数：level(必填，任务层级 L，0..7)、role(可选，协议角色 HumanSteward/Reminder/Executor/Leader，缺省按 level 定级)、leaf(可选，true 时强制士兵)。返回 {level, role, rank, rank_index, is_officer, table, officer_levels}。",
     schema(
       {
         "level": int_prop("任务层级 L（必填，0..7）"),

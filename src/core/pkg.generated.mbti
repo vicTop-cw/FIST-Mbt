@@ -10,6 +10,8 @@ pub fn can(Role, Action) -> Bool
 
 pub fn child_id(parent_id~ : String, idx~ : Int) -> String
 
+pub fn child_level(Int) -> Int
+
 pub fn ensure_can(Role, Action) -> Result[Unit, String]
 
 pub fn ensure_can_create_spec(String) -> Result[Unit, String]
@@ -65,6 +67,7 @@ pub struct Task {
   importance : String
   depth : Int
   split_n : Int
+  level : Int
   status : TaskStatus
   assignee : String?
   description : String
@@ -81,17 +84,18 @@ pub fn Task::claim(Self, assignee~ : String) -> Result[Self, String]
 pub fn Task::complete(Self, completed_by~ : String) -> Result[Self, String]
 pub fn Task::execute(Self) -> Result[Self, String]
 pub fn Task::execute_exit_hint(TaskStatus) -> String
-pub fn Task::from_db(String, String?, String, String, String, String, Int, Int, String, String?, String, String, String, String, String?, String, Array[String]) -> Self
+pub fn Task::from_db(String, String?, String, String, String, String, Int, Int, Int, String, String?, String, String, String, String, String?, String, Array[String]) -> Self
 pub fn Task::get_assignee(Self) -> String?
 pub fn Task::get_depth(Self) -> Int
 pub fn Task::get_description(Self) -> String
 pub fn Task::get_id(Self) -> String
+pub fn Task::get_level(Self) -> Int
 pub fn Task::get_parent(Self) -> String?
 pub fn Task::get_status(Self) -> TaskStatus
 pub fn Task::get_updated_at(Self) -> String
 pub fn Task::is_leaf(Self) -> Bool
 pub fn Task::mark_decomposing(Self) -> Result[Self, String]
-pub fn Task::new(id~ : String, project_dir~ : String, description? : String, priority? : String, importance? : String, depth? : Int, split_n? : Int, parent_id? : String, assignee? : String, cleanup_mode? : String, created_at? : String, ns? : String, depends_on? : Array[String]) -> Self
+pub fn Task::new(id~ : String, project_dir~ : String, description? : String, priority? : String, importance? : String, depth? : Int, split_n? : Int, level? : Int, parent_id? : String, assignee? : String, cleanup_mode? : String, created_at? : String, ns? : String, depends_on? : Array[String]) -> Self
 pub fn Task::pause(Self) -> Result[Self, String]
 pub fn Task::reject(Self, reason? : String) -> Result[Self, String]
 pub fn Task::reopen(Self) -> Result[Self, String]
