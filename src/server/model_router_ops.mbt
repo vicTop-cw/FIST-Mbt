@@ -118,7 +118,8 @@ fn mr_caf_read_diag(project_dir : String, ns : String) -> (Bool, Bool, Json) {
 ///   - 只在 `r.config.use_caf_memory=true` 时由调用方调用；false 一个字节都不碰（零回归）。
 ///   - 坏 JSON 记忆文件**不覆盖、不删除**，留作证据并计数告警，本次 push 直接跳过。
 ///   - cost 记为 0.0：路由层不掌握真实成本（CafRecord 契约：0 = 未知/免费）。
-///   - 只记成功侧（ok=true）：配额消耗即"真用了"；失败路径在 executor 层区分（见报告）。
+///   - ok 由调用方给定：成功执行记 ok=true，失败执行记 ok=false——CAF 同时学成功与失败，
+///     不能只学成功（否则"常失败模型"的 CAF 成功率被长期抬高）。
 ///
 /// 返回追加过程的 warnings；Err 仅表示**写盘失败**（调用方必须回执，不得静默吞）。
 fn mr_caf_push_evidence(
@@ -127,6 +128,7 @@ fn mr_caf_push_evidence(
   context : String,
   model : String,
   ts : String,
+  ok : Bool,
 ) -> Result[Array[String], String] {
   let path = mr_caf_state_path(project_dir, ns)
   let (_exists, bad_json, caf_json) = mr_caf_read_diag(project_dir, ns)
@@ -142,7 +144,7 @@ fn mr_caf_push_evidence(
         @router.caf_normalize_context(context),
       ),
       model~,
-      ok=true,
+      ok~,
       cost=0.0,
       ts~,
     ),
@@ -337,6 +339,7 @@ fn model_route_impl(
   pool_label? : String = "",
   dry_run? : Bool = false,
   context? : String = "",
+  ok? : Bool = true,
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err(
@@ -476,7 +479,8 @@ fn model_route_impl(
   // 路由决策与记账已成功，CAF 写半是旁路增强，不应把主路径拉黑。
   let mut caf_push_warns : Array[String] = []
   if consuming && r.config.use_caf_memory {
-    match mr_caf_push_evidence(project_dir, ns, context, record_model, now) {
+    match
+      mr_caf_push_evidence(project_dir, ns, context, record_model, now, ok) {
       Ok(w) => caf_push_warns = w
       Err(e) => caf_push_warns = [e]
     }
@@ -536,12 +540,14 @@ fn model_route_impl(
 ///|
 /// 只记账不做决策（BUG-61 的接线点：执行器真跑完，把这次用量记到路由账上）。
 /// 复用 model_route_impl 的"给了 record_model 才落盘"语义，避免两处各写一遍存盘逻辑。
+/// `ok` 是本次执行的成败：成功 true、失败 false，透传给 CAF 写半（失败也 push，ok=false）。
 fn mr_record_only(
   project_dir : String,
   ns~ : String,
   model : String,
+  ok? : Bool = true,
 ) -> Result[Unit, String] {
-  match model_route_impl(project_dir, ns~, record_model=model) {
+  match model_route_impl(project_dir, ns~, record_model=model, ok~) {
     Err(e) => Err(e)
     Ok(j) =>
       match j {
@@ -882,7 +888,7 @@ async fn ofm_execute_http(
   }
   let fail_kind = @router.classify_ofm_failure(http_status, resp.error_type)
   let quota_note = if routed_by_pool {
-    match mr_record_only(project_dir, ns~, model) {
+    match mr_record_only(project_dir, ns~, model, ok=not(resp.is_error)) {
       Ok(_) => "recorded(\{model})"
       Err(e) => "record_failed: \{e}"
     }
@@ -1225,7 +1231,7 @@ async fn executor_run_impl(
           if routed_by_pool {
             let note = mr_retry_note(
               attempt_model,
-              mr_record_only(project_dir, ns~, attempt_model),
+              mr_record_only(project_dir, ns~, attempt_model, ok=false),
             )
             if note != "" {
               cooldown_errors = cooldown_errors + [note]
@@ -1245,7 +1251,7 @@ async fn executor_run_impl(
         } else {
           // 最终尝试（成功或已用尽重试）：记账并返回
           let quota_note = if routed_by_pool {
-            match mr_record_only(project_dir, ns~, attempt_model) {
+            match mr_record_only(project_dir, ns~, attempt_model, ok=okk) {
               Ok(_) => "recorded(\{attempt_model})"
               Err(e) => "record_failed: \{e}"
             }
