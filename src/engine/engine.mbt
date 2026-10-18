@@ -39,6 +39,7 @@ pub fn FistEngine::publish(
   created_by~ : String,
   now~ : String,
   ns? : String = "default",
+  level? : Int = 6,
 ) -> Result[String, String] {
   if created_by != "human_steward" && created_by != "human" {
     return Err("publish 仅限人类指挥官（created_by=human_steward）")
@@ -51,6 +52,7 @@ pub fn FistEngine::publish(
     description~,
     depth=3,
     split_n=3,
+    level~,
     created_at=now,
     ns~,
   )
@@ -122,6 +124,8 @@ pub fn FistEngine::plan(
           importance=parent.importance,
           depth=child_depth,
           split_n=child_depth,
+          // 军衔继承降一级：连长(6)→排长(7)→士兵（封顶 7）。军衔与 depth 严格分离。
+          level=@core.child_level(parent.get_level()),
           created_at=now,
           ns=parent.ns,
         )
@@ -724,6 +728,7 @@ pub fn FistEngine::publish_next_round(
   created_by~ : String,
   prev_task_id~ : String,
   now~ : String,
+  level? : Int = 6,
 ) -> Result[String, String] {
   if ns == "" || ns == "default" {
     return Err(
@@ -753,6 +758,7 @@ pub fn FistEngine::publish_next_round(
     description~,
     depth=3,
     split_n=3,
+    level~,
     created_at=now,
     ns~,
   )
@@ -791,6 +797,7 @@ pub fn FistEngine::cold_publish(
   created_by~ : String,
   project_dir~ : String,
   now~ : String,
+  level? : Int = 6,
 ) -> Result[String, String] {
   if ns == "" || ns == "default" {
     return Err(
@@ -812,6 +819,7 @@ pub fn FistEngine::cold_publish(
     description~,
     depth=3,
     split_n=3,
+    level~,
     created_at=now,
     ns~,
   )
@@ -834,6 +842,7 @@ pub fn FistEngine::publish_parallel(
   created_by~ : String,
   project_dir~ : String,
   now~ : String,
+  level? : Int = 6,
 ) -> Result[String, String] {
   if ns == "" || ns == "default" {
     return Err(
@@ -849,6 +858,7 @@ pub fn FistEngine::publish_parallel(
     description~,
     depth=3,
     split_n=3,
+    level~,
     created_at=now,
     ns~,
   )
@@ -1192,6 +1202,8 @@ fn FistEngine::decompose_rec(
       importance=parent.importance,
       depth=child_depth,
       split_n=if child_depth > 1 { child_depth } else { 1 },
+      // 军衔继承降一级：连长(6)→排长(7)→士兵（封顶 7）。军衔与 depth 严格分离。
+      level=@core.child_level(parent.get_level()),
       created_at=now,
       depends_on=dag_dep,
     )
@@ -1491,6 +1503,7 @@ pub fn FistEngine::publish_with_deps(
   created_by? : String = "human_steward",
   now? : String = "",
   ns? : String = "default",
+  level? : Int = 6,
 ) -> Result[String, String] {
   if created_by != "human_steward" && created_by != "human" {
     return Err("publish 仅限人类指挥官")
@@ -1509,6 +1522,7 @@ pub fn FistEngine::publish_with_deps(
     description~,
     depth=3,
     split_n=3,
+    level~,
     created_at=now,
     ns~,
     depends_on~,

@@ -159,7 +159,25 @@ fn append_group(
     if diff_label != "" {
       diff_note = " 难度[" + diff_label + "]"
     }
-    lines.push(indent + "[" + st + "] " + short_id + " · " + desc + diff_note)
+    // 军衔标注（§8.1 军衔体系）：来源是 `t.get_level()`，与 depth（缩进）严格分离。
+    // 叶子恒为士兵（leaf_label），非叶子按 rank_of(level) 定级（连长→排长→…）。
+    let rank_label = if t.is_leaf() {
+      @display.leaf_label(t.get_level())
+    } else {
+      @display.rank_of(t.get_level())
+    }
+    let rank_note = " 军衔[" + rank_label + "]"
+    lines.push(
+      indent +
+      "[" +
+      st +
+      "] " +
+      short_id +
+      " · " +
+      desc +
+      rank_note +
+      diff_note,
+    )
   }
 }
 
