@@ -725,3 +725,198 @@ test "caf_dr_5_有记忆时 basis 有条目" {
   // dry_run 读过记忆但仍不落盘（连回写都不做）
   must_not_exist(mo_str(j, "state_path"))
 }
+
+///|
+/// 一条白盒辅助：读 CAF 记忆文件并返回 `records` 数组长度（读不到/非法即 abort，测试自爆）。
+fn caf_read_rec_count(path : String) -> Int {
+  let raw = @fs.read_file_to_string(path, encoding="utf8") catch {
+    _ => abort("读 CAF 记忆文件失败：" + path)
+  }
+  let parsed = @json.parse(raw) catch {
+    _ => abort("CAF 文件不是合法 JSON：" + path)
+  }
+  match mo_get(parsed, "records") {
+    Json::Array(a) => a.length()
+    _ => abort("CAF 文件缺 records 数组")
+  }
+}
+
+///|
+/// 读侧降级锁（Slice B · caf_dr_6）：CAF 记忆文件是**坏 JSON** 时，dry_run 路径必须
+/// 降级为「空记忆 + warning」且**不 panic**，返回 Ok；warnings 必须点名坏 JSON
+/// （否则调用方以为"没建议是因为真的没记忆"，其实是记忆坏了，BUG-31 同族最难查的静默降级）。
+/// 坏文件本身保留不删（坏状态是证据，与 mr_read 同款纪律）。
+test "caf_dr_6_坏记忆JSON降级不panic" {
+  let d = caf_prep("caf_dr6")
+  @fs.create_dir("temp/mo_ops/memory") catch {
+    _ => ()
+  }
+  let caf_path = "temp/mo_ops/memory/model-router-caf-caf_dr6.json"
+  let bad = "{ 这不是合法 JSON @@"
+  @fs.write_string_to_file(caf_path, bad, encoding="utf8") catch {
+    _ => abort("预写坏 JSON 失败")
+  }
+  let j = mo_unwrap(
+    model_route_impl(
+      d,
+      ns="caf_dr6",
+      config=caf_cfg(true),
+      dry_run=true,
+      context="ctx",
+    ),
+  )
+  assert_true(mo_bool(j, "ok"))
+  // 降级为空记忆：suggestion == base，basis 是空数组（不 panic、不塌成 null）
+  let dec = mo_get(j, "decision")
+  assert_eq(mo_str(dec, "suggestion"), mo_str(dec, "base"))
+  match mo_get(dec, "basis") {
+    Json::Array(a) => assert_eq(a.length(), 0)
+    _ => abort("坏 JSON 时应降级为空 basis 数组")
+  }
+  // warnings 点名坏 JSON（根因可见，不静默）
+  assert_true(mo_warn_count(j) >= 1)
+  let wt = match mo_get(j, "warnings") {
+    Json::Array(a) => a.map(fn(x) { x.stringify() }).join(" | ")
+    _ => ""
+  }
+  assert_true(wt.contains("坏 JSON"))
+  // 坏文件是证据：读侧不得删除/覆盖
+  assert_eq(
+    @fs.read_file_to_string(caf_path, encoding="utf8") catch {
+      _ => abort("坏文件被读侧删掉了")
+    },
+    bad,
+  )
+  // dry_run 零副作用：普通路由状态文件不写
+  must_not_exist(mo_str(j, "state_path"))
+}
+
+///|
+/// 写半闭环锁（Slice B · caf_dr_7）：真消耗（record_model）且 `use_caf_memory=true` 时，
+/// 本次调用必须作为一条 evidence **追加**进 CAF 记忆文件（3 条，不是覆盖成 1 条），
+/// 并且随后在同 ns 的 dry_run 能看见历史依据（basis 非空）——闭合标准 3 的读写两半。
+test "caf_dr_7_真消耗回写CAF记忆并闭合读写闭环" {
+  let d = caf_prep("caf_dr7")
+  let caf_path = "temp/mo_ops/memory/model-router-caf-caf_dr7.json"
+  // 先播 1 条既有 evidence，验证 push 是"追加"而非"覆盖"
+  let seed = @router.CafMemory::new()
+  seed.push(
+    @router.CafRecord::new(
+      feature_hash=@router.caf_feature_hash(
+        @router.caf_normalize_context("旧任务"),
+      ),
+      model="caf_free_b",
+      ok=true,
+      cost=0.1,
+      ts="2026-10-17T00:00:00Z",
+    ),
+  )
+  @fs.create_dir("temp/mo_ops/memory") catch {
+    _ => ()
+  }
+  @fs.write_string_to_file(
+    caf_path,
+    @router.caf_memory_dump(seed).stringify(),
+    encoding="utf8",
+  ) catch {
+    _ => abort("预写种子失败")
+  }
+  assert_eq(caf_read_rec_count(caf_path), 1)
+  // 真消耗：记账 + CAF 写半同时发生
+  let j = mo_unwrap(
+    model_route_impl(
+      d,
+      ns="caf_dr7",
+      config=caf_cfg(true),
+      record_model="caf_free_a",
+      context="新任务",
+    ),
+  )
+  assert_true(mo_bool(j, "persisted"))
+  assert_eq(caf_read_rec_count(caf_path), 2)
+  // 闭合读写闭环：同 ns 的 dry_run 现在能看见 evidence → basis 非空
+  let j2 = mo_unwrap(
+    model_route_impl(
+      d,
+      ns="caf_dr7",
+      config=caf_cfg(true),
+      dry_run=true,
+      context="新任务",
+    ),
+  )
+  match mo_get(mo_get(j2, "decision"), "basis") {
+    Json::Array(a) => assert_true(a.length() >= 1)
+    _ => abort("回写后 dry_run 的 basis 应为非空数组")
+  }
+  // 幂等（§三.6）：每次真消耗恰好追加 1 条（1+1+1=3），不重复计数也不丢
+  let _again = mo_unwrap(
+    model_route_impl(
+      d,
+      ns="caf_dr7",
+      config=caf_cfg(true),
+      record_model="caf_free_a",
+      context="新任务",
+    ),
+  )
+  assert_eq(caf_read_rec_count(caf_path), 3)
+}
+
+///|
+/// 零回归红线锁（Slice B · caf_dr_8）：`use_caf_memory=false` 时，即使真消耗发生，
+/// CAF 记忆文件也**一个字节都不碰**（不存在 → 仍不存在）。路由器状态照常记账（persisted=true），
+/// 但 CAF 写半必须被门禁挡下。
+test "caf_dr_8_未开启use_caf_memory真消耗不写CAF文件" {
+  let d = caf_prep("caf_dr8")
+  let j = mo_unwrap(
+    model_route_impl(
+      d,
+      ns="caf_dr8",
+      config=caf_cfg(false),
+      record_model="caf_free_a",
+      context="ctx",
+    ),
+  )
+  assert_true(mo_bool(j, "persisted"))
+  must_not_exist("temp/mo_ops/memory/model-router-caf-caf_dr8.json")
+}
+
+///|
+/// 写半证据保留锁（Slice B · caf_dr_9）：push 路径遇到坏 JSON 记忆文件时，**不覆盖不删除**——
+/// 文件字节级不变（坏状态是证据），本次 evidence 跳过，warnings 点名坏 JSON（不静默吞）。
+/// 主路径（记账）不受影响。
+test "caf_dr_9_坏JSON记忆push不覆盖不删除" {
+  let d = caf_prep("caf_dr9")
+  @fs.create_dir("temp/mo_ops/memory") catch {
+    _ => ()
+  }
+  let caf_path = "temp/mo_ops/memory/model-router-caf-caf_dr9.json"
+  let bad = "{ 这不是合法 JSON @@"
+  @fs.write_string_to_file(caf_path, bad, encoding="utf8") catch {
+    _ => abort("预写坏 JSON 失败")
+  }
+  let j = mo_unwrap(
+    model_route_impl(
+      d,
+      ns="caf_dr9",
+      config=caf_cfg(true),
+      record_model="caf_free_a",
+      context="ctx",
+    ),
+  )
+  // 主路径照常（CAF 写半是旁路增强，不把路由决策/记账拉黑）
+  assert_true(mo_bool(j, "persisted"))
+  // 坏证据字节级保留
+  assert_eq(
+    @fs.read_file_to_string(caf_path, encoding="utf8") catch {
+      _ => abort("坏文件被 push 覆盖/删掉了")
+    },
+    bad,
+  )
+  // warnings 点名坏 JSON
+  assert_true(mo_warn_count(j) >= 1)
+  let wt = match mo_get(j, "warnings") {
+    Json::Array(a) => a.map(fn(x) { x.stringify() }).join(" | ")
+    _ => ""
+  }
+  assert_true(wt.contains("坏 JSON"))
+}

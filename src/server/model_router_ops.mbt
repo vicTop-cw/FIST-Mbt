@@ -79,6 +79,88 @@ fn mr_caf_read(project_dir : String, ns : String) -> Json {
 }
 
 ///|
+/// 把 `@json.parse`（raising 风格）包成 Result，好让调用方能区分「解析成功」与「坏 JSON」。
+/// `mr_caf_read` 把两者都塌成 `Json::null()`（读侧只需降级），CAF 写半需要知道根因
+/// ——坏 JSON 是证据，不能覆盖/删除。
+fn mr_try_parse(raw : String) -> Result[Json, Unit] {
+  let v = @json.parse(raw) catch { _ => return Err(()) }
+  Ok(v)
+}
+
+///|
+/// CAF 记忆文件的**可诊断**读取：区分「不存在」/「空」/「坏 JSON」/「合法 JSON」，
+/// 供 dry_run 读侧与 push 写侧共用同一套降级口径（`mr_caf_read` 把"不存在/读失败/坏 JSON"
+/// 全部塌成 `Json::null()`，读侧能降级但**说不出根因**；本函数把根因显式带出来）。
+/// 返回 `(是否存在, 是否坏 JSON, 解析后的 Json 或 Json::null())`。
+/// 坏 JSON 是证据：只计数告警，绝不删除/覆盖（与 `mr_read` 同款"坏状态不删"纪律）。
+fn mr_caf_read_diag(project_dir : String, ns : String) -> (Bool, Bool, Json) {
+  let path = mr_caf_state_path(project_dir, ns)
+  if not(@fs.path_exists(path)) {
+    return (false, false, Json::null())
+  }
+  let raw = @fs.read_file_to_string(path, encoding="utf8") catch { _ => "" }
+  if raw.trim().is_empty() {
+    return (true, false, Json::null())
+  }
+  // 解析成功即合法 JSON（即使是字面量 `null`/数字——那种由 caf_memory_load 再降级），
+  // 解析失败才是坏 JSON。
+  match mr_try_parse(raw) {
+    Ok(j) => (true, false, j)
+    Err(_) => (true, true, Json::null())
+  }
+}
+
+///|
+/// CAF 写半（Slice B）：把一次**真消耗**作为 evidence 追加进 CAF 记忆文件并落盘，
+/// 闭合标准 3 的「写半」——否则 CAF 状态文件永为空、dry_run 恒返回空 basis。
+///
+/// 纪律（与读侧同源）：
+///   - 只在 `r.config.use_caf_memory=true` 时由调用方调用；false 一个字节都不碰（零回归）。
+///   - 坏 JSON 记忆文件**不覆盖、不删除**，留作证据并计数告警，本次 push 直接跳过。
+///   - cost 记为 0.0：路由层不掌握真实成本（CafRecord 契约：0 = 未知/免费）。
+///   - 只记成功侧（ok=true）：配额消耗即"真用了"；失败路径在 executor 层区分（见报告）。
+///
+/// 返回追加过程的 warnings；Err 仅表示**写盘失败**（调用方必须回执，不得静默吞）。
+fn mr_caf_push_evidence(
+  project_dir : String,
+  ns : String,
+  context : String,
+  model : String,
+  ts : String,
+) -> Result[Array[String], String] {
+  let path = mr_caf_state_path(project_dir, ns)
+  let (_exists, bad_json, caf_json) = mr_caf_read_diag(project_dir, ns)
+  if bad_json {
+    return Ok([
+      "CAF 记忆文件是坏 JSON，已跳过本次回写（不覆盖证据）",
+    ])
+  }
+  let (mem, warns) = @router.caf_memory_load(caf_json)
+  mem.push(
+    @router.CafRecord::new(
+      feature_hash=@router.caf_feature_hash(
+        @router.caf_normalize_context(context),
+      ),
+      model~,
+      ok=true,
+      cost=0.0,
+      ts~,
+    ),
+  )
+  @fs.create_dir(project_dir + "/memory") catch {
+    _ => ()
+  }
+  @fs.write_string_to_file(
+    path,
+    @router.caf_memory_dump(mem).stringify(),
+    encoding="utf8",
+  ) catch {
+    _ => return Err("写入 CAF 记忆文件失败：" + path)
+  }
+  Ok(warns)
+}
+
+///|
 /// 写状态（建 memory/ 目录；失败返回 Err，绝不静默）
 fn mr_save(
   r : @router.ModelRouter,
@@ -308,7 +390,20 @@ fn model_route_impl(
       )
     }
     let caf_path = mr_caf_state_path(project_dir, ns)
-    let (mem, caf_warns) = @router.caf_memory_load(mr_caf_read(project_dir, ns))
+    let (_caf_exists, caf_bad_json, caf_json) = mr_caf_read_diag(
+      project_dir, ns,
+    )
+    let (mem, caf_warns) = @router.caf_memory_load(caf_json)
+    // 坏 JSON 是证据：只计数告警，绝不删除/覆盖（与 mr_read 同款纪律）。caf_memory_load 已
+    // 降级成空记忆（顶层非对象），这里再点名根因，让调用方知道"空 basis 是因为记忆坏了"。
+    let caf_warns_all = if caf_bad_json {
+      caf_warns +
+      [
+        "CAF 记忆文件是坏 JSON，按空记忆处理（坏状态是证据，未删除）",
+      ]
+    } else {
+      caf_warns
+    }
     let dr = r.pick_caf_dry_run(
       now~,
       caf_memory=mem,
@@ -325,7 +420,7 @@ fn model_route_impl(
         ("context", Json::string(context)),
         ("persisted", Json::boolean(false)),
         ("decision", @router.caf_dry_run_to_json(dr)),
-        ("warnings", mr_warn_arr(warns + caf_warns)),
+        ("warnings", mr_warn_arr(warns + caf_warns_all)),
         ("star_gate", gate.to_json()),
         (
           "mode",
@@ -373,6 +468,19 @@ fn model_route_impl(
     Ok(_) => consuming
     Err(_) => false
   }
+  // CAF 写半（Slice B）：真消耗后把本次调用作为一条 evidence 回写进 CAF 记忆文件，
+  // 闭合标准 3 的「写半」——否则 `memory/model-router-caf-{ns}.json` 永为空、dry_run 恒返回空 basis。
+  // 只在 `r.config.use_caf_memory=true` 时发生（false 时一个字节都不碰，零回归红线）；
+  // 坏 JSON 记忆文件不覆盖、不删除，由 push helper 留作证据计数告警。
+  // 失败不吞：写盘失败进 `warnings`（回执可见），但**不**让 model_route 整体转 Err——
+  // 路由决策与记账已成功，CAF 写半是旁路增强，不应把主路径拉黑。
+  let mut caf_push_warns : Array[String] = []
+  if consuming && r.config.use_caf_memory {
+    match mr_caf_push_evidence(project_dir, ns, context, record_model, now) {
+      Ok(w) => caf_push_warns = w
+      Err(e) => caf_push_warns = [e]
+    }
+  }
   let mut items : Array[(String, Json)] = [
     ("ok", Json::boolean(dec.available)),
     ("stamped_at", Json::string(now)),
@@ -390,7 +498,7 @@ fn model_route_impl(
         },
       ),
     ),
-    ("warnings", mr_warn_arr(warns)),
+    ("warnings", mr_warn_arr(warns + caf_push_warns)),
     ("star_gate", gate.to_json()),
     ("persisted", Json::boolean(persisted)),
     (
