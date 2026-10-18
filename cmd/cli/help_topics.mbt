@@ -10,7 +10,7 @@ pub fn list_topics() -> String {
   let v = FIST_VERSION
   "FIST-Mbt Help  v" +
   v +
-  "  (166 MCP tools)\n" +
+  "  (170 MCP tools)\n" +
   "\n" +
   "Usage: fist help <topic>\n" +
   "Topics: overview / cli / tools / mcp / plugins / install\n" +
@@ -25,7 +25,7 @@ pub fn help_overview() -> String {
   " ===\n" +
   "\n" +
   "Pure MoonBit AI commander orchestration, exposed as MCP Server.\n" +
-  "166 MCP tools / 3 resources / 2 prompts.\n" +
+  "170 MCP tools / 3 resources / 2 prompts.\n" +
   "\n" +
   "Lifecycle: publish -> plan -> claim -> execute -> submit -> verify -> archive\n" +
   "Self-drive: selfdrive_init -> review -> publish_next -> triage\n" +
@@ -55,7 +55,7 @@ pub fn help_tools() -> String {
   let v = FIST_VERSION
   "=== " +
   v +
-  "  166 MCP tools (17 groups) ===\n" +
+  "  170 MCP tools (18 groups) ===\n" +
   "\n" +
   "  [Lifecycle 14] publish publish_parallel plan claim execute submit verify reject retry pause resume reopen_task archive delete\n" +
   "  [Query 2] list get\n" +
@@ -64,6 +64,7 @@ pub fn help_tools() -> String {
   "  [Board-DAG 27] dag_critical_path dag_parallelism dag_ascii dag_check dag_ready dag_sort dag_depend dag_publish dag_slack dag_schedule dag_cost_route dag_mc plan_revise goal_drift_check board_ascii state_flow_ascii status_summary project_health health_check reserve_scope reserve_check reserve_release lock_acquire lock_renew lock_release lock_status task_triage\n" +
   "  [Selfdrive 9] selfdrive_init selfdrive_append selfdrive_get selfdrive_export_tasks selfdrive_review_tick selfdrive_review_ready selfdrive_publish_next selfdrive_parse_next_tasks selfdrive_pick_next\n" +
   "  [Marketplace 5] executor_register executor_route executor_auction executor_clear selfdrive_dispatch\n" +
+  "  [Display 4] rank_of soldier_type_of soldier_route staff_label_of\n" +
   "  [Memory-Evolve 11] memory_consolidate memory_gc memory_link evolve_submit evolve_sample evolve_snapshot evolve_distill evolve_lesson evolve_critic evolve_asset_register task_challenge\n" +
   "  [GitHub-GitCode 12] github_env_check github_queue_status github_flush_plan github_flush_execute github_queue_mark_sent github_issue_close github_issue_comment github_issue_webhook_parse gitcode_env_check gitcode_queue_status gitcode_flush_plan gitcode_queue_mark_sent\n" +
   "  [Model-Router 5] model_auth_status model_route model_router_status model_router_reset executor_run\n" +
