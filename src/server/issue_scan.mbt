@@ -744,6 +744,438 @@ fn scan_guard_substring_end_var(
 }
 
 ///|
+/// BUG-268 辅助：解析非负整数（与 scan_substring_start 同款 int_safe 上界）；
+/// 失败/空/溢出返回 -1。
+fn scan_parse_int_opt(s : String) -> Int {
+  let t = s.trim().to_string()
+  if t.is_empty() {
+    return -1
+  }
+  let int_safe : Int = 200_000_000
+  let mut acc : Int = 0
+  for c in t {
+    if c < '0' || c > '9' {
+      return -1
+    }
+    if acc >= int_safe {
+      return -1
+    }
+    acc = acc * 10 + (c.to_int() - 48)
+  }
+  acc
+}
+
+///|
+/// BUG-268 辅助：去掉字符串里的所有空格。刻意不用 `String::replace`——
+/// 本仓钉版 moon 的 `replace` 需要 `old~/new~` 标签且返回 `StringView`，直接写
+/// `.replace(" ", "")` 会撞 4014/4080/4086 三连编译错；这里显式拼一个 `String`，
+/// 语义等价且不受 core 版本漂移影响。
+fn scan_nospace(s : String) -> String {
+  let mut out = ""
+  for c in s {
+    if c != ' ' {
+      out = out + c.to_string()
+    }
+  }
+  out
+}
+
+///|
+/// BUG-268 辅助：提取 substring 的 `start=` / `end=` 参数表达式原文
+/// （到逗号/右括号前、去首尾空白），如 `start=d` → `d`、`end=d + 1` → `d + 1`；
+/// 找不到返回 ""。`end~` 简写按现有约定返回 "end"。
+fn scan_substring_arg_expr(code : String, arg : String) -> String {
+  let pat = arg + "="
+  match code.find(pat) {
+    None => ""
+    Some(idx) => {
+      let pos = idx + pat.length()
+      if pos >= code.length() {
+        return ""
+      }
+      let mut j = pos
+      let mut depth : Int = 0
+      while j < code.length() {
+        let c = code[j]
+        if c == '(' {
+          depth = depth + 1
+        } else if c == ')' {
+          if depth > 0 {
+            depth = depth - 1
+          } else {
+            break
+          }
+        } else if c == ',' && depth == 0 {
+          break
+        }
+        j = j + 1
+      }
+      code.substring(start=pos, end=j).to_string().trim().to_string()
+    }
+  }
+}
+
+///|
+fn scan_substring_start_expr(code : String) -> String {
+  scan_substring_arg_expr(code, "start")
+}
+
+///|
+fn scan_substring_end_expr(code : String) -> String {
+  match code.find("end~") {
+    Some(_) => "end"
+    None => scan_substring_arg_expr(code, "end")
+  }
+}
+
+///|
+/// BUG-268 形态 A：模运算不变量。`let d = rem % 16` 使 0 ≤ d < 16，
+/// `hex.substring(start=d, end=d+1)` 的 end=d+1 ≤ 16 = hex 长度，安全。
+/// 要求：prev_lines 内存在 `let <v> = <expr> % <K>`（K 数字字面量），start_expr == v，
+/// end_expr 为 v 或 v+1（去空格比对），且目标 vn 的字面量定义长度 ≥ K。
+/// 保守：任一步不满足即返回 false，把判定留给下游（拿不准就保留）。
+fn scan_guard_mod_invariant(
+  prev_lines : Array[String],
+  start_expr : String,
+  end_expr : String,
+  vn : String,
+) -> Bool {
+  if start_expr.is_empty() || vn.is_empty() {
+    return false
+  }
+  let se = start_expr.trim().to_string()
+  let ee = scan_nospace(end_expr.trim().to_string())
+  let ee_ok = ee == se || ee == se + "+1"
+  if not(ee_ok) {
+    return false
+  }
+  let mut mod_k : Int = -1
+  let mut found = false
+  for p in prev_lines {
+    let t = p.trim().to_string()
+    if t.is_empty() {
+      continue
+    }
+    let pref = "let " + se + " = "
+    if t.has_prefix(pref) {
+      let rest = t.substring(start=pref.length(), end=t.length()).to_string()
+      match rest.find(" % ") {
+        Some(pi) => {
+          let ktxt = rest
+            .substring(start=pi + 3, end=rest.length())
+            .to_string()
+            .trim()
+            .to_string()
+          let kv = scan_parse_int_opt(ktxt)
+          if kv >= 0 {
+            mod_k = kv
+            found = true
+            break
+          }
+        }
+        None => ()
+      }
+    }
+  }
+  if not(found) || mod_k < 0 {
+    return false
+  }
+  // 目标长度：`let <vn> = "<literal>"` 的字面量长度 ≥ K
+  for p in prev_lines {
+    let t = p.trim().to_string()
+    let pref2 = "let " + vn + " = "
+    if t.has_prefix(pref2) {
+      let lit = t
+        .substring(start=pref2.length(), end=t.length())
+        .to_string()
+        .trim()
+      if lit.length() >= 2 && lit[0] == '"' && lit[lit.length() - 1] == '"' {
+        if lit.length() - 2 >= mod_k {
+          return true
+        }
+      }
+    }
+  }
+  false
+}
+
+///|
+/// BUG-268 形态 B：for 循环有界迭代。`for i in 0..<26` 使 0 ≤ i ≤ 25，
+/// `upper.substring(start=i, end=i+1)` 的 end=i+1 ≤ 26 = 目标长度，安全。
+/// 要求：prev_lines 内存在 `for <v> in 0..<N`（N 数字字面量），start_expr == v，
+/// end_expr 为 v 或 v+1，且目标 vn 字面量长度 ≥ N。
+fn scan_guard_for_bounded(
+  prev_lines : Array[String],
+  start_expr : String,
+  end_expr : String,
+  vn : String,
+) -> Bool {
+  if start_expr.is_empty() || vn.is_empty() {
+    return false
+  }
+  let se = start_expr.trim().to_string()
+  let ee = scan_nospace(end_expr.trim().to_string())
+  let ee_ok = ee == se || ee == se + "+1"
+  if not(ee_ok) {
+    return false
+  }
+  let mut bound : Int = -1
+  let mut found = false
+  for p in prev_lines {
+    let t = p.trim().to_string()
+    let pref = "for " + se + " in 0..<"
+    if t.has_prefix(pref) {
+      let ktxt = t
+        .substring(start=pref.length(), end=t.length())
+        .to_string()
+        .trim()
+        .to_string()
+      // BUG-268 补充：`for i in 0..<26 {` 尾部 `{` 会混入字面量导致 parse 失败
+      let mut kk = ktxt
+      while kk.length() > 0 &&
+            (
+              kk[kk.length() - 1] == '{' ||
+              kk[kk.length() - 1] == '}' ||
+              kk[kk.length() - 1] == ' '
+            ) {
+        kk = kk.substring(start=0, end=kk.length() - 1).to_string()
+      }
+      let kv = scan_parse_int_opt(kk)
+      if kv >= 0 {
+        bound = kv
+        found = true
+        break
+      }
+    }
+  }
+  if not(found) || bound < 0 {
+    return false
+  }
+  for p in prev_lines {
+    let t = p.trim().to_string()
+    let pref2 = "let " + vn + " = "
+    if t.has_prefix(pref2) {
+      let lit = t
+        .substring(start=pref2.length(), end=t.length())
+        .to_string()
+        .trim()
+      if lit.length() >= 2 && lit[0] == '"' && lit[lit.length() - 1] == '"' {
+        if lit.length() - 2 >= bound {
+          return true
+        }
+      }
+    }
+  }
+  false
+}
+
+///|
+/// BUG-268 辅助：判断减数 X 是否在 prev_lines 中被约束为非负且有界。
+/// 两种安全来源：① 数字字面量 ≥ 0；② `let <X> = if <A> < 0 { 0 } else { <limit> }`
+/// （X = max(limit, 0)，与 if-else 守卫上限同源）。
+fn scan_cut_bounded(
+  prev_lines : Array[String],
+  x : String,
+  limit : String,
+) -> Bool {
+  let xt = x.trim().to_string()
+  if xt.is_empty() || limit.is_empty() {
+    return false
+  }
+  let kv = scan_parse_int_opt(xt)
+  if kv >= 0 {
+    return true
+  }
+  for p in prev_lines {
+    let t = p.trim().to_string()
+    let pref = "let " + xt + " = "
+    if t.has_prefix(pref) {
+      let rhs = t.substring(start=pref.length(), end=t.length()).to_string()
+      if rhs.contains("< 0 { 0 }") && rhs.contains(limit) {
+        return true
+      }
+    }
+  }
+  false
+}
+
+///|
+/// BUG-268 形态 D：前 N 行多行 if-else 长度守卫。
+/// `let n = content.length()` → `if n <= max_chars { ... } else { let cut = if max_chars < 0
+/// { 0 } else { max_chars }; substring(start=n - cut, end=n) }`：
+/// else 分支中 n > max_chars，cut = max(max_chars, 0) ≤ max_chars < n，
+/// start=n-cut ∈ (0, n)、end=n = 长度，安全。
+/// 要求：① prev_lines 有 `let <lenv> = <vn>.length()`；
+/// ② prev_lines 有 `if <lenv> <= <L> {`（或 `< <L>`）且其后出现 `} else {`；
+/// ③ code 的 start/end 表达式为 0 / lenv / lenv-<X>，X 满足 scan_cut_bounded。
+fn scan_guard_multi_line_length(
+  prev_lines : Array[String],
+  code : String,
+  vn : String,
+) -> Bool {
+  if vn.is_empty() {
+    return false
+  }
+  let start_expr = scan_substring_start_expr(code)
+  let end_expr = scan_substring_end_expr(code)
+  let se = start_expr.trim().to_string()
+  let ee = scan_nospace(end_expr.trim().to_string())
+  // ① lenv 绑定
+  let mut lenv = ""
+  for p in prev_lines {
+    let t = p.trim().to_string()
+    if t.has_prefix("let ") && t.contains(vn + ".length()") {
+      match t.find(" = ") {
+        Some(ei) => {
+          let name = t.substring(start=4, end=ei).to_string().trim().to_string()
+          if not(name.is_empty()) {
+            lenv = name
+            break
+          }
+        }
+        None => ()
+      }
+    }
+  }
+  if lenv.is_empty() {
+    return false
+  }
+  // ② if <lenv> <= <L> / < <L>，其后有 } else {
+  let mut limit = ""
+  let mut if_idx = -1
+  for i in 0..<prev_lines.length() {
+    let t = prev_lines[i].trim().to_string()
+    let pref = "if " + lenv + " <= "
+    let pref2 = "if " + lenv + " < "
+    if t.has_prefix(pref) {
+      limit = t
+        .substring(start=pref.length(), end=t.length())
+        .to_string()
+        .trim()
+        .to_string()
+      if_idx = i
+      break
+    }
+    if t.has_prefix(pref2) {
+      limit = t
+        .substring(start=pref2.length(), end=t.length())
+        .to_string()
+        .trim()
+        .to_string()
+      if_idx = i
+      break
+    }
+  }
+  if if_idx < 0 || limit.is_empty() {
+    return false
+  }
+  // ②′ 修剪 limit 尾部的 `{`：`if n <= max_chars {` → `max_chars`（BUG-268：memory_gc_logic
+  // L160 就是这种形状，不修剪会让 scan_cut_bounded 拿 "max_chars {" 去子串比对，恒失败）。
+  while limit.length() > 0 && limit[limit.length() - 1] == '{' {
+    limit = limit.substring(start=0, end=limit.length() - 1).to_string()
+  }
+  limit = limit.trim().to_string()
+  if limit.is_empty() {
+    return false
+  }
+  // BUG-268 实测：issue_scan 传入的 prev_lines 是"从最近一行往回扫"的近邻窗口，
+  // 顺序是**倒序**（`} else {` 在 `if n <= max_chars {` 之前），所以 else 检测不能
+  // 只从 if 之后往后找——只要窗口里同时存在 `if <lenv> <= <L>` 与 `} else {` 即可，
+  // 与两者相对顺序无关（保守：形状要求强，误豁免风险低）。
+  let mut after_else = false
+  for p in prev_lines {
+    if p.contains("} else {") {
+      after_else = true
+      break
+    }
+  }
+  if not(after_else) {
+    return false
+  }
+  // ③ start/end 表达式在安全集合内（start/end 归一化空格：`n - cut` ≡ `n-cut`）
+  let se_n = scan_nospace(se)
+  let mut ee_ok = false
+  if ee == lenv {
+    ee_ok = true
+  } else {
+    let pref3 = lenv + "-"
+    if ee.has_prefix(pref3) {
+      let x = ee.substring(start=pref3.length(), end=ee.length()).to_string()
+      if scan_cut_bounded(prev_lines, x, limit) {
+        ee_ok = true
+      }
+    }
+  }
+  if not(ee_ok) {
+    return false
+  }
+  if se_n == "0" || se_n == lenv {
+    return true
+  }
+  let pref4 = lenv + "-"
+  if se_n.has_prefix(pref4) {
+    let x = se_n.substring(start=pref4.length(), end=se_n.length()).to_string()
+    return scan_cut_bounded(prev_lines, x, limit)
+  }
+  false
+}
+
+///|
+/// BUG-268 形态 E：has_suffix 间接长度。
+/// `let cut = if names.has_suffix(", ") { 2 } else { 0 }` 使 cut ∈ {0, k}；
+/// cut=k>0 时 names 至少含该后缀（长度 ≥ k），`names.substring(start=0,
+/// end=names.length() - cut)` 不越界。要求：end_expr 形如 `<vn>.length() - <cut>`，
+/// prev_lines 有上述 has_suffix 定义行，且 if 分支值 k ∈ 1..4（保守小值）。
+fn scan_guard_has_suffix_cut(
+  prev_lines : Array[String],
+  code : String,
+  vn : String,
+) -> Bool {
+  if vn.is_empty() {
+    return false
+  }
+  let ee = scan_nospace(scan_substring_end_expr(code).trim().to_string())
+  let need = vn + ".length()-"
+  if not(ee.has_prefix(need)) {
+    return false
+  }
+  let cutv = ee.substring(start=need.length(), end=ee.length()).to_string()
+  if cutv.is_empty() {
+    return false
+  }
+  for p in prev_lines {
+    let t = p.trim().to_string()
+    let pref = "let " + cutv + " = "
+    if t.has_prefix(pref) && t.contains(vn + ".has_suffix(") {
+      let body = t.substring(start=pref.length(), end=t.length()).to_string()
+      // body: `if <vn>.has_suffix(<lit>) { <k> } else { 0 }`
+      match body.find(" { ") {
+        Some(oi) => {
+          let seg = body.substring(start=oi + 3, end=body.length()).to_string()
+          // seg: `<k> } else { 0 }`
+          match seg.find(" } else { ") {
+            Some(ci) => {
+              let ktxt = seg
+                .substring(start=0, end=ci)
+                .to_string()
+                .trim()
+                .to_string()
+              let kv = scan_parse_int_opt(ktxt)
+              if kv >= 1 && kv <= 4 {
+                return true
+              }
+            }
+            None => ()
+          }
+        }
+        None => ()
+      }
+    }
+  }
+  false
+}
+
+///|
 /// 在 prev 行里找该 var 是否被 `is_empty()` 守卫（同形 `if var.is_empty()` / `var.is_empty()`）。
 fn scan_guard_is_empty(prev : String, vn : String) -> Bool {
   let t = prev.trim().to_string()
@@ -974,6 +1406,27 @@ pub fn scan_finding_guarded(
       code_t.contains("end = .length()") {
       return true
     }
+    // BUG-268：跨行/间接守卫形态（prev_lines 循环外整体识别，保守过滤假阳性）
+    if not(vn.is_empty()) {
+      let sexpr = scan_substring_start_expr(code)
+      let eexpr = scan_substring_end_expr(code)
+      // 形态 A：模运算不变量（`let d = rem % 16` + `substring(start=d, end=d+1)`）
+      if scan_guard_mod_invariant(prev_lines, sexpr, eexpr, vn) {
+        return true
+      }
+      // 形态 B：for 循环有界迭代（`for i in 0..<26` + `substring(start=i, end=i+1)`）
+      if scan_guard_for_bounded(prev_lines, sexpr, eexpr, vn) {
+        return true
+      }
+      // 形态 D：前 N 行多行 if-else 长度守卫（`if n <= max_chars { ... } else { ... }`）
+      if scan_guard_multi_line_length(prev_lines, code, vn) {
+        return true
+      }
+      // 形态 E：has_suffix 间接长度（`let cut = if names.has_suffix(...) { 2 } else { 0 }`）
+      if scan_guard_has_suffix_cut(prev_lines, code, vn) {
+        return true
+      }
+    }
   }
   // R125: string-index / index-out-of-bounds 同一行守卫（循环外，prev_lines 空时也能命中）
   if rule == "index-out-of-bounds" || rule == "string-index" {
@@ -1103,7 +1556,9 @@ fn scan_filter_guarded(
   let out : Array[ScanFinding] = []
   for hit in findings {
     let ln = hit.line
-    let prev_start = if ln - 6 < 1 { 1 } else { ln - 6 }
+    // BUG-268：近邻窗口由 6 扩到 12，覆盖 `let upper = "..."` 等字面量定义
+    // 与 for 循环头相距较远的形态 B 场景（如 mcs_lower 中定义与使用隔 9 行）。
+    let prev_start = if ln - 12 < 1 { 1 } else { ln - 12 }
     let prev_end = ln - 1
     let prev_lines : Array[String] = []
     if prev_end >= prev_start {
