@@ -535,3 +535,193 @@ test "bug229_重试分支记账冷却不留静默吞错" {
     Err(e) => abort("不在池中的模型应返回 Ok，实际 Err: " + e)
   }
 }
+
+// ===== CAF dry_run 预览（验收标准 3 的 server 层接线锁）=====
+
+///|
+/// caf_dr 用配置：`use_caf_memory=true` + 双模型池（两模型都健康，便于软性重排有空间）。
+/// `use_caf` 传 false 时只把开关关掉，其余保持不变（供 caf_dr_3 的对照面）。
+fn caf_cfg(use_caf : Bool) -> Json {
+  let pool = fn(name : String, limit : Int) -> Json {
+    Json::object({
+      "name": Json::string(name),
+      "limit": Json::number(limit.to_double()),
+    })
+  }
+  Json::object({
+    "window_seconds": Json::number(18000.0),
+    "threshold_pct": Json::number(95.0),
+    "free_pool": Json::array([pool("caf_free_a", 9), pool("caf_free_b", 9)]),
+    "paid_pool": Json::array([pool("caf_paid", 9)]),
+    "use_caf_memory": Json::boolean(use_caf),
+  })
+}
+
+///|
+/// caf_dr 用独立目录：复用 mo_prep，额外清掉 CAF 状态文件（保证每次从"无记忆"起步）。
+fn caf_prep(ns : String) -> String {
+  let d = mo_prep(ns)
+  @fs.remove_file("temp/mo_ops/memory/model-router-caf-" + ns + ".json") catch {
+    _ => ()
+  }
+  d
+}
+
+///|
+/// 预览形状锁：dry_run=true 必须回建议模型 + 历史依据（decision.basis 是数组）、
+/// persisted=false，且**未创建任何状态文件**（CAF 状态文件 + 普通路由状态文件都没有）。
+test "caf_dr_1_零副作用预览形状" {
+  let d = caf_prep("caf_dr1")
+  let j = mo_unwrap(
+    model_route_impl(
+      d,
+      ns="caf_dr1",
+      config=caf_cfg(true),
+      dry_run=true,
+      context="任务A",
+    ),
+  )
+  assert_true(mo_bool(j, "ok"))
+  assert_false(mo_bool(j, "persisted"))
+  assert_eq(mo_str(j, "context"), "任务A")
+  must_contain(mo_str(j, "mode"), "caf-dry-run")
+  // decision 是标准 3 形状：suggestion + basis（数组）
+  let dec = mo_get(j, "decision")
+  assert_true(mo_str(dec, "suggestion") != "")
+  assert_true(not(mo_str(dec, "base").is_empty()))
+  match mo_get(dec, "basis") {
+    Json::Array(_) => ()
+    _ => abort("decision.basis 应为数组，实际不是")
+  }
+  // 零副作用：dry_run 连"播种池定义"那一步都没走
+  must_not_exist(mo_str(j, "state_path"))
+  must_not_exist(mo_str(j, "caf_state_path"))
+}
+
+///|
+/// 空记忆零回归：无 CAF 状态文件时，suggestion 必须等于 base（软性重排不改变原决策），
+/// basis 必须是**空数组**（`[]`，不是 null）——调用方按数组遍历不会 panic。
+test "caf_dr_2_空记忆零回归" {
+  let d = caf_prep("caf_dr2")
+  let j = mo_unwrap(
+    model_route_impl(d, ns="caf_dr2", config=caf_cfg(true), dry_run=true),
+  )
+  let dec = mo_get(j, "decision")
+  assert_eq(mo_str(dec, "suggestion"), mo_str(dec, "base"))
+  match mo_get(dec, "basis") {
+    Json::Array(a) => assert_eq(a.length(), 0)
+    _ => abort("空记忆 basis 应为空数组，实际不是")
+  }
+  // 空记忆也绝不落盘
+  must_not_exist(mo_str(j, "state_path"))
+  must_not_exist(mo_str(j, "caf_state_path"))
+}
+
+///|
+/// 未开启显式拒绝：`use_caf_memory=false`（默认配置）时 dry_run 必须回 Err 且点名 CAF，
+/// 而不是静默降级回普通查询（BUG-31 同族的最难查静默降级）。
+test "caf_dr_3_未开启显式拒绝" {
+  let d = caf_prep("caf_dr3")
+  match model_route_impl(d, ns="caf_dr3", dry_run=true) {
+    Err(e) => {
+      must_contain(e, "CAF")
+      must_contain(e, "use_caf_memory=false")
+    }
+    Ok(j) =>
+      abort(
+        "未开启 CAF 的 dry_run 应被拒绝，实际 Ok: " + j.stringify(),
+      )
+  }
+  // 显式给 use_caf_memory=false 也一样拒
+  match model_route_impl(d, ns="caf_dr3", config=caf_cfg(false), dry_run=true) {
+    Err(e) => must_contain(e, "CAF")
+    Ok(j) =>
+      abort(
+        "显式 use_caf_memory=false 应被拒绝，实际 Ok: " + j.stringify(),
+      )
+  }
+}
+
+///|
+/// 零副作用不落盘的最强形式：连调两次，决策/模式/状态路径逐字节一致
+/// （stamped_at 走墙钟、粒度 1s，跨秒边界会不同，故不把它纳入逐字节比较——这是时钟本身的性质，
+/// 不是副作用），且工作目录下**不新增** model-router-caf-* 与 model-router-* 状态文件。
+test "caf_dr_4_零副作用不落盘" {
+  let d = caf_prep("caf_dr4")
+  let j1 = mo_unwrap(
+    model_route_impl(
+      d,
+      ns="caf_dr4",
+      config=caf_cfg(true),
+      dry_run=true,
+      context="ctx",
+    ),
+  )
+  let j2 = mo_unwrap(
+    model_route_impl(
+      d,
+      ns="caf_dr4",
+      config=caf_cfg(true),
+      dry_run=true,
+      context="ctx",
+    ),
+  )
+  assert_eq(
+    mo_get(j1, "decision").stringify(),
+    mo_get(j2, "decision").stringify(),
+  )
+  assert_eq(mo_bool(j1, "persisted"), mo_bool(j2, "persisted"))
+  assert_eq(mo_str(j1, "mode"), mo_str(j2, "mode"))
+  assert_eq(mo_str(j1, "state_path"), mo_str(j2, "state_path"))
+  assert_eq(mo_str(j1, "caf_state_path"), mo_str(j2, "caf_state_path"))
+  must_not_exist(mo_str(j1, "state_path"))
+  must_not_exist(mo_str(j1, "caf_state_path"))
+  must_not_exist("temp/mo_ops/memory/model-router-caf_dr4.json")
+  must_not_exist("temp/mo_ops/memory/model-router-caf-caf_dr4.json")
+}
+
+///|
+/// 有记忆时 basis 有条目：预写一条与 context 同 feature_hash 的 CAF 记录，
+/// dry_run 读盘恢复后，basis 必须非空（证明"历史依据"真的来自落盘的 CAF 记忆）。
+test "caf_dr_5_有记忆时 basis 有条目" {
+  let d = caf_prep("caf_dr5")
+  let mem = @router.CafMemory::new()
+  for i = 0; i < 5; i = i + 1 {
+    mem.push(
+      @router.CafRecord::new(
+        feature_hash=@router.caf_feature_hash("ctx"),
+        model="caf_free_a",
+        ok=true,
+        cost=1.0,
+        ts="2026-10-15T00:00:00Z",
+      ),
+    )
+  }
+  let caf_dir = "temp/mo_ops/memory"
+  @fs.create_dir(caf_dir) catch {
+    _ => ()
+  }
+  let caf_path = caf_dir + "/model-router-caf-caf_dr5.json"
+  @fs.write_string_to_file(
+    caf_path,
+    @router.caf_memory_dump(mem).stringify(),
+    encoding="utf8",
+  ) catch {
+    _ => abort("预写 CAF 状态文件失败")
+  }
+  let j = mo_unwrap(
+    model_route_impl(
+      d,
+      ns="caf_dr5",
+      config=caf_cfg(true),
+      dry_run=true,
+      context="ctx",
+    ),
+  )
+  match mo_get(mo_get(j, "decision"), "basis") {
+    Json::Array(a) => assert_true(a.length() >= 1)
+    _ => abort("有记忆时 basis 应为非空数组")
+  }
+  // dry_run 读过记忆但仍不落盘（连回写都不做）
+  must_not_exist(mo_str(j, "state_path"))
+}

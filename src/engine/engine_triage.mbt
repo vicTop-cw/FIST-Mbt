@@ -121,7 +121,7 @@ fn skill_mode(key : String) -> String {
     ("superpowers", "advance"),
   ]
   for (prefix, mode) in table {
-    if k.starts_with(prefix) {
+    if k.has_prefix(prefix) {
       return mode
     }
   }

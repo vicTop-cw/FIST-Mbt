@@ -27,7 +27,7 @@ pub fn lesson_ts_part(now : String) -> String {
     .replace(old=":", new=".")
     .replace(old="T", new=".")
   if compact.length() > 16 {
-    compact.substring(start=0, end=16)
+    compact[0:16].to_string()
   } else {
     compact
   }

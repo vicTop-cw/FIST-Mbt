@@ -135,18 +135,14 @@ fn append_group(
       indent = indent + "· "
     }
     let tid = t.get_id()
-    let short_id = if tid.length() > 10 {
-      tid.substring(start=0, end=10)
-    } else {
-      tid
-    }
+    let short_id = if tid.length() > 10 { tid[0:10].to_string() } else { tid }
     // R12-R6 性能：`t.get_description()` 对 SqliteStore 是 DB 读，这里只取一次。
     // 旧代码在同一行里调了两次（一次给 desc 截断，一次给 extract_difficulty），
     // 等于每任务 2 次 DB 读；2079 任务 → 多出 2079 次 DB 读。
     let full_desc = t.get_description()
     let mut desc = full_desc
     if desc.length() > 40 {
-      desc = desc.substring(start=0, end=40) + "…"
+      desc = desc[0:40].to_string() + "…"
     }
     // R55：看板每行标注自身难度档（复用 pub extract_difficulty 单一来源，支柱①②"一目了然+复用"）
     let mut diff_note = ""

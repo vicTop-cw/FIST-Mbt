@@ -253,7 +253,7 @@ fn check_file_artifact(
     if have_nc {
       names = names + "not_contains, "
     }
-    let cut = if names.ends_with(", ") { 2 } else { 0 }
+    let cut = if names.has_suffix(", ") { 2 } else { 0 }
     let tail = names.substring(start=0, end=names.length() - cut)
     "OK（存在/非空 + invariant 全部通过: " + tail + "）"
   }
@@ -269,7 +269,7 @@ fn check_external_invariants(stdout : String, spec : ArtifactSpec) -> String {
   if !spec.contains.is_empty() {
     if !stdout.contains(spec.contains) {
       let shown = if stdout.length() > 120 {
-        stdout.substring(start=0, end=120) + "..."
+        stdout[0:120].to_string() + "..."
       } else {
         stdout
       }
@@ -293,7 +293,7 @@ fn check_external_invariants(stdout : String, spec : ArtifactSpec) -> String {
 pub fn ov_parse_int(raw : String) -> Int? {
   // 去掉末尾句号（moon 汇总行末尾 "0." 常见）
   let mut s = raw.trim().to_string()
-  if s.ends_with(".") {
+  if s.has_suffix(".") {
     s = s.substring(start=0, end=s.length() - 1).to_string()
   }
   if s.is_empty() {
@@ -327,19 +327,19 @@ fn check_moon_test_summary(stdout : String) -> String {
   let mut total = 0
   for ln in lines {
     let line = ln.trim().to_owned()
-    if line.starts_with("Total tests:") {
+    if line.has_prefix("Total tests:") {
       found = true
       // 形如 "Total tests: 645, passed: 645, failed: 0."（末尾可带句号）
       for field in line.split(",") {
         let f = field.trim().to_owned()
-        if f.starts_with("failed:") {
-          let v = f.substring(start=7).trim().to_owned()
+        if f.has_prefix("failed:") {
+          let v = f[7:].to_string().trim().to_owned()
           match ov_parse_int(v) {
             Some(n) => failed = n
             None => ()
           }
-        } else if f.starts_with("Total tests:") {
-          let v = f.substring(start=12).trim().to_owned()
+        } else if f.has_prefix("Total tests:") {
+          let v = f[12:].to_string().trim().to_owned()
           match ov_parse_int(v) {
             Some(n) => total = n
             None => ()
@@ -439,7 +439,7 @@ fn check_external_artifact(
           let stderr = match m.get("stderr") {
             Some(String(s)) =>
               if s.length() > 200 {
-                s.substring(start=0, end=200) + "..."
+                s[0:200].to_string() + "..."
               } else {
                 s
               }

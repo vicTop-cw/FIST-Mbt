@@ -11,7 +11,10 @@ test "BUG-239：队列标记失败不再被静默吞成空对象（源码文本�
 ///|
 test "BUG-239：捕获 github_queue_mark_sent 的失败原因（源码文本锁）" {
   let src = r2_read_or_abort("src/server/server.mbt")
-  assert_eq(r2_count(src, "let (mark_json, mark_sent_error) = match mark_res {"), 1)
+  assert_eq(
+    r2_count(src, "let (mark_json, mark_sent_error) = match mark_res {"),
+    1,
+  )
 }
 
 ///|

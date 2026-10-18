@@ -12,40 +12,40 @@
 ///|
 /// 一个单元任务（可交给 executor_run 执行）。
 pub struct ElementTask {
-  pub element_id : String
-  pub lane : String
+  element_id : String
+  lane : String
   // free_pool | paid_pool | balanced
-  pub temperature : Double
-  pub max_tokens : Int
-  pub output_schema : Array[String]
-  pub prompt : String
+  temperature : Double
+  max_tokens : Int
+  output_schema : Array[String]
+  prompt : String
   // 可直接喂 executor_run 的正文
-  pub executor_hint : String
+  executor_hint : String
   // 恒 "ofm"（并存 HTTP 通道）
-  pub dry_run_shape : String
+  dry_run_shape : String
   // 调用形状说明（dry_run 校验用）
 }
 
 ///|
 /// 一对帽子就该议题交锋的辩论计划。
 pub struct DebatePair {
-  pub left : String
+  left : String
   // 六元代号 A
-  pub right : String
+  right : String
   // 六元代号 B
-  pub issue : String
+  issue : String
   // 交锋议题
-  pub rounds : Int
+  rounds : Int
 }
 
 ///|
 /// 一次 HexaMind 编排计划。
 pub struct HatPlan {
-  pub topic : String
-  pub config : HatConfig
-  pub tasks : Array[ElementTask]
-  pub debate_pairs : Array[DebatePair]
-  pub nucleus : ElementTask
+  topic : String
+  config : HatConfig
+  tasks : Array[ElementTask]
+  debate_pairs : Array[DebatePair]
+  nucleus : ElementTask
 }
 
 ///|

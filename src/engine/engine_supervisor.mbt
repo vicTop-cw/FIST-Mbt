@@ -468,7 +468,20 @@ pub fn FistEngine::supervisor_task_upsert(
                         c = c.with_depends_on(d, now)
                       }
                     }
-                    ignore(self.store.update_task(c))
+                    match self.store.update_task(c) {
+                      Ok(_) => ()
+                      Err(e) =>
+                        ignore(
+                          results.push(
+                            Json::object({
+                              "ok": Json::boolean(false),
+                              "task_id": Json::string(id),
+                              "action": Json::string("dep_update_failed"),
+                              "error": Json::string(e),
+                            }),
+                          ),
+                        )
+                    }
                   }
                   None => ()
                 }

@@ -58,11 +58,11 @@ pub fn hat_role(Hat) -> String
 
 pub fn hat_verdict(String, String, String) -> HatVerdict
 
-pub fn heal_stale_tasks(@engine.FistEngine, Heartbeat, String, timeout_sec? : Int, ns? : String) -> Result[Array[String], String]
+pub fn heal_stale_tasks(@engine.FistEngine, Heartbeat, String, timeout_sec? : Int, ns? : String, delete_failed_ids? : Array[String]) -> Result[Array[String], String]
 
-pub fn heal_stale_tasks_by_phi(@engine.FistEngine, String, phi_threshold? : Int, ns? : String, timeout_sec? : Int, no_history_ids? : Array[String]) -> Result[Array[String], String]
+pub fn heal_stale_tasks_by_phi(@engine.FistEngine, String, phi_threshold? : Int, ns? : String, timeout_sec? : Int, no_history_ids? : Array[String], delete_failed_ids? : Array[String]) -> Result[Array[String], String]
 
-pub fn heal_stale_tasks_from_store(@engine.FistEngine, String, timeout_sec? : Int, ns? : String, skipped_ids? : Array[String]) -> Result[Array[String], String]
+pub fn heal_stale_tasks_from_store(@engine.FistEngine, String, timeout_sec? : Int, ns? : String, skipped_ids? : Array[String], delete_failed_ids? : Array[String]) -> Result[Array[String], String]
 
 pub fn is_meta_prompt_name(String) -> Bool
 

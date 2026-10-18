@@ -284,6 +284,9 @@ pub fn report_bug(
 
   // 可选：发布修复根任务（best-effort；失败不阻断落账，仅在返回里体现）
   let mut task_id : String = ""
+  // BUG-204：发布失败此前被 `Err(_) => ()` 静默吞掉——上面注释承诺"仅在返回里体现"，
+  // 返回里却既无 task_id 也无错误位，且 task_namespace 照旧回显 ⇒ 调用方以为单已发。
+  let mut publish_error : String = ""
   // BUG-8：修复单落到哪个 ns 由调用方决定（缺省仍 "bugs"，零回归）。
   // 过去这里写死 ns="bugs"，与发起轮的 ns 断裂：按批次 ns 查不到修复单，
   // 「子单全部 verify 后父任务自动上卷」这条生命周期对 issue_up 通道永不触发。
@@ -303,7 +306,7 @@ pub fn report_bug(
         now~,
       ) {
       Ok(id) => task_id = id
-      Err(_) => ()
+      Err(e) => publish_error = e
     }
   }
 
@@ -323,7 +326,7 @@ pub fn report_bug(
     lines.push("- task_id: " + task_id + "\n")
   }
   lines.push("\n")
-  let entry = lines.fold_left(init="", fn(acc, l) { acc + l })
+  let entry = lines.fold(init="", fn(acc, l) { acc + l })
   if not(mem_write(path, old + entry)) {
     return Err("report_bug: 写入 bugs.md 失败: " + path)
   }
@@ -347,6 +350,9 @@ pub fn report_bug(
   )
   if not(task_id.is_empty()) {
     m.set("task_id", Json::string(task_id))
+  }
+  if not(publish_error.is_empty()) {
+    m.set("publish_error", Json::string(publish_error))
   }
   Ok(Json::object(m))
 }
@@ -507,18 +513,35 @@ fn bug_norm_id(bug_id : String) -> String {
 
 ///|
 /// 某编号抬头所在行（0-based），找不到回 -1。
+/// BUG-241：仅取首个命中。BUG-217 等编号在账本里存在多条独立条目
+/// （同号不同 ts/summary），只改首条会让真正待闭环的那条永久 OPEN。
+/// 批量改判请用 `bug_header_lines`。
 fn bug_header_line(lines : Array[String], bug_id : String) -> Int {
+  let all = bug_header_lines(lines, bug_id)
+  if all.is_empty() {
+    -1
+  } else {
+    all[0]
+  }
+}
+
+///|
+/// 某编号抬头**全部**所在行（0-based），找不到回空数组。
+/// BUG-241 修复：`bug_fix` / 依赖单行定位的路径改用它遍历所有命中，
+/// 使重复编号的每条独立条目都能被真实改判，而不是只改首条。
+fn bug_header_lines(lines : Array[String], bug_id : String) -> Array[Int] {
   let want = bug_norm_id(bug_id)
   let n = lines.length()
+  let out : Array[Int] = []
   let mut i = 0
   while i < n {
     let t = lines[i].trim().to_string()
     if bug_is_header(t) && bug_parse_header(t).0 == want {
-      return i
+      out.push(i)
     }
     i = i + 1
   }
-  -1
+  out
 }
 
 ///|
@@ -712,33 +735,39 @@ pub fn bug_fix(
   let mut changed = 0
   let mut already = 0
   let mut insert_at = 0
+  // BUG-241：同号可能有多条独立条目（BUG-217 有两条不同 ts/summary）。
+  // 逐条遍历全部命中并各自改判，避免只改首条让真正待闭环的那条永久 OPEN。
   for raw_id in bug_ids {
     let want = bug_norm_id(raw_id)
-    let idx = bug_header_line(lines, want)
-    if idx < 0 {
+    let idxs = bug_header_lines(lines, want)
+    if idxs.is_empty() {
       return Err("bug_fix: 编号不存在 " + want)
     }
-    let (id, h_ts, sev, cur, cur_main) = bug_split_header(lines[idx])
-    if cur == "DUPLICATE" || cur == "FALSE_POSITIVE" {
-      return Err(
-        "bug_fix: " +
-        want +
-        " 当前是 " +
-        cur +
-        "，终态之间不互跳（要改判先回 OPEN）",
-      )
+    if !named.contains(want) {
+      named.push(want)
     }
-    if cur != "FIXED" {
-      let tail = if cur_main.is_empty() { "" } else { " →" + cur_main }
-      lines[idx] = "## " + id + " [" + h_ts + "] [" + sev + "] FIXED" + tail
-      changed = changed + 1
-    } else {
-      already = already + 1
-    }
-    named.push(want)
-    let e = bug_entry_end(lines, idx)
-    if e > insert_at {
-      insert_at = e
+    for idx in idxs {
+      let (id, h_ts, sev, cur, cur_main) = bug_split_header(lines[idx])
+      if cur == "DUPLICATE" || cur == "FALSE_POSITIVE" {
+        return Err(
+          "bug_fix: " +
+          want +
+          " 当前是 " +
+          cur +
+          "，终态之间不互跳（要改判先回 OPEN）",
+        )
+      }
+      if cur != "FIXED" {
+        let tail = if cur_main.is_empty() { "" } else { " →" + cur_main }
+        lines[idx] = "## " + id + " [" + h_ts + "] [" + sev + "] FIXED" + tail
+        changed = changed + 1
+      } else {
+        already = already + 1
+      }
+      let e = bug_entry_end(lines, idx)
+      if e > insert_at {
+        insert_at = e
+      }
     }
   }
   let header = "### FIXED(" + ts + " / " + bug_comma_join(named) + ")"

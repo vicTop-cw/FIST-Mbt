@@ -12,7 +12,10 @@
 test "bug230_熔断器写盘不留静默吞错" {
   // cb_persist_note：Ok→""（无错不留痕），Err→错误原文
   assert_eq(cb_persist_note(Ok(())), "")
-  assert_eq(cb_persist_note(Err("sqlite 写入熔断器失败")), "sqlite 写入熔断器失败")
+  assert_eq(
+    cb_persist_note(Err("sqlite 写入熔断器失败")),
+    "sqlite 写入熔断器失败",
+  )
   // cb_note_join：都空→""，一空取另一，都非空→"a；b"
   assert_eq(cb_note_join("", ""), "")
   assert_eq(cb_note_join("a", ""), "a")

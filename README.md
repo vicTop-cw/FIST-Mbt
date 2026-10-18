@@ -8,7 +8,7 @@
 [![Tests](https://img.shields.io/badge/tests-1108%2F1108-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
-**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **166 个 MCP 工具**（17 组）暴露给任意 MCP 客户端。
+**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **170 个 MCP 工具**（17 组）暴露给任意 MCP 客户端。
 
 **为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 1112 项测试全绿、跨环境可复现。
 
@@ -39,7 +39,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 
 ---
 
-## 功能全景（166 个 MCP 工具 · 17 组）
+## 功能全景（170 个 MCP 工具 · 17 组）
 
 ### 生命周期（14）
 `publish` · `publish_parallel` · `plan` · `claim` · `execute` · `submit` · `verify` · `reject` · `retry` · `pause` · `resume` · `reopen_task` · `archive` · `delete`
@@ -53,8 +53,8 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 ### 自驱闭环（9）
 `selfdrive_init` · `selfdrive_append` · `selfdrive_get` · `selfdrive_export_tasks` · `selfdrive_review_tick` · `selfdrive_review_ready` · `selfdrive_publish_next` · `selfdrive_parse_next_tasks` · `selfdrive_pick_next`
 
-### 运维·验证·规范（24）
-`call_log` · `bug_list` · `bug_fix` · `bug_mark_status` · `report_bug` · `issue_scan` · `ocr_scan` · `boundary_probe` · `eval_feedback` · `run_check` · `output_validate` · `project_standards` · `text_diff` · `schedule` · `pipeline_tick` · `cost_stats` · `cost_budget_check` · `cost_budget_split` · `progress_gate` · `laya_decide` · `loop_create` · `loop_tick` · `loop_status` · `mcp_config_scaffold`
+### 运维·验证·规范（28）
+`call_log` · `bug_list` · `bug_fix` · `bug_mark_status` · `report_bug` · `issue_scan` · `ocr_scan` · `boundary_probe` · `eval_feedback` · `run_check` · `output_validate` · `project_standards` · `text_diff` · `rank_of` · `soldier_type_of` · `soldier_route` · `staff_label_of` · `schedule` · `pipeline_tick` · `cost_stats` · `cost_budget_check` · `cost_budget_split` · `progress_gate` · `laya_decide` · `loop_create` · `loop_tick` · `loop_status` · `mcp_config_scaffold`
 
 ### 模型路由·外部执行器（5）
 `model_auth_status` · `model_route` · `model_router_status` · `model_router_reset` · `executor_run`
@@ -264,6 +264,21 @@ fist doctor        # 5 项健康检查
   的原始证据链，报告/日志/裁判测试一字可回溯（原件在该仓 `stories/experiment-0*.md` 与 `stories/evidence/`——**该路径属伴生仓，本仓无 `stories/` 目录**）；
   「证据梯至少 L4」的实物展示
 - **License**: Apache-2.0
+
+---
+
+## 开发进度
+
+| 里程碑 | 日期 | 内容 |
+|---|---|---|
+| M8 | 2026-09 | 36+ MCP 工具 + 77/77 测试；文档体系（README/CHANGELOG/USAGE）全面更新到 0.2.0 |
+| 四模式流水线 Round 1~3 | 2026-10-15 | 自迭代收口：一源四态 cl7 + 模型路由与外部执行器合并 + 多管家/supervisor + web 面板 M0 + 五语言接入示例 |
+| Unsafe 扫描 | 2026-10-17 | `engine_dag_ext` / `issue_scan` / `issue_scan_wbtest` 三文件裸 `.unwrap()`/`unsafe_get()`/`expect()` 零命中；`unwrap_or` 3 处中高风险（P1: `budget_split_by_dag` L910 语义反转） |
+| Engine 回归 | 2026-10-17 | `moon test --target js src/engine` 162/162 全绿 |
+
+**当前分支**：`marvis-verify-20261017`  
+**当前验证状态**：Unsafe 扫描通过 + Engine 回归全绿  
+**下一步**：按 unsafe-scan 建议修复 P1（`budget_split_by_dag` L910 语义反转），追加白盒测试后合入主线
 
 ---
 

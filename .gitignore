@@ -110,3 +110,15 @@ dist/
 /zhi_*.py
 # Round 261b：并发 ofm-caf agent 新加的临时脚本（未跟踪）——挡 publish 泄漏，防下一发 P1 事故。
 /scripts/fist_mbt_mcp_client.py
+# Round 8 polish (marvis)：仓库根临时测试输出（`moon test`/构建脚本生成的中间产物，非本仓资产）
+/build_js_out.txt
+/chk_out.txt
+/dag_test_out.txt
+
+# Round 262 (marvis security)：敏感文件兜底——防未来 .env / 私钥误入 git 与发布包
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx

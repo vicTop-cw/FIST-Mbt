@@ -10,11 +10,11 @@ fn parse_section(text : String, header : String) -> Array[String] {
   let mut in_section = false
   for line in text.split("\n") {
     let t = line.trim()
-    if t.starts_with("## ") {
+    if t.has_prefix("## ") {
       in_section = t == "## " + header
-    } else if in_section && t.starts_with("- ") {
+    } else if in_section && t.has_prefix("- ") {
       let s = t.to_owned()
-      // R1 bugfind：substring-overrun——`starts_with("- ")` 保证 length>=2，
+      // R1 bugfind：substring-overrun——`has_prefix("- ")` 保证 length>=2，
       // 但仍显式守卫，让静态扫描能确定性证明 end<=length
       if s.length() >= 2 {
         out.push(s.substring(start=2, end=s.length()))

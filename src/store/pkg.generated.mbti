@@ -130,6 +130,7 @@ pub fn MemoryStore::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ :
 pub fn MemoryStore::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[RsvOutcome, String]
 pub fn MemoryStore::update_spec_status(Self, String, String, String, String) -> Result[Unit, String]
 pub fn MemoryStore::update_task(Self, @core.Task) -> Result[Unit, String]
+pub fn MemoryStore::update_task_if_status(Self, @core.Task, String) -> Result[Unit, String]
 pub fn MemoryStore::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
 pub fn MemoryStore::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int, seq~ : Int) -> Result[Unit, String]
 
@@ -220,6 +221,7 @@ pub fn SqliteStore::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ :
 pub fn SqliteStore::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[RsvOutcome, String]
 pub fn SqliteStore::update_spec_status(Self, String, String, String, String) -> Result[Unit, String]
 pub fn SqliteStore::update_task(Self, @core.Task) -> Result[Unit, String]
+pub fn SqliteStore::update_task_if_status(Self, @core.Task, String) -> Result[Unit, String]
 pub fn SqliteStore::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
 pub fn SqliteStore::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int, seq~ : Int) -> Result[Unit, String]
 pub fn SqliteStore::write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
@@ -276,6 +278,7 @@ pub fn StoreBackend::sqlite(SqliteStore) -> Self
 pub fn StoreBackend::sqlite_store(Self) -> SqliteStore?
 pub fn StoreBackend::update_spec_status(Self, String, String, String, String) -> Result[Unit, String]
 pub fn StoreBackend::update_task(Self, @core.Task) -> Result[Unit, String]
+pub fn StoreBackend::update_task_if_status(Self, @core.Task, String) -> Result[Unit, String]
 pub fn StoreBackend::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
 pub fn StoreBackend::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int, seq~ : Int) -> Result[Unit, String]
 pub fn StoreBackend::write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]

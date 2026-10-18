@@ -170,7 +170,7 @@ test "BUG-18：no_sidecar 逃生门存在、默认关闭，且描述写明预算
   assert_true(src.contains("\"no_sidecar\": bool_prop("))
   assert_true(src.contains("get_bool(args, \"no_sidecar\", default=false)"))
   // 规范「工具命名即文档」：描述必须讲清两侧预算关系
-  assert_true(src.contains("timeout_ms=30000"))
+  assert_true(src.contains("timeout_ms=120000"))
   assert_true(src.contains("laya_sidecar_budget_ms"))
   // 逃生门分支必须真给 decision（走 route_decision），而不是回一个空降级
   assert_true(r2_count(src, "route_decision(context, split_n_hint)") >= 3)

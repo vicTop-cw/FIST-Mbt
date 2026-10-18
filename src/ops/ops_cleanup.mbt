@@ -33,7 +33,10 @@ pub fn cleanup_archived(
       if ts_s >= 0 && ts_s < threshold {
         match engine.delete_task(t.get_id()) {
           Ok(_) => removed.push(t.get_id())
-          Err(e) => return Err(e)
+          Err(e) => {
+            removed.push(t.get_id() + ":failed:" + e)
+            continue
+          }
         }
       }
     }

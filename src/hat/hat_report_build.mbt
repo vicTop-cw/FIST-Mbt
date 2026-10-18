@@ -117,7 +117,9 @@ fn render_markdown(
       "| " +
       el +
       " | " +
-      r.verdict +
+      // BUG-205：本列是"帽子"，此前误填 r.verdict（与"判决"列重复）。
+      // 六元代号→六顶帽 id 的单真源是 hexa_hat_id（white/red/black/yellow/green/blue）。
+      hexa_hat_id(r.element_id) +
       " | " +
       r.verdict +
       " | " +

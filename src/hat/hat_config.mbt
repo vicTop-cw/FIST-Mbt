@@ -19,18 +19,18 @@
 ///|
 /// 收敛与迭代策略。
 pub struct HatPolicy {
-  pub max_rounds : Int
-  pub converge_threshold : Double
-  pub auto_select_hats : Bool
-  pub debate_enabled : Bool
+  max_rounds : Int
+  converge_threshold : Double
+  auto_select_hats : Bool
+  debate_enabled : Bool
 }
 
 ///|
 /// 一份已校验的 HexaMind 配置：议题 + 已解析六元 + 策略。
 pub struct HatConfig {
-  pub topic : String
-  pub elements : Array[HexaElement]
-  pub policy : HatPolicy
+  topic : String
+  elements : Array[HexaElement]
+  policy : HatPolicy
 }
 
 ///|

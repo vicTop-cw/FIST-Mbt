@@ -49,7 +49,7 @@ pub fn gitcode_env_check() -> Result[Json, String]
 
 pub async fn gitcode_execute_batch(Array[String], String, Int) -> Result[Json, String]
 
-pub async fn gitcode_execute_single(String, String, Int) -> Result[Json, String]
+pub fn gitcode_execute_single(String, String, Int) -> Result[Json, String]
 
 pub fn gitcode_flush_plan(String, String, Int) -> Result[Json, String]
 
@@ -160,6 +160,8 @@ pub fn ov_parse_int(String) -> Int?
 pub fn parse_search_lines(String) -> Array[@evolve.SearchCandidate]
 
 pub fn project_standards(String, Bool) -> Json
+
+pub fn queue_mark_receipt(String, Result[Json, String]) -> Json
 
 pub fn register_supervisor_tools(@colmugx/mcp/server.MCPServer) -> @colmugx/mcp/server.MCPServer
 

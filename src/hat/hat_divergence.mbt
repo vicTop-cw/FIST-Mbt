@@ -11,15 +11,15 @@
 ///|
 /// 一条分歧。
 pub struct Divergence {
-  pub kind : String
+  kind : String
   // verdict_conflict | confidence_gap | evidence_mismatch
-  pub left : String
+  left : String
   // 六元代号 A
-  pub right : String
+  right : String
   // 六元代号 B
-  pub detail : String
+  detail : String
   // 人类可读说明
-  pub severity : Int
+  severity : Int
   // 1..3，3 最严重（阻止收敛）
 }
 

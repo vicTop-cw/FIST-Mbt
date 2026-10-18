@@ -239,3 +239,45 @@ test "tx_contract：BUG-168 未知动作 postcondition 拒绝（非 precondition
     None => abort("task missing")
   }
 }
+
+///|
+/// BUG-272：tx_contract 的 archive precondition 未建模 BUG-227 强制归档路径。
+/// 默认 force=false 对 已暂停 任务判 rejected（"要求状态 [已完成]"），
+/// force=true 应放行为 allowed/已归档（在流态仍拒）。契约只读，不落库。
+test "tx_contract：BUG-272 archive force=true 放行 已暂停 僵尸任务（默认 force=false 仍拒）" {
+  let e = contract_engine("tc_r109_t9.db")
+  let id = publish_croot(e)
+  ignore(e.claim(task_id=id, assignee="agent", now="2026-09-26T10:01:00Z"))
+  ignore(e.pause_task(task_id=id, now="2026-09-26T10:02:00Z"))
+  // 前置态回稳确认
+  match e.get_task(id) {
+    Some(t) => assert_eq(t.status_to_string(), "已暂停")
+    None => abort("task missing")
+  }
+  // 默认（force=false）→ 与 Task::archive 同义：拒绝（零回归锚）
+  let j0 = e.transition_contract(id, "archive")
+  assert_eq(cx_verdict(j0), "rejected")
+  assert_eq(cx_phase(j0), "precondition")
+  // force=true → 放行强制归档路径（BUG-227 清扫）
+  let j1 = e.transition_contract(id, "archive", force=true)
+  assert_eq(cx_verdict(j1), "allowed")
+  assert_eq(cx_phase(j1), "all_pass")
+  assert_eq(cx_target(j1), "已归档")
+  // 契约只读：库中任务仍为已暂停
+  match e.get_task(id) {
+    Some(t) => assert_eq(t.status_to_string(), "已暂停")
+    None => abort("task missing")
+  }
+}
+
+///|
+/// BUG-272 锁的另一半：force=true 只放行非流态滞留（已暂停/已打回），
+/// 在流态（已领取）仍拒，不因 force 而放宽。
+test "tx_contract：BUG-272 archive force=true 在流态（已领取）仍拒" {
+  let e = contract_engine("tc_r109_t10.db")
+  let id = publish_croot(e)
+  ignore(e.claim(task_id=id, assignee="agent", now="2026-09-26T10:01:00Z"))
+  let j = e.transition_contract(id, "archive", force=true)
+  assert_eq(cx_verdict(j), "rejected")
+  assert_eq(cx_phase(j), "precondition")
+}

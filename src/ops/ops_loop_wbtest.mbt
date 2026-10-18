@@ -196,12 +196,18 @@ test "loop_tick: 完整走满触发 max_rounds" {
 // ---------------------------------------------------------------------------
 
 ///|
-test "loop_tick: healthy + 零 blocked → goal_reached" {
+test "loop_tick: 跑一轮后 healthy + 零 blocked → goal_reached" {
+  // BUG-162：首轮 round=0 一律不让 goal_reached 停（项目健康度还没
+  // 经过 verify 步骤真实评估，调用方传的很可能是占位值）。所以先让
+  // loop 跑完一整轮 advance→verify（round 从 0→1）再给 healthy。
   let lp = loop_create("lp", ["advance", "verify"], "t0", stop_on_goal=true)
-  let r = loop_tick(lp, "t1", project_health_grade="healthy", blocked_tasks=0)
-  assert_true(r.should_stop)
-  assert_true(r.stop_reason.contains("goal_reached"))
-  assert_true(r.loop_after.goal_reached)
+  let r1 = loop_tick(lp, "t1", project_health_grade="stalled", blocked_tasks=0)
+  assert_true(not(r1.should_stop)) // 首轮 round=0 + stalled → 不停
+  let lp2 = r1.loop_after
+  let r2 = loop_tick(lp2, "t2", project_health_grade="healthy", blocked_tasks=0)
+  assert_true(r2.should_stop)
+  assert_true(r2.stop_reason.contains("goal_reached"))
+  assert_true(r2.loop_after.goal_reached)
 }
 
 ///|
@@ -217,31 +223,51 @@ test "loop_tick: healthy 但有 blocked → 不停" {
 
 ///|
 test "loop_tick: test_count 涨 10%+ → exceeded" {
+  // BUG-162：同 goal_reached，首轮 round=0 跳过 exceeded 判定，
+  // 需先让 loop 跑完一轮完整循环（round 0→1）再给数据。
   let lp = loop_create(
     "lp",
-    ["advance"],
+    ["s1", "s2"],
     "t0",
     baseline_test_count=100,
     baseline_open_bug_count=5,
   )
-  let r = loop_tick(lp, "t1", current_test_count=120, current_open_bug_count=5)
-  assert_true(r.should_stop)
-  assert_true(r.stop_reason.contains("exceeded"))
-  assert_true(r.loop_after.exceeded)
+  // 首轮 round=0 → 不停
+  let r1 = loop_tick(lp, "t1", current_test_count=120, current_open_bug_count=5)
+  assert_true(not(r1.should_stop))
+  let lp2 = r1.loop_after
+  // 第二轮 round=1 → 涨 20% 触发 exceeded
+  let r2 = loop_tick(
+    lp2,
+    "t2",
+    current_test_count=120,
+    current_open_bug_count=5,
+  )
+  assert_true(r2.should_stop)
+  assert_true(r2.stop_reason.contains("exceeded"))
+  assert_true(r2.loop_after.exceeded)
 }
 
 ///|
 test "loop_tick: open_bug 降 50%+ → exceeded" {
   let lp = loop_create(
     "lp",
-    ["advance"],
+    ["s1", "s2"],
     "t0",
     baseline_test_count=100,
     baseline_open_bug_count=10,
   )
-  let r = loop_tick(lp, "t1", current_test_count=100, current_open_bug_count=4)
-  assert_true(r.should_stop)
-  assert_true(r.stop_reason.contains("exceeded"))
+  let r1 = loop_tick(lp, "t1", current_test_count=100, current_open_bug_count=4)
+  assert_true(not(r1.should_stop))
+  let lp2 = r1.loop_after
+  let r2 = loop_tick(
+    lp2,
+    "t2",
+    current_test_count=100,
+    current_open_bug_count=4,
+  )
+  assert_true(r2.should_stop)
+  assert_true(r2.stop_reason.contains("exceeded"))
 }
 
 // ---------------------------------------------------------------------------

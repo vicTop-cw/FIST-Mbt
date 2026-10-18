@@ -462,140 +462,142 @@ pub fn watchdog_tick(
   }
   // ---- 5. 完成 -> 自动起下一轮（功能 C，仅当显式指定 ns 且有下一轮描述） ----
   if ns != "" && next_desc != "" {
-    if pending_advance.is_some() {
-      let prev = pending_advance.unwrap()
-      match
-        engine.publish_next_round(
-          ns~,
-          description=next_desc,
-          created_by=next_created_by,
-          prev_task_id=prev.get_id(),
-          now~,
-        ) {
-        Ok(new_id) => {
-          // Omega 强验证：开启后自动拆分并打标记
-          let omega_info = if omega_strong_verify {
-            match
-              engine.plan_deep(
-                task_id=new_id,
-                split_n=omega_split_n,
-                by=next_created_by,
-                spec=omega_spec,
-                now~,
-                omega_strong_verify=true,
-              ) {
-              Ok(tree) =>
-                Json::object({
-                  "enabled": Json::boolean(true),
-                  "root": Json::string(new_id),
-                  "split_n": Json::number(omega_split_n.to_double()),
-                  "tree": tree,
-                })
-              Err(_) =>
-                Json::object({
-                  "enabled": Json::boolean(false),
-                  "error": Json::string("plan_deep failed"),
-                })
-            }
-          } else {
-            Json::null()
-          }
-          return Ok(
-            tick_json(
-              "advanced",
-              active_ids.length(),
-              healed,
-              Some(new_id),
-              Some(prev.get_id()),
-              blocked_ids,
-              detail,
-              omega_info,
-            ),
-          )
-        }
-        Err(e) => {
-          let new_m : Map[String, Json] = Map([])
-          match detail {
-            Object(m) =>
-              for k, v in m {
-                new_m.set(k, v)
+    match pending_advance {
+      Some(prev) =>
+        match
+          engine.publish_next_round(
+            ns~,
+            description=next_desc,
+            created_by=next_created_by,
+            prev_task_id=prev.get_id(),
+            now~,
+          ) {
+          Ok(new_id) => {
+            // Omega 强验证：开启后自动拆分并打标记
+            let omega_info = if omega_strong_verify {
+              match
+                engine.plan_deep(
+                  task_id=new_id,
+                  split_n=omega_split_n,
+                  by=next_created_by,
+                  spec=omega_spec,
+                  now~,
+                  omega_strong_verify=true,
+                ) {
+                Ok(tree) =>
+                  Json::object({
+                    "enabled": Json::boolean(true),
+                    "root": Json::string(new_id),
+                    "split_n": Json::number(omega_split_n.to_double()),
+                    "tree": tree,
+                  })
+                Err(_) =>
+                  Json::object({
+                    "enabled": Json::boolean(false),
+                    "error": Json::string("plan_deep failed"),
+                  })
               }
-            _ => ()
-          }
-          new_m.set("advance_error", Json::string(e))
-          detail = Json::object(new_m)
-        }
-      }
-    } else if cold_start {
-      // 冷启动：无已完成根任务时，发布首个任务
-      let pdir = if project_dir != "" { project_dir } else { "" }
-      match
-        engine.cold_publish(
-          ns~,
-          description=next_desc,
-          created_by=next_created_by,
-          project_dir=pdir,
-          now~,
-        ) {
-        Ok(new_id) => {
-          // Omega 强验证：开启后自动拆分并打标记
-          let omega_info = if omega_strong_verify {
-            match
-              engine.plan_deep(
-                task_id=new_id,
-                split_n=omega_split_n,
-                by=next_created_by,
-                spec=omega_spec,
-                now~,
-                omega_strong_verify=true,
-              ) {
-              Ok(tree) =>
-                Json::object({
-                  "enabled": Json::boolean(true),
-                  "root": Json::string(new_id),
-                  "split_n": Json::number(omega_split_n.to_double()),
-                  "tree": tree,
-                })
-              Err(_) =>
-                Json::object({
-                  "enabled": Json::boolean(false),
-                  "error": Json::string("plan_deep failed"),
-                })
+            } else {
+              Json::null()
             }
-          } else {
-            Json::null()
+            return Ok(
+              tick_json(
+                "advanced",
+                active_ids.length(),
+                healed,
+                Some(new_id),
+                Some(prev.get_id()),
+                blocked_ids,
+                detail,
+                omega_info,
+              ),
+            )
           }
-          return Ok(
-            tick_json(
-              "advanced",
-              active_ids.length(),
-              healed,
-              Some(new_id),
-              None,
-              blocked_ids,
-              detail,
-              omega_info,
-            ),
-          )
+          Err(e) => {
+            let new_m : Map[String, Json] = Map([])
+            match detail {
+              Object(m) =>
+                for k, v in m {
+                  new_m.set(k, v)
+                }
+              _ => ()
+            }
+            new_m.set("advance_error", Json::string(e))
+            detail = Json::object(new_m)
+          }
         }
-        Err(e) => {
-          // BUG-225：冷启动发布失败不能静默吞掉——否则调用方只看到 action="idle"，
-          // 无法区分「无任务可发布」与「冷启动失败」（default 命名空间拒绝冷启动、
-          // 已有任务拒绝重复发布、或 DB/IO 瞬时错误）。与上方 publish_next_round
-          // 失败分支保持一致，把原因并入 detail.cold_start_error 供调用方判别；
-          // 仍退化为 idle，保持 D-3/D-4 既有语义零回归。
-          let new_m : Map[String, Json] = Map([])
-          match detail {
-            Object(m) =>
-              for k, v in m {
-                new_m.set(k, v)
+      None =>
+        if cold_start {
+          // 冷启动：无已完成根任务时，发布首个任务
+          let pdir = if project_dir != "" { project_dir } else { "" }
+          match
+            engine.cold_publish(
+              ns~,
+              description=next_desc,
+              created_by=next_created_by,
+              project_dir=pdir,
+              now~,
+            ) {
+            Ok(new_id) => {
+              // Omega 强验证：开启后自动拆分并打标记
+              let omega_info = if omega_strong_verify {
+                match
+                  engine.plan_deep(
+                    task_id=new_id,
+                    split_n=omega_split_n,
+                    by=next_created_by,
+                    spec=omega_spec,
+                    now~,
+                    omega_strong_verify=true,
+                  ) {
+                  Ok(tree) =>
+                    Json::object({
+                      "enabled": Json::boolean(true),
+                      "root": Json::string(new_id),
+                      "split_n": Json::number(omega_split_n.to_double()),
+                      "tree": tree,
+                    })
+                  Err(_) =>
+                    Json::object({
+                      "enabled": Json::boolean(false),
+                      "error": Json::string("plan_deep failed"),
+                    })
+                }
+              } else {
+                Json::null()
               }
-            _ => ()
+              return Ok(
+                tick_json(
+                  "advanced",
+                  active_ids.length(),
+                  healed,
+                  Some(new_id),
+                  None,
+                  blocked_ids,
+                  detail,
+                  omega_info,
+                ),
+              )
+            }
+            Err(e) => {
+              // BUG-225：冷启动发布失败不能静默吞掉——否则调用方只看到 action="idle"，
+              // 无法区分「无任务可发布」与「冷启动失败」（default 命名空间拒绝冷启动、
+              // 已有任务拒绝重复发布、或 DB/IO 瞬时错误）。与上方 publish_next_round
+              // 失败分支保持一致，把原因并入 detail.cold_start_error 供调用方判别；
+              // 仍退化为 idle，保持 D-3/D-4 既有语义零回归。
+              let new_m : Map[String, Json] = Map([])
+              match detail {
+                Object(m) =>
+                  for k, v in m {
+                    new_m.set(k, v)
+                  }
+                _ => ()
+              }
+              new_m.set("cold_start_error", Json::string(e))
+              detail = Json::object(new_m)
+            }
           }
-          new_m.set("cold_start_error", Json::string(e))
-          detail = Json::object(new_m)
         }
-      }
     }
   }
   // ---- 6. 默认：等待 / 空闲 ---- 

@@ -57,7 +57,7 @@ pub fn FistEngine::circuit_fail(
     rec,
     new_opened,
     now_secs,
-    persist_error=persist_error,
+    persist_error~,
   )
 }
 
@@ -104,7 +104,7 @@ pub fn FistEngine::circuit_succeed(
     rec,
     new_opened,
     now_secs,
-    persist_error=persist_error,
+    persist_error~,
   )
 }
 
@@ -132,26 +132,27 @@ pub fn FistEngine::circuit_status(
     Some(r) => r
   }
   // ① Open 到期 → Half-Open，并把"已放行探测数"清零（迁移写失败留痕，BUG-230）
-  let (eff_state, eff_failures, migrate_note) =
-    if state == "open" && opened_at > 0 && now_secs - opened_at >= rec {
-      let note = cb_persist_note(
-        self.store.cb_save(
-          ns,
-          circuit,
-          "half_open",
-          0,
-          w,
-          thr,
-          rec,
-          opened_at,
-          now_secs,
-          now_secs.to_string(),
-        ),
-      )
-      ("half_open", 0, note)
-    } else {
-      (state, failures, "")
-    }
+  let (eff_state, eff_failures, migrate_note) = if state == "open" &&
+    opened_at > 0 &&
+    now_secs - opened_at >= rec {
+    let note = cb_persist_note(
+      self.store.cb_save(
+        ns,
+        circuit,
+        "half_open",
+        0,
+        w,
+        thr,
+        rec,
+        opened_at,
+        now_secs,
+        now_secs.to_string(),
+      ),
+    )
+    ("half_open", 0, note)
+  } else {
+    (state, failures, "")
+  }
   if eff_state != "half_open" {
     cb_json(
       circuit,
