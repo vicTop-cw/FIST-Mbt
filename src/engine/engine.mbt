@@ -611,6 +611,14 @@ pub fn FistEngine::archive(
           "仅已完成任务可归档，当前状态: \{t.status_to_string()}",
         )
       }
+      // Omega 门（验收项：archive 不得绕过验收门）：强验证任务必须先过成果复验门，
+      // 归档即"了账"，未通过 Omega 门就是假了账（纵深防御，与 archive_force 同门）。
+      if omega_enabled(t) {
+        match self.omega_verify_gate(task_id) {
+          Err(e) => return Err("Omega 门禁拦截归档: \{e}")
+          Ok(_) => ()
+        }
+      }
       let c = match t.archive() {
         Ok(x) => x
         Err(e) => return Err(e)
