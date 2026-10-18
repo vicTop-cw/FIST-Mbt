@@ -274,22 +274,47 @@ def _is_wsl_bash():
     except Exception:  # noqa: BLE001
         return False
 
+
+def _find_posix_shell():
+    """定位 POSIX shim 的**承诺行为面**：Git Bash / MSYS 的 bash.exe（Windows 路径可直接执行 node）。
+
+    BUG-261：真面档必须**点名目标 shell**——只认 Git Bash/MSYS 这类 Windows 原生 bash；
+    WSL 的 C:\\Windows\\system32\\bash.exe 在 PATH 上但语义错位（`exec node "C:\\..."` 实测 rc=1），
+    不认。Git Bash/MSYS 都没有时返回 None，由 probe 走「判据拒绝出数」（rc=3）而非报产品红。"""
+    for p in (r"C:\Program Files\Git\bin\bash.exe",
+              r"C:\Program Files\Git\usr\bin\bash.exe",
+              r"C:\msys64\usr\bin\bash.exe",
+              r"C:\Program Files\MSYS2\usr\bin\bash.exe"):
+        if os.path.isfile(p):
+            return p
+    w = shutil.which("bash")
+    if w and not _is_wsl_bash():
+        return w
+    return None
+
+
 def probe(env, box, label, sbin=None):
     """默认走 PATH；沙箱档必须**点名沙箱那一份**——否则沙箱里没装成时会摸到真用户面的旧产物，
     把"根本没装上"读成"装成了旧版本"（BUG-117 的第二个形态）。
-    BUG-185 修：裸词（无 sbin）改用 command -v 代替 [ -x 'fist' ]；WSL bash 拒出行为面。"""
+    BUG-185 修：裸词（无 sbin）改用 command -v 代替 [ -x 'fist' ]；WSL bash 拒出行为面。
+    BUG-261 修：真面档（无 sbin）进一步**点名目标 shell**——存在 Git Bash/MSYS 才跑行为面，
+    两者都没有时返回 "REJECT: ..." 标记（rc=3 语义：判据拒绝出数，绝不把"没法跑"报成产品红）。
+    沙箱档（传 sbin 全路径）的 -x 用法本身合法，保持不动。"""
     if sbin:
         exe = os.path.join(sbin, "fist").replace("\\", "/")
         script = ("if [ -x '%s' ]; then echo '%s'; '%s' version 2>/dev/null; "
                   "'%s' doctor >/dev/null 2>&1; echo doctor=$?; else echo 'MISSING %s'; fi") % (exe, exe, exe, exe, exe)
+        bash = "bash"
     else:
-        if _is_wsl_bash():
-            print("  %-14s WSL bash 检测到（PATH 可寻但不能用于 POSIX shim 行为面），跳过探针" % label)
-            return "SKIP: WSL bash"
+        shell = _find_posix_shell()
+        if not shell:
+            print("  %-14s 无 Git Bash/MSYS bash（POSIX shim 承诺面缺失）⇒ 判据拒绝出数 rc=3" % label)
+            return "REJECT: 无 Git Bash/MSYS bash（POSIX shim 承诺面缺失）"
         exe = "fist"
         script = ("if command -v '%s' >/dev/null 2>&1; then echo '%s'; '%s' version 2>/dev/null; "
                   "'%s' doctor >/dev/null 2>&1; echo doctor=$?; else echo 'MISSING %s'; fi") % (exe, exe, exe, exe, exe)
-    r = subprocess.run(["bash", "-c", script],
+        bash = shell
+    r = subprocess.run([bash, "-c", script],
                        capture_output=True, text=True, encoding="utf-8", errors="replace",
                        cwd=box, env=env, timeout=300)
     txt = (r.stdout or "").replace("\r", "").strip()
@@ -447,14 +472,23 @@ def sandbox():
     return exit_code
 
 
+def _real_profile():
+    """真实用户目录（CSIDL_PROFILE），不受会话 env 的 USERPROFILE 重定向影响。"""
+    try:
+        import ctypes  # noqa: E402
+        buf = ctypes.create_unicode_buffer(260)
+        ctypes.windll.shell32.SHGetFolderPathW(None, 0x0028, None, 0, buf)  # CSIDL_PROFILE
+        return buf.value.rstrip("\\")
+    except Exception:  # noqa: BLE001
+        return os.path.expanduser("~")
+
+
 def _userprofile_redirected():
     """检测 USERPROFILE/LOCALAPPDATA 是否被 sandbox/agent 框架重定向。
     BUG-186：重定向环境里 --real 会改写真实 shim 与 HKCU PATH，在此拒绝执行。"""
     try:
         import ctypes, winreg  # noqa: E402
-        buf = ctypes.create_unicode_buffer(260)
-        ctypes.windll.shell32.SHGetFolderPathW(None, 0x0028, None, 0, buf)  # CSIDL_PROFILE
-        real_user = buf.value.rstrip("\\").lower()
+        real_user = _real_profile().lower()
         env_user = os.environ.get("USERPROFILE", "").rstrip("\\").lower()
         return env_user != "" and real_user != "" and env_user != real_user
     except Exception:  # noqa: BLE001
@@ -475,26 +509,62 @@ def real():
     os.makedirs(BOX, exist_ok=True)
     if os.path.isfile(js) and not os.path.isfile(bak):
         shutil.copy2(js, bak)
+    # BUG-262：基线采集——真实用户 PATH 与真实 .local\\bin 四件 shim（CSIDL_PROFILE 面，
+    # 不被会话 env 重定向带偏），跑后逐字比对还原（对齐 arm() 的 finally 纪律）。
+    path_before = ps_path()
+    real_sbin = os.path.join(_real_profile(), ".local", "bin")
+    shim_before = {}
+    shim_bak = {}
+    for name in ("fist", "fist.cmd", "fist-mbt", "fist-mbt.cmd"):
+        p = os.path.join(real_sbin, name)
+        if os.path.isfile(p):
+            shim_before[name] = sha8(p)
+            shim_bak[name] = os.path.join(BOX, "backup-shim-%s" % name)
+            if not os.path.isfile(shim_bak[name]):
+                shutil.copy2(p, shim_bak[name])
     print("真面档：现产物 %s（备份 temp/irm-sandbox/backup-%s.js）" % (before, before))
+    if shim_before:
+        print("   基线 shim（%s）：%s" % (os.path.relpath(real_sbin, ROOT),
+              "、".join("%s=%s" % (k, v) for k, v in sorted(shim_before.items()))))
     env = dict(os.environ)
-    rc, out, _rcpt = run_line(line, env, ROOT, "irm-real")
-    print("=== 真用户面 rc=%d ===" % rc)
-    for ln in out.split("\n"):
-        if any(k in ln for k in ("v" + VER, "fist (PATH)", "POSIX shim", "❌", "404")):
-            print("   " + ln.strip()[:112])
-    after = sha8(js)
-    print("   真产物：%s → %s" % (before, after))
-    txt = probe(env, ROOT, "真面 bash")
-    ok = rc == 0 and ("v" + VER) in txt and "doctor=0" in txt
-    if not ok and os.path.isfile(bak):
-        print("   不绿 ⇒ 自动还原备份")
-        shutil.copy2(bak, js)
-        print("   还原后 = %s（应回 %s）" % (sha8(js), before))
-        probe(env, ROOT, "还原后")
-    print("=== 真面档：%s ===" % ("PASS" if ok else "FAIL（已尽力还原）"))
-    io.open(os.path.join(ROOT, "temp", "e2e-irm-real.txt"), "w", encoding="utf-8", newline="\n").write(
-        "line=%s\n产物=%s→%s\nprobe=%s\n判定=%s" % (line, before, after, txt, "PASS" if ok else "FAIL"))
-    return 0 if ok else 1
+    try:
+        rc, out, _rcpt = run_line(line, env, ROOT, "irm-real")
+        print("=== 真用户面 rc=%d ===" % rc)
+        for ln in out.split("\n"):
+            if any(k in ln for k in ("v" + VER, "fist (PATH)", "POSIX shim", "❌", "404")):
+                print("   " + ln.strip()[:112])
+        after = sha8(js)
+        print("   真产物：%s → %s" % (before, after))
+        txt = probe(env, ROOT, "真面 bash")
+        if txt.startswith("REJECT"):
+            print("=== 真面档：判据拒绝出数（rc=3）——POSIX shim 承诺面（Git Bash/MSYS）缺失 ===")
+            io.open(os.path.join(ROOT, "temp", "e2e-irm-real.txt"), "w", encoding="utf-8", newline="\n").write(
+                "line=%s\n产物=%s→%s\nprobe=REJECT(rc=3)\n判定=REJECT" % (line, before, after))
+            return 3
+        ok = rc == 0 and ("v" + VER) in txt and "doctor=0" in txt
+        if not ok and os.path.isfile(bak):
+            print("   不绿 ⇒ 自动还原备份")
+            shutil.copy2(bak, js)
+            print("   还原后 = %s（应回 %s）" % (sha8(js), before))
+            probe(env, ROOT, "还原后")
+        print("=== 真面档：%s ===" % ("PASS" if ok else "FAIL（已尽力还原）"))
+        io.open(os.path.join(ROOT, "temp", "e2e-irm-real.txt"), "w", encoding="utf-8", newline="\n").write(
+            "line=%s\n产物=%s→%s\nprobe=%s\n判定=%s" % (line, before, after, txt, "PASS" if ok else "FAIL"))
+        return 0 if ok else 1
+    finally:
+        # BUG-262：PATH 与四件 shim 基线比对还原（即使 run_line 抛异常也执行）
+        path_now = ps_path()
+        if path_now != path_before:
+            set_path(path_before)
+            print("   用户 PATH 已被改写（%d 字 → %d 字）⇒ 还原基线" % (len(path_now), len(path_before)))
+        for name, h0 in shim_before.items():
+            p = os.path.join(real_sbin, name)
+            h1 = sha8(p) if os.path.isfile(p) else "<缺失>"
+            if h1 != h0 and os.path.isfile(shim_bak[name]):
+                shutil.copy2(shim_bak[name], p)
+                print("   shim %s 已被改写（%s → %s）⇒ 还原基线" % (name, h1, h0))
+            elif h1 != h0:
+                print("   shim %s 已被改写但无备份，无法还原（%s → %s）" % (name, h1, h0))
 
 
 if __name__ == "__main__":
