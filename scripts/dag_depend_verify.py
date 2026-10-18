@@ -52,14 +52,14 @@ def main():
         a = call(p, "publish_parallel", project_dir=ROOT, description="DAG A", namespace=NS, created_by="dag", now=NOW)["task_id"]
         b = call(p, "publish_parallel", project_dir=ROOT, description="DAG B", namespace=NS, created_by="dag", now=NOW)["task_id"]
         print(f"PASS publish → A={a} B={b}")
-        # B 依赖 A
-        tb = call(p, "dag_depend", task_id=b, dep_id=a)
+        # B 依赖 A（ns 独立库：必须带 namespace，否则 dag_depend 落在 default 主库找不到任务）
+        tb = call(p, "dag_depend", task_id=b, dep_id=a, namespace=NS)
         deps = tb.get("depends_on", [])
         assert a in deps, f"B 应依赖 A: {deps}"
         print(f"PASS dag_depend → B.depends_on={deps}")
         # 自环拒绝
         try:
-            call(p, "dag_depend", task_id=a, dep_id=a)
+            call(p, "dag_depend", task_id=a, dep_id=a, namespace=NS)
             print("FAIL 自环应被拒绝"); sys.exit(1)
         except RuntimeError as e:
             print("PASS dag_depend 自环被拒绝")

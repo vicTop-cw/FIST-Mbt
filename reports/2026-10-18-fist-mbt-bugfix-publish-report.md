@@ -1,3 +1,14 @@
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: 9f2a11add43fbf12a546606fb2b962ab_85361b43cacc11f18b7f525400393706
+    ReservedCode1: NsomXRRrq6w7SBKn1v9a+u+DKVBMZeAvsZyLVKR8Uy8V+psuQj42iiGqdNglJOjCryJwF9F88mc6TQzWUriwesBbiN7anvkiENXR2f5rZNbo+iabKXrQ+nGT+A9/AbtXlgnirt7G8+NR/Vy0s7Zkeu3epWAOJVKdQFSK1JvXpFyxhuIvaCTbdccB8sM=
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: 9f2a11add43fbf12a546606fb2b962ab_85361b43cacc11f18b7f525400393706
+    ReservedCode2: NsomXRRrq6w7SBKn1v9a+u+DKVBMZeAvsZyLVKR8Uy8V+psuQj42iiGqdNglJOjCryJwF9F88mc6TQzWUriwesBbiN7anvkiENXR2f5rZNbo+iabKXrQ+nGT+A9/AbtXlgnirt7G8+NR/Vy0s7Zkeu3epWAOJVKdQFSK1JvXpFyxhuIvaCTbdccB8sM=
+---
+
 # 2026-10-18 · FIST-Mbt 寻虫-修复-打磨-验证闭环 + 发布 0.3.9 收口报告
 
 > 触发：owner 指令对 fist-mbt 走一轮「寻虫-修复-打磨-验证」后推送仓库并发布。
@@ -48,3 +59,4 @@
 ## 6. 遗留
 
 - moon publish 校验过程存在 2014 条 deprecated/unused 警告（`is_some()` → `x is Some(_)` 等），不影响发布，可后续打磨轮处理。
+*（内容由AI生成，仅供参考）*

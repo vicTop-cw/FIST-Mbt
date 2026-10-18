@@ -1502,11 +1502,16 @@ pub async fn run_server() -> Unit {
         "inject": string_prop(
           "可选：逗号分隔的档案库资产 keywords（如 code-review,superpowers），按 goal 子串检索命中资产并追加到返回",
         ),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
       },
       ["task_id"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
       let split_n = get_int(args, "split_n", default=3)
       if split_n < 1 {
         return Err(
@@ -1521,7 +1526,7 @@ pub async fn run_server() -> Unit {
       let ts = now_default()
       let inject = get_str(args, "inject")
       // 先执行拆解拿 ids
-      let ids = match engine.plan(task_id~, split_n~, by~, now=ts) {
+      let ids = match eng.plan(task_id~, split_n~, by~, now=ts) {
         Ok(a) => a
         Err(e) => return Err(@mcp_types.ToolError(e))
       }
@@ -1773,15 +1778,20 @@ pub async fn run_server() -> Unit {
         "docs_check": bool_prop(
           "是否开启文档一致性门禁(默认 false，不传即现状)：开启后校验项目结构 README.md/CHANGELOG.md/reports 与交付物回传五段式，缺项打回",
         ),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
       },
       ["task_id", "verifier"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
       let verifier = get_str(args, "verifier")
       let ts = now_default()
       let docs_check = get_bool(args, "docs_check", default=false)
-      to_result(engine.verify(task_id~, verifier~, now=ts, docs_check~))
+      to_result(eng.verify(task_id~, verifier~, now=ts, docs_check~))
     },
   )
   s1 = instrumented_tool(
@@ -1793,37 +1803,62 @@ pub async fn run_server() -> Unit {
         "task_id": string_prop("任务 id（必填）"),
         "reason": string_prop("打回原因（可选）"),
         "by": string_prop("操作者(默认 human_steward)"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
       },
       ["task_id"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
       let reason = get_str(args, "reason", default="")
       let by = get_str(args, "by", default="human_steward")
       let ts = now_default()
-      to_result(engine.reject_task(task_id~, reason~, by~, now=ts))
+      to_result(eng.reject_task(task_id~, reason~, by~, now=ts))
     },
   )
   s1 = instrumented_tool(
     s1,
     "retry",
     "打回后重试（已打回 -> 执行中）。参数：task_id。",
-    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
+      },
+      ["task_id"],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
       let ts = now_default()
-      to_result(engine.retry_task(task_id~, now=ts))
+      to_result(eng.retry_task(task_id~, now=ts))
     },
   )
   s1 = instrumented_tool(
     s1,
     "reopen_task",
     "重开/重派任务：任意非归档任务回滚为已领取（M4 heal/运维重派用）。参数：task_id。",
-    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
+      },
+      ["task_id"],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
       let ts = now_default()
-      match engine.reopen_task(task_id, ts) {
+      match eng.reopen_task(task_id, ts) {
         Ok(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
@@ -1833,22 +1868,42 @@ pub async fn run_server() -> Unit {
     s1,
     "pause",
     "暂停任务（任意活跃状态 -> 已暂停）。参数：task_id。",
-    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
+      },
+      ["task_id"],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
       let ts = now_default()
-      to_result(engine.pause_task(task_id~, now=ts))
+      to_result(eng.pause_task(task_id~, now=ts))
     },
   )
   s1 = instrumented_tool(
     s1,
     "resume",
     "恢复任务（已暂停 -> 已领取）。参数：task_id。",
-    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
+      },
+      ["task_id"],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
       let ts = now_default()
-      to_result(engine.resume_task(task_id~, now=ts))
+      to_result(eng.resume_task(task_id~, now=ts))
     },
   )
   s1 = instrumented_tool(
@@ -1862,15 +1917,20 @@ pub async fn run_server() -> Unit {
         "force": bool_prop(
           "强制归档(可选默认false)：放行已暂停/已打回滞留态，在流态(已领取/执行中/待验收)仍拒",
         ),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
       },
       ["task_id"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
       let by = get_str(args, "by", default="human_steward")
       let force = get_bool(args, "force")
       let ts = now_default()
-      to_result(engine.archive_force(task_id~, by~, force~, now=ts))
+      to_result(eng.archive_force(task_id~, by~, force~, now=ts))
     },
   )
   s1 = instrumented_tool(
@@ -1890,18 +1950,16 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let status_str = get_str(args, "status")
-      let ns_str = get_str(args, "namespace")
-      let mut tasks = if status_str == "" {
-        engine.list_all()
+      let ns_str = get_str(args, "namespace", default="")
+      let eng = if ns_str == "" { engine } else { engine_for_ns(ns_str) }
+      let tasks = if status_str == "" {
+        eng.list_all()
       } else {
         match @core.TaskStatus::from_string(status_str) {
-          Some(st) => engine.list_by_status(st)
+          Some(st) => eng.list_by_status(st)
           None =>
             return Err(@mcp_types.ToolError("未知状态: \{status_str}"))
         }
-      }
-      if ns_str != "" {
-        tasks = tasks.filter(fn(t) { t.ns == ns_str })
       }
       Ok(
         @mcp.ToolResult::text(
@@ -1914,10 +1972,20 @@ pub async fn run_server() -> Unit {
     s1,
     "get",
     "查询单个任务详情。参数：task_id。",
-    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
+      },
+      ["task_id"],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
-      match engine.get_task(task_id) {
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
+      match eng.get_task(task_id) {
         Some(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
         None => Err(@mcp_types.ToolError("task not found: \{task_id}"))
       }
@@ -1928,12 +1996,19 @@ pub async fn run_server() -> Unit {
     "delete",
     "删除已归档任务。参数：task_id。",
     schema(
-      { "task_id": string_prop("任务 id（必填，仅已归档可删）") },
+      {
+        "task_id": string_prop("任务 id（必填，仅已归档可删）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
+      },
       ["task_id"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
-      to_unit_result(engine.delete_task(task_id))
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
+      to_unit_result(eng.delete_task(task_id))
     },
   )
   s1 = instrumented_tool(
@@ -1979,6 +2054,9 @@ pub async fn run_server() -> Unit {
           "躬身选档理由(可选，可审计)：说明为何定此拆分数",
         ),
         "decide_by": string_prop("躬身选档身份(默认 leader)"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
       },
       ["task_id"],
     ),
@@ -1988,6 +2066,7 @@ pub async fn run_server() -> Unit {
       let by = get_str(args, "by", default="leader")
       let spec_raw = get_str(args, "spec")
       let ts = now_default()
+      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
       let spec : Json? = if spec_raw == "" {
         None
       } else {
@@ -2049,7 +2128,7 @@ pub async fn run_server() -> Unit {
           }
         }
         if avail {
-          match engine.get_task(task_id) {
+          match eng.get_task(task_id) {
             Some(parent) =>
               match
                 laya_decide_external(
@@ -2102,7 +2181,7 @@ pub async fn run_server() -> Unit {
         )
       }
       let base = match
-        engine.plan_deep(
+        eng.plan_deep(
           task_id~,
           split_n~,
           by~,
@@ -2137,7 +2216,7 @@ pub async fn run_server() -> Unit {
           }
           // 「执行计划」视图：拆解后给出一张按 DAG 拓扑序、附难度/依赖/深度的
           // 扁平执行清单，agent 拿到即可照单执行（纯读，无副作用）。
-          m.set("exec_order", engine.plan_exec_order(task_id))
+          m.set("exec_order", eng.plan_exec_order(task_id))
           Json::object(m)
         }
         _ => base
@@ -2194,6 +2273,9 @@ pub async fn run_server() -> Unit {
         "author": string_prop("语料创建者身份(默认 spec_author)"),
         "content": string_prop("语料内容（必填）"),
         "max_rounds": int_prop("打回上限(默认3，最大10)"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
       },
       ["task_id", "content"],
     ),
@@ -2203,14 +2285,9 @@ pub async fn run_server() -> Unit {
       let content = get_str(args, "content")
       let max_rounds = get_int(args, "max_rounds", default=3)
       let ts = now_default()
+      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
       match
-        engine.omega_spec_create(
-          task_id~,
-          author~,
-          content~,
-          now=ts,
-          max_rounds~,
-        ) {
+        eng.omega_spec_create(task_id~, author~, content~, now=ts, max_rounds~) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
@@ -2227,6 +2304,9 @@ pub async fn run_server() -> Unit {
         "verdict": string_prop("approve 通过 / 其它值打回（必填）"),
         "reason": string_prop("审核意见(可选)"),
         "max_rounds": int_prop("打回上限(默认3，最大10)"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
       },
       ["task_id", "verdict"],
     ),
@@ -2237,8 +2317,9 @@ pub async fn run_server() -> Unit {
       let reason = get_str(args, "reason")
       let max_rounds = get_int(args, "max_rounds", default=3)
       let ts = now_default()
+      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
       match
-        engine.omega_spec_review(
+        eng.omega_spec_review(
           task_id~,
           reviewer~,
           verdict~,
@@ -2246,7 +2327,28 @@ pub async fn run_server() -> Unit {
           now=ts,
           max_rounds~,
         ) {
-        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Ok(j) => {
+          // 打回时除引擎自动落 ns 库教训外，server 层补落根库教训，
+          // 保证 evolve_snapshot（无 ns 参数）的 dead_ends 也能检索到全局教训
+          if verdict != "approve" {
+            let why = if reason == "" {
+              "语料被打回（未附原因）"
+            } else {
+              reason
+            }
+            ignore(
+              @evolve.evolve_lesson_persist(
+                evolve_store,
+                id="omega-lesson-root-\{@evolve.lesson_ts_part(ts)}-omega.spec_rejected-r1",
+                "omega.spec_rejected",
+                why,
+                "语料未达要求，按审核意见重写后重新 omega_spec_create",
+                ts,
+              ),
+            )
+          }
+          Ok(@mcp.ToolResult::text(j.stringify()))
+        }
         Err(e) => Err(@mcp_types.ToolError(e))
       }
     },
@@ -2262,6 +2364,9 @@ pub async fn run_server() -> Unit {
         "verdict": string_prop("pass 达标 / 其它值打回（必填）"),
         "reason": string_prop("复验意见(可选)"),
         "max_rounds": int_prop("打回上限(默认3，最大10)"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
       },
       ["task_id", "verdict"],
     ),
@@ -2272,8 +2377,9 @@ pub async fn run_server() -> Unit {
       let reason = get_str(args, "reason")
       let max_rounds = get_int(args, "max_rounds", default=3)
       let ts = now_default()
+      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
       match
-        engine.omega_result_verify(
+        eng.omega_result_verify(
           task_id~,
           reviewer~,
           verdict~,
@@ -2281,7 +2387,23 @@ pub async fn run_server() -> Unit {
           now=ts,
           max_rounds~,
         ) {
-        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Ok(j) => {
+          // 复验打回同理补落根库教训（evolve_snapshot dead_ends 全局可检索）
+          if verdict != "pass" {
+            let why = if reason == "" { "成果未达标（未附原因）" } else { reason }
+            ignore(
+              @evolve.evolve_lesson_persist(
+                evolve_store,
+                id="omega-lesson-root-\{@evolve.lesson_ts_part(ts)}-omega.result_rejected-r1",
+                "omega.result_rejected",
+                why,
+                "成果未达验收标准，按复验意见修改后重新提交",
+                ts,
+              ),
+            )
+          }
+          Ok(@mcp.ToolResult::text(j.stringify()))
+        }
         Err(e) => Err(@mcp_types.ToolError(e))
       }
     },
@@ -2290,10 +2412,19 @@ pub async fn run_server() -> Unit {
     s1,
     "omega_status",
     "Omega 强验证状态查询：返回该任务是否开启强验证、语料/复验轮次、打回次数、是否已升级人工。参数：task_id。",
-    schema({ "task_id": string_prop("任务 id（必填）") }, ["task_id"]),
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
+      },
+      ["task_id"],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
-      match engine.omega_status(task_id) {
+      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      match eng.omega_status(task_id) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
@@ -6928,14 +7059,14 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "executor_run",
-    "把任务交给外部执行器真跑（宿主命令能力，默认收紧）：执行器名**只能**是已登记集合 aider | atomcode | ofm。aider/atomcode 走本地 CLI spawn（argv 形状由 src/executor/cli_argv.mbt 固定，不经过 shell，提示词里的 ; $() 反引号都只是字面量，可执行文件名由登记表推导——调用方无法借本工具注入任意命令）；**ofm 走并存 HTTP 通道**（`executor_run_impl` 按 `executor` 分流，不经 build_command）：真 POST `{ofm_endpoint}/chat/completions`，端点 env `FIST_OFM_ENDPOINT` 优先、`config.ofm_endpoint` 兜底，`Authorization: Bearer` 的 key 只在 server 进程环境变量里读、**回执绝不回显**，失败按 `classify_ofm_failure` 归因（网络/401/5xx/其他）。model 留空时先向 model_route 要一个模型并记账（路由↔执行器接线点）；无可用模型直接失败不猜模型。结果 ok=false 时附可诊断 error/hint/failure_kind，绝不静默成功。参数：project_dir(必填)、executor(必填 aider|atomcode|ofm)、prompt(必填，非空且不含 NUL)、model(可选，留空则路由决定)、namespace(可选)、timeout_ms(可选默认 180000)、dry_run(可选默认 false：CLI 通道只回显将执行的 argv、OFM 通道只回显将发送的请求体 URL，一个进程/一个网络请求都不起，先审后跑)（注：时间戳由服务端盖章）。执行需 js/node 运行时；native 构建返回明确拒绝。",
+    "把任务交给外部执行器真跑（宿主命令能力，默认收紧）：执行器名**只能**是白名单 aider | atomcode | ofm，或 `executor_register` 已注册的自定义执行器（注册即可用，跨重启可复现）。aider/atomcode 走本地 CLI spawn（argv 形状由 src/executor/cli_argv.mbt 固定，不经过 shell，提示词里的 ; $() 反引号都只是字面量，可执行文件名由登记表推导——调用方无法借本工具注入任意命令）；自定义执行器走受限 CLI 通道（binary=注册名、argv=[prompt]，同样不经 shell）；**ofm 走并存 HTTP 通道**（`executor_run_impl` 按 `executor` 分流，不经 build_command）：真 POST `{ofm_endpoint}/chat/completions`，端点 env `FIST_OFM_ENDPOINT` 优先、`config.ofm_endpoint` 兜底，`Authorization: Bearer` 的 key 只在 server 进程环境变量里读、**回执绝不回显**，失败按 `classify_ofm_failure` 归因（网络/401/5xx/其他）。model 留空时先向 model_route 要一个模型并记账（路由↔执行器接线点；自定义执行器与 atomcode 同规——跳过 FIST 路由防模型名跨命名空间错配）；无可用模型直接失败不猜模型。结果 ok=false 时附可诊断 error/hint/failure_kind，绝不静默成功。参数：project_dir(必填)、executor(必填 aider|atomcode|ofm 或已注册自定义执行器)、prompt(必填，非空且不含 NUL)、model(可选，留空则路由决定)、namespace(可选)、timeout_ms(可选默认 180000)、dry_run(可选默认 false：CLI 通道只回显将执行的 argv、OFM 通道只回显将发送的请求体 URL，一个进程/一个网络请求都不起，先审后跑)（注：时间戳由服务端盖章）。执行需 js/node 运行时；native 构建返回明确拒绝。",
     schema(
       {
         "project_dir": string_prop(
           "项目目录（必填，相对 server 进程 cwd；作为执行器工作目录）",
         ),
         "executor": string_prop(
-          "执行器名（必填，只接受 aider | atomcode | ofm；ofm 走 HTTP 通道）",
+          "执行器名（必填，白名单 aider | atomcode | ofm，或 executor_register 已注册的自定义执行器；ofm 走 HTTP 通道）",
         ),
         "prompt": string_prop(
           "任务描述（必填，作为 --message/-p 的字面量参数）",
@@ -6962,6 +7093,20 @@ pub async fn run_server() -> Unit {
       let model = get_str(args, "model")
       let ns = get_str(args, "namespace")
       let ns2 = if ns.is_empty() { "default" } else { ns }
+      // 可替换 Executor（验收项）：白名单 OR 已注册自定义执行器（注册表从 store 回灌，跨进程可复现）。
+      // 未注册即拒绝——executor_run_impl 只负责执行通道，放行名单在此把关。
+      sync_db_executors()
+      if !(@executor.is_external_executor(ex) || exec_reg.has(ex)) {
+        return Err(
+          @mcp_types.ToolError(
+            "未知执行器 '" +
+            ex +
+            "'，可用白名单：" +
+            @executor.external_executors().join(", ") +
+            "，或先用 executor_register 注册自定义执行器",
+          ),
+        )
+      }
       let tm = match args {
         Json::Object(m) =>
           match m.get("timeout_ms") {

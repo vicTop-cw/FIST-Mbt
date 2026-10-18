@@ -5442,3 +5442,23 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - evidence: semantic.py 行 1063-1079 修改：为 VarRef 和 IdRef 添加作用域检查，产生 UNDEFINED_VAR/UNDEFINED_FUNC 诊断
 
 
+## BUG-324 [2026-10-18T12:20:56Z] [high] OPEN
+- summary: verify DANGEROUS_PATTERNS 漏检 os.popen(<变量>)：旧 pattern `os.popen(cmd\b` 只匹配变量名恰为 cmd，实测 os.popen(wsl_cmd) 漏网（mcp_call L85 为 RCE）
+- detail: ## 根因
+`actions/vools/actus.verify.actus.md` 原 DANGEROUS_PATTERNS 中 os.popen pattern 为 `os\.popen\s*\(cmd\b`，仅匹配变量名恰为 `cmd`。全仓 16 个动作使用 `os.popen(<其他变量>)`（如 `wsl_cmd`、`cmd_line`、`run_cmd`），全部漏网。
+
+## 实测
+- 全仓 113 个 `.actus.md` 文件，16 个触发 os.popen 变量（新 pattern 后）
+- mcp_call L85 `os.popen(wsl_cmd, "r")` 中 `wsl_cmd` 由用户 `server` 参数拼入，为 RCE
+- cli_curl/git_commit 的 `wsl_cmd` 已 shlex.quote，安全但同样被旧 pattern 漏检
+
+## 修复（本轮已完成）
+1. DANGEROUS_PATTERNS 增补 3 条：`os.popen f-string`、`subprocess shell=True 全家族`、`subprocess 字符串首参`
+2. 新增 SUSPICIOUS_PATTERNS（WARNING 级）2 条：`os.popen(<变量>)`、`os.system(<变量>)`
+3. `_check_suspicious` 函数 + `_verify_single` 接入 + self-scan 剔除 SUSPICIOUS_PATTERNS 块
+4. `tests/test_verify_injection.py` 更新为加载两表，新增 `test_suspicious_patterns_exist`，10/10 通过
+
+## 遗留
+16 个 os.popen 变量命中动作需逐个修复（shlex.quote 或改 subprocess.run 列表 argv），不在本 bug 修复范围。
+- reported_by: fist-agent
+

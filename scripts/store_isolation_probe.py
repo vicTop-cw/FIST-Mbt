@@ -64,8 +64,8 @@ io.open(LOG, "w", encoding="utf-8").write("started=%s run_id=%s\n" % (
     time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), RUN_ID))
 
 SERVER_JS_CANDIDATES = [
-    os.path.expandvars(r"%LOCALAPPDATA%\FIST-Mbt\fist-mbt.js"),
     os.path.join(ROOT, "_build", "js", "debug", "build", "cmd", "cli", "cli.js"),
+    os.path.expandvars(r"%LOCALAPPDATA%\FIST-Mbt\fist-mbt.js"),
 ]
 META = {
     "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -243,10 +243,10 @@ def main():
     default_db = os.path.join(box, "fist-mbt.db")  # 未设 env 时的默认落点
     os.makedirs(box, exist_ok=True)
 
-    # C1 env 生效格：FIST_DB_PATH 指向 box 外的 probe.db ⇒ 行进 probe.db，且 box 里不得长出默认库
+    # C1 env 生效格：FIST_DB_PATH 指向 box 外的 probe.db ⇒ default 任务行进 probe.db，且 box 里不得长出默认库
     env1 = dict(os.environ)
     env1["FIST_DB_PATH"] = probe_db
-    ns1 = "iso-c1-" + RUN_ID[-6:]
+    ns1 = "default"  # FIST_DB_PATH 路由只对 default（主库）生效；合法 ns 走 ns 独立库（C3 覆盖）
     v1, d1 = publish_and_check(js, ns1, box, env1, probe_db, "c1")
     d1["default_db_created_in_cwd"] = os.path.isfile(default_db)
     if v1 == "GREEN" and d1["default_db_created_in_cwd"]:
@@ -256,13 +256,38 @@ def main():
                      % os.path.relpath(probe_db, ROOT).replace("\\", "/"))
     results["C1_env_routing"] = (v1, d1)
 
-    # C2 默认回落格（成对对照）：同一 cwd、无 env ⇒ 行必须落 box/fist-mbt.db
+    # C2 默认回落格（成对对照）：同一 cwd、无 env ⇒ default 行必须落 box/fist-mbt.db
     env2 = {k: v for k, v in os.environ.items() if k != "FIST_DB_PATH"}
-    ns2 = "iso-c2-" + RUN_ID[-6:]
+    ns2 = "default"
     v2, d2 = publish_and_check(js, ns2, box, env2, default_db, "c2")
     if v2 == "GREEN":
         d2["c1_rows_isolated"] = count_rows(probe_db)
     results["C2_default_under_cwd"] = (v2, d2)
+
+    # C3 命名空间物理隔离格（验收项：alpha/beta 库不得零任务写同一主库）：
+    #   独立 main_db（避开 C1 已写入的 default 行）下 publish(ns=独立 ns) ⇒ 行必须落 box/<ns>.db，
+    #   且 main_db 中不得出现该 ns 的任务行（主库未被污染 = 物理隔离，而非登记表）。
+    env3 = dict(os.environ)
+    c3_main_db = os.path.join(SCRATCH, "c3probe.db")
+    env3["FIST_DB_PATH"] = c3_main_db
+    ns3 = "iso-c3-" + RUN_ID[-6:]
+    ns_db = os.path.join(box, ns3 + ".db")
+    v3, d3 = publish_and_check(js, ns3, box, env3, ns_db, "c3")
+    d3["main_db_exists"] = os.path.isfile(c3_main_db)
+    ns_rows_in_main = 0
+    if os.path.isfile(c3_main_db):
+        c = sqlite3.connect("file:%s?mode=ro" % c3_main_db.replace("\\", "/"), uri=True)
+        try:
+            ns_rows_in_main = c.execute(
+                "select count(*) from tasks where ns = ?", (ns3,)).fetchone()[0]
+        finally:
+            c.close()
+    d3["ns_rows_in_main_db"] = ns_rows_in_main
+    if v3 == "GREEN" and ns_rows_in_main > 0:
+        v3 = "RED"
+        d3["why"] = ("ns 库独立存在，但主库也出现了 ns=%s 的任务行 ⇒ ns 行仍写进主库，"
+                     "物理隔离未闭环（BUG-90 复发形态）" % ns3)
+    results["C3_ns_physical_isolation"] = (v3, d3)
 
     # —— ST1 合成违例（判据必须能发红，否则"C1 绿"没有信息量）——
     #    把 FIST_DB_PATH 指到一个父目录不存在的库：open 失败 ⇒ 引擎静默回退内存版

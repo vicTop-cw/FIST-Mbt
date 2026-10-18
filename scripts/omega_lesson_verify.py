@@ -71,19 +71,6 @@ def call(p, name, **args):
     except (KeyError, IndexError, TypeError):
         return r["result"]["content"][0]["text"]
 
-def lessons_in_db(prefix):
-    """从根库读回已沉淀的教训（id 前缀匹配）。"""
-    if not os.path.exists(DB):
-        return []
-    con = sqlite3.connect(DB); con.row_factory = sqlite3.Row
-    try:
-        rows = con.execute(
-            "SELECT id, goal, note, code FROM evolve_artifacts WHERE id LIKE ? ORDER BY created_at",
-            (prefix + "%",)).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        con.close()
-
 def cleanup_root_lessons():
     """剔除本脚本写入的教训（跨候选库、仅按本脚本原因精确匹配），保证根库整洁。"""
     total = 0
@@ -123,9 +110,9 @@ def main():
                     description="Omega 打回自动落教训 E2E", namespace=NS,
                     created_by="human_steward", now=NOW)
         root_id = root["task_id"]
-        call(p, "claim", task_id=root_id, assignee="leader_a", now=NOW)
+        call(p, "claim", task_id=root_id, assignee="leader_a", namespace=NS, now=NOW)
         call(p, "task_plan_deep", task_id=root_id, split_n=1, by="leader_a",
-             omega_strong_verify=True, now=NOW)
+             omega_strong_verify=True, namespace=NS, now=NOW)
         tasks = call(p, "list", namespace=NS)
         if isinstance(tasks, dict): tasks = tasks.get("tasks", tasks)
         child = next(
@@ -137,21 +124,21 @@ def main():
 
         # ① 语料被打回 → 自动落 [lesson] omega.spec_rejected
         call(p, "omega_spec_create", task_id=cid, author="spec_author",
-             content="验收标准 v1", now=NOW)
+             content="验收标准 v1", namespace=NS, now=NOW)
         r1 = call(p, "omega_spec_review", task_id=cid, reviewer="verifier",
-                  verdict="reject", reason="验收标准不量化", now=NOW)
+                  verdict="reject", reason="验收标准不量化", namespace=NS, now=NOW)
         assert r1.get("learned_lesson") is True, f"spec 打回未自动学习: {r1}"
         print(f"PASS 语料打回 → learned_lesson={r1.get('learned_lesson')}")
 
         # ② 语料重做通过 + 执行 + 提交 → 成果复验打回 → 自动落 [lesson] omega.result_rejected
         call(p, "omega_spec_create", task_id=cid, author="spec_author",
-             content="验收标准 v2（可量化）", now=NOW)
-        call(p, "omega_spec_review", task_id=cid, reviewer="verifier", verdict="approve", now=NOW)
-        call(p, "claim", task_id=cid, assignee="exec_1", now=NOW)
-        call(p, "execute", task_id=cid, deliverable="成果 v1", now=NOW)
-        call(p, "submit", task_id=cid, now=NOW)
+             content="验收标准 v2（可量化）", namespace=NS, now=NOW)
+        call(p, "omega_spec_review", task_id=cid, reviewer="verifier", verdict="approve", namespace=NS, now=NOW)
+        call(p, "claim", task_id=cid, assignee="exec_1", namespace=NS, now=NOW)
+        call(p, "execute", task_id=cid, deliverable="成果 v1", namespace=NS, now=NOW)
+        call(p, "submit", task_id=cid, namespace=NS, now=NOW)
         r2 = call(p, "omega_result_verify", task_id=cid, reviewer="verifier",
-                  verdict="fail", reason="成果未达标", now=NOW)
+                  verdict="fail", reason="成果未达标", namespace=NS, now=NOW)
         assert r2.get("learned_lesson") is True, f"复验打回未自动学习: {r2}"
         print(f"PASS 成果复验打回 → learned_lesson={r2.get('learned_lesson')}")
 

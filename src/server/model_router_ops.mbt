@@ -887,15 +887,10 @@ async fn executor_run_impl(
     Some(msg) => return fail("executor_run: " + msg, [])
     None => ()
   }
-  if !@executor.is_external_executor(executor) {
-    return fail(
-      "未知执行器 '" +
-      executor +
-      "'，可用：" +
-      @executor.external_executors().join(", "),
-      [],
-    )
-  }
+  // 可替换 Executor（验收项）：白名单走 build_command；自定义执行器走受限 CLI 通道
+  // （binary=注册名、argv=[prompt]，不经 shell）。放行名单由 server 层 exec_reg 把关
+  // （executor_run 工具闭包），本层只负责执行通道，不再硬拒非白名单。
+  let custom_cli = !@executor.is_external_executor(executor)
   let mut chosen = model
   let mut route_json = Json::null()
   // 只有"模型是路由器给的"才需要在真跑后记账；调用方显式指定 model 属越池覆盖，
@@ -908,7 +903,7 @@ async fn executor_run_impl(
   // `HTTP 400 Unsupported model`。故 model 留空时**跳过路由**、chosen 保持空串，
   // 由 `cli_argv.atomcode_argv` 省略 `--model`，让 atomcode 走自身 config 的
   // default_model。aider 不同（空模型=绕过路由决策，维持拒绝），仍走路由。
-  if chosen.is_empty() && executor != "atomcode" {
+  if chosen.is_empty() && executor != "atomcode" && !custom_cli {
     match model_route_impl(project_dir, ns~) {
       Err(e) => return fail(e, [])
       Ok(j) =>
@@ -991,10 +986,16 @@ async fn executor_run_impl(
       routed_by_pool,
     )
   }
-  let (bin, args) = match
-    @executor.build_command(executor~, prompt~, model=chosen, workdir="") {
-    Err(e) => return fail(e, [("model", Json::string(chosen))])
-    Ok(v) => v
+  let (bin, args) : (String, Array[String]) = if custom_cli {
+    // 自定义执行器：binary=注册名、argv=[prompt]（受限 CLI 通道，不经 shell，与
+    // build_command 同一安全线：提示词只是字面量 argv 元素）
+    (executor, [prompt])
+  } else {
+    match
+      @executor.build_command(executor~, prompt~, model=chosen, workdir="") {
+      Err(e) => return fail(e, [("model", Json::string(chosen))])
+      Ok(v) => v
+    }
   }
   if dry_run {
     // 只回显"将要执行的 argv"，一个进程都不起：宿主命令能力默认收紧，
