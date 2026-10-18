@@ -920,3 +920,67 @@ test "caf_dr_9_坏JSON记忆push不覆盖不删除" {
   }
   assert_true(wt.contains("坏 JSON"))
 }
+
+///|
+/// 一条白盒辅助：读 CAF 记忆文件并返回**末条**记录的 `ok` 字段（读不到/非法即 abort）。
+fn caf_read_last_ok(path : String) -> Bool {
+  let raw = @fs.read_file_to_string(path, encoding="utf8") catch {
+    _ => abort("读 CAF 记忆文件失败：" + path)
+  }
+  let parsed = @json.parse(raw) catch {
+    _ => abort("CAF 文件不是合法 JSON：" + path)
+  }
+  match mo_get(parsed, "records") {
+    Json::Array(a) =>
+      if a.is_empty() {
+        abort("CAF 文件 records 为空，无末条可读")
+      } else {
+        let last = a[a.length() - 1]
+        match mo_get(last, "ok") {
+          Json::True => true
+          Json::False => false
+          _ => abort("末条记录缺 ok 布尔字段")
+        }
+      }
+    _ => abort("CAF 文件缺 records 数组")
+  }
+}
+
+///|
+/// 失败执行污染锁（Slice B 遗留项 · caf_dr_10）：`mr_record_only` / `model_route_impl` 在
+/// 真消耗后 push 的 CAF evidence 必须带上调用方给定的 `ok` 语义——
+///   失败执行 → push ok=false，成功执行 → push ok=true（默认）。失败不得误写 ok=true。
+/// 修法前此处硬编码 `ok=true`：失败执行也 push `ok=true`，长期抬高"常失败模型"的 CAF 成功率。
+/// 本锁在**穿透链**上验证（model_route_impl → mr_caf_push_evidence → 落盘读回），
+/// 不触发 OFM/CLI 真执行（与 caf_dr_7 同口径的最小可验一格）。
+test "caf_dr_10_失败执行push_ok_false_CAF学成败" {
+  let d = caf_prep("caf_dr10")
+  let caf_path = "temp/mo_ops/memory/model-router-caf-caf_dr10.json"
+  // 失败执行：显式 ok=false → 写进 CAF 记忆的是 ok=false（而非默认 true）
+  let j = mo_unwrap(
+    model_route_impl(
+      d,
+      ns="caf_dr10",
+      config=caf_cfg(true),
+      record_model="caf_free_a",
+      context="ctx",
+      ok=false,
+    ),
+  )
+  assert_true(mo_bool(j, "persisted"))
+  assert_false(caf_read_last_ok(caf_path))
+  // 成功执行：不给 ok（默认 true）→ 写进 CAF 记忆的是 ok=true
+  let j2 = mo_unwrap(
+    model_route_impl(
+      d,
+      ns="caf_dr10",
+      config=caf_cfg(true),
+      record_model="caf_free_b",
+      context="ctx",
+    ),
+  )
+  assert_true(mo_bool(j2, "persisted"))
+  assert_true(caf_read_last_ok(caf_path))
+  // 两条都落进同一记忆：末条为成功侧、总数 = 2，验证"追加"而非"覆盖"
+  assert_eq(caf_read_rec_count(caf_path), 2)
+}
