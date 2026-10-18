@@ -99,6 +99,13 @@ test "topo_sort: 无依赖时保持输入顺序" {
 ///|
 test "critical_path: 含依赖的发布任务也算入图" {
   let e = FistEngine::new()
+  let t = @core.Task::new(
+    id="A",
+    project_dir="/proj/demo",
+    description="前置",
+    created_at="2026-01-01T00:00:00Z",
+  )
+  ignore(e.store.create_task(t))
   let r = e.publish_with_deps(
     project_dir="/proj/demo",
     description="根",
@@ -109,13 +116,6 @@ test "critical_path: 含依赖的发布任务也算入图" {
     Ok(_) => ()
     Err(m) => abort("publish_with_deps failed: \{m}")
   }
-  let t = @core.Task::new(
-    id="A",
-    project_dir="/proj/demo",
-    description="前置",
-    created_at="2026-01-01T00:00:00Z",
-  )
-  ignore(e.store.create_task(t))
   let cp = e.critical_path()
   assert_eq(cp.length(), 2)
   assert_eq(cp[0], "A")

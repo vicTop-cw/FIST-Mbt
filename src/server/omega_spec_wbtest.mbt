@@ -11,12 +11,12 @@
 ///
 /// 注意：不使用纯函数归一（此处是内联 match，非独立函数），
 /// 改用源码文本锁钉住关键模式。
-
 test "BUG-233：omega_spec 解析不再有裸 Err(_) => None（源码文本锁）" {
   let src = r2_read_or_abort("src/server/server.mbt")
   assert_eq(r2_count(src, "Err(_) => None"), 0)
 }
 
+///|
 test "BUG-233：omega_spec_error 回执逻辑存在（源码文本锁）" {
   let src = r2_read_or_abort("src/server/server.mbt")
   assert_true(src.contains("omega_spec_error"))
@@ -26,6 +26,7 @@ test "BUG-233：omega_spec_error 回执逻辑存在（源码文本锁）" {
   assert_true(src.contains("if omega_spec_error != \"\""))
 }
 
+///|
 test "BUG-233：omega_spec 工具描述同步提及 omega_spec_error" {
   let src = r2_read_or_abort("src/server/server.mbt")
   assert_true(src.contains("omega_spec_error"))

@@ -28,7 +28,7 @@ test "quickcheck: default_slices 数量与内容前缀不变量" {
         } else {
           let mut all_prefix = true
           for s in slices {
-            if !s.starts_with(d) {
+            if !s.has_prefix(d) {
               all_prefix = false
             }
           }

@@ -675,4 +675,3 @@ test "gc-22: 队列写入失败必须回执 Err（BUG-223）" {
   let r3 = gitcode_queue_mark_sent_batch(d, ["GC-B223"], Map([]))
   assert_true(r3.is_err())
 }
-

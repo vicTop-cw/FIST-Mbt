@@ -13,7 +13,9 @@ test "BUG-232：executor_persist_note Ok/Err 双分支" {
   let (ok_p, ok_e) = executor_persist_note(Ok("executor-A"))
   assert_eq(ok_p, true)
   assert_eq(ok_e, "")
-  let (bad_p, bad_e) = executor_persist_note(Err("sqlite 写入 executors 失败"))
+  let (bad_p, bad_e) = executor_persist_note(
+    Err("sqlite 写入 executors 失败"),
+  )
   assert_eq(bad_p, false)
   assert_eq(bad_e, "sqlite 写入 executors 失败")
   // 空原因也照样成型（不 panic、不吞成空串之外的东西）
@@ -28,5 +30,7 @@ test "BUG-232：executor_register 不再硬编码 persisted:true（源码文本�
   let src = r2_read_or_abort("src/server/server.mbt")
   assert_true(r2_count(src, "= executor_persist_note(") >= 1)
   assert_eq(r2_count(src, "\"persisted\": Json::boolean(true),"), 0)
-  assert_true(src.contains("m.set(\"persist_error\", Json::string(persist_error))"))
+  assert_true(
+    src.contains("m.set(\"persist_error\", Json::string(persist_error))"),
+  )
 }

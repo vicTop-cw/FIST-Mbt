@@ -10,7 +10,9 @@
 
 ///|
 test "BUG-231：laya_auto_fail 恒带 available=false + 可见原因（区分『未装』与『调用挂』）" {
-  let j = laya_auto_fail("laya sidecar 调用失败: 子进程结果 JSON 解析失败")
+  let j = laya_auto_fail(
+    "laya sidecar 调用失败: 子进程结果 JSON 解析失败",
+  )
   assert_eq(ld_bool(j, "available", true), false)
   assert_true(ld_str(j, "reason").contains("sidecar 调用失败"))
   assert_true(ld_str(j, "reason").contains("JSON 解析失败"))

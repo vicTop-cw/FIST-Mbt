@@ -1,3 +1,35 @@
+// BUG-159: 跨 target 取用户首参 —— JS 下跳过 node.exe/.js 路径（args[2]），native 下 args[0] 即用户首参
+
+///|
+#cfg(target="js")
+fn user_first_arg(args : Array[String]) -> String {
+  if args.length() >= 3 {
+    args[2]
+  } else {
+    ""
+  }
+}
+
+///|
+#cfg(any(target="native", target="llvm"))
+fn user_first_arg(args : Array[String]) -> String {
+  if args.length() >= 1 {
+    args[0]
+  } else {
+    ""
+  }
+}
+
+///|
+#cfg(not(any(target="js", target="native", target="llvm")))
+fn user_first_arg(args : Array[String]) -> String {
+  if args.length() >= 3 {
+    args[2]
+  } else {
+    ""
+  }
+}
+
 ///|
 /// FIST-Mbt CLI 子命令分发器
 /// 用法：
@@ -6,9 +38,7 @@
 ///   moon run cmd/cli/main -- doctor  # 健康检查
 async fn main {
   let args = @env.args()
-  // @env.args() 返回 js/node 原生 argv：
-  // args[0] = node.exe 路径, args[1] = .js 路径, args[2..] = 用户参数
-  let sub = if args.length() >= 3 { args[2] } else { "" }
+  let sub = user_first_arg(args)
 
   let cmd = parse_subcmd(sub)
   match cmd {
@@ -16,6 +46,7 @@ async fn main {
     Version => run_version()
     Demo => run_demo()
     Doctor => run_doctor()
+    Upgrade => run_upgrade()
     Help => run_help(args)
     NoArgs => print_help()
     Unknown(other) => {
@@ -65,6 +96,23 @@ fn run_version() -> Unit {
 }
 
 ///|
+
+///|
+/// upgrade：从远端 fetch 最新版本、备份、替换当前二进制
+/// 核心逻辑在 cmd/cli/upgrade_core.mbt:run_upgrade_full（纯计算层）
+/// BUG-160 修复：CLI match 缺 Upgrade 分支
+async fn run_upgrade() -> Unit {
+  // native 下 run_upgrade_full 是 stub（只 Err 提示需 js target）
+  // js 下真实 fetch + IO
+  let result = run_upgrade_full("gitcode", "fist-mbt.js", "", false)
+  match result {
+    Ok(msg) => println(msg)
+    Err(e) => {
+      eprintln("升级失败: \{e}")
+      cli_exit(1)
+    }
+  }
+}
 
 ///|
 /// serve：启动 MCP server (stdio 传输)

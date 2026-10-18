@@ -336,4 +336,3 @@ test "lint_10_missing_dir_returns_err" {
   let r = issue_scan(d, "", 100)
   assert_true(r.is_err())
 }
-

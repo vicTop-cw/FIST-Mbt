@@ -6,7 +6,7 @@
 
 ///|
 /// stub：native 上不存在执行 curl 命令的能力。
-pub async fn gitcode_execute_single(
+pub fn gitcode_execute_single(
   _curl_command : String,
   _workdir : String,
   _timeout_ms : Int,

@@ -241,7 +241,19 @@ fn lit_neg(l : Lit) -> Lit {
 /// assignment[var_idx] = true/false (1-based 索引，0 位不用)
 pub fn dpll_sat(cnf : Cnf) -> Array[Bool]? {
   let n = cnf.num_vars
-  // assignment: 0=未赋值, true/false
+  let mut ci = 0
+  while ci < cnf.clauses.length() {
+    let c = cnf.clauses[ci]
+    let mut li = 0
+    while li < c.length() {
+      let (v, _) = c[li]
+      if v < 0 || v > n {
+        return None
+      }
+      li = li + 1
+    }
+    ci = ci + 1
+  }
   let assign : Array[Int] = []
   // 用 0=unassigned, 1=true, -1=false
   let mut i = 0
@@ -534,7 +546,7 @@ pub fn check_constraints_json(exprs : Array[BoolExpr]) -> String {
       }
       let cnf = to_cnf(conj)
       match dpll_sat(cnf) {
-        Some(assign) =>
+        Some(_) =>
           // 只输出用户变量（前 num_user_vars 个）
           // 这里简化输出全部非辅助变量
           parts.push("\"has_model\":true")

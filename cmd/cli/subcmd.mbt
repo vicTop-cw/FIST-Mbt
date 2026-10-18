@@ -9,6 +9,7 @@ enum Subcmd {
   Version
   Demo
   Doctor
+  Upgrade
   Help
   NoArgs
   Unknown(String)
@@ -21,6 +22,7 @@ fn parse_subcmd(sub : String) -> Subcmd {
     "version" | "--version" | "-V" => Version
     "demo" => Demo
     "doctor" => Doctor
+    "upgrade" | "--upgrade" => Upgrade
     "help" | "--help" | "-h" => Help
     "" => NoArgs
     other => Unknown(other)

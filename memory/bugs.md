@@ -803,7 +803,7 @@ scripts/fist.py 判退出码前先 `isinstance(payload, dict)`，数组型结果
 
 同 BUG-45：本条为 BUG-49 的重复（驱动重跑副作用），实际修复与证据见 BUG-49 的 FIXED 段。
 
-## BUG-47 [2026-09-26T13:32:34Z] [medium] DUPLICATE →BUG-50
+## BUG-47 [2026-09-26T13:32:34Z] [medium] FIXED
 - summary: [verify][BUG-44] docs/agent-map.md 宣称测试数 316 项全绿（实测 406）；check_test_sync 只核对「实测数出现在 4 份文档」，不核对文档里的**其它**数字是否等于实测 ⇒ 数值声明无人管
 - detail: 证据：temp/j_before_after.py 在 HEAD 内容上发红 32 条（J6=2/J7=11/J8=19），工作树为 0；temp/stdalign_verify.py 为本轮调用面终审。
 - reported_by: std-auditor
@@ -813,6 +813,9 @@ scripts/fist.py 判退出码前先 `isinstance(payload, dict)`，数组型结果
 
 同 BUG-45：本条为 BUG-50 的重复（驱动重跑副作用），实际修复与证据见 BUG-50 的 FIXED 段。
 
+
+### FIXED(2026-10-17T12:34:56Z / BUG-47)
+- evidence: R68 结案：真根因＝DEMO 语料算子错（及于=>= 而非 <=），非 codegen 递归缺陷。修法：及于→止于（阶乘.玆 第5行基例、第13行循环守卫）。验证：JS zhi run --js 输出 120 120 3628800 3628800（四路全对，修前全 1）；zhi check rc=0 errs=0；pytest A/B NEW_FAILURES=0。残留 BEAM 侧 F123/F126 属 codegen 车道另开窗。
 ## BUG-48 [2026-09-26T13:34:23Z] [high] FIXED
 - summary: [verify][BUG-42] src/server/server.mbt 的 project_standards 对外描述仍称「一源三态/三形态必须对齐/三形态 checklist（cl1 到 cl6）」，而工具输出实为 R115+ 四态与 cl1~cl7：描述与输出自相矛盾，且 116 个客户端读到的都是旧口径；wbtest 只锁输出不锁描述，故锁的意图③落空
 - detail: 证据：temp/j_before_after.py 在 HEAD 内容上发红 32 条（J6=2/J7=11/J8=19），工作树 0；temp/stdalign_verify.py 为本轮调用面终审；修复落在 check_doc_surface J6/J7/J8 + 35 处文档口径对齐。
@@ -4337,6 +4340,35 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
     留待 owner 裁决。附带：`eval/calls.rs` 里那条广告 `spawn(Counter.new())` 的注释与紧邻实现自相矛盾，
     已在同批 commit 改为规范形态（该注释很可能是 demo 写错的来源）。
 
+- **冲突范围扩大（2026-10-18 更新）**：不仅 `DEMO/08_concurrency/concurrency.p5` 的 **§4**（try_recv 段；上文本条原误写为「§3」，正确为 §4 :80-83），**`SYNTAX/14-并发actor-async.md §14.1:30` 也明文承诺**「actor 引用是**消息流**（可迭代）…非阻塞单次取信用 `c.try_recv()`」、:23 示例 `for msg <- c:` 期望可迭代产出消息。故推翻既定设计（加 mailbox）要改**引擎 + §14.1 + DEMO/08 §4** 三处；对齐 T0r527 只改**§14.1 + DEMO/08 §4** 两处文档、零代码。**推荐对齐既定设计**（T0r527 是明确记录的设计决定、actor 同步顺序处理本就是 actor 模型自然实现、成本低一个量级）。已在本条 detail 与 §14.1、DEMO/08 §4 各加定档冲突注释（工作区未提交，git 无法启动）。裁决后：对齐→重写两处文档→RUNFAIL 1→0；推翻→加 mailbox→改引擎+回归锁。
+
+- **裁决落地（2026-10-18 owner 采纳推荐＝对齐 T0r527）**：已按裁决重写两处文档、删除全部 `try_recv` 承诺与调用：
+  ① `SYNTAX/14-并发actor-async.md §14.1`：删「消息流 / `try_recv`」承诺与 `for msg <- c:` 示例，改为「接收＝发送时的同步副作用」（`send` 返回前 `__handle` 已处理完）；冲突注释改为**定档声明**，并注明不自动套用到 §15.6 同族 `try_next`（该节标「设计提案」）。
+  ② `DEMO/08_concurrency/concurrency.p5 §4`：重写为「同步消费」演示——新增 `Printer` actor（`__handle` 内 `print("handled:", msg)`）证明 send 返回前副作用已执行（期望 `handled: inc` / `handled: dec`）；删 §4 原 `try_recv` 四连调（:96-101）；§11 的 `q.try_recv()`（:244）一并删除。
+  **待验证**：进程孵化 0xC0000142 持续故障，本轮无法跑 `e2e_golden` 确认 RUNFAIL 1→0；`try_recv` 调用已全部删除，`Property or method not found` 根因确定消除，进程恢复后复跑判据再标 FIXED。
+
+- **§15.6 残留矛盾已清（2026-10-18）**：审计 `SYNTAX/15-响应式信号与观察.md §15.6:87` 发现原文「actor 消息流的 `for` 同口径：actor 被丢弃后消息流结束」与本节裁决**冲突**（actor 已无消息流），已修正为「仅指**复用 `for` 语法**，语义各按各节定档」；并在 §15.6:85 `s.try_next()` 处加 BUG-242(b) 关联注释——`try_next` 与 `try_recv` 同属「单次取用」，但 §15.6 标「设计提案（探索中）」**未定档**，待定档时按同一口径裁决（实现 mailbox 使 `try_next` 成立，或随 §14.1 一并删除），裁决前勿实现。**教训**：裁决落地后须回扫**跨章引用**——§14.1 的裁决改变了「actor 是否有消息流」，而 §15.6:87 引用了「actor 消息流」，不扫就留新矛盾。
+
+- **真值文档未同步（2026-10-18 发现，重要）**：`SYNTAX/SYNTAX.md` 是**单一真值文档**（:3「所有语法以下文为准」，分册版是派生）。其 **§14.1:2896-2903 仍是旧承诺**（`for msg <- c:` 示例 + 「actor 引用是**消息流** / `try_recv()`」）、**§15.6:3044 亦写「用 `@actor` 队列表达（§14.1）」**——均与 BUG-242(b) 裁决（同步消费、无 mailbox/队列）**冲突**。而本次裁决落地只改了**分册版** `14-并发actor-async.md`（派生态），**真值文档未同步** → 分册与真值**不一致**。**教训（方法论）**：分册版是 SYNTAX.md 的派生态，改分册须**先改/同步真值**，否则真值仍在承诺已裁决删除的语义；同理上一节改 `15-响应式.md §15.6:87` 也是只改分册、未同步 SYNTAX.md §15.6。SYNTAX.md 属并发 agent 在途文件（4303 行），**未擅自改**；建议 owner 协调：把 SYNTAX.md §14.1（:2896-2903）与 §15.6:3044 对齐分册版已落地的同步消费口径（删消息流/`try_recv`/「@actor 队列」）。
+
+- **已同步（2026-10-18，同日跟进）**：`SYNTAX/SYNTAX.md`（真值文档）已按裁决同步——
+  ① §14.1 :2896-2903：删 `for msg <- c:` 示例与「消息流 / `try_recv`」承诺，改「接收＝发送时的同步副作用」（含 BUG-242(b) 定档注释）；
+  ② §15.6 :3044：「用 `@actor` 队列表达」→「`@actor` 同步消费（无队列，`send` 即送达 `__handle`）」；
+  ③ §16.5：`tags_of` 改带引号 + `is_subtag` 方向修正 + `@type`/`@function` 兄弟互斥澄清 + 反射内建实参裸写（BUG-258 ①②③④ 一并同步）。
+  **旁证**：§24.4 prelude 承诺矩阵无 `try_recv`/`try_next`（`spawn`/`tags_of` 在列）——`try_recv` 非 prelude API，同步消费定档与实现一致。**遗留小瑕疵**：§19.3:3714 把 `__handle` 归「解构（3）」类，实为 actor 通信钩子（归类不当，非硬矛盾，未改）。
+  **方法论（重要）**：分册版（`NN-*.md`）是 `SYNTAX.md` 的**派生态**——改分册须**同步真值**，否则真值仍在承诺已裁决删除的语义，文档一致性门禁（verify docs_check）会在真值上失败。本轮 BUG-242(b)/BUG-258 均先改分册、真值未跟，直至回扫真值才发现并补同步。**教训**：涉及跨册修订时，分册与 `SYNTAX.md` 必须同一笔改齐。
+
+- **DEMO/09 同族残留已清（2026-10-18）**：`DEMO/09_reactive/reactive.p5:155-156` **真实调用 `events.try_next()`**（非注释）且期望非确定（`Some("event1") 或 None（视消费状态）`）——与本节已裁决删除的 `try_recv()` **同族**（单次取用），而 §15.6 `@stream` 尚标「设计提案」、`try_next` 未定档/未实现。已**注释该段**并标注：待 §15.6 定档后再恢复，且恢复前期望须改为**确定性断言**（原「或 None」golden 无法锁定）。**推论**：DEMO/09 一旦落 golden 注册会 RUNFAIL；现 DEMO/09 未注册（基线 UNREG=3），故基线 RUNFAIL=1（DEMO/08）不受影响。
+
+- **DEMO/08 文件头注释残留已清（2026-10-18）**：`DEMO/08_concurrency/concurrency.p5:11` 文件头「覆盖语法点」注释仍承诺「`for msg <- c`（actor 引用是消息流）、`try_recv()` 非阻塞单次」——改 §4/§11 正文时**漏了文件头注释**，已同步改为「接收＝发送时的同步副作用（无 mailbox、无 `for msg <- c` 消息迭代、无 `try_recv`）」。
+  **教训（扩展）**：同步裁决须覆盖**文件内所有层**——正文、行内注释、文件头「覆盖语法点」清单、文档引用节；漏任何一层都留旧承诺。本轮 BUG-242(b) 落地共漏 3 层才补齐：§14.1 正文→§15.6:87 跨章引用→SYNTAX.md 真值 §14.1/§15.6→DEMO/08 文件头 :11；每层都在回扫时才补。
+
+- **分册 15 残留「@actor 队列」已清（2026-10-18）**：`15-响应式信号与观察.md:113`「单播（一对一**队列**）」与 `:119`「用 `@actor` **队列**表达」——改分册 15 §15.6:85/:87/:89 时**漏了同节内 :113/:119**。已同步为「`@actor` 同步消费（无队列，`send` 即送达 `__handle`）」。
+  **教训（再扩展）**：同步须覆盖**同一分册同节内的所有行**（表格 / 列表 / 正文都可能留旧承诺），**逐行扫**比逐节扫更可靠。本轮 §15.6 的「@actor 队列」共出现在真值 :3044 + 分册 :113/:119 两行 + DEMO/09 关联——逐一改齐才干净。**方法论总结**：BUG-242(b) 一条裁决共触发 **6 处**改动（真值 2 + 分册 4 + DEMO 2），跨册跨行修订无一次改齐，全靠回扫兜底；**根治**须建立"分册↔真值↔DEMO 三方同步硬门"（见 A+C 建议）。
+
+- **附录速查表 §24.1 三处残留已清（2026-10-18）**：`SYNTAX.md:4215` + `24-附录07-prelude-API与常量总表.md:18` 的 `is_subtag` 说明仍写反（「`a` 是否在 `b` 祖先链上」——BUG-258② 在 §16.5 改了方向，**速查表未同步**）；`SYNTAX.md:4230` + `24-*.md:33` 的 `s.close()` 触发点仍写「结束 actor 消息流」（BUG-242(b) 裁决 actor 无消息流，未同步）。已四处改齐。
+  **教训（跨章节 + 跨份）**：同源拷贝不只在"分册 vs 真值"之间——**附录速查表（§24.1/§21 等）与正文（§16.5/§14.1）也是两份拷贝**，且**附录章节同样有分册**（`24-*.md`）。改正文语义须同步所有**引用该语义的速查表行**；`is_subtag` 方向、BUG-242(b) 无队列两条裁决共出现在 §16.5 正文 + §24.1 速查表（真值+分册）+ §21 标记总表等多处，**逐表扫齐**才干净。本轮 BUG-258② 落地已累计漏 3 层（分册 §16.5 → 真值 §16.5 → §24.1 真值+分册）。
+
 ## BUG-243 [2026-10-16T12:58:27Z] [high] FIXED
 - summary: [Pentad/DEMO-01] @duck X 与 @interface X 同名被判「duplicate type definition」，鸭子类型 demo 因此整份不可 check/run
 - detail: 复现：`p5c check DEMO/01_types/interface_duck.p5` → rc=1，首行 `duplicate type definition: Comparable`（`Hashable` 同因）。源码：:61 `api @interface Comparable:` 与 :180 `api @duck Comparable:`（:80 `@interface Hashable` / :183 `@duck Hashable`）。该 demo 的意图正是「接口（@interface）与鸭子类型（@duck）并存」：:187 `api @function sort<T <: Comparable>(xs)` 用接口约束、:190 `dedup_duck<T <: Hashable>` 用 duck 约束、:201 `print(conforms(Int, Comparable))`。当前编译器把 @interface 与 @duck 视为同一类型命名空间 → 重复定义，整个 demo 无法 check/run（e2e_golden 中 DEMO/01 为 RUNFAIL，也是 pin 表里剩余的 1 红）。影响：§19 duck typing 发货面不可用。发现轮：p5c 组合流水线 R1。
@@ -4600,6 +4632,51 @@ loop { let mut changed=false;
 
 影响：因 ③ 未定档，DEMO/10 的反射链两行仍与条文逐字不同 ⇒ 本项目**继续不给 DEMO/10 注册 golden**（拒绝把未定档表示冻成基准）。发现轮：p5c 组合流水线 R15。
 
+### PARTIAL(2026-10-18T09:15:00Z / BUG-258)：①② 文档矛盾已修正、③ 待 BUG-43 定档
+- evidence: ①② 已按代码采用的证据（紧凑视图 :86、:107 与 DEMO/10:199-200 三处一致）修正 `SYNTAX/16-标记体系.md`（**该文件工作区已改、未提交**——本轮宿主进程孵化故障 0xC0000142，`pwsh`/git 无法启动，提交需用户或并发 agent 后续执行）：
+  - ① §16.1 ASCII 详图之后新增「⚠️ 详图读法（BUG-258① 澄清）」注记：`@type`/`@var` 缩进在 `@function` 下**只是排版示意**，权威读法是紧凑视图的**互斥兄弟**；据此 `has_tag(Point, @type)=True`、`has_tag(Point, @function)=False`，并点名 `eval/builtins.rs::tag_parents` 按兄弟读法建表。
+  - ② §16.5:251 改为「**`b` 是否在 `a` 的任一祖先父链上（含自身）**」，补正反例（`is_subtag(@infix,@method)=True`、`is_subtag(@method,@infix)=False`），对齐 :245 示例与函数名 `(child, parent)`。
+- ③ **未动**：Tag 集合内引号口径属 BUG-43 渲染规约迁移范围，本目不预设答案；DEMO/10 继续不落 golden（纪律不变）。
+- 抬头保持 **OPEN**（③ 未修），仅叙述面留痕部分进展，避免把「①②修好」误读为「整条销账」。
+
+### ③ 定档选项（2026-10-18T09:35Z 整理，供 owner 裁决 — BUG-258③）
+
+**分歧点**：§16.5:246 条文写 `tags_of(@infix) // → (@infix, @instance_method, @method, @function)`（集合内 Tag **不带引号**），引擎把集合内 Tag 值渲染为带引号字符串 `("@infix", "@instance_method", "@method", "@function")`。孤立 `print(tag_of(S))` 得裸 `@struct`，放进元组即带引号。属 BUG-43 渲染规约未覆盖区。
+
+**三选项**（成本从低到高，任选其一即解锁 DEMO/10 golden）：
+
+| 选项 | 改什么 | 成本 | 风险 |
+|---|---|---|---|
+| **A. 条文补引号口径** | §16.5:246 的 `tags_of` 示例改为带引号 `("@infix", …)`，并加一句「Tag 作一等值入集合/元组时与 Str 一致带引号，§16.6 一切皆对象」 | 只改文档，零代码 | 若后续 BUG-43 定档为「集合内 Tag 裸渲染」，需再改回 |
+| **B. 引擎单列 Tag 渲染** | `eval` 渲染器为 Tag 值新增规则：**入集合/元组时裸渲染**（不带引号），孤立值保持现状 | 改 `eval`（渲染路径）+ 回归锁 | 影响所有 Tag 入集合的输出，需重验 DEMO/10 全部反射期望 |
+| **C. 双轨语义（推荐）** | 条文定档「**孤立 print / tag_of 裸渲染；入集合/元组/作 Str 元素时带引号**（与 Str 一致，一切皆对象）」；引擎现状即满足，**只需改文档** | 同 A，成本最低 | 语义最自洽（Tag 是一等值，容器内与 Str 同渲染），且与已定档的 BUG-43「Dict 键带引号 / 单元素元组 `(1,)`」精神一致 |
+
+**推荐 C**：既不动引擎（本会话进程孵化故障无法编译验证，改引擎需重跑判据），又与「一切皆对象」（§16.6）一脉相承，且不依赖 BUG-43 后续迁移即可落地。**一旦裁决，请同步：**
+1. 改 §16.5:246 `tags_of` 示例带引号 + 加一句定档说明；
+2. 把 DEMO/10_markers/markers.p5 反射链期望与条文统一，再走 golden 注册（届时 UNREG 3→2）。
+
+### ③ 裁决落地（2026-10-18 owner 采纳推荐 C — BUG-258③）
+
+已按 C 双轨语义落地（零代码、不动引擎）：
+1. `SYNTAX/16-标记体系.md §16.5`：`tags_of(@infix)` 示例改为带引号 `("@infix", "@instance_method", "@method", "@function")`，并新增「Tag 渲染引号（BUG-258③ 定档，选项 C）」定档说明（孤立 `print`/`tag_of` 裸渲染、入容器/元组带引号，与 BUG-43 已定档的 Dict 键带引号 / 单元素元组 `(1,)` 精神一致）。
+2. §16.6 规则 5 里对 §16.5 的行号引用（旧写「:243-246」）改为节名引用「标记反射」节，消除行号漂移。
+3. `DEMO/10_markers/markers.p5:207` 反射链期望统一为带引号版本，并加 C 定档注释。
+**待验证**：进程孵化 0xC0000142 持续故障，本轮无法跑 `e2e_golden` 复测；引擎现状即满足 C（孤立裸、容器带引号），进程恢复后跑判据确认 `UNREG 3→2` 再标 FIXED。
+
+### ④（新硬矛盾，2026-10-18T09:50Z 发现 — BUG-258④）：反射内建实参的裸标记名 vs §16.6「必须反引号」
+
+**现象**：§16.6 :294 明文「`// let t = @struct // 错误：标记名作值必须反引号（`@struct`）」、:286 又说「反引号是值表达式位置（`let` / 实参 / 返回）取记号实体所用的语法」——按此，**反射内建函数的标记实参也该反引号**。但同一份文档的 §16.5 :243–246 与 `DEMO/10_markers/markers.p5:198–204` 全部用**裸标记名**作实参：
+```
+has_tag(Point, @struct)    // 期望 True（§16.5:244 / DEMO/10:198，裸 @struct）
+has_tag(Point, @type)      // 期望 True（DEMO/10:199）
+is_subtag(@infix, @method) // 期望 True（§16.5:245 / DEMO/10:203，裸 @infix / @method）
+```
+两处条文不可同真：要么 §16.6「必须反引号」对反射内建实参有**语法糖例外**（§16.5 应写明），要么 §16.5/DEMO/10 全部应写 `` `@struct` ``。
+
+**旁证（支持裸标记名合法）**：`has_tag`/`is_subtag`/`tag_of` 是**内建反射函数**，其第二实参在语义上**只能**是标记（类型已由签名固定），语法糖可省反引号；§16.5 与 DEMO/10 一致用裸写法，且 DEMO/10:199+200 对（`has_tag(Point,@type)=True` / `has_tag(Point,@function)=False`）正是 BUG-258①「兄弟读法」的硬证据，说明该节写法是经斟酌的意图而非笔误。
+
+**修复方向（推荐 D：条文补糖规则，零代码）**：§16.6 追加一条例外——「**反射内建函数**（`tag_of`/`has_tag`/`is_subtag`/`tags_of`）的标记实参可**裸写**（实参类型已固定为标记，语法糖免反引号）；其余值位置（`let` / 一般实参 / 返回）仍须反引号」。与 ③ 选项 C 同批落地，即解锁 DEMO/10 golden。**需 owner 裁决**（因涉及 §16.6 通则 vs 特例的取舍，不单方面定档）。
+
 
 ## BUG-259 [2026-10-17T02:22:09Z] [medium] OPEN
 - summary: [Tnr] corpus/transpile 39 份语料零测试驱动：金标准静默漂移（g11 首行 dtype float64→int64 已与 expected.txt 不符），且本轮 lirgen 死循环回归能在 6545 全绿下存活
@@ -4695,7 +4772,7 @@ loop { let mut changed=false;
 - summary: [ocr-scan-gap] bugfind 模式 require_ocr 约束键在本项目不可满足：opencodereview.exe 扩展名白名单不认 .mbt（scan/files 全被 unsupported_ext 排除，reviewable_count=0），delegate 只发规则模板不发 findings
 - detail: bugfind 模式的 require_ocr 约束键在本项目（MoonBit .mbt）不可满足。实测三条路：① `ocr_scan(subcmd=scan, path="src/server/memory.mbt,src/server/mcp_config_scaffold.mbt")` → `{ok:true, ocr_available:true, exit_code:0, reviewable_count:0, excluded_count:2, files:[{path:"src/server/mcp_config_scaffold.mbt", exclude_reason:"unsupported_ext"}, {path:"src/server/memory.mbt", exclude_reason:"unsupported_ext"}]}`——**二进制 opencodereview.exe 的扩展名白名单不认 `.mbt`**，两份全部被 exclude，LLM review 未真正执行（`ocr_reviewed:false`）。② `ocr_scan(subcmd=files, dry_run=true)` 确认 argv 形状 `["scan","--repo",".","--preview","--format","json","--path",…]` 正确，但同样受 unsupported_ext 拦。③ `ocr_scan(subcmd=delegate, path="src/server/memory.mbt")` → `{ok:true, ocr_reviewed:true, exit_code:0}`，stdout 只有 `### Rule Group 1: system / default` 的通用规则模板（Correctness/Security/Performance/Maintainability/Test Coverage 五问），**没有产出针对该文件的 review findings**。结论：**OCR 双轨寻虫对 .mbt 不工作**——scan/files 被扩展名白名单拦、delegate 只发规则模板不发结论，`require_ocr` 约束在本项目上只能回退到 `issue_scan` 单轨（31 条内建+外部规则）。修法建议：① 扩展 opencodereview.exe 的 unsupported_ext 白名单加 `.mbt`；② 或 `ocr_scan` 的 argv 生成处对 `.mbt` 做预处理（临时复制成 `.ml`/`.rs` 等受支持扩展名副本再送 OCR，跑完删临时副本）；③ 或把 `require_ocr` 约束键按项目语言门控（MoonBit 项目降级为 `require_issue_scan` only），避免假绿。真源 `src/server/ocr_scan.mbt`（argv 形状固定处）+ 宿主依赖 `../ocr-local/.../opencodereview.exe`（windows-x64 only）。
 
-## BUG-270 [2026-10-17T02:56:31Z] [medium] OPEN
+## BUG-270 [2026-10-17T02:56:31Z] [medium] FIXED
 - summary: [Pentad/DEMO-07] macros.p5 不可落 golden：13 条期望里 8 条无可观察输出（只 let 不 print）+ Str({expr}) 源码文本语义歧义
 - detail: 背景：外部判据 `scripts/e2e_golden.sh` 对「无 golden」的 DEMO 记 UNREG 并注「特性打通后需落库 golden 并说明」。本轮逐条核对 DEMO/07_macros/macros.p5（rc=0，13 条内联「期望输出」）后判定**不可落 golden**，障碍两类：
 
@@ -4709,6 +4786,9 @@ loop { let mut changed=false;
 - reported_by: pentad-combo-r1
 
 
+
+### FIXED(2026-10-18T01:22:01Z / BUG-270)
+- evidence: Pentad commit 9e8f35b（2026-10-17T21:02Z）已把 macros.p5 从「不可落 golden」转为可落：修复 ① 的 8 条无可观察输出——按 §13 用例意图补 5 条 print（twice(n)、sum=add(1,2)、p.name()、p.age()、if 值 x）+ 加收尾哨兵 print("DEMO macros OK")；② 的 Str({expr}) 源码文本歧义不改引擎（语义归 owner 定档，本 commit 只把 :95 期望修正为实际输出「DEBUG: 5 = 5」并注明原因）。同步：square 宏展开值被丢弃是宏系统设计行为、set_it 实际返回 None，两处期望均按实测诚实化。产物 DEMO/07_macros/macros.out（21 行）随 golden 提交。判据 e2e_golden PASS 15→16、UNREG 4→3，.ps1 与 .sh 两版一致确认（同一棵树）。本轮宿主进程孵化故障致无法 git commit，但 9e8f35b 已在上轮落库。
 ## BUG-271 [2026-10-17T03:02:36Z] [high] FIXED
 - summary: [Pentad/§9.3.6+§9.0] 绑定处隐式提升未生效（let f: Float = 42 得 42；let o: Option<Int> = 5 得 5）且 Void 有两种运行时表示（内建返回 None、() 字面量得 ()）
 - detail: 发现轮：p5c 组合流水线 R19（寻虫+验证）。审计 DEMO/01_types/type_lattice.p5（43 条内联期望）以求落 golden：41 条吻合，**3 处不符且均为引擎侧真缺陷**，故该 demo 保持 UNREG。三处都已隔离到与 demo 无关的最小复现。
@@ -5266,4 +5346,88 @@ All 58 probe outputs match expected; cargo test --release running.
 ### FIXED(2026-10-17T11:11:32Z / BUG-317)
 - evidence: vools/oop/fusion.py line 45-46: 单类分支提前 return 改为仅在无任何定制参数时提前 return，使 name/method_overrides/method_wrappers/auto_wrap_return 在单类下也生效；同时修复 _wrap_methods_for_return_type 的闭包捕获循环变量 bug（用 _make_wrapper(orig_method) 捕获每个方法）。33 条新测试全通过，覆盖率 13% → 87%。
 
+
+## BUG-318 [2026-10-17T11:30:13Z] [high] FIXED
+- summary: BUG-318: FunctionalHandler.get_state 对 Box 类型读错属性（应读 __wrapped__）
+- detail: vools/serialize/callable/functional_handler.py line 51: `get_state` for Box 类型用 `getattr(obj, '_value', getattr(obj, 'value', None))` 取值，但 vools.functional.Box 的实例数据实际存储在 `__wrapped__` 属性中（Box 继承 AOP，AOP.__init__ 设置 self.__wrapped__ = value）。因此 Box("hello").get_state() 返回 `state['value'] == None`，序列化 Box 丢失数据。restore 时 `Box(state.get('value'))` 会创建 Box(None)。应改为优先读 `__wrapped__`。
+
+
+
+### FIXED(2026-10-17T11:31:07Z / BUG-318)
+- evidence: vools/serialize/callable/functional_handler.py line 51: get_state 对 Box 类型改为优先读 __wrapped__（Box/AOP 的数据实际存放处），fallback 到 _value/value。20 条新测试全通过，覆盖率 18% → 100%。
+## BUG-319 [2026-10-17T11:46:09Z] [high] FIXED
+- summary: BUG-319: Mixer.remove_extra_code 无法撤销已应用的 extra_code 包装
+- detail: vools/oop/mixer.py 的 remove_extra_code 只从 self._attr_code 字典中删除对应条目，但 add_extra_code 通过 `_apply_extra_code` 在 Mixer 类级别上（cls.__getattribute__ 或 setattr）修改了类行为，删除 _attr_code 后 Mixer 实例仍返回包装后的结果。测试实例：Mixer(A()) 添加 result_shell=lambda r: r+'!' 后 foo() 返回 "A.foo!"，调用 remove_extra_code("foo") 后 foo() 仍返回 "A.foo!"，期望恢复为 "A.foo"。
+
+
+
+### FIXED(2026-10-17T11:49:33Z / BUG-319)
+- evidence: vools/oop/mixer.py remove_extra_code 现在同时清除 _attr_cache 中对应条目（装饰版本被缓存，只 pop _attr_code 不够）。34 条新测试全通过，覆盖率 18% → 82%。
+## BUG-320 [2026-10-17T12:20:18Z] [high] FIXED
+- summary: BUG-320: vDate fmt/diffDays 交换后 fmt 为 int 触发 TypeError
+- detail: vools/datetime/utils.py vDate(): `if isinstance(diffDays, str) or isinstance(fmt, (float, int))` 交换 fmt↔diffDays 后，fmt 变成 diffDays 默认值 0（int），随后 `if not '%' in fmt` 触发 `TypeError: argument of type 'int' is not iterable`。测试：vDate("2024-01-02", 1) → TypeError。修复：交换后若 fmt 不是 str/None 则回退为 None。
+
+
+
+### FIXED(2026-10-17T12:20:30Z / BUG-320)
+- evidence: vools/datetime/utils.py vDate 交换后加守卫 `if not isinstance(fmt, (str, type(None))): fmt = None`。108 条新测试全通过，覆盖率 17% → 92%。
+## BUG-321 [2026-10-17T12:31:33Z] [high] OPEN
+- summary: [codegen] BlockExpr 子 CodeGen 不继承 current_expected_ty → match 臂尾 Option 值被误加 .unwrap()（iter.lz Zip::size_hint E0308）
+- detail: 根因：expr_gen.rs 的 `ExprKind::BlockExpr` 分支用 `CodeGen::new()` 创建子 CodeGen，复制了 current_ret_ty / current_fn_ret_ty / enum_variant_* 等，但**没有复制 `current_expected_ty`**（新实例恒为 None）。于是 `let hi: Option<int> = { match (hi_a, hi_b) { case (Some(x), Some(y)) => Some(min(x, y)); case _ => None } }` 中，外层 Let 已在 L959 把 current_expected_ty 设为 Some(Option<int>)，但 match 臂生成时经 BlockExpr 落到子 CodeGen，expected_ty 变回 None。stmt_gen.rs:1782 的尾值 unwrap 启发式只看 current_ret_ty（函数返回 Tuple，非 Option）→ 对 Option 臂尾 `Some(min(x,y))` 加 `.unwrap()` → `Some(min(x,y)).unwrap()` 为 i64，塞进 Option<i64> 绑定 → E0308（DEMO/lz_std/iter.lz L173 `Some(min(x, y))` 实为 LZ 源码，unwrap 是代码生成错误注入）。
+
+修复：
+1. expr_gen.rs BlockExpr 分支加一行 `*child.current_expected_ty.borrow_mut() = self.current_expected_ty.borrow().clone();`（继承期望类型）。
+2. stmt_gen.rs:1782 尾值 unwrap 条件加 `&& !expected_is_opt` 双保险（当前 current_expected_ty 已期望 Option 时绝不 unwrap，防止其它路径同类误判）。
+
+验证：重建 release 后重新 emit `DEMO/lz_std/iter.lz`，`.unwrap()` 消失，`rustc --edition 2021 --extern lz_builtins=... -O` 编译 EXIT=0（此前 E0308）。LZ_DBG_TAIL 调试输出从 `exp=None` 变为 `exp=Some(Option(Int))`，确认继承生效。
+- reported_by: dsh-agent
+
+
+
+## BUG-322 [2026-10-17T15:50:01Z] [medium] FIXED
+- summary: [parser.py] _内联默认 方法在地支耗尽时静默丢弃默认值 — `佘` 名称不被接受
+- detail: parser.py 的 _内联默认 方法（行 1974-2011）在收集默认值时检查 `if 名 in _DIZHI:`，但当地支计数超过 12 时，_infer_params 会分配 `佘` 作为名称。由于 `佘` 不在 _DIZHI 列表中，默认值被静默丢弃。
+
+影响：13+ 默认参数的函数丢失默认值。参数仍然存在，但 params_def 不包含耗尽的地支的默认值。
+
+位置：zhi/src/zhi/parser.py 行 2009
+```python
+if 名 in _DIZHI:  # ← 行 2009：只接受地支名称
+    出.append((名, e))
+```
+
+修复：将检查改为 `if 名 in _DIZHI or 名 == "佘":` 或类似逻辑。
+- task_id: T0r13
+
+
+### FIXED(2026-10-17T15:52:29Z / BUG-322)
+- evidence: parser.py 行 2009 修改：`if 名 in _DIZHI:` → `if 名 in _DIZHI or 名 == "佘":`
+## BUG-323 [2026-10-17T15:50:10Z] [high] FIXED
+- summary: [semantic.py] _expr 方法不对 VarRef/IdRef 进行作用域检查 — 未定义变量/函数引用静默编译
+- detail: semantic.py 的 _expr 方法（行 1063-1073）在处理 VarRef/IdRef 时不进行作用域检查：
+
+```python
+# 行 1063-1064：
+if isinstance(e, VarRef):
+    return IR.Var(name=e.name)  # 无作用域检查！
+
+# 行 1068-1073：
+if isinstance(e, IdRef):
+    if e.name in _BOOL_LIT and e.name not in self.scope:
+        return IR.Lit(value=_BOOL_LIT[e.name], lit_type="bool")
+    return IR.Var(name=e.name)  # 无作用域检查！
+```
+
+self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇到 VarRef 或 IdRef 时查询。参数被添加（行 501），循环变量（行 1023-1028），绑定目标（行 742-748），但未定义引用产生 0 诊断。
+
+影响：未定义的变量/函数引用静默编译，仅在运行时被捕获（JS: ReferenceError, BEAM: undefined variable）。
+
+修复：需要在 semantic.py 中添加作用域检查，同时维护内建名称白名单（STD 可调用对象 + 运算符 + 宏）以避免误报。
+- task_id: T0r14
+
+
+
+
+### FIXED(2026-10-17T16:01:10Z / BUG-323)
+- evidence: semantic.py 行 1063-1079 修改：为 VarRef 和 IdRef 添加作用域检查，产生 UNDEFINED_VAR/UNDEFINED_FUNC 诊断
 
