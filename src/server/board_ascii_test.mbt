@@ -122,6 +122,7 @@ test "health_check：healthy + latency 百分位——3 完成 1 待领取，p50
       "中",
       1,
       1,
+      6,
       st,
       if st == "已完成" {
         Some("exec_1")
@@ -201,6 +202,7 @@ test "health_check：latency p50/p90 用最近秩 (n-1)*p（BUG-207）" {
       "中",
       1,
       1,
+      6,
       "已完成",
       Some("exec_1"),
       "health latency \{i}",

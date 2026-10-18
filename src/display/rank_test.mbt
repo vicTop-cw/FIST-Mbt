@@ -56,18 +56,22 @@ test "officer_table 长度与档位数一致" {
 }
 
 ///|
-test "root depth=3 实际生效 4 档（司令→军长→师长→士兵）" {
-  // docs 定级规则：默认 root depth=3 → L=0 司令, L=1 军长, L=2 师长, 叶子=士兵。
-  assert_eq(rank_of(0), "司令")
-  assert_eq(rank_of(1), "军长")
-  assert_eq(rank_of(2), "师长")
-  assert_eq(leaf_label(3), soldier_rank())
-  // 旅长及以下（L>=3）在当前默认 depth 下是占位档，但 rank_of 已定义好。
-  assert_eq(rank_of(3), "旅长")
-  assert_eq(rank_of(4), "团长")
-  assert_eq(rank_of(5), "营长")
+test "默认任务 level=6（连长），rank_of 映射连长" {
+  // docs 定级规则（新口径）：默认任务 level=6（连长），上游可显式声明 x级；
+  // 子任务 level = 父级+1 封顶排长；叶子恒为士兵。rank_of(L) 映射表不变。
   assert_eq(rank_of(6), "连长")
   assert_eq(rank_of(7), "排长")
+  assert_eq(leaf_label(6), soldier_rank())
+  assert_eq(leaf_label(7), soldier_rank())
+}
+
+///|
+test "子任务等级链：默认 6（连长）→ 7（排长）→ 士兵，封顶排长" {
+  // 连长(6)→排长(7)→士兵：level 链只降一级，封顶 7 不再上升。
+  assert_eq(rank_of(6), "连长")
+  assert_eq(rank_of(7), "排长")
+  // 排长(7) 的子任务仍封顶排长（rank_of 只认 L=7），靠 leaf_label 落到士兵。
+  assert_eq(leaf_label(7), soldier_rank())
 }
 
 ///|

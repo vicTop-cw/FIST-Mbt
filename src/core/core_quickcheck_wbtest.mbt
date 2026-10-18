@@ -177,3 +177,43 @@ test "bug2_execute_after_retry_ok" {
   )
   assert_eq(c7d.deliverable, "重做后的新交付物")
 }
+
+///|
+/// 军衔等级 `level`：Task 默认 6（连长），上游未显式声明级时即连长级。
+test "level: Task 默认 6（连长），getter 回读一致" {
+  let t = Task::new(id="L0", project_dir="/p")
+  assert_eq(t.level, 6)
+  assert_eq(t.get_level(), 6)
+  // to_json 携带 level 字段（军衔展示层真数据源落 JSON）
+  assert_eq(t.to_json().stringify().contains("\"level\":6"), true)
+  let t2 = Task::new(id="L1", project_dir="/p", level=3)
+  assert_eq(t2.get_level(), 3)
+  assert_eq(t2.to_json().stringify().contains("\"level\":3"), true)
+}
+
+///|
+/// 军衔等级越界钳制 0..7（<0→0，>7→7）；映射表 rank_of 不变。
+test "level: 越界钳制 0..7，负值与超界回退边界档" {
+  let neg = Task::new(id="Ln", project_dir="/p", level=-5)
+  assert_eq(neg.get_level(), 0)
+  let big = Task::new(id="Lb", project_dir="/p", level=99)
+  assert_eq(big.get_level(), 7)
+  // 边界档本身不钳制
+  let lo = Task::new(id="Ll", project_dir="/p", level=0)
+  assert_eq(lo.get_level(), 0)
+  let hi = Task::new(id="Lh", project_dir="/p", level=7)
+  assert_eq(hi.get_level(), 7)
+  assert_eq(clamp_level(-1), 0)
+  assert_eq(clamp_level(8), 7)
+}
+
+///|
+/// 子任务军衔 = 父级 + 1，封顶排长（7）：连长(6)→排长(7)→士兵；不再上升。
+test "child_level: 父级+1，封顶 7" {
+  assert_eq(child_level(6), 7)
+  assert_eq(child_level(7), 7)
+  assert_eq(child_level(8), 7)
+  assert_eq(child_level(0), 1)
+  // 父级负值先钳到 0，再 +1（防御：真实 Task 的 level 恒 0..7）
+  assert_eq(child_level(-1), 1)
+}
