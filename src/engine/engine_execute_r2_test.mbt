@@ -142,6 +142,7 @@ fn r2e_task_in(id : String, st : @core.TaskStatus) -> @core.Task {
     "medium",
     1,
     3,
+    6,
     st.to_string(),
     None,
     "守卫一致性夹具",
