@@ -5561,7 +5561,7 @@ if hasattr(sys.stderr, "reconfigure"):
 建议：默认降噪——①`--min-severity` 或按 rule 白/黑名单过滤（默认关掉 unused-variable/long-function/match-exhaustive 三高噪音项，或降为 info-only）；②match-exhaustive 直接不产（编译器已保证）；③对剩余 low 项挂 `confirmed=false` 要求调用方喂 run_check 复核后才 report_bug（boundary_probe 已是这个语义，可复用）。
 - reported_by: lead
 
-## BUG-334 [2026-10-19T06:11:48Z] [high] OPEN
+## BUG-334 [2026-10-19T06:11:48Z] [high] FIXED
 - summary: cleanup_artifacts.py 的 `_`前缀规则误移 git 跟踪的工具注册真源 `scripts/_tool_registry.py`，破坏 7 个导入它的守卫（check_tools_sync/check_plugin_sync/gen_plugins/check_doc_surface/mcp_smoke）；CI 仅靠 cleanup 排在最后的顺序侥幸未炸，属 latent hazard
 - detail: `scripts/cleanup_artifacts.py` L65 `_TMP_SCRIPT_EXT = (".py",".ps1",".sh")` + L79 的 `_` 前缀匹配规则，会把 **`scripts/_tool_registry.py`** 误当「任务完即清的临时脚本」移入 `temp/`。而 `_tool_registry.py` 是 **git 跟踪的**（`d35c2f0 refactor(guard): 抽单一 _tool_registry 实现，5 个消费者改委托`）工具注册单一真源，被 7 处导入：
 - `check_doc_surface.py:89` / `check_plugin_sync.py:34` / `check_tools_sync.py:40` / `gen_plugins.py:41` / `mcp_smoke.py:35`（5 个 importlib 委托）
@@ -5577,6 +5577,9 @@ if hasattr(sys.stderr, "reconfigure"):
 **修复建议（小，一行）**：在 `cleanup_artifacts.py` 加豁免集，如 `KEEP_SCRIPTS = {"_tool_registry.py"}`（+ 任何 git 跟踪的 `_` 前缀脚本），在 `_` 匹配分支跳过；更稳的通用规则是「只清 `git ls-files --others`（untracked）的 `_` 脚本，tracked 一律不动」。后者顺带根治「cleanup 误删已跟踪临时文件」整类问题。
 - reported_by: lead
 
+
+### FIXED(2026-10-19T06:51:02Z / BUG-334)
+- evidence: 提交 32849cd：cleanup_artifacts.py 加 is_git_tracked(relpath)（git ls-files --error-unmatch），`_` 前缀规则跳过 git 跟踪资产；加 --selftest 三格回归锁（S1 tracked 识别 / S2 _tool_registry.py 豁免 / S3 真 `_` 临时脚本仍被抓），变异验证 FAIL/1 → PASS/0。修复后 7 处导入 _tool_registry 的守卫（check_doc_surface/check_plugin_sync/check_tools_sync/gen_plugins/mcp_smoke/check_template_ctrl/check_scripts_index）全部复活 exit 0。
 ## BUG-335 [2026-10-19T06:37:21Z] [high] OPEN
 - summary: e2e_heartbeat_xproc (default) CI 门禁红：publish_parallel 返回 task_id 但任务不落隔离库（call_log 正常改道、tasks 表空）
 - detail: 复现：`python scripts/blackbox/e2e_heartbeat_xproc.py`（ci.yml L222 门禁）exit 1。
@@ -5593,4 +5596,5 @@ if hasattr(sys.stderr, "reconfigure"):
 
 本机 `--selftest` 通过、`store_isolation_probe --selftest` 通过，故不阻断其它守卫；仅 default 面红，需真实 server 端复现定位。
 - reported_by: lead-R20
+
 

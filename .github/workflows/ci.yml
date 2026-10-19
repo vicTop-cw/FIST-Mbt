@@ -242,7 +242,7 @@ jobs:
 
       - name: Cleanliness guard (仓库整洁，仅交付库 fist-mbt.db)
         shell: bash
-        run: python3 scripts/cleanup_artifacts.py && python3 scripts/cleanup_artifacts.py --check
+        run: python3 scripts/cleanup_artifacts.py && python3 scripts/cleanup_artifacts.py --check && python3 scripts/cleanup_artifacts.py --selftest
 
   check-native:
     name: check + test (native, ubuntu)
