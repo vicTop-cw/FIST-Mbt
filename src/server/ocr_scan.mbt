@@ -382,6 +382,15 @@ fn ocr_fake_green_check(stdout : String) -> (Bool, String) {
 }
 
 ///|
+/// BUG-327：BUG-165 已在假绿时给出 ocr_reviewed=false + notice，但顶层 ok 仍按
+/// exit_code 报 true，只看 ok 的调用方（含 bugfind 的 require_ocr 门）会把
+/// 「0 份文件被评审」当成 OCR 成功。此处把「假绿 ⇒ ok 必须 false」抽成纯函数，
+/// 供白盒锁（bugfind fail-closed 契约）。
+pub fn ocr_effective_ok(okk : Bool, reviewed : Bool) -> Bool {
+  okk && reviewed
+}
+
+///|
 /// ocr_scan 主入口（async）：先走 ocr_plan（校验/argv/探测），再 spawn 真实进程。
 /// dry_run=true 或校验失败时直接把 plan 回执返回，一个进程都不起。
 pub async fn ocr_scan_impl(
@@ -469,9 +478,11 @@ pub async fn ocr_scan_impl(
       } else {
         (true, "")
       }
+      // BUG-327：假绿 fail-closed——reviewable_count=0 时顶层 ok 强制 false（见 ocr_effective_ok）。
+      let ok_eff = ocr_effective_ok(okk, reviewed)
       ocr_obj(
         [
-          ("ok", Json::boolean(okk)),
+          ("ok", Json::boolean(ok_eff)),
           ("ocr_available", Json::boolean(true)),
           ("subcmd", Json::string(subcmd)),
           ("binary", Json::string(bin)),
