@@ -122,3 +122,13 @@ dist/
 *.key
 *.p12
 *.pfx
+
+# Round 12 (marvis)：P1 publish 载荷面清整——并发 agent 未入库的辅助脚本 + 3 份旧报告，
+# 逐文件精确点名（遵循 Round 261b 同款先例）。保留在工作树供其自行决定入库，
+# 但 `moon publish`（载荷面=工作树−ignore）不得把它们公开出去。
+/reports/2026-10-18-fist-mbt-cleanup-report.md
+/reports/2026-10-18-fist-mbt-issue-scan-fp-report.md
+/reports/2026-10-19-fist-mbt-round3-bug268-fp-cleanup-report.md
+/scripts/pol_keeper_run.py
+/scripts/_gen.py
+/scripts/fix_esm_require.py
