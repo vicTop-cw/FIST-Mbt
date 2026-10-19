@@ -391,6 +391,26 @@ pub fn ocr_effective_ok(okk : Bool, reviewed : Bool) -> Bool {
 }
 
 ///|
+/// BUG-327b（本轮实证发现）：`ocr_fake_green_check` 只解析 stdout，对「单 .mbt 文件
+/// 目标」无能为力——OCR 二进制会静默返回 files:[] / reviewable_count:0 /
+/// excluded_count:0（不计 excluded），与「空目录」同形，走空目录豁免判
+/// reviewed=true（假绿，顶层 ok 跟着 true）。此处把「目标路径本身不可审」也纳入
+/// fail-closed：目标为单个 .mbt 文件时强制 reviewed=false，附 notice 说明。
+/// 纯函数供白盒锁（`ocr_reviewed_final_*`）。
+pub fn ocr_reviewed_final(
+  stdout_reviewed : Bool,
+  path : String,
+) -> (Bool, String) {
+  if stdout_reviewed && path.ends_with(".mbt") {
+    (
+      false, "目标为单个 .mbt 文件（OCR 白名单外扩展名），LLM review 未真正执行；顶层 ok 已强制 fail-closed",
+    )
+  } else {
+    (stdout_reviewed, "")
+  }
+}
+
+///|
 /// ocr_scan 主入口（async）：先走 ocr_plan（校验/argv/探测），再 spawn 真实进程。
 /// dry_run=true 或校验失败时直接把 plan 回执返回，一个进程都不起。
 pub async fn ocr_scan_impl(
@@ -478,8 +498,11 @@ pub async fn ocr_scan_impl(
       } else {
         (true, "")
       }
+      // BUG-327b：单 .mbt 文件目标时 OCR 静默 files:[] 且不计 excluded（reviewed 仍
+      // true 的假绿盲区），按目标路径补判（见 ocr_reviewed_final）。
+      let (reviewed2, fake_notice2) = ocr_reviewed_final(reviewed, path)
       // BUG-327：假绿 fail-closed——reviewable_count=0 时顶层 ok 强制 false（见 ocr_effective_ok）。
-      let ok_eff = ocr_effective_ok(okk, reviewed)
+      let ok_eff = ocr_effective_ok(okk, reviewed2)
       ocr_obj(
         [
           ("ok", Json::boolean(ok_eff)),
@@ -491,12 +514,12 @@ pub async fn ocr_scan_impl(
           ("stderr", Json::string(stderr)),
           ("error", Json::string(errtxt)),
           ("args", args_json),
-          ("ocr_reviewed", Json::boolean(reviewed)),
+          ("ocr_reviewed", Json::boolean(reviewed2)),
         ] +
-        (if fake_notice == "" {
+        (if fake_notice2 == "" {
           []
         } else {
-          [("notice", Json::string(fake_notice))]
+          [("notice", Json::string(fake_notice2))]
         }) +
         [("files", Json::array(files.map(fn(f) { Json::string(f) })))],
       )

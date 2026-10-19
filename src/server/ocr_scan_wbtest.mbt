@@ -232,3 +232,28 @@ test "BUG-327_ocr_effective_ok_fail_closed_on_fake_green" {
   assert_false(ocr_effective_ok(false, true))
   assert_false(ocr_effective_ok(false, false))
 }
+
+///|
+test "BUG-327b_ocr_reviewed_final_single_mbt_fail_closed" {
+  // BUG-327b：单 .mbt 文件目标时 OCR 静默 files:[] / reviewable=0 / excluded=0，
+  // 与「空目录」同形，`ocr_fake_green_check` 走空目录豁免判 reviewed=true（假绿）。
+  // `ocr_reviewed_final` 按目标路径补判：目标为单个 .mbt 文件时强制 fail-closed。
+  let (r1, n1) = ocr_reviewed_final(true, "src/server/ocr_scan.mbt")
+  assert_false(r1)
+  assert_true(n1.contains("白名单外扩展名"))
+  // 目录目标或非 .mbt 单文件不受影响（零回归）
+  let (r2, n2) = ocr_reviewed_final(true, "src/server/")
+  assert_true(r2)
+  assert_eq(n2, "")
+  let (r3, n3) = ocr_reviewed_final(true, "docs/foo.md")
+  assert_true(r3)
+  assert_eq(n3, "")
+  // stdout 已判假绿时不重复覆盖
+  let (r4, n4) = ocr_reviewed_final(false, "src/server/ocr_scan.mbt")
+  assert_false(r4)
+  assert_eq(n4, "")
+  // 空 path 不误判
+  let (r5, n5) = ocr_reviewed_final(true, "")
+  assert_true(r5)
+  assert_eq(n5, "")
+}
