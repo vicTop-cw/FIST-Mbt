@@ -97,6 +97,8 @@ run: python3 scripts/check_badge.py /tmp/moon_test.log README.md
 
 issue_scan 默认 `include_tests=false` 却不排除 `_test.mbt` / `_wbtest.mbt` 文件本身——abort 死代码命中全落在测试文件里就是证据。建议下轮在扫描层把 `_test.mbt` / `_wbtest.mbt` 文件整体跳过（与 `include_tests` 参数语义对齐）。`src/server/issue_scan.mbt` 目前干净可编辑；但 `issue_scan_wbtest.mbt` 是并发 agent 文件（内容 == HEAD，仅 EOL），动规则前需确认其锁期望。
 
+> **⚠️ 更正（Round 10，2026-10-19 11:13）**：本节为**误判**，正式撤回。`issue_scan.mbt:1639-1640` `scan_collect` 已在 `include_tests=false` 时跳过 `_test.mbt`/`_wbtest.mbt`；`issue_scan dir=src/claimguard`（默认）返回 `scanned_files:1`、命中全为 `claimguard.mbt`，测试文件被正确排除。abort 候选来自我自己的 PowerShell grep，非扫描器输出。**issue_scan 本身无此问题。** 详见 `reports/2026-10-19-fist-mbt-round10-correction-and-array-index-audit-report.md`。
+
 ---
 
 ## 5. 守卫窄面复核（为何不做）
