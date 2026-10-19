@@ -1,4 +1,4 @@
-// BUG-159: 跨 target 取用户首参 —— JS 下跳过 node.exe/.js 路径（args[2]），native 下 args[0] 即用户首参
+// BUG-159: 跨 target 取用户首参 —— JS 下跳过 node.exe/.js 路径（args[2]），native 下跳过 exe 路径（args[1]）；统一用 user_arg(args, i) 访问用户参数
 
 ///|
 #cfg(target="js")
@@ -13,8 +13,9 @@ fn user_first_arg(args : Array[String]) -> String {
 ///|
 #cfg(any(target="native", target="llvm"))
 fn user_first_arg(args : Array[String]) -> String {
-  if args.length() >= 1 {
-    args[0]
+  // native 目标 argv[0] 是 exe 路径，真实子命令从 argv[1] 开始
+  if args.length() >= 2 {
+    args[1]
   } else {
     ""
   }
@@ -59,15 +60,15 @@ async fn main {
 
 ///|
 /// help 子命令：解析 topic 参数，调用 help_topics
-/// args[2]="help", args[3]=topic, args[4]=可选第二参数
+/// user_arg(1)=topic, user_arg(2)=可选第二参数
 fn run_help(args : Array[String]) -> Unit {
-  let topic : String = if args.length() > 3 { args[3] } else { "" }
+  let topic : String = user_arg(args, 1)
   match topic {
     "overview" => println(help_overview())
     "cli" => println(help_cli())
     "tools" => println(help_tools())
     "tool" => {
-      let tool = if args.length() > 4 { args[4] } else { "" }
+      let tool = user_arg(args, 2)
       if tool.length() == 0 {
         println("Usage: fist help tool <tool_name>")
         println("List:  fist help tools")
@@ -79,6 +80,29 @@ fn run_help(args : Array[String]) -> Unit {
     "plugins" => println(help_plugins())
     "install" => println(help_install())
     _ => println(list_topics())
+  }
+}
+
+///|
+/// 统一用户参数访问：ua[0]=子命令、ua[1]=子命令后第一个参数……
+/// JS 目标：@env.args() 为 [node.exe, 脚本路径, 用户参数…]，ua[i]=args[i+2]
+#cfg(target="js")
+fn user_arg(args : Array[String], i : Int) -> String {
+  if args.length() > i + 2 {
+    args[i + 2]
+  } else {
+    ""
+  }
+}
+
+///|
+#cfg(any(target="native", target="llvm"))
+fn user_arg(args : Array[String], i : Int) -> String {
+  // native 目标 @env.args()[0] 为 exe 路径，ua[i]=args[i+1]
+  if args.length() > i + 1 {
+    args[i + 1]
+  } else {
+    ""
   }
 }
 
