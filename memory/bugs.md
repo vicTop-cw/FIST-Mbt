@@ -5517,3 +5517,13 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 
 ### FIXED(2026-10-19T05:03:25Z / BUG-330)
 - evidence: scripts/check_skill_inject.py：SELECT 收窄为 goal 单面（判别位在 goal，不再匹配 note/code，与 L35-37「[lesson] 不算 [asset]」一致）；FAIL 计数 len(rows)→len(ap)。复核：主检 PASS（15 条 [asset] 全部可反查，假阳性 lesson-202610-15.05.17 不再误报）、--selftest OK（U1 合规不误红/匹配缺失必红/档案面空自拒 exit 2 全过）、check_scripts_index + check_py_stdout_encoding EXIT=0。
+## BUG-331 [2026-10-19T05:10:21Z] [medium] FIXED
+- summary: [rule:version-lag] DSH 宿主 manifest version 0.3.8 落后 moon.mod 0.3.9（0.3.9 bump 漏同步第四处真源）
+- detail: commit 8052e67 标注「三处真源同步」（cmd/cli/help_topics.mbt + moon.mod + src/server/server.mbt），但漏了第四处：DSH 宿主真安装面 `.dsh/fist-mbt-plugin/package.json` 的 `version` 仍为 0.3.8，meta.description 也写 v0.3.8。check_host_installable 守卫 D1 档据此 FAIL：「DSH manifest version 0.3.8 != moon.mod 0.3.9」。同族：BUG-114（server.mbt project_version 落后）/ BUG-120（README 资产名落后）/ BUG-329（README 离线线资产名落后）。
+修复：package.json version 0.3.8→0.3.9，meta.description 版本标签同步（8052e67 为纯版本 bump、功能集不变，如实注明）。
+复核：check_host_installable PASS（DSH manifest/patch 严格档 + 宽松档 + 默认模板 + moon.mod 0.3.9 全过）。
+
+
+
+### FIXED(2026-10-19T05:10:34Z / BUG-331)
+- evidence: .dsh/fist-mbt-plugin/package.json：L3 version 0.3.8→0.3.9；L16 meta.description 版本标签同步并如实注明「0.3.8→0.3.9 为版本号推进，功能集不变」（8052e67 为纯 version bump，3 文件仅版本字面量）。复核：check_host_installable PASS（DSH manifest/patch 严格档：绝对路径 + toolCallTimeoutMs + dsh reconnect schema 合规；宽松档 MCP JSON 合规；moon.mod 版本 0.3.9）。
