@@ -336,3 +336,210 @@ pub fn batch_verify_fix(
     "veto": Json::boolean(final_accuracy < 100.0),
   })
 }
+
+/// —— verify_fix 主链路（接入 evidence 三轮真实自动修复引擎）——
+
+///|
+/// verify_fix 真实修复链路：持有 spec 原文（content），接入 src/evidence 的
+/// auto_repair 三轮引擎——每轮对失败 Spec 真实调用 apply_fix 落地修复，
+/// 并经 verify_single_spec 回归验证，产出 fix_evidence 写入证据仓。
+///
+/// 语义/未知根因无法自动修复：如实保留 failed 状态并转 needs_human_review 兜底，
+/// 不再伪造修复成功。输出结构兼容 batch_verify_fix（rounds / final_accuracy /
+/// fixes_applied / needs_human_review / veto），并附加 evidence_report 自证修复轮次。
+///
+/// 输入：spec_contents 为 (file_name, content) 数组（含 spec 原文）。
+pub fn verify_fix_with_evidence(
+  spec_contents : Array[(String, String)],
+) -> Json {
+  // 1. 初始批量验证
+  let initial = batch_verify(spec_contents)
+  let total = match initial.value("total") {
+    Some(Number(n)) => n.to_int()
+    _ => 0
+  }
+  let passed_init = match initial.value("passed") {
+    Some(Number(n)) => n.to_int()
+    _ => 0
+  }
+  let init_accuracy = if total > 0 {
+    passed_init.to_double() / total.to_double() * 100.0
+  } else {
+    100.0
+  }
+  let failed_details : Array[Json] = match initial.value("failed_details") {
+    Some(Array(a)) => a
+    _ => []
+  }
+  // 2. 失败项提取：file_name + errors
+  let failed_meta : Array[(String, String)] = []
+  for fr in failed_details {
+    let fname = match fr.value("file_name") {
+      Some(String(s)) => s
+      _ => ""
+    }
+    let errors = match fr.value("errors") {
+      Some(Array(a)) => a
+      _ => []
+    }
+    if fname != "" {
+      let mut buf = ""
+      let mut first = true
+      for e in errors {
+        if !first {
+          buf = buf + "; "
+        }
+        first = false
+        match e {
+          String(s) => buf = buf + s
+          _ => buf = buf + e.stringify()
+        }
+      }
+      failed_meta.push((fname, buf))
+    }
+  }
+  // 3. 构造 evidence.Spec（id = file_name，expectation 持有 content 原文）
+  let specs : Array[@evidence.Spec] = []
+  let failed_ids : Array[String] = failed_meta.map(fn(p) { p.0 })
+  for (fname, content) in spec_contents {
+    let base = @evidence.Spec::new(
+      fname,
+      fname,
+      @evidence.Severity::from_string("major"),
+      content,
+    )
+    // 初始失败项标记失败并附带 errors 详情
+    let is_failed = failed_ids.contains(fname)
+    let mut s = base
+    if is_failed {
+      let mut detail = "verify failed"
+      for (f, d) in failed_meta {
+        if f == fname {
+          detail = d
+        }
+      }
+      s = base.mark_failed(detail)
+    }
+    specs.push(s)
+  }
+  // 4. 注入 fixer / verifier：均基于 spec 原文真实调用 apply_fix / verify_single_spec
+  let content_of = fn(fname : String) -> String {
+    for (f, c) in spec_contents {
+      if f == fname {
+        return c
+      }
+    }
+    ""
+  }
+  let can_fix = fn(fname : String, detail : String) -> Bool {
+    if detail == "" {
+      return false
+    }
+    let rc = classify_root_cause(detail)
+    rc != ROOT_CAUSE_SEMANTIC_ERROR && rc != ROOT_CAUSE_UNKNOWN
+  }
+  let fixer : @evidence.Fixer = fn(spec : @evidence.Spec) -> String? {
+    let fname = spec.id
+    if !can_fix(fname, spec.failed_detail) {
+      return None
+    }
+    let content = content_of(fname)
+    let rc = classify_root_cause(spec.failed_detail)
+    let spec_json = match parse_spec(content) {
+      Ok(j) => j
+      Err(_) => return None
+    }
+    let fixed_json = apply_fix(spec_json, rc)
+    let action = "apply_fix[" + rc + "] -> " + fixed_json.stringify()
+    Some(action)
+  }
+  let verifier : @evidence.Verifier = fn(spec : @evidence.Spec) -> Bool {
+    let fname = spec.id
+    if !can_fix(fname, spec.failed_detail) {
+      return false
+    }
+    let content = content_of(fname)
+    let rc = classify_root_cause(spec.failed_detail)
+    let spec_json = match parse_spec(content) {
+      Ok(j) => j
+      Err(_) => return false
+    }
+    let fixed_json = apply_fix(spec_json, rc)
+    let r = verify_single_spec(fname, fixed_json.stringify())
+    match r.value("ok") {
+      Some(True) => true
+      _ => false
+    }
+  }
+  // 5. 执行 evidence 三轮真实自动修复
+  let outcome = @evidence.auto_repair(specs, fixer, verifier)
+  // 6. 写入证据仓（租户隔离 key="omega"）
+  let store = @evidence.EvidenceStore::new()
+  let store2 = @evidence.record_outcome(store, "omega", outcome)
+  // 7. 统计：修复通过项 = evidence 中 verify_result=="pass" 的 spec 去重
+  let fixed_ids : Array[String] = []
+  for ev in outcome.fix_evidence {
+    if ev.verify_result == "pass" && !fixed_ids.contains(ev.spec_id) {
+      fixed_ids.push(ev.spec_id)
+    }
+  }
+  let human_ids : Array[String] = failed_ids.filter(fn(id) {
+    !fixed_ids.contains(id)
+  })
+  let final_passed = passed_init + fixed_ids.length()
+  let final_accuracy = if total > 0 {
+    final_passed.to_double() / total.to_double() * 100.0
+  } else {
+    100.0
+  }
+  // 8. rounds 数组：按轮聚合 fixes_applied 计数
+  let rounds : Array[Json] = []
+  let mut r = 1
+  while r <= outcome.rounds_used {
+    let mut cnt = 0
+    for ev in outcome.fix_evidence {
+      if ev.round == r {
+        cnt = cnt + 1
+      }
+    }
+    rounds.push(
+      Json::object({
+        "round": Json::number(r.to_double()),
+        "root_cause": Json::string("mixed"),
+        "fixes_applied": Json::number(cnt.to_double()),
+        "accuracy_before": Json::number(init_accuracy),
+        "accuracy_after": Json::number(final_accuracy),
+        "note": Json::string(
+          "evidence auto_repair round " + r.to_string(),
+        ),
+      }),
+    )
+    r = r + 1
+  }
+  // 9. 人工兜底明细
+  let human_detail : Array[String] = []
+  for id in human_ids {
+    human_detail.push(
+      id + ": " + ROOT_CAUSE_SEMANTIC_ERROR +
+      "/" + ROOT_CAUSE_UNKNOWN +
+      " -> needs_human_review（无法自动修复，转人工兜底）",
+    )
+  }
+  Json::object({
+    "rounds": Json::array(rounds),
+    "total_rounds": Json::number(outcome.rounds_used.to_double()),
+    "final_accuracy": Json::number(final_accuracy),
+    "fixes_applied": Json::array(
+      outcome.fix_evidence.map(fn(ev) { Json::string(ev.action) }),
+    ),
+    "needs_human_review": Json::array(
+      human_ids.map(fn(s) { Json::string(s) }),
+    ),
+    "needs_human_review_detail": Json::array(
+      human_detail.map(fn(s) { Json::string(s) }),
+    ),
+    "veto": Json::boolean(final_accuracy < 100.0),
+    "evidence_report": Json::string(store2.report("omega")),
+    "engine": Json::string("evidence/auto_repair@src/evidence"),
+  })
+}
