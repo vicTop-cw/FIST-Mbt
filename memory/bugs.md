@@ -5577,3 +5577,20 @@ if hasattr(sys.stderr, "reconfigure"):
 **修复建议（小，一行）**：在 `cleanup_artifacts.py` 加豁免集，如 `KEEP_SCRIPTS = {"_tool_registry.py"}`（+ 任何 git 跟踪的 `_` 前缀脚本），在 `_` 匹配分支跳过；更稳的通用规则是「只清 `git ls-files --others`（untracked）的 `_` 脚本，tracked 一律不动」。后者顺带根治「cleanup 误删已跟踪临时文件」整类问题。
 - reported_by: lead
 
+## BUG-335 [2026-10-19T06:37:21Z] [high] OPEN
+- summary: e2e_heartbeat_xproc (default) CI 门禁红：publish_parallel 返回 task_id 但任务不落隔离库（call_log 正常改道、tasks 表空）
+- detail: 复现：`python scripts/blackbox/e2e_heartbeat_xproc.py`（ci.yml L222 门禁）exit 1。
+
+证据链：
+1) 脚本 L220 先 `os.remove(temp/hb-xproc.db + suf)` 清场，L139 `env["FIST_DB_PATH"]=隔离库` 起真 `node cli.js serve`，L238-249 用 `publish_parallel(namespace="hb-xproc")` 建 4 条在途任务。
+2) 隔离库 `temp/hb-xproc.db` 的 **call_log 有 seq 7-11**（claim/execute/heartbeat/pause，证明 server 确实用了该库），但 **tasks 表 count=0** —— publish_parallel 返回的 4 个 id 一个都没落 task 行。
+3) 真实交付库 `fist-mbt.db` 亦无 `%心跳跨进程%` 任务（latest id=T0r641，未污染）。
+4) 脚本 `A heartbeat 回执` = `{"_error": "task not found: T0r5"}`，而 L255 用的是动态 `t1`（publish_parallel 返回值）—— 即 publish_parallel 报了 T0r5 但按此查无此任务。
+
+对照：`store_isolation_probe --selftest` exit 0（隔离专项门 PASS，隔离机制未整体坏）；`e2e_heartbeat_xproc --selftest` exit 0（脚本自身 28 格逻辑 PASS，仅 default 实测失败）。
+
+归因：本轮 5 处 CI 真跑面红中，本条与 check_entry_paths 同属**并发 agent 未提交 WIP 域**（src/server/server.mbt HEAD d010592 有未提交改动），非本轮 cleanup_artifacts 修复（那支只改 cleanup_artifacts.py 自身）引入。建议并发 agent 侧排查 publish_parallel 在「FIST_DB_PATH 隔离库 + 自定义 namespace」下的 task 落库路径。
+
+本机 `--selftest` 通过、`store_isolation_probe --selftest` 通过，故不阻断其它守卫；仅 default 面红，需真实 server 端复现定位。
+- reported_by: lead-R20
+
