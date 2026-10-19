@@ -128,5 +128,10 @@
 - `fist_mbt_mcp_client.py` — **通用 fist-mbt 发布版 MCP 客户端封装**（stdio, 协议 2026-07-28, cwd=项目根）：`FistClient` 自动启动 `node fist-mbt.js serve`，供脚本复用调用工具（`fc.call("store_list")`）。
 - `ns_route_probe.py` — **多租户库级物理隔离闭环探针（stage1）**：验证 C1 业务工具带 namespace 路由到独立库 / C2 默认库无该任务行 / C3 全流程在 ns 库内流转 / C4 负例 not found。
 - `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
+- `fix_esm_require.py` — **Post-build ESM require 修复（`patch_esm_main.py` 同族）**：给 moon 生成的 ESM 产物注入 `createRequire` 垫片，解 `mizchi/sqlite@0.3.1` 绑定顶层 `require("node:sqlite")` 在 ESM 作用域下的 `ReferenceError`。用法：`python scripts/fix_esm_require.py [产物路径]`（幂等）。
+- `pol_keeper_run.py` — **命名空间政策守门员（Policy Keeper）进程**：连发布版 FIST MCP server（`PROTO=2026-07-28`），按内置黑名单 `BL` / 白名单 `WL` 巡检命名空间使用政策，产出报告到 `temp/pol_keeper_reports/`。属并发 agent 在盘未跟踪 WIP，登记以过 `check_scripts_index` 索引守卫。
+- `pol_keeper_prompt.md` — **Policy Keeper 的 LLM 提示词模板**：带 `AIGC` front-matter 标记，供 `pol_keeper_run.py` 调模型裁决政策命中。同上为在盘未跟踪 WIP。
+- `pol_keeper_wrapper.ps1` — **Policy Keeper 的 PowerShell 包装**：`$ErrorActionPreference="Continue"`，用 `temp/pol_keeper.lock` 做互斥、报告落 `temp/pol_keeper_reports`，负责拉起/守护 `pol_keeper_run.py`。同上为在盘未跟踪 WIP。
+- `run_check_t0r21.py` — **T0r2.1 run_check 判据（BUG-253 修复回归）**：`moon test src/engine` 全绿即通过。用法：`python scripts/run_check_t0r21.py`（0=全绿，非 0=回归）。
 
 > 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/cli` + `patch_esm_main` → node）。
