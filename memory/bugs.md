@@ -5527,3 +5527,22 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 
 ### FIXED(2026-10-19T05:10:34Z / BUG-331)
 - evidence: .dsh/fist-mbt-plugin/package.json：L3 version 0.3.8→0.3.9；L16 meta.description 版本标签同步并如实注明「0.3.8→0.3.9 为版本号推进，功能集不变」（8052e67 为纯 version bump，3 文件仅版本字面量）。复核：check_host_installable PASS（DSH manifest/patch 严格档：绝对路径 + toolCallTimeoutMs + dsh reconnect schema 合规；宽松档 MCP JSON 合规；moon.mod 版本 0.3.9）。
+## BUG-332 [2026-10-19T05:34:50Z] [medium] OPEN
+- summary: check_py_stdout_encoding --all 面 10 处脚本缺 BUG-58/138 stdout UTF-8 重配（Windows 控制台手跑会 UnicodeEncodeError 崩在结论行前，rc 被冒用）；CI 跑 --all，故此前 CI 在该面一直红
+- detail: BUG-138 追记的 --all 残余面从未被跑过，本轮 selftest E1 暴露现状面真红。CI ci.yml 实际跑 `python3 scripts/check_py_stdout_encoding.py --all`，故这是真 CI 失败面，非仅 selftest 严苛。
+
+违例 10 处（会 print 非 ASCII 却无 sys.stdout.reconfigure）：
+- scripts/blackbox/e2e_assistant_xproc.py（print 含 ×/—）→ 已修（8f00f8b 前单独改）
+- scripts/caf_offline_replay.py / caf_p2c_ab_preflight.py / caf_p2d_coldstart_ab.py / patch_router_config_caf_field.py / run_check_t0r21.py / test_shim_handshake.py → 已修
+- fix_esm_require.py / pol_keeper_run.py（gitignore 未跟踪，仍实存）→ 已修
+- scripts/fist_mbt_mcp_client.py / scripts/ns_route_probe.py → **并发 WIP，未动，待 concurrent agent 收口时补**
+
+修复形态（与守卫标准逐字一致）：import 段后插
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+修后 --all 违例 10→2（余 2 并发 WIP）；selftest E1/M6 待 2 处补齐后转绿。同族 BUG-58/138/122（手写族名落后于新增脚本）。
+- reported_by: lead
+
