@@ -19,6 +19,13 @@ import sys
 import tempfile
 import time
 
+# BUG-58/138 stdout/stderr UTF-8 重配：本脚本会 print 非 ASCII（×、—、中文），
+# 在 Windows 控制台（cp1252/GBK）下不重配会当场 UnicodeEncodeError（check_py_stdout_encoding --all 面）。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # 与 store_sqlite.mbt L1651/L1667 逐字对齐的 SQL 形态（无事务包裹）
 CLEAR_SQL = "UPDATE assistant_reg SET is_primary=0 WHERE is_primary=1 AND agent != ?"
 UPSERT_SQL = (
