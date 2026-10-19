@@ -5561,3 +5561,19 @@ if hasattr(sys.stderr, "reconfigure"):
 建议：默认降噪——①`--min-severity` 或按 rule 白/黑名单过滤（默认关掉 unused-variable/long-function/match-exhaustive 三高噪音项，或降为 info-only）；②match-exhaustive 直接不产（编译器已保证）；③对剩余 low 项挂 `confirmed=false` 要求调用方喂 run_check 复核后才 report_bug（boundary_probe 已是这个语义，可复用）。
 - reported_by: lead
 
+## BUG-334 [2026-10-19T06:11:48Z] [high] OPEN
+- summary: cleanup_artifacts.py 的 `_`前缀规则误移 git 跟踪的工具注册真源 `scripts/_tool_registry.py`，破坏 7 个导入它的守卫（check_tools_sync/check_plugin_sync/gen_plugins/check_doc_surface/mcp_smoke）；CI 仅靠 cleanup 排在最后的顺序侥幸未炸，属 latent hazard
+- detail: `scripts/cleanup_artifacts.py` L65 `_TMP_SCRIPT_EXT = (".py",".ps1",".sh")` + L79 的 `_` 前缀匹配规则，会把 **`scripts/_tool_registry.py`** 误当「任务完即清的临时脚本」移入 `temp/`。而 `_tool_registry.py` 是 **git 跟踪的**（`d35c2f0 refactor(guard): 抽单一 _tool_registry 实现，5 个消费者改委托`）工具注册单一真源，被 7 处导入：
+- `check_doc_surface.py:89` / `check_plugin_sync.py:34` / `check_tools_sync.py:40` / `gen_plugins.py:41` / `mcp_smoke.py:35`（5 个 importlib 委托）
+- `check_plugin_sync.py:126`（子进程 `_tool_registry.py --selftest`）
+- `check_template_ctrl.py:211`（诊断建议引用）
+
+**已实测触发**：本机跑 `python scripts/cleanup_artifacts.py` 后，`scripts/_tool_registry.py` 消失（git status 报 `D`），`check_tools_sync.py` / `check_plugin_sync.py` 当场 ImportError 红；`git checkout -- scripts/_tool_registry.py` 恢复后两者复活（exit 0）。
+
+**CI 为什么没炸**：`ci.yml` L243-245 的 "Cleanliness guard" 是 check-js job 的**最后一步**，位于 L91 check_tools_sync、L108 gen_plugins --check、L110 check_plugin_sync **之后**；后续 `check-native` 等 job 重新 checkout。所以 cleanup 的误移没被同 job 下游消费到。**这是顺序侥幸，不是正确性**——只要有人在 ci.yml 把 cleanup 挪到守卫前面，或加一个依赖 `_tool_registry.py` 的步骤在其后，就会静默红，且红因难查（报 ImportError 在消费者、不报 cleanup）。
+
+**同族**：BUG-330（守卫 false-positive）/BUG-333（判据精度）/BUG-329（selftest 崩溃）——「守卫族自身健壮性」系。
+
+**修复建议（小，一行）**：在 `cleanup_artifacts.py` 加豁免集，如 `KEEP_SCRIPTS = {"_tool_registry.py"}`（+ 任何 git 跟踪的 `_` 前缀脚本），在 `_` 匹配分支跳过；更稳的通用规则是「只清 `git ls-files --others`（untracked）的 `_` 脚本，tracked 一律不动」。后者顺带根治「cleanup 误删已跟踪临时文件」整类问题。
+- reported_by: lead
+
