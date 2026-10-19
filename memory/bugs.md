@@ -5462,3 +5462,30 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 16 个 os.popen 变量命中动作需逐个修复（shlex.quote 或改 subprocess.run 列表 argv），不在本 bug 修复范围。
 - reported_by: fist-agent
 
+## BUG-325 [2026-10-18T15:38:56Z] [high] OPEN
+- summary: [rule:type-annotation] let x: T = e 的类型注解被 parser 丢弃、static_check 从不强制：`let x: Int = "hello"`、`let x: Int = 3.5`、`let x: Int = Some(5)` 全部静默通过
+- detail: 根因：`parse_let_binding_top`（crates/p5c/src/parser/item.rs:530-535）把 `: T` 只当 `shall_coerce`（是否 Float）判定用后**丢弃**，AST `TopLevel::LetBinding`/`Stmt::LetBinding` 根本没有 `ty` 字段；`static_check` 侧零注解处理。连带症状：`DEMO/01_types/type_lattice.p5:182` 的 `let opt: Option<Int> = 5` 注解不生效，`print(opt)` 打印 `5` 而非 `Some(5)`、`typeof(opt)` 报 `Int`。实测（修复前）：`check` 对 `let x: Int = "hello"` 报 "Static check passed"。修复：AST 增 `ty: Option<Type>`，parser 存储注解，static_check 增 `check_let_annotation` 强制标量类型（Int/Float/Str/Bool/Atom/None/Any/Nothing），对 Named（union 成员/接口上转型/newtype 别名，含被折叠的 `Option<Int>`）宁漏报不误报。e2e_demo_golden 仍 20/20 通过。
+
+## BUG-326 [2026-10-18T18:29:49Z] [medium] FALSE_POSITIVE
+- summary: BUG-262 Module 值内省元字段 mod.apis / mod.name / mod.path / mod.is_macro 全部未实现，运行期报 Field not found（§11.2 规范-实现静默分歧）
+- detail: §11.2「模块值：一等值」内省表公开四支元字段——`mod.apis`（导出 api 列表）/ `mod.name`（模块名）/ `mod.path`（模块路径）/ `mod.is_macro`（是否 `#![macro]` 宏模块，§13.9）。R61 实测（修复前）：`import("std.math").apis` → `Runtime error: Field not found: apis (module math, available exports: abs, ceil, cos, floor, ln, log10, sin, sqrt)`；文件模块 `import("lib.p5").apis` 同型失败。根因：`crates/p5c/src/eval/expr.rs` 的 `Value::Module(mv)` 字段访问只按 `mv.exports`（导出绑定）查找，未把四支元字段接线——错误信息里的 `available exports: …` 正是唯一的字段面。属**规范-实现静默分歧**（无编译期诊断，运行期才 `Field not found`），且 `DEMO/**/*.p5` 未覆盖 `mod.apis` 面故 golden 未拦。
+- reported_by: pentad-polish-lead-1019
+
+
+- false_positive(2026-10-18T18:30:35Z): 误报落错库：project_dir="." 解析到 server cwd（FIST-Mbt），而该缺陷属 Pentad 项目代码（crates/p5c/src/eval/expr.rs）。真实条目按 BUG-262 记入 Pentad 项目 memory/bugs.md，本库不适用。
+## BUG-327 [2026-10-19T01:51:59Z] [medium] OPEN
+- summary: ocr_scan 的 OCR LLM review 对 MoonBit .mbt 恒不可达（unsupported_ext 全拦），bugfind 的 require_ocr 门是伪能力/可静默满足
+- detail: 实测证据（2026-10-19，opencodereview.exe @alibaba-group+ocr-win32-x64@1.12.9）：
+1) `ocr_scan subcmd=scan path=src/server` → `total_files=81, reviewable_count=0, excluded_count=81`，全部 `exclude_reason: unsupported_ext`。
+2) 显式单文件 `ocr scan --preview --path src/server/issue_scan.mbt` → 仍 `exclude_reason: unsupported_ext`（1/1 排除）。
+3) `ocr rules check src/server/issue_scan.mbt` → 匹配 `default` 规则（Source: System built-in）—— 规则层**不拒** .mbt。
+4) `ocr scan --help`：有 `--exclude`（只会加排除）与 `--rule`（规则 JSON），**无 `--include` 扩展名旗**；`ocr config` 无扩展名白名单键；CLI 无逃生门。
+
+结论：排除发生在 scan 的文件遍历阶段（二进制硬编码扩展名白名单不含 .mbt），规则层本可处理。MoonBit 项目下 OCR LLM review 恒不可达。
+
+影响：① AGENTS.md 宣称的「内建规则 + OCR LLM review 双轨互补」对 MoonBit 只有单轨；② 自驱 bugfind 模式的 `require_ocr` 约束在本项目不可满足，但 `ocr_scan` 顶层回执 `ok=true / exit_code=0` 会让只看 ok 的门禁误判「已 review」——伪能力/静默通过。
+
+建议修复方向：`ocr_scan` 在目标路径含 .mbt 且 reviewable_count=0 时显式返回 `ok=false` + 明确 reason（fail-loud，防门禁被静默满足），或将该局限显式写入 bugfind 的 require_ocr 判据与 AGENTS.md（诚实标注单轨）。
+- reported_by: fist-mbt-round5-lead
+- task_id: T0r588
+
