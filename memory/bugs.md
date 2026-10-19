@@ -5498,3 +5498,11 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 
 ### FIXED(2026-10-19T04:41:54Z / BUG-328)
 - evidence: scripts/check_demo_isolation.py NEEDLE_RE 增第 5 形状 `\w*env\w*\.setdefault\(\s*["']FIST_DB_PATH["']`，注释"四种"→"五种"；提交 49dca79。守卫回 PASS（spawn 面 35 脚本全合规、豁免锚点成立），--selftest G1/M1/M1b/M2/M3 全绿——变异仍必红，守卫未被放宽。
+## BUG-329 [2026-10-19T04:52:17Z] [medium] FIXED
+- summary: [rule:check_release_asset_names/R13] README 离线线资产名版本字面量 v0.3.8 落后 moon.mod 0.3.9（BUG-120 复发），连累 selftest 崩溃
+- detail: check_release_asset_names 守卫 R13 违例：README L141 离线/内网线 `install_onecmd.ps1 -LocalZip C:\path\to\fist-mbt-js-v0.3.8.zip` 版本字面量落后于 moon.mod "0.3.9" ⇒ 用户照抄离线线即 404（同 BUG-120 形态，0.3.8→0.3.9 版本推进时未同步）。连带：守卫 `--selftest` 因 R13 变异锚 `fist-mbt-js-v0.3.9.zip` 不在 README 内而 AssertionError 崩溃（"变异锚不在 readme 里"），selftest 失检。修复（dd056d6）：README L141 `v0.3.8.zip`→`v0.3.9.zip`。复核：守卫主检 PASS（R1~R14 全绿）、selftest OK（R13×2 等 14 格）。
+
+
+
+### FIXED(2026-10-19T04:52:26Z / BUG-329)
+- evidence: README.md L141 离线线资产名 `fist-mbt-js-v0.3.8.zip`→`fist-mbt-js-v0.3.9.zip` 对齐 moon.mod "0.3.9"；提交 dd056d6。守卫 check_release_asset_names 主检 PASS（R1~R14 全绿），--selftest OK（R13×2 等 14 格不再崩溃）。
