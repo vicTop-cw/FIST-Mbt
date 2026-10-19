@@ -5600,3 +5600,20 @@ if hasattr(sys.stderr, "reconfigure"):
 
 
 
+## BUG-336 [2026-10-19T09:03:42Z] [medium] FIXED
+- summary: dag_cost_route 负载感知冻结：load 只在循环前一次性快照，路由循环内从不更新累计负载 → 等成本平局时全堆给先注册执行者（1180 任务 59% 给单一执行者）
+- detail: ## 现象
+dogfood `dag_cost_route`（R77 成本路由）：1180 个 slack>0 未认领任务中 59%（701）堆给单个执行者 `marvis`，负载感知声明失效。
+## 根因
+`src/engine/engine_dag_ext.mbt` L657 `load = self.executor_loads(reg_names)` 只在路由循环**前**一次性快照活跃负载；L744 把任务写进 `routed` 却**从不更新 `load`**。于是 L732-739 的等成本平局 tiebreak（"相等取负载最低"）对本次路由自身的累计分配失明——平局时 `nl < bl` 恒假（两执行者负载都=初始值），`best` 永远停在先注册者 → 整轮路由全堆给先注册执行者，负载均衡形同虚设。
+## 实证（白盒 RED→GREEN）
+`src/engine/dag_ext_test.mbt` 新增 `dag_cost_route: 等成本平局按累计负载均分（BUG-336）`：2 个同能力执行者 + 4 独立灵活任务（+ 旁链垫 makespan=3）→ 修复前 `alice=4, bob=0`（RED），修复后 `alice=2, bob=2`（GREEN）。
+## 修复
+L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best){...}; ignore(load.set(best, prev_load + 1))`——把本次分配计入累计负载，后续等成本平局任务才转向其他执行者。
+## 验证
+`moon test --target js` = 1339/1339（新增 1 锁）；`moon fmt` 干净（engine 文件）。
+
+
+
+### FIXED(2026-10-19T09:04:03Z / BUG-336)
+- evidence: 修复点 src/engine/engine_dag_ext.mbt L741-749：routed.set(id, best) 之后追加 load.set(best, prev_load + 1)，把本次分配计入累计负载。白盒锁 src/engine/dag_ext_test.mbt `dag_cost_route: 等成本平局按累计负载均分（BUG-336）` RED(alice=4,bob=0)→GREEN(alice=2,bob=2)。全量 moon test --target js=1339/1339。

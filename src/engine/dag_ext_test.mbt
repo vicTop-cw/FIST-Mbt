@@ -614,6 +614,78 @@ test "dag_cost_route: 同执行者免切换税 + 空注册表跳过（R77）" {
 }
 
 ///|
+/// BUG-336 回归锁：dag_cost_route 的负载感知 tiebreak 必须考虑本次路由自身的累计分配，
+/// 不能只吃 executor_loads 的一次性快照（旧实现 L657 算一次、循环里从不更新 → 全部任务堆给先注册执行者）。
+test "dag_cost_route: 等成本平局按累计负载均分（BUG-336 负载感知冻结）" {
+  let e = FistEngine::new()
+  ignore(
+    e.executor_save(
+      name="alice",
+      abilities_json="[\"通用\"]",
+      created_at="2026-01-01T00:00:00Z",
+    ),
+  )
+  ignore(
+    e.executor_save(
+      name="bob",
+      abilities_json="[\"通用\"]",
+      created_at="2026-01-01T00:00:00Z",
+    ),
+  )
+  // B/C/D/E 完全独立（无依赖）+ 旁链 F→G→H→I（makespan=3）：B/C/D/E 的 slack=3（灵活），
+  // 无依赖 → switch 税恒 0 → 纯等成本平局。描述不含已注册能力标签 → want 空 → alice/bob 皆候选。
+  let specs : Array[(String, Array[String], String)] = [
+    ("B", [], "独立任务乙"),
+    ("C", [], "独立任务丙"),
+    ("D", [], "独立任务丁"),
+    ("E", [], "独立任务戊"),
+    ("F", [], "旁路根"),
+    ("G", ["F"], "旁路中"),
+    ("H", ["G"], "旁路二"),
+    ("I", ["H"], "旁路末"),
+  ]
+  for s in specs {
+    let (id, deps, desc) = s
+    ignore(
+      e.store.create_task(
+        @core.Task::new(
+          id~,
+          project_dir="/proj/demo",
+          description=desc,
+          created_at="2026-01-01T00:00:00Z",
+          depends_on=deps,
+        ),
+      ),
+    )
+  }
+  let j = e.dag_cost_route()
+  let mut alice_cnt = 0
+  let mut bob_cnt = 0
+  match j.value("cost_route") {
+    Some(Array(cr)) => {
+      assert_eq(cr.length(), 4)
+      for r in cr {
+        match r.value("assignee") {
+          Some(Json::String(s)) =>
+            if s == "alice" {
+              alice_cnt = alice_cnt + 1
+            } else if s == "bob" {
+              bob_cnt = bob_cnt + 1
+            } else {
+              abort("意外执行者: " + s)
+            }
+          _ => abort("assignee 缺失")
+        }
+      }
+    }
+    _ => abort("cost_route 缺失: " + j.stringify())
+  }
+  // 4 个等成本独立任务应在 alice/bob 间均分（2/2）；旧实现因 load 快照冻结而 4/0
+  assert_eq(alice_cnt, 2)
+  assert_eq(bob_cnt, 2)
+}
+
+///|
 test "budget_split_by_dag: 预算按依赖图阶段切分（R81 ZEBRA 蒸馏）" {
   // 链 A→B→C（A 难/B 中/C 易）：earliest A=0/B=1/C=2；预算 10 → 权重 3/2/1 归一化
   let e = FistEngine::new()
