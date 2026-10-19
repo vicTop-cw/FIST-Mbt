@@ -35,8 +35,8 @@
 
 1. **`E：/temp/moon-nightly` 294.9MB**：路径错乱（全角冒号）的孤立安装。当前 gitignored（`temp/` 规则）、未跟踪、未引用，不影响发布与 CI。**待用户/指挥官确认后删除**（预案：`Remove-Item` 三层 `E：`、`E：/temp`、`E：/temp/moon-nightly`；如需 CI nightly fmt 对齐，`moon` 分钟级可重装）。
 2. **BUG-333（issue_scan 精度）**：本轮只量化+上报，未修——`src/server/issue_scan_wbtest.mbt` 并发 WIP，动 `issue_scan.mbt` 默认行为会撞其 WIP 测试。修复方案见记忆条目。
-3. **BUG-327 part 2 仍阻塞**：`src/server/server.mbt` / `src/server/issue_scan_wbtest.mbt` 仍 M。语义级寻虫能力（`ocr_scan` fail-closed）仍缺——头号阻塞。
-4. **BUG-332 余 2**：`fist_mbt_mcp_client.py` / `ns_route_probe.py` 仍缺 UTF-8 重配，`check_py_stdout_encoding --all`/`--selftest` 仍红——完全在并发 agent 一侧。
+3. **CI 上 `check_py_stdout_encoding` 作业 2/3 步红**（诚实口径）：ci.yml L148 `--selftest` exit 2、L150 `--all` exit 1；L149 默认面绿。**根因 = BUG-332 余 2（`fist_mbt_mcp_client.py` / `ns_route_probe.py`）完全在并发 agent 一侧**，我修完可动的 8 处后无法再进。并发 agent 补完这 2 处即转绿。
+4. **BUG-327 part 2 仍阻塞**：`src/server/server.mbt` / `src/server/issue_scan_wbtest.mbt` 仍 M。语义级寻虫能力（`ocr_scan` fail-closed）仍缺——头号阻塞。
 5. **`dist/fist-mbt.js` 未重建**：当前工作树构建会打进并发 agent 未提交代码，不合法。
 
 ## 后续建议
