@@ -1,6 +1,6 @@
 {
   "name": "@victop/fist-mbt",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "private": true,
   "type": "module",
   "description": "FIST-Mbt MCP server integration — task orchestration and self-driving loops",
@@ -13,6 +13,6 @@
   },
   "meta": {
     "title": "FIST-Mbt",
-    "description": "FIST 指挥官任务编排与自驱流水线：FIST 指挥官任务编排与自驱流水线：MCP 工具集 + 记忆沉淀闭环，v0.3.8（含 ofm 非 JSON 二次重试 + 502 黑名单健康探测 + Star 门默认开启）"
+    "description": "FIST 指挥官任务编排与自驱流水线：FIST 指挥官任务编排与自驱流水线：MCP 工具集 + 记忆沉淀闭环，v0.3.9（0.3.8→0.3.9 为版本号推进，功能集不变：含 ofm 非 JSON 二次重试 + 502 黑名单健康探测 + Star 门默认开启）"
   }
 }
