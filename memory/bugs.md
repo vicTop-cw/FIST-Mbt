@@ -5546,3 +5546,18 @@ if hasattr(sys.stderr, "reconfigure"):
 修后 --all 违例 10→2（余 2 并发 WIP）；selftest E1/M6 待 2 处补齐后转绿。同族 BUG-58/138/122（手写族名落后于新增脚本）。
 - reported_by: lead
 
+## BUG-333 [2026-10-19T05:54:08Z] [medium] OPEN
+- summary: issue_scan 精度不足：src 全量 9925 命中中 72.7%（7219）为编译期已保证/子串近似噪音（match-exhaustive 编译器强制=100% 假阳、unused-variable/long-function 为近似启发），使"扫描→上报→修复"闭环不可用
+- detail: 实测 `issue_scan dir=src max_findings=100`：scanned_files=129, total_findings=9925（截断）。by_rule 全表精确求和 = 9925。其中：
+
+- moonbit-unused-variable 4259（info）：自述「子串近似 let 声明点，实际使用性需人工/编译器复核」——编译器已对真正未使用变量给警告，故绝大多数为假阳性。
+- moonbit-match-exhaustive 1513（low）：MoonBit 编译器**强制** match 穷尽（不穷尽 = 编译错误），代码 1338 测试全过、编译通过 ⇒ **100% 假阳性**。
+- moonbit-long-function 1447（info）：自述「行数精确判定见 OCR 双轨」，本就是启发式，非 bug。
+- moonbit-json-injection 1409（low）：子串近似，Json API 是否转义需逐条核实。
+- 其余（array-index-bounds 159 / empty-match 109 / race-condition 9 / resource-leak 7 / dead-code 6 / floating-point-equality 2 等）抽查全为假阳性：float-eq 命中的是 rule-id 字符串里的 "float"；dead-code 的 abort 全在 claimguard_wbtest.mbt 测试断言（故意测错误路径）；resource-leak 全仓 grep File::open/sqlite.open 零命中。
+
+**前三项合计 7219/9925 = 72.7%**。后果：「扫描→上报→修复」闭环不可用——执行者不可能 triage 9925 条里 73% 已知为噪音的命中，于是闭环要么被绕过、要么被「全报 bug」淹没真实缺陷。同族于 BUG-330（守卫 false-positive）/BUG-329（selftest 崩溃）的「判据精度」族。
+
+建议：默认降噪——①`--min-severity` 或按 rule 白/黑名单过滤（默认关掉 unused-variable/long-function/match-exhaustive 三高噪音项，或降为 info-only）；②match-exhaustive 直接不产（编译器已保证）；③对剩余 low 项挂 `confirmed=false` 要求调用方喂 run_check 复核后才 report_bug（boundary_probe 已是这个语义，可复用）。
+- reported_by: lead
+
