@@ -221,3 +221,14 @@ test "ocr_fake_green_check_empty_dir_no_fp" {
   assert_true(reviewed)
   assert_eq(notice, "")
 }
+
+///|
+test "BUG-327_ocr_effective_ok_fail_closed_on_fake_green" {
+  // BUG-327 fail-closed 契约：reviewable_count=0（reviewed=false）时，即使
+  // 二进制 exit_code=0（okk=true），顶层 ok 也必须为 false——只看 ok 的调用方
+  // （含 bugfind 的 require_ocr 门）不能再把「0 份文件被评审」当成 OCR 成功。
+  assert_false(ocr_effective_ok(true, false))
+  assert_true(ocr_effective_ok(true, true))
+  assert_false(ocr_effective_ok(false, true))
+  assert_false(ocr_effective_ok(false, false))
+}
