@@ -5490,3 +5490,11 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - task_id: T0r588
 - 追记(2026-10-19T12:0x+08:00, Round 13 / b2d1920+faf0186): 本条目建议修复方向的部分 1（`ocr_scan` 对 .mbt 显式 fail-loud）已落地并分两小步：① 上轮 `ocr_effective_ok` 把「`ok=true` 但 `reviewable=0` 且 `excluded>0`」判 `ok=false`（dir `src/server/` 走此分支，实测 82 excluded → ok=false）；② **本轮实测发现部分 1 仍有一条盲区（记 BUG-327b）**：显式单文件 `path=src/ocr_scan.mbt` 时 OCR 二进制报 `reviewable_count=0, excluded_count=0, files=[]`——与「空目录」同形，被 `ocr_fake_green_check` 的空目录豁免判 `reviewed=true`，顶层 `ok=true` 假绿幸存。修复：新增纯函数 `ocr_reviewed_final(stdout_reviewed, path)`——目标为单个 `.mbt` 文件时强制 `reviewed=false`（fail-closed）并回显 notice「目标为单个 .mbt 文件（OCR 白名单外扩展名），LLM review 未真正执行；顶层 ok 已强制 fail-closed」，接线进 `ocr_scan_impl`（`reviewed2`/`fake_notice2`）；配套白盒锁 `BUG-327b_ocr_reviewed_final_single_mbt_fail_closed`。发布版 dist 真跑实证：`src/ocr_scan.mbt` → `ok=false` + 上述 notice；`src/server/`（目录）→ `ok=false` 零回归。**注意**：同一条路径两种目标形状（单文件 vs 目录）走的是两条不同假绿分支，任何一边单独修都会留下另一边——现已双分支都 fail-closed。**部分 2（`require_ocr` 门禁接线到 `.mbt` 非可审查性）仍未做**，阻塞在 `src/server/server.mbt`（并发 agent WIP），故本条目**保持 OPEN**。
 
+## BUG-328 [2026-10-19T04:41:44Z] [low] FIXED
+- summary: [rule:check_demo_isolation] NEEDLE_RE 不认 env.setdefault(FIST_DB_PATH) 形状 → 守卫假红 2 项
+- detail: NEEDLE_RE 只认四种形状：① `Xenv["FIST_DB_PATH"]=` ② `os.environ.setdefault("FIST_DB_PATH",...)` ③ `env=dict(...FIST_DB_PATH...)` ④ `env={...FIST_DB_PATH...}`。但 `env=dict(os.environ)` 后接 `env.setdefault("FIST_DB_PATH", db)` 也把 FIST_DB_PATH 落进传给 Popen 的子进程 env（_gen.py L27-32、pol_keeper_run.py 同款），却因形状不匹配被误判 I1 违例 ⇒ check_demo_isolation 假红 2 项。修复（49dca79）：NEEDLE_RE 增加第 5 形状 `\w*env\w*\.setdefault\(\s*["']FIST_DB_PATH["']`，注释同步四种→五种；守卫回 PASS（spawn 面 35 脚本全合规），--selftest G1/M1/M1b/M2/M3 全绿（变异仍必红，未放宽守卫）。
+
+
+
+### FIXED(2026-10-19T04:41:54Z / BUG-328)
+- evidence: scripts/check_demo_isolation.py NEEDLE_RE 增第 5 形状 `\w*env\w*\.setdefault\(\s*["']FIST_DB_PATH["']`，注释"四种"→"五种"；提交 49dca79。守卫回 PASS（spawn 面 35 脚本全合规、豁免锚点成立），--selftest G1/M1/M1b/M2/M3 全绿——变异仍必红，守卫未被放宽。
