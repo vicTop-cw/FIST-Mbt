@@ -4091,7 +4091,7 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 
 ### FIXED(2026-10-16T15:51:31Z / BUG-217)
 - evidence: commit ba4fd93 修复 claimguard.mbt may_proceed_sematic/may_proceed_full：先跑只读预检（decide_claim/blind_spot_holds/semantic_collision）全部通过后才 claim_item；claim_item 调用位于 L248/L294 在所有检查之后。次条（2026-10-15T13:22:34Z）与首条同号不同 ts，因 BUG-241 未修而滞留 OPEN。BUG-241 修复已入库（f1e36a3：bug_header_lines 返回 ALL 索引，bug_fix 逐条改判同号重复条目）。现补标 FIXED。
-## BUG-263 [2026-10-15T13:22:34Z] [medium] OPEN
+## BUG-263 [2026-10-15T13:22:34Z] [medium] FALSE_POSITIVE
 - renumbered_from: BUG-217（2026-10-17 fist-lead 清整，消除与已 FIXED BUG-217 的 ID 碰撞，见 BUG-260）
 - summary: [claimguard-side-effect] may_proceed_sematic / may_proceed_full 在检查前先 claim_item：返回 false 时项已被 side-effect 认领
 - detail: `may_proceed_sematic` / `may_proceed_full` 的语义是"问"——回答能否 proceed——但实现先调 `claim_item(g, proposed, agent)` 把项**认领给自己**，再跑语义/盲点检查；检查失败返回 false 时，项已被 side-effect 认领。
@@ -4107,6 +4107,7 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 修复方向：把 claim 动作移到所有检查**通过之后**——先用 `decide_claim` 只读判重，全通过再 `claim_item`；或者拆成 `check_proceed_*`（纯读）+ `claim_item` 两步，由调用方显式认领。
 
 
+- false_positive(2026-10-19T07:05:35Z): 2026-10-19 实证：src/claimguard/claimguard.mbt L232-252 may_proceed_sematic 与 L272-294 may_proceed_full 均已是「只读预检→全过后才 claim_item」——L240/L245（sematic）与 L282/L287/L291（full）在 return false 之前**不调用** claim_item，状态写只发生在 L248/L294 的放行分支。白盒锁 cg_full_gate_item_id_block（claimguard_wbtest.mbt L224-234）显式断言：may_proceed_full 返回 false 后 `holder_of(g,"L38-logic-engine")==Some("A")`（原持有者未变）。`moon test --target js -p src/claimguard` = 57/57 passed。该 bug 已在 BUG-217 rework（源码注释 L228-231/L270-271 明写「旧实现先 claim_item 再跑语义检查→现在改为只读预检」）落地时一并修复，BUG-263 报告所引行号（L228-243/L261-283）与现文件偏移 4~11 行，系报告早于修复落盘。
 ## BUG-218 [2026-10-15T13:51:38Z] [medium] FIXED
 - summary: [scoring] calc_coverage 的 substring 匹配对空/单字符 law 产生假覆盖（coverage 虚高）
 - detail: `src/omega/scoring.mbt` 的 `calc_coverage` 用 `Json::stringify(t).contains(law)` 判断某条 law 是否被 tests 覆盖。实测两个漏洞：
@@ -5596,5 +5597,6 @@ if hasattr(sys.stderr, "reconfigure"):
 
 本机 `--selftest` 通过、`store_isolation_probe --selftest` 通过，故不阻断其它守卫；仅 default 面红，需真实 server 端复现定位。
 - reported_by: lead-R20
+
 
 
