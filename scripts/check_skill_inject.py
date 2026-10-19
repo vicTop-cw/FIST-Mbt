@@ -137,11 +137,20 @@ def read_asset_rows(db_path: Path) -> tuple[str | None, list[dict]]:
             )
             if not cur.fetchone():
                 return "fist-mbt.db 里没有 `evolve_artifacts` 表", []
+            # `[asset]` 条目的判别位是 **goal**（`evolve_asset_register` 落库为
+            # `[asset]<source>`，`evolve_lesson` 落库为 `[lesson]<cat>`）——只按
+            # goal 匹配才与 L35-37「`[lesson]` 条目不算 `[asset]`」一致。
+            # 旧实现匹配 goal/note/code 三面：一条 `[lesson]` 教训只要在 code 里
+            # 提一句归档规则（讲 evolve_asset_register 怎么用）就会被误选，
+            # 再因 goal 不是 `[asset]<source>` 被误报「反查问题」（实测命中
+            # lesson-202610-15.05.17，goal=`[lesson] concurrent-coordination`）。
+            # 且 `lookup_injected_assets_in` 只按 goal/note 子串检索、不匹配 code，
+            # 匹配 code 本身就不落在判据面内。故收窄为 goal 单面。
             cur.execute(
                 "SELECT id, goal, note, code FROM evolve_artifacts "
-                "WHERE goal LIKE ? OR note LIKE ? OR code LIKE ? "
+                "WHERE goal LIKE ? "
                 "ORDER BY created_at ASC",
-                ("%" + ASSET_MARKER + "%",) * 3,
+                ("%" + ASSET_MARKER + "%",),
             )
             rows = []
             for rid, goal, note, code in cur.fetchall():
@@ -329,7 +338,7 @@ def main(argv: list[str]) -> int:
 
     ap = asset_rows_problems(rows)
     if ap:
-        print("FAIL 已注册 `[asset]` 资产存在反查问题（共 %d 条）：" % len(rows))
+        print("FAIL 已注册 `[asset]` 资产存在反查问题（共 %d 条）：" % len(ap))
         for p in ap:
             print("  - " + p)
         return 1

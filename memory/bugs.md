@@ -5506,3 +5506,14 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 
 ### FIXED(2026-10-19T04:52:26Z / BUG-329)
 - evidence: README.md L141 离线线资产名 `fist-mbt-js-v0.3.8.zip`→`fist-mbt-js-v0.3.9.zip` 对齐 moon.mod "0.3.9"；提交 dd056d6。守卫 check_release_asset_names 主检 PASS（R1~R14 全绿），--selftest OK（R13×2 等 14 格不再崩溃）。
+## BUG-330 [2026-10-19T05:03:09Z] [medium] FIXED
+- summary: [rule:check_skill_inject] 守卫误选 [lesson] 教训为 [asset]（SELECT 过宽）+ 计数 len(rows) 误报 16 条违例
+- detail: check_skill_inject 守卫两处缺陷（BUG-329 同族，守卫自身缺口）：
+① SELECT `goal/note/code LIKE '%[asset]%'` 过宽 —— `[lesson]` 教训条目（goal=`[lesson] concurrent-coordination`，id=lesson-202610-15.05.17）因其 code 里合法提到归档规则（讲 evolve_asset_register/evolve_lesson 用法）被误选，再因 goal 非 `[asset]<source>` 被误报「反查问题」。守卫 L35-37 自述「`[lesson]` 条目不算 `[asset]`」与实现自相矛盾；且 lookup_injected_assets_in 只按 goal/note 检索、不匹配 code，匹配 code 本身不落在判据面内。
+② FAIL 消息 `共 %d 条 % len(rows)` 用全量 `[asset]` 条目数而非违例数 `len(ap)` —— 实测 16 条被误读为 16 条违例，实为 1 条。
+修复：SELECT 收窄为 goal 单面（判别位在 goal）；计数改 len(ap)。复核：主检 PASS（15 条 `[asset]` 全部可反查）、--selftest OK、check_scripts_index/check_py_stdout_encoding 全过。
+
+
+
+### FIXED(2026-10-19T05:03:25Z / BUG-330)
+- evidence: scripts/check_skill_inject.py：SELECT 收窄为 goal 单面（判别位在 goal，不再匹配 note/code，与 L35-37「[lesson] 不算 [asset]」一致）；FAIL 计数 len(rows)→len(ap)。复核：主检 PASS（15 条 [asset] 全部可反查，假阳性 lesson-202610-15.05.17 不再误报）、--selftest OK（U1 合规不误红/匹配缺失必红/档案面空自拒 exit 2 全过）、check_scripts_index + check_py_stdout_encoding EXIT=0。
