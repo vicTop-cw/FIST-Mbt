@@ -13,6 +13,15 @@
 
 import random
 from collections import defaultdict
+import sys
+
+
+# BUG-58/138 stdout/stderr UTF-8 重配：本脚本 print 非 ASCII，
+# Windows 控制台（cp1252/GBK）下不重配会当场 UnicodeEncodeError（check_py_stdout_encoding --all 面）。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 # ---- 基础配置 ----

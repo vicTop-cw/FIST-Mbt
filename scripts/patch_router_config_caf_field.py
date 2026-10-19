@@ -9,6 +9,14 @@ import re
 import sys
 from pathlib import Path
 
+
+# BUG-58/138 stdout/stderr UTF-8 重配：本脚本 print 非 ASCII，
+# Windows 控制台（cp1252/GBK）下不重配会当场 UnicodeEncodeError（check_py_stdout_encoding --all 面）。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # 目标文件及其 use_caf_memory 值
 FILES = {
     "src/router/model_router_wbtest.mbt": "false",
