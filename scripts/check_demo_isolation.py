@@ -46,12 +46,16 @@ SCRIPTS_DIR = os.path.join(ROOT, "scripts")
 
 SPAWN_RE = re.compile(r'subprocess\.Popen\s*\([\s\S]{0,220}?"serve"')
 
-# 四种「把 FIST_DB_PATH 交给子进程」的形状。这里**必须**用三引号 raw 串：
+# 五种「把 FIST_DB_PATH 交给子进程」的形状。这里**必须**用三引号 raw 串：
 # 第一版用单引号 raw 串写字符类 ["'] 时，那个单引号把字符串自己闭合了——判据坏在 import 期，
 # 而被检面（一堆 demo 脚本）是无辜的。X 模式下的空白与 # 注释都不进模式，便于逐支注释。
+# 第 5 形状是第 2 形状的泛化：`os.environ.setdefault(...)` 只是 `env=dict(os.environ)` 后
+# `env.setdefault(...)` 的特例——后者同样把 FIST_DB_PATH 落进传给 Popen 的子进程 env，
+# 只改道针写法不匹配就误红（_gen.py / pol_keeper_run.py 即此形状）。
 NEEDLE_RE = re.compile(r"""
       \w*env\w*\s*\[\s*["']FIST_DB_PATH["']\s*\]\s*=
     | os\.environ\.setdefault\(\s*["']FIST_DB_PATH["']
+    | \w*env\w*\.setdefault\(\s*["']FIST_DB_PATH["']
     | env\s*=\s*dict\([^)]*FIST_DB_PATH
     | env\s*=\s*\{[^}]{0,140}FIST_DB_PATH
 """, re.I | re.X)
