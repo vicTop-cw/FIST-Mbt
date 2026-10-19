@@ -41,7 +41,7 @@ updated: 2026-10-16
 
 ## 发布
 
-- 部署路径：`_build/js/debug/build/cmd/main/main.js` → `scripts\patch_esm_main.py` → Copy-Item 到 AppData
+- 部署路径：`_build/js/debug/build/cmd/cli/cli.js`（发布入口）→ `scripts\patch_esm_main.py` → Copy-Item 到 AppData
 - 重启 MCP server 后新代码生效
 
 ## 代码质量
