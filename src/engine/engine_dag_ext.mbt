@@ -742,6 +742,13 @@ pub fn FistEngine::dag_cost_route(self : FistEngine) -> Json {
       continue
     }
     routed.set(id, best)
+    // 负载感知（BUG-336）：把本次分配计入累计负载，后续等成本平局任务才会转向其他执行者，
+    // 否则 load 只在循环前一次性快照（L657），整轮路由全堆给先注册执行者。
+    let prev_load = match load.get(best) {
+      Some(n) => n
+      None => 0
+    }
+    ignore(load.set(best, prev_load + 1))
     total_cost = total_cost + best_total
     rows.push(
       Json::object({
