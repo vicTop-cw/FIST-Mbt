@@ -115,11 +115,12 @@ test "preset_loop: 未知名称" {
 
 ///|
 test "validate_loop_steps: 合法 steps" {
-  assert_true(validate_loop_steps(["advance", "bugfind"]).is_none())
+  assert_true(validate_loop_steps(["advance", "bugfind"]) is None)
   assert_true(
     validate_loop_steps([
       "advance", "polish", "verify", "bugfind", "fix_and_merge", "tidy",
-    ]).is_none(),
+    ])
+    is None,
   )
 }
 

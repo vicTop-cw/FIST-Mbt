@@ -20,7 +20,7 @@ test "secs-overflow 规则存在且可统计" {
     _ => ()
   }
   let r = issue_scan(d, "", 500)
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
     Err(_) => return

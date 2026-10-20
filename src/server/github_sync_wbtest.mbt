@@ -257,9 +257,9 @@ test "BUG-220_queue_write_failure_surfaces" {
     "owner/repo",
     [],
   )
-  assert_true(r1.is_err())
+  assert_true(r1 is Err(_))
   let r2 = github_queue_mark_sent(d, [], Map([]))
-  assert_true(r2.is_err())
+  assert_true(r2 is Err(_))
 }
 
 ///|

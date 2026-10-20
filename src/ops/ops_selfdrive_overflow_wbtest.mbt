@@ -20,15 +20,15 @@ test "sdp_02_leading_trim" {
 
 ///|
 test "sdp_03_empty_or_nonnum_returns_none" {
-  assert_true(sd_parse_int("").is_none())
-  assert_true(sd_parse_int("abc").is_none())
-  assert_true(sd_parse_int("12a").is_none())
+  assert_true(sd_parse_int("") is None)
+  assert_true(sd_parse_int("abc") is None)
+  assert_true(sd_parse_int("12a") is None)
 }
 
 ///|
 test "sdp_04_large_no_overflow" {
   // 24 位数字串：旧实现溢出为乱数；新实现返回 None（不产出乱数）
-  assert_true(sd_parse_int("999999999999999999999999").is_none())
+  assert_true(sd_parse_int("999999999999999999999999") is None)
 }
 
 ///|
@@ -42,5 +42,5 @@ test "sdp_05_just_below_threshold_ok" {
 ///|
 test "sdp_06_over_threshold_none" {
   // 2000000001 第 10 位：v=200000000 >= int_safe（2e8），下次乘 10 会越界 → None
-  assert_true(sd_parse_int("2000000001").is_none())
+  assert_true(sd_parse_int("2000000001") is None)
 }

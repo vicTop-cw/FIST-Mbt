@@ -92,8 +92,8 @@ test "parse_hat_args：空串回退默认三帽；非法串整批 Err；WHITE �
   assert_eq(wb_hat_ok(parse_hat_args("")).length(), 3)
   let mixed = wb_hat_ok(parse_hat_args("white、black，yellow"))
   assert_eq(mixed.length(), 3)
-  assert_eq(parse_hat_args("white,WHITE").is_err(), true)
-  assert_eq(parse_hat_args("white,unknown").is_err(), true)
+  assert_eq(parse_hat_args("white,WHITE") is Err(_), true)
+  assert_eq(parse_hat_args("white,unknown") is Err(_), true)
 }
 
 ///|
@@ -139,15 +139,15 @@ test "hat_verdict_json / debate_summary_json：键与数值完整" {
 ///|
 test "valid_verdict：evidence 为空拒绝、verdict 非法拒绝" {
   assert_eq(
-    @ops.valid_verdict(@ops.hat_verdict("white", "pass", "")).is_err(),
+    @(ops.valid_verdict(@ops.hat_verdict("white", "pass", "")) is Err(_)),
     true,
   )
   assert_eq(
-    @ops.valid_verdict(@ops.hat_verdict("white", "maybe", "有证据")).is_err(),
+    @(ops.valid_verdict(@ops.hat_verdict("white", "maybe", "有证据")) is Err(_)),
     true,
   )
   assert_eq(
-    @ops.valid_verdict(@ops.hat_verdict("black", "reject", "有反例")).is_ok(),
+    @(ops.valid_verdict(@ops.hat_verdict("black", "reject", "有反例")) is Ok(_)),
     true,
   )
 }
@@ -223,10 +223,10 @@ test "会话流：convene 登记 → register 收敛 → verdict 输出 summary"
   let hl_j = Json::object(hl)
   assert_eq(get_array(hl_j, "hats").length(), 0)
   assert_eq(get_int(hl_j, "count"), 6)
-  assert_eq(wb_obj(hl_j).get("defaults").is_some(), true)
+  assert_eq(wb_obj(hl_j).get("defaults") is Some(_), true)
 }
 
 ///|
 test "debate_get_session：不存在的 session 返回明确错误" {
-  assert_eq(debate_get_session("debate-not-there").is_err(), true)
+  assert_eq(debate_get_session("debate-not-there") is Err(_), true)
 }

@@ -64,36 +64,36 @@ test "ofm_c_1_合法请求产出可反解的 JSON" {
 ///|
 test "ofm_c_2_model 空即 Err_fail_closed" {
   let req = ofm_c_req("", "user", "hi")
-  assert_eq(build_ofm_chat_request_json(req).is_err(), true)
+  assert_eq(build_ofm_chat_request_json(req) is Err(_), true)
   let req2 = ofm_c_req("   ", "user", "hi")
-  assert_eq(build_ofm_chat_request_json(req2).is_err(), true)
+  assert_eq(build_ofm_chat_request_json(req2) is Err(_), true)
 }
 
 ///|
 test "ofm_c_3_messages 空即 Err" {
   let req = { model: "m", messages: [], temperature: None, max_tokens: None, }
-  assert_eq(build_ofm_chat_request_json(req).is_err(), true)
+  assert_eq(build_ofm_chat_request_json(req) is Err(_), true)
 }
 
 ///|
 test "ofm_c_4_role 不认即 Err_不猜" {
   for role in ["tool", "function", "unknown"] {
     let req = ofm_c_req("m", role, "hi")
-    assert_eq(build_ofm_chat_request_json(req).is_err(), true)
+    assert_eq(build_ofm_chat_request_json(req) is Err(_), true)
   }
   // 合法三种都要过
   for role in ["system", "user", "assistant"] {
     let req = ofm_c_req("m", role, "hi")
-    assert_eq(build_ofm_chat_request_json(req).is_ok(), true)
+    assert_eq(build_ofm_chat_request_json(req) is Ok(_), true)
   }
 }
 
 ///|
 test "ofm_c_5_content 空即 Err" {
   let req = ofm_c_req("m", "user", "")
-  assert_eq(build_ofm_chat_request_json(req).is_err(), true)
+  assert_eq(build_ofm_chat_request_json(req) is Err(_), true)
   let req2 = ofm_c_req("m", "user", "   ")
-  assert_eq(build_ofm_chat_request_json(req2).is_err(), true)
+  assert_eq(build_ofm_chat_request_json(req2) is Err(_), true)
 }
 
 ///|
@@ -144,9 +144,9 @@ test "ofm_c_8_max_tokens 余量预留_不越硬上限" {
   // 余量 1 → 恒为 上限-1，绝不等于硬上限
   assert_eq(ofm_reserve_max_tokens(2048, 1).unwrap(), 2047)
   // fail-closed：limit ≤ 0、margin < 0 → Err，不静默回落
-  assert_eq(ofm_reserve_max_tokens(0, 10).is_err(), true)
-  assert_eq(ofm_reserve_max_tokens(-1, 10).is_err(), true)
-  assert_eq(ofm_reserve_max_tokens(100, -1).is_err(), true)
+  assert_eq(ofm_reserve_max_tokens(0, 10) is Err(_), true)
+  assert_eq(ofm_reserve_max_tokens(-1, 10) is Err(_), true)
+  assert_eq(ofm_reserve_max_tokens(100, -1) is Err(_), true)
 }
 
 ///|
@@ -230,6 +230,6 @@ test "ofm_c_10_追加重试提示到请求体" {
     _ => abort("不是 JSON 对象")
   }
   // fail-closed：非法输入 → Err
-  assert_eq(append_retry_prompt("not json").is_err(), true)
-  assert_eq(append_retry_prompt("{\"a\":1}").is_err(), true) // 缺少 messages
+  assert_eq(append_retry_prompt("not json") is Err(_), true)
+  assert_eq(append_retry_prompt("{\"a\":1}") is Err(_), true) // 缺少 messages
 }

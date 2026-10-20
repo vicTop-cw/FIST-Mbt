@@ -35,7 +35,7 @@ pub fn ExecutorRegistry::register(
 ) -> ExecutorRegistry {
   let m = self.executors
   m.set(name, name)
-  if self.abilities.get(name).is_none() {
+  if self.abilities.get(name) is None {
     ignore(self.abilities.set(name, []))
   }
   { executors: m, abilities: self.abilities, }
@@ -144,7 +144,7 @@ pub fn ability_coverage(ab : Array[String], need : Array[String]) -> Double {
 pub fn ExecutorRegistry::route_pick(
   self : ExecutorRegistry,
   need : String,
-  load : Map[String, Int],
+  load : Map[String, Int32],
 ) -> Json {
   let tags = split_need_tags(need)
   // 汇总每条候选：覆盖率 + 负载
@@ -167,7 +167,7 @@ pub fn ExecutorRegistry::route_pick(
     )
   }
   // 稳定排序：coverage desc → load asc → name asc
-  rows.sort_by(fn(a : Json, b : Json) -> Int {
+  rows.sort_by(fn(a : Json, b : Json) -> Int32 {
     let ac = num(a, "coverage")
     let bc = num(b, "coverage")
     if ac != bc {
@@ -213,7 +213,7 @@ pub fn ExecutorRegistry::route_pick(
 pub fn ExecutorRegistry::route_pick_with_trust(
   self : ExecutorRegistry,
   need : String,
-  load : Map[String, Int],
+  load : Map[String, Int32],
   trust : Map[String, Double],
 ) -> Json {
   let tags = split_need_tags(need)
@@ -240,7 +240,7 @@ pub fn ExecutorRegistry::route_pick_with_trust(
       }),
     )
   }
-  rows.sort_by(fn(a : Json, b : Json) -> Int {
+  rows.sort_by(fn(a : Json, b : Json) -> Int32 {
     let ac = num(a, "coverage")
     let bc = num(b, "coverage")
     if ac != bc {
@@ -302,7 +302,7 @@ pub fn ExecutorRegistry::route_pick_with_trust(
 pub fn ExecutorRegistry::auction_pick(
   self : ExecutorRegistry,
   need : String,
-  load : Map[String, Int],
+  load : Map[String, Int32],
   trust : Map[String, Double],
   bid : Map[String, Double],
 ) -> Json {
@@ -345,7 +345,7 @@ pub fn ExecutorRegistry::auction_pick(
       )
     }
   }
-  rows.sort_by(fn(a : Json, b : Json) -> Int {
+  rows.sort_by(fn(a : Json, b : Json) -> Int32 {
     let as_ = num(a, "score")
     let bs = num(b, "score")
     if as_ != bs {

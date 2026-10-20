@@ -9,7 +9,7 @@
 ///   4. 路径防御（../、盘符、空 → Err）
 ///   5. 空 rules_file 走内建零回归
 ///   6. 真实文件加载（写 temp JSON 再读回）
-fn ext_cnt_id(rs : Array[ScanRule], id : String) -> Int {
+fn ext_cnt_id(rs : Array[ScanRule], id : String) -> Int32 {
   rs.filter(fn(r : ScanRule) { r.id == id }).length()
 }
 
@@ -17,7 +17,7 @@ fn ext_cnt_id(rs : Array[ScanRule], id : String) -> Int {
 test "ext_rules_1_valid_parse" {
   let j = "{\"rules\":[{\"name\":\"a-rule\",\"severity\":\"error\",\"pattern\":\"foo\\\\\\\\(\",\"why\":\"w\",\"description\":\"d\"}]}"
   let r = scan_parse_external_rules(j)
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   let rs = r.unwrap()
   assert_eq(rs.length(), 1)
   assert_eq(rs[0].id, "a-rule")
@@ -27,10 +27,10 @@ test "ext_rules_1_valid_parse" {
 
 ///|
 test "ext_rules_2_bad_json_err" {
-  assert_true(scan_parse_external_rules("{not json").is_err())
-  assert_true(scan_parse_external_rules("[]").is_err())
-  assert_true(scan_parse_external_rules("{\"no_rules\":1}").is_err())
-  assert_true(scan_parse_external_rules("").is_err())
+  assert_true(scan_parse_external_rules("{not json") is Err(_))
+  assert_true(scan_parse_external_rules("[]") is Err(_))
+  assert_true(scan_parse_external_rules("{\"no_rules\":1}") is Err(_))
+  assert_true(scan_parse_external_rules("") is Err(_))
 }
 
 ///|
@@ -56,17 +56,17 @@ test "ext_rules_3_merge_external_overrides" {
 
 ///|
 test "ext_rules_4_load_bad_path_err" {
-  assert_true(scan_load_external_rules("../evil.json").is_err())
-  assert_true(scan_load_external_rules("C:/x.json").is_err())
-  assert_true(scan_load_external_rules("").is_err())
-  assert_true(scan_load_external_rules("no_such_dir/rules.json").is_err())
+  assert_true(scan_load_external_rules("../evil.json") is Err(_))
+  assert_true(scan_load_external_rules("C:/x.json") is Err(_))
+  assert_true(scan_load_external_rules("") is Err(_))
+  assert_true(scan_load_external_rules("no_such_dir/rules.json") is Err(_))
 }
 
 ///|
 test "ext_rules_5_issue_scan_empty_rules_no_regression" {
   // 空 rules_file 走内建，与改造前行为一致：合法目录返回 Ok（不 Err）
   let r = issue_scan("temp", "", 50)
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
 }
 
 ///|
@@ -77,7 +77,7 @@ test "ext_rules_6_load_real_file" {
     _ => return
   }
   let r = scan_load_external_rules(p)
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   let rs = r.unwrap()
   assert_eq(rs.length(), 1)
   assert_eq(rs[0].id, "probe-r")
