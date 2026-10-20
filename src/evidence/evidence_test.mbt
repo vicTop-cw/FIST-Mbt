@@ -24,7 +24,7 @@ test "spec lifecycle" {
   )
   assert_true(s1.is_repairable())
   let s2 = s1.mark_passed()
-  assert_true(s2 is Ok(_))
+  assert_true(s2.is_ok())
   // 摘要可读
   let sum = s2.summary()
   assert_true(sum.contains("T1"))
