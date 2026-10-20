@@ -716,7 +716,7 @@ pub fn SqliteStore::evolve_bump_child(self : SqliteStore, id : String) -> Bool {
 
 ///|
 /// 取 evolve_artifacts 某列文本（列索引从 0 起）。
-fn evolve_col_text(stmt : @sqlite.Statement, i : Int) -> String {
+fn evolve_col_text(stmt : @sqlite.Statement, i : Int32) -> String {
   str_from_bytes(stmt.column_text(i))
 }
 
@@ -728,7 +728,7 @@ fn evolve_parse_double(raw : String) -> Double {
 
 ///|
 /// 取 evolve_artifacts 某列 int。
-fn evolve_col_int(stmt : @sqlite.Statement, i : Int) -> Int {
+fn evolve_col_int(stmt : @sqlite.Statement, i : Int32) -> Int32 {
   stmt.column_int(i)
 }
 
@@ -1597,7 +1597,7 @@ pub fn SqliteStore::locks_release(
 
 ///|
 /// SQLite 后端：清理过期锁（active 且 ttl_until < now → expired + 记违例）。
-pub fn SqliteStore::locks_sweep(self : SqliteStore, now : String) -> Int {
+pub fn SqliteStore::locks_sweep(self : SqliteStore, now : String) -> Int32 {
   match self.db {
     None => 0
     Some(db) => {
@@ -1899,17 +1899,15 @@ fn SqliteStore::assistant_from_row(
   stmt : @sqlite.Statement,
 ) -> AssistantReg? {
   let _ = self
-  match
-    (try? AssistantReg::{
-      agent: str_from_bytes(stmt.column_text(0)),
-      mode: str_from_bytes(stmt.column_text(1)),
-      is_primary: stmt.column_int(2) == 1,
-      registered_at: str_from_bytes(stmt.column_text(3)),
-      heartbeat_at: str_from_bytes(stmt.column_text(4)),
-      status: str_from_bytes(stmt.column_text(5)),
-    }) {
-    Ok(r) => Some(r)
-    Err(_) => None
+  Some(AssistantReg::{
+    agent: str_from_bytes(stmt.column_text(0)),
+    mode: str_from_bytes(stmt.column_text(1)),
+    is_primary: stmt.column_int(2) == 1,
+    registered_at: str_from_bytes(stmt.column_text(3)),
+    heartbeat_at: str_from_bytes(stmt.column_text(4)),
+    status: str_from_bytes(stmt.column_text(5)),
+  }) catch {
+    _ => None
   }
 }
 
@@ -1931,10 +1929,10 @@ pub fn SqliteStore::record_execution(
   task_id~ : String,
   executor~ : String,
   model~ : String,
-  tokens_in~ : Int,
-  tokens_out~ : Int,
+  tokens_in~ : Int32,
+  tokens_out~ : Int32,
   cost~ : Double,
-  duration_ms~ : Int,
+  duration_ms~ : Int32,
   rate_limited~ : Bool,
   failure_reason~ : String,
   created_at~ : String,
@@ -2196,7 +2194,7 @@ pub fn SqliteStore::list_all_heartbeats(
 pub fn SqliteStore::write_heartbeat_interval(
   self : SqliteStore,
   task_id~ : String,
-  interval_sec~ : Int,
+  interval_sec~ : Int32,
   ts~ : String,
 ) -> Result[Unit, String] {
   match self.db {
@@ -2255,9 +2253,9 @@ pub fn SqliteStore::write_heartbeat_interval(
 pub fn SqliteStore::list_heartbeat_intervals(
   self : SqliteStore,
   task_id : String,
-  limit? : Int = 100,
-) -> Array[Int] {
-  let out : Array[Int] = []
+  limit~ : Int32 = 100,
+) -> Array[Int32] {
+  let out : Array[Int32] = []
   match self.db {
     None => out
     Some(db) => {
@@ -2272,7 +2270,7 @@ pub fn SqliteStore::list_heartbeat_intervals(
             ),
           )
           ignore(stmt.bind(2, @sqlite.SqlValue::Int(limit)))
-          let rows : Array[Int] = []
+          let rows : Array[Int32] = []
           while stmt.step() {
             rows.push(stmt.column_int(0))
           }
@@ -2295,10 +2293,10 @@ pub fn SqliteStore::list_heartbeat_intervals(
 /// 幂等覆盖——重登记会把 status 重置为 pending（重试安全），created_at 刷新。
 pub fn SqliteStore::write_saga_action(
   self : SqliteStore,
-  ns? : String = "default",
+  ns~ : String = "default",
   root_task_id~ : String,
   step~ : String,
-  task_id? : String = "",
+  task_id~ : String = "",
   compensation~ : String,
   created_at~ : String,
 ) -> Result[Unit, String] {
@@ -2359,8 +2357,8 @@ pub fn SqliteStore::list_saga_actions(
   self : SqliteStore,
   ns : String,
   root_task_id : String,
-) -> Array[(Int, String, String, String, String)] {
-  let out : Array[(Int, String, String, String, String)] = []
+) -> Array[(Int32, String, String, String, String)] {
+  let out : Array[(Int32, String, String, String, String)] = []
   match self.db {
     None => out
     Some(db) => {
@@ -2400,9 +2398,9 @@ pub fn SqliteStore::list_saga_actions(
 /// 把指定 Saga 补偿步骤标记为 done（已补偿/已消费），幂等。
 pub fn SqliteStore::mark_saga_actions_done(
   self : SqliteStore,
-  ns? : String = "default",
+  ns~ : String = "default",
   root_task_id~ : String,
-  ids~ : Array[Int],
+  ids~ : Array[Int32],
 ) -> Result[Unit, String] {
   if ids.is_empty() {
     return Ok(())
@@ -2448,7 +2446,7 @@ pub fn SqliteStore::cb_get(
   self : SqliteStore,
   ns : String,
   circuit : String,
-) -> (String, Int, Int, Int, Int, Int, Int)? {
+) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)? {
   match self.db {
     None => None
     Some(db) => {
@@ -2465,7 +2463,7 @@ pub fn SqliteStore::cb_get(
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, circuit)),
             ),
           )
-          let mut row : (String, Int, Int, Int, Int, Int, Int)? = None
+          let mut row : (String, Int32, Int32, Int32, Int32, Int32, Int32)? = None
           if stmt.step() {
             row = Some(
               (
@@ -2494,12 +2492,12 @@ pub fn SqliteStore::cb_save(
   ns : String,
   circuit : String,
   state : String,
-  failures : Int,
-  window_secs : Int,
-  threshold : Int,
-  recovery_secs : Int,
-  opened_at : Int,
-  last_fail_ts : Int,
+  failures : Int32,
+  window_secs : Int32,
+  threshold : Int32,
+  recovery_secs : Int32,
+  opened_at : Int32,
+  last_fail_ts : Int32,
   updated_at : String,
 ) -> Result[Unit, String] {
   match self.db {
@@ -2557,8 +2555,8 @@ pub fn SqliteStore::write_call_log(
   params_json~ : String,
   result_json~ : String,
   ok~ : Bool,
-  runtime_ms~ : Int,
-  seq~ : Int,
+  runtime_ms~ : Int32,
+  seq~ : Int32,
 ) -> Result[Unit, String] {
   match self.db {
     None => Err("sqlite store 未打开")
@@ -2611,7 +2609,7 @@ pub fn SqliteStore::write_call_log(
 /// 读取最近 N 条调用日志（按自增 id DESC，新的在前；seq 仅作同进程单调定位）。
 pub fn SqliteStore::recent_call_logs(
   self : SqliteStore,
-  limit? : Int = 50,
+  limit~ : Int32 = 50,
 ) -> Array[Json] {
   let out : Array[Json] = []
   match self.db {

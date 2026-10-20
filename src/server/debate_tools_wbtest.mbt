@@ -139,15 +139,17 @@ test "hat_verdict_json / debate_summary_json：键与数值完整" {
 ///|
 test "valid_verdict：evidence 为空拒绝、verdict 非法拒绝" {
   assert_eq(
-    @(ops.valid_verdict(@ops.hat_verdict("white", "pass", "")) is Err(_)),
+    @ops.valid_verdict(@ops.hat_verdict("white", "pass", "")) is Err(_),
     true,
   )
   assert_eq(
-    @(ops.valid_verdict(@ops.hat_verdict("white", "maybe", "有证据")) is Err(_)),
+    @ops.valid_verdict(@ops.hat_verdict("white", "maybe", "有证据"))
+    is Err(_),
     true,
   )
   assert_eq(
-    @(ops.valid_verdict(@ops.hat_verdict("black", "reject", "有反例")) is Ok(_)),
+    @ops.valid_verdict(@ops.hat_verdict("black", "reject", "有反例"))
+    is Ok(_),
     true,
   )
 }
