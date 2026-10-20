@@ -82,6 +82,9 @@ dist/
 /me.txt
 /fist-mbt-light-worktree.zip
 
+# R10: `_scratch/` 整目录挡（临时工作目录，含 4MB 级 dump；`moon publish` 会把它公开出去）
+/_scratch/
+
 # Round 261: 发布载荷面清整（check_publish_payload BUG-127 红面）——
 # `moon publish` 打包面=工作树−.gitignore，这些本地临时/工作产物会被公开出去。
 # 逐文件/前缀精确点名，不整目录挡：reports/memory/docs-archive 各有已跟踪合法内容，
