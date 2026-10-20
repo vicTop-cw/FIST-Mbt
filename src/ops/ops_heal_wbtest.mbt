@@ -14,7 +14,7 @@
 ///|
 /// 统计子串出现次数（文本锁用）。不用 `hay.split(needle).length()`：
 /// 本版本 `String::split` 返回消费式 Iter，第二次读到 0 会假红灯。
-fn ops_heal_count(hay : String, needle : String) -> Int {
+fn ops_heal_count(hay : String, needle : String) -> Int32 {
   let cs = hay.to_array()
   let ps = needle.to_array()
   if ps.length() == 0 {
@@ -70,7 +70,11 @@ test "BUG-240：三处清理心跳失败均点名进 delete_failed_ids（源码�
 }
 
 ///|
+/// BUG-342：并发 agent 把可选参数签名 `?` 批量改成 borrow `~`（MoonBit 0.1.20261016）。
+/// 文本锁必须同时接受两种形态，否则同一语义不同签名会假红。
 test "BUG-240：三个看护函数均暴露 delete_failed_ids 参数（源码文本锁）" {
   let src = ops_heal_read_or_abort("src/ops/ops_heal.mbt")
-  assert_eq(ops_heal_count(src, "delete_failed_ids? : Array[String] = []"), 3)
+  let count_q = ops_heal_count(src, "delete_failed_ids? : Array[String] = []")
+  let count_t = ops_heal_count(src, "delete_failed_ids~ : Array[String] = []")
+  assert_eq(count_q + count_t, 3)
 }
