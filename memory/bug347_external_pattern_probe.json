@@ -1,0 +1,11 @@
+{
+  "rules": [
+    {
+      "name": "moonbit-json-injection",
+      "severity": "info",
+      "pattern": "Foo::string(",
+      "why": "R16 三探针实证（BUG-347）：无关命名空间 Foo::string( 作 pattern 时，src/ltl 仍命中 11 条 *.to_string()/formula_to_string(/verdict_to_string( 行（与 Json::string( 完全相同），证明外部 rules_file 的 pattern 匹配器按 :: 切分、只取尾段 string( 做子串匹配，:: 前命名空间限定被静默丢弃",
+      "description": "外部 rules_file pattern :: 限定剥离实证探针（可切换 pattern 复现：Json::string( 命中 11 / Foo::string( 命中 11 / NOPEstring( 无 :: 命中 0 / ###NOMATCH### 命中 0）"
+    }
+  ]
+}
