@@ -1,0 +1,45 @@
+{
+  "title": "moonbit-json-injection sink 面分析（R18，可复现）",
+  "purpose": "证明本仓不存在 json-injection 的注入汇（sink），该规则为残留/失效规则",
+  "queries": [
+    {"pattern": "Json::(parse|from_string|from_json|decode|read_from|from_str)", "scope": "src/**/*.mbt", "hits": 0, "conclusion": "无任何 Json 反序列化入口"},
+    {"pattern": "Json\\.(parse|from|decode|read)|\\.parse\\(|from_string|@json\\.", "scope": "src/**/*.mbt", "hits": 127, "conclusion": "127 处命中，全部为 @json.parse 或 Role/TaskStatus/Severity/ModelTier::from_string；无拼接字符串喂解析器"}
+  ],
+  "parse_sites_by_source": {
+    "http_response": [
+      {"file": "src/evolve/github_client.mbt", "lines": [88, 151]},
+      {"file": "src/router/ofm_chat.mbt", "lines": [97]},
+      {"file": "src/router/ofm_models.mbt", "lines": [29]},
+      {"file": "src/router/ofm_response.mbt", "lines": [42]},
+      {"file": "src/server/github_js.mbt", "lines": [129, 152, 212]}
+    ],
+    "config_or_submitted_json": [
+      {"file": "src/store/store_sqlite.mbt", "lines": [351, 679]},
+      {"file": "src/server/issue_scan.mbt", "lines": [1735]},
+      {"file": "src/server/server.mbt", "lines": [3623, 7253]},
+      {"file": "src/server/supervisor_tools.mbt", "lines": [400]},
+      {"file": "src/server/mcp_config_scaffold.mbt", "lines": [206]}
+    ],
+    "process_or_stdin_message": [
+      {"file": "src/server/stdio_js.mbt", "lines": [41, 135, 183]}
+    ],
+    "test_or_self_built_corpus": [
+      {"file": "src/router/ofm_chat_wbtest.mbt", "lines": [21, 202]},
+      {"file": "src/omega/spec.mbt", "lines": [151]},
+      {"file": "src/omega/scoring.mbt", "lines": [135]}
+    ]
+  },
+  "write_side_observation": "全仓 JSON 序列化仅用 Json::object({...}) + Json::string(...) / @json.to_json(...)（如 src/omega/spec.mbt L27/29、src/omega/omega_test.mbt L236-238、src/omega/check.mbt L28/60），均为安全构造器；无裸字符串拼接后喂序列化",
+  "conclusions": [
+    "读取侧：127 处 @json.parse 全为反序列化外部载荷，属 deserialization 风险类别，与 JSON injection（write-side output-encoding flaw）不同",
+    "写入侧：仅用安全构造器，无注入汇",
+    "故 moonbit-json-injection 对两类真实风险面均不可见，属残留规则",
+    "修复方向：退役该规则（推荐），或重构为 moonbit-unvalidated-json-parse 指向无 catch 兜底的 @json.parse（另立提案）"
+  ],
+  "recommendations": [
+    "推荐 1：删除 moonbit-json-injection 或 severity 永久置 info + pattern 改必不命中标记，显式标注 deprecated: no-sink-in-moonbit",
+    "推荐 2：重构为 moonbit-unvalidated-json-parse（新增能力，需单独评估 127 处 catch 覆盖率作为 FP 基线）",
+    "推荐 3（过渡）：保持 memory/bug333_denoise_rules_v2.json 的降噪，修前止损"
+  ],
+  "blocking": "BUG-345/346/347 落地仍需改 src/server/issue_scan.mbt；该目录 37 个并发未提交改动 + 新增未跟踪 src/server/bug335_ns_route_wbtest.mbt 持续阻塞（R14/R15/R16/R17/R18 五轮一致）"
+}
