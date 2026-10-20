@@ -81,7 +81,7 @@ test "ov_1_missing_file_fail" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "fail")
 }
 
@@ -97,7 +97,7 @@ test "ov_2_empty_file_fail" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "fail")
 }
 
@@ -123,7 +123,7 @@ test "ov_3_file_with_invariants_pass" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "pass")
 }
 
@@ -145,7 +145,7 @@ test "ov_4_invariant_mismatch_fail" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "fail")
 }
 
@@ -161,7 +161,7 @@ test "ov_5_evidence_required_but_empty_fail" {
     "",
     require_evidence=true,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   // 硬门全过但 evidence 空 + require_evidence=true → fail
   assert_eq(ov_verdict(r), "fail")
 }
@@ -178,7 +178,7 @@ test "ov_6_evidence_provided_pass" {
     "agent 报告：已完成 out.txt 交付",
     require_evidence=true,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "pass")
 }
 
@@ -201,7 +201,7 @@ test "ov_7_external_artifact_ok" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "pass")
 }
 
@@ -221,7 +221,7 @@ test "ov_8_external_artifact_fail" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "fail")
 }
 
@@ -242,7 +242,7 @@ test "ov_9_external_missing_fail" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "fail")
 }
 
@@ -256,7 +256,7 @@ test "ov_10_empty_artifacts_error" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_err())
+  assert_true(r is Err(_))
 }
 
 ///|
@@ -274,7 +274,7 @@ test "ov_11_illegal_path_fail" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "fail")
 }
 
@@ -318,7 +318,7 @@ test "ov_12_mixed_all_pass" {
     "已完成 README + main + moon_test + issue_scan",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "pass")
 }
 
@@ -357,7 +357,7 @@ test "ov_13_external_ok_but_stdout_missing_contains_fail" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "fail")
 }
 
@@ -383,7 +383,7 @@ test "ov_14_external_ok_but_stdout_has_not_contains_fail" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "fail")
 }
 
@@ -408,7 +408,7 @@ test "ov_15_external_ok_and_stdout_satisfies_contains_pass" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "pass")
 }
 
@@ -433,7 +433,7 @@ test "ov_16_external_ok_and_stdout_no_forbidden_pass" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "pass")
 }
 
@@ -457,7 +457,7 @@ test "ov_17_moon_auto_gate_failed0_pass" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "pass")
 }
 
@@ -479,7 +479,7 @@ test "ov_18_moon_auto_gate_failed_gt0_fail" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "fail")
 }
 
@@ -500,7 +500,7 @@ test "ov_19_moon_auto_gate_no_summary_fail" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "fail")
 }
 
@@ -523,7 +523,7 @@ test "ov_20_non_moon_key_no_auto_gate" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "pass")
 }
 
@@ -541,7 +541,7 @@ test "ov_21_invariant_wrong_type_fail" {
     }),
   ]
   let r1 = output_validate(d, a1, Json::object({}), "", require_evidence=false)
-  assert_true(r1.is_ok())
+  assert_true(r1 is Ok(_))
   assert_eq(ov_verdict(r1), "fail")
   // contains 应为 String，传 Number → spec_err 应拒绝
   let a2 : Array[Json] = [
@@ -551,7 +551,7 @@ test "ov_21_invariant_wrong_type_fail" {
     }),
   ]
   let r2 = output_validate(d, a2, Json::object({}), "", require_evidence=false)
-  assert_true(r2.is_ok())
+  assert_true(r2 is Ok(_))
   assert_eq(ov_verdict(r2), "fail")
   // not_contains 应为 String，传 Number → spec_err 应拒绝
   let a3 : Array[Json] = [
@@ -561,7 +561,7 @@ test "ov_21_invariant_wrong_type_fail" {
     }),
   ]
   let r3 = output_validate(d, a3, Json::object({}), "", require_evidence=false)
-  assert_true(r3.is_ok())
+  assert_true(r3 is Ok(_))
   assert_eq(ov_verdict(r3), "fail")
 }
 
@@ -583,6 +583,6 @@ test "ov_22_moon_test_total_zero_fail" {
     "",
     require_evidence=false,
   )
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   assert_eq(ov_verdict(r), "fail")
 }

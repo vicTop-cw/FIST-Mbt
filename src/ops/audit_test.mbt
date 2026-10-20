@@ -49,15 +49,15 @@ test "audit: enforce 放行与拒绝" {
     None => return
   }
   // HumanSteward 四操作全部放行
-  assert_true(enforce(action="publish", role=hs).is_ok())
-  assert_true(enforce(action="archive", role=hs).is_ok())
-  assert_true(enforce(action="delete", role=hs).is_ok())
-  assert_true(enforce(action="claim", role=hs).is_ok())
+  assert_true(enforce(action="publish", role=hs) is Ok(_))
+  assert_true(enforce(action="archive", role=hs) is Ok(_))
+  assert_true(enforce(action="delete", role=hs) is Ok(_))
+  assert_true(enforce(action="claim", role=hs) is Ok(_))
   // Leader 越权 publish/archive/delete 被拒，claim 放行
   let actions = ["publish", "archive", "delete"]
   for a in actions {
     let r = enforce(action=a, role=leader)
-    assert_true(r.is_err())
+    assert_true(r is Err(_))
     match r {
       Err(msg) => {
         assert_true(msg.contains("leader"))
@@ -66,13 +66,13 @@ test "audit: enforce 放行与拒绝" {
       Ok(_) => fail("leader 不应获得 \{a} 权限")
     }
   }
-  assert_true(enforce(action="claim", role=leader).is_ok())
+  assert_true(enforce(action="claim", role=leader) is Ok(_))
   // Agent 同理
-  assert_true(enforce(action="publish", role=agent).is_err())
-  assert_true(enforce(action="delete", role=agent).is_err())
-  assert_true(enforce(action="claim", role=agent).is_ok())
+  assert_true(enforce(action="publish", role=agent) is Err(_))
+  assert_true(enforce(action="delete", role=agent) is Err(_))
+  assert_true(enforce(action="claim", role=agent) is Ok(_))
   // 未知动作一律拒绝
-  assert_true(enforce(action="unknown_op", role=hs).is_err())
+  assert_true(enforce(action="unknown_op", role=hs) is Err(_))
 }
 
 ///|
@@ -170,7 +170,7 @@ test "audit: 引擎任务可作为审计来源" {
     ),
   )
   assert_true(
-    enforce(action="publish", role=hs).is_ok() && e.get_task("T0") is Some(_),
+    enforce(action="publish", role=hs) is Ok(_) && e.get_task("T0") is Some(_),
   )
   for t in e.list_all() {
     log.record(

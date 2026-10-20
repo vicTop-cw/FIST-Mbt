@@ -27,7 +27,7 @@ struct ScanFinding {
   rule : String
   severity : String
   file : String
-  line : Int
+  line : Int32
   code : String
 }
 
@@ -39,7 +39,7 @@ struct ScanFinding {
 ///   slice_only: 文件是否已无裸 substring 调用（全用切片 `s[:end]`）
 struct ScanCtx {
   safe_clamps : Map[String, String]
-  guarded_lines : Map[Int, Bool]
+  guarded_lines : Map[Int32, Bool]
   slice_only : Bool
 }
 
@@ -49,7 +49,7 @@ struct ScanCtx {
 /// 不贪多——拿不准就不写进表（保守过滤）。
 fn scan_build_ctx(content : String) -> ScanCtx {
   let clamps : Map[String, String] = Map([])
-  let guarded : Map[Int, Bool] = Map([])
+  let guarded : Map[Int32, Bool] = Map([])
   let mut has_substring_call = false
   let mut ln = 1
   for line in content.split("\n") {
@@ -365,7 +365,7 @@ fn scan_is_rules_table(path : String, content : String) -> Bool {
 
 ///|
 /// 从 at 起，cs 是否以 pat 开头（逐字符比，不靠切片：中文按字节下标极易切坏）。
-fn scan_matches_at(cs : Array[Char], pat : Array[Char], at : Int) -> Bool {
+fn scan_matches_at(cs : Array[Char], pat : Array[Char], at : Int32) -> Bool {
   let m = pat.length()
   if at < 0 || at + m > cs.length() {
     return false
@@ -610,7 +610,7 @@ fn scan_substring_target(code : String) -> String {
 
 ///|
 /// BUG-164 盲区 B 辅助：提取 `substring(start=N, ...)` 的 start 整数值；找不到返回 -1。
-fn scan_substring_start(code : String) -> Int {
+fn scan_substring_start(code : String) -> Int32 {
   match code.find("start=") {
     None => -1
     Some(idx) => {
@@ -625,8 +625,8 @@ fn scan_substring_start(code : String) -> Int {
       // store_sqlite_executions.mbt:202 / supervisor_tools.mbt:456）都有 int_safe 上界
       // 守卫，本函数漏网。被扫描源码含 `substring(start=<长数字>, ...)` 时
       // `acc = acc * 10 + d` 溢出 Int（JS 静默乱数 / native panic），按解析失败返回 -1。
-      let int_safe : Int = 200_000_000
-      let mut acc : Int = 0
+      let int_safe : Int32 = 200_000_000
+      let mut acc : Int32 = 0
       let mut j = pos
       while j < code.length() && code[j] >= '0' && code[j] <= '9' {
         if acc >= int_safe {
@@ -746,13 +746,13 @@ fn scan_guard_substring_end_var(
 ///|
 /// BUG-268 辅助：解析非负整数（与 scan_substring_start 同款 int_safe 上界）；
 /// 失败/空/溢出返回 -1。
-fn scan_parse_int_opt(s : String) -> Int {
+fn scan_parse_int_opt(s : String) -> Int32 {
   let t = s.trim().to_string()
   if t.is_empty() {
     return -1
   }
-  let int_safe : Int = 200_000_000
-  let mut acc : Int = 0
+  let int_safe : Int32 = 200_000_000
+  let mut acc : Int32 = 0
   for c in t {
     if c < '0' || c > '9' {
       return -1
@@ -794,7 +794,7 @@ fn scan_substring_arg_expr(code : String, arg : String) -> String {
         return ""
       }
       let mut j = pos
-      let mut depth : Int = 0
+      let mut depth : Int32 = 0
       while j < code.length() {
         let c = code[j]
         if c == '(' {
@@ -849,7 +849,7 @@ fn scan_guard_mod_invariant(
   if not(ee_ok) {
     return false
   }
-  let mut mod_k : Int = -1
+  let mut mod_k : Int32 = -1
   let mut found = false
   for p in prev_lines {
     let t = p.trim().to_string()
@@ -919,7 +919,7 @@ fn scan_guard_for_bounded(
   if not(ee_ok) {
     return false
   }
-  let mut bound : Int = -1
+  let mut bound : Int32 = -1
   let mut found = false
   for p in prev_lines {
     let t = p.trim().to_string()
@@ -1345,13 +1345,13 @@ pub fn scan_finding_guarded(
   code : String,
   rule : String,
   prev_lines : Array[String],
-  ctx? : ScanCtx = {
+  ctx~ : ScanCtx = {
     safe_clamps: Map([]),
     guarded_lines: Map([]),
     slice_only: false,
   },
-  hit_line? : String = "",
-  hit_ln? : Int = 0,
+  hit_line~ : String = "",
+  hit_ln~ : Int32 = 0,
 ) -> Bool {
   // R124: MoonBit substring 安全通道 — 文件已无裸 substring 调用
   if rule == "substring-overrun" && ctx.slice_only {
@@ -1365,7 +1365,7 @@ pub fn scan_finding_guarded(
     ""
   }
   // R124: _safe 钳制识别 — 除数是 X_safe 时，构造行已钳制到 ≥1
-  if rule == "unprotected-division" && ctx.safe_clamps.get(vn).is_some() {
+  if rule == "unprotected-division" && ctx.safe_clamps.get(vn) is Some(_) {
     return true
   }
   // BUG-152: unprotected-division 直接守卫识别 — hint `if total > 0 { ... } else { 兜底 }`
@@ -1380,7 +1380,7 @@ pub fn scan_finding_guarded(
   if rule == "possible-overflow" && hit_ln > 0 {
     let mut check = hit_ln - 1
     while check >= hit_ln - 6 && check > 0 {
-      if ctx.guarded_lines.get(check).is_some() {
+      if ctx.guarded_lines.get(check) is Some(_) {
         return true
       }
       check = check - 1
@@ -1816,8 +1816,8 @@ fn scan_merge_rules(
 pub fn issue_scan(
   dir : String,
   rules_file : String,
-  max_findings : Int,
-  include_tests? : Bool = false,
+  max_findings : Int32,
+  include_tests~ : Bool = false,
 ) -> Result[Json, String] {
   if not(scan_dir_ok(dir)) {
     return Err(
@@ -1950,7 +1950,7 @@ pub fn issue_scan(
   let mut medium = 0
   let mut low = 0
   // 按规则聚合（单次遍历计数，替代旧的逐规则全量 filter）
-  let rule_counts : Map[String, Int] = Map([])
+  let rule_counts : Map[String, Int32] = Map([])
   for h in dedup {
     if h.severity == "high" {
       high = high + 1

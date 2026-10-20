@@ -93,13 +93,13 @@ test "ocr_build_args_rules_shape" {
 test "ocr_build_args_bad_input_err" {
   // 未知子命令
   let r1 = ocr_build_args(project_dir="src", subcmd="review")
-  assert_false(r1.is_ok())
+  assert_false(r1 is Ok(_))
   // delegate 缺 path
   let r2 = ocr_build_args(project_dir="src", subcmd="delegate")
-  assert_false(r2.is_ok())
+  assert_false(r2 is Ok(_))
   // rules 缺 path
   let r3 = ocr_build_args(project_dir="src", subcmd="rules")
-  assert_false(r3.is_ok())
+  assert_false(r3 is Ok(_))
 }
 
 ///|

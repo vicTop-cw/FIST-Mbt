@@ -32,7 +32,7 @@ test "lint_1_scan_hits_high_risk" {
   lint_seed(d)
   let r = issue_scan(d, "", 100)
   // 不应报非法目录错误
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
     Err(_) => return
@@ -47,17 +47,17 @@ test "lint_1_scan_hits_high_risk" {
 ///|
 test "lint_2_illegal_dir_rejected" {
   // 空目录 / 绝对路径 / 穿越都应返回 Err
-  assert_true(issue_scan("", "", 100).is_err())
-  assert_true(issue_scan("../x", "", 100).is_err())
-  assert_true(issue_scan("C:/x", "", 100).is_err())
-  assert_true(issue_scan("/abs", "", 100).is_err())
+  assert_true(issue_scan("", "", 100) is Err(_))
+  assert_true(issue_scan("../x", "", 100) is Err(_))
+  assert_true(issue_scan("C:/x", "", 100) is Err(_))
+  assert_true(issue_scan("/abs", "", 100) is Err(_))
 }
 
 ///|
 test "lint_3_empty_dir_no_findings" {
   let d = lint_dir("lint_c3")
   let r = issue_scan(d, "", 100)
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
     Err(_) => return
@@ -80,7 +80,7 @@ test "lint_4_test_file_skipped_by_default" {
   }
   // 默认 include_tests=false：只扫到 sample.mbt（1 个）
   let r0 = issue_scan(d, "", 100)
-  assert_true(r0.is_ok())
+  assert_true(r0 is Ok(_))
   let j0 = match r0 {
     Ok(x) => x
     Err(_) => return
@@ -89,7 +89,7 @@ test "lint_4_test_file_skipped_by_default" {
   assert_eq(mem_bool(j0, "include_tests"), false)
   // include_tests=true：扫到 2 个（含 t_test.mbt）
   let r1 = issue_scan(d, "", 100, include_tests=true)
-  assert_true(r1.is_ok())
+  assert_true(r1 is Ok(_))
   let j1 = match r1 {
     Ok(x) => x
     Err(_) => return
@@ -120,7 +120,7 @@ fn lint_any_file_suffix(items : Array[Json], suffix : String) -> Bool {
 
 ///|
 /// 命中行号（缺失返回 -1）。
-fn lint_line(f : Json) -> Int {
+fn lint_line(f : Json) -> Int32 {
   match f.value("line") {
     Some(Number(n, ..)) => n.to_int()
     _ => -1
@@ -146,7 +146,7 @@ test "lint_5_comment_lines_are_not_matched_bug15" {
     _ => ()
   }
   let r = issue_scan(d, "", 100)
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
     Err(_) => return
@@ -167,7 +167,7 @@ test "lint_6_rules_table_never_self_hits_bug15" {
   // 扫真实仓库 src/server：扫描器自己的规则表文件不得再贡献命中（pattern/hint 字面量自命中）。
   // 前置哨兵：scanned_files>0 —— 否则「没扫到」会被当成「没有自噪声」而假绿。
   let r = issue_scan("src/server", "", 300)
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
     Err(_) => return
@@ -182,7 +182,7 @@ test "lint_7_no_high_hits_left_in_src_omega_bug15" {
   // spec.mbt:69/70 的 unsafe_get 与 :378/392 的 counts[0] 均有前置守卫（本轮逐条实跑复核为误报）。
   // 修复后 high 档应为 0（by_severity.high 与逐条 findings 双查，防聚合与明细不一致）。
   let r = issue_scan("src/omega", "", 300)
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
     Err(_) => return
@@ -234,7 +234,7 @@ test "lint_8_guard_filter_keeps_real_hits_drops_guarded" {
     _ => ()
   }
   let r = issue_scan(d, "", 100)
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
     Err(_) => return
@@ -312,7 +312,7 @@ test "lint_9_substring_guard_filter" {
     _ => ()
   }
   let r = issue_scan(d, "", 100)
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
     Err(_) => return
@@ -334,7 +334,7 @@ test "lint_9_substring_guard_filter" {
 test "lint_10_missing_dir_returns_err" {
   let d = "temp/lint_bug222_missing_dir"
   let r = issue_scan(d, "", 100)
-  assert_true(r.is_err())
+  assert_true(r is Err(_))
 
   // ---------------------------------------------------------------------------
   // BUG-268：substring-overrun medium 档假阳性消除（三类守卫）+ 真阳性保留
@@ -456,7 +456,7 @@ test "lint_14_bug268_true_positive_still_hits" {
     _ => ()
   }
   let r = issue_scan(d, "", 100)
-  assert_true(r.is_ok())
+  assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
     Err(_) => return
@@ -476,7 +476,7 @@ test "lint_14_bug268_true_positive_still_hits" {
 /// 只按 file 后缀 + code 片段匹配（不钉行号），行号漂移不误红。
 test "lint_15_bug268_real_samples_no_fp" {
   let r_server = issue_scan("src/server", "", 300)
-  assert_true(r_server.is_ok())
+  assert_true(r_server is Ok(_))
   let j_server = match r_server {
     Ok(x) => x
     Err(_) => return
@@ -491,7 +491,7 @@ test "lint_15_bug268_real_samples_no_fp" {
     "start=d",
   )
   let r_ops = issue_scan("src/ops", "", 300)
-  assert_true(r_ops.is_ok())
+  assert_true(r_ops is Ok(_))
   let j_ops = match r_ops {
     Ok(x) => x
     Err(_) => return

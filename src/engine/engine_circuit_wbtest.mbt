@@ -24,7 +24,7 @@ test "bug230_熔断器写盘不留静默吞错" {
   // Mem 后端 cb_save 恒 Ok：成功路径不出 persist_error 字段（零回归）
   let e = FistEngine::new()
   let j = e.circuit_fail(circuit="mem-c1", now_secs=100)
-  assert_eq(j.value("persist_error").is_none(), true)
+  assert_eq(j.value("persist_error") is None, true)
   let s = e.circuit_status(circuit="mem-c1", now_secs=200)
-  assert_eq(s.value("persist_error").is_none(), true)
+  assert_eq(s.value("persist_error") is None, true)
 }

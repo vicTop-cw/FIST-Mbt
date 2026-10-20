@@ -104,7 +104,7 @@ test "BUG-63：get_json_text 取对象形态的配置不丢内容，取缺失/Nu
     "",
   )
   assert_eq(get_json_text(Json::null(), "config_json"), "")
-  assert_eq(mr_parse_config("").is_ok(), true)
+  assert_eq(mr_parse_config("") is Ok(_), true)
 }
 
 ///|

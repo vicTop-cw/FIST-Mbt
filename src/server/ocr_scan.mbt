@@ -107,7 +107,7 @@ pub fn ocr_probe_binary(project_dir : String) -> String? {
   ]
   for root in roots {
     let found = ocr_glob_binary(root)
-    if found.is_some() {
+    if found is Some(_) {
       return found
     }
   }
@@ -123,8 +123,8 @@ pub fn ocr_probe_binary(project_dir : String) -> String? {
 pub fn ocr_build_args(
   project_dir~ : String,
   subcmd~ : String,
-  path? : String = "",
-  rules_file? : String = "",
+  path~ : String = "",
+  rules_file~ : String = "",
 ) -> Result[Array[String], String] {
   if not(is_ocr_subcmd(subcmd)) {
     return Err(
@@ -241,9 +241,9 @@ fn ocr_fail(
 pub fn ocr_plan(
   project_dir : String,
   subcmd~ : String,
-  path? : String = "",
-  rules_file? : String = "",
-  dry_run? : Bool = false,
+  path~ : String = "",
+  rules_file~ : String = "",
+  dry_run~ : Bool = false,
 ) -> Json {
   if not(ocr_dir_ok(project_dir)) {
     return ocr_fail(
@@ -344,7 +344,7 @@ fn ocr_fake_green_check(stdout : String) -> (Bool, String) {
         return (true, "")
       }
       // reviewable_count == 0 且 excluded > 0：收集 exclude_reason 计数
-      let reason_counts : Map[String, Int] = Map([])
+      let reason_counts : Map[String, Int32] = Map([])
       match m.get("files") {
         Some(Json::Array(a)) =>
           for item in a {
@@ -416,10 +416,10 @@ pub fn ocr_reviewed_final(
 pub async fn ocr_scan_impl(
   project_dir : String,
   subcmd~ : String,
-  path? : String = "",
-  rules_file? : String = "",
-  timeout_ms? : Int = 180000,
-  dry_run? : Bool = false,
+  path~ : String = "",
+  rules_file~ : String = "",
+  timeout_ms~ : Int32 = 180000,
+  dry_run~ : Bool = false,
 ) -> Json {
   let plan = ocr_plan(project_dir, subcmd~, path~, rules_file~, dry_run~)
   let pm : Map[String, Json] = match plan {

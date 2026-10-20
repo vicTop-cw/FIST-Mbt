@@ -26,7 +26,7 @@ pub enum BoolExpr {
 
 ///|
 /// 文字：变量索引 + 正负（正=true 表示变量本身，负=false 表示否定）
-type Lit = (Int, Bool)
+type Lit = (Int32, Bool)
 
 ///|
 /// 子句：文字的析取
@@ -36,7 +36,7 @@ type Clause = Array[Lit]
 /// CNF 公式：子句的合取
 pub struct Cnf {
   clauses : Array[Clause]
-  num_vars : Int
+  num_vars : Int32
 }
 
 ///|
@@ -122,7 +122,7 @@ pub fn to_cnf(expr : BoolExpr) -> Cnf {
   collect_vars(expr, var_names)
 
   // 建立 变量名 -> 索引 映射
-  let var_index : Map[String, Int] = Map([])
+  let var_index : Map[String, Int32] = Map([])
   let mut idx = 1
   let mut i = 0
   while i < var_names.length() {
@@ -216,7 +216,7 @@ pub fn to_cnf(expr : BoolExpr) -> Cnf {
 
 ///|
 /// 取文字的变量索引
-fn lit_var(l : Lit) -> Int {
+fn lit_var(l : Lit) -> Int32 {
   let (v, _) = l
   v
 }
@@ -254,7 +254,7 @@ pub fn dpll_sat(cnf : Cnf) -> Array[Bool]? {
     }
     ci = ci + 1
   }
-  let assign : Array[Int] = []
+  let assign : Array[Int32] = []
   // 用 0=unassigned, 1=true, -1=false
   let mut i = 0
   while i <= n {
@@ -267,7 +267,7 @@ pub fn dpll_sat(cnf : Cnf) -> Array[Bool]? {
 
   // 单位传播：反复找单文字子句并赋值
   // 返回 true 继续，false 冲突
-  fn unit_propagate(clauses : Array[Clause], assign : Array[Int]) -> Bool {
+  fn unit_propagate(clauses : Array[Clause], assign : Array[Int32]) -> Bool {
     let mut changed = true
     while changed {
       changed = false
@@ -310,12 +310,12 @@ pub fn dpll_sat(cnf : Cnf) -> Array[Bool]? {
   // 纯文字消元
   fn pure_literal_eliminate(
     clauses : Array[Clause],
-    assign : Array[Int],
-    n : Int,
+    assign : Array[Int32],
+    n : Int32,
   ) -> Unit {
     // 对每个变量统计正负出现
-    let pos_count : Array[Int] = []
-    let neg_count : Array[Int] = []
+    let pos_count : Array[Int32] = []
+    let neg_count : Array[Int32] = []
     let mut i = 0
     while i <= n {
       pos_count.push(0)
@@ -367,7 +367,7 @@ pub fn dpll_sat(cnf : Cnf) -> Array[Bool]? {
   }
 
   // 检查是否所有子句满足
-  fn all_satisfied(clauses : Array[Clause], assign : Array[Int]) -> Bool {
+  fn all_satisfied(clauses : Array[Clause], assign : Array[Int32]) -> Bool {
     let mut ci = 0
     while ci < clauses.length() {
       let c = clauses[ci]
@@ -392,10 +392,10 @@ pub fn dpll_sat(cnf : Cnf) -> Array[Bool]? {
   // 选下一个未赋值变量（MOMS 启发式的简化版：选出现次数最多的）
   fn pick_branch_var(
     clauses : Array[Clause],
-    assign : Array[Int],
-    n : Int,
-  ) -> Int {
-    let counts : Array[Int] = []
+    assign : Array[Int32],
+    n : Int32,
+  ) -> Int32 {
+    let counts : Array[Int32] = []
     let mut i = 0
     while i <= n {
       counts.push(0)
@@ -428,7 +428,7 @@ pub fn dpll_sat(cnf : Cnf) -> Array[Bool]? {
   }
 
   // 递归求解
-  fn solve(clauses : Array[Clause], assign : Array[Int], n : Int) -> Bool {
+  fn solve(clauses : Array[Clause], assign : Array[Int32], n : Int32) -> Bool {
     // 单位传播
     if !unit_propagate(clauses, assign) {
       return false
@@ -481,7 +481,7 @@ pub fn dpll_sat(cnf : Cnf) -> Array[Bool]? {
 /// 判断表达式是否可满足
 pub fn is_satisfiable(expr : BoolExpr) -> Bool {
   let cnf = to_cnf(expr)
-  dpll_sat(cnf).is_some()
+  dpll_sat(cnf) is Some(_)
 }
 
 ///|

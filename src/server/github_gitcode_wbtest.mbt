@@ -101,7 +101,7 @@ fn gc_str(j : Json, key : String) -> String {
 
 ///|
 /// 安全取对象字段为数字（转 Int）。
-fn gc_int(j : Json, key : String) -> Int {
+fn gc_int(j : Json, key : String) -> Int32 {
   match j {
     Object(m) =>
       match m.get(key) {
@@ -669,9 +669,9 @@ test "gc-22: 队列写入失败必须回执 Err（BUG-223）" {
     "999",
     [],
   )
-  assert_true(r1.is_err())
+  assert_true(r1 is Err(_))
   let r2 = gitcode_queue_mark_sent(d, "GC-B223", "1")
-  assert_true(r2.is_err())
+  assert_true(r2 is Err(_))
   let r3 = gitcode_queue_mark_sent_batch(d, ["GC-B223"], Map([]))
-  assert_true(r3.is_err())
+  assert_true(r3 is Err(_))
 }

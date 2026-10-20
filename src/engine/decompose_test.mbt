@@ -9,7 +9,7 @@ fn dp_new_engine() -> @engine.FistEngine {
 ///|
 fn dp_publish(
   e : @engine.FistEngine,
-  desc? : String = "M3 根任务",
+  desc~ : String = "M3 根任务",
 ) -> String {
   match
     e.publish(
@@ -390,7 +390,7 @@ test "plan_exec_order 输出 DAG 序执行计划：依赖先于被依赖，携�
       match ej.value("order") {
         None => abort("order missing")
         Some(Array(seq)) => {
-          let idx : Map[String, Int] = Map([])
+          let idx : Map[String, Int32] = Map([])
           for k = 0; k < seq.length(); k = k + 1 {
             let oid = match seq[k].value("id") {
               Some(Json::String(s)) => s
@@ -419,7 +419,7 @@ test "plan_exec_order 输出 DAG 序执行计划：依赖先于被依赖，携�
                 Json::String(did) =>
                   assert_eq(
                     // 在集合内才校验顺序（跨子树依赖归因到根内已含）
-                    idx.get(did).is_none() ||
+                    idx.get(did) is None ||
                     idx.get(did).unwrap_or(-1) < idx.get(oid).unwrap_or(-1),
                     true,
                   )
