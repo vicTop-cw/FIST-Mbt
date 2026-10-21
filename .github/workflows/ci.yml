@@ -50,6 +50,45 @@ jobs:
           python3 scripts/check_mbti_sync.py --selftest
           python3 scripts/check_mbti_sync.py
 
+      # 位置说明（TASK-003）：本尺是**静态预检**（只读仓库即可出结论），故意排在
+      # Migrate 之前——Migrate 失败时其后步骤会被 GitHub Actions skip，
+      # 而这条门最需要在'脏东西进入构建前'出声。改位置请先读 check_ci_step_position.py。
+      - name: Scripts-index guard (工具类辅助代码统一登记 scripts/README)
+        shell: bash
+        run: python3 scripts/check_scripts_index.py
+
+      # 零执行面的尺=坏着的尺（R40 实测）：check_plan_landing 自 2026-10-14 落仓起既不在 CI、
+      # 也不在 11 份手写回归电池（temp/run_guards5、7–16 逐份 grep 全 0 命中）里，于是它带着
+      # 「路径:行号整串当路径 ⇒ 已跟踪文件报 missing」的虚报缺陷躺了一周，没人跑就没人知道。
+      # 本步把「每把 check_*.py 至少有一个执行面」这条门自己挂上执行面；--selftest 先证明这条门会红。
+      # 位置说明（TASK-003）：本尺是**静态预检**（只读仓库即可出结论），故意排在
+      # Migrate 之前——Migrate 失败时其后步骤会被 GitHub Actions skip，
+      # 而这条门最需要在'脏东西进入构建前'出声。改位置请先读 check_ci_step_position.py。
+      - name: PowerShell encoding guard (BUG-88：无 BOM 的非 ASCII .ps1 在 PS5.1 下解析期即炸)
+        shell: bash
+        run: |
+          python3 scripts/check_ps_encoding.py --selftest
+          python3 scripts/check_ps_encoding.py
+
+      # 位置说明（TASK-003）：本尺是**静态预检**（只读仓库即可出结论），故意排在
+      # Migrate 之前——Migrate 失败时其后步骤会被 GitHub Actions skip，
+      # 而这条门最需要在'脏东西进入构建前'出声。改位置请先读 check_ci_step_position.py。
+      - name: Template control-char guard (templates/*.md 禁裸控制字符——裸 CR 会吃掉工具名首字母)
+        shell: bash
+        # 2026-10-14 普查：7 份 pipeline_mode_*.md 曾因转义序列解释混入裸 CR，把 task_plan_deep 吃成
+        # ask_plan_deep、reject 吃成 eject ⇒ 执行者调不到工具。判据只判"裸"控制字符：CRLF 是
+        # Windows autocrlf checkout 注入的合法行尾，被容忍；配套 .gitattributes `templates/*.md text eol=lf`
+        # 从源头钉 checkout 行尾（双保险）。
+        run: |
+          python3 scripts/check_template_ctrl.py --selftest
+          python3 scripts/check_template_ctrl.py
+
+      # 位置说明（TASK-003）：本尺检查**其它尺站的位置**，自身必须最早跑（同在 Migrate 前）。
+      - name: CI step-position guard (TASK-003：静态预检尺必须在 Migrate 之前，否则被 skip)
+        shell: bash
+        run: |
+          python3 scripts/check_ci_step_position.py --selftest
+          python3 scripts/check_ci_step_position.py
       - name: Migrate mooncakes dep manifests (新版 moon 拒旧 moon.mod.json，check/test 全线的公共前置)
         shell: bash
         run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
@@ -112,14 +151,6 @@ jobs:
         shell: bash
         run: python3 scripts/check_test_sync.py --selftest
 
-      - name: Scripts-index guard (工具类辅助代码统一登记 scripts/README)
-        shell: bash
-        run: python3 scripts/check_scripts_index.py
-
-      # 零执行面的尺=坏着的尺（R40 实测）：check_plan_landing 自 2026-10-14 落仓起既不在 CI、
-      # 也不在 11 份手写回归电池（temp/run_guards5、7–16 逐份 grep 全 0 命中）里，于是它带着
-      # 「路径:行号整串当路径 ⇒ 已跟踪文件报 missing」的虚报缺陷躺了一周，没人跑就没人知道。
-      # 本步把「每把 check_*.py 至少有一个执行面」这条门自己挂上执行面；--selftest 先证明这条门会红。
       - name: Guard execution-face census (每把尺必须在 CI 或仓内电池有一格，BUG-366)
         shell: bash
         run: |
@@ -158,22 +189,6 @@ jobs:
         run: |
           python3 scripts/check_store_tables_wired.py --selftest
           python3 scripts/check_store_tables_wired.py
-
-      - name: PowerShell encoding guard (BUG-88：无 BOM 的非 ASCII .ps1 在 PS5.1 下解析期即炸)
-        shell: bash
-        run: |
-          python3 scripts/check_ps_encoding.py --selftest
-          python3 scripts/check_ps_encoding.py
-
-      - name: Template control-char guard (templates/*.md 禁裸控制字符——裸 CR 会吃掉工具名首字母)
-        shell: bash
-        # 2026-10-14 普查：7 份 pipeline_mode_*.md 曾因转义序列解释混入裸 CR，把 task_plan_deep 吃成
-        # ask_plan_deep、reject 吃成 eject ⇒ 执行者调不到工具。判据只判"裸"控制字符：CRLF 是
-        # Windows autocrlf checkout 注入的合法行尾，被容忍；配套 .gitattributes `templates/*.md text eol=lf`
-        # 从源头钉 checkout 行尾（双保险）。
-        run: |
-          python3 scripts/check_template_ctrl.py --selftest
-          python3 scripts/check_template_ctrl.py
 
       - name: Exit-code contract guard (BUG-369：自述的退出码契约必须与 ast 实现面同色)
         shell: bash
