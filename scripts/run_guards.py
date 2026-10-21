@@ -81,6 +81,10 @@ CASES = [
     case("check_demo_isolation.py"),
     case("check_desc_enum_sync.py"),
     case("check_template_ctrl.py"),
+    # BUG-369 一族：自述 `2=判据无法自证` 而代码 `raise SystemExit("串")` 实给 1 ⇒ 承诺面与实现面
+    # 之间原先没有门。两格都在：`--selftest` 证这把尺会红，全量跑棘轮（判定面 ≤ 上限才 0）。
+    case("check_exit_code_contract.py", "--selftest"),
+    case("check_exit_code_contract.py"),
     case("check_model_auth_no_key.py"),
     case("check_release_asset_names.py"),
     case("check_publish_payload.py"),
