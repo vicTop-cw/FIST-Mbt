@@ -436,6 +436,120 @@ fn scan_outside_literal(line : StringView, needle : String) -> Bool {
 }
 
 ///|
+/// 字符是否为标识符续接字符（A-Z a-z 0-9 _）。BUG-348 抽绑定名与整词扫描共用。
+fn scan_is_ident_cont(c : Char) -> Bool {
+  let o = c.to_int()
+  (o >= 65 && o <= 90) ||
+  (o >= 97 && o <= 122) ||
+  (o >= 48 && o <= 57) ||
+  o == 95
+}
+
+///|
+/// 字符是否为标识符起始字符（A-Z a-z _）。数字不算起始。
+fn scan_is_ident_start(c : Char) -> Bool {
+  let o = c.to_int()
+  (o >= 65 && o <= 90) || (o >= 97 && o <= 122) || o == 95
+}
+
+///|
+/// word 是否作为**完整单词**出现在 text 中（前后不接标识符字符）。
+/// BUG-348：`used` 不该在 `truly_unused` 里被当成命中（左邻 `n` 是标识符字符⇒不算整词）。
+fn scan_word_occurs(text : String, word : String) -> Bool {
+  let cs = text.to_array()
+  let ws = word.to_array()
+  let n = cs.length()
+  let m = ws.length()
+  if m == 0 || m > n {
+    return false
+  }
+  let mut i = 0
+  while i + m <= n {
+    let mut j = 0
+    let mut eq = true
+    while j < m {
+      if cs[i + j] != ws[j] {
+        eq = false
+        break
+      }
+      j = j + 1
+    }
+    if eq {
+      let left_ok = i == 0 || !scan_is_ident_cont(cs[i - 1])
+      let right_ok = i + m >= n || !scan_is_ident_cont(cs[i + m])
+      if left_ok && right_ok {
+        return true
+      }
+    }
+    i = i + 1
+  }
+  false
+}
+
+///|
+/// 从 `let [mut ]IDENT ...` 声明行抽出绑定标识符 IDENT。
+/// 非简单形状（解构 `let [a,b]`/`let (x,y)`、弃元 `let _`、提取失败）返回空串 ⇒ 调用方
+/// 保持现行为（BUG-348，只处理能被安全判定的 `let IDENT`）。
+fn scan_let_binding_name(line : String) -> String {
+  let cs = line.to_array()
+  let n = cs.length()
+  if n < 3 || !(cs[0] == 'l' && cs[1] == 'e' && cs[2] == 't') {
+    return ""
+  }
+  let mut i = 3
+  while i < n && (cs[i] == ' ' || cs[i] == '\t') {
+    i = i + 1
+  }
+  // 可选 mut 关键字（其后不能再是标识符字符，避免 `let mutator = …` 误吃 `mut`）
+  if i + 3 <= n && cs[i] == 'm' && cs[i + 1] == 'u' && cs[i + 2] == 't' {
+    let after = i + 3
+    if after >= n || !scan_is_ident_cont(cs[after]) {
+      i = after
+      while i < n && (cs[i] == ' ' || cs[i] == '\t') {
+        i = i + 1
+      }
+    }
+  }
+  if i >= n || !scan_is_ident_start(cs[i]) {
+    return ""
+  }
+  let start = i
+  i = i + 1
+  while i < n && scan_is_ident_cont(cs[i]) {
+    i = i + 1
+  }
+  let name = String::from_array(cs[start:i])
+  if name == "_" {
+    ""
+  } else {
+    name
+  }
+}
+
+///|
+/// BUG-348：变量名 `name` 是否作为完整单词出现在**除声明行外**的任何代码行。
+/// 入参 `codeparts` 是各行预先算好的 `scan_code_part`（字面量内容/行尾注释已剔除），
+/// 由调用方按文件缓存一次（unused-variable 命中每个 let 行，逐命中重算是 O(L²)）。
+/// 真未使用 ⇒ 只在声明行出现 ⇒ 返回 false（照常报）。单向保守：本判定只会把
+/// 「其实用了」的假阳丢弃，绝不藏真问题。
+fn scan_variable_used_elsewhere(
+  codeparts : Array[String],
+  decl_line : Int32,
+  name : String,
+) -> Bool {
+  let mut k = 0
+  while k < codeparts.length() {
+    if k + 1 != decl_line {
+      if scan_word_occurs(codeparts[k], name) {
+        return true
+      }
+    }
+    k = k + 1
+  }
+  false
+}
+
+///|
 /// 逐行匹配一条规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
 
 ///|
@@ -1846,8 +1960,60 @@ pub fn issue_scan(
   let ctx_cache : Map[String, ScanCtx] = Map([])
   let lines_cache : Map[String, Array[String]] = Map([])
   let fc_cache : Map[String, String] = Map([])
+  // BUG-348：unused-variable 使用性判定按文件缓存各行 code_part（命中每个 let 行，逐命中
+  // 重算 code_part 是 O(命中×行)；文件级缓存一次即降到 O(行)）。
+  let codeparts_cache : Map[String, Array[String]] = Map([])
   let guarded_filtered : Array[ScanFinding] = []
   for hit in dedup {
+    // BUG-348：moonbit-unused-variable 此前按裸子串 `let ` 命中每个 let 声明，
+    // 不看绑定名是否真被使用 ⇒ 把「已使用的 let」也报成未使用（info 档，cost_tool.mbt
+    // L29/31/32 exceeded/remaining/action 均在函数体后续被引用却照样报，纯假阳）。
+    // 单向保守修法：抽出 `let [mut ]IDENT` 的绑定名；若该名字作为完整单词出现在**除声明行外**
+    // 的任一代码行（字面量/注释已剔除）⇒ 判「其实用了」⇒ 丢弃该命中。抽不出名字
+    // （解构/弃元/非 let 开头）或读不到文件 ⇒ 保持现行为照常报——只减假阳、绝不藏真问题。
+    if hit.rule == "moonbit-unused-variable" {
+      let name = scan_let_binding_name(hit.code)
+      if name.length() == 0 {
+        guarded_filtered.push(hit)
+        continue
+      }
+      // 读不到文件 ⇒ 无法判定使用性，保守照常报（不隐藏）。
+      let fc_opt : String? = match fc_cache.get(hit.file) {
+        Some(c) => Some(c)
+        None =>
+          match mem_read(hit.file) {
+            None => None
+            Some(c) => {
+              fc_cache.set(hit.file, c)
+              Some(c)
+            }
+          }
+      }
+      match fc_opt {
+        None => {
+          guarded_filtered.push(hit)
+          continue
+        }
+        Some(fc) => {
+          let cps = match codeparts_cache.get(hit.file) {
+            Some(v) => v
+            None => {
+              let built : Array[String] = []
+              for l in fc.split("\n") {
+                built.push(scan_code_part(l))
+              }
+              codeparts_cache.set(hit.file, built)
+              built
+            }
+          }
+          if scan_variable_used_elsewhere(cps, hit.line, name) {
+            continue
+          }
+          guarded_filtered.push(hit)
+          continue
+        }
+      }
+    }
     // BUG-162 优化：只有少数规则会被守卫豁免（substring-overrun / unprotected-division /
     // unwrapped-unwrap / possible-overflow / index-out-of-bounds / string-index / secs-overflow），
     // 其余规则（unused-variable、match-exhaustive、long-function、json-injection 等

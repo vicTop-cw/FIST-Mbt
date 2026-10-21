@@ -548,3 +548,42 @@ test "lint_15_bug268_real_samples_no_fp" {
     "substring(start=3, end~)",
   )
 }
+
+///|
+/// BUG-348 端到端成对锁（走 @server.issue_scan 真源码，非旧构建产物，钉 BUG-32 教训）：
+/// `moonbit-unused-variable` 此前按裸子串 `let ` 命中每个 let 声明、不看绑定名是否真被用
+/// ⇒ 已使用的 let 照样报（cost_tool.mbt L29/31/32 纯假阳）。修复后必须：
+///   - 用了的绑定（let cost=3; cost+1）不再报
+///   - 真没用的绑定（let dead=5，全程不引用）仍报 —— 单向保守，绝不藏真问题
+test "lint_348_unused_variable_pairwise" {
+  let d = lint_dir("lint_c348")
+  @fs.write_string_to_file(
+    d + "/sample.mbt",
+    "fn used_one(): Int {\n" +
+    "  let cost = 3\n" +
+    "  cost + 1\n" +
+    "}\n" +
+    "fn truly_unused(): Int {\n" +
+    "  let dead = 5\n" +
+    "  7\n" +
+    "}\n",
+    encoding="utf8",
+  ) catch {
+    _ => ()
+  }
+  let r = @server.issue_scan(d, "", 200)
+  let j = match r {
+    Ok(x) => x
+    Err(_) => return
+  }
+  let items = lint_findings(j)
+  let is_unused_on = fn(line_no : Int32) -> Bool {
+    items.any(fn(f) {
+      mem_str(f, "rule") == "moonbit-unused-variable" && lint_line(f) == line_no
+    })
+  }
+  // 第 2 行 `let cost` 在第 3 行被使用 ⇒ 修复前被报、修复后不得再报
+  assert_false(is_unused_on(2))
+  // 第 6 行 `let dead` 全程未被引用 ⇒ 必须仍报（不许把「不扫了」当修复）
+  assert_true(is_unused_on(6))
+}
