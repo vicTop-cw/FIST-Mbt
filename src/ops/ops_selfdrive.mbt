@@ -163,7 +163,11 @@ fn sd_recent_reports(project_dir : String, k : Int32) -> Array[String] {
 /// R12-R2（BUG-215）：加 Int 溢出哨兵——MoonBit Int 为 32 位，异常长数字串
 /// 会在 `v * 10 + d` 处溢出并静默绕回。阈值 2e8（*10 后 2e9 < 2^31），
 /// 超过即返回 None（调用方视为解析失败，不产出乱数）。
+<<<<<<< HEAD
 fn sd_parse_int(raw : String) -> Int32? {
+=======
+fn sd_parse_int(raw : String) -> Int? {
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
   let s = raw.trim().to_owned()
   if s.is_empty() {
     return None
@@ -584,7 +588,11 @@ pub fn selfdrive_parse_next_tasks(
       match ls.find("]") {
         Some(end) =>
           if end > 3 {
+<<<<<<< HEAD
             let desc = ls[3:end].to_owned().trim().to_owned()
+=======
+            let desc = ls.substring(start=3, end~).trim().to_owned()
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
             if desc != "" && out.length() < max_tasks {
               out.push(desc)
             }

@@ -105,7 +105,11 @@ pub fn FistEngine::saga_rollback(
 
 ///|
 /// saga_log 行（id, step, task_id, compensation, status）→ JSON。
+<<<<<<< HEAD
 fn saga_step_json(t : (Int32, String, String, String, String)) -> Json {
+=======
+fn saga_step_json(t : (Int, String, String, String, String)) -> Json {
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
   let sm = Map([])
   sm.set("id", Json::number(t.0.to_double()))
   sm.set("step", Json::string(t.1))
