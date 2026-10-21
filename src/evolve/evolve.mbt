@@ -22,7 +22,7 @@ pub struct Artifact {
   code : String // 实现
   score : Double // 可计算评分 [0,1]
   parts : Map[String, Double] // 评分分项明细（域选择）
-  children : Int32 // 已产生的可用子代数（采样新颖性）
+  children : Int // 已产生的可用子代数（采样新颖性）
   created_at : String // 时间戳
 }
 
@@ -41,8 +41,8 @@ pub fn Archive::new(path : String) -> Archive {
 
 ///|
 /// 产物总数。
-pub fn Archive::len(self : Archive) -> Int32 {
-  self.items.size()
+pub fn Archive::len(self : Archive) -> Int {
+  self.items.length()
 }
 
 ///|
@@ -91,7 +91,7 @@ pub fn Archive::add(self : Archive, a : Artifact) -> Unit {
 
 ///|
 /// 返回 children 字段更新后的副本（MoonBit struct 不可变，用于累加子代数）。
-pub fn Artifact::with_children(a : Artifact, n : Int32) -> Artifact {
+pub fn Artifact::with_children(a : Artifact, n : Int) -> Artifact {
   {
     id: a.id,
     parent_id: a.parent_id,
@@ -132,8 +132,8 @@ pub fn Artifact::create(
 /// rand 注入 `() -> Double`（[0,1) 均匀），保证可测试。
 pub fn Archive::sample_parent(
   self : Archive,
-  lam~ : Double = 8.0,
-  a0~ : Double = 0.4,
+  lam? : Double = 8.0,
+  a0? : Double = 0.4,
   rand~ : () -> Double,
 ) -> Artifact? {
   let cands = self.all()
@@ -322,7 +322,7 @@ pub fn jaccard(a : Array[String], b : Array[String]) -> Double {
       inter = inter + 1
     }
   }
-  let union = in_a.size() + in_b.size() - inter
+  let union = in_a.length() + in_b.length() - inter
   if union == 0 {
     0.0
   } else {
@@ -335,7 +335,7 @@ pub fn jaccard(a : Array[String], b : Array[String]) -> Double {
 pub fn Archive::is_duplicate(
   self : Archive,
   goal : String,
-  threshold~ : Double = 0.88,
+  threshold? : Double = 0.88,
 ) -> Bool {
   let g = tokens(goal)
   if g.is_empty() {
@@ -378,7 +378,7 @@ pub fn Archive::novelty(self : Archive, note : String) -> Double {
 
 ///|
 /// 摘要（高分优先）：给课程生成器看的 top-N。
-pub fn Archive::summaries(self : Archive, limit~ : Int32 = 12) -> Array[String] {
+pub fn Archive::summaries(self : Archive, limit? : Int = 12) -> Array[String] {
   let sorted = self.all()
   sorted.sort_by(fn(a, b) {
     if a.score != b.score {
@@ -401,7 +401,7 @@ pub fn Archive::summaries(self : Archive, limit~ : Int32 = 12) -> Array[String] 
 
 ///|
 /// 低分产物（“此路不通”地图）：喂回给课程生成器绕开。
-pub fn Archive::dead_ends(self : Archive, limit~ : Int32 = 8) -> Array[String] {
+pub fn Archive::dead_ends(self : Archive, limit? : Int = 8) -> Array[String] {
   let sorted = self.all()
   sorted.sort_by(fn(a, b) {
     if a.score != b.score {
@@ -425,7 +425,7 @@ pub fn Archive::dead_ends(self : Archive, limit~ : Int32 = 8) -> Array[String] {
 ///|
 /// 单行摘要（id 前 8 位 + score + goal）。
 fn evolve_summary_line(a : Artifact) -> String {
-  let short = if a.id.length() > 8 { a.id[0:8].to_string() } else { a.id }
+  let short = if a.id.length() > 8 { a.id[0:8].to_owned() } else { a.id }
   // R12-R4 bugfind：`(a.score * 1000.0).to_int()` 在 MoonBit Double→Int 转换时，
   // 若 |a.score*1000| > 2^31-1 会 panic。`evolve_submit` 未钳制 score，
   // 理论上可传 >2.1e6 的值。这里显式 clamp 到 [0, 2_000_000]（*1000 后 < 2^31），
@@ -441,7 +441,7 @@ fn evolve_summary_line(a : Artifact) -> String {
 pub fn Archive::lineage(
   self : Archive,
   from : String,
-  depth~ : Int32 = 12,
+  depth? : Int = 12,
 ) -> Array[(String, Double, String)] {
   let out : Array[(String, Double, String)] = []
   let mut cur : String? = Some(from)

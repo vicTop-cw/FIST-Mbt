@@ -269,7 +269,7 @@ fn check_external_invariants(stdout : String, spec : ArtifactSpec) -> String {
   if !spec.contains.is_empty() {
     if !stdout.contains(spec.contains) {
       let shown = if stdout.length() > 120 {
-        stdout[0:120].to_string() + "..."
+        stdout[0:120].to_owned() + "..."
       } else {
         stdout
       }
@@ -292,7 +292,7 @@ fn check_external_invariants(stdout : String, spec : ArtifactSpec) -> String {
 /// `v = v * 10 + d` 上溢出 Int32 而不报错（绕回/精度丢失）。
 pub fn ov_parse_int(raw : String) -> Int? {
   // 去掉末尾句号（moon 汇总行末尾 "0." 常见）
-  let mut s = raw.trim().to_string()
+  let mut s = raw.trim().to_owned()
   if s.has_suffix(".") {
     s = s.substring(start=0, end=s.length() - 1).to_string()
   }
@@ -333,13 +333,13 @@ fn check_moon_test_summary(stdout : String) -> String {
       for field in line.split(",") {
         let f = field.trim().to_owned()
         if f.has_prefix("failed:") {
-          let v = f[7:].to_string().trim().to_owned()
+          let v = f[7:].to_owned().trim().to_owned()
           match ov_parse_int(v) {
             Some(n) => failed = n
             None => ()
           }
         } else if f.has_prefix("Total tests:") {
-          let v = f[12:].to_string().trim().to_owned()
+          let v = f[12:].to_owned().trim().to_owned()
           match ov_parse_int(v) {
             Some(n) => total = n
             None => ()
@@ -439,7 +439,7 @@ fn check_external_artifact(
           let stderr = match m.get("stderr") {
             Some(String(s)) =>
               if s.length() > 200 {
-                s[0:200].to_string() + "..."
+                s[0:200].to_owned() + "..."
               } else {
                 s
               }

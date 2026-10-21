@@ -239,7 +239,7 @@ fn mr_config_gives_pools(config : Json) -> Bool {
 /// 从环境变量读取逗号分隔的不健康模型黑名单（如 `FIST_OFM_UNHEALTHY_MODELS`）。
 /// 空串 / 不存在 → 空数组（不误伤任何模型）。
 fn mr_unhealthy_models() -> Array[String] {
-  let raw = mr_env("FIST_OFM_UNHEALTHY_MODELS").trim().to_string()
+  let raw = mr_env("FIST_OFM_UNHEALTHY_MODELS").trim().to_owned()
   if raw.is_empty() {
     return []
   }
@@ -248,7 +248,7 @@ fn mr_unhealthy_models() -> Array[String] {
   for i = 0; i < raw.length(); i = i + 1 {
     let c = raw[i]
     if c == ',' {
-      let s = buf.trim().to_string()
+      let s = buf.trim().to_owned()
       if !s.is_empty() {
         out.push(s)
       }
@@ -257,7 +257,7 @@ fn mr_unhealthy_models() -> Array[String] {
       buf = buf + c.to_string()
     }
   }
-  let last = buf.trim().to_string()
+  let last = buf.trim().to_owned()
   if !last.is_empty() {
     out.push(last)
   }

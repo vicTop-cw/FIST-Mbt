@@ -185,11 +185,11 @@ pub fn atgc_explain(seq : String) -> String {
 /// MCP: atgc_talk —— 叙事对话。给出序列（非空）则讲生物故事并回答自由问题；
 /// 序列为空则返回双链虚拟机简介。
 pub fn atgc_talk(seq : String, question : String) -> String {
-  if seq.trim().to_string() == "" {
+  if seq.trim().to_owned() == "" {
     atgc_intro()
   } else {
     let base = atgc_explain(seq)
-    let q = question.trim().to_string()
+    let q = question.trim().to_owned()
     if q == "" {
       base
     } else {

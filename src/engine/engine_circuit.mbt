@@ -255,7 +255,7 @@ fn cb_json(
   let allow = state != "open" && !deny
   // 半开态下 failures 复用为"已放行探测数"，另给显式字段，免得读侧按失败数解释
   let probes = if state == "half_open" { failures } else { 0 }
-  let m = Map::new()
+  let m = Map([])
   m.set("circuit", Json::string(circuit))
   m.set("state", Json::string(state))
   m.set("failures", Json::number(failures.to_double()))

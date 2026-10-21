@@ -79,7 +79,7 @@ fn skill_keys(skill : String) -> Array[String] {
   } else {
     skill
     .split(",")
-    .map(fn(s) { s.trim().to_string() })
+    .map(fn(s) { s.trim().to_owned() })
     .filter(fn(s) { s != "" })
     .collect()
   }

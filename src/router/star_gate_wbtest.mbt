@@ -33,7 +33,7 @@ fn sg_attest_json(
   pk_hex : String,
   sig_hex : String,
 ) -> String {
-  let buf = StringBuilder::new(size_hint=256)
+  let buf = StringBuilder(size_hint=256)
   buf.write_string(
     "{\"format\":\"fist-star-gate-attestation/v1\",\"algorithm\":\"ed25519\",\"list\":[",
   )

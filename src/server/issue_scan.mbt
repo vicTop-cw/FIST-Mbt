@@ -27,7 +27,7 @@ struct ScanFinding {
   rule : String
   severity : String
   file : String
-  line : Int32
+  line : Int
   code : String
 }
 
@@ -39,7 +39,7 @@ struct ScanFinding {
 ///   slice_only: 文件是否已无裸 substring 调用（全用切片 `s[:end]`）
 struct ScanCtx {
   safe_clamps : Map[String, String]
-  guarded_lines : Map[Int32, Bool]
+  guarded_lines : Map[Int, Bool]
   slice_only : Bool
 }
 
@@ -49,11 +49,11 @@ struct ScanCtx {
 /// 不贪多——拿不准就不写进表（保守过滤）。
 fn scan_build_ctx(content : String) -> ScanCtx {
   let clamps : Map[String, String] = Map([])
-  let guarded : Map[Int32, Bool] = Map([])
+  let guarded : Map[Int, Bool] = Map([])
   let mut has_substring_call = false
   let mut ln = 1
   for line in content.split("\n") {
-    let t = line.trim().to_string()
+    let t = line.trim().to_owned()
     // _safe 钳制：识别 `let X_safe = if ... > 0 { ... } else { 1 }`
     if t.has_prefix("let ") &&
       t.contains("_safe") &&
@@ -365,7 +365,7 @@ fn scan_is_rules_table(path : String, content : String) -> Bool {
 
 ///|
 /// 从 at 起，cs 是否以 pat 开头（逐字符比，不靠切片：中文按字节下标极易切坏）。
-fn scan_matches_at(cs : Array[Char], pat : Array[Char], at : Int32) -> Bool {
+fn scan_matches_at(cs : Array[Char], pat : Array[Char], at : Int) -> Bool {
   let m = pat.length()
   if at < 0 || at + m > cs.length() {
     return false
@@ -389,7 +389,7 @@ fn scan_matches_at(cs : Array[Char], pat : Array[Char], at : Int32) -> Bool {
 /// 不必完整 lexer，所以把那半边的债一起还了：
 /// `Json::Null => (d, []) // null = 没给配置` 不再被裸子串 `/ n` 命中。
 fn scan_code_part(line : StringView) -> String {
-  let cs = line.to_string().to_array()
+  let cs = line.to_owned().to_array()
   let n = cs.length()
   let out : Array[Char] = []
   let mut in_lit = false
@@ -610,7 +610,7 @@ fn scan_substring_target(code : String) -> String {
 
 ///|
 /// BUG-164 盲区 B 辅助：提取 `substring(start=N, ...)` 的 start 整数值；找不到返回 -1。
-fn scan_substring_start(code : String) -> Int32 {
+fn scan_substring_start(code : String) -> Int {
   match code.find("start=") {
     None => -1
     Some(idx) => {
@@ -625,8 +625,8 @@ fn scan_substring_start(code : String) -> Int32 {
       // store_sqlite_executions.mbt:202 / supervisor_tools.mbt:456）都有 int_safe 上界
       // 守卫，本函数漏网。被扫描源码含 `substring(start=<长数字>, ...)` 时
       // `acc = acc * 10 + d` 溢出 Int（JS 静默乱数 / native panic），按解析失败返回 -1。
-      let int_safe : Int32 = 200_000_000
-      let mut acc : Int32 = 0
+      let int_safe : Int = 200_000_000
+      let mut acc : Int = 0
       let mut j = pos
       while j < code.length() && code[j] >= '0' && code[j] <= '9' {
         if acc >= int_safe {
@@ -699,7 +699,7 @@ fn scan_guard_substring_end_var(
   code : String,
   vn : String,
 ) -> Bool {
-  let t = prev.trim().to_string()
+  let t = prev.trim().to_owned()
   if t.is_empty() {
     return false
   }
@@ -746,13 +746,13 @@ fn scan_guard_substring_end_var(
 ///|
 /// BUG-268 辅助：解析非负整数（与 scan_substring_start 同款 int_safe 上界）；
 /// 失败/空/溢出返回 -1。
-fn scan_parse_int_opt(s : String) -> Int32 {
-  let t = s.trim().to_string()
+fn scan_parse_int_opt(s : String) -> Int {
+  let t = s.trim().to_owned()
   if t.is_empty() {
     return -1
   }
-  let int_safe : Int32 = 200_000_000
-  let mut acc : Int32 = 0
+  let int_safe : Int = 200_000_000
+  let mut acc : Int = 0
   for c in t {
     if c < '0' || c > '9' {
       return -1
@@ -794,7 +794,7 @@ fn scan_substring_arg_expr(code : String, arg : String) -> String {
         return ""
       }
       let mut j = pos
-      let mut depth : Int32 = 0
+      let mut depth : Int = 0
       while j < code.length() {
         let c = code[j]
         if c == '(' {
@@ -810,7 +810,7 @@ fn scan_substring_arg_expr(code : String, arg : String) -> String {
         }
         j = j + 1
       }
-      code.substring(start=pos, end=j).to_string().trim().to_string()
+      code.substring(start=pos, end=j).to_string().trim().to_owned()
     }
   }
 }
@@ -843,16 +843,16 @@ fn scan_guard_mod_invariant(
   if start_expr.is_empty() || vn.is_empty() {
     return false
   }
-  let se = start_expr.trim().to_string()
-  let ee = scan_nospace(end_expr.trim().to_string())
+  let se = start_expr.trim().to_owned()
+  let ee = scan_nospace(end_expr.trim().to_owned())
   let ee_ok = ee == se || ee == se + "+1"
   if !ee_ok {
     return false
   }
-  let mut mod_k : Int32 = -1
+  let mut mod_k : Int = -1
   let mut found = false
   for p in prev_lines {
-    let t = p.trim().to_string()
+    let t = p.trim().to_owned()
     if t.is_empty() {
       continue
     }
@@ -865,7 +865,7 @@ fn scan_guard_mod_invariant(
             .substring(start=pi + 3, end=rest.length())
             .to_string()
             .trim()
-            .to_string()
+            .to_owned()
           let kv = scan_parse_int_opt(ktxt)
           if kv >= 0 {
             mod_k = kv
@@ -882,7 +882,7 @@ fn scan_guard_mod_invariant(
   }
   // 目标长度：`let <vn> = "<literal>"` 的字面量长度 ≥ K
   for p in prev_lines {
-    let t = p.trim().to_string()
+    let t = p.trim().to_owned()
     let pref2 = "let " + vn + " = "
     if t.has_prefix(pref2) {
       let lit = t
@@ -913,23 +913,23 @@ fn scan_guard_for_bounded(
   if start_expr.is_empty() || vn.is_empty() {
     return false
   }
-  let se = start_expr.trim().to_string()
-  let ee = scan_nospace(end_expr.trim().to_string())
+  let se = start_expr.trim().to_owned()
+  let ee = scan_nospace(end_expr.trim().to_owned())
   let ee_ok = ee == se || ee == se + "+1"
   if !ee_ok {
     return false
   }
-  let mut bound : Int32 = -1
+  let mut bound : Int = -1
   let mut found = false
   for p in prev_lines {
-    let t = p.trim().to_string()
+    let t = p.trim().to_owned()
     let pref = "for " + se + " in 0..<"
     if t.has_prefix(pref) {
       let ktxt = t
         .substring(start=pref.length(), end=t.length())
         .to_string()
         .trim()
-        .to_string()
+        .to_owned()
       // BUG-268 补充：`for i in 0..<26 {` 尾部 `{` 会混入字面量导致 parse 失败
       let mut kk = ktxt
       while kk.length() > 0 &&
@@ -952,7 +952,7 @@ fn scan_guard_for_bounded(
     return false
   }
   for p in prev_lines {
-    let t = p.trim().to_string()
+    let t = p.trim().to_owned()
     let pref2 = "let " + vn + " = "
     if t.has_prefix(pref2) {
       let lit = t
@@ -978,7 +978,7 @@ fn scan_cut_bounded(
   x : String,
   limit : String,
 ) -> Bool {
-  let xt = x.trim().to_string()
+  let xt = x.trim().to_owned()
   if xt.is_empty() || limit.is_empty() {
     return false
   }
@@ -987,7 +987,7 @@ fn scan_cut_bounded(
     return true
   }
   for p in prev_lines {
-    let t = p.trim().to_string()
+    let t = p.trim().to_owned()
     let pref = "let " + xt + " = "
     if t.has_prefix(pref) {
       let rhs = t.substring(start=pref.length(), end=t.length()).to_string()
@@ -1018,16 +1018,16 @@ fn scan_guard_multi_line_length(
   }
   let start_expr = scan_substring_start_expr(code)
   let end_expr = scan_substring_end_expr(code)
-  let se = start_expr.trim().to_string()
-  let ee = scan_nospace(end_expr.trim().to_string())
+  let se = start_expr.trim().to_owned()
+  let ee = scan_nospace(end_expr.trim().to_owned())
   // ① lenv 绑定
   let mut lenv = ""
   for p in prev_lines {
-    let t = p.trim().to_string()
+    let t = p.trim().to_owned()
     if t.has_prefix("let ") && t.contains(vn + ".length()") {
       match t.find(" = ") {
         Some(ei) => {
-          let name = t.substring(start=4, end=ei).to_string().trim().to_string()
+          let name = t.substring(start=4, end=ei).to_string().trim().to_owned()
           if !name.is_empty() {
             lenv = name
             break
@@ -1044,7 +1044,7 @@ fn scan_guard_multi_line_length(
   let mut limit = ""
   let mut if_idx = -1
   for i in 0..<prev_lines.length() {
-    let t = prev_lines[i].trim().to_string()
+    let t = prev_lines[i].trim().to_owned()
     let pref = "if " + lenv + " <= "
     let pref2 = "if " + lenv + " < "
     if t.has_prefix(pref) {
@@ -1052,7 +1052,7 @@ fn scan_guard_multi_line_length(
         .substring(start=pref.length(), end=t.length())
         .to_string()
         .trim()
-        .to_string()
+        .to_owned()
       if_idx = i
       break
     }
@@ -1061,7 +1061,7 @@ fn scan_guard_multi_line_length(
         .substring(start=pref2.length(), end=t.length())
         .to_string()
         .trim()
-        .to_string()
+        .to_owned()
       if_idx = i
       break
     }
@@ -1074,7 +1074,7 @@ fn scan_guard_multi_line_length(
   while limit.length() > 0 && limit[limit.length() - 1] == '{' {
     limit = limit.substring(start=0, end=limit.length() - 1).to_string()
   }
-  limit = limit.trim().to_string()
+  limit = limit.trim().to_owned()
   if limit.is_empty() {
     return false
   }
@@ -1134,7 +1134,7 @@ fn scan_guard_has_suffix_cut(
   if vn.is_empty() {
     return false
   }
-  let ee = scan_nospace(scan_substring_end_expr(code).trim().to_string())
+  let ee = scan_nospace(scan_substring_end_expr(code).trim().to_owned())
   let need = vn + ".length()-"
   if !ee.has_prefix(need) {
     return false
@@ -1144,7 +1144,7 @@ fn scan_guard_has_suffix_cut(
     return false
   }
   for p in prev_lines {
-    let t = p.trim().to_string()
+    let t = p.trim().to_owned()
     let pref = "let " + cutv + " = "
     if t.has_prefix(pref) && t.contains(vn + ".has_suffix(") {
       let body = t.substring(start=pref.length(), end=t.length()).to_string()
@@ -1159,7 +1159,7 @@ fn scan_guard_has_suffix_cut(
                 .substring(start=0, end=ci)
                 .to_string()
                 .trim()
-                .to_string()
+                .to_owned()
               let kv = scan_parse_int_opt(ktxt)
               if kv >= 1 && kv <= 4 {
                 return true
@@ -1178,7 +1178,7 @@ fn scan_guard_has_suffix_cut(
 ///|
 /// 在 prev 行里找该 var 是否被 `is_empty()` 守卫（同形 `if var.is_empty()` / `var.is_empty()`）。
 fn scan_guard_is_empty(prev : String, vn : String) -> Bool {
-  let t = prev.trim().to_string()
+  let t = prev.trim().to_owned()
   if t.is_empty() {
     return false
   }
@@ -1193,7 +1193,7 @@ fn scan_guard_is_empty(prev : String, vn : String) -> Bool {
 ///|
 /// 在 prev 行里找该 var 是否被 `length() > N` / `length() >= N` 守卫。
 fn scan_guard_length_above(prev : String, vn : String) -> Bool {
-  let t = prev.trim().to_string()
+  let t = prev.trim().to_owned()
   if t.is_empty() {
     return false
   }
@@ -1210,7 +1210,7 @@ fn scan_guard_length_above(prev : String, vn : String) -> Bool {
 /// 在 prev 行里找 `if total <= 0` / `if total == 0` / `if n <= 0` 这类零值守卫。
 /// 不要求变量名匹配（常见于函数入口的总量校验），只认"零值判断 + return/fallback"形状。
 fn scan_guard_zero(prev : String) -> Bool {
-  let t = prev.trim().to_string()
+  let t = prev.trim().to_owned()
   if t.is_empty() {
     return false
   }
@@ -1229,7 +1229,7 @@ fn scan_guard_zero(prev : String) -> Bool {
 /// 实现须同步认这一形态，否则 hint 承诺了却把真守卫代码报成假阳性。
 /// 只认 `vn` 字面量紧跟比较运算符的形状，避免把同函数里无关的 `if` 行误判。
 fn scan_guard_div_direct(line : String, vn : String) -> Bool {
-  let t = line.trim().to_string()
+  let t = line.trim().to_owned()
   if t.is_empty() || vn.is_empty() {
     return false
   }
@@ -1345,13 +1345,13 @@ pub fn scan_finding_guarded(
   code : String,
   rule : String,
   prev_lines : Array[String],
-  ctx~ : ScanCtx = {
+  ctx? : ScanCtx = {
     safe_clamps: Map([]),
     guarded_lines: Map([]),
     slice_only: false,
   },
-  hit_line~ : String = "",
-  hit_ln~ : Int32 = 0,
+  hit_line? : String = "",
+  hit_ln? : Int = 0,
 ) -> Bool {
   // R124: MoonBit substring 安全通道 — 文件已无裸 substring 调用
   if rule == "substring-overrun" && ctx.slice_only {
@@ -1389,7 +1389,7 @@ pub fn scan_finding_guarded(
   // 同一行守卫：substring 可能写在 `if s.length() > N { ... substring(...) }` 同一行，
   // prev_lines 不含当前行，须先检查 code 自身。
   if rule == "substring-overrun" {
-    let code_t = code.trim().to_string()
+    let code_t = code.trim().to_owned()
     if !vn.is_empty() && scan_guard_length_above(code_t, vn) {
       return true
     }
@@ -1462,7 +1462,7 @@ pub fn scan_finding_guarded(
   let mut i = n - 1
   while i >= 0 {
     let p = prev_lines[i]
-    let t = p.trim().to_string()
+    let t = p.trim().to_owned()
     i = i - 1
     if t.is_empty() {
       continue
@@ -1816,8 +1816,8 @@ fn scan_merge_rules(
 pub fn issue_scan(
   dir : String,
   rules_file : String,
-  max_findings : Int32,
-  include_tests~ : Bool = false,
+  max_findings : Int,
+  include_tests? : Bool = false,
 ) -> Result[Json, String] {
   if !scan_dir_ok(dir) {
     return Err(
@@ -1869,12 +1869,12 @@ pub fn issue_scan(
     // 其余规则（unused-variable、match-exhaustive、long-function、json-injection 等
     // 占全量 findings 大头）的命中直接透传，免掉 mem_read + split + prev_window 三件套。
     if !(hit.rule == "substring-overrun" ||
-        hit.rule == "unprotected-division" ||
-        hit.rule == "unwrapped-unwrap" ||
-        hit.rule == "possible-overflow" ||
-        hit.rule == "index-out-of-bounds" ||
-        hit.rule == "string-index" ||
-        hit.rule == "secs-overflow",) {
+      hit.rule == "unprotected-division" ||
+      hit.rule == "unwrapped-unwrap" ||
+      hit.rule == "possible-overflow" ||
+      hit.rule == "index-out-of-bounds" ||
+      hit.rule == "string-index" ||
+      hit.rule == "secs-overflow") {
       guarded_filtered.push(hit)
       continue
     }
@@ -1915,7 +1915,7 @@ pub fn issue_scan(
       let mut i = hit_idx - 1
       while i >= 0 {
         let line_str = fc_lines[i]
-        if line_str.trim().to_string().has_prefix("fn ") {
+        if line_str.trim().to_owned().has_prefix("fn ") {
           break
         }
         prev_window.push(line_str)
@@ -1948,7 +1948,7 @@ pub fn issue_scan(
   let mut medium = 0
   let mut low = 0
   // 按规则聚合（单次遍历计数，替代旧的逐规则全量 filter）
-  let rule_counts : Map[String, Int32] = Map([])
+  let rule_counts : Map[String, Int] = Map([])
   for h in dedup {
     if h.severity == "high" {
       high = high + 1

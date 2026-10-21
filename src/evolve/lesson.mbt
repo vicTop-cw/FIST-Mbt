@@ -11,7 +11,7 @@
 ///|
 /// 构造 lesson 类目目标串：goal 前加 `[lesson]` 前缀（幂等，已有前缀则原样返回）。
 pub fn lesson_goal(cat : String) -> String {
-  let c = cat.trim().to_string()
+  let c = cat.trim().to_owned()
   if c.has_prefix("[lesson]") {
     c
   } else {
@@ -27,7 +27,7 @@ pub fn lesson_ts_part(now : String) -> String {
     .replace(old=":", new=".")
     .replace(old="T", new=".")
   if compact.length() > 16 {
-    compact[0:16].to_string()
+    compact[0:16].to_owned()
   } else {
     compact
   }

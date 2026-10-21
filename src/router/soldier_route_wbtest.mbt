@@ -43,15 +43,15 @@ test "sr_1_池标签 → 档位提示映射（paid-* 付费、其余免费）" {
 
 ///|
 test "sr_2_兵种理由文案覆盖 8 兵种 + 未知回退" {
-  assert_eq(soldier_label_reason("特种兵").starts_with("特种兵"), true)
-  assert_eq(soldier_label_reason("炮兵").starts_with("炮兵"), true)
-  assert_eq(soldier_label_reason("侦查兵").starts_with("侦查兵"), true)
-  assert_eq(soldier_label_reason("骑兵").starts_with("骑兵"), true)
-  assert_eq(soldier_label_reason("通信兵").starts_with("通信兵"), true)
-  assert_eq(soldier_label_reason("医疗兵").starts_with("医疗兵"), true)
-  assert_eq(soldier_label_reason("后勤兵").starts_with("后勤兵"), true)
-  assert_eq(soldier_label_reason("工兵").starts_with("工兵"), true)
-  assert_eq(soldier_label_reason("某未知").starts_with("通用"), true)
+  assert_eq(soldier_label_reason("特种兵").has_prefix("特种兵"), true)
+  assert_eq(soldier_label_reason("炮兵").has_prefix("炮兵"), true)
+  assert_eq(soldier_label_reason("侦查兵").has_prefix("侦查兵"), true)
+  assert_eq(soldier_label_reason("骑兵").has_prefix("骑兵"), true)
+  assert_eq(soldier_label_reason("通信兵").has_prefix("通信兵"), true)
+  assert_eq(soldier_label_reason("医疗兵").has_prefix("医疗兵"), true)
+  assert_eq(soldier_label_reason("后勤兵").has_prefix("后勤兵"), true)
+  assert_eq(soldier_label_reason("工兵").has_prefix("工兵"), true)
+  assert_eq(soldier_label_reason("某未知").has_prefix("通用"), true)
 }
 
 ///|

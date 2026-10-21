@@ -50,7 +50,7 @@ pub fn all_hats() -> Array[Hat] {
 /// 帽子字符串 → Hat。非法值返回 Err。与 ops_modes::parse_mode 同约定：
 /// 大小写敏感（trim 后逐字匹配），"WHITE" 视为非法而非静默转小写。
 pub fn parse_hat(s : String) -> Result[Hat, String] {
-  let t = s.trim().to_string()
+  let t = s.trim().to_owned()
   match t {
     "white" => Ok(White)
     "red" => Ok(Red)

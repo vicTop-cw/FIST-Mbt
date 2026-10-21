@@ -119,7 +119,7 @@ pub async fn laya_decide_external(
   }
   // 解析 sidecar stdout 里的 JSON（可能混有 stderr 噪音）
   let trimmed = stdout_str.trim()
-  let out : Json = @json.parse(trimmed.to_string()) catch {
+  let out : Json = @json.parse(trimmed.to_owned()) catch {
     _ =>
       Json::object({
         "available": Json::boolean(false),

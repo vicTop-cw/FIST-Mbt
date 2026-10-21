@@ -116,7 +116,7 @@ test "ns_stats 反映各 ns 任务数" {
   let mut gamma_total = -1
   match stats {
     Json::Object(fields) => {
-      assert_eq(fields.size(), 2)
+      assert_eq(fields.length(), 2)
       fields.each(fn(k, v) {
         match v {
           Json::Object(item) => {

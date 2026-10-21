@@ -32,7 +32,12 @@ fn mc_sqrt(x : Double) -> Double {
 
 ///|
 /// 三角分布采样（a<m<b）：u∈[0,1) → 时长（向上取整）。返回 (新状态, 时长)。
-fn mc_tri_sample(state : Int, a : Int, m : Int, b : Int) -> (Int, Int) {
+fn mc_tri_sample(
+  state : Int,
+  a : Int,
+  m : Int,
+  b : Int,
+) -> (Int, Int) {
   let (s2, v) = mc_xorshift(state)
   let denom = (b - a).to_double()
   let u = v.to_double() / 2147483648.0
@@ -228,7 +233,7 @@ pub fn FistEngine::dag_mc(
   let d = if deadline < 0 { 0 } else { deadline }
   let tasks = self.mc_scope_tasks(ns, root_task_id)
   if tasks.is_empty() {
-    let im = Map::new()
+    let im = Map([])
     im.set("insufficient", Json::boolean(true))
     im.set(
       "note",
@@ -379,7 +384,7 @@ pub fn FistEngine::dag_mc(
   }
   let crit_json : Array[Json] = []
   for i = 0; i < top_k; i = i + 1 {
-    let cm = Map::new()
+    let cm = Map([])
     cm.set("task_id", Json::string(crit_arr[i].0))
     cm.set(
       "critical_freq",
@@ -388,17 +393,17 @@ pub fn FistEngine::dag_mc(
     crit_json.push(Json::object(cm))
   }
   // 组装返回
-  let mk = Map::new()
+  let mk = Map([])
   mk.set("min", Json::number(minv.to_double()))
   mk.set("mean", Json::number(mean))
   mk.set("p50", Json::number(p50.to_double()))
   mk.set("p90", Json::number(p90.to_double()))
   mk.set("max", Json::number(maxv.to_double()))
-  let sc = Map::new()
+  let sc = Map([])
   sc.set("ns", Json::string(ns))
   sc.set("root_task_id", Json::string(root_task_id))
   sc.set("tasks", Json::number(tasks.length().to_double()))
-  let m = Map::new()
+  let m = Map([])
   m.set("scope", Json::object(sc))
   m.set("samples", Json::number(n.to_double()))
   // BUG-24：如实回显"要了多少 / 实际跑了多少 / 为什么"，调用方不用读源码就能知道被钳制

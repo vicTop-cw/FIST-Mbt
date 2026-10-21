@@ -16,7 +16,7 @@
 /// 第四元 is_pre：`-alpha1` 之类为 true——按 semver 应排同号正式版之下，
 /// 若不区分会把「有 pre-release 的旧版」误判成等于正式版（假绿风险）。
 fn parse_version(s : String) -> (Int, Int, Int, Bool)? {
-  let mut core = s.trim().to_string()
+  let mut core = s.trim().to_owned()
   if core.length() > 0 && (core[0] == 'v' || core[0] == 'V') {
     core = core.substring(start=1, end=core.length())
   }
@@ -25,15 +25,15 @@ fn parse_version(s : String) -> (Int, Int, Int, Bool)? {
   if parts.length() != 3 {
     return None
   }
-  let major = match parse_num(strip_suffix(parts[0].to_string())) {
+  let major = match parse_num(strip_suffix(parts[0].to_owned())) {
     Some(v) => v
     None => return None
   }
-  let minor = match parse_num(strip_suffix(parts[1].to_string())) {
+  let minor = match parse_num(strip_suffix(parts[1].to_owned())) {
     Some(v) => v
     None => return None
   }
-  let patch = match parse_num(strip_suffix(parts[2].to_string())) {
+  let patch = match parse_num(strip_suffix(parts[2].to_owned())) {
     Some(v) => v
     None => return None
   }
@@ -43,7 +43,7 @@ fn parse_version(s : String) -> (Int, Int, Int, Bool)? {
 ///|
 /// 是否有 pre-release 后缀：去掉 `+build` 元数据（不参与优先级）后仍含 `-` 即 true。
 fn has_pre_release(core : String) -> Bool {
-  let base = core.split("+").collect()[0].to_string()
+  let base = core.split("+").collect()[0].to_owned()
   match base.find("-") {
     Some(_) => true
     None => false
@@ -55,9 +55,9 @@ fn has_pre_release(core : String) -> Bool {
 /// split 无分隔符时返回单元素，取 `[0]` 恒等于自身——无需 index_of。
 fn strip_suffix(s : String) -> String {
   let dash = s.split("-").collect()
-  let base = dash[0].to_string()
+  let base = dash[0].to_owned()
   let plus = base.split("+").collect()
-  plus[0].to_string()
+  plus[0].to_owned()
 }
 
 ///|
@@ -163,7 +163,7 @@ fn backup_name(local : String) -> String {
 ///  * `base_url` 空 → GitHub API `repos/{repo}/releases/latest`。
 /// 放这里（而非 upgrade_js.mbt）是因为它跨 target 通用，wbtest 在 native/js 都要能编译。
 pub fn latest_url(repo : String, base_url : String) -> String {
-  let b = base_url.trim().to_string()
+  let b = base_url.trim().to_owned()
   if b.length() > 0 {
     let trimmed = if b.has_suffix("/") {
       b.substring(start=0, end=b.length() - 1)

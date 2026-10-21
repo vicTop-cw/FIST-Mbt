@@ -53,9 +53,9 @@ pub fn omega_clean_slice(s : String) -> String {
   }
   let mut out = ""
   for part in s.split(mark) {
-    out = out + part.to_string()
+    out = out + part.to_owned()
   }
-  out.trim().to_string()
+  out.trim().to_owned()
 }
 
 ///|
@@ -121,9 +121,9 @@ fn omega_author_of(content : String) -> String {
   }
   let rest = content[p.length():content.length()]
   for line in rest.split("\n") {
-    return line.to_string()
+    return line.to_owned()
   }
-  rest.to_string()
+  rest.to_owned()
 }
 
 ///|

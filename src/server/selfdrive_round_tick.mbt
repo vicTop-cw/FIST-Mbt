@@ -113,7 +113,7 @@ fn evaluate_target_simple(target_text : String, snapshot : Json) -> Json {
   let optional_keywords : Array[String] = []
   let lines = target_text.split("\n")
   for raw_line in lines {
-    let line = raw_line.trim().to_string()
+    let line = raw_line.trim().to_owned()
     if line.length() == 0 {
       continue
     }
@@ -121,10 +121,10 @@ fn evaluate_target_simple(target_text : String, snapshot : Json) -> Json {
     let mut is_req = true
     if has_prefix(line, "- [x]") || has_prefix(line, "- [X]") {
       is_req = true
-      body = line[5:].to_string().trim().to_string()
+      body = line[5:].to_owned().trim().to_owned()
     } else if has_prefix(line, "- [ ]") {
       is_req = false
-      body = line[5:].to_string().trim().to_string()
+      body = line[5:].to_owned().trim().to_owned()
     } else {
       // fallback：整行当 keyword
       body = line
