@@ -146,6 +146,7 @@ fn bug_field_value(line : String, key : String) -> String? {
   Some(body[colon + 1:body.length()].trim().to_owned())
 }
 
+
 ///|
 /// 把 bugs.md 全文解析为条目 Json 数组。
 fn bug_parse(text : String) -> Array[Json] {

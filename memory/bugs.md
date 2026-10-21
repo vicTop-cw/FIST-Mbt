@@ -5776,7 +5776,7 @@ task_plan_deep.mbt:  runner? → runner~
 
 ### FIXED(2026-10-21T01:23:06Z / BUG-344)
 - evidence: 并发 agent 在 docs/2026-10-20-slave-dev-playbook.md:206 修正了 cl 表工具数声明（09:09:59 该文件被改）；check_tools_sync.py R3b 现 PASS（R3b/R7 扫现状面 156 份，历史面豁免 1 份，无违例）。本会话 09:18 实测：check_tools_sync rc=0。一源四态 cl 全部守卫 6/6 rc=0。
-## BUG-345 [2026-10-20T13:34:03Z] [medium] FIXED
+## BUG-345 [2026-10-20T13:34:03Z] [medium] OPEN
 - summary: [issue_scan] by_severity 聚合把 info 档并入 low 桶，BUG-333 降噪预案无法净化 by_severity
 - detail: 实测对比（release v0.3.9，src/ltl）：
 
@@ -5791,10 +5791,6 @@ task_plan_deep.mbt:  runner? → runner~
 
 证据：同一次 release 二进制、同一目录 src/ltl，两跑差异仅 rules_file 参数；by_severity 完全相等（low=69），by_rule 与逐条 findings 已显示覆盖后 severity=info。
 - reported_by: polish-lead
-
-
-### FIXED(2026-10-21T07:18:52Z / BUG-345)
-- evidence: src/server/issue_scan.mbt 抽出 scan_severity_bucket 四桶（high/medium/low/info，未知档位归 info 不再 else→low），聚合改按四桶计数，by_severity 回执新增 info 键；src/server/issue_scan_wbtest.mbt 加四桶穷举锁，src/server/issue_scan_test.mbt 加 A/B 集成锁（内建 low 规则被 rules_file 同名降为 info：low 1→0、info 1→3、四桶和==total）。实跑：moon check 504 warning/0 error（族计数与基线逐族相同），moon test --target js 1344/1344/0，MCP issue_scan A/B 实测 by_severity {high:0,medium:0,low:1,info:1} → {high:0,medium:0,low:0,info:3}。
 
 ## BUG-346 [2026-10-20T13:48:51Z] [medium] OPEN
 - summary: [issue_scan] moonbit-json-injection 规则 pattern 与意图相反：匹配的是安全构造器 Json::string(，从未检测真实拼接注入；全 MoonBit 命中恒假阳（src/store 单目录 45 条，L1876 注释自述全仓约 1334 条）
@@ -6060,5 +6056,4 @@ total = int(m.group(1))  # 只取 group(1)=Total tests 数
 ### FIXED(2026-10-21 轮次 R55 副机 / BUG-380)
 - 改了什么：`src/engine/dag_mc_test.mbt`（删 `mc_top_crit`）、`src/server/issue_scan.mbt`（删 `scan_filter_guarded`）、`src/server/model_router_ops.mbt`（删 `mr_caf_read`，两处文档措辞改行为描述）、`src/server/server.mbt`（删 `intlist` 与 `to_ids_result`，BUG-26 注释去掉已删符号名）、`src/symbolic/symbolic.mbt`（删 `lit_var` / `lit_sign` / `lit_neg`）。共 5 文件 +3/−120 行。
 - 实测锁钉：`moon check --target js` → rc=0，`(504 warnings, 0 errors)`，0001 命中 10→2、0020 473→471、0078 3→2、其余族逐格不变；`moon test --target js` → `Total tests: 1340, passed: 1340, failed: 0`；五文件 moonfmt 零差异 / bareLF 0；电池 38/5/5/0 与改前逐格相同；`.mbti` 已 restore，未入提交。
-
 

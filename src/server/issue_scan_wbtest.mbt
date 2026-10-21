@@ -134,6 +134,7 @@ test "scan_match_lines_整行注释与字面量两道降噪同时生效" {
 >>>>>>> 92218ec5 (fix(issue_scan): json-injection 只认实参拼接/插值，安全构造器不再假阳（BUG-346 / T0r47）)
 }
 
+
 ///|
 /// BUG-164 盲区 A：`X.unwrap()` 的守卫写在**上一行**（`if X.is_some()`），
 /// 扫描器此前不认上一行守卫、把受保护 unwrap 误报为 unwrapped-unwrap。
@@ -343,6 +344,7 @@ test "bug348_let_binding_name_extraction" {
   // mut 是更长标识符前缀时绝不能吃掉它（`let mutator = 1` 的绑定名是 mutator）
   assert_eq(scan_let_binding_name("let mutator = 1"), "mutator")
 }
+
 
 ///|
 test "bug348_word_occurrence_is_whole_word" {

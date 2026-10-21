@@ -209,6 +209,7 @@ test "auction_pick：胜者诅咒防护——过度自信者被校准折扣击�
   }
 }
 
+
 ///|
 test "auction_pick：负载折扣分胜负 + 空 need 无竞拍者" {
   let reg = @executor.ExecutorRegistry::new()

@@ -506,6 +506,7 @@ fn find_issue_and_repo(
   (-1, "")
 }
 
+
 ///|
 /// 为一批 issue number 构建 close 计划：按 repo 分组 → 每组生成一条 curl 命令
 /// (PUT /repos/{owner}/{repo}/issues/{n} body=`{"state":"closed"}`)。

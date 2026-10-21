@@ -137,6 +137,7 @@ test "memory_4_gc_missing_file" {
   assert_eq(mem_str(j, "kind"), "target")
 }
 
+
 ///|
 test "memory_5_gc_one_archives" {
   let dir = mem_dir("mem_c5_arch")
@@ -404,6 +405,7 @@ test "memory_18_gc_illegal_kind_refuses_without_writing" {
   assert_eq(body, "0123456789abcdefghij")
   assert_true(!@fs.path_exists(dir + "/memory/archive/target.archive.md"))
 }
+
 
 ///|
 /// BUG-36 同族缺口：consolidate 的非法 kind 必须 Err 且不写任何文件。

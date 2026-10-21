@@ -119,6 +119,7 @@ fn saga_step_json(t : (Int, String, String, String, String)) -> Json {
   Json::object(sm)
 }
 
+
 ///|
 /// 依赖者传递闭包：从 start 出发，沿「任务 depends_on 反向边」（谁依赖我）收集
 /// 全部受影响下游任务。Map[String, Bool] 兼作 visited 集合（环保护）。

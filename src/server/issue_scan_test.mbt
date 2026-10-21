@@ -588,6 +588,7 @@ test "lint_348_unused_variable_pairwise" {
   assert_true(is_unused_on(6))
 }
 
+
 ///|
 /// BUG-333 回归锁：moonbit-match-exhaustive（needle 裸子串 `match `）——MoonBit 编译器
 /// **强制** match 穷尽（不穷尽 = 编译错误），账本实测 1513 条命中全部假阳 ⇒ 默认降噪丢弃。
@@ -652,6 +653,7 @@ fn lint_sev(j : Json, key : String) -> Int {
     _ => -1
   }
 }
+
 
 ///|
 /// BUG-345：外部规则把内建 low 规则降为 info 后，`by_severity` 必须出现 info 桶、

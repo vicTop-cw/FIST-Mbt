@@ -186,6 +186,7 @@ fn sd_parse_int(raw : String) -> Int? {
   Some(v)
 }
 
+
 ///|
 /// 读取已审视轮次（缺失视为 0；解析失败视为 0）。
 fn sd_reviewed_count(project_dir : String) -> Int32 {
@@ -607,6 +608,7 @@ pub fn selfdrive_parse_next_tasks(
   }
   out
 }
+
 
 ///|
 /// 发布最新审视报告中的 Next Tasks（幂等：description 内嵌 [review:<file>:<idx>] 标记防重）。

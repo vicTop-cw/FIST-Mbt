@@ -41,11 +41,7 @@ pub fn Archive::new(path : String) -> Archive {
 
 ///|
 /// 产物总数。
-<<<<<<< HEAD
 pub fn Archive::len(self : Archive) -> Int32 {
-=======
-pub fn Archive::len(self : Archive) -> Int {
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
   self.items.length()
 }
 

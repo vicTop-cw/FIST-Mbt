@@ -505,6 +505,7 @@ fn scan_is_ident_cont(c : Char) -> Bool {
   o == 95
 }
 
+
 ///|
 /// 字符是否为标识符起始字符（A-Z a-z _）。数字不算起始。
 fn scan_is_ident_start(c : Char) -> Bool {
@@ -719,6 +720,7 @@ fn scan_json_string_built_by_concat(line : StringView) -> Bool {
   false
 }
 
+
 ///|
 <<<<<<< HEAD
 /// 从 `fn` 定义行量到花括号配平的闭合行（含），量不出（无 `{` 或超上界）返回 -1。
@@ -748,6 +750,7 @@ fn scan_function_line_count(lines : Array[StringView], l : Int32) -> Int32 {
 =======
 /// 逐行匹配一条规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
 >>>>>>> 92218ec5 (fix(issue_scan): json-injection 只认实参拼接/插值，安全构造器不再假阳（BUG-346 / T0r47）)
+
 
 ///|
 /// 逐行匹配全部规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
@@ -837,6 +840,7 @@ fn scan_match_lines(
 // 只对 substring-overrun / unprotected-division / index-out-of-bounds / string-index 四档做
 // 守卫过滤；div-by-zero（字面量除零）不参与，`/ 0` 没有"守得住"的上下文。
 // ============================================================================
+
 
 ///|
 /// 是否为标识符字符（字母/数字/下划线）。MoonBit 标识符允许 ASCII 字母与数字、
@@ -1098,6 +1102,7 @@ fn scan_parse_int_opt(s : String) -> Int {
   acc
 }
 
+
 ///|
 /// BUG-268 辅助：去掉字符串里的所有空格。刻意不用 `String::replace`——
 /// 本仓钉版 moon 的 `replace` 需要 `old~/new~` 标签且返回 `StringView`，直接写
@@ -1155,6 +1160,7 @@ fn scan_substring_arg_expr(code : String, arg : String) -> String {
     }
   }
 }
+
 
 ///|
 fn scan_substring_start_expr(code : String) -> String {
@@ -1245,6 +1251,7 @@ fn scan_guard_mod_invariant(
   false
 }
 
+
 ///|
 /// BUG-268 形态 B：for 循环有界迭代。`for i in 0..<26` 使 0 ≤ i ≤ 25，
 /// `upper.substring(start=i, end=i+1)` 的 end=i+1 ≤ 26 = 目标长度，安全。
@@ -1319,6 +1326,7 @@ fn scan_guard_for_bounded(
   }
   false
 }
+
 
 ///|
 /// BUG-268 辅助：判断减数 X 是否在 prev_lines 中被约束为非负且有界。
@@ -1499,6 +1507,7 @@ fn scan_guard_multi_line_length(
   false
 }
 
+
 ///|
 /// BUG-268 形态 E：has_suffix 间接长度。
 /// `let cut = if names.has_suffix(", ") { 2 } else { 0 }` 使 cut ∈ {0, k}；
@@ -1561,6 +1570,7 @@ fn scan_guard_has_suffix_cut(
   }
   false
 }
+
 
 ///|
 /// 在 prev 行里找该 var 是否被 `is_empty()` 守卫（同形 `if var.is_empty()` / `var.is_empty()`）。
@@ -1942,6 +1952,7 @@ pub fn scan_finding_guarded(
   false
 }
 
+
 ///|
 /// 对整批 findings 做守卫过滤：返回没被守卫的（即真待判）那些。
 fn scan_filter_guarded(
@@ -2078,7 +2089,15 @@ fn scan_file(path : String, rules : Array[ScanRule]) -> Array[ScanFinding] {
 }
 
 ///|
+/// needle 词法的字母数字判定（`scan_regex_to_needle` 共用）。
+fn scan_is_alnum_char(c : Char) -> Bool {
+  let o = c.to_int()
+  (o >= 65 && o <= 90) || (o >= 97 && o <= 122) || (o >= 48 && o <= 57)
+}
+
+///|
 /// 从 ocr-local 的 regex pattern 提取稳定字面量 needle（子串近似，免 regex 依赖）。
+<<<<<<< HEAD
 /// 策略：扫描 pattern，收集连续字母数字与 `::` 命名空间片段，取最长者；`\w` `\s` `\d`
 /// 等 regex 类与其余标点当分隔跳过。
 /// BUG-347：`::` 命名空间限定是 MoonBit 构造器身份的一部分，必须保留进 needle。旧实现只认
@@ -2086,6 +2105,13 @@ fn scan_file(path : String, rules : Array[ScanRule]) -> Array[ScanFinding] {
 /// 任何含 `string` 的行都命中（假阳）；且 `\s` 里的 `s` 反被当字面量起点重新计数。
 /// 例：`ignore\s*\(\s*\w+` → "ignore"；`Json::string\(` → "Json::string"；
 /// `@fs\.(open|write|read)\s*\(` → "write"（分支 regex 无单一 needle，属已知局限）。
+=======
+/// 策略：扫描 pattern，收集连续字母数字片段，取最长者；`\w` `\s` `\d` 等 regex 类跳过。
+/// `ident::ident` 是同一个限定名，`::` 不断开片段——否则 `Json::string(` 会被降级成
+/// `string`，命中 `to_string(` / `formula_to_string(` 等无关调用（BUG-347）。
+/// 例：`ignore\s*\(\s*\w+` → "ignore"；`@fs\.(open|write|read)\s*\(` → "write"；
+/// `Json::string\(` → "Json::string"。
+>>>>>>> 1104bb05 (fix: 外部规则 pattern 保留 :: 命名空间（BUG-347 / T0r38）)
 fn scan_regex_to_needle(re : String) -> String {
   let cs = re.to_array()
   let n = cs.length()
@@ -2094,17 +2120,28 @@ fn scan_regex_to_needle(re : String) -> String {
   let mut i = 0
   while i < n {
     let c = cs[i]
-    let o = c.to_int()
-    let alnum = (o >= 65 && o <= 90) ||
-      (o >= 97 && o <= 122) ||
-      (o >= 48 && o <= 57)
-    if alnum {
+    if scan_is_alnum_char(c) {
       cur = cur + c.to_string()
       i = i + 1
+<<<<<<< HEAD
     } else if c == ':' && i + 1 < n && cs[i + 1] == ':' {
       // BUG-347：`::` 命名空间限定保留，不当分隔符切断。
       cur = cur + "::"
       i = i + 2
+=======
+      // 限定名续接：`ident::ident` 并入同一段
+      while i + 2 < n &&
+        cs[i] == ':' &&
+        cs[i + 1] == ':' &&
+        scan_is_alnum_char(cs[i + 2]) {
+        cur = cur + "::"
+        i = i + 2
+        while i < n && scan_is_alnum_char(cs[i]) {
+          cur = cur + cs[i].to_string()
+          i = i + 1
+        }
+      }
+>>>>>>> 1104bb05 (fix: 外部规则 pattern 保留 :: 命名空间（BUG-347 / T0r38）)
     } else {
       if cur.length() > best.length() {
         best = cur
@@ -2118,6 +2155,7 @@ fn scan_regex_to_needle(re : String) -> String {
   }
   best
 }
+
 
 ///|
 /// 从外部规则 JSON 文本（ocr-local moonbit-rules.json 风格：顶层 `rules` 数组，
@@ -2530,6 +2568,7 @@ pub fn issue_scan(
 }
 
 // ========== DEBUG TESTS (R125 guard filter) ==========
+
 
 ///|
 fn _ctx() -> ScanCtx {
