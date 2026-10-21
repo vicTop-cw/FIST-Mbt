@@ -1,0 +1,31 @@
+name: FIST Gate
+
+# Unified Tier2 gate chain on every PR touching master/main.
+# Runs scripts/fist-gate.py (merge_markers/fmt/build/ps_encoding/store_path).
+# rc semantics: 0=pass 1=fail 2=degraded -> gate action fails on rc>=1.
+on:
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: unified gate chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install MoonBit toolchain
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Refresh registry (first build)
+        run: moon update
+
+      - name: Run unified gate chain
+        run: python3 scripts/fist-gate.py
