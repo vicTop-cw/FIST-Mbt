@@ -37,9 +37,9 @@
     "修复方向：退役该规则（推荐），或重构为 moonbit-unvalidated-json-parse 指向无 catch 兜底的 @json.parse（另立提案）"
   ],
   "recommendations": [
-    "推荐 1：删除 moonbit-json-injection 或 severity 永久置 info + pattern 改必不命中标记，显式标注 deprecated: no-sink-in-moonbit",
-    "推荐 2：重构为 moonbit-unvalidated-json-parse（新增能力，需单独评估 127 处 catch 覆盖率作为 FP 基线）",
-    "推荐 3（过渡）：保持 memory/bug333_denoise_rules_v2.json 的降噪，修前止损"
+    "OWNER_DECIDED_2026-10-21: RETIRE moonbit-json-injection（退役）。处置：删除该规则，或 severity 永久置 info + pattern 改必不命中标记 + 标注 deprecated: no-sink-in-moonbit。原推荐 1 获 owner 拍板",
+    "原推荐 2（重构为 moonbit-unvalidated-json-parse）：未被选用；如需，另立提案评估 127 处 catch 覆盖率作为 FP 基线",
+    "原推荐 3（保持降噪过渡 memory/bug333_denoise_rules_v2.json）：作为退役落地前的临时止损，仍有效"
   ],
   "blocking": "BUG-345/346/347 落地仍需改 src/server/issue_scan.mbt；该目录 37 个并发未提交改动 + 新增未跟踪 src/server/bug335_ns_route_wbtest.mbt 持续阻塞（R14/R15/R16/R17/R18 五轮一致）"
 }
