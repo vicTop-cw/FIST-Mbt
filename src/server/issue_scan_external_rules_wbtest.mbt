@@ -97,5 +97,31 @@ test "ext_rules_7_needle_preserves_namespace" {
   assert_eq(scan_regex_to_needle("a:bcd\\("), "bcd")
   // fixture 类零回归：纯词 + 转义括号
   assert_eq(scan_regex_to_needle("ignore\\s*\\(\\s*\\w+"), "ignore")
+<<<<<<< HEAD
   assert_eq(scan_regex_to_needle("probe\\("), "probe")
+=======
+  assert_eq(scan_regex_to_needle("string("), "string")
+  // :: 右侧不是标识符时不并入同一段（`Json::(string)` 回落到括号内字面量）
+  assert_eq(scan_regex_to_needle("Json::(string)"), "string")
+}
+
+///|
+test "ext_rules_8_namespace_not_dropped_in_matching" {
+  // BUG-347 端到端同形：外部规则 `Json::string(` 只命中真正的 Json::string( 行，
+  // 不得命中 formula_to_string( / j.to_string()（旧实现 needle 降级为 "string"）。
+  // BUG-346 起该规则只认实参里的拼接/插值，夹具用 `x + y` 才符合规则语义。
+  let json = "{\"rules\":[{\"name\":\"moonbit-json-injection\",\"severity\":\"high\",\"pattern\":\"Json::string(\",\"why\":\"w\",\"description\":\"d\"}]}"
+  let r = scan_parse_external_rules(json)
+  assert_true(r is Ok(_))
+  let content = "let a = Json::string(x + y)\nlet b = formula_to_string(f)\nlet c = j.to_string()\n"
+  let hits = scan_match_lines(content, r.unwrap(), "sample.mbt")
+  assert_eq(hits.length(), 1)
+  assert_eq(hits[0].line, 1)
+  // 换一个命名空间必须 0 命中：旧实现 Foo:: 与 Json:: 命中行号逐字相同
+  let json_foo = "{\"rules\":[{\"name\":\"moonbit-json-injection\",\"severity\":\"high\",\"pattern\":\"Foo::string(\",\"why\":\"w\",\"description\":\"d\"}]}"
+  let r2 = scan_parse_external_rules(json_foo)
+  assert_true(r2 is Ok(_))
+  let hits2 = scan_match_lines(content, r2.unwrap(), "sample.mbt")
+  assert_eq(hits2.length(), 0)
+>>>>>>> 92218ec5 (fix(issue_scan): json-injection 只认实参拼接/插值，安全构造器不再假阳（BUG-346 / T0r47）)
 }

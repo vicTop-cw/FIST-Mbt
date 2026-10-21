@@ -257,7 +257,7 @@ fn scan_rules() -> Array[ScanRule] {
       id: "moonbit-json-injection",
       severity: "low",
       pattern: ["Json::string("],
-      why: "JSON 字符串由拼接构造，可破坏 JSON 结构（ocr-local moonbit-json-injection）",
+      why: "JSON 字符串由拼接/插值构造，可破坏 JSON 结构（安全构造器 Json::string(value) 不算，见 BUG-346）",
       hint: "用 Json::object 构造或转义特殊字符",
     },
     {
@@ -495,6 +495,7 @@ fn scan_outside_literal(line : StringView, needle : String) -> Bool {
 }
 
 ///|
+<<<<<<< HEAD
 /// 字符是否为标识符续接字符（A-Z a-z 0-9 _）。BUG-348 抽绑定名与整词扫描共用。
 fn scan_is_ident_cont(c : Char) -> Bool {
   let o = c.to_int()
@@ -658,11 +659,68 @@ fn scan_match_has_catch_all(lines : Array[StringView], l : Int32) -> Bool {
       return false
     }
     i = i + 1
+=======
+/// BUG-346：`moonbit-json-injection` 的意图是"JSON 字符串由拼接/插值构造"，旧 pattern 却是
+/// 裸 `Json::string(` ⇒ 安全构造器 `Json::string(value)` 全被判成注入（src/store 单目录 45 条
+/// 实测 0 条带拼接/插值）。这里只认同一调用的实参里出现**拼接**（字面量外的 `+`）或
+/// **插值**（字面量里的 `\{`）；两者都没有就放过。保守口径：宁可少报，不误报。
+fn scan_json_string_built_by_concat(line : StringView) -> Bool {
+  let cs = line.to_owned().to_array()
+  let n = cs.length()
+  let pat = "Json::string(".to_array()
+  let mut start = -1
+  let mut i = 0
+  while i + pat.length() <= n {
+    if scan_matches_at(cs, pat, i) {
+      start = i + pat.length()
+      break
+    }
+    i = i + 1
+  }
+  if start < 0 {
+    return false
+  }
+  let mut depth = 1
+  let mut in_lit = false
+  let mut prev_bs = false
+  let mut j = start
+  while j < n {
+    let c = cs[j]
+    if in_lit {
+      if c == '\\' {
+        if j + 1 < n && cs[j + 1] == '{' {
+          return true
+        }
+        prev_bs = !prev_bs
+      } else {
+        if c == '"' && !prev_bs {
+          in_lit = false
+        }
+        prev_bs = false
+      }
+    } else if c == '"' {
+      in_lit = true
+      prev_bs = false
+    } else if c == '/' && j + 1 < n && cs[j + 1] == '/' {
+      break
+    } else if c == '(' {
+      depth = depth + 1
+    } else if c == ')' {
+      depth = depth - 1
+      if depth == 0 {
+        break
+      }
+    } else if c == '+' {
+      return true
+    }
+    j = j + 1
+>>>>>>> 92218ec5 (fix(issue_scan): json-injection 只认实参拼接/插值，安全构造器不再假阳（BUG-346 / T0r47）)
   }
   false
 }
 
 ///|
+<<<<<<< HEAD
 /// 从 `fn` 定义行量到花括号配平的闭合行（含），量不出（无 `{` 或超上界）返回 -1。
 /// BUG-348：行数精确判定，短函数不再被报超长。
 fn scan_function_line_count(lines : Array[StringView], l : Int32) -> Int32 {
@@ -687,6 +745,9 @@ fn scan_function_line_count(lines : Array[StringView], l : Int32) -> Int32 {
   }
   -1
 }
+=======
+/// 逐行匹配一条规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
+>>>>>>> 92218ec5 (fix(issue_scan): json-injection 只认实参拼接/插值，安全构造器不再假阳（BUG-346 / T0r47）)
 
 ///|
 /// 逐行匹配全部规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
@@ -734,6 +795,7 @@ fn scan_match_lines(
           }
         }
         if hit {
+<<<<<<< HEAD
           let suppressed = if rule.id == "moonbit-json-injection" {
             !scan_json_string_built_by_concat(ls)
           } else if rule.id == "moonbit-match-exhaustive" {
@@ -745,6 +807,11 @@ fn scan_match_lines(
             false
           }
           if !suppressed {
+=======
+          let needle_only = rule.id == "moonbit-json-injection" &&
+            !scan_json_string_built_by_concat(ls)
+          if !needle_only {
+>>>>>>> 92218ec5 (fix(issue_scan): json-injection 只认实参拼接/插值，安全构造器不再假阳（BUG-346 / T0r47）)
             out.push({
               rule: rule.id,
               severity: rule.severity,
