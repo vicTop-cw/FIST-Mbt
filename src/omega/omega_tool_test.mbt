@@ -238,6 +238,7 @@ test "root cause constants accessible" {
   assert_eq(@omega.ROOT_CAUSE_FORMAT_DEVIATION, "format_deviation")
   assert_eq(@omega.ROOT_CAUSE_SEMANTIC_ERROR, "semantic_error")
   assert_eq(@omega.ROOT_CAUSE_UNKNOWN, "unknown")
+<<<<<<< HEAD
 }
 
 // —— verify_fix_with_evidence（evidence 三轮真实自动修复引擎）测试 ——
@@ -324,4 +325,6 @@ test "verify_fix_with_evidence repairs fp_mismatch for real" {
     Some(Number(n, ..)) => assert_eq(n, 100.0)
     _ => abort("final_accuracy 缺失")
   }
+=======
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
 }
