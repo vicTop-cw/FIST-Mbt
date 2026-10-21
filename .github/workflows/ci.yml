@@ -266,6 +266,14 @@ jobs:
         run: |
           python3 scripts/mcp_tool_tour.py --surface-selftest
 
+      # BUG-373 出路①：代码/字面量里引用的 BUG-N ↔ 账本抬头编号。判定面只有 J1 悬空-注释
+      # 一条棘轮（上限 1）；S1/S2/S3 只报不判、必须出数。自拒（宇宙空/账本空）真给 rc=2。
+      - name: Bug-reference integrity guard (BUG-373：引用面 ↔ 账本抬头，只报不判 + J1 棘轮)
+        shell: bash
+        run: |
+          python3 scripts/check_bug_reference_integrity.py --selftest
+          python3 scripts/check_bug_reference_integrity.py
+
       - name: Store-isolation probe (BUG-90：FIST_DB_PATH 必须真的改道，两格成对 + 合成违例)
         shell: bash
         run: |
