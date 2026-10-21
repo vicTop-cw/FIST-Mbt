@@ -16,19 +16,26 @@
 ### MCP 形态（server 内）
 ```
 tools/call issue_scan
-  { "dir": "src", "max_findings": 100, "include_tests": false }
+  { "dir": "src", "max_findings": 100, "include_tests": false,
+    "min_severity": "" }
 ```
-返回 `{ scanned_files, total_findings, include_tests, by_severity, by_rule, findings[] }`。
+返回 `{ scanned_files, total_findings, include_tests, min_severity, filtered_out,
+by_severity, by_rule, findings[] }`。
 - `findings[]` 每项：`{ rule, severity, file, line, code }`。
 - `dir` 必须相对路径（拒绝绝对/穿越/盘符，防路径逃逸）。
 - `include_tests`（默认 `false`）只扫**产品代码**，跳过 `_test.mbt`/`_wbtest.mbt`
   （测试自带断言前置、命中多为安全场景，跳过后专注找产品代码真缺陷、降噪）。
   需要连测试文件一起看时传 `true`。
+- `min_severity`（默认空串=不过滤）：严重度噪音闸，取 `high|medium|low|info`。
+  低于该档的命中计入 `filtered_out`、不进 `findings` 与 `by_severity`；
+  过滤发生在结构降噪之后、`max_findings` 截断之前（低档噪音不会吃掉输出配额）；
+  非法值显式报错，不静默回落。只想要硬门时传 `high`。
 
 ### CLI 形态（免写 JSON-RPC）
 ```
 python scripts/issue_scan.py src --max-findings 30
 python scripts/issue_scan.py src --include-tests   # 连测试文件一起扫
+python scripts/issue_scan.py src --min-severity high  # 只看高危硬门
 ```
 先 `moon build --target js cmd/cli` 保证 main.js 新鲜。
 

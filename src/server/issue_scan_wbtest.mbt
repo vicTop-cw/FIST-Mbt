@@ -65,8 +65,6 @@ test "scan_match_lines_整行注释与字面量两道降噪同时生效" {
   // 第 3 行的字面量被本轮的 scan_outside_literal 挡
   assert_eq(hits.length(), 1)
   assert_eq(hits[0].line, 5)
-<<<<<<< HEAD
-=======
   // BUG-346 成对锁：json-injection 只认同一调用实参里的拼接/插值；
   // 安全构造器 Json::string(value) 必须放过（旧 pattern 裸 Json::string( 全判假阳）。
   let json_rule = {
@@ -125,7 +123,66 @@ test "scan_match_lines_整行注释与字面量两道降噪同时生效" {
   // 单行函数（三行以内）同样不报
   let one_line = "fn id(x : Int) -> Int { x }\n"
   assert_eq(scan_match_lines(one_line, [lf_rule], "f.mbt").length(), 0)
->>>>>>> fe14481b (fix(issue_scan): match-exhaustive 认顶层 _ => 兜底、long-function 按实测行数（BUG-348 部分 / T0r48）)
+  // 成对锁：empty-match 只报「整个 match 仅一条 `_ => ()` 手臂」；
+  // 多臂 match 的 catch-all 空手臂是正常写法，必须放过。
+  let em_rule = {
+    id: "moonbit-empty-match",
+    severity: "low",
+    pattern: ["_ => ()"],
+    why: "空转 match",
+    hint: "逐变体处理",
+  }
+  let em_only = "fn f(x : Int) -> Unit {\n  match x {\n    _ => ()\n  }\n}\n"
+  assert_eq(scan_match_lines(em_only, [em_rule], "e.mbt").length(), 1)
+  let em_multi = "fn g(x : Int) -> Unit {\n  match x {\n    0 => ()\n    _ => ()\n  }\n}\n"
+  assert_eq(scan_match_lines(em_multi, [em_rule], "e.mbt").length(), 0)
+  // 成对锁：noop 只认 `self.x = self.x`；结构体字面量 `id: self.id` 与改别的字段都不报。
+  let noop_rule = {
+    id: "moonbit-noop-assignment",
+    severity: "low",
+    pattern: ["self."],
+    why: "自赋值",
+    hint: "确认更新源",
+  }
+  let noop_real = "fn h() -> Unit {\n  self.total = self.total\n}\n"
+  assert_eq(scan_match_lines(noop_real, [noop_rule], "n.mbt").length(), 1)
+  let noop_literal = "let p = { id: self.id }\n"
+  assert_eq(scan_match_lines(noop_literal, [noop_rule], "n.mbt").length(), 0)
+  let noop_different = "self.total = self.other\n"
+  assert_eq(scan_match_lines(noop_different, [noop_rule], "n.mbt").length(), 0)
+  // CRLF 工作树的 `\r` 视作空白，行尾判定不被它挡掉
+  let noop_crlf = "self.total = self.total\r\n"
+  assert_eq(scan_match_lines(noop_crlf, [noop_rule], "n.mbt").length(), 1)
+  // 成对锁：private-field-leak 只认整词；tokens_in / max_tokens 不报。
+  let pf_rule = {
+    id: "moonbit-private-field-leak",
+    severity: "low",
+    pattern: ["password", "secret", "token"],
+    why: "敏感字段",
+    hint: "保持私有",
+  }
+  let pf_word = "let token = read_token()\n"
+  assert_eq(scan_match_lines(pf_word, [pf_rule], "p.mbt").length(), 1)
+  let pf_sub = "let tokens_in = 3\nlet max_tokens = 4\n"
+  assert_eq(scan_match_lines(pf_sub, [pf_rule], "p.mbt").length(), 0)
+  // 成对锁：shared-mutable 只认 `let mut x = obj.field` 形状。
+  let sm_rule = {
+    id: "moonbit-shared-mutable",
+    severity: "low",
+    pattern: ["let mut "],
+    why: "共享可变",
+    hint: "直接改字段",
+  }
+  let sm_field = "let mut round = lp.round\n"
+  assert_eq(scan_match_lines(sm_field, [sm_rule], "s.mbt").length(), 1)
+  let sm_zero = "let mut i = 0\n"
+  assert_eq(scan_match_lines(sm_zero, [sm_rule], "s.mbt").length(), 0)
+  let sm_float = "let mut sum = 0.0\nlet mut d = 1.0\n"
+  assert_eq(scan_match_lines(sm_float, [sm_rule], "s.mbt").length(), 0)
+  let sm_expr = "let mut total = self.total + 1\n"
+  assert_eq(scan_match_lines(sm_expr, [sm_rule], "s.mbt").length(), 0)
+  let sm_crlf = "let mut round = lp.round\r\n"
+  assert_eq(scan_match_lines(sm_crlf, [sm_rule], "s.mbt").length(), 1)
 }
 
 ///|
@@ -367,4 +424,39 @@ test "bug348_used_elsewhere_skips_decl_line_only" {
   // 只在声明行出现（哪怕声明行里同名重复 = 自引用）⇒ false：除声明行外没有使用点
   let cps3 : Array[String] = ["  let cost = cost", "}"]
   assert_false(scan_variable_used_elsewhere(cps3, 1, "cost"))
+}
+
+///|
+/// severity 档位与聚合兜底同一口径——未知档归 0（info），
+/// 否则过滤和 by_severity 计数会各说各话。
+test "scan_severity_rank_mapping" {
+  assert_eq(scan_severity_rank("high"), 3)
+  assert_eq(scan_severity_rank("medium"), 2)
+  assert_eq(scan_severity_rank("low"), 1)
+  assert_eq(scan_severity_rank("info"), 0)
+  assert_eq(scan_severity_rank("weird"), 0)
+  assert_eq(scan_severity_rank(""), 0)
+}
+
+///|
+test "scan_min_severity_rank_parse" {
+  let rank_of = fn(raw : String) -> Int32 {
+    match scan_min_severity_rank(raw) {
+      Ok(r) => r
+      Err(_) => -999
+    }
+  }
+  assert_eq(rank_of(""), -1)
+  assert_eq(rank_of("   "), -1)
+  assert_eq(rank_of("HIGH"), 3)
+  assert_eq(rank_of("  Medium "), 2)
+  assert_eq(rank_of("low"), 1)
+  assert_eq(rank_of("INFO"), 0)
+  match scan_min_severity_rank("severe") {
+    Ok(_) => abort("非法 min_severity 必须 Err")
+    Err(e) => {
+      assert_true(e.contains("min_severity"))
+      assert_true(e.contains("high|medium|low|info"))
+    }
+  }
 }
