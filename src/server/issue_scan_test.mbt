@@ -346,10 +346,10 @@ test "lint_9_substring_guard_filter" {
   @fs.write_string_to_file(
     d + "/sample.mbt",
     "fn guarded(s : String) -> String {\n" +
-    "  if s.length() > 8 { s[0:8].to_string() } else { s }\n" +
+    "  if s.length() > 8 { s.substring(start=0, end=8) } else { s }\n" +
     "}\n" +
     "fn unguarded(s : String) -> String {\n" +
-    "  s[0:8].to_string()\n" +
+    "  s.substring(start=0, end=8)\n" +
     "}\n",
     encoding="utf8",
   ) catch {
@@ -362,13 +362,12 @@ test "lint_9_substring_guard_filter" {
     Err(_) => return
   }
   let items = lint_findings(j)
-  // 守卫过滤语义：substring-overrun 只应命中 unguarded 第 5 行，guarded 第 2 行被过滤
-  assert_true(items.length() >= 1)
-  for f in items {
-    if mem_str(f, "rule") == "substring-overrun" {
-      assert_eq(lint_line(f), 5)
-    }
-  }
+  // 守卫过滤语义：substring-overrun 只应命中 unguarded 第 5 行，guarded 第 2 行被过滤。
+  // BUG-348 副产物：旧夹具用 s[0:8] 切片（根本不匹配 substring(），断言却靠 long-function
+  // 噪声命中满足 >=1 而恒绿；短函数不再报后此处暴露出原先零 substring 命中，改用真 substring 调用。
+  assert_eq(items.length(), 1)
+  assert_eq(mem_str(items[0], "rule"), "substring-overrun")
+  assert_eq(lint_line(items[0]), 5)
 }
 
 ///|
@@ -620,6 +619,7 @@ test "lint_333_match_exhaustive_denoised_targeted" {
     Ok(x) => x
     Err(_) => return
   }
+<<<<<<< HEAD
   let items = lint_findings(j)
   let count_rule = fn(rid : String) -> Int {
     items.filter(fn(f) { mem_str(f, "rule") == rid }).length()
@@ -630,4 +630,34 @@ test "lint_333_match_exhaustive_denoised_targeted" {
   assert_true(count_rule("moonbit-long-function") > 0)
   // ③ 硬门必须仍报 ⇒ 降噪是定向的，没把真规则一并吞掉
   assert_true(count_rule("unwrapped-unwrap") > 0)
+=======
+  // 基线一命中：race-condition(low)。BUG-348 起短函数不再报 long-function（旧基线那 1 条是噪声）
+  assert_eq(mem_int(j0, "total_findings"), 1)
+  assert_eq(lint_sev(j0, "low"), 1)
+  assert_eq(lint_sev(j0, "info"), 0)
+  // A/B：同一文件，rules_file 同名覆盖降为 info，并新增一条 info 规则
+  let rules_path = d + "/rules.json"
+  let rules_json = "{\"rules\":[" +
+    "{\"name\":\"moonbit-race-condition\",\"severity\":\"info\",\"pattern\":\"await\",\"why\":\"w\",\"description\":\"d\"}," +
+    "{\"name\":\"probe-info-rule\",\"severity\":\"info\",\"pattern\":\"probeinfomarker\",\"why\":\"w\",\"description\":\"d\"}]}"
+  @fs.write_string_to_file(rules_path, rules_json, encoding="utf8") catch {
+    _ => abort("BUG-345: 规则夹具写入失败")
+  }
+  let r1 = @server.issue_scan(d, rules_path, 100)
+  assert_true(r1 is Ok(_))
+  let j1 = match r1 {
+    Ok(x) => x
+    Err(_) => return
+  }
+  // 降级后两条全进 info：race-condition(被覆盖) + probe-info-rule（短函数 long-function 不再报）
+  assert_eq(mem_int(j1, "total_findings"), 2)
+  assert_eq(lint_sev(j1, "info"), 2)
+  assert_eq(lint_sev(j1, "low"), 0)
+  // 四桶之和 == total_findings：分桶不许漏计或重计
+  let sum = lint_sev(j1, "high") +
+    lint_sev(j1, "medium") +
+    lint_sev(j1, "low") +
+    lint_sev(j1, "info")
+  assert_eq(sum, mem_int(j1, "total_findings"))
+>>>>>>> fe14481b (fix(issue_scan): match-exhaustive 认顶层 _ => 兜底、long-function 按实测行数（BUG-348 部分 / T0r48）)
 }
