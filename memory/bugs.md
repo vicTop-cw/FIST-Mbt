@@ -5865,7 +5865,7 @@ task_plan_deep.mbt:  runner? → runner~
 
 建议：并入 BUG-348 修复范围（同一根因），或独立修复（result-discard 需按 ignore 参数的实际返回类型过滤）。
 
-## BUG-350 [2026-10-21T02:57:18Z] [medium] OPEN
+## BUG-350 [2026-10-21T02:57:18Z] [medium] FIXED
 - summary: [rule-layer] check_test_sync 判据只取日志 Total tests 忽略 passed/failed——passed=3 failed=1344 假绿 PASS"实测 1347"（与 BUG-142 moon exit 0 不可靠同族，补丁形同虚设）
 - detail: 【L4 硬证据 · 实测假绿】构造合成 moon test 日志 `Total tests: 1347, passed: 3, failed: 1344`（几乎全挂），跑 `python scripts/check_test_sync.py temp/fake_fail_log.txt` → **exit 0**，输出 `PASS 测试总数单一真源一致：实测 1347；扫描现状面 131 份文档，16 条声明全部等于实测；must-carry 5 份齐全；豁免 25 条全部有效`。
 
@@ -5883,7 +5883,10 @@ total = int(m.group(1))  # 只取 group(1)=Total tests 数
 【附：BUG-351 上下文（并发 WIP 编译错误）】重跑 `moon test --target js` **exit 1**，stderr Error 4043：`src/router/model_router_wbtest.mbt` L620/748 `use_caf_memory: false` **record field defined several times**（该 wbtest 在并发 agent 未提交 WIP 里，git status M）。权威测试门 1347/1347 因此当前不可复现——需并发 agent 收口 WIP 修复重复字段后重跑。
 - reported_by: agent-skill-docs
 
-## BUG-351 [2026-10-21T03:07:03Z] [medium] OPEN
+
+### FIXED(2026-10-21T06:49:58Z / BUG-350)
+- evidence: 改了 `scripts/check_test_sync.py` main()：① 日志解析从 `passed:\s*\d+`（不捕获值）改为 `passed:\s*(\d+)\s*,\s*failed:\s*(\d+)` 捕获 passed/failed；② 追加判绿补丁 `if passed != total or failed != 0 → FAIL 日志显示测试未全过 exit 1`；③ 追加友好报错 `if not Path(args[0]).is_file() → FAIL 日志文件不存在 exit 1`（防 traceback）。实测：合成 `Total tests: 1347, passed: 3, failed: 1344` → exit 1 FAIL（原 exit 0 假绿）；`passed=99 failed=1` → exit 1 FAIL；`passed=100 failed=0` → passed 检查通过（文档面正常红）；缺文件 → exit 1 友好报错无 traceback；`--selftest` 8 变体全绿零回归。
+## BUG-351 [2026-10-21T03:07:03Z] [medium] FIXED
 - summary: [rule-layer] check_demo_isolation selftest M3 自证式假绿：scan({}) 实测仍返回 spawners=34（bodies 只覆盖 body 内容不影响 _files() 枚举），M3 只测 L138 已提前 return 的不可达条件且 L178 无条件 append M3 格子；main() L197-199 真自拒门从未被 selftest 覆盖——把 I3 自拒门删掉 selftest 仍 exit 0
 - detail: 【L4 硬证据 · 自证式假绿】`python scripts/check_demo_isolation.py --selftest` → **exit 0**，输出 `SELFTEST OK（干净不误红 + 变异必红 + 空扫描自拒；格子从已执行对照反解：... / M3 空扫描必自拒；spawn 面 34 个脚本）`。M3 声称"空扫描必自拒"已锁，但实际从未真构造空扫描。
 
@@ -5902,6 +5905,9 @@ total = int(m.group(1))  # 只取 group(1)=Total tests 数
 - reported_by: agent-skill-docs
 
 
+
+### FIXED(2026-10-21T07:00:44Z / BUG-351)
+- evidence: 改 scripts/check_demo_isolation.py：① scan() 增 files 注入面（默认 _files()），使空扫描可构造（旧 scan({}) 因 _files() 硬编码恒返回 34）；② 抽出纯函数 isolate_verdict(spawners,problems)->(verdict,detail)，把 main() 的『空扫描必自拒』从不可达内联判断（旧 M3 测的是 L138 已 return 的条件）抽成可喂 spawners=[] 的真门；③ main() 与 selftest 共用 isolate_verdict；④ selftest M3 拆成三格：M3a 枚举面可真空 / M3b 空扫描必自拒 / M3c 裁决三态不串台。实测变异：删 I3 自拒门→M3b 转红 selftest FAIL exit2；files 注入失效→M3a 转红 FAIL；违例腿漏判→M3c 转红 FAIL。还原后 selftest exit0、普通扫描 exit0（34 脚本全合规）零回归。
 ## BUG-356 [2026-10-21T02:25:00Z] [low] FIXED
 - summary: [惯用法面] 0020 deprecated 的 Json 布尔/字符串访问器子族 22 处清零：`as_bool` 15 处 + `as_string` 7 处改构造器模式匹配，判据面 523 → 501 warnings / 0 errors（0020 命中 482→460，其余族 1:9 / 2:11 / 6:12 / 7:2 / 9:3 / 27:1 / 78:3 逐格不变），1302/1302/0 不变、接口面零变化
 - detail: 这一族的坑不在语法，在**别把测试的两类失败模式改混**，五个非显然判定：
@@ -5942,3 +5948,46 @@ total = int(m.group(1))  # 只取 group(1)=Total tests 数
 - note: 定级 medium 的理由：这不是「少一条读数」，而是**一条自接入 CI 那轮（`efbeaaa`，2026-10-14「ci(guard): check_template_ctrl 接入 CI」同笔加了 `--selftest` + 全量两步）起就没在权威面上执行过的宿主安装门**——D1 档（deepseek-harness `cordis.patch.yml` 的绝对路径/超时键/reconnect schema）本该拦住 cl7 记过的那类「装上即 disconnected」回归。本单未复核 GitHub Actions 历史读数，结论只建立在「干净检出必缺该文件 + 本机实跑 rc=2」两格证据上。
 - 后续建议: ① 出路 (a) 与 BUG-131 同口径、且不需要在 CI 里造未跟踪件，建议优先；动的是判据输入面（这条守卫在 CI 上究竟测什么），按金条四留 owner 定夺后单独开一单元。② 无论选哪条，建议同时给 ci.yml 那步补一句「缺件 ⇒ rc=2 自拒，不算绿」的现状说明，避免下一轮再把它当环境噪声。③ 普查其余判据是否还有同类形状：把 `.gitignore` 里的未跟踪件列进「缺件即自拒」名单的，用 `grep -n "crit" scripts/check_*.py` 复核一遍。
 - task_id: T0r13
+## BUG-359 [2026-10-21T06:49:58Z] [medium] FIXED
+- summary: [rule-layer] cli_flag_probe judge() 版本臂用 substring 匹配（`ver not in first` / `ver not in out`）——反向版本漂移 v0.3.90/v0.3.900 恒假绿，判据声称锁 BUG-114 实际只锁"漏版本"不锁"版本说谎"
+- detail: 【L4 硬证据 · 实测假绿】`judge(good_transcript("0.3.9", ...))` 基线 problems=[] 绿（正确）；把版本臂输出改成 `FIST-Mbt v0.3.90`（反向漂移，源码常量写 0.3.90 但 moon.mod 是 0.3.9）→ problems 仍=[] 假绿；改成 v0.3.900 → 仍假绿；帮助臂改成 v0.3.90 → 仍假绿。三处独立假绿全部被旧 substring 匹配放行。
+
+【根因】`scripts/cli_flag_probe.py` judge()：
+- L66 `if ver not in first:` —— `"0.3.9" in "FIST-Mbt v0.3.90"` 恒 True ⇒ 反向漂移（源码写 v0.3.90 但 moon.mod 是 0.3.9）不被抓
+- L75 `if ver not in out:` —— 同上 substring 语义
+
+判据宣称锁 BUG-114（源码版本常量必须 == moon.mod），实际只锁"首行完全没写版本"（正向缺失），不锁"版本写错了但包含正确版本子串"（反向/说谎）。这与 BUG-114 的 R11 判据意图（`project_version` 必须 == moon.mod，读不到基线即自拒）同族但更隐蔽——正向漂移（v0.2.8，旧版）会被 `0.3.9 not in out` 抓到，反向漂移（v0.3.90，超前版）恒漏。
+
+【修复（本回合已落 scripts/边界）】
+- L66 → `if first.strip() != "FIST-Mbt v%s" % ver:`（首行精确相等）
+- L75 → `if not re.search(r"FIST-Mbt(?: CLI)? v%s([\s\n]|$)" % re.escape(ver), out):`（锚定 v%s 后必跟空白/行尾，防 v0.3.90 前缀命中；`CLI` 兼容真实 help 首行 `=== FIST-Mbt CLI v0.3.9` 与合成 `FIST-Mbt CLI v0.3.9`）
+
+【修复后实测】基线绿；漂移 v0.3.90 / v0.3.900 / v0.4.0 → 全红；仅帮助臂漂移 v0.3.90 → 红；版本臂反漂移 v0.3.90 → 红。`--selftest` 7 支全绿零回归。
+
+【关联】BUG-114（R11 源码版本常量锁）的入口守卫。真实产物输出形状：`cmd/cli/main.mbt L118` `println("FIST-Mbt v\{v}")`（版本旗首行）、`cmd/cli/help_topics.mbt L23` `"=== FIST-Mbt v"`（帮助面）。
+
+【未提交】修复在 `scripts/cli_flag_probe.py` 工作树，本回合与 BUG-350 修复一起提交。
+
+- reported_by: agent-skill-docs
+
+
+## BUG-360 [2026-10-21T06:58:09Z] [medium] FIXED
+- summary: [rule-layer] check_badge.py 零自检锁：无 --selftest 分支（传 --selftest 被当位置参数吃掉报 usage exit 1），且 L71/L84 判据 `n!=total or d!=total` 改坏成 `and` 时无任何合成格会红——分子或分母单独错被短路放行 ⇒ 假绿
+- detail: 【L4 硬证据 · 变异敏感】修复前 `python scripts/check_badge.py --selftest` → exit 1，stderr `用法: python scripts/check_badge.py <moon_test_log> <README.md>`：本守卫此前完全没有自检面（grep selftest 零命中），所以「判据改坏会不会红」从没人锁过。
+手动把 L71 `if n != total or d != total:` 改成 `and`，喂合成违例（README 徽章分子 9999/分母 1347 正确 + 合规日志）→ 判据 `9999!=1347 and 1347!=1347` = `True and False` = False → 徽章错照样放行报绿。这是 `or` 短路型假绿的教科书形状：分子腿单独失效、或分母腿单独失效，两种真实漂移（手改徽章只改一边）都逃过。
+
+【根因】① 缺 selftest（无合成违例格反证判据有效）；② 判据在 main() 里内联、与文件 IO 耦合，无法喂合成串单测。
+
+【修复（本回合已落 scripts/check_badge.py）】① 抽出纯函数 judge(log_text, readme_text)->(problems, info)，判据与 IO 解耦；② 加 --selftest：8 支合成格（G1 干净必绿 + V1 徽章分子错/V2 分母错/V3 自检注释分子错/V4 测试有失败/V5 无徽章/V6 无自检注释/V7 日志无 Total 行 必红），计数从 cases 反解不手写；③ main() 只做读文件+打印+转 SystemExit。
+
+【修复后变异复验（4 项全被抓）】or→and@L71 → V1 由红转绿 → selftest FAIL；or→and@L84 → V3 FAIL；删徽章判据整行 → V1 FAIL；前置失败门 or→False → V4 FAIL。还原原文件 selftest exit 0。真实 README+匹配日志零回归 exit 0（PASS tests-1339/1339）。
+
+【关联】与 BUG-350（check_test_sync passed 不捕获）、BUG-351（check_demo_isolation 自证式假绿）、cli_flag_probe BUG-359 同族：守卫只自述「我检查了」，从不证明自己会红。AGENTS.md 守卫族「判据与 selftest 同源，不手写计数」原则的又一处落地。
+
+- reported_by: agent-skill-docs
+
+
+
+
+### FIXED(2026-10-21T07:01:23Z / BUG-359, BUG-360)
+- evidence: BUG-359 改 scripts/cli_flag_probe.py judge()：L66 版本臂 substring `ver not in first` → 精确 `first.strip() != "FIST-Mbt v%s" % ver`；L75 帮助臂 → `re.search(r"FIST-Mbt(?: CLI)? v%s([\s\n]|$)", out)`（兼容真实 main.mbt L118 `FIST-Mbt v` 与 help_topics.mbt L23 `=== FIST-Mbt v` 两形状）。实测基线绿、反漂移 v0.3.90/v0.3.900/v0.4.0 全红、仅帮助臂漂移红，selftest 7 支全绿。BUG-360 改 scripts/check_badge.py：抽纯函数 judge() + 加 --selftest 8 格（V1-V7 违例必红）。实测 4 变异（or→and@L71/L84、删徽章判据、前置门改坏）全部被抓 selftest FAIL，还原 exit0，真实 README 零回归。

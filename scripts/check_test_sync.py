@@ -422,13 +422,34 @@ def main():
     if args and args[0] == "--total" and len(args) >= 2:
         total = int(args[1])
     elif args:
+        if not Path(args[0]).is_file():
+            print("FAIL 日志文件不存在：%s（BUG-350：缺样本=没测，不是测过且对）" % args[0])
+            return 1
         log = Path(args[0]).read_text(encoding="utf-8", errors="replace")
-        m = re.search(r"Total tests:?\s*(\d+)\s*,\s*passed:\s*\d+", log)
-        m2 = re.search(r"total=(\d+) passed=(\d+)", log)
+        # BUG-350：日志里 passed 与 total 必须同取——moon test 的 exit 0 不可靠（BUG-142，
+        # SIGABRT 仍回 0），判据作为补丁必须抓 "total 数没变但 passed 掉到 < total" 的崩溃场景。
+        # 旧实现 `passed:\s*\d+` 不捕获 passed 值，只 group(1) 取 total ⇒ 合成日志
+        # `Total tests: 1347, passed: 3, failed: 1344` 假绿 PASS。
+        m = re.search(r"Total tests:?\s*(\d+)\s*,\s*passed:\s*(\d+)\s*,\s*failed:\s*(\d+)", log)
+        m2 = re.search(r"total=(\d+)\s+passed=(\d+)\s+failed=(\d+)", log)
+        passed = None
+        failed = None
         if m:
             total = int(m.group(1))
+            passed = int(m.group(2))
+            failed = int(m.group(3))
         elif m2:
             total = int(m2.group(1))
+            passed = int(m2.group(2))
+            failed = int(m2.group(3))
+        # BUG-350 判绿补丁：passed 必须等于 total 且 failed 必须为 0，否则"测试挂了一部分"
+        # 而判据仍绿（正是 BUG-350 实测的假绿形状）。
+        if total is not None and passed is not None and failed is not None:
+            if passed != total or failed != 0:
+                print("FAIL 日志显示测试未全过：passed=%s, failed=%s, total=%s "
+                      "（判据不绿——BUG-142 同族：exit 0 不可靠，此处抓 passed<total）"
+                      % (passed, failed, total))
+                return 1
     if total is None:
         print("FAIL 无法从参数/日志解析测试总数")
         return 1

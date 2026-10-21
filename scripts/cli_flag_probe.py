@@ -63,8 +63,8 @@ def judge(transcript, ver, marker):
             problems.append("%-11s rc=%s（版本旗应 0）" % (arm, rc))
         if marker in out or marker in first:
             problems.append("%-11s 落了未知子命令文案（BUG-106 第一半复发）" % arm)
-        if ver not in first:
-            problems.append("%-11s 首行没回显 moon.mod 版本 %s，实得 %r（BUG-114：源码常量漂移）"
+        if first.strip() != "FIST-Mbt v%s" % ver:
+            problems.append("%-11s 首行没回显 moon.mod 版本 %s，实得 %r（BUG-114 源码常量漂移 / BUG-359 反向版本漂移）"
                             % (arm, ver, first[:48]))
     for arm in ARMS_HELP:
         rc, out = transcript[arm]
@@ -72,7 +72,7 @@ def judge(transcript, ver, marker):
             problems.append("%-11s rc=%s（帮助旗应 0）" % (arm, rc))
         if marker in out:
             problems.append("%-11s 落了未知子命令文案（BUG-106 第一半复发）" % arm)
-        if ver not in out:
+        if not re.search(r"FIST-Mbt(?: CLI)? v%s([\s\n]|$)" % re.escape(ver), out):
             problems.append("%-11s 帮助面不回显版本 %s（帮助自己也是自述面）" % (arm, ver))
     rc, out = transcript[UNKNOWN_ARG]
     if rc == 0:
