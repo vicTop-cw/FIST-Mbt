@@ -1,5 +1,6 @@
 import {
   "cc06b/mooncry/lib" @mooncry,
+  "moonbitlang/core/debug",
   "moonbitlang/core/json",
 }
 

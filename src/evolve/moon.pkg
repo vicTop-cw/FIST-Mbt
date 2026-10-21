@@ -1,5 +1,6 @@
 import {
   "vicTop-cw/fist-mbt/src/store",
+  "moonbitlang/core/debug",
   "moonbitlang/core/json",
 }
 
