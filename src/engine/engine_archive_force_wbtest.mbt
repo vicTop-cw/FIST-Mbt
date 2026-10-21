@@ -80,7 +80,7 @@ test "archive_force/force=true 归档暂停态并落库持久化" {
     force=true,
     now="2026-01-01T00:00:02Z",
   )
-  assert_eq(r is Ok(_), true)
+  assert_true(r is Ok(_))
   // 落库持久化：重读 store 确认状态真的变为已归档（engine 层薄包装不丢副作用）
   let got = e.store.get_task("T1").unwrap()
   assert_eq(got.get_status().to_string(), "已归档")

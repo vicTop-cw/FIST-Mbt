@@ -5451,6 +5451,45 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 ### FIXED(2026-10-17T16:01:10Z / BUG-323)
 - evidence: semantic.py 行 1063-1079 修改：为 VarRef 和 IdRef 添加作用域检查，产生 UNDEFINED_VAR/UNDEFINED_FUNC 诊断
 
+## BUG-328 [2026-10-20T12:47:00Z] [high] FIXED
+- summary: [16 个测试文件 + src/store/store_sqlite.mbt] moonc 0.10.16 删除 `Result::is_ok/is_err` 与 `try?` —— HEAD 在现行工具链下 `moon check --target js` 报 26 errors，全仓不可编译
+- detail: 2026-10-20 副机（moon 0.1.20261016 / moonc v0.10.16+b1a0e846e）实测：HEAD 的 `moon check --target js --json` = 26 errors / 641 warnings，分两族——
+
+① 23 处 error 4015：`is_ok()` / `is_err()` 作为方法已不存在（110 个调用点散在 16 个测试文件；`src/server/issue_scan_wbtest.mbt:84` 的 `["if r.is_ok() {"]` 是 issue_scan 规则的**测试语料字符串**，不是调用，刻意不改）。
+② 3 处：`src/store/store_sqlite.mbt` 的 `assistant_from_row` 用了已移除的 `try? expr` 语法。
+
+修复取本仓既有惯用法 `assert_true(x is Ok(_))` / `assert_true(x is Err(_))`（不用 `is_ok` 的替代谓词，因为 0.10.16 起判定式只留模式匹配）；`assert_false(x.is_ok())` 取反为 `is Err(_)`，与同族 `assert_eq(..., false)` 一致。`try?` 那处按可达性拆除而非机械换壳：同文件 `str_from_bytes`（:284）本身是全函数（`decode_to ... catch { _ => () }`），坏行只会读出空串、不会抛，`None` 的真实来源是调用方（:1782 / :1806）的 prepare/step 守卫 ⇒ 恒返回 `Some` 不改变既有语义。
+
+优先级一处由编译器证实：`enforce(...) is Ok(_) && e.get_task("T0") is Some(_)`（audit_test:173）—— moonfmt 主动删掉我加的括号，且整表达式必须为 Bool 才过类型检查，故 `is` 结合紧于 `&&`。
+
+判据（本机实跑）：`moon check --target js --json` → `status=success`，`summary.diagnostic_errors=0`，`diagnostic_warnings=1920`。warning 由 641→1920 **不是本单引入**：基线时 src/store 编译失败，src/server|engine|ops 等下游包根本没被检查；26 个 error 一撤，存量全暴露（头部三种：code 20 deprecated StringView 904、code 25 test_unqualified_package 803、code 79 implicit_impl_as_method 63）。本单 16 个文件内落在改动行上的 16 条 code 25，其锚点名（enforce/check_claim/issue_scan…）在 HEAD 同 byte-identical 行上同样存在，同文件未改动行另有 25/21/22 条同类。
+- note: 未自证面：`moon test --target js` 与 `moon build --target js` 在本机物理跑不了（见 BUG-329），故"测试全绿"交 CI 兜，PR 里如实标注。`.mbti` 里 `Int`→`Int32` 的 24 处改动与本单无关，是这次**成功的** `moon check` / `moonfmt` 顺手做的类型名规范化（见 BUG-330），已从提交里剔除。
+- task_id: T0-slave-moonc-0.10.16-result-api
+
+## BUG-329 [2026-10-20T12:44:00Z] [high] OPEN
+- summary: [工具链/非本仓] 副机 `~/.moon/lib/core/_build/js/release/bundle/core.core` 缺失 —— 任何工程的 `moon build`/`moon test` 都在 LinkCore 步骤红，与代码无关
+- detail: 复现不依赖 FIST-Mbt：新建最小工程（`probe/probe`，单包 3 行 main，仅 import `moonbitlang/core/array`）跑 `moon build --target js` 与 `moon test --target js`，两者同报
+  `probe/probe/p@Source@LinkCore:0: input ...\bundle\core.core missing`。
+
+排查链：① 全盘 `find ~/.moon -name core.core` = 0 命中（js/wasm-gc/native 三套 bundle 都缺）；② `moonbitlang/core` 仓库根目录既无 `*.mbt` 也无 `moon.pkg` ⇒ 根包无源码；③ 在 `~/.moon/lib/core` 内用现行工具链重跑 `moon build --target js --target-dir <scratch>`，ran 80 tasks 成功、产出 79 个 `<pkg>.core`，**依然不产出 `core.core`** ⇒ 不是本机把文件弄丢，是这份安装的 stdlib bundle 从来不含根包产物。
+
+同族第二道：`moon fmt` 在本机也中 `\\?\` ICE（moonfmt.exe 的 make_directory 撞同一颗雷），绕法是直调 `~/.moon/bin/moonfmt.exe -w <file>`（`MOONC_OVERRIDE` 只覆盖 moonc，管不到 moonfmt）。旁证：`moonc` 侧的 `\\?\` ICE 已用 argv 剥离 shim 打通（`MOONC_OVERRIDE` 指向自建 shim），所以 `moon check` 可用——本单能给出 0 error 判据全靠它。
+
+影响：这台机器上「`moon test` 全绿」这类金条八自证**物理不可能**，只能做到 `moon check` 级自证 + CI 兜 build/test。修复属机器级、且要重建 stdlib 安装（`cli.moonbitlang.com` 出口 403，装不动），故只出方案不动手：要么从主机拷一份含 `core.core` 的 `~/.moon/lib/core/_build`，要么在能联网处装回本仓钉版 0.1.20260920。
+- task_id: T0-slave-moonc-0.10.16-result-api
+
+## BUG-330 [2026-10-20T12:54:00Z] [medium] OPEN
+- summary: [工具链] moonc/moonfmt 0.10.16 把 `Int` 规范化打印成 `Int32` —— `moon fmt --check` 与 `.mbti` 生成面在新版下与仓库存量拼写系统性不一致
+- detail: 本机实测两例同根：① `moon check` 成功后会把 24 份 `pkg.generated.mbti` 里的 `Int` 改写成 `Int32`；② 直调 `moonfmt.exe <file> -o out` 后 diff，唯一差异就是 `fn evolve_col_text(stmt, i : Int)` → `i : Int32` 这类签名行 —— 即 **moonfmt 自己**要求 `Int32` 拼写，不是谁手改的。
+
+后果分两层：
+- `moon fmt --check`（CI 有一步）在 0.10.16 下对本仓**系统性红**：全仓存量都写 `Int`，逐文件核对差异只落在 Int/Int32 这一格。要让它绿，需要一次**全仓 `moon fmt`**（几万行级 churn、与任何功能单正交），属独立决策，不能塞进适配单。
+- 若只把本单 17 个文件改成 `Int32`，整仓 fmt 依旧红 ⇒ 换来的是 28 行与主题无关的类型名抖动。故本单**保留 `Int`**（与 HEAD 同拼写），并把这 28 行 revert 掉。
+
+反幻影自证（不是"猜它无关"）：revert 后重跑 `moon check --target js --json`，`status=success`、`diagnostic_errors=0`、warning 仍 1920 —— 与带 `Int32` 时逐项相同 ⇒ `Int`/`Int32` 在本版是同一类型的两种拼写，revert 不改语义、也不改判据读数。
+- note: 判据本身别反过来当门：`check_mbti_sync.py` 只判 `pub fn` 名字在不在，不判类型拼写，所以 revert `.mbti` 不会新增红。上一版子代理报的"16 个文件 fmt 幂等通过"其实是**先把 Int 改成 Int32 才通过**的——这条要记进交接：新版 moonfmt 的幂等前提改了拼写，不是格式。
+- task_id: T0-slave-moonc-0.10.16-result-api
+
 
 ## BUG-324 [2026-10-18T12:20:56Z] [high] OPEN
 - summary: verify DANGEROUS_PATTERNS 漏检 os.popen(<变量>)：旧 pattern `os.popen(cmd\b` 只匹配变量名恰为 cmd，实测 os.popen(wsl_cmd) 漏网（mcp_call L85 为 RCE）

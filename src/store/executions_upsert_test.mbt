@@ -36,7 +36,7 @@ test "record_execution 幂等：同 id 重复写入优雅覆盖不抛 UNIQUE" {
     failure_reason="",
     created_at="2026-09-05T00:00:00Z",
   )
-  assert_eq(r1 is Ok(_), true)
+  assert_true(r1 is Ok(_))
   // 首条写入：1 行，tokens_in=1
   let stats1 = @store.StoreBackend::sqlite(s).cost_stats()
   assert_eq(_stat_d(stats1, "total_records"), 1.0)
@@ -54,7 +54,7 @@ test "record_execution 幂等：同 id 重复写入优雅覆盖不抛 UNIQUE" {
     failure_reason="r",
     created_at="2026-09-05T00:00:00Z",
   )
-  assert_eq(r2 is Ok(_), true)
+  assert_true(r2 is Ok(_))
   // 覆盖生效：仍只有 1 行，且 tokens_in 是第二次的新值(5)而非两行累加(6)或旧值(1)
   let stats2 = @store.StoreBackend::sqlite(s).cost_stats()
   assert_eq(_stat_d(stats2, "total_records"), 1.0)
