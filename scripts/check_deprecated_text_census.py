@@ -23,6 +23,18 @@
      gap 缩小**不**阻断，只打「可收紧至 N」——理由见下面「为什么收紧不判红」
   R4 死条目：文本面与判据面同时为 0 ⇒ 红（exit 1），整条下线（把表项删掉），不许留着当免检牌
 
+哪些族进不了这张表（实测，不是设想）：本表要求 `text_regex` 是**站点级**代理——判据发火的那个 token
+在源码文本里就长得一样。0020 的五个子族里只有两族满足：`Json::value`（文本 441 / 判据 430）与
+`Check @encoding/utf8.encode`（`.to_bytes(` 3 / 判据 3，逐行重合）。其余三族的弃用点在**语义**上，
+名称级普查给出的读数荒谬：`Show` 族名称级 `\bShow\b` 全仓只有 **2** 处而判据 **8** 处，且那 2 处是
+0027 的 `derive(Eq, Debug, Show)` 与一条 `extend StarVerdict with Show::{to_string, output}`，
+与 8 个判据行**无一重合**；真实站点分散在 `.to_string()`(435) / `inspect(`(39) / 字符串插值 `\{}`(859)
+三种写法里，并集 1333 处对判据 11 处 ⇒ 上限要写到 1322 才不红，棘轮当场失去意义。FFI `Array` 判据
+3 处全在 `extern "js" fn` 的形参/字段上，而 `: Array[` 在跟踪面有 953 处——「是否处在 extern 块内」是
+跨行事实，行级正则表达不了。隐式提升判据 1 处、`.run(` 7 处，同理。这三族要收口只能按 `error_code`
+逐条清（判据面自己就是清单），文本普查替不了它；把它们按名称级写进表也不会被放过——2 < 8 触发 R2
+的「判据数多于文本数」，rc=2 而非 rc=0。
+
 为什么收紧不判红（与 check_test_sync 的豁免失效律故意不同）：gap 的具体数字随工具链版本浮动
 （判据形状发不发火、正则匹配到的行数会不会被重排），今天 11、明天也许 10；强制「必须等于
 表里的上限」会把一次正常升级变成红灯，而红灯被忽略一次，整把尺就废了。所以只写上界，
@@ -32,7 +44,7 @@
 
 用法：
     python scripts/check_deprecated_text_census.py temp/chk40.json   # CI/本机复跑
-    python scripts/check_deprecated_text_census.py --selftest        # 9 支对照考这把尺自己
+    python scripts/check_deprecated_text_census.py --selftest        # 10 支对照考这把尺自己
 """
 import io
 import json
@@ -69,6 +81,24 @@ FAMILIES = [
             "supervisor_tools_wbtest.mbt:31，全部是 `match recv.value(\"k\") {}` 形态，"
             "确为 Json::value 调用（非同名方法）；反向哨兵 0（判据命中全部落在文本面上）。"
             "上限 11 即这 11 处，改完一处即可收紧，清零后本条目整条下线（R4）。"
+        ),
+    },
+    {
+        "name": "Check @encoding/utf8.encode(0020 via String::to_bytes)",
+        "error_code": 20,
+        "judge_marker": "utf8.encode",
+        "text_regex": r"\.to_bytes\(",
+        "gap_ceiling": 0,
+        "audited": (
+            "2026-10-21 普查：判据面 3 处与文本面 3 处逐行重合、缺口 0。站点 "
+            "src/router/star_gate.mbt:302 / src/router/star_gate_wbtest.mbt:22,350，"
+            "三处都是 `canonical.to_bytes()`——即 BUG-360 记的那条「String 内部 UTF-16LE、"
+            "生产签名侧用 UTF-8」验签洞的本体，本条目量的是它还剩几处。名称级正则 "
+            "`utf8\\.encode\\(` 在跟踪面只有 1 处（注释里），按它登记会得到负缺口（3 > 1）"
+            "⇒ 走 R2 现形，所以这里用站点级代理。上限 0 的已知误红面：若将来在非 String "
+            "接收者上新写 `.to_bytes(`（编译器不发判据），R3 会红并列逐文件差额，正确处置是"
+            "把正则收窄（带上接收者形状），不是抬上限。BUG-360 修完后两面归 0 ⇒ R4 发红，"
+            "那时该做的动作就是把这条整条删掉。"
         ),
     },
 ]
@@ -302,12 +332,18 @@ def selftest():
     other = [fixture_diag(10, code=2, msg="Warning (other): keep the dump non-empty")]
     if not case("R4-retire-exemption", [fixture_family()], other, empty, 1, "R4 FixtureFam：文本面与判据面双 0"):
         return 1
-    # 9) R0 条目没有审计依据 + 收紧提示不算红
+    # 8) R0 条目没有审计依据：缺依据的登记等于免检牌
     if not case("R0-missing-audited", [fixture_family(audited="  ")], [fixture_diag(10)], base, 2,
                 "R0 FixtureFam：表内条目没有 audited 依据"):
         return 1
+    # 9) 缺口缩小只打印建议，不判红
     if not case("hint-narrow-only", [fixture_family(gap_ceiling=5)], [fixture_diag(10)], base, 0,
                 "可收紧至 1"):
+        return 1
+    # 10) R2 负缺口：同一行两条判据、文本只有一处（实测到的 Show 形状：8 处判据对 2 处 `Show` 文本）
+    if not case("R2-judge-over-text",
+                [fixture_family(text_regex=r"a\.value\(", gap_ceiling=0)],
+                [fixture_diag(10), fixture_diag(10)], base, 2, "判据面 2 多于文本面 1"):
         return 1
     print("SELFTEST PASS %d 个变体各自命中自己指名的判据（计数由 run_case 实测累加，非手写）" % done[0])
     return 0
