@@ -315,7 +315,10 @@ pub fn RouterConfig::equal(Self, Self) -> Bool
 pub fn RouterConfig::from_json(Json) -> (Self, Array[String])
 pub fn RouterConfig::not_equal(Self, Self) -> Bool
 pub fn RouterConfig::to_json(Self) -> Json
+<<<<<<< HEAD
 pub fn RouterConfig::to_repr(Self) -> @debug.Repr
+=======
+>>>>>>> 6c402281 (fix(idiom): 清零 0035/0004/0067 三族 25 条（首个带 .mbti 接口收缩的单）)
 
 pub struct StarGateOutcome {
   verdict : StarVerdict
