@@ -5,13 +5,13 @@
 /// 以及 ISO↔epoch 秒的精确性（源项目用「365 天固定年 + 每月 31 天」近似，跨月/闰年会偏）。
 
 ///|
-fn rt_at(day : Int, hour : Int) -> String {
+fn rt_at(day : Int32, hour : Int32) -> String {
   secs_to_iso(1790000000 + day * 86400 + hour * 3600)
 }
 
 ///|
 /// 造一个可控路由器：free 1 个 limit=N、paid 1 个 limit=M
-fn rt_router(free_limit : Int, paid_limit : Int) -> ModelRouter {
+fn rt_router(free_limit : Int32, paid_limit : Int32) -> ModelRouter {
   let cfg = {
     window_seconds: 18000,
     threshold_pct: 95.0,
