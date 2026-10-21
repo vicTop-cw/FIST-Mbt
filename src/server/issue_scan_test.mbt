@@ -216,14 +216,19 @@ test "lint_7_no_high_hits_left_in_src_omega_bug15" {
 /// BUG-345：by_severity 聚合把 info 档独立成一桶（含未知 severity 兜底），
 /// 不再被 `else` 折进 low。旧实现只有 high/medium/low 三桶 ⇒ 返回体根本没有 info 键，
 /// low 被 info 命中系统性虚高、BUG-333 降噪预案无法按档净化。
-/// 语料只含函数定义行 ⇒ 必命中 moonbit-long-function（severity=info）。
+/// 语料含一个超 50 行的函数 ⇒ 必命中 moonbit-long-function（severity=info）。
 test "lint_9_by_severity_has_info_bucket" {
   let d = lint_dir("lint_c9")
-  @fs.write_string_to_file(
-    d + "/sample.mbt",
-    "fn alpha(): Int {\n  1\n}\nfn beta(): Int {\n  2\n}\n",
-    encoding="utf8",
-  ) catch {
+  let mut sample = "fn alpha(): Int {\n  1\n}\nfn beta(): Int {\n  2\n}\n"
+  // BUG-348 起 long-function 按花括号配平实测行数（>50 才报），短函数不再产生 info 命中。
+  sample = sample + "fn big() -> Int {\n"
+  let mut bi = 0
+  while bi < 60 {
+    sample = sample + "  let v" + bi.to_string() + " = 0\n"
+    bi = bi + 1
+  }
+  sample = sample + "  0\n}\n"
+  @fs.write_string_to_file(d + "/sample.mbt", sample, encoding="utf8") catch {
     _ => ()
   }
   let r = @server.issue_scan(d, "", 100)
@@ -599,9 +604,7 @@ test "lint_348_unused_variable_pairwise" {
 ///   ③ 编译器不保证的硬门 unwrapped-unwrap 必须仍报（反证「不是把真规则也一起降噪了」）
 test "lint_333_match_exhaustive_denoised_targeted" {
   let d = lint_dir("lint_c333")
-  @fs.write_string_to_file(
-    d + "/sample.mbt",
-    "fn f(x : Int) -> Int {\n" +
+  let mut sample = "fn f(x : Int) -> Int {\n" +
     "  match x {\n" +
     "    _ => 3\n" +
     "  }\n" +
@@ -609,9 +612,17 @@ test "lint_333_match_exhaustive_denoised_targeted" {
     "fn g(): Int {\n" +
     "  let ot = Option::Some(1)\n" +
     "  ot.unwrap()\n" +
-    "}\n",
-    encoding="utf8",
-  ) catch {
+    "}\n"
+  // ② 要的「同族启发式仍在」得真有一条会触发的命中：BUG-348 起 long-function 按花括号
+  // 配平实测行数（>50 才报），旧夹具里两个短函数已不再命中 ⇒ 补一个 60 行的长函数。
+  sample = sample + "fn big() -> Int {\n"
+  let mut bi = 0
+  while bi < 60 {
+    sample = sample + "  let v" + bi.to_string() + " = 0\n"
+    bi = bi + 1
+  }
+  sample = sample + "  0\n}\n"
+  @fs.write_string_to_file(d + "/sample.mbt", sample, encoding="utf8") catch {
     _ => ()
   }
   let r = @server.issue_scan(d, "", 500)
@@ -619,9 +630,8 @@ test "lint_333_match_exhaustive_denoised_targeted" {
     Ok(x) => x
     Err(_) => return
   }
-<<<<<<< HEAD
   let items = lint_findings(j)
-  let count_rule = fn(rid : String) -> Int {
+  let count_rule = fn(rid : String) -> Int32 {
     items.filter(fn(f) { mem_str(f, "rule") == rid }).length()
   }
   // ① 编译器已保证穷尽 ⇒ 这条规则命中全丢
@@ -630,34 +640,4 @@ test "lint_333_match_exhaustive_denoised_targeted" {
   assert_true(count_rule("moonbit-long-function") > 0)
   // ③ 硬门必须仍报 ⇒ 降噪是定向的，没把真规则一并吞掉
   assert_true(count_rule("unwrapped-unwrap") > 0)
-=======
-  // 基线一命中：race-condition(low)。BUG-348 起短函数不再报 long-function（旧基线那 1 条是噪声）
-  assert_eq(mem_int(j0, "total_findings"), 1)
-  assert_eq(lint_sev(j0, "low"), 1)
-  assert_eq(lint_sev(j0, "info"), 0)
-  // A/B：同一文件，rules_file 同名覆盖降为 info，并新增一条 info 规则
-  let rules_path = d + "/rules.json"
-  let rules_json = "{\"rules\":[" +
-    "{\"name\":\"moonbit-race-condition\",\"severity\":\"info\",\"pattern\":\"await\",\"why\":\"w\",\"description\":\"d\"}," +
-    "{\"name\":\"probe-info-rule\",\"severity\":\"info\",\"pattern\":\"probeinfomarker\",\"why\":\"w\",\"description\":\"d\"}]}"
-  @fs.write_string_to_file(rules_path, rules_json, encoding="utf8") catch {
-    _ => abort("BUG-345: 规则夹具写入失败")
-  }
-  let r1 = @server.issue_scan(d, rules_path, 100)
-  assert_true(r1 is Ok(_))
-  let j1 = match r1 {
-    Ok(x) => x
-    Err(_) => return
-  }
-  // 降级后两条全进 info：race-condition(被覆盖) + probe-info-rule（短函数 long-function 不再报）
-  assert_eq(mem_int(j1, "total_findings"), 2)
-  assert_eq(lint_sev(j1, "info"), 2)
-  assert_eq(lint_sev(j1, "low"), 0)
-  // 四桶之和 == total_findings：分桶不许漏计或重计
-  let sum = lint_sev(j1, "high") +
-    lint_sev(j1, "medium") +
-    lint_sev(j1, "low") +
-    lint_sev(j1, "info")
-  assert_eq(sum, mem_int(j1, "total_findings"))
->>>>>>> fe14481b (fix(issue_scan): match-exhaustive 认顶层 _ => 兜底、long-function 按实测行数（BUG-348 部分 / T0r48）)
 }
