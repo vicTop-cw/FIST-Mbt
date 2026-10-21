@@ -459,12 +459,12 @@ test "caf_p2_pipeline_integration" {
   let ctx = "summarize large document"
   let h = caf_feature_hash(ctx)
   // 三模型积累：m_gpt 高成功率/高成本，m_claude 中成功率/低成本，m_gemini 低成功率
-  for i in 0..<3 {
+  for _i in 0..<3 {
     mem.push(
       CafRecord::new(feature_hash=h, model="m_gpt", ok=true, cost=0.5, ts="t"),
     )
   }
-  for i in 0..<5 {
+  for _i in 0..<5 {
     mem.push(
       CafRecord::new(
         feature_hash=h,
@@ -475,7 +475,7 @@ test "caf_p2_pipeline_integration" {
       ),
     )
   }
-  for i in 0..<4 {
+  for _i in 0..<4 {
     mem.push(
       CafRecord::new(
         feature_hash=h,
@@ -640,11 +640,11 @@ test "caf_edit_distance_length_guard" {
   // 2. 超长串不 panic 且返回有限值
   // 构造长串
   let mut long_a = ""
-  for i in 0..<1000 {
+  for _i in 0..<1000 {
     long_a = long_a + "a"
   }
   let mut long_b = ""
-  for i in 0..<1000 {
+  for _i in 0..<1000 {
     long_b = long_b + "b"
   }
   let d = caf_edit_distance(long_a, long_b)

@@ -326,7 +326,7 @@ fn run_doctor() -> Unit {
 
   // —— 检查 1：engine 能创建 ——
   ref_total[0] = ref_total[0] + 1
-  let e1 = @engine.FistEngine::new()
+  let _e1 = @engine.FistEngine::new()
   ref_ok[0] = ref_ok[0] + 1
   println("✅ [1/5] FistEngine 能创建")
 

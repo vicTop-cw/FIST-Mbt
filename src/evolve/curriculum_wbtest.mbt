@@ -107,7 +107,7 @@ test "derive_skill_name 前缀截取" {
 
 ///|
 test "evolve_decision 高分可蒸馏" {
-  let (level, mutation, distillable) = evolve_decision(0.9)
+  let (level, _mutation, distillable) = evolve_decision(0.9)
   assert_eq(level, L4)
   assert_true(distillable)
 }

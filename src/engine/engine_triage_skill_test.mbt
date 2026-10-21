@@ -88,7 +88,7 @@ fn tsk_sugg_mode(j : Json) -> String {
 test "skill 路由正路径：tdd 命中任务排头部，suggestion.mode==fix_and_merge" {
   let e = tsk_engine()
   let a = tsk_publish(e, "用 tdd 先写测试再实现调度器")
-  let b = tsk_publish(e, "脑暴 ideation 生成候选功能清单")
+  let _b = tsk_publish(e, "脑暴 ideation 生成候选功能清单")
   let j = e.triage("", "exec_demo", "", skill="tdd")
   // tdd 命中的 a 应排头部（同 priority/importance/depth，靠 skill 命中度决胜）
   assert_eq(tsk_first(j), a)
@@ -105,8 +105,8 @@ test "skill 路由正路径：tdd 命中任务排头部，suggestion.mode==fix_a
 ///|
 test "skill 空串零回归锁：排序与不传 skill 一致，skill_hits 全空，suggestion 无 mode" {
   let e = tsk_engine()
-  let a = tsk_publish(e, "用 tdd 先写测试再实现调度器")
-  let b = tsk_publish(e, "脑暴 ideation 生成候选功能清单")
+  let _a = tsk_publish(e, "用 tdd 先写测试再实现调度器")
+  let _b = tsk_publish(e, "脑暴 ideation 生成候选功能清单")
   let j0 = e.triage("", "exec_demo", "") // 不传 skill（旧调用面）
   let j1 = e.triage("", "exec_demo", "", skill="") // 显式空串
   // 排序完全一致（零回归）
@@ -126,7 +126,7 @@ test "skill 空串零回归锁：排序与不传 skill 一致，skill_hits 全�
 test "skill 命中大小写不敏感：desc 含 TDD 而 skill=tdd 仍命中" {
   let e = tsk_engine()
   let a = tsk_publish(e, "遵循 TDD 红绿重构写核心模块")
-  let b = tsk_publish(e, "脑暴 ideation 收集点子")
+  let _b = tsk_publish(e, "脑暴 ideation 收集点子")
   let j = e.triage("", "exec_demo", "", skill="tdd")
   assert_eq(tsk_first(j), a)
   assert_true(tsk_skill_hits(j, a).contains("tdd"))

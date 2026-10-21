@@ -46,7 +46,7 @@ test "plan_deep 无 spec 时按 split_n 递归拆整棵子树并落库" {
       by="leader_a",
       now="2026-09-05T10:02:00Z",
     ) {
-    Ok(res) => {
+    Ok(_res) => {
       // 根 T0(depth3) -> 3 个 depth2 -> 每层再拆 2(其 split_n=2) -> depth1 叶
       // 总任务数 = 1 + 3 + 6 = 10
       assert_eq(e.list_all().length(), 10)
@@ -100,7 +100,7 @@ test "plan_deep 以 spec.laws 为切割依据递归拆解" {
       now="2026-09-05T10:02:00Z",
     ) {
     Err(m) => abort("plan_deep with spec failed: \{m}")
-    Ok(res) => {
+    Ok(_res) => {
       // laws 2 条 -> T0.1/T0.2（depth2，split_n=2）-> 各有 2 个 depth1 叶
       assert_eq(e.list_all().length(), 1 + 2 + 4)
       match e.get_task("T0.1") {
