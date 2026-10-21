@@ -130,19 +130,6 @@ fn executor_loads(e : @engine.FistEngine) -> Map[String, Int32] {
 }
 
 ///|
-/// 把 Json 数组 [{Int}] 转成 Array[Int]（用于 intervals 解析）。
-fn intlist(j : Array[Json]) -> Array[Int32] {
-  let out : Array[Int32] = []
-  for x in j {
-    match x {
-      Json::Number(n, ..) => out.push(n.to_int())
-      _ => ()
-    }
-  }
-  out
-}
-
-///|
 /// 把 Json 数组 [{String}] 转成 Array[String]（用于 abilities 解析）。
 fn strlist(j : Array[Json]) -> Array[String] {
   let out : Array[String] = []
@@ -842,21 +829,6 @@ pub fn lookup_injected_assets_in(
 fn lookup_injected_assets(inject : String) -> Json {
   ignore(sync_db_lessons(evolve_arc, evolve_store))
   lookup_injected_assets_in(evolve_arc, inject)
-}
-
-///|
-fn to_ids_result(
-  r : Result[Array[String], String],
-) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-  match r {
-    Ok(ids) =>
-      Ok(
-        @mcp.ToolResult::text(
-          Json::array(ids.map(fn(s) { Json::string(s) })).stringify(),
-        ),
-      )
-    Err(e) => Err(@mcp_types.ToolError(e))
-  }
 }
 
 ///|
@@ -5546,7 +5518,7 @@ pub async fn run_server() -> Unit {
       ["intervals", "elapsed"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      // BUG-26：这里原先用 intlist(...) / jnum(...).to_int()，两者都会**静默**把
+      // BUG-26：这里原先用宽松的 Json→Int 数组转换 / jnum(...).to_int()，两者都会**静默**把
       // 1e300 饱和成 2147483647、把 1.5 截断成 1、把非数字元素整个丢掉。
       // φ 的建模输入失真后输出仍是格式完好的判定，所以改成逐个严格转换并按原值报错。
       let raw = get_array(args, "intervals")
