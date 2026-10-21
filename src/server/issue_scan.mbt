@@ -1928,9 +1928,15 @@ pub fn issue_scan(
   }
   let dedup = guarded_filtered
   // 严重度聚合（单次遍历，替代旧的三次全量 filter）
+  // BUG-345：旧实现只有 high/medium/low 三桶，`else` 把 info 档（scan_rules 里
+  // match-non-exhaustive/unused-variable 等 low 之下的一档，及外部规则透传的 severity）
+  // 连同任何未知档一并折进 low ⇒ 返回体看不见 info、BUG-333 的降噪预案无法按档净化，
+  // low 桶被系统性虚高。info 拆成独立一档；未知 severity 显式归 info（最低档兜底、
+  // 不冒充 low），并在 rule 计数旁照常统计。
   let mut high = 0
   let mut medium = 0
   let mut low = 0
+  let mut info = 0
   // 按规则聚合（单次遍历计数，替代旧的逐规则全量 filter）
   let rule_counts : Map[String, Int32] = Map([])
   for h in dedup {
@@ -1938,8 +1944,11 @@ pub fn issue_scan(
       high = high + 1
     } else if h.severity == "medium" {
       medium = medium + 1
-    } else {
+    } else if h.severity == "low" {
       low = low + 1
+    } else {
+      // info 及任何未知档：归最低档 info，不再冒充 low（BUG-345）。
+      info = info + 1
     }
     rule_counts.set(h.rule, rule_counts.get(h.rule).unwrap_or(0) + 1)
   }
@@ -1975,6 +1984,8 @@ pub fn issue_scan(
         "high": Json::number(high.to_double()),
         "medium": Json::number(medium.to_double()),
         "low": Json::number(low.to_double()),
+        // BUG-345：info 单列一档（含未知 severity 兜底），不再被并入 low。
+        "info": Json::number(info.to_double()),
       }),
       "by_rule": Json::array(by_rule),
       "findings": Json::array(

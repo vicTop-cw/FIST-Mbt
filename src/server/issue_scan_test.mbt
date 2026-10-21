@@ -213,6 +213,46 @@ test "lint_7_no_high_hits_left_in_src_omega_bug15" {
 }
 
 ///|
+/// BUG-345：by_severity 聚合把 info 档独立成一桶（含未知 severity 兜底），
+/// 不再被 `else` 折进 low。旧实现只有 high/medium/low 三桶 ⇒ 返回体根本没有 info 键，
+/// low 被 info 命中系统性虚高、BUG-333 降噪预案无法按档净化。
+/// 语料只含函数定义行 ⇒ 必命中 moonbit-long-function（severity=info）。
+test "lint_9_by_severity_has_info_bucket" {
+  let d = lint_dir("lint_c9")
+  @fs.write_string_to_file(
+    d + "/sample.mbt",
+    "fn alpha(): Int {\n  1\n}\nfn beta(): Int {\n  2\n}\n",
+    encoding="utf8",
+  ) catch {
+    _ => ()
+  }
+  let r = @server.issue_scan(d, "", 100)
+  let j = match r {
+    Ok(x) => x
+    Err(_) => return
+  }
+  let total = mem_int(j, "total_findings")
+  let buckets = match j.value("by_severity") {
+    Some(Object(m)) => m
+    _ => Map([])
+  }
+  let bucket = fn(k : String) -> Int32 {
+    match buckets.get(k) {
+      Some(Number(n, ..)) => n.to_int()
+      _ => -999
+    }
+  }
+  // info 键必须存在（旧实现根本没这键 → -999）且 > 0（两条 fn 命中 long-function）
+  assert_true(bucket("info") >= 0)
+  assert_true(bucket("info") > 0)
+  // 四桶不重不漏：high+medium+low+info == total_findings（旧三桶口径缺 info）
+  assert_eq(
+    bucket("high") + bucket("medium") + bucket("low") + bucket("info"),
+    total,
+  )
+}
+
+///|
 /// 守卫感知过滤回归（2026-10-10）：`if is_empty()` / `if length() > N` 之后的
 /// rows[0] / substring(0,N) 应被就地过滤；无守卫的同形代码仍须命中——证明
 /// 「消噪」不是「不扫了」。

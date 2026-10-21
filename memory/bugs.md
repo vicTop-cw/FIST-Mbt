@@ -5776,7 +5776,7 @@ task_plan_deep.mbt:  runner? → runner~
 
 ### FIXED(2026-10-21T01:23:06Z / BUG-344)
 - evidence: 并发 agent 在 docs/2026-10-20-slave-dev-playbook.md:206 修正了 cl 表工具数声明（09:09:59 该文件被改）；check_tools_sync.py R3b 现 PASS（R3b/R7 扫现状面 156 份，历史面豁免 1 份，无违例）。本会话 09:18 实测：check_tools_sync rc=0。一源四态 cl 全部守卫 6/6 rc=0。
-## BUG-345 [2026-10-20T13:34:03Z] [medium] OPEN
+## BUG-345 [2026-10-20T13:34:03Z] [medium] FIXED
 - summary: [issue_scan] by_severity 聚合把 info 档并入 low 桶，BUG-333 降噪预案无法净化 by_severity
 - detail: 实测对比（release v0.3.9，src/ltl）：
 
@@ -5792,6 +5792,9 @@ task_plan_deep.mbt:  runner? → runner~
 证据：同一次 release 二进制、同一目录 src/ltl，两跑差异仅 rules_file 参数；by_severity 完全相等（low=69），by_rule 与逐条 findings 已显示覆盖后 severity=info。
 - reported_by: polish-lead
 
+
+### FIXED(2026-10-21T07:27:26Z / BUG-345)
+- evidence: 改 src/server/issue_scan.mbt 聚合：旧三桶 high/medium/low 的 else 把 info 档（scan_rules L279 moonbit-long-function=info、L335 unused-variable=info，及外部规则透传 severity）连同未知档全折进 low、返回体根本没有 info 键。新增 `info` 独立计数 + 未知档显式归 info（不冒充 low），by_severity 输出体加 "info" 键。配套端到端锁 lint_9_by_severity_has_info_bucket（src/server/issue_scan_test.mbt，走 @server.issue_scan 真源码——非旧构建产物，钉 BUG-32 教训）：语料含 fn 定义行必命中 long-function(info)，断言 info 键存在且>0、四桶 high+medium+low+info==total_findings 不重不漏。变异复验：① 还原旧三桶无 info 键 → lint_9 红（342→341/1）；② info 命中误归 low 半修复 → lint_9 红；还原 → 342/342 全绿。moon check exit0。未混入 pkg.generated.mbti（issue_scan 公开签名不变）。
 ## BUG-346 [2026-10-20T13:48:51Z] [medium] OPEN
 - summary: [issue_scan] moonbit-json-injection 规则 pattern 与意图相反：匹配的是安全构造器 Json::string(，从未检测真实拼接注入；全 MoonBit 命中恒假阳（src/store 单目录 45 条，L1876 注释自述全仓约 1334 条）
 - detail: 规则定义（src/server/issue_scan.mbt:257-262）：
@@ -5997,5 +6000,6 @@ total = int(m.group(1))  # 只取 group(1)=Total tests 数
 
 ### FIXED(2026-10-21T07:01:23Z / BUG-359, BUG-360)
 - evidence: BUG-359 改 scripts/cli_flag_probe.py judge()：L66 版本臂 substring `ver not in first` → 精确 `first.strip() != "FIST-Mbt v%s" % ver`；L75 帮助臂 → `re.search(r"FIST-Mbt(?: CLI)? v%s([\s\n]|$)", out)`（兼容真实 main.mbt L118 `FIST-Mbt v` 与 help_topics.mbt L23 `=== FIST-Mbt v` 两形状）。实测基线绿、反漂移 v0.3.90/v0.3.900/v0.4.0 全红、仅帮助臂漂移红，selftest 7 支全绿。BUG-360 改 scripts/check_badge.py：抽纯函数 judge() + 加 --selftest 8 格（V1-V7 违例必红）。实测 4 变异（or→and@L71/L84、删徽章判据、前置门改坏）全部被抓 selftest FAIL，还原 exit0，真实 README 零回归。
+
 
 
