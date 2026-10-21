@@ -1,7 +1,6 @@
 import {
   "cc06b/mooncry/lib" @mooncry,
   "moonbitlang/core/json",
-  "moonbitlang/core/encoding/utf8",
 }
 
 supported_targets = "js+native"
