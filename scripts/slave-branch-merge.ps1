@@ -7,6 +7,48 @@ param(
   [switch]$DryRun  # 只扫描不执行
 )
 
+# ── TASK-002：cherry-pick 黑名单（实测教训）──────────────────────────────
+# 旧 commit 里的 `src/ops/moon.pkg` 与 HEAD 版本不同且常自带冲突标记；cherry-pick e1b1a9d3 时
+# 正是它把 `moon build` 打成 [3002] lexing error。`src/ops/rhop_poll.mbt` 更毒：HEAD 已有
+# `rhop_native.mbt` 完整实现，旧 commit 再带一份同名函数 `rhop_poll` ⇒ 重复定义直接崩构建。
+# 处置：这些路径在每次 cherry-pick 后**一律回退到 HEAD 版本**（不是"取 theirs"，是"根本不收"）；
+# `rhop*.mbt` 若以新增文件形式出现 ⇒ 文件 + 索引一起删，并打印警告留痕。
+$SKIP_EXACT = @('src/ops/moon.pkg', 'src/ops/rhop_poll.mbt')
+$SKIP_GLOB  = @('src/ops/rhop*.mbt')
+
+function Restore-Blacklisted {
+  param([string]$why)
+  $touched = 0
+  foreach ($f in $SKIP_EXACT) {
+    git cat-file -e "HEAD:$f" 2>$null
+    if ($LASTEXITCODE -ne 0) { continue }
+    $staged = git diff --cached --name-only -- $f 2>$null
+    if ($staged) {
+      git checkout HEAD -- $f 2>$null
+      Write-Host "      🚫 黑名单回退 HEAD: $f" -ForegroundColor DarkYellow
+      $touched++
+    }
+  }
+  foreach ($pat in $SKIP_GLOB) {
+    $hits = git diff --cached --name-only -- $pat 2>$null
+    foreach ($h in $hits) {
+      if (-not $h) { continue }
+      git cat-file -e "HEAD:$h" 2>$null
+      if ($LASTEXITCODE -ne 0) {
+        if (Test-Path $h) { Remove-Item -Force $h }
+        git rm --cached --ignore-unmatch $h 2>$null | Out-Null
+        Write-Host "      🚫 黑名单删除（新引入）: $h" -ForegroundColor DarkYellow
+        $touched++
+      } else {
+        git checkout HEAD -- $h 2>$null
+        Write-Host "      🚫 黑名单回退 HEAD: $h" -ForegroundColor DarkYellow
+        $touched++
+      }
+    }
+  }
+  return $touched
+}
+
 $ErrorActionPreference = "Stop"
 
 Write-Host "=== FIST-Mbt Slave Branch Merger ===" -ForegroundColor Cyan
@@ -83,7 +125,10 @@ foreach ($slave in $codeBranches) {
     Write-Host "    Pick $shortHash : $msg" -ForegroundColor White
     
     git cherry-pick --no-commit $c 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $cpRc = $LASTEXITCODE
+    # TASK-002：无论成败先摘掉黑名单路径（冲突状态下它们最脏）
+    $null = Restore-Blacklisted "cherry-pick $shortHash"
+    if ($cpRc -ne 0) {
       # 冲突：memory/reports/plugins/docs 取 theirs，其他留着
       $conflicts = git diff --name-only --diff-filter=U 2>$null
       foreach ($f in $conflicts) {
@@ -95,6 +140,16 @@ foreach ($slave in $codeBranches) {
       git add -A 2>$null
     }
     
+    # TASK-001③：commit 之前先跑冲突标记判据（live），红则**不许提交**——
+    # 这正是 259b56a8 的形状：标记进跟踪面后，CI 只能是事后才可能知道。
+    $markerOut = python scripts/blackbox/check_merge_markers.py 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host "      ❌ 冲突标记判据红，拒绝提交本笔" -ForegroundColor Red
+      Write-Host ($markerOut | Select-Object -Last 1)
+      git reset --hard HEAD 2>&1 | Out-Null
+      $skipCount++
+      continue
+    }
     git commit -m "$msg (from $shortHash)" 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) { $pickCount++ }
   }
@@ -154,6 +209,20 @@ Get-ChildItem -Path . -Filter 'moon.pkg' -Recurse | ForEach-Object {
 
 # 6. Build 验证
 Write-Host "`n[6/6] Build 验证..." -ForegroundColor Yellow
+# TASK-001③：整批 pick 完先自证判据（--selftest）再 live 扫全跟踪面
+$selfOut = python scripts/blackbox/check_merge_markers.py --selftest 2>&1
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "  ❌ 冲突标记判据自检失败（尺子本身坏了，拒绝继续）" -ForegroundColor Red
+  return
+}
+$allOut = python scripts/blackbox/check_merge_markers.py 2>&1
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "  ❌ 跟踪面仍有冲突标记，停止（不许 build/push）" -ForegroundColor Red
+  Write-Host ($allOut | Select-Object -Last 5)
+  return
+}
+Write-Host "  ✅ 冲突标记判据：selftest + live 全绿" -ForegroundColor Green
+
 moon fmt 2>&1 | Out-Null
 $buildOut = moon build --target js src/server src/engine src/store src/router src/ops 2>&1
 $hasError = $buildOut -match 'Error:' -and $buildOut -notmatch 'Finished.*0 errors'
