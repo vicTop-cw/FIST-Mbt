@@ -1,7 +1,6 @@
 import {
   "vicTop-cw/fist-mbt/src/ops",
   "vicTop-cw/fist-mbt/src/engine",
-  "moonbitlang/core/json",
 }
 
 pkgtype(kind: "executable")

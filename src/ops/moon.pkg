@@ -4,7 +4,6 @@ import {
 <<<<<<< HEAD
   "vicTop-cw/RX-MBT/rhop",
   "vicTop-cw/RX-MBT/rx",
-  "moonbitlang/core/json",
   "moonbitlang/core/ref",
 =======
 >>>>>>> 9dfd08a0 (fix(deps): 清零 0029 unused_package 全族 16 条（BUG-342）)
