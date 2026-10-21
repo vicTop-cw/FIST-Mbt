@@ -103,7 +103,7 @@ test "auto repair records evidence into store per tenant" {
     ).mark_failed("archive 绕过了门禁"),
   ]
   let fixer = fn(s : @evidence.Spec) -> String? { Some("apply_fix:" + s.id) }
-  let verifier = fn(s : @evidence.Spec) -> Bool { true }
+  let verifier = fn(_s : @evidence.Spec) -> Bool { true }
   let outcome = @evidence.auto_repair(specs, fixer, verifier)
   assert_true(outcome.ok)
   let mut store = @evidence.EvidenceStore::new()
