@@ -361,7 +361,7 @@ fn model_route_impl(
     mr_env("FIST_STAR_GATE_PUBKEY_HEX"),
     mr_env("FIST_STAR_GATE_ATTESTATION_JSON"),
     mr_env("FIST_STAR_GATE_USER_LOGIN"),
-    @env.now().to_int64() / 1000L,
+    @env.now().reinterpret_as_int64() / 1000L,
   )
   if gate.gate_enabled && !gate.free_pool_unlocked {
     return Ok(
@@ -717,7 +717,7 @@ pub fn model_auth_status_impl(
     Some(msg) => return Err("model_auth_status: " + msg)
     None => ()
   }
-  let now = @env.now().to_int64() / 1000L
+  let now = @env.now().reinterpret_as_int64() / 1000L
   let gate = mr_auth_gate(
     mr_env("FIST_STAR_GATE_PUBKEY_HEX"),
     mr_env("FIST_STAR_GATE_ATTESTATION_JSON"),

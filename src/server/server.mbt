@@ -370,7 +370,7 @@ fn _iso_to_unix_ms(iso : String) -> Int64? {
 fn now_default() -> String {
   // @env.now() 返回 UInt64 毫秒；直接用 Int64 做整数运算，避免 .to_int()
   // 对 UInt64 的 32 位截断（1790 亿级别毫秒被截成负值，导致 1969 时间戳）。
-  let ms = @env.now().to_int64()
+  let ms = @env.now().reinterpret_as_int64()
   let total_sec = ms / 1000L
   let sec = (total_sec % 60L).to_int()
   let min = (total_sec / 60L % 60L).to_int()
@@ -392,7 +392,7 @@ fn iso_minus_secs(iso : String, secs : Int) -> String {
   // 现真正作为基准参与计算：iso 可解析则以其为准，不可解析回退墙钟（与旧行为等价）。
   let base_ms = match _iso_to_unix_ms(iso) {
     Some(v) => v
-    None => @env.now().to_int64()
+    None => @env.now().reinterpret_as_int64()
   }
   let ms = base_ms - s.to_int64() * 1000L
   if ms < 0L {
@@ -675,7 +675,7 @@ async fn laya_probe_cached(
   workdir : String,
   timeout_ms : Int,
 ) -> Result[Bool, String] {
-  let now_ms = @env.now().to_int64()
+  let now_ms = @env.now().reinterpret_as_int64()
   let cached : Json = match laya_probe_cache.get("probe") {
     Some(j) => j
     None => Json::null()
@@ -1215,7 +1215,7 @@ fn _instrument(
   let required = schema_required(input_schema)
   let props = schema_properties(input_schema)
   async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-    let t0 = @env.now().to_int64()
+    let t0 = @env.now().reinterpret_as_int64()
     let params_json = args.stringify()
     let miss = missing_required(args, required)
     if miss.length() > 0 {
@@ -1250,7 +1250,7 @@ fn _instrument(
       return Err(e)
     }
     let r = handler(args)
-    let runtime_ms = (@env.now().to_int64() - t0).to_int()
+    let runtime_ms = (@env.now().reinterpret_as_int64() - t0).to_int()
     let (result_json, ok) = match r {
       Err(e) => (e.message(), false)
       Ok(_tr) => ("ok", true)
@@ -1286,7 +1286,7 @@ pub fn instrumented_tool(
 ///|
 /// 今日日期键 `yyyyMMdd`（复用 _civil_from_days，与 now_default 同源）。
 fn debate_day_key() -> String {
-  let total_sec = @env.now().to_int64() / 1000L
+  let total_sec = @env.now().reinterpret_as_int64() / 1000L
   let days = (total_sec / 86400L).to_int()
   let (y, m, d) = _civil_from_days(days)
   "\{y}\{_pad2(m)}\{_pad2(d)}"

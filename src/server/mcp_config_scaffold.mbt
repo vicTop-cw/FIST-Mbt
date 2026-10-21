@@ -146,7 +146,7 @@ fn mcs_hex4(n : Int) -> String {
 }
 
 ///|
-/// ASCII 小写（MoonBit core 未提供 String::lowercase / Char::from_int；
+/// ASCII 小写（core 无 `String::lowercase`，逐字符面只有 `Char::to_ascii_lowercase`；
 /// 只做 A-Z → a-z，其余原样）。
 fn mcs_lower(s : String) -> String {
   let upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
