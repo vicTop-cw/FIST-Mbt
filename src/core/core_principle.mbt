@@ -17,7 +17,11 @@ pub extend Principle with Eq::{not_equal, equal}
 pub extend Principle with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
+<<<<<<< HEAD
 pub fn Principle::get_index(self : Principle) -> Int32 {
+=======
+pub fn Principle::get_index(self : Principle) -> Int {
+>>>>>>> df8ba1a1 (fix(idiom): 清零 0079 implicit_impl_as_method 全族 63 条 + 修守卫 derive 盲区)
   self.index
 }
 

@@ -190,20 +190,38 @@ pub fn ModelTier::to_string(Self) -> String
 pub struct OfmChatMessage {
   role : String
   content : String
+<<<<<<< HEAD
 } derive(Eq, @debug.Debug)
 pub fn OfmChatMessage::equal(Self, Self) -> Bool
 pub fn OfmChatMessage::not_equal(Self, Self) -> Bool
 pub fn OfmChatMessage::to_repr(Self) -> @debug.Repr
+=======
+} derive(Eq, Show, @debug.Debug)
+pub fn OfmChatMessage::equal(Self, Self) -> Bool
+pub fn OfmChatMessage::not_equal(Self, Self) -> Bool
+pub fn OfmChatMessage::output(Self, &Logger) -> Unit
+pub fn OfmChatMessage::to_repr(Self) -> @debug.Repr
+pub fn OfmChatMessage::to_string(Self) -> String
+>>>>>>> df8ba1a1 (fix(idiom): 清零 0079 implicit_impl_as_method 全族 63 条 + 修守卫 derive 盲区)
 
 pub struct OfmChatRequest {
   model : String
   messages : Array[OfmChatMessage]
   temperature : Double?
   max_tokens : Int?
+<<<<<<< HEAD
 } derive(Eq, @debug.Debug)
 pub fn OfmChatRequest::equal(Self, Self) -> Bool
 pub fn OfmChatRequest::not_equal(Self, Self) -> Bool
 pub fn OfmChatRequest::to_repr(Self) -> @debug.Repr
+=======
+} derive(Eq, Show, @debug.Debug)
+pub fn OfmChatRequest::equal(Self, Self) -> Bool
+pub fn OfmChatRequest::not_equal(Self, Self) -> Bool
+pub fn OfmChatRequest::output(Self, &Logger) -> Unit
+pub fn OfmChatRequest::to_repr(Self) -> @debug.Repr
+pub fn OfmChatRequest::to_string(Self) -> String
+>>>>>>> df8ba1a1 (fix(idiom): 清零 0079 implicit_impl_as_method 全族 63 条 + 修守卫 derive 盲区)
 
 pub struct OfmChatResponse {
   http_status : Int
@@ -212,10 +230,19 @@ pub struct OfmChatResponse {
   error_type : String
   content : String
   raw : String
+<<<<<<< HEAD
 } derive(Eq, @debug.Debug)
 pub fn OfmChatResponse::equal(Self, Self) -> Bool
 pub fn OfmChatResponse::not_equal(Self, Self) -> Bool
 pub fn OfmChatResponse::to_repr(Self) -> @debug.Repr
+=======
+} derive(Eq, Show, @debug.Debug)
+pub fn OfmChatResponse::equal(Self, Self) -> Bool
+pub fn OfmChatResponse::not_equal(Self, Self) -> Bool
+pub fn OfmChatResponse::output(Self, &Logger) -> Unit
+pub fn OfmChatResponse::to_repr(Self) -> @debug.Repr
+pub fn OfmChatResponse::to_string(Self) -> String
+>>>>>>> df8ba1a1 (fix(idiom): 清零 0079 implicit_impl_as_method 全族 63 条 + 修守卫 derive 盲区)
 
 pub enum OfmFailure {
   InvalidCredential
@@ -224,19 +251,38 @@ pub enum OfmFailure {
   NetworkError
   BadRequest
   Unknown
+<<<<<<< HEAD
 } derive(Eq, @debug.Debug)
 pub fn OfmFailure::equal(Self, Self) -> Bool
 pub fn OfmFailure::label(Self) -> String
 pub fn OfmFailure::not_equal(Self, Self) -> Bool
 pub fn OfmFailure::to_repr(Self) -> @debug.Repr
+=======
+} derive(Eq, Show, @debug.Debug)
+pub fn OfmFailure::equal(Self, Self) -> Bool
+pub fn OfmFailure::label(Self) -> String
+pub fn OfmFailure::not_equal(Self, Self) -> Bool
+pub fn OfmFailure::output(Self, &Logger) -> Unit
+pub fn OfmFailure::to_repr(Self) -> @debug.Repr
+pub fn OfmFailure::to_string(Self) -> String
+>>>>>>> df8ba1a1 (fix(idiom): 清零 0079 implicit_impl_as_method 全族 63 条 + 修守卫 derive 盲区)
 
 pub struct OfmModel {
   id : String
   owned_by : String
+<<<<<<< HEAD
 } derive(Eq, @debug.Debug)
 pub fn OfmModel::equal(Self, Self) -> Bool
 pub fn OfmModel::not_equal(Self, Self) -> Bool
 pub fn OfmModel::to_repr(Self) -> @debug.Repr
+=======
+} derive(Eq, Show, @debug.Debug)
+pub fn OfmModel::equal(Self, Self) -> Bool
+pub fn OfmModel::not_equal(Self, Self) -> Bool
+pub fn OfmModel::output(Self, &Logger) -> Unit
+pub fn OfmModel::to_repr(Self) -> @debug.Repr
+pub fn OfmModel::to_string(Self) -> String
+>>>>>>> df8ba1a1 (fix(idiom): 清零 0079 implicit_impl_as_method 全族 63 条 + 修守卫 derive 盲区)
 
 pub struct RouteDecision {
   model_name : String

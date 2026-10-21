@@ -68,6 +68,7 @@ SHAPES = {
 # `derive(...)` 的两种落点：闭合行 `} derive(Eq, Debug)` 与一行式 `pub type T = Int derive(Eq)`。
 TYPE_HDR = re.compile(r"^\s*(?:pub(?:\(all\))? )?(?:struct|enum|trait|type|abstract)\s+(\w+)\b")
 DERIVE_TAIL = re.compile(r"^\s*\}.*\bderive\(")
+<<<<<<< HEAD
 
 
 def emit_fatal(msg):
@@ -79,6 +80,8 @@ def emit_fatal(msg):
     """
     sys.stderr.write(msg + "\n")
     return 2
+=======
+>>>>>>> df8ba1a1 (fix(idiom): 清零 0079 implicit_impl_as_method 全族 63 条 + 修守卫 derive 盲区)
 
 
 def tracked(root=None):
@@ -323,8 +326,12 @@ def selftest():
     print("SELFTEST OK（%d 格：干净不误红 / 合成违例必红 / 扩展形状(struct)可红 / 真实 4 符号必红 / "
           "私有函数不误 / 无 .mbt 包跳过 / .mbti 侧只收 pub 项 / 源侧认 pub(all) / "
           "derive 承载三格（带 derive 不误红、不带照红）/ 缺额计入空转门 / "
+<<<<<<< HEAD
           "**出路分流两格（工作树有=未提交 / 工作树无=真缺失）+ 向后兼容一格** / "
           "**判据空转的退出码真是 2（两格：emit_fatal 返 2 + 子进程 rc 是 2）**）"
+=======
+          "**出路分流两格（工作树有=未提交 / 工作树无=真缺失）+ 向后兼容一格**）"
+>>>>>>> df8ba1a1 (fix(idiom): 清零 0079 implicit_impl_as_method 全族 63 条 + 修守卫 derive 盲区)
           % len(cells))
     return 0
 

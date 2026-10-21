@@ -23,12 +23,30 @@ pub struct OfmChatMessage {
 } derive(Show, Eq, Debug)
 
 ///|
+pub extend OfmChatMessage with Eq::{not_equal, equal}
+
+///|
+pub extend OfmChatMessage with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+pub extend OfmChatMessage with Show::{to_string, output}
+
+///|
 pub struct OfmChatRequest {
   model : String
   messages : Array[OfmChatMessage]
   temperature : Double? // None = 不传该字段
   max_tokens : Int?
 } derive(Show, Eq, Debug)
+
+///|
+pub extend OfmChatRequest with Eq::{not_equal, equal}
+
+///|
+pub extend OfmChatRequest with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+pub extend OfmChatRequest with Show::{to_string, output}
 
 ///|
 /// 把请求结构化成 OpenAI 兼容的 chat/completions 请求体 JSON 字符串。
