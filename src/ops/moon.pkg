@@ -1,0 +1,22 @@
+import {
+  "vicTop-cw/fist-mbt/src/core",
+  "vicTop-cw/fist-mbt/src/engine",
+<<<<<<< HEAD
+  "vicTop-cw/RX-MBT/rhop",
+  "vicTop-cw/RX-MBT/rx",
+  "moonbitlang/core/ref",
+=======
+>>>>>>> 9dfd08a0 (fix(deps): 清零 0029 unused_package 全族 16 条（BUG-342）)
+  "moonbitlang/x/fs",
+  "moonbitlang/core/debug",
+}
+
+import {
+  "vicTop-cw/fist-mbt/src/store",
+} for "test"
+
+supported_targets = "js+native"
+
+options(
+  link: { "native": { "cc-link-flags": "-lsqlite3" } },
+)

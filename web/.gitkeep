@@ -1,0 +1,2 @@
+web/ 目录占位文件。前端 `web/index.html` 由后续任务（M0 前端）创建；
+后端 `scripts/fist-mbt-web.py` 在 index.html 缺失时自动返回占位状态页。

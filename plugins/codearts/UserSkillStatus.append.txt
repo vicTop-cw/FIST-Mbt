@@ -1,0 +1,2 @@
+fist-mbt=true
+fist-commander=true

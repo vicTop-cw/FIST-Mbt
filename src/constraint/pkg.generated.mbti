@@ -1,0 +1,44 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/constraint"
+
+// Values
+pub fn eval_all(WorldState, PlannedAction, Array[(WorldState, PlannedAction) -> Verdict]) -> Verdict
+
+pub fn eval_default(WorldState, PlannedAction) -> Verdict
+
+pub fn eval_disjoint_scopes(WorldState, PlannedAction) -> Verdict
+
+pub fn eval_known_agent(WorldState, PlannedAction) -> Verdict
+
+pub fn eval_no_overlap(WorldState, PlannedAction) -> Verdict
+
+pub fn rsv_conflict_verdict((String, String, String)?, String, String) -> (Bool, String)
+
+// Errors
+
+// Types and methods
+pub struct ActiveReservation {
+  scope : String
+  holder : String
+  ttl_until : String
+}
+
+pub struct PlannedAction {
+  agent : String
+  scopes : Array[String]
+  now : String
+}
+
+pub struct Verdict {
+  allowed : Bool
+  reasons : Array[String]
+}
+
+pub struct WorldState {
+  reservations : Array[ActiveReservation]
+  agents : Array[String]
+}
+
+// Type aliases
+
+// Traits

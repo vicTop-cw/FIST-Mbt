@@ -1,0 +1,14 @@
+import {
+  "vicTop-cw/fist-mbt/src/core",
+  "mizchi/sqlite",
+  "moonbitlang/x/encoding",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+}
+
+supported_targets = "js+native"
+
+options(
+  link: { "native": { "cc-link-flags": "-lsqlite3" } },
+)

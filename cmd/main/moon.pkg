@@ -1,0 +1,12 @@
+import {
+  "vicTop-cw/fist-mbt" @lib,
+  "moonbitlang/async",
+}
+
+pkgtype(kind: "executable")
+
+supported_targets = "js+native"
+
+options(
+  link: { "native": { "cc-link-flags": "-lsqlite3" } },
+)

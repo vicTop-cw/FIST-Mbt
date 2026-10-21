@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""check_demo_isolation.py — 「spawn server 的脚本必须把 FIST_DB_PATH 交给子进程」守卫（BUG-122 的常驻判据面）。
+
+背景：仓库根的 `fist-mbt.db` 是**自举台账**（`.gitignore` 挡着 ≠ 可脏）。JS 服务端只认一个隔离出口：
+spawn 进程环境里的 `FIST_DB_PATH`（`store_open(scratch=true)` 实测连隔离手段都不是 ⇒ BUG-90/96 改判）。
+所以任何一个 `Popen([node, cli.js, "serve"])` 却不把 `FIST_DB_PATH` 交给子进程的脚本，
+都是在往真实台账里写演示行；而 README/USAGE/agent-map/deliverable 四处正是教人**裸跑**这类脚本（BUG-122 成因）。
+
+判据（两个方向都发红）：
+  I1  `scripts/**.py` 里 spawn `serve` 的脚本，必须同文件出现「把 FIST_DB_PATH 交给子进程」的五种形状之一：
+        os.environ["FIST_DB_PATH"] = ...            （或任意 *env* 变量的下标赋值）
+        os.environ.setdefault("FIST_DB_PATH", ...)
+        env.setdefault("FIST_DB_PATH", ...)         # env=dict(os.environ) 之后的特例
+        env = dict(... FIST_DB_PATH ...)            # 再传给 Popen
+        env = { ... "FIST_DB_PATH": ... }            # 再传给 Popen
+      缺针 = 红：这个脚本一裸跑就污染真实台账。
+  I2  `EXEMPT` 每一项必须 (a) 文件真实存在 (b) 理由非空 (c) 锚点成立——该文件确实 spawn `serve`，
+      或属于两份**显式子句**（守卫自身、把 `"serve"` 当正则字面量读的 check_entry_paths）。
+      把豁免扩到既不 spawn 也不是显式子句的文件 = 红 ⇒ 否则豁免面可以随便扩。
+  I3  扫描面为空（一个 spawn 脚本都没抓到）⇒ FATAL(2)：判据看不见样本就等于没判（J10/BUG-118 同族）。
+  I0  任一被检文件读不到 ⇒ 整笔自拒，不报绿。
+
+`--selftest` 六支：G1 干净不误红 / M1 摘掉一个真 spawn 脚本的改道针必红 /
+M1b 只加一行注释不许误红 / M2 把豁免扩到一个根本不 spawn 的文件必红 / M3 空扫描必自拒 /
+M3b 入口级空扫描自拒（把 scan 换成空面直接调 main）。
+**BUG-351**：M3 用 `scan(files=[])` 真构造空扫描，并走 main 与自检共用的 `judge()` 断言 FATAL(2)——
+旧版 `scan({})` 仍枚举真实文件（恒非空），M3 只测了不可达分支，是自证式假绿。
+格子清单从已执行对照反解打印，不手写计数。
+
+用法：python scripts/check_demo_isolation.py [--selftest]
+退出码：0=PASS，1=违例，2=判据无法自证（扫描面空 / 读不到文件 / 自检不通过）。
+"""
+import argparse
+import contextlib
+import io
+import os
+import re
+import sys
+
+# BUG-138（BUG-58 同族）：守卫的红必须是判据红。Windows 默认 cp936 控制台上打印中文结论里的
+# ⇒ 等字符会让 print 当场 UnicodeEncodeError——拿到 traceback 而不是 verdict，而且崩在结论行之前
+# 留下的 rc 会被读成「缺陷在场」（判据自己的崩不许冒用被测的退出码）。CI 在 Linux UTF-8 下是无损 no-op。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+SCRIPTS_DIR = os.path.join(ROOT, "scripts")
+
+SPAWN_RE = re.compile(r'subprocess\.Popen\s*\([\s\S]{0,220}?"serve"')
+
+# 五种「把 FIST_DB_PATH 交给子进程」的形状。这里**必须**用三引号 raw 串：
+# 第一版用单引号 raw 串写字符类 ["'] 时，那个单引号把字符串自己闭合了——判据坏在 import 期，
+# 而被检面（一堆 demo 脚本）是无辜的。X 模式下的空白与 # 注释都不进模式，便于逐支注释。
+# 第 5 形状是第 2 形状的泛化：`os.environ.setdefault(...)` 只是 `env=dict(os.environ)` 后
+# `env.setdefault(...)` 的特例——后者同样把 FIST_DB_PATH 落进传给 Popen 的子进程 env，
+# 只改道针写法不匹配就误红（_gen.py / pol_keeper_run.py 即此形状）。
+NEEDLE_RE = re.compile(r"""
+      \w*env\w*\s*\[\s*["']FIST_DB_PATH["']\s*\]\s*=
+    | os\.environ\.setdefault\(\s*["']FIST_DB_PATH["']
+    | \w*env\w*\.setdefault\(\s*["']FIST_DB_PATH["']
+    | env\s*=\s*dict\([^)]*FIST_DB_PATH
+    | env\s*=\s*\{[^}]{0,140}FIST_DB_PATH
+""", re.I | re.X)
+
+# 显式子句：这两份本来就不构成污染面，I1/I2 都不判它们。
+EXPLICIT_CLAUSES = {
+    "scripts/check_demo_isolation.py": "本守卫自身：只做文本判定，不 spawn server。",
+    "scripts/check_entry_paths.py": (
+        '把 "serve" 当**正则字面量**读（判别人的 argv 少没少 serve），自身不 Popen 产物。'),
+}
+
+# 豁免面：确实 spawn，但按设计必须走默认路径 —— 理由要写清"为什么仍然不污染根台账"。
+EXEMPT = {
+    "scripts/store_isolation_probe.py": (
+        "两格对照里 C2 **必须**走默认路径，否则证不了 C1 真的改道；两格的 cwd 与库都在临时 box 内，"
+        "仓库根台账不被任何一格写（该探针本身即 BUG-90 的活判据）。"),
+}
+
+
+def rel(path):
+    return os.path.relpath(path, ROOT).replace("\\", "/")
+
+
+def _files():
+    out = []
+    for dirpath, dirnames, filenames in os.walk(SCRIPTS_DIR):
+        dirnames[:] = [d for d in dirnames if d not in ("__pycache__", "node_modules")]
+        for fn in sorted(filenames):
+            if fn.endswith(".py"):
+                out.append(os.path.join(dirpath, fn))
+    return out
+
+
+def read_body(r, bodies):
+    if bodies and r in bodies:
+        return bodies[r]
+    p = os.path.join(ROOT, r.replace("/", os.sep))
+    if not os.path.isfile(p):
+        return None
+    return io.open(p, encoding="utf-8", errors="replace").read()
+
+
+def scan(bodies=None, files=None):
+<<<<<<< HEAD
+    """返回 (spawn 脚本清单, 违例清单)。bodies 供 --selftest 注入合成正文；
+    files 供注入枚举面（BUG-351：默认走 _files()；旧实现 bodies 只覆盖正文、不影响
+    _files() 枚举，故 scan({}) 仍返回 34 个 spawners——空扫描根本构造不出来）。"""
+    spawners, problems, unreadable = [], [], []
+    for path in (_files() if files is None else files):
+=======
+    """返回 (spawn 脚本清单, 违例清单)。
+
+    bodies 供 --selftest 注入合成正文；files 供自检注入扫描面（缺省走真文件系统）。
+    BUG-351：旧版只有 bodies，_files() 恒枚举真实文件 ⇒ 空扫描永远构造不出来。
+    """
+    spawners, problems, unreadable = [], [], []
+    for path in (files if files is not None else _files()):
+>>>>>>> 010ad445 (fix(guard): check_demo_isolation 的 M3 真构造空扫描，判定抽成共用 judge（BUG-351 / T0r44）)
+        r = rel(path)
+        body = read_body(r, bodies)
+        if body is None:
+            unreadable.append(r)
+            continue
+        if not SPAWN_RE.search(body):
+            continue
+        spawners.append(r)
+        if r in EXPLICIT_CLAUSES or r in EXEMPT:
+            continue
+        if not NEEDLE_RE.search(body):
+            problems.append(
+                'I1 %s spawn `serve` 却没把 FIST_DB_PATH 交给子进程 ⇒ 裸跑即写仓库根自举台账 fist-mbt.db'
+                '（修法：未显式设置时 os.environ["FIST_DB_PATH"] = temp/<脚本名>.db）' % r)
+    for r, why in sorted(list(EXEMPT.items()) + list(EXPLICIT_CLAUSES.items())):
+        body = read_body(r, bodies)
+        if body is None:
+            problems.append("I2 %s 指向不存在的文件（清单过期 = 给真违例让路）" % r)
+            continue
+        if not (why or "").strip():
+            problems.append("I2 项 %s 没有理由" % r)
+        anchored = bool(SPAWN_RE.search(body)) or r in EXPLICIT_CLAUSES
+        if not anchored:
+            problems.append("I2 豁免 %s 的锚不成立：既不 spawn serve、也不是显式子句 ⇒ "
+                            "豁免面漂到无关文件（等于谁都能加豁免）" % r)
+    if unreadable:
+        problems.append("I0 读不到这些文件 ⇒ 判据无法自证：%s" % ", ".join(unreadable))
+    return spawners, problems
+
+
+<<<<<<< HEAD
+def isolate_verdict(spawners, problems):
+    """纯裁决：(verdict, detail)。BUG-351 核心修复——把 main() 里那条『空扫描必自拒』
+    从不可达的内联判断抽成可被 selftest 直接喂 spawners=[] 的纯函数：
+      空 spawners ⇒ FATAL_I3（判据空转，绝不报绿）；有问题 ⇒ VIOLATION；否则 PASS。
+    main() 与 selftest 共用它，故测 isolate_verdict == 测了 main 的 I3 门。"""
+    if not spawners:
+        return "FATAL_I3", "现状面没抓到任何 spawn `serve` 的脚本 ⇒ 判据空转，绝不报绿"
+    if problems:
+        return "VIOLATION", problems
+    return "PASS", (len(spawners), len(EXPLICIT_CLAUSES), len(EXEMPT))
+=======
+def judge(spawners, problems):
+    """主判定（main 与 --selftest 共用）：返回 (退出码, 待打印行)。
+
+    BUG-351：空扫描自拒门原先只写在 main() 里，selftest 摸不到它——把判定抽出来，
+    M3 用真空扫描走同一条门，删掉门或断掉调用自检都会红。
+    """
+    if not spawners:
+        return 2, ["FATAL I3 现状面没抓到任何 spawn `serve` 的脚本 ⇒ 判据空转，绝不报绿"]
+    if problems:
+        return 1, ["VIOLATION " + p for p in problems]
+    return 0, ["PASS spawn 面隔离一致：%d 个脚本 spawn `serve` 时都把 FIST_DB_PATH 交给了子进程"
+               "（显式子句 %d 项 + 豁免 %d 项锚点均成立）"
+               % (len(spawners), len(EXPLICIT_CLAUSES), len(EXEMPT))]
+>>>>>>> 010ad445 (fix(guard): check_demo_isolation 的 M3 真构造空扫描，判定抽成共用 judge（BUG-351 / T0r44）)
+
+
+def selftest():
+    executed, fails = [], []
+    spawners, base_probs = scan()
+    if not spawners:
+        print("SELFTEST FAIL I3 真实现状面一个 spawn 脚本都没抓到 ⇒ 扫描器坏了，不报绿")
+        return 2
+    executed.append("G1 干净不误红")
+    if base_probs:
+        fails.append("干净输入被误判（本仓现状应通过）：%s" % base_probs[:2])
+
+    # M1：摘掉一个真 spawn 脚本的改道针 ⇒ I1 必须红
+    victim = next((r for r in spawners if r.endswith("mcp_smoke.py")), spawners[0])
+    body = read_body(victim, None) or ""
+    cut = NEEDLE_RE.sub("    pass  # (变异：摘掉默认改道)", body, count=1)
+    if cut == body:
+        fails.append("M1 变异没生效：%s 里摘不到改道针（该格不能当对照）" % victim)
+    else:
+        _s, probs = scan({victim: cut})
+        executed.append("M1 摘改道针必红")
+        if not any(p.startswith("I1") and victim in p for p in probs):
+            fails.append("I1 未红（摘掉 %s 的改道针后仍报绿 = 判据看不见污染面）" % victim)
+
+    # M1b：只加一行注释 ⇒ 不许误红（防"注释喂针"型判据：变异落在非承重面也报红就是噪声）
+    comment_only = body.rstrip() + chr(10) + "# （这一行只是注释，被检面没动）" + chr(10)
+    _s, probs = scan({victim: comment_only})
+    executed.append("M1b 加注释不误红")
+    if any(p.startswith("I1") and victim in p for p in probs):
+        fails.append("M1b 误红：只加一行注释就判 %s 违例" % victim)
+
+    # M2：把豁免扩到一个既不 spawn 也不是显式子句的文件 ⇒ I2 必须红
+    key = "moon.mod"
+    saved = dict(EXEMPT)
+    EXEMPT[key] = "（合成违例：把豁免扩到一个既不 spawn 也不是显式子句的文件）"
+    try:
+        _s, probs = scan()
+        executed.append("M2 豁免面漂移必红")
+        if not any(p.startswith("I2") and key in p for p in probs):
+            fails.append("I2 未红：豁免了 %s 却没被抓 ⇒ 豁免面可以随便扩" % key)
+    finally:
+        EXEMPT.clear()
+        EXEMPT.update(saved)
+
+<<<<<<< HEAD
+    # M3a：枚举面真能真空（旧 scan({}) 因 _files() 硬编码永远非空，构造不出空扫描）
+    _s3, _p3 = scan(files=[])
+    executed.append("M3a 枚举面可真空")
+    if _s3:
+        fails.append("M3a 无法构造空扫描：scan(files=[]) 仍返回 %d 个 spawners（files 注入面没生效）" % len(_s3))
+    # M3b：真空裁决必自拒——真锁 main 的 I3 门（旧 M3 测的是已 return 的不可达条件）
+    executed.append("M3b 空扫描必自拒")
+    v, _ = isolate_verdict([], [])
+    if v != "FATAL_I3":
+        fails.append("M3b 空扫描未自拒（isolate_verdict([], [])=%s ⇒ main 的 I3 门形同虚设，删了它 selftest 照样绿）" % v)
+    # M3c：三态不串台（合规=PASS、违例=VIOLATION）
+    executed.append("M3c 裁决三态")
+    if isolate_verdict(["a.py"], [])[0] != "PASS":
+        fails.append("M3c 合规面未判 PASS")
+    if isolate_verdict(["a.py"], ["VIOLATION x"])[0] != "VIOLATION":
+        fails.append("M3c 违例面未判 VIOLATION")
+=======
+    # M3：真空扫描必自拒（BUG-351）。旧版 scan({}) 仍枚举真实文件、恒非空，
+    # 这一格只是无条件 append；现在 scan(files=[]) 真走空面，并要求共用判定 judge() 给 rc=2。
+    empty_sp, empty_probs = scan(files=[])
+    executed.append("M3 空扫描必自拒")
+    if empty_sp:
+        fails.append("M3 空扫描仍抓到 %d 个 spawn ⇒ files 注入没生效" % len(empty_sp))
+    else:
+        rc, lines = judge(empty_sp, empty_probs)
+        if rc != 2 or not any("I3" in ln for ln in lines):
+            fails.append("M3 空扫描未自拒：rc=%r lines=%r（判据空转必须 FATAL(2)）"
+                         % (rc, lines[:1]))
+    # 干净路径也必须走共用判定且 rc=0（防 judge 的 PASS 分支漂移）
+    rc_clean, _lines = judge(spawners, base_probs)
+    if rc_clean != 0:
+        fails.append("G1 判定层未放行干净输入：judge rc=%r" % rc_clean)
+
+    # M3b：入口接线锁（BUG-350 的入口级教训）——把 scan 换成空面直接调 main()，
+    # 必须拿到 rc=2 且打印 I3；main 若绕过 judge 自报绿，这一格当场红。
+    saved_scan, saved_argv = globals()["scan"], sys.argv
+    globals()["scan"] = lambda *a, **k: ([], [])
+    sys.argv = ["check_demo_isolation.py"]
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            rc_entry = main()
+    finally:
+        globals()["scan"] = saved_scan
+        sys.argv = saved_argv
+    executed.append("M3b 入口空扫描必自拒")
+    if rc_entry != 2 or "I3" not in buf.getvalue():
+        fails.append("M3b main() 在空扫描下 rc=%r / 输出=%r（应 2 且带 I3）"
+                     % (rc_entry, buf.getvalue()[:80]))
+>>>>>>> 010ad445 (fix(guard): check_demo_isolation 的 M3 真构造空扫描，判定抽成共用 judge（BUG-351 / T0r44）)
+
+    print("SELFTEST %s（干净不误红 + 变异必红 + 空扫描自拒；格子从已执行对照反解：%s；"
+          "spawn 面 %d 个脚本，显式子句 %d 项 / 豁免 %d 项）"
+          % ("OK" if not fails else "FAIL", " / ".join(executed), len(spawners),
+             len(EXPLICIT_CLAUSES), len(EXEMPT)))
+    for f in fails:
+        print("SELFTEST FAIL " + f)
+    return 0 if not fails else 2
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--selftest", action="store_true")
+    a = ap.parse_args()
+    if a.selftest:
+        return selftest()
+    spawners, problems = scan()
+<<<<<<< HEAD
+    verdict, detail = isolate_verdict(spawners, problems)
+    if verdict == "FATAL_I3":
+        print("FATAL " + detail)
+        return 2
+    if verdict == "VIOLATION":
+        for pp in detail:
+            print("VIOLATION " + pp)
+        return 1
+    n_spawners, n_clause, n_exempt = detail
+    print("PASS spawn 面隔离一致：%d 个脚本 spawn `serve` 时都把 FIST_DB_PATH 交给了子进程"
+          "（显式子句 %d 项 + 豁免 %d 项锚点均成立）" % (n_spawners, n_clause, n_exempt))
+    return 0
+=======
+    rc, lines = judge(spawners, problems)
+    for ln in lines:
+        print(ln)
+    return rc
+>>>>>>> 010ad445 (fix(guard): check_demo_isolation 的 M3 真构造空扫描，判定抽成共用 judge（BUG-351 / T0r44）)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

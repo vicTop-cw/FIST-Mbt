@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""scripts/task_challenge_verify.py — 验证 task_challenge Challenger 进阶变体 E2E（tools/list=77；scratch 隔离）。"""
+
+# BUG-138 残余面：Windows 默认 cp936 控制台下，中文结论一红就崩在 print 里，
+# traceback + rc=1 会被读成「缺陷在场」那一档——那是尺子自己坏了。先把两条流钉 UTF-8。
+import sys as _sys
+if hasattr(_sys.stdout, "reconfigure"):
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(_sys.stderr, "reconfigure"):
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+import json, os, subprocess
+from datetime import datetime, timezone
+ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+NODE = os.environ.get("FIST_NODE", "node")
+# BUG-122 同型收口：不带 FIST_DB_PATH 裸跑会把演示数据写进仓库根的自举台账 fist-mbt.db。
+# 默认改道 temp/ 下的隔离库；调用方显式设过 FIST_DB_PATH 就照它的（store_isolation_probe 那类必须自己控制）。
+_FIST_ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+if not (os.environ.get("FIST_DB_PATH") or "").strip():
+    os.environ["FIST_DB_PATH"] = os.path.join(_FIST_ROOT, "temp", "task_challenge_verify.db")
+MAIN = "_build/js/debug/build/cmd/cli/cli.js"
+NS = "challenge-verify"
+META = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": {},
+        "io.modelcontextprotocol/clientInfo": {"name": "task-challenge-verify", "version": "1.0"}}
+NOW = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def rpc(p, m, **kw):
+    kw["_meta"] = META
+    req = {"jsonrpc": "2.0", "id": "1", "method": m, "params": kw}
+    p.stdin.write(json.dumps(req, ensure_ascii=False) + "\n"); p.stdin.flush()
+    line = p.stdout.readline()
+    if not line: raise RuntimeError("server closed stdout")
+    return json.loads(line)
+
+def call(p, name, **args):
+    r = rpc(p, "tools/call", name=name, arguments=args)
+    if "error" in r: raise RuntimeError(f"{name}: {r['error']}")
+    return json.loads(r["result"]["content"][0]["text"])
+
+def main():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("patch_esm_main", os.path.join(ROOT, "scripts", "patch_esm_main.py"))
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); mod.patch(MAIN)
+    p = subprocess.Popen([NODE, MAIN, "serve"], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", bufsize=1)
+    try:
+        tools = [t["name"] for t in rpc(p, "tools/list").get("result", {}).get("tools", [])]
+        print(f"PASS tools/list → {len(tools)} 个工具")
+        assert "task_challenge" in tools, "缺少 task_challenge"
+        call(p, "store_open", namespace=NS, scratch=True, now=NOW)
+        # 完成一条任务后发起挑战
+        r = call(p, "publish", project_dir="/proj/demo", namespace=NS, description="实现一个基础计算器", created_by="human_steward", now=NOW)
+        tid = r["task_id"]
+        call(p, "claim", task_id=tid, assignee="exec_1", now=NOW)
+        call(p, "execute", task_id=tid, deliverable="done", now=NOW)
+        call(p, "submit", task_id=tid, now=NOW)
+        call(p, "verify", task_id=tid, verifier="ver_1", now=NOW)
+        c = call(p, "task_challenge", task_id=tid, factor=3, strat="scale", by="auto", now=NOW)
+        new_id = c["new_id"]
+        g = call(p, "get", task_id=new_id)
+        assert "[challenge]" in g["description"], f"应带 [challenge]: {g['description']}"
+        assert f"from {tid}" in g["description"], f"应溯源 from {tid}"
+        assert "3 倍" in g["description"], f"scale 应写入 factor=3: {g['description']}"
+        print(f"PASS task_challenge → new_id={new_id} 带 [challenge]/溯源/3倍")
+        # R29 防漂移门禁：critic=true 在 MCP 层接受、返回 critic/critic_status、仍能发布（空档案库放行）
+        cg = call(p, "task_challenge", task_id=tid, by="auto", strat="unhint", critic=True, now=NOW)
+        assert cg.get("critic_status") == "admitted", f"空档案库应放行: {cg.get('critic_status')}"
+        assert "critic" in cg, "应返回 critic 评审"
+        assert "critic_status" in cg, "应返回 critic_status"
+        g2 = call(p, "get", task_id=cg["new_id"])
+        assert "[challenge]" in g2["description"], "critic 门禁下仍应产出 [challenge]"
+        print(f"PASS task_challenge critic=true → critic_status={cg['critic_status']} 附评审 + [challenge] 产出（防漂移门禁）")
+        # 未完成任务应拒绝
+        r2 = call(p, "publish", project_dir="/proj/demo", namespace=NS, description="待挑战任务", created_by="human_steward", now=NOW)
+        try:
+            call(p, "task_challenge", task_id=r2["task_id"], by="auto", now=NOW)
+            raise RuntimeError("未完成任务不应通过 challenge")
+        except RuntimeError as e:
+            assert "已完成/已归档" in str(e), f"应提示需已完成/已归档: {e}"
+        print("PASS 未完成任务 → 拒绝（提示 已完成/已归档）")
+        # 整洁：scratch 隔离，仓库根无 {NS}.db
+        assert not os.path.exists(os.path.join(ROOT, NS + ".db")), f"仓库根不应出现 {NS}.db"
+        print("PASS 仓库根无 challenge-verify.db（scratch 已隔离）")
+        print("MCP-TASK-CHALLENGE-VERIFY PASS")
+    finally:
+        try:
+            p.stdin.close(); p.terminate(); p.wait(timeout=5)
+        except Exception:
+            pass
+
+if __name__ == "__main__":
+    main()
