@@ -118,9 +118,14 @@ RE_PROMPT = re.compile(r"s1\.prompt\(")
 #   下限式  "140+ 个 MCP 工具" / "140+ MCP 工具" / "140+ 工具注册" / "工具 140+ 个" → 只需实测 ≥ 下限
 # 下限式治「写死一个数就是下一颗漂移雷」：加工具不必改文档，减到下限以下才红；
 # 下限超过实测即虚报（overclaim），照样判红，不许靠模糊化掩盖虚报。
+# BUG-344 根因（2026-10-21）：数字前只挡 `\.` 不够——`cl1 MCP 工具存在` 的 "1" 紧贴
+# 标识符字母 "l"，被 `(\d+)\s*MCP\s*工具` 误读成「声明 1 个工具」（实测 170），
+# cl 表整行假阳。把数字前 lookbehind 强化为 `(?<![A-Za-z0-9_.])`：拒绝紧贴
+# 字母/数字/下划线/点的数字（标识符内数字：cl1/v1/s1/bug37），真声明数字前恒为
+# 空格/标点/行首，不受影响。只降假阳、不产生假绿（真实过期声明必在词边界）。
 RE_TOOL_CLAIM = re.compile(
-    r"(?<!\.)(\d+)\+?\s*个\s*MCP\s*工具|(?<!\.)(\d+)\+?\s*MCP\s*工具|"
-    r"(?<!\.)(\d+)\+?\s*工具注册|工具\s*(?<!\.)(\d+)\+?\s*个"
+    r"(?<![A-Za-z0-9_.])(\d+)\+?\s*个\s*MCP\s*工具|(?<![A-Za-z0-9_.])(\d+)\+?\s*MCP\s*工具|"
+    r"(?<![A-Za-z0-9_.])(\d+)\+?\s*工具注册|工具\s*(?<![A-Za-z0-9_.])(\d+)\+?\s*个"
 )
 # 三元组："120 tools + 3 resources + 2 prompts"
 RE_TRIPLE = re.compile(
@@ -515,6 +520,17 @@ def selftest():
         "floor-alt-shape-and-mixed",
         "docs/improvement-plan-20261010.md",
         "以 **120+ MCP 工具** 暴露；另有精确口径 **130 个 MCP 工具**",
+        want_none="R3b",
+    ):
+        return 1
+
+    # 7e) BUG-344 根因回归：标识符内数字（cl1）不得被当成「1 MCP 工具」声明
+    #     数字紧贴标识符字母（cl1）时 lookbehind `(?<![A-Za-z0-9_.])` 拒配，
+    #     该形状不再产生 R3b 假阳（实测 170 的工具数不被 1 顶掉）。
+    if not run_case(
+        "identifier-digit-in-cl-cell-no-false-claim",
+        "docs/improvement-plan-20261010.md",
+        "| cl1 MCP 工具存在 | model_route 新增 dry_run 分支回写 | ✅ |",
         want_none="R3b",
     ):
         return 1
