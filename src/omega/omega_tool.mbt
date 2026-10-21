@@ -355,11 +355,11 @@ pub fn verify_fix_with_evidence(
   // 1. 初始批量验证
   let initial = batch_verify(spec_contents)
   let total = match initial.value("total") {
-    Some(Number(n)) => n.to_int()
+    Some(Number(n, ..)) => n.to_int()
     _ => 0
   }
   let passed_init = match initial.value("passed") {
-    Some(Number(n)) => n.to_int()
+    Some(Number(n, ..)) => n.to_int()
     _ => 0
   }
   let init_accuracy = if total > 0 {
@@ -431,7 +431,7 @@ pub fn verify_fix_with_evidence(
     }
     ""
   }
-  let can_fix = fn(fname : String, detail : String) -> Bool {
+  let can_fix = fn(_fname : String, detail : String) -> Bool {
     if detail == "" {
       return false
     }

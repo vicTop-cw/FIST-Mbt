@@ -540,7 +540,7 @@ pub async fn ocr_scan_impl(
       }
       // BUG-165：scan/files 对白名单外扩展名（如 .mbt）会假绿——回执 ok=true 但
       // reviewable_count=0。这里把假绿显式摊到回执上，调用方不再误读为「已审完」。
-      let (reviewed, fake_notice) = if subcmd == "scan" || subcmd == "files" {
+      let (reviewed, _fake_notice) = if subcmd == "scan" || subcmd == "files" {
         ocr_fake_green_check(stdout)
       } else {
         (true, "")
