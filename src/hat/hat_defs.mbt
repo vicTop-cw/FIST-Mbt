@@ -284,7 +284,7 @@ pub fn resolve_elements(items : Array[String]) -> Result[Array[String], String] 
   let out : Array[String] = []
   for i = 0; i < items.length(); i = i + 1 {
     match resolve_element_id(items[i]) {
-      Ok(id) => if not(out.contains(id)) { out.push(id) }
+      Ok(id) => if !out.contains(id) { out.push(id) }
       Err(e) => return Err(e)
     }
   }

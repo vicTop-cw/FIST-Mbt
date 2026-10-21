@@ -73,7 +73,7 @@ test "task_triage 返回可领取排行 + suggestion，且带难度标签" {
   }
   // 至少第一条任务带难度标签（gradient 的 易/中/难 或 叶(可执行) 兜底）
   match j.value("tasks") {
-    Some(Array(arr)) if not(arr.is_empty()) =>
+    Some(Array(arr)) if !arr.is_empty() =>
       match arr[0].value("difficulty") {
         Some(String(d)) =>
           assert_true(

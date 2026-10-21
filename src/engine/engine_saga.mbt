@@ -66,7 +66,7 @@ pub fn FistEngine::saga_rollback(
   }
   let ids = lifo.map(fn(t) { t.0 })
   let mut mark_err = ""
-  let marked_n = if mark && not(ids.is_empty()) {
+  let marked_n = if mark && !ids.is_empty() {
     match self.store_mark_saga_actions_done(ns~, root_task_id~, ids~) {
       Ok(_) => ids.length()
       Err(e) => {
@@ -219,12 +219,12 @@ pub fn FistEngine::saga_repair(
       let affected_ids : Array[Int] = affected.map(fn(t) { t.0 })
       let keep : Array[(Int, String, String, String, String)] = []
       for r in pending {
-        if not(affected_ids.contains(r.0)) {
+        if !affected_ids.contains(r.0) {
           keep.push(r)
         }
       }
       let mut mark_err = ""
-      let marked_n = if mark && not(affected_ids.is_empty()) {
+      let marked_n = if mark && !affected_ids.is_empty() {
         match
           self.store_mark_saga_actions_done(
             ns~,

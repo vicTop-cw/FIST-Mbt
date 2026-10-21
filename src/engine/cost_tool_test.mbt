@@ -27,7 +27,7 @@ test "BUG-181：cost_budget_check 超支时 remaining 为负（超支额可见�
   // reason 应带超支额，不只说"超限"
   match j.value("reason") {
     Some(String(r)) =>
-      if not(r.contains("超支额")) {
+      if !r.contains("超支额") {
         abort("reason 应说明超支额: " + r)
       }
     _ => abort("reason 缺失: " + j.stringify())

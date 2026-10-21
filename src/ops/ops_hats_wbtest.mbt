@@ -245,7 +245,7 @@ test "hats: all_hats() 返回 6 顶且 id 互不相同" {
   // 两两 id 不同（去重后仍 6 个）
   let seen : Array[String] = []
   for id in ids {
-    if not(seen.contains(id)) {
+    if !seen.contains(id) {
       seen.push(id)
     }
   }

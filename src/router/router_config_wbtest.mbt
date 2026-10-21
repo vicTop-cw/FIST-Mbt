@@ -188,7 +188,7 @@ test "cfg_caf_1_use_caf_memory_true 解析为 true" {
   let (cfg, _) = RouterConfig::from_json(
     qj([("use_caf_memory", Json::boolean(true))]),
   )
-  if not(cfg.use_caf_memory) {
+  if !cfg.use_caf_memory {
     abort("use_caf_memory: true 应解析为 true")
   }
 }

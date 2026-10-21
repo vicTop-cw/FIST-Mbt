@@ -285,7 +285,7 @@ async fn mr_laya_tier_hint() -> String {
     Ok(a) => a
     Err(_) => false
   }
-  if not(avail) {
+  if !avail {
     return ""
   }
   let questions = Json::object({
@@ -363,7 +363,7 @@ fn model_route_impl(
     mr_env("FIST_STAR_GATE_USER_LOGIN"),
     @env.now().to_int64() / 1000L,
   )
-  if gate.gate_enabled && not(gate.free_pool_unlocked) {
+  if gate.gate_enabled && !gate.free_pool_unlocked {
     return Ok(
       mr_obj([
         ("ok", Json::boolean(false)),
@@ -387,7 +387,7 @@ fn model_route_impl(
   // config.use_caf_memory=false 时**显式拒绝**（不静默降级回普通查询：调用方以为在看
   // CAF 建议、实际却拿到了非 CAF 决策，是 BUG-31 同族的最难查静默降级）。
   if dry_run {
-    if not(r.config.use_caf_memory) {
+    if !r.config.use_caf_memory {
       return Err(
         "model_route: dry_run=true 但 config.use_caf_memory=false，CAF 未开启",
       )
@@ -582,7 +582,7 @@ fn mr_record_failure(
   let cool_until = @router.secs_to_iso(now_secs + secs)
   let (r, _warns) = @router.router_restore(mr_read(project_dir, ns))
   let found = r.mark_failure(model, cool_until)
-  if not(found) {
+  if !found {
     return Ok(())
   }
   mr_save(r, project_dir, ns)

@@ -73,7 +73,7 @@ test "dag_mc：确定性可复现 + 按期概率随 deadline 单调（宽松 dea
   // 紧 deadline(3) 的按期概率 < 宽松 deadline(100)
   let tight = mc_num(e.dag_mc(deadline=3), "p_on_time")
   let loose = mc_num(e.dag_mc(deadline=100), "p_on_time")
-  if not(tight < loose) {
+  if !(tight < loose) {
     abort("p_on_time 应随 deadline 单调: tight=\{tight} loose=\{loose}")
   }
   if loose != 1.0 {

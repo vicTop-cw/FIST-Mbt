@@ -157,7 +157,7 @@ pub fn parse_spec(s : String) -> Result[Json, String] {
 /// 校验必填字段与结构，返回错误列表（空 = 通过）。
 pub fn validate_schema(spec : Json) -> Array[String] {
   let errors : Array[String] = []
-  if not(spec is Object(_)) {
+  if !(spec is Object(_)) {
     errors.push("spec 必须是 JSON 对象")
     return errors
   }
@@ -170,15 +170,15 @@ pub fn validate_schema(spec : Json) -> Array[String] {
     Some(Array(tests)) =>
       for i in 0..<tests.length() {
         let t = tests[i]
-        if not(t is Object(_)) {
+        if !(t is Object(_)) {
           errors.push("tests[\{i}] 必须是对象")
           continue
         }
         if t.value("input") is None {
           errors.push("tests[\{i}] 缺少 input")
         }
-        let has_exp = not(t.value("expected") is None)
-        let has_err = not(t.value("error") is None)
+        let has_exp = !(t.value("expected") is None)
+        let has_err = !(t.value("error") is None)
         if !has_exp && !has_err {
           errors.push("tests[\{i}] 缺少 expected 或 error")
         }

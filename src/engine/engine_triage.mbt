@@ -176,10 +176,10 @@ pub fn FistEngine::triage(
     if namespace != "" && t.ns != namespace {
       continue
     }
-    if not(t.get_status().is_pending()) {
+    if !t.get_status().is_pending() {
       continue
     }
-    if not(deps_ready_memo(t.depends_on, completed)) {
+    if !deps_ready_memo(t.depends_on, completed) {
       continue
     }
     let lab : String = triage_label_of(t.description)
@@ -262,7 +262,7 @@ pub fn FistEngine::triage(
     ("skill", Json::string(skill)),
     ("tasks", Json::array(tasks)),
   ])
-  if not(rows.is_empty()) {
+  if !rows.is_empty() {
     let top = rows[0]
     let cap = if cap_match(top, want) && want != "" {
       "；能力匹配<\{want}>"

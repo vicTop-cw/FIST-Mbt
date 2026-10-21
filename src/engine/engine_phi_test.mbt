@@ -84,7 +84,7 @@ test "phi_accrual：单调性——elapsed 越大 φ 越大；无历史 = insuff
     Some(Number(n, ..)) => n
     _ => abort("phi2 缺失: " + j2.stringify())
   }
-  if not(phi2 > phi1) {
+  if !(phi2 > phi1) {
     abort(
       "φ 应随 elapsed 单调增: " +
       phi1.to_string() +

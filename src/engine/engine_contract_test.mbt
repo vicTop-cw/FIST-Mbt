@@ -230,7 +230,7 @@ test "tx_contract：BUG-168 未知动作 postcondition 拒绝（非 precondition
   assert_eq(cx_phase(j), "postcondition")
   let reasons = cx_reasons(j)
   assert_eq(reasons.length(), 1)
-  if not(reasons[0].contains("动作无契约定义")) {
+  if !reasons[0].contains("动作无契约定义") {
     abort("reasons 应说明动作无契约定义: " + j.stringify())
   }
   // 回稳：库中任务仍为待领取（只读预检不落库）

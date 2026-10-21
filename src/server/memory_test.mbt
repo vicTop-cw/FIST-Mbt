@@ -128,8 +128,8 @@ test "memory_3_gc_logic_chinese" {
 test "memory_4_gc_missing_file" {
   let dir = mem_dir("mem_c4_missing")
   let j = memory_gc_one(dir, "target", 2000)
-  assert_true(not(mem_bool(j, "gc")))
-  assert_true(not(mem_bool(j, "exists")))
+  assert_true(!mem_bool(j, "gc"))
+  assert_true(!mem_bool(j, "exists"))
   assert_eq(mem_str(j, "kind"), "target")
 }
 
@@ -382,7 +382,7 @@ test "memory_18_gc_illegal_kind_refuses_without_writing" {
     _ => abort("写档失败")
   }
   let j = memory_gc_one(dir, "thinking g", 5)
-  assert_true(not(mem_bool(j, "gc")))
+  assert_true(!mem_bool(j, "gc"))
   assert_eq(mem_str(j, "kind"), "thinking g")
   // 拒绝必须带原因：非法值本身 + 合法集合（不能只回一个干巴巴的 false）
   let err = mem_str(j, "error")
@@ -394,7 +394,7 @@ test "memory_18_gc_illegal_kind_refuses_without_writing" {
     _ => abort("读正文失败")
   }
   assert_eq(body, "0123456789abcdefghij")
-  assert_true(not(@fs.path_exists(dir + "/memory/archive/target.archive.md")))
+  assert_true(!@fs.path_exists(dir + "/memory/archive/target.archive.md"))
 }
 
 ///|
@@ -421,7 +421,7 @@ test "memory_19_consolidate_illegal_kind_err_without_writing" {
     _ => abort("读正文失败")
   }
   assert_eq(body, "原有正文不许动")
-  assert_true(not(@fs.path_exists(dir + "/memory/thinking g.md")))
+  assert_true(!@fs.path_exists(dir + "/memory/thinking g.md"))
 }
 
 // ---------------------------------------------------------------------------

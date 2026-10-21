@@ -73,8 +73,8 @@ fn _has_word(hay : String, needle : String) -> Bool {
       k = k + 1
     }
     if equal {
-      let before_ok = i == 0 || not(_is_word_char(chars[i - 1]))
-      let after_ok = i + m == n || not(_is_word_char(chars[i + m]))
+      let before_ok = i == 0 || !_is_word_char(chars[i - 1])
+      let after_ok = i + m == n || !_is_word_char(chars[i + m])
       if before_ok && after_ok {
         return true
       }

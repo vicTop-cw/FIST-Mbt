@@ -817,7 +817,7 @@ test "progress_gate：CAUTION 判决（线性可行但保守缓冲不足）" {
   }
   match j.value("action") {
     Some(String(a)) =>
-      if not(a.contains("降档")) && not(a.contains("缩减")) {
+      if !a.contains("降档") && !a.contains("缩减") {
         abort("action 应建议降档/缩范围: " + a)
       }
     _ => abort("action 缺失: " + j.stringify())
@@ -1381,7 +1381,7 @@ test "progress_gate：BUG-165 进度 0% 但有消耗 → ESCALATE 且 burn_rate=
   }
   match j.value("action") {
     Some(String(a)) =>
-      if not(a.contains("不可计算")) {
+      if !a.contains("不可计算") {
         abort("action 应说明燃尽率不可计算: " + a)
       }
     _ => abort("action 缺失: " + j.stringify())
@@ -1417,7 +1417,7 @@ test "progress_gate：BUG-166 负预算回显实收值并带齐契约字段" {
   }
   match j.value("action") {
     Some(String(a)) =>
-      if not(a.contains("必须为正")) {
+      if !a.contains("必须为正") {
         abort("action 应说明预算须为正: " + a)
       }
     _ => abort("action 缺失: " + j.stringify())
@@ -1472,7 +1472,7 @@ test "progress_gate：BUG-169 已完成但超支 → ESCALATE 而非 OK" {
   }
   match j.value("action") {
     Some(String(a)) =>
-      if not(a.contains("超支")) {
+      if !a.contains("超支") {
         abort("action 应说明超支: " + a)
       }
     _ => abort("action 缺失: " + j.stringify())

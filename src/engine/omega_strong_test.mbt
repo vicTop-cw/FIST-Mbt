@@ -540,7 +540,7 @@ test "omega_audit_gate_placeholder_punctuation_tolerant" {
     let r = e.execute(task_id=id, deliverable=ph, now="2026-09-17T14:01:00Z")
     match r {
       Err(m) =>
-        if not(m.contains("占位符")) {
+        if !m.contains("占位符") {
           abort("规整后仍是占位符却放行: [" + ph + "] → " + m)
         }
       Ok(_) =>

@@ -516,7 +516,7 @@ test "caf_status_4_全失败记录不产出NaN" {
 /// 防止字段只进 struct 而漏进 from_json/to_json（R32 教训：字段改动面大，必须有锁兜底）。
 test "caf_cfg_1_新字段默认值与JSON往返" {
   let d = RouterConfig::default()
-  if not(d.caf_default_preference.is_empty()) {
+  if !d.caf_default_preference.is_empty() {
     abort("默认偏好应为空（零回归）")
   }
   if d.caf_min_evidences != 10 {
@@ -526,7 +526,7 @@ test "caf_cfg_1_新字段默认值与JSON往返" {
   if warns.length() != 0 {
     abort("往返不应产生警告，got \{warns.length()}")
   }
-  if not(back.caf_default_preference.is_empty()) {
+  if !back.caf_default_preference.is_empty() {
     abort("往返后偏好应仍为空")
   }
   if back.caf_min_evidences != 10 {
@@ -620,7 +620,7 @@ test "caf_cfg_3_坏类型偏好降级默认" {
     "caf_min_evidences": Json::number(3.0),
   }
   let (back, warns) = RouterConfig::from_json(bad)
-  if not(back.caf_default_preference.is_empty()) {
+  if !back.caf_default_preference.is_empty() {
     abort(
       "坏类型偏好应降级为空，实际 \{back.caf_default_preference}",
     )

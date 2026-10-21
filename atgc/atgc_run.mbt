@@ -72,7 +72,7 @@ fn assemble(seq : String) -> Array[Inst] {
 ///|
 /// 极简入口：源码 -> 执行 -> 返回一行文本（output + result）。
 pub fn run_dna(seq : String) -> Result[String, String] {
-  if not(valid_input(seq)) {
+  if !valid_input(seq) {
     return Err("run_dna: 非法输入（仅允许 ATGCU 与空白/注释）")
   }
   let r = run(assemble(normalize(seq)))

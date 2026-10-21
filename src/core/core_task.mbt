@@ -500,7 +500,7 @@ pub fn Task::archive(self : Task) -> Result[Task, String] {
 /// 已领取/执行中/待验收 等在流状态不放行——它们可能仍被活跃 agent 持有，
 /// 强制归档会吞掉在途工作；请先 pause 落到已暂停再走本路径。
 pub fn Task::archive_force(self : Task, force~ : Bool) -> Result[Task, String] {
-  if not(force) {
+  if !force {
     return self.archive()
   }
   match self.status {

@@ -240,7 +240,7 @@ test "selfdrive_2_append_get" {
     Err(m) => abort(m)
   }
   assert_eq(sd_str(gm, "action"), "get")
-  assert_true(not(sd_bool(gm, "exists")))
+  assert_true(!sd_bool(gm, "exists"))
 }
 
 // ---------------------------------------------------------------------------

@@ -350,7 +350,7 @@ test "mo_7_非法 namespace 三个入口全拒，空 ns 仍按 default 零回归
 
 ///|
 fn must_contain(hay : String, needle : String) -> Unit {
-  if not(hay.contains(needle)) {
+  if !hay.contains(needle) {
     abort("文案缺 '\{needle}'：\{hay}")
   }
 }
@@ -588,7 +588,7 @@ test "caf_dr_1_零副作用预览形状" {
   // decision 是标准 3 形状：suggestion + basis（数组）
   let dec = mo_get(j, "decision")
   assert_true(mo_str(dec, "suggestion") != "")
-  assert_true(not(mo_str(dec, "base").is_empty()))
+  assert_true(!mo_str(dec, "base").is_empty())
   match mo_get(dec, "basis") {
     Json::Array(_) => ()
     _ => abort("decision.basis 应为数组，实际不是")

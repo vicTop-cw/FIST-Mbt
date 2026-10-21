@@ -132,7 +132,7 @@ test "scoring_bad_fingerprint" {
     Some(False) => false
     _ => true // 默认 true，若 false 则是真篡改
   }
-  assert_true(not(fp_ok))
+  assert_true(!fp_ok)
 }
 
 ///|
@@ -150,7 +150,7 @@ test "scoring_bad_schema" {
     Some(False) => false
     _ => true
   }
-  assert_true(not(schema_ok))
+  assert_true(!schema_ok)
 }
 
 ///|
@@ -177,7 +177,7 @@ test "scoring_zero_accuracy" {
     _ => true
   }
   assert_true(acc == 0.0)
-  assert_true(not(pass))
+  assert_true(!pass)
 }
 
 ///|
@@ -194,7 +194,7 @@ test "scoring_bad_json_no_panic" {
     _ => true
   }
   assert_true(score == 0.0)
-  assert_true(not(pass))
+  assert_true(!pass)
 }
 
 ///|

@@ -180,7 +180,7 @@ pub fn latest_url(repo : String, base_url : String) -> String {
 ///   `--check`（check_only=true）永不写盘——阶段 A 只读；
 ///   否则**仅当** `远端 > 本地`（cmp>0）才进入阶段 B/C。
 fn should_upgrade(cmp : Int, check_only : Bool) -> Bool {
-  cmp > 0 && not(check_only)
+  cmp > 0 && !check_only
 }
 
 ///|
@@ -301,7 +301,7 @@ pub async fn run_upgrade_full(
       }
     _ => return Err("upgrade: 定位安装目录的回执不是对象")
   }
-  if not(js_exists) {
+  if !js_exists {
     return Err(
       "未检测到已安装的 fist-mbt.js（\{js_bin}）；请先运行安装器安装 fist-mbt，再执行 upgrade",
     )

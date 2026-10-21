@@ -76,7 +76,7 @@ fn FistEngine::mc_scope_tasks(
         Some(p) => scope.get(p).unwrap_or(false)
         None => false
       }
-      if in_parent && not(scope.get(t.get_id()).unwrap_or(false)) {
+      if in_parent && !scope.get(t.get_id()).unwrap_or(false) {
         scope.set(t.get_id(), true)
         changed = true
       }

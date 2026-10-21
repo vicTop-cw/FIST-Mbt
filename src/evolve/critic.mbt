@@ -33,7 +33,7 @@ pub fn critic_most_similar(
   let mut best : (String, String, Double) = ("", "", 0.0)
   for a in Archive::all(arc) {
     let t = tokens(a.note)
-    if not(t.is_empty()) {
+    if !t.is_empty() {
       let j = jaccard(n, t)
       if j > best.2 {
         best = (a.id, a.note, j)
@@ -76,10 +76,10 @@ pub fn critic_review(
     (0.5 * score + 0.5 * novelty).clamp(min=0.0, max=1.0)
   }
   let dup = sim >= critic_dup_sim()
-  let ok = not(dup) && score_accept(combined, threshold~)
+  let ok = !dup && score_accept(combined, threshold~)
   let reason = if dup {
     "\{score_rank(combined)} 疑似课程漂移/重复：与档案库最相似资产重合 \{fmt_pct(sim)}（≥\{fmt_pct(critic_dup_sim())}），建议先赋新目标或拒绝入库"
-  } else if not(ok) {
+  } else if !ok {
     "\{score_rank(combined)} 稳健性不足：平均分 \{fmt_pct(combined)} < 阈值 \{fmt_pct(threshold)}，暂缓入库"
   } else {
     "\{score_rank(combined)} 放行：新颖度 \{fmt_pct(novelty)}、稳健平均分 \{fmt_pct(combined)} ≥ \{fmt_pct(threshold)}，无重复漂移"

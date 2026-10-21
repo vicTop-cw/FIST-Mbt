@@ -96,7 +96,7 @@ test "evolve_is_duplicate_jaccard" {
     a.is_duplicate("修复列表推导嵌套作用域泄漏 bug", threshold=0.4),
   )
   // 完全不同 -> 不判重
-  assert_true(not(a.is_duplicate("新增并发垃圾回收器", threshold=0.4)))
+  assert_true(!a.is_duplicate("新增并发垃圾回收器", threshold=0.4))
 }
 
 ///|

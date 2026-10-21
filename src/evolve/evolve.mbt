@@ -343,7 +343,7 @@ pub fn Archive::is_duplicate(
   }
   for (_, a) in self.items {
     let t = tokens(a.goal)
-    if not(t.is_empty()) {
+    if !t.is_empty() {
       if jaccard(g, t) >= threshold {
         return true
       }
@@ -362,7 +362,7 @@ pub fn Archive::novelty(self : Archive, note : String) -> Double {
   let mut max_sim = 0.0
   for (_, a) in self.items {
     let t = tokens(a.note)
-    if not(t.is_empty()) {
+    if !t.is_empty() {
       let j = jaccard(n, t)
       if j > max_sim {
         max_sim = j

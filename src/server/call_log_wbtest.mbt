@@ -62,7 +62,7 @@ test "call_log_wrapper_ok_and_err_logged" {
         ns_fall_bk = true
       }
     }
-    if wb_str(l, "tool") == "wbtool_err" && not(wb_bool(l, "ok")) {
+    if wb_str(l, "tool") == "wbtool_err" && !wb_bool(l, "ok") {
       err_seen = true
     }
   }

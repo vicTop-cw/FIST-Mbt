@@ -74,7 +74,7 @@ fn scan_build_ctx(content : String) -> ScanCtx {
       t.contains(">=200_000_000") {
       guarded.set(ln, true)
     }
-    if t.contains("substring(") && not(scan_is_comment_line(line)) {
+    if t.contains("substring(") && !scan_is_comment_line(line) {
       has_substring_call = true
     }
     ln = ln + 1
@@ -82,7 +82,7 @@ fn scan_build_ctx(content : String) -> ScanCtx {
   {
     safe_clamps: clamps,
     guarded_lines: guarded,
-    slice_only: not(has_substring_call),
+    slice_only: !has_substring_call,
   }
 }
 
@@ -466,7 +466,7 @@ fn scan_match_lines(
     let rule = rules[r]
     let mut l = 0
     while l < n {
-      if not(is_comment[l]) {
+      if !is_comment[l] {
         let ls = lines[l]
         let mut hit = false
         for needle in rule.pattern {
@@ -548,7 +548,7 @@ fn scan_div_var(code : String) -> String {
     j = j + 1
   }
   let mut k = j
-  while k < n && not(scan_is_ident_char(cs[k])) {
+  while k < n && !scan_is_ident_char(cs[k]) {
     k = k + 1
   }
   // k 之后才是变量（或字面量数字）；变量允许字母/数字/下划线
@@ -663,7 +663,7 @@ fn scan_substring_end_var(code : String) -> String {
           let first_ok = (o0 >= 65 && o0 <= 90) ||
             (o0 >= 97 && o0 <= 122) ||
             code[j] == '_'
-          if not(first_ok) {
+          if !first_ok {
             return ""
           }
           while j < code.length() {
@@ -708,7 +708,7 @@ fn scan_guard_substring_end_var(
     t.has_prefix("if(") ||
     t.contains(" else if ") ||
     t.contains("else if ")
-  if not(is_cond) {
+  if !is_cond {
     return false
   }
   let start_n = scan_substring_start(code)
@@ -734,7 +734,7 @@ fn scan_guard_substring_end_var(
   }
   // C 形态：`max <= s.length()`（engine_triage.mbt:46 `} else if max > 0 && max <= s.length() {`）
   // 该形态在 start=0 时保证 end_var ≥ 0 且 end_var ≤ length，substring 不越界。
-  if start_n == 0 && not(vn.is_empty()) {
+  if start_n == 0 && !vn.is_empty() {
     let len_ref = vn + ".length()"
     if t.contains(ev + " <= " + len_ref) || t.contains(ev + "<=" + len_ref) {
       return true
@@ -846,7 +846,7 @@ fn scan_guard_mod_invariant(
   let se = start_expr.trim().to_string()
   let ee = scan_nospace(end_expr.trim().to_string())
   let ee_ok = ee == se || ee == se + "+1"
-  if not(ee_ok) {
+  if !ee_ok {
     return false
   }
   let mut mod_k : Int32 = -1
@@ -877,7 +877,7 @@ fn scan_guard_mod_invariant(
       }
     }
   }
-  if not(found) || mod_k < 0 {
+  if !found || mod_k < 0 {
     return false
   }
   // 目标长度：`let <vn> = "<literal>"` 的字面量长度 ≥ K
@@ -916,7 +916,7 @@ fn scan_guard_for_bounded(
   let se = start_expr.trim().to_string()
   let ee = scan_nospace(end_expr.trim().to_string())
   let ee_ok = ee == se || ee == se + "+1"
-  if not(ee_ok) {
+  if !ee_ok {
     return false
   }
   let mut bound : Int32 = -1
@@ -948,7 +948,7 @@ fn scan_guard_for_bounded(
       }
     }
   }
-  if not(found) || bound < 0 {
+  if !found || bound < 0 {
     return false
   }
   for p in prev_lines {
@@ -1028,7 +1028,7 @@ fn scan_guard_multi_line_length(
       match t.find(" = ") {
         Some(ei) => {
           let name = t.substring(start=4, end=ei).to_string().trim().to_string()
-          if not(name.is_empty()) {
+          if !name.is_empty() {
             lenv = name
             break
           }
@@ -1089,7 +1089,7 @@ fn scan_guard_multi_line_length(
       break
     }
   }
-  if not(after_else) {
+  if !after_else {
     return false
   }
   // ③ start/end 表达式在安全集合内（start/end 归一化空格：`n - cut` ≡ `n-cut`）
@@ -1106,7 +1106,7 @@ fn scan_guard_multi_line_length(
       }
     }
   }
-  if not(ee_ok) {
+  if !ee_ok {
     return false
   }
   if se_n == "0" || se_n == lenv {
@@ -1136,7 +1136,7 @@ fn scan_guard_has_suffix_cut(
   }
   let ee = scan_nospace(scan_substring_end_expr(code).trim().to_string())
   let need = vn + ".length()-"
-  if not(ee.has_prefix(need)) {
+  if !ee.has_prefix(need) {
     return false
   }
   let cutv = ee.substring(start=need.length(), end=ee.length()).to_string()
@@ -1322,7 +1322,7 @@ fn scan_unwrap_receiver(code : String) -> String {
           (c >= '0' && c <= '9') ||
           c == '_' ||
           c == '.'
-        if not(ok) {
+        if !ok {
           break
         }
         start = i
@@ -1371,7 +1371,7 @@ pub fn scan_finding_guarded(
   // BUG-152: unprotected-division 直接守卫识别 — hint `if total > 0 { ... } else { 兜底 }`
   // 守卫常与除法**同一行**（`let acc = if total > 0 { passed / total * 100 } else { 0.0 }`），
   // prev_lines 不含当前行，故先查 code 自身。
-  if rule == "unprotected-division" && not(vn.is_empty()) {
+  if rule == "unprotected-division" && !vn.is_empty() {
     if scan_guard_div_direct(code, vn) {
       return true
     }
@@ -1390,7 +1390,7 @@ pub fn scan_finding_guarded(
   // prev_lines 不含当前行，须先检查 code 自身。
   if rule == "substring-overrun" {
     let code_t = code.trim().to_string()
-    if not(vn.is_empty()) && scan_guard_length_above(code_t, vn) {
+    if !vn.is_empty() && scan_guard_length_above(code_t, vn) {
       return true
     }
     if code_t.contains("if ") && code_t.contains(".length() >") {
@@ -1407,7 +1407,7 @@ pub fn scan_finding_guarded(
       return true
     }
     // BUG-268：跨行/间接守卫形态（prev_lines 循环外整体识别，保守过滤假阳性）
-    if not(vn.is_empty()) {
+    if !vn.is_empty() {
       let sexpr = scan_substring_start_expr(code)
       let eexpr = scan_substring_end_expr(code)
       // 形态 A：模运算不变量（`let d = rem % 16` + `substring(start=d, end=d+1)`）
@@ -1471,15 +1471,15 @@ pub fn scan_finding_guarded(
       if scan_guard_zero(t) {
         return true
       }
-      if not(vn.is_empty()) && scan_guard_is_empty(t, vn) {
+      if !vn.is_empty() && scan_guard_is_empty(t, vn) {
         return true
       }
       // BUG-152: prev 行的直接守卫 `if total > 0 {` / `if total_w <= 0 {`
-      if not(vn.is_empty()) && scan_guard_div_direct(t, vn) {
+      if !vn.is_empty() && scan_guard_div_direct(t, vn) {
         return true
       }
     } else if rule == "substring-overrun" {
-      if not(vn.is_empty()) && scan_guard_length_above(t, vn) {
+      if !vn.is_empty() && scan_guard_length_above(t, vn) {
         return true
       }
       if t.contains("if ") && t.contains(".length() >") {
@@ -1524,7 +1524,7 @@ pub fn scan_finding_guarded(
       // BUG-164 盲区 A：`X.unwrap()` 的守卫常写在**上一行** `if X.is_some() { ... }`
       // 或 `match X { Some(_) => ... }`，prev_lines 里识别到即豁免。
       let rc = scan_unwrap_receiver(code)
-      if not(rc.is_empty()) {
+      if !rc.is_empty() {
         if t.contains(rc) && (t.contains("is_some()") || t.contains("is_ok()")) {
           return true
         }
@@ -1637,7 +1637,7 @@ fn scan_collect(
         Err(e) => return Err(e)
       }
     } else if p.has_suffix(".mbt") {
-      if include_tests || not(scan_is_test_file(p)) {
+      if include_tests || !scan_is_test_file(p) {
         out.push(p)
       }
     }
@@ -1776,7 +1776,7 @@ fn scan_parse_external_rules(
 /// 读取并解析外部规则文件。路径先过 scan_dir_ok（拒绝对称/穿越/盘符），
 /// 再 mem_read 读内容交给 scan_parse_external_rules。
 fn scan_load_external_rules(path : String) -> Result[Array[ScanRule], String] {
-  if not(scan_dir_ok(path)) {
+  if !scan_dir_ok(path) {
     return Err(
       "issue_scan: 非法规则文件路径（拒绝绝对路径/穿越/盘符）: " +
       path,
@@ -1819,7 +1819,7 @@ pub fn issue_scan(
   max_findings : Int32,
   include_tests~ : Bool = false,
 ) -> Result[Json, String] {
-  if not(scan_dir_ok(dir)) {
+  if !scan_dir_ok(dir) {
     return Err(
       "issue_scan: 非法目录（拒绝绝对路径/穿越/盘符）: " + dir,
     )
@@ -1868,15 +1868,13 @@ pub fn issue_scan(
     // unwrapped-unwrap / possible-overflow / index-out-of-bounds / string-index / secs-overflow），
     // 其余规则（unused-variable、match-exhaustive、long-function、json-injection 等
     // 占全量 findings 大头）的命中直接透传，免掉 mem_read + split + prev_window 三件套。
-    if not(
-        hit.rule == "substring-overrun" ||
+    if !(hit.rule == "substring-overrun" ||
         hit.rule == "unprotected-division" ||
         hit.rule == "unwrapped-unwrap" ||
         hit.rule == "possible-overflow" ||
         hit.rule == "index-out-of-bounds" ||
         hit.rule == "string-index" ||
-        hit.rule == "secs-overflow",
-      ) {
+        hit.rule == "secs-overflow",) {
       guarded_filtered.push(hit)
       continue
     }
@@ -2102,7 +2100,7 @@ test "R125 unprotected-division no guard not filtered" {
     hit_line=code,
     hit_ln=346,
   )
-  assert_true(not(result))
+  assert_true(!result)
 }
 
 ///|
@@ -2117,7 +2115,7 @@ test "BUG-152 secs-overflow explicit Int32 keeps finding" {
     hit_line=code,
     hit_ln=120,
   )
-  assert_true(not(result))
+  assert_true(!result)
 }
 
 ///|
@@ -2132,7 +2130,7 @@ test "BUG-152 secs-overflow to_int32 keeps finding" {
     hit_line=code,
     hit_ln=121,
   )
-  assert_true(not(result))
+  assert_true(!result)
 }
 
 ///|

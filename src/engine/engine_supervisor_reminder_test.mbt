@@ -65,10 +65,10 @@ test "reminder_tick 检出停滞活跃任务与待处理超时任务" {
       timeout_found = true
     }
   }
-  if not(stale_found) {
+  if !stale_found {
     abort("should find stale reminder")
   }
-  if not(timeout_found) {
+  if !timeout_found {
     abort("should find pending_timeout reminder")
   }
   // 近期任务不应报停滞：再建一个 09-09 当天的任务

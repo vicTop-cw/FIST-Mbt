@@ -66,7 +66,7 @@ test "call_log_sql_roundtrip" {
   assert_eq(logs.length(), 2)
   // 新的（seq=2）在前
   assert_eq(clog_str(logs[0], "tool"), "verify")
-  assert_true(not(clog_bool(logs[0], "ok")))
+  assert_true(!clog_bool(logs[0], "ok"))
   assert_eq(clog_str(logs[0], "result"), "boom")
   assert_eq(clog_str(logs[1], "tool"), "get")
   assert_true(clog_bool(logs[1], "ok"))
