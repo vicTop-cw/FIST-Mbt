@@ -1,0 +1,44 @@
+id: TASK-009
+title: "风语者自动化 — 巡检脚本写 yaml 进 docs/tasks/ 让下游 agent 处理"
+priority: P2
+status: backlog
+assignee: atomcode
+discovered_by: whisperer
+discovered_at: "2026-10-21T20:12:00+08:00"
+
+problem: >
+  风语者（Whisperer）是合入者给自己取的新角色名：定时唤醒的雷达，做分支巡检 + 合入 + 发现问题 + 写任务。
+  
+  目前风语者的行为是：每 15 分钟触发一次定时任务 prompt，
+  **手动**跑 git fetch / diff / cherry / 文档散落扫描 / 命名规范检测 / 守卫覆盖检测。
+  
+  这个手动流程应该变成一个脚本：scripts/whisperer.py（风语者巡检器），
+  然后定时任务只负责触发这个脚本 + 报告输出。
+  
+  风语者的核心价值是**发现问题**，不是**修问题**——它把问题写成 yaml 进 docs/tasks/backlog/，
+  然后下游 agent（AtomCode / 副机）认领处理。风语者自己只修合并者层面的事（冲突标记 / cherry-pick）。
+
+scope:
+  - 新增 scripts/whisperer.py（≤ 200 行 Python）
+  - 定时任务 prompt 简化为 "跑 whisperer.py 并报告"
+  - whisperer.py 发现的问题自动写 docs/tasks/backlog/TASK-NNN-*.yaml
+
+acceptance:
+  - [ ] `python scripts/whisperer.py` 单次运行：git fetch + 分支巡检 + 合入检查 + 问题扫描 + yaml 输出
+  - [ ] `python scripts/whisperer.py --scan-only` 只扫描不合入（安全模式）
+  - [ ] `python scripts/whisperer.py --apply` 扫描 + 自动合入 + 写 yaml
+  - [ ] 每次运行结束打印风语者报告（分支统计 + 问题统计 + 新 yaml 列表）
+  - [ ] yaml 文件名递增（TASK-NNN-...），已存在的 TASK 编号不重复
+  - [ ] --selftest 模式：对干净树跑一遍必须 0 个新 yaml（自证不制造假红）
+  - [ ] fist-gate.py 加 whisperer.py 检查项
+
+evidence: |
+  风语者 20:11 手动巡检产出：
+  分支巡检: 28 分支, 0 个值得合入
+  文档散落: 609 md 文件, "治理" 散在 19 个文件
+  run_guards 盲区: 管 26 个 vs 实际 90 个, 64 个漏
+  scripts 命名: ~50 个无前缀
+  
+  这些全应该自动产出，不该每次手动 PowerShell
+
+blocked_by: []
