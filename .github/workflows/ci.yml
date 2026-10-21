@@ -200,6 +200,18 @@ jobs:
           python3 scripts/check_skill_inject.py --selftest
           python3 scripts/check_skill_inject.py
 
+      - name: Desc-enum-sync guard (report_bug.severity 等描述侧枚举 ↔ 闭集一致)
+        shell: bash
+        run: |
+          python3 scripts/check_desc_enum_sync.py --selftest
+          python3 scripts/check_desc_enum_sync.py
+
+      - name: Upgrade-installer guard (升级安装器可红可绿，自证不误红)
+        shell: bash
+        run: |
+          python3 scripts/check_upgrade_installer.py --selftest
+          python3 scripts/check_upgrade_installer.py
+
       - name: Self-described surface guard (BUG-104：resources/prompts/版本 自述面判据的 12 支对照)
         shell: bash
         run: |
