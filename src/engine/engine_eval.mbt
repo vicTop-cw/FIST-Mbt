@@ -39,7 +39,7 @@ fn section_present(text : String, header : String) -> Bool {
 /// 反馈收敛：归一为四段式 schema + verdict（E/O 蒸馏：生成→评估→定向修订→收敛）。
 /// 返回 { ok, task_id, schema:{defects,evidence,fix,acceptance}, counts, verdict, flags, note }。
 pub fn FistEngine::eval_feedback(
-  self : FistEngine,
+  _self : FistEngine,
   feedback : String,
   task_id? : String = "",
 ) -> Json {

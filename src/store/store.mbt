@@ -208,7 +208,7 @@ pub fn AssistantReg::new(
 pub fn assistant_claim_action(
   prev : AssistantReg?,
   agent : String,
-  now : String,
+  _now : String,
   cutoff : String,
 ) -> (Bool, String, String) {
   match prev {
