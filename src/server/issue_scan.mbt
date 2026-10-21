@@ -381,6 +381,65 @@ fn scan_matches_at(cs : Array[Char], pat : Array[Char], at : Int32) -> Bool {
 }
 
 ///|
+/// BUG-346：`moonbit-json-injection` 的意图是"JSON 字符串由拼接/插值构造"，旧 pattern 却是
+/// 裸 `Json::string(` ⇒ 安全构造器 `Json::string(value)` 全被判成注入。这里只认同一调用
+/// 的实参里出现**拼接**（字面量外的 `+`）或**插值**（字面量里的 `\{`）；两者都没有就放过。
+/// 保守口径：宁可少报，不误报。
+fn scan_json_string_built_by_concat(line : StringView) -> Bool {
+  let cs = line.to_owned().to_array()
+  let n = cs.length()
+  let pat = "Json::string(".to_array()
+  let mut start = -1
+  let mut i = 0
+  while i + pat.length() <= n {
+    if scan_matches_at(cs, pat, i) {
+      start = i + pat.length()
+      break
+    }
+    i = i + 1
+  }
+  if start < 0 {
+    return false
+  }
+  let mut depth = 1
+  let mut in_lit = false
+  let mut prev_bs = false
+  let mut j = start
+  while j < n {
+    let c = cs[j]
+    if in_lit {
+      if c == '\\' {
+        if j + 1 < n && cs[j + 1] == '{' {
+          return true
+        }
+        prev_bs = !prev_bs
+      } else {
+        if c == '"' && !prev_bs {
+          in_lit = false
+        }
+        prev_bs = false
+      }
+    } else if c == '"' {
+      in_lit = true
+      prev_bs = false
+    } else if c == '/' && j + 1 < n && cs[j + 1] == '/' {
+      break
+    } else if c == '(' {
+      depth = depth + 1
+    } else if c == ')' {
+      depth = depth - 1
+      if depth == 0 {
+        break
+      }
+    } else if c == '+' {
+      return true
+    }
+    j = j + 1
+  }
+  false
+}
+
+///|
 /// 取一行的"可扫代码部分"：字符串字面量**内容整体丢弃**（留一对空引号作壳），
 /// 并从第一个不在字面量里的 `//` 处截断行尾注释。
 ///
@@ -711,7 +770,6 @@ fn scan_match_lines(
 // 只对 substring-overrun / unprotected-division / index-out-of-bounds / string-index 四档做
 // 守卫过滤；div-by-zero（字面量除零）不参与，`/ 0` 没有"守得住"的上下文。
 // ============================================================================
-
 
 ///|
 /// 是否为标识符字符（字母/数字/下划线）。MoonBit 标识符允许 ASCII 字母与数字、
