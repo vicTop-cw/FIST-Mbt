@@ -3,6 +3,7 @@ import {
   "mizchi/sqlite",
   "moonbitlang/x/encoding",
   "moonbitlang/core/env",
+  "moonbitlang/core/json",
 }
 
 supported_targets = "js+native"
