@@ -31,6 +31,9 @@
      其落点在归档面上本就是"当时没做/后来改名"的事实，不是今天的待办）：
      活文档面（计入退出码）与归档面（只报不判）分开打印，两边的数字都在结论行里出现。
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
   P5 **搬家态**（2026-10-21 实测，BUG-367 的 D 类 3 条）：判定面里点名的
      `docs/2026-10-11-multi-agent-lock-design-v2.md`、`docs/2026-10-11-fist-mbt-upgrade-plan-v2.md`、
      `docs/improvement-plan-20260929.md` **同名文件确实被跟踪**，只是父目录从 `docs/` 变成 `docs/archive/`
@@ -45,8 +48,11 @@
      结论行显式标「超限 + 新增几条」；低于上限**只打印收紧建议、不判红也不自动改数**（同
      `check_deprecated_text_census` 的 R3 口径）。理由：A/B/C 三档裁决（BUG-367）由指挥官裁、节奏不由副机定——
      没有棘轮，裁决慢的那几周里新写的计划文档会继续往判定面里加条，而 28 这个数已经在心里被当成"已知的存量"。
+<<<<<<< HEAD
 =======
 >>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
 
 **刻意不判**（避免过度拦截）：
   - 文本里指向**尚不存在**的文件是**合法的**（计划本来就会写"新增 X"）⇒ 本工具**不是门禁**，
@@ -60,6 +66,9 @@
   python scripts/check_plan_landing.py --selftest         # 合成违例自证
   python scripts/check_plan_landing.py --all-faces        # 归档面也计入退出码（默认只报不判）
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
   python scripts/check_plan_landing.py --gate             # 门禁口径：退出码只看棘轮（CI/电池用这个）
 退出码：0=活文档面落点全在跟踪面（或有搬家证据的已按 moved 单独出数）/ 1=判定面有落点未落地（诊断）**或**判定面
         条数超出 VERDICT_GAP_CEILING（棘轮，结论行会显式写「超限」）/ 2=判据无法自证（FATAL：三条空转之一、
@@ -71,9 +80,12 @@
         自述 2 而代码里一条 2 都给不出 ⇒ 同为幻影，本轮未改；`simulate_head_commit.py` 是**半形**——
         moon 超时那条走 `return 2` 真给 2，其余 4 处 FATAL 走串式给 1，其中「PATH 上没有 moon」那条
         **文案里自己写着「（rc=2）」**。四份的处置记 BUG-369。
+<<<<<<< HEAD
 =======
 退出码：0=活文档面落点全在跟踪面 / 1=活文档面有落点未落地（诊断）/ 2=判据无法自证（FATAL）。
 >>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
 """
 import argparse
 import os
@@ -111,6 +123,11 @@ ARCHIVE_DOC_PREFIX = ("docs/archive/", "reports/")
 VERDICT_GAP_CEILING = 25
 =======
 >>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
+
+# P6 棘轮上限：判定面（活文档面里非 moved 的未落地条目）条数只许下降。
+# 25 = 2026-10-21 实测：判定面 28 − moved 3（BUG-367 的 D 类，同名件确在 docs/archive/）。
+# 这一格由 A/B/C 三档裁决（BUG-367 OPEN）决定何时能降，所以**不自动改数**：超限并红、有余量只给建议。
+VERDICT_GAP_CEILING = 25
 
 
 def tracked(root=None):
@@ -264,20 +281,92 @@ def mode_fatal(gate, all_faces):
 >>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
 
 
+def find_moved(p, universe):
+    """P5 搬家判据（纯函数：喂合成宇宙即可考，不需要真 git）。universe = 跟踪面文件 ∪ 跟踪面隐含目录。
+    返回点名路径 p 的搬家候选；无候选 ⇒ 空列表，调用方落回 missing。
+    三闸窄形：① basename 逐字相等；② p **有父目录**（顶层引用不认搬家，见 docstring 的保守②）；
+    ③ 候选父目录等于 p 的父目录、或以 `p 的父目录 + "/"` 为前缀（搬进更深层子目录同样算）。
+    磁盘上未跟踪的同名件**不进来**（调用方只喂跟踪面）：那证不了"搬过家"，只证"别处也有个同名文件"。"""
+    parent = os.path.dirname(p)
+    if not parent:
+        return []
+    base = os.path.basename(p)
+    hits = []
+    for x in universe:
+        if x == p or os.path.basename(x) != base:
+            continue
+        xp = os.path.dirname(x)
+        if xp == parent or xp.startswith(parent + "/"):
+            hits.append(x)
+    return sorted(hits)
+
+
+def ratchet(n, ceiling):
+    """P6 纯判据：判定面 n 条 vs 上限 ceiling。返回 (是否并红, 打印文本)。
+    n > ceiling ⇒ 并红并写清多出几条；n < ceiling ⇒ **只给收紧建议、不阻断**；相等 ⇒ 无话。
+    收紧不自动发生：数字随文档增删浮动，把「降上限」这个动作留给人，免得尺子自己把新盲区吞成合规存量。"""
+    if n > ceiling:
+        return True, "棘轮超限：判定面 %d 条 > 上限 %d ⇒ 比已核存量多 %d 条未落地" % (n, ceiling, n - ceiling)
+    if n < ceiling:
+        return False, ("提示：判定面已缩小到 %d 条（上限 %d）⇒ 可把 VERDICT_GAP_CEILING 收紧至 %d；"
+                       "本轮不阻断，降与不降由人判" % (n, ceiling, n))
+    return False, ""
+
+
+def fatal_reason(n_enum, n_readable, n_paths):
+    """P2 防空转的三条判据（纯函数，供 `--selftest` 直接考）。任一成立即 FATAL，返回那条因由。
+    本轮把它从 main 里三处 `raise SystemExit("FATAL …")` 抽出来，实测顺手抓了一条自己的缺陷：
+    **`SystemExit(带字符串)` 的退出码是 1，不是 2**（`python -c` 与真跑双测）⇒ 本文件 docstring 承诺的
+    「2=判据无法自证」从来没有生效过，「判据空转」与「有落点未落地」在退出码面上同色，而电池期望文本里
+    那句「读出 0 或 2 都算这格漂移」的 2 是不可达的。同族面见 temp/r41_fatal_census.py 的普查（BUG-369）。"""
+    if not n_enum:
+        return "一份文档都没枚举到 —— 判据空转，拒绝出读数"
+    if not n_readable:
+        return "一份计划文档都读不到 —— 判据空转，拒绝出读数"
+    if not n_paths:
+        return "全仓计划文档里一条仓内落点路径都没抽到 —— 判据空转，拒绝出读数"
+    return None
+
+
+def emit_fatal(msg):
+    """FATAL 的统一出口：打到 stderr（与改前的 `SystemExit(str)` 同一条流）并**返回整数 2**
+    （由 `sys.exit(main())` 落成退出码）。这里刻意不用 `raise SystemExit(msg)` —— 带字符串的
+    SystemExit 退出码是 1，正是本轮实测抓到的那条幻影。"""
+    sys.stderr.write("FATAL %s\n" % msg)
+    return 2
+
+
+def mode_fatal(gate, all_faces):
+    """模式互斥判据：`--gate` 与 `--all-faces` 不许同给（返回 FATAL 文本，None=无冲突）。
+    实测依据：同给时判定面从 25 条涨到 38 条（存档面 13 条被拉进来），拿按活文档面标定的上限去比
+    等于要求判据回答它没标定过的问题 ⇒ 拒绝出读数，而不是"红得莫名"或"绿得莫名"。"""
+    if gate and all_faces:
+        return ("--gate 与 --all-faces 互斥：棘轮上限 %d 按默认活文档面口径标定，"
+                "存档面拉进判定面后是另一个宇宙（实测 25 → 38 条）⇒ 拒绝在这个组合上出读数"
+                % VERDICT_GAP_CEILING)
+    return None
+
+
 def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None):
     """doc_paths = {文档: [点名路径]}。返回 (诊断条目, 检查过的路径数)。
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
     非 tracked 的才进诊断；disk_set 用来区分「在工作树磁盘上」与「都没有」；都没有时先问一次
     find_moved，有搬家证据就落 moved（P5），否则落 missing。
     tracked_dirs 提供时，目录形态的落点也按「跟踪面隐含目录」判定（防已跟踪目录被误报），
     并与跟踪文件一起构成 moved 的宇宙。
     条目 (文档, 路径, 态, 处置话术, 面, 搬家候选)；第 5 位是**面**（"活文档"/"存档面"）——
     判定红只数活文档面那一档，且 moved 不入判定面（第 6 位对非 moved 条目恒为空列表）。"""
+<<<<<<< HEAD
 =======
     非 tracked 的才进诊断；disk_set 用来区分「在工作树磁盘上」与「都没有」。
     tracked_dirs 提供时，目录形态的落点也按「跟踪面隐含目录」判定（防已跟踪目录被误报）。
     条目第 5 位是**面**（"活文档"/"存档面"）——判定红只数活文档面那一档。"""
 >>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
     tracked_dirs = tracked_dirs or set()
     moved_universe = set(tracked_set) | set(tracked_dirs)
     findings = []
@@ -293,6 +382,9 @@ def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None):
             on_disk = p in disk_set or any(x.startswith(p + "/") for x in disk_set)
             if on_disk:
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
                 findings.append((doc, p, "on-disk",
                                  "**实现已在工作树磁盘上、只是没进跟踪面** ⇒ 出路是 `git add` 并提交", face, []))
                 continue
@@ -302,6 +394,7 @@ def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None):
                                  "跟踪面存在同名件、父目录在点名父目录之下 ⇒ 事实是**搬家**（多为归档之后），"
                                  "不是未落地。实际位置见本条候选；moved 只证同名+前缀、不证同一份内容，由人确认",
                                  face, mv))
+<<<<<<< HEAD
             else:
                 findings.append((doc, p, "missing",
                                  "跟踪面与磁盘都没有 ⇒ 若计划已说'已完成'则是**虚报**；若说'将新增'则属正常未做",
@@ -311,6 +404,12 @@ def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None):
             else:
                 findings.append((doc, p, "missing", "跟踪面与磁盘都没有 ⇒ 若计划已说'已完成'则是**虚报**；若说'将新增'则属正常未做", face))
 >>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
+=======
+            else:
+                findings.append((doc, p, "missing",
+                                 "跟踪面与磁盘都没有 ⇒ 若计划已说'已完成'则是**虚报**；若说'将新增'则属正常未做",
+                                 face, []))
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
     return findings, n
 
 
@@ -536,13 +635,19 @@ def selftest():
     print("SELFTEST OK（%d 格：抽取口径 9 格（`<…>`/`*` 形态、日期与变量占位、形态出数反证、"
           "「路径:行号」剥离 + 同串正反证、绝对路径、目录形态、非仓内）/ 干净不误报 / on-disk 必报 / "
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
           "missing 必报 / 跟踪目录反解 3 格 / P4 分面 3 格 / 空转计数 / P5 搬家 7 格（检出、深层子目录仍认、"
           "父目录不相干/顶层点名/抢白 on-disk/未跟踪候选 4 条反证、目录形态搬家）/ 搬家不进判定面 2 格 / "
           "P6 棘轮 3 格 / 退出码两口径 5 格 / 上限常量 1 格 / P2 空转三条 4 格 / 模式互斥 2 格 / FATAL 出口码 1 格）"
           % len(cells))
+<<<<<<< HEAD
 =======
           "missing 必报 / 跟踪目录反解 3 格 / P4 分面 3 格 / 空转计数）" % len(cells))
 >>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
     return 0
 
 
@@ -552,11 +657,17 @@ def main():
     ap.add_argument("--all-faces", action="store_true",
                     help="存档面（docs/archive/、reports/）的未落地落点也计入退出码；默认只报不判")
 <<<<<<< HEAD
+<<<<<<< HEAD
     ap.add_argument("--gate", action="store_true",
                     help="门禁口径：退出码只看棘轮（判定面 ≤ VERDICT_GAP_CEILING ⇒ 0，超限 ⇒ 1）；"
                          "不带此开关时是只读诊断（判定面非空即 1，不代表门禁该红）")
 =======
 >>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
+=======
+    ap.add_argument("--gate", action="store_true",
+                    help="门禁口径：退出码只看棘轮（判定面 ≤ VERDICT_GAP_CEILING ⇒ 0，超限 ⇒ 1）；"
+                         "不带此开关时是只读诊断（判定面非空即 1，不代表门禁该红）")
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
     ap.add_argument("docs", nargs="*")
     args = ap.parse_args()
     if args.selftest:
@@ -589,10 +700,13 @@ def main():
 <<<<<<< HEAD
 =======
 
+<<<<<<< HEAD
     if not doc_paths:
         raise SystemExit("FATAL 一份计划文档都读不到 —— 判据空转，拒绝出读数")
 >>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
 
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
     disk_set = set()
     for dp, dn, fn in os.walk(ROOT):
         if any(x in dp for x in (".git", "_build", "node_modules", ".mooncakes", "temp")):
@@ -612,6 +726,9 @@ def main():
         return emit_fatal(fr)
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
     live, moved, archived = split_faces(findings, args.all_faces)
     if args.all_faces:
         # 上限是按**默认活文档面**标定的；--all-faces 把存档面拉进判定面后是另一个宇宙（实测 25 → 38）。
@@ -623,6 +740,7 @@ def main():
         over, rnote = ratchet(len(live), VERDICT_GAP_CEILING)
     rc = verdict_rc(len(live), over, args.gate)
     # 只报未落地的（tracked 是常态）；搬家态按 P5 单列，不进判定面
+<<<<<<< HEAD
     if not live:
         extra = ""
         if archived and not args.all_faces:
@@ -638,17 +756,32 @@ def main():
     live = findings if args.all_faces else [x for x in findings if x[4] == "活文档"]
     archived = [x for x in findings if x[4] == "存档面"]
     # 只报未落地的（tracked 是常态）
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
     if not live:
-        extra = ("；存档面另有 %d 条只报不判（--all-faces 可计入）" % len(archived)) if archived else ""
+        extra = ""
+        if archived and not args.all_faces:
+            extra = "；存档面另有 %d 条只报不判（--all-faces 可计入）" % len(archived)
+        if moved:
+            extra += "；另有搬家态 %d 条单独出数（P5，不判红）" % len(moved)
         print("PASS 计划落点核对：%d 份文档的 %d 条仓内点名路径**全部在跟踪面**（形态说明 %d 条不认作落点、单独出数）%s"
               % (len(doc_paths), n, len(shape_notes), extra))
+<<<<<<< HEAD
         return 0
 >>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
+=======
+        for doc, p, kind, hint, face, mv in sorted(moved, key=lambda x: (x[1], x[0])):
+            print("  - [moved] %s 点名 `%s` → 跟踪面实际位置 %s" % (doc, p, "、".join(mv)))
+        return rc
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
 
     on_disk = [x for x in live if x[2] == "on-disk"]
     missing = [x for x in live if x[2] == "missing"]
     print("INFO 计划落点核对（%d 份文档、%d 条点名路径、形态说明 %d 条已出数不比对）："
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
           "判定面未在跟踪面 %d 条（磁盘上有 %d 条、都没有 %d 条）；搬家态另有 %d 条单列入 P5、不进判定面；"
           "%s"
           % (len(doc_paths), n, len(shape_notes), len(live), len(on_disk), len(missing), len(moved),
@@ -658,6 +791,7 @@ def main():
         print("  %s%s" % (rnote, "" if args.all_faces
                           else "（上限 VERDICT_GAP_CEILING=%d，只许降）" % VERDICT_GAP_CEILING))
     for doc, p, kind, hint, face, mv in sorted(live, key=lambda x: (x[2] != "on-disk", x[0], x[1])):
+<<<<<<< HEAD
         print("  - [%s] %s 点名 `%s` ——%s" % (kind, doc, p, hint))
     if moved:
         print("  …搬家态（P5：跟踪面有同名件、其父目录在点名父目录之下 ⇒ 不判红，但逐条给实际位置）%d 条："
@@ -672,6 +806,15 @@ def main():
         print("  - [%s] %s 点名 `%s` ——%s" % (kind, doc, p, hint))
     if archived:
 >>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
+=======
+        print("  - [%s] %s 点名 `%s` ——%s" % (kind, doc, p, hint))
+    if moved:
+        print("  …搬家态（P5：跟踪面有同名件、其父目录在点名父目录之下 ⇒ 不判红，但逐条给实际位置）%d 条："
+              % len(moved))
+        for doc, p, kind, hint, face, mv in sorted(moved, key=lambda x: (x[1], x[0])):
+            print("  - [moved] %s 点名 `%s` → 跟踪面实际位置 %s" % (doc, p, "、".join(mv)))
+    if archived and not args.all_faces:
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
         print("  …存档面（docs/archive/、reports/）%d 条，分布在 %d 份文档：%s"
               % (len(archived), len({x[0] for x in archived}),
                  " ".join(sorted({x[0] for x in archived}))[:200]))
@@ -679,6 +822,9 @@ def main():
         print("  …形态说明（`<…>`/`*`/日期/变量占位，R40 起单独出数、不参与跟踪面比对）%d 条：%s"
               % (len(shape_notes), " ".join(shape_notes)[:200]))
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
     if args.gate:
         print("注：**门禁口径**（--gate）——判定面在上限内即退出码 0（存量按声明接受、增量必须归零，BUG-367 ④），"
               "超限才给 1；不带 --gate 时本工具是只读诊断，判定面非空即 1，不代表门禁该红。")
@@ -686,11 +832,14 @@ def main():
         print("注：本工具是**只读诊断**（计划里写'新增尚不存在的文件'是合法的），退出码 1 只表示判定面有落点未落地，"
               "不代表门禁该红。")
     return rc
+<<<<<<< HEAD
 =======
     print("注：本工具是**只读诊断**（计划里写'新增尚不存在的文件'是合法的），退出码 1 只表示判定面有落点未落地，"
           "不代表门禁该红。")
     return 1
 >>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
 
 
 if __name__ == "__main__":

@@ -119,6 +119,9 @@ jobs:
           python3 scripts/check_plan_landing.py --selftest
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
       # 判定面棘轮真门禁（BUG-367 建议②）：--gate 模式下「判定面条数 > 上限」才红。
       # 上限 25 = 2026-10-21 实测存量（28 减去搬家态 3），存量在上限内 ⇒ 本步绿；
       # 此后任何新点名的落点没写出来 ⇒ 26 > 25 ⇒ 门红。裁决慢可以，盲区重新长回来不行。
@@ -128,8 +131,11 @@ jobs:
         shell: bash
         run: python3 scripts/check_plan_landing.py --gate
 
+<<<<<<< HEAD
 =======
 >>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
+=======
+>>>>>>> 095bf312 (feat: check_plan_landing 加搬家态与判定面棘轮（BUG-367 D 类 / 新账 BUG-369）)
       - name: Deprecated text-census selftest (BUG-362：尺子必须先证明自己会红)
         shell: bash
         run: python3 scripts/check_deprecated_text_census.py --selftest
