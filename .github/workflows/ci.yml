@@ -107,6 +107,19 @@ jobs:
         shell: bash
         run: python3 scripts/check_scripts_index.py
 
+      - name: Deprecated text-census selftest (BUG-362：尺子必须先证明自己会红)
+        shell: bash
+        run: python3 scripts/check_deprecated_text_census.py --selftest
+
+      # 判据面（`error_code` 命中数）会静默少报：实测 0020 的 Json::value 族判据 430 /
+      # 文本普查 441。本门把「判据归零但弃用调用还在」这一格从盲区变成红门（缺口上限入表）。
+      # 宇宙必须是 git 跟踪面——文件系统 walk 会把 .mooncakes 里同名的 Weekday.value() 数进来。
+      - name: Deprecated text-census guard (0020 判据面 vs 文本面棘轮，缺口只许缩小)
+        shell: bash
+        run: |
+          moon check --target js --json > /tmp/moon_check.json || true
+          python3 scripts/check_deprecated_text_census.py /tmp/moon_check.json
+
       - name: Plugin-form guard cl7 (一源四态：四宿主插件目录==真源投影)
         shell: bash
         run: |
