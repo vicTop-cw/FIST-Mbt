@@ -33,7 +33,7 @@
 ## 后续建议
 
 1. 主机优先合入 r71 / r72 两个 MR——本单的电池读数在两单合入后应到「失败 0 / SKIP 按前置件」。
-2. `check_merge_markers.py` 扫描面核查：已提交冲突标记漏检两文件是 BUG-385 家族的又一形状，建议立案扩面。
+2. **更正（R74 取证后回填）**：`check_merge_markers.py` 并未漏检——它在 r73 取证当时实跑即准确红出 3 个文件（`scripts/blackbox/check_merge_markers.py` rc=1）。真缺口是它**从未接进 ci.yml**（510b1ff 只落了脚本），且 f259d79 清 ci.yml 冲突时连带删掉了「Plan-landing ratchet gate」步骤；接线由 R74 分支承担。
 3. `run_guards.py` 的 `expected(kind="known-red"/"diag")` 棘轮在本单又兑现一格（py_stdout_encoding 2 格），同类滞后期望尚有 `cleanup_artifacts` 预存红一格待裁决。
 
 ## 超额内容
