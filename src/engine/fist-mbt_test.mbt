@@ -10,7 +10,11 @@ fn new_engine() -> @engine.FistEngine {
 ///|
 fn publish_root(
   e : @engine.FistEngine,
+<<<<<<< HEAD
   desc~ : String = "测试根任务",
+=======
+  desc? : String = "测试根任务",
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
 ) -> String {
   let r = e.publish(
     project_dir="/proj/demo",
@@ -151,7 +155,11 @@ test "非归档状态不允许 delete" {
 }
 
 ///|
+<<<<<<< HEAD
 fn count_status(e : @engine.FistEngine, s : String) -> Int32 {
+=======
+fn count_status(e : @engine.FistEngine, s : String) -> Int {
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   let mut n = 0
   for t in e.list_all() {
     if t.status_to_string() == s {

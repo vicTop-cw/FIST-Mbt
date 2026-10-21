@@ -50,10 +50,14 @@ test "audit: enforce 放行与拒绝" {
   }
   // HumanSteward 四操作全部放行
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(@ops.enforce(action="publish", role=hs) is Ok(_))
   assert_true(@ops.enforce(action="archive", role=hs) is Ok(_))
   assert_true(@ops.enforce(action="delete", role=hs) is Ok(_))
   assert_true(@ops.enforce(action="claim", role=hs) is Ok(_))
+<<<<<<< HEAD
   // Leader 越权 publish/archive/delete 被拒，claim 放行
   let actions = ["publish", "archive", "delete"]
   for a in actions {
@@ -68,6 +72,12 @@ test "audit: enforce 放行与拒绝" {
   for a in actions {
     let r = enforce(action=a, role=leader)
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  // Leader 越权 publish/archive/delete 被拒，claim 放行
+  let actions = ["publish", "archive", "delete"]
+  for a in actions {
+    let r = @ops.enforce(action=a, role=leader)
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
     assert_true(r is Err(_))
     match r {
       Err(msg) => {
@@ -78,6 +88,7 @@ test "audit: enforce 放行与拒绝" {
     }
   }
 <<<<<<< HEAD
+<<<<<<< HEAD
   assert_true(@ops.enforce(action="claim", role=leader) is Ok(_))
   // Agent 同理
   assert_true(@ops.enforce(action="publish", role=agent) is Err(_))
@@ -87,13 +98,20 @@ test "audit: enforce 放行与拒绝" {
   assert_true(@ops.enforce(action="unknown_op", role=hs) is Err(_))
 =======
   assert_true(enforce(action="claim", role=leader) is Ok(_))
+=======
+  assert_true(@ops.enforce(action="claim", role=leader) is Ok(_))
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   // Agent 同理
-  assert_true(enforce(action="publish", role=agent) is Err(_))
-  assert_true(enforce(action="delete", role=agent) is Err(_))
-  assert_true(enforce(action="claim", role=agent) is Ok(_))
+  assert_true(@ops.enforce(action="publish", role=agent) is Err(_))
+  assert_true(@ops.enforce(action="delete", role=agent) is Err(_))
+  assert_true(@ops.enforce(action="claim", role=agent) is Ok(_))
   // 未知动作一律拒绝
+<<<<<<< HEAD
   assert_true(enforce(action="unknown_op", role=hs) is Err(_))
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  assert_true(@ops.enforce(action="unknown_op", role=hs) is Err(_))
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
 }
 
 ///|
@@ -192,11 +210,16 @@ test "audit: 引擎任务可作为审计来源" {
   )
   assert_true(
 <<<<<<< HEAD
+<<<<<<< HEAD
     @ops.enforce(action="publish", role=hs) is Ok(_) &&
     e.get_task("T0") is Some(_),
 =======
     enforce(action="publish", role=hs) is Ok(_) && e.get_task("T0") is Some(_),
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+    @ops.enforce(action="publish", role=hs) is Ok(_) &&
+    e.get_task("T0") is Some(_),
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   )
   for t in e.list_all() {
     log.record(

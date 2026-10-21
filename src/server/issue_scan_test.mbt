@@ -48,26 +48,36 @@ test "lint_1_scan_hits_high_risk" {
 test "lint_2_illegal_dir_rejected" {
   // 空目录 / 绝对路径 / 穿越都应返回 Err
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(@server.issue_scan("", "", 100) is Err(_))
   assert_true(@server.issue_scan("../x", "", 100) is Err(_))
   assert_true(@server.issue_scan("C:/x", "", 100) is Err(_))
   assert_true(@server.issue_scan("/abs", "", 100) is Err(_))
+<<<<<<< HEAD
 =======
   assert_true(issue_scan("", "", 100) is Err(_))
   assert_true(issue_scan("../x", "", 100) is Err(_))
   assert_true(issue_scan("C:/x", "", 100) is Err(_))
   assert_true(issue_scan("/abs", "", 100) is Err(_))
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
 }
 
 ///|
 test "lint_3_empty_dir_no_findings" {
   let d = lint_dir("lint_c3")
 <<<<<<< HEAD
+<<<<<<< HEAD
   let r = @server.issue_scan(d, "", 100)
 =======
   let r = issue_scan(d, "", 100)
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  let r = @server.issue_scan(d, "", 100)
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -91,10 +101,14 @@ test "lint_4_test_file_skipped_by_default" {
   }
   // 默认 include_tests=false：只扫到 sample.mbt（1 个）
 <<<<<<< HEAD
+<<<<<<< HEAD
   let r0 = @server.issue_scan(d, "", 100)
 =======
   let r0 = issue_scan(d, "", 100)
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  let r0 = @server.issue_scan(d, "", 100)
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r0 is Ok(_))
   let j0 = match r0 {
     Ok(x) => x
@@ -104,10 +118,14 @@ test "lint_4_test_file_skipped_by_default" {
   assert_eq(mem_bool(j0, "include_tests"), false)
   // include_tests=true：扫到 2 个（含 t_test.mbt）
 <<<<<<< HEAD
+<<<<<<< HEAD
   let r1 = @server.issue_scan(d, "", 100, include_tests=true)
 =======
   let r1 = issue_scan(d, "", 100, include_tests=true)
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  let r1 = @server.issue_scan(d, "", 100, include_tests=true)
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r1 is Ok(_))
   let j1 = match r1 {
     Ok(x) => x
@@ -165,10 +183,14 @@ test "lint_5_comment_lines_are_not_matched_bug15" {
     _ => ()
   }
 <<<<<<< HEAD
+<<<<<<< HEAD
   let r = @server.issue_scan(d, "", 100)
 =======
   let r = issue_scan(d, "", 100)
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  let r = @server.issue_scan(d, "", 100)
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -190,10 +212,14 @@ test "lint_6_rules_table_never_self_hits_bug15" {
   // 扫真实仓库 src/server：扫描器自己的规则表文件不得再贡献命中（pattern/hint 字面量自命中）。
   // 前置哨兵：scanned_files>0 —— 否则「没扫到」会被当成「没有自噪声」而假绿。
 <<<<<<< HEAD
+<<<<<<< HEAD
   let r = @server.issue_scan("src/server", "", 300)
 =======
   let r = issue_scan("src/server", "", 300)
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  let r = @server.issue_scan("src/server", "", 300)
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -209,10 +235,14 @@ test "lint_7_no_high_hits_left_in_src_omega_bug15" {
   // spec.mbt:69/70 的 unsafe_get 与 :378/392 的 counts[0] 均有前置守卫（本轮逐条实跑复核为误报）。
   // 修复后 high 档应为 0（by_severity.high 与逐条 findings 双查，防聚合与明细不一致）。
 <<<<<<< HEAD
+<<<<<<< HEAD
   let r = @server.issue_scan("src/omega", "", 300)
 =======
   let r = issue_scan("src/omega", "", 300)
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  let r = @server.issue_scan("src/omega", "", 300)
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -265,10 +295,14 @@ test "lint_8_guard_filter_keeps_real_hits_drops_guarded" {
     _ => ()
   }
 <<<<<<< HEAD
+<<<<<<< HEAD
   let r = @server.issue_scan(d, "", 100)
 =======
   let r = issue_scan(d, "", 100)
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  let r = @server.issue_scan(d, "", 100)
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -351,10 +385,14 @@ test "lint_9_substring_guard_filter" {
     _ => ()
   }
 <<<<<<< HEAD
+<<<<<<< HEAD
   let r = @server.issue_scan(d, "", 100)
 =======
   let r = issue_scan(d, "", 100)
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  let r = @server.issue_scan(d, "", 100)
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -377,10 +415,14 @@ test "lint_9_substring_guard_filter" {
 test "lint_10_missing_dir_returns_err" {
   let d = "temp/lint_bug222_missing_dir"
 <<<<<<< HEAD
+<<<<<<< HEAD
   let r = @server.issue_scan(d, "", 100)
 =======
   let r = issue_scan(d, "", 100)
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  let r = @server.issue_scan(d, "", 100)
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r is Err(_))
 
   // ---------------------------------------------------------------------------
@@ -503,10 +545,14 @@ test "lint_14_bug268_true_positive_still_hits" {
     _ => ()
   }
 <<<<<<< HEAD
+<<<<<<< HEAD
   let r = @server.issue_scan(d, "", 100)
 =======
   let r = issue_scan(d, "", 100)
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  let r = @server.issue_scan(d, "", 100)
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -527,10 +573,14 @@ test "lint_14_bug268_true_positive_still_hits" {
 /// 只按 file 后缀 + code 片段匹配（不钉行号），行号漂移不误红。
 test "lint_15_bug268_real_samples_no_fp" {
 <<<<<<< HEAD
+<<<<<<< HEAD
   let r_server = @server.issue_scan("src/server", "", 300)
 =======
   let r_server = issue_scan("src/server", "", 300)
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  let r_server = @server.issue_scan("src/server", "", 300)
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r_server is Ok(_))
   let j_server = match r_server {
     Ok(x) => x
@@ -546,10 +596,14 @@ test "lint_15_bug268_real_samples_no_fp" {
     "start=d",
   )
 <<<<<<< HEAD
+<<<<<<< HEAD
   let r_ops = @server.issue_scan("src/ops", "", 300)
 =======
   let r_ops = issue_scan("src/ops", "", 300)
 >>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
+=======
+  let r_ops = @server.issue_scan("src/ops", "", 300)
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r_ops is Ok(_))
   let j_ops = match r_ops {
     Ok(x) => x

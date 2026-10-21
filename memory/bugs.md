@@ -5456,7 +5456,13 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - note: 未自证面：`moon test --target js` 与 `moon build --target js` 在本机物理跑不了（见 BUG-329），故"测试全绿"交 CI 兜，PR 里如实标注。`.mbti` 里 `Int`→`Int32` 的 24 处改动与本单无关，是这次**成功的** `moon check` / `moonfmt` 顺手做的类型名规范化（见 BUG-330），已从提交里剔除。
 - task_id: T0-slave-moonc-0.10.16-result-api
 
-## BUG-329 [2026-10-20T12:44:00Z] [high] OPEN
+### FIXED(2026-10-20T14:10:00Z / BUG-328)
+- evidence: 20 个文件改动已在本分支 `slave/fix/moonc-0.10.16-result-api`：16 个测试文件里的 `is_ok()/is_err()` 调用点改写为 `is Ok(_)/is Err(_)`（`assert_false(x.is_ok())` 取反成 `is Err(_)`），`src/store/store_sqlite.mbt:1860` 一带的 `try? AssistantReg` 化石语法按可达性拆除。
+  基线（HEAD `34ce658`，本机实跑）：`moon check` → `Failed with 641 warnings, 26 errors`（23 条 4015 + `store_sqlite.mbt` 的 3002/4014 三条），rc=1。
+  修后（同一命令）：rc=**0**，`Finished. moon: ran 49 tasks, now up to date (1920 warnings, 0 errors)` —— 26 error 全清，warning 641→1920 的差额是 store 包编译成功后下游包全量暴露的存量（与本单改动行无关，见 detail 末段自证）。
+  补验（工具链修通后，见 BUG-329 的 FIXED 小记）：`moon test` 与 `moon test --target js -j 1` 均 rc=0、`Total tests: 1302, passed: 1302, failed: 0`；`moon build cmd/cli --target js` rc=0；发布链 `build_release.ps1 -Version 0.3.9 -SkipNative` rc=0 产出 `fist-mbt.js` 3747.3 KB 与 `fist-mbt-js-v0.3.9.zip`。本单 detail 里"测试全绿交 CI 兜"的未自证面已全部转为本机实测。
+
+## BUG-329 [2026-10-20T12:44:00Z] [high] FIXED
 - summary: [工具链/非本仓] 副机 `~/.moon/lib/core/_build/js/release/bundle/core.core` 缺失 —— 任何工程的 `moon build`/`moon test` 都在 LinkCore 步骤红，与代码无关
 - detail: 复现不依赖 FIST-Mbt：新建最小工程（`probe/probe`，单包 3 行 main，仅 import `moonbitlang/core/array`）跑 `moon build --target js` 与 `moon test --target js`，两者同报
   `probe/probe/p@Source@LinkCore:0: input ...\bundle\core.core missing`。
@@ -5467,6 +5473,15 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 
 影响：这台机器上「`moon test` 全绿」这类金条八自证**物理不可能**，只能做到 `moon check` 级自证 + CI 兜 build/test。修复属机器级、且要重建 stdlib 安装（`cli.moonbitlang.com` 出口 403，装不动），故只出方案不动手：要么从主机拷一份含 `core.core` 的 `~/.moon/lib/core/_build`，要么在能联网处装回本仓钉版 0.1.20260920。
 - task_id: T0-slave-moonc-0.10.16-result-api
+
+### FIXED(2026-10-20T14:07:00Z / BUG-329)
+- evidence: 本机已修好并实跑，**不需要联网、不需要从主机拷 `_build`** —— 缺的那一步用工具链自带的 `moonc bundle-core` 就地补上（`moonc --help` 原文：`bundle-core: bundle multiple core IR files into one`）。工序三步：
+  ① 输入正是本单 detail ③ 里重跑 stdlib 自身构建产出的那 79 个 `<pkg>.core`，路径 `~/.moon/lib/core/_build/js/release/bundle/<pkg>/<pkg>.core`，顺序照同目录 `all_pkgs.json` 的 `packages[]`（79 项，`abort` 居首）；
+  ② `moonc bundle-core <除 abort 外的 78 个 .core> -o core.core`。`abort.core` 刻意不进 bundle：`moon test --dry-run` 里每一条 `link-core` 都把 `bundle/abort/abort.core` 与 `bundle/core.core` 并列为两个输入，照此拆分即与编译器期望同形；
+  ③ 产出 `bundle/core.core` 4476287 字节 ⇒ LinkCore 的缺失输入补齐。
+- 修通后的实跑读数（同一分支、同一份代码，全部 rc 实测）：`moon test` rc=0，`Total tests: 1302, passed: 1302, failed: 0`；`moon check` rc=0（0 errors / 1920 warnings，与本单 detail 里 `--json` 的判据读数逐项一致）；`moon build cmd/cli --target js` rc=0，产物 `_build/js/debug/build/cmd/cli/cli.js`（这正好证实了 BUG-336 的判读：SOP 原来写的 `cmd/main/main.js` 在这条流水线下不会产出）；`powershell scripts/blackbox/build_release.ps1 -Version 0.3.9 -TargetDir temp/_release_probe -SkipNative` rc=0，产出 `js/fist-mbt.js` 3747.3 KB 与 `fist-mbt-js-v0.3.9.zip`；`node temp/_release_probe/js/fist-mbt.js --help` → `FIST-Mbt Help v0.3.9 (170 MCP tools)`。
+- 本单原判的修正（append-only，不改上文）："修复属机器级、要重建 stdlib 安装、出口 403 装不动"这一条**不成立**，正确定性是"安装侧缺 bundle 合成这道工序，编译器自己能做"。连带解除两条限制：① 金条八的 `moon test` 全绿自证在本机恢复可用；② 上一版交 CI 兜的 `moon test` / `moon build` 面现在可以本机实跑，BUG-328 的"未自证面"已补验。
+- 边界与副作用（如实记）：① 合成物落在 `~/.moon/lib/core/_build/js/release/bundle/core.core`，属机器级、不进仓库、不随本 PR 走，换机/重装工具链需重跑同一工序；② 同目录 `all_pkgs.json` 里那批 `\\?\` 长路径是上一轮为绕 moonc 的 Windows 长路径 ICE 手工改写留下的（`all_pkgs.json.orig-fossil` 是改写前的原件），本单沿用现状、未再动它；③ 本机仍靠 `MOONC_OVERRIDE` 指向自建 shim 才能跑 moon，这颗 ICE 未解（另单）。
 
 ## BUG-330 [2026-10-20T12:54:00Z] [medium] OPEN
 - summary: [工具链] moonc/moonfmt 0.10.16 把 `Int` 规范化打印成 `Int32` —— `moon fmt --check` 与 `.mbti` 生成面在新版下与仓库存量拼写系统性不一致
@@ -5481,3 +5496,71 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - task_id: T0-slave-moonc-0.10.16-result-api
 
 
+## BUG-342 [2026-10-20T14:39:00Z] [medium] FIXED
+- summary: [依赖面] 16 条 `unused_package`(0029) 全清 —— 暴露 moon.pkg 的 import 作用域口径：`for "test"` 不覆盖 `*_wbtest.mbt`，白盒测试依赖必须写 `for "wbtest"`
+- detail: 基线读数（本机 `moon check --target js --json`，分支 slave/fix/moonc-0.10.16-result-api 的 stacked 基）：`status=success`、1920 warnings / 0 errors，其中 `error_code=29`（unused_package）16 条，落在 12 份 `moon.pkg` 的 import 行上。按引用面分两族：
+  ① **全包零引用 12 条**（含 `omega/` 4 条——该目录只有 `moon.pkg` + `pkg.generated.mbti`，一份 `.mbt` 都没有，且全仓无 `vicTop-cw/fist-mbt/omega` 引用）：`omega`×4、`src/decompose` 的 `src/core`、`src/diff` 的 `json`、`src/evolve` 的 `x/fs`、`src/executor` 的 `json`、`src/ltl` 的 `json`、`src/omega` 的 `set`、`src/router` 的 `encoding/utf8`、`src/server` 的 `string` ⇒ 直接删该行；某包的 import 块被删空则整块移除，不留 `import {}` 空壳。
+  ② **只被测试面引用 4 条**，需要的是**作用域**而不是删除：`src/engine` 的 `x/fs`（`docs_gate_test.mbt` 等 `@fs.` 限定引用）与 `src/ops` 的 `src/store`（`ops_watchdog_test.mbt:12 @store.SqliteStore::open`）改 `for "test"` ⇒ 0029 清零且不新增 0071；`src/core` 的 `quickcheck` 是本条的**主证据**：它原本就写 `for "test"`，却同时吃到两半——主编译单元报 0029（unused）+ `core_quickcheck_wbtest.mbt:35/56/75/94/113` 报 0071 `core_package_not_imported`（"used without import"）。同仓 `src/decompose` 的 `quickcheck` 同样是 `for "test"` 却不报，差别只在引用文件是 `_test.mbt`（黑盒）还是 `_wbtest.mbt`（白盒）⇒  moonc 0.10.16 不把 `for "test"` 依赖注入白盒单元。改成普通 import 可清掉 5 条 0071 但 0029 仍在（主单元确实用不到）；写 `for "wbtest"` 后两族同清。`for "wbtest"` 不是我造的写法：`~/.moon/lib/core/*/moon.pkg` 里 5 份、本仓 `_deps` 里 14 份在用。
+  净读数：1920 → **1899**（−16 条 0029 全部 −5 条 0071 = −21），`moon test --target js -j 1` 仍 `Total tests: 1302, passed: 1302, failed: 0`。
+- note: 三条可复用的坑：① 用 `(^|[^\w./@-])pkg\.` 这类正则判"包是否被引用"会把**同名局部变量**算成引用——`src/ops/audit_test.mbt:145` 是 `let json = log.to_json()` 后 `json.stringify()`，与 `moonbitlang/core/json` 无关；命中行必须逐条肉眼过，否则会把真该删的 import 误判成"测试在用"而错标 `for "test"`。② native 面本机不可验证：`moon check --target native` rc=1，失败在 `.moon/lib/core/_build/native/release/bundle/cmp/cmp.mi: No such file or directory`（本机只合成了 js bundle，与 BUG-329 同族的机器级缺口），与本单改动无关；被删的 12 条在**含 `*_native.mbt` 的整个包目录**零引用，CI 的 native job（`fist-ci.yml:103` check / `:129` test）当门。③ `moon check` 会顺手重写 24 份 `pkg.generated.mbti`（Int→Int32 拼写抖动，BUG-330 同根），本单收尾统一 `git restore -- '*.mbti'`，`check_mbti_sync.py` 在还原后仍 PASS（它只判 pub 名在不在，不判类型拼写）。
+- 出路（不在本单边界内）：`omega/` 空包只剩两个非源文件，删除属不可逆动作，按金条留 owner 裁决；`cmd/cli/upgrade_js.mbt:75/280` 与 `src/store/store_sqlite.mbt:309/636` 的 4 条 0071 是"用了 `json` 却没 import"，与本单反向，留作下一族（补 import 时要防 js-only 文件在 native 面反吃 0029）。
+- task_id: T0-slave-unused-package-deps
+
+### FIXED(2026-10-20 轮次 R18 / BUG-342)
+- 改了什么：12 份 `moon.pkg` —— 删 12 条零引用 import（`omega`×4 连同空块、`src/decompose` 的 `src/core` 连同空块、`src/diff` 的 `json` 连同空块、`src/evolve`/`src/executor`/`src/ltl`/`src/omega`/`src/router`/`src/server` 各 1 条）；`src/engine` 的 `x/fs`、`src/ops` 的 `src/store` 收进 `for "test"` 块，`src/ops` 的 `json` 删除（同名局部变量假阳性）；`src/core` 的 `quickcheck` 由 `for "test"` 改 `for "wbtest"`。
+- 实测锁钉：`moon check --target js --json` → `status=success`、1899 warnings / 0 errors、`error_code=29` 命中数 **0**（改前 16），`error_code=71` 由 9 → 4；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`python scripts/check_pkg_imports.py` → PASS（24 份 moon.pkg 的 30 条本地 import 指向目录都在跟踪面）+ `--selftest` SELFTEST OK 6 格；`python scripts/check_mbti_sync.py` → PASS 641 条 pub 声明。
+## BUG-343 [2026-10-20T14:48:00Z] [medium] FIXED
+- summary: [依赖面] 4 条 `core_package_not_imported`(0071) 清零 —— 与 BUG-342 反向的那一格：代码用了 `moonbitlang/core/json` 却没在 `moon.pkg` 里 import
+- detail: 0071 原文是 "Package `json` from `moonbitlang/core/` is used without import. This is deprecated."。族里原有 9 条，其中 5 条是 `src/core/core_quickcheck_wbtest.mbt` 的 `@quickcheck.check`，已随 BUG-342 的 `for "wbtest"` 一并清掉；剩 4 条同一形状：`cmd/cli/upgrade_js.mbt:75/280`、`src/store/store_sqlite.mbt:309/636`，全是 `@json.parse(raw)`。
+  为什么没有"免 import 的替代写法"：查 core 库真源 `~/.moon/lib/core/json/parse.mbt:82` 只有包级 `pub fn parse`，`Json` 类型侧不存在 `from_string`（`from_string` 只在 `BigInt` 上）⇒ 想不引包就改写法这条路不存在，只能补 import。这与 `upgrade_core.mbt` 里 `Json::object({...})` 不报警是两回事：类型名走的是隐式可见面，包级函数才是 0071 判的那一格。
+  多目标一格（如实标注，不当已解决）：`cmd/cli/moon.pkg` 有 `options(targets: {"upgrade_native.mbt": ["native"], "upgrade_js.mbt": ["js"]})`，而 `@json.` 只出现在 js-only 的 `upgrade_js.mbt`（3 处），native-only 的 `upgrade_native.mbt` 0 处 ⇒ 这条 import 在 native 面理论上会反吃一条 0029。本机量不了 native（`~/.moon/lib/core/_build/native/release/bundle/cmp/cmp.mi` 缺件，BUG-329 同族的机器级缺口），且 CI 的 native job 只判 error 不判 warning（`fist-ci.yml:103`）。这一格与本支既有形状一致——`cmd/cli` 早就 import 了 js 专属的 `moonbitlang/async/js_async`——`moon.pkg` 现行文法没有"按 target 导依赖"的表达力（只有 `for "test"` / `for "wbtest"` 两种测试向作用域），属工具链边界，不靠压制或 hack 绕。
+- note: 族谱进度一并落档，免得下轮重新量：0020 deprecated 904、0025 test_unqualified_package 803 两支大的未动；0079 implicit_impl_as_method 63、0002 37、0035 reserved_keyword 13、0078 result_error_return 13、0006 unused_constructor 12、0008 unused_value 12、0004 11、0001 9、0021 6、0027 5、0009 3、0007 2、0067 1、0013 1（本轮起 0029/0071 双双归零）。
+- task_id: T0-slave-unused-package-deps
+
+### FIXED(2026-10-20 轮次 R19 / BUG-343)
+- 改了什么：`cmd/cli/moon.pkg`、`src/store/moon.pkg` 各加一条 `"moonbitlang/core/json"`。源码一行未动。
+- 实测锁钉：`moon check --target js --json` → status=success、1899 → **1895** warnings / 0 errors，`error_code=71` 命中 **0**、`error_code=29` 命中 **0**；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`python scripts/check_pkg_imports.py` PASS + `--selftest` 6 格 OK。
+## BUG-344 [2026-10-20T15:15:00Z] [medium] FIXED
+- summary: [惯用法面] 0020 deprecated 的 `not(x)` 子族 203 处清零 —— 并证实 moonc 对同一行的同族弃用告警只报一次，`--json` 清单当工单会留下"清单外残余"
+- detail: 起量（本机 `moon check --target js --json`，分支 slave/fix/core-package-imports 的 stacked 基）：1895 warnings / 0 errors，其中 0020=904，子形状 `Use !expr instead` 报 **201** 处、落在 62 份文件。改法是纯机械的 `not(arg)` → `!arg`。
+  但 201 不是真族大小：收尾 `grep -rn '\bnot('` 复核发现仍有 2 处代码命中 —— `src/server/output_validate.mbt:351`（`if not(found)`）与 `src/server/run_check_guard.mbt:325`（`if not(p.absolute) && !p.escaped ...`）。两处的共同点是**同一行还有另一个 `not(` 且那一个已被告警覆盖** ⇒ moonc 0.10.16 在同行内对同一 `error_code` 只出一条，族真实大小 203。教训写死：以 `--json` 清单为工单的族，收尾必须用文本面（grep 计数）复核残余，两数不一致就是编译器在去重而不是代码没问题。补掉这 2 处后 `--json` 里 `Use !expr instead` 命中 **0**，残余只有 `#cfg(not(...))`（2 处，属性语法不是调用）与 1 处文档注释里的 `not(avail)` 引述。
+  与格式化器的相互作用（本单真正花时间的地方）：`!(primary)` 的括号是冗余的，moonfmt 会剥掉 ⇒ 首版脚本按"含空格就保留括号"保守处理，产生 51 处 `!(...)`，直调 moonfmt 逐行比对后暴露 18 处分歧；改成按**括号/方括号深度**判深度 0 是否只含 `[A-Za-z0-9_.@]` 与 `::` 后，201 处里仅 7 处需要保留括号（`!(tight < loose)`、`!(phi2 > phi1)`、4 处 `is` 模式、1 处跨行 `||` 串）。还有一类不是括号问题：`not(a) && not(b) && not(c)` 折行写成三行，改成 `!a && !b && !c` 后短到能并行，moonfmt 要求合并 —— `src/engine/engine_supervisor.mbt` 两处、`src/server/server.mbt`、`src/server/supervisor_tools.mbt`、`src/executor/registry_test.mbt` 各一处，已按格式化器给的缩进就地合并。
+  量法（沿用既有绕法）：本机 `moon fmt` 中 `\\?` ICE（BUG-329 的 FIXED 注记里"同族第二道"），直调 `~/.moon/bin/moonfmt.exe <file> -o out`；比对时剔除 0.10.16 的两类拼写漂移（`Int`/`Int32` 与 `x? :` / `x~ :`，BUG-330 同根）只看 `!` 相关行 ⇒ 最终 **0** 处分歧，62 份文件 CRLF 全部保持（bare LF = 0）。
+- note: 本单只动 `!` 运算符一处语义面，零接口变更（`check_mbti_sync.py` 前后同 PASS）。CI 面 6 处预存红与本机 `cleanup_artifacts --check` DIRTY(265) 在改前改后逐项一致，非本单引入，按既有裁决交 CI 当门 + PR 里如实标注；native 面本机仍量不了（js bundle 之外无件，BUG-329 同族机器级缺口），而 `!` 与 `not()` 在两后端同语义，风险面限于 js 侧的格式化差异。
+- 后续建议：0020 剩余 703 条的最大子形状是 `Json::value`（430 条，建议语 "Suggestion: `if json is Object(obj) { obj.get(key) } else { None }`"）—— 该族需要一个 `priv` 辅助函数做逐包替换，与本单的"就地换运算符"不是一个工序量级，宜单独开单；次族仍是 0025 `test_unqualified_package`(803) 与 0079 `implicit_impl_as_method`(63)。
+- task_id: T0.3
+
+### FIXED(2026-10-20 轮次 R20 / BUG-344)
+- 改了什么：62 份 `.mbt` 里 203 处 `not(x)` → `!x`（7 处保留必要括号），并按 moonfmt 要求合并因此变短的 5 处折行表达式。无 API/接口/行为变更，`#cfg(not(...))` 与文档引述未动。
+- 实测锁钉：`moon check --target js --json` → status=success、1895 → **1694** warnings / 0 errors（0020 由 904 → 703，`Use !expr instead` 命中 **0**）；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；直调 moonfmt 逐行比对 `!` 相关分歧 **0**；CRLF 面 bare LF = 0；`check_pkg_imports` / `check_mbti_sync` / `gen_plugins --check` / `--selftest` / `check_plugin_sync` / `check_tools_sync` 全绿，其余红点为 6 处预存项。
+## BUG-345 [2026-10-20T15:26:00Z] [low] FIXED
+- summary: [惯用法面] 纯语法噪声三族合清：0008 redundant_modifier 12 条 + 0021 missing_pattern_arguments 6 条 + 0013 unresolved_type_variable 1 条，共 19 条，零语义变更
+- detail: 起量 1694 warnings / 0 errors（BUG-344 收尾后的基线）。三族的修法都不涉及行为：
+  ① **0008**：`pub struct` 的字段默认公开，字段级 `pub` 是冗余修饰（`src/hat/hat_report_build.mbt` 8 处、`src/router/router_caf.mbt` 4 处）⇒ 删 `pub ` 两个词，字段可见性不变。
+  ② **0021**：`Json::Number` 现在带一个 `repr` 参数位，`Some(Number(n))` 属于"省略构造参数"⇒ 按编译器建议补 `..`：`Some(Number(n, ..))`（`src/server/selfdrive_round_tick.mbt` 4 处、`src/server/bugreport_status_wbtest.mbt:105`、`src/store/multi_store_test.mbt:128`）。这是模式面的放宽，匹配集不变。
+  ③ **0013**：`src/server/supervisor_tools.mbt:420` 的 `for ... nobreak { ignore([]) }` —— 空数组字面量的元素类型不可判定，`ignore` 又只在"表达式有类型"的前提上成立 ⇒ 类型为 `(Array[_/0]) -> Unit`，尾随的 `_/0` 未解析就是 0013 判的那格。`nobreak` 分支只要求尾表达式是 Unit，`ignore([])` 在这里没有任何副作用可保留 ⇒ 改 `()`，未解析类型变量随之消失。
+  净读数：1694 → **1675**（−19），0 errors；`moon test --target js -j 1` 仍 `Total tests: 1302, passed: 1302, failed: 0`；6 份文件里除 BUG-330 两类拼写漂移外与 moonfmt **0 处分歧**，CRLF 完整（bare LF 0）。
+- note: **接口面零变更已实证**：删字段 `pub` 后跑 `moon info src/hat src/router`，两份 `pkg.generated.mbti` 与 HEAD 逐行比对，在归一化掉 BUG-330 两类漂移（`Int`↔`Int32`、`? :`↔`~ :`）之后**残留 0 行** —— 生成的漂移属另一单，本单不收，`.mbti` 保持 HEAD 原样（`check_mbti_sync` PASS 641 条声明）。
+  三族刻意未动，原因写清免得下轮重复评估：① **0067 unused_async**（`src/server/github_gitcode_native.mbt:21` 的 `pub async fn gitcode_execute_batch`）—— 删 `async` 改的是**公开 API 的箭头类型**，而这个文件在 native 面（本机 native bundle 缺件，BUG-329 同族机器级缺口）量不了，调用面又跨后端 ⇒ 与 native 面一起处理，不靠"看着没事"下刀。② **0009 struct_never_constructed**(3) / **0006 unused_constructor**(12) / **0001 unused_value**(9) —— 三族都是"死代码判定"，删之前要读设计意图（0006 还被仓里 `warnings = "-6-35"` 压制着，属 owner 已表态的豁免面），不属本单的纯语法档。③ 复发确认：`git restore -- '*.mbti'` 会把 24 份 mbti 的 mtime 推到当下，于是 `scripts/fist.py` 的 BUG-32 新鲜度守卫触发自动重建，而重建会撞 `\\?` ICE 并在依赖包上失败 —— 绕法仍是先手工 `moon build cmd/cli --target js`（rc=0）再驱动 FIST 命令，本单二次实证。
+- 后续建议：剩余大头依次是 0025 test_unqualified_package(803)、0020 deprecated(703，其中 `Json::value` 一族 430)、0079 implicit_impl_as_method(63)、0002 unused_value(37)；小族只剩 0035(13)/0078(13)/0006(12)/0004(11)/0001(9)/0027(5)/0009(3)/0007(2)/0067(1)。
+- task_id: T0r2
+
+### FIXED(2026-10-20 轮次 R21 / BUG-345)
+- 改了什么：6 份 `.mbt` —— 删 12 处字段级冗余 `pub`、给 6 处 `Number(...)` 模式补 `..`、把 1 处 `ignore([])` 换成 `()`。零接口、零行为变更。
+- 实测锁钉：`moon check --target js --json` → 1694 → **1675** warnings / 0 errors，`error_code` 8/21/13 命中 **0**；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`check_pkg_imports` / `check_mbti_sync` / `check_tools_sync` PASS；直调 moonfmt.exe 逐行比对非漂移分歧 0。
+## BUG-346 [2026-10-20T15:44:30Z] [medium] FIXED
+- summary: [测试面惯用法] 清零 0025 test_unqualified_package 全族 803 处：测试文件里的隐式导入名一律改 `@pkg.name` 显式限定，判据面 1675 → 872（单族占存量 48%）
+- detail: 起量 1675 warnings / 0 errors（BUG-345 收尾后的基线）。0025 是黑盒测试文件的遗留行为：`xxx_test.mbt` 不用写包名就能拿到被测包的公开名，moonc 0.10.16 判这为隐式导入并逐个给建议串 `Use `@server.foo` instead`。
+  ① 量法：803 条 loc 全部是单行标识符区间，先用 `temp/census25.py` 逐条回切源文件核对 `seg == name`（错位 0、跨行 0、已带点前缀 0），确认可以按 loc 精确改写而不必正则扫面。
+  ② 试点先行：先只对 `atgc*` 两个包下手（39 处，含带连字符的 `@atgc-old.` 这种最容易踩解析的形式），`moon check atgc atgc-old` + `moon test` = 17/17 通过，才铺满余下 40 份文件（764 处）。
+  ③ 同行同码去重二次命中：铺完后 `moon check` 仍报 6 处 —— 就是 BUG-344 记的那条量法定律（moonc 对同一 (文件, 行, error_code) 只报一次），第二轮按新 loc 补 6 处后归零。总计 803 处 = 39 + 764 + 6（第二轮 6 处里含首轮因列位漂移被主动跳过的重复项，跳过逻辑由 `seg != name` 守卫兜住，未误改）。
+  ④ 拆行连锁：加上 `@server.` 一类前缀后有 43 处调用越过 100 列，moonfmt 要求把实参拆行。用 `temp/apply_fmt25.py` 做**区间合并**：只在 norm（Int↔Int32、`~ :`↔`? :`）后仍不同的 hunk 上采纳 moonfmt 版，其余保留原行，从而只收拆行、不收 BUG-330 拼写漂移；18 份文件 43 个 hunk，其中 1 处 `desc~ :` 泄漏由手工还原为 `desc? :`。
+  净读数：1675 → **872**（−803），0 errors；`moon test --target js -j 1` 仍 `Total tests: 1302, passed: 1302, failed: 0`；43 份文件与 moonfmt **0 处分歧**（norm 后），bare LF 0，`Int32`/`~ :` 新增 0。
+- note: **本轮新坑（比 BUG-32 更直接）**：`moon check`/`moon test` 自己就会重写 24 份 `pkg.generated.mbti`（不只是 `moon info`），所以在可编译树上跑一次判据 = 立刻污染接口面；收尾必须 `git restore -- ':(exclude)*.mbt' '*'` 只回非 .mbt，再 `check_mbti_sync` 复验（641 条声明 PASS）。这条工序每轮都要走，不能靠"记得不 add"。
+  族选择理由：0025 是纯可定位、纯机械、零语义的族（编译器给全了替换文本），且占存量近一半，清掉后剩下的 872 条里 0020 deprecated(703) 成为绝对大头。
+- 后续建议：① 0020 按子族拆单打，`Json::value` 430、StringView `to_owned` 122、`str[:]` 42、`derive(Show)` 11、`is None/Some(_)` 若干；② 0079 implicit_impl_as_method(63) 需要补 `pub extend T with ...`，是接口面动作，单独一轮；③ 0002 unused_value(37) 多为测试里故意绑定的变量，改 `_` 前缀即可，属低风险小单。
+- task_id: T0r3
+
+### FIXED(2026-10-20 轮次 R22 / BUG-346)
+- 改了什么：43 份 `.mbt` 的 803 处隐式导入名 → `@pkg.name`（`@server` 210、`@display` 142、`@ops` 123、`@omega` 86、`@evolve` 54、`@router` 53、`@engine` 49、`@diff` 22、`@atgc` 20、`@atgc-old` 19、`@store` 19、`@decompose` 6）；18 份文件随之按 moonfmt 拆 43 个调用 hunk。零行为变更。
+- 实测锁钉：`moon check --target js --json` → 1675 → **872** warnings / 0 errors，`error_code` 25 命中 **0**；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；试点单独量过一次（`atgc`/`atgc-old` 17/17）；`check_mbti_sync`/`check_pkg_imports`/`check_tools_sync`/`check_plugin_sync`/`gen_plugins --check` 全 PASS；24 份被 check 重写的 `.mbti` 已还原。
