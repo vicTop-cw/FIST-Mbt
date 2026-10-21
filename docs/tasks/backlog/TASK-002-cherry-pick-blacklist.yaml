@@ -1,7 +1,7 @@
 id: TASK-002
 title: "cherry-pick 黑名单 — src/ops/moon.pkg + rhop_poll.mbt"
 priority: P1
-status: backlog
+status: in_review
 assignee: atomcode
 discovered_by: lead
 discovered_at: "2026-10-21T17:30:00+08:00"
@@ -29,3 +29,24 @@ evidence:
   - HEAD 已有 rhop_native.mbt，功能完整且干净
 
 blocked_by: []
+
+# ── 执行回填（AtomCode / 2026-10-21T22:10+08:00）──
+result: >
+  `slave-branch-merge.ps1` 落 `$SKIP_EXACT = src/ops/moon.pkg, src/ops/rhop_poll.mbt` +
+  `$SKIP_GLOB = src/ops/rhop*.mbt`，并新增 `Restore-Blacklisted`：**每次 cherry-pick 后立刻**执行
+  （无论成败——冲突状态下这些路径最脏）：已跟踪件回退 HEAD、`rhop*.mbt` 若为旧 commit 新引入则
+  **文件 + 索引一起删**并打印警告。**不是"取 theirs"，是"根本不收"**。
+behavior_test: >
+  在临时仓库真跑了一遍（非只读代码）：base 提交含 moon.pkg=HEAD-VERSION 与 rhop_native.mbt；
+  "旧 commit"改 moon.pkg 为带标记内容并新增 rhop_poll.mbt；`cherry-pick --no-commit` 后调用该函数 ⇒
+  输出「回退 HEAD: src/ops/moon.pkg / 删除（新引入）: src/ops/rhop_poll.mbt」，touched=2；
+  断言三条全过：文件已删、索引已清、moon.pkg 回到 HEAD-VERSION 且无标记。
+validation:
+  - "PowerShell 真解析器 ParseFile：语法错误 0（不看自述）"
+  - "check_ps_encoding PASS（BOM 保留，PS5.1 不会炸）"
+  - "-DryRun 实跑：正常扫描并退出，工作树脏件数不变"
+acceptance_met:
+  - "skip list 三档：✅（exact 2 + glob rhop*.mbt）"
+  - "cherry-pick 后自动 reset 这些文件：✅（Restore-Blacklisted 在 pick 后立即调用）"
+  - "rhop_poll.mbt 出现即 rm + git rm + 告警：✅（行为测试实测）"
+pr_branch: fix/task-002-cherry-pick-blacklist

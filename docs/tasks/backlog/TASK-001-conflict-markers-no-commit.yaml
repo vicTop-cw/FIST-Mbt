@@ -30,3 +30,13 @@ evidence:
   - 合入者 diff 检测 6/6 分支命中标记
 
 blocked_by: []
+
+# ── 部分完成回填（AtomCode / 2026-10-21T22:10+08:00）──
+partial_met:
+  - "① 合入前自动跑 check_merge_markers：✅ 已由 CI 的 Merge-marker gate 承担（且在 Migrate 之前）"
+  - "③ slave-branch-merge.ps1 加 cherry-pick 后自动标记扫描：✅ 本轮落地——每笔 commit 前先跑 live，
+     红则 git reset --hard 拒绝提交；整批 pick 完再 --selftest + live，红则不许 build/push"
+  - "② cherry-pick 必须全解、git diff --check 过、selftest 过才允许 commit：**
+     部分完成**——cherry-pick 路径已由 ③ 覆盖（含 selftest + live）；**通用 pre-commit 钩子仍未做**，
+     属开放项（会拦到"手写 commit"这条路径，需单独评估钩子分发方式）"
+open_item: "通用 pre-commit 钩子（拦截任何本地手写 commit 的标记）未做"
