@@ -587,3 +587,47 @@ test "lint_348_unused_variable_pairwise" {
   // 第 6 行 `let dead` 全程未被引用 ⇒ 必须仍报（不许把「不扫了」当修复）
   assert_true(is_unused_on(6))
 }
+
+///|
+/// BUG-333 回归锁：moonbit-match-exhaustive（needle 裸子串 `match `）——MoonBit 编译器
+/// **强制** match 穷尽（不穷尽 = 编译错误），账本实测 1513 条命中全部假阳 ⇒ 默认降噪丢弃。
+/// R8 曾落地这处修复，但它**连同私有的函数名白盒锁**在后续重构中被一并删掉 = 静默回归
+/// （R53 实测 grep `denoise` 全 src 零命中）。本轮教训写进锁的选型：**锁走公开
+/// @server.issue_scan 的产出，不锁内部函数名**——内部函数被重构删掉时，行为锁当场变红。
+/// 三重断言缺一不可：
+///   ① match-exhaustive 命中必须为 0（降噪生效）
+///   ② 同族启发式 moonbit-long-function 必须仍 > 0（反证「不是扫描器坏了/不扫了」）
+///   ③ 编译器不保证的硬门 unwrapped-unwrap 必须仍报（反证「不是把真规则也一起降噪了」）
+test "lint_333_match_exhaustive_denoised_targeted" {
+  let d = lint_dir("lint_c333")
+  @fs.write_string_to_file(
+    d + "/sample.mbt",
+    "fn f(x : Int) -> Int {\n" +
+    "  match x {\n" +
+    "    _ => 3\n" +
+    "  }\n" +
+    "}\n" +
+    "fn g(): Int {\n" +
+    "  let ot = Option::Some(1)\n" +
+    "  ot.unwrap()\n" +
+    "}\n",
+    encoding="utf8",
+  ) catch {
+    _ => ()
+  }
+  let r = @server.issue_scan(d, "", 500)
+  let j = match r {
+    Ok(x) => x
+    Err(_) => return
+  }
+  let items = lint_findings(j)
+  let count_rule = fn(rid : String) -> Int {
+    items.filter(fn(f) { mem_str(f, "rule") == rid }).length()
+  }
+  // ① 编译器已保证穷尽 ⇒ 这条规则命中全丢
+  assert_eq(count_rule("moonbit-match-exhaustive"), 0)
+  // ② 同族启发式必须仍在 ⇒ 证明扫描器本身工作正常（不是「不扫了」）
+  assert_true(count_rule("moonbit-long-function") > 0)
+  // ③ 硬门必须仍报 ⇒ 降噪是定向的，没把真规则一并吞掉
+  assert_true(count_rule("unwrapped-unwrap") > 0)
+}
