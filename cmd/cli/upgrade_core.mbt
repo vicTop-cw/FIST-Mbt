@@ -44,6 +44,7 @@ fn parse_version(s : String) -> (Int, Int, Int, Bool)? {
   Some((major, minor, patch, is_pre))
 }
 
+
 ///|
 /// 是否有 pre-release 后缀：去掉 `+build` 元数据（不参与优先级）后仍含 `-` 即 true。
 fn has_pre_release(core : String) -> Bool {
@@ -190,6 +191,7 @@ fn should_upgrade(cmp : Int, check_only : Bool) -> Bool {
 >>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
   cmp > 0 && !check_only
 }
+
 
 ///|
 /// 调 `upgrade_io` 并解包 JSON 回执（永不 abort：调度/解析失败回 Err）。

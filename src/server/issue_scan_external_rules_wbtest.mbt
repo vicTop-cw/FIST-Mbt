@@ -85,6 +85,7 @@ test "ext_rules_6_load_real_file" {
 }
 
 ///|
+<<<<<<< HEAD
 /// BUG-347：外部 regex pattern 的 `::` 命名空间限定必须保留进 needle。
 /// 旧实现只认 alnum，把 `Json::string\(` 退化成裸 `string`（`Json::` 整段丢弃），
 /// 任何含 `string` 的行都命中 ⇒ 假阳。锁四条：命名空间保留、`\s` 不污染、fixture 类零回归。
@@ -100,20 +101,39 @@ test "ext_rules_7_needle_preserves_namespace" {
 <<<<<<< HEAD
   assert_eq(scan_regex_to_needle("probe\\("), "probe")
 =======
+=======
+test "ext_rules_7_qualified_needle_keeps_namespace" {
+  // BUG-347：`ident::ident` 是同一个限定名，`::` 不得把片段断开后只取最长段
+  assert_eq(scan_regex_to_needle("Json::string("), "Json::string")
+  assert_eq(scan_regex_to_needle("Json::string\\("), "Json::string")
+  assert_eq(scan_regex_to_needle("Foo::string("), "Foo::string")
+  assert_eq(scan_regex_to_needle("Json::value"), "Json::value")
+  assert_eq(scan_regex_to_needle("@pkg.Json::string\\("), "Json::string")
+  // 无 :: 的规则零回归：仍取最长纯字母数字段
+  assert_eq(scan_regex_to_needle("ignore\\s*\\(\\s*\\w+"), "ignore")
+>>>>>>> 1104bb05 (fix: 外部规则 pattern 保留 :: 命名空间（BUG-347 / T0r38）)
   assert_eq(scan_regex_to_needle("string("), "string")
   // :: 右侧不是标识符时不并入同一段（`Json::(string)` 回落到括号内字面量）
   assert_eq(scan_regex_to_needle("Json::(string)"), "string")
 }
 
+
 ///|
 test "ext_rules_8_namespace_not_dropped_in_matching" {
   // BUG-347 端到端同形：外部规则 `Json::string(` 只命中真正的 Json::string( 行，
   // 不得命中 formula_to_string( / j.to_string()（旧实现 needle 降级为 "string"）。
+<<<<<<< HEAD
   // BUG-346 起该规则只认实参里的拼接/插值，夹具用 `x + y` 才符合规则语义。
   let json = "{\"rules\":[{\"name\":\"moonbit-json-injection\",\"severity\":\"high\",\"pattern\":\"Json::string(\",\"why\":\"w\",\"description\":\"d\"}]}"
   let r = scan_parse_external_rules(json)
   assert_true(r is Ok(_))
   let content = "let a = Json::string(x + y)\nlet b = formula_to_string(f)\nlet c = j.to_string()\n"
+=======
+  let json = "{\"rules\":[{\"name\":\"moonbit-json-injection\",\"severity\":\"high\",\"pattern\":\"Json::string(\",\"why\":\"w\",\"description\":\"d\"}]}"
+  let r = scan_parse_external_rules(json)
+  assert_true(r is Ok(_))
+  let content = "let a = Json::string(x)\nlet b = formula_to_string(f)\nlet c = j.to_string()\n"
+>>>>>>> 1104bb05 (fix: 外部规则 pattern 保留 :: 命名空间（BUG-347 / T0r38）)
   let hits = scan_match_lines(content, r.unwrap(), "sample.mbt")
   assert_eq(hits.length(), 1)
   assert_eq(hits[0].line, 1)
@@ -123,5 +143,8 @@ test "ext_rules_8_namespace_not_dropped_in_matching" {
   assert_true(r2 is Ok(_))
   let hits2 = scan_match_lines(content, r2.unwrap(), "sample.mbt")
   assert_eq(hits2.length(), 0)
+<<<<<<< HEAD
 >>>>>>> 92218ec5 (fix(issue_scan): json-injection 只认实参拼接/插值，安全构造器不再假阳（BUG-346 / T0r47）)
+=======
+>>>>>>> 1104bb05 (fix: 外部规则 pattern 保留 :: 命名空间（BUG-347 / T0r38）)
 }

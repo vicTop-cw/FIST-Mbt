@@ -57,6 +57,7 @@ fn mc_tri_sample(
   (s2, dur.ceil().to_int())
 }
 
+
 ///|
 /// 难度档 → 三点三角分布（易/中/难；缺省档按中）。
 fn mc_durations(tier : String) -> (Int32, Int32, Int32) {
