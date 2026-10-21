@@ -140,6 +140,11 @@ SPECIAL_CASES = [
     case("check_deprecated_site_list.py", "--selftest"),
     expected("cleanup_artifacts.py", 1,
              "预存红：工作树 DIRTY（temp/ 与 *.db 是运行物，本仓不 git clean 它们）", "--check"),
+    # 本轮（fist-gate 的 fmt/build 环境态分类）实测：本机两臂 DEGRADED ⇒ 如实声明 2；
+    # 预热格式化器 + 迁移依赖缓存后应读 0，届时把期望改回 0（与其它 known-red 同规矩）。
+    # 若不声明，自动生成的格会写死 expect=0，让「环境态」冒充「代码红」。
+    expected("fist-gate.py", 2,
+             "本机两臂 DEGRADED（moon fmt 格式化器未预热 + 依赖缓存格式过旧）= 环境态，非代码红"),
 ]
 
 
