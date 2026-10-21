@@ -29,7 +29,11 @@ test "scoring_low_accuracy" {
 test "scoring_fingerprint_false_penalty" {
   let s = @evolve.score_artifact(1.0, false, true, 1.0)
   assert_eq(s, 0.75)
+<<<<<<< HEAD
   assert_true(!@evolve.score_accept(s))
+=======
+  assert_true(!score_accept(s))
+>>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
 }
 
 ///|
@@ -62,10 +66,17 @@ test "scoring_rank_boundary" {
 ///|
 /// 门禁阈值：默认 0.85（端点含），自定义阈值生效。
 test "scoring_accept_threshold" {
+<<<<<<< HEAD
   assert_true(@evolve.score_accept(0.85))
   assert_true(!@evolve.score_accept(0.84))
   assert_true(!@evolve.score_accept(0.90, threshold=0.95))
   assert_true(@evolve.score_accept(0.96, threshold=0.95))
+=======
+  assert_true(score_accept(0.85))
+  assert_true(!score_accept(0.84))
+  assert_true(!score_accept(0.90, threshold=0.95))
+  assert_true(score_accept(0.96, threshold=0.95))
+>>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
 }
 
 ///|
@@ -80,7 +91,13 @@ test "scoring_rank_order" {
 ///|
 /// 稳健性谓词（默认 floor=0.70，可自定义）。
 test "scoring_is_robust" {
+<<<<<<< HEAD
   assert_true(@evolve.is_robust(0.80))
   assert_true(!@evolve.is_robust(0.60))
   assert_true(@evolve.is_robust(0.69, floor=0.60))
+=======
+  assert_true(is_robust(0.80))
+  assert_true(!is_robust(0.60))
+  assert_true(is_robust(0.69, floor=0.60))
+>>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
 }
