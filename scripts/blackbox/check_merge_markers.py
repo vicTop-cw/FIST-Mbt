@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """scripts/blackbox/check_merge_markers.py — 「未解决冲突标记被提交进跟踪面」硬门禁（活判据）。
 
-**为什么要有它**：2026-10-21 沿 first-parent 实测——16:23 那波 cherry-pick 把带
-`<<<<<<< / ======= / >>>>>>>` 的文件直接 commit 进了 master（check_plan_landing.py 标记
-0→12→31 逐 commit 钉死），此后一直躺在跟踪面上（现 master 仍有 9 个文件带行首标记）。
+**为什么要有它**：2026-10-21 实测——多轮 cherry-pick/merge 把**带着
+`<<<<<<< / ======= / >>>>>>>` 的文件直接 commit 进了 master**，且后续「全部取 theirs」式
+清扫会把标记**重新引入**本来干净的文件（实测同一支 check_plan_landing.py 标记块 31→62 递增）。
 后果分两种，都比红更糟：
   ① .py/.mbt 带标记 ⇒ 语法错误 ⇒ CI 当场崩，守卫族自己 SyntaxError 到连「我坏了」都说不出来；
   ② .md/.yml/.mbti 带标记 ⇒ 不报错，标记作为正文安静发布（徽章、文档、CI 步骤描述都被污染）。

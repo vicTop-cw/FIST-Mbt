@@ -105,12 +105,8 @@ pub fn Task::get_status(Self) -> TaskStatus
 pub fn Task::get_updated_at(Self) -> String
 pub fn Task::is_leaf(Self) -> Bool
 pub fn Task::mark_decomposing(Self) -> Result[Self, String]
-<<<<<<< HEAD
-pub fn Task::new(id~ : String, project_dir~ : String, description? : String, priority? : String, importance? : String, depth? : Int, split_n? : Int, level? : Int, parent_id? : String, assignee? : String, cleanup_mode? : String, created_at? : String, ns? : String, depends_on? : Array[String]) -> Self
-=======
 pub fn Task::new(id~ : String, project_dir~ : String, description? : String, priority? : String, importance? : String, depth? : Int, split_n? : Int, parent_id? : String, assignee? : String, cleanup_mode? : String, created_at? : String, ns? : String, depends_on? : Array[String]) -> Self
 pub fn Task::not_equal(Self, Self) -> Bool
->>>>>>> df8ba1a1 (fix(idiom): 清零 0079 implicit_impl_as_method 全族 63 条 + 修守卫 derive 盲区)
 pub fn Task::pause(Self) -> Result[Self, String]
 pub fn Task::reject(Self, reason? : String) -> Result[Self, String]
 pub fn Task::reopen(Self) -> Result[Self, String]
