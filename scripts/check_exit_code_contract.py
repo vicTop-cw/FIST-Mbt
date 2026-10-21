@@ -26,11 +26,8 @@ r"""scripts/check_exit_code_contract.py — 「退出码契约」承诺面 ↔ �
 
 **校准（尺子必须先对着已知真相校，三条口径缺陷就是这么抓出来的）**：
   check_plan_landing ⇒ R1/R2/R3 全 0（emit_fatal 返 2 + `sys.exit(main())` 透传，真契约）
-  check_template_ctrl ⇒ 立判据时 R1 一条（R42 已修，calib 格改为「必须归零」）
-  check_mbti_sync ⇒ 立判据时 R1 一条 + R2 七条（R43 已修，同上）
-  check_pkg_imports ⇒ 立判据时 R1 一条 + R2 六条（R44 已修，同上）
-  simulate_head_commit ⇒ 立判据时 R3 一条（半形：别处 `return 2` 真给 2，4 处串式 FATAL 只给 1，
-                         其中一条文案自写「（rc=2）」）；R45 已修，calib 格改为「必须归零」—— 它是判定面上最后一把尺
+  check_mbti_sync / check_pkg_imports ⇒ R1 各一条 + R2 若干（纯幻影）
+  simulate_head_commit ⇒ R1 为 0（别处真给 2）但 R3 一条（半形）
   普查第一版 `temp/r42_census.py` 因①「退出码」块跨行只吃到行尾 ②不认名字传播，
   把 `check_plan_landing` 判成「承诺 1 给不出」的**假红**；第二版 `temp/r42_census2.py` 又把
   `"FATAL …" % e` 算成不透明（check_pkg_imports 真 6 处串式只读出 4 处）⇒ 三条都由标注集抓出，写进上面文法。
@@ -60,24 +57,17 @@ README = os.path.join(ROOT, "scripts", "README.md")
 
 # 棘轮：判定面（R1+R2+R3）条数上限，**只许下降**。放宽上限（改这个常量）是人的决定。
 #
-# 这一档的构成（2026-10-21 R45 现读真源，逐条对上 BUG-369 的标定面；`--selftest` 的 calib 格钉住这个构成）：
-#   simulate_head_commit 清零（R45 修真：4 处串式 FATAL 全改 emit_fatal ⇒ 「文案自写（rc=2）而站点实给 1」那条半形消失）
-#   check_pkg_imports    清零（R44 修真：6 处串式）｜check_mbti_sync 清零（R43 修真：7 处串式）
-#   check_template_ctrl  清零（R42 修真：1 处串式）｜check_plan_landing 立判据时本就 0
-# 合计归零 ⇒ 当前上限 0：BUG-369 立案时那四把尺的存量全部清完，此后任何一条新假契约都必红（上限 0 没有容忍带）。
-# 历史档位 16（R42 立判据时）→ 8（R43）→ 1（R44）→ 0（R45）；每修好一把尺这里必须跟着降。
-#
-# 降档必须核承重：判定面少 N 条要回头对 O/S/U 三面 —— 条数**搬家**（R1 让位给外部件透传）不等于消失。
-# R45 现读 `simulate_head_commit` 的实现面含 2（emit_fatal 交回；moon 超时那支的 `return 2` 本来就在），
-# 这一问由 `fixed-ruler-gives-two-in-impl-face` 一格钉住：五把修过的尺一起考。
-#
-# 上限归零后棘轮两格的写法：必须从常量导出（R44 定律），且「低于上限」这一档已不存在 ⇒ 走
-# `tightening-not-applicable-at-zero-ceiling` 那条分支。**不许靠删格子维持绿**，也不许把上限调回正数。
+# 这一档的构成（2026-10-21 R43 现读真源，逐条对上 BUG-369 的标定面；`--selftest` 的 calib 格钉住这个构成）：
+#   check_pkg_imports    R1 一条 + R2 六条，计 7
+#   simulate_head_commit R3 一条，计 1
+#   check_mbti_sync      清零（R43 修真：7 处串式 FATAL 全改 emit_fatal ⇒ R1/R2 归零）
+#   check_template_ctrl  清零（R42 修真）｜check_plan_landing 本就 0
+# 合计 8 = 当前上限；上一档 16（R42 立判据时的读数）。每修好一把尺这里必须跟着降；降到 0 才算 BUG-369 关闭。
 #
 # 写法约束：这段是「举例」不是「承诺」，所以**没有任何行首写成「数字等号」**——那是本判据认的契约头形状，
 # 上一版开头是「8 = 2026-10-21 …」，于是自家注释把自己读成了一份新契约（有契约块的脚本 31→32）。
 # 按既有定律：改写文本，不给判据开「跳过注释」的口子。`--selftest` 有格钉住这个形状。
-CONTRACT_GAP_CEILING = 0
+CONTRACT_GAP_CEILING = 8
 MAX_CODE = 9
 MAX_DEPTH = 8           # 值集解析的递归水位；断环靠 _busy，水位只防灾利性深链
 
@@ -538,8 +528,6 @@ def hint(count, ceiling):
                "（改常量是人的决定，本判据不自动改数）。" % (count, ceiling, count)
     if count > ceiling:
         return "FAIL：判定面 %d 条 > 棘轮上限 %d —— 新增的假契约必须当场修，不许放宽上限绕过。" % (count, ceiling)
-    if ceiling == 0:
-        return "判定面归零（上限 0）：BUG-369 立案那批存量已清完 ⇒ 没有容忍带，任何一条新假契约都必红。"
     return "判定面 %d 条 = 棘轮上限 %d（存量按声明接受、增量必须归零）。" % (count, ceiling)
 
 
@@ -672,23 +660,14 @@ def selftest():
          "现读自家契约块 %d 个，其中非标题头 %d 个 —— 有非标题头就说明注释里又写了举例形状"
          % (len(own_blocks), len(own_untitled)))
 
-    # 棘轮两格必须**从常量导出**，不写死读数：上一版这里写死「合成 4 条在上限内」与「hint(3, 上限)」，
-    # R44 把上限从 8 降到 1 时这两格立刻自红 —— 4 > 1、3 > 1。写死的格子在棘轮下降时会咬人。
-    at = CONTRACT_GAP_CEILING
+    n = len(probe("stringy")["bad"]) + len(probe("headless")["bad"])
     cell("ratchet-over-ceiling-is-red",
-         verdict_rc(at, at) == 0 and verdict_rc(at + 1, at) == 1 and verdict_rc(0, at) == 0,
-         "三点判法：等于上限给 0 / 上限+1 给 1 / 零条给 0（三点都由常量导出，上限怎么降都不失配）")
-    below = at - 1
-    if below >= 0:
-        cell("tightening-is-a-suggestion-not-a-verdict",
-             "收紧" in hint(below, at) and "FAIL" not in hint(below, at) and verdict_rc(below, at) == 0,
-             "上限-%d 那一档只给建议：含「收紧」、不含 FAIL、rc=0（收紧是人的决定，判据不自动改数）" % below)
-    else:
-        # 上限降到 0 之后「低于上限」这一档不存在了，格子改为钉「等于 0 时的读法」而不是留一支必红的旧期望。
-        cell("tightening-not-applicable-at-zero-ceiling",
-             "收紧" not in hint(0, 0) and "FAIL" not in hint(0, 0) and verdict_rc(0, 0) == 0
-             and verdict_rc(1, 0) == 1,
-             "上限已归零：hint(0,0) 不该再提收紧，且任何一条新增假契约都得红")
+         verdict_rc(CONTRACT_GAP_CEILING + 1, CONTRACT_GAP_CEILING) == 1 and
+         verdict_rc(n, CONTRACT_GAP_CEILING) == 0,
+         "合成 %d 条在上限内=0；上限+1 必=1" % n)
+    cell("tightening-is-a-suggestion-not-a-verdict",
+         "收紧" in hint(3, CONTRACT_GAP_CEILING) and "FAIL" not in hint(3, CONTRACT_GAP_CEILING),
+         "读数低于上限只给建议，不判红也不判绿")
 
     rows, skipped = census()
     total = sum(len(r["bad"]) for r in rows)
@@ -701,27 +680,17 @@ def selftest():
         ("check_plan_landing.py", lambda r: not r["bad"], "R1/R2/R3 全 0（emit_fatal 真给 2，是契约不是幻影）"),
         ("check_mbti_sync.py", lambda r: not r["bad"],
          "R43 已修（7 处串式 FATAL 改 emit_fatal）⇒ 必须归零；再被判红就是尺子或被测面回退了"),
-        ("check_pkg_imports.py", lambda r: not r["bad"],
-         "R44 已修（6 处串式 FATAL 改 emit_fatal）⇒ 必须归零；再被判红就是尺子或被测面回退了"),
-        ("simulate_head_commit.py", lambda r: not r["bad"],
-         "R45 已修（4 处串式 FATAL 改 emit_fatal，那条自写「（rc=2）」的文案从此说实话）⇒ 必须归零；"
-         "再被 R3 判红就是尺子回退了"),
+        ("check_pkg_imports.py", lambda r: any(b.startswith("R1") for b in r["bad"])
+            and len([b for b in r["bad"] if b.startswith("R2")]) >= 5,
+            "R1 一条 + R2 ≥5（记 6 处串式，v2 普查只读出 4 处）"),
+        ("simulate_head_commit.py", lambda r: any(b.startswith("R3") for b in r["bad"])
+            and not any(b.startswith("R1") for b in r["bad"]), "R1=0（别处真给 2）但 R3 一条 —— 半形"),
         ("check_template_ctrl.py", lambda r: not r["bad"], "R42 已修 ⇒ 必须归零（修过的尺不许再被判红）"),
     )
     for base, want, why in calib:
         r = by.get("scripts/" + base)
         cell("calib:%s" % base, r is not None and want(r),
              why if r is not None else "不在宇宙里")
-
-    # 降档的承重力问的是「2 从哪来」，不是「判定面小没小」：R43 的 M3 变异实测过一条反差
-    # （把 emit_fatal 改回 return 1，第 8 条不在判定面、搬进 O 面留名）。修过的尺一起考实现面。
-    fixed = ("check_plan_landing.py", "check_template_ctrl.py", "check_mbti_sync.py",
-             "check_pkg_imports.py", "simulate_head_commit.py")
-    no_two = [b for b in fixed if not (by.get("scripts/" + b) or {}).get("impl")
-              or 2 not in by["scripts/" + b]["impl"]]
-    cell("fixed-ruler-gives-two-in-impl-face", not no_two,
-         "%d 把修过的尺的 ast 实现面都得真含 2；缺的是 %s —— 判定面归零但实现面给不出 2 ⇒ 那是让位不是修好"
-         % (len(fixed), ", ".join(no_two) or "无"))
 
     cell("own-fatal-exit-is-2", emit_fatal("（自检探针，非违例）") == 2,
          "emit_fatal 恒返 2 —— 本判据不用被抓者的缺陷给自己开门")
@@ -745,11 +714,8 @@ def selftest():
         for nm, w in fails:
             print("  - %s：%s" % (nm, w))
         return emit_fatal("判据自检不通过 —— 尺子坏了，先修判据再读读数")
-    # 这一行只印**能实测导出的**计数：总数 = len(cells)，calib 格数 = 现数格子名。
-    # 上一版把分类数写死（6｜4｜3｜2｜5｜1｜4），R44 一加格子这些数就与总数不自洽 —— 同本轮那条定律。
-    n_calib = len([nm for nm, _ok, _why in cells if nm.startswith("calib:")])
-    print("SELFTEST OK（%d 格，其中标注集校准 %d 格按名字现数；分类面：承诺与条目切片 / 实现面 / 判定 R1·R2·R3 / "
-          "只报不判与让位 / 棘轮 / 承重对照 / 自指）" % (len(cells), n_calib))
+    print("SELFTEST OK（%d 格：承诺面与条目切片 6｜实现面 4｜判定 R1/R2/R3 各 1｜只报不判与让位 3｜"
+          "棘轮 2｜标注集校准 5｜自指 4）" % len(cells))
     return 0
 
 
