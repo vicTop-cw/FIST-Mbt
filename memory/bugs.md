@@ -6037,3 +6037,19 @@ total = int(m.group(1))  # 只取 group(1)=Total tests 数
 ### FIXED(2026-10-21 轮次 R54 副机 / BUG-379)
 - 改了什么：`src/server/server.mbt`（`DebateSession` 删 `topic`/`hats` 字段；`debate_convene` 构造删两字段并删 `hat_ids` 绑定）、`src/server/debate_tools_wbtest.mbt`（两处构造同步删字段）。共 2 文件 −4 行。
 - 实测锁钉：`moon check --target js` → rc=0，`(515 warnings, 0 errors)`，0007 命中 2→0、其余族逐格不变（0002 仍 11）；`moon test --target js` → `Total tests: 1340, passed: 1340, failed: 0`；两份 `.mbt` moonfmt 零差异；电池 38/5/5/0 与改前逐格相同；`.mbti` 已 restore，未入提交。
+
+
+## BUG-380 [2026-10-21T07:00:00Z] [low] FIXED
+- summary: [warning 面] 0001 unused function 死代码 8 条清零：`dag_mc_test` 的 `mc_top_crit`、`issue_scan` 的 `scan_filter_guarded`、`model_router_ops` 的 `mr_caf_read`、`server` 的 `intlist` / `to_ids_result`、`symbolic` 的 `lit_var` / `lit_sign` / `lit_neg`；`moon check --target js` **515 → 504 warnings / 0 errors**（0001 10→2；0020 473→471 与 0078 3→2 是随死代码一起消失的旧命中），`moon test --target js` 保持 **1340/1340/0**
+- detail: 四条判定：
+  ① **真死与假死分开**：10 条里 8 条在 `src/` + `cmd/` 全域零引用；剩下 2 条虽在主单元判未用，但分别被 `upgrade_wbtest.mbt` 的 upgrade-5 与 `issue_scan_wbtest.mbt` 的 BUG-72 成对锁引用（合计 16 处断言）——删函数就是删覆盖，按 BUG-351 留档口径保留，记入后续建议。
+  ② **两条是「被取代」而非功能缺失**：`scan_filter_guarded` 的守卫过滤已内联进主扫描路径（`issue_scan.mbt:1907` 直接调 `scan_finding_guarded`），`mr_caf_read` 已被 `mr_caf_read_diag` 取代（后者区分不存在/坏 JSON/合法 JSON）；删旧符号时同步把两处文档里的指名改成行为描述，避免注释指向不存在的函数。
+  ③ **判据只认逐族分布**（BUG-344 定律）：改前 0020 473 / 0006 12 / 0002 11 / 0001 10 / 0009 3 / 0078 3 / 0023 2 / 0027 1；改后总数 515→504 恰减 11，0001 10→2，其余变化均可归因到被删代码自身的旧命中——`mc_top_crit` 的两处 `j.value`（0020 473→471）、`to_ids_result` 的 `Result[...]` 签名（0078 3→2），无新族、无跨族反噬。
+  ④ **零公开面改动**：8 个函数全是私有 `fn`（含 1 个测试文件内的私有辅助），`pub` 面与 `.mbti` 零变化；`intlist` 的历史注释去掉已删符号名，保留 BUG-26 的成因叙述。
+- note: 守卫电池 `run_guards` 38 格 / 失败 5 / SKIP 5 / 缺执行面的尺 0，与改前逐格相同——5 条仍是同步基点预存红（check_scripts_index / check_exit_code_contract --selftest / check_plugin_sync / gen_plugins --check 的 5 组重复编号 / check_plan_landing --gate），本单未引入也未代修。五份 `.mbt` 经 `moonfmt.exe` 比对 CR 归一零差异、bare LF 0；`.mbti` 已按 BUG-330 口径 restore，未入提交。
+- 后续建议: ① `should_upgrade` / `scan_outside_literal` 的警告形状是「仅测试引用」——要清零得把白盒锁改写到生产原语（`scan_code_part(...).contains(...)`）或把纯逻辑内联回生产调用点，属行为/测试结构调整，按金条四另开单；② `0002 unused_value` 余 11 条全是参数位或包级 `let`（BUG-354 / R24 既有结论），改名会动签名；③ `0009 struct_never_constructed` 3 条与 `0006 unused_constructor` 12 条是公开类型/枚举面；④ `deprecated` 471 条仍以 `Json::value` 为主，按 BUG-356 属 owner 决策项。
+- task_id: T0r37
+
+### FIXED(2026-10-21 轮次 R55 副机 / BUG-380)
+- 改了什么：`src/engine/dag_mc_test.mbt`（删 `mc_top_crit`）、`src/server/issue_scan.mbt`（删 `scan_filter_guarded`）、`src/server/model_router_ops.mbt`（删 `mr_caf_read`，两处文档措辞改行为描述）、`src/server/server.mbt`（删 `intlist` 与 `to_ids_result`，BUG-26 注释去掉已删符号名）、`src/symbolic/symbolic.mbt`（删 `lit_var` / `lit_sign` / `lit_neg`）。共 5 文件 +3/−120 行。
+- 实测锁钉：`moon check --target js` → rc=0，`(504 warnings, 0 errors)`，0001 命中 10→2、0020 473→471、0078 3→2、其余族逐格不变；`moon test --target js` → `Total tests: 1340, passed: 1340, failed: 0`；五文件 moonfmt 零差异 / bareLF 0；电池 38/5/5/0 与改前逐格相同；`.mbti` 已 restore，未入提交。

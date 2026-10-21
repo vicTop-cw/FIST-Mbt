@@ -1548,37 +1548,6 @@ pub fn scan_finding_guarded(
 }
 
 ///|
-/// 对整批 findings 做守卫过滤：返回没被守卫的（即真待判）那些。
-fn scan_filter_guarded(
-  findings : Array[ScanFinding],
-  file_content : Array[String],
-) -> Array[ScanFinding] {
-  let out : Array[ScanFinding] = []
-  for hit in findings {
-    let ln = hit.line
-    // BUG-268：近邻窗口由 6 扩到 12，覆盖 `let upper = "..."` 等字面量定义
-    // 与 for 循环头相距较远的形态 B 场景（如 mcs_lower 中定义与使用隔 9 行）。
-    let prev_start = if ln - 12 < 1 { 1 } else { ln - 12 }
-    let prev_end = ln - 1
-    let prev_lines : Array[String] = []
-    if prev_end >= prev_start {
-      let mut i = prev_start - 1
-      while i <= prev_end - 1 {
-        if i >= 0 && i < file_content.length() {
-          prev_lines.push(file_content[i])
-        }
-        i = i + 1
-      }
-    }
-    if scan_finding_guarded(hit.code, hit.rule, prev_lines) {
-      continue
-    }
-    out.push(hit)
-  }
-  out
-}
-
-///|
 /// 跳过不应扫描的目录/文件（构建产物、依赖、版本库、数据库、接口快照）。
 fn scan_skip(path : String) -> Bool {
   if path.contains("target/") || path.contains("node_modules") {

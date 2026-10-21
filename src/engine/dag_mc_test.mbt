@@ -42,23 +42,6 @@ fn mc_meanspan(j : Json) -> Double {
 }
 
 ///|
-/// 读 criticality 首位 task_id。
-fn mc_top_crit(j : Json) -> String {
-  match j.value("criticality") {
-    Some(Array(a)) =>
-      if a.is_empty() {
-        ""
-      } else {
-        match a[0].value("task_id") {
-          Some(String(s)) => s
-          _ => ""
-        }
-      }
-    _ => ""
-  }
-}
-
-///|
 test "dag_mc：确定性可复现 + 按期概率随 deadline 单调（宽松 deadline P 更高）" {
   let e = @engine.FistEngine::new()
   mc_mk(e, "A", "MC 任务 A [难度梯度 中]", [])
