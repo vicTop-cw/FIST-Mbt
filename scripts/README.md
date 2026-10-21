@@ -145,3 +145,29 @@
 - `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
 
 > 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/cli` + `patch_esm_main` → node）。
+
+
+### 2026-10-21 R59 补登记（`check_scripts_index` 现读三件漏网尺）
+
+- `check_doc_surface.py` — **文档面单一真源守卫（BUG-22/BUG-30 的判据化，J1~J16 档）**：以
+  `src/server/server.mbt` 注册表为工具真源，逐名校验 AGENTS/README 覆盖（J2）、分组标题数字之和
+  == N 且「N 组」== 实解析组数（J3）、`vicTop-cw/fist-mbt@x.y.z` 当前自述 == `moon.mod` 版本且
+  发布版本权威自述只许 BACKLOG.md 一处（J4）、清单为空时反幻影哨兵直接 FATAL 不许 PASS（J5）、
+  规范正文 ↔ `project_standards` 机器投影的规则 id/版本一致（J6）等。**这行不是新登记而是复权**：
+  本条原先就在本文件里，被 `f259d797`「全仓清冲突标记·取 theirs」连带冲突区一起删掉
+  （实证：`f259d797^:scripts/README.md` 含 `check_doc_surface`、`origin/master` 起为 0，
+  该次 diff 同时留着 `<<<<<<< HEAD` 与被吃掉的正文行）——sweep 顺手删登记，正是 R57 记的
+  「取 theirs 的连带删除」在文档面的复发。用法 `python scripts/check_doc_surface.py [--selftest]`。
+- `commit_bug335_lock.ps1`（2026-10-20 18:54 `901eca8c` 入仓，此前从未登记）— **BUG-339 提交
+  成对性收尾助手**：等并发 agent 把含 `publish_parallel_route` 的 `src/server/server.mbt` 提交进
+  HEAD 后，**只提交**配套锁 `src/server/bug335_ns_route_wbtest.mbt`；脚本自身规则写明
+  「DO NOT commit server.mbt（concurrent agent owns it）」且「Safe to run repeatedly」——
+  存在的理由就是 BUG-339 的教训：锁引用未提交函数时单独提交锁 = 给 src/server 引入编译红。
+  用法 `pwsh scripts/commit_bug335_lock.ps1`。
+- `slave-branch-merge.ps1`（2026-10-21 17:00 `c689f027` 入仓，此前从未登记）— **`gitcode/slave/*`
+  批量合并驱动器（合并 agent 的执行面）**：fetch → 扫哪些分支动了 src/scripts/cmd/moon.pkg →
+  逐个 cherry-pick → 清冲突标记 → build → push → 删已合并分支；`-DryRun` 只扫描不执行，
+  开头先备份 HEAD。**入仓时缺 UTF-8 BOM 被 `check_ps_encoding` 判红**（887 个非 ASCII 字节；
+  PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
+  去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
+  用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
