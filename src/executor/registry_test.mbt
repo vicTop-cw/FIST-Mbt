@@ -26,7 +26,7 @@ test "route_pick：按 覆盖 desc → 负载 asc → 名称 asc 排序" {
     .add_ability("ex-A", ["编排", "json"])
     .add_ability("ex-B", ["编排"])
     .add_ability("ex-C", ["json"])
-  let load : Map[String, Int32] = Map([("ex-A", 3), ("ex-B", 0), ("ex-C", 0)])
+  let load : Map[String, Int] = Map([("ex-A", 3), ("ex-B", 0), ("ex-C", 0)])
   let j = reg.route_pick("编排", load)
   // 覆盖率最高的是 ex-A(1.0) 与 ex-B(1.0)；同覆盖下负载小的 ex-B(0) 在 ex-A(3) 前
   match j.value("best") {
@@ -44,7 +44,7 @@ test "check_name_order：同覆盖同负载按名称字母序" {
   let reg = @executor.ExecutorRegistry::new()
   ignore(reg.add_ability("zxc", ["编排"]))
   ignore(reg.add_ability("abc", ["编排"]))
-  let load : Map[String, Int32] = Map([])
+  let load : Map[String, Int] = Map([])
   let j = reg.route_pick("编排", load)
   match j.value("best") {
     Some(Object(m)) =>
@@ -62,7 +62,7 @@ test "route_pick_with_trust：覆盖 desc → 信任 desc → 负载 asc（R80 �
     .add_ability("ex-A", ["编排", "json"])
     .add_ability("ex-B", ["编排"])
     .add_ability("ex-C", ["json"])
-  let load : Map[String, Int32] = Map([("ex-A", 3), ("ex-B", 0), ("ex-C", 0)])
+  let load : Map[String, Int] = Map([("ex-A", 3), ("ex-B", 0), ("ex-C", 0)])
   // 同覆盖(1.0)下：ex-A trust 0.9 > ex-B trust 0.3 → ex-A 优先（信任轴压过负载差异）
   let trust : Map[String, Double] = Map([("ex-A", 0.9), ("ex-B", 0.3)])
   let j = reg.route_pick_with_trust("编排", load, trust)
@@ -110,7 +110,7 @@ test "auction_pick：能力覆盖>0 方可竞拍；默认出价=覆盖率；无�
     .add_ability("ex-B", ["编排"])
     .add_ability("ex-C", ["json"])
     .add_ability("ex-D", ["java"])
-  let load : Map[String, Int32] = Map([("ex-A", 2), ("ex-B", 0)])
+  let load : Map[String, Int] = Map([("ex-A", 2), ("ex-B", 0)])
   let j = reg.auction_pick("编排", load, Map([]), Map([]))
   // 参与竞拍者：ex-A(1.0)、ex-B(1.0)；ex-C(0.0)/ex-D(0.0)/系统执行者(空能力) 被能力门槛挡下
   match j.value("count") {
@@ -173,26 +173,12 @@ test "auction_pick：胜者诅咒防护——过度自信者被校准折扣击�
             if n == "ex-A" {
               match c.value("overconfident") {
                 Some(j) =>
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 8d292e36 (fix(idiom): 清零 0020 Json 布尔/字符串访问器 22 处（523→501 warnings / 0 errors）)
-                  match j {
-                    Json::True => ()
-                    Json::False =>
-                      abort("ex-A 应标记 overconfident: " + j.stringify())
-                    _ => abort("overconfident 非布尔: " + j.stringify())
-<<<<<<< HEAD
-=======
                   match j.as_bool() {
                     Some(b) =>
                       if !b {
                         abort("ex-A 应标记 overconfident: " + j.stringify())
                       }
                     None => abort("overconfident 非布尔: " + j.stringify())
->>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
-=======
->>>>>>> 8d292e36 (fix(idiom): 清零 0020 Json 布尔/字符串访问器 22 处（523→501 warnings / 0 errors）)
                   }
                 _ => abort("overconfident 字段缺失: " + j.stringify())
               }
@@ -209,7 +195,6 @@ test "auction_pick：胜者诅咒防护——过度自信者被校准折扣击�
   }
 }
 
-
 ///|
 test "auction_pick：负载折扣分胜负 + 空 need 无竞拍者" {
   let reg = @executor.ExecutorRegistry::new()
@@ -218,7 +203,7 @@ test "auction_pick：负载折扣分胜负 + 空 need 无竞拍者" {
   // 出价/兑现率相同(0.8/0.8，校准=1)：负载 0 的 ex-A(0.8) 胜负载 3 的 ex-B(0.8×0.25=0.2)
   let bid : Map[String, Double] = Map([("ex-A", 0.8), ("ex-B", 0.8)])
   let trust : Map[String, Double] = Map([("ex-A", 0.8), ("ex-B", 0.8)])
-  let load : Map[String, Int32] = Map([("ex-A", 0), ("ex-B", 3)])
+  let load : Map[String, Int] = Map([("ex-A", 0), ("ex-B", 3)])
   let j = reg.auction_pick("编排", load, trust, bid)
   match j.value("winner") {
     Some(Object(m)) =>

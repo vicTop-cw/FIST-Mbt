@@ -103,7 +103,7 @@ fn sd_json(
 ///|
 /// 统计已闭环轮次数：Reports/（兼容 reports/）内合法 yyyyMMdd.HH.mm.ss.md 报告数。
 /// 两目录若同时存在，优先 Reports/（协议约定），避免重复计数。
-fn sd_round_count(project_dir : String) -> Int32 {
+fn sd_round_count(project_dir : String) -> Int {
   let upper = join_path(project_dir, "Reports")
   let lower = join_path(project_dir, "reports")
   let dir = if @fs.path_exists(upper) && safe_is_dir(upper) {
@@ -128,7 +128,7 @@ fn sd_round_count(project_dir : String) -> Int32 {
 
 ///|
 /// 取 Reports/（兼容 reports/）内字典序最大的 k 份报告完整路径。
-fn sd_recent_reports(project_dir : String, k : Int32) -> Array[String] {
+fn sd_recent_reports(project_dir : String, k : Int) -> Array[String] {
   let upper = join_path(project_dir, "Reports")
   let lower = join_path(project_dir, "reports")
   let dir = if @fs.path_exists(upper) && safe_is_dir(upper) {
@@ -163,16 +163,12 @@ fn sd_recent_reports(project_dir : String, k : Int32) -> Array[String] {
 /// R12-R2（BUG-215）：加 Int 溢出哨兵——MoonBit Int 为 32 位，异常长数字串
 /// 会在 `v * 10 + d` 处溢出并静默绕回。阈值 2e8（*10 后 2e9 < 2^31），
 /// 超过即返回 None（调用方视为解析失败，不产出乱数）。
-<<<<<<< HEAD
-fn sd_parse_int(raw : String) -> Int32? {
-=======
 fn sd_parse_int(raw : String) -> Int? {
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
   let s = raw.trim().to_owned()
   if s.is_empty() {
     return None
   }
-  let int_safe : Int32 = 200_000_000
+  let int_safe : Int = 200_000_000
   let mut v = 0
   for c in s {
     if c < '0' || c > '9' {
@@ -186,10 +182,9 @@ fn sd_parse_int(raw : String) -> Int? {
   Some(v)
 }
 
-
 ///|
 /// 读取已审视轮次（缺失视为 0；解析失败视为 0）。
-fn sd_reviewed_count(project_dir : String) -> Int32 {
+fn sd_reviewed_count(project_dir : String) -> Int {
   match sd_read(sd_count_path(project_dir)) {
     None => 0
     Some(raw) =>
@@ -202,7 +197,7 @@ fn sd_reviewed_count(project_dir : String) -> Int32 {
 
 ///|
 /// 写已审视轮次（失败返回 false）。
-fn sd_write_reviewed(project_dir : String, n : Int32) -> Bool {
+fn sd_write_reviewed(project_dir : String, n : Int) -> Bool {
   sd_write(sd_count_path(project_dir), n.to_string() + "\n")
 }
 
@@ -362,7 +357,7 @@ pub fn selfdrive_export_tasks(
   engine : @engine.FistEngine,
   project_dir : String,
   ns : String,
-  now~ : String = "",
+  now? : String = "",
 ) -> Result[Json, String] {
   let tasks = engine.list_in_ns(ns)
   let stamp = if now.is_empty() {
@@ -425,7 +420,7 @@ pub fn selfdrive_export_tasks(
 pub fn selfdrive_review_tick(
   project_dir : String,
   ns~ : String,
-  review_every~ : Int32,
+  review_every~ : Int,
 ) -> Result[Json, String] {
   let mem = sd_memory_dir(project_dir)
   if !@fs.path_exists(join_path(mem, "product.md")) {
@@ -568,7 +563,7 @@ pub fn selfdrive_review_ready(
 /// 最多返回 max_tasks 条。
 pub fn selfdrive_parse_next_tasks(
   content : String,
-  max_tasks~ : Int32,
+  max_tasks~ : Int,
 ) -> Array[String] {
   let mut in_section = false
   let out : Array[String] = []
@@ -589,15 +584,7 @@ pub fn selfdrive_parse_next_tasks(
       match ls.find("]") {
         Some(end) =>
           if end > 3 {
-<<<<<<< HEAD
-<<<<<<< HEAD
-            let desc = ls[3:end].to_owned().trim().to_owned()
-=======
             let desc = ls.substring(start=3, end~).trim().to_owned()
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
-=======
-            let desc = ls[3:end].to_owned().trim().to_owned()
->>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
             if desc != "" && out.length() < max_tasks {
               out.push(desc)
             }
@@ -609,7 +596,6 @@ pub fn selfdrive_parse_next_tasks(
   out
 }
 
-
 ///|
 /// 发布最新审视报告中的 Next Tasks（幂等：description 内嵌 [review:<file>:<idx>] 标记防重）。
 /// 发布方式：ns 空 → cold_publish；ns 非空 → publish_next_round（prev 取 ns 内最后一个已完成根任务）。
@@ -618,8 +604,8 @@ pub fn selfdrive_publish_next(
   project_dir : String,
   ns~ : String,
   now~ : String,
-  max_tasks~ : Int32,
-  mode~ : String = "",
+  max_tasks~ : Int,
+  mode? : String = "",
 ) -> Result[Json, String] {
   let latest = match sd_latest_review(project_dir) {
     None =>

@@ -53,7 +53,7 @@ fn bug_file_path(project_dir : String) -> String {
 
 ///|
 /// 在字符串中自 `from` 起找字符，返回下标或 -1。
-fn bug_char_index(s : String, ch : Char, from : Int32) -> Int32 {
+fn bug_char_index(s : String, ch : Char, from : Int) -> Int {
   let mut i = from
   while i < s.length() {
     if s[i].to_int() == ch.to_int() {
@@ -122,15 +122,7 @@ fn bug_parse_header(line : String) -> (String, String, String, String) {
 ///|
 /// 提取 `- key: value` 行的值（key 名匹配则回 Some(value)）。
 fn bug_field_value(line : String, key : String) -> String? {
-<<<<<<< HEAD
-<<<<<<< HEAD
   let t = line.trim().to_owned()
-=======
-  let t = line.trim().to_string()
->>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
-=======
-  let t = line.trim().to_owned()
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
   if !t.has_prefix("- ") {
     return None
   }
@@ -145,7 +137,6 @@ fn bug_field_value(line : String, key : String) -> String? {
   }
   Some(body[colon + 1:body.length()].trim().to_owned())
 }
-
 
 ///|
 /// 把 bugs.md 全文解析为条目 Json 数组。
@@ -209,9 +200,9 @@ fn bug_parse(text : String) -> Array[Json] {
 /// R12-R2（BUG-215）：加 Int 溢出哨兵——MoonBit Int 为 32 位，异常长数字串
 /// 会在 `acc * 10 + d` 处溢出并静默绕回。阈值 2e8（*10 后 2e9 < 2^31），
 /// 超过即 break（返回已累积部分，不产出乱数）。
-fn bug_parse_int(s : String) -> Int32 {
-  let int_safe : Int32 = 200_000_000
-  let mut acc : Int32 = 0
+fn bug_parse_int(s : String) -> Int {
+  let int_safe : Int = 200_000_000
+  let mut acc : Int = 0
   for c in s {
     let ci = c.to_int()
     if ci >= 48 && ci <= 57 {
@@ -228,8 +219,8 @@ fn bug_parse_int(s : String) -> Int32 {
 
 ///|
 /// 计算下一个 bug 序号（解析既有条目的最大 BUG-n，+1；无则从 1 起）。
-fn bug_next_seq(text : String) -> Int32 {
-  let mut max_n : Int32 = 0
+fn bug_next_seq(text : String) -> Int {
+  let mut max_n : Int = 0
   for raw in text.split("\n") {
     let t = raw.trim().to_owned()
     if bug_is_header(t) {
@@ -260,9 +251,9 @@ pub fn report_bug(
   reported_by~ : String,
   publish_task~ : Bool,
   // BUG-8：修复单落哪个 ns 由调用方决定（缺省 "bugs" ⇒ 既有调用零回归）
-  task_ns~ : String = "bugs",
-  github_sync~ : Bool = false,
-  github_repo~ : String = "",
+  task_ns? : String = "bugs",
+  github_sync? : Bool = false,
+  github_repo? : String = "",
   eng : @engine.FistEngine,
   now~ : String,
 ) -> Result[Json, String] {
@@ -525,7 +516,7 @@ fn bug_norm_id(bug_id : String) -> String {
 /// BUG-241：仅取首个命中。BUG-217 等编号在账本里存在多条独立条目
 /// （同号不同 ts/summary），只改首条会让真正待闭环的那条永久 OPEN。
 /// 批量改判请用 `bug_header_lines`。
-fn bug_header_line(lines : Array[String], bug_id : String) -> Int32 {
+fn bug_header_line(lines : Array[String], bug_id : String) -> Int {
   let all = bug_header_lines(lines, bug_id)
   if all.is_empty() {
     -1
@@ -538,10 +529,10 @@ fn bug_header_line(lines : Array[String], bug_id : String) -> Int32 {
 /// 某编号抬头**全部**所在行（0-based），找不到回空数组。
 /// BUG-241 修复：`bug_fix` / 依赖单行定位的路径改用它遍历所有命中，
 /// 使重复编号的每条独立条目都能被真实改判，而不是只改首条。
-fn bug_header_lines(lines : Array[String], bug_id : String) -> Array[Int32] {
+fn bug_header_lines(lines : Array[String], bug_id : String) -> Array[Int] {
   let want = bug_norm_id(bug_id)
   let n = lines.length()
-  let out : Array[Int32] = []
+  let out : Array[Int] = []
   let mut i = 0
   while i < n {
     let t = lines[i].trim().to_owned()
@@ -556,7 +547,7 @@ fn bug_header_lines(lines : Array[String], bug_id : String) -> Array[Int32] {
 ///|
 /// 条目正文的结束行 = 下一条抬头（或文件尾）。
 /// 小记只能插在这个界内，否则会把邻居条目的正文吞进本条目的证据里。
-fn bug_entry_end(lines : Array[String], from : Int32) -> Int32 {
+fn bug_entry_end(lines : Array[String], from : Int) -> Int {
   let n = lines.length()
   let mut j = from + 1
   while j < n {
