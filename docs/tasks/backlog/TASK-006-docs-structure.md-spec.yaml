@@ -1,0 +1,38 @@
+id: TASK-006
+title: "docs 结构规范 — 609 个 md 文件散落四处"
+priority: P2
+status: backlog
+assignee: atomcode
+discovered_by: whisperer
+discovered_at: "2026-10-21T20:12:00+08:00"
+
+problem: >
+  风语者首轮巡检统计：全仓 609 个 md 文件
+  - 根目录 10 个 (README*.md, ARCHITECTURE.md, AGENTS.md, BACKLOG.md, CHANGELOG.md...)
+  - docs/ 69 个 (2026-10-21-fist-governance-tier2-plan.md, deliverable.md, agent-map.md, SOP.md...)
+  - reports/ 501 个 (大量 *_report.md)
+  - memory/ 29 个 (2026-10-21.md, bugs.md, thinking.md, product.md...)
+  
+  "治理" 主题散在 19 个文件里（根目录、docs、reports、memory 四处都有）。
+  没有规范说明什么类型的文档该放哪个目录、命名格式是什么。
+  新人进仓会困惑：改计划应该去 docs/ 还是根目录？写报告应该放 reports/ 还是新建 docs/reports/？
+  
+  这不是紧急阻塞，但它会持续制造文档债务——每次想写个东西都要纠结"放哪儿"。
+
+scope:
+  - 新增 docs/DOCS-STRUCTURE.md（规范文档）
+  - 根目录 md 文件保留哪些、哪些迁到 docs/（低优先级，规范先出）
+  - docs/ 内部分层（plans/ reports/ design/ skill/）
+
+acceptance:
+  - [ ] docs/DOCS-STRUCTURE.md 写清楚 4 类文档的定位、命名、放置目录
+  - [ ] 根目录只留 README.md + ARCHITECTURE.md + CHANGELOG.md（其他迁走或删除）
+  - [ ] reports/ 历史报告不强制迁走（501 个太多），但规范里明确它的定位
+
+evidence: |
+  风语者 `Get-ChildItem -Recurse *.md | Measure-Object` 实测：
+  根目录=10, docs=69, reports=501, memory=29 → 合计 609
+  
+  Select-String "治理" *.md docs/*.md reports/*.md memory/*.md → 19 个文件
+
+blocked_by: []
