@@ -116,6 +116,16 @@ jobs:
         shell: bash
         run: python3 scripts/check_scripts_index.py
 
+      # 未解决冲突标记被提交进跟踪面 ⇒ .py/.mbt 当场崩编译、.md/.yml 把标记当正文安静发布，
+      # 两种形态此前都没人看（BUG-330/334/336 一系的守卫族缺口；2026-10-21 实测 master
+      # 一度 9 个文件带标记、清扫后又出现「标记清了但 SyntaxError@253」的残骸 ⇒ 判据带
+      # L1 标记面 + L2 解析面双档）。本步是硬门：live 先 --selftest 证明这把尺会红。
+      - name: Merge-marker hard gate (冲突标记不许进跟踪面：L1 标记 + L2 解析死，check_merge_markers)
+        shell: bash
+        run: |
+          python3 scripts/blackbox/check_merge_markers.py --selftest
+          python3 scripts/blackbox/check_merge_markers.py
+
       # 零执行面的尺=坏着的尺（R40 实测）：check_plan_landing 自 2026-10-14 落仓起既不在 CI、
       # 也不在 11 份手写回归电池（temp/run_guards5、7–16 逐份 grep 全 0 命中）里，于是它带着
       # 「路径:行号整串当路径 ⇒ 已跟踪文件报 missing」的虚报缺陷躺了一周，没人跑就没人知道。
@@ -126,6 +136,17 @@ jobs:
           python3 scripts/run_guards.py --selftest
           python3 scripts/run_guards.py --list
           python3 scripts/check_plan_landing.py --selftest
+
+      # 判定面棘轮真门禁（BUG-367 建议②）：--gate 模式下「判定面条数 > 上限」才红。
+      # 上限 25 = 2026-10-21 实测存量（28 减去搬家态 3）；此后任何新点名的落点没写出来 ⇒ 门红。
+      # ⚠ 观测臂（continue-on-error）的由来：f259d797「清冲突标记·取 theirs」把本步**整块删除**
+      # （标记清了、步骤没了=零执行面真空，BUG-366 定义的坏尺形状）。恢复步骤但暂不硬：现跑
+      # 判定面 36 > 25，超出的是 259b56a8 前后计划文档的 11 条内容债（412 条点名路径的漂移），
+      # 补齐落点或收紧上限属内容裁决（金条四留指挥官）。内容归零后把 continue-on-error 摘掉转硬门。
+      - name: Plan-landing ratchet gate (计划点名落点判定面棘轮，观测臂，BUG-367/BUG-366)
+        shell: bash
+        continue-on-error: true
+        run: python3 scripts/check_plan_landing.py --gate
 
       - name: Deprecated text-census selftest (BUG-362：尺子必须先证明自己会红)
         shell: bash
