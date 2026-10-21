@@ -5444,6 +5444,27 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 ### FIXED(2026-10-17T16:01:10Z / BUG-323)
 - evidence: semantic.py 行 1063-1079 修改：为 VarRef 和 IdRef 添加作用域检查，产生 UNDEFINED_VAR/UNDEFINED_FUNC 诊断
 
+## BUG-327 [2026-10-19T01:51:59Z] [medium] FIXED
+- summary: ocr_scan 的 OCR LLM review 对 MoonBit .mbt 恒不可达（unsupported_ext 全拦），bugfind 的 require_ocr 门是伪能力/可静默满足
+- detail: 实测证据（2026-10-19，opencodereview.exe @alibaba-group+ocr-win32-x64@1.12.9）：
+1) `ocr_scan subcmd=scan path=src/server` → `total_files=81, reviewable_count=0, excluded_count=81`，全部 `exclude_reason: unsupported_ext`。
+2) 显式单文件 `ocr scan --preview --path src/server/issue_scan.mbt` → 仍 `exclude_reason: unsupported_ext`（1/1 排除）。
+3) `ocr rules check src/server/issue_scan.mbt` → 匹配 `default` 规则（Source: System built-in）—— 规则层**不拒** .mbt。
+4) `ocr scan --help`：有 `--exclude`（只会加排除）与 `--rule`（规则 JSON），**无 `--include` 扩展名旗**；`ocr config` 无扩展名白名单键；CLI 无逃生门。
+
+结论：排除发生在 scan 的文件遍历阶段（二进制硬编码扩展名白名单不含 .mbt），规则层本可处理。MoonBit 项目下 OCR LLM review 恒不可达。
+
+影响：① AGENTS.md 宣称的「内建规则 + OCR LLM review 双轨互补」对 MoonBit 只有单轨；② 自驱 bugfind 模式的 `require_ocr` 约束在本项目不可满足，但 `ocr_scan` 顶层回执 `ok=true / exit_code=0` 会让只看 ok 的门禁误判「已 review」——伪能力/静默通过。
+
+建议修复方向：`ocr_scan` 在目标路径含 .mbt 且 reviewable_count=0 时显式返回 `ok=false` + 明确 reason（fail-loud，防门禁被静默满足），或将该局限显式写入 bugfind 的 require_ocr 判据与 AGENTS.md（诚实标注单轨）。
+- reported_by: fist-mbt-round5-lead
+- task_id: T0r588
+- 追记(2026-10-19T12:0x+08:00, Round 13 / b2d1920+faf0186): 本条目建议修复方向的部分 1（`ocr_scan` 对 .mbt 显式 fail-loud）已落地并分两小步：① 上轮 `ocr_effective_ok` 把「`ok=true` 但 `reviewable=0` 且 `excluded>0`」判 `ok=false`（dir `src/server/` 走此分支，实测 82 excluded → ok=false）；② **本轮实测发现部分 1 仍有一条盲区（记 BUG-327b）**：显式单文件 `path=src/ocr_scan.mbt` 时 OCR 二进制报 `reviewable_count=0, excluded_count=0, files=[]`——与「空目录」同形，被 `ocr_fake_green_check` 的空目录豁免判 `reviewed=true`，顶层 `ok=true` 假绿幸存。修复：新增纯函数 `ocr_reviewed_final(stdout_reviewed, path)`——目标为单个 `.mbt` 文件时强制 `reviewed=false`（fail-closed）并回显 notice「目标为单个 .mbt 文件（OCR 白名单外扩展名），LLM review 未真正执行；顶层 ok 已强制 fail-closed」，接线进 `ocr_scan_impl`（`reviewed2`/`fake_notice2`）；配套白盒锁 `BUG-327b_ocr_reviewed_final_single_mbt_fail_closed`。发布版 dist 真跑实证：`src/ocr_scan.mbt` → `ok=false` + 上述 notice；`src/server/`（目录）→ `ok=false` 零回归。**注意**：同一条路径两种目标形状（单文件 vs 目录）走的是两条不同假绿分支，任何一边单独修都会留下另一边——现已双分支都 fail-closed。**部分 2（`require_ocr` 门禁接线到 `.mbt` 非可审查性）仍未做**，阻塞在 `src/server/server.mbt`（并发 agent WIP），故本条目**保持 OPEN**。
+
+
+### FIXED(2026-10-21T07:27:39Z / BUG-327)
+- evidence: 部分2 已落地（提交 ebaa2c1）：src/server/ocr_scan.mbt 新增纯函数 ocr_gate_state（unavailable / degraded / satisfied）与 IO 薄壳 ocr_capability_json（probe 二进制 + project_dir 根 moon.mod 判 MoonBit 目标）；pipeline_tick 与 watchdog_tick 两处 bugfind 预检共用同一构造，回执新增 moonbit_target / mbt_reviewable / gate / note——二进制在但目标是 MoonBit 项目时 gate=degraded，不再按 available=true 伪满足 require_ocr。实测：pipeline_tick(project_dir=temp/t41moon 含 moon.mod) → moonbit_target=true / mbt_reviewable=false / gate=unavailable（本机无 OCR 二进制）；temp/t41plain → moonbit_target=false / gate=unavailable；纯函数白盒锁 4 条覆盖 degraded 与 satisfied 分支。moon check 504 warnings/0 errors；moon test 1348/1348/0（基线 1344 + 4）；src/server 348/348；电池 38 格/5 红/5 SKIP/0 缺执行面（五条预存红未代修）。部分1（ocr_effective_ok 假绿 ok=false）与 BUG-327b（单 .mbt 文件 fail-closed）此前已落地。
+
 ## BUG-328 [2026-10-20T12:47:00Z] [high] FIXED
 - summary: [16 个测试文件 + src/store/store_sqlite.mbt] moonc 0.10.16 删除 `Result::is_ok/is_err` 与 `try?` —— HEAD 在现行工具链下 `moon check --target js` 报 26 errors，全仓不可编译
 - detail: 2026-10-20 副机（moon 0.1.20261016 / moonc v0.10.16+b1a0e846e）实测：HEAD 的 `moon check --target js --json` = 26 errors / 641 warnings，分两族——
@@ -5498,6 +5519,40 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - note: 判据本身别反过来当门：`check_mbti_sync.py` 只判 `pub fn` 名字在不在，不判类型拼写，所以 revert `.mbti` 不会新增红。上一版子代理报的"16 个文件 fmt 幂等通过"其实是**先把 Int 改成 Int32 才通过**的——这条要记进交接：新版 moonfmt 的幂等前提改了拼写，不是格式。
 - task_id: T0-slave-moonc-0.10.16-result-api
 
+
+## BUG-333 [2026-10-19T05:54:08Z] [medium] OPEN
+- summary: issue_scan 精度不足：src 全量 9925 命中中 72.7%（7219）为编译期已保证/子串近似噪音（match-exhaustive 编译器强制=100% 假阳、unused-variable/long-function 为近似启发），使"扫描→上报→修复"闭环不可用
+- detail: 实测 `issue_scan dir=src max_findings=100`：scanned_files=129, total_findings=9925（截断）。by_rule 全表精确求和 = 9925。其中：
+
+- moonbit-unused-variable 4259（info）：自述「子串近似 let 声明点，实际使用性需人工/编译器复核」——编译器已对真正未使用变量给警告，故绝大多数为假阳性。
+- moonbit-match-exhaustive 1513（low）：MoonBit 编译器**强制** match 穷尽（不穷尽 = 编译错误），代码 1338 测试全过、编译通过 ⇒ **100% 假阳性**。
+- moonbit-long-function 1447（info）：自述「行数精确判定见 OCR 双轨」，本就是启发式，非 bug。
+- moonbit-json-injection 1409（low）：子串近似，Json API 是否转义需逐条核实。
+- 其余（array-index-bounds 159 / empty-match 109 / race-condition 9 / resource-leak 7 / dead-code 6 / floating-point-equality 2 等）抽查全为假阳性：float-eq 命中的是 rule-id 字符串里的 "float"；dead-code 的 abort 全在 claimguard_wbtest.mbt 测试断言（故意测错误路径）；resource-leak 全仓 grep File::open/sqlite.open 零命中。
+
+**前三项合计 7219/9925 = 72.7%**。后果：「扫描→上报→修复」闭环不可用——执行者不可能 triage 9925 条里 73% 已知为噪音的命中，于是闭环要么被绕过、要么被「全报 bug」淹没真实缺陷。同族于 BUG-330（守卫 false-positive）/BUG-329（selftest 崩溃）的「判据精度」族。
+
+建议：默认降噪——①`--min-severity` 或按 rule 白/黑名单过滤（默认关掉 unused-variable/long-function/match-exhaustive 三高噪音项，或降为 info-only）；②match-exhaustive 直接不产（编译器已保证）；③对剩余 low 项挂 `confirmed=false` 要求调用方喂 run_check 复核后才 report_bug（boundary_probe 已是这个语义，可复用）。
+- reported_by: lead
+- 追记(2026-10-20T20:40Z, R8): **建议②已落地** —— `src/server/issue_scan.mbt` 新增 `scan_denoise_default_skip(rule_id)`（默认跳过 `moonbit-match-exhaustive`，编译器强制穷尽 ⇒ 100% 假阳），在 findings 收集处过滤。端到端验证（本地产物 `_build/js/debug/build/cmd/cli/cli.js` 直跑真 MCP `issue_scan dir=src`）：total_findings 9998→8475（−1523 全部为 match-exhaustive，by_rule 已无该项）；`unused-variable` 4283 / `long-function` 1470 保持 info 级保留。白盒锁 `BUG-333 match-exhaustive denoised by default`（同时断言硬门规则 div-by-zero/substring-overrun/unprotected-division 绝不被默认降噪）。全量 `moon test --target js` = 1347/1347 零回归。规则仍在表内（31 条不变，rule 计数/文档面守卫不受影响），`rules_file` 无 `enabled` 抑制位（只支持 severity 覆盖）故无法在调用侧禁用其余项。**建议①`--min-severity`/按 rule 白名单、建议③ `confirmed=false` 仍 OPEN**，且①需在 `src/server/server.mbt` 工具签名侧加参数（并发 agent WIP，收敛后再做）。
+
+## BUG-336 [2026-10-19T09:03:42Z] [medium] FIXED
+- summary: dag_cost_route 负载感知冻结：load 只在循环前一次性快照，路由循环内从不更新累计负载 → 等成本平局时全堆给先注册执行者（1180 任务 59% 给单一执行者）
+- detail: ## 现象
+dogfood `dag_cost_route`（R77 成本路由）：1180 个 slack>0 未认领任务中 59%（701）堆给单个执行者 `marvis`，负载感知声明失效。
+## 根因
+`src/engine/engine_dag_ext.mbt` L657 `load = self.executor_loads(reg_names)` 只在路由循环**前**一次性快照活跃负载；L744 把任务写进 `routed` 却**从不更新 `load`**。于是 L732-739 的等成本平局 tiebreak（"相等取负载最低"）对本次路由自身的累计分配失明——平局时 `nl < bl` 恒假（两执行者负载都=初始值），`best` 永远停在先注册者 → 整轮路由全堆给先注册执行者，负载均衡形同虚设。
+## 实证（白盒 RED→GREEN）
+`src/engine/dag_ext_test.mbt` 新增 `dag_cost_route: 等成本平局按累计负载均分（BUG-336）`：2 个同能力执行者 + 4 独立灵活任务（+ 旁链垫 makespan=3）→ 修复前 `alice=4, bob=0`（RED），修复后 `alice=2, bob=2`（GREEN）。
+## 修复
+L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best){...}; ignore(load.set(best, prev_load + 1))`——把本次分配计入累计负载，后续等成本平局任务才转向其他执行者。
+## 验证
+`moon test --target js` = 1339/1339（新增 1 锁）；`moon fmt` 干净（engine 文件）。
+
+
+
+### FIXED(2026-10-19T09:04:03Z / BUG-336)
+- evidence: 修复点 src/engine/engine_dag_ext.mbt L741-749：routed.set(id, best) 之后追加 load.set(best, prev_load + 1)，把本次分配计入累计负载。白盒锁 src/engine/dag_ext_test.mbt `dag_cost_route: 等成本平局按累计负载均分（BUG-336）` RED(alice=4,bob=0)→GREEN(alice=2,bob=2)。全量 moon test --target js=1339/1339。
 
 ## BUG-342 [2026-10-20T14:39:00Z] [medium] FIXED
 - summary: [依赖面] 16 条 `unused_package`(0029) 全清 —— 暴露 moon.pkg 的 import 作用域口径：`for "test"` 不覆盖 `*_wbtest.mbt`，白盒测试依赖必须写 `for "wbtest"`
@@ -6026,3 +6081,36 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
   ② 修引用分两批：注释面一批（可直接改）、测试标题一批（须 `moon test --update` 同批）；
   ③ 悬空的那条「11 字段同构」先补一条账本条目（或声明它属已被 BUG-186 之外的哪条），别让证据只活在注释里。
 - task_id: T0r29
+
+## BUG-384 [2026-10-21T08:23:29Z] [low] FIXED
+
+`issue_scan` 的 ocr-local 三条规则（moonbit-empty-match / moonbit-noop-assignment /
+moonbit-private-field-leak）用的是裸子串匹配，在 src 全量扫描里产出 239 条命中、几乎全为假阳：
+
+- empty-match `_ => ()` 110 条：多臂 match 的 catch-all 空手臂是正常写法，旧规则只要行内含该子串就报；
+- noop-assignment `: self.` 39 条：结构体字面量 `id: self.id`、字段读取全被当成自赋值；
+- private-field-leak `password`/`secret`/`token` 90 条：`tokens_in`/`max_tokens` 这类词内子串也算命中。
+
+【修复】`scan_match_lines` 命中后按规则做结构过滤：empty-match 只在「整个 match 仅一条 `_ => ()`
+手臂」时报；noop 只认 `self.x = self.x`（右侧同名且行尾只余空白）；private-field-leak 改为整词匹配。
+真源 `src/server/issue_scan.mbt`，成对白盒锁在 `src/server/issue_scan_wbtest.mbt`。
+
+- task_id: T0r51
+
+
+## BUG-385 [2026-10-21T08:23:29Z] [low] FIXED
+
+`moonbit-shared-mutable` 的 needle 是裸子串 `let mut `，src 全量 465 条命中全部是普通可变局部量
+（`let mut i = 0`、`let mut sum = 0.0`），规则意图「派生自字段的局部副本、改动不回写」一条都没抓到，
+是 100% 假阳。
+
+【修复】只认初始化表达式恰为 `obj.field` 的形状：`let mut ` 词界、赋值号排除 `==`、首段与次段都须
+是标识符（数字起始排除 `0.0`/`1.0` 浮点字面量）、`.field` 后只允许空白（含 CRLF 工作树的 ``）。
+真源 `src/server/issue_scan.mbt`，成对白盒锁（含 CRLF 行尾锁）在 `src/server/issue_scan_wbtest.mbt`。
+
+- task_id: T0r51
+
+
+
+### FIXED(2026-10-21T08:24:32Z / BUG-384, BUG-385)
+- evidence: 真源 src/server/issue_scan.mbt 四条降噪规则（empty-match 只认单臂 / noop-assignment 只认 self.x=self.x / private-field-leak 敏感词改全词匹配 / shared-mutable 只认初始化式为 obj.field），白盒锁 src/server/issue_scan_wbtest.mbt。同基线 A/B（gitcode master 1646596 工作树，扫 src）：命中 1668→967，empty-match 110→0、noop 39→0、private-field-leak 90→2（残留为 src/evolve/github_client.mbt:294/296 真敏感词 token）、shared-mutable 465→1（残留 src/ops/ops_loop.mbt:199）。moon test --target js 1351/1351 passed 0 failed。
