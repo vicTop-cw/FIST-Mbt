@@ -66,7 +66,10 @@ test "scan_match_lines_整行注释与字面量两道降噪同时生效" {
   assert_eq(hits.length(), 1)
   assert_eq(hits[0].line, 5)
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 92218ec5 (fix(issue_scan): json-injection 只认实参拼接/插值，安全构造器不再假阳（BUG-346 / T0r47）)
   // BUG-346 成对锁：json-injection 只认同一调用实参里的拼接/插值；
   // 安全构造器 Json::string(value) 必须放过（旧 pattern 裸 Json::string( 全判假阳）。
   let json_rule = {
@@ -89,6 +92,7 @@ test "scan_match_lines_整行注释与字面量两道降噪同时生效" {
   // 插值 \{value} 仍算拼接构造
   let interp = "let s = Json::string(\"v=\\{value}\")\n"
   assert_eq(scan_match_lines(interp, [json_rule], "sample.mbt").length(), 1)
+<<<<<<< HEAD
   // BUG-348 成对锁：match-exhaustive 已有顶层 `_ =>` 兜底必须放过；缺兜底仍报。
   let me_rule = {
     id: "moonbit-match-exhaustive",
@@ -126,6 +130,8 @@ test "scan_match_lines_整行注释与字面量两道降噪同时生效" {
   let one_line = "fn id(x : Int) -> Int { x }\n"
   assert_eq(scan_match_lines(one_line, [lf_rule], "f.mbt").length(), 0)
 >>>>>>> fe14481b (fix(issue_scan): match-exhaustive 认顶层 _ => 兜底、long-function 按实测行数（BUG-348 部分 / T0r48）)
+=======
+>>>>>>> 92218ec5 (fix(issue_scan): json-injection 只认实参拼接/插值，安全构造器不再假阳（BUG-346 / T0r47）)
 }
 
 ///|
