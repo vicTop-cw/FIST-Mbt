@@ -15,7 +15,11 @@
 /// 三段缺一或任一非整数 → None。
 /// 第四元 is_pre：`-alpha1` 之类为 true——按 semver 应排同号正式版之下，
 /// 若不区分会把「有 pre-release 的旧版」误判成等于正式版（假绿风险）。
+<<<<<<< HEAD
 fn parse_version(s : String) -> (Int32, Int32, Int32, Bool)? {
+=======
+fn parse_version(s : String) -> (Int, Int, Int, Bool)? {
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
   let mut core = s.trim().to_owned()
   if core.length() > 0 && (core[0] == 'v' || core[0] == 'V') {
     core = core[1:core.length()].to_owned()
