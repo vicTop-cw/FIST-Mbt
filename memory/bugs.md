@@ -5813,7 +5813,7 @@ task_plan_deep.mbt:  runner? → runner~
 ①② 与 BUG-345（by_severity 四桶）独立可并行；修完用 A/B（src/store）验证 json-injection 命中从 45 → 0（若走②）或从假阳命中转为真命中（若走①）。
 - reported_by: polish-lead
 
-## BUG-347 [2026-10-20T14:04:47Z] [high] OPEN
+## BUG-347 [2026-10-20T14:04:47Z] [high] FIXED
 - summary: [bug:issue_scan] 外部 rules_file 的 pattern 匹配器按 :: 切分只取尾段做子串匹配，Json:: 命名空间限定被静默丢弃（BUG-346 的更深层真因）
 - detail: v0.3.9 实测（三探针交叉，src/ltl/ltl.mbt 无任何 Json::string( 调用）：
 
@@ -5830,6 +5830,9 @@ task_plan_deep.mbt:  runner? → runner~
 证据产物：memory/_ctl_pattern_probe.json（可切换 pattern 复现三探针）；memory/bug333_denoise_rules_v2.json（v2 降噪清单，把 json-injection 临时降为 info 止损）。关联 BUG-346（内建表匹配安全构造函数 Json::string( 的 FP），本缺陷是同一规则在外部 rules_file 路径上的更严重变体。
 - reported_by: r16-issue_scan-ab
 
+
+### FIXED(2026-10-21T07:21:32Z / BUG-347)
+- evidence: 改 src/server/issue_scan.mbt scan_regex_to_needle()：新增 `::` 命名空间保留分支（`c==':' && cs[i+1]==':'` → cur+="::"，i+=2），其余分支与旧实现逐字一致。旧实现只认 alnum，把 `Json::string\(` 退化成裸 needle `string`（Json:: 整段丢弃）⇒ 任何含 string 的行都命中（假阳），且 \s 的 s 被当字面量起点重新计数。配套新增白盒锁 ext_rules_7_needle_preserves_namespace（src/server/issue_scan_external_rules_wbtest.mbt）：断言 Json::string\(→Json::string、Json::string\s*\(→Json::string、单冒号 a:bcd\(→bcd、fixture 类 ignore\s*\(\s*\w+→ignore / probe\(→probe 零回归。变异复验：把 :: 保留分支改 `else if false` 复现 BUG-347 → ext_rules_7 红（341→340/1 fail）；还原 → 341/341 全绿。src/server 编译门 moon check exit0、moon fmt exit0。未跑 moon info（改动私有函数、公开签名不变，.mbti 本不该动；顺手跑了也只会带 BUG-330 的 Int→Int32 存量漂移，已 git checkout 还原、不混入本笔提交）。
 ## BUG-348 [2026-10-21T00:57:36Z] [medium] OPEN
 - summary: [rule-layer] moonbit-unused-variable 把已使用的 let 绑定报成未使用（cost_tool.mbt L29 exceeded/L31 remaining/L32 action 均在函数体后续被引用）；moonbit-match-exhaustive 报已含 catch-all 的 match 为"可能非穷尽"——src/engine 1693 命中 low/info 近似全 FP，扫描器自身精度缺陷
 - detail: 【精度审计 · 扫描器自身缺陷】`issue_scan` 的 `low`/`info` 规则在真实代码上近似全 FP。
@@ -5994,4 +5997,5 @@ total = int(m.group(1))  # 只取 group(1)=Total tests 数
 
 ### FIXED(2026-10-21T07:01:23Z / BUG-359, BUG-360)
 - evidence: BUG-359 改 scripts/cli_flag_probe.py judge()：L66 版本臂 substring `ver not in first` → 精确 `first.strip() != "FIST-Mbt v%s" % ver`；L75 帮助臂 → `re.search(r"FIST-Mbt(?: CLI)? v%s([\s\n]|$)", out)`（兼容真实 main.mbt L118 `FIST-Mbt v` 与 help_topics.mbt L23 `=== FIST-Mbt v` 两形状）。实测基线绿、反漂移 v0.3.90/v0.3.900/v0.4.0 全红、仅帮助臂漂移红，selftest 7 支全绿。BUG-360 改 scripts/check_badge.py：抽纯函数 judge() + 加 --selftest 8 格（V1-V7 违例必红）。实测 4 变异（or→and@L71/L84、删徽章判据、前置门改坏）全部被抓 selftest FAIL，还原 exit0，真实 README 零回归。
+
 
