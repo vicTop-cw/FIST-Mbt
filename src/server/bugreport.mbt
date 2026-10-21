@@ -122,7 +122,11 @@ fn bug_parse_header(line : String) -> (String, String, String, String) {
 ///|
 /// 提取 `- key: value` 行的值（key 名匹配则回 Some(value)）。
 fn bug_field_value(line : String, key : String) -> String? {
+<<<<<<< HEAD
   let t = line.trim().to_owned()
+=======
+  let t = line.trim().to_string()
+>>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
   if !t.has_prefix("- ") {
     return None
   }

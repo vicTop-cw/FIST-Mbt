@@ -1275,7 +1275,11 @@ fn scan_guard_multi_line_length(
     if t.has_prefix("let ") && t.contains(vn + ".length()") {
       match t.find(" = ") {
         Some(ei) => {
+<<<<<<< HEAD
           let name = t[4:ei].to_owned().trim().to_owned()
+=======
+          let name = t.substring(start=4, end=ei).to_string().trim().to_string()
+>>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
           if !name.is_empty() {
             lenv = name
             break
@@ -1625,7 +1629,11 @@ pub fn scan_finding_guarded(
   // 同一行守卫：substring 可能写在 `if s.length() > N { ... substring(...) }` 同一行，
   // prev_lines 不含当前行，须先检查 code 自身。
   if rule == "substring-overrun" {
+<<<<<<< HEAD
     let code_t = code.trim().to_owned()
+=======
+    let code_t = code.trim().to_string()
+>>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
     if !vn.is_empty() && scan_guard_length_above(code_t, vn) {
       return true
     }
@@ -2178,12 +2186,21 @@ pub fn issue_scan(
     // 其余规则（unused-variable、match-exhaustive、long-function、json-injection 等
     // 占全量 findings 大头）的命中直接透传，免掉 mem_read + split + prev_window 三件套。
     if !(hit.rule == "substring-overrun" ||
+<<<<<<< HEAD
       hit.rule == "unprotected-division" ||
       hit.rule == "unwrapped-unwrap" ||
       hit.rule == "possible-overflow" ||
       hit.rule == "index-out-of-bounds" ||
       hit.rule == "string-index" ||
       hit.rule == "secs-overflow") {
+=======
+        hit.rule == "unprotected-division" ||
+        hit.rule == "unwrapped-unwrap" ||
+        hit.rule == "possible-overflow" ||
+        hit.rule == "index-out-of-bounds" ||
+        hit.rule == "string-index" ||
+        hit.rule == "secs-overflow",) {
+>>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
       guarded_filtered.push(hit)
       continue
     }

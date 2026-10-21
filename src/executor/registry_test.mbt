@@ -173,11 +173,20 @@ test "auction_pick：胜者诅咒防护——过度自信者被校准折扣击�
             if n == "ex-A" {
               match c.value("overconfident") {
                 Some(j) =>
+<<<<<<< HEAD
                   match j {
                     Json::True => ()
                     Json::False =>
                       abort("ex-A 应标记 overconfident: " + j.stringify())
                     _ => abort("overconfident 非布尔: " + j.stringify())
+=======
+                  match j.as_bool() {
+                    Some(b) =>
+                      if !b {
+                        abort("ex-A 应标记 overconfident: " + j.stringify())
+                      }
+                    None => abort("overconfident 非布尔: " + j.stringify())
+>>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
                   }
                 _ => abort("overconfident 字段缺失: " + j.stringify())
               }

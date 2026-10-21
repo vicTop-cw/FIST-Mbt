@@ -433,7 +433,11 @@ pub fn file_scope_conflicts(scopes : Array[Array[String]]) -> Array[String] {
   for i = 0; i < n; i = i + 1 {
     for j = i + 1; j < n; j = j + 1 {
       for a in scopes[i] {
+<<<<<<< HEAD
         let ka = a.trim().to_owned()
+=======
+        let ka = a.trim().to_string()
+>>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
         if ka != "" && !in_list(out, ka) {
           for b in scopes[j] {
             if ka == b.trim().to_owned() {
