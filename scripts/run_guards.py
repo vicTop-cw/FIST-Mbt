@@ -81,10 +81,13 @@ CASES = [
     case("check_demo_isolation.py"),
     case("check_desc_enum_sync.py"),
     case("check_template_ctrl.py"),
+<<<<<<< HEAD
     # BUG-369 一族：自述 `2=判据无法自证` 而代码 `raise SystemExit("串")` 实给 1 ⇒ 承诺面与实现面
     # 之间原先没有门。两格都在：`--selftest` 证这把尺会红，全量跑棘轮（判定面 ≤ 上限才 0）。
     case("check_exit_code_contract.py", "--selftest"),
     case("check_exit_code_contract.py"),
+=======
+>>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
     case("check_model_auth_no_key.py"),
     case("check_release_asset_names.py"),
     case("check_publish_payload.py"),
@@ -94,6 +97,7 @@ CASES = [
     case("gen_plugins.py", "--selftest"),
     case("check_upgrade_installer.py"),
     case("check_plan_landing.py", "--selftest"),
+<<<<<<< HEAD
     # R41 起 plan_landing 有两种口径：--gate 是**真门禁**（判定面 ≤ 上限即 0，超限 1），
     # 不带 --gate 的那格是**诊断**（判定面非空即 1，不是门禁）。两格都要在电池里：
     # 只留诊断格，棘轮就是一把不跑的死尺（BUG-366 那条定律的正身）。
@@ -107,6 +111,11 @@ CASES = [
              "诊断口径：判定面 25 条活文档点名落点未落地（BUG-367 A/B/C 三档留裁决）；另有搬家态 3 条单列"
              "（P5，不判红）、存档面 17 条只报不判。读出 0 算这格漂移；判据空转自 R41 起给真 rc=2"
              "（改前 SystemExit(str) 只给 1，那个 2 是幻影 ⇒ BUG-369）",
+=======
+    # —— 诊断型：退出码语义不是门禁，把当轮真读数钉成期望值（数字变了就现形）——
+    expected("check_plan_landing.py", 1,
+             "判定面 28 条活文档点名落点未落地（BUG-367 OPEN 留裁决）；读出 0 或 2 都算这格漂移",
+>>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
              kind="diag"),
     case("check_ps_encoding.py"),
     # —— 编码面：Windows 才红，属预存红，修好后期望值要改回 0 ——
@@ -246,12 +255,15 @@ def selftest():
     rows, missing, ci, battery, guards = face_report()
     cell("repo-current-has-no-orphan-guard", check_faces(guards, ci, battery, missing)[0], 0)
     cell("battery-covers-plan-landing", "check_plan_landing.py" in battery, True)
+<<<<<<< HEAD
     # R41：电池必须**同时**点 plan_landing 的门禁口径与诊断口径 —— 只留诊断格，棘轮就成了不跑的死尺
     gate_cases = [c for c in CASES if c["script"] == "check_plan_landing.py" and "--gate" in c["argv"]]
     diag_cases = [c for c in CASES if c["script"] == "check_plan_landing.py" and c["kind"] == "diag"]
     cell("plan-landing-has-gate-cell", len(gate_cases) == 1 and gate_cases[0]["expect"] == 0, True)
     cell("plan-landing-diag-cell-carries-构成",
          len(diag_cases) == 1 and "搬家态" in diag_cases[0]["why"] and "判定面 25" in diag_cases[0]["why"], True)
+=======
+>>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
     print("  ok  现状读数：%d 把尺 / CI 面 %d / 电池面 %d / 缺面 %d"
           % (len(guards), len(ci & set(guards)), len(battery & set(guards)), len(missing)))
 
@@ -262,8 +274,12 @@ def selftest():
             print("  - %s：%s" % (nm, why))
         return 1
     print("SELFTEST OK（%d 格：G1 干净 / G1 抓漏面尺 + 必点名 / G3 三种空宇宙各自拒 / "
+<<<<<<< HEAD
           "G2 电池点了不存在的脚本自拒 / 真源现状全绿 / plan_landing 已进电池 / "
           "plan_landing 门禁格与诊断格并存且诊断格 why 带构成）" % len(cells))
+=======
+          "G2 电池点了不存在的脚本自拒 / 真源现状全绿 / plan_landing 已进电池）" % len(cells))
+>>>>>>> f73788da (fix(guard): 守卫执行面普查 + 仓内电池真源化（BUG-365/366 / T0r21）)
     return 0
 
 
