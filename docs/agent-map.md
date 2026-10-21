@@ -56,6 +56,9 @@
 3. **想加/改 MCP 工具** → `src/server/server.mbt` 用 `.tool(name, desc, schema, handler)`，handler 经 `_instrument` 包装（自动 call_log）。
 4. **想动存储** → `src/store/store_sqlite.mbt`（表结构在 `moon.pkg` 初始化处）。
 5. **想跑通即走** → `python scripts/mcp_smoke.py` / `scripts/enrich_selfdrive.py`。
+6. **提交前想确认守卫面** → `python scripts/run_guards.py`（仓内电池真源，34 格：逐格打 rc/期望/结论，
+   预存红按声明的期望值命中、不算失败但也写在汇总里）。**别在 `temp/` 里另写一份电池**：
+   历轮 11 份手写电池的格数是 13 → 30 → 37 全靠回忆，漏的那格永远不会被发现漏了（BUG-366）。
 
 ## 五、约定与雷区（别踩）
 
@@ -64,3 +67,4 @@
 - **时间戳用 Int64**：`@env.now().to_int()` 对 UInt64 做 32 位截断会产生 1969 假时间戳——务必用 `@env.now().reinterpret_as_int64()`（`UInt64::to_int64` 自 BUG-359 起已由 core 弃用，仓内 11 处调用全部改名；写 `.to_int64()` 会给 `moon check` 新增一条 0020 warning）。注意 `to_int64` 是重载名：`Double::to_int64()` / `Int::to_int64()` 是**饱和转换**、未弃用，不要跟着改。
 - **勿改共享 fist-mbt.db 测试**：测试用独立内存/SQLite（见 call_log_wbtest）。
 - **无硬编码路径**：分隔符跟随输入，路径不硬编码盘符。
+- **一把尺不跑就等于一把坏尺**：本仓的守卫只在 CI 有红门，本地提交面是空的（`.githooks/pre-commit` 只跑 `moon check`，而且 `core.hooksPath` 未设置 ⇒ 连这一条都不生效）。新写或改 `scripts/check_*.py` 时，**同时给它一个执行面**（挂 CI 或进 `run_guards.py` 的 `CASES`），否则它会像 `check_plan_landing` 那样带着虚报缺陷躺一周（BUG-365/366）。
