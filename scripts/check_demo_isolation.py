@@ -104,13 +104,6 @@ def read_body(r, bodies):
 
 
 def scan(bodies=None, files=None):
-<<<<<<< HEAD
-    """返回 (spawn 脚本清单, 违例清单)。bodies 供 --selftest 注入合成正文；
-    files 供注入枚举面（BUG-351：默认走 _files()；旧实现 bodies 只覆盖正文、不影响
-    _files() 枚举，故 scan({}) 仍返回 34 个 spawners——空扫描根本构造不出来）。"""
-    spawners, problems, unreadable = [], [], []
-    for path in (_files() if files is None else files):
-=======
     """返回 (spawn 脚本清单, 违例清单)。
 
     bodies 供 --selftest 注入合成正文；files 供自检注入扫描面（缺省走真文件系统）。
@@ -118,7 +111,6 @@ def scan(bodies=None, files=None):
     """
     spawners, problems, unreadable = [], [], []
     for path in (files if files is not None else _files()):
->>>>>>> 010ad445 (fix(guard): check_demo_isolation 的 M3 真构造空扫描，判定抽成共用 judge（BUG-351 / T0r44）)
         r = rel(path)
         body = read_body(r, bodies)
         if body is None:
@@ -149,18 +141,6 @@ def scan(bodies=None, files=None):
     return spawners, problems
 
 
-<<<<<<< HEAD
-def isolate_verdict(spawners, problems):
-    """纯裁决：(verdict, detail)。BUG-351 核心修复——把 main() 里那条『空扫描必自拒』
-    从不可达的内联判断抽成可被 selftest 直接喂 spawners=[] 的纯函数：
-      空 spawners ⇒ FATAL_I3（判据空转，绝不报绿）；有问题 ⇒ VIOLATION；否则 PASS。
-    main() 与 selftest 共用它，故测 isolate_verdict == 测了 main 的 I3 门。"""
-    if not spawners:
-        return "FATAL_I3", "现状面没抓到任何 spawn `serve` 的脚本 ⇒ 判据空转，绝不报绿"
-    if problems:
-        return "VIOLATION", problems
-    return "PASS", (len(spawners), len(EXPLICIT_CLAUSES), len(EXEMPT))
-=======
 def judge(spawners, problems):
     """主判定（main 与 --selftest 共用）：返回 (退出码, 待打印行)。
 
@@ -174,7 +154,6 @@ def judge(spawners, problems):
     return 0, ["PASS spawn 面隔离一致：%d 个脚本 spawn `serve` 时都把 FIST_DB_PATH 交给了子进程"
                "（显式子句 %d 项 + 豁免 %d 项锚点均成立）"
                % (len(spawners), len(EXPLICIT_CLAUSES), len(EXEMPT))]
->>>>>>> 010ad445 (fix(guard): check_demo_isolation 的 M3 真构造空扫描，判定抽成共用 judge（BUG-351 / T0r44）)
 
 
 def selftest():
@@ -219,24 +198,6 @@ def selftest():
         EXEMPT.clear()
         EXEMPT.update(saved)
 
-<<<<<<< HEAD
-    # M3a：枚举面真能真空（旧 scan({}) 因 _files() 硬编码永远非空，构造不出空扫描）
-    _s3, _p3 = scan(files=[])
-    executed.append("M3a 枚举面可真空")
-    if _s3:
-        fails.append("M3a 无法构造空扫描：scan(files=[]) 仍返回 %d 个 spawners（files 注入面没生效）" % len(_s3))
-    # M3b：真空裁决必自拒——真锁 main 的 I3 门（旧 M3 测的是已 return 的不可达条件）
-    executed.append("M3b 空扫描必自拒")
-    v, _ = isolate_verdict([], [])
-    if v != "FATAL_I3":
-        fails.append("M3b 空扫描未自拒（isolate_verdict([], [])=%s ⇒ main 的 I3 门形同虚设，删了它 selftest 照样绿）" % v)
-    # M3c：三态不串台（合规=PASS、违例=VIOLATION）
-    executed.append("M3c 裁决三态")
-    if isolate_verdict(["a.py"], [])[0] != "PASS":
-        fails.append("M3c 合规面未判 PASS")
-    if isolate_verdict(["a.py"], ["VIOLATION x"])[0] != "VIOLATION":
-        fails.append("M3c 违例面未判 VIOLATION")
-=======
     # M3：真空扫描必自拒（BUG-351）。旧版 scan({}) 仍枚举真实文件、恒非空，
     # 这一格只是无条件 append；现在 scan(files=[]) 真走空面，并要求共用判定 judge() 给 rc=2。
     empty_sp, empty_probs = scan(files=[])
@@ -269,7 +230,6 @@ def selftest():
     if rc_entry != 2 or "I3" not in buf.getvalue():
         fails.append("M3b main() 在空扫描下 rc=%r / 输出=%r（应 2 且带 I3）"
                      % (rc_entry, buf.getvalue()[:80]))
->>>>>>> 010ad445 (fix(guard): check_demo_isolation 的 M3 真构造空扫描，判定抽成共用 judge（BUG-351 / T0r44）)
 
     print("SELFTEST %s（干净不误红 + 变异必红 + 空扫描自拒；格子从已执行对照反解：%s；"
           "spawn 面 %d 个脚本，显式子句 %d 项 / 豁免 %d 项）"
@@ -287,25 +247,10 @@ def main():
     if a.selftest:
         return selftest()
     spawners, problems = scan()
-<<<<<<< HEAD
-    verdict, detail = isolate_verdict(spawners, problems)
-    if verdict == "FATAL_I3":
-        print("FATAL " + detail)
-        return 2
-    if verdict == "VIOLATION":
-        for pp in detail:
-            print("VIOLATION " + pp)
-        return 1
-    n_spawners, n_clause, n_exempt = detail
-    print("PASS spawn 面隔离一致：%d 个脚本 spawn `serve` 时都把 FIST_DB_PATH 交给了子进程"
-          "（显式子句 %d 项 + 豁免 %d 项锚点均成立）" % (n_spawners, n_clause, n_exempt))
-    return 0
-=======
     rc, lines = judge(spawners, problems)
     for ln in lines:
         print(ln)
     return rc
->>>>>>> 010ad445 (fix(guard): check_demo_isolation 的 M3 真构造空扫描，判定抽成共用 judge（BUG-351 / T0r44）)
 
 
 if __name__ == "__main__":
