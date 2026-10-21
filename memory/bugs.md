@@ -5743,7 +5743,7 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - 改了什么：11 份文档 + 1 份守卫夹具，26 处现状面对表。测试总数面 21 处（`temp/fix32.py`，逐条断言命中次数才落盘、CRLF 按原文件判定回写）：AGENTS.md 2、ARCHITECTURE.md 1、README.mbt.md 1、README.md 5（徽章 `tests-1108%2F1108` → 1302、正文 1112 → 1302、日志回显行 2 数）、README_EN.md 7（EN 徽章、`1112-test JS suite`、`check_test_sync (1112 aligned`、`(Node ≥ 24, 1112/1112 …)`）、docs/SOP.md 2（含 frontmatter `updated: 2026-10-16` → `2026-10-21`）、docs/agent-map.md 1、docs/deliverable.md 1、scripts/scoring_rubric.md 1；豁免面 `scripts/check_test_sync.py` 新登记 3 条 `EXEMPT`（README 77 / README 162 / SHIP-PLAN 1058）并给夹具补 8 条声明（5 条上一轮漏写 + 3 条本轮新登记）；入口面 docs/SOP.md 部署路径 `cmd/main/main.js` → `cmd/cli/cli.js serve`（并补「裸跑只打印 help」限定）；版本面 USAGE.md 自述 0.3.8 → 0.3.9、README 资产名字面量 `fist-mbt-js-v0.3.8.zip` → `v0.3.9.zip`；索引面 scripts/README.md 登记 `run_check_t0r21.py`。零 `.mbt`、零接口变更。
 - 实测锁钉：真源重跑 `moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`check_badge temp/pt19.log README.md` PASS（徽章 == 实测 + 自检注释行 == 实测）；`check_test_sync temp/pt19.log` PASS（121 份现状面 17 条声明全等实测、must-carry 5 份齐全、豁免 22 条全部有效）；`check_test_sync --selftest` PASS（R0-enumerator + 8 支对照，此前该步直接判红、8 支对照从未跑过）；`check_doc_surface` PASS + `--selftest` PASS；`check_entry_paths` / `check_release_asset_names` / `check_scripts_index` 由红转绿；`check_mbti_sync`（654 条）/ `check_tools_sync` / `check_plugin_sync` / `check_pkg_imports` / `check_publish_payload` / `check_demo_isolation` / `check_store_tables_wired` / `check_ps_encoding` / `check_template_ctrl` / `check_py_stdout_encoding` / `check_model_auth_no_key` / `check_skill_inject` 12 守卫无回归；`moon build cmd/cli --target js` rc=0。
 
-## BUG-358 [2026-10-21T03:00:00Z] [medium] OPEN
+## BUG-358 [2026-10-21T03:00:00Z] [medium] FIXED
 - summary: [CI 判据输入面] `check_host_installable.py` 把**未跟踪件** `.mcp.json` 列进「关键文件缺失即自拒」名单（`LENIENT_JSON = [".mcp.json", ".mcp.dev.json"]` → `missing_key_files()`），而 `.gitignore:65` 明写仓库根 `.mcp.json` 不跟踪 ⇒ 干净检出（CI runner、`git archive HEAD`）上这一步必然 `FATAL … 拒绝出结论` 退出码 2，判据在 CI 上从来没跑过一次真判定
 - detail: 证据链三格实测：① `.gitignore:62-65`「仓库根 `.mcp.json` = 本机 MCP 连接器在读的那一份：未跟踪、内容与跟踪真源 .mcp.dev.json 逐字节相同。BUG-131 之后投影已按跟踪面优先解析」；② `git ls-files` 只有 `.mcp.dev.json` / `.mcp.example.json` / `default-fist.mcp.json` / `plugins/claude/.mcp.json` 四件是跟踪件，根 `.mcp.json` 不在其中；③ 本机 `python scripts/check_host_installable.py` 实跑 `FATAL 判据输入面退化：关键文件缺失 .mcp.json`，rc=2（本机也没有该文件，与 CI 同形，不是 Windows 特有）。ci.yml「Host-installable guard」那步先 `--selftest` 再全量：`--selftest` 里 T5b 一格（`crit_names` 含 `.mcp.json`）在缺件时打的是「当前不可判」的自陈，不会伪装成绿——但整步的退出码仍是非 0，门就是恒红。
   为什么是判据缺陷而不是配置缺陷：BUG-131 已经把**投影侧**（`gen_plugins` / `check_plugin_sync`）改成「跟踪面优先，未跟踪的 `.mcp.json` 只兜底」，`.gitignore` 那条注释正是那次裁决的落盘。本守卫是同族另一支尺子却没跟着改，于是留下「本机有连接器残件就偶发可判、干净树永不可判」的形状——比恒绿更坏，因为它读数长得像「环境没配好」，容易被人当噪声跳过。
@@ -5752,6 +5752,9 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - 后续建议: ① 出路 (a) 与 BUG-131 同口径、且不需要在 CI 里造未跟踪件，建议优先；动的是判据输入面（这条守卫在 CI 上究竟测什么），按金条四留 owner 定夺后单独开一单元。② 无论选哪条，建议同时给 ci.yml 那步补一句「缺件 ⇒ rc=2 自拒，不算绿」的现状说明，避免下一轮再把它当环境噪声。③ 普查其余判据是否还有同类形状：把 `.gitignore` 里的未跟踪件列进「缺件即自拒」名单的，用 `grep -n "crit" scripts/check_*.py` 复核一遍。
 - task_id: T0r13
 
+
+### FIXED(2026-10-21T11:02:58Z / BUG-358)
+- evidence: BUG-358 修复已在 master 线：ea6eba6c 是 origin/master 祖先（git merge-base --is-ancestor 实测 rc=0）。判据采纳本单出路(a)——check_host_installable.py 现以 REQUIRED_MCP_JSON=[".mcp.dev.json"] 只把跟踪真源列进「关键文件缺失即自拒」名单，根 .mcp.json 留在 LENIENT_JSON 宽松档（缺失合法 continue），并在源码注释点名本单与 BUG-131 同口径。行为复测：在无根 .mcp.json 的干净 worktree（temp/m18 @ origin/master，git ls-files 面无该件）全量跑该守卫 rc=0 PASS；修复前同形场景必 rc=2 永不产出结论（本机当时有连接器残件才偶发可判＝假绿）。CI 侧从此真跑判定，不再恒红也不再被当噪声跳过。
 ## BUG-359 [2026-10-21T03:10:00Z] [low] FIXED
 - summary: [弃用面/0020] 「同一原语改名族」12 处清零：`UInt64::to_int64` → `UInt64::reinterpret_as_int64` 11 处（`src/server/server.mbt` 6 / `src/server/mcpcf_embed.mbt` 3 / `src/server/model_router_ops.mbt` 2）+ `Char::from_int` → `Int32::unsafe_to_char` 1 处（`src/router/router_caf_ext.mbt:116`），判据面 501 → **489 warnings / 0 errors**，0020 命中 460 → **448**（这两族 11+1 → 0）；附带 1 处注释事实修正（`src/server/mcp_config_scaffold.mbt:149`）
 - detail: 收口判据不是「新名字看着更现行」，而是**弃用面与新面在 core 里落到同一条后端 primitive**，这样 codegen 逐字节不变、改名在语义上是空的：
@@ -6026,3 +6029,4 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
   ② 修引用分两批：注释面一批（可直接改）、测试标题一批（须 `moon test --update` 同批）；
   ③ 悬空的那条「11 字段同构」先补一条账本条目（或声明它属已被 BUG-186 之外的哪条），别让证据只活在注释里。
 - task_id: T0r29
+
