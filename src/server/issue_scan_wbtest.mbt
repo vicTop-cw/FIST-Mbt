@@ -256,3 +256,54 @@ test "scan_guard_substring_end_var_上界约束判已守卫" {
   )
   assert_false(wrong_target)
 }
+
+///|
+/// BUG-348：unused-variable 此前按裸子串 `let ` 命中每个 let 声明、不看绑定名是否真被用
+/// ⇒ 已使用的 let 照样报（纯假阳）。三件纯函数各自钉死，再加端到端成对锁
+/// （用了的必须不报、真没用的必须仍报——单向保守，不许翻成「不扫了」）。
+test "bug348_let_binding_name_extraction" {
+  assert_eq(scan_let_binding_name("let x = 1"), "x")
+  assert_eq(scan_let_binding_name("let mut cost = 3"), "cost")
+  assert_eq(
+    scan_let_binding_name("let remaining: Int = total - used"),
+    "remaining",
+  )
+  // 非简单形状 ⇒ 空串（调用方保持现行为照常报，不猜名字）
+  assert_eq(scan_let_binding_name("let [a, b] = pair"), "")
+  assert_eq(scan_let_binding_name("let _ = f()"), "")
+  assert_eq(scan_let_binding_name("  let x = 1"), "")
+  // mut 是更长标识符前缀时绝不能吃掉它（`let mutator = 1` 的绑定名是 mutator）
+  assert_eq(scan_let_binding_name("let mutator = 1"), "mutator")
+}
+
+///|
+test "bug348_word_occurrence_is_whole_word" {
+  // 整词命中
+  assert_true(scan_word_occurs("  let y = x + 1", "x"))
+  // 左邻标识符字符 ⇒ 不算整词（真未使用的 x 不该在 totally_unused 里被看见）
+  assert_false(scan_word_occurs("  let v = totally_unused", "x"))
+  assert_false(scan_word_occurs("  let v = xtotal", "x"))
+  // 右邻是下划线（标识符续接字符）⇒ 不算整词
+  assert_false(scan_word_occurs("  let v = x_1", "x"))
+  // 空词/空文本都不命中（不拿空串当万能 needle）
+  assert_false(scan_word_occurs("anything", ""))
+  assert_false(scan_word_occurs("", "x"))
+  // 边界：行尾与行首都算整词
+  assert_true(scan_word_occurs("x", "x"))
+  assert_true(scan_word_occurs("  action", "action"))
+}
+
+///|
+test "bug348_used_elsewhere_skips_decl_line_only" {
+  // 只在声明行出现 ⇒ false（照常报真未使用）
+  let cps1 : Array[String] = ["let dead = 1", "  2", "}"]
+  assert_false(scan_variable_used_elsewhere(cps1, 1, "dead"))
+  // 别行出现 ⇒ true（其实用了）
+  let cps2 : Array[String] = [
+    "fn f(): Int {", "  let cost = 3", "  cost + 1", "}",
+  ]
+  assert_true(scan_variable_used_elsewhere(cps2, 2, "cost"))
+  // 只在声明行出现（哪怕声明行里同名重复 = 自引用）⇒ false：除声明行外没有使用点
+  let cps3 : Array[String] = ["  let cost = cost", "}"]
+  assert_false(scan_variable_used_elsewhere(cps3, 1, "cost"))
+}

@@ -5836,7 +5836,7 @@ task_plan_deep.mbt:  runner? → runner~
 
 ### FIXED(2026-10-21T07:21:32Z / BUG-347)
 - evidence: 改 src/server/issue_scan.mbt scan_regex_to_needle()：新增 `::` 命名空间保留分支（`c==':' && cs[i+1]==':'` → cur+="::"，i+=2），其余分支与旧实现逐字一致。旧实现只认 alnum，把 `Json::string\(` 退化成裸 needle `string`（Json:: 整段丢弃）⇒ 任何含 string 的行都命中（假阳），且 \s 的 s 被当字面量起点重新计数。配套新增白盒锁 ext_rules_7_needle_preserves_namespace（src/server/issue_scan_external_rules_wbtest.mbt）：断言 Json::string\(→Json::string、Json::string\s*\(→Json::string、单冒号 a:bcd\(→bcd、fixture 类 ignore\s*\(\s*\w+→ignore / probe\(→probe 零回归。变异复验：把 :: 保留分支改 `else if false` 复现 BUG-347 → ext_rules_7 红（341→340/1 fail）；还原 → 341/341 全绿。src/server 编译门 moon check exit0、moon fmt exit0。未跑 moon info（改动私有函数、公开签名不变，.mbti 本不该动；顺手跑了也只会带 BUG-330 的 Int→Int32 存量漂移，已 git checkout 还原、不混入本笔提交）。
-## BUG-348 [2026-10-21T00:57:36Z] [medium] OPEN
+## BUG-348 [2026-10-21T00:57:36Z] [medium] FIXED
 - summary: [rule-layer] moonbit-unused-variable 把已使用的 let 绑定报成未使用（cost_tool.mbt L29 exceeded/L31 remaining/L32 action 均在函数体后续被引用）；moonbit-match-exhaustive 报已含 catch-all 的 match 为"可能非穷尽"——src/engine 1693 命中 low/info 近似全 FP，扫描器自身精度缺陷
 - detail: 【精度审计 · 扫描器自身缺陷】`issue_scan` 的 `low`/`info` 规则在真实代码上近似全 FP。
 
@@ -5859,6 +5859,13 @@ task_plan_deep.mbt:  runner? → runner~
 
 
 
+
+### FIXED(2026-10-21T07:45:50Z / BUG-348)
+- evidence: 改 src/server/issue_scan.mbt：新增 moonbit-unused-variable 单向保守过滤——从 `let [mut ]IDENT` 抽绑定名(scan_let_binding_name)，若该名字作为完整单词(scan_word_occurs，前后不接标识符字符)出现在**除声明行外**的任一代码行(scan_code_part 已剔字面量/注释)⇒ 判「其实用了」⇒ 丢弃该 info 命中；抽不出名字(解构/弃元/非let开头)或读不到文件⇒保持现行为照常报。按文件缓存各行 code_part 到 codeparts_cache(unused-variable 命中每个 let 行，逐命中重算 code_part 是 O(命中×行)，缓存降到 O(行))。新增 5 个私有纯函数(scan_is_ident_cont/start, scan_word_occurs, scan_let_binding_name, scan_variable_used_elsewhere)。
+
+锁(走 @server.issue_scan 真源码，非旧构建产物，钉 BUG-32)：白盒 issue_scan_wbtest.mbt 3 条(bug348_let_binding_name_extraction 含 mutator 边界 / bug348_word_occurrence_is_whole_word 含 totally_unused 整词、行首行尾 / bug348_used_elsewhere_skips_decl_line_only 含自引用 let cost=cost)+ 端到端成对锁 issue_scan_test.mbt lint_348_unused_variable_pairwise(语料 used_one 里 let cost 第2行被第3行用、truly_unused 里 let dead 第6行全程不引用；断言 第2行不报、第6行仍报)。
+
+变异敏感性双向复验(隔离工作树 @ HEAD bc036f7，干净 engine，避开并发 agent 正在改的 src/engine 不编译碰撞)：① 关掉过滤(分支恒透传)→ 假阳复活 → lint_348 红(346→345/1)；② 过度激进抽出名字后无条件 continue(真未使用也被藏)→ lint_348 红。还原→ 346/346 全绿。moon check src/server 隔离树 exit0。公开签名 issue_scan(...) 未变(只加私有函数、改内部过滤循环)，无需 moon info、不动 .mbti。
 ## BUG-349 [2026-10-21T01:49:54Z] [medium] OPEN
 - summary: [rule-layer] moonbit-result-discard 按 ignore( 字面量匹配不查参数类型——store_specs.mbt L78/167 丢 Bool 非 Result 照样报（BUG-348 同族"只看字面量不看语义"）
 - detail: 独立 L4 证据（真读源码，非转发）：
@@ -6000,6 +6007,7 @@ total = int(m.group(1))  # 只取 group(1)=Total tests 数
 
 ### FIXED(2026-10-21T07:01:23Z / BUG-359, BUG-360)
 - evidence: BUG-359 改 scripts/cli_flag_probe.py judge()：L66 版本臂 substring `ver not in first` → 精确 `first.strip() != "FIST-Mbt v%s" % ver`；L75 帮助臂 → `re.search(r"FIST-Mbt(?: CLI)? v%s([\s\n]|$)", out)`（兼容真实 main.mbt L118 `FIST-Mbt v` 与 help_topics.mbt L23 `=== FIST-Mbt v` 两形状）。实测基线绿、反漂移 v0.3.90/v0.3.900/v0.4.0 全红、仅帮助臂漂移红，selftest 7 支全绿。BUG-360 改 scripts/check_badge.py：抽纯函数 judge() + 加 --selftest 8 格（V1-V7 违例必红）。实测 4 变异（or→and@L71/L84、删徽章判据、前置门改坏）全部被抓 selftest FAIL，还原 exit0，真实 README 零回归。
+
 
 
 
