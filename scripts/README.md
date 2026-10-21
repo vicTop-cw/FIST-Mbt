@@ -171,3 +171,8 @@
   PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
   去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
   用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
+  **R81（TASK-001）加冲突标记硬门**：每次 cherry-pick 在 `git commit` 之前跑
+  `check_merge_markers.py`，rc!=0（含 rc=2 判据自拒）即 abort 该 pick 不 commit（fail-closed）；
+  收尾 commit 之前再过一遍，不过则不 commit 不 push——堵死 259b56a8「解冲突未完就 commit 进 master」
+  那条通路。顺手修同文件 BUG-109 同族缺陷：EAP=Stop 下 `git fetch --all 2>&1` 遇远端 stderr
+  即终止全脚本，fetch 一行改临时降 EAP（同文件其余 `2>&1` 位点同族隐患未动，见 R81 报告）。
