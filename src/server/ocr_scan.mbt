@@ -411,6 +411,53 @@ pub fn ocr_reviewed_final(
 }
 
 ///|
+/// BUG-327 部分 2：bugfind 的 require_ocr 门不能只看「二进制在不在」——OCR 的扩展名
+/// 白名单不收 .mbt（实测 scan reviewable_count=0、单文件也被拦），MoonBit 目标上该约束
+/// 恒不可满足。返回 (gate, note)：satisfied / degraded / unavailable。
+/// degraded = 二进制可用但 .mbt 不可审查 ⇒ 如实降级为只用 issue_scan，不得按
+/// available=true 当作门已满足（伪能力）。
+pub fn ocr_gate_state(
+  binary_available : Bool,
+  moonbit_target : Bool,
+) -> (String, String) {
+  if !binary_available {
+    return (
+      "unavailable", "OCR 二进制不可用（windows-x64 only，宿主依赖）；bugfind 显式降级为只用 issue_scan，回执 ocr_available=false",
+    )
+  }
+  if moonbit_target {
+    return (
+      "degraded", "OCR 二进制可用，但其扩展名白名单不收 .mbt（实测 reviewable_count=0）；目标为 MoonBit 项目 ⇒ require_ocr 不可满足，bugfind 如实降级为只用 issue_scan",
+    )
+  }
+  (
+    "satisfied", "OCR 二进制可用且目标非 MoonBit 项目；require_ocr 由 ocr_scan 回执的 ok/reviewed 字段判定",
+  )
+}
+
+///|
+/// bugfind 的 require_ocr 预检回执（IO 薄壳，pipeline_tick / watchdog_tick 共用）：
+/// probe 二进制 + 判目标是否 MoonBit 项目（project_dir 根有 moon.mod）。
+/// 纯读探测，不 spawn；新增字段对旧调用方是纯增量。
+pub fn ocr_capability_json(project_dir : String) -> Json {
+  let bin = ocr_probe_binary(project_dir)
+  let is_mbt = @fs.path_exists(ocr_join(project_dir, "moon.mod"))
+  let avail = bin is Some(_)
+  let (gate, note) = ocr_gate_state(avail, is_mbt)
+  let m : Map[String, Json] = Map([])
+  m.set("available", Json::boolean(avail))
+  match bin {
+    Some(b) => m.set("binary", Json::string(b))
+    None => ()
+  }
+  m.set("moonbit_target", Json::boolean(is_mbt))
+  m.set("mbt_reviewable", Json::boolean(false))
+  m.set("gate", Json::string(gate))
+  m.set("note", Json::string(note))
+  Json::object(m)
+}
+
+///|
 /// ocr_scan 主入口（async）：先走 ocr_plan（校验/argv/探测），再 spawn 真实进程。
 /// dry_run=true 或校验失败时直接把 plan 回执返回，一个进程都不起。
 pub async fn ocr_scan_impl(
