@@ -101,8 +101,6 @@ test "debate_next_session_id：格式 debate-yyyyMMdd-nnn 且同日递增" {
   // 预置一条今天的会话，验证 nnn 递增（服务端盖章，不接受调用方注入）
   let day = debate_day_key()
   debate_sessions.sessions.set("debate-" + day + "-001", {
-    topic: "seed",
-    hats: ["white"],
     threshold: 0.6,
     verdicts: [],
     created_at: "2026-01-01T00:00:00Z",
@@ -180,8 +178,6 @@ test "会话流：convene 登记 → register 收敛 → verdict 输出 summary"
   // 直接用同包可访问的全局 + struct，等价于 async handler 的进程内闭环
   let sid = debate_next_session_id()
   let sess : DebateSession = {
-    topic: "是否引入 grill-me skill",
-    hats: ["white", "black", "yellow"],
     threshold: 0.6,
     verdicts: [],
     created_at: "2026-01-01T00:00:00Z",
