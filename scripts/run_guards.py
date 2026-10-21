@@ -72,9 +72,11 @@ def gated(script, need, *args):
 
 def discover_scripts():
     """扫描 scripts/ + scripts/blackbox/ 的全部 .py 脚本（TASK-007：宇宙不限于 check_*）。
-    排除：__init__.py / test_* / verify_* / selfdrive_* / run_guards.py（纯测试/工具脚本）。
+    排除：__init__.py / test_* / verify_* / selfdrive_* / run_guards.py（纯测试/工具脚本），
+    以及长驻服务脚本（R84 实测：fist-mbt-http.py 进电池即起 serve 永不退出——
+    e2e_http_contract 外的裸跑无终止路径，电池整轮挂死；CI 只跑 --selftest/--list 不受影响）。
     返回相对 scripts/ 的路径名（blackbox 子目录带 `blackbox/` 前缀）。"""
-    EXCLUDE_EXACT = {"__init__.py", "run_guards.py"}
+    EXCLUDE_EXACT = {"__init__.py", "run_guards.py", "fist-mbt-http.py", "fist-mbt-web.py"}
     EXCLUDE_PREFIX = ("test_", "verify_", "selfdrive_")
     out = []
     for base, prefix in ((SCRIPTS_DIR, ""), (BLACKBOX_DIR, "blackbox/")):
@@ -112,6 +114,9 @@ SPECIAL_CASES = [
     case("gen_plugins.py", "--selftest"),
     case("check_upgrade_installer.py"),
     case("check_plan_landing.py", "--selftest"),
+    # —— R84 (TASK-003)：gate 步骤位置纪律 ——
+    case("check_ci_step_position.py"),
+    case("check_ci_step_position.py", "--selftest"),
     # —— R55：blackbox 尺进宇宙也进电池（相对 scripts/ 点名，路径含子目录）——
     case("blackbox/check_merge_markers.py", "--selftest"),
     case("blackbox/check_merge_markers.py"),
