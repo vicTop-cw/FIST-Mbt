@@ -551,7 +551,7 @@ fn scan_variable_used_elsewhere(
 
 ///|
 /// 函数体超过该行数才报 moonbit-long-function（BUG-348：13 行函数曾被报超长）。
-let scan_long_function_limit : Int = 50
+let scan_long_function_limit : Int32 = 50
 
 ///|
 /// 取代码区字符（含引号时剔除字面量内容），供花括号配对使用。
@@ -566,7 +566,7 @@ fn scan_code_chars(line : StringView) -> Array[Char] {
 ///|
 /// 从命中行起按花括号配对找 match 块，块顶层（depth==1）出现 `_ =>` 即视为已穷尽。
 /// 嵌套 match 的兜底分支不算外层穷尽（BUG-348：已含 catch-all 的 match 仍被报非穷尽）。
-fn scan_match_has_catch_all(lines : Array[StringView], l : Int) -> Bool {
+fn scan_match_has_catch_all(lines : Array[StringView], l : Int32) -> Bool {
   let n = lines.length()
   let stop = if l + 200 < n { l + 200 } else { n }
   let mut depth = 0
@@ -606,7 +606,7 @@ fn scan_match_has_catch_all(lines : Array[StringView], l : Int) -> Bool {
 ///|
 /// 从 `fn` 定义行量到花括号配平的闭合行（含），量不出（无 `{` 或超上界）返回 -1。
 /// BUG-348：行数精确判定，短函数不再被报超长。
-fn scan_function_line_count(lines : Array[StringView], l : Int) -> Int {
+fn scan_function_line_count(lines : Array[StringView], l : Int32) -> Int32 {
   let n = lines.length()
   let stop = if l + 2000 < n { l + 2000 } else { n }
   let mut depth = 0
@@ -675,15 +675,6 @@ fn scan_match_lines(
           }
         }
         if hit {
-<<<<<<< HEAD
-          out.push({
-            rule: rule.id,
-            severity: rule.severity,
-            file,
-            line: l + 1,
-            code: ls.trim().to_owned(),
-          })
-=======
           let suppressed = if rule.id == "moonbit-json-injection" {
             !scan_json_string_built_by_concat(ls)
           } else if rule.id == "moonbit-match-exhaustive" {
@@ -703,7 +694,6 @@ fn scan_match_lines(
               code: ls.trim().to_owned(),
             })
           }
->>>>>>> fe14481b (fix(issue_scan): match-exhaustive 认顶层 _ => 兜底、long-function 按实测行数（BUG-348 部分 / T0r48）)
         }
       }
       l = l + 1
@@ -721,6 +711,7 @@ fn scan_match_lines(
 // 只对 substring-overrun / unprotected-division / index-out-of-bounds / string-index 四档做
 // 守卫过滤；div-by-zero（字面量除零）不参与，`/ 0` 没有"守得住"的上下文。
 // ============================================================================
+
 
 ///|
 /// 是否为标识符字符（字母/数字/下划线）。MoonBit 标识符允许 ASCII 字母与数字、
