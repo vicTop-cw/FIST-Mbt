@@ -526,9 +526,10 @@ fn sf_num(j : Json, key : String) -> Int {
 fn b29_bool(j : Json, key : String) -> Bool {
   match j.value(key) {
     Some(v) =>
-      match v.as_bool() {
-        Some(b) => b
-        None => abort("\{key} 非布尔: " + j.stringify())
+      match v {
+        Json::True => true
+        Json::False => false
+        _ => abort("\{key} 非布尔: " + j.stringify())
       }
     None => abort("\{key} 缺失: " + j.stringify())
   }

@@ -194,28 +194,32 @@ test "tx_contract：reopen on 已归档 前置拒绝" {
 test "tx_contract：BUG-167 任务不存在回执契约件字段齐全" {
   let e = contract_engine("tc_r109_t7.db")
   let j = e.transition_contract("NOPE", "execute")
-  match j.value("ok") {
+  let b_ok = match j.value("ok") {
     Some(x) =>
-      match x.as_bool() {
-        Some(b) => assert_eq(b, false)
-        None => abort("ok 非布尔: " + j.stringify())
+      match x {
+        Json::True => true
+        Json::False => false
+        _ => abort("ok 非布尔: " + j.stringify())
       }
     _ => abort("ok 缺失: " + j.stringify())
   }
+  assert_eq(b_ok, false)
   assert_eq(cx_phase(j), "precondition")
   assert_eq(cx_verdict(j), "rejected")
   let reasons = cx_reasons(j)
   assert_eq(reasons.length(), 1)
   assert_eq(reasons[0], "任务不存在: NOPE")
   assert_eq(cx_target(j), "")
-  match j.value("state_stable") {
+  let b_ss = match j.value("state_stable") {
     Some(x) =>
-      match x.as_bool() {
-        Some(b) => assert_eq(b, true)
-        None => abort("state_stable 非布尔: " + j.stringify())
+      match x {
+        Json::True => true
+        Json::False => false
+        _ => abort("state_stable 非布尔: " + j.stringify())
       }
     _ => abort("state_stable 缺失: " + j.stringify())
   }
+  assert_eq(b_ss, true)
 }
 
 ///|

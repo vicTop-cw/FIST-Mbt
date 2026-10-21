@@ -92,14 +92,16 @@ fn b25_flag(j : Json, id : String, key : String) -> Bool {
         match x.value("subtask_id") {
           Some(Json::String(s)) =>
             if s == id {
-              match x.value(key) {
+              let b_sub = match x.value(key) {
                 Some(v) =>
-                  match v.as_bool() {
-                    Some(b) => return b
-                    None => abort(key + " 非布尔: " + x.stringify())
+                  match v {
+                    Json::True => true
+                    Json::False => false
+                    _ => abort(key + " 非布尔: " + x.stringify())
                   }
                 _ => abort("\{key} 缺失或非布尔: " + x.stringify())
               }
+              return b_sub
             }
           _ => ()
         }
@@ -114,9 +116,10 @@ fn b25_flag(j : Json, id : String, key : String) -> Bool {
 fn b25_top_flag(j : Json, key : String) -> Bool {
   match j.value(key) {
     Some(v) =>
-      match v.as_bool() {
-        Some(b) => b
-        None => abort("顶层 \{key} 非布尔: " + j.stringify())
+      match v {
+        Json::True => true
+        Json::False => false
+        _ => abort("顶层 \{key} 非布尔: " + j.stringify())
       }
     None => abort("顶层 \{key} 缺失: " + j.stringify())
   }

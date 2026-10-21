@@ -902,23 +902,27 @@ test "progress_gate：未开工=OK / 全完成=OK / 空任务+非法预算=ok:fa
   }
   // 空任务 / 非法预算 → ok:false
   let j2 = e.progress_gate("NOPE", 10, 0)
-  match j2.value("ok") {
+  let b_ok2 = match j2.value("ok") {
     Some(j) =>
-      match j.as_bool() {
-        Some(b) => assert_eq(b, false)
-        None => abort("j2 ok 非布尔: " + j2.stringify())
+      match j {
+        Json::True => true
+        Json::False => false
+        _ => abort("j2 ok 非布尔: " + j2.stringify())
       }
     _ => abort("j2 ok 缺失: " + j2.stringify())
   }
+  assert_eq(b_ok2, false)
   let j3 = e.progress_gate("P", 0, 0)
-  match j3.value("ok") {
+  let b_ok3 = match j3.value("ok") {
     Some(j) =>
-      match j.as_bool() {
-        Some(b) => assert_eq(b, false)
-        None => abort("j3 ok 非布尔: " + j3.stringify())
+      match j {
+        Json::True => true
+        Json::False => false
+        _ => abort("j3 ok 非布尔: " + j3.stringify())
       }
     _ => abort("j3 ok 缺失: " + j3.stringify())
   }
+  assert_eq(b_ok3, false)
 }
 
 ///|
@@ -1084,14 +1088,16 @@ test "plan_revise：feedback 显式 no → rework（未开工下游级联，控�
 test "plan_revise：根任务不存在 → ok:false" {
   let e = @engine.FistEngine::new()
   let j = e.plan_revise("NOPE")
-  match j.value("ok") {
+  let b_ok_pr = match j.value("ok") {
     Some(jj) =>
-      match jj.as_bool() {
-        Some(b) => assert_eq(b, false)
-        None => abort("ok 非布尔: " + j.stringify())
+      match jj {
+        Json::True => true
+        Json::False => false
+        _ => abort("ok 非布尔: " + j.stringify())
       }
     _ => abort("ok 缺失: " + j.stringify())
   }
+  assert_eq(b_ok_pr, false)
 }
 
 ///|
@@ -1165,14 +1171,16 @@ test "goal_drift_check：aligned 与 drift_suspect（偏离根目标，附 re_an
         match x.value("subtask_id") {
           Some(Json::String(s)) =>
             if s == "B" {
-              match x.value("re_anchor") {
+              let b_re = match x.value("re_anchor") {
                 Some(jj) =>
-                  match jj.as_bool() {
-                    Some(b) => assert_eq(b, true)
-                    None => abort("re_anchor 非布尔: " + j.stringify())
+                  match jj {
+                    Json::True => true
+                    Json::False => false
+                    _ => abort("re_anchor 非布尔: " + j.stringify())
                   }
                 _ => abort("re_anchor 缺失")
               }
+              assert_eq(b_re, true)
             }
           _ => ()
         }
@@ -1220,14 +1228,16 @@ test "goal_drift_check：redundant_suspect（与兄弟重复，防重复子目�
 test "goal_drift_check：根任务不存在 → ok:false" {
   let e = @engine.FistEngine::new()
   let j = e.goal_drift_check("NOPE")
-  match j.value("ok") {
+  let b_ok_gd = match j.value("ok") {
     Some(jj) =>
-      match jj.as_bool() {
-        Some(b) => assert_eq(b, false)
-        None => abort("ok 非布尔: " + j.stringify())
+      match jj {
+        Json::True => true
+        Json::False => false
+        _ => abort("ok 非布尔: " + j.stringify())
       }
     _ => abort("ok 缺失: " + j.stringify())
   }
+  assert_eq(b_ok_gd, false)
 }
 
 ///|
@@ -1393,14 +1403,16 @@ test "progress_gate：BUG-165 进度 0% 但有消耗 → ESCALATE 且 burn_rate=
 test "progress_gate：BUG-166 负预算回显实收值并带齐契约字段" {
   let e = progress_gate_engine()
   let j = e.progress_gate("P", -5, 0)
-  match j.value("ok") {
+  let b_ok_neg = match j.value("ok") {
     Some(x) =>
-      match x.as_bool() {
-        Some(b) => assert_eq(b, false)
-        None => abort("ok 非布尔: " + j.stringify())
+      match x {
+        Json::True => true
+        Json::False => false
+        _ => abort("ok 非布尔: " + j.stringify())
       }
     _ => abort("ok 缺失: " + j.stringify())
   }
+  assert_eq(b_ok_neg, false)
   match j.value("budget") {
     Some(Number(n, ..)) =>
       if n != -5.0 {
