@@ -65,6 +65,67 @@ test "scan_match_lines_整行注释与字面量两道降噪同时生效" {
   // 第 3 行的字面量被本轮的 scan_outside_literal 挡
   assert_eq(hits.length(), 1)
   assert_eq(hits[0].line, 5)
+<<<<<<< HEAD
+=======
+  // BUG-346 成对锁：json-injection 只认同一调用实参里的拼接/插值；
+  // 安全构造器 Json::string(value) 必须放过（旧 pattern 裸 Json::string( 全判假阳）。
+  let json_rule = {
+    id: "moonbit-json-injection",
+    severity: "low",
+    pattern: ["Json::string("],
+    why: "JSON 字符串由拼接构造",
+    hint: "先转义",
+  }
+  let safe = "let s = Json::string(name)\n"
+  assert_eq(scan_match_lines(safe, [json_rule], "sample.mbt").length(), 0)
+  let concat = "let s = Json::string(name + suffix)\n"
+  assert_eq(scan_match_lines(concat, [json_rule], "sample.mbt").length(), 1)
+  // 字面量里的加号不是拼接（"a+b" 是安全内容）
+  let plus_in_literal = "let s = Json::string(\"a+b\")\n"
+  assert_eq(
+    scan_match_lines(plus_in_literal, [json_rule], "sample.mbt").length(),
+    0,
+  )
+  // 插值 \{value} 仍算拼接构造
+  let interp = "let s = Json::string(\"v=\\{value}\")\n"
+  assert_eq(scan_match_lines(interp, [json_rule], "sample.mbt").length(), 1)
+  // BUG-348 成对锁：match-exhaustive 已有顶层 `_ =>` 兜底必须放过；缺兜底仍报。
+  let me_rule = {
+    id: "moonbit-match-exhaustive",
+    severity: "low",
+    pattern: ["match "],
+    why: "match 可能非穷尽",
+    hint: "补全变体",
+  }
+  let me_closed = "fn f(x : Int) -> Int {\n  match x {\n    0 => 0\n    _ => 1\n  }\n}\n"
+  assert_eq(scan_match_lines(me_closed, [me_rule], "m.mbt").length(), 0)
+  let me_open = "fn g(x : Int) -> Int {\n  match x {\n    0 => 0\n  }\n}\n"
+  assert_eq(scan_match_lines(me_open, [me_rule], "m.mbt").length(), 1)
+  // 嵌套 match 的兜底只算内层穷尽，外层仍须报（1 条）
+  let me_nested = "fn h(x : Int, y : Int) -> Int {\n  match x {\n    0 =>\n      match y {\n        0 => 0\n        _ => 1\n      }\n  }\n}\n"
+  assert_eq(scan_match_lines(me_nested, [me_rule], "m.mbt").length(), 1)
+  // BUG-348：moonbit-long-function 按花括号配平实测行数，短函数不报、超 50 行才报。
+  let lf_rule = {
+    id: "moonbit-long-function",
+    severity: "info",
+    pattern: ["fn "],
+    why: "超长函数",
+    hint: "拆分",
+  }
+  let short_fn = "fn add(a : Int, b : Int) -> Int {\n  a + b\n}\n"
+  assert_eq(scan_match_lines(short_fn, [lf_rule], "f.mbt").length(), 0)
+  let mut long_src = "fn big() -> Int {\n"
+  let mut bi = 0
+  while bi < 60 {
+    long_src = long_src + "  let v" + bi.to_string() + " = 0\n"
+    bi = bi + 1
+  }
+  long_src = long_src + "  0\n}\n"
+  assert_eq(scan_match_lines(long_src, [lf_rule], "f.mbt").length(), 1)
+  // 单行函数（三行以内）同样不报
+  let one_line = "fn id(x : Int) -> Int { x }\n"
+  assert_eq(scan_match_lines(one_line, [lf_rule], "f.mbt").length(), 0)
+>>>>>>> fe14481b (fix(issue_scan): match-exhaustive 认顶层 _ => 兜底、long-function 按实测行数（BUG-348 部分 / T0r48）)
 }
 
 ///|

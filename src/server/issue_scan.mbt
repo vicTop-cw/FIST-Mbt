@@ -278,7 +278,7 @@ fn scan_rules() -> Array[ScanRule] {
       id: "moonbit-long-function",
       severity: "info",
       pattern: ["fn "],
-      why: "超长函数难测难维护（ocr-local moonbit-long-function；子串近似 fn 定义行，行数精确判定见 OCR 双轨）",
+      why: "超长函数难测难维护（按花括号配平实测行数，>50 行才报，见 BUG-348）",
       hint: "按职责拆分长函数",
     },
     {
@@ -313,7 +313,7 @@ fn scan_rules() -> Array[ScanRule] {
       id: "moonbit-match-exhaustive",
       severity: "low",
       pattern: ["match "],
-      why: "match 可能非穷尽，运行时对未处理变体 panic（ocr-local moonbit-match-exhaustive；穷尽性需编译期保证，子串提示性）",
+      why: "match 可能非穷尽，运行时对未处理变体 panic（顶层已有 `_ =>` 兜底的不报，见 BUG-348）",
       hint: "补全所有枚举变体分支",
     },
     {
@@ -550,7 +550,84 @@ fn scan_variable_used_elsewhere(
 }
 
 ///|
-/// 逐行匹配一条规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
+/// 函数体超过该行数才报 moonbit-long-function（BUG-348：13 行函数曾被报超长）。
+let scan_long_function_limit : Int = 50
+
+///|
+/// 取代码区字符（含引号时剔除字面量内容），供花括号配对使用。
+fn scan_code_chars(line : StringView) -> Array[Char] {
+  if line.contains("\"") {
+    scan_code_part(line).to_array()
+  } else {
+    line.to_owned().to_array()
+  }
+}
+
+///|
+/// 从命中行起按花括号配对找 match 块，块顶层（depth==1）出现 `_ =>` 即视为已穷尽。
+/// 嵌套 match 的兜底分支不算外层穷尽（BUG-348：已含 catch-all 的 match 仍被报非穷尽）。
+fn scan_match_has_catch_all(lines : Array[StringView], l : Int) -> Bool {
+  let n = lines.length()
+  let stop = if l + 200 < n { l + 200 } else { n }
+  let mut depth = 0
+  let mut opened = false
+  let mut i = l
+  while i < stop {
+    let cs = scan_code_chars(lines[i])
+    let m = cs.length()
+    let mut j = 0
+    while j < m {
+      let c = cs[j]
+      if c == '{' {
+        depth = depth + 1
+        opened = true
+      } else if c == '}' {
+        depth = depth - 1
+      } else if c == '_' && opened && depth == 1 {
+        let prev_ok = j == 0 || !scan_is_ident_char(cs[j - 1])
+        let mut k = j + 1
+        while k < m && cs[k] == ' ' {
+          k = k + 1
+        }
+        if prev_ok && k + 1 < m && cs[k] == '=' && cs[k + 1] == '>' {
+          return true
+        }
+      }
+      j = j + 1
+    }
+    if opened && depth <= 0 {
+      return false
+    }
+    i = i + 1
+  }
+  false
+}
+
+///|
+/// 从 `fn` 定义行量到花括号配平的闭合行（含），量不出（无 `{` 或超上界）返回 -1。
+/// BUG-348：行数精确判定，短函数不再被报超长。
+fn scan_function_line_count(lines : Array[StringView], l : Int) -> Int {
+  let n = lines.length()
+  let stop = if l + 2000 < n { l + 2000 } else { n }
+  let mut depth = 0
+  let mut opened = false
+  let mut i = l
+  while i < stop {
+    for c in scan_code_chars(lines[i]) {
+      if c == '{' {
+        depth = depth + 1
+        opened = true
+      } else if c == '}' {
+        depth = depth - 1
+      }
+    }
+    if opened && depth <= 0 {
+      return i - l + 1
+    }
+    i = i + 1
+  }
+  -1
+}
 
 ///|
 /// 逐行匹配全部规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
@@ -598,6 +675,7 @@ fn scan_match_lines(
           }
         }
         if hit {
+<<<<<<< HEAD
           out.push({
             rule: rule.id,
             severity: rule.severity,
@@ -605,6 +683,27 @@ fn scan_match_lines(
             line: l + 1,
             code: ls.trim().to_owned(),
           })
+=======
+          let suppressed = if rule.id == "moonbit-json-injection" {
+            !scan_json_string_built_by_concat(ls)
+          } else if rule.id == "moonbit-match-exhaustive" {
+            scan_match_has_catch_all(lines, l)
+          } else if rule.id == "moonbit-long-function" {
+            let cnt = scan_function_line_count(lines, l)
+            cnt >= 0 && cnt <= scan_long_function_limit
+          } else {
+            false
+          }
+          if !suppressed {
+            out.push({
+              rule: rule.id,
+              severity: rule.severity,
+              file,
+              line: l + 1,
+              code: ls.trim().to_owned(),
+            })
+          }
+>>>>>>> fe14481b (fix(issue_scan): match-exhaustive 认顶层 _ => 兜底、long-function 按实测行数（BUG-348 部分 / T0r48）)
         }
       }
       l = l + 1
