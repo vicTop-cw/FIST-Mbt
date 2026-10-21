@@ -20,16 +20,13 @@ pub struct OfmChatResponse {
   error_type : String
   content : String
   raw : String
-} derive(Show, Eq, Debug)
+} derive(Eq, Debug)
 
 ///|
 pub extend OfmChatResponse with Eq::{not_equal, equal}
 
 ///|
 pub extend OfmChatResponse with @moonbitlang/core/debug.Debug::{to_repr}
-
-///|
-pub extend OfmChatResponse with Show::{to_string, output}
 
 ///|
 /// 从回体 + HTTP 状态构造解析结果。`body` 为空 → 视为不可判读错误（不猜成功）。
