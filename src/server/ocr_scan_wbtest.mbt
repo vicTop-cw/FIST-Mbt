@@ -221,3 +221,47 @@ test "ocr_fake_green_check_empty_dir_no_fp" {
   assert_true(reviewed)
   assert_eq(notice, "")
 }
+
+///|
+test "BUG-327 部分2 ocr_gate_state 三态：二进制缺=unavailable" {
+  let (g, n) = ocr_gate_state(false, true)
+  assert_eq(g, "unavailable")
+  assert_true(n.contains("ocr_available=false"))
+  let (g2, _) = ocr_gate_state(false, false)
+  assert_eq(g2, "unavailable")
+}
+
+///|
+test "BUG-327 部分2 ocr_gate_state 三态：MoonBit 目标恒 degraded" {
+  // 二进制在 ≠ 约束可满足：.mbt 不在 OCR 白名单内，require_ocr 必须如实降级
+  let (g, n) = ocr_gate_state(true, true)
+  assert_eq(g, "degraded")
+  assert_true(n.contains("require_ocr 不可满足"))
+  assert_true(n.contains("只用 issue_scan"))
+}
+
+///|
+test "BUG-327 部分2 ocr_gate_state 三态：非 MoonBit 目标才 satisfied" {
+  let (g, n) = ocr_gate_state(true, false)
+  assert_eq(g, "satisfied")
+  assert_true(n.contains("ok/reviewed"))
+}
+
+///|
+test "BUG-327 部分2 ocr_capability_json 本仓回执不得伪满足" {
+  // 本仓根有 moon.mod ⇒ moonbit_target=true、mbt_reviewable=false，
+  // 且 gate 绝不能是 satisfied（二进制在/不在都只配 degraded/unavailable）
+  let j = ocr_capability_json(".")
+  let m = match j {
+    Json::Object(mm) => mm
+    _ => abort("capability 不是对象")
+  }
+  assert_eq(m.get("moonbit_target"), Some(Json::boolean(true)))
+  assert_eq(m.get("mbt_reviewable"), Some(Json::boolean(false)))
+  let g = match m.get("gate") {
+    Some(Json::String(s)) => s
+    _ => abort("gate 缺失")
+  }
+  assert_true(g == "degraded" || g == "unavailable")
+  assert_true(m.get("note") is Some(_))
+}

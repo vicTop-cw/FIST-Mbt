@@ -2854,26 +2854,14 @@ pub async fn run_server() -> Unit {
             flush_result.set("any_success", Json::boolean(gh_ok || gc_ok))
           }
 
-          // bugfind 模式的 require_ocr 预检：probe OCR 二进制，把可达性注入回执（纯读探测，不 spawn）
-          let ocr_cap : Map[String, Json] = Map([])
-          if mode == "bugfind" {
+          // bugfind 模式的 require_ocr 预检（BUG-327 部分 2）：二进制可用 ≠ .mbt 可审查，
+          // 统一由 ocr_capability_json 给出 gate=satisfied/degraded/unavailable（纯读探测，不 spawn）
+          let ocr_cap : Json = if mode == "bugfind" {
             let pd_ocr = get_str(args, "project_dir")
             let actual_dir_ocr = if pd_ocr.is_empty() { "." } else { pd_ocr }
-            match ocr_probe_binary(actual_dir_ocr) {
-              Some(b) => {
-                ocr_cap.set("available", Json::boolean(true))
-                ocr_cap.set("binary", Json::string(b))
-              }
-              None => {
-                ocr_cap.set("available", Json::boolean(false))
-                ocr_cap.set(
-                  "note",
-                  Json::string(
-                    "OCR 二进制不可用（windows-x64 only，宿主依赖）；bugfind 显式降级为只用 issue_scan，回执 ocr_available=false",
-                  ),
-                )
-              }
-            }
+            ocr_capability_json(actual_dir_ocr)
+          } else {
+            Json::boolean(false)
           }
 
           // 只在 auto_flush=true 时才合并 flush_result，保证默认路径字节级一致
@@ -2884,7 +2872,7 @@ pub async fn run_server() -> Unit {
                   m.set("flush_bug_queue", Json::object(flush_result))
                 }
                 if mode == "bugfind" {
-                  m.set("ocr_capability", Json::object(ocr_cap))
+                  m.set("ocr_capability", ocr_cap)
                 }
                 Json::object(m)
               }
@@ -2894,7 +2882,7 @@ pub async fn run_server() -> Unit {
                   mm.set("flush_bug_queue", Json::object(flush_result))
                 }
                 if mode == "bugfind" {
-                  mm.set("ocr_capability", Json::object(ocr_cap))
+                  mm.set("ocr_capability", ocr_cap)
                 }
                 mm.set("original", j)
                 Json::object(mm)
@@ -2972,32 +2960,18 @@ pub async fn run_server() -> Unit {
         ) {
         Ok(j) => {
           let final_json = if mode == "bugfind" {
-            // bugfind 的 require_ocr 预检：probe 二进制并注入回执（纯读探测，不 spawn）
-            let ocr_cap : Map[String, Json] = Map([])
+            // bugfind 的 require_ocr 预检（BUG-327 部分 2）：二进制可用 ≠ .mbt 可审查，
+            // 回执统一由 ocr_capability_json 给出 gate=satisfied/degraded/unavailable
             let pd_ocr = if project_dir.is_empty() { "." } else { project_dir }
-            match ocr_probe_binary(pd_ocr) {
-              Some(b) => {
-                ocr_cap.set("available", Json::boolean(true))
-                ocr_cap.set("binary", Json::string(b))
-              }
-              None => {
-                ocr_cap.set("available", Json::boolean(false))
-                ocr_cap.set(
-                  "note",
-                  Json::string(
-                    "OCR 二进制不可用（windows-x64 only，宿主依赖）；bugfind 显式降级为只用 issue_scan，回执 ocr_available=false",
-                  ),
-                )
-              }
-            }
+            let ocr_cap = ocr_capability_json(pd_ocr)
             match j {
               Object(m) => {
-                m.set("ocr_capability", Json::object(ocr_cap))
+                m.set("ocr_capability", ocr_cap)
                 Json::object(m)
               }
               _ => {
                 let mm : Map[String, Json] = Map([])
-                mm.set("ocr_capability", Json::object(ocr_cap))
+                mm.set("ocr_capability", ocr_cap)
                 mm.set("original", j)
                 Json::object(mm)
               }
