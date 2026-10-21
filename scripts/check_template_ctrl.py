@@ -28,6 +28,8 @@ r"""scripts/check_template_ctrl.py — 模板/提示词文件「无裸控制字�
     工作树里那 159/53 个 `\r` 全是 autocrlf checkout 假象（不是提交缺陷），本判据据此放宽 CRLF；
     配套 `templates/*.md  text eol=lf`（.gitattributes）从源头钉死，双保险。
   T2 防空转：一份 .md 都枚举不到 ⇒ FATAL（判据空转 ≠ 没问题）。
+    R42 起该 FATAL **真给 rc=2**：改前是 `raise SystemExit("FATAL …")`，带字符串的 SystemExit
+    退出码是 1 ⇒ 第 38 行自述的「2=判据无法自证」从未生效（BUG-369 三条纯幻影之一，本单按建议①修第一把尺）。
 
 **为什么不自动修**：修复需判断"这个控制字符原本该是哪个字母"（如 `\t` 处可能是 `task_*` 也可能是别的词），
 属**作者意图知识**。本判据只**点名并给出上下文**（前后 30 字 + 该字符的转义名 + 被吃掉字母的推测），
@@ -99,6 +101,17 @@ def scan(path):
     return problems, len(raw)
 
 
+def emit_fatal(msg):
+    """判据无法自证 ⇒ **真给 2**（写 stderr，由 `sys.exit(main())` 落成退出码）。
+
+    BUG-369：改前这一处是 `raise SystemExit("FATAL …")`，而带字符串的 SystemExit 退出码是 1
+    ⇒ 第 38 行自述的「2=判据无法自证（FATAL）」从来没有生效过，「判据空转」与「有裸控制字符」
+    在退出码面上同色。这里刻意不用 `raise SystemExit(msg)`。
+    """
+    sys.stderr.write(msg + "\n")
+    return 2
+
+
 def selftest():
     """合成违例自证：判据必须先证明它会红，且干净输入不误红。"""
     import tempfile
@@ -147,6 +160,29 @@ def selftest():
         # 空扫描面自拒（由 main 判，这里考枚举函数）
         cell("md-enum-nonempty", len(md_files()) > 0, True)
         print("  ok  md-enum-nonempty（templates/ 枚举到 %d 份 .md）" % len(md_files()))
+
+        # 出口码自证（BUG-369 建议①：改行为必须同时补一支「FATAL 的码真是 2」格）。
+        # 子进程里把 TPL_DIR 指向空目录、跑真 main()，考的是**进程退出码**，不是函数返回值。
+        import subprocess
+        empty = os.path.join(d, "empty-templates")
+        os.makedirs(empty, exist_ok=True)
+        child = os.path.join(d, "child_fatal_rc.py")
+        with open(child, "w", encoding="utf-8") as fh:
+            fh.write("import importlib.util, sys\n"
+                     "spec = importlib.util.spec_from_file_location('tc', %r)\n"
+                     "m = importlib.util.module_from_spec(spec)\n"
+                     "spec.loader.exec_module(m)\n"
+                     "m.TPL_DIR = %r\n"
+                     "sys.argv = ['check_template_ctrl.py']\n"
+                     "sys.exit(m.main())\n"
+                     % (os.path.abspath(__file__), empty))
+        pr = subprocess.run((sys.executable, child), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        cell("fatal-exit-code-is-really-2", pr.returncode == 2, True)
+        print("  ok  fatal-exit-code-is-really-2（子进程实测 rc=%s；改前那条 `raise SystemExit(串)` 只给 1，"
+              "承诺面第 38 行的 2 从未生效）%s"
+              % (pr.returncode,
+                 "" if pr.returncode == 2 else "  ← stderr：%s"
+                 % pr.stderr.decode("utf-8", "replace").strip()[-160:]))
     finally:
         import shutil
         shutil.rmtree(d, ignore_errors=True)
@@ -157,8 +193,8 @@ def selftest():
         for n, w in badc:
             print("  - %s：%s" % (n, w))
         return 1
-    print("SELFTEST OK（%d 格：干净不误红 / CR 必红 / ESC+VT 必红 / TAB 放行 / CRLF 容忍 / 裸CR 必红 / 枚举非空）"
-          % len(cells))
+    print("SELFTEST OK（%d 格：干净不误红 / CR 必红 / ESC+VT 必红 / TAB 放行 / CRLF 容忍 / 裸CR 必红 / "
+          "枚举非空 / **判据空转的退出码真是 2**）" % len(cells))
     return 0
 
 
@@ -172,7 +208,7 @@ def main():
 
     files = md_files()
     if not files:
-        raise SystemExit("FATAL templates/ 下一份 .md 都没枚举到 —— 判据空转，拒绝报绿")
+        return emit_fatal("FATAL templates/ 下一份 .md 都没枚举到 —— 判据空转，拒绝报绿")
 
     total = 0
     hits = []

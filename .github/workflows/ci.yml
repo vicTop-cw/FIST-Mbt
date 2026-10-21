@@ -175,6 +175,17 @@ jobs:
           python3 scripts/check_template_ctrl.py --selftest
           python3 scripts/check_template_ctrl.py
 
+      - name: Exit-code contract guard (BUG-369：自述的退出码契约必须与 ast 实现面同色)
+        shell: bash
+        # 普查实测：`raise SystemExit("中文串")` 的退出码是 **1 不是 2**——四把尺（check_mbti_sync /
+        # check_pkg_imports / check_template_ctrl / simulate_head_commit）自述 `2=判据无法自证` 却给不出 2，
+        # 而 CI 与电池按 2 写期望 ⇒ 「尺子坏了」和「缺陷在场」在退出码面上同色。本步跑新判据的自证与棘轮：
+        # 判定面（R1 幻影 + R2 站点类指派 + R3 站点自述码）超上限即红；上限 CONTRACT_GAP_CEILING=16 是
+        # 2026-10-21 现读存量（template_ctrl 已在 R42 修真、plan_landing 已修，其余三条留待逐轮修）。
+        run: |
+          python3 scripts/check_exit_code_contract.py --selftest
+          python3 scripts/check_exit_code_contract.py
+
       - name: Py-stdout encoding guard (BUG-138：本机红必须看得见，不许崩在结论行之前)
         shell: bash
         # 扫描面从本 workflow 反解：凡被 CI 调用、会 print 且正文含非 ASCII 的 .py，必须自带
