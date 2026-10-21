@@ -325,6 +325,7 @@ test "scan_guard_substring_end_var_上界约束判已守卫" {
 }
 
 ///|
+<<<<<<< HEAD
 /// BUG-348：unused-variable 此前按裸子串 `let ` 命中每个 let 声明、不看绑定名是否真被用
 /// ⇒ 已使用的 let 照样报（纯假阳）。三件纯函数各自钉死，再加端到端成对锁
 /// （用了的必须不报、真没用的必须仍报——单向保守，不许翻成「不扫了」）。
@@ -373,4 +374,15 @@ test "bug348_used_elsewhere_skips_decl_line_only" {
   // 只在声明行出现（哪怕声明行里同名重复 = 自引用）⇒ false：除声明行外没有使用点
   let cps3 : Array[String] = ["  let cost = cost", "}"]
   assert_false(scan_variable_used_elsewhere(cps3, 1, "cost"))
+=======
+/// BUG-345：`by_severity` 四桶分档——info 必须独立成桶，未知档位不得回落到 low。
+test "BUG-345 scan_severity_bucket 四桶穷举" {
+  assert_eq(scan_severity_bucket("high"), "high")
+  assert_eq(scan_severity_bucket("medium"), "medium")
+  assert_eq(scan_severity_bucket("low"), "low")
+  assert_eq(scan_severity_bucket("info"), "info")
+  // 旧实现 `else → low` 会把未知档位算进 low，与 by_rule 标签撕裂（BUG-345 同族）
+  assert_eq(scan_severity_bucket("critical"), "info")
+  assert_eq(scan_severity_bucket(""), "info")
+>>>>>>> e1017b8d (fix: issue_scan by_severity 四桶，info 不再并入 low（BUG-345 / T0r39）)
 }
