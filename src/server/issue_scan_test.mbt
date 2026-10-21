@@ -47,6 +47,10 @@ test "lint_1_scan_hits_high_risk" {
 ///|
 test "lint_2_illegal_dir_rejected" {
   // 空目录 / 绝对路径 / 穿越都应返回 Err
+  assert_true(@server.issue_scan("", "", 100) is Err(_))
+  assert_true(@server.issue_scan("../x", "", 100) is Err(_))
+  assert_true(@server.issue_scan("C:/x", "", 100) is Err(_))
+  assert_true(@server.issue_scan("/abs", "", 100) is Err(_))
 }
 
 ///|
@@ -209,6 +213,51 @@ test "lint_7_no_high_hits_left_in_src_omega_bug15" {
 }
 
 ///|
+/// BUG-345：by_severity 聚合把 info 档独立成一桶（含未知 severity 兜底），
+/// 不再被 `else` 折进 low。旧实现只有 high/medium/low 三桶 ⇒ 返回体根本没有 info 键，
+/// low 被 info 命中系统性虚高、BUG-333 降噪预案无法按档净化。
+/// 语料含一个超 50 行的函数 ⇒ 必命中 moonbit-long-function（severity=info）。
+test "lint_9_by_severity_has_info_bucket" {
+  let d = lint_dir("lint_c9")
+  let mut sample = "fn alpha(): Int {\n  1\n}\nfn beta(): Int {\n  2\n}\n"
+  // BUG-348 起 long-function 按花括号配平实测行数（>50 才报），短函数不再产生 info 命中。
+  sample = sample + "fn big() -> Int {\n"
+  let mut bi = 0
+  while bi < 60 {
+    sample = sample + "  let v" + bi.to_string() + " = 0\n"
+    bi = bi + 1
+  }
+  sample = sample + "  0\n}\n"
+  @fs.write_string_to_file(d + "/sample.mbt", sample, encoding="utf8") catch {
+    _ => ()
+  }
+  let r = @server.issue_scan(d, "", 100)
+  let j = match r {
+    Ok(x) => x
+    Err(_) => return
+  }
+  let total = mem_int(j, "total_findings")
+  let buckets = match j.value("by_severity") {
+    Some(Object(m)) => m
+    _ => Map([])
+  }
+  let bucket = fn(k : String) -> Int32 {
+    match buckets.get(k) {
+      Some(Number(n, ..)) => n.to_int()
+      _ => -999
+    }
+  }
+  // info 键必须存在（旧实现根本没这键 → -999）且 > 0（两条 fn 命中 long-function）
+  assert_true(bucket("info") >= 0)
+  assert_true(bucket("info") > 0)
+  // 四桶不重不漏：high+medium+low+info == total_findings（旧三桶口径缺 info）
+  assert_eq(
+    bucket("high") + bucket("medium") + bucket("low") + bucket("info"),
+    total,
+  )
+}
+
+///|
 /// 守卫感知过滤回归（2026-10-10）：`if is_empty()` / `if length() > N` 之后的
 /// rows[0] / substring(0,N) 应被就地过滤；无守卫的同形代码仍须命中——证明
 /// 「消噪」不是「不扫了」。
@@ -302,10 +351,10 @@ test "lint_9_substring_guard_filter" {
   @fs.write_string_to_file(
     d + "/sample.mbt",
     "fn guarded(s : String) -> String {\n" +
-    "  if s.length() > 8 { s[0:8].to_string() } else { s }\n" +
+    "  if s.length() > 8 { s.substring(start=0, end=8) } else { s }\n" +
     "}\n" +
     "fn unguarded(s : String) -> String {\n" +
-    "  s[0:8].to_string()\n" +
+    "  s.substring(start=0, end=8)\n" +
     "}\n",
     encoding="utf8",
   ) catch {
@@ -318,13 +367,12 @@ test "lint_9_substring_guard_filter" {
     Err(_) => return
   }
   let items = lint_findings(j)
-  // 守卫过滤语义：substring-overrun 只应命中 unguarded 第 5 行，guarded 第 2 行被过滤
-  assert_true(items.length() >= 1)
-  for f in items {
-    if mem_str(f, "rule") == "substring-overrun" {
-      assert_eq(lint_line(f), 5)
-    }
-  }
+  // 守卫过滤语义：substring-overrun 只应命中 unguarded 第 5 行，guarded 第 2 行被过滤。
+  // BUG-348 副产物：旧夹具用 s[0:8] 切片（根本不匹配 substring(），断言却靠 long-function
+  // 噪声命中满足 >=1 而恒绿；短函数不再报后此处暴露出原先零 substring 命中，改用真 substring 调用。
+  assert_eq(items.length(), 1)
+  assert_eq(mem_str(items[0], "rule"), "substring-overrun")
+  assert_eq(lint_line(items[0]), 5)
 }
 
 ///|
@@ -503,4 +551,93 @@ test "lint_15_bug268_real_samples_no_fp" {
     "ops_selfdrive.mbt",
     "substring(start=3, end~)",
   )
+}
+
+///|
+/// BUG-348 端到端成对锁（走 @server.issue_scan 真源码，非旧构建产物，钉 BUG-32 教训）：
+/// `moonbit-unused-variable` 此前按裸子串 `let ` 命中每个 let 声明、不看绑定名是否真被用
+/// ⇒ 已使用的 let 照样报（cost_tool.mbt L29/31/32 纯假阳）。修复后必须：
+///   - 用了的绑定（let cost=3; cost+1）不再报
+///   - 真没用的绑定（let dead=5，全程不引用）仍报 —— 单向保守，绝不藏真问题
+test "lint_348_unused_variable_pairwise" {
+  let d = lint_dir("lint_c348")
+  @fs.write_string_to_file(
+    d + "/sample.mbt",
+    "fn used_one(): Int {\n" +
+    "  let cost = 3\n" +
+    "  cost + 1\n" +
+    "}\n" +
+    "fn truly_unused(): Int {\n" +
+    "  let dead = 5\n" +
+    "  7\n" +
+    "}\n",
+    encoding="utf8",
+  ) catch {
+    _ => ()
+  }
+  let r = @server.issue_scan(d, "", 200)
+  let j = match r {
+    Ok(x) => x
+    Err(_) => return
+  }
+  let items = lint_findings(j)
+  let is_unused_on = fn(line_no : Int32) -> Bool {
+    items.any(fn(f) {
+      mem_str(f, "rule") == "moonbit-unused-variable" && lint_line(f) == line_no
+    })
+  }
+  // 第 2 行 `let cost` 在第 3 行被使用 ⇒ 修复前被报、修复后不得再报
+  assert_false(is_unused_on(2))
+  // 第 6 行 `let dead` 全程未被引用 ⇒ 必须仍报（不许把「不扫了」当修复）
+  assert_true(is_unused_on(6))
+}
+
+///|
+/// BUG-333 回归锁：moonbit-match-exhaustive（needle 裸子串 `match `）——MoonBit 编译器
+/// **强制** match 穷尽（不穷尽 = 编译错误），账本实测 1513 条命中全部假阳 ⇒ 默认降噪丢弃。
+/// R8 曾落地这处修复，但它**连同私有的函数名白盒锁**在后续重构中被一并删掉 = 静默回归
+/// （R53 实测 grep `denoise` 全 src 零命中）。本轮教训写进锁的选型：**锁走公开
+/// @server.issue_scan 的产出，不锁内部函数名**——内部函数被重构删掉时，行为锁当场变红。
+/// 三重断言缺一不可：
+///   ① match-exhaustive 命中必须为 0（降噪生效）
+///   ② 同族启发式 moonbit-long-function 必须仍 > 0（反证「不是扫描器坏了/不扫了」）
+///   ③ 编译器不保证的硬门 unwrapped-unwrap 必须仍报（反证「不是把真规则也一起降噪了」）
+test "lint_333_match_exhaustive_denoised_targeted" {
+  let d = lint_dir("lint_c333")
+  let mut sample = "fn f(x : Int) -> Int {\n" +
+    "  match x {\n" +
+    "    _ => 3\n" +
+    "  }\n" +
+    "}\n" +
+    "fn g(): Int {\n" +
+    "  let ot = Option::Some(1)\n" +
+    "  ot.unwrap()\n" +
+    "}\n"
+  // ② 要的「同族启发式仍在」得真有一条会触发的命中：BUG-348 起 long-function 按花括号
+  // 配平实测行数（>50 才报），旧夹具里两个短函数已不再命中 ⇒ 补一个 60 行的长函数。
+  sample = sample + "fn big() -> Int {\n"
+  let mut bi = 0
+  while bi < 60 {
+    sample = sample + "  let v" + bi.to_string() + " = 0\n"
+    bi = bi + 1
+  }
+  sample = sample + "  0\n}\n"
+  @fs.write_string_to_file(d + "/sample.mbt", sample, encoding="utf8") catch {
+    _ => ()
+  }
+  let r = @server.issue_scan(d, "", 500)
+  let j = match r {
+    Ok(x) => x
+    Err(_) => return
+  }
+  let items = lint_findings(j)
+  let count_rule = fn(rid : String) -> Int32 {
+    items.filter(fn(f) { mem_str(f, "rule") == rid }).length()
+  }
+  // ① 编译器已保证穷尽 ⇒ 这条规则命中全丢
+  assert_eq(count_rule("moonbit-match-exhaustive"), 0)
+  // ② 同族启发式必须仍在 ⇒ 证明扫描器本身工作正常（不是「不扫了」）
+  assert_true(count_rule("moonbit-long-function") > 0)
+  // ③ 硬门必须仍报 ⇒ 降噪是定向的，没把真规则一并吞掉
+  assert_true(count_rule("unwrapped-unwrap") > 0)
 }
