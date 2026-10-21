@@ -146,7 +146,6 @@ test "ns_stats 反映各 ns 任务数" {
   assert_eq(gamma_total, 1)
 }
 
-
 ///|
 test "close 移除单个 ns，close_all 清空全部" {
   let ms = @store.MultiStore::new(data_dir=base_dir())

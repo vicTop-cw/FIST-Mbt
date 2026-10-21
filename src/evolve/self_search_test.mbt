@@ -38,7 +38,6 @@ test "self_search_is_duplicate" {
   assert_true(!@evolve.is_duplicate_candidate(a, d))
 }
 
-
 ///|
 /// 可移植性：含中文动作词（移植/复用）应判定可移植。
 test "self_search_portability_words" {
@@ -52,7 +51,6 @@ test "self_search_portability_words" {
   assert_true(!@evolve.assess_portability(low))
 }
 
-
 ///|
 /// 可移植性边界：长度恰好触发词应判可移植；过短/空原样不可移植。
 test "self_search_portability_length" {
@@ -63,7 +61,6 @@ test "self_search_portability_length" {
   let word4 = @evolve.analyze_candidate("w", "", "tmp", "wrap")
   assert_true(@evolve.assess_portability(word4))
 }
-
 
 ///|
 /// distill：去重同键、过滤不可移植、按 source 升序，且稳定。

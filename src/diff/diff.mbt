@@ -46,15 +46,9 @@ pub fn diff_lines(old : String, new : String) -> Array[DiffOp] {
   let n = old_lines.length()
   let m = new_lines.length()
   // LCS DP 表：dp[i][j] = old[0..i] 与 new[0..j] 的 LCS 长度
-<<<<<<< HEAD
   let dp : Array[Array[Int32]] = []
   for _i in 0..<=n {
     let row : Array[Int32] = []
-=======
-  let dp : Array[Array[Int]] = []
-  for _i in 0..<=n {
-    let row : Array[Int] = []
->>>>>>> 77a2675e (fix(idiom): 清零 0002 unused_value 非参数绑定子族 20 条（20 处 _ 前缀 / 10 份 .mbt）)
     for _j in 0..<=m {
       row.push(0)
     }
