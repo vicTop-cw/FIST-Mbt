@@ -1,4 +1,4 @@
-# scripts/slave-branch-merge.ps1
+﻿# scripts/slave-branch-merge.ps1
 # 一键合并 gitcode/slave/* 分支的新代码 commits 到 master，并清理已合并分支
 # 用法: pwsh scripts/slave-branch-merge.ps1
 # 流程: fetch → 扫描哪些分支有 src/scripts/cmd/moon.pkg 改动 → 逐个 cherry-pick → 清冲突标记 → build → push → 删已合并分支

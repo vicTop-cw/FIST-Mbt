@@ -97,11 +97,9 @@ CASES = [
              "（改前 SystemExit(str) 只给 1，那个 2 是幻影 ⇒ BUG-369）",
              kind="diag"),
     case("check_ps_encoding.py"),
-    # —— 编码面：Windows 才红，属预存红，修好后期望值要改回 0 ——
-    expected("check_py_stdout_encoding.py", 2,
-             "预存红：--selftest 本机 rc=2（BUG-355 一族）", "--selftest"),
-    expected("check_py_stdout_encoding.py", 1,
-             "预存红：同一批 9 份历史脚本（BUG-355 一族）", "--all"),
+    # —— 编码面：BUG-355 一族 9 份历史脚本已修（R73 基线实测两格 rc=0），期望值按约定改回 0 ——
+    case("check_py_stdout_encoding.py", "--selftest"),
+    case("check_py_stdout_encoding.py", "--all"),
     # —— 依赖临时件的 case：缺前置 ⇒ SKIP 并点名 ——
     gated("check_badge.py", TESTLOG, TESTLOG, "README.md"),
     gated("check_test_sync.py", TESTLOG, TESTLOG),
