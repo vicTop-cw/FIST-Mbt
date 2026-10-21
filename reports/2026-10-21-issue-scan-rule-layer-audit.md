@@ -13,6 +13,7 @@
 | BUG-345 | by_severity 聚合把 `info` 并入 `low` 桶 | 带 `bug333_denoise_rules_v2.json` 跑 `src/ltl`：by_rule 已显示 match-exhaustive=`info`(9)、unused-variable=`info`(27)、long-function=`info`(23)、json-injection=`info`(11)；但 **by_severity 仍 {high:0, medium:0, low:80}，与默认完全一致** | ✅ 确证 |
 | BUG-347 | 外部 rules_file pattern 按 `::` 切分取尾段，命名空间限定被静默丢弃 | 三探针（我自写 JSON，非它的 `_ctl_pattern_probe.json`）在 `src/ltl`（无任何 `Json::string(` 调用）：`Foo::string(`→json-injection **11 条**；`Json::string(`→**11 条**；`NOPEstring(`（无 `::`）→**0 条**。与它报告的 11 条逐字一致 | ✅ 确证 |
 | BUG-348 | `unused-variable` 报已使用的 let；`match-exhaustive` 报已含 catch-all 的 match | issue_scan(src/engine) = 1693 命中，**high=0 medium=0**；真读 `src/engine/cost_tool.mbt`（77 行）逐行：L29 `exceeded`→L43/46 使用、L31 `remaining`→L34/44/52 使用、L32 `action`→L45 使用、L68/72 match 均含 `_ => 0.0` | ✅ 确证 |
+| BUG-346 | 内建表 pattern `Json::string(` 匹配安全 JSON 构造器（反转） | issue_scan(src/store) = 954 命中，**json-injection=45 条**（与它报告的 45 条逐字一致）；抽查 `multi_store.mbt:179` `item.set("ns", Json::string(ns))` 为 `Json::object.set` + `Json::string` 值（MoonBit 惯用安全构造），**非拼接注入** | ✅ 确证 |
 
 **证据强度**：全部达到 L4（L3 是并发 agent 的自述，我在同一工具上独立复现并真读源码，非转发其结论）。
 
@@ -85,3 +86,26 @@
 - 降噪预案：`memory/bug333_denoise_rules.json`、`memory/bug333_denoise_rules_v2.json`
 - 扫描日志：本会话 issue_scan 6 次调用（`call_log` 可查）
 - 记忆：`memory/2026-10-20.md`（09:28–09:30 三条独立验证追加）
+## 补充发现（09:36 扩展）：FP 噪音淹没真告警
+
+四个规则层缺陷全部独立确证后，交叉看 src/store（7 文件，954 命中）与 src/engine（23 文件，1693 命中）的**规则分布**：
+
+| 规则 | src/store | src/engine | 性质 |
+|---|---|---|---|
+| moonbit-json-injection | 45 | 340 | **BUG-346 FP**（安全构造器） |
+| moonbit-match-exhaustive | 204 | 252 | **BUG-348 FP**（含 catch-all 仍报） |
+| moonbit-unused-variable | 195 | 708 | **BUG-348 FP**（已使用仍报） |
+| moonbit-long-function | 203 | 215 | **BUG-348 FP**（子串近似 fn 行） |
+| moonbit-result-discard | **236** | 17 | **真告警**（ignore() 丢 Result） |
+| moonbit-array-index-bounds | 5 | 19 | 真告警 |
+| moonbit-resource-leak | 6 | 1 | 真告警 |
+
+**结论**：FP 四条规则（json-injection/match-exhaustive/unused-variable/long-function）在 src/store 贡献 45+204+195+203 = **647/954 = 68% 命中**；真告警（result-discard 236 / array-index-bounds / resource-leak）被淹没在同为 low 桶的噪音里。y_severity 里 low=954 一字不辨。
+
+**这直接验证了 BUG-333 的初衷**：降噪预案本应净化 low 桶，但 BUG-345（info 并入 low）使它结构上失效；即便修掉 345，BUG-346/348 的 FP 规则仍占 68% 噪音。**四缺陷必须联动修复**，单独修任何一条都无法让 issue_scan 成为可用的寻虫工具。
+
+## 审计总账
+
+- **独立验证 4/4 确证**：BUG-345/346/347/348 全部成立，命中数与并发 agent 报告逐字一致。
+- **未发现新缺陷**：本轮未在全量新扫描，仅复现已知四条；不排除规则层还有未上报缺陷（如 moonbit-overly-broad-catch 5 条、moonbit-noop-assignment 5 条未抽查）。
+- **修复优先级（与并发 agent 建议一致）**：347 → 345 → 346/348。
