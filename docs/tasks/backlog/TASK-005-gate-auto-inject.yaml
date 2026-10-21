@@ -1,0 +1,30 @@
+id: TASK-005
+title: "合入者巡检报告自动生成 — 15 分钟定时→backlog 注入"
+priority: P1
+status: backlog
+assignee: atomcode
+discovered_by: lead
+discovered_at: "2026-10-21T19:45:00+08:00"
+
+problem: >
+ 合入者每 15 分钟做一次巡检（schedule-9a125f43），手动运行 git fetch + diff + cherry 检查。
+ 目前发现的问题（TASK-001~TASK-004）都是合入者手动写成 yaml 的。
+  
+ 应该有一个自动化：fist-gate.py 每次巡检时把"值得合入的分支"和"发现的问题"自动生成 yaml
+ 进 .git/fist/tasks/backlog/——这样 AtomCode 拉取主分支后 git status 能看到新任务。
+
+scope:
+  - scripts/fist-gate.py
+  - 定时任务巡检 prompt 调整
+
+acceptance:
+  - [ ] fist-gate.py 加 scan 子命令：自动遍历远端分支、跑 cherry --no-merges、检测冲突标记、生成 yaml
+  - [ ] 生成的 yaml 文件名 = BRANCH-NAME.yaml，内含 ahead / cherry+/冲突标记 / src 改动行数 / 建议动作
+  - [ ] 巡检 prompt 里加上"发现问题自动写 .git/fist/tasks/backlog/*.yaml"
+  - [ ] 合入者下次巡检能看到之前 AtomCode 修了哪些任务（状态从 backlog→claimed→done）
+
+evidence:
+  - 本轮手动写了 TASK-001~004 四个 yaml，证明这个流程有价值
+  - .git/fist/tasks/ 目录已建好，缺注入器
+
+blocked_by: []
