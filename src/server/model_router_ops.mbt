@@ -59,28 +59,8 @@ fn mr_caf_state_path(project_dir : String, ns : String) -> String {
 }
 
 ///|
-/// 读 CAF 记忆状态；文件不存在/读失败/非法 JSON 一律回 Json::null()，
-/// 由 `caf_memory_load` 降级成空记忆 + warning，绝不 panic。
-/// 与 `mr_read` 同款"坏状态不删"纪律：坏记忆是证据，留给 `caf_memory_load` 计数告警。
-fn mr_caf_read(project_dir : String, ns : String) -> Json {
-  let raw = @fs.read_file_to_string(
-    mr_caf_state_path(project_dir, ns),
-    encoding="utf8",
-  ) catch {
-    _ => ""
-  }
-  if raw.is_empty() {
-    Json::null()
-  } else {
-    @json.parse(raw) catch {
-      _ => Json::null()
-    }
-  }
-}
-
-///|
 /// 把 `@json.parse`（raising 风格）包成 Result，好让调用方能区分「解析成功」与「坏 JSON」。
-/// `mr_caf_read` 把两者都塌成 `Json::null()`（读侧只需降级），CAF 写半需要知道根因
+/// 直接塌成 `Json::null()` 的读法（读侧只需降级）会丢掉根因，CAF 写半需要知道根因
 /// ——坏 JSON 是证据，不能覆盖/删除。
 fn mr_try_parse(raw : String) -> Result[Json, Unit] {
   let v = @json.parse(raw) catch { _ => return Err(()) }
@@ -89,7 +69,7 @@ fn mr_try_parse(raw : String) -> Result[Json, Unit] {
 
 ///|
 /// CAF 记忆文件的**可诊断**读取：区分「不存在」/「空」/「坏 JSON」/「合法 JSON」，
-/// 供 dry_run 读侧与 push 写侧共用同一套降级口径（`mr_caf_read` 把"不存在/读失败/坏 JSON"
+/// 供 dry_run 读侧与 push 写侧共用同一套降级口径（直接读会把"不存在/读失败/坏 JSON"
 /// 全部塌成 `Json::null()`，读侧能降级但**说不出根因**；本函数把根因显式带出来）。
 /// 返回 `(是否存在, 是否坏 JSON, 解析后的 Json 或 Json::null())`。
 /// 坏 JSON 是证据：只计数告警，绝不删除/覆盖（与 `mr_read` 同款"坏状态不删"纪律）。

@@ -215,27 +215,6 @@ pub fn to_cnf(expr : BoolExpr) -> Cnf {
 }
 
 ///|
-/// 取文字的变量索引
-fn lit_var(l : Lit) -> Int32 {
-  let (v, _) = l
-  v
-}
-
-///|
-/// 取文字的正负
-fn lit_sign(l : Lit) -> Bool {
-  let (_, s) = l
-  s
-}
-
-///|
-/// 取文字的否定
-fn lit_neg(l : Lit) -> Lit {
-  let (v, s) = l
-  (v, !s)
-}
-
-///|
 /// DPLL SAT 求解器
 /// 返回 Some(assignment) 表示可满足，None 表示不可满足
 /// assignment[var_idx] = true/false (1-based 索引，0 位不用)
