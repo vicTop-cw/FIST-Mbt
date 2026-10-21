@@ -96,6 +96,12 @@ EXEMPT = [
     ("docs/atgc-selfdrive-demo.md", "807", "该轮交付叙述里的当轮全量读数（交付记录，非现状断言面）"),
     ("docs/evolve.md", "807", "同型交付叙述：那轮改动后的当轮全量读数（非现状断言面）"),
     ("docs/features/F094-multi-butler-file-binds-positioning.md", "12", "F094 定位文档里该特性轮的**单包**读数（非全量总数声明）"),
+    # 2026-10-20（BUG-339：moonc 0.10.16 迁移后 JS 全量实测 1302，现状面文档已同步）。下面三条是同批扫描里
+    # 暴露的**合法历史数/局部读数**，按 docstring 的规定逐条点名而不是改写——改它们等于把 2026-09 的里程碑读数、
+    # 单包读数、2026-09-28 审计快照冒充成今日实测。
+    ("README.md", "77", "「开发进度」表 M8 行（2026-09）的当轮读数 77/77，同格自带日期 = 历史行，非现状断言"),
+    ("README.md", "162", "「开发进度」表 2026-10-17 行 `moon test --target js src/engine` 的**单包**读数（非全量总数声明）"),
+    ("docs/SHIP-PLAN-BLACKBOX-v2.md", "1058", "§1 标题自述「2026-09-28 实量」的现状审计快照 + §Phase5/§附录的**当轮验收基线**（日期快照型规划文档，与 docs/improvement-plan-20261010.md 的 737 同型）"),
 ]
 
 # 历史记录类别：整路径豁免（按日期追加，改写即伪造历史）
@@ -264,7 +270,8 @@ def selftest() -> int:
     # R4 会当场判 baseline-clean 不绿 —— 那是设计，不是噪声）。
     native_old = "572"
     base = {
-        "README.md": _pair(total) + "\n> Native 后端" + _pair(native_old) + "（工作树带构建残留时）；干净树同一命令必崩，见 BUG-133",
+        "README.md": (_pair(total) + "\n> Native 后端" + _pair(native_old) + "（工作树带构建残留时）；干净树同一命令必崩，见 BUG-133"
+                      + "\n> 开发进度表历史行：M8（2026-09）36+ 工具 + 77/77 测试；2026-10-17 `moon test --target js src/engine` = 162/162 全绿"),
         "AGENTS.md": _pair(total) + "\n> Native 后端" + _pair(native_old) + "，干净树必崩（BUG-133），不据任何旧数宣称双端同版全绿",
         "docs/deliverable.md": f"测试 **{total} 项全绿**\n| 43 测试数单一真源 | 当轮实测（233/233 全绿）|",
         "docs/agent-map.md": f"**{total} 项全绿**",
@@ -280,11 +287,20 @@ def selftest() -> int:
             "done(翻账全量测试 811/811 全绿)\n"
             "done(单包 `src/router` 测试 86/86 全绿)\n"
             "done(脚本自检面测试 CI 面 23/23、--all 面 62/62 全绿)\n"
-            "done(另一 done 行 JS 全量测试 737/737 全绿)"
+            "done(另一 done 行 JS 全量测试 737/737 全绿)\n"
+            "pending(L16 行引述的当时背景数 807/807 全绿，非现状断言)\n"
+            "done(Omega gate 策略自定义那轮单包 50/50 全绿)"
         ),
         # 本轮新登记的 EXEMPT 条目必须在夹具里各有声明（R4 的设计如此，见上），
         # 否则 baseline-clean 会因"豁免失效"而红。此份供 improvement-plan 的 737 那条用。
         "docs/improvement-plan-20261010.md": "日期快照型规划文档：当轮 JS 全量测试 737/737 全绿（非现状断言）",
+        # 2026-10-20（BUG-340）：HEAD 上 --selftest 就判 baseline-clean 不绿 —— 豁免表里 5 条
+        # （BACKLOG 807/50、atgc 807、evolve 807、F094 的 12）在夹具里没有对应声明，R4 按设计报"豁免失效"。
+        # 本轮把这三条 + 新登记的 README 77/162、SHIP-PLAN 1058 一起补进夹具，判据的自检面回到可跑。
+        "docs/atgc-selfdrive-demo.md": "该轮交付叙述：JS 全量测试 807/807 全绿（当轮记录，非现状断言）",
+        "docs/evolve.md": "同型交付叙述：那轮改动后全量测试 807/807 全绿（非现状断言面）",
+        "docs/features/F094-multi-butler-file-binds-positioning.md": "F094 定位文档：该特性轮单包测试 12/12 全绿（非全量总数）",
+        "docs/SHIP-PLAN-BLACKBOX-v2.md": "§1 现状审计（2026-09-28 实量）：moon test JS 后端 1058/1058 全绿；§Phase5 验收基线 1058/1058",
         "docs/other.md": "无关文字：测试 105/104 是引文，1986/1997 是年份",
         "memory/2026-09-26.md": "当日记录写 406/406（历史面豁免）",
         "reports/2026-09-26-x.md": "报告写 406/406（历史面豁免）",
