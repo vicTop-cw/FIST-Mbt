@@ -153,8 +153,8 @@ pub async fn latest_tag(
 
 ///|
 /// 备份文件名：`fist-mbt.js.bak-<L>`（与 `fist-mbt.js` 同目录同卷，copy 后自检失败可还原）。
-fn backup_name(local : String) -> String {
-  "fist-mbt.js.bak-" + local
+fn backup_name(bak_ver : String) -> String {
+  "fist-mbt.js.bak-" + bak_ver
 }
 
 ///|
@@ -260,7 +260,7 @@ async fn up_ok(op : String, payload : Json) -> Result[Unit, String] {
 /// 换入前必先备份、换入后必自检、自检不符必还原——**写盘三保险**。
 pub async fn run_upgrade_full(
   remote : String,
-  local : String,
+  bin_name : String,
   base_url : String,
   no_path : Bool,
 ) -> Result[String, String] {
@@ -323,7 +323,7 @@ pub async fn run_upgrade_full(
   }
   if recheck <= 0 {
     return Ok(
-      "已是最新 v\{installed}（运行构建 \{local}）；未做任何替换",
+      "已是最新 v\{installed}（运行构建 \{bin_name}）；未做任何替换",
     )
   }
   // 第 3 步：备份旧 JS（备份名 = backup_name(installed)，两处写死同源防漂移），自检失败就靠它还原

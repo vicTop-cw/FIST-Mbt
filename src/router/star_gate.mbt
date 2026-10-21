@@ -55,7 +55,7 @@ pub struct StarGateOutcome {
 
 ///|
 /// 从 JSON 解析出的、验签所需的最小结构。
-struct StarAttestData {
+priv struct StarAttestData {
   list : Array[String]
   issued_at : Int64
   ttl_seconds : Int64

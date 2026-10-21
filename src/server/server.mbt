@@ -82,7 +82,7 @@ let loop_reg : @ops.LoopRegistry = @ops.LoopRegistry::new()
 
 ///|
 /// 六顶帽辩论的单场会话（R118 P1-b）。verdicts 是该 session 下已登记的帽子判决。
-struct DebateSession {
+priv struct DebateSession {
   topic : String
   hats : Array[String]
   threshold : Double
@@ -93,7 +93,7 @@ struct DebateSession {
 ///|
 /// 六顶帽辩论进程内会话注册表。**不落库**：跨进程 / server 重启即失（诚实标注）。
 /// 模仿 LoopRegistry 的内部可变性模式（模块级 let 持有，字段可变）。
-struct DebateRegistry {
+priv struct DebateRegistry {
   sessions : Map[String, DebateSession]
 }
 

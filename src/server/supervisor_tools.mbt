@@ -8,7 +8,7 @@
 
 ///|
 /// 引导提示词条目（提示词引导能力）。
-struct SupervisorGuidance {
+priv struct SupervisorGuidance {
   id : String
   target : String
   prompt : String
@@ -19,7 +19,7 @@ struct SupervisorGuidance {
 
 ///|
 /// 引导队列注册表（进程内；跨进程经 call_log 双写回读，见计划文档 §4）。
-struct SupervisorGuidanceRegistry {
+priv struct SupervisorGuidanceRegistry {
   mut seq : Int
   items : Map[String, SupervisorGuidance]
 }

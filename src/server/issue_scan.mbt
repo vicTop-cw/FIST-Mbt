@@ -13,7 +13,7 @@
 ///|
 /// 规则定义：id + 说明 + 匹配模式（按行正则式字符串匹配，命中即给 finding，
 /// 是否真实缺陷由 agent 读上下文判定）。
-struct ScanRule {
+priv struct ScanRule {
   id : String
   severity : String
   pattern : Array[String]
@@ -23,7 +23,7 @@ struct ScanRule {
 
 ///|
 /// 一条命中记录。
-struct ScanFinding {
+priv struct ScanFinding {
   rule : String
   severity : String
   file : String
