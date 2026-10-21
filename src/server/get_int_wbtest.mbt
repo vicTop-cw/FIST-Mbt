@@ -1,4 +1,4 @@
-/// get_int_wbtest.mbt —— BUG-192（server.mbt get_int 溢出）的白盒锁
+/// get_int_wbtest.mbt —— BUG-194（server.mbt get_int 溢出）的白盒锁
 ///
 /// 真源：src/server/server.mbt 的 `get_int`（被 42 个 MCP 工具的参数解析共用）。
 /// 病灶：`Double::to_int()` 对超 Int32 域的值**饱和**（BUG-26 实测 1e300 → Int max），
@@ -12,7 +12,7 @@ fn gi_int(v : Double) -> Json {
 }
 
 ///|
-test "BUG-192：get_int 对超 Int32 域的值回落默认" {
+test "BUG-194：get_int 对超 Int32 域的值回落默认" {
   // 1e300 级别（饱和为 Int max 的旧形状）
   assert_eq(get_int(gi_int(2147483647.0), "k", default=3), 3)
   assert_eq(get_int(gi_int(99999999999.0), "k", default=3), 3)
@@ -28,7 +28,7 @@ test "BUG-192：get_int 对超 Int32 域的值回落默认" {
 }
 
 ///|
-test "BUG-192：get_int 缺字段/坏类型回落默认" {
+test "BUG-194：get_int 缺字段/坏类型回落默认" {
   assert_eq(get_int(Json::object({}), "k", default=3), 3)
   assert_eq(
     get_int(Json::object({ "k": Json::string("x") }), "k", default=3),
