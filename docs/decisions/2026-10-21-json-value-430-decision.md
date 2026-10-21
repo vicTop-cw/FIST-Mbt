@@ -154,6 +154,37 @@ unused 系、0078 契约面 437 处对判据 3 处）只能按 `error_code` 逐�
 `utf8.encode` 一条也命中不了；③ 本模式**不挂 CI**，只可能返回 0 或 2——「读到了什么」和「这算不算缺陷」
 分开写，才不能让一次工具链升级用红门的形式说出「大概没事」。
 
+### 3.7 不可入表族的「站点清单」也做成守卫（R38）
+
+§3.5 只能给「这几族进不了表」的结论，给不出「那这几族到底在哪、该怎么改」。上一单为拿这两问的答案临时写了
+`temp/probe50.py`/`temp/probe51.py`，本单把答案固化成 `scripts/check_deprecated_site_list.py`：判据行 ⇒
+`file:line:col` ⇒ 按 loc 起止列切出源码片段 ⇒ 结构归属（回溯顶层条目抬头 / 反解判据文本里的 impl /
+判 derive 列表是否已含 Debug / 判 0078 站点所在函数的可见性）。**只读数，退出码只可能 0 或 2，不挂 CI**。
+
+一条实测纠正了本单自己沿用的口径：Show 族不是 11 处，是 **11 条判据行 / 8 个站点**。`cmd/cli/main.mbt:458`、
+`src/router/router_caf_replay_distinct_test.mbt:288`、`src/router/router_state_wbtest.mbt:85` 三处同时被
+`Use Debug instead of Show…` 与 ``Use `@debug.Debug` instead of `Show` for collections`` 两条文本命中，
+后者**新增 0 个站点**。按行派工就会多算 3 处——这是行级普查的第二种失真（第一种是 §3.4 的静默少报）。
+
+三族的结构归属实测（`temp/chk44.json` 表头读数：六族合计判据行 19 / 站点 16 / 文件 11）：
+
+- FFI `Array` 3 处（`src/server/github_js.mbt:63` / `src/server/laya_js.mbt:18` / `src/server/run_check_js.mbt:26`）：
+  extern "js" 抬头分别在其上 **1、2、2 行** ⇒ §3.5 说的「跨行事实」不是推测，行级判据在这三行上读 0；
+  工具把这格直接印成 `行级正则能否单独判定 = 不能（本行无 extern token，归属在上方 N 行）`。
+- 隐式提升 1 处：判据文本自述 `impl Executor for McpDelegateExecutor`，本文件内该 impl 有两条（第 50、57 行），
+  按「下一个顶层条目起始行」取粗界得段 50–56 / 57–68，站点第 71 行**落在两段体之外**（在 `fn delegate_execute` 里）
+  ⇒ 标准形状是「方法只存在于 impl 而按点号调用」，改法即判据点名的显式限定 `Executor::run`。
+- 0027 那 1 处真身是 `} derive(Eq, Debug, Show)`，**Debug 已在列表里** ⇒ 改法是删一个 token，不用补实现。
+- 0078 的 3 处全在**私有**转换辅助（`fn to_result` 第 795 行 / `fn to_ids_result` 第 850 行 / 同型第三处）的返回类型上
+  ⇒ 对外契约面为 0，这正是 §3.5 里「437 处对判据 3 处」那三处的真身。
+
+两支真数据变异对照（各 489 条，不是合成件）：M1 把六族 marker 各改一个字母（命中 19 条）⇒ rc 仍 0，但打出
+「大概率是判据文本漂移而不是族已清空」并指回 `--dump-distribution` 对 code 面；M2 把表内族 loc 起止列整体 +3
+⇒ rc=2 并点名 S5。一条不对称值得记下：只有判据**点名符号**的族能自证列口径（Array / 0027 的 Show / Result），
+Show 的 0020 判据不点名 token，同一份变异里它 8 个站点全读成「未分类」——数字不会自拒，但小结一片「未分类」
+就是进料信号。另有一条本轮新踩的坑：本单第一版探针按 `messages` 键读 dump，读到 0 条而不自知（489 条在
+`diagnostics`），这把尺因此把「`diagnostics` 是非空数组」钉成 S1 硬前置（与 §3.6 那批一次性探针同型教训）。
+
 ## 4. 作用域定律（实测，4 组探针）
 
 A 案要落辅助件，第一件事是问「同名私有件能不能一个文件写一份」。四组探针（`temp/probe_dup_helper.py` / `probe_dup_helper2.py`，每组都完整回退、判据面复测）：
