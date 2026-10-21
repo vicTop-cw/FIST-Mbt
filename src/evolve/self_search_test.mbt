@@ -48,6 +48,7 @@ test "self_search_is_duplicate" {
 >>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
 }
 
+
 ///|
 /// 可移植性：含中文动作词（移植/复用）应判定可移植。
 test "self_search_portability_words" {
@@ -64,6 +65,7 @@ test "self_search_portability_words" {
   assert_true(!assess_portability(low))
 >>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
 }
+
 
 ///|
 /// 可移植性边界：长度恰好触发词应判可移植；过短/空原样不可移植。
@@ -84,6 +86,7 @@ test "self_search_portability_length" {
   assert_true(assess_portability(word4))
 >>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
 }
+
 
 ///|
 /// distill：去重同键、过滤不可移植、按 source 升序，且稳定。

@@ -36,6 +36,7 @@ test "scoring_fingerprint_false_penalty" {
 >>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
 }
 
+
 ///|
 /// schema 缺失 -> 结构分 -0.25，惩罚到 0.75，档位落 L3。
 test "scoring_schema_false_penalty" {
@@ -78,6 +79,7 @@ test "scoring_accept_threshold" {
   assert_true(score_accept(0.96, threshold=0.95))
 >>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
 }
+
 
 ///|
 /// rank 单调：score 越大档位只升不降（抽查两对）。

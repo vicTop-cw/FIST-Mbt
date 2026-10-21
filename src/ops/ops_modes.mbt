@@ -428,6 +428,7 @@ pub fn estimate_complexity(
   score
 }
 
+
 ///|
 /// 多个文件作用域**两两相交**的文件名（去重）。空数组 = 两两不相交。
 /// 按 trim 后的字面路径比对，不做归一化："./a.mbt" 与 "a.mbt" 视作不同作用域——
@@ -459,6 +460,7 @@ pub fn file_scope_conflicts(scopes : Array[Array[String]]) -> Array[String] {
   }
   out
 }
+
 
 ///|
 /// 作用域是否两两不相交（file_scope_conflicts 的布尔门面）。
