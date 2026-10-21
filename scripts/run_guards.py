@@ -70,7 +70,26 @@ def gated(script, need, *args):
             "kind": "gate"}
 
 
-CASES = [
+def discover_scripts():
+    """扫描 scripts/ + scripts/blackbox/ 的全部 .py 脚本（TASK-007：宇宙不限于 check_*）。
+    排除：__init__.py / test_* / verify_* / selfdrive_* / run_guards.py（纯测试/工具脚本）。
+    返回相对 scripts/ 的路径名（blackbox 子目录带 `blackbox/` 前缀）。"""
+    EXCLUDE_EXACT = {"__init__.py", "run_guards.py"}
+    EXCLUDE_PREFIX = ("test_", "verify_", "selfdrive_")
+    out = []
+    for base, prefix in ((SCRIPTS_DIR, ""), (BLACKBOX_DIR, "blackbox/")):
+        if not os.path.isdir(base):
+            continue
+        for f in sorted(os.listdir(base)):
+            if not f.endswith(".py"):
+                continue
+            if f in EXCLUDE_EXACT or any(f.startswith(p) for p in EXCLUDE_PREFIX):
+                continue
+            out.append(prefix + f)
+    return out
+
+
+SPECIAL_CASES = [
     # —— 判据面（纯静态，跨平台稳定）——
     case("check_tools_sync.py"),
     case("check_doc_surface.py"),
@@ -124,6 +143,20 @@ CASES = [
 ]
 
 
+def build_cases():
+    """自动构建 CASES：SPECIAL_CASES + 对每个未发现脚本补一条 case(script)。
+    已有手写的脚本（SPECIAL_CASES 里出现过的）不重复补。"""
+    covered = {c["script"] for c in SPECIAL_CASES}
+    cases = list(SPECIAL_CASES)
+    for script in discover_scripts():
+        if script not in covered:
+            cases.append(case(script))
+    return cases
+
+
+CASES = build_cases()
+
+
 def ci_referred():
     """现读 .github/workflows/*.yml 里引用过的守卫脚本名（不抄清单）。"""
     names = set()
@@ -140,16 +173,9 @@ def ci_referred():
 
 
 def guard_files():
-    """普查宇宙 = scripts/ 顶层 + scripts/blackbox/ 的 check_*.py（R55：子目录不再豁免）。
-    返回相对 scripts/ 的路径名（blackbox 尺带 `blackbox/` 前缀，电池里同形点名）。"""
-    out = []
-    if os.path.isdir(SCRIPTS_DIR):
-        out += [f for f in sorted(os.listdir(SCRIPTS_DIR))
-                if f.startswith("check_") and f.endswith(".py")]
-    if os.path.isdir(BLACKBOX_DIR):
-        out += ["blackbox/" + f for f in sorted(os.listdir(BLACKBOX_DIR))
-                if f.startswith("check_") and f.endswith(".py")]
-    return out
+    """普查宇宙 = discover_scripts()（R55：子目录不豁免；TASK-007：全量 .py 而非仅 check_*）。
+    返回相对 scripts/ 的路径名（blackbox 子目录带 `blackbox/` 前缀，电池里同形点名）。"""
+    return discover_scripts()
 
 
 def _existing_scripts():
