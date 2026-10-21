@@ -47,7 +47,15 @@ def ck_sp(root):
     pat = re.compile(r'"[^"\n]*(?:C:|c:)[\\/][^"\n]*"|"[^"\n]*/(?:etc|home|usr|var|root)/[^"\n]*"|"[^"\n]*\\\\[A-Za-z][^"\n]*"')
     bad = [f for f in st if pat.search((root / f).read_text(encoding="utf-8", errors="replace"))]
     return (1, "FAIL store_path: " + ", ".join(bad)) if bad else (0, "store_path: %d store files ok" % len(st))
-CHECKS = [("merge_markers", ck_mm), ("fmt", ck_fmt), ("build", ck_build), ("ps_encoding", ck_ps), ("store_path", ck_sp)]
+def ck_ws(root):
+    # whisperer 检查项：只跑 --selftest 自证（扫描产物是输出不是门，真发现走 backlog yaml）；
+    # 脚本取真实安装位（合成仓里没有副本，whisperer 自证自建临时仓、不依赖被检 root）
+    ws = Path(__file__).resolve().parent / "whisperer.py"
+    r = run([sys.executable or "python", str(ws), "--selftest"], cwd=root)
+    if r.returncode:
+        return 1, "FAIL whisperer: 自证 rc=%d %s" % (r.returncode, ((r.stdout + r.stderr).strip().splitlines() or ["no output"])[-1])
+    return 0, "whisperer: " + ((r.stdout.strip().splitlines() or ["ok"])[0])
+CHECKS = [("merge_markers", ck_mm), ("fmt", ck_fmt), ("build", ck_build), ("ps_encoding", ck_ps), ("store_path", ck_sp), ("whisperer", ck_ws)]
 def safe(name, fn, root):
     try: return fn(root)
     except Exception as e: return 2, "DEGRADED %s: %s" % (name, e)
@@ -163,6 +171,8 @@ def selftest():
     clean = repo({"ok.ps1": b"Write-Output 'ascii'\n", "src/store/y.mbt": "let p = \"data\"\n", "a.mbt": "def f() = 1\n"})
     for name, fn in [("merge_markers", ck_mm), ("ps_encoding", ck_ps), ("store_path", ck_sp)]: probe(name, fn, clean, 0, "G2 %s green-on-clean rc=%d")
     probe("ps_encoding", ck_ps, repo({"a.mbt": "def f() = 1\n"}), 2, "G3 %s empty-scan self-reject rc=%d")
+    c, line = safe("whisperer", ck_ws, clean); executed.append("G5 whisperer green-on-clean (rc=%d)" % c)
+    if c != 0: fails.append("G5 whisperer rc=%d: %s" % (c, line))
     for name, fn in [("fmt", ck_fmt), ("build", ck_build)]: c, line = safe(name, fn, ROOT); executed.append("G4 %s observable-on-real (rc=%d)" % (name, c)); fails.append("G4 %s rc=%d degraded: %s" % (name, c, line)) if c not in (0, 1) else None
     # --- TASK-005 scan cells (offline: local repo as "origin") ---
     def scan_origin(branches, merged=()):
