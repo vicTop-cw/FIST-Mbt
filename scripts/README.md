@@ -172,9 +172,11 @@
   去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
   用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
 
+### 2026-10-21 补登记：`fist-gate.py`
+
+- `fist-gate.py`（R74 入仓）— **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段，
+  退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量，不冒用 1）。用法 `python scripts/fist-gate.py [树]`。
+
 ### 2026-10-22 登记：`whisperer.py`
 
 - `whisperer.py` — **风语者巡检自动化（TASK-009）**：Step 0-4 一把跑（HEAD 安全门 → 分支普查 →
-  候选任务卡 → issue 扫描）。旗标 `--scan-only`（默认）/ `--auto-merge` / `--selftest`（**也接受
-  `--self-test`**，与全仓惯例对齐）。自检 G1 会真跑 `fist-gate.py --scan` 并区分
-  绿 / DEGRADED(rc=2) / 红（红要印末行原因，不只印 rc）。
