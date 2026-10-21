@@ -72,6 +72,7 @@ README = os.path.join(ROOT, "scripts", "README.md")
 #
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 4d87191c (feat: 立 check_exit_code_contract 判据 + 修掉一把尺（BUG-369 建议② / T0r23）)
 # 16 = 2026-10-21 现读真源，逐条对上 BUG-369 的标定面（`--selftest` 的 calib 格钉住这个构成）：
@@ -96,14 +97,26 @@ CONTRACT_GAP_CEILING = 16
 #
 # 上限归零后棘轮两格的写法：必须从常量导出（R44 定律），且「低于上限」这一档已不存在 ⇒ 走
 # `tightening-not-applicable-at-zero-ceiling` 那条分支。**不许靠删格子维持绿**，也不许把上限调回正数。
+=======
+# 这一档的构成（2026-10-21 R43 现读真源，逐条对上 BUG-369 的标定面；`--selftest` 的 calib 格钉住这个构成）：
+#   check_pkg_imports    R1 一条 + R2 六条，计 7
+#   simulate_head_commit R3 一条，计 1
+#   check_mbti_sync      清零（R43 修真：7 处串式 FATAL 全改 emit_fatal ⇒ R1/R2 归零）
+#   check_template_ctrl  清零（R42 修真）｜check_plan_landing 本就 0
+# 合计 8 = 当前上限；上一档 16（R42 立判据时的读数）。每修好一把尺这里必须跟着降；降到 0 才算 BUG-369 关闭。
+>>>>>>> c50ae662 (fix: check_mbti_sync 的 7 处 FATAL 出口真给 rc=2，退出码棘轮 16→8（BUG-369 / T0r24）)
 #
 # 写法约束：这段是「举例」不是「承诺」，所以**没有任何行首写成「数字等号」**——那是本判据认的契约头形状，
 # 上一版开头是「8 = 2026-10-21 …」，于是自家注释把自己读成了一份新契约（有契约块的脚本 31→32）。
 # 按既有定律：改写文本，不给判据开「跳过注释」的口子。`--selftest` 有格钉住这个形状。
+<<<<<<< HEAD
 CONTRACT_GAP_CEILING = 0
 >>>>>>> 57f24264 (fix: simulate_head_commit 的 4 处 FATAL 出口真给 rc=2，退出码棘轮 1→0（BUG-369 / T0r26）)
 =======
 >>>>>>> 4d87191c (feat: 立 check_exit_code_contract 判据 + 修掉一把尺（BUG-369 建议② / T0r23）)
+=======
+CONTRACT_GAP_CEILING = 8
+>>>>>>> c50ae662 (fix: check_mbti_sync 的 7 处 FATAL 出口真给 rc=2，退出码棘轮 16→8（BUG-369 / T0r24）)
 MAX_CODE = 9
 MAX_DEPTH = 8           # 值集解析的递归水位；断环靠 _busy，水位只防灾利性深链
 
@@ -689,6 +702,18 @@ def selftest():
          9 in r_q["promised"] and any(b.startswith("R1") for b in r_q["bad"]) and not sharp["bad"],
          "注释里的例子被当真承诺读进来（R1 追一条）—— 已知代价，靠改写文本消，不开豁免面")
 
+    # 同形的第二只咬口（R43 现形）：棘轮上限的构成说明上一版写成「数字等号」开头，
+    # 于是自家注释被当成一份新契约读进承诺面 —— 这次红在统计面上（有契约块的脚本 31→32），没进判定面。
+    # 出路同上：改写文本。这一格把这个形状钉住，防止下轮为了解释构成又把它写回去。
+    TITLE_HEAD = re.compile(r"^\s*(?:退\s*出\s*码(?:契约)?|用\s*法(?:（[^）]*）)?)")
+    with open(os.path.abspath(__file__), encoding="utf-8") as fh:
+        own_src = fh.read()
+    own_blocks = contract_blocks(own_src)
+    own_untitled = [b for b in own_blocks if not TITLE_HEAD.match(LEAD_JUNK.sub("", b))]
+    cell("own-source-has-no-bare-pair-block", bool(own_blocks) and not own_untitled,
+         "现读自家契约块 %d 个，其中非标题头 %d 个 —— 有非标题头就说明注释里又写了举例形状"
+         % (len(own_blocks), len(own_untitled)))
+
     n = len(probe("stringy")["bad"]) + len(probe("headless")["bad"])
     cell("ratchet-over-ceiling-is-red",
 <<<<<<< HEAD
@@ -731,11 +756,16 @@ def selftest():
         ("check_plan_landing.py", lambda r: not r["bad"], "R1/R2/R3 全 0（emit_fatal 真给 2，是契约不是幻影）"),
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 4d87191c (feat: 立 check_exit_code_contract 判据 + 修掉一把尺（BUG-369 建议② / T0r23）)
         ("check_mbti_sync.py", lambda r: any(b.startswith("R1") for b in r["bad"])
             and len([b for b in r["bad"] if b.startswith("R2")]) >= 6,
             "R1 一条 + R2 ≥6（BUG-369 记 7 处串式 FATAL）"),
+=======
+        ("check_mbti_sync.py", lambda r: not r["bad"],
+         "R43 已修（7 处串式 FATAL 改 emit_fatal）⇒ 必须归零；再被判红就是尺子或被测面回退了"),
+>>>>>>> c50ae662 (fix: check_mbti_sync 的 7 处 FATAL 出口真给 rc=2，退出码棘轮 16→8（BUG-369 / T0r24）)
         ("check_pkg_imports.py", lambda r: any(b.startswith("R1") for b in r["bad"])
             and len([b for b in r["bad"] if b.startswith("R2")]) >= 5,
             "R1 一条 + R2 ≥5（记 6 处串式，v2 普查只读出 4 处）"),
@@ -799,7 +829,7 @@ def selftest():
             print("  - %s：%s" % (nm, w))
         return emit_fatal("判据自检不通过 —— 尺子坏了，先修判据再读读数")
     print("SELFTEST OK（%d 格：承诺面与条目切片 6｜实现面 4｜判定 R1/R2/R3 各 1｜只报不判与让位 3｜"
-          "棘轮 2｜标注集校准 5｜自指 3）" % len(cells))
+          "棘轮 2｜标注集校准 5｜自指 4）" % len(cells))
     return 0
 
 
