@@ -6,7 +6,7 @@
 
 ///|
 /// 生成 n 层两空格缩进
-fn dag_indent(n : Int) -> String {
+fn dag_indent(n : Int32) -> String {
   let mut s = ""
   for i = 0; i < n; i = i + 1 {
     s = s + "  "
@@ -100,7 +100,7 @@ pub fn FistEngine::critical_path(self : FistEngine) -> Array[String] {
 
 ///|
 /// 当前可并行执行的任务数：状态为待领取且依赖已满足的任务数。
-pub fn FistEngine::parallelism(self : FistEngine) -> Int {
+pub fn FistEngine::parallelism(self : FistEngine) -> Int32 {
   // R12-R7 性能：与 ready_tasks 同款——deps_satisfied 逐条 DB 读，
   // 这里一次遍历建 completed 映射，O(1) 判依赖。
   let tasks = self.list_all()
@@ -131,9 +131,9 @@ fn FistEngine::dag_level(
   self : FistEngine,
   id : String,
   members : Map[String, Bool],
-  memo : Map[String, Int],
+  memo : Map[String, Int32],
   visiting : Map[String, Bool],
-) -> Int {
+) -> Int32 {
   match memo.get(id) {
     Some(l) => return l
     None => ()
@@ -198,9 +198,9 @@ pub fn FistEngine::dag_ascii(self : FistEngine, ns~ : String) -> String {
   for t in tasks {
     members.set(t.id, true)
   }
-  let memo : Map[String, Int] = Map([])
+  let memo : Map[String, Int32] = Map([])
   let visiting : Map[String, Bool] = Map([])
-  let levels : Map[String, Int] = Map([])
+  let levels : Map[String, Int32] = Map([])
   for t in tasks {
     levels.set(t.id, self.dag_level(t.id, members, memo, visiting))
   }
@@ -332,7 +332,7 @@ fn FistEngine::dag_topo_order(
   for t in tasks_all {
     ids.push(t.get_id())
   }
-  let indeg : Map[String, Int] = Map([])
+  let indeg : Map[String, Int32] = Map([])
   let deps_of : Map[String, Array[String]] = Map([])
   for id in ids {
     indeg.set(id, 0)
@@ -398,7 +398,7 @@ pub fn FistEngine::dag_slack_analysis(self : FistEngine) -> Json {
     ids.push(t.get_id())
   }
   // earliest: 前向——依赖全就绪的最早开始
-  let earliest : Map[String, Int] = Map([])
+  let earliest : Map[String, Int32] = Map([])
   for id in ids {
     earliest.set(id, 0)
   }
@@ -424,7 +424,7 @@ pub fn FistEngine::dag_slack_analysis(self : FistEngine) -> Json {
     }
   }
   // latest: 反向——不拖慢总工期的最晚开始
-  let latest : Map[String, Int] = Map([])
+  let latest : Map[String, Int32] = Map([])
   for id in ids {
     latest.set(id, makespan)
   }
@@ -503,7 +503,7 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
   for (name, _abl, _created) in self.executor_list() {
     reg_names.push(name)
   }
-  let load : Map[String, Int] = Map([])
+  let load : Map[String, Int32] = Map([])
   for n in reg_names {
     load.set(n, 0)
   }
@@ -564,7 +564,7 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
     }
   }
   // 弹性批按最早开始排序（可并行窗口）
-  flexible_batch.sort_by(fn(a : Json, b : Json) -> Int {
+  flexible_batch.sort_by(fn(a : Json, b : Json) -> Int32 {
     let ae = match a.value("earliest") {
       Some(Number(n, ..)) => n
       _ => 0.0
@@ -795,7 +795,7 @@ fn FistEngine::budget_scope_ids(
 
 ///|
 /// 作用域自证字段（BUG-20③）：这次切分覆盖的是哪些任务，写在返回体里而不是靠调用方回忆。
-fn budget_scope_json(root : String, ns : String, count : Int) -> Json {
+fn budget_scope_json(root : String, ns : String, count : Int32) -> Json {
   Json::object({
     "root_task_id": Json::string(root),
     "namespace": Json::string(ns),
@@ -815,7 +815,7 @@ fn budget_scope_json(root : String, ns : String, count : Int) -> Json {
 ///|
 /// BUG-209：非 DAG（不在 slack_map、不参与依赖边）的任务按其 parent_id 父链深归 stage，
 /// 而不是一律归 level 0——level 0 是真正根任务层，孤立任务混入会虚增该层权重与份额。
-fn FistEngine::parent_chain_depth(self : FistEngine, id : String) -> Int {
+fn FistEngine::parent_chain_depth(self : FistEngine, id : String) -> Int32 {
   let mut depth = 0
   let mut cur = id
   let mut hops = 0
@@ -853,9 +853,9 @@ fn FistEngine::parent_chain_depth(self : FistEngine, id : String) -> Int {
 ///    但这一点从此写在返回体里，而不是靠调用方记得自己没传。
 pub fn FistEngine::budget_split_by_dag(
   self : FistEngine,
-  budget : Int,
-  root? : String = "",
-  ns? : String = "",
+  budget : Int32,
+  root~ : String = "",
+  ns~ : String = "",
 ) -> Json {
   if budget <= 0 {
     // BUG-180：rejected 分支此前不回 makespan/scope，与 ok/insufficient 分支不同构
@@ -882,7 +882,7 @@ pub fn FistEngine::budget_split_by_dag(
   }
   let slack = self.dag_slack_analysis()
   // 每任务 earliest 作为阶段
-  let level_of : Map[String, Int] = Map([])
+  let level_of : Map[String, Int32] = Map([])
   match slack.value("slack_map") {
     Some(Object(sm)) =>
       for id in sm.keys() {
@@ -920,8 +920,8 @@ pub fn FistEngine::budget_split_by_dag(
     })
   }
   // 阶段聚合：难度权重（难3/中2/易1，无难度 1）+ 任务数
-  let stage_weight : Map[Int, Int] = Map([])
-  let stage_count : Map[Int, Int] = Map([])
+  let stage_weight : Map[Int32, Int32] = Map([])
+  let stage_count : Map[Int32, Int32] = Map([])
   let in_scope : Map[String, Bool] = Map([])
   for id in scope_ids {
     in_scope.set(id, true)
@@ -957,7 +957,7 @@ pub fn FistEngine::budget_split_by_dag(
   }
   // 归一化切分：向下取整，余数补给最大权重阶段
   let mut used = 0
-  let shares : Map[Int, Int] = Map([])
+  let shares : Map[Int32, Int32] = Map([])
   for lv in stage_weight.keys() {
     let w = stage_weight.get(lv).unwrap_or(0)
     let share = if total_w <= 0 { 0 } else { budget * w / total_w }
@@ -970,7 +970,7 @@ pub fn FistEngine::budget_split_by_dag(
   }
   // 输出阶段行（按层级升序）
   let stages : Array[Json] = []
-  let lvs : Array[Int] = stage_weight.keys().to_array()
+  let lvs : Array[Int32] = stage_weight.keys().to_array()
   lvs.sort()
   for lv in lvs {
     stages.push(
@@ -1047,8 +1047,8 @@ fn FistEngine::subtree_ids(self : FistEngine, root : String) -> Array[String] {
 pub fn FistEngine::progress_gate(
   self : FistEngine,
   task_id : String,
-  budget : Int,
-  spent_override : Int,
+  budget : Int32,
+  spent_override : Int32,
 ) -> Json {
   match self.get_task(task_id) {
     None =>
@@ -1214,8 +1214,8 @@ pub fn FistEngine::progress_gate(
 pub fn FistEngine::plan_revise(
   self : FistEngine,
   root_task_id : String,
-  feedback? : Array[Json] = [],
-  ns? : String = "default",
+  feedback~ : Array[Json] = [],
+  ns~ : String = "default",
 ) -> Json {
   if self.get_task(root_task_id) is None {
     return Json::object({
@@ -1375,8 +1375,8 @@ pub fn FistEngine::plan_revise(
 pub fn FistEngine::goal_drift_check(
   self : FistEngine,
   root_task_id : String,
-  subtask_id? : String = "",
-  ns? : String = "default",
+  subtask_id~ : String = "",
+  ns~ : String = "default",
 ) -> Json {
   match self.get_task(root_task_id) {
     None =>
@@ -1491,7 +1491,7 @@ let drift_threshold : Double = 0.7
 let redundancy_threshold : Double = 0.7
 
 ///|
-let drift_min_tokens : Int = 6
+let drift_min_tokens : Int32 = 6
 
 ///|
 fn drift_similarity(a : Array[String], b : Array[String]) -> Double {

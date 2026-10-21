@@ -24,7 +24,7 @@ pub fn build_report(
   topic : String,
   config : HatConfig,
   reports : Array[HatReport],
-  round : Int,
+  round : Int32,
 ) -> HatVerdictReport {
   // 只保留合法报告（不崩溃，空/非法项被剔除并计入 skipped）
   let valid : Array[HatReport] = []
@@ -65,7 +65,7 @@ fn render_markdown(
   reports : Array[HatReport],
   divergences : Array[Divergence],
   c : ConvergeResult,
-  skipped : Int,
+  skipped : Int32,
 ) -> String {
   let mut s = "# HexaMind 六元裁决报告\n\n"
   s = s + "**议题**：" + topic + "\n\n"

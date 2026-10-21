@@ -105,7 +105,7 @@ fn contains_risk_keyword(desc : String) -> Bool {
 ///   n_files    涉及文件数（可选，默认 1）
 /// 返回 JSON：
 ///   { complexity, n_split, depth, parallel, cost_tier, hold, reason }
-pub fn schedule_task(desc : String, n_files? : Int = 1) -> Json {
+pub fn schedule_task(desc : String, n_files~ : Int32 = 1) -> Json {
   // 1. 风险检查
   if contains_risk_keyword(desc) {
     return Json::object({

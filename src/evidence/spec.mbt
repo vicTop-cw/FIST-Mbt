@@ -23,7 +23,7 @@ pub fn Severity::from_string(s : String) -> Severity {
 
 ///|
 /// 修复轮次上限：验收反馈要求"自动修复三轮"
-pub const MAX_FIX_ROUNDS : Int = 3
+pub const MAX_FIX_ROUNDS : Int32 = 3
 
 ///|
 /// 规格状态
@@ -47,7 +47,7 @@ pub struct Spec {
   // 实际观察到的失败详情（由 verify 或外部探针填充）
   failed_detail : String
   status : SpecStatus
-  fixed_round : Int
+  fixed_round : Int32
 }
 
 ///|

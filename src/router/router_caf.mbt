@@ -13,7 +13,7 @@
 /// 一条 C-A-F 反馈记录
 pub struct CafRecord {
   /// 特征哈希：由 task_lang/difficulty/action_type 组合成的标识符
-  feature_hash : Int
+  feature_hash : Int32
   /// 被选的模型名
   model : String
   /// 是否成功
@@ -29,7 +29,7 @@ pub extend CafRecord with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 pub fn CafRecord::new(
-  feature_hash~ : Int,
+  feature_hash~ : Int32,
   model~ : String,
   ok~ : Bool,
   cost~ : Double,
@@ -42,16 +42,16 @@ pub fn CafRecord::new(
 /// C-A-F 反馈记忆表：FIFO 环形缓冲区，上限 max_size 条
 pub struct CafMemory {
   records : Array[CafRecord?]
-  max_size : Int
-  mut head : Int
-  mut count : Int
+  max_size : Int32
+  mut head : Int32
+  mut count : Int32
 } derive(Debug)
 
 ///|
 pub extend CafMemory with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
-pub fn CafMemory::new(max_size? : Int = 10000) -> CafMemory {
+pub fn CafMemory::new(max_size~ : Int32 = 10000) -> CafMemory {
   // BUG-188：max_size<=0 会让 records 成为空数组，push 时 records[0] 越界 panic。
   // 收敛到至少 1，使环形缓冲在任何输入下都可用。
   let m = if max_size <= 0 { 1 } else { max_size }
@@ -90,7 +90,7 @@ pub fn CafMemory::all(self : CafMemory) -> Array[CafRecord] {
 /// O(count) 而非 O(max_size)。
 pub fn CafMemory::find(
   self : CafMemory,
-  feature_hash~ : Int,
+  feature_hash~ : Int32,
 ) -> Array[CafRecord] {
   let mut out : Array[CafRecord] = []
   let start = (self.head + self.max_size - self.count) % self.max_size
@@ -109,8 +109,8 @@ pub fn CafMemory::find(
 /// 模型维度的成功率与成本统计（决策融合消费面）
 pub struct CafModelStats {
   model : String
-  total : Int
-  success : Int
+  total : Int32
+  success : Int32
   avg_cost : Double
 } derive(Debug)
 
@@ -122,8 +122,8 @@ pub extend CafModelStats with @moonbitlang/core/debug.Debug::{to_repr}
 /// 返回按成功率降序、成本升序排列的数组
 pub fn caf_stats(records : Array[CafRecord]) -> Array[CafModelStats] {
   let mut model_names : Array[String] = []
-  let mut model_totals : Array[Int] = []
-  let mut model_success : Array[Int] = []
+  let mut model_totals : Array[Int32] = []
+  let mut model_success : Array[Int32] = []
   let mut model_cost_sum : Array[Double] = []
 
   for rec in records {
@@ -167,7 +167,7 @@ pub fn caf_stats(records : Array[CafRecord]) -> Array[CafModelStats] {
   // BUG-173：原实现在 rate_a==rate_b && avg_cost_a==avg_cost_b 时恒返回 1（非 0），
   // 违反严格弱序（自反性 cmp(a,a)!=0 / 反对称性），可致 sort_by 未定义行为。
   // 修复：三档比较（< / > / 0），完全相等时按 model 字典序做确定性 tiebreak。
-  out.sort_by(fn(a, b) -> Int {
+  out.sort_by(fn(a, b) -> Int32 {
     let rate_a = if a.total > 0 {
       a.success.to_double() / a.total.to_double()
     } else {
@@ -204,8 +204,8 @@ pub fn caf_stats(records : Array[CafRecord]) -> Array[CafModelStats] {
 /// 必然溢出到极端负值；`h.abs()` 在 `h == Int64.min_value()` 时 MoonBit 未定义（panic）。
 /// 修复：每步用 `and 0xFFFFFFFF` 截断到 32 位无符号范围（0..2^32-1），
 /// 使 h 恒为非负且不会溢出到极端负值，从而无需 `abs()`。
-pub fn caf_feature_hash(context : String) -> Int {
-  let mut h : Int = 0
+pub fn caf_feature_hash(context : String) -> Int32 {
+  let mut h : Int32 = 0
   let mut i = 0
   while i < context.length() {
     let c = context[i].to_int()
@@ -245,10 +245,10 @@ pub fn CafMemory::to_json(self : CafMemory) -> Json {
 ///
 /// 性能守卫：特征哈希串为 32-bit Int（至多 10 字符），但调用方可能误传长 context。
 /// 超过 `CAF_EDIT_MAX_LEN` 时截断，避免 O(n*m) 爆炸（如 10^4 字符会 O(10^8) 不可接受）。
-pub const CAF_EDIT_MAX_LEN : Int = 256
+pub const CAF_EDIT_MAX_LEN : Int32 = 256
 
 ///|
-pub fn caf_edit_distance(a : String, b : String) -> Int {
+pub fn caf_edit_distance(a : String, b : String) -> Int32 {
   // 长度守卫：截断到 CAF_EDIT_MAX_LEN，防止长字符串 O(n*m) 爆炸
   let a_s = if a.length() > CAF_EDIT_MAX_LEN {
     a[0:CAF_EDIT_MAX_LEN].to_owned()
@@ -269,13 +269,13 @@ pub fn caf_edit_distance(a : String, b : String) -> Int {
     return n
   }
   // 简化：用 O(n*m) DP（特征串短，长度受限于任务描述截断）
-  let mut prev : Array[Int] = []
+  let mut prev : Array[Int32] = []
   for j in 0..<=m {
     prev = prev + [j]
   }
   let mut i = 1
   while i <= n {
-    let mut curr : Array[Int] = [i]
+    let mut curr : Array[Int32] = [i]
     let mut j = 1
     while j <= m {
       let cost = if a_s[i - 1] == b_s[j - 1] { 0 } else { 1 }
@@ -300,7 +300,7 @@ pub fn caf_edit_distance(a : String, b : String) -> Int {
 pub fn CafMemory::knn_search(
   self : CafMemory,
   context : String,
-  k : Int,
+  k : Int32,
 ) -> Array[CafRecord] {
   // 防御：负 k 无意义，返回空
   if k <= 0 {
@@ -312,13 +312,13 @@ pub fn CafMemory::knn_search(
   // 计算每条记录与目标哈希的编辑距离（作用于特征哈希字符串化的数字串）
   // 注：编辑距离直接作用于数字串（Int.to_string()），非语义距离，但满足
   // 计划要求的"轻量近似"定位；特征哈希本身已做 32-bit 截断。
-  let mut scored : Array[(Int, Int, Int)] = [] // (dist, seq, feature_hash)
+  let mut scored : Array[(Int32, Int32, Int32)] = [] // (dist, seq, feature_hash)
   for i in 0..<all.length() {
     let hash_str = all[i].feature_hash.to_string()
     let dist = caf_edit_distance(hash_str, target_str)
     scored = scored + [(dist, i, all[i].feature_hash)]
   }
-  scored.sort_by(fn(p, q) -> Int {
+  scored.sort_by(fn(p, q) -> Int32 {
     if p.0 != q.0 {
       // 距离升序
       if p.0 < q.0 {
@@ -352,7 +352,7 @@ pub fn CafMemory::knn_search(
 pub fn CafMemory::knn_stats(
   self : CafMemory,
   context : String,
-  k : Int,
+  k : Int32,
 ) -> Array[CafModelStats] {
   caf_stats(self.knn_search(context, k))
 }
@@ -371,7 +371,7 @@ pub fn caf_soft_reorder(
     return candidates
   }
   // 为每个候选计算 (in_neighborhood, rate, avg_cost, 原始位置)
-  let mut scored : Array[(String, Bool, Double, Double, Int)] = []
+  let mut scored : Array[(String, Bool, Double, Double, Int32)] = []
   for i in 0..<candidates.length() {
     let mut in_nb = false
     let mut rate = 0.0
@@ -386,7 +386,7 @@ pub fn caf_soft_reorder(
     }
     scored = scored + [(candidates[i], in_nb, rate, cost, i)]
   }
-  scored.sort_by(fn(a, b) -> Int {
+  scored.sort_by(fn(a, b) -> Int32 {
     // 邻域内的排前面
     if a.1 && !b.1 {
       -1

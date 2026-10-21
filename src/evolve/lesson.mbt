@@ -56,7 +56,7 @@ pub fn evolve_lesson_persist(
   reason : String,
   fix : String,
   now : String,
-  score? : Double = 0.5,
+  score~ : Double = 0.5,
 ) -> Bool {
   let goal = lesson_goal(cat)
   let code = if fix == "" { reason } else { fix }

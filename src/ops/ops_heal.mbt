@@ -12,8 +12,8 @@
 /// 不可解析时间戳一贯的「不误伤」口径一致）。
 fn stale_by_task_clock(
   updated_at : String,
-  now_s : Int,
-  timeout_sec : Int,
+  now_s : Int32,
+  timeout_sec : Int32,
 ) -> Bool {
   if now_s < 0 || updated_at.is_empty() {
     false
@@ -38,9 +38,9 @@ pub fn heal_stale_tasks(
   engine : @engine.FistEngine,
   hb : Heartbeat,
   now : String,
-  timeout_sec? : Int = 600,
-  ns? : String = "",
-  delete_failed_ids? : Array[String] = [],
+  timeout_sec~ : Int32 = 600,
+  ns~ : String = "",
+  delete_failed_ids~ : Array[String] = [],
 ) -> Result[Array[String], String] {
   let healed : Array[String] = []
   let now_s = iso_to_secs(now)
@@ -95,10 +95,10 @@ pub fn heal_stale_tasks(
 pub fn heal_stale_tasks_from_store(
   engine : @engine.FistEngine,
   now : String,
-  timeout_sec? : Int = 600,
-  ns? : String = "default",
-  skipped_ids? : Array[String] = [],
-  delete_failed_ids? : Array[String] = [],
+  timeout_sec~ : Int32 = 600,
+  ns~ : String = "default",
+  skipped_ids~ : Array[String] = [],
+  delete_failed_ids~ : Array[String] = [],
 ) -> Result[Array[String], String] {
   let healed : Array[String] = []
   let now_s = iso_to_secs(now)
@@ -177,11 +177,11 @@ pub fn heal_stale_tasks_from_store(
 pub fn heal_stale_tasks_by_phi(
   engine : @engine.FistEngine,
   now : String,
-  phi_threshold? : Int = 8,
-  ns? : String = "default",
-  timeout_sec? : Int = 600,
-  no_history_ids? : Array[String] = [],
-  delete_failed_ids? : Array[String] = [],
+  phi_threshold~ : Int32 = 8,
+  ns~ : String = "default",
+  timeout_sec~ : Int32 = 600,
+  no_history_ids~ : Array[String] = [],
+  delete_failed_ids~ : Array[String] = [],
 ) -> Result[Array[String], String] {
   let healed : Array[String] = []
   let now_s = iso_to_secs(now)

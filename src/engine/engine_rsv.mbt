@@ -91,7 +91,7 @@ pub fn FistEngine::locks_release(
 }
 
 ///|
-pub fn FistEngine::locks_sweep(self : FistEngine, now : String) -> Int {
+pub fn FistEngine::locks_sweep(self : FistEngine, now : String) -> Int32 {
   self.store.locks_sweep(now)
 }
 

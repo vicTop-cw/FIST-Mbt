@@ -4,7 +4,7 @@
 
 ///|
 /// 难度档序：易(0) < 中(1) < 难(2)；非法档位返回 99 哨兵。
-fn diff_order(s : String) -> Int {
+fn diff_order(s : String) -> Int32 {
   match s {
     "易" => 0
     "中" => 1
@@ -16,7 +16,7 @@ fn diff_order(s : String) -> Int {
 ///|
 test "quickcheck: default_slices 数量与内容前缀不变量" {
   @quickcheck.check(
-    (p : (Int, String)) => {
+    (p : (Int32, String)) => {
       let n = p.0
       let d = p.1
       if n < 1 || n > 100 {
@@ -45,7 +45,7 @@ test "quickcheck: default_slices 数量与内容前缀不变量" {
 ///|
 test "quickcheck: difficulty_label 三档合法且整段单调（前易后难）" {
   @quickcheck.check(
-    (p : (Int, Int)) => {
+    (p : (Int32, Int32)) => {
       let idx = p.0
       let split_n = p.1
       if split_n < 1 || split_n > 100 {

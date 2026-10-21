@@ -27,7 +27,7 @@ fn ps_str(j : Json, key : String) -> String {
 }
 
 ///|
-fn ps_arr_len(j : Json, key : String) -> Int {
+fn ps_arr_len(j : Json, key : String) -> Int32 {
   match j.value(key) {
     Some(Json::Array(arr)) => arr.length()
     _ => -1

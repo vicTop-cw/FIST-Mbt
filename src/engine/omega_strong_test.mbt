@@ -14,7 +14,7 @@ fn os_engine() -> @engine.FistEngine {
 ///|
 fn os_publish(
   e : @engine.FistEngine,
-  desc? : String = "Omega 强验证根任务",
+  desc~ : String = "Omega 强验证根任务",
 ) -> String {
   match
     e.publish(

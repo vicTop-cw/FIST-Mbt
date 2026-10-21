@@ -59,7 +59,7 @@ pub fn critic_review(
   arc : Archive,
   note : String,
   score : Double,
-  threshold? : Double = 0.85,
+  threshold~ : Double = 0.85,
 ) -> Json {
   let novelty = arc.novelty(note)
   let sim = match critic_most_similar(arc, note) {

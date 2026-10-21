@@ -80,7 +80,7 @@ pub fn calc_coverage(laws : Array[String], tests : Json) -> Double {
 ///   spec_json   已 parse 的 Ω-spec Json（缺字段会得 schema_ok=false）
 ///   total       跑批样本总数（0 表示未跑）
 ///   passed      跑批通过数
-pub fn spec_scoring(spec : Json, total : Int, passed : Int) -> ScoreResult {
+pub fn spec_scoring(spec : Json, total : Int32, passed : Int32) -> ScoreResult {
   // 从 spec 里取字段（缺省给空值）
   let laws : Array[String] = match spec.value("laws") {
     Some(Array(arr)) => {
@@ -127,7 +127,11 @@ pub fn spec_scoring(spec : Json, total : Int, passed : Int) -> ScoreResult {
 
 ///|
 /// 便捷入口：直接接 spec JSON 字符串。
-pub fn spec_scoring_str(spec_str : String, total : Int, passed : Int) -> Json {
+pub fn spec_scoring_str(
+  spec_str : String,
+  total : Int32,
+  passed : Int32,
+) -> Json {
   let j : Json = @json.parse(spec_str) catch {
     _ =>
       return score_to_json({

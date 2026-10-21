@@ -333,7 +333,7 @@ pub fn MemoryStore::locks_release(
 ///|
 /// 内存后端：清理过期锁（status=active 且 ttl_until < now → 标记 expired，记违例）。
 /// 返回被清理的锁数量。
-pub fn MemoryStore::locks_sweep(self : MemoryStore, now : String) -> Int {
+pub fn MemoryStore::locks_sweep(self : MemoryStore, now : String) -> Int32 {
   let mut count = 0
   let scopes = self.file_locks.keys()
   for scope in scopes {

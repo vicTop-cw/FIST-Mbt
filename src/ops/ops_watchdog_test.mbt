@@ -78,7 +78,7 @@ fn wd_action(j : Json) -> String {
 
 ///|
 /// 读出整数字段。
-fn wd_int(j : Json, key : String) -> Int {
+fn wd_int(j : Json, key : String) -> Int32 {
   match j {
     Object(m) =>
       match m.get(key) {
@@ -144,10 +144,10 @@ fn wd_tick_ok(
   e : @engine.FistEngine,
   now : String,
   ns~ : String,
-  next_description? : String = "",
-  meta_prompt_path? : String = "",
-  cold_start? : Bool = false,
-  project_dir? : String = "",
+  next_description~ : String = "",
+  meta_prompt_path~ : String = "",
+  cold_start~ : Bool = false,
+  project_dir~ : String = "",
 ) -> Json {
   match
     @ops.watchdog_tick(
@@ -740,12 +740,12 @@ test "watchdog D-5: 冷启动 — meta_prompt_path + cold_start=true 组合" {
 fn wd_tick_omega_ok(
   e : @engine.FistEngine,
   now : String,
-  ns? : String = "",
-  next_description? : String = "",
-  cold_start? : Bool = false,
-  project_dir? : String = "",
-  omega_strong_verify? : Bool = false,
-  omega_split_n? : Int = 3,
+  ns~ : String = "",
+  next_description~ : String = "",
+  cold_start~ : Bool = false,
+  project_dir~ : String = "",
+  omega_strong_verify~ : Bool = false,
+  omega_split_n~ : Int32 = 3,
 ) -> Json {
   let r = @ops.watchdog_tick(
     e,
@@ -977,7 +977,7 @@ test "watchdog R57: autodispatch=false 时绝不认领（零回归回归确认�
 fn wd_beat_interval(
   e : @engine.FistEngine,
   task_id : String,
-  interval_sec : Int,
+  interval_sec : Int32,
   ts : String,
 ) -> Unit {
   ignore(e.store_write_heartbeat_interval(task_id~, interval_sec~, ts~))

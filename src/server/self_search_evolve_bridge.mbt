@@ -111,7 +111,7 @@ pub fn do_evolve_asset_register_with_search(
   code : String,
   score : Double,
   ts : String,
-  runner? : ((String, Array[String]) -> Result[String, String])? = None,
+  runner~ : ((String, Array[String]) -> Result[String, String])? = None,
 ) -> Result[Json, String] {
   if source == "" || note == "" || code == "" {
     return Err("source/note/code 均为必填")

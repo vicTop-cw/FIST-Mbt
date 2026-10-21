@@ -42,7 +42,7 @@ fn og_check_json(ok : Bool, stdout : String, stderr : String) -> String {
 }
 
 ///|
-fn og_repeat(ch : Char, n : Int) -> String {
+fn og_repeat(ch : Char, n : Int32) -> String {
   let out : Array[Char] = []
   let mut i = 0
   while i < n {

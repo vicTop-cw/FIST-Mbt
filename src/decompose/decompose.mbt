@@ -24,7 +24,7 @@
 /// 返回切片描述数组。
 pub fn decompose_slices(
   spec : Json,
-  split_n : Int,
+  split_n : Int32,
   parent_desc~ : String,
 ) -> Array[String] {
   match spec {
@@ -52,7 +52,7 @@ pub fn decompose_slices(
 
 ///|
 /// 无 spec.laws 时的通用切分条目（描述逐层递进派生）。
-pub fn default_slices(split_n : Int, parent_desc~ : String) -> Array[String] {
+pub fn default_slices(split_n : Int32, parent_desc~ : String) -> Array[String] {
   let out : Array[String] = []
   for i = 1; i <= split_n; i = i + 1 {
     out.push("\{parent_desc} - 子任务单元 \{i}")
@@ -76,7 +76,7 @@ pub fn spec_hash_of(spec : Json?) -> String {
 ///|
 /// LADDER 信号：把拆分序号在 split_n 片中的位置映射为难度档（由易到难三档）。
 /// 让递归拆解产出"梯度"而非扁平同难单元（供 plan_deep gradient 标注）。
-pub fn difficulty_label(idx : Int, split_n : Int) -> String {
+pub fn difficulty_label(idx : Int32, split_n : Int32) -> String {
   let total = if split_n < 1 { 1 } else { split_n }
   let pos = if idx < 1 { 1 } else if idx > split_n { split_n } else { idx }
   let third = (total + 2) / 3

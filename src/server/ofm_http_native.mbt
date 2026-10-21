@@ -5,7 +5,7 @@
 pub async fn ofm_chat_http(
   _url : String,
   _body : String,
-  _timeout_ms : Int,
+  _timeout_ms : Int32,
 ) -> Result[Json, String] {
   Err(
     "ofm_chat_http 需要 js/node 运行时（fetch）；本构建为 native，请在 node 下启动 fist-mbt server",

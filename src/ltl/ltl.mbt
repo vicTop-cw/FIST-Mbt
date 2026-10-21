@@ -116,7 +116,7 @@ pub fn evaluate(formula : LtlFormula, trace : Array[State]) -> Verdict {
 
 ///|
 /// 在轨迹位置 i 处求值，返回三值判定
-fn eval_at(formula : LtlFormula, trace : Array[State], i : Int) -> Verdict {
+fn eval_at(formula : LtlFormula, trace : Array[State], i : Int32) -> Verdict {
   if i >= trace.length() {
     // 超出轨迹末尾：liveness 属性未完成 → Unknown
     return eval_end(formula)
@@ -174,7 +174,7 @@ fn eval_until(
   p : LtlFormula,
   q : LtlFormula,
   trace : Array[State],
-  i : Int,
+  i : Int32,
 ) -> Verdict {
   let mut j = i
   while j < trace.length() {
@@ -360,7 +360,7 @@ fn json_escape(s : String) -> String {
 }
 
 ///|
-fn format_hex4(n : Int) -> String {
+fn format_hex4(n : Int32) -> String {
   // 简单的 4 位 16 进制转换，只用于控制字符 (<0x20)
   let hex_chars = "0123456789abcdef"
   let mut s = ""

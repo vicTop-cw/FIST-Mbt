@@ -36,7 +36,7 @@ fn b9_read(d : String) -> String {
 
 ///|
 /// 从账本正文里数某个状态出现了几次（按抬头行，不按正文提及）。
-fn b9_status_count(text : String, status : String) -> Int {
+fn b9_status_count(text : String, status : String) -> Int32 {
   let mut n = 0
   for v in text.split("\n") {
     let line = v.to_owned().trim().to_owned()
@@ -100,7 +100,7 @@ fn b9_str(j : Json, key : String) -> String {
 }
 
 ///|
-fn b9_int(j : Json, key : String) -> Int {
+fn b9_int(j : Json, key : String) -> Int32 {
   match j.value(key) {
     Some(Number(n, ..)) => n.to_int()
     _ => -1

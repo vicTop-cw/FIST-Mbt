@@ -13,17 +13,17 @@
 ///|
 /// 一个里程碑：阶段目标 + 顺序 + 依赖的前序里程碑索引
 pub struct Milestone {
-  index : Int // 序号（从 0 开始）
+  index : Int32 // 序号（从 0 开始）
   title : String // 里程碑标题
   description : String // 详细描述
-  depends_on : Array[Int] // 依赖的前序里程碑 index
+  depends_on : Array[Int32] // 依赖的前序里程碑 index
 }
 
 ///|
 /// 里程碑分解结果：里程碑序列 + 细化建议
 pub struct MilestonePlan {
   milestones : Array[Milestone]
-  total : Int
+  total : Int32
 }
 
 ///|
@@ -32,7 +32,7 @@ pub struct MilestonePlan {
 /// split_n 控制里程碑数量（3~5 之间，少于 3 强制 3，多于 5 截断到 5）。
 pub fn generate_milestones(
   parent_desc~ : String,
-  split_n : Int,
+  split_n : Int32,
 ) -> MilestonePlan {
   let n = if split_n < 3 { 3 } else if split_n > 5 { 5 } else { split_n }
 
@@ -87,7 +87,7 @@ pub fn generate_milestones(
   while i < selected.length() {
     let (title, desc) = selected[i]
     // 每个里程碑依赖前一个（线性依赖链）
-    let deps : Array[Int] = []
+    let deps : Array[Int32] = []
     if i > 0 {
       deps.push(i - 1)
     }
@@ -101,7 +101,7 @@ pub fn generate_milestones(
 ///|
 /// 对单个里程碑生成细化子任务（复用 decompose_slices 的 default_slices 思路）。
 /// 返回该里程碑下的子任务描述数组。
-pub fn refine_milestone(m : Milestone, sub_split_n : Int) -> Array[String] {
+pub fn refine_milestone(m : Milestone, sub_split_n : Int32) -> Array[String] {
   let out : Array[String] = []
   let n = if sub_split_n < 1 { 1 } else { sub_split_n }
   for i = 1; i <= n; i = i + 1 {

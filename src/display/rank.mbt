@@ -23,7 +23,7 @@
 /// 军官档位数（Leader 线，不含统帅/士兵/政委）。
 /// 总表自上而下：司令(L=0)、军长(L=1)、师长(L=2)、旅长(L=3)、
 /// 团长(L=4)、营长(L=5)、连长(L=6)、排长(L=7)。
-const OFFICER_LEVELS : Int = 8
+const OFFICER_LEVELS : Int32 = 8
 
 ///|
 /// 统帅军衔标签（`HumanSteward`，人类唯一主权，不下放协议层）。
@@ -40,7 +40,7 @@ const COMMISSAR_RANK : String = "政委"
 ///|
 /// 军官档位数（Leader 线，不含统帅/士兵/政委）。
 /// pub getter：Web 面板 / 汇报文案读取档位数。
-pub fn officer_levels() -> Int {
+pub fn officer_levels() -> Int32 {
   OFFICER_LEVELS
 }
 
@@ -74,7 +74,7 @@ pub fn officer_table() -> Array[String] {
 /// rank_of：由任务层级 L 得展示军衔（展示层标签，非协议枚举）。
 /// L=0 → 司令，L=1 → 军长，…，L=7 → 排长。
 /// 越界（L<0 或 L>=OFFICER_LEVELS）回退到士兵（防越界）。
-pub fn rank_of(level : Int) -> String {
+pub fn rank_of(level : Int32) -> String {
   if level < 0 || level >= OFFICER_LEVELS {
     return SOLDIER_RANK
   }
@@ -85,7 +85,7 @@ pub fn rank_of(level : Int) -> String {
 /// role_label：按协议角色得军衔标签（展示层映射）。
 /// `HumanSteward` → 统帅；`Reminder` → 政委；`Executor` → 士兵；
 /// `Leader` → 按层级 `rank_of(L)`；其他未知角色 → 士兵（防未登记角色泄漏军衔）。
-pub fn role_label(role : String, level : Int) -> String {
+pub fn role_label(role : String, level : Int32) -> String {
   match role {
     "HumanSteward" => MARSHAL_RANK
     "Reminder" => COMMISSAR_RANK
@@ -98,13 +98,13 @@ pub fn role_label(role : String, level : Int) -> String {
 ///|
 /// leaf_label：叶子原子任务固定为士兵（无论层级）。
 /// 任何 `depth == 叶子` 的任务无论层级一律 `Executor` 士兵级。
-pub fn leaf_label(_level : Int) -> String {
+pub fn leaf_label(_level : Int32) -> String {
   SOLDIER_RANK
 }
 
 ///|
 /// is_officer：该层级是否落在军官档内（L=0..OFFICER_LEVELS-1）。
 /// 士兵/越界/叶子均非军官。
-pub fn is_officer(level : Int) -> Bool {
+pub fn is_officer(level : Int32) -> Bool {
   level >= 0 && level < OFFICER_LEVELS
 }

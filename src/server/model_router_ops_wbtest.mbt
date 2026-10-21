@@ -38,7 +38,7 @@ fn mo_bool(j : Json, key : String) -> Bool {
 }
 
 ///|
-fn mo_int(j : Json, key : String) -> Int {
+fn mo_int(j : Json, key : String) -> Int32 {
   match mo_get(j, key) {
     Json::Number(n, ..) => n.to_int()
     _ => -999999
@@ -46,7 +46,7 @@ fn mo_int(j : Json, key : String) -> Int {
 }
 
 ///|
-fn mo_warn_count(j : Json) -> Int {
+fn mo_warn_count(j : Json) -> Int32 {
   match mo_get(j, "warnings") {
     Json::Array(a) => a.length()
     _ => -1
@@ -55,8 +55,8 @@ fn mo_warn_count(j : Json) -> Int {
 
 ///|
 /// 用构造器搭配置池（MoonBit 无单引号字符串，字面量 JSON 会埋进转义噪音）
-fn mo_cfg(free_limit : Int, paid_limit : Int) -> Json {
-  let pool = fn(name : String, limit : Int) -> Json {
+fn mo_cfg(free_limit : Int32, paid_limit : Int32) -> Json {
+  let pool = fn(name : String, limit : Int32) -> Json {
     Json::object({
       "name": Json::string(name),
       "limit": Json::number(limit.to_double()),
@@ -260,7 +260,7 @@ test "mo_6_无 config 的查询零副作用：不建文件、不换模型" {
 /// "未在任何池中配置"，配额形同虚设；播种了用量 → 又退回 BUG-62 的偷偷建账。
 test "mo_8_带 config 的查询播种池定义：文件里有名但用量为零" {
   let d = mo_prep("mo8")
-  let pool = fn(name : String, limit : Int) -> Json {
+  let pool = fn(name : String, limit : Int32) -> Json {
     Json::object({
       "name": Json::string(name),
       "limit": Json::number(limit.to_double()),
@@ -542,7 +542,7 @@ test "bug229_重试分支记账冷却不留静默吞错" {
 /// caf_dr 用配置：`use_caf_memory=true` + 双模型池（两模型都健康，便于软性重排有空间）。
 /// `use_caf` 传 false 时只把开关关掉，其余保持不变（供 caf_dr_3 的对照面）。
 fn caf_cfg(use_caf : Bool) -> Json {
-  let pool = fn(name : String, limit : Int) -> Json {
+  let pool = fn(name : String, limit : Int32) -> Json {
     Json::object({
       "name": Json::string(name),
       "limit": Json::number(limit.to_double()),
@@ -728,7 +728,7 @@ test "caf_dr_5_有记忆时 basis 有条目" {
 
 ///|
 /// 一条白盒辅助：读 CAF 记忆文件并返回 `records` 数组长度（读不到/非法即 abort，测试自爆）。
-fn caf_read_rec_count(path : String) -> Int {
+fn caf_read_rec_count(path : String) -> Int32 {
   let raw = @fs.read_file_to_string(path, encoding="utf8") catch {
     _ => abort("读 CAF 记忆文件失败：" + path)
   }

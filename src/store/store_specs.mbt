@@ -39,11 +39,11 @@ pub extend SpecRecord with @moonbitlang/core/debug.Debug::{to_repr}
 pub fn SpecRecord::new(
   id~ : String,
   task_id~ : String,
-  spec_type? : String = "spec",
-  content? : String = "",
-  status? : String = "pending",
-  created_at? : String = "",
-  updated_at? : String = "",
+  spec_type~ : String = "spec",
+  content~ : String = "",
+  status~ : String = "pending",
+  created_at~ : String = "",
+  updated_at~ : String = "",
 ) -> SpecRecord {
   { id, task_id, spec_type, content, status, created_at, updated_at, }
 }

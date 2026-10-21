@@ -48,7 +48,11 @@ fn _derived_check_status(check_json : String) -> String {
 /// "自写自测"这条 run_check 正是要防的路径），要么整单打回却不知打回原因。
 /// 解析失败 / 字段缺失 / 字段不是字符串一律回 ("", false)——记录已落库，
 /// 取不到尾巴不该让回执本身失败。
-fn _json_str_tail(check_json : String, key : String, n : Int) -> (String, Bool) {
+fn _json_str_tail(
+  check_json : String,
+  key : String,
+  n : Int32,
+) -> (String, Bool) {
   let parsed = @json.parse(check_json) catch { _ => return ("", false) }
   match parsed {
     Object(m) =>
@@ -77,7 +81,7 @@ fn _json_str_tail(check_json : String, key : String, n : Int) -> (String, Bool) 
 ///|
 /// 回执携带的输出尾巴上限（字符）。取"末 N"而不是"前 N"：判据的关键信息在结尾
 /// （失败断言、汇总行、exit code 说明），前 N 往往是命令回显或进度条。
-fn gate_check_tail_limit() -> Int {
+fn gate_check_tail_limit() -> Int32 {
   2000
 }
 

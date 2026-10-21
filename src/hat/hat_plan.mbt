@@ -16,7 +16,7 @@ pub struct ElementTask {
   lane : String
   // free_pool | paid_pool | balanced
   temperature : Double
-  max_tokens : Int
+  max_tokens : Int32
   output_schema : Array[String]
   prompt : String
   // 可直接喂 executor_run 的正文
@@ -35,7 +35,7 @@ pub struct DebatePair {
   // 六元代号 B
   issue : String
   // 交锋议题
-  rounds : Int
+  rounds : Int32
 }
 
 ///|
@@ -120,7 +120,7 @@ pub fn debate_pair(
   left : String,
   right : String,
   issue : String,
-  rounds : Int,
+  rounds : Int32,
 ) -> DebatePair {
   { left, right, issue, rounds, }
 }

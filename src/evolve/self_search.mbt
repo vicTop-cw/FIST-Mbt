@@ -123,7 +123,7 @@ pub fn distill_candidates(
 pub fn run_external_search(
   cmd : String,
   args : Array[String],
-  runner? : ((String, Array[String]) -> Result[String, String])? = None,
+  runner~ : ((String, Array[String]) -> Result[String, String])? = None,
 ) -> Result[String, String] {
   match runner {
     Some(f) => f(cmd, args)
@@ -168,7 +168,7 @@ fn char_eq_ci(a : UInt16, b : UInt16) -> Bool {
 
 ///|
 /// hay 从 start 起是否与 needle 逐码点（大小写不敏感）匹配。
-fn has_match_ci(hay : String, start : Int, needle : String) -> Bool {
+fn has_match_ci(hay : String, start : Int32, needle : String) -> Bool {
   let mut k = 0
   while k < needle.length() {
     if !char_eq_ci(hay[start + k], needle[k]) {

@@ -113,17 +113,17 @@ test "boundary_probe_on_adds_owner_leaf_and_per_leaf_hint" {
 ///|
 /// 确定性 xorshift 伪随机数发生器（不依赖标准库 Random，跨平台可复现）。
 struct BpRng {
-  state : Int
+  state : Int32
 }
 
 ///|
-fn bp_rng(seed : Int) -> BpRng {
+fn bp_rng(seed : Int32) -> BpRng {
   { state: if seed == 0 { 1 } else { seed }, }
 }
 
 ///|
 /// 推进并返回下一个非负整数（xorshift32）。
-fn BpRng::bp_next(self : BpRng) -> (Int, BpRng) {
+fn BpRng::bp_next(self : BpRng) -> (Int32, BpRng) {
   let mut x = self.state
   x = x ^ (x << 13)
   x = x ^ (x >> 17)
@@ -134,9 +134,9 @@ fn BpRng::bp_next(self : BpRng) -> (Int, BpRng) {
 
 ///|
 /// 生成一个伪随机 Int 列表（长度在 [0, len] 之间，值域受 bound 约束）。
-fn bp_rand_ints(len : Int, bound : Int, seed : Int) -> Array[Int] {
+fn bp_rand_ints(len : Int32, bound : Int32, seed : Int32) -> Array[Int32] {
   let mut r = bp_rng(seed)
-  let mut out : Array[Int] = []
+  let mut out : Array[Int32] = []
   for _i in 0..<len {
     let (n, nr) = r.bp_next()
     r = nr

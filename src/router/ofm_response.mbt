@@ -14,7 +14,7 @@
 ///|
 /// 解析结果：HTTP 状态 + 是否错误 + 错误信息/类型 + 成功正文 + 原始回体。
 pub struct OfmChatResponse {
-  http_status : Int
+  http_status : Int32
   is_error : Bool
   error_message : String
   error_type : String
@@ -32,7 +32,7 @@ pub extend OfmChatResponse with @moonbitlang/core/debug.Debug::{to_repr}
 /// 从回体 + HTTP 状态构造解析结果。`body` 为空 → 视为不可判读错误（不猜成功）。
 pub fn parse_ofm_chat_response(
   body : String,
-  http_status : Int,
+  http_status : Int32,
 ) -> OfmChatResponse {
   let body_trim = body.trim().to_owned()
   if body_trim.is_empty() {
@@ -99,7 +99,7 @@ pub fn parse_ofm_chat_response(
 fn parse_ofm_success(
   parsed : Json,
   body : String,
-  http_status : Int,
+  http_status : Int32,
 ) -> OfmChatResponse {
   let content = extract_ofm_content(parsed)
   if content.is_empty() {

@@ -17,7 +17,7 @@ pub fn do_evolve_lesson(
   reason : String,
   fix : String,
   now : String,
-  score? : Double = 0.5,
+  score~ : Double = 0.5,
 ) -> Json {
   let goal_l = @evolve.lesson_goal(cat)
   let id = "lesson-" + @evolve.lesson_ts_part(now)
@@ -64,7 +64,7 @@ pub fn do_evolve_lesson(
 /// 落库的外部资产，经此同步后在同一进程内对立于 `evolve_snapshot`/`dead_ends`/plan·claim
 /// 的 `inject` 可见。
 /// 返回本次新同步条数。
-fn sync_db_lessons(arc : @evolve.Archive, store : @store.SqliteStore?) -> Int {
+fn sync_db_lessons(arc : @evolve.Archive, store : @store.SqliteStore?) -> Int32 {
   let mut n = 0
   match store {
     None => ()

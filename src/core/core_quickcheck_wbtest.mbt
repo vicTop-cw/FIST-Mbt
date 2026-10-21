@@ -3,7 +3,7 @@
 
 ///|
 /// 由随机 Int 映射到 9 态之一（覆盖全状态空间）。
-fn status_at(i : Int) -> TaskStatus {
+fn status_at(i : Int32) -> TaskStatus {
   match i % 9 {
     0 => Pending
     1 => Claimed
@@ -19,7 +19,7 @@ fn status_at(i : Int) -> TaskStatus {
 
 ///|
 /// 由随机 Int 构造任意状态任务（depth 1..5 覆盖叶子/非叶子）。
-fn rand_task(i : Int) -> Task {
+fn rand_task(i : Int32) -> Task {
   let t = Task::new(
     id="t_" + i.to_string(),
     project_dir="/p",
@@ -33,7 +33,7 @@ fn rand_task(i : Int) -> Task {
 ///|
 test "quickcheck: claim 迁移纪律（空 assignee 拒绝 / 非待领取拒绝 / 身份与 assignee 保留）" {
   @quickcheck.check(
-    (i : Int) => {
+    (i : Int32) => {
       let t = rand_task(i)
       let a = if i % 3 == 0 { "" } else { "agent" + (i % 3).to_string() }
       match t.claim(assignee=a) {
@@ -54,7 +54,7 @@ test "quickcheck: claim 迁移纪律（空 assignee 拒绝 / 非待领取拒绝 
 ///|
 test "quickcheck: execute 迁移纪律（仅已领取/拆分中可执行，其余拒绝且身份保留）" {
   @quickcheck.check(
-    (i : Int) => {
+    (i : Int32) => {
       let t = rand_task(i)
       match t.execute() {
         Ok(nt) =>
@@ -73,7 +73,7 @@ test "quickcheck: execute 迁移纪律（仅已领取/拆分中可执行，其�
 ///|
 test "quickcheck: reopen 迁移纪律（仅已归档拒绝，其余回已领取且清空交付）" {
   @quickcheck.check(
-    (i : Int) => {
+    (i : Int32) => {
       let t = rand_task(i)
       match t.reopen() {
         Ok(nt) =>
@@ -92,7 +92,7 @@ test "quickcheck: reopen 迁移纪律（仅已归档拒绝，其余回已领取�
 ///|
 test "quickcheck: split 迁移纪律（仅已领取且非叶子可拆，叶子/他态拒绝）" {
   @quickcheck.check(
-    (i : Int) => {
+    (i : Int32) => {
       let t = rand_task(i)
       match t.split() {
         Ok(nt) =>
@@ -111,7 +111,7 @@ test "quickcheck: split 迁移纪律（仅已领取且非叶子可拆，叶子/�
 ///|
 test "quickcheck: submit/reject 对称纪律（仅执行中可提交、仅待验收可打回）" {
   @quickcheck.check(
-    (i : Int) => {
+    (i : Int32) => {
       let t = rand_task(i)
       let sub_ok = match t.submit() {
         Ok(nt) => t.get_status() == Executing && nt.get_status() == Reviewing

@@ -21,7 +21,7 @@ pub struct RepairOutcome {
   // 最终状态（true = 三轮内全部通过）
   ok : Bool
   // 实际执行的修复轮数（>0 即证明非零修复）
-  rounds_used : Int
+  rounds_used : Int32
   // 每轮修复动作记录（用于证据存储）
   fix_evidence : Array[FixEvidence]
 }

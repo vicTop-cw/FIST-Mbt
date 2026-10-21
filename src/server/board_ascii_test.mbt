@@ -505,7 +505,7 @@ fn b29_done(id : String, deliv : String) -> @core.Task {
 
 ///|
 /// 读顶层整数字段
-fn b29_num(j : Json, key : String) -> Int {
+fn b29_num(j : Json, key : String) -> Int32 {
   match j.value(key) {
     Some(Json::Number(n, ..)) => n.to_int()
     _ => abort("\{key} 缺失: " + j.stringify())
@@ -514,7 +514,7 @@ fn b29_num(j : Json, key : String) -> Int {
 
 ///|
 /// 读顶层整数字段（state_flow 用，缺失返回 0 fail-open）
-fn sf_num(j : Json, key : String) -> Int {
+fn sf_num(j : Json, key : String) -> Int32 {
   match j.value(key) {
     Some(Json::Number(n, ..)) => n.to_int()
     _ => 0

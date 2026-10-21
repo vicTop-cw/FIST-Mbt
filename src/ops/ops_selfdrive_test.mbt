@@ -100,7 +100,7 @@ fn sd_str(j : Json, key : String) -> String {
 
 ///|
 /// 读 JSON 数组字段长度（缺失返回 -1）。
-fn sd_arr_len(j : Json, key : String) -> Int {
+fn sd_arr_len(j : Json, key : String) -> Int32 {
   match j {
     Object(m) =>
       match m.get(key) {
@@ -113,7 +113,7 @@ fn sd_arr_len(j : Json, key : String) -> Int {
 
 ///|
 /// 读 JSON 数组字段第 i 项（缺失返回 "<none>"）。
-fn sd_arr_item(j : Json, key : String, i : Int) -> String {
+fn sd_arr_item(j : Json, key : String, i : Int32) -> String {
   match j {
     Object(m) =>
       match m.get(key) {

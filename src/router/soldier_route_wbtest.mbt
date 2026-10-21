@@ -6,7 +6,7 @@
 
 ///|
 /// 造一个可控路由器：free 1 个 limit=FL、paid 1 个 limit=PL
-fn sr_router(free_limit : Int, paid_limit : Int) -> ModelRouter {
+fn sr_router(free_limit : Int32, paid_limit : Int32) -> ModelRouter {
   let cfg = {
     window_seconds: 18000,
     threshold_pct: 95.0,

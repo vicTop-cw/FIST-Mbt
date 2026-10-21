@@ -31,10 +31,10 @@ fn parse_subcmd(sub : String) -> Subcmd {
 
 ///|
 /// 用法错（拼错子命令、给了不认识的旗）与运行错分档：2 = 用法错。
-const USAGE_ERROR_EXIT_CODE : Int = 2
+const USAGE_ERROR_EXIT_CODE : Int32 = 2
 
 ///|
-fn exit_code_of(cmd : Subcmd) -> Int {
+fn exit_code_of(cmd : Subcmd) -> Int32 {
   match cmd {
     Unknown(_) => USAGE_ERROR_EXIT_CODE
     _ => 0
@@ -45,7 +45,7 @@ fn exit_code_of(cmd : Subcmd) -> Int {
 /// 把退出码真的交给宿主运行时。JS 腿是权威门槛（Node），native 腿用 libc `exit`；
 /// 其余运行时没有退出码可设，就当场炸出来，绝不静默回 0（那正是 BUG-106 的形态）。
 #cfg(target="js")
-extern "js" fn js_try_exit(code : Int) -> Bool =
+extern "js" fn js_try_exit(code : Int32) -> Bool =
   #| function(code) {
   #|   if (typeof process !== "undefined" && typeof process.exit === "function") {
   #|     process.exit(code);
@@ -56,7 +56,7 @@ extern "js" fn js_try_exit(code : Int) -> Bool =
 
 ///|
 #cfg(target="js")
-fn cli_exit(code : Int) -> Unit {
+fn cli_exit(code : Int32) -> Unit {
   if !js_try_exit(code) {
     abort("运行时没有 process.exit，无法回显退出码 \{code}")
   }
@@ -64,16 +64,16 @@ fn cli_exit(code : Int) -> Unit {
 
 ///|
 #cfg(any(target="native", target="llvm"))
-extern "c" fn native_exit(code : Int) = "exit"
+extern "c" fn native_exit(code : Int32) = "exit"
 
 ///|
 #cfg(any(target="native", target="llvm"))
-fn cli_exit(code : Int) -> Unit {
+fn cli_exit(code : Int32) -> Unit {
   native_exit(code)
 }
 
 ///|
 #cfg(not(any(target="js", target="native", target="llvm")))
-fn cli_exit(code : Int) -> Unit {
+fn cli_exit(code : Int32) -> Unit {
   abort("该运行时无法设置退出码，本应回 \{code}")
 }

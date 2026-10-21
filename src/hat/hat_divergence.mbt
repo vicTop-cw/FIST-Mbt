@@ -19,7 +19,7 @@ pub struct Divergence {
   // 六元代号 B
   detail : String
   // 人类可读说明
-  severity : Int
+  severity : Int32
   // 1..3，3 最严重（阻止收敛）
 }
 
@@ -100,7 +100,7 @@ pub fn divergence(
   left : String,
   right : String,
   detail : String,
-  severity : Int,
+  severity : Int32,
 ) -> Divergence {
   { kind, left, right, detail, severity, }
 }
@@ -113,8 +113,8 @@ pub fn blocking_divergences(ds : Array[Divergence]) -> Array[Divergence] {
 
 ///|
 /// 统计各类分歧数量。
-pub fn count_by_kind(ds : Array[Divergence]) -> Map[String, Int] {
-  let m : Map[String, Int] = Map([])
+pub fn count_by_kind(ds : Array[Divergence]) -> Map[String, Int32] {
+  let m : Map[String, Int32] = Map([])
   for d in ds {
     let cur = match m.get(d.kind) {
       Some(v) => v

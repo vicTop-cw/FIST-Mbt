@@ -35,8 +35,8 @@ pub fn FistEngine::executor_clear(self : FistEngine) -> Bool {
 /// （分母含打回/执行中/待验收等，防"只认领不交付"）；名下无任务取 0.5 中性。
 /// 供 executor_route 历史信任轴（排序键 能力覆盖→信任→负载）。
 pub fn FistEngine::executor_trust(self : FistEngine) -> Map[String, Double] {
-  let total : Map[String, Int] = Map([])
-  let done : Map[String, Int] = Map([])
+  let total : Map[String, Int32] = Map([])
+  let done : Map[String, Int32] = Map([])
   for t in self.list_all() {
     match t.assignee {
       Some(a) => {

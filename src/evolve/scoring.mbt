@@ -59,13 +59,13 @@ pub fn score_rank(score : Double) -> String {
 ///|
 /// 门禁放行：score 达到阈值（默认 0.85）即通过。
 /// 供 evolve_submit 落库前 / Omega gate 复用——决策来自可计算分数，而非 LLM 主观判断。
-pub fn score_accept(score : Double, threshold? : Double = 0.85) -> Bool {
+pub fn score_accept(score : Double, threshold~ : Double = 0.85) -> Bool {
   score >= threshold
 }
 
 ///|
 /// 稳健性谓词：score 不低于 floor（默认 0.70）视为稳健产物。
 /// 用于在采样/蒸馏前过滤掉脆弱产物。
-pub fn is_robust(score : Double, floor? : Double = 0.70) -> Bool {
+pub fn is_robust(score : Double, floor~ : Double = 0.70) -> Bool {
   score >= floor
 }

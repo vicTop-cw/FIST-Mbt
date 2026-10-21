@@ -39,7 +39,7 @@ fn st_str(m : Map[String, Json], key : String) -> String {
 
 ///|
 /// JSON Number → Int 的读取（BUG-192：越界/NaN 不 panic，回落到默认）。
-fn st_int(m : Map[String, Json], key : String, default~ : Int) -> Int {
+fn st_int(m : Map[String, Json], key : String, default~ : Int32) -> Int32 {
   match m.get(key) {
     Some(Json::Number(n, ..)) =>
       if n != n || n < -2_000_000_000.0 || n > 2_000_000_000.0 {
@@ -141,7 +141,7 @@ fn merge_usage(
 /// - 状态非法/缺失 ⇒ 用 config（或默认）重建，并保留旧文件不删
 pub fn router_restore(
   state : Json,
-  config? : Json = Json::null(),
+  config~ : Json = Json::null(),
 ) -> (ModelRouter, Array[String]) {
   let (cfg, mut_warns) = RouterConfig::from_json(config)
   let mut warns = mut_warns

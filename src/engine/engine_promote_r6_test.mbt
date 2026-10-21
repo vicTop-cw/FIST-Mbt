@@ -26,7 +26,7 @@ fn p6_finish_leaf(
   e : @engine.FistEngine,
   id : String,
   deliverable : String,
-  t : Int,
+  t : Int32,
 ) -> Unit {
   let now = "2026-09-26T10:0\{t}:00Z"
   ignore(e.claim(task_id=id, assignee="worker_\{t}", now~))

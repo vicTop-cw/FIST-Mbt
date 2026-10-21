@@ -3,13 +3,13 @@
 
 ///|
 fn mk_snap(
-  inflight : Int,
-  ready : Int,
-  done : Int,
-  blocked : Int,
+  inflight : Int32,
+  ready : Int32,
+  done : Int32,
+  blocked : Int32,
   target : String,
-  idle : Int,
-  round_n : Int,
+  idle : Int32,
+  round_n : Int32,
   artifacts : Array[Json],
 ) -> Json {
   let m : Map[String, Json] = Map([])

@@ -11,18 +11,18 @@
 ///|
 /// 收敛结果。
 pub struct ConvergeResult {
-  round : Int
-  max_rounds : Int
-  agree : Int
+  round : Int32
+  max_rounds : Int32
+  agree : Int32
   // verdict == pass 的单元数
-  total : Int
+  total : Int32
   // 参与统计的单元数（不含 abstain）
   rate : Double
   // agree / total
   threshold : Double
   status : String
   // converged | partial | diverged
-  blocking : Int
+  blocking : Int32
   // 阻止收敛的分歧（verdict_conflict）数量
   blockers : Array[String]
   // 阻止收敛的分歧详情
@@ -37,7 +37,7 @@ pub struct ConvergeResult {
 pub fn converge(
   reports : Array[HatReport],
   policy : HatPolicy,
-  round : Int,
+  round : Int32,
 ) -> ConvergeResult {
   let threshold = policy.converge_threshold
   let mut agree = 0

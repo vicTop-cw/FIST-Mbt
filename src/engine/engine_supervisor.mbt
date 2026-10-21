@@ -8,11 +8,11 @@
 /// 全库（或指定 ns）状态聚合：供 supervisor_status 使用。纯读。
 pub fn FistEngine::supervisor_status(
   self : FistEngine,
-  ns_filter? : String = "",
+  ns_filter~ : String = "",
 ) -> Json {
   let tasks = self.list_all()
-  let by_status : Map[String, Int] = Map([])
-  let by_ns : Map[String, Int] = Map([])
+  let by_status : Map[String, Int32] = Map([])
+  let by_ns : Map[String, Int32] = Map([])
   let active : Array[Json] = []
   let mut done = 0
   let mut total = 0
@@ -59,7 +59,7 @@ fn FistEngine::supervisor_tree_node(
   self : FistEngine,
   idx : Map[String, Array[String]],
   task_id : String,
-) -> (Json, Int, Int)? {
+) -> (Json, Int32, Int32)? {
   match self.get_task(task_id) {
     None => None
     Some(t) => {
@@ -145,9 +145,9 @@ pub fn FistEngine::supervisor_kill_plan(
   task_id~ : String,
   by~ : String,
   reason~ : String,
-  force? : Bool = false,
-  apply_pause? : Bool = false,
-  now? : String = "",
+  force~ : Bool = false,
+  apply_pause~ : Bool = false,
+  now~ : String = "",
 ) -> Json {
   let gates : Array[SupervisorGate] = []
   // G1 身份门
@@ -362,7 +362,7 @@ pub fn FistEngine::supervisor_task_upsert(
   by~ : String,
   items : Array[Json],
   now~ : String,
-  ns? : String = "default",
+  ns~ : String = "default",
 ) -> Json {
   let results : Array[Json] = []
   let mut ok_count = 0
@@ -520,7 +520,7 @@ pub fn FistEngine::supervisor_task_upsert(
 ///|
 /// ISO 时间（YYYY-MM-DDTHH:MM:SS，忽略尾部 Z/毫秒/时区）→ epoch 秒。
 /// 解析失败返回 None（调用方按不可比较处理，不阻断轮询）。
-fn iso_to_epoch(s : String) -> Int? {
+fn iso_to_epoch(s : String) -> Int32? {
   if s.length() < 19 ||
     s[4] != '-' ||
     s[7] != '-' ||
@@ -529,8 +529,8 @@ fn iso_to_epoch(s : String) -> Int? {
     s[16] != ':' {
     return None
   }
-  let nums : Array[Int] = []
-  let idxs : Array[(Int, Int)] = [
+  let nums : Array[Int32] = []
+  let idxs : Array[(Int32, Int32)] = [
     (0, 4),
     (5, 7),
     (8, 10),
@@ -578,8 +578,8 @@ fn iso_to_epoch(s : String) -> Int? {
 pub fn FistEngine::supervisor_reminder_tick(
   self : FistEngine,
   now~ : String,
-  stale_hours? : Int = 24,
-  pending_hours? : Int = 48,
+  stale_hours~ : Int32 = 24,
+  pending_hours~ : Int32 = 48,
 ) -> Json {
   let now_ep = iso_to_epoch(now).unwrap_or(0)
   let stale_cut = now_ep - stale_hours * 3600

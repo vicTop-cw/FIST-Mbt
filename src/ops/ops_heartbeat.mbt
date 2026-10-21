@@ -22,7 +22,7 @@ pub fn Heartbeat::new() -> Heartbeat {
 pub fn Heartbeat::beat(
   self : Heartbeat,
   task_id : String,
-  signal? : String = "active",
+  signal~ : String = "active",
   now~ : String,
 ) -> Unit {
   self.signals.set(task_id, signal)
@@ -63,7 +63,7 @@ pub fn Heartbeat::is_stale(
   self : Heartbeat,
   task_id : String,
   now : String,
-  timeout_sec? : Int = 600,
+  timeout_sec~ : Int32 = 600,
 ) -> Bool {
   let now_s = iso_to_secs(now)
   if now_s < 0 {

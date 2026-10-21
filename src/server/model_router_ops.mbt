@@ -332,14 +332,14 @@ async fn mr_laya_tier_hint() -> String {
 fn model_route_impl(
   project_dir : String,
   ns~ : String,
-  record_model? : String = "",
-  config? : Json = Json::null(),
-  laya_hint? : String = "",
-  soldier? : String = "",
-  pool_label? : String = "",
-  dry_run? : Bool = false,
-  context? : String = "",
-  ok? : Bool = true,
+  record_model~ : String = "",
+  config~ : Json = Json::null(),
+  laya_hint~ : String = "",
+  soldier~ : String = "",
+  pool_label~ : String = "",
+  dry_run~ : Bool = false,
+  context~ : String = "",
+  ok~ : Bool = true,
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err(
@@ -545,7 +545,7 @@ fn mr_record_only(
   project_dir : String,
   ns~ : String,
   model : String,
-  ok? : Bool = true,
+  ok~ : Bool = true,
 ) -> Result[Unit, String] {
   match model_route_impl(project_dir, ns~, record_model=model, ok~) {
     Err(e) => Err(e)
@@ -736,7 +736,7 @@ pub fn model_auth_status_impl(
 fn model_router_reset_impl(
   project_dir : String,
   ns~ : String,
-  hard? : Bool = false,
+  hard~ : Bool = false,
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err(
@@ -779,7 +779,7 @@ async fn ofm_execute_http(
   ns~ : String,
   prompt~ : String,
   model~ : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
   dry_run : Bool,
   route_json : Json,
   routed_by_pool : Bool,
@@ -949,7 +949,7 @@ fn ofm_chat_url(endpoint : String) -> String {
 
 ///|
 /// 读 Json 对象的 Int 字段。
-fn mr_json_int(m : Map[String, Json], key : String) -> Int {
+fn mr_json_int(m : Map[String, Json], key : String) -> Int32 {
   match m.get(key) {
     Some(Json::Number(n, ..)) => n.to_int()
     _ => 0
@@ -977,9 +977,9 @@ async fn executor_run_impl(
   ns~ : String,
   executor~ : String,
   prompt~ : String,
-  model? : String = "",
-  timeout_ms? : Int = 180000,
-  dry_run? : Bool = false,
+  model~ : String = "",
+  timeout_ms~ : Int32 = 180000,
+  dry_run~ : Bool = false,
 ) -> Json {
   let fail = fn(msg : String, extra : Array[(String, Json)]) -> Json {
     mr_obj(

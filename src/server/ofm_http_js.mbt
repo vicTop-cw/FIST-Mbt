@@ -12,7 +12,7 @@
 extern "js" fn js_ofm_chat_fetch(
   url : String,
   body : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> @js_async.Promise[String] =
   #| async (url, body, timeoutMs) => {
   #|   const key = process.env.FIST_OFM_KEY || ''
@@ -44,7 +44,7 @@ extern "js" fn js_ofm_chat_fetch(
 pub async fn ofm_chat_http(
   url : String,
   body : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> Result[Json, String] {
   let raw = js_ofm_chat_fetch(url, body, timeout_ms).wait() catch {
     _ => return Err("ofm_chat_http: fetch 调度失败（js 运行时异常）")

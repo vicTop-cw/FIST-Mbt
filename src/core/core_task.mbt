@@ -139,7 +139,7 @@ pub fn TaskStatus::is_archived(self : TaskStatus) -> Bool {
 }
 
 ///|
-pub fn TaskStatus::order(self : TaskStatus) -> Int {
+pub fn TaskStatus::order(self : TaskStatus) -> Int32 {
   match self {
     Pending => 0
     Claimed => 1
@@ -165,12 +165,12 @@ pub struct Task {
   priority : String
   importance : String
   /// K 值：根=3，每拆一层减 1；K<=1 为原子任务
-  depth : Int
+  depth : Int32
   /// 拆分数量（默认 3）
-  split_n : Int
+  split_n : Int32
   /// 军衔等级（军衔体系展示层的真数据源）：0=司令 … 7=排长，越界钳制；
   /// 默认 6（连长）；子任务 = 父级 + 1，封顶 7。**与 depth（树深/缩进）严格分离**。
-  level : Int
+  level : Int32
   status : TaskStatus
   assignee : String?
   description : String
@@ -211,13 +211,13 @@ pub fn Task::get_status(self : Task) -> TaskStatus {
 }
 
 ///|
-pub fn Task::get_depth(self : Task) -> Int {
+pub fn Task::get_depth(self : Task) -> Int32 {
   self.depth
 }
 
 ///|
 /// 军衔等级（0..7）。军衔体系展示层读取此处，而非 depth。
-pub fn Task::get_level(self : Task) -> Int {
+pub fn Task::get_level(self : Task) -> Int32 {
   self.level
 }
 
@@ -244,7 +244,7 @@ pub fn Task::is_leaf(self : Task) -> Bool {
 ///|
 /// 军衔等级钳制到 0..7（<0→0，>7→7）。军衔体系展示层的真数据源，
 /// 与 depth（树深）语义独立，绝不用 depth 兼任 level。
-fn clamp_level(l : Int) -> Int {
+fn clamp_level(l : Int32) -> Int32 {
   if l < 0 {
     0
   } else if l > 7 {
@@ -257,7 +257,7 @@ fn clamp_level(l : Int) -> Int {
 ///|
 /// 子任务军衔 = 父级 + 1，封顶排长（7）。
 /// 连长(6)→排长(7)→士兵；不再上升。父级越界先钳制再 +1（防御）。
-pub fn child_level(parent : Int) -> Int {
+pub fn child_level(parent : Int32) -> Int32 {
   let p = clamp_level(parent)
   if p + 1 > 7 {
     7
@@ -271,18 +271,18 @@ pub fn child_level(parent : Int) -> Int {
 pub fn Task::new(
   id~ : String,
   project_dir~ : String,
-  description? : String = "",
-  priority? : String = "中",
-  importance? : String = "中",
-  depth? : Int = 3,
-  split_n? : Int = 3,
-  level? : Int = 6,
-  parent_id? : String = "",
-  assignee? : String = "",
-  cleanup_mode? : String = "deferred",
-  created_at? : String = "",
-  ns? : String = "default",
-  depends_on? : Array[String] = [],
+  description~ : String = "",
+  priority~ : String = "中",
+  importance~ : String = "中",
+  depth~ : Int32 = 3,
+  split_n~ : Int32 = 3,
+  level~ : Int32 = 6,
+  parent_id~ : String = "",
+  assignee~ : String = "",
+  cleanup_mode~ : String = "deferred",
+  created_at~ : String = "",
+  ns~ : String = "default",
+  depends_on~ : Array[String] = [],
 ) -> Task {
   {
     id,
@@ -323,9 +323,9 @@ pub fn Task::from_db(
   ns : String,
   priority : String,
   importance : String,
-  depth : Int,
-  split_n : Int,
-  level : Int,
+  depth : Int32,
+  split_n : Int32,
+  level : Int32,
   status_s : String,
   assignee : String?,
   description : String,
@@ -540,7 +540,7 @@ pub fn Task::reopen(self : Task) -> Result[Task, String] {
 
 ///|
 /// 待验收 -> 已打回（验收不通过，需重做）
-pub fn Task::reject(self : Task, reason? : String = "") -> Result[Task, String] {
+pub fn Task::reject(self : Task, reason~ : String = "") -> Result[Task, String] {
   match self.status {
     Reviewing =>
       Ok({
@@ -645,7 +645,7 @@ pub fn Task::with_depends_on(
 }
 
 ///|
-pub fn child_id(parent_id~ : String, idx~ : Int) -> String {
+pub fn child_id(parent_id~ : String, idx~ : Int32) -> String {
   "\{parent_id}.\{idx}"
 }
 

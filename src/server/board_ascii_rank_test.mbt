@@ -10,7 +10,7 @@ fn bar_engine() -> @engine.FistEngine {
 fn bar_publish(
   e : @engine.FistEngine,
   desc : String,
-  level? : Int = 6,
+  level~ : Int32 = 6,
 ) -> String {
   match
     e.publish(
@@ -27,7 +27,7 @@ fn bar_publish(
 
 ///|
 /// 读出看板 ascii 正文。
-fn bar_ascii(e : @engine.FistEngine, ns? : String = "") -> String {
+fn bar_ascii(e : @engine.FistEngine, ns~ : String = "") -> String {
   let j = render_board_ascii(e.list_all(), ns)
   match j.value("ascii") {
     Some(Json::String(s)) => s

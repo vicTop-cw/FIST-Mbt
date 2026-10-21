@@ -87,7 +87,7 @@ fn run_help(args : Array[String]) -> Unit {
 /// 统一用户参数访问：ua[0]=子命令、ua[1]=子命令后第一个参数……
 /// JS 目标：@env.args() 为 [node.exe, 脚本路径, 用户参数…]，ua[i]=args[i+2]
 #cfg(target="js")
-fn user_arg(args : Array[String], i : Int) -> String {
+fn user_arg(args : Array[String], i : Int32) -> String {
   if args.length() > i + 2 {
     args[i + 2]
   } else {
@@ -97,7 +97,7 @@ fn user_arg(args : Array[String], i : Int) -> String {
 
 ///|
 #cfg(any(target="native", target="llvm"))
-fn user_arg(args : Array[String], i : Int) -> String {
+fn user_arg(args : Array[String], i : Int32) -> String {
   // native 目标 @env.args()[0] 为 exe 路径，ua[i]=args[i+1]
   if args.length() > i + 1 {
     args[i + 1]

@@ -18,7 +18,7 @@ pub fn staff_titles() -> Array[String] {
 
 ///|
 /// 参谋军职数（6）。
-pub fn staff_title_count() -> Int {
+pub fn staff_title_count() -> Int32 {
   6
 }
 

@@ -276,7 +276,7 @@ pub fn batch_verify(spec_contents : Array[(String, String)]) -> Json {
 /// 返回：{ rounds[], final_accuracy, fixes_applied[], needs_human_review[] }
 pub fn batch_verify_fix(
   failed_results : Array[Json],
-  max_rounds? : Int = 3,
+  max_rounds~ : Int32 = 3,
 ) -> Json {
   let rounds : Array[Json] = []
   let human_review : Array[String] = []
@@ -509,9 +509,7 @@ pub fn verify_fix_with_evidence(
         "fixes_applied": Json::number(cnt.to_double()),
         "accuracy_before": Json::number(init_accuracy),
         "accuracy_after": Json::number(final_accuracy),
-        "note": Json::string(
-          "evidence auto_repair round " + r.to_string(),
-        ),
+        "note": Json::string("evidence auto_repair round " + r.to_string()),
       }),
     )
     r = r + 1
@@ -520,8 +518,11 @@ pub fn verify_fix_with_evidence(
   let human_detail : Array[String] = []
   for id in human_ids {
     human_detail.push(
-      id + ": " + ROOT_CAUSE_SEMANTIC_ERROR +
-      "/" + ROOT_CAUSE_UNKNOWN +
+      id +
+      ": " +
+      ROOT_CAUSE_SEMANTIC_ERROR +
+      "/" +
+      ROOT_CAUSE_UNKNOWN +
       " -> needs_human_review（无法自动修复，转人工兜底）",
     )
   }
@@ -532,9 +533,7 @@ pub fn verify_fix_with_evidence(
     "fixes_applied": Json::array(
       outcome.fix_evidence.map(fn(ev) { Json::string(ev.action) }),
     ),
-    "needs_human_review": Json::array(
-      human_ids.map(fn(s) { Json::string(s) }),
-    ),
+    "needs_human_review": Json::array(human_ids.map(fn(s) { Json::string(s) })),
     "needs_human_review_detail": Json::array(
       human_detail.map(fn(s) { Json::string(s) }),
     ),

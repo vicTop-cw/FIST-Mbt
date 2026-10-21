@@ -46,7 +46,7 @@ pub fn OfmFailure::label(self : OfmFailure) -> String {
 
 ///|
 /// 主入口：以 HTTP 状态码为主判据，`ofm_code` 只作 3xx/语义不明时的二次提示。
-pub fn classify_ofm_failure(status : Int, ofm_code : String) -> OfmFailure {
+pub fn classify_ofm_failure(status : Int32, ofm_code : String) -> OfmFailure {
   if status >= 200 && status < 300 {
     // 成功不是失败；真进来说明调用方把 2xx 误送进归因
     Unknown

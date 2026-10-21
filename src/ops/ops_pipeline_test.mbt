@@ -109,7 +109,7 @@ fn pl_bool(j : Json, key : String) -> Bool {
 
 ///|
 /// 读 JSON 数组字段长度（缺失返回 -1）。
-fn pl_arr_len(j : Json, key : String) -> Int {
+fn pl_arr_len(j : Json, key : String) -> Int32 {
   match j {
     Object(m) =>
       match m.get(key) {
@@ -126,7 +126,7 @@ fn pl_tick(
   e : @engine.FistEngine,
   dir : String,
   now : String,
-  timeout_sec? : Int = 2400,
+  timeout_sec~ : Int32 = 2400,
 ) -> Json {
   match @ops.pipeline_tick(e, dir, now, ns="cron-auto", timeout_sec~) {
     Ok(j) => j
@@ -150,7 +150,7 @@ fn pl_tick_named(
 
 ///|
 /// 该命名空间任务数量。
-fn pl_count(e : @engine.FistEngine, ns : String) -> Int {
+fn pl_count(e : @engine.FistEngine, ns : String) -> Int32 {
   e.list_in_ns(ns).length()
 }
 

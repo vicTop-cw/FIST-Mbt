@@ -136,7 +136,7 @@ fn scan_prompt_tasks(
   engine : @engine.FistEngine,
   ns : String,
   prompt_name : String,
-) -> (@core.Task?, Int, String) {
+) -> (@core.Task?, Int32, String) {
   let marker = pipeline_marker(prompt_name)
   let mut active : @core.Task? = None
   let mut count = 0
@@ -288,11 +288,11 @@ pub fn pipeline_tick(
   engine : @engine.FistEngine,
   project_dir : String,
   now : String,
-  ns? : String = "cron-auto",
-  timeout_sec? : Int = 2400,
-  phase? : String = "auto",
-  prompt_name? : String = "",
-  mode? : String = "",
+  ns~ : String = "cron-auto",
+  timeout_sec~ : Int32 = 2400,
+  phase~ : String = "auto",
+  prompt_name~ : String = "",
+  mode~ : String = "",
 ) -> Result[Json, String] {
   if project_dir == "" {
     return Err("project_dir 不能为空")
@@ -672,7 +672,7 @@ fn advance_from_pending(
   gen_dir : String,
   state_path : String,
   started_path : String,
-  only_prompt? : String = "",
+  only_prompt~ : String = "",
 ) -> Result[Json, String] {
   // only_prompt 非空时只处理指定提示词；缺省取目录内最新一份
   let picked = if only_prompt != "" {
@@ -878,7 +878,7 @@ fn advance_from_running(
   ns : String,
   state_path : String,
   started_path : String,
-  timeout_sec~ : Int,
+  timeout_sec~ : Int32,
 ) -> Json {
   let picked = pipeline_latest_prompt(project_dir)
   let pf = match picked {

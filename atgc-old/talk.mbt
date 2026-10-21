@@ -69,7 +69,7 @@ fn str_join(arr : Array[String], sep : String) -> String {
 
 ///|
 /// int 数组 → JSON 数组字符串。
-fn jints(arr : Array[Int]) -> String {
+fn jints(arr : Array[Int32]) -> String {
   let parts : Array[String] = []
   for x in arr {
     parts.push(x.to_string())

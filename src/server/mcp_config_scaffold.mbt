@@ -69,7 +69,7 @@ pub fn mcs_pretty(j : Json) -> String {
 }
 
 ///|
-fn mcs_pretty_at(j : Json, depth : Int) -> String {
+fn mcs_pretty_at(j : Json, depth : Int32) -> String {
   let pad = "  ".repeat(depth)
   let child_pad = "  ".repeat(depth + 1)
   match j {
@@ -129,7 +129,7 @@ fn mcs_escape_body(s : String) -> String {
 
 ///|
 /// 4 位十六进制（补前导 0），用于 `\uXXXX` 控制符转义。
-fn mcs_hex4(n : Int) -> String {
+fn mcs_hex4(n : Int32) -> String {
   let hex = "0123456789abcdef"
   let mut rem = n
   let mut out = ""
@@ -171,7 +171,7 @@ fn mcs_lower(s : String) -> String {
 
 ///|
 /// 取字符串前 n 个字符（不足 n 则全取），用于脱敏回显。
-fn mcs_head(s : String, n : Int) -> String {
+fn mcs_head(s : String, n : Int32) -> String {
   let mut i = 0
   let mut out = ""
   for c in s {
@@ -219,7 +219,7 @@ fn mcs_get_bool(form : Json, key : String, default : Bool) -> Bool {
 
 ///|
 /// 从 form JSON 的 Object 里取 toolCallTimeoutMs（非整数或不在 1..600000 → Err）。
-fn mcs_get_timeout(form : Json, key : String) -> Result[Int, String] {
+fn mcs_get_timeout(form : Json, key : String) -> Result[Int32, String] {
   match form {
     Json::Object(map) =>
       match map.get(key) {
@@ -428,7 +428,7 @@ pub fn mcs_filter_env(
 
 ///|
 /// 从 form 的 reconnect 对象取整数子字段（缺省回退 default，非法值钳到 default）。
-fn mcs_get_reconnect_int(form : Json, key : String, default : Int) -> Int {
+fn mcs_get_reconnect_int(form : Json, key : String, default : Int32) -> Int32 {
   match form {
     Json::Object(map) =>
       match map.get(key) {

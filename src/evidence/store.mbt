@@ -9,7 +9,7 @@
 /// 一条修复证据：记录某 Spec 在某一轮被 apply_fix 真实修复的记录
 pub struct FixEvidence {
   spec_id : String
-  round : Int
+  round : Int32
   // 修复动作描述（由 apply_fix 返回）
   action : String
   // 修复后的校验结果（verify 返回）
@@ -20,7 +20,7 @@ pub struct FixEvidence {
 /// 构造一条修复证据
 pub fn FixEvidence::new(
   spec_id : String,
-  round : Int,
+  round : Int32,
   action : String,
   verify_result : String,
 ) -> FixEvidence {
@@ -122,8 +122,8 @@ pub fn EvidenceStore::all_tenants(self : EvidenceStore) -> Array[String] {
 pub fn EvidenceStore::count_fixes(
   self : EvidenceStore,
   tenant : String,
-  up_to_round : Int,
-) -> Int {
+  up_to_round : Int32,
+) -> Int32 {
   let mut n = 0
   for ev in self.evidence_of(tenant) {
     if ev.round <= up_to_round {

@@ -31,10 +31,10 @@ pub struct ExecResult {
   deliverable : String
   executor : String
   model : String
-  tokens_in : Int
-  tokens_out : Int
+  tokens_in : Int32
+  tokens_out : Int32
   cost : Double
-  duration_ms : Int
+  duration_ms : Int32
   error_msg : String
 }
 
@@ -71,8 +71,8 @@ pub fn ExecResult::fail(error_msg : String, executor : String) -> ExecResult {
 ///|
 pub fn ExecResult::with_tokens(
   self : ExecResult,
-  tokens_in : Int,
-  tokens_out : Int,
+  tokens_in : Int32,
+  tokens_out : Int32,
   cost : Double,
 ) -> ExecResult {
   ExecResult::{

@@ -208,8 +208,8 @@ pub fn hat_verdict(
 /// 多帽一致性聚合结果（确定性计算，不含 LLM 自评）。
 /// rate = agree / total；pass = rate >= threshold。
 pub struct DebateSummary {
-  total : Int
-  agree : Int // verdict == pass 的帽子数
+  total : Int32
+  agree : Int32 // verdict == pass 的帽子数
   rate : Double
   threshold : Double
   pass : Bool // rate >= threshold，仅表示视角一致性，不代用户裁决

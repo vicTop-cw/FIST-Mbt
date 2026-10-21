@@ -35,7 +35,7 @@ pub struct HexaElement {
   lane : String
   // 模型车道：free_pool | paid_pool | balanced（交给 model_route 分池）
   temperature : Double
-  max_tokens : Int
+  max_tokens : Int32
   output_schema : Array[String]
   // 该元必须逐项给出的字段
   role : String
@@ -152,7 +152,7 @@ fn mk(
   name_zh : String,
   lane : String,
   temperature : Double,
-  max_tokens : Int,
+  max_tokens : Int32,
   output_schema : Array[String],
   hexa_note : String,
 ) -> HexaElement {

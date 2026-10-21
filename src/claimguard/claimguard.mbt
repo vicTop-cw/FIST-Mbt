@@ -402,7 +402,7 @@ pub fn may_reconcile_ok(a : ClaimGuardState, b : ClaimGuardState) -> Bool {
 pub fn reconcile_summary(
   a : ClaimGuardState,
   b : ClaimGuardState,
-) -> (Int, Int) {
+) -> (Int32, Int32) {
   (
     reconcile_id_conflicts(a, b).length(),
     reconcile_semantic_conflicts(a, b).length(),
@@ -467,7 +467,7 @@ pub fn may_reconcile_all_ok(states : Array[ClaimGuardState]) -> Bool {
 // Read-only convenience: total id + semantic collision counts across all pairs.
 
 ///|
-pub fn reconcile_all_summary(states : Array[ClaimGuardState]) -> (Int, Int) {
+pub fn reconcile_all_summary(states : Array[ClaimGuardState]) -> (Int32, Int32) {
   let r = reconcile_all(states)
   (r.id_conflicts.length(), r.semantic_conflicts.length())
 }
@@ -565,8 +565,8 @@ pub fn admit_ok(
 // ask to yield first (highest degree => most contested). Pure + read-only.
 
 ///|
-pub fn conflict_scoreboard(report : ReconcileAllReport) -> Map[String, Int] {
-  let m : Map[String, Int] = Map([])
+pub fn conflict_scoreboard(report : ReconcileAllReport) -> Map[String, Int32] {
+  let m : Map[String, Int32] = Map([])
   for c in report.id_conflicts {
     m.set(
       c.agent_a,
@@ -640,7 +640,7 @@ pub fn peer_yield(s : ClaimGuardState, agent : String) -> ClaimGuardState {
 ///|
 pub fn advise_yield(report : ReconcileAllReport) -> String? {
   let board = conflict_scoreboard(report)
-  let entries : Array[(String, Int)] = []
+  let entries : Array[(String, Int32)] = []
   for a, d in board.iter2() {
     entries.push((a, d))
   }
@@ -655,10 +655,10 @@ pub fn advise_yield(report : ReconcileAllReport) -> String? {
 
 ///|
 fn pick_top(
-  es : Array[(String, Int)],
-  i : Int,
-  cur : (String, Int),
-) -> (String, Int) {
+  es : Array[(String, Int32)],
+  i : Int32,
+  cur : (String, Int32),
+) -> (String, Int32) {
   if i >= es.length() {
     cur
   } else {
@@ -680,10 +680,10 @@ fn pick_top(
 
 ///|
 fn pick_top_priority(
-  es : Array[(String, Int, Int)],
-  i : Int,
-  cur : (String, Int, Int),
-) -> (String, Int, Int) {
+  es : Array[(String, Int32, Int32)],
+  i : Int32,
+  cur : (String, Int32, Int32),
+) -> (String, Int32, Int32) {
   if i >= es.length() {
     cur
   } else {
@@ -739,7 +739,7 @@ pub struct NegotiateReport {
 pub fn negotiate_admit(
   proposed : ClaimGuardState,
   others : Array[ClaimGuardState],
-  max_steps : Int,
+  max_steps : Int32,
 ) -> NegotiateReport {
   let mut cur : Array[ClaimGuardState] = []
   for s in others {
@@ -760,7 +760,7 @@ pub fn negotiate_admit(
       states.push(s)
     }
     let board = conflict_scoreboard(reconcile_all(states))
-    let cands : Array[(String, Int)] = []
+    let cands : Array[(String, Int32)] = []
     for a, d in board.iter2() {
       if r.colliding_agents.contains(a) {
         cands.push((a, d))
@@ -793,8 +793,8 @@ pub fn negotiate_admit(
 pub fn negotiate_admit_priority(
   proposed : ClaimGuardState,
   others : Array[ClaimGuardState],
-  max_steps : Int,
-  priorities : Map[String, Int],
+  max_steps : Int32,
+  priorities : Map[String, Int32],
 ) -> NegotiateReport {
   let mut cur : Array[ClaimGuardState] = []
   for s in others {
@@ -811,7 +811,7 @@ pub fn negotiate_admit_priority(
       states.push(s)
     }
     let board = conflict_scoreboard(reconcile_all(states))
-    let cands : Array[(String, Int, Int)] = []
+    let cands : Array[(String, Int32, Int32)] = []
     for a, d in board.iter2() {
       if r.colliding_agents.contains(a) {
         let p = priorities.get_or_default(a, 0)
@@ -849,7 +849,7 @@ pub fn negotiate_admit_priority(
 ///|
 pub struct NegotiatePlan {
   report : NegotiateReport // underlying cascade verdict (ok / yielded / admit)
-  priority_cost : Int // sum of priorities of yielded peers (disruption cost)
+  priority_cost : Int32 // sum of priorities of yielded peers (disruption cost)
   freed_for_proposed : Array[String] // contested items that would unblock `proposed`
 }
 
@@ -857,8 +857,8 @@ pub struct NegotiatePlan {
 pub fn negotiate_plan(
   proposed : ClaimGuardState,
   others : Array[ClaimGuardState],
-  max_steps : Int,
-  priorities : Map[String, Int],
+  max_steps : Int32,
+  priorities : Map[String, Int32],
 ) -> NegotiatePlan {
   let neg = negotiate_admit_priority(proposed, others, max_steps, priorities)
   // agent name -> items it currently holds (from the original in-flight states)
@@ -916,7 +916,7 @@ pub struct ScheduledAdmit {
 pub struct ScheduleReport {
   admitted : Array[ScheduledAdmit] // in admission order, cheapest-disruption-first
   rejected : Array[String] // candidate agent names that could not be admitted
-  total_priority_cost : Int // sum of priority_cost over admitted (lane disruption)
+  total_priority_cost : Int32 // sum of priority_cost over admitted (lane disruption)
   scene : Array[ClaimGuardState] // resulting live scene after all admits+yields
 }
 
@@ -951,8 +951,8 @@ fn cg_state_agent(s : ClaimGuardState) -> String {
 pub fn schedule_admit(
   peers : Array[ClaimGuardState],
   candidates : Array[ClaimGuardState],
-  max_steps : Int,
-  priorities : Map[String, Int],
+  max_steps : Int32,
+  priorities : Map[String, Int32],
 ) -> ScheduleReport {
   // Mutable in-flight peers (deep copy). Yields from negotiation fold into THIS
   // copy only — already-admitted newcomers are never bounced.

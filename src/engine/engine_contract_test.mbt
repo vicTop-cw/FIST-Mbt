@@ -56,7 +56,7 @@ fn cx_target(j : Json) -> String {
 ///|
 fn publish_croot(
   e : @engine.FistEngine,
-  desc? : String = "契约测试根任务",
+  desc~ : String = "契约测试根任务",
 ) -> String {
   match
     e.publish(

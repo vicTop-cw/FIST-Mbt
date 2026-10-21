@@ -11,7 +11,7 @@
 pub struct GhRepo {
   full_name : String // owner/repo
   description : String
-  stargazers_count : Int
+  stargazers_count : Int32
   language : String
   html_url : String
   topics : Array[String]
@@ -31,7 +31,7 @@ pub struct GhCode {
 ///   query: 搜索关键词（如 "moonbit ltl parser"）
 ///   per_page: 每页条数（1~100，默认 30）
 ///   sort: 排序字段（"stars"/"updated"/""，空=默认 best match）
-fn clamp_pp(n : Int) -> Int {
+fn clamp_pp(n : Int32) -> Int32 {
   if n < 1 {
     1
   } else if n > 100 {
@@ -48,8 +48,8 @@ fn clamp_pp(n : Int) -> Int {
 ///   sort: 排序字段（"stars"/"updated"/""，空=默认 best match）
 pub fn repo_search_url(
   query : String,
-  per_page? : Int = 30,
-  sort? : String = "",
+  per_page~ : Int32 = 30,
+  sort~ : String = "",
 ) -> String {
   let q = query.trim().to_owned()
   let pp = clamp_pp(per_page)
@@ -63,7 +63,7 @@ pub fn repo_search_url(
 
 ///|
 /// 构造 GitHub 代码搜索 API URL
-pub fn code_search_url(query : String, per_page? : Int = 30) -> String {
+pub fn code_search_url(query : String, per_page~ : Int32 = 30) -> String {
   let q = query.trim().to_owned()
   let pp = clamp_pp(per_page)
   "https://api.github.com/search/code?q=" + q + "&per_page=" + pp.to_string()
@@ -71,7 +71,7 @@ pub fn code_search_url(query : String, per_page? : Int = 30) -> String {
 
 ///|
 /// 构造 GitHub topic 搜索 API URL
-pub fn topic_search_url(topic : String, per_page? : Int = 30) -> String {
+pub fn topic_search_url(topic : String, per_page~ : Int32 = 30) -> String {
   let t = topic.trim().to_owned()
   let pp = clamp_pp(per_page)
   "https://api.github.com/search/repositories?q=topic:" +
@@ -291,7 +291,7 @@ pub fn github_json_to_tsv(json_text : String) -> String {
 /// 生成 curl 命令（供外部执行，不内置网络）
 ///   - token 留空则不带 Authorization header（匿名，限流 60/h）
 ///   - 不回显 token 本体
-pub fn curl_repo_search(query : String, token? : String = "") -> String {
+pub fn curl_repo_search(query : String, token~ : String = "") -> String {
   let url = repo_search_url(query)
   let auth = if token.length() > 0 {
     " -H \"Authorization: Bearer ***\""

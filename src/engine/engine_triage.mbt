@@ -29,7 +29,7 @@ fn triage_label_of(desc : String) -> String {
 
 ///|
 /// 优先级/重要度的档位秩（越小越高优）。
-fn ranking(x : String) -> Int {
+fn ranking(x : String) -> Int32 {
   match x {
     "高" => 0
     "中" => 1
@@ -40,7 +40,7 @@ fn ranking(x : String) -> Int {
 
 ///|
 /// 截断描述到 max 字符（避免返回里塞一整棵描述）。
-fn truncate(s : String, max : Int) -> String {
+fn truncate(s : String, max : Int32) -> String {
   if s.length() <= max {
     s
   } else if max > 0 && max <= s.length() {
@@ -58,7 +58,7 @@ priv struct TriageRow {
   priority : String
   importance : String
   difficulty : String
-  depth : Int
+  depth : Int32
   desc : String
   depends_on : Array[String]
   // skill 路由：命中的 skill 关键词（原样大小写）；skill 为空时恒为空数组（零回归）。
@@ -88,7 +88,7 @@ fn skill_keys(skill : String) -> Array[String] {
 ///|
 /// 纯计算 skill 命中打分：对每个 key 做大小写不敏感的子串匹配（key 与 desc 都 lowercase 后 contains）。
 /// 返回 (命中条数, 命中的原样关键词列表)。关键词可能含 `-`，只 lowercase 不做分词。
-fn skill_hit(desc : String, keys : Array[String]) -> (Int, Array[String]) {
+fn skill_hit(desc : String, keys : Array[String]) -> (Int32, Array[String]) {
   let d = desc.to_lower()
   let hits : Array[String] = []
   for k in keys {
@@ -131,7 +131,7 @@ fn skill_mode(key : String) -> String {
 ///|
 /// 排行主键之后的后继键：priority(高>中>低) → importance(高>中>低) → depth(小者前) → id(稳定)。
 /// 在能力匹配与 skill 命中度都打平时复用（同一排序语义的单一真源）。
-fn triage_rest(a : TriageRow, b : TriageRow) -> Int {
+fn triage_rest(a : TriageRow, b : TriageRow) -> Int32 {
   let pc = ranking(a.priority) - ranking(b.priority)
   if pc != 0 {
     return pc
@@ -161,7 +161,7 @@ pub fn FistEngine::triage(
   ns_filter : String,
   agent : String,
   want : String,
-  skill? : String = "",
+  skill~ : String = "",
 ) -> Json {
   let keys = skill_keys(skill)
   let rows : Array[TriageRow] = []
@@ -302,7 +302,7 @@ pub fn FistEngine::pick_next(
   agent : String,
   want : String,
   now : String,
-  skill? : String = "",
+  skill~ : String = "",
 ) -> Json {
   let tg = self.triage(ns_filter, agent, want, skill~)
   let m = match tg {

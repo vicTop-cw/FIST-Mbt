@@ -5,7 +5,7 @@
 
 ///|
 /// 统计所有模型的 evidence 总数
-fn evidence_total(stats : Array[CafModelStats]) -> Int {
+fn evidence_total(stats : Array[CafModelStats]) -> Int32 {
   let mut total = 0
   for s in stats {
     total = total + s.total
@@ -15,7 +15,7 @@ fn evidence_total(stats : Array[CafModelStats]) -> Int {
 
 ///|
 /// 从数组中删除指定索引元素（返回新数组）
-fn remove_at(arr : Array[String], idx : Int) -> Array[String] {
+fn remove_at(arr : Array[String], idx : Int32) -> Array[String] {
   let mut out : Array[String] = []
   for i in 0..<arr.length() {
     if i != idx {
@@ -38,7 +38,7 @@ pub fn caf_soft_reorder_with_preference(
   candidates : Array[String],
   stats : Array[CafModelStats],
   default_preference : Array[String],
-  min_evidences : Int,
+  min_evidences : Int32,
 ) -> Array[String] {
   // 记忆充足 → 退化为 caf_soft_reorder
   if stats.length() > 0 && evidence_total(stats) >= min_evidences {
@@ -106,12 +106,12 @@ pub fn caf_normalize_context(context : String) -> String {
 }
 
 ///|
-fn is_ws_byte(b : Int) -> Bool {
+fn is_ws_byte(b : Int32) -> Bool {
   b == 32 || b == 9 || b == 10 || b == 13 || b == 0x3000
 }
 
 ///|
-fn to_lower_byte(b : Int) -> String {
+fn to_lower_byte(b : Int32) -> String {
   let lc = if b >= 65 && b <= 90 { b + 32 } else { b }
   Int32::unsafe_to_char(lc).to_string()
 }

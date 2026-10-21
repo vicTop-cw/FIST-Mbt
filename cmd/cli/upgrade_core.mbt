@@ -15,7 +15,7 @@
 /// 三段缺一或任一非整数 → None。
 /// 第四元 is_pre：`-alpha1` 之类为 true——按 semver 应排同号正式版之下，
 /// 若不区分会把「有 pre-release 的旧版」误判成等于正式版（假绿风险）。
-fn parse_version(s : String) -> (Int, Int, Int, Bool)? {
+fn parse_version(s : String) -> (Int32, Int32, Int32, Bool)? {
   let mut core = s.trim().to_owned()
   if core.length() > 0 && (core[0] == 'v' || core[0] == 'V') {
     core = core[1:core.length()].to_owned()
@@ -63,7 +63,7 @@ fn strip_suffix(s : String) -> String {
 ///|
 /// 字符串 → 非负整数（digit 逐位累加）；含非数字或空串回 None。
 /// core 未提供 String→Int 解析，这里手写（仅接受纯 ASCII 数字）。
-fn parse_num(s : String) -> Int? {
+fn parse_num(s : String) -> Int32? {
   if s.length() == 0 {
     return None
   }
@@ -87,7 +87,7 @@ fn parse_num(s : String) -> Int? {
 /// 语义版本比较：a 高于 b 回 1、相等回 0、低于回 -1。
 /// 返回 Result：任一版本解析失败回 Err（**绝不回 0 假绿**——R7 不假绿）。
 /// pre-release 规则（semver）：major/minor/patch 相同时，带 pre-release 的一方更低。
-fn cmp_version(a : String, b : String) -> Result[Int, String] {
+fn cmp_version(a : String, b : String) -> Result[Int32, String] {
   let va = parse_version(a)
   let vb = parse_version(b)
   match (va, vb) {
@@ -138,7 +138,7 @@ fn cmp_version(a : String, b : String) -> Result[Int, String] {
 pub async fn latest_tag(
   repo : String,
   base_url : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> Result[String, String] {
   upgrade_fetch_latest(repo, base_url, timeout_ms)
 }
@@ -179,7 +179,7 @@ pub fn latest_url(repo : String, base_url : String) -> String {
 /// 要不要进写盘流程（纯逻辑，可白盒锁）：
 ///   `--check`（check_only=true）永不写盘——阶段 A 只读；
 ///   否则**仅当** `远端 > 本地`（cmp>0）才进入阶段 B/C。
-fn should_upgrade(cmp : Int, check_only : Bool) -> Bool {
+fn should_upgrade(cmp : Int32, check_only : Bool) -> Bool {
   cmp > 0 && !check_only
 }
 

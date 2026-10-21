@@ -7,12 +7,12 @@
 /// 上报一次失败并推进熔断状态机。窗口内失败达阈值 → Open（记 opened_at）；Half-Open 探测失败 → 回 Open。
 pub fn FistEngine::circuit_fail(
   self : FistEngine,
-  ns? : String = "default",
+  ns~ : String = "default",
   circuit~ : String,
-  now_secs~ : Int,
-  window_secs? : Int = 60,
-  threshold? : Int = 3,
-  recovery_secs? : Int = 30,
+  now_secs~ : Int32,
+  window_secs~ : Int32 = 60,
+  threshold~ : Int32 = 3,
+  recovery_secs~ : Int32 = 30,
 ) -> Json {
   let row = self.store.cb_get(ns, circuit)
   let (state, failures, w, thr, rec, opened_at, last_fail_ts) = match row {
@@ -65,9 +65,9 @@ pub fn FistEngine::circuit_fail(
 /// 上报一次成功：Closed 复位计数；Half-Open 探测成功 → Closed；Open 保持。
 pub fn FistEngine::circuit_succeed(
   self : FistEngine,
-  ns? : String = "default",
+  ns~ : String = "default",
   circuit~ : String,
-  now_secs~ : Int,
+  now_secs~ : Int32,
 ) -> Json {
   let row = self.store.cb_get(ns, circuit)
   let (state, failures, w, thr, rec, opened_at, _last_fail_ts) = match row {
@@ -121,10 +121,10 @@ pub fn FistEngine::circuit_succeed(
 /// 否则一次被吞掉的探测会把半开态永久锁在快速失败（那是把旧 bug 换成新 bug）。
 pub fn FistEngine::circuit_status(
   self : FistEngine,
-  ns? : String = "default",
+  ns~ : String = "default",
   circuit~ : String,
-  now_secs~ : Int,
-  probe_limit? : Int = 1,
+  now_secs~ : Int32,
+  probe_limit~ : Int32 = 1,
 ) -> Json {
   let row = self.store.cb_get(ns, circuit)
   let (state, failures, w, thr, rec, opened_at, last_ts) = match row {
@@ -242,15 +242,15 @@ fn cb_note_join(a : String, b : String) -> String {
 fn cb_json(
   circuit : String,
   state : String,
-  failures : Int,
-  w : Int,
-  thr : Int,
-  rec : Int,
-  opened_at : Int,
-  _now_secs : Int,
-  probe_limit? : Int = 1,
-  deny? : Bool = false,
-  persist_error? : String = "",
+  failures : Int32,
+  w : Int32,
+  thr : Int32,
+  rec : Int32,
+  opened_at : Int32,
+  _now_secs : Int32,
+  probe_limit~ : Int32 = 1,
+  deny~ : Bool = false,
+  persist_error~ : String = "",
 ) -> Json {
   let allow = state != "open" && !deny
   // 半开态下 failures 复用为"已放行探测数"，另给显式字段，免得读侧按失败数解释
