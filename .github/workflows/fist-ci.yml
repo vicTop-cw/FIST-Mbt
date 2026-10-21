@@ -1,0 +1,145 @@
+name: FIST CI — Build + Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------- JS target ----------
+  test-js:
+    name: check + test (js, ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install MoonBit toolchain
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Refresh registry
+        run: moon update
+
+      # 2026-10-13 CI #98/#99 实证：`Check (js)` 红在 Failed to resolve the module dependency graph
+      # ——新版 moon（latest）拒 .mooncakes/<dep>/moon.mod.json 旧格式清单。同一颗雷在 release.yml
+      # 已由 scripts/migrate_mooncakes_modjson.sh 修好，本文件漏挂 ⇒ Check 一步红、后面全 skip。
+      # 依赖图是每步之前的公共前置，修一处不修另一处等于没修。老版 moon 首轮即过 = 无损 no-op。
+      - name: Migrate mooncakes dep manifests (新版 moon 拒旧 moon.mod.json，check/test 的公共前置)
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
+
+      - name: Check (js)
+        run: moon check --target js
+
+      - name: Test (js)
+        run: set -o pipefail; moon test --target js 2>&1 | tee /tmp/moon_js_test.log
+
+      - name: Format check
+        run: |
+          moon version --all
+          moon fmt --check
+        # 2026-10-13 定因（reports/2026-10-13-ci-format-int32-diagnosis-report.md）：
+        # CI moon=latest（实测 nightly 0.1.20261012）与本地钉版 0.1.20260920 两代 moon fmt 的
+        # 类型规范化规则不同——新版把 Int 改写成 Int32（含 FFI 边界），语义改动不是格式。
+        # 同版 nightly 实测 moon check --target js rc=0 而 moon fmt --check rc=255 ⇒ 两把尺不同步。
+        # 落法（A′ 第 1 条）：降门不阻断，保住其后的守卫族；根修 = 升级面 A（nightly 全仓 fmt，
+        # 需 owner 裁决 + 全量 moon test --target js 守 Int32 溢出）。
+        continue-on-error: true
+
+      - name: Moon info
+        if: runner.os == 'Linux'
+        run: moon info
+
+  # ---------- Native target ----------
+  test-native:
+    name: check + test (native, ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install system deps (sqlite3 + build tools)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlite3-dev build-essential
+
+      - name: Install MoonBit toolchain
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Refresh registry
+        run: moon update
+
+      # 2026-10-13 WSL 实测纠正（我先前在本文件写的"migrate 须在 Reapply 之后"是**反的**）：
+      # `moon update` 之后 `.mooncakes` 根本不存在（依赖惰性解包）⇒ reapply 找不到 stub.c 必 rc=1。
+      # 实测：migrate（内含 `moon check`，既解包又迁旧 moon.mod.json）跑完 stub.c 才出现，
+      # 此后 reapply rc=0、--verify rc=0。故正确顺序 = migrate → reapply → check。
+      # （reapply 覆盖的是 `.mooncakes/mizchi/sqlite/stub.c` 一个文件，不会盖回被迁移的清单格式。）
+      - name: Migrate mooncakes dep manifests (先解包：moon check 触发依赖落地 + 迁旧 moon.mod.json)
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target native"
+
+      # BUG-133（2026-10-10 修）：依赖侧 `mizchi/sqlite` 的 stub.c 是 native FFI 内存安全缺陷的根
+      #（C 回裸 sqlite3*/sqlite3_stmt*，另有 6 处 const char* 被当成 Bytes）。修法是把 repo 内的
+      # `patches/sqlite-bug133/stub.c` 落回 `.mooncakes/`——`.mooncakes` 每次 `moon update` 会被重生成。
+      # 前置：依赖必须先被上一步解包，否则目标 stub.c 不存在（脚本会 fail-loud 明确报出来）。
+      - name: Reapply BUG-133 sqlite FFI fix
+        run: bash patches/sqlite-bug133/reapply.sh --force
+
+      - name: Check (native)
+        run: moon check --target native
+
+      # 2026-10-01 owner 裁决 BUG-130 出路③（与 ci.yml 同形，读数口径也相同）：
+      # 这一步原来叫 `Test (native, j=1)`，恒红在 signal 11 (SIGSEGV) 上，日志里没有原因。
+      # 定因在依赖侧的 native FFI（账本 BUG-133），本仓逻辑无因果 ⇒ 用常驻判据当门：
+      # 判据按退出码分四档（0=全跑完 / 1=有崩溃 / 3=平台不给量 / 4=探针自己编译不过=尺子坏了），
+      # 只有 0 才放行下一步的 native 全量测试——**上游修好后这一步自己就绿，不需要再来改 workflow**。
+      # `rc=0` 取数写成 `|| rc=$?`：GHA 默认 `bash -e`，直接 `cmd; rc=$?` 会在 cmd 非零时先退出、
+      # 下面的 case 分流根本走不到（那等于四档读数只剩一档能说话）。
+      # 两种红都解释过：门红 = BUG-133 在场；门绿而下一步 `Test (native, j=1)` 仍被信号打死 = 12 次抽检没抽中
+      # （同一支尺、同一次会话连跑两发给出过 3/12 与 0/12 两端），不是新缺陷——0/N 是抽样性质，见判据 docstring 与账本 BUG-133 追记。
+      - name: Native heap gate (BUG-133 探针当门)
+        run: |
+          python3 scripts/blackbox/e2e_native_heap_probe.py --selftest
+          rc=0
+          python3 scripts/blackbox/e2e_native_heap_probe.py --runs 12 || rc=$?
+          case $rc in
+            0) exit 0 ;;
+            1) echo "::error::BUG-133 在场（mizchi/sqlite native FFI 内存安全缺陷；上面是探针的 TALLY/VERDICT 原文）。native 全量测试按 2026-10-01 裁决③ 挂在这道门之后，本臂恢复全量测试的前置 = 判据回到 crashes=0/12；BUG-133 的关闭条件另在账本（依赖侧修好 + 干净树 native 全量通过），0/N 只说明这一支样本没抽中。"; exit 1 ;;
+            3) echo "::error::判据拒绝出数（rc=3：平台或工具链不给量），这不是「native 没问题」也不是「产品坏了」。"; exit 1 ;;
+            *) echo "::error::尺子坏了（rc=$rc：4=探针自己编译不过）。红的是判据，不是产品——先修判据再读 native 面。"; exit 1 ;;
+          esac
+
+      - name: Test (native, j=1)
+        run: |
+          rc=0
+          moon test --target native -j 1 || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::BUG-133 的读面：native 测试二进制没跑完就退场（rc=$rc，既往形态是被信号打死 + core dumped）。门在这一发是绿的，只代表这次 12 抽没抽中（同一支尺、同一次会话连跑两发给出过 3/12 与 0/12）⇒ 不据此写「native 已修」；关闭条件见账本 BUG-133（抽检连发 0 崩溃 + git archive HEAD 干净树全量通过）。"
+          fi
+          exit "$rc"
+
+  # ---------- 2026-10-02 owner 裁决 BUG-132 出路 c：删掉 nightly self-check 空壳作业 ----------
+  # 它从前长这样：`nightly:` + `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`
+  # + `needs: [test-js, test-native]`，正文最后一步是三条 `echo "// TODO:…"`。
+  # 本仓默认分支是 master，且这个 workflow 没有 `schedule:` ⇒ 条件恒假，每次运行读到的
+  # `nightly self-check: skipped` 不是「定时轨没到点」而是「永不可能运行」；
+  # 出路 a（只把 main 改成 master）也救不活它——`needs` 挂在恒红的 native 臂后面，照旧 skipped。
+  # native 的读数面现在由两条臂前面的常驻判据 `Native heap gate (BUG-133 探针当门)` 承担，
+  # 测试步骤没删 ⇒ 上游修好后覆盖自己回来，不需要这道空壳位。
+  # 要恢复：`git show d8c24eb:.github/workflows/fist-ci.yml`（删除前最后一版全文），
+  # 但**别再写 `if:` 钉 `refs/heads/<分支>`**——分支过滤交回 `on:`，钉分支名的守卫由
+  # `scripts/check_doc_surface.py` 的 J12 判红（恒假条件的门比没有门更坏：它占一个「绿灯位」骗读数的人）。

@@ -1,0 +1,17 @@
+import {
+  "vicTop-cw/fist-mbt/src/core",
+  "vicTop-cw/fist-mbt/src/store",
+  "vicTop-cw/fist-mbt/src/engine",
+  "vicTop-cw/RX-MBT/rhop",
+  "vicTop-cw/RX-MBT/rx",
+  "moonbitlang/core/json",
+  "moonbitlang/core/ref",
+  "moonbitlang/x/fs",
+  "moonbitlang/core/debug",
+}
+
+supported_targets = "js+native"
+
+options(
+  link: { "native": { "cc-link-flags": "-lsqlite3" } },
+)

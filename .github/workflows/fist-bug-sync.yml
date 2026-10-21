@@ -1,0 +1,65 @@
+name: FIST Bug Sync → GitHub Issues
+
+on:
+  schedule:
+    # 每天 03:00 UTC（用户可能在白天活跃，凌晨 flush 不打扰）
+    - cron: '0 3 * * *'
+  workflow_dispatch: # 允许手动触发（需仓库写权限）
+
+permissions:
+  contents: read
+
+# 并发：同一时刻只跑一个 flush，避免 token 限流
+concurrency:
+  group: fist-bug-sync
+  cancel-in-progress: true
+
+jobs:
+  flush:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install MoonBit toolchain
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Refresh moon registry
+        run: moon update
+
+      - name: Build JS target
+        run: moon build --target js
+
+      # ---------- 环境变量注入 ----------
+      # github.event.repository.full_name = owner/repo
+      # secrets.FIST_GITHUB_TOKEN 必须在仓库 Settings → Secrets and variables → Actions 配置
+      - name: Prepare env
+        run: |
+          echo "FIST_GITHUB_ENABLED=true" >> "$GITHUB_ENV"
+          echo "FIST_GITHUB_REPO=${{ github.repository }}" >> "$GITHUB_ENV"
+          # force 硬门控：脚本自身也会二次断言
+          echo "FIST_FORCE_FLUSH=true" >> "$GITHUB_ENV"
+
+      # ---------- 执行 flush ----------
+      - name: Run github_flush_execute
+        run: node scripts/flush_github.mjs --force=true --limit 50
+        env:
+          FIST_GITHUB_TOKEN: ${{ secrets.FIST_GITHUB_TOKEN }}
+
+      # ---------- 结果归档 ----------
+      # 脚本会把统计打到 stdout；退出码含义：
+      #   0 = 全部 sent 成功（或 pending 队列为空）
+      #   2 = 部分 failed（workflow 标黄）
+      #   1 = 硬错误（server 启动失败 / MCP 协议错误）
+      - name: Report
+        if: always()
+        run: |
+          echo "Finish status: ${{ job.status }}"
+          echo "Exit code handled by flush_github.mjs"

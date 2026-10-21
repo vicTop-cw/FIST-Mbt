@@ -1,0 +1,55 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/symbolic"
+
+// Values
+pub fn check_constraints_json(Array[BoolExpr]) -> String
+
+pub fn dpll_sat(Cnf) -> Array[Bool]?
+
+pub fn entails(BoolExpr, BoolExpr) -> Bool
+
+pub fn expr_to_string(BoolExpr) -> String
+
+pub fn is_contradictory(Array[BoolExpr]) -> Bool
+
+pub fn is_satisfiable(BoolExpr) -> Bool
+
+pub fn is_tautology(BoolExpr) -> Bool
+
+pub fn mk_and(BoolExpr, BoolExpr) -> BoolExpr
+
+pub fn mk_const(Bool) -> BoolExpr
+
+pub fn mk_iff(BoolExpr, BoolExpr) -> BoolExpr
+
+pub fn mk_implies(BoolExpr, BoolExpr) -> BoolExpr
+
+pub fn mk_not(BoolExpr) -> BoolExpr
+
+pub fn mk_or(BoolExpr, BoolExpr) -> BoolExpr
+
+pub fn mk_var(String) -> BoolExpr
+
+pub fn to_cnf(BoolExpr) -> Cnf
+
+// Errors
+
+// Types and methods
+pub enum BoolExpr {
+  Var(String)
+  Const(Bool)
+  Not(BoolExpr)
+  And(BoolExpr, BoolExpr)
+  Or(BoolExpr, BoolExpr)
+  Implies(BoolExpr, BoolExpr)
+  Iff(BoolExpr, BoolExpr)
+}
+
+pub struct Cnf {
+  clauses : Array[Array[(Int, Bool)]]
+  num_vars : Int
+}
+
+// Type aliases
+
+// Traits

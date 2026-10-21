@@ -1,0 +1,426 @@
+/// router_caf.mbt —— C-A-F 轻量反馈记忆层（ACRouter 启发）
+///
+/// 设计决策（文档见 docs/2026-10-14-fist-mbt-router-caf-learning-plan.md）：
+///   - 纯计算、零 IO、不依赖任何外部存储
+///   - FIFO 环形表上限 10000 条，进程重启即清空（轻量第一，不做持久化）
+///   - 特征哈希：基于任务语言/难度/动作类型组合的简单哈希，不做向量库
+///   - 默认关闭（use_caf_memory=false），关闭时行为零回归
+///   - 只在候选集内做软性排序微调，不破配额硬约束
+///
+/// 本文件仅包含 schema 与检索逻辑；旁路回写点在 src/server/model_router_ops.mbt。
+
+///|
+/// 一条 C-A-F 反馈记录
+pub struct CafRecord {
+  /// 特征哈希：由 task_lang/difficulty/action_type 组合成的标识符
+  feature_hash : Int
+  /// 被选的模型名
+  model : String
+  /// 是否成功
+  ok : Bool
+  /// 成本（美元，近似值；0 = 未知/免费）
+  cost : Double
+  /// 时间戳 ISO
+  ts : String
+} derive(Debug)
+
+///|
+pub extend CafRecord with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+pub fn CafRecord::new(
+  feature_hash~ : Int,
+  model~ : String,
+  ok~ : Bool,
+  cost~ : Double,
+  ts~ : String,
+) -> CafRecord {
+  { feature_hash, model, ok, cost, ts, }
+}
+
+///|
+/// C-A-F 反馈记忆表：FIFO 环形缓冲区，上限 max_size 条
+pub struct CafMemory {
+  records : Array[CafRecord?]
+  max_size : Int
+  mut head : Int
+  mut count : Int
+} derive(Debug)
+
+///|
+pub extend CafMemory with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+pub fn CafMemory::new(max_size? : Int = 10000) -> CafMemory {
+  // BUG-188：max_size<=0 会让 records 成为空数组，push 时 records[0] 越界 panic。
+  // 收敛到至少 1，使环形缓冲在任何输入下都可用。
+  let m = if max_size <= 0 { 1 } else { max_size }
+  { records: Array::make(m, None), max_size: m, head: 0, count: 0, }
+}
+
+///|
+/// 追加一条记录（FIFO，超出 max_size 自动淘汰最旧）
+pub fn CafMemory::push(self : CafMemory, rec : CafRecord) -> Unit {
+  self.records[self.head] = Some(rec)
+  self.head = (self.head + 1) % self.max_size
+  if self.count < self.max_size {
+    self.count = self.count + 1
+  }
+}
+
+///|
+/// 遍历所有有效记录
+/// O(count) 而非 O(max_size)：count << max_size 时避免全环扫描。
+pub fn CafMemory::all(self : CafMemory) -> Array[CafRecord] {
+  let mut out : Array[CafRecord] = []
+  let start = (self.head + self.max_size - self.count) % self.max_size
+  let mut i = 0
+  while i < self.count {
+    match self.records[(start + i) % self.max_size] {
+      Some(rec) => out = out + [rec]
+      None => ()
+    }
+    i = i + 1
+  }
+  out
+}
+
+///|
+/// 按特征哈希检索：返回所有匹配记录
+/// O(count) 而非 O(max_size)。
+pub fn CafMemory::find(
+  self : CafMemory,
+  feature_hash~ : Int,
+) -> Array[CafRecord] {
+  let mut out : Array[CafRecord] = []
+  let start = (self.head + self.max_size - self.count) % self.max_size
+  let mut i = 0
+  while i < self.count {
+    match self.records[(start + i) % self.max_size] {
+      Some(rec) if rec.feature_hash == feature_hash => out = out + [rec]
+      _ => ()
+    }
+    i = i + 1
+  }
+  out
+}
+
+///|
+/// 模型维度的成功率与成本统计（决策融合消费面）
+pub struct CafModelStats {
+  model : String
+  total : Int
+  success : Int
+  avg_cost : Double
+} derive(Debug)
+
+///|
+pub extend CafModelStats with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+/// 对检索结果做按模型的成功率统计
+/// 返回按成功率降序、成本升序排列的数组
+pub fn caf_stats(records : Array[CafRecord]) -> Array[CafModelStats] {
+  let mut model_names : Array[String] = []
+  let mut model_totals : Array[Int] = []
+  let mut model_success : Array[Int] = []
+  let mut model_cost_sum : Array[Double] = []
+
+  for rec in records {
+    let mut found = false
+    for i in 0..<model_names.length() {
+      if model_names[i] == rec.model {
+        model_totals[i] = model_totals[i] + 1
+        if rec.ok {
+          model_success[i] = model_success[i] + 1
+        }
+        model_cost_sum[i] = model_cost_sum[i] + rec.cost
+        found = true
+        break
+      }
+    }
+    if !found {
+      model_names = model_names + [rec.model]
+      model_totals = model_totals + [1]
+      model_success = model_success + [if rec.ok { 1 } else { 0 }]
+      model_cost_sum = model_cost_sum + [rec.cost]
+    }
+  }
+
+  let mut out : Array[CafModelStats] = []
+  for i in 0..<model_names.length() {
+    out = out +
+      [
+        {
+          model: model_names[i],
+          total: model_totals[i],
+          success: model_success[i],
+          avg_cost: if model_totals[i] > 0 {
+            model_cost_sum[i] / model_totals[i].to_double()
+          } else {
+            0.0
+          },
+        },
+      ]
+  }
+  // 按成功率降序、成本升序排列（sort_by 返回 Int：负=前者在前）
+  // BUG-173：原实现在 rate_a==rate_b && avg_cost_a==avg_cost_b 时恒返回 1（非 0），
+  // 违反严格弱序（自反性 cmp(a,a)!=0 / 反对称性），可致 sort_by 未定义行为。
+  // 修复：三档比较（< / > / 0），完全相等时按 model 字典序做确定性 tiebreak。
+  out.sort_by(fn(a, b) -> Int {
+    let rate_a = if a.total > 0 {
+      a.success.to_double() / a.total.to_double()
+    } else {
+      0.0
+    }
+    let rate_b = if b.total > 0 {
+      b.success.to_double() / b.total.to_double()
+    } else {
+      0.0
+    }
+    if rate_a > rate_b {
+      -1
+    } else if rate_a < rate_b {
+      1
+    } else if a.avg_cost < b.avg_cost {
+      -1
+    } else if a.avg_cost > b.avg_cost {
+      1
+    } else if a.model < b.model {
+      -1
+    } else if a.model > b.model {
+      1
+    } else {
+      0
+    }
+  })
+  out
+}
+
+///|
+/// 计算简单特征哈希
+///
+/// BUG-174：原实现 `h = h * 31 + c` 在 Int64 上无检查，约 14 字符以上的 context
+/// 必然溢出到极端负值；`h.abs()` 在 `h == Int64.min_value()` 时 MoonBit 未定义（panic）。
+/// 修复：每步用 `and 0xFFFFFFFF` 截断到 32 位无符号范围（0..2^32-1），
+/// 使 h 恒为非负且不会溢出到极端负值，从而无需 `abs()`。
+pub fn caf_feature_hash(context : String) -> Int {
+  let mut h : Int = 0
+  let mut i = 0
+  while i < context.length() {
+    let c = context[i].to_int()
+    h = (h * 31 + c).land(0xFFFFFFFF)
+    i = i + 1
+  }
+  h
+}
+
+///|
+/// 取 CafMemory 快照的 JSON（供 model_router_status/usage_report 展示）
+pub fn CafMemory::to_json(self : CafMemory) -> Json {
+  let all_records = self.all()
+  let total = all_records.length()
+  let with_model = caf_stats(all_records)
+  Json::object({
+    "total_records": Json::number(total.to_double()),
+    "capacity": Json::number(self.max_size.to_double()),
+    "count": Json::number(self.count.to_double()),
+    "by_model": Json::array(
+      with_model.map(fn(s) {
+        Json::object({
+          "model": Json::string(s.model),
+          "total": Json::number(s.total.to_double()),
+          "success": Json::number(s.success.to_double()),
+          "avg_cost": Json::number(s.avg_cost),
+        })
+      }),
+    ),
+  })
+}
+
+///|
+/// 编辑距离（Levenshtein）—— P2 相似检索的相似度度量。
+/// 计算两个字符串的编辑距离，用于 kNN 检索中对特征做轻量相似度比较。
+/// 空间 O(m)（滚动 prev/curr 两行），时间 O(n*m)；特征串短（数字串），可接受。
+///
+/// 性能守卫：特征哈希串为 32-bit Int（至多 10 字符），但调用方可能误传长 context。
+/// 超过 `CAF_EDIT_MAX_LEN` 时截断，避免 O(n*m) 爆炸（如 10^4 字符会 O(10^8) 不可接受）。
+pub const CAF_EDIT_MAX_LEN : Int = 256
+
+///|
+pub fn caf_edit_distance(a : String, b : String) -> Int {
+  // 长度守卫：截断到 CAF_EDIT_MAX_LEN，防止长字符串 O(n*m) 爆炸
+  let a_s = if a.length() > CAF_EDIT_MAX_LEN {
+    a[0:CAF_EDIT_MAX_LEN].to_owned()
+  } else {
+    a
+  }
+  let b_s = if b.length() > CAF_EDIT_MAX_LEN {
+    b[0:CAF_EDIT_MAX_LEN].to_owned()
+  } else {
+    b
+  }
+  let n = a_s.length()
+  let m = b_s.length()
+  if n == 0 {
+    return m
+  }
+  if m == 0 {
+    return n
+  }
+  // 简化：用 O(n*m) DP（特征串短，长度受限于任务描述截断）
+  let mut prev : Array[Int] = []
+  for j in 0..<=m {
+    prev = prev + [j]
+  }
+  let mut i = 1
+  while i <= n {
+    let mut curr : Array[Int] = [i]
+    let mut j = 1
+    while j <= m {
+      let cost = if a_s[i - 1] == b_s[j - 1] { 0 } else { 1 }
+      let del = prev[j] + 1
+      let ins = curr[j - 1] + 1
+      let sub = prev[j - 1] + cost
+      let m1 = if del < ins { del } else { ins }
+      let mn = if m1 < sub { m1 } else { sub }
+      curr = curr + [mn]
+      j = j + 1
+    }
+    prev = curr
+    i = i + 1
+  }
+  prev[m]
+}
+
+///|
+/// P2 相似检索：kNN 近似检索。
+/// 在 CafMemory 中按特征哈希相似度（编辑距离）取 Top-K 历史记录。
+/// 返回值按相似度降序排列（编辑距离升序），距离相等时保持 FIFO 稳定序。
+pub fn CafMemory::knn_search(
+  self : CafMemory,
+  context : String,
+  k : Int,
+) -> Array[CafRecord] {
+  // 防御：负 k 无意义，返回空
+  if k <= 0 {
+    return []
+  }
+  let target = caf_feature_hash(context)
+  let target_str = target.to_string()
+  let all = self.all()
+  // 计算每条记录与目标哈希的编辑距离（作用于特征哈希字符串化的数字串）
+  // 注：编辑距离直接作用于数字串（Int.to_string()），非语义距离，但满足
+  // 计划要求的"轻量近似"定位；特征哈希本身已做 32-bit 截断。
+  let mut scored : Array[(Int, Int, Int)] = [] // (dist, seq, feature_hash)
+  for i in 0..<all.length() {
+    let hash_str = all[i].feature_hash.to_string()
+    let dist = caf_edit_distance(hash_str, target_str)
+    scored = scored + [(dist, i, all[i].feature_hash)]
+  }
+  scored.sort_by(fn(p, q) -> Int {
+    if p.0 != q.0 {
+      // 距离升序
+      if p.0 < q.0 {
+        -1
+      } else {
+        1
+      }
+      // 距离相等 → FIFO 稳定序（seq 升序）
+    } else if p.1 < q.1 {
+      -1
+    } else if p.1 > q.1 {
+      1
+    } else {
+      0
+    }
+  })
+  let mut out : Array[CafRecord] = []
+  for idx in 0..<scored.length() {
+    if idx >= k {
+      break
+    }
+    let rec = all[scored[idx].1]
+    out = out + [rec]
+  }
+  out
+}
+
+///|
+/// P2 决策融合数据源：对 Top-K 邻域按模型统计成功率与平均成本。
+/// 复用 caf_stats（成功率降序 + 成本升序），供 pick 软性排序钩子消费。
+pub fn CafMemory::knn_stats(
+  self : CafMemory,
+  context : String,
+  k : Int,
+) -> Array[CafModelStats] {
+  caf_stats(self.knn_search(context, k))
+}
+
+///|
+/// P2 决策融合核心：软性重排候选模型。
+/// 根据 Top-K 邻域统计，把"成功率显著占优 / 成本更低"的模型提前。
+/// - 只在候选集内重排，不增删模型，不破配额硬约束。
+/// - stats 为空或候选为空 → 原样返回（零回归基线）。
+/// - 未出现在邻域统计中的候选保持原相对顺序（稳定序）。
+pub fn caf_soft_reorder(
+  candidates : Array[String],
+  stats : Array[CafModelStats],
+) -> Array[String] {
+  if candidates.is_empty() || stats.is_empty() {
+    return candidates
+  }
+  // 为每个候选计算 (in_neighborhood, rate, avg_cost, 原始位置)
+  let mut scored : Array[(String, Bool, Double, Double, Int)] = []
+  for i in 0..<candidates.length() {
+    let mut in_nb = false
+    let mut rate = 0.0
+    let mut cost = 0.0
+    for s in stats {
+      if s.model == candidates[i] {
+        in_nb = true
+        rate = s.success.to_double() / s.total.to_double()
+        cost = s.avg_cost
+        break
+      }
+    }
+    scored = scored + [(candidates[i], in_nb, rate, cost, i)]
+  }
+  scored.sort_by(fn(a, b) -> Int {
+    // 邻域内的排前面
+    if a.1 && !b.1 {
+      -1
+    } else if !a.1 && b.1 {
+      1
+    } else if a.1 && b.1 {
+      // 都在邻域 → 成功率降序 → 成本升序 → 稳定序
+      if a.2 > b.2 {
+        -1
+      } else if a.2 < b.2 {
+        1
+      } else if a.3 < b.3 {
+        -1
+      } else if a.3 > b.3 {
+        1
+      } else if a.4 < b.4 {
+        -1
+      } else if a.4 > b.4 {
+        1
+      } else {
+        0
+      }
+      // 都不在邻域 → 原始顺序
+    } else if a.4 < b.4 {
+      -1
+    } else if a.4 > b.4 {
+      1
+    } else {
+      0
+    }
+  })
+  let mut out : Array[String] = []
+  for s in scored {
+    out = out + [s.0]
+  }
+  out
+}

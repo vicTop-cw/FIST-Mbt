@@ -1,0 +1,140 @@
+// cmd/cli/help_topics.mbt - FIST-Mbt help data, inlined into binary
+
+///|
+// R11 硬门：FIST_VERSION 必须 == moon.mod 的 version（check_release_asset_names），
+// 否则公网装出来的全局 `fist version` 会回旧版而资产/横幅/README 是新版。换版本号同步改两处。
+const FIST_VERSION = "0.3.9"
+
+///|
+pub fn list_topics() -> String {
+  let v = FIST_VERSION
+  "FIST-Mbt Help  v" +
+  v +
+  "  (170 MCP tools)\n" +
+  "\n" +
+  "Usage: fist help <topic>\n" +
+  "Topics: overview / cli / tools / mcp / plugins / install\n" +
+  "Default shows this list."
+}
+
+///|
+pub fn help_overview() -> String {
+  let v = FIST_VERSION
+  "=== FIST-Mbt v" +
+  v +
+  " ===\n" +
+  "\n" +
+  "Pure MoonBit AI commander orchestration, exposed as MCP Server.\n" +
+  "170 MCP tools / 3 resources / 2 prompts.\n" +
+  "\n" +
+  "Lifecycle: publish -> plan -> claim -> execute -> submit -> verify -> archive\n" +
+  "Self-drive: selfdrive_init -> review -> publish_next -> triage\n" +
+  "\n" +
+  "Black-box: download _release/fist-mbt-js-v" +
+  v +
+  ".zip, run install.\n" +
+  "Zero source code needed."
+}
+
+///|
+pub fn help_cli() -> String {
+  let v = FIST_VERSION
+  "=== CLI subcommands (v" +
+  v +
+  ") ===\n" +
+  "\n" +
+  "  fist version     print version\n" +
+  "  fist serve       start MCP server (stdio). stdout = pure JSON-RPC.\n" +
+  "  fist demo        7-state closed-loop demo, in-memory store\n" +
+  "  fist doctor      5 health checks, read-only\n" +
+  "  fist help [t]    show help. topics: overview/cli/tools/mcp/plugins/install"
+}
+
+///|
+pub fn help_tools() -> String {
+  let v = FIST_VERSION
+  "=== " +
+  v +
+  "  170 MCP tools (18 groups) ===\n" +
+  "\n" +
+  "  [Lifecycle 14] publish publish_parallel plan claim execute submit verify reject retry pause resume reopen_task archive delete\n" +
+  "  [Query 2] list get\n" +
+  "  [Ops 14] task_plan_deep conflicts_check heartbeat heal watchdog_tick task_cleanup phi_accrual saga_register saga_rollback saga_repair circuit_fail circuit_succeed circuit_status tx_contract\n" +
+  "  [Ops-Log-Bug-Cost 24] call_log bug_list bug_fix bug_mark_status report_bug issue_scan ocr_scan boundary_probe eval_feedback run_check output_validate project_standards text_diff schedule pipeline_tick cost_stats cost_budget_check cost_budget_split progress_gate laya_decide loop_create loop_tick loop_status mcp_config_scaffold\n" +
+  "  [Board-DAG 27] dag_critical_path dag_parallelism dag_ascii dag_check dag_ready dag_sort dag_depend dag_publish dag_slack dag_schedule dag_cost_route dag_mc plan_revise goal_drift_check board_ascii state_flow_ascii status_summary project_health health_check reserve_scope reserve_check reserve_release lock_acquire lock_renew lock_release lock_status task_triage\n" +
+  "  [Selfdrive 9] selfdrive_init selfdrive_append selfdrive_get selfdrive_export_tasks selfdrive_review_tick selfdrive_review_ready selfdrive_publish_next selfdrive_parse_next_tasks selfdrive_pick_next\n" +
+  "  [Marketplace 5] executor_register executor_route executor_auction executor_clear selfdrive_dispatch\n" +
+  "  [Display 4] rank_of soldier_type_of soldier_route staff_label_of\n" +
+  "  [Memory-Evolve 11] memory_consolidate memory_gc memory_link evolve_submit evolve_sample evolve_snapshot evolve_distill evolve_lesson evolve_critic evolve_asset_register task_challenge\n" +
+  "  [GitHub-GitCode 12] github_env_check github_queue_status github_flush_plan github_flush_execute github_queue_mark_sent github_issue_close github_issue_comment github_issue_webhook_parse gitcode_env_check gitcode_queue_status gitcode_flush_plan gitcode_queue_mark_sent\n" +
+  "  [Model-Router 5] model_auth_status model_route model_router_status model_router_reset executor_run\n" +
+  "  [Omega 6] omega_spec_create omega_spec_review omega_result_verify omega_status omega_verify omega_verify_fix\n" +
+  "  [Six-Hats-Debate 7] hat_list debate_convene debate_register debate_verdict hat_run hat_debate hat_merge\n" +
+  "  [Assistant 5] assistant_claim assistant_status assistant_sweep assistant_resign assistant_heartbeat\n" +
+  "  [Supervisor 8] supervisor_status supervisor_task_tree supervisor_kill_plan supervisor_prompt_inject supervisor_prompt_list supervisor_prompt_consume supervisor_task_upsert supervisor_reminder_tick\n" +
+  "  [MCPCf-Embed 7] mcpcf.ops_init mcpcf.circuit mcpcf.report mcpcf.review mcpcf.run_batch mcpcf.verify mcpcf.watchdog\n" +
+  "  [Other 8] store_open store_list store_close audit_permission audit_log atgc_old_compile atgc_old_run atgc_old_talk\n" +
+  "  [Modes 2] mode_list mode_templates\n" +
+  "\n" +
+  "  Per-tool detail: fist help tool <name>"
+}
+
+///|
+pub fn help_mcp() -> String {
+  let v = FIST_VERSION
+  "=== MCP Config (v" +
+  v +
+  ") ===\n" +
+  "\n" +
+  "Start: fist serve  (stdio transport)\n" +
+  "\n" +
+  ".mcp.json template (paste into your client):\n" +
+  "  mcpServers.fist-mbt.command = fist\n" +
+  "  mcpServers.fist-mbt.args    = [\"serve\"]\n" +
+  "  mcpServers.fist-mbt.timeout_ms = 30000\n" +
+  "\n" +
+  "Full JSON file: see _release/.mcp.json.example\n" +
+  "\n" +
+  "Prereq: Node.js >=24, fist in PATH\n" +
+  "Clients: Claude Desktop, VSCode MCP, Trae\n" +
+  "\n" +
+  "Protocol: MCP 2026-07-28 required (colmugx/mcp@0.17.4 hard pin).\n" +
+  "If your client fails handshake with -32022 Unsupported protocol version,\n" +
+  "it speaks an older protocol (e.g. 2024-11-05); upgrade the client or use\n" +
+  "one supporting 2026-07-28. Upstream mcp lib 0.15+ moved to this version."
+}
+
+///|
+pub fn help_plugins() -> String {
+  let v = FIST_VERSION
+  "=== Plugin Hosts (v" +
+  v +
+  ") ===\n" +
+  "\n" +
+  "Four hosts (generated by scripts/gen_plugins.py):\n" +
+  "  plugins/atomcode/          AtomCode (Trae)\n" +
+  "  plugins/codearts/          CodeArts\n" +
+  "  plugins/deepseek-harness/  DeepSeek\n" +
+  "  plugins/claude/            Claude Desktop\n" +
+  "\n" +
+  "Regenerate: python scripts/gen_plugins.py\n" +
+  "Verify:     python scripts/check_plugin_sync.py  # cl7 gate"
+}
+
+///|
+pub fn help_install() -> String {
+  let v = FIST_VERSION
+  "=== One-Click Install (v" +
+  v +
+  ") ===\n" +
+  "\n" +
+  "Windows:\n" +
+  "  irm https://gitcode.com/VictorTop/Fist-Mbt/-/raw/main/scripts/blackbox/install_onecmd.ps1 | iex\n" +
+  "  Prereq: Node.js >=24 (winget install OpenJS.NodeJS.LTS)\n" +
+  "\n" +
+  "WSL / Linux:\n" +
+  "  curl -fsSL https://gitcode.com/VictorTop/Fist-Mbt/-/raw/main/scripts/blackbox/install.sh | bash\n" +
+  "  Prereq: Node.js >=24\n" +
+  "\n" +
+  "Post-install: fist version; fist help; fist doctor; fist demo"
+}

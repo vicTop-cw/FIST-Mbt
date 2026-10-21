@@ -1,0 +1,40 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/cmd/cli"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn help_cli() -> String
+
+pub fn help_install() -> String
+
+pub fn help_mcp() -> String
+
+pub fn help_overview() -> String
+
+pub fn help_plugins() -> String
+
+pub fn help_tools() -> String
+
+pub async fn latest_tag(String, String, Int) -> Result[String, String]
+
+pub fn latest_url(String, String) -> String
+
+pub fn list_topics() -> String
+
+pub async fn run_upgrade_full(String, String, String, Bool) -> Result[String, String]
+
+pub async fn upgrade_fetch_latest(String, String, Int) -> Result[String, String]
+
+pub async fn upgrade_io(String, String) -> Result[Json, String]
+
+// Errors
+
+// Types and methods
+type Subcmd derive(Eq, @debug.Debug)
+
+// Type aliases
+
+// Traits

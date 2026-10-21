@@ -1,0 +1,13 @@
+import {
+  "moonbitlang/core/debug",
+}
+
+import {
+  "moonbitlang/core/quickcheck",
+} for "wbtest"
+
+supported_targets = "js+native"
+
+options(
+  link: { "native": { "cc-link-flags": "-lsqlite3" } },
+)
