@@ -1425,7 +1425,7 @@ pub fn FistEngine::goal_drift_check(
             } else {
               aligned = aligned + 1
             }
-            let cm = Map::new()
+            let cm = Map([])
             cm.set("subtask_id", Json::string(id))
             cm.set("drift_score", Json::number(drift))
             cm.set("redundancy_score", Json::number(red))

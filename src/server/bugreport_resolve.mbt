@@ -11,7 +11,7 @@ pub fn bug_resolve_path(dir : String) -> String {
   let s = dir.replace_all(old="\\", new="/")
   // 去尾部斜杠（保留 "/" 本身）
   if s.length() > 1 && s.has_suffix("/") {
-    s[0:s.length() - 1].to_string()
+    s[0:s.length() - 1].to_owned()
   } else {
     s
   }

@@ -113,7 +113,7 @@ pub fn append_retry_prompt(body : String) -> Result[String, String] {
               ),
             }),
           )
-          let new_body = Map::new()
+          let new_body = Map([])
           for k, v in m {
             new_body[k] = v
           }
@@ -134,7 +134,10 @@ pub fn append_retry_prompt(body : String) -> Result[String, String] {
 ///
 /// fail-closed：`limit ≤ 0`（视为无上限信息，不猜）、`margin < 0` → `Err`。
 /// 纯计算零 IO。下限 1（`margin ≥ limit` 时仍给最小 token 数），上限恒 ≤ `limit`。
-pub fn ofm_reserve_max_tokens(limit : Int, margin : Int) -> Result[Int, String] {
+pub fn ofm_reserve_max_tokens(
+  limit : Int,
+  margin : Int,
+) -> Result[Int, String] {
   if limit <= 0 {
     return Err("limit 非法：\{limit}")
   }

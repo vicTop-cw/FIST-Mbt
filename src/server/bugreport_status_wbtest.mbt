@@ -39,7 +39,7 @@ fn b9_read(d : String) -> String {
 fn b9_status_count(text : String, status : String) -> Int {
   let mut n = 0
   for v in text.split("\n") {
-    let line = v.to_string().trim().to_string()
+    let line = v.to_owned().trim().to_owned()
     if bug_is_header(line) {
       let (_, _, _, cur, _) = bug_split_header(line)
       if cur == status {
@@ -165,7 +165,7 @@ test "BUG-9：bug_fix 同一笔改抬头 + 落点名整批的小记（幂等，�
   assert_eq(b9_status_count(text2, "FIXED"), 2)
   let mut notes = 0
   for v in text2.split("\n") {
-    if v.to_string().trim().to_string().has_prefix("### FIXED(") {
+    if v.to_owned().trim().to_owned().has_prefix("### FIXED(") {
       notes = notes + 1
     }
   }

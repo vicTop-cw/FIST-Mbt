@@ -156,7 +156,7 @@ pub fn ocr_build_args(
         args = args + ["--rule", rules_file]
       }
       for p in path.split(",") {
-        let t = p.trim().to_string()
+        let t = p.trim().to_owned()
         if t.length() > 0 {
           args = args + [t]
         }

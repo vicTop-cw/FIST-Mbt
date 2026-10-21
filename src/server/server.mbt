@@ -813,7 +813,7 @@ pub fn lookup_injected_assets_in(
   let hits : Array[Json] = []
   let ksq : Array[String] = []
   for k in inject.split(",") {
-    let s = k.trim().to_string()
+    let s = k.trim().to_owned()
     if s != "" {
       ksq.push(s)
     }
@@ -1321,7 +1321,7 @@ fn split_hat_items(s : String) -> Array[String] {
   let mut sb = StringBuilder()
   for ch in s {
     if ch == ',' || ch == '、' || ch == '，' {
-      let t = sb.to_string().trim().to_string()
+      let t = sb.to_string().trim().to_owned()
       if t != "" {
         out.push(t)
       }
@@ -1330,7 +1330,7 @@ fn split_hat_items(s : String) -> Array[String] {
       sb.write_char(ch)
     }
   }
-  let last = sb.to_string().trim().to_string()
+  let last = sb.to_string().trim().to_owned()
   if last != "" {
     out.push(last)
   }

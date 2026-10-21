@@ -471,7 +471,10 @@ pub fn github_queue_pending(
 ///|
 /// 从 JSONL 队列查找指定 bug_id 对应的 github_issue_number + github_repo。
 /// 返回 (issue_number, repo)；找不到时 issue_number=-1, repo=""。
-fn find_issue_and_repo(project_dir : String, bug_id : String) -> (Int, String) {
+fn find_issue_and_repo(
+  project_dir : String,
+  bug_id : String,
+) -> (Int, String) {
   let entries = extract_arr(github_queue_read(project_dir))
   for entry in entries {
     match entry {
@@ -678,7 +681,7 @@ pub fn github_webhook_parse(payload : String) -> Result[Json, String] {
   let trimmed = body.trim().to_owned()
   let mm : Map[String, Json] = Map([])
   if trimmed.has_prefix("@fist-bot reopen ") {
-    let rest = trimmed[17:].to_string()
+    let rest = trimmed[17:].to_owned()
     let task_id = rest.trim().to_owned()
     mm.set("action", Json::string("reopen"))
     mm.set("task_id", Json::string(task_id))
@@ -690,7 +693,7 @@ pub fn github_webhook_parse(payload : String) -> Result[Json, String] {
     mm.set("action", Json::string("close"))
     mm.set("raw", Json::string(trimmed))
   } else if trimmed.has_prefix("@fist-bot blocked ") {
-    let rest = trimmed[18:].to_string()
+    let rest = trimmed[18:].to_owned()
     let reason = rest.trim().to_owned()
     mm.set("action", Json::string("blocked"))
     mm.set("reason", Json::string(reason))

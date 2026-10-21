@@ -29,7 +29,7 @@ pub fn FistEngine::saga_register(
     ) {
     Err(m) => Err(m)
     Ok(_) => {
-      let m = Map::new()
+      let m = Map([])
       m.set("root_task_id", Json::string(root_task_id))
       m.set("step", Json::string(step))
       m.set("task_id", Json::string(task_id))
@@ -79,7 +79,7 @@ pub fn FistEngine::saga_rollback(
   }
   let steps : Array[Json] = []
   for t in lifo {
-    let sm = Map::new()
+    let sm = Map([])
     sm.set("id", Json::number(t.0.to_double()))
     sm.set("step", Json::string(t.1))
     sm.set("task_id", Json::string(t.2))
@@ -87,7 +87,7 @@ pub fn FistEngine::saga_rollback(
     sm.set("status", Json::string(t.4))
     steps.push(Json::object(sm))
   }
-  let m = Map::new()
+  let m = Map([])
   m.set("root_task_id", Json::string(root_task_id))
   m.set("lifo", Json::boolean(true))
   m.set("pending_count", Json::number(lifo.length().to_double()))
@@ -106,7 +106,7 @@ pub fn FistEngine::saga_rollback(
 ///|
 /// saga_log 行（id, step, task_id, compensation, status）→ JSON。
 fn saga_step_json(t : (Int, String, String, String, String)) -> Json {
-  let sm = Map::new()
+  let sm = Map([])
   sm.set("id", Json::number(t.0.to_double()))
   sm.set("step", Json::string(t.1))
   sm.set("task_id", Json::string(t.2))
@@ -248,7 +248,7 @@ pub fn FistEngine::saga_repair(
       for t in keep {
         kp.push(saga_step_json(t))
       }
-      let m = Map::new()
+      let m = Map([])
       m.set("root_task_id", Json::string(root_task_id))
       m.set("failed_step", Json::string(failed_step))
       m.set("basis", Json::string(basis))

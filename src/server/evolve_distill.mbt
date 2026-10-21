@@ -13,7 +13,7 @@
 ///|
 /// 构造 principle 类型产物的目标字符串：goal 前加 `[principle]` 前缀标识 tag。
 pub fn distill_principle_goal(goal : String) -> String {
-  let g = goal.trim().to_string()
+  let g = goal.trim().to_owned()
   if g.has_prefix("[principle]") {
     g
   } else {
@@ -89,7 +89,7 @@ fn distill_ts_part(now : String) -> String {
     .replace(old=":", new=".")
     .replace(old="T", new=".")
   if compact.length() > 16 {
-    compact[0:16].to_string()
+    compact[0:16].to_owned()
   } else {
     compact
   }

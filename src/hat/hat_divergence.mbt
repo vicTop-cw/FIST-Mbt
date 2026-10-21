@@ -166,7 +166,7 @@ fn word_set(items : Array[String]) -> Array[String] {
   let out : Array[String] = []
   for s in items {
     for w in s.to_lower().split(" ") {
-      let t = w.trim().to_string()
+      let t = w.trim().to_owned()
       if !t.is_empty() && !out.contains(t) {
         out.push(t)
       }

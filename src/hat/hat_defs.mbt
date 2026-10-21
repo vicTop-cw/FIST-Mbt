@@ -95,7 +95,7 @@ pub fn hexa_for_id(id : String) -> Result[HexaElement, String] {
 /// 把调用面给的帽子标识解析成**六元代号**：既接受六元 id（stargazer），
 /// 也接受六顶帽 id（white）——单真源归一，其余一律 Err（不静默回落）。
 pub fn resolve_element_id(s : String) -> Result[String, String] {
-  let t = s.trim().to_string()
+  let t = s.trim().to_owned()
   if t.is_empty() {
     return Err("帽子标识不能为空")
   }

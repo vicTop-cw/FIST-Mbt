@@ -39,7 +39,7 @@ pub fn default_mode() -> PipelineMode {
 ///|
 /// mode 字符串 → PipelineMode。非法值返回 Err（区分大小写，trim 后匹配）。
 pub fn parse_mode(s : String) -> Result[PipelineMode, String] {
-  let t = s.trim().to_string()
+  let t = s.trim().to_owned()
   match t {
     "advance" => Ok(Advance)
     "polish" => Ok(Polish)
@@ -415,7 +415,10 @@ fn complexity_assess(
 /// 目标复杂度估计（0..5）。只用任务自身的信号（描述长度、子任务数、关键词），
 /// 并复用 @engine.extract_difficulty 读到的 LADDER 难度档做夹紧（不另立第二套难度口径）。
 /// 纯计算、确定性：同一输入恒得同一档。
-pub fn estimate_complexity(description : String, subtask_count : Int) -> Int {
+pub fn estimate_complexity(
+  description : String,
+  subtask_count : Int,
+) -> Int {
   let (score, _, _) = complexity_assess(description, subtask_count)
   score
 }
@@ -430,10 +433,10 @@ pub fn file_scope_conflicts(scopes : Array[Array[String]]) -> Array[String] {
   for i = 0; i < n; i = i + 1 {
     for j = i + 1; j < n; j = j + 1 {
       for a in scopes[i] {
-        let ka = a.trim().to_string()
+        let ka = a.trim().to_owned()
         if ka != "" && !in_list(out, ka) {
           for b in scopes[j] {
-            if ka == b.trim().to_string() {
+            if ka == b.trim().to_owned() {
               out.push(ka)
             }
           }
@@ -485,7 +488,7 @@ pub fn explore_plan(
   let mut scopes : Array[Array[String]] = []
   let rejected : Array[String] = []
   for i = 0; i < candidate_modes.length(); i = i + 1 {
-    let raw_name = candidate_modes[i].trim().to_string()
+    let raw_name = candidate_modes[i].trim().to_owned()
     match parse_mode(raw_name) {
       Ok(m) => {
         let s = mode_short(m)

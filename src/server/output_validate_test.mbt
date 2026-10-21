@@ -23,8 +23,8 @@ fn ov_write(d : String, name : String, body : String) -> Unit {
   if name.contains("/") || name.contains("\\") {
     let parts = name.split("/")
     let mut cur = d
-    for p in parts[0:parts.length() - 1] {
-      cur = cur + "/" + p.to_string()
+    for p in parts[0:parts.count() - 1] {
+      cur = cur + "/" + p.to_owned()
       @fs.create_dir(cur) catch {
         _ => ()
       }

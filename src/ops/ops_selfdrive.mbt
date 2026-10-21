@@ -164,7 +164,7 @@ fn sd_recent_reports(project_dir : String, k : Int) -> Array[String] {
 /// 会在 `v * 10 + d` 处溢出并静默绕回。阈值 2e8（*10 后 2e9 < 2^31），
 /// 超过即返回 None（调用方视为解析失败，不产出乱数）。
 fn sd_parse_int(raw : String) -> Int? {
-  let s = raw.trim().to_string()
+  let s = raw.trim().to_owned()
   if s.is_empty() {
     return None
   }
@@ -377,7 +377,7 @@ pub fn selfdrive_export_tasks(
   for t in tasks {
     let desc = t.description
     let short = if desc.length() > 200 {
-      desc[0:200].to_string() + "..."
+      desc[0:200].to_owned() + "..."
     } else {
       desc
     }
@@ -580,11 +580,11 @@ pub fn selfdrive_parse_next_tasks(
       continue
     }
     if l.has_prefix("- [") {
-      let ls = l.to_string()
+      let ls = l.to_owned()
       match ls.find("]") {
         Some(end) =>
           if end > 3 {
-            let desc = ls.substring(start=3, end~).trim().to_string()
+            let desc = ls.substring(start=3, end~).trim().to_owned()
             if desc != "" && out.length() < max_tasks {
               out.push(desc)
             }

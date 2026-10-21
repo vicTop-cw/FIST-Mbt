@@ -79,7 +79,7 @@ pub fn star_canonical(
   issued_at : Int64,
   ttl_seconds : Int64,
 ) -> String {
-  let buf = StringBuilder::new(size_hint=64)
+  let buf = StringBuilder(size_hint=64)
   buf.write_string("{\"issued_at\":")
   buf.write_string(issued_at.to_string())
   buf.write_string(",\"list\":[")

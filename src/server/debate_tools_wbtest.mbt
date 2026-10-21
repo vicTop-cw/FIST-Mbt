@@ -222,7 +222,7 @@ test "会话流：convene 登记 → register 收敛 → verdict 输出 summary"
   let hl_j = Json::object(hl)
   assert_eq(get_array(hl_j, "hats").length(), 0)
   assert_eq(get_int(hl_j, "count"), 6)
-  assert_eq(wb_obj(hl_j).get("defaults").is_some(), true)
+  assert_eq(wb_obj(hl_j).get("defaults") is Some(_), true)
 }
 
 ///|

@@ -81,7 +81,7 @@ fn bug_next_bracket(rest : String) -> String {
   if ri < 0 {
     return ""
   }
-  rest[li + 1:ri].to_string()
+  rest[li + 1:ri].to_owned()
 }
 
 ///|
@@ -95,26 +95,26 @@ fn bug_after_bracket(rest : String) -> String {
   if ri < 0 {
     return rest
   }
-  rest[ri + 1:rest.length()].to_string()
+  rest[ri + 1:rest.length()].to_owned()
 }
 
 ///|
 /// 从头部行解析出 (id, ts, severity, status)。
 fn bug_parse_header(line : String) -> (String, String, String, String) {
-  let raw = line.trim().to_string()
+  let raw = line.trim().to_owned()
   // 去掉 "## " 前缀后再定位 id
   let body = if raw.has_prefix("## ") {
-    raw[3:raw.length()].to_string()
+    raw[3:raw.length()].to_owned()
   } else {
     raw
   }
   let sp = bug_char_index(body, ' ', 0)
-  let id = if sp < 0 { body } else { body[0:sp].to_string() }
-  let tail = if sp < 0 { "" } else { body[sp + 1:body.length()].to_string() }
+  let id = if sp < 0 { body } else { body[0:sp].to_owned() }
+  let tail = if sp < 0 { "" } else { body[sp + 1:body.length()].to_owned() }
   let ts = bug_next_bracket(tail)
   let after_ts = bug_after_bracket(tail)
   let sev = bug_next_bracket(after_ts)
-  let status = bug_after_bracket(after_ts).trim().to_string()
+  let status = bug_after_bracket(after_ts).trim().to_owned()
   let sure_status = if status.is_empty() { "OPEN" } else { status }
   (id, ts, sev, sure_status)
 }
@@ -122,20 +122,20 @@ fn bug_parse_header(line : String) -> (String, String, String, String) {
 ///|
 /// 提取 `- key: value` 行的值（key 名匹配则回 Some(value)）。
 fn bug_field_value(line : String, key : String) -> String? {
-  let t = line.trim().to_string()
+  let t = line.trim().to_owned()
   if !t.has_prefix("- ") {
     return None
   }
-  let body = t[2:t.length()].to_string()
+  let body = t[2:t.length()].to_owned()
   let colon = bug_char_index(body, ':', 0)
   if colon < 0 {
     return None
   }
-  let k = body[0:colon].trim().to_string()
+  let k = body[0:colon].trim().to_owned()
   if k != key {
     return None
   }
-  Some(body[colon + 1:body.length()].trim().to_string())
+  Some(body[colon + 1:body.length()].trim().to_owned())
 }
 
 ///|
@@ -145,7 +145,7 @@ fn bug_parse(text : String) -> Array[Json] {
   let mut cur : Map[String, Json] = Map([])
   let mut active : Bool = false
   for raw in text.split("\n") {
-    let t = raw.trim().to_string()
+    let t = raw.trim().to_owned()
     if bug_is_header(t) {
       // 收拢上一条
       if active {
@@ -156,7 +156,7 @@ fn bug_parse(text : String) -> Array[Json] {
       // 在这里拆成独立字段回给读侧，status 保持单值，别让调用方自己切字符串。
       let arrow = raw_status.split("→").to_array()
       let (status, dup_of) = if arrow.length() == 2 {
-        (arrow[0].trim().to_string(), arrow[1].trim().to_string())
+        (arrow[0].trim().to_owned(), arrow[1].trim().to_owned())
       } else {
         (raw_status, "")
       }
@@ -222,14 +222,14 @@ fn bug_parse_int(s : String) -> Int {
 fn bug_next_seq(text : String) -> Int {
   let mut max_n : Int = 0
   for raw in text.split("\n") {
-    let t = raw.trim().to_string()
+    let t = raw.trim().to_owned()
     if bug_is_header(t) {
-      let body = t[3:t.length()].to_string()
+      let body = t[3:t.length()].to_owned()
       let sp = bug_char_index(body, ' ', 0)
-      let id = if sp < 0 { body } else { body[0:sp].to_string() }
+      let id = if sp < 0 { body } else { body[0:sp].to_owned() }
       // id = "BUG-n"
       if id.has_prefix("BUG-") {
-        let n = bug_parse_int(id[4:id.length()].to_string())
+        let n = bug_parse_int(id[4:id.length()].to_owned())
         if n > max_n {
           max_n = n
         }
@@ -466,7 +466,7 @@ fn bug_status_closed() -> Array[String] {
 fn bug_lines_of(text : String) -> Array[String] {
   let out : Array[String] = []
   for v in text.split("\n") {
-    out.push(v.to_string())
+    out.push(v.to_owned())
   }
   out
 }
@@ -535,7 +535,7 @@ fn bug_header_lines(lines : Array[String], bug_id : String) -> Array[Int] {
   let out : Array[Int] = []
   let mut i = 0
   while i < n {
-    let t = lines[i].trim().to_string()
+    let t = lines[i].trim().to_owned()
     if bug_is_header(t) && bug_parse_header(t).0 == want {
       out.push(i)
     }
@@ -551,7 +551,7 @@ fn bug_entry_end(lines : Array[String], from : Int) -> Int {
   let n = lines.length()
   let mut j = from + 1
   while j < n {
-    if bug_is_header(lines[j].trim().to_string()) {
+    if bug_is_header(lines[j].trim().to_owned()) {
       return j
     }
     j = j + 1
@@ -562,10 +562,10 @@ fn bug_entry_end(lines : Array[String], from : Int) -> Int {
 ///|
 /// 抬头那一行的三段（编号 / 时间戳 / 严重度）+ 裸状态串（可能带 `→BUG-m`）。
 fn bug_split_header(line : String) -> (String, String, String, String, String) {
-  let (id, ts, sev, raw_status) = bug_parse_header(line.trim().to_string())
+  let (id, ts, sev, raw_status) = bug_parse_header(line.trim().to_owned())
   let parts = raw_status.split("→").to_array()
-  let status = parts[0].trim().to_string()
-  let main = if parts.length() == 2 { parts[1].trim().to_string() } else { "" }
+  let status = parts[0].trim().to_owned()
+  let main = if parts.length() == 2 { parts[1].trim().to_owned() } else { "" }
   (id, ts, sev, status, main)
 }
 
@@ -651,7 +651,7 @@ pub fn bug_mark_status(
   let (id, h_ts, sev, cur_status, cur_main) = bug_split_header(lines[idx])
   let note_text = match evidence {
     None => ""
-    Some(s) => s.trim().to_string()
+    Some(s) => s.trim().to_owned()
   }
   let add_note = new_status == "FALSE_POSITIVE" && !note_text.is_empty()
 
@@ -720,7 +720,7 @@ pub fn bug_fix(
   if ts.trim().is_empty() {
     return Err("bug_fix: 需要 ts（时间戳由调用层服务端盖章）")
   }
-  let ev = evidence.trim().to_string()
+  let ev = evidence.trim().to_owned()
   if ev.is_empty() {
     return Err(
       "bug_fix: 需要 evidence——空口标修好正是历史上假 GREEN 的来源（记账规则硬门①）",
@@ -771,7 +771,7 @@ pub fn bug_fix(
     }
   }
   let header = "### FIXED(" + ts + " / " + bug_comma_join(named) + ")"
-  let exists = lines.any(fn(l : String) { l.trim().to_string() == header })
+  let exists = lines.any(fn(l : String) { l.trim().to_owned() == header })
   if !exists {
     lines.insert(insert_at, "- evidence: " + ev)
     lines.insert(insert_at, header)

@@ -810,7 +810,7 @@ fn ModelRouter::pick_inner(
   // P2：laya 软性档位提示——先试提示档位，配额硬约束仍在，不破。
   // 档位字符串大小写归一（laya sidecar 可能返回 "Free"/"Paid"，from_string 只收小写）。
   if laya_prefer_tier != "" {
-    let hint_norm = match laya_prefer_tier.trim().to_string() {
+    let hint_norm = match laya_prefer_tier.trim().to_owned() {
       "Free" | "FREE" => "free"
       "Paid" | "PAID" => "paid"
       other => other
