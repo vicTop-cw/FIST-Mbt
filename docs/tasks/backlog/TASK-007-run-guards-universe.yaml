@@ -1,7 +1,7 @@
 id: TASK-007
 title: "run_guards.py 宇宙扩展 — 漏检 64 个脚本含 blackbox e2e"
 priority: P1
-status: backlog
+status: done
 assignee: atomcode
 discovered_by: whisperer
 discovered_at: "2026-10-21T20:12:00+08:00"
@@ -37,3 +37,4 @@ evidence: |
   其中 blackbox/ 下的 e2e_*.py 有 10 个
 
 blocked_by: []
+
