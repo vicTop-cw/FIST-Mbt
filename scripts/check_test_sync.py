@@ -29,13 +29,11 @@
 追加的既成记录，改写它们等于伪造历史。
 
 用法：
-  python scripts/check_test_sync.py <moon_test_log>          # 从日志提取 "Total tests: N, passed: N"
+  python scripts/check_test_sync.py <moon_test_log>          # 从日志提取 "Total tests: N, passed: N, failed: F"
   python scripts/check_test_sync.py --total 439              # 直接给总数
   python scripts/check_test_sync.py --selftest               # 违例对照：证明本判据会红（含"自洽的谎"型）
 
 任一违例即 FAIL（退出码非 0）。R1 的豁免表条目若已失效（不再命中任何声明）同样 FAIL。
-<<<<<<< HEAD
-=======
 
 **BUG-350**：日志面判绿必须看 passed/failed，不能只取 `Total tests`——否则
 `Total tests: 1347, passed: 3, failed: 1344` 这种"几乎全挂"的日志照样 PASS。
@@ -48,7 +46,6 @@
 同轮的变异自检还抓出**自检层的假绿**：`run_case` 失败时返回 `(None, None)`，而所有调用点都写
 `if run_case(...) is None` ⇒ 文档面变异只打印 FAIL 行、`selftest()` 仍一路走到 rc=0。失败路径
 改为返回 `None`，并在末尾加一格「退出码传导」把这条形状钉住（旧版下该格当场红）。
->>>>>>> eeb13930 (fix(guard): check_test_sync 补 N-test/(N aligned 两形状，修自检失败路径 rc=0（BUG-382 / T0r46）)
 """
 import re
 import subprocess
@@ -443,8 +440,6 @@ def selftest() -> int:
     d["docs/echo.md"] = "moon test --target js  # → Total tests: 400, passed: 400, failed: 0"
     if run_case("D-log-echo-shape", d, want="R1 docs/echo.md") is None:
         return 1
-<<<<<<< HEAD
-=======
     # 8b) BUG-382：README_EN 的两种真实声明形状，上一轮守卫对它们完全静默（人工 grep 才补齐）
     d = dict(base)
     d["docs/echo.md"] = "one command re-runs the 999-test JS suite"
@@ -523,9 +518,34 @@ def selftest() -> int:
         return 1
     done[0] += 1
     print("  ok  rc-propagation")
->>>>>>> eeb13930 (fix(guard): check_test_sync 补 N-test/(N aligned 两形状，修自检失败路径 rc=0（BUG-382 / T0r46）)
     print(f"SELFTEST PASS {done[0]} 个变体各自命中自己指名的判据（计数由 run_case 实测累加，非手写）")
     return 0
+
+
+def parse_log_counts(log):
+    """从 moon test 日志解析 (total, passed, failed)。failed 缺省 None（旧格式未写）。"""
+    m = re.search(
+        r"Total tests:?\s*(\d+)\s*,\s*passed:\s*(\d+)(?:\s*,\s*failed:\s*(\d+))?",
+        log,
+    )
+    if m is None:
+        m = re.search(
+            r"total=(\d+) passed=(\d+)(?: failed=(\d+))?", log)
+    if m is None:
+        return None
+    failed = int(m.group(3)) if m.group(3) is not None else None
+    return int(m.group(1)), int(m.group(2)), failed
+
+
+def log_not_green(counts):
+    """日志面判绿（BUG-350）：返回 None=全绿；否则返回不绿的原因。"""
+    total, passed, failed = counts
+    bad = []
+    if passed != total:
+        bad.append(f"passed={passed} != Total tests={total}")
+    if failed is not None and failed != 0:
+        bad.append(f"failed={failed} != 0")
+    return "，".join(bad) if bad else None
 
 
 def main():
@@ -536,34 +556,20 @@ def main():
     if args and args[0] == "--total" and len(args) >= 2:
         total = int(args[1])
     elif args:
-        if not Path(args[0]).is_file():
-            print("FAIL 日志文件不存在：%s（BUG-350：缺样本=没测，不是测过且对）" % args[0])
+        log_path = Path(args[0])
+        if not log_path.is_file():
+            print(f"FAIL 测试日志不存在：{args[0]}（判据输入面缺失，拒绝出结论）")
             return 1
-        log = Path(args[0]).read_text(encoding="utf-8", errors="replace")
-        # BUG-350：日志里 passed 与 total 必须同取——moon test 的 exit 0 不可靠（BUG-142，
-        # SIGABRT 仍回 0），判据作为补丁必须抓 "total 数没变但 passed 掉到 < total" 的崩溃场景。
-        # 旧实现 `passed:\s*\d+` 不捕获 passed 值，只 group(1) 取 total ⇒ 合成日志
-        # `Total tests: 1347, passed: 3, failed: 1344` 假绿 PASS。
-        m = re.search(r"Total tests:?\s*(\d+)\s*,\s*passed:\s*(\d+)\s*,\s*failed:\s*(\d+)", log)
-        m2 = re.search(r"total=(\d+)\s+passed=(\d+)\s+failed=(\d+)", log)
-        passed = None
-        failed = None
-        if m:
-            total = int(m.group(1))
-            passed = int(m.group(2))
-            failed = int(m.group(3))
-        elif m2:
-            total = int(m2.group(1))
-            passed = int(m2.group(2))
-            failed = int(m2.group(3))
-        # BUG-350 判绿补丁：passed 必须等于 total 且 failed 必须为 0，否则"测试挂了一部分"
-        # 而判据仍绿（正是 BUG-350 实测的假绿形状）。
-        if total is not None and passed is not None and failed is not None:
-            if passed != total or failed != 0:
-                print("FAIL 日志显示测试未全过：passed=%s, failed=%s, total=%s "
-                      "（判据不绿——BUG-142 同族：exit 0 不可靠，此处抓 passed<total）"
-                      % (passed, failed, total))
-                return 1
+        log = log_path.read_text(encoding="utf-8", errors="replace")
+        counts = parse_log_counts(log)
+        if counts is None:
+            print("FAIL 无法从参数/日志解析测试总数")
+            return 1
+        why = log_not_green(counts)
+        if why:
+            print(f"FAIL 测试日志未全绿：{why}（BUG-350：只取 Total tests 会把几乎全挂的日志判绿）")
+            return 1
+        total = counts[0]
     if total is None:
         print("FAIL 无法从参数/日志解析测试总数")
         return 1
