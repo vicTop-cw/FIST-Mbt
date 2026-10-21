@@ -33,6 +33,15 @@ pub enum StarVerdict {
 } derive(Eq, Debug, Show)
 
 ///|
+pub extend StarVerdict with Eq::{not_equal, equal}
+
+///|
+pub extend StarVerdict with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+pub extend StarVerdict with Show::{to_string, output}
+
+///|
 /// 验签结果。字段保持私有可见性（白盒测试可构造；黑盒只读 verdict/reason）。
 pub struct StarGateOutcome {
   verdict : StarVerdict
@@ -363,6 +372,12 @@ pub struct StarGatePolicyResult {
   /// 验签 verdict（门未启用或未提供 attestation 时缺省）
   verdict : StarVerdict?
 } derive(Eq, Debug)
+
+///|
+pub extend StarGatePolicyResult with Eq::{not_equal, equal}
+
+///|
+pub extend StarGatePolicyResult with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 pub fn StarGatePolicyResult::to_json(self : StarGatePolicyResult) -> Json {

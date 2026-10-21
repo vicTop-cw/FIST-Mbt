@@ -25,6 +25,12 @@ pub enum TaskStatus {
 } derive(Eq, Debug)
 
 ///|
+pub extend TaskStatus with Eq::{not_equal, equal}
+
+///|
+pub extend TaskStatus with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 pub fn TaskStatus::to_string(self : TaskStatus) -> String {
   match self {
     Pending => "待领取"
@@ -176,6 +182,12 @@ pub struct Task {
   /// 依赖的任务 id 列表（这些任务完成后，本任务才可领取）
   depends_on : Array[String]
 } derive(Eq, Debug)
+
+///|
+pub extend Task with Eq::{not_equal, equal}
+
+///|
+pub extend Task with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 /// 便捷状态访问

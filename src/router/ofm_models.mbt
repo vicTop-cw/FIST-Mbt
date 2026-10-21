@@ -20,6 +20,15 @@ pub struct OfmModel {
 } derive(Show, Eq, Debug)
 
 ///|
+pub extend OfmModel with Eq::{not_equal, equal}
+
+///|
+pub extend OfmModel with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+pub extend OfmModel with Show::{to_string, output}
+
+///|
 /// 解析 OpenAI 兼容的 `GET /v1/models` 响应体，返回模型清单。
 pub fn parse_ofm_models(body : String) -> Result[Array[OfmModel], String] {
   let b = body.trim().to_owned()

@@ -7,6 +7,7 @@ import {
   "moonbitlang/core/json",
   "moonbitlang/core/ref",
   "moonbitlang/x/fs",
+  "moonbitlang/core/debug",
 }
 
 supported_targets = "js+native"

@@ -17,6 +17,9 @@ HEAD 的 `src/server/pkg.generated.mbti`（`moon info` 生成的接口面，文�
   M1 每个 `<pkg>/pkg.generated.mbti` 里的 `pub fn <name>` 声明，**同包的 `.mbt` 文件里
      必须能找到 `pub fn <name>` 定义**（文本级：同名顶层 pub fn 即算）。找不到即红，
      并点名"接口面声明了但实现未提交"。
+     派生方法例外：`\w+` 在 `pub fn T::m(...)` 上只收到 `T`，而 `derive(Eq, Debug)` 生成的
+     方法在源码里没有 `fn` 文本 ⇒ 源侧把**带 derive 标注的类型名**也收进 `fn` 定义集
+     （`collect_defs` 的 derive 承载格）。类型没带 derive 时照红，真缺实现不放水。
   待确认：`pub let` / `pub const` / `pub type` 等其它声明形状**本轮不判**（先只在 `pub fn` 上做实）。
 
 **刻意不判**（避免误红）：
@@ -62,6 +65,9 @@ SHAPES = {
     "trait":  (re.compile(r"^\s*pub trait (\w+)"),
                re.compile(r"^\s*(?:pub(?:\(all\))? )?trait (\w+)")),
 }
+# `derive(...)` 的两种落点：闭合行 `} derive(Eq, Debug)` 与一行式 `pub type T = Int derive(Eq)`。
+TYPE_HDR = re.compile(r"^\s*(?:pub(?:\(all\))? )?(?:struct|enum|trait|type|abstract)\s+(\w+)\b")
+DERIVE_TAIL = re.compile(r"^\s*\}.*\bderive\(")
 
 
 def tracked(root=None):
@@ -93,7 +99,14 @@ def collect_decls(text):
 
 
 def collect_defs(text):
-    """从源 .mbt 正文收集 {形状: {定义名}}（只认源侧正则，允许 pub(all)/无前缀）。"""
+    """从源 .mbt 正文收集 {形状: {定义名}}（只认源侧正则，允许 pub(all)/无前缀）。
+
+    `fn` 形状额外收下**带 `derive(...)` 的类型名**：`.mbti` 里 `pub fn T::to_repr(...)`
+    这类行按现有正则两侧都只收到 `T`（`\w+` 停在 `::` 前），而 derive 生成的方法在源码里
+    没有 `fn` 文本、只有闭合行上的 `derive(Eq, Debug)` 标注。不收这一格，`0079`
+    的 `pub extend T with ...::{...}` 修复就会让"只有派生方法、没有手写方法"的类型误红
+    （实测 12 个类型）。收进来之后仍然判得住真正的缺实现：类型没带 derive ⇒ 照红。
+    """
     out = {}
     for shape, (_, pat) in SHAPES.items():
         names = set()
@@ -102,6 +115,18 @@ def collect_defs(text):
             if m:
                 names.add(m.group(1))
         out[shape] = names
+    pending = None
+    for l in text.splitlines():
+        h = TYPE_HDR.match(l)
+        if h:
+            pending = h.group(1)
+            if "derive(" in l:      # 一行式：`pub type T = Int derive(Eq)`
+                out["fn"].add(pending)
+                pending = None
+            continue
+        if pending and DERIVE_TAIL.match(l):
+            out["fn"].add(pending)
+            pending = None
     return out
 
 
@@ -213,6 +238,22 @@ def selftest():
     cell("src-pub-all-recognized", dsrc["struct"] == {"Foo", "Baz"}, True)
     print("  ok  src-pub-all-recognized（源侧 pub(all)/无前缀都认，防扩展误红）")
 
+    # 6c) derive 承载格（清零 0079 时实测到的误红面）：`.mbti` 里 `pub fn T::to_repr(...)`
+    #     这类行两侧正则都只收到 `T`（`\w+` 停在 `::` 前），而 derive 生成的方法在源码里没有
+    #     `fn` 文本、只有闭合行上的 `} derive(Eq, Debug)`。不收这一格，"只有派生方法、没有手写
+    #     方法"的类型在补 `pub extend` 后会集体误红（实发 12 个类型）；收了之后，同型不带 derive
+    #     仍必须照红——否则这一格会把真缺实现一并放过。
+    dsrc_derive = collect_defs("pub struct Foo {\n  x : Int\n} derive(Eq, Debug)\n")
+    cell("derive-carrier-collected", "Foo" in dsrc_derive["fn"], True)
+    p_d, _ = safe_judge("derive-carrier-no-false-positive",
+                        {'src/a': {'fn': {'Foo'}}}, {'src/a': dsrc_derive})
+    cell("derive-carrier-no-false-positive", len(p_d) == 0, True)
+    dsrc_plain = collect_defs("pub struct Bar {\n  x : Int\n}\n")
+    p_nd, _ = safe_judge("no-derive-carrier-still-red",
+                         {'src/a': {'fn': {'Bar'}}}, {'src/a': dsrc_plain})
+    cell("no-derive-carrier-still-red", any("Bar" in x for x in p_nd), True)
+    print("  ok  derive-carrier 三格（带 derive 不误红 / 不带 derive 照红 / 类型名收进 fn 集）")
+
     # 7) 缺声明必须计入 n（否则"判据空转"门会失效：全缺时把 n 算成 0 就自拒不报红了）。
     _, n_miss = safe_judge("missing-counted-in-n",
                            {'src/z': {'fn': {'ghost'}}}, {'src/z': {'fn': set()}})
@@ -240,7 +281,8 @@ def selftest():
             print("  - %s：%s" % (nm, why))
         return 1
     print("SELFTEST OK（%d 格：干净不误红 / 合成违例必红 / 扩展形状(struct)可红 / 真实 4 符号必红 / "
-          "私有函数不误 / 无 .mbt 包跳过 / .mbti 侧只收 pub 项 / 源侧认 pub(all) / 缺额计入空转门 / "
+          "私有函数不误 / 无 .mbt 包跳过 / .mbti 侧只收 pub 项 / 源侧认 pub(all) / "
+          "derive 承载三格（带 derive 不误红、不带照红）/ 缺额计入空转门 / "
           "**出路分流两格（工作树有=未提交 / 工作树无=真缺失）+ 向后兼容一格**）"
           % len(cells))
     return 0

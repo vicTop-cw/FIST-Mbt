@@ -19,6 +19,12 @@ pub enum ModelTier {
 } derive(Eq, Debug)
 
 ///|
+pub extend ModelTier with Eq::{not_equal, equal}
+
+///|
+pub extend ModelTier with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 pub fn ModelTier::to_string(self : ModelTier) -> String {
   match self {
     Free => "free"
@@ -57,6 +63,12 @@ pub struct ModelQuota {
   /// P1.1：冷却截止（ISO 8601），"" = 无冷却
   mut cooldown_until : String
 } derive(Eq, Debug)
+
+///|
+pub extend ModelQuota with Eq::{not_equal, equal}
+
+///|
+pub extend ModelQuota with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 /// 构造入口。`lane` 必须走这里传入：字段非 `pub`，跨包不得直接构造/改字段。
@@ -337,6 +349,12 @@ pub struct RouterConfig {
 } derive(Eq, Debug)
 
 ///|
+pub extend RouterConfig with Eq::{not_equal, equal}
+
+///|
+pub extend RouterConfig with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 /// 默认配置：与源项目 config/fist-model-router.json 同形的**样例默认值**（不含任何密钥）。
 /// 真实部署请用 `model_router_config` 覆盖池与限额。
 ///
@@ -426,6 +444,12 @@ pub struct RouteDecision {
   /// P2：laya 参与时标注 `laya:<tier>`（如 laya:paid），未参与 = 空串
   laya_reason : String
 } derive(Eq, Debug)
+
+///|
+pub extend RouteDecision with Eq::{not_equal, equal}
+
+///|
+pub extend RouteDecision with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 pub fn RouteDecision::to_json(self : RouteDecision) -> Json {
@@ -602,6 +626,12 @@ pub struct ModelRouter {
   // 不能拿它当"当前模型"报给调用方，否则同一响应里 decision.model 与 usage.current_model 自相矛盾）
   mut last_pick : String
 } derive(Eq, Debug)
+
+///|
+pub extend ModelRouter with Eq::{not_equal, equal}
+
+///|
+pub extend ModelRouter with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 pub fn ModelRouter::from_config(config : RouterConfig) -> ModelRouter {

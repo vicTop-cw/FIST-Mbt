@@ -11,6 +11,12 @@ pub struct Principle {
 } derive(Eq, Debug)
 
 ///|
+pub extend Principle with Eq::{not_equal, equal}
+
+///|
+pub extend Principle with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 pub fn Principle::get_index(self : Principle) -> Int {
   self.index
 }

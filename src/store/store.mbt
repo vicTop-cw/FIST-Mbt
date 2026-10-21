@@ -73,6 +73,12 @@ pub struct FileLock {
 } derive(Eq, Debug)
 
 ///|
+pub extend FileLock with Eq::{not_equal, equal}
+
+///|
+pub extend FileLock with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 /// 便捷构造。
 pub fn FileLock::new(
   lock_id~ : String,
@@ -132,6 +138,12 @@ pub struct LockViolation {
 } derive(Eq, Debug)
 
 ///|
+pub extend LockViolation with Eq::{not_equal, equal}
+
+///|
+pub extend LockViolation with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 /// 便捷构造（LockViolation 字段对外只读，跨包经此构造）。
 pub fn LockViolation::new(
   ts~ : String,
@@ -156,6 +168,12 @@ pub struct AssistantReg {
   /// active | dead | resigned
   status : String
 } derive(Eq, Debug)
+
+///|
+pub extend AssistantReg with Eq::{not_equal, equal}
+
+///|
+pub extend AssistantReg with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 /// AssistantReg → JSON（供 MCP 工具输出）。

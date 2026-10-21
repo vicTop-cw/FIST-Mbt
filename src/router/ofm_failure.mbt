@@ -27,6 +27,15 @@ pub enum OfmFailure {
 } derive(Show, Eq, Debug)
 
 ///|
+pub extend OfmFailure with Eq::{not_equal, equal}
+
+///|
+pub extend OfmFailure with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+pub extend OfmFailure with Show::{to_string, output}
+
+///|
 pub fn OfmFailure::label(self : OfmFailure) -> String {
   match self {
     InvalidCredential => "INVALID_CREDENTIAL"

@@ -24,6 +24,12 @@ pub struct AuditEntry {
 } derive(Eq, Debug)
 
 ///|
+pub extend AuditEntry with Eq::{not_equal, equal}
+
+///|
+pub extend AuditEntry with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 /// 进程内追加式审计日志
 pub struct AuditLog {
   entries : Array[AuditEntry]
@@ -103,6 +109,12 @@ pub enum Role {
   Leader
   Agent
 } derive(Eq, Debug)
+
+///|
+pub extend Role with Eq::{not_equal, equal}
+
+///|
+pub extend Role with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 /// 人类可读角色名

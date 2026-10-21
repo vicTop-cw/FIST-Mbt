@@ -138,6 +138,9 @@ pub struct AuditEntry {
   task_id : String
   detail : String
 } derive(Eq, @debug.Debug)
+pub fn AuditEntry::equal(Self, Self) -> Bool
+pub fn AuditEntry::not_equal(Self, Self) -> Bool
+pub fn AuditEntry::to_repr(Self) -> @debug.Repr
 
 pub struct AuditLog {
   entries : Array[AuditEntry]
@@ -243,7 +246,10 @@ pub enum Role {
   Leader
   Agent
 } derive(Eq, @debug.Debug)
+pub fn Role::equal(Self, Self) -> Bool
 pub fn Role::from_string(String) -> Self?
+pub fn Role::not_equal(Self, Self) -> Bool
+pub fn Role::to_repr(Self) -> @debug.Repr
 pub fn Role::to_string(Self) -> String
 
 // Type aliases

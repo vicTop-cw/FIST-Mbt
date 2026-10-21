@@ -218,6 +218,9 @@ pub struct LockAcquireOutcome {
 } derive(Debug)
 
 ///|
+pub extend LockAcquireOutcome with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 /// 内存后端：把锁写入（按 scope 唯一，覆盖旧值；旧锁若 active 且非本人且未过期则记违例）。
 ///
 /// **这是底层原语，不是互斥门**：它永远落库（last-write-wins），只在覆盖他人 live 锁时

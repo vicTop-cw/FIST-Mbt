@@ -25,6 +25,12 @@ pub enum Role {
 } derive(Eq, Debug)
 
 ///|
+pub extend Role with Eq::{not_equal, equal}
+
+///|
+pub extend Role with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 pub fn Role::to_string(self : Role) -> String {
   match self {
     HumanSteward => "human_steward"
@@ -87,6 +93,12 @@ pub enum Action {
   CreateSpec // 创建语料（Omega 强验证：语料创建者）
   ReviewSpec // 审核语料 / 复验成果（Omega 强验证：验证者）
 } derive(Eq, Debug)
+
+///|
+pub extend Action with Eq::{not_equal, equal}
+
+///|
+pub extend Action with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 /// 权限判定：Can(HumanSteward, 任意) = true；
