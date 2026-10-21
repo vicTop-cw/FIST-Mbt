@@ -94,11 +94,11 @@ fn mem_int(j : Json, key : String) -> Int {
 ///|
 test "memory_1_gc_logic_no_trim" {
   let content = "abcdef"
-  let (kept, archived) = memory_gc_logic(content, 10)
+  let (kept, archived) = @server.memory_gc_logic(content, 10)
   assert_eq(kept, "abcdef")
   assert_eq(archived, "")
   // 恰好等于上限：不归档
-  let (k2, a2) = memory_gc_logic(content, 6)
+  let (k2, a2) = @server.memory_gc_logic(content, 6)
   assert_eq(k2, "abcdef")
   assert_eq(a2, "")
 }
@@ -106,7 +106,7 @@ test "memory_1_gc_logic_no_trim" {
 ///|
 test "memory_2_gc_logic_trim" {
   let content = "abcdefghij"
-  let (kept, archived) = memory_gc_logic(content, 4)
+  let (kept, archived) = @server.memory_gc_logic(content, 4)
   assert_eq(kept, "ghij")
   assert_eq(archived, "abcdef")
 }
@@ -115,7 +115,7 @@ test "memory_2_gc_logic_trim" {
 test "memory_3_gc_logic_chinese" {
   // 中文按字符截断（UTF-16 字符），取最新 3 个字符
   let content = "第一阶段的老人条目最新目标"
-  let (kept, archived) = memory_gc_logic(content, 3)
+  let (kept, archived) = @server.memory_gc_logic(content, 3)
   assert_eq(kept, "新目标")
   assert_eq(archived, "第一阶段的老人条目最")
 }
@@ -127,7 +127,7 @@ test "memory_3_gc_logic_chinese" {
 ///|
 test "memory_4_gc_missing_file" {
   let dir = mem_dir("mem_c4_missing")
-  let j = memory_gc_one(dir, "target", 2000)
+  let j = @server.memory_gc_one(dir, "target", 2000)
   assert_true(!mem_bool(j, "gc"))
   assert_true(!mem_bool(j, "exists"))
   assert_eq(mem_str(j, "kind"), "target")
@@ -144,7 +144,7 @@ test "memory_5_gc_one_archives" {
   ) catch {
     _ => abort("写档失败")
   }
-  let j = memory_gc_one(dir, "target", 5)
+  let j = @server.memory_gc_one(dir, "target", 5)
   assert_true(mem_bool(j, "gc"))
   assert_eq(mem_int(j, "before_chars"), 20)
   assert_eq(mem_int(j, "after_chars"), 5)
@@ -181,7 +181,7 @@ test "memory_6_gc_all_kinds" {
   @fs.write_string_to_file(dir + "/memory/product.md", "short", encoding="utf8") catch {
     _ => ()
   }
-  let j = memory_gc_all(dir, 4)
+  let j = @server.memory_gc_all(dir, 4)
   assert_true(mem_bool(j, "gc"))
   // 四件套均返回
   match j {
@@ -208,7 +208,7 @@ test "memory_6_gc_all_kinds" {
 test "memory_7_consolidate_target" {
   let dir = mem_dir("mem_c7_cons")
   let j = match
-    memory_consolidate(
+    @server.memory_consolidate(
       dir, "T1", "target", "# 本轮目标：完成 X", "2026-09-05T00:00:00Z",
     ) {
     Ok(x) => x
@@ -227,12 +227,12 @@ test "memory_7_consolidate_target" {
 test "memory_8_consolidate_thinking_append" {
   let dir = mem_dir("mem_c8_think")
   ignore(
-    memory_consolidate(
+    @server.memory_consolidate(
       dir, "T1", "thinking", "第一步思考", "2026-09-05T00:00:00Z",
     ),
   )
   ignore(
-    memory_consolidate(
+    @server.memory_consolidate(
       dir, "T1", "thinking", "第二步思考", "2026-09-06T00:00:00Z",
     ),
   )
@@ -255,13 +255,13 @@ test "memory_8_consolidate_thinking_append" {
 ///|
 test "memory_9_link_create_append" {
   let dir = mem_dir("mem_c9_link")
-  let j1 = match memory_link(dir, "taskA", "taskB", "关联说明") {
+  let j1 = match @server.memory_link(dir, "taskA", "taskB", "关联说明") {
     Ok(x) => x
     Err(m) => abort(m)
   }
   assert_true(mem_bool(j1, "linked"))
   // 追加一条
-  ignore(memory_link(dir, "taskB", "taskC", ""))
+  ignore(@server.memory_link(dir, "taskB", "taskC", ""))
   let body = @fs.read_file_to_string(dir + "/memory/links.md", encoding="utf8") catch {
     _ => abort("读 links 失败")
   }
@@ -276,12 +276,12 @@ test "memory_9_link_create_append" {
 ///|
 test "memory_10_distill_principle_goal" {
   assert_eq(
-    distill_principle_goal("保持单一职责"),
+    @server.distill_principle_goal("保持单一职责"),
     "[principle] 保持单一职责",
   )
   // 已带前缀则不重复叠加
   assert_eq(
-    distill_principle_goal("  [principle] 旧原则  "),
+    @server.distill_principle_goal("  [principle] 旧原则  "),
     "[principle] 旧原则",
   )
 }
@@ -290,7 +290,7 @@ test "memory_10_distill_principle_goal" {
 test "memory_11_distill_in_memory" {
   // 独立 Archive + 无 sqlite（仅进程内），验证 distilled + artifact_id
   let arc = @evolve.Archive::new("test-dist")
-  let j1 = do_evolve_distill(
+  let j1 = @server.do_evolve_distill(
     arc,
     None,
     "单一职责原则",
@@ -301,7 +301,7 @@ test "memory_11_distill_in_memory" {
   assert_true(mem_bool(j1, "distilled"))
   assert_true(mem_str(j1, "artifact_id").contains("principle-"))
   // 同 now 同 goal 二次蒸馏：同一 id，upsert 幂等
-  let j2 = do_evolve_distill(
+  let j2 = @server.do_evolve_distill(
     arc,
     None,
     "单一职责原则",
@@ -311,7 +311,7 @@ test "memory_11_distill_in_memory" {
   )
   assert_eq(mem_str(j1, "artifact_id"), mem_str(j2, "artifact_id"))
   // 不同 now 蒸馏相同目标 → 触发查重（duplicate=true）但各称 id 独立成条原则（复用 upsert 语义）
-  let j3 = do_evolve_distill(
+  let j3 = @server.do_evolve_distill(
     arc,
     None,
     "单一职责原则",
@@ -322,7 +322,7 @@ test "memory_11_distill_in_memory" {
   assert_true(mem_bool(j3, "duplicate"))
   assert_true(mem_str(j3, "artifact_id") != mem_str(j2, "artifact_id"))
   // 不同目标 → 独立成条（用与 j1 不同的 now 确保 id 唯一）
-  let j4 = do_evolve_distill(
+  let j4 = @server.do_evolve_distill(
     arc,
     None,
     "另一原则",
@@ -344,7 +344,7 @@ test "memory_12_distill_persist_sqlite" {
   }
   ignore(s.clear())
   let arc = @evolve.Archive::new("test-dist-sql")
-  let j = do_evolve_distill(
+  let j = @server.do_evolve_distill(
     arc,
     Some(s),
     "可计算评分原则",
@@ -381,7 +381,7 @@ test "memory_18_gc_illegal_kind_refuses_without_writing" {
   ) catch {
     _ => abort("写档失败")
   }
-  let j = memory_gc_one(dir, "thinking g", 5)
+  let j = @server.memory_gc_one(dir, "thinking g", 5)
   assert_true(!mem_bool(j, "gc"))
   assert_eq(mem_str(j, "kind"), "thinking g")
   // 拒绝必须带原因：非法值本身 + 合法集合（不能只回一个干巴巴的 false）
@@ -411,7 +411,7 @@ test "memory_19_consolidate_illegal_kind_err_without_writing" {
     _ => abort("写档失败")
   }
   match
-    memory_consolidate(
+    @server.memory_consolidate(
       dir, "T1", "thinking g", "越权正文", "2026-09-26T00:00:00Z",
     ) {
     Ok(_) => abort("非法 kind 必须被拒，不能返回 Ok")
@@ -456,7 +456,7 @@ test "memory_13_lookup_injected_assets_hit_and_empty" {
   arc.add(a2)
   // 命中：code-review → 1 条
   let h1 = @json.parse(
-    lookup_injected_assets_in(arc, "code-review").stringify(),
+    @server.lookup_injected_assets_in(arc, "code-review").stringify(),
   ) catch {
     _ => Json::null()
   }
@@ -466,7 +466,7 @@ test "memory_13_lookup_injected_assets_hit_and_empty" {
   }
   // 命中：superpowers + code-review（逗号分隔多关键词）→ 2 条
   let h2 = @json.parse(
-    lookup_injected_assets_in(arc, "superpowers,code-review").stringify(),
+    @server.lookup_injected_assets_in(arc, "superpowers,code-review").stringify(),
   ) catch {
     _ => Json::null()
   }
@@ -489,7 +489,7 @@ test "memory_13_lookup_injected_assets_hit_and_empty" {
     _ => abort("应命中 2 条资产")
   }
   // 不命中：空关键词 → 空数组
-  let e0 = @json.parse(lookup_injected_assets_in(arc, "").stringify()) catch {
+  let e0 = @json.parse(@server.lookup_injected_assets_in(arc, "").stringify()) catch {
     _ => Json::null()
   }
   match e0 {
@@ -497,7 +497,9 @@ test "memory_13_lookup_injected_assets_hit_and_empty" {
     _ => abort("空关键词应返回空数组")
   }
   // 无关词 → 空数组
-  let e1 = @json.parse(lookup_injected_assets_in(arc, "xyzzy").stringify()) catch {
+  let e1 = @json.parse(
+    @server.lookup_injected_assets_in(arc, "xyzzy").stringify(),
+  ) catch {
     _ => Json::null()
   }
   match e1 {
@@ -520,7 +522,7 @@ test "memory_15_lesson_goal_prefix" {
 test "memory_16_lesson_record_and_inject" {
   // 独立 Archive：记录一条教训，验证 do_evolve_lesson 返回 learned/artifact_id 且可被 inject 检索
   let arc = @evolve.Archive::new("test-lesson")
-  let j1 = do_evolve_lesson(
+  let j1 = @server.do_evolve_lesson(
     arc,
     None,
     "语料不合格",
@@ -532,7 +534,7 @@ test "memory_16_lesson_record_and_inject" {
   assert_true(mem_str(j1, "artifact_id").contains("lesson-"))
   assert_eq(mem_str(j1, "category"), "语料不合格")
   // 同类目不同 now → 独立成条
-  let j2 = do_evolve_lesson(
+  let j2 = @server.do_evolve_lesson(
     arc,
     None,
     "成果未达标",
@@ -543,7 +545,7 @@ test "memory_16_lesson_record_and_inject" {
   assert_true(mem_str(j2, "artifact_id") != mem_str(j1, "artifact_id"))
   // 可经 lookup_injected_assets_in 按类目命中（goal=[lesson]<cat>）
   let h = @json.parse(
-    lookup_injected_assets_in(arc, "[lesson] 语料不合格").stringify(),
+    @server.lookup_injected_assets_in(arc, "[lesson] 语料不合格").stringify(),
   ) catch {
     _ => Json::null()
   }
@@ -569,7 +571,7 @@ test "memory_17_lesson_persist_sqlite" {
   }
   ignore(s.clear())
   let arc = @evolve.Archive::new("test-lesson-sql")
-  let j = do_evolve_lesson(
+  let j = @server.do_evolve_lesson(
     arc,
     Some(s),
     "文档门禁",

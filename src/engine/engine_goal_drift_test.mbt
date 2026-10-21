@@ -32,8 +32,8 @@ fn b25_prefix_slice(unit : String) -> String {
 fn b25_tree(
   root_desc : String,
   children : Array[(String, String)],
-) -> FistEngine {
-  let e = FistEngine::new()
+) -> @engine.FistEngine {
+  let e = @engine.FistEngine::new()
   ignore(
     e.store.create_task(
       @core.Task::new(

@@ -3,60 +3,60 @@
 ///|
 /// 权限矩阵：publish/archive/delete 仅 HumanSteward
 test "audit: 权限矩阵（人类主权四操作）" {
-  let hs = match Role::from_string("human_steward") {
+  let hs = match @ops.Role::from_string("human_steward") {
     Some(r) => r
     None => return
   }
-  let leader = match Role::from_string("leader") {
+  let leader = match @ops.Role::from_string("leader") {
     Some(r) => r
     None => return
   }
-  let agent = match Role::from_string("agent") {
+  let agent = match @ops.Role::from_string("agent") {
     Some(r) => r
     None => return
   }
   // publish
-  assert_true(can_publish(hs))
-  assert_false(can_publish(leader))
-  assert_false(can_publish(agent))
+  assert_true(@ops.can_publish(hs))
+  assert_false(@ops.can_publish(leader))
+  assert_false(@ops.can_publish(agent))
   // archive
-  assert_true(can_archive(hs))
-  assert_false(can_archive(leader))
-  assert_false(can_archive(agent))
+  assert_true(@ops.can_archive(hs))
+  assert_false(@ops.can_archive(leader))
+  assert_false(@ops.can_archive(agent))
   // delete
-  assert_true(can_delete(hs))
-  assert_false(can_delete(leader))
-  assert_false(can_delete(agent))
+  assert_true(@ops.can_delete(hs))
+  assert_false(@ops.can_delete(leader))
+  assert_false(@ops.can_delete(agent))
   // claim：三角色全部放开
-  assert_true(can_claim(hs))
-  assert_true(can_claim(leader))
-  assert_true(can_claim(agent))
+  assert_true(@ops.can_claim(hs))
+  assert_true(@ops.can_claim(leader))
+  assert_true(@ops.can_claim(agent))
 }
 
 ///|
 /// enforce：合法放行 / 越权拒绝
 test "audit: enforce 放行与拒绝" {
-  let hs = match Role::from_string("human_steward") {
+  let hs = match @ops.Role::from_string("human_steward") {
     Some(r) => r
     None => return
   }
-  let leader = match Role::from_string("leader") {
+  let leader = match @ops.Role::from_string("leader") {
     Some(r) => r
     None => return
   }
-  let agent = match Role::from_string("agent") {
+  let agent = match @ops.Role::from_string("agent") {
     Some(r) => r
     None => return
   }
   // HumanSteward 四操作全部放行
-  assert_true(enforce(action="publish", role=hs) is Ok(_))
-  assert_true(enforce(action="archive", role=hs) is Ok(_))
-  assert_true(enforce(action="delete", role=hs) is Ok(_))
-  assert_true(enforce(action="claim", role=hs) is Ok(_))
+  assert_true(@ops.enforce(action="publish", role=hs) is Ok(_))
+  assert_true(@ops.enforce(action="archive", role=hs) is Ok(_))
+  assert_true(@ops.enforce(action="delete", role=hs) is Ok(_))
+  assert_true(@ops.enforce(action="claim", role=hs) is Ok(_))
   // Leader 越权 publish/archive/delete 被拒，claim 放行
   let actions = ["publish", "archive", "delete"]
   for a in actions {
-    let r = enforce(action=a, role=leader)
+    let r = @ops.enforce(action=a, role=leader)
     assert_true(r is Err(_))
     match r {
       Err(msg) => {
@@ -66,19 +66,19 @@ test "audit: enforce 放行与拒绝" {
       Ok(_) => fail("leader 不应获得 \{a} 权限")
     }
   }
-  assert_true(enforce(action="claim", role=leader) is Ok(_))
+  assert_true(@ops.enforce(action="claim", role=leader) is Ok(_))
   // Agent 同理
-  assert_true(enforce(action="publish", role=agent) is Err(_))
-  assert_true(enforce(action="delete", role=agent) is Err(_))
-  assert_true(enforce(action="claim", role=agent) is Ok(_))
+  assert_true(@ops.enforce(action="publish", role=agent) is Err(_))
+  assert_true(@ops.enforce(action="delete", role=agent) is Err(_))
+  assert_true(@ops.enforce(action="claim", role=agent) is Ok(_))
   // 未知动作一律拒绝
-  assert_true(enforce(action="unknown_op", role=hs) is Err(_))
+  assert_true(@ops.enforce(action="unknown_op", role=hs) is Err(_))
 }
 
 ///|
 /// AuditLog：追加式记录与 entries 顺序
 test "audit: 日志追加保持顺序" {
-  let log = AuditLog::new()
+  let log = @ops.AuditLog::new()
   log.record(
     action="publish",
     actor="human_steward",
@@ -111,7 +111,7 @@ test "audit: 日志追加保持顺序" {
 ///|
 /// AuditLog：by_actor / by_task 过滤互不干扰
 test "audit: by_actor 与 by_task 过滤" {
-  let log = AuditLog::new()
+  let log = @ops.AuditLog::new()
   log.record(action="publish", actor="human_steward", task_id="T0", now="t0")
   log.record(action="claim", actor="leader-1", task_id="T0", now="t1")
   log.record(action="claim", actor="agent-1", task_id="T0.1", now="t2")
@@ -134,7 +134,7 @@ test "audit: by_actor 与 by_task 过滤" {
 ///|
 /// AuditLog：to_json 序列化字段完整
 test "audit: to_json 序列化" {
-  let log = AuditLog::new()
+  let log = @ops.AuditLog::new()
   log.record(
     action="publish",
     actor="human_steward",
@@ -149,15 +149,15 @@ test "audit: to_json 序列化" {
   assert_true(s.contains("\"task_id\":\"T0\""))
   assert_true(s.contains("\"detail\":\"根任务发布\""))
   assert_true(s.contains("\"ts\":\"2026-09-05T00:00:00Z\""))
-  assert_eq(AuditLog::new().to_json().stringify(), "[]")
+  assert_eq(@ops.AuditLog::new().to_json().stringify(), "[]")
 }
 
 ///|
 /// 与引擎联动：list_all/get_task 提供审计事实来源
 test "audit: 引擎任务可作为审计来源" {
   let e = @engine.FistEngine::new()
-  let log = AuditLog::new()
-  let hs = match Role::from_string("human_steward") {
+  let log = @ops.AuditLog::new()
+  let hs = match @ops.Role::from_string("human_steward") {
     Some(r) => r
     None => return
   }
@@ -170,7 +170,8 @@ test "audit: 引擎任务可作为审计来源" {
     ),
   )
   assert_true(
-    enforce(action="publish", role=hs) is Ok(_) && e.get_task("T0") is Some(_),
+    @ops.enforce(action="publish", role=hs) is Ok(_) &&
+    e.get_task("T0") is Some(_),
   )
   for t in e.list_all() {
     log.record(

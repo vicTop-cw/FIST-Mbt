@@ -49,7 +49,7 @@ test "bug_report_list_roundtrip" {
   let eng = @engine.FistEngine::new()
   // 上报两条
   let j1 = match
-    report_bug(
+    @server.report_bug(
       d,
       "verify 阶段崩溃",
       detail="栈回溯…",
@@ -67,7 +67,7 @@ test "bug_report_list_roundtrip" {
   assert_eq(bug_str(j1, "status"), "OPEN")
   assert_true(bug_str(j1, "path").contains("memory/bugs.md"))
   let j2 = match
-    report_bug(
+    @server.report_bug(
       d,
       "list 返回空数组",
       detail="",
@@ -92,7 +92,7 @@ test "bug_report_list_roundtrip" {
   assert_true(body.contains("- ref_call: 42"))
 
   // bug_list 能读回
-  let lj = match bug_list(d) {
+  let lj = match @server.bug_list(d) {
     Ok(x) => x
     Err(m) => abort(m)
   }
@@ -110,7 +110,7 @@ test "bug_report_list_roundtrip" {
 /// 非法 project_dir（路径穿）被拒；非法 severity 被拒。
 test "bug_report_validation" {
   let eng = @engine.FistEngine::new()
-  let r1 = report_bug(
+  let r1 = @server.report_bug(
     "../../etc",
     "x",
     detail="",
@@ -122,7 +122,7 @@ test "bug_report_validation" {
     now="2026-09-24T00:00:00Z",
   )
   assert_true(r1 is Err(_))
-  let r2 = report_bug(
+  let r2 = @server.report_bug(
     "temp/bug_c1",
     "x",
     detail="",
@@ -152,7 +152,7 @@ test "bug5_report_bug_returns_resolved_path" {
   }
   let eng = @engine.FistEngine::new()
   let j = match
-    report_bug(
+    @server.report_bug(
       d,
       "BUG-5 验证",
       detail="",
@@ -182,7 +182,7 @@ test "bug5_report_bug_returns_resolved_path" {
   let pd = bug_str(j, "project_dir")
   assert_eq(pd, d)
   // bug_list 也带 resolved_path，且与 report_bug 同一支尺
-  let lj = match bug_list(d) {
+  let lj = match @server.bug_list(d) {
     Ok(x) => x
     Err(m) => abort(m)
   }
@@ -217,7 +217,7 @@ test "bug8_bug11_task_ns_echo_and_id_alias" {
   }
   let eng = @engine.FistEngine::new()
   let j = match
-    report_bug(
+    @server.report_bug(
       d,
       "BUG-8 验证：修复单要能落进发起 ns",
       detail="ns 写死 bugs 时上卷永不触发",
@@ -242,7 +242,7 @@ test "bug8_bug11_task_ns_echo_and_id_alias" {
   // 不传 task_ns 时回落到缺省 bugs（零回归）
   let eng2 = @engine.FistEngine::new()
   let j2 = match
-    report_bug(
+    @server.report_bug(
       d,
       "BUG-8 缺省路径",
       detail="",
@@ -261,7 +261,7 @@ test "bug8_bug11_task_ns_echo_and_id_alias" {
   // publish_task=false 时不回显成 "bugs"：没有发单就没有落点
   let eng3 = @engine.FistEngine::new()
   let j3 = match
-    report_bug(
+    @server.report_bug(
       d,
       "BUG-8 未发单",
       detail="",
@@ -313,7 +313,7 @@ test "ledger_status_vocabulary_parses_duplicate_of" {
   ) catch {
     _ => abort("写夹具失败")
   }
-  let lj = match bug_list(d) {
+  let lj = match @server.bug_list(d) {
     Ok(x) => x
     Err(m) => abort(m)
   }
@@ -337,17 +337,19 @@ test "ledger_status_vocabulary_parses_duplicate_of" {
 /// 那不是"项目目录子树内"。Round 2 按子树判定后这种错配必须拒（完整矩阵见
 /// run_check_guard_test.mbt；实测调用面里也不存在这种传法：workdir 恒等于 project_dir 或 `.`）。
 test "bug4_run_check_workdir_ok" {
-  assert_false(run_check_workdir_ok(".", "temp/proj"))
-  assert_true(run_check_workdir_ok("temp/proj", "temp/proj"))
-  assert_true(run_check_workdir_ok("temp/proj/scripts", "temp/proj"))
-  assert_false(run_check_workdir_ok("", "temp/proj"))
-  assert_false(run_check_workdir_ok("../outside", "temp/proj"))
-  assert_false(run_check_workdir_ok("..", "temp/proj"))
-  assert_false(run_check_workdir_ok("/abs/path", "temp/proj"))
-  assert_false(run_check_workdir_ok("C:/Windows", "temp/proj"))
+  assert_false(@server.run_check_workdir_ok(".", "temp/proj"))
+  assert_true(@server.run_check_workdir_ok("temp/proj", "temp/proj"))
+  assert_true(@server.run_check_workdir_ok("temp/proj/scripts", "temp/proj"))
+  assert_false(@server.run_check_workdir_ok("", "temp/proj"))
+  assert_false(@server.run_check_workdir_ok("../outside", "temp/proj"))
+  assert_false(@server.run_check_workdir_ok("..", "temp/proj"))
+  assert_false(@server.run_check_workdir_ok("/abs/path", "temp/proj"))
+  assert_false(@server.run_check_workdir_ok("C:/Windows", "temp/proj"))
   // Round 1 会误拒、Round 2 必须放行：绝对 project_dir 本身（实测调用面主形态）
   assert_true(
-    run_check_workdir_ok("E:/IDEProjects/AI/Cypy", "E:/IDEProjects/AI/Cypy"),
+    @server.run_check_workdir_ok(
+      "E:/IDEProjects/AI/Cypy", "E:/IDEProjects/AI/Cypy",
+    ),
   )
 }
 
@@ -356,9 +358,12 @@ test "bug4_run_check_workdir_ok" {
 /// Windows 反斜杠 cwd / 带尾斜杠的 cwd + `dir="."` / 相对段带尾斜杠 / 宿主给不出 cwd 的退路。
 /// 最后一支是成对的：cwd 为空时必须原样回相对形态，不许拼出一条**看着像**绝对落点的串。
 test "bug134_abs_path_shapes" {
-  assert_eq(bug_abs_path("E:\\repo", "temp/bug_c5"), "E:/repo/temp/bug_c5")
-  assert_eq(bug_abs_path("/srv/app/", "."), "/srv/app")
-  assert_eq(bug_abs_path("/srv/app", "sub/"), "/srv/app/sub")
-  assert_eq(bug_abs_path("", "temp/bug_c5"), "temp/bug_c5")
-  assert_false(bug_abs_path("", "temp/bug_c5").has_prefix("/"))
+  assert_eq(
+    @server.bug_abs_path("E:\\repo", "temp/bug_c5"),
+    "E:/repo/temp/bug_c5",
+  )
+  assert_eq(@server.bug_abs_path("/srv/app/", "."), "/srv/app")
+  assert_eq(@server.bug_abs_path("/srv/app", "sub/"), "/srv/app/sub")
+  assert_eq(@server.bug_abs_path("", "temp/bug_c5"), "temp/bug_c5")
+  assert_false(@server.bug_abs_path("", "temp/bug_c5").has_prefix("/"))
 }

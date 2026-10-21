@@ -19,7 +19,7 @@ test "secs-overflow 规则存在且可统计" {
   @fs.write_string_to_file(d + "/sample.mbt", body, encoding="utf8") catch {
     _ => ()
   }
-  let r = issue_scan(d, "", 500)
+  let r = @server.issue_scan(d, "", 500)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x

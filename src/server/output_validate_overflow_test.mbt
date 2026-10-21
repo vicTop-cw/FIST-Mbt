@@ -4,8 +4,8 @@
 /// 该函数是文件私有，故测试放在同包（server）内。
 test "ov_parse_int 拒绝长数字串" {
   // 11 位 9（≈1e11）会超 int_safe（200_000_000）触发守卫
-  assert_true(@server.ov_parse_int("99999999999") is None)
+  assert_true(@server.ov_parse_int("99999999999").is_none())
   // 3 位正常数字应能解析
-  assert_true(@server.ov_parse_int("123") is Some(_))
+  assert_true(@server.ov_parse_int("123").is_some())
   assert_eq(@server.ov_parse_int("123"), Some(123))
 }

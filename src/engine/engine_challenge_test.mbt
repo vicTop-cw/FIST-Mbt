@@ -153,7 +153,7 @@ test "task_challenge critic 门禁：当前策略漂移 → 自动降档到非�
   // 档案库只"抄袭"了 scale 帧；scale 会被判课程漂移 → 自动降档 generalize（首个非漂移）
   let src_desc = "实现一个基础计算器"
   let scale_frame = "把规模/负载/覆盖度提升到 2 倍并保持语义正确与可验证（扩规模上难度）"
-  let arc = ch_arc_with(ch_desc(id, src_desc, scale_frame))
+  let arc = ch_arc_with(@engine.ch_desc(id, src_desc, scale_frame))
   match
     e.challenge(
       task_id=id,
@@ -196,7 +196,7 @@ test "task_challenge critic 门禁：全部策略皆漂移 → 拒发且不出�
       id="seed-all-" + fr.hash().to_string(),
       parent_id=None,
       goal="[lesson] 测试",
-      note=ch_desc(id, src_desc, fr),
+      note=@engine.ch_desc(id, src_desc, fr),
       code="",
       score=0.9,
       parts=Map([]),

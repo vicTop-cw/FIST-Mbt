@@ -2,7 +2,7 @@
 /// record_execution 幂等（upsert）黑盒测试：同一任务 + 同一 created_at 重复 execute
 /// 不应因 executions.id 唯一约束抛错，而应优雅覆盖（ON CONFLICT DO UPDATE）。
 fn _reset_exec(path : String) -> Unit {
-  match SqliteStore::open(path) {
+  match @store.SqliteStore::open(path) {
     Some(s) => ignore(s.clear())
     None => ()
   }
@@ -20,7 +20,7 @@ fn _stat_d(j : Json, key : String) -> Double {
 ///|
 test "record_execution 幂等：同 id 重复写入优雅覆盖不抛 UNIQUE" {
   _reset_exec("tmp_exec_upsert.db")
-  let s = match SqliteStore::open("tmp_exec_upsert.db") {
+  let s = match @store.SqliteStore::open("tmp_exec_upsert.db") {
     Some(x) => x
     None => abort("sqlite open failed")
   }

@@ -154,14 +154,14 @@ fn sd_engine(db : String) -> @engine.FistEngine {
 ///|
 test "selfdrive_1_init_idempotent" {
   let dir = sd_dir("sd_c1_init")
-  let j1 = match selfdrive_memory_init(dir, ns="sd-test") {
+  let j1 = match @ops.selfdrive_memory_init(dir, ns="sd-test") {
     Ok(x) => x
     Err(m) => abort(m)
   }
   assert_eq(sd_str(j1, "action"), "init")
   assert_eq(sd_arr_len(j1, "created"), 4)
   // 二次调用：全部跳过，不覆盖
-  let j2 = match selfdrive_memory_init(dir, ns="sd-test") {
+  let j2 = match @ops.selfdrive_memory_init(dir, ns="sd-test") {
     Ok(x) => x
     Err(m) => abort(m)
   }
@@ -181,10 +181,10 @@ test "selfdrive_1_init_idempotent" {
 ///|
 test "selfdrive_2_append_get" {
   let dir = sd_dir("sd_c2_append")
-  ignore(selfdrive_memory_init(dir, ns="sd-test"))
+  ignore(@ops.selfdrive_memory_init(dir, ns="sd-test"))
   // thinking 追加
   let j1 = match
-    selfdrive_memory_append(
+    @ops.selfdrive_memory_append(
       dir,
       ns="sd-test",
       kind="thinking",
@@ -197,7 +197,7 @@ test "selfdrive_2_append_get" {
   assert_eq(sd_str(j1, "action"), "append")
   // 再次追加
   ignore(
-    selfdrive_memory_append(
+    @ops.selfdrive_memory_append(
       dir,
       ns="sd-test",
       kind="thinking",
@@ -205,7 +205,7 @@ test "selfdrive_2_append_get" {
       now="2026-09-23T11:00:00+08:00",
     ),
   )
-  let g = match selfdrive_memory_get(dir, ns="sd-test", kind="thinking") {
+  let g = match @ops.selfdrive_memory_get(dir, ns="sd-test", kind="thinking") {
     Ok(x) => x
     Err(m) => abort(m)
   }
@@ -215,7 +215,7 @@ test "selfdrive_2_append_get" {
   assert_true(sd_str(g, "content").contains("第二轮思考"))
   // product 覆盖写
   ignore(
-    selfdrive_memory_append(
+    @ops.selfdrive_memory_append(
       dir,
       ns="sd-test",
       kind="product",
@@ -223,19 +223,25 @@ test "selfdrive_2_append_get" {
       now="2026-09-23T12:00:00+08:00",
     ),
   )
-  let gp = match selfdrive_memory_get(dir, ns="sd-test", kind="product") {
+  let gp = match @ops.selfdrive_memory_get(dir, ns="sd-test", kind="product") {
     Ok(x) => x
     Err(m) => abort(m)
   }
   assert_true(sd_str(gp, "content").contains("自驱试点"))
   // 非法 kind
   match
-    selfdrive_memory_append(dir, ns="sd-test", kind="bad", content="x", now="t") {
+    @ops.selfdrive_memory_append(
+      dir,
+      ns="sd-test",
+      kind="bad",
+      content="x",
+      now="t",
+    ) {
     Err(m) => assert_true(m.contains("未知 memory kind"))
     Ok(_) => abort("非法 kind 不应成功")
   }
   // 不存在的 kind 读取
-  let gm = match selfdrive_memory_get(dir, ns="sd-test", kind="missing") {
+  let gm = match @ops.selfdrive_memory_get(dir, ns="sd-test", kind="missing") {
     Ok(x) => x
     Err(m) => abort(m)
   }
@@ -251,14 +257,14 @@ test "selfdrive_2_append_get" {
 test "selfdrive_3_review_tick_idle" {
   let dir = sd_dir("sd_c3_idle")
   // 未初始化 memory → no_memory
-  let j0 = match selfdrive_review_tick(dir, ns="sd-test", review_every=3) {
+  let j0 = match @ops.selfdrive_review_tick(dir, ns="sd-test", review_every=3) {
     Ok(x) => x
     Err(m) => abort(m)
   }
   assert_eq(sd_str(j0, "action"), "no_memory")
   // 初始化后无报告 → idle
-  ignore(selfdrive_memory_init(dir, ns="sd-test"))
-  let j1 = match selfdrive_review_tick(dir, ns="sd-test", review_every=3) {
+  ignore(@ops.selfdrive_memory_init(dir, ns="sd-test"))
+  let j1 = match @ops.selfdrive_review_tick(dir, ns="sd-test", review_every=3) {
     Ok(x) => x
     Err(m) => abort(m)
   }
@@ -267,7 +273,7 @@ test "selfdrive_3_review_tick_idle" {
   // 报告不足 → idle
   sd_report(dir, "20260920.10.00.00.md", "# 报告1")
   sd_report(dir, "20260920.11.00.00.md", "# 报告2")
-  let j2 = match selfdrive_review_tick(dir, ns="sd-test", review_every=3) {
+  let j2 = match @ops.selfdrive_review_tick(dir, ns="sd-test", review_every=3) {
     Ok(x) => x
     Err(m) => abort(m)
   }
@@ -284,12 +290,12 @@ test "selfdrive_3_review_tick_idle" {
 ///|
 test "selfdrive_4_review_tick_trigger" {
   let dir = sd_dir("sd_c4_review")
-  ignore(selfdrive_memory_init(dir, ns="sd-test"))
+  ignore(@ops.selfdrive_memory_init(dir, ns="sd-test"))
   sd_report(dir, "20260920.10.00.00.md", "# 报告1")
   sd_report(dir, "20260920.11.00.00.md", "# 报告2")
   sd_report(dir, "20260920.12.00.00.md", "# 报告3")
   sd_report(dir, "20260920.13.00.00.md", "# 报告4")
-  let j = match selfdrive_review_tick(dir, ns="sd-test", review_every=3) {
+  let j = match @ops.selfdrive_review_tick(dir, ns="sd-test", review_every=3) {
     Ok(x) => x
     Err(m) => abort(m)
   }
@@ -314,12 +320,12 @@ test "selfdrive_4_review_tick_trigger" {
 ///|
 test "selfdrive_5_review_ready_report_first" {
   let dir = sd_dir("sd_c5_ready")
-  ignore(selfdrive_memory_init(dir, ns="sd-test"))
+  ignore(@ops.selfdrive_memory_init(dir, ns="sd-test"))
   sd_report(dir, "20260920.10.00.00.md", "# 报告1")
   sd_report(dir, "20260920.11.00.00.md", "# 报告2")
   sd_report(dir, "20260920.12.00.00.md", "# 报告3")
   // 无审视报告 → safe_exit（报告先行，拒绝推进）
-  let j0 = match selfdrive_review_ready(dir, ns="sd-test") {
+  let j0 = match @ops.selfdrive_review_ready(dir, ns="sd-test") {
     Ok(x) => x
     Err(m) => abort(m)
   }
@@ -328,14 +334,14 @@ test "selfdrive_5_review_ready_report_first" {
   sd_review(
     dir, "20260920.13.00.00.md", "# 审视报告\n\n## Next Tasks\n- [任务A]\n",
   )
-  let j1 = match selfdrive_review_ready(dir, ns="sd-test") {
+  let j1 = match @ops.selfdrive_review_ready(dir, ns="sd-test") {
     Ok(x) => x
     Err(m) => abort(m)
   }
   assert_eq(sd_str(j1, "action"), "reviewed")
   assert_eq(sd_str(j1, "reviewed"), "3")
   // 计数已推进：再 tick 不再触发（pending=0）
-  let j2 = match selfdrive_review_tick(dir, ns="sd-test", review_every=3) {
+  let j2 = match @ops.selfdrive_review_tick(dir, ns="sd-test", review_every=3) {
     Ok(x) => x
     Err(m) => abort(m)
   }
@@ -351,16 +357,16 @@ test "selfdrive_5_review_ready_report_first" {
 ///|
 test "selfdrive_6_parse_next_tasks" {
   let content = "# 审视报告\n\n## 上一轮回顾\n...\n\n## Next Tasks\n- [任务A：优化生成器]\n- [任务B：补测试]\n- [x] 已完成任务\n- [任务C]\n"
-  let tasks = selfdrive_parse_next_tasks(content, max_tasks=5)
+  let tasks = @ops.selfdrive_parse_next_tasks(content, max_tasks=5)
   assert_eq(tasks.length(), 3)
   assert_eq(tasks[0], "任务A：优化生成器")
   assert_eq(tasks[1], "任务B：补测试")
   assert_eq(tasks[2], "任务C")
   // max_tasks 截断
-  let tasks2 = selfdrive_parse_next_tasks(content, max_tasks=2)
+  let tasks2 = @ops.selfdrive_parse_next_tasks(content, max_tasks=2)
   assert_eq(tasks2.length(), 2)
   // 无 Next Tasks 段
-  let tasks3 = selfdrive_parse_next_tasks(
+  let tasks3 = @ops.selfdrive_parse_next_tasks(
     "# 审视报告\n没有任务段",
     max_tasks=5,
   )
@@ -374,12 +380,12 @@ test "selfdrive_6_parse_next_tasks" {
 ///|
 test "selfdrive_7_publish_next_idempotent" {
   let dir = sd_dir("sd_c7_publish")
-  ignore(selfdrive_memory_init(dir, ns="sd-test"))
+  ignore(@ops.selfdrive_memory_init(dir, ns="sd-test"))
   sd_report(dir, "20260920.10.00.00.md", "# 报告1")
   let e = sd_engine("temp/sd_c7.db")
   // 无审视报告 → wait
   let j0 = match
-    selfdrive_publish_next(
+    @ops.selfdrive_publish_next(
       e,
       dir,
       ns="sd-test",
@@ -396,7 +402,7 @@ test "selfdrive_7_publish_next_idempotent" {
   )
   // 发布：首次 → published 2 条，ns 内产生 2 个任务
   let j1 = match
-    selfdrive_publish_next(
+    @ops.selfdrive_publish_next(
       e,
       dir,
       ns="sd-test",
@@ -411,7 +417,7 @@ test "selfdrive_7_publish_next_idempotent" {
   assert_eq(e.list_in_ns("sd-test").length(), 2)
   // 再次发布：幂等跳过，不再新增
   let j2 = match
-    selfdrive_publish_next(
+    @ops.selfdrive_publish_next(
       e,
       dir,
       ns="sd-test",
@@ -443,7 +449,7 @@ test "selfdrive_7_publish_next_idempotent" {
 ///|
 test "selfdrive_9_publish_next_surfaces_errors" {
   let dir = sd_dir("sd_c9_publish_err")
-  ignore(selfdrive_memory_init(dir, ns="sd-test"))
+  ignore(@ops.selfdrive_memory_init(dir, ns="sd-test"))
   sd_review(
     dir, "20260920.14.00.00.md", "# 审视报告\n\n## Next Tasks\n- [自驱任务A]\n- [自驱任务B]\n",
   )
@@ -451,7 +457,7 @@ test "selfdrive_9_publish_next_surfaces_errors" {
   // BUG-217：ns="default" 被 publish_parallel 硬拒（并行发布仅限定时/自驱 ns），
   // 是确定性失败路径——必须回执 publish_errors，不得静默折叠进 skipped。
   let j = match
-    selfdrive_publish_next(
+    @ops.selfdrive_publish_next(
       e,
       dir,
       ns="default",
@@ -474,7 +480,7 @@ test "selfdrive_9_publish_next_surfaces_errors" {
 ///|
 test "selfdrive_8_agent_contract_fields" {
   // 纯函数契约生成：必须含 7 个字段标记，且 Objective 回填任务原文
-  let c = sd_agent_contract("做一个自驱任务")
+  let c = @ops.sd_agent_contract("做一个自驱任务")
   let fields = [
     "- Objective:", "- Constraints:", "- Tool policy:", "- Stop conditions:", "- Escalation:",
     "- State discipline:", "- Evidence:",
@@ -494,7 +500,8 @@ test "selfdrive_b82_export_stamp_成对" {
   let dir = sd_dir("sd_b82_export")
   let e = sd_engine("sd_b82.db")
   let path = dir + "/memory/task.md"
-  match selfdrive_export_tasks(e, dir, "sd-b82", now="2026-09-27T07:00:00Z") {
+  match
+    @ops.selfdrive_export_tasks(e, dir, "sd-b82", now="2026-09-27T07:00:00Z") {
     Err(m) => abort(m)
     Ok(_) => ()
   }
@@ -507,7 +514,7 @@ test "selfdrive_b82_export_stamp_成对" {
   }
   assert_true(head.contains("2026-09-27T07:00:00Z"))
   assert_false(head.contains("导出时间：now"))
-  match selfdrive_export_tasks(e, dir, "sd-b82") {
+  match @ops.selfdrive_export_tasks(e, dir, "sd-b82") {
     Err(m) => abort(m)
     Ok(_) => ()
   }
@@ -540,7 +547,7 @@ test "selfdrive_218_memory_init_surfaces_write_errors" {
   @fs.write_string_to_file(dir + "/memory", "x", encoding="utf8") catch {
     _ => abort("构造 fixture 失败：memory 无法落为普通文件")
   }
-  let j = match selfdrive_memory_init(dir, ns="sd-test") {
+  let j = match @ops.selfdrive_memory_init(dir, ns="sd-test") {
     Ok(x) => x
     Err(m) => abort(m)
   }

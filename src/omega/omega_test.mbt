@@ -4,7 +4,7 @@
 /// 8 种断言、错误路径、跑批汇总、五段式回传校验。
 /// 对拍基准来自 FIST(Python) omega/spec.py 计算出的已知向量。
 fn parse(s : String) -> Json {
-  match parse_spec(s) {
+  match @omega.parse_spec(s) {
     Ok(j) => j
     Err(e) => abort("parse failed: \{e}")
   }
@@ -12,9 +12,9 @@ fn parse(s : String) -> Json {
 
 ///|
 test "fnv1a64 与 Python 版对拍一致" {
-  assert_eq(fnv1a64(""), "cbf29ce484222325")
-  assert_eq(fnv1a64("hello"), "a430d84680aabd0b")
-  assert_eq(fnv1a64("abc"), "e71fa2190541574b")
+  assert_eq(@omega.fnv1a64(""), "cbf29ce484222325")
+  assert_eq(@omega.fnv1a64("hello"), "a430d84680aabd0b")
+  assert_eq(@omega.fnv1a64("abc"), "e71fa2190541574b")
 }
 
 ///|
@@ -22,14 +22,14 @@ test "compute_fingerprint 与 Python json.dumps(sort_keys) 对拍一致" {
   let spec = parse(
     "{\"op\":\"report\",\"version\":\"1.0\",\"definition\":{\"sig\":\"a\"},\"preconditions\":[\"x\"],\"laws\":[\"L\"],\"tests\":[{\"input\":{\"a\":\"1\"},\"expected\":\"ok\"}]}",
   )
-  let fp = compute_fingerprint(spec)
+  let fp = @omega.compute_fingerprint(spec)
   assert_eq(fp, "fnv1a64:dd1bc62c4d988913")
 }
 
 ///|
 test "validate_schema 缺字段报错" {
   let spec = parse("{\"op\":\"report\",\"version\":\"1.0\"}")
-  let errors = validate_schema(spec)
+  let errors = @omega.validate_schema(spec)
   assert_eq(errors.length(), 5) // definition/preconditions/laws/tests/fingerprint 缺失
 }
 
@@ -38,7 +38,7 @@ test "verify_fingerprint 匹配通过" {
   let spec = parse(
     "{\"op\":\"report\",\"version\":\"1.0\",\"definition\":{\"sig\":\"a\"},\"preconditions\":[\"x\"],\"laws\":[\"L\"],\"tests\":[{\"input\":{\"a\":\"1\"},\"expected\":\"ok\"}],\"fingerprint\":\"fnv1a64:dd1bc62c4d988913\"}",
   )
-  match verify_fingerprint(spec) {
+  match @omega.verify_fingerprint(spec) {
     Ok(_) => ()
     Err(m) => abort("应通过: \{m}")
   }
@@ -49,7 +49,7 @@ test "verify_fingerprint 不匹配报错" {
   let spec = parse(
     "{\"op\":\"report\",\"version\":\"1.0\",\"definition\":{\"sig\":\"a\"},\"preconditions\":[\"x\"],\"laws\":[\"L\"],\"tests\":[{\"input\":{\"a\":\"1\"},\"expected\":\"ok\"}],\"fingerprint\":\"fnv1a64:deadbeef00000000\"}",
   )
-  match verify_fingerprint(spec) {
+  match @omega.verify_fingerprint(spec) {
     Err(_) => ()
     Ok(_) => abort("应失败")
   }
@@ -60,7 +60,7 @@ test "expand_parameters 展开参数化用例" {
   let spec = parse(
     "{\"op\":\"t\",\"version\":\"1.0\",\"tests\":[{\"parameters\":{\"mode\":[\"deferred\",\"immediate\"],\"days\":[1,2]},\"input\":{\"mode\":\"${mode}\",\"days\":\"${days}\"},\"expected\":\"r\"}]}",
   )
-  let exp = expand_parameters(spec)
+  let exp = @omega.expand_parameters(spec)
   match exp.value("tests") {
     Some(Array(a)) => {
       assert_eq(a.length(), 2)
@@ -89,7 +89,7 @@ test "expand_parameters 参数长度不一致时退化保留原测试" {
   let spec = parse(
     "{\"op\":\"t\",\"version\":\"1.0\",\"tests\":[{\"parameters\":{\"mode\":[\"a\",\"b\"],\"days\":[1]},\"input\":{\"mode\":\"${mode}\"},\"expected\":\"r\"}]}",
   )
-  let exp = expand_parameters(spec)
+  let exp = @omega.expand_parameters(spec)
   match exp.value("tests") {
     Some(Array(a)) => assert_eq(a.length(), 1)
     _ => abort("tests 缺失")
@@ -98,7 +98,10 @@ test "expand_parameters 参数长度不一致时退化保留原测试" {
 
 ///|
 test "gate 精确相等断言" {
-  let (ok, detail) = check_expected(Json::string("ok"), Json::string("ok"))
+  let (ok, detail) = @omega.check_expected(
+    Json::string("ok"),
+    Json::string("ok"),
+  )
   assert_eq(ok, true)
   check_string(detail, "精确相等")
 }
@@ -109,42 +112,42 @@ test "gate approx 数值容差&field 提取" {
   let expected = parse(
     "{\"$assert\":\"approx\",\"field\":\"score\",\"value\":3.14,\"epsilon\":0.01}",
   )
-  let (ok, _) = check_expected(parse("{\"score\":3.141}"), expected)
+  let (ok, _) = @omega.check_expected(parse("{\"score\":3.141}"), expected)
   assert_eq(ok, true)
-  let (ok2, _) = check_expected(parse("{\"score\":3.2}"), expected)
+  let (ok2, _) = @omega.check_expected(parse("{\"score\":3.2}"), expected)
   assert_eq(ok2, false)
 }
 
 ///|
 test "gate regex_lite 前中后缀匹配" {
-  assert_eq(regex_lite("OK done", "^OK"), true)
-  assert_eq(regex_lite("done OK", "^OK$"), false)
-  assert_eq(regex_lite("OK", "^OK$"), true)
-  assert_eq(regex_lite("hello world", "lo wo"), true)
-  assert_eq(regex_lite("fail", "OK"), false)
+  assert_eq(@omega.regex_lite("OK done", "^OK"), true)
+  assert_eq(@omega.regex_lite("done OK", "^OK$"), false)
+  assert_eq(@omega.regex_lite("OK", "^OK$"), true)
+  assert_eq(@omega.regex_lite("hello world", "lo wo"), true)
+  assert_eq(@omega.regex_lite("fail", "OK"), false)
 }
 
 ///|
 test "gate regex_lite 单字符锚点 ^ / $ 不应匹配一切（BUG-226）" {
-  assert_eq(regex_lite("anything", "^"), false)
-  assert_eq(regex_lite("anything", "$"), false)
-  assert_eq(regex_lite("", "^"), false)
-  assert_eq(regex_lite("", "$"), false)
+  assert_eq(@omega.regex_lite("anything", "^"), false)
+  assert_eq(@omega.regex_lite("anything", "$"), false)
+  assert_eq(@omega.regex_lite("", "^"), false)
+  assert_eq(@omega.regex_lite("", "$"), false)
 }
 
 ///|
 test "gate subset / superset 集合包含" {
-  let (ok1, _) = check_expected(
+  let (ok1, _) = @omega.check_expected(
     parse("[1,2,3]"),
     parse("{\"$assert\":\"subset\",\"value\":[1,2]}"),
   )
   assert_eq(ok1, true)
-  let (ok2, _) = check_expected(
+  let (ok2, _) = @omega.check_expected(
     parse("[1,2,3]"),
     parse("{\"$assert\":\"subset\",\"value\":[1,9]}"),
   )
   assert_eq(ok2, false)
-  let (ok3, _) = check_expected(
+  let (ok3, _) = @omega.check_expected(
     parse("[1,2]"),
     parse("{\"$assert\":\"superset\",\"value\":[1,2,3]}"),
   )
@@ -153,17 +156,17 @@ test "gate subset / superset 集合包含" {
 
 ///|
 test "gate type 类型检查" {
-  let (ok1, _) = check_expected(
+  let (ok1, _) = @omega.check_expected(
     Json::number(1.0),
     parse("{\"$assert\":\"type\",\"value\":\"int\"}"),
   )
   assert_eq(ok1, true)
-  let (ok2, _) = check_expected(
+  let (ok2, _) = @omega.check_expected(
     Json::string("x"),
     parse("{\"$assert\":\"type\",\"value\":\"int\"}"),
   )
   assert_eq(ok2, false)
-  let (ok3, _) = check_expected(
+  let (ok3, _) = @omega.check_expected(
     parse("[1]"),
     parse("{\"$assert\":\"type\",\"value\":\"list\"}"),
   )
@@ -172,17 +175,17 @@ test "gate type 类型检查" {
 
 ///|
 test "gate exists 存在性检查" {
-  let (ok1, _) = check_expected(
+  let (ok1, _) = @omega.check_expected(
     parse("{\"a\":1}"),
     parse("{\"$assert\":\"exists\",\"key\":\"a\"}"),
   )
   assert_eq(ok1, true)
-  let (ok2, _) = check_expected(
+  let (ok2, _) = @omega.check_expected(
     parse("{\"a\":1}"),
     parse("{\"$assert\":\"exists\",\"key\":\"b\"}"),
   )
   assert_eq(ok2, false)
-  let (ok3, _) = check_expected(
+  let (ok3, _) = @omega.check_expected(
     Json::string("hello"),
     parse("{\"$assert\":\"exists\",\"key\":\"ell\"}"),
   )
@@ -191,12 +194,12 @@ test "gate exists 存在性检查" {
 
 ///|
 test "gate range 范围检查" {
-  let (ok1, _) = check_expected(
+  let (ok1, _) = @omega.check_expected(
     Json::number(5.0),
     parse("{\"$assert\":\"range\",\"min\":0,\"max\":10}"),
   )
   assert_eq(ok1, true)
-  let (ok2, _) = check_expected(
+  let (ok2, _) = @omega.check_expected(
     Json::number(15.0),
     parse("{\"$assert\":\"range\",\"min\":0,\"max\":10}"),
   )
@@ -208,7 +211,9 @@ test "gate run_tests 跑批 normal + error 路径" {
   let spec = parse(
     "{\"op\":\"t\",\"version\":\"1.0\",\"tests\":[{\"input\":{\"x\":1},\"expected\":{\"$assert\":\"eq\",\"value\":1}},{\"input\":{\"x\":2},\"error\":\"boom\"}]}",
   )
-  let results = run_tests(spec, fn(input : Json) -> Result[Json, String] {
+  let results = @omega.run_tests(spec, fn(
+    input : Json,
+  ) -> Result[Json, String] {
     match input.value("x") {
       Some(Number(n, ..)) if n == 1.0 => Ok(Json::number(1.0))
       _ => Err("boom: something failed")
@@ -237,7 +242,7 @@ test "gate summarize 汇总准确率" {
   results[1] = Json::object({ "passed": @json.to_json(false) })
   results[2] = Json::object({ "passed": @json.to_json(true) })
   results[3] = Json::object({ "passed": @json.to_json(true) })
-  let s = summarize(results)
+  let s = @omega.summarize(results)
   match s.value("accuracy") {
     Some(Number(n, ..)) => assert_eq(n, 75.0)
     _ => abort("accuracy 缺失")
@@ -251,7 +256,7 @@ test "gate summarize 汇总准确率" {
 ///|
 test "check_report_format 五段式校验" {
   let ok_text = "结论：完成\n证据：x\n分析：y\n缺口与风险：z\n建议入档位置：w"
-  let results = check_report_format(ok_text)
+  let results = @omega.check_report_format(ok_text)
   assert_eq(results.length(), 5)
   for r in results {
     match r.value("passed") {
@@ -259,12 +264,12 @@ test "check_report_format 五段式校验" {
       _ => abort("passed 缺失")
     }
   }
-  let bad = check_report_format("只有结论")
+  let bad = @omega.check_report_format("只有结论")
   match bad[1].value("passed") {
     Some(False) => ()
     _ => abort("passed 缺失")
   }
-  let empty = check_report_format("   ")
+  let empty = @omega.check_report_format("   ")
   assert_eq(empty.length(), 1)
 }
 
@@ -274,7 +279,7 @@ test "gate custom 不变量集：全部通过" {
   let expected = parse(
     "{\"$assert\":\"custom\",\"rules\":[{\"op\":\"gte\",\"field\":\"score\",\"value\":0},{\"op\":\"lte\",\"field\":\"score\",\"value\":100},{\"op\":\"type\",\"field\":\"name\",\"value\":\"string\"},{\"op\":\"contains\",\"field\":\"name\",\"value\":\"test\"}]}",
   )
-  let (ok, _) = check_expected(actual, expected)
+  let (ok, _) = @omega.check_expected(actual, expected)
   assert_eq(ok, true)
 }
 
@@ -284,7 +289,7 @@ test "gate custom 不变量集：第一条失败短路" {
   let expected = parse(
     "{\"$assert\":\"custom\",\"rules\":[{\"op\":\"lte\",\"field\":\"score\",\"value\":100},{\"op\":\"type\",\"field\":\"name\",\"value\":\"string\"}]}",
   )
-  let (ok, detail) = check_expected(actual, expected)
+  let (ok, detail) = @omega.check_expected(actual, expected)
   assert_eq(ok, false)
   check_string(detail, "lte")
 }
@@ -295,13 +300,13 @@ test "gate custom 不变量集：无 field 对整体应用" {
   let expected = parse(
     "{\"$assert\":\"custom\",\"rules\":[{\"op\":\"gt\",\"value\":0},{\"op\":\"lt\",\"value\":100}]}",
   )
-  let (ok, _) = check_expected(actual, expected)
+  let (ok, _) = @omega.check_expected(actual, expected)
   assert_eq(ok, true)
 }
 
 ///|
 test "gate custom 不变量集：空 rules 拒绝" {
-  let (ok, _) = check_expected(
+  let (ok, _) = @omega.check_expected(
     Json::null(),
     parse("{\"$assert\":\"custom\",\"rules\":[]}"),
   )
@@ -310,7 +315,7 @@ test "gate custom 不变量集：空 rules 拒绝" {
 
 ///|
 test "gate custom 不变量集：未知 op 拒绝" {
-  let (ok, _) = check_expected(
+  let (ok, _) = @omega.check_expected(
     Json::number(1.0),
     parse("{\"$assert\":\"custom\",\"rules\":[{\"op\":\"weird\",\"value\":1}]}"),
   )

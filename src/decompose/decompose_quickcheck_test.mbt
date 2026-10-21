@@ -22,7 +22,7 @@ test "quickcheck: default_slices 数量与内容前缀不变量" {
       if n < 1 || n > 100 {
         true // 超出合理拆分域（Int 生成器含全幅大整数），属性放行
       } else {
-        let slices = default_slices(n, parent_desc=d)
+        let slices = @decompose.default_slices(n, parent_desc=d)
         if slices.length() != n {
           false
         } else {
@@ -51,15 +51,15 @@ test "quickcheck: difficulty_label 三档合法且整段单调（前易后难）
       if split_n < 1 || split_n > 100 {
         true // 超出合理拆分域，属性放行（避免大 split_n 的整段扫描）
       } else {
-        let l = difficulty_label(idx, split_n)
+        let l = @decompose.difficulty_label(idx, split_n)
         if diff_order(l) > 2 {
           false
         } else {
           // 对生成出的 split_n 校验整段难度序列单调不减（含越界 idx 的钳制路径）
           let mut mono = true
           for j = 1; j < split_n; j = j + 1 {
-            if diff_order(difficulty_label(j, split_n)) >
-              diff_order(difficulty_label(j + 1, split_n)) {
+            if diff_order(@decompose.difficulty_label(j, split_n)) >
+              diff_order(@decompose.difficulty_label(j + 1, split_n)) {
               mono = false
             }
           }
@@ -82,8 +82,8 @@ test "quickcheck: difficulty_label_from 随难度数值单调不减" {
       if d1 > d2 {
         true
       } else {
-        diff_order(difficulty_label_from(d1)) <=
-        diff_order(difficulty_label_from(d2))
+        diff_order(@decompose.difficulty_label_from(d1)) <=
+        diff_order(@decompose.difficulty_label_from(d2))
       }
     },
     count=100,

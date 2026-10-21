@@ -2,7 +2,7 @@
 /// 探针：复现 doctor 七态机闭环，逐步打印每步 Err（不静默吞错）。
 /// 本文件位于 src/engine 包内，FistEngine 为同包本地符号。
 test "engine_doctor_closed_loop_regression" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   let now = "2026-09-27T10:00:00Z"
   let c4 = e.publish(
     project_dir="./",

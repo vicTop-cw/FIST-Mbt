@@ -128,7 +128,7 @@ fn pl_tick(
   now : String,
   timeout_sec? : Int = 2400,
 ) -> Json {
-  match pipeline_tick(e, dir, now, ns="cron-auto", timeout_sec~) {
+  match @ops.pipeline_tick(e, dir, now, ns="cron-auto", timeout_sec~) {
     Ok(j) => j
     Err(m) => abort("pipeline_tick 失败: " + m)
   }
@@ -142,7 +142,7 @@ fn pl_tick_named(
   now : String,
   prompt_name : String,
 ) -> Json {
-  match pipeline_tick(e, dir, now, ns="cron-auto", prompt_name~) {
+  match @ops.pipeline_tick(e, dir, now, ns="cron-auto", prompt_name~) {
     Ok(j) => j
     Err(m) => abort("pipeline_tick 失败: " + m)
   }
@@ -196,7 +196,7 @@ test "pipeline_2_prompt_ready_to_pending" {
   pl_set_state(dir, "Creating")
   let e = wd_sqlite_engine("temp/pl_c2.db")
   let j = match
-    pipeline_tick(
+    @ops.pipeline_tick(
       e,
       dir,
       "2026-09-20T11:05:00+08:00",
@@ -281,7 +281,7 @@ test "pipeline_7_report_ready_without_report_blocked" {
   pl_set_state(dir, "Running")
   let e = wd_sqlite_engine("temp/pl_c7.db")
   let j = match
-    pipeline_tick(
+    @ops.pipeline_tick(
       e,
       dir,
       "2026-09-20T16:35:00+08:00",
@@ -305,7 +305,7 @@ test "pipeline_8_report_ready_with_report_closes" {
   pl_set_state(dir, "Running")
   let e = wd_sqlite_engine("temp/pl_c8.db")
   let j = match
-    pipeline_tick(
+    @ops.pipeline_tick(
       e,
       dir,
       "2026-09-20T17:35:00+08:00",
@@ -404,7 +404,7 @@ test "pipeline_14_default_namespace_rejected" {
   pl_prompt(dir, "20260921.00.30.00.md", "# 提示词14")
   pl_set_state(dir, "Pending")
   let e = wd_sqlite_engine("temp/pl_c14.db")
-  match pipeline_tick(e, dir, "2026-09-21T00:35:00+08:00", ns="default") {
+  match @ops.pipeline_tick(e, dir, "2026-09-21T00:35:00+08:00", ns="default") {
     Ok(_) => abort("default 命名空间应被拒绝")
     Err(_) => ()
   }
@@ -459,7 +459,7 @@ test "pipeline_16_backlog_does_not_stack_new_round" {
 /// Tool Use Rubric 判定（P1）：含结束标记 → true。
 test "pipeline_17_rubric_detect_true" {
   assert_eq(
-    pipeline_has_rubric("正文……\n<!-- TOOL_USE_RUBRIC_END -->\n"),
+    @ops.pipeline_has_rubric("正文……\n<!-- TOOL_USE_RUBRIC_END -->\n"),
     true,
   )
 }
@@ -467,22 +467,28 @@ test "pipeline_17_rubric_detect_true" {
 ///|
 /// Tool Use Rubric 判定：不含结束标记 → false。
 test "pipeline_18_rubric_detect_false_no_mark" {
-  assert_eq(pipeline_has_rubric("正文……无标记"), false)
+  assert_eq(@ops.pipeline_has_rubric("正文……无标记"), false)
 }
 
 ///|
 /// Tool Use Rubric 判定：空串 fail-closed。
 test "pipeline_19_rubric_detect_false_empty" {
-  assert_eq(pipeline_has_rubric(""), false)
+  assert_eq(@ops.pipeline_has_rubric(""), false)
 }
 
 ///|
 /// Tool Use Rubric 判定（BUG-146 反 spoof 锁）：仅结束标记（夹空白/换行）但无真实正文
 /// 不得判 true——否则只贴一个结束标记就能绕过自检。
 test "pipeline_22_rubric_detect_false_marker_only" {
-  assert_eq(pipeline_has_rubric("<!-- TOOL_USE_RUBRIC_END -->"), false)
-  assert_eq(pipeline_has_rubric("  \n<!-- TOOL_USE_RUBRIC_END -->\n  "), false)
-  assert_eq(pipeline_has_rubric("\n\n<!-- TOOL_USE_RUBRIC_END -->\n\n"), false)
+  assert_eq(@ops.pipeline_has_rubric("<!-- TOOL_USE_RUBRIC_END -->"), false)
+  assert_eq(
+    @ops.pipeline_has_rubric("  \n<!-- TOOL_USE_RUBRIC_END -->\n  "),
+    false,
+  )
+  assert_eq(
+    @ops.pipeline_has_rubric("\n\n<!-- TOOL_USE_RUBRIC_END -->\n\n"),
+    false,
+  )
 }
 
 ///|
@@ -494,7 +500,7 @@ test "pipeline_20_prompt_ready_with_rubric" {
   pl_set_state(dir, "Creating")
   let e = wd_sqlite_engine("temp/pl_c20.db")
   let j = match
-    pipeline_tick(
+    @ops.pipeline_tick(
       e,
       dir,
       "2026-09-21T08:00:00+08:00",
@@ -517,7 +523,7 @@ test "pipeline_21_prompt_ready_without_rubric" {
   pl_set_state(dir, "Creating")
   let e = wd_sqlite_engine("temp/pl_c21.db")
   let j = match
-    pipeline_tick(
+    @ops.pipeline_tick(
       e,
       dir,
       "2026-09-21T09:00:00+08:00",

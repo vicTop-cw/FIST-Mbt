@@ -4,8 +4,8 @@
 
 ///|
 /// 造一条链 C→B→A（C 依赖 B，B 依赖 A，A 无依赖）+ 独立节点 D。
-fn cycle_test_engine() -> FistEngine {
-  let e = FistEngine::new()
+fn cycle_test_engine() -> @engine.FistEngine {
+  let e = @engine.FistEngine::new()
   let specs : Array[(String, Array[String])] = [
     ("A", []),
     ("B", ["A"]),
@@ -28,7 +28,7 @@ fn cycle_test_engine() -> FistEngine {
 
 ///|
 /// 直接给任务追加依赖（绕过 dag_depend，用于构造前置状态）。
-fn add_dep(e : FistEngine, task_id : String, dep_id : String) -> Unit {
+fn add_dep(e : @engine.FistEngine, task_id : String, dep_id : String) -> Unit {
   ignore(e.dag_depend(task_id~, dep_id~, now="2026-01-01T05:00:00Z"))
 }
 

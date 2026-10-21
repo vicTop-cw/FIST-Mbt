@@ -7,12 +7,12 @@
 /// 现有锁 `caf_knn_search_topk/boundary/k_greater_than_records` 只测 Top-K 的**返回数量**与边界，
 /// **没测区分度**——若不同 context 都命中同一组记录，回放就退化成"单一优先级"。
 /// 本锁钉死"不同 context → 不同模型"这一标准 1 前提。
-fn c1_mem() -> CafMemory {
-  let mem = CafMemory::new()
-  let hs = caf_feature_hash("simple task")
-  let hc = caf_feature_hash("complex task")
+fn c1_mem() -> @router.CafMemory {
+  let mem = @router.CafMemory::new()
+  let hs = @router.caf_feature_hash("simple task")
+  let hc = @router.caf_feature_hash("complex task")
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=hs,
       model="m_free",
       ok=true,
@@ -21,7 +21,7 @@ fn c1_mem() -> CafMemory {
     ),
   )
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=hs,
       model="m_free",
       ok=true,
@@ -30,7 +30,7 @@ fn c1_mem() -> CafMemory {
     ),
   )
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=hs,
       model="m_free",
       ok=false,
@@ -39,7 +39,7 @@ fn c1_mem() -> CafMemory {
     ),
   )
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=hc,
       model="m_premium",
       ok=true,
@@ -48,7 +48,7 @@ fn c1_mem() -> CafMemory {
     ),
   )
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=hc,
       model="m_premium",
       ok=true,
@@ -57,7 +57,7 @@ fn c1_mem() -> CafMemory {
     ),
   )
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=hc,
       model="m_premium",
       ok=true,
@@ -73,7 +73,7 @@ fn c1_mem() -> CafMemory {
 /// k=3 时精确 hash 匹配（编辑距离 0）的 3 条 simple 记录排前，首条即 m_free。
 test "caf_c1_1_简单任务回放命中m_free" {
   let mem = c1_mem()
-  let stats = caf_stats(mem.knn_search("simple task", 3))
+  let stats = @router.caf_stats(mem.knn_search("simple task", 3))
   if stats.is_empty() {
     abort("knn_search 应返回非空")
   }
@@ -95,7 +95,7 @@ test "caf_c1_1_简单任务回放命中m_free" {
 /// 若此锁红，说明不同 context 未命中不同邻域，离线回放无法区分任务类型。
 test "caf_c1_2_复杂任务回放命中m_premium" {
   let mem = c1_mem()
-  let stats = caf_stats(mem.knn_search("complex task", 3))
+  let stats = @router.caf_stats(mem.knn_search("complex task", 3))
   if stats.is_empty() {
     abort("knn_search 应返回非空")
   }
@@ -117,8 +117,8 @@ test "caf_c1_2_复杂任务回放命中m_premium" {
 /// 且简单任务 rate (0.667) < 复杂任务 rate (1.0)（复杂任务更可靠 → 回放优先 premium）。
 test "caf_c1_3_两种任务类型严格区分" {
   let mem = c1_mem()
-  let simple = caf_stats(mem.knn_search("simple task", 3))
-  let complex = caf_stats(mem.knn_search("complex task", 3))
+  let simple = @router.caf_stats(mem.knn_search("simple task", 3))
+  let complex = @router.caf_stats(mem.knn_search("complex task", 3))
   if simple[0].model == complex[0].model {
     abort(
       "不同任务类型应命中不同模型，实际均为 " +
@@ -150,11 +150,11 @@ test "caf_c1_3_两种任务类型严格区分" {
 test "caf_c1_4_候选集置换不变" {
   let mem = c1_mem()
   // 全量聚合，保证 m_free（rate 0.667）与 m_premium（rate 1.0）都在 stats 里
-  let stats = caf_stats(mem.all())
+  let stats = @router.caf_stats(mem.all())
   let base : Array[String] = ["m_free", "m_premium"]
   let perm : Array[String] = ["m_premium", "m_free"]
-  let r_base = caf_soft_reorder(base, stats)
-  let r_perm = caf_soft_reorder(perm, stats)
+  let r_base = @router.caf_soft_reorder(base, stats)
+  let r_perm = @router.caf_soft_reorder(perm, stats)
   if r_base.length() != 2 {
     abort("应返回 2 个候选，实际 " + r_base.length().to_string())
   }
@@ -196,12 +196,12 @@ test "caf_c1_4_候选集置换不变" {
 /// 前提：邻域内候选 rate 互不相同（无 tie，tie 稳定由 R13 锁）。
 test "caf_c1_5_混合邻域排列不变" {
   let mem = c1_mem()
-  let stats = caf_stats(mem.all())
+  let stats = @router.caf_stats(mem.all())
   // m_free / m_premium 有依据（rate 0.667 / 1.0），m_unknown 无依据（不在 stats）
   let base : Array[String] = ["m_free", "m_premium", "m_unknown"]
   let perm : Array[String] = ["m_unknown", "m_premium", "m_free"]
-  let r_base = caf_soft_reorder(base, stats)
-  let r_perm = caf_soft_reorder(perm, stats)
+  let r_base = @router.caf_soft_reorder(base, stats)
+  let r_perm = @router.caf_soft_reorder(perm, stats)
   if r_base.length() != 3 {
     abort("应返回 3 个候选，实际 " + r_base.length().to_string())
   }
@@ -247,9 +247,9 @@ test "caf_c1_5_混合邻域排列不变" {
 /// 因为候选都无依据时系统不该自作主张重排，应把决策交还确定性路由的原始顺序。
 test "caf_c1_6_无邻域保留原始顺序" {
   let mem = c1_mem()
-  let stats = caf_stats(mem.all())
+  let stats = @router.caf_stats(mem.all())
   let base : Array[String] = ["m_unknown", "m_a", "m_b"]
-  let r = caf_soft_reorder(base, stats)
+  let r = @router.caf_soft_reorder(base, stats)
   if r.length() != 3 {
     abort("应返回 3 个候选，实际 " + r.length().to_string())
   }
@@ -268,7 +268,7 @@ test "caf_c1_6_无邻域保留原始顺序" {
   }
   // 反向输入（m_b 在前）：仍保原序（恒等，非置换不变）
   let rev : Array[String] = ["m_b", "m_a", "m_unknown"]
-  let r2 = caf_soft_reorder(rev, stats)
+  let r2 = @router.caf_soft_reorder(rev, stats)
   for i in 0..<r2.length() {
     if r2[i] != rev[i] {
       abort(
@@ -283,7 +283,7 @@ test "caf_c1_6_无邻域保留原始顺序" {
   }
   // 单元素候选（边界）
   let single : Array[String] = ["m_unknown"]
-  let r3 = caf_soft_reorder(single, stats)
+  let r3 = @router.caf_soft_reorder(single, stats)
   if r3.length() != 1 || r3[0] != "m_unknown" {
     abort("单元素无邻域候选应保原序，实际 " + r3.to_string())
   }

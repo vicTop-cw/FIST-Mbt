@@ -6,10 +6,10 @@
 /// - 坏字段单条跳过，正常条不被牵连
 
 ///|
-fn ptest_mem() -> CafMemory {
-  let mem = CafMemory::new(max_size=10)
+fn ptest_mem() -> @router.CafMemory {
+  let mem = @router.CafMemory::new(max_size=10)
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=1,
       model="free-a",
       ok=true,
@@ -18,7 +18,7 @@ fn ptest_mem() -> CafMemory {
     ),
   )
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=2,
       model="free-b",
       ok=false,
@@ -27,7 +27,7 @@ fn ptest_mem() -> CafMemory {
     ),
   )
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=3,
       model="free-a",
       ok=true,
@@ -41,9 +41,9 @@ fn ptest_mem() -> CafMemory {
 ///|
 /// 空记忆往返：dump → load → all() 空、warns 空、max_size 保留。
 test "caf_persist_1_空记忆往返" {
-  let mem = CafMemory::new(max_size=7)
-  let json = caf_memory_dump(mem)
-  let (back, warns) = caf_memory_load(json)
+  let mem = @router.CafMemory::new(max_size=7)
+  let json = @router.caf_memory_dump(mem)
+  let (back, warns) = @router.caf_memory_load(json)
   if warns.length() != 0 {
     abort("空记忆往返不应警告，got \{warns.length()}")
   }
@@ -57,8 +57,8 @@ test "caf_persist_1_空记忆往返" {
 test "caf_persist_2_多条记录往返" {
   let mem = ptest_mem()
   let orig = mem.all()
-  let json = caf_memory_dump(mem)
-  let (back, warns) = caf_memory_load(json)
+  let json = @router.caf_memory_dump(mem)
+  let (back, warns) = @router.caf_memory_load(json)
   if warns.length() != 0 {
     abort("正常往返不应警告，got \{warns.length()}")
   }
@@ -97,7 +97,7 @@ test "caf_persist_3_坏类型records降级" {
     "max_size": Json::number(10.0),
     "records": Json::string("oops"),
   }
-  let (back, warns) = caf_memory_load(bad)
+  let (back, warns) = @router.caf_memory_load(bad)
   if warns.length() == 0 {
     abort("坏类型 records 应产生 warning，实际 0 条")
   }
@@ -129,7 +129,7 @@ test "caf_persist_4_坏字段单条跳过" {
       }),
     ]),
   }
-  let (back, warns) = caf_memory_load(bad)
+  let (back, warns) = @router.caf_memory_load(bad)
   if warns.length() == 0 {
     abort("有坏字段应产生 warning，实际 0 条")
   }

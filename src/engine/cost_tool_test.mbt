@@ -6,7 +6,7 @@
 ///|
 /// BUG-181①：超支额必须可见——remaining 为负（=current-limit），不再被抹成 0。
 test "BUG-181：cost_budget_check 超支时 remaining 为负（超支额可见）" {
-  let j = budget_check(100.0, 150.0)
+  let j = @engine.budget_check(100.0, 150.0)
   match j.value("exceeded") {
     Some(True) => ()
     Some(False) => abort("150>100 应 exceeded: " + j.stringify())
@@ -38,7 +38,7 @@ test "BUG-181：cost_budget_check 超支时 remaining 为负（超支额可见�
 /// BUG-181②：limit<=0 是非法预算，不是"已超支"——不得报 switch_free 误导 action。
 /// limit=0 时 current>=0 恒真，旧实现无条件 exceeded=true + switch_free。
 test "BUG-181：cost_budget_check limit<=0 视为非法预算，不报误导性 action" {
-  let j0 = budget_check(0.0, 5.0)
+  let j0 = @engine.budget_check(0.0, 5.0)
   match j0.value("valid") {
     Some(False) => ()
     Some(True) => abort("limit=0 应 valid=false: " + j0.stringify())
@@ -57,7 +57,7 @@ test "BUG-181：cost_budget_check limit<=0 视为非法预算，不报误导性 
     _ => abort("limit=0 应 action=rejected: " + j0.stringify())
   }
 
-  let jneg = budget_check(-10.0, 1.0)
+  let jneg = @engine.budget_check(-10.0, 1.0)
   match jneg.value("action") {
     Some(String(a)) => assert_eq(a, "rejected")
     _ => abort("limit<0 应 action=rejected: " + jneg.stringify())
@@ -67,7 +67,7 @@ test "BUG-181：cost_budget_check limit<=0 视为非法预算，不报误导性 
 ///|
 /// 回归零：正常预算、未超支——行为不变（remaining>0、action=continue）。
 test "BUG-181：正常预算未超支时行为不变" {
-  let j = budget_check(100.0, 30.0)
+  let j = @engine.budget_check(100.0, 30.0)
   match j.value("valid") {
     Some(True) => ()
     _ => abort("正常预算应 valid=true: " + j.stringify())

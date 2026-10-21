@@ -3,12 +3,15 @@
 // Run `moon test` to execute and `moon test --update` to refresh snapshots.
 
 ///|
-fn new_engine() -> FistEngine {
-  FistEngine::new()
+fn new_engine() -> @engine.FistEngine {
+  @engine.FistEngine::new()
 }
 
 ///|
-fn publish_root(e : FistEngine, desc? : String = "测试根任务") -> String {
+fn publish_root(
+  e : @engine.FistEngine,
+  desc? : String = "测试根任务",
+) -> String {
   let r = e.publish(
     project_dir="/proj/demo",
     description=desc,
@@ -148,7 +151,7 @@ test "非归档状态不允许 delete" {
 }
 
 ///|
-fn count_status(e : FistEngine, s : String) -> Int {
+fn count_status(e : @engine.FistEngine, s : String) -> Int {
   let mut n = 0
   for t in e.list_all() {
     if t.status_to_string() == s {

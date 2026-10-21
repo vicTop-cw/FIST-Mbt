@@ -48,7 +48,7 @@ fn hc_signal_verdict(j : Json, key : String) -> String {
 ///|
 test "health_check：空仓 → idle（traffic=0），latency insufficient" {
   let e = ba_engine()
-  let j = render_health_check(e.list_all(), "default")
+  let j = @server.render_health_check(e.list_all(), "default")
   assert_eq(hc_grade(j), "idle")
   assert_eq(hc_signal_verdict(j, "traffic"), "idle")
   assert_eq(hc_signal_verdict(j, "latency"), "insufficient")
@@ -70,7 +70,7 @@ test "health_check：积压先行预警——待领取过半 → saturation atte
     Err(m) => abort("plan_deep failed: \{m}")
   }
   // 5 任务（根+4 子）：ready=4 → 饱和 0.8 > 0.5 → attention
-  let j = render_health_check(e.list_all(), "default")
+  let j = @server.render_health_check(e.list_all(), "default")
   assert_eq(hc_signal_verdict(j, "saturation"), "attention")
   assert_eq(hc_grade(j), "attention")
 }
@@ -143,7 +143,7 @@ test "health_check：healthy + latency 百分位——3 完成 1 待领取，p50
     )
     ignore(e.store.create_task(t))
   }
-  let j = render_health_check(e.list_all(), "default")
+  let j = @server.render_health_check(e.list_all(), "default")
   assert_eq(hc_signal_verdict(j, "latency"), "ok")
   assert_eq(hc_grade(j), "healthy")
   match j.value("signals") {
@@ -215,7 +215,7 @@ test "health_check：latency p50/p90 用最近秩 (n-1)*p（BUG-207）" {
     )
     ignore(e.store.create_task(t))
   }
-  let j = render_health_check(e.list_all(), "default")
+  let j = @server.render_health_check(e.list_all(), "default")
   assert_eq(hc_signal_verdict(j, "latency"), "ok")
   assert_eq(hc_latency_num(j, "p50_secs").to_int(), 50)
   assert_eq(hc_latency_num(j, "p90_secs").to_int(), 90)
@@ -245,7 +245,7 @@ test "board_ascii 按状态分组 + 深度缩进 + 状态合计" {
     e.execute(task_id=c0, deliverable="成果 v1", now="2026-09-25T10:04:00Z"),
   )
 
-  let board = render_board_ascii(e.list_all(), "")
+  let board = @server.render_board_ascii(e.list_all(), "")
   let j = board.stringify()
   // 状态合计头尾都在
   assert_true(j.contains("状态合计"))
@@ -279,10 +279,10 @@ test "board_ascii 支持 namespace 过滤" {
   }
   let tasks = e.list_all()
   // 全部命名空间视图应含任务
-  let all = render_board_ascii(tasks, "").stringify()
+  let all = @server.render_board_ascii(tasks, "").stringify()
   assert_true(all.contains("待领取"))
   // 按不存在的 ns 过滤：不应出现任何任务行
-  let none = render_board_ascii(tasks, "no-such-ns").stringify()
+  let none = @server.render_board_ascii(tasks, "no-such-ns").stringify()
   assert_true(none.contains("状态合计"))
   assert_false(none.contains("[待领取]"))
   assert_false(none.contains("[已领取]"))
@@ -305,10 +305,12 @@ test "status_summary 项目脉冲：总量 + 按状态计数 + 活跃命名空�
   }
   let tasks = e.list_all()
   assert_true(tasks.length() >= 2)
-  let s = render_status_summary(tasks, ["default"], "0.2.4").stringify()
+  let s = @server.render_status_summary(tasks, ["default"], "0.2.4").stringify()
   // 总量 = 引擎任务数
   match
-    render_status_summary(tasks, ["default"], "0.2.4").value("total_tasks") {
+    @server.render_status_summary(tasks, ["default"], "0.2.4").value(
+      "total_tasks",
+    ) {
     Some(Number(n, ..)) => assert_eq(n.to_int(), tasks.length())
     _ => abort("total_tasks 缺失: " + s)
   }
@@ -319,7 +321,9 @@ test "status_summary 项目脉冲：总量 + 按状态计数 + 活跃命名空�
   assert_true(s.contains("待领取"))
   // by_difficulty 不变量：各难度档数量之和 == 待领取任务数（复用 extract_difficulty，支柱②）
   match
-    render_status_summary(tasks, ["default"], "0.2.4").value("by_difficulty") {
+    @server.render_status_summary(tasks, ["default"], "0.2.4").value(
+      "by_difficulty",
+    ) {
     Some(Object(dm)) => {
       let mut sum = 0.0
       for (_k, v) in dm {
@@ -358,7 +362,7 @@ test "status_summary 支持 namespace 过滤：只统计该 ns" {
   let tasks = e.list_all()
   // 按任务的真实 ns 过滤：total = 该 ns 任务数（此处应 >= 1 且 <= 全部）
   let ns = tasks[0].ns
-  let scoped = render_status_summary(
+  let scoped = @server.render_status_summary(
     tasks.filter(fn(t) { t.ns == ns }),
     ["default"],
     "0.2.4",
@@ -368,7 +372,7 @@ test "status_summary 支持 namespace 过滤：只统计该 ns" {
     _ => abort("scoped total_tasks 缺失: " + scoped.stringify())
   }
   // 按不存在的 ns 过滤：total 应为 0
-  let zero = render_status_summary(
+  let zero = @server.render_status_summary(
     tasks.filter(fn(t) { t.ns == "no-such-ns" }),
     [],
     "0.2.4",
@@ -402,7 +406,7 @@ test "board_ascii 组内全等任务按 id 升序（BUG-210）" {
       now="2026-09-25T11:30:00Z",
     ),
   )
-  let j = render_board_ascii(e.list_all(), "").stringify()
+  let j = @server.render_board_ascii(e.list_all(), "").stringify()
   let parts = j.split("ts_bbb").to_array()
   assert_eq(parts.length(), 2)
   assert_true(parts[1].contains("ts_aaa"))
@@ -422,7 +426,7 @@ test "board_ascii 每行标注难度档（复用 extract_difficulty，支柱①+
       now="2026-09-25T10:02:00Z",
     ),
   )
-  let j = render_board_ascii(e.list_all(), "")
+  let j = @server.render_board_ascii(e.list_all(), "")
   match j.value("ascii") {
     Some(String(s)) => assert_true(s.contains("难度["))
     _ => abort("ascii 缺失")
@@ -433,7 +437,7 @@ test "board_ascii 每行标注难度档（复用 extract_difficulty，支柱①+
 test "project_health 健康卡：聚合六类计数 + 等级判定（R68）" {
   let e = ba_engine()
   // 空库 -> empty
-  let h0 = render_project_health(e.list_all(), "0.2.4")
+  let h0 = @server.render_project_health(e.list_all(), "0.2.4")
   match h0.value("grade") {
     Some(String(g)) => assert_eq(g, "empty")
     _ => abort("空库 grade 应 empty")
@@ -441,7 +445,7 @@ test "project_health 健康卡：聚合六类计数 + 等级判定（R68）" {
   // 发布根 + 认领 -> 有 in_flight(+1 已领取)，root 状态已领取 -> healthy（无阻塞、有进行）
   let root = ba_publish(e, "健康根任务")
   ignore(e.claim(task_id=root, assignee="leader_a", now="2026-09-25T11:00:00Z"))
-  let h1 = render_project_health(e.list_all(), "0.2.4")
+  let h1 = @server.render_project_health(e.list_all(), "0.2.4")
   match h1.value("grade") {
     Some(String(g)) => assert_eq(g, "healthy")
     _ => abort("有进行应 healthy")
@@ -452,7 +456,7 @@ test "project_health 健康卡：聚合六类计数 + 等级判定（R68）" {
   }
   // 暂停 -> 计入 blocked，grade 降为 attention
   ignore(e.pause_task(task_id=root, now="2026-09-25T11:01:00Z"))
-  let h2 = render_project_health(e.list_all(), "0.2.4")
+  let h2 = @server.render_project_health(e.list_all(), "0.2.4")
   match h2.value("grade") {
     Some(String(g)) => assert_eq(g, "attention")
     _ => abort("有阻塞应 attention")
@@ -538,7 +542,7 @@ test "BUG-29：已完成单列 done_no_artifact 档——status_summary / board 
     b29_done("D3", ""),
     b29_done("D4", "交付物 D"),
   ]
-  let s = render_status_summary(tasks, ["default"], "0.3.0")
+  let s = @server.render_status_summary(tasks, ["default"], "0.3.0")
   // 已完成=4，其中无交付物=2（旧口径把两者混为一谈，指挥官按 status 判进度就把探针读成成果）
   match s.value("by_status") {
     Some(Object(m)) =>
@@ -549,13 +553,13 @@ test "BUG-29：已完成单列 done_no_artifact 档——status_summary / board 
     _ => abort("by_status 缺失")
   }
   assert_eq(b29_num(s, "done_no_artifact"), 2)
-  let b = render_board_ascii(tasks, "default")
+  let b = @server.render_board_ascii(tasks, "default")
   assert_eq(b29_num(b, "done_no_artifact"), 2)
   match b.value("ascii") {
     Some(Json::String(a)) => {
       assert_true(a.contains("已完成:4(无交付物2)"))
       // 作用域一致性：board 的计数按 ns 过滤后仍与 status_summary 同源
-      let b2 = render_board_ascii(tasks, "nosuch")
+      let b2 = @server.render_board_ascii(tasks, "nosuch")
       assert_eq(b29_num(b2, "done_no_artifact"), 0)
     }
     _ => abort("ascii 缺失")
@@ -587,7 +591,7 @@ test "BUG-29：棘轮——残留数等于基线不报警，高出基线即 proj
     b29_done("A2", ""),
     b29_done("A3", "有交付物"),
   ]
-  let h0 = render_project_health(at_baseline, "0.3.0")
+  let h0 = @server.render_project_health(at_baseline, "0.3.0")
   assert_eq(b29_num(h0, "done_no_artifact"), 2)
   assert_eq(b29_bool(h0, "residue_over_baseline"), false)
   assert_eq(ph_grade(h0), "healthy")
@@ -599,13 +603,13 @@ test "BUG-29：棘轮——残留数等于基线不报警，高出基线即 proj
     b29_done("B3", ""),
     b29_done("B4", "有交付物"),
   ]
-  let h1 = render_project_health(over, "0.3.0")
+  let h1 = @server.render_project_health(over, "0.3.0")
   assert_eq(b29_num(h1, "done_no_artifact"), 3)
   assert_eq(b29_bool(h1, "residue_over_baseline"), true)
   assert_eq(ph_grade(h1), "attention")
   // 清干净（残留归零）也必须仍然 healthy——防止判据反向恒红
   let clean = [p1, b29_done("C1", "交付物"), b29_done("C2", "交付物")]
-  let h2 = render_project_health(clean, "0.3.0")
+  let h2 = @server.render_project_health(clean, "0.3.0")
   assert_eq(b29_num(h2, "done_no_artifact"), 0)
   assert_eq(ph_grade(h2), "healthy")
 }
@@ -633,7 +637,7 @@ test "state_flow_ascii_shows_lifecycle" {
   ignore(
     e.execute(task_id=c0, deliverable="成果 v1", now="2026-09-25T11:03:00Z"),
   )
-  let j = render_state_flow_ascii(e.list_all(), "")
+  let j = @server.render_state_flow_ascii(e.list_all(), "")
   let ascii = match j.value("ascii") {
     Some(Json::String(s)) => s
     _ => abort("ascii 缺失")
@@ -657,7 +661,7 @@ test "state_flow_ascii_shows_lifecycle" {
 ///|
 /// 状态流转 ASCII：空仓 → 当前分布 (空)，在流 = 0。
 test "state_flow_ascii_empty_store" {
-  let j = render_state_flow_ascii([], "nosuch")
+  let j = @server.render_state_flow_ascii([], "nosuch")
   let ascii = match j.value("ascii") {
     Some(Json::String(s)) => s
     _ => abort("ascii 缺失")
@@ -691,9 +695,9 @@ test "property_ascii_views_consistency_seeded" {
           ),
         ]
     }
-    let board = render_board_ascii(tasks, "")
-    let state = render_state_flow_ascii(tasks, "")
-    let summary = render_status_summary(tasks, ["default"], "0.3.8")
+    let board = @server.render_board_ascii(tasks, "")
+    let state = @server.render_state_flow_ascii(tasks, "")
+    let summary = @server.render_status_summary(tasks, ["default"], "0.3.8")
     match board.value("ascii") {
       Some(Json::String(s)) => assert_true(s.length() > 0)
       _ => abort("board ascii 缺失")
