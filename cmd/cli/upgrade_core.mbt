@@ -15,11 +15,7 @@
 /// 三段缺一或任一非整数 → None。
 /// 第四元 is_pre：`-alpha1` 之类为 true——按 semver 应排同号正式版之下，
 /// 若不区分会把「有 pre-release 的旧版」误判成等于正式版（假绿风险）。
-<<<<<<< HEAD
-fn parse_version(s : String) -> (Int32, Int32, Int32, Bool)? {
-=======
 fn parse_version(s : String) -> (Int, Int, Int, Bool)? {
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
   let mut core = s.trim().to_owned()
   if core.length() > 0 && (core[0] == 'v' || core[0] == 'V') {
     core = core[1:core.length()].to_owned()
@@ -184,11 +180,7 @@ pub fn latest_url(repo : String, base_url : String) -> String {
 /// 要不要进写盘流程（纯逻辑，可白盒锁）：
 ///   `--check`（check_only=true）永不写盘——阶段 A 只读；
 ///   否则**仅当** `远端 > 本地`（cmp>0）才进入阶段 B/C。
-<<<<<<< HEAD
-fn should_upgrade(cmp : Int32, check_only : Bool) -> Bool {
-=======
 fn should_upgrade(cmp : Int, check_only : Bool) -> Bool {
->>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
   cmp > 0 && !check_only
 }
 
