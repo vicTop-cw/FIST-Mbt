@@ -1,7 +1,9 @@
 ﻿# scripts/slave-branch-merge.ps1
 # 一键合并 gitcode/slave/* 分支的新代码 commits 到 master，并清理已合并分支
 # 用法: pwsh scripts/slave-branch-merge.ps1
-# 流程: fetch → 扫描哪些分支有 src/scripts/cmd/moon.pkg 改动 → 逐个 cherry-pick → 清冲突标记 → build → push → 删已合并分支
+# 流程: fetch → 扫描哪些分支有 src/scripts/cmd/moon.pkg 改动 → 逐个 cherry-pick → 清冲突标记 → marker 硬门 → build → push → 删已合并分支
+# TASK-001 硬门禁（R81）: 每次 cherry-pick commit 之前跑 check_merge_markers.py，rc!=0 即放弃该 pick；
+#   收尾 commit 之前再过一遍，rc!=0 不 commit 不 push——冲突标记不许进 commit（259b56a8 教训）。
 
 param(
   [switch]$DryRun  # 只扫描不执行
@@ -17,16 +19,19 @@ $before = git rev-parse HEAD 2>$null
 Write-Host "当前 HEAD: $before" -ForegroundColor Gray
 
 # 1. Fetch
-Write-Host "`n[1/6] Fetch 所有远端..." -ForegroundColor Yellow
+Write-Host "`n[1/8] Fetch 所有远端..." -ForegroundColor Yellow
+# BUG-109 同族防线：EAP=Stop 下原生命令 stderr 经 2>&1 会变终止错误（fetch 单个远端连不上即炸全脚本），此处临时降 EAP
+$eap = $ErrorActionPreference; $ErrorActionPreference = "Continue"
 git fetch --all --prune 2>&1 | Out-Null
+$ErrorActionPreference = $eap
 
 # 2. 扫描 slave 分支
-Write-Host "`n[2/6] 扫描 gitcode/slave/* 分支..." -ForegroundColor Yellow
+Write-Host "`n[2/8] 扫描 gitcode/slave/* 分支..." -ForegroundColor Yellow
 $slaves = git branch -r 2>$null | Select-String 'gitcode/slave/' | ForEach-Object { $_.Line.Trim() }
 Write-Host "  发现 $($slaves.Count) 个 slave 分支" -ForegroundColor Gray
 
 # 3. 筛选：哪些有 src/scripts/cmd/moon.pkg 改动且不在 HEAD 里
-Write-Host "`n[3/6] 筛选有代码改动的分支..." -ForegroundColor Yellow
+Write-Host "`n[3/8] 筛选有代码改动的分支..." -ForegroundColor Yellow
 $codeBranches = @()
 $docBranches = @()
 
@@ -63,9 +68,10 @@ if ($codeBranches.Count -eq 0) {
 }
 
 # 4. 逐个 pick
-Write-Host "`n[4/6] Cherry-pick 代码 commits..." -ForegroundColor Yellow
+Write-Host "`n[4/8] Cherry-pick 代码 commits..." -ForegroundColor Yellow
 $pickCount = 0
 $skipCount = 0
+$markerSkips = 0
 
 foreach ($slave in $codeBranches) {
   Write-Host "`n  --- $slave ---" -ForegroundColor Magenta
@@ -94,16 +100,33 @@ foreach ($slave in $codeBranches) {
       }
       git add -A 2>$null
     }
-    
+
+    # TASK-001 硬门禁：commit 之前必须过冲突标记扫描（fail-closed：rc=2 判据自拒也算不过）
+    $eap = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    $markerOut = python scripts/blackbox/check_merge_markers.py 2>&1 | Out-String
+    $markerRc = $LASTEXITCODE
+    $ErrorActionPreference = $eap
+    if ($markerRc -ne 0) {
+      Write-Host "    ❌ MARKER GATE rc=$markerRc : $shortHash 解冲突后仍有标记，放弃该 pick（不 commit）" -ForegroundColor Red
+      $markerHead = ($markerOut.Trim() -split "`r?`n") | Select-Object -First 6
+      Write-Host ($markerHead -join "`n") -ForegroundColor DarkGray
+      $eap = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+      git cherry-pick --abort 2>$null | Out-Null
+      if ($LASTEXITCODE -ne 0) { git reset --hard HEAD 2>$null | Out-Null }
+      $ErrorActionPreference = $eap
+      $markerSkips++
+      continue
+    }
+
     git commit -m "$msg (from $shortHash)" 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) { $pickCount++ }
   }
 }
 
-Write-Host "`n  Picked: $pickCount commits, Skipped (no code): $skipCount" -ForegroundColor Green
+Write-Host "`n  Picked: $pickCount commits, Skipped (no code): $skipCount, Marker-gate skipped: $markerSkips" -ForegroundColor Green
 
 # 5. 循环清冲突标记（最多 10 轮）
-Write-Host "`n[5/6] 清理残留冲突标记..." -ForegroundColor Yellow
+Write-Host "`n[5/8] 清理残留冲突标记..." -ForegroundColor Yellow
 for ($round = 1; $round -le 10; $round++) {
   $totalFixed = 0
   # 只扫 git 跟踪的 src/ + cmd/ 目录，跳过 _build/ temp/ 缓存
@@ -153,7 +176,7 @@ Get-ChildItem -Path . -Filter 'moon.pkg' -Recurse | ForEach-Object {
 }
 
 # 6. Build 验证
-Write-Host "`n[6/6] Build 验证..." -ForegroundColor Yellow
+Write-Host "`n[6/8] Build 验证..." -ForegroundColor Yellow
 moon fmt 2>&1 | Out-Null
 $buildOut = moon build --target js src/server src/engine src/store src/router src/ops 2>&1
 $hasError = $buildOut -match 'Error:' -and $buildOut -notmatch 'Finished.*0 errors'
@@ -167,7 +190,20 @@ if ($hasError) {
   Write-Host "  ✅ Build passed!" -ForegroundColor Green
 }
 
-# 7. Commit 冲突清理 + Push
+# 7. Commit 冲突清理 + Push（TASK-001 硬门禁：收尾 commit 前再过一遍标记扫描，不过则不 commit 不 push）
+Write-Host "`n[7/8] 收尾 marker 门..." -ForegroundColor Yellow
+$eap = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+$finalMarkerOut = python scripts/blackbox/check_merge_markers.py 2>&1 | Out-String
+$finalMarkerRc = $LASTEXITCODE
+$ErrorActionPreference = $eap
+if ($finalMarkerRc -ne 0) {
+  Write-Host "  ❌ MARKER GATE rc=$finalMarkerRc ：树上仍有冲突标记，不 commit 不 push。判据输出：" -ForegroundColor Red
+  Write-Host $finalMarkerOut.Trim() -ForegroundColor DarkGray
+  return
+} else {
+  Write-Host "  ✅ marker 门通过（rc=0）" -ForegroundColor Green
+}
+
 Write-Host "`nCommit 冲突清理..." -ForegroundColor Yellow
 git add -A 2>$null
 $hasUncommitted = $true
