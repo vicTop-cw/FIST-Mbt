@@ -135,7 +135,7 @@ fn mcs_hex4(n : Int) -> String {
   let mut out = ""
   while rem > 0 {
     let d = rem % 16
-    out = hex.substring(start=d, end=d + 1) + out
+    out = hex[d:d + 1].to_owned() + out
     rem = rem / 16
   }
   if out.length() >= 4 {
@@ -156,8 +156,8 @@ fn mcs_lower(s : String) -> String {
     let cs = c.to_string()
     let mut replaced = false
     for i in 0..<26 {
-      if upper.substring(start=i, end=i + 1) == cs {
-        out = out + lower.substring(start=i, end=i + 1)
+      if upper[i:i + 1].to_owned() == cs {
+        out = out + lower[i:i + 1].to_owned()
         replaced = true
         break
       }

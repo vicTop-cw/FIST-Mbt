@@ -44,7 +44,7 @@ fn truncate(s : String, max : Int) -> String {
   if s.length() <= max {
     s
   } else if max > 0 && max <= s.length() {
-    s.substring(start=0, end=max) + "…"
+    s[0:max].to_owned() + "…"
   } else {
     s
   }

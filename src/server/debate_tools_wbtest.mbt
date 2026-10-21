@@ -113,7 +113,7 @@ test "debate_next_session_id：格式 debate-yyyyMMdd-nnn 且同日递增" {
   assert_eq(sid.length(), prefix.length() + 3)
   assert_eq(sid, prefix + "002")
   // 编号必须是 3 位（个位数补零）
-  assert_eq(sid.substring(start=sid.length() - 3), "002")
+  assert_eq(sid[sid.length() - 3:].to_owned(), "002")
 }
 
 ///|

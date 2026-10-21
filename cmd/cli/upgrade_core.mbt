@@ -18,7 +18,7 @@
 fn parse_version(s : String) -> (Int, Int, Int, Bool)? {
   let mut core = s.trim().to_owned()
   if core.length() > 0 && (core[0] == 'v' || core[0] == 'V') {
-    core = core.substring(start=1, end=core.length())
+    core = core[1:core.length()].to_owned()
   }
   let is_pre = has_pre_release(core)
   let parts = core.split(".").collect()
@@ -166,7 +166,7 @@ pub fn latest_url(repo : String, base_url : String) -> String {
   let b = base_url.trim().to_owned()
   if b.length() > 0 {
     let trimmed = if b.has_suffix("/") {
-      b.substring(start=0, end=b.length() - 1)
+      b[0:b.length() - 1].to_owned()
     } else {
       b
     }

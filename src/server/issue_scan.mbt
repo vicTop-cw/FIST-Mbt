@@ -679,7 +679,7 @@ fn scan_substring_end_var(code : String) -> String {
             }
           }
           if j > start {
-            code.substring(start~, end=j).to_string()
+            code[start:j].to_owned()
           } else {
             ""
           }
@@ -810,7 +810,7 @@ fn scan_substring_arg_expr(code : String, arg : String) -> String {
         }
         j = j + 1
       }
-      code.substring(start=pos, end=j).to_string().trim().to_owned()
+      code[pos:j].to_owned().trim().to_owned()
     }
   }
 }
@@ -858,14 +858,10 @@ fn scan_guard_mod_invariant(
     }
     let pref = "let " + se + " = "
     if t.has_prefix(pref) {
-      let rest = t.substring(start=pref.length(), end=t.length()).to_string()
+      let rest = t[pref.length():t.length()].to_owned()
       match rest.find(" % ") {
         Some(pi) => {
-          let ktxt = rest
-            .substring(start=pi + 3, end=rest.length())
-            .to_string()
-            .trim()
-            .to_owned()
+          let ktxt = rest[pi + 3:rest.length()].to_owned().trim().to_owned()
           let kv = scan_parse_int_opt(ktxt)
           if kv >= 0 {
             mod_k = kv
@@ -885,10 +881,7 @@ fn scan_guard_mod_invariant(
     let t = p.trim().to_owned()
     let pref2 = "let " + vn + " = "
     if t.has_prefix(pref2) {
-      let lit = t
-        .substring(start=pref2.length(), end=t.length())
-        .to_string()
-        .trim()
+      let lit = t[pref2.length():t.length()].to_owned().trim()
       if lit.length() >= 2 && lit[0] == '"' && lit[lit.length() - 1] == '"' {
         if lit.length() - 2 >= mod_k {
           return true
@@ -925,11 +918,7 @@ fn scan_guard_for_bounded(
     let t = p.trim().to_owned()
     let pref = "for " + se + " in 0..<"
     if t.has_prefix(pref) {
-      let ktxt = t
-        .substring(start=pref.length(), end=t.length())
-        .to_string()
-        .trim()
-        .to_owned()
+      let ktxt = t[pref.length():t.length()].to_owned().trim().to_owned()
       // BUG-268 补充：`for i in 0..<26 {` 尾部 `{` 会混入字面量导致 parse 失败
       let mut kk = ktxt
       while kk.length() > 0 &&
@@ -938,7 +927,7 @@ fn scan_guard_for_bounded(
               kk[kk.length() - 1] == '}' ||
               kk[kk.length() - 1] == ' '
             ) {
-        kk = kk.substring(start=0, end=kk.length() - 1).to_string()
+        kk = kk[0:kk.length() - 1].to_owned()
       }
       let kv = scan_parse_int_opt(kk)
       if kv >= 0 {
@@ -955,10 +944,7 @@ fn scan_guard_for_bounded(
     let t = p.trim().to_owned()
     let pref2 = "let " + vn + " = "
     if t.has_prefix(pref2) {
-      let lit = t
-        .substring(start=pref2.length(), end=t.length())
-        .to_string()
-        .trim()
+      let lit = t[pref2.length():t.length()].to_owned().trim()
       if lit.length() >= 2 && lit[0] == '"' && lit[lit.length() - 1] == '"' {
         if lit.length() - 2 >= bound {
           return true
@@ -990,7 +976,7 @@ fn scan_cut_bounded(
     let t = p.trim().to_owned()
     let pref = "let " + xt + " = "
     if t.has_prefix(pref) {
-      let rhs = t.substring(start=pref.length(), end=t.length()).to_string()
+      let rhs = t[pref.length():t.length()].to_owned()
       if rhs.contains("< 0 { 0 }") && rhs.contains(limit) {
         return true
       }
@@ -1027,7 +1013,7 @@ fn scan_guard_multi_line_length(
     if t.has_prefix("let ") && t.contains(vn + ".length()") {
       match t.find(" = ") {
         Some(ei) => {
-          let name = t.substring(start=4, end=ei).to_string().trim().to_owned()
+          let name = t[4:ei].to_owned().trim().to_owned()
           if !name.is_empty() {
             lenv = name
             break
@@ -1048,20 +1034,12 @@ fn scan_guard_multi_line_length(
     let pref = "if " + lenv + " <= "
     let pref2 = "if " + lenv + " < "
     if t.has_prefix(pref) {
-      limit = t
-        .substring(start=pref.length(), end=t.length())
-        .to_string()
-        .trim()
-        .to_owned()
+      limit = t[pref.length():t.length()].to_owned().trim().to_owned()
       if_idx = i
       break
     }
     if t.has_prefix(pref2) {
-      limit = t
-        .substring(start=pref2.length(), end=t.length())
-        .to_string()
-        .trim()
-        .to_owned()
+      limit = t[pref2.length():t.length()].to_owned().trim().to_owned()
       if_idx = i
       break
     }
@@ -1072,7 +1050,7 @@ fn scan_guard_multi_line_length(
   // ②′ 修剪 limit 尾部的 `{`：`if n <= max_chars {` → `max_chars`（BUG-268：memory_gc_logic
   // L160 就是这种形状，不修剪会让 scan_cut_bounded 拿 "max_chars {" 去子串比对，恒失败）。
   while limit.length() > 0 && limit[limit.length() - 1] == '{' {
-    limit = limit.substring(start=0, end=limit.length() - 1).to_string()
+    limit = limit[0:limit.length() - 1].to_owned()
   }
   limit = limit.trim().to_owned()
   if limit.is_empty() {
@@ -1100,7 +1078,7 @@ fn scan_guard_multi_line_length(
   } else {
     let pref3 = lenv + "-"
     if ee.has_prefix(pref3) {
-      let x = ee.substring(start=pref3.length(), end=ee.length()).to_string()
+      let x = ee[pref3.length():ee.length()].to_owned()
       if scan_cut_bounded(prev_lines, x, limit) {
         ee_ok = true
       }
@@ -1114,7 +1092,7 @@ fn scan_guard_multi_line_length(
   }
   let pref4 = lenv + "-"
   if se_n.has_prefix(pref4) {
-    let x = se_n.substring(start=pref4.length(), end=se_n.length()).to_string()
+    let x = se_n[pref4.length():se_n.length()].to_owned()
     return scan_cut_bounded(prev_lines, x, limit)
   }
   false
@@ -1139,7 +1117,7 @@ fn scan_guard_has_suffix_cut(
   if !ee.has_prefix(need) {
     return false
   }
-  let cutv = ee.substring(start=need.length(), end=ee.length()).to_string()
+  let cutv = ee[need.length():ee.length()].to_owned()
   if cutv.is_empty() {
     return false
   }
@@ -1147,19 +1125,15 @@ fn scan_guard_has_suffix_cut(
     let t = p.trim().to_owned()
     let pref = "let " + cutv + " = "
     if t.has_prefix(pref) && t.contains(vn + ".has_suffix(") {
-      let body = t.substring(start=pref.length(), end=t.length()).to_string()
+      let body = t[pref.length():t.length()].to_owned()
       // body: `if <vn>.has_suffix(<lit>) { <k> } else { 0 }`
       match body.find(" { ") {
         Some(oi) => {
-          let seg = body.substring(start=oi + 3, end=body.length()).to_string()
+          let seg = body[oi + 3:body.length()].to_owned()
           // seg: `<k> } else { 0 }`
           match seg.find(" } else { ") {
             Some(ci) => {
-              let ktxt = seg
-                .substring(start=0, end=ci)
-                .to_string()
-                .trim()
-                .to_owned()
+              let ktxt = seg[0:ci].to_owned().trim().to_owned()
               let kv = scan_parse_int_opt(ktxt)
               if kv >= 1 && kv <= 4 {
                 return true
@@ -1328,10 +1302,10 @@ fn scan_unwrap_receiver(code : String) -> String {
         start = i
         i = i - 1
       }
-      let r = code.substring(start~, end=idx).to_string()
+      let r = code[start:idx].to_owned()
       // 跳过末尾多余的点（`.unwrap(` 前的 `.` 归属方法调用）
       if r.has_suffix(".") {
-        r.substring(start=0, end=r.length() - 1).to_string()
+        r[0:r.length() - 1].to_owned()
       } else {
         r
       }

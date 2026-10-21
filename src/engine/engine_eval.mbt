@@ -17,7 +17,7 @@ fn parse_section(text : String, header : String) -> Array[String] {
       // R1 bugfind：substring-overrun——`has_prefix("- ")` 保证 length>=2，
       // 但仍显式守卫，让静态扫描能确定性证明 end<=length
       if s.length() >= 2 {
-        out.push(s.substring(start=2, end=s.length()))
+        out.push(s[2:s.length()].to_owned())
       }
     }
   }

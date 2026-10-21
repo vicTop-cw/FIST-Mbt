@@ -584,7 +584,7 @@ pub fn selfdrive_parse_next_tasks(
       match ls.find("]") {
         Some(end) =>
           if end > 3 {
-            let desc = ls.substring(start=3, end~).trim().to_owned()
+            let desc = ls[3:end].to_owned().trim().to_owned()
             if desc != "" && out.length() < max_tasks {
               out.push(desc)
             }

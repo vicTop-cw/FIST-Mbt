@@ -254,7 +254,7 @@ fn check_file_artifact(
       names = names + "not_contains, "
     }
     let cut = if names.has_suffix(", ") { 2 } else { 0 }
-    let tail = names.substring(start=0, end=names.length() - cut)
+    let tail = names[0:names.length() - cut].to_owned()
     "OK（存在/非空 + invariant 全部通过: " + tail + "）"
   }
   { artifact: spec.path, ok: true, detail: pass_detail, }
@@ -294,7 +294,7 @@ pub fn ov_parse_int(raw : String) -> Int? {
   // 去掉末尾句号（moon 汇总行末尾 "0." 常见）
   let mut s = raw.trim().to_owned()
   if s.has_suffix(".") {
-    s = s.substring(start=0, end=s.length() - 1).to_string()
+    s = s[0:s.length() - 1].to_owned()
   }
   if s.is_empty() {
     return None
