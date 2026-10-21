@@ -65,6 +65,124 @@ test "scan_match_lines_整行注释与字面量两道降噪同时生效" {
   // 第 3 行的字面量被本轮的 scan_outside_literal 挡
   assert_eq(hits.length(), 1)
   assert_eq(hits[0].line, 5)
+  // BUG-346 成对锁：json-injection 只认同一调用实参里的拼接/插值；
+  // 安全构造器 Json::string(value) 必须放过（旧 pattern 裸 Json::string( 全判假阳）。
+  let json_rule = {
+    id: "moonbit-json-injection",
+    severity: "low",
+    pattern: ["Json::string("],
+    why: "JSON 字符串由拼接构造",
+    hint: "先转义",
+  }
+  let safe = "let s = Json::string(name)\n"
+  assert_eq(scan_match_lines(safe, [json_rule], "sample.mbt").length(), 0)
+  let concat = "let s = Json::string(name + suffix)\n"
+  assert_eq(scan_match_lines(concat, [json_rule], "sample.mbt").length(), 1)
+  // 字面量里的加号不是拼接（"a+b" 是安全内容）
+  let plus_in_literal = "let s = Json::string(\"a+b\")\n"
+  assert_eq(
+    scan_match_lines(plus_in_literal, [json_rule], "sample.mbt").length(),
+    0,
+  )
+  // 插值 \{value} 仍算拼接构造
+  let interp = "let s = Json::string(\"v=\\{value}\")\n"
+  assert_eq(scan_match_lines(interp, [json_rule], "sample.mbt").length(), 1)
+  // BUG-348 成对锁：match-exhaustive 已有顶层 `_ =>` 兜底必须放过；缺兜底仍报。
+  let me_rule = {
+    id: "moonbit-match-exhaustive",
+    severity: "low",
+    pattern: ["match "],
+    why: "match 可能非穷尽",
+    hint: "补全变体",
+  }
+  let me_closed = "fn f(x : Int) -> Int {\n  match x {\n    0 => 0\n    _ => 1\n  }\n}\n"
+  assert_eq(scan_match_lines(me_closed, [me_rule], "m.mbt").length(), 0)
+  let me_open = "fn g(x : Int) -> Int {\n  match x {\n    0 => 0\n  }\n}\n"
+  assert_eq(scan_match_lines(me_open, [me_rule], "m.mbt").length(), 1)
+  // 嵌套 match 的兜底只算内层穷尽，外层仍须报（1 条）
+  let me_nested = "fn h(x : Int, y : Int) -> Int {\n  match x {\n    0 =>\n      match y {\n        0 => 0\n        _ => 1\n      }\n  }\n}\n"
+  assert_eq(scan_match_lines(me_nested, [me_rule], "m.mbt").length(), 1)
+  // BUG-348：moonbit-long-function 按花括号配平实测行数，短函数不报、超 50 行才报。
+  let lf_rule = {
+    id: "moonbit-long-function",
+    severity: "info",
+    pattern: ["fn "],
+    why: "超长函数",
+    hint: "拆分",
+  }
+  let short_fn = "fn add(a : Int, b : Int) -> Int {\n  a + b\n}\n"
+  assert_eq(scan_match_lines(short_fn, [lf_rule], "f.mbt").length(), 0)
+  let mut long_src = "fn big() -> Int {\n"
+  let mut bi = 0
+  while bi < 60 {
+    long_src = long_src + "  let v" + bi.to_string() + " = 0\n"
+    bi = bi + 1
+  }
+  long_src = long_src + "  0\n}\n"
+  assert_eq(scan_match_lines(long_src, [lf_rule], "f.mbt").length(), 1)
+  // 单行函数（三行以内）同样不报
+  let one_line = "fn id(x : Int) -> Int { x }\n"
+  assert_eq(scan_match_lines(one_line, [lf_rule], "f.mbt").length(), 0)
+  // BUG-384 成对锁：empty-match 只报「整个 match 仅一条 `_ => ()` 手臂」；
+  // 多臂 match 的 catch-all 空手臂是正常写法，必须放过。
+  let em_rule = {
+    id: "moonbit-empty-match",
+    severity: "low",
+    pattern: ["_ => ()"],
+    why: "空转 match",
+    hint: "逐变体处理",
+  }
+  let em_only = "fn f(x : Int) -> Unit {\n  match x {\n    _ => ()\n  }\n}\n"
+  assert_eq(scan_match_lines(em_only, [em_rule], "e.mbt").length(), 1)
+  let em_multi = "fn g(x : Int) -> Unit {\n  match x {\n    0 => ()\n    _ => ()\n  }\n}\n"
+  assert_eq(scan_match_lines(em_multi, [em_rule], "e.mbt").length(), 0)
+  // BUG-384 成对锁：noop 只认 `self.x = self.x`；结构体字面量 `id: self.id` 与改别的字段都不报。
+  let noop_rule = {
+    id: "moonbit-noop-assignment",
+    severity: "low",
+    pattern: ["self."],
+    why: "自赋值",
+    hint: "确认更新源",
+  }
+  let noop_real = "fn h() -> Unit {\n  self.total = self.total\n}\n"
+  assert_eq(scan_match_lines(noop_real, [noop_rule], "n.mbt").length(), 1)
+  let noop_literal = "let p = { id: self.id }\n"
+  assert_eq(scan_match_lines(noop_literal, [noop_rule], "n.mbt").length(), 0)
+  let noop_different = "self.total = self.other\n"
+  assert_eq(scan_match_lines(noop_different, [noop_rule], "n.mbt").length(), 0)
+  // CRLF 工作树的 `\r` 视作空白，行尾判定不被它挡掉
+  let noop_crlf = "self.total = self.total\r\n"
+  assert_eq(scan_match_lines(noop_crlf, [noop_rule], "n.mbt").length(), 1)
+  // BUG-384 成对锁：private-field-leak 只认整词；tokens_in / max_tokens 不报。
+  let pf_rule = {
+    id: "moonbit-private-field-leak",
+    severity: "low",
+    pattern: ["password", "secret", "token"],
+    why: "敏感字段",
+    hint: "保持私有",
+  }
+  let pf_word = "let token = read_token()\n"
+  assert_eq(scan_match_lines(pf_word, [pf_rule], "p.mbt").length(), 1)
+  let pf_sub = "let tokens_in = 3\nlet max_tokens = 4\n"
+  assert_eq(scan_match_lines(pf_sub, [pf_rule], "p.mbt").length(), 0)
+  // BUG-385 成对锁：shared-mutable 只认 `let mut x = obj.field` 形状。
+  let sm_rule = {
+    id: "moonbit-shared-mutable",
+    severity: "low",
+    pattern: ["let mut "],
+    why: "共享可变",
+    hint: "直接改字段",
+  }
+  let sm_field = "let mut round = lp.round\n"
+  assert_eq(scan_match_lines(sm_field, [sm_rule], "s.mbt").length(), 1)
+  let sm_zero = "let mut i = 0\n"
+  assert_eq(scan_match_lines(sm_zero, [sm_rule], "s.mbt").length(), 0)
+  let sm_float = "let mut sum = 0.0\nlet mut d = 1.0\n"
+  assert_eq(scan_match_lines(sm_float, [sm_rule], "s.mbt").length(), 0)
+  let sm_expr = "let mut total = self.total + 1\n"
+  assert_eq(scan_match_lines(sm_expr, [sm_rule], "s.mbt").length(), 0)
+  let sm_crlf = "let mut round = lp.round\r\n"
+  assert_eq(scan_match_lines(sm_crlf, [sm_rule], "s.mbt").length(), 1)
 }
 
 ///|
@@ -255,4 +373,55 @@ test "scan_guard_substring_end_var_上界约束判已守卫" {
     ["} else if max <= other.length() {"],
   )
   assert_false(wrong_target)
+}
+
+///|
+/// BUG-348：unused-variable 此前按裸子串 `let ` 命中每个 let 声明、不看绑定名是否真被用
+/// ⇒ 已使用的 let 照样报（纯假阳）。三件纯函数各自钉死，再加端到端成对锁
+/// （用了的必须不报、真没用的必须仍报——单向保守，不许翻成「不扫了」）。
+test "bug348_let_binding_name_extraction" {
+  assert_eq(scan_let_binding_name("let x = 1"), "x")
+  assert_eq(scan_let_binding_name("let mut cost = 3"), "cost")
+  assert_eq(
+    scan_let_binding_name("let remaining: Int = total - used"),
+    "remaining",
+  )
+  // 非简单形状 ⇒ 空串（调用方保持现行为照常报，不猜名字）
+  assert_eq(scan_let_binding_name("let [a, b] = pair"), "")
+  assert_eq(scan_let_binding_name("let _ = f()"), "")
+  assert_eq(scan_let_binding_name("  let x = 1"), "")
+  // mut 是更长标识符前缀时绝不能吃掉它（`let mutator = 1` 的绑定名是 mutator）
+  assert_eq(scan_let_binding_name("let mutator = 1"), "mutator")
+}
+
+///|
+test "bug348_word_occurrence_is_whole_word" {
+  // 整词命中
+  assert_true(scan_word_occurs("  let y = x + 1", "x"))
+  // 左邻标识符字符 ⇒ 不算整词（真未使用的 x 不该在 totally_unused 里被看见）
+  assert_false(scan_word_occurs("  let v = totally_unused", "x"))
+  assert_false(scan_word_occurs("  let v = xtotal", "x"))
+  // 右邻是下划线（标识符续接字符）⇒ 不算整词
+  assert_false(scan_word_occurs("  let v = x_1", "x"))
+  // 空词/空文本都不命中（不拿空串当万能 needle）
+  assert_false(scan_word_occurs("anything", ""))
+  assert_false(scan_word_occurs("", "x"))
+  // 边界：行尾与行首都算整词
+  assert_true(scan_word_occurs("x", "x"))
+  assert_true(scan_word_occurs("  action", "action"))
+}
+
+///|
+test "bug348_used_elsewhere_skips_decl_line_only" {
+  // 只在声明行出现 ⇒ false（照常报真未使用）
+  let cps1 : Array[String] = ["let dead = 1", "  2", "}"]
+  assert_false(scan_variable_used_elsewhere(cps1, 1, "dead"))
+  // 别行出现 ⇒ true（其实用了）
+  let cps2 : Array[String] = [
+    "fn f(): Int {", "  let cost = 3", "  cost + 1", "}",
+  ]
+  assert_true(scan_variable_used_elsewhere(cps2, 2, "cost"))
+  // 只在声明行出现（哪怕声明行里同名重复 = 自引用）⇒ false：除声明行外没有使用点
+  let cps3 : Array[String] = ["  let cost = cost", "}"]
+  assert_false(scan_variable_used_elsewhere(cps3, 1, "cost"))
 }
