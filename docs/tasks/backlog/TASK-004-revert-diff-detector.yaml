@@ -1,7 +1,7 @@
 id: TASK-004
 title: "反向 diff 检测 — 删远多于增 = 自动拒绝"
 priority: P3
-status: backlog
+status: in_review
 assignee: atomcode
 discovered_by: lead
 discovered_at: "2026-10-21T19:15:00+08:00"
@@ -28,3 +28,34 @@ evidence:
   - issue_scan.mbt 单文件 -457/+0（从 2714 砍到 2257）
 
 blocked_by: []
+
+# ── 执行回填（AtomCode / 2026-10-21T22:30+08:00）──
+result: >
+  `fist-gate.py` 加**反向 diff 检测**：numstat 解析与判定做成纯函数
+  （`parse_numstat` / `is_revert_pattern` / `worst_deletions`），阈值 `REVERT_RATIO = 1.5`
+  （实测正例 191 ins / 718 del = 3.76；正常分支几乎不超 1.0，阈值取在两分布之间）。
+  `scan_branch` 带出 `insertions` / `deletions` / `revert_pattern` / `worst_deletions` 四个字段；
+  `scan` 把 REVERT-PATTERN 分支写进 **`.git/fist/tasks/failed/`**（不进 claimable 的 backlog/），
+  并在汇总里点名「哪几个文件删远多于增 + 差值」。
+also_fixed: >
+  **顺带修掉一个真 bug**：`--scan` 在 **git worktree** 里直接崩 `FileNotFoundError` ——
+  因为 worktree 的 `.git` 是**文件**（gitdir 指针）而不是目录，原实现 `Path(root)/".git"/"fist"/...`
+  建目录必然失败。改为 `git rev-parse --absolute-git-dir` 取真实 gitdir（取不到则 rc=2 拒绝写错位置）。
+  修复后在本仓 worktree 实跑：53 个远端分支扫描完成、写入 `.git/worktrees/<name>/fist/tasks/`。
+behavior_test: >
+  临时仓库端到端（不只看代码）：base 300 行；`origin/normal-x` 新增 80 行；`origin/slave/revert-y`
+  把 300 行砍到 20 行。scan 实跑输出 ⇒「REVERT-PATTERN 1 个 → 进 failed/」+
+  「⚠ REVERT-PATTERN origin/slave/revert-y：insertions=0 deletions=280」+
+  「删远多于增: src/big.mbt -280/+0 (净 -280)」；正常分支判 MERGE-CODE **未被误判**；
+  `failed/` 下 yaml 含 `revert_pattern: True` / `insertions: 0` / `deletions: 280` /
+  `worst_deletions: ["src/big.mbt -280/+0 (净 -280)"]` / `suggested_action: "REVERT-PATTERN…"`。
+selftest: >
+  新增 7 格纯函数格：真实语料必触发（191/718）、正常增量不触发（500/120）、
+  边界严格大于（100/150 不触发、100/151 触发）、空 diff 安全、二进制行跳过、worst_deletions 点名净删最大者。
+  注：`fist-gate.py --selftest` 整体 rc=2 属**预存红**（G1 环境格 + G4 fmt 的 git 管道在本机退化），
+  已用 HEAD 版对照确认为同一组失败、与本笔无关。
+acceptance_met:
+  - "fist-gate.py 加 diff 检测（del > add*1.5 ⇒ REVERT-PATTERN）：✅"
+  - "REVERT-PATTERN 进 failed/、不进 claimable 队列：✅（端到端实测两个目录分流）"
+  - "日志写明哪几个文件删远多于增 + 差值：✅（日志与 yaml.worst_deletions 双处）"
+pr_branch: fix/task-004-revert-diff-detector
