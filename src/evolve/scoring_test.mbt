@@ -29,7 +29,64 @@ test "scoring_low_accuracy" {
 test "scoring_fingerprint_false_penalty" {
   let s = @evolve.score_artifact(1.0, false, true, 1.0)
   assert_eq(s, 0.75)
+<<<<<<< HEAD
   assert_true(is_robust(0.80))
   assert_true(!is_robust(0.60))
   assert_true(is_robust(0.69, floor=0.60))
+=======
+  assert_true(!@evolve.score_accept(s))
+}
+
+///|
+/// schema 缺失 -> 结构分 -0.25，惩罚到 0.75，档位落 L3。
+test "scoring_schema_false_penalty" {
+  let s = @evolve.score_artifact(1.0, true, false, 1.0)
+  assert_eq(s, 0.75)
+  assert_eq(@evolve.score_rank(s), "L3")
+}
+
+///|
+/// 两个结构位都缺失 -> 结构分归零，综合分仅剩覆盖+正确 = 0.5。
+test "scoring_both_structural_fail" {
+  let s = @evolve.score_artifact(1.0, false, false, 1.0)
+  assert_eq(s, 0.5)
+  assert_eq(@evolve.score_rank(s), "L1")
+}
+
+///|
+/// 档位边界（含端点）：0.00/L1、0.55/L2、0.70/L3、0.85/L4。
+test "scoring_rank_boundary" {
+  assert_eq(@evolve.score_rank(0.0), "L1")
+  assert_eq(@evolve.score_rank(0.54), "L1")
+  assert_eq(@evolve.score_rank(0.55), "L2")
+  assert_eq(@evolve.score_rank(0.70), "L3")
+  assert_eq(@evolve.score_rank(0.85), "L4")
+  assert_eq(@evolve.score_rank(1.0), "L4")
+}
+
+///|
+/// 门禁阈值：默认 0.85（端点含），自定义阈值生效。
+test "scoring_accept_threshold" {
+  assert_true(@evolve.score_accept(0.85))
+  assert_true(!@evolve.score_accept(0.84))
+  assert_true(!@evolve.score_accept(0.90, threshold=0.95))
+  assert_true(@evolve.score_accept(0.96, threshold=0.95))
+}
+
+///|
+/// rank 单调：score 越大档位只升不降（抽查两对）。
+test "scoring_rank_order" {
+  assert_eq(@evolve.score_rank(0.86), "L4")
+  assert_eq(@evolve.score_rank(0.72), "L3")
+  assert_eq(@evolve.score_rank(0.60), "L2")
+  assert_eq(@evolve.score_rank(0.30), "L1")
+}
+
+///|
+/// 稳健性谓词（默认 floor=0.70，可自定义）。
+test "scoring_is_robust" {
+  assert_true(@evolve.is_robust(0.80))
+  assert_true(!@evolve.is_robust(0.60))
+  assert_true(@evolve.is_robust(0.69, floor=0.60))
+>>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
 }
