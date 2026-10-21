@@ -145,16 +145,14 @@ fn arg_bool(args : Json, key : String, default : Bool) -> Bool {
 
 ///|
 /// 构造成功 JSON 文本结果。
-fn ok_text(
-  m : Map[String, Json],
-) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-  Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
+fn ok_text(m : Map[String, Json]) -> @mcp.ToolResult {
+  @mcp.ToolResult::text(Json::object(m).stringify())
 }
 
 ///|
 /// 构造失败文本结果。
-fn err_text(msg : String) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-  Ok(@mcp.ToolResult::text(Json::string("ERROR: " + msg).stringify()))
+fn err_text(msg : String) -> @mcp.ToolResult {
+  @mcp.ToolResult::text(Json::string("ERROR: " + msg).stringify())
 }
 
 ///|
@@ -174,7 +172,7 @@ fn tasks_json(tasks : Array[@core.Task]) -> Json {
 
 ///|
 /// 初始化 FIST 引擎（SQLite 优先，内存回退）。参数：data_dir（可选，覆盖默认数据目录）。
-fn tool_ops_init(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+fn tool_ops_init(args : Json) -> @mcp.ToolResult {
   let data_dir_opt = arg_str_opt(args, "data_dir")
   match data_dir_opt {
     Some(d) => {
@@ -208,7 +206,7 @@ fn tool_ops_init(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
 
 ///|
 /// 发布根任务（一次巡检批次）。参数：project_dir / description / created_by / ns（可选）。
-fn tool_run_batch(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+fn tool_run_batch(args : Json) -> @mcp.ToolResult {
   let e = ensure_engine()
   let project_dir = arg_str(args, "project_dir", "")
   let description = arg_str(args, "description", "")
@@ -231,7 +229,7 @@ fn tool_run_batch(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
 
 ///|
 /// 验收任务。参数：task_id / verifier / docs_check（可选）。
-fn tool_verify(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+fn tool_verify(args : Json) -> @mcp.ToolResult {
   let e = ensure_engine()
   let task_id = arg_str(args, "task_id", "")
   let verifier = arg_str(args, "verifier", "mcpconftest")
@@ -258,7 +256,7 @@ fn tool_verify(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
 
 ///|
 /// 熔断状态查询/操作。参数：circuit / action(status|fail|succeed) / ns（可选）。
-fn tool_circuit(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+fn tool_circuit(args : Json) -> @mcp.ToolResult {
   let e = ensure_engine()
   let circuit = arg_str(args, "circuit", "")
   if circuit.is_empty() {
@@ -274,12 +272,12 @@ fn tool_circuit(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
   } else {
     e.circuit_status(ns~, circuit~, now_secs~)
   }
-  Ok(@mcp.ToolResult::text(json.stringify()))
+  @mcp.ToolResult::text(json.stringify())
 }
 
 ///|
 /// 生成巡检任务报告。参数：ns（可选，默认 default）。
-fn tool_report(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+fn tool_report(args : Json) -> @mcp.ToolResult {
   let e = ensure_engine()
   let ns = arg_str(args, "ns", "default")
   let tasks = e.list_in_ns(ns)
@@ -307,7 +305,7 @@ fn tool_report(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
 
 ///|
 /// 审查任务。参数：task_id（可选；不传则按 status 过滤或全量）。
-fn tool_review(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+fn tool_review(args : Json) -> @mcp.ToolResult {
   let e = ensure_engine()
   match arg_str_opt(args, "task_id") {
     Some(tid) =>
@@ -350,7 +348,7 @@ fn tool_review(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
 
 ///|
 /// 看护检查：引擎后端 + 心跳 + 熔断快照。参数：circuit（可选，同时查熔断）。
-fn tool_watchdog(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+fn tool_watchdog(args : Json) -> @mcp.ToolResult {
   let e = ensure_engine()
   let m : Map[String, Json] = Map([])
   m.set("ok", Json::boolean(true))
@@ -385,7 +383,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
       }),
     }),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-      tool_ops_init(args)
+      Ok(tool_ops_init(args))
     },
   )
   let s2 = s1.tool(
@@ -415,7 +413,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
       }),
     }),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-      tool_run_batch(args)
+      Ok(tool_run_batch(args))
     },
   )
   let s3 = s2.tool(
@@ -439,7 +437,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
       }),
     }),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-      tool_verify(args)
+      Ok(tool_verify(args))
     },
   )
   let s4 = s3.tool(
@@ -463,7 +461,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
       }),
     }),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-      tool_circuit(args)
+      Ok(tool_circuit(args))
     },
   )
   let s5 = s4.tool(
@@ -479,7 +477,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
       }),
     }),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-      tool_report(args)
+      Ok(tool_report(args))
     },
   )
   let s6 = s5.tool(
@@ -501,7 +499,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
       }),
     }),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-      tool_review(args)
+      Ok(tool_review(args))
     },
   )
   let s7 = s6.tool(
@@ -521,7 +519,7 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
       }),
     }),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-      tool_watchdog(args)
+      Ok(tool_watchdog(args))
     },
   )
   s7

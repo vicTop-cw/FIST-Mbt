@@ -443,7 +443,7 @@ fn run_check_deny(
   task_id : String,
   actor : String,
   reason : String,
-) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+) -> @mcp_types.MCPError {
   ignore(
     audit.record(
       action="run_check_denied",
@@ -453,11 +453,9 @@ fn run_check_deny(
       now=now_default(),
     ),
   )
-  Err(
-    @mcp_types.ToolError(
-      reason +
-      "。本次尝试已落审计：audit_log(本进程) 与 call_log(跨进程, tool=run_check, ok=false) 均可查",
-    ),
+  @mcp_types.ToolError(
+    reason +
+    "。本次尝试已落审计：audit_log(本进程) 与 call_log(跨进程, tool=run_check, ok=false) 均可查",
   )
 }
 
@@ -1696,7 +1694,7 @@ pub async fn run_server() -> Unit {
       // FIST_RUN_CHECK_ALLOW 能扩权，调用方无处自授），再定位任务。两条分支
       // （任务存在/不存在）共用同一判定，防「任务不存在」变成绕过白名单的后门。
       match run_check_cmd_denied(cmd, []) {
-        Some(reason) => return run_check_deny(task_id, "unknown", reason)
+        Some(reason) => return Err(run_check_deny(task_id, "unknown", reason))
         None => ()
       }
       // 定位任务（取项目目录作默认 workdir；任务不存在也允许执行，仅不落库）
@@ -1707,13 +1705,15 @@ pub async fn run_server() -> Unit {
           // 绝对 project_dir 本身**是**合法值（实测调用面 38/51 就是这种形态）。
           match run_check_workdir_denied(workdir, t.project_dir) {
             Some(reason) =>
-              return run_check_deny(
-                task_id,
-                match t.get_assignee() {
-                  Some(a) if a != "" => a
-                  _ => "unassigned"
-                },
-                reason,
+              return Err(
+                run_check_deny(
+                  task_id,
+                  match t.get_assignee() {
+                    Some(a) if a != "" => a
+                    _ => "unassigned"
+                  },
+                  reason,
+                ),
               )
             None => ()
           }
@@ -1752,7 +1752,7 @@ pub async fn run_server() -> Unit {
           match run_check_workdir_denied(workdir, ".") {
             Some(reason) => {
               let hint = "（任务 \{task_id} 不存在，workdir 只允许 server cwd 子树内的相对路径，如 `.`）"
-              return run_check_deny(task_id, "unknown", reason + hint)
+              return Err(run_check_deny(task_id, "unknown", reason + hint))
             }
             None => ()
           }
