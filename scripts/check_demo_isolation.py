@@ -8,9 +8,10 @@ spawn 进程环境里的 `FIST_DB_PATH`（`store_open(scratch=true)` 实测连�
 都是在往真实台账里写演示行；而 README/USAGE/agent-map/deliverable 四处正是教人**裸跑**这类脚本（BUG-122 成因）。
 
 判据（两个方向都发红）：
-  I1  `scripts/**.py` 里 spawn `serve` 的脚本，必须同文件出现「把 FIST_DB_PATH 交给子进程」的四种形状之一：
+  I1  `scripts/**.py` 里 spawn `serve` 的脚本，必须同文件出现「把 FIST_DB_PATH 交给子进程」的五种形状之一：
         os.environ["FIST_DB_PATH"] = ...            （或任意 *env* 变量的下标赋值）
         os.environ.setdefault("FIST_DB_PATH", ...)
+        env.setdefault("FIST_DB_PATH", ...)         # env=dict(os.environ) 之后的特例
         env = dict(... FIST_DB_PATH ...)            # 再传给 Popen
         env = { ... "FIST_DB_PATH": ... }            # 再传给 Popen
       缺针 = 红：这个脚本一裸跑就污染真实台账。
@@ -20,14 +21,18 @@ spawn 进程环境里的 `FIST_DB_PATH`（`store_open(scratch=true)` 实测连�
   I3  扫描面为空（一个 spawn 脚本都没抓到）⇒ FATAL(2)：判据看不见样本就等于没判（J10/BUG-118 同族）。
   I0  任一被检文件读不到 ⇒ 整笔自拒，不报绿。
 
-`--selftest` 五支：G1 干净不误红 / M1 摘掉一个真 spawn 脚本的改道针必红 /
-M1b 只加一行注释不许误红 / M2 把豁免扩到一个根本不 spawn 的文件必红 / M3 空扫描必自拒。
+`--selftest` 六支：G1 干净不误红 / M1 摘掉一个真 spawn 脚本的改道针必红 /
+M1b 只加一行注释不许误红 / M2 把豁免扩到一个根本不 spawn 的文件必红 / M3 空扫描必自拒 /
+M3b 入口级空扫描自拒（把 scan 换成空面直接调 main）。
+**BUG-351**：M3 用 `scan(files=[])` 真构造空扫描，并走 main 与自检共用的 `judge()` 断言 FATAL(2)——
+旧版 `scan({})` 仍枚举真实文件（恒非空），M3 只测了不可达分支，是自证式假绿。
 格子清单从已执行对照反解打印，不手写计数。
 
 用法：python scripts/check_demo_isolation.py [--selftest]
 退出码：0=PASS，1=违例，2=判据无法自证（扫描面空 / 读不到文件 / 自检不通过）。
 """
 import argparse
+import contextlib
 import io
 import os
 import re
@@ -99,11 +104,21 @@ def read_body(r, bodies):
 
 
 def scan(bodies=None, files=None):
+<<<<<<< HEAD
     """返回 (spawn 脚本清单, 违例清单)。bodies 供 --selftest 注入合成正文；
     files 供注入枚举面（BUG-351：默认走 _files()；旧实现 bodies 只覆盖正文、不影响
     _files() 枚举，故 scan({}) 仍返回 34 个 spawners——空扫描根本构造不出来）。"""
     spawners, problems, unreadable = [], [], []
     for path in (_files() if files is None else files):
+=======
+    """返回 (spawn 脚本清单, 违例清单)。
+
+    bodies 供 --selftest 注入合成正文；files 供自检注入扫描面（缺省走真文件系统）。
+    BUG-351：旧版只有 bodies，_files() 恒枚举真实文件 ⇒ 空扫描永远构造不出来。
+    """
+    spawners, problems, unreadable = [], [], []
+    for path in (files if files is not None else _files()):
+>>>>>>> 010ad445 (fix(guard): check_demo_isolation 的 M3 真构造空扫描，判定抽成共用 judge（BUG-351 / T0r44）)
         r = rel(path)
         body = read_body(r, bodies)
         if body is None:
@@ -134,6 +149,7 @@ def scan(bodies=None, files=None):
     return spawners, problems
 
 
+<<<<<<< HEAD
 def isolate_verdict(spawners, problems):
     """纯裁决：(verdict, detail)。BUG-351 核心修复——把 main() 里那条『空扫描必自拒』
     从不可达的内联判断抽成可被 selftest 直接喂 spawners=[] 的纯函数：
@@ -144,6 +160,21 @@ def isolate_verdict(spawners, problems):
     if problems:
         return "VIOLATION", problems
     return "PASS", (len(spawners), len(EXPLICIT_CLAUSES), len(EXEMPT))
+=======
+def judge(spawners, problems):
+    """主判定（main 与 --selftest 共用）：返回 (退出码, 待打印行)。
+
+    BUG-351：空扫描自拒门原先只写在 main() 里，selftest 摸不到它——把判定抽出来，
+    M3 用真空扫描走同一条门，删掉门或断掉调用自检都会红。
+    """
+    if not spawners:
+        return 2, ["FATAL I3 现状面没抓到任何 spawn `serve` 的脚本 ⇒ 判据空转，绝不报绿"]
+    if problems:
+        return 1, ["VIOLATION " + p for p in problems]
+    return 0, ["PASS spawn 面隔离一致：%d 个脚本 spawn `serve` 时都把 FIST_DB_PATH 交给了子进程"
+               "（显式子句 %d 项 + 豁免 %d 项锚点均成立）"
+               % (len(spawners), len(EXPLICIT_CLAUSES), len(EXEMPT))]
+>>>>>>> 010ad445 (fix(guard): check_demo_isolation 的 M3 真构造空扫描，判定抽成共用 judge（BUG-351 / T0r44）)
 
 
 def selftest():
@@ -188,6 +219,7 @@ def selftest():
         EXEMPT.clear()
         EXEMPT.update(saved)
 
+<<<<<<< HEAD
     # M3a：枚举面真能真空（旧 scan({}) 因 _files() 硬编码永远非空，构造不出空扫描）
     _s3, _p3 = scan(files=[])
     executed.append("M3a 枚举面可真空")
@@ -204,6 +236,40 @@ def selftest():
         fails.append("M3c 合规面未判 PASS")
     if isolate_verdict(["a.py"], ["VIOLATION x"])[0] != "VIOLATION":
         fails.append("M3c 违例面未判 VIOLATION")
+=======
+    # M3：真空扫描必自拒（BUG-351）。旧版 scan({}) 仍枚举真实文件、恒非空，
+    # 这一格只是无条件 append；现在 scan(files=[]) 真走空面，并要求共用判定 judge() 给 rc=2。
+    empty_sp, empty_probs = scan(files=[])
+    executed.append("M3 空扫描必自拒")
+    if empty_sp:
+        fails.append("M3 空扫描仍抓到 %d 个 spawn ⇒ files 注入没生效" % len(empty_sp))
+    else:
+        rc, lines = judge(empty_sp, empty_probs)
+        if rc != 2 or not any("I3" in ln for ln in lines):
+            fails.append("M3 空扫描未自拒：rc=%r lines=%r（判据空转必须 FATAL(2)）"
+                         % (rc, lines[:1]))
+    # 干净路径也必须走共用判定且 rc=0（防 judge 的 PASS 分支漂移）
+    rc_clean, _lines = judge(spawners, base_probs)
+    if rc_clean != 0:
+        fails.append("G1 判定层未放行干净输入：judge rc=%r" % rc_clean)
+
+    # M3b：入口接线锁（BUG-350 的入口级教训）——把 scan 换成空面直接调 main()，
+    # 必须拿到 rc=2 且打印 I3；main 若绕过 judge 自报绿，这一格当场红。
+    saved_scan, saved_argv = globals()["scan"], sys.argv
+    globals()["scan"] = lambda *a, **k: ([], [])
+    sys.argv = ["check_demo_isolation.py"]
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            rc_entry = main()
+    finally:
+        globals()["scan"] = saved_scan
+        sys.argv = saved_argv
+    executed.append("M3b 入口空扫描必自拒")
+    if rc_entry != 2 or "I3" not in buf.getvalue():
+        fails.append("M3b main() 在空扫描下 rc=%r / 输出=%r（应 2 且带 I3）"
+                     % (rc_entry, buf.getvalue()[:80]))
+>>>>>>> 010ad445 (fix(guard): check_demo_isolation 的 M3 真构造空扫描，判定抽成共用 judge（BUG-351 / T0r44）)
 
     print("SELFTEST %s（干净不误红 + 变异必红 + 空扫描自拒；格子从已执行对照反解：%s；"
           "spawn 面 %d 个脚本，显式子句 %d 项 / 豁免 %d 项）"
@@ -221,6 +287,7 @@ def main():
     if a.selftest:
         return selftest()
     spawners, problems = scan()
+<<<<<<< HEAD
     verdict, detail = isolate_verdict(spawners, problems)
     if verdict == "FATAL_I3":
         print("FATAL " + detail)
@@ -233,6 +300,12 @@ def main():
     print("PASS spawn 面隔离一致：%d 个脚本 spawn `serve` 时都把 FIST_DB_PATH 交给了子进程"
           "（显式子句 %d 项 + 豁免 %d 项锚点均成立）" % (n_spawners, n_clause, n_exempt))
     return 0
+=======
+    rc, lines = judge(spawners, problems)
+    for ln in lines:
+        print(ln)
+    return rc
+>>>>>>> 010ad445 (fix(guard): check_demo_isolation 的 M3 真构造空扫描，判定抽成共用 judge（BUG-351 / T0r44）)
 
 
 if __name__ == "__main__":
