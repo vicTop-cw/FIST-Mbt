@@ -113,5 +113,5 @@ fn is_ws_byte(b : Int) -> Bool {
 ///|
 fn to_lower_byte(b : Int) -> String {
   let lc = if b >= 65 && b <= 90 { b + 32 } else { b }
-  Char::from_int(lc).to_string()
+  Int32::unsafe_to_char(lc).to_string()
 }

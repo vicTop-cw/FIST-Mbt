@@ -69,7 +69,7 @@ fn reset_engine() -> Unit {
 ///|
 /// 当前 UTC 时间戳（YYYY-MM-DDTHH:MM:SSZ），供 publish/verify 等 now~ 参数使用。
 fn now_utc() -> String {
-  let ms = @env.now().to_int64()
+  let ms = @env.now().reinterpret_as_int64()
   let total_sec = ms / 1000L
   let sec = (total_sec % 60L).to_int()
   let min = (total_sec / 60L % 60L).to_int()
@@ -266,7 +266,7 @@ fn tool_circuit(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
   }
   let ns = arg_str(args, "ns", "default")
   let action = arg_str(args, "action", "status")
-  let now_secs = (@env.now().to_int64() / 1000L).to_int()
+  let now_secs = (@env.now().reinterpret_as_int64() / 1000L).to_int()
   let json = if action == "fail" {
     e.circuit_fail(ns~, circuit~, now_secs~)
   } else if action == "succeed" {
@@ -359,7 +359,7 @@ fn tool_watchdog(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
   match arg_str_opt(args, "circuit") {
     Some(c) => {
       let ns = arg_str(args, "ns", "default")
-      let now_secs = (@env.now().to_int64() / 1000L).to_int()
+      let now_secs = (@env.now().reinterpret_as_int64() / 1000L).to_int()
       m.set("circuit", e.circuit_status(ns~, circuit=c, now_secs~))
     }
     None => ()
