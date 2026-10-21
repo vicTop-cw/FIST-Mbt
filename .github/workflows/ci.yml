@@ -74,6 +74,11 @@ jobs:
         # 根修 = 升级面 A（nightly moon 全仓 fmt，保留门 + 永久消除红）；需 owner 裁决，
         # 提交前必须跑全量 moon test --target js 守 Int32 溢出类缺陷（BUG-218 同族）。
         # 版本自述留在日志里供 owner 裁决；工作树 93 个 .mbt 未提交 WIP 未收口，暂不宜全仓重排。
+        # 2026-10-21 复核（R31）：本地 moon 已升 0.1.20261016（> CI nightly 0.1.20261012），
+        # 含并发 WIP 的工作树上 `moon fmt --check` exit=0 全绿 ⇒ 上面所述"两代 fmt 版本漂移"已消，
+        # 底层技术阻塞已清除。剩余仅流程阻塞（WIP 收口 + 一次 nightly 重排统一风格）；
+        # 在此之前 continue-on-error 仍保留（防 CI 侧 moon 版本波动 skip 守卫族），
+        # 但 owner 裁决时可直接以本条为"技术前置已满足"的证据，不再需要重新诊断漂移。
         continue-on-error: true
         run: |
           moon version --all
