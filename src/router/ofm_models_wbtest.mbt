@@ -30,12 +30,12 @@ test "ofm_m_1_合法响应体解析出模型清单" {
 
 ///|
 test "ofm_m_2_给不出清单即 Err_不静默给空" {
-  assert_eq(parse_ofm_models("") is Err(_), true)
-  assert_eq(parse_ofm_models("   ") is Err(_), true)
-  assert_eq(parse_ofm_models("not json") is Err(_), true)
-  assert_eq(parse_ofm_models("[1,2,3]") is Err(_), true) // 是 JSON 但不是对象
-  assert_eq(parse_ofm_models("{}") is Err(_), true) // 缺 data
-  assert_eq(parse_ofm_models("{\"data\": \"not-array\"}") is Err(_), true)
+  assert_true(parse_ofm_models("") is Err(_))
+  assert_true(parse_ofm_models("   ") is Err(_))
+  assert_true(parse_ofm_models("not json") is Err(_))
+  assert_true(parse_ofm_models("[1,2,3]") is Err(_)) // 是 JSON 但不是对象
+  assert_true(parse_ofm_models("{}") is Err(_)) // 缺 data
+  assert_true(parse_ofm_models("{\"data\": \"not-array\"}") is Err(_))
 }
 
 ///|

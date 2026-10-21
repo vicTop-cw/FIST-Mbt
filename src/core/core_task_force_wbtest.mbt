@@ -35,13 +35,13 @@ test "archive_force/false 与 archive 同义：Paused 双双拒绝且文案一�
 ///|
 test "archive_force/true 放行 Paused/Rejected/Completed 三类滞留态入档" {
   let p = force_task_at(Paused).archive_force(force=true)
-  assert_eq(p is Ok(_), true)
+  assert_true(p is Ok(_))
   assert_eq(p.unwrap().get_status(), Archived)
   let rj = force_task_at(Rejected).archive_force(force=true)
-  assert_eq(rj is Ok(_), true)
+  assert_true(rj is Ok(_))
   assert_eq(rj.unwrap().get_status(), Archived)
   let cp = force_task_at(Completed).archive_force(force=true)
-  assert_eq(cp is Ok(_), true)
+  assert_true(cp is Ok(_))
   assert_eq(cp.unwrap().get_status(), Archived)
 }
 
@@ -50,7 +50,7 @@ test "archive_force/true 拒绝在流态并给出 pause 出路文案" {
   let actives = [Pending, Claimed, Splitting, Executing, Reviewing]
   for i in 0..<5 {
     let r = force_task_at(actives[i]).archive_force(force=true)
-    assert_eq(r is Err(_), true)
+    assert_true(r is Err(_))
     assert_eq(force_err_of(r).contains("在流状态请先 pause"), true)
   }
 }
@@ -58,6 +58,6 @@ test "archive_force/true 拒绝在流态并给出 pause 出路文案" {
 ///|
 test "archive_force/true 对已归档终态拒绝重复归档" {
   let r = force_task_at(Archived).archive_force(force=true)
-  assert_eq(r is Err(_), true)
+  assert_true(r is Err(_))
   assert_eq(force_err_of(r).contains("force archive 仅支持"), true)
 }

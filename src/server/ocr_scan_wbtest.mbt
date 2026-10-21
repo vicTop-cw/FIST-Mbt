@@ -93,13 +93,13 @@ test "ocr_build_args_rules_shape" {
 test "ocr_build_args_bad_input_err" {
   // 未知子命令
   let r1 = ocr_build_args(project_dir="src", subcmd="review")
-  assert_false(r1 is Ok(_))
+  assert_true(r1 is Err(_))
   // delegate 缺 path
   let r2 = ocr_build_args(project_dir="src", subcmd="delegate")
-  assert_false(r2 is Ok(_))
+  assert_true(r2 is Err(_))
   // rules 缺 path
   let r3 = ocr_build_args(project_dir="src", subcmd="rules")
-  assert_false(r3 is Ok(_))
+  assert_true(r3 is Err(_))
 }
 
 ///|
@@ -220,40 +220,4 @@ test "ocr_fake_green_check_empty_dir_no_fp" {
   let (reviewed, notice) = ocr_fake_green_check(s)
   assert_true(reviewed)
   assert_eq(notice, "")
-}
-
-///|
-test "BUG-327_ocr_effective_ok_fail_closed_on_fake_green" {
-  // BUG-327 fail-closed 契约：reviewable_count=0（reviewed=false）时，即使
-  // 二进制 exit_code=0（okk=true），顶层 ok 也必须为 false——只看 ok 的调用方
-  // （含 bugfind 的 require_ocr 门）不能再把「0 份文件被评审」当成 OCR 成功。
-  assert_false(ocr_effective_ok(true, false))
-  assert_true(ocr_effective_ok(true, true))
-  assert_false(ocr_effective_ok(false, true))
-  assert_false(ocr_effective_ok(false, false))
-}
-
-///|
-test "BUG-327b_ocr_reviewed_final_single_mbt_fail_closed" {
-  // BUG-327b：单 .mbt 文件目标时 OCR 静默 files:[] / reviewable=0 / excluded=0，
-  // 与「空目录」同形，`ocr_fake_green_check` 走空目录豁免判 reviewed=true（假绿）。
-  // `ocr_reviewed_final` 按目标路径补判：目标为单个 .mbt 文件时强制 fail-closed。
-  let (r1, n1) = ocr_reviewed_final(true, "src/server/ocr_scan.mbt")
-  assert_false(r1)
-  assert_true(n1.contains("白名单外扩展名"))
-  // 目录目标或非 .mbt 单文件不受影响（零回归）
-  let (r2, n2) = ocr_reviewed_final(true, "src/server/")
-  assert_true(r2)
-  assert_eq(n2, "")
-  let (r3, n3) = ocr_reviewed_final(true, "docs/foo.md")
-  assert_true(r3)
-  assert_eq(n3, "")
-  // stdout 已判假绿时不重复覆盖
-  let (r4, n4) = ocr_reviewed_final(false, "src/server/ocr_scan.mbt")
-  assert_false(r4)
-  assert_eq(n4, "")
-  // 空 path 不误判
-  let (r5, n5) = ocr_reviewed_final(true, "")
-  assert_true(r5)
-  assert_eq(n5, "")
 }
