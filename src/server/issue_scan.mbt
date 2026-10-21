@@ -1077,10 +1077,14 @@ fn scan_substring_arg_expr(code : String, arg : String) -> String {
         j = j + 1
       }
 <<<<<<< HEAD
+<<<<<<< HEAD
       code[pos:j].to_owned().trim().to_owned()
 =======
       code.substring(start=pos, end=j).to_string().trim().to_owned()
 >>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
+=======
+      code[pos:j].to_owned().trim().to_owned()
+>>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
     }
   }
 }
@@ -1132,6 +1136,7 @@ fn scan_guard_mod_invariant(
       match rest.find(" % ") {
         Some(pi) => {
 <<<<<<< HEAD
+<<<<<<< HEAD
           let ktxt = rest[pi + 3:rest.length()].to_owned().trim().to_owned()
 =======
           let ktxt = rest
@@ -1140,6 +1145,9 @@ fn scan_guard_mod_invariant(
             .trim()
             .to_owned()
 >>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
+=======
+          let ktxt = rest[pi + 3:rest.length()].to_owned().trim().to_owned()
+>>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
           let kv = scan_parse_int_opt(ktxt)
           if kv >= 0 {
             mod_k = kv
@@ -1197,6 +1205,7 @@ fn scan_guard_for_bounded(
     let pref = "for " + se + " in 0..<"
     if t.has_prefix(pref) {
 <<<<<<< HEAD
+<<<<<<< HEAD
       let ktxt = t[pref.length():t.length()].to_owned().trim().to_owned()
 =======
       let ktxt = t
@@ -1205,6 +1214,9 @@ fn scan_guard_for_bounded(
         .trim()
         .to_owned()
 >>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
+=======
+      let ktxt = t[pref.length():t.length()].to_owned().trim().to_owned()
+>>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
       // BUG-268 补充：`for i in 0..<26 {` 尾部 `{` 会混入字面量导致 parse 失败
       let mut kk = ktxt
       while kk.length() > 0 &&
@@ -1301,6 +1313,7 @@ fn scan_guard_multi_line_length(
         Some(ei) => {
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
           let name = t[4:ei].to_owned().trim().to_owned()
 =======
           let name = t.substring(start=4, end=ei).to_string().trim().to_string()
@@ -1308,6 +1321,9 @@ fn scan_guard_multi_line_length(
 =======
           let name = t.substring(start=4, end=ei).to_string().trim().to_owned()
 >>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
+=======
+          let name = t[4:ei].to_owned().trim().to_owned()
+>>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
           if !name.is_empty() {
             lenv = name
             break
@@ -1329,6 +1345,7 @@ fn scan_guard_multi_line_length(
     let pref2 = "if " + lenv + " < "
     if t.has_prefix(pref) {
 <<<<<<< HEAD
+<<<<<<< HEAD
       limit = t[pref.length():t.length()].to_owned().trim().to_owned()
 =======
       limit = t
@@ -1337,10 +1354,14 @@ fn scan_guard_multi_line_length(
         .trim()
         .to_owned()
 >>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
+=======
+      limit = t[pref.length():t.length()].to_owned().trim().to_owned()
+>>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
       if_idx = i
       break
     }
     if t.has_prefix(pref2) {
+<<<<<<< HEAD
 <<<<<<< HEAD
       limit = t[pref2.length():t.length()].to_owned().trim().to_owned()
 =======
@@ -1350,6 +1371,9 @@ fn scan_guard_multi_line_length(
         .trim()
         .to_owned()
 >>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
+=======
+      limit = t[pref2.length():t.length()].to_owned().trim().to_owned()
+>>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
       if_idx = i
       break
     }
@@ -1444,6 +1468,7 @@ fn scan_guard_has_suffix_cut(
           match seg.find(" } else { ") {
             Some(ci) => {
 <<<<<<< HEAD
+<<<<<<< HEAD
               let ktxt = seg[0:ci].to_owned().trim().to_owned()
 =======
               let ktxt = seg
@@ -1452,6 +1477,9 @@ fn scan_guard_has_suffix_cut(
                 .trim()
                 .to_owned()
 >>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
+=======
+              let ktxt = seg[0:ci].to_owned().trim().to_owned()
+>>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
               let kv = scan_parse_int_opt(ktxt)
               if kv >= 1 && kv <= 4 {
                 return true
