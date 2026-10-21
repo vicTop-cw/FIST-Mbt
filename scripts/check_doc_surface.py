@@ -17,7 +17,8 @@
 判据（任一不满足即 FAIL，退出码非 0）：
   J1 真源：src/server/server.mbt 注册的工具集合 N。
   J2 AGENTS.md 与 README.md 都必须**逐个覆盖**这 N 个工具名（不是只写对数字）。
-  J3 README.md 功能全景各分组标题括号里的数字之和必须 == N。
+  J3 README.md 功能全景各分组标题括号里的数字之和必须 == N；标题那句「N 组」还必须 == 实际
+     解析到的分组标题数（BUG-363②：只比和抓不到「少一组/多一组」，和可以不变）。
   J4 所有文档里 `vicTop-cw/fist-mbt@x.y.z` 形态的**当前自述**版本必须 == moon.mod 的 version；
      例外：CHANGELOG.md、memory/、reports/、docs/polish-plan.md 属历史/计划陈述，允许旧值。
      子判据（BUG-30）：注册表**发布版本**（"已发布到 x.y.z"）只允许一处权威自述 = BACKLOG.md；
@@ -63,10 +64,13 @@
      两支反向对照（戳早于 published 不误红 / 权威面没记这一版则这一格不作数），
      两面任一为空 ⇒ FATAL 自拒；标记自身残缺、同版本两条、版本与资产名打架也都判红。
 
-  J14 工具计数自述 ↔ 真源对表（BUG-136）：src/server/server.mbt 资源正文、cmd/cli/help_topics.mbt
-       CLI 帮助面、ARCHITECTURE.md 架构自述面三处里的 `N 个工具`/`N MCP tools` 类计数主张，
+  J14 工具计数自述 ↔ 真源对表（BUG-136 / BUG-363 增面）：J14_FACES 里每一面（现为 5 面：
+       src/server/server.mbt 资源正文、cmd/cli/help_topics.mbt CLI 帮助面、ARCHITECTURE.md 架构自述面、
+       templates/tool_use_rubric.md 提示词模板面、docs/agent-map.md 项目地图面）里的
+       `N 个工具`/`N 工具`/`N MCP tools` 类计数主张，
        必须等于 server.mbt 注册表真源计数；CLI 帮助面的分组数字之和与标题「(N groups)」
-       自述也须与真源一致。三面一处都解析不到 ⇒ FATAL 自拒（扫描面饿死不等于没问题）。
+       自述也须与真源一致。各面一处都解析不到 ⇒ FATAL 自拒（扫描面饿死不等于没问题）。
+       口径自述与本表同源：面数一改，上面这句必须跟着改（曾经写着「三面」而 FACES 已 4 面）。
 
   J15 docs/ 归档文档文件名日期前缀（R12 新增）：docs/ 目录下每个 .md 文件名必须
       `YYYY-MM-DD-` 开头——docs/ 是评估/决策归档面（如 2026-10-10-mizchi-llm-eval.md），
@@ -752,6 +756,15 @@ J14_FACES = (
     ("cmd/cli/help_topics.mbt", "CLI 帮助面"),
     ("ARCHITECTURE.md", "架构自述面"),
     ("templates/tool_use_rubric.md", "提示词模板计数面"),
+    # BUG-363（2026-10-21 实测）：docs/agent-map.md 是**给首次进入的 agent 读的第一张图**，
+    # 它手写了一句「122 个工具+3 resources+2 prompts」而真源 170/3/2 —— 落后 48 个没人报。
+    # 为什么两张尺都没照到：check_tools_sync 的 RE_TOOL_CLAIM 是窄口径，只认带「MCP」字样的
+    # 「N 个 MCP 工具」等四种形状，而这句写的是中文三元组「N 个工具+…」；它同族的 RE_TRIPLE
+    # 只认英文「N tools + M resources + K prompts」⇒ 中文写法两边都漏。J14 此前按面白名单走，
+    # 这张地图不在名单里 ⇒ 盲区不是判据坏了，是**名单少一面**。加面的代价（已实测）：
+    # RE_J14_CLAIM 会吃「数字+个工具」形状，地图 §三 分组表里「生命周期(14)」这类导航简写
+    # 不含「工具」二字，不被误伤；只有真正总数主张进比对。
+    ("docs/agent-map.md", "项目地图面"),
 )
 J14_HELP = "cmd/cli/help_topics.mbt"
 RE_J14_CLAIM = re.compile(
@@ -1135,7 +1148,7 @@ def j_selftest():
         fails.append("J14 对『资源面数字落后于真源』不敏感 → BUG-136 那类漂移会重犯")
     if not any("判据饿死" in p for p in j14_count_problems(
             {"src/server/server.mbt": "没有计数", "cmd/cli/help_topics.mbt": "", "ARCHITECTURE.md": ""}, 129)):
-        fails.append("J14 三面全空时不自拒 → 扫描面失效被读成没有问题")
+        fails.append("J14 各面全空时不自拒 → 扫描面失效被读成没有问题")
     J14_HELP_OK = '  "  [Lifecycle 14] a\\n" +\n  "  [Query 2] b\\n"'
     if j14_help_group_problems(J14_HELP_OK + '  "  === 16 MCP tools (2 groups) ==="', 16):
         fails.append("J14 对正确的分组和/分组数误红")
@@ -1147,6 +1160,27 @@ def j_selftest():
         fails.append("J14 对『标题组数与实际不符』不敏感")
     if not any("只解析到" in p for p in j14_help_group_problems('"no groups here"', 129)):
         fails.append("J14 分组面读不到时不自拒 → 和数门成了空门")
+    # BUG-363①：地图面（新增的第 5 面）。正例=中文三元组写法与真源一致不误红；
+    # 反例=同一句把 170 写成 122 必红；再一格证明「分组简写 (14)」这类导航数字不被误伤。
+    J14_MAP_OK = "## 三、MCP 工具分组概览\n| 生命周期(14) | publish/plan |\n| `server` | MCP 层：170 个工具+3 resources+2 prompts 注册 |\n"
+    if j14_count_problems({"docs/agent-map.md": J14_MAP_OK}, 170):
+        fails.append("J14 对项目地图面的正确自述误红 → 分组简写(14)被当成计数主张了")
+    if not any("项目地图面" in p for p in j14_count_problems(
+            {"docs/agent-map.md": J14_MAP_OK.replace("170 个工具", "122 个工具")}, 170)):
+        fails.append("J14 对『地图面总数落后于真源』不敏感 → BUG-363 那类盲区会重犯")
+    # BUG-363②：README 标题的「N 组」自述 ↔ 实际分组标题数（只比和抓不到少一组多一组）。
+    J3_TXT = "## 功能全景（170 个 MCP 工具 · 2 组）\n### A（100）\n### B（70）\n"
+    if j3_readme_group_count_problems(J3_TXT, [100, 70]):
+        fails.append("J3 对正确的组数自述误红")
+    if not any("实际解析到 3 个分组标题" in p for p in j3_readme_group_count_problems(
+            J3_TXT, [100, 40, 30])):
+        fails.append("J3 对『标题组数与实际分组标题数不符』不敏感 → BUG-363② 那类漂移照不到")
+    if not any("没有「N 组」自述" in p for p in j3_readme_group_count_problems(
+            "## 功能全景（170 个 MCP 工具）\n", [170])):
+        fails.append("J3 在组数自述消失时放绿 → 对照面没了这一格就成了空门")
+    if not any("找不到「功能全景」标题行" in p for p in j3_readme_group_count_problems(
+            "# 没有这一行的 README\n", [1, 2])):
+        fails.append("J3 在整张对照面不存在时不自拒")
     j14_real = j14_tool_count_claims()
     if j14_real:
         fails.append("J14 在真实现状面上就红了（先判尺子，再判被测）：" + j14_real[0])
@@ -1210,17 +1244,42 @@ def stale_hits(text):
     return [n for n in STALE_NEEDLES if n in text]
 
 
-def readme_group_sum(text):
-    """README 功能全景分组标题：### X（N） / ### X（N · …）——取每行第一个括号内整数。"""
-    total = 0
+def readme_group_counts(text):
+    """同上口径，但把每组的数字逐条交出：J3 既比「和 == 实测」也比「组数 == 标题自述」。
+    BUG-363②：此前只比和，于是 README 标题写「17 组」而正文实有 18 个分组标题（和照样 170）
+    ——数字和对组数是两件事，少一组多一组都能被"和"掩盖（分组边界一改，和可以不变）。"""
+    out = []
     for line in text.splitlines():
         s = line.strip()
         if not s.startswith("###"):
             continue
         m = re.search(r"[（(]\s*(\d+)\s*[)）]", s)
         if m:
-            total += int(m.group(1))
-    return total
+            out.append(int(m.group(1)))
+    return out
+
+
+RE_J3_HEADING = re.compile(r"^##+\s*功能全景.*$", re.M)
+RE_J3_GROUPN = re.compile(r"(\d+)\s*组")
+
+
+def j3_readme_group_count_problems(readme_txt, parsed_counts):
+    """README 功能全景标题里那句「N 组」↔ 实际解析到的分组标题数（与 J14 对 CLI 帮助面
+    「(N groups)」的同口径）。读不到自述不放过去：对照面消失等于这一格没在量。"""
+    head = RE_J3_HEADING.search(readme_txt)
+    if not head:
+        return ["FATAL J3 README 里找不到「功能全景」标题行 ⇒ 这一格的对照面不存在"]
+    claims = [int(x) for x in RE_J3_GROUPN.findall(head.group(0))]
+    if not claims:
+        return [f"J3 README 功能全景标题（{head.group(0).strip()}）没有「N 组」自述"
+                f"，而正文解析到 {len(parsed_counts)} 个分组标题 ⇒ 组数这一格没人声明，读不到不报绿"]
+    bad = [c for c in claims if c != len(parsed_counts)]
+    if not bad:
+        return []
+    return [f"J3 README 功能全景标题自述「{', '.join(str(c) for c in bad)} 组」，"
+            f"实际解析到 {len(parsed_counts)} 个分组标题（和={sum(parsed_counts)}）"
+            " ⇒ 分组增删只改了和没改组数，或标题数字滞后"]
+
 
 
 def main(argv):
@@ -1266,10 +1325,12 @@ def main(argv):
         if miss:
             problems.append(f"{label} 未逐个列出 {len(miss)} 个已注册工具: " + ", ".join(miss))
 
-    # ---- J3 README 分组数之和 == 实测 ----
-    gs = readme_group_sum(readme_txt)
+    # ---- J3 README 分组数之和 == 实测；组数自述 == 实际分组标题数 ----
+    gcounts = readme_group_counts(readme_txt)
+    gs = sum(gcounts)
     if gs != n:
         problems.append(f"README 功能全景分组计数之和={gs}，与实测工具数 {n} 不符（标题数字对不代表正文跟上）")
+    problems += j3_readme_group_count_problems(readme_txt, gcounts)
 
     # ---- J4 当前自述版本一致性 ----
     mv = moon_version()

@@ -39,7 +39,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 
 ---
 
-## 功能全景（170 个 MCP 工具 · 17 组）
+## 功能全景（170 个 MCP 工具 · 18 组）
 
 ### 生命周期（14）
 `publish` · `publish_parallel` · `plan` · `claim` · `execute` · `submit` · `verify` · `reject` · `retry` · `pause` · `resume` · `reopen_task` · `archive` · `delete`
