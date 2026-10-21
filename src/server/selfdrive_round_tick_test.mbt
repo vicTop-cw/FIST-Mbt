@@ -65,7 +65,7 @@ fn action_of(r : Json) -> String {
 ///|
 test "R115 L1 卡死：idle > timeout → STALLED" {
   let snap = mk_snap(0, 0, 5, 0, "- [x] README.md", 10000, 1, [ok("README.md")])
-  let r = selfdrive_round_tick(snap)
+  let r = @server.selfdrive_round_tick(snap)
   assert_eq(verdict_of(r), "STALLED")
   assert_eq(action_of(r), "HEAL_OR_END")
 }
@@ -73,7 +73,7 @@ test "R115 L1 卡死：idle > timeout → STALLED" {
 ///|
 test "R115 L1 不误报：idle < timeout → 非 STALLED" {
   let snap = mk_snap(3, 2, 5, 0, "- [x] README.md", 3000, 1, [ok("README.md")])
-  let r = selfdrive_round_tick(snap)
+  let r = @server.selfdrive_round_tick(snap)
   assert_eq(verdict_of(r) == "STALLED", false)
 }
 
@@ -85,7 +85,7 @@ test "R115 L2 目标达成：required 全命中 → GOAL_ACHIEVED" {
     ok("README.md"),
     ok("moon.mod"),
   ])
-  let r = selfdrive_round_tick(snap)
+  let r = @server.selfdrive_round_tick(snap)
   assert_eq(verdict_of(r), "GOAL_ACHIEVED")
   assert_eq(action_of(r), "STOP_ALL")
 }
@@ -102,7 +102,7 @@ test "R115 L2 部分命中不达成" {
     1,
     [ok("README.md")],
   )
-  let r = selfdrive_round_tick(snap)
+  let r = @server.selfdrive_round_tick(snap)
   assert_eq(verdict_of(r) == "GOAL_ACHIEVED", false)
 }
 
@@ -120,7 +120,7 @@ test "R115 L3 轮次耗尽：95%+ done 无阻塞无活跃 → ROUND_COMPLETE" {
     1,
     [ok("README.md")],
   )
-  let r = selfdrive_round_tick(snap)
+  let r = @server.selfdrive_round_tick(snap)
   assert_eq(verdict_of(r), "ROUND_COMPLETE")
   assert_eq(action_of(r), "START_NEXT_ROUND")
 }
@@ -137,7 +137,7 @@ test "R115 L3 有阻塞不算耗尽" {
     1,
     [ok("README.md")],
   )
-  let r = selfdrive_round_tick(snap)
+  let r = @server.selfdrive_round_tick(snap)
   assert_eq(verdict_of(r), "CONTINUE")
 }
 
@@ -153,7 +153,7 @@ test "R115 L3 有活跃不算耗尽" {
     1,
     [ok("README.md")],
   )
-  let r = selfdrive_round_tick(snap)
+  let r = @server.selfdrive_round_tick(snap)
   assert_eq(verdict_of(r), "CONTINUE")
 }
 
@@ -171,7 +171,7 @@ test "R115 L4 正常推进 → CONTINUE" {
     1,
     [ok("README.md")],
   )
-  let r = selfdrive_round_tick(snap)
+  let r = @server.selfdrive_round_tick(snap)
   assert_eq(verdict_of(r), "CONTINUE")
   assert_eq(action_of(r), "PICK_NEXT")
 }
@@ -182,6 +182,6 @@ test "R115 L4 正常推进 → CONTINUE" {
 test "R115 卡死优先于达成" {
   // 达成条件全满足 + 卡死 → 应该先判卡死
   let snap = mk_snap(0, 0, 10, 0, "- [x] README.md", 10000, 1, [ok("README.md")])
-  let r = selfdrive_round_tick(snap)
+  let r = @server.selfdrive_round_tick(snap)
   assert_eq(verdict_of(r), "STALLED")
 }

@@ -30,7 +30,7 @@ fn lint_seed(d : String) -> Unit {
 test "lint_1_scan_hits_high_risk" {
   let d = lint_dir("lint_c1")
   lint_seed(d)
-  let r = issue_scan(d, "", 100)
+  let r = @server.issue_scan(d, "", 100)
   // 不应报非法目录错误
   assert_true(r is Ok(_))
   let j = match r {
@@ -47,16 +47,16 @@ test "lint_1_scan_hits_high_risk" {
 ///|
 test "lint_2_illegal_dir_rejected" {
   // 空目录 / 绝对路径 / 穿越都应返回 Err
-  assert_true(issue_scan("", "", 100) is Err(_))
-  assert_true(issue_scan("../x", "", 100) is Err(_))
-  assert_true(issue_scan("C:/x", "", 100) is Err(_))
-  assert_true(issue_scan("/abs", "", 100) is Err(_))
+  assert_true(@server.issue_scan("", "", 100) is Err(_))
+  assert_true(@server.issue_scan("../x", "", 100) is Err(_))
+  assert_true(@server.issue_scan("C:/x", "", 100) is Err(_))
+  assert_true(@server.issue_scan("/abs", "", 100) is Err(_))
 }
 
 ///|
 test "lint_3_empty_dir_no_findings" {
   let d = lint_dir("lint_c3")
-  let r = issue_scan(d, "", 100)
+  let r = @server.issue_scan(d, "", 100)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -79,7 +79,7 @@ test "lint_4_test_file_skipped_by_default" {
     _ => ()
   }
   // 默认 include_tests=false：只扫到 sample.mbt（1 个）
-  let r0 = issue_scan(d, "", 100)
+  let r0 = @server.issue_scan(d, "", 100)
   assert_true(r0 is Ok(_))
   let j0 = match r0 {
     Ok(x) => x
@@ -88,7 +88,7 @@ test "lint_4_test_file_skipped_by_default" {
   assert_eq(mem_int(j0, "scanned_files"), 1)
   assert_eq(mem_bool(j0, "include_tests"), false)
   // include_tests=true：扫到 2 个（含 t_test.mbt）
-  let r1 = issue_scan(d, "", 100, include_tests=true)
+  let r1 = @server.issue_scan(d, "", 100, include_tests=true)
   assert_true(r1 is Ok(_))
   let j1 = match r1 {
     Ok(x) => x
@@ -145,7 +145,7 @@ test "lint_5_comment_lines_are_not_matched_bug15" {
   ) catch {
     _ => ()
   }
-  let r = issue_scan(d, "", 100)
+  let r = @server.issue_scan(d, "", 100)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -166,7 +166,7 @@ test "lint_5_comment_lines_are_not_matched_bug15" {
 test "lint_6_rules_table_never_self_hits_bug15" {
   // 扫真实仓库 src/server：扫描器自己的规则表文件不得再贡献命中（pattern/hint 字面量自命中）。
   // 前置哨兵：scanned_files>0 —— 否则「没扫到」会被当成「没有自噪声」而假绿。
-  let r = issue_scan("src/server", "", 300)
+  let r = @server.issue_scan("src/server", "", 300)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -181,7 +181,7 @@ test "lint_7_no_high_hits_left_in_src_omega_bug15" {
   // 真实仓库 src/omega：spec.mbt:23 的 doc 注释（含 "/ 0"）曾被判 div-by-zero(high)，
   // spec.mbt:69/70 的 unsafe_get 与 :378/392 的 counts[0] 均有前置守卫（本轮逐条实跑复核为误报）。
   // 修复后 high 档应为 0（by_severity.high 与逐条 findings 双查，防聚合与明细不一致）。
-  let r = issue_scan("src/omega", "", 300)
+  let r = @server.issue_scan("src/omega", "", 300)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -233,7 +233,7 @@ test "lint_8_guard_filter_keeps_real_hits_drops_guarded" {
   ) catch {
     _ => ()
   }
-  let r = issue_scan(d, "", 100)
+  let r = @server.issue_scan(d, "", 100)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -260,14 +260,16 @@ test "lint_10_guard_function_direct" {
   let prev_guarded : Array[String] = ["  if rows.is_empty() { return -1 }"]
   // 上一行有 is_empty() 守卫应判 guarded
   assert_true(
-    scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_guarded),
+    @server.scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_guarded),
   )
   // 无守卫：上一行只是声明
   let prev_unguarded : Array[String] = [
     "fn unguarded(): Int {", "  let rows : Array[Int] = []",
   ]
   assert_eq(
-    scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_unguarded),
+    @server.scan_finding_guarded(
+      "rows[0]", "index-out-of-bounds", prev_unguarded,
+    ),
     false,
   )
   // 跨函数守卫应被停：上一行是 `fn ` 边界
@@ -275,7 +277,9 @@ test "lint_10_guard_function_direct" {
     "  let rows : Array[Int] = []", "  if rows.is_empty() { return -1 }", "}", "fn next(): Int {",
   ]
   assert_eq(
-    scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_cross_fn),
+    @server.scan_finding_guarded(
+      "rows[0]", "index-out-of-bounds", prev_cross_fn,
+    ),
     false,
   )
   // unguarded: 前一函数里的守卫跨了 `fn` 边界，不应算
@@ -289,7 +293,7 @@ test "lint_10_guard_function_direct" {
     "fn unguarded(): Int {", "  let rows : Array[Int] = []",
   ]
   assert_eq(
-    scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_for_8),
+    @server.scan_finding_guarded("rows[0]", "index-out-of-bounds", prev_for_8),
     false,
   )
 }
@@ -311,7 +315,7 @@ test "lint_9_substring_guard_filter" {
   ) catch {
     _ => ()
   }
-  let r = issue_scan(d, "", 100)
+  let r = @server.issue_scan(d, "", 100)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -333,7 +337,7 @@ test "lint_9_substring_guard_filter" {
 /// 该目录从不会被创建，因此必然不存在。
 test "lint_10_missing_dir_returns_err" {
   let d = "temp/lint_bug222_missing_dir"
-  let r = issue_scan(d, "", 100)
+  let r = @server.issue_scan(d, "", 100)
   assert_true(r is Err(_))
 
   // ---------------------------------------------------------------------------
@@ -383,7 +387,7 @@ test "lint_11_bug268_multiline_ifelse_length_fp_eliminated" {
     "pub fn memory_gc_logic(content : String, max_chars : Int) {",
   ]
   assert_true(
-    scan_finding_guarded(code, "substring-overrun", prev),
+    @server.scan_finding_guarded(code, "substring-overrun", prev),
     msg="BUG-268 形态 D：倒序窗口下的多行 if-else 守卫应被识别",
   )
   // 无 else 分支（或守卫与长度无关）的同形代码仍须判为未守卫
@@ -391,7 +395,7 @@ test "lint_11_bug268_multiline_ifelse_length_fp_eliminated" {
     "    (", "    let cut = max_chars", "  ", "  let n = content.length()", "pub fn memory_gc_logic(content : String, max_chars : Int) {",
   ]
   assert_eq(
-    scan_finding_guarded(
+    @server.scan_finding_guarded(
       "content.substring(start=n - cut, end=n)", "substring-overrun", unguarded,
     ),
     false,
@@ -408,12 +412,12 @@ test "lint_12_bug268_mod_invariant_fp_eliminated" {
     "  let hex = \"0123456789abcdef\"", "fn mcs_hex4(n : Int) -> String {",
   ]
   assert_true(
-    scan_finding_guarded(code, "substring-overrun", prev),
+    @server.scan_finding_guarded(code, "substring-overrun", prev),
     msg="BUG-268 形态 A：`x % k` 模运算区间应被识别",
   )
   // 无模运算定义时不得豁免
   assert_eq(
-    scan_finding_guarded(
+    @server.scan_finding_guarded(
       "out = hex.substring(start=d, end=d + 1) + out",
       "substring-overrun",
       ["    let d = n - 3", "  let hex = \"0123456789abcdef\""],
@@ -432,7 +436,7 @@ test "lint_13_bug268_find_endvar_fp_eliminated" {
     "    let ls = l.to_string()",
   ]
   assert_true(
-    scan_finding_guarded(code, "substring-overrun", prev),
+    @server.scan_finding_guarded(code, "substring-overrun", prev),
     msg="BUG-268 形态 B/C：find() 位置守卫应被识别",
   )
 }
@@ -455,7 +459,7 @@ test "lint_14_bug268_true_positive_still_hits" {
   ) catch {
     _ => ()
   }
-  let r = issue_scan(d, "", 100)
+  let r = @server.issue_scan(d, "", 100)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x
@@ -475,7 +479,7 @@ test "lint_14_bug268_true_positive_still_hits" {
 /// BUG-268 端到端：对真实样本点所在目录做 issue_scan，确认三个已知假阳性已消除。
 /// 只按 file 后缀 + code 片段匹配（不钉行号），行号漂移不误红。
 test "lint_15_bug268_real_samples_no_fp" {
-  let r_server = issue_scan("src/server", "", 300)
+  let r_server = @server.issue_scan("src/server", "", 300)
   assert_true(r_server is Ok(_))
   let j_server = match r_server {
     Ok(x) => x
@@ -490,7 +494,7 @@ test "lint_15_bug268_real_samples_no_fp" {
     "mcp_config_scaffold.mbt",
     "start=d",
   )
-  let r_ops = issue_scan("src/ops", "", 300)
+  let r_ops = @server.issue_scan("src/ops", "", 300)
   assert_true(r_ops is Ok(_))
   let j_ops = match r_ops {
     Ok(x) => x

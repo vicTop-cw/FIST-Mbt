@@ -3,8 +3,8 @@
 /// 验证 supervisor_reminder_tick 的停滞（R2）/待处理超时（R3）检出，纯计算只读。
 
 ///|
-fn reminder_test_engine() -> FistEngine {
-  FistEngine::new()
+fn reminder_test_engine() -> @engine.FistEngine {
+  @engine.FistEngine::new()
 }
 
 ///|

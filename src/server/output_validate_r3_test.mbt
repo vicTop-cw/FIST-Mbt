@@ -41,7 +41,7 @@ fn r3ov_details(j : Json) -> String {
 test "BUG-31：拼错的 artifact 键必须让硬门变红，且点名未知键" {
   // 与下面那条"合法 contains 断言"只差一个字母——旧实现两者都回 pass，正是病灶
   let j = r3ov_json(
-    output_validate(
+    @server.output_validate(
       ".",
       [
         Json::object({
@@ -70,7 +70,7 @@ test "BUG-31：拼错的 artifact 键必须让硬门变红，且点名未知键"
 ///|
 test "BUG-31 成对：合法规格必须放行，冲突/空规格必须挡下" {
   let ok = r3ov_json(
-    output_validate(
+    @server.output_validate(
       ".",
       [
         Json::object({
@@ -86,7 +86,7 @@ test "BUG-31 成对：合法规格必须放行，冲突/空规格必须挡下" {
     abort("合法 contains 断言被误拒: " + r3ov_details(ok))
   }
   let both = r3ov_json(
-    output_validate(
+    @server.output_validate(
       ".",
       [
         Json::object({
@@ -104,7 +104,7 @@ test "BUG-31 成对：合法规格必须放行，冲突/空规格必须挡下" {
     )
   }
   let empty_spec = r3ov_json(
-    output_validate(
+    @server.output_validate(
       ".",
       [Json::object({ "min_chars": Json::number(1.0) })],
       Json::object({}),
@@ -119,7 +119,7 @@ test "BUG-31 成对：合法规格必须放行，冲突/空规格必须挡下" {
 ///|
 test "BUG-31 建议2：纯 {path} 的 pass 文案不得声称 invariant 通过" {
   let j = r3ov_json(
-    output_validate(
+    @server.output_validate(
       ".",
       [Json::object({ "path": Json::string("README.md") })],
       Json::object({}),

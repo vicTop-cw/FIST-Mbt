@@ -150,7 +150,7 @@ fn wd_tick_ok(
   project_dir? : String = "",
 ) -> Json {
   match
-    watchdog_tick(
+    @ops.watchdog_tick(
       e,
       now,
       timeout_sec=600,
@@ -197,7 +197,7 @@ test "watchdog A-1: 库中 10 分钟前心跳 -> 跨进程判定 stale 并回滚
   // 心跳仅落库（本进程内存无记录），模拟 MCP 进程重启后的判定
   wd_beat(e, "T0", "2026-09-17T00:00:02Z", "active")
   match
-    heal_stale_tasks_from_store(
+    @ops.heal_stale_tasks_from_store(
       e,
       "2026-09-17T00:10:03Z",
       timeout_sec=600,
@@ -222,7 +222,7 @@ test "watchdog A-2: 心跳新鲜 -> 不回滚" {
   wd_to_executing(e)
   wd_beat(e, "T0", "2026-09-17T00:00:02Z", "active")
   match
-    heal_stale_tasks_from_store(
+    @ops.heal_stale_tasks_from_store(
       e,
       "2026-09-17T00:00:22Z",
       timeout_sec=600,
@@ -244,7 +244,7 @@ test "watchdog A-3a: 无任何心跳记录但刚刚活动过 -> 不回滚（BUG-
   wd_to_executing(e)
   // execute 盖在 00:00:02，1 秒后看护：没有心跳行不等于已经静默
   match
-    heal_stale_tasks_from_store(
+    @ops.heal_stale_tasks_from_store(
       e,
       "2026-09-17T00:00:03Z",
       timeout_sec=600,
@@ -265,7 +265,7 @@ test "watchdog A-3b: 无任何心跳记录且活动时钟超 timeout -> 仍回�
   wd_publish(e, "cron-auto")
   wd_to_executing(e)
   match
-    heal_stale_tasks_from_store(
+    @ops.heal_stale_tasks_from_store(
       e,
       "2026-09-17T00:16:42Z",
       timeout_sec=600,
@@ -285,7 +285,7 @@ test "watchdog A-3c: ns 传空串 = 全库扫描（BUG-119 与 heal 的 BUG-81 �
   wd_publish(e, "other-ns")
   wd_to_executing(e)
   match
-    heal_stale_tasks_from_store(
+    @ops.heal_stale_tasks_from_store(
       e,
       "2026-09-17T00:16:42Z",
       timeout_sec=600,
@@ -304,7 +304,7 @@ test "watchdog A-4: 非活跃状态（已完成 / 已暂停）超时也不回滚
   wd_to_completed(e)
   wd_beat(e, "T0", "2026-09-17T00:00:02Z", "done")
   match
-    heal_stale_tasks_from_store(
+    @ops.heal_stale_tasks_from_store(
       e,
       "2026-09-17T09:00:00Z",
       timeout_sec=600,
@@ -324,7 +324,7 @@ test "watchdog A-4: 非活跃状态（已完成 / 已暂停）超时也不回滚
   ignore(e2.pause_task(task_id="T0", now="2026-09-17T00:00:05Z"))
   wd_beat(e2, "T0", "2026-09-17T00:00:02Z", "paused")
   match
-    heal_stale_tasks_from_store(
+    @ops.heal_stale_tasks_from_store(
       e2,
       "2026-09-17T09:00:00Z",
       timeout_sec=600,
@@ -505,13 +505,13 @@ test "watchdog 边界: 未传 / 显式传 default 命名空间均不自动续轮
 
 ///|
 test "watchdog M-1: 元提示词命名规则判定" {
-  assert_eq(is_meta_prompt_name("20260917.12.30.45.md"), true)
-  assert_eq(is_meta_prompt_name("20260901.10.00.00.md"), true)
-  assert_eq(is_meta_prompt_name("_20260917.12.30.45.md"), false)
-  assert_eq(is_meta_prompt_name("20260917.12.30.4.md"), false)
-  assert_eq(is_meta_prompt_name("20260917.12.30.45.txt"), false)
-  assert_eq(is_meta_prompt_name("20260917.1230.45.md"), false)
-  assert_eq(is_meta_prompt_name("README.md"), false)
+  assert_eq(@ops.is_meta_prompt_name("20260917.12.30.45.md"), true)
+  assert_eq(@ops.is_meta_prompt_name("20260901.10.00.00.md"), true)
+  assert_eq(@ops.is_meta_prompt_name("_20260917.12.30.45.md"), false)
+  assert_eq(@ops.is_meta_prompt_name("20260917.12.30.4.md"), false)
+  assert_eq(@ops.is_meta_prompt_name("20260917.12.30.45.txt"), false)
+  assert_eq(@ops.is_meta_prompt_name("20260917.1230.45.md"), false)
+  assert_eq(@ops.is_meta_prompt_name("README.md"), false)
 }
 
 ///|
@@ -522,12 +522,12 @@ test "watchdog M-2: 目录取最新一份、忽略下划线辅助文件" {
     ("20260917.12.30.45.md", "最新轮提示词"),
     ("README.md", "非规范命名，应被忽略"),
   ])
-  assert_eq(latest_meta_prompt_in_dir(dir), Some("20260917.12.30.45.md"))
-  match read_meta_prompt(dir) {
+  assert_eq(@ops.latest_meta_prompt_in_dir(dir), Some("20260917.12.30.45.md"))
+  match @ops.read_meta_prompt(dir) {
     Some(c) => assert_eq(c, "最新轮提示词")
     None => abort("应读到最新元提示词")
   }
-  match read_meta_prompt(dir + "/20260901.10.00.00.md") {
+  match @ops.read_meta_prompt(dir + "/20260901.10.00.00.md") {
     Some(c) => assert_eq(c, "旧轮提示词")
     None => abort("单文件形式应可读")
   }

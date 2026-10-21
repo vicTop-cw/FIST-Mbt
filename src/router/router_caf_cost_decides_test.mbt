@@ -8,11 +8,11 @@
 ///
 /// stats 由真实 `CafRecord` 记忆经 `caf_stats` 聚合生成（全 pub API，避免构造
 /// `CafModelStats` 的字面量语法歧义），确保测的是真源聚合口径。
-fn caf_cost_mem() -> CafMemory {
-  let h = caf_feature_hash("cost test context")
-  let mem = CafMemory::new()
+fn caf_cost_mem() -> @router.CafMemory {
+  let h = @router.caf_feature_hash("cost test context")
+  let mem = @router.CafMemory::new()
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=h,
       model="free-a",
       ok=true,
@@ -21,7 +21,7 @@ fn caf_cost_mem() -> CafMemory {
     ),
   )
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=h,
       model="free-a",
       ok=true,
@@ -30,7 +30,7 @@ fn caf_cost_mem() -> CafMemory {
     ),
   )
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=h,
       model="free-b",
       ok=true,
@@ -39,7 +39,7 @@ fn caf_cost_mem() -> CafMemory {
     ),
   )
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=h,
       model="free-b",
       ok=true,
@@ -55,9 +55,9 @@ fn caf_cost_mem() -> CafMemory {
 /// free-a 与 free-b 都 100% 成功（rate 均为 1.0），但 free-a avg_cost=10.0、free-b avg_cost=0.1。
 /// 期望 free-b 排到 free-a 前面（否则 CAF 会在同成功率下选更贵的模型）。
 test "caf_cost_1_同率不同成本_成本低优先" {
-  let stats = caf_stats(caf_cost_mem().all())
+  let stats = @router.caf_stats(caf_cost_mem().all())
   let candidates : Array[String] = ["free-a", "free-b"]
-  let out = caf_soft_reorder(candidates, stats)
+  let out = @router.caf_soft_reorder(candidates, stats)
   if out.length() != 2 {
     abort("应返回 2 个候选，实际 " + out.length().to_string())
   }
@@ -73,10 +73,10 @@ test "caf_cost_1_同率不同成本_成本低优先" {
 /// 邻域优先胜过成本：只有 free-a 有历史依据（rate 0.5, cost 0.1），
 /// free-b 不在邻域 → free-a 先。防止"为了省成本把无依据模型排到有依据的前面"。
 test "caf_cost_2_邻域优先胜过成本" {
-  let h = caf_feature_hash("nb test context")
-  let mem = CafMemory::new()
+  let h = @router.caf_feature_hash("nb test context")
+  let mem = @router.CafMemory::new()
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=h,
       model="free-a",
       ok=true,
@@ -85,7 +85,7 @@ test "caf_cost_2_邻域优先胜过成本" {
     ),
   )
   mem.push(
-    CafRecord::new(
+    @router.CafRecord::new(
       feature_hash=h,
       model="free-a",
       ok=false,
@@ -93,9 +93,9 @@ test "caf_cost_2_邻域优先胜过成本" {
       ts="2026-10-15T11:00:00Z",
     ),
   )
-  let stats = caf_stats(mem.all())
+  let stats = @router.caf_stats(mem.all())
   let candidates : Array[String] = ["free-a", "free-b"]
-  let out = caf_soft_reorder(candidates, stats)
+  let out = @router.caf_soft_reorder(candidates, stats)
   if out[0] != "free-a" {
     abort("邻域内的 free-a 应优先，实际首位 " + out[0])
   }

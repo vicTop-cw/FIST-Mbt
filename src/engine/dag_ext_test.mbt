@@ -2,8 +2,8 @@
 
 ///|
 /// 构造带依赖的任务集（不走 publish，直接写 store 以便自由指定 depends_on）
-fn dag_test_engine() -> FistEngine {
-  let e = FistEngine::new()
+fn dag_test_engine() -> @engine.FistEngine {
+  let e = @engine.FistEngine::new()
   // A 无依赖；B 依赖 A；C 依赖 B；D 依赖 A（短链）；E 依赖 D，独立分支
   let specs : Array[(String, String?, Array[String])] = [
     ("A", None, []),
@@ -42,13 +42,13 @@ test "critical_path: 最长依赖链 A->B->C" {
 
 ///|
 test "critical_path: 空仓库返回空数组" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   assert_eq(e.critical_path().length(), 0)
 }
 
 ///|
 test "critical_path: 成环依赖不产生重复节点" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   // A -> B -> C -> A（人为造环）
   let specs : Array[(String, Array[String])] = [
     ("A", ["C"]),
@@ -98,7 +98,7 @@ test "topo_sort: 无依赖时保持输入顺序" {
 
 ///|
 test "critical_path: 含依赖的发布任务也算入图" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   let t = @core.Task::new(
     id="A",
     project_dir="/proj/demo",
@@ -124,7 +124,7 @@ test "critical_path: 含依赖的发布任务也算入图" {
 
 ///|
 /// 通过引擎状态机将任务推进到已完成：claim -> execute -> submit -> verify
-fn drive_to_completed(e : FistEngine, id : String) -> Unit {
+fn drive_to_completed(e : @engine.FistEngine, id : String) -> Unit {
   match e.claim(task_id=id, assignee="agent1", now="2026-01-01T01:00:00Z") {
     Ok(_) => ()
     Err(m) => abort("claim \{id} failed: \{m}")
@@ -147,7 +147,7 @@ fn drive_to_completed(e : FistEngine, id : String) -> Unit {
 
 ///|
 /// 通过引擎状态机将任务推进到已领取
-fn drive_to_claimed(e : FistEngine, id : String) -> Unit {
+fn drive_to_claimed(e : @engine.FistEngine, id : String) -> Unit {
   match e.claim(task_id=id, assignee="agent2", now="2026-01-01T01:00:00Z") {
     Ok(_) => ()
     Err(m) => abort("claim \{id} failed: \{m}")
@@ -170,7 +170,7 @@ test "parallelism: 待领取且依赖满足的任务数" {
 
 ///|
 test "dag_ascii: parent_id 归组 + depends_on 缩进" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   let specs : Array[(String, String, Array[String])] = [
     ("T0", "", []),
     ("T0.1", "T0", []),
@@ -203,7 +203,7 @@ test "dag_ascii: parent_id 归组 + depends_on 缩进" {
 
 ///|
 test "dag_ascii: 空命名空间返回空串" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   assert_eq(e.dag_ascii(ns="nothing"), "")
 }
 
@@ -286,7 +286,7 @@ test "dag_slack: 瓶颈与松弛分析——关键路径 slack=0、旁支 slack>
     _ => abort("slack_map 缺失")
   }
   // 构造带松弛的图：A→B 与 A→C 独立分支，B 无后继 -> B 的 latest 可晚于 earliest
-  let e2 = FistEngine::new()
+  let e2 = @engine.FistEngine::new()
   let specs : Array[(String, Array[String])] = [
     ("A", []),
     ("B", ["A"]),
@@ -315,7 +315,7 @@ test "dag_slack: 瓶颈与松弛分析——关键路径 slack=0、旁支 slack>
   // 说明：latest 反向从 makespan=1 起，B/C 无后继 -> latest=1, earliest=1 -> slack=0；A latest=0。
   // 因此两条分支都在关键路径上（无松弛），符合"必须都做完才完工"。环检测单独验证。
   // 构造环：X→Y→X
-  let e3 = FistEngine::new()
+  let e3 = @engine.FistEngine::new()
   ignore(
     e3.store.create_task(
       @core.Task::new(
@@ -361,7 +361,7 @@ test "dag_schedule: 排程视图——critical/flexible 分批 + assignee 附带
   }
   // 造带松弛的图：A→B 与 A→C 独立分支——两条都关键（须都做完）；B 无后继
   // 为造出 flexible，加 X→B 使 B 有 slack：A(0) -> B(1,slack1) / C(1,slack0)？ 简化：验证 assignee 透传
-  let e2 = FistEngine::new()
+  let e2 = @engine.FistEngine::new()
   let specs : Array[(String, Array[String])] = [("A", []), ("B", ["A"])]
   for s in specs {
     let (id, deps) = s
@@ -389,7 +389,7 @@ test "dag_schedule: 排程视图——critical/flexible 分批 + assignee 附带
 test "dag_schedule R75: 负载感知——flexible 未认领任务附 suggest=负载最低执行者" {
   // 图：A 无依赖(关键,slack0)、X 无依赖(有 slack 可并行)——makespan=0 下 X slack>=0
   // 为造出 slack>0 的 flexible 项，加长链 A→B→C 使 makespan=2，则并列的 X、Y(无依赖) 有 slack=2
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   // 注册执行者 w1(负载0) 与 w2(负载0)
   ignore(
     e.executor_save(
@@ -456,7 +456,7 @@ test "dag_schedule R75: 负载感知——flexible 未认领任务附 suggest=�
 ///|
 test "dag_cost_route: 能力约束+切换税+总成本（R77 STAR 式成本路由）" {
   // 图 A→B→C 关键链 + A→D 短链：D slack=1 flexible。A 已认领给 alice（切换成本基准）。
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   ignore(
     e.executor_save(
       name="alice",
@@ -534,7 +534,7 @@ test "dag_cost_route: 能力约束+切换税+总成本（R77 STAR 式成本路�
 ///|
 test "dag_cost_route: 同执行者免切换税 + 空注册表跳过（R77）" {
   // 场景1：D 描述含"编排" -> want=编排 -> 仅 alice 可路由；与依赖 A=alice 相同 -> switch=0
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   ignore(
     e.executor_save(
       name="alice",
@@ -583,7 +583,7 @@ test "dag_cost_route: 同执行者免切换税 + 空注册表跳过（R77）" {
     _ => abort("e2 cost_route 缺失: " + j.stringify())
   }
   // 场景2：无注册执行者 -> cost_route 空、total=0（note 说明跳过）
-  let e3 = FistEngine::new()
+  let e3 = @engine.FistEngine::new()
   let specs3 : Array[(String, Array[String], String)] = [
     ("A", [], "编排根任务"),
     ("D", ["A"], "编排子任务"),
@@ -688,7 +688,7 @@ test "dag_cost_route: 等成本平局按累计负载均分（BUG-336 负载感�
 ///|
 test "budget_split_by_dag: 预算按依赖图阶段切分（R81 ZEBRA 蒸馏）" {
   // 链 A→B→C（A 难/B 中/C 易）：earliest A=0/B=1/C=2；预算 10 → 权重 3/2/1 归一化
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   let specs : Array[(String, Array[String], String)] = [
     ("A", [], "编排根任务 [难度梯度 1/3:难]"),
     ("B", ["A"], "编排子任务 [难度梯度 2/3:中]"),
@@ -735,7 +735,7 @@ test "budget_split_by_dag: 预算按依赖图阶段切分（R81 ZEBRA 蒸馏）"
     _ => abort("total_budget 缺失")
   }
   // 空仓库：stages 空、total_budget 保真
-  let e2 = FistEngine::new()
+  let e2 = @engine.FistEngine::new()
   let j2 = e2.budget_split_by_dag(7)
   match j2.value("stages") {
     Some(Array(st)) => assert_eq(st.length(), 0)
@@ -750,8 +750,8 @@ test "budget_split_by_dag: 预算按依赖图阶段切分（R81 ZEBRA 蒸馏）"
 ///|
 /// 构造 进度门控 测试引擎：P(根,[难度梯度 1/3:中]) + C1/C2([难度梯度 1/2:中])，C1 已完成。
 /// 子树=3 任务，done=1 → progress=1/3；已开工难度权重和=2（仅 C1）。
-fn progress_gate_engine() -> FistEngine {
-  let e = FistEngine::new()
+fn progress_gate_engine() -> @engine.FistEngine {
+  let e = @engine.FistEngine::new()
   let specs : Array[(String, String, String)] = [
     ("P", "", "[难度梯度 1/3:中] 进度门控根任务"),
     ("C1", "P", "[难度梯度 1/2:中] 子任务一"),
@@ -860,7 +860,7 @@ test "progress_gate：ESCALATE 判决（线性已超支）+ 双路径数字" {
 ///|
 test "progress_gate：未开工=OK / 全完成=OK / 空任务+非法预算=ok:false" {
   // 未开工：仅根任务待领取 → progress 0、燃尽率 0 → OK
-  let e0 = FistEngine::new()
+  let e0 = @engine.FistEngine::new()
   let t = @core.Task::new(
     id="P0",
     project_dir="/proj/demo",
@@ -923,8 +923,8 @@ test "progress_gate：未开工=OK / 全完成=OK / 空任务+非法预算=ok:fa
 
 ///|
 /// plan_revise 测试引擎：根 R + 三个孩子 A/B/C（C 依赖 B），A 已完成、B 已打回、C 待领取。
-fn plan_revise_engine() -> FistEngine {
-  let e = FistEngine::new()
+fn plan_revise_engine() -> @engine.FistEngine {
+  let e = @engine.FistEngine::new()
   let specs : Array[(String, String?, Array[String])] = [
     ("R", None, []),
     ("A", Some("R"), []),
@@ -1011,7 +1011,7 @@ test "plan_revise：status 基础——keep 已完成承诺、rework 打回及�
 
 ///|
 test "plan_revise：ready=依赖全部有效且未执行（下一步可做）；feedback 显式覆盖读状态" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   let specs : Array[(String, String?, Array[String])] = [
     ("R2", None, []),
     ("X", Some("R2"), []),
@@ -1049,7 +1049,7 @@ test "plan_revise：ready=依赖全部有效且未执行（下一步可做）；
 
 ///|
 test "plan_revise：feedback 显式 no → rework（未开工下游级联，控涟漪）" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   let specs : Array[(String, String?, Array[String])] = [
     ("R3", None, []),
     ("P", Some("R3"), []),
@@ -1082,7 +1082,7 @@ test "plan_revise：feedback 显式 no → rework（未开工下游级联，控�
 
 ///|
 test "plan_revise：根任务不存在 → ok:false" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   let j = e.plan_revise("NOPE")
   match j.value("ok") {
     Some(jj) =>
@@ -1131,7 +1131,7 @@ fn gdc_count(j : Json, key : String) -> Int {
 
 ///|
 test "goal_drift_check：aligned 与 drift_suspect（偏离根目标，附 re_anchor）" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   let specs : Array[(String, String?, String)] = [
     ("G", None, "搭建可插拔的父层调度系统"),
     ("A", Some("G"), "父层调度引擎与插拔接口设计"),
@@ -1183,7 +1183,7 @@ test "goal_drift_check：aligned 与 drift_suspect（偏离根目标，附 re_an
 
 ///|
 test "goal_drift_check：redundant_suspect（与兄弟重复，防重复子目标）+ subtask_id 过滤" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   let specs : Array[(String, String?, String)] = [
     ("G2", None, "数据采集与清洗管线"),
     ("C", Some("G2"), "数据采集模块实现"),
@@ -1218,7 +1218,7 @@ test "goal_drift_check：redundant_suspect（与兄弟重复，防重复子目�
 
 ///|
 test "goal_drift_check：根任务不存在 → ok:false" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   let j = e.goal_drift_check("NOPE")
   match j.value("ok") {
     Some(jj) =>
@@ -1233,8 +1233,8 @@ test "goal_drift_check：根任务不存在 → ok:false" {
 ///|
 /// 给 BUG-20 造一棵可数的子树：ns `b20` 下 T0 + 3 个子任务，另有 2 个别的 ns 的任务。
 /// 不走 publish（要自由指定 parent_id / ns / 难度档字样），直接写 store。
-fn b20_engine() -> FistEngine {
-  let e = FistEngine::new()
+fn b20_engine() -> @engine.FistEngine {
+  let e = @engine.FistEngine::new()
   let specs : Array[(String, String, String)] = [
     ("T0", "", "b20"),
     ("T1", "T0", "b20"),
@@ -1348,7 +1348,7 @@ fn b20_share_sum(j : Json) -> Int {
 ///|
 /// BUG-165：progress=0 且已消耗预算 >0 → 燃尽率不可计算，不得静默归零判 OK，须预警。
 test "progress_gate：BUG-165 进度 0% 但有消耗 → ESCALATE 且 burn_rate=-1.0" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   let t = @core.Task::new(
     id="P1",
     project_dir="/proj/demo",

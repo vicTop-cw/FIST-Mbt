@@ -17,8 +17,8 @@ fn mk_spec(laws : Array[String], tests : Json) -> String {
     "laws": laws_arr,
     "tests": tests,
   })
-  let fp = compute_fingerprint(skeleton)
-  canonical_json(
+  let fp = @omega.compute_fingerprint(skeleton)
+  @omega.canonical_json(
     Json::object({
       "op": Json::string("task_report"),
       "version": Json::string("1.0"),
@@ -45,7 +45,7 @@ test "scoring_coverage_full" {
   ])
   let tstr = Json::stringify(tests)
   assert_true(tstr.contains("L1"))
-  let c = calc_coverage(laws, tests)
+  let c = @omega.calc_coverage(laws, tests)
   assert_true(c == 1.0)
 }
 
@@ -54,7 +54,7 @@ test "scoring_coverage_full" {
 test "scoring_coverage_partial" {
   let laws : Array[String] = ["L1", "L2", "L3"]
   let tests = Json::array([Json::object({ "uses": Json::string("L1") })])
-  let c = calc_coverage(laws, tests)
+  let c = @omega.calc_coverage(laws, tests)
   assert_true(c < 0.4)
   assert_true(c > 0.3)
 }
@@ -62,7 +62,7 @@ test "scoring_coverage_partial" {
 ///|
 /// coverage laws 为空 → 1.0（无法律可覆盖）
 test "scoring_coverage_empty_laws" {
-  let c = calc_coverage([], Json::null())
+  let c = @omega.calc_coverage([], Json::null())
   assert_true(c == 1.0)
 }
 
@@ -71,14 +71,14 @@ test "scoring_coverage_empty_laws" {
 test "scoring_coverage_short_law_skip" {
   let tests = Json::array([Json::object({ "name": Json::string("test1") })])
   // 全短 law：无可判定覆盖 → 1.0（同"无法律可覆盖"语义）
-  let c_all_short = calc_coverage(["", "a", "x"], tests)
+  let c_all_short = @omega.calc_coverage(["", "a", "x"], tests)
   assert_true(c_all_short == 1.0)
   // 混合：短 law 被跳过，正常 law 判覆盖
-  let c_mixed = calc_coverage(["", "a", "L1"], tests)
+  let c_mixed = @omega.calc_coverage(["", "a", "L1"], tests)
   // 分母只算 "L1"（1 条），test 里无 "L1" → 0.0
   assert_true(c_mixed == 0.0)
   // 混合 + 命中
-  let c_hit = calc_coverage(["", "a", "test1"], tests)
+  let c_hit = @omega.calc_coverage(["", "a", "test1"], tests)
   // 分母只算 "test1"，test 里含 "test1" → 1.0
   assert_true(c_hit == 1.0)
 }
@@ -96,7 +96,7 @@ test "scoring_perfect" {
       }),
     ]),
   )
-  let j = spec_scoring_str(spec_str, 4, 4)
+  let j = @omega.spec_scoring_str(spec_str, 4, 4)
 
   let s = match j.value("score") {
     Some(Number(n, ..)) => n
@@ -126,7 +126,7 @@ test "scoring_bad_fingerprint" {
   )
   // 篡改：把 laws 里 L1 换成 L2，fingerprint 就失效
   let tampered = spec_str.replace(old="L1", new="L2")
-  let j = spec_scoring_str(tampered, 2, 2)
+  let j = @omega.spec_scoring_str(tampered, 2, 2)
   let fp_ok = match j.value("fingerprint_ok") {
     Some(True) => true
     Some(False) => false
@@ -144,7 +144,7 @@ test "scoring_bad_schema" {
     "laws": Json::array([Json::string("L1")]),
     "tests": Json::array([]),
   })
-  let j = spec_scoring_str(Json::stringify(bad), 1, 1)
+  let j = @omega.spec_scoring_str(Json::stringify(bad), 1, 1)
   let schema_ok = match j.value("schema_ok") {
     Some(True) => true
     Some(False) => false
@@ -166,7 +166,7 @@ test "scoring_zero_accuracy" {
       }),
     ]),
   )
-  let j = spec_scoring_str(spec_str, 4, 0)
+  let j = @omega.spec_scoring_str(spec_str, 4, 0)
   let acc = match j.value("accuracy") {
     Some(Number(n, ..)) => n
     _ => -1.0
@@ -183,7 +183,7 @@ test "scoring_zero_accuracy" {
 ///|
 /// 非法 JSON 字符串 → fail-closed（score=0, pass=false），不 panic
 test "scoring_bad_json_no_panic" {
-  let j = spec_scoring_str("not json{", 1, 1)
+  let j = @omega.spec_scoring_str("not json{", 1, 1)
   let score = match j.value("score") {
     Some(Number(n, ..)) => n
     _ => -1.0
@@ -201,7 +201,7 @@ test "scoring_bad_json_no_panic" {
 /// total=0（未跑批）→ accuracy=0，不 panic
 test "scoring_no_batch_no_panic" {
   let spec_str = mk_spec(["L1"], Json::array([]))
-  let j = spec_scoring_str(spec_str, 0, 0)
+  let j = @omega.spec_scoring_str(spec_str, 0, 0)
   let acc = match j.value("accuracy") {
     Some(Number(n, ..)) => n
     _ => -1.0

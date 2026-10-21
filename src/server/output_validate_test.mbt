@@ -74,7 +74,7 @@ fn ov_verdict(j : Result[Json, String]) -> String {
 /// 测试 1：产物缺失 → fail
 test "ov_1_missing_file_fail" {
   let d = ov_dir("ov_c1")
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     ov_artifacts(["nonexistent.mbt"]),
     Json::object({}),
@@ -90,7 +90,7 @@ test "ov_1_missing_file_fail" {
 test "ov_2_empty_file_fail" {
   let d = ov_dir("ov_c2")
   ov_write(d, "empty.txt", "")
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     ov_artifacts(["empty.txt"]),
     Json::object({}),
@@ -116,7 +116,7 @@ test "ov_3_file_with_invariants_pass" {
       "min_chars": Json::number(10.0),
     }),
   ]
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     Json::object({}),
@@ -138,7 +138,7 @@ test "ov_4_invariant_mismatch_fail" {
       "contains": Json::string("fn main"),
     }),
   ]
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     Json::object({}),
@@ -154,7 +154,7 @@ test "ov_4_invariant_mismatch_fail" {
 test "ov_5_evidence_required_but_empty_fail" {
   let d = ov_dir("ov_c5")
   ov_write(d, "out.txt", "actual content here, not empty\n")
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     ov_artifacts(["out.txt"]),
     Json::object({}),
@@ -171,7 +171,7 @@ test "ov_5_evidence_required_but_empty_fail" {
 test "ov_6_evidence_provided_pass" {
   let d = ov_dir("ov_c6")
   ov_write(d, "out.txt", "done\n")
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     ov_artifacts(["out.txt"]),
     Json::object({}),
@@ -192,7 +192,7 @@ test "ov_7_external_artifact_ok" {
     Json::object({ "check_key": Json::string("moon_test") }),
   ]
   // BUG-142：moon_test 需带汇总行（进程可能崩溃仍 exit 0，只给 ok=true 不算判绿）
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     ov_ext_stdout(
@@ -214,7 +214,7 @@ test "ov_8_external_artifact_fail" {
     Json::object({ "path": Json::string("main.mbt") }),
     Json::object({ "check_key": Json::string("moon_test") }),
   ]
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     ov_ext("moon_test", false),
@@ -235,7 +235,7 @@ test "ov_9_external_missing_fail" {
     Json::object({ "check_key": Json::string("moon_test") }),
   ]
   // 传空 Json：external_results 没有 moon_test
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     Json::object({}),
@@ -249,7 +249,7 @@ test "ov_9_external_missing_fail" {
 ///|
 /// 测试 10：artifact 数组为空 → Err（参数校验）
 test "ov_10_empty_artifacts_error" {
-  let r = output_validate(
+  let r = @server.output_validate(
     "temp",
     [],
     Json::object({}),
@@ -267,7 +267,7 @@ test "ov_11_illegal_path_fail" {
     Json::object({ "path": Json::string("../escape.mbt") }),
     Json::object({ "path": Json::string("C:/hardcode.mbt") }),
   ]
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     Json::object({}),
@@ -311,7 +311,7 @@ test "ov_12_mixed_all_pass" {
       "stderr": Json::string(""),
     }),
   })
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     ext,
@@ -350,7 +350,7 @@ test "ov_13_external_ok_but_stdout_missing_contains_fail" {
     }),
   ]
   // ok=true 但 stdout 没有 "failed: 0"（模拟崩溃却 exit 0）
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     ov_ext_stdout("moon_test", true, "Total tests: 645, passed: 645"),
@@ -374,7 +374,7 @@ test "ov_14_external_ok_but_stdout_has_not_contains_fail" {
       "not_contains": Json::string("SIGABRT"),
     }),
   ]
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     ov_ext_stdout(
@@ -399,7 +399,7 @@ test "ov_15_external_ok_and_stdout_satisfies_contains_pass" {
       "contains": Json::string("failed: 0"),
     }),
   ]
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     ov_ext_stdout(
@@ -424,7 +424,7 @@ test "ov_16_external_ok_and_stdout_no_forbidden_pass" {
       "not_contains": Json::string("SIGABRT"),
     }),
   ]
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     ov_ext_stdout(
@@ -448,7 +448,7 @@ test "ov_17_moon_auto_gate_failed0_pass" {
     Json::object({ "path": Json::string("main.mbt") }),
     Json::object({ "check_key": Json::string("moon_test") }),
   ]
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     ov_ext_stdout(
@@ -470,7 +470,7 @@ test "ov_18_moon_auto_gate_failed_gt0_fail" {
     Json::object({ "path": Json::string("main.mbt") }),
     Json::object({ "check_key": Json::string("moon_test") }),
   ]
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     ov_ext_stdout(
@@ -493,7 +493,7 @@ test "ov_19_moon_auto_gate_no_summary_fail" {
     Json::object({ "path": Json::string("main.mbt") }),
     Json::object({ "check_key": Json::string("moon_test") }),
   ]
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     ov_ext_stdout("moon_test", true, "Building...\nCompiling..."),
@@ -514,7 +514,7 @@ test "ov_20_non_moon_key_no_auto_gate" {
     Json::object({ "check_key": Json::string("linter_check") }),
   ]
   // stdout 里有 Total tests 但 key 不匹配，不应触发自动 gate
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     ov_ext_stdout(
@@ -540,7 +540,13 @@ test "ov_21_invariant_wrong_type_fail" {
       "min_chars": Json::string("100"),
     }),
   ]
-  let r1 = output_validate(d, a1, Json::object({}), "", require_evidence=false)
+  let r1 = @server.output_validate(
+    d,
+    a1,
+    Json::object({}),
+    "",
+    require_evidence=false,
+  )
   assert_true(r1 is Ok(_))
   assert_eq(ov_verdict(r1), "fail")
   // contains 应为 String，传 Number → spec_err 应拒绝
@@ -550,7 +556,13 @@ test "ov_21_invariant_wrong_type_fail" {
       "contains": Json::number(42.0),
     }),
   ]
-  let r2 = output_validate(d, a2, Json::object({}), "", require_evidence=false)
+  let r2 = @server.output_validate(
+    d,
+    a2,
+    Json::object({}),
+    "",
+    require_evidence=false,
+  )
   assert_true(r2 is Ok(_))
   assert_eq(ov_verdict(r2), "fail")
   // not_contains 应为 String，传 Number → spec_err 应拒绝
@@ -560,7 +572,13 @@ test "ov_21_invariant_wrong_type_fail" {
       "not_contains": Json::number(7.0),
     }),
   ]
-  let r3 = output_validate(d, a3, Json::object({}), "", require_evidence=false)
+  let r3 = @server.output_validate(
+    d,
+    a3,
+    Json::object({}),
+    "",
+    require_evidence=false,
+  )
   assert_true(r3 is Ok(_))
   assert_eq(ov_verdict(r3), "fail")
 }
@@ -576,7 +594,7 @@ test "ov_22_moon_test_total_zero_fail" {
     Json::object({ "check_key": Json::string("moon_test") }),
   ]
   // ok=true、exit 0、汇总行 failed=0 —— 但 total=0，等于没跑测试
-  let r = output_validate(
+  let r = @server.output_validate(
     d,
     artifacts,
     ov_ext_stdout("moon_test", true, "Total tests: 0, passed: 0, failed: 0."),

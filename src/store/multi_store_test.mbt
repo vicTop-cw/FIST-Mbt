@@ -8,7 +8,7 @@ fn base_dir() -> String {
 ///|
 /// 清空可能由上次运行残留的物理库，保证本文件测试可重复执行（幂等）。
 fn reset_db(path : String) -> Unit {
-  match SqliteStore::open(path) {
+  match @store.SqliteStore::open(path) {
     Some(s) => ignore(s.clear())
     None => ()
   }
@@ -17,7 +17,7 @@ fn reset_db(path : String) -> Unit {
 ///|
 test "open 创建并注册命名空间，get 幂等复用" {
   reset_db("alpha.db")
-  let ms = MultiStore::new(data_dir=base_dir())
+  let ms = @store.MultiStore::new(data_dir=base_dir())
   assert_eq(ms.open(ns="alpha", data_dir=base_dir()), true)
   let list = ms.ns_list()
   assert_eq(list.length(), 1)
@@ -47,7 +47,7 @@ test "open 创建并注册命名空间，get 幂等复用" {
 ///|
 test "惰性打开：未显式 open 时 get 可直接打开物理库" {
   reset_db("beta.db")
-  let ms = MultiStore::new(data_dir=base_dir())
+  let ms = @store.MultiStore::new(data_dir=base_dir())
   assert_eq(ms.ns_list().length(), 0)
   // 先 open 一次，确保物理库文件存在
   assert_eq(ms.open(ns="beta", data_dir=base_dir()), true)
@@ -73,7 +73,7 @@ test "惰性打开：未显式 open 时 get 可直接打开物理库" {
 
 ///|
 test "ns_stats 反映各 ns 任务数" {
-  let ms = MultiStore::new(data_dir=base_dir())
+  let ms = @store.MultiStore::new(data_dir=base_dir())
   assert_eq(ms.open(ns="gs-alpha", data_dir=base_dir()), true)
   assert_eq(ms.open(ns="gs-gamma", data_dir=base_dir()), true)
   match ms.get("gs-alpha") {
@@ -148,7 +148,7 @@ test "ns_stats 反映各 ns 任务数" {
 
 ///|
 test "close 移除单个 ns，close_all 清空全部" {
-  let ms = MultiStore::new(data_dir=base_dir())
+  let ms = @store.MultiStore::new(data_dir=base_dir())
   assert_eq(ms.open(ns="cl-alpha", data_dir=base_dir()), true)
   assert_eq(ms.open(ns="cl-gamma", data_dir=base_dir()), true)
   assert_eq(ms.ns_list().length(), 2)
@@ -160,7 +160,7 @@ test "close 移除单个 ns，close_all 清空全部" {
 
 ///|
 test "open 空 ns 被拒" {
-  let ms = MultiStore::new(data_dir=base_dir())
+  let ms = @store.MultiStore::new(data_dir=base_dir())
   assert_eq(ms.open(ns="", data_dir=base_dir()), false)
   assert_eq(ms.ns_list().length(), 0)
 }
@@ -171,7 +171,7 @@ test "WAL 模式：多 ns 并发写入 + 读取一致性" {
   reset_db("wal-a.db")
   reset_db("wal-b.db")
   reset_db("wal-c.db")
-  let ms = MultiStore::new(data_dir=base_dir())
+  let ms = @store.MultiStore::new(data_dir=base_dir())
   let ns_names = ["wal-a", "wal-b", "wal-c"]
   for ns in ns_names {
     assert_eq(ms.open(ns~, data_dir=base_dir()), true)
@@ -215,19 +215,19 @@ test "WAL 模式：多 ns 并发写入 + 读取一致性" {
 /// 反向钉四种越界形态；最后一档是入口级——非法目录必须 open=false。
 test "data_dir 只接受相对路径（BUG-78 成对）" {
   // 正向：合法相对目录不许被误拒（误拒＝把既有 store_open(scratch) 路径打断）
-  assert_true(MultiStore::data_dir_ok("."))
-  assert_true(MultiStore::data_dir_ok("temp"))
-  assert_true(MultiStore::data_dir_ok("temp/ms-b78"))
+  assert_true(@store.MultiStore::data_dir_ok("."))
+  assert_true(@store.MultiStore::data_dir_ok("temp"))
+  assert_true(@store.MultiStore::data_dir_ok("temp/ms-b78"))
   // 反向：四种逃逸形态逐一必拒
-  assert_false(MultiStore::data_dir_ok(""))
-  assert_false(MultiStore::data_dir_ok("../outside"))
-  assert_false(MultiStore::data_dir_ok("temp/../../outside"))
-  assert_false(MultiStore::data_dir_ok("/etc"))
-  assert_false(MultiStore::data_dir_ok("C:/evil"))
+  assert_false(@store.MultiStore::data_dir_ok(""))
+  assert_false(@store.MultiStore::data_dir_ok("../outside"))
+  assert_false(@store.MultiStore::data_dir_ok("temp/../../outside"))
+  assert_false(@store.MultiStore::data_dir_ok("/etc"))
+  assert_false(@store.MultiStore::data_dir_ok("C:/evil"))
   // 前导反斜杠（UNC 形态的起始）同样算"前导分隔符"
-  assert_false(MultiStore::data_dir_ok("\\server"))
+  assert_false(@store.MultiStore::data_dir_ok("\\server"))
   // 入口级：非法 data_dir 不得建库（open 回 false，且 ns 不进 ns_list）
-  let ms = MultiStore::new(data_dir=".")
+  let ms = @store.MultiStore::new(data_dir=".")
   assert_false(ms.open(ns="b78out", data_dir="../b78-outside"))
   assert_false(ms.ns_list().contains("b78out"))
   assert_true(ms.open(ns="b78ok", data_dir="temp"))
