@@ -19,6 +19,9 @@
   B) `N 项|个|条 [测试|用例] 全绿|通过|passed`
   C) `total=N`
   D) 日志回显 `Total tests: N, passed: N`（两个数各算一条声明，缺一即红）
+  E) `N-test`（如 `1348-test JS suite`；前导不得是字母/数字/点/斜杠/连字符，
+     否则 `v0.3.9-test`、`2026-10-21-test-report.md` 这类版本号/日期文件名会被误抓）
+  F) `(N aligned`（括号引导的英文对照短语，如 `check_test_sync (1348 aligned ...)`）
 不等值对（如 105/104、1986/1997、22/30）一律**不算**声明。
 
 历史记录豁免（按路径类别，不逐条点名）：`memory/`、`reports/`、`CHANGELOG.md`、
@@ -31,6 +34,21 @@
   python scripts/check_test_sync.py --selftest               # 违例对照：证明本判据会红（含"自洽的谎"型）
 
 任一违例即 FAIL（退出码非 0）。R1 的豁免表条目若已失效（不再命中任何声明）同样 FAIL。
+<<<<<<< HEAD
+=======
+
+**BUG-350**：日志面判绿必须看 passed/failed，不能只取 `Total tests`——否则
+`Total tests: 1347, passed: 3, failed: 1344` 这种"几乎全挂"的日志照样 PASS。
+现行口径：`passed == Total tests` 且 `failed == 0`；旧格式不写 failed 时只校验 passed==total。
+
+**BUG-382**：口径 E/F 是文档同步时**人工 grep 才发现的两种真实声明形状**
+（README_EN 的 `1348-test` 与 `(1348 aligned`）——上一轮守卫对它们完全静默，
+"没命中"被读成了"没问题"。补形状同批带反向对照：版本号 `v0.3.9-test` 与日期文件名
+`2026-10-21-test-report.md` 不误红（前导字符排除词字符/点/斜杠/连字符）。
+同轮的变异自检还抓出**自检层的假绿**：`run_case` 失败时返回 `(None, None)`，而所有调用点都写
+`if run_case(...) is None` ⇒ 文档面变异只打印 FAIL 行、`selftest()` 仍一路走到 rc=0。失败路径
+改为返回 `None`，并在末尾加一格「退出码传导」把这条形状钉住（旧版下该格当场红）。
+>>>>>>> eeb13930 (fix(guard): check_test_sync 补 N-test/(N aligned 两形状，修自检失败路径 rc=0（BUG-382 / T0r46）)
 """
 import re
 import subprocess
@@ -119,6 +137,11 @@ RX_TOTAL = re.compile(r"total\s*=\s*(\d{2,5})", re.I)
 # D) 日志回显形状 `Total tests: N, passed: N`（README 的自检示例行就是这个形状；
 #    只认 A~C 会漏掉它，本轮实测靠 check_badge 才抓到 ⇒ 补进同一判据口径）
 RX_LOG = re.compile(r"Total tests:?\s*(\d{2,5})\s*[,,]\s*passed:?\s*(\d{2,5})", re.I)
+# E) `1348-test`（README_EN:86 的正文形状）。前导排除词字符/点/斜杠/连字符：
+#    `v0.3.9-test` 是版本号、`2026-10-21-test-report.md` 是日期文件名，都不是总数声明。
+RX_HYPHEN = re.compile(r"(?<![\w./-])(\d{2,5})-tests?\b", re.I)
+# F) `(1348 aligned`（README_EN:112 的对照句）。只认括号引导，散句里的 "N aligned" 不收。
+RX_ALIGN = re.compile(r"\(\s*(\d{2,5})\s+aligned\b", re.I)
 RX_KEY = re.compile(r"(测试|用例|全绿|passed|test)", re.I)
 
 
@@ -192,6 +215,10 @@ def collect_claims(text: str):
         for m in RX_LOG.finditer(line):
             hits.append((m.group(1), "日志回显 tests", ln))
             hits.append((m.group(2), "日志回显 passed", ln))
+        for m in RX_HYPHEN.finditer(line):
+            hits.append((m.group(1), "N-test", ln))
+        for m in RX_ALIGN.finditer(line):
+            hits.append((m.group(1), "(N aligned", ln))
     return hits
 
 
@@ -316,22 +343,27 @@ def selftest() -> int:
         total, total)
     done = [0]
 
-    def run_case(name, docs, want=None, want_none=None, exempt=None):
+    def run_case(name, docs, want=None, want_none=None, exempt=None, quiet=False):
         ex = exempt if exempt is not None else EXEMPT
         probs, agree, _ = judge(total, docs, sweeps, MUST_CARRY, ex)
+
+        def fail(msg):
+            # BUG-382：失败必须返回单个 None——调用点写的是 `is None`。
+            # 旧版返回 (None, None) 使之永不成立，变异只打印 FAIL 行、rc 仍是 0。
+            if not quiet:
+                print(f"SELFTEST FAIL [{name}] {msg}")
+            return None
+
         if want is None and want_none is None:
             if probs:
-                print(f"SELFTEST FAIL [{name}] 期望全绿实际 {probs}")
-                return None, None
+                return fail(f"期望全绿实际 {probs}")
             done[0] += 1
             print(f"  ok  {name}")
             return agree, probs
         if want is not None and not any(want in p for p in probs):
-            print(f"SELFTEST FAIL [{name}] 期望命中 «{want}» 实际 {probs or '无违例'}")
-            return None, None
+            return fail(f"期望命中 «{want}» 实际 {probs or '无违例'}")
         if want_none is not None and any(want_none in p for p in probs):
-            print(f"SELFTEST FAIL [{name}] 不该命中 «{want_none}» 实际 {probs}")
-            return None, None
+            return fail(f"不该命中 «{want_none}» 实际 {probs}")
         done[0] += 1
         print(f"  ok  {name}")
         return agree, probs
@@ -363,10 +395,11 @@ def selftest() -> int:
     print(f"  ok  R0-enumerator（现状面 {done_enum} 份，含曾漏面的两份；收窄夹具能被抓）")
 
     # 1) 基准：现状面全一致 + 豁免有效 + 历史面不参与
-    agree, probs = run_case("baseline-clean", dict(base))
-    if agree is None:
+    baseline = run_case("baseline-clean", dict(base))
+    if baseline is None:
         print("SELFTEST FAIL 基准夹具本身不绿，后面的对照无意义")
         return 2
+    agree, probs = baseline
     if agree < len(MUST_CARRY):
         print(f"SELFTEST FAIL 基准命中数 {agree} < must-carry 份数 {len(MUST_CARRY)}（正则没吃到声明）")
         return 2
@@ -410,6 +443,87 @@ def selftest() -> int:
     d["docs/echo.md"] = "moon test --target js  # → Total tests: 400, passed: 400, failed: 0"
     if run_case("D-log-echo-shape", d, want="R1 docs/echo.md") is None:
         return 1
+<<<<<<< HEAD
+=======
+    # 8b) BUG-382：README_EN 的两种真实声明形状，上一轮守卫对它们完全静默（人工 grep 才补齐）
+    d = dict(base)
+    d["docs/echo.md"] = "one command re-runs the 999-test JS suite"
+    if run_case("E-hyphen-prose-shape", d, want="R1 docs/echo.md") is None:
+        return 1
+    d = dict(base)
+    d["docs/echo.md"] = "check_test_sync (999 aligned — sweeps every current-state doc)"
+    if run_case("F-aligned-prose-shape", d, want="R1 docs/echo.md") is None:
+        return 1
+    # 反向对照：版本号与日期文件名里也含 "N-test" 子串，不是测试总数声明
+    d = dict(base)
+    d["docs/other.md"] = "版本 v0.3.9-test 与文件 2026-10-21-test-report.md 都不是总数声明"
+    if run_case("E/F-reverse-controls", d, want=None) is None:
+        return 1
+    # 9) 日志面判绿（BUG-350）：只看 Total tests 会把"几乎全挂"的日志判绿 —— 三条对照必须成立：
+    #    a) passed=3/failed=1344 必判不绿；b) 全绿必放行；c) 旧格式缺 failed 时仍按 passed==total 判。
+    log_checks = [
+        ("LOG-mostly-failed",
+         "Total tests: 1347, passed: 3, failed: 1344", True),
+        ("LOG-all-green",
+         "Total tests: 1347, passed: 1347, failed: 0", False),
+        ("LOG-old-format-passed-short",
+         "Total tests: 1347, passed: 3", True),
+        ("LOG-old-format-green",
+         "Total tests: 1347, passed: 1347", False),
+        ("LOG-kv-shape-failed",
+         "total=1347 passed=3 failed=1344", True),
+    ]
+    for name, synth, must_fail in log_checks:
+        counts = parse_log_counts(synth)
+        why = log_not_green(counts) if counts is not None else "解析不到计数"
+        if must_fail != (why is not None):
+            print(f"SELFTEST FAIL [{name}] 期望{'不绿' if must_fail else '全绿'}，实际 {why or '全绿'}")
+            return 1
+        done[0] += 1
+        print(f"  ok  {name}")
+    if parse_log_counts("no summary line at all") is not None:
+        print("SELFTEST FAIL [LOG-no-summary] 无汇总行却解析出了计数")
+        return 1
+    done[0] += 1
+    print("  ok  LOG-no-summary")
+    # 10) 入口级锁：纯函数会判不等于 main() 接了这条判据——直接起真入口跑两份日志，
+    #     否则把 main 里的 log_not_green 调用删掉，上面九格仍然全绿（自证式假绿）。
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        p_fail = Path(td) / "fail.log"
+        p_fail.write_text(
+            "Total tests: 1347, passed: 3, failed: 1344\n", encoding="utf-8")
+        r = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), str(p_fail)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        out = (r.stdout or "") + (r.stderr or "")
+        if r.returncode == 0 or "未全绿" not in out:
+            print(f"SELFTEST FAIL [LOG-entry-fail] 入口对近乎全挂的日志未判红：rc={r.returncode} out={out!r}")
+            return 1
+        done[0] += 1
+        print("  ok  LOG-entry-fail")
+        p_ok = Path(td) / "ok.log"
+        p_ok.write_text(
+            "Total tests: 1347, passed: 1347, failed: 0\n", encoding="utf-8")
+        r = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), str(p_ok)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        out = (r.stdout or "") + (r.stderr or "")
+        if "未全绿" in out or "无法从参数/日志解析测试总数" in out:
+            print(f"SELFTEST FAIL [LOG-entry-green] 全绿日志被日志面误判：{out!r}")
+            return 1
+        done[0] += 1
+        print("  ok  LOG-entry-green")
+    # 退出码传导锁（BUG-382）：上一批变异已实测——E/F 两格打印了 FAIL 行，但 selftest 仍返回 0，
+    # 因为 run_case 失败时返回 (None, None)、调用点的 `is None` 永不成立。这里直接考失败路径的形状。
+    q = run_case("rc-propagation-probe", dict(base), want="R1 不存在的路径", quiet=True)
+    if q is not None:
+        print("SELFTEST FAIL [rc-propagation] run_case 失败路径返回 %r（应为 None）"
+              " ⇒ 调用点的 `is None` 不成立，变异不会改变退出码" % (q,))
+        return 1
+    done[0] += 1
+    print("  ok  rc-propagation")
+>>>>>>> eeb13930 (fix(guard): check_test_sync 补 N-test/(N aligned 两形状，修自检失败路径 rc=0（BUG-382 / T0r46）)
     print(f"SELFTEST PASS {done[0]} 个变体各自命中自己指名的判据（计数由 run_case 实测累加，非手写）")
     return 0
 
