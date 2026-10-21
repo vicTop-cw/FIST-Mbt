@@ -141,12 +141,6 @@ SPECIAL_CASES = [
     gated("check_deprecated_text_census.py", DUMP, "--dump-distribution", DUMP),
     gated("check_deprecated_site_list.py", DUMP, DUMP),
     case("check_deprecated_site_list.py", "--selftest"),
-    # BUG-368：预存红的 why 必须**可核对**——写清构成与已知虚报面，否则数字漂了没人看得出。
-    # 现状（2026-10-21 实测，共享树）：根 *.db 运行物 + temp/ scratch 件 ⇒ rc=1 属预期；
-    # `scripts/` 的 `_` 档按 BUG-334 只计**未跟踪**件、已跟踪真源（现 2 件：`_tool_registry.py`
-    # 工具注册单一真源、`_run_check_t0r21.py`）列入豁免并逐条印出 ⇒ 该档不再虚报。
-    # ⚠ 本格读数是**树态相关**的：干净检出（CI / git archive）上同一条 --check 读 rc=0 CLEAN，
-    # 那是正确读数而非判据坏——本格按共享树口径声明 1；两种读数都逐条点名，可自行核对。
     # BUG-368：本格读数是**树态相关**的——运行态树（有 temp/ 残留）rc=1 才对；干净检出
     # （CI / git archive / 隔离 worktree）同命令正确读 rc=0 CLEAN。故用 gated("temp") 表达：
     # 有 temp/ ⇒ 按运行态预期 1；无 temp/ ⇒ SKIP 并打印（不是"这格过了"，是不适用）。
@@ -156,7 +150,63 @@ SPECIAL_CASES = [
           why="运行态树预存红：根 .db + temp/ scratch ⇒ rc=1（干净检出无 temp/ 则 SKIP）；"
               "scripts/ `_` 档只计未跟踪件、跟踪真源逐条印入豁免（BUG-334/BUG-368）"),
     case("cleanup_artifacts.py", "--selftest"),
+    # ── 本轮（电池只读缺陷）按实测事实补的三格：不硬凑 0 ──
+    expected("check_bug_reference_integrity.py", 1,
+             "已知棘轮超限：现读 17 条悬空注释引用 > 上限 1（BUG-373 待逐条修）；修到 1 条后自然转绿"),
+    gated("check_skill_inject.py", "fist-mbt.db", "fist-mbt.db"),
+    expected("fist-gate.py", 2,
+             "fmt 段依赖 git diff 管道，本机退化 rc=-1 ⇒ 按设计 DEGRADED(2)；实体机/CI 复跑"),
 ]
+
+
+# ── BUG（本轮实测）：电池必须**只读**，且不许把一次性工具当门禁跑 ──
+# 现象：TASK-007 把 scripts/ 下全部 .py 都补成电池格后，实测 96 格 / 45 红，且**改工作树**——
+# `patch_router_config_caf_field.py` 是把 `use_caf_memory` 写进 src/router/*.mbt 的改码工具，
+# 被当门禁执行后 `git status` 多出两处 M（src/router/router_state.mbt、model_router_wbtest.mbt）。
+# 判据的解释：**电池是判据面，不是工具跑场**——它必须满足「跑完工作树不变」这条不变量；
+# 一次性工具（改码/生成/迁移/标定/演示/宿主客户端）留在宇宙里（可见、可点名），但不进电池。
+NON_GATE_RULES = (
+    ("patch_", "改码/注入工具（会写工作树，电池只读不变量不许跑）"),
+    ("migrate_", "一次性迁移工具（会写文件）"),
+    ("calibrate_", "一次性标定工具（会写文件）"),
+    ("gen_", "生成器：只有 gen_plugins 是可核对的判据，其余生成即写盘"),
+    ("caf_", "CAF 离线回放/预演（一次性验证，写报告）"),
+    ("fist", "CLI 网关/HTTP/Web 宿主入口（需宿主进程）"),
+    ("mcp_", "MCP 冒烟/演练（需宿主进程）"),
+    ("demo", "演示脚本（会写演示库）"),
+    ("simulate_", "一次性模拟工具"),
+    ("probe", "一次性探针（人工按需）"),
+    ("score_gate", "评分辅助（人工按需）"),
+    ("issue_scan.py", "MCP 工具薄封装（人工调用）"),
+    ("output_validate.py", "MCP 工具薄封装（人工调用）"),
+    ("laya_decide.py", "MCP 工具薄封装（人工调用）"),
+    ("_verify.py", "一次性验收演示（跑完即弃）"),
+)
+GEN_PLUGINS_GATE = "gen_plugins.py"
+
+
+# 自动进电池的门禁族（白名单）。**默认排除**比"默认全进 + 事后排除"安全：
+# 默认全进会把改码工具/演示脚本跑起来（实测改过 src/router/*.mbt），
+# 而"新脚本默认不进电池"最多是漏检——漏检由 --list 的非判据清单兜底（可见 + 有理由）。
+AUTO_CASE_PREFIXES = ("check_", "cleanup_")
+AUTO_CASE_EXACT = {"gen_plugins.py", "fist-gate.py"}
+
+
+def non_gate_reason(script):
+    """非「自动进电池」的门禁族时给出理由（空串=是门禁，进电池）。
+
+    注意**不判断脚本会不会写盘**——靠名字猜副作用不可靠；改为白名单：
+    只有明确的门禁族（check_/e2e_/cleanup_ + gen_plugins/fist-gate）才自动进电池，
+    其余全部列进 --list 的「非判据」清单，由人决定要不要显式加 case。
+    """
+    base = os.path.basename(script)
+    if base in AUTO_CASE_EXACT:
+        return ""
+    if any(base.startswith(x) for x in AUTO_CASE_PREFIXES):
+        return ""
+    if base.startswith("e2e_"):
+        return "e2e 探针：需宿主进程/网络/发布物或 POSIX 平台，CI 另有观测臂；不进本地电池"
+    return "非门禁族（演示/一次性/宿主/辅助）——如需进电池请显式加 case 并写明理由"
 
 
 def build_cases():
@@ -164,9 +214,15 @@ def build_cases():
     已有手写的脚本（SPECIAL_CASES 里出现过的）不重复补。"""
     covered = {c["script"] for c in SPECIAL_CASES}
     cases = list(SPECIAL_CASES)
+    skipped = []
     for script in discover_scripts():
-        if script not in covered:
-            cases.append(case(script))
+        if script in covered:
+            continue
+        why = non_gate_reason(script)
+        if why:
+            skipped.append((script, why))   # 留在宇宙里（--list 可见），但不进电池
+            continue
+        cases.append(case(script))
     return cases
 
 
@@ -189,9 +245,14 @@ def ci_referred():
 
 
 def guard_files():
-    """普查宇宙 = discover_scripts()（R55：子目录不豁免；TASK-007：全量 .py 而非仅 check_*）。
-    返回相对 scripts/ 的路径名（blackbox 子目录带 `blackbox/` 前缀，电池里同形点名）。"""
-    return discover_scripts()
+    """普查宇宙 = **门禁尺**（discover_scripts 去掉非判据工具）。
+
+    R55：子目录不豁免；TASK-007：全量 .py 而非仅 check_*。本轮（电池只读缺陷）再加一层：
+    改码/生成/迁移/宿主类一次性工具**不是判据**，它们进 --list 的「非判据」清单（带理由）
+    但不进 G1 的缺面统计——否则 G1 会把"没给一次性工具安排执行面"当成缺陷报红，
+    逼着人把 patch_*/gen_* 塞进电池（正是工作树被改动的来源）。
+    """
+    return [s for s in discover_scripts() if not non_gate_reason(s)]
 
 
 def _existing_scripts():
@@ -313,6 +374,10 @@ def selftest():
          check_faces(G, {"check_a.py"}, {"check_b.py"}, [], {"check_a.py"})[0], 2)
     # 5) 真源自证：本仓现状必须 G1 全绿；且 plan_landing 这一格从此进电池
     rows, missing, ci, battery, guards = face_report()
+    cell("non-gate-never-becomes-case",
+         non_gate_reason("patch_router_config_caf_field.py") != ""
+         and all(not non_gate_reason(c["script"]) for c in CASES), True)
+    cell("gen-plugins-still-gate", non_gate_reason("gen_plugins.py"), "")
     cell("repo-current-has-no-orphan-guard", check_faces(guards, ci, battery, missing)[0], 0)
     cell("battery-covers-plan-landing", "check_plan_landing.py" in battery, True)
     print("  ok  现状读数：%d 把尺 / CI 面 %d / 电池面 %d / 缺面 %d"
@@ -343,6 +408,10 @@ def main():
             print("%-42s CI=%-3s 电池=%-3s" % (g, a, b))
         print("\n尺 %d 把 / CI 面 %d / 电池面 %d / 缺执行面 %d"
               % (len(rows), len(ci & set(guards)), len(battery & set(guards)), len(missing)))
+        nong = [(s, non_gate_reason(s)) for s in discover_scripts() if non_gate_reason(s)]
+        print("非判据工具 %d 个（留在宇宙可见、不进电池——电池只读，改码/生成/宿主类工具不在判据面）" % len(nong))
+        for s, why in nong[:60]:
+            print("  非判据 %-42s %s" % (s, why))
         if missing:
             print("缺面清单：" + " ".join(missing))
             return 1
