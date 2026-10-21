@@ -70,7 +70,7 @@ pub fn FistEngine::circuit_succeed(
   now_secs~ : Int,
 ) -> Json {
   let row = self.store.cb_get(ns, circuit)
-  let (state, failures, w, thr, rec, opened_at, last_fail_ts) = match row {
+  let (state, failures, w, thr, rec, opened_at, _last_fail_ts) = match row {
     None => ("closed", 0, 60, 3, 30, 0, 0)
     Some(r) => r
   }

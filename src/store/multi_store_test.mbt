@@ -117,7 +117,7 @@ test "ns_stats 反映各 ns 任务数" {
   match stats {
     Json::Object(fields) => {
       assert_eq(fields.length(), 2)
-      fields.each(fn(k, v) {
+      fields.each(fn(_k, v) {
         match v {
           Json::Object(item) => {
             let mut ns_name = ""

@@ -3395,7 +3395,7 @@ pub async fn run_server() -> Unit {
     "mode_list",
     "返回 7 种自驱编程开发模式的完整信息（mode / name / description / constraints / template_path / forbidden_tools）。纯计算只读，供 AI 选择模式。其中 `explore`（探索模式）不直接开发：它先给目标复杂度打分（0..5，复用难度单一抽取来源），再据此**自选**一个单模式去跑；只有在候选模式申报的文件作用域两两不相交（`reserve_scope` 预订成功 + 认领前 `conflicts_check` 可认领）时才允许并行多模式，否则退回单模式串行。",
     schema({}, []),
-    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let modes = @ops.all_modes()
       Ok(@mcp.ToolResult::text(Json::array(modes).stringify()))
     },
@@ -3405,7 +3405,7 @@ pub async fn run_server() -> Unit {
     "mode_templates",
     "检查 templates/pipeline_mode_*.md 全部存在性，返回 {templates:{advance:true,...}, missing:[...]}。mode 参数预检用。名单从模式注册表 all_modes() 反解，不硬编码——注册表加模式而这里漏检查就是『模板缺席没人报』（BUG-118 同族：判据看不见样本就等于没判）。",
     schema({}, []),
-    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       // 名单从模式注册表反解：注册表加模式而这里漏名单 ⇒ 模板缺席永远没人报
       let names = @ops.all_modes().map(fn(j) { get_str(j, "mode") })
       let exists : Map[String, Json] = Map([])
@@ -3660,7 +3660,7 @@ pub async fn run_server() -> Unit {
       let cat = get_str(args, "cat")
       let reason = get_str(args, "reason")
       let fix = get_str(args, "fix")
-      let score = get_double(args, "score", default=0.5)
+      let _score = get_double(args, "score", default=0.5)
       let ts = now_default()
       if cat == "" || reason == "" {
         return Err(@mcp_types.ToolError("cat/reason 均为必填"))
