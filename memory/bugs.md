@@ -5844,3 +5844,21 @@ total = int(m.group(1))  # 只取 group(1)=Total tests 数
 【附：BUG-351 上下文（并发 WIP 编译错误）】重跑 `moon test --target js` **exit 1**，stderr Error 4043：`src/router/model_router_wbtest.mbt` L620/748 `use_caf_memory: false` **record field defined several times**（该 wbtest 在并发 agent 未提交 WIP 里，git status M）。权威测试门 1347/1347 因此当前不可复现——需并发 agent 收口 WIP 修复重复字段后重跑。
 - reported_by: agent-skill-docs
 
+## BUG-351 [2026-10-21T03:07:03Z] [medium] OPEN
+- summary: [rule-layer] check_demo_isolation selftest M3 自证式假绿：scan({}) 实测仍返回 spawners=34（bodies 只覆盖 body 内容不影响 _files() 枚举），M3 只测 L138 已提前 return 的不可达条件且 L178 无条件 append M3 格子；main() L197-199 真自拒门从未被 selftest 覆盖——把 I3 自拒门删掉 selftest 仍 exit 0
+- detail: 【L4 硬证据 · 自证式假绿】`python scripts/check_demo_isolation.py --selftest` → **exit 0**，输出 `SELFTEST OK（干净不误红 + 变异必红 + 空扫描自拒；格子从已执行对照反解：... / M3 空扫描必自拒；spawn 面 34 个脚本）`。M3 声称"空扫描必自拒"已锁，但实际从未真构造空扫描。
+
+【变异推演（判据改坏也不红）】三处独立证据：
+1. **scan() 无空扫描路径**：L104 `for path in _files():` 硬编码枚举真实文件系统；`bodies` 参数（L106 `read_body(r, bodies)`）**只覆盖 body 内容，不影响 `_files()` 枚举结果**。实测 `scan({})` 传空 bodies **仍返回 spawners=34**（空 bodies 恒非空）。
+2. **selftest M3 只测不可能条件**：L177-180 `if not spawners: fails.append("M3 无法构造空扫描对照（真实现状面就没样本）")`——但 L138-140 已在 selftest 开头 `if not spawners: return 2` 提前返回，所以 M3 里 `spawners` **恒非空**，`fails.append` **永远不可达**。
+3. **L178 `executed.append("M3 空扫描必自拒")` 无条件执行**：无论是否真验证，M3 的格子都进 executed 清单并计入"格子从已执行对照反解"。
+
+【真正自拒门未被覆盖】main() L197-199 `if not spawners: print("FATAL I3 现状面没抓到任何 spawn \`serve\` 的脚本 ⇒ 判据空转，绝不报绿")` 是**真正的空扫描自拒门**，但 selftest **从未构造空扫描**（`_files()` 不可注入）来验证它。把 main() 的 I3 自拒门删掉，selftest 仍 exit 0。
+
+【影响】M3 是 BUG-124"扫描面空即自拒"的 selftest 钉子，但它是自证式假绿——声称锁了"空扫描必自拒"，实际 scan() 恒非空、selftest 恒进 M3 格子。与 BUG-127/check_publish_payload 的空扫描自拒实现（`will_ship` 空显式触发 FATAL）相比，check_demo_isolation 的 M3 是纸面钉子。
+
+【建议修复】给 scan() 加可注入的 `files=None` 参数（缺省走 `_files()`），M3 改成 `scan(files=[])` 真构造空扫描并断言返回自拒/FATAL；否则删掉 M3 格子、承认"空扫描自拒"这一格由 main() 硬覆盖但无 selftest 钉。
+
+【附：BUG-351 状态】并发 agent 报告 BUG-351（`src/router/router_state.mbt:211-212 重复字段 use_caf_memory` 意外复制致 Error 4043）但**未修复**——重跑 `moon test --target js` **exit 1**，stderr Error 4043 **18 处**（`use_caf_memory` 重复字段扩散）。并发 agent 提交 `f0a8f4e` 说明"删任一重复行即恢复，owner 应协调 src/router 编辑者收口"，但其工作树仍有大量未提交 WIP。**权威测试门 1347/1347 当前不可复现**。
+- reported_by: agent-skill-docs
+
