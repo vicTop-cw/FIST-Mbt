@@ -65,7 +65,19 @@
 
 ---
 
-## 遗留风险 / 阻断（优先级排序）
+## 五、自动路由能力全栈验证（目标明确要求，此前未用）
+
+对 Marketplace 自动路由三工具做真调用，全部正常响应 + basis 完整：
+
+| 工具 | 调用 | 结果 |
+|---|---|---|
+| `task_triage` | 默认 ns / `ns-skill-worktree` / 带 `want=寻虫,静态分析,python` | 均 `count=0`（正常响应，无"待领取"任务可路由）——13 个任务全被并发 agent 认领/完成 |
+| `executor_route(need=寻虫,python,静态分析)` | 19 已注册执行者 | **best=`polish-lead`** coverage=0.333, trust=1.0, load=0；basis="能力覆盖 → 历史信任(验收通过率) → 负载 → 名称（R80）" |
+| `executor_auction(need=文档,验证)` | 4 竞拍 | **winner=`exec-verify-gate`** score=0.5, calibration=1（出价=历史兑现率，无胜者诅咒）；basis="置信度校准拍卖（Agora arXiv2607.09600 蒸馏）…（R87）" |
+
+**结论**：自动路由栈（triage → route → auction）真调用全部返回正确结构 + 完整 basis，R80 信任轴 + R87 拍卖防胜者诅咒均生效。`task_triage` 无输入是因为当前全库无"待领取"任务（并发 agent 密集认领/完成），非能力缺陷。
+
+## 六、遗留风险 / 阻断（优先级排序）
 
 1. **【最高优·未变】`src/router/router_state.mbt:211-212` 重复字段** → 全仓编译红（R34 发现，R35 复核仍在）。并发 agent 未修。**删任一行即恢复**。阻断所有 agent 的 `moon test` 验证。
 2. **`ocr_scan --dry_run` 契约 bug**：R34 已写出最小补丁（`ocr_available` 改 `not(bin_hint.is_empty())`，`moon fmt` exit 0），等仓库编译恢复后应用 + 验证。
