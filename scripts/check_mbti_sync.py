@@ -70,18 +70,29 @@ TYPE_HDR = re.compile(r"^\s*(?:pub(?:\(all\))? )?(?:struct|enum|trait|type|abstr
 DERIVE_TAIL = re.compile(r"^\s*\}.*\bderive\(")
 
 
+def emit_fatal(msg):
+    """判据无法自证 ⇒ **真给 2**（写 stderr，由调用点的 `raise SystemExit(emit_fatal(…))` 落成退出码）。
+
+    BUG-369：改前本份有 7 处 `raise SystemExit("FATAL …")`，而带字符串的 SystemExit 退出码是 **1**
+    ⇒ 第 34 行自述的「2=判据无法自证（FATAL）」从来没有生效过，「尺子坏了」与「接口面有违例」
+    在退出码面上同色（CI 与电池里按 2 写的期望文本也一直对着一个不存在的码）。刻意不用 `raise SystemExit(msg)`。
+    """
+    sys.stderr.write(msg + "\n")
+    return 2
+
+
 def tracked(root=None):
     root = root or ROOT
     try:
         r = subprocess.run(["git", "-C", root, "ls-files", "-z"],
                            capture_output=True, text=True, encoding="utf-8", errors="replace")
     except Exception as e:
-        raise SystemExit("FATAL 无法调用 git ls-files（%s）—— 拒绝在无枚举时出绿灯" % e)
+        raise SystemExit(emit_fatal("FATAL 无法调用 git ls-files（%s）—— 拒绝在无枚举时出绿灯" % e))
     if r.returncode != 0:
-        raise SystemExit("FATAL git ls-files 退出码 %s" % r.returncode)
+        raise SystemExit(emit_fatal("FATAL git ls-files 退出码 %s" % r.returncode))
     files = [x.replace("\\", "/") for x in (r.stdout or "").split("\0") if x.strip()]
     if not files:
-        raise SystemExit("FATAL git ls-files 返回空清单 —— 拒绝在无枚举时出绿灯")
+        raise SystemExit(emit_fatal("FATAL git ls-files 返回空清单 —— 拒绝在无枚举时出绿灯"))
     return files
 
 
@@ -274,6 +285,35 @@ def selftest():
     cell("hint-compat-without-wt", any('接口面声明了但实现未提交' in x for x in p_compat), True)
     print("  ok  hint-compat-without-wt（不给 wt_defs 时保持原文案）")
 
+    # 9) 出口码自证（BUG-369 建议① / R43：改行为必须同时补一支「FATAL 的码真是 2」格）。
+    #    本份原先 7 处 `raise SystemExit("FATAL …")` 全给 1，而承诺面第 34 行写着 2 ⇒ 空转与违例同色。
+    #    这里考的是**进程退出码**，不是函数返回值 —— 返回值对不等于 rc 对。
+    cell("emit-fatal-returns-2", emit_fatal("（自检探针，非违例）") == 2, True)
+    print("  ok  emit-fatal-returns-2")
+    import subprocess
+    import tempfile
+    d = tempfile.mkdtemp(prefix="mbti-fatal-")
+    try:
+        child = os.path.join(d, "child_fatal_rc.py")
+        with open(child, "w", encoding="utf-8") as fh:
+            fh.write("import importlib.util, sys\n"
+                     "spec = importlib.util.spec_from_file_location('ms', %r)\n"
+                     "m = importlib.util.module_from_spec(spec)\n"
+                     "spec.loader.exec_module(m)\n"
+                     "m.MBTI_NAME = 'no-such-mbti-face.mbti'\n"
+                     "sys.argv = ['check_mbti_sync.py']\n"
+                     "sys.exit(m.main())\n"
+                     % os.path.abspath(__file__))
+        pr = subprocess.run((sys.executable, child), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        cell("fatal-empty-scan-face-rc-is-really-2", pr.returncode == 2, True)
+        print("  ok  fatal-empty-scan-face-rc-is-really-2（子进程实测 rc=%s；改前同一条只给 1）%s"
+              % (pr.returncode,
+                 "" if pr.returncode == 2 else "  ← stderr：%s"
+                 % pr.stderr.decode("utf-8", "replace").strip()[-160:]))
+    finally:
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
+
     bad_cells = [(nm, why) for nm, ok, why in cells if not ok]
     if bad_cells:
         print("SELFTEST FAIL：")
@@ -283,7 +323,8 @@ def selftest():
     print("SELFTEST OK（%d 格：干净不误红 / 合成违例必红 / 扩展形状(struct)可红 / 真实 4 符号必红 / "
           "私有函数不误 / 无 .mbt 包跳过 / .mbti 侧只收 pub 项 / 源侧认 pub(all) / "
           "derive 承载三格（带 derive 不误红、不带照红）/ 缺额计入空转门 / "
-          "**出路分流两格（工作树有=未提交 / 工作树无=真缺失）+ 向后兼容一格**）"
+          "**出路分流两格（工作树有=未提交 / 工作树无=真缺失）+ 向后兼容一格** / "
+          "**判据空转的退出码真是 2（两格：emit_fatal 返 2 + 子进程 rc 是 2）**）"
           % len(cells))
     return 0
 
@@ -295,7 +336,7 @@ def read_tracked(rel):
         with open(p, encoding="utf-8", errors="replace") as f:
             return f.read()
     except OSError as e:
-        raise SystemExit("FATAL 跟踪面里的 %s 读不到（%s）—— 判据无法自证，拒绝出读数" % (rel, e))
+        raise SystemExit(emit_fatal("FATAL 跟踪面里的 %s 读不到（%s）—— 判据无法自证，拒绝出读数" % (rel, e)))
 
 
 def main():
@@ -308,7 +349,7 @@ def main():
     files = tracked()
     mbti = [f for f in files if f.endswith(MBTI_NAME)]
     if not mbti:
-        raise SystemExit("FATAL 跟踪面里一份 %s 都没枚举到 —— 判据空转，拒绝报绿" % MBTI_NAME)
+        raise SystemExit(emit_fatal("FATAL 跟踪面里一份 %s 都没枚举到 —— 判据空转，拒绝报绿" % MBTI_NAME))
 
     pkg_decls = {}
     for p in mbti:
@@ -349,11 +390,11 @@ def main():
     try:
         problems, n = judge(pkg_decls, pkg_defs, wt_defs=wt_defs)
     except Exception as e:
-        raise SystemExit("FATAL 判据自身异常（%s: %s）—— 尺子坏了，先修判据再读读数"
-                         % (type(e).__name__, e))
+        raise SystemExit(emit_fatal("FATAL 判据自身异常（%s: %s）—— 尺子坏了，先修判据再读读数"
+                                    % (type(e).__name__, e)))
 
     if n == 0:
-        raise SystemExit("FATAL 全仓 .mbti 里一条 pub 声明都没有 —— 判据空转，拒绝报绿")
+        raise SystemExit(emit_fatal("FATAL 全仓 .mbti 里一条 pub 声明都没有 —— 判据空转，拒绝报绿"))
     if problems:
         print("FAIL .mbti 接口声明 ↔ 源定义 一致性守卫（扫 %d 份 .mbti、%d 条 pub 声明、%d 种形状）："
               % (len(pkg_decls), n, len(SHAPES)))
