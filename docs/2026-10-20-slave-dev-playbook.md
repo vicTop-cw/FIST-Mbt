@@ -203,7 +203,7 @@ git push origin feature/<slug>
 ### 四态覆盖
 | cl | 覆盖 | 状态 |
 |---|---|---|
-| cl1 MCP 工具存在 | model_route 新增 dry_run 分支回写 | ✅ |
+| cl1：MCP 工具存在 | model_route 新增 dry_run 分支回写 | ✅ |
 | cl2 CLI 封装 | 不需要改（现有 fist.py call 可路由） | ⏭ |
 | cl3 skill 文档 | 不需要（CAF 已有 router-caf-learning-plan.md） | ⏭ |
 | cl4 测试 | caf_dr_6 白盒锁 | ✅ 新增 1 条 |
