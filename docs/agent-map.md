@@ -9,7 +9,7 @@
 
 - **构建/测试**：`moon check` / `moon test --target js`（**1347 项全绿**，2026-10-19 Windows 实测）
 - **跑 MCP Server**：`moon build --target js cmd/cli && python scripts/patch_esm_main.py` → `node _build/js/debug/build/cmd/cli/cli.js`
-- **一键自检**：`python scripts/mcp_smoke.py`（工具数 104 + publish/get 链路 + issue_scan 命中校验）
+- **一键自检**：`python scripts/mcp_smoke.py`（实测 170 个工具 + publish/get 链路 + issue_scan 命中校验；这个数由 `check_doc_surface.py` 的 J14 项目地图面钉住，改工具数时这张图必须跟着改）
 - **找目标项目潜问题**：`issue_scan`（MCP 工具）/ `python scripts/issue_scan.py <dir>`（CLI）/ [技能文档](issue-scan-skill.md)（skill）三处手写形态 + 插件态投影（四态），规则驱动扫描，命中喂 `report_bug` 闭环
 - **语言**：MoonBit；测试用 `suite`/`test` 而非 `@test def`；guard/match 冒号后换行。
 
@@ -23,13 +23,15 @@
 | `evolve` | DGM 自进化档案库：Archive/Artifact/sample_parent/查重/新颖度/谱线 | `evolve.mbt` `scoring.mbt` `self_search.mbt` |
 | `omega` | Ω-check：项目结构/回传五段式校验、spec 解析/批量校验 | `check.mbt` |
 | `ops` | 运维：心跳/看门狗/google 调度 | `ops_watchdog.mbt` 等 |
-| `server` | MCP 层：122 个工具+3 resources+2 prompts 注册、call_log 注入、Laya/evolve MCP 封装、规则驱动源码扫描（issue_scan） | `server.mbt` `laya_js.mbt` `evolve_distill.mbt` `evolve_lesson.mbt` `issue_scan.mbt` |
+| `server` | MCP 层：170 个工具+3 resources+2 prompts 注册、call_log 注入、Laya/evolve MCP 封装、规则驱动源码扫描（issue_scan） | `server.mbt` `laya_js.mbt` `evolve_distill.mbt` `evolve_lesson.mbt` `issue_scan.mbt` |
 | `decompose` | 递归拆解规格 | — |
 | `executor` | 执行器抽象 + 能力注册表 + 能力路由（Marketplace 雏形，R30/R31）+ store 持久化 | `registry.mbt` `base.mbt` |
 | `atgc-old` | 旧 ATGC 叙事子项目（保留全量） | — |
 | `atgc` | 极简双链虚拟机（能力演示） | — |
 
-## 三、MCP 工具分组概览（104 个）
+## 三、MCP 工具分组概览（导航简写，不是注册表计数）
+
+> **边界（BUG-123 / BUG-363）**：本表组名与组值是手写的导航简写（省略公共前缀，如`succeed status`），**不等于** `tools/list` 的注册表，也不能与真源做机械差集。逐组的权威清单在 README「功能全景」，由 `check_doc_surface.py` 的 J3 同时钉「分组数字之和 == 真源」与「标题组数 == 实际分组标题数」；这张地图自己只钉**总数主张**那一句（J14 项目地图面）。本表尚未覆盖的分组（GitHub/GitCode 同步、超级管家、六顶帽、项目助理、嵌入式 MCPCf、模型路由·外部执行器、开发模式等）记在 BUG-364，改写本表属内容决策，留裁决。
 
 | 组 | 工具 |
 |---|---|
@@ -59,6 +61,6 @@
 
 - **测试**：JS 目标已支持；native 需系统 SQLite + VS 环境（见 AGENTS.md）。
 - **Node ≥ 24**：JS 目标依赖 `node:sqlite` 的 returnArrays，<24 会导致列读空。
-- **时间戳用 Int64**：`@env.now().to_int()` 对 UInt64 做 32 位截断会产生 1969 假时间戳——务必用 `.to_int64()`。
+- **时间戳用 Int64**：`@env.now().to_int()` 对 UInt64 做 32 位截断会产生 1969 假时间戳——务必用 `@env.now().reinterpret_as_int64()`（`UInt64::to_int64` 自 BUG-359 起已由 core 弃用，仓内 11 处调用全部改名；写 `.to_int64()` 会给 `moon check` 新增一条 0020 warning）。注意 `to_int64` 是重载名：`Double::to_int64()` / `Int::to_int64()` 是**饱和转换**、未弃用，不要跟着改。
 - **勿改共享 fist-mbt.db 测试**：测试用独立内存/SQLite（见 call_log_wbtest）。
 - **无硬编码路径**：分隔符跟随输入，路径不硬编码盘符。
