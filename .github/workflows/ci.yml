@@ -35,6 +35,15 @@ jobs:
       # 2026-10-13 第二次 master 坏状态实录（server/pkg.generated.mbti 声明了 4 个源里没有的 pub fn ⇒
       # 干净树 moon check 报 unbound 20 errors，而 CI 红在 Migrate 步且 skip 其后全部步）。
       # 本判据放在 Migrate **之前** —— 上轮实测：挂在 Migrate 之后的判据会被 skip（恰在最需要它出声时）。
+      # 冲突标记硬门禁（R74 接线）：510b1ff 落了 scripts/blackbox/check_merge_markers.py 却从未接进
+      # CI——f259d79 清完 9 个文件 2 分钟后，259b56a 又把 3 份 issue_scan 文件的冲突标记提交进来
+      # 而 CI 无感（.py/.mbt 带标记直接崩编译）。放 Migrate 之前（同上教训：之后的判据会被 skip）。
+      - name: Merge-marker gate (冲突标记硬门禁：标记进跟踪面=编译必崩，R74)
+        shell: bash
+        run: |
+          python3 scripts/blackbox/check_merge_markers.py --selftest
+          python3 scripts/blackbox/check_merge_markers.py
+
       - name: MBTI sync guard (.mbti 接口声明 ↔ 源定义；第二次 master 坏状态形状)
         shell: bash
         run: |
