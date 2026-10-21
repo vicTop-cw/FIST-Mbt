@@ -63,11 +63,14 @@ def expected(script, rc, why, *args, kind="known-red"):
             "argv": list(args), "expect": rc, "needs": [], "why": why, "kind": kind}
 
 
-def gated(script, need, *args):
-    """依赖 temp/ 临时件的 case：缺前置即 SKIP（打印，不静默）。"""
+def gated(script, need, *args, expect=0, why="依赖 temp 临时件", kind="gate"):
+    """依赖 temp/ 临时件（或树态目录）的 case：缺前置即 SKIP（打印，不静默）。
+
+    BUG-368：前置可以是**目录**（如 `temp/` 树态）；且树态相关格的期望值可能不是 0
+    （运行态树里 cleanup --check 正确读 rc=1），故 expect/why 做成显式入参。"""
     return {"name": "%s %s" % (script, " ".join(args)), "script": script,
-            "argv": list(args), "expect": 0, "needs": [need], "why": "依赖 temp 临时件",
-            "kind": "gate"}
+            "argv": list(args), "expect": expect, "needs": [need], "why": why,
+            "kind": kind}
 
 
 CASES = [
@@ -119,8 +122,21 @@ CASES = [
     gated("check_deprecated_text_census.py", DUMP, "--dump-distribution", DUMP),
     gated("check_deprecated_site_list.py", DUMP, DUMP),
     case("check_deprecated_site_list.py", "--selftest"),
-    expected("cleanup_artifacts.py", 1,
-             "预存红：工作树 DIRTY（temp/ 与 *.db 是运行物，本仓不 git clean 它们）", "--check"),
+    # BUG-368：预存红的 why 必须**可核对**——写清构成与已知虚报面，否则数字漂了没人看得出。
+    # 现状（2026-10-21 实测，共享树）：根 *.db 运行物 + temp/ scratch 件 ⇒ rc=1 属预期；
+    # `scripts/` 的 `_` 档按 BUG-334 只计**未跟踪**件、已跟踪真源（现 2 件：`_tool_registry.py`
+    # 工具注册单一真源、`_run_check_t0r21.py`）列入豁免并逐条印出 ⇒ 该档不再虚报。
+    # ⚠ 本格读数是**树态相关**的：干净检出（CI / git archive）上同一条 --check 读 rc=0 CLEAN，
+    # 那是正确读数而非判据坏——本格按共享树口径声明 1；两种读数都逐条点名，可自行核对。
+    # BUG-368：本格读数是**树态相关**的——运行态树（有 temp/ 残留）rc=1 才对；干净检出
+    # （CI / git archive / 隔离 worktree）同命令正确读 rc=0 CLEAN。故用 gated("temp") 表达：
+    # 有 temp/ ⇒ 按运行态预期 1；无 temp/ ⇒ SKIP 并打印（不是"这格过了"，是不适用）。
+    # why 写实构成（BUG-368 建议②）：根 .db 运行物 + temp/ scratch；scripts/ `_` 档只计未跟踪件，
+    # 已跟踪真源（_tool_registry.py / _run_check_t0r21.py）逐条印入豁免、不计数。
+    gated("cleanup_artifacts.py", "temp", "--check", expect=1,
+          why="运行态树预存红：根 .db + temp/ scratch ⇒ rc=1（干净检出无 temp/ 则 SKIP）；"
+              "scripts/ `_` 档只计未跟踪件、跟踪真源逐条印入豁免（BUG-334/BUG-368）"),
+    case("cleanup_artifacts.py", "--selftest"),
 ]
 
 
@@ -205,7 +221,8 @@ def run_battery():
     py = sys.executable
     fails, skips = [], []
     for c in CASES:
-        miss = [n for n in c["needs"] if not os.path.isfile(os.path.join(ROOT, n))]
+        # BUG-368：前置既可能是文件（temp/*.json）也可能是目录（temp/ 树态）⇒ 用 exists
+        miss = [n for n in c["needs"] if not os.path.exists(os.path.join(ROOT, n))]
         if miss:
             skips.append((c["name"], "缺前置 " + " ".join(miss)))
             print("SKIP  %-56s %s" % (c["name"], "缺前置 " + " ".join(miss)))
