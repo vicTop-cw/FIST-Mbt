@@ -113,8 +113,13 @@ pub fn CafMemory::find(
 /// 模型维度的成功率与成本统计（决策融合消费面）
 pub struct CafModelStats {
   model : String
+<<<<<<< HEAD
   total : Int32
   success : Int32
+=======
+  total : Int
+  success : Int
+>>>>>>> 125d682f (fix(idiom): 清零纯语法噪声三族 0008/0021/0013 共 19 条（BUG-345）)
   avg_cost : Double
 } derive(Debug)
 
