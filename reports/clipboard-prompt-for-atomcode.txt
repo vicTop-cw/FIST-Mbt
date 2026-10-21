@@ -1,0 +1,134 @@
+# FIST-Mbt 治理 Tier2 升级 — AtomCode 任务包
+
+执行目标: https://github.com/vicTop-cw/RX-MBT 仓库，HEAD defbe27b
+参考计划文档: docs/2026-10-21-fist-governance-tier2-plan.md
+
+---
+
+## 角色
+
+你是 AtomCode，FIST-Mbt 项目的"多租户治理"执行机器。每一步做一件事，提交一个小 PR（≤ 15 commits），让主库能独立合入或丢弃。
+
+## 当前仓库状态
+
+- HEAD: defbe27b（三远端 gitcode/origin 完全对齐）
+- Build: 0 errors, 65 warnings
+- 已合入脚本: scripts/slave-branch-merge.ps1, scripts/blackbox/check_merge_markers.py
+- 关键文件已存在: src/server/server.mbt (MultiStore + engine_for_ns), src/store/multi_store.mbt
+
+## 执行顺序（4 个独立 PR）
+
+### PR1: scripts/fist-gate.py — 统一门禁链
+
+**只动 2 处**:
+1. 新建 scripts/fist-gate.py（≤ 80 行 Python）
+2. .gitignore 追加 1 行: `.git/fist/`
+
+fist-gate.py 必须执行 5 个检查:
+1. **merge_markers**: 调 `python scripts/blackbox/check_merge_markers.py`（已存在）
+2. **fmt**: 跑 `moon fmt --check`，非零 rc 即红
+3. **build**: 跑 `moon build --target js src/server src/engine src/store src/router src/ops`，检查输出含 `0 errors`
+4. **ps_encoding**: 内联 ~20 行——扫 git 跟踪的 .ps1 文件，要求纯 ASCII 或 UTF-8 BOM（BUG-88 规则）
+5. **store_path**: 内联 ~10 行——扫 src/store/*.mbt 里绝对路径硬编码（`/etc/`、`C:\`、`\\`）
+
+排除目录: `_build/`, `temp/`, `.git/`, `node_modules/`
+
+**退出码契约**: 0=全过；1=有失败（每项分别点名输出 "FAIL <name>: ..."）；2=自身退化（扫描面空/python 不可用/moon 不可用——绝不误报绿）
+
+**--selftest**: 合成一个临时 git repo，注入合成违例（例如把 `<<<<<<<` 塞进一个 .mbt），证明 selftest 能检测到 → 判红。然后用干净文件 → 判绿。用 tempfile + subprocess.run(["git","init"])，不 mock。格子数从已执行数反解。
+
+**验收**: `python scripts/fist-gate.py --selftest` 所有格子 PASS 且 exit=0；真正跑全仓 exit=0
+
+commit 信息格式: `feat(gate): fist-gate.py 统一门禁链 — merge_markers+fmt+build+ps_encoding+store_path`
+
+### PR2: scripts/fist-task-pool.py — 任务池 yaml 管理
+
+**只动 2 处**:
+1. 新建 scripts/fist-task-pool.py（≤ 120 行 Python）
+2. 新建 .git/fist/.gitkeep（占位）
+
+子命令:
+```
+init          → 建 .git/fist/tasks/{backlog,claimed,done,failed} + .git/fist/machines.yaml (空模板)
+publish <yaml>→ mv <yaml> 到 .git/fist/tasks/backlog/
+claim <id> <machine> → mv .git/fist/tasks/backlog/<id>.yaml → .git/fist/tasks/claimed/<machine>/ + 写 owner/status
+release <id>  → mv claimed/<machine>/<id>.yaml 退回 backlog/
+archive <id>  → mv claimed/<machine>/<id>.yaml → done/
+fail <id>     → mv claimed/<machine>/<id>.yaml → failed/
+list [--status X] [--machine Y] → 打印匹配的任务清单
+```
+
+约束:
+- safe_yaml_name: task_id 只允许 `[A-Za-z0-9._-]`，拒绝路径穿越
+- .git/fist/ 不在 git 跟踪里（PR1 已加 gitignore），所以这两个文件被 git stash 吃掉也没关系
+- 不依赖 pyyaml 包（环境可能没装），手写 ~10 行解析器处理 task_id/title/want/owner/status 等顶层键
+
+commit 信息格式: `feat(task-pool): fist-task-pool.py — .git/fist/tasks/ yaml 任务池管理`
+
+### PR3: .github/workflows/gate.yml — PR 时自动跑门禁
+
+**只动 1 处**:
+1. 新建 .github/workflows/gate.yml（~50 行 YAML）
+
+触发条件: `pull_request` 事件（opened/synchronize/reopened）
+
+步骤:
+```yaml
+- uses: moonbitlang/setup-moon@v1    # 装 moon 工具链
+- run: python scripts/fist-gate.py   # 跑门禁
+```
+
+行为: fist-gate.py rc!=0 → gate.yml job 失败 → GitHub PR 显示红 × → 阻止合并
+
+commit 信息格式: `ci(gate): gate.yml — PR 时自动跑 fist-gate.py 阻止脏代码合入`
+
+### PR4: scripts/fist-pr-automator.py — PR → Gate → Merge 自动流水线
+
+**只动 1 处**:
+1. 新建 scripts/fist-pr-automator.py（≤ 150 行 Python）
+
+主入口: `python scripts/fist-pr-automator.py <task_id>`
+
+流程:
+1. 读 `.git/fist/tasks/backlog/<task_id>.yaml`
+2. 调 `git diff-tree --no-commit-id --name-only HEAD` 验证当前分支改动范围 ⊆ yaml.files_touched
+3. 本地跑 `python scripts/fist-gate.py` → rc!=0 退出（gate 没过）
+4. push 当前分支 → 创建 PR（用 gitcode API v4 或 gh CLI，优先用已有的 scripts/blackbox 里的 git 操作模式）
+5. 等 gate.yml CI 完成（轮询 PR status，timeout 120s）
+6. CI 全绿 → merge 回 master → checkout master → pull → `python scripts/fist-task-pool.py archive <task_id>`
+7. CI 红 → `python scripts/fist-task-pool.py fail <task_id>`（由人来决定重试还是放弃）
+
+依赖: 不新引入任何包。PR 创建优先用 git + curl + 已配置的 GITCODE_TOKEN/GITHUB_TOKEN（环境变量）。
+
+commit 信息格式: `feat(automator): fist-pr-automator.py — yaml 任务 → PR → gate → merge 一键流水线`
+
+---
+
+## 关键约束（铁律）
+
+1. **commit 前必须 `moon fmt` + `moon fmt --check`**（即使只改 Python 也跑一遍，防止 MoonBit 文件被意外触碰）
+2. **每个 PR 一个功能一件事**，≤ 15 commits
+3. **fist-gate.py 必须有 --selftest 且所有格子 PASS**，这是它的自证
+4. **scripts/fist-*.py 必须 UTF-8 BOM 或纯 ASCII**（Windows PS5.1 读 GBK 会炸）
+5. **不引入第三方 Python 依赖**（pyyaml/requests 等环境可能没有）
+6. **路径用相对的**，绝对路径硬编码 = FAIL
+
+## 验证 checklist
+
+每个 PR 你必须先在本地验证完再提交:
+
+- [ ] `moon fmt --check` rc=0
+- [ ] `moon build --target js src/server src/engine src/store src/router src/ops` 输出 `0 errors`
+- [ ] `python scripts/fist-gate.py --selftest` PASS（仅 PR1 有）
+- [ ] `python scripts/fist-gate.py` PASS（真正跑全仓）
+- [ ] `git diff --name-only` 改动范围符合 PR 描述
+- [ ] `git log --oneline PR-branch ^master` 确认 commit 数 ≤ 15
+
+## 回传格式
+
+每个 PR 做完后回传:
+- **结论**: PR 号 + 提交 hash + 状态（已 push 等合入/已被拒需修）
+- **证据**: `git log --oneline -3` + 门禁脚本 rc + 改动文件清单
+- **分析**: 实现了什么 / 有什么取舍 / 和计划有什么差异
+- **缺口与风险**: 未覆盖的格子 / 潜在问题
+- **建议入档位置**: 哪个 memory/*.md / bugs.md 条目
