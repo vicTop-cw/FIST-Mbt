@@ -35,7 +35,7 @@ updated: 2026-10-16
 
 ## 测试基线
 
-- `moon test --target js` 全量 = 1348/1348 绿
+- `moon test --target js` 全量 = 1347/1347 绿
 - 单模块：`moon test --target js src/<module>`
 - 环境：`$env:MOON_HOME = "C:\Users\victo\.moon"`
 
