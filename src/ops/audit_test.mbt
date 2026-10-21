@@ -49,6 +49,7 @@ test "audit: enforce 放行与拒绝" {
     None => return
   }
   // HumanSteward 四操作全部放行
+<<<<<<< HEAD
   assert_true(@ops.enforce(action="publish", role=hs) is Ok(_))
   assert_true(@ops.enforce(action="archive", role=hs) is Ok(_))
   assert_true(@ops.enforce(action="delete", role=hs) is Ok(_))
@@ -57,6 +58,16 @@ test "audit: enforce 放行与拒绝" {
   let actions = ["publish", "archive", "delete"]
   for a in actions {
     let r = @ops.enforce(action=a, role=leader)
+=======
+  assert_true(enforce(action="publish", role=hs) is Ok(_))
+  assert_true(enforce(action="archive", role=hs) is Ok(_))
+  assert_true(enforce(action="delete", role=hs) is Ok(_))
+  assert_true(enforce(action="claim", role=hs) is Ok(_))
+  // Leader 越权 publish/archive/delete 被拒，claim 放行
+  let actions = ["publish", "archive", "delete"]
+  for a in actions {
+    let r = enforce(action=a, role=leader)
+>>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
     assert_true(r is Err(_))
     match r {
       Err(msg) => {
@@ -66,6 +77,7 @@ test "audit: enforce 放行与拒绝" {
       Ok(_) => fail("leader 不应获得 \{a} 权限")
     }
   }
+<<<<<<< HEAD
   assert_true(@ops.enforce(action="claim", role=leader) is Ok(_))
   // Agent 同理
   assert_true(@ops.enforce(action="publish", role=agent) is Err(_))
@@ -73,6 +85,15 @@ test "audit: enforce 放行与拒绝" {
   assert_true(@ops.enforce(action="claim", role=agent) is Ok(_))
   // 未知动作一律拒绝
   assert_true(@ops.enforce(action="unknown_op", role=hs) is Err(_))
+=======
+  assert_true(enforce(action="claim", role=leader) is Ok(_))
+  // Agent 同理
+  assert_true(enforce(action="publish", role=agent) is Err(_))
+  assert_true(enforce(action="delete", role=agent) is Err(_))
+  assert_true(enforce(action="claim", role=agent) is Ok(_))
+  // 未知动作一律拒绝
+  assert_true(enforce(action="unknown_op", role=hs) is Err(_))
+>>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
 }
 
 ///|
@@ -170,8 +191,12 @@ test "audit: 引擎任务可作为审计来源" {
     ),
   )
   assert_true(
+<<<<<<< HEAD
     @ops.enforce(action="publish", role=hs) is Ok(_) &&
     e.get_task("T0") is Some(_),
+=======
+    enforce(action="publish", role=hs) is Ok(_) && e.get_task("T0") is Some(_),
+>>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
   )
   for t in e.list_all() {
     log.record(

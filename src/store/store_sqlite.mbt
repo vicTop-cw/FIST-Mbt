@@ -1893,7 +1893,8 @@ pub fn SqliteStore::assistant_set_status(
 }
 
 ///|
-/// 行 -> AssistantReg（列序与上面 SELECT 一致；解析失败返回 None，不让单行坏数据打死调用方）。
+/// 行 -> AssistantReg（列序与上面 SELECT 一致）。取值函数全为全函数，坏行只会读出空串，
+/// 不会打死调用方；None 由调用方的 prepare/step 守卫产生。
 fn SqliteStore::assistant_from_row(
   self : SqliteStore,
   stmt : @sqlite.Statement,
@@ -1906,9 +1907,13 @@ fn SqliteStore::assistant_from_row(
     registered_at: str_from_bytes(stmt.column_text(3)),
     heartbeat_at: str_from_bytes(stmt.column_text(4)),
     status: str_from_bytes(stmt.column_text(5)),
+<<<<<<< HEAD
   }) catch {
     _ => None
   }
+=======
+  })
+>>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
 }
 
 // —— executions 表（执行元数据，供成本统计使用）——
@@ -2253,9 +2258,15 @@ pub fn SqliteStore::write_heartbeat_interval(
 pub fn SqliteStore::list_heartbeat_intervals(
   self : SqliteStore,
   task_id : String,
+<<<<<<< HEAD
   limit~ : Int32 = 100,
 ) -> Array[Int32] {
   let out : Array[Int32] = []
+=======
+  limit~ : Int = 100,
+) -> Array[Int] {
+  let out : Array[Int] = []
+>>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
   match self.db {
     None => out
     Some(db) => {
@@ -2609,7 +2620,11 @@ pub fn SqliteStore::write_call_log(
 /// 读取最近 N 条调用日志（按自增 id DESC，新的在前；seq 仅作同进程单调定位）。
 pub fn SqliteStore::recent_call_logs(
   self : SqliteStore,
+<<<<<<< HEAD
   limit~ : Int32 = 50,
+=======
+  limit~ : Int = 50,
+>>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
 ) -> Array[Json] {
   let out : Array[Json] = []
   match self.db {

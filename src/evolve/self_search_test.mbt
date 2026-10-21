@@ -29,15 +29,6 @@ test "self_search_analyze_nonportable" {
 ///|
 /// 判重：name+source 均同视为重复；任一分量不同则不重复。
 test "self_search_is_duplicate" {
-<<<<<<< HEAD
-  let a = @evolve.analyze_candidate("lib", "x", "crate", "portable wrapper")
-  let b = @evolve.analyze_candidate("lib", "x", "crate", "portable wrapper")
-  let c = @evolve.analyze_candidate("lib", "x", "gh", "portable wrapper")
-  let d = @evolve.analyze_candidate("other", "x", "crate", "portable wrapper")
-  assert_true(@evolve.is_duplicate_candidate(a, b))
-  assert_true(!@evolve.is_duplicate_candidate(a, c))
-  assert_true(!@evolve.is_duplicate_candidate(a, d))
-=======
   let a = analyze_candidate("lib", "x", "crate", "portable wrapper")
   let b = analyze_candidate("lib", "x", "crate", "portable wrapper")
   let c = analyze_candidate("lib", "x", "gh", "portable wrapper")
@@ -45,7 +36,6 @@ test "self_search_is_duplicate" {
   assert_true(is_duplicate_candidate(a, b))
   assert_true(!is_duplicate_candidate(a, c))
   assert_true(!is_duplicate_candidate(a, d))
->>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
 }
 
 
@@ -59,32 +49,19 @@ test "self_search_portability_words" {
   let low = @evolve.analyze_candidate(
     "eng2", "", "paper", "describes the threading model only",
   )
-<<<<<<< HEAD
-  assert_true(!@evolve.assess_portability(low))
-=======
   assert_true(!assess_portability(low))
->>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
 }
 
 
 ///|
 /// 可移植性边界：长度恰好触发词应判可移植；过短/空原样不可移植。
 test "self_search_portability_length" {
-<<<<<<< HEAD
-  let empty = @evolve.analyze_candidate("e", "", "tmp", "")
-  assert_true(!@evolve.assess_portability(empty))
-  let short = @evolve.analyze_candidate("s", "", "tmp", "abc")
-  assert_true(!@evolve.assess_portability(short))
-  let word4 = @evolve.analyze_candidate("w", "", "tmp", "wrap")
-  assert_true(@evolve.assess_portability(word4))
-=======
   let empty = analyze_candidate("e", "", "tmp", "")
   assert_true(!assess_portability(empty))
   let short = analyze_candidate("s", "", "tmp", "abc")
   assert_true(!assess_portability(short))
   let word4 = analyze_candidate("w", "", "tmp", "wrap")
   assert_true(assess_portability(word4))
->>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
 }
 
 
