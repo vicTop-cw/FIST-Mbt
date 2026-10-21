@@ -102,7 +102,7 @@ fn b9_str(j : Json, key : String) -> String {
 ///|
 fn b9_int(j : Json, key : String) -> Int {
   match j.value(key) {
-    Some(Number(n)) => n.to_int()
+    Some(Number(n, ..)) => n.to_int()
     _ => -1
   }
 }

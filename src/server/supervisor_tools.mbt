@@ -417,7 +417,7 @@ fn supervisor_guidance_list(
       }
     }
   } nobreak {
-    ignore([])
+    ()
   }
   let out : Array[SupervisorGuidance] = []
   supervisor_guidance.items.each(fn(_, g) {

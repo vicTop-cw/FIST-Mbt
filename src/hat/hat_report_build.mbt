@@ -6,16 +6,16 @@
 ///|
 /// 一次 HexaMind 裁决报告。
 pub struct HatVerdictReport {
-  pub topic : String
-  pub status : String
+  topic : String
+  status : String
   // converged | partial | diverged
-  pub convergence : ConvergeResult
-  pub divergences : Array[Divergence]
-  pub reports : Array[HatReport]
-  pub should_iterate : Bool
-  pub terminal_gate : String
+  convergence : ConvergeResult
+  divergences : Array[Divergence]
+  reports : Array[HatReport]
+  should_iterate : Bool
+  terminal_gate : String
   // 恒 "user"
-  pub markdown : String
+  markdown : String
 }
 
 ///|
