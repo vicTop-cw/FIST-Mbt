@@ -1,7 +1,6 @@
 import {
   "moonbitlang/x/fs",
   "moonbitlang/core/json",
-  "moonbitlang/core/set",
   "moonbitlang/core/encoding/utf8",
   "vicTop-cw/fist-mbt/src/evidence",
 }

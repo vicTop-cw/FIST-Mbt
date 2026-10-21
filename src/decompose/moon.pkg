@@ -1,8 +1,4 @@
 import {
-  "vicTop-cw/fist-mbt/src/core",
-}
-
-import {
   "moonbitlang/core/quickcheck",
 } for "test"
 

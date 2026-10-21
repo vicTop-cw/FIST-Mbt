@@ -7,8 +7,11 @@ import {
   "vicTop-cw/fist-mbt/src/executor",
   "moonbitlang/core/json",
   "moonbitlang/core/math",
-  "moonbitlang/x/fs",
 }
+
+import {
+  "moonbitlang/x/fs",
+} for "test"
 
 supported_targets = "js+native"
 

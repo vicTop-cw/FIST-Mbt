@@ -4,7 +4,7 @@ import {
 
 import {
   "moonbitlang/core/quickcheck",
-} for "test"
+} for "wbtest"
 
 supported_targets = "js+native"
 
