@@ -179,7 +179,11 @@ pub fn latest_url(repo : String, base_url : String) -> String {
 /// 要不要进写盘流程（纯逻辑，可白盒锁）：
 ///   `--check`（check_only=true）永不写盘——阶段 A 只读；
 ///   否则**仅当** `远端 > 本地`（cmp>0）才进入阶段 B/C。
+<<<<<<< HEAD
 fn should_upgrade(cmp : Int32, check_only : Bool) -> Bool {
+=======
+fn should_upgrade(cmp : Int, check_only : Bool) -> Bool {
+>>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
   cmp > 0 && !check_only
 }
 
