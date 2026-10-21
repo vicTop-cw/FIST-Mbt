@@ -6079,3 +6079,20 @@ total = int(m.group(1))  # 只取 group(1)=Total tests 数
 ### FIXED(2026-10-21T07:21:28Z / BUG-381)
 - evidence: BUG-332 的幻影 FIXED 已实证：HEAD 上两个脚本无 reconfigure、无对应修复 commit，而 check_py_stdout_encoding.py --all rc=1（2 份 E1 违例），ci.yml:199 跑 --all ⇒ master 常红。本轮在 scripts/fist_mbt_mcp_client.py / scripts/ns_route_probe.py 各补 BUG-58/138 标准 stdout/stderr UTF-8 reconfigure 块；复跑 --all rc=0（84 份该带闸/84 已带）、CI 面 PASS 37/37、--selftest rc=0 SELFTEST OK、py_compile rc=0、去 PYTHONIOENCODING 冒烟仍打印「中文 ⇒ 客户端导入 OK」rc=0。
 
+
+## BUG-327 [2026-10-20T12:33:00Z] [medium] FIXED
+- summary: scripts/run_check_t0r21.py 未登记 ⇒ check_scripts_index.py 在干净 HEAD 上恒红（判据自己被孤儿件拖红）
+- detail: 复现（本机 2026-10-20 实测，纯 Python、不依赖 moonc）：`python scripts/check_scripts_index.py` → rc=1
+  `FAIL 以下正式辅助脚本未在 scripts/README.md 登记（工具统一管理缺口）：- run_check_t0r21.py`。
+  该件由 98fb27a 带进跟踪面，全文 17 行：cmd 硬编码 `C:\Users\victo\.moon\bin\moon.exe`、
+  cwd 硬编码 `E:\IDEProjects\AI\FIST-Mbt`、判据写死字符串 `passed: 162` —— 换一台机器、加一条测试就永远红，
+  是典型的一次性复现脚本，不是工具。全仓 `grep -rn "run_check_t0r21"` 零引用（ci.yml/docs/脚本都没有）
+  ⇒ 改名对任何流程无影响。
+  出路不是「补登记」：把硬编码到别人机器的件供进 scripts/README.md 的工具索引，等于让「地图」开始说谎
+  （R62 的初衷正是工具统一管理）。守卫自己的分工写得很清楚
+  （check_scripts_index.py:44 `if name.startswith("_"): continue  # 临时脚本不要求登记（即用即清）`），
+  所以正确动作是**声明它是临时件**：`mv scripts/run_check_t0r21.py scripts/_run_check_t0r21.py`。
+  内容一字未动、文件未删 ⇒ 可逆；彻底删除仍需属主裁决（删除不可逆，副机不代拍）。
+  修后同一命令：rc=0 `PASS 工具类辅助代码单一索引完整`。
+- note: 同一缺陷在并行分支 slave/fix/migrate-selftest-ice-routing 上先记为 BUG-325（OPEN）。两条并存 ⇒
+  合并时以本条（FIXED + 已改名）为终态、BUG-325 转 DUPLICATE；memory/2026-10-20.md 亦会同名冲突，保留双方段落即可。
