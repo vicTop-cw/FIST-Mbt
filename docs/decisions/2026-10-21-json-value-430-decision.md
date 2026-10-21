@@ -101,6 +101,44 @@ pub fn Json::value(self : Json, key : String) -> Json? {
 
 ---
 
+### 3.5 其余 0020 子族没有可证的文本代理（R36 实测）
+
+§3.4 的差额只有在「弃用点在源码里就长得和弃用件同名」时才可测。把 0020 剩下的子族按**名称级**
+与**站点级**两种口径各普查一遍（宇宙 `git ls-files "*.mbt"` = 290 文件，判据面 `temp/chk41.json`）：
+
+| 子族 | 判据面 | 名称级文本 | 站点级文本 | 结论 |
+|---|---|---|---|---|
+| `Json::value` | 430 | `.value(` 441 | 同一处 | 代理成立，盲区 **11** |
+| `Check @encoding/utf8.encode` | 3 | `utf8.encode(` **1**（且在注释里） | `.to_bytes(` 3 | 代理成立，盲区 **0** |
+| `Show`（debugging 8 / collections 3） | 8 行发 11 条（3 行双发） | `\bShow\b` **2** | `.to_string()` 435 + `inspect(` 39 + 插值 `\{` 859 ⇒ 并集 **1333** | **无代理** |
+| FFI `Array` | 3 | `\bArray\b` 1463 | `: Array[` 953 | **无代理** |
+| 隐式提升 `run` | 1 | `\brun\b` 32 | `.run(` 7 | **无代理** |
+
+三条非显然读数，都直接影响 §6 的收口表能覆盖谁：
+
+1. **`Show` 族的名称级普查会给出负缺口**：文本 2 处 < 判据 8 处，而那 2 处文本本身不是弃用站点——
+   `src/router/star_gate.mbt:33` 是 0027 的 `derive(Eq, Debug, Show)`，`:42` 是一条
+   `pub extend StarVerdict with Show::{to_string, output}`，与 8 个判据行**无一重合**。真正的站点分散在
+   三种写法里（方法调用 `.to_string()`、`inspect(...)`、字符串插值 `\{x}`），把它们并起来是 1333 处对判据 11 条：
+   上限要写到 **1322** 才不红，这样的棘轮等于没有。
+2. **`utf8.encode` 族反过来证明站点级代理可行**：判据 3 处与 `.to_bytes(` 文本 3 处逐行重合（盲区 0），
+   三处即 `src/router/star_gate.mbt:302` / `src/router/star_gate_wbtest.mbt:22,350`——**正是 BUG-360 那条
+   「String 内部 UTF-16LE、签名侧 UTF-8」验签洞的本体**。所以这一族的上限 0 顺带把 BUG-360 的修复进度也钉住了：
+   谁新写一处不发判据的 `.to_bytes(`，R3 就红；BUG-360 修完后两面归 0，R4 会要求把这条整条删掉。
+3. **FFI `Array` 的判别事实是跨行的**：3 处全在 `extern "js" fn` 的形参/字段上（`github_js.mbt:63` /
+   `laya_js.mbt:18` / `run_check_js.mbt:26`），而 `: Array[` 在跟踪面有 953 处合法非 FFI 用法；建议替代件
+   `FixedArray` 全仓 0 处。行级正则表达不了「这一处是否处在 extern 声明里」，隐式提升那一处同理（`.run(` 7 处对判据 1 处，
+   建议形态 `Executor::run` 全仓 0 处）。
+
+把 Show 族真按两种口径各写一条表项喂进守卫，实测读数：**名称级 ⇒ rc=2**（R2「判据命中未被本族文本正则覆盖」，
+尺子拒绝代读，不会静默放过）；**站点并集 ⇒ rc=1、缺口 1322**。结论写进 `scripts/check_deprecated_text_census.py`
+的 docstring：这张表只收**语法族**；语义族（`Show`/FFI `Array`/隐式提升）与缺席型族（0001/0002/0006/0007/0009 的
+unused 系、0078 契约面 437 处对判据 3 处）只能按 `error_code` 逐条清，判据面自己就是清单。
+
+> 一条口径提醒：0027 那 1 处若照字面写 `derive(Show)` 普查会读 **0**（真身是 `derive(Eq, Debug, Show)`），
+> 要 `derive\([^)]*\bShow\b` 才对得上。BUG-359 说的「逐字命中、无差额」只就 0020 的两个改名子族成立，
+> 不能当成对所有弃用族的默认假设。
+
 ## 4. 作用域定律（实测，4 组探针）
 
 A 案要落辅助件，第一件事是问「同名私有件能不能一个文件写一份」。四组探针（`temp/probe_dup_helper.py` / `probe_dup_helper2.py`，每组都完整回退、判据面复测）：
