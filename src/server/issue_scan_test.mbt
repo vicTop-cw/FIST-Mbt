@@ -549,6 +549,7 @@ test "lint_15_bug268_real_samples_no_fp" {
 }
 
 ///|
+<<<<<<< HEAD
 /// BUG-348 端到端成对锁（走 @server.issue_scan 真源码，非旧构建产物，钉 BUG-32 教训）：
 /// `moonbit-unused-variable` 此前按裸子串 `let ` 命中每个 let 声明、不看绑定名是否真被用
 /// ⇒ 已使用的 let 照样报（cost_tool.mbt L29/31/32 纯假阳）。修复后必须：
@@ -635,6 +636,47 @@ test "lint_333_match_exhaustive_denoised_targeted" {
   assert_eq(mem_int(j0, "total_findings"), 1)
   assert_eq(lint_sev(j0, "low"), 1)
   assert_eq(lint_sev(j0, "info"), 0)
+=======
+/// by_severity 单档读取（缺键/结构异常返回 -1，避免读成 0 而假绿）。
+fn lint_sev(j : Json, key : String) -> Int {
+  let by = match j {
+    Object(m) =>
+      match m.get("by_severity") {
+        Some(Object(s)) => s
+        _ => return -1
+      }
+    _ => return -1
+  }
+  match by.get(key) {
+    Some(Number(n, ..)) => n.to_int()
+    _ => -1
+  }
+}
+
+///|
+/// BUG-345：外部规则把内建 low 规则降为 info 后，`by_severity` 必须出现 info 桶、
+/// low 相应归零。修前 `info` 被 else 兜底并入 low，A/B 两跑 by_severity 一字不变。
+test "lint_345_by_severity_info_独立成桶" {
+  let d = lint_dir("lint_c345")
+  @fs.write_string_to_file(
+    d + "/sample.mbt",
+    "fn probe(): Unit {\n  await tick()\n  probeinfomarker()\n}\n",
+    encoding="utf8",
+  ) catch {
+    _ => abort("BUG-345: 夹具写入失败")
+  }
+  // 基线：内建 moonbit-race-condition（low）命中 await
+  let r0 = @server.issue_scan(d, "", 100)
+  assert_true(r0 is Ok(_))
+  let j0 = match r0 {
+    Ok(x) => x
+    Err(_) => return
+  }
+  // 基线两命中：race-condition(low) + long-function(info，内建即 info 档)
+  assert_eq(mem_int(j0, "total_findings"), 2)
+  assert_eq(lint_sev(j0, "low"), 1)
+  assert_eq(lint_sev(j0, "info"), 1)
+>>>>>>> e1017b8d (fix: issue_scan by_severity 四桶，info 不再并入 low（BUG-345 / T0r39）)
   // A/B：同一文件，rules_file 同名覆盖降为 info，并新增一条 info 规则
   let rules_path = d + "/rules.json"
   let rules_json = "{\"rules\":[" +
@@ -649,9 +691,15 @@ test "lint_333_match_exhaustive_denoised_targeted" {
     Ok(x) => x
     Err(_) => return
   }
+<<<<<<< HEAD
   // 降级后两条全进 info：race-condition(被覆盖) + probe-info-rule（短函数 long-function 不再报）
   assert_eq(mem_int(j1, "total_findings"), 2)
   assert_eq(lint_sev(j1, "info"), 2)
+=======
+  // 降级后三条全进 info：race-condition(被覆盖) + long-function + probe-info-rule
+  assert_eq(mem_int(j1, "total_findings"), 3)
+  assert_eq(lint_sev(j1, "info"), 3)
+>>>>>>> e1017b8d (fix: issue_scan by_severity 四桶，info 不再并入 low（BUG-345 / T0r39）)
   assert_eq(lint_sev(j1, "low"), 0)
   // 四桶之和 == total_findings：分桶不许漏计或重计
   let sum = lint_sev(j1, "high") +
@@ -659,5 +707,8 @@ test "lint_333_match_exhaustive_denoised_targeted" {
     lint_sev(j1, "low") +
     lint_sev(j1, "info")
   assert_eq(sum, mem_int(j1, "total_findings"))
+<<<<<<< HEAD
 >>>>>>> fe14481b (fix(issue_scan): match-exhaustive 认顶层 _ => 兜底、long-function 按实测行数（BUG-348 部分 / T0r48）)
+=======
+>>>>>>> e1017b8d (fix: issue_scan by_severity 四桶，info 不再并入 low（BUG-345 / T0r39）)
 }

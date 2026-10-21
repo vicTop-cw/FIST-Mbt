@@ -2215,6 +2215,23 @@ fn scan_merge_rules(
 }
 
 ///|
+/// 严重度分桶（BUG-345）：`by_severity` 与 `by_rule` 必须同源，四档各自独立计数。
+/// 未知档位归 info 而非 low——旧 `else → low` 兜底会把 rules_file 降级为 info 的
+/// 命中继续算进 low，降噪对 `by_severity` 零收益。
+fn scan_severity_bucket(sev : String) -> String {
+  if sev == "high" {
+    return "high"
+  }
+  if sev == "medium" {
+    return "medium"
+  }
+  if sev == "low" {
+    return "low"
+  }
+  "info"
+}
+
+///|
 /// 规则驱动源码扫描主入口：递归收集 {dir} 下 .mbt 文件，对每条规则逐行匹配。
 /// 返回 {scanned_files, findings, by_severity, by_rule}；findings 可直接喂给
 /// report_bug（summary = "\[rule:id\] file:line code"）。
@@ -2439,14 +2456,21 @@ pub fn issue_scan(
   // 按规则聚合（单次遍历计数，替代旧的逐规则全量 filter）
   let rule_counts : Map[String, Int32] = Map([])
   for h in dedup {
-    if h.severity == "high" {
+    let bucket = scan_severity_bucket(h.severity)
+    if bucket == "high" {
       high = high + 1
-    } else if h.severity == "medium" {
+    } else if bucket == "medium" {
       medium = medium + 1
+<<<<<<< HEAD
     } else if h.severity == "low" {
       low = low + 1
     } else {
       // info 及任何未知档：归最低档 info，不再冒充 low（BUG-345）。
+=======
+    } else if bucket == "low" {
+      low = low + 1
+    } else {
+>>>>>>> e1017b8d (fix: issue_scan by_severity 四桶，info 不再并入 low（BUG-345 / T0r39）)
       info = info + 1
     }
     rule_counts.set(h.rule, rule_counts.get(h.rule).unwrap_or(0) + 1)
@@ -2483,7 +2507,10 @@ pub fn issue_scan(
         "high": Json::number(high.to_double()),
         "medium": Json::number(medium.to_double()),
         "low": Json::number(low.to_double()),
+<<<<<<< HEAD
         // BUG-345：info 单列一档（含未知 severity 兜底），不再被并入 low。
+=======
+>>>>>>> e1017b8d (fix: issue_scan by_severity 四桶，info 不再并入 low（BUG-345 / T0r39）)
         "info": Json::number(info.to_double()),
       }),
       "by_rule": Json::array(by_rule),
