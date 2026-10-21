@@ -30,8 +30,8 @@ fn parse_abilities(abs_json : String) -> Array[String] {
 fn FistEngine::executor_loads(
   self : FistEngine,
   names : Array[String],
-) -> Map[String, Int] {
-  let m : Map[String, Int] = Map([])
+) -> Map[String, Int32] {
+  let m : Map[String, Int32] = Map([])
   for n in names {
     m.set(n, 0)
   }

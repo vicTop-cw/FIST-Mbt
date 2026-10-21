@@ -26,7 +26,7 @@ test "difficulty_label_all_tiers_reachable" {
 ///|
 /// BUG-189 回归：整段仍单调不减（前易后难），档位序只升不降。
 /// 档序复刻黑盒测试 decompose_quickcheck_test.mbt 的 diff_order（whitebox 不可见）。
-fn local_diff_order(s : String) -> Int {
+fn local_diff_order(s : String) -> Int32 {
   match s {
     "易" => 0
     "中" => 1

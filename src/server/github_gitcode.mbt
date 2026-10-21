@@ -49,7 +49,7 @@ pub fn gitcode_queue_status(
   let mut total = 0
   let mut sent_count = 0
   let mut oldest_ts = ""
-  let by_sev : Map[String, Int] = Map([])
+  let by_sev : Map[String, Int32] = Map([])
   let pending_entries : Array[Json] = []
 
   for entry in all_entries {
@@ -148,7 +148,7 @@ pub fn gitcode_queue_status(
 pub fn gitcode_flush_plan(
   project_dir : String,
   gitcode_project_id : String,
-  limit : Int,
+  limit : Int32,
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err("gitcode_flush_plan: 非法 project_dir")
@@ -264,7 +264,7 @@ pub fn gitcode_queue_mark_sent(
   project_dir : String,
   bug_id : String,
   gitcode_issue_iid : String,
-  sent_at? : String = "gitcode",
+  sent_at~ : String = "gitcode",
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err("gitcode_queue_mark_sent: 非法 project_dir")
@@ -318,7 +318,7 @@ pub fn gitcode_queue_mark_sent_batch(
   project_dir : String,
   bug_ids : Array[String],
   iids_map : Map[String, String],
-  sent_at? : String = "",
+  sent_at~ : String = "",
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err("gitcode_queue_mark_sent: 非法 project_dir")

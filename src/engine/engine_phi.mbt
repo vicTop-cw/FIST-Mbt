@@ -58,7 +58,7 @@ fn normal_tail_q(z : Double) -> Double {
 /// JSON 秒数 → Int 的**安全**转换（BUG-26 的上溢落点）：`Double::to_int()` 对超出 Int 域的
 /// 值（如实测的 1e300）**饱和**成 2147483647，随后仍被当成均值继续算 φ；带小数的值被截断、
 /// 非数字元素被整条丢掉。这里把这三类失真一律收成 None，让调用面在转换**之前**拒绝。
-pub fn phi_coerce_seconds(v : Double) -> Int? {
+pub fn phi_coerce_seconds(v : Double) -> Int32? {
   let int_max_d = 2147483647.0
   // v != v 抓 NaN；±inf 与 1e300 由范围比较抓（NaN 不参与大小比较，所以两条都要）。
   if v != v || v < -int_max_d || v > int_max_d {
@@ -77,7 +77,7 @@ pub fn phi_coerce_seconds(v : Double) -> Int? {
 /// 取值域校验（BUG-26）：φ 的建模输入一旦失真（负 elapsed、非正间隔），输出仍是格式完好的
 /// healthy/suspect——看起来是结论，实际是溢出后的算术。把「不可建模」提到结论之前。
 /// 返回拒绝原因（空串=通过）。间隔的**上溢**发生在 JSON→Int 的转换点，由调用面拦。
-pub fn phi_domain_error(intervals : Array[Int], elapsed : Int) -> String {
+pub fn phi_domain_error(intervals : Array[Int32], elapsed : Int32) -> String {
   if elapsed < 0 {
     return "elapsed 为负（\{elapsed.to_string()}s）：时钟回拨或心跳尚未到达，无 elapsed 可建模"
   }
@@ -100,9 +100,9 @@ pub fn phi_domain_error(intervals : Array[Int], elapsed : Int) -> String {
 /// 取值域外返回 `rejected` 且**不出结论**——以前这类输入带着饱和后的均值照样回 healthy，
 /// 看护据此不 heal，任务永久卡在已领取。
 pub fn phi_accrual(
-  intervals : Array[Int],
-  elapsed : Int,
-  threshold? : Int = 8,
+  intervals : Array[Int32],
+  elapsed : Int32,
+  threshold~ : Int32 = 8,
 ) -> Json {
   let dom = phi_domain_error(intervals, elapsed)
   if dom != "" {

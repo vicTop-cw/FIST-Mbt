@@ -430,7 +430,7 @@ pub fn run_tests(
 ///|
 /// 汇总跑批结果：{"total", "passed", "accuracy"}
 pub fn summarize(results : Array[Json]) -> Json {
-  let mut passed : Int = 0
+  let mut passed : Int32 = 0
   for r in results {
     match r.value("passed") {
       Some(True) => passed = passed + 1

@@ -34,9 +34,9 @@ pub enum LoopStatus {
 pub struct PipelineLoop {
   name : String
   steps : Array[String]
-  current_idx : Int
-  round : Int
-  max_rounds : Int
+  current_idx : Int32
+  round : Int32
+  max_rounds : Int32
   stop_on_goal : Bool
   stop_on_exceeded : Bool
   created_at : String
@@ -44,16 +44,16 @@ pub struct PipelineLoop {
   stop_reason : String
   goal_reached : Bool
   exceeded : Bool
-  baseline_test_count : Int
-  baseline_open_bug_count : Int
+  baseline_test_count : Int32
+  baseline_open_bug_count : Int32
 }
 
 ///|
 pub struct LoopTickResult {
   loop_id : String
   next_mode : String
-  next_step_idx : Int
-  next_round : Int
+  next_step_idx : Int32
+  next_round : Int32
   should_stop : Bool
   stop_reason : String
   history_json : Json
@@ -70,11 +70,11 @@ pub fn loop_create(
   name : String,
   steps : Array[String],
   now : String,
-  max_rounds? : Int = 5,
-  stop_on_goal? : Bool = true,
-  stop_on_exceeded? : Bool = true,
-  baseline_test_count? : Int = 0,
-  baseline_open_bug_count? : Int = 0,
+  max_rounds~ : Int32 = 5,
+  stop_on_goal~ : Bool = true,
+  stop_on_exceeded~ : Bool = true,
+  baseline_test_count~ : Int32 = 0,
+  baseline_open_bug_count~ : Int32 = 0,
 ) -> PipelineLoop {
   PipelineLoop::{
     name,
@@ -152,10 +152,10 @@ pub fn preset_loop(name : String) -> Result[(Array[String], String), String] {
 pub fn loop_tick(
   lp : PipelineLoop,
   now : String,
-  current_test_count? : Int = 0,
-  current_open_bug_count? : Int = 0,
-  project_health_grade? : String = "",
-  blocked_tasks? : Int = 0,
+  current_test_count~ : Int32 = 0,
+  current_open_bug_count~ : Int32 = 0,
+  project_health_grade~ : String = "",
+  blocked_tasks~ : Int32 = 0,
 ) -> LoopTickResult {
   // 空 steps 保护
   if lp.steps.length() == 0 {

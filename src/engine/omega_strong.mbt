@@ -60,13 +60,13 @@ pub fn omega_clean_slice(s : String) -> String {
 
 ///|
 /// 默认最大打回轮次。
-pub fn omega_max_rounds_default() -> Int {
+pub fn omega_max_rounds_default() -> Int32 {
   3
 }
 
 ///|
 /// 归一化轮次上限：非正数取默认，超过 10 硬截断（防死循环的最终边界）。
-pub fn omega_norm_max_rounds(v : Int) -> Int {
+pub fn omega_norm_max_rounds(v : Int32) -> Int32 {
   if v <= 0 {
     omega_max_rounds_default()
   } else if v > 10 {
@@ -78,13 +78,13 @@ pub fn omega_norm_max_rounds(v : Int) -> Int {
 
 ///|
 /// 语料记录 id：spec:<task_id>:r<round>
-pub fn omega_spec_id(task_id : String, round : Int) -> String {
+pub fn omega_spec_id(task_id : String, round : Int32) -> String {
   "spec:\{task_id}:r\{round}"
 }
 
 ///|
 /// 成果复验记录 id：result:<task_id>:r<round>
-pub fn omega_result_id(task_id : String, round : Int) -> String {
+pub fn omega_result_id(task_id : String, round : Int32) -> String {
   "result:\{task_id}:r\{round}"
 }
 
@@ -93,7 +93,7 @@ pub fn omega_result_id(task_id : String, round : Int) -> String {
 pub fn omega_escalation_id(
   task_id : String,
   stage : String,
-  round : Int,
+  round : Int32,
 ) -> String {
   "escalation:\{task_id}:\{stage}:r\{round}"
 }
@@ -154,7 +154,7 @@ pub fn FistEngine::omega_count(
   task_id : String,
   spec_type : String,
   status : String,
-) -> Int {
+) -> Int32 {
   let mut n = 0
   for r in self.store.list_specs_by_task(task_id) {
     if r.spec_type == spec_type && r.status == status {
@@ -170,7 +170,7 @@ pub fn FistEngine::omega_count_type(
   self : FistEngine,
   task_id : String,
   spec_type : String,
-) -> Int {
+) -> Int32 {
   let mut n = 0
   for r in self.store.list_specs_by_task(task_id) {
     if r.spec_type == spec_type {
@@ -328,7 +328,7 @@ pub fn FistEngine::omega_spec_create(
   author~ : String,
   content~ : String,
   now~ : String,
-  max_rounds? : Int = 0,
+  max_rounds~ : Int32 = 0,
 ) -> Result[Json, String] {
   match omega_authorize_create(author) {
     Err(e) => return Err(e)
@@ -410,9 +410,9 @@ pub fn FistEngine::omega_spec_review(
   task_id~ : String,
   reviewer~ : String,
   verdict~ : String,
-  reason? : String = "",
+  reason~ : String = "",
   now~ : String,
-  max_rounds? : Int = 0,
+  max_rounds~ : Int32 = 0,
 ) -> Result[Json, String] {
   match omega_authorize_review(reviewer) {
     Err(e) => return Err(e)
@@ -525,9 +525,9 @@ pub fn FistEngine::omega_result_verify(
   task_id~ : String,
   reviewer~ : String,
   verdict~ : String,
-  reason? : String = "",
+  reason~ : String = "",
   now~ : String,
-  max_rounds? : Int = 0,
+  max_rounds~ : Int32 = 0,
 ) -> Result[Json, String] {
   match omega_authorize_review(reviewer) {
     Err(e) => return Err(e)
@@ -668,8 +668,8 @@ fn FistEngine::omega_escalate(
   self : FistEngine,
   task_id : String,
   stage : String,
-  rounds : Int,
-  max_r : Int,
+  rounds : Int32,
+  max_r : Int32,
   reason : String,
   now : String,
 ) -> Json {

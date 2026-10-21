@@ -50,8 +50,8 @@ pub fn ModelTier::from_string(s : String) -> ModelTier? {
 pub struct ModelQuota {
   name : String
   tier : ModelTier
-  limit : Int
-  mut used : Int
+  limit : Int32
+  mut used : Int32
   mut window_start : String
   lane : String
   /// P1.3：单次调用价格（美元），0 = 未知/免费，不参与性价比比较
@@ -59,7 +59,7 @@ pub struct ModelQuota {
   /// P1.3：每 1k token 价格（美元），0 = 未知
   price_per_1k : Double
   /// P1.3：质量排名（数值越大越强），0 = 未知/不参与
-  rank : Int
+  rank : Int32
   /// P1.1：冷却截止（ISO 8601），"" = 无冷却
   mut cooldown_until : String
 } derive(Eq, Debug)
@@ -75,14 +75,14 @@ pub extend ModelQuota with @moonbitlang/core/debug.Debug::{to_repr}
 pub fn ModelQuota::new(
   name~ : String,
   tier~ : ModelTier,
-  limit? : Int = 0,
-  used? : Int = 0,
-  window_start? : String = "",
-  lane? : String = "",
-  price_per_call? : Double = 0.0,
-  price_per_1k? : Double = 0.0,
-  rank? : Int = 0,
-  cooldown_until? : String = "",
+  limit~ : Int32 = 0,
+  used~ : Int32 = 0,
+  window_start~ : String = "",
+  lane~ : String = "",
+  price_per_call~ : Double = 0.0,
+  price_per_1k~ : Double = 0.0,
+  rank~ : Int32 = 0,
+  cooldown_until~ : String = "",
 ) -> ModelQuota {
   // used/window_start 作为构造参数而非"建完再改"：跨包不得改 mut 字段（MoonBit 只允许
   // 定义包内改），状态恢复必须能在 src/server 里做，所以把入口做成构造函数。
@@ -103,7 +103,7 @@ pub fn ModelQuota::new(
 
 ///|
 /// 剩余配额。无限配额返回 -1（而不是源项目的 999999 魔数——调用方无法区分"很多"与"无限"）
-pub fn ModelQuota::remaining(self : ModelQuota) -> Int {
+pub fn ModelQuota::remaining(self : ModelQuota) -> Int32 {
   if self.limit <= 0 {
     -1
   } else {
@@ -225,7 +225,7 @@ pub fn sort_by_cost_performance(pool : Array[ModelQuota]) -> Unit {
 pub fn compute_fallback_chain(
   config : RouterConfig,
   primary : String,
-  unhealthy_ids? : Array[String] = [],
+  unhealthy_ids~ : Array[String] = [],
 ) -> Array[String] {
   let cur_tier = find_tier(config, primary)
   let first_pool = if cur_tier == Free {
@@ -276,7 +276,7 @@ fn find_tier(config : RouterConfig, name : String) -> ModelTier {
 /// 按性价比排序后的副本（只取未耗尽且不在黑名单的模型）
 fn sort_pool_copy(
   pool : Array[ModelQuota],
-  unhealthy_ids? : Array[String] = [],
+  unhealthy_ids~ : Array[String] = [],
 ) -> Array[ModelQuota] {
   let mut kept : Array[ModelQuota] = []
   for m in pool {
@@ -332,7 +332,7 @@ pub fn soldier_label_reason(label : String) -> String {
 /// **本结构体刻意没有 API key 字段**：配置会被四态投影到 skill/插件目录，密钥一旦进结构体
 /// 就会进投影。密钥只从进程环境变量读（`FIST_OFM_KEY`），由 `src/server` 层注入。
 pub struct RouterConfig {
-  window_seconds : Int
+  window_seconds : Int32
   threshold_pct : Double
   free_models : Array[ModelQuota]
   paid_models : Array[ModelQuota]
@@ -345,7 +345,7 @@ pub struct RouterConfig {
   // 非空时走 `caf_soft_reorder_with_preference`（记忆充足退化成功率排序、记忆不足按偏好冷启动）。
   caf_default_preference : Array[String]
   // P2d：视为「记忆充足」的最小证据数。默认 10；0 表示任何证据都算充足。
-  caf_min_evidences : Int
+  caf_min_evidences : Int32
 } derive(Eq, Debug)
 
 ///|
@@ -473,7 +473,7 @@ pub fn RouteDecision::to_json(self : RouteDecision) -> Json {
 
 ///|
 /// 从 civil 日期到 epoch 天的精确换算（Howard Hinnant days_from_civil）
-fn days_from_civil(y : Int, m : Int, d : Int) -> Int {
+fn days_from_civil(y : Int32, m : Int32, d : Int32) -> Int32 {
   let yy = if m <= 2 { y - 1 } else { y }
   let era = (if yy >= 0 { yy } else { yy - 399 }) / 400
   let yoe = yy - era * 400
@@ -485,7 +485,7 @@ fn days_from_civil(y : Int, m : Int, d : Int) -> Int {
 
 ///|
 /// epoch 天到 civil 日期（inverse）
-fn civil_from_days(z : Int) -> (Int, Int, Int) {
+fn civil_from_days(z : Int32) -> (Int32, Int32, Int32) {
   let z2 = z + 719468
   let era = (if z2 >= 0 { z2 } else { z2 - 146096 }) / 146097
   let doe = z2 - era * 146097
@@ -500,7 +500,7 @@ fn civil_from_days(z : Int) -> (Int, Int, Int) {
 }
 
 ///|
-fn two(v : Int) -> String {
+fn two(v : Int32) -> String {
   let d1 = v / 10
   let d2 = v % 10
   "\{d1}\{d2}"
@@ -508,13 +508,13 @@ fn two(v : Int) -> String {
 
 ///|
 /// ISO8601 → epoch 秒；非法/越界/缺位一律返回 -1（调用方必须显式处理，不得当作 0 秒）
-pub fn iso_to_secs(s : String) -> Int {
+pub fn iso_to_secs(s : String) -> Int32 {
   let cs = s.to_array()
   // 最少 "YYYY-MM-DDThh:mm:ss" = 19 个字符
   if cs.length() < 19 {
     return -1
   }
-  let mut dig : Array[Int] = []
+  let mut dig : Array[Int32] = []
   for c in cs {
     let o = c.to_int() - 48
     let v = if o >= 0 && o <= 9 { o } else { -1 }
@@ -567,7 +567,7 @@ pub fn iso_to_secs(s : String) -> Int {
 
 ///|
 /// epoch 秒 → ISO8601(UTC)；负秒返回 ""（源项目会产出错误日期）
-pub fn secs_to_iso(secs : Int) -> String {
+pub fn secs_to_iso(secs : Int32) -> String {
   if secs < 0 {
     return ""
   }
@@ -585,11 +585,11 @@ pub fn secs_to_iso(secs : Int) -> String {
 /// 池内第一个可用模型下标（环形扫描：未达阈值且未耗尽且**不在黑名单**）；空池/全不可用 → None
 fn pool_pick(
   pool : Array[ModelQuota],
-  start_idx : Int,
+  start_idx : Int32,
   threshold : Double,
   now~ : String,
-  unhealthy_ids? : Array[String] = [],
-) -> Int? {
+  unhealthy_ids~ : Array[String] = [],
+) -> Int32? {
   let n = pool.length()
   if n == 0 {
     return None
@@ -616,10 +616,10 @@ fn pool_pick(
 /// 模型路由器（档位状态机 + 池内轮询游标）
 pub struct ModelRouter {
   config : RouterConfig
-  mut free_idx : Int
-  mut paid_idx : Int
+  mut free_idx : Int32
+  mut paid_idx : Int32
   mut current_tier : ModelTier
-  mut switch_count : Int
+  mut switch_count : Int32
   mut last_switch_at : String
   mut last_reason : String
   // 本次真正选中/使用的模型名（BUG-56：游标 free_idx/paid_idx 指向的是**下一个**候选，
@@ -700,7 +700,7 @@ pub fn ModelRouter::current_model(self : ModelRouter) -> ModelQuota? {
 pub fn ModelRouter::window_reset_check(
   self : ModelRouter,
   now~ : String,
-) -> Int {
+) -> Int32 {
   let now_s = iso_to_secs(now)
   if now_s < 0 {
     return 0
@@ -733,9 +733,9 @@ pub fn ModelRouter::window_reset_check(
 pub fn ModelRouter::pick(
   self : ModelRouter,
   now~ : String,
-  unhealthy_ids? : Array[String] = [],
-  laya_prefer_tier? : String = "",
-  soldier_label? : String = "",
+  unhealthy_ids~ : Array[String] = [],
+  laya_prefer_tier~ : String = "",
+  soldier_label~ : String = "",
 ) -> RouteDecision {
   let d = self.pick_inner(
     now~,
@@ -828,9 +828,9 @@ fn ModelRouter::pick_with_hint(
 fn ModelRouter::pick_inner(
   self : ModelRouter,
   now~ : String,
-  unhealthy_ids? : Array[String] = [],
-  laya_prefer_tier? : String = "",
-  soldier_label? : String = "",
+  unhealthy_ids~ : Array[String] = [],
+  laya_prefer_tier~ : String = "",
+  soldier_label~ : String = "",
 ) -> RouteDecision {
   let _ = self.window_reset_check(now~)
   let th = self.config.threshold_pct

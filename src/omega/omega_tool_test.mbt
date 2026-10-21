@@ -245,13 +245,14 @@ test "root cause constants accessible" {
 ///|
 test "verify_fix_with_evidence repairs struct_missing for real" {
   // 结构缺失 spec：初始验证失败，evidence 引擎应真实修复（非零修复）
-  let spec_contents = [
-    ("missing.json", "{\"op\":\"t\"}"),
-  ]
+  let spec_contents = [("missing.json", "{\"op\":\"t\"}")]
   let result = verify_fix_with_evidence(spec_contents)
   // 修复证据非空（杜绝零修复）
   match result.value("fixes_applied") {
-    Some(Array(a)) => if a.length() == 0 { abort("零修复：应真实调用 apply_fix") }
+    Some(Array(a)) =>
+      if a.length() == 0 {
+        abort("零修复：应真实调用 apply_fix")
+      }
     _ => abort("fixes_applied 缺失")
   }
   // 该 spec 不应转人工
@@ -281,8 +282,7 @@ test "verify_fix_with_evidence mixed corpus full pass" {
   // 一个已通过 + 一个可修复：最终 100%，且修复轮次 >= 1
   let spec_contents = [
     (
-      "valid.json",
-      "{\"op\":\"report\",\"version\":\"1.0\",\"definition\":{\"sig\":\"a\"},\"preconditions\":[\"x\"],\"laws\":[\"L\"],\"tests\":[{\"input\":{\"a\":\"1\"},\"expected\":\"ok\"}],\"fingerprint\":\"fnv1a64:dd1bc62c4d988913\"}",
+      "valid.json", "{\"op\":\"report\",\"version\":\"1.0\",\"definition\":{\"sig\":\"a\"},\"preconditions\":[\"x\"],\"laws\":[\"L\"],\"tests\":[{\"input\":{\"a\":\"1\"},\"expected\":\"ok\"}],\"fingerprint\":\"fnv1a64:dd1bc62c4d988913\"}",
     ),
     ("missing.json", "{\"op\":\"t\"}"),
   ]
@@ -292,7 +292,10 @@ test "verify_fix_with_evidence mixed corpus full pass" {
     _ => abort("final_accuracy 缺失")
   }
   match result.value("total_rounds") {
-    Some(Number(n, ..)) => if n < 1.0 { abort("应执行至少一轮真实修复") }
+    Some(Number(n, ..)) =>
+      if n < 1.0 {
+        abort("应执行至少一轮真实修复")
+      }
     _ => abort("total_rounds 缺失")
   }
   match result.value("veto") {
@@ -306,13 +309,15 @@ test "verify_fix_with_evidence repairs fp_mismatch for real" {
   // fingerprint 不匹配：属于可自动修复根因，evidence 引擎应真实修复
   let spec_contents = [
     (
-      "fp.json",
-      "{\"op\":\"report\",\"version\":\"1.0\",\"definition\":{\"sig\":\"a\"},\"preconditions\":[\"x\"],\"laws\":[\"L\"],\"tests\":[{\"input\":{\"a\":\"1\"},\"expected\":\"ok\"}],\"fingerprint\":\"fnv1a64:wrong0000000000\"}",
+      "fp.json", "{\"op\":\"report\",\"version\":\"1.0\",\"definition\":{\"sig\":\"a\"},\"preconditions\":[\"x\"],\"laws\":[\"L\"],\"tests\":[{\"input\":{\"a\":\"1\"},\"expected\":\"ok\"}],\"fingerprint\":\"fnv1a64:wrong0000000000\"}",
     ),
   ]
   let result = verify_fix_with_evidence(spec_contents)
   match result.value("fixes_applied") {
-    Some(Array(a)) => if a.length() == 0 { abort("fp_mismatch 应被真实修复") }
+    Some(Array(a)) =>
+      if a.length() == 0 {
+        abort("fp_mismatch 应被真实修复")
+      }
     _ => abort("fixes_applied 缺失")
   }
   match result.value("final_accuracy") {

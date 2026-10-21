@@ -59,7 +59,7 @@ fn saga_reg_task(
 
 ///|
 /// 读出 rollback JSON 的 pending_count。
-fn saga_pending_count(j : Json) -> Int {
+fn saga_pending_count(j : Json) -> Int32 {
   match j.value("pending_count") {
     Some(Number(n, ..)) => n.to_int()
     _ => abort("pending_count 缺失: " + j.stringify())

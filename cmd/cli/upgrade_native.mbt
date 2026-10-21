@@ -11,7 +11,7 @@
 pub async fn upgrade_fetch_latest(
   _repo : String,
   _base_url : String,
-  _timeout_ms : Int,
+  _timeout_ms : Int32,
 ) -> Result[String, String] {
   Err(
     "upgrade_fetch_latest 需要 js/node 运行时（Node fetch）；本构建为 native，请在 node 下运行 node fist-mbt.js upgrade --check",

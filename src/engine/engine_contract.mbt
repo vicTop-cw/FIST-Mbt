@@ -100,9 +100,9 @@ pub fn FistEngine::transition_contract(
   self : FistEngine,
   task_id : String,
   action : String,
-  assignee? : String = "agent",
-  completed_by? : String = "human_steward",
-  force? : Bool = false,
+  assignee~ : String = "agent",
+  completed_by~ : String = "human_steward",
+  force~ : Bool = false,
 ) -> Json {
   match self.get_task(task_id) {
     None =>

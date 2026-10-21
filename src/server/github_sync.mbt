@@ -126,7 +126,7 @@ pub fn github_queue_status(project_dir : String) -> Result[Json, String] {
   let entries = extract_arr(github_queue_read(project_dir))
   let mut sent_count = 0
   let mut oldest_ts = ""
-  let by_sev : Map[String, Int] = Map([])
+  let by_sev : Map[String, Int32] = Map([])
   let pending_entries : Array[Json] = []
 
   for entry in entries {
@@ -197,7 +197,7 @@ pub fn github_queue_status(project_dir : String) -> Result[Json, String] {
 ///|
 pub fn github_flush_plan(
   project_dir : String,
-  limit : Int,
+  limit : Int32,
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err("github_flush_plan: 非法 project_dir")
@@ -308,8 +308,8 @@ pub fn github_flush_plan(
 pub fn github_queue_mark_sent(
   project_dir : String,
   bug_ids : Array[String],
-  issue_numbers : Map[String, Int],
-  sent_at? : String = "",
+  issue_numbers : Map[String, Int32],
+  sent_at~ : String = "",
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err("github_queue_mark_sent: 非法 project_dir")
@@ -474,7 +474,7 @@ pub fn github_queue_pending(
 fn find_issue_and_repo(
   project_dir : String,
   bug_id : String,
-) -> (Int, String) {
+) -> (Int32, String) {
   let entries = extract_arr(github_queue_read(project_dir))
   for entry in entries {
     match entry {
@@ -510,7 +510,7 @@ fn find_issue_and_repo(
 /// 纯计算：零网络、零 token、零外部依赖。
 pub fn github_build_close_plan(
   project_dir : String,
-  issue_numbers : Map[String, Int],
+  issue_numbers : Map[String, Int32],
 ) -> Result[Json, String] {
   if !bug_project_dir_ok(project_dir) {
     return Err("github_build_close_plan: 非法 project_dir")

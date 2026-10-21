@@ -24,7 +24,7 @@
 extern "js" fn js_fetch_latest(
   repo : String,
   base_url : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> @js_async.Promise[String] =
   #| async (repo, baseUrl, timeoutMs) => {
   #|   // BUG-C：base_url 非空时按镜像形状取 tag，空才走 GitHub API。
@@ -67,7 +67,7 @@ extern "js" fn js_fetch_latest(
 pub async fn upgrade_fetch_latest(
   repo : String,
   base_url : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> Result[String, String] {
   let raw = js_fetch_latest(repo, base_url, timeout_ms).wait() catch {
     _ => return Err("upgrade_fetch_latest: 运行时调度失败")

@@ -20,7 +20,7 @@ priv struct SupervisorGuidance {
 ///|
 /// 引导队列注册表（进程内；跨进程经 call_log 双写回读，见计划文档 §4）。
 priv struct SupervisorGuidanceRegistry {
-  mut seq : Int
+  mut seq : Int32
   items : Map[String, SupervisorGuidance]
 }
 
@@ -389,8 +389,8 @@ fn json_field_bool(j : Json, key : String) -> Bool {
 ///|
 /// 列出引导（进程内 + call_log 回读去重）。新的在前。
 fn supervisor_guidance_list(
-  target? : String = "",
-  include_consumed? : Bool = false,
+  target~ : String = "",
+  include_consumed~ : Bool = false,
 ) -> Array[SupervisorGuidance] {
   // call_log 回读（best-effort）：把落库但进程内没有的条目回灌
   for log in engine.store_recent_call_logs(limit=200) {
@@ -444,7 +444,7 @@ fn supervisor_guidance_consume(id~ : String) -> SupervisorGuidance? {
 
 ///|
 /// 字符串转整数（非法/空返回默认值）。供 supervisor_reminder_tick 解析阈值。
-fn str_to_int(s : String, dft : Int) -> Int {
+fn str_to_int(s : String, dft : Int32) -> Int32 {
   if s == "" {
     return dft
   }
@@ -452,7 +452,7 @@ fn str_to_int(s : String, dft : Int) -> Int {
   // store_sqlite_executions.mbt:202）都用 int_safe 上界守卫，本函数是漏网。
   // 长数字串（如 stale_hours=99999999999999999999）在 `v = v*10 + d` 上溢出 Int
   // （JS target 静默精度丢失、native panic），这里复用同一上界并回退默认值。
-  let int_safe : Int = 200_000_000
+  let int_safe : Int32 = 200_000_000
   let mut v = 0
   let mut neg = false
   let mut i = 0

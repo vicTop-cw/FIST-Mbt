@@ -5,7 +5,7 @@
 
 ///|
 /// 碱基 → 四进制数值。仅接受 DNA 四字母；U 已在词法层归并为 T。未知返回 None。
-pub fn base_to_int(c : Char) -> Int? {
+pub fn base_to_int(c : Char) -> Int32? {
   match c {
     'A' => Some(0)
     'T' => Some(1)
@@ -17,7 +17,7 @@ pub fn base_to_int(c : Char) -> Int? {
 
 ///|
 /// 四进制数值 → 碱基。v 越界 0..3 时按 mod 4 折叠（防御）。
-pub fn int_to_base(v : Int) -> Char {
+pub fn int_to_base(v : Int32) -> Char {
   let b = if v < 0 { v + 4 } else if v > 3 { v % 4 } else { v }
   match b {
     0 => 'A'
@@ -41,7 +41,7 @@ pub fn complement(c : Char) -> Char? {
 
 ///|
 /// 单个密码子（3 碱基）按四进制解析为 0..63（§2.3）。长度不足/非法返回 None。
-pub fn quaternary_of(codon : String) -> Int? {
+pub fn quaternary_of(codon : String) -> Int32? {
   if codon.length() != 3 {
     return None
   }
@@ -57,7 +57,7 @@ pub fn quaternary_of(codon : String) -> Int? {
 
 ///|
 /// 四进制数值 0..63 渲染为 3 碱基密码子。
-pub fn int_to_codon(v : Int) -> String {
+pub fn int_to_codon(v : Int32) -> String {
   let sb = StringBuilder()
   sb.write_char(int_to_base(v / 16 % 4))
   sb.write_char(int_to_base(v / 4 % 4))
@@ -101,7 +101,7 @@ pub fn is_valid_dna(seq : String) -> Bool {
 ///|
 /// 按字符位置截取子串（Char 语义）：取出 [start, start+len) 的字符。
 /// 越界自动截断。用于指令区解析（无 sub_string 依赖）。
-pub fn slice_str(s : String, start : Int, len : Int) -> String {
+pub fn slice_str(s : String, start : Int32, len : Int32) -> String {
   let sb = StringBuilder()
   let mut i = 0
   for c in s {
@@ -115,7 +115,7 @@ pub fn slice_str(s : String, start : Int, len : Int) -> String {
 
 ///|
 /// 在 hay 中查找 needle 首次出现的起始下标；未找到返回 -1（避免依赖 sub_string 索引）。
-pub fn find_substr(hay : String, needle : String) -> Int {
+pub fn find_substr(hay : String, needle : String) -> Int32 {
   let n = hay.length()
   let m = needle.length()
   if m > n {

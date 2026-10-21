@@ -1124,7 +1124,7 @@ fn gdc_verdict(j : Json, id : String) -> String {
 
 ///|
 /// 读出 goal_drift_check counts 中某类计数。
-fn gdc_count(j : Json, key : String) -> Int {
+fn gdc_count(j : Json, key : String) -> Int32 {
   let obj = match j.value("counts") {
     Some(Object(o)) => o
     _ => return 0
@@ -1270,7 +1270,7 @@ fn b20_engine() -> @engine.FistEngine {
 
 ///|
 /// 读 cost_budget_split 返回体里的作用域自证字段
-fn b20_scope(j : Json) -> (String, Int) {
+fn b20_scope(j : Json) -> (String, Int32) {
   let kind = match j.value("scope") {
     Some(Object(sm)) =>
       match sm.get("scope_kind") {
@@ -1336,7 +1336,7 @@ test "BUG-20：cost_budget_split 作用域真参与取数 + 负预算拒绝" {
 
 ///|
 /// 把 stages[*].share 求和（自己算，不接受实现自报的总数）
-fn b20_share_sum(j : Json) -> Int {
+fn b20_share_sum(j : Json) -> Int32 {
   let mut sum = 0
   match j.value("stages") {
     Some(Array(rows)) =>

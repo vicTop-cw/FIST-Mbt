@@ -39,7 +39,7 @@ test "upgrade-3：版本号无法解析必须回 Err，绝不回 0 假绿（R7�
 }
 
 ///|
-fn is_err(r : Result[Int, String]) -> Bool {
+fn is_err(r : Result[Int32, String]) -> Bool {
   match r {
     Err(_) => true
     Ok(_) => false

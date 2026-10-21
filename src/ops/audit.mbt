@@ -47,7 +47,7 @@ pub fn AuditLog::record(
   action~ : String,
   actor~ : String,
   task_id~ : String,
-  detail? : String = "",
+  detail~ : String = "",
   now~ : String,
 ) -> Unit {
   self.entries.push({ ts: now, action, actor, task_id, detail, })

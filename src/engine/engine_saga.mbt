@@ -11,10 +11,10 @@
 /// 重置为 pending 并刷新 compensation——重试安全，不改 LIFO 位置）。
 pub fn FistEngine::saga_register(
   self : FistEngine,
-  ns? : String = "default",
+  ns~ : String = "default",
   root_task_id~ : String,
   step~ : String,
-  task_id? : String = "",
+  task_id~ : String = "",
   compensation~ : String,
   now~ : String,
 ) -> Result[Json, String] {
@@ -47,20 +47,20 @@ pub fn FistEngine::saga_register(
 /// 补偿是"业务逆转"动作描述，调用方（agent/指挥官）按序列顺序执行真实补偿。
 pub fn FistEngine::saga_rollback(
   self : FistEngine,
-  ns? : String = "default",
+  ns~ : String = "default",
   root_task_id : String,
-  mark? : Bool = true,
+  mark~ : Bool = true,
 ) -> Result[Json, String] {
   let rows = self.store_list_saga_actions(ns, root_task_id)
   // 只取待补偿（pending）步骤；rows 为前向顺序（id ASC）
-  let pending : Array[(Int, String, String, String, String)] = []
+  let pending : Array[(Int32, String, String, String, String)] = []
   for r in rows {
     if r.4 == "pending" {
       pending.push(r)
     }
   }
   // LIFO：倒序（id 大 → 小）
-  let lifo : Array[(Int, String, String, String, String)] = []
+  let lifo : Array[(Int32, String, String, String, String)] = []
   for i = pending.length() - 1; i >= 0; i = i - 1 {
     lifo.push(pending[i])
   }
@@ -105,7 +105,7 @@ pub fn FistEngine::saga_rollback(
 
 ///|
 /// saga_log 行（id, step, task_id, compensation, status）→ JSON。
-fn saga_step_json(t : (Int, String, String, String, String)) -> Json {
+fn saga_step_json(t : (Int32, String, String, String, String)) -> Json {
   let sm = Map([])
   sm.set("id", Json::number(t.0.to_double()))
   sm.set("step", Json::string(t.1))
@@ -152,20 +152,20 @@ fn saga_dependents_closure(
 /// 供后续按需补偿（局部修复保留承诺，不涟漪撤销）。
 pub fn FistEngine::saga_repair(
   self : FistEngine,
-  ns? : String = "default",
+  ns~ : String = "default",
   root_task_id : String,
   failed_step~ : String,
-  mark? : Bool = true,
+  mark~ : Bool = true,
 ) -> Result[Json, String] {
   let rows = self.store_list_saga_actions(ns, root_task_id)
   // 只取待补偿（pending）步骤；rows 为前向顺序（id ASC）
-  let pending : Array[(Int, String, String, String, String)] = []
+  let pending : Array[(Int32, String, String, String, String)] = []
   for r in rows {
     if r.4 == "pending" {
       pending.push(r)
     }
   }
-  let mut failed_opt : (Int, String, String, String, String)? = None
+  let mut failed_opt : (Int32, String, String, String, String)? = None
   for r in pending {
     if r.1 == failed_step {
       failed_opt = Some(r)
@@ -182,7 +182,7 @@ pub fn FistEngine::saga_repair(
       )
     Some(failed) => {
       let mut basis = ""
-      let affected : Array[(Int, String, String, String, String)] = []
+      let affected : Array[(Int32, String, String, String, String)] = []
       if failed.2 == "" {
         // 无 task_id：注册序保守兜底（id 更大 = 注册更晚 = 潜在下游）
         basis = "order"
@@ -211,13 +211,13 @@ pub fn FistEngine::saga_repair(
         }
       }
       // 切片内 LIFO（id 倒序）
-      let lifo : Array[(Int, String, String, String, String)] = []
+      let lifo : Array[(Int32, String, String, String, String)] = []
       for i = affected.length() - 1; i >= 0; i = i - 1 {
         lifo.push(affected[i])
       }
       // keep = pending ∖ affected（保留已接受承诺）
-      let affected_ids : Array[Int] = affected.map(fn(t) { t.0 })
-      let keep : Array[(Int, String, String, String, String)] = []
+      let affected_ids : Array[Int32] = affected.map(fn(t) { t.0 })
+      let keep : Array[(Int32, String, String, String, String)] = []
       for r in pending {
         if !affected_ids.contains(r.0) {
           keep.push(r)

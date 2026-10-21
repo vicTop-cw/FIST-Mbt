@@ -6,7 +6,7 @@ pub async fn run_check_external(
   _cmd : String,
   _args : Array[String],
   _workdir : String,
-  _timeout_ms : Int,
+  _timeout_ms : Int32,
 ) -> Result[Json, String] {
   Err(
     "run_check 需要 js/node 运行时（child_process spawn）；本构建为 native，请在 node 下启动 fist-mbt server",

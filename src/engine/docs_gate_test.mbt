@@ -48,7 +48,7 @@ fn dg_make_reviewing(
 }
 
 ///|
-fn dg_make_temp_dir(name : String, with_docs? : Bool = false) -> String {
+fn dg_make_temp_dir(name : String, with_docs~ : Bool = false) -> String {
   @fs.create_dir("temp") catch {
     _ => ()
   }

@@ -13,7 +13,7 @@ pub struct MultiStore {
 
 ///|
 /// 构造：仅记录根目录，不打开任何库（惰性）。
-pub fn MultiStore::new(data_dir? : String = ".") -> MultiStore {
+pub fn MultiStore::new(data_dir~ : String = ".") -> MultiStore {
   { stores: Map([]), data_dir, }
 }
 
@@ -156,7 +156,7 @@ pub fn MultiStore::ns_list(self : MultiStore) -> Array[String] {
 /// 返回 Json 数组，元素形如 {"ns": "...", "total": N}。
 pub fn MultiStore::ns_stats(self : MultiStore) -> Json {
   let m : Map[String, Json] = Map([])
-  fn count_tasks(store : SqliteStore) -> Int {
+  fn count_tasks(store : SqliteStore) -> Int32 {
     let mut n = 0
     match store.db {
       None => n = 0

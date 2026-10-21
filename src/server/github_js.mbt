@@ -15,7 +15,7 @@
 extern "js" fn js_exec_curl(
   cmd_args : String,
   workdir : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> @js_async.Promise[String] =
   #| async (cmdArgs, workdir, timeoutMs) => {
   #|   const { spawn } = await import('node:child_process')
@@ -62,7 +62,7 @@ extern "js" fn js_exec_curl(
 extern "js" fn js_exec_batch_curl(
   commands : Array[String],
   workdir : String,
-  timeout_ms_each : Int,
+  timeout_ms_each : Int32,
 ) -> @js_async.Promise[String] =
   #| async (cmds, workdir, timeoutMs) => {
   #|   const { spawn } = await import('node:child_process')
@@ -118,7 +118,7 @@ extern "js" fn js_exec_batch_curl(
 pub async fn github_execute_single(
   curl_command : String,
   workdir : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> Result[Json, String] {
   let raw = js_exec_curl(curl_command, workdir, timeout_ms).wait() catch {
     _ =>
@@ -201,7 +201,7 @@ pub async fn github_execute_single(
 pub async fn github_execute_batch(
   curl_commands : Array[String],
   workdir : String,
-  timeout_ms_each : Int,
+  timeout_ms_each : Int32,
 ) -> Result[Json, String] {
   let raw = js_exec_batch_curl(curl_commands, workdir, timeout_ms_each).wait() catch {
     _ =>
@@ -220,7 +220,7 @@ pub async fn github_execute_batch(
 pub async fn github_execute_close(
   curl_command : String,
   workdir : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> Result[Json, String] {
   github_execute_single(curl_command, workdir, timeout_ms)
 }
@@ -230,7 +230,7 @@ pub async fn github_execute_close(
 pub async fn github_execute_comment(
   curl_command : String,
   workdir : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> Result[Json, String] {
   github_execute_single(curl_command, workdir, timeout_ms)
 }

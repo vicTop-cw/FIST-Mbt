@@ -12,7 +12,7 @@ test "probe: Map.set 是否原地修改(丢弃返回值后能否读到)" {
 
 ///|
 test "probe: Map.remove 是否原地(丢弃返回值后 in_task 收缩)" {
-  let m : Map[String, Int] = Map([])
+  let m : Map[String, Int32] = Map([])
   m.set("a", 1)
   m.set("b", 2)
   m.remove("a")

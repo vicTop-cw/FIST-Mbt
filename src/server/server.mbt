@@ -110,8 +110,8 @@ let debate_sessions : DebateRegistry = DebateRegistry::new()
 ///|
 /// 统计各执行者（assignee）当前的活跃负载：其名下"非终态"（未完成/未归档）任务数。
 /// 供 executor_route 做负载均衡。
-fn executor_loads(e : @engine.FistEngine) -> Map[String, Int] {
-  let m : Map[String, Int] = Map([])
+fn executor_loads(e : @engine.FistEngine) -> Map[String, Int32] {
+  let m : Map[String, Int32] = Map([])
   for t in e.list_all() {
     let st = t.get_status()
     let active = !st.is_pending() && !st.is_completed() && !st.is_archived()
@@ -133,8 +133,8 @@ fn executor_loads(e : @engine.FistEngine) -> Map[String, Int] {
 
 ///|
 /// 把 Json 数组 [{Int}] 转成 Array[Int]（用于 intervals 解析）。
-fn intlist(j : Array[Json]) -> Array[Int] {
-  let out : Array[Int] = []
+fn intlist(j : Array[Json]) -> Array[Int32] {
+  let out : Array[Int32] = []
   for x in j {
     match x {
       Json::Number(n, ..) => out.push(n.to_int())
@@ -259,7 +259,7 @@ fn auto_need(desc : String) -> String {
 
 ///|
 /// 把毫秒级 Unix 时间转换为 UTC 时刻两项补齐
-fn _pad2(n : Int) -> String {
+fn _pad2(n : Int32) -> String {
   let s = n.to_string()
   if s.length() == 1 {
     "0" + s
@@ -271,7 +271,7 @@ fn _pad2(n : Int) -> String {
 ///|
 /// 从 Unix 日起算天数反推公历 (年, 月, 日)（Howard Hinnant 的 civil_from_days，
 /// 纯整数算术、适用于 z >= 0 即 1970 年起的日期）。
-fn _civil_from_days(z : Int) -> (Int, Int, Int) {
+fn _civil_from_days(z : Int32) -> (Int32, Int32, Int32) {
   let z0 = z + 719468
   let era = z0 / 146097
   let doe = z0 - era * 146097
@@ -288,7 +288,7 @@ fn _civil_from_days(z : Int) -> (Int, Int, Int) {
 ///|
 /// 公历 (y, m, d) → Unix 日起算天数（Howard Hinnant 的 days_from_civil，_civil_from_days 的逆）。
 /// 仅供 _iso_to_unix_ms 使用，年份已由调用方钳到 [1970, 9999]。
-fn _days_from_civil(y : Int, m : Int, d : Int) -> Int {
+fn _days_from_civil(y : Int32, m : Int32, d : Int32) -> Int32 {
   let y2 = if m <= 2 { y - 1 } else { y }
   let era = y2 / 400
   let yoe = y2 - era * 400
@@ -306,7 +306,7 @@ fn _iso_to_unix_ms(iso : String) -> Int64? {
   if iso.length() < 19 {
     return None
   }
-  let digit = fn(a : Int) -> Int? {
+  let digit = fn(a : Int32) -> Int32? {
     let c = iso[a].to_int()
     if c >= 48 && c <= 57 {
       Some(c - 48)
@@ -314,7 +314,7 @@ fn _iso_to_unix_ms(iso : String) -> Int64? {
       None
     }
   }
-  let all : Array[Int?] = [
+  let all : Array[Int32?] = [
     digit(0),
     digit(1),
     digit(2),
@@ -333,7 +333,7 @@ fn _iso_to_unix_ms(iso : String) -> Int64? {
   if all.any(fn(o) { o is None }) {
     return None
   }
-  let v = fn(o : Int?) -> Int {
+  let v = fn(o : Int32?) -> Int32 {
     match o {
       Some(x) => x
       None => 0
@@ -383,7 +383,7 @@ fn now_default() -> String {
 ///|
 /// 把 now_default 格式（YYYY-MM-DDTHH:MM:SSZ）的时间戳回退 secs 秒，
 /// 返回同格式字符串。供心跳新鲜线 / 陈旧线计算（字典序比较成立）。
-fn iso_minus_secs(iso : String, secs : Int) -> String {
+fn iso_minus_secs(iso : String, secs : Int32) -> String {
   // BUG-196：`secs` 经 get_int 允许负值。负回退会算出**未来** cutoff（fail-open 授权绕过：
   // assistant_claim 会把一份心跳完全新鲜的主助理立即判陈旧而接管；assistant_sweep 会把
   // 刚心跳过的助理标 dead）。按 0 钳位——"回退 0 秒"即 cutoff=基准时间，符合函数名承诺。
@@ -531,7 +531,7 @@ fn get_json_text(args : Json, key : String) -> String {
 
 ///|
 /// 从 JSON 参数中读取字符串，缺省回退默认值
-fn get_str(args : Json, key : String, default? : String = "") -> String {
+fn get_str(args : Json, key : String, default~ : String = "") -> String {
   match args {
     Object(map) =>
       match map.get(key) {
@@ -547,7 +547,7 @@ fn get_str(args : Json, key : String, default? : String = "") -> String {
 /// BUG-192：`Double::to_int()` 对超 Int32 域的值**饱和**（BUG-26 实测：1e300 → Int max），
 /// 会让超时/阈值/配额类参数静默变成天量值（如 `timeout_ms=2147483647` 永不超时、
 /// `phi_threshold` 永不判 suspect）；越界/NaN 一律回落默认。
-fn get_int(args : Json, key : String, default? : Int = 3) -> Int {
+fn get_int(args : Json, key : String, default~ : Int32 = 3) -> Int32 {
   match args {
     Object(map) =>
       match map.get(key) {
@@ -577,7 +577,7 @@ fn get_array(args : Json, key : String) -> Array[Json] {
 }
 
 ///|
-fn get_double(args : Json, key : String, default? : Double = 0.0) -> Double {
+fn get_double(args : Json, key : String, default~ : Double = 0.0) -> Double {
   match args {
     Object(map) =>
       match map.get(key) {
@@ -589,7 +589,7 @@ fn get_double(args : Json, key : String, default? : Double = 0.0) -> Double {
 }
 
 ///|
-fn get_bool(args : Json, key : String, default? : Bool = false) -> Bool {
+fn get_bool(args : Json, key : String, default~ : Bool = false) -> Bool {
   match args {
     Object(map) =>
       match map.get(key) {
@@ -639,13 +639,13 @@ fn add_parse_error_field(j : Json, key : String, msg : String) -> Json {
 /// 留 95s 余量给 node/python 进程 spawn 与 MCP 往返。要真用满 Laya 侧车（本机实测 ~270s），
 /// 必须**同时**上调 `.mcp.json` 的 timeout_ms 和下面两个常量，否则客户端仍先断。
 /// `.mcp.json` 的 timeout_ms 是真源，这里只是镜像常量（没有构建期单一真源＝BUG-16 遗留）。
-let laya_client_budget_ms : Int = 120000
+let laya_client_budget_ms : Int32 = 120000
 
 ///|
-let laya_probe_budget_ms : Int = 5000
+let laya_probe_budget_ms : Int32 = 5000
 
 ///|
-let laya_sidecar_budget_ms : Int = 20000
+let laya_sidecar_budget_ms : Int32 = 20000
 
 ///|
 /// probe 结果的进程内缓存（BUG-18）：`--probe` 会真的 `import laya`，是每次调用的固定
@@ -671,7 +671,7 @@ async fn laya_probe_cached(
   cmd : String,
   args : Array[String],
   workdir : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> Result[Bool, String] {
   let now_ms = @env.now().reinterpret_as_int64()
   let cached : Json = match laya_probe_cache.get("probe") {
@@ -734,7 +734,7 @@ fn laya_difficulty_score(j : Json) -> Double {
 fn laya_ensure_decision(
   res : Json,
   context : String,
-  split_n_hint : Int,
+  split_n_hint : Int32,
 ) -> Json {
   let obj = match res {
     Object(m) => m
@@ -1015,7 +1015,7 @@ fn caller_from_env(env_value : String?, created_by : String) -> String {
 /// 进程内注入全局 handler 的自动日志（best-effort，任何失败均被吞掉，不影响工具调用）。
 /// seq 用单调递增计数器（跨全部工具严格递增，供回放定位/排序，非主键）。
 /// 规避 @env.now().to_int() 对 UInt64 毫秒做 32 位截断产生的负值/1970 错乱排序。
-let _call_log_seq : Ref[Int] = { val: 0, }
+let _call_log_seq : Ref[Int32] = { val: 0, }
 
 ///|
 fn _log_call(
@@ -1025,7 +1025,7 @@ fn _log_call(
   params_json : String,
   result_json : String,
   ok : Bool,
-  runtime_ms : Int,
+  runtime_ms : Int32,
 ) -> Unit {
   // BUG-137：caller 过去只从 `args.created_by` 取——那是**调用方自报**，而绝大多数工具没有这个
   // 入参，于是根库 call_log 最近 800 行的 caller 全为空串（实测读数见账本）。
@@ -5578,7 +5578,7 @@ pub async fn run_server() -> Unit {
       // 1e300 饱和成 2147483647、把 1.5 截断成 1、把非数字元素整个丢掉。
       // φ 的建模输入失真后输出仍是格式完好的判定，所以改成逐个严格转换并按原值报错。
       let raw = get_array(args, "intervals")
-      let intervals : Array[Int] = []
+      let intervals : Array[Int32] = []
       let offs : Array[String] = []
       let mut idx = 0
       for item in raw {
@@ -7220,7 +7220,7 @@ pub async fn run_server() -> Unit {
       // BUG-235：issue_numbers 非法 JSON 此前被静默吞成空 Map——映射被丢弃，
       // sent_at 照写、github_issue_number 被清空，回执无任何提示。
       // 现捕获解析失败原因，经 issue_numbers_error 透出（非空才出现）。
-      let issue_numbers : Map[String, Int] = Map([])
+      let issue_numbers : Map[String, Int32] = Map([])
       let issue_numbers_error = if issue_nums_raw.is_empty() {
         ""
       } else {
@@ -7402,7 +7402,7 @@ pub async fn run_server() -> Unit {
         _ => []
       }
       // 为每条成功的 curl 解析 issue number
-      let issue_numbers : Map[String, Int] = Map([])
+      let issue_numbers : Map[String, Int32] = Map([])
       let sent_at_list : Array[String] = []
       let sent_at_now = "flushed-by-github_flush_execute"
       let mut i1 = 0
@@ -7540,7 +7540,7 @@ pub async fn run_server() -> Unit {
           ),
         )
       }
-      let issue_numbers : Map[String, Int] = Map([])
+      let issue_numbers : Map[String, Int32] = Map([])
       let j = @json.parse(issue_nums_raw) catch { _ => Json::object(Map([])) }
       match j {
         Object(om) =>

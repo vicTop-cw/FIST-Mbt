@@ -80,7 +80,7 @@ fn now_utc() -> String {
 }
 
 ///|
-fn fist_pad2(n : Int) -> String {
+fn fist_pad2(n : Int32) -> String {
   let s = n.to_string()
   if s.length() == 1 {
     "0" + s
@@ -90,7 +90,7 @@ fn fist_pad2(n : Int) -> String {
 }
 
 ///|
-fn fist_civil_from_days(z : Int) -> (Int, Int, Int) {
+fn fist_civil_from_days(z : Int32) -> (Int32, Int32, Int32) {
   let z0 = z + 719468
   let era = z0 / 146097
   let doe = z0 - era * 146097
@@ -281,7 +281,7 @@ fn tool_report(args : Json) -> @mcp.ToolResult {
   let e = ensure_engine()
   let ns = arg_str(args, "ns", "default")
   let tasks = e.list_in_ns(ns)
-  let counts : Map[String, Int] = Map([])
+  let counts : Map[String, Int32] = Map([])
   for t in tasks {
     let st = t.get_status().to_string()
     let cur = match counts.get(st) {

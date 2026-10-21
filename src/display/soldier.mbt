@@ -31,7 +31,7 @@ pub fn soldier_types() -> Array[String] {
 
 ///|
 /// 兵种数（8）。
-pub fn soldier_type_count() -> Int {
+pub fn soldier_type_count() -> Int32 {
   8
 }
 

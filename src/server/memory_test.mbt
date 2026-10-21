@@ -76,7 +76,7 @@ fn mem_bool(j : Json, key : String) -> Bool {
 
 ///|
 /// 读 JSON 数字字段为 int（缺失返回 -1）。
-fn mem_int(j : Json, key : String) -> Int {
+fn mem_int(j : Json, key : String) -> Int32 {
   match j {
     Object(m) =>
       match m.get(key) {

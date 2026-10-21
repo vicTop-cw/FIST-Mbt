@@ -16,8 +16,8 @@
 fn get_int_field(
   m : Map[String, Json],
   key : String,
-  default? : Int = 0,
-) -> Int {
+  default~ : Int32 = 0,
+) -> Int32 {
   match m.get(key) {
     Some(Number(n, ..)) => n.to_int()
     _ => default
@@ -36,7 +36,7 @@ fn get_str_field(m : Map[String, Json], key : String) -> String {
 fn get_bool_field(
   m : Map[String, Json],
   key : String,
-  default? : Bool = false,
+  default~ : Bool = false,
 ) -> Bool {
   match m.get(key) {
     Some(True) => true

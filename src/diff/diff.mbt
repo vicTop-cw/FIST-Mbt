@@ -46,9 +46,9 @@ pub fn diff_lines(old : String, new : String) -> Array[DiffOp] {
   let n = old_lines.length()
   let m = new_lines.length()
   // LCS DP 表：dp[i][j] = old[0..i] 与 new[0..j] 的 LCS 长度
-  let dp : Array[Array[Int]] = []
+  let dp : Array[Array[Int32]] = []
   for _i in 0..<=n {
-    let row : Array[Int] = []
+    let row : Array[Int32] = []
     for _j in 0..<=m {
       row.push(0)
     }
@@ -162,7 +162,7 @@ fn json_escape(s : String) -> String {
 
 ///|
 /// 4 位大写十六进制（0x0000–0x001F 专用）。
-fn hex4(code : Int) -> String {
+fn hex4(code : Int32) -> String {
   let digits : Array[Char] = [
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
   ]
@@ -182,7 +182,7 @@ fn hex4(code : Int) -> String {
 
 ///|
 /// 统计：equal/insert/delete 计数，返回 {equal, insert, delete}。
-pub fn diff_stats(ops : Array[DiffOp]) -> (Int, Int, Int) {
+pub fn diff_stats(ops : Array[DiffOp]) -> (Int32, Int32, Int32) {
   let mut eq = 0
   let mut ins = 0
   let mut del = 0

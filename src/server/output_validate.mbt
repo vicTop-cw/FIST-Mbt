@@ -48,7 +48,7 @@ priv struct ArtifactSpec {
   check_key : String
   contains : String
   not_contains : String
-  min_chars : Int
+  min_chars : Int32
 }
 
 ///|
@@ -290,7 +290,7 @@ fn check_external_invariants(stdout : String, spec : ArtifactSpec) -> String {
 /// R12-R8 bugfind（BUG-221）：**补上 sd_parse_int 已有的 int_safe 上界守卫**——
 /// 旧实现缺守卫，长数字串（如 max_findings=999999999999）在
 /// `v = v * 10 + d` 上溢出 Int32 而不报错（绕回/精度丢失）。
-pub fn ov_parse_int(raw : String) -> Int? {
+pub fn ov_parse_int(raw : String) -> Int32? {
   // 去掉末尾句号（moon 汇总行末尾 "0." 常见）
   let mut s = raw.trim().to_owned()
   if s.has_suffix(".") {
@@ -299,7 +299,7 @@ pub fn ov_parse_int(raw : String) -> Int? {
   if s.is_empty() {
     return None
   }
-  let int_safe : Int = 200_000_000
+  let int_safe : Int32 = 200_000_000
   let mut v = 0
   for c in s {
     if c < '0' || c > '9' {
@@ -512,7 +512,7 @@ pub fn output_validate(
   artifacts : Array[Json],
   external_results : Json,
   evidence : String,
-  require_evidence? : Bool = false,
+  require_evidence~ : Bool = false,
 ) -> Result[Json, String] {
   // 1) 基本校验
   if artifacts.length() == 0 {

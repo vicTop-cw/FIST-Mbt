@@ -10,7 +10,7 @@ pub async fn laya_probe_available(
   _cmd : String,
   _args : Array[String],
   _workdir : String,
-  _timeout_ms : Int,
+  _timeout_ms : Int32,
 ) -> Result[Bool, String] {
   Ok(false)
 }
@@ -22,7 +22,7 @@ pub async fn laya_decide_external(
   _args : Array[String],
   _workdir : String,
   _input_json : String,
-  _timeout_ms : Int,
+  _timeout_ms : Int32,
 ) -> Result[Json, String] {
   Ok(
     Json::object({

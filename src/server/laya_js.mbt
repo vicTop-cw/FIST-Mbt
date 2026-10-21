@@ -18,7 +18,7 @@ extern "js" fn js_run_laya(
   args : Array[String],
   workdir : String,
   input : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> @js_async.Promise[String] =
   #| async (cmd, args, workdir, input, timeoutMs) => {
   #|   const { spawn } = await import('node:child_process')
@@ -65,7 +65,7 @@ pub async fn laya_probe_available(
   cmd : String,
   args : Array[String],
   workdir : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> Result[Bool, String] {
   let raw = js_run_laya(cmd, args, workdir, "", timeout_ms).wait() catch {
     _ => return Err("laya probe: 子进程调度失败（js 运行时异常）")
@@ -92,7 +92,7 @@ pub async fn laya_decide_external(
   args : Array[String],
   workdir : String,
   input_json : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> Result[Json, String] {
   let raw = js_run_laya(cmd, args, workdir, input_json, timeout_ms).wait() catch {
     _ =>

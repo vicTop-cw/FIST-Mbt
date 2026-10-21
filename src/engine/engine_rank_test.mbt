@@ -10,8 +10,8 @@ fn rank_engine() -> FistEngine {
 ///|
 fn rank_publish(
   e : FistEngine,
-  desc? : String = "军衔根任务",
-  level? : Int = 6,
+  desc~ : String = "军衔根任务",
+  level~ : Int32 = 6,
 ) -> String {
   match
     e.publish(
@@ -28,7 +28,7 @@ fn rank_publish(
 
 ///|
 /// 读任务 level，取不到即 abort。
-fn rank_level_of(e : FistEngine, id : String) -> Int {
+fn rank_level_of(e : FistEngine, id : String) -> Int32 {
   match e.get_task(id) {
     Some(t) => t.get_level()
     None => abort("task missing: \{id}")

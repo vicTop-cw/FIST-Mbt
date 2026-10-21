@@ -19,7 +19,7 @@
 ///|
 /// 收敛与迭代策略。
 pub struct HatPolicy {
-  max_rounds : Int
+  max_rounds : Int32
   converge_threshold : Double
   auto_select_hats : Bool
   debate_enabled : Bool
@@ -217,7 +217,7 @@ fn get_bool(j : Json, key : String, default : Bool) -> Bool {
 
 ///|
 /// 取整数；非整数或字段类型不符 → Err。
-fn get_int(j : Json, key : String) -> Result[Int, String] {
+fn get_int(j : Json, key : String) -> Result[Int32, String] {
   match j {
     Json::Object(map) =>
       match map.get(key) {

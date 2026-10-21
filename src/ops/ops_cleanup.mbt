@@ -9,7 +9,7 @@
 pub fn cleanup_archived(
   engine : @engine.FistEngine,
   now : String,
-  retention_days? : Int = 30,
+  retention_days~ : Int32 = 30,
 ) -> Result[Array[String], String] {
   let now_s = iso_to_secs(now)
   // R12-R6 bugfind（BUG-218 同族）：`retention_days * 86400` 无上界——

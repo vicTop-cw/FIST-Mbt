@@ -10,7 +10,7 @@
 /// 造引擎 + 一张 dur 表（环 A↔B，时长 A=3 / B=5）。
 fn mcw_cycle_setup() -> (
   FistEngine,
-  Map[String, Int],
+  Map[String, Int32],
   Map[String, Array[String]],
 ) {
   let e = FistEngine::new()
@@ -31,7 +31,7 @@ fn mcw_cycle_setup() -> (
   )
   ignore(e.store.create_task(ta))
   ignore(e.store.create_task(tb))
-  let dur : Map[String, Int] = Map([])
+  let dur : Map[String, Int32] = Map([])
   dur.set("A", 3)
   dur.set("B", 5)
   let deps : Map[String, Array[String]] = Map([])
@@ -45,11 +45,11 @@ fn mcw_cycle_setup() -> (
 /// 修复前：A 返回 8（= 3 + 5），B 返回 5——-1 未传播，环被当正常最长路径。
 test "BUG-212：环上节点的 mc_finish 必须为 -1（-1 沿依赖链传播）" {
   let (e, dur, deps) = mcw_cycle_setup()
-  let memo : Map[String, Int] = Map([])
+  let memo : Map[String, Int32] = Map([])
   let visiting : Map[String, Bool] = Map([])
   let fa = e.mc_finish("A", dur, memo, visiting, deps)
   assert_eq(fa, -1)
-  let memo2 : Map[String, Int] = Map([])
+  let memo2 : Map[String, Int32] = Map([])
   let visiting2 : Map[String, Bool] = Map([])
   let fb = e.mc_finish("B", dur, memo2, visiting2, deps)
   assert_eq(fb, -1)
@@ -59,14 +59,14 @@ test "BUG-212：环上节点的 mc_finish 必须为 -1（-1 沿依赖链传播�
 /// 环 A↔B：mc_suffix_from(A) 和 mc_suffix_from(B) 也必须返回 -1。
 test "BUG-212：环上节点的 mc_suffix_from 必须为 -1" {
   let (_e, dur, _deps) = mcw_cycle_setup()
-  let memo_suf : Map[String, Int] = Map([])
+  let memo_suf : Map[String, Int32] = Map([])
   let visiting_suf : Map[String, Bool] = Map([])
   let succ : Map[String, Array[String]] = Map([])
   succ.set("A", ["B"])
   succ.set("B", ["A"])
   let sa = mc_suffix_from("A", dur, memo_suf, visiting_suf, succ)
   assert_eq(sa, -1)
-  let memo_suf2 : Map[String, Int] = Map([])
+  let memo_suf2 : Map[String, Int32] = Map([])
   let visiting_suf2 : Map[String, Bool] = Map([])
   let sb = mc_suffix_from("B", dur, memo_suf2, visiting_suf2, succ)
   assert_eq(sb, -1)
@@ -93,13 +93,13 @@ test "BUG-212 成对：非环节点的 mc_finish 不误标 -1" {
   )
   ignore(e.store.create_task(ta))
   ignore(e.store.create_task(tb))
-  let dur : Map[String, Int] = Map([])
+  let dur : Map[String, Int32] = Map([])
   dur.set("X", 3)
   dur.set("Y", 5)
   let deps : Map[String, Array[String]] = Map([])
   deps.set("X", ["Y"])
   deps.set("Y", [])
-  let memo : Map[String, Int] = Map([])
+  let memo : Map[String, Int32] = Map([])
   let visiting : Map[String, Bool] = Map([])
   let fx = e.mc_finish("X", dur, memo, visiting, deps)
   assert_eq(fx, 8)

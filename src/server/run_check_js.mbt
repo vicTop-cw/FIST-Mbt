@@ -25,7 +25,7 @@ extern "js" fn js_run_command(
   cmd : String,
   args : Array[String],
   workdir : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> @js_async.Promise[String] =
   #| async (cmd, args, workdir, timeoutMs) => {
   #|   const { spawn } = await import('node:child_process')
@@ -85,7 +85,7 @@ pub async fn run_check_external(
   cmd : String,
   args : Array[String],
   workdir : String,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> Result[Json, String] {
   let raw = js_run_command(cmd, args, workdir, timeout_ms).wait() catch {
     _ => return Err("run_check: 子进程调度失败（js 运行时异常）")

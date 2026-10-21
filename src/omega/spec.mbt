@@ -39,7 +39,7 @@ pub fn fnv1a64(data : String) -> String {
     h = (h ^ b.to_uint64()) * 0x100000001b3
   }
   // 从低位到高位收集 16 个 nibble
-  let nibbles : Array[Int] = []
+  let nibbles : Array[Int32] = []
   for _ in 0..<16 {
     nibbles.push((h & 0x0f).to_int())
     h = h >> 4
@@ -52,7 +52,7 @@ pub fn fnv1a64(data : String) -> String {
 }
 
 ///|
-fn hex_char(v : Int) -> String {
+fn hex_char(v : Int32) -> String {
   let hex = "0123456789abcdef"
   hex[v:v + 1].to_owned()
 }
@@ -60,7 +60,7 @@ fn hex_char(v : Int) -> String {
 ///|
 /// 字典序比较（逐 code unit，短前缀在前），对齐 Python sort_keys / strcmp 语义。
 /// 注意：MoonBit String 默认 Compare 为 shortlex（先比长度），不可用于 canonical 排序。
-fn lex_compare(a : String, b : String) -> Int {
+fn lex_compare(a : String, b : String) -> Int32 {
   let la = a.length()
   let lb = b.length()
   let n = if la < lb { la } else { lb }
@@ -313,9 +313,9 @@ fn replace_placeholders(s : String, params : Map[String, Json]) -> String {
   let mut i = 0
   let n = s.length()
   while i < n {
-    if is_placeholder_open(Int::unsafe_to_char(s[i].to_int())) &&
+    if is_placeholder_open(Int32::unsafe_to_char(s[i].to_int())) &&
       i + 2 < n &&
-      is_brace_open(Int::unsafe_to_char(s[i + 1].to_int())) {
+      is_brace_open(Int32::unsafe_to_char(s[i + 1].to_int())) {
       let end = find_close(s, i + 2)
       if end >= 0 {
         let name = s[i + 2:end].to_owned()
@@ -337,9 +337,9 @@ fn replace_placeholders(s : String, params : Map[String, Json]) -> String {
 
 ///|
 /// 找到从 start 开始的第一个 '}'，返回其索引；找不到返回 -1
-fn find_close(s : String, start : Int) -> Int {
+fn find_close(s : String, start : Int32) -> Int32 {
   for i in start..<s.length() {
-    if is_brace_close(Int::unsafe_to_char(s[i].to_int())) {
+    if is_brace_close(Int32::unsafe_to_char(s[i].to_int())) {
       return i
     }
   }
@@ -372,7 +372,7 @@ pub fn expand_parameters(spec : Json) -> Json {
     match t.value("parameters") {
       Some(Object(pm)) if pm.length() > 0 => {
         let entries = collect_param_entries(pm)
-        let counts : Array[Int] = entries.map(fn(e) { e.1.length() })
+        let counts : Array[Int32] = entries.map(fn(e) { e.1.length() })
         let mut has_zero = false
         let mut uniform = true
         if counts.length() > 0 {

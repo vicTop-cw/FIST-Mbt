@@ -10,7 +10,7 @@ fn new_engine() -> @engine.FistEngine {
 ///|
 fn publish_root(
   e : @engine.FistEngine,
-  desc? : String = "测试根任务",
+  desc~ : String = "测试根任务",
 ) -> String {
   let r = e.publish(
     project_dir="/proj/demo",
@@ -151,7 +151,7 @@ test "非归档状态不允许 delete" {
 }
 
 ///|
-fn count_status(e : @engine.FistEngine, s : String) -> Int {
+fn count_status(e : @engine.FistEngine, s : String) -> Int32 {
   let mut n = 0
   for t in e.list_all() {
     if t.status_to_string() == s {

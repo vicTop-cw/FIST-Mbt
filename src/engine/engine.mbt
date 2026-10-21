@@ -16,7 +16,7 @@ pub struct FistEngine {
 
 ///|
 pub fn FistEngine::new(
-  store? : @store.StoreBackend = @store.StoreBackend::memory(),
+  store~ : @store.StoreBackend = @store.StoreBackend::memory(),
 ) -> FistEngine {
   { store, }
 }
@@ -38,8 +38,8 @@ pub fn FistEngine::publish(
   description~ : String,
   created_by~ : String,
   now~ : String,
-  ns? : String = "default",
-  level? : Int = 6,
+  ns~ : String = "default",
+  level~ : Int32 = 6,
 ) -> Result[String, String] {
   if created_by != "human_steward" && created_by != "human" {
     return Err("publish 仅限人类指挥官（created_by=human_steward）")
@@ -85,7 +85,7 @@ fn split_remedy(task_id : String, st : @core.TaskStatus) -> String {
 pub fn FistEngine::plan(
   self : FistEngine,
   task_id~ : String,
-  split_n? : Int = 3,
+  split_n~ : Int32 = 3,
   by~ : String,
   now~ : String,
 ) -> Result[Array[String], String] {
@@ -219,14 +219,14 @@ pub fn FistEngine::execute_with_meta(
   task_id~ : String,
   deliverable~ : String,
   now~ : String,
-  executor? : String = "manual",
-  model? : String = "",
-  tokens_in? : Int = 0,
-  tokens_out? : Int = 0,
-  cost? : Double = 0.0,
-  duration_ms? : Int = 0,
-  rate_limited? : Bool = false,
-  failure_reason? : String = "",
+  executor~ : String = "manual",
+  model~ : String = "",
+  tokens_in~ : Int32 = 0,
+  tokens_out~ : Int32 = 0,
+  cost~ : Double = 0.0,
+  duration_ms~ : Int32 = 0,
+  rate_limited~ : Bool = false,
+  failure_reason~ : String = "",
 ) -> Result[@core.Task, String] {
   // 0. 预执行审计门禁必须真正前置（BUG-147）：gate 在 record_execution 之前。
   // 否则空 deliverable 时 execute 的 gate 拒绝返回 Err，但 executions 已写入一行
@@ -325,7 +325,7 @@ pub fn FistEngine::heartbeat_backend(self : FistEngine) -> String {
 pub fn FistEngine::store_write_heartbeat_interval(
   self : FistEngine,
   task_id~ : String,
-  interval_sec~ : Int,
+  interval_sec~ : Int32,
   ts~ : String,
 ) -> Result[Unit, String] {
   self.store.write_heartbeat_interval(task_id~, interval_sec~, ts~)
@@ -336,7 +336,7 @@ pub fn FistEngine::store_write_heartbeat_interval(
 pub fn FistEngine::store_list_heartbeat_intervals(
   self : FistEngine,
   task_id : String,
-) -> Array[Int] {
+) -> Array[Int32] {
   self.store.list_heartbeat_intervals(task_id)
 }
 
@@ -344,10 +344,10 @@ pub fn FistEngine::store_list_heartbeat_intervals(
 /// 登记 Saga 补偿步骤（R92，durable action log；委托给 store 后端）。
 pub fn FistEngine::store_write_saga_action(
   self : FistEngine,
-  ns? : String = "default",
+  ns~ : String = "default",
   root_task_id~ : String,
   step~ : String,
-  task_id? : String = "",
+  task_id~ : String = "",
   compensation~ : String,
   created_at~ : String,
 ) -> Result[Unit, String] {
@@ -367,7 +367,7 @@ pub fn FistEngine::store_list_saga_actions(
   self : FistEngine,
   ns : String,
   root_task_id : String,
-) -> Array[(Int, String, String, String, String)] {
+) -> Array[(Int32, String, String, String, String)] {
   self.store.list_saga_actions(ns, root_task_id)
 }
 
@@ -375,9 +375,9 @@ pub fn FistEngine::store_list_saga_actions(
 /// 把指定 Saga 补偿步骤标记 done（R92；幂等）。
 pub fn FistEngine::store_mark_saga_actions_done(
   self : FistEngine,
-  ns? : String = "default",
+  ns~ : String = "default",
   root_task_id~ : String,
-  ids~ : Array[Int],
+  ids~ : Array[Int32],
 ) -> Result[Unit, String] {
   self.store.mark_saga_actions_done(ns~, root_task_id~, ids~)
 }
@@ -393,8 +393,8 @@ pub fn FistEngine::store_write_call_log(
   params_json~ : String,
   result_json~ : String,
   ok~ : Bool,
-  runtime_ms~ : Int,
-  seq~ : Int,
+  runtime_ms~ : Int32,
+  seq~ : Int32,
 ) -> Result[Unit, String] {
   self.store.write_call_log(
     ts~,
@@ -413,7 +413,7 @@ pub fn FistEngine::store_write_call_log(
 /// 读取最近 N 条调用日志（委托给 store 后端，新的在前）。
 pub fn FistEngine::store_recent_call_logs(
   self : FistEngine,
-  limit? : Int = 50,
+  limit~ : Int32 = 50,
 ) -> Array[Json] {
   self.store.recent_call_logs(limit~)
 }
@@ -501,7 +501,7 @@ pub fn FistEngine::verify(
   task_id~ : String,
   verifier~ : String,
   now~ : String,
-  docs_check? : Bool = false,
+  docs_check~ : Bool = false,
 ) -> Result[@core.Task, String] {
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
@@ -728,7 +728,7 @@ pub fn FistEngine::publish_next_round(
   created_by~ : String,
   prev_task_id~ : String,
   now~ : String,
-  level? : Int = 6,
+  level~ : Int32 = 6,
 ) -> Result[String, String] {
   if ns == "" || ns == "default" {
     return Err(
@@ -797,7 +797,7 @@ pub fn FistEngine::cold_publish(
   created_by~ : String,
   project_dir~ : String,
   now~ : String,
-  level? : Int = 6,
+  level~ : Int32 = 6,
 ) -> Result[String, String] {
   if ns == "" || ns == "default" {
     return Err(
@@ -842,7 +842,7 @@ pub fn FistEngine::publish_parallel(
   created_by~ : String,
   project_dir~ : String,
   now~ : String,
-  level? : Int = 6,
+  level~ : Int32 = 6,
 ) -> Result[String, String] {
   if ns == "" || ns == "default" {
     return Err(
@@ -897,7 +897,7 @@ pub fn FistEngine::reopen_task(
 pub fn FistEngine::reject_task(
   self : FistEngine,
   task_id~ : String,
-  reason? : String = "",
+  reason~ : String = "",
   by~ : String,
   now~ : String,
 ) -> Result[@core.Task, String] {
@@ -1035,16 +1035,16 @@ pub fn FistEngine::delete_task(
 pub fn FistEngine::plan_deep(
   self : FistEngine,
   task_id~ : String,
-  split_n? : Int = 3,
+  split_n~ : Int32 = 3,
   by~ : String,
-  spec? : Json? = None,
+  spec~ : Json? = None,
   now~ : String,
-  omega_strong_verify? : Bool = false,
-  gradient? : Bool = false,
-  calibrate? : Array[Double]? = None,
-  gradient_dag? : Bool = false,
-  reinject_context? : Bool = false,
-  boundary_probe? : Bool = false,
+  omega_strong_verify~ : Bool = false,
+  gradient~ : Bool = false,
+  calibrate~ : Array[Double]? = None,
+  gradient_dag~ : Bool = false,
+  reinject_context~ : Bool = false,
+  boundary_probe~ : Bool = false,
 ) -> Result[Json, String] {
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
@@ -1291,7 +1291,7 @@ pub fn FistEngine::topo_sort(
     in_task.set(id, true)
   }
   // indegree: 任务在 task_ids 内尚未满足的依赖数；dependents[d] = 依赖 d 的任务列表
-  let indeg : Map[String, Int] = Map([])
+  let indeg : Map[String, Int32] = Map([])
   let dependents : Map[String, Array[String]] = Map([])
   for id in task_ids {
     indeg.set(id, 0)
@@ -1351,7 +1351,7 @@ pub fn FistEngine::topo_sort(
 
 ///|
 /// 在 Char 数组中寻找任一子串起始下标（找不到返回 -1）。
-fn find_sub_chars(hay : Array[Char], needle : Array[Char]) -> Int {
+fn find_sub_chars(hay : Array[Char], needle : Array[Char]) -> Int32 {
   if needle.length() == 0 {
     return 0
   }
@@ -1452,7 +1452,7 @@ pub fn FistEngine::plan_exec_order(self : FistEngine, root_id : String) -> Json 
 /// 获取当前命名空间内所有 Pending 且依赖满足、可领取的任务
 pub fn FistEngine::ready_tasks(
   self : FistEngine,
-  ns_filter? : String = "default",
+  ns_filter~ : String = "default",
 ) -> Array[@core.Task] {
   let target = if ns_filter == "" { "default" } else { ns_filter }
   let tasks = self.store.list_tasks_in(target)
@@ -1499,11 +1499,11 @@ pub fn FistEngine::publish_with_deps(
   self : FistEngine,
   project_dir~ : String,
   description~ : String,
-  depends_on? : Array[String] = [],
-  created_by? : String = "human_steward",
-  now? : String = "",
-  ns? : String = "default",
-  level? : Int = 6,
+  depends_on~ : Array[String] = [],
+  created_by~ : String = "human_steward",
+  now~ : String = "",
+  ns~ : String = "default",
+  level~ : Int32 = 6,
 ) -> Result[String, String] {
   if created_by != "human_steward" && created_by != "human" {
     return Err("publish 仅限人类指挥官")

@@ -79,7 +79,7 @@ fn route_families() -> Array[(String, Array[String])] {
 
 ///|
 /// 一族的命中分：出现的关键词越多分越高；CJK/长关键词加权（更能体现语义指向）。
-fn route_score(desc : String, keywords : Array[String]) -> Int {
+fn route_score(desc : String, keywords : Array[String]) -> Int32 {
   let mut s = 0
   for k in keywords {
     if desc.contains(k) {
@@ -111,10 +111,10 @@ fn route_complex(description : String) -> Bool {
 /// 规则式决策主函数（纯计算，无外部依赖）：
 /// 输入任务描述 + 拆分提示，输出 { feature_route, splits_per_family, split_n, complex, reasons }。
 /// source 固定为 "fallback"（本模块即无 Laya 时的确定性分支）。
-pub fn route_decision(description : String, split_n_hint : Int) -> Json {
+pub fn route_decision(description : String, split_n_hint : Int32) -> Json {
   let families = route_families()
   // 逐族打分（避免 map 元组解构闭包，用显式循环）
-  let scores : Array[(String, Int)] = []
+  let scores : Array[(String, Int32)] = []
   for f in families {
     let (name, ks) = f
     scores.push((name, route_score(description, ks)))

@@ -18,7 +18,7 @@ fn lr_str(j : Json, key : String) -> String {
 
 ///|
 /// 读 JSON 数字为 int。
-fn lr_int(j : Json, key : String) -> Int {
+fn lr_int(j : Json, key : String) -> Int32 {
   match j {
     Object(m) =>
       match m.get(key) {
