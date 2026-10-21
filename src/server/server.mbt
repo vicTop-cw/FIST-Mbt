@@ -83,8 +83,6 @@ let loop_reg : @ops.LoopRegistry = @ops.LoopRegistry::new()
 ///|
 /// 六顶帽辩论的单场会话（R118 P1-b）。verdicts 是该 session 下已登记的帽子判决。
 priv struct DebateSession {
-  topic : String
-  hats : Array[String]
   threshold : Double
   verdicts : Array[@ops.HatVerdict]
   created_at : String
@@ -7869,11 +7867,8 @@ pub async fn run_server() -> Unit {
         Ok(hs) => hs
         Err(e) => return Err(@mcp_types.ToolError(e))
       }
-      let hat_ids = parsed.map(fn(h) { @ops.hat_id(h) })
       let sid = debate_next_session_id()
       let sess : DebateSession = {
-        topic,
-        hats: hat_ids,
         threshold: th,
         verdicts: [],
         created_at: now_default(),
