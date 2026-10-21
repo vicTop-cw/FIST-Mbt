@@ -127,6 +127,19 @@ jobs:
           python3 scripts/run_guards.py --list
           python3 scripts/check_plan_landing.py --selftest
 
+      # 判定面棘轮真门禁（BUG-367 建议②）：--gate 模式下「判定面条数 > 上限」才红。
+      # 上限 25 = 2026-10-21 实测存量（28 减去搬家态 3）；此后任何新点名的落点没写出来就红。
+      # 历史：本步曾被 f259d797「清冲突标记·取 theirs」整块删除（19 行 diff 全在标记区内，
+      # 标记抹了步骤也没了；图片对照 f259d797^/072a8148/defbe27b/16465969 四棵旧树都有、之后为 0）。
+      # ⚠ 本步目前是**观测臂**（continue-on-error）：2026-10-21 19:30 实测判定面 36 > 上限 25，
+      # 超出的是计划文档 11 条内容债（非本步引入）。直接挂硬门会让 CI 因存量内容债常红，
+      # 把「步骤被删」修成「CI 常红」是另一种坏；补齐落点或收紧上限属内容裁决（金条四）。
+      # 债清完请摘掉 continue-on-error 转硬门——别让它停在观测位当装饰。
+      - name: Plan-landing ratchet gate (计划点名落点判定面棘轮，观测臂，BUG-367)
+        shell: bash
+        continue-on-error: true
+        run: python3 scripts/check_plan_landing.py --gate
+
       - name: Deprecated text-census selftest (BUG-362：尺子必须先证明自己会红)
         shell: bash
         run: python3 scripts/check_deprecated_text_census.py --selftest

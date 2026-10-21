@@ -158,12 +158,7 @@
   （实证：`f259d797^:scripts/README.md` 含 `check_doc_surface`、`origin/master` 起为 0，
   该次 diff 同时留着 `<<<<<<< HEAD` 与被吃掉的正文行）——sweep 顺手删登记，正是 R57 记的
   「取 theirs 的连带删除」在文档面的复发。用法 `python scripts/check_doc_surface.py [--selftest]`。
-- `commit_bug335_lock.ps1`（2026-10-20 18:54 `901eca8c` 入仓，此前从未登记）— **BUG-339 提交
-  成对性收尾助手**：等并发 agent 把含 `publish_parallel_route` 的 `src/server/server.mbt` 提交进
-  HEAD 后，**只提交**配套锁 `src/server/bug335_ns_route_wbtest.mbt`；脚本自身规则写明
-  「DO NOT commit server.mbt（concurrent agent owns it）」且「Safe to run repeatedly」——
-  存在的理由就是 BUG-339 的教训：锁引用未提交函数时单独提交锁 = 给 src/server 引入编译红。
-  用法 `pwsh scripts/commit_bug335_lock.ps1`。
+- `commit_bug335_lock.ps1`（2026-10-20 18:54 `901eca8c` 入仓，此前从未登记）— **提交成对性收尾助手（脚本自述）**：等并发 agent 把含 `publish_parallel_route` 的 `src/server/server.mbt` 提交进 HEAD 后，**只提交**配套锁 `src/server/bug335_ns_route_wbtest.mbt`；脚本自身规则写明「DO NOT commit server.mbt（concurrent agent owns it）」与「Safe to run repeatedly」——存在的理由是「锁引用未提交函数时单独提交锁 = 给 src/server 引入编译红」。⚠ **脚本文件头自称对应 BUG-339 / BUG-335，但账本抬头面查无此二号**（356 条唯一编号里都没有；本行初版照抄了脚本的编号，经 `check_bug_reference_integrity` 同族排查后改为如实标注）：编号来源未入账，引用时别当账本事实。用法 `pwsh scripts/commit_bug335_lock.ps1`。
 - `slave-branch-merge.ps1`（2026-10-21 17:00 `c689f027` 入仓，此前从未登记）— **`gitcode/slave/*`
   批量合并驱动器（合并 agent 的执行面）**：fetch → 扫哪些分支动了 src/scripts/cmd/moon.pkg →
   逐个 cherry-pick → 清冲突标记 → build → push → 删已合并分支；`-DryRun` 只扫描不执行，
@@ -171,3 +166,13 @@
   PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
   去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
   用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
+
+### 2026-10-21 补登记：`fist-gate.py`（R74 合并线新件，`check_scripts_index` 现读红）
+
+- `fist-gate.py`（454aea3a 入仓）— **统一门禁链（合并前一条命令全跑）**：脚本自述
+  `merge_markers / fmt / build / ps_encoding / store_path` 五段，退出码约定
+  **0=pass / 1=fail / 2=degraded**（2 专给「判据自身取不到量」，不冒用 1 那一档）。
+  merge_markers 段在本仓根上直接调 `scripts/blackbox/check_merge_markers.py`、对任意目标树则
+  按 `git ls-files` 逐文件扫行首标记；其余段分别跑 `moon fmt --check`、`moon build`、
+  `check_ps_encoding.py` 与库路径隔离检查。用途是让 slave/* 分支合入前有一条可复现的本地门，
+  不必等 CI。用法 `python scripts/fist-gate.py [目标树]`。
