@@ -183,5 +183,8 @@
 
 ### 2026-10-21 补登记：`fist-gate.py`
 
-- `fist-gate.py`（R74 入仓）— **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段，
-  退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量，不冒用 1）。用法 `python scripts/fist-gate.py [树]`。
+- `fist-gate.py`（R74 入仓）— **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段 +
+  `--scan` 分支普查 + `--selftest`。退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量）。
+  本轮补了 fmt/build 两臂的**环境态分类**：冷格式化器（缺 `_build/wasm-gc/release/format/`）与依赖缓存
+  格式过旧（`moon.mod.json no longer supported`）都报 DEGRADED 并给可执行提示，不再冒充'代码红'；
+  `FIST_GATE_FMT_STRICT=1` 可把 fmt 世代差转硬红。用法 `python scripts/fist-gate.py [--scan|--selftest] [树]`。
