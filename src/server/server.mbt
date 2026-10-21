@@ -529,7 +529,7 @@ fn get_str(args : Json, key : String, default~ : String = "") -> String {
 
 ///|
 /// 从 JSON 参数中读取整数，缺省回退默认值。
-/// BUG-192：`Double::to_int()` 对超 Int32 域的值**饱和**（BUG-26 实测：1e300 → Int max），
+/// BUG-194：`Double::to_int()` 对超 Int32 域的值**饱和**（BUG-26 实测：1e300 → Int max），
 /// 会让超时/阈值/配额类参数静默变成天量值（如 `timeout_ms=2147483647` 永不超时、
 /// `phi_threshold` 永不判 suspect）；越界/NaN 一律回落默认。
 fn get_int(args : Json, key : String, default~ : Int32 = 3) -> Int32 {
