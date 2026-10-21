@@ -247,7 +247,7 @@ fn cb_json(
   thr : Int,
   rec : Int,
   opened_at : Int,
-  now_secs : Int,
+  _now_secs : Int,
   probe_limit? : Int = 1,
   deny? : Bool = false,
   persist_error? : String = "",

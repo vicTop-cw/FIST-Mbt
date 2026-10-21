@@ -226,8 +226,8 @@ fn placeholder_normalize(s : String) -> String {
 ///   ① deliverable trim 后非空；② 非纯占位符（如 "done"/"完成"/"ok"/"yes"/"通过"，大小写不敏感；不做全角归一化）。
 /// 只拦确定性问题，不做过度拦截；零回归（正常交付物一定含具体改动/路径/验证信息）。
 pub fn FistEngine::audit_execute_gate(
-  self : FistEngine,
-  task_id : String,
+  _self : FistEngine,
+  _task_id : String,
   deliverable : String,
 ) -> Result[Unit, String] {
   let trimmed = deliverable.trim().to_owned()

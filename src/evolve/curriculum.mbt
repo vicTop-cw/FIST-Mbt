@@ -197,7 +197,7 @@ pub fn is_distillable(score : Double, note : String) -> Bool {
 
 ///|
 /// 从 artifact 的 goal + note 生成 skill 名称
-pub fn derive_skill_name(goal : String, note : String) -> String {
+pub fn derive_skill_name(_goal : String, note : String) -> String {
   // 取 note 的前 8 个字符作为 skill 名前缀
   let prefix = if note.length() > 8 { note[0:8].to_owned() } else { note }
   let cleaned = prefix.trim().replace(old=" ", new="_").to_owned()
