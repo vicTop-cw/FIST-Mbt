@@ -352,7 +352,7 @@ test "lint_10_guard_function_direct" {
     false,
   )
   // unguarded: 前一函数里的守卫跨了 `fn` 边界，不应算
-  let unguarded_lines : Array[String] = [
+  let _unguarded_lines : Array[String] = [
     "fn guarded(): Int {", "  let rows : Array[Int] = []", "  if rows.is_empty() { return -1 }",
     "  rows[0]", "}", "fn unguarded(): Int {", "  let rows : Array[Int] = []", "  rows[0]",
     "}",
