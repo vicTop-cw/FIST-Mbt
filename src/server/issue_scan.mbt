@@ -1965,6 +1965,17 @@ pub fn issue_scan(
   let codeparts_cache : Map[String, Array[String]] = Map([])
   let guarded_filtered : Array[ScanFinding] = []
   for hit in dedup {
+    // BUG-333：moonbit-match-exhaustive 的 needle 是裸子串 `match `，而 MoonBit 编译器
+    // **强制** match 穷尽（不穷尽 = 编译错误，账本实测 1513 条命中 = 100% 假阳）⇒ 这条规则
+    // 对任何能编译的 .mbt 都零信息量，只是把真实缺陷淹在噪音里。R8 曾落地
+    // `scan_denoise_default_skip` 默认丢弃，但那处修复**连同它的私有函数名白盒锁**在后续
+    // 重构中被一并删除 ⇒ 静默回归（本轮 grep `denoise` 全 src 零命中证实，1513 条噪音回来了）。
+    // 此处重新落地定向降噪：只丢这一条编译器已保证的规则，其余规则一概不动
+    // （硬门 div-by-zero/unwrapped-unwrap 与 BUG-348 过滤都由独立断言守着，见 issue_scan_test）。
+    // 锁一律走公开 @server.issue_scan 的产出而非内部函数名，再被重构删掉时会当场编译/断言红。
+    if hit.rule == "moonbit-match-exhaustive" {
+      continue
+    }
     // BUG-348：moonbit-unused-variable 此前按裸子串 `let ` 命中每个 let 声明，
     // 不看绑定名是否真被使用 ⇒ 把「已使用的 let」也报成未使用（info 档，cost_tool.mbt
     // L29/31/32 exceeded/remaining/action 均在函数体后续被引用却照样报，纯假阳）。
