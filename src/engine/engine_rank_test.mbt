@@ -3,13 +3,13 @@
 // publish_parallel / publish_with_deps 根任务 level 透传。
 
 ///|
-fn rank_engine() -> FistEngine {
-  FistEngine::new()
+fn rank_engine() -> @engine.FistEngine {
+  @engine.FistEngine::new()
 }
 
 ///|
 fn rank_publish(
-  e : FistEngine,
+  e : @engine.FistEngine,
   desc~ : String = "军衔根任务",
   level~ : Int32 = 6,
 ) -> String {
@@ -28,7 +28,7 @@ fn rank_publish(
 
 ///|
 /// 读任务 level，取不到即 abort。
-fn rank_level_of(e : FistEngine, id : String) -> Int32 {
+fn rank_level_of(e : @engine.FistEngine, id : String) -> Int32 {
   match e.get_task(id) {
     Some(t) => t.get_level()
     None => abort("task missing: \{id}")

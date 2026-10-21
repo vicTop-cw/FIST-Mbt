@@ -247,7 +247,7 @@ test "root cause constants accessible" {
 test "verify_fix_with_evidence repairs struct_missing for real" {
   // 结构缺失 spec：初始验证失败，evidence 引擎应真实修复（非零修复）
   let spec_contents = [("missing.json", "{\"op\":\"t\"}")]
-  let result = verify_fix_with_evidence(spec_contents)
+  let result = @omega.verify_fix_with_evidence(spec_contents)
   // 修复证据非空（杜绝零修复）
   match result.value("fixes_applied") {
     Some(Array(a)) =>
@@ -287,7 +287,7 @@ test "verify_fix_with_evidence mixed corpus full pass" {
     ),
     ("missing.json", "{\"op\":\"t\"}"),
   ]
-  let result = verify_fix_with_evidence(spec_contents)
+  let result = @omega.verify_fix_with_evidence(spec_contents)
   match result.value("final_accuracy") {
     Some(Number(n, ..)) => assert_eq(n, 100.0)
     _ => abort("final_accuracy 缺失")
@@ -313,7 +313,7 @@ test "verify_fix_with_evidence repairs fp_mismatch for real" {
       "fp.json", "{\"op\":\"report\",\"version\":\"1.0\",\"definition\":{\"sig\":\"a\"},\"preconditions\":[\"x\"],\"laws\":[\"L\"],\"tests\":[{\"input\":{\"a\":\"1\"},\"expected\":\"ok\"}],\"fingerprint\":\"fnv1a64:wrong0000000000\"}",
     ),
   ]
-  let result = verify_fix_with_evidence(spec_contents)
+  let result = @omega.verify_fix_with_evidence(spec_contents)
   match result.value("fixes_applied") {
     Some(Array(a)) =>
       if a.length() == 0 {

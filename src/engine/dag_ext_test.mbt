@@ -617,7 +617,7 @@ test "dag_cost_route: 同执行者免切换税 + 空注册表跳过（R77）" {
 /// BUG-336 回归锁：dag_cost_route 的负载感知 tiebreak 必须考虑本次路由自身的累计分配，
 /// 不能只吃 executor_loads 的一次性快照（旧实现 L657 算一次、循环里从不更新 → 全部任务堆给先注册执行者）。
 test "dag_cost_route: 等成本平局按累计负载均分（BUG-336 负载感知冻结）" {
-  let e = FistEngine::new()
+  let e = @engine.FistEngine::new()
   ignore(
     e.executor_save(
       name="alice",
