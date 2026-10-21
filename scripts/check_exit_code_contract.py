@@ -27,6 +27,7 @@ r"""scripts/check_exit_code_contract.py — 「退出码契约」承诺面 ↔ �
 **校准（尺子必须先对着已知真相校，三条口径缺陷就是这么抓出来的）**：
   check_plan_landing ⇒ R1/R2/R3 全 0（emit_fatal 返 2 + `sys.exit(main())` 透传，真契约）
 <<<<<<< HEAD
+<<<<<<< HEAD
   check_mbti_sync / check_pkg_imports ⇒ R1 各一条 + R2 若干（纯幻影）
   simulate_head_commit ⇒ R1 为 0（别处真给 2）但 R3 一条（半形）
 =======
@@ -36,6 +37,10 @@ r"""scripts/check_exit_code_contract.py — 「退出码契约」承诺面 ↔ �
   simulate_head_commit ⇒ 立判据时 R3 一条（半形：别处 `return 2` 真给 2，4 处串式 FATAL 只给 1，
                          其中一条文案自写「（rc=2）」）；R45 已修，calib 格改为「必须归零」—— 它是判定面上最后一把尺
 >>>>>>> 57f24264 (fix: simulate_head_commit 的 4 处 FATAL 出口真给 rc=2，退出码棘轮 1→0（BUG-369 / T0r26）)
+=======
+  check_mbti_sync / check_pkg_imports ⇒ R1 各一条 + R2 若干（纯幻影）
+  simulate_head_commit ⇒ R1 为 0（别处真给 2）但 R3 一条（半形）
+>>>>>>> 4d87191c (feat: 立 check_exit_code_contract 判据 + 修掉一把尺（BUG-369 建议② / T0r23）)
   普查第一版 `temp/r42_census.py` 因①「退出码」块跨行只吃到行尾 ②不认名字传播，
   把 `check_plan_landing` 判成「承诺 1 给不出」的**假红**；第二版 `temp/r42_census2.py` 又把
   `"FATAL …" % e` 算成不透明（check_pkg_imports 真 6 处串式只读出 4 处）⇒ 三条都由标注集抓出，写进上面文法。
@@ -66,6 +71,9 @@ README = os.path.join(ROOT, "scripts", "README.md")
 # 棘轮：判定面（R1+R2+R3）条数上限，**只许下降**。放宽上限（改这个常量）是人的决定。
 #
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 4d87191c (feat: 立 check_exit_code_contract 判据 + 修掉一把尺（BUG-369 建议② / T0r23）)
 # 16 = 2026-10-21 现读真源，逐条对上 BUG-369 的标定面（`--selftest` 的 calib 格钉住这个构成）：
 #   check_mbti_sync      R1×1 + R2×7 = 8
 #   check_pkg_imports    R1×1 + R2×6 = 7
@@ -73,6 +81,7 @@ README = os.path.join(ROOT, "scripts", "README.md")
 #   check_template_ctrl  0（R42 本轮已修真 rc=2）｜check_plan_landing 0
 # 每修好一把尺，这里必须跟着降；降到 0 才算 BUG-369 关闭。
 CONTRACT_GAP_CEILING = 16
+<<<<<<< HEAD
 =======
 # 这一档的构成（2026-10-21 R45 现读真源，逐条对上 BUG-369 的标定面；`--selftest` 的 calib 格钉住这个构成）：
 #   simulate_head_commit 清零（R45 修真：4 处串式 FATAL 全改 emit_fatal ⇒ 「文案自写（rc=2）而站点实给 1」那条半形消失）
@@ -93,6 +102,8 @@ CONTRACT_GAP_CEILING = 16
 # 按既有定律：改写文本，不给判据开「跳过注释」的口子。`--selftest` 有格钉住这个形状。
 CONTRACT_GAP_CEILING = 0
 >>>>>>> 57f24264 (fix: simulate_head_commit 的 4 处 FATAL 出口真给 rc=2，退出码棘轮 1→0（BUG-369 / T0r26）)
+=======
+>>>>>>> 4d87191c (feat: 立 check_exit_code_contract 判据 + 修掉一把尺（BUG-369 建议② / T0r23）)
 MAX_CODE = 9
 MAX_DEPTH = 8           # 值集解析的递归水位；断环靠 _busy，水位只防灾利性深链
 
@@ -553,8 +564,11 @@ def hint(count, ceiling):
                "（改常量是人的决定，本判据不自动改数）。" % (count, ceiling, count)
     if count > ceiling:
         return "FAIL：判定面 %d 条 > 棘轮上限 %d —— 新增的假契约必须当场修，不许放宽上限绕过。" % (count, ceiling)
+<<<<<<< HEAD
     if ceiling == 0:
         return "判定面归零（上限 0）：BUG-369 立案那批存量已清完 ⇒ 没有容忍带，任何一条新假契约都必红。"
+=======
+>>>>>>> 4d87191c (feat: 立 check_exit_code_contract 判据 + 修掉一把尺（BUG-369 建议② / T0r23）)
     return "判定面 %d 条 = 棘轮上限 %d（存量按声明接受、增量必须归零）。" % (count, ceiling)
 
 
@@ -678,12 +692,16 @@ def selftest():
     n = len(probe("stringy")["bad"]) + len(probe("headless")["bad"])
     cell("ratchet-over-ceiling-is-red",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 4d87191c (feat: 立 check_exit_code_contract 判据 + 修掉一把尺（BUG-369 建议② / T0r23）)
          verdict_rc(CONTRACT_GAP_CEILING + 1, CONTRACT_GAP_CEILING) == 1 and
          verdict_rc(n, CONTRACT_GAP_CEILING) == 0,
          "合成 %d 条在上限内=0；上限+1 必=1" % n)
     cell("tightening-is-a-suggestion-not-a-verdict",
          "收紧" in hint(3, CONTRACT_GAP_CEILING) and "FAIL" not in hint(3, CONTRACT_GAP_CEILING),
          "读数低于上限只给建议，不判红也不判绿")
+<<<<<<< HEAD
 =======
          verdict_rc(at, at) == 0 and verdict_rc(at + 1, at) == 1 and verdict_rc(0, at) == 0,
          "三点判法：等于上限给 0 / 上限+1 给 1 / 零条给 0（三点都由常量导出，上限怎么降都不失配）")
@@ -699,6 +717,8 @@ def selftest():
              and verdict_rc(1, 0) == 1,
              "上限已归零：hint(0,0) 不该再提收紧，且任何一条新增假契约都得红")
 >>>>>>> 57f24264 (fix: simulate_head_commit 的 4 处 FATAL 出口真给 rc=2，退出码棘轮 1→0（BUG-369 / T0r26）)
+=======
+>>>>>>> 4d87191c (feat: 立 check_exit_code_contract 判据 + 修掉一把尺（BUG-369 建议② / T0r23）)
 
     rows, skipped = census()
     total = sum(len(r["bad"]) for r in rows)
@@ -710,6 +730,9 @@ def selftest():
     calib = (
         ("check_plan_landing.py", lambda r: not r["bad"], "R1/R2/R3 全 0（emit_fatal 真给 2，是契约不是幻影）"),
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 4d87191c (feat: 立 check_exit_code_contract 判据 + 修掉一把尺（BUG-369 建议② / T0r23）)
         ("check_mbti_sync.py", lambda r: any(b.startswith("R1") for b in r["bad"])
             and len([b for b in r["bad"] if b.startswith("R2")]) >= 6,
             "R1 一条 + R2 ≥6（BUG-369 记 7 处串式 FATAL）"),
@@ -718,6 +741,7 @@ def selftest():
             "R1 一条 + R2 ≥5（记 6 处串式，v2 普查只读出 4 处）"),
         ("simulate_head_commit.py", lambda r: any(b.startswith("R3") for b in r["bad"])
             and not any(b.startswith("R1") for b in r["bad"]), "R1=0（别处真给 2）但 R3 一条 —— 半形"),
+<<<<<<< HEAD
 =======
         ("check_mbti_sync.py", lambda r: not r["bad"],
          "R43 已修（7 处串式 FATAL 改 emit_fatal）⇒ 必须归零；再被判红就是尺子或被测面回退了"),
@@ -727,6 +751,8 @@ def selftest():
          "R45 已修（4 处串式 FATAL 改 emit_fatal，那条自写「（rc=2）」的文案从此说实话）⇒ 必须归零；"
          "再被 R3 判红就是尺子回退了"),
 >>>>>>> 57f24264 (fix: simulate_head_commit 的 4 处 FATAL 出口真给 rc=2，退出码棘轮 1→0（BUG-369 / T0r26）)
+=======
+>>>>>>> 4d87191c (feat: 立 check_exit_code_contract 判据 + 修掉一把尺（BUG-369 建议② / T0r23）)
         ("check_template_ctrl.py", lambda r: not r["bad"], "R42 已修 ⇒ 必须归零（修过的尺不许再被判红）"),
     )
     for base, want, why in calib:
@@ -734,6 +760,7 @@ def selftest():
         cell("calib:%s" % base, r is not None and want(r),
              why if r is not None else "不在宇宙里")
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
     # 降档的承重力问的是「2 从哪来」，不是「判定面小没小」：R43 的 M3 变异实测过一条反差
@@ -747,6 +774,8 @@ def selftest():
          % (len(fixed), ", ".join(no_two) or "无"))
 
 >>>>>>> 57f24264 (fix: simulate_head_commit 的 4 处 FATAL 出口真给 rc=2，退出码棘轮 1→0（BUG-369 / T0r26）)
+=======
+>>>>>>> 4d87191c (feat: 立 check_exit_code_contract 判据 + 修掉一把尺（BUG-369 建议② / T0r23）)
     cell("own-fatal-exit-is-2", emit_fatal("（自检探针，非违例）") == 2,
          "emit_fatal 恒返 2 —— 本判据不用被抓者的缺陷给自己开门")
 
