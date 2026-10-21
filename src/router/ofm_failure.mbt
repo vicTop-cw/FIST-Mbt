@@ -25,21 +25,21 @@ pub enum OfmFailure {
   BadRequest
   Unknown
 } derive(Eq, Debug)
+<<<<<<< HEAD
 
 ///|
 pub extend OfmFailure with Eq::{not_equal, equal}
 
 ///|
 pub extend OfmFailure with @moonbitlang/core/debug.Debug::{to_repr}
+=======
+>>>>>>> 2a0c0ec8 (fix(idiom): 清零 0027 derive(Show) 弃用面 4/5 条（StarVerdict 承重面留档）)
 
 ///|
 pub extend OfmFailure with Eq::{not_equal, equal}
 
 ///|
 pub extend OfmFailure with @moonbitlang/core/debug.Debug::{to_repr}
-
-///|
-pub extend OfmFailure with Show::{to_string, output}
 
 ///|
 pub fn OfmFailure::label(self : OfmFailure) -> String {
