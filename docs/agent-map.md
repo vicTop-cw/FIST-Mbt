@@ -56,7 +56,7 @@
 3. **想加/改 MCP 工具** → `src/server/server.mbt` 用 `.tool(name, desc, schema, handler)`，handler 经 `_instrument` 包装（自动 call_log）。
 4. **想动存储** → `src/store/store_sqlite.mbt`（表结构在 `moon.pkg` 初始化处）。
 5. **想跑通即走** → `python scripts/mcp_smoke.py` / `scripts/enrich_selfdrive.py`。
-6. **提交前想确认守卫面** → `python scripts/run_guards.py`（仓内电池真源，34 格：逐格打 rc/期望/结论，
+6. **提交前想确认守卫面** → `python scripts/run_guards.py`（仓内电池真源，35 格：逐格打 rc/期望/结论，
    预存红按声明的期望值命中、不算失败但也写在汇总里）。**别在 `temp/` 里另写一份电池**：
    历轮 11 份手写电池的格数是 13 → 30 → 37 全靠回忆，漏的那格永远不会被发现漏了（BUG-366）。
 
@@ -68,3 +68,6 @@
 - **勿改共享 fist-mbt.db 测试**：测试用独立内存/SQLite（见 call_log_wbtest）。
 - **无硬编码路径**：分隔符跟随输入，路径不硬编码盘符。
 - **一把尺不跑就等于一把坏尺**：本仓的守卫只在 CI 有红门，本地提交面是空的（`.githooks/pre-commit` 只跑 `moon check`，而且 `core.hooksPath` 未设置 ⇒ 连这一条都不生效）。新写或改 `scripts/check_*.py` 时，**同时给它一个执行面**（挂 CI 或进 `run_guards.py` 的 `CASES`），否则它会像 `check_plan_landing` 那样带着虚报缺陷躺一周（BUG-365/366）。
+- **自述的退出码必须实测**：`raise SystemExit("FATAL …")` 给的是 **1**，不是 2 —— 带字符串的 SystemExit 只打印文本。ast 普查真调用点：3 份尺自述「2=判据无法自证」而代码里一条 2 都给不出（`check_mbti_sync` 7 处串式 FATAL / `check_pkg_imports` 6 处 / `check_template_ctrl` 1 处），另 1 份是**半形**（`simulate_head_commit`：moon 超时走 `return 2` 真给 2，其余 4 处 FATAL 给 1，其中一条文案自己写着「（rc=2）」）⇒ BUG-369。要承诺 rc=2 就写 `SystemExit(2)` 或 `return 2`，并在 `--selftest` 留一格锁「FATAL 那条出口的码真是 2」。
+- **数站点要用 ast，不要用正则**：同一份普查，正则版把 docstring 里的 `SystemExit("…")` 字样当调用点（数字虚高到 33），又把 `sys.exit(main())` 这种**正常透传**当「已有整式出口」（家族漏判）——两条缺陷都在同一轮现形。凡是「数代码里的某种形状」的判据，先问一句：读的是站点面还是文本面？
+- **模式互斥不是洁癖**：同一把尺的两种模式若共享一个「按某面标定的上限」，允许它们同时打开就是在未标定的宇宙上比数。实测 `check_plan_landing.py --gate --all-faces` 去掉互斥闸后：同一份存量从 25 跳到 38，门禁反而给 **0** —— 红是假的、绿也是假的，而「绿得莫名」比红更坏。
