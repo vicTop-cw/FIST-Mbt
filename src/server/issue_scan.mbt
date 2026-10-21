@@ -1658,8 +1658,13 @@ fn scan_file(path : String, rules : Array[ScanRule]) -> Array[ScanFinding] {
 
 ///|
 /// 从 ocr-local 的 regex pattern 提取稳定字面量 needle（子串近似，免 regex 依赖）。
-/// 策略：扫描 pattern，收集连续字母数字片段，取最长者；`\w` `\s` `\d` 等 regex 类跳过。
-/// 例：`ignore\s*\(\s*\w+` → "ignore"；`@fs\.(open|write|read)\s*\(` → "open"。
+/// 策略：扫描 pattern，收集连续字母数字与 `::` 命名空间片段，取最长者；`\w` `\s` `\d`
+/// 等 regex 类与其余标点当分隔跳过。
+/// BUG-347：`::` 命名空间限定是 MoonBit 构造器身份的一部分，必须保留进 needle。旧实现只认
+/// alnum，把 `::` 当分隔整段丢弃 ⇒ `Json::string\(` 退化成裸 `string`，`Json::` 限定丢失，
+/// 任何含 `string` 的行都命中（假阳）；且 `\s` 里的 `s` 反被当字面量起点重新计数。
+/// 例：`ignore\s*\(\s*\w+` → "ignore"；`Json::string\(` → "Json::string"；
+/// `@fs\.(open|write|read)\s*\(` → "write"（分支 regex 无单一 needle，属已知局限）。
 fn scan_regex_to_needle(re : String) -> String {
   let cs = re.to_array()
   let n = cs.length()
@@ -1674,13 +1679,18 @@ fn scan_regex_to_needle(re : String) -> String {
       (o >= 48 && o <= 57)
     if alnum {
       cur = cur + c.to_string()
+      i = i + 1
+    } else if c == ':' && i + 1 < n && cs[i + 1] == ':' {
+      // BUG-347：`::` 命名空间限定保留，不当分隔符切断。
+      cur = cur + "::"
+      i = i + 2
     } else {
       if cur.length() > best.length() {
         best = cur
       }
       cur = ""
+      i = i + 1
     }
-    i = i + 1
   }
   if cur.length() > best.length() {
     best = cur
