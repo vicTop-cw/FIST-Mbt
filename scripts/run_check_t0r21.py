@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """T0r2.1 run_check 判据：moon test src/engine 全绿即通过（BUG-253 修复回归）。"""
 import subprocess, sys
-import sys
 
 
 # BUG-58/138 stdout/stderr UTF-8 重配：本脚本 print 非 ASCII，
