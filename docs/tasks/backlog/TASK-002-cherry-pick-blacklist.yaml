@@ -1,0 +1,31 @@
+id: TASK-002
+title: "cherry-pick 黑名单 — src/ops/moon.pkg + rhop_poll.mbt"
+priority: P1
+status: backlog
+assignee: atomcode
+discovered_by: lead
+discovered_at: "2026-10-21T17:30:00+08:00"
+
+problem: >
+ cherry-pick 旧 commit 时，src/ops/moon.pkg 总会带冲突标记（AtomCode 的旧分支 moon.pkg 版本
+ 与 HEAD 不同且自带标记）。同时 rhop_poll.mbt 是 poison——AtomCode 旧 commit 里加了这个文件，
+ 但 HEAD 已有 rhop_native.mbt 完整实现，两者同名函数 rhop_poll 冲突导致 build 崩。
+
+ 合入者的处理方式：cherry-pick 直接 abort，改用 git checkout <branch> -- src/server/xxx.mbt
+ 选择性拿 HEAD 里没有的文件，全程跳过 src/ops/ 目录。
+
+scope:
+  - slave-branch-merge.ps1（自动合入脚本）
+  - AtomCode 自己日常 cherry-pick 工作流
+
+acceptance:
+  - [ ] slave-branch-merge.ps1 加 skip list: src/ops/moon.pkg, src/ops/rhop_poll.mbt, src/ops/rhop*.mbt
+  - [ ] 脚本检测到 cherry-pick 带 src/ops/ 文件时自动 reset HEAD 这些文件
+  - [ ] 任何 rhop_poll.mbt 出现都 rm + git rm + 合入者警告
+
+evidence:
+  - cherry-pick e1b1a9d3 时 src/ops/moon.pkg 冲突标记导致 moon build 报 [3002] lexing error @offset 134
+  - git checkout 259b56a8 -- src/server/* 带入 rhop_poll.mbt 导致重复定义
+  - HEAD 已有 rhop_native.mbt，功能完整且干净
+
+blocked_by: []

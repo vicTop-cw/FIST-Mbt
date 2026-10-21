@@ -1,0 +1,32 @@
+id: TASK-001
+title: "冲突标记不许进 commit — 硬前置门禁"
+priority: P0
+status: backlog
+assignee: atomcode
+discovered_by: lead
+discovered_at: "2026-10-21T18:00:00+08:00"
+
+problem: >
+  AtomCode 所有分支（fix/guards-conflict-markers-from-clean-commits、feat/guard-check-merge-markers、
+  fix/restore-issue-scan-merged-state 等）最初都自带 git 冲突标记（<<<<<<< HEAD / ======= / >>>>>>> xxx）。
+  合入者用 git diff 检测 6 个分支全命中标记。最终只能跳过 src/ops/ 目录 + 手动 checkout 干净文件绕过。
+  
+  实测坏 commit 259b56a8 曾短暂进 master，check_merge_markers.py 检出 3 处标记、moon build 报 20 errors。
+  
+  根本原因：cherry-pick 时冲突未解完就 commit 了，或者 git checkout --theirs 取完一边没删标记就 add + commit。
+
+scope:
+  - 所有未来 commit（硬门禁）
+  - 所有当前 backlog 里还没合入的分支
+
+acceptance:
+  - [ ] 每个 PR/commit 合入前自动跑 check_merge_markers.py，rc=0 才允许进入终审
+  - [ ] cherry-pick 冲突时必须全解完、git diff --check 过、check_merge_markers.py --selftest 过，才允许 commit
+  - [ ] 在 slave-branch-merge.ps1 里加 cherry-pick 后的自动标记扫描
+
+evidence:
+  - commit 259b56a8 的 issue_scan_wbtest.mbt 含 <<<<<<< x1 / ======= x1 / >>>>>>> x1
+  - origin/feat/guard-check-merge-markers 的 e1b1a9d3 带完整三元组
+  - 合入者 diff 检测 6/6 分支命中标记
+
+blocked_by: []
