@@ -70,6 +70,17 @@ TYPE_HDR = re.compile(r"^\s*(?:pub(?:\(all\))? )?(?:struct|enum|trait|type|abstr
 DERIVE_TAIL = re.compile(r"^\s*\}.*\bderive\(")
 
 
+def emit_fatal(msg):
+    """判据无法自证 ⇒ **真给 2**（写 stderr，由调用点的 `raise SystemExit(emit_fatal(…))` 落成退出码）。
+
+    BUG-369：改前本份有 7 处 `raise SystemExit("FATAL …")`，而带字符串的 SystemExit 退出码是 **1**
+    ⇒ 第 34 行自述的「2=判据无法自证（FATAL）」从来没有生效过，「尺子坏了」与「接口面有违例」
+    在退出码面上同色（CI 与电池里按 2 写的期望文本也一直对着一个不存在的码）。刻意不用 `raise SystemExit(msg)`。
+    """
+    sys.stderr.write(msg + "\n")
+    return 2
+
+
 def tracked(root=None):
     root = root or ROOT
     try:
@@ -312,7 +323,8 @@ def selftest():
     print("SELFTEST OK（%d 格：干净不误红 / 合成违例必红 / 扩展形状(struct)可红 / 真实 4 符号必红 / "
           "私有函数不误 / 无 .mbt 包跳过 / .mbti 侧只收 pub 项 / 源侧认 pub(all) / "
           "derive 承载三格（带 derive 不误红、不带照红）/ 缺额计入空转门 / "
-          "**出路分流两格（工作树有=未提交 / 工作树无=真缺失）+ 向后兼容一格**）"
+          "**出路分流两格（工作树有=未提交 / 工作树无=真缺失）+ 向后兼容一格** / "
+          "**判据空转的退出码真是 2（两格：emit_fatal 返 2 + 子进程 rc 是 2）**）"
           % len(cells))
     return 0
 

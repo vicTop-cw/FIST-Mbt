@@ -30,6 +30,20 @@
   P4 **分面出数**（同一批实测：56 条里 17 条落在 `docs/archive/`，那是历史计划的存档，
      其落点在归档面上本就是"当时没做/后来改名"的事实，不是今天的待办）：
      活文档面（计入退出码）与归档面（只报不判）分开打印，两边的数字都在结论行里出现。
+  P5 **搬家态**（2026-10-21 实测，BUG-367 的 D 类 3 条）：判定面里点名的
+     `docs/2026-10-11-multi-agent-lock-design-v2.md`、`docs/2026-10-11-fist-mbt-upgrade-plan-v2.md`、
+     `docs/improvement-plan-20260929.md` **同名文件确实被跟踪**，只是父目录从 `docs/` 变成 `docs/archive/`
+     （归档发生在引用写下之后）。三态宇宙里没有「搬家」这一格 ⇒ 它们只能读成 missing，于是**每一轮都要靠人
+     肉反查 basename 才能确认「文档没错、是尺子少一格」**。判据取机械可证的窄形：
+     `basename 相等` **且** `实际父目录以点名父目录为前缀` **且** 候选在**跟踪面**（磁盘上未跟踪的同名件不算证据）。
+     两条刻意的保守：① moved 只**替换 missing**，不吃 on-disk（点名处自己在磁盘上时，`git add` 才是出路，
+     不许被远处同名件抢白）；② 点名在顶层（无目录）时**不认 moved**——那时「实际在子目录」是引用没写目录，
+     属文档口径问题，工具不替人猜。**moved 只证「同名 + 前缀」，不证「同一份内容」**，所以它单独出数、
+     逐条打实际位置，由人确认；它不进判定面，但一条都不会静默消失。
+  P6 **判定面棘轮**（BUG-367 建议②）：判定面条数只许下降。`VERDICT_GAP_CEILING` 超出即并红（rc=1）并在
+     结论行显式标「超限 + 新增几条」；低于上限**只打印收紧建议、不判红也不自动改数**（同
+     `check_deprecated_text_census` 的 R3 口径）。理由：A/B/C 三档裁决（BUG-367）由指挥官裁、节奏不由副机定——
+     没有棘轮，裁决慢的那几周里新写的计划文档会继续往判定面里加条，而 28 这个数已经在心里被当成"已知的存量"。
 
 **刻意不判**（避免过度拦截）：
   - 文本里指向**尚不存在**的文件是**合法的**（计划本来就会写"新增 X"）⇒ 本工具**不是门禁**，
@@ -42,6 +56,17 @@
   python scripts/check_plan_landing.py <文档路径>...      # 只扫指定文档
   python scripts/check_plan_landing.py --selftest         # 合成违例自证
   python scripts/check_plan_landing.py --all-faces        # 归档面也计入退出码（默认只报不判）
+  python scripts/check_plan_landing.py --gate             # 门禁口径：退出码只看棘轮（CI/电池用这个）
+退出码：0=活文档面落点全在跟踪面（或有搬家证据的已按 moved 单独出数）/ 1=判定面有落点未落地（诊断）**或**判定面
+        条数超出 VERDICT_GAP_CEILING（棘轮，结论行会显式写「超限」）/ 2=判据无法自证（FATAL：三条空转之一、
+        git 枚举失败、或 `--gate` 与 `--all-faces` 这种没标定过的模式组合）。
+        注：rc=2 这一格在 R41 之前是**幻影**——三处 FATAL 都写成 `raise SystemExit("…")`，而带字符串的
+        SystemExit 退出码是 1。本轮实测把它改成真 2。同族面用 ast 数**真调用点**重扫（正则数文本会把
+        docstring 里的字样当站点、把 `sys.exit(main())` 这种正常透传当"有整式出口"，两条口径缺陷都踩过）：
+        `check_mbti_sync.py`（7 处串式 FATAL）/ `check_pkg_imports.py`（6 处）/ `check_template_ctrl.py`（1 处）
+        自述 2 而代码里一条 2 都给不出 ⇒ 同为幻影，本轮未改；`simulate_head_commit.py` 是**半形**——
+        moon 超时那条走 `return 2` 真给 2，其余 4 处 FATAL 走串式给 1，其中「PATH 上没有 moon」那条
+        **文案里自己写着「（rc=2）」**。四份的处置记 BUG-369。
 """
 import argparse
 import os
@@ -228,6 +253,12 @@ def mode_fatal(gate, all_faces):
 
 def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None):
     """doc_paths = {文档: [点名路径]}。返回 (诊断条目, 检查过的路径数)。
+    非 tracked 的才进诊断；disk_set 用来区分「在工作树磁盘上」与「都没有」；都没有时先问一次
+    find_moved，有搬家证据就落 moved（P5），否则落 missing。
+    tracked_dirs 提供时，目录形态的落点也按「跟踪面隐含目录」判定（防已跟踪目录被误报），
+    并与跟踪文件一起构成 moved 的宇宙。
+    条目 (文档, 路径, 态, 处置话术, 面, 搬家候选)；第 5 位是**面**（"活文档"/"存档面"）——
+    判定红只数活文档面那一档，且 moved 不入判定面（第 6 位对非 moved 条目恒为空列表）。"""
     tracked_dirs = tracked_dirs or set()
     moved_universe = set(tracked_set) | set(tracked_dirs)
     findings = []
@@ -242,6 +273,15 @@ def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None):
             # 但 `src/claimguard/xxx.mbt` 的存在足以证明 `src/claimguard` 在工作树里。
             on_disk = p in disk_set or any(x.startswith(p + "/") for x in disk_set)
             if on_disk:
+                findings.append((doc, p, "on-disk",
+                                 "**实现已在工作树磁盘上、只是没进跟踪面** ⇒ 出路是 `git add` 并提交", face, []))
+                continue
+            mv = find_moved(p, moved_universe)
+            if mv:
+                findings.append((doc, p, "moved",
+                                 "跟踪面存在同名件、父目录在点名父目录之下 ⇒ 事实是**搬家**（多为归档之后），"
+                                 "不是未落地。实际位置见本条候选；moved 只证同名+前缀、不证同一份内容，由人确认",
+                                 face, mv))
             else:
                 findings.append((doc, p, "missing",
                                  "跟踪面与磁盘都没有 ⇒ 若计划已说'已完成'则是**虚报**；若说'将新增'则属正常未做",
@@ -470,6 +510,10 @@ def selftest():
         return 1
     print("SELFTEST OK（%d 格：抽取口径 9 格（`<…>`/`*` 形态、日期与变量占位、形态出数反证、"
           "「路径:行号」剥离 + 同串正反证、绝对路径、目录形态、非仓内）/ 干净不误报 / on-disk 必报 / "
+          "missing 必报 / 跟踪目录反解 3 格 / P4 分面 3 格 / 空转计数 / P5 搬家 7 格（检出、深层子目录仍认、"
+          "父目录不相干/顶层点名/抢白 on-disk/未跟踪候选 4 条反证、目录形态搬家）/ 搬家不进判定面 2 格 / "
+          "P6 棘轮 3 格 / 退出码两口径 5 格 / 上限常量 1 格 / P2 空转三条 4 格 / 模式互斥 2 格 / FATAL 出口码 1 格）"
+          % len(cells))
     return 0
 
 
@@ -511,9 +555,6 @@ def main():
             if s not in shape_notes:
                 shape_notes.append(s)
 
-    if not doc_paths:
-        raise SystemExit("FATAL 一份计划文档都读不到 —— 判据空转，拒绝出读数")
-
     disk_set = set()
     for dp, dn, fn in os.walk(ROOT):
         if any(x in dp for x in (".git", "_build", "node_modules", ".mooncakes", "temp")):
@@ -532,6 +573,25 @@ def main():
     if fr:
         return emit_fatal(fr)
 
+    live, moved, archived = split_faces(findings, args.all_faces)
+    if args.all_faces:
+        # 上限是按**默认活文档面**标定的；--all-faces 把存档面拉进判定面后是另一个宇宙（实测 25 → 38）。
+        # 这里不比对、只说明 —— 拿没标定过的口径去判红，和红得莫名是同一件事。
+        over = False
+        rnote = ("棘轮本模式不比对：上限 %d 按默认活文档面口径标定，--all-faces 下的判定面不是那个宇宙"
+                 % VERDICT_GAP_CEILING)
+    else:
+        over, rnote = ratchet(len(live), VERDICT_GAP_CEILING)
+    rc = verdict_rc(len(live), over, args.gate)
+    # 只报未落地的（tracked 是常态）；搬家态按 P5 单列，不进判定面
+    if not live:
+        extra = ""
+        if archived and not args.all_faces:
+            extra = "；存档面另有 %d 条只报不判（--all-faces 可计入）" % len(archived)
+        if moved:
+            extra += "；另有搬家态 %d 条单独出数（P5，不判红）" % len(moved)
+        print("PASS 计划落点核对：%d 份文档的 %d 条仓内点名路径**全部在跟踪面**（形态说明 %d 条不认作落点、单独出数）%s"
+              % (len(doc_paths), n, len(shape_notes), extra))
         for doc, p, kind, hint, face, mv in sorted(moved, key=lambda x: (x[1], x[0])):
             print("  - [moved] %s 点名 `%s` → 跟踪面实际位置 %s" % (doc, p, "、".join(mv)))
         return rc
@@ -539,6 +599,15 @@ def main():
     on_disk = [x for x in live if x[2] == "on-disk"]
     missing = [x for x in live if x[2] == "missing"]
     print("INFO 计划落点核对（%d 份文档、%d 条点名路径、形态说明 %d 条已出数不比对）："
+          "判定面未在跟踪面 %d 条（磁盘上有 %d 条、都没有 %d 条）；搬家态另有 %d 条单列入 P5、不进判定面；"
+          "%s"
+          % (len(doc_paths), n, len(shape_notes), len(live), len(on_disk), len(missing), len(moved),
+             ("存档面 %d 条已按 --all-faces 计入判定面" % len(archived)) if args.all_faces
+             else ("存档面另有 %d 条只报不判" % len(archived))))
+    if rnote:
+        print("  %s%s" % (rnote, "" if args.all_faces
+                          else "（上限 VERDICT_GAP_CEILING=%d，只许降）" % VERDICT_GAP_CEILING))
+    for doc, p, kind, hint, face, mv in sorted(live, key=lambda x: (x[2] != "on-disk", x[0], x[1])):
         print("  - [%s] %s 点名 `%s` ——%s" % (kind, doc, p, hint))
     if moved:
         print("  …搬家态（P5：跟踪面有同名件、其父目录在点名父目录之下 ⇒ 不判红，但逐条给实际位置）%d 条："
@@ -552,6 +621,13 @@ def main():
     if shape_notes:
         print("  …形态说明（`<…>`/`*`/日期/变量占位，R40 起单独出数、不参与跟踪面比对）%d 条：%s"
               % (len(shape_notes), " ".join(shape_notes)[:200]))
+    if args.gate:
+        print("注：**门禁口径**（--gate）——判定面在上限内即退出码 0（存量按声明接受、增量必须归零，BUG-367 ④），"
+              "超限才给 1；不带 --gate 时本工具是只读诊断，判定面非空即 1，不代表门禁该红。")
+    else:
+        print("注：本工具是**只读诊断**（计划里写'新增尚不存在的文件'是合法的），退出码 1 只表示判定面有落点未落地，"
+              "不代表门禁该红。")
+    return rc
 
 
 if __name__ == "__main__":

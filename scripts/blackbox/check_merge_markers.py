@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """scripts/blackbox/check_merge_markers.py — 「未解决冲突标记被提交进跟踪面」硬门禁（活判据）。
 
-**为什么要有它**：2026-10-21 实测——多轮 cherry-pick/merge 把**带着
-`<<<<<<< / ======= / >>>>>>>` 的文件直接 commit 进了 master**，且后续「全部取 theirs」式
-清扫会把标记**重新引入**本来干净的文件（实测同一支 check_plan_landing.py 标记块 31→62 递增）。
+**为什么要有它**：2026-10-21 沿 first-parent 实测——16:23 那波 cherry-pick 把带
+`<<<<<<< / ======= / >>>>>>>` 的文件直接 commit 进了 master（check_plan_landing.py 标记
+0→12→31 逐 commit 钉死），此后一直躺在跟踪面上（现 master 仍有 9 个文件带行首标记）。
 后果分两种，都比红更糟：
   ① .py/.mbt 带标记 ⇒ 语法错误 ⇒ CI 当场崩，守卫族自己 SyntaxError 到连「我坏了」都说不出来；
   ② .md/.yml/.mbti 带标记 ⇒ 不报错，标记作为正文安静发布（徽章、文档、CI 步骤描述都被污染）。
@@ -15,6 +15,11 @@
   L1 某跟踪文件出现行首冲突标记 ⇒ 未解决冲突/半截污染（必红）。完整三元组之外，任何
      落单的一侧（只有 <<<<<<< 或只有 ======= 或只有 >>>>>>>）同样是污染。
   L0 扫描面为空（一个跟踪文件都没读到）⇒ 自拒 exit 2：缺样本＝没测，不是测过且对。
+  L2 .py 跟踪文件标记虽已清但**解析不过**（`ast.parse` 抛 SyntaxError）⇒ 同样必红。
+     这条是实测补的：「清标记」把三元组抹掉却留下半行残骸（2026-10-21 的
+     check_plan_landing.py：标记 0、SyntaxError@253），只查标记会把它判成干净——
+     守卫看不到自己放过的正是它要防的那类坏。非 .py（.md/.yml/.mbti/.mbt）不做解析判定，
+     由各语言自己的编译门管。
 
 用法：
     python scripts/blackbox/check_merge_markers.py             # 扫当前仓库跟踪面
@@ -24,6 +29,7 @@
         2 = 判据无法自证（扫描面空/读不到文件/不在 git 仓库）。
 `--selftest` 的格子清单**从已执行格子反解**，不手写计数。
 """
+import ast
 import re
 import subprocess
 import sys
@@ -92,6 +98,14 @@ def scan(root, files):
         scanned += 1
         for why in marker_problems(text):
             problems.append("L1 %s ⇒ %s（冲突标记被提交进跟踪面）" % (f, why))
+        if f.endswith(".py"):
+            # L2：标记清干净 ≠ 文件能用。半行残骸照样 SyntaxError。
+            try:
+                ast.parse(text)
+            except SyntaxError as e:
+                problems.append("L2 %s ⇒ 无冲突标记但解析失败 SyntaxError@%s：%s"
+                                "（「清标记」留下的残骸，只查标记会放它过去）"
+                                % (f, e.lineno, (e.msg or "")[:40]))
     if unreadable:
         problems.append("L1 有 %d 个跟踪文件读不到 ⇒ 判据输入面不完整：%s"
                         % (len(unreadable), ", ".join(sorted(unreadable)[:5])))
@@ -165,6 +179,21 @@ def selftest():
     executed.append("C4 提及字面量不误红")
     if probs:
         fails.append("C4 行内提及被判违例（正则太宽）：%s" % (probs[:1],))
+
+    # C5b L2：标记已被抹平、但 .py 解析不过（真实事故形状）⇒ 必红且点名
+    dead_py = "def f():\n    return 1\n    end if x > 0。\n"
+    d = new_repo({"dead.py": dead_py, "fine.py": CLEAN_PY})
+    n, probs = scan(d, tracked_files(d) or [])
+    executed.append("C6 无标记但解析死必红")
+    if not any(p.startswith("L2") and "dead.py" in p for p in probs):
+        fails.append("C6 解析死的 .py 未被抓到（守卫只认标记 = 放过残骸）：%s" % (probs[:2],))
+    if any("fine.py" in p for p in probs):
+        fails.append("C6 误伤：能解析的 fine.py 也被 L2 点名")
+    # 反向：非 .py 不套 L2（避免把 .md 里的中文残骸误判成语法错）
+    d = new_repo({"note.md": "随便一段中文。\n"})
+    n, probs = scan(d, tracked_files(d) or [])
+    if any(p.startswith("L2") for p in probs):
+        fails.append("C6 越界：L2 不该管非 .py 文件")
 
     # C5 空跟踪面 ⇒ main 自拒 exit 2，绝不报绿
     executed.append("C5 空扫描必自拒")
