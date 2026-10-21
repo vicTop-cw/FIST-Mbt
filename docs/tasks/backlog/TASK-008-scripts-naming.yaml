@@ -1,0 +1,40 @@
+id: TASK-008
+title: "scripts/ 命名规范化 — ~50 个无前缀脚本"
+priority: P3
+status: backlog
+assignee: atomcode
+discovered_by: whisperer
+discovered_at: "2026-10-21T20:12:00+08:00"
+
+problem: >
+  风语者首轮巡检：scripts/ 目录 78 个 py 文件，约 50 个没有 check_/gen_/clean_/run_/migrate_/patch_ 等语义前缀。
+  
+  典型例子：
+  - fist-mbt-http.py / fist-mbt-web.py → 应归类为什么？web_*？server_*？
+  - fist.py → 主入口？cli_*？
+  - issue_scan.py → 这个和 MCP issue_scan 工具同名，但只是 helper 不是入口
+  - output_validate.py → 应是 check_output_validate_artifacts.py？
+  - patch_esm_main.py → 前缀 patch_ 清晰 ✅
+  - run_guards.py → 前缀 run_ 清晰 ✅
+  
+  命名不统一导致：看文件名猜不出它是门禁（check_*）还是工具（gen_*）还是补丁（patch_*）还是测试（test_*）。
+  新人翻 scripts/ 目录需要打开文件内容才能知道用途。
+
+scope:
+  - scripts/ 目录下的 py 文件（含子目录）
+  - 只改文件名 + 更新 CI / run_guards.py / 文档里的引用
+  - 不改文件内容（纯重命名 + ref）
+
+acceptance:
+  - [ ] 写一份 scripts/NAMING.md 规范：前缀 → 语义映射表
+  - [ ] 每个无前缀脚本按规范重命名（先动 scripts/ 顶层，子目录低优先级）
+  - [ ] CI / run_guards.py / docs/ 里的引用全部更新
+  - [ ] git mv（保留历史），不删除旧文件
+
+evidence: |
+  风语者 20:11 实测：
+  scripts/ 78 个 py，无 check_/gen_/clean_/run_/migrate_/patch_ 前缀的 ~50 个
+  fist-mbt-http.py, fist-mbt-web.py, fist.py, issue_scan.py, output_validate.py,
+  score_gate.py, pentad_fist.py, ...
+
+blocked_by: []

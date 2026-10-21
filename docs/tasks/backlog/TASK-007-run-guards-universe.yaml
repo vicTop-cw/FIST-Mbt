@@ -1,0 +1,39 @@
+id: TASK-007
+title: "run_guards.py 宇宙扩展 — 漏检 64 个脚本含 blackbox e2e"
+priority: P1
+status: backlog
+assignee: atomcode
+discovered_by: whisperer
+discovered_at: "2026-10-21T20:12:00+08:00"
+
+problem: >
+  风语者首轮巡检：run_guards.py `--list` 只列 26 个脚本，
+  实际 scripts/ 目录（含子目录）有 90 个 py 文件 → **漏检 64 个**。
+  
+  上轮合入者只修了 blackbox/check_merge_markers.py 这 1 个文件进宇宙（commit 2fa9df31），
+  但 blackbox/ 下实际有 **10 个 e2e 探针**（e2e_mirror_install.py / e2e_native_heap_probe.py /
+  e2e_irm_line.py 等）全在漏检列表里。
+  
+  还有 50+ 个 scripts/ 顶层测试/验证脚本（verify_* / selfdrive / caf_*）也没被 run_guards 覆盖。
+  
+  根因：run_guards.py 的 CASES 数组是手写清单，不是自动扫描。
+
+scope:
+  - scripts/run_guards.py（改 CASES 从手写到自动扫描 + 前缀过滤）
+  - scripts/blackbox/e2e_*.py（10 个探针全部进宇宙）
+  - 决策：test_*/verify_*/selfdrive/ 这些要不要进（测试脚本 vs 门禁脚本的边界）
+
+acceptance:
+  - [ ] run_guards.py 从手写 CASES 改为：扫描 scripts/**/*.py → 过滤掉 test_/verify_/selfdrive_ → 自动生成 CASES
+  - [ ] 所有 scripts/blackbox/*.py 进入宇宙（之前合入者只加了 check_merge_markers.py）
+  - [ ] run_guards.py --list 覆盖数从 26 → 至少 40+
+  - [ ] 不引入回归：原来的 expected("check_plan_landing.py", 1, ...) 这种诊断型 case 保留
+
+evidence: |
+  风语者 20:11 实测：
+  run_guards.py --list 输出 26 行（每个一行带 CI=CI 电池=电池）
+  scripts/ 递归 Get-ChildItem *.py → 90 个文件
+  差集 = 64 个文件漏检
+  其中 blackbox/ 下的 e2e_*.py 有 10 个
+
+blocked_by: []
