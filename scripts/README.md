@@ -180,3 +180,8 @@
   P1 预检族越位=rc1 并列名；P2 其它构建后 gate 只报计数与清单（本仓实测 30 个，硬堵无意义）；
   P3 无 Migrate 步 / yml 空 ⇒ rc2 自拒。`--selftest` 7 格。**不依赖 PyYAML**（runner 未必有），
   自带极简步骤解析器——判据不该把"自己会不会崩"交给环境。
+
+### 2026-10-21 补登记：`fist-gate.py`
+
+- `fist-gate.py`（R74 入仓）— **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段，
+  退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量，不冒用 1）。用法 `python scripts/fist-gate.py [树]`。
