@@ -69,6 +69,7 @@
 import json
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -89,6 +90,12 @@ DSH_DIR = ".dsh/fist-mbt-plugin"
 DSH_MANIFEST = DSH_DIR + "/package.json"
 DSH_PATCH = DSH_DIR + "/cordis.patch.yml"
 LENIENT_JSON = [".mcp.json", ".mcp.dev.json"]
+# BUG-358：只有「跟踪真源」才允许进关键清单。根 `.mcp.json` 被 .gitignore `/.mcp.json`
+# 显式忽略（本机 MCP 连接器在读、与跟踪真源 .mcp.dev.json 逐字节相同但不进 git，见 BUG-131）。
+# 旧实现把整个 LENIENT_JSON 塞进 missing_key_files() ⇒ 干净 CI checkout 根本没有 .mcp.json
+# ⇒ 判据每次报「输入面退化」exit 2、永不产出结论（本地绿只因这台机恰好有 .mcp.json = 假绿）。
+# 且与 D2 宽松档「缺失合法 continue」直接矛盾。
+REQUIRED_MCP_JSON = [".mcp.dev.json"]
 DEFAULT_TEMPLATE = "default-fist.mcp.json"
 PLUGIN_MCP_GLOB = "plugins/**/.mcp.json"
 MOON_MOD = "moon.mod"
@@ -322,10 +329,12 @@ def read_moon_version() -> str | None:
 
 
 # ── 关键文件缺失 → 自拒 ─────────────────────────────────────────────────────
-def missing_key_files() -> list[str]:
-    crit = [DSH_MANIFEST, DSH_PATCH, DEFAULT_TEMPLATE, MOON_MOD]
-    crit += LENIENT_JSON
-    return [c for c in crit if not (ROOT / c).exists()]
+def missing_key_files(root: Path = ROOT) -> list[str]:
+    """跟踪真源齐不齐。BUG-358：关键清单只收 REQUIRED_MCP_JSON（跟踪件），
+    不收被 gitignore 的根 .mcp.json——否则任何干净 checkout（CI、副机 clone）都会
+    因缺这个本机件而自拒 exit 2，判据形同虚设。root 供 --selftest 注入合成树。"""
+    crit = [DSH_MANIFEST, DSH_PATCH, DEFAULT_TEMPLATE, MOON_MOD] + REQUIRED_MCP_JSON
+    return [c for c in crit if not (root / c).exists()]
 
 
 # ── 自检 ─────────────────────────────────────────────────────────────────────
@@ -466,14 +475,30 @@ def selftest() -> list[str]:
     if not [c for c in ["nope/package.json", "nope/cordis.patch.yml"] if not (ROOT / c).exists()]:
         fails.append("T5 输入面退化时不报缺失 → 判据无输入面却照常出结论")
     #   - 真实现状关键文件应齐全（若缺，说明扫描面清单本身选错了文件）
-    crit_names = [DSH_MANIFEST, DSH_PATCH, DEFAULT_TEMPLATE, MOON_MOD] + LENIENT_JSON
     if missing_key_files():
         fails.append("T5b 真实现状面缺关键文件：%s → 判据将自拒 exit 2（当前不可判）"
                      % ", ".join(missing_key_files()))
-    else:
-        # 关键文件齐全，则 missing_key_files 必须为空（一致性自证）
-        if missing_key_files():
-            fails.append("T5c missing_key_files 与文件系统不一致")
+
+    #   - T5d/BUG-358 合成锁：干净 checkout（本机 .mcp.json 缺席）不得被判成「输入面退化」。
+    #     旧实现把 gitignore 的根 .mcp.json 列进关键清单 ⇒ CI/副机 clone 每次 exit 2、永不产出
+    #     结论，而本地因恰好有这台机的 .mcp.json 恒绿（假绿）。构造「有跟踪真源、无 .mcp.json」
+    #     的合成 root，missing_key_files 必须为空。
+    with tempfile.TemporaryDirectory() as td:
+        fake = Path(td)
+        (fake / DSH_MANIFEST).parent.mkdir(parents=True, exist_ok=True)
+        for rel in [DSH_MANIFEST, DSH_PATCH, DEFAULT_TEMPLATE, MOON_MOD, ".mcp.dev.json"]:
+            (fake / rel).parent.mkdir(parents=True, exist_ok=True)
+            (fake / rel).write_text("{}", encoding="utf-8")
+        # 故意【不】创建 .mcp.json —— 模拟干净 CI checkout
+        absent_local = missing_key_files(fake)
+        if absent_local:
+            fails.append("T5d BUG-358：干净 checkout（无本机 .mcp.json）被误判输入面退化：%s"
+                         % ", ".join(absent_local))
+        # T5e：跟踪真源真缺时仍须自拒（防修复把判据削成「什么都不缺」的另一端假绿）
+        (fake / MOON_MOD).unlink()
+        real_missing = missing_key_files(fake)
+        if MOON_MOD not in real_missing:
+            fails.append("T5e 真缺跟踪件 moon.mod 时未报缺失（关键清单被削空 = 新的假绿）")
 
     # T6 版本基线：moon.mod 必须可读
     if read_moon_version() is None:
