@@ -125,7 +125,7 @@ test "ns_stats 反映各 ns 任务数" {
             item.each(fn(ik, iv) {
               match (ik, iv) {
                 ("ns", Json::String(s)) => ns_name = s
-                ("total", Json::Number(n)) => total = n
+                ("total", Json::Number(n, ..)) => total = n
                 _ => ()
               }
             })

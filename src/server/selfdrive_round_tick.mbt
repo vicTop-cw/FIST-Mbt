@@ -19,7 +19,7 @@ fn get_int_field(
   default? : Int = 0,
 ) -> Int {
   match m.get(key) {
-    Some(Number(n)) => n.to_int()
+    Some(Number(n, ..)) => n.to_int()
     _ => default
   }
 }
@@ -252,7 +252,7 @@ pub fn selfdrive_round_tick(snapshot : Json) -> Json {
   let goal_conf = match goal_eval {
     Object(gm) =>
       match gm.get("confidence") {
-        Some(Number(n)) => n
+        Some(Number(n, ..)) => n
         _ => 0.0
       }
     _ => 0.0
@@ -260,7 +260,7 @@ pub fn selfdrive_round_tick(snapshot : Json) -> Json {
   let req_total = match goal_eval {
     Object(gm) =>
       match gm.get("required_total") {
-        Some(Number(n)) => n.to_int()
+        Some(Number(n, ..)) => n.to_int()
         _ => 0
       }
     _ => 0
@@ -268,7 +268,7 @@ pub fn selfdrive_round_tick(snapshot : Json) -> Json {
   let req_matched = match goal_eval {
     Object(gm) =>
       match gm.get("required_matched") {
-        Some(Number(n)) => n.to_int()
+        Some(Number(n, ..)) => n.to_int()
         _ => 0
       }
     _ => 0

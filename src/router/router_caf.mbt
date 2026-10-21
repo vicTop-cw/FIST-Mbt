@@ -108,10 +108,10 @@ pub fn CafMemory::find(
 ///|
 /// 模型维度的成功率与成本统计（决策融合消费面）
 pub struct CafModelStats {
-  pub model : String
-  pub total : Int
-  pub success : Int
-  pub avg_cost : Double
+  model : String
+  total : Int
+  success : Int
+  avg_cost : Double
 } derive(Debug)
 
 ///|
