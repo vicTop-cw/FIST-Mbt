@@ -135,3 +135,16 @@ dist/
 /scripts/pol_keeper_run.py
 /scripts/_gen.py
 /scripts/fix_esm_require.py
+
+# R26 (2026-10-21)：`check_publish_payload.py` 判出的 7 条 P1 载荷泄露——既未被本
+# .gitignore 挡住、又未被 git 跟踪的非点号路径，`moon publish`（载荷面=工作树−ignore）
+# 会把它们公开到 registry。遵循上方 Round 12 同款先例逐文件精确点名：
+# 保留在工作树（不删、不代提交并发 WIP；bug335_ns_route_wbtest 仍归 BUG-339 持有方），
+# 但一律不得进入发布包。
+/_proj_lang-zone/
+/cmd/commissar/pkg.generated.mbti
+/memory/archive/thinking.archive.md
+/publish_sigma.js
+/src/evidence/pkg.generated.mbti
+/src/ops/rhop_native.mbt
+/src/server/bug335_ns_route_wbtest.mbt
