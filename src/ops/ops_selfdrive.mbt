@@ -589,10 +589,14 @@ pub fn selfdrive_parse_next_tasks(
         Some(end) =>
           if end > 3 {
 <<<<<<< HEAD
+<<<<<<< HEAD
             let desc = ls[3:end].to_owned().trim().to_owned()
 =======
             let desc = ls.substring(start=3, end~).trim().to_owned()
 >>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
+=======
+            let desc = ls[3:end].to_owned().trim().to_owned()
+>>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
             if desc != "" && out.length() < max_tasks {
               out.push(desc)
             }
