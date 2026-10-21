@@ -171,6 +171,12 @@
   PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
   去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
   用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
+- **R87 追记（fist-gate.py，TASK-004）**：`--scan` 加**反向 diff 检测（REVERT-PATTERN）**——
+  分支对基点的 src/scripts/cmd numstat 满足「删 ≥50 行且 删 > 增×1.5」即判疑似 revert
+  （把合入者已合的内容砍回旧版，r73 实证形状 -718/+191），yaml `status: failed`
+  （不进 claimable backlog）+ 文件级证据 Top5（`path(-删/+增)`）打进 yaml 与巡检日志；
+  文件级阈值 20 行防小删误报；判定序在 DROP 之后、MERGE 之前（ABORT 冲突标记仍最高）。
+  自证格 S7（-60/+1 必进 failed 队列）/ S8（小删不误红），`--selftest` 十九格。
 - `fist-gate.py`（2026-10-21 `defbe27` 一带入仓，此前从未登记）— **统一门链（五查 → 六查）**：
   merge_markers / fmt / build / ps_encoding / store_path 五查 + R86 起第 6 查 `whisperer`
   （只跑 `whisperer.py --selftest` 自证；扫描产物是输出不是门）。另有 `--scan` 分支普查
