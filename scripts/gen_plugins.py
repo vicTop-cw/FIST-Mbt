@@ -151,6 +151,17 @@ def ledger_status(bugs_txt):
         problems.append(
             f"条目 {len(ids)} 条 / 可解析抬头状态 {len(heads)} 条不符 ⇒ 有抬头不合文法"
             "（`## BUG-n [时间] [严重度] 状态 [→BUG-m]`）")
+    # 硬门④：编号必须唯一（BUG-370）。放在计数之前是重点——`st` 按编号建 dict，
+    # 串号时后一条会覆盖前一条，于是「抬头解析到了 355 条」与「四态之和 353」并存，
+    # 门①②③各自看的是集合、看不见被吞掉的那条，判据绿着把两个分母印进同一句话。
+    seen = {}
+    for i in ids:
+        seen[i] = seen.get(i, 0) + 1
+    dup = sorted(((k, v) for k, v in seen.items() if v > 1), key=lambda x: int(x[0]))
+    if dup:
+        problems.append(
+            f"{len(dup)} 个编号被重复使用：{' '.join(f'BUG-{k}×{v}' for k, v in dup)}"
+            "（抬头编号是唯一键；同一编号写两条 ⇒ 前一条被 dict 吞掉，不进任何计数）")
     st = {h[0]: (h[2], (h[3] or "").lstrip("→")) for h in heads}
     bad_vocabulary = sorted({s for s, _ in st.values()} - set(BUG_STATUSES))
     if bad_vocabulary:
@@ -242,7 +253,6 @@ def measure() -> dict:
     ids = [int(x) for x in RE_BUG_HEAD.findall(bugs_txt)]
     if not ids:
         die("memory/bugs.md 未解析到任何缺陷条目")
-    total = len(ids)
     # 计数只从**条目抬头的状态位**反解（2026-09-27 兑账立的口径）。
     # 旧口径 open_cnt = total - len(### FIXED) 把"小记有几条"当成"修了几条 bug"，
     # 而一条小记可收 1~16 条、也可一条都不收 ⇒ 那句"30 条待修"从来没有定义。
@@ -251,6 +261,11 @@ def measure() -> dict:
     problems = problems + severity_vocab_drift()
     if problems:
         die("账本状态与叙述面对不上：\n  - " + "\n  - ".join(problems))
+    # BUG-370：总数与它的分解必须同集合同一次算出。原先这里是 `total = len(ids)`——
+    # 数的是抬头**出现次数**，而 counts 来自按编号建键的 dict（串号被静默去重），
+    # 于是摘要一句里"354 条入账"与"20+313+10+9=352"并存。门④已拦住串号，这里再让
+    # 总数由同一份计数导出：恒等式「总数 == 四态之和」成为结构成立，不是"当前恰好对上"。
+    total = sum(counts.values())
     return {
         "TOOL_COUNT": str(n),
         "TOOL_GROUPS": tool_groups(n),
