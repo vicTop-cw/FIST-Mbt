@@ -9,7 +9,7 @@
 ///|
 /// xorshift32 一步（返回 (新状态, [0, 2^31) 的整数)）。Int 为 64 位，用 32 位掩码
 /// 保持 js/native 双 target 数值一致。
-fn mc_xorshift(state : Int32) -> (Int32, Int32) {
+fn mc_xorshift(state : Int) -> (Int, Int) {
   let mut x = state
   x = (x ^ (x << 13)) & 0xffffffff
   x = (x ^ (x >> 17)) & 0xffffffff
@@ -33,19 +33,11 @@ fn mc_sqrt(x : Double) -> Double {
 ///|
 /// 三角分布采样（a<m<b）：u∈[0,1) → 时长（向上取整）。返回 (新状态, 时长)。
 fn mc_tri_sample(
-<<<<<<< HEAD
-  state : Int32,
-  a : Int32,
-  m : Int32,
-  b : Int32,
-) -> (Int32, Int32) {
-=======
   state : Int,
   a : Int,
   m : Int,
   b : Int,
 ) -> (Int, Int) {
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
   let (s2, v) = mc_xorshift(state)
   let denom = (b - a).to_double()
   let u = v.to_double() / 2147483648.0
@@ -57,10 +49,9 @@ fn mc_tri_sample(
   (s2, dur.ceil().to_int())
 }
 
-
 ///|
 /// 难度档 → 三点三角分布（易/中/难；缺省档按中）。
-fn mc_durations(tier : String) -> (Int32, Int32, Int32) {
+fn mc_durations(tier : String) -> (Int, Int, Int) {
   match tier {
     "易" => (2, 3, 5)
     "难" => (5, 8, 14)
@@ -110,11 +101,11 @@ fn FistEngine::mc_scope_tasks(
 fn FistEngine::mc_finish(
   self : FistEngine,
   id : String,
-  dur : Map[String, Int32],
-  memo : Map[String, Int32],
+  dur : Map[String, Int],
+  memo : Map[String, Int],
   visiting : Map[String, Bool],
   deps : Map[String, Array[String]],
-) -> Int32 {
+) -> Int {
   match memo.get(id) {
     Some(v) => return v
     None => ()
@@ -162,11 +153,11 @@ fn FistEngine::mc_finish(
 /// 关键度判据必须前向+后向相加减 own == makespan，故补这个后向 pass。
 fn mc_suffix_from(
   id : String,
-  dur : Map[String, Int32],
-  memo_suf : Map[String, Int32],
+  dur : Map[String, Int],
+  memo_suf : Map[String, Int],
   visiting : Map[String, Bool],
   succ : Map[String, Array[String]],
-) -> Int32 {
+) -> Int {
   match memo_suf.get(id) {
     Some(v) => return v
     None => ()
@@ -207,7 +198,7 @@ fn mc_suffix_from(
 /// 最近秩分位索引：n 个有序样本（升序）取 p 分位（0..100）应用的 0-based 索引。
 /// BUG-206：旧公式 p50 用 (n-1)/2、p90 用 n*9/10，两条取法不对称——p90 比最近秩
 /// ceil(p*n/100)-1 恒高 1，系统性高估 p90 一个样本值。这里统一为 (n-1)*p/100。
-pub fn mc_percentile_index(n : Int32, p : Int32) -> Int32 {
+pub fn mc_percentile_index(n : Int, p : Int) -> Int {
   if n <= 0 {
     return 0
   }
@@ -229,11 +220,11 @@ pub fn mc_percentile_index(n : Int32, p : Int32) -> Int32 {
 /// （无法预测，不伪造——BUG-182 文档契约）。
 pub fn FistEngine::dag_mc(
   self : FistEngine,
-  ns~ : String = "default",
-  root_task_id~ : String = "",
-  deadline~ : Int32 = 0,
-  samples~ : Int32 = 1000,
-  seed~ : Int32 = 42,
+  ns? : String = "default",
+  root_task_id? : String = "",
+  deadline? : Int = 0,
+  samples? : Int = 1000,
+  seed? : Int = 42,
 ) -> Json {
   // BUG-250：负 deadline 过去被静默接受——`deadline > 0` 守卫让 p_on_time 恒为 0，
   // 而回显里 deadline=-5 与 p_on_time=0 并置，读起来像"按期概率 0%"，实际是"根本没问"。
@@ -258,8 +249,8 @@ pub fn FistEngine::dag_mc(
   let n_requested = if samples < 10 { 10 } else { samples }
   let mc_cap = 5000
   let n = if n_requested > mc_cap { mc_cap } else { n_requested }
-  let makespans : Array[Int32] = []
-  let critical_hits : Map[String, Int32] = Map([])
+  let makespans : Array[Int] = []
+  let critical_hits : Map[String, Int] = Map([])
   for t in tasks {
     critical_hits.set(t.get_id(), 0)
   }
@@ -267,7 +258,7 @@ pub fn FistEngine::dag_mc(
   // 旧代码把它放在 `for s` 内，导致 5000 样本 × N 任务的**重复难度解析**——
   // 每个任务每样本都做一遍正则/字符串扫描。预计算后每样本只做一次三角形采样。
   // 用 `(t.get_id(), a, m, b)` 三元组数组，避免 Map 的 String 哈希开销。
-  let tier_cache : Array[(String, Int32, Int32, Int32)] = []
+  let tier_cache : Array[(String, Int, Int, Int)] = []
   for t in tasks {
     let tier = extract_difficulty(t.description)
     let (a, m, b) = mc_durations(tier)
@@ -307,13 +298,13 @@ pub fn FistEngine::dag_mc(
     if state <= 0 {
       state = 1
     }
-    let dur : Map[String, Int32] = Map([])
+    let dur : Map[String, Int] = Map([])
     for (tid, a, m, b) in tier_cache {
       let (s2, d) = mc_tri_sample(state, a, m, b)
       state = s2
       dur.set(tid, d)
     }
-    let memo : Map[String, Int32] = Map([])
+    let memo : Map[String, Int] = Map([])
     let visiting : Map[String, Bool] = Map([])
     let mut ms = 0
     for t in tasks {
@@ -325,7 +316,7 @@ pub fn FistEngine::dag_mc(
     makespans.push(ms)
     // BUG-203 判据：t 在最长路径上 ⇔ 前向 finish + 后向 suffix - own == makespan。
     // 只判 `finish == ms` 会漏掉最长路径的中间节点（前驱），把关键度系统性错报。
-    let memo_suf : Map[String, Int32] = Map([])
+    let memo_suf : Map[String, Int] = Map([])
     let visiting_suf : Map[String, Bool] = Map([])
     for t in tasks {
       ignore(mc_suffix_from(t.get_id(), dur, memo_suf, visiting_suf, succ))
@@ -370,7 +361,7 @@ pub fn FistEngine::dag_mc(
     0.0
   }
   // 关键度排行（top 10；手写选择排序降序，规避 tuple 比较器 API 差异）
-  let crit_arr : Array[(String, Int32)] = []
+  let crit_arr : Array[(String, Int)] = []
   for t in tasks {
     crit_arr.push((t.get_id(), critical_hits.get(t.get_id()).unwrap_or(0)))
   }

@@ -20,27 +20,15 @@
 pub struct OfmChatMessage {
   role : String // "system" | "user" | "assistant"
   content : String
-} derive(Eq, Debug)
-
-///|
-pub extend OfmChatMessage with Eq::{not_equal, equal}
-
-///|
-pub extend OfmChatMessage with @moonbitlang/core/debug.Debug::{to_repr}
+} derive(Show, Eq, Debug)
 
 ///|
 pub struct OfmChatRequest {
   model : String
   messages : Array[OfmChatMessage]
   temperature : Double? // None = 不传该字段
-  max_tokens : Int32?
-} derive(Eq, Debug)
-
-///|
-pub extend OfmChatRequest with Eq::{not_equal, equal}
-
-///|
-pub extend OfmChatRequest with @moonbitlang/core/debug.Debug::{to_repr}
+  max_tokens : Int?
+} derive(Show, Eq, Debug)
 
 ///|
 /// 把请求结构化成 OpenAI 兼容的 chat/completions 请求体 JSON 字符串。
@@ -147,9 +135,9 @@ pub fn append_retry_prompt(body : String) -> Result[String, String] {
 /// fail-closed：`limit ≤ 0`（视为无上限信息，不猜）、`margin < 0` → `Err`。
 /// 纯计算零 IO。下限 1（`margin ≥ limit` 时仍给最小 token 数），上限恒 ≤ `limit`。
 pub fn ofm_reserve_max_tokens(
-  limit : Int32,
-  margin : Int32,
-) -> Result[Int32, String] {
+  limit : Int,
+  margin : Int,
+) -> Result[Int, String] {
   if limit <= 0 {
     return Err("limit 非法：\{limit}")
   }

@@ -127,11 +127,7 @@ test "memory_3_gc_logic_chinese" {
 ///|
 test "memory_4_gc_missing_file" {
   let dir = mem_dir("mem_c4_missing")
-<<<<<<< HEAD
-  let j = @server.memory_gc_one(dir, "target", 2000)
-=======
   let j = memory_gc_one(dir, "target", 2000)
->>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
   assert_true(!mem_bool(j, "gc"))
   assert_true(!mem_bool(j, "exists"))
   assert_eq(mem_str(j, "kind"), "target")
@@ -386,11 +382,7 @@ test "memory_18_gc_illegal_kind_refuses_without_writing" {
   ) catch {
     _ => abort("写档失败")
   }
-<<<<<<< HEAD
-  let j = @server.memory_gc_one(dir, "thinking g", 5)
-=======
   let j = memory_gc_one(dir, "thinking g", 5)
->>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
   assert_true(!mem_bool(j, "gc"))
   assert_eq(mem_str(j, "kind"), "thinking g")
   // 拒绝必须带原因：非法值本身 + 合法集合（不能只回一个干巴巴的 false）

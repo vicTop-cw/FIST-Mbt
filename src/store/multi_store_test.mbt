@@ -117,11 +117,7 @@ test "ns_stats 反映各 ns 任务数" {
   match stats {
     Json::Object(fields) => {
       assert_eq(fields.length(), 2)
-<<<<<<< HEAD
-      fields.each(fn(_k, v) {
-=======
       fields.each(fn(k, v) {
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
         match v {
           Json::Object(item) => {
             let mut ns_name = ""

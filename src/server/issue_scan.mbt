@@ -13,7 +13,7 @@
 ///|
 /// 规则定义：id + 说明 + 匹配模式（按行正则式字符串匹配，命中即给 finding，
 /// 是否真实缺陷由 agent 读上下文判定）。
-priv struct ScanRule {
+struct ScanRule {
   id : String
   severity : String
   pattern : Array[String]
@@ -23,11 +23,11 @@ priv struct ScanRule {
 
 ///|
 /// 一条命中记录。
-priv struct ScanFinding {
+struct ScanFinding {
   rule : String
   severity : String
   file : String
-  line : Int32
+  line : Int
   code : String
 }
 
@@ -39,7 +39,7 @@ priv struct ScanFinding {
 ///   slice_only: 文件是否已无裸 substring 调用（全用切片 `s[:end]`）
 struct ScanCtx {
   safe_clamps : Map[String, String]
-  guarded_lines : Map[Int32, Bool]
+  guarded_lines : Map[Int, Bool]
   slice_only : Bool
 }
 
@@ -49,7 +49,7 @@ struct ScanCtx {
 /// 不贪多——拿不准就不写进表（保守过滤）。
 fn scan_build_ctx(content : String) -> ScanCtx {
   let clamps : Map[String, String] = Map([])
-  let guarded : Map[Int32, Bool] = Map([])
+  let guarded : Map[Int, Bool] = Map([])
   let mut has_substring_call = false
   let mut ln = 1
   for line in content.split("\n") {
@@ -257,7 +257,7 @@ fn scan_rules() -> Array[ScanRule] {
       id: "moonbit-json-injection",
       severity: "low",
       pattern: ["Json::string("],
-      why: "JSON 字符串由拼接/插值构造，可破坏 JSON 结构（安全构造器 Json::string(value) 不算，见 BUG-346）",
+      why: "JSON 字符串由拼接构造，可破坏 JSON 结构（ocr-local moonbit-json-injection）",
       hint: "用 Json::object 构造或转义特殊字符",
     },
     {
@@ -278,7 +278,7 @@ fn scan_rules() -> Array[ScanRule] {
       id: "moonbit-long-function",
       severity: "info",
       pattern: ["fn "],
-      why: "超长函数难测难维护（按花括号配平实测行数，>50 行才报，见 BUG-348）",
+      why: "超长函数难测难维护（ocr-local moonbit-long-function；子串近似 fn 定义行，行数精确判定见 OCR 双轨）",
       hint: "按职责拆分长函数",
     },
     {
@@ -313,7 +313,7 @@ fn scan_rules() -> Array[ScanRule] {
       id: "moonbit-match-exhaustive",
       severity: "low",
       pattern: ["match "],
-      why: "match 可能非穷尽，运行时对未处理变体 panic（顶层已有 `_ =>` 兜底的不报，见 BUG-348）",
+      why: "match 可能非穷尽，运行时对未处理变体 panic（ocr-local moonbit-match-exhaustive；穷尽性需编译期保证，子串提示性）",
       hint: "补全所有枚举变体分支",
     },
     {
@@ -365,7 +365,7 @@ fn scan_is_rules_table(path : String, content : String) -> Bool {
 
 ///|
 /// 从 at 起，cs 是否以 pat 开头（逐字符比，不靠切片：中文按字节下标极易切坏）。
-fn scan_matches_at(cs : Array[Char], pat : Array[Char], at : Int32) -> Bool {
+fn scan_matches_at(cs : Array[Char], pat : Array[Char], at : Int) -> Bool {
   let m = pat.length()
   if at < 0 || at + m > cs.length() {
     return false
@@ -378,65 +378,6 @@ fn scan_matches_at(cs : Array[Char], pat : Array[Char], at : Int32) -> Bool {
     k = k + 1
   }
   true
-}
-
-///|
-/// BUG-346：`moonbit-json-injection` 的意图是"JSON 字符串由拼接/插值构造"，旧 pattern 却是
-/// 裸 `Json::string(` ⇒ 安全构造器 `Json::string(value)` 全被判成注入。这里只认同一调用
-/// 的实参里出现**拼接**（字面量外的 `+`）或**插值**（字面量里的 `\{`）；两者都没有就放过。
-/// 保守口径：宁可少报，不误报。
-fn scan_json_string_built_by_concat(line : StringView) -> Bool {
-  let cs = line.to_owned().to_array()
-  let n = cs.length()
-  let pat = "Json::string(".to_array()
-  let mut start = -1
-  let mut i = 0
-  while i + pat.length() <= n {
-    if scan_matches_at(cs, pat, i) {
-      start = i + pat.length()
-      break
-    }
-    i = i + 1
-  }
-  if start < 0 {
-    return false
-  }
-  let mut depth = 1
-  let mut in_lit = false
-  let mut prev_bs = false
-  let mut j = start
-  while j < n {
-    let c = cs[j]
-    if in_lit {
-      if c == '\\' {
-        if j + 1 < n && cs[j + 1] == '{' {
-          return true
-        }
-        prev_bs = !prev_bs
-      } else {
-        if c == '"' && !prev_bs {
-          in_lit = false
-        }
-        prev_bs = false
-      }
-    } else if c == '"' {
-      in_lit = true
-      prev_bs = false
-    } else if c == '/' && j + 1 < n && cs[j + 1] == '/' {
-      break
-    } else if c == '(' {
-      depth = depth + 1
-    } else if c == ')' {
-      depth = depth - 1
-      if depth == 0 {
-        break
-      }
-    } else if c == '+' {
-      return true
-    }
-    j = j + 1
-  }
-  false
 }
 
 ///|
@@ -495,262 +436,7 @@ fn scan_outside_literal(line : StringView, needle : String) -> Bool {
 }
 
 ///|
-<<<<<<< HEAD
-/// 字符是否为标识符续接字符（A-Z a-z 0-9 _）。BUG-348 抽绑定名与整词扫描共用。
-fn scan_is_ident_cont(c : Char) -> Bool {
-  let o = c.to_int()
-  (o >= 65 && o <= 90) ||
-  (o >= 97 && o <= 122) ||
-  (o >= 48 && o <= 57) ||
-  o == 95
-}
-
-
-///|
-/// 字符是否为标识符起始字符（A-Z a-z _）。数字不算起始。
-fn scan_is_ident_start(c : Char) -> Bool {
-  let o = c.to_int()
-  (o >= 65 && o <= 90) || (o >= 97 && o <= 122) || o == 95
-}
-
-///|
-/// word 是否作为**完整单词**出现在 text 中（前后不接标识符字符）。
-/// BUG-348：`used` 不该在 `truly_unused` 里被当成命中（左邻 `n` 是标识符字符⇒不算整词）。
-fn scan_word_occurs(text : String, word : String) -> Bool {
-  let cs = text.to_array()
-  let ws = word.to_array()
-  let n = cs.length()
-  let m = ws.length()
-  if m == 0 || m > n {
-    return false
-  }
-  let mut i = 0
-  while i + m <= n {
-    let mut j = 0
-    let mut eq = true
-    while j < m {
-      if cs[i + j] != ws[j] {
-        eq = false
-        break
-      }
-      j = j + 1
-    }
-    if eq {
-      let left_ok = i == 0 || !scan_is_ident_cont(cs[i - 1])
-      let right_ok = i + m >= n || !scan_is_ident_cont(cs[i + m])
-      if left_ok && right_ok {
-        return true
-      }
-    }
-    i = i + 1
-  }
-  false
-}
-
-///|
-/// 从 `let [mut ]IDENT ...` 声明行抽出绑定标识符 IDENT。
-/// 非简单形状（解构 `let [a,b]`/`let (x,y)`、弃元 `let _`、提取失败）返回空串 ⇒ 调用方
-/// 保持现行为（BUG-348，只处理能被安全判定的 `let IDENT`）。
-fn scan_let_binding_name(line : String) -> String {
-  let cs = line.to_array()
-  let n = cs.length()
-  if n < 3 || !(cs[0] == 'l' && cs[1] == 'e' && cs[2] == 't') {
-    return ""
-  }
-  let mut i = 3
-  while i < n && (cs[i] == ' ' || cs[i] == '\t') {
-    i = i + 1
-  }
-  // 可选 mut 关键字（其后不能再是标识符字符，避免 `let mutator = …` 误吃 `mut`）
-  if i + 3 <= n && cs[i] == 'm' && cs[i + 1] == 'u' && cs[i + 2] == 't' {
-    let after = i + 3
-    if after >= n || !scan_is_ident_cont(cs[after]) {
-      i = after
-      while i < n && (cs[i] == ' ' || cs[i] == '\t') {
-        i = i + 1
-      }
-    }
-  }
-  if i >= n || !scan_is_ident_start(cs[i]) {
-    return ""
-  }
-  let start = i
-  i = i + 1
-  while i < n && scan_is_ident_cont(cs[i]) {
-    i = i + 1
-  }
-  let name = String::from_array(cs[start:i])
-  if name == "_" {
-    ""
-  } else {
-    name
-  }
-}
-
-///|
-/// BUG-348：变量名 `name` 是否作为完整单词出现在**除声明行外**的任何代码行。
-/// 入参 `codeparts` 是各行预先算好的 `scan_code_part`（字面量内容/行尾注释已剔除），
-/// 由调用方按文件缓存一次（unused-variable 命中每个 let 行，逐命中重算是 O(L²)）。
-/// 真未使用 ⇒ 只在声明行出现 ⇒ 返回 false（照常报）。单向保守：本判定只会把
-/// 「其实用了」的假阳丢弃，绝不藏真问题。
-fn scan_variable_used_elsewhere(
-  codeparts : Array[String],
-  decl_line : Int32,
-  name : String,
-) -> Bool {
-  let mut k = 0
-  while k < codeparts.length() {
-    if k + 1 != decl_line {
-      if scan_word_occurs(codeparts[k], name) {
-        return true
-      }
-    }
-    k = k + 1
-  }
-  false
-}
-
-///|
-/// 函数体超过该行数才报 moonbit-long-function（BUG-348：13 行函数曾被报超长）。
-let scan_long_function_limit : Int32 = 50
-
-///|
-/// 取代码区字符（含引号时剔除字面量内容），供花括号配对使用。
-fn scan_code_chars(line : StringView) -> Array[Char] {
-  if line.contains("\"") {
-    scan_code_part(line).to_array()
-  } else {
-    line.to_owned().to_array()
-  }
-}
-
-///|
-/// 从命中行起按花括号配对找 match 块，块顶层（depth==1）出现 `_ =>` 即视为已穷尽。
-/// 嵌套 match 的兜底分支不算外层穷尽（BUG-348：已含 catch-all 的 match 仍被报非穷尽）。
-fn scan_match_has_catch_all(lines : Array[StringView], l : Int32) -> Bool {
-  let n = lines.length()
-  let stop = if l + 200 < n { l + 200 } else { n }
-  let mut depth = 0
-  let mut opened = false
-  let mut i = l
-  while i < stop {
-    let cs = scan_code_chars(lines[i])
-    let m = cs.length()
-    let mut j = 0
-    while j < m {
-      let c = cs[j]
-      if c == '{' {
-        depth = depth + 1
-        opened = true
-      } else if c == '}' {
-        depth = depth - 1
-      } else if c == '_' && opened && depth == 1 {
-        let prev_ok = j == 0 || !scan_is_ident_char(cs[j - 1])
-        let mut k = j + 1
-        while k < m && cs[k] == ' ' {
-          k = k + 1
-        }
-        if prev_ok && k + 1 < m && cs[k] == '=' && cs[k + 1] == '>' {
-          return true
-        }
-      }
-      j = j + 1
-    }
-    if opened && depth <= 0 {
-      return false
-    }
-    i = i + 1
-=======
-/// BUG-346：`moonbit-json-injection` 的意图是"JSON 字符串由拼接/插值构造"，旧 pattern 却是
-/// 裸 `Json::string(` ⇒ 安全构造器 `Json::string(value)` 全被判成注入（src/store 单目录 45 条
-/// 实测 0 条带拼接/插值）。这里只认同一调用的实参里出现**拼接**（字面量外的 `+`）或
-/// **插值**（字面量里的 `\{`）；两者都没有就放过。保守口径：宁可少报，不误报。
-fn scan_json_string_built_by_concat(line : StringView) -> Bool {
-  let cs = line.to_owned().to_array()
-  let n = cs.length()
-  let pat = "Json::string(".to_array()
-  let mut start = -1
-  let mut i = 0
-  while i + pat.length() <= n {
-    if scan_matches_at(cs, pat, i) {
-      start = i + pat.length()
-      break
-    }
-    i = i + 1
-  }
-  if start < 0 {
-    return false
-  }
-  let mut depth = 1
-  let mut in_lit = false
-  let mut prev_bs = false
-  let mut j = start
-  while j < n {
-    let c = cs[j]
-    if in_lit {
-      if c == '\\' {
-        if j + 1 < n && cs[j + 1] == '{' {
-          return true
-        }
-        prev_bs = !prev_bs
-      } else {
-        if c == '"' && !prev_bs {
-          in_lit = false
-        }
-        prev_bs = false
-      }
-    } else if c == '"' {
-      in_lit = true
-      prev_bs = false
-    } else if c == '/' && j + 1 < n && cs[j + 1] == '/' {
-      break
-    } else if c == '(' {
-      depth = depth + 1
-    } else if c == ')' {
-      depth = depth - 1
-      if depth == 0 {
-        break
-      }
-    } else if c == '+' {
-      return true
-    }
-    j = j + 1
->>>>>>> 92218ec5 (fix(issue_scan): json-injection 只认实参拼接/插值，安全构造器不再假阳（BUG-346 / T0r47）)
-  }
-  false
-}
-
-
-///|
-<<<<<<< HEAD
-/// 从 `fn` 定义行量到花括号配平的闭合行（含），量不出（无 `{` 或超上界）返回 -1。
-/// BUG-348：行数精确判定，短函数不再被报超长。
-fn scan_function_line_count(lines : Array[StringView], l : Int32) -> Int32 {
-  let n = lines.length()
-  let stop = if l + 2000 < n { l + 2000 } else { n }
-  let mut depth = 0
-  let mut opened = false
-  let mut i = l
-  while i < stop {
-    for c in scan_code_chars(lines[i]) {
-      if c == '{' {
-        depth = depth + 1
-        opened = true
-      } else if c == '}' {
-        depth = depth - 1
-      }
-    }
-    if opened && depth <= 0 {
-      return i - l + 1
-    }
-    i = i + 1
-  }
-  -1
-}
-=======
 /// 逐行匹配一条规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
->>>>>>> 92218ec5 (fix(issue_scan): json-injection 只认实参拼接/插值，安全构造器不再假阳（BUG-346 / T0r47）)
-
 
 ///|
 /// 逐行匹配全部规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
@@ -798,31 +484,13 @@ fn scan_match_lines(
           }
         }
         if hit {
-<<<<<<< HEAD
-          let suppressed = if rule.id == "moonbit-json-injection" {
-            !scan_json_string_built_by_concat(ls)
-          } else if rule.id == "moonbit-match-exhaustive" {
-            scan_match_has_catch_all(lines, l)
-          } else if rule.id == "moonbit-long-function" {
-            let cnt = scan_function_line_count(lines, l)
-            cnt >= 0 && cnt <= scan_long_function_limit
-          } else {
-            false
-          }
-          if !suppressed {
-=======
-          let needle_only = rule.id == "moonbit-json-injection" &&
-            !scan_json_string_built_by_concat(ls)
-          if !needle_only {
->>>>>>> 92218ec5 (fix(issue_scan): json-injection 只认实参拼接/插值，安全构造器不再假阳（BUG-346 / T0r47）)
-            out.push({
-              rule: rule.id,
-              severity: rule.severity,
-              file,
-              line: l + 1,
-              code: ls.trim().to_owned(),
-            })
-          }
+          out.push({
+            rule: rule.id,
+            severity: rule.severity,
+            file,
+            line: l + 1,
+            code: ls.trim().to_owned(),
+          })
         }
       }
       l = l + 1
@@ -840,7 +508,6 @@ fn scan_match_lines(
 // 只对 substring-overrun / unprotected-division / index-out-of-bounds / string-index 四档做
 // 守卫过滤；div-by-zero（字面量除零）不参与，`/ 0` 没有"守得住"的上下文。
 // ============================================================================
-
 
 ///|
 /// 是否为标识符字符（字母/数字/下划线）。MoonBit 标识符允许 ASCII 字母与数字、
@@ -943,7 +610,7 @@ fn scan_substring_target(code : String) -> String {
 
 ///|
 /// BUG-164 盲区 B 辅助：提取 `substring(start=N, ...)` 的 start 整数值；找不到返回 -1。
-fn scan_substring_start(code : String) -> Int32 {
+fn scan_substring_start(code : String) -> Int {
   match code.find("start=") {
     None => -1
     Some(idx) => {
@@ -958,8 +625,8 @@ fn scan_substring_start(code : String) -> Int32 {
       // store_sqlite_executions.mbt:202 / supervisor_tools.mbt:456）都有 int_safe 上界
       // 守卫，本函数漏网。被扫描源码含 `substring(start=<长数字>, ...)` 时
       // `acc = acc * 10 + d` 溢出 Int（JS 静默乱数 / native panic），按解析失败返回 -1。
-      let int_safe : Int32 = 200_000_000
-      let mut acc : Int32 = 0
+      let int_safe : Int = 200_000_000
+      let mut acc : Int = 0
       let mut j = pos
       while j < code.length() && code[j] >= '0' && code[j] <= '9' {
         if acc >= int_safe {
@@ -1012,7 +679,7 @@ fn scan_substring_end_var(code : String) -> String {
             }
           }
           if j > start {
-            code[start:j].to_owned()
+            code.substring(start~, end=j).to_string()
           } else {
             ""
           }
@@ -1079,17 +746,13 @@ fn scan_guard_substring_end_var(
 ///|
 /// BUG-268 辅助：解析非负整数（与 scan_substring_start 同款 int_safe 上界）；
 /// 失败/空/溢出返回 -1。
-<<<<<<< HEAD
-fn scan_parse_int_opt(s : String) -> Int32 {
-=======
 fn scan_parse_int_opt(s : String) -> Int {
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
   let t = s.trim().to_owned()
   if t.is_empty() {
     return -1
   }
-  let int_safe : Int32 = 200_000_000
-  let mut acc : Int32 = 0
+  let int_safe : Int = 200_000_000
+  let mut acc : Int = 0
   for c in t {
     if c < '0' || c > '9' {
       return -1
@@ -1101,7 +764,6 @@ fn scan_parse_int_opt(s : String) -> Int {
   }
   acc
 }
-
 
 ///|
 /// BUG-268 辅助：去掉字符串里的所有空格。刻意不用 `String::replace`——
@@ -1132,7 +794,7 @@ fn scan_substring_arg_expr(code : String, arg : String) -> String {
         return ""
       }
       let mut j = pos
-      let mut depth : Int32 = 0
+      let mut depth : Int = 0
       while j < code.length() {
         let c = code[j]
         if c == '(' {
@@ -1148,19 +810,10 @@ fn scan_substring_arg_expr(code : String, arg : String) -> String {
         }
         j = j + 1
       }
-<<<<<<< HEAD
-<<<<<<< HEAD
-      code[pos:j].to_owned().trim().to_owned()
-=======
       code.substring(start=pos, end=j).to_string().trim().to_owned()
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
-=======
-      code[pos:j].to_owned().trim().to_owned()
->>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
     }
   }
 }
-
 
 ///|
 fn scan_substring_start_expr(code : String) -> String {
@@ -1196,7 +849,7 @@ fn scan_guard_mod_invariant(
   if !ee_ok {
     return false
   }
-  let mut mod_k : Int32 = -1
+  let mut mod_k : Int = -1
   let mut found = false
   for p in prev_lines {
     let t = p.trim().to_owned()
@@ -1205,22 +858,14 @@ fn scan_guard_mod_invariant(
     }
     let pref = "let " + se + " = "
     if t.has_prefix(pref) {
-      let rest = t[pref.length():t.length()].to_owned()
+      let rest = t.substring(start=pref.length(), end=t.length()).to_string()
       match rest.find(" % ") {
         Some(pi) => {
-<<<<<<< HEAD
-<<<<<<< HEAD
-          let ktxt = rest[pi + 3:rest.length()].to_owned().trim().to_owned()
-=======
           let ktxt = rest
             .substring(start=pi + 3, end=rest.length())
             .to_string()
             .trim()
             .to_owned()
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
-=======
-          let ktxt = rest[pi + 3:rest.length()].to_owned().trim().to_owned()
->>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
           let kv = scan_parse_int_opt(ktxt)
           if kv >= 0 {
             mod_k = kv
@@ -1240,7 +885,10 @@ fn scan_guard_mod_invariant(
     let t = p.trim().to_owned()
     let pref2 = "let " + vn + " = "
     if t.has_prefix(pref2) {
-      let lit = t[pref2.length():t.length()].to_owned().trim()
+      let lit = t
+        .substring(start=pref2.length(), end=t.length())
+        .to_string()
+        .trim()
       if lit.length() >= 2 && lit[0] == '"' && lit[lit.length() - 1] == '"' {
         if lit.length() - 2 >= mod_k {
           return true
@@ -1250,7 +898,6 @@ fn scan_guard_mod_invariant(
   }
   false
 }
-
 
 ///|
 /// BUG-268 形态 B：for 循环有界迭代。`for i in 0..<26` 使 0 ≤ i ≤ 25，
@@ -1272,25 +919,17 @@ fn scan_guard_for_bounded(
   if !ee_ok {
     return false
   }
-  let mut bound : Int32 = -1
+  let mut bound : Int = -1
   let mut found = false
   for p in prev_lines {
     let t = p.trim().to_owned()
     let pref = "for " + se + " in 0..<"
     if t.has_prefix(pref) {
-<<<<<<< HEAD
-<<<<<<< HEAD
-      let ktxt = t[pref.length():t.length()].to_owned().trim().to_owned()
-=======
       let ktxt = t
         .substring(start=pref.length(), end=t.length())
         .to_string()
         .trim()
         .to_owned()
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
-=======
-      let ktxt = t[pref.length():t.length()].to_owned().trim().to_owned()
->>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
       // BUG-268 补充：`for i in 0..<26 {` 尾部 `{` 会混入字面量导致 parse 失败
       let mut kk = ktxt
       while kk.length() > 0 &&
@@ -1299,7 +938,7 @@ fn scan_guard_for_bounded(
               kk[kk.length() - 1] == '}' ||
               kk[kk.length() - 1] == ' '
             ) {
-        kk = kk[0:kk.length() - 1].to_owned()
+        kk = kk.substring(start=0, end=kk.length() - 1).to_string()
       }
       let kv = scan_parse_int_opt(kk)
       if kv >= 0 {
@@ -1316,7 +955,10 @@ fn scan_guard_for_bounded(
     let t = p.trim().to_owned()
     let pref2 = "let " + vn + " = "
     if t.has_prefix(pref2) {
-      let lit = t[pref2.length():t.length()].to_owned().trim()
+      let lit = t
+        .substring(start=pref2.length(), end=t.length())
+        .to_string()
+        .trim()
       if lit.length() >= 2 && lit[0] == '"' && lit[lit.length() - 1] == '"' {
         if lit.length() - 2 >= bound {
           return true
@@ -1326,7 +968,6 @@ fn scan_guard_for_bounded(
   }
   false
 }
-
 
 ///|
 /// BUG-268 辅助：判断减数 X 是否在 prev_lines 中被约束为非负且有界。
@@ -1349,7 +990,7 @@ fn scan_cut_bounded(
     let t = p.trim().to_owned()
     let pref = "let " + xt + " = "
     if t.has_prefix(pref) {
-      let rhs = t[pref.length():t.length()].to_owned()
+      let rhs = t.substring(start=pref.length(), end=t.length()).to_string()
       if rhs.contains("< 0 { 0 }") && rhs.contains(limit) {
         return true
       }
@@ -1386,19 +1027,7 @@ fn scan_guard_multi_line_length(
     if t.has_prefix("let ") && t.contains(vn + ".length()") {
       match t.find(" = ") {
         Some(ei) => {
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-          let name = t[4:ei].to_owned().trim().to_owned()
-=======
-          let name = t.substring(start=4, end=ei).to_string().trim().to_string()
->>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
-=======
           let name = t.substring(start=4, end=ei).to_string().trim().to_owned()
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
-=======
-          let name = t[4:ei].to_owned().trim().to_owned()
->>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
           if !name.is_empty() {
             lenv = name
             break
@@ -1419,36 +1048,20 @@ fn scan_guard_multi_line_length(
     let pref = "if " + lenv + " <= "
     let pref2 = "if " + lenv + " < "
     if t.has_prefix(pref) {
-<<<<<<< HEAD
-<<<<<<< HEAD
-      limit = t[pref.length():t.length()].to_owned().trim().to_owned()
-=======
       limit = t
         .substring(start=pref.length(), end=t.length())
         .to_string()
         .trim()
         .to_owned()
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
-=======
-      limit = t[pref.length():t.length()].to_owned().trim().to_owned()
->>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
       if_idx = i
       break
     }
     if t.has_prefix(pref2) {
-<<<<<<< HEAD
-<<<<<<< HEAD
-      limit = t[pref2.length():t.length()].to_owned().trim().to_owned()
-=======
       limit = t
         .substring(start=pref2.length(), end=t.length())
         .to_string()
         .trim()
         .to_owned()
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
-=======
-      limit = t[pref2.length():t.length()].to_owned().trim().to_owned()
->>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
       if_idx = i
       break
     }
@@ -1459,7 +1072,7 @@ fn scan_guard_multi_line_length(
   // ②′ 修剪 limit 尾部的 `{`：`if n <= max_chars {` → `max_chars`（BUG-268：memory_gc_logic
   // L160 就是这种形状，不修剪会让 scan_cut_bounded 拿 "max_chars {" 去子串比对，恒失败）。
   while limit.length() > 0 && limit[limit.length() - 1] == '{' {
-    limit = limit[0:limit.length() - 1].to_owned()
+    limit = limit.substring(start=0, end=limit.length() - 1).to_string()
   }
   limit = limit.trim().to_owned()
   if limit.is_empty() {
@@ -1487,7 +1100,7 @@ fn scan_guard_multi_line_length(
   } else {
     let pref3 = lenv + "-"
     if ee.has_prefix(pref3) {
-      let x = ee[pref3.length():ee.length()].to_owned()
+      let x = ee.substring(start=pref3.length(), end=ee.length()).to_string()
       if scan_cut_bounded(prev_lines, x, limit) {
         ee_ok = true
       }
@@ -1501,12 +1114,11 @@ fn scan_guard_multi_line_length(
   }
   let pref4 = lenv + "-"
   if se_n.has_prefix(pref4) {
-    let x = se_n[pref4.length():se_n.length()].to_owned()
+    let x = se_n.substring(start=pref4.length(), end=se_n.length()).to_string()
     return scan_cut_bounded(prev_lines, x, limit)
   }
   false
 }
-
 
 ///|
 /// BUG-268 形态 E：has_suffix 间接长度。
@@ -1527,7 +1139,7 @@ fn scan_guard_has_suffix_cut(
   if !ee.has_prefix(need) {
     return false
   }
-  let cutv = ee[need.length():ee.length()].to_owned()
+  let cutv = ee.substring(start=need.length(), end=ee.length()).to_string()
   if cutv.is_empty() {
     return false
   }
@@ -1535,27 +1147,19 @@ fn scan_guard_has_suffix_cut(
     let t = p.trim().to_owned()
     let pref = "let " + cutv + " = "
     if t.has_prefix(pref) && t.contains(vn + ".has_suffix(") {
-      let body = t[pref.length():t.length()].to_owned()
+      let body = t.substring(start=pref.length(), end=t.length()).to_string()
       // body: `if <vn>.has_suffix(<lit>) { <k> } else { 0 }`
       match body.find(" { ") {
         Some(oi) => {
-          let seg = body[oi + 3:body.length()].to_owned()
+          let seg = body.substring(start=oi + 3, end=body.length()).to_string()
           // seg: `<k> } else { 0 }`
           match seg.find(" } else { ") {
             Some(ci) => {
-<<<<<<< HEAD
-<<<<<<< HEAD
-              let ktxt = seg[0:ci].to_owned().trim().to_owned()
-=======
               let ktxt = seg
                 .substring(start=0, end=ci)
                 .to_string()
                 .trim()
                 .to_owned()
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
-=======
-              let ktxt = seg[0:ci].to_owned().trim().to_owned()
->>>>>>> 8a68ec70 (fix(idiom): 清零 0020 str[:] 弃用切片 42 处（565→523 warnings / 0 errors）)
               let kv = scan_parse_int_opt(ktxt)
               if kv >= 1 && kv <= 4 {
                 return true
@@ -1570,7 +1174,6 @@ fn scan_guard_has_suffix_cut(
   }
   false
 }
-
 
 ///|
 /// 在 prev 行里找该 var 是否被 `is_empty()` 守卫（同形 `if var.is_empty()` / `var.is_empty()`）。
@@ -1725,10 +1328,10 @@ fn scan_unwrap_receiver(code : String) -> String {
         start = i
         i = i - 1
       }
-      let r = code[start:idx].to_owned()
+      let r = code.substring(start~, end=idx).to_string()
       // 跳过末尾多余的点（`.unwrap(` 前的 `.` 归属方法调用）
       if r.has_suffix(".") {
-        r[0:r.length() - 1].to_owned()
+        r.substring(start=0, end=r.length() - 1).to_string()
       } else {
         r
       }
@@ -1742,13 +1345,13 @@ pub fn scan_finding_guarded(
   code : String,
   rule : String,
   prev_lines : Array[String],
-  ctx~ : ScanCtx = {
+  ctx? : ScanCtx = {
     safe_clamps: Map([]),
     guarded_lines: Map([]),
     slice_only: false,
   },
-  hit_line~ : String = "",
-  hit_ln~ : Int32 = 0,
+  hit_line? : String = "",
+  hit_ln? : Int = 0,
 ) -> Bool {
   // R124: MoonBit substring 安全通道 — 文件已无裸 substring 调用
   if rule == "substring-overrun" && ctx.slice_only {
@@ -1786,15 +1389,7 @@ pub fn scan_finding_guarded(
   // 同一行守卫：substring 可能写在 `if s.length() > N { ... substring(...) }` 同一行，
   // prev_lines 不含当前行，须先检查 code 自身。
   if rule == "substring-overrun" {
-<<<<<<< HEAD
-<<<<<<< HEAD
     let code_t = code.trim().to_owned()
-=======
-    let code_t = code.trim().to_string()
->>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
-=======
-    let code_t = code.trim().to_owned()
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
     if !vn.is_empty() && scan_guard_length_above(code_t, vn) {
       return true
     }
@@ -1952,7 +1547,6 @@ pub fn scan_finding_guarded(
   false
 }
 
-
 ///|
 /// 对整批 findings 做守卫过滤：返回没被守卫的（即真待判）那些。
 fn scan_filter_guarded(
@@ -2089,29 +1683,9 @@ fn scan_file(path : String, rules : Array[ScanRule]) -> Array[ScanFinding] {
 }
 
 ///|
-/// needle 词法的字母数字判定（`scan_regex_to_needle` 共用）。
-fn scan_is_alnum_char(c : Char) -> Bool {
-  let o = c.to_int()
-  (o >= 65 && o <= 90) || (o >= 97 && o <= 122) || (o >= 48 && o <= 57)
-}
-
-///|
 /// 从 ocr-local 的 regex pattern 提取稳定字面量 needle（子串近似，免 regex 依赖）。
-<<<<<<< HEAD
-/// 策略：扫描 pattern，收集连续字母数字与 `::` 命名空间片段，取最长者；`\w` `\s` `\d`
-/// 等 regex 类与其余标点当分隔跳过。
-/// BUG-347：`::` 命名空间限定是 MoonBit 构造器身份的一部分，必须保留进 needle。旧实现只认
-/// alnum，把 `::` 当分隔整段丢弃 ⇒ `Json::string\(` 退化成裸 `string`，`Json::` 限定丢失，
-/// 任何含 `string` 的行都命中（假阳）；且 `\s` 里的 `s` 反被当字面量起点重新计数。
-/// 例：`ignore\s*\(\s*\w+` → "ignore"；`Json::string\(` → "Json::string"；
-/// `@fs\.(open|write|read)\s*\(` → "write"（分支 regex 无单一 needle，属已知局限）。
-=======
 /// 策略：扫描 pattern，收集连续字母数字片段，取最长者；`\w` `\s` `\d` 等 regex 类跳过。
-/// `ident::ident` 是同一个限定名，`::` 不断开片段——否则 `Json::string(` 会被降级成
-/// `string`，命中 `to_string(` / `formula_to_string(` 等无关调用（BUG-347）。
-/// 例：`ignore\s*\(\s*\w+` → "ignore"；`@fs\.(open|write|read)\s*\(` → "write"；
-/// `Json::string\(` → "Json::string"。
->>>>>>> 1104bb05 (fix: 外部规则 pattern 保留 :: 命名空间（BUG-347 / T0r38）)
+/// 例：`ignore\s*\(\s*\w+` → "ignore"；`@fs\.(open|write|read)\s*\(` → "open"。
 fn scan_regex_to_needle(re : String) -> String {
   let cs = re.to_array()
   let n = cs.length()
@@ -2120,42 +1694,25 @@ fn scan_regex_to_needle(re : String) -> String {
   let mut i = 0
   while i < n {
     let c = cs[i]
-    if scan_is_alnum_char(c) {
+    let o = c.to_int()
+    let alnum = (o >= 65 && o <= 90) ||
+      (o >= 97 && o <= 122) ||
+      (o >= 48 && o <= 57)
+    if alnum {
       cur = cur + c.to_string()
-      i = i + 1
-<<<<<<< HEAD
-    } else if c == ':' && i + 1 < n && cs[i + 1] == ':' {
-      // BUG-347：`::` 命名空间限定保留，不当分隔符切断。
-      cur = cur + "::"
-      i = i + 2
-=======
-      // 限定名续接：`ident::ident` 并入同一段
-      while i + 2 < n &&
-        cs[i] == ':' &&
-        cs[i + 1] == ':' &&
-        scan_is_alnum_char(cs[i + 2]) {
-        cur = cur + "::"
-        i = i + 2
-        while i < n && scan_is_alnum_char(cs[i]) {
-          cur = cur + cs[i].to_string()
-          i = i + 1
-        }
-      }
->>>>>>> 1104bb05 (fix: 外部规则 pattern 保留 :: 命名空间（BUG-347 / T0r38）)
     } else {
       if cur.length() > best.length() {
         best = cur
       }
       cur = ""
-      i = i + 1
     }
+    i = i + 1
   }
   if cur.length() > best.length() {
     best = cur
   }
   best
 }
-
 
 ///|
 /// 从外部规则 JSON 文本（ocr-local moonbit-rules.json 风格：顶层 `rules` 数组，
@@ -2253,31 +1810,14 @@ fn scan_merge_rules(
 }
 
 ///|
-/// 严重度分桶（BUG-345）：`by_severity` 与 `by_rule` 必须同源，四档各自独立计数。
-/// 未知档位归 info 而非 low——旧 `else → low` 兜底会把 rules_file 降级为 info 的
-/// 命中继续算进 low，降噪对 `by_severity` 零收益。
-fn scan_severity_bucket(sev : String) -> String {
-  if sev == "high" {
-    return "high"
-  }
-  if sev == "medium" {
-    return "medium"
-  }
-  if sev == "low" {
-    return "low"
-  }
-  "info"
-}
-
-///|
 /// 规则驱动源码扫描主入口：递归收集 {dir} 下 .mbt 文件，对每条规则逐行匹配。
 /// 返回 {scanned_files, findings, by_severity, by_rule}；findings 可直接喂给
 /// report_bug（summary = "\[rule:id\] file:line code"）。
 pub fn issue_scan(
   dir : String,
   rules_file : String,
-  max_findings : Int32,
-  include_tests~ : Bool = false,
+  max_findings : Int,
+  include_tests? : Bool = false,
 ) -> Result[Json, String] {
   if !scan_dir_ok(dir) {
     return Err(
@@ -2322,97 +1862,19 @@ pub fn issue_scan(
   let ctx_cache : Map[String, ScanCtx] = Map([])
   let lines_cache : Map[String, Array[String]] = Map([])
   let fc_cache : Map[String, String] = Map([])
-  // BUG-348：unused-variable 使用性判定按文件缓存各行 code_part（命中每个 let 行，逐命中
-  // 重算 code_part 是 O(命中×行)；文件级缓存一次即降到 O(行)）。
-  let codeparts_cache : Map[String, Array[String]] = Map([])
   let guarded_filtered : Array[ScanFinding] = []
   for hit in dedup {
-    // BUG-333：moonbit-match-exhaustive 的 needle 是裸子串 `match `，而 MoonBit 编译器
-    // **强制** match 穷尽（不穷尽 = 编译错误，账本实测 1513 条命中 = 100% 假阳）⇒ 这条规则
-    // 对任何能编译的 .mbt 都零信息量，只是把真实缺陷淹在噪音里。R8 曾落地
-    // `scan_denoise_default_skip` 默认丢弃，但那处修复**连同它的私有函数名白盒锁**在后续
-    // 重构中被一并删除 ⇒ 静默回归（本轮 grep `denoise` 全 src 零命中证实，1513 条噪音回来了）。
-    // 此处重新落地定向降噪：只丢这一条编译器已保证的规则，其余规则一概不动
-    // （硬门 div-by-zero/unwrapped-unwrap 与 BUG-348 过滤都由独立断言守着，见 issue_scan_test）。
-    // 锁一律走公开 @server.issue_scan 的产出而非内部函数名，再被重构删掉时会当场编译/断言红。
-    if hit.rule == "moonbit-match-exhaustive" {
-      continue
-    }
-    // BUG-348：moonbit-unused-variable 此前按裸子串 `let ` 命中每个 let 声明，
-    // 不看绑定名是否真被使用 ⇒ 把「已使用的 let」也报成未使用（info 档，cost_tool.mbt
-    // L29/31/32 exceeded/remaining/action 均在函数体后续被引用却照样报，纯假阳）。
-    // 单向保守修法：抽出 `let [mut ]IDENT` 的绑定名；若该名字作为完整单词出现在**除声明行外**
-    // 的任一代码行（字面量/注释已剔除）⇒ 判「其实用了」⇒ 丢弃该命中。抽不出名字
-    // （解构/弃元/非 let 开头）或读不到文件 ⇒ 保持现行为照常报——只减假阳、绝不藏真问题。
-    if hit.rule == "moonbit-unused-variable" {
-      let name = scan_let_binding_name(hit.code)
-      if name.length() == 0 {
-        guarded_filtered.push(hit)
-        continue
-      }
-      // 读不到文件 ⇒ 无法判定使用性，保守照常报（不隐藏）。
-      let fc_opt : String? = match fc_cache.get(hit.file) {
-        Some(c) => Some(c)
-        None =>
-          match mem_read(hit.file) {
-            None => None
-            Some(c) => {
-              fc_cache.set(hit.file, c)
-              Some(c)
-            }
-          }
-      }
-      match fc_opt {
-        None => {
-          guarded_filtered.push(hit)
-          continue
-        }
-        Some(fc) => {
-          let cps = match codeparts_cache.get(hit.file) {
-            Some(v) => v
-            None => {
-              let built : Array[String] = []
-              for l in fc.split("\n") {
-                built.push(scan_code_part(l))
-              }
-              codeparts_cache.set(hit.file, built)
-              built
-            }
-          }
-          if scan_variable_used_elsewhere(cps, hit.line, name) {
-            continue
-          }
-          guarded_filtered.push(hit)
-          continue
-        }
-      }
-    }
     // BUG-162 优化：只有少数规则会被守卫豁免（substring-overrun / unprotected-division /
     // unwrapped-unwrap / possible-overflow / index-out-of-bounds / string-index / secs-overflow），
     // 其余规则（unused-variable、match-exhaustive、long-function、json-injection 等
     // 占全量 findings 大头）的命中直接透传，免掉 mem_read + split + prev_window 三件套。
     if !(hit.rule == "substring-overrun" ||
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
       hit.rule == "unprotected-division" ||
       hit.rule == "unwrapped-unwrap" ||
       hit.rule == "possible-overflow" ||
       hit.rule == "index-out-of-bounds" ||
       hit.rule == "string-index" ||
       hit.rule == "secs-overflow") {
-<<<<<<< HEAD
-=======
-        hit.rule == "unprotected-division" ||
-        hit.rule == "unwrapped-unwrap" ||
-        hit.rule == "possible-overflow" ||
-        hit.rule == "index-out-of-bounds" ||
-        hit.rule == "string-index" ||
-        hit.rule == "secs-overflow",) {
->>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
-=======
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
       guarded_filtered.push(hit)
       continue
     }
@@ -2482,34 +1944,18 @@ pub fn issue_scan(
   }
   let dedup = guarded_filtered
   // 严重度聚合（单次遍历，替代旧的三次全量 filter）
-  // BUG-345：旧实现只有 high/medium/low 三桶，`else` 把 info 档（scan_rules 里
-  // match-non-exhaustive/unused-variable 等 low 之下的一档，及外部规则透传的 severity）
-  // 连同任何未知档一并折进 low ⇒ 返回体看不见 info、BUG-333 的降噪预案无法按档净化，
-  // low 桶被系统性虚高。info 拆成独立一档；未知 severity 显式归 info（最低档兜底、
-  // 不冒充 low），并在 rule 计数旁照常统计。
   let mut high = 0
   let mut medium = 0
   let mut low = 0
-  let mut info = 0
   // 按规则聚合（单次遍历计数，替代旧的逐规则全量 filter）
-  let rule_counts : Map[String, Int32] = Map([])
+  let rule_counts : Map[String, Int] = Map([])
   for h in dedup {
-    let bucket = scan_severity_bucket(h.severity)
-    if bucket == "high" {
+    if h.severity == "high" {
       high = high + 1
-    } else if bucket == "medium" {
+    } else if h.severity == "medium" {
       medium = medium + 1
-<<<<<<< HEAD
-    } else if h.severity == "low" {
-      low = low + 1
     } else {
-      // info 及任何未知档：归最低档 info，不再冒充 low（BUG-345）。
-=======
-    } else if bucket == "low" {
       low = low + 1
-    } else {
->>>>>>> e1017b8d (fix: issue_scan by_severity 四桶，info 不再并入 low（BUG-345 / T0r39）)
-      info = info + 1
     }
     rule_counts.set(h.rule, rule_counts.get(h.rule).unwrap_or(0) + 1)
   }
@@ -2545,11 +1991,6 @@ pub fn issue_scan(
         "high": Json::number(high.to_double()),
         "medium": Json::number(medium.to_double()),
         "low": Json::number(low.to_double()),
-<<<<<<< HEAD
-        // BUG-345：info 单列一档（含未知 severity 兜底），不再被并入 low。
-=======
->>>>>>> e1017b8d (fix: issue_scan by_severity 四桶，info 不再并入 low（BUG-345 / T0r39）)
-        "info": Json::number(info.to_double()),
       }),
       "by_rule": Json::array(by_rule),
       "findings": Json::array(
@@ -2568,7 +2009,6 @@ pub fn issue_scan(
 }
 
 // ========== DEBUG TESTS (R125 guard filter) ==========
-
 
 ///|
 fn _ctx() -> ScanCtx {

@@ -35,6 +35,7 @@ test "ops: iso_to_secs 解析与比较" {
 test "ops: conflicts 拦截重复 claim" {
   let e = test_engine()
   // T0 初始待领取，可认领
+<<<<<<< HEAD
   assert_true(@ops.check_claim(e, "T0", "worker-a") is Ok(_))
   ignore(e.claim(task_id="T0", assignee="worker-a", now="2026-09-05T00:00:01Z"))
   // 同一人重复认领被拒（--no-takeover）
@@ -42,13 +43,26 @@ test "ops: conflicts 拦截重复 claim" {
   assert_true(dup is Err(_))
   // 他人认领被拒
   let other = @ops.check_claim(e, "T0", "worker-b")
+=======
+  assert_true(check_claim(e, "T0", "worker-a") is Ok(_))
+  ignore(e.claim(task_id="T0", assignee="worker-a", now="2026-09-05T00:00:01Z"))
+  // 同一人重复认领被拒（--no-takeover）
+  let dup = check_claim(e, "T0", "worker-a")
+  assert_true(dup is Err(_))
+  // 他人认领被拒
+  let other = check_claim(e, "T0", "worker-b")
+>>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
   assert_true(other is Err(_))
   match other {
     Err(msg) => assert_true(msg.contains("worker-a"))
     Ok(_) => abort("应返回冲突")
   }
   // 不存在的任务
+<<<<<<< HEAD
   assert_true(@ops.check_claim(e, "T99", "worker-a") is Err(_))
+=======
+  assert_true(check_claim(e, "T99", "worker-a") is Err(_))
+>>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
 }
 
 ///|
@@ -69,12 +83,16 @@ test "ops: heartbeat 上报后未超时 -> heal 不回滚" {
   ignore(e.execute(task_id="T0", deliverable="d", now="2026-09-05T00:00:02Z"))
   hb.beat("T0", now="2026-09-05T00:00:02Z")
   // 20 秒后 < 600 秒超时：不回滚
+<<<<<<< HEAD
   let healed = @ops.heal_stale_tasks(
     e,
     hb,
     "2026-09-05T00:00:22Z",
     timeout_sec=600,
   )
+=======
+  let healed = heal_stale_tasks(e, hb, "2026-09-05T00:00:22Z", timeout_sec=600)
+>>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
   assert_true(healed is Ok(_))
   match healed {
     Ok(list) => assert_true(list.is_empty())

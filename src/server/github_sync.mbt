@@ -474,11 +474,7 @@ pub fn github_queue_pending(
 fn find_issue_and_repo(
   project_dir : String,
   bug_id : String,
-<<<<<<< HEAD
-) -> (Int32, String) {
-=======
 ) -> (Int, String) {
->>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
   let entries = extract_arr(github_queue_read(project_dir))
   for entry in entries {
     match entry {
