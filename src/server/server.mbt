@@ -4134,7 +4134,8 @@ pub async fn run_server() -> Unit {
       let ts = now_default()
       let depends_on : Array[String] = try {
         match @json.parse(depends_on_raw) {
-          Json::Array(a) => a.map(fn(v) { v.as_string().unwrap_or("") })
+          Json::Array(a) =>
+            a.map(fn(v) { if v is Json::String(s) { s } else { "" } })
           _ => []
         }
       } catch {
@@ -5375,7 +5376,8 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace", default="default")
       let task_ids : Array[String] = try {
         match @json.parse(raw) {
-          Json::Array(a) => a.map(fn(v) { v.as_string().unwrap_or("") })
+          Json::Array(a) =>
+            a.map(fn(v) { if v is Json::String(s) { s } else { "" } })
           _ => []
         }
       } catch {
@@ -6043,7 +6045,7 @@ pub async fn run_server() -> Unit {
         match arr {
           Array(a) =>
             a
-            .map(fn(v) { v.as_string().unwrap_or("") })
+            .map(fn(v) { if v is Json::String(s) { s } else { "" } })
             .filter(fn(s) { !s.is_empty() })
           _ => ["github", "gitcode"]
         }
@@ -6500,7 +6502,11 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let bug_ids = get_array(args, "bug_ids").map(fn(v) {
-        v.as_string().unwrap_or("")
+        if v is Json::String(s) {
+          s
+        } else {
+          ""
+        }
       })
       let evidence = get_str(args, "evidence")
       match bug_fix(project_dir, bug_ids, evidence~, ts=now_default()) {
@@ -7203,7 +7209,13 @@ pub async fn run_server() -> Unit {
       let project_dir = get_str(args, "project_dir")
       let sent_at = get_str(args, "sent_at", default="")
       let ids_arr = get_array(args, "bug_ids")
-      let bug_ids = ids_arr.map(fn(v) { v.as_string().unwrap_or("") })
+      let bug_ids = ids_arr.map(fn(v) {
+        if v is Json::String(s) {
+          s
+        } else {
+          ""
+        }
+      })
       let issue_nums_raw = get_str(args, "issue_numbers")
       // BUG-235：issue_numbers 非法 JSON 此前被静默吞成空 Map——映射被丢弃，
       // sent_at 照写、github_issue_number 被清空，回执无任何提示。
@@ -7770,7 +7782,13 @@ pub async fn run_server() -> Unit {
       let project_dir = get_str(args, "project_dir")
       let sent_at = get_str(args, "sent_at", default="")
       let ids_arr = get_array(args, "bug_ids")
-      let bug_ids = ids_arr.map(fn(v) { v.as_string().unwrap_or("") })
+      let bug_ids = ids_arr.map(fn(v) {
+        if v is Json::String(s) {
+          s
+        } else {
+          ""
+        }
+      })
       let iids_raw = get_str(args, "gitcode_issue_iids")
       // BUG-235：gitcode_issue_iids 非法 JSON 此前被静默吞成空 Map——iid 映射被丢弃，
       // sent_at 照写、gitcode_issue_iid 不回写，回执无任何提示。

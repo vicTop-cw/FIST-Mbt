@@ -1233,7 +1233,12 @@ pub fn FistEngine::plan_revise(
       _ => None
     }
     let ok_opt = match f.value("ok") {
-      Some(j) => j.as_bool()
+      Some(j) =>
+        match j {
+          Json::True => Some(true)
+          Json::False => Some(false)
+          _ => None
+        }
       _ => None
     }
     match (tid_opt, ok_opt) {

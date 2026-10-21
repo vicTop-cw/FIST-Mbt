@@ -338,7 +338,8 @@ fn parse_upsert_item(v : Json) -> SupervisorUpsertItem? {
         }
       }
       let deps : Array[String] = match m.get("depends_on") {
-        Some(Json::Array(a)) => a.map(fn(d) { d.as_string().unwrap_or("") })
+        Some(Json::Array(a)) =>
+          a.map(fn(d) { if d is Json::String(s) { s } else { "" } })
         _ => []
       }
       Some({

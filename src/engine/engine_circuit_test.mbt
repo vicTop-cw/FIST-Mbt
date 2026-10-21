@@ -35,9 +35,10 @@ fn cb_failures(j : Json) -> Int {
 fn cb_allow(j : Json) -> Bool {
   match j.value("allow_call") {
     Some(jj) =>
-      match jj.as_bool() {
-        Some(b) => b
-        None => abort("allow_call 非布尔: " + j.stringify())
+      match jj {
+        Json::True => true
+        Json::False => false
+        _ => abort("allow_call 非布尔: " + j.stringify())
       }
     _ => abort("allow_call 缺失: " + j.stringify())
   }

@@ -100,7 +100,7 @@ fn pl_bool(j : Json, key : String) -> Bool {
   match j {
     Object(m) =>
       match m.get(key) {
-        Some(v) => v.as_bool().unwrap_or(false)
+        Some(v) => v is Json::True
         None => false
       }
     _ => abort("应返回 JSON 对象")
