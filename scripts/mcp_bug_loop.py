@@ -44,7 +44,9 @@ def tool_result(name, arguments):
     if content:
         try:
             return json.loads(content[0]["text"])
-        except:
+        except Exception:
+            # 只兜 json.loads 解析失败（ValueError/TypeError）；裸 except 会连
+            # KeyboardInterrupt/SystemExit 一起吞掉，Ctrl-C 无法中断本脚本。
             return {"raw": content[0]["text"]}
     return r.get("result", {})
 
