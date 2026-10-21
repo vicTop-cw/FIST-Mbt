@@ -33,7 +33,7 @@ pub struct OfmChatRequest {
   model : String
   messages : Array[OfmChatMessage]
   temperature : Double? // None = 不传该字段
-  max_tokens : Int?
+  max_tokens : Int32?
 } derive(Eq, Debug)
 
 ///|
@@ -147,9 +147,9 @@ pub fn append_retry_prompt(body : String) -> Result[String, String] {
 /// fail-closed：`limit ≤ 0`（视为无上限信息，不猜）、`margin < 0` → `Err`。
 /// 纯计算零 IO。下限 1（`margin ≥ limit` 时仍给最小 token 数），上限恒 ≤ `limit`。
 pub fn ofm_reserve_max_tokens(
-  limit : Int,
-  margin : Int,
-) -> Result[Int, String] {
+  limit : Int32,
+  margin : Int32,
+) -> Result[Int32, String] {
   if limit <= 0 {
     return Err("limit 非法：\{limit}")
   }

@@ -540,23 +540,6 @@ test "ov_21_invariant_wrong_type_fail" {
       "min_chars": Json::string("100"),
     }),
   ]
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
-  let r1 = @server.output_validate(
-    d,
-    a1,
-    Json::object({}),
-    "",
-    require_evidence=false,
-  )
-<<<<<<< HEAD
-=======
-  let r1 = output_validate(d, a1, Json::object({}), "", require_evidence=false)
->>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
-=======
->>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r1 is Ok(_))
   assert_eq(ov_verdict(r1), "fail")
   // contains 应为 String，传 Number → spec_err 应拒绝
@@ -566,23 +549,6 @@ test "ov_21_invariant_wrong_type_fail" {
       "contains": Json::number(42.0),
     }),
   ]
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
-  let r2 = @server.output_validate(
-    d,
-    a2,
-    Json::object({}),
-    "",
-    require_evidence=false,
-  )
-<<<<<<< HEAD
-=======
-  let r2 = output_validate(d, a2, Json::object({}), "", require_evidence=false)
->>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
-=======
->>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r2 is Ok(_))
   assert_eq(ov_verdict(r2), "fail")
   // not_contains 应为 String，传 Number → spec_err 应拒绝
@@ -592,23 +558,6 @@ test "ov_21_invariant_wrong_type_fail" {
       "not_contains": Json::number(7.0),
     }),
   ]
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
-  let r3 = @server.output_validate(
-    d,
-    a3,
-    Json::object({}),
-    "",
-    require_evidence=false,
-  )
-<<<<<<< HEAD
-=======
-  let r3 = output_validate(d, a3, Json::object({}), "", require_evidence=false)
->>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
-=======
->>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r3 is Ok(_))
   assert_eq(ov_verdict(r3), "fail")
 }
