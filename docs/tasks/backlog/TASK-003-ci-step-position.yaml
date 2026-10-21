@@ -1,7 +1,7 @@
 id: TASK-003
 title: "CI 步骤位置门禁 — Migrate 之前才是安全区"
 priority: P2
-status: backlog
+status: in_review
 assignee: atomcode
 discovered_by: lead
 discovered_at: "2026-10-21T19:15:00+08:00"
@@ -28,3 +28,22 @@ evidence:
   - commit 2b007646 的修正 diff 显示 +9/-21 行变化 = 位置移动
 
 blocked_by: []
+
+# ── 执行回填（AtomCode / 2026-10-21T21:20+08:00）──
+result: >
+  新判据 `scripts/check_ci_step_position.py` + 三处位置纠正 + CI 接线，全部可自证。
+  判据设计（按本单「告警」原话，不硬堵）：P1 **静态预检族**（冲突标记 / PS 编码 / 模板控制字符 /
+  脚本索引 / 本尺自身）必须排在 Migrate 之前，越位=rc1 并列名；P2 其它构建后 gate 只报计数与清单
+  （本仓实测 30 个，它们依赖 build/test 产物，硬堵无意义）；P3 无 Migrate 步或 yml 空 ⇒ rc2 自拒。
+  不依赖 PyYAML（runner 未必有），自带极简步骤解析器。
+  实测发现的**三处真违规**（本单之前从未有人查过位置）：`Scripts-index guard`(#13→#5)、
+  `PowerShell encoding guard`(#20→#6)、`Template control-char guard`(#21→#7) 原先都在 Migrate 之后
+  ⇒ Migrate 一崩这三把静态尺全被 skip。已全部移到 Migrate 前，并各加一段位置说明注释（验收③）。
+  CI 里新接线 `CI step-position guard` 自己也排在 Migrate 前（#8 < #9）——本尺遵守自己定的规则。
+acceptance_met:
+  - "check_ci_step_position.py 新增：✅（P1 硬判 / P2 只报 / P3 自拒；--selftest 7 格）"
+  - "三把静态预检尺移到 Migrate 之前：✅（scripts_index / ps_encoding / template_ctrl）"
+  - "新增 gate 步骤附带位置说明：✅（四个预检步与位置守卫均带说明注释）"
+followup:
+  - "ratchet gate（check_plan_landing --gate）当前仍不在 master 的 CI 里；如要接，按本尺规则必须排在 Migrate 之前"
+pr_branch: fix/task-003-ci-step-position
