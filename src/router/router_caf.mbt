@@ -51,11 +51,7 @@ pub struct CafMemory {
 pub extend CafMemory with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
-<<<<<<< HEAD
 pub fn CafMemory::new(max_size~ : Int32 = 10000) -> CafMemory {
-=======
-pub fn CafMemory::new(max_size? : Int = 10000) -> CafMemory {
->>>>>>> df8ba1a1 (fix(idiom): 清零 0079 implicit_impl_as_method 全族 63 条 + 修守卫 derive 盲区)
   // BUG-188：max_size<=0 会让 records 成为空数组，push 时 records[0] 越界 panic。
   // 收敛到至少 1，使环形缓冲在任何输入下都可用。
   let m = if max_size <= 0 { 1 } else { max_size }
@@ -113,13 +109,8 @@ pub fn CafMemory::find(
 /// 模型维度的成功率与成本统计（决策融合消费面）
 pub struct CafModelStats {
   model : String
-<<<<<<< HEAD
   total : Int32
   success : Int32
-=======
-  total : Int
-  success : Int
->>>>>>> 125d682f (fix(idiom): 清零纯语法噪声三族 0008/0021/0013 共 19 条（BUG-345）)
   avg_cost : Double
 } derive(Debug)
 

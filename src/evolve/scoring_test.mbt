@@ -29,11 +29,6 @@ test "scoring_low_accuracy" {
 test "scoring_fingerprint_false_penalty" {
   let s = @evolve.score_artifact(1.0, false, true, 1.0)
   assert_eq(s, 0.75)
-<<<<<<< HEAD
-  assert_true(is_robust(0.80))
-  assert_true(!is_robust(0.60))
-  assert_true(is_robust(0.69, floor=0.60))
-=======
   assert_true(!@evolve.score_accept(s))
 }
 
@@ -88,5 +83,4 @@ test "scoring_is_robust" {
   assert_true(@evolve.is_robust(0.80))
   assert_true(!@evolve.is_robust(0.60))
   assert_true(@evolve.is_robust(0.69, floor=0.60))
->>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
 }

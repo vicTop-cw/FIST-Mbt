@@ -474,7 +474,7 @@ pub fn github_queue_pending(
 fn find_issue_and_repo(
   project_dir : String,
   bug_id : String,
-) -> (Int, String) {
+) -> (Int32, String) {
   let entries = extract_arr(github_queue_read(project_dir))
   for entry in entries {
     match entry {
@@ -501,7 +501,6 @@ fn find_issue_and_repo(
   }
   (-1, "")
 }
-
 
 ///|
 /// 为一批 issue number 构建 close 计划：按 repo 分组 → 每组生成一条 curl 命令

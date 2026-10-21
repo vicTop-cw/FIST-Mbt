@@ -21,15 +21,6 @@ pub struct OfmChatResponse {
   content : String
   raw : String
 } derive(Eq, Debug)
-<<<<<<< HEAD
-
-///|
-pub extend OfmChatResponse with Eq::{not_equal, equal}
-
-///|
-pub extend OfmChatResponse with @moonbitlang/core/debug.Debug::{to_repr}
-=======
->>>>>>> 2a0c0ec8 (fix(idiom): 清零 0027 derive(Show) 弃用面 4/5 条（StarVerdict 承重面留档）)
 
 ///|
 pub extend OfmChatResponse with Eq::{not_equal, equal}

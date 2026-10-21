@@ -235,7 +235,7 @@ pub fn all_modes() -> Array[Json] {
 ///    "按复杂度授权"；② 若 4 档就能选中 advance，则 4/5 两档同解、六档退化成五档可达，
 ///    fix_and_merge 永远选不到（选择器名义上覆盖 6 个模式，实际只覆盖 5 个）。
 /// 要回到示意档表：把下面 `FixAndMerge` 与 `Advance` 两个分支对调即可，其余不动。
-pub fn select_mode_by_complexity(complexity : Int) -> PipelineMode {
+pub fn select_mode_by_complexity(complexity : Int32) -> PipelineMode {
   if complexity <= 0 {
     Tidy
   } else if complexity == 1 {
@@ -260,7 +260,7 @@ pub fn select_mode_by_complexity(complexity : Int) -> PipelineMode {
 /// "档表 + 白盒配对锁"复用同一口径：`ops_modes_wbtest` 里对 0..5 每个整数
 /// 都断言"它落在 difficulty_label_from 自己算出的那一档的区间内"，
 /// 改任一侧即红。未知档（含空串）→ (0, 5) = 不夹，让信号分原样通过。
-pub fn complexity_band_of_tier(tier : String) -> (Int, Int) {
+pub fn complexity_band_of_tier(tier : String) -> (Int32, Int32) {
   if tier.contains("易") {
     (0, 2)
   } else if tier.contains("中") {
@@ -273,7 +273,7 @@ pub fn complexity_band_of_tier(tier : String) -> (Int, Int) {
 }
 
 ///|
-fn clamp_int(x : Int, lo : Int, hi : Int) -> Int {
+fn clamp_int(x : Int32, lo : Int32, hi : Int32) -> Int32 {
   if x < lo {
     lo
   } else if x > hi {
@@ -321,8 +321,8 @@ fn keyword_hits(lower : String, keys : Array[String]) -> Array[String] {
 /// 不会出现"分数一套说法、basis 另一套说法"。
 fn complexity_assess(
   description : String,
-  subtask_count : Int,
-) -> (Int, String, Array[String]) {
+  subtask_count : Int32,
+) -> (Int32, String, Array[String]) {
   let chars = description.to_array().length()
   let lower = description.to_lower()
   let reasons : Array[String] = []
@@ -417,8 +417,8 @@ fn complexity_assess(
 /// 纯计算、确定性：同一输入恒得同一档。
 pub fn estimate_complexity(
   description : String,
-  subtask_count : Int,
-) -> Int {
+  subtask_count : Int32,
+) -> Int32 {
   let (score, _, _) = complexity_assess(description, subtask_count)
   score
 }
@@ -476,7 +476,7 @@ pub fn file_scopes_disjoint(scopes : Array[Array[String]]) -> Bool {
 /// （探索模式不能当并行工作单元，否则"选模式的模式"可以无限递归、一个都不开发）。
 pub fn explore_plan(
   description : String,
-  subtask_count : Int,
+  subtask_count : Int32,
   candidate_modes : Array[String],
   files : Array[Array[String]],
   scopes_cleared : Bool,

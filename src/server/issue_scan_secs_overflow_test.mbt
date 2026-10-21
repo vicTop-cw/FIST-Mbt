@@ -19,15 +19,7 @@ test "secs-overflow 规则存在且可统计" {
   @fs.write_string_to_file(d + "/sample.mbt", body, encoding="utf8") catch {
     _ => ()
   }
-<<<<<<< HEAD
-<<<<<<< HEAD
   let r = @server.issue_scan(d, "", 500)
-=======
-  let r = issue_scan(d, "", 500)
->>>>>>> 5f29de2e (fix(test): 适配 moonc 0.10.16 的 Result API —— is_ok/is_err 迁移 + 拆 try? 化石语法 (BUG-328))
-=======
-  let r = @server.issue_scan(d, "", 500)
->>>>>>> f336923b (fix(test-idiom): 清零 0025 test_unqualified_package 全族 803 处（BUG-346）)
   assert_true(r is Ok(_))
   let j = match r {
     Ok(x) => x

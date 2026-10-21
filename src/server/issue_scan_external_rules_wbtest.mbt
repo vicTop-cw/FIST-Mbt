@@ -9,7 +9,7 @@
 ///   4. 路径防御（../、盘符、空 → Err）
 ///   5. 空 rules_file 走内建零回归
 ///   6. 真实文件加载（写 temp JSON 再读回）
-fn ext_cnt_id(rs : Array[ScanRule], id : String) -> Int {
+fn ext_cnt_id(rs : Array[ScanRule], id : String) -> Int32 {
   rs.filter(fn(r : ScanRule) { r.id == id }).length()
 }
 

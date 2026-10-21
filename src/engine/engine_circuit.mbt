@@ -242,7 +242,6 @@ fn cb_note_join(a : String, b : String) -> String {
 fn cb_json(
   circuit : String,
   state : String,
-<<<<<<< HEAD
   failures : Int32,
   w : Int32,
   thr : Int32,
@@ -252,17 +251,6 @@ fn cb_json(
   probe_limit~ : Int32 = 1,
   deny~ : Bool = false,
   persist_error~ : String = "",
-=======
-  failures : Int,
-  w : Int,
-  thr : Int,
-  rec : Int,
-  opened_at : Int,
-  _now_secs : Int,
-  probe_limit? : Int = 1,
-  deny? : Bool = false,
-  persist_error? : String = "",
->>>>>>> 2242a6dc (fix(idiom): 清零 0002 参数位 positional 子族 6 条（`~`/`?` 10 条实证不可机械改名，升格 BUG-354）)
 ) -> Json {
   let allow = state != "open" && !deny
   // 半开态下 failures 复用为"已放行探测数"，另给显式字段，免得读侧按失败数解释

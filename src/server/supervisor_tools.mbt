@@ -20,11 +20,7 @@ priv struct SupervisorGuidance {
 ///|
 /// 引导队列注册表（进程内；跨进程经 call_log 双写回读，见计划文档 §4）。
 priv struct SupervisorGuidanceRegistry {
-<<<<<<< HEAD
   mut seq : Int32
-=======
-  mut seq : Int
->>>>>>> 6c402281 (fix(idiom): 清零 0035/0004/0067 三族 25 条（首个带 .mbti 接口收缩的单）)
   items : Map[String, SupervisorGuidance]
 }
 
