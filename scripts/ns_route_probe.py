@@ -8,6 +8,12 @@
 """
 import sys, os, json, shutil, tempfile as tf
 
+# BUG-381：与 fist_mbt_mcp_client 同款——本机 cp936 下结论行的中文/符号不得崩。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import fist_mbt_mcp_client as fist_client

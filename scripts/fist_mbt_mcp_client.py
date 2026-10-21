@@ -10,6 +10,13 @@
 """
 import subprocess, json, os, threading, time, sys
 
+# BUG-381：Windows 控制台默认 cp936，打印中文结论会 UnicodeEncodeError 崩在结论行前，
+# 退出码被冒用成「缺陷在场」。CI 的 check_py_stdout_encoding.py --all 以此闸为准。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 PROJ = r"E:\IDEProjects\AI\FIST-Mbt"
 JS = os.path.join(os.environ["LOCALAPPDATA"], "FIST-Mbt", "fist-mbt.js")
 PROTOCOL = "2026-07-28"
