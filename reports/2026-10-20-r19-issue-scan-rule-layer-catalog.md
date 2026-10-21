@@ -103,3 +103,17 @@
 - 证据细节：R14 `reports/2026-10-20-r14-bug345-fix-blueprint.md`、R16 `…-r16-denoise-rules-v2-and-bug347.md`、R17 `…-r17-bug347-fix-blueprint.md`、R18 `…-r18-json-injection-sink-vestigial.md`
 - 数据：`memory/bug346_json_injection_sink_analysis.json`、`memory/bug347_external_pattern_probe.json`、`memory/bug333_denoise_rules_v2.json`
 - 账本：BUG-345 / BUG-346 / BUG-347
+
+---
+
+## 追加：owner 裁决（2026-10-21，R19 收口）
+
+**裁决① · `moonbit-json-injection` 处置 = 退役**（owner 选定）
+- 处置方式：删除该规则，或 `severity` 永久置 `info` + `pattern` 改必不命中标记 + 显式标注 `deprecated: no-sink-in-moonbit`。
+- 依据：R16-R19 四轮实证——内建命中安全构造器（BUG-346）、外部 rules_file 被剥离 `::` 限定（BUG-347）、本仓注入汇不存在（`Json::parse/from_*` 零命中，`@json.parse` 127 处全为反序列化外部载荷；FP 量级 store=45 / ltl=11 / engine=340）。
+
+**裁决② · 落地授权 = 清空后落地**（owner 选定）
+- 授权范围：等 `src/server` 并发 WIP 清空后，一次性落地 BUG-347（统一匹配器）→ BUG-345（`by_severity` 补 info）→ BUG-346（json-injection 退役，按裁决①）→ 可选 BUG-327/333；落地后跑 `moon test --target js` 全绿再 `bug_fix` 销账。
+- 边界：不触碰并发未提交的 `src/server` 37 个改动与新增未跟踪 `src/server/bug335_ns_route_wbtest.mbt`；不越权修改无关子系统。
+
+**待定项**：`moonbit-result-discard` 规则命中任意 `ignore(`（`engine.mbt` L739/L853 `ignore(created_by : String)`）的过宽问题，未在本次裁决范围内；建议在 BUG-346/347 修复批一并评估，或另立提案。
