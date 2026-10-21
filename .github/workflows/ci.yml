@@ -107,6 +107,17 @@ jobs:
         shell: bash
         run: python3 scripts/check_scripts_index.py
 
+      # 零执行面的尺=坏着的尺（R40 实测）：check_plan_landing 自 2026-10-14 落仓起既不在 CI、
+      # 也不在 11 份手写回归电池（temp/run_guards5、7–16 逐份 grep 全 0 命中）里，于是它带着
+      # 「路径:行号整串当路径 ⇒ 已跟踪文件报 missing」的虚报缺陷躺了一周，没人跑就没人知道。
+      # 本步把「每把 check_*.py 至少有一个执行面」这条门自己挂上执行面；--selftest 先证明这条门会红。
+      - name: Guard execution-face census (每把尺必须在 CI 或仓内电池有一格，BUG-366)
+        shell: bash
+        run: |
+          python3 scripts/run_guards.py --selftest
+          python3 scripts/run_guards.py --list
+          python3 scripts/check_plan_landing.py --selftest
+
       - name: Deprecated text-census selftest (BUG-362：尺子必须先证明自己会红)
         shell: bash
         run: python3 scripts/check_deprecated_text_census.py --selftest
