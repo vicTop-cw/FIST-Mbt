@@ -2,9 +2,7 @@
 
 - 提交面：新守卫 `scripts/check_exit_code_contract.py`（740 行）+ 一把尺修真 `scripts/check_template_ctrl.py`（+42 −3）
   + 执行面三处（`ci.yml` +11、`run_guards.py` +4、`scripts/README.md`）+ 认知面两处（`docs/agent-map.md` §五 +4 −1、`memory/bugs.md` BUG-369 `landed`）
-  + 本汇报；主件 `4d87191`（9 个显式路径 / +924 −6，逐路径 `git add`、无 `-A`、无 `--no-verify`）。分支 `slave/guard/exit-code-contract`
-  链在已推的 `slave/guard/plan-landing-moved-face`（R41 `095bf31`）之后单独起支，**trunk 未推**，已推 gitcode、远端
-  `Start Git Hooks Checking [PASSED]`，
+  + 本汇报；分支 `slave/guard/exit-code-contract` 链在已推的 `slave/guard/plan-landing-moved-face`（R41）之后单独起支，**trunk 未推**，
   MR 入口 `https://gitcode.com/VictorTop/Fist-Mbt/merge_requests/new?source_branch=slave/guard/exit-code-contract`（MR 由 owner 开）
 - FIST：根任务 `T0r23`（publish→claim→execute→submit→verify 全生命周期，`--created-by human_steward` / `--assignee slave-guard`），连续第廿三轮自我迭代可证
 - 台账：BUG-369（low，**仍 OPEN**——4 把尺只修真 1 把，判定面 16 条 = 棘轮上限；`landed[2026-10-21 R42]` 记下改了什么、没改什么）；
@@ -63,10 +61,9 @@
    ② 形状识别分不出「举例」与「承诺」，出路是改写文本——若有人加「跳过注释」的口子，先被吃掉的是把契约写在 `#` 注释块里的真脚本
    （`e2e_native_heap_probe` 正是这种）。
 3. **O 面只有 1 条但非零**：`sys.exit(p.returncode)` 这类外部件透传 ⇒ R1 主动让位。让位面若长大，R1 的承重力就下降，需要人读。
-4. **工具链拼写抖动仍在账上（BUG-330，OPEN；本轮复现，不是新发现）**：`moon test`/`moon check` 会重算 `.mbti`，本轮实测
-   23 份变脏、其中 18 份真有 `Int` → `Int32` 纯拼写差（237 增 / 237 删，`src/**` 一字节未动）。收尾按 BUG-342 note③ 的既有约定
-   `git restore -- '*.mbti'` 收回、未入提交，还原后 `check_mbti_sync.py` 仍 PASS（它只判 pub 名在不在，不判类型拼写）。
-   真正待裁决的是「要不要一次全仓 `moon fmt` 把拼写钉成 0.10.16 的口径」——几万行级 churn、与任何功能单正交，属独立决策（金条四，留 owner）。
+4. **本机 moon 与提交面 `.mbti` 版本异色**（本轮金条八顺带现形）：`moon test`/`moon check` 会重算 23 份 `pkg.generated.mbti`，
+   其中 **18 份真有内容差**（237 增 / 237 删，逐行核对是纯 `Int` → `Int32` 改名，`src/**` 一字节未动）。本轮**未 stage 这些噪音**
+   （也没 `git restore`——写操作只到确认），它们留在工作树；下一轮跑 `moon info` 的任务必须先裁决「`.mbti` 由哪个版本落地」。
 5. **CI 仍无提交面门**：`core.hooksPath` 未设置，`.githooks/pre-commit` 不生效；本轮把守卫挂进 CI 与本地电池，但「本地提交前自动跑」这件事没做。
 6. **用户口径「提交之前不能有任何 WARNING 和 ERROR」**：489 条 warning 是存量（非本轮引入，逐文件分布与基线求差为空），
    按既有裁定「交 CI 当门，PR 里如实标注」处理——本报告即标注面。
@@ -96,16 +93,4 @@
   `check_scripts_index`、`check_doc_surface` 全绿（170 工具 / v0.3.9）
 - 认知来源：`memory/bugs.md` BUG-369（R41 立单 + 本轮 `landed`）、`memory/2026-10-21.md` R41/R42 两段、`docs/agent-map.md` §五
   「一把尺不跑就等于一把坏尺」→ 本轮把它从口头纪律变成有门的判据
-- 上游任务面：`python scripts/fist.py` 的 `T0r23`（publish→claim→execute→submit→verify，驱动器 `temp/t23_drive.py`），
-  终态 `status=已完成`；DELIV 十一点见 `temp/fist-selfiter.db`
-
----
-
-## 回填更正（R43，2026-10-21 下一轮）
-
-上表两处数字是**同一轮里两次采样的混读**，现读真源更正如下（不改写当时的判定面读数，只补计时口径）：
-
-- 「85 份 .py 里 **31** 份有 `N=` 契约块」⇒ 真源现读 **32** 份。原因：**新尺入场会把自己算进宇宙**——`git ls-files` 的 85 是加判据之后重跑的，31 是加之前那次普查的读数。同一条自咬在棘轮说明上又踩一次：构成注释写成「8 = 2026-…」开头 ⇒ 自家注释被承诺面当成一份新契约（该文件契约块 2→3），按既有定律改写文本、不开豁免面，并加 `own-source-has-no-bare-pair-block` 一格钉住形状。
-- 「U 未认作契约 **38**」⇒ 真源现读 **37**（同一采样时刻问题，不是这轮把 U 面修小了）。
-- 判定面那两栏（16 条 = 上限）无更正：R42 的 16 条是入场后重跑过的；本轮 R43 修掉 `check_mbti_sync` 一族 8 条后降到 **8**。
-- 教训一句话：**一组数字要么一次跑齐，要么各自标清采样时刻**（与 `cleanup_artifacts` 读数那条计时口径同律）。
+- 上游任务面：`python scripts/fist.py` 的 `T0r23`（publish/claim/execute/submit/verify），DELIV 记录见 FIST 库 `temp/fist-selfiter.db`

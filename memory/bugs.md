@@ -4091,7 +4091,7 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 
 ### FIXED(2026-10-16T15:51:31Z / BUG-217)
 - evidence: commit ba4fd93 修复 claimguard.mbt may_proceed_sematic/may_proceed_full：先跑只读预检（decide_claim/blind_spot_holds/semantic_collision）全部通过后才 claim_item；claim_item 调用位于 L248/L294 在所有检查之后。次条（2026-10-15T13:22:34Z）与首条同号不同 ts，因 BUG-241 未修而滞留 OPEN。BUG-241 修复已入库（f1e36a3：bug_header_lines 返回 ALL 索引，bug_fix 逐条改判同号重复条目）。现补标 FIXED。
-## BUG-263 [2026-10-15T13:22:34Z] [medium] FALSE_POSITIVE
+## BUG-263 [2026-10-15T13:22:34Z] [medium] OPEN
 - renumbered_from: BUG-217（2026-10-17 fist-lead 清整，消除与已 FIXED BUG-217 的 ID 碰撞，见 BUG-260）
 - summary: [claimguard-side-effect] may_proceed_sematic / may_proceed_full 在检查前先 claim_item：返回 false 时项已被 side-effect 认领
 - detail: `may_proceed_sematic` / `may_proceed_full` 的语义是"问"——回答能否 proceed——但实现先调 `claim_item(g, proposed, agent)` 把项**认领给自己**，再跑语义/盲点检查；检查失败返回 false 时，项已被 side-effect 认领。
@@ -4107,7 +4107,6 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 修复方向：把 claim 动作移到所有检查**通过之后**——先用 `decide_claim` 只读判重，全通过再 `claim_item`；或者拆成 `check_proceed_*`（纯读）+ `claim_item` 两步，由调用方显式认领。
 
 
-- false_positive(2026-10-19T07:05:35Z): 2026-10-19 实证：src/claimguard/claimguard.mbt L232-252 may_proceed_sematic 与 L272-294 may_proceed_full 均已是「只读预检→全过后才 claim_item」——L240/L245（sematic）与 L282/L287/L291（full）在 return false 之前**不调用** claim_item，状态写只发生在 L248/L294 的放行分支。白盒锁 cg_full_gate_item_id_block（claimguard_wbtest.mbt L224-234）显式断言：may_proceed_full 返回 false 后 `holder_of(g,"L38-logic-engine")==Some("A")`（原持有者未变）。`moon test --target js -p src/claimguard` = 57/57 passed。该 bug 已在 BUG-217 rework（源码注释 L228-231/L270-271 明写「旧实现先 claim_item 再跑语义检查→现在改为只读预检」）落地时一并修复，BUG-263 报告所引行号（L228-243/L261-283）与现文件偏移 4~11 行，系报告早于修复落盘。
 ## BUG-218 [2026-10-15T13:51:38Z] [medium] FIXED
 - summary: [scoring] calc_coverage 的 substring 匹配对空/单字符 law 产生假覆盖（coverage 虚高）
 - detail: `src/omega/scoring.mbt` 的 `calc_coverage` 用 `Json::stringify(t).contains(law)` 判断某条 law 是否被 tests 覆盖。实测两个漏洞：
@@ -4800,9 +4799,6 @@ is_subtag(@infix, @method) // 期望 True（§16.5:245 / DEMO/10:203，裸 @infi
 
 ### FIXED(2026-10-18T01:22:01Z / BUG-270)
 - evidence: Pentad commit 9e8f35b（2026-10-17T21:02Z）已把 macros.p5 从「不可落 golden」转为可落：修复 ① 的 8 条无可观察输出——按 §13 用例意图补 5 条 print（twice(n)、sum=add(1,2)、p.name()、p.age()、if 值 x）+ 加收尾哨兵 print("DEMO macros OK")；② 的 Str({expr}) 源码文本歧义不改引擎（语义归 owner 定档，本 commit 只把 :95 期望修正为实际输出「DEBUG: 5 = 5」并注明原因）。同步：square 宏展开值被丢弃是宏系统设计行为、set_it 实际返回 None，两处期望均按实测诚实化。产物 DEMO/07_macros/macros.out（21 行）随 golden 提交。判据 e2e_golden PASS 15→16、UNREG 4→3，.ps1 与 .sh 两版一致确认（同一棵树）。本轮宿主进程孵化故障致无法 git commit，但 9e8f35b 已在上轮落库。
-
-### FIXED(2026-10-20T06:42:07Z / BUG-270)
-- evidence: 实测 rlib 导出面：`rustc --extern lz_builtins` 逐个编译 158 个缺失名，仅 17 个真导出（chunk/compose/concat/count/drop/expect/find/fold/fold1/group_by/partition/pipe/pipe2/pipe3/reduce/unique/unique_by），141 个 `lz_builtins/std/*.rs` 未并入 crate（`git status ??` + `runtime/mod.rs` 无 mod 声明）。已在 `src/ir/codegen/scan.rs` `LZ_BUILTIN_FN_NAMES` 末尾新增 17 名分组（L1756-1775 带 BUG-270 注释），阻止桩遮蔽真身；141 未导出名保留桩语义（桩是其唯一定义）。探针 `TEMP/probe/sweep10/bug270_probe2.lz` 实测：find/fold 已解析到 rlib 真身无桩；get_or/keys 仍生桩（预期）。语料搜索零命中，无回归。
 ## BUG-271 [2026-10-17T03:02:36Z] [high] FIXED
 - summary: [Pentad/§9.3.6+§9.0] 绑定处隐式提升未生效（let f: Float = 42 得 42；let o: Option<Int> = 5 得 5）且 Void 有两种运行时表示（内建返回 None、() 字面量得 ()）
 - detail: 发现轮：p5c 组合流水线 R19（寻虫+验证）。审计 DEMO/01_types/type_lattice.p5（43 条内联期望）以求落 golden：41 条吻合，**3 处不符且均为引擎侧真缺陷**，故该 demo 保持 UNREG。三处都已隔离到与 demo 无关的最小复现。
@@ -5030,9 +5026,6 @@ expr_gen.rs：Dict/HashMap 无 DictExt trait 时 values/keys 生成 `{recv}.{met
 - evidence: expr_gen.rs 增加 take_while/drop_while prelude 映射：`({xs}).into_iter().{take_while|skip_while}({lambda}).collect::<Vec<_>>()`，lambda 用 strip_lambda_type_with_ref。Rust 1.96 无 drop_while，用 skip_while 等价替代。
 验证 TEMP/str_probe14.lz → unwrap_or_else=42、expect=5、and_then=2、take_while_count=2、drop_while_count=2。全部通过。
 全套 cargo test 601 passed。
-
-### FIXED(2026-10-19T09:07:54Z / BUG-288)
-- evidence: 落地在 eval/mod.rs（FrameRec 新增 is_block 字段 + push_block() + pop() 对 Set(Some) 分支跳过回滚）+ eval/stmts.rs（eval_scoped_block 走 push_block/pop，Stmt::If 分支改用 eval_scoped_block）。3 条新单测锁定：g1.rs::test_if_block_let_does_not_leak_out / test_if_block_mutation_of_outer_binding_propagates / test_if_block_let_shadow_does_not_affect_outer。815 测全绿，20 DEMO 全跑通。
 ## BUG-289 [2026-10-17T05:48:48Z] [medium] FIXED
 - summary: BUG-290: Set([...])/Dict({...}) 非空 type-alias 构造按函数调用生成 → E0308
 - detail: Set([1,2,3]) / Dict({"a":1,"b":2}) 非空构造被按 struct/函数调用路由生成 `Set(vec![...])` / `Dict(BTreeMap::from([...]))` → E0308 expected i64, found Vec<i64>。
@@ -5115,9 +5108,6 @@ BUG-294：infer.rs lookup_builtin_method_ret 增加 Range arm（next/len/count/c
 ### FIXED(2026-10-17T06:21:03Z / BUG-295)
 - evidence: 修复：expr_gen.rs L3706 通用 MethodCall 回落路径增加 split 特判（recv_is_str_owned && rust_method=="split" → `{recv}.split({args}).map(|s| s.to_string()).collect::<Vec<_>>()`）；infer.rs lookup_builtin_method_ret 增加 IrType::Int/F64 → abs 保持原类型。
 验证 TEMP/str_probe18.lz：abs(-5)=5、abs(-3.5)=3.5、upper=HELLO、lower=world、trim=hi、split.len=4、starts_with=true、ends_with=true、contains=true。
-
-### FIXED(2026-10-19T09:23:08Z / BUG-295)
-- evidence: 生成器函数体为 try/catch 时，闭包内生成器 return/raise 曾直接 `return __gen_vec;`，把被 &mut 捕获的 __gen_vec 移出闭包 → E0382。改发终止标志：闭包内 `__gen_terminated_N = true; return;`（闭包返回 ()），try 块结束后统一 `if __gen_terminated_N { return __gen_vec; }`。嵌套修复：gen_try_flag_counter 改 Rc<Cell<usize>> 共享 + 子 CodeGen（BlockExpr/Lambda/trait默认方法体/构建块）继承 gen_try_flag_stack 与共享计数器，否则嵌套 try 复用同名标志（内层遮蔽外层、置位语句两次都写内层绑定）。验证：TEMP/probe/sweep10/{gen_try_ret,gen_try,gen_try_else,gen_try_finally,gen_try_nested}.rs 全部 rustc 通过并运行输出 Some(1)；回归 DEMO/CY 七个既有 try 文件全部通过。
 ## BUG-296 [2026-10-17T06:25:54Z] [medium] FIXED
 - summary: BUG-296: List.sort()/reverse() 未登记返回类型 → E0608
 - detail: `xs.sort()`/`xs.reverse()` 未在 lookup_builtin_method_ret List arm 中登记 → 回退 Any→i64/Unit，codegen 生成 `let ys = xs.sort();` → ys 为 `()` → `ys[0]` E0608。
@@ -5466,7 +5456,13 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - note: 未自证面：`moon test --target js` 与 `moon build --target js` 在本机物理跑不了（见 BUG-329），故"测试全绿"交 CI 兜，PR 里如实标注。`.mbti` 里 `Int`→`Int32` 的 24 处改动与本单无关，是这次**成功的** `moon check` / `moonfmt` 顺手做的类型名规范化（见 BUG-330），已从提交里剔除。
 - task_id: T0-slave-moonc-0.10.16-result-api
 
-## BUG-329 [2026-10-20T12:44:00Z] [high] OPEN
+### FIXED(2026-10-20T14:10:00Z / BUG-328)
+- evidence: 20 个文件改动已在本分支 `slave/fix/moonc-0.10.16-result-api`：16 个测试文件里的 `is_ok()/is_err()` 调用点改写为 `is Ok(_)/is Err(_)`（`assert_false(x.is_ok())` 取反成 `is Err(_)`），`src/store/store_sqlite.mbt:1860` 一带的 `try? AssistantReg` 化石语法按可达性拆除。
+  基线（HEAD `34ce658`，本机实跑）：`moon check` → `Failed with 641 warnings, 26 errors`（23 条 4015 + `store_sqlite.mbt` 的 3002/4014 三条），rc=1。
+  修后（同一命令）：rc=**0**，`Finished. moon: ran 49 tasks, now up to date (1920 warnings, 0 errors)` —— 26 error 全清，warning 641→1920 的差额是 store 包编译成功后下游包全量暴露的存量（与本单改动行无关，见 detail 末段自证）。
+  补验（工具链修通后，见 BUG-329 的 FIXED 小记）：`moon test` 与 `moon test --target js -j 1` 均 rc=0、`Total tests: 1302, passed: 1302, failed: 0`；`moon build cmd/cli --target js` rc=0；发布链 `build_release.ps1 -Version 0.3.9 -SkipNative` rc=0 产出 `fist-mbt.js` 3747.3 KB 与 `fist-mbt-js-v0.3.9.zip`。本单 detail 里"测试全绿交 CI 兜"的未自证面已全部转为本机实测。
+
+## BUG-329 [2026-10-20T12:44:00Z] [high] FIXED
 - summary: [工具链/非本仓] 副机 `~/.moon/lib/core/_build/js/release/bundle/core.core` 缺失 —— 任何工程的 `moon build`/`moon test` 都在 LinkCore 步骤红，与代码无关
 - detail: 复现不依赖 FIST-Mbt：新建最小工程（`probe/probe`，单包 3 行 main，仅 import `moonbitlang/core/array`）跑 `moon build --target js` 与 `moon test --target js`，两者同报
   `probe/probe/p@Source@LinkCore:0: input ...\bundle\core.core missing`。
@@ -5477,6 +5473,15 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 
 影响：这台机器上「`moon test` 全绿」这类金条八自证**物理不可能**，只能做到 `moon check` 级自证 + CI 兜 build/test。修复属机器级、且要重建 stdlib 安装（`cli.moonbitlang.com` 出口 403，装不动），故只出方案不动手：要么从主机拷一份含 `core.core` 的 `~/.moon/lib/core/_build`，要么在能联网处装回本仓钉版 0.1.20260920。
 - task_id: T0-slave-moonc-0.10.16-result-api
+
+### FIXED(2026-10-20T14:07:00Z / BUG-329)
+- evidence: 本机已修好并实跑，**不需要联网、不需要从主机拷 `_build`** —— 缺的那一步用工具链自带的 `moonc bundle-core` 就地补上（`moonc --help` 原文：`bundle-core: bundle multiple core IR files into one`）。工序三步：
+  ① 输入正是本单 detail ③ 里重跑 stdlib 自身构建产出的那 79 个 `<pkg>.core`，路径 `~/.moon/lib/core/_build/js/release/bundle/<pkg>/<pkg>.core`，顺序照同目录 `all_pkgs.json` 的 `packages[]`（79 项，`abort` 居首）；
+  ② `moonc bundle-core <除 abort 外的 78 个 .core> -o core.core`。`abort.core` 刻意不进 bundle：`moon test --dry-run` 里每一条 `link-core` 都把 `bundle/abort/abort.core` 与 `bundle/core.core` 并列为两个输入，照此拆分即与编译器期望同形；
+  ③ 产出 `bundle/core.core` 4476287 字节 ⇒ LinkCore 的缺失输入补齐。
+- 修通后的实跑读数（同一分支、同一份代码，全部 rc 实测）：`moon test` rc=0，`Total tests: 1302, passed: 1302, failed: 0`；`moon check` rc=0（0 errors / 1920 warnings，与本单 detail 里 `--json` 的判据读数逐项一致）；`moon build cmd/cli --target js` rc=0，产物 `_build/js/debug/build/cmd/cli/cli.js`（这正好证实了 BUG-336 的判读：SOP 原来写的 `cmd/main/main.js` 在这条流水线下不会产出）；`powershell scripts/blackbox/build_release.ps1 -Version 0.3.9 -TargetDir temp/_release_probe -SkipNative` rc=0，产出 `js/fist-mbt.js` 3747.3 KB 与 `fist-mbt-js-v0.3.9.zip`；`node temp/_release_probe/js/fist-mbt.js --help` → `FIST-Mbt Help v0.3.9 (170 MCP tools)`。
+- 本单原判的修正（append-only，不改上文）："修复属机器级、要重建 stdlib 安装、出口 403 装不动"这一条**不成立**，正确定性是"安装侧缺 bundle 合成这道工序，编译器自己能做"。连带解除两条限制：① 金条八的 `moon test` 全绿自证在本机恢复可用；② 上一版交 CI 兜的 `moon test` / `moon build` 面现在可以本机实跑，BUG-328 的"未自证面"已补验。
+- 边界与副作用（如实记）：① 合成物落在 `~/.moon/lib/core/_build/js/release/bundle/core.core`，属机器级、不进仓库、不随本 PR 走，换机/重装工具链需重跑同一工序；② 同目录 `all_pkgs.json` 里那批 `\\?\` 长路径是上一轮为绕 moonc 的 Windows 长路径 ICE 手工改写留下的（`all_pkgs.json.orig-fossil` 是改写前的原件），本单沿用现状、未再动它；③ 本机仍靠 `MOONC_OVERRIDE` 指向自建 shim 才能跑 moon，这颗 ICE 未解（另单）。
 
 ## BUG-330 [2026-10-20T12:54:00Z] [medium] OPEN
 - summary: [工具链] moonc/moonfmt 0.10.16 把 `Int` 规范化打印成 `Int32` —— `moon fmt --check` 与 `.mbti` 生成面在新版下与仓库存量拼写系统性不一致
@@ -5491,436 +5496,218 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - task_id: T0-slave-moonc-0.10.16-result-api
 
 
-## BUG-324 [2026-10-18T12:20:56Z] [high] OPEN
-- summary: verify DANGEROUS_PATTERNS 漏检 os.popen(<变量>)：旧 pattern `os.popen(cmd\b` 只匹配变量名恰为 cmd，实测 os.popen(wsl_cmd) 漏网（mcp_call L85 为 RCE）
-- detail: ## 根因
-`actions/vools/actus.verify.actus.md` 原 DANGEROUS_PATTERNS 中 os.popen pattern 为 `os\.popen\s*\(cmd\b`，仅匹配变量名恰为 `cmd`。全仓 16 个动作使用 `os.popen(<其他变量>)`（如 `wsl_cmd`、`cmd_line`、`run_cmd`），全部漏网。
+## BUG-342 [2026-10-20T14:39:00Z] [medium] FIXED
+- summary: [依赖面] 16 条 `unused_package`(0029) 全清 —— 暴露 moon.pkg 的 import 作用域口径：`for "test"` 不覆盖 `*_wbtest.mbt`，白盒测试依赖必须写 `for "wbtest"`
+- detail: 基线读数（本机 `moon check --target js --json`，分支 slave/fix/moonc-0.10.16-result-api 的 stacked 基）：`status=success`、1920 warnings / 0 errors，其中 `error_code=29`（unused_package）16 条，落在 12 份 `moon.pkg` 的 import 行上。按引用面分两族：
+  ① **全包零引用 12 条**（含 `omega/` 4 条——该目录只有 `moon.pkg` + `pkg.generated.mbti`，一份 `.mbt` 都没有，且全仓无 `vicTop-cw/fist-mbt/omega` 引用）：`omega`×4、`src/decompose` 的 `src/core`、`src/diff` 的 `json`、`src/evolve` 的 `x/fs`、`src/executor` 的 `json`、`src/ltl` 的 `json`、`src/omega` 的 `set`、`src/router` 的 `encoding/utf8`、`src/server` 的 `string` ⇒ 直接删该行；某包的 import 块被删空则整块移除，不留 `import {}` 空壳。
+  ② **只被测试面引用 4 条**，需要的是**作用域**而不是删除：`src/engine` 的 `x/fs`（`docs_gate_test.mbt` 等 `@fs.` 限定引用）与 `src/ops` 的 `src/store`（`ops_watchdog_test.mbt:12 @store.SqliteStore::open`）改 `for "test"` ⇒ 0029 清零且不新增 0071；`src/core` 的 `quickcheck` 是本条的**主证据**：它原本就写 `for "test"`，却同时吃到两半——主编译单元报 0029（unused）+ `core_quickcheck_wbtest.mbt:35/56/75/94/113` 报 0071 `core_package_not_imported`（"used without import"）。同仓 `src/decompose` 的 `quickcheck` 同样是 `for "test"` 却不报，差别只在引用文件是 `_test.mbt`（黑盒）还是 `_wbtest.mbt`（白盒）⇒  moonc 0.10.16 不把 `for "test"` 依赖注入白盒单元。改成普通 import 可清掉 5 条 0071 但 0029 仍在（主单元确实用不到）；写 `for "wbtest"` 后两族同清。`for "wbtest"` 不是我造的写法：`~/.moon/lib/core/*/moon.pkg` 里 5 份、本仓 `_deps` 里 14 份在用。
+  净读数：1920 → **1899**（−16 条 0029 全部 −5 条 0071 = −21），`moon test --target js -j 1` 仍 `Total tests: 1302, passed: 1302, failed: 0`。
+- note: 三条可复用的坑：① 用 `(^|[^\w./@-])pkg\.` 这类正则判"包是否被引用"会把**同名局部变量**算成引用——`src/ops/audit_test.mbt:145` 是 `let json = log.to_json()` 后 `json.stringify()`，与 `moonbitlang/core/json` 无关；命中行必须逐条肉眼过，否则会把真该删的 import 误判成"测试在用"而错标 `for "test"`。② native 面本机不可验证：`moon check --target native` rc=1，失败在 `.moon/lib/core/_build/native/release/bundle/cmp/cmp.mi: No such file or directory`（本机只合成了 js bundle，与 BUG-329 同族的机器级缺口），与本单改动无关；被删的 12 条在**含 `*_native.mbt` 的整个包目录**零引用，CI 的 native job（`fist-ci.yml:103` check / `:129` test）当门。③ `moon check` 会顺手重写 24 份 `pkg.generated.mbti`（Int→Int32 拼写抖动，BUG-330 同根），本单收尾统一 `git restore -- '*.mbti'`，`check_mbti_sync.py` 在还原后仍 PASS（它只判 pub 名在不在，不判类型拼写）。
+- 出路（不在本单边界内）：`omega/` 空包只剩两个非源文件，删除属不可逆动作，按金条留 owner 裁决；`cmd/cli/upgrade_js.mbt:75/280` 与 `src/store/store_sqlite.mbt:309/636` 的 4 条 0071 是"用了 `json` 却没 import"，与本单反向，留作下一族（补 import 时要防 js-only 文件在 native 面反吃 0029）。
+- task_id: T0-slave-unused-package-deps
+
+### FIXED(2026-10-20 轮次 R18 / BUG-342)
+- 改了什么：12 份 `moon.pkg` —— 删 12 条零引用 import（`omega`×4 连同空块、`src/decompose` 的 `src/core` 连同空块、`src/diff` 的 `json` 连同空块、`src/evolve`/`src/executor`/`src/ltl`/`src/omega`/`src/router`/`src/server` 各 1 条）；`src/engine` 的 `x/fs`、`src/ops` 的 `src/store` 收进 `for "test"` 块，`src/ops` 的 `json` 删除（同名局部变量假阳性）；`src/core` 的 `quickcheck` 由 `for "test"` 改 `for "wbtest"`。
+- 实测锁钉：`moon check --target js --json` → `status=success`、1899 warnings / 0 errors、`error_code=29` 命中数 **0**（改前 16），`error_code=71` 由 9 → 4；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`python scripts/check_pkg_imports.py` → PASS（24 份 moon.pkg 的 30 条本地 import 指向目录都在跟踪面）+ `--selftest` SELFTEST OK 6 格；`python scripts/check_mbti_sync.py` → PASS 641 条 pub 声明。
+## BUG-343 [2026-10-20T14:48:00Z] [medium] FIXED
+- summary: [依赖面] 4 条 `core_package_not_imported`(0071) 清零 —— 与 BUG-342 反向的那一格：代码用了 `moonbitlang/core/json` 却没在 `moon.pkg` 里 import
+- detail: 0071 原文是 "Package `json` from `moonbitlang/core/` is used without import. This is deprecated."。族里原有 9 条，其中 5 条是 `src/core/core_quickcheck_wbtest.mbt` 的 `@quickcheck.check`，已随 BUG-342 的 `for "wbtest"` 一并清掉；剩 4 条同一形状：`cmd/cli/upgrade_js.mbt:75/280`、`src/store/store_sqlite.mbt:309/636`，全是 `@json.parse(raw)`。
+  为什么没有"免 import 的替代写法"：查 core 库真源 `~/.moon/lib/core/json/parse.mbt:82` 只有包级 `pub fn parse`，`Json` 类型侧不存在 `from_string`（`from_string` 只在 `BigInt` 上）⇒ 想不引包就改写法这条路不存在，只能补 import。这与 `upgrade_core.mbt` 里 `Json::object({...})` 不报警是两回事：类型名走的是隐式可见面，包级函数才是 0071 判的那一格。
+  多目标一格（如实标注，不当已解决）：`cmd/cli/moon.pkg` 有 `options(targets: {"upgrade_native.mbt": ["native"], "upgrade_js.mbt": ["js"]})`，而 `@json.` 只出现在 js-only 的 `upgrade_js.mbt`（3 处），native-only 的 `upgrade_native.mbt` 0 处 ⇒ 这条 import 在 native 面理论上会反吃一条 0029。本机量不了 native（`~/.moon/lib/core/_build/native/release/bundle/cmp/cmp.mi` 缺件，BUG-329 同族的机器级缺口），且 CI 的 native job 只判 error 不判 warning（`fist-ci.yml:103`）。这一格与本支既有形状一致——`cmd/cli` 早就 import 了 js 专属的 `moonbitlang/async/js_async`——`moon.pkg` 现行文法没有"按 target 导依赖"的表达力（只有 `for "test"` / `for "wbtest"` 两种测试向作用域），属工具链边界，不靠压制或 hack 绕。
+- note: 族谱进度一并落档，免得下轮重新量：0020 deprecated 904、0025 test_unqualified_package 803 两支大的未动；0079 implicit_impl_as_method 63、0002 37、0035 reserved_keyword 13、0078 result_error_return 13、0006 unused_constructor 12、0008 unused_value 12、0004 11、0001 9、0021 6、0027 5、0009 3、0007 2、0067 1、0013 1（本轮起 0029/0071 双双归零）。
+- task_id: T0-slave-unused-package-deps
+
+### FIXED(2026-10-20 轮次 R19 / BUG-343)
+- 改了什么：`cmd/cli/moon.pkg`、`src/store/moon.pkg` 各加一条 `"moonbitlang/core/json"`。源码一行未动。
+- 实测锁钉：`moon check --target js --json` → status=success、1899 → **1895** warnings / 0 errors，`error_code=71` 命中 **0**、`error_code=29` 命中 **0**；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`python scripts/check_pkg_imports.py` PASS + `--selftest` 6 格 OK。
+## BUG-344 [2026-10-20T15:15:00Z] [medium] FIXED
+- summary: [惯用法面] 0020 deprecated 的 `not(x)` 子族 203 处清零 —— 并证实 moonc 对同一行的同族弃用告警只报一次，`--json` 清单当工单会留下"清单外残余"
+- detail: 起量（本机 `moon check --target js --json`，分支 slave/fix/core-package-imports 的 stacked 基）：1895 warnings / 0 errors，其中 0020=904，子形状 `Use !expr instead` 报 **201** 处、落在 62 份文件。改法是纯机械的 `not(arg)` → `!arg`。
+  但 201 不是真族大小：收尾 `grep -rn '\bnot('` 复核发现仍有 2 处代码命中 —— `src/server/output_validate.mbt:351`（`if not(found)`）与 `src/server/run_check_guard.mbt:325`（`if not(p.absolute) && !p.escaped ...`）。两处的共同点是**同一行还有另一个 `not(` 且那一个已被告警覆盖** ⇒ moonc 0.10.16 在同行内对同一 `error_code` 只出一条，族真实大小 203。教训写死：以 `--json` 清单为工单的族，收尾必须用文本面（grep 计数）复核残余，两数不一致就是编译器在去重而不是代码没问题。补掉这 2 处后 `--json` 里 `Use !expr instead` 命中 **0**，残余只有 `#cfg(not(...))`（2 处，属性语法不是调用）与 1 处文档注释里的 `not(avail)` 引述。
+  与格式化器的相互作用（本单真正花时间的地方）：`!(primary)` 的括号是冗余的，moonfmt 会剥掉 ⇒ 首版脚本按"含空格就保留括号"保守处理，产生 51 处 `!(...)`，直调 moonfmt 逐行比对后暴露 18 处分歧；改成按**括号/方括号深度**判深度 0 是否只含 `[A-Za-z0-9_.@]` 与 `::` 后，201 处里仅 7 处需要保留括号（`!(tight < loose)`、`!(phi2 > phi1)`、4 处 `is` 模式、1 处跨行 `||` 串）。还有一类不是括号问题：`not(a) && not(b) && not(c)` 折行写成三行，改成 `!a && !b && !c` 后短到能并行，moonfmt 要求合并 —— `src/engine/engine_supervisor.mbt` 两处、`src/server/server.mbt`、`src/server/supervisor_tools.mbt`、`src/executor/registry_test.mbt` 各一处，已按格式化器给的缩进就地合并。
+  量法（沿用既有绕法）：本机 `moon fmt` 中 `\\?` ICE（BUG-329 的 FIXED 注记里"同族第二道"），直调 `~/.moon/bin/moonfmt.exe <file> -o out`；比对时剔除 0.10.16 的两类拼写漂移（`Int`/`Int32` 与 `x? :` / `x~ :`，BUG-330 同根）只看 `!` 相关行 ⇒ 最终 **0** 处分歧，62 份文件 CRLF 全部保持（bare LF = 0）。
+- note: 本单只动 `!` 运算符一处语义面，零接口变更（`check_mbti_sync.py` 前后同 PASS）。CI 面 6 处预存红与本机 `cleanup_artifacts --check` DIRTY(265) 在改前改后逐项一致，非本单引入，按既有裁决交 CI 当门 + PR 里如实标注；native 面本机仍量不了（js bundle 之外无件，BUG-329 同族机器级缺口），而 `!` 与 `not()` 在两后端同语义，风险面限于 js 侧的格式化差异。
+- 后续建议：0020 剩余 703 条的最大子形状是 `Json::value`（430 条，建议语 "Suggestion: `if json is Object(obj) { obj.get(key) } else { None }`"）—— 该族需要一个 `priv` 辅助函数做逐包替换，与本单的"就地换运算符"不是一个工序量级，宜单独开单；次族仍是 0025 `test_unqualified_package`(803) 与 0079 `implicit_impl_as_method`(63)。
+- task_id: T0.3
+
+### FIXED(2026-10-20 轮次 R20 / BUG-344)
+- 改了什么：62 份 `.mbt` 里 203 处 `not(x)` → `!x`（7 处保留必要括号），并按 moonfmt 要求合并因此变短的 5 处折行表达式。无 API/接口/行为变更，`#cfg(not(...))` 与文档引述未动。
+- 实测锁钉：`moon check --target js --json` → status=success、1895 → **1694** warnings / 0 errors（0020 由 904 → 703，`Use !expr instead` 命中 **0**）；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；直调 moonfmt 逐行比对 `!` 相关分歧 **0**；CRLF 面 bare LF = 0；`check_pkg_imports` / `check_mbti_sync` / `gen_plugins --check` / `--selftest` / `check_plugin_sync` / `check_tools_sync` 全绿，其余红点为 6 处预存项。
+## BUG-345 [2026-10-20T15:26:00Z] [low] FIXED
+- summary: [惯用法面] 纯语法噪声三族合清：0008 redundant_modifier 12 条 + 0021 missing_pattern_arguments 6 条 + 0013 unresolved_type_variable 1 条，共 19 条，零语义变更
+- detail: 起量 1694 warnings / 0 errors（BUG-344 收尾后的基线）。三族的修法都不涉及行为：
+  ① **0008**：`pub struct` 的字段默认公开，字段级 `pub` 是冗余修饰（`src/hat/hat_report_build.mbt` 8 处、`src/router/router_caf.mbt` 4 处）⇒ 删 `pub ` 两个词，字段可见性不变。
+  ② **0021**：`Json::Number` 现在带一个 `repr` 参数位，`Some(Number(n))` 属于"省略构造参数"⇒ 按编译器建议补 `..`：`Some(Number(n, ..))`（`src/server/selfdrive_round_tick.mbt` 4 处、`src/server/bugreport_status_wbtest.mbt:105`、`src/store/multi_store_test.mbt:128`）。这是模式面的放宽，匹配集不变。
+  ③ **0013**：`src/server/supervisor_tools.mbt:420` 的 `for ... nobreak { ignore([]) }` —— 空数组字面量的元素类型不可判定，`ignore` 又只在"表达式有类型"的前提上成立 ⇒ 类型为 `(Array[_/0]) -> Unit`，尾随的 `_/0` 未解析就是 0013 判的那格。`nobreak` 分支只要求尾表达式是 Unit，`ignore([])` 在这里没有任何副作用可保留 ⇒ 改 `()`，未解析类型变量随之消失。
+  净读数：1694 → **1675**（−19），0 errors；`moon test --target js -j 1` 仍 `Total tests: 1302, passed: 1302, failed: 0`；6 份文件里除 BUG-330 两类拼写漂移外与 moonfmt **0 处分歧**，CRLF 完整（bare LF 0）。
+- note: **接口面零变更已实证**：删字段 `pub` 后跑 `moon info src/hat src/router`，两份 `pkg.generated.mbti` 与 HEAD 逐行比对，在归一化掉 BUG-330 两类漂移（`Int`↔`Int32`、`? :`↔`~ :`）之后**残留 0 行** —— 生成的漂移属另一单，本单不收，`.mbti` 保持 HEAD 原样（`check_mbti_sync` PASS 641 条声明）。
+  三族刻意未动，原因写清免得下轮重复评估：① **0067 unused_async**（`src/server/github_gitcode_native.mbt:21` 的 `pub async fn gitcode_execute_batch`）—— 删 `async` 改的是**公开 API 的箭头类型**，而这个文件在 native 面（本机 native bundle 缺件，BUG-329 同族机器级缺口）量不了，调用面又跨后端 ⇒ 与 native 面一起处理，不靠"看着没事"下刀。② **0009 struct_never_constructed**(3) / **0006 unused_constructor**(12) / **0001 unused_value**(9) —— 三族都是"死代码判定"，删之前要读设计意图（0006 还被仓里 `warnings = "-6-35"` 压制着，属 owner 已表态的豁免面），不属本单的纯语法档。③ 复发确认：`git restore -- '*.mbti'` 会把 24 份 mbti 的 mtime 推到当下，于是 `scripts/fist.py` 的 BUG-32 新鲜度守卫触发自动重建，而重建会撞 `\\?` ICE 并在依赖包上失败 —— 绕法仍是先手工 `moon build cmd/cli --target js`（rc=0）再驱动 FIST 命令，本单二次实证。
+- 后续建议：剩余大头依次是 0025 test_unqualified_package(803)、0020 deprecated(703，其中 `Json::value` 一族 430)、0079 implicit_impl_as_method(63)、0002 unused_value(37)；小族只剩 0035(13)/0078(13)/0006(12)/0004(11)/0001(9)/0027(5)/0009(3)/0007(2)/0067(1)。
+- task_id: T0r2
+
+### FIXED(2026-10-20 轮次 R21 / BUG-345)
+- 改了什么：6 份 `.mbt` —— 删 12 处字段级冗余 `pub`、给 6 处 `Number(...)` 模式补 `..`、把 1 处 `ignore([])` 换成 `()`。零接口、零行为变更。
+- 实测锁钉：`moon check --target js --json` → 1694 → **1675** warnings / 0 errors，`error_code` 8/21/13 命中 **0**；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`check_pkg_imports` / `check_mbti_sync` / `check_tools_sync` PASS；直调 moonfmt.exe 逐行比对非漂移分歧 0。
+## BUG-346 [2026-10-20T15:44:30Z] [medium] FIXED
+- summary: [测试面惯用法] 清零 0025 test_unqualified_package 全族 803 处：测试文件里的隐式导入名一律改 `@pkg.name` 显式限定，判据面 1675 → 872（单族占存量 48%）
+- detail: 起量 1675 warnings / 0 errors（BUG-345 收尾后的基线）。0025 是黑盒测试文件的遗留行为：`xxx_test.mbt` 不用写包名就能拿到被测包的公开名，moonc 0.10.16 判这为隐式导入并逐个给建议串 `Use `@server.foo` instead`。
+  ① 量法：803 条 loc 全部是单行标识符区间，先用 `temp/census25.py` 逐条回切源文件核对 `seg == name`（错位 0、跨行 0、已带点前缀 0），确认可以按 loc 精确改写而不必正则扫面。
+  ② 试点先行：先只对 `atgc*` 两个包下手（39 处，含带连字符的 `@atgc-old.` 这种最容易踩解析的形式），`moon check atgc atgc-old` + `moon test` = 17/17 通过，才铺满余下 40 份文件（764 处）。
+  ③ 同行同码去重二次命中：铺完后 `moon check` 仍报 6 处 —— 就是 BUG-344 记的那条量法定律（moonc 对同一 (文件, 行, error_code) 只报一次），第二轮按新 loc 补 6 处后归零。总计 803 处 = 39 + 764 + 6（第二轮 6 处里含首轮因列位漂移被主动跳过的重复项，跳过逻辑由 `seg != name` 守卫兜住，未误改）。
+  ④ 拆行连锁：加上 `@server.` 一类前缀后有 43 处调用越过 100 列，moonfmt 要求把实参拆行。用 `temp/apply_fmt25.py` 做**区间合并**：只在 norm（Int↔Int32、`~ :`↔`? :`）后仍不同的 hunk 上采纳 moonfmt 版，其余保留原行，从而只收拆行、不收 BUG-330 拼写漂移；18 份文件 43 个 hunk，其中 1 处 `desc~ :` 泄漏由手工还原为 `desc? :`。
+  净读数：1675 → **872**（−803），0 errors；`moon test --target js -j 1` 仍 `Total tests: 1302, passed: 1302, failed: 0`；43 份文件与 moonfmt **0 处分歧**（norm 后），bare LF 0，`Int32`/`~ :` 新增 0。
+- note: **本轮新坑（比 BUG-32 更直接）**：`moon check`/`moon test` 自己就会重写 24 份 `pkg.generated.mbti`（不只是 `moon info`），所以在可编译树上跑一次判据 = 立刻污染接口面；收尾必须 `git restore -- ':(exclude)*.mbt' '*'` 只回非 .mbt，再 `check_mbti_sync` 复验（641 条声明 PASS）。这条工序每轮都要走，不能靠"记得不 add"。
+  族选择理由：0025 是纯可定位、纯机械、零语义的族（编译器给全了替换文本），且占存量近一半，清掉后剩下的 872 条里 0020 deprecated(703) 成为绝对大头。
+- 后续建议：① 0020 按子族拆单打，`Json::value` 430、StringView `to_owned` 122、`str[:]` 42、`derive(Show)` 11、`is None/Some(_)` 若干；② 0079 implicit_impl_as_method(63) 需要补 `pub extend T with ...`，是接口面动作，单独一轮；③ 0002 unused_value(37) 多为测试里故意绑定的变量，改 `_` 前缀即可，属低风险小单。
+- task_id: T0r3
+
+### FIXED(2026-10-20 轮次 R22 / BUG-346)
+- 改了什么：43 份 `.mbt` 的 803 处隐式导入名 → `@pkg.name`（`@server` 210、`@display` 142、`@ops` 123、`@omega` 86、`@evolve` 54、`@router` 53、`@engine` 49、`@diff` 22、`@atgc` 20、`@atgc-old` 19、`@store` 19、`@decompose` 6）；18 份文件随之按 moonfmt 拆 43 个调用 hunk。零行为变更。
+- 实测锁钉：`moon check --target js --json` → 1675 → **872** warnings / 0 errors，`error_code` 25 命中 **0**；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；试点单独量过一次（`atgc`/`atgc-old` 17/17）；`check_mbti_sync`/`check_pkg_imports`/`check_tools_sync`/`check_plugin_sync`/`gen_plugins --check` 全 PASS；24 份被 check 重写的 `.mbti` 已还原。
+## BUG-347 [2026-10-21T00:04:00Z] [low] FIXED
+- summary: [惯用法面] 清零 0020 deprecated 的机械改名子族 176 条（177 处改写，47 份 .mbt）：to_string→to_owned 123、is_none/is_some→is None/is Some(_) 20、Map::new()→Map([]) 13、starts_with→has_prefix 9、length→count 5、size→length 4、StringBuilder::new→StringBuilder 3
+- detail: 起量 872 warnings / 0 errors（BUG-346 收尾后的基线），其中 0020 占 703。本单只吃"编译器把替换文本写在建议里、改完不改语义"的那一档，其余形状（`Json::value` 452、`str[:]` 42、`reinterpret_as_int64` 11、`Debug` 11+3、`@debug.Debug` 3、`@encoding` 检查面 3、JS-FFI `Array` 3、`Executor::run` 1、`Int::unsafe_to_char` 1）一律不动 —— 它们要么改类型推断面、要么改 API 契约。三条非显然的坑：
+  ① **`Map::new()` 不能直接改 `Map()`**。建议文本是 "Use `Map([], capacity=...)` instead"，`Map` 作为构造函数首参是 `ArrayView[(K, V)]`（必填），照字面只把 `::new` 删掉会得到 13 条 4080 arity 错（`requires 1 positional arguments, but is given 0`）。正确形状是 `Map([])`；`StringBuilder::new(size_hint=64)` 反而只需删 `::new`，因为它的参数全是可选标鉴。同一族的两种落点，不能一把梭。
+  ② **`.is_none()` → `is None` 要自己定接收者边界**。编译器给的 loc 只覆盖方法名（`sc-2` 才是 `.`），往前找接收者要跳过成对括号；对 `f(a).is_none()` 这类"带一次调用的链"，回溯过深会把整段 `f(a)` 当接收者、产出 `f(a)(.get(..) is Some(_))` 这种语法错（本单实发 1 处，`src/server/debate_tools_wbtest.mbt:225`）。改成"取整段 span，断言它必以 `.name()` 结尾，再剥掉这个后缀"，把算术偏移换成结构自检，同类问题不可能再静默通过。跨行的 `].is_none(),` 一处（`src/ops/ops_loop_wbtest.mbt:121`）脚本按设计跳过，手改后 moonfmt 仍要求把 `is None` 单独成行。
+  ③ **同行同码去重（BUG-344 定律）再次显形**：按站点表清完 175 条后，`src/server/ocr_scan.mbt:159` 的 `to_string` 仍报 —— 它所在那次 check 的告警被同行另一条 0020 吃掉了一个名额。所以"清单条数 − 命中条数 = 0"不能当收口判据，必须以复跑 `moon check` 的 `error_code` 命中为准。
+  净读数：872 → **696**（−176），0 errors；0020 703 → **527**；`moon test --target js -j 1` 仍 `Total tests: 1302, passed: 1302, failed: 0`；47 份文件与 moonfmt **0 处分歧**（norm 后），bare LF 0；`Int32` 泄漏 12 处已按"基线该文件为 0"的前提逐文件还原。
+- note: 改名会缩短/加长行宽，拆行连锁 15 份文件 22 个 hunk，仍用 norm 区间合并（只采纳 moonfmt 的拆行，不采纳 BUG-330 的 `Int`→`Int32`、`? :`→`~ :`）；本轮泄漏 12 个 `Int32` 集中在 4 份"参数表被拆成多行"的文件里，靠"基线该文件 `Int32` 计数为 0"这一条前提判定为漂移而非新写法，还原后 diff 面干净。工序面复发确认：`moon check`/`moon test` 重写 24 份 `.mbti` ⇒ 收尾 `git restore -- ':(exclude)*.mbt' '*'` + `check_mbti_sync` 复验（641 条 PASS）；驱动 `scripts/fist.py` 前先 `moon build cmd/cli --target js`（rc=0）避开 BUG-32 新鲜度守卫的 `\\?` ICE。
+- 后续建议：① 0020 剩下的形状按"是否改语义"分档：`Json::value`(452) 要迁到 `@json.Json` 的索引/`as_*` 面，是本轮最大单体，建议先 3–5 份文件试点量测；`str[:]`(42) 是 `substring` 的替换、涉及实参顺序，单独一轮；`reinterpret_as_int64`(11) 与 `Int::unsafe_to_char`(1) 是类型面动作。② 0079 implicit_impl_as_method(63) 要补 `pub extend T with @moonbitlang/core/debug.Debug::{to_repr}`，改的是接口面，需与 `.mbti` 一起看。③ 0002 unused_value(37)/0035 reserved_keyword(13)/0078 result_error_return(13)/0004 missing_priv(11) 各成一个单。
+- task_id: T0r4
+
+### FIXED(2026-10-21 轮次 R23 / BUG-347)
+- 改了什么：47 份 `.mbt` 的 177 处机械改名（123 to_owned、20 `is None`/`is Some(_)`、13 `Map([])`、9 `has_prefix`、5 `count`、4 `length`、3 `StringBuilder`），15 份文件随之按 moonfmt 拆/合 22 个 hunk。零接口、零行为变更。
+- 实测锁钉：`moon check --target js --json` → 872 → **696** warnings / 0 errors，`error_code` 20 命中 703 → **527**（机械改名子族命中 0）；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`check_pkg_imports` / `check_mbti_sync` / `gen_plugins --check` / `check_plugin_sync` PASS；47 份文件 moonfmt 非漂移分歧 0、bare LF 0、`Int32`/`~ :` 净新增 0。
+## BUG-348 [2026-10-21T00:18:00Z] [low] FIXED
+- summary: [惯用法面] 清零 0002 unused_value 的非参数绑定子族 20 条（20 处 _ 前缀改写，10 份 .mbt）：let 绑定 10、for 绑定 6、match 臂 2、lambda 参数 1、server.mbt 手修 3（let _score + 2 处 fn(_args : Json)）
+- detail: 起量 696 warnings / 0 errors（BUG-347 收尾后的基线），其中 0002 占 37。本单只吃"改完不动签名、不动调用面"的那一档，剩下 17 条全在参数位（列号普遍为 3，`by`/`created_by`/`ns`/`self`/`now`/`max_rounds`/`github_sync` 等）与 1 处包级 `let`。四条非显然的坑：
+  ① **参数位不能盲加 `_`**。MoonBit 里 `fn f(args : T)` 的形参名同时是 `~args:` 的标签来源，改名即改调用契约。`temp/fix02.py` 因此按 binder 分类白名单只动 `let-binding / for-binder / match-arm / lambda-fn` 四类（`fn` 声明与带 label、可选 `?`、`~`、`self` 的形参一律跳过），18 处按边界跳过、零误伤。
+  ② **包级 `let` 报 unused 是陷阱**。`src/server/server.mbt:644 let laya_client_budget_ms` 被改名后 `pipeline_r2_wbtest.mbt:137` 的 `assert_eq(laya_client_budget_ms, client_ms)` 直接 4021 unbound —— 白盒测试单位（`_wbtest.mbt`）与本包共享可见性，"本文件内没读到"不等于"没人读"。已回滚，该条仍在 17 条里。
+  ③ **签名面禁止整串正则替换**。想用一条 `fn(args : Json) -> Result[@mcp.ToolResult, …]` 的字符串替换统一 2 处 MCP 处理器，实发命中 134 个处理器 → 374 条错误；反向"从 HEAD 还原"又把仓库 owner 自己已经写成 `fn(_args : Json)` 的 8 处一起抹掉。最终 `git restore --source=HEAD -- src/server/server.mbt` 后再按行号点改（3523 `let _score`、3258/3268 `_args`），并把"`_args` 是 owner 既有惯例（HEAD 内 8 处）"记为前提。另：`let score = …` 在文件内出现 2 次，"断言唯一"的门禁正确拦下了非唯一替换。
+  ④ 站点数与告警数本轮对齐（20 处改写 ↔ 37→17，净 −20），但收口判据仍是复跑 `moon check` 的 `error_code` 命中（BUG-344 定律），不拿清单条数交差。
+  净读数：696 → **676**（−20），0 errors；`moon test --target js -j 1` 仍 `Total tests: 1302, passed: 1302, failed: 0`；10 份文件与 moonfmt **0 处分歧**（norm 后，本轮无拆行连锁）、bare LF 0、`Int32`/`~ :` 漂移泄漏 0。
+- note: 工序面第三次复发确认：`moon check`/`moon test` 重写 24 份 `pkg.generated.mbti` ⇒ 收尾固定 `git restore -- ':(exclude)*.mbt' '*'` + `check_mbti_sync` 复验（本单接口零变更）；驱动 `scripts/fist.py` 前先 `moon build cmd/cli --target js`（rc=0，"no work to do"）避开 BUG-32 新鲜度守卫触发的 `\\?` ICE。加 `_` 前缀只把行长推 1 列，20 行均未越过 moonfmt 换行阈值，所以本轮不需要 BUG-330 的 norm 区间合并。
+- 后续建议：① 剩余 17 条 0002 全在参数位，逐处要判断"这个形参是不是对外标签"：`by`/`created_by`/`ns`/`task_id`/`now`/`max_rounds`/`goal`/`lam`/`github_sync`/`github_repo`/`flush_bug_queue` 是 API 契约面，删除或改 `_` 都可能破坏 `~label:` 调用与 `.mbti`；建议与 0004 missing_priv(11) 合成一轮"接口面"单，`moon info` 后逐条看 `.mbti` diff。② 0079 implicit_impl_as_method(63) 编译器已给确切声明文本（补 `pub extend T with @moonbitlang/core/debug.Debug::{to_repr}`），但仍动接口面。③ 0035 reserved_keyword(13)（`local`/`namespace` 形参）与 0078 result_error_return(13) 各成一单。④ 0020 语义档 527 条（`Json::value` 452 为主体）保持"先试点 3–5 份文件"的判断。
+- task_id: T0r5
+
+### FIXED(2026-10-21 轮次 R24 / BUG-348)
+- 改了什么：10 份 `.mbt` 的 20 处未使用绑定加 `_` 前缀（`cmd/cli/main.mbt` 1、`src/diff/diff.mbt` 1、`src/engine/decompose_test.mbt` 2、`src/engine/engine_circuit.mbt` 1、`src/engine/engine_triage_skill_test.mbt` 4、`src/evolve/curriculum_wbtest.mbt` 1、`src/router/router_caf_wbtest.mbt` 5、`src/server/issue_scan_test.mbt` 1、`src/server/server.mbt` 3、`src/store/multi_store_test.mbt` 1）。+20/−20 行，零接口、零行为变更。
+- 实测锁钉：`moon check --target js --json` → 696 → **676** warnings / 0 errors，`error_code` 2 命中 37 → **17**（非参数绑定命中 0）；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`check_pkg_imports` / `check_mbti_sync` / `gen_plugins --check` / `gen_plugins --selftest` / `check_plugin_sync` PASS；10 份文件 moonfmt 非漂移分歧 0、bare LF 0、`Int32`/`~ :` 净新增 0。
+## BUG-349 [2026-10-21T00:33:00Z] [low] FIXED
+- summary: [惯用法面 + 接口面] 清零纯惯用法噪声三族 25 条：0035 reserved_keyword(13)、0004 missing_priv(11)、0067 unused_async(1)；本单是本分支链上**第一份动 `.mbti` 接口面**的单，接口收缩靠手写镜像 + 编译器复验完成
+- detail: 起量 676 warnings / 0 errors（BUG-348 收尾后的基线）。三族合单的前提是"每条改完都能被编译器当场证伪或证实"：
+  ① **0035 只需改位置参的名字，因为 `.mbti` 不记位置参名**。`pub fn FistEngine::triage` 在接口里写作 `(Self, String, String, String, skill? : String)` —— 只有带标签或可选的形参才保留名字。所以 `namespace`→`ns_filter`（10 处，含 1 处 doc 注释）与 `local`→`bak_ver`/`bin_name`（4 处）是零接口变更；改名前已验证仓库无 `~namespace` / `~local` 调用面（MCP JSON 参数名来自 server.mbt 的工具 schema，与 MoonBit 形参名无关）。新名 `ns_filter` 对齐 owner 既有惯例（engine.mbt:1435、engine_supervisor.mbt:11、board_ascii.mbt:29），不是新发明。
+  ② **0004 的 `priv` 会收缩接口，而本机 `moon info` 不可用**：在一棵未改动的树上跑 `moon info`，18 份 `pkg.generated.mbti` 被重写 237 行；即便先按 BUG-330 规则归一（`Int32`→`Int`、`x~ :`→`x? :`）仍有 242 行残留差异（生成器对标签/可选标注与声明顺序的判定与仓库既有 mbti 不一致）。所以接口面单**不能**靠"重新生成 mbti"收口，只能手写镜像：11 个包内 `struct X {` 前加 `priv`，同时在所属 `pkg.generated.mbti` 删掉那条唯一的 `type X`（连同相邻的一个空行）。镜像规则可判定：这 11 个类型在各自 mbti 里恰好出现 1 次。
+  ③ **判据一跑就冲掉手工镜像**（BUG-346 定律第四次确认，且这次是双向的）：`moon check`/`moon test` 会把 24 份 mbti 全部重写。本单固化的工序是"改源 → 镜像改 mbti → 把 3 份镜像 `cp` 到 `temp/keep25/` → 跑 check/test → `git restore -- '*.mbti'` → 从 keep25 复制回来"。少了这一步，终态 diff 会退回生成器漂移。
+  ④ 一个反直觉的读数：`check_mbti_sync` 的声明计数从 641 → **642**。不是回归——`pub async fn gitcode_execute_batch` 原来不匹配守卫的六种 `pub fn` 形状，去掉无用 `async` 后才开始计数。接口面单里"计数变动"必须逐项解释，不能只看 PASS/FAIL。
+  净读数：676 → **651**（−25），0 errors；`error_code` 4/35/67 命中 **全部归零**；`moon test --target js -j 1` 仍 `Total tests: 1302, passed: 1302, failed: 0`；9 份 `.mbt` 与 moonfmt 非漂移分歧 0（漂移面 79 行按 BUG-330 只读不改）、bare LF 0。
+- note: 白盒验证面本单零损失：11 个类型转 `priv` 后仍被同包 `_wbtest.mbt` 可读，黑盒 `_test.mbt` 事先确认无一引用（逐类型 grep 命中面只有 mbti 自身）。试点先行：先在 `ScanRule` 一处做"priv + mbti 删行"并跑 `moon check src/server`（362 warnings / 0 errors、0004 由 11→10）确认规则成立，再铺开到 11 处。
+- 后续建议：① 0020 语义档 527 条里 `as_bool`(15)/`as_string`(7) 的替换文本编译器已给全，但落地形态是 `if j is True {…} else {…}` 表达式，直接内联进 `match j.as_bool() {…}` 的候选位可读性差，建议先定"是否引入包内 `priv fn` 辅助"再批量；`Json::value` 430 条同属此档。② 0079 implicit_impl_as_method(63) 要补 `pub extend … ::{to_repr}`，同样动接口面，可直接复用本单的"手写镜像 + keep 备份"工序。③ 0078 result_error_return(13) 把 `Result[T, E]` 改 `T raise E` 是真签名变更，需要单独一轮并同步 mbti 镜像。④ 仍待 owner 决策：BUG-330 拼写漂移（本机生成器与仓库 mbti 的根因差异）、死码族 0001/0006/0007/0009（删除即语义变更）。
+- task_id: T0r6
+
+### FIXED(2026-10-21 轮次 R25 / BUG-349)
+- 改了什么：9 份 `.mbt` + 3 份 `.mbti`。0004 给 11 个包内 struct 补 `priv`（engine 3、router 1、server 7）并删除 mbti 里对应 11 条 `type X` 声明；0035 改 14 处形参名（`namespace`→`ns_filter` 10、`local`→`bak_ver`/`bin_name` 4）；0067 去掉 `gitcode_execute_batch` 的无用 `async`（源 1 行 + mbti 1 行）。
+- 实测锁钉：`moon check --target js --json` → 676 → **651** warnings / 0 errors，`error_code` 4/35/67 命中 **0**；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`check_mbti_sync`（642 条）/ `check_pkg_imports` / `gen_plugins --check` / `gen_plugins --selftest` / `check_plugin_sync` PASS；9 份 `.mbt` moonfmt 非漂移分歧 0、bare LF 0。
+## BUG-350 [2026-10-21T01:10:00Z] [low] FIXED
+- summary: [接口面] 清零 0079 implicit_impl_as_method 全族 63 条（试点 2 + 批量 61，17 份 .mbt 补 `pub extend T with …::{…}`）+ 收掉耦合的 0071（补 6 份 moon.pkg 的 `"moonbitlang/core/debug"`）+ 修 `check_mbti_sync` 的 derive 承载盲区（12 个类型误红）
+- detail: 起量 651 warnings / 0 errors（BUG-349 收尾后的基线），其中 0079 占 63。四个非显然的坑：
+  ① **编译器给的确切文本是全限定的，照抄就把红账挪到 0071**。0079 对 `derive(...)` 承载的类型给出 `pub extend T with @moonbitlang/core/debug.Debug::{to_repr}`，插进去之后 0079 清零、却实发 30 条新的 0071 core_package_not_imported（`temp/chk22.json`：619 warnings、71 命中 31）。修法走编译器自己指的路：**往所属包 `moon.pkg` 的 `import {}` 里加 `"moonbitlang/core/debug",`**（6 份），不是往源文件加 `import{}`；补完 71 命中 0。`src/core` 原本没有 `import{}` 块，得整块新建——第一版脚本按 `"\nimport {\n"` 定位，静默零命中，靠"命中数断言"才发现。
+  ② **告警锚点是类型的闭合行 `} derive(...)`，它不以 `}` 收尾**。用 `endswith("}")` 找插入点直接 IndexError；`Debug` 面还会让闭合行写成 `} derive(Eq, @debug.Debug)`。找闭合改用 `startswith("}")` + 空行断言。
+  ③ **`.mbti` 侧这次是"扩张"面，与 BUG-349 的"收缩"镜像对称**：63 条声明落到 6 份 `pkg.generated.mbti` 是 **+95 行**（Eq 26×2 + Debug 31 + Show 6×2），一家族的方法按字母序排进该类型方法段、紧跟闭合行之后。镜像规则可算术验证：26×2+31+6×2=95。手写镜像之后仍要让 `moon check` 复验生成器认不认这份镜像（0079 命中 0 就是背书）。工序照 BUG-346 第五次确认："改源 → 镜像 mbti → `cp` 到 `temp/keep26` → 跑判据 → `git restore -- '*.mbti'` → 从 keep26 复制回来"。
+  ④ **`check_mbti_sync` 有 derive 承载盲区，补完实现反而 12 个类型集体误红**。两侧正则都只收 `\w+`，`.mbti` 里 `pub fn T::to_repr(...)` 停在 `::` 前 ⇒ 收到的是类型名 `T`；而派生方法在源码里没有 `fn` 文本、只有闭合行上的 `derive(Eq, Debug)` ⇒ 源侧收不到 `T`。修法是在 `collect_defs` 里额外收下"带 `derive(...)` 的类型名"（含一行式 `pub type T = Int derive(Eq)`）。收进来之后同型不带 derive 仍必须照红，否则这一格会放过真缺失；用三格 selftest 钉住（带 derive 不误红 / 不带 derive 照红 / 类型名进 `fn` 集）。变异实测：摘除新增段 ⇒ 12 条 M1 红 + selftest 报红，证明这一格是真判据不是装饰。
+  一个必须解释的读数：守卫声明计数 642 → **654（只 +12）**而不是 +95 —— 声明按 `(包, 形状, 名字)` 存**集合**，`T::equal`/`T::not_equal`/`T::to_repr` 塌成同一个 `T`，只有"此前没有任何 `pub fn T::…`"的类型才占一个新名额；实测新增的 12 个恰是误红名单本身（evolve 2、ltl 1、ops 1、router 7、store 1）。
+  净读数：651 → **588**（−63），0 errors；0079 命中 63→**0**、0071 命中 1→**0**、0029 保持 0；`moon test --target js -j 1` 仍 `Total tests: 1302, passed: 1302, failed: 0`；17 份 `.mbt` 与 moonfmt 非漂移分歧 0、bare LF 0。
+- note: 试点先行再铺开（沿用 BUG-349 方法论）：先只改 `src/core/core_principle.mbt`（2 条）跑全量判据，就看清了"全限定文本 ⇒ 0071 一起来"，省掉 61 处的返工。`scripts/fist.py` 驱动次序坑（BUG-32/BUG-329）：必须 `moon build cmd/cli --target js` 后**立即**驱动，驱动完才恢复 mbti；反过来会被产物新鲜度守卫触发重编译并撞上 `\\?\` 撞 `\\?` ICE（本轮实发一次）。另有一格每轮必踩、本轮再确认的投影面：追加 `memory/bugs.md` 条目会把 9 份生成件（四宿主 SKILL.md + `plugins/README.md` + deepseek `instructions.append.md`）里的 `BUG-1~N 共 M 条入账` 计数打红 `gen_plugins --check`/`check_plugin_sync` ⇒ 记忆沉淀必须紧跟一次 `python scripts/gen_plugins.py` 重投影（本轮重投影后 4 宿主 / 64 生成文件 PASS）。
+- 后续建议：① 0078 result_error_return(13) 是真签名变更（`Result[T, E]` → `T raise E`），方向是改类型而非加行，调用面要逐个看。② 0020 语义档 527（`Json::value` 430 / `str[:]` 42 / `as_bool` 15 / `reinterpret_as_int64` 11 / `as_string` 7）仍需先定"是否引入包内 `priv fn` 辅助"。③ 建议把"接口面三步工序（手写镜像 → keep 备份 → restore 复验）"写进 `docs/SOP.md`：本链已连续两轮踩同一坑。④ 仍待 owner 决策：BUG-330 拼写漂移（接口面无法用 `moon info` 背书的根因）、死码族 0001/0006/0007/0009。
+- task_id: T0r7
+
+### FIXED(2026-10-21 轮次 R26 / BUG-350)
+- 改了什么：17 份 `.mbt` 补 63 条 `pub extend`（Eq 26 / Debug 31 / Show 6）；6 份 `moon.pkg` 加 `"moonbitlang/core/debug"` 包依赖；6 份 `pkg.generated.mbti` 手写镜像 +95 行；`scripts/check_mbti_sync.py` 补 derive 承载收集（+44/−2，含 3 格新 selftest）。合计 30 份文件 +337/−2，零行为变更。
+- 实测锁钉：`moon check --target js --json` → 651 → **588** warnings / 0 errors，`error_code` 79 命中 63→**0**、71 命中 →**0**；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`moon build cmd/cli --target js` rc=0；`check_mbti_sync` PASS（24 份 / 654 条）、`check_pkg_imports` PASS（24 份 / 30 条）、`gen_plugins --check` / `gen_plugins --selftest` / `check_plugin_sync` / `check_tools_sync` PASS；17 份 `.mbt` moonfmt 非漂移分歧 0、bare LF 0。
+## BUG-351 [2026-10-21T01:30:00Z] [low] FIXED
+- summary: [惯用法面 + 接口面] 0027 deprecated_syntax（`derive(Show)` 弃用）5 → 1：剥掉 5 个零消费者 OFM 类型的 `derive(Show)` 并撤销随之失效的 5 条 `pub extend T with Show::{to_string, output}`，连带清掉 3 条字段级 0020；残留 1 条是承重面 `StarVerdict`，本单不动、转 owner 决策
+- detail: 起量 588 warnings / 0 errors（BUG-350 收尾后的基线），其中 0027 占 5。四个非显然的坑：
+  ① **0027 按 (文件, 码) 报，不按站点报**。源码里 `derive(Show)` 有 6 处（`src/router/ofm_chat.mbt` 2 处 + ofm_failure/ofm_models/ofm_response 各 1 + star_gate.mbt:33 1 处），告警只有 5 条，且 ofm_chat 那条报在**第二个**站点 40:10 上。⇒ 站点枚举必须回源文件，收口只能看复跑 `error_code` 命中（BUG-344 定律的又一格形态）。
+  ② **`derive(Show)` 不是孤立一行，它拖着两样东西**：一条 `pub extend T with Show::{to_string, output}`，和该类型在 `.mbti` 里的 2 行接口（`pub fn T::output(Self, &Logger) -> Unit` / `pub fn T::to_string(Self) -> String`）。只剥 derive 行 ⇒ 调用面失去实现；只剥 extend ⇒ 接口面与源码失配、`check_mbti_sync` 报红。三处必须同批改，本单 5 类型 ⇒ 5 处 derive + 5 块 extend + mbti 10 行。
+  ③ **`.mbti` 的闭合行也带 derive 列表，且闭合行不写类型名**：`} derive(Eq, Show, @debug.Debug)`。无差别正则把 6 个类型的闭合行一起改了，撞上本单不该碰的 `StarVerdict`（断言 `c == 5` 实发 6 才暴露）。修法是按前一个 `pub struct|enum X {` 头做**块归属跟踪**，再加"StarVerdict 面必须原样还在"的反向断言；批量工具同时改为"全部断言通过才落盘"——此前边判边写会在中止时留下半改的树。
+  ④ **承重不承重由编译器判，不由 grep 判**：把 6 个类型全剥掉跑全量 check，实发 20 条错误（4015/4018，`temp/chk27.json` 408 warnings / 20 errors）。根因是 `StarVerdict` 的 Show 被生产面 `StarGatePolicyResult::to_json`（star_gate.mbt:382 `Json::string(x.to_string())`）与 19 处白盒 `inspect(o.verdict, content="Valid")` 依赖。据此把它排除出本单边界，代价是 0027 留 1 条、这单只清 4/5。
+  顺带一格收益：剥掉 `OfmChatRequest` 的 Show 派生实现同时消掉 3 条字段级 0020（`temp/chk26.json` 报在 ofm_chat.mbt 37/38/39 三行，文案 "Use Debug instead of Show"）。这 3 条不属"0020 语义档"，是 Show 派生的副产品，不剥 Show 就消不掉。
+  净读数：588 → **581**（−7 = 0027 −4 + 0020 −3），0 errors；`moon test --target js -j 1` 仍 `Total tests: 1302, passed: 1302, failed: 0`；4 份 `.mbt` 与 moonfmt 非漂移分歧 0、bare LF 0。
+- note: 接口面第三轮，方向回收缩（BUG-349 收缩 → BUG-350 扩张 → 本单收缩），工序照第六次确认："改源 → 手写镜像 mbti → `cp` 到 `temp/keep27/` → 跑判据 → `git restore -- '*.mbti'` → 从 keep27 复制回来 → diff 复验"。`check_mbti_sync` 计数 654 **不变**：删掉 10 行接口声明不动名额，因为这些类型的 `equal`/`not_equal`/`to_repr` 早已占着同一个 `T`（BUG-350 的集合塌陷定律反向成立）。白盒验证面零损失：5 个类型的 `to_string` 在 `_test`/`_wbtest` 面无引用（grep 命中面只有 mbti 自身与 extend 块）。
+- 后续建议: ① **`StarVerdict` 那 1 条 0027 要 owner 决策**，两条路：手写 `impl Show for StarVerdict with to_string, output`（保住 `to_json` 契约与 `inspect` 断言面，代价是手写实现 + 弃用面继续存在），或把 `to_json` 的 verdict 字段与 19 处白盒 `inspect` 一起迁到 `Debug`/`to_repr`（代价是动生产序列化 + 测试断言）。② 下一单主候选仍是 0078 result_error_return(13)：真签名变更（`Result[T, E]` → `T raise E`），逐站判断，不宜机械铺开。③ 0020 语义档 524（`Json::value` 主体）、0002 参数位 17、死码族 0001/0006/0007/0009 未动。④ 建议把"接口面三步工序 + `.mbti` 闭合行块归属"写进 `docs/SOP.md`：本链连续三轮踩同一坑，且每轮踩的是不同侧面。
+- task_id: T0r8
+
+### FIXED(2026-10-21 轮次 R27 / BUG-351)
+- 改了什么：4 份 `src/router/*.mbt` 剥掉 5 处 `derive(Show)`（OfmChatMessage / OfmChatRequest / OfmFailure / OfmModel / OfmChatResponse）并删除随之失效的 5 条 `pub extend T with Show::{to_string, output}`；`src/router/pkg.generated.mbti` 手写镜像收缩 10 行方法声明 + 5 处闭合行去 Show。`src/router/star_gate.mbt` 与 `StarVerdict` 的 Show 接口面**原样保留**。合计 5 份文件 +10/−35 行，零行为变更。
+- 实测锁钉：`moon check --target js --json` → 588 → **581** warnings / 0 errors，`error_code` 27 命中 5→**1**（残留 = StarVerdict）、20 命中 527→**524**、79/71/29 保持 0；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`moon build cmd/cli --target js` rc=0；`check_mbti_sync` PASS（654 条）/ `check_pkg_imports` PASS；4 份 `.mbt` moonfmt 非漂移分歧 0、bare LF 0。
+
+## BUG-352 [2026-10-21T01:45:00Z] [low] FIXED
+- summary: [惯用法面] 0078 result_error_return 13 → 3：剥掉 10 个「从不产出 Err 分支」私有辅助的伪 Result 通道（`src/server/mcpcf_embed.mbt` 9 个直接返回 `@mcp.ToolResult`、`src/server/server.mbt` 的 `run_check_deny` 直接返回 `@mcp_types.MCPError`），在 7 个注册 lambda 与 3 个调用点这两个协议边界包回 `Ok/Err`；残留 3 条是「失败当普通数据」的合法用法 + 外部 handler 契约锁死，转 owner 决策
+- detail: 起量 581 warnings / 0 errors（BUG-351 收尾后的基线），其中 0078 占 13。四个非显然的坑：
+  ① **机械 `Result[T, E]` → `T raise E` 这条路编译不过，不是风格问题**。三格试点实证：(a) 在声明 `-> Result[T,E]` 的函数里调用 raising fn ⇒ 4014 Expr Type Mismatch（raise 不自动协变成 Result）；(b) 把 lambda 声明成 `-> T raise E` 再传给期望 `async (Json) -> Result[T,E]` 的 handler 位 ⇒ 4014 + 4118「The error type is mismatched」；(c) 编译器原文规则「Function with error can only be used inside a function with error types in its signature. Please fix the return type of this function.」⇒ 非 raising 上下文里唯一被认可的失败表达是 `try { ... } catch { E(x) => ... }`。根因在契约面：外部 `colmugx/mcp` 的 `MCPServer::tool(..., handler : async (Json) -> Result[ToolResult, MCPError])` 把 handler 类型钉死，本仓库 `pub fn instrumented_tool`（server.mbt:1266，pub ⇒ 接口面）继承同一契约。
+  ② **正确的问法不是「哪里能改 raise」而是「哪个函数根本不失败」**。9 个 mcpcf 私有辅助的函数体只走成功路径（错误在内部被渲染成 `ERROR: ...` 文本结果），`Err` 分支是**假通道**；`run_check_deny` 更极端——它只构造 `ToolError` 数据、根本没有成功返回。前者改 `-> @mcp.ToolResult`（3 处体内 `Ok(...)` 包装随之剥除），后者改 `-> @mcp_types.MCPError`。协议边界（7 个注册 lambda + 3 个 `return`）不动语义，只把 `Ok/Err` 显式写出来。
+  ③ **残留 3 条不是漏网，是合法用法**：`to_result`(server.mbt:797) / `to_ids_result`(852) / `to_unit_result`(867) 的职责就是「把失败当普通数据交给上层」，正是 0078 文案里 `only when success/failure must be represented as ordinary data` 的那一半。要动它们得同时改 13 处调用面与 pub handler 类型 ⇒ owner 决策。顺带一条事实：`to_ids_result` 全仓 0 个调用点，属死码族（0001/0006）候选。
+  ④ **moonfmt 的 2 行差量会被逐行 zip 比较放大成整块错位噪声**：`ok_text` 的三行签名被收成一行（529 vs 527），旧比对工具于是从那一格起把后面每一行都报成分歧（cur `Json::object(m)` vs fmt `Json::array(arr)` 这种假对）。换成 norm 后 unified diff 才看清全树真实分歧只有 1 格。
+  净读数：581 → **571**（−10 = 0078 −10，其余族计数逐格不变：1:9 / 2:17 / 6:12 / 7:2 / 9:3 / 20:524 / 27:1）；`moon test --target js -j 1` 仍 `Total tests: 1302, passed: 1302, failed: 0`。
+- note: 零接口变更 ⇒ `check_mbti_sync` 654 条不变、24 份 `.mbti` 全程 `git restore` 保护（BUG-346 工序第 7 次确认，本单还多一次 `moon build` 后的恢复）。试点证据（pilot A/B/C + 一份临时 `_wbtest` 语义探针）全部回滚或删除，不留半成品在树里。收口只看复跑 `error_code` 命中（BUG-344 定律）。批量工具 `temp/fix28.py` 沿用 BUG-351 定下的「全部断言通过才落盘」。
+- 后续建议: ① **0078 残 3 条要 owner 决策**，两条路：把 13 处调用面改 `try/catch` 并同步改 `pub instrumented_tool` 的 handler 类型（动外部契约、动接口面），或对这 3 格加定向说明并保留。② 0027 残 1 条 = `StarVerdict`（BUG-351 已立项）。③ 0020 语义档 524（`Json::value` 430 / `str[:]` 42 / `as_bool` 15 / `reinterpret_as_int64` 11 / `as_string` 7）、0002 参数位 17、死码族 0001(9)/0006(12)/0007(2)/0009(3) 未动。④ 建议把「伪 Result 通道识别法（看函数体有没有真 Err 分支，而不是看签名）」写进 `docs/SOP.md`，并把「逐行 zip 的格式比对换成 norm 后 unified diff」写进工具面约束。
+- task_id: T0r9
+
+### FIXED(2026-10-21 轮次 R28 / BUG-352)
+- 改了什么：`src/server/mcpcf_embed.mbt` 9 处私有声明 `-> Result[@mcp.ToolResult, @mcp_types.MCPError]` 收缩为 `-> @mcp.ToolResult`、3 处体内 `Ok(...)` 包装剥除、7 个注册 lambda 在协议边界改调 `Ok(tool_x(args))`；`src/server/server.mbt` 的 `run_check_deny` 改 `-> @mcp_types.MCPError` 直接返回错误对象、3 个调用点包 `Err(run_check_deny(...))`。合计 2 份文件 +34/−36 行，零行为变更、零接口变更。
+- 实测锁钉：`moon check --target js --json` → 581 → **571** warnings / 0 errors，`error_code` 78 命中 13→**3**（残留 = server.mbt:797/852/867），1/2/6/7/9/20/27 六族计数逐格不变；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`moon build cmd/cli --target js` rc=0；`check_mbti_sync` PASS（24 份 / 654 条）、`check_pkg_imports` PASS（30 条）、`gen_plugins --check` / `--selftest` / `check_plugin_sync` PASS；2 份 `.mbt` moonfmt 非漂移分歧 0、bare LF 0。
+
+## BUG-353 [2026-10-21T01:53:00Z] [low] FIXED
+- summary: [惯用法面] 0002 unused_value 参数位 17 条的边界判定：positional 子族 6 处加 `_` 前缀清零（5 份文件），`~`/`?` 子族 10 条由编译器实证「改名即改契约」不可机械清理、转 BUG-354，包级 `let` 1 条归死码族
+- detail: 起量 571 warnings / 0 errors（BUG-352 收尾后的基线），0002 占 17。三格非显然的坑：
+  ① **`~`/`?` 参数的 label 就是参数名，`_` 前缀会连带改掉对外契约**。探针（`temp/p29.json`）：`fn p29_labelled(_x~ : Int)` 用 `p29_labelled(x=1)` 调用实发 4085「This function has no parameter with label x~」+ 4086「The labels _x~ are required by this function, but not supplied」；可选参数同理（`_z?` 使 `p29_optional(z=5)` 报 4085）。⇒ 上一单留下的「0002 参数位 17 条」里，只有 positional 那部分是机械单。
+  ② **MoonBit 没有保留 label 的改名语法**。探针试 `~y as _yy : Int` ⇒ 3001「Lexing error: unrecognized character "~"」+ 3002「unexpected token `as`」。全仓与 `~/.moon/lib/core` 也搜不到 ` as _` 形态。⇒ 想同时保住契约又不留告警，只有「真正消费该参数」或「删参数并改所有调用点」两条路，两条都是行为/契约变更。
+  ③ **positional 与接收者是安全的，且接口面可证零变化**。探针 B（`temp/p29b.json` 0 errors）证明 `_self` 作方法接收者合法、`_p`/`_q` 作 positional 参数合法且调用点无需改动；复跑后 `.mbti` 的实证更直接——positional 参数在接口文件里**只写类型不写名**（`pub fn FistEngine::audit_execute_gate(Self, String, String)`），带 label 的才写名（`task_id~ : String`）。本单 4 个受影响 pub fn 名在 24 份 `.mbti` 的 diff 里命中 0 条（237/237 全是 BUG-330 的 `Int`/`Int32` 漂移噪声）。
+  顺带一格工具教训：`derive(Copy, Show)` 作为**前置属性**写在 `_wbtest` 文件里被解析器拒（3002 unexpected token derive，提示期望 pub/priv/type/...），本仓惯用**尾随** `struct X { ... } derive(Show)`——探针首版就是踩在这里才多跑一轮。
+  净读数：571 → **565**（−6），0 errors；`moon test --target js -j 1` 仍 `Total tests: 1302, passed: 1302, failed: 0`。
+- note: 零接口变更 ⇒ `check_mbti_sync` 654 条不变。收口只看复跑 `error_code` 命中（0002 17→11）。探针文件 `src/engine/probe29_wbtest.mbt` 用完即删，未进判据轮次，测试面 1302 未受探针影响。
+- 后续建议: ① 残 10 条见 BUG-354（声明后不消费的参数是 API 真实面问题，不是风格）。② 残 1 条 `let laya_client_budget_ms`（server.mbt:642，零引用文档常量）与死码族一起判。③ 建议把「参数清理前先分辨 positional / `~` / `?` 三形态，`~` 与 `?` 需契约决策」写进 `docs/SOP.md`——这是本链第一次「同一告警族内两种形态的可动性完全相反」。
+- task_id: T0r10
+
+### FIXED(2026-10-21 轮次 R29 / BUG-353)
+- 改了什么：5 份 `.mbt` 共 6 处 positional 参数加 `_` 前缀——`src/engine/engine_circuit.mbt:250` `now_secs`、`src/engine/engine_eval.mbt:42` `self`、`src/engine/omega_strong.mbt:229` `self` + `230` `task_id`、`src/evolve/curriculum.mbt:200` `goal`、`src/store/store.mbt:211` `now`。合计 +6/−6 行，零行为变更、零接口变更。
+- 实测锁钉：`moon check --target js --json` → 571 → **565** warnings / 0 errors，`error_code` 2 命中 17→**11**，其余六族 1:9 / 6:12 / 7:2 / 9:3 / 20:524 / 27:1 / 78:3 逐格不变；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`moon build cmd/cli --target js` rc=0；`check_mbti_sync` PASS（24 份 / 654 条）、`check_pkg_imports` PASS（30 条）、`gen_plugins --check` / `check_plugin_sync` PASS；5 份 `.mbt` moonfmt 非漂移分歧 0、bare LF 0。
+
+## BUG-354 [2026-10-21T01:53:00Z] [medium] OPEN
+- summary: [API 真实面] 10 个 `~`/`?` 参数声明后从不消费（0002 残量的本体）：`by~`×2、`created_by~`、`ns?`×2、`lam?`、`max_rounds?`、`flush_bug_queue?`、`github_sync?`、`github_repo?`——按 label 改名即改契约（BUG-353 实证），所以出路只有「实现消费」或「删参数 + 改所有调用点」，两条都是行为/契约变更，需 owner 定夺
+- detail: 逐格现状（均已核对函数体）：
+  | 位置 | 参数 | 现状 |
+  |---|---|---|
+  | engine.mbt:87 `FistEngine::plan` | `by~` | 函数体不消费；server.mbt:1520 的 handler 从 JSON 取出 `by`（缺省 human_steward）一路传下来即丢，分支内无独立 audit 写入 |
+  | engine.mbt:883 `FistEngine::reject_task` | `by~` | 同上，server.mbt:1800-1802 取 `by` 传入后被丢；「谁驳回的」在任务状态面没有落点 |
+  | engine.mbt:783 `FistEngine::cold_publish` | `created_by~` | 文档写明「审计日志标记为 watchdog 自动发布」，但参数未被消费 |
+  | engine_dag_ext.mbt:1211 `plan_revise` / 1367 `goal_drift_check` | `ns?` | 体不消费。缓解事实：ns 由上一层 `engine_for_ns(ns)`（server.mbt:4174）承载，故这两格是**冗余契约**而非错数据 |
+  | evolve.mbt:135 `Archive::sample_parent` | `lam? : Double = 8.0` | softmax 温度形参未参与计算，选择规则实际不含它 |
+  | omega_tool.mbt:279 `batch_verify_fix` | `max_rounds? : Int = 3` | Omega 侧轮次上限未消费（同名语义在 omega_strong 里另有实现） |
+  | ops_watchdog.mbt:255 `watchdog_tick` | `flush_bug_queue?` | 开关未实现，传与不传同果 |
+  | bugreport.mbt:255/256 `report_bug` | `github_sync?` / `github_repo?` | GitHub 同步未实现（与本项目「推 gitcode、MR 由人开」的现状一致，但契约面仍挂着两个假开关） |
+  为什么不能像 BUG-348 那样机械清：这三类里除 `ns?` 两格，其余每一格都是「调用方以为生效」的语义面。加 `_` 前缀会让所有 `by=`/`ns=` 风格的调用点编译失败（4085/4086 实证）；写 `let _ = by` 之类的空消费能消警但把设计缺口藏起来；删参数则动 pub 接口与 MCP 入参 schema。**本链的原则是判据面不靠压制、也不靠假消费**，故留档待决策而不是就地糊过去。
+- note: 定级 medium 的理由不是「告警多」，是 10 条里有 4 条直接影响可追溯性（`by`×2 / `created_by` / `cold_publish` 的审计语义）。已核实的边界：`instrumented_tool` 的 call_log 会把原始入参落库，所以 `by` 在跨进程日志面可查，但任务对象/状态面不含驳回者——本单未复核 call_log 的字段保真度，不做超出证据的结论。
+- 后续建议: ① 三条出路给 owner 选：(a) 实现消费（plan/reject 把 `by` 写进任务历史或审计字段，cold_publish 把 `created_by` 落标记；代价=行为变更 + 可能动 store schema）；(b) 删参数并同步改 MCP 入参 schema 与调用点（代价=对外契约收缩，需版本说明）；(c) 保留现状但在函数文档注释里明确「该参数由上一层承载/暂未实现」，并给这 10 格加定向说明（代价=告警面继续留 10 条）。② `github_sync`/`github_repo` 与 `flush_bug_queue` 属「未实现开关」，建议与产品路线图一起判，不要单独动。③ 与 0078 残 3、0027 残 1、死码族一起构成当前 owner 决策清单。
+- task_id: T0r10
+
+## BUG-355 [2026-10-21T02:10:00Z] [low] FIXED
+- summary: [惯用法面] 0020 deprecated 的 `str[:]` 子族 42 处清零：14 份文件里所有 `String::substring(start=, end=)` 调用改成切片 `s[A:B].to_owned()`，判据面 565 → 523 warnings / 0 errors（0020 命中 524→482，其余族逐格不变），1302/1302/0 不变、接口面零变化
+- detail: 这一单的关键不在改法，在**先把等价性钉死再铺开**，四个非显然的坑：
+  ① **索引空间必须先问源码，不能问直觉**。`C:/Users/Administrator/.moon/lib/core/builtin/string.mbt:274-283` 里 `String::substring` 只做 `guard! start >= 0 && start <= end && end <= len` 后转 `unsafe_substring`；`stringview.mbt:198-201` 里 `StringView::to_owned` 也是转同一个 `unsafe_substring` ⇒ 两条路共用一套下标。而 0.10.16 的 `String` 是 **UTF-16 code unit** 索引（`"中文abcΩx".length() == 7`，不是 12）——首版探针按字节写 `substring(start=3, end=9)` 直接 panic（`String::substring.inner`），把"越界"误读成"语义不等"，读了 core 才定性为探针自己写错。
+  ② **`s[A:B].to_string()` 本身也是 0020**（"Use `to_owned` to allocate an owned String from a StringView"）⇒ 编译器给的替换文案 `str[:]` / `str[:].to_string()` 只走一半，终态必须是 `s[A:B].to_owned()`（要 String 处）或裸 `s[A:B]`（StringView 就够处）。42 处实际都要 String，故统一 `to_owned()`。
+  ③ **`substring` 的 label-passing 形态有两种要分别认**：`start~`（变量名就叫 `start`，⇒ `code[start:j]`）与 `end~`（⇒ `ls[3:end]`）；另有 `substring(start=k)` 省 `end` 的 ⇒ 开区间 `sid[k:]`。7 处是 `X` / `.substring(...)` / `.to_string()` 的三行链式，折成 `X[A:B]` + `.to_owned()` 后 moonfmt 要求并回一行，故第二轮 `temp/fix30b.py` 只做折叠。
+  ④ **承重面是"本仓自己就是 substring 规则的实现者"**。`src/server/issue_scan.mbt` 里 `git grep substring` 命中 80 行，真调用只有 21 行，其余是规则表 needle（`pattern: ["substring("]`）、注释与被扫描文案；`scan_substring_start` / `scan_guard_find_endvar` / `scan_guard_multi_line_length` 这套守卫识别器（BUG-164/BUG-268 建）按 `substring(start=N` 文本形态匹配。改完后 substring-overrun 一档在真源码面**恒 0 命中**、`ScanCtx.slice_only` 由 false 翻 true（只影响这一档的过滤，不动其它规则）；白盒夹具全是字面量、不依赖真源码 ⇒ 326→328 探针通过后删除，1302 条测试零回归。
+  等价性实证：`src/server/probe30_wbtest.mbt` 白盒 4 组断言（ASCII / 全区间 / 空区间 / 多字节 code-unit 下标，各比 `substring(...).to_string()` 与 `[...].to_owned()`）⇒ `moon test src/server` = **328, passed 328, failed 0**，探针文件随后删除（不进判据面）。
+- note: 工具面沿用 BUG-351 定的"全部断言通过才落盘"：`temp/fix30.py` 逐行断言原文 + 站点计数断言 42 + 链式/单行分档计数断言（35/7），任一失败就不写盘。首版链式分支把接收者行号算错一位（`pin = ln - 2` 应为 `ln - 1`）且把接收者名重复拼上（`restrest[...]`），dry-run 的 diff 面直接暴露——**dry-run 先出 diff 再落盘**是这类批量改的必需一道，不是可选。格式化判定用 D0/D1 同尺对比（`temp/fmt30.py`：对 HEAD 版与改后版各跑 `moonfmt` 再数分歧行）：本机预存漂移 38/52/22 等格原样保留，只要求 `D1 == D0`，14 份文件全部 0 处新增分歧、bare LF 0。
+- 后续建议: ① 0020 剩下的 482 条里 `Json::value` 主体仍占 430，入口还是那个 owner 决策：要不要在包内引入 `priv fn` 辅助（机械铺开会动 20+ 份文件的调用面）。② `substring-overrun` 规则现在只有合成夹具受检，建议下一轮给它配一条"真源码恒 0"的定向自检，免得规则静默失效被当成精度改善。③ 0002 残 11（其中 10 条见 BUG-354 OPEN）、0078 残 3、0027 残 1（`StarVerdict`）、死码族 0001/0006/0007/0009 继续挂 owner 清单。
+- task_id: T0r11
+
+### FIXED(2026-10-21 轮次 R30 / BUG-355)
+- 改了什么：14 份 `.mbt` 共 42 处 `String::substring` 调用改切片 + `to_owned()`（`src/server/issue_scan.mbt` 21、`mcp_config_scaffold.mbt` 3、`memory.mbt` 2、`output_validate.mbt` 2、`cmd/cli/upgrade_core.mbt` 2、`src/router/router_caf.mbt` 2、`github_gitcode_wbtest.mbt` 2、`github_sync_wbtest.mbt` 2、`atgc/atgc_run.mbt` 1、`src/engine/engine_eval.mbt` 1、`src/engine/engine_triage.mbt` 1、`src/ops/ops_selfdrive.mbt` 1、`bugreport_status_wbtest.mbt` 1、`debate_tools_wbtest.mbt` 1）；零接口变更、零行为变更、`.mbti` 未改。合计 +41/−70。
+- 实测锁钉：`moon check --target js --json` → 565 → **523** warnings / 0 errors，`error_code` 20 命中 524→**482**（`str[:]` 族 42→**0**）、2/6/1/9/7/27/78 各格 11/12/9/3/2/1/3 **不变**；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`moon build cmd/cli --target js` rc=0；`check_mbti_sync` PASS（654 条不变）/ `check_pkg_imports` PASS / `gen_plugins --check` / `gen_plugins --selftest` / `check_plugin_sync` / `check_tools_sync` PASS；14 份 `.mbt` moonfmt 新增分歧 0、bare LF 0。
 
-## 实测
-- 全仓 113 个 `.actus.md` 文件，16 个触发 os.popen 变量（新 pattern 后）
-- mcp_call L85 `os.popen(wsl_cmd, "r")` 中 `wsl_cmd` 由用户 `server` 参数拼入，为 RCE
-- cli_curl/git_commit 的 `wsl_cmd` 已 shlex.quote，安全但同样被旧 pattern 漏检
 
-## 修复（本轮已完成）
-1. DANGEROUS_PATTERNS 增补 3 条：`os.popen f-string`、`subprocess shell=True 全家族`、`subprocess 字符串首参`
-2. 新增 SUSPICIOUS_PATTERNS（WARNING 级）2 条：`os.popen(<变量>)`、`os.system(<变量>)`
-3. `_check_suspicious` 函数 + `_verify_single` 接入 + self-scan 剔除 SUSPICIOUS_PATTERNS 块
-4. `tests/test_verify_injection.py` 更新为加载两表，新增 `test_suspicious_patterns_exist`，10/10 通过
-
-## 遗留
-16 个 os.popen 变量命中动作需逐个修复（shlex.quote 或改 subprocess.run 列表 argv），不在本 bug 修复范围。
-- reported_by: fist-agent
-
-## BUG-325 [2026-10-18T15:38:56Z] [high] OPEN
-- summary: [rule:type-annotation] let x: T = e 的类型注解被 parser 丢弃、static_check 从不强制：`let x: Int = "hello"`、`let x: Int = 3.5`、`let x: Int = Some(5)` 全部静默通过
-- detail: 根因：`parse_let_binding_top`（crates/p5c/src/parser/item.rs:530-535）把 `: T` 只当 `shall_coerce`（是否 Float）判定用后**丢弃**，AST `TopLevel::LetBinding`/`Stmt::LetBinding` 根本没有 `ty` 字段；`static_check` 侧零注解处理。连带症状：`DEMO/01_types/type_lattice.p5:182` 的 `let opt: Option<Int> = 5` 注解不生效，`print(opt)` 打印 `5` 而非 `Some(5)`、`typeof(opt)` 报 `Int`。实测（修复前）：`check` 对 `let x: Int = "hello"` 报 "Static check passed"。修复：AST 增 `ty: Option<Type>`，parser 存储注解，static_check 增 `check_let_annotation` 强制标量类型（Int/Float/Str/Bool/Atom/None/Any/Nothing），对 Named（union 成员/接口上转型/newtype 别名，含被折叠的 `Option<Int>`）宁漏报不误报。e2e_demo_golden 仍 20/20 通过。
-
-## BUG-326 [2026-10-18T18:29:49Z] [medium] FALSE_POSITIVE
-- summary: BUG-262 Module 值内省元字段 mod.apis / mod.name / mod.path / mod.is_macro 全部未实现，运行期报 Field not found（§11.2 规范-实现静默分歧）
-- detail: §11.2「模块值：一等值」内省表公开四支元字段——`mod.apis`（导出 api 列表）/ `mod.name`（模块名）/ `mod.path`（模块路径）/ `mod.is_macro`（是否 `#![macro]` 宏模块，§13.9）。R61 实测（修复前）：`import("std.math").apis` → `Runtime error: Field not found: apis (module math, available exports: abs, ceil, cos, floor, ln, log10, sin, sqrt)`；文件模块 `import("lib.p5").apis` 同型失败。根因：`crates/p5c/src/eval/expr.rs` 的 `Value::Module(mv)` 字段访问只按 `mv.exports`（导出绑定）查找，未把四支元字段接线——错误信息里的 `available exports: …` 正是唯一的字段面。属**规范-实现静默分歧**（无编译期诊断，运行期才 `Field not found`），且 `DEMO/**/*.p5` 未覆盖 `mod.apis` 面故 golden 未拦。
-- reported_by: pentad-polish-lead-1019
-
-
-- false_positive(2026-10-18T18:30:35Z): 误报落错库：project_dir="." 解析到 server cwd（FIST-Mbt），而该缺陷属 Pentad 项目代码（crates/p5c/src/eval/expr.rs）。真实条目按 BUG-262 记入 Pentad 项目 memory/bugs.md，本库不适用。
-## BUG-327 [2026-10-19T01:51:59Z] [medium] OPEN
-- summary: ocr_scan 的 OCR LLM review 对 MoonBit .mbt 恒不可达（unsupported_ext 全拦），bugfind 的 require_ocr 门是伪能力/可静默满足
-- detail: 实测证据（2026-10-19，opencodereview.exe @alibaba-group+ocr-win32-x64@1.12.9）：
-1) `ocr_scan subcmd=scan path=src/server` → `total_files=81, reviewable_count=0, excluded_count=81`，全部 `exclude_reason: unsupported_ext`。
-2) 显式单文件 `ocr scan --preview --path src/server/issue_scan.mbt` → 仍 `exclude_reason: unsupported_ext`（1/1 排除）。
-3) `ocr rules check src/server/issue_scan.mbt` → 匹配 `default` 规则（Source: System built-in）—— 规则层**不拒** .mbt。
-4) `ocr scan --help`：有 `--exclude`（只会加排除）与 `--rule`（规则 JSON），**无 `--include` 扩展名旗**；`ocr config` 无扩展名白名单键；CLI 无逃生门。
-
-结论：排除发生在 scan 的文件遍历阶段（二进制硬编码扩展名白名单不含 .mbt），规则层本可处理。MoonBit 项目下 OCR LLM review 恒不可达。
-
-影响：① AGENTS.md 宣称的「内建规则 + OCR LLM review 双轨互补」对 MoonBit 只有单轨；② 自驱 bugfind 模式的 `require_ocr` 约束在本项目不可满足，但 `ocr_scan` 顶层回执 `ok=true / exit_code=0` 会让只看 ok 的门禁误判「已 review」——伪能力/静默通过。
-
-建议修复方向：`ocr_scan` 在目标路径含 .mbt 且 reviewable_count=0 时显式返回 `ok=false` + 明确 reason（fail-loud，防门禁被静默满足），或将该局限显式写入 bugfind 的 require_ocr 判据与 AGENTS.md（诚实标注单轨）。
-- reported_by: fist-mbt-round5-lead
-- task_id: T0r588
-- 追记(2026-10-19T12:0x+08:00, Round 13 / b2d1920+faf0186): 本条目建议修复方向的部分 1（`ocr_scan` 对 .mbt 显式 fail-loud）已落地并分两小步：① 上轮 `ocr_effective_ok` 把「`ok=true` 但 `reviewable=0` 且 `excluded>0`」判 `ok=false`（dir `src/server/` 走此分支，实测 82 excluded → ok=false）；② **本轮实测发现部分 1 仍有一条盲区（记 BUG-327b）**：显式单文件 `path=src/ocr_scan.mbt` 时 OCR 二进制报 `reviewable_count=0, excluded_count=0, files=[]`——与「空目录」同形，被 `ocr_fake_green_check` 的空目录豁免判 `reviewed=true`，顶层 `ok=true` 假绿幸存。修复：新增纯函数 `ocr_reviewed_final(stdout_reviewed, path)`——目标为单个 `.mbt` 文件时强制 `reviewed=false`（fail-closed）并回显 notice「目标为单个 .mbt 文件（OCR 白名单外扩展名），LLM review 未真正执行；顶层 ok 已强制 fail-closed」，接线进 `ocr_scan_impl`（`reviewed2`/`fake_notice2`）；配套白盒锁 `BUG-327b_ocr_reviewed_final_single_mbt_fail_closed`。发布版 dist 真跑实证：`src/ocr_scan.mbt` → `ok=false` + 上述 notice；`src/server/`（目录）→ `ok=false` 零回归。**注意**：同一条路径两种目标形状（单文件 vs 目录）走的是两条不同假绿分支，任何一边单独修都会留下另一边——现已双分支都 fail-closed。**部分 2（`require_ocr` 门禁接线到 `.mbt` 非可审查性）仍未做**，阻塞在 `src/server/server.mbt`（并发 agent WIP），故本条目**保持 OPEN**。
-
-## BUG-328 [2026-10-19T04:41:44Z] [low] FIXED
-- summary: [rule:check_demo_isolation] NEEDLE_RE 不认 env.setdefault(FIST_DB_PATH) 形状 → 守卫假红 2 项
-- detail: NEEDLE_RE 只认四种形状：① `Xenv["FIST_DB_PATH"]=` ② `os.environ.setdefault("FIST_DB_PATH",...)` ③ `env=dict(...FIST_DB_PATH...)` ④ `env={...FIST_DB_PATH...}`。但 `env=dict(os.environ)` 后接 `env.setdefault("FIST_DB_PATH", db)` 也把 FIST_DB_PATH 落进传给 Popen 的子进程 env（_gen.py L27-32、pol_keeper_run.py 同款），却因形状不匹配被误判 I1 违例 ⇒ check_demo_isolation 假红 2 项。修复（49dca79）：NEEDLE_RE 增加第 5 形状 `\w*env\w*\.setdefault\(\s*["']FIST_DB_PATH["']`，注释同步四种→五种；守卫回 PASS（spawn 面 35 脚本全合规），--selftest G1/M1/M1b/M2/M3 全绿（变异仍必红，未放宽守卫）。
-
-
-
-### FIXED(2026-10-19T04:41:54Z / BUG-328)
-- evidence: scripts/check_demo_isolation.py NEEDLE_RE 增第 5 形状 `\w*env\w*\.setdefault\(\s*["']FIST_DB_PATH["']`，注释"四种"→"五种"；提交 49dca79。守卫回 PASS（spawn 面 35 脚本全合规、豁免锚点成立），--selftest G1/M1/M1b/M2/M3 全绿——变异仍必红，守卫未被放宽。
-## BUG-329 [2026-10-19T04:52:17Z] [medium] FIXED
-- summary: [rule:check_release_asset_names/R13] README 离线线资产名版本字面量 v0.3.8 落后 moon.mod 0.3.9（BUG-120 复发），连累 selftest 崩溃
-- detail: check_release_asset_names 守卫 R13 违例：README L141 离线/内网线 `install_onecmd.ps1 -LocalZip C:\path\to\fist-mbt-js-v0.3.8.zip` 版本字面量落后于 moon.mod "0.3.9" ⇒ 用户照抄离线线即 404（同 BUG-120 形态，0.3.8→0.3.9 版本推进时未同步）。连带：守卫 `--selftest` 因 R13 变异锚 `fist-mbt-js-v0.3.9.zip` 不在 README 内而 AssertionError 崩溃（"变异锚不在 readme 里"），selftest 失检。修复（dd056d6）：README L141 `v0.3.8.zip`→`v0.3.9.zip`。复核：守卫主检 PASS（R1~R14 全绿）、selftest OK（R13×2 等 14 格）。
-
-
-
-### FIXED(2026-10-19T04:52:26Z / BUG-329)
-- evidence: README.md L141 离线线资产名 `fist-mbt-js-v0.3.8.zip`→`fist-mbt-js-v0.3.9.zip` 对齐 moon.mod "0.3.9"；提交 dd056d6。守卫 check_release_asset_names 主检 PASS（R1~R14 全绿），--selftest OK（R13×2 等 14 格不再崩溃）。
-## BUG-330 [2026-10-19T05:03:09Z] [medium] FIXED
-- summary: [rule:check_skill_inject] 守卫误选 [lesson] 教训为 [asset]（SELECT 过宽）+ 计数 len(rows) 误报 16 条违例
-- detail: check_skill_inject 守卫两处缺陷（BUG-329 同族，守卫自身缺口）：
-① SELECT `goal/note/code LIKE '%[asset]%'` 过宽 —— `[lesson]` 教训条目（goal=`[lesson] concurrent-coordination`，id=lesson-202610-15.05.17）因其 code 里合法提到归档规则（讲 evolve_asset_register/evolve_lesson 用法）被误选，再因 goal 非 `[asset]<source>` 被误报「反查问题」。守卫 L35-37 自述「`[lesson]` 条目不算 `[asset]`」与实现自相矛盾；且 lookup_injected_assets_in 只按 goal/note 检索、不匹配 code，匹配 code 本身不落在判据面内。
-② FAIL 消息 `共 %d 条 % len(rows)` 用全量 `[asset]` 条目数而非违例数 `len(ap)` —— 实测 16 条被误读为 16 条违例，实为 1 条。
-修复：SELECT 收窄为 goal 单面（判别位在 goal）；计数改 len(ap)。复核：主检 PASS（15 条 `[asset]` 全部可反查）、--selftest OK、check_scripts_index/check_py_stdout_encoding 全过。
-
-
-
-### FIXED(2026-10-19T05:03:25Z / BUG-330)
-- evidence: scripts/check_skill_inject.py：SELECT 收窄为 goal 单面（判别位在 goal，不再匹配 note/code，与 L35-37「[lesson] 不算 [asset]」一致）；FAIL 计数 len(rows)→len(ap)。复核：主检 PASS（15 条 [asset] 全部可反查，假阳性 lesson-202610-15.05.17 不再误报）、--selftest OK（U1 合规不误红/匹配缺失必红/档案面空自拒 exit 2 全过）、check_scripts_index + check_py_stdout_encoding EXIT=0。
-## BUG-331 [2026-10-19T05:10:21Z] [medium] FIXED
-- summary: [rule:version-lag] DSH 宿主 manifest version 0.3.8 落后 moon.mod 0.3.9（0.3.9 bump 漏同步第四处真源）
-- detail: commit 8052e67 标注「三处真源同步」（cmd/cli/help_topics.mbt + moon.mod + src/server/server.mbt），但漏了第四处：DSH 宿主真安装面 `.dsh/fist-mbt-plugin/package.json` 的 `version` 仍为 0.3.8，meta.description 也写 v0.3.8。check_host_installable 守卫 D1 档据此 FAIL：「DSH manifest version 0.3.8 != moon.mod 0.3.9」。同族：BUG-114（server.mbt project_version 落后）/ BUG-120（README 资产名落后）/ BUG-329（README 离线线资产名落后）。
-修复：package.json version 0.3.8→0.3.9，meta.description 版本标签同步（8052e67 为纯版本 bump、功能集不变，如实注明）。
-复核：check_host_installable PASS（DSH manifest/patch 严格档 + 宽松档 + 默认模板 + moon.mod 0.3.9 全过）。
-
-
-
-### FIXED(2026-10-19T05:10:34Z / BUG-331)
-- evidence: .dsh/fist-mbt-plugin/package.json：L3 version 0.3.8→0.3.9；L16 meta.description 版本标签同步并如实注明「0.3.8→0.3.9 为版本号推进，功能集不变」（8052e67 为纯 version bump，3 文件仅版本字面量）。复核：check_host_installable PASS（DSH manifest/patch 严格档：绝对路径 + toolCallTimeoutMs + dsh reconnect schema 合规；宽松档 MCP JSON 合规；moon.mod 版本 0.3.9）。
-## BUG-332 [2026-10-19T05:34:50Z] [medium] FIXED
-- summary: check_py_stdout_encoding --all 面 10 处脚本缺 BUG-58/138 stdout UTF-8 重配（Windows 控制台手跑会 UnicodeEncodeError 崩在结论行前，rc 被冒用）；CI 跑 --all，故此前 CI 在该面一直红
-- detail: BUG-138 追记的 --all 残余面从未被跑过，本轮 selftest E1 暴露现状面真红。CI ci.yml 实际跑 `python3 scripts/check_py_stdout_encoding.py --all`，故这是真 CI 失败面，非仅 selftest 严苛。
-
-违例 10 处（会 print 非 ASCII 却无 sys.stdout.reconfigure）：
-- scripts/blackbox/e2e_assistant_xproc.py（print 含 ×/—）→ 已修（8f00f8b 前单独改）
-- scripts/caf_offline_replay.py / caf_p2c_ab_preflight.py / caf_p2d_coldstart_ab.py / patch_router_config_caf_field.py / run_check_t0r21.py / test_shim_handshake.py → 已修
-- fix_esm_require.py / pol_keeper_run.py（gitignore 未跟踪，仍实存）→ 已修
-- scripts/fist_mbt_mcp_client.py / scripts/ns_route_probe.py → **并发 WIP，未动，待 concurrent agent 收口时补**
-
-修复形态（与守卫标准逐字一致）：import 段后插
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
-修后 --all 违例 10→2（余 2 并发 WIP）；selftest E1/M6 待 2 处补齐后转绿。同族 BUG-58/138/122（手写族名落后于新增脚本）。
-- reported_by: lead
-
-
-### FIXED(2026-10-20T12:01:05Z / BUG-332)
-- evidence: 补上 BUG-58/138 stdout UTF-8 重配（`sys.stdout.reconfigure(encoding="utf-8", errors="replace")` + 同款 stderr）到残余 2 处脚本：`scripts/fist_mbt_mcp_client.py`（import 段后）与 `scripts/ns_route_probe.py`（import 段后）。证据：`python scripts/check_py_stdout_encoding.py --all` 修复前 FAIL（该带闸 82 / 已带 80，E1 点名这 2 份），修复后 PASS（该带闸 82 / 已带 82，另有 0 份纯 ASCII 面出预告）；同工具 CI 面 PASS（30/30）；`--selftest` SELFTEST OK；`python -m py_compile` 两文件 rc=0；`FistClient()` 独立实例化 + `store_list` 调用正常返回（改动未破坏客户端）。
-## BUG-333 [2026-10-19T05:54:08Z] [medium] OPEN
-- summary: issue_scan 精度不足：src 全量 9925 命中中 72.7%（7219）为编译期已保证/子串近似噪音（match-exhaustive 编译器强制=100% 假阳、unused-variable/long-function 为近似启发），使"扫描→上报→修复"闭环不可用
-- detail: 实测 `issue_scan dir=src max_findings=100`：scanned_files=129, total_findings=9925（截断）。by_rule 全表精确求和 = 9925。其中：
-
-- moonbit-unused-variable 4259（info）：自述「子串近似 let 声明点，实际使用性需人工/编译器复核」——编译器已对真正未使用变量给警告，故绝大多数为假阳性。
-- moonbit-match-exhaustive 1513（low）：MoonBit 编译器**强制** match 穷尽（不穷尽 = 编译错误），代码 1338 测试全过、编译通过 ⇒ **100% 假阳性**。
-- moonbit-long-function 1447（info）：自述「行数精确判定见 OCR 双轨」，本就是启发式，非 bug。
-- moonbit-json-injection 1409（low）：子串近似，Json API 是否转义需逐条核实。
-- 其余（array-index-bounds 159 / empty-match 109 / race-condition 9 / resource-leak 7 / dead-code 6 / floating-point-equality 2 等）抽查全为假阳性：float-eq 命中的是 rule-id 字符串里的 "float"；dead-code 的 abort 全在 claimguard_wbtest.mbt 测试断言（故意测错误路径）；resource-leak 全仓 grep File::open/sqlite.open 零命中。
-
-**前三项合计 7219/9925 = 72.7%**。后果：「扫描→上报→修复」闭环不可用——执行者不可能 triage 9925 条里 73% 已知为噪音的命中，于是闭环要么被绕过、要么被「全报 bug」淹没真实缺陷。同族于 BUG-330（守卫 false-positive）/BUG-329（selftest 崩溃）的「判据精度」族。
-
-建议：默认降噪——①`--min-severity` 或按 rule 白/黑名单过滤（默认关掉 unused-variable/long-function/match-exhaustive 三高噪音项，或降为 info-only）；②match-exhaustive 直接不产（编译器已保证）；③对剩余 low 项挂 `confirmed=false` 要求调用方喂 run_check 复核后才 report_bug（boundary_probe 已是这个语义，可复用）。
-- reported_by: lead
-- 追记(2026-10-20T20:40Z, R8): **建议②已落地** —— `src/server/issue_scan.mbt` 新增 `scan_denoise_default_skip(rule_id)`（默认跳过 `moonbit-match-exhaustive`，编译器强制穷尽 ⇒ 100% 假阳），在 findings 收集处过滤。端到端验证（本地产物 `_build/js/debug/build/cmd/cli/cli.js` 直跑真 MCP `issue_scan dir=src`）：total_findings 9998→8475（−1523 全部为 match-exhaustive，by_rule 已无该项）；`unused-variable` 4283 / `long-function` 1470 保持 info 级保留。白盒锁 `BUG-333 match-exhaustive denoised by default`（同时断言硬门规则 div-by-zero/substring-overrun/unprotected-division 绝不被默认降噪）。全量 `moon test --target js` = 1347/1347 零回归。规则仍在表内（31 条不变，rule 计数/文档面守卫不受影响），`rules_file` 无 `enabled` 抑制位（只支持 severity 覆盖）故无法在调用侧禁用其余项。**建议①`--min-severity`/按 rule 白名单、建议③ `confirmed=false` 仍 OPEN**，且①需在 `src/server/server.mbt` 工具签名侧加参数（并发 agent WIP，收敛后再做）。
-
-## BUG-334 [2026-10-19T06:11:48Z] [high] FIXED
-- summary: cleanup_artifacts.py 的 `_`前缀规则误移 git 跟踪的工具注册真源 `scripts/_tool_registry.py`，破坏 7 个导入它的守卫（check_tools_sync/check_plugin_sync/gen_plugins/check_doc_surface/mcp_smoke）；CI 仅靠 cleanup 排在最后的顺序侥幸未炸，属 latent hazard
-- detail: `scripts/cleanup_artifacts.py` L65 `_TMP_SCRIPT_EXT = (".py",".ps1",".sh")` + L79 的 `_` 前缀匹配规则，会把 **`scripts/_tool_registry.py`** 误当「任务完即清的临时脚本」移入 `temp/`。而 `_tool_registry.py` 是 **git 跟踪的**（`d35c2f0 refactor(guard): 抽单一 _tool_registry 实现，5 个消费者改委托`）工具注册单一真源，被 7 处导入：
-- `check_doc_surface.py:89` / `check_plugin_sync.py:34` / `check_tools_sync.py:40` / `gen_plugins.py:41` / `mcp_smoke.py:35`（5 个 importlib 委托）
-- `check_plugin_sync.py:126`（子进程 `_tool_registry.py --selftest`）
-- `check_template_ctrl.py:211`（诊断建议引用）
-
-**已实测触发**：本机跑 `python scripts/cleanup_artifacts.py` 后，`scripts/_tool_registry.py` 消失（git status 报 `D`），`check_tools_sync.py` / `check_plugin_sync.py` 当场 ImportError 红；`git checkout -- scripts/_tool_registry.py` 恢复后两者复活（exit 0）。
-
-**CI 为什么没炸**：`ci.yml` L243-245 的 "Cleanliness guard" 是 check-js job 的**最后一步**，位于 L91 check_tools_sync、L108 gen_plugins --check、L110 check_plugin_sync **之后**；后续 `check-native` 等 job 重新 checkout。所以 cleanup 的误移没被同 job 下游消费到。**这是顺序侥幸，不是正确性**——只要有人在 ci.yml 把 cleanup 挪到守卫前面，或加一个依赖 `_tool_registry.py` 的步骤在其后，就会静默红，且红因难查（报 ImportError 在消费者、不报 cleanup）。
-
-**同族**：BUG-330（守卫 false-positive）/BUG-333（判据精度）/BUG-329（selftest 崩溃）——「守卫族自身健壮性」系。
-
-**修复建议（小，一行）**：在 `cleanup_artifacts.py` 加豁免集，如 `KEEP_SCRIPTS = {"_tool_registry.py"}`（+ 任何 git 跟踪的 `_` 前缀脚本），在 `_` 匹配分支跳过；更稳的通用规则是「只清 `git ls-files --others`（untracked）的 `_` 脚本，tracked 一律不动」。后者顺带根治「cleanup 误删已跟踪临时文件」整类问题。
-- reported_by: lead
-
-
-### FIXED(2026-10-19T06:51:02Z / BUG-334)
-- evidence: 提交 32849cd：cleanup_artifacts.py 加 is_git_tracked(relpath)（git ls-files --error-unmatch），`_` 前缀规则跳过 git 跟踪资产；加 --selftest 三格回归锁（S1 tracked 识别 / S2 _tool_registry.py 豁免 / S3 真 `_` 临时脚本仍被抓），变异验证 FAIL/1 → PASS/0。修复后 7 处导入 _tool_registry 的守卫（check_doc_surface/check_plugin_sync/check_tools_sync/gen_plugins/mcp_smoke/check_template_ctrl/check_scripts_index）全部复活 exit 0。
-## BUG-335 [2026-10-19T06:37:21Z] [high] FIXED
-- summary: e2e_heartbeat_xproc (default) CI 门禁红：publish_parallel 返回 task_id 但任务不落隔离库（call_log 正常改道、tasks 表空）
-- detail: 复现：`python scripts/blackbox/e2e_heartbeat_xproc.py`（ci.yml L222 门禁）exit 1。
-
-证据链：
-1) 脚本 L220 先 `os.remove(temp/hb-xproc.db + suf)` 清场，L139 `env["FIST_DB_PATH"]=隔离库` 起真 `node cli.js serve`，L238-249 用 `publish_parallel(namespace="hb-xproc")` 建 4 条在途任务。
-2) 隔离库 `temp/hb-xproc.db` 的 **call_log 有 seq 7-11**（claim/execute/heartbeat/pause，证明 server 确实用了该库），但 **tasks 表 count=0** —— publish_parallel 返回的 4 个 id 一个都没落 task 行。
-3) 真实交付库 `fist-mbt.db` 亦无 `%心跳跨进程%` 任务（latest id=T0r641，未污染）。
-4) 脚本 `A heartbeat 回执` = `{"_error": "task not found: T0r5"}`，而 L255 用的是动态 `t1`（publish_parallel 返回值）—— 即 publish_parallel 报了 T0r5 但按此查无此任务。
-
-对照：`store_isolation_probe --selftest` exit 0（隔离专项门 PASS，隔离机制未整体坏）；`e2e_heartbeat_xproc --selftest` exit 0（脚本自身 28 格逻辑 PASS，仅 default 实测失败）。
-
-归因：本轮 5 处 CI 真跑面红中，本条与 check_entry_paths 同属**并发 agent 未提交 WIP 域**（src/server/server.mbt HEAD d010592 有未提交改动），非本轮 cleanup_artifacts 修复（那支只改 cleanup_artifacts.py 自身）引入。建议并发 agent 侧排查 publish_parallel 在「FIST_DB_PATH 隔离库 + 自定义 namespace」下的 task 落库路径。
-
-本机 `--selftest` 通过、`store_isolation_probe --selftest` 通过，故不阻断其它守卫；仅 default 面红，需真实 server 端复现定位。
-- reported_by: lead-R20
-
-
-
-
-### FIXED(2026-10-20T03:48:37Z / BUG-335)
-- evidence: 独立复核（终审亲自跑，非依赖执行者自述）：python scripts/blackbox/e2e_heartbeat_xproc.py EXIT 0、8/8 全绿（A heartbeat 回执从 task not found:T0r9 变为 {task_id:T0,persisted:true,backend:sqlite}；隔离库心跳从 [] 变 [('T0',...)]；D 格 heal(timeout=1) 仍回滚 3 条未被削弱）。e2e 每次先 moon build --target js cmd/cli，故反映的是修复后产物（产物 line 59128 含 default_db_path()!=\"fist-mbt.db\" 隔离判定）。改动：src/server/server.mbt +37/-1 新增 publish_parallel_route/isolate_db_path_set/publish_parallel_engine 并把 handler 改调 publish_parallel_engine(ns)；新增 src/server/bug335_ns_route_wbtest.mbt 3 条白盒锁。根因 c9ea8b3 把 publish_parallel 接进 engine_for_ns ⇒ 显式 ns 落 mstore 独立库，而 e2e 的 no-ns 调用与 heal/watchdog 都在 default 引擎 ⇒ 隔离库 tasks 表空；因 store_isolation_probe C3 钉死 publish(ns) 物理隔离，只能定点改 publish_parallel。moon build --target js cmd/cli EXIT 0。未触碰任何他方 WIP。
-## BUG-336 [2026-10-19T09:03:42Z] [medium] FIXED
-- summary: dag_cost_route 负载感知冻结：load 只在循环前一次性快照，路由循环内从不更新累计负载 → 等成本平局时全堆给先注册执行者（1180 任务 59% 给单一执行者）
-- detail: ## 现象
-dogfood `dag_cost_route`（R77 成本路由）：1180 个 slack>0 未认领任务中 59%（701）堆给单个执行者 `marvis`，负载感知声明失效。
-## 根因
-`src/engine/engine_dag_ext.mbt` L657 `load = self.executor_loads(reg_names)` 只在路由循环**前**一次性快照活跃负载；L744 把任务写进 `routed` 却**从不更新 `load`**。于是 L732-739 的等成本平局 tiebreak（"相等取负载最低"）对本次路由自身的累计分配失明——平局时 `nl < bl` 恒假（两执行者负载都=初始值），`best` 永远停在先注册者 → 整轮路由全堆给先注册执行者，负载均衡形同虚设。
-## 实证（白盒 RED→GREEN）
-`src/engine/dag_ext_test.mbt` 新增 `dag_cost_route: 等成本平局按累计负载均分（BUG-336）`：2 个同能力执行者 + 4 独立灵活任务（+ 旁链垫 makespan=3）→ 修复前 `alice=4, bob=0`（RED），修复后 `alice=2, bob=2`（GREEN）。
-## 修复
-L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best){...}; ignore(load.set(best, prev_load + 1))`——把本次分配计入累计负载，后续等成本平局任务才转向其他执行者。
-## 验证
-`moon test --target js` = 1339/1339（新增 1 锁）；`moon fmt` 干净（engine 文件）。
-
-
-
-### FIXED(2026-10-19T09:04:03Z / BUG-336)
-- evidence: 修复点 src/engine/engine_dag_ext.mbt L741-749：routed.set(id, best) 之后追加 load.set(best, prev_load + 1)，把本次分配计入累计负载。白盒锁 src/engine/dag_ext_test.mbt `dag_cost_route: 等成本平局按累计负载均分（BUG-336）` RED(alice=4,bob=0)→GREEN(alice=2,bob=2)。全量 moon test --target js=1339/1339。
-
-
-
-## BUG-337 [2026-10-20T03:49:01Z] [high] FIXED
-- summary: HEAD src/server/debate_tools_wbtest.mbt 的 @(expr) 语法被 pinned moon 0.1.20261016 判 lexing error ⇒ src/server 测试包整体编译失败
-- detail: moon 0.1.20261016 对 src/server/debate_tools_wbtest.mbt 的 @(ops.hat_verdict(...)) 语法判 lexing error（unrecognized character "@" U+0040），导致整个 src/server 测试包编译失败（EXIT 1），该包内所有 _wbtest/_test 锁（含 BUG-335 新增的 bug335_ns_route_wbtest.mbt 3 条）都无法经 moon test 跑绿。该文件属并发 agent 的 moon 0.1.20261016 适配 WIP（HEAD a6f6f15）。
-- task_id: T0r672
-
-
-
-### FIXED(2026-10-20T05:30:54Z / BUG-337)
-- evidence: HEAD 4ee92c6（fix(r29): 修复 HEAD 在 moon 0.1.20261016 下的构建红）已把 src/server/debate_tools_wbtest.mbt L142/146/150 的 `@(ops.valid_verdict(@ops.hat_verdict(...)) is Err(_))` 改为 `@ops.valid_verdict(@ops.hat_verdict("white","pass","")) is Err(_),`（剥掉 `@(` 包裹、补 `ops.` 前缀）。验证：moon test --target js src/server = 342/342 passed EXIT 0；HEAD 干净 worktree（temp/head-verify，共享 .mooncakes/_build junction）复跑 src/server 342/342、src/ops 196/196、src/evidence 4/4 全绿。`@` 前缀合法位只在标识符前（包路径如 @ops / @moonbitlang/core），`@(` 不是合法语法。
-## BUG-338 [2026-10-20T05:31:34Z] [high] FIXED
-- summary: [r29-misrewrite] d799f56 批量改写误把 Spec::is_ok() 方法调用改成 `Spec is Ok(_)` 模式匹配 ⇒ src/evidence 测试包类型不匹配编译失败
-- detail: d799f56 批量改写把 `Spec::is_ok()` 方法调用误改成 `Spec is Ok(_)` Result 模式匹配。但 `src/evidence/spec.mbt:74` 的 `mark_passed(self : Spec) -> Spec` 返回 `Spec` 而非 `Result`，故 `evidence_test.mbt:27` 原 `assert_true(s2.is_ok())` 被改成 `assert_true(s2 is Ok(_))` 后触发 Constr Type Mismatch（wanted `Spec`），导致 src/evidence 测试包编译失败。正确谓词是 `src/evidence/spec.mbt:102` 的 `Spec::is_ok(self : Spec) -> Bool`。同族教训与 BUG-337（`@(` 语法误用）同源：批量改写脚本把「方法调用 / 特定语法」与「Result 模式匹配」两类不同语言构造混淆，131 处改写里至少 2 处出错。修复：`evidence_test.mbt:27` 改回 `assert_true(s2.is_ok())`，HEAD 4ee92c6 已修，moon test --target js src/evidence = 4/4 passed。
-
-
-
-### FIXED(2026-10-20T05:31:45Z / BUG-338)
-- evidence: HEAD 4ee92c6 已把 src/evidence/evidence_test.mbt:27 改回 `assert_true(s2.is_ok())`（还原 d799f56 误改的 `s2 is Ok(_)`）。判据：`Spec::mark_passed(self : Spec) -> Spec`（src/evidence/spec.mbt:74）返回 Spec 非 Result，`Spec::is_ok(self : Spec) -> Bool`（spec.mbt:102）才是正确谓词。验证：moon test --target js src/evidence = 4/4 passed EXIT 0；HEAD 干净 worktree 复跑 src/evidence 4/4 全绿。
-## BUG-339 [2026-10-20T05:56:44Z] [high] OPEN
-- summary: [commit-pairing] BUG-335 修复（server.mbt publish_parallel_route 三函数）从未 git 提交仅停留工作树 ⇒ 单独提交配套锁即引入 src/server 编译红（Error 4021 unbound ×6）
-- detail: BUG-335 修复（src/server/server.mbt 新增 publish_parallel_route / isolate_db_path_set / publish_parallel_engine 三函数）在 BUG-335 FIXED 小记（2026-10-20T03:48:37Z）声称已完成，但该改动**从未 git commit**，一直仅停留工作树 M 状态。实证：HEAD 各提交点 `git show <sha>:src/server/server.mbt | grep publish_parallel_route` 命中数 = 0（feea1e3、13ddb72 均为 0），而工作树 server.mbt L68/L92 有该函数。后果：HEAD 不含 BUG-335 修复 ⇒ 若把配套锁 src/server/bug335_ns_route_wbtest.mbt（引用了 publish_parallel_route）提交进 HEAD，src/server 包即编译红（Error [4021] The value identifier publish_parallel_route is unbound ×6，bug335 锁 L16/L22/L27）。本次即实测触发：提交 feea1e3（仅锁文件）后 HEAD 干净 worktree 全量 moon test 19 秒即 exit 1（全在编译期失败，未跑到测试），已 `git revert feea1e3` 回退（HEAD 现 13ddb72，等价 4ee92c6 内容），锁文件 `git restore --source=feea1e3 --worktree` 恢复为工作树未跟踪态。**教训（commit 成对性）**：白盒测试锁与被测源码函数必须**同一笔提交**——锁引用未提交函数时，单独提交锁 = 引入编译红，且 moon test 的 exit 1 会被误读为"测试失败"而实为编译失败。待办：BUG-335 的 server.mbt 三函数修复 + bug335_ns_route_wbtest.mbt 锁需**成对**提交（当前两者均在工作树未提交/未跟踪）。
-
-## BUG-340 [2026-10-20T06:19:51Z] [high] FALSE_POSITIVE
-- summary: [parallel-flaky] moon test 并行全量结果不稳定：1371/2-failed 与 1339/0-failed 两态（同命令同 worktree 两次并行 + 串行对照），测试数亦波动 ±32 ⇒ R29 自述的 1339/1339 不保证 CI 并行稳定绿
-- detail: 在同一干净 worktree（temp/head4，HEAD 13ddb72，junction .mooncakes、独立 _build、无 FIST_DB_PATH）下，`moon test --target js`（默认并行，无 -j 旗）两次运行给出**不一致结果**：第一次 `Total tests: 1371, passed: 1369, failed: 2`（exit 2）；第二次 `Total tests: 1339, passed: 1339, failed: 0`（exit 0）。而 `moon test --target js -j 1`（串行）稳定 `1339/1339/0`。**测试数也不稳定**（1371 vs 1339，差 32），说明并行调度下测试集合/计数本身有波动——不是单纯"失败 2 条"，而是**并行全量非确定性**。moon test 失败时不打印失败详情到 stdout/stderr（head4_full.log 525KB 全为 warning 源码片段，无 ✗/FAIL/panic 标记），故具体哪 2 条失败无法直接从输出定位。**影响**：项目里"全绿"的自述（如 R29 声称 1339/1339）若在串行或幸运并行下测得，不保证 CI 并行下稳定绿——同一命令两次并行 2 失败 vs 0 失败即铁证。**判据**：以 `Total tests: N, passed: N, failed: 0` 汇总行为准且需**连跑确认稳定**（BUG-142 同族：exit 0 不可靠，此处 exit 2/0 波动更直接）。建议：① CI 全量测试前先跑一次"稳定性预热"（同命令连跑 N 次，全绿才放行）；② 排查测试间共享资源（src/store 各包测试在 worktree 根建 ~80 个 .db 文件，并行时多进程可能 SQLITE_BUSY / 锁冲突）；③ moon test 并行失败无详情是测试基础设施缺口，建议 `-v` 或分包定位。
-
-
-- false_positive(2026-10-20T06:30:08Z): 5 次全量实测（HEAD 13ddb72，隔离 worktree，junction .mooncakes、独立 _build、无 FIST_DB_PATH）推翻原上报归因：串行 `-j 1` 1339/0、默认并行 2 次（1339/0）、`-j 8 -v` 1339/0，共 4/5 次稳定 `Total tests: 1339, passed: 1339, failed: 0`；仅 1 次默认并行出现 1371/2（flaky 率 1/3）。**项目代码本身稳定绿**（R29 的 1339/1339 是准确读数，非假绿），1371 vs 1339 差 32 与偶发 2 失败指向 **moon 工具链并行调度自身问题**（并行收集测试多跑 32 个 + 偶发异常），非 fist-mbt 项目代码 bug。bugfind 佐证：issue_scan(src/store) 954 findings 全 low/info（result-discard 236、match-exhaustive 204、long-function 203 等），无竞态类高危命中，说明根因在测试基建/moon 而非产品代码。原上报把 moon flaky 归因为"项目并行竞态 bug / 推翻 R29 全绿自述"属**归因错误**，按 FALSE_POSITIVE 改判。
-
-## BUG-341 [2026-10-20T06:53:02Z] [low] OPEN
-- summary: 元组嵌套解构 `let ((a,b),c) = ...` 与元组 match 模式解析失败（parser 仅接受扁平 Ident 列表）
-- detail: 现象：`let ((a, b), c) = ((1, 2), 3)` 解析报 "Expected variable name in destructuring, got LParen"（`src/parser/stmt.rs` L1325-1358 的 tuple 解构解析器只接受 `Ident`/`Underscore`/`RParen`，遇 `LParen` 即错）。同类：`let ((p,q),(r,s)) = ((1,2),(3,4))`、`match t { (x, y) => ... }` 元组模式。
-
-现状：扁平解构 `let (a, b) = (1, 2)`、`let (a, b) = ((1,2),(3,4))` 正常工作（前者输出 1/2，后者 `a`=`(1,2)` `b`=`(3,4)`）。嵌套必须靠中间变量：`let (p, q) = t; let (a, b) = p; let (c, d) = q;`（实测 OK，输出 10）。
-
-修法路径（未实施）：需要把 `Stmt::LetTuple { names: Vec<String>, .. }` 改为递归 `Vec<Pattern>` 或做 parser 层扁平化展开（把 `((a,b),c) = ((1,2),3)` 改写为 `let (a,b) = x.0; let c = x.1;`），牵连 `convert_stmt.rs` L14-57、`extended_check.rs` L651、`specialize.rs` L1216、`capture.rs` L347、`semantic_check.rs` L1075、`comptime/eval.rs` L426 六处。属便利性缺口（有中间变量等价写法），非正确性缺陷，本轮未动。
-
-## BUG-342 [2026-10-20T11:37:38Z] [high] FIXED
-- summary: [regression] 并发 agent 批量把参数签名 `?`(可选) 改成 `~`(borrow)，导致已有源码文本锁红（ops_heal_wbtest BUG-240 count 3→0）+ 参数语义变更
-- detail: **现象**：并发 agent 在 MoonBit 0.1.20261016 适配过程中，把多个文件里的参数签名从 `name? : Type = default`（可选参数）批量改成了 `name~ : Type = default`（borrow 语法）。具体清单（git diff HEAD -- '*.mbt'）：
-
-```
-ops_heal.mbt:  delete_failed_ids? → delete_failed_ids~ （3 处）
-ops_heal.mbt:  skipped_ids? → skipped_ids~
-ops_heal.mbt:  no_history_ids? → no_history_ids~
-ops_heal.mbt:  unhealthy_ids? → unhealthy_ids~ （多处）
-engine_dag_ext.mbt:  ids? → ids~
-task_plan_deep.mbt:  calibrate? → calibrate~
-task_plan_deep.mbt:  feedback? → feedback~
-task_plan_deep.mbt:  runner? → runner~
-```
-
-**破坏面**：
-1. `ops_heal_wbtest.mbt:75` 文本锁 `assert_eq(ops_heal_count(src, "delete_failed_ids? : Array[String] = []"), 3)` → 搜不到 → 红（当前全量 moon test 1344/1346）
-2. 参数语义变更：`?` 表示"调用方可省略、有默认值"；`~` 是 MoonBit 0.1.20261016 新引入的 borrow 语法，语义不同
-3. 其他依赖可选参数语义的调用点可能静默行为变化（heal 默认值、task_plan_deep 默认空数组等）
-
-**根因**：并发 agent 把 MoonBit 0.1.20261016 的 borrow 新语法 `~` 误判为"可选参数的新写法"，批量替换。
-
-**修复建议**：
-- 方案 A（保守）：把所有 `~` 改回 `?`，保留原有可选参数语义；MoonBit 0.1.20261016 对可选参数仍支持 `?` 语法
-- 方案 B（升级）：如果并发 agent 确认 `~` 是新版本推荐写法（需要 MoonBit changelog 证据），则同步更新文本锁从精确匹配 `delete_failed_ids?` 接受 `delete_failed_ids? | delete_failed_ids~`
-- ref_call: BUG-342
-- reported_by: host-steward
-
-## BUG-343 [2026-10-20T11:39:21Z] [medium] FIXED
-- summary: [regression] rhop_poll_once 去重测试 got1.length() 期望 1 实际返回 2（并发 agent commissar 引入后行为变化）
-- detail: **现象**：全量 moon test --target js 1346/1345/1，唯一红是 src/ops/rhop_native_wbtest.mbt:20。测试 `rhop_poll_once 解码新增 .rhop 且按完整路径去重` 第一拍 got1 期望 length=1 实际返回 2。
-
-```
-[vicTop-cw/fist-mbt] test src/ops/rhop_native_wbtest.mbt:20 ("rhop_poll_once 解码新增 .rhop 且按完整路径去重") failed: src/ops/rhop_native_wbtest.mbt:36:3-36:30@vicTop-cw/fist-mbt FAILED: `2 != 1`
-```
-
-**定位**：
-- rhop_native_wbtest.mbt 工作树 vs HEAD 零 diff（文件本身没变）
-- ops_heal_wbtest 锁修复后全量失败从 2 → 1，只剩这一条
-- 根因在并发 agent 引入的 commissar 功能（ops_commissar.mbt 是并发 agent 新增），可能往同一个 temp/ 目录里多造了一个 .rhop 文件，或 rhop_poll_once 解码逻辑变了
-
-**验证**：
-- 清理 temp/rhop_poll_dedup/ 后重跑是否仍红
-- 检查 ops_commissar 是否用了同一个 rhop 发送目录
-- rhop_poll_once 的去重逻辑是否在并发 WIP 中被修改
-
-**根因分类**：并发 agent 引入的新功能（commissar）副作用影响了已有 rhop_poll_once 语义。修复责任：并发 agent 调整自己的代码让 rhop 测试过，或修改 rhop 测试期望匹配新行为。
-- reported_by: host-steward
-
-
-
-
-### FIXED(2026-10-20T12:05:04Z / BUG-342, BUG-343)
-- evidence: 并发 agent 已按 BUG-342 建议之方案 B 收敛并把文本锁扩形：`src/ops/ops_heal_wbtest.mbt` 现在同时计数 `delete_failed_ids? : Array[String] = []`（count_q）与 `delete_failed_ids~ : Array[String] = []`（count_t），BOTH 形都被接受；`src/engine/engine_dag_ext.mbt` 已不再出现 `ids~`/`ids?`（并发 agent 已收敛）。判据实测：`moon test --target js -p src/ops` = Total tests 217, passed 217, failed 0；`moon test --target js -p src/engine` = Total tests 174, passed 174, failed 0（均含 ops_heal_wbtest 的 BUG-240 文本锁）。BUG-343 侧：HEAD 66fbf65「test(ops): BUG-343 rhop_native_wbtest 加 rn_clean tear-down」已落，rhop 锁不再红，随 ops 217/217 一并转绿。注意：源码仍保留 `~`（borrow）写法且在本机钉版 moon 0.1.20261016 下编译通过，语义是否等价「可选参数」留作观察项，若后续 moon 升级语义分歧再按方案 A 回退。
-## BUG-344 [2026-10-20T13:06:14Z] [medium] FIXED
-- summary: [cl5/R3b] docs/2026-10-20-slave-dev-playbook.md:206 cl 表声明工具数 1 vs 实测 170，check_tools_sync R3b 红
-- detail: cl5 硬门 check_tools_sync.py R3b 扫出红：docs/2026-10-20-slave-dev-playbook.md:206 的 cl 覆盖表第一行写 `| cl1 MCP 工具存在 | model_route 新增 dry_run 分支回写 | ✅ |`——该行只声明 1 个工具（dry_run 分支），而实测注册工具 170 个。R3b 判据把该行解析为"声明工具数 1"并点名不符。该文件是并发 agent（slave）今日新增的产物，非本轮 skill-docs WIP；按用户"report-and-trace only"边界，不直接修改并发 agent 的文档，上报到账本由并发 agent 或 owner 裁决。修复方向：该行应写明"model_route dry_run 分支 + 整体 170 工具 保持"或把该行从 cl 表拆分（cl1 应写"工具存在"而非"新增 1 分支"）；或在表格加一列显式工具数=170。
-- reported_by: agent-skill-docs
-
-
-### FIXED(2026-10-21T01:12:09Z / BUG-344)
-- evidence: 改了 docs/2026-10-20-slave-dev-playbook.md:206（cl1 行）：`cl1 MCP 工具存在` → `cl1：MCP 工具存在`。真因：RE_TOOL_CLAIM 第三分支 `(\d+)\+?\s*MCP\s*工具` 把 cl 标签里的 "cl1" 数字 1 当成"1 MCP 工具"声明（实测 170）。在 1 与 MCP 之间插入非空白字符（全角冒号）断开误匹配，无新计数声明。锁：`python scripts/check_tools_sync.py` 复跑 `PASS 工具单一真源一致：server.mbt 注册 170 个`，exit 0（修前 FAIL + exit 1）。文件原为 git 干净状态，提交 e603b89（仅该文档）。该文件是 slave-dev 模板，后续复制不再踩雷。
-
-### FIXED(2026-10-21T01:23:06Z / BUG-344)
-- evidence: 并发 agent 在 docs/2026-10-20-slave-dev-playbook.md:206 修正了 cl 表工具数声明（09:09:59 该文件被改）；check_tools_sync.py R3b 现 PASS（R3b/R7 扫现状面 156 份，历史面豁免 1 份，无违例）。本会话 09:18 实测：check_tools_sync rc=0。一源四态 cl 全部守卫 6/6 rc=0。
-## BUG-345 [2026-10-20T13:34:03Z] [medium] FIXED
-- summary: [issue_scan] by_severity 聚合把 info 档并入 low 桶，BUG-333 降噪预案无法净化 by_severity
-- detail: 实测对比（release v0.3.9，src/ltl）：
-
-- 无 rules_file：by_rule 中 `moonbit-match-exhaustive` severity=**low** count=9；by_severity={high:0,medium:0,**low:69**}。
-- 带 rules_file=memory/bug333_denoise_rules.json（match-exhaustive/unused-variable/long-function 三条降 severity=info，已入库 commit 524a198）：by_rule 中 `moonbit-match-exhaustive` severity=**info** count=9（severity 覆盖生效✓）、逐条 findings 的 severity 也变 info✓；但 **by_severity 仍 ={high:0,medium:0,low:69}，与默认完全一致**。
-
-根因：src/server/issue_scan.mbt 聚合块（L1969-1976）只有
-  if h.severity=="high" {high+1} else if h.severity=="medium" {medium+1} else {low+1}
-⇒ `info` 走 else 被并入 low 桶。by_rule（L1987 `r.severity`）用规则表的 severity 所以显示 info，by_severity（L1970 `h.severity`）虽然也用同一 severity，但值域只有 high/medium/其余→low。
-
-后果：BUG-333 预案「把子串近似噪音降 severity 为 info，净化 by_severity 的 low/high」结构上不成立 —— 降噪只改了标签，by_severity 的 low 计数一字不变。降噪预案落地后 by_severity 仍是低噪声污染，判读 low/high 的初衷失效。
-
-证据：同一次 release 二进制、同一目录 src/ltl，两跑差异仅 rules_file 参数；by_severity 完全相等（low=69），by_rule 与逐条 findings 已显示覆盖后 severity=info。
-- reported_by: polish-lead
-
-
-### FIXED(2026-10-21T07:27:26Z / BUG-345)
-- evidence: 改 src/server/issue_scan.mbt 聚合：旧三桶 high/medium/low 的 else 把 info 档（scan_rules L279 moonbit-long-function=info、L335 unused-variable=info，及外部规则透传 severity）连同未知档全折进 low、返回体根本没有 info 键。新增 `info` 独立计数 + 未知档显式归 info（不冒充 low），by_severity 输出体加 "info" 键。配套端到端锁 lint_9_by_severity_has_info_bucket（src/server/issue_scan_test.mbt，走 @server.issue_scan 真源码——非旧构建产物，钉 BUG-32 教训）：语料含 fn 定义行必命中 long-function(info)，断言 info 键存在且>0、四桶 high+medium+low+info==total_findings 不重不漏。变异复验：① 还原旧三桶无 info 键 → lint_9 红（342→341/1）；② info 命中误归 low 半修复 → lint_9 红；还原 → 342/342 全绿。moon check exit0。未混入 pkg.generated.mbti（issue_scan 公开签名不变）。
-## BUG-346 [2026-10-20T13:48:51Z] [medium] OPEN
-- summary: [issue_scan] moonbit-json-injection 规则 pattern 与意图相反：匹配的是安全构造器 Json::string(，从未检测真实拼接注入；全 MoonBit 命中恒假阳（src/store 单目录 45 条，L1876 注释自述全仓约 1334 条）
-- detail: 规则定义（src/server/issue_scan.mbt:257-262）：
-  id: "moonbit-json-injection"
-  severity: "low"
-  pattern: ["Json::string("]                                  ← 匹配的是安全 JSON 构造器
-  why: "JSON 字符串由拼接构造，可破坏 JSON 结构"              ← 描述的是字符串拼接
-  hint: "用 Json::object 构造或转义特殊字符"                  ← 叫用户用 Json::string/Json::object 构造
-
-三处自相矛盾：pattern 所匹配的 `Json::string(...)` 恰恰就是 hint 推荐的安全做法（MoonBit 惯用法 `Json::object({...})` + `Json::string(...)` 构造，无裸字符串拼接），因此该规则对 MoonBit 代码命中率 100% 假阳；而真正的注入向量（`"...\" + x` 裸拼接）pattern 里根本没有。
-
-实测（release v0.3.9，issue_scan src/store，7 文件）：954 命中中 json-injection 计 45 条，逐条抽查（multi_store.mbt:179 item.set("ns", Json::string(ns))、store.mbt:113-120 lock_id/batch_id/scope/agent 等）全部是安全构造，无一为拼接注入。
-
-叠加风险：src/server/issue_scan.mbt:2209 白盒锁 `assert_false(scan_denoise_default_skip("moonbit-json-injection"))` 断言该规则**不在**默认降噪跳过集 —— 即把它当作应当常驻暴露的"真规则"，使这个 100% 假阳规则被结构性锁定在结果里，直接放大 BUG-333 的量噪（72.7% 噪音）。
-
-修复方向（归属 src/server，待并发 WIP 清空）：
-① 把 pattern 改成真正的拼接注入形状（如 `"\\" +` / `+ x + "` 类裸拼接），或
-② 把 moonbit-json-injection 加入默认降噪跳过集，并同步改 L2209 白盒锁断言为 assert_true。
-①② 与 BUG-345（by_severity 四桶）独立可并行；修完用 A/B（src/store）验证 json-injection 命中从 45 → 0（若走②）或从假阳命中转为真命中（若走①）。
-- reported_by: polish-lead
-
-## BUG-347 [2026-10-20T14:04:47Z] [high] FIXED
-- summary: [bug:issue_scan] 外部 rules_file 的 pattern 匹配器按 :: 切分只取尾段做子串匹配，Json:: 命名空间限定被静默丢弃（BUG-346 的更深层真因）
-- detail: v0.3.9 实测（三探针交叉，src/ltl/ltl.mbt 无任何 Json::string( 调用）：
-
-1. issue_scan(src/ltl, rules_file 里 json-injection pattern="Json::string(") → json-injection 命中 11 条，全部是 *.to_string() / formula_to_string( / verdict_to_string( 行（L37/62/284/287/288/289/290/292/298/347/367），这些行都不含子串 "Json::string("。
-2. issue_scan(src/ltl, rules_file 里 json-injection pattern="Foo::string(")（无关命名空间）→ 同样命中 11 条，且行号逐字相同。⇒ "Json::" 与 "Foo::" 无差别，证明匹配的是尾段 "string("，:: 前的命名空间限定被丢弃。
-3. issue_scan(src/ltl, rules_file 里 json-injection pattern="NOPEstring(")（无 ::，仅含子串 string(）→ json-injection 0 命中。⇒ 触发条件是"含 ::"，而非"含 string("。
-4. issue_scan(src/ltl, rules_file 里 json-injection pattern="###NOMATCH-MARKER###")（无 ::）→ 0 命中，且 src/store 上该 pattern 把 json-injection 从 45 打到 0。⇒ 外部 rules_file 的 pattern 字段确实生效（此前 R12 记为"pattern 惰性"系误判）。
-5. 基线（不带 rules_file）src/ltl → json-injection 不在 by_rule（0 命中）；src/store → 45 命中全为字面量 Json::string(。
-
-根因：issue_scan 对外部 rules_file 的 pattern 与内建规则表使用两套语义不同的匹配器。内建表按字面量 "Json::string(" 匹配（基线 store=45）；外部 rules_file 的 pattern 则先按 "::" split 取尾段再子串匹配，于是 "Json::string(" 被降级为 "string("，命中全库每个 *.to_string() / formula_to_string( / verdict_to_string( 调用，假阳性爆炸式扩散。
-
-修复方向（需改 src/server/issue_scan.mbt，本轮因 src/server 有并发 WIP 未动）：外部规则 pattern 与内建走同一匹配器（字面量或显式正则），不要按 :: 静默剥离；或匹配前校验 pattern 前缀与命中位置的左侧邻字符，保证 "string(" 只在与完整 "Json::string(" 语义一致时命中。
-
-证据产物：memory/_ctl_pattern_probe.json（可切换 pattern 复现三探针）；memory/bug333_denoise_rules_v2.json（v2 降噪清单，把 json-injection 临时降为 info 止损）。关联 BUG-346（内建表匹配安全构造函数 Json::string( 的 FP），本缺陷是同一规则在外部 rules_file 路径上的更严重变体。
-- reported_by: r16-issue_scan-ab
-
-
-### FIXED(2026-10-21T07:21:32Z / BUG-347)
-- evidence: 改 src/server/issue_scan.mbt scan_regex_to_needle()：新增 `::` 命名空间保留分支（`c==':' && cs[i+1]==':'` → cur+="::"，i+=2），其余分支与旧实现逐字一致。旧实现只认 alnum，把 `Json::string\(` 退化成裸 needle `string`（Json:: 整段丢弃）⇒ 任何含 string 的行都命中（假阳），且 \s 的 s 被当字面量起点重新计数。配套新增白盒锁 ext_rules_7_needle_preserves_namespace（src/server/issue_scan_external_rules_wbtest.mbt）：断言 Json::string\(→Json::string、Json::string\s*\(→Json::string、单冒号 a:bcd\(→bcd、fixture 类 ignore\s*\(\s*\w+→ignore / probe\(→probe 零回归。变异复验：把 :: 保留分支改 `else if false` 复现 BUG-347 → ext_rules_7 红（341→340/1 fail）；还原 → 341/341 全绿。src/server 编译门 moon check exit0、moon fmt exit0。未跑 moon info（改动私有函数、公开签名不变，.mbti 本不该动；顺手跑了也只会带 BUG-330 的 Int→Int32 存量漂移，已 git checkout 还原、不混入本笔提交）。
-## BUG-348 [2026-10-21T00:57:36Z] [medium] FIXED
-- summary: [rule-layer] moonbit-unused-variable 把已使用的 let 绑定报成未使用（cost_tool.mbt L29 exceeded/L31 remaining/L32 action 均在函数体后续被引用）；moonbit-match-exhaustive 报已含 catch-all 的 match 为"可能非穷尽"——src/engine 1693 命中 low/info 近似全 FP，扫描器自身精度缺陷
-- detail: 【精度审计 · 扫描器自身缺陷】`issue_scan` 的 `low`/`info` 规则在真实代码上近似全 FP。
-
-取 `src/engine/cost_tool.mbt`（77 行，可全文复核）作为精度样本，12 条 low/info 命中：
-
-- `moonbit-unused-variable`（info，src/engine 全目录 708 条）：
-  - L29 `let exceeded = current >= limit` —— **`exceeded` 在 L43 `Json::boolean(exceeded)` 与 L46 `if exceeded` 实际使用**，非未使用。
-  - L31 `let remaining = limit - current` —— **`remaining` 在 L44 `Json::number(remaining)` 与 L52 `if remaining < limit*0.2` 实际使用**。
-  - L32 `let action = if exceeded {...}` —— **`action` 在 L45 `Json::string(action)` 实际使用**。
-  ⇒ 规则把「已使用」的 let 绑定报成未使用，判定口径错误。
-- `moonbit-match-exhaustive`（low，src/engine 全目录 252 条）：L68/L72 `match args.value("limit")` / `match args.value("current")` 均含 `_ => 0.0` catch-all，**本已穷尽**仍被报"可能非穷尽"。
-- `moonbit-json-injection`（low）：L23/24/45/47/53/55 全为 `Json::string(...)` 安全构造器（已知 BUG-346）。
-- `moonbit-long-function`（info）：L64 `budget_check_json` 仅 13 行却被报"超长函数"；L14 `budget_check` 46 行，临界。
-
-**结论**：cost_tool.mbt 上 12 条 low/info 命中 = 0 真 bug；`unused-variable` 与 `match-exhaustive` 两条规则的判定口径与实际代码不符。src/engine 全目录 1693 条命中里 `high=0 medium=0`，`low`/`info` 噪音主要由这两条规则 + json-injection 贡献。
-
-【修复方向（待 owner 一并裁决）】与 BUG-345/346/347 同批处理：① `moonbit-unused-variable` 需先做实际使用性检查（当前疑似只按 `let <ident> =` 行首启发式匹配）；② `moonbit-match-exhaustive` 需先排除已含 catch-all 的 match；③ 或对这两条规则降级/退役，避免淹没真告警。相关落地仍受 src/server 37 脏并发 WIP 阻塞（与 BUG-345/346/347 一致）。
-
-【证据】`src/engine/cost_tool.mbt` 全文 77 行，`exceeded`/`remaining`/`action` 三处 let 均在函数体后续被引用；L68/L72 两个 match 均含 `_ =>` 兜底分支。可复现：`issue_scan(dir="src/engine")` → 抽样 12 条 cost_tool 命中。
-
-
-
-
-### FIXED(2026-10-21T07:45:50Z / BUG-348)
-- evidence: 改 src/server/issue_scan.mbt：新增 moonbit-unused-variable 单向保守过滤——从 `let [mut ]IDENT` 抽绑定名(scan_let_binding_name)，若该名字作为完整单词(scan_word_occurs，前后不接标识符字符)出现在**除声明行外**的任一代码行(scan_code_part 已剔字面量/注释)⇒ 判「其实用了」⇒ 丢弃该 info 命中；抽不出名字(解构/弃元/非let开头)或读不到文件⇒保持现行为照常报。按文件缓存各行 code_part 到 codeparts_cache(unused-variable 命中每个 let 行，逐命中重算 code_part 是 O(命中×行)，缓存降到 O(行))。新增 5 个私有纯函数(scan_is_ident_cont/start, scan_word_occurs, scan_let_binding_name, scan_variable_used_elsewhere)。
-
-锁(走 @server.issue_scan 真源码，非旧构建产物，钉 BUG-32)：白盒 issue_scan_wbtest.mbt 3 条(bug348_let_binding_name_extraction 含 mutator 边界 / bug348_word_occurrence_is_whole_word 含 totally_unused 整词、行首行尾 / bug348_used_elsewhere_skips_decl_line_only 含自引用 let cost=cost)+ 端到端成对锁 issue_scan_test.mbt lint_348_unused_variable_pairwise(语料 used_one 里 let cost 第2行被第3行用、truly_unused 里 let dead 第6行全程不引用；断言 第2行不报、第6行仍报)。
-
-变异敏感性双向复验(隔离工作树 @ HEAD bc036f7，干净 engine，避开并发 agent 正在改的 src/engine 不编译碰撞)：① 关掉过滤(分支恒透传)→ 假阳复活 → lint_348 红(346→345/1)；② 过度激进抽出名字后无条件 continue(真未使用也被藏)→ lint_348 红。还原→ 346/346 全绿。moon check src/server 隔离树 exit0。公开签名 issue_scan(...) 未变(只加私有函数、改内部过滤循环)，无需 moon info、不动 .mbti。
-## BUG-349 [2026-10-21T01:49:54Z] [medium] OPEN
-- summary: [rule-layer] moonbit-result-discard 按 ignore( 字面量匹配不查参数类型——store_specs.mbt L78/167 丢 Bool 非 Result 照样报（BUG-348 同族"只看字面量不看语义"）
-- detail: 独立 L4 证据（真读源码，非转发）：
-1) src/store/store_specs.mbt L62: `pub fn SqliteStore::ensure_specs_table(self : SqliteStore) -> Bool`（返回 Bool）。
-2) L78 / L167: `ignore(self.ensure_specs_table())` —— ignore 丢弃的是 **Bool**（表是否已存在/创建成功），**非错误 Result**，但 result-discard 照样命中。
-3) 真丢 Result 的是 L83-220 的 `ignore(stmt.bind(...))`（bind 返回 Result）。
-4) 量化：src/store 产品代码 ignore( = 236 条，与 result-discard=236 逐字一致，其中含丢 Bool/Unit/String 的，FP 比例非零。
-
-根因与 BUG-348 同族：规则按 `ignore(` **字面量**匹配，不做返回类型检查——同一"只看字面量不看语义"缺陷。修复需语义级检查（返回类型），非简单改 pattern。
-
-建议：并入 BUG-348 修复范围（同一根因），或独立修复（result-discard 需按 ignore 参数的实际返回类型过滤）。
-
-## BUG-350 [2026-10-21T02:57:18Z] [medium] FIXED
-- summary: [rule-layer] check_test_sync 判据只取日志 Total tests 忽略 passed/failed——passed=3 failed=1344 假绿 PASS"实测 1347"（与 BUG-142 moon exit 0 不可靠同族，补丁形同虚设）
-- detail: 【L4 硬证据 · 实测假绿】构造合成 moon test 日志 `Total tests: 1347, passed: 3, failed: 1344`（几乎全挂），跑 `python scripts/check_test_sync.py temp/fake_fail_log.txt` → **exit 0**，输出 `PASS 测试总数单一真源一致：实测 1347；扫描现状面 131 份文档，16 条声明全部等于实测；must-carry 5 份齐全；豁免 25 条全部有效`。
-
-【根因】`check_test_sync.py` main() L434：
-```python
-m = re.search(r"Total tests:?\s*(\d+)\s*,\s*passed:\s*\d+", log)
-total = int(m.group(1))  # 只取 group(1)=Total tests 数
-```
-`passed:\s*\d+` **不捕获 passed 的值**（`\d+` 无分组）。判据声称"测试总数单一真源一致"，实际只验证日志的 `Total tests` 与文档声明一致，**完全忽略 passed/failed 分布**。当测试几乎全挂（passed=3 failed=1344）但 total 仍=1347 时，判据误绿。
-
-【假绿场景】这与 AGENTS.md 记载的 BUG-142 同族——moon test 的 exit 0 不可靠（SIGABRT 仍回 0），判据本应作为补丁抓崩溃，但 `passed` 不捕获意味着"moon test 崩了但 total 数不变"依然绿。判据宣称的"以 `Total tests: N, passed: N, failed: 0` 汇总行为准"**只实现了前半句**（total），后半句（passed==N、failed==0）未实现。
-
-【附带发现】真实 moon test 日志（`temp/moon-test-2026-10-21-1045.log`，945 行 61KB）**完全不含 `Total tests:` 行**（grep 0 命中，日志末尾全是 deprecation Warning 块），导致 check_test_sync 对真实 moon 输出 `FAIL 无法从参数/日志解析测试总数`——**判据的正则匹配不了 moon 实际输出格式**（可能是 moon 版本升级后汇总行格式变化，或被重定向到别处）。这也解释了为何守卫依赖的 `temp/moon-test-*.log` 日志文件会消失（temp/ 被清理后守卫崩溃 traceback 而非友好报错）。
-
-【附：BUG-351 上下文（并发 WIP 编译错误）】重跑 `moon test --target js` **exit 1**，stderr Error 4043：`src/router/model_router_wbtest.mbt` L620/748 `use_caf_memory: false` **record field defined several times**（该 wbtest 在并发 agent 未提交 WIP 里，git status M）。权威测试门 1347/1347 因此当前不可复现——需并发 agent 收口 WIP 修复重复字段后重跑。
-- reported_by: agent-skill-docs
-
-
-### FIXED(2026-10-21T06:49:58Z / BUG-350)
-- evidence: 改了 `scripts/check_test_sync.py` main()：① 日志解析从 `passed:\s*\d+`（不捕获值）改为 `passed:\s*(\d+)\s*,\s*failed:\s*(\d+)` 捕获 passed/failed；② 追加判绿补丁 `if passed != total or failed != 0 → FAIL 日志显示测试未全过 exit 1`；③ 追加友好报错 `if not Path(args[0]).is_file() → FAIL 日志文件不存在 exit 1`（防 traceback）。实测：合成 `Total tests: 1347, passed: 3, failed: 1344` → exit 1 FAIL（原 exit 0 假绿）；`passed=99 failed=1` → exit 1 FAIL；`passed=100 failed=0` → passed 检查通过（文档面正常红）；缺文件 → exit 1 友好报错无 traceback；`--selftest` 8 变体全绿零回归。
-## BUG-351 [2026-10-21T03:07:03Z] [medium] FIXED
-- summary: [rule-layer] check_demo_isolation selftest M3 自证式假绿：scan({}) 实测仍返回 spawners=34（bodies 只覆盖 body 内容不影响 _files() 枚举），M3 只测 L138 已提前 return 的不可达条件且 L178 无条件 append M3 格子；main() L197-199 真自拒门从未被 selftest 覆盖——把 I3 自拒门删掉 selftest 仍 exit 0
-- detail: 【L4 硬证据 · 自证式假绿】`python scripts/check_demo_isolation.py --selftest` → **exit 0**，输出 `SELFTEST OK（干净不误红 + 变异必红 + 空扫描自拒；格子从已执行对照反解：... / M3 空扫描必自拒；spawn 面 34 个脚本）`。M3 声称"空扫描必自拒"已锁，但实际从未真构造空扫描。
-
-【变异推演（判据改坏也不红）】三处独立证据：
-1. **scan() 无空扫描路径**：L104 `for path in _files():` 硬编码枚举真实文件系统；`bodies` 参数（L106 `read_body(r, bodies)`）**只覆盖 body 内容，不影响 `_files()` 枚举结果**。实测 `scan({})` 传空 bodies **仍返回 spawners=34**（空 bodies 恒非空）。
-2. **selftest M3 只测不可能条件**：L177-180 `if not spawners: fails.append("M3 无法构造空扫描对照（真实现状面就没样本）")`——但 L138-140 已在 selftest 开头 `if not spawners: return 2` 提前返回，所以 M3 里 `spawners` **恒非空**，`fails.append` **永远不可达**。
-3. **L178 `executed.append("M3 空扫描必自拒")` 无条件执行**：无论是否真验证，M3 的格子都进 executed 清单并计入"格子从已执行对照反解"。
-
-【真正自拒门未被覆盖】main() L197-199 `if not spawners: print("FATAL I3 现状面没抓到任何 spawn \`serve\` 的脚本 ⇒ 判据空转，绝不报绿")` 是**真正的空扫描自拒门**，但 selftest **从未构造空扫描**（`_files()` 不可注入）来验证它。把 main() 的 I3 自拒门删掉，selftest 仍 exit 0。
-
-【影响】M3 是 BUG-124"扫描面空即自拒"的 selftest 钉子，但它是自证式假绿——声称锁了"空扫描必自拒"，实际 scan() 恒非空、selftest 恒进 M3 格子。与 BUG-127/check_publish_payload 的空扫描自拒实现（`will_ship` 空显式触发 FATAL）相比，check_demo_isolation 的 M3 是纸面钉子。
-
-【建议修复】给 scan() 加可注入的 `files=None` 参数（缺省走 `_files()`），M3 改成 `scan(files=[])` 真构造空扫描并断言返回自拒/FATAL；否则删掉 M3 格子、承认"空扫描自拒"这一格由 main() 硬覆盖但无 selftest 钉。
-
-【附：BUG-351 状态】并发 agent 报告 BUG-351（`src/router/router_state.mbt:211-212 重复字段 use_caf_memory` 意外复制致 Error 4043）但**未修复**——重跑 `moon test --target js` **exit 1**，stderr Error 4043 **18 处**（`use_caf_memory` 重复字段扩散）。并发 agent 提交 `f0a8f4e` 说明"删任一重复行即恢复，owner 应协调 src/router 编辑者收口"，但其工作树仍有大量未提交 WIP。**权威测试门 1347/1347 当前不可复现**。
-- reported_by: agent-skill-docs
-
-
-
-### FIXED(2026-10-21T07:00:44Z / BUG-351)
-- evidence: 改 scripts/check_demo_isolation.py：① scan() 增 files 注入面（默认 _files()），使空扫描可构造（旧 scan({}) 因 _files() 硬编码恒返回 34）；② 抽出纯函数 isolate_verdict(spawners,problems)->(verdict,detail)，把 main() 的『空扫描必自拒』从不可达内联判断（旧 M3 测的是 L138 已 return 的条件）抽成可喂 spawners=[] 的真门；③ main() 与 selftest 共用 isolate_verdict；④ selftest M3 拆成三格：M3a 枚举面可真空 / M3b 空扫描必自拒 / M3c 裁决三态不串台。实测变异：删 I3 自拒门→M3b 转红 selftest FAIL exit2；files 注入失效→M3a 转红 FAIL；违例腿漏判→M3c 转红 FAIL。还原后 selftest exit0、普通扫描 exit0（34 脚本全合规）零回归。
 ## BUG-356 [2026-10-21T02:25:00Z] [low] FIXED
 - summary: [惯用法面] 0020 deprecated 的 Json 布尔/字符串访问器子族 22 处清零：`as_bool` 15 处 + `as_string` 7 处改构造器模式匹配，判据面 523 → 501 warnings / 0 errors（0020 命中 482→460，其余族 1:9 / 2:11 / 6:12 / 7:2 / 9:3 / 27:1 / 78:3 逐格不变），1302/1302/0 不变、接口面零变化
 - detail: 这一族的坑不在语法，在**别把测试的两类失败模式改混**，五个非显然判定：
@@ -5953,7 +5740,7 @@ total = int(m.group(1))  # 只取 group(1)=Total tests 数
 - 改了什么：11 份文档 + 1 份守卫夹具，26 处现状面对表。测试总数面 21 处（`temp/fix32.py`，逐条断言命中次数才落盘、CRLF 按原文件判定回写）：AGENTS.md 2、ARCHITECTURE.md 1、README.mbt.md 1、README.md 5（徽章 `tests-1108%2F1108` → 1302、正文 1112 → 1302、日志回显行 2 数）、README_EN.md 7（EN 徽章、`1112-test JS suite`、`check_test_sync (1112 aligned`、`(Node ≥ 24, 1112/1112 …)`）、docs/SOP.md 2（含 frontmatter `updated: 2026-10-16` → `2026-10-21`）、docs/agent-map.md 1、docs/deliverable.md 1、scripts/scoring_rubric.md 1；豁免面 `scripts/check_test_sync.py` 新登记 3 条 `EXEMPT`（README 77 / README 162 / SHIP-PLAN 1058）并给夹具补 8 条声明（5 条上一轮漏写 + 3 条本轮新登记）；入口面 docs/SOP.md 部署路径 `cmd/main/main.js` → `cmd/cli/cli.js serve`（并补「裸跑只打印 help」限定）；版本面 USAGE.md 自述 0.3.8 → 0.3.9、README 资产名字面量 `fist-mbt-js-v0.3.8.zip` → `v0.3.9.zip`；索引面 scripts/README.md 登记 `run_check_t0r21.py`。零 `.mbt`、零接口变更。
 - 实测锁钉：真源重跑 `moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`check_badge temp/pt19.log README.md` PASS（徽章 == 实测 + 自检注释行 == 实测）；`check_test_sync temp/pt19.log` PASS（121 份现状面 17 条声明全等实测、must-carry 5 份齐全、豁免 22 条全部有效）；`check_test_sync --selftest` PASS（R0-enumerator + 8 支对照，此前该步直接判红、8 支对照从未跑过）；`check_doc_surface` PASS + `--selftest` PASS；`check_entry_paths` / `check_release_asset_names` / `check_scripts_index` 由红转绿；`check_mbti_sync`（654 条）/ `check_tools_sync` / `check_plugin_sync` / `check_pkg_imports` / `check_publish_payload` / `check_demo_isolation` / `check_store_tables_wired` / `check_ps_encoding` / `check_template_ctrl` / `check_py_stdout_encoding` / `check_model_auth_no_key` / `check_skill_inject` 12 守卫无回归；`moon build cmd/cli --target js` rc=0。
 
-## BUG-358 [2026-10-21T03:00:00Z] [medium] FIXED
+## BUG-358 [2026-10-21T03:00:00Z] [medium] OPEN
 - summary: [CI 判据输入面] `check_host_installable.py` 把**未跟踪件** `.mcp.json` 列进「关键文件缺失即自拒」名单（`LENIENT_JSON = [".mcp.json", ".mcp.dev.json"]` → `missing_key_files()`），而 `.gitignore:65` 明写仓库根 `.mcp.json` 不跟踪 ⇒ 干净检出（CI runner、`git archive HEAD`）上这一步必然 `FATAL … 拒绝出结论` 退出码 2，判据在 CI 上从来没跑过一次真判定
 - detail: 证据链三格实测：① `.gitignore:62-65`「仓库根 `.mcp.json` = 本机 MCP 连接器在读的那一份：未跟踪、内容与跟踪真源 .mcp.dev.json 逐字节相同。BUG-131 之后投影已按跟踪面优先解析」；② `git ls-files` 只有 `.mcp.dev.json` / `.mcp.example.json` / `default-fist.mcp.json` / `plugins/claude/.mcp.json` 四件是跟踪件，根 `.mcp.json` 不在其中；③ 本机 `python scripts/check_host_installable.py` 实跑 `FATAL 判据输入面退化：关键文件缺失 .mcp.json`，rc=2（本机也没有该文件，与 CI 同形，不是 Windows 特有）。ci.yml「Host-installable guard」那步先 `--selftest` 再全量：`--selftest` 里 T5b 一格（`crit_names` 含 `.mcp.json`）在缺件时打的是「当前不可判」的自陈，不会伪装成绿——但整步的退出码仍是非 0，门就是恒红。
   为什么是判据缺陷而不是配置缺陷：BUG-131 已经把**投影侧**（`gen_plugins` / `check_plugin_sync`）改成「跟踪面优先，未跟踪的 `.mcp.json` 只兜底」，`.gitignore` 那条注释正是那次裁决的落盘。本守卫是同族另一支尺子却没跟着改，于是留下「本机有连接器残件就偶发可判、干净树永不可判」的形状——比恒绿更坏，因为它读数长得像「环境没配好」，容易被人当噪声跳过。
@@ -5962,52 +5749,179 @@ total = int(m.group(1))  # 只取 group(1)=Total tests 数
 - 后续建议: ① 出路 (a) 与 BUG-131 同口径、且不需要在 CI 里造未跟踪件，建议优先；动的是判据输入面（这条守卫在 CI 上究竟测什么），按金条四留 owner 定夺后单独开一单元。② 无论选哪条，建议同时给 ci.yml 那步补一句「缺件 ⇒ rc=2 自拒，不算绿」的现状说明，避免下一轮再把它当环境噪声。③ 普查其余判据是否还有同类形状：把 `.gitignore` 里的未跟踪件列进「缺件即自拒」名单的，用 `grep -n "crit" scripts/check_*.py` 复核一遍。
 - task_id: T0r13
 
-### FIXED(2026-10-21T07:07:33Z / BUG-358)
-- evidence: 改 scripts/check_host_installable.py：① 新增 REQUIRED_MCP_JSON=[".mcp.dev.json"]（只收跟踪真源）；② missing_key_files() 关键清单从 `crit += LENIENT_JSON`（含被 .gitignore `/.mcp.json` 忽略的本机件）改为只收 REQUIRED_MCP_JSON——否则任何干净 checkout（CI、副机 clone，根本没有本机 .mcp.json）都因缺这个 gitignore 件被 L513 报「输入面退化」exit 2、整支判据永不产出结论，而本地因恰好有这台机的 .mcp.json 恒绿=假绿；且与 D2 宽松档 L556「缺失合法 continue」自相矛盾；③ missing_key_files(root=ROOT) 增注入面；④ T5 自检重写：删不可达的 T5c/失效 crit_names，加 T5d（tempfile 合成「有跟踪真源、无 .mcp.json」的 root，断言 missing_key_files 为空）+ T5e（真删 moon.mod 仍须自拒，防修复削成啥都不缺的另一端假绿）。实测：--selftest exit0；变异「清单塞回 .mcp.json 还原 BUG-358」→ T5d 红、selftest exit1 被抓；普通扫描 exit0 零回归（本地 WARN .mcp.json timeout_ms 是信息级）。
-## BUG-359 [2026-10-21T06:49:58Z] [medium] FIXED
-- summary: [rule-layer] cli_flag_probe judge() 版本臂用 substring 匹配（`ver not in first` / `ver not in out`）——反向版本漂移 v0.3.90/v0.3.900 恒假绿，判据声称锁 BUG-114 实际只锁"漏版本"不锁"版本说谎"
-- detail: 【L4 硬证据 · 实测假绿】`judge(good_transcript("0.3.9", ...))` 基线 problems=[] 绿（正确）；把版本臂输出改成 `FIST-Mbt v0.3.90`（反向漂移，源码常量写 0.3.90 但 moon.mod 是 0.3.9）→ problems 仍=[] 假绿；改成 v0.3.900 → 仍假绿；帮助臂改成 v0.3.90 → 仍假绿。三处独立假绿全部被旧 substring 匹配放行。
+## BUG-359 [2026-10-21T03:10:00Z] [low] FIXED
+- summary: [弃用面/0020] 「同一原语改名族」12 处清零：`UInt64::to_int64` → `UInt64::reinterpret_as_int64` 11 处（`src/server/server.mbt` 6 / `src/server/mcpcf_embed.mbt` 3 / `src/server/model_router_ops.mbt` 2）+ `Char::from_int` → `Int32::unsafe_to_char` 1 处（`src/router/router_caf_ext.mbt:116`），判据面 501 → **489 warnings / 0 errors**，0020 命中 460 → **448**（这两族 11+1 → 0）；附带 1 处注释事实修正（`src/server/mcp_config_scaffold.mbt:149`）
+- detail: 收口判据不是「新名字看着更现行」，而是**弃用面与新面在 core 里落到同一条后端 primitive**，这样 codegen 逐字节不变、改名在语义上是空的：
+  ① A 族证据：`~/.moon/lib/core/builtin/int64.mbt:1199-1201` 是 `#deprecated("Use reinterpret_as_int64 instead") pub fn UInt64::to_int64 = "%u64.to_i64_reinterpret"`，同文件 `:1222` 是 `pub fn UInt64::reinterpret_as_int64 = "%u64.to_i64_reinterpret"`——两个声明绑定同一个 primitive。
+  ② B 族证据：`builtin/intrinsics.mbt:1353-1354` 的 `#deprecated("Use Int32::unsafe_to_char") pub fn Char::from_int(val : Int32) -> Char = "%char_from_int"` 与 `:1625-1626` 的 `pub fn Int32::unsafe_to_char(self : Int32) -> Char = "%char_from_int"` 同理。
+  ③ 边界（这一格最容易被「顺手扫干净」越过去）：`to_int64` 是重载名，`Double::to_int64()` / `Int::to_int64()` 是**饱和转换**、并未弃用（`src/router/star_gate.mbt:157` 那类就是）。所以 `temp/fix33.py` 只匹配带接收者的完整调用文本 `@env.now().to_int64()`，绝不匹配裸 `.to_int64()`——把饱和转换改成按位重解读是语义事故，不是改名。脚本里那条「站点文本不得等于过宽禁串」的自检第一版写成子串判定 `any(f in old for f in FORBIDDEN)`，结果把每一个**合法**站点都判成违规而 abort（合法全文里本来就含着禁串 `.to_int64()`）；改成整串成员判定 `if old in FORBIDDEN` 才只拦「裸串当匹配文本」这一种。工具自身的判据也要判性质，否则它会把正确用法全拒了、还报一片红。
+  ④ B 族那处的 unsafe 前置条件：入参是 `String` 字符的码点，永为合法 Unicode scalar；core 自己的 `Char::to_ascii_lowercase`（`builtin/char.mbt:436-438`）就用 `(self.to_int() + 32).unsafe_to_char()` 同一惯用法，仓内先例 `src/omega/spec.mbt:316`。选 unsafe 而不是模式匹配，是因为这里本来就有「合法码点」的类型级来源，写成匹配反而把 core 自家写法判成违规。
+  ⑤ moonfmt 正字法教训：首版照仓内先例写 `Int::unsafe_to_char`，`moonfmt` 把它规范化回 `Int32::unsafe_to_char` ⇒ 该文件分歧从 D0=10 涨到 D1=12，即「新增分歧 1 处」直接踩判据。按格式化工具的正字法落 `Int32::` 之后 D1==D0。这就是 BUG-330 记过的 `Int`/`Int32` 拼写漂移面：**格式化器说了算，旧先例不算数**，否则「零新增分歧」这条锁钉自己会红。
+- note: 0020 余 448 里 `Json::value` 占 430（等 owner 定形态）。本轮挑的是**剩余机械族里唯一能用「同一原语」这条硬证据判等价**的一类：Show→Debug 8+3 动的是快照承载、`String::to_bytes` 3 处动的是字节序列语义（见 BUG-360）、FFI `Array`→`FixedArray` 3 处要过 FFI 布局，都不满足该判据，故不入本单。
+- 后续建议: ① 见 BUG-360——普查 `to_bytes` 那 3 处时实测出的编码不一致，是产品功能洞，不在本单范围。② `Int`/`Int32` 漂移面仍在：任何手写 `Int::` 的调用都可能被格式化器改写，建议单独一轮普查 `grep -rn "Int::unsafe_to_char\|Int::to_char" src cmd` 统一正字法（BUG-330 的延续）。③ 0020 主体 430 条的决策稿仍需指挥官二选一后铺开。
+- task_id: T0r14
 
-【根因】`scripts/cli_flag_probe.py` judge()：
-- L66 `if ver not in first:` —— `"0.3.9" in "FIST-Mbt v0.3.90"` 恒 True ⇒ 反向漂移（源码写 v0.3.90 但 moon.mod 是 0.3.9）不被抓
-- L75 `if ver not in out:` —— 同上 substring 语义
+### FIXED(2026-10-21 轮次 R33 / BUG-359)
+- 改了什么：5 份 `.mbt`、13 处替换（12 处改名 + 1 处注释修正），零接口变更、`.mbti` 未动。`src/server/server.mbt` 6、`src/server/mcpcf_embed.mbt` 3、`src/server/model_router_ops.mbt` 2 的 `@env.now().to_int64()` → `@env.now().reinterpret_as_int64()`（`temp/fix33.py`：dry-run 先行、逐条断言命中次数才落盘、CRLF 按原文件判定回写）；`src/router/router_caf_ext.mbt:116` `Char::from_int(lc).to_string()` → `Int32::unsafe_to_char(lc).to_string()`；`src/server/mcp_config_scaffold.mbt:149` 注释按事实改写——原文声称「core 未提供 `String::lowercase` / `Char::from_int`」，前半真后半假（`Char::from_int` 存在、只是本轮起弃用），且漏了 core 其实有逐字符 `Char::to_ascii_lowercase`。
+- 实测锁钉：`moon check --target js --json` = `temp/chk39.json` → **489 warnings / 0 errors**，error_code 分布 {1:9, 2:11, 6:12, 7:2, 9:3, 20:448, 27:1, 78:3}——0020 内 `to_int64` 族 11→0、`Char.from_int` 族 1→0，其余族逐格不变；`moon test --target js -j 1` = `temp/pt20b.log` → `Total tests: 1302, passed: 1302, failed: 0`；`moon build cmd/cli --target js` = `temp/build20.log` rc=0；`temp/fmt30.py` 五份逐文件 D0==D1（router_caf_ext 10/10、mcp_config_scaffold 10/10、mcpcf_embed 6/6、model_router_ops 26/26、server 60/60）、新增分歧 0；20 支守卫 PASS（`check_mbti_sync` 654 条不变 / `check_tools_sync` / `check_plugin_sync` / `check_pkg_imports` / `check_demo_isolation` / `check_store_tables_wired` / `check_ps_encoding` / `check_template_ctrl` / `check_py_stdout_encoding` / `check_model_auth_no_key` / `check_skill_inject` / `gen_plugins --check` + `--selftest` / `check_test_sync`（对 `temp/pt20b.log`）+ `--selftest` / `check_badge` / `check_doc_surface` / `check_entry_paths` / `check_release_asset_names` / `check_scripts_index`）；收尾 `git restore -- ':(glob)**/*.mbti'` 后工作树只剩这 5 份 `.mbt`。
 
-判据宣称锁 BUG-114（源码版本常量必须 == moon.mod），实际只锁"首行完全没写版本"（正向缺失），不锁"版本写错了但包含正确版本子串"（反向/说谎）。这与 BUG-114 的 R11 判据意图（`project_version` 必须 == moon.mod，读不到基线即自拒）同族但更隐蔽——正向漂移（v0.2.8，旧版）会被 `0.3.9 not in out` 抓到，反向漂移（v0.3.90，超前版）恒漏。
+## BUG-360 [2026-10-21T03:10:00Z] [medium] OPEN
+- summary: [密码学面/编码不一致] `src/router/star_gate.mbt:302` 用 `canonical.to_bytes()` 当 Ed25519 验签消息，而当前工具链的 `String` 内部是 **UTF-16LE**（本轮探针实测）；生产侧 `.github/workflows/attest.yml:105-107` 签的是 `.encode("utf-8")` ⇒ 同一 canonical 串两侧长度 **57 字符 vs 114 字节**，对真 attestations 验签必然失败（fail-closed 的功能洞，不是安全洞）。仓内 wbtest 与产品共用同一个 `to_bytes()`，两侧错得一致 ⇒ 1302 条测试测不穿它
+- detail: 证据链四格，全部本轮实测或直读真源：
+  ① 消费侧：`src/router/star_gate.mbt:264` 重建 canonical、`:302` `let msg = canonical.to_bytes()` 交给验签；`:78` 的注释明写 canonical 规则要与 attest.yml 的 `json.dumps(..., sort_keys=True, separators=(",", ":"))` 对齐——即这条链的设计意图就是「两侧同一串字节」。
+  ② 生产侧：`.github/workflows/attest.yml:105-107`（签名）与 `:168-172`（CI 自校验 `SELFTEST OK`）都是 Python `.encode("utf-8")`。
+  ③ 探针实测（`temp/probe_enc2.log`，用完即删，工作树已验证无残留）：本轮 canonical 样例 `str_len=57 bytes_len=114`，ASCII 参照 `abc` → `abc_len=6 abc_b0=97 abc_b1=0`。b1=0 就是 UTF-16LE 的第二个字节，不是 UTF-8。core 背书两格：`builtin/string.mbt:364-366`「String holds a sequence of UTF-16 code units encoded in little endian format」，且 `String::to_bytes` 上挂的弃用文案正是 `Check @encoding/utf8.encode`（编译器已经在指路）。
+  ④ 为什么测试看不见：`star_gate` 的白盒夹具自签自验，签名侧与验签侧走同一个 `to_bytes()`，错得对称就 PASS——典型「测试镜像实现」盲区。现存的 `SELFTEST OK: signature valid` 也在同一镜像结构里（attest.yml 自己签、自己验，不经过 MoonBit 侧），所以两道「绿」各自闭环、谁都不覆盖这条边界。唯一会现形的是拿 GitHub Pages 上真签发的 attestation 去跑 `star_gate`。
+  三条出路：(a) 验签侧改 `@encoding/utf8.encode(canonical)`，并补一支**跨实现 KAT**——用 Node/Python 预先签好的「canonical → 签名 → 公钥」三元组钉死已知答案，让测试第一次不镜像实现（首选，一次改动同时收掉 0020 的 3 处 `to_bytes` 与这条功能洞）；(b) 生产侧改按 UTF-16LE 签（不建议：把非标准编码钉进 wire 格式，且既有 attestation 要重签）；(c) 先只加 KAT 不改实现，让红灯在 CI 上可见、门禁继续 fail-closed（成本最低，但功能仍不可用）。
+  本单未复核 GitHub Pages 上是否已存在真签名，也未复核 `star_gate` 在无人值守流水线里是否真被调用；结论只建立在 ①②③④ 四格代码与探针证据上。
+- note: 定级 medium 的理由：方向是 fail-closed（合法放行被判 BadSignature），不会造成伪造通过，所以不是安全洞；但后果是「配了 star-gate 就必然拒绝」，这条门禁在真实数据面上从未成立过。动的是产品语义（验签输入到底哪些字节），按金条四留指挥官定夺，本单只入账不开修。
+- 后续建议: ① 优先出路 (a)，KAT 夹具连同 canonical 规则一起钉住（`star_gate.mbt:78` 那条靠注释同步的规则需要一个会红的替身）。② 普查同类形状：凡是「把 String 当字节序列交给外部协议」的调用点都该走 `@utf8.encode`——`grep -rn "to_bytes()" src cmd atgc*` 复核一遍，逐格判是协议面还是内部面。③ 若指挥官暂时不动实现，建议在 `docs` 面明确标注 star-gate 当前不可用，避免下游把它当已生效的门。
+- task_id: T0r14
 
-【修复（本回合已落 scripts/边界）】
-- L66 → `if first.strip() != "FIST-Mbt v%s" % ver:`（首行精确相等）
-- L75 → `if not re.search(r"FIST-Mbt(?: CLI)? v%s([\s\n]|$)" % re.escape(ver), out):`（锚定 v%s 后必跟空白/行尾，防 v0.3.90 前缀命中；`CLI` 兼容真实 help 首行 `=== FIST-Mbt CLI v0.3.9` 与合成 `FIST-Mbt CLI v0.3.9`）
+## BUG-361 [2026-10-21T03:30:00Z] [medium] OPEN
+- summary: [惯用法基线决策面] 0020 弃用面最后一族 `Json::value` 判据面 430 处 / 文本面 441 处，跨 9 个包 53 个文件；三条可实施形态的代价差一个数量级且互不可替代 ⇒ 按金条四只出量尺不开修。量尺稿 `docs/decisions/2026-10-21-json-value-430-decision.md`。选定之前 0020 面停在 448、总 warnings 停在 489，本项目的「提交前零 WARNING」硬要求在这一族上没有绕行路径
+- detail: 这一族和前三个弃用族（`not(x)` 203、切片 42、布尔/字符串访问器 22、同一原语改名 12）的性质不同：那几族都是**逐字改名**，本族 prescribed 的是一个**表达式形态**，所以「落成什么形状」是产品决定而不是机械决定。本单元把它拆成四格实测：
+  ① 语义面（实测 core）：`~/.moon/lib/core/json/json.mbt:79-86` 的弃用体逐字就是 prescribed 表达式 `if self is Object(obj) { obj.get(key) } else { None }`，且 core **不提供**任何现行替代键访问器（`json.mbt:17-72` 其余弃用件都不是键访问）。⇒ 收口只能是「判据面不再报」，不存在「改坏语义」的风险面，这一点和 BUG-359 那两族落到同一条 primitive 完全同型。
+  ② 作用域面（4 组探针实测，`temp/probe_dup_helper.py` / `probe_dup_helper2.py`，每组跑完即回退并复测判据面）：同包两份生产文件各写一份 `fn jget` ⇒ `The toplevel identifier jget is declared twice`（rc=1）；同目录两份黑盒 `_test.mbt` ⇒ 同样 declared twice；生产文件 + 白盒 `_wbtest.mbt` ⇒ 同样 declared twice；只有生产 + 黑盒这一组 ⇒ rc=0 / 0 errors。三条定律直接改写辅助件计数：**辅助件按作用域算不按文件算**（包作用域 8 份 + 黑盒作用域 7 份 = 15 份覆盖 53 个文件），且黑盒看不到包私有件 ⇒ 那 7 份不可省。本单踩到的正是「草稿按每文件一份外推」的形状，实测把它推翻了。
+  ③ 三案同站点对等量尺（同一批 25 处，`src/omega/gate.mbt`）：A（每作用域一个私有辅助件）numstat +35/−25、`moon check` 464 warnings / 0 errors、value 族 430→405、moonfmt 新增分歧 **0**（D0=5→D1=5），外推全量 ≈ +591/−441；B（就地内联 `if … is Object(obj)`）numstat +26/−25（比 A 少 9 行）、判据面读数与 A 逐格相同，但 moonfmt 新增分歧 **128**（D0=5→D1=133），外推 ≈ 2260 行；C（房内 `arg_str` 式逐处展开嵌套 match）实测 1 处手写 4 行→8 行，**不可机械批处理**（410 个 match-head 各自要判原 arms 有无兜底、没兜底的必须新增一条会改变失败路径的臂），外推 ≈ +1764 行 + 410 次人工判断。A 案另有 3 文件 54 处的整树背书：`moon test --target js -j 1` = 1302/1302/0、新增分歧文件数 0、`.mbti` 不变。
+  ④ B 案代价的**准确说法**（本单自己纠正的一处猜测）：初稿写「未复核 CI 是否有 `moon fmt --check` 门」，实际两条轨都有（`.github/workflows/ci.yml:80`、`.github/workflows/fist-ci.yml:49`），但两步都是 `continue-on-error: true`（2026-10-13 定因后按「A′ 第 1 条」降门不阻断）。所以选 B 的真实后果不是「CI 判死」，而是把一个**本就因工具链版本差而红**的步骤混进「本仓自造的分歧」，让 owner 那次根修裁决更难判——反过来，若指挥官恰好要批 nightly 全仓 fmt 那次根修，B 的 2260 行代价会被一并吸收。这条翻盘路径必须和 BUG-358 / A′ 根修放在一起看，不能单看本族。
+- note: 定 medium 而不是 low 的理由：不是「少一条读数」——489 warnings 里 430 条（88%）压在这一族，它是用户「提交之前一定不能有任何 WARNING」这条硬要求的**唯一大拦路**；搁着不动，warning 面就永久停在 489。同时它确实不该定 high：弃用件仍能正常编译运行，零功能风险。本单的结论只建立在「同 25 处对等实测 + 4 组作用域探针 + core 逐字取证 + 两条 CI 轨实读」上，B/C 的全量数字是**外推**，稿内逐处标注。
+- 后续建议: ① 请指挥官定五件事（稿 §7）：选案 / 辅助件命名（草稿用 `jget`，实测与 core 的 `Json::get` 不冲突）/ 放置（每包新建 `json_get.mbt` + `json_get_test.mbt`，还是挂既有文件尾）/ 黑盒作用域自带私有件是否可接受 / 收口口径认 430 还是 441（后者见 BUG-362）。② 选定后按稿 §6 的 9 批推进，单批 ≤60 站点便于终审，收口后 0020 面 448→18、总 warnings 489→48。③ 命名要一次定死：15 份重复件跨名漂移是本仓已记过的 BUG-330 同族形状。
+- task_id: T0r15
 
-【修复后实测】基线绿；漂移 v0.3.90 / v0.3.900 / v0.4.0 → 全红；仅帮助臂漂移 v0.3.90 → 红；版本臂反漂移 v0.3.90 → 红。`--selftest` 7 支全绿零回归。
+## BUG-362 [2026-10-21T03:30:00Z] [low] OPEN
+- summary: [判据面缺陷] 编译器对 `Json::value` 站点**报不全**：文本普查 `.value(` = 441 处，`moon check --target js` 只报 430 处，**11 处沉默跨 8 个文件**（最多一处 `engine_contract_test.mbt` 文本 6 / 判据 3）⇒ BUG-344 那条「以 `error_code` 命中数作为收口口径」的铁律在这一族上给出的是**下界**
+- detail: 证据链四格：① 三种跑法读数逐格相同（暖跑 489/448/430、`moon clean` 后冷跑完全相同、touch 单文件再跑也相同）⇒ 排除聚合级缓存截断这个解释；② 反向哨兵 0 处（不存在「判据报了但文本没有 .value(」的文件）⇒ 不是普查口径太松；③ 决定性一格：`src/engine/engine_dispatch_test.mbt:47` 是真实 `.value(` 调用，在干净树的三种跑法里**都不被报**，只有把它改成新形态再跑才在诊断面现形 ⇒ 沉默是**逐文件**发生的，不是整族按比例均匀漏；④ `src/server/supervisor_tools_wbtest.mbt` 那处更干脆：整个白盒文件判据面 0 报，文本面有 1 处。
+  差额逐格（文本/判据/差）：`engine_contract_test.mbt` 6/3/3、`engine_triage_test.mbt` 15/13/2、`engine_circuit_test.mbt` 4/3/1、`engine_dispatch_test.mbt` 8/7/1、`engine_eval_test.mbt` 4/3/1、`engine_phi_test.mbt` 20/19/1、`engine_triage_skill_test.mbt` 6/5/1、`supervisor_tools_wbtest.mbt` 1/0/1。
+  为什么值得单独入账而不只是 BUG-361 的一行注脚：它的后果正是本仓反复记过的**「绿着的谎」**形状（BUG-68、BUG-357 第④类同型）——按 430 收口，清完后源码仍留 11 处弃用调用而门是绿的。两条出路：(a) 收口口径改为「文本普查 441 为分母，判据面归零只是必要条件之一」，代价=给 BUG-344 元规则加限定语、且「文本普查」要变成每个弃用族收口时的固定动作；(b) 维持 430 口径、接受 11 处留存并在稿内显式标注。两条都不该由副机代选：(a) 动的是「判据怎么算收口」这条元规则。
+- note: 定 low：不影响代码正确性，只影响**收口判据的可信度**。未复核两格——native 后端是否同样漏报（本机 native 工具链不可用）、这 11 处是否有共同结构特征（粗看分布在 match-head 与 `let` 绑定两种形状，未见统一形态，故不下结论）。结论只建立在「三跑法 + 反向哨兵 + 一处现形实验」上。
+- 后续建议: ① 若 BUG-361 选 A 案，落地时直接用文本普查当改写清单（441），这 11 处自然被收掉——两单合并执行成本最低。② 建议新守卫 `scripts/check_deprecated_text_census.py`：对每个 `error_code` 族比对「文本命中数」与「判据命中数」，报「判据面归零但文本有余」的形态；棘轮方向只许差额缩小。③ 普查其余弃用族是否同形漏报（`Show` 8+3、`utf8.encode` 3、FFI `Array` 3、隐式提升 1 各族做一次文本对照），已知 BUG-359 那两族是逐字命中、无差额。
+- landed[2026-10-21 R36]: 建议③ 已普查完（0020 剩余子族逐个做「名称级 vs 站点级 vs 判据面」三向对照，判据面 `temp/chk41.json`、宇宙 290 个跟踪 .mbt）。**只有一族能入表**：`Check @encoding/utf8.encode` 判据 3 / 站点级文本 `\.to_bytes\(` 3，逐行重合、盲区 0 ⇒ 已作为族表第二条落地（上限 0；三处即 BUG-360 验签洞本体，故这条同时钉住 BUG-360 的修复进度：修完两面归 0 ⇒ R4 要求整条删除）。其余三族**没有可证的文本代理**：`Show` 名称级 `\bShow\b` 只有 2 处而判据 8 处，且这 2 处（`star_gate.mbt:33` 的 `derive(Eq, Debug, Show)`、`:42` 的 `extend StarVerdict with Show::{to_string, output}`）与 8 个判据行无一重合，真站点散在 `.to_string()` 435 / `inspect(` 39 / 插值 `\{` 859，并集 1333 对判据 11 ⇒ 上限得写到 1322，棘轮失去意义；FFI `Array` 判据 3 处全在 `extern "js" fn` 形参/字段上而 `: Array[` 有 953 处（extern 归属是跨行事实，行级正则表达不了，建议替代 `FixedArray` 全仓 0 处）；隐式提升判据 1 处对 `.run(` 7 处（建议形态 `Executor::run` 0 处）。两条探针实测把「硬把语义族入表」的两种后果钉成读数：名称级 ⇒ rc=2 R2 现形（尺子不会静默放过），站点并集 ⇒ rc=1 缺口 1322。族表 docstring 现写明「只收语法族」，`--selftest` 补第 10 支覆盖此前**有分支无夹具**的负缺口路径（判据 2 对文本 1，形状取自 Show 族同一行双发）。附带一条口径纠正：0027 那 1 处按字面正则 `derive\(Show\)` 普查读 0（真身 `derive(Eq, Debug, Show)`），要 `derive\([^)]*\bShow\b` 才对得上 ⇒ BUG-359 的「逐字命中、无差额」只适用于 0020 那两个改名子族，不是所有族的默认假设。数字全部写入决策稿新增 §3.5。**本单状态仍 OPEN**：11 处弃用调用本体待 BUG-361 定案后随 A 案收掉。（R37 追记：本单拆族用的 8 份 `temp/probe42.py`–`probe49.py` 已收进守卫——新增 `--dump-distribution` 模式，对 `temp/chk43.json` 复现 0020 = 430/8/3/3/3/1、全 dump = 8 code / 15 形状 / 489 处，与手工读数逐格相同，未入表的 13 种形状（判据 56 处）直接列成下表队列；认领对原始 message 测 marker，同形状只命中一半读成「部分入表」。此模式**不挂 CI**：报告不判红，只可能 0 或 2。`--selftest` 10→17 支。） R38 追记（同单续）：不可入表族做成 `scripts/check_deprecated_site_list.py`（只读数、退出码只可能 0/2、永不给 1、不挂 CI）——判据行逐处落成 file:line:col + loc 列切片的精确源码 + 结构归属；实测六族合计判据行 19/站点 16/文件 11，**Show 族 11 行只对应 8 个站点**（3 处被两条 Show 文本同时命中，collections 那条新增 0 站），行级普查的第二种失真=重复计费；FFI Array 3/3 的 extern 抬头在站点上方 1–2 行（跨行归属机械化证实）、隐式提升站点落在 impl 段 50–56/57–68 之外、0027 的 Debug 已在 derive 列表（删一个 token 即可）、0078 3/3 在私有转换辅助（契约面 0）；两支真数据变异对照 M1 marker 漂移⇒rc=0+漂移点名、M2 列口径+3⇒rc=2 点名 S5，不对称：只有判据点名符号的族能自证列口径，Show 的 0020 判据不点名⇒同样变异读成 8/8「未分类」；`--selftest` 20 支全绿。
+- landed[2026-10-21 R35]: 建议② 已落地 = `scripts/check_deprecated_text_census.py`（族表首条即本族：判据面 430 / 文本面 441 / 缺口上限 11；R0 审计依据入表、R1 宇宙哨兵 100 文件、R2 反向包含、R3 棘轮、R4 双 0 死条目；`--selftest` 9 支对照各自命中指名判据；权威 CI `ci.yml` js-ubuntu 臂挂 selftest + 真判据两步，dump 由 `moon check --target js --json` 现产）。本机对**当场新产**的 `temp/chk41.json` 读数与 `temp/chk40.json` 逐格相同（489 诊断 / 430 判据 / 441 文本 / 缺口 11 ⇒ PASS），变异对照（上限人为降到 10）⇒ rc=1 并列逐文件差额。**本单状态仍 OPEN**：守卫只把盲区变成红门，11 处弃用调用本体待 BUG-361 定案后随 A 案收掉；建议③（其余族普查）仍未做，属后续。
+- task_id: T0r15
 
-【关联】BUG-114（R11 源码版本常量锁）的入口守卫。真实产物输出形状：`cmd/cli/main.mbt L118` `println("FIST-Mbt v\{v}")`（版本旗首行）、`cmd/cli/help_topics.mbt L23` `"=== FIST-Mbt v"`（帮助面）。
+## BUG-363 [2026-10-21T04:00:00Z] [low] FIXED
+- summary: [现状面/守卫盲区] 「文档写的数或惯用法落后于真源」有三格落在所有尺子的扫描面之外：① `docs/agent-map.md:26` 的中文三元组「122 个工具+3 resources+2 prompts」对 `check_tools_sync` 的两条计数正则**双向隐形**（`RE_TOOL_CLAIM` 四个形态都要求字面含 "MCP"，`RE_TRIPLE` 只认英文 `N tools + M resources + K prompts`），而该文件当时也不在 `check_doc_surface.J14_FACES` 的按面白名单（4 面）里 ⇒ 真源 170、地图写 122，六支文档守卫齐绿；② README `## 功能全景（170 个 MCP 工具 · 17 组）` 自述 17 组，正文实际 18 个分组标题（和恰好=170）⇒ J3 只比「分组数字之和 == 真源」，**组数这一格从未被比过，和对了也不代表组没漏**；③ 同文件 §五「雷区」教 agent 写 `@env.now().to_int64()`，而 core 已把 `UInt64::to_int64` 判弃用（`~/.moon/lib/core/builtin/int64.mbt:1199-1201`，BUG-359 取证）、仓内 11 处调用已全部改名 ⇒ 照地图写代码就**自己新增一条 0020 warning**，正面撞用户「提交之前一定不能有任何 WARNING」这条硬要求。三条同一条定律：**尺子只量它自己认领的面，没认领的面等于不存在**
+- detail: ① 证据（改前必红，先判尺子再判被测）：对**未同步**的三处实跑 `python scripts/check_doc_surface.py`（`temp/am_before2.log`）⇒ rc=1，两条读数逐字点名——`J3 README 功能全景标题自述「17 组」，实际解析到 18 个分组标题（和=170）` 与 `J14 项目地图面（docs/agent-map.md:26）自述「122 个工具」，真源注册表是 170 个`；改后 PASS rc=0、`--selftest` 仍 OK（读数首句「真源解析到 170 个工具，J3/J4/J6/J7/J8/J9/J10/J11/J12/J13/J14/J15 对合成违例均发红」）。③ 不在任何读数里：没有一把尺比对「文档里推荐的调用名 ↔ core 弃用集」，它只能靠读地图的人恰好记得 BUG-359 刚改过名——**这就是「靠记忆而不是靠门」的形状**，也是本单把它并进同一条而不是另开一单的理由。
+  ② 漂移的**来源**比结果更要紧（`git log -S` 实测）：`122` 出自 `3cee285`「已知缺陷独立清零 …（120→122）」、`17 组` 出自 `3d3d695`——两处**写下那天都是对的**。所以这不是抄错，而是「写死一个数 + 之后没人钉」：与 `check_tools_sync` 当年引入「下限式 `N+`」的动机（「写死一个数就是下一颗漂移雷」）完全同型，只是这次雷埋在门没认领的面里。
+  ③ 修法三处，各自最小：J14 加第 5 面 `("docs/agent-map.md", "项目地图面")`；J3 把「只算和」改成「和与组数同源解析」——`readme_group_sum()` 换成 `readme_group_counts()`（返回逐组列表），新增 `j3_readme_group_count_problems()` 用 `RE_J3_HEADING` 定位「功能全景」标题行、`RE_J3_GROUPN` 解析 `N 组`，**读不到标题行、或标题里没有组数自述、或一个分组标题都解析不到 ⇒ 各自 FATAL 发红**，绝不「没写到就放过」；地图 §五 那句惯用法改成 `@env.now().reinterpret_as_int64()`，并把重载边界一并写进去（`Double::to_int64()` / `Int::to_int64()` 是饱和转换、未弃用，不得跟着改）——只说「用新名」会把 BUG-359 记过的误伤面再教一遍。
+  ④ **否掉的那条路**（为什么不用宽口径一次性扫全部文档）：`temp/probe52.py` 实测把 `RE_TOOL_CLAIM` 放宽成通用「N 个工具」会在现状面命中 **20 处**，其中多数是日报/决策稿里「那一次实跑的截面记录」——本项目定律是历史面不改数 ⇒ 放宽等于逼人伪造历史，或先吃一片假红。故走「一面一面认领」的窄口径。
+  ⑤ 两套口径**故意不对称**，而不对称的缝正好是漂移的藏身处：`check_tools_sync` 的 R3b/R7 遍历「跟踪的全部 .md − 历史面」，文件面宽、形状窄（漏中文三元组）；`J14` 形状宽（`RE_J14_CLAIM` 认「N 工具」「N 个工具」「N MCP tools」）但文件面窄（只认名单）。agent-map 那一句同时落在两个盲区里，所以六守卫齐绿不是巧合。J14 docstring 现写明「口径自述与本表同源」，认领第 5 面时同步补了 6 支正/反 selftest 夹具（含「分组简写不得误伤」这一支反证）。
+- note: 定 low：①② 是**读数缺失**，零代码风险；③ 略重（它会引导下一次提交产出新 warning），但地图不参与编译、也不是判据输入面，纠一句文案成本近零，故不升 medium。未复核一格：122/17 两数的其余同族旧自述是否在别处还有（已确认 `check_tools_sync` 的历史面豁免口径覆盖 CHANGELOG 与 improvement-plan 系列，本轮未再逐文件人肉扫）。结论只建立在「现状面文本 + 六守卫实跑 + `git log -S` 出处 + core 弃用声明」上。
+- 后续建议: ① 建议新读数：把「现状面文档里反引号包着的调用形态」与 core 弃用集对表（prescribed 名可直接从 `moon check` 的 0020 文案里取）——BUG-363③ 这一类「文档教了一句已经弃用的正确写法」目前是零覆盖，且它会自我复制（地图被抄进新 agent 的上下文）。② J14 按面认领的节奏继续，每认领一面必须同时补正/反两支夹具，否则新面只是第二条「有分支无夹具」的空门。**且认领要按「面 × 形状」记，不是按面记**：`RE_J14_CLAIM` 一张表里只认四种形状，本轮 HEAD 版地图的三处旧数（122 / 104 / 104）里它只命中 122 ⇒ 「这张图已入扫描面」这句话如果写成「地图上的数都被钉了」就是虚报（详见本单 FIXED 段的边界条）。③ README 的「标题组数 ↔ 正文分组数」现在钉死了，但门只保证二者**一致**，不保证划分**合理**；将来重划分组要标题与正文同批改，别指望门替你判断该分几组。
+- task_id: T0r20
 
-【未提交】修复在 `scripts/cli_flag_probe.py` 工作树，本回合与 BUG-350 修复一起提交。
+## BUG-364 [2026-10-21T04:00:00Z] [low] OPEN
+- summary: [文档内容决策面] `docs/agent-map.md` §三「MCP 工具分组概览」是一张**只覆盖 100/170** 的手写导航表：实测 12 行带组数、和=**100**，另有 1 行「其它(辅助)」无计数 ⇒ **70 个工具在这张「首次进入者唯一会读的分组表」上不点名**（未覆盖的组至少含 GitHub/GitCode 同步、超级管家、六顶帽、项目助理、嵌入式 MCPCf、模型路由·外部执行器、开发模式）。本单只给表加了**边界注**（写清它是导航简写、不等于注册表，权威面在 README 功能全景并被 J3 钉住），**没有补全表**——补不补、按什么轴收成 18 行属内容决策，按金条四留指挥官裁决
+- detail: ① 为什么这不是数字漂移而是**覆盖缺口**：J14 现在钉的是地图里**总数自述那一句**（:26「170 个工具+3 resources+2 prompts 注册」），§三 的表头与注记都明写「导航简写，不是注册表计数」⇒ 门**刻意**不会因为它和=100 而红。这条口径来自 BUG-123 的实测教训：组值用的是省略公共前缀的简写（如 `succeed status`、`append/get/export_tasks`），拿它跟 `tools/list` 做机械差集会把「未点名」虚高到 73，差集读数是假的。② 代价面：首次进入的 agent 若照 §四「想懂业务流 → 读 README/ARCHITECTURE」走还能补上；但若他**只读地图**——而本文件写明的目的就是「先读地图、再动代码，不必全项目盲目探索」——就会得出「这 70 个能力不存在」的结论。**地图越容易被当成权威，缺口的伤害越大**。
+  三条出路：(a) 把 §三 改成 README 功能全景的**投影**（同源生成，18 行、和=170），代价=多一个生成器，且必须防住 BUG-123 那类简写漂移；(b) 手写补全缺的 6–7 组，代价=制造第二份手写副本——本项目已为「5 个消费者各写一份、漏改 2 处就假绿或互掐」付过学费，才把工具注册面收进唯一真源 `_tool_registry.real_tools()`；(c) 删掉 §三，只留一句「分组见 README 功能全景（J3 钉住和与组数）」，代价=失去速查表，但**永不漂移**。副机倾向 (c)：这张表的**存在理由**（省 context）用一行指针即可满足，而它的**失真面**要靠新增一个生成器才压得住。本单不动手，等裁决。
+- note: 定 low：零代码风险、零判据失真，纯内容面；但它和 BUG-363 是同一张地图上的两件事，分开入账是因为**修法归属不同**（363 归守卫，364 归内容决策）。未复核两格：未覆盖清单是本轮按 README 18 组与地图 12 行人工对照列出的，未逐组核对组名归属；(a) 方案的生成成本没实测过。
+- 后续建议: ① 与 BUG-363 建议① 一起裁：先定「§三 留不留」，再决定要不要给文档面加生成器——顺序反了就造出第二个漂移源。② 若选 (c)，注意 §三 现在还兼着「BUG-123 边界教学」的作用，删表时把那条边界注一并挪走或保留，别让教训跟着表一起消失。③ 认领地图任一面的计数自述时，顺带检查该行是否同时是**导航**与**权威**——两种身份写在一张表里就是本单的成因。
+- task_id: T0r20
 
-- reported_by: agent-skill-docs
-
-
-## BUG-360 [2026-10-21T06:58:09Z] [medium] FIXED
-- summary: [rule-layer] check_badge.py 零自检锁：无 --selftest 分支（传 --selftest 被当位置参数吃掉报 usage exit 1），且 L71/L84 判据 `n!=total or d!=total` 改坏成 `and` 时无任何合成格会红——分子或分母单独错被短路放行 ⇒ 假绿
-- detail: 【L4 硬证据 · 变异敏感】修复前 `python scripts/check_badge.py --selftest` → exit 1，stderr `用法: python scripts/check_badge.py <moon_test_log> <README.md>`：本守卫此前完全没有自检面（grep selftest 零命中），所以「判据改坏会不会红」从没人锁过。
-手动把 L71 `if n != total or d != total:` 改成 `and`，喂合成违例（README 徽章分子 9999/分母 1347 正确 + 合规日志）→ 判据 `9999!=1347 and 1347!=1347` = `True and False` = False → 徽章错照样放行报绿。这是 `or` 短路型假绿的教科书形状：分子腿单独失效、或分母腿单独失效，两种真实漂移（手改徽章只改一边）都逃过。
-
-【根因】① 缺 selftest（无合成违例格反证判据有效）；② 判据在 main() 里内联、与文件 IO 耦合，无法喂合成串单测。
-
-【修复（本回合已落 scripts/check_badge.py）】① 抽出纯函数 judge(log_text, readme_text)->(problems, info)，判据与 IO 解耦；② 加 --selftest：8 支合成格（G1 干净必绿 + V1 徽章分子错/V2 分母错/V3 自检注释分子错/V4 测试有失败/V5 无徽章/V6 无自检注释/V7 日志无 Total 行 必红），计数从 cases 反解不手写；③ main() 只做读文件+打印+转 SystemExit。
-
-【修复后变异复验（4 项全被抓）】or→and@L71 → V1 由红转绿 → selftest FAIL；or→and@L84 → V3 FAIL；删徽章判据整行 → V1 FAIL；前置失败门 or→False → V4 FAIL。还原原文件 selftest exit 0。真实 README+匹配日志零回归 exit 0（PASS tests-1339/1339）。
-
-【关联】与 BUG-350（check_test_sync passed 不捕获）、BUG-351（check_demo_isolation 自证式假绿）、cli_flag_probe BUG-359 同族：守卫只自述「我检查了」，从不证明自己会红。AGENTS.md 守卫族「判据与 selftest 同源，不手写计数」原则的又一处落地。
-
-- reported_by: agent-skill-docs
-
-
+### FIXED(2026-10-21 轮次 R39 / BUG-363)
+- 改了什么：守卫 1 份、文档 3 份，零 `.mbt` 改动、零接口变更。`scripts/check_doc_surface.py`：`J14_FACES` 4 面 → **5 面**（新增 `("docs/agent-map.md", "项目地图面")`）；`readme_group_sum()` 删除、换 `readme_group_counts()`；新增 `RE_J3_HEADING` / `RE_J3_GROUPN` / `j3_readme_group_count_problems()`（三种读不到一律 FATAL 发红）；J3/J14 两段 docstring 重写；`--selftest` 补 6 支（J14 地图面正/反 + 分组简写不误伤的反证，J3 组数正/组数不符/无「N 组」自述/无功能全景标题），标签「J14 三面全空」改「J14 各面全空」。`README.md`：功能全景标题 `17 组` → `18 组`。`docs/agent-map.md`：:12 「实测 170 个工具 …（这个数由 J14 项目地图面钉住）」、:26 「170 个工具+3 resources+2 prompts 注册」、§三 表头加「（导航简写，不是注册表计数）」+ BUG-123/BUG-363 边界注（未覆盖组记入 BUG-364）、§五 惯用法改 `reinterpret_as_int64()` 并写明重载边界。
+- 实测锁钉：改动前 `temp/am_before2.log` rc=1，恰好两条点名读数（J3「17 组」↔18 个标题 / J14 地图面 122↔真源 170）⇒ **先让尺子红，再动文档**；改动后 `check_doc_surface.py` PASS rc=0、`--selftest` rc=0（真源 170）；`check_tools_sync.py` PASS（170 / 144 份 / 历史面豁免 1）；`moon test --target js -j 1` = `temp/pt27.log` → `Total tests: 1302, passed: 1302, failed: 0`；`moon check --target js --json` = `temp/chk47.json` → **489 warnings / 0 errors**、分布 {20:448, 6:12, 2:11, 1:9, 9:3, 78:3, 7:2, 27:1} 与上一单基线逐格相同（本单零 `.mbt` 改动）；`temp/run_guards16.py` 37 格非零 **3**＝预存红 3（`check_py_stdout_encoding --selftest` rc=2 与 `--all` rc=1 同 9 份历史脚本、`cleanup_artifacts --check` DIRTY 608 件），**无新增红**。`.mbti` 面：moon 跑完后 24 份又现 `Int`→`Int32`（BUG-330 复现），`git restore -- '*.mbti'` 收回且逐路径 staging，不入本提交。
+- **改账本会带动插件态红（本单撞到的一条耦合，值得单记）**：`gen_plugins.py` 的 `measure()` 把账本摘要 `LEDGER_SUMMARY`（`BUG-1~{max} 共 {total} 条入账：OPEN/FIXED/DUPLICATE/FALSE_POSITIVE`）投影进 **9 份**插件态文件（`plugins/README.md` + 四宿主 SKILL.md/instructions.append.md），所以**只往 `memory/bugs.md` 追加条目而不重跑生成器，`gen_plugins --check` 与 `check_plugin_sync` 立刻双红**——本轮第一次复跑就是 37 格里多出这两格红（347 条/16 待修/310 已修 → 349/17/311），按守卫自己的处置话术重跑 `python scripts/gen_plugins.py` 后复跑回到非零 3。这条耦合不在 BUG-363 的三格盲区里、也不在 T0r20 的回执文本里，此处在账本与日报补齐；副作用面：插件态文件由生成器写、行尾是 LF（git 提示「LF will be replaced by CRLF」），`check_plugin_sync` 比较前会归一行尾（BUG-102），所以这不是缺陷。
+- 附带取证：`git log -S` 确认 122 出自 `3cee285`、17 组出自 `3d3d695`，两处写下当天都是对的 ⇒ 定性为「写死数字 + 无人钉」的漂移，不是抄错；`temp/probe52.py` 实测宽口径正则命中 20 处（多为历史截面记录，按本仓定律不改数）⇒ 否掉宽口径，选按面认领。
+- **本门的边界（不许读成「地图面从此全钉」**：把 HEAD 版地图文本喂给 `RE_J14_CLAIM` 只命中 `122` 一处，另外两处旧数 **`工具数 104`（:12）与 `§三 标题（104 个）`（:32）在认领面之后仍然照不到**——前者的形状是「工具」在数字之前、后者是括号里没有「工具」二字，都不在该正则的四形态里。两处本轮**人工改写**（:12 改成「实测 170 个工具」并写明由 J14 钉住、§三 标题去掉死数换成「导航简写，不是注册表计数」）。所以「认领一面」只等于「认领这一面里的某一种形状」，写档时必须按形状说，不能按面说。
+- 写入器自伤（已修，未进任何提交）：追加写盘器对**已含 CRLF** 的字符串整串 `replace("\n","\r\n")` ⇒ 账本既有 5801 行变 `\r\r\n`（日报 187 行同），而它的断言「bare LF==0」在破损面上**照样通过**（`\r\r\n` 里 `\n` 与 `\r\n` 各计 1 次），暴露靠的是 `git diff --stat` 把整份账本报成全文件重写。修复器 `temp/fix_double_cr.py` 把验收从计数改成**逐字节对照权威面**：`git show HEAD:<file>` 的 blob 做 `\n→\r\n` 后必须是本文件前缀、差额只许是追加段；修完 diff 回到 +24 行、`git ls-files --eol` 从 `w/-text` 恢复 `w/crlf`。这条与本单主题同型：**计数型自检在结构破损面前可以全绿**，故记入日报 R39 方法坑，不单立 BUG 号（破损件只活在未跟踪的 `temp/`）。
+- 提交面：`5246a61`（分支 `slave/guard/doc-surface-blindspot`，链在 `1125d6f` 之后单独起支，trunk 未推；
+  gitcode 远端 hooks `[PASSED]`；MR 入口 `https://gitcode.com/VictorTop/Fist-Mbt/merge_requests/new?source_branch=slave/guard/doc-surface-blindspot`，
+  MR 由 owner 开）。提交前 37 格非零 4＝预存红 3 + 自造临时红 1（`check_publish_payload` 点名当时未跟踪的新报告），
+  提交后该格复跑 rc=0 ⇒ 与 §实测锁钉 里那句「非零 3」对得上（那句读数是重跑 `gen_plugins.py` 之后的）。
 
 
-### FIXED(2026-10-21T07:01:23Z / BUG-359, BUG-360)
-- evidence: BUG-359 改 scripts/cli_flag_probe.py judge()：L66 版本臂 substring `ver not in first` → 精确 `first.strip() != "FIST-Mbt v%s" % ver`；L75 帮助臂 → `re.search(r"FIST-Mbt(?: CLI)? v%s([\s\n]|$)", out)`（兼容真实 main.mbt L118 `FIST-Mbt v` 与 help_topics.mbt L23 `=== FIST-Mbt v` 两形状）。实测基线绿、反漂移 v0.3.90/v0.3.900/v0.4.0 全红、仅帮助臂漂移红，selftest 7 支全绿。BUG-360 改 scripts/check_badge.py：抽纯函数 judge() + 加 --selftest 8 格（V1-V7 违例必红）。实测 4 变异（or→and@L71/L84、删徽章判据、前置门改坏）全部被抓 selftest FAIL，还原 exit0，真实 README 零回归。
+## BUG-365 [2026-10-21T22:10:00Z] [low] FIXED
+- summary: [守卫判据缺陷] `scripts/check_plan_landing.py`（计划文档点名落点 ↔ 跟踪面核对）把三类**不是路径的形状当路径判**：① `x.mbt:108/121/134` 这种「路径+行号后缀」点名的行号段没剥，`basename("…/134")="134"` 无扩展名 ⇒ 逃过 `base_ok` ⇒ **一个确实存在的跟踪文件被报成 missing**；② 日期/变量占位（`memory/YYYY-MM-DD.md`、`memory/model-router-caf-{ns}.json`）被当成具体路径去比对；③ **存档面**（`docs/archive/`、`reports/` 里的历史计划点名当年尚不存在的落点）与「活文档」混在同一个判定数字里。改前 56 条 findings 的构成实测＝判定面 28 + 存档面 17 + 占位虚报 9 + 行号后缀虚报 2
+- detail: 证据链四格（`temp/plan_landing_before.py` = `git show HEAD:scripts/check_plan_landing.py`，与现版跑**同一棵树**）：① 集合差 `comm` 实测 before=56 / after=45，`comm -23` 恰好 11 条、`comm -13` **0 条** ⇒ 改后没有新增任何一条判定，不是把虚报换成了漏报（这条是本单唯一能证明「只修假阳性、没顺手放宽判据」的读数）；② 11 条逐字点名：`plugins/source/references/omega-verification.md:33/60/65/68`、`src/server/mcpcf_embed.mbt:108/121/134`（①型，前者在 `docs/archive/improvement-plan-20260929.md`、后者在 `docs/decisions/2026-10-21-json-value-430-decision.md`）+ `memory/YYYY-MM-DD.md`×2、`memory/model-router-caf-{ns}.json`×4、`…-{safe_ns}.json`×1、`memory/research/score-YYYYMMDD.md`×1、`memory/reviews/yyyyMMdd.HH.mm.ss.md`×1（②型）；③ 恒等式 28+17+9+2=56 逐格对上；④ 修法三条各自最小：`LINE_SUFFIX` 在 `base_ok` **之前**剥后缀（只认「冒号后全是 `数字[/、-,]数字`」的形状，普通路径不受影响，`--selftest` 有 `line-suffix-keeps-paths` 反证）、`SHAPE_PLACEHOLDER` 把 `<…>`/`*`/日期/变量形态收进 `shapes` **出数不比对**（改前是被 `base_ok` 静默丢弃——静默丢弃同样是盲区，不给条数就没人知道有多少条目从未进入判据）、`is_archive_doc` + `judge` 返回第 5 元组 `face`，默认只判活文档面、存档面单独出数，`--all-faces` 可切回合并视图。
+  **白名单刻意不扩**（本单自己差点踩的坑）：`ARCHIVE_DOC_PREFIX` 只收 `docs/archive/` 与 `reports/`。我首版把 `docs/superpowers/` 也划进存档面，随即否掉——`docs/superpowers/plans/2026-09-24-probability-gate.md` 点名的 `scripts/_ai_prompt.md`、`_score_probe.py` 是**真未落地**，按「看起来像历史」就豁免等于给自己造免检牌，而本工具存在的唯一理由就是抓「计划写了没做」。边界钉成夹具 `archive-prefix-not-overbroad`（证明该前缀只 2 条、不误伤 superpowers）。
+- note: 定 low：只读诊断工具的读数缺陷，不参与 CI 红门、零 `.mbt` 改动。但它同时是 BUG-366 的**证据件**：一个从 `9267572`（2026-10-14 引入）起潜伏整整一周、最后改动在 `0e46b2a` 的假阳性之所以没人看见，是因为这把尺在 CI 与仓内电池里**都没有一格**。未复核一格：存档面那 17 条里是否混有「历史文档谎称已完成」的真虚报，本轮未逐条人肉判读（逐条裁决与 BUG-367 同属内容决策面）。
+- 后续建议: ① 判定面 28 条的处置不在本单，已单立 BUG-367 留裁决。② 任何「按前缀/颜色豁免」的白名单扩张必须同时补**反夹具**（证明豁免面之外仍会被抓），`archive-prefix-not-overbroad` 是这条的最小实现。③ 形状口径与分面口径都要出数：只打印「不比对」而不给条数，下一轮无法判断判据覆盖面多大。
+- task_id: T0r21
+
+## BUG-366 [2026-10-21T22:10:00Z] [medium] FIXED
+- summary: [守卫体系结构性盲区] 「一把尺不跑就等于一把坏尺」——本仓 24 把守卫里 `check_plan_landing.py` **既不在 CI 的任何一步、也不在任何一份电池里** ⇒ 它红不红没人知道，BUG-365 因此潜伏一周。根因不是「这一把尺漏挂」而是**电池没有真源**：历轮把电池写在 `temp/`（gitignore 面）手写了 **11 份**，格数 13→30→37 全靠作者回忆抄名单，抄漏的那一格永远不会被发现漏了。修法＝仓内电池真源 `scripts/run_guards.py`（G1 每把尺必须有执行面 / G2 电池不许点不存在的脚本 / G3 空宇宙自拒）＋ **把面门 itself 挂进 CI**（否则这条律又一次只写在文档里）
+- detail: ① 零执行面三向取证（全部实测，不是推断）：`git show HEAD:.github/workflows/*.yml` 七条工作流对 `check_plan_landing` **全部 0 命中**；`temp/run_guards*.py` 11 份对同一字符串 **`grep -l` 0 命中**；该文件自 `9267572` 起只有两次提交（引入 + `0e46b2a` 补占位过滤）⇒「有工具、无执行面」是唯一能同时解释「缺陷一周现形」与「六支文档守卫齐绿」的读法。附带一条同族事实：`.githooks/pre-commit` 内容只有 `moon check` 一行，且 `git config core.hooksPath` **未设置**（rc=1）⇒ 连这一行在本地都不生效。
+  ② 判据三条：`G1` 缺执行面 ⇒ rc=1 并**逐条点名**（只报个数等于不报）；`G2` 电池点了不存在的脚本 ⇒ rc=2（点了已删的尺＝账面绿、实际空转，正是 11 份手写电池的失效方向）；`G3` 守卫宇宙为空 ⇒ rc=2（沿用本仓「空宇宙 FATAL 自拒」定律）。CI 面名单**现读** `.github/workflows/*.yml`（正则抽 `scripts/*.py` 调用行）、电池面名单**现读** `CASES` ⇒ 两边都不抄名单，新增一把尺不给执行面，下次 `--list` 立刻红。
+  ③ 落地读数：`--selftest` = 现状 **24 把尺 / CI 面 21 / 电池面 22 / 缺面 0** + OK（9 格：G1 干净 / G1 抓漏面尺且必点名 / G3 三种空宇宙各自拒 / G2 自拒 / 真源现状无孤儿 / plan_landing 已进电池）；`run_guards.py`（不带参）跑 **34 格**，逐格打 `rc / 期望 / 结论`，格分三类 `gate` / `diag` / `known-red`——**预存红按声明的期望值命中即不算失败，但期望值必须带依据文本**（`expected()` 的 `why`），沿用 BUG-357「绿着的谎」的教训：不给依据的期望红等于免检牌。
+  ④ 变异实测（证明 G1 不是空门）：把 `check_plan_landing.py` 那一格从 `CASES` 删掉（CI 也没有）⇒ rc=1 且**点名该文件**，同时 `repo-current-has-no-orphan-guard` 那格转红；改回后 rc=0。
+  ⑤ 本单内一处自我纠正：`expected()` 首版把 plan_landing 的 rc=1 标成「预存红」是**错标**（它是只读诊断的常态读数、不是待修的门），故引入 `kind` 三分类 + 标签表，让红/诊断/门禁三种非零退出在汇总里分列，不再共用「红」这一个词——否则下一轮读汇总的人会以为有一扇待修的门。
+- note: 定 medium 而不是 low：它不是单点读数错，而是**决定其它所有守卫可信度**的元层盲区——24 把里有 1 把零执行面，「守卫全绿」这句话的覆盖面就是 23/24，而本仓多条定律（BUG-344 收口口径、BUG-357 绿着的谎）都以「守卫全绿」当前件。未复核两格：本机 native 目标不可用 ⇒ 电池未覆盖 `--target native` 面；`gated()` 两格依赖本机 `temp/chk47.json` / `temp/pt27.log`，跨环境读为 SKIP（不算绿也不算红，但也就没跑）。
+- 后续建议: ① 想把本地钩子做成真门：`git config core.hooksPath .githooks` 是机器级动作、且钩子里跑守卫会让每次提交慢几十秒，按金条四不自作，留指挥官。② 电池格数按**尺数**棘轮（读 `--list` 首句 24/21/22/0），不要再抄 `temp/` 里某份手写脚本的数字。③ 建议下一单把 `gated()` 的 dump/pt 两格改成 CI 内产物（CI 已经现产 dump，仓内电池读的是本机 temp ⇒ 不可复现）。
+- task_id: T0r21
+
+## BUG-367 [2026-10-21T22:10:00Z] [low] OPEN
+- summary: [文档 ↔ 实现落地面] `check_plan_landing` 修完假阳性后剩下的**判定面 28 条**（10 份活文档点名、26 条唯一路径，`memory/lock-config.json` 与 `scripts/_ai_prompt.md` 各被两份文档点名）：既不在跟踪面也不在磁盘上，且 **on-disk 0 条**（不是「写了没跟踪」，是「压根没写」）。按形状分四档待裁：**A 计划点名未落地 18 条**（最大一块 `docs/2026-10-11-multi-agent-lock-design-v3.md` 独占 8 条：6 个 `.mbt` + `memory/lock-config.json` + `templates/lock_wait_loop.md`；次块 `docs/plan-light-worktree-isolation.md` 5 条）；**B 外部件 4 条**（`src/adapter.js`、`src/eac.js`、`src/eac-login.js`、`src/vault.js`，属别的宿主，用本仓跟踪面当分母必然报 missing）；**C 历史一次性工具 3 条**（`docs/superpowers/plans|specs/2026-09-24-probability-gate*` 点名 `scripts/_ai_prompt.md`、`_score_probe.py`，`_` 前缀=本仓约定的临时件）；**D 搬家后旧引用 3 条**（点名的 `docs/2026-10-11-multi-agent-lock-design-v2.md`、`docs/2026-10-11-fist-mbt-upgrade-plan-v2.md`、`docs/improvement-plan-20260929.md` 三者**同名文件确实存在、只是在 `docs/archive/` 下**）。本单**只出数不改文档**：判「删文」还是「补做」属内容决策，按金条四留指挥官
+- detail: ① 为什么这 28 条值得单独入账而不是当噪音关掉：本工具的整条判据是「文档点名的路径必须存在于跟踪面」，而它**天然无法区分**「计划未执行」与「计划已作废、文档留着当历史」——处置话术已经把两种读法并排写进每一行（`若计划已说'已完成'则是虚报；若说'将新增'则属正常未做`）⇒ 分辨它需要读上下文，是裁决不是判据。② A 类里最扎手的一块：v3 锁设计稿点名 6 个 `.mbt`（`src/engine/engine_lock.mbt`、`src/executor/kill_argv.mbt`、`src/server/{assistant_ops,kill_exec,locks_ops}.mbt`、`src/store/store_locks.mbt`），而 `docs/archive/` 里同时存在 v2 设计稿的同名落点点名 ⇒ 要么整案未落地、要么落地时换了别的文件名下这批文；两种都改变「这仓有没有多智能体锁」这句话的答案，不该由副机代答。③ **D 类是本工具的一个真缺口，不是文档的错**：三条读数逐条核过 `git ls-files`， basename 全在跟踪面、只是目录从 `docs/` 变成 `docs/archive/`（归档动作发生在引用写下之后）。修法两条：(a) 给工具加第四态 `[moved] docs/archive/<basename>`，让「搬家」从「缺失」里分出来；(b) 改活文档里的引用。副机倾向 (a)——**搬家是可机械证明的事实，不该靠人改文**；但本轮不实现，因为新加一态会同时改变判定面条数与既有 selftest 的期望，属判据语义变更，按边界（本单声明「判据语义不改」）另立一轮。④ B 类是**判据宇宙**的问题：出路 (a) 给工具加「外部面」白名单（要按形状写，不能按文件豁免，否则复制 BUG-365 的免检牌形状）/ (b) 把这 4 条改写成正文里的「外部宿主路径，不在本仓」说明 / (c) 接受存量常驻、只盯新增。副机倾向 (c)+(b) 混合：**存量按声明接受、增量必须归零**，因为 (a) 的白名单一旦写下，本工具就只认识它同意过的路径。⑤ 数量现状（改后首跑）：54 份文档 / 354 条点名路径 ⇒ 判定面 28（missing 28、on-disk 0）+ 存档面 17 + 形态说明 26；`--selftest` 11 → 19 格 rc=0。
+- note: 定 low：零代码风险、零判据失真，纯文档 ↔ 实现一致性面；但**别读成「28 条都是文档陈旧」**——A 类若实为「设计已作废」，陈旧的是设计稿而不是代码；D 类恰恰相反，文档没错、是工具的宇宙里没有「搬家」这一格。未复核两格：A 类的 6 个锁 `.mbt` 是否以别的文件名存在（未做全仓符号级反查）；B 类外部件是否曾在别的仓落地过（本仓看不见）。结论只建立在「`git ls-files` 跟踪面 + 工作树磁盘面 + 逐条路径文本 + 三条 D 类 basename 反查」上。
+- 后续建议: ① 请指挥官分四档裁：A（补做还是作废这批设计稿）/ B（外部面口径写进工具 docstring 还是改写文档）/ C（历史一次性工具要不要留名）/ D（先认「搬家态」这条判据缺口，再决定要不要动文档）。② 无论选哪档，建议给本工具加**棘轮**：判定面条数只许下降（`gap_ceiling` 手法同 `check_deprecated_text_census`），这样裁决慢不会让盲区重新长回来。③ 若选「按形状给外部面白名单」，必须同时补一支反夹具证明豁免面之外仍被抓——BUG-365 已经把这条律钉成夹具了。
+- landed[2026-10-21 R41]: **D 类三条已随「搬家态」机械收掉，本单状态仍 OPEN（A/B/C 三档留裁）**。① 修法取 (a)：`check_plan_landing.py` 加第四态 `moved`，判定条件刻意窄到「basename 相同 **且** 候选父目录落在点名父目录之下 **且** 候选本身在跟踪面」；三条保守：只从 missing 里换出来、不许吃掉 `on-disk`、顶层点名（无父目录可核）一律不认搬家。三条读数逐条给实际位置——`docs/2026-10-12-ofm-atomcode-referenceerror-playbook.md` 点名的 upgrade-plan-v2 → `docs/archive/…`、`docs/2026-10-12-fist-mbt-supervisor-tools-plan.md` 点名的 multi-agent-lock-design-v2 → `docs/archive/…`、`docs/improvement-plan-20261010.md` 点名的 improvement-plan-20260929 → `docs/archive/…`。**搬家是可机械证明的事实，不该靠人改文** ⇒ 文档一字未动。② 建议② 的棘轮已落地：`VERDICT_GAP_CEILING = 25`（= 28 − 3 实测存量）+ `--gate` 真门禁（默认模式仍只报不判，保住「计划写将新增」的合法性）；缺口缩小只提示、放宽上限归人（内容裁决，金条四）。执行面三处齐备：CI「Guard execution-face census」跑 `--selftest`、CI 新增「Plan-landing ratchet gate」跑 `--gate`、`run_guards.py` 电池同时留诊断格与门禁格（只留诊断格 ⇒ 棘轮就是一把不跑的死尺，BUG-366 定律的正身）。③ 28 ⇒ 25 的差额是逐条核对的：改前后路径集合 `comm` 双向对照，移出集恰为上述 3 条、新增集 0 条。④ 建议③（外部面白名单 + 反夹具）**未执行**：B 类 4 条仍常驻判定面——按形状给豁免必须与反夹具同轮落地，本轮只做机械可证的 D 类。⑤ 收尾时长出的新账：本工具文档自述的 `2=判据无法自证` 在 R41 之前是**幻影**（`raise SystemExit(str)` 给 1），已在本份修掉并留一格锁它；同族 4 份另立 **BUG-369**。读数现状：54 份文档 / 354 条点名路径 ⇒ 判定面 25 + 搬家 3 + 存档 17 + 形态 26；`--selftest` 19 → 44 格 rc=0；变异 8 支各自被自己认领的夹具抓住（含退出码面）、6 格对照全绿。
+- task_id: T0r21
 
 
+## BUG-368 [2026-10-21T22:10:00Z] [low] OPEN
+- summary: [预存红的依据面] `scripts/cleanup_artifacts.py --check` 把**已跟踪的真源** `scripts/_tool_registry.py` 数进「`_` 临时脚本」这一档并报红：读数 `DIRTY: 仓库残留 86 个根 .db + 536 个 temp/ 文件 + 1 个 scripts/ 下划线临时脚本（共 623）` 里的那个 `1` 就是它（`git ls-files "scripts/_*"` 全仓只命中这一份，而它自己的 docstring 首行写着「MCP 工具注册表的**单一真源读取实现**（内部共享模块，非独立工具）」）。该守卫只给档数不给文件名 ⇒ 这一格既虚报了一份**不该清理的文件**，又让人无法核对「623」由什么构成——而它在本轮新电池里是**已声明的预存红**（`expected(..., rc=1, why=...)`），依据文本若只写结论不写构成，数字从上一单的 608 漂到 623 没人看得出来
+- detail: ① 取证两格：`ls scripts/_*` = 只有 `_tool_registry.py`（外加被 `.gitignore:35 __pycache__/` 挡住的目录）；`git ls-files scripts/_tool_registry.py` 命中 ⇒ 跟踪面在、不是残留。② 与本单主题的接合点：BUG-366 立的律是「缺执行面的尺＝坏着的尺」，本条是它的**下一层**——有了执行面之后，**期望红的依据如果不可核对，那一格等于半开**。电池里现在这一格读 `rc=1 exp=1 ⇒ 预存红 OK`，判据没错，但「623 件的构成」和「其中 1 件其实是真源」两件事都不在任何尺子的面上。③ 修法三档（都不动本单元边界，留裁）：(a) 让 `cleanup_artifacts` 按档**逐条点名**（文件名打印出来，虚报当场可见，成本最低）；(b) 把 `scripts/` 的 `_` 档改成「未被 `check_scripts_index` 认领的 `_` 脚本」，即以索引守卫为真源、跟踪面自动豁免；(c) 维持现状但在电池 `why` 文本里写死构成与已知虚报。副机倾向 (a)+(b)：(c) 是把盲区从被测面搬到依据面。
+- note: 定 low：不参与红门（本机该格本就按期望红声明）、`--check` 是只读诊断、零清理动作。未复核一格：86 个根 `.db` 与 536 个 `temp/` 文件里是否还混有别的跟踪件（本条只核了 `scripts/` 这一档）。结论只建立在「`ls` + `git ls-files` + `scripts/README.md` 真源声明 + 电池 `expected()` 文本」上。
+- 后续建议: ① 与 `check_scripts_index`（R62）的「正式脚本=无 `_` 前缀」这条约定一起看：`_tool_registry.py` 是**约定内的例外**（真源、必须跟踪），所以判据应当读约定而不是读前缀。② 电池里每条 `known-red` 的 `why` 建议补「构成 + 已知虚报」，否则棘轮方向无法核对。
+- task_id: T0r21
 
+### FIXED(2026-10-21 轮次 R40 / BUG-365, BUG-366)
+- 改了什么：守卫 2 份（1 改 1 新）+ CI 1 份 + 工具文档 2 份，**零 `.mbt` 改动、零接口变更、判据语义不改**。
+  `scripts/check_plan_landing.py`：新增 `LINE_SUFFIX`（`base_ok` 之前剥 `path:12/34` 行号后缀）、`SHAPE_PLACEHOLDER`
+  （`<…>`/`*`/日期/变量形态收进 `shapes` 出数不比对）、`is_archive_doc` + `ARCHIVE_DOC_PREFIX`（只 `docs/archive/`、
+  `reports/` 两条，刻意不收 `docs/superpowers/`）、`judge()` 返回第 5 元组 `face`（活文档/存档面）、`main()` 加
+  `--all-faces` 与三段汇总（判定面/存档面/形态说明）；docstring 补 P3（形状口径）P4（分面口径）两段；`--selftest` 11 → **19 格**。
+  `scripts/run_guards.py`（**新增、仓内电池真源**，270 行）：`case/expected/gated` 三个构造器 + `CASES` 34 格 +
+  `ci_referred()` 现读 `.github/workflows/*.yml` + `guard_files()` 现读守卫宇宙 + `check_faces()` 三条判据（G1 缺执行面
+  rc=1 并点名 / G2 电池点不存在脚本 rc=2 / G3 空宇宙 rc=2）+ `face_report()` + `run_battery()` 逐格 rc/期望/结论 +
+  `selftest()` 9 格；格按 `kind` 分 `gate`/`diag`/`known-red` 三类，预存红必须带 `why` 依据文本。
+  `.github/workflows/ci.yml`：Scripts-index 守卫之后插三步（`run_guards.py --selftest` / `--list` / `check_plan_landing.py --selftest`）
+  + 一段注明 11 份手写电池与七天潜伏的因果。`scripts/README.md`：新增 `run_guards.py` 条目、`check_plan_landing.py` 条目追记缺陷③④
+  与 P3/P4 及新读数。`docs/agent-map.md`：§四 第 6 条把「提交前想确认守卫面」指向 `run_guards.py` 并明令别再在 `temp/` 另写电池（BUG-366）、
+  §五 新增「一把尺不跑就等于一把坏尺」雷区条（含 `core.hooksPath` 未设置这条事实）。
+- 实测锁钉：① **假阳性只减不增**——`temp/plan_landing_before.py`（`git show HEAD:` 版）与现版跑同一棵树，
+  `comm -23` 恰好 11 条、`comm -13` **0 条**；读数 before「54 份 / 349 条 / 未落地 56」→ after「54 份 / 354 条 /
+  判定面 28 + 存档面 17 + 形态说明 26」，恒等式 **56 = 28 + 17 + 9 占位虚报 + 2 行号后缀虚报** 逐格对上；11 条逐字见 BUG-365 detail②。
+  ② 面门读数：`run_guards.py --selftest` = 现状 **24 把尺 / CI 面 21 / 电池面 22 / 缺面 0** + SELFTEST OK（9 格）；
+  变异实测（把 plan_landing 那格从 `CASES` 删掉、CI 也没有）⇒ **rc=1 且点名该文件**、`repo-current-has-no-orphan-guard` 同步转红，改回 rc=0。
+  ③ 零执行面的三向取证：`git show HEAD:.github/workflows/*.yml` 七条工作流对 `check_plan_landing` **全部 0 命中**、
+  `temp/run_guards*.py` **11 份 0 命中**、`git log --follow` 仅两次提交（`9267572` 引入 / `0e46b2a` 补占位过滤）。
+  ④ 代码面：`moon test --target js -j 1` = `temp/pt28_raw.log` → `Total tests: 1302, passed: 1302, failed: 0`；
+  `moon check --target js --json` = `temp/chk48.json` → **489 warnings / 0 errors**，分布 {20:448, 6:12, 2:11, 1:9, 9:3, 78:3, 7:2, 27:1}
+  与上单基线**逐格相同**，且与 `temp/chk47.json` **逐字节相同**（`cmp -s` 通过）⇒ 本单零 `.mbt` 改动可证。
+  ⑤ `.mbti` 面：moon 跑完后 23 份又现 `Int`→`Int32`（BUG-330 复现），`git restore -- '*.mbti'` 收回、不入本提交。
+  ⑥ 索引守卫：`check_scripts_index.py` PASS（`run_guards.py` 已在 `scripts/README.md` 登记）。
+- **本单撞到的第二条耦合（补 BUG-363 那条）**：`gen_plugins.py` 除了把账本摘要投影进 9 份插件态文件，还会做**账本 ↔ 叙述面自证**
+  ——「标 FIXED 却没有小记点名」直接 FATAL 拒生成（本轮首跑报 `- 2 条标 FIXED 却无小记点名：BUG-365 BUG-366`），
+  所以「追加账本条目」与「写 FIXED 小记」是**同一笔不可拆的动作**，拆了 `gen_plugins --check` 与 `check_plugin_sync` 双红。
+  本条正是 BUG-366 那条定律在写盘顺序上的体现：**判据不点名，就没人知道自己少做了一半**。
+- **本单的边界（不许读成「守卫面从此完整」**：面门 G1 钉的是「有没有一格执行过」，**不钉那一格跑的是什么目标**——
+  本机 native 面不可用 ⇒ 24 把尺的 native 行为仍然零读数；`gated()` 两格依赖本机 `temp/chk47.json` / `temp/pt27.log`，
+  跨环境读成 SKIP（不算绿也不算红，但**也就没跑**）。CI 三步只补了 `--selftest` / `--list`，**没有把 34 格整把电池搬进 CI**：
+  电池里 3 格是 `known-red`（`check_py_stdout_encoding --selftest` rc=2、`--all` rc=1 同 9 份历史脚本、`cleanup_artifacts --check` rc=1）
+  外加 1 格 `diag`（`check_plan_landing` rc=1 常态诊断），CI 若直接跑就得给这些格开 `continue-on-error`，那等于把刚立的「期望红要带依据」
+  降级成「红都放行」，故留到下一单连同那 9 份历史脚本一起裁。本轮 34 格实跑：**失败 2 / SKIP 0 / 缺面 0**，两格失败都是
+  「账本已追加、FIXED 小记与插件态尚未跟上」这一顺序性自红（见下条耦合），按守卫自己的处置话术走完 `gen_plugins.py` 后归零。
+- 遗留（不属本单修法）：BUG-367 判定面 28 条留裁决，其中 D 类「搬家后旧引用」3 条已核实是**工具缺第四态 `[moved]`**
+  （三个 basename 全在跟踪面、只是目录从 `docs/` 变成 `docs/archive/`），加态会改判据语义 ⇒ 另立一轮；
+  BUG-368 是本轮把电池跑起来之后**由电池自己暴露的第二层盲区**（预存红的依据不可核对 + `cleanup_artifacts` 把真源
+  `scripts/_tool_registry.py` 数成临时脚本），入账留裁；`.githooks/pre-commit` 与 `core.hooksPath` 未设置这条留给指挥官
+  （机器级动作 + 每次提交慢几十秒的代价）。
 
+- 提交面：`f73788d`（17 件 / +658 −39，新增 2 件：`scripts/run_guards.py` 与本单报告）＝分支 `slave/guard/execution-face`，
+  链在 `fc8ce7e` 之后**单独起支**（不复用已在审的 `slave/guard/doc-surface-blindspot`；trunk 未推）；已推 gitcode、
+  远端 `Start Git Hooks Checking [PASSED]`；MR 入口
+  `https://gitcode.com/VictorTop/Fist-Mbt/merge_requests/new?source_branch=slave/guard/execution-face`（MR 由 owner 开）。
+  提交后电池整跑复读 **34 格 / 失败 0 / SKIP 0 / 缺面 0**；`moon test --target js` = 1302/1302/0、
+  `moon check --target js` = 489 warnings / 0 errors 与上单基线逐字节相同。
+  BUG-368 那条「构成不可核对」在收尾时又长了一格：`cleanup_artifacts` 的残留数从 608（上一单）→ 623（本单首跑）→ **624**
+  （本单 `temp/` 新增取证件），三档数字都在同一句读数里、没有一档能自证由什么组成。
+## BUG-369 [2026-10-21T23:30:00Z] [low] OPEN
+- summary: [尺子自述面 ↔ 真退出码] 4 份脚本在自身文本或 `scripts/README.md` 里承诺「2=判据无法自证 / 2=前置不满足」，但 FATAL 出口写成 `raise SystemExit("文本")` —— **带字符串的 SystemExit 退出码是 1，不是 2** ⇒ 那条承诺从来没生效过（幻影契约）。R41 用 ast 数**真调用点**普查 `scripts/*.py`：**3 份纯幻影** = `check_mbti_sync.py`（7 处串式 FATAL、0 条 2 出口）/ `check_pkg_imports.py`（6 处）/ `check_template_ctrl.py`（1 处）；**1 份半形** = `simulate_head_commit.py`（moon 超时那条走 `return 2` 真给 2，其余 4 处 FATAL 走串式给 1，其中「PATH 上没有 moon」那条**文案自己写着「（rc=2）」而实测给 1**）。本轮只把 `check_plan_landing.py` 改成真 2（`emit_fatal()` + `SystemExit(2)` + 一格 `fatal-exit-code-is-2`），其余 4 份**未改、留本单**
+- detail: ① 为什么是「尺子的缺陷」而不是「文档的瑕疵」：退出码是本仓**机器读的那一栏**——CI 步骤、`run_guards.py` 的 `expect`、电池汇总都按 rc 分档。红字文本照样打给人看，但「rc=2 表示判据自拒」一旦是幻影，任何据此写的门（「2 ⇒ 尺子坏了、单独报警」）都会把「尺子坏」读成「业务红」，把最该出声的那一格静音；今天的实际后果是**「判据空转」与「有违例」在 rc 面上同色**。② 发现路径本身就是证据链：R41 给 `check_plan_landing` 的空转 FATAL 写期望格时先按文档填 `expect=2`，实测恒 1 ⇒ 才反查到一条 Python 语义级事实。**若本轮没给这把尺加执行面，幻影会继续躺在文档里**——这是 BUG-366「零执行面的尺=坏着的尺」的推论：**没有执行面的自述面同样没人核对**。③ 普查工具自己先红了两条（同轮现形，已写进 `docs/agent-map.md` §五）：正则版把 docstring/注释里的 `SystemExit("…")` **字样**当调用点（虚高到「9 份 33 处」），又把 `sys.exit(main())` 这种**正常透传**当「已有整式出口」（于是漏掉 `check_pkg_imports`、误判 `simulate_head_commit`）；改 ast 后真数是 3 纯 + 1 半形。**凡数「代码里的某种形状」的判据，先问读的是站点面还是文本面**。④ 为什么不当轮顺手把这 4 份一起改：每改一份都改变它的 rc 面，而这 4 份里 3 份在 CI 有门、`simulate_head_commit` 在电池有 `known-red` 格 ⇒ 期望值要逐条复核，且它们的 selftest 里可能藏着「按 1 写死的期望」被这次改动撞红。按边界一轮一把尺。⑤ 当场实测：`python scripts/check_plan_landing.py docs/not-exist-xyz.md` 改前 rc=**1**（文档说该给 2）、改后 rc=2；`check_deprecated_text_census.py` / `check_deprecated_site_list.py` 的 dump 读不到探针当场 rc=2（这两份走 `return 2`，本来就对）⇒ 幻影不是全仓通病，是**特定写法**的通病
+- note: 定 low：那几把尺的红绿方向没有反（该红还是红），失真面在**退出码这一栏的语义**——「业务红」与「尺子自拒」不可分。未复核三格：`.github/workflows/*.yml` 是否有步骤按 rc==2 分档（本轮只读了 js-ubuntu 臂的 run 行）；`run_guards.py` 之外的调用方是否有 `rc == 2` 判断（`temp/` 历史电池未查，temp 不在跟踪面）；native 臂的 CI 面。结论只建立在「ast 静态扫 `scripts/*.py` 真调用点 + 当场触发实测 + `python -c` 语义对照」上。
+- 后续建议: ① 逐份修那 4 把尺：加 `emit_fatal()` 形出口（或统一 `return 2` 透传），每份配一格「FATAL 的码真是 2」，同时复核 CI 与电池里按 rc 写死的期望值。② 建议新守卫 `scripts/check_exit_code_contract.py`：现读每份 `scripts/*.py` 的自述退出码（**脚本正文 ∪ `scripts/README.md` 条目**，两处都算承诺面），与该脚本 ast 可达的整数出口集合做对照，抓「自述有 2 而代码给不出 2」——这条普查现在是零执行面的临时件（`temp/r41_fatal_census2.py`），本单就是它的第一个样本。③ 「模式互斥不是洁癖」与「数站点用 ast」两条定律 R41 已随本单写进 `docs/agent-map.md` §五，若要固化成判据请另立一轮。
+- landed[2026-10-21 R42]: **建议② 落地成常驻判据，建议① 走完 4 份里的 1 份；本单仍 OPEN（剩 3 份尺）**。① 新守卫 `scripts/check_exit_code_contract.py`（宇宙现读 `git ls-files scripts` = 85 份 .py，解析跳过 0）：承诺面 = 脚本正文的 `退出码`/`用法`/裸 `N=` 块（含跨行块、行首文档装饰 `"""`/`#`）∪ `scripts/README.md` 条目侧；实现面 = ast 出口站点整数（字面量、`%`/f-string 串式、`sys.exit(main())` 透传、模块常量与元组解包、函数内名字传播、把函数名当实参递出去的高阶透传）。判定面三条共用一个棘轮：R1 模块面幻影（承诺 N≥2 而实现面给不出；**刻意不判 0/1**——1 是 Python 未捕获异常默认码，判它必假红；这是按形状的保守，不是按文件的豁免）/ R2 站点类指派矛盾（文本含 FATAL 类关键词而承诺面把该类指派给的码不在站点实给集里）/ R3 站点自述码不符（文案自写 `rc=N` 而站点实给≠N，抓 `simulate_head_commit` 那种 R1 看不见的**半形**）。只报不判且必须出数：S 沉默出口 21 ｜ U 未认作契约 38 ｜ O 不透明/让位 1（外部件 `p.returncode` 透传 ⇒ R1 让位但留名）。② **真源读数 = 判定面 16 条 = `CONTRACT_GAP_CEILING`**：`check_mbti_sync` R1×1+R2×7 ／ `check_pkg_imports` R1×1+R2×6 ／ `simulate_head_commit` R3×1 ／ `check_template_ctrl` **已修真归零**（本轮唯一改动的被测尺：`emit_fatal()` + 一格 subprocess 实测「判据空转时子进程 rc 真是 2」，`--selftest` 七格→八格）／ `check_plan_landing` 全 0。每修一把尺这个数就得降，降到 0 才算本单可关。③ **尺子先对着已知真相校准再写文法**：`--selftest` 26 格里 5 格是 `calib:`（钉死 BUG-369 四条读数，对不上就是尺子坏，不多判也不漏判）。普查两版的三条口径缺陷（跨行块只吃到行尾 / 不认名字传播 / 把 `"FATAL …" % e` 算成不透明）全部由标注集现形后写进文法；变异台 `temp/r42_mutation.py` **7/7**：判定恒不报⇒整面哑 / 断整数识别⇒16→42（假红暴涨，连该归零的两尺都冒出 2 条）/ 断串式识别⇒16→0（标定四尺全丢）/ 断名字传播⇒+4 假红 / 豁免面过宽⇒丢 2 / 跨行块截断⇒丢 7 / README 条目侧⇒0 变化。④ **两处盲区显式上账、不静默**：README 条目现实形状是一整行，行内 `N=` 当前**不读**（实测开启后判定面 16→39，新增 10 份面的真伪未核 ⇒ 本轮不开，留待逐条核对；`--selftest` 有格锁住这个盲区，谁开启谁必须同时改上限与说明）；形状识别分不出「举例」与「承诺」——本判据在自家注释里被自己的例子判红过（16→17），出路是改写文本而不是给判据加跳过注释的口子（加了就把 `e2e_native_heap_probe` 这类把契约写在 `#` 注释块里的真脚本吃掉了）。⑤ 执行面三处齐备：ci.yml 新增「Exit-code contract guard」跑 `--selftest` + 全量、`run_guards.py` 电池两格并存（37 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0）、`scripts/README.md` 登记（`check_scripts_index` 绿）。⑥ 本单**未**做的事：剩下 3 把尺（`check_mbti_sync` / `check_pkg_imports` / `simulate_head_commit`）的 rc 面改动，按「一轮一把尺」留下一轮——每改一份都要复核 CI 与电池里按 rc 写死的期望，且它们的 selftest 可能藏着一按就红的死期望。
+- task_id: T0r22
