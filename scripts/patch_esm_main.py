@@ -67,6 +67,9 @@ def patch(main_js: str) -> bool:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] in ("--help", "-h"):
+        print(__doc__)
+        sys.exit(0)
     if len(sys.argv) > 1:
         target = sys.argv[1]
     else:
