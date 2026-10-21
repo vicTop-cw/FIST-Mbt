@@ -31,6 +31,12 @@ pub enum Verdict {
 } derive(Eq, Debug)
 
 ///|
+pub extend Verdict with Eq::{not_equal, equal}
+
+///|
+pub extend Verdict with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 /// 用派生算子构造 F φ（eventually）
 pub fn eventually(f : LtlFormula) -> LtlFormula {
   // F φ = true U φ；true 用 Atom("__true__") 表示，求值时恒真

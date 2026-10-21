@@ -37,8 +37,11 @@ pub struct AssistantReg {
   heartbeat_at : String
   status : String
 } derive(Eq, @debug.Debug)
+pub fn AssistantReg::equal(Self, Self) -> Bool
 pub fn AssistantReg::new(agent~ : String, mode~ : String, is_primary~ : Bool, registered_at~ : String, heartbeat_at~ : String, status~ : String) -> Self
+pub fn AssistantReg::not_equal(Self, Self) -> Bool
 pub fn AssistantReg::to_json(Self) -> Json
+pub fn AssistantReg::to_repr(Self) -> @debug.Repr
 
 pub struct ExecutionRecord {
   id : String
@@ -64,9 +67,12 @@ pub struct FileLock {
   ttl_until : String
   meta : String
 } derive(Eq, @debug.Debug)
+pub fn FileLock::equal(Self, Self) -> Bool
 pub fn FileLock::new(lock_id~ : String, batch_id~ : String, scope~ : String, agent~ : String, status? : String, ts? : String, ttl_until? : String, meta? : String) -> Self
+pub fn FileLock::not_equal(Self, Self) -> Bool
 pub fn FileLock::renew(Self, ttl_until~ : String, ts~ : String) -> Self
 pub fn FileLock::to_json(Self) -> Json
+pub fn FileLock::to_repr(Self) -> @debug.Repr
 
 pub struct LockAcquireOutcome {
   granted : Bool
@@ -76,6 +82,7 @@ pub struct LockAcquireOutcome {
   ttl_until : String
   violation_logged : Bool
 } derive(@debug.Debug)
+pub fn LockAcquireOutcome::to_repr(Self) -> @debug.Repr
 
 pub struct LockViolation {
   ts : String
@@ -84,8 +91,11 @@ pub struct LockViolation {
   reason : String
   lock_id : String
 } derive(Eq, @debug.Debug)
+pub fn LockViolation::equal(Self, Self) -> Bool
 pub fn LockViolation::new(ts~ : String, agent~ : String, scope~ : String, reason~ : String, lock_id~ : String) -> Self
+pub fn LockViolation::not_equal(Self, Self) -> Bool
 pub fn LockViolation::to_json(Self) -> Json
+pub fn LockViolation::to_repr(Self) -> @debug.Repr
 
 pub struct MemoryStore {
   tasks : Map[String, @core.Task]
@@ -165,8 +175,11 @@ pub struct SpecRecord {
   created_at : String
   updated_at : String
 } derive(Eq, @debug.Debug)
+pub fn SpecRecord::equal(Self, Self) -> Bool
 pub fn SpecRecord::new(id~ : String, task_id~ : String, spec_type? : String, content? : String, status? : String, created_at? : String, updated_at? : String) -> Self
+pub fn SpecRecord::not_equal(Self, Self) -> Bool
 pub fn SpecRecord::to_json(Self) -> Json
+pub fn SpecRecord::to_repr(Self) -> @debug.Repr
 
 pub struct SqliteStore {
   db : @sqlite.Database?

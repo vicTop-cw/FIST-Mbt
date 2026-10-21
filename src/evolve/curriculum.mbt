@@ -19,6 +19,12 @@ pub enum CurriculumLevel {
 } derive(Eq, Debug)
 
 ///|
+pub extend CurriculumLevel with Eq::{not_equal, equal}
+
+///|
+pub extend CurriculumLevel with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 /// 课程条目：一个阶段 + 该阶段的学习目标
 pub struct CurriculumItem {
   level : CurriculumLevel
@@ -116,6 +122,12 @@ pub enum MutationKind {
   Specialize // 特化（针对特定场景优化）
   Combine // 组合（融合两个父代的特征）
 } derive(Eq, Debug)
+
+///|
+pub extend MutationKind with Eq::{not_equal, equal}
+
+///|
+pub extend MutationKind with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 /// 对 artifact 的 note/goal 生成变异提示词（供外部执行器使用）

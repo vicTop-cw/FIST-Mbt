@@ -29,6 +29,12 @@ pub struct SpecRecord {
 } derive(Eq, Debug)
 
 ///|
+pub extend SpecRecord with Eq::{not_equal, equal}
+
+///|
+pub extend SpecRecord with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 /// 便捷构造（仅 id / task_id 必填，其余带默认值）。
 pub fn SpecRecord::new(
   id~ : String,

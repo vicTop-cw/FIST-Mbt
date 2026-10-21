@@ -32,6 +32,9 @@ pub struct CafDryRun {
 } derive(Debug)
 
 ///|
+pub extend CafDryRun with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 /// 在配额筛选之后、最终返回之前插入 CAF 软性重排的 pick 变体。
 /// 返回 (decision, 是否发生了重排)。
 pub fn ModelRouter::pick_caf(

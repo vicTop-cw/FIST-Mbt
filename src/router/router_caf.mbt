@@ -25,6 +25,9 @@ pub struct CafRecord {
 } derive(Debug)
 
 ///|
+pub extend CafRecord with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 pub fn CafRecord::new(
   feature_hash~ : Int,
   model~ : String,
@@ -43,6 +46,9 @@ pub struct CafMemory {
   mut head : Int
   mut count : Int
 } derive(Debug)
+
+///|
+pub extend CafMemory with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 pub fn CafMemory::new(max_size? : Int = 10000) -> CafMemory {
@@ -107,6 +113,9 @@ pub struct CafModelStats {
   pub success : Int
   pub avg_cost : Double
 } derive(Debug)
+
+///|
+pub extend CafModelStats with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 /// 对检索结果做按模型的成功率统计
