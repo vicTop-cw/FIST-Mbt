@@ -324,7 +324,7 @@ fn SqliteStore::bind_task_update_values(
 
 ///|
 fn str_from_bytes(b : Bytes) -> String {
-  let sb = StringBuilder::new()
+  let sb = StringBuilder()
   @encoding.decode_to(b, sb, encoding=UTF8) catch {
     _ => ()
   }

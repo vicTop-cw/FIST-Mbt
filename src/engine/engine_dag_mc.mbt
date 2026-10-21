@@ -33,11 +33,19 @@ fn mc_sqrt(x : Double) -> Double {
 ///|
 /// 三角分布采样（a<m<b）：u∈[0,1) → 时长（向上取整）。返回 (新状态, 时长)。
 fn mc_tri_sample(
+<<<<<<< HEAD
   state : Int32,
   a : Int32,
   m : Int32,
   b : Int32,
 ) -> (Int32, Int32) {
+=======
+  state : Int,
+  a : Int,
+  m : Int,
+  b : Int,
+) -> (Int, Int) {
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
   let (s2, v) = mc_xorshift(state)
   let denom = (b - a).to_double()
   let u = v.to_double() / 2147483648.0

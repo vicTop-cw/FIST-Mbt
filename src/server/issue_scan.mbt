@@ -1008,7 +1008,11 @@ fn scan_guard_substring_end_var(
 ///|
 /// BUG-268 辅助：解析非负整数（与 scan_substring_start 同款 int_safe 上界）；
 /// 失败/空/溢出返回 -1。
+<<<<<<< HEAD
 fn scan_parse_int_opt(s : String) -> Int32 {
+=======
+fn scan_parse_int_opt(s : String) -> Int {
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
   let t = s.trim().to_owned()
   if t.is_empty() {
     return -1
@@ -1072,7 +1076,11 @@ fn scan_substring_arg_expr(code : String, arg : String) -> String {
         }
         j = j + 1
       }
+<<<<<<< HEAD
       code[pos:j].to_owned().trim().to_owned()
+=======
+      code.substring(start=pos, end=j).to_string().trim().to_owned()
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
     }
   }
 }
@@ -1123,7 +1131,15 @@ fn scan_guard_mod_invariant(
       let rest = t[pref.length():t.length()].to_owned()
       match rest.find(" % ") {
         Some(pi) => {
+<<<<<<< HEAD
           let ktxt = rest[pi + 3:rest.length()].to_owned().trim().to_owned()
+=======
+          let ktxt = rest
+            .substring(start=pi + 3, end=rest.length())
+            .to_string()
+            .trim()
+            .to_owned()
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
           let kv = scan_parse_int_opt(ktxt)
           if kv >= 0 {
             mod_k = kv
@@ -1180,7 +1196,15 @@ fn scan_guard_for_bounded(
     let t = p.trim().to_owned()
     let pref = "for " + se + " in 0..<"
     if t.has_prefix(pref) {
+<<<<<<< HEAD
       let ktxt = t[pref.length():t.length()].to_owned().trim().to_owned()
+=======
+      let ktxt = t
+        .substring(start=pref.length(), end=t.length())
+        .to_string()
+        .trim()
+        .to_owned()
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
       // BUG-268 补充：`for i in 0..<26 {` 尾部 `{` 会混入字面量导致 parse 失败
       let mut kk = ktxt
       while kk.length() > 0 &&
@@ -1276,10 +1300,14 @@ fn scan_guard_multi_line_length(
       match t.find(" = ") {
         Some(ei) => {
 <<<<<<< HEAD
+<<<<<<< HEAD
           let name = t[4:ei].to_owned().trim().to_owned()
 =======
           let name = t.substring(start=4, end=ei).to_string().trim().to_string()
 >>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
+=======
+          let name = t.substring(start=4, end=ei).to_string().trim().to_owned()
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
           if !name.is_empty() {
             lenv = name
             break
@@ -1300,12 +1328,28 @@ fn scan_guard_multi_line_length(
     let pref = "if " + lenv + " <= "
     let pref2 = "if " + lenv + " < "
     if t.has_prefix(pref) {
+<<<<<<< HEAD
       limit = t[pref.length():t.length()].to_owned().trim().to_owned()
+=======
+      limit = t
+        .substring(start=pref.length(), end=t.length())
+        .to_string()
+        .trim()
+        .to_owned()
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
       if_idx = i
       break
     }
     if t.has_prefix(pref2) {
+<<<<<<< HEAD
       limit = t[pref2.length():t.length()].to_owned().trim().to_owned()
+=======
+      limit = t
+        .substring(start=pref2.length(), end=t.length())
+        .to_string()
+        .trim()
+        .to_owned()
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
       if_idx = i
       break
     }
@@ -1399,7 +1443,15 @@ fn scan_guard_has_suffix_cut(
           // seg: `<k> } else { 0 }`
           match seg.find(" } else { ") {
             Some(ci) => {
+<<<<<<< HEAD
               let ktxt = seg[0:ci].to_owned().trim().to_owned()
+=======
+              let ktxt = seg
+                .substring(start=0, end=ci)
+                .to_string()
+                .trim()
+                .to_owned()
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
               let kv = scan_parse_int_opt(ktxt)
               if kv >= 1 && kv <= 4 {
                 return true
@@ -1630,10 +1682,14 @@ pub fn scan_finding_guarded(
   // prev_lines 不含当前行，须先检查 code 自身。
   if rule == "substring-overrun" {
 <<<<<<< HEAD
+<<<<<<< HEAD
     let code_t = code.trim().to_owned()
 =======
     let code_t = code.trim().to_string()
 >>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
+=======
+    let code_t = code.trim().to_owned()
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
     if !vn.is_empty() && scan_guard_length_above(code_t, vn) {
       return true
     }
@@ -2187,12 +2243,16 @@ pub fn issue_scan(
     // 占全量 findings 大头）的命中直接透传，免掉 mem_read + split + prev_window 三件套。
     if !(hit.rule == "substring-overrun" ||
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
       hit.rule == "unprotected-division" ||
       hit.rule == "unwrapped-unwrap" ||
       hit.rule == "possible-overflow" ||
       hit.rule == "index-out-of-bounds" ||
       hit.rule == "string-index" ||
       hit.rule == "secs-overflow") {
+<<<<<<< HEAD
 =======
         hit.rule == "unprotected-division" ||
         hit.rule == "unwrapped-unwrap" ||
@@ -2201,6 +2261,8 @@ pub fn issue_scan(
         hit.rule == "string-index" ||
         hit.rule == "secs-overflow",) {
 >>>>>>> 9099e060 (fix(idiom): 清零 0020 deprecated 的 not(x) 子族 203 处（BUG-344）)
+=======
+>>>>>>> 68c6df2b (fix(deprecated): 清零 0020 机械改名子族 176 条（177 处改写 / 47 份 .mbt）)
       guarded_filtered.push(hit)
       continue
     }
