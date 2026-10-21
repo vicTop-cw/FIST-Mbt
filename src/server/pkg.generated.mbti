@@ -47,7 +47,7 @@ pub fn get_version() -> String
 
 pub fn gitcode_env_check() -> Result[Json, String]
 
-pub async fn gitcode_execute_batch(Array[String], String, Int) -> Result[Json, String]
+pub fn gitcode_execute_batch(Array[String], String, Int) -> Result[Json, String]
 
 pub fn gitcode_execute_single(String, String, Int) -> Result[Json, String]
 
@@ -208,21 +208,7 @@ pub fn selfdrive_round_tick(Json) -> Json
 // Errors
 
 // Types and methods
-type DebateRegistry
-
-type DebateSession
-
-type RcPath
-
 type ScanCtx
-
-type ScanFinding
-
-type ScanRule
-
-type SupervisorGuidance
-
-type SupervisorGuidanceRegistry
 
 // Type aliases
 

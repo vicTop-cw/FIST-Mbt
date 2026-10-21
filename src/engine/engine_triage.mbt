@@ -52,7 +52,7 @@ fn truncate(s : String, max : Int) -> String {
 
 ///|
 /// 下一步排行行（triage 内部行）。
-struct TriageRow {
+priv struct TriageRow {
   id : String
   ns : String
   priority : String
@@ -152,13 +152,13 @@ fn triage_rest(a : TriageRow, b : TriageRow) -> Int {
 
 ///|
 /// 下一步推荐（Triage，带能力偏好路由 + skill 命中度路由）：返回 { count, ns, agent, want, skill?, suggestion?, tasks:[...] }。
-/// namespace 为空表示全量；只统计"待领取且依赖已满足"的任务。want 为能力关键词（Marketplookup 雏形）：
+/// ns_filter 为空表示全量；只统计"待领取且依赖已满足"的任务。want 为能力关键词（Marketplookup 雏形）：
 /// 非空时，命中该关键词的候选排在头部（按能力匹配路由"这个 agent 擅长啥就先领啥"），不命中者照旧跟进。
 /// skill 可选（逗号分隔 skill 关键词）：非空时按 skill 命中度排在能力匹配之后、优先级之前，并在 suggestion
 /// 里给出建议的开发模式（SKILL→MODE 建议表）；空串 = 不做 skill 路由，排序与输出与旧版完全一致（零回归）。
 pub fn FistEngine::triage(
   self : FistEngine,
-  namespace : String,
+  ns_filter : String,
   agent : String,
   want : String,
   skill? : String = "",
@@ -173,7 +173,7 @@ pub fn FistEngine::triage(
     completed.set(t.get_id(), t.get_status().is_completed())
   }
   for t in all_tasks {
-    if namespace != "" && t.ns != namespace {
+    if ns_filter != "" && t.ns != ns_filter {
       continue
     }
     if !t.get_status().is_pending() {
@@ -256,7 +256,7 @@ pub fn FistEngine::triage(
   }
   let m : Map[String, Json] = Map([
     ("count", Json::number(rows.length().to_double())),
-    ("ns", Json::string(namespace)),
+    ("ns", Json::string(ns_filter)),
     ("agent", Json::string(agent)),
     ("want", Json::string(want)),
     ("skill", Json::string(skill)),
@@ -298,13 +298,13 @@ pub fn FistEngine::triage(
 /// 返回 { picked, remaining, claimed, ns, want, skill, task?, note|error? }。
 pub fn FistEngine::pick_next(
   self : FistEngine,
-  namespace : String,
+  ns_filter : String,
   agent : String,
   want : String,
   now : String,
   skill? : String = "",
 ) -> Json {
-  let tg = self.triage(namespace, agent, want, skill~)
+  let tg = self.triage(ns_filter, agent, want, skill~)
   let m = match tg {
     Object(mm) => mm
     _ => Map([])
@@ -327,7 +327,7 @@ pub fn FistEngine::pick_next(
         "picked": Json::string(""),
         "remaining": Json::number(count.to_double()),
         "claimed": Json::boolean(false),
-        "ns": Json::string(namespace),
+        "ns": Json::string(ns_filter),
         "want": Json::string(want),
         "skill": Json::string(skill),
         "note": Json::string(
@@ -343,7 +343,7 @@ pub fn FistEngine::pick_next(
               (if count > 0 { count - 1 } else { 0 }).to_double(),
             ),
             "claimed": Json::boolean(true),
-            "ns": Json::string(namespace),
+            "ns": Json::string(ns_filter),
             "want": Json::string(want),
             "skill": Json::string(skill),
             "task": t.to_json(),
@@ -354,7 +354,7 @@ pub fn FistEngine::pick_next(
             "picked": Json::string(""),
             "remaining": Json::number(count.to_double()),
             "claimed": Json::boolean(false),
-            "ns": Json::string(namespace),
+            "ns": Json::string(ns_filter),
             "want": Json::string(want),
             "skill": Json::string(skill),
             "error": Json::string(e),

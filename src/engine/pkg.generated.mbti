@@ -200,12 +200,6 @@ pub fn FistEngine::transition_contract(Self, String, String, assignee? : String,
 pub fn FistEngine::triage(Self, String, String, String, skill? : String) -> Json
 pub fn FistEngine::verify(Self, task_id~ : String, verifier~ : String, now~ : String, docs_check? : Bool) -> Result[@core.Task, String]
 
-type SupervisorGate
-
-type SupervisorUpsertItem
-
-type TriageRow
-
 // Type aliases
 
 // Traits

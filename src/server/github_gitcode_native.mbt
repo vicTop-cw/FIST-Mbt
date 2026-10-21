@@ -18,7 +18,7 @@ pub fn gitcode_execute_single(
 
 ///|
 /// stub：native 上不存在批量执行 shell 的能力。
-pub async fn gitcode_execute_batch(
+pub fn gitcode_execute_batch(
   _curl_commands : Array[String],
   _workdir : String,
   _timeout_ms_each : Int,

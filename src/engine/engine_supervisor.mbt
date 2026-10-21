@@ -117,7 +117,7 @@ pub fn FistEngine::supervisor_task_tree(
 
 ///|
 /// kill 硬门链单门结果。
-struct SupervisorGate {
+priv struct SupervisorGate {
   gate : String
   passed : Bool
   reason : String
@@ -320,7 +320,7 @@ pub fn FistEngine::supervisor_kill_apply_pause(
 
 ///|
 /// 单条 upsert item 的解析结果（内部结构）。
-struct SupervisorUpsertItem {
+priv struct SupervisorUpsertItem {
   task_id : String
   description : String
   priority : String

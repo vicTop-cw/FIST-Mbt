@@ -75,7 +75,7 @@ fn run_check_env_extra_cmds() -> Array[String] {
 
 ///|
 /// 路径/命令的归一形态：段列表 + 是否绝对 + 盘符 + 是否被 `..` 冲出根。
-struct RcPath {
+priv struct RcPath {
   segs : Array[String]
   absolute : Bool
   drive : String
