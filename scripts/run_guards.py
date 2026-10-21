@@ -46,6 +46,9 @@ WORKFLOWS = os.path.join(ROOT, ".github", "workflows")
 DUMP = "temp/chk47.json"
 TESTLOG = "temp/pt27.log"
 SCRIPTS_DIR = os.path.join(ROOT, "scripts")
+# R55 实测宇宙漏洞：普查只扫 scripts/ 顶层 ⇒ 放在 scripts/blackbox/ 的尺（check_merge_markers）
+# 天然漏出普查——「零执行面的尺=坏着的尺」（BUG-366 本文件立的律）对子目录里的尺是盲的。
+BLACKBOX_DIR = os.path.join(SCRIPTS_DIR, "blackbox")
 
 
 def case(script, *args):
@@ -90,6 +93,9 @@ CASES = [
     case("gen_plugins.py", "--selftest"),
     case("check_upgrade_installer.py"),
     case("check_plan_landing.py", "--selftest"),
+    # —— R55：blackbox 尺进宇宙也进电池（相对 scripts/ 点名，路径含子目录）——
+    case("blackbox/check_merge_markers.py", "--selftest"),
+    case("blackbox/check_merge_markers.py"),
     # —— 诊断型：退出码语义不是门禁，把当轮真读数钉成期望值（数字变了就现形）——
     expected("check_plan_landing.py", 1,
              "诊断口径：判定面 25 条活文档点名落点未落地（BUG-367 A/B/C 三档留裁决）；另有搬家态 3 条单列"
@@ -97,11 +103,13 @@ CASES = [
              "（改前 SystemExit(str) 只给 1，那个 2 是幻影 ⇒ BUG-369）",
              kind="diag"),
     case("check_ps_encoding.py"),
-    # —— 编码面：Windows 才红，属预存红，修好后期望值要改回 0 ——
-    expected("check_py_stdout_encoding.py", 2,
-             "预存红：--selftest 本机 rc=2（BUG-355 一族）", "--selftest"),
-    expected("check_py_stdout_encoding.py", 1,
-             "预存红：同一批 9 份历史脚本（BUG-355 一族）", "--all"),
+    # —— 编码面：R58 期望值回归 0——BUG-355/332 一族已在主仓修完（现读真源：--selftest 绿、
+    #    --all 面「该带闸 85 份/已带 85 份」全过）。按本文件自订的律「预存红被修好 ⇒ 下一次
+    #    改动的人把期望改回 0，数字变了不改进期望就现形」，此处正是那一次改动。
+    #    注：cleanup_artifacts 那格的 expect=1 是**工作树脏**（运行态）而非内容态，隔离树里
+    #    读到 0 属环境差异，不改期望（改了会在真脏的共享树反向假绿），留给读数自行说明。 ——
+    case("check_py_stdout_encoding.py", "--selftest"),
+    case("check_py_stdout_encoding.py", "--all"),
     # —— 依赖临时件的 case：缺前置 ⇒ SKIP 并点名 ——
     gated("check_badge.py", TESTLOG, TESTLOG, "README.md"),
     gated("check_test_sync.py", TESTLOG, TESTLOG),
@@ -125,21 +133,38 @@ def ci_referred():
         if not fn.endswith((".yml", ".yaml")):
             continue
         with io.open(os.path.join(WORKFLOWS, fn), encoding="utf-8", errors="replace") as f:
-            for m in re.finditer(r"(check_[a-z0-9_]+\.py|gen_plugins\.py|cleanup_artifacts\.py)",
+            for m in re.finditer(r"((?:blackbox/)?check_[a-z0-9_]+\.py|gen_plugins\.py|cleanup_artifacts\.py)",
                                  f.read()):
                 names.add(m.group(1))
     return names
 
 
 def guard_files():
-    if not os.path.isdir(SCRIPTS_DIR):
-        return []
-    return sorted(f for f in os.listdir(SCRIPTS_DIR) if f.startswith("check_") and f.endswith(".py"))
+    """普查宇宙 = scripts/ 顶层 + scripts/blackbox/ 的 check_*.py（R55：子目录不再豁免）。
+    返回相对 scripts/ 的路径名（blackbox 尺带 `blackbox/` 前缀，电池里同形点名）。"""
+    out = []
+    if os.path.isdir(SCRIPTS_DIR):
+        out += [f for f in sorted(os.listdir(SCRIPTS_DIR))
+                if f.startswith("check_") and f.endswith(".py")]
+    if os.path.isdir(BLACKBOX_DIR):
+        out += ["blackbox/" + f for f in sorted(os.listdir(BLACKBOX_DIR))
+                if f.startswith("check_") and f.endswith(".py")]
+    return out
+
+
+def _existing_scripts():
+    """「文件系统上有哪些尺」与 guard_files() 同形：顶层名 + `blackbox/` 前缀名。"""
+    existing = set()
+    if os.path.isdir(SCRIPTS_DIR):
+        existing |= set(os.listdir(SCRIPTS_DIR))
+    if os.path.isdir(BLACKBOX_DIR):
+        existing |= {"blackbox/" + f for f in os.listdir(BLACKBOX_DIR)}
+    return existing
 
 
 def check_faces(guards, ci_names, case_scripts, missing, existing=None):
     """G1/G2/G3 的纯函数版（selftest 喂合成集合，含合成的"文件系统上有哪些脚本"）。
-    existing=None 时现读真目录。"""
+    existing=None 时现读真目录（含 blackbox 子目录，与 guard_files 点名同形）。"""
     if not guards:
         return 2, ["FATAL G3：`scripts/check_*.py` 解析到 0 把尺 —— 宇宙被换小，拒绝出'无人缺面'的读数"]
     if not ci_names:
@@ -147,7 +172,7 @@ def check_faces(guards, ci_names, case_scripts, missing, existing=None):
     if not case_scripts:
         return 2, ["FATAL G3：电池为空 —— 判据空转，拒绝出数"]
     if existing is None:
-        existing = set(os.listdir(SCRIPTS_DIR))
+        existing = _existing_scripts()
     stale = sorted(s for s in case_scripts if s not in existing)
     if stale:
         return 2, ["FATAL G2：电池点名的脚本不存在：%s" % " ".join(stale)]
@@ -217,6 +242,19 @@ def selftest():
 
     G = ["check_a.py", "check_b.py"]
     FS = set(G)  # 合成"文件系统上有哪些脚本"
+    # 0) R55 宇宙修复本体：现读真宇宙必须含 blackbox 尺（宇宙被改窄回顶层-only 时这格当场红），
+    #    且电池里的 blackbox 点名不得被 G2 误判 stale（存在集与宇宙同形）
+    cell("universe-covers-blackbox-real",
+         any(g.startswith("blackbox/") for g in guard_files()), True)
+    rows0, missing0, ci0, battery0, guards0 = face_report()
+    cell("g2-not-false-stale-on-blackbox",
+         check_faces(guards0, ci0, battery0, missing0)[0] != 2, True)
+    # 0b) 合成孤儿：blackbox 尺既不在 CI 也不在电池 ⇒ 必须 1 且带前缀点名
+    rc, lines = check_faces(["check_a.py", "blackbox/check_m.py"], {"check_a.py"},
+                            {"check_a.py"}, ["blackbox/check_m.py"],
+                            {"check_a.py", "blackbox/check_m.py"})
+    cell("G1-detects-orphan-in-blackbox", rc, 1)
+    cell("G1-names-blackbox-orphan", any("blackbox/check_m.py" in l for l in lines), True)
     # 1) 干净：每把尺至少一个面 ⇒ 0
     cell("G1-clean", check_faces(G, {"check_a.py"}, {"check_b.py"}, [], FS)[0], 0)
     # 2) 漏一格：尺既不在 CI 也不在电池 ⇒ 必须 1 且点名（check_plan_landing 躺一周的那个形状）
@@ -243,7 +281,7 @@ def selftest():
         for nm, why in bad:
             print("  - %s：%s" % (nm, why))
         return 1
-    print("SELFTEST OK（%d 格：G1 干净 / G1 抓漏面尺 + 必点名 / G3 三种空宇宙各自拒 / "
+    print("SELFTEST OK（%d 格：宇宙覆盖 blackbox 真尺 + G2 不误判其 stale / G1 抓 blackbox 孤儿 + 带前缀点名 / G1 干净 / G1 抓漏面尺 + 必点名 / G3 三种空宇宙各自拒 / "
           "G2 电池点了不存在的脚本自拒 / 真源现状全绿 / plan_landing 已进电池 / "
           "plan_landing 门禁格与诊断格并存且诊断格 why 带构成）" % len(cells))
     return 0
