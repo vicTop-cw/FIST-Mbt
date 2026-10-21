@@ -1,7 +1,13 @@
-#!/usr/bin/env python3
-"""scripts/fist-gate.py - unified gate chain (merge_markers/fmt/build/ps_encoding/store_path). rc: 0=pass 1=fail 2=degraded."""
+# -*- coding: utf-8 -*-
+"""scripts/fist-gate.py - unified gate chain (merge_markers/fmt/build/ps_encoding/store_path) + --scan branch census. rc: 0=pass/scan-output 1=fail 2=degraded."""
 import re, subprocess, sys, tempfile
+from datetime import datetime
 from pathlib import Path
+# 统一把 stdout/stderr 钉成 UTF-8（CI 在 Linux UTF-8 下是无损 no-op）。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parent.parent
 EXC = ("_build", "temp", ".git", "node_modules")
 def run(cmd, cwd=None): return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -52,6 +58,93 @@ def gate(root):
         print(("FAIL " if c == 1 else "DEGRADED " if c == 2 else "PASS ") + name + ": " + line)
         rc = max(rc, c)
     return rc
+
+# --- TASK-005: --scan 分支普查（合入者巡检的自动进料口） -----------------
+# rc 契约：0 = 有产出（含发现，发现是输出不是失败）；2 = 判据无法自证（远端分支枚举不到 / 无 master-main 基点）。
+def remote_refs(root):
+    r = run(["git", "-C", str(root), "branch", "-r", "--format", "%(refname)"], cwd=root)
+    if r.returncode: return None
+    out = []
+    for l in r.stdout.splitlines():
+        l = l.strip()
+        if l.startswith("refs/remotes/") and not l.endswith("/HEAD"):
+            out.append(l[len("refs/remotes/"):])
+    return out
+def pick_base(refs):
+    for cand in ("gitcode/master", "gitcode/main", "origin/master", "origin/main", "master"):
+        if cand in refs: return cand
+    return None
+def gout(root, *args):
+    r = run(["git", "-C", str(root)] + list(args), cwd=root)
+    return "" if r.returncode else r.stdout
+def scan_branch(root, base, ref):
+    ahead = gout(root, "rev-list", "--count", "%s..%s" % (base, ref)).strip()
+    ahead = int(ahead) if ahead.isdigit() else 0
+    cherry_plus = sum(1 for l in gout(root, "cherry", base, ref).splitlines() if l.startswith("+"))
+    numstat = gout(root, "diff", "--numstat", "%s...%s" % (base, ref), "--", "src", "scripts", "cmd", "moon.pkg")
+    code_files, src_lines = [], 0
+    for line in numstat.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3: continue
+        add, dele, path = parts[0], parts[1], parts[2]
+        code_files.append(path)
+        if add.isdigit(): src_lines += int(add)
+        if dele.isdigit(): src_lines += int(dele)
+    markers = []
+    for path in code_files:
+        body = gout(root, "show", "%s:%s" % (ref, path))
+        if any(l.startswith(("<<<<<<<", ">>>>>>>")) for l in body.splitlines()):
+            markers.append(path)
+    if markers: action = "ABORT/人工解冲突：分支自带未解决冲突标记"
+    elif ahead == 0 and cherry_plus == 0: action = "DROP：base 已包含分支全部提交（可删分支/关 MR）"
+    elif cherry_plus == 0: action = "DROP：全部提交内容已等价存在于 base（cherry 无 +）"
+    elif src_lines == 0: action = "MERGE-LOW-RISK：纯文档/流水账改动，低风险合入"
+    else: action = "MERGE-CODE：有 src/scripts 代码改动——先过统一门链（fist-gate.py）再合入"
+    return {"branch": ref, "base": base, "ahead": ahead, "cherry_plus": cherry_plus,
+            "conflict_markers": markers, "src_lines_changed": src_lines, "code_files": code_files,
+            "suggested_action": action}
+def yaml_cell(v):
+    if isinstance(v, int): return str(v)
+    if isinstance(v, list): return "[" + ", ".join('"%s"' % x for x in v) + "]" if v else "[]"
+    return '"%s"' % str(v).replace("\\", "\\\\").replace('"', '\\"')
+def write_scan_yaml(path, row):
+    body = ["status: backlog", "source: fist-gate.py scan"]
+    body += ["%s: %s" % (k, yaml_cell(v)) for k, v in row.items()]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(body) + "\n", encoding="utf-8")
+def scan(root, do_fetch=True):
+    refs = remote_refs(root)
+    if refs is None or not refs: return 2, "scan: no remote branches enumerable (fetch first / no remotes)"
+    base = pick_base(refs)
+    if base is None: return 2, "scan: no master/main base ref among remote branches"
+    fetch_note = ""
+    if do_fetch:
+        fr = run(["git", "-C", str(root), "fetch", "--all", "--prune"], cwd=root)
+        if fr.returncode: fetch_note = "DEGRADED fetch rc=%d（用既有远端引用继续）\n" % fr.returncode
+        refs = remote_refs(root) or refs
+    out_dir = Path(root) / ".git" / "fist" / "tasks" / "backlog"
+    rows = []
+    for ref in refs:
+        if ref == base or ref.rsplit("/", 1)[-1] in ("master", "main"): continue
+        row = scan_branch(root, base, ref)
+        row["scanned_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+        write_scan_yaml(out_dir / (ref + ".yaml"), row)
+        rows.append(row)
+    stale = 0
+    if out_dir.is_dir():
+        live = {ref + ".yaml" for ref in refs if ref != base and ref.rsplit("/", 1)[-1] not in ("master", "main")}
+        for p in list(out_dir.rglob("*.yaml")):
+            if p.relative_to(out_dir).as_posix() not in live:
+                p.unlink(); stale += 1
+    print(fetch_note + "scan: base=%s 分支 %d 个 → %s（清掉 stale yaml %d 份）" % (base, len(rows), out_dir, stale))
+    for row in sorted(rows, key=lambda r: (-r["src_lines_changed"], r["branch"])):
+        print("  %-52s ahead=%-3d cherry+=%-3d src±=%-5d markers=%d → %s" % (
+            row["branch"], row["ahead"], row["cherry_plus"], row["src_lines_changed"],
+            len(row["conflict_markers"]), row["suggested_action"]))
+    print("巡检 prompt 追加句：『每次巡检先跑 python scripts/fist-gate.py --scan，把"
+          ".git/fist/tasks/backlog/ 下的新 yaml 里值得处理的问题提升为 docs/tasks/backlog/*.yaml』")
+    return 0, "scan: %d branches" % len(rows)
+
 def selftest():
     executed, fails = [], []
     def repo(files):
@@ -71,10 +164,62 @@ def selftest():
     for name, fn in [("merge_markers", ck_mm), ("ps_encoding", ck_ps), ("store_path", ck_sp)]: probe(name, fn, clean, 0, "G2 %s green-on-clean rc=%d")
     probe("ps_encoding", ck_ps, repo({"a.mbt": "def f() = 1\n"}), 2, "G3 %s empty-scan self-reject rc=%d")
     for name, fn in [("fmt", ck_fmt), ("build", ck_build)]: c, line = safe(name, fn, ROOT); executed.append("G4 %s observable-on-real (rc=%d)" % (name, c)); fails.append("G4 %s rc=%d degraded: %s" % (name, c, line)) if c not in (0, 1) else None
+    # --- TASK-005 scan cells (offline: local repo as "origin") ---
+    def scan_origin(branches, merged=()):
+        org = Path(tempfile.mkdtemp(prefix="fg-org-"))
+        run(["git", "init", "-q", "-b", "master"], cwd=org); run(["git", "config", "user.email", "t@t"], cwd=org); run(["git", "config", "user.name", "t"], cwd=org)
+        (org / "r.txt").write_text("base\n", encoding="utf-8"); run(["git", "add", "-A"], cwd=org); run(["git", "commit", "-qm", "base"], cwd=org)
+        for name, files in branches.items():
+            run(["git", "checkout", "-q", "-b", name], cwd=org)
+            for rel, body in files.items():
+                p = org / rel; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(body, encoding="utf-8")
+            run(["git", "add", "-A"], cwd=org); run(["git", "commit", "-qm", name], cwd=org)
+            run(["git", "checkout", "-q", "master"], cwd=org)
+        for name in merged:
+            run(["git", "merge", "-q", "--ff-only", name], cwd=org)
+        loc = Path(tempfile.mkdtemp(prefix="fg-loc-"))
+        run(["git", "init", "-q"], cwd=loc); run(["git", "config", "user.email", "t@t"], cwd=loc); run(["git", "config", "user.name", "t"], cwd=loc)
+        run(["git", "remote", "add", "origin", str(org)], cwd=loc); run(["git", "fetch", "-q", "origin"], cwd=loc)
+        return loc
+    def yaml_at(loc, name):
+        p = loc / ".git" / "fist" / "tasks" / "backlog" / ("origin/%s.yaml" % name)
+        return p, (p.read_text(encoding="utf-8") if p.exists() else "")
+    c, line = scan(repo({}), do_fetch=False)
+    executed.append("S1 scan-no-remote-self-reject rc=%d" % c)
+    if c != 2: fails.append("S1 scan on repo without remotes rc=%d want 2" % c)
+    loc = scan_origin({"feature": {"src/lib.mbt": "a\nb\nc\n"}})
+    c, line = scan(loc, do_fetch=False)
+    _, y = yaml_at(loc, "feature")
+    ok = c == 0 and "ahead: 1" in y and "cherry_plus: 1" in y and "src_lines_changed: 3" in y and "suggested_action: \"MERGE-CODE" in y
+    executed.append("S2 scan-code-branch-yaml fields (rc=%d)" % c)
+    if not ok: fails.append("S2 scan code branch rc=%d yaml mismatch: %s" % (c, y[:200]))
+    loc = scan_origin({"docs-only": {"docs/note.md": "hi\n"}})
+    scan(loc, do_fetch=False)
+    _, y = yaml_at(loc, "docs-only")
+    executed.append("S3 scan-docs-only-merges-low-risk")
+    if "suggested_action: \"MERGE-LOW-RISK" not in y: fails.append("S3 docs-only action mismatch: %s" % y[:200])
+    loc = scan_origin({"feat-a": {"src/a.mbt": "x\n"}}, merged=("feat-a",))
+    scan(loc, do_fetch=False)
+    _, y = yaml_at(loc, "feat-a")
+    executed.append("S4 scan-merged-branch-drop")
+    if "ahead: 0" not in y or "suggested_action: \"DROP" not in y: fails.append("S4 merged branch mismatch: %s" % y[:200])
+    loc = scan_origin({"marked": {"scripts/m.py": "a\n<<<<<<< HEAD\nb\n"}})
+    scan(loc, do_fetch=False)
+    _, y = yaml_at(loc, "marked")
+    executed.append("S5 scan-conflict-markers-abort")
+    if "conflict_markers: [\"scripts/m.py\"]" not in y or "suggested_action: \"ABORT" not in y: fails.append("S5 markers mismatch: %s" % y[:200])
+    loc = scan_origin({"feat-b": {"src/b.mbt": "y\n"}})
+    stale_p = loc / ".git" / "fist" / "tasks" / "backlog" / ("origin/ghost.yaml")
+    stale_p.parent.mkdir(parents=True, exist_ok=True); stale_p.write_text("stale: true\n", encoding="utf-8")
+    scan(loc, do_fetch=False)
+    executed.append("S6 scan-prunes-stale-yaml")
+    if stale_p.exists(): fails.append("S6 stale yaml not pruned")
     print("SELFTEST %s (grid: %s)" % ("OK" if not fails else "FAIL", " / ".join(executed)))
     for f in fails: print("SELFTEST FAIL " + f)
     return 0 if not fails else 2
 if __name__ == "__main__":
     if "--selftest" in sys.argv[1:]: sys.exit(selftest())
-    if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist-gate.py [--selftest]")
+    if "--scan" in sys.argv[1:]:
+        sys.exit(scan(ROOT)[0])
+    if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist-gate.py [--selftest|--scan]")
     sys.exit(gate(ROOT))
