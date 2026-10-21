@@ -31,6 +31,9 @@ pub enum Action {
   CreateSpec
   ReviewSpec
 } derive(Eq, @debug.Debug)
+pub fn Action::equal(Self, Self) -> Bool
+pub fn Action::not_equal(Self, Self) -> Bool
+pub fn Action::to_repr(Self) -> @debug.Repr
 pub fn Action::to_string(Self) -> String
 
 pub struct Principle {
@@ -38,10 +41,13 @@ pub struct Principle {
   title : String
   body : String
 } derive(Eq, @debug.Debug)
+pub fn Principle::equal(Self, Self) -> Bool
 pub fn Principle::get_body(Self) -> String
 pub fn Principle::get_index(Self) -> Int
 pub fn Principle::get_title(Self) -> String
+pub fn Principle::not_equal(Self, Self) -> Bool
 pub fn Principle::to_json(Self) -> Json
+pub fn Principle::to_repr(Self) -> @debug.Repr
 
 pub enum Role {
   HumanSteward
@@ -55,7 +61,10 @@ pub enum Role {
   SpecAuthor
 } derive(Eq, @debug.Debug)
 pub fn Role::description(Self) -> String
+pub fn Role::equal(Self, Self) -> Bool
 pub fn Role::from_string(String) -> Self?
+pub fn Role::not_equal(Self, Self) -> Bool
+pub fn Role::to_repr(Self) -> @debug.Repr
 pub fn Role::to_string(Self) -> String
 
 pub struct Task {
@@ -82,6 +91,7 @@ pub fn Task::archive(Self) -> Result[Self, String]
 pub fn Task::archive_force(Self, force~ : Bool) -> Result[Self, String]
 pub fn Task::claim(Self, assignee~ : String) -> Result[Self, String]
 pub fn Task::complete(Self, completed_by~ : String) -> Result[Self, String]
+pub fn Task::equal(Self, Self) -> Bool
 pub fn Task::execute(Self) -> Result[Self, String]
 pub fn Task::execute_exit_hint(TaskStatus) -> String
 pub fn Task::from_db(String, String?, String, String, String, String, Int, Int, Int, String, String?, String, String, String, String, String?, String, Array[String]) -> Self
@@ -95,7 +105,12 @@ pub fn Task::get_status(Self) -> TaskStatus
 pub fn Task::get_updated_at(Self) -> String
 pub fn Task::is_leaf(Self) -> Bool
 pub fn Task::mark_decomposing(Self) -> Result[Self, String]
+<<<<<<< HEAD
 pub fn Task::new(id~ : String, project_dir~ : String, description? : String, priority? : String, importance? : String, depth? : Int, split_n? : Int, level? : Int, parent_id? : String, assignee? : String, cleanup_mode? : String, created_at? : String, ns? : String, depends_on? : Array[String]) -> Self
+=======
+pub fn Task::new(id~ : String, project_dir~ : String, description? : String, priority? : String, importance? : String, depth? : Int, split_n? : Int, parent_id? : String, assignee? : String, cleanup_mode? : String, created_at? : String, ns? : String, depends_on? : Array[String]) -> Self
+pub fn Task::not_equal(Self, Self) -> Bool
+>>>>>>> df8ba1a1 (fix(idiom): 清零 0079 implicit_impl_as_method 全族 63 条 + 修守卫 derive 盲区)
 pub fn Task::pause(Self) -> Result[Self, String]
 pub fn Task::reject(Self, reason? : String) -> Result[Self, String]
 pub fn Task::reopen(Self) -> Result[Self, String]
@@ -105,6 +120,7 @@ pub fn Task::split(Self) -> Result[Self, String]
 pub fn Task::status_to_string(Self) -> String
 pub fn Task::submit(Self) -> Result[Self, String]
 pub fn Task::to_json(Self) -> Json
+pub fn Task::to_repr(Self) -> @debug.Repr
 pub fn Task::with_deliverable(Self, String, String) -> Self
 pub fn Task::with_depends_on(Self, String, String) -> Self
 pub fn Task::with_description(Self, String, String) -> Self
@@ -124,6 +140,7 @@ pub enum TaskStatus {
 } derive(Eq, @debug.Debug)
 pub fn TaskStatus::can_execute(Self) -> Bool
 pub fn TaskStatus::can_split(Self) -> Bool
+pub fn TaskStatus::equal(Self, Self) -> Bool
 pub fn TaskStatus::from_string(String) -> Self?
 pub fn TaskStatus::is_active(Self) -> Bool
 pub fn TaskStatus::is_archived(Self) -> Bool
@@ -135,7 +152,9 @@ pub fn TaskStatus::is_pending(Self) -> Bool
 pub fn TaskStatus::is_rejected(Self) -> Bool
 pub fn TaskStatus::is_reviewing(Self) -> Bool
 pub fn TaskStatus::is_splitting(Self) -> Bool
+pub fn TaskStatus::not_equal(Self, Self) -> Bool
 pub fn TaskStatus::order(Self) -> Int
+pub fn TaskStatus::to_repr(Self) -> @debug.Repr
 pub fn TaskStatus::to_string(Self) -> String
 
 // Type aliases
