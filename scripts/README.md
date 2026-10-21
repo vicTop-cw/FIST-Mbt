@@ -171,3 +171,8 @@
   PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
   去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
   用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
+
+### 2026-10-21 补登记：`fist-gate.py`
+
+- `fist-gate.py`（R74 入仓）— **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段，
+  退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量，不冒用 1）。用法 `python scripts/fist-gate.py [树]`。
