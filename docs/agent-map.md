@@ -9,6 +9,7 @@
 
 - **构建/测试**：`moon check` / `moon test --target js`（**1351 项全绿**，2026-10-21 Windows 实测）
 - **构建/测试**：`moon check` / `moon test --target js`（**1348 项全绿**，2026-10-21 Windows 实测）
+- **构建/测试**：`moon check` / `moon test --target js`（**1358 项全绿**，2026-10-21 Windows 实测）
 - **跑 MCP Server**：`moon build --target js cmd/cli && python scripts/patch_esm_main.py` → `node _build/js/debug/build/cmd/cli/cli.js`
 - **一键自检**：`python scripts/mcp_smoke.py`（实测 170 个工具 + publish/get 链路 + issue_scan 命中校验；这个数由 `check_doc_surface.py` 的 J14 项目地图面钉住，改工具数时这张图必须跟着改）
 - **找目标项目潜问题**：`issue_scan`（MCP 工具）/ `python scripts/issue_scan.py <dir>`（CLI）/ [技能文档](issue-scan-skill.md)（skill）三处手写形态 + 插件态投影（四态），规则驱动扫描，命中喂 `report_bug` 闭环
