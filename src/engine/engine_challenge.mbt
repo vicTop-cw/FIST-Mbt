@@ -165,7 +165,7 @@ pub fn FistEngine::challenge(
     None => Err("task not found: \{task_id}")
     Some(src) => {
       let st = src.get_status()
-      if not(st.is_completed()) && not(st.is_archived()) {
+      if !st.is_completed() && !st.is_archived() {
         return Err(
           "Challenger 仅对「已完成/已归档」任务发起进阶变体，当前状态 [{src.status_to_string()}]",
         )

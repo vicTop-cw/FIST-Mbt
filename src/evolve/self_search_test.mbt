@@ -23,7 +23,7 @@ test "self_search_analyze_nonportable" {
   let c = analyze_candidate("tiny", "短描述", "blogs", "hi")
   assert_eq(c.name, "tiny")
   assert_eq(c.mechanism, "hi")
-  assert_true(not(c.portable))
+  assert_true(!c.portable)
 }
 
 ///|
@@ -34,8 +34,8 @@ test "self_search_is_duplicate" {
   let c = analyze_candidate("lib", "x", "gh", "portable wrapper")
   let d = analyze_candidate("other", "x", "crate", "portable wrapper")
   assert_true(is_duplicate_candidate(a, b))
-  assert_true(not(is_duplicate_candidate(a, c)))
-  assert_true(not(is_duplicate_candidate(a, d)))
+  assert_true(!is_duplicate_candidate(a, c))
+  assert_true(!is_duplicate_candidate(a, d))
 }
 
 ///|
@@ -48,16 +48,16 @@ test "self_search_portability_words" {
   let low = analyze_candidate(
     "eng2", "", "paper", "describes the threading model only",
   )
-  assert_true(not(assess_portability(low)))
+  assert_true(!assess_portability(low))
 }
 
 ///|
 /// 可移植性边界：长度恰好触发词应判可移植；过短/空原样不可移植。
 test "self_search_portability_length" {
   let empty = analyze_candidate("e", "", "tmp", "")
-  assert_true(not(assess_portability(empty)))
+  assert_true(!assess_portability(empty))
   let short = analyze_candidate("s", "", "tmp", "abc")
-  assert_true(not(assess_portability(short)))
+  assert_true(!assess_portability(short))
   let word4 = analyze_candidate("w", "", "tmp", "wrap")
   assert_true(assess_portability(word4))
 }

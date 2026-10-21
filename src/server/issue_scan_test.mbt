@@ -173,7 +173,7 @@ test "lint_6_rules_table_never_self_hits_bug15" {
     Err(_) => return
   }
   assert_true(mem_int(j, "scanned_files") > 0)
-  assert_true(not(lint_any_file_suffix(lint_findings(j), "issue_scan.mbt")))
+  assert_true(!lint_any_file_suffix(lint_findings(j), "issue_scan.mbt"))
 }
 
 ///|
@@ -353,7 +353,7 @@ fn lint_268_no_medium(
   for f in items {
     let is_sub = mem_str(f, "rule") == "substring-overrun" &&
       mem_str(f, "severity") == "medium"
-    if not(is_sub) {
+    if !is_sub {
       continue
     }
     let fp = match f.value("file") {

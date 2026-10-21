@@ -41,7 +41,7 @@ fn FistEngine::executor_loads(
         if m.contains(a) {
           let done = t.get_status().is_completed() ||
             t.get_status().to_string() == "已归档"
-          if not(done) {
+          if !done {
             m.set(a, m.get(a).unwrap_or(0) + 1)
           }
         }

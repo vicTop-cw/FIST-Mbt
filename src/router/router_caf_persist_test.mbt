@@ -47,7 +47,7 @@ test "caf_persist_1_空记忆往返" {
   if warns.length() != 0 {
     abort("空记忆往返不应警告，got \{warns.length()}")
   }
-  if not(back.all().is_empty()) {
+  if !back.all().is_empty() {
     abort("空记忆往返后应为空，实际 \{back.all().length()}")
   }
 }
@@ -101,7 +101,7 @@ test "caf_persist_3_坏类型records降级" {
   if warns.length() == 0 {
     abort("坏类型 records 应产生 warning，实际 0 条")
   }
-  if not(back.all().is_empty()) {
+  if !back.all().is_empty() {
     abort("坏类型 records 应降级为空，实际 \{back.all().length()}")
   }
 }

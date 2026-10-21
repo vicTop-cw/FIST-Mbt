@@ -28,9 +28,7 @@ pub fn FistEngine::supervisor_status(
         done = done + 1
       }
       let a = t.get_status()
-      let is_active = not(a.is_pending()) &&
-        not(a.is_completed()) &&
-        not(a.is_archived())
+      let is_active = !a.is_pending() && !a.is_completed() && !a.is_archived()
       if is_active {
         active.push(t.to_json())
       }
@@ -211,7 +209,7 @@ pub fn FistEngine::supervisor_kill_plan(
       let terminal = st.is_completed() || st.is_archived()
       gates.push({
         gate: "G4_terminal_state",
-        passed: not(terminal),
+        passed: !terminal,
         reason: if terminal {
           "目标已是终态 [\{st.to_string()}]，无需终止"
         } else {
@@ -229,7 +227,7 @@ pub fn FistEngine::supervisor_kill_plan(
           "需要 force=true 且非空 reason 才给出 allowed（当前仅出方案）"
         },
       })
-      let blocked = not(g1_pass) || is_root || terminal
+      let blocked = !g1_pass || is_root || terminal
       let verdict = if blocked {
         "blocked"
       } else if g5_pass {
@@ -282,7 +280,7 @@ pub fn FistEngine::supervisor_kill_plan(
         ),
       ])
       // 可逆出口：apply_pause=true 且未被 G3/G4 拦下时执行 pause（已暂停可 resume）
-      if apply_pause && not(is_root) && not(terminal) {
+      if apply_pause && !is_root && !terminal {
         // engine 包不依赖 @env：now 缺省回退任务自身 updated_at
         let ts = if now == "" { t.get_updated_at() } else { now }
         match self.pause_task(task_id~, now=ts) {
@@ -588,9 +586,7 @@ pub fn FistEngine::supervisor_reminder_tick(
   let reminders : Array[Json] = []
   for t in self.list_all() {
     let st = t.get_status()
-    let active = not(st.is_pending()) &&
-      not(st.is_completed()) &&
-      not(st.is_archived())
+    let active = !st.is_pending() && !st.is_completed() && !st.is_archived()
     let up = t.get_updated_at()
     let up_ep = iso_to_epoch(up).unwrap_or(0)
     let ts_ok = now_ep > 0 && up_ep > 0

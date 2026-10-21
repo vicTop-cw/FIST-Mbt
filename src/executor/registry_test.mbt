@@ -88,10 +88,7 @@ test "route_pick_with_trust：覆盖 desc → 信任 desc → 负载 asc（R80 �
     _ => abort("candidates 缺失: " + j.stringify())
   }
   match j.value("basis") {
-    Some(String(s)) =>
-      if not(s.contains("信任")) {
-        abort("basis 内容: " + s)
-      }
+    Some(String(s)) => if !s.contains("信任") { abort("basis 内容: " + s) }
     _ => abort("basis 缺失: " + j.stringify())
   }
   // 信任相同(均无历史 → 0.5 中性)时回退负载轴：ex-B(0) 优先于 ex-A(3)
@@ -138,7 +135,7 @@ test "auction_pick：能力覆盖>0 方可竞拍；默认出价=覆盖率；无�
   }
   match j.value("basis") {
     Some(String(s)) =>
-      if not(s.contains("校准")) || not(s.contains("拍卖")) {
+      if !s.contains("校准") || !s.contains("拍卖") {
         abort("basis 内容: " + s)
       }
     _ => abort("basis 缺失: " + j.stringify())
@@ -178,7 +175,7 @@ test "auction_pick：胜者诅咒防护——过度自信者被校准折扣击�
                 Some(j) =>
                   match j.as_bool() {
                     Some(b) =>
-                      if not(b) {
+                      if !b {
                         abort("ex-A 应标记 overconfident: " + j.stringify())
                       }
                     None => abort("overconfident 非布尔: " + j.stringify())
@@ -190,7 +187,7 @@ test "auction_pick：胜者诅咒防护——过度自信者被校准折扣击�
           _ => ()
         }
       }
-      if not(found) {
+      if !found {
         abort("bids 未含 ex-A: " + j.stringify())
       }
     }

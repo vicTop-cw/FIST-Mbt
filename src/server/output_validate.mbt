@@ -107,7 +107,7 @@ fn artifact_spec_errors(a : Json) -> String {
         Some(_) => false
         None => true
       }
-      if not(mc) {
+      if !mc {
         return "min_chars 必须是数字（Number），不能是字符串/布尔/null——否则会被静默当成 0、不检查字符数"
       }
       let cc = match m.get("contains") {
@@ -115,7 +115,7 @@ fn artifact_spec_errors(a : Json) -> String {
         Some(_) => false
         None => true
       }
-      if not(cc) {
+      if !cc {
         return "contains 必须是字符串（String），不能是数字/布尔/null——否则会被静默当成空串、不检查 invariant"
       }
       let nc = match m.get("not_contains") {
@@ -123,7 +123,7 @@ fn artifact_spec_errors(a : Json) -> String {
         Some(_) => false
         None => true
       }
-      if not(nc) {
+      if !nc {
         return "not_contains 必须是字符串（String），不能是数字/布尔/null——否则会被静默当成空串、不检查 invariant"
       }
       ""
@@ -348,7 +348,7 @@ fn check_moon_test_summary(stdout : String) -> String {
       }
     }
   }
-  if not(found) {
+  if !found {
     return "moon test stdout 缺 `Total tests:` 汇总行——无法判绿（BUG-142：进程可能崩溃却仍 exit 0）"
   }
   // BUG-211：`Total tests: 0, passed: 0, failed: 0.` 是「一个测试都没跑」的空套件——

@@ -431,7 +431,7 @@ pub fn file_scope_conflicts(scopes : Array[Array[String]]) -> Array[String] {
     for j = i + 1; j < n; j = j + 1 {
       for a in scopes[i] {
         let ka = a.trim().to_string()
-        if ka != "" && not(in_list(out, ka)) {
+        if ka != "" && !in_list(out, ka) {
           for b in scopes[j] {
             if ka == b.trim().to_string() {
               out.push(ka)
@@ -491,7 +491,7 @@ pub fn explore_plan(
         let s = mode_short(m)
         if s == "explore" {
           rejected.push(raw_name + "：explore 不可作为并行工作单元")
-        } else if not(in_list(modes, s)) {
+        } else if !in_list(modes, s) {
           modes.push(s)
           scopes.push(if i < files.length() { files[i] } else { [] })
         }
@@ -535,7 +535,7 @@ pub fn explore_plan(
   let disjoint = conflicts.length() == 0
   let allowed = want_parallel && declared && disjoint && scopes_cleared
   let notes : Array[String] = []
-  if not(want_parallel) {
+  if !want_parallel {
     notes.push(
       "单模式即可：候选集里没有一个可与之并行的模式",
     )

@@ -161,6 +161,6 @@ test "BUG-16：对外版本单一真源——project_version 逐字等于 moon.m
     None => abort("src/server/server.mbt 不可读——回归锁无法自证")
     Some(c) => c
   }
-  assert_true(not(src.contains("0.2.4")))
+  assert_true(!src.contains("0.2.4"))
   assert_true(src.contains("let project_version"))
 }

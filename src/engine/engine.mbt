@@ -1411,7 +1411,7 @@ pub fn FistEngine::plan_exec_order(self : FistEngine, root_id : String) -> Json 
   let cidx = self.children_index()
   let all_ids : Array[String] = []
   let mut frontier : Array[String] = cidx.get(root_id).unwrap_or([])
-  while not(frontier.is_empty()) {
+  while !frontier.is_empty() {
     let next : Array[String] = []
     for id in frontier {
       all_ids.push(id)
@@ -1486,7 +1486,7 @@ pub fn deps_ready_memo(
       Some(b) => b
       None => false
     }
-    if not(done) {
+    if !done {
       return false
     }
   }

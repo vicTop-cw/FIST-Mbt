@@ -114,9 +114,7 @@ fn executor_loads(e : @engine.FistEngine) -> Map[String, Int] {
   let m : Map[String, Int] = Map([])
   for t in e.list_all() {
     let st = t.get_status()
-    let active = not(st.is_pending()) &&
-      not(st.is_completed()) &&
-      not(st.is_archived())
+    let active = !st.is_pending() && !st.is_completed() && !st.is_archived()
     if active {
       match t.get_assignee() {
         Some(a) => {
@@ -179,7 +177,7 @@ fn ab_from_jsonstr(s : String) -> Array[String] {
 /// 把 store 里已持久化的执行者能力注册"回灌"进进程内注册表（幂等，跨进程可复现）。
 fn sync_db_executors() -> Unit {
   for (name, ab, _ca) in engine.executor_list() {
-    if not(exec_reg.has(name)) {
+    if !exec_reg.has(name) {
       ignore(exec_reg.add_ability(name, ab_from_jsonstr(ab)))
     }
   }
@@ -1143,7 +1141,7 @@ fn misnamed_args(args : Json, props : Array[String]) -> Array[(String, String)] 
   match args {
     Object(map) =>
       for (k, _) in map {
-        if not(props.any(fn(p) { p == k })) {
+        if !props.any(fn(p) { p == k }) {
           let mut suggest = ""
           // ① 缩写表：命中的正名必须真的被这个工具声明
           let alias = known_arg_aliases(k)
@@ -1160,7 +1158,7 @@ fn misnamed_args(args : Json, props : Array[String]) -> Array[(String, String)] 
               }
             }
           }
-          if not(suggest.is_empty()) {
+          if !suggest.is_empty() {
             out.push((k, suggest))
           }
         }
@@ -2114,7 +2112,7 @@ pub async fn run_server() -> Unit {
       }
       // Laya 自动选档（仅在无躬身自决、且显式开启 laya_auto 时探测）：
       let mut laya_info : Json = Json::null()
-      if laya_auto && not(decided) {
+      if laya_auto && !decided {
         // BUG-18：探测走 TTL 缓存、预算与 .mcp.json 的 120s 客户端超时对齐
         let avail = match
           laya_probe_cached(
@@ -2216,7 +2214,7 @@ pub async fn run_server() -> Unit {
             ])
             m.set("plan_decision", Json::object(dm))
           }
-          if laya_auto && not(decided) {
+          if laya_auto && !decided {
             m.set("laya", laya_info)
           }
           // 「执行计划」视图：拆解后给出一张按 DAG 拓扑序、附难度/依赖/深度的
@@ -3867,7 +3865,7 @@ pub async fn run_server() -> Unit {
         Ok(a) => a
         Err(_) => false
       }
-      if not(avail) {
+      if !avail {
         // 无 Laya（或探测失败/超时）→ 确定性回退分支（本自驱改造核心：不再是空降级，而给出可用决策）
         return Ok(
           @mcp.ToolResult::text(
@@ -4482,7 +4480,7 @@ pub async fn run_server() -> Unit {
       if rec < 1 {
         bad.push("recovery_secs=" + rec.to_string() + "（须 >= 1）")
       }
-      if not(bad.is_empty()) {
+      if !bad.is_empty() {
         return Err(
           @mcp_types.ToolError(
             "circuit_fail: 参数须为正 " +
@@ -5610,7 +5608,7 @@ pub async fn run_server() -> Unit {
         }
         bad.push("elapsed=" + shown + "（须为 0..2147483647 的整数）")
       }
-      if not(bad.is_empty()) {
+      if !bad.is_empty() {
         return Err(
           @mcp_types.ToolError(
             "phi_accrual: 取值域外 " +
@@ -5878,7 +5876,7 @@ pub async fn run_server() -> Unit {
           ),
         )
       }
-      if not(@store.MultiStore::data_dir_ok(dir)) {
+      if !@store.MultiStore::data_dir_ok(dir) {
         return Err(
           @mcp_types.ToolError(
             "store_open: 非法 data_dir=\{dir}（只接受相对 server 进程 cwd 的相对路径，拒 .. 、前导分隔符、盘符）。两条出路：① 传相对目录（如 temp/ns-probe）；② 直接给 scratch=true 落 temp/",

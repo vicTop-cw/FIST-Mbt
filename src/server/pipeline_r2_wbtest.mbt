@@ -104,7 +104,7 @@ fn r2_mcp_candidates() -> Array[String] {
 fn r2_slash_join(xs : Array[String]) -> String {
   let mut s = ""
   for x in xs {
-    if not(s.is_empty()) {
+    if !s.is_empty() {
       s = s + " / "
     }
     s = s + x

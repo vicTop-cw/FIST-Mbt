@@ -81,7 +81,7 @@ pub fn filter_unhealthy_models(
         break
       }
     }
-    if not(is_bad) {
+    if !is_bad {
       out.push(m)
     }
   }

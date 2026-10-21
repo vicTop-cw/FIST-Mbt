@@ -29,7 +29,7 @@ test "scoring_low_accuracy" {
 test "scoring_fingerprint_false_penalty" {
   let s = score_artifact(1.0, false, true, 1.0)
   assert_eq(s, 0.75)
-  assert_true(not(score_accept(s)))
+  assert_true(!score_accept(s))
 }
 
 ///|
@@ -63,8 +63,8 @@ test "scoring_rank_boundary" {
 /// 门禁阈值：默认 0.85（端点含），自定义阈值生效。
 test "scoring_accept_threshold" {
   assert_true(score_accept(0.85))
-  assert_true(not(score_accept(0.84)))
-  assert_true(not(score_accept(0.90, threshold=0.95)))
+  assert_true(!score_accept(0.84))
+  assert_true(!score_accept(0.90, threshold=0.95))
   assert_true(score_accept(0.96, threshold=0.95))
 }
 
@@ -81,6 +81,6 @@ test "scoring_rank_order" {
 /// 稳健性谓词（默认 floor=0.70，可自定义）。
 test "scoring_is_robust" {
   assert_true(is_robust(0.80))
-  assert_true(not(is_robust(0.60)))
+  assert_true(!is_robust(0.60))
   assert_true(is_robust(0.69, floor=0.60))
 }

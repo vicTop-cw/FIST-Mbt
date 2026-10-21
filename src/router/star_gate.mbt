@@ -291,7 +291,7 @@ fn star_gate_verify_impl(
       )
   }
   let msg = canonical.to_bytes()
-  if not(@mooncry.ed25519_verify(pub_key, msg, sig)) {
+  if !@mooncry.ed25519_verify(pub_key, msg, sig) {
     return star_outcome(
       BadSignature,
       "Ed25519 验签失败（清单可能被篡改）",
@@ -315,7 +315,7 @@ fn star_gate_verify_impl(
     )
   }
   // ⑤ 名单：验签通过只说明「这份清单确实是持私钥方签的」，但用户可能不在名单里
-  if not(data.list.contains(user_login)) {
+  if !data.list.contains(user_login) {
     return star_outcome(
       NoSuchUser,
       "user_login 不在授权名单里",

@@ -396,7 +396,7 @@ pub fn run_tests(
       }
       _ => {
         let exp = json_or(t.value("expected"), Json::null())
-        if not(ok) {
+        if !ok {
           // evaluator 出错（无匹配 error 字段）→ 直接失败，不把错误字符串当正常值走 check_expected
           results.push(
             Json::object({

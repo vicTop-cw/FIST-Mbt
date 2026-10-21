@@ -116,7 +116,7 @@ test "BUG-14：退出码非 0（code=143）形态也必须带 decision，且不�
     res, "为分布式任务编排系统设计跨命名空间自愈算法", 4,
   )
   assert_true(ld_has_decision(fixed))
-  assert_true(not(ld_bool(fixed, "available", true)))
+  assert_true(!ld_bool(fixed, "available", true))
   assert_eq(ld_num(fixed, "exit_code"), 143.0)
   assert_true(ld_str(fixed, "reason").contains("143"))
 }

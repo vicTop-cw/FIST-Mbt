@@ -166,7 +166,7 @@ test "loop_tick: 单步推进 2-steps 环" {
   assert_eq(r1.next_mode, "verify")
   assert_eq(r1.next_step_idx, 1)
   assert_eq(r1.next_round, 0)
-  assert_true(not(r1.should_stop))
+  assert_true(!r1.should_stop)
 
   let r2 = loop_tick(r1.loop_after, "t2")
   // 上一步后 idx=1，推进后 idx=0，下一步回到 "advance"，同时走满一圈 round+1。
@@ -203,7 +203,7 @@ test "loop_tick: 跑一轮后 healthy + 零 blocked → goal_reached" {
   // loop 跑完一整轮 advance→verify（round 从 0→1）再给 healthy。
   let lp = loop_create("lp", ["advance", "verify"], "t0", stop_on_goal=true)
   let r1 = loop_tick(lp, "t1", project_health_grade="stalled", blocked_tasks=0)
-  assert_true(not(r1.should_stop)) // 首轮 round=0 + stalled → 不停
+  assert_true(!r1.should_stop) // 首轮 round=0 + stalled → 不停
   let lp2 = r1.loop_after
   let r2 = loop_tick(lp2, "t2", project_health_grade="healthy", blocked_tasks=0)
   assert_true(r2.should_stop)
@@ -215,7 +215,7 @@ test "loop_tick: 跑一轮后 healthy + 零 blocked → goal_reached" {
 test "loop_tick: healthy 但有 blocked → 不停" {
   let lp = loop_create("lp", ["advance", "verify"], "t0", stop_on_goal=true)
   let r = loop_tick(lp, "t1", project_health_grade="healthy", blocked_tasks=3)
-  assert_true(not(r.should_stop))
+  assert_true(!r.should_stop)
 }
 
 // ---------------------------------------------------------------------------
@@ -235,7 +235,7 @@ test "loop_tick: test_count 涨 10%+ → exceeded" {
   )
   // 首轮 round=0 → 不停
   let r1 = loop_tick(lp, "t1", current_test_count=120, current_open_bug_count=5)
-  assert_true(not(r1.should_stop))
+  assert_true(!r1.should_stop)
   let lp2 = r1.loop_after
   // 第二轮 round=1 → 涨 20% 触发 exceeded
   let r2 = loop_tick(
@@ -259,7 +259,7 @@ test "loop_tick: open_bug 降 50%+ → exceeded" {
     baseline_open_bug_count=10,
   )
   let r1 = loop_tick(lp, "t1", current_test_count=100, current_open_bug_count=4)
-  assert_true(not(r1.should_stop))
+  assert_true(!r1.should_stop)
   let lp2 = r1.loop_after
   let r2 = loop_tick(
     lp2,

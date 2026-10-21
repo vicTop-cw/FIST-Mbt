@@ -123,7 +123,7 @@ fn bug_parse_header(line : String) -> (String, String, String, String) {
 /// 提取 `- key: value` 行的值（key 名匹配则回 Some(value)）。
 fn bug_field_value(line : String, key : String) -> String? {
   let t = line.trim().to_string()
-  if not(t.has_prefix("- ")) {
+  if !t.has_prefix("- ") {
     return None
   }
   let body = t[2:t.length()].to_string()
@@ -169,7 +169,7 @@ fn bug_parse(text : String) -> Array[Json] {
         ("status", Json::string(status)),
         ("summary", Json::string("")),
       ])
-      if not(dup_of.is_empty()) {
+      if !dup_of.is_empty() {
         cur.set("duplicate_of", Json::string(dup_of))
       }
       active = true
@@ -257,7 +257,7 @@ pub fn report_bug(
   eng : @engine.FistEngine,
   now~ : String,
 ) -> Result[Json, String] {
-  if not(bug_project_dir_ok(project_dir)) {
+  if !bug_project_dir_ok(project_dir) {
     return Err(
       "report_bug: 非法 project_dir（拒绝绝对路径/穿越/盘符）",
     )
@@ -266,7 +266,7 @@ pub fn report_bug(
     return Err("report_bug: summary 不能为空")
   }
   let sev = if severity.is_empty() { "medium" } else { severity }
-  if not(bug_severity_ok(sev)) {
+  if !bug_severity_ok(sev) {
     return Err(
       "report_bug: 非法 severity=" +
       sev +
@@ -313,21 +313,21 @@ pub fn report_bug(
   let lines : Array[String] = []
   lines.push("## " + bug_id + " [" + now + "] [" + sev + "] OPEN\n")
   lines.push("- summary: " + summary + "\n")
-  if not(detail.is_empty()) {
+  if !detail.is_empty() {
     lines.push("- detail: " + detail + "\n")
   }
-  if not(ref_call_id.is_empty()) {
+  if !ref_call_id.is_empty() {
     lines.push("- ref_call: " + ref_call_id + "\n")
   }
-  if not(reported_by.is_empty()) {
+  if !reported_by.is_empty() {
     lines.push("- reported_by: " + reported_by + "\n")
   }
-  if not(task_id.is_empty()) {
+  if !task_id.is_empty() {
     lines.push("- task_id: " + task_id + "\n")
   }
   lines.push("\n")
   let entry = lines.fold(init="", fn(acc, l) { acc + l })
-  if not(mem_write(path, old + entry)) {
+  if !mem_write(path, old + entry) {
     return Err("report_bug: 写入 bugs.md 失败: " + path)
   }
   let m : Map[String, Json] = Map([])
@@ -348,10 +348,10 @@ pub fn report_bug(
     "task_namespace",
     Json::string(if publish_task { eff_task_ns } else { "" }),
   )
-  if not(task_id.is_empty()) {
+  if !task_id.is_empty() {
     m.set("task_id", Json::string(task_id))
   }
-  if not(publish_error.is_empty()) {
+  if !publish_error.is_empty() {
     m.set("publish_error", Json::string(publish_error))
   }
   Ok(Json::object(m))
@@ -429,7 +429,7 @@ pub fn bug_list_with_links(
 
 ///|
 pub fn bug_list(project_dir : String) -> Result[Json, String] {
-  if not(bug_project_dir_ok(project_dir)) {
+  if !bug_project_dir_ok(project_dir) {
     return Err(
       "bug_list: 非法 project_dir（拒绝绝对路径/穿越/盘符）",
     )
@@ -593,7 +593,7 @@ fn bug_status_result(
   m.set("status", Json::string(status))
   m.set("from_status", Json::string(from))
   m.set("changed", Json::boolean(changed))
-  if not(dup_of.is_empty()) {
+  if !dup_of.is_empty() {
     m.set("duplicate_of", Json::string(dup_of))
   }
   m.set("path", Json::string(path))
@@ -653,7 +653,7 @@ pub fn bug_mark_status(
     None => ""
     Some(s) => s.trim().to_string()
   }
-  let add_note = new_status == "FALSE_POSITIVE" && not(note_text.is_empty())
+  let add_note = new_status == "FALSE_POSITIVE" && !note_text.is_empty()
 
   let mut new_main = ""
   if new_status == "DUPLICATE" {

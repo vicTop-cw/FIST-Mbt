@@ -126,7 +126,7 @@ pub fn ocr_build_args(
   path~ : String = "",
   rules_file~ : String = "",
 ) -> Result[Array[String], String] {
-  if not(is_ocr_subcmd(subcmd)) {
+  if !is_ocr_subcmd(subcmd) {
     return Err(
       "ocr_scan: 未知子命令 '" +
       subcmd +
@@ -245,7 +245,7 @@ pub fn ocr_plan(
   rules_file~ : String = "",
   dry_run~ : Bool = false,
 ) -> Json {
-  if not(ocr_dir_ok(project_dir)) {
+  if !ocr_dir_ok(project_dir) {
     return ocr_fail(
       subcmd,
       "ocr_scan: 非法 project_dir（拒绝绝对路径/穿越/盘符）",
@@ -253,7 +253,7 @@ pub fn ocr_plan(
       [],
     )
   }
-  if not(is_ocr_subcmd(subcmd)) {
+  if !is_ocr_subcmd(subcmd) {
     return ocr_fail(
       subcmd,
       "ocr_scan: 未知子命令 '" + subcmd + "'",
@@ -434,7 +434,7 @@ pub async fn ocr_scan_impl(
     Some(Json::True) => true
     _ => false
   }
-  if not(okk) || is_dry {
+  if !okk || is_dry {
     return plan
   }
   let bin = match pm.get("binary") {

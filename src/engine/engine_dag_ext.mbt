@@ -270,7 +270,7 @@ fn FistEngine::dag_reaches(
           if d == target {
             return true
           }
-          if not(visited.get(d).unwrap_or(false)) {
+          if !visited.get(d).unwrap_or(false) {
             queue = queue + [d]
           }
         }
@@ -513,7 +513,7 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
         if load.contains(a) {
           let done = t.get_status().is_completed() ||
             t.get_status().to_string() == "已归档"
-          if not(done) {
+          if !done {
             load.set(a, load.get(a).unwrap_or(0) + 1)
           }
         }
@@ -716,10 +716,10 @@ pub fn FistEngine::dag_cost_route(self : FistEngine) -> Json {
     let mut best_switch = 0
     for n in reg_names {
       let abl = reg_abl.get(n).unwrap_or([])
-      if want != "" && not(abl.contains(want)) {
+      if want != "" && !abl.contains(want) {
         continue
       }
-      let sw = if deps_asg.length() > 0 && not(deps_asg.contains(n)) {
+      let sw = if deps_asg.length() > 0 && !deps_asg.contains(n) {
         1
       } else {
         0
@@ -1094,7 +1094,7 @@ pub fn FistEngine::progress_gate(
           done = done + 1
         }
         // 已开工（非待领取）的任务计入已消耗预算（难度权重）
-        if not(st.is_pending()) {
+        if !st.is_pending() {
           let lab = triage_label_of(x.get_description())
           let w = if lab == "难" { 3 } else if lab == "中" { 2 } else { 1 }
           started_weight = started_weight + w
@@ -1297,7 +1297,7 @@ pub fn FistEngine::plan_revise(
               // 子树外依赖：按真实状态判定是否完成
               match self.get_task(d) {
                 Some(dt) =>
-                  if not(dt.get_status().is_completed()) {
+                  if !dt.get_status().is_completed() {
                     dep_undone = true
                   }
                 None => dep_undone = true

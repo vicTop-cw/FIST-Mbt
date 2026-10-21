@@ -272,7 +272,7 @@ test "BUG-81：heal 带 namespace 只回滚该 ns，不带=全库（旧行为）
           "]",
         )
       }
-      if not(list.contains(id_b_of(e))) {
+      if !list.contains(id_b_of(e)) {
         abort("全库 heal 漏了 b81-b，实得 [" + b81_ids(list) + "]")
       }
     }

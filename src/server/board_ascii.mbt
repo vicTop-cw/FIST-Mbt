@@ -64,7 +64,7 @@ pub fn render_board_ascii(
     }
   }
   for (st, arr) in buckets {
-    if not(rendered.contains(st)) {
+    if !rendered.contains(st) {
       append_group(lines, st, arr)
     }
   }

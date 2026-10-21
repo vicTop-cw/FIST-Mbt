@@ -56,7 +56,7 @@ fn elements_of(ids : Array[String]) -> Result[Array[HexaElement], String] {
   let out : Array[HexaElement] = []
   for id in ids {
     match hexa_for_id(id) {
-      Ok(e) => if not(out.any(fn(x) { x.id == e.id })) { out.push(e) }
+      Ok(e) => if !out.any(fn(x) { x.id == e.id }) { out.push(e) }
       Err(m) => return Err(m)
     }
   }

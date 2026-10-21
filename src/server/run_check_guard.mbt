@@ -109,7 +109,7 @@ fn rc_path(s0 : String) -> RcPath {
       continue
     } else if name == ".." {
       match segs.pop() {
-        None => if not(absolute) { escaped = true }
+        None => if !absolute { escaped = true }
         Some(_) => ()
       }
     } else {
@@ -170,7 +170,7 @@ pub fn run_check_workdir_denied(
   // 安全性不降：上面的 escaped 已排除 `..` 冲出自身起点，故拼接结果必落在项目子树内；
   // 反向（绝对 workdir + 相对 project_dir）仍然拒——相对根的真实位置取决于 server cwd，
   // 无法判定绝对路径归属，放开就是拿"不知道"当"在里面"。
-  if not(w.absolute) && p.absolute {
+  if !w.absolute && p.absolute {
     return None
   }
   if w.absolute != p.absolute {
@@ -209,7 +209,7 @@ pub fn run_check_effective_workdir(
   let proj = if project_dir.trim() == "" { "." } else { project_dir }
   let w = rc_path(workdir)
   let p = rc_path(proj)
-  if not(w.absolute) && p.absolute && not(w.escaped) {
+  if !w.absolute && p.absolute && !w.escaped {
     let segs = p.segs.copy()
     for s in w.segs {
       segs.push(s)
@@ -322,7 +322,7 @@ pub fn run_check_cmd_denied(
     }
   }
   // 项目内显式登记的判据脚本：相对、不上跳、至少一层目录
-  if not(p.absolute) && not(p.escaped) && p.segs.length() >= 2 {
+  if !p.absolute && !p.escaped && p.segs.length() >= 2 {
     return None
   }
   let allow_txt = rc_join(run_check_default_allow_cmds())

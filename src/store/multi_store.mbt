@@ -33,7 +33,7 @@ pub fn MultiStore::safe_ns(ns : String) -> String? {
       (u >= 97 && u <= 122) ||
       u == 45 ||
       u == 95
-    if not(ok) {
+    if !ok {
       return None
     }
   }
@@ -83,7 +83,7 @@ pub fn MultiStore::open(
         return true
       }
       let dir = if data_dir == "" { self.data_dir } else { data_dir }
-      if not(MultiStore::data_dir_ok(dir)) {
+      if !MultiStore::data_dir_ok(dir) {
         return false
       }
       let path = "\{dir}/\{safe}.db"
@@ -109,7 +109,7 @@ pub fn MultiStore::get(self : MultiStore, ns : String) -> SqliteStore? {
       match self.stores.get(safe) {
         Some(s) => Some(s)
         None =>
-          if not(MultiStore::data_dir_ok(self.data_dir)) {
+          if !MultiStore::data_dir_ok(self.data_dir) {
             // 构造期就把根目录写歪（如绝对路径）也不建库：与 open 同口径，别留第二条免检入口
             None
           } else {

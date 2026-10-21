@@ -289,7 +289,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
         pending_hours=pending_h,
       )
       let guidance = supervisor_guidance_list(target="", include_consumed~)
-      let unconsumed = guidance.filter(fn(g) { not(g.consumed) })
+      let unconsumed = guidance.filter(fn(g) { !g.consumed })
       let base_count = match tick {
         Json::Object(m) =>
           match m.get("reminder_count") {
@@ -402,7 +402,7 @@ fn supervisor_guidance_list(
           Json::Null => ()
           gj => {
             let id = json_field_str(gj, "id")
-            if id != "" && not(supervisor_guidance.items.contains(id)) {
+            if id != "" && !supervisor_guidance.items.contains(id) {
               supervisor_guidance.items.set(id, {
                 id,
                 target: json_field_str(gj, "target"),
@@ -421,8 +421,7 @@ fn supervisor_guidance_list(
   }
   let out : Array[SupervisorGuidance] = []
   supervisor_guidance.items.each(fn(_, g) {
-    if (target == "" || g.target == target) &&
-      (include_consumed || not(g.consumed)) {
+    if (target == "" || g.target == target) && (include_consumed || !g.consumed) {
       out.push(g)
     }
   })

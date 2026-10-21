@@ -118,7 +118,7 @@ pub fn memory_consolidate(
   if content.is_empty() {
     return Err("memory_consolidate: content 为空，无可收敛内容")
   }
-  if not(mem_kinds_contain(kind)) {
+  if !mem_kinds_contain(kind) {
     return Err("memory_consolidate: 非法 kind: \{kind}")
   }
   mem_ensure_dir(mem_dir(project_dir))
@@ -132,7 +132,7 @@ pub fn memory_consolidate(
   } else {
     content
   }
-  if not(mem_write(p, body)) {
+  if !mem_write(p, body) {
     return Err("memory_consolidate: 写入失败 " + p)
   }
   Ok(
@@ -180,7 +180,7 @@ pub fn memory_gc_one(
   // 但补救动作是"换一个你没点名的文件接着截"，打错一个字（thinking g）就写坏 target.md。
   // 现在：不在白名单就直接拒、不落笔（consolidate 对同一字段本来就是 Err；本函数返回 Json，
   // 故以 gc:false + error 表达拒绝）。
-  if not(mem_kinds_contain(kind)) {
+  if !mem_kinds_contain(kind) {
     let allowed = mem_kinds().join(" | ")
     let msg = "memory_gc: 非法 kind=" +
       kind +
@@ -226,7 +226,7 @@ pub fn memory_gc_one(
     let sep = if arch_old.has_suffix("\n") { "" } else { "\n" }
     arch_old + sep + archived + "\n"
   }
-  if not(mem_write(arch_path, arch_new)) {
+  if !mem_write(arch_path, arch_new) {
     return Json::object({
       "gc": Json::boolean(false),
       "kind": Json::string(kind),
@@ -234,7 +234,7 @@ pub fn memory_gc_one(
     })
   }
   // 正文只保留最新 max_chars
-  if not(mem_write(p, kept)) {
+  if !mem_write(p, kept) {
     return Json::object({
       "gc": Json::boolean(false),
       "kind": Json::string(kind),
@@ -292,7 +292,7 @@ pub fn memory_link(
     let sep = if old.has_suffix("\n") { "" } else { "\n" }
     old + sep + line + "\n"
   }
-  if not(mem_write(p, body)) {
+  if !mem_write(p, body) {
     return Err("memory_link: 写入失败 " + p)
   }
   Ok(
