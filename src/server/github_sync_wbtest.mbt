@@ -59,7 +59,7 @@ fn extract_data_arg(cmd : String) -> Result[String, String] {
   if at < 0 {
     return Err("命令里没有 --data 段")
   }
-  let rest = cmd.substring(start=at, end=cmd.length())
+  let rest = cmd[at:cmd.length()].to_owned()
   let wrapped = rest.length() >= 2 &&
     rest.has_prefix("'") &&
     rest.has_suffix("'")
@@ -67,7 +67,7 @@ fn extract_data_arg(cmd : String) -> Result[String, String] {
     return Err("--data 值不是完整的单引号包装: " + rest)
   }
   // 去掉外层引号，再把 shell 的 '"'"' 还原成 '
-  let inner = rest.substring(start=1, end=rest.length() - 1)
+  let inner = rest[1:rest.length() - 1].to_owned()
   let unwrapped = inner.replace(old="'\"'\"'", new="'")
   Ok(unwrapped)
 }

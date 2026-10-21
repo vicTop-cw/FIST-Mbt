@@ -161,10 +161,7 @@ pub fn memory_gc_logic(content : String, max_chars : Int) -> (String, String) {
     (content, "")
   } else {
     let cut = if max_chars < 0 { 0 } else { max_chars }
-    (
-      content.substring(start=n - cut, end=n),
-      content.substring(start=0, end=n - cut),
-    )
+    (content[n - cut:n].to_owned(), content[0:n - cut].to_owned())
   }
 }
 

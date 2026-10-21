@@ -87,7 +87,7 @@ fn b9_between(text : String, start : String, end : String) -> String {
   if a < 0 || b < 0 {
     "<b9-between-missing>"
   } else {
-    text.substring(start=a, end=b)
+    text[a:b].to_owned()
   }
 }
 

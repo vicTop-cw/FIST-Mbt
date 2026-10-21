@@ -251,12 +251,12 @@ pub const CAF_EDIT_MAX_LEN : Int = 256
 pub fn caf_edit_distance(a : String, b : String) -> Int {
   // 长度守卫：截断到 CAF_EDIT_MAX_LEN，防止长字符串 O(n*m) 爆炸
   let a_s = if a.length() > CAF_EDIT_MAX_LEN {
-    a.substring(start=0, end=CAF_EDIT_MAX_LEN)
+    a[0:CAF_EDIT_MAX_LEN].to_owned()
   } else {
     a
   }
   let b_s = if b.length() > CAF_EDIT_MAX_LEN {
-    b.substring(start=0, end=CAF_EDIT_MAX_LEN)
+    b[0:CAF_EDIT_MAX_LEN].to_owned()
   } else {
     b
   }

@@ -45,7 +45,7 @@ fn assemble(seq : String) -> Array[Inst] {
   let n = normalize(seq)
   let codons : Array[String] = []
   for i = 0; i + 3 <= n.length(); i = i + 3 {
-    codons.push(n.substring(start=i, end=i + 3))
+    codons.push(n[i:i + 3].to_owned())
   }
   let program : Array[Inst] = []
   let mut i = 0
