@@ -32,7 +32,7 @@ pub fn challenge_strategies() -> Array[String] {
 
 ///|
 /// 依据策略生成"更难变体"的框架文本（规则模板，非 LLM 生成）。
-fn challenge_frame(strat : String, factor : Int) -> String {
+fn challenge_frame(strat : String, factor : Int32) -> String {
   match strat {
     "generalize" =>
       "摆脱对具体场景的依赖，抽象为通用能力并覆盖边界与异常（泛化上难度）"
@@ -90,7 +90,7 @@ fn pick_frame(
   task_id : String,
   src_desc : String,
   strat : String,
-  factor : Int,
+  factor : Int32,
   arc : @evolve.Archive?,
 ) -> ChaPick {
   let s = if challenge_strategies().contains(strat) { strat } else { "scale" }
@@ -156,10 +156,10 @@ pub fn FistEngine::challenge(
   self : FistEngine,
   task_id~ : String,
   by~ : String,
-  factor? : Int = 2,
-  strat? : String = "scale",
+  factor~ : Int32 = 2,
+  strat~ : String = "scale",
   now~ : String,
-  critic? : @evolve.Archive? = None,
+  critic~ : @evolve.Archive? = None,
 ) -> Result[Json, String] {
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")

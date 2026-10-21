@@ -11,7 +11,7 @@ fn ef_verdict(j : Json) -> String {
 }
 
 ///|
-fn ef_count(j : Json, key : String) -> Int {
+fn ef_count(j : Json, key : String) -> Int32 {
   match j.value("counts") {
     Some(Json::Object(m)) =>
       match m.get(key) {

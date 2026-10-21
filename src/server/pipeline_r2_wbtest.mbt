@@ -8,7 +8,7 @@
 ///|
 /// 从 JSON 文本里抠一个整数字段（键后第一个数字串）；抠不到返回 -1。
 /// 只用于 .mcp.json 的 timeout_ms 这种小字段，不引第三方解析器。
-fn r2_json_int_field(text : String, key : String) -> Int {
+fn r2_json_int_field(text : String, key : String) -> Int32 {
   let cs = text.to_array()
   let pat = "\"" + key + "\""
   let ps = pat.to_array()
@@ -53,7 +53,7 @@ fn r2_json_int_field(text : String, key : String) -> Int {
 /// 统计子串出现次数（文本锁用）。
 /// 不用 `hay.split(needle).length()`：本版本 `String::split` 返回**消费式 Iter**，
 /// 第一次 `length()` 走完迭代、第二次读到 0，判据会恒返 -1（假红灯，测的是判据自己）。
-fn r2_count(hay : String, needle : String) -> Int {
+fn r2_count(hay : String, needle : String) -> Int32 {
   let cs = hay.to_array()
   let ps = needle.to_array()
   if ps.length() == 0 {

@@ -44,7 +44,7 @@ pub fn route(complexity : String, cost_tier : String) -> Json {
 ///|
 /// 组合 schedule + route：输入 description + n_files，输出完整调度+路由方案。
 /// 返回 JSON：{ schedule: {...}, route: {...} }
-pub fn plan_route(description : String, n_files? : Int = 1) -> Json {
+pub fn plan_route(description : String, n_files~ : Int32 = 1) -> Json {
   // 复用 scheduler 逻辑
   let len = description.length()
   let complexity = if contains_risk_kw(description) {

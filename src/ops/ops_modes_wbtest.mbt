@@ -573,7 +573,7 @@ test "explore: estimate_complexity 文档词不加分（防把『补文档』估
 }
 
 ///|
-fn xm_repeat(unit : String, times : Int) -> String {
+fn xm_repeat(unit : String, times : Int32) -> String {
   let mut s = ""
   for i = 0; i < times; i = i + 1 {
     s = s + unit

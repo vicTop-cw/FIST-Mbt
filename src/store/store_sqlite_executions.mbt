@@ -16,10 +16,10 @@ pub struct ExecutionRecord {
   task_id : String
   executor : String
   model : String
-  tokens_in : Int
-  tokens_out : Int
+  tokens_in : Int32
+  tokens_out : Int32
   cost : Double
-  duration_ms : Int
+  duration_ms : Int32
   rate_limited : Bool
   failure_reason : String
   created_at : String
@@ -120,9 +120,9 @@ pub fn list_all_executions(db : @sqlite.Database) -> Array[ExecutionRecord] {
 pub fn aggregate_stats(db : @sqlite.Database) -> Json {
   let records = list_all_executions(db)
   let mut total_cost : Double = 0.0
-  let mut total_tokens_in : Int = 0
-  let mut total_tokens_out : Int = 0
-  let mut total_rate_limited : Int = 0
+  let mut total_tokens_in : Int32 = 0
+  let mut total_tokens_out : Int32 = 0
+  let mut total_rate_limited : Int32 = 0
   let by_executor : Map[String, Json] = Map([])
   for rec in records {
     total_cost = total_cost + rec.cost
@@ -181,25 +181,25 @@ fn row_to_execution(stmt : @sqlite.Statement) -> ExecutionRecord {
 }
 
 ///|
-fn str_from_stmt_text(stmt : @sqlite.Statement, col : Int) -> String {
+fn str_from_stmt_text(stmt : @sqlite.Statement, col : Int32) -> String {
   str_from_bytes(stmt.column_text(col))
 }
 
 ///|
 /// 简单解析字符串为 Double（支持 "3.14" 格式）
 fn parse_simple_double(s : String) -> Double {
-  let mut integer_part : Int = 0
-  let mut fractional_part : Int = 0
-  let mut fractional_digits : Int = 0
+  let mut integer_part : Int32 = 0
+  let mut fractional_part : Int32 = 0
+  let mut fractional_digits : Int32 = 0
   let mut found_dot : Bool = false
   let mut negative : Bool = false
-  let mut i : Int = 0
+  let mut i : Int32 = 0
   // R12-R2：Int 溢出哨兵。MoonBit Int 为 32 位（-2^31 ~ 2^31-1，最大 2,147,483,647）。
   // 成本字段若被写入异常大字符串（如 "999999999999999999999"）会在
   // `integer_part * 10 + d` 处溢出并**静默**产出乱数——溢出后继续累加会绕回。
   // 关键：守卫必须**在乘法之前**判定，否则 `integer_part=214748364` 时 *10 即越界。
   // 阈值取 2e8（*10 后 = 2e9 < 2^31），余量足够所有真实成本（< 1e8）。
-  let int_safe : Int = 200_000_000
+  let int_safe : Int32 = 200_000_000
   let mut int_over = false
   let mut int_double : Double = 0.0
   // 跳过前导空格
@@ -249,7 +249,7 @@ fn parse_simple_double(s : String) -> Double {
   let mut result : Double = int_res
   if fractional_digits > 0 {
     let mut divisor : Double = 1.0
-    let mut j : Int = 0
+    let mut j : Int32 = 0
     while j < fractional_digits {
       divisor = divisor * 10.0
       j = j + 1

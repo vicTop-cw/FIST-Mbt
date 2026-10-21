@@ -8,7 +8,7 @@
 pub async fn github_execute_single(
   _curl_command : String,
   _workdir : String,
-  _timeout_ms : Int,
+  _timeout_ms : Int32,
 ) -> Result[Json, String] {
   Err(
     "github_execute_single 需要 js/node 运行时（child_process spawn curl）；本构建为 native，请在 node 下启动 fist-mbt server",
@@ -20,7 +20,7 @@ pub async fn github_execute_single(
 pub async fn github_execute_batch(
   _curl_commands : Array[String],
   _workdir : String,
-  _timeout_ms_each : Int,
+  _timeout_ms_each : Int32,
 ) -> Result[Json, String] {
   Err(
     "github_execute_batch 需要 js/node 运行时；本构建为 native，请在 node 下启动 fist-mbt server",
@@ -32,7 +32,7 @@ pub async fn github_execute_batch(
 pub async fn github_execute_close(
   _curl_command : String,
   _workdir : String,
-  _timeout_ms : Int,
+  _timeout_ms : Int32,
 ) -> Result[Json, String] {
   Err("github_execute_close 需要 js/node 运行时")
 }
@@ -42,7 +42,7 @@ pub async fn github_execute_close(
 pub async fn github_execute_comment(
   _curl_command : String,
   _workdir : String,
-  _timeout_ms : Int,
+  _timeout_ms : Int32,
 ) -> Result[Json, String] {
   Err("github_execute_comment 需要 js/node 运行时")
 }

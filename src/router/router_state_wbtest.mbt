@@ -13,7 +13,7 @@ fn qs(s : String) -> Json {
 }
 
 ///|
-fn qn(v : Int) -> Json {
+fn qn(v : Int32) -> Json {
   Json::number(v.to_double())
 }
 
@@ -21,9 +21,9 @@ fn qn(v : Int) -> Json {
 /// 池条目：{name,limit,used?,window_start?}
 fn ent(
   name : String,
-  limit : Int,
-  used? : Int = -1,
-  win? : String = "",
+  limit : Int32,
+  used~ : Int32 = -1,
+  win~ : String = "",
 ) -> Json {
   let mut items : Array[(String, Json)] = [
     ("name", qs(name)),

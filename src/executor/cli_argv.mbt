@@ -53,9 +53,9 @@ fn prompt_ok(prompt : String) -> Bool {
 pub fn aider_argv(
   prompt~ : String,
   model~ : String,
-  edit_format? : String = "whole",
-  map_tokens? : Int = 0,
-  encoding? : String = "gbk",
+  edit_format~ : String = "whole",
+  map_tokens~ : Int32 = 0,
+  encoding~ : String = "gbk",
 ) -> Result[Array[String], String] {
   if !prompt_ok(prompt) {
     return Err("aider: --message 不能为空或含 NUL 字符")
@@ -104,8 +104,8 @@ pub fn aider_argv(
 pub fn atomcode_argv(
   prompt~ : String,
   model~ : String,
-  workdir? : String = "",
-  auto_yes? : Bool = true,
+  workdir~ : String = "",
+  auto_yes~ : Bool = true,
 ) -> Result[Array[String], String] {
   if !prompt_ok(prompt) {
     return Err("atomcode: -p 提示词不能为空或含 NUL 字符")
@@ -139,7 +139,7 @@ pub fn build_command(
   executor~ : String,
   prompt~ : String,
   model~ : String,
-  workdir? : String = "",
+  workdir~ : String = "",
 ) -> Result[(String, Array[String]), String] {
   match executor {
     "aider" =>

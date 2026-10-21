@@ -5,7 +5,7 @@
 ///|
 /// 单条原则
 pub struct Principle {
-  index : Int
+  index : Int32
   title : String
   body : String
 } derive(Eq, Debug)
@@ -17,7 +17,7 @@ pub extend Principle with Eq::{not_equal, equal}
 pub extend Principle with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
-pub fn Principle::get_index(self : Principle) -> Int {
+pub fn Principle::get_index(self : Principle) -> Int32 {
   self.index
 }
 

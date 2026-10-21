@@ -171,8 +171,8 @@ fn parse_opt_double(v : Json?, field : String) -> (Double, Array[String]) {
 fn num_to_int_safe(
   v : Json?,
   field : String,
-  dft : Int,
-) -> (Int, Array[String]) {
+  dft : Int32,
+) -> (Int32, Array[String]) {
   match v {
     None | Some(Json::Null) => (dft, [])
     Some(Json::Number(n, ..)) =>
@@ -186,7 +186,7 @@ fn num_to_int_safe(
 }
 
 ///|
-fn parse_opt_int(v : Json?, field : String) -> (Int, Array[String]) {
+fn parse_opt_int(v : Json?, field : String) -> (Int32, Array[String]) {
   match v {
     None => (0, [])
     Some(Json::Null) => (0, [])

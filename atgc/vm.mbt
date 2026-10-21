@@ -12,7 +12,7 @@ pub enum Op {
   Add
   Sub
   OutNum
-  PushImm(Int)
+  PushImm(Int32)
   Unknown(String)
 }
 
@@ -20,7 +20,7 @@ pub enum Op {
 /// 程序指令：要么操作码，要么立即数。
 pub enum Inst {
   Op(Op)
-  Num(Int)
+  Num(Int32)
 }
 
 ///|
@@ -28,16 +28,16 @@ pub enum Inst {
 pub struct RunResult {
   output : String
   result : String
-  stack : Array[Int]
+  stack : Array[Int32]
 }
 
 ///|
 /// 运行一条指令，返回 (pc_delta 或停机哨兵 -1, result) 以错误。
 fn step(
   inst : Inst,
-  stack : Array[Int],
+  stack : Array[Int32],
   out : StringBuilder,
-) -> Result[Int, String] {
+) -> Result[Int32, String] {
   match inst {
     Num(_) => Err("vm: 数据语境值不应作为指令执行")
     Op(Start) | Op(Break) => Ok(1)
@@ -80,7 +80,7 @@ fn step(
 /// 执行程序（指令数组），返回 RunResult。
 pub fn run(program : Array[Inst]) -> RunResult {
   let mut pc = 0
-  let stack : Array[Int] = []
+  let stack : Array[Int32] = []
   let out = StringBuilder()
   let mut result = "ok"
   while pc >= 0 && pc < program.length() {

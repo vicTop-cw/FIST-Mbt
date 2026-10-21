@@ -30,7 +30,7 @@ pub fn normalize(seq : String) -> String {
 
 ///|
 /// 碱基 -> 四进制(A=0 T=1 G=2 C=3)；U 视为 T。
-pub fn base_to_int(c : Char) -> Int? {
+pub fn base_to_int(c : Char) -> Int32? {
   let up = c.to_ascii_uppercase()
   if up == 'A' || up == 'U' {
     Some(0)
@@ -47,7 +47,7 @@ pub fn base_to_int(c : Char) -> Int? {
 
 ///|
 /// 四进制 -> 碱基。
-pub fn int_to_base(n : Int) -> Char {
+pub fn int_to_base(n : Int32) -> Char {
   if n == 0 {
     'A'
   } else if n == 1 {

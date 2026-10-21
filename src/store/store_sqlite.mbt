@@ -21,6 +21,8 @@ pub fn SqliteStore::open(db_path : String) -> SqliteStore? {
     Some(db) => {
       let s = { db: Some(db), }
       if s.create_schema() {
+        // 幂等迁移：旧库升级补 `level` 列（见 ensure_level_column）
+        s.ensure_level_column()
         // 启用 WAL 模式提升并发读写性能
         s.exec_if_ok("PRAGMA journal_mode=WAL")
         s.exec_if_ok("PRAGMA synchronous=NORMAL")
@@ -90,7 +92,7 @@ pub fn SqliteStore::new() -> SqliteStore? {
 /// 初始化 schema：tasks 为完整任务表，specs/runs/heartbeats/archive 为后续阶段预置骨架。
 fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
   let sqls : Array[String] = [
-    "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority TEXT NOT NULL DEFAULT '中', importance TEXT NOT NULL DEFAULT '中', depth INTEGER NOT NULL DEFAULT 3, split_n INTEGER NOT NULL DEFAULT 3, status TEXT NOT NULL DEFAULT '待领取', assignee TEXT DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT 'deferred', depends_on TEXT NOT NULL DEFAULT '[]')",
+    "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority TEXT NOT NULL DEFAULT '中', importance TEXT NOT NULL DEFAULT '中', depth INTEGER NOT NULL DEFAULT 3, split_n INTEGER NOT NULL DEFAULT 3, level INTEGER NOT NULL DEFAULT 6, status TEXT NOT NULL DEFAULT '待领取', assignee TEXT DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT 'deferred', depends_on TEXT NOT NULL DEFAULT '[]')",
     "CREATE TABLE IF NOT EXISTS specs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', spec_type TEXT NOT NULL DEFAULT 'spec', content TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', run_type TEXT NOT NULL DEFAULT 'verify', status TEXT NOT NULL DEFAULT 'running', detail TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL DEFAULT '', finished_at TEXT DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS heartbeats (agent_id TEXT NOT NULL, task_id TEXT NOT NULL, last_seen TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', PRIMARY KEY (agent_id, task_id))",
@@ -131,11 +133,50 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
   }
 }
 
+///|
+/// 幂等迁移：确保 tasks 表含 `level` 列（军衔等级）。
+/// 全仓此前没有迁移机制，旧库（如仓库根 fist-mbt.db）建表时不含 `level`；
+/// `CREATE TABLE IF NOT EXISTS` 对已存在的旧表是 no-op，因此这里用
+/// `PRAGMA table_info(tasks)` 探测，缺列才 `ALTER TABLE ... ADD COLUMN`。
+/// 幂等：重复调用不报错、不加两列（命中已有列直接跳过）。
+/// 已有任务自动拿到默认 6（连长）。**绝不抛未捕获异常**——整段用 catch 兜底，
+/// 迁移失败只当作"未迁移"静默降级（新库由 CREATE TABLE 直接带列，无需本函数）。
+fn SqliteStore::ensure_level_column(self : SqliteStore) -> Unit {
+  match self.db {
+    None => ()
+    Some(db) =>
+      ignore(
+        try {
+          let mut has_level = false
+          match db.prepare("PRAGMA table_info(tasks)") {
+            None => ()
+            Some(stmt) => {
+              while stmt.step() {
+                let name = str_from_bytes(stmt.column_text(1))
+                if name == "level" {
+                  has_level = true
+                }
+              }
+              stmt.finalize()
+            }
+          }
+          if has_level == false {
+            self.exec_if_ok(
+              "ALTER TABLE tasks ADD COLUMN level INTEGER NOT NULL DEFAULT 6",
+            )
+          }
+        } catch {
+          _ => ()
+        },
+      )
+  }
+}
+
 // —— 行 <-> Task 序列化辅助 ——
 
 ///|
 fn SqliteStore::task_columns() -> String {
-  "id, parent_id, project_dir, ns, priority, importance, depth, split_n, status, assignee, description, deliverable, created_at, updated_at, completed_by, cleanup_mode, depends_on"
+  "id, parent_id, project_dir, ns, priority, importance, depth, split_n, level, status, assignee, description, deliverable, created_at, updated_at, completed_by, cleanup_mode, depends_on"
 }
 
 ///|
@@ -164,45 +205,46 @@ fn SqliteStore::bind_task_values(
   )
   ignore(stmt.bind(7, @sqlite.SqlValue::Int(t.depth)))
   ignore(stmt.bind(8, @sqlite.SqlValue::Int(t.split_n)))
+  ignore(stmt.bind(9, @sqlite.SqlValue::Int(t.get_level())))
   ignore(
     stmt.bind(
-      9,
+      10,
       @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.status.to_string())),
     ),
   )
   ignore(
     stmt.bind(
-      10,
+      11,
       @sqlite.SqlValue::Text(@encoding.encode(UTF8, _opt_str(t.get_assignee()))),
     ),
   )
   ignore(
-    stmt.bind(11, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.description))),
+    stmt.bind(12, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.description))),
   )
   ignore(
-    stmt.bind(12, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.deliverable))),
+    stmt.bind(13, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.deliverable))),
   )
   ignore(
-    stmt.bind(13, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.created_at))),
+    stmt.bind(14, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.created_at))),
   )
   ignore(
-    stmt.bind(14, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.updated_at))),
+    stmt.bind(15, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.updated_at))),
   )
   ignore(
     stmt.bind(
-      15,
+      16,
       @sqlite.SqlValue::Text(@encoding.encode(UTF8, _opt_str(t.completed_by))),
     ),
   )
   ignore(
     stmt.bind(
-      16,
+      17,
       @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.cleanup_mode)),
     ),
   )
   ignore(
     stmt.bind(
-      17,
+      18,
       @sqlite.SqlValue::Text(
         @encoding.encode(UTF8, _array_to_json(t.depends_on)),
       ),
@@ -282,7 +324,7 @@ fn SqliteStore::bind_task_update_values(
 
 ///|
 fn str_from_bytes(b : Bytes) -> String {
-  let sb = StringBuilder()
+  let sb = StringBuilder::new()
   @encoding.decode_to(b, sb, encoding=UTF8) catch {
     _ => ()
   }
@@ -322,9 +364,9 @@ fn _json_to_array(json : String) -> Array[String] {
 ///|
 fn row_to_task(stmt : @sqlite.Statement) -> @core.Task {
   let parent_raw = str_from_bytes(stmt.column_text(1))
-  let assignee_raw = str_from_bytes(stmt.column_text(9))
-  let completed_raw = str_from_bytes(stmt.column_text(14))
-  let depends_raw = str_from_bytes(stmt.column_text(16))
+  let assignee_raw = str_from_bytes(stmt.column_text(10))
+  let completed_raw = str_from_bytes(stmt.column_text(15))
+  let depends_raw = str_from_bytes(stmt.column_text(17))
   @core.Task::from_db(
     str_from_bytes(stmt.column_text(0)),
     if parent_raw == "" {
@@ -338,22 +380,23 @@ fn row_to_task(stmt : @sqlite.Statement) -> @core.Task {
     str_from_bytes(stmt.column_text(5)),
     stmt.column_int(6),
     stmt.column_int(7),
-    str_from_bytes(stmt.column_text(8)),
+    stmt.column_int(8),
+    str_from_bytes(stmt.column_text(9)),
     if assignee_raw == "" {
       None
     } else {
       Some(assignee_raw)
     },
-    str_from_bytes(stmt.column_text(10)),
     str_from_bytes(stmt.column_text(11)),
     str_from_bytes(stmt.column_text(12)),
     str_from_bytes(stmt.column_text(13)),
+    str_from_bytes(stmt.column_text(14)),
     if completed_raw == "" {
       None
     } else {
       Some(completed_raw)
     },
-    str_from_bytes(stmt.column_text(15)),
+    str_from_bytes(stmt.column_text(16)),
     _json_to_array(depends_raw),
   )
 }
@@ -369,7 +412,7 @@ impl Store for SqliteStore with fn create_task(self, task) {
         Some(_) => return Err("task already exists: \{task.get_id()}")
         None => ()
       }
-      let sql = "INSERT INTO tasks (\{SqliteStore::task_columns()}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+      let sql = "INSERT INTO tasks (\{SqliteStore::task_columns()}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: create_task")
         Some(stmt) => {
@@ -673,7 +716,7 @@ pub fn SqliteStore::evolve_bump_child(self : SqliteStore, id : String) -> Bool {
 
 ///|
 /// 取 evolve_artifacts 某列文本（列索引从 0 起）。
-fn evolve_col_text(stmt : @sqlite.Statement, i : Int) -> String {
+fn evolve_col_text(stmt : @sqlite.Statement, i : Int32) -> String {
   str_from_bytes(stmt.column_text(i))
 }
 
@@ -685,7 +728,7 @@ fn evolve_parse_double(raw : String) -> Double {
 
 ///|
 /// 取 evolve_artifacts 某列 int。
-fn evolve_col_int(stmt : @sqlite.Statement, i : Int) -> Int {
+fn evolve_col_int(stmt : @sqlite.Statement, i : Int32) -> Int32 {
   stmt.column_int(i)
 }
 
@@ -1554,7 +1597,7 @@ pub fn SqliteStore::locks_release(
 
 ///|
 /// SQLite 后端：清理过期锁（active 且 ttl_until < now → expired + 记违例）。
-pub fn SqliteStore::locks_sweep(self : SqliteStore, now : String) -> Int {
+pub fn SqliteStore::locks_sweep(self : SqliteStore, now : String) -> Int32 {
   match self.db {
     None => 0
     Some(db) => {
@@ -1850,8 +1893,7 @@ pub fn SqliteStore::assistant_set_status(
 }
 
 ///|
-/// 行 -> AssistantReg（列序与上面 SELECT 一致）。取值函数全为全函数，坏行只会读出空串，
-/// 不会打死调用方；None 由调用方的 prepare/step 守卫产生。
+/// 行 -> AssistantReg（列序与上面 SELECT 一致；解析失败返回 None，不让单行坏数据打死调用方）。
 fn SqliteStore::assistant_from_row(
   self : SqliteStore,
   stmt : @sqlite.Statement,
@@ -1864,7 +1906,9 @@ fn SqliteStore::assistant_from_row(
     registered_at: str_from_bytes(stmt.column_text(3)),
     heartbeat_at: str_from_bytes(stmt.column_text(4)),
     status: str_from_bytes(stmt.column_text(5)),
-  })
+  }) catch {
+    _ => None
+  }
 }
 
 // —— executions 表（执行元数据，供成本统计使用）——
@@ -1885,10 +1929,10 @@ pub fn SqliteStore::record_execution(
   task_id~ : String,
   executor~ : String,
   model~ : String,
-  tokens_in~ : Int,
-  tokens_out~ : Int,
+  tokens_in~ : Int32,
+  tokens_out~ : Int32,
   cost~ : Double,
-  duration_ms~ : Int,
+  duration_ms~ : Int32,
   rate_limited~ : Bool,
   failure_reason~ : String,
   created_at~ : String,
@@ -2150,7 +2194,7 @@ pub fn SqliteStore::list_all_heartbeats(
 pub fn SqliteStore::write_heartbeat_interval(
   self : SqliteStore,
   task_id~ : String,
-  interval_sec~ : Int,
+  interval_sec~ : Int32,
   ts~ : String,
 ) -> Result[Unit, String] {
   match self.db {
@@ -2209,9 +2253,9 @@ pub fn SqliteStore::write_heartbeat_interval(
 pub fn SqliteStore::list_heartbeat_intervals(
   self : SqliteStore,
   task_id : String,
-  limit~ : Int = 100,
-) -> Array[Int] {
-  let out : Array[Int] = []
+  limit~ : Int32 = 100,
+) -> Array[Int32] {
+  let out : Array[Int32] = []
   match self.db {
     None => out
     Some(db) => {
@@ -2226,7 +2270,7 @@ pub fn SqliteStore::list_heartbeat_intervals(
             ),
           )
           ignore(stmt.bind(2, @sqlite.SqlValue::Int(limit)))
-          let rows : Array[Int] = []
+          let rows : Array[Int32] = []
           while stmt.step() {
             rows.push(stmt.column_int(0))
           }
@@ -2313,8 +2357,8 @@ pub fn SqliteStore::list_saga_actions(
   self : SqliteStore,
   ns : String,
   root_task_id : String,
-) -> Array[(Int, String, String, String, String)] {
-  let out : Array[(Int, String, String, String, String)] = []
+) -> Array[(Int32, String, String, String, String)] {
+  let out : Array[(Int32, String, String, String, String)] = []
   match self.db {
     None => out
     Some(db) => {
@@ -2356,7 +2400,7 @@ pub fn SqliteStore::mark_saga_actions_done(
   self : SqliteStore,
   ns~ : String = "default",
   root_task_id~ : String,
-  ids~ : Array[Int],
+  ids~ : Array[Int32],
 ) -> Result[Unit, String] {
   if ids.is_empty() {
     return Ok(())
@@ -2402,7 +2446,7 @@ pub fn SqliteStore::cb_get(
   self : SqliteStore,
   ns : String,
   circuit : String,
-) -> (String, Int, Int, Int, Int, Int, Int)? {
+) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)? {
   match self.db {
     None => None
     Some(db) => {
@@ -2419,7 +2463,7 @@ pub fn SqliteStore::cb_get(
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, circuit)),
             ),
           )
-          let mut row : (String, Int, Int, Int, Int, Int, Int)? = None
+          let mut row : (String, Int32, Int32, Int32, Int32, Int32, Int32)? = None
           if stmt.step() {
             row = Some(
               (
@@ -2448,12 +2492,12 @@ pub fn SqliteStore::cb_save(
   ns : String,
   circuit : String,
   state : String,
-  failures : Int,
-  window_secs : Int,
-  threshold : Int,
-  recovery_secs : Int,
-  opened_at : Int,
-  last_fail_ts : Int,
+  failures : Int32,
+  window_secs : Int32,
+  threshold : Int32,
+  recovery_secs : Int32,
+  opened_at : Int32,
+  last_fail_ts : Int32,
   updated_at : String,
 ) -> Result[Unit, String] {
   match self.db {
@@ -2511,8 +2555,8 @@ pub fn SqliteStore::write_call_log(
   params_json~ : String,
   result_json~ : String,
   ok~ : Bool,
-  runtime_ms~ : Int,
-  seq~ : Int,
+  runtime_ms~ : Int32,
+  seq~ : Int32,
 ) -> Result[Unit, String] {
   match self.db {
     None => Err("sqlite store 未打开")
@@ -2565,7 +2609,7 @@ pub fn SqliteStore::write_call_log(
 /// 读取最近 N 条调用日志（按自增 id DESC，新的在前；seq 仅作同进程单调定位）。
 pub fn SqliteStore::recent_call_logs(
   self : SqliteStore,
-  limit~ : Int = 50,
+  limit~ : Int32 = 50,
 ) -> Array[Json] {
   let out : Array[Json] = []
   match self.db {

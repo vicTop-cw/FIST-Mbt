@@ -155,7 +155,7 @@ pub fn memory_consolidate(
 /// 把「末尾（老人）」内容切分为归档段，正文只保留最新 max_chars 个字符。
 /// 返回 (kept 正文, archived 老人)。未超限时 archived 为空串。
 /// 中文安全：按字符（而非字节）截断。
-pub fn memory_gc_logic(content : String, max_chars : Int) -> (String, String) {
+pub fn memory_gc_logic(content : String, max_chars : Int32) -> (String, String) {
   let n = content.length()
   if n <= max_chars {
     (content, "")
@@ -171,7 +171,7 @@ pub fn memory_gc_logic(content : String, max_chars : Int) -> (String, String) {
 pub fn memory_gc_one(
   project_dir : String,
   kind : String,
-  max_chars : Int,
+  max_chars : Int32,
 ) -> Json {
   // BUG-36：这里原本把非法 kind 静默改靶到 target 再继续写盘——防路径遍历的意图是对的，
   // 但补救动作是"换一个你没点名的文件接着截"，打错一个字（thinking g）就写坏 target.md。
@@ -249,7 +249,7 @@ pub fn memory_gc_one(
 
 ///|
 /// 对 memory 四件套逐件执行 GC，返回汇总。
-pub fn memory_gc_all(project_dir : String, max_chars : Int) -> Json {
+pub fn memory_gc_all(project_dir : String, max_chars : Int32) -> Json {
   let results : Array[Json] = []
   for k in mem_kinds() {
     results.push(memory_gc_one(project_dir, k, max_chars))

@@ -246,7 +246,7 @@ pub fn render_status_summary(
 
 ///|
 /// 已完成但交付物为空的任务数（BUG-29 的"无成果已完成"档，全库口径由调用方传入的任务集决定）。
-pub fn done_no_artifact(tasks : Array[@core.Task]) -> Int {
+pub fn done_no_artifact(tasks : Array[@core.Task]) -> Int32 {
   let mut n = 0
   for t in tasks {
     if t.status_to_string() == "已完成" && t.deliverable == "" {
@@ -260,7 +260,7 @@ pub fn done_no_artifact(tasks : Array[@core.Task]) -> Int {
 /// 残留硬门基线（BUG-29）：账本里**点名作废**的探针单数——T0r286/T0r287（memory/bugs.md BUG-29，
 /// 判据=只读直查 status='已完成' 且 deliverable 空 且 specs=0 且 created_at==updated_at）。
 /// 只许降不许升：新高出基线即 residue_over_baseline=true，project_health 据此把等级压到 attention。
-let done_no_artifact_baseline : Int = 2
+let done_no_artifact_baseline : Int32 = 2
 
 ///|
 /// 项目健康卡（R68）：单次调用看全项目健康，无需 list+逐条筛选。
@@ -339,7 +339,7 @@ pub fn render_health_check(tasks : Array[@core.Task], ns : String) -> Json {
   let mut in_flight = 0
   let mut ready = 0
   let mut blocked = 0
-  let done_cycles : Array[Int] = []
+  let done_cycles : Array[Int32] = []
   for t in tasks {
     match t.status_to_string() {
       "执行中" | "已领取" | "拆分中" => in_flight = in_flight + 1
@@ -445,7 +445,7 @@ pub fn render_state_flow_ascii(
     "                         ▼         ▼\n" +
     "                   已暂停→已领取  已打回→执行中\n" +
     "                        (恢复)       (重试)"
-  let bucket : Map[String, Int] = Map([])
+  let bucket : Map[String, Int32] = Map([])
   for t in tasks {
     if ns_filter == "" || t.ns == ns_filter {
       let st = t.status_to_string()

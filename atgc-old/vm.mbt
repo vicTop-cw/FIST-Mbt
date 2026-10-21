@@ -10,7 +10,7 @@ let ascii_table : String = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQR
 
 ///|
 /// 代码点 → 单字符字符串（供 OUT_CHAR 拼接到输出）。
-fn ascii_char(v : Int) -> String {
+fn ascii_char(v : Int32) -> String {
   if v < 32 || v > 126 {
     return "?"
   }
@@ -31,14 +31,14 @@ fn ascii_char(v : Int) -> String {
 pub struct RunResult {
   output : String
   stack_history : Array[String]
-  final_stack : Array[Int]
+  final_stack : Array[Int32]
   result : String
   rolled_back : Bool
 }
 
 ///|
 /// 栈快照文本（供 history / 快照展示）。
-fn stack_str(s : Array[Int]) -> String {
+fn stack_str(s : Array[Int32]) -> String {
   let parts : Array[String] = []
   for x in s {
     parts.push(x.to_string())
@@ -63,11 +63,11 @@ fn stack_join(arr : Array[String], sep : String) -> String {
 /// 错误以 Err 返回，绝不崩溃。
 fn step(
   op : Op,
-  stack : Array[Int],
+  stack : Array[Int32],
   program : Array[Inst],
-  pc : Int,
+  pc : Int32,
   out : StringBuilder,
-) -> Result[Int, String] {
+) -> Result[Int32, String] {
   match op {
     Start | Nop => Ok(pc + 1)
     Halt | Break => Ok(-1)
@@ -165,21 +165,21 @@ fn step(
         return Err("JUMP_IF_ZERO: 栈空")
       }
       let v = stack.pop().unwrap()
-      cond_jump(program, pc, v, fn(x : Int) -> Bool { x == 0 })
+      cond_jump(program, pc, v, fn(x : Int32) -> Bool { x == 0 })
     }
     JumpIfNeg => {
       if stack.is_empty() {
         return Err("JUMP_IF_NEG: 栈空")
       }
       let v = stack.pop().unwrap()
-      cond_jump(program, pc, v, fn(x : Int) -> Bool { x < 0 })
+      cond_jump(program, pc, v, fn(x : Int32) -> Bool { x < 0 })
     }
     JumpIfPos => {
       if stack.is_empty() {
         return Err("JUMP_IF_POS: 栈空")
       }
       let v = stack.pop().unwrap()
-      cond_jump(program, pc, v, fn(x : Int) -> Bool { x > 0 })
+      cond_jump(program, pc, v, fn(x : Int32) -> Bool { x > 0 })
     }
     Call => jump_target(program, pc)
     Return => Ok(pc + 1) // 近似：普通流水式返回（未启用调用返回地址）
@@ -190,7 +190,7 @@ fn step(
 
 ///|
 /// 无条件跳转：目标为紧随其后的 Number 操作数。
-fn jump_target(program : Array[Inst], pc : Int) -> Result[Int, String] {
+fn jump_target(program : Array[Inst], pc : Int32) -> Result[Int32, String] {
   if pc + 1 < program.length() {
     match program[pc + 1] {
       Number(t) => Ok(t)
@@ -205,10 +205,10 @@ fn jump_target(program : Array[Inst], pc : Int) -> Result[Int, String] {
 /// 条件跳转：栈顶已取出作为条件值 v；满足 test(v) 则跳到目标，否则跳过操作数（pc+2）。
 fn cond_jump(
   program : Array[Inst],
-  pc : Int,
-  v : Int,
-  pred : (Int) -> Bool,
-) -> Result[Int, String] {
+  pc : Int32,
+  v : Int32,
+  pred : (Int32) -> Bool,
+) -> Result[Int32, String] {
   if pc + 1 < program.length() {
     match program[pc + 1] {
       Number(t) => if pred(v) { Ok(t) } else { Ok(pc + 2) }
@@ -222,12 +222,12 @@ fn cond_jump(
 ///|
 /// 执行整个程序。返回 RunResult；开启 rollback 时出错自动恢复到最后一个 checkpoint。
 pub fn run(program : Array[Inst], rollback : Bool) -> RunResult {
-  let mut stack : Array[Int] = []
+  let mut stack : Array[Int32] = []
   let mut pc = 0
   let mut out = StringBuilder()
   let history : Array[String] = []
   let mut rolled_back = false
-  let checkpoints : Array[(Int, Array[Int], String)] = []
+  let checkpoints : Array[(Int32, Array[Int32], String)] = []
   let mut result = "ok"
   let mut halted = false
 

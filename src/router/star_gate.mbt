@@ -48,7 +48,7 @@ pub struct StarGateOutcome {
   /// 人可读的中文原因，便于把「为什么没放行」写进日志/回执
   reason : String
   /// 名单条目数（供调用方做量级/异常观察，如异常超大名单）
-  list_count : Int
+  list_count : Int32
   /// 回显本次判定使用的 now_epoch，便于审计与复现
   now_epoch : Int64
 }
@@ -68,7 +68,7 @@ priv struct StarAttestData {
 fn star_outcome(
   verdict : StarVerdict,
   reason : String,
-  list_count : Int,
+  list_count : Int32,
   now_epoch : Int64,
 ) -> StarGateOutcome {
   { verdict, reason, list_count, now_epoch, }

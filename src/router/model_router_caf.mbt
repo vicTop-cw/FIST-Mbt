@@ -28,7 +28,7 @@ pub struct CafDryRun {
   /// Top-K 邻域统计（历史依据），供调用方展示 rate/avg_cost/count
   basis : Array[CafModelStats]
   /// 检索的 k 值
-  top_k : Int
+  top_k : Int32
 } derive(Debug)
 
 ///|
@@ -42,11 +42,11 @@ pub fn ModelRouter::pick_caf(
   now~ : String,
   caf_memory~ : CafMemory,
   context~ : String,
-  k~ : Int,
-  unhealthy_ids? : Array[String] = [],
-  laya_prefer_tier? : String = "",
-  caf_default_preference? : Array[String] = [],
-  caf_min_evidences? : Int = 10,
+  k~ : Int32,
+  unhealthy_ids~ : Array[String] = [],
+  laya_prefer_tier~ : String = "",
+  caf_default_preference~ : Array[String] = [],
+  caf_min_evidences~ : Int32 = 10,
 ) -> (RouteDecision, Bool) {
   let d = self.pick(now~, unhealthy_ids~, laya_prefer_tier~)
   self.apply_caf(
@@ -73,10 +73,10 @@ pub fn ModelRouter::apply_caf(
   now~ : String,
   caf_memory~ : CafMemory,
   context~ : String,
-  k~ : Int,
-  unhealthy_ids? : Array[String] = [],
-  caf_default_preference? : Array[String] = [],
-  caf_min_evidences? : Int = 10,
+  k~ : Int32,
+  unhealthy_ids~ : Array[String] = [],
+  caf_default_preference~ : Array[String] = [],
+  caf_min_evidences~ : Int32 = 10,
 ) -> (RouteDecision, Bool) {
   if !self.config.use_caf_memory {
     return (d, false)
@@ -146,10 +146,10 @@ pub fn ModelRouter::pick_caf_dry_run(
   now~ : String,
   caf_memory~ : CafMemory,
   context~ : String,
-  k~ : Int,
-  unhealthy_ids? : Array[String] = [],
-  caf_default_preference? : Array[String] = [],
-  caf_min_evidences? : Int = 10,
+  k~ : Int32,
+  unhealthy_ids~ : Array[String] = [],
+  caf_default_preference~ : Array[String] = [],
+  caf_min_evidences~ : Int32 = 10,
 ) -> CafDryRun {
   let probe = self.clone_for_peek()
   let base = probe.pick(now~, unhealthy_ids~)
@@ -244,7 +244,7 @@ fn caf_reorder_combined(
   candidates : Array[String],
   stats : Array[CafModelStats],
   preference : Array[String],
-  min_evidences : Int,
+  min_evidences : Int32,
 ) -> Array[String] {
   if preference.is_empty() {
     caf_soft_reorder(candidates, stats)
@@ -269,8 +269,8 @@ pub fn caf_memory_status_text(mem : CafMemory) -> String {
     return "CAF 记忆：空（0 条记录）"
   }
   let mut models : Array[String] = []
-  let mut model_cnt : Array[Int] = []
-  let mut model_ok : Array[Int] = []
+  let mut model_cnt : Array[Int32] = []
+  let mut model_ok : Array[Int32] = []
   let mut model_cost : Array[Double] = []
   for rec in all {
     let mut idx = -1

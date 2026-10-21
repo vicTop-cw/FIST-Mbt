@@ -24,7 +24,7 @@ fn cb_state(j : Json) -> String {
 }
 
 ///|
-fn cb_failures(j : Json) -> Int {
+fn cb_failures(j : Json) -> Int32 {
   match j.value("failures") {
     Some(Json::Number(n, ..)) => n.to_int()
     _ => abort("failures 缺失: " + j.stringify())
@@ -124,7 +124,7 @@ test "circuit_fail：窗口外失败复位计数；clear 清空熔断器" {
 
 ///|
 /// 读出半开探测配额字段（probes_granted/probe_limit）
-fn cb_int_field(j : Json, key : String) -> Int {
+fn cb_int_field(j : Json, key : String) -> Int32 {
   match j.value(key) {
     Some(Json::Number(n, ..)) => n.to_int()
     _ => abort("\{key} 缺失: " + j.stringify())

@@ -28,7 +28,7 @@ fn decode(codon : String) -> Op {
 
 ///|
 /// 3 碱基 -> 四进制数值(0..63)：每位 base_to_int 依 A=0,T=1,G=2,C=3。
-fn codon_value(codon : String) -> Int {
+fn codon_value(codon : String) -> Int32 {
   let mut v = 0
   for c in codon {
     match base_to_int(c) {

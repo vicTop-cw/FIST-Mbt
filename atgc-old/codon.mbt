@@ -19,7 +19,7 @@ pub enum Op {
   /// 栈顶弹出并以字符输出
   OutChar
   /// 把下一个碱基作为立即数入栈
-  PushImm(Int)
+  PushImm(Int32)
   /// 弹出栈顶
   Pop
   /// 复制栈顶
@@ -65,7 +65,7 @@ pub enum Op {
 /// 二者共同构成 `(Op | Number)` 的指令列表（§2.4 语境二分）。
 pub enum Inst {
   Op(Op)
-  Number(Int)
+  Number(Int32)
 }
 
 ///|

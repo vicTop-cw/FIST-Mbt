@@ -15,7 +15,7 @@
 /// 保证 spec 打回 / 复验打回 / 超限升级在同一时间戳下互不覆盖（upsert 语义防丢史）。
 pub fn FistEngine::omega_auto_lesson(
   self : FistEngine,
-  seq : Int,
+  seq : Int32,
   cat : String,
   reason : String,
   fix : String,

@@ -85,10 +85,10 @@ pub fn FileLock::new(
   batch_id~ : String,
   scope~ : String,
   agent~ : String,
-  status? : String = "active",
-  ts? : String = "",
-  ttl_until? : String = "",
-  meta? : String = "",
+  status~ : String = "active",
+  ts~ : String = "",
+  ttl_until~ : String = "",
+  meta~ : String = "",
 ) -> FileLock {
   { lock_id, batch_id, scope, agent, status, ts, ttl_until, meta, }
 }
@@ -652,7 +652,7 @@ pub fn StoreBackend::locks_release(
 }
 
 ///|
-pub fn StoreBackend::locks_sweep(self : StoreBackend, now : String) -> Int {
+pub fn StoreBackend::locks_sweep(self : StoreBackend, now : String) -> Int32 {
   match self {
     Mem(m) => m.locks_sweep(now)
     Sql(s) => s.locks_sweep(now)
@@ -742,10 +742,10 @@ pub fn StoreBackend::record_execution(
   task_id~ : String,
   executor~ : String,
   model~ : String,
-  tokens_in~ : Int,
-  tokens_out~ : Int,
+  tokens_in~ : Int32,
+  tokens_out~ : Int32,
   cost~ : Double,
-  duration_ms~ : Int,
+  duration_ms~ : Int32,
   rate_limited~ : Bool,
   failure_reason~ : String,
   created_at~ : String,
@@ -867,7 +867,7 @@ pub fn StoreBackend::list_all_heartbeats(
 pub fn StoreBackend::write_heartbeat_interval(
   self : StoreBackend,
   task_id~ : String,
-  interval_sec~ : Int,
+  interval_sec~ : Int32,
   ts~ : String,
 ) -> Result[Unit, String] {
   match self {
@@ -881,8 +881,8 @@ pub fn StoreBackend::write_heartbeat_interval(
 pub fn StoreBackend::list_heartbeat_intervals(
   self : StoreBackend,
   task_id : String,
-  limit? : Int = 100,
-) -> Array[Int] {
+  limit~ : Int32 = 100,
+) -> Array[Int32] {
   match self {
     Mem(_) => []
     Sql(s) => s.list_heartbeat_intervals(task_id, limit~)
@@ -893,10 +893,10 @@ pub fn StoreBackend::list_heartbeat_intervals(
 /// 登记 Saga 补偿步骤（R92：SQLite 落库 durable action log，内存后端为 no-op）。
 pub fn StoreBackend::write_saga_action(
   self : StoreBackend,
-  ns? : String = "default",
+  ns~ : String = "default",
   root_task_id~ : String,
   step~ : String,
-  task_id? : String = "",
+  task_id~ : String = "",
   compensation~ : String,
   created_at~ : String,
 ) -> Result[Unit, String] {
@@ -920,7 +920,7 @@ pub fn StoreBackend::list_saga_actions(
   self : StoreBackend,
   ns : String,
   root_task_id : String,
-) -> Array[(Int, String, String, String, String)] {
+) -> Array[(Int32, String, String, String, String)] {
   match self {
     Mem(_) => []
     Sql(s) => s.list_saga_actions(ns, root_task_id)
@@ -931,9 +931,9 @@ pub fn StoreBackend::list_saga_actions(
 /// 把指定 Saga 补偿步骤标记 done（R92：内存后端为 no-op，SQLite 幂等更新）。
 pub fn StoreBackend::mark_saga_actions_done(
   self : StoreBackend,
-  ns? : String = "default",
+  ns~ : String = "default",
   root_task_id~ : String,
-  ids~ : Array[Int],
+  ids~ : Array[Int32],
 ) -> Result[Unit, String] {
   match self {
     Mem(_) => Ok(())
@@ -947,7 +947,7 @@ pub fn StoreBackend::cb_get(
   self : StoreBackend,
   ns : String,
   circuit : String,
-) -> (String, Int, Int, Int, Int, Int, Int)? {
+) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)? {
   match self {
     Mem(_) => None
     Sql(s) => s.cb_get(ns, circuit)
@@ -961,12 +961,12 @@ pub fn StoreBackend::cb_save(
   ns : String,
   circuit : String,
   state : String,
-  failures : Int,
-  window_secs : Int,
-  threshold : Int,
-  recovery_secs : Int,
-  opened_at : Int,
-  last_fail_ts : Int,
+  failures : Int32,
+  window_secs : Int32,
+  threshold : Int32,
+  recovery_secs : Int32,
+  opened_at : Int32,
+  last_fail_ts : Int32,
   updated_at : String,
 ) -> Result[Unit, String] {
   match self {
@@ -1034,7 +1034,7 @@ pub fn StoreBackend::update_spec_status(
 ///|
 /// 把一次工具调用固化为 call_log 条目 JSON。
 fn call_log_to_json(
-  seq : Int,
+  seq : Int32,
   ts : String,
   tool : String,
   caller : String,
@@ -1042,7 +1042,7 @@ fn call_log_to_json(
   params_json : String,
   result_json : String,
   ok : Bool,
-  runtime_ms : Int,
+  runtime_ms : Int32,
 ) -> Json {
   Json::object({
     "seq": Json::number(seq.to_double()),
@@ -1068,8 +1068,8 @@ pub fn MemoryStore::write_call_log(
   params_json~ : String,
   result_json~ : String,
   ok~ : Bool,
-  runtime_ms~ : Int,
-  seq~ : Int,
+  runtime_ms~ : Int32,
+  seq~ : Int32,
 ) -> Result[Unit, String] {
   let j = call_log_to_json(
     seq, ts, tool, caller, ns, params_json, result_json, ok, runtime_ms,
@@ -1085,7 +1085,7 @@ pub fn MemoryStore::write_call_log(
 /// 读取最近 N 条调用日志（新的在前）。
 pub fn MemoryStore::recent_call_logs(
   self : MemoryStore,
-  limit? : Int = 50,
+  limit~ : Int32 = 50,
 ) -> Array[Json] {
   let n = self.call_logs.length()
   let take = if n > limit { limit } else { n }
@@ -1109,8 +1109,8 @@ pub fn StoreBackend::write_call_log(
   params_json~ : String,
   result_json~ : String,
   ok~ : Bool,
-  runtime_ms~ : Int,
-  seq~ : Int,
+  runtime_ms~ : Int32,
+  seq~ : Int32,
 ) -> Result[Unit, String] {
   match self {
     Mem(m) =>
@@ -1144,7 +1144,7 @@ pub fn StoreBackend::write_call_log(
 /// 读取最近 N 条调用日志（双后端统一入口，新的在前）。
 pub fn StoreBackend::recent_call_logs(
   self : StoreBackend,
-  limit? : Int = 50,
+  limit~ : Int32 = 50,
 ) -> Array[Json] {
   match self {
     Mem(m) => m.recent_call_logs(limit~)
