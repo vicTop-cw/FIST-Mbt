@@ -200,8 +200,8 @@ fn scan_rules() -> Array[ScanRule] {
     {
       id: "moonbit-noop-assignment",
       severity: "low",
-      pattern: [": self."],
-      why: "字段自赋值无效果（ocr-local moonbit-noop-assignment）",
+      pattern: ["self."],
+      why: "字段自赋值无效果（只认 self.x = self.x；结构体字面量 id: self.id 不报，见 BUG-384）",
       hint: "确认更新源字段而非自身赋值",
     },
     {
@@ -243,7 +243,7 @@ fn scan_rules() -> Array[ScanRule] {
       id: "moonbit-private-field-leak",
       severity: "low",
       pattern: ["password", "secret", "token"],
-      why: "敏感字段可能被公开导出（ocr-local moonbit-private-field-leak）",
+      why: "敏感字段可能被公开导出（敏感词须全词匹配；tokens_in/max_tokens 不报，见 BUG-384）",
       hint: "敏感字段保持私有或加密存储",
     },
     {
@@ -306,7 +306,7 @@ fn scan_rules() -> Array[ScanRule] {
       id: "moonbit-empty-match",
       severity: "low",
       pattern: ["_ => ()"],
-      why: "catch-all 匹配空转，隐藏逻辑错误（ocr-local moonbit-empty-match）",
+      why: "整个 match 只有 `_ => ()` 一条手臂才算空转（多臂 match 的 catch-all 空手臂不报，见 BUG-384）",
       hint: "逐变体处理而非 catch-all 吞掉",
     },
     {
@@ -320,7 +320,7 @@ fn scan_rules() -> Array[ScanRule] {
       id: "moonbit-shared-mutable",
       severity: "low",
       pattern: ["let mut "],
-      why: "可变局部派生自字段，变更不回写（ocr-local moonbit-shared-mutable）",
+      why: "可变局部派生自字段，变更不回写（只有初始化表达式恰为 `obj.field` 才报，见 BUG-385）",
       hint: "直接改字段或重绑定回写",
     },
     {
@@ -439,6 +439,207 @@ fn scan_outside_literal(line : StringView, needle : String) -> Bool {
 /// 逐行匹配一条规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
 
 ///|
+/// 空白字符（含 CRLF 工作树残留的 `\r`）。
+fn scan_is_space_char(c : Char) -> Bool {
+  c == ' ' || c == '\t' || c == '\r'
+}
+
+///|
+/// BUG-384：`self.x = self.x`（右侧名字后只允许空白）才算字段自赋值 no-op。
+/// 旧 pattern 裸子串 `: self.` 会把结构体字面量 `id: self.id` 等所有字段引用都报成 no-op。
+fn scan_self_assign_noop(code : String) -> Bool {
+  let cs = code.to_array()
+  let n = cs.length()
+  let mut i = 0
+  while i + 5 <= n {
+    if cs[i] == 's' &&
+      cs[i + 1] == 'e' &&
+      cs[i + 2] == 'l' &&
+      cs[i + 3] == 'f' &&
+      cs[i + 4] == '.' &&
+      (i == 0 || !scan_is_ident_char(cs[i - 1])) {
+      let mut j = i + 5
+      let start = j
+      while j < n && scan_is_ident_cont(cs[j]) {
+        j = j + 1
+      }
+      if j > start && scan_is_ident_start(cs[start]) {
+        let mut k = j
+        while k < n && scan_is_space_char(cs[k]) {
+          k = k + 1
+        }
+        if k < n &&
+          cs[k] == '=' &&
+          (k == 0 || cs[k - 1] != '=') &&
+          (k + 1 >= n || cs[k + 1] != '=') {
+          k = k + 1
+          while k < n && scan_is_space_char(cs[k]) {
+            k = k + 1
+          }
+          if k + 5 <= n &&
+            cs[k] == 's' &&
+            cs[k + 1] == 'e' &&
+            cs[k + 2] == 'l' &&
+            cs[k + 3] == 'f' &&
+            cs[k + 4] == '.' {
+            let s2 = k + 5
+            let mut e2 = s2
+            while e2 < n && scan_is_ident_cont(cs[e2]) {
+              e2 = e2 + 1
+            }
+            let mut same = e2 - s2 == j - start
+            let mut t = 0
+            while same && t < j - start {
+              if cs[start + t] != cs[s2 + t] {
+                same = false
+              }
+              t = t + 1
+            }
+            let mut tail = e2
+            while tail < n && scan_is_space_char(cs[tail]) {
+              tail = tail + 1
+            }
+            if same && tail >= n {
+              return true
+            }
+          }
+        }
+      }
+      i = i + 5
+    } else {
+      i = i + 1
+    }
+  }
+  false
+}
+
+///|
+/// 从 start 行起按花括号配对数 match 块顶层（depth==1）的 `=>` 手臂数；量不出返回 -1。
+fn scan_match_arm_count(lines : Array[StringView], start : Int32) -> Int32 {
+  let n = lines.length()
+  let stop = if start + 400 < n { start + 400 } else { n }
+  let mut depth = 0
+  let mut opened = false
+  let mut arms = 0
+  let mut i = start
+  while i < stop {
+    let cs = scan_code_chars(lines[i])
+    let m = cs.length()
+    let mut j = 0
+    while j < m {
+      let c = cs[j]
+      if c == '{' {
+        depth = depth + 1
+        opened = true
+      } else if c == '}' {
+        depth = depth - 1
+      } else if c == '=' &&
+        opened &&
+        depth == 1 &&
+        j + 1 < m &&
+        cs[j + 1] == '>' {
+        arms = arms + 1
+      }
+      j = j + 1
+    }
+    if opened && depth <= 0 {
+      return arms
+    }
+    i = i + 1
+  }
+  -1
+}
+
+///|
+/// BUG-384：`_ => ()` 只在「整个 match 块就这一条手臂」时才算空转的 match；
+/// 多臂 match 里的 catch-all 空手臂是正常写法（ocr-local 规则只看子串）。
+fn scan_empty_match_only_arm(lines : Array[StringView], l : Int32) -> Bool {
+  let low = if l > 60 { l - 60 } else { 0 }
+  let mut start = -1
+  let mut i = l
+  while i >= low {
+    if lines[i].contains("match ") {
+      start = i
+      break
+    }
+    if i == 0 {
+      break
+    }
+    i = i - 1
+  }
+  if start < 0 {
+    return false
+  }
+  scan_match_arm_count(lines, start) == 1
+}
+
+///|
+/// BUG-385：`moonbit-shared-mutable` 只认「`let mut x = obj.field`」这一形状——
+/// 局部副本派生自字段、改动不回写。`let mut x = 0` / `let mut x = obj.field() + 1`
+/// 等普通可变量不是本规则要抓的共享态副本（旧 pattern 裸子串 `let mut ` 全判）。
+fn scan_let_mut_field_copy(code : String) -> Bool {
+  let cs = code.to_array()
+  let n = cs.length()
+  let mut i = 0
+  let mut found = false
+  while i + 8 <= n {
+    if cs[i] == 'l' &&
+      cs[i + 1] == 'e' &&
+      cs[i + 2] == 't' &&
+      cs[i + 3] == ' ' &&
+      cs[i + 4] == 'm' &&
+      cs[i + 5] == 'u' &&
+      cs[i + 6] == 't' &&
+      cs[i + 7] == ' ' &&
+      (i == 0 || !scan_is_ident_char(cs[i - 1])) {
+      i = i + 8
+      found = true
+      break
+    }
+    i = i + 1
+  }
+  if !found {
+    return false
+  }
+  let mut eq = -1
+  while i < n {
+    if cs[i] == '=' &&
+      (i == 0 || cs[i - 1] != '=') &&
+      (i + 1 >= n || cs[i + 1] != '=') {
+      eq = i
+      break
+    }
+    i = i + 1
+  }
+  if eq < 0 {
+    return false
+  }
+  i = eq + 1
+  while i < n && scan_is_space_char(cs[i]) {
+    i = i + 1
+  }
+  let start = i
+  while i < n && scan_is_ident_cont(cs[i]) {
+    i = i + 1
+  }
+  if i == start || !scan_is_ident_start(cs[start]) || i >= n || cs[i] != '.' {
+    return false
+  }
+  i = i + 1
+  let start2 = i
+  while i < n && scan_is_ident_cont(cs[i]) {
+    i = i + 1
+  }
+  if i == start2 || !scan_is_ident_start(cs[start2]) {
+    return false
+  }
+  while i < n && scan_is_space_char(cs[i]) {
+    i = i + 1
+  }
+  i >= n
+}
+
+///|
 /// 逐行匹配全部规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
 /// 输出按规则在规则表中的顺序分组，与旧「规则外循环」次序一致。
 /// BUG-162 优化：每行只做一次 `to_owned` + 一次 `code_part`（字面量感知的代码区）计算，
@@ -484,6 +685,7 @@ fn scan_match_lines(
           }
         }
         if hit {
+<<<<<<< HEAD
           out.push({
             rule: rule.id,
             severity: rule.severity,
@@ -491,6 +693,37 @@ fn scan_match_lines(
             line: l + 1,
             code: ls.trim().to_owned(),
           })
+=======
+          let suppressed = if rule.id == "moonbit-json-injection" {
+            !scan_json_string_built_by_concat(ls)
+          } else if rule.id == "moonbit-match-exhaustive" {
+            scan_match_has_catch_all(lines, l)
+          } else if rule.id == "moonbit-long-function" {
+            let cnt = scan_function_line_count(lines, l)
+            cnt >= 0 && cnt <= scan_long_function_limit
+          } else if rule.id == "moonbit-empty-match" {
+            !scan_empty_match_only_arm(lines, l)
+          } else if rule.id == "moonbit-noop-assignment" {
+            !scan_self_assign_noop(code[l])
+          } else if rule.id == "moonbit-private-field-leak" {
+            !(scan_word_occurs(code[l], "password") ||
+            scan_word_occurs(code[l], "secret") ||
+            scan_word_occurs(code[l], "token"))
+          } else if rule.id == "moonbit-shared-mutable" {
+            !scan_let_mut_field_copy(code[l])
+          } else {
+            false
+          }
+          if !suppressed {
+            out.push({
+              rule: rule.id,
+              severity: rule.severity,
+              file,
+              line: l + 1,
+              code: ls.trim().to_owned(),
+            })
+          }
+>>>>>>> 606dd330 (fix(issue_scan): 四条规则结构级降噪 + 修复 master 基线红树（BUG-384/385 / T0r51）)
         }
       }
       l = l + 1
