@@ -212,6 +212,11 @@ SPECIAL_CASES = [
     #    --auto-merge / 写任务池，那是不可逆面，不在判据面里。
     case("whisperer.py", "--selftest"),
     case("whisperer_patrol.py", "--selftest"),
+    # ── R118：`audit_branch_delete.py`（分支删除硬门）落仓时漏接线——`run_guards --list` 现读
+    #    「缺面清单：audit_branch_delete.py」，它连带 check_battery_count_doc / selftest-inventory
+    #    两格一起红。本脚本裸跑要分支参数且会写 <git-dir>/fist/delete-audit.jsonl，只有 --selftest
+    #    是只读面（temp 仓自建自清），故手写点名自检格。──
+    case("audit_branch_delete.py", "--selftest"),
     # —— R106：宇宙并成全集后 `--list` 第一次把这三把尺的**现读红**摆出来。按本文件的律，
     #    预存红「照写期望值 + 依据」而不是豁免：被检内容修好之后这一格自己会翻红，逼下一位
     #    改动的人把期望改回 0（数字变了不改进期望就现形）。这里只登记读数，不动被检脚本。
@@ -387,7 +392,8 @@ UNIVERSE_EXCLUDE_RE = re.compile(r"(^_|^test_|^verify_|^selfdrive_|_verify\.py$|
 # 定义与调用被拆到两次改动里，正是这类事故的形状；下面的 selftest 格把「宇宙必须是递归的、
 # 且含 blackbox 尺」钉成判据，不再靠「跑起来才发现」。
 GATE_PREFIXES = ("check_", "e2e_", "run_", "gen_plugins", "cleanup_",
-                 "store_isolation", "fist-gate", "cli_flag_probe")
+                 "store_isolation", "fist-gate", "cli_flag_probe",
+                 "audit_branch_delete")
 
 # 豁免规则：(前缀或后缀, 理由)。命中必须在 --list 里带理由印出。
 EXEMPT_RULES = (
@@ -859,7 +865,12 @@ def main():
               % (len(_g), len(_e), len(_u)))
         for rel in sorted(set(KNOWN_NO_FACE)):
             print("  待接线 %-42s %s" % (rel, KNOWN_NO_FACE[rel]))
-        nong = [(s, non_gate_reason(s)) for s in discover_scripts() if non_gate_reason(s)]
+        # 「非判据」= 在宇宙里可见、且**不进电池**。有手写 case 的脚本（哪怕名字不在门禁前缀族）
+        # 已在判据面上，不能再出现在这份「不进电池」清单里（R118：audit_branch_delete 同时出现在
+        # 门禁尺 56 与「非判据」两处——两份判据用的谓词不同，清单说的是假的）。
+        nong = [(s, non_gate_reason(s)) for s in discover_scripts()
+                if non_gate_reason(s)
+                and os.path.basename(s) not in {os.path.basename(b) for b in battery}]
         print("非判据工具 %d 个（留在宇宙可见、不进电池——电池只读，改码/生成/宿主类工具不在判据面）" % len(nong))
         for s, why in nong[:60]:
             print("  非判据 %-42s %s" % (s, why))
