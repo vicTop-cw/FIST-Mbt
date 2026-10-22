@@ -121,3 +121,35 @@
 执行路径（备好未跑，等一句授权）：
 - 快进主干：`PATCH /repos/vicTop-cw/FIST-Mbt/git/refs/heads/master`（和 `/heads/main`）body `{"sha":"<gitcode/main>"}`——快进、非强推；**应先在主干同步后再删支**，否则删完主干仍是旧的。
 - 删支：`DELETE /repos/vicTop-cw/FIST-Mbt/git/refs/heads/<urlencoded-ref>`（33 次），或 git 通的时候 `git push origin --delete ...`。
+
+
+## 附注三：GitCode 端最终收口（2026-10-22 14:14 现读）
+
+> owner 裁决：「GitHub 那边不用管，弄 GitCode 端即可」——上一节的 origin 33 支清单交回人工，本节只记 GitCode 单端的收尾。
+
+### Phase 1 · DROP 删除（cherry+=0）
+
+| 分支 | 删除前 SHA | 判据 | rc | 结果 |
+|---|---|---|---|---|
+| `fix/merge-cleanup-content-based` | `e1f752c4` | ahead=0 cherry+=0 src±=0 markers=0 + `merge-base --is-ancestor` 已并入 main | 0 | `- [deleted]`（remote Git Hooks PASSED） |
+| `slave/fix/merge-cleanup-content-based` | `e1f752c4` | 同一 SHA 的双生引用，判据同上 | 0 | `- [deleted]` |
+
+零丢面：两条 ref 都指 `e1f752c4`，该 commit 是 `main`(`bbcc5a35`) 的祖先、逐字留在 main 历史里；删的只是 ref，可用 `git push gitcode e1f752c4:refs/heads/<分支名>` 精确还原（SHA 已备份 `~/gc-drop-shas.txt`）。
+
+### Phase 2 · MERGE-CODE 手动合并
+
+本轮无待合项：删除后 `git ls-remote --heads gitcode` = `main` + `master` 两条（同指 `bbcc5a35`），分支数 4 → 2；任务书里「80 条 MERGE-CODE」那一格在 GitCode 面上已归零。
+
+### 门禁读数（主干 `bbcc5a35`，隔离 worktree `F:/AI/Fist-Mbt-wt-clear` detached）
+
+- `moon check --target js` → `Finished. moon: ran 32 tasks, now up to date (508 warnings, 0 errors)`。判绿只看 0 errors 汇总行，不据退出码（BUG-142）。
+- `moon fmt`：本轮改动全为 `.md`，无 `.mbt` 落盘，故格式化门 N/A；本机 `moon fmt` 仍 rc=127（`Moonfmt.make_directory`），非本轮引入。
+- `python scripts/whisperer.py --fast` → `HEAD: bbcc5a3 | ✅ 三端一致`。
+
+### 一条预存红（按裁决不代修，只点名）
+
+whisperer fast 的「三端一致」是文案、不是对表：`scripts/whisperer.py:44` 读的是**本地陈旧的 `origin/main` 引用**（本机 `git fetch origin` 不通 ⇒ origin 引用永无法 prune），而 `og` 只参与 `gc == og and gc != local` 那一种篡改形状（:62），走到 else 分支就无条件打印「✅ 三端一致」（:100-101）。同一次调用实测：`origin/main=f6560010`、`gitcode/main=bbcc5a35`（本地陈旧引用落后主干 **207 commits**），标签照样报一致 ⇒ **该读数不得当作 GitHub 同步证据**，GitHub 真实存量一律以 `GET /repos/vicTop-cw/FIST-Mbt/git/refs/heads/*` API 现读为准。
+
+### `fist-gate.py --scan` 的读数如何解释
+
+扫描报 35 支 DROP，其中 33 支是 `origin/*` 幻影（unreachable 面 + 无法 prune），GitCode 真存量只有上表 2 支且已删。分支宇宙取本地远端跟踪引用这条口径不改（改它属于判据面重构，不在本轮边界内），本轮靠 `git fetch --prune gitcode` + `git ls-remote --heads gitcode` 双面对表把幻影与真存量分开计数。
