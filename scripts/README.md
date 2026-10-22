@@ -178,3 +178,11 @@
   候选任务卡 → issue 扫描）。旗标 `--scan-only`（默认）/ `--auto-merge` / `--selftest`（**也接受
   `--self-test`**，与全仓惯例对齐）。自检 G1 会真跑 `fist-gate.py --scan` 并区分
   绿 / DEGRADED(rc=2) / 红（红要印末行原因，不只印 rc）。
+
+### 2026-10-22 补登记：`check_bug_refs.py`
+
+- `check_bug_refs.py` — 工具类辅助脚本（本次补登记；职责见脚本头部 docstring）。
+
+### 2026-10-22 补登记：`fist-pr-automator.py`
+
+- `fist-pr-automator.py` — 工具类辅助脚本（本次补登记；职责见脚本头部 docstring）。
