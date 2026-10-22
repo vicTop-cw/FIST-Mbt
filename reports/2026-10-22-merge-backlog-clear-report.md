@@ -95,3 +95,8 @@
 - 主线历史：`34a4e670`（本 agent 推送）、`90969972`（收口时 gitcode/main 与 master 同指）。
 - 工具链现状与工艺依据：项目记忆 `project-slave-box-toolchain-blockers.md`、`project-slave-unit-close-out-traps.md`（本轮新添坑 18/19/20）。
 - 任务书前提（80 条 MERGE-CODE / 8 条 DROP / HEAD `f6560010`）与本报告的实测差异，以上表为准。
+
+## 附注（收口后自查：零丢面证明）
+
+- 三条被判 `cherry+=1`（补丁不在 main）的**早期被弃草稿支** `work/backlog-clear` = `626219b6` / `3801bd11` / `9b4271ad`，已**逐行机器对表主线正文**（added lines ↔ `gitcode/main:<file>`）：`reapply.sh` 124/0、`memory/2026-10-22.md` 22/0、`claim_rank_wbtest.mbt` 131/0 ⇒ **not-on-main 全为 0，零丢面**。
+- 读法（值得入档）：`git cherry` 比的是 **patch-id**，而 patch-id 对上下文敏感 ⇒ 「超集文件里的一支子集提交」「union 合并后的日志追加」「换过锚点的同一 shell 改动」都会显示 `+`。判「内容有没有进主线」必须加一层**逐行对表**，只看 `cherry+=` 会把已落账的活读成丢失。
