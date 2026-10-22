@@ -123,7 +123,7 @@ test "scan_match_lines_整行注释与字面量两道降噪同时生效" {
   // 单行函数（三行以内）同样不报
   let one_line = "fn id(x : Int) -> Int { x }\n"
   assert_eq(scan_match_lines(one_line, [lf_rule], "f.mbt").length(), 0)
-  // BUG-384 成对锁：empty-match 只报「整个 match 仅一条 `_ => ()` 手臂」；
+  // 成对锁（历史注释曾误引一个从未入账、也无任何追记的编号，已按 BUG-373 口径移除该记号以免悬空引用）：empty-match 只报「整个 match 仅一条 `_ => ()` 手臂」；
   // 多臂 match 的 catch-all 空手臂是正常写法，必须放过。
   let em_rule = {
     id: "moonbit-empty-match",
@@ -136,7 +136,7 @@ test "scan_match_lines_整行注释与字面量两道降噪同时生效" {
   assert_eq(scan_match_lines(em_only, [em_rule], "e.mbt").length(), 1)
   let em_multi = "fn g(x : Int) -> Unit {\n  match x {\n    0 => ()\n    _ => ()\n  }\n}\n"
   assert_eq(scan_match_lines(em_multi, [em_rule], "e.mbt").length(), 0)
-  // BUG-384 成对锁：noop 只认 `self.x = self.x`；结构体字面量 `id: self.id` 与改别的字段都不报。
+  // 成对锁（历史注释曾误引一个从未入账、也无任何追记的编号，已按 BUG-373 口径移除该记号以免悬空引用）：noop 只认 `self.x = self.x`；结构体字面量 `id: self.id` 与改别的字段都不报。
   let noop_rule = {
     id: "moonbit-noop-assignment",
     severity: "low",
@@ -153,7 +153,7 @@ test "scan_match_lines_整行注释与字面量两道降噪同时生效" {
   // CRLF 工作树的 `\r` 视作空白，行尾判定不被它挡掉
   let noop_crlf = "self.total = self.total\r\n"
   assert_eq(scan_match_lines(noop_crlf, [noop_rule], "n.mbt").length(), 1)
-  // BUG-384 成对锁：private-field-leak 只认整词；tokens_in / max_tokens 不报。
+  // 成对锁（历史注释曾误引一个从未入账、也无任何追记的编号，已按 BUG-373 口径移除该记号以免悬空引用）：private-field-leak 只认整词；tokens_in / max_tokens 不报。
   let pf_rule = {
     id: "moonbit-private-field-leak",
     severity: "low",
@@ -165,7 +165,7 @@ test "scan_match_lines_整行注释与字面量两道降噪同时生效" {
   assert_eq(scan_match_lines(pf_word, [pf_rule], "p.mbt").length(), 1)
   let pf_sub = "let tokens_in = 3\nlet max_tokens = 4\n"
   assert_eq(scan_match_lines(pf_sub, [pf_rule], "p.mbt").length(), 0)
-  // BUG-385 成对锁：shared-mutable 只认 `let mut x = obj.field` 形状。
+  // 成对锁（历史注释曾误引一个从未入账、也无任何追记的编号，已按 BUG-373 口径移除该记号以免悬空引用）：shared-mutable 只认 `let mut x = obj.field` 形状。
   let sm_rule = {
     id: "moonbit-shared-mutable",
     severity: "low",
