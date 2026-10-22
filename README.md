@@ -286,15 +286,3 @@ fist doctor        # 5 项健康检查
 
 - **0.2.5** (2026-09-26) — 105 工具 / 329 测试。新增 `output_validate`(R113)、`issue_scan`、`laya_decide` · `loop_create` · `loop_tick` · `loop_status` · `mcp_config_scaffold`、`project_standards`(R114)；统一 CLI 网关 `scripts/fist.py`；MCP/CLI/Skill 三处手写形态对齐（插件态于 0.2.6 起成为第四态）。
 - **0.2.4** (前置) — 104 工具 / 317 测试。完整生命周期闭环、自驱体系、Omega 强验证、看门狗、Saga、熔断器。
-
-[![Tests](https://img.shields.io/badge/tests-1353%2F1353-brightgreen)](./src)
-**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 1353 项测试全绿、跨环境可复现。
-4. ✅ `moon test` 全绿？ → 1353/1353 零回归（`--target js`，本轮 CI 实测）
-moon test --target js  # → Total tests: 1353, passed: 1353, failed: 0
-> **JS 后端**：`moon test --target js` = **1353/1353**（2026-10-22 CI js/ubuntu 实测，含 C-A-F 反馈记忆层、一源四态 cl7、CAF 属性测试、模型路由与外部执行器合并）。
-
-[![Tests](https://img.shields.io/badge/tests-1347%2F1347-brightgreen)](./src)
-**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 1347 项测试全绿、跨环境可复现。
-4. ✅ `moon test` 全绿？ → 1347/1347 零回归（`--target js`，本轮 Windows 实测）
-moon test --target js  # → Total tests: 1347, passed: 1347, failed: 0
-> **JS 后端**：`moon test --target js` = **1347/1347**（2026-10-21 Windows 实测，含 C-A-F 反馈记忆层、一源四态 cl7、CAF 属性测试、模型路由与外部执行器合并）。
