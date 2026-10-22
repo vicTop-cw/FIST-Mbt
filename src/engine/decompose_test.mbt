@@ -541,3 +541,103 @@ test "plan_deep SQLite 持久化：重启后子树可经 get_task 恢复" {
     }
   }
 }
+
+///|
+/// 子串出现次数（R113 的判据尺：标注叠乘在文本面上的形状就是同一标记出现多次）。
+fn dp_count(hay : String, needle : String) -> Int32 {
+  let mut n = 0
+  for _ in hay.split(needle) {
+    n = n + 1
+  }
+  n - 1
+}
+
+///|
+test "plan_deep 开关全开时标注不逐层叠乘：每叶一档梯度、一份父计划、一枚强验证标记" {
+  let e = dp_new_engine()
+  let id = dp_publish(e, desc="R113 叠乘根")
+  let spec = dp_spec(["L1: 满足能力A", "L2: 满足能力B"])
+  match
+    e.plan_deep(
+      task_id=id,
+      split_n=2,
+      by="leader_a",
+      spec=Some(spec),
+      now="2026-10-22T00:02:00Z",
+      omega_strong_verify=true,
+      gradient=true,
+      reinject_context=true,
+      boundary_probe=true,
+    ) {
+    Err(m) => abort("plan_deep 全开失败: \{m}")
+    Ok(_) => {
+      for t in e.list_all() {
+        if t.get_id() == id {
+          ()
+        } else {
+          // 梯度档在叶上只允许出现一次（旧实现下钻时将上一层整段引文再裹进来 -> 两次）
+          assert_eq(dp_count(t.description, "[难度梯度 "), 1)
+          assert_eq(dp_count(t.description, "更简单变体：先把「"), 1)
+          assert_eq(dp_count(t.description, "[父计划:"), 1)
+          assert_eq(dp_count(t.description, @engine.omega_mark()), 1)
+          assert_eq(dp_count(t.description, "fnv1a64:test-spec-hash"), 1)
+          // 边界四问：元叶本身不挂、其余每片至多挂一次（叠乘的形状是同一片出现多次）
+          assert_eq(dp_count(t.description, "[边界四问") <= 1, true)
+        }
+      }
+    }
+  }
+}
+
+///|
+test "plan_deep boundary_probe 开启时 calibrate 仍按业务片生效（旧实现长度错配整段静默丢弃）" {
+  let e = dp_new_engine()
+  let id = dp_publish(e, desc="R113 校准根")
+  match
+    e.plan_deep(
+      task_id=id,
+      split_n=3,
+      by="leader_a",
+      now="2026-10-22T00:03:00Z",
+      gradient=true,
+      calibrate=Some([4.0, 3.0, 1.0]),
+      boundary_probe=true,
+    ) {
+    Err(m) => abort("plan_deep 校准失败: \{m}")
+    Ok(_) => {
+      let kids = e.children_of(id)
+      // 3 片业务 + 1 片引擎追加的边界审视叶
+      assert_eq(kids.length(), 4)
+      assert_eq(kids[0].description.contains("[难度梯度 1/4:难 d=4]"), true)
+      assert_eq(kids[1].description.contains("[难度梯度 2/4:中 d=3]"), true)
+      assert_eq(kids[2].description.contains("[难度梯度 3/4:易 d=1]"), true)
+      assert_eq(kids[3].description.contains("[边界审视"), true)
+    }
+  }
+}
+
+///|
+test "plan_deep 默认关闭开关时下钻底稿不重复挂 spec 指纹（叠乘的同形面，零回归仅指语义）" {
+  let e = dp_new_engine()
+  let id = dp_publish(e, desc="R113 指纹根")
+  let spec = dp_spec(["L1: 满足能力A", "L2: 满足能力B"])
+  match
+    e.plan_deep(
+      task_id=id,
+      split_n=2,
+      by="leader_a",
+      spec=Some(spec),
+      now="2026-10-22T00:04:00Z",
+    ) {
+    Err(m) => abort("plan_deep 默认失败: \{m}")
+    Ok(_) => {
+      for t in e.list_all() {
+        if t.get_id() == id {
+          ()
+        } else {
+          assert_eq(dp_count(t.description, "fnv1a64:test-spec-hash"), 1)
+        }
+      }
+    }
+  }
+}
