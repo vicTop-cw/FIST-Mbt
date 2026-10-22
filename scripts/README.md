@@ -202,3 +202,24 @@
   `git checkout master` + `git reset --hard` + `git push --force HEAD:main HEAD:master`（两远端），
   无人值守跑它等于让定时脚本对共享线强推——已入池 TASK-018（P1）待裁决，裁决前面包保持排除。
   与 `whisperer_patrol.py` 的分工：这份管编排（含合入动作），那份管探测与入池（零共享线副作用）。
+- `check_bug_refs.py`（2026-10-22 `cef1e9c` 主机入仓，BUG-373 出路①的第二把尺）—
+  **代码/文档里 `BUG-n` 引用 ↔ 账本 `memory/bugs.md` 对账**：`git ls-files` 取跟踪面（.mbt/.py/.md/.yml/
+  .yaml/.json/.ps1/.sh/.toml，排除 `_build`/`temp`/`.git`/`plugins`/`reports`/`docs/archive` 等），
+  逐行正则 `\bBUG-\d+\b` 对账本抬头 `## BUG-n ... STATUS` 分三档：OK（存在）/ ORPHAN（账本无此编号）/
+  CLOSED（账本已 FIXED/DUPLICATE/FALSE_POSITIVE）。`--selftest` 三格合成失配（ok/orphan/closed），
+  rc：0=只报告（默认）/ 1=`--strict` 下 orphan 或 closed 存在 / 2=自证失败。
+  **现状读数（2026-10-22 本机实测）**：默认档 rc=0、命中量大到「…还有 7177 处」这一档，
+  其中 CLOSED 占绝大多数（本仓习惯在注释里留 BUG 号作历史溯源）⇒ `--strict` 当门是永久红，
+  这一把只能当报告面；要给「悬空（ORPHAN）」上硬门，请走已接 CI 的 `check_bug_reference_integrity.py`
+  （J1 族，棘轮已压到 0，判据口径不同：只管悬空不管引到已关号）。两份同族实现待裁，见 TASK-020。
+  用法 `python scripts/check_bug_refs.py [--selftest|--strict] [--bugs memory/bugs.md]`。
+- `fist-pr-automator.py`（2026-10-22 `cef1e9c` 主机入仓）— **yaml → 门 → push → 开 PR/MR → merge 流水线**：
+  三参跑法 `python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode>`，读 `branch`/`title`/`base`/
+  `repo`/`remote`/`gate`/`merge` 字段，先跑 `scripts/fist-gate.py`（rc≥1 即停），再 `git push -u`，
+  然后用 curl 打 GitHub API v3 / GitCode API v5（token 只从 `GITHUB_TOKEN`/`GITCODE_TOKEN` 环境变量读），
+  默认还会 `merge`（squash）。rc：0=ok / 1=blocked / 2=degraded；`--selftest` 一格守它自带的
+  最小 yaml 解析器。**这是本仓唯一会「自己合并代码」的脚本**，与金条四（不可逆操作执行权留人）正面冲突，
+  因此 `EXCLUDE_EXACT` 排除其无参自动发现格（无参 `raise SystemExit(str)` ⇒ 恒 rc=1 的永久红格），
+  电池里只保留 `--selftest` 一格；合入动作本身挂 TASK-021 待裁，任何自动化都不得默认调它。
+  用法 `python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode>`（人工触发）。
+
