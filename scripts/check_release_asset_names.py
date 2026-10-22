@@ -48,6 +48,9 @@ CI 看不见这条：CI 不发 Release，也不跑安装器。
      runner 每步起新 shell，安装脚本改的是 shell rc，下一步里 `moon` 不在 PATH ⇒ `Build JS target` 红 ⇒
      `release` 作业被 skip ⇒ Release 零资产、默认安装线一直 404。
      判据只看**去掉注释行之后**的代码面（第一版被自家注释里的 "GITHUB_PATH" 喂回针，那格变异不红）。
+     被检面从 `.github/workflows/` **目录派生**（逻辑名 `wf:<文件名>`），只判其中真跑了 `moon build|test|update|ide|check`
+     的那几份：实测 `gate.yml` 与 `fist-bug-sync.yml` 都跑 moon 却不在旧的手写三名单里 ⇒ 名单形态本身就是盲区。
+     一个 workflow 都没读到 ⇒ `R9 FATAL` 拒绝出数（空扫描必自拒）。
 
   R10 文档线必须 BOM 安全（BUG-113）：安装脚本按 BUG-88 带 UTF-8 BOM，`irm` 把 BOM 留成首字符 U+FEFF，
       `iex` 于是把 `param()` 当普通语句解析 ⇒ 用户照 README 粘的那一行当场报「赋值表达式的左侧无效」，
@@ -99,6 +102,28 @@ FILES = {
     "server_mbt": os.path.join("src", "server", "server.mbt"),
 }
 CLI_DIR = os.path.join("cmd", "cli")
+WORKFLOW_DIR = os.path.join(".github", "workflows")
+
+
+def workflow_face(root=None):
+    """R9 的被检面：逻辑名一律 `wf:<文件名>`，从目录派生而不是手写名单。
+    实测为什么要改：`gate.yml` 与 `fist-bug-sync.yml` 都跑 `moon`，却不在旧名单的三个名字里
+    ⇒ 新 workflow 天生在盲区，BUG-112 那套"moon 不在 PATH"会重犯而无人红。
+    与 J12 同口径（那条一开始就是 glob 目录，注释里写着"手写清单必然落后于新增 workflow"）。"""
+    d = os.path.join(root or ROOT, WORKFLOW_DIR)
+    out = {}
+    if not os.path.isdir(d):
+        return out
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith((".yml", ".yaml")):
+            continue
+        out["wf:" + fn] = io.open(os.path.join(d, fn), encoding="utf-8-sig", errors="replace").read()
+    return out
+
+
+def code_face_text(text):
+    """剔掉整行 `#` 注释，只留代码面（R9 第一版被自家注释里的 GITHUB_PATH 喂回过针）。"""
+    return chr(10).join(l for l in (text or "").split(chr(10)) if not l.lstrip().startswith("#"))
 
 
 def collect_cli_version_consts(root=None):
@@ -250,13 +275,13 @@ def judge(texts):
     # build-js 红 ⇒ release 作业被 skip ⇒ 默认安装线永远 404。本机装了全局 moon，
     # "在 git archive 快照树里复跑 CI 的三步"因此全绿 —— 这条只在 runner 上现形）
     MOON_CALL = re.compile(r'\bmoon\s+(?:build|test|update|ide|check)\b')
-    for wf_name, wf_key in (("release.yml", "release_yml"), ("ci.yml", "ci_yml"), ("fist-ci.yml", "fist_ci_yml")):
-        wf = texts.get(wf_key)
-        if not wf or not MOON_CALL.search(wf):
+    wf_face = dict((k[3:], v) for k, v in texts.items() if k.startswith("wf:") and v)
+    if not wf_face:
+        problems.append("R9 FATAL 一个 workflow 都没读到（扫描面空转 ≠ 没有问题，判据拒绝出数）")
+    for wf_name, wf in sorted(wf_face.items()):
+        wf_code = code_face_text(wf)
+        if not MOON_CALL.search(wf_code):
             continue
-        # 只看**代码面**：注释里出现 "GITHUB_PATH" 不算导出（第一版就被自家说明文字喂回过针——
-        # 我在 release.yml 写的注释里有这个词，于是"摘掉导出行"那格变异不红了）。
-        wf_code = "\n".join(l for l in wf.split("\n") if not l.lstrip().startswith("#"))
         if "GITHUB_PATH" not in wf_code:
             problems.append("R9 %s 里跑了 moon 却没把工具链目录写进 GITHUB_PATH"
                             "（安装脚本改的是 shell rc，下一步的 shell 看不见 ⇒ moon 不在 PATH）" % wf_name)
@@ -359,6 +384,7 @@ def selftest():
             "moon_mod": clean_moon, "server_mbt": clean_srv,
             "cli_version_consts": collect_cli_version_consts(),
             "readme": io.open(os.path.join(ROOT, FILES["readme"]), encoding="utf-8").read()}
+    base.update(workflow_face())  # 扫描面从目录派生 ⇒ 夹具也得拿真目录，否则变异格打不到新增 workflow
     fails = []
     if judge(dict(base)):
         fails.append("干净输入被误判（本仓现状应通过）：%s" % judge(dict(base))[:2])
@@ -398,8 +424,8 @@ def selftest():
         ("release_yml", "needs: [meta, build-js]", "needs: [build-js, build-native-linux]", "R8"),
         ("release_yml", "needs: [meta, build-js]", "needs: [build-js]", "R8"),
         # R9 两支（BUG-112 的两种退化）：moon 目录不交给下一步 / 安装 URL 退回少 `.sh`
-        ("release_yml", 'echo "$HOME/.moon/bin" >> "$GITHUB_PATH"', "echo '# (变异：不把 moon 交给下一步)'", "R9"),
-        ("release_yml", "cli.moonbitlang.com/install/unix.sh", "cli.moonbitlang.com/install/unix", "R9"),
+        ("wf:release.yml", 'echo "$HOME/.moon/bin" >> "$GITHUB_PATH"', "echo '# (变异：不把 moon 交给下一步)'", "R9"),
+        ("wf:release.yml", "cli.moonbitlang.com/install/unix.sh", "cli.moonbitlang.com/install/unix", "R9"),
         # R10 两支：文档线退回裸 `irm … | iex`（安装器侧 / README 侧）
         ("ps1", "TrimStart([char]0xFEFF)", "NO-TRIM", "R10"),
         ("readme", "TrimStart([char]0xFEFF)", "NO-TRIM", "R10"),
@@ -460,6 +486,27 @@ def selftest():
         fails.append("R13 对模板形态 v$VERSION 误红（那不是字面量，判据会把文档逼回写死版本）：%s" % probs[:1])
     executed.append("R13")
 
+    # R9 另三格：证的不是 moon 那两行，而是**扫描面从目录派生**这件事真的生效
+    d = dict(base)
+    d["wf:gate.yml"] = d["wf:gate.yml"].replace(
+        'echo "$HOME/.moon/bin" >> "$GITHUB_PATH"', 'echo "# (变异：不把 moon 交给下一步)"')
+    probs = judge(d)
+    if not any(p.startswith("R9") and "gate.yml" in p for p in probs):
+        fails.append("R9 对目录里的新 workflow 失明（gate.yml 摘掉 GITHUB_PATH 未红 ⇒ 旧名单之外没人认领）：%s" % probs[:1])
+    executed.append("R9")
+    # 反向对照：不跑 moon 的 workflow 不许被 R9 判（否则每份 yml 都得配一段 bootstrap 才算合规）
+    d = dict(base)
+    d["wf:no-moon.yml"] = chr(10).join(["name: x", "jobs:", "  a:", "    steps:", "      - run: python3 scripts/noop.py"])
+    probs = judge(d)
+    if any("no-moon.yml" in p for p in probs):
+        fails.append("R9 对不跑 moon 的 workflow 误红：%s" % probs[:1])
+    executed.append("R9")
+    # 空扫描自拒：一个 workflow 都没读到必须是 FATAL，不是"通过"
+    probs = judge(dict((k, v) for k, v in base.items() if not str(k).startswith("wf:")))
+    if not any(p.startswith("R9 FATAL") for p in probs):
+        fails.append("R9 扫描面空转时不红（没抓到 ≠ 没有问题，空扫描必自拒）")
+    executed.append("R9")
+
     from collections import Counter
     cnt = Counter(executed)
     inventory = " / ".join("%s×%d" % (k, v) if v > 1 else k for k, v in sorted(
@@ -479,6 +526,7 @@ def main():
         return selftest()
     texts = {k: load(v) for k, v in FILES.items()}
     texts["cli_version_consts"] = collect_cli_version_consts()
+    texts.update(workflow_face())
     problems = judge(texts)
     for p in problems:
         print("  - " + p)
