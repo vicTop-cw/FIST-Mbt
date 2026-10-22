@@ -56,7 +56,7 @@
 3. **想加/改 MCP 工具** → `src/server/server.mbt` 用 `.tool(name, desc, schema, handler)`，handler 经 `_instrument` 包装（自动 call_log）。
 4. **想动存储** → `src/store/store_sqlite.mbt`（表结构在 `moon.pkg` 初始化处）。
 5. **想跑通即走** → `python scripts/mcp_smoke.py` / `scripts/enrich_selfdrive.py`。
-6. **提交前想确认守卫面** → `python scripts/run_guards.py`（仓内电池真源，35 格：逐格打 rc/期望/结论，
+6. **提交前想确认守卫面** → `python scripts/run_guards.py`（仓内电池真源，逐格打 rc/期望/结论——**格数与登记以 `scripts/README.md` 的 `BATTERY-REGISTRATION` 锚点为唯一出处，本句不写死数字**：本文件曾写死「35 格」，到 2026-10-22 实测已是 60 格，写死一个数就是下一颗漂移雷；
    预存红按声明的期望值命中、不算失败但也写在汇总里）。**别在 `temp/` 里另写一份电池**：
    历轮 11 份手写电池的格数是 13 → 30 → 37 全靠回忆，漏的那格永远不会被发现漏了（BUG-366）。
 
