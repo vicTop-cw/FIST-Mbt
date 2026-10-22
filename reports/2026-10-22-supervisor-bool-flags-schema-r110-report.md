@@ -86,6 +86,30 @@ supervisor_kill_plan   {apply_pause:"true"}      → -32602 … at /apply_pause 
 `check_delivery_gap` 那一格量的是**交付态**而不是代码（HEAD 领先主线、tip 尚未出现在任何远端分支）。
 按本仓既有裁决：不给它 `expected`、不豁免、不降棘轮；权威读数取 push 之后那一次复跑（见「后续」）。
 
+### E′ 推后权威读数（本单交付证据以此行为准）
+
+分支推上 `gitcode/slave/fix/supervisor-bool-flags-schema-r110` 之后复跑 `scripts/run_guards.py`：
+**格数 55 / 失败 0 / SKIP 5 / 缺执行面 0，rc=0** —— `check_delivery_gap` 如预期归 0（tip 已在远端分支上）。
+SKIP 5 是缺前置产物（`temp/pt27.log`、`temp/chk47.json`），不构成「这格过了」的证据，也不构成失败。
+期间主线又前进一次（`4914a81f → 15bb3b24`，含 `d1847018 fix(whisperer.py)`），已叠进来复跑：
+`moon check --target js` = 508 warnings / 0 errors，`moon test --target js` = 1379/1379。
+
+### F `whisperer --fast` 读数（照硬规则跑，但**不采纳它的处方**）
+
+```
+🔀 origin/main (e5293cc) ≠ gitcode/main (15bb3b2) — 镜像不同步！ gitcode 领先 11 / 落后 0
+⚠️ 本地 HEAD 与远端 main 不一致（篡改） → 跑 --scan-only 恢复，或手动 git reset --hard 15bb3b2
+```
+
+两条都是**新Fix（`d1847018` 加了 fetch + 双远程比对）带来的新读数**，逐条判读：
+
+1. 镜像不同步 = GitHub 侧落后，owner 裁决「gitHub 那边不用管，弄 GITcode 端即可」⇒ 对本单无关，不处置。
+2. 「本地 HEAD 与远端 main 不一致（篡改）」并把 `git reset --hard` 写成恢复处方 —— 这是**判据 defect**，
+   不是本单问题：feature 分支「领先主线 N 个提交」是 MR 工作流的正常形状，而 `reset --hard` 会把
+   刚提交并推送的单元**在本地抹掉**。本单不执行该处方（HEAD 落后主线 0 / 领先 4，已由 merge 保证）。
+   建议下一单：`--fast` 先判当前分支是否等于主线名，非主线时改报「落后/领先 N（feature 分支，勿 reset）」，
+   且处方文本里不再出现销毁性命令。
+
 ## 资源消耗
 
 - 工具面普查：1 个 `serve` 进程 96 次调用（全开关）+ 2 次针对性验证进程（各 6~10 次调用）；
@@ -132,6 +156,8 @@ supervisor_kill_plan   {apply_pause:"true"}      → -32602 … at /apply_pause 
    （实测 `hat_merge` 的词表是 `stargazer/pulse/wallbreaker/golddigger/nova/nucleus`，与六帽无关），
    已在上一轮报告列勘误，建议单独一笔文档修。
 4. `src/hat/hat_defs.mbt:88` 的拒绝消息不带 offending 值与字段名，调用方无从自证 —— 小改，可搭车。
+5. `scripts/whisperer.py --fast` 的「篡改 + `git reset --hard`」处方（F 节实测读数）：对 feature 分支
+   把正常领先判成事故，并给销毁性处方。AI 消费方照做会丢单元，判绿也不该带这句。
 
 ## 超额内容（超出「把 4 个参数改成 boolean」的部分）
 
