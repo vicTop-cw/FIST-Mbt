@@ -225,9 +225,11 @@ SPECIAL_CASES = [
     #    因为 C9 真面变异格是「再有人抄一份」的唯一机器读数。
     case("check_backlog_yaml_integrity.py"),
     case("check_backlog_yaml_integrity.py", "--selftest"),
-    expected("check_backlog_status_staleness.py", 1,
-             "现读 9 条状态落差 > 上限 4（任务池里 backlog/done 与提交面对不上，属内容债，"
-             "逐条核对归任务池那一单；上限不许为了让电池变绿而上调）"),
+    # ── 兑现（R114）：主线 `60558289`（backlog-status-reconcile-r111）把 9 条状态落差逐条
+    #    对账清零，并把 STALE_CEILING 4→0 ⇒ 这一格现读 got=0，登记的红已不成立。
+    #    按本文件自订的律「被检内容修好 ⇒ 把期望改回 0」转回门禁格，依据一起删。
+    #    尺没被削弱：--selftest 11 格（M×2/P×2/R×4/V×3）照旧全过，上限 0 ⇒ 新增一条落差就红。──
+    case("check_backlog_status_staleness.py"),
     expected("check_scripts_naming.py", 1,
              "现读 2 条命名判定面 > 棘轮上限（NAMING.md 词法棘轮，改名要同批下调上限，"
              "见 scripts/NAMING.md）"),
