@@ -39,7 +39,7 @@
 
 ## 遗留风险
 
-1. **与 R116 gitlink 单的合并面**：那一单也改本文件，位置在第 179 行附近；本单一在第 228 行附近，两处相隔约 49 行，预期 auto-merge 干净。若 owner 先并其中一单，另一单照常合并即可，无需手工取舍。
+1. **与 R116 gitlink 单的合并面（已实测）**：`git merge-tree --write-tree --name-only slave/fix/drop-orphan-gitlink-merge-marker HEAD` 实测 rc=1，唯一冲突是 `memory/2026-10-22.md`（两支都在当日日志尾部追加自己的段，属尾追加撞点）；`scripts/run_guards.py` 两处改动（第 179 行附近 / 第 228 行附近）**auto-merge 干净**。解冲突时两段并排保留、谁的都不覆（本仓既有工艺）。
 2. **SKIP 5 仍是证据缺口**：`temp/pt27.log` / `temp/chk47.json` 不存在时，`check_badge` / `check_test_sync` / `check_deprecated_*` 五格不跑。本单不代造这些前置件（造了就是给判据喂假执行面）。
 3. **尺的扫描面取 `gitcode/main`**：若主线后续新增点名 TASK-0NN 的提交而 yaml 不盖章，这条尺会重新红——这正是期望改回 0 后应有的现形机制，不是回归。
 
