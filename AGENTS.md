@@ -104,7 +104,7 @@ You can browse and install extra skills here:
 
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
 > Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
-> **JS 后端**：`moon test --target js` = **1379/1379**（2026-10-22 CI (js, ubuntu) 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并 + 多管家/supervisor 工具 + web 面板 M0 + 五语言接入示例 + CAF 属性测试与边界探针 + BUG-333 默认降噪锁等后续追加）。
+> **JS 后端**：`moon test --target js` = **1384/1384**（2026-10-22 CI (js, ubuntu) 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并 + 多管家/supervisor 工具 + web 面板 M0 + 五语言接入示例 + CAF 属性测试与边界探针 + BUG-333 默认降噪锁等后续追加）。
 > **Native 后端**：2026-10-01 在 WSL(Linux ubuntu-22.04) 实测 `moon test --target native -j 1` = **572/572**（工作树带既往构建残留时）；
 > 同一 commit 的 `git archive HEAD` **干净树**上同一条命令必崩，根因见账本 BUG-133（依赖的 native FFI），
 > 崩没崩由 `scripts/blackbox/e2e_native_heap_probe.py` 说话，不据任何旧数宣称双端同版全绿。
@@ -129,7 +129,7 @@ You can browse and install extra skills here:
   就给出过 `3/12` 与 `0/12` 两端（2026-10-02 WSL，逐跑 rc 分解见账本 BUG-133 追记）⇒ `crashes=0/N` 只说明
   "这一支样本没抽中"，不许据此写「native 已修」；BUG-133 的关闭条件因此是两格（抽检连发 0 崩溃 + 干净树全量通过）。
   退出码是契约（`0` 全跑完 / `1` 有崩溃 / `3` 平台或工具链不给量、拒绝出数 / `4` 尺子自己坏了——含判据未捕获异常，
-  绝不冒用 `1` 那一档）。**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 1379/1379）**，见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
+  绝不冒用 `1` 那一档）。**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 1384/1384）**，见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
    但 `moon test` 自身的退出码**不可靠**（moon 0.1.20260920 实测：测试可执行文件 SIGABRT 时 `moon test` 仍回 exit 0，BUG-142）——**判绿以 `Total tests: N, passed: N, failed: 0` 汇总行为准**，exit 0 只是必要条件；只查退出码的脚本会把崩溃判成通过。
 
 > **BUG-133 已在依赖侧修复（2026-10-10）**：`mizchi/sqlite` 的 `stub.c` 已改写成
@@ -388,14 +388,14 @@ You can browse and install extra skills here:
 ### 超级管家专属工具（8，`src/server/supervisor_tools.mbt` 真源）
 | 工具 | 说明 |
 |---|---|
-| `supervisor_status` | 全项目/按 ns 的任务全景：by_status / by_ns / active / 进度百分比。超级管家（human_steward 对外入口）查看项目状态的唯一入口 |
-| `supervisor_task_tree` | 以 `root_id` 出任务树：节点含 id/状态/描述/子任务完成度 + 聚合 summary。复用 task_plan_deep 的树聚合口径 |
-| `supervisor_kill_plan` | 终止**方案**（只出方案不执行）：`task_id`/`by`/`reason` 经六门链（身份/目标存在/不可杀根任务/终态/force+reason/补偿建议）逐门评估，`apply_pause=true` 时执行唯一可逆动作 `pause_task`。真 kill 由指挥官按方案人工执行 |
+| `supervisor_status` | 全项目/按 ns 的任务全景：by_status / by_ns / active / 进度百分比。超级管家（human_steward 对外入口）查看项目状态的唯一入口。**不传 namespace = 真跨库聚合**（default + 所有已打开 ns 逐库取行数再合并，进度由计数重算不取均值）；传了则只查该 ns 的物理库，库打开发红而不静默回落 default |
+| `supervisor_task_tree` | 以 `root_id` 出任务树：节点含 id/状态/描述/子任务完成度 + 聚合 summary。复用 task_plan_deep 的树聚合口径。`namespace` 可选：不传=在 default+已打开 ns 里寻址并回显命中的库；同 id 在多库都存在时**拒绝猜库**（根 id 每库各自从 T0 起算，撞号是常态） |
+| `supervisor_kill_plan` | 终止**方案**（只出方案不执行）：`task_id`/`by`/`reason` 经六门链（身份/目标存在/不可杀根任务/终态/force+reason/补偿建议）逐门评估，`apply_pause=true` 时执行唯一可逆动作 `pause_task`。真 kill 由指挥官按方案人工执行。`namespace` 可选：寻址同上，G2 未命中时回显搜过的库，撞号先于评估（pause 不会打到别库的同名任务） |
 | `supervisor_prompt_inject` | 向 `target`（agent 或项目）注入引导提示词，落进程内 registry + call_log 双写（跨进程可回读、幂等） |
 | `supervisor_prompt_list` | 列出待投递/已消费的引导（`target` 可选过滤，`include_consumed` 可选）。进程内优先、回灌 store recent_call_logs |
 | `supervisor_prompt_consume` | 取走一条引导并标记已消费（`guidance_id` 必填）。重复调用不重复返回（幂等） |
-| `supervisor_task_upsert` | 更新目标项目任务列表：`items[]` 带 `task_id` 则更新描述/优先级/依赖，无则追加新任务（复用 `engine.publish` 的 human_steward 硬门）。per-item created/updated/failed 逐项回执 |
-| `supervisor_reminder_tick` | 提醒者（Reminder）轮询一拍：扫描 plan 目标 vs task_tree 实际的偏离（目标未拆解/节点长期 pending/产出物缺失），产出待投递提醒。跑法见 `docs/2026-10-12-fist-mbt-reminder-role-plan.md` |
+| `supervisor_task_upsert` | 更新目标项目任务列表：`items[]` 带 `task_id` 则更新描述/优先级/依赖，无则追加新任务（复用 `engine.publish` 的 human_steward 硬门）。per-item created/updated/failed 逐项回执。`namespace` 决定**物理落库位置**（过去只盖列值不路由，ghostA 的行写进默认库 ⇒ 与 publish/list 脑裂） |
+| `supervisor_reminder_tick` | 提醒者（Reminder）轮询一拍：扫描 plan 目标 vs task_tree 实际的偏离（目标未拆解/节点长期 pending/产出物缺失），产出待投递提醒。跑法见 `docs/2026-10-12-fist-mbt-reminder-role-plan.md`。`namespace` 可选：不传=逐库轮询（文案承诺的「一次全库」现在是真的），每条提醒回显来源库 |
 
 ### 嵌入式 MCPCf 内部工具（7，`src/server/mcpcf_embed.mbt` 真源，链式 `s.tool` 注册）
 | 工具 | 说明 |
