@@ -329,6 +329,74 @@ def guard_files():
     return [s for s in discover_scripts() if not non_gate_reason(s)]
 
 
+def is_gate(name):
+    return os.path.basename(name).startswith(GATE_PREFIXES)
+
+
+def exempt_reason(name):
+    return _match_rule(os.path.basename(name))
+
+
+# 已知缺面（TASK-007 遗留，**不是豁免**——它们是门禁尺但没有执行面）：
+# 这 4 个 e2e 探针没有 `--selftest`，且都需要网络/发布资产才能跑，故 CI 未接。
+# 处置：留在宇宙里、在 --list 逐条印「待接线」并计入统计，但不让 G1 永久红——
+# 与"豁免"的区别是：豁免是**决定不进电池**，这里是**该进而还没接**。
+# 后续（已记入 TASK-007 遗留）：要么给它们补 --selftest（离线自证），要么在 CI 里接成观测臂。
+KNOWN_NO_FACE = {
+    "blackbox/e2e_irm_line.py": "无 --selftest；需 GitHub raw/发布物 ⇒ CI 接线或补离线自证",
+    "blackbox/e2e_mirror_install.py": "无 --selftest；需镜像安装环境 ⇒ CI 接线或补离线自证",
+    "blackbox/e2e_transport_stack_fallback.py": "无 --selftest；需网络 ⇒ 补离线自证",
+    "blackbox/e2e_upgrade_mirror.py": "无 --selftest；需镜像/发布物 ⇒ 补离线自证",
+}
+
+
+def classify():
+    """把递归宇宙分成三份：(门禁尺, 豁免(带理由), 未归类)。"""
+    gates, exempt, unknown = [], [], []
+    for rel in universe_files():
+        if is_gate(rel):
+            gates.append(rel)
+            continue
+        why = exempt_reason(rel)
+        if why:
+            exempt.append((rel, why))
+        else:
+            unknown.append(rel)
+    return gates, exempt, unknown
+
+
+def guard_files():
+    """普查宇宙 = 门禁尺（递归发现，不再靠手写清单）。"""
+    return classify()[0]
+
+
+def auto_cases():
+    """TASK-007：把「有 --selftest 的门禁尺」自动补进电池（手写 CASES 优先，后者覆盖前者）。
+
+    判据：源码文本里出现 `--selftest` ⇒ 该尺自证入口存在 ⇒ 进电池跑它。
+    手写条目（含 expected/diag/gated 这些带期望值的）**一律保留并优先**——诊断型期望值、
+    树态前置这些信息自动化生成不出来，不能因为它自动了就把原来那张"为什么是 1"的依据冲掉。
+    """
+    declared = {(c["script"], tuple(c["argv"])) for c in CASES}
+    declared_script = {c["script"] for c in CASES}
+    out = []
+    for rel in guard_files():
+        if rel in declared_script:
+            continue
+        full = os.path.join(SCRIPTS_DIR, rel)
+        try:
+            src = io.open(full, encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        if "--selftest" in src:
+            if (rel, ("--selftest",)) not in declared:
+                out.append(case(rel, "--selftest"))
+    return out
+
+
+CASES = CASES + auto_cases()
+
+
 def _existing_scripts():
     """「文件系统上有哪些脚本」与 guard_files() 同形：scripts/**/*.py 全集（递归）。"""
     existing = set()
