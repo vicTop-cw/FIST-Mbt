@@ -57,8 +57,8 @@
 ## 后续建议
 
 1. 合序建议：`r96`（README 三件登记 + NAMING）→ `r97`（本单）→ r94（USAGE.md 版本面）。
-   两处会撞面：`memory/2026-10-22.md` 同日尾追加、`scripts/README.md` 的 `slave-branch-merge.ps1` 条目内插入——
-   冲突一律**两边都留**，不许 `--theirs` 覆盖任何一方正文。
+   实测 merge 面只有一处：`git merge-tree --write-tree r96 HEAD` 只对 `memory/2026-10-22.md`（同日尾追加）发红，
+   `scripts/README.md` **auto-merge 干净**（两支插同一文件的不同 hunk）。冲突两边都留，不许 `--theirs` 覆盖任何一方正文。
 2. 若要把「poison 出现在任何 lane」升成硬门，最省的接法是复用本单的 `$PoisonNames`：
    `check_merge_markers` 那条普查族里加一把「跟踪面不得存在 `src/ops/rhop_poll.mbt`」，比在合并脚本里兜底更早一步。
 3. `run_guards.py` 里加一把 `.ps1 -SelfTest` 的面（现在 PowerShell 侧的判据不进电池，全靠人跑）。
