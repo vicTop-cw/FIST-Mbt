@@ -153,6 +153,28 @@ test "eval_no_overlap_multi_scope" {
 }
 
 ///|
+/// 约束3·同一 action 重复申报同一 scope：只对第一个实例裁决，不重复报冲突。
+test "eval_no_overlap_duplicate_scope_dedup" {
+  let w = mk_world(
+    [
+      ActiveReservation::{
+        scope: "src/x",
+        holder: "A",
+        ttl_until: "2026-01-01T00:00:99",
+      },
+    ],
+    ["A", "B"],
+  )
+  let v = eval_no_overlap(w, PlannedAction::{
+    agent: "B",
+    scopes: ["src/x", "src/x", "src/x"],
+    now: "2026-01-01T00:00:05",
+  })
+  assert_true(!v.allowed)
+  assert_eq(v.reasons.length(), 1)
+}
+
+///|
 /// 约束1·未知执行者 -> 拒绝。
 test "eval_known_agent_unknown" {
   let w = mk_world([], ["A"])
