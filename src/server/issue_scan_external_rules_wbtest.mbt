@@ -83,3 +83,19 @@ test "ext_rules_6_load_real_file" {
   assert_eq(rs[0].id, "probe-r")
   assert_eq(rs[0].severity, "error")
 }
+
+///|
+/// BUG-347：外部 regex pattern 的 `::` 命名空间限定必须保留进 needle。
+/// 旧实现只认 alnum，把 `Json::string\(` 退化成裸 `string`（`Json::` 整段丢弃），
+/// 任何含 `string` 的行都命中 ⇒ 假阳。锁四条：命名空间保留、`\s` 不污染、fixture 类零回归。
+test "ext_rules_7_needle_preserves_namespace" {
+  // 命名空间保留：不是旧实现的裸 "string"
+  assert_eq(scan_regex_to_needle("Json::string\\("), "Json::string")
+  // 带 `\s*` 也不被 `\s` 的 `s` 重新起算（旧实现这里同样产出裸 "string"）
+  assert_eq(scan_regex_to_needle("Json::string\\s*\\("), "Json::string")
+  // 单冒号 `:` 不是命名空间，仍当分隔：`a:bcd` 最长片段是 "bcd"（若误当命名空间会是 "a::bcd" 形，这里 a 与 bcd 断开）
+  assert_eq(scan_regex_to_needle("a:bcd\\("), "bcd")
+  // fixture 类零回归：纯词 + 转义括号
+  assert_eq(scan_regex_to_needle("ignore\\s*\\(\\s*\\w+"), "ignore")
+  assert_eq(scan_regex_to_needle("probe\\("), "probe")
+}
