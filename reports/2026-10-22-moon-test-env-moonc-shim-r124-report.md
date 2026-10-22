@@ -21,6 +21,7 @@
 | 修复后 | `python scripts/moon_test_env.py` | rc=0，`Total tests: 1387, passed: 1387, failed: 0` |
 | 自证 | `python scripts/moon_test_env.py --selftest` | rc=0，12 格：垫片目录 2 + PATH 清理 3 + node 解析 2 + moonc 覆盖 4 |
 | dry-run | `python scripts/moon_test_env.py --dry-run` | 打印 `moonc override：~/.moon-shim/shim.exe（自动发现…）`，不执行 |
+| 电池终读 | `python scripts/run_guards.py`（叠线后，tip 6a74bdd6） | 64 格 / 失败 0 / SKIP 5 / 缺执行面 0，rc=0 |
 
 ## 3. 改动清单
 
