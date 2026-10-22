@@ -302,3 +302,9 @@
   **0=pass / 1=fail / 2=degraded**（判据自己取不到量绝不冒用 1 冒充业务红）；fmt/build 两臂区分
   **环境态与代码红**（冷格式化器、依赖缓存过旧报 DEGRADED + 可执行提示，判据链保持只读、绝不自行
   预热）；`--scan` 分支普查（合入者巡检自动进料口）、`--selftest` 逐格驱动。
+
+- `whisperer.py` — **风语者巡检自动化（TASK-009）**：Step 0-4（HEAD 安全门 → 分支普查 → 候选任务卡 → issue 扫描）。
+  旗标 `--scan-only`（默认）/ `--auto-merge` / `--selftest`（也接受 `--self-test`）。
+- 配套 `check_bug_refs.py`（BUG-373 引用面普查）与 `fist-gate.py --scan`（分支普查）互为补充。
+- `fist-pr-automator.py` — **PR 自动化**：把一个本地分支/提交整理成可审的 PR 描述并（可选）推送建 PR；
+  注意：文件必须是 **UTF-8（可带 BOM）**，UTF-16 会让 Python 与 ps1 双端都读成乱码（同日 cef1e9cb 已修）。
