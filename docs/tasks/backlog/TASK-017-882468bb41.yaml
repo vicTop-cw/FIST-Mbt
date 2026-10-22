@@ -2,7 +2,7 @@ id: TASK-017
 title: "守卫电池格数读数需与 README 登记对表"
 dedupe_key: "882468bb41c4b8ac"
 priority: P3
-status: in_review
+status: done
 assignee: atomcode
 discovered_by: whisperer-script
 discovered_at: "2026-10-22T01:10:13+00:00"
@@ -12,4 +12,4 @@ problem: >
 
 evidence: |
   whisperer probe_guards()
-status_note: "R112 交付：新增 check_battery_count_doc.py（7 键两向对表 + 15 格自证 + CI/电池双执行面），README 增加 BATTERY-REGISTRATION 锚点；现读 rulers=83 ci=40 battery=45 missing=0 gate=55 exempt=26 unclassified=4 逐键一致。转 done 需主线收录本提交点名（R2 UNPROVEN-DONE 判据）"
+status_note: "R112 交付：新增 check_battery_count_doc.py（7 键两向对表 + 15 格自证 + CI/电池双执行面），README 增加 BATTERY-REGISTRATION 锚点；交付时读数 rulers=83 ci=40 battery=45 missing=0 gate=55 exempt=26 unclassified=4 逐键一致。转 done 需主线收录本提交点名（R2 UNPROVEN-DONE 判据）。R119 兑现：主线 b224e770 已点名本 id（R2 条件满足）⇒ 转 done"
