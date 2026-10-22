@@ -76,9 +76,10 @@ PASS 文本面无 C0/DEL 控制字符
 
 ### 2.5 全量电池
 
-`python scripts/run_guards.py`（提交后、推送后复跑）：
+`python scripts/run_guards.py`（提交并推送后复跑）：
 
-- 结果：见文末追记（本报告提交时首次运行读数：63 格 / 失败 3——`check_publish_payload`（新守卫尚未跟踪）、`check_delivery_gap`（HEAD 未推送）、`check_fmt_gate`（SPECIAL_CASE 尚未补回）；三者均在本单提交/推送后消除）。
+- 结果：**63 格 / 失败 0 / SKIP 5 / 缺执行面 0（rc=0）**。
+- 首跑（提交推送前）3 红逐条落地：`check_publish_payload`（新守卫未跟踪）→ 跟踪后 PASS；`check_delivery_gap`（HEAD 未推送）→ 推送后 PASS；`check_fmt_gate`（SPECIAL_CASE 被合并丢掉）→ 补回后走 `--selftest` 格 PASS。SKIP 5 均为 temp 前置缺失（`temp/pt27.log` / `temp/chk47.json`），不构成通过证据。
 
 ## 三、资源消耗
 
