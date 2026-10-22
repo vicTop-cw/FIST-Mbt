@@ -93,3 +93,19 @@
   `blackbox/check_merge_markers` rc=0（1236 跟踪文件）／`check_py_stdout_encoding --all` rc=0（该带闸 88 份 / 已带 88 份）／
   `run_guards --selftest` rc=0（13 格；现状 88 把尺 / CI 面 28 / 电池面 88 / 缺面 0）／
   `check_scripts_index` rc=1（预存红，见遗留风险 1）／`check_doc_surface` rc=1（预存红，见遗留风险 2）
+
+
+## 追记（2026-10-22 副机 R98/R99 时段）：本单已被主机实现**部分**取代，读数如下
+
+- main 前进到 `c03d78c`，其中 **`4822e26` = 主机自述「feat(merge): TASK-002 cherry-pick 黑名单」**（backlog 里 TASK-002 抬头随之转 `in_review`）。
+  对比三面，逐条现读、不靠记忆：
+  1. **黑名单本体：已被取代**。主机版用 `$SKIP_EXACT = @('src/ops/moon.pkg','src/ops/rhop_poll.mbt')` + `$SKIP_GLOB` + `function Restore-Blacklisted`
+     （本机同一函数在本单里叫 `$PoisonNames` / `Clear-SkipPaths`，语义一致：每次 cherry-pick 后一律回退 HEAD，不收毒路径）。⇒ **本单那部分不必再合**。
+  2. **自证面：main 上没有**。`git show c03d78c:scripts/slave-branch-merge.ps1 | grep -c SelfTest` = **0** ⇒ 主机版**没有 `-SelfTest` 旗标**、
+     没有 G0/G0b「先证明真造出冲突」两格、没有两支变异台、也没有盘上兜底普查。按本仓「尺子必须先证明自己会红」，这一半仍是本单的价值面。
+  3. **BUG-109 那一族的 stderr 门：main 上没有**。主机版第 52 行 `$ErrorActionPreference = "Stop"`，而第 63/127/149/153/226/227 行是原生
+     `git … 2>&1` / `moon … 2>&1` 直调（38 处原生 git 调用）⇒ 原生 stderr 经 `2>&1` 变成终止错误就会当场炸掉合并流程，正是本单 `Invoke-Git`（临时降 EAP + `2>$null`）治的形状。
+- **给 owner 的处置建议（不代改、不代关 MR）**：本 MR 不要整支 cherry-pick 到主机版之上（词汇与函数名不同形，硬合会把两套黑名单叠成两份门）。
+  最省的接法是**只搬自证面**：把本单 `-SelfTest` 的 G0/G0b + 两支变异台 + 盘上普查这几格，按主机版的名词（`$SKIP_EXACT` / `Restore-Blacklisted`）重挂一版，
+  顺带把 38 处原生调用收进 `Invoke-Git`。那是独立一单（R100+）的形状，副机在剩余轮次里没启动 —— 因为 bulk-port 在 PS5.1 上需要连跑迭代，宁可不做也不留半件。
+- 本单交付面本身不变：`-SelfTest` 二十格 + 两支变异台在**本分支 HEAD `27d0c30`** 上可复跑（前一条追记已记当前树读数）。
