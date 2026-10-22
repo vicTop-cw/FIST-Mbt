@@ -1,7 +1,7 @@
 id: TASK-004
 title: "反向 diff 检测 — 删远多于增 = 自动拒绝"
 priority: P3
-status: backlog
+status: in_review
 assignee: atomcode
 discovered_by: lead
 discovered_at: "2026-10-21T19:15:00+08:00"
@@ -28,3 +28,27 @@ evidence:
   - issue_scan.mbt 单文件 -457/+0（从 2714 砍到 2257）
 
 blocked_by: []
+
+# ── 执行回填（AtomCode / 2026-10-22 R39，重落在新 master 的 fist-gate.py 上）──
+result: >
+  `fist-gate.py` 加**反向 diff 检测**：`REVERT_RATIO = 1.5`（实测正常分支极少超 1.0，回退型 3.7）；
+  纯函数 `parse_numstat` / `is_revert_pattern` / `worst_deletions`；`scan_branch` 带出
+  `insertions` / `deletions` / `revert_pattern` / `worst_deletions`；`scan` 把回退型写进
+  `.git/fist/tasks/failed/`（不进 claimable 的 backlog/），汇总与明细处点名「哪几个文件删远多于增 + 差值」。
+why_redo: >
+  上一版（R28）落在了旧 master 的 fist-gate.py 上，master 该文件已演进（含 gitdir 修复）⇒ cherry-pick 冲突。
+  本轮**在新版本上重新落**这套逻辑，分支基于当前 master，可无冲突合入。
+behavior_test: >
+  合成仓库端到端：base 300 行 + `origin/normal-x`(新增 80) + `origin/slave/revert-y`(砍到 20) ⇒
+  scan 实跑输出「REVERT-PATTERN 1 个 → 进 failed/」「insertions=0 deletions=280」
+  「删远多于增: src/big.mbt -280/+0 (净 -280)」；正常分支判 MERGE-CODE 未误判；
+  `failed/` 与 `backlog/` 目录分流成立。
+selftest: >
+  新增 8 格真断言（真实语料 191/718 必触发 / 正常 500/120 不触发 / 边界 100/150 不触发、100/151 触发 /
+  空 diff 安全 / numstat 解析 / 二进制跳过 / worst_deletions 点名净删最大者）；独立导入模块跑 8 条断言全过。
+  注：`--selftest` 整体仍红在 **G4 fmt（冷格式化器，master 预存）与 G1 环境格**，与本笔无关（另有分支修分类）。
+acceptance_met:
+  - "fist-gate.py 加 diff 检测（del > add*1.5 ⇒ REVERT-PATTERN）：✅"
+  - "REVERT-PATTERN 进 failed/、不进 claimable 队列：✅（端到端实测两目录分流）"
+  - "日志写明哪几个文件删远多于增 + 差值：✅（汇总行 + worst_deletions 字段 + yaml）"
+pr_branch: fix/task-004-revert-diff-detector-v2
