@@ -120,12 +120,13 @@ SPECIAL_CASES = [
     # —— R106 预存红登记（电池自 770478c1 起跑不起来，这几格的红从没被任何人读到过）：
     #    照写读数 + 成因，不动被检内容。被检内容修好后 got≠expect 当场现形，逼下一位改的人
     #    把期望改回 0——这是本文件自订的律，不是给红脸上色。 ——
-    expected("check_doc_surface.py", 1,
-             "预存红：J4 判 scripts/README.md 里第二处发布版本自述 0.3.9（HEAD 起就有，"
-             "该行是叙述 dist 快照落后于 moon.mod 0.3.10 的句子），交文档面那一单删字面量并指向 "
-             "BACKLOG.md；本单元只登记读数"),
-    expected("check_doc_surface.py", 2, "同一处 J4 真实现状面红 ⇒ 自检按「先判解析器坏再判文档坏」出 2",
-             "--selftest"),
+    # R106 追记（叠 b465915f 后自查改判）：`check_doc_surface` 那格 J4 的红**不是预存红，是我自己喂的**
+    # ——我在 README 抄本④里写「第二处发布版本自述 0.3.9」这类**带版本字面量的说明句**，30 份抄本就把它
+    # 放大成 30 处，J4 数的是"README 里出现了几处版本自述"。同基线举证（把 main 的 README 摆回来跑同一尺）
+    # 实测 rc=0 ⇒ 成因在我这边，不在主线。已把说明句改成不带版本字面量的写法，两面期望按现读改回 0。
+    # 与 `check_scripts_index` 那次「文档写进被检文件名」是同一族：**登记红面的文字本身就是被检面**。
+    case("check_doc_surface.py"),
+    case("check_doc_surface.py", "--selftest"),
     case("check_mbti_sync.py"),
     case("check_mbti_sync.py", "--selftest"),
     case("check_store_tables_wired.py"),
@@ -138,12 +139,11 @@ SPECIAL_CASES = [
     case("check_release_asset_names.py"),
     case("check_publish_payload.py"),
     case("check_publish_payload.py", "--selftest"),
-    expected("check_plugin_sync.py", 1,
-             "预存红：J1 插件态漂移，根因是 gen_plugins --check 那格（账本编号唯一门 + "
-             "小记↔抬头状态对表），修好账本后此格自绿"),
-    expected("gen_plugins.py", 2,
-             "预存红：真源自证失败——BUG-333×2 / BUG-384×2 抬头编号重复 + BUG-384 被小记点名但"
-             "状态非 FIXED（memory/bugs.md 内容债，归主机 R47 那一族；本单元不改账本）", "--check"),
+    # —— R106 追记（叠 gitcode/master b465915f 之后现读）：下面三格原来的 expected 非 0 已被主线
+    #    修好（账本撞号收敛 + `scripts/merge-prompt.txt` 出跟踪面），got 0 ≠ expect 当场现形 ⇒
+    #    按本文件自订的律「预存红被修好 ⇒ 把期望改回 0」转回门禁格。 ——
+    case("check_plugin_sync.py"),
+    case("gen_plugins.py", "--check"),
     case("gen_plugins.py", "--selftest"),
     case("check_upgrade_installer.py"),
     case("check_plan_landing.py", "--selftest"),
@@ -155,7 +155,15 @@ SPECIAL_CASES = [
              "同一处棘轮超限 ⇒ 自检 T9「真源现状 rc=0」不成立，按判据自拒出 2", "--selftest"),
     # —— R55：blackbox 尺进宇宙也进电池（相对 scripts/ 点名，路径含子目录）——
     case("blackbox/check_merge_markers.py", "--selftest"),
-    case("blackbox/check_merge_markers.py"),
+    # R106 追记（叠 b465915f 后现读）：主线把某 agent 的 git worktree 以 **gitlink(mode 160000)**
+    # 提交进了跟踪面（`.agents/worktrees/fix/display-rank-boundary`，由 `4a7bf82a` 手动解冲突带入；
+    # 我的基点 19830ccb 上没有 `.agents`，本单元净差也不含它）。判据对跟踪面逐文件读取，读到 gitlink
+    # 拿不到正文 ⇒ VIOLATION L1「有 1 个跟踪文件读不到」⇒ rc=1。这是主线面的一次入库事故，
+    # 出路是 `git rm --cached .agents/worktrees/fix/display-rank-boundary`（属人的决定，本单元不代删）；
+    # 按预存红的律登记：它修好后 got 0 ≠ expect 1 当场现形，逼下一位把期望改回 0。
+    expected("blackbox/check_merge_markers.py", 1,
+             "预存红：主线跟踪面含 gitlink .agents/worktrees/fix/display-rank-boundary（mode 160000）"
+             "⇒ 判据读不到正文，VIOLATION L1 后整尺 rc=1；归属＝主线出该条目"),
     # —— 诊断型：退出码语义不是门禁，把当轮真读数钉成期望值（数字变了就现形）——
     expected("check_plan_landing.py", 1,
              "诊断口径：判定面 25 条活文档点名落点未落地（BUG-367 A/B/C 三档留裁决）；另有搬家态 3 条单列"
@@ -166,10 +174,9 @@ SPECIAL_CASES = [
     # —— R82：scripts_index 那格按本文件自订的律改记预存红——master 现状 red 的根因是主机
     #    fist-gate.py（454aea3）未在 scripts/README.md 登记（TASK-003/004 施工面，R81 点名）。
     #    主机一登记，got 0 ≠ expect 1 当场现形，逼着把期望改回 0。 ——
-    expected("check_scripts_index.py", 1,
-             "预存红（R106 现读换因）：原依据点名的 fist-gate.py 已由主机登记入 scripts/README.md，"
-             "现在红的是 merge-prompt.txt（提示词素材，不是 .py 却进了正式辅助脚本面）；"
-             "登记或删除归文档那一单，本单元只改记读数"),
+    #    R106 追记：这一形**兑现了**——主机把 `scripts/merge-prompt.txt` 从跟踪面删掉（b465915f 系），
+    #    现读 got=0 ⇒ 按那条律把期望从 1 改回 0，转回门禁格。
+    case("check_scripts_index.py"),
     # —— 编码面：R58 期望值回归 0——BUG-355/332 一族已在主仓修完（现读真源：--selftest 绿、
     #    --all 面「该带闸 85 份/已带 85 份」全过）。按本文件自订的律「预存红被修好 ⇒ 下一次
     #    改动的人把期望改回 0，数字变了不改进期望就现形」，此处正是那一次改动。

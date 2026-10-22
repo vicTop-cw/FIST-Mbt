@@ -1140,3 +1140,4 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
   Step 0 HEAD 安全门 / Step 1 分支普查（调 `fist-gate.py --scan`）/ Step 2 分类（DROP/MERGE-CODE）/ Step 3-4 合入与回写。
   模式：`--fast`（P0-1：只跑 Step 0 安全门，<3s，每次合入前确认 HEAD 没漂）、`--scan-only`（Step 0-2+3 扫描不自动合入，
   默认）、`--auto-merge`（Step 0-2 + 自动合入 MERGE-CODE 分支 + Step 3）、`--selftest`。
+- `check_delivery_gap.py` — **交付断层巡检（主线 R46 落仓，本单元补索引登记）**：把「本地已合」与「已交付」分开看——逐 ref 比对 `rev-list --count base..ref` 与 `git branch -r --contains <tip>`，有领先提交且 tip 不在任何远端分支上即判 gap 并 rc=1。判据正文写明它防的是清理/合并流程拿本地 HEAD 当「已包含」从而删掉尚未推送的通道分支。`--selftest` 为纯函数三档加真仓库两例。进电池后这一格在「刚提交还没推」的窗口必然红，属交付态读数而非代码债：推完即归 0，所以不给它登记期望。

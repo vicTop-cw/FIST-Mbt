@@ -139,3 +139,70 @@ SKIP 5 格全部是缺 temp/ 前置（`temp/pt27.log` ×2、`temp/chk47.json` ×
   跑前就该带上。
 - **`moon fmt` 面**：本机仍 rc=127（工具链 blocker）。本次合并的 `.mbt` 改动全部逐字来自主线、零手改，
   故 fmt 对本单元**中性**；不据此宣称全仓 fmt 绿。
+
+---
+
+## 追记二 · 叠到主线真 tip `b465915f`：三格兑现归 0、一格改判、一条新红
+
+追记一里我叠的是 `bbcc5a35`，但 `gitcode/master` 的实际 tip 是 `b465915f`（多出 5 commits，含
+`3bed6405 fix(guards): main 线三处守卫红全归绿 + 账本撞号收敛`）。**我把主线的一个中间提交当成了 tip**
+——`rev-list --left-right --count gitcode/master...HEAD` 读出 `5 / 3` 才现形。叠真 tip 之后按实测重登记：
+
+- **三格预存红被主线修好 ⇒ 期望从非 0 改回 0**（这正是本单元自订那条律的第二次实战，不是我改的被检内容）：
+  `gen_plugins.py --check`（2→0，账本撞号已收敛）、`check_plugin_sync.py`（1→0，随上一格自绿）、
+  `check_scripts_index.py`（1→0，那份提示词素材件已出跟踪面）。
+- **一格改判（我最该认的一条）**：`check_doc_surface.py` 的 J4 红**不是预存红，是我自己喂进去的**。
+  我在 README 抄本的登记说明里写了「第二处发布版本自述 0.3.9」这类**带版本字面量的句子**，
+  而 README 有 30 份抄本 ⇒ 我把被检面放大成 30 处。同基线举证：把 `gitcode/master` 的 README 摆回来跑同一尺 =
+  **rc=0** ⇒ 成因在我这边。已把说明句改成不带版本字面量的写法，`check_doc_surface` 裸跑与 `--selftest`
+  两面期望按现读改回 0。这与本单元已经踩过一次的「`check_scripts_index` 被自家文档里的文件名喂绿/喂红」
+  是同一族：**登记红面的文字本身就是被检面**，写预存红的说明时，被检面里出现的每个字面量都要当作会被数。
+- **一条新登记的预存红（主线面，本单元不代修）**：`blackbox/check_merge_markers.py` 1。
+  主线把某个 agent 的 git worktree 以 **gitlink（mode 160000，`.agents/worktrees/fix/display-rank-boundary`）**
+  提交进了跟踪面（由 `4a7bf82a` 手动解冲突带入；我的基点 `19830ccb` 没有 `.agents`，本单元净差也不含它）。
+  判据逐跟踪文件读正文，读到 gitlink 拿不到内容 ⇒ `VIOLATION L1 有 1 个跟踪文件读不到` ⇒ 整尺 rc=1。
+  出路是 `git rm --cached .agents/worktrees/fix/display-rank-boundary`（**属人的决定**：那是别人 worktree 的
+  注册面，我不代删），按预存红的律登记，主线出该条目后这一格自己会翻红逼下一位改回 0。
+
+### 预存红账（改判后现读：`SPECIAL_CASES` 里 `expected(` 共 9 格 = 8 条预存红 + 1 条诊断口径）
+
+首稿这里写「共 8 格」并把 `check_ci_step_position` 的两格并成一行、同时漏了 `check_plan_landing` 那一格
+——数字是从印象来的而不是从 `grep -c 'expected('` 来的，属于本单元自己判罚的那一类（自述 ≠ 实现 ⇒ J10 型）。
+下表一行一格，与 `scripts/run_guards.py` 里 `expected(` 的 9 次调用逐一对表：
+
+| 格 | rc | 类型 | 成因 | 归属 |
+|---|---|---|---|---|
+| `check_ci_step_position.py` | 1 | 预存红 | 位置违规 35 > 棘轮上限 34 | CI workflow 内容债，升档是人的决定 |
+| `check_ci_step_position.py --selftest` | 2 | 预存红 | 同一处超限使自检 T9「真源现状 rc=0」不成立 ⇒ 按判据自拒出 2 | 同上 |
+| `check_backlog_status_staleness.py` | 1 | 预存红 | 任务池 9 条状态落差 > 上限 4 | 任务池那一单；上限不许为变绿而上调 |
+| `check_scripts_naming.py` | 1 | 预存红 | 命名判定面 2 条 > 词法棘轮上限 | `scripts/NAMING.md` 那一单 |
+| `check_dist_snapshot.py` | 1 | 预存红 | 本机 moonc 世代 bundle 与仓内快照不同代（108k vs 83k 行） | 发布流程动作，不在电池里做 |
+| `cleanup_artifacts.py --check` | 1 | 预存红 | 工作树运行态脏（temp/ 与 *.db 是本机运行物） | 运行态，不改期望 |
+| `fist-gate.py` | 2 | 预存红 | fmt 段依赖 `git diff` 管道，本机退化 rc=-1 ⇒ 按设计 DEGRADED | 实体机/CI 复跑 |
+| `blackbox/check_merge_markers.py` | 1 | 预存红（**本单元新登记**） | 主线跟踪面含 gitlink `.agents/worktrees/fix/display-rank-boundary` | 主线出该条目 |
+| `check_plan_landing.py` | 1 | 诊断口径（非门禁） | 判定面 25 条活文档点名落点未落地（BUG-367 A/B/C 三档留裁决）+ 搬家态 3 条单列 | 等人裁决，读数变了就现形 |
+
+---
+
+## 追记三 · 交单前主仓又前进了两次：叠 `3eec0901` + 接主线新尺 `check_delivery_gap`
+
+写追记二的过程中 `gitcode/master` 又动了：`3eec0901` 已经是**主线 merge 掉我上一轮推送的 `bc7b4677`**
+再加上 `e4ce1197`（删分支判据换成「远端基线 + 内容等价」，并落一支新尺 `scripts/check_delivery_gap.py`）。
+坑 27 当场复发第二次——所以「叠主线」不是一次动作，而是**每次交单前都要重跑的动作**。
+
+- **冲突面实测**：`git merge-tree --write-tree --name-only HEAD gitcode/master` 只回一个 tree 号、
+  不列冲突 ⇒ auto-merge 干净。我没有沿用追记一「README 必撞」的结论（那正是坑 10 点名的错形）。
+  合并净落地 2 个文件（`check_delivery_gap.py` +158、`slave-branch-merge.ps1` +72/−20）。
+- **主线带来的红（我接住的那一条）**：新尺 `check_delivery_gap.py` 进了仓但没进 `scripts/README.md` 索引
+  ⇒ `check_scripts_index` 现读 rc=1。按 R94 立的同一条 lane（新尺落主线 ⇒ 副机接线并补索引）处理：
+  README 尾部补一条真条目，并把 run_guards 抄本里的普查读数按 `--selftest` 现读联动
+  （**电池 53→54 格、尺 79→80 把、宇宙 81→82 份、电池面 41→42**，30 份抄本同改，锚点命中数断言 == 30 才写盘）。
+- **那条红说的是我自己**：`check_delivery_gap` 裸跑 rc=1 的内容是「HEAD 领先 3 个提交、tip 不在任何远端分支上」。
+  它量的是**交付态**而不是代码，且 `git branch -r --contains` 在我推完之后就会命中 ⇒ 归 0。
+  所以不登记 `expected`、不豁免、不降棘轮——**给它登记期望等于把「还没交付」这件事洗成常态**。
+  这是本仓第一格量交付态的电池格，推完复跑取的是权威读数。
+- **推后权威读数**（`05b881b6` 已推 `gitcode` 后同树复跑）：全量电池 **rc=0 / 54 格 / 失败 0 / SKIP 5 / 缺执行面 0**，其中 `check_delivery_gap.py` 该格现读 **rc=0 exp=0**（回执「3 个分支，其中 0 个存在未推送提交」）——证明上面那条归因是实测而不是说法；`MOONC_OVERRIDE=… moon check --target js` **rc=0 / 31 tasks / 508 warnings / 0 errors**（与主线同读数 ⇒ 本单元零新增 warning）。
+- **另一单的文案债（本单元不代改，点名即可）**：`blackbox/check_merge_markers.py` 的 FAIL 抬头写
+  「跟踪面存在冲突标记（1 处）」，而同一份输出里 `VIOLATION L1` 点名的是**读不到正文的 gitlink**
+  `.agents/worktrees/fix/display-rank-boundary`。抬头与读数不同义 ⇒ 读的人会以为有我漏解的冲突标记。
+  修法是把「输入面不完整」这一档单独成句，属该尺 owner 的一单，我只在这里点名（实测两行照抄）。
