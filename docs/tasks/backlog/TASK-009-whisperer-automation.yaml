@@ -42,3 +42,17 @@ evidence: |
   这些全应该自动产出，不该每次手动 PowerShell
 
 blocked_by: []
+
+# ── 实测补修（AtomCode / 2026-10-22 R70，非本单作者）──
+found_and_fixed:
+  - "自检 G1 在本仓 **worktree** 里恒红（rc=2）：根因在 `fist-gate.py --scan` —— worktree 的 `.git`
+     是**文件**（gitdir 指针），原实现 `Path(root)/'.git'/...` 建目录必 FileNotFoundError，
+     未捕获异常还让 rc 变成 1（看起来像'判据红了'）。已改 `git rev-parse --absolute-git-dir`。"
+  - "G1 只印 `rc=N` 不说原因 ⇒ 改为一档三态：绿 / **DEGRADED(rc=2) 单列** / 红带末行 + 提示；
+     并固定 `cwd=ROOT`（原来继承进程 cwd，在别的目录跑自检会'找不到 scripts/fist-gate.py'）。"
+  - "旗标只认 `--self-test`，而全仓惯例是 `--selftest` ⇒ 统一跑所有尺 `--selftest` 的自动化在这里
+     拿到 argparse rc=2，被误读成'判据坏了'。现已两个都收（同一 dest）。"
+verification:
+  - "`whisperer.py --self-test` 与 `--selftest` 均 rc=0（修前 rc=2）"
+  - "`fist-gate.py --scan` 在 worktree 里 rc=0，task yaml 落到真实 gitdir `.git/worktrees/<name>/fist/tasks/backlog/`"
+  - "从任意目录（C:\）跑 `whisperer.py --selftest` 仍 rc=0（ROOT 修正生效）"
