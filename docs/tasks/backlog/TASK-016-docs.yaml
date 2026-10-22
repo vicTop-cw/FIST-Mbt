@@ -1,0 +1,14 @@
+id: TASK-016
+title: "治理主题散落需收敛到规范真源"
+dedupe_key: "cf4ccf6971b1be0a"
+priority: P3
+status: backlog
+assignee: atomcode
+discovered_by: whisperer-script
+discovered_at: "2026-10-22T01:10:13+00:00"
+
+problem: >
+  治理主题命中 21 个 md（根/docs/reports/memory），规范真源应唯一（对齐 J7，规范见 docs/DOCS-STRUCTURE.md）
+
+evidence: |
+  whisperer probe_docs() 现读：['docs\\2026-10-11-multi-agent-lock-design-v3.md', 'docs\\2026-10-21-fist-governance-tier2-plan.md', 'docs\\DOCS-STRUCTURE.md', 'reports\\2026-09-20-pipeline-watchdog-state-machine.md', 'reports\\2026-09-25-award-enhancement-r15-cleanup-report.md', 'reports\\2026-09-26-award-enhancement-r106-english-readme-report.md', 'reports\\2026-09-26-selfloop-round2-report.md', 'reports\\2026-10-11-r12-cycle10-report.md', 'reports\\2026-10-11-r12-cycle11-report.md', 'reports\\2026-10-13-multilane-lock-mechanism-report.md']
