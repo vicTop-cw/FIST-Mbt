@@ -139,7 +139,7 @@
 - `caf_offline_replay.py` — **CAF 离线回放验证脚本**：用历史执行记录离线回放构建 ACRouter 记忆表，复现按成功率排序的模型优先级（与人工标注一致），验证 C-A-F 学习路由的验收标准 1。
 - `caf_p2c_ab_preflight.py` — **CAF P2c 接线 A/B 预演验证（验收标准 2）**：模拟 P2c 接线后的 A/B 对比，验证 `use_caf_memory` 接线后的路由质量。
 - `caf_p2d_coldstart_ab.py` — **CAF P2d 冷启动 A/B 预演（2026-10-15 Goal-2 Round 25）**：冷启动场景下对比开/关 CAF 记忆的路由表现。
-- `patch_router_config_caf_field.py` — **RouterConfig 构造点补字段**：批量给 `RouterConfig` 构造点补 `use_caf_memory` 字段（P2c 前置步骤）。
+- `patch_router_config_caf_field.py` — **RouterConfig 构造点补字段**：批量给 `RouterConfig` 构造点补 `use_caf_memory` 字段（P2c 前置步骤）。 **R99 修尺**：原实现的幂等门写成 `not IDEMPOTENT_RE.search(line)`，查的是刚匹配到的 `use_laya:` 行本身（那行永远不含 `use_caf_memory` ⇒ 门恒真），每跑一次就多插一份同名 struct 字段（编译必红），而读数打的是 `rc=0 总计: 18 处` 的绿灯；退出码还反着写（`0 if total > 0 else 1`）⇒ 正确的「盘面已对齐、补 0 处」被判成红。现在门查**下一行**、补 0 处时不改字节也不刷 mtime、`--selftest` 七格（含一支把门改回旧形状的变异台）；码：0 已对齐或已补齐 / 1 目标不存在或盘上没有 `use_laya:` 面（拒绝空转报绿）/ 2 读写异常与自检坏。`run_guards.py` 从此只跑它的 `--selftest` 格，脚本名被 SPECIAL_CASES 点名后自动补格不再裸跑这个会写跟踪面的补丁。
 - `fist_mbt_mcp_client.py` — **通用 fist-mbt 发布版 MCP 客户端封装**（stdio, 协议 2026-07-28, cwd=项目根）：`FistClient` 自动启动 `node fist-mbt.js serve`，供脚本复用调用工具（`fc.call("store_list")`）。
 - `ns_route_probe.py` — **多租户库级物理隔离闭环探针（stage1）**：验证 C1 业务工具带 namespace 路由到独立库 / C2 默认库无该任务行 / C3 全流程在 ns 库内流转 / C4 负例 not found。
 - `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
