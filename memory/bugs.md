@@ -6166,3 +6166,6 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 
 ### FIXED(2026-10-22T11:20:00Z / BUG-379)
 - evidence: `git rm src/ops/rhop_native_wbtest.mbt`（孤儿测试：引用从未存在的 `rhop_poll_once`）+ `moon info` 重生成 `src/ops/pkg.generated.mbti`（孤儿声明消失）；实测 `moon check --target js` **rc=0 / 0 errors / `[4021]` 计数 0**（修前 6 × `[4021] is unbound`，`moon test` 10s 内即编译红）。配套新开 BUG-380 记录 runner 面预存缺陷。
+
+### FIXED(2026-10-21T11:02:58Z / BUG-358)
+- evidence: BUG-358 修复已在 master 线：ea6eba6c 是 origin/master 祖先（git merge-base --is-ancestor 实测 rc=0）。判据采纳本单出路(a)——check_host_installable.py 现以 REQUIRED_MCP_JSON=[".mcp.dev.json"] 只把跟踪真源列进「关键文件缺失即自拒」名单，根 .mcp.json 留在 LENIENT_JSON 宽松档（缺失合法 continue），并在源码注释点名本单与 BUG-131 同口径。行为复测：在无根 .mcp.json 的干净 worktree（temp/m18 @ origin/master，git ls-files 面无该件）全量跑该守卫 rc=0 PASS；修复前同形场景必 rc=2 永不产出结论（本机当时有连接器残件才偶发可判＝假绿）。CI 侧从此真跑判定，不再恒红也不再被当噪声跳过。
