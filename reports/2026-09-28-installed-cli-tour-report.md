@@ -1,0 +1,423 @@
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: installed-cli-tour-report
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: installed-cli-tour-report
+---
+
+# 2026-09-28 · 安装面自证：以用户身份装，再用装好的全局命令把 129 工具打一遍
+
+盖章时间：`2026-09-28T05:08:42Z`（写这份汇报时的 UTC 瞬间，非本地钟点换算）
+承接目标（逐字）：「fist-mbt 有更新，说是全弄好了，你现在作为用户的身份 使用 irm 命令安装，并测试验证，验证方式：用新安装的fist-mbt 全局命令对 本项目 做遗漏补缺，使其更完善，需要验证各个功能都能够使用」
+被测产物身份：`C:\Users\victo\AppData\Local\FIST-Mbt\fist-mbt.js`（安装器落点），巡回时 sha256:99beda11（tools/list 自证=129）
+
+## 结果摘要
+
+- **一句话**：「说是全弄好了」在发布/安装面上不成立；本轮把它装到了能自证的程度，并且**用装好的全局命令**
+  （`%LOCALAPPDATA%\FIST-Mbt\fist-mbt.js`，非仓库构建）对本仓做了一遍全工具调用面巡回，
+  当场打死服务的两处（BUG-90/91）已修，另三处（BUG-92/93/94）带活证据入账待裁决。
+- **安装（用户视角）**：`irm … | iex` 的两条下载源当时**双双 404**——GitHub 没有任何 release
+  （`releases/latest` 404）、`release.yml` 对已打的 `v0.3.0`/`v0.3.0-beta` 标签 **0 次运行**、
+  兜底 raw URL 写的是 `main` 而本仓 GitHub 默认分支是 `master`。⇒ 补了离线入口
+  （`install_onecmd.ps1 -LocalZip` / `install.sh FIST_LOCAL_ZIP`），用**仓库内已提交的安装器**
+  从本地 zip 装成 v0.3.1-beta，`fist-mbt help / doctor / demo / --version` 全过
+  （doctor = 5/5 checks，含 SQLite 闭环 `pub=Ok(T0r4)`）。
+- **调用面巡回（安装版 sha256:99beda11，tools/list 自证=129）**：
+  - 写面（临时 box + 独立库）：**129/129 全部打到调用面** = `ok 81 / refused 42 / skipped 6 / crashed 0`，
+    播种链 `publish → claim → plan(["T0.1","T0.2"]) → claim → execute → submit` 六步全 ok。
+  - 读面（cwd=仓库根，真源码树 + 独立库）：`ok 78 / refused 44 / skipped 6 / crashed 1`，
+    崩溃点是 `cost_stats` 无参调用（→ BUG-94），驱动复活 server 后把剩余工具跑完。
+  - `skipped` 是本驱动的授权边界，不是产品缺口：`github_flush_execute / github_issue_close /
+    github_issue_comment`（真出网）、`heal`（无 ns 全库回滚，历史事故 396 单/23 ns）、`delete`（不可逆）、
+    `watchdog_tick`（会真派单）；`executor_run` 只 `dry_run=true`。
+  - 逐字拒绝文案与参数留档：`temp/tour_evidence.txt`（42+6 条写面明细 + 读面崩溃行原文）。
+- **修掉的两个 critical**：
+  1. **BUG-90 存储隔离是假的**：`store_open(scratch=true)` 回 `data_dir=temp` 并建出 `temp/<ns>.db`，
+     但那库是**空库**（tasks=0/call_log=0），任务行仍落仓库根 `fist-mbt.db`
+     （实测行 `T0r496` + 8 条 call_log，ns='goalverify0928'）。根因：模块级 `engine` 写死
+     `SqliteStore::open("fist-mbt.db")`，`MultiStore::get()` 全仓零调用。
+     修法：`FIST_DB_PATH` 运维侧环境变量（与 `FIST_RUN_CHECK_ALLOW` 同族，调用方不能自我扩权）
+     + 3 条白盒 + 新判据 `scripts/store_isolation_probe.py`。
+     **承重对照（两态实测）**：修复前产物 9771abf9 → C1 RED / C2 GREEN；修复后 f24be5be → C1+C2 GREEN；
+     `--selftest` 合成违例格也发红。
+  2. **BUG-91 一次调用打死整个会话**：`run_check` 无上限累积子进程输出（`stdout += d`）。
+     实测两态：同一无限输出夹具，修前 2.1s `RangeError: Invalid string length` 进程死；
+     修后 6.6s 正常回执 `status=failed`、进程存活。修法：每流末 1 MiB + `stdout_capped/stderr_capped` 旗。
+- **PowerShell 编码面（用户首屏）**：新增 `scripts/check_ps_encoding.py`（无 BOM + 非 ASCII ⇒ 违例，
+  扫描面为空即 FATAL 不出假绿）。PS 5.1 的 `Parser::ParseFile` 实测：`native-env.ps1` **12 处**、
+  `showcase.ps1` **5 处**解析错误，`demo.ps1` 0 处（能解析但中文输出乱码）；补 BOM 后**三档全部 0 处**。
+  判据 + `--selftest` 现均 rc=0。
+- **发布链**：`release.yml` 标签过滤 `v[0-9]+.[0-9]+.[0-9]+`（GitHub ref 过滤器不支持 `[0-9]` 类，
+  实测 0 runs）→ `v*`；版本源改为正则读 `moon.mod`（本仓没有 `moon.mod.json`，上一版我自己写错过）；
+  4 处入口路径 `cmd/main` → `cmd/cli`；`prerelease` 按标签是否含 `-` 推导。
+- **全量面**：JS 后端 **529/529**（HEAD 基线 526 + 本轮 3 条新白盒），在 `git archive HEAD` 快照树
+  `temp/relbuild` 里跑（避开并行改动面），`rc=0` 落 `temp/relbuild_test_r3.log`。native 本轮未复跑，不宣称。
+
+## 资源消耗
+
+- MCP 调用（安装版 server 侧，落独立库）：写面 129 + 播种 ~20，读面 129，探针/复现矩阵 ~14 次 server 起停；
+  合计工具调用 ≈ 300，server 进程 spawn ≈ 14。
+- 构建/测试：`moon test --target js` × 3（含一次失败重跑）、`moon build --target js` × 2、
+  打包 zip × 2、安装 × 2（`-LocalZip` 离线）。
+- 凭据面：全程未读 `.env`、未探测/回显任何 key；`github_*` 只打到 `env_check/queue_status/flush_plan`
+  这一类纯读面（`force=false`，不发包）。
+
+## 任务分配记录
+
+- 本轮**未走 FIST 流水线**（用户先前指令：已知缺陷独立修，不走流水线），全程指挥官亲自执行 + 本地实测。
+- 共享状态守护：仓库根 `fist-mbt.db`（6.6 MB，多轮共用）在巡回改判为"每轮独立库"后不再被写入；
+  本轮早期那次（12:16 的 `mcp_sweep.py`）留下的 `ns=goalverify0928` 行与 call_log 行**照实入账**（BUG-90 正文），
+  不做无痕抹除——它是该缺陷的活证据。
+- 并行改动面未碰：`cmd/cli/*`、`src/ops/ops_loop*`、`scripts/gen_help_docs.py`、`scripts/patch_esm_main.py`、
+  README 的 `fist help tools` 段落均属他人未提交工作，本轮只读不写。
+
+## 遗留风险
+
+1. **BUG-94（high，OPEN）**：`cost_stats` 无参调用在仓库根树 + 独立库上触发未捕获 `ERR_SQLITE_ERROR` 并杀死会话；
+   同调用在 box 树上 ok。具体 SQL 未定位，第三棵树未复跑（归因边界已写进账）。
+2. **BUG-92（medium，OPEN）**：状态机拒绝文案「split 要求状态 [待领取]，当前是 [待领取]」把调用方指回它已满足的那一档；
+   实测真实前置是"根任务先 claim"。修在 `src/engine` 报错拼装，与并行面重叠，交裁决。
+3. **BUG-93（medium，OPEN）**：15+ 处脚本/文档仍指退役入口 `cmd/main` 且不带 `serve`（清单见账本）；
+   `cmd/main.js`(2,681,667) 与 `cmd/cli.js`(2,779,308) 两棵入口并存、产物不同 ⇒ 旧 E2E 的绿证明不了发布产物可用。
+4. **两条既有文档红（归因不到本轮）**：`check_doc_surface` J4 与 `check_tools_sync` R3b 都点名
+   `docs/SHIP-PLAN-BLACKBOX-v2.md`（:45/:52/:60）。该文件相对 HEAD **未修改**（`git status` 清单级证据），
+   本轮没动它也没替它改。口径修法（删第二处版本自述 / 把"3 个工具"改成指向 BACKLOG 的相对表述）写在建议里。
+5. **并行改动未登记**：`check_scripts_index` 在活树红于 `scripts/gen_help_docs.py`（他人未进索引的新脚本），
+   不在本轮责任面内，不代登记。
+6. **BUG-91 的锁还不在仓库里**：崩溃对照目前只活在 `temp/runaway_repro.py`（js-only 执行面没有 MoonBit 单测）。
+   建议把 `store_isolation_probe.py` 同形的"输出上限判据"补成一条 `scripts/` 判据 + CI 步，是否升级交裁决。
+
+## 后续建议
+
+1. 真发一次 Release：`git push` 后打 `v0.3.1`，让 `release.yml`（已改 `v*` + `moon.mod` 版本源 + `cmd/cli`）
+   产出 `fist-mbt-js-v0.3.1.zip`， then 用**字面** `irm https://…/install_onecmd.ps1 | iex` 做一次零参数安装。
+   （推送与发布未获授权，本轮没做。）
+2. 修 BUG-94：store 层 JS 桥把 sqlite 异常包成 `Err`；server 侧给工具分发加 catch-all，
+   任何 handler 异常回 JSON-RPC error 而不是让进程退出——这条是"服务面鲁棒性"，值得单独一条判据
+   （任意畸形调用后会话必须仍可响应）。
+3. 修 BUG-93 时顺手加一条**入口清单守卫**：扫 `scripts/` 与 README 里的 `cmd/main` 字面 ⇒ 红，
+   历史陈述文件豁免（照 J7 禁词判据同形，成本极低）。
+4. 修 BUG-92 时给拒绝文案立一条成对判据：`要求态 != 当前态`，相等即判文案坏了（本项目对拒绝文案的一贯要求）。
+5. 把 `mcp_tool_tour.py` 挂进 CI（它已经把"发布产物 + 129 工具 + 三面分栏"做成了一条命令）。
+
+## 超额内容（本可以不做）
+
+- 顺手把安装器的下载失败路径改成打印 HTTP 状态与候选 URL 清单（上一版吞异常，用户只能看到"换源"）。
+- 巡回驱动第一版把崩溃后的 94 个工具全记成 `broken`——本轮把它改成"分诊 + 复活 + 继续数 + 基数自证"
+  （`len(rows) != len(tools)` 直接 rc=2），并因此才发现我自己的明细表曾经丢过 123 行而结论仍报绿。
+
+## 来源
+
+- 判据/修复：`src/store/store_sqlite.mbt`、`src/store/store_db_path_wbtest.mbt`（新）、
+  `src/store/moon.pkg`（+`moonbitlang/core/env`）、`src/server/run_check_js.mbt`、
+  `scripts/check_ps_encoding.py`（新）、`scripts/store_isolation_probe.py`（新）、
+  `scripts/mcp_tool_tour.py`（新）、`scripts/blackbox/install_onecmd.ps1`、`scripts/blackbox/install.sh`、
+  `scripts/blackbox/install.ps1`、`.github/workflows/release.yml`、`.github/workflows/ci.yml`、
+  `AGENTS.md`（守卫族 7→9）、`scripts/README.md`、`memory/bugs.md`（BUG-90~94 + FIXED 小记）。
+- 证据：`temp/relbuild_test_r3.log`（529/529）、`temp/store_isolation_probe_*.json|.log`、
+  `temp/runaway_repro_3d397a.log`、`temp/runcheck_repro_1ff69c.log`、`temp/tour_evidence.txt`、
+  `temp/mcp_tool_tour_{write,read}_*.json`、`temp/install_r5.log`、`temp/install_r6.log`、
+  `temp/tool-tour-*/tour-*.stderr.log`（4 GB OOM 原文）、`temp/goalverify0928.db`（空库）vs 根库行 `T0r496`。
+- 上游对照：`scripts/blackbox/build_release.ps1:38`（发布入口 = `cmd/cli/cli.js`）、
+  `scripts/mcp_smoke.py:29-46`（`params._meta` 协议契约真源）、`src/engine/omega_gate.mbt:136`（`output_truncated`）。
+
+
+---
+
+## 续段（盖章 2026-09-28T05:29:54Z）：BUG-94 定位到根因并修掉，读面复跑到绿
+
+第一段把 BUG-94 记成"读面崩、写面 ok"的**归因边界**。本段把它推到底：
+
+- **根因**：`executions` 表从来不在 `src/store/store_sqlite.mbt` 的 `create_schema` 清单里，
+  只在**写**路径 `record_execution` 里 ensure。读路径 `StoreBackend::cost_stats` →
+  `aggregate_stats` → `list_all_executions` 直接 prepare `FROM executions`，而 js 桥的
+  `Database.prepare` 缺表时**抛异常**（不是返回 None）⇒ 未捕获异常打死 server。
+- **第一段那条"写面 ok / 读面崩"的差别不是树，是顺序**：写面播种链里先跑过 `execute`（把表建出来了）。
+  单独起 server 只读时，仓库根/无参、仓库根/带 ns、临时 box/无参 **三格全复现**
+  `Error: no such table: executions`（`temp/cost_stats_repro_3c39fd.log`）。
+- **修法两层**：① `executions_table_sql()` 进建表清单（新库开库即有表）；
+  ② `cost_stats` 读前 ensure（**存量老库**没这张表时也能自保——只补①对老库无效）。
+- **承重对照（同一判据两态实测）**：白盒 `src/store/cost_stats_executions_wbtest.mbt` 两条
+  （开库即查表 / `DROP TABLE` 后只读聚合回零值）。HEAD 源码 + 该判据 ⇒
+  `Total tests: 23, passed: 21, failed: 2`，两条红信息逐字 `Error: no such table: executions`
+  （`temp/cs_lock_head2.log`）；修复后 ⇒ 该包 23/23、全量 JS 后端 **531/531**（`temp/relbuild_test_r4.log`）。
+- **调用面复验（安装版 eb18f4f0）**：三种形态全部 `alive_after=True` 且回执
+  `{"total_records":0,...,"by_executor":{}}`（`temp/cost_stats_repro_e51bb6.log`）；
+  巡回两面 **129/129 打到调用面**：写面 ok 81 / refused 42 / skipped 6 / crashed 0，
+  读面 ok 76 / refused 41 / skipped 12 / crashed 0。
+
+## 续段自报的一个自身缺陷（BUG-98，已修）
+
+读面把 `project_dir="."` 当探针项目，而 `.` 就是仓库根 ⇒ 驱动里的 `report_bug` **直接写进了真账本**
+`memory/bugs.md`，一天内两发；其中 05:01 那一把编号推到了 90，而我 05:04 手写台账时按"89 条"的旧读数
+分配 90~94 ⇒ **BUG-90 出现两个抬头**。处置：
+- 两条垃圾条目改判 `FALSE_POSITIVE` 并逐条立据（重编号为 BUG-96/BUG-97，消除撞号）；
+- 缺陷本体另立 **BUG-98（FIXED）**：`mcp_tool_tour.py` 增加 `READ_PLANE_SKIP`
+  （report_bug / bug_fix / bug_mark_status / memory_consolidate / memory_gc / memory_link），
+  读面一律 skipped 并写明理由；
+- 判据：读面跑前跑后 `memory/bugs.md` 的 sha256 必须逐字相等 —— 实测
+  `63cd8b2593587b63` == `63cd8b2593587b63`（`temp/ledger_hash_before_read.txt`）。
+- 教训入档：**手写台账编号与工具发单不能并行数号**；改完脚本要先重新反解上界再落笔。
+
+账本现状：97 条抬头、无重复 id = 83 FIXED / 9 DUPLICATE / 3 FALSE_POSITIVE / 2 OPEN（BUG-92 拒绝文案自相矛盾、
+BUG-93 退役入口 `cmd/main` 散落 15+ 处）。仍未做：服务面级 catch-all（任何 handler 异常应回 JSON-RPC error
+而不是让进程退出）——那是"一个工具打死会话"的总闸，本轮只堵住了具体通路。
+
+## 补遗（2026-09-28T06:31:07Z）· 三件新收口与一处改判
+
+| 项 | 结论 | 证据（逐字可回溯） |
+|---|---|---|
+| BUG-92 改判 | 误报（引用文案出自 cp936 乱码猜测）；真缺陷重报为 BUG-99 并修 | `temp/bug92_probe.log` 的 \u 转义回执 |
+| BUG-93 修复 | 104 处 cmd/main→cmd/cli + 26 个启动点补 serve + 守卫 `check_entry_paths.py`（守卫族 9→10）| `temp/bug93_apply.log`、`temp/eg_prefix_run.log`(HEAD 树 119 违例)、`temp/eg_full3.log`(0 违例) |
+| BUG-100 修复 | 读面 project_dir/data_dir 指向 temp/ 草稿项目 + 外溢硬门 | `temp/tour_read_plane_r2.log`(rc=2 抓到仓库根 ns 库)、`temp/tour_read_plane_r3.log`(GREEN 0 新建 0 改动) |
+| BUG-101 修复 | run_serve 不再往 JSON-RPC stdout 打横幅（3 处）| `temp/smoke_e2e_proof.log`→`temp/smoke_e2e_proof3.log` MCP-SMOKE PASS |
+| 全量 | JS `moon test --target js` **533/533** rc=0 | `temp/verify_eng_full.log` |
+| 提交树自证 | `git archive` 327bb7a 干净树 **531/531** rc=0 | `temp/verify_327bb7a_test.log` |
+| 账本 | 账本 100 条 = 87 已修 / 9 重复并入 / 4 误报 / 0 待修 | `memory/bugs.md` 抬头计数 |
+| BUG-102 修复 | cl7 比较侧行尾归一 + `drift_keys` 分栏 + `gen_plugins --selftest` 四格进 CI；同一新克隆漂移 55 → 1（那 1 份是真未重生成），重生成后 rc=0 | `temp/cl_check_plugin_sync.out`（旧守卫 55 条）、提交 da47806 后复跑 cl7 PASS |
+| BUG-103 修复 | 安装器版本真源改绑 moon.mod（空值即 exit 1）+ 新守卫 check_release_asset_names.py（守卫族 11）；不带参数时 URL 由 v0.3.0-beta 变 v0.3.0/fist-mbt-js-v0.3.0.zip；离线装完 doctor 5/5、serve 第一行 JSON、129 工具 |
+| 已知红 | `gen_help_docs.py` 未登记（并行改动面的文件，本环不代改）| `temp/g_check_scripts_index.log` |
+
+来源：本轮以用户身份安装的 `fist`（sha256:eb18f4f0）+ 仓库 `git archive HEAD` 派生树实测；
+所有临时件在 `temp/`，历史面（memory/ reports/ CHANGELOG.md 既有段落）只追加未改写。
+
+## 再补遗 · 自述面判据（BUG-104）（盖章 2026-09-28T07:31:34Z）
+
+上一条补遗之后又追问了一件事：**「129 工具」有人钉着，「3 resources + 2 prompts」没有人钉**。
+
+| 项 | 结论 | 证据（逐字可回溯） |
+|---|---|---|
+| 缺陷定位 | BUG-104（medium，入账即 FIXED）：AGENTS.md 自述的 resources / prompts 两面与 `serverInfo.version ↔ moon.mod` 无任何判据认领 | `AGENTS.md` 的 `Resources:` / `Prompts:` 两行 vs `scripts/check_doc_surface.py` 覆盖面（只解 tools 表） |
+| 判据 | `scripts/mcp_tool_tour.py::surface_probe()`：期望值从 AGENTS.md 两行反解、与服务端实回**双向**对表；反解失败即自拒不报绿 | `temp/surf2_read_1790580101.log` 第 3 行、`temp/surf2_write_1790580144.log` 第 3 行（两行逐字相同） |
+| 判据自证 | `--surface-selftest` 12 支对照：10 违例必红 + 干净支必绿 + 无声明行必自拒 ⇒ `SURFACE-SELFTEST: OK … 不符 0 支`；已作为独立一步进 `ci.yml`（`check-and-test-js` job） | `python scripts/mcp_tool_tour.py --surface-selftest` rc=0 |
+| 调用面（安装态产物 sha256:**616b7632**） | read 面 129 工具 ok=76 refused=41 skipped=12 crashed=0 自述面红=0，且外溢判据取证面 172 项 0 新建 0 改动 | `temp/surf2_read_1790580101.log` |
+| 调用面（同上） | write 面 129 工具 ok=81 refused=42 skipped=6 crashed=0 自述面红=0（临时 box + 隔离库，仓库根 `fist-mbt.db` 未动） | `temp/surf2_write_1790580144.log` |
+| 实测自述面 | `resources=3(声明 3)[map=2182 overview=212 principles=606] prompts=2(声明 2)[check_in=1消息 verify=1消息] serverInfo=0.3.0 moon.mod=0.3.0` | 同上两份日志第 3 行 |
+| 投影复算 | `gen_plugins` 重生成 + cl7 PASS（4 宿主 / 56 文件 / v0.3.0）；`check_doc_surface` J1-J10 PASS；账本 103 条 = 90 已修 / 9 重复并入 / 4 误报 / 0 待修 | `python scripts/check_plugin_sync.py` rc=0 |
+
+两处对旧文字的**改判（不改写原文，只在此点名）**：
+1. 上一段「来源」写的是 `fist`（sha256:eb18f4f0）；本段两条巡回跑的是**重装后**的产物 sha256:616b7632
+   （含 BUG-101 的 stdout 净化与 serve 语义），旧 identity 只描述它当时那一批证据，不外推到本段。
+2. 上一段表格 `BUG-103 修复` 行只有 2 格（缺第三格证据列），本表按 3 列补齐；
+   那一行的证据其实存在（`temp/b103_*.log`），是当时漏排版 ⇒ 教训：**表格列数也是主张**，
+   少一格的行在渲染时会被静默补空，正好看不到"这条没有证据"。
+
+来源：本轮以用户身份安装的 `fist`（sha256:616b7632）+ 仓库工作树；临时件在 `temp/`，历史面只追加。
+
+## 再补遗 · 装完之后命令在 bash 里不存在（BUG-105）与一条新开（BUG-106）（盖章 2026-09-28T07:51:57Z）
+
+| 项 | 结论 | 证据（逐字可回溯） |
+|---|---|---|
+| 缺陷 | BUG-105（medium，入账即 FIXED）：Windows 安装器只给 `.cmd` shim ⇒ bash 侧 `fist` 不存在；顺带 shim 注释里的 em dash 被 ASCII 写盘压成 `?` | bash `which fist` → not found；`ls ~/.local/bin` 只见 `fist.cmd`/`fist-mbt.cmd`（102 字节，内容 `REM FIST-Mbt shim ? v0.3.0`） |
+| 修法 | `install_onecmd.ps1` 再写无扩展名 `fist`/`fist-mbt`（`#!/bin/sh`，LF）+「四件齐」门 +「shebang/无 CR」门 | `scripts/blackbox/install_onecmd.ps1` 的 `创建 shim + PATH` 段与自检段 |
+| 判据 | `check_release_asset_names.py` R1-R4 ⇒ **R1-R5**；`--selftest` 六格 ⇒ 八格（R5×2 变异必红 + 干净不误红） | `temp/r5_selftest.log` 尾行 `SELFTEST OK`；全量 `temp/r5_full.log` rc=0 |
+| 门承重对照 | M1 摘掉两条 POSIX 写入 ⇒ rc=1 并点名 `shim 未全部写出：fist, fist-mbt`；M2 原样复跑 ⇒ rc=0 | `python temp/b105_gate_canary.py`（两格，1 红 1 绿） |
+| 调用面（隔离 bin） | 四件齐：`fist`/`fist-mbt` bytes=77 CR=0 head=`#!/bin/sh`，`.cmd` 两份 CR=4；bash 里 `fist version`→`FIST-Mbt v0.3.0`、`fist doctor`→`5/5 checks 通过` | `python temp/b105_shim_probe.py` + `PATH=temp/b105-shim-bin bash -c 'fist doctor'` |
+| 真机面 | `~/.local/bin/fist` 新增后 `which fist` → `/c/Users/victo/.local/bin/fist`，`fist version` → v0.3.0（**只新增不覆盖**：`.cmd` 与 `fist-mbt.js` 保持并行改动面装好的那份） | `ls -la ~/.local/bin` 与 `fist version` 输出 |
+| 新开 | BUG-106（medium，OPEN，跨环移交）：`--help/-h/--version/-V` 判"未知子命令"且**退出码 0**；补丁已随账本给出 | 逐旗实测：`--help`→`未知子命令: --help` exit=0；`-V`→同 exit=0；`help`/`version` 正常 |
+
+一处口径澄清（不改写上文，只在此点名）：上文「再补遗」段说 read 面 `skipped=12`、write 面 `skipped=6`，
+那是 129 工具里**授权边界内主动不打**的件数（真发 issue / 真关 issue / 改真账本等），
+不是"没测到" ⇒ `not_tested=0` 才是覆盖判据。
+
+## 再补遗 · 全局命令全链路（bash → shim → `fist serve` → MCP）（盖章 2026-09-28T08:03:27Z）
+
+补完 BUG-105 之后，把"用户实际敲的那条命令"整链跑了一遍（此前巡回 spawn 的是 `node <js> serve`，
+中间少一层 shim）：
+
+| 面 | 观测 | 判据 |
+|---|---|---|
+| `fist demo`（bash，经 shim） | `七态闭环全绿` exit=0，`FIST_DB_PATH` 指到哪就只在那儿落库（`temp/b105-cli/cli.db`），仓库根 `fist-mbt.db` 未动 | 退出码 + 目录清单 |
+| `fist serve`（bash → shim → node → serve） | `tools/list` 129 / `resources/list` 3 / `serverInfo.version=0.3.0` / `status_summary` 真回执带 version 与计数 / 协议 stdout **零**人类行 | 与"node 直调产物"对照组逐格相同 |
+| initialize 一跑 | 我的第一版探针把标准 `initialize` 当门 ⇒ 全判红。**是我的期望错**：本服务端是 2026-07-28 口径、无握手，身份在每个请求的 `params._meta` 里（BUG-21 的验收位置就是这个） | 改按 `_meta` 形状重打即 PASS |
+
+证据脚本：`temp/b105_serve_over_shim.py`（两面对表，shim 组与直调组同为 PASS）。
+
+## 再补遗 · 文档那条安装线其实通不了（盖章 2026-09-28T08:22:01Z）
+
+把「作为用户去装」这句话真当成一次网络请求来做审计（只 GET、不执行、不带凭据）：
+
+| 源 | 实测 | 含义 |
+|---|---|---|
+| GitHub raw **master** | 200，首行 `#!/usr/bin/env pwsh`，5557 字节 | 唯一匿名可用的 raw 直链 |
+| GitHub raw main | 取不到（该仓默认分支 master） | 文档里那条 `main` 链接是死路 |
+| GitCode `/-/raw/master`、`/raw/master`、`/raw/main` | **200 + `<!DOCTYPE html>`（5527 字节）** | HTML 灌进 `iex` 就是解析错；200 让旧代码把它读成「成功」 |
+| raw.gitcode.com 子域 | 403 | 没有可用的匿名 raw 形式 |
+
+收口（BUG-107，high，入账即 FIXED）：安装器首选线全改 GitHub master raw；moon.mod 取回内容先做 HTML 形状检查（是网页就点名换源）；资产下载后先验 zip 魔数 `PK` 再看大小。判据 R6 + 三格变异；自述同步 AGENTS 守卫族与 scripts/README（五条 ⇒ 六条、八格 ⇒ 十一格）。
+判据自己也红过一次：R6 的首选线正则写成 `install_(?:onecmd\.ps1|sh)`，把 `install.sh` 读成 `install_sh` ⇒ 干净输入误红。**尺子坏与产品坏要用同一套对照区分**，这次靠「干净支必须绿」那格抓到。
+交出去的一处：README「黑盒用户」段本轮由并行改动面新加，两行安装线用的是 GitCode raw —— 对方在写该文件 ⇒ 不代改，改法即上表第一行。
+
+## 补遗 · 「真的走下载」第一次跑得起来，顺带抓出自检的假绿（盖章 2026-09-28T08:55:13Z）
+
+BUG-107 之后手里还剩一个没兑现的主张：「按文档装」的**下载**那一步。`-LocalZip` 绕开它，公网 Release 又需要推送授权。
+于是给两个安装器加镜像入口（`-BaseUrl` / `FIST_BASE_URL`），并写常驻端到端 `scripts/blackbox/e2e_mirror_install.py`
+——本机 `http.server` 挂 `moon.mod` + `/-/releases/download/v0.3.0/fist-mbt-js-v0.3.0.zip`（zip 由已装产物现打包），
+让安装器**真的走一次下载**装进沙箱。
+
+| 面 | 实测回执 | 判定 |
+|---|---|---|
+| 正向安装 rc | `0` | 通过 |
+| 版本来源 | `http://127.0.0.1:<port>/moon.mod` | 镜像 moon.mod 命中 |
+| 资产名拼装 | `v0.3.0/fist-mbt-js-v0.3.0.zip` | 命中 |
+| POSIX shim | `POSIX shim, LF` | 门通过 |
+| 安装器自检经 shim 跑到 fist | `fist (PATH)` | **修好后才第一次命中**（见 BUG-109） |
+| 沙箱产物 | `sha256:616b7632` ＝ 镜像一致 | 通过 |
+| 沙箱 bin | `fist / fist-mbt / fist.cmd / fist-mbt.cmd` 四件齐 | 通过 |
+| bash → 沙箱 `fist version` | rc=0 首行 `FIST-Mbt v0.3.0` | 通过 |
+| bash → 沙箱 `fist doctor` | rc=0 首行 `✅ [1/5] FistEngine 能创建` | 通过 |
+| 反面对照（资产换 20KB HTML） | rc=1，回执含「前两字节 `3C-21`」，未装出产物 | 拒绝带理由 |
+| HKCU 用户级 PATH | 跑前 1708 字 ⇒ 跑后逐字还原相同 | 沙箱外零污染 |
+| 真安装目录产物 | `616b7632 → 616b7632` | 不动别人已装的那份 |
+
+**BUG-108（medium，入账即 FIXED）**：下载段从未可验 = 验证面的空洞，补上述镜像入口与常驻 e2e。
+顺带抓到 PS 5.1 的 `(Invoke-WebRequest).Content` 在服务器标 `application/octet-stream` 时返回 **`byte[]`**——
+版本正则对 `byte[]` 静默失配，回执只说「正文里没有可解析的 version 行」，看着像镜像造错了。
+修在产品侧（非 string 先按 UTF-8 解码），不改测试夹具的形状。
+
+**BUG-109（high，入账即 FIXED）**：这条是上一格「自检经 shim 跑到 fist 永不命中」逼出来的。
+我一度怀疑探针写错，因为同一份 shim 在 bash 里 `fist version` 是 rc=0、stdout 正常。逐字证据
+（`temp/b108-sandbox/selfcheck-ps-stderr.txt`）：
+
+```
+fist.cmd : (node:36896) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+    + FullyQualifiedErrorId : NativeCommandError
+```
+
+错误记录的**来源就是 shim 本身** ⇒ 命令名解析成功、进程真跑起来了；而脚本顶部 `$ErrorActionPreference="Stop"`
+把原生命令的一行 stderr 升级成终止错误。node:sqlite 每次启动都打那行警告 ⇒ 这不是偶发，是**每次**。
+于是自检同时说两件假话：`✅ fist-mbt.js 可执行` 挂在两个必然进 catch 的 try 之后**无条件**打印（假绿），
+`& fist version` 的 catch 又把它渲染成「当前会话 PATH 未刷新（新开终端即可）」（假因——PATH 那一刻是对的）。
+修法：`Invoke-FistNative` 封装（调用期临时降 EAP、`2>$null` 隔离 stderr、`finally` 还原）；
+版本无 stdout ⇒ `❌ 产物跑不出版本（node 不在 PATH 或产物损坏）` + **exit 1**；
+`Get-Command fist` 分流「解析不到」与「解析到却无回执」。判据面加 **R7**（三支子判据：禁空 catch /
+原生调用必须降 EAP+stderr 隔离 / ✅ 必须挂在版本回执的条件分支上），`--selftest` 十一格 ⇒ 十四格。
+
+教训两条：**①「自检打印的 ✅」不是判据，要看它挂在哪条实测分支上**——无条件的那句永远绿，等于永远不说谎也永远不说真话；
+**② 一句错误的诊断比没有诊断更贵**：它把用户支去开新终端、重装，而真因只是一行 stderr 警告。
+
+### 沙箱外真面复验（盖章 2026-09-28T09:03:56Z）
+
+上面那张表的证据全部来自**沙箱**（env 重定向 + 沙箱 bin 顶 PATH），而「安装器自检经 shim 跑到 fist」
+这句话的用户面是 `~/.local/bin\fist.cmd` 加**真** PATH —— 不是同一个解析环境，所以再跑一次真面：
+用修好的 `install_onecmd.ps1` 以同版本、同字节（zip 由当前已装产物现打包）在真用户目录重装一次，
+跑前跑后 `fist-mbt.js` 都是 `sha256:616b7632`（同一版本重装不该改字节，改了即 FAIL）。
+
+| 面 | 回执 |
+|---|---|
+| 安装 rc | `0` |
+| 自检经 shim 那行 | 打出 `✅ fist (PATH) → …`（BUG-109 修前这一行**永远**打不出来，只出 ⚠️ 假因） |
+| 用户面 bash | `command -v fist` = `/c/Users/victo/.local/bin/fist`；`fist version` = `FIST-Mbt v0.3.0 (moon.mod version 单一真源)`；`fist doctor` rc=0 |
+| 装完 smoke | `fist demo` rc=0，`🎉 七态闭环全绿 ✅`（回执 `temp/b109-post-reinstall-demo.txt`） |
+| 真产物字节 | `616b7632 → 616b7632` 未变 |
+
+顺带一条旁证：`fist demo` 的回执**末尾**就挂着 `(node:…) ExperimentalWarning: SQLite is an experimental feature`
+——正是这行 stderr 在 `$ErrorActionPreference="Stop"` 下被升级成终止错误，才让旧自检把"跑通了"说成"PATH 未刷新"。
+
+## 补遗 · README 那条线由我落了（含并行改动面本体）（盖章 2026-09-28T10:22:50Z）
+
+BUG-107 把「文档写的主安装线通不了」记成 FIXED，但**真凶在 README 那两行**——当时 README 由并行改动面在写，
+我按边界不代改。本轮用户指令收回（「README 补丁你去改」），落盘时又发现同段代码栅栏的字节里嵌着退格符：
+
+| 面 | 修前（逐字实测） | 修后 |
+|---|---|---|
+| Windows 安装线 | `irm https://gitcode.com/VictorTop/Fist-Mbt/-/raw/main/scripts/blackbox/install_onecmd.ps1 \| iex` | `irm https://raw.githubusercontent.com/vicTop-cw/FIST-Mbt/master/scripts/blackbox/install_onecmd.ps1 \| iex` |
+| Linux 安装线 | 同上 GitCode `raw/main` | GitHub `raw/master` 的 `install.sh` |
+| 代码栅栏开 | `` `ash ``（真实字节 `0x60 0x08 61 73 68`） | ` ```bash ` |
+| 代码栅栏闭 | 一个裸反引号 | ` ``` ` |
+| GitCode 的角色 | 被写成主安装线 | 降为「只当浏览备用」，并写明三种 raw 形状都回 200 + HTML ⇒ 不许接进 `\| iex` |
+
+自证（脚本打印）：dry-run 命中区间 461 字含 1 个退格符 ⇒ 退格符全文 1→0、GitCode 死链 0 命中、
+新线命中、行数 225→233 且差==本节新旧行差、`startswith(改前缀)` 成立。
+**提交里含并行改动面那 20 行本体**（HEAD 无此节，我的修复只能落在他们未提交的新增之上），在此点名而非静默带走。
+
+## 补遗 · SSH 推送双腿通过，Release 资产腿仍差一次 CI（盖章 2026-09-28T10:31:48Z）
+
+用户指出「不该再来回要授权」⇒ 本轮直接按既有远端拓扑推：**origin 与 gitcode 都走 SSH**
+（gitcode 的 fetch 是 HTTPS 无凭据、pushurl 才是 SSH），推送前先做快进核对，两把 `merge-base --is-ancestor` 都过 ⇒ 纯快进、未用 `--force`。
+
+| 腿 | 回执 |
+|---|---|
+| GitHub master | `8304eb5..b5b7b67 master -> master`（SSH，BatchMode） |
+| GitCode master | `8751245..b5b7b67`，`remote: Start Git Hooks Checking [PASSED]` |
+| 六个本地标签 | 两侧均 `* [new tag]`（v0.3.0-posix-shim / raw-url-shape / surface / mirror-e2e / real-plane / tour-recap） |
+| 文档首选线（修后） | `https://raw.githubusercontent.com/…/master/scripts/blackbox/install_onecmd.ps1` → **200 + BOM + `#!/usr/bin/env pwsh`**（README 那条现在真取得到脚本） |
+| GitCode raw 三种形状 | 仍 **200 + `<!DOCTYPE html>`** ⇒ README 里把它降为「只当浏览备用」是实测结论而非猜测 |
+| Release 资产 | `…/releases/download/v0.3.0/fist-mbt-js-v0.3.0.zip` → **404**；release 页面 `/releases/tag/v0.3.0` 存在但页面上 `releases/download/` 链接 **0 条** ⇒ 那是一个**没有资产的 Release** |
+
+差在哪一条链上：`release.yml` 的触发是 **tag push**，而 `v0.3.0` 这个标签早于「标签过滤器修好（旧写法对 v0.3.0 实测触发 0 次）」之前就已存在，
+标签不再变化就永远不触发 ⇒ 资产名对不上的根因不是拼装，是**这个版本从没跑过发布流水线**。
+本机既无 `gh` 也无 `FIST_GITHUB_TOKEN`（只查存在性，未探测/回显任何 key）⇒ 手工上传与 `workflow_dispatch` 两条路都不可用。
+
+顺带一条我自己造成的副作用，如实记账：推上去的六个 `v0.3.0-<轮次名>` 标签每个都会跑一次 Release 流水线，
+产出 `fist-mbt-js-v0.3.0-<轮次名>.zip` 这类**非默认线资产名的 Release**（安装器默认只拼 moon.mod 的 `0.3.0`）。
+它们不影响用户安装线，但会在 Releases 列表里留噪声 ⇒ 是否清理由用户定。
+
+## 补遗 · 发布流水线第一次真跑就失败（根因在作业依赖，不在产物）（盖章 2026-09-28T11:33:28Z）
+
+推 `v0.3.1` 之后等了 420 秒，资产 URL 一直 404；抓 Actions 页面得到的关键事实是那句
+`failed: Run **1** of FIST-Mbt Blackbox Release` —— 这条发布流水线**从来没有跑过第二次，也没跑过第一次之前的一次**，
+本轮是它史上第一跑，而第一跑就红了。
+
+排除误判的实测（都在 `git archive HEAD` 快照树里做，建树自证 551 文件 == `git ls-files` 551）：
+
+| CI 的 JS 三步 | 本机快照复跑结果 |
+|---|---|
+| `moon build --target js` | `ran 78 tasks, 499 warnings, **0 errors**` |
+| `python3 scripts/patch_esm_main.py …/cli.js` | rc=0，打印 `patched …` |
+| 打包 `fist-mbt-js-v0.3.1.zip` | 374,830 字节，前两字节 `b'PK'` |
+
+⇒ 产物没问题，问题在 `release.yml` 的 `release` 作业：
+
+1. 它引用 `needs.meta.outputs.version`，自己的 `needs` 却是 `[build-js, build-native-linux]` ——
+   **`meta` 不在 needs 里就取不到值**，Release 名与资产名会漂成空版本形态；
+2. 它把**可选的** `build-native-linux` 当一票否决项，而 AGENTS 自己写明权威门槛是 JS 后端；
+   同文件里 `build-native-windows` 反而已经带 `continue-on-error: true`。
+
+修：`needs: [meta, build-js]` + `build-native-linux: continue-on-error: true`；判据面加 **R8**（三支子判据各必红，
+`--selftest` 十四格 ⇒ 十七格）。发布动作走纯快进——不删也不重指已经发布出去的 `v0.3.0`/`v0.3.1` 标签
+（那等于改写公网 release point，与本仓「只快进、绝不 force」的纪律冲突），改成版本前进 `0.3.1 → 0.3.2` 打新标签。
+
+**如实记两件事**：① 这条先入账为 **OPEN**——修复与判据已落盘，但「Release 真出了资产」还没发生，
+翻 FIXED 的判据写在账本条目里（匿名 HEAD 得 200 + `PK`，且用真公网线不带任何参数装出 `fist version` = 0.3.2）；
+② 本仓 CI 长期是红的（`run 178 → 186` 全是 failed，含早于本轮的多笔提交），
+而匿名 API 现在 `403 rate limit exceeded` ⇒ 读不到日志，继续定位需要 `FIST_GITHUB_TOKEN` 从环境变量注入，或在 UI 里点开 run。
+
+## 更正 · BUG-111 的归因只覆盖了一半：真最后一格是 runner 上没有 moon（盖章 2026-09-28T11:54:14Z）
+
+BUG-111 里我写的"真因在作业依赖"是**不完整归因**，这里用只读 API 拿到的失败步骤名更正（不是重写原文，是追加更正）：
+
+| 作业 | 结论 | 失败步骤 |
+|---|---|---|
+| meta | success | — |
+| build-js | failure | **Build JS target** |
+| build-native-linux | failure | **Build native** |
+| build-native-windows | failure | **Install MoonBit** |
+| release | **skipped** | —（前置红所以根本没跑） |
+
+两个作业红在"调 moon 的那一步"、一个红在"装 moon 的那一步"、`release` 是 skipped 而非跑挂 ⇒
+形状指向**工具链没到手**。同仓的 `ci.yml` / `fist-ci.yml` 是这么装的（且验证过能跑）：
+
+```bash
+curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+moon update
+```
+
+`release.yml` 三条全缺：URL 少 `.sh`、不导出 `GITHUB_PATH`、不 `moon update` ⇒
+runner 每步起新 shell、安装脚本改的只是 shell rc ⇒ 下一步里 `moon` 不在 PATH。
+
+**为什么我上一次复跑没抓到**：我在 `git archive HEAD` 快照树里把 CI 的 JS 三步逐条复跑，全绿
+（`moon build --target js` 0 errors / `patch_esm_main.py` rc=0 / zip 374KB `PK`），据此写下"失败在作业依赖不在产物"。
+那次复跑用的是**本机全局安装的 moon**，与 runner 的 PATH 不是同一个环境——
+它证明的是"代码编得过"，我却把它当成了"CI 那一步也过得去"。
+⇒ 教训：**跨环境复跑必须先证环境同形**（这里就是 `which moon` 在 runner 上取不取得到），
+否则"复跑全绿"会变成一张把自己骗过去的假证据。这条与 [[feedback-verify-at-call-site]] 同族：
+调用面不只包括函数入口，也包括**跑它的那台机器的 PATH**。
+
+判据面加 **R9**：跑 moon 的 workflow 必须有把 moon 交进 `GITHUB_PATH` 的**代码行**（注释不算——
+第一版判据就是被我在 release.yml 写的注释里那个 "GITHUB_PATH" 喂回针，"摘掉导出行"那格变异不红，`--selftest` 当场抓到），
+安装 URL 必须是 `install/unix.sh` 那条形状。`--selftest` 十七格 ⇒ 十九格。
+发布动作仍走纯快进：版本 `0.3.2 → 0.3.3` 打新标签 `v0.3.3`。

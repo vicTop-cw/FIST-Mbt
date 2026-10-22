@@ -1,0 +1,1 @@
+对 FIST-Mbt 整个项目执行 [打磨,寻虫,修复,验证,清整,推进] 组合模式开发：打磨完善已有功能（重构/性能调优/不加新功能）、寻虫（issue_scan+边界语料+code review）、修复 bugs、验证（API 枚举/完备性/文档自洽）、清整（dead code/过期文件/依赖清理）、持续推进。全程使用最新版 fist-mbt（开发仓 _build/js/debug/build/cmd/cli/cli.js）驱动。注意：有其他 agent 同步开发同一项目，任务描述须注明隔离分支/不污染他人工作区；善用发布版 fist-mbt 任何能力；开启所有功能（含自动路由 autodispatch、watchdog、plan_deep、hats 辩论、omega 强验证）。

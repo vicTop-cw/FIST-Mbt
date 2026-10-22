@@ -1,0 +1,12 @@
+import {
+  "vicTop-cw/fist-mbt/src/ops",
+  "vicTop-cw/fist-mbt/src/engine",
+}
+
+pkgtype(kind: "executable")
+
+supported_targets = "js+native"
+
+options(
+  targets: { "main.mbt": [ "js" ], "main_native.mbt": [ "native" ] },
+)

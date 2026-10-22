@@ -1,0 +1,1541 @@
+/// FIST-Mbt engine: DAG 扩展模块。
+/// 提供：critical_path（最长依赖链）、parallelism（当前可并行度）、dag_ascii（ASCII 依赖图）。
+/// 仅依赖既有 FistEngine 能力（list_all / get_task / deps_satisfied），不改原有行为。
+
+/// ==================== 内部工具 ====================
+
+///|
+/// 生成 n 层两空格缩进
+fn dag_indent(n : Int32) -> String {
+  let mut s = ""
+  for i = 0; i < n; i = i + 1 {
+    s = s + "  "
+  }
+  s
+}
+
+///|
+/// 用逗号拼接依赖 id 列表
+fn dag_join_deps(deps : Array[String]) -> String {
+  let mut s = ""
+  for i = 0; i < deps.length(); i = i + 1 {
+    if i > 0 {
+      s = s + ","
+    }
+    s = s + deps[i]
+  }
+  s
+}
+
+/// ==================== 关键路径 ====================
+
+///|
+/// 求以 id 结尾的最长依赖链（沿 depends_on 边回溯；memo 化 DFS，含环保护）。
+/// 返回序列按依赖先后排列（最底层依赖在前，id 自身在后）。
+/// **BUG-215**：环保护从「局部重入检查」升级为「环成员标记」——返回 `None` 表示
+/// 「本路径已成环」，调用方（critical_path）不得把环成员计入关键路径。
+/// 旧实现返回 `[]`，与「无依赖(合法空链)」不可区分，导致 X→Y→X 环上
+/// `critical_path` 返回 `[Y, X]`（实跑验证）。现在环成员一律 `None`。
+fn FistEngine::longest_chain_ending(
+  self : FistEngine,
+  id : String,
+  memo : Map[String, Array[String]?],
+  visiting : Map[String, Bool],
+) -> Array[String]? {
+  match memo.get(id) {
+    Some(c) => return c
+    None => ()
+  }
+  // 环保护：当前 DFS 路径上已出现过则返回 None（不再沿环回溯，并把环成员标记为 None）
+  match visiting.get(id) {
+    Some(_) => {
+      memo.set(id, None)
+      return None
+    }
+    None => ()
+  }
+  visiting.set(id, true)
+  let deps = match self.get_task(id) {
+    Some(t) => t.depends_on
+    None => []
+  }
+  let mut best : Array[String] = []
+  let mut in_cycle = false
+  for d in deps {
+    match self.longest_chain_ending(d, memo, visiting) {
+      Some(chain) => if chain.length() > best.length() { best = chain }
+      None => in_cycle = true
+    }
+  }
+  visiting.remove(id)
+  if in_cycle {
+    // 有后继返回 None（环成员），本节点也是环成员——向上传播
+    memo.set(id, None)
+    return None
+  }
+  let out = best.copy()
+  out.push(id)
+  memo.set(id, Some(out))
+  Some(out)
+}
+
+///|
+/// 关键路径：全图中按 depends_on 建图后的最长依赖链（任务 id 序列）。
+/// 多条等长链取先遇到的一条；空仓库返回空数组。
+/// **BUG-215**：环成员被 `longest_chain_ending` 标记为 None，此处不再计入。
+pub fn FistEngine::critical_path(self : FistEngine) -> Array[String] {
+  let memo : Map[String, Array[String]?] = Map([])
+  let visiting : Map[String, Bool] = Map([])
+  let mut best : Array[String] = []
+  for t in self.list_all() {
+    match self.longest_chain_ending(t.id, memo, visiting) {
+      Some(chain) => if chain.length() > best.length() { best = chain }
+      None => ()
+    }
+  }
+  best
+}
+
+/// ==================== 并行度 ====================
+
+///|
+/// 当前可并行执行的任务数：状态为待领取且依赖已满足的任务数。
+pub fn FistEngine::parallelism(self : FistEngine) -> Int32 {
+  // R12-R7 性能：与 ready_tasks 同款——deps_satisfied 逐条 DB 读，
+  // 这里一次遍历建 completed 映射，O(1) 判依赖。
+  let tasks = self.list_all()
+  let completed : Map[String, Bool] = Map([])
+  for t in tasks {
+    completed.set(t.get_id(), t.get_status().is_completed())
+  }
+  let mut n = 0
+  for t in tasks {
+    if t.get_status().is_pending() && deps_ready_memo(t.depends_on, completed) {
+      n = n + 1
+    }
+  }
+  n
+}
+
+/// ==================== ASCII 依赖图 ====================
+
+///|
+/// 计算任务在 DAG 中的层级（缩进深度）：
+/// 取「parent_id 父链深度」与「depends_on 依赖链深度」的较大者。
+/// 父/依赖不在本命名空间内则不计入；环保护下返回 0。
+/// **BUG-215**：环保护从「重入点返回 0」升级为「环成员一律 -1 哨兵」——
+/// 让调用方（dag_ascii）能区分「无依赖(0)」与「成环(-1)」，并在渲染面把 -1 收敛为 0。
+/// 旧实现只在重入点返回 0，触发重入的外层节点仍累加 +1，X→Y→X 环被渲染成
+/// X 深 2、Y 深 1（顺序依赖）。现在环成员统一 -1，渲染面钳到 0（顶层）。
+fn FistEngine::dag_level(
+  self : FistEngine,
+  id : String,
+  members : Map[String, Bool],
+  memo : Map[String, Int32],
+  visiting : Map[String, Bool],
+) -> Int32 {
+  match memo.get(id) {
+    Some(l) => return l
+    None => ()
+  }
+  match visiting.get(id) {
+    Some(_) => {
+      // 环保护：重入点返回 -1 哨兵并 memoize（标记该节点为环成员）
+      memo.set(id, -1)
+      return -1
+    }
+    None => ()
+  }
+  visiting.set(id, true)
+  let mut level = 0
+  let mut in_cycle = false
+  match self.get_task(id) {
+    Some(t) => {
+      // 子任务按 parent_id 归组：父任务存在则至少缩进一层
+      match t.parent_id {
+        Some(p) =>
+          if members.contains(p) && p != id {
+            let pl = self.dag_level(p, members, memo, visiting)
+            if pl < 0 {
+              in_cycle = true
+            } else if pl + 1 > level {
+              level = pl + 1
+            }
+          }
+        None => ()
+      }
+      // depends_on 同样加深层级（依赖必须先完成，视觉上位于上层）
+      for d in t.depends_on {
+        if d != id && members.contains(d) {
+          let dl = self.dag_level(d, members, memo, visiting)
+          if dl < 0 {
+            in_cycle = true
+          } else if dl + 1 > level {
+            level = dl + 1
+          }
+        }
+      }
+    }
+    None => ()
+  }
+  visiting.remove(id)
+  let final_level = if in_cycle { -1 } else { level }
+  memo.set(id, final_level)
+  final_level
+}
+
+///|
+/// ASCII 树/缩进图：展示某命名空间下的任务依赖结构。
+/// 层级由 parent_id（子任务归组）与 depends_on（依赖深度）共同决定，
+/// 同层任务按 id 字典序稳定输出；跨命名空间的父/依赖不计入缩进。
+/// 每行格式：<缩进><id> [<状态>]（有依赖时追加 " (依赖: a,b)"），行尾换行。
+/// **BUG-215**：`dag_level` 对环成员返回 -1 哨兵，此处钳到 0（顶层），
+/// 让环成员不被渲染成「看似有合法深度」的中间层。
+pub fn FistEngine::dag_ascii(self : FistEngine, ns~ : String) -> String {
+  let target = if ns == "" { "default" } else { ns }
+  let tasks = self.store.list_tasks_in(target)
+  let members : Map[String, Bool] = Map([])
+  for t in tasks {
+    members.set(t.id, true)
+  }
+  let memo : Map[String, Int32] = Map([])
+  let visiting : Map[String, Bool] = Map([])
+  let levels : Map[String, Int32] = Map([])
+  for t in tasks {
+    levels.set(t.id, self.dag_level(t.id, members, memo, visiting))
+  }
+  let sorted = tasks.copy()
+  sorted.sort_by(fn(a, b) {
+    let la = match levels.get(a.id) {
+      Some(l) => if l < 0 { 0 } else { l }
+      None => 0
+    }
+    let lb = match levels.get(b.id) {
+      Some(l) => if l < 0 { 0 } else { l }
+      None => 0
+    }
+    if la != lb {
+      la - lb
+    } else {
+      a.id.compare(b.id)
+    }
+  })
+  let mut out = ""
+  for t in sorted {
+    let lvl = match levels.get(t.id) {
+      Some(l) => if l < 0 { 0 } else { l }
+      None => 0
+    }
+    let mut line = dag_indent(lvl) + t.id + " [" + t.status_to_string() + "]"
+    if t.depends_on.length() > 0 {
+      line = line + " (依赖: " + dag_join_deps(t.depends_on) + ")"
+    }
+    out = out + line + "\n"
+  }
+  out
+}
+
+///|
+/// BUG-213：从 `from` 出发沿 depends_on 链 BFS，判断 `target` 是否可达。
+/// 用于 dag_depend 建边前的传递环检测：若 `dep_id` 已（传递）依赖 `task_id`，
+/// 再给 `task_id` 加一条 `dep_id` 依赖就成环。
+/// 纯读 store；已访问集合用 Map[String,Bool] 兜底（不做 Set 依赖）。
+fn FistEngine::dag_reaches(
+  self : FistEngine,
+  from : String,
+  target : String,
+) -> Bool {
+  if from == target {
+    return true
+  }
+  let visited : Map[String, Bool] = Map([])
+  let mut queue : Array[String] = [from]
+  while queue.length() > 0 {
+    let cur = queue[0]
+    let rest : Array[String] = []
+    for i = 1; i < queue.length(); i = i + 1 {
+      rest.push(queue[i])
+    }
+    queue = rest
+    // BUG-253: visited 不变量——纯本函数写入（仅 visited.set(cur, true)），
+    // 单线程模型下无并发污染；首次访问时 get 返回 None → unwrap_or(false) 语义安全
+    // （对应昨日 unsafe-scan P3 建议：保留现状，注释说明不变量）。
+    if visited.get(cur).unwrap_or(false) {
+      continue
+    }
+    visited.set(cur, true)
+    match self.store.get_task(cur) {
+      Some(t) =>
+        for d in t.depends_on {
+          if d == target {
+            return true
+          }
+          if !visited.get(d).unwrap_or(false) {
+            queue = queue + [d]
+          }
+        }
+      None => ()
+    }
+  }
+  false
+}
+
+///|
+/// 显式给任务追加一条前置依赖（构建 DAG 依赖边，不只靠 plan_deep 隐式父子）。
+/// 校验：task 与 dep 均存在、非同一任务、且不会形成直接自环；去重追加并落库。
+/// 返回追加后的任务 JSON。失败返回 Err（含人语原因）。
+pub fn FistEngine::dag_depend(
+  self : FistEngine,
+  task_id~ : String,
+  dep_id~ : String,
+  now~ : String,
+) -> Result[@core.Task, String] {
+  let task = match self.store.get_task(task_id) {
+    None => return Err("task not found: \{task_id}")
+    Some(t) => t
+  }
+  if dep_id == task_id {
+    return Err("不能依赖自身: \{task_id}")
+  }
+  let _dep = match self.store.get_task(dep_id) {
+    None => return Err("依赖任务 \{dep_id} 不存在")
+    Some(d) => d
+  }
+  // BUG-213：传递环检测——若 task_id 是 dep_id 的（传递）依赖，加这条边即成环
+  if self.dag_reaches(dep_id, task_id) {
+    return Err(
+      "拒绝成环依赖: \{task_id} 依赖 \{dep_id} 会形成传递环（\{dep_id} 已传递依赖 \{task_id}）",
+    )
+  }
+  // 已存在则幂等返回现任务
+  if task.depends_on.contains(dep_id) {
+    return Ok(task)
+  }
+  let c = task.with_depends_on(dep_id, now)
+  match self.store.update_task(c) {
+    Ok(_) => Ok(c)
+    Err(e) => Err("依赖落库失败: \{e}")
+  }
+}
+
+/// ==================== 瓶颈与松弛分析（PERT/CPM，R71） ====================
+
+///|
+/// 拓扑序（依赖先于被依赖；带环保护——成环任务归入 cycle，不阻塞计算）。
+fn FistEngine::dag_topo_order(
+  self : FistEngine,
+) -> (Array[String], Array[String]) {
+  let ids : Array[String] = []
+  // R12-R9 性能：旧代码把 `list_all()` 调了两次（一次取 ids、一次建边），
+  // SqliteStore 下每次都是全库读。改一次遍历：把 Task 暂存，两次循环共用。
+  let tasks_all = self.list_all()
+  for t in tasks_all {
+    ids.push(t.get_id())
+  }
+  let indeg : Map[String, Int32] = Map([])
+  let deps_of : Map[String, Array[String]] = Map([])
+  for id in ids {
+    indeg.set(id, 0)
+    deps_of.set(id, [])
+  }
+  // 建前置→后继边：任务 t 依赖 d（d 是 t 的前置）→ 边 d→t；indeg[t]++（t 的前置数）
+  for t in tasks_all {
+    for d in t.depends_on {
+      deps_of.set(d, deps_of.get(d).unwrap_or([]) + [t.get_id()])
+      let cur = indeg.get(t.get_id()).unwrap_or(0)
+      indeg.set(t.get_id(), cur + 1)
+    }
+  }
+  let order : Array[String] = []
+  let mut ready_ids : Array[String] = ids.filter(fn(id) {
+    indeg.get(id).unwrap_or(0) == 0
+  })
+  while ready_ids.length() > 0 {
+    let cur = ready_ids[0]
+    // 移除队首（保持顺序）
+    let rest : Array[String] = []
+    for i = 1; i < ready_ids.length(); i = i + 1 {
+      rest.push(ready_ids[i])
+    }
+    ready_ids = rest
+    order.push(cur)
+    // cur 的后继（以 cur 为前置的任务）：前置完成 -> 后继入度-1
+    // BUG-253：Kahn invariant —— deps_of/indeg 已对全部 ids 显式初始化（见上方 L334-337），
+    // 循环内 get 不应为 None；旧 unwrap_or 默认值会静默吞掉漏初始化的后继导致拓扑序不完整，
+    // 改为显式 crash 暴露 invariant 违背（对应昨夜 unsafe-scan P2 建议）。
+    let cur_deps = match deps_of.get(cur) {
+      Some(v) => v
+      None => abort("Kahn: 未初始化的后继 \{cur}")
+    }
+    for nxt in cur_deps {
+      let nd = match indeg.get(nxt) {
+        Some(v) => v
+        None => abort("Kahn: 未初始化的入度 \{nxt}")
+      }
+      indeg.set(nxt, nd - 1)
+      if nd == 1 {
+        ready_ids = ready_ids + [nxt]
+      }
+    }
+  }
+  let cycle = ids.filter(fn(id) { indeg.get(id).unwrap_or(0) > 0 })
+  (order, cycle)
+}
+
+///|
+/// 瓶颈与松弛分析（PERT/CPM 硬核调度能力，R71）：对每个任务计算
+///   earliest（依赖全部就绪的最早开始步数）、latest（不拖慢总工期的最晚开始步数）、
+///   slack（latest-earliest；0=关键路径上，>0=可灵活并行安排）。
+/// 返回 { critical:[关键路径任务id], slack_map:{id:{earliest,latest,slack}}, makespan, cycle:[成环任务] }。
+/// ——"找出谁在关键路径上、谁有松弛可并行"，直接支撑排程优化（不是视图叠加）。
+pub fn FistEngine::dag_slack_analysis(self : FistEngine) -> Json {
+  let (order, cycle) = self.dag_topo_order()
+  let ids : Array[String] = []
+  // R12-R9 性能：与 dag_topo_order 同款——旧代码把 list_all() 调两次
+  //（一次取 ids、一次建 reverse 边）。一次读、两循环共用。
+  let tasks_all = self.list_all()
+  for t in tasks_all {
+    ids.push(t.get_id())
+  }
+  // earliest: 前向——依赖全就绪的最早开始
+  let earliest : Map[String, Int32] = Map([])
+  for id in ids {
+    earliest.set(id, 0)
+  }
+  for id in order {
+    match self.get_task(id) {
+      Some(t) =>
+        for d in t.depends_on {
+          let de = earliest.get(d).unwrap_or(0)
+          let ce = earliest.get(id).unwrap_or(0)
+          if de + 1 > ce {
+            earliest.set(id, de + 1)
+          }
+        }
+      None => ()
+    }
+  }
+  // makespan: 全图最长 earliest（总工期）
+  let mut makespan = 0
+  for id in ids {
+    let e = earliest.get(id).unwrap_or(0)
+    if e > makespan {
+      makespan = e
+    }
+  }
+  // latest: 反向——不拖慢总工期的最晚开始
+  let latest : Map[String, Int32] = Map([])
+  for id in ids {
+    latest.set(id, makespan)
+  }
+  let rev : Map[String, Array[String]] = Map([])
+  for id in ids {
+    rev.set(id, [])
+  }
+  for t in tasks_all {
+    for d in t.depends_on {
+      rev.set(d, rev.get(d).unwrap_or([]) + [t.get_id()])
+    }
+  }
+  for i = order.length() - 1; i >= 0; i = i - 1 {
+    let id = order[i]
+    let mut lt = makespan
+    for nxt in rev.get(id).unwrap_or([]) {
+      let ln = latest.get(nxt).unwrap_or(0)
+      if ln - 1 < lt {
+        lt = ln - 1
+      }
+    }
+    if lt < 0 {
+      lt = 0
+    }
+    latest.set(id, lt)
+  }
+  // slack = latest - earliest；0 → 关键路径
+  let slack_map : Map[String, Json] = Map([])
+  let critical : Array[String] = []
+  for id in ids {
+    let e = earliest.get(id).unwrap_or(0)
+    let l = latest.get(id).unwrap_or(0)
+    let slack = l - e
+    if slack == 0 {
+      critical.push(id)
+    }
+    slack_map.set(
+      id,
+      Json::object({
+        "earliest": Json::number(e.to_double()),
+        "latest": Json::number(l.to_double()),
+        "slack": Json::number(slack.to_double()),
+      }),
+    )
+  }
+  critical.sort()
+  Json::object({
+    "makespan": Json::number(makespan.to_double()),
+    "critical": Json::array(critical.map(fn(s) { Json::string(s) })),
+    "slack_map": Json::object(slack_map),
+    "cycle": Json::array(cycle.map(fn(s) { Json::string(s) })),
+    // R12-R10 性能：把 topo order 一并回传，省掉 `dag_cost_route` 里的
+    // 第二次 `dag_topo_order()`（那又是一次全库 read + Kahn 遍历）。
+    "order": Json::array(order.map(fn(s) { Json::string(s) })),
+  })
+}
+
+/// ==================== 排程视图（R74，基于 slack 落成可执行排程） ====================
+
+///|
+/// 排程视图（R75 增强）：在 dag_slack_analysis 基础上把任务落成可执行排程——
+/// 按 slack 分两层批：critical 批（slack=0，关键路径瓶颈，须串行盯紧）与
+/// flexible 批（slack>0，可按最早开始排序并行的弹性任务），每批附 assignee 当前占用，
+/// 并对 flexible 批中未认领任务给出「负载感知建议派单」（suggest：活跃负载最低的已注册执行者）。
+/// 复用 dag_slack_analysis（不重复算图）。——"谁在瓶颈、谁可并行派单"一目了然，排程优化闭环。
+pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
+  let slack = self.dag_slack_analysis()
+  let ids : Array[String] = []
+  // R12-R9 性能：同款双 list_all()——一次取 ids、一次统计负载。一次读、两循环共用。
+  let tasks_all = self.list_all()
+  for t in tasks_all {
+    ids.push(t.get_id())
+  }
+  // 负载感知：统计各已注册执行者名下活跃（未完成未归档）任务数
+  let reg_names : Array[String] = []
+  for (name, _abl, _created) in self.executor_list() {
+    reg_names.push(name)
+  }
+  let load : Map[String, Int32] = Map([])
+  for n in reg_names {
+    load.set(n, 0)
+  }
+  for t in tasks_all {
+    match t.assignee {
+      Some(a) =>
+        if load.contains(a) {
+          let done = t.get_status().is_completed() ||
+            t.get_status().to_string() == "已归档"
+          if !done {
+            load.set(a, load.get(a).unwrap_or(0) + 1)
+          }
+        }
+      None => ()
+    }
+  }
+  // 从 slack.slack_map 取每个任务的 slack 与 earliest
+  let critical_batch : Array[Json] = []
+  let flexible_batch : Array[Json] = []
+  for id in ids {
+    let mut sl = -1
+    let mut ea = -1
+    match slack.value("slack_map") {
+      Some(Object(sm)) =>
+        match sm.get(id) {
+          Some(Object(o)) => {
+            sl = match o.get("slack") {
+              Some(Number(n, ..)) => n.to_int()
+              _ => -1
+            }
+            ea = match o.get("earliest") {
+              Some(Number(n, ..)) => n.to_int()
+              _ => -1
+            }
+          }
+          _ => ()
+        }
+      _ => ()
+    }
+    let assignee = match self.get_task(id) {
+      Some(t) =>
+        match t.assignee {
+          Some(a) => a
+          None => ""
+        }
+      None => ""
+    }
+    let row = Json::object({
+      "task_id": Json::string(id),
+      "earliest": Json::number(ea.to_double()),
+      "slack": Json::number(sl.to_double()),
+      "assignee": Json::string(assignee),
+    })
+    if sl == 0 {
+      critical_batch.push(row)
+    } else if sl > 0 {
+      flexible_batch.push(row)
+    }
+  }
+  // 弹性批按最早开始排序（可并行窗口）
+  flexible_batch.sort_by(fn(a : Json, b : Json) -> Int32 {
+    let ae = match a.value("earliest") {
+      Some(Number(n, ..)) => n
+      _ => 0.0
+    }
+    let be = match b.value("earliest") {
+      Some(Number(n, ..)) => n
+      _ => 0.0
+    }
+    if ae < be {
+      -1
+    } else if ae > be {
+      1
+    } else {
+      0
+    }
+  })
+  // R75 负载感知：flexible 批中未认领任务建议派给活跃负载最低的已注册执行者
+  let flexible_adv : Array[Json] = flexible_batch.map(fn(row) {
+    let asg = match row.value("assignee") {
+      Some(Json::String(s)) => s
+      _ => ""
+    }
+    if asg != "" {
+      return row
+    }
+    // 已注册执行者中选负载最低者（无注册则不建议）
+    let mut best = ""
+    let mut best_load = 2147483647
+    for n in reg_names {
+      let l = load.get(n).unwrap_or(0)
+      if l < best_load {
+        best_load = l
+        best = n
+      }
+    }
+    let m = match row {
+      Object(o) => o
+      _ => Map([])
+    }
+    m.set("suggest", Json::string(if best != "" { best } else { "" }))
+    Json::object(m)
+  })
+  Json::object({
+    "basis": Json::string("PERT/CPM slack（基于 dag_slack_analysis）"),
+    "critical_batch": Json::array(critical_batch),
+    "flexible_batch": Json::array(flexible_adv),
+    "note": Json::string(
+      "critical_batch=关键路径瓶颈(须串行盯紧)；flexible_batch=有松弛可按最早开始并行的任务，未认领项附 suggest=活跃负载最低的已注册执行者(R75 负载感知)",
+    ),
+  })
+}
+
+/// ==================== 成本路由（R77，STAR 式依赖图成本路由） ====================
+
+///|
+/// 依赖图成本路由（R77，STAR 蒸馏简化版）：在 dag_schedule 排程视图之上补「成本」维度——
+/// 对 flexible（slack>0）批中未认领任务，按拓扑序贪心给出建议执行者：在「能力覆盖的
+/// 已注册执行者」里选 执行成本 + 切换成本 之和最小者。
+///   - 执行成本：难度档映射（易/中/难 → 1/2/3，复用 extract_difficulty 单一来源）；
+///   - 能力约束：任务所需能力 = 描述命中的最长已注册能力标签（复用 auto_want），
+///     未命中标签的执行者被排除（want 空则全命中）；
+///   - 切换成本：任务依赖链上已路由执行者若与候选不同则 +1（STAR 的上下文切换税）；
+///   - 成本相等时取活跃负载最低者（与 R75 一致）。
+/// 纯计算、无副作用（只给建议不 claim）。——排程优化闭环最终形态：
+/// critical_path→slack→schedule→suggest→cost_route。
+pub fn FistEngine::dag_cost_route(self : FistEngine) -> Json {
+  let slack = self.dag_slack_analysis()
+  // R12-R10 性能：`dag_slack_analysis` 现已在返回里带上 topo order（见 slack_analysis 结果），
+  // 直接复用，省掉一次 `dag_topo_order()`（那又是一次全库 read + Kahn 遍历）。
+  let order = match slack.value("order") {
+    Some(Json::Array(arr)) =>
+      arr.filter_map(fn(v) {
+        match v {
+          Json::String(s) => Some(s)
+          _ => None
+        }
+      })
+    _ => {
+      let (o, _c) = self.dag_topo_order()
+      o
+    }
+  }
+  // 执行者注册表：候选顺序按注册顺序（executor_list 稳定）
+  let reg_names : Array[String] = []
+  let reg_abl : Map[String, Array[String]] = Map([])
+  for (name, abl, _created) in self.executor_list() {
+    reg_names.push(name)
+    reg_abl.set(name, parse_abilities(abl))
+  }
+  let load = self.executor_loads(reg_names)
+  // 已路由执行者记录（切换成本基准）：已认领任务先登记为固定占用
+  let routed : Map[String, String] = Map([])
+  for t in self.list_all() {
+    match t.assignee {
+      Some(a) => routed.set(t.get_id(), a)
+      None => ()
+    }
+  }
+  let rows : Array[Json] = []
+  let mut total_cost = 0
+  for id in order {
+    // 只处理 slack>0（flexible）且未认领的任务
+    let mut sl = -1
+    match slack.value("slack_map") {
+      Some(Object(sm)) =>
+        match sm.get(id) {
+          Some(Object(o)) =>
+            match o.get("slack") {
+              Some(Number(n, ..)) => sl = n.to_int()
+              _ => ()
+            }
+          _ => ()
+        }
+      _ => ()
+    }
+    if sl <= 0 {
+      continue
+    }
+    if routed.contains(id) {
+      continue
+    }
+    let desc = match self.get_task(id) {
+      Some(t) => t.description
+      None => ""
+    }
+    if desc == "" {
+      continue
+    }
+    // 任务所需能力：描述命中的最长已注册能力标签（无注册标签则空 = 全命中）
+    let want = self.auto_want(desc)
+    // 难度 → 执行成本（易/中/难 → 1/2/3，无难度标记按 1）
+    let lab = triage_label_of(desc)
+    let est = if lab == "难" { 3 } else if lab == "中" { 2 } else { 1 }
+    // 依赖任务的执行者（切换成本基准）
+    let deps_asg : Array[String] = []
+    match self.get_task(id) {
+      Some(t) =>
+        for d in t.depends_on {
+          match routed.get(d) {
+            Some(a) => deps_asg.push(a)
+            None => ()
+          }
+        }
+      None => ()
+    }
+    // 候选执行者：能力覆盖 want（want 空 → 全部）；选 执行成本+切换成本 最小，相等取负载最低
+    let mut best = ""
+    let mut best_total = 2147483647
+    let mut best_switch = 0
+    for n in reg_names {
+      let abl = reg_abl.get(n).unwrap_or([])
+      if want != "" && !abl.contains(want) {
+        continue
+      }
+      let sw = if deps_asg.length() > 0 && !deps_asg.contains(n) {
+        1
+      } else {
+        0
+      }
+      let ttl = est + sw
+      if ttl < best_total {
+        best_total = ttl
+        best = n
+        best_switch = sw
+      } else if ttl == best_total {
+        let bl = load.get(best).unwrap_or(0)
+        let nl = load.get(n).unwrap_or(0)
+        if nl < bl {
+          best = n
+          best_switch = sw
+        }
+      }
+    }
+    if best == "" {
+      continue
+    }
+    routed.set(id, best)
+    // 负载感知（BUG-336）：把本次分配计入累计负载，后续等成本平局任务才会转向其他执行者，
+    // 否则 load 只在循环前一次性快照（L657），整轮路由全堆给先注册执行者。
+    let prev_load = match load.get(best) {
+      Some(n) => n
+      None => 0
+    }
+    ignore(load.set(best, prev_load + 1))
+    total_cost = total_cost + best_total
+    rows.push(
+      Json::object({
+        "task_id": Json::string(id),
+        "assignee": Json::string(best),
+        "est_cost": Json::number(est.to_double()),
+        "switch_cost": Json::number(best_switch.to_double()),
+        "total": Json::number(best_total.to_double()),
+      }),
+    )
+  }
+  Json::object({
+    "basis": Json::string(
+      "STAR 式依赖图成本路由：执行成本(难度档易/中/难→1/2/3)+切换税(依赖执行者不同则+1)，能力约束过滤，拓扑贪心",
+    ),
+    "cost_route": Json::array(rows),
+    "total_est_cost": Json::number(total_cost.to_double()),
+    "note": Json::string(
+      "仅对 slack>0 未认领任务给出建议执行者(纯读不 claim)；无注册执行者或能力不匹配项跳过",
+    ),
+  })
+}
+
+/// ==================== 预算按依赖图阶段切分（R81，ZEBRA 水填充蒸馏简化版） ====================
+
+///|
+/// 预算切分的取数范围（BUG-20①）：root 给定时取该任务子树，否则按 ns（空=default→全库按 ns=""）。
+fn FistEngine::budget_scope_ids(
+  self : FistEngine,
+  root : String,
+  ns : String,
+) -> Array[String] {
+  if root != "" {
+    self.subtree_ids(root)
+  } else {
+    let pool = if ns == "" { self.list_all() } else { self.list_in_ns(ns) }
+    let out : Array[String] = []
+    for t in pool {
+      out.push(t.get_id())
+    }
+    out
+  }
+}
+
+///|
+/// 作用域自证字段（BUG-20③）：这次切分覆盖的是哪些任务，写在返回体里而不是靠调用方回忆。
+fn budget_scope_json(root : String, ns : String, count : Int32) -> Json {
+  Json::object({
+    "root_task_id": Json::string(root),
+    "namespace": Json::string(ns),
+    "scoped_task_count": Json::number(count.to_double()),
+    "scope_kind": Json::string(
+      if root != "" {
+        "subtree"
+      } else if ns != "" {
+        "namespace"
+      } else {
+        "whole-store"
+      },
+    ),
+  })
+}
+
+///|
+/// BUG-209：非 DAG（不在 slack_map、不参与依赖边）的任务按其 parent_id 父链深归 stage，
+/// 而不是一律归 level 0——level 0 是真正根任务层，孤立任务混入会虚增该层权重与份额。
+fn FistEngine::parent_chain_depth(self : FistEngine, id : String) -> Int32 {
+  let mut depth = 0
+  let mut cur = id
+  let mut hops = 0
+  while hops < 10000 {
+    match self.get_task(cur) {
+      None => break
+      Some(t) =>
+        match t.parent_id {
+          Some(p) if p != cur && p != "" => {
+            cur = p
+            depth = depth + 1
+          }
+          _ => break
+        }
+    }
+    hops = hops + 1
+  }
+  depth
+}
+
+///|
+/// 预算按依赖图阶段切分（R81，ZEBRA 背包水填充蒸馏简化版）：给定总预算，
+/// 按任务 DAG 阶段（slack 分析的 earliest 层级 0..makespan）切分——每阶段基础份额 =
+/// 该阶段任务数 × 难度权重（难3/中2/易1，复用难度档单一来源；无难度标记按 1），
+/// 总权重归一化后乘总预算（向下取整，余数补给最大权重阶段）。
+/// 返回 { verdict, stages:[{level, tasks, difficulty_sum, share}], total_budget, makespan, scope, note }。
+/// ——"预算在依赖图上按阶段切分：瓶颈阶段(关键路径层)占额可见，超支先预警"，机制设计叙事。
+///
+/// BUG-20 改的三件事：
+/// ① 过去**只吃 budget**，task_id/namespace 传了也不生效，算的永远是整个 store（实测
+///    某轮 T0r292 子树 7 个任务，它报 tasks=1152＝全库数）——现在 root/ns 真的参与取数，
+///    与同族 dag_slack/dag_mc 的作用域口径一致；
+/// ② budget<=0（含负数）过去直接产出负份额（-50 → -42/-5/-2），既不拒也不警——现在拒绝；
+/// ③ 切了哪些任务写进返回体的 `scope` 自证。root/ns 都不给＝全库（旧行为，零回归），
+///    但这一点从此写在返回体里，而不是靠调用方记得自己没传。
+pub fn FistEngine::budget_split_by_dag(
+  self : FistEngine,
+  budget : Int32,
+  root~ : String = "",
+  ns~ : String = "",
+) -> Json {
+  if budget <= 0 {
+    // BUG-180：rejected 分支此前不回 makespan/scope，与 ok/insufficient 分支不同构
+    //（文档承诺所有分支都带这两个字段）。rejected 因未取数而无统计，故 makespan:0、
+    // scoped_task_count:0 是诚实的回显，不是硬编码假值。
+    let reject_note = if budget < 0 {
+      "负预算只会切出负份额，那不是预算而是赤字"
+    } else {
+      "0 预算无法按比例切分份额（份额=比例×总预算，分母为零不成立）"
+    }
+    return Json::object({
+      "stages": Json::array([]),
+      "total_budget": Json::number(budget.to_double()),
+      "makespan": Json::number(0.0),
+      "verdict": Json::string("rejected"),
+      "scope": budget_scope_json(root, ns, 0),
+      "note": Json::string(
+        "budget 必须是正整数（收到 " +
+        budget.to_string() +
+        "）：" +
+        reject_note,
+      ),
+    })
+  }
+  let slack = self.dag_slack_analysis()
+  // 每任务 earliest 作为阶段
+  let level_of : Map[String, Int32] = Map([])
+  match slack.value("slack_map") {
+    Some(Object(sm)) =>
+      for id in sm.keys() {
+        match sm.get(id) {
+          Some(Object(o)) =>
+            match o.get("earliest") {
+              Some(Number(n, ..)) => level_of.set(id, n.to_int())
+              _ => ()
+            }
+          _ => ()
+        }
+      }
+    _ => ()
+  }
+  // ---- 作用域取数（BUG-20①）----
+  let scope_ids = self.budget_scope_ids(root, ns)
+  let root_missing = match self.get_task(root) {
+    None => true
+    Some(_) => false
+  }
+  if root != "" && root_missing {
+    return Json::object({
+      "stages": Json::array([]),
+      "total_budget": Json::number(budget.to_double()),
+      // BUG-184：未取数（根任务不存在），makespan=0 是诚实的"无数据"回显，
+      // 与 scope_ids 为空的 insufficient 分支（L827-838）同构。
+      "makespan": Json::number(0.0),
+      "verdict": Json::string("insufficient"),
+      "scope": budget_scope_json(root, ns, 0),
+      "note": Json::string(
+        "作用域内无任务：根任务不存在 " +
+        root +
+        "（与 dag_mc 同口径——不退回全库，退回全库正是本条缺陷的形状）",
+      ),
+    })
+  }
+  // 阶段聚合：难度权重（难3/中2/易1，无难度 1）+ 任务数
+  let stage_weight : Map[Int32, Int32] = Map([])
+  let stage_count : Map[Int32, Int32] = Map([])
+  let in_scope : Map[String, Bool] = Map([])
+  for id in scope_ids {
+    in_scope.set(id, true)
+  }
+  for t in self.list_all() {
+    // BUG-253：明确区分「未登记(false)」与「显式排除(false)」——scope_ids 之外返回 None，
+    // 用 `!= Some(true)` 语义等价于旧 unwrap_or(false) 且不会因未来追加 false 条目静默反转
+    //（对应昨夜 unsafe-scan P1 建议）。
+    if in_scope.get(t.get_id()) != Some(true) {
+      continue
+    }
+    let lv = match level_of.get(t.get_id()) {
+      // BUG-209：slack_map 之外（无依赖边）的任务旧行为一律归 level 0，
+      // 与真正根任务挤同 stage；改按 parent_id 父链深归 stage（parent_chain_depth）。
+      Some(l) => l
+      None => self.parent_chain_depth(t.get_id())
+    }
+    let lab = triage_label_of(t.description)
+    let w = if lab == "难" { 3 } else if lab == "中" { 2 } else { 1 }
+    stage_weight.set(lv, stage_weight.get(lv).unwrap_or(0) + w)
+    stage_count.set(lv, stage_count.get(lv).unwrap_or(0) + 1)
+  }
+  let mut total_w = 0
+  let mut max_lv = 0
+  let mut max_w = 0
+  for lv in stage_weight.keys() {
+    let w = stage_weight.get(lv).unwrap_or(0)
+    total_w = total_w + w
+    if w > max_w {
+      max_w = w
+      max_lv = lv
+    }
+  }
+  // 归一化切分：向下取整，余数补给最大权重阶段
+  let mut used = 0
+  let shares : Map[Int32, Int32] = Map([])
+  for lv in stage_weight.keys() {
+    let w = stage_weight.get(lv).unwrap_or(0)
+    let share = if total_w <= 0 { 0 } else { budget * w / total_w }
+    shares.set(lv, share)
+    used = used + share
+  }
+  if total_w > 0 && used < budget {
+    let cur = shares.get(max_lv).unwrap_or(0)
+    shares.set(max_lv, cur + (budget - used))
+  }
+  // 输出阶段行（按层级升序）
+  let stages : Array[Json] = []
+  let lvs : Array[Int32] = stage_weight.keys().to_array()
+  lvs.sort()
+  for lv in lvs {
+    stages.push(
+      Json::object({
+        "level": Json::number(lv.to_double()),
+        "tasks": Json::number(stage_count.get(lv).unwrap_or(0).to_double()),
+        "difficulty_sum": Json::number(
+          stage_weight.get(lv).unwrap_or(0).to_double(),
+        ),
+        "share": Json::number(shares.get(lv).unwrap_or(0).to_double()),
+      }),
+    )
+  }
+  let mut makespan = 0
+  match slack.value("makespan") {
+    Some(Number(n, ..)) => makespan = n.to_int()
+    _ => ()
+  }
+  if scope_ids.is_empty() {
+    // 空作用域不出"三阶段全 0"的像模像样的切分（BUG-20①的另一半）
+    return Json::object({
+      "stages": Json::array([]),
+      "total_budget": Json::number(budget.to_double()),
+      "makespan": Json::number(0.0),
+      "verdict": Json::string("insufficient"),
+      "scope": budget_scope_json(root, ns, 0),
+      "note": Json::string(
+        "作用域内无任务，未做切分（不是预算问题，是取数范围为空）",
+      ),
+    })
+  }
+  Json::object({
+    "stages": Json::array(stages),
+    "total_budget": Json::number(budget.to_double()),
+    "makespan": Json::number(makespan.to_double()),
+    "verdict": Json::string("ok"),
+    "scope": budget_scope_json(root, ns, scope_ids.length()),
+    "note": Json::string(
+      "阶段=slack 分析的 earliest 层级；份额=阶段难度权重占总量比例×总预算(余数补最大权重阶段)——瓶颈阶段占额可见，超支先预警",
+    ),
+  })
+}
+
+/// ==================== 进度预算路由门控（R88，PROGROUTER 蒸馏） ====================
+
+///|
+/// 收集 task_id 的子树 id（自身 + 全部 parent_id 后代，BFS；复用 children_of）。
+fn FistEngine::subtree_ids(self : FistEngine, root : String) -> Array[String] {
+  // R12-R8 性能：旧实现每个节点调 `children_of(pid)`（每查一次全库 list_tasks），
+  // 子树 N 节点 = O(N×M)。这里一次建 children 索引，遍历中全部走 Map。
+  let idx = self.children_index()
+  let out : Array[String] = [root]
+  let mut i = 0
+  while i < out.length() {
+    let pid = out[i]
+    let kids = idx.get(pid).unwrap_or([])
+    for kid in kids {
+      out.push(kid)
+    }
+    i = i + 1
+  }
+  out
+}
+
+///|
+/// 进度预算路由门控（R88，PROGROUTER arXiv 2608.25992 蒸馏简化版）：在线进度引导——
+/// 对任务子树按「已消耗预算（难度权重 易/中/难→1/2/3，复用 extract_difficulty 单一来源）
+/// 与 完成进度（已完成+已归档 / 子树任务数）」做双路径剩余成本预测：
+///   线性 = 燃尽率(burn_rate=spent/progress) × 剩余工作量(1-progress)；
+///   保守 = 线性 × 1.2（PROGROUTER 双路径，缓冲 20%）。
+/// 元门控给决策：OK（预算充足继续）/ CAUTION（线性可行但缓冲不足 → 建议降档/缩范围）/
+/// ESCALATE（线性已超支 → 建议追加预算或暂停）。纯计算、无副作用。
+/// spent_override>0 可覆盖自动估算（如按真实 token/成本统计注入）；0 或缺省=自动。
+pub fn FistEngine::progress_gate(
+  self : FistEngine,
+  task_id : String,
+  budget : Int32,
+  spent_override : Int32,
+) -> Json {
+  match self.get_task(task_id) {
+    None =>
+      // BUG-183：任务不存在分支须与文档承诺的字段集（11 字段）同构，不能只回 3 字段。
+      // 无子树可统计 → spent/progress/burn_rate 为 0，linear=0、conservative=0（复用正常分支公式
+      // 线性=燃尽率×剩余工作量、保守=1.2×线性）；verdict="rejected" + basis="task not found"
+      // 明确区分「任务不存在」与「预算问题」（后者 verdict 同为 rejected 但 basis/action 不同）。
+      return Json::object({
+        "ok": Json::boolean(false),
+        "task_id": Json::string(task_id),
+        "budget": Json::number(budget.to_double()),
+        "spent": Json::number(0.0),
+        "remaining": Json::number(budget.to_double()),
+        "progress": Json::number(0.0),
+        "burn_rate": Json::number(0.0),
+        // BUG-186：BUG-183 补丁只对齐了文档 11 字段，漏了对齐 sibling 分支——L956-979 rejected 与
+        // L1015-1033 正常分支都带 remaining_work（=1-progress），None 分支是函数内唯一缺失者。
+        // 无子树可测 → progress 视为 0 → remaining_work 无意义，诚实回 0.0（与 note 分支同构）。
+        "remaining_work": Json::number(0.0),
+        "projection": Json::object({
+          "linear": Json::number(0.0),
+          "conservative": Json::number(0.0),
+        }),
+        "verdict": Json::string("rejected"),
+        "action": Json::string(
+          "任务不存在，无法做进度预算路由门控",
+        ),
+        "basis": Json::string("task not found"),
+        "note": Json::string("任务不存在: " + task_id),
+      })
+    Some(_) => ()
+  }
+  let ids = self.subtree_ids(task_id)
+  let mut total = 0
+  let mut done = 0
+  let mut started_weight = 0
+  for id in ids {
+    match self.get_task(id) {
+      Some(x) => {
+        total = total + 1
+        let st = x.get_status()
+        if st.is_completed() || st.is_archived() {
+          done = done + 1
+        }
+        // 已开工（非待领取）的任务计入已消耗预算（难度权重）
+        if !st.is_pending() {
+          let lab = triage_label_of(x.get_description())
+          let w = if lab == "难" { 3 } else if lab == "中" { 2 } else { 1 }
+          started_weight = started_weight + w
+        }
+      }
+      None => ()
+    }
+  }
+  let progress = if total <= 0 {
+    0.0
+  } else {
+    done.to_double() / total.to_double()
+  }
+  let spent = if spent_override > 0 { spent_override } else { started_weight }
+  let remaining = (budget - spent).to_double()
+  // 燃尽率：每单位进度消耗的预算。progress=0 且 spent>0 时燃尽率不可计算（未定义）→
+  // 用 sentinel -1.0 表示，绝不静默归零（BUG-165：归零会让 verdict 恒 OK，掩盖已消耗预算）。
+  let burn = if progress > 0.0 {
+    spent.to_double() / progress
+  } else if spent > 0 {
+    -1.0
+  } else {
+    0.0
+  }
+  let remaining_work = 1.0 - progress
+  let linear = burn * remaining_work
+  let conservative = linear * 1.2
+  if budget <= 0 {
+    return Json::object({
+      "ok": Json::boolean(false),
+      "task_id": Json::string(task_id),
+      "budget": Json::number(budget.to_double()),
+      "spent": Json::number(spent.to_double()),
+      "remaining": Json::number(remaining),
+      "progress": Json::number(progress),
+      "burn_rate": Json::number(burn),
+      "remaining_work": Json::number(remaining_work),
+      "projection": Json::object({
+        "linear": Json::number(linear),
+        "conservative": Json::number(conservative),
+      }),
+      "verdict": Json::string("rejected"),
+      "action": Json::string(
+        "非法预算：budget 必须为正（实收 " +
+        budget.to_string() +
+        "）",
+      ),
+      "note": Json::string("budget 必须为正"),
+      "basis": Json::string(
+        "进度预算路由门控（PROGROUTER arXiv2608.25992 蒸馏）：预算须为正，非法输入整笔拒绝、状态回稳。",
+      ),
+    })
+  }
+  // BUG-165：progress=0 且有消耗 → 燃尽率不可计算，不得静默归零判 OK，须预警（CAUTION/ESCALATE）。
+  // BUG-169：progress>=1 且已超支 → verdict 不得为 OK，须与 action（负为超支）一致。
+  let (verdict, action) = if progress <= 0.0 && spent > 0 {
+    (
+      "ESCALATE",
+      "进度 0% 但已消耗预算 " +
+      spent.to_string() +
+      "，燃尽率不可计算（建议追加预算或暂停复核）",
+    )
+  } else if progress >= 1.0 {
+    if remaining < 0.0 {
+      (
+        "ESCALATE",
+        "已完成但预算超支，结余 " +
+        (budget - spent).to_string() +
+        "（负为超支）",
+      )
+    } else {
+      (
+        "OK",
+        "已完成，预算结余 " +
+        (budget - spent).to_string() +
+        "（负为超支）",
+      )
+    }
+  } else if linear <= remaining && conservative <= remaining {
+    ("OK", "继续推进（按当前燃尽率预算充足）")
+  } else if linear <= remaining {
+    (
+      "CAUTION", "缩减范围/降档（如选更简单变体或减少拆分数）后继续",
+    )
+  } else {
+    ("ESCALATE", "追加预算或暂停复核（按当前燃尽率将超支）")
+  }
+  Json::object({
+    "ok": Json::boolean(true),
+    "task_id": Json::string(task_id),
+    "budget": Json::number(budget.to_double()),
+    "spent": Json::number(spent.to_double()),
+    "remaining": Json::number(remaining),
+    "progress": Json::number(progress),
+    "burn_rate": Json::number(burn),
+    "remaining_work": Json::number(remaining_work),
+    "projection": Json::object({
+      "linear": Json::number(linear),
+      "conservative": Json::number(conservative),
+    }),
+    "verdict": Json::string(verdict),
+    "action": Json::string(action),
+    "basis": Json::string(
+      "进度预算路由门控（PROGROUTER arXiv2608.25992 蒸馏）：双路径预测 线性=燃尽率×剩余工作量 / 保守=1.2×线性; 元门控 OK/CAUTION/ESCALATE（R88）",
+    ),
+  })
+}
+
+///|
+/// 反馈驱动的计划修订（R98，ReAct arXiv 2210.03629 / CoPAL arXiv 2310.07263 蒸馏落地）：
+/// 把"拆完即弃"升级为"执行中持续修订"——给定根任务及子任务执行反馈，计算计划三分：
+/// keep（已证有效、承诺保留）/ rework（失败或其依赖链受牵连，需返工/重做）/ ready
+/// （依赖全部有效且未执行 = 下一步可做）。feedback 缺省时读真实状态（已完成/已归档
+/// =ok；已打回/已暂停=否；其余=未证）。级联：失败任务的下游依赖者一并 rework
+/// （plan commitment 控涟漪——与 saga_repair 依赖者闭包同构）。纯计算、只读不写库
+/// （决策建议，执行权在 agent/指挥官，与 saga 返回补偿序列同一抽象层）。
+pub fn FistEngine::plan_revise(
+  self : FistEngine,
+  root_task_id : String,
+  feedback~ : Array[Json] = [],
+  ns~ : String = "default",
+) -> Json {
+  if self.get_task(root_task_id) is None {
+    return Json::object({
+      "ok": Json::boolean(false),
+      "root_task_id": Json::string(root_task_id),
+      "note": Json::string("根任务不存在: " + root_task_id),
+    })
+  }
+  let sub = self.subtree_ids(root_task_id)
+  // 显式反馈表：task_id -> ok（覆盖读状态）
+  let fb : Map[String, Bool] = Map([])
+  for f in feedback {
+    let tid_opt = match f.value("task_id") {
+      Some(Json::String(s)) => Some(s)
+      _ => None
+    }
+    let ok_opt = match f.value("ok") {
+      Some(j) =>
+        match j {
+          Json::True => Some(true)
+          Json::False => Some(false)
+          _ => None
+        }
+      _ => None
+    }
+    match (tid_opt, ok_opt) {
+      (Some(tid), Some(okv)) => fb.set(tid, okv)
+      _ => ()
+    }
+  }
+  let basis = if feedback.is_empty() { "status" } else { "feedback" }
+  // 证据判定：ok / no / ?
+  let ev : Map[String, String] = Map([])
+  for id in sub {
+    match self.get_task(id) {
+      None => ()
+      Some(t) => {
+        let v = match fb.get(id) {
+          Some(b) => if b { "ok" } else { "no" }
+          None => {
+            let st = t.get_status()
+            if st.is_completed() || st.is_archived() {
+              "ok"
+            } else if st.is_rejected() || st.is_paused() {
+              "no"
+            } else {
+              "?"
+            }
+          }
+        }
+        ev.set(id, v)
+      }
+    }
+  }
+  // 类别：keep / rework / ready（依赖先分类，迭代至稳定；根任务是计划容器，不入桶）
+  let cat : Map[String, String] = Map([])
+  let mut changed = true
+  while changed {
+    changed = false
+    for id in sub {
+      if id == root_task_id {
+        continue
+      }
+      if cat.get(id) is Some(_) {
+        continue
+      }
+      match self.get_task(id) {
+        None => ()
+        Some(t) => {
+          let mut dep_rework = false
+          let mut dep_undone = false
+          for d in t.depends_on {
+            if sub.contains(d) {
+              match cat.get(d) {
+                Some("rework") => dep_rework = true
+                Some("keep") => ()
+                // BUG-206：d 是根任务（计划容器）时不入 cat 桶，cat.get 恒 None；
+                // 旧 `_ => dep_undone = true` 把"根已完成"误判成"依赖未做"，
+                // 让所有挂根的子任务恒落 ""（待再跑）。根任务能到这里说明它已完成，
+                // 故直接视为 done。
+                _ => if d == root_task_id { () } else { dep_undone = true }
+              }
+            } else {
+              // 子树外依赖：按真实状态判定是否完成
+              match self.get_task(d) {
+                Some(dt) =>
+                  if !dt.get_status().is_completed() {
+                    dep_undone = true
+                  }
+                None => dep_undone = true
+              }
+            }
+          }
+          let tag = match ev.get(id) {
+            Some("no") => "rework"
+            Some("ok") => if dep_rework { "rework" } else { "keep" }
+            _ =>
+              if dep_rework {
+                "rework"
+              } else if dep_undone {
+                ""
+              } else {
+                "ready"
+              }
+          }
+          if tag != "" {
+            cat.set(id, tag)
+            changed = true
+          }
+        }
+      }
+    }
+  }
+  let keep : Array[String] = []
+  let rework : Array[String] = []
+  let ready : Array[String] = []
+  for id in sub {
+    match cat.get(id) {
+      Some("keep") => keep.push(id)
+      Some("rework") => rework.push(id)
+      Some("ready") => ready.push(id)
+      _ => ()
+    }
+  }
+  Json::object({
+    "ok": Json::boolean(true),
+    "root_task_id": Json::string(root_task_id),
+    "basis": Json::string(basis),
+    "keep_count": Json::number(keep.length().to_double()),
+    "rework_count": Json::number(rework.length().to_double()),
+    "ready_count": Json::number(ready.length().to_double()),
+    "keep": Json::array(keep.map(fn(s) { Json::string(s) })),
+    "rework": Json::array(rework.map(fn(s) { Json::string(s) })),
+    "ready": Json::array(ready.map(fn(s) { Json::string(s) })),
+    "note": Json::string(
+      "反馈驱动的计划修订（ReAct 交错 + CoPAL 分级纠正蒸馏）：keep=已证有效承诺保留 / rework=失败或其依赖链受牵连需返工（控涟漪）/ ready=依赖全部有效且未执行，下一步可做。",
+    ),
+  })
+}
+
+///|
+/// 全局目标校验（R100，goal drift arXiv 2505.02709 / Repetitiveness Rate 2603.12710 /
+/// IntentCUA 2602.17049 / HiMAP ICML2026 蒸馏落地）——**advisory 判据，不是硬门**（BUG-25）。
+///
+/// 词法口径（单真源 @evolve.tokens）：similarity = max(jaccard, coverage)，drift = 1 - similarity。
+///   · coverage 非对称（|根∩子|/|根|）：只问"根目标的词还在不在"，子任务多写模板不被长度惩罚；
+///   · jaccard 保留给兄弟冗余（对称量，语义正确）。
+///
+/// 为什么必须降级成 advisory（标定实测，scripts/calibrate_goal_drift.py）：
+///   真实父子对全集 1222 条 drift_suspect=1.9%，随机错配对照 400 条=81.3%（有分离）；
+///   但**改写型**父子对（去掉前缀拼接桩与模板桩后剩 39 条，如 T0r61→T0r61.1「依赖图恒空」
+///   被写成「增量编译链与依赖图修复：cypyc/incremental/...」）假阳性 56~59%，
+///   3 个可测家族上绝对阈值 0.7 命中 15/15——合法拆解与真漂移在词面上不可分。
+///   所以：判据照旧发红（离群时最有信息量），但 verdict 一律带 advisory=true，
+///   下游按它打回就是把 15/15 的正常子任务反复打回（BUG-25 影响 2 的病灶）。
+/// subtask_id 缺省校验根下全部后代。纯计算、只读不写库（决策建议，执行权在 agent/指挥官）。
+pub fn FistEngine::goal_drift_check(
+  self : FistEngine,
+  root_task_id : String,
+  subtask_id~ : String = "",
+  ns~ : String = "default",
+) -> Json {
+  match self.get_task(root_task_id) {
+    None =>
+      return Json::object({
+        "ok": Json::boolean(false),
+        "root_task_id": Json::string(root_task_id),
+        "note": Json::string("根任务不存在: " + root_task_id),
+      })
+    Some(rt) => {
+      let goal_tokens = @evolve.tokens(rt.get_description())
+      let targets : Array[String] = if subtask_id != "" {
+        [subtask_id]
+      } else {
+        self.subtree_ids(root_task_id).filter(fn(id) { id != root_task_id })
+      }
+      let checks : Array[Json] = []
+      let mut aligned = 0
+      let mut drift_suspect = 0
+      let mut redundant_suspect = 0
+      let mut insufficient = 0
+      for id in targets {
+        match self.get_task(id) {
+          None => ()
+          Some(t) => {
+            let tk = @evolve.tokens(t.get_description())
+            let red = self.sibling_max_similarity(t, tk)
+            // 信息量不足（空描述/纯模板桩）判 insufficient，不判漂移——
+            // 恒阳性正是本条缺陷的形状（BUG-25：6/6 全误报里就混着这一类）
+            let low_info = goal_tokens.length() < drift_min_tokens ||
+              tk.length() < drift_min_tokens
+            let drift = if low_info {
+              1.0
+            } else {
+              1.0 - drift_similarity(goal_tokens, tk)
+            }
+            let verdict = if low_info {
+              "insufficient"
+            } else if drift > drift_threshold {
+              "drift_suspect"
+            } else if red >= redundancy_threshold {
+              "redundant_suspect"
+            } else {
+              "aligned"
+            }
+            if verdict == "drift_suspect" {
+              drift_suspect = drift_suspect + 1
+            } else if verdict == "redundant_suspect" {
+              redundant_suspect = redundant_suspect + 1
+            } else if verdict == "insufficient" {
+              insufficient = insufficient + 1
+            } else {
+              aligned = aligned + 1
+            }
+            let cm = Map([])
+            cm.set("subtask_id", Json::string(id))
+            cm.set("drift_score", Json::number(drift))
+            cm.set("redundancy_score", Json::number(red))
+            cm.set("verdict", Json::string(verdict))
+            // advisory 恒真：本判据在中文改写型语料上假阳性 15/15，不可作打回硬门（BUG-25）
+            cm.set("advisory", Json::boolean(true))
+            cm.set("re_anchor", Json::boolean(verdict == "drift_suspect"))
+            checks.push(Json::object(cm))
+          }
+        }
+      }
+      Json::object({
+        "ok": Json::boolean(true),
+        "root_task_id": Json::string(root_task_id),
+        "basis": Json::string(
+          "max(jaccard, coverage)@evolve（词法相似度纯计算，零 LLM 自评；coverage 非对称、不罚长度）",
+        ),
+        "hard_gate": Json::boolean(false),
+        "threshold": Json::object({
+          "drift": Json::number(drift_threshold),
+          "redundancy": Json::number(redundancy_threshold),
+          "min_tokens": Json::number(drift_min_tokens.to_double()),
+        }),
+        "calibration": Json::object({
+          "corpus": Json::string(
+            "fist-mbt.db 只读实测（2026-09-27），复跑：python scripts/calibrate_goal_drift.py",
+          ),
+          "real_pairs_suspect": Json::number(0.019),
+          "real_pairs_n": Json::number(1222.0),
+          "random_control_suspect": Json::number(0.813),
+          "random_control_n": Json::number(400.0),
+          "reworded_pairs_suspect": Json::number(0.590),
+          "reworded_pairs_n": Json::number(39.0),
+          "conclusion": Json::string(
+            "全量分离成立（1.9% vs 81.3%），但改写型父子对 59% 假阳性 ⇒ 只可 advisory，硬用会把正常拆解反复打回",
+          ),
+        }),
+        "counts": Json::object({
+          "aligned": Json::number(aligned.to_double()),
+          "drift_suspect": Json::number(drift_suspect.to_double()),
+          "redundant_suspect": Json::number(redundant_suspect.to_double()),
+          "insufficient": Json::number(insufficient.to_double()),
+        }),
+        "checks": Json::array(checks),
+        "note": Json::string(
+          "全局目标校验（advisory，非硬门）：drift=1-max(jaccard,coverage)(根目标,子任务) >0.7 记 drift_suspect（附 re_anchor 提示）；与兄弟 jaccard ≥0.7 记 redundant_suspect；任一侧词数 <6 记 insufficient（不判漂移）。打回决策需人工/指挥官复核——中文改写型子任务上本判据假阳性 15/15（见 calibration）。",
+        ),
+      })
+    }
+  }
+}
+
+///|
+/// 判据常量（与标定脚本同源，改这里=改判据，必须重跑 scripts/calibrate_goal_drift.py）
+let drift_threshold : Double = 0.7
+
+///|
+let redundancy_threshold : Double = 0.7
+
+///|
+let drift_min_tokens : Int32 = 6
+
+///|
+fn drift_similarity(a : Array[String], b : Array[String]) -> Double {
+  max_of(@evolve.jaccard(a, b), @evolve.coverage(a, b))
+}
+
+///|
+/// 同父兄弟里与本任务的最大词法相似度（对称量）。
+/// 取两个口径的最大值：二字组词集抓"用词相同"，可见字符集抓"词序换位"
+/// （`数据采集模块` ↔ `采集数据模块` 在前者只有 0.556，后者 1.0）；
+/// 标定实测该分量在真实非模板家族上与单口径同为 34.8%，不额外增误报。
+fn FistEngine::sibling_max_similarity(
+  self : FistEngine,
+  t : @core.Task,
+  tk : Array[String],
+) -> Double {
+  let mut red = 0.0
+  match t.get_parent() {
+    Some(p) =>
+      for sib in self.children_of(p) {
+        if sib.get_id() != t.get_id() {
+          let sd = sib.get_description()
+          let s = max_of(
+            @evolve.jaccard(tk, @evolve.tokens(sd)),
+            @evolve.jaccard(
+              @evolve.unigrams(t.get_description()),
+              @evolve.unigrams(sd),
+            ),
+          )
+          if s > red {
+            red = s
+          }
+        }
+      }
+    None => ()
+  }
+  red
+}
+
+///|
+fn max_of(a : Double, b : Double) -> Double {
+  if a > b {
+    a
+  } else {
+    b
+  }
+}

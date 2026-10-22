@@ -1,0 +1,32 @@
+{
+  "rules": [
+    {
+      "name": "moonbit-match-exhaustive",
+      "severity": "info",
+      "pattern": "match",
+      "why": "降噪版（BUG-333 预案）：MoonBit 编译器强制 match 穷尽，编译通过即无未处理变体，子串命中 match 关键字是提示性噪音；降 severity 为 info，净化 by_severity 的 low/high",
+      "description": "match 可能非穷尽（降噪版：编译器已保证穷尽，仅 info 提示）"
+    },
+    {
+      "name": "moonbit-unused-variable",
+      "severity": "info",
+      "pattern": "let",
+      "why": "降噪版（BUG-333 预案）：子串近似 let 声明点，实际使用性需人工/编译器复核；保持 info 不干扰 low/high 判读",
+      "description": "未使用变量（降噪版：保持 info，清洁代码族提示）"
+    },
+    {
+      "name": "moonbit-long-function",
+      "severity": "info",
+      "pattern": "fn",
+      "why": "降噪版（BUG-333 预案）：子串近似 fn 定义行，行数精确判定见 OCR 双轨；保持 info 不干扰 low/high 判读",
+      "description": "超长函数（降噪版：保持 info，可维护性提示）"
+    },
+    {
+      "name": "moonbit-json-injection",
+      "severity": "info",
+      "pattern": "string(",
+      "why": "降噪版（BUG-346 + BUG-347）：该规则双缺陷。① BUG-346（内建表）：内建 pattern 与意图相反，匹配的是安全构造器 Json::string(，而 MoonBit 惯用 Json::object({...}) + Json::string(...) 构造、无裸字符串拼接，基线 src/store 实测 45/45 假阳（全仓约 1334 条）。② BUG-347（外部 rules_file 路径）：外部 pattern 被匹配器按 :: 切分、只取尾段 string( 做子串匹配，Json:: 命名空间限定被静默丢弃（三探针实证：Json::string( 与无关的 Foo::string( 在 src/ltl 各命中完全相同 11 条，均为 *.to_string()/formula_to_string(/verdict_to_string( 行；无 :: 的 NOPEstring( 则 0 命中），故本条目作为 rules_file 传入时实际命中全库每个 *string( 调用。故本条目把 pattern 显式写成 string(，如实反映 BUG-347 生效后的真实行为，severity 降 info 止损，by_rule/per-hit 不再污染 low 桶。注：本文件其余三条（match-exhaustive/unused-variable/long-function）的 pattern 不含 ::，不受 BUG-347 影响",
+      "description": "JSON 拼接注入（降噪版：内建表 pattern 反转 100% 假阳 BUG-346 + 外部规则 :: 限定被剥离命中 *string( BUG-347；修前降 info 止损，pattern 显式化为 string( 以如实编码 BUG-347 行为）"
+    }
+  ]
+}

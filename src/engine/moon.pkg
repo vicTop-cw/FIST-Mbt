@@ -1,0 +1,22 @@
+import {
+  "vicTop-cw/fist-mbt/src/core",
+  "vicTop-cw/fist-mbt/src/store",
+  "vicTop-cw/fist-mbt/src/decompose",
+  "vicTop-cw/fist-mbt/src/omega",
+  "vicTop-cw/fist-mbt/src/evolve",
+  "vicTop-cw/fist-mbt/src/executor",
+  "moonbitlang/core/json",
+  "moonbitlang/core/math",
+}
+
+import {
+  "moonbitlang/x/fs",
+} for "test"
+
+supported_targets = "js+native"
+
+warnings = "-6" // multi-target unused_package suppression (align with server)
+
+options(
+  link: { "native": { "cc-link-flags": "-lsqlite3" } },
+)

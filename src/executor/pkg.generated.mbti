@@ -1,0 +1,85 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/executor"
+
+import {
+  "vicTop-cw/fist-mbt/src/core",
+}
+
+// Values
+pub fn ability_coverage(Array[String], Array[String]) -> Double
+
+pub fn aider_argv(prompt~ : String, model~ : String, edit_format? : String, map_tokens? : Int32, encoding? : String) -> Result[Array[String], String]
+
+pub fn atomcode_argv(prompt~ : String, model~ : String, workdir? : String, auto_yes? : Bool) -> Result[Array[String], String]
+
+pub fn build_command(executor~ : String, prompt~ : String, model~ : String, workdir? : String) -> Result[(String, Array[String]), String]
+
+pub fn delegate_execute(@core.Task, ExecContext) -> ExecResult
+
+pub fn executor_binary(String) -> String
+
+pub fn executor_missing_hint(String) -> String
+
+pub fn external_executors() -> Array[String]
+
+pub fn is_external_executor(String) -> Bool
+
+pub fn is_valid_executor(String) -> Bool
+
+pub fn split_need_tags(String) -> Array[String]
+
+// Errors
+
+// Types and methods
+pub struct ExecContext {
+  project_dir : String
+  task_id : String
+  description : String
+  assignee : String
+}
+pub fn ExecContext::new(String, String, String, String) -> Self
+
+pub struct ExecResult {
+  ok : Bool
+  deliverable : String
+  executor : String
+  model : String
+  tokens_in : Int32
+  tokens_out : Int32
+  cost : Double
+  duration_ms : Int32
+  error_msg : String
+}
+pub fn ExecResult::fail(String, String) -> Self
+pub fn ExecResult::ok(String, String) -> Self
+pub fn ExecResult::to_json(Self) -> Json
+pub fn ExecResult::with_tokens(Self, Int32, Int32, Double) -> Self
+
+pub struct ExecutorRegistry {
+  executors : Map[String, String]
+  abilities : Map[String, Array[String]]
+}
+pub fn ExecutorRegistry::abilities_of(Self, String) -> Array[String]
+pub fn ExecutorRegistry::add_ability(Self, String, Array[String]) -> Self
+pub fn ExecutorRegistry::auction_pick(Self, String, Map[String, Int32], Map[String, Double], Map[String, Double]) -> Json
+pub fn ExecutorRegistry::get(Self, String) -> String?
+pub fn ExecutorRegistry::has(Self, String) -> Bool
+pub fn ExecutorRegistry::list(Self) -> Array[String]
+pub fn ExecutorRegistry::new() -> Self
+pub fn ExecutorRegistry::register(Self, String) -> Self
+pub fn ExecutorRegistry::route_pick(Self, String, Map[String, Int32]) -> Json
+pub fn ExecutorRegistry::route_pick_with_trust(Self, String, Map[String, Int32], Map[String, Double]) -> Json
+
+pub struct McpDelegateExecutor {
+  name : String
+}
+pub fn McpDelegateExecutor::new() -> Self
+pub fn McpDelegateExecutor::with_name(String) -> Self
+
+// Type aliases
+
+// Traits
+pub trait Executor {
+  fn name(Self) -> String
+  fn run(Self, @core.Task, ExecContext) -> ExecResult
+}

@@ -1,0 +1,151 @@
+.DS_Store
+_build/
+_build_mcpcf/
+_proj_vools/
+moon.mod.bak-mcpcf
+/target/
+.mooncakes/
+# `moon vendor` 落盘的依赖实体副本（如 vendor/mizchi-sqlite-fixed/）——工具生成的依赖物化，
+# 不是本仓资产，`moon publish` 不得打包（check_publish_payload 点名过 P1）。
+/vendor/
+.moonagent/
+# build/test logs
+*.log
+# sqlite e2e test dbs
+*.db
+# 自我迭代数据库（评审可查的原始记档，随每轮稳定一并同步入库）
+# temp scripts (m9_*, m18_*, etc.)
+m9_*.js
+m18_*.js
+# atomcode project dir
+.atomcode/
+# 项目申报书（个人参赛文档，不入仓库）
+项目申报书.md
+项目申报书.pdf
+# generated interface files (optional - uncomment to exclude)
+# *.mbti
+# pkg.generated.mbti
+
+temp/
+# sqlite runtime files (wal/shm)
+*.db-shm
+*.db-wal
+# cron runtime state & scratch scripts（仅仓库根目录的运行时状态）
+/.cron_state_*.json
+__pycache__/
+execute_cron.py
+_cron_executor.py
+_cron_query.py
+# IDE / scratch transient
+.trae/
+.office-claw/
+_cron_tmp_sends.jsonl
+# blackbox release artifacts
+_release/
+memory/bugs_pending_github.json
+# runtime state & scratch (2026-10-13 维护提交排除项)
+/memory/model-router-default.json
+/fist-runtime.json
+/logs/
+/.mcp.json.bak-*
+/temp_*.txt
+
+# 构建产物
+dist/
+!dist/
+!dist/*
+
+# moon 生成的 pkg 临时件——`moon publish` 的打包面 = 工作树减 .gitignore（不是 git 跟踪面），
+# 0.3.4 发布载荷实测带上了 __cli_pkg.mbt.tmp（552 件里唯一不在 git 里的）⇒ 这类残留必须挡在 ignore 面
+*.mbt.tmp
+
+# 仓库根 `.mcp.json` = 本机 MCP 连接器在读的那一份：未跟踪、内容与跟踪真源 .mcp.dev.json 逐字节相同。
+# BUG-131 之后投影已按跟踪面优先解析，这里再把它挡在 ignore 面 ⇒ `git status` 与「工作树 − .gitignore」两面都干净。
+# 只锚仓库根（plugins/claude/.mcp.json 是跟踪件，不许被这条规则盖住）。
+/.mcp.json
+
+# 目标项目「使用态」配置（由 fist-config.html 生成 / mcp_config_scaffold 落盘）——
+# 只在仓库根锚，避免 check_publish_payload 把「用户在本仓试跑生成的配置」当未跟踪文件点名。
+# 注意 default-fist.mcp.json 是「模板」，必须进发布包，不许被这条规则盖住。
+/.fist.mcp.json
+/fist.mcp.json
+
+
+
+# Round 120: 仓库根目录的临时产物（`*.log` 规则不覆盖，`moon publish` 会把它们公开出去）
+/_build_err.txt
+/_test_out.txt
+/stdout.txt
+/stderr.txt
+/verr.txt
+/vout.txt
+/me.txt
+/fist-mbt-light-worktree.zip
+
+# R10: `_scratch/` 整目录挡（临时工作目录，含 4MB 级 dump；`moon publish` 会把它公开出去）
+/_scratch/
+
+# Round 261: 发布载荷面清整（check_publish_payload BUG-127 红面）——
+# `moon publish` 打包面=工作树−.gitignore，这些本地临时/工作产物会被公开出去。
+# 逐文件/前缀精确点名，不整目录挡：reports/memory/docs-archive 各有已跟踪合法内容，
+# 整挡会让将来合法新增也进不了包。
+/_tmp_*.py
+/backup/
+/requirements.txt
+/check_output.txt
+/atgc/codon_lab.py
+/docs/archive/README.md
+/memory/plan-ofm-fallback-retry.md
+/reports/2026-10-15-round27-caf-pick-hook-report.md
+/reports/2026-10-16-fist-mbt-self-iter-sweep.md
+/reports/2026-10-16-future-plan.md
+/scripts/bug161_smoke.py
+/scripts/check_bytes.py
+/scripts/check_line_endings.py
+/scripts/dev_loop.py
+/scripts/fix_ledger.py
+/scripts/fix_router_caf.py
+/scripts/fix_router_caf2.py
+/scripts/phase6_smoke.py
+/scripts/pol_keeper_prompt.md
+/scripts/pol_keeper_wrapper.ps1
+/scripts/warn_stats.py
+/zhi_*.py
+# Round 261b：并发 ofm-caf agent 新加的临时脚本（未跟踪）——挡 publish 泄漏，防下一发 P1 事故。
+/scripts/fist_mbt_mcp_client.py
+# Round 8 polish (marvis)：仓库根临时测试输出（`moon test`/构建脚本生成的中间产物，非本仓资产）
+/build_js_out.txt
+/chk_out.txt
+/dag_test_out.txt
+
+# Round 262 (marvis security)：敏感文件兜底——防未来 .env / 私钥误入 git 与发布包
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Round 12 (marvis)：P1 publish 载荷面清整——并发 agent 未入库的辅助脚本 + 3 份旧报告，
+# 逐文件精确点名（遵循 Round 261b 同款先例）。保留在工作树供其自行决定入库，
+# 但 `moon publish`（载荷面=工作树−ignore）不得把它们公开出去。
+/reports/2026-10-18-fist-mbt-cleanup-report.md
+/reports/2026-10-18-fist-mbt-issue-scan-fp-report.md
+/reports/2026-10-19-fist-mbt-round3-bug268-fp-cleanup-report.md
+/scripts/pol_keeper_run.py
+/scripts/_gen.py
+/scripts/fix_esm_require.py
+
+# R26 (2026-10-21)：`check_publish_payload.py` 判出的 7 条 P1 载荷泄露——既未被本
+# .gitignore 挡住、又未被 git 跟踪的非点号路径，`moon publish`（载荷面=工作树−ignore）
+# 会把它们公开到 registry。遵循上方 Round 12 同款先例逐文件精确点名：
+# 保留在工作树（不删、不代提交并发 WIP；bug335_ns_route_wbtest 仍归 BUG-339 持有方），
+# 但一律不得进入发布包。
+/_proj_lang-zone/
+/cmd/commissar/pkg.generated.mbti
+/memory/archive/thinking.archive.md
+/publish_sigma.js
+/src/evidence/pkg.generated.mbti
+/src/ops/rhop_native.mbt
+/src/server/bug335_ns_route_wbtest.mbt
+.git/fist/

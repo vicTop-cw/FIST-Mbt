@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""scripts/dispatch_verify.py — 验证 `selfdrive_dispatch` 能力路由自动派单（R32）E2E。
+
+流程：登记执行者 exec-DP([编排]) → 发布一条「编排」任务 → `selfdrive_dispatch(want=编排)`
+→ 应自动把该任务**认领给 exec-DP**（routed=true，而非常规回退自领）。验证 myself 状态迁移（待领取→已领取）。
+
+⚠ 本脚本为验证派单会向交付库写一条任务；运行后主代理会以 `git checkout -- fist-mbt.db` 恢复，
+  并执行 cleanup 保持整洁（仅本仓库独立验证，不并入交付自检链）。
+用法：moon build --target js cmd/cli && python scripts/dispatch_verify.py
+"""
+
+# BUG-138 残余面：Windows 默认 cp936 控制台下，中文结论一红就崩在 print 里，
+# traceback + rc=1 会被读成「缺陷在场」那一档——那是尺子自己坏了。先把两条流钉 UTF-8。
+import sys as _sys
+if hasattr(_sys.stdout, "reconfigure"):
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(_sys.stderr, "reconfigure"):
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+import json, os, subprocess
+from datetime import datetime, timezone
+ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+NODE = os.environ.get("FIST_NODE", "node")
+# BUG-122 同型收口：不带 FIST_DB_PATH 裸跑会把演示数据写进仓库根的自举台账 fist-mbt.db。
+# 默认改道 temp/ 下的隔离库；调用方显式设过 FIST_DB_PATH 就照它的（store_isolation_probe 那类必须自己控制）。
+_FIST_ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+if not (os.environ.get("FIST_DB_PATH") or "").strip():
+    os.environ["FIST_DB_PATH"] = os.path.join(_FIST_ROOT, "temp", "dispatch_verify.db")
+MAIN = "_build/js/debug/build/cmd/cli/cli.js"
+NS = "dispatch-verify"
+META = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": {},
+        "io.modelcontextprotocol/clientInfo": {"name": "dispatch-verify", "version": "1.0"}}
+NOW = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def start(argv_mod=None):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("patch_esm_main", os.path.join(ROOT, "scripts", "patch_esm_main.py"))
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); mod.patch(MAIN)
+    return subprocess.Popen([NODE, MAIN, "serve"], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", bufsize=1)
+
+def rpc(p, m, **kw):
+    kw["_meta"] = META
+    req = {"jsonrpc": "2.0", "id": "1", "method": m, "params": kw}
+    p.stdin.write(json.dumps(req, ensure_ascii=False) + "\n"); p.stdin.flush()
+    line = p.stdout.readline()
+    if not line: raise RuntimeError("server closed stdout")
+    return json.loads(line)
+
+def call(p, tool, **args):
+    r = rpc(p, "tools/call", name=tool, arguments=args)
+    if "error" in r: raise RuntimeError(f"{tool}: {r['error']}")
+    return json.loads(r["result"]["content"][0]["text"])
+
+def stop(p):
+    try:
+        p.stdin.close(); p.terminate(); p.wait(timeout=5)
+    except Exception:
+        pass
+
+def main():
+    p = start()
+    try:
+        tools = [t["name"] for t in rpc(p, "tools/list").get("result", {}).get("tools", [])]
+        print(f"PASS tools/list → {len(tools)} 个工具")
+        assert "selfdrive_dispatch" in tools, "缺少 selfdrive_dispatch"
+
+        # ① 登记一个「编排」能力执行者
+        call(p, "executor_register", name="exec-DP", abilities=["编排"])
+        # ② 发布一条「编排」任务（待领取）
+        r = call(p, "publish", project_dir="/proj/demo", namespace=NS, description="构建一个编排引擎 MVP", created_by="human", now=NOW)
+        tid = r["task_id"]
+
+        # ③ 能力路由自动派单：应派给 exec-DP
+        d = call(p, "selfdrive_dispatch", namespace=NS, agent="self", want="编排", now=NOW)
+        assert d.get("dispatched"), f"应能派单: {d}"
+        assert d.get("routed"), f"应路由到注册执行者而非自领: {d}"
+        assert d["assignee"] == "exec-DP", f"应派给 exec-DP: {d}"
+        assert d["task_id"] == tid, f"应派单给发布的任务 {tid}: {d}"
+        print(f"PASS selfdrive_dispatch(want=编排) → 派单 {tid} 给 exec-DP（routed=true, coverage={d['route']['coverage']}）")
+
+        # ④ 免手传：另发一条「编排」任务，不传 want，应从描述自动抽取能力并仍路由到 exec-DP
+        r2 = call(p, "publish", project_dir="/proj/demo", namespace=NS, description="做一个编排调度器 v2", created_by="human", now=NOW)
+        tid2 = r2["task_id"]
+        d2 = call(p, "selfdrive_dispatch", namespace=NS, agent="self", now=NOW)
+        assert d2.get("dispatched"), f"自动抽取后应能派单: {d2}"
+        assert d2.get("need_auto"), f"应走能力自动抽取: {d2}"
+        assert d2.get("routed"), f"应能自动路由到注册执行者: {d2}"
+        assert d2["assignee"] == "exec-DP", f"免手传应仍派给 exec-DP: {d2}"
+        assert d2["want"] == "编排", f"自动抽取 want 应为 编排: {d2}"
+        print(f"PASS selfdrive_dispatch(免 want) → 自动抽取 want={d2['want']} 派给 exec-DP（need_auto=true）")
+        # ⑤ 状态迁移验证：任务已认领给 exec-DP
+        g = call(p, "get", task_id=tid)
+        assert g.get("assignee") == "exec-DP", f"任务 assignee 应为 exec-DP: {g}"
+        assert g.get("status") in ("已领取",), f"任务应已领取: {g.get('status')}"
+        print(f"PASS 任务状态 → {g.get('status')}，assignee=exec-DP（0 迁移 待领取→已领取 经能力自动路由）")
+
+        # ⑥ 清理能力注册（防存留）
+        call(p, "executor_clear")
+        print("PASS executor_clear 已复位能力注册")
+        print("MCP-DISPATCH-VERIFY PASS")
+    finally:
+        stop(p)
+
+if __name__ == "__main__":
+    main()

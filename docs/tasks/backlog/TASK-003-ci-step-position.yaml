@@ -1,0 +1,30 @@
+id: TASK-003
+title: "CI 步骤位置门禁 — Migrate 之前才是安全区"
+priority: P2
+status: backlog
+assignee: atomcode
+discovered_by: lead
+discovered_at: "2026-10-21T19:15:00+08:00"
+
+problem: >
+ CI 里 Migrate mooncakes dep manifests 这一步会在失败时 skip 其后所有步骤。
+ AtomCode 第一次把 merge-marker gate 放在 Migrate 之后 → 实测 Migrate 崩了之后这步永远不跑，
+ 最需要它出声（冲突标记进跟踪面）的时候沉默。
+
+ 合入者已手动修正位置：把 merge-marker gate 移到 Migrate 之前（L41 vs L53）。
+ 但 plan-landing ratchet gate 还在 Migrate 之后（观测臂 continue-on-error）。
+
+scope:
+  - .github/workflows/ci.yml（所有新添加的 gate 步骤）
+  - .github/workflows/fist-ci.yml
+
+acceptance:
+  - [ ] 加 CI 守卫脚本 check_ci_step_position.py — 新 gate 步骤位置 > Migrate 步骤位置时告警
+  - [ ] ratchet gate 也移到 Migrate 之前（从 continue-on-error 变真门禁，RC=1 时硬红）
+  - [ ] 所有新增 gate 步骤必须附带"位置说明"（为什么在 Migrate 之前/之后）
+
+evidence:
+  - commit dda98e63 的 merge-marker gate 在 Migrate 之后 → 合入者发现后手动 checkout r74 修正
+  - commit 2b007646 的修正 diff 显示 +9/-21 行变化 = 位置移动
+
+blocked_by: []
