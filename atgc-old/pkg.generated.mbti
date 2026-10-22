@@ -14,7 +14,7 @@ pub fn atgc_run(String) -> Result[String, String]
 
 pub fn atgc_talk(String, String) -> String
 
-pub fn base_to_int(Char) -> Int?
+pub fn base_to_int(Char) -> Int32?
 
 pub fn compile_dna(String) -> Compiled
 
@@ -22,13 +22,13 @@ pub fn complement(Char) -> Char?
 
 pub fn decode(String) -> Op
 
-pub fn find_substr(String, String) -> Int
+pub fn find_substr(String, String) -> Int32
 
 pub fn group_codons(String) -> Array[String]
 
-pub fn int_to_base(Int) -> Char
+pub fn int_to_base(Int32) -> Char
 
-pub fn int_to_codon(Int) -> String
+pub fn int_to_codon(Int32) -> String
 
 pub fn is_data_prefix(Op) -> Bool
 
@@ -42,7 +42,7 @@ pub fn op_name(Op) -> String
 
 pub fn parse_directives(String) -> (Array[String], String)
 
-pub fn quaternary_of(String) -> Int?
+pub fn quaternary_of(String) -> Int32?
 
 pub fn rc_pairs() -> Array[(String, String)]
 
@@ -54,7 +54,7 @@ pub fn run(Array[Inst], Bool) -> RunResult
 
 pub fn run_dna(String) -> RunResult
 
-pub fn slice_str(String, Int, Int) -> String
+pub fn slice_str(String, Int32, Int32) -> String
 
 pub fn to_program(String) -> Array[Inst]
 
@@ -79,7 +79,7 @@ pub struct Compiled {
 
 pub enum Inst {
   Op(Op)
-  Number(Int)
+  Number(Int32)
 }
 
 pub enum Op {
@@ -89,7 +89,7 @@ pub enum Op {
   Break
   OutNum
   OutChar
-  PushImm(Int)
+  PushImm(Int32)
   Pop
   Dup
   Swap
@@ -114,7 +114,7 @@ pub enum Op {
 pub struct RunResult {
   output : String
   stack_history : Array[String]
-  final_stack : Array[Int]
+  final_stack : Array[Int32]
   result : String
   rolled_back : Bool
 }

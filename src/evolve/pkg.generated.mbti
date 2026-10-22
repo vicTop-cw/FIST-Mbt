@@ -17,7 +17,7 @@ pub fn candidates_to_tsv_lines(Array[SearchCandidate]) -> String
 
 pub fn code_search_to_tsv(String) -> String
 
-pub fn code_search_url(String, per_page? : Int) -> String
+pub fn code_search_url(String, per_page? : Int32) -> String
 
 pub fn code_to_candidates(Array[GhCode]) -> Array[SearchCandidate]
 
@@ -73,7 +73,7 @@ pub fn parse_repo_search(String) -> Array[GhRepo]
 
 pub fn repo_search_to_tsv(String) -> String
 
-pub fn repo_search_url(String, per_page? : Int, sort? : String) -> String
+pub fn repo_search_url(String, per_page? : Int32, sort? : String) -> String
 
 pub fn repos_to_candidates(Array[GhRepo]) -> Array[SearchCandidate]
 
@@ -97,7 +97,7 @@ pub fn tag_skill(SkillEntry, Array[String]) -> SkillEntry
 
 pub fn tokens(String) -> Array[String]
 
-pub fn topic_search_url(String, per_page? : Int) -> String
+pub fn topic_search_url(String, per_page? : Int32) -> String
 
 pub fn unigrams(String) -> Array[String]
 
@@ -111,16 +111,16 @@ pub struct Archive {
 pub fn Archive::add(Self, Artifact) -> Unit
 pub fn Archive::all(Self) -> Array[Artifact]
 pub fn Archive::best(Self) -> Artifact?
-pub fn Archive::dead_ends(Self, limit? : Int) -> Array[String]
+pub fn Archive::dead_ends(Self, limit? : Int32) -> Array[String]
 pub fn Archive::get(Self, String) -> Artifact?
 pub fn Archive::is_duplicate(Self, String, threshold? : Double) -> Bool
 pub fn Archive::is_empty(Self) -> Bool
-pub fn Archive::len(Self) -> Int
-pub fn Archive::lineage(Self, String, depth? : Int) -> Array[(String, Double, String)]
+pub fn Archive::len(Self) -> Int32
+pub fn Archive::lineage(Self, String, depth? : Int32) -> Array[(String, Double, String)]
 pub fn Archive::new(String) -> Self
 pub fn Archive::novelty(Self, String) -> Double
 pub fn Archive::sample_parent(Self, lam? : Double, a0? : Double, rand~ : () -> Double) -> Artifact?
-pub fn Archive::summaries(Self, limit? : Int) -> Array[String]
+pub fn Archive::summaries(Self, limit? : Int32) -> Array[String]
 
 pub struct Artifact {
   id : String
@@ -130,13 +130,13 @@ pub struct Artifact {
   code : String
   score : Double
   parts : Map[String, Double]
-  children : Int
+  children : Int32
   created_at : String
 }
 pub fn Artifact::create(id~ : String, parent_id~ : String?, goal~ : String, note~ : String, code~ : String, score~ : Double, parts~ : Map[String, Double], created_at~ : String) -> Self
 pub fn Artifact::from_json(Json) -> Self
 pub fn Artifact::to_json(Self) -> Json
-pub fn Artifact::with_children(Self, Int) -> Self
+pub fn Artifact::with_children(Self, Int32) -> Self
 
 pub struct CurriculumItem {
   level : CurriculumLevel
@@ -164,7 +164,7 @@ pub struct GhCode {
 pub struct GhRepo {
   full_name : String
   description : String
-  stargazers_count : Int
+  stargazers_count : Int32
   language : String
   html_url : String
   topics : Array[String]

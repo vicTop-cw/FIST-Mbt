@@ -18,7 +18,7 @@ pub fn help_plugins() -> String
 
 pub fn help_tools() -> String
 
-pub async fn latest_tag(String, String, Int) -> Result[String, String]
+pub async fn latest_tag(String, String, Int32) -> Result[String, String]
 
 pub fn latest_url(String, String) -> String
 
@@ -26,7 +26,7 @@ pub fn list_topics() -> String
 
 pub async fn run_upgrade_full(String, String, String, Bool) -> Result[String, String]
 
-pub async fn upgrade_fetch_latest(String, String, Int) -> Result[String, String]
+pub async fn upgrade_fetch_latest(String, String, Int32) -> Result[String, String]
 
 pub async fn upgrade_io(String, String) -> Result[Json, String]
 

@@ -2,7 +2,7 @@
 package "vicTop-cw/fist-mbt/src/store"
 
 import {
-  "mizchi/sqlite",
+  "daqing/sqlite",
   "moonbitlang/core/debug",
   "vicTop-cw/fist-mbt/src/core",
 }
@@ -48,10 +48,10 @@ pub struct ExecutionRecord {
   task_id : String
   executor : String
   model : String
-  tokens_in : Int
-  tokens_out : Int
+  tokens_in : Int32
+  tokens_out : Int32
   cost : Double
-  duration_ms : Int
+  duration_ms : Int32
   rate_limited : Bool
   failure_reason : String
   created_at : String
@@ -128,11 +128,11 @@ pub fn MemoryStore::lock_violations_push(Self, LockViolation) -> Unit
 pub fn MemoryStore::locks_get(Self, String) -> FileLock?
 pub fn MemoryStore::locks_list(Self) -> Array[FileLock]
 pub fn MemoryStore::locks_release(Self, String, String) -> Bool
-pub fn MemoryStore::locks_sweep(Self, String) -> Int
+pub fn MemoryStore::locks_sweep(Self, String) -> Int32
 pub fn MemoryStore::locks_try_acquire(Self, FileLock) -> LockAcquireOutcome
 pub fn MemoryStore::locks_upsert(Self, FileLock) -> Unit
 pub fn MemoryStore::new() -> Self
-pub fn MemoryStore::recent_call_logs(Self, limit? : Int) -> Array[Json]
+pub fn MemoryStore::recent_call_logs(Self, limit? : Int32) -> Array[Json]
 pub fn MemoryStore::rsv_get(Self, String) -> (String, String, String)?
 pub fn MemoryStore::rsv_list(Self) -> Array[(String, String, String)]
 pub fn MemoryStore::rsv_release(Self, String, String) -> Bool
@@ -142,7 +142,7 @@ pub fn MemoryStore::update_spec_status(Self, String, String, String, String) -> 
 pub fn MemoryStore::update_task(Self, @core.Task) -> Result[Unit, String]
 pub fn MemoryStore::update_task_if_status(Self, @core.Task, String) -> Result[Unit, String]
 pub fn MemoryStore::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
-pub fn MemoryStore::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int, seq~ : Int) -> Result[Unit, String]
+pub fn MemoryStore::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int32, seq~ : Int32) -> Result[Unit, String]
 
 pub struct MultiStore {
   stores : Map[String, SqliteStore]
@@ -189,8 +189,8 @@ pub fn SqliteStore::assistant_get(Self, String) -> AssistantReg?
 pub fn SqliteStore::assistant_list(Self) -> Array[AssistantReg]
 pub fn SqliteStore::assistant_set_status(Self, String, String) -> Bool
 pub fn SqliteStore::assistant_upsert(Self, AssistantReg) -> Unit
-pub fn SqliteStore::cb_get(Self, String, String) -> (String, Int, Int, Int, Int, Int, Int)?
-pub fn SqliteStore::cb_save(Self, String, String, String, Int, Int, Int, Int, Int, Int, String) -> Result[Unit, String]
+pub fn SqliteStore::cb_get(Self, String, String) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)?
+pub fn SqliteStore::cb_save(Self, String, String, String, Int32, Int32, Int32, Int32, Int32, Int32, String) -> Result[Unit, String]
 pub fn SqliteStore::clear(Self) -> Unit
 pub fn SqliteStore::create_task(Self, @core.Task) -> Result[Unit, String]
 pub fn SqliteStore::db_path_from_env(String?) -> String
@@ -208,8 +208,8 @@ pub fn SqliteStore::get_spec(Self, String) -> SpecRecord?
 pub fn SqliteStore::get_task(Self, String) -> @core.Task?
 pub fn SqliteStore::list_all_heartbeats(Self) -> Array[(String, String, String, String)]
 pub fn SqliteStore::list_archived(Self) -> Array[(String, String)]
-pub fn SqliteStore::list_heartbeat_intervals(Self, String, limit? : Int) -> Array[Int]
-pub fn SqliteStore::list_saga_actions(Self, String, String) -> Array[(Int, String, String, String, String)]
+pub fn SqliteStore::list_heartbeat_intervals(Self, String, limit? : Int32) -> Array[Int32]
+pub fn SqliteStore::list_saga_actions(Self, String, String) -> Array[(Int32, String, String, String, String)]
 pub fn SqliteStore::list_specs_by_task(Self, String) -> Array[SpecRecord]
 pub fn SqliteStore::list_tasks(Self) -> Array[@core.Task]
 pub fn SqliteStore::list_tasks_in(Self, String) -> Array[@core.Task]
@@ -218,15 +218,15 @@ pub fn SqliteStore::lock_violations_push(Self, LockViolation) -> Unit
 pub fn SqliteStore::locks_get(Self, String) -> FileLock?
 pub fn SqliteStore::locks_list(Self) -> Array[FileLock]
 pub fn SqliteStore::locks_release(Self, String, String) -> Bool
-pub fn SqliteStore::locks_sweep(Self, String) -> Int
+pub fn SqliteStore::locks_sweep(Self, String) -> Int32
 pub fn SqliteStore::locks_try_acquire(Self, FileLock) -> LockAcquireOutcome
 pub fn SqliteStore::locks_upsert(Self, FileLock) -> Unit
-pub fn SqliteStore::mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int]) -> Result[Unit, String]
+pub fn SqliteStore::mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int32]) -> Result[Unit, String]
 pub fn SqliteStore::new() -> Self?
 pub fn SqliteStore::open(String) -> Self?
 pub fn SqliteStore::read_heartbeat(Self, String) -> (String, String, String)
-pub fn SqliteStore::recent_call_logs(Self, limit? : Int) -> Array[Json]
-pub fn SqliteStore::record_execution(Self, task_id~ : String, executor~ : String, model~ : String, tokens_in~ : Int, tokens_out~ : Int, cost~ : Double, duration_ms~ : Int, rate_limited~ : Bool, failure_reason~ : String, created_at~ : String) -> Result[Unit, String]
+pub fn SqliteStore::recent_call_logs(Self, limit? : Int32) -> Array[Json]
+pub fn SqliteStore::record_execution(Self, task_id~ : String, executor~ : String, model~ : String, tokens_in~ : Int32, tokens_out~ : Int32, cost~ : Double, duration_ms~ : Int32, rate_limited~ : Bool, failure_reason~ : String, created_at~ : String) -> Result[Unit, String]
 pub fn SqliteStore::rsv_get(Self, String) -> (String, String, String)?
 pub fn SqliteStore::rsv_list(Self) -> Array[(String, String, String)]
 pub fn SqliteStore::rsv_release(Self, String, String) -> Bool
@@ -236,9 +236,9 @@ pub fn SqliteStore::update_spec_status(Self, String, String, String, String) -> 
 pub fn SqliteStore::update_task(Self, @core.Task) -> Result[Unit, String]
 pub fn SqliteStore::update_task_if_status(Self, @core.Task, String) -> Result[Unit, String]
 pub fn SqliteStore::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
-pub fn SqliteStore::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int, seq~ : Int) -> Result[Unit, String]
+pub fn SqliteStore::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int32, seq~ : Int32) -> Result[Unit, String]
 pub fn SqliteStore::write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
-pub fn SqliteStore::write_heartbeat_interval(Self, task_id~ : String, interval_sec~ : Int, ts~ : String) -> Result[Unit, String]
+pub fn SqliteStore::write_heartbeat_interval(Self, task_id~ : String, interval_sec~ : Int32, ts~ : String) -> Result[Unit, String]
 pub fn SqliteStore::write_saga_action(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, created_at~ : String) -> Result[Unit, String]
 
 pub enum StoreBackend {
@@ -250,8 +250,8 @@ pub fn StoreBackend::assistant_list(Self) -> Array[AssistantReg]
 pub fn StoreBackend::assistant_set_status(Self, String, String) -> Bool
 pub fn StoreBackend::assistant_upsert(Self, AssistantReg) -> Unit
 pub fn StoreBackend::backend_name(Self) -> String
-pub fn StoreBackend::cb_get(Self, String, String) -> (String, Int, Int, Int, Int, Int, Int)?
-pub fn StoreBackend::cb_save(Self, String, String, String, Int, Int, Int, Int, Int, Int, String) -> Result[Unit, String]
+pub fn StoreBackend::cb_get(Self, String, String) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)?
+pub fn StoreBackend::cb_save(Self, String, String, String, Int32, Int32, Int32, Int32, Int32, Int32, String) -> Result[Unit, String]
 pub fn StoreBackend::clear(Self) -> Unit
 pub fn StoreBackend::cost_stats(Self) -> Json
 pub fn StoreBackend::create_task(Self, @core.Task) -> Result[Unit, String]
@@ -263,8 +263,8 @@ pub fn StoreBackend::executor_save(Self, name~ : String, abilities_json~ : Strin
 pub fn StoreBackend::get_spec(Self, String) -> SpecRecord?
 pub fn StoreBackend::get_task(Self, String) -> @core.Task?
 pub fn StoreBackend::list_all_heartbeats(Self) -> Array[(String, String, String, String)]
-pub fn StoreBackend::list_heartbeat_intervals(Self, String, limit? : Int) -> Array[Int]
-pub fn StoreBackend::list_saga_actions(Self, String, String) -> Array[(Int, String, String, String, String)]
+pub fn StoreBackend::list_heartbeat_intervals(Self, String, limit? : Int32) -> Array[Int32]
+pub fn StoreBackend::list_saga_actions(Self, String, String) -> Array[(Int32, String, String, String, String)]
 pub fn StoreBackend::list_specs_by_task(Self, String) -> Array[SpecRecord]
 pub fn StoreBackend::list_tasks(Self) -> Array[@core.Task]
 pub fn StoreBackend::list_tasks_in(Self, String) -> Array[@core.Task]
@@ -273,14 +273,14 @@ pub fn StoreBackend::lock_violations_push(Self, LockViolation) -> Unit
 pub fn StoreBackend::locks_get(Self, String) -> FileLock?
 pub fn StoreBackend::locks_list(Self) -> Array[FileLock]
 pub fn StoreBackend::locks_release(Self, String, String) -> Bool
-pub fn StoreBackend::locks_sweep(Self, String) -> Int
+pub fn StoreBackend::locks_sweep(Self, String) -> Int32
 pub fn StoreBackend::locks_try_acquire(Self, FileLock) -> LockAcquireOutcome
 pub fn StoreBackend::locks_upsert(Self, FileLock) -> Unit
-pub fn StoreBackend::mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int]) -> Result[Unit, String]
+pub fn StoreBackend::mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int32]) -> Result[Unit, String]
 pub fn StoreBackend::memory() -> Self
 pub fn StoreBackend::read_heartbeat(Self, String) -> (String, String, String)
-pub fn StoreBackend::recent_call_logs(Self, limit? : Int) -> Array[Json]
-pub fn StoreBackend::record_execution(Self, task_id~ : String, executor~ : String, model~ : String, tokens_in~ : Int, tokens_out~ : Int, cost~ : Double, duration_ms~ : Int, rate_limited~ : Bool, failure_reason~ : String, created_at~ : String) -> Result[Unit, String]
+pub fn StoreBackend::recent_call_logs(Self, limit? : Int32) -> Array[Json]
+pub fn StoreBackend::record_execution(Self, task_id~ : String, executor~ : String, model~ : String, tokens_in~ : Int32, tokens_out~ : Int32, cost~ : Double, duration_ms~ : Int32, rate_limited~ : Bool, failure_reason~ : String, created_at~ : String) -> Result[Unit, String]
 pub fn StoreBackend::rsv_get(Self, String) -> (String, String, String)?
 pub fn StoreBackend::rsv_list(Self) -> Array[(String, String, String)]
 pub fn StoreBackend::rsv_release(Self, String, String) -> Bool
@@ -293,9 +293,9 @@ pub fn StoreBackend::update_spec_status(Self, String, String, String, String) ->
 pub fn StoreBackend::update_task(Self, @core.Task) -> Result[Unit, String]
 pub fn StoreBackend::update_task_if_status(Self, @core.Task, String) -> Result[Unit, String]
 pub fn StoreBackend::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
-pub fn StoreBackend::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int, seq~ : Int) -> Result[Unit, String]
+pub fn StoreBackend::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int32, seq~ : Int32) -> Result[Unit, String]
 pub fn StoreBackend::write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
-pub fn StoreBackend::write_heartbeat_interval(Self, task_id~ : String, interval_sec~ : Int, ts~ : String) -> Result[Unit, String]
+pub fn StoreBackend::write_heartbeat_interval(Self, task_id~ : String, interval_sec~ : Int32, ts~ : String) -> Result[Unit, String]
 pub fn StoreBackend::write_saga_action(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, created_at~ : String) -> Result[Unit, String]
 
 // Type aliases
