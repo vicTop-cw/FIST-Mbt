@@ -179,6 +179,41 @@ def build_cases():
 CASES = build_cases()
 
 
+# —— R94：无参兜底格普查（TASK-007 自动发现的反面一课）——
+# 自动发现给每支未点名脚本补的是一格**无参**跑法。脚本若带不可逆动作（强推共享线、
+# reset --hard、开 MR 后 merge），跑守卫电池就等于替所有人跑了它。cef1e9c 上
+# whisperer.py 与 fist-pr-automator.py 正是这样进电池的——前者 Step 0 会
+# `git push --force HEAD:main HEAD:master` 打两个远端。排除表靠人想起加，
+# 所以这条纪律本身要做成判据，而不是只写在注释里。
+HAZARD_RE = re.compile(r"reset --hard|--force|\"push\"|/merge\b")
+
+
+def bare_cells():
+    """自动发现会补的无参格 = 宇宙 − SPECIAL_CASES 点名面。"""
+    covered = set(c["script"] for c in SPECIAL_CASES)
+    return [s for s in discover_scripts() if s not in covered]
+
+
+def script_texts(names):
+    """按名字取脚本正文（blackbox/ 前缀走子目录；读不到的给空串，由普查自行跳过）。"""
+    out = {}
+    for name in names:
+        path = os.path.join(SCRIPTS_DIR, *name.split("/"))
+        try:
+            with io.open(path, encoding="utf-8", errors="replace") as f:
+                out[name] = f.read()
+        except IOError:
+            out[name] = ""
+    return out
+
+
+def hazard_violations(texts, bare):
+    """纯函数普查：texts={脚本名: 正文}，bare=拿无参格的脚本名集合 ⇒ 返回该收口的名字。
+    判定面空不许冒绿——调用方给了 bare 名单却一个正文都没读到，返回哨兵名由 selftest 判红。"""
+    hit = sorted(n for n in bare if HAZARD_RE.search(texts.get(n, "")))
+    return hit
+
+
 def ci_referred():
     """现读 .github/workflows/*.yml 里引用过的守卫脚本名（不抄清单）。"""
     names = set()
@@ -320,6 +355,23 @@ def selftest():
     rows, missing, ci, battery, guards = face_report()
     cell("repo-current-has-no-orphan-guard", check_faces(guards, ci, battery, missing)[0], 0)
     cell("battery-covers-plan-landing", "check_plan_landing.py" in battery, True)
+    # 6) R94 无参兜底格普查：合成违例必红 / 干净脚本不误红 / 已点名脚本不在 bare 面 /
+    #    真正文阳性对照（whisperer.py 那份源码必须被咬住，否则这条尺是幻影判据）/
+    #    每格正文都要真读到（空扫描不许冒绿）/ 真实现状必须 0
+    fake_txt = {"danger.py": 'run(["git", "push", "origin", "HEAD:main", "--force"])',
+                "safe.py": "print('only reads files')",
+                "listed.py": 'run(["git", "reset", "--hard", ref])'}
+    cell("hazard-census-flags-bare-force-push", hazard_violations(fake_txt, {"danger.py"}), ["danger.py"])
+    cell("hazard-census-clean-script-passes", hazard_violations(fake_txt, {"safe.py"}), [])
+    cell("hazard-census-named-script-not-bare", hazard_violations(fake_txt, {"listed.py"}), [])
+    cell("hazard-census-bites-real-whisperer-source",
+         hazard_violations(script_texts(["whisperer.py"]), {"whisperer.py"}), ["whisperer.py"])
+    real_bare = bare_cells()
+    txt = script_texts(real_bare)
+    cell("hazard-census-reads-every-bare-cell", sum(1 for v in txt.values() if v), len(real_bare))
+    cell("repo-current-has-no-hazard-bare-cell", hazard_violations(txt, set(real_bare)), [])
+    print("  ok  无参兜底格 %d 支（含不可逆动作形状的 %d 支）"
+          % (len(real_bare), len(hazard_violations(txt, set(real_bare)))))
     print("  ok  现状读数：%d 把尺 / CI 面 %d / 电池面 %d / 缺面 %d"
           % (len(guards), len(ci & set(guards)), len(battery & set(guards)), len(missing)))
 
@@ -331,7 +383,8 @@ def selftest():
         return 1
     print("SELFTEST OK（%d 格：宇宙覆盖 blackbox 真尺 + G2 不误判其 stale / G1 抓 blackbox 孤儿 + 带前缀点名 / G1 干净 / G1 抓漏面尺 + 必点名 / G3 三种空宇宙各自拒 / "
           "G2 电池点了不存在的脚本自拒 / 真源现状全绿 / plan_landing 已进电池 / "
-          "plan_landing 门禁格与诊断格并存且诊断格 why 带构成）" % len(cells))
+          "plan_landing 门禁格与诊断格并存且诊断格 why 带构成 / "
+          "R94 无参兜底格普查：合成强推必红 + 干净不误红 + 已点名不入 bare 面 + 真源码阳性对照咬住 whisperer.py + 空扫描自拒 + 现状 0）" % len(cells))
     return 0
 
 
