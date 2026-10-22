@@ -762,7 +762,7 @@
 - `run_guards.py` — **守卫回归电池的唯一真源（R40 / BUG-366）**：`check_*.py` 这 24 把尺「红不红」看 CI，但「本地每轮复跑哪几格」从来没有真源——历轮都是一份 `temp/run_guardsNN.py`，temp/ 被 gitignore、写完即丢，格数全靠人回忆（实测这条手抄链：11 份电池 5、7–16 = 13×7 → 30 → 33 → 37 → 37 格）。漏抄不是「少跑一格」，是「那格永远不会被发现漏了」：**`check_plan_landing` 自 2026-10-14 落仓起 CI 里没有、11 份电池逐份 grep 全 0 命中，于是它带着「`src/x.mbt:108/121/134` 整串当路径 ⇒ 已跟踪文件报 missing」的虚报缺陷躺了一周**（本轮实测：56 条读数里 2 条虚报 / 8 条日期与变量占位噪音 / 17 条落在存档面）。判据 **G1** 每把 `check_*.py` 至少一个执行面（CI ∪ 电池，两侧名单都现读、不另抄清单——抄的那份就是下一个漂移点）；**G2** 电池点名的脚本不存在 ⇒ FATAL；**G3** 尺数 0 / CI 一把都没解析到 / 电池为空 ⇒ FATAL（空宇宙会让「无人缺面」以 rc=0 骗人）；每条 case 带 `expect`，预存红**照写期望值 + 依据**（`kind="known-red"`）而不是豁免，数字被修好就说明显；诊断型读数是 `kind="diag"`；依赖 temp 件的 case 缺前置打 SKIP，但 **SKIP 不构成「这格过了」的证据**，G1 只认名字在不在电池里。真源读数：**34 格 / 失败 2（都是本文件尚未入库造成的，登记后归 0）/ SKIP 0 / 缺执行面的尺 0；24 把尺 = CI 面 20 ∪ 电池面 22**。`--selftest` 9 格：G1 干净 / G1 抓漏面尺且必点名 / G3 三种空宇宙各自拒 / G2 自拒 / 真源现状全绿 / plan_landing 已进电池。**变异实测**：把 plan_landing 从 CASES 里摘掉 ⇒ `--list` 与 G1 立刻 rc=1 并点名它（正是那周的形状的机械化复现）。本工具的两个模式在 ci.yml「Guard execution-face」步里执行（`--selftest` + `--list`），所以这条门自己不会重蹈「写了没人跑」。用法：`python scripts/run_guards.py`｜`--list`｜`--selftest`（0=无失败 / 1=有格越期望或有尺无人跑 / 2=电池自拒）。
 - `run_guards.py` — **守卫回归电池的唯一真源（R40 / BUG-366）**：`check_*.py` 这 24 把尺「红不红」看 CI，但「本地每轮复跑哪几格」从来没有真源——历轮都是一份 `temp/run_guardsNN.py`，temp/ 被 gitignore、写完即丢，格数全靠人回忆（实测这条手抄链：11 份电池 5、7–16 = 13×7 → 30 → 33 → 37 → 37 格）。漏抄不是「少跑一格」，是「那格永远不会被发现漏了」：**`check_plan_landing` 自 2026-10-14 落仓起 CI 里没有、11 份电池逐份 grep 全 0 命中，于是它带着「`src/x.mbt:108/121/134` 整串当路径 ⇒ 已跟踪文件报 missing」的虚报缺陷躺了一周**（本轮实测：56 条读数里 2 条虚报 / 8 条日期与变量占位噪音 / 17 条落在存档面）。判据 **G1** 每把 `check_*.py` 至少一个执行面（CI ∪ 电池，两侧名单都现读、不另抄清单——抄的那份就是下一个漂移点）；**G2** 电池点名的脚本不存在 ⇒ FATAL；**G3** 尺数 0 / CI 一把都没解析到 / 电池为空 ⇒ FATAL（空宇宙会让「无人缺面」以 rc=0 骗人）；每条 case 带 `expect`，预存红**照写期望值 + 依据**（`kind="known-red"`）而不是豁免，数字被修好就说明显；诊断型读数是 `kind="diag"`；依赖 temp 件的 case 缺前置打 SKIP，但 **SKIP 不构成「这格过了」的证据**，G1 只认名字在不在电池里。真源读数（R41 复读）：**35 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0；24 把尺 = CI 面 21 ∪ 电池面 22**（R40 首跑当时是 34 格 / 失败 2，那两条红是「本文件尚未入库」造成的顺序性自红，登记后归 0）。`--selftest` 11 格：G1 干净 / G1 抓漏面尺且必点名 / G3 三种空宇宙各自拒 / G2 自拒 / 真源现状全绿 / plan_landing 已进电池 / **R41 两格：plan_landing 的门禁格与诊断格必须并存，且诊断格的 why 必带构成**（读数只给一个孤零零的 rc 不算证据）。**变异实测**：把 plan_landing 从 CASES 里摘掉 ⇒ `--list` 与 G1 立刻 rc=1 并点名它（正是那周的形状的机械化复现）。本工具的两个模式在 ci.yml「Guard execution-face」步里执行（`--selftest` + `--list`），所以这条门自己不会重蹈「写了没人跑」。用法：`python scripts/run_guards.py`｜`--list`｜`--selftest`（0=无失败 / 1=有格越期望或有尺无人跑 / 2=电池自拒）。
 - `check_bug_reference_integrity.py` — **引用面「代码里的 BUG-N」↔ 账本抬头编号 对表器（BUG-373 出路①，R48 新增，只报不判 + 一条棘轮）**：把跟踪面 `.mbt` 里所有 `BUG-<n>` 引用按**出现面**分三类——comment（`//` 之后）/ string（双引号字面量内，多为 wbtest 合成语料）/ code（正常应为 0，出现即解析器读错面）；账本编号集合由本脚本自己解析 `^## BUG-(\d+)\b`（不 import gen_plugins，判据不自证）。**判定面只有 J1 悬空-注释面**：上限 `DANGLING_COMMENT_CEILING = 1`（R48 现读唯一一条 = `src/engine/engine.mbt:227` 引 BUG-147、账本无该抬头），只许降不许升；**只报面必须出数**：S1 悬空-字面量（合成语料）/ S1b 夹具说明注释（同文件 string 面出现同号 ⇒ 机械降档，治首跑 2 条假红）/ S2 疑似无归属（编号在集合内但条目正文没提该文件 basename、同目录 `.mbt`、`src/<pkg>` 或 `` `<pkg>` `` 的最松层——同包一层实测救回 163 处合法跨文件引用，所以只作疑似）/ S3 跨文件同编号（信息面）。**R48 现读**：宇宙 290 份 `.mbt` / 账本唯一编号 356 / 引用点 946 / 涉及编号 157（comment 615 / string 331 / code 0）⇒ J1 1 / S1 35 / S1b 2 / S2 195 / S3 113。自拒：git 枚举失败、0 份 `.mbt`、账本零抬头、引用解析为 0 ⇒ FATAL 真给 2（`--probe-empty-root` 子进程锁进程码）。`--selftest` 10 格（含标定格「真语料恰好 1 条注释悬空」与空宇宙 rc=2 子进程格）。**为什么第一版不让 S1/S2 判红**：本仓「假红比漏判更贵」，946 处一次性开判红等于逼人无视这把尺；逐条核过再上棘轮。执行面三处齐备：ci.yml「Bug-reference integrity guard」跑 `--selftest` + 全量、`run_guards.py` 电池一格、本条 README 登记。用法：`python scripts/check_bug_reference_integrity.py [--selftest|--dump|--show-ceiling]`（0=J1 在棘轮上限内 / 1=超上限 / 2=判据无法自证）。
-- `run_guards.py` — **守卫回归电池的唯一真源（R40 / BUG-366）**：`check_*.py` 这 26 把尺「红不红」看 CI，但「本地每轮复跑哪几格」从来没有真源——历轮都是一份 `temp/run_guardsNN.py`，temp/ 被 gitignore、写完即丢，格数全靠人回忆（实测这条手抄链：11 份电池 5、7–16 = 13×7 → 30 → 33 → 37 → 37 格）。漏抄不是「少跑一格」，是「那格永远不会被发现漏了」：**`check_plan_landing` 自 2026-10-14 落仓起 CI 里没有、11 份电池逐份 grep 全 0 命中，于是它带着「`src/x.mbt:108/121/134` 整串当路径 ⇒ 已跟踪文件报 missing」的虚报缺陷躺了一周**（本轮实测：56 条读数里 2 条虚报 / 8 条日期与变量占位噪音 / 17 条落在存档面）。判据 **G1** 每把 `check_*.py` 至少一个执行面（CI ∪ 电池，两侧名单都现读、不另抄清单——抄的那份就是下一个漂移点）；**G2** 电池点名的脚本不存在 ⇒ FATAL；**G3** 尺数 0 / CI 一把都没解析到 / 电池为空 ⇒ FATAL（空宇宙会让「无人缺面」以 rc=0 骗人）；每条 case 带 `expect`，预存红**照写期望值 + 依据**（`kind="known-red"`）而不是豁免，数字被修好就说明显；诊断型读数是 `kind="diag"`；依赖 temp 件的 case 缺前置打 SKIP，但 **SKIP 不构成「这格过了」的证据**，G1 只认名字在不在电池里。真源读数（R41 复读）：**35 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0；24 把尺 = CI 面 21 ∪ 电池面 22**（R48 现读：38 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0；26 把尺 = CI 面 23 ∪ 电池面 24）（R40 首跑当时是 34 格 / 失败 2，那两条红是「本文件尚未入库」造成的顺序性自红，登记后归 0）。`--selftest` 11 格：G1 干净 / G1 抓漏面尺且必点名 / G3 三种空宇宙各自拒 / G2 自拒 / 真源现状全绿 / plan_landing 已进电池 / **R41 两格：plan_landing 的门禁格与诊断格必须并存，且诊断格的 why 必带构成**（读数只给一个孤零零的 rc 不算证据）。**变异实测**：把 plan_landing 从 CASES 里摘掉 ⇒ `--list` 与 G1 立刻 rc=1 并点名它（正是那周的形状的机械化复现）。本工具的两个模式在 ci.yml「Guard execution-face」步里执行（`--selftest` + `--list`），所以这条门自己不会重蹈「写了没人跑」。用法：`python scripts/run_guards.py`｜`--list`｜`--selftest`（0=无失败 / 1=有格越期望或有尺无人跑 / 2=电池自拒）。
+- `run_guards.py` — **守卫回归电池的唯一真源（R40 / BUG-366）**：`check_*.py` 这 26 把尺「红不红」看 CI，但「本地每轮复跑哪几格」从来没有真源——历轮都是一份 `temp/run_guardsNN.py`，temp/ 被 gitignore、写完即丢，格数全靠人回忆（实测这条手抄链：11 份电池 5、7–16 = 13×7 → 30 → 33 → 37 → 37 格）。漏抄不是「少跑一格」，是「那格永远不会被发现漏了」：**`check_plan_landing` 自 2026-10-14 落仓起 CI 里没有、11 份电池逐份 grep 全 0 命中，于是它带着「`src/x.mbt:108/121/134` 整串当路径 ⇒ 已跟踪文件报 missing」的虚报缺陷躺了一周**（本轮实测：56 条读数里 2 条虚报 / 8 条日期与变量占位噪音 / 17 条落在存档面）。判据 **G1** 每把 `check_*.py` 至少一个执行面（CI ∪ 电池，两侧名单都现读、不另抄清单——抄的那份就是下一个漂移点）；**G2** 电池点名的脚本不存在 ⇒ FATAL；**G3** 尺数 0 / CI 一把都没解析到 / 电池为空 ⇒ FATAL（空宇宙会让「无人缺面」以 rc=0 骗人）；每条 case 带 `expect`，预存红**照写期望值 + 依据**（`kind="known-red"`）而不是豁免，数字被修好就说明显；诊断型读数是 `kind="diag"`；依赖 temp 件的 case 缺前置打 SKIP，但 **SKIP 不构成「这格过了」的证据**，G1 只认名字在不在电池里。真源读数（R41 复读）：**35 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0；24 把尺 = CI 面 21 ∪ 电池面 22**（R48 现读：38 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0；26 把尺 = CI 面 23 ∪ 电池面 24）（R40 首跑当时是 34 格 / 失败 2，那两条红是「本文件尚未入库」造成的顺序性自红，登记后归 0）。`--selftest` 19 格（R94 现读，格数由 cells 现数）：G1 干净 / G1 抓漏面尺且必点名 / G3 三种空宇宙各自拒 / G2 自拒 / 真源现状全绿 / plan_landing 已进电池 / **R41 两格：plan_landing 的门禁格与诊断格必须并存，且诊断格的 why 必带构成**（读数只给一个孤零零的 rc 不算证据）。**R94 无参兜底格普查**（`bare_cells()` + 纯函数 `hazard_violations(texts, bare)`，判据形状进 `--selftest` 六格：合成强推必红 / 干净脚本不误红 / 已点名脚本不入 bare 面 / 真源码阳性对照必须咬住 `scripts/whisperer.py`（Step 0 带 `--force` 强推共享线）/ 每支 bare 格的正文必须真读到（空扫描不许冒绿）/ 真实现状必须 0 条）——自动发现给每支未点名脚本补的是一格**无参**跑法，`EXCLUDE_EXACT` 靠人想起加，这一条把「危险脚本不得拿无参格」从注释纪律变成门：下一支带不可逆动作的脚本入仓又没被点名，`--selftest` 当场红。R94 现读：无参兜底格 56 支 / 含不可逆动作形状 0 支。**变异实测**：把 plan_landing 从 CASES 里摘掉 ⇒ `--list` 与 G1 立刻 rc=1 并点名它（正是那周的形状的机械化复现）。本工具的两个模式在 ci.yml「Guard execution-face」步里执行（`--selftest` + `--list`），所以这条门自己不会重蹈「写了没人跑」。用法：`python scripts/run_guards.py`｜`--list`｜`--selftest`（0=无失败 / 1=有格越期望或有尺无人跑 / 2=电池自拒）。
 - `check_plugin_sync.py` 的索引缺口补齐登记（本轮 cl7 落地时实测出的历史欠账）：
 - `flush_github.mjs` — **GitHub 缺陷外发通道 Node 入口**：走 MCP stdio 调 `github_flush_execute`，把 `report_bug` 入账的缺陷推到远端 issue。用法：`node scripts/flush_github.mjs [--limit 50] [--timeout-ms 30000]`（需 `GITHUB_TOKEN`，凭据只从环境注入）。
 - `output_validate.py` — **交付物硬门 CLI 形态**：`output_validate`(R113) 的命令行入口（与 MCP/skill 同一真源），逐件校验 path/check_key + invariant，退出码即门禁结论。用法：`python scripts/output_validate.py <project_dir> --artifacts '[{"path":"README.md","contains":"FIST"}]'`。
@@ -881,10 +881,16 @@
   `docs/tasks/backlog/TASK-NNN-*.yaml`（编号递增；每份 yaml 落一行机器锚 `dedupe_key: <sha1(key)[:16]>`，
   同键重跑即跳过——键的散文会漂，锚不会；ABORT 分支级发现按去掉远端前缀的分支名入池，
   gitcode/ 与 origin/ 两条镜面只占一单，P1）；默认扫描+写 yaml，
-  `--scan-only` 只出报告，`--apply` 额外做 ff-only 无分叉快进合入（真合并仍是人的决定），
-  `--no-fetch` 离线档。rc：0=无事 / 1=无法自证 / 2=发现待办。
-  `--selftest` 六格：干净分支巡检 / 干净标记 / pool_findings 逐类入池 / 重跑幂等且镜面去重 /
-  整串中文键不落到 `TASK-NNN-.yaml`（退化为键哈希 slug）/ 沙箱写不动真任务池。
+  `--scan-only` 只出报告，`--apply` 额外做 ff-only 无分叉快进合入（真合并仍是人的决定）——
+  快进的落点是**当前签出分支**，所以 R94 起有三道前置：工作树干净 + HEAD 就站在基线对应的本地分支上
+  + 逐条 `--ff-only` 且第一条不合常理即停；任一不成立即整批不动并把原因打报告（上一版没有前置、
+  非零 rc 全被吞掉、每轮还空转一次 `git checkout`），
+  `--no-fetch` 离线档。rc：0=无事 / 1=无法自证或 `--apply` 被前置挡住 / 2=发现待办。
+  `--selftest` 十格：干净分支巡检 / 干净标记 / pool_findings 逐类入池 / 重跑幂等且镜面去重 /
+  整串中文键不落到 `TASK-NNN-.yaml`（退化为键哈希 slug）/ 沙箱写不动真任务池 /
+  `--apply` 四格（基线上快进成功且基线 sha 前进 / 错签出整批不动 / 脏树整批不动 / 分叉分支永不进快进面）。
+  四格各有变异对照：拿掉任一道前置、或把合并面放宽到全部处置，必有对应格红；本轮正是这四格抓到
+  `probe_branches` 里 `merge-base` 漏传 `cwd`（真仓 cwd 恰等于 ROOT，这一格在真实跑法里看不见）。
   用法 `python scripts/whisperer_patrol.py [--scan-only|--apply] [--no-fetch] [--selftest]`。
 - `whisperer.py`（2026-10-22 主机 b0693a6 入仓，gitcode/main 线）— **风语者 Step 0-4 编排真源**：
   `--scan-only`（默认）/`--auto-merge`/`--self-test`，旗名带连字符，与本文件的 `--selftest` 不是同一个旗。
@@ -892,3 +898,24 @@
   `git checkout master` + `git reset --hard` + `git push --force HEAD:main HEAD:master`（两远端），
   无人值守跑它等于让定时脚本对共享线强推——已入池 TASK-018（P1）待裁决，裁决前面包保持排除。
   与 `whisperer_patrol.py` 的分工：这份管编排（含合入动作），那份管探测与入池（零共享线副作用）。
+- `check_bug_refs.py`（2026-10-22 `cef1e9c` 主机入仓，BUG-373 出路①的第二把尺）—
+  **代码/文档里 `BUG-n` 引用 ↔ 账本 `memory/bugs.md` 对账**：`git ls-files` 取跟踪面（.mbt/.py/.md/.yml/
+  .yaml/.json/.ps1/.sh/.toml，排除 `_build`/`temp`/`.git`/`plugins`/`reports`/`docs/archive` 等），
+  逐行正则 `\bBUG-\d+\b` 对账本抬头 `## BUG-n ... STATUS` 分三档：OK（存在）/ ORPHAN（账本无此编号）/
+  CLOSED（账本已 FIXED/DUPLICATE/FALSE_POSITIVE）。`--selftest` 三格合成失配（ok/orphan/closed），
+  rc：0=只报告（默认）/ 1=`--strict` 下 orphan 或 closed 存在 / 2=自证失败。
+  **现状读数（2026-10-22 本机实测）**：默认档 rc=0、命中量大到「…还有 7177 处」这一档，
+  其中 CLOSED 占绝大多数（本仓习惯在注释里留 BUG 号作历史溯源）⇒ `--strict` 当门是永久红，
+  这一把只能当报告面；要给「悬空（ORPHAN）」上硬门，请走已接 CI 的 `check_bug_reference_integrity.py`
+  （J1 族，棘轮已压到 0，判据口径不同：只管悬空不管引到已关号）。两份同族实现待裁，见 TASK-020。
+  用法 `python scripts/check_bug_refs.py [--selftest|--strict] [--bugs memory/bugs.md]`。
+- `fist-pr-automator.py`（2026-10-22 `cef1e9c` 主机入仓）— **yaml → 门 → push → 开 PR/MR → merge 流水线**：
+  三参跑法 `python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode>`，读 `branch`/`title`/`base`/
+  `repo`/`remote`/`gate`/`merge` 字段，先跑 `scripts/fist-gate.py`（rc≥1 即停），再 `git push -u`，
+  然后用 curl 打 GitHub API v3 / GitCode API v5（token 只从 `GITHUB_TOKEN`/`GITCODE_TOKEN` 环境变量读），
+  默认还会 `merge`（squash）。rc：0=ok / 1=blocked / 2=degraded；`--selftest` 一格守它自带的
+  最小 yaml 解析器。**这是本仓唯一会「自己合并代码」的脚本**，与金条四（不可逆操作执行权留人）正面冲突，
+  因此 `EXCLUDE_EXACT` 排除其无参自动发现格（无参 `raise SystemExit(str)` ⇒ 恒 rc=1 的永久红格），
+  电池里只保留 `--selftest` 一格；合入动作本身挂 TASK-021 待裁，任何自动化都不得默认调它。
+  用法 `python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode>`（人工触发）。
+
