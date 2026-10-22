@@ -3,14 +3,23 @@
 """BUG-130/BUG-133 常驻判据：native 后端内存安全探针（不含任何 FIST 业务码）。
 
 **2026-10-22 改指现役后端（BUG-383）**：v0.3.10 起本仓 native 后端已由 `mizchi/sqlite` 换成
-`daqing/sqlite@0.4.0`（后者用不透明外部类型 `type Sqlite3` + `#borrow`，133 那族「裸指针当 MoonBit
-对象」在形态上不存在）。探针原钉 `import "mizchi/sqlite"`，换后端后**连依赖都解析不了**
+`daqing/sqlite@0.4.0`。探针原钉 `import "mizchi/sqlite"`，换后端后**连依赖都解析不了**
 （`Failed to solve package …` rc=255）⇒ 判据自己先坏，native 覆盖面被这道失效的门长期挡住
 （CI 红话是「尺子坏了」而不是「缺陷在场」）。本次把它改指 `daqing/sqlite`：两者公开 API 同形
 （`Database::open/exec/prepare/query`、`Statement::bind/execute/step/column/finalize`、
 `SqlValue::{Int,Text}`），差异只有 `SqlValue::Int` 收 `Int32`（故 `one_round` 形参改 `Int32`）。
 探针的**语义与四档退出码契约不变**：它现在回答的是「我们真正发布的 daqing FFI 会不会崩」，
 而不是「旧后端会不会崩」。
+
+**换后端并没有换掉这类缺陷（2026-10-22 WSL 实测，本文件最重要的读数）**：改指 daqing 后连跑
+**40 抽仍崩 1 次**（`TALLY {'sigabort': 1, 'ok': 39}`）⇒ 之前「daqing 用不透明外部类型 + `#borrow`，
+133 那族在形态上不存在」的推断**被实测推翻**。所以：
+① 依赖侧 native 内存安全缺陷是**跨实现存在**的（mizchi 时代 3/12 一档、daqing 时代 1/40 一档），
+   不是某一个包写坏了；
+② CI 里 `--runs 12` 在 2.5% 量级命中率下**漏检概率约 74%**，故「门绿」只能读成「这一发没抽中」，
+   不能读成「native 已安全」——与账本 BUG-133 的关闭条件（抽检连发 0 崩 + 干净树 native 全量通过）一致；
+③ 全量测试二进制（如 `src/ops/ops.blackbox_test.exe`）的**游走式 SIGSEGV/SIGABRT** 与本探针同源：
+   WSL 实测同一用例清 temp 前后可分别崩溃与全过，属同一族概率性堆损坏，不归因到某个用例。
 
 它证明什么
 ----------
@@ -338,7 +347,8 @@ def main() -> int:
               "但 0/N **不等于缺陷已修**——同一支尺、同一次会话连跑两发就给出过 3/12 与 0/12 两端，"
               "这是概率性失效；真正的关闭条件在账本 BUG-133（抽检连发 0 崩溃 + 干净树 native 全量通过）。")
         return RC_OK
-    print("VERDICT: 缺陷在场 ⇒ BUG-133（mizchi/sqlite native FFI 裸指针/Bytes 越界）未修，"
+    print("VERDICT: 缺陷在场 ⇒ 依赖侧 sqlite native FFI 的内存安全缺陷未修（现役后端 daqing/sqlite@0.4.0；"
+          "2026-10-22 WSL 实测 40 抽 1 崩，与历史 mizchi 时代的 3/12 同族——换依赖没有换掉这一类缺陷），"
           "BUG-130 的 CI 红是该缺陷的读面。")
     return RC_CRASH
 
