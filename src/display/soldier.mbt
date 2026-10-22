@@ -39,6 +39,11 @@ pub fn soldier_type_count() -> Int32 {
 /// 兵种角色映射（展示层）：把任务关键词映射到 8 兵种之一。
 /// 按 docs §8.2 攻坚任务类型的关键词匹配，未知回退到「工兵」（工具链 + 通用模型，最通用）。
 /// 参数：keywords(可选，任务描述关键词，逗号/空格分隔)。
+///
+/// 匹配表的**顺序必须与 `soldier_types()` 一致**（侦查兵→骑兵→炮兵→特种兵→工兵→
+/// 医疗兵→通信兵→后勤兵）：多词命中时**先出现的兵种优先**，顺序即优先级。
+/// 此前顺序与 `soldier_types()` 不一致（骑兵/工兵被排到末尾、医疗兵提前），
+/// 导致「修复 环境」「脚本 批量」这类多命中关键词的归类随表序漂移、违背文档定的优先级。
 pub fn soldier_type_of(keywords : String) -> String {
   let kw = keywords
   if kw.is_empty() {
@@ -49,6 +54,12 @@ pub fn soldier_type_of(keywords : String) -> String {
       "侦查兵",
       [
         "情报", "调研", "搜索", "文档", "速读", "search", "research", "feasibility",
+      ],
+    ),
+    (
+      "骑兵",
+      [
+        "短平快", "高频", "批量", "琐事", "quick", "fast", "batch", "bulk",
       ],
     ),
     (
@@ -66,6 +77,12 @@ pub fn soldier_type_of(keywords : String) -> String {
       ],
     ),
     (
+      "工兵",
+      [
+        "环境", "依赖", "脚本", "搭建", "build", "env", "script", "install",
+      ],
+    ),
+    (
       "医疗兵",
       ["修复", "故障", "恢复", "抢救", "fix", "recover", "bug", "error"],
     ),
@@ -77,22 +94,7 @@ pub fn soldier_type_of(keywords : String) -> String {
     ),
     (
       "后勤兵",
-      [
-        "整理", "分配", "归档", "资源", "整理", "organize", "archive",
-        "alloc",
-      ],
-    ),
-    (
-      "工兵",
-      [
-        "环境", "依赖", "脚本", "搭建", "build", "env", "script", "install",
-      ],
-    ),
-    (
-      "骑兵",
-      [
-        "短平快", "高频", "批量", "琐事", "quick", "fast", "batch", "bulk",
-      ],
+      ["整理", "分配", "归档", "资源", "organize", "archive", "alloc"],
     ),
   ]
   let kws = kw.to_lower()
