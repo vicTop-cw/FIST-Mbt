@@ -1,0 +1,14 @@
+id: TASK-014
+title: "清理分支 fix/guard-docstring-correct-measurement 的未解冲突标记"
+dedupe_key: "bdca400276e8a7dd"
+priority: P1
+status: backlog
+assignee: atomcode
+discovered_by: whisperer-script
+discovered_at: "2026-10-22T01:10:13+00:00"
+
+problem: >
+  分支 origin/fix/guard-docstring-correct-measurement 含未解决冲突标记（9 个文件），合入前必须先人工解标记；直接 cherry-pick 会把标记带进 commit（TASK-001 实证形状 259b56a8）
+
+evidence: |
+  whisperer probe_branches()：ahead=1 cherry_plus=1 命中文件 origin/fix/guard-docstring-correct-measurement:.github/workflows/ci.yml, origin/fix/guard-docstring-correct-measurement:docs/agent-map.md, origin/fix/guard-docstring-correct-measurement:scripts/README.md, origin/fix/guard-docstring-correct-measurement:scripts/check_demo_isolation.py, origin/fix/guard-docstring-correct-measurement:scripts/check_mbti_sync.py, origin/fix/guard-docstring-correct-measurement:scripts/check_plan_landing.py, origin/fix/guard-docstring-correct-measurement:scripts/run_guards.py, origin/fix/guard-docstring-correct-measurement:src/core/pkg.generated.mbti, origin/fix/guard-docstring-correct-measurement:src/router/pkg.generated.mbti

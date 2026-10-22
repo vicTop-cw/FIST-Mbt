@@ -1,0 +1,14 @@
+id: TASK-013
+title: "清理分支 feat/guard-check-merge-markers 的未解冲突标记"
+dedupe_key: "11a2d9333c67b0e3"
+priority: P1
+status: backlog
+assignee: atomcode
+discovered_by: whisperer-script
+discovered_at: "2026-10-22T01:10:13+00:00"
+
+problem: >
+  分支 origin/feat/guard-check-merge-markers 含未解决冲突标记（15 个文件），合入前必须先人工解标记；直接 cherry-pick 会把标记带进 commit（TASK-001 实证形状 259b56a8）
+
+evidence: |
+  whisperer probe_branches()：ahead=3 cherry_plus=3 命中文件 origin/feat/guard-check-merge-markers:.github/workflows/ci.yml, origin/feat/guard-check-merge-markers:cmd/cli/upgrade_core.mbt, origin/feat/guard-check-merge-markers:docs/agent-map.md, origin/feat/guard-check-merge-markers:scripts/README.md, origin/feat/guard-check-merge-markers:scripts/check_demo_isolation.py, origin/feat/guard-check-merge-markers:scripts/check_exit_code_contract.py, origin/feat/guard-check-merge-markers:scripts/check_mbti_sync.py, origin/feat/guard-check-merge-markers:scripts/check_plan_landing.py, origin/feat/guard-check-merge-markers:scripts/run_guards.py, origin/feat/guard-check-merge-markers:src/core/pkg.generated.mbti, origin/feat/guard-check-merge-markers:src/ops/moon.pkg, origin/feat/guard-check-merge-markers:src/router/pkg.generated.mbti, origin/feat/guard-check-merge-markers:src/server/issue_scan.mbt, origin/feat/guard-check-merge-markers:src/server/issue_scan_test.mbt, origin/feat/guard-check-merge-markers:src/server/issue_scan_wbtest.mbt
