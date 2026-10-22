@@ -179,7 +179,7 @@
   `--self-test`**，与全仓惯例对齐）。自检 G1 会真跑 `fist-gate.py --scan` 并区分
   绿 / DEGRADED(rc=2) / 红（红要印末行原因，不只印 rc）。
 
-### 2026-10-22 补登记（v0.3.10 升版对齐时 `check_scripts_index` 现读两把漏网尺 + 一把假登记）
+### 2026-10-22 补登记（v0.3.10 升版对齐时 `check_scripts_index` 现读三把漏网尺 + 一把假登记）
 
 - `check_bug_refs.py` — **引用面「代码里的 BUG-n」↔ 账本存在性守卫（BUG-373 出路面）**：全仓扫
   `BUG-<n>` 引用，三档判定——OK（账本里有）/ ORPHAN（引用了但账本没有这个编号）/ CLOSED（引用了
@@ -198,3 +198,10 @@
   **环境态与代码红**（冷格式化器、依赖缓存过旧报 DEGRADED + 可执行提示，判据链保持只读、绝不自行
   预热）；`--scan` 分支普查（合入者巡检自动进料口）、`--selftest` 逐格驱动。
   用法 `python scripts/fist-gate.py [--scan|--selftest] [树]`。
+- `fist-task-pool.py` — **任务池 yaml 管理器（`.git/fist/tasks/`，风语者 Tier2 执行面）**：
+  子命令 `init | publish <yaml> | claim <tid> <machine> | release <tid> | archive <tid> | fail <tid> |
+  list [--status X] [--machine Y]`，把 backlog/claimed/done/failed 四态目录与 machines.yaml 注册表管成
+  文件协议（多机认领防抢）。自带极简 yaml 解析（同 `check_ci_step_position.py` 的纪律：判据/工具不把自己的
+  可用性交给 PyYAML 是否在环境里）。出错 `ERROR <msg>` 走 stderr、exit 1。**登记补注**：本件由
+  `38bb7358`（PR #5 线）合入 master 时漏了索引登记——`check_scripts_index` 现读第三条红，随本单补齐；
+  与同文件 `slave-branch-merge.ps1`/`whisperer.py` 的登记方式一致（按 ` - \`<name>\`` 抬头形状点名）。
