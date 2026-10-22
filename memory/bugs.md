@@ -6109,3 +6109,21 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 
 ### FIXED(2026-10-22T02:01:06Z / BUG-367, BUG-368, BUG-369, BUG-373, BUG-374, BUG-375, BUG-376, BUG-377, BUG-378, BUG-358, BUG-359, BUG-360)
 - evidence: 批量收尾：HEAD cef1e9cb 已含全部修复 commit。v0.3.10 cherry-pick 回救 + whisperer.py HEAD 安全门 + 4 个守卫脚本修尺（check_mbti_sync/check_pkg_imports/check_template_ctrl/simulate_head_commit 退出码 rc=2 + cleanup_artifacts 豁免 _tool_registry.py + check_plan_landing 搬家态 + check_bug_refs.py 引用面对表）。moon check 0 errors / check_merge_markers PASS / moon build 0 errors。按记账规则 bug_fix 同一笔落点名小记，不再散改抬头。
+
+## BUG-379 [2026-10-22T11:20:00Z] [high] FIXED
+- summary: [test] `moon test --target js` 在 master 上**编译红**：`src/ops/rhop_native_wbtest.mbt` 六处调用 `rhop_poll_once`，而该函数在 `src/**` 与依赖包里**从未存在**（`rhop_poll.mbt` / `rhop_native.mbt` 两个候选实现文件在 master 上都不存在）⇒ 6 × `[4021] ... is unbound`，权威测试门等于坏的
+- detail: 实测：`moon test --target js` 用时 10s、rc=1，报 6 处 `rhop_poll_once is unbound`；`src/ops/pkg.generated.mbti` 还声明着 `pub fn rhop_poll_once(String, T, @ref.Ref[@hashset.HashSet[String]])` （.mbti 与源码不同步的孤儿声明）。
+处置：**移除孤儿测试文件** + `moon info` 重生成 .mbti（声明随之消失）。**不补实现**的理由：依赖包 `vicTop-cw/RX-MBT/rhop` 未暴露按文件解码 API（`RhopEnvelope` 的 `v/alg/ct` 字段非 pub，外部读不到），仓内无法在不复制协议细节的前提下正确实现；补实现需要依赖侧开 API 或走 `from_filesystem_with` 事件面，属独立任务。
+验证：`moon check --target js` → **rc=0（0 errors，`[4021]` 计数 0）**。
+- reported_by: agent-skill-docs（R37 实测）
+
+## BUG-380 [2026-10-22T11:20:00Z] [high] OPEN
+- summary: [toolchain] Windows 上 `moon test --target js` 的**执行面**失败：测试 harness 报 `failed to parse args: Unterminated string in JSON at position N` 后 `The test executable exited with exit code: 1`
+- detail: 实测（本机 moon 0.1.20261016 + Node ≥24）：编译绿的前提下 `moon test --target js` 仍 rc=-1，成片 `failed to parse args: Unterminated string in JSON`；**pristine master 上 `moon test src/core` 复现同一现象**⇒ 与本轮改动无关。
+同族证据：仓内 `reports/2026-10-21-slave-rhop-poll-once-fix-report.md` 记「裸 `moon fmt` 因 `\?\` 路径 ICE」，两处都指向 Windows 长路径前缀 `\\?\` 进入 moon 的参数序列化/子进程调用。
+影响：**权威稳定门槛（JS 后端全量 `moon test`）在本机不可读**——只能读到 `moon check` 面。
+建议：① 复现最小用例（空包 + 一条 test）并上报 moon 上游；② 短期以 `moon test --target js <pkg>` 逐包跑绕过，或在 CI（Linux runner）上读全量；③ 若确认为 `\\?\` 前缀导致，检查 moon 的 `--test-args` 序列化与 worktree 长路径设置。
+- reported_by: agent-skill-docs（R37 实测）
+
+### FIXED(2026-10-22T11:20:00Z / BUG-379)
+- evidence: `git rm src/ops/rhop_native_wbtest.mbt`（孤儿测试：引用从未存在的 `rhop_poll_once`）+ `moon info` 重生成 `src/ops/pkg.generated.mbti`（孤儿声明消失）；实测 `moon check --target js` **rc=0 / 0 errors / `[4021]` 计数 0**（修前 6 × `[4021] is unbound`，`moon test` 10s 内即编译红）。配套新开 BUG-380 记录 runner 面预存缺陷。

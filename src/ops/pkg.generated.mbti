@@ -3,9 +3,6 @@ package "vicTop-cw/fist-mbt/src/ops"
 
 import {
   "moonbitlang/core/debug",
-  "moonbitlang/core/hashset",
-  "moonbitlang/core/ref",
-  "vicTop-cw/RX-MBT/rhop",
   "vicTop-cw/fist-mbt/src/core",
   "vicTop-cw/fist-mbt/src/engine",
 }
@@ -120,8 +117,6 @@ pub fn pipeline_tick(@engine.FistEngine, String, String, ns? : String, timeout_s
 pub fn preset_loop(String) -> Result[(Array[String], String), String]
 
 pub fn read_meta_prompt(String) -> String?
-
-pub fn[T : @rhop.RhopCipher] rhop_poll_once(String, T, @ref.Ref[@hashset.HashSet[String]]) -> Array[@rhop.RhopPacket]
 
 pub fn sd_agent_contract(String) -> String
 
