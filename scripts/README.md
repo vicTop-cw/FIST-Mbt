@@ -206,7 +206,7 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
 > 只读探测/入池那一半在副机分支上另址 `whisperer_patrol.py`（双活解，等 TASK-019 裁决）。
 > 旗标口径以 main 为准：`99bacbe` 已把 `--self-test` / `--selftest` 两个形状收进同一 dest，副机 R96 首稿写「只认带连字符的、照抄习惯会打空」已被这一版作废。
 - `fist-pr-automator.py` — **yaml → PR → 门禁 →（显式）合并流水线**：读一份 PR 定义 yaml，本地跑统一门禁，推分支，再用 curl 经 `GITHUB_TOKEN`/`GITCODE_TOKEN` 开 PR/MR；**合入默认关**——只有 yaml 明写 `merge: true` 才走 squash 合并（R113/TASK-021：不可逆动作的执行权留在调用者手里，缺省/`false`/`yes` 一律不合）。`--dry-run` 只打印将执行的步骤（不起子进程、不碰网络、不读 token 值），先看计划再跑。rc：0=ok / 1=blocked / 2=degraded 或用法自拒；纯 ASCII、只用标准库（`check_py_stdout_encoding` 对它出的是 E2 预告：今天不红，写第一句中文结论就得补闸）。
-- `check_bug_refs.py` — **代码注释/测试标题里的 `BUG-n` ↔ 账本抬头 对表尺（BUG-373，主机 `cef1e9c` 落仓）**：三档 OK/ORPHAN/CLOSED，`--selftest` + `--bugs <账本>`。**与 `check_bug_reference_integrity.py`（副机 R48）是同一意图的两把尺**，而 main 这版被 peer 分支 `slave/fix/bug-refs-guard-semantics`（`484aced`）实测三处硬伤：假自测 / 退出码反用 / 把正常注释当违规 ⇒ 登记归登记，语义修复归那条分支，两把尺的分工与合并由 TASK-020 裁决。**这条登记不是选边**：它只让 `check_scripts_index` 出真实缺口。
+- `check_bug_refs.py` — **代码注释/测试标题里的 `BUG-n` ↔ 账本抬头 对表尺（BUG-373，主机 `cef1e9c` 落仓）**：三档 OK/ORPHAN/CLOSED，`--selftest` + `--bugs <账本>`。peer 分支 `slave/fix/bug-refs-guard-semantics`（`484aced`）修的假自测/退出码/CLOSED 误判已并入；**R115/TASK-020 裁决：与 `check_bug_reference_integrity.py` 两把尺并存、各钉一面**——前者管 `.mbt` 注释面悬空（CI 棘轮 0），本尺管全仓普查 + 可分面的 `--strict`（只判注释面 ORPHAN，字面量/叙述面只报）。**这条登记不是选边**：它只让 `check_scripts_index` 出真实缺口。
 **重复读数（本轮清掉的 4 行）**：`run_guards.py` 曾同时挂 4 条自述互不相同的条目（24 把尺/34 格失败 2、24 把尺/35 格、26 把尺/38 格 ×2 逐字相同），`check_bug_reference_integrity.py` 挂 2 条逐字相同。`check_scripts_index` 只查「名字在不在」，重复与互斥读数一律放过 —— 这就是「同一工具多份历史读数并存」能躺在索引文件里没人管的机理。处理：留 R48 现读那条，删被取代的 2 条与逐字重复的 1 条，另删 `check_bug_reference_integrity.py` 的逐字重复 1 条。还有一条**假阳形状**必须记：散文引子 `- \`check_plugin_sync.py\` 的索引缺口补齐登记（…）：` 按行首反引号名统计会被当成条目/重复，但它不是 —— 计数式检测的第一手误差就长这样，所以本轮按内容逐条判定、不按计数删除。
 
 ### 2026-10-22 新增：`check_dist_snapshot.py` / `refresh_dist.py`
@@ -281,11 +281,14 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
 - `whisperer.py` — **风语者（Whisperer）自动化巡检**：Step 0 HEAD 安全门（篡改则记录并拒跑，见 `memory/whisperer-tamper.log`）→ Step 1 分支普查（调 `fist-gate.py --scan`）→ Step 2 agent 认领检测 → Step 3 问题扫描自动写 `docs/tasks/backlog/*.yaml`。`--selftest` 驱动各步。Windows GBK 终端会炸 emoji，脚本首行强钉 stdout/stderr UTF-8。用法 `python scripts/whisperer.py [--selftest]`。
 
 ### 2026-10-22 补登记（v0.3.10 升版对齐时 `check_scripts_index` 现读两把漏网尺 + 一把假登记）
-- `check_bug_refs.py` — **引用面「代码里的 BUG-n」↔ 账本存在性守卫（BUG-373 出路面）**：全仓扫
+- `check_bug_refs.py` — **引用面「代码里的 BUG-n」↔ 账本存在性守卫（BUG-373 出路面，R115/TASK-020 定面）**：全仓扫
   `BUG-<n>` 引用，三档判定——OK（账本里有）/ ORPHAN（引用了但账本没有这个编号）/ CLOSED（引用了
-  已关条目，注释没清）。账本编号自解析 `memory/bugs.md` 抬头（不 import gen_plugins，判据不自证）。
-  **默认只报不判（rc=0），`--strict` 才升格：ORPHAN→2、CLOSED→1**——与只报面的
-  `check_bug_reference_integrity.py`（棘轮+构成读数）互补：前者盯「关没关干净」，本尺盯「存不存在」。
+  已关条目，仅信息）。账本编号自解析 `memory/bugs.md` 抬头（不 import gen_plugins，判据不自证）。
+  每条引用按**面**分类：comment（`//`/`#` 之后）/ string（代码字面量）/ narrative（`.md` 等文档）；
+  **默认只报不判（rc=0），`--strict` 只判注释面 ORPHAN**——超过 `STRICT_ORPHAN_CEILING` 才 rc=1，
+  测试文件里注释面编号若在同文件字面量面出现按 S1b 降档（夹具说明注释）。CLOSED 默认仅信息，
+  `--strict-closed` 才升格。与 `check_bug_reference_integrity.py`（`.mbt` 注释面 J1 棘轮，CI 面）分工：
+  那把守 `.mbt` 单面，本尺守全仓普查与跨文件类型的面分类。
   用法 `python scripts/check_bug_refs.py [--selftest|--strict] [--bugs <path>]`。
 - `fist-pr-automator.py` — **yaml → PR → gate → merge 流水线自动化**：读 PR 定义 yaml → 本地跑统一
   门禁（`fist-gate.py`）→ push 分支 → curl 开 PR/MR（`GITHUB_TOKEN`/`GITCODE_TOKEN` 只从环境注入，
@@ -703,16 +706,18 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
   `git checkout master` + `git reset --hard` + `git push --force HEAD:main HEAD:master`（两远端），
   无人值守跑它等于让定时脚本对共享线强推——已入池 TASK-018（P1）待裁决，裁决前面包保持排除。
   与 `whisperer_patrol.py` 的分工：这份管编排（含合入动作），那份管探测与入池（零共享线副作用）。
-- `check_bug_refs.py`（2026-10-22 `cef1e9c` 主机入仓，BUG-373 出路①的第二把尺）—
+- `check_bug_refs.py`（2026-10-22 `cef1e9c` 主机入仓，BUG-373 出路①的第二把尺；R115/TASK-020 定面）—
   **代码/文档里 `BUG-n` 引用 ↔ 账本 `memory/bugs.md` 对账**：`git ls-files` 取跟踪面（.mbt/.py/.md/.yml/
-  .yaml/.json/.ps1/.sh/.toml，排除 `_build`/`temp`/`.git`/`plugins`/`reports`/`docs/archive` 等），
-  逐行正则 `\bBUG-\d+\b` 对账本抬头 `## BUG-n ... STATUS` 分三档：OK（存在）/ ORPHAN（账本无此编号）/
-  CLOSED（账本已 FIXED/DUPLICATE/FALSE_POSITIVE）。`--selftest` 三格合成失配（ok/orphan/closed），
-  rc：0=只报告（默认）/ 1=`--strict` 下 orphan 或 closed 存在 / 2=自证失败。
-  **现状读数（2026-10-22 本机实测）**：默认档 rc=0、命中量大到「…还有 7177 处」这一档，
-  其中 CLOSED 占绝大多数（本仓习惯在注释里留 BUG 号作历史溯源）⇒ `--strict` 当门是永久红，
-  这一把只能当报告面；要给「悬空（ORPHAN）」上硬门，请走已接 CI 的 `check_bug_reference_integrity.py`
-  （J1 族，棘轮已压到 0，判据口径不同：只管悬空不管引到已关号）。两份同族实现待裁，见 TASK-020。
+  .yaml/.json/.ps1/.sh/.toml），`EXCL`（`_build`/`temp`/`.git`/`plugins`/`reports`/`docs/archive` 等）
+  R115 起**真生效**（此前只声明没过滤，`reports/` 169 条噪音就是这么进来的）。逐行正则对账本抬头分三档，
+  并按面分类：comment（`//`/`#` 之后）/ string（代码字面量）/ narrative（文档）。**`--strict` 只判
+  注释面 ORPHAN**，棘轮 `STRICT_ORPHAN_CEILING=3`（现读 3 条全在 `commit_bug335_lock.ps1` 注释；
+  测试文件的夹具说明注释按 S1b 降档）；字面量与叙述面只报，CLOSED 仅信息（`--strict-closed` 才升格）。
+  与已接 CI 的 `check_bug_reference_integrity.py`（`.mbt` 注释面 J1=0）**两把尺并存、各钉一面**。
+  **现状读数（2026-10-22 R115 本机实测）**：7103 处引用 / OK 667 / ORPHAN 206（comment 3、string 67、
+  narrative 136）/ CLOSED 6230；默认与 `--strict` 均 rc=0。`--selftest` 24 格（三档计数、三面分类、
+  夹具降档、排除面、退出码/棘轮、真语料校准），rc：0=通过/只报告 / 1=注释面 ORPHAN 超棘轮或
+  `--strict-closed` 命中 / 2=账本不存在。
   用法 `python scripts/check_bug_refs.py [--selftest|--strict] [--bugs memory/bugs.md]`。
 - `fist-pr-automator.py`（2026-10-22 `cef1e9c` 主机入仓，R113 收紧默认）— **yaml → 门 → push → 开 PR/MR →（显式）merge 流水线**：
   三参跑法 `python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode> [--dry-run]`，读 `branch`/`title`/`base`/
@@ -983,10 +988,8 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
 
 ### 2026-10-22 补登记（v0.3.10 升版对齐时 `check_scripts_index` 现读三把漏网尺 + 一把假登记）
 
-- `check_bug_refs.py` — **引用面「代码里的 BUG-n」↔ 账本存在性守卫（BUG-373 出路面）**：全仓扫
-  `BUG-<n>` 引用，三档判定——OK（账本里有）/ ORPHAN（引用了但账本没有这个编号）/ CLOSED（引用了
-  已关条目，注释没清）。账本编号自解析 `memory/bugs.md` 抬头（不 import gen_plugins，判据不自证）。
-  `check_bug_reference_integrity.py`（棘轮+构成读数）互补：前者盯「关没关干净」，本尺盯「存不存在」。
+- `check_bug_refs.py` — 详见前文同名条目（R115/TASK-020 定面：`--strict` 只判注释面 ORPHAN，
+  字面量/叙述面只报，CLOSED 仅信息；与 `check_bug_reference_integrity.py` 两把尺并存、各钉一面）。
   用法 `python scripts/check_bug_refs.py [--selftest|--strict] [--bugs <path>]`。
 - `fist-pr-automator.py` — **yaml → PR → gate → merge 流水线自动化**：读 PR 定义 yaml → 本地跑统一
   门禁（`fist-gate.py`）→ push 分支 → curl 开 PR/MR（`GITHUB_TOKEN`/`GITCODE_TOKEN` 只从环境注入，

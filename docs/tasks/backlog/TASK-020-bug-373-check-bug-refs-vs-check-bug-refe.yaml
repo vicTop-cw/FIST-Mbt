@@ -2,7 +2,8 @@ id: TASK-020
 title: "BUG-373 两把判据同族并存，需裁口径或合尺"
 dedupe_key: "16000cc54591293e"
 priority: P2
-status: backlog
+status: in_review
+status_note: "R115 裁决（两把尺并存、各钉一面）：check_bug_reference_integrity.py 继续管 .mbt 注释面悬空（CI 棘轮 0）；check_bug_refs.py 改为全仓普查 + 分面 --strict（只判注释面 ORPHAN，棘轮 3，字面量/叙述面与 CLOSED 仅信息），并修好 EXCL 未生效的缺陷。交付读数：7103 处引用 / OK 667 / ORPHAN 206（comment 3 / string 67 / narrative 136）/ CLOSED 6230，默认与 --strict 均 rc=0。转 done 需主线收录本提交点名。"
 assignee: atomcode
 discovered_by: whisperer-script
 discovered_at: "2026-10-22T01:41:15+00:00"
