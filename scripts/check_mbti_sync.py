@@ -52,8 +52,15 @@ MBTI_NAME = "pkg.generated.mbti"
 # 形状 → (.mbti 里的声明正则, 源 .mbt 里的定义正则)
 #   源侧允许 `pub` / `pub(all)` / 无前缀三种写法（`.mbti` 只列 pub 项，但源码里可能写 pub(all)）。
 SHAPES = {
-    "fn":     (re.compile(r"^\s*pub fn (\w+)"),
-               re.compile(r"^\s*(?:pub(?:\(all\))? )?fn (\w+)")),
+    # 泛型顶层 fn（BUG-382）：形如 `pub fn[T : @rhop.RhopCipher] rhop_poll_once(...)`——`fn` 后紧跟
+    # 类型参数列表、与名字之间没有空格。原正则 `pub fn (\w+)` 要求 `fn` 后**必须有空格再接名字**，
+    # 这类声明两侧都不匹配 ⇒ 根本不进判据宇宙（实测：全仓唯一的泛型顶层 fn 恰好是 2026-10-22 丢件的
+    # rhop_poll_once，本尺对它的悬空声明判 PASS）。放宽为可选 `[...]` 段。
+    # 限制：只认**单行**类型参数列表（`pub fn[\n  T : Foo,\n] name` 这类跨行写法的名字在后续行，仍不收；
+    # 本仓现无此形态，若将来出现需改成跨行状态机——此处如实标注，免得下一步又踩同样的隐形）。
+
+    "fn":     (re.compile(r"^\s*pub fn(?:\[[^\]]*\])? (\w+)"),
+               re.compile(r"^\s*(?:pub(?:\(all\))? )?fn(?:\[[^\]]*\])? (\w+)")),
     "struct": (re.compile(r"^\s*pub (?:all\()?struct (\w+)"),
                re.compile(r"^\s*(?:pub(?:\(all\))? )?struct (\w+)")),
     "enum":   (re.compile(r"^\s*pub (?:all\()?enum (\w+)"),
@@ -218,6 +225,25 @@ def selftest():
     cell("struct-violation-caught", any('struct Foo' in x for x in p), True)
     print("  ok  struct-violation-caught（扩展形状可红）")
 
+    # 2c) 泛型顶层 fn（BUG-382）：两侧都必须认得出 `pub fn[T : ...] name` 这一形状。
+    #     变异自证：把 SHAPES["fn"] 的两个正则各退回原形（`pub fn (` / `fn (`），本格即红。
+    gen_mbti = "pub fn[T : Foo] gen_api(String, T) -> Array[Int]\n"
+    gen_mbt = "pub fn[T : Foo] gen_api(s : String, x : T) -> Array[Int] {\n  []\n}\n"
+    d_gen = collect_decls(gen_mbti)
+    f_gen = collect_defs(gen_mbt)
+    cell("generic-fn-decl-collected", d_gen["fn"] == {"gen_api"}, True)
+    cell("generic-fn-def-collected", f_gen["fn"] == {"gen_api"}, True)
+    print("  ok  generic-fn-decl-collected / generic-fn-def-collected（泛型顶层 fn 两侧都进判据宇宙）")
+
+    # 2d) 悬空泛型声明必须判红 —— 这正是 2026-10-22 `rhop_poll_once` 丢件的形状：
+    #     .mbti 有 `pub fn[T : @rhop.RhopCipher] rhop_poll_once(...)`、源里无定义，
+    #     而旧判据判 PASS（声明根本没被收集，故"675 条全有定义"）。本格锁死它必红。
+    p, n = safe_judge("generic-dangling-caught",
+                      {'src/ops': {'fn': d_gen["fn"]}}, {'src/ops': {'fn': set()}})
+    cell("generic-dangling-caught", len(p) == 1 and 'gen_api' in p[0], True)
+    print("  ok  generic-dangling-caught（悬空泛型声明不再隐形：%s）"
+          % (p[0][:60] if p else "未编制"))
+
     # 3) 真实形状：本轮 HEAD 的 4 个缺符号 ⇒ 必红（用真实名字）
     real = {'src/server': {'fn': {'do_evolve_asset_register_with_search', 'parse_search_lines',
                                   'register_supervisor_tools', 'self_search_runner_default'}}}
@@ -322,6 +348,7 @@ def selftest():
         return 1
     print("SELFTEST OK（%d 格：干净不误红 / 合成违例必红 / 扩展形状(struct)可红 / 真实 4 符号必红 / "
           "私有函数不误 / 无 .mbt 包跳过 / .mbti 侧只收 pub 项 / 源侧认 pub(all) / "
+          "**泛型顶层 fn 两格（声明与定义各自入集）+ 悬空泛型声明必红一格（BUG-382）** / "
           "derive 承载三格（带 derive 不误红、不带照红）/ 缺额计入空转门 / "
           "**出路分流两格（工作树有=未提交 / 工作树无=真缺失）+ 向后兼容一格** / "
           "**判据空转的退出码真是 2（两格：emit_fatal 返 2 + 子进程 rc 是 2）**）"
