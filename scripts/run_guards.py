@@ -140,6 +140,11 @@ SPECIAL_CASES = [
     case("check_deprecated_site_list.py", "--selftest"),
     expected("cleanup_artifacts.py", 1,
              "预存红：工作树 DIRTY（temp/ 与 *.db 是运行物，本仓不 git clean 它们）", "--check"),
+    # 仓内发布快照 dist/fist-mbt.js 停在 0.3.9（moon.mod 0.3.10）——**已确认的真红**，不是假阳性：
+    # scripts/mcp_compat_shim.js 默认连的就是它。刷新命令 python scripts/refresh_dist.py
+    # （实测刷新后 node dist/fist-mbt.js version 回 v0.3.10）；发布流程产出后把本格改回 case(expect 0)。
+    expected("check_dist_snapshot.py", 1,
+             "dist/fist-mbt.js 快照 0.3.9 != moon.mod 0.3.10（照 shim 文档会拿到旧版本/旧工具集）；刷新见 scripts/refresh_dist.py"),
 ]
 
 
