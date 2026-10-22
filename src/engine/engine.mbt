@@ -263,7 +263,7 @@ pub fn FistEngine::execute_with_meta(
   rate_limited~ : Bool = false,
   failure_reason~ : String = "",
 ) -> Result[@core.Task, String] {
-  // 0. 预执行审计门禁必须真正前置（BUG-147）：gate 在 record_execution 之前。
+  // 0. 预执行审计门禁必须真正前置（BUG-176）：gate 在 record_execution 之前。
   // 否则空 deliverable 时 execute 的 gate 拒绝返回 Err，但 executions 已写入一行
   // 幽灵元数据，cost_stats 会 double-count。空交付物直接返回 Err，不落任何元数据。
   match self.audit_execute_gate(task_id, deliverable) {

@@ -4,6 +4,7 @@ import {
   "vicTop-cw/RX-MBT/rhop",
   "vicTop-cw/RX-MBT/rx",
   "moonbitlang/core/hashset",
+  "moonbitlang/core/ref",
   "moonbitlang/x/fs",
   "moonbitlang/core/debug",
   "moonbitlang/core/env",
