@@ -6109,3 +6109,26 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 
 ### FIXED(2026-10-22T02:01:06Z / BUG-367, BUG-368, BUG-369, BUG-373, BUG-374, BUG-375, BUG-376, BUG-377, BUG-378, BUG-358, BUG-359, BUG-360)
 - evidence: 批量收尾：HEAD cef1e9cb 已含全部修复 commit。v0.3.10 cherry-pick 回救 + whisperer.py HEAD 安全门 + 4 个守卫脚本修尺（check_mbti_sync/check_pkg_imports/check_template_ctrl/simulate_head_commit 退出码 rc=2 + cleanup_artifacts 豁免 _tool_registry.py + check_plan_landing 搬家态 + check_bug_refs.py 引用面对表）。moon check 0 errors / check_merge_markers PASS / moon build 0 errors。按记账规则 bug_fix 同一笔落点名小记，不再散改抬头。
+
+## BUG-147 [2026-10-10T00:00:00Z] [medium] FIXED
+- summary: [engine] `execute_with_meta` 把 `audit_execute_gate` 前置到 `record_execution` 之前——预执行审计门禁必须真正前置
+- detail: 补录说明：本条据 `reports/2026-10-10-r12-cycle1-report.md`（R12 Round 1 表格行）与 `src/engine/engine.mbt:231` 注释追记补录；**原始抬头在账本中缺失**（代码先引用、账本未入账——正是 BUG-373 要治的形状）。修复面：审计门禁顺序修正，报告「注释准确度」一节逐行核对注释与实现一致。
+- reported_by: agent-skill-docs（补录：先入账再引用，见 BUG-373）
+
+## BUG-327 [2026-10-19T00:00:00Z] [medium] FIXED
+- summary: [ocr] `ocr_scan` 对 `.mbt` 恒 `unsupported_ext` / 单文件目标静默 `files:[]` ⇒ `require_ocr` 门可**假绿**；改为 fail-closed（`reviewable_count=0` 时顶层 `ok` 强制 false）
+- detail: 补录说明：据 `memory/2026-10-19.md:20`（上报段：BUG-327 OPEN、非 BUG-165 重复）与代码内实现追记补录（`src/server/ocr_scan.mbt:385/394/414/548/551`、`src/server/server.mbt:2839/2945`）；原始抬头缺失。为何 FIXED：代码面已落 fail-closed 与 `ocr_reviewed=false + notice`，与 `ocr_effective_ok` 自述一致。
+- reported_by: agent-skill-docs（补录：先入账再引用，见 BUG-373）
+
+## BUG-333 [2026-10-19T00:00:00Z] [medium] FIXED
+- summary: [issue_scan] 精度不足：src 全量 9927 命中中 72.7% 为编译期已保证/子串近似噪音 ⇒「扫描→上报→修复」闭环不可用；落地默认降噪锁
+- detail: 补录说明：据 `memory/2026-10-19.md:158`（上报 BUG-333）与 `src/server/issue_scan.mbt:2327/2469`、`src/server/issue_scan_test.mbt:218/596` 注释追记补录；原始抬头缺失。为何 FIXED：AGENTS/README 已把「BUG-333 默认降噪锁」记为已落地能力，测试里带成对回归锁。
+- reported_by: agent-skill-docs（补录：先入账再引用，见 BUG-373）
+
+## BUG-336 [2026-10-19T00:00:00Z] [medium] FIXED
+- summary: [engine] `dag_cost_route` 负载感知 tiebreak：`load` 只在路由循环前一次性快照 ⇒ 等成本平局任务不会转向其他执行者；改为逐次计入
+- detail: 补录说明：据 `memory/2026-10-19.md:227`（Round 23 标题与根因段）与 `src/engine/engine_dag_ext.mbt:745` 注释追记补录；原始抬头缺失。为何 FIXED：报告标题为「负载感知冻结（寻虫→根因→修复→回归）」，代码注释描述已落逐次累计。
+- reported_by: agent-skill-docs（补录：先入账再引用，见 BUG-373）
+
+### FIXED(2026-10-22T11:00:00Z / BUG-147, BUG-327, BUG-333, BUG-336)
+- evidence: **补录收口（先入账再引用，BUG-373 口径）**：这 4 条此前只在 memory/reports 有追记、账本无抬头，导致 17 处代码注释引用悬空（`check_bug_reference_integrity` 判定面 17 > 上限 1）。本轮按其第一手追记补录抬头（provenance 写在各自 detail 内），并修掉一处**无任何追记**的误引编号（`src/server/issue_scan_wbtest.mbt` 原 BUG-384/385 记号已移除，只保留成对锁技术说明）。实测：`check_bug_reference_integrity` 判定面 **17 → 0（rc=0）**；账本抬头 361 → 365。
