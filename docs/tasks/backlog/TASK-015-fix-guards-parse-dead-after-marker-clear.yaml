@@ -2,7 +2,7 @@ id: TASK-015
 title: "清理分支 fix/guards-parse-dead-after-marker-clear 的未解冲突标记"
 dedupe_key: "42b78b76c9818f4b"
 priority: P1
-status: backlog
+status: in_review
 assignee: atomcode
 discovered_by: whisperer-script
 discovered_at: "2026-10-22T01:10:13+00:00"
@@ -12,3 +12,8 @@ problem: >
 
 evidence: |
   whisperer probe_branches()：ahead=3 cherry_plus=3 命中文件 origin/fix/guards-parse-dead-after-marker-clear:src/server/issue_scan.mbt, origin/fix/guards-parse-dead-after-marker-clear:src/server/issue_scan_test.mbt, origin/fix/guards-parse-dead-after-marker-clear:src/server/issue_scan_wbtest.mbt
+status_note: |
+  2026-10-22 对账（R123）：分支已并线——f84eac58 "Merge remote-tracking branch
+  'origin/fix/guards-parse-dead-after-marker-clear' into trial/merge-order"，该提交是 master 祖先；
+  且 gitcode/origin 两端 refs/heads/fix/guards-parse-dead-after-marker-clear 均已不存在。
+  无标记可解，转 in_review 待 owner 盖章；R4 STALE-BRANCH 已能拦住同类形状。
