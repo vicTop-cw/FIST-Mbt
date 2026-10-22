@@ -1,0 +1,14 @@
+id: TASK-012
+title: "清理分支 slave/fix/ecc-selftest-r72 的未解冲突标记"
+dedupe_key: "a44ef93472685ef7"
+priority: P1
+status: backlog
+assignee: atomcode
+discovered_by: whisperer-script
+discovered_at: "2026-10-22T01:10:13+00:00"
+
+problem: >
+  分支 gitcode/slave/fix/ecc-selftest-r72 含未解决冲突标记（3 个文件），合入前必须先人工解标记；直接 cherry-pick 会把标记带进 commit（TASK-001 实证形状 259b56a8）
+
+evidence: |
+  whisperer probe_branches()：ahead=2 cherry_plus=2 命中文件 gitcode/slave/fix/ecc-selftest-r72:src/server/issue_scan.mbt, gitcode/slave/fix/ecc-selftest-r72:src/server/issue_scan_test.mbt, gitcode/slave/fix/ecc-selftest-r72:src/server/issue_scan_wbtest.mbt
