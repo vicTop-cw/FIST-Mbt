@@ -310,6 +310,14 @@ jobs:
           python3 scripts/check_bug_reference_integrity.py --selftest
           python3 scripts/check_bug_reference_integrity.py
 
+      # TASK-008 第一批：scripts/ 命名词法门（N1 无角色名 / N2 连字符名，棘轮只许下降）。
+      # 词表真源 = scripts/NAMING.md 的两条 anchor 行；读不到词法即自拒 rc=2，不报「都合规」。
+      - name: Scripts naming guard (TASK-008：命名词法 ↔ NAMING.md anchor，N1/N2 棘轮)
+        shell: bash
+        run: |
+          python3 scripts/check_scripts_naming.py --selftest
+          python3 scripts/check_scripts_naming.py
+
       - name: Store-isolation probe (BUG-90：FIST_DB_PATH 必须真的改道，两格成对 + 合成违例)
         shell: bash
         run: |
