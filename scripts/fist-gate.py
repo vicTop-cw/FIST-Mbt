@@ -3,6 +3,8 @@
 import os, re, subprocess, sys, tempfile
 from datetime import datetime
 from pathlib import Path
+
+from moon_env_probe import moon_env
 # 统一把 stdout/stderr 钉成 UTF-8（CI 在 Linux UTF-8 下是无损 no-op）。
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -10,7 +12,9 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parent.parent
 EXC = ("_build", "temp", ".git", "node_modules")
-def run(cmd, cwd=None): return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+def run(cmd, cwd=None):
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", env=moon_env())
 def tracked(root):
     r = run(["git", "-C", str(root), "ls-files", "-z"])
     return None if r.returncode else [f for f in r.stdout.split("\0") if f.strip()]
@@ -407,7 +411,9 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parent.parent
 EXC = ("_build", "temp", ".git", "node_modules")
-def run(cmd, cwd=None): return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+def run(cmd, cwd=None):
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", env=moon_env())
 def tracked(root):
     r = run(["git", "-C", str(root), "ls-files", "-z"])
     return None if r.returncode else [f for f in r.stdout.split("\0") if f.strip()]
@@ -711,7 +717,9 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parent.parent
 EXC = ("_build", "temp", ".git", "node_modules")
-def run(cmd, cwd=None): return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+def run(cmd, cwd=None):
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", env=moon_env())
 def tracked(root):
     r = run(["git", "-C", str(root), "ls-files", "-z"])
     return None if r.returncode else [f for f in r.stdout.split("\0") if f.strip()]
@@ -973,6 +981,8 @@ if __name__ == "__main__":
 import os, re, subprocess, sys, tempfile
 from datetime import datetime
 from pathlib import Path
+
+from moon_env_probe import moon_env
 # 统一把 stdout/stderr 钉成 UTF-8（CI 在 Linux UTF-8 下是无损 no-op）。
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -980,7 +990,9 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parent.parent
 EXC = ("_build", "temp", ".git", "node_modules")
-def run(cmd, cwd=None): return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+def run(cmd, cwd=None):
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", env=moon_env())
 def tracked(root):
     r = run(["git", "-C", str(root), "ls-files", "-z"])
     return None if r.returncode else [f for f in r.stdout.split("\0") if f.strip()]
