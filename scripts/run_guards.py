@@ -144,8 +144,10 @@ SPECIAL_CASES = [
     expected("check_bug_reference_integrity.py", 1,
              "已知棘轮超限：现读 17 条悬空注释引用 > 上限 1（BUG-373 待逐条修）；修到 1 条后自然转绿"),
     gated("check_skill_inject.py", "fist-mbt.db", "fist-mbt.db"),
+    # fist-gate 的 fmt/build 环境态分类实测：本机两臂 DEGRADED ⇒ 如实声明 2，不冒充「代码红」。
+    # 预热格式化器 + 迁移依赖缓存后应读 0，届时把期望改回 0（与其它 known-red 同规矩）。
     expected("fist-gate.py", 2,
-             "fmt 段依赖 git diff 管道，本机退化 rc=-1 ⇒ 按设计 DEGRADED(2)；实体机/CI 复跑"),
+             "本机两臂 DEGRADED（moon fmt 格式化器未预热 + 依赖缓存格式过旧）= 环境态，非代码红"),
 ]
 
 

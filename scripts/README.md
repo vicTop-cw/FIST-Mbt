@@ -174,9 +174,15 @@
 
 ### 2026-10-21 补登记：`fist-gate.py`
 
-- `fist-gate.py`（R74 入仓）— **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段，
-  退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量，不冒用 1）。用法 `python scripts/fist-gate.py [树]`。
+- `fist-gate.py`（R74 入仓）— **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段 +
+  `--scan` 分支普查 + `--selftest`。退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量，不冒用 1）。
+  fmt/build 两臂带**环境态分类**：冷格式化器（缺 `_build/wasm-gc/release/format/`）与依赖缓存
+  格式过旧（`moon.mod.json no longer supported`）都报 DEGRADED 并给可执行提示，不再冒充'代码红'；
+  `FIST_GATE_FMT_STRICT=1` 可把 fmt 世代差转硬红。用法 `python scripts/fist-gate.py [--scan|--selftest] [树]`。
 
 ### 2026-10-22 登记：`whisperer.py`
 
-- `whisperer.py` — **风语者巡检自动化（TASK-009）**：Step 0-4 一把跑（HEAD 安全门 → 分支普查 →
+- `whisperer.py` — **风语者巡检自动化（TASK-009）**：把定时任务 prompt 里的 Step 0-4 装进一个 Python 文件——
+  Step 0 HEAD 安全门 / Step 1 分支普查（调 `fist-gate.py --scan`）/ Step 2 分类（DROP/MERGE-CODE）/ Step 3-4 合入与回写。
+  模式：`--fast`（P0-1：只跑 Step 0 安全门，<3s，每次合入前确认 HEAD 没漂）、`--scan-only`（Step 0-2+3 扫描不自动合入，
+  默认）、`--auto-merge`（Step 0-2 + 自动合入 MERGE-CODE 分支 + Step 3）、`--selftest`。
