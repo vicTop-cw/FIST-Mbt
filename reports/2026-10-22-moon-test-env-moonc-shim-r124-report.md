@@ -2,7 +2,7 @@
 
 - 日期：2026-10-22
 - 分支：`slave/fix/moon-test-env-moonc-shim-r124`
-- 基线：`gitcode/master` @ `5666efbc`（开工时 8e6e5444；交付前已叠最新主线，冲突 0）
+- 基线：`gitcode/master` @ `2149ae04`（开工时 8e6e5444；交付前两次叠线 5666efbc→2149ae04，仅当日日志尾追加冲突，两边保留）
 - 判据：`python scripts/moon_test_env.py` = Total tests 1387 / passed 1387 / failed 0, rc=0
 
 ## 1. 结果摘要（结论 / 证据 / 分析）
