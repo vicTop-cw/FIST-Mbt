@@ -2,10 +2,20 @@
 # -*- coding: utf-8 -*-
 """BUG-130/BUG-133 常驻判据：native 后端内存安全探针（不含任何 FIST 业务码）。
 
+**2026-10-22 改指现役后端（BUG-383）**：v0.3.10 起本仓 native 后端已由 `mizchi/sqlite` 换成
+`daqing/sqlite@0.4.0`（后者用不透明外部类型 `type Sqlite3` + `#borrow`，133 那族「裸指针当 MoonBit
+对象」在形态上不存在）。探针原钉 `import "mizchi/sqlite"`，换后端后**连依赖都解析不了**
+（`Failed to solve package …` rc=255）⇒ 判据自己先坏，native 覆盖面被这道失效的门长期挡住
+（CI 红话是「尺子坏了」而不是「缺陷在场」）。本次把它改指 `daqing/sqlite`：两者公开 API 同形
+（`Database::open/exec/prepare/query`、`Statement::bind/execute/step/column/finalize`、
+`SqlValue::{Int,Text}`），差异只有 `SqlValue::Int` 收 `Int32`（故 `one_round` 形参改 `Int32`）。
+探针的**语义与四档退出码契约不变**：它现在回答的是「我们真正发布的 daqing FFI 会不会崩」，
+而不是「旧后端会不会崩」。
+
 它证明什么
 ----------
-`mizchi/sqlite` 在 native 后端把 C 侧的 `sqlite3*` / `sqlite3_stmt*` 裸指针**直接**当
-MoonBit 抽象类型的值返回（`stub.c` 里没有 `moonbit_make_external_object`），另有三个函数
+`mizchi/sqlite`（历史对象，换后端之前）在 native 后端把 C 侧的 `sqlite3*` / `sqlite3_stmt*` 裸指针
+**直接**当 MoonBit 抽象类型的值返回（`stub.c` 里没有 `moonbit_make_external_object`），另有三个函数
 （`sqlite_errmsg` / `sqlite_db_filename` / `sqlite_expanded_sql`）C 侧回 `const char*`
 而 MoonBit 声明成 `-> Bytes`（`Bytes` 要读长度前缀，包内注释自己写了这是 UB）。
 本探针只用它的**公开 API**（open/exec/prepare/bind/step/column/finalize/close）反复开关库
@@ -91,7 +101,7 @@ def run_guarded(body, label: str = "") -> int:
         return RC_RULER
 
 MOON_PKG = """import {
-  "mizchi/sqlite",
+  "daqing/sqlite",
   "moonbitlang/x/fs",
   "moonbitlang/x/encoding",
 }
@@ -105,7 +115,9 @@ options(
 )
 """
 
-MAIN_MBT = r'''/// BUG-130 最小复现体：只走 mizchi/sqlite 的公开 API。
+MAIN_MBT = r'''/// BUG-130 最小复现体：只走 daqing/sqlite 的公开 API（v0.3.10 起后端由 mizchi 换成 daqing，
+/// 本探针随之改指——API 形状两者一致：Database::open/exec/prepare/query、Statement::bind/execute/
+/// step/column/finalize、SqlValue::{Int,Text}；差异仅 SqlValue::Int 取 Int32）。
 fn pad(n : Int) -> Int {
   let buf : Array[Bytes] = []
   for k = 0; k < n; k = k + 1 {
@@ -114,7 +126,7 @@ fn pad(n : Int) -> Int {
   buf.length()
 }
 
-fn one_round(round : Int) -> Int {
+fn one_round(round : Int32) -> Int {
   let path = "temp/probe_\{(round % 4).to_string()}.db"
   let db = match @sqlite.Database::open(path) {
     None => abort("open failed: " + path)
