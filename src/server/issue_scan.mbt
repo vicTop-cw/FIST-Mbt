@@ -890,6 +890,42 @@ fn scan_let_mut_field_copy(code : String) -> Bool {
 }
 
 ///|
+/// 严重度 → 档位序（high=3 / medium=2 / low=1 / 其它=0，未知档按 info 处理）。
+fn scan_severity_rank(sev : String) -> Int32 {
+  if sev == "high" {
+    3
+  } else if sev == "medium" {
+    2
+  } else if sev == "low" {
+    1
+  } else {
+    0
+  }
+}
+
+///|
+/// 解析 min_severity：空串=不过滤(-1)；high/medium/low/info→档位；其它→Err（不静默回落）。
+fn scan_min_severity_rank(raw : String) -> Result[Int32, String] {
+  let v = raw.trim().to_owned().to_lower()
+  if v == "" {
+    Ok(-1)
+  } else if v == "high" {
+    Ok(3)
+  } else if v == "medium" {
+    Ok(2)
+  } else if v == "low" {
+    Ok(1)
+  } else if v == "info" {
+    Ok(0)
+  } else {
+    Err(
+      "issue_scan: 非法 min_severity（只接受 high|medium|low|info，空串=不过滤）: " +
+      raw,
+    )
+  }
+}
+
+///|
 /// 逐行匹配全部规则，返回命中（行号从 1 起）。整行注释跳过（见 scan_is_comment_line）。
 /// 输出按规则在规则表中的顺序分组，与旧「规则外循环」次序一致。
 /// BUG-162 优化：每行只做一次 `to_owned` + 一次 `code_part`（字面量感知的代码区）计算，
@@ -2275,11 +2311,18 @@ pub fn issue_scan(
   rules_file : String,
   max_findings : Int32,
   include_tests~ : Bool = false,
+  min_severity~ : String = "",
 ) -> Result[Json, String] {
   if !scan_dir_ok(dir) {
     return Err(
       "issue_scan: 非法目录（拒绝绝对路径/穿越/盘符）: " + dir,
     )
+  }
+  // 严重度噪音闸：空串=不过滤；非法值显式报错，不静默回落。
+  let min_sev = min_severity.trim().to_owned().to_lower()
+  let min_rank = match scan_min_severity_rank(min_sev) {
+    Ok(r) => r
+    Err(e) => return Err(e)
   }
   // 外部规则文件（ocr-local moonbit-rules.json 风格）：非空则真实读取 + 解析 + 合并，
   // 同名外部规则覆盖内建（档 2 ocr-local 融入 bugfind）；空串走内建，行为与改造前完全一致。
@@ -2462,7 +2505,20 @@ pub fn issue_scan(
     }
     guarded_filtered.push(hit)
   }
-  let dedup = guarded_filtered
+  // 档位过滤发生在结构降噪之后、max_findings 截断之前。
+  let dedup : Array[ScanFinding] = []
+  if min_rank < 0 {
+    for h in guarded_filtered {
+      dedup.push(h)
+    }
+  } else {
+    for h in guarded_filtered {
+      if scan_severity_rank(h.severity) >= min_rank {
+        dedup.push(h)
+      }
+    }
+  }
+  let filtered_out = guarded_filtered.length() - dedup.length()
   // 严重度聚合（单次遍历，替代旧的三次全量 filter）
   // BUG-345：旧实现只有 high/medium/low 三桶，`else` 把 info 档（scan_rules 里
   // match-non-exhaustive/unused-variable 等 low 之下的一档，及外部规则透传的 severity）
@@ -2516,6 +2572,8 @@ pub fn issue_scan(
       "total_findings": Json::number(dedup.length().to_double()),
       "truncated": Json::boolean(dedup.length() > max_findings),
       "include_tests": Json::boolean(include_tests),
+      "min_severity": Json::string(min_sev),
+      "filtered_out": Json::number(filtered_out.to_double()),
       "by_severity": Json::object({
         "high": Json::number(high.to_double()),
         "medium": Json::number(medium.to_double()),

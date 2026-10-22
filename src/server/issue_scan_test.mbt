@@ -641,3 +641,127 @@ test "lint_333_match_exhaustive_denoised_targeted" {
   // ③ 硬门必须仍报 ⇒ 降噪是定向的，没把真规则一并吞掉
   assert_true(count_rule("unwrapped-unwrap") > 0)
 }
+
+///|
+/// min_severity 噪音闸端到端。缺省不过滤（零回归）、high 档只留 high
+/// 且 by_severity 与 findings 同批、info 档等于不过滤、非法值显式 Err、过滤先于截断。
+test "issue_scan_min_severity_gate_end_to_end" {
+  let d = lint_dir("lint_c333b")
+  let mut sample = "fn dead(): Int {\n  let unused_value = 1\n  0\n}\n" +
+    "fn boom(): Int {\n  let x = 1 / 0\n  x\n}\n"
+  sample = sample + "fn big() -> Int {\n"
+  let mut bi = 0
+  while bi < 60 {
+    sample = sample + "  let v" + bi.to_string() + " = 0\n"
+    bi = bi + 1
+  }
+  sample = sample + "  0\n}\n"
+  @fs.write_string_to_file(d + "/sample.mbt", sample, encoding="utf8") catch {
+    _ => ()
+  }
+  let num_of = fn(j : Json, k : String) -> Int32 {
+    match j {
+      Object(m) =>
+        match m.get(k) {
+          Some(Number(n, ..)) => n.to_int()
+          _ => -999
+        }
+      _ => -999
+    }
+  }
+  let str_of = fn(j : Json, k : String) -> String {
+    match j {
+      Object(m) =>
+        match m.get(k) {
+          Some(String(s)) => s
+          _ => ""
+        }
+      _ => ""
+    }
+  }
+  let bool_of = fn(j : Json, k : String) -> Bool {
+    match j {
+      Object(m) =>
+        match m.get(k) {
+          Some(True) => true
+          _ => false
+        }
+      _ => false
+    }
+  }
+  let bucket_of = fn(j : Json, k : String) -> Int32 {
+    let buckets = match j {
+      Object(m) =>
+        match m.get("by_severity") {
+          Some(Object(b)) => b
+          _ => Map([])
+        }
+      _ => Map([])
+    }
+    match buckets.get(k) {
+      Some(Number(n, ..)) => n.to_int()
+      _ => -999
+    }
+  }
+  let base = match @server.issue_scan(d, "", 500) {
+    Ok(j) => j
+    Err(_) => return
+  }
+  let base_total = num_of(base, "total_findings")
+  // 前置哨兵：夹具必须同时含 high 与 info，否则「过滤后为 0」无从区分真假
+  assert_true(bucket_of(base, "high") > 0)
+  assert_true(bucket_of(base, "info") > 0)
+  assert_eq(num_of(base, "filtered_out"), 0)
+  assert_eq(str_of(base, "min_severity"), "")
+  // high 档：只剩 high，聚合与明细同批
+  let hi = match @server.issue_scan(d, "", 500, min_severity="high") {
+    Ok(j) => j
+    Err(_) => return
+  }
+  assert_eq(str_of(hi, "min_severity"), "high")
+  assert_eq(bucket_of(hi, "high"), bucket_of(base, "high"))
+  assert_eq(bucket_of(hi, "medium"), 0)
+  assert_eq(bucket_of(hi, "low"), 0)
+  assert_eq(bucket_of(hi, "info"), 0)
+  assert_eq(num_of(hi, "total_findings"), bucket_of(hi, "high"))
+  assert_eq(
+    num_of(hi, "filtered_out"),
+    base_total - num_of(hi, "total_findings"),
+  )
+  for f in lint_findings(hi) {
+    assert_eq(str_of(f, "severity"), "high")
+  }
+  // 大小写与首尾空白容忍（回显归一化后的值）
+  let hi2 = match @server.issue_scan(d, "", 500, min_severity="  HIGH ") {
+    Ok(j) => j
+    Err(_) => return
+  }
+  assert_eq(str_of(hi2, "min_severity"), "high")
+  // info 档 = 不过滤（最低档保留全部）
+  let inf = match @server.issue_scan(d, "", 500, min_severity="info") {
+    Ok(j) => j
+    Err(_) => return
+  }
+  assert_eq(num_of(inf, "total_findings"), base_total)
+  assert_eq(num_of(inf, "filtered_out"), 0)
+  // 非法值显式 Err（不静默回落成不过滤）
+  match @server.issue_scan(d, "", 500, min_severity="severe") {
+    Ok(_) => abort("非法 min_severity 必须 Err")
+    Err(e) => assert_true(e.contains("min_severity"))
+  }
+  // 过滤发生在 max_findings 截断之前：默认档 total>1 会截断；high 档 total==1 不截断
+  let one_all = match @server.issue_scan(d, "", 1) {
+    Ok(j) => j
+    Err(_) => return
+  }
+  assert_true(num_of(one_all, "total_findings") > 1)
+  assert_true(bool_of(one_all, "truncated"))
+  assert_eq(lint_findings(one_all).length(), 1)
+  let one_hi = match @server.issue_scan(d, "", 1, min_severity="high") {
+    Ok(j) => j
+    Err(_) => return
+  }
+  assert_eq(num_of(one_hi, "total_findings"), 1)
+  assert_false(bool_of(one_hi, "truncated"))
+  assert_eq(lint_findings(one_hi).length(), 1)
+}

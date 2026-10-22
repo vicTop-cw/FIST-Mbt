@@ -11,8 +11,11 @@
   · code 面    = 既不在注释也不在字面量里（MoonBit 里 `BUG-1` 不是合法标识符 ⇒ 正常应为 0，出现即说明解析器读错了面）
 
 判定面（唯一会红的，走棘轮只许降）：
-  J1 悬空-注释面：comment 面引用的编号 ∉ 账本抬头集合。现读 1 条（`src/engine/engine.mbt` 引 BUG-147，
-     账本无 147 抬头），上限 `DANGLING_COMMENT_CEILING` 由该现读值钉住，修一条就降一档。
+  J1 悬空-注释面：comment 面引用的编号 ∉ 账本抬头集合。R48 立案时现读 1 条（`src/engine/engine.mbt`
+     引 BUG-147，账本无 147 抬头）；R76 取证改判——那是一条**错号**（真身 BUG-176 幽灵元数据，已改注），
+     而 BUG-327×7 / BUG-336×1 的「悬空」实为主机账本世系未合入 master 的滞后（抬头在
+     slave/fix/bugfind-ocr-gate-honesty 等分支上逐字在案），同批 verbatim 补账后现读 0 条；
+     `DANGLING_COMMENT_CEILING` 棘轮只许降，不再放新悬空。
 
 只报不判（必须出数；静默丢弃 = 数字凭空少）：
   S1 悬空-字面量面（合成语料，逐编号计数）
@@ -48,7 +51,7 @@ RE_HEAD = re.compile(r"^## (BUG-\d+)\b")
 RE_REF = re.compile(r"BUG-(\d+)")
 RE_MENTIONED = re.compile(r"[\w./\\-]*\.mbti?\b")
 # 判定面棘轮：钉住 R48 立案时的现读值（1 = engine.mbt 的 BUG-147），此后只许下降。
-DANGLING_COMMENT_CEILING = 1
+DANGLING_COMMENT_CEILING = 0
 FACES = ("comment", "string", "code")
 
 
