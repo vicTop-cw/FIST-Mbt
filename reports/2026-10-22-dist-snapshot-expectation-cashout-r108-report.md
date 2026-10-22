@@ -23,7 +23,7 @@
 - 期望格计数：`expected(` 由 13 → **12**，`case(` 由 32 → **33**（`grep -c` 现读，不手数）。
 - `check_doc_surface` / `check_scripts_index` / `check_selftest_inventory_doc` / `check_publish_payload`
   四把尺在改后同棵树现读（见下节推后权威读数）。
-- 全量电池（推后复跑，权威）：见文末「推后读数」。
+- 全量电池（推后复跑，权威）：见下节。
 
 ## 预存红点名（rc + 成因，均非本单元引入）
 
@@ -64,3 +64,15 @@
 - 主线提交：`gitcode/master 866e2e65`（README 去重 378 行 + 登记 `check_delivery_gap.py` + dist 快照刷到 0.3.10）、`f2413472`（merge R106 分支）。
 - 真源改动：`scripts/run_guards.py`（`expected` → `case` 一格 + 兑现注释）。
 - 读数：本机 `check_dist_snapshot.py`（rc=0）、`run_guards.py --selftest`（rc=0 / 34 格）、`--list`（rc=0 / 缺执行面 0）。
+
+## 推后权威读数（本机实跑）
+
+- 交单窗口内主线又前进 2 commit（`f2413472..e07f479e`，六帽真跑那一单）⇒ 叠完再推：
+  `git merge-tree --write-tree HEAD gitcode/master` 报 **0 冲突**，`ort` 自动合并只带进 1 份新报告；
+  叠后 `grep -n check_dist_snapshot scripts/run_guards.py` 现读仍是 `case(...)`（兑现未被合并吃掉），
+  格数对表 `expected(` 12 / `case(` 33。
+- **全量电池 `python scripts/run_guards.py` ⇒ rc=0 / 54 格 / 失败 0 / SKIP 5 / 缺执行面 0**
+  （SKIP 全部是 `temp/pt27.log`、`temp/chk47.json` 这类缺前置的既有豁免格，不是本单面）。
+  这一发是推完之后跑的：`check_delivery_gap` 现读 rc=0（`HEAD ahead=0 pushed=True`），
+  本单的交付态格自解，没有为它登记期望。
+- 结论：这一格从「已知红」变成真门禁之后，整条电池第一次在副机上以 **失败 0** 收口。
