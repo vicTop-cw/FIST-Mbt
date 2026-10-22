@@ -170,7 +170,18 @@
   开头先备份 HEAD。**入仓时缺 UTF-8 BOM 被 `check_ps_encoding` 判红**（887 个非 ASCII 字节；
   PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
   去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
-  用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
+  **2026-10-22 R97 / TASK-002 追加面 —— cherry-pick 黑名单 + `-SelfTest` 自证**：
+  `$SkipPaths` = `^src/ops/moon\.pkg$` + `^src/ops/rhop.*\.mbt$`，`$PoisonNames` 单独点名
+  `src/ops/rhop_poll.mbt`（旧 AtomCode commit 里的它和 HEAD 的 `rhop_native.mbt` 重复定义，build 必崩）。
+  pick 循环在提交前撤名单（`git reset` 清索引 → HEAD 有的还原、HEAD 没有的删文件，逐条打印 `poison:`/`黑名单:`
+  不静默丢），第 5.5 步再对盘上做一遍兜底普查（名单文件也可能被 checkout/copy 带进来，不只 cherry-pick 一条路）。
+  `-SelfTest` 在 `%TEMP%` 建沙箱 git 仓真造一次 cherry-pick 冲突（G0/G0b 先证明「冲突确实存在且落在 moon.pkg 上」，
+  否则后面全是空跑），零副作用：不碰本仓、不合并、不推送。退出码 0 全过 / 1 有格失败 / 2 沙箱起不来（尺子
+  无法自证绝不冒用 1 那一档）。**变异台两支都已实跑**：① 把 `^src/ops/rhop.*\.mbt$` 改成 `^src/ops/NOPE.*\.mbt$`
+  ⇒ 通过 13 / 失败 7、rc=1（P2/P3/P4/P8/G1/G2/G3 同批发红）；② 把 `rhop_native.mbt` 塞进 `$PoisonNames`
+  ⇒ 通过 19 / 失败 1、rc=1（P11 单独发红，钉住「盘上兜底不许把 HEAD 的干净实现报成 poison」）。
+  干净树 20 / 0、rc=0；三档 ok+FAIL 格数都等于 20，没有静默跳过的格。
+  用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`｜`-SelfTest`。
 
 ### 2026-10-22 登记：`whisperer.py`
 
