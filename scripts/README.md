@@ -172,9 +172,41 @@
   去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
   用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
 
-### 2026-10-22 登记：`whisperer.py`
+### 2026-10-22 新增：`check_dist_snapshot.py` / `refresh_dist.py`
 
-- `whisperer.py` — **风语者巡检自动化（TASK-009）**：Step 0-4 一把跑（HEAD 安全门 → 分支普查 →
-  候选任务卡 → issue 扫描）。旗标 `--scan-only`（默认）/ `--auto-merge` / `--selftest`（**也接受
-  `--self-test`**，与全仓惯例对齐）。自检 G1 会真跑 `fist-gate.py --scan` 并区分
-  绿 / DEGRADED(rc=2) / 红（红要印末行原因，不只印 rc）。
+- `check_dist_snapshot.py` — **仓内发布快照 `dist/fist-mbt.js` 的版本守卫**：快照内嵌
+  `project__version` 必须 == `moon.mod`。存在理由：`scripts/mcp_compat_shim.js` 的**默认服务端**就是
+  `node dist/fist-mbt.js serve`，README 也把它当"发布版"引用；实测快照停在 **0.3.9** 而 moon.mod 已是
+  **0.3.10** ⇒ 照文档连过去的人/agent 拿到旧版本 + 旧工具集（shim 注释里甚至写着 148 工具/v0.3.8）。
+  `check_release_asset_names` 明确不扫 dist，这一格此前**无人认领**。`--selftest` 8 格真断言；
+  读不到版本/缺文件 ⇒ rc=2（判据无样本绝不放行）。
+- `refresh_dist.py` — **刷新快照的一条命令**：`moon build --target js --release cmd/cli` →
+  `patch_esm_main.py` 注入 ESM shim → 拷贝到 `dist/fist-mbt.js` → 跑上面那把尺自证。`--dry-run` 只打印计划。
+  实测 2026-10-22：刷新后 `node dist/fist-mbt.js version` = **FIST-Mbt v0.3.10**（用户视角真读数）。
+  注意：当前 moonc 世代产出的 bundle 比仓内快照大（release 108675 行 vs 快照 83765 行），
+  刷新会带来大 diff 属预期——**快照本该由发布流程产出**，故本仓只固化命令、不代提交产物。
+
+### 2026-10-22 登记：whisperer.py
+
+- whisperer.py — **风语者巡检自动化（TASK-009）**：Step 0-4（HEAD 安全门 → 分支普查 → 候选任务卡 →
+  issue 扫描）；旗标 --scan-only（默认）/ --auto-merge / --selftest。
+
+### 2026-10-22 登记：ist-pr-automator.py
+
+- ist-pr-automator.py — **PR 自动化**：把本地分支/提交整理成可审 PR 描述并（可选）推送建 PR；
+  与 slave-branch-merge.ps1（合并面）、whisperer.py（巡检面）同属分支治理三件套。
+  注意文件必须是 **UTF-8**（UTF-16 会让 Python 与 ps1 双端都读成乱码，同日 cef1e9cb 已修）。
+
+### 2026-10-22 登记：`fist-pr-automator.py`
+
+- `fist-pr-automator.py` — **PR 自动化**：把本地分支/提交整理成可审 PR 描述并（可选）推送建 PR；
+  与 `slave-branch-merge.ps1`（合并面）、`whisperer.py`（巡检面）同属分支治理三件套。
+  文件必须是 **UTF-8**（UTF-16 会让 Python 与 ps1 双端都读成乱码，同日 cef1e9cb 已修）。
+
+### 2026-10-22 补登记：`check_bug_refs.py`
+
+- `check_bug_refs.py` — 工具类辅助脚本（本次补登记；职责见脚本头部 docstring）。
+
+### 2026-10-22 补登记：`fist-gate.py`
+
+- `fist-gate.py` — **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段 + `--scan` 分支普查 + `--selftest`；退出码 0=pass / 1=fail / 2=degraded。
