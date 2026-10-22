@@ -41,6 +41,11 @@ REPO_ROOT="${REPO_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 
 FIXED_STUB="$SCRIPT_DIR/stub.c"
 TARGET_STUB="$REPO_ROOT/.mooncakes/mizchi/sqlite/stub.c"
+# daqing 版（2026-10-22 起现役后端）：valgrind 定位后发现 daqing 的 stub 同样把
+# sqlite3*/sqlite3_stmt* 裸指针当 MoonBit GC 对象回传 ⇒ finalize 后运行时二次 drop = UAF。
+# 补丁本体见同目录 stub-daqing.c（external object 包装 + payload 存取）。
+DAQING_STUB="$SCRIPT_DIR/stub-daqing.c"
+DAQING_TARGET="$REPO_ROOT/.mooncakes/daqing/sqlite/stub.c"
 MOON_MOD="$REPO_ROOT/moon.mod"
 
 MODE="apply"   # apply | force | verify | selftest
@@ -60,38 +65,53 @@ done
 
 fail() { echo "::error::$1" >&2; exit 1; }
 
-# 后端判定：moon.mod 是否仍声明 mizchi/sqlite。
-#   mizchi    → 仍需本补丁
-#   switched  → 已换别的 sqlite 后端，补丁不适用
-#   unknown   → 读不到 moon.mod，无法判定（保守：不得猜成"已换"而掩盖真·未解包）
+# 后端判定：moon.mod 声明的是哪个 sqlite 后端。
+#   mizchi  → 打 mizchi 版补丁（历史对象，本仓 2026-10-10 起就在打）
+#   daqing  → 打 daqing 版补丁（2026-10-22 起现役；同样有「裸指针当 MoonBit 对象」缺陷）
+#   unknown → 读不到 moon.mod / 两个都不声明（保守失败，不猜）
 backend_state() {
   if [[ ! -r "$MOON_MOD" ]]; then
     echo unknown
   elif grep -q "mizchi/sqlite" "$MOON_MOD"; then
     echo mizchi
+  elif grep -q "daqing/sqlite" "$MOON_MOD"; then
+    echo daqing
   else
-    echo switched
+    echo unknown
   fi
+}
+
+# 依后端选补丁源与目标
+selected_patch() {
+  case "$(backend_state)" in
+    mizchi) echo "$FIXED_STUB" ;;
+    daqing) echo "$DAQING_STUB" ;;
+    *)      echo "" ;;
+  esac
+}
+selected_target() {
+  case "$(backend_state)" in
+    mizchi) echo "$TARGET_STUB" ;;
+    daqing) echo "$DAQING_TARGET" ;;
+    *)      echo "" ;;
+  esac
 }
 
 # TARGET stub 缺失时的分流。绝不把「后端已换」与「还没解包」混成一类红。
 missing_target_verdict() {
-  local state
+  local state patch target
   state="$(backend_state)"
+  patch="$(selected_patch)"
+  target="$(selected_target)"
   case "$state" in
-    switched)
-      echo "SKIP: $MOON_MOD 已不声明 mizchi/sqlite —— BUG-133 补丁对现后端不适用。"
-      echo "      （native 覆盖的权威判据是 heap gate 探针 e2e_native_heap_probe.py，"
-      echo "       它现在能真的跑起来了；daqing/sqlite 是否也崩由它说话，不在此自证。）"
-      return 0 ;;
-    mizchi)
-      fail "找不到目标 stub.c：$TARGET_STUB
-  ⇒ 依赖仍是 mizchi/sqlite 却尚未解包。注意：先跑 moon update 不够（2026-10-13 实测
+    mizchi|daqing)
+      fail "找不到目标 stub.c：$target
+  ⇒ 后端已是 $state/sqlite，但依赖尚未解包。注意：先跑 moon update 不够（2026-10-13 实测
     纠正：update 只刷新注册表索引，.mooncakes 是惰性解包，update 之后目录根本不存在）；
     请先跑一次能触发解包的构建，例如 \`moon check --target native\`。
     CI 顺序见 ci.yml / fist-ci.yml 的 native 臂：migrate → reapply → heap gate → check。" ;;
     *)
-      fail "找不到目标 stub.c：$TARGET_STUB，且无法从 $MOON_MOD 判定后端（读不到/不可读）—— 保守判失败：不猜测为「已换」而跳过（那会掩盖真·未解包）。" ;;
+      fail "找不到目标 stub.c（$MOON_MOD 未声明 mizchi/sqlite 或 daqing/sqlite，或 moon.mod 不可读）—— 保守判失败：不猜后端。" ;;
   esac
 }
 
@@ -121,27 +141,28 @@ selftest() {
     echo "  OK   $name (rc=$got_rc)"
   }
 
-  # S1 后端已换（moon.mod 无 mizchi）+ 无 stub ⇒ SKIP rc=0
-  mkdir -p "$tmp/s1/.mooncakes"
+  # S1 现役 daqing 后端 + 已解包（目标存在但非补丁版）⇒ 覆写 rc=0
+  mkdir -p "$tmp/s1/.mooncakes/daqing/sqlite"
   printf 'dependencies = ["daqing/sqlite@0.4.0"]\n' > "$tmp/s1/moon.mod"
-  # S2 仍 mizchi + 无 stub ⇒ 未解包硬失败 rc=1（旧语义保留，且提示仍是纠正后的版本）
+  printf '/* upstream daqing stub (unpatched) */\n' > "$tmp/s1/.mooncakes/daqing/sqlite/stub.c"
+  # S2 现役 daqing 后端 + 未解包 ⇒ 硬失败 rc=1
   mkdir -p "$tmp/s2/.mooncakes"
-  printf 'dependencies = ["mizchi/sqlite@0.3.1"]\n' > "$tmp/s2/moon.mod"
-  # S3 读不到 moon.mod + 无 stub ⇒ 保守失败 rc=1（unknown ≠ switched）
+  printf 'dependencies = ["daqing/sqlite@0.4.0"]\n' > "$tmp/s2/moon.mod"
+  # S3 读不到 moon.mod + 无 stub ⇒ 保守失败 rc=1（unknown ≠ 任一后端）
   mkdir -p "$tmp/s3/.mooncakes"
-  # S4 仍 mizchi + stub 已是修复版 ⇒ 无需覆写 rc=0（positive control：正常路径没被分类改动伤到）
+  # S4 历史 mizchi 后端 + 已是修复版 ⇒ 无需覆写 rc=0（positive control）
   mkdir -p "$tmp/s4/.mooncakes/mizchi/sqlite"
   printf 'dependencies = ["mizchi/sqlite@0.3.1"]\n' > "$tmp/s4/moon.mod"
   cp "$FIXED_STUB" "$tmp/s4/.mooncakes/mizchi/sqlite/stub.c"
 
   echo "selftest（reapply 后端分类，四格 S1/S2/S3/S4）："
-  run_case "S1 后端已换⇒SKIP"          0 "SKIP"     "$tmp/s1" || true
-  run_case "S2 仍mizchi未解包⇒硬失败"   1 "尚未解包" "$tmp/s2" || true
-  run_case "S3 读不到moon.mod⇒保守失败" 1 "无法从"   "$tmp/s3" || true
-  run_case "S4 已是修复版⇒跳过"         0 "已是修复版" "$tmp/s4" || true
+  run_case "S1 daqing已解包⇒覆写"        0 "已覆写"   "$tmp/s1" || true
+  run_case "S2 daqing未解包⇒硬失败"      1 "尚未解包" "$tmp/s2" || true
+  run_case "S3 读不到moon.mod⇒保守失败"  1 "未声明"   "$tmp/s3" || true
+  run_case "S4 mizchi已是修复版⇒跳过"    0 "已是修复版" "$tmp/s4" || true
 
   if [[ "$rc" == 0 ]]; then
-    echo "SELFTEST OK（四格全绿；S1=0 与 S2=1 的**差异**即分类在起作用的自证，无需额外变异格）"
+    echo "SELFTEST OK（四格全绿；S1=0 与 S2=1 的**差异**即分类在起作用的自证）"
   else
     echo "SELFTEST FAIL"
   fi
@@ -157,31 +178,40 @@ if [[ ! -f "$FIXED_STUB" ]]; then
   fail "找不到修复版 stub.c：$FIXED_STUB"
 fi
 
+# 依后端选定补丁源/目标（mizchi 历史版 / daqing 现役版）
+PATCH_SRC="$(selected_patch)"
+PATCH_DST="$(selected_target)"
+if [[ -z "$PATCH_SRC" ]]; then
+  fail "无法判定 sqlite 后端（$MOON_MOD 未声明 mizchi/sqlite 或 daqing/sqlite）—— 保守判失败，不猜后端。"
+fi
+if [[ ! -f "$PATCH_SRC" ]]; then
+  fail "找不到后端补丁源：$PATCH_SRC"
+fi
+
 # 自检单格驱动：只走真实判定路径，不碰仓库根。
 if [[ "$SELFTEST_RUN" == "1" ]]; then
-  if [[ ! -f "$TARGET_STUB" ]]; then
+  if [[ ! -f "$PATCH_DST" ]]; then
     missing_target_verdict
     exit 0
   fi
-  if cmp -s "$FIXED_STUB" "$TARGET_STUB"; then
+  if cmp -s "$PATCH_SRC" "$PATCH_DST"; then
     echo "目标已是修复版，跳过"
     exit 0
   fi
-  cp "$FIXED_STUB" "$TARGET_STUB"
-  echo "已覆写 $TARGET_STUB（BUG-133 C stub 修复）[selftest-run]"
+  cp "$PATCH_SRC" "$PATCH_DST"
+  echo "已覆写 $PATCH_DST（sqlite FFI 修复）[selftest-run]"
   exit 0
 fi
 
-if [[ ! -f "$TARGET_STUB" ]]; then
-  # 2026-10-22（BUG-380）：先分流「后端已换 vs 尚未解包」，再决定 SKIP 或失败。
+if [[ ! -f "$PATCH_DST" ]]; then
   missing_target_verdict
   exit 0
 fi
 
 # --verify 只校验、不写
 if [[ "$MODE" == "verify" ]]; then
-  if cmp -s "$FIXED_STUB" "$TARGET_STUB"; then
-    echo "OK: 目标已是 BUG-133 修复版"
+  if cmp -s "$PATCH_SRC" "$PATCH_DST"; then
+    echo "OK: 目标已是 sqlite FFI 修复版（后端 $(backend_state)）"
     exit 0
   else
     echo "MISMATCH: 目标不是修复版（需要跑 reapply.sh 落地）"
@@ -190,9 +220,9 @@ if [[ "$MODE" == "verify" ]]; then
 fi
 
 # --force 或无脑写
-if [[ "$MODE" == "force" ]] || ! cmp -s "$FIXED_STUB" "$TARGET_STUB"; then
-  cp "$FIXED_STUB" "$TARGET_STUB"
-  echo "已覆写 $TARGET_STUB（BUG-133 C stub 修复）"
+if [[ "$MODE" == "force" ]] || ! cmp -s "$PATCH_SRC" "$PATCH_DST"; then
+  cp "$PATCH_SRC" "$PATCH_DST"
+  echo "已覆写 $PATCH_DST（sqlite FFI 修复，后端 $(backend_state)）"
 else
-  echo "目标已是修复版，跳过"
+  echo "目标已是修复版，跳过（后端 $(backend_state)）"
 fi
