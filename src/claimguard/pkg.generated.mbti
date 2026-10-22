@@ -16,7 +16,7 @@ pub fn claim_all(ClaimGuardState, Array[String], String) -> Result[Unit, String]
 
 pub fn claim_item(ClaimGuardState, String, String) -> ClaimVerdict
 
-pub fn conflict_scoreboard(ReconcileAllReport) -> Map[String, Int]
+pub fn conflict_scoreboard(ReconcileAllReport) -> Map[String, Int32]
 
 pub fn decide_claim(String?, String) -> ClaimVerdict
 
@@ -34,11 +34,11 @@ pub fn may_reconcile_all_ok(Array[ClaimGuardState]) -> Bool
 
 pub fn may_reconcile_ok(ClaimGuardState, ClaimGuardState) -> Bool
 
-pub fn negotiate_admit(ClaimGuardState, Array[ClaimGuardState], Int) -> NegotiateReport
+pub fn negotiate_admit(ClaimGuardState, Array[ClaimGuardState], Int32) -> NegotiateReport
 
-pub fn negotiate_admit_priority(ClaimGuardState, Array[ClaimGuardState], Int, Map[String, Int]) -> NegotiateReport
+pub fn negotiate_admit_priority(ClaimGuardState, Array[ClaimGuardState], Int32, Map[String, Int32]) -> NegotiateReport
 
-pub fn negotiate_plan(ClaimGuardState, Array[ClaimGuardState], Int, Map[String, Int]) -> NegotiatePlan
+pub fn negotiate_plan(ClaimGuardState, Array[ClaimGuardState], Int32, Map[String, Int32]) -> NegotiatePlan
 
 pub fn overlapping_tag(Array[String], Array[String]) -> String?
 
@@ -46,19 +46,19 @@ pub fn peer_yield(ClaimGuardState, String) -> ClaimGuardState
 
 pub fn reconcile_all(Array[ClaimGuardState]) -> ReconcileAllReport
 
-pub fn reconcile_all_summary(Array[ClaimGuardState]) -> (Int, Int)
+pub fn reconcile_all_summary(Array[ClaimGuardState]) -> (Int32, Int32)
 
 pub fn reconcile_id_conflicts(ClaimGuardState, ClaimGuardState) -> Map[String, (String, String)]
 
 pub fn reconcile_semantic_conflicts(ClaimGuardState, ClaimGuardState) -> Array[CrossCollision]
 
-pub fn reconcile_summary(ClaimGuardState, ClaimGuardState) -> (Int, Int)
+pub fn reconcile_summary(ClaimGuardState, ClaimGuardState) -> (Int32, Int32)
 
 pub fn release_all(ClaimGuardState, Array[String], String) -> Unit
 
 pub fn release_item(ClaimGuardState, String, String) -> ClaimVerdict
 
-pub fn schedule_admit(Array[ClaimGuardState], Array[ClaimGuardState], Int, Map[String, Int]) -> ScheduleReport
+pub fn schedule_admit(Array[ClaimGuardState], Array[ClaimGuardState], Int32, Map[String, Int32]) -> ScheduleReport
 
 pub fn scopes_disjoint(Array[String], Array[String]) -> Bool
 
@@ -110,7 +110,7 @@ pub struct IdConflict {
 
 pub struct NegotiatePlan {
   report : NegotiateReport
-  priority_cost : Int
+  priority_cost : Int32
   freed_for_proposed : Array[String]
 }
 
@@ -128,7 +128,7 @@ pub struct ReconcileAllReport {
 pub struct ScheduleReport {
   admitted : Array[ScheduledAdmit]
   rejected : Array[String]
-  total_priority_cost : Int
+  total_priority_cost : Int32
   scene : Array[ClaimGuardState]
 }
 

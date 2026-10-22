@@ -6,19 +6,19 @@ pub fn blocking_divergences(Array[Divergence]) -> Array[Divergence]
 
 pub fn build_plan(String, HatConfig) -> HatPlan
 
-pub fn build_report(String, HatConfig, Array[HatReport], Int) -> HatVerdictReport
+pub fn build_report(String, HatConfig, Array[HatReport], Int32) -> HatVerdictReport
 
-pub fn converge(Array[HatReport], HatPolicy, Int) -> ConvergeResult
+pub fn converge(Array[HatReport], HatPolicy, Int32) -> ConvergeResult
 
-pub fn count_by_kind(Array[Divergence]) -> Map[String, Int]
+pub fn count_by_kind(Array[Divergence]) -> Map[String, Int32]
 
-pub fn debate_pair(String, String, String, Int) -> DebatePair
+pub fn debate_pair(String, String, String, Int32) -> DebatePair
 
 pub fn default_config(String) -> HatConfig
 
 pub fn default_policy() -> HatPolicy
 
-pub fn divergence(String, String, String, String, Int) -> Divergence
+pub fn divergence(String, String, String, String, Int32) -> Divergence
 
 pub fn element_task(String, HexaElement) -> ElementTask
 
@@ -64,14 +64,14 @@ pub fn wallbreaker() -> HexaElement
 
 // Types and methods
 pub struct ConvergeResult {
-  round : Int
-  max_rounds : Int
-  agree : Int
-  total : Int
+  round : Int32
+  max_rounds : Int32
+  agree : Int32
+  total : Int32
   rate : Double
   threshold : Double
   status : String
-  blocking : Int
+  blocking : Int32
   blockers : Array[String]
   should_iterate : Bool
   terminal_gate : String
@@ -82,7 +82,7 @@ pub struct DebatePair {
   left : String
   right : String
   issue : String
-  rounds : Int
+  rounds : Int32
 }
 
 pub struct Divergence {
@@ -90,14 +90,14 @@ pub struct Divergence {
   left : String
   right : String
   detail : String
-  severity : Int
+  severity : Int32
 }
 
 pub struct ElementTask {
   element_id : String
   lane : String
   temperature : Double
-  max_tokens : Int
+  max_tokens : Int32
   output_schema : Array[String]
   prompt : String
   executor_hint : String
@@ -119,7 +119,7 @@ pub struct HatPlan {
 }
 
 pub struct HatPolicy {
-  max_rounds : Int
+  max_rounds : Int32
   converge_threshold : Double
   auto_select_hats : Bool
   debate_enabled : Bool
@@ -151,7 +151,7 @@ pub struct HexaElement {
   name_zh : String
   lane : String
   temperature : Double
-  max_tokens : Int
+  max_tokens : Int32
   output_schema : Array[String]
   role : String
 }

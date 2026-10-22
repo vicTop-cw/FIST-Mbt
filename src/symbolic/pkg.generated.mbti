@@ -46,8 +46,8 @@ pub enum BoolExpr {
 }
 
 pub struct Cnf {
-  clauses : Array[Array[(Int, Bool)]]
-  num_vars : Int
+  clauses : Array[Array[(Int32, Bool)]]
+  num_vars : Int32
 }
 
 // Type aliases

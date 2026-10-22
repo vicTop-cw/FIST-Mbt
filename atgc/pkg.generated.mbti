@@ -2,11 +2,11 @@
 package "vicTop-cw/fist-mbt/atgc"
 
 // Values
-pub fn base_to_int(Char) -> Int?
+pub fn base_to_int(Char) -> Int32?
 
 pub fn complement(Char) -> Char?
 
-pub fn int_to_base(Int) -> Char
+pub fn int_to_base(Int32) -> Char
 
 pub fn normalize(String) -> String
 
@@ -27,7 +27,7 @@ pub fn valid_input(String) -> Bool
 // Types and methods
 pub enum Inst {
   Op(Op)
-  Num(Int)
+  Num(Int32)
 }
 
 pub enum Op {
@@ -37,14 +37,14 @@ pub enum Op {
   Add
   Sub
   OutNum
-  PushImm(Int)
+  PushImm(Int32)
   Unknown(String)
 }
 
 pub struct RunResult {
   output : String
   result : String
-  stack : Array[Int]
+  stack : Array[Int32]
 }
 
 // Type aliases

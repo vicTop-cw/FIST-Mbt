@@ -8,7 +8,7 @@ import {
 // Values
 pub fn ability_coverage(Array[String], Array[String]) -> Double
 
-pub fn aider_argv(prompt~ : String, model~ : String, edit_format? : String, map_tokens? : Int, encoding? : String) -> Result[Array[String], String]
+pub fn aider_argv(prompt~ : String, model~ : String, edit_format? : String, map_tokens? : Int32, encoding? : String) -> Result[Array[String], String]
 
 pub fn atomcode_argv(prompt~ : String, model~ : String, workdir? : String, auto_yes? : Bool) -> Result[Array[String], String]
 
@@ -44,16 +44,16 @@ pub struct ExecResult {
   deliverable : String
   executor : String
   model : String
-  tokens_in : Int
-  tokens_out : Int
+  tokens_in : Int32
+  tokens_out : Int32
   cost : Double
-  duration_ms : Int
+  duration_ms : Int32
   error_msg : String
 }
 pub fn ExecResult::fail(String, String) -> Self
 pub fn ExecResult::ok(String, String) -> Self
 pub fn ExecResult::to_json(Self) -> Json
-pub fn ExecResult::with_tokens(Self, Int, Int, Double) -> Self
+pub fn ExecResult::with_tokens(Self, Int32, Int32, Double) -> Self
 
 pub struct ExecutorRegistry {
   executors : Map[String, String]
@@ -61,14 +61,14 @@ pub struct ExecutorRegistry {
 }
 pub fn ExecutorRegistry::abilities_of(Self, String) -> Array[String]
 pub fn ExecutorRegistry::add_ability(Self, String, Array[String]) -> Self
-pub fn ExecutorRegistry::auction_pick(Self, String, Map[String, Int], Map[String, Double], Map[String, Double]) -> Json
+pub fn ExecutorRegistry::auction_pick(Self, String, Map[String, Int32], Map[String, Double], Map[String, Double]) -> Json
 pub fn ExecutorRegistry::get(Self, String) -> String?
 pub fn ExecutorRegistry::has(Self, String) -> Bool
 pub fn ExecutorRegistry::list(Self) -> Array[String]
 pub fn ExecutorRegistry::new() -> Self
 pub fn ExecutorRegistry::register(Self, String) -> Self
-pub fn ExecutorRegistry::route_pick(Self, String, Map[String, Int]) -> Json
-pub fn ExecutorRegistry::route_pick_with_trust(Self, String, Map[String, Int], Map[String, Double]) -> Json
+pub fn ExecutorRegistry::route_pick(Self, String, Map[String, Int32]) -> Json
+pub fn ExecutorRegistry::route_pick_with_trust(Self, String, Map[String, Int32], Map[String, Double]) -> Json
 
 pub struct McpDelegateExecutor {
   name : String

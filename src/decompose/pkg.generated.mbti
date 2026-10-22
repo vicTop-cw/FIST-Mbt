@@ -2,15 +2,15 @@
 package "vicTop-cw/fist-mbt/src/decompose"
 
 // Values
-pub fn decompose_slices(Json, Int, parent_desc~ : String) -> Array[String]
+pub fn decompose_slices(Json, Int32, parent_desc~ : String) -> Array[String]
 
-pub fn default_slices(Int, parent_desc~ : String) -> Array[String]
+pub fn default_slices(Int32, parent_desc~ : String) -> Array[String]
 
-pub fn difficulty_label(Int, Int) -> String
+pub fn difficulty_label(Int32, Int32) -> String
 
 pub fn difficulty_label_from(Double) -> String
 
-pub fn generate_milestones(parent_desc~ : String, Int) -> MilestonePlan
+pub fn generate_milestones(parent_desc~ : String, Int32) -> MilestonePlan
 
 pub fn milestone_ascii(MilestonePlan) -> String
 
@@ -18,7 +18,7 @@ pub fn milestone_plan_to_json(MilestonePlan) -> String
 
 pub fn milestone_progress(MilestonePlan, Array[Bool]) -> Double
 
-pub fn refine_milestone(Milestone, Int) -> Array[String]
+pub fn refine_milestone(Milestone, Int32) -> Array[String]
 
 pub fn simpler_variant_hint(String) -> String
 
@@ -30,15 +30,15 @@ pub fn validate_milestone_plan(MilestonePlan) -> (Bool, String)
 
 // Types and methods
 pub struct Milestone {
-  index : Int
+  index : Int32
   title : String
   description : String
-  depends_on : Array[Int]
+  depends_on : Array[Int32]
 }
 
 pub struct MilestonePlan {
   milestones : Array[Milestone]
-  total : Int
+  total : Int32
 }
 
 // Type aliases

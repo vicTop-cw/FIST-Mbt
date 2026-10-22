@@ -4,7 +4,7 @@ package "vicTop-cw/fist-mbt/src/diff"
 // Values
 pub fn diff_lines(String, String) -> Array[DiffOp]
 
-pub fn diff_stats(Array[DiffOp]) -> (Int, Int, Int)
+pub fn diff_stats(Array[DiffOp]) -> (Int32, Int32, Int32)
 
 pub fn render_json(Array[DiffOp]) -> String
 
