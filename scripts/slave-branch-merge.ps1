@@ -258,12 +258,22 @@ foreach ($slave in $allSlaves) {
   $slaveHead = git rev-parse $slave 2>$null
   $mb = git merge-base HEAD $slave 2>$null
   if ($mb -eq $slaveHead) {
+    # 真包含（分支 tip 就是与 HEAD 的 merge-base）⇒ 内容确实全在 master，可删
     $toDelete += $slave
   } else {
-    # 也按 message 匹配
-    $headMsg = git log -1 --format="%s" $slave 2>$null
-    $headMessages = git log --format="%s" HEAD 2>$null
-    if ($headMessages -contains $headMsg) { $toDelete += $slave }
+    # ⚠ R45：**不再用 commit message 撞车当"已合并"**。
+    # message 相同 ≠ 内容进 master。实测 2026-10-22：多支分支的 tip 主题与 master 上他人
+    # cherry-pick 的同名提交相同，被这条判据当成"已合并"直接 `git push --delete`，
+    # 而 master 上根本没有它们的改动（dist-snapshot-guard / orphan-rhop-test-compile-red /
+    # battery-readonly / task-004-revert-diff-detector 均如此）——删掉后合并 agent 再也看不到，
+    # 这就是"PR 提了却永远不合"的一个真实机理。
+    # 改判据：**内容等价**才算已合（git cherry 无 '+' 行，且 diff 无文件）。
+    $cherryPlus = @(git cherry HEAD $slave 2>$null | Select-String '^\+').Count
+    $diffFiles = @(git diff --name-only HEAD $slave 2>$null | Where-Object { $_.Trim() -ne "" }).Count
+    if ($cherryPlus -eq 0 -and $diffFiles -eq 0) { $toDelete += $slave }
+    else {
+      Write-Host ("    ↺ 保留 $slave（未合：cherry+={0} diff={1}）" -f $cherryPlus, $diffFiles) -ForegroundColor Yellow
+    }
   }
 }
 
