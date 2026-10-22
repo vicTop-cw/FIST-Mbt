@@ -40,10 +40,9 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 BACKLOG_DIR = os.path.join("docs", "tasks", "backlog")
-# 2026-10-22 在 `gitcode/main` 面实测：R1 = TASK-001 / TASK-005 / TASK-006 / TASK-009 四条（各自点名 commit
-# 逐条印在读数里），R2 = 0 条（TASK-007 的 done 有 `chore(tasks): TASK-007 -> done` 为据）。
-# 这 4 条是**存量落差**，等 owner 盖章就自然下降；新增一条就红。
-STALE_CEILING = 4
+# 2026-10-22 R111 对账：9 条存量逐条核过后转 in_review/done（R1=0、R2=0），尺自报 RATCHET 要求降数 ⇒
+# 上限 4 → 0：此后「主线点名 + 仍 backlog」新增一条即红。R102 立单时的 4 条历史读数留在 git 史里。
+STALE_CEILING = 0
 UNSTAMPED = ("backlog",)
 
 
