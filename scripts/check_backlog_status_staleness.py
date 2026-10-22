@@ -9,11 +9,13 @@ r"""scripts/check_backlog_status_staleness.py — 「任务池状态 ↔ 主线�
 再派一次，而它已经在线上了——重复派单正是本仓反复抓的那类「账面说没做、线上说做完了」（与 `bug_list`
 的 `open_with_linked_done` 同形，只是发生在任务池面而非缺陷账本面）。
 
-判据三条（窄口径，刻意保守）：
+判据四条（窄口径，刻意保守）：
   R1 STALE   主线 commit subject 点名该 id，而 yaml `status` 仍是 `backlog` ⇒ 状态落后于事实。
   R2 虚报    `status: done` 但主线没有任何点名该 id 的 commit ⇒ 「done」无据（终态必须有据）。
   R3 OPEN    从未被点名且 `status: backlog` ⇒ **只报不判**（这一单确实还没做，是正常的）。
-判定面 = R1 条数 + R2 条数，**棘轮只许下降**（`STALE_CEILING`）：超出即红（rc=1）；低于上限只打印
+  R4 分支并   yaml 点名的分支已出现在主线 subject 里（`Merge <branch>`），而 `status` 仍是 `backlog`
+             ⇒ 活随分支并线，但 subject 没点名 TASK id，R1 看不见。R123 实测 TASK-014/015。
+判定面 = R1 条数 + R2 条数 + R4 条数，**棘轮只许下降**（`STALE_CEILING`）：超出即红（rc=1）；低于上限只打印
 收紧建议、**不判红也不自动改数**（放宽是人的决定，与 `check_plan_landing` P6 / `check_deprecated_text_census`
 R3 同一口径）。
 
@@ -44,6 +46,20 @@ BACKLOG_DIR = os.path.join("docs", "tasks", "backlog")
 # 上限 4 → 0：此后「主线点名 + 仍 backlog」新增一条即红。R102 立单时的 4 条历史读数留在 git 史里。
 STALE_CEILING = 0
 UNSTAMPED = ("backlog",)
+# 分支名前缀白名单：只认常见任务分支族；`src/ops/x.mbt` 这类路径与 `.md`/`.mbt` 尾巴不入账。
+BRANCH_RE = re.compile(
+    r"(?:origin/)?((?:feat|fix|slave|docs|chore|ci|refactor|test)/[A-Za-z0-9._-]+)")
+FILE_EXT_RE = re.compile(r"\.(?:md|mbt|mbti|py|json|ya?ml|sh|ps1|txt)$")
+
+
+def branches_of(text):
+    """从一份 yaml 正文里取分支名（去重、排序）；文件路径不冒充分支。"""
+    out = set()
+    for m in BRANCH_RE.finditer(text):
+        b = m.group(1)
+        if not FILE_EXT_RE.search(b):
+            out.add(b)
+    return sorted(out)
 
 
 def parse_yaml(text):
@@ -69,17 +85,40 @@ def citations(subjects):
     return out
 
 
-def judge(tasks, cited, ceiling=STALE_CEILING, rules=("R1", "R2")):
+def branch_citations(tasks, subjects):
+    """{task_id: (branch, subject)}：yaml 点名的分支已在主线 subject 里出现（活随分支并线）。"""
+    hits = {}
+    for t in tasks:
+        for b in t.get("branches") or []:
+            for s in subjects:
+                if b in s:
+                    hits[t["id"]] = (b, s)
+                    break
+            if t["id"] in hits:
+                break
+    return hits
+
+
+def judge(tasks, cited, ceiling=STALE_CEILING, rules=("R1", "R2", "R4"), subjects=None):
     """纯函数：任务面 + 点名面 -> (判定清单, 收紧建议清单, 正常清单)。空清单 = 判定面未超上限。"""
+    subjects = subjects or []
     verdicts, clean = [], []
     stale = [t["id"] for t in tasks if t["id"] in cited and t["status"] in UNSTAMPED]
     unfixed = [t["id"] for t in tasks if t["status"] == "done" and t["id"] not in cited]
+    bmerged = branch_citations(tasks, subjects)
+    stale_branch = [t["id"] for t in tasks
+                    if t["id"] in bmerged and t["status"] in UNSTAMPED and t["id"] not in stale]
     if "R1" in rules:
         for tid in stale:
             verdicts.append("STALE %s status=backlog 已被主线点名 -> 应转 in_review/done :: %s" % (tid, cited[tid][:70]))
     if "R2" in rules:
         for tid in unfixed:
             verdicts.append("UNPROVEN-DONE %s status=done 但主线无任何点名该 id 的 commit" % tid)
+    if "R4" in rules:
+        for tid in stale_branch:
+            b, s = bmerged[tid]
+            verdicts.append("STALE-BRANCH %s status=backlog 但分支已并线（%s）-> 应转 in_review/done :: %s"
+                            % (tid, b, s[:70]))
     n = len(verdicts)
     if n > ceiling:
         return verdicts, [], clean + ["判定面 %d 条 > 上限 %d ⇒ 超 %d 条" % (n, ceiling, n - ceiling)]
@@ -91,6 +130,10 @@ def judge(tasks, cited, ceiling=STALE_CEILING, rules=("R1", "R2")):
 
 def synth_tasks(rows):
     return [{"id": i, "status": s, "priority": "P0"} for (i, s) in rows]
+
+
+def synth_branch_tasks(rows):
+    return [{"id": i, "status": s, "priority": "P0", "branches": [b]} for (i, s, b) in rows]
 
 
 def selftest():
@@ -112,6 +155,11 @@ def selftest():
     # 2) R2 违例必红
     v, _, _ = judge(synth_tasks([("TASK-009", "done")]), {}, ceiling=0)
     cell("violation-unproven-done-is-named", len(v) == 1 and v[0].startswith("UNPROVEN-DONE TASK-009"))
+    # 2b) R4 分支并线：yaml 点名的分支已在主线 subject 里出现 ⇒ backlog 是落后（R123 实测形状）
+    v, _, _ = judge(synth_branch_tasks([("TASK-014", "backlog", "fix/guard-docstring")]), {}, ceiling=0,
+                    subjects=["Merge fix/guard-docstring: 清积压"])
+    cell("violation-branch-merged-backlog-is-named",
+         len(v) == 1 and v[0].startswith("STALE-BRANCH TASK-014"))
     # 3) 超限必红（同一批存量在上限内不红、上限降一格就红）
     rows = [("TASK-00%d" % i, "backlog") for i in (1, 2, 3, 4)]
     c2 = {("TASK-00%d" % i): "cited" for i in (1, 2, 3, 4)}
@@ -125,6 +173,12 @@ def selftest():
     cell("reverse-proven-done-not-red", v == [])
     v, _, _ = judge(synth_tasks([("TASK-003", "backlog")]), {}, ceiling=9)
     cell("reverse-never-cited-backlog-is-open-not-red", v == [])
+    v, _, _ = judge(synth_branch_tasks([("TASK-014", "in_review", "fix/x")]), {}, ceiling=9,
+                    subjects=["Merge fix/x: 已并线"])
+    cell("reverse-branch-merged-in_review-not-red", v == [])
+    v, _, _ = judge(synth_branch_tasks([("TASK-016", "backlog", "fix/x")]), {}, ceiling=9,
+                    subjects=["Merge fix/y: 别的分支"])
+    cell("reverse-branch-not-merged-backlog-is-open-not-red", v == [])
     # 收紧建议那一格：低于上限只提示、不入判定面
     v, over, _ = judge(synth_tasks([("TASK-001", "backlog")]), cited, ceiling=4)
     cell("reverse-under-ceiling-prints-tightening-only", v == [] and len(over) == 1)
@@ -133,10 +187,15 @@ def selftest():
     cell("mutation-rule-blind-R1", v == [])
     v, _, _ = judge(synth_tasks([("TASK-009", "done")]), {}, ceiling=0, rules=("R1",))
     cell("mutation-rule-blind-R2", v == [])
+    v, _, _ = judge(synth_branch_tasks([("TASK-014", "backlog", "fix/x")]), {}, ceiling=0,
+                    rules=("R1", "R2"), subjects=["Merge fix/x: 已并线"])
+    cell("mutation-rule-blind-R4", v == [])
     # 解析面自证：非可解析形状必须判「不算数」，否则空文件会被读成 status 空串而悄悄进判定
     cell("parser-rejects-yaml-without-id", parse_yaml("title: x\nstatus: backlog\n") is None)
     cell("parser-reads-id-status-priority", parse_yaml("id: TASK-042\npriority: P1\nstatus: backlog\n")
          == {"id": "TASK-042", "status": "backlog", "priority": "P1"})
+    cell("parser-extracts-branch-not-path",
+         branches_of("see origin/fix/x:src/ops/a.mbt and docs/agent-map.md") == ["fix/x"])
     return fails, executed
 
 
@@ -191,8 +250,10 @@ def main(argv):
     for fn in sorted(os.listdir(backlog)):
         if not fn.endswith(".yaml"):
             continue
-        rec = parse_yaml(open(os.path.join(backlog, fn), encoding="utf-8", errors="replace").read())
+        text = open(os.path.join(backlog, fn), encoding="utf-8", errors="replace").read()
+        rec = parse_yaml(text)
         if rec:
+            rec["branches"] = branches_of(text)
             tasks.append(rec)
     if not tasks:
         return fatal("%s 里一份可解析的 TASK-*.yaml 都没有，判据空转不报绿" % backlog)
@@ -206,9 +267,15 @@ def main(argv):
         return fatal("%s 一条 commit 都没有，点名面无从谈起" % rev)
 
     cited = citations(subjects)
-    verdicts, tighten, _ = judge(tasks, cited)
-    bad = ([t["id"] for t in tasks if t["id"] in cited and t["status"] in UNSTAMPED]
-           + [t["id"] for t in tasks if t["status"] == "done" and t["id"] not in cited])
+    bmerged = branch_citations(tasks, subjects)
+    verdicts, tighten, _ = judge(tasks, cited, subjects=subjects)
+    bad = []
+    for tid in ([t["id"] for t in tasks if t["id"] in cited and t["status"] in UNSTAMPED]
+                + [t["id"] for t in tasks if t["status"] == "done" and t["id"] not in cited]
+                + [t["id"] for t in tasks if t["id"] in bmerged
+                   and t["status"] in UNSTAMPED and t["id"] not in cited]):
+        if tid not in bad:
+            bad.append(tid)
     over = max(0, len(bad) - STALE_CEILING)
     print("扫描面=%s | backlog %d 份 | 主线点名到的 TASK id %d 个 | 落差 %d 条 / 上限 %d 条 / 超限 %d 条"
           % (rev, len(tasks), len(cited), len(bad), STALE_CEILING, over))
@@ -222,6 +289,10 @@ def main(argv):
     for t in tasks:
         if t["id"] in cited and t["status"] in UNSTAMPED:
             print("  落差 STALE %s status=backlog :: %s" % (t["id"], cited[t["id"]][:70]))
+    for t in tasks:
+        if t["id"] in bmerged and t["status"] in UNSTAMPED and t["id"] not in cited:
+            b, s = bmerged[t["id"]]
+            print("  落差 STALE-BRANCH %s status=backlog :: 分支 %s 已并线 —— %s" % (t["id"], b, s[:70]))
     for t in tasks:
         if t["status"] == "done" and t["id"] not in cited:
             print("  落差 UNPROVEN-DONE %s status=done 但主线无点名该 id 的 commit" % t["id"])
