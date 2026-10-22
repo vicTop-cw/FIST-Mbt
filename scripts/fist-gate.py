@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """scripts/fist-gate.py - unified gate chain (merge_markers/fmt/build/ps_encoding/store_path) + --scan branch census. rc: 0=pass/scan-output 1=fail 2=degraded."""
-import re, subprocess, sys, tempfile
+import os, re, subprocess, sys, tempfile
 from datetime import datetime
 from pathlib import Path
 # 统一把 stdout/stderr 钉成 UTF-8（CI 在 Linux UTF-8 下是无损 no-op）。
@@ -122,7 +122,17 @@ def scan(root, do_fetch=True):
         fr = run(["git", "-C", str(root), "fetch", "--all", "--prune"], cwd=root)
         if fr.returncode: fetch_note = "DEGRADED fetch rc=%d（用既有远端引用继续）\n" % fr.returncode
         refs = remote_refs(root) or refs
-    out_dir = Path(root) / ".git" / "fist" / "tasks" / "backlog"
+    # 坑（实测 2026-10-21/22 两发）：在 git worktree 里 `.git` 是**文件**（gitdir 指针），不是目录 ⇒
+    # `Path(root)/".git"/...` 建目录必 FileNotFoundError，未捕获异常还会把 rc 变成 1（看起来像"判据红了"）。
+    # 必须问 git 要真实 gitdir；取不到就 rc=2 拒绝"在错位置写任务"。
+    gd = gout(root, "rev-parse", "--absolute-git-dir").strip()
+    if not gd:
+        gd = gout(root, "rev-parse", "--git-dir").strip()
+        if gd and not os.path.isabs(gd):
+            gd = os.path.normpath(os.path.join(str(root), gd))
+    if not gd:
+        return 2, "scan: 取不到 git dir（rev-parse --absolute-git-dir 空）——拒绝在错位置写任务"
+    out_dir = Path(gd) / "fist" / "tasks" / "backlog"
     rows = []
     for ref in refs:
         if ref == base or ref.rsplit("/", 1)[-1] in ("master", "main"): continue
