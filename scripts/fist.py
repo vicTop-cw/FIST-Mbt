@@ -38,6 +38,8 @@ import re
 import subprocess
 import sys
 
+from moon_env_probe import moon_env
+
 NODE = os.environ.get("FIST_NODE", "node")
 # BUG-122 同型收口：不带 FIST_DB_PATH 裸跑会把演示数据写进仓库根的自举台账 fist-mbt.db。
 # 默认改道 temp/ 下的隔离库；调用方显式设过 FIST_DB_PATH 就照它的（store_isolation_probe 那类必须自己控制）。
@@ -105,6 +107,7 @@ def ensure_fresh(main_js, root):
     r = subprocess.run(
         ["moon", "build", "--target", "js", "cmd/cli"],
         cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env=moon_env(),
     )
     if r.returncode != 0:
         sys.stderr.write("[fist.py] 自动重建失败（BUG-32），中止而不退回旧产物：\n")

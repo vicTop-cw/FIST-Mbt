@@ -96,7 +96,11 @@ You can browse and install extra skills here:
 > 环境要求：新环境首次先 `moon update` 刷新 registry（依赖全公开，无私有包）；
 > **moon 工具链 ≥ 0.1.20261016**（`is` 模式匹配表达式为 d799f56 适配此版引入，替代已移除的 is_ok/is_err——R29 升级）；
 > **JS 目标需 Node.js ≥ 24**（项目默认 target，SQLite 后端依赖 `node:sqlite` 的 `returnArrays`，
-> node <24 会退化为对象行导致列读取为空）。见 README「环境要求」。
+> node <24 会退化为对象行导致列读取为空）。
+> **常驻入口 spawn `moon` 统一带 `MOONC_OVERRIDE`**：`scripts/moon_env_probe.py`（R125）在本机自动发现
+> `~/.moon-shim/shim.exe`（剥离 `\\?\` 前缀，绕 moonc 的 `Sys_error("\\\\?: Invalid argument")` ICE），
+> 显式环境变量优先、非 Windows 原样透传；8 个入口已接线，静态普查与 `--selftest` 均在电池里。
+> 见 README「环境要求」。
 > **JS 可执行产物 ESM 兼容**：moonc ≥0.10.14 对 `cmd/cli` 输出 ESM，而 `mizchi/sqlite` 的 JS 桩用 CJS `require`，
 > 直接 `node main.js` 会报 `require is not defined`。`scripts/mcp_smoke.py` / `demo.ps1` 启动前会自动调
 > `scripts/patch_esm_main.py` 注入 require shim（幂等）；手动跑 server 请先 `python scripts/patch_esm_main.py`。

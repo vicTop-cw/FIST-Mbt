@@ -39,6 +39,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from queue import Empty, Queue
 
+from moon_env_probe import moon_env
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -107,6 +109,7 @@ def ensure_mcp_build() -> None:
             capture_output=True,
             text=True,
             timeout=300,
+            env=moon_env(),
         )
     except Exception as e:
         raise SystemExit(f"FATAL `moon build --target js cmd/cli` 异常：{e}")
