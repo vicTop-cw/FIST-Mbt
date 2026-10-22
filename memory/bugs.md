@@ -6442,7 +6442,7 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 ### FIXED(2026-10-19T09:04:03Z / BUG-336)
 - evidence: 修复点 src/engine/engine_dag_ext.mbt L741-749：routed.set(id, best) 之后追加 load.set(best, prev_load + 1)，把本次分配计入累计负载。白盒锁 src/engine/dag_ext_test.mbt `dag_cost_route: 等成本平局按累计负载均分（BUG-336）` RED(alice=4,bob=0)→GREEN(alice=2,bob=2)。全量 moon test --target js=1339/1339。
 
-## BUG-381 [2026-10-22T05:00:45Z] [high] OPEN
+## BUG-381 [2026-10-22T05:00:45Z] [high] FIXED
 - summary: [判据盲区] check_mbti_sync 对泛型顶层 `pub fn[T : …]` 双向隐形——声明与定义两侧正则都要求 fn 后有空格，[ 开头的类型参数列表两侧皆不匹配 ⇒ 这类声明不进判据宇宙；master 上它对悬空的 rhop_poll_once 判 PASS（675 条"全有定义"），正是本轮编译回归溜过的那道门
 - detail: 现象（2026-10-22 实测，master f6560010）：`python scripts/check_mbti_sync.py` 报
 「PASS … 24 份 .mbti 的 **675** 条 pub 声明（6 种形状）在同包 .mbt 里都有定义」，
@@ -6468,7 +6468,7 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 仍需改为跨行状态机（本仓现无此形态）。
 - reported_by: lead-2 (PR#12 取证时实测)
 
-## BUG-382 [2026-10-22T05:06:29Z] [medium] OPEN
+## BUG-382 [2026-10-22T05:06:29Z] [medium] FIXED
 - summary: [CI native 臂] reapply.sh 硬失败于已移除依赖 mizchi/sqlite——v0.3.10 换 daqing/sqlite@0.4.0 后 .mooncakes/mizchi 永不存在，native 双臂卡在 Reapply 步、heap gate 判据被挡（修于 PR #15）
 - detail: 现象（PR #15 CI 实测，job 119622405259 / 119616495085）：`bash patches/sqlite-bug133/reapply.sh --force` 报
 `找不到目标 stub.c：…/.mooncakes/mizchi/sqlite/stub.c`，rc=1，native 双臂因此每跑必停在 `Reapply` 步。
@@ -6490,7 +6490,7 @@ S3 读不到⇒保守失败1 / S4 已是修复版⇒跳过0），S1=0 与 S2=1 �
 orphan-test 与 Windows moon-test-runner 两条），原条目丢失，故按新号重录。后续层 BUG-383 另记。
 - reported_by: lead-2（重录：原 BUG-380）
 
-## BUG-383 [2026-10-22T05:06:55Z] [medium] OPEN
+## BUG-383 [2026-10-22T05:06:55Z] [medium] FIXED
 - summary: [CI native 判据漂移] e2e_native_heap_probe.py 自含小项目钉死 import mizchi/sqlite——主仓换 daqing 后 owner 裁决③的 heap gate 测的是旧后端；reapply 解锁后门仍不覆盖真正发布的 FFI 形态（BUG-382 的后续层，三档处置留 owner）
 - detail: 现象（静态取证）：`scripts/blackbox/e2e_native_heap_probe.py` 在 `temp/native_heap_probe` **自建**小项目
 （PROBE_DIR，moon.pkg 由脚本 L93-96 现写），`MOON_PKG` 钉死 `import "mizchi/sqlite"`，main.mbt 只走该依赖的
@@ -6511,6 +6511,9 @@ daqing FFI 会不会崩"。若 133 族缺陷在 daqing 上确实不存在，这�
 
 编号说明：本条最初以 BUG-381 入账，账本被并行 lane 重写后原条目丢失，故按新号重录。
 - reported_by: lead-2（重录：原 BUG-381）
+
+### FIXED(2026-10-22T08:35:00Z / BUG-381, BUG-382, BUG-383)
+- evidence: 三条的修复提交都已是 `gitcode/master` 祖先（实测 `git merge-base --is-ancestor` 均 rc=0）：BUG-381 ← a0408239（check_mbti_sync 两侧正则收泛型顶层 fn，现读 676 条 PASS）；BUG-382 ← f420c1e7（reapply 后端三态 SKIP，`--selftest` 4/4 rc=0；该提交自身署名号码是 BUG-380，本条目编号说明已交代「原 BUG-380 被重分配后按新号重录」，盖章按条目正文映射、不按提交署名）；BUG-383 ← 07e23e7d（探针改指 daqing/sqlite，`--selftest` rc=0，选项①已落地）。账本 OPEN 状态与提交面脱节即本单成因；若 owner 对 BUG-383 三档处置另有裁决，可重开本条。
 
 ## BUG-147 [2026-10-10T00:00:00Z] [medium] FIXED
 - summary: [engine] `execute_with_meta` 把 `audit_execute_gate` 前置到 `record_execution` 之前——预执行审计门禁必须真正前置
