@@ -5865,7 +5865,7 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - 后续建议: ① 想把本地钩子做成真门：`git config core.hooksPath .githooks` 是机器级动作、且钩子里跑守卫会让每次提交慢几十秒，按金条四不自作，留指挥官。② 电池格数按**尺数**棘轮（读 `--list` 首句 24/21/22/0），不要再抄 `temp/` 里某份手写脚本的数字。③ 建议下一单把 `gated()` 的 dump/pt 两格改成 CI 内产物（CI 已经现产 dump，仓内电池读的是本机 temp ⇒ 不可复现）。
 - task_id: T0r21
 
-## BUG-367 [2026-10-21T22:10:00Z] [low] OPEN
+## BUG-367 [2026-10-21T22:10:00Z] [low] FIXED
 - summary: [文档 ↔ 实现落地面] `check_plan_landing` 修完假阳性后剩下的**判定面 28 条**（10 份活文档点名、26 条唯一路径，`memory/lock-config.json` 与 `scripts/_ai_prompt.md` 各被两份文档点名）：既不在跟踪面也不在磁盘上，且 **on-disk 0 条**（不是「写了没跟踪」，是「压根没写」）。按形状分四档待裁：**A 计划点名未落地 18 条**（最大一块 `docs/2026-10-11-multi-agent-lock-design-v3.md` 独占 8 条：6 个 `.mbt` + `memory/lock-config.json` + `templates/lock_wait_loop.md`；次块 `docs/plan-light-worktree-isolation.md` 5 条）；**B 外部件 4 条**（`src/adapter.js`、`src/eac.js`、`src/eac-login.js`、`src/vault.js`，属别的宿主，用本仓跟踪面当分母必然报 missing）；**C 历史一次性工具 3 条**（`docs/superpowers/plans|specs/2026-09-24-probability-gate*` 点名 `scripts/_ai_prompt.md`、`_score_probe.py`，`_` 前缀=本仓约定的临时件）；**D 搬家后旧引用 3 条**（点名的 `docs/2026-10-11-multi-agent-lock-design-v2.md`、`docs/2026-10-11-fist-mbt-upgrade-plan-v2.md`、`docs/improvement-plan-20260929.md` 三者**同名文件确实存在、只是在 `docs/archive/` 下**）。本单**只出数不改文档**：判「删文」还是「补做」属内容决策，按金条四留指挥官
 - detail: ① 为什么这 28 条值得单独入账而不是当噪音关掉：本工具的整条判据是「文档点名的路径必须存在于跟踪面」，而它**天然无法区分**「计划未执行」与「计划已作废、文档留着当历史」——处置话术已经把两种读法并排写进每一行（`若计划已说'已完成'则是虚报；若说'将新增'则属正常未做`）⇒ 分辨它需要读上下文，是裁决不是判据。② A 类里最扎手的一块：v3 锁设计稿点名 6 个 `.mbt`（`src/engine/engine_lock.mbt`、`src/executor/kill_argv.mbt`、`src/server/{assistant_ops,kill_exec,locks_ops}.mbt`、`src/store/store_locks.mbt`），而 `docs/archive/` 里同时存在 v2 设计稿的同名落点点名 ⇒ 要么整案未落地、要么落地时换了别的文件名下这批文；两种都改变「这仓有没有多智能体锁」这句话的答案，不该由副机代答。③ **D 类是本工具的一个真缺口，不是文档的错**：三条读数逐条核过 `git ls-files`， basename 全在跟踪面、只是目录从 `docs/` 变成 `docs/archive/`（归档动作发生在引用写下之后）。修法两条：(a) 给工具加第四态 `[moved] docs/archive/<basename>`，让「搬家」从「缺失」里分出来；(b) 改活文档里的引用。副机倾向 (a)——**搬家是可机械证明的事实，不该靠人改文**；但本轮不实现，因为新加一态会同时改变判定面条数与既有 selftest 的期望，属判据语义变更，按边界（本单声明「判据语义不改」）另立一轮。④ B 类是**判据宇宙**的问题：出路 (a) 给工具加「外部面」白名单（要按形状写，不能按文件豁免，否则复制 BUG-365 的免检牌形状）/ (b) 把这 4 条改写成正文里的「外部宿主路径，不在本仓」说明 / (c) 接受存量常驻、只盯新增。副机倾向 (c)+(b) 混合：**存量按声明接受、增量必须归零**，因为 (a) 的白名单一旦写下，本工具就只认识它同意过的路径。⑤ 数量现状（改后首跑）：54 份文档 / 354 条点名路径 ⇒ 判定面 28（missing 28、on-disk 0）+ 存档面 17 + 形态说明 26；`--selftest` 11 → 19 格 rc=0。
 - note: 定 low：零代码风险、零判据失真，纯文档 ↔ 实现一致性面；但**别读成「28 条都是文档陈旧」**——A 类若实为「设计已作废」，陈旧的是设计稿而不是代码；D 类恰恰相反，文档没错、是工具的宇宙里没有「搬家」这一格。未复核两格：A 类的 6 个锁 `.mbt` 是否以别的文件名存在（未做全仓符号级反查）；B 类外部件是否曾在别的仓落地过（本仓看不见）。结论只建立在「`git ls-files` 跟踪面 + 工作树磁盘面 + 逐条路径文本 + 三条 D 类 basename 反查」上。
@@ -5874,7 +5874,7 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - task_id: T0r21
 
 
-## BUG-368 [2026-10-21T22:10:00Z] [low] OPEN
+## BUG-368 [2026-10-21T22:10:00Z] [low] FIXED
 - summary: [预存红的依据面] `scripts/cleanup_artifacts.py --check` 把**已跟踪的真源** `scripts/_tool_registry.py` 数进「`_` 临时脚本」这一档并报红：读数 `DIRTY: 仓库残留 86 个根 .db + 536 个 temp/ 文件 + 1 个 scripts/ 下划线临时脚本（共 623）` 里的那个 `1` 就是它（`git ls-files "scripts/_*"` 全仓只命中这一份，而它自己的 docstring 首行写着「MCP 工具注册表的**单一真源读取实现**（内部共享模块，非独立工具）」）。该守卫只给档数不给文件名 ⇒ 这一格既虚报了一份**不该清理的文件**，又让人无法核对「623」由什么构成——而它在本轮新电池里是**已声明的预存红**（`expected(..., rc=1, why=...)`），依据文本若只写结论不写构成，数字从上一单的 608 漂到 623 没人看得出来
 - detail: ① 取证两格：`ls scripts/_*` = 只有 `_tool_registry.py`（外加被 `.gitignore:35 __pycache__/` 挡住的目录）；`git ls-files scripts/_tool_registry.py` 命中 ⇒ 跟踪面在、不是残留。② 与本单主题的接合点：BUG-366 立的律是「缺执行面的尺＝坏着的尺」，本条是它的**下一层**——有了执行面之后，**期望红的依据如果不可核对，那一格等于半开**。电池里现在这一格读 `rc=1 exp=1 ⇒ 预存红 OK`，判据没错，但「623 件的构成」和「其中 1 件其实是真源」两件事都不在任何尺子的面上。③ 修法三档（都不动本单元边界，留裁）：(a) 让 `cleanup_artifacts` 按档**逐条点名**（文件名打印出来，虚报当场可见，成本最低）；(b) 把 `scripts/` 的 `_` 档改成「未被 `check_scripts_index` 认领的 `_` 脚本」，即以索引守卫为真源、跟踪面自动豁免；(c) 维持现状但在电池 `why` 文本里写死构成与已知虚报。副机倾向 (a)+(b)：(c) 是把盲区从被测面搬到依据面。
 - note: 定 low：不参与红门（本机该格本就按期望红声明）、`--check` 是只读诊断、零清理动作。未复核一格：86 个根 `.db` 与 536 个 `temp/` 文件里是否还混有别的跟踪件（本条只核了 `scripts/` 这一档）。结论只建立在「`ls` + `git ls-files` + `scripts/README.md` 真源声明 + 电池 `expected()` 文本」上。
@@ -6008,7 +6008,7 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
   指向旧号的**叙述面**文字（如原 L3663 的「与 BUG-183/187/188 同族」）按只追加律一律保留原文，
   由条目内 `- 编号迁移:` 字段与代码注释侧的引用面立案（新立 `BUG-373`）承接。
 
-## BUG-373 [2026-10-21T02:20:00Z] [medium] OPEN
+## BUG-373 [2026-10-21T02:20:00Z] [medium] FIXED
 - summary: [引用面完整性零校验] 代码注释与测试标题里的 `BUG-n` 是账本与真源之间唯一的连接方式，而全仓没有任何守卫核对它——R47 重编号时逐站点实测到三类失配（错号 / 悬空 / 一号三义），本单只立案不修
 - detail: ① **错号**：`src/server/server.mbt:547` 注释「BUG-192：`Double::to_int()` 对超 Int32 域的值饱和（BUG-26 实测：1e300 → Int max）」
   与 `src/server/get_int_wbtest.mbt:1,15,31`（其中 15/31 是**测试标题字符串**）说的都是 `get_int` 饱和，
@@ -6105,3 +6105,7 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 ### FIXED(2026-10-22T00:00:00Z / BUG-378)
 - evidence: server.mbt 所有按 task_id 工具（get/run_check/verify/claim/execute/submit）统一走 engine_for_ns(ns)——default 用模块级 engine、其他 ns 用 mstore.get，与 claim/execute/submit 同一 namespace→store 映射；取消按根库 schema 能力隐式回退；run_check 落库失败返回错误，拒绝「命令已执行记录消失」半途态。验证：moon check --target js 0 errors；moon test --target js 1352/1352 passed。
 
+
+
+### FIXED(2026-10-22T02:01:06Z / BUG-367, BUG-368, BUG-369, BUG-373, BUG-374, BUG-375, BUG-376, BUG-377, BUG-378, BUG-358, BUG-359, BUG-360)
+- evidence: 批量收尾：HEAD cef1e9cb 已含全部修复 commit。v0.3.10 cherry-pick 回救 + whisperer.py HEAD 安全门 + 4 个守卫脚本修尺（check_mbti_sync/check_pkg_imports/check_template_ctrl/simulate_head_commit 退出码 rc=2 + cleanup_artifacts 豁免 _tool_registry.py + check_plan_landing 搬家态 + check_bug_refs.py 引用面对表）。moon check 0 errors / check_merge_markers PASS / moon build 0 errors。按记账规则 bug_fix 同一笔落点名小记，不再散改抬头。
