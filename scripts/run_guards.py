@@ -170,15 +170,10 @@ SPECIAL_CASES = [
              "同一处棘轮超限 ⇒ 自检 T9「真源现状 rc=0」不成立，按判据自拒出 2", "--selftest"),
     # —— R55：blackbox 尺进宇宙也进电池（相对 scripts/ 点名，路径含子目录）——
     case("blackbox/check_merge_markers.py", "--selftest"),
-    # R106 追记（叠 b465915f 后现读）：主线把某 agent 的 git worktree 以 **gitlink(mode 160000)**
-    # 提交进了跟踪面（`.agents/worktrees/fix/display-rank-boundary`，由 `4a7bf82a` 手动解冲突带入；
-    # 我的基点 19830ccb 上没有 `.agents`，本单元净差也不含它）。判据对跟踪面逐文件读取，读到 gitlink
-    # 拿不到正文 ⇒ VIOLATION L1「有 1 个跟踪文件读不到」⇒ rc=1。这是主线面的一次入库事故，
-    # 出路是 `git rm --cached .agents/worktrees/fix/display-rank-boundary`（属人的决定，本单元不代删）；
-    # 按预存红的律登记：它修好后 got 0 ≠ expect 1 当场现形，逼下一位把期望改回 0。
-    expected("blackbox/check_merge_markers.py", 1,
-             "预存红：主线跟踪面含 gitlink .agents/worktrees/fix/display-rank-boundary（mode 160000）"
-             "⇒ 判据读不到正文，VIOLATION L1 后整尺 rc=1；归属＝主线出该条目"),
+    # R106 曾登记预存红：主线把某 agent 的 git worktree 以 gitlink(mode 160000) 提交进跟踪面
+    # （`.agents/worktrees/fix/display-rank-boundary`，`4a7bf82a` 带入）⇒ 判据读不到正文，L1 后 rc=1。
+    # R116 收口：`git rm --cached` 删该条目 + `.gitignore` 忽略 `.agents/worktrees/`，期望按预存红律改回 0。
+    case("blackbox/check_merge_markers.py"),
     # —— 诊断型：退出码语义不是门禁，把当轮真读数钉成期望值（数字变了就现形）——
     expected("check_plan_landing.py", 1,
              "诊断口径：判定面 25 条活文档点名落点未落地（BUG-367 A/B/C 三档留裁决）；另有搬家态 3 条单列"

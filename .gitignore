@@ -149,3 +149,4 @@ dist/
 /src/ops/rhop_native.mbt
 /src/server/bug335_ns_route_wbtest.mbt
 .git/fist/
+.agents/worktrees/
