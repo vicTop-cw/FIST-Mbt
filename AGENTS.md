@@ -443,9 +443,3 @@ Prompts: `fist:check_in`, `fist:verify`
 | FIST SKILL 全文 | `<FIST-项目根目录>/FIST-SKILL.md` |
 | FIST-Mbt 根 | `<FIST-Mbt-项目根目录>` |
 *（内容由AI生成，仅供参考）*
-
-> **JS 后端**：`moon test --target js` = **1353/1353**（2026-10-22 CI (js, ubuntu) 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并 + 多管家/supervisor 工具 + web 面板 M0 + 五语言接入示例 + CAF 属性测试与边界探针 + BUG-333 默认降噪锁等后续追加）。
-  绝不冒用 `1` 那一档）。**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 1353/1353）**，见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
-
-> **JS 后端**：`moon test --target js` = **1347/1347**（2026-10-21 Windows 实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并 + 多管家/supervisor 工具 + web 面板 M0 + 五语言接入示例 + CAF 属性测试与边界探针 + BUG-333 默认降噪锁等后续追加）。
-  绝不冒用 `1` 那一档）。**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 1347/1347）**，见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
