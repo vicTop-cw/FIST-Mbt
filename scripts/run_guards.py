@@ -256,6 +256,41 @@ def build_cases():
 CASES = build_cases()
 
 
+# —— R94：无参兜底格普查（TASK-007 自动发现的反面一课）——
+# 自动发现给每支未点名脚本补的是一格**无参**跑法。脚本若带不可逆动作（强推共享线、
+# reset --hard、开 MR 后 merge），跑守卫电池就等于替所有人跑了它。cef1e9c 上
+# whisperer.py 与 fist-pr-automator.py 正是这样进电池的——前者 Step 0 会
+# `git push --force HEAD:main HEAD:master` 打两个远端。排除表靠人想起加，
+# 所以这条纪律本身要做成判据，而不是只写在注释里。
+HAZARD_RE = re.compile(r"reset --hard|--force|\"push\"|/merge\b")
+
+
+def bare_cells():
+    """自动发现会补的无参格 = 宇宙 − SPECIAL_CASES 点名面。"""
+    covered = set(c["script"] for c in SPECIAL_CASES)
+    return [s for s in discover_scripts() if s not in covered]
+
+
+def script_texts(names):
+    """按名字取脚本正文（blackbox/ 前缀走子目录；读不到的给空串，由普查自行跳过）。"""
+    out = {}
+    for name in names:
+        path = os.path.join(SCRIPTS_DIR, *name.split("/"))
+        try:
+            with io.open(path, encoding="utf-8", errors="replace") as f:
+                out[name] = f.read()
+        except IOError:
+            out[name] = ""
+    return out
+
+
+def hazard_violations(texts, bare):
+    """纯函数普查：texts={脚本名: 正文}，bare=拿无参格的脚本名集合 ⇒ 返回该收口的名字。
+    判定面空不许冒绿——调用方给了 bare 名单却一个正文都没读到，返回哨兵名由 selftest 判红。"""
+    hit = sorted(n for n in bare if HAZARD_RE.search(texts.get(n, "")))
+    return hit
+
+
 def ci_referred():
     """现读 .github/workflows/*.yml 里引用过的 scripts/*.py（不抄清单）。
     R82：正则从「check_*/gen_plugins/cleanup 白名单」放宽到任意 `scripts/...py` 路径引用——
