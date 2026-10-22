@@ -66,3 +66,18 @@
 - 实测读数：本会话 `whisperer.py --selftest` rc=0（六格全 True）、默认 `--no-fetch` 首拍入池 8 单 rc=2、
   次拍「新 yaml：无」rc=2（notes 仍在）、`check_scripts_index.py` rc=0、
   `check_py_stdout_encoding.py --all` rc=0（87/87）、`fist-gate.py --selftest` 本机 rc=2（G4 预存红）。
+
+## 追记（同轮）· 拉主仓看到的两件撞车
+
+按「新分支前先看主仓是否需要覆盖本地」的律回看 `gitcode/main`：基点之后有 4 格，最新 9e0064a（v0.3.10）。
+其中 b0693a6 是主机自己合并的 `scripts/whisperer.py`（Step 0-4 编排版，218 行），与副机 R86 的
+TASK-009 交付**同名、同单号、不同实现**；它的 `step0_head_safety()` 在巡检拍里执行
+`git checkout master` → `git reset --hard <gitcode/main>` → `git push --force HEAD:main HEAD:master`（两远端），
+判据 `gc == og and gc != local` 把「本地 master 有未推提交」和「工作树脏」都读成篡改。
+主机自身已被这一门开过火：9e0064a 的提交信息写着「风语者 HEAD 安全门手动回救」。
+
+两件事都只入池不自行裁决（金条四：不可逆面留指挥官/用户）：
+`docs/tasks/backlog/TASK-018-whisperer-head-gate-destructive.yaml`（P1，撤巡检面强推/改显式 --recover）、
+`TASK-019-task009-whisperer-double-implementation.yaml`（P1，裁决 whisperer 真源，建议以 main 的编排为真源
+并入副机的探测/入池面，或改名双活）。r85 的 MR 与 main 在 `scripts/whisperer.py` 上必撞冲突，
+合并者需带着这两份 yaml 一起解。
