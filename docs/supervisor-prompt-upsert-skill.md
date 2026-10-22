@@ -68,14 +68,18 @@ supervisor_task_upsert(
 - `items` **必填数组**：每项 `{task_id?, description, priority?, depends_on?[]}`。
   - 带 `task_id` → **更新**该任务（描述 / 优先级 / 追加依赖）。
   - 不带 `task_id` → **追加**新根任务（复用 `publish` 的 human_steward 硬门）。
-- `namespace` **可选默认 default**：任务落哪个 ns。
-- 返回：per-item `{created/updated/failed}` 逐项回执（逐条独立成败，不整体回滚）。
+- `namespace` **可选默认 default**：**决定物理落库位置**（R114 起走 `engine_for_ns` 同一条路由）。
+  过去只把 ns 当列值盖章、写还是写进默认库 ⇒ ghostA 的行躺在 `default.db` 里，
+  `publish`/`list` 按 ns 路由看不见它、`supervisor_status` 又按列值数到它（脑裂）。
+  ns 打不开（名称非法 / data_dir 不合法）直接发红，**不静默回落 default**。
+- 返回：per-item `{created/updated/failed}` 逐项回执（逐条独立成败，不整体回滚），另附 `namespace`（实际写入库）。
 - **终态任务拒改**（已完成 / 已归档不改描述）。
 
-### 5. `supervisor_reminder_tick(stale_hours 可选默认 24, pending_hours 可选默认 48, include_consumed 可选默认 false)`
+### 5. `supervisor_reminder_tick(stale_hours 可选默认 24, pending_hours 可选默认 48, include_consumed 可选默认 false, namespace 可选)`
 
 ```
 supervisor_reminder_tick(stale_hours: 24, pending_hours: 48)
+supervisor_reminder_tick(namespace: "ghostA")
 ```
 
 - **提醒者（Reminder）轮询一拍**：扫描 plan 目标 vs task_tree 实际的偏离。
@@ -83,12 +87,18 @@ supervisor_reminder_tick(stale_hours: 24, pending_hours: 48)
   - R1 未消费引导（`include_consumed=false` 时只看待投递）。
   - R2 停滞任务（活跃超 `stale_hours` 未更新）。
   - R3 待处理超时（`pending` 超 `pending_hours` 未被接管）。
+- `namespace` **可选**：不传 = **真·全库轮询**（遍历 `default` + 所有已打开 ns）；传了 = 只查该 ns 的物理库，打不开直接发红、不静默回落 default。
+  修复前它只打默认引擎，别的 ns 里停了几天的任务提醒者永远不响，而文案写的正是「一次全库提醒检查」。
 - 返回：`reminder_count` / `reminders`、`guidance_unconsumed_count` / `guidance_unconsumed`、
-  `total_reminders`（= 提醒数 + 未消费引导数）；`include_consumed=true` 时**另出**
+  `total_reminders`（= 提醒数 + 未消费引导数），另附 `scope`（`all-namespaces` / `namespace`）与
+  `namespaces_scanned`（本轮实际轮询过哪些库）；`reminders` 每条带 `namespace`（**物理库**，折时盖上）
+  和引擎自报的 `ns`（**列值**）——R114 之前 `task_upsert` 的脑裂行会出现两者不一致，正好用它认出旧脏数据。
+  `include_consumed=true` 时**另出**
   `guidance_consumed_count` / `guidance_consumed`，已消费引导**不计入** `total_reminders`。
   这两个键是 R110 补的：参数早就 advertised，但 handler 先取全量再无条件滤掉已消费，
   所以真布尔传上去读数恒为空——修复前 `include_consumed` 只能按字符串 `"true"` 传才不被
   inputSchema 拒，而那正是本工具想收的形状（现收紧为 boolean，字符串一律 -32602 拒收）。
+  `reminder_count` 取拼接后 `reminders` 的实际条数，不是各库自报数之和（各库自报在跨库折加时是重复计数）。
 
 ## 已知边界
 
@@ -97,6 +107,16 @@ supervisor_reminder_tick(stale_hours: 24, pending_hours: 48)
 - **`task_upsert` 追加须 `human_steward`**：非 human_steward 传无 `task_id` 的 items 会被拒（engine.publish 硬门）。
 - **`task_upsert` 不改终态任务**：已完成 / 已归档任务拒改描述。
 - **`task_upsert` 逐条独立成败**：一条失败不整体回滚，回执 `failed` 项要逐条看。
+- **撞号不猜库（R114）**：`task_id` 是**每库各自顺延**的（`T0` 可以同时存在于 `default` 与 `ghostA`）。
+  `supervisor_task_tree` / `supervisor_kill_plan` 不传 `namespace` 时按 `default → 其余已打开 ns` 寻址，
+  **命中 0 个**发红并点名搜过哪些库，**命中 ≥2 个**直接发红要求点名 `namespace`，绝不按顺序取第一个。
+  这一条是给 `kill_plan` 的 `apply_pause=true` 兜底用的：先做撞号判定再评估门链，
+  所以它不可能把别的租户的任务 pause 掉。
+- **搜索面 = `default` + 已打开的 ns**：`mstore.ns_list()` 只列已持有句柄的库，磁盘上存在但本轮没 `store_open`
+  过的 `.db` 不在寻址面内。找不到任务时先看 `namespaces_scanned` 是否包含目标库，不含就是没开库，不是没数据。
+- **引导面不按 ns 分库**：`prompt_*` 三件套与 `reminder_tick` 的 `guidance_*` 读数走进程内 registry
+  （+ `call_log` 双写），是**进程级**而非**库级**的——跨库轮询只把 `reminders` 分段拼接，
+  未消费引导数在所有 `namespaces_scanned` 读数里是同一份，别按库数乘。
 - **`reminder_tick` 只读**：它只产出提醒清单，不自动注入；注入要走 `prompt_inject`（人工或上层调度）。
 - **`stale_hours` / `pending_hours` 默认值对活跃项目偏保守**：24h / 48h 适合日级节奏，高频项目需下调。
 
@@ -121,6 +141,6 @@ supervisor_reminder_tick(stale_hours: 24, pending_hours: 48)
 ## 验收
 
 - 四段齐全：`## 何时用` / `## 怎么调` / `## 已知边界` / `## 五工具协同` ✓
-- 5 工具参数名逐字：`target, prompt` / `target, include_consumed` / `guidance_id` / `project_dir, by, items, namespace` / `stale_hours, pending_hours, include_consumed` ✓
+- 5 工具参数名逐字：`target, prompt` / `target, include_consumed` / `guidance_id` / `project_dir, by, items, namespace` / `stale_hours, pending_hours, include_consumed, namespace` ✓
 - 硬门点：`task_upsert` 追加须 `human_steward`、`prompt_consume` 幂等、`reminder_tick` 只读不注入、终态任务拒改 ✓
 - 真源对齐：`src/server/supervisor_tools.mbt` + `AGENTS.md`「超级管家专属工具」段 ✓
