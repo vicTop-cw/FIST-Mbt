@@ -93,9 +93,3 @@ evolve_distill            蒸馏成 [principle] 原则写入 DGM，4-AI 门禁�
 - 170 工具分组：`README.md` §MCP 暴露面（生命周期/查询/DAG/自驱/演化/运维/Omega/调用日志+bug上报）
 - 自驱走通实例：`docs/selfdrive-walkthrough.md`
 - 评审关注"补齐 MCP 概念门槛"建议从此页分层图入手，再下沉到 `src/` 各包。
-
-*（内容由AI生成，仅供参考）*
-
-1. **纯 MoonBit，零运行时依赖**：无 Python/Rust 包装；JS + Native 双端交叉编译：JS 端 `moon test --target js` = 1353/1353（2026-10-22 CI js/ubuntu 实测，权威门槛）；Native 端 2026-10-01 WSL 实测同为 572/572，但同一 commit 的干净树（`git archive HEAD`）上 native 测试二进制必崩，根因在依赖的 FFI（账本 BUG-133），故不拿 native 数当门槛（`moon update && moon run cmd/cli` 即用）。CI 的 native 两条臂按 2026-10-01 owner 裁决③改成「常驻判据当门 + 门后才跑全量」：门 `Native heap gate (BUG-133 探针当门)` 跑 `scripts/blackbox/e2e_native_heap_probe.py`（零本仓业务码），只有 `crashes=0/12` 才放行——把「没人解释的红」换成「有读数、有前置的红」，测试步骤未删所以覆盖会自己回来。
-
-1. **纯 MoonBit，零运行时依赖**：无 Python/Rust 包装；JS + Native 双端交叉编译：JS 端 `moon test --target js` = 1347/1347（2026-10-21 Windows 实测，权威门槛）；Native 端 2026-10-01 WSL 实测同为 572/572，但同一 commit 的干净树（`git archive HEAD`）上 native 测试二进制必崩，根因在依赖的 FFI（账本 BUG-133），故不拿 native 数当门槛（`moon update && moon run cmd/cli` 即用）。CI 的 native 两条臂按 2026-10-01 owner 裁决③改成「常驻判据当门 + 门后才跑全量」：门 `Native heap gate (BUG-133 探针当门)` 跑 `scripts/blackbox/e2e_native_heap_probe.py`（零本仓业务码），只有 `crashes=0/12` 才放行——把「没人解释的红」换成「有读数、有前置的红」，测试步骤未删所以覆盖会自己回来。
