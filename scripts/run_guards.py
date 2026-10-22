@@ -89,6 +89,23 @@ def discover_scripts():
     return out
 
 
+RESIDENT_MARKERS = ("serve_forever(", "run_forever(")
+
+
+def is_resident_src(src):
+    """纯函数版分类器：源码里有常驻循环旗标 ⇒ 这脚本自己不会结束。
+    从源码现读而不抄名单：新写一个 server 自动归类，改名/搬目录都不会漏。"""
+    return any(m in src for m in RESIDENT_MARKERS)
+
+
+def is_resident(rel):
+    try:
+        with io.open(os.path.join(SCRIPTS_DIR, rel), encoding="utf-8", errors="replace") as f:
+            return is_resident_src(f.read())
+    except OSError:
+        return False
+
+
 SPECIAL_CASES = [
     # —— 判据面（纯静态，跨平台稳定）——
     case("check_tools_sync.py"),
@@ -145,12 +162,18 @@ SPECIAL_CASES = [
 
 def build_cases():
     """自动构建 CASES：SPECIAL_CASES + 对每个未发现脚本补一条 case(script)。
-    已有手写的脚本（SPECIAL_CASES 里出现过的）不重复补。"""
+    已有手写的脚本（SPECIAL_CASES 里出现过的）不重复补。
+    R98 追修：自动补格时**跳过常驻服务型脚本**——裸跑 `serve_forever()` 的脚本永不退出，
+    一格就把整轮电池挂死（TASK-007 自动扫描把 http/web 两个 bridge 卷进来实测卡死 6 分钟）。
+    手写的格子（带旗标的有界跑法）不受影响。"""
     covered = {c["script"] for c in SPECIAL_CASES}
     cases = list(SPECIAL_CASES)
     for script in discover_scripts():
-        if script not in covered:
-            cases.append(case(script))
+        if script in covered:
+            continue
+        if is_resident(script):
+            continue
+        cases.append(case(script))
     return cases
 
 
@@ -188,7 +211,7 @@ def _existing_scripts():
     return existing
 
 
-def check_faces(guards, ci_names, case_scripts, missing, existing=None):
+def check_faces(guards, ci_names, case_scripts, missing, existing=None, resident=()):
     """G1/G2/G3 的纯函数版（selftest 喂合成集合，含合成的"文件系统上有哪些脚本"）。
     existing=None 时现读真目录（含 blackbox 子目录，与 guard_files 点名同形）。"""
     if not guards:
@@ -207,22 +230,33 @@ def check_faces(guards, ci_names, case_scripts, missing, existing=None):
         for g in missing:
             lines.append("  - %s ⇒ 要么挂进 CI，要么进本电池 CASES，别留'写了就没人跑'" % g)
         return 1, lines
-    return 0, ["G1 通过：%d 把尺全部有执行面（CI %d / 电池 %d）"
-               % (len(guards), len(ci_names & set(guards)), len(case_scripts & set(guards)))]
+    line = ("G1 通过：%d 把尺全部有执行面（CI %d / 电池 %d）"
+            % (len(guards), len(ci_names & set(guards)), len(case_scripts & set(guards))))
+    if resident:
+        line += "；常驻服务 %d 把不裸跑（serve_forever，逐条点名）：%s" % (len(resident), " ".join(resident))
+    return 0, [line]
 
 
 def face_report():
     ci = ci_referred()
     battery = {c["script"] for c in CASES}
-    guards = guard_files()
+    guards_all = guard_files()
+    # 常驻服务：只有「没有手写有界格子」的那些才豁免；一旦有人给它补了带旗标的一格，
+    # 它就回到宇宙里当尺使（豁免是形状豁免，不是身份豁免）。
+    resident = sorted(g for g in guards_all if g not in battery and is_resident(g))
+    rset = set(resident)
+    guards = [g for g in guards_all if g not in rset]
     missing = [g for g in guards if g not in ci and g not in battery]
     rows = [(g, "CI" if g in ci else "-", "电池" if g in battery else "-") for g in guards]
-    return rows, missing, ci, battery, guards
+    return rows, missing, ci, battery, guards, resident
 
 
-def run_battery():
-    rows, missing, ci, battery, guards = face_report()
-    rc, lines = check_faces(guards, ci, battery, missing)
+CASE_TIMEOUT_SEC = 600
+
+
+def run_battery(case_timeout=CASE_TIMEOUT_SEC):
+    rows, missing, ci, battery, guards, resident = face_report()
+    rc, lines = check_faces(guards, ci, battery, missing, resident=resident)
     for l in lines:
         print(l)
     if rc == 2:
@@ -236,9 +270,18 @@ def run_battery():
             skips.append((c["name"], "缺前置 " + " ".join(miss)))
             print("SKIP  %-56s %s" % (c["name"], "缺前置 " + " ".join(miss)))
             continue
-        p = subprocess.run([py, os.path.join(SCRIPTS_DIR, c["script"])] + c["argv"],
-                           capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", cwd=ROOT)
+        tmo = c.get("timeout") or case_timeout
+        try:
+            p = subprocess.run([py, os.path.join(SCRIPTS_DIR, c["script"])] + c["argv"],
+                               capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", cwd=ROOT, timeout=tmo)
+        except subprocess.TimeoutExpired:
+            # R98：尺子不结束不等于判据红，更不等于可以整轮挂着——限时判红并点名，
+            # 否则下一位跑电池的人只会看到"没输出"（本仓空转即自拒的同一口径）。
+            fails.append((c["name"], "TIMEOUT", c["expect"], c["why"],
+                          "限时 %ds 未结束" % tmo))
+            print("TIMEOUT %-56s 限时 %ds 未结束（尺子不结束 ⇒ 判红点名）" % (c["name"], tmo))
+            continue
         out = ((p.stdout or "") + ("\n" + p.stderr if p.stderr else "")).strip().splitlines()
         tail = out[-1][:120] if out else ""
         ok = p.returncode == c["expect"]
@@ -272,9 +315,9 @@ def selftest():
     #    且电池里的 blackbox 点名不得被 G2 误判 stale（存在集与宇宙同形）
     cell("universe-covers-blackbox-real",
          any(g.startswith("blackbox/") for g in guard_files()), True)
-    rows0, missing0, ci0, battery0, guards0 = face_report()
+    rows0, missing0, ci0, battery0, guards0, resident0 = face_report()
     cell("g2-not-false-stale-on-blackbox",
-         check_faces(guards0, ci0, battery0, missing0)[0] != 2, True)
+         check_faces(guards0, ci0, battery0, missing0, resident=resident0)[0] != 2, True)
     # 0b) 合成孤儿：blackbox 尺既不在 CI 也不在电池 ⇒ 必须 1 且带前缀点名
     rc, lines = check_faces(["check_a.py", "blackbox/check_m.py"], {"check_a.py"},
                             {"check_a.py"}, ["blackbox/check_m.py"],
@@ -295,11 +338,24 @@ def selftest():
     cell("G2-stale-case-name",
          check_faces(G, {"check_a.py"}, {"check_b.py"}, [], {"check_a.py"})[0], 2)
     # 5) 真源自证：本仓现状必须 G1 全绿；且 plan_landing 这一格从此进电池
-    rows, missing, ci, battery, guards = face_report()
-    cell("repo-current-has-no-orphan-guard", check_faces(guards, ci, battery, missing)[0], 0)
+    rows, missing, ci, battery, guards, resident = face_report()
+    cell("repo-current-has-no-orphan-guard",
+         check_faces(guards, ci, battery, missing, resident=resident)[0], 0)
     cell("battery-covers-plan-landing", "check_plan_landing.py" in battery, True)
-    print("  ok  现状读数：%d 把尺 / CI 面 %d / 电池面 %d / 缺面 %d"
-          % (len(guards), len(ci & set(guards)), len(battery & set(guards)), len(missing)))
+    # 6) R98 本体：常驻服务型脚本（自己不会结束）既不能被裸跑进电池，也不能悄悄从宇宙里消失
+    cell("resident-src-flags-serve-forever",
+         is_resident_src("def main():\n    server.serve_forever()\n"), True)
+    cell("resident-src-flags-run-forever", is_resident_src("    app.run_forever()\n"), True)
+    cell("resident-src-clean-guard-not-flagged", is_resident_src("print('ok')\n"), False)
+    cell("resident-face-is-named-not-silent", len(resident) > 0, True)
+    cell("battery-has-no-bare-resident-case",
+         any(c["script"] in set(resident) and not c["argv"] for c in CASES), False)
+    cell("g1-still-red-for-real-orphan-with-resident-exempt",
+         check_faces(guards + ["check_orphan.py"], ci, battery, missing + ["check_orphan.py"],
+                     resident=resident)[0], 1)
+    print("  ok  现状读数：%d 把尺 / CI 面 %d / 电池面 %d / 缺面 %d / 常驻豁免 %d"
+          % (len(guards), len(ci & set(guards)), len(battery & set(guards)), len(missing),
+             len(resident)))
 
     bad = [(nm, why) for nm, ok, why in cells if not ok]
     if bad:
@@ -309,7 +365,9 @@ def selftest():
         return 1
     print("SELFTEST OK（%d 格：宇宙覆盖 blackbox 真尺 + G2 不误判其 stale / G1 抓 blackbox 孤儿 + 带前缀点名 / G1 干净 / G1 抓漏面尺 + 必点名 / G3 三种空宇宙各自拒 / "
           "G2 电池点了不存在的脚本自拒 / 真源现状全绿 / plan_landing 已进电池 / "
-          "plan_landing 门禁格与诊断格并存且诊断格 why 带构成）" % len(cells))
+          "plan_landing 门禁格与诊断格并存且诊断格 why 带构成 / "
+          "常驻分类器咬 serve_forever 与 run_forever 且不误咬干净尺 / 常驻面逐条点名不静默 / "
+          "电池里没有裸跑的常驻格 / 有常驻豁免时真孤儿仍判红）" % len(cells))
     return 0
 
 
@@ -317,20 +375,25 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--list", action="store_true", help="只打覆盖表，不跑")
+    ap.add_argument("--case-timeout", type=int, default=CASE_TIMEOUT_SEC,
+                    help="单格限时（秒）：尺子不结束就判红点名，不许挂住整轮")
     args = ap.parse_args()
     if args.selftest:
         return selftest()
     if args.list:
-        rows, missing, ci, battery, guards = face_report()
+        rows, missing, ci, battery, guards, resident = face_report()
         for g, a, b in rows:
             print("%-42s CI=%-3s 电池=%-3s" % (g, a, b))
-        print("\n尺 %d 把 / CI 面 %d / 电池面 %d / 缺执行面 %d"
-              % (len(rows), len(ci & set(guards)), len(battery & set(guards)), len(missing)))
+        for g in resident:
+            print("%-42s CI=%-3s 电池=%-3s  （常驻服务：serve_forever，不裸跑）" % (g, "-", "-"))
+        print("\n尺 %d 把 / CI 面 %d / 电池面 %d / 缺执行面 %d / 常驻豁免 %d"
+              % (len(rows), len(ci & set(guards)), len(battery & set(guards)), len(missing),
+                 len(resident)))
         if missing:
             print("缺面清单：" + " ".join(missing))
             return 1
         return 0
-    return run_battery()
+    return run_battery(args.case_timeout)
 
 
 if __name__ == "__main__":
