@@ -211,9 +211,9 @@ SPECIAL_CASES = [
     expected("check_scripts_naming.py", 1,
              "现读 2 条命名判定面 > 棘轮上限（NAMING.md 词法棘轮，改名要同批下调上限，"
              "见 scripts/NAMING.md）"),
-    expected("check_dist_snapshot.py", 1,
-             "本机 moonc 世代产出的 bundle 比仓内快照大（实测 release 108k 行 vs 快照 83k 行）"
-             "⇒ 副机工具链与主仓钉版不同代，刷新快照属发布流程动作，不在电池里做"),
+    # ── 兑现（R108）：主线 `866e2e65` 把 dist 快照刷到与 moon.mod 同版 ⇒ 这一格现读 got=0，"
+    #    登记的红已不成立。按本文件自订的律「被检内容修好 ⇒ 把期望改回 0」转回门禁格，依据一起删。──
+    case("check_dist_snapshot.py"),
     expected("cleanup_artifacts.py", 1,
              "预存红：工作树 DIRTY（temp/ 与 *.db 是运行物，本仓不 git clean 它们）", "--check"),
     # ── 这一格是「预存红被修好 ⇒ 期望改回 0」那条律的一次兑现（不是我们替它改的读数）──
