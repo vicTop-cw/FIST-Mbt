@@ -35,13 +35,22 @@ def step0_head_safety():
     local = sh("git", "rev-parse", "HEAD")
     gc = sh("git", "rev-parse", "gitcode/main")
     og = sh("git", "rev-parse", "origin/main")
-    status = f"local={local[:7]} gitcode={gc[:7]} origin={og[:7]}"
     if gc == og and gc != local:
-        print(f"  ⚠️ HEAD 从 {local[:7]} 恢复到 {gc[:7]}")
+        # 记录篡改事件
+        log_path = ROOT / "memory" / "whisperer-tamper.log"
+        tamper = sh("git", "log", "-1", "--oneline", local)
+        author = sh("git", "log", "-1", "--format=%an <%ae>", local)
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_line = f"[{ts}] 本地 HEAD={local[:7]} 被篡改: {tamper} | {author} → 恢复到 {gc[:7]}\n"
+        log_path.parent.mkdir(exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(log_line)
+        print(f"  ⚠️ HEAD 被篡改！{tamper[:80]}")
+        print(f"  → 恢复到 {gc[:7]}，篡改记录写入 memory/whisperer-tamper.log")
         run(["git", "reset", "--hard", gc])
         run(["git", "push", "gitcode", "HEAD:main", "HEAD:master", "--force"])
         run(["git", "push", "origin", "HEAD:main", "HEAD:master", "--force"])
-        return (gc[:7], "⚠️ 已恢复")
+        return (gc[:7], f"⚠️ HEAD被篡改已恢复 ({tamper[:40]})")
     return (local[:7], "✅ 三端一致")
 
 # ============================================================
