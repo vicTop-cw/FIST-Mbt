@@ -44,6 +44,15 @@ jobs:
           python3 scripts/blackbox/check_merge_markers.py --selftest
           python3 scripts/blackbox/check_merge_markers.py
 
+      # R121：文本面控制字符零容忍门——写 `\b`/`\e`/`\f` 时被转义吃成不可见字节（0x08/0x1b/0x0c），
+      # 文件照样能读能提交，只是 grep/正则永远命不中（R119/R120 连中三份制品）。
+      # 纯文件扫描不依赖 moon；放 Migrate 之前（同 merge-marker：之后的判据会被 skip）。
+      - name: Text control-char gate (R121：文本面 C0/DEL 零容忍)
+        shell: bash
+        run: |
+          python3 scripts/check_text_control_chars.py --selftest
+          python3 scripts/check_text_control_chars.py
+
       - name: MBTI sync guard (.mbti 接口声明 ↔ 源定义；第二次 master 坏状态形状)
         shell: bash
         run: |

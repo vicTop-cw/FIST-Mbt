@@ -71,6 +71,7 @@ You can browse and install extra skills here:
   观测到 0.1.20261012）分属不同 moon fmt 世代，输出可能不一致。以本地
   `moon fmt` 落盘 + `moon fmt --check` 通过为准；并发 WIP 收口后跑一次
   nightly 全仓重排，统一风格后即可撤销 `continue-on-error`、恢复 fmt 门强度。
+- **本机 `moon fmt --check` 不可用（**BUG-388**，2026-10-22 实测）**：moon 0.1.20261016 的 `--check` 管线报 `_build/wasm-gc/release/format/…: No such file` + `fatal: cannot hash` 且 rc=-1，**与本仓无关的 3 文件最小工程同样复现** ⇒ 工具链缺陷。判它请用 `python scripts/check_fmt_gate.py`：`0` 干净 / `2` 不可测（拒绝判红也拒绝判绿）/ `1` 真格式差异；格式门权威面以 CI（Linux nightly）为准。
 - 标准提交流程：`moon fmt` → `moon info && moon fmt`（同步 `.mbti`）→
   `moon test --target js` 全绿 → `git commit`。
 
@@ -95,10 +96,25 @@ You can browse and install extra skills here:
 > 环境要求：新环境首次先 `moon update` 刷新 registry（依赖全公开，无私有包）；
 > **moon 工具链 ≥ 0.1.20261016**（`is` 模式匹配表达式为 d799f56 适配此版引入，替代已移除的 is_ok/is_err——R29 升级）；
 > **JS 目标需 Node.js ≥ 24**（项目默认 target，SQLite 后端依赖 `node:sqlite` 的 `returnArrays`，
-> node <24 会退化为对象行导致列读取为空）。见 README「环境要求」。
+> node <24 会退化为对象行导致列读取为空）。
+> **常驻入口 spawn `moon` 统一带 `MOONC_OVERRIDE`**：`scripts/moon_env_probe.py`（R125）在本机自动发现
+> `~/.moon-shim/shim.exe`（剥离 `\\?\` 前缀，绕 moonc 的 `Sys_error("\\\\?: Invalid argument")` ICE），
+> 显式环境变量优先、非 Windows 原样透传；8 个入口已接线，静态普查与 `--selftest` 均在电池里。
+> 见 README「环境要求」。
 > **JS 可执行产物 ESM 兼容**：moonc ≥0.10.14 对 `cmd/cli` 输出 ESM，而 `mizchi/sqlite` 的 JS 桩用 CJS `require`，
 > 直接 `node main.js` 会报 `require is not defined`。`scripts/mcp_smoke.py` / `demo.ps1` 启动前会自动调
 > `scripts/patch_esm_main.py` 注入 require shim（幂等）；手动跑 server 请先 `python scripts/patch_esm_main.py`。
+
+> **JS 测试在本机跑不起来？先看这一条（BUG-380 根因，2026-10-22 实测）**：
+> `moon test --target js` 会把测试选择面作为**一整段 JSON 参数**交给测试产物；若 PATH 上的 `node`
+> 落在 **`node.cmd` / `node.bat` 垫片**（例如 DSH 桌面端的 `%APPDATA%\dsh-desktop\harness\.desktop-bin\node.cmd`），
+> 参数经 `cmd.exe` 转发会**吞掉引号**，产物收到残缺 JSON →
+> `failed to parse args: Unterminated string in JSON`、`Error: failed to run test for target Js`。
+> **对照实验**：同一 payload，垫片 rc=1「Expected property name or '}'」；真 `node.exe` rc=0 并正常打印
+> `----- BEGIN MOON TEST RESULT -----`。⇒ 坏的是垫片转发，不是 moon、不是本仓、更不是测试代码。
+> **常驻入口**：`python scripts/moon_test_env.py [moon test 的参数…]`——按目录内容剔垫片、校验真 `.exe`、
+> 跑测试并核对汇总行；rc 契约 0/1/2（2=判据无法自证）；Windows 上另自动发现 `~/.moon-shim/shim.exe` 并设
+> `MOONC_OVERRIDE`，绕开 moonc 的 `\\?\` 路径 ICE（工具链缺陷，见账本 BUG-380）。实测清理后全仓 **1387/1387 passed, rc=0**。
 
 ### native 目标构建环境要求
 

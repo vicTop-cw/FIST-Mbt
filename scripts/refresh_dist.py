@@ -22,6 +22,8 @@ import shutil
 import subprocess
 import sys
 
+from moon_env_probe import moon_env
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -31,7 +33,8 @@ DIST = os.path.join(ROOT, "dist", "fist-mbt.js")
 
 
 def run(cmd, cwd=ROOT):
-    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", env=moon_env())
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 

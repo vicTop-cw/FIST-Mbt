@@ -6158,7 +6158,7 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 验证：`moon check --target js` → **rc=0（0 errors，`[4021]` 计数 0）**。
 - reported_by: agent-skill-docs（R37 实测）
 
-## BUG-380 [2026-10-22T11:20:00Z] [high] OPEN
+## BUG-380 [2026-10-22T11:20:00Z] [high] FIXED
 - summary: [toolchain] Windows 上 `moon test --target js` 的**执行面**失败：测试 harness 报 `failed to parse args: Unterminated string in JSON at position N` 后 `The test executable exited with exit code: 1`
 - detail: 实测（本机 moon 0.1.20261016 + Node ≥24）：编译绿的前提下 `moon test --target js` 仍 rc=-1，成片 `failed to parse args: Unterminated string in JSON`；**pristine master 上 `moon test src/core` 复现同一现象**⇒ 与本轮改动无关。
 同族证据：仓内 `reports/2026-10-21-slave-rhop-poll-once-fix-report.md` 记「裸 `moon fmt` 因 `\?\` 路径 ICE」，两处都指向 Windows 长路径前缀 `\\?\` 进入 moon 的参数序列化/子进程调用。
@@ -6166,12 +6166,16 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 建议：① 复现最小用例（空包 + 一条 test）并上报 moon 上游；② 短期以 `moon test --target js <pkg>` 逐包跑绕过，或在 CI（Linux runner）上读全量；③ 若确认为 `\\?\` 前缀导致，检查 moon 的 `--test-args` 序列化与 worktree 长路径设置。
 - reported_by: agent-skill-docs（R37 实测）
 
+### FIXED(2026-10-22T11:51:00Z / BUG-380)
+- evidence: 两道坑都在常驻入口 scripts/moon_test_env.py 收口（R54 + R124）：① PATH 上的 node.cmd 垫片吞 JSON 引号（见上追记）；② 清干净 PATH 后冷编译面 moonc 的 \\?\ 路径 ICE（Sys_error("\\\\?: Invalid argument")，moon 0.1.20261016 / Windows；最小工程同现，工具链缺陷）——Windows 上自动发现 ~/.moon-shim/shim.exe 并设 MOONC_OVERRIDE（显式环境变量优先；该 shim 剥离 \\?\ 前缀后转发真 moonc），找不到就照跑并在 ICE 出现时点名成因给 rc=2。实测（2026-10-22 R124，master 8e6e5444 基线）：无 override 的 moon check --target js rc=1 ICE、设 override 后 0 errors；python scripts/moon_test_env.py 全仓 1387/1387 passed, rc=0；--selftest 12 格全绿。工具链本体仍未上游修复（同族 fmt 面见 BUG-388）。
+
 ### FIXED(2026-10-22T11:20:00Z / BUG-379)
 - evidence: `git rm src/ops/rhop_native_wbtest.mbt`（孤儿测试：引用从未存在的 `rhop_poll_once`）+ `moon info` 重生成 `src/ops/pkg.generated.mbti`（孤儿声明消失）；实测 `moon check --target js` **rc=0 / 0 errors / `[4021]` 计数 0**（修前 6 × `[4021] is unbound`，`moon test` 10s 内即编译红）。配套新开 BUG-380 记录 runner 面预存缺陷。
 
 ### FIXED(2026-10-21T11:02:58Z / BUG-358)
 - evidence: BUG-358 修复已在 master 线：ea6eba6c 是 origin/master 祖先（git merge-base --is-ancestor 实测 rc=0）。判据采纳本单出路(a)——check_host_installable.py 现以 REQUIRED_MCP_JSON=[".mcp.dev.json"] 只把跟踪真源列进「关键文件缺失即自拒」名单，根 .mcp.json 留在 LENIENT_JSON 宽松档（缺失合法 continue），并在源码注释点名本单与 BUG-131 同口径。行为复测：在无根 .mcp.json 的干净 worktree（temp/m18 @ origin/master，git ls-files 面无该件）全量跑该守卫 rc=0 PASS；修复前同形场景必 rc=2 永不产出结论（本机当时有连接器残件才偶发可判＝假绿）。CI 侧从此真跑判定，不再恒红也不再被当噪声跳过。
 
+  - 追记(R54, 2026-10-22 18:25 **根因已定位并给出常驻入口**)：真凶不是 moon、不是本仓测试代码，而是 **PATH 上的 `node.cmd` 垫片**（`%APPDATA%\dsh-desktop\harness\.desktop-bin\node.cmd`）——`moon test` 把测试选择面作为一整段 JSON 参数交给产物，经 `cmd.exe` 转发时**引号被吞**，产物收到残缺 JSON。决定性对照：同一 payload，垫片 rc=1 `Expected property name or '}' in JSON at position 1`；真 `node.exe` rc=0 且正常打出 `BEGIN MOON TEST RESULT`。**把垫片目录从 PATH 移除后**：`moon test --target js` = **1387/1387 passed, rc=0（11~15s）**（此前全仓一条测试都跑不出）。常驻入口 `scripts/moon_test_env.py`（按目录内容剔垫片 + 校验真 exe + 核对汇总行，rc 契约 0/1/2，`--selftest` 8 格），已登记索引与守卫电池；AGENTS「环境要求」也补了这条。
 ## BUG-333 [2026-10-19T05:54:08Z] [medium] FIXED
 - summary: issue_scan 精度不足：src 全量 9925 命中中 72.7%（7219）为编译期已保证/子串近似噪音（match-exhaustive 编译器强制=100% 假阳、unused-variable/long-function 为近似启发），使"扫描→上报→修复"闭环不可用
 - detail: 实测 `issue_scan dir=src max_findings=100`：scanned_files=129, total_findings=9925（截断）。by_rule 全表精确求和 = 9925。其中：
@@ -6559,3 +6563,17 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 ### 编号重编说明（2026-10-22T13:55:00Z / BUG-387 → BUG-333）
 
 - BUG-387 是 2026-10-22 的**补录块**（原抬头写作 `BUG-333 [2026-10-19T00:00:00Z]`，据 `memory/2026-10-19.md:158` 与源码注释追记），而同一缺陷的**原始抬头**早已存在（`BUG-333 [2026-10-19T05:54:08Z]`，含完整 9925 命中拆解）。两者是同一件事的两份记录 ⇒ 补录块重编为 BUG-387 并标 `DUPLICATE →BUG-333`（硬门③：主编号存在、非自身、非链式 DUPLICATE），原始抬头按 `### FIXED(… / BUG-333 …)` 小记改判 FIXED（硬门②：被小记点名者必须是 FIXED）。
+
+## BUG-388 [2026-10-22T11:02:00Z] [medium] OPEN
+- summary: [工具链] `moon fmt --check` 在本机跑不完（moon 0.1.20261016 / Windows）：rc=-1 报 `_build/wasm-gc/release/format/<file>: No such file` + `fatal: cannot hash`；而同版本 `moon fmt`（写模式）rc=0 正常
+- detail: 现象与对照（2026-10-22 R55 实测）：
+  | 场景 | 结果 |
+  |---|---|
+  | 本仓 `moon fmt --check` | rc=-1：`error: open("\\\\?\\…\\_build\\wasm-gc\\release\\format\\moon.mod"): No such file` / `fatal: cannot hash …` / `Error: failed when formatting project` |
+  | 本仓 `moon fmt`（写模式） | rc=0 `Finished. moon: ran 333 tasks` |
+  | **与本仓无关的 3 文件最小工程**（`moon.mod`+`moon.pkg`+`lib.mbt`） | **同样 rc=-1**，同样 `_build/…/format/lib.mbt: No such file` |
+  ⇒ 定性：moon 的 `--check` 管线缺陷（把格式化结果写进 `_build/wasm-gc/release/format/` 再 `git diff --no-index` 比对，而那批文件没落盘），**不是本仓格式红、也不是本仓配置**。
+- 影响：AGENTS「提交门禁」要求"`moon fmt --check` 返回 0"，该命令在本机**不可判**——当红追会追不存在的格式问题，当绿则把工具链缺陷洗成"格式没问题"。
+- 处置（R55 已落）：新增 `scripts/check_fmt_gate.py` 三档闸（`0` 干净 / **`2` DEGRADED 不可测** / `1` 真 diff），`--selftest` 6 格；已登记索引与守卫电池；AGENTS 提交门禁补口径。实测该闸真跑返回 **rc=2 DEGRADED**（正是期望档）。
+- note: 编号说明——本条最初被我误写成 `BUG-381`，但 `BUG-381` 在主线早已被占（`check_mbti_sync` 泛型盲区，已 FIXED），故另立本编号；R55 的更正提交里写清了这件事。
+- 后续建议: ① 格式门权威面交给 CI（Linux nightly）；② 升级 moon 后先跑 `python scripts/check_fmt_gate.py`，转 `0` 即可把该闸降为普通门禁；③ 与 BUG-330（fmt 世代漂移）一并复核。

@@ -45,7 +45,7 @@
 ## 资源消耗
 
 - 分支 1 条、提交 4 笔（对账 1 + 叠线 1 + 复核改判 1 + 报告/日志 1）。
-- `moon check` 1 次（约 2 分钟）、`moon test --target js` 1 次（约 3 分钟）、`run_guards.py` 全量 2 次（推送前 1 次 rc=0；推送后权威读数 1 次）。
+- `moon check` 1 次（约 2 分钟）、`moon test --target js` 1 次（约 3 分钟）、`run_guards.py` 全量 2 次（推送前 1 次 rc=0；推送后权威读数 1 次 rc=0：格数 60——该读数属于 `5364eb75` 那一版推送态；本报告在其上又追加了一笔追记提交（只改本节这一行与「遗留风险」第 8 条），纯文档、不重跑全量电池 / 失败 0 / SKIP 5 / 缺执行面 0，`grep -c '^FAIL'` = 0。其中 2 条 SKIP 恰好是我上面点名的两把预存红尺——见「遗留风险」第 8 条）。
 - 只读取证子代理 1 个（51 次工具调用、约 44 分钟、3.67M 子代理 token）——这是本单最贵的一项，见「任务分配记录」。
 - 文档尺 4 把 + `check_doc_surface --selftest` 各 1 次（秒级）。
 
@@ -65,6 +65,7 @@
 5. **验收未证的行仍标着 `部分`/`未开工`**：POLISH-03 的字面验收「干净树 `moon test --target native -j 1` 全绿」需 `git archive HEAD` 实跑，本单未跑；SHIP-01 的"能用"未证（GitCode 直链实测 403，靠 GitHub fallback 兜住）。这些不是我能在此单关闭的。
 6. **清单外两处陈旧自述**（点名不代修）：`README.md:218` 版本地板 0.1.20260827 落后于 AGENTS.md 要求的 0.1.20261016（按 README 起环境必崩）；`docs/selfdrive-walkthrough.md:56` 仍写「148 项测试」。
 7. **运行时状态文件仍在跟踪面**：`memory/whisperer-head.txt` 每次跑 `whisperer` 就脏（R121 已记，仍未解决）。
+8. **电池里的 `失败 0` 藏着两个没跑的判定面**：post-push 权威读数 5 条 SKIP 中有 2 条正是`check_badge.py` / `check_test_sync.py`（缺前置 `temp/pt27.log`），而这两把尺单独跑是 rc=1 预存红。「缺前置而跳过」把红从读数里抹掉，`失败 0` 因此不等于「这两格过了」——SUMMARY 那行已经写了「SKIP 明细（不计失败，但也不构成'这格过了'的证据）」，方向对，但它不认识SKIP 里混着 known-red 家族。出路：电池先造前置（`temp/pt27.log` 由 `moon test` 产出）再跑，或把「SKIP ∩ known-red」单印一行的点名格。本单未改电池本体。
 
 ## 后续建议
 
