@@ -19,7 +19,7 @@ fn sg_sign_attest(
   ttl_seconds : Int64,
 ) -> String {
   let canonical = star_canonical(list, issued_at, ttl_seconds)
-  let sig = @mooncry.ed25519_sign(sg_seed, canonical.to_bytes())
+  let sig = @mooncry.ed25519_sign(sg_seed, @utf8.encode(canonical))
   let pk = @mooncry.ed25519_public_key(sg_seed)
   sg_attest_json(list, issued_at, ttl_seconds, hex_encode(pk), hex_encode(sig))
 }
@@ -347,7 +347,7 @@ test "star_gate_verify 恶意 1e300 issued_at+ttl 不 panic（BUG-196 溢出回�
   let big = 9223372036854775807L
   // canonical 使用 to_int64() 的饱和值（Int64 max），与 star_extract_fields 的产物一致
   let canonical = star_canonical(list, big, big)
-  let sig = @mooncry.ed25519_sign(sg_seed, canonical.to_bytes())
+  let sig = @mooncry.ed25519_sign(sg_seed, @utf8.encode(canonical))
   let pk = @mooncry.ed25519_public_key(sg_seed)
   let j = "{\"format\":\"fist-star-gate-attestation/v1\",\"algorithm\":\"ed25519\",\"list\":[\"octocat\"],\"issued_at\":1e300,\"ttl_seconds\":1e300,\"public_key_hex\":\"" +
     hex_encode(pk) +

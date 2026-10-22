@@ -6,6 +6,7 @@ import {
   "moonbitlang/core/hashset",
   "moonbitlang/x/fs",
   "moonbitlang/core/debug",
+  "moonbitlang/core/env",
 }
 
 import {

@@ -21,8 +21,13 @@ pub fn SqliteStore::open(db_path : String) -> SqliteStore? {
     Some(db) => {
       let s = { db: Some(db), }
       if s.create_schema() {
-        // 幂等迁移：旧库升级补 `level` 列（见 ensure_level_column）
-        s.ensure_level_column()
+        // 幂等迁移：旧库升级补现役必需列（见 ensure_task_columns）。
+        // BUG-374：补列失败必须**拒载**而非静默降级——缺列库（旧 schema 根库）
+        // 会在按 task_id 的读路径 prepare 抛未捕获 SQL 异常、直接打死 serve 进程。
+        if !s.ensure_task_columns() {
+          db.close()
+          return None
+        }
         // 启用 WAL 模式提升并发读写性能
         s.exec_if_ok("PRAGMA journal_mode=WAL")
         s.exec_if_ok("PRAGMA synchronous=NORMAL")
@@ -134,41 +139,73 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
 }
 
 ///|
-/// 幂等迁移：确保 tasks 表含 `level` 列（军衔等级）。
-/// 全仓此前没有迁移机制，旧库（如仓库根 fist-mbt.db）建表时不含 `level`；
-/// `CREATE TABLE IF NOT EXISTS` 对已存在的旧表是 no-op，因此这里用
-/// `PRAGMA table_info(tasks)` 探测，缺列才 `ALTER TABLE ... ADD COLUMN`。
-/// 幂等：重复调用不报错、不加两列（命中已有列直接跳过）。
-/// 已有任务自动拿到默认 6（连长）。**绝不抛未捕获异常**——整段用 catch 兜底，
-/// 迁移失败只当作"未迁移"静默降级（新库由 CREATE TABLE 直接带列，无需本函数）。
-fn SqliteStore::ensure_level_column(self : SqliteStore) -> Unit {
+/// 幂等迁移：确保 tasks 表含全部**现役必需列**（BUG-374 升级 ensure_level_column）。
+/// 旧代际库缺列时按 task_id 的读路径（get_task prepare 18 列 SELECT）会抛
+/// 未捕获 SQL 异常 ⇒ 直接打死 serve 进程。这里启动期探测并补列；补不动返回
+/// false，由 open 决定**拒载**（明确失败，而不是留一颗运行期炸弹）。
+/// 重复调用不报错、不加多列（命中已有列直接跳过）；已有任务自动拿到默认值
+/// （level=6 连长 / ns=default / depends_on=[] 等）。**绝不抛未捕获异常**——
+/// 整段用 catch 兜底，探测失败视为迁移失败返回 false。
+fn SqliteStore::ensure_task_columns(self : SqliteStore) -> Bool {
   match self.db {
-    None => ()
-    Some(db) =>
-      ignore(
-        try {
-          let mut has_level = false
-          match db.prepare("PRAGMA table_info(tasks)") {
-            None => ()
-            Some(stmt) => {
-              while stmt.step() {
-                let name = str_from_bytes(stmt.column_text(1))
-                if name == "level" {
-                  has_level = true
-                }
-              }
-              stmt.finalize()
+    None => false
+    Some(db) => {
+      let cols : Map[String, Bool] = Map([])
+      let mut probe_ok = true
+      try {
+        match db.prepare("PRAGMA table_info(tasks)") {
+          None => probe_ok = false
+          Some(stmt) => {
+            while stmt.step() {
+              let name = str_from_bytes(stmt.column_text(1))
+              cols.set(name, true)
             }
+            stmt.finalize()
           }
-          if has_level == false {
-            self.exec_if_ok(
-              "ALTER TABLE tasks ADD COLUMN level INTEGER NOT NULL DEFAULT 6",
-            )
+        }
+      } catch {
+        _ => probe_ok = false
+      }
+      if !probe_ok {
+        return false
+      }
+      // 现役 18 列中旧代际库可能缺失的列：
+      // 16 列版（无 ns/depends_on）、17 列版（有 ns 无 level）。其余列
+      // （parent_id/priority/importance/...）自 16 列版起即存在，无需补。
+      let needed : Array[(String, String)] = [
+        (
+          "ns",
+          "ALTER TABLE tasks ADD COLUMN ns TEXT NOT NULL DEFAULT 'default'",
+        ),
+        (
+          "level",
+          "ALTER TABLE tasks ADD COLUMN level INTEGER NOT NULL DEFAULT 6",
+        ),
+        (
+          "completed_by",
+          "ALTER TABLE tasks ADD COLUMN completed_by TEXT DEFAULT ''",
+        ),
+        (
+          "cleanup_mode",
+          "ALTER TABLE tasks ADD COLUMN cleanup_mode TEXT NOT NULL DEFAULT 'deferred'",
+        ),
+        (
+          "depends_on",
+          "ALTER TABLE tasks ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]'",
+        ),
+      ]
+      let mut ok = true
+      for (name, sql) in needed {
+        if !cols.contains(name) {
+          match db.exec(sql) {
+            true => ()
+            false => ok = false
           }
-        } catch {
-          _ => ()
-        },
-      )
+          cols.set(name, true)
+        }
+      }
+      ok
+    }
   }
 }
 

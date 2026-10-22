@@ -15,7 +15,7 @@
 /// 三段缺一或任一非整数 → None。
 /// 第四元 is_pre：`-alpha1` 之类为 true——按 semver 应排同号正式版之下，
 /// 若不区分会把「有 pre-release 的旧版」误判成等于正式版（假绿风险）。
-fn parse_version(s : String) -> (Int, Int, Int, Bool)? {
+fn parse_version(s : String) -> (Int32, Int32, Int32, Bool)? {
   let mut core = s.trim().to_owned()
   if core.length() > 0 && (core[0] == 'v' || core[0] == 'V') {
     core = core[1:core.length()].to_owned()
@@ -39,7 +39,6 @@ fn parse_version(s : String) -> (Int, Int, Int, Bool)? {
   }
   Some((major, minor, patch, is_pre))
 }
-
 
 ///|
 /// 是否有 pre-release 后缀：去掉 `+build` 元数据（不参与优先级）后仍含 `-` 即 true。
@@ -180,10 +179,9 @@ pub fn latest_url(repo : String, base_url : String) -> String {
 /// 要不要进写盘流程（纯逻辑，可白盒锁）：
 ///   `--check`（check_only=true）永不写盘——阶段 A 只读；
 ///   否则**仅当** `远端 > 本地`（cmp>0）才进入阶段 B/C。
-fn should_upgrade(cmp : Int, check_only : Bool) -> Bool {
+fn should_upgrade(cmp : Int32, check_only : Bool) -> Bool {
   cmp > 0 && !check_only
 }
-
 
 ///|
 /// 调 `upgrade_io` 并解包 JSON 回执（永不 abort：调度/解析失败回 Err）。

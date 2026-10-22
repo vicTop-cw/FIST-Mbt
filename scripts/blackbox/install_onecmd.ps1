@@ -229,6 +229,13 @@ if ($needPython -and $pyPatch) {
 
 Write-Host ""
 Write-Host "🔧 创建 shim + PATH ..." -ForegroundColor Yellow
+# BUG-377：shim 指向稳定发布入口 $dest\fist-mbt.js（绝不指向 _build 下可被
+# moon clean 清空的产物）；生成前硬校验目标存在，避免"指向空文件的 shim"。
+if (-not (Test-Path "$dest\fist-mbt.js")) {
+    Write-Host "❌ 未找到构建产物 $dest\fist-mbt.js，无法生成 shim（BUG-377：绝不指向 _build 下易被清空的路径）" -ForegroundColor Red
+    Write-Host "   请检查下载/解压是否完整，或改用 -LocalZip 提供本地发布包。" -ForegroundColor Red
+    exit 1
+}
 New-Item -ItemType Directory -Path $bin -Force | Out-Null
 # 注释一律纯 ASCII：这下面用 -Encoding ASCII 写盘，非 ASCII 字符会被替换成 '?'
 # （实测旧版那行 REM 落盘成 "shim ? v0.3.0"），而 shim 内容本身不参与执行，别放中文。

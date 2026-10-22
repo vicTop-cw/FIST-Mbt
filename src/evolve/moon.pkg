@@ -2,7 +2,6 @@ import {
   "vicTop-cw/fist-mbt/src/store",
   "moonbitlang/core/debug",
   "moonbitlang/core/json",
-  "moonbitlang/core/debug",
 }
 
 supported_targets = "js+native"

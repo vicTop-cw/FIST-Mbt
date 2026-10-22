@@ -342,10 +342,12 @@ pub fn watchdog_tick(
       Err(e) => return Err(e)
       Ok(_) => ()
     }
-    let tp = mode_template_path(mode_str)
+    let tp = template_probe_path(mode_str)
     if @fs.path_exists(tp) {
       tp // mode 指定的模板存在 → 覆盖
     } else {
+      // BUG-375：判定基准与 mode_list 的 template_path 同一根（env 优先 / cwd 兜底），
+      // 并回执**实际探测的绝对路径**——驱动据此人工核对，不再误以为模板全缺而降级空转。
       return Err("mode=" + mode_str + " 模板不存在: " + tp)
     }
   }

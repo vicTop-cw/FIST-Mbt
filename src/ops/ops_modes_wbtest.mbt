@@ -853,3 +853,19 @@ test "loop: validate_loop_steps 仍拒非法 step，且错误消息点名 explor
   }
   assert_eq(validate_loop_steps([]), Some("steps is empty"))
 }
+
+///|
+/// BUG-375：判定基准统一——探测绝对路径必须与 mode_list 的 template_path
+/// 同一根（templates_root()），业务项目目录下调用不再误报 7/7 missing。
+test "modes: template_probe_path 与 mode_template_path 同根（BUG-375）" {
+  let root = templates_root()
+  let rel = mode_template_path("advance")
+  let probe = template_probe_path("advance")
+  if root == "." {
+    assert_eq(probe, rel)
+  } else {
+    assert_eq(probe, root + "/" + rel)
+  }
+  // 兜底路径语义一致：probe 一定以模板相对路径收尾（可读、可探测）
+  assert_true(probe.ends_with(rel))
+}
