@@ -105,3 +105,37 @@ SKIP 5 格全部是缺 temp/ 前置（`temp/pt27.log` ×2、`temp/chk47.json` ×
 - `docs/tasks/backlog/TASK-007-run-guards-universe.yaml`（被回归的那一单，status done）
 - `.github/workflows/ci.yml:138-160`（`--selftest` + `--list` 两模式执行面）
 - 实测读数文件：`temp/r106-battery-2.log`、`temp/r106-battery-3.log`、`temp/r106-battery-4.log`（temp/ 不入库）
+
+---
+
+## 追记 · 主线叠加（bbcc5a35）与合并收口（同分支、同一单）
+
+开工时基点是 `770478c1`，收口时 `gitcode/master` 已前进 14 commits（tip `bbcc5a35`：R105 格数自述泛化
++ 积压清账）。按「启动分支先看主仓是否要覆盖本地、中途也回看」的口径，把主线叠进来再交单。
+
+- **冲突面实测只有 2 份文件**，都是追加型文档：
+  - `scripts/README.md`：唯一冲突格 = `check_backlog_status_staleness.py` 那条抄本。我早前把全仓
+    「11 格」批量改成「27 格」时**误伤了这一行**（它不属于 run_guards）⇒ 从主线版本还原后两侧逐字相同，
+    合并只保留一份。教训：全局字符串替换必须先按「这行属于哪把尺」限定范围，否则会把别人的登记改掉。
+  - `memory/2026-10-22.md`：两侧都是当日追加段（主线写清账、我写 R106）⇒ **并集**，不丢任何一段。
+- **合并后复验**（不沿用改前读数，全部现跑）：
+
+| 判据 | 命令 | 读数 |
+|---|---|---|
+| 电池自检 | `python scripts/run_guards.py --selftest` | rc=0 / 34 格 |
+| 执行面普查 | `python scripts/run_guards.py --list` | rc=0 / 尺 79 把 · CI 面 39 · 电池面 41 · 缺执行面 0 · 常驻豁免 2 |
+| 全量电池 | `python scripts/run_guards.py` | rc=0 / 53 格（手写 53 + 自动 0）/ 失败 0 / SKIP 5 |
+| R105 新尺（主线带来的） | `python scripts/check_selftest_inventory_doc.py` | rc=0 / 判定族 22 条对表通过 ⇒ 本单元写进 README 的「34 格」自述被泛化后的文法接受 |
+| 冲突标记 | `python scripts/blackbox/check_merge_markers.py` | rc=0 / 1310 个跟踪文件无标记 |
+| 编译面 | `MOONC_OVERRIDE=… moon check --target js` | rc=0 / **0 errors** / 508 warnings（与主线报告同基线 ⇒ 本合并零新增 warning） |
+
+- **`.mbti` 脏面处理**：`moon check` 把 24 份 `pkg.generated.mbti` 以 LF 重写，`git status` 恒报 M
+  而 `git diff HEAD` 为空（blob 与工作树逐字相同）——这是 `core.autocrlf=true` 的 smudge 期望差，
+  不是内容差。`git checkout -- <这 24 份>` 重新 smudge 后工作树归零，未产生任何提交。
+- **本机踩到并纠正的两处纪律**：① 合并提交我挂了 `--no-verify`——本仓默认**没有**装钩子
+  （`core.hooksPath` 未设、`.git/hooks` 无生效钩子，已实测），所以这一下是空操作，但**下次不该带**：
+  判绿应以实跑守卫为准，不该用旗标表达"跳过"；② 忘挂 `MOONC_OVERRIDE` 直接 `moon check` 会撞
+  `\?` ICE（依赖 `moonbitlang/async` 那一格），读数长得像「合并把代码弄坏了」——项目记忆里已有这条，
+  跑前就该带上。
+- **`moon fmt` 面**：本机仍 rc=127（工具链 blocker）。本次合并的 `.mbt` 改动全部逐字来自主线、零手改，
+  故 fmt 对本单元**中性**；不据此宣称全仓 fmt 绿。
