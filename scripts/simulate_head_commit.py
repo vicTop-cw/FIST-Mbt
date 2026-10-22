@@ -30,6 +30,8 @@ import shutil
 import subprocess
 import sys
 import tarfile
+
+from moon_env_probe import moon_env
 import tempfile
 
 # BUG-138 同族：中文结论里的 ⇒ 在 Windows 默认 cp936 控制台会先崩掉 print（rc 被读成「缺陷在场」）。
@@ -248,7 +250,7 @@ def main():
         print("  跑 moon check --target js（最长 %ds）…" % args.max_seconds)
         try:
             r = subprocess.run(["moon", "check", "--target", "js"], capture_output=True,
-                               cwd=box, timeout=args.max_seconds)
+                               cwd=box, timeout=args.max_seconds, env=moon_env())
         except subprocess.TimeoutExpired:
             print("SIMULATE REFUSED: moon check 超时（%ds）—— 拒绝出结论" % args.max_seconds)
             return 2

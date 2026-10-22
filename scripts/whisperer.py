@@ -11,6 +11,8 @@
 import argparse, os, re, subprocess, sys
 from datetime import datetime
 from pathlib import Path
+
+from moon_env_probe import moon_env
 # 强制 stdout/stderr UTF-8（Windows GBK 终端会炸 emoji）
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -21,7 +23,8 @@ ROOT = Path(__file__).resolve().parent.parent
 EXC = ("_build", "temp", ".git", "node_modules")
 
 def run(cmd, cwd=None, capture=True):
-    r = subprocess.run(cmd, cwd=cwd or ROOT, capture_output=capture, text=True, encoding="utf-8", errors="replace")
+    r = subprocess.run(cmd, cwd=cwd or ROOT, capture_output=capture, text=True, encoding="utf-8",
+                       errors="replace", env=moon_env())
     return r
 
 def sh(*args, cwd=None):

@@ -100,7 +100,7 @@
 | moonbit-array-index-bounds | 5 | 19 | 真告警 |
 | moonbit-resource-leak | 6 | 1 | 真告警 |
 
-**结论**：FP 四条规则（json-injection/match-exhaustive/unused-variable/long-function）在 src/store 贡献 45+204+195+203 = **647/954 = 68% 命中**；真告警（result-discard 236 / array-index-bounds / resource-leak）被淹没在同为 low 桶的噪音里。y_severity 里 low=954 一字不辨。
+**结论**：FP 四条规则（json-injection/match-exhaustive/unused-variable/long-function）在 src/store 贡献 45+204+195+203 = **647/954 = 68% 命中**；真告警（result-discard 236 / array-index-bounds / resource-leak）被淹没在同为 low 桶的噪音里。by_severity 里 low=954 一字不辨。
 
 **这直接验证了 BUG-333 的初衷**：降噪预案本应净化 low 桶，但 BUG-345（info 并入 low）使它结构上失效；即便修掉 345，BUG-346/348 的 FP 规则仍占 68% 噪音。**四缺陷必须联动修复**，单独修任何一条都无法让 issue_scan 成为可用的寻虫工具。
 

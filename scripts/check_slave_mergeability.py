@@ -27,6 +27,8 @@ import subprocess
 import sys
 import tempfile
 
+from moon_env_probe import moon_env
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -178,7 +180,8 @@ def apply_merges(base, rows, execute=False):
         # 门②：构建
         b = subprocess.run(["moon", "build", "--target", "js", "src/server", "src/engine",
                             "src/store", "src/router", "src/ops"], cwd=ROOT,
-                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+                           capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           env=moon_env())
         if (b.stdout or "").count("Error:") > 0:
             git("reset", "--hard", "HEAD~%d" % len(commits), cwd=ROOT)
             print("  ✗ %s build 有 Error → 回滚" % ref)
