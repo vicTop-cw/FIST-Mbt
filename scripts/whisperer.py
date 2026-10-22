@@ -11,12 +11,15 @@ docs/tasks/backlog/TASK-NNN-*.yaml 交给下游 agent（AtomCode/副机）认领
 - `python scripts/whisperer.py --scan-only` 只扫描出报告：不写 yaml、不合入（CI/fist-gate 用）
 - `python scripts/whisperer.py --apply`    扫描 + 写 yaml + **ff-only 自动合入**可快进分支（真合并是人的决定，本旗只做无分叉的快进）
 - `python scripts/whisperer.py --no-fetch` 跳过 git fetch（离线/CI 无网络或 fist-gate 快查）
-- `python scripts/whisperer.py --selftest` 合成仓自证：干净树 0 新 yaml（自证不制造假红）
+- `python scripts/whisperer.py --selftest` 合成仓自证六格：干净分支/干净标记 + 写侧四格
+  （pool_findings 逐类入池 / 重跑幂等且镜面分支只入一次 / 整串中文键不落到 `TASK-NNN-.yaml` /
+  沙箱写不动真任务池）
 
 探测面四项：①分支巡检（ahead/cherry 等价/冲突标记）②docs 散落普查 ③scripts 命名
-④守卫覆盖（run_guards --list 格数）。写侧铁律：yaml 幂等——同 title 关键词已存在即跳过。
+④守卫覆盖（run_guards --list 读数）。写侧铁律：yaml 幂等——每份 yaml 落一行机器锚
+`dedupe_key: <sha1(key)[:16]>`，同键再跑即跳过（键的散文会漂，锚不会）。
 """
-import os, re, subprocess, sys, tempfile
+import hashlib, os, re, subprocess, sys, tempfile
 from datetime import datetime, timezone
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -146,12 +149,17 @@ def next_task_id():
     return mx + 1
 
 
+def dedupe_token(key):
+    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+
+
 def yaml_exists(key):
     if not os.path.isdir(TASKS_DIR):
         return False
+    needle = 'dedupe_key: "%s"' % dedupe_token(key)
     for f in os.listdir(TASKS_DIR):
         try:
-            if key in open(os.path.join(TASKS_DIR, f), encoding="utf-8", errors="replace").read():
+            if needle in open(os.path.join(TASKS_DIR, f), encoding="utf-8", errors="replace").read():
                 return True
         except OSError:
             pass
@@ -163,13 +171,17 @@ def write_yaml(key, title, problem, evidence, priority="P3"):
         return None
     n = next_task_id()
     slug = re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-")[:40]
+    if not slug:
+        # 纯中文键反解不出 ASCII slug，会得到 "TASK-010-.yaml"——既不可读也可能撞名
+        slug = dedupe_token(key)[:10]
     path = os.path.join(TASKS_DIR, "TASK-%03d-%s.yaml" % (n, slug))
     os.makedirs(TASKS_DIR, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write('id: TASK-%03d\ntitle: "%s"\npriority: %s\nstatus: backlog\n'
+        fh.write('id: TASK-%03d\ntitle: "%s"\ndedupe_key: "%s"\npriority: %s\nstatus: backlog\n'
                  'assignee: atomcode\ndiscovered_by: whisperer-script\ndiscovered_at: "%s"\n\n'
                  'problem: >\n  %s\n\nevidence: |\n  %s\n'
-                 % (n, title, priority, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                 % (n, title.replace('"', "'"), dedupe_token(key), priority,
+                    datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                     problem.replace("\n", "\n  "), evidence.replace("\n", "\n  ")))
     return os.path.basename(path)
 
@@ -187,9 +199,77 @@ def selftest():
     b1, n1 = probe_branches("HEAD", cwd=d)
     ok1 = b1 is not None and not n1
     ok2 = has_markers("HEAD", cwd=d) == []
-    print("SELFTEST %s (grid: clean-branch-probe=%s clean-marker-probe=%s 0-new-yaml: %d→%d)"
-          % ("OK" if ok1 and ok2 else "FAIL", ok1, ok2, n0, n0))
-    return 0 if ok1 and ok2 else 2
+    # 写侧三格：入池走 pool_findings（main 的写面）。此前 selftest 只跑到 --scan-only 面，
+    # 「少传一个参数就 TypeError」与「幂等锚从未生效」都藏在这一格的暗区里
+    real_dir = globals()["TASKS_DIR"]
+    r0 = len(os.listdir(real_dir)) if os.path.isdir(real_dir) else -1
+    globals()["TASKS_DIR"] = tdir
+    fake_notes = [
+        {"branch": "gitcode/fix/demo", "action": "ABORT-CONFLICT-MARKERS",
+         "ahead": 1, "cherry_plus": 1, "conflict_markers": ["x.mbt", "y.mbt"]},
+        {"branch": "origin/fix/demo", "action": "ABORT-CONFLICT-MARKERS",
+         "ahead": 1, "cherry_plus": 1, "conflict_markers": ["x.mbt", "y.mbt"]},
+        {"branch": "origin/feat/demo", "action": "REVIEW",
+         "ahead": 2, "cherry_plus": 2, "conflict_markers": []},
+    ]
+    fake_gov = ["a.md", "b.md", "c.md", "d.md", "e.md", "f.md"]
+    try:
+        p1 = pool_findings(fake_notes, fake_gov, 83)
+        ok3 = len(p1) == 3 and len(os.listdir(tdir)) == n0 + 3
+        p2 = pool_findings(fake_notes, fake_gov, 83)
+        ok3b = p2 == [] and len(os.listdir(tdir)) == n0 + 3
+        w3 = write_yaml("整串中文键反解不出可用切片", "中文标题", "问题", "证据")
+        ok4 = (w3 is not None and re.match(r"TASK-\d{3}-[0-9a-f]{10}\.yaml$", w3) is not None
+               and len(os.listdir(tdir)) == n0 + 4)
+    finally:
+        globals()["TASKS_DIR"] = real_dir
+    r1 = len(os.listdir(real_dir)) if os.path.isdir(real_dir) else -1
+    ok5 = r0 == r1
+    print("SELFTEST %s (grid: clean-branch-probe=%s clean-marker-probe=%s pool-findings=%s "
+          "pool-idempotent+mirror-dedupe=%s zh-only-key-slug=%s sandbox=%d→%d real-pool-untouched=%s %d→%d)"
+          % ("OK" if all([ok1, ok2, ok3, ok3b, ok4, ok5]) else "FAIL",
+             ok1, ok2, ok3, ok3b, ok4, n0, len(os.listdir(tdir)), ok5, r0, r1))
+    return 0 if (ok1 and ok2 and ok3 and ok3b and ok4 and ok5) else 2
+
+
+def pool_findings(notes, governance, cells):
+    """把「看见的问题」写成下游可认领的 yaml，返回本轮新写的文件名（幂等重跑返回空）。
+
+    抽成函数而不是留在 main() 里：main() 的写侧没人自证过，两个 TypeError 级漏参数
+    就是这么藏住的（selftest 只跑 --scan-only 面永远走不到）。
+    """
+    new = []
+    for e in notes:
+        if e["action"] != "ABORT-CONFLICT-MARKERS":
+            continue
+        # ABORT = 分支自带未解冲突标记，直接 cherry-pick 会把标记带进 commit（TASK-001 的 259b56a8 形状）
+        # 键去掉远端前缀：同一分支在 gitcode/ 与 origin/ 两条镜面上只入池一次
+        bare = re.sub(r"^(gitcode|origin)/", "", e["branch"])
+        y = write_yaml("分支 %s 自带未解冲突标记需人工清理" % bare,
+                       "清理分支 %s 的未解冲突标记" % bare,
+                       '分支 %s 含未解决冲突标记（%d 个文件），合入前必须先人工解标记；'
+                       '直接 cherry-pick 会把标记带进 commit（TASK-001 实证形状 259b56a8）'
+                       % (e["branch"], len(e["conflict_markers"])),
+                       "whisperer probe_branches()：ahead=%s cherry_plus=%s 命中文件 %s"
+                       % (e["ahead"], e["cherry_plus"], ", ".join(e["conflict_markers"])),
+                       priority="P1")
+        if y:
+            new.append(y)
+    if len(governance) > 5:
+        y = write_yaml("docs 散落普查：治理主题散落",
+                       "治理主题散落需收敛到规范真源",
+                       "治理主题命中 %d 个 md（根/docs/reports/memory），规范真源应唯一（对齐 J7，规范见 docs/DOCS-STRUCTURE.md）" % len(governance),
+                       "whisperer probe_docs() 现读：%s" % governance[:10])
+        if y:
+            new.append(y)
+    if cells is not None:
+        y = write_yaml("守卫电池格数读数核对",
+                       "守卫电池格数读数需与 README 登记对表",
+                       "run_guards --list 读数 %s 格；若低于 scripts/README.md 最新登记即欠格" % cells,
+                       "whisperer probe_guards()")
+        if y:
+            new.append(y)
+    return new
 
 
 def main():
@@ -222,18 +302,7 @@ def main():
     print("docs 散落：%s；治理主题散在 %d 个文件" % (stats, len(governance)))
     print("scripts 命名待定：%d 个（%s）" % (len(naming), ", ".join(naming[:5]) or "-"))
     print("守卫电池格数：%s" % cells)
-    new = []
-    if not scan_only:
-        if len(governance) > 5:
-            y = write_yaml("docs 散落普查：治理主题散落",
-                           "治理主题命中 %d 个 md（根/docs/reports/memory），规范真源应唯一（对齐 J7，规范见 docs/DOCS-STRUCTURE.md）" % len(governance),
-                           "whisperer probe_docs() 现读：%s" % governance[:10])
-            new.append(y) if y else None
-        if cells is not None:
-            y = write_yaml("守卫电池格数读数核对",
-                           "run_guards --list 读数 %s 格；若低于 scripts/README.md 最新登记即欠格" % cells,
-                           "whisperer probe_guards()")
-            new.append(y) if y else None
+    new = [] if scan_only else pool_findings(notes, governance, cells)
     print("新 yaml：%s" % (new or "无（幂等跳过或 scan-only）"))
     rc = 2 if (notes or new) else 0
     print("WHISPERER rc=%d（0=无事 / 2=已发现待办）" % rc)
