@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scripts/check_fmt_gate.py — `moon fmt --check` 的**可判性闸**（R55，BUG-381）。
+"""scripts/check_fmt_gate.py — `moon fmt --check` 的**可判性闸**（R55 / **BUG-388**；最初误记为 381，381 是 check_mbti_sync 泛型盲区）。
 
 ## 为什么要它
 本仓 AGENTS「提交门禁」写着：提交前必须 `moon fmt` + `moon fmt --check` 返回 0。

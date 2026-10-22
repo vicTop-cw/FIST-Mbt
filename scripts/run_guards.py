@@ -219,6 +219,9 @@ SPECIAL_CASES = [
     # —— R54：`moon test` 的环境垫片问题（BUG-380）。**只跑 --selftest**——
     #    真跑全仓测试要 11s 且会起一堆 node 进程，电池必须只读且快。 ——
     case("moon_test_env.py", "--selftest"),
+    # —— R55：`moon fmt --check` 的可判性闸（BUG-388）。**必须显式只跑 --selftest**：
+    #    裸跑在本机恒 DEGRADED(2)，自动补格会把它当红；本表点名后自动格就不再裸跑。 ——
+    case("check_fmt_gate.py", "--selftest"),
     case("audit_branch_delete.py", "--selftest"),
     # —— R106：宇宙并成全集后 `--list` 第一次把这三把尺的**现读红**摆出来。按本文件的律，
     #    预存红「照写期望值 + 依据」而不是豁免：被检内容修好之后这一格自己会翻红，逼下一位
