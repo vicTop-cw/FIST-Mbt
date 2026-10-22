@@ -50,3 +50,5 @@ updated: 2026-10-16
 - 无 high/medium 级 issue_scan 命中
 - 组合环 `loop_create` + `loop_tick` 自动推进
 - `evolve_submit` 沉淀经验教训
+
+- `moon test --target js` 全量 = 1353/1353 绿
