@@ -121,3 +121,20 @@ test "soldier_type_of 大小写不敏感" {
   assert_eq(@display.soldier_type_of("Refactor"), "炮兵")
   assert_eq(@display.soldier_type_of("URGENT"), "特种兵")
 }
+
+///|
+/// 多关键词命中时按 `soldier_types()` 的 canonical 顺序定优先级（先出现的兵种优先）。
+/// 此前匹配表顺序与 `soldier_types()` 不一致（骑兵/工兵被排到末尾、医疗兵提前），
+/// 导致下列归类的优先级随表序漂移、违背文档定级。
+/// 附证：
+///   - "批量 修复"：批量=骑兵、修复=医疗兵；canonical 骑兵(第2) > 医疗兵(第6) → 骑兵
+///     （旧表：医疗兵(第4) > 骑兵(第8) → 医疗兵）。
+///   - "脚本 批量"：脚本=工兵、批量=骑兵；canonical 骑兵(第2) > 工兵(第5) → 骑兵
+///     （旧表：工兵(第7) > 骑兵(第8) → 工兵）。
+///   - "环境 修复"：环境=工兵、修复=医疗兵；canonical 工兵(第5) > 医疗兵(第6) → 工兵
+///     （旧表：医疗兵(第4) > 工兵(第7) → 医疗兵）。
+test "soldier_type_of 多命中按 canonical 顺序优先" {
+  assert_eq(@display.soldier_type_of("批量 修复"), "骑兵")
+  assert_eq(@display.soldier_type_of("脚本 批量"), "骑兵")
+  assert_eq(@display.soldier_type_of("环境 修复"), "工兵")
+}
