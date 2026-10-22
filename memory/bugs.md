@@ -6170,6 +6170,7 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 ### FIXED(2026-10-21T11:02:58Z / BUG-358)
 - evidence: BUG-358 修复已在 master 线：ea6eba6c 是 origin/master 祖先（git merge-base --is-ancestor 实测 rc=0）。判据采纳本单出路(a)——check_host_installable.py 现以 REQUIRED_MCP_JSON=[".mcp.dev.json"] 只把跟踪真源列进「关键文件缺失即自拒」名单，根 .mcp.json 留在 LENIENT_JSON 宽松档（缺失合法 continue），并在源码注释点名本单与 BUG-131 同口径。行为复测：在无根 .mcp.json 的干净 worktree（temp/m18 @ origin/master，git ls-files 面无该件）全量跑该守卫 rc=0 PASS；修复前同形场景必 rc=2 永不产出结论（本机当时有连接器残件才偶发可判＝假绿）。CI 侧从此真跑判定，不再恒红也不再被当噪声跳过。
 
+  - 追记(R54, 2026-10-22 18:25 **根因已定位并给出常驻入口**)：真凶不是 moon、不是本仓测试代码，而是 **PATH 上的 `node.cmd` 垫片**（`%APPDATA%\dsh-desktop\harness\.desktop-bin\node.cmd`）——`moon test` 把测试选择面作为一整段 JSON 参数交给产物，经 `cmd.exe` 转发时**引号被吞**，产物收到残缺 JSON。决定性对照：同一 payload，垫片 rc=1 `Expected property name or '}' in JSON at position 1`；真 `node.exe` rc=0 且正常打出 `BEGIN MOON TEST RESULT`。**把垫片目录从 PATH 移除后**：`moon test --target js` = **1387/1387 passed, rc=0（11~15s）**（此前全仓一条测试都跑不出）。常驻入口 `scripts/moon_test_env.py`（按目录内容剔垫片 + 校验真 exe + 核对汇总行，rc 契约 0/1/2，`--selftest` 8 格），已登记索引与守卫电池；AGENTS「环境要求」也补了这条。
 ## BUG-333 [2026-10-19T05:54:08Z] [medium] FIXED
 - summary: issue_scan 精度不足：src 全量 9925 命中中 72.7%（7219）为编译期已保证/子串近似噪音（match-exhaustive 编译器强制=100% 假阳、unused-variable/long-function 为近似启发），使"扫描→上报→修复"闭环不可用
 - detail: 实测 `issue_scan dir=src max_findings=100`：scanned_files=129, total_findings=9925（截断）。by_rule 全表精确求和 = 9925。其中：
