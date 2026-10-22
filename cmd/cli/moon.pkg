@@ -13,5 +13,5 @@ supported_targets = "js+native"
 
 options(
   targets: { "upgrade_native.mbt": [ "native" ], "upgrade_js.mbt": [ "js" ] },
-  link: { "native": { "cc-link-flags": "sqlite3.lib" } },
+  link: { "native": { "cc-link-flags": "-lsqlite3" } },
 )
