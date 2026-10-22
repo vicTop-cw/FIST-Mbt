@@ -2,10 +2,11 @@
 """scripts/whisperer.py — 风语者（Whisperer）自动化巡检脚本。
 把定时任务 prompt 里的 Step 0-4 装进一个 Python 文件。
 用法:
-  python scripts/whisperer.py --scan-only     # Step 0-2 + Step 3 扫描，不自动合入
-  python scripts/whisperer.py --auto-merge   # Step 0-2 + 自动合入 MERGE-CODE 分支 + Step 3
-  python scripts/whisperer.py --self-test     # selftest: 对干净树跑一遍，必须 0 异常
-  python scripts/whisperer.py                 # 默认 --scan-only
+  python scripts/whisperer.py --fast           # P0-1 新增：只跑 Step 0 HEAD 安全门（<3s）
+  python scripts/whisperer.py --scan-only      # Step 0-2 + Step 3 扫描，不自动合入
+  python scripts/whisperer.py --auto-merge    # Step 0-2 + 自动合入 MERGE-CODE 分支 + Step 3
+  python scripts/whisperer.py --self-test      # selftest: 对干净树跑一遍，必须 0 异常
+  python scripts/whisperer.py                  # 默认 --scan-only
 退出码: 0=全绿 1=有失败 2=自身异常"""
 import argparse, os, re, subprocess, sys
 from datetime import datetime
@@ -27,16 +28,46 @@ def sh(*args, cwd=None):
     return run(list(args), cwd=cwd).stdout.strip()
 
 # ============================================================
-# Step 0 — HEAD 安全门
+# Step 0 — HEAD 安全门（拆分 fast + full）
 # ============================================================
-def step0_head_safety():
-    print("[Step 0] HEAD 安全门")
-    run(["git", "checkout", "master"])
+HEAD_STATE_FILE = ROOT / "memory" / "whisperer-head.txt"
+
+def step0_head_safety(full=True):
+    """HEAD 安全门。full=True 全量（fetch+reset 篡改），full=False fast 模式（仅读 hash 对比，<3s）"""
+    if full:
+        print("[Step 0] HEAD 安全门（full）")
+    else:
+        pass  # fast 模式 main() 会打印精简头
+
     local = sh("git", "rev-parse", "HEAD")
     gc = sh("git", "rev-parse", "gitcode/main")
     og = sh("git", "rev-parse", "origin/main")
+
+    # 读上次 HEAD 状态（fast 模式用来检测"最近有没有被碰"）
+    prev_hash = None
+    prev_ts = None
+    if HEAD_STATE_FILE.exists():
+        try:
+            prev_line = HEAD_STATE_FILE.read_text(encoding="utf-8").strip()
+            prev_hash, prev_ts = prev_line.split("|", 1)
+        except Exception:
+            pass
+
+    # 写入当前状态
+    HEAD_STATE_FILE.parent.mkdir(exist_ok=True)
+    HEAD_STATE_FILE.write_text(f"{local}|{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
+
+    tampered = False
+    tamper_reason = ""
     if gc == og and gc != local:
-        # 记录篡改事件
+        tampered = True
+        tamper_reason = "本地 HEAD 与远端 main 不一致（篡改）"
+    elif prev_hash and prev_hash != local and local != gc:
+        tampered = True
+        tamper_reason = f"HEAD 从 {prev_hash[:7]} 变到 {local[:7]}（非风语者触发）"
+
+    if tampered and full:
+        # 篡改事件记录 + 自动恢复
         log_path = ROOT / "memory" / "whisperer-tamper.log"
         tamper = sh("git", "log", "-1", "--oneline", local)
         author = sh("git", "log", "-1", "--format=%an <%ae>", local)
@@ -51,7 +82,24 @@ def step0_head_safety():
         run(["git", "push", "gitcode", "HEAD:main", "HEAD:master", "--force"])
         run(["git", "push", "origin", "HEAD:main", "HEAD:master", "--force"])
         return (gc[:7], f"⚠️ HEAD被篡改已恢复 ({tamper[:40]})")
-    return (local[:7], "✅ 三端一致")
+    elif tampered and not full:
+        # fast 模式只告警，不恢复
+        print(f"  ⚠️ {tamper_reason}")
+        print(f"  → 跑 --scan-only 恢复，或手动 git reset --hard {gc[:7]}")
+        return (local[:7], f"⚠️ HEAD 不一致: local={local[:7]} remote={gc[:7]}")
+
+    if prev_hash and prev_hash == local and local == gc:
+        # HEAD 稳定：计数
+        stable_minutes = 0
+        try:
+            prev_dt = datetime.strptime(prev_ts, "%Y-%m-%d %H:%M:%S")
+            stable_minutes = int((datetime.now() - prev_dt).total_seconds() / 60)
+        except Exception:
+            pass
+        status = f"✅ 三端一致，稳定 {stable_minutes}min"
+    else:
+        status = "✅ 三端一致"
+    return (local[:7], status)
 
 # ============================================================
 # Step 1 — 分支普查（调用 fist-gate.py --scan）
@@ -204,6 +252,7 @@ def selftest():
 def main():
     ap = argparse.ArgumentParser(description="风语者自动化巡检")
     g = ap.add_mutually_exclusive_group()
+    g.add_argument("--fast", action="store_true", help="P0-1: 只跑 Step 0 HEAD 安全门，<3s")
     g.add_argument("--scan-only", action="store_true", help="Step 0-2 + Step 3 扫描（默认）")
     g.add_argument("--auto-merge", action="store_true", help="Step 0-2 + 自动合入 + Step 3")
     # 全仓惯例是 `--selftest`（无连字符），本工具原先只认 `--self-test` ⇒ 统一跑 `--selftest` 的
@@ -214,10 +263,24 @@ def main():
     if args.self_test:
         sys.exit(selftest())
 
+    if args.fast:
+        # ==================== FAST MODE ====================
+        print(f"⚡ {datetime.now().strftime('%H:%M:%S')} 风语者 fast HEAD 巡检 (<3s)")
+        try:
+            head, head_status = step0_head_safety(full=False)
+        except Exception as e:
+            print(f"FATAL: {e}")
+            sys.exit(2)
+        print(f"HEAD: {head} | {head_status}")
+        print(f"下次 1min（fast）/ 15min（full）")
+        # 退出码：不一致=1，一致=0
+        sys.exit(1 if "⚠️" in head_status else 0)
+
+    # ==================== FULL MODE ====================
     print(f"🔍 {datetime.now().strftime('%H:%M:%S')} 风语者巡检")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     try:
-        head, head_status = step0_head_safety()
+        head, head_status = step0_head_safety(full=True)
         mc, ab, candidates = step1_branch_scan()
         if args.auto_merge and candidates:
             auto_merge(candidates)
