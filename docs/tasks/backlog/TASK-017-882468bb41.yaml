@@ -1,0 +1,14 @@
+id: TASK-017
+title: "守卫电池格数读数需与 README 登记对表"
+dedupe_key: "882468bb41c4b8ac"
+priority: P3
+status: backlog
+assignee: atomcode
+discovered_by: whisperer-script
+discovered_at: "2026-10-22T01:10:13+00:00"
+
+problem: >
+  run_guards --list 读数 83 格；若低于 scripts/README.md 最新登记即欠格
+
+evidence: |
+  whisperer probe_guards()

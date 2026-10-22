@@ -861,3 +861,34 @@
   PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
   去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
   用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
+- **R87 追记（fist-gate.py，TASK-004）**：`--scan` 加**反向 diff 检测（REVERT-PATTERN）**——
+  分支对基点的 src/scripts/cmd numstat 满足「删 ≥50 行且 删 > 增×1.5」即判疑似 revert
+  （把合入者已合的内容砍回旧版，r73 实证形状 -718/+191），yaml `status: failed`
+  （不进 claimable backlog）+ 文件级证据 Top5（`path(-删/+增)`）打进 yaml 与巡检日志；
+  文件级阈值 20 行防小删误报；判定序在 DROP 之后、MERGE 之前（ABORT 冲突标记仍最高）。
+  自证格 S7（-60/+1 必进 failed 队列）/ S8（小删不误红），`--selftest` 十九格。
+- `fist-gate.py`（2026-10-21 `defbe27` 一带入仓，此前从未登记）— **统一门链（五查 → 六查）**：
+  merge_markers / fmt / build / ps_encoding / store_path 五查 + R86 起第 6 查 `whisperer`
+  （R93 起指向 `whisperer_patrol.py --selftest` 自证，不再是 `whisperer.py`——后者旗名是
+  `--self-test`，喂 `--selftest` 只拿到 argparse 的 rc=2 幻影红；扫描产物是输出不是门）。另有 `--scan` 分支普查
+  子命令（TASK-005）：枚举远端分支对基点逐个出 ahead/cherry+/代码改动/冲突标记 → 自动写
+  `.git/fist/tasks/backlog/origin/<branch>.yaml`（stale 自动清），给合并 agent 当进料口；
+  `--selftest` 十九格（G1-G5 门链红绿/自拒 + S1-S8 扫描桩）。
+  用法 `python scripts/fist-gate.py [--selftest|--scan]`。
+- `whisperer_patrol.py`（2026-10-21 R86 入仓为 `whisperer.py`，R90 收写侧，R93 改址让位）— **风语者探测/入池引擎（TASK-009）**：分支巡检
+  （ahead/cherry 等价/冲突标记单发 `git grep`，四类处置 ABORT/DROP/FF-MERGE-CANDIDATE/REVIEW）
+  + docs 散落普查 + scripts 命名普查 + 守卫电池格数读数，发现由 `pool_findings()` 写成
+  `docs/tasks/backlog/TASK-NNN-*.yaml`（编号递增；每份 yaml 落一行机器锚 `dedupe_key: <sha1(key)[:16]>`，
+  同键重跑即跳过——键的散文会漂，锚不会；ABORT 分支级发现按去掉远端前缀的分支名入池，
+  gitcode/ 与 origin/ 两条镜面只占一单，P1）；默认扫描+写 yaml，
+  `--scan-only` 只出报告，`--apply` 额外做 ff-only 无分叉快进合入（真合并仍是人的决定），
+  `--no-fetch` 离线档。rc：0=无事 / 1=无法自证 / 2=发现待办。
+  `--selftest` 六格：干净分支巡检 / 干净标记 / pool_findings 逐类入池 / 重跑幂等且镜面去重 /
+  整串中文键不落到 `TASK-NNN-.yaml`（退化为键哈希 slug）/ 沙箱写不动真任务池。
+  用法 `python scripts/whisperer_patrol.py [--scan-only|--apply] [--no-fetch] [--selftest]`。
+- `whisperer.py`（2026-10-22 主机 b0693a6 入仓，gitcode/main 线）— **风语者 Step 0-4 编排真源**：
+  `--scan-only`（默认）/`--auto-merge`/`--self-test`，旗名带连字符，与本文件的 `--selftest` 不是同一个旗。
+  **刻意不进 run_guards 电池、也不进 fist-gate 门链**：它的 Step 0 HEAD 安全门在巡检拍里执行
+  `git checkout master` + `git reset --hard` + `git push --force HEAD:main HEAD:master`（两远端），
+  无人值守跑它等于让定时脚本对共享线强推——已入池 TASK-018（P1）待裁决，裁决前面包保持排除。
+  与 `whisperer_patrol.py` 的分工：这份管编排（含合入动作），那份管探测与入池（零共享线副作用）。
