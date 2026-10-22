@@ -6512,3 +6512,37 @@ daqing FFI 会不会崩"。若 133 族缺陷在 daqing 上确实不存在，这�
 编号说明：本条最初以 BUG-381 入账，账本被并行 lane 重写后原条目丢失，故按新号重录。
 - reported_by: lead-2（重录：原 BUG-381）
 
+## BUG-147 [2026-10-10T00:00:00Z] [medium] FIXED
+- summary: [engine] `execute_with_meta` 把 `audit_execute_gate` 前置到 `record_execution` 之前——预执行审计门禁必须真正前置
+- detail: 补录说明：本条据 `reports/2026-10-10-r12-cycle1-report.md`（R12 Round 1 表格行）与 `src/engine/engine.mbt:231` 注释追记补录；**原始抬头在账本中缺失**（代码先引用、账本未入账——正是 BUG-373 要治的形状）。修复面：审计门禁顺序修正，报告「注释准确度」一节逐行核对注释与实现一致。
+- reported_by: agent-skill-docs（补录：先入账再引用，见 BUG-373）
+
+## BUG-333 [2026-10-19T00:00:00Z] [medium] FIXED
+- summary: [issue_scan] 精度不足：src 全量 9927 命中中 72.7% 为编译期已保证/子串近似噪音 ⇒「扫描→上报→修复」闭环不可用；落地默认降噪锁
+- detail: 补录说明：据 `memory/2026-10-19.md:158`（上报 BUG-333）与 `src/server/issue_scan.mbt:2327/2469`、`src/server/issue_scan_test.mbt:218/596` 注释追记补录；原始抬头缺失。为何 FIXED：AGENTS/README 已把「BUG-333 默认降噪锁」记为已落地能力，测试里带成对回归锁。
+- reported_by: agent-skill-docs（补录：先入账再引用，见 BUG-373）
+
+### FIXED(2026-10-22T11:00:00Z / BUG-147, BUG-327, BUG-333, BUG-336)
+- evidence: **补录收口（先入账再引用，BUG-373 口径）**：这 4 条此前只在 memory/reports 有追记、账本无抬头，导致 17 处代码注释引用悬空（`check_bug_reference_integrity` 判定面 17 > 上限 1）。本轮按其第一手追记补录抬头（provenance 写在各自 detail 内），并修掉一处**无任何追记**的误引编号（`src/server/issue_scan_wbtest.mbt` 原 BUG-384/385 记号已移除，只保留成对锁技术说明）。实测：`check_bug_reference_integrity` 判定面 **17 → 0（rc=0）**；账本抬头 361 → 365。
+## BUG-384 [2026-10-22T05:18:56Z] [high] OPEN
+- summary: [半吊子修复] main 线 rhop_poll_once 成为死代码：还原了实现（blob 42c86c8）却删除了唯一测试 rhop_native_wbtest.mbt——两条本应二选一的修复被叠加，编译绿掩盖了「零调用者 + 零测试」；已推 gitcode 分支 fix/restore-rhop-test-on-main 取回测试
+- detail: 现象（三线对照实测，2026-10-22 13:1x）：
+- `origin/master` == `origin/main` == `f6560010`：**无** `src/ops/rhop_poll.mbt`、**有** `src/ops/rhop_native_wbtest.mbt` ⇒ 编译红（6×`[4021] rhop_poll_once is unbound`）
+- `gitcode/main`(e1754560) / 本机 `main`(aab08a4e)：**有** `src/ops/rhop_poll.mbt`（blob `42c86c8`，即 slave 支 `e912d1b3` 的逐字节还原）+ **无** `src/ops/rhop_native_wbtest.mbt` ⇒ 编译绿
+
+后果：两条本应二选一的修复被**叠加成半吊子**——「还原实现」那笔守住了功能，「删孤儿测试」那笔抹掉了唯一的测试面。
+实测 `git grep rhop_poll_once main -- '*.mbt' '*.mbti'` 只剩两处：`.mbti` 的声明与本文件自己的定义
+⇒ `rhop_poll_once` 在 main 上是**零调用者 + 零测试的死代码**，编译绿掩盖了「能力上线但无人验证」。
+
+另一层：`check_mbti_sync` 看不见泛型顶层 fn（另案 BUG-381 已修于 PR #16），所以删测试 + `moon info` 后
+声明消失这件事也无人对表；`check_mbti_sync` 在 main 上 PASS。
+
+修法（已提交并推 gitcode 线：分支 `fix/restore-rhop-test-on-main`，commit 36e75974）：
+从 `f6560010` 取回 `src/ops/rhop_native_wbtest.mbt`（与 blob 42c86c8 的实现同源，均出自 e912d1b3），
+main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一对实现+测试在 PR #12 的 js-windows 臂上
+实测 `Total tests: 1353, passed: 1353, failed: 0`；本机 `moon test` 撞 BUG-380 的 Windows runner 缺陷，不可读）。
+
+判据建议：合并「修编译红」类改动时，**补实现 与 删测试 是互斥决策**，必须在同一处登记并只取其一；
+若两案都已进历史，收口动作是**把测试加回**（实现有覆盖）而不是再删实现。
+- reported_by: lead-2（三线对照实测）
+
