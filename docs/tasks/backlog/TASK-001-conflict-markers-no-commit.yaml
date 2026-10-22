@@ -40,3 +40,21 @@ partial_met:
      部分完成**——cherry-pick 路径已由 ③ 覆盖（含 selftest + live）；**通用 pre-commit 钩子仍未做**，
      属开放项（会拦到"手写 commit"这条路径，需单独评估钩子分发方式）"
 open_item: "通用 pre-commit 钩子（拦截任何本地手写 commit 的标记）未做"
+
+# ── ① ② ③ 全部落地回填（AtomCode / 2026-10-21T23:10+08:00）──
+result: >
+  ① CI 的 `Merge-marker gate`（在 Migrate 之前）承担"合入前自动跑"；
+  ③ `slave-branch-merge.ps1` 里每笔 commit 前 live 扫、整批后 `--selftest` + live 双跑，红则拒绝提交/不许 build；
+  ② **本轮补齐本地提交面**：`.githooks/pre-commit` 原来只跑 `moon check`——**没有标记门**，且
+  `core.hooksPath` 从未设置 ⇒ 钩子默认不生效。现改为三步（判据自证 → live 全跟踪面 → `git diff --cached --check`），
+  并新增 `scripts/install_git_hooks.py`（`--install` 幂等安装 / `--check` 核对），`.githooks/README.md` 写清
+  步骤、环境变量（`FIST_PRECOMMIT_SKIP_MOON=1`）与手工等效命令。
+behavior_test: >
+  临时仓库端到端（不是读代码）：装钩子后，暂存面含 `<<<<<<< HEAD / ======= / >>>>>>> other` ⇒
+  `git commit` **rc=1 且 HEAD 未动**（拒绝）；清掉标记后同仓库 ⇒ `git commit` **rc=0**（通过）；
+  本仓 `--check` 正确报出 `core.hooksPath 未设置 ⇒ 钩子存在但不生效`（rc=1）。
+acceptance_met:
+  - "① 合入前自动跑 check_merge_markers：✅（CI gate，Migrate 前）"
+  - "② cherry-pick 全解 + git diff --check + selftest 过才允许 commit：✅（pre-commit 钩子三步 + 合并驱动脚本）"
+  - "③ slave-branch-merge.ps1 加 cherry-pick 后自动标记扫描：✅（前一轮落地）"
+status_note: "本单可关闭（三条全部落地）；钩子仍需每人跑一次 install_git_hooks.py --install 才生效（README 已写）"
