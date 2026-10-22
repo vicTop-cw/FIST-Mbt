@@ -77,30 +77,67 @@ def pick_base(refs):
 def gout(root, *args):
     r = run(["git", "-C", str(root)] + list(args), cwd=root)
     return "" if r.returncode else r.stdout
+# TASK-004：反向 diff 检测。判据来自实测——slave/fix/battery-expectations-r73 的
+# `git diff --stat` = 718 deletions / 191 insertions，issue_scan.mbt 单文件 -457/+0：
+# 那是"把已合入内容 revert 回旧版本"，不是正常增量。正常增量几乎总是 add ≥ del，
+# 回退型的特征是 **deletions > insertions × 1.5**（实测正常分支极少超 1.0，回退型高达 3.7）。
+# 本判据**只标记不自动丢弃**：可疑不等于有罪——回退型分支进 failed/ 等人工确认后重做。
+REVERT_RATIO = 1.5
+
+
+def parse_numstat(text):
+    """`git diff --numstat` → ([(path,add,del)], add_total, del_total)；二进制行(-)跳过。"""
+    files, add_t, del_t = [], 0, 0
+    for line in text.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3:
+            continue
+        a, d, path = parts[0], parts[1], parts[2]
+        if not (a.isdigit() and d.isdigit()):
+            continue
+        A, D = int(a), int(d)
+        files.append((path, A, D))
+        add_t += A
+        del_t += D
+    return files, add_t, del_t
+
+
+def is_revert_pattern(add_total, del_total):
+    """删远多于增 ⇒ 疑似回退（rebase 方向错/把已合内容倒回旧版）。纯函数，直接可测。"""
+    return del_total > 0 and del_total > add_total * REVERT_RATIO
+
+
+def worst_deletions(files, limit=5):
+    """按 (del-add) 降序取前几个，用于日志点名「哪几个文件删远多于增 + 差值」。"""
+    rows = [(path, A, D, D - A) for path, A, D in files if D > A]
+    rows.sort(key=lambda r: -r[3])
+    return rows[:limit]
+
+
 def scan_branch(root, base, ref):
     ahead = gout(root, "rev-list", "--count", "%s..%s" % (base, ref)).strip()
     ahead = int(ahead) if ahead.isdigit() else 0
     cherry_plus = sum(1 for l in gout(root, "cherry", base, ref).splitlines() if l.startswith("+"))
     numstat = gout(root, "diff", "--numstat", "%s...%s" % (base, ref), "--", "src", "scripts", "cmd", "moon.pkg")
-    code_files, src_lines = [], 0
-    for line in numstat.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 3: continue
-        add, dele, path = parts[0], parts[1], parts[2]
-        code_files.append(path)
-        if add.isdigit(): src_lines += int(add)
-        if dele.isdigit(): src_lines += int(dele)
+    files, add_total, del_total = parse_numstat(numstat)
+    code_files = [f[0] for f in files]
+    src_lines = add_total + del_total
     markers = []
     for path in code_files:
         body = gout(root, "show", "%s:%s" % (ref, path))
         if any(l.startswith(("<<<<<<<", ">>>>>>>")) for l in body.splitlines()):
             markers.append(path)
+    revert = is_revert_pattern(add_total, del_total)
+    worst = worst_deletions(files)
     if markers: action = "ABORT/人工解冲突：分支自带未解决冲突标记"
+    elif revert: action = "REVERT-PATTERN：删远多于增（疑似 rebase 方向错/把已合内容倒回旧版）——进 failed/，人工确认后重做"
     elif ahead == 0 and cherry_plus == 0: action = "DROP：base 已包含分支全部提交（可删分支/关 MR）"
     elif cherry_plus == 0: action = "DROP：全部提交内容已等价存在于 base（cherry 无 +）"
     elif src_lines == 0: action = "MERGE-LOW-RISK：纯文档/流水账改动，低风险合入"
     else: action = "MERGE-CODE：有 src/scripts 代码改动——先过统一门链（fist-gate.py）再合入"
     return {"branch": ref, "base": base, "ahead": ahead, "cherry_plus": cherry_plus,
+            "insertions": add_total, "deletions": del_total, "revert_pattern": revert,
+            "worst_deletions": ["%s -%d/+%d (净 -%d)" % (w[0], w[2], w[1], w[3]) for w in worst],
             "conflict_markers": markers, "src_lines_changed": src_lines, "code_files": code_files,
             "suggested_action": action}
 def yaml_cell(v):
@@ -132,21 +169,34 @@ def scan(root, do_fetch=True):
             gd = os.path.normpath(os.path.join(str(root), gd))
     if not gd:
         return 2, "scan: 取不到 git dir（rev-parse --absolute-git-dir 空）——拒绝在错位置写任务"
-    out_dir = Path(gd) / "fist" / "tasks" / "backlog"
+    tasks_root = Path(gd) / "fist" / "tasks"
+    out_dir = tasks_root / "backlog"
+    failed_dir = tasks_root / "failed"
     rows = []
     for ref in refs:
         if ref == base or ref.rsplit("/", 1)[-1] in ("master", "main"): continue
         row = scan_branch(root, base, ref)
         row["scanned_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
-        write_scan_yaml(out_dir / (ref + ".yaml"), row)
+        dest = failed_dir if row["revert_pattern"] else out_dir   # TASK-004：回退型进 failed/
+        write_scan_yaml(dest / (ref + ".yaml"), row)
         rows.append(row)
     stale = 0
-    if out_dir.is_dir():
-        live = {ref + ".yaml" for ref in refs if ref != base and ref.rsplit("/", 1)[-1] not in ("master", "main")}
-        for p in list(out_dir.rglob("*.yaml")):
-            if p.relative_to(out_dir).as_posix() not in live:
+    live = {ref + ".yaml" for ref in refs if ref != base and ref.rsplit("/", 1)[-1] not in ("master", "main")}
+    for d in (out_dir, failed_dir):
+        if not d.is_dir():
+            continue
+        for p in list(d.rglob("*.yaml")):
+            if p.relative_to(d).as_posix() not in live:
                 p.unlink(); stale += 1
-    print(fetch_note + "scan: base=%s 分支 %d 个 → %s（清掉 stale yaml %d 份）" % (base, len(rows), out_dir, stale))
+    reverts = [r for r in rows if r["revert_pattern"]]
+    print(fetch_note + "scan: base=%s 分支 %d 个（REVERT-PATTERN %d 个 → 进 failed/）→ %s（清掉 stale yaml %d 份）"
+          % (base, len(rows), len(reverts), out_dir, stale))
+    for r in reverts:
+        ratio = (r["deletions"] / r["insertions"]) if r["insertions"] else float("inf")
+        print("  ⚠ REVERT-PATTERN %s：insertions=%d deletions=%d（删/增=%.2f > %.1f）"
+              % (r["branch"], r["insertions"], r["deletions"], ratio, REVERT_RATIO))
+        for w in r["worst_deletions"]:
+            print("      删远多于增: %s" % w)
     for row in sorted(rows, key=lambda r: (-r["src_lines_changed"], r["branch"])):
         print("  %-52s ahead=%-3d cherry+=%-3d src±=%-5d markers=%d → %s" % (
             row["branch"], row["ahead"], row["cherry_plus"], row["src_lines_changed"],
@@ -226,6 +276,20 @@ def selftest():
     if stale_p.exists(): fails.append("S6 stale yaml not pruned")
     print("SELFTEST %s (grid: %s)" % ("OK" if not fails else "FAIL", " / ".join(executed)))
     for f in fails: print("SELFTEST FAIL " + f)
+    # ── TASK-004：反向 diff 判定（真断言；判据坏掉这里必红）──
+    f1 = "0\t457\tsrc/server/issue_scan.mbt\n191\t261\tsrc/other.mbt\n"
+    files1, a1, d1 = parse_numstat(f1)
+    cells.append(("T4-real-revert corpus(191/718)", is_revert_pattern(a1, d1) is True, "%d/%d" % (a1, d1)))
+    cells.append(("T4-numstat-parsed", (len(files1), a1, d1) == (2, 191, 718), str((len(files1), a1, d1))))
+    cells.append(("T4-normal-code-not-flagged", is_revert_pattern(500, 120) is False, "500/120"))
+    cells.append(("T4-boundary-strictly-greater", is_revert_pattern(100, 150) is False, "100/150"))
+    cells.append(("T4-just-over-boundary", is_revert_pattern(100, 151) is True, "100/151"))
+    cells.append(("T4-empty-safe", is_revert_pattern(0, 0) is False, "0/0"))
+    _f2, a2, d2 = parse_numstat("-\t-\tassets/x.png\n")
+    cells.append(("T4-binary-skipped", (a2, d2) == (0, 0), "%d/%d" % (a2, d2)))
+    w = worst_deletions([("a.mbt", 0, 457), ("b.mbt", 100, 120), ("c.mbt", 50, 10)])
+    cells.append(("T4-worst-names-culprit", bool(w) and w[0][0] == "a.mbt" and w[0][3] == 457, str(w[:1])))
+
     return 0 if not fails else 2
 if __name__ == "__main__":
     if "--selftest" in sys.argv[1:]: sys.exit(selftest())
