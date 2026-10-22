@@ -116,7 +116,6 @@ SPECIAL_CASES = [
     case("check_tools_sync.py"),
     case("check_doc_surface.py"),
     case("check_doc_surface.py", "--selftest"),
-    case("check_scripts_index.py"),
     case("check_mbti_sync.py"),
     case("check_mbti_sync.py", "--selftest"),
     case("check_store_tables_wired.py"),
@@ -147,6 +146,12 @@ SPECIAL_CASES = [
              "（改前 SystemExit(str) 只给 1，那个 2 是幻影 ⇒ BUG-369）",
              kind="diag"),
     case("check_ps_encoding.py"),
+    # —— R82：scripts_index 那格按本文件自订的律改记预存红——master 现状 red 的根因是主机
+    #    fist-gate.py（454aea3）未在 scripts/README.md 登记（TASK-003/004 施工面，R81 点名）。
+    #    主机一登记，got 0 ≠ expect 1 当场现形，逼着把期望改回 0。 ——
+    expected("check_scripts_index.py", 1,
+             "预存红：fist-gate.py 未在 scripts/README.md 登记（TASK-003/004 面，主机在办；"
+             "修好后此格期望改回 0）"),
     # —— 编码面：R58 期望值回归 0——BUG-355/332 一族已在主仓修完（现读真源：--selftest 绿、
     #    --all 面「该带闸 85 份/已带 85 份」全过）。按本文件自订的律「预存红被修好 ⇒ 下一次
     #    改动的人把期望改回 0，数字变了不改进期望就现形」，此处正是那一次改动。
@@ -252,7 +257,10 @@ CASES = build_cases()
 
 
 def ci_referred():
-    """现读 .github/workflows/*.yml 里引用过的守卫脚本名（不抄清单）。"""
+    """现读 .github/workflows/*.yml 里引用过的 scripts/*.py（不抄清单）。
+    R82：正则从「check_*/gen_plugins/cleanup 白名单」放宽到任意 `scripts/...py` 路径引用——
+    CI 里真实引用着 e2e 探针 ×5 / cli_flag_probe / store_isolation_probe / mcp_tool_tour /
+    patch_esm_main / run_guards 本身，旧正则全都看不见，这批被误判成缺面。"""
     names = set()
     if not os.path.isdir(WORKFLOWS):
         return names
@@ -260,10 +268,54 @@ def ci_referred():
         if not fn.endswith((".yml", ".yaml")):
             continue
         with io.open(os.path.join(WORKFLOWS, fn), encoding="utf-8", errors="replace") as f:
-            for m in re.finditer(r"((?:blackbox/)?check_[a-z0-9_]+\.py|gen_plugins\.py|cleanup_artifacts\.py)",
-                                 f.read()):
+            for m in re.finditer(r"scripts/([A-Za-z0-9_/.-]+\.py)", f.read()):
                 names.add(m.group(1))
     return names
+
+
+# R82（TASK-007）：宇宙从「check_*.py 顶层+blackbox」扩到 **scripts/**/*.py 递归自动扫描**
+# ——风语者实测 26 把尺 vs 88 份 .py，漏 64；根因是宇宙定义写死了 check_ 前缀。
+# 排除族（测试/一次性/内部辅助，不进宇宙）：
+#   `_` 前缀（一次性临时件，如 _run_check_t0r21.py / _tool_registry.py）、
+#   `test_` / `verify_` 前缀与 `*_verify.py` / `*_selfdrive*.py`（实验/自驱验证脚本族）。
+# 三种执行面（G1 的对象）：CI（.github/workflows 现读）/ 电池（CASES + 自动格）/ 登记（REGISTRY）。
+UNIVERSE_EXCLUDE_RE = re.compile(r"(^_|^test_|^verify_|^selfdrive_|_verify\.py$|_selfdrive)")
+
+
+# R82：登记面——「不该被自动电池跑」的脚本必须在此点名 + why，否则按缺面判红。
+# 与 CASES 的分工：CASES 是「要跑的」，REGISTRY 是「在册但不自动跑的」（起服务/需网络/
+# 平台前提/一次性补丁/纯辅助库）。点名失效（脚本删了）由 G2 扩展面抓。
+REGISTRY = {
+    "award_demo.py": "演示脚本（无门禁语义）",
+    "blackbox/e2e_assistant_xproc.py": "端到端探针：跨进程起真 assistant，需运行前提，跑法见 scripts/README.md",
+    "blackbox/e2e_lock_xproc.py": "端到端探针：跨进程锁竞争，需运行前提，跑法见 scripts/README.md",
+    "blackbox/e2e_mirror_install.py": "端到端探针：真下载镜像安装（网络 + 沙箱），跑法见 scripts/README.md",
+    "blackbox/e2e_transport_stack_fallback.py": "端到端探针：TLS 换栈真装（网络 + 沙箱），跑法见 scripts/README.md",
+    "blackbox/e2e_upgrade_mirror.py": "端到端探针：升级镜像真装（网络 + 沙箱），跑法见 scripts/README.md",
+    "blackbox/patch_esm_main.py": "构建辅助：mcp_smoke/demo 启动前幂等注入 require shim（CI 在用，不单独当格跑）",
+    "caf_offline_replay.py": "CAF 实验重放（长跑/需语料）",
+    "caf_p2c_ab_preflight.py": "CAF A/B 预检（长跑/需语料）",
+    "caf_p2d_coldstart_ab.py": "CAF 冷启动 A/B（长跑/需语料）",
+    "calibrate_goal_drift.py": "goal_drift 阈值标定（一次性标定，读数已固化入 goal_drift_check）",
+    "fist-gate.py": "统一门链（merge_markers/fmt/build/ps_encoding/store_path）：CI/本地单独跑；"
+                    "进自动电池会在 fmt 环境差异（本地钉版 vs nightly）上假红",
+    "fist-mbt-http.py": "HTTP 服务入口（起服务长跑）",
+    "fist-mbt-web.py": "Web 面板入口（起服务长跑）",
+    "fist.py": "FIST CLI 主入口（交互/长跑）",
+    "fist_mbt_mcp_client.py": "MCP 客户端演示（需 server 活着）",
+    "gen_apply_pdf.py": "按需生成器（产出报告 PDF，无门禁语义）",
+    "gen_help_docs.py": "按需生成器（产出帮助文档，drift 由 doc_surface 面另判）",
+    "issue_scan.py": "MCP issue_scan 的 CLI 辅助入口（能力面由 src/server 白盒锁覆盖）",
+    "laya_decide.py": "Laya 决策 CLI（无门禁语义）",
+    "mcp_bug_loop.py": "MCP bug 闭环长跑（需 server 活着）",
+    "mcp_smoke.py": "MCP 冒烟（需构建产物 + node，CI 由 run_check 面另跑）",
+    "ns_route_probe.py": "ns 路由探针（需 server 活着）",
+    "output_validate.py": "交付物硬门 CLI（对给定 artifacts 运行，无固定入参；语义由 server 侧白盒锁覆盖）",
+    "patch_router_config_caf_field.py": "一次性补丁（patch_ 语义，跑完即退场）",
+    "pentad_fist.py": "Pentad 外部项目驱动器（长跑）",
+    "score_gate.py": "评分器 CLI（读数型，无门禁语义）",
+    "simulate_head_commit.py": "辅助库（check_bug_reference_integrity 引用其 simulate_head_commit，不单独跑）",
+}
 
 
 def guard_files():
@@ -278,20 +330,23 @@ def guard_files():
 
 
 def _existing_scripts():
-    """「文件系统上有哪些尺」与 guard_files() 同形：顶层名 + `blackbox/` 前缀名。"""
+    """「文件系统上有哪些脚本」与 guard_files() 同形：scripts/**/*.py 全集（递归）。"""
     existing = set()
-    if os.path.isdir(SCRIPTS_DIR):
-        existing |= set(os.listdir(SCRIPTS_DIR))
-    if os.path.isdir(BLACKBOX_DIR):
-        existing |= {"blackbox/" + f for f in os.listdir(BLACKBOX_DIR)}
+    for dirpath, dirnames, filenames in os.walk(SCRIPTS_DIR):
+        dirnames[:] = [d for d in dirnames if d not in ("__pycache__",)]
+        rel = os.path.relpath(dirpath, SCRIPTS_DIR).replace(os.sep, "/")
+        for f in filenames:
+            if f.endswith(".py"):
+                existing.add(f if rel == "." else rel + "/" + f)
     return existing
 
 
 def check_faces(guards, ci_names, case_scripts, missing, existing=None, resident=()):
     """G1/G2/G3 的纯函数版（selftest 喂合成集合，含合成的"文件系统上有哪些脚本"）。
-    existing=None 时现读真目录（含 blackbox 子目录，与 guard_files 点名同形）。"""
+    existing=None 时现读真目录（scripts/**/*.py 递归，与 guard_files 同形）。
+    registry=R82 登记面（脚本名集合）：与 CI/电池同权构成执行面。"""
     if not guards:
-        return 2, ["FATAL G3：`scripts/check_*.py` 解析到 0 把尺 —— 宇宙被换小，拒绝出'无人缺面'的读数"]
+        return 2, ["FATAL G3：宇宙解析到 0 份脚本 —— 宇宙被换小，拒绝出'无人缺面'的读数"]
     if not ci_names:
         return 2, ["FATAL G3：CI 面一把尺都没解析到 —— workflows 缺失/改名，拒绝出数"]
     if not case_scripts:
@@ -299,12 +354,15 @@ def check_faces(guards, ci_names, case_scripts, missing, existing=None, resident
     if existing is None:
         existing = _existing_scripts()
     stale = sorted(s for s in case_scripts if s not in existing)
+    stale_reg = sorted(s for s in registry if s not in existing)
     if stale:
         return 2, ["FATAL G2：电池点名的脚本不存在：%s" % " ".join(stale)]
+    if stale_reg:
+        return 2, ["FATAL G2：登记面点名的脚本不存在（脚本删了登记没删）：%s" % " ".join(stale_reg)]
     if missing:
-        lines = ["G1 缺执行面 %d 把尺（既不在 CI 也不在电池）：" % len(missing)]
+        lines = ["G1 缺执行面 %d 份脚本（CI / 电池 / 登记三面皆无）：" % len(missing)]
         for g in missing:
-            lines.append("  - %s ⇒ 要么挂进 CI，要么进本电池 CASES，别留'写了就没人跑'" % g)
+            lines.append("  - %s ⇒ 挂进 CI、进本电池 CASES，或在 REGISTRY 点名+why，别留'写了就没人跑'" % g)
         return 1, lines
     line = ("G1 通过：%d 把尺全部有执行面（CI %d / 电池 %d）"
             % (len(guards), len(ci_names & set(guards)), len(case_scripts & set(guards))))
@@ -337,7 +395,11 @@ def run_battery(case_timeout=CASE_TIMEOUT_SEC):
         print(l)
     if rc == 2:
         return 2
-    print("\n=== 电池 %d 格 ===" % len(CASES))
+    cases_all = CASES + auto_cases(battery, ci, guards)
+    if len(cases_all) > len(CASES):
+        print("\n（R82 自动补格 %d：宇宙里新落的无 CI 面静态尺，见 auto_cases）"
+              % (len(cases_all) - len(CASES)))
+    print("\n=== 电池 %d 格 ===" % len(cases_all))
     py = sys.executable
     fails, skips = [], []
     for c in CASES:
@@ -367,8 +429,9 @@ def run_battery(case_timeout=CASE_TIMEOUT_SEC):
         if not ok:
             fails.append((c["name"], p.returncode, c["expect"], c["why"], tail))
     print("\n=== 汇总 ===")
-    print("格数 %d / 失败 %d / SKIP %d / 缺执行面的尺 %d"
-          % (len(CASES), len(fails), len(skips), len(missing)))
+    print("格数 %d（手写 %d + 自动 %d）/ 失败 %d / SKIP %d / 缺执行面 %d"
+          % (len(cases_all), len(CASES), len(cases_all) - len(CASES),
+             len(fails), len(skips), len(missing)))
     for name, got, exp, why, tail in fails:
         print("  FAIL %s got=%s expect=%s :: %s" % (name, got, exp, tail))
         if why:
