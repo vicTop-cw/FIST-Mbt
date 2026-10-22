@@ -2,7 +2,8 @@ id: TASK-010
 title: "清理分支 fix/guards-conflict-markers-from-clean-commits 的未解冲突标记"
 dedupe_key: "96655bd0f208910f"
 priority: P1
-status: backlog
+status: in_review
+status_note: "R119 对账：远端 gitcode 已无 fix/guards-conflict-markers-from-clean-commits（ls-remote 0 命中），本机无同名分支/远端跟踪 ref；gitcode/master 树 marker 面 0 命中（git grep 冲突标记 rc=1）⇒ 本单要清的「合入前标记」已无合入对象，转 in_review 待 owner 裁决 done/dropped（转 done 需主线点名该 id，R2 判据不许无据）"
 assignee: atomcode
 discovered_by: whisperer-script
 discovered_at: "2026-10-22T01:10:13+00:00"
