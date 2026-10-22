@@ -125,6 +125,3 @@ python scripts/mcp_smoke.py
 
 *（内容由AI生成，仅供参考）*
 
-| 测试 | **`moon test --target js` 1353/1353**（2026-10-22 CI (js, ubuntu) 实测，四模式流水线自我迭代 Round 1~3 收口；native 轨见 AGENTS.md「已知边界」） |
-
-| 测试 | **`moon test --target js` 1347/1347**（2026-10-21 Windows 实测，四模式流水线自我迭代 Round 1~3 收口；native 轨见 AGENTS.md「已知边界」） |

@@ -6170,7 +6170,7 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 ### FIXED(2026-10-21T11:02:58Z / BUG-358)
 - evidence: BUG-358 修复已在 master 线：ea6eba6c 是 origin/master 祖先（git merge-base --is-ancestor 实测 rc=0）。判据采纳本单出路(a)——check_host_installable.py 现以 REQUIRED_MCP_JSON=[".mcp.dev.json"] 只把跟踪真源列进「关键文件缺失即自拒」名单，根 .mcp.json 留在 LENIENT_JSON 宽松档（缺失合法 continue），并在源码注释点名本单与 BUG-131 同口径。行为复测：在无根 .mcp.json 的干净 worktree（temp/m18 @ origin/master，git ls-files 面无该件）全量跑该守卫 rc=0 PASS；修复前同形场景必 rc=2 永不产出结论（本机当时有连接器残件才偶发可判＝假绿）。CI 侧从此真跑判定，不再恒红也不再被当噪声跳过。
 
-## BUG-333 [2026-10-19T05:54:08Z] [medium] OPEN
+## BUG-333 [2026-10-19T05:54:08Z] [medium] FIXED
 - summary: issue_scan 精度不足：src 全量 9925 命中中 72.7%（7219）为编译期已保证/子串近似噪音（match-exhaustive 编译器强制=100% 假阳、unused-variable/long-function 为近似启发），使"扫描→上报→修复"闭环不可用
 - detail: 实测 `issue_scan dir=src max_findings=100`：scanned_files=129, total_findings=9925（截断）。by_rule 全表精确求和 = 9925。其中：
 - moonbit-unused-variable 4259（info）：自述「子串近似 let 声明点，实际使用性需人工/编译器复核」——编译器已对真正未使用变量给警告，故绝大多数为假阳性。
@@ -6517,14 +6517,14 @@ daqing FFI 会不会崩"。若 133 族缺陷在 daqing 上确实不存在，这�
 - detail: 补录说明：本条据 `reports/2026-10-10-r12-cycle1-report.md`（R12 Round 1 表格行）与 `src/engine/engine.mbt:231` 注释追记补录；**原始抬头在账本中缺失**（代码先引用、账本未入账——正是 BUG-373 要治的形状）。修复面：审计门禁顺序修正，报告「注释准确度」一节逐行核对注释与实现一致。
 - reported_by: agent-skill-docs（补录：先入账再引用，见 BUG-373）
 
-## BUG-333 [2026-10-19T00:00:00Z] [medium] FIXED
+## BUG-387 [2026-10-19T00:00:00Z] [medium] DUPLICATE →BUG-333
 - summary: [issue_scan] 精度不足：src 全量 9927 命中中 72.7% 为编译期已保证/子串近似噪音 ⇒「扫描→上报→修复」闭环不可用；落地默认降噪锁
 - detail: 补录说明：据 `memory/2026-10-19.md:158`（上报 BUG-333）与 `src/server/issue_scan.mbt:2327/2469`、`src/server/issue_scan_test.mbt:218/596` 注释追记补录；原始抬头缺失。为何 FIXED：AGENTS/README 已把「BUG-333 默认降噪锁」记为已落地能力，测试里带成对回归锁。
 - reported_by: agent-skill-docs（补录：先入账再引用，见 BUG-373）
 
 ### FIXED(2026-10-22T11:00:00Z / BUG-147, BUG-327, BUG-333, BUG-336)
 - evidence: **补录收口（先入账再引用，BUG-373 口径）**：这 4 条此前只在 memory/reports 有追记、账本无抬头，导致 17 处代码注释引用悬空（`check_bug_reference_integrity` 判定面 17 > 上限 1）。本轮按其第一手追记补录抬头（provenance 写在各自 detail 内），并修掉一处**无任何追记**的误引编号（`src/server/issue_scan_wbtest.mbt` 原 BUG-384/385 记号已移除，只保留成对锁技术说明）。实测：`check_bug_reference_integrity` 判定面 **17 → 0（rc=0）**；账本抬头 361 → 365。
-## BUG-384 [2026-10-22T05:18:56Z] [high] OPEN
+## BUG-386 [2026-10-22T05:18:56Z] [high] FIXED
 - summary: [半吊子修复] main 线 rhop_poll_once 成为死代码：还原了实现（blob 42c86c8）却删除了唯一测试 rhop_native_wbtest.mbt——两条本应二选一的修复被叠加，编译绿掩盖了「零调用者 + 零测试」；已推 gitcode 分支 fix/restore-rhop-test-on-main 取回测试
 - detail: 现象（三线对照实测，2026-10-22 13:1x）：
 - `origin/master` == `origin/main` == `f6560010`：**无** `src/ops/rhop_poll.mbt`、**有** `src/ops/rhop_native_wbtest.mbt` ⇒ 编译红（6×`[4021] rhop_poll_once is unbound`）
@@ -6546,3 +6546,11 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 若两案都已进历史，收口动作是**把测试加回**（实现有覆盖）而不是再删实现。
 - reported_by: lead-2（三线对照实测）
 
+### FIXED(2026-10-22T13:55:00Z / BUG-386)
+
+- evidence: 本轮三线对照后的收口——`main` 线曾同时合入「还原 `src/ops/rhop_poll.mbt`」与「删 `src/ops/rhop_native_wbtest.mbt`」两条互斥修复，形成「实现存在、零调用者零测试」的死代码。**修复随 `origin/fix/restore-rhop-poll-impl` 与本仓 `fix/restore-rhop-test-on-main` 合入 main 落地**：`git cat-file -e main:src/ops/rhop_poll.mbt` 与 `main:src/ops/rhop_native_wbtest.mbt` **均存在**，`moon check` 0 errors，`check_mbti_sync` PASS（676 条声明）。
+- 编号说明：本条原登记为 BUG-384，与另一 lane 补录的 ocr-local 规则条目撞号（账本被并发重写后 `report_bug` 又分配了同一号），按「抬头编号唯一键」（硬门④）重编为 BUG-386。
+
+### 编号重编说明（2026-10-22T13:55:00Z / BUG-387 → BUG-333）
+
+- BUG-387 是 2026-10-22 的**补录块**（原抬头写作 `BUG-333 [2026-10-19T00:00:00Z]`，据 `memory/2026-10-19.md:158` 与源码注释追记），而同一缺陷的**原始抬头**早已存在（`BUG-333 [2026-10-19T05:54:08Z]`，含完整 9925 命中拆解）。两者是同一件事的两份记录 ⇒ 补录块重编为 BUG-387 并标 `DUPLICATE →BUG-333`（硬门③：主编号存在、非自身、非链式 DUPLICATE），原始抬头按 `### FIXED(… / BUG-333 …)` 小记改判 FIXED（硬门②：被小记点名者必须是 FIXED）。
