@@ -74,3 +74,21 @@ SKIP 5 格都是 `temp/` 前置件缺失（`chk47.json` / `pt27.log`），按本
 - 上一单：`reports/2026-10-22-task001-yaml-duplicate-block-r109-report.md`
 - 规范：`AI-DEVELOPMENT-STANDARD.md` §7 已知边界；`AGENTS.md` 金条四/五/八
 - 读数：本文件「证据」表 + `temp/` 外重定向的电池日志（`FIST_DB_PATH` 指到仓外，不落仓库）
+
+## 追记 · 叠主线后的权威读数（同一轮，交单前复核）
+
+- 交单前复查主仓：`gitcode/master` 已从本分支基点 `e07f479e` 前进 13 个 commit，其中
+  `c6eb84e6` 并了 **R108**、`4914a81f` + `15bb3b24` 两次并了 **R109** ⇒ 本分支叠主线（merge commit `21886d0e`）。
+  唯一冲突是 `memory/2026-10-22.md` 的日志尾部追加（三方各加各的段），按本仓律**并集解决**：
+  保留主线 R108 段 + 本线 R109/R110 段，断言无冲突标记、无裸 LF、三个小节标题各出现 1 次。
+  `scripts/README.md` 与 `scripts/run_guards.py` 由 ort 自动合并（主线这一轮做了文档去重，`README` 索引条目未被吃掉：
+  `grep -c check_backlog_yaml_integrity.py` = README 1 / run_guards 2）。
+- **第 4 条预存红的归位**：叠主线后 `expected("check_dist_snapshot` 在本分支为 **0 处**——R108 的兑现随主线进来，
+  本单不再需要在两处改同一行。上面「不属本单」那一格因此自然消失，这正是报告里写的归位方式，不是推测。
+- 提交时读数（merge 前，`check_publish_payload` 与 stdout 两条已随本单修掉）：`rc=1 / 57 格 / 失败 1` =
+  `check_delivery_gap.py got=1`——**交付态红**（HEAD 尚未推），律是「不给它登记期望」，推完自己翻绿。
+- **推后权威读数**（tip `21886d0e` 已在 `gitcode/slave/gate/backlog-yaml-integrity-r110`）：
+  `python scripts/run_guards.py` ⇒ **rc=0 / 格数 57（手写 57 + 自动 0）/ 失败 0 / SKIP 5 / 缺执行面 0**。
+  SKIP 5 格全是 `temp/` 前置件缺失（`chk47.json` / `pt27.log`），按本仓律 SKIP 不构成「这格过了」的证据。
+  本单两格 `check_backlog_yaml_integrity.py`（裸跑 + `--selftest`）在 57 格里各占一格，读数 rc=0。
+- MR 只交链接不代开：https://gitcode.com/VictorTop/Fist-Mbt/merge_requests/new?source_branch=slave/gate/backlog-yaml-integrity-r110
