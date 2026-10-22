@@ -73,6 +73,14 @@ jobs:
           python3 scripts/check_battery_count_doc.py --selftest
           python3 scripts/check_battery_count_doc.py
 
+      # position-why: 本尺只读 docs/ 副机清单与 git 跟踪面，不依赖 moon。住在 Migrate 之前
+      # 与上一条同因：Migrate 崩掉时正是「这一单还能不能认领」最需要出声的时刻，放在之后会被 skip。
+      - name: Slave-task-list self-proof guard (副机认领入口：证据锚点 ↔ 真源对表，R126)
+        shell: bash
+        run: |
+          python3 scripts/check_slave_task_list.py --selftest
+          python3 scripts/check_slave_task_list.py
+
       - name: Migrate mooncakes dep manifests (新版 moon 拒旧 moon.mod.json，check/test 全线的公共前置)
         shell: bash
         run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"

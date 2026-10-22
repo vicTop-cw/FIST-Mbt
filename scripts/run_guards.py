@@ -142,6 +142,11 @@ SPECIAL_CASES = [
     # 与 `check_scripts_index` 那次「文档写进被检文件名」是同一族：**登记红面的文字本身就是被检面**。
     case("check_doc_surface.py"),
     case("check_doc_surface.py", "--selftest"),
+    # —— R126：副机认领入口（docs/2026-10-20-slave-tasks.md）的自证尺。裸跑判「证据锚点指不指
+    #    得到真源 + 文首计数自述对不对」，--selftest 判「这把尺能不能发红」（18 格合成树）。
+    #    手写点名两格而不靠自动补格：自动补格只补裸跑，自检格必须点名（本文件既有纪律）。
+    case("check_slave_task_list.py"),
+    case("check_slave_task_list.py", "--selftest"),
     case("check_mbti_sync.py"),
     case("check_mbti_sync.py", "--selftest"),
     case("check_store_tables_wired.py"),
