@@ -5736,6 +5736,8 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 - 后续建议: ① 三条出路给 owner 选：(a) 实现消费（plan/reject 把 `by` 写进任务历史或审计字段，cold_publish 把 `created_by` 落标记；代价=行为变更 + 可能动 store schema）；(b) 删参数并同步改 MCP 入参 schema 与调用点（代价=对外契约收缩，需版本说明）；(c) 保留现状但在函数文档注释里明确「该参数由上一层承载/暂未实现」，并给这 10 格加定向说明（代价=告警面继续留 10 条）。② `github_sync`/`github_repo` 与 `flush_bug_queue` 属「未实现开关」，建议与产品路线图一起判，不要单独动。③ 与 0078 残 3、0027 残 1、死码族一起构成当前 owner 决策清单。
 - task_id: T0r10
 
+  - 追记(R53, 2026-10-22 18:05 实测复核)：十格里 **3 格已收口**——`report_bug` 的 `github_sync?` / `github_repo?`（全仓零调用点，真正的外发走 handler 的 auto_push/github_flush_* 通道）与 `watchdog_tick` 的 `flush_bug_queue?`（handler 自带 `flush_bug_queue 追加段` 才是真实现，ops 层形参与传参双双是死件）已删除，`moon check --target js` **0 errors**、`check_mbti_sync`/`check_tools_sync`/`check_plugin_sync`/`check_doc_surface` 全 rc=0。
+    仍在的 7 格（未动，需语义决策）：`plan(by)`、`reject_task(by)`、`cold_publish(created_by)`、`sample_parent(lam)`、`batch_verify_fix(max_rounds)`，以及两处 `ns?`（台账记体不消费，本轮按函数名未能在主线定位，疑似已改名/搬家，需重查）。
 ## BUG-355 [2026-10-21T02:10:00Z] [low] FIXED
 - summary: [惯用法面] 0020 deprecated 的 `str[:]` 子族 42 处清零：14 份文件里所有 `String::substring(start=, end=)` 调用改成切片 `s[A:B].to_owned()`，判据面 565 → 523 warnings / 0 errors（0020 命中 524→482，其余族逐格不变），1302/1302/0 不变、接口面零变化
 - detail: 这一单的关键不在改法，在**先把等价性钉死再铺开**，四个非显然的坑：

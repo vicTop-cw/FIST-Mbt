@@ -151,7 +151,7 @@ pub fn valid_verdict(HatVerdict) -> Result[Unit, String]
 
 pub fn validate_loop_steps(Array[String]) -> String?
 
-pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int32, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String, cold_start? : Bool, project_dir? : String, omega_strong_verify? : Bool, omega_split_n? : Int32, omega_spec? : Json?, selfdrive_project_dir? : String, selfdrive_review_every? : Int32, autodispatch? : Bool, autodispatch_want? : String, phi_gate? : Bool, phi_threshold? : Int32, mode? : String, flush_bug_queue? : Bool) -> Result[Json, String]
+pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int32, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String, cold_start? : Bool, project_dir? : String, omega_strong_verify? : Bool, omega_split_n? : Int32, omega_spec? : Json?, selfdrive_project_dir? : String, selfdrive_review_every? : Int32, autodispatch? : Bool, autodispatch_want? : String, phi_gate? : Bool, phi_threshold? : Int32, mode? : String) -> Result[Json, String]
 
 // Errors
 

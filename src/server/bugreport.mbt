@@ -252,8 +252,9 @@ pub fn report_bug(
   publish_task~ : Bool,
   // BUG-8：修复单落哪个 ns 由调用方决定（缺省 "bugs" ⇒ 既有调用零回归）
   task_ns~ : String = "bugs",
-  github_sync~ : Bool = false,
-  github_repo~ : String = "",
+  // BUG-354 收口（R53）：这里曾声明 `github_sync~` / `github_repo~` 两个**从不被消费**的参数
+  // （全仓零调用点；真正的外发走 handler 的 auto_push / github_flush_* 通道）。留着就是
+  // 「调用方以为传了就同步」的契约谎言，故删除；外发能力一字未动。
   eng : @engine.FistEngine,
   now~ : String,
 ) -> Result[Json, String] {
