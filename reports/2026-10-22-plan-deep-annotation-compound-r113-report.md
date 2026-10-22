@@ -87,6 +87,37 @@ DB 改道 temp，13 个任务全量逐条数标记）：
    彻底做法是加 `calibrate_note` 返回字段，但那会改 `task_plan_deep` 的返回形状（`J9` 描述契约门要同批改 server.mbt 描述），
    本单没顺手做。
 
+## 叠主线后权威读数（交单前，现读远端 tip）
+
+叠 `gitcode/master`（本单基点之后先进 14 commit，含 `803293c2` 一系）后重测，交单的读数以这一节为准：
+
+- **冲突面**：唯一冲突 `memory/2026-10-22.md` 尾部追加。并集解（主线 3642 行在前、本单 R113 节 23 行在后），
+  落盘实测 `CR=0`、冲突标记 0 处、`## R113` 标题恰 1 次。其余 14 个文件三方无重叠。
+- **MR 面 diff**（`gitcode/master` → 分支 tip）：15 files / +306 / −25，其中当日日志只 +24 行。
+- **全量测试**：`moon test --target js` → `Total tests: 1382, passed: 1382, failed: 0`。主线这 14 commit
+  未增测试，本单的 1379→1382 文档面同步在合并树上仍然成立（不用二次改）。电池里这两格因缺前置 `temp/pt27.log`
+  而 SKIP，故用合并树日志单独重跑：`check_test_sync` rc=0（实测 1382，136 份现状面 19 条声明全等、must-carry 5 份齐全、
+  豁免 22 条有效）、`check_badge` rc=0（`tests-1382%2F1382` 与自检注释一致）。
+- **电池**：`run_guards.py` 58 格 / 失败 2 / SKIP 5 / 缺执行面 0。两格失败都不属本单，逐条给因：
+  1. `check_delivery_gap.py` `got=1 expect=0` —— HEAD 未推的交付态红，推后自翻（本仓既有口径：推前不登记期望，
+     交单读数只认推后那一发）。
+  2. `check_backlog_status_staleness.py` `got=0 expect=1` —— **预存红**：`gitcode/master` 的 `run_guards.py:228`
+     与本分支同一行一字不差，即红在主线就在主线。成因是「被检面被别人修好 ⇒ 登记的必红期望反现形」：
+     主线把任务池那 9 条状态落差关掉后，实测现读 `扫描面=gitcode/main | backlog 23 份 | 落差 0 条 / 上限 0 条`、
+     `rc=0`。本单不代修（把期望改绿要连「期望依据」一起改，归任务池 owner 那一单）。
+- **警告面**：合并树构建日志 722 处 `Warning` 里，点名 `src/engine/engine.mbt` / `omega_strong.mbt` /
+  `decompose_test.mbt` 的 **0 处**（grep 三个文件名零命中）——本单新增行不引入新警告。
+
+### 交单前自检抓到自己两格（如实记账）
+
+1. **整文件行尾翻脏**：首发提交把 `memory/2026-10-22.md` 写成 CRLF，而仓库 blob 与主线都是纯 LF
+   （`.gitattributes` 只给 `*.sh` / `*.mjs` / `templates/*.md` / `.githooks/*` 钉 `eol=lf`，`*.md` 不在清单里）。
+   后果不是难看而是**冲突面**：合并时 5022 行每一行都是冲突。已还原 LF，MR 面回到「只追加一节」。
+2. **转义吃掉字母**：正文那条 moon fmt 的 ICE 路径 `` `\\?\..._build\wasm-gc\release\format` `` 在写入时
+   `\r` 吞掉 `r`、`\f` 吞掉 `f`，落成裸 CR(0x0D) + 裸 FF(0x0C) 两个控制字符。这正是 `.gitattributes` 注释里
+   记录过的 templates/*.md 353 处裸 CR 同形坑，只是这次发生在日志面、`eol=lf` 钉不住它。
+   报告文件实测本就 `CR=0 / FF=0`，未受影响；日志按字面还原后全文件控制字符归零。
+
 ## 建议入档位置
 
 - `memory/2026-10-22.md`：本单条目（已写）。
