@@ -2,7 +2,7 @@ id: TASK-014
 title: "清理分支 fix/guard-docstring-correct-measurement 的未解冲突标记"
 dedupe_key: "bdca400276e8a7dd"
 priority: P1
-status: backlog
+status: in_review
 assignee: atomcode
 discovered_by: whisperer-script
 discovered_at: "2026-10-22T01:10:13+00:00"
@@ -12,3 +12,8 @@ problem: >
 
 evidence: |
   whisperer probe_branches()：ahead=1 cherry_plus=1 命中文件 origin/fix/guard-docstring-correct-measurement:.github/workflows/ci.yml, origin/fix/guard-docstring-correct-measurement:docs/agent-map.md, origin/fix/guard-docstring-correct-measurement:scripts/README.md, origin/fix/guard-docstring-correct-measurement:scripts/check_demo_isolation.py, origin/fix/guard-docstring-correct-measurement:scripts/check_mbti_sync.py, origin/fix/guard-docstring-correct-measurement:scripts/check_plan_landing.py, origin/fix/guard-docstring-correct-measurement:scripts/run_guards.py, origin/fix/guard-docstring-correct-measurement:src/core/pkg.generated.mbti, origin/fix/guard-docstring-correct-measurement:src/router/pkg.generated.mbti
+status_note: |
+  2026-10-22 对账（R123）：分支已并线——e3f76387 "Merge fix/guard-docstring-correct-measurement:
+  清积压（自动合入，moon check 0 errors 门通过）"，且 gitcode/origin 两端 refs/heads/
+  fix/guard-docstring-correct-measurement 均已不存在（git ls-remote 现读 rc=1）。
+  无标记可解，转 in_review 待 owner 盖章；R4 STALE-BRANCH 已能拦住同类形状。
