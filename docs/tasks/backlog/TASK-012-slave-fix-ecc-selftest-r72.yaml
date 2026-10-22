@@ -2,7 +2,8 @@ id: TASK-012
 title: "清理分支 slave/fix/ecc-selftest-r72 的未解冲突标记"
 dedupe_key: "a44ef93472685ef7"
 priority: P1
-status: backlog
+status: in_review
+status_note: "R119 对账：远端 gitcode 已无 slave/fix/ecc-selftest-r72（ls-remote 0 命中）；本机同名分支 tip af07af1c 已全部在 gitcode/master（rev-list --count 0 / merge-base --is-ancestor YES），且主线树 marker 面 0 命中 ⇒ 分支已合、标记已在主线侧解掉，无待清对象；转 in_review 待 owner 裁决 done/dropped（转 done 需主线点名该 id）"
 assignee: atomcode
 discovered_by: whisperer-script
 discovered_at: "2026-10-22T01:10:13+00:00"
