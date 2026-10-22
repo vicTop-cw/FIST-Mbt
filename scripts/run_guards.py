@@ -205,9 +205,9 @@ SPECIAL_CASES = [
     # —— R106：宇宙并成全集后 `--list` 第一次把这三把尺的**现读红**摆出来。按本文件的律，
     #    预存红「照写期望值 + 依据」而不是豁免：被检内容修好之后这一格自己会翻红，逼下一位
     #    改动的人把期望改回 0（数字变了不改进期望就现形）。这里只登记读数，不动被检脚本。
-    expected("check_backlog_status_staleness.py", 1,
-             "现读 9 条状态落差 > 上限 4（任务池里 backlog/done 与提交面对不上，属内容债，"
-             "逐条核对归任务池那一单；上限不许为了让电池变绿而上调）"),
+    # R111：任务池 9 条存量落差已逐条对账（转 in_review/done），本尺现读 rc=0；按「预存红被修好 ⇒
+    # 期望改回 0」的律转回门禁格，依据一起删。STALE_CEILING 已随之下调到 0（新增一条即红）。
+    case("check_backlog_status_staleness.py"),
     expected("check_scripts_naming.py", 1,
              "现读 2 条命名判定面 > 棘轮上限（NAMING.md 词法棘轮，改名要同批下调上限，"
              "见 scripts/NAMING.md）"),

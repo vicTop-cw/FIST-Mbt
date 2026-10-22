@@ -1,7 +1,7 @@
 id: TASK-001
 title: "冲突标记不许进 commit — 硬前置门禁"
 priority: P0
-status: backlog
+status: done
 assignee: atomcode
 discovered_by: lead
 discovered_at: "2026-10-21T18:00:00+08:00"
@@ -57,4 +57,4 @@ acceptance_met:
   - "① 合入前自动跑 check_merge_markers：✅（CI gate，Migrate 前）"
   - "② cherry-pick 全解 + git diff --check + selftest 过才允许 commit：✅（pre-commit 钩子三步 + 合并驱动脚本）"
   - "③ slave-branch-merge.ps1 加 cherry-pick 后自动标记扫描：✅（前一轮落地）"
-status_note: "本单可关闭（三条全部落地）；钩子仍需每人跑一次 install_git_hooks.py --install 才生效（README 已写）"
+status_note: "R111 对账转 done（三条全部落地）；钩子仍需每人跑一次 install_git_hooks.py --install 才生效（README 已写）"
