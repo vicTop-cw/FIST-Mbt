@@ -175,6 +175,8 @@ test "cg_semantic_collision_detected" {
   assert_true(semantic_collision(g, "L33-self-search", proposed_tags, "B"))
   // 综合门：本应被拦下，即便文件作用域不相交
   assert_true(!may_proceed_sematic(g, "L33-self-search", proposed_tags, "B"))
+  // BUG-263：被拦下时不得留下认领副作用——holder 必须仍未设置
+  assert_eq(holder_of(g, "L33-self-search"), None)
 }
 
 ///|
@@ -186,6 +188,8 @@ test "cg_semantic_no_collision_ok" {
   let proposed_tags = ["diff", "text"]
   assert_true(!semantic_collision(g, "L31-diff", proposed_tags, "B"))
   assert_true(may_proceed_sematic(g, "L31-diff", proposed_tags, "B"))
+  // BUG-263 反面：放行路径才真正落认领——holder 被设置（claim 仍在检查通过后发生）
+  assert_eq(holder_of(g, "L31-diff"), Some("B"))
 }
 
 ///|

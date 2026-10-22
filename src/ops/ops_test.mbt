@@ -34,13 +34,18 @@ test "ops: iso_to_secs 解析与比较" {
 ///|
 test "ops: conflicts 拦截重复 claim" {
   let e = test_engine()
-  // T0 初始待领取，可认领
+  // T0 初始待领取：任意 worker 可认领
+  assert_true(@ops.check_claim(e, "T0", "worker-a") is Ok(_))
+  // worker-a 认领后，worker-b 重复认领被拦截（--no-takeover）
+  ignore(e.claim(task_id="T0", assignee="worker-a", now="2026-09-05T00:00:01Z"))
   let other = @ops.check_claim(e, "T0", "worker-b")
   assert_true(other is Err(_))
   match other {
     Err(msg) => assert_true(msg.contains("worker-a"))
     Ok(_) => abort("应返回冲突")
   }
+  // 本人重复认领同样被拦截
+  assert_true(@ops.check_claim(e, "T0", "worker-a") is Err(_))
   // 不存在的任务
   assert_true(@ops.check_claim(e, "T99", "worker-a") is Err(_))
 }
@@ -63,6 +68,12 @@ test "ops: heartbeat 上报后未超时 -> heal 不回滚" {
   ignore(e.execute(task_id="T0", deliverable="d", now="2026-09-05T00:00:02Z"))
   hb.beat("T0", now="2026-09-05T00:00:02Z")
   // 20 秒后 < 600 秒超时：不回滚
+  let healed = @ops.heal_stale_tasks(
+    e,
+    hb,
+    "2026-09-05T00:00:22Z",
+    timeout_sec=600,
+  )
   assert_true(healed is Ok(_))
   match healed {
     Ok(list) => assert_true(list.is_empty())

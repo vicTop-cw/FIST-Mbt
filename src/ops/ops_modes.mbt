@@ -93,8 +93,43 @@ fn mode_display_name(mode_str : String) -> String {
 ///|
 /// 模式 → 模板文件相对路径。
 /// 仅字符串拼接，不检查路径存在性——由调用方自行决定"不存在时是报错还是降级"。
+/// BUG-375：该相对路径的**基准根**是安装/包根（mode_list 的 template_path 语义），
+/// 判定存在性一律用 template_probe_path（见下），不得用进程 cwd 直接拼。
 pub fn mode_template_path(mode : String) -> String {
   "templates/pipeline_mode_" + mode + ".md"
+}
+
+///|
+/// 模式模板的**判定基准根**（BUG-375 统一基准）。
+/// 优先级：环境变量 FIST_MODE_TEMPLATES_ROOT > server 进程 cwd。
+/// - 安装/发布形态：运维侧把该 env 指向安装根，模板判定与 mode_list 同一基准，
+///   业务目录下不再 7/7 missing 误报；
+/// - 仓库开发形态：cwd=仓库根 时即包根，行为与旧实现一致（零回归）。
+/// 旧实现直接拿 `templates/pipeline_mode_x.md` 相对 **server 进程 cwd** 判存在，
+/// 而 cwd 可被业务目录（任意子目录）带偏 ⇒ 模板明明在安装根却全判 missing、
+/// 驱动降级空转（BUG-375 实测 7/7 missing）。
+pub fn templates_root() -> String {
+  match @env.get_env_var("FIST_MODE_TEMPLATES_ROOT") {
+    Some(v) if v != "" => v
+    _ => match @env.current_dir() {
+      None => "."
+      Some(d) => d
+    }
+  }
+}
+
+///|
+/// 模式模板的**实际探测绝对路径**（基准根 join 相对路径）。
+/// 找不到时把本值回执给驱动/用户，避免"报错却不说是按哪个基准判的"（BUG-375）。
+/// 根为 "."（无法取 cwd）时保持相对形态，由调用方按当前目录解释。
+pub fn template_probe_path(mode : String) -> String {
+  let root = templates_root()
+  let p = mode_template_path(mode)
+  if root == "." {
+    p
+  } else {
+    root + "/" + p
+  }
 }
 
 // ---------------------------------------------------------------------------

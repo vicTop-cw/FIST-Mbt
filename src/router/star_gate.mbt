@@ -299,7 +299,11 @@ fn star_gate_verify_impl(
         now_epoch,
       )
   }
-  let msg = canonical.to_bytes()
+  // BUG-360：`String::to_bytes()` 在工具链下是 UTF-16LE 字节序列，而生产侧
+  // `.github/workflows/attest.yml` 用 `.encode("utf-8")` 签名 ⇒ 两侧长度不一致、
+  // 对真 attestations 验签必然失败。统一走 `@utf8.encode`（core 对 `to_bytes`
+  // 的弃用文案也指向这里）。
+  let msg = @utf8.encode(canonical)
   if !@mooncry.ed25519_verify(pub_key, msg, sig) {
     return star_outcome(
       BadSignature,
