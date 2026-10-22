@@ -6560,3 +6560,17 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 ### 编号重编说明（2026-10-22T13:55:00Z / BUG-387 → BUG-333）
 
 - BUG-387 是 2026-10-22 的**补录块**（原抬头写作 `BUG-333 [2026-10-19T00:00:00Z]`，据 `memory/2026-10-19.md:158` 与源码注释追记），而同一缺陷的**原始抬头**早已存在（`BUG-333 [2026-10-19T05:54:08Z]`，含完整 9925 命中拆解）。两者是同一件事的两份记录 ⇒ 补录块重编为 BUG-387 并标 `DUPLICATE →BUG-333`（硬门③：主编号存在、非自身、非链式 DUPLICATE），原始抬头按 `### FIXED(… / BUG-333 …)` 小记改判 FIXED（硬门②：被小记点名者必须是 FIXED）。
+
+## BUG-388 [2026-10-22T11:02:00Z] [medium] OPEN
+- summary: [工具链] `moon fmt --check` 在本机跑不完（moon 0.1.20261016 / Windows）：rc=-1 报 `_build/wasm-gc/release/format/<file>: No such file` + `fatal: cannot hash`；而同版本 `moon fmt`（写模式）rc=0 正常
+- detail: 现象与对照（2026-10-22 R55 实测）：
+  | 场景 | 结果 |
+  |---|---|
+  | 本仓 `moon fmt --check` | rc=-1：`error: open("\\\\?\\…\\_build\\wasm-gc\\release\\format\\moon.mod"): No such file` / `fatal: cannot hash …` / `Error: failed when formatting project` |
+  | 本仓 `moon fmt`（写模式） | rc=0 `Finished. moon: ran 333 tasks` |
+  | **与本仓无关的 3 文件最小工程**（`moon.mod`+`moon.pkg`+`lib.mbt`） | **同样 rc=-1**，同样 `_build/…/format/lib.mbt: No such file` |
+  ⇒ 定性：moon 的 `--check` 管线缺陷（把格式化结果写进 `_build/wasm-gc/release/format/` 再 `git diff --no-index` 比对，而那批文件没落盘），**不是本仓格式红、也不是本仓配置**。
+- 影响：AGENTS「提交门禁」要求"`moon fmt --check` 返回 0"，该命令在本机**不可判**——当红追会追不存在的格式问题，当绿则把工具链缺陷洗成"格式没问题"。
+- 处置（R55 已落）：新增 `scripts/check_fmt_gate.py` 三档闸（`0` 干净 / **`2` DEGRADED 不可测** / `1` 真 diff），`--selftest` 6 格；已登记索引与守卫电池；AGENTS 提交门禁补口径。实测该闸真跑返回 **rc=2 DEGRADED**（正是期望档）。
+- note: 编号说明——本条最初被我误写成 `BUG-381`，但 `BUG-381` 在主线早已被占（`check_mbti_sync` 泛型盲区，已 FIXED），故另立本编号；R55 的更正提交里写清了这件事。
+- 后续建议: ① 格式门权威面交给 CI（Linux nightly）；② 升级 moon 后先跑 `python scripts/check_fmt_gate.py`，转 `0` 即可把该闸降为普通门禁；③ 与 BUG-330（fmt 世代漂移）一并复核。
