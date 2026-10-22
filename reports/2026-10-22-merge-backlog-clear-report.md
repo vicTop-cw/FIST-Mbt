@@ -100,3 +100,24 @@
 
 - 三条被判 `cherry+=1`（补丁不在 main）的**早期被弃草稿支** `work/backlog-clear` = `626219b6` / `3801bd11` / `9b4271ad`，已**逐行机器对表主线正文**（added lines ↔ `gitcode/main:<file>`）：`reapply.sh` 124/0、`memory/2026-10-22.md` 22/0、`claim_rank_wbtest.mbt` 131/0 ⇒ **not-on-main 全为 0，零丢面**。
 - 读法（值得入档）：`git cherry` 比的是 **patch-id**，而 patch-id 对上下文敏感 ⇒ 「超集文件里的一支子集提交」「union 合并后的日志追加」「换过锚点的同一 shell 改动」都会显示 `+`。判「内容有没有进主线」必须加一层**逐行对表**，只看 `cherry+=` 会把已落账的活读成丢失。
+
+## GitHub 面 API 现读（收口后补测：可达性事实已变）
+
+前提更正：先前「GitHub 完全不可达」只对 **git 面**成立。`github.com:443`（`git ls-remote origin` / `git push origin` / `git fetch --prune origin`）确实连不上，但 **REST 面通**：`api.github.com` 用 `GITHUB_TOKNE` 认证为 `vicTop-cw`，仓库真名 `vicTop-cw/FIST-Mbt`（默认分支 `master`），`permissions = admin/maintain/push/triage/pull`。⇒ origin 侧的删除**技术上可做**，只是本轮按 owner 裁决未执行。
+
+现读（不靠本地陈旧 ref）：GitHub 上 **35 支** = `main` + `master`（同指 `f6560010`）+ **33 条工作支**。逐支用本地对象做 `git merge-base --is-ancestor <tip> gitcode/main`：
+
+- **32 支 = 主线祖先**（内容已全在主线，删ref零丢失风险）；
+- **1 支 `fix/reapply-backend-skip`**（tip `3801bd11`）拓扑上不是祖先，但 `git cherry += 0` 且其 22 条新增行**逐行对表主线正文全在**（见上「附注」）⇒ 同属可删，形状正是「union 后 cherry 假报 +」。
+
+可删清单（33，API 现读逐字支名）：
+  feat/slave-mergeability-guard, feat/task-007-run-guards-universe, feat/tier2-pr4-fist-pr-automator, feat/tier2-pr4-pr-automator, fix/battery-readonly, fix/bug-refs-guard-semantics, fix/bug-refs-ledger-backfill, fix/cleanup-artifact-naming, fix/dist-snapshot-guard, fix/guard-census-covers-blackbox, fix/hygiene-ps1-bom-and-index, fix/integrate-guard-repairs-verified, fix/ledger-close-358, fix/mbti-generic-fn, fix/orphan-rhop-test-compile-red, fix/pre-commit-marker-gate, fix/reapply-backend-skip, fix/reapply-backend-skip-r2, fix/restore-issue-scan-merged-state, fix/restore-plan-landing-ratchet-gate, fix/restore-rhop-poll-impl, fix/task-003-ci-step-position, fix/task-004-revert-diff-detector, fix/task-004-revert-diff-detector-v2, fix/tier2-delta-ratchet-ledger, fix/tier2-governance-bundle, fix/v0310-projection-closeout, fix/v0310-projection-closeout2, fix/version-align-r2, fix/version-align-r3, fix/version-align-r4, fix/whisperer-cherry-pick-not-overlay, test/claim-rank-gate-lock
+
+两条由此暴露的事实：
+
+1. **GitHub 主干落后 gitcode 主干 197 commits**（`git rev-list --count f6560010..gitcode/main` = 197）⇒ 任务书自述的「HEAD 三端一致 ✅」不成立，`f6560010` 只是 GitHub 侧的旧主干。
+2. `git fetch --prune origin` 本身失败（443 不通）⇒ **origin 的本地 remote-tracking refs 永远刷不动**，`--scan` 报的 DROP=37 与 GitHub 真存量 33 之间那 4 条差是陈旧 ref 幻影。origin 面的任何判据都必须走 API 现读，不能走本地 ref。
+
+执行路径（备好未跑，等一句授权）：
+- 快进主干：`PATCH /repos/vicTop-cw/FIST-Mbt/git/refs/heads/master`（和 `/heads/main`）body `{"sha":"<gitcode/main>"}`——快进、非强推；**应先在主干同步后再删支**，否则删完主干仍是旧的。
+- 删支：`DELETE /repos/vicTop-cw/FIST-Mbt/git/refs/heads/<urlencoded-ref>`（33 次），或 git 通的时候 `git push origin --delete ...`。
