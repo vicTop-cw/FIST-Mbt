@@ -1,7 +1,7 @@
 id: TASK-008
 title: "scripts/ 命名规范化 — ~50 个无前缀脚本"
 priority: P3
-status: backlog
+status: in_review
 assignee: atomcode
 discovered_by: whisperer
 discovered_at: "2026-10-21T20:12:00+08:00"
@@ -38,6 +38,7 @@ evidence: |
   score_gate.py, pentad_fist.py, ...
 
 blocked_by: []
+status_note: "R111 对账转 in_review：验收①已交付（NAMING.md + check_scripts_naming.py，R95）；②③④未做——N1 仍有 16 份真债、改名总成本 1224 处引用，先等 owner 裁「只动活面 vs 连归档面回写」再逐批改。"
 delivery_r95: |
   副机 R95 交第一批（分支 slave/ci/task008-scripts-naming-r95）：
   - scripts/NAMING.md：定律三条（角色写在名字两端之一 / 分隔符只有下划线 / 归档面不回写）+ 角色前缀表 13 项 + 角色后缀表 12 项。
