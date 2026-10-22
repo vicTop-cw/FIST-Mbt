@@ -346,12 +346,19 @@ def evaluate(doc_text, rows, anchors, struct_n, content_n, fileface):
     return uniq, selfref
 
 
-def run(doc_path, root):
-    """主判定。返回 (rc, 读数文本)。"""
+def run(doc_path, root, sink):
+    """主判定：读数逐行 append 进 `sink`，交回**裸**退出码（2=自拒 / 1=违例 / 0=全过）。
+
+    码与文本分家不是洁癖：串式 `return 2, 文本` 里那个 2 在
+    `check_exit_code_contract.py` 的 ast 实现面上是隐形的（它只认非元组的出口），
+    承诺 rc=2 而实现面给不出 = R1 模块面幻影 = BUG-369 抓过的假契约。
+    """
     if not os.path.isdir(root):
-        return 2, u"自拒：根目录不存在 %s" % root
+        sink.append(u"自拒：根目录不存在 %s" % root)
+        return 2
     if not os.path.isfile(doc_path):
-        return 2, u"自拒：清单不存在 %s" % doc_path
+        sink.append(u"自拒：清单不存在 %s" % doc_path)
+        return 2
     with io.open(doc_path, encoding="utf-8", errors="replace") as f:
         doc_text = f.read()
 
@@ -374,15 +381,18 @@ def run(doc_path, root):
            u"状态分布（尺实算，非手抄）：" + u" / ".join(u"%s %d" % (w, counts[w]) for w in STATUS_WORDS)]
     if selfref:
         out.append(u"自拒：" + u"；".join(selfref))
-        return 2, u"\n".join(out)
+        sink.extend(out)
+        return 2
     if viol:
         out.append(u"FAIL 违例 %d 条：" % len(viol))
         for v in viol:
             out.append(u"  - " + v)
-        return 1, u"\n".join(out)
+        sink.extend(out)
+        return 1
     out.append(u"PASS 认领入口自证通过：锚点全部可解析、内容级记号逐行命中、`已落地` 全部带据、"
                u"文首自述与尺实算逐键一致")
-    return 0, u"\n".join(out)
+    sink.extend(out)
+    return 0
 
 
 # ───────────────────────────── 自测 ─────────────────────────────
@@ -426,7 +436,8 @@ def selftest():
 
         def go(text):
             _write(doc, text)
-            return run(doc, base)
+            sink = []
+            return run(doc, base, sink), u"\n".join(sink)
 
         cases.append((u"A1 干净不误红", go(_doc(struct=1, rows=1)), 0, None))
         cases.append((u"A2 文件级证据不误红",
@@ -481,8 +492,9 @@ def selftest():
         cases.append((u"E1 空扫描面必自拒",
                       go(u"# 空清单\n\n没有表格行。\n"),
                       2, u"判定面为空"))
-        rc, out = run(os.path.join(base, "docs", "nope.md"), base)
-        cases.append((u"E2 读不到清单必自拒", (rc, out), 2, u"清单不存在"))
+        sink = []
+        rc = run(os.path.join(base, "docs", "nope.md"), base, sink)
+        cases.append((u"E2 读不到清单必自拒", (rc, u"\n".join(sink)), 2, u"清单不存在"))
     finally:
         shutil.rmtree(base, ignore_errors=True)
 
@@ -533,8 +545,9 @@ def main(argv):
             return 0
         i += 1
     doc_path = doc if (doc and os.path.isabs(doc)) else os.path.join(root, doc or DEFAULT_DOC)
-    rc, out = run(doc_path, os.path.abspath(root))
-    print(out)
+    sink = []
+    rc = run(doc_path, os.path.abspath(root), sink)
+    print(u"\n".join(sink))
     if show_face:
         print(u"—— 尺读的到底是哪一份：%s ｜ 根目录：%s" % (doc_path, root))
     return rc
