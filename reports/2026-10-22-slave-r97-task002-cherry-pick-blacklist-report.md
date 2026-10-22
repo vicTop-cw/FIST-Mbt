@@ -63,6 +63,14 @@
    `check_merge_markers` 那条普查族里加一把「跟踪面不得存在 `src/ops/rhop_poll.mbt`」，比在合并脚本里兜底更早一步。
 3. `run_guards.py` 里加一把 `.ps1 -SelfTest` 的面（现在 PowerShell 侧的判据不进电池，全靠人跑）。
    本单的 20 格 + 两支变异台正是这种「可被电池调用」的形状：约定 rc=0 绿 / 非 0 红即可接线。
+4. **对表主机在飞三支（2026-10-22 实测，`git merge-tree --write-tree`）**：主机今天推了
+   `fix/bug-refs-ledger-backfill`（`c27d6e7`）、`fix/v0310-projection-closeout2`（`e7b1ca9`）、
+   `fix/dist-snapshot-guard`（`9718fee`），main 仍 `99bacbe` 未前进。与副机三支的冲突面只有**一个文件**：
+   - `fix/dist-snapshot-guard` ↔ `r96` ⇒ 红在 `scripts/README.md`；↔ `r97` ⇒ 同处红；↔ `r95` **CLEAN**；
+   - `fix/v0310-projection-closeout2` ↔ `r97` **CLEAN**（它也动 `scripts/README.md`，但与本单不同 hunk）。
+   即撞点全部集中在 README **文件尾追加**这一族（同「同日尾追加」的老形状）。给 owner 的可执行结论：
+   谁先合都可能，但**后合的一侧只需解 `scripts/README.md` 一处尾追加冲突**，两段登记并排保留即可，
+   不存在代码面冲突；`r95`（NAMING 第一批）对全部在飞支干净，可最先合。
 
 ## 超额内容
 
