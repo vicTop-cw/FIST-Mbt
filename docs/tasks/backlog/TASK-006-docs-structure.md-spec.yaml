@@ -1,7 +1,7 @@
 id: TASK-006
 title: "docs 结构规范 — 609 个 md 文件散落四处"
 priority: P2
-status: backlog
+status: in_review
 assignee: atomcode
 discovered_by: whisperer
 discovered_at: "2026-10-21T20:12:00+08:00"
@@ -36,3 +36,4 @@ evidence: |
   Select-String "治理" *.md docs/*.md reports/*.md memory/*.md → 19 个文件
 
 blocked_by: []
+status_note: "R111 对账转 in_review：docs/DOCS-STRUCTURE.md 已落（r85）；验收②未做——根目录仍有 9 份 .md（AGENTS.md / AI-DEVELOPMENT-STANDARD.md / ARCHITECTURE.md / BACKLOG.md / CHANGELOG.md / README.md / README.mbt.md / README_EN.md / USAGE.md），迁移/删除要 owner 定档。"
