@@ -238,6 +238,13 @@ SPECIAL_CASES = [
     #    因为 C9 真面变异格是「再有人抄一份」的唯一机器读数。
     case("check_backlog_yaml_integrity.py"),
     case("check_backlog_yaml_integrity.py", "--selftest"),
+    # ── R128：当日日志（金条五的追加面）整块重复是 union 式解冲突的产物，与上面 R110 的
+    #    台账面同一族、不同宇宙。裸跑现读 rc=0（本尺立尺当日该面是 MB 级违例，本单把它无损
+    #    去重后转绿，精确读数见 scripts/README.md 同名条目）⇒ 进门禁格；--selftest 里
+    #    S9 是「真源现状面必须绿」的活格，S12/S13 钉住「无 `## ` 块的整篇叙事不误红、
+    #    也不掩护另一面的真违例」这条分界。
+    case("check_memory_log_dup.py"),
+    case("check_memory_log_dup.py", "--selftest"),
     # ── 兑现（R117）：R111 那一单把 9 条落差逐条核过转 in_review/done，并把尺内棘轮降到 0；
     #    现读 `扫描面=gitcode/main | 落差 0 条 / 上限 0 条` ⇒ 登记的那条红已不成立。
     #    按本文件自订的律「被检内容修好 ⇒ 把期望改回 0」，转回门禁格，依据一起删。
