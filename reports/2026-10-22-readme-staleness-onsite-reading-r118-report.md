@@ -40,7 +40,7 @@ R117 兑现电池期望时也没带上它（现读主线仍是 `4/4/0`）⇒ 一
 | 文档面 | `python scripts/check_doc_surface.py` / `python scripts/check_scripts_index.py` | **rc=0 / rc=0** |
 | 全量电池（改前，基点现状） | `python scripts/run_guards.py --case-timeout 180` | **58 格 / 失败 2 / SKIP 5 / 缺执行面 1**，rc=1 —— 两格失败均为**预存红**，见下节 |
 
-改后权威读数（推分支之后重跑）见文末「推后权威读数」段。
+改后权威读数（推分支之后重跑）见下方「推后权威读数」段。
 
 ## 预存红（本单不代修，按口径点名 rc 与成因）
 
@@ -57,6 +57,19 @@ R117 兑现电池期望时也没带上它（现读主线仍是 `4/4/0`）⇒ 一
 按一单一面纪律**不混进本单**——本单只动 `scripts/README.md` 一行。
 
 SKIP 5 格照本仓律**不构成通过证据**（`temp/pt27.log` 两格、`temp/chk47.json` 三格缺进料前置）。
+
+## 推后权威读数（交付态，本单以此为准）
+
+提交 `f285459a` 推送后（远端钩子 `Git Hooks Checking [PASSED]`）重跑同一条命令：
+`python scripts/run_guards.py --case-timeout 180`（`FIST_DB_PATH` 指仓外 Temp，日志写 `~/r118_battery_postpush.log`）
+⇒ **58 格 / 失败 2 / SKIP 5 / 缺执行面 1**，rc=1（与基点逐格同形，本单未增未减）。
+
+- `rc=0 exp=0 check_delivery_gap.py OK 汇总：3 个分支，其中 0 个存在未推送提交` —— 交付态自翻为绿，
+  印证「这种格不登记期望、不豁免、不降棘轮，只把门禁顺序改成 commit→push→复跑」这条纪律。
+- `rc=0 exp=0 check_backlog_status_staleness.py OK BACKLOG_STALENESS=within 落差 0 条 <= 上限 0`
+  —— 本单结清的正是这句话在 README 里的旧抄本（`4/4/0`）。
+- 失败两格 = 上一条点名的两条预存红（`audit_branch_delete.py` 缺执行面 + 其级联），成因与本单无关，已立项 R119。
+- `blackbox/check_merge_markers.py` 跟踪面 1335 个文件 **0 未解决标记**（本单文字里不含标记形状，故不触它）。
 
 ## 任务分配记录
 
