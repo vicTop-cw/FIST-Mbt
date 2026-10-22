@@ -2,7 +2,7 @@ id: TASK-021
 title: "裁 fist-pr-automator.py 的自动合入面（默认 merge + 强推权在脚本）"
 dedupe_key: "01a35d45747f4f31"
 priority: P1
-status: backlog
+status: in_review
 assignee: atomcode
 discovered_by: whisperer-script
 discovered_at: "2026-10-22T01:41:15+00:00"
@@ -12,3 +12,4 @@ problem: >
 
 evidence: |
   scripts/fist-pr-automator.py pipeline() 内 sh(['git','push','-u',...]) + merge(num, repo, tok, platform)，merge 默认 conf.get('merge','true')!='false' 即执行；python scripts/run_guards.py --list 在 cef1e9c 上给该脚本自动补了无参电池格；AGENTS.md『角色边界（金条四）』与 owner 裁决『我给 MR 链接』。
+status_note: "R113 交付：merge 默认关（仅 yaml 明写 merge: true 才合）+ --dry-run（零子进程/零网络/不读 token 值）+ 平台与用法自拒 rc=2 + --selftest 18 项；README 主条目与详条目同步。转 done 需主线收录本提交点名（R2 UNPROVEN-DONE 判据）"

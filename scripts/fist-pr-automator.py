@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 
-"""scripts/fist-pr-automator.py - yaml -> PR -> gate -> merge pipeline.
+"""scripts/fist-pr-automator.py - yaml -> PR -> gate -> (explicit) merge pipeline.
 
-Reads a PR definition yaml, runs local unified gate, pushes branch, opens
+Reads a PR definition yaml: runs the local unified gate, pushes the branch, opens
 
-PR/MR via curl (GITHUB_TOKEN / GITCODE_TOKEN), waits gate green, merges.
+PR/MR via curl (GITHUB_TOKEN / GITCODE_TOKEN from the environment), and merges
 
-rc: 0=ok 1=blocked 2=degraded. Pure ASCII, stdlib only."""
+ONLY when the yaml says `merge: true` (default OFF; R113/TASK-021).
 
-import json, os, re, subprocess, sys, time
+`--dry-run` prints the plan and returns without spawning a process or touching
+
+the network. The irreversible merge stays an explicit caller decision.
+
+rc: 0=ok 1=blocked 2=degraded/self-refuse. Pure ASCII, stdlib only."""
+
+import contextlib, io, json, os, re, subprocess, sys, time
 
 from pathlib import Path
 
@@ -18,7 +24,15 @@ GH_API = "https://api.github.com"
 
 GC_API = "https://gitcode.com/api/v5"
 
+PLATFORMS = ("github", "gitcode")
 
+def usage():
+
+    """One-line CLI contract (also asserted by --selftest)."""
+
+    return ("usage: python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode> [--dry-run]"
+
+            " | python scripts/fist-pr-automator.py --selftest")
 
 def run(cmd, cwd=None, env=None):
 
@@ -27,8 +41,6 @@ def run(cmd, cwd=None, env=None):
     if env: e.update(env)
 
     return subprocess.run(cmd, cwd=cwd, env=e, capture_output=True, text=True, encoding="utf-8", errors="replace")
-
-
 
 def sh(cmd, cwd=None, env=None):
 
@@ -39,8 +51,6 @@ def sh(cmd, cwd=None, env=None):
         raise RuntimeError("cmd rc=%d %s: %s" % (r.returncode, cmd[0], (r.stderr or r.stdout).strip()[-200:]))
 
     return r.stdout.strip()
-
-
 
 def parse_yaml(text):
 
@@ -72,7 +82,69 @@ def parse_yaml(text):
 
     return d
 
+def merge_requested(conf):
 
+    """Only an explicit `merge: true` (case-insensitive, trimmed) enables the merge.
+
+    Everything else - missing key, empty value, `false`, `yes` - stays OFF, so a
+
+    yaml that never thought about merging cannot merge by accident."""
+
+    return str(conf.get("merge", "")).strip().lower() == "true"
+
+def gate_enabled(conf):
+
+    """Local gate defaults ON; only a literal `gate: false` skips it."""
+
+    return str(conf.get("gate", "true")).strip().lower() != "false"
+
+def plan_lines(conf, repo, platform, token_present):
+
+    """Deterministic dry-run plan. Pure: no env read, no subprocess, no network."""
+
+    branch = conf["branch"]; base = conf.get("base", "master"); remote = conf.get("remote", "origin")
+
+    if platform == "github":
+
+        token_key = "GITHUB_TOKEN"
+
+        open_line = "open PR: POST %s/repos/%s/pulls (token %s: %s)" % (
+
+            GH_API, repo, token_key, "set" if token_present else "missing")
+
+    else:
+
+        token_key = "GITCODE_TOKEN"
+
+        open_line = "open MR: POST %s/repos/%s/merge_requests (token %s: %s)" % (
+
+            GC_API, repo, token_key, "set" if token_present else "missing")
+
+    merge_line = ("merge: ON (yaml merge: true) -- irreversible" if merge_requested(conf)
+
+                  else "merge: OFF (default; set 'merge: true' in the yaml to enable)")
+
+    return [
+
+        "DRY-RUN plan (no subprocess, no network):",
+
+        "  branch: %s" % branch,
+
+        "  base: %s" % base,
+
+        "  remote: %s" % remote,
+
+        "  local gate: %s" % ("run scripts/fist-gate.py" if gate_enabled(conf) else "skipped (gate: false)"),
+
+        "  push: git push -u %s %s" % (remote, branch),
+
+        "  " + open_line,
+
+        "  " + merge_line,
+
+        "  execute: rerun without --dry-run",
+
+    ]
 
 def api(url, token, method="POST", data=None):
 
@@ -90,8 +162,6 @@ def api(url, token, method="POST", data=None):
 
     return json.loads(r.stdout or "{}")
 
-
-
 def github_pr(conf, repo):
 
     tok = os.environ.get("GITHUB_TOKEN")
@@ -108,8 +178,6 @@ def github_pr(conf, repo):
 
     return pr["number"], pr.get("html_url", "")
 
-
-
 def gitcode_mr(conf, repo):
 
     tok = os.environ.get("GITCODE_TOKEN")
@@ -125,8 +193,6 @@ def gitcode_mr(conf, repo):
     if "id" not in mr: raise RuntimeError("gitcode MR failed: " + str(mr)[:200])
 
     return mr["id"], mr.get("html_url", "")
-
-
 
 def wait_gate(sha, repo, tok, timeout=900):
 
@@ -150,8 +216,6 @@ def wait_gate(sha, repo, tok, timeout=900):
 
     raise RuntimeError("gate timeout after %ds" % timeout)
 
-
-
 def merge(number, repo, tok, platform):
 
     if platform == "github":
@@ -166,15 +230,23 @@ def merge(number, repo, tok, platform):
 
     return r.get("state") == "merged", str(r.get("state", ""))[:120]
 
-
-
-def pipeline(conf, repo, platform):
+def pipeline(conf, repo, platform, dry_run=False):
 
     branch = conf["branch"]; base = conf.get("base", "master")
 
+    token = os.environ.get("GITHUB_TOKEN" if platform == "github" else "GITCODE_TOKEN")
+
+    if dry_run:
+
+        for line in plan_lines(conf, repo, platform, bool(token)):
+
+            print(line)
+
+        return 0
+
     sh(["git", "rev-parse", "--verify", branch], cwd=ROOT)
 
-    if conf.get("gate", "true").lower() != "false":
+    if gate_enabled(conf):
 
         r = run(["python", "scripts/fist-gate.py"], cwd=ROOT)
 
@@ -186,53 +258,154 @@ def pipeline(conf, repo, platform):
 
     head_sha = sh(["git", "rev-parse", branch], cwd=ROOT)
 
-    tok = os.environ.get("GITHUB_TOKEN" if platform == "github" else "GITCODE_TOKEN")
-
     if platform == "github":
 
         num, url = github_pr(conf, repo); print("PR opened: " + url)
 
-        wait_gate(head_sha, repo, tok)
+        wait_gate(head_sha, repo, token)
 
     else:
 
         num, url = gitcode_mr(conf, repo); print("MR opened: " + url)
 
-    if conf.get("merge", "true").lower() != "false":
+    if merge_requested(conf):
 
-        ok, msg = merge(num, repo, tok, platform)
+        ok, msg = merge(num, repo, token, platform)
 
         print("merged=%s %s" % (ok, msg))
 
+    else:
+
+        print("merge=off (default; set merge: true in the yaml to enable)")
+
     return 0
-
-
 
 def selftest():
 
-    txt = "id: TASK-005\ntitle: \"gate auto inject\"\npriority: P1\nbody: >-\n  line1\n  line2\n"
+    checks = []
 
-    d = parse_yaml(txt)
+    def chk(name, cond):
 
-    ok = d.get("id") == "TASK-005" and d.get("priority") == "P1" and "line1" in d.get("body", "")
+        checks.append((name, bool(cond)))
 
-    print("SELFTEST %s (yaml parse: %s)" % ("OK" if ok else "FAIL", d))
+    d = parse_yaml("id: TASK-005\ntitle: \"gate auto inject\"\npriority: P1\nbody: >-\n  line1\n  line2\n")
 
-    return 0 if ok else 2
+    chk("yaml-parse", d.get("id") == "TASK-005" and d.get("priority") == "P1" and "line1" in d.get("body", ""))
 
+    g = {"branch": "slave/x", "title": "t"}
 
+    chk("merge-default-off", not merge_requested({}))
 
-if __name__ == "__main__":
+    chk("merge-empty-off", not merge_requested({"merge": ""}))
 
-    if "--selftest" in sys.argv[1:]: sys.exit(selftest())
+    chk("merge-false-off", not merge_requested({"merge": "false"}))
 
-    if len(sys.argv) != 3: raise SystemExit("usage: python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode>")
+    chk("merge-true-on", merge_requested({"merge": "true"}))
 
-    conf = parse_yaml(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    chk("merge-true-trimmed-on", merge_requested({"merge": " TRUE "}))
 
-    if "branch" not in conf or "title" not in conf: raise SystemExit("yaml needs branch + title")
+    txt_off = "\n".join(plan_lines(g, "o/r", "gitcode", False))
+
+    txt_on = "\n".join(plan_lines(dict(g, merge="true"), "o/r", "gitcode", True))
+
+    txt_gate_off = "\n".join(plan_lines(dict(g, gate="false"), "o/r", "github", True))
+
+    chk("plan-merge-off", "merge: OFF" in txt_off)
+
+    chk("plan-token-missing", "token GITCODE_TOKEN: missing" in txt_off)
+
+    chk("plan-push-line", "git push -u origin slave/x" in txt_off)
+
+    chk("plan-merge-on", "merge: ON" in txt_on and "token GITCODE_TOKEN: set" in txt_on)
+
+    chk("plan-gate-off", "skipped (gate: false)" in txt_gate_off)
+
+    calls = []
+
+    def boom(*a, **k):
+
+        calls.append(a)
+
+        raise AssertionError("dry-run touched an external face: %r" % (a[:1],))
+
+    saved = (globals()["sh"], globals()["run"], globals()["api"])
+
+    globals()["sh"] = boom; globals()["run"] = boom; globals()["api"] = boom
+
+    buf = io.StringIO(); rc = 99; err = ""
+
+    try:
+
+        with contextlib.redirect_stdout(buf):
+
+            rc = pipeline(g, "o/r", "gitcode", dry_run=True)
+
+    except Exception as e:
+
+        err = repr(e)
+
+    finally:
+
+        globals()["sh"], globals()["run"], globals()["api"] = saved
+
+    chk("dry-run-rc0", rc == 0 and not err)
+
+    chk("dry-run-zero-side-effects", calls == [])
+
+    chk("dry-run-prints-plan", "DRY-RUN plan" in buf.getvalue())
+
+    ebuf = io.StringIO()
+
+    with contextlib.redirect_stderr(ebuf):
+
+        chk("usage-no-args-rc2", main([]) == 2)
+
+        chk("usage-dry-run-only-rc2", main(["--dry-run"]) == 2)
+
+        chk("usage-bad-platform-rc2", main(["x.yaml", "gitlab"]) == 2)
+
+    chk("usage-text", "usage:" in ebuf.getvalue())
+
+    bad = [n for n, ok in checks if not ok]
+
+    if bad:
+
+        print("SELFTEST FAIL: " + ", ".join(bad))
+
+        return 2
+
+    print("SELFTEST OK (%d checks: %s)" % (len(checks), ", ".join(n for n, _ in checks)))
+
+    return 0
+
+def main(argv):
+
+    if "--selftest" in argv:
+
+        return selftest()
+
+    dry_run = "--dry-run" in argv
+
+    rest = [a for a in argv if a != "--dry-run"]
+
+    if len(rest) != 2 or rest[1] not in PLATFORMS:
+
+        sys.stderr.write(usage() + "\n")
+
+        return 2
+
+    conf = parse_yaml(Path(rest[0]).read_text(encoding="utf-8"))
+
+    if "branch" not in conf or "title" not in conf:
+
+        sys.stderr.write("yaml needs branch + title\n")
+
+        return 2
 
     repo = conf.get("repo", "vicTop-Cw/FIST-Mbt")
 
-    sys.exit(pipeline(conf, repo, sys.argv[2]))
+    return pipeline(conf, repo, rest[1], dry_run=dry_run)
 
+if __name__ == "__main__":
+
+    sys.exit(main(sys.argv[1:]))

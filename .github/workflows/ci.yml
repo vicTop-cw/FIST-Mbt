@@ -65,6 +65,14 @@ jobs:
           python3 scripts/check_ci_step_position.py --selftest
           python3 scripts/check_ci_step_position.py
 
+      # position-why: 本尺只读 README 与 `run_guards --list` 读数，不依赖 moon；放在 Migrate 之前
+      # 是为了在 Migrate 崩掉时也能看见登记漂移（与 CI-step-position guard 同批）。
+      - name: Battery-count registration guard (README 登记 ↔ run_guards 现读，TASK-017/R112)
+        shell: bash
+        run: |
+          python3 scripts/check_battery_count_doc.py --selftest
+          python3 scripts/check_battery_count_doc.py
+
       - name: Migrate mooncakes dep manifests (新版 moon 拒旧 moon.mod.json，check/test 全线的公共前置)
         shell: bash
         run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"

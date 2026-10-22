@@ -2,10 +2,11 @@ id: TASK-023
 title: "把 J1 悬空 17 条清零：搬 r80 账本五条抬头 + engine.mbt 的 BUG-147 改号"
 dedupe_key: "1e8d335c2803b5d9"
 priority: P1
-status: backlog
+status: done
 assignee: atomcode
 discovered_by: whisperer-script
 discovered_at: "2026-10-22T01:48:58+00:00"
+status_note: "R111 对账转 done：check_bug_reference_integrity.py 现读 J1=0 条 / 上限 0（rc=0）；engine.mbt 已改 BUG-176；账本五条抬头 grep -c=5。"
 
 problem: >
   cef1e9c 上 `python scripts/check_bug_reference_integrity.py` rc=1（判定面 17 条，DANGLING_COMMENT_CEILING=1）。这条红随电池一起传染：该尺在 run_guards 宇宙里拿的是自动发现的无参格，所以 main 的 `python scripts/run_guards.py` 也有一格红。

@@ -1,7 +1,7 @@
 id: TASK-009
 title: "风语者自动化 — 巡检脚本写 yaml 进 docs/tasks/ 让下游 agent 处理"
 priority: P2
-status: backlog
+status: in_review
 assignee: atomcode
 discovered_by: whisperer
 discovered_at: "2026-10-21T20:12:00+08:00"
@@ -42,6 +42,7 @@ evidence: |
   这些全应该自动产出，不该每次手动 PowerShell
 
 blocked_by: []
+status_note: "R111 对账转 in_review：whisperer.py Step 0-4 / --scan-only / --auto-merge / --selftest（rc=0）/ fist-gate G5 / Step 3 写 TASK yaml 均已落；验收③写的旗名 --apply 实际实现为 --auto-merge（未留别名），故不冒 done。"
 
 # ── 实测补修（AtomCode / 2026-10-22 R70，非本单作者）──
 found_and_fixed:
