@@ -284,11 +284,44 @@ fn _days_from_civil(y : Int32, m : Int32, d : Int32) -> Int32 {
 }
 
 ///|
+/// R131：`_iso_to_unix_ms` 原只按固定下标取数字，分隔符从未校验
+/// （`2024x01x01T00x00x00` 也能入值）；日历日只挡 d>31，`2024-02-30`
+/// 被 `_days_from_civil` 归一成 03-01。这里按真实日历判。
+fn _is_leap_year(y : Int32) -> Bool {
+  (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+///|
+fn _days_in_month(y : Int32, m : Int32) -> Int32 {
+  if m == 2 {
+    if _is_leap_year(y) {
+      29
+    } else {
+      28
+    }
+  } else if m == 4 || m == 6 || m == 9 || m == 11 {
+    30
+  } else {
+    31
+  }
+}
+
+///|
 /// 解析 `YYYY-MM-DDTHH:MM:SS` 起始的时间戳为 Unix 毫秒（Int64）；解析失败返回 None。
-/// 长度 < 19（完整 "YYYY-MM-DDTHH:MM:SS"）即不可解析；年份钳到 [1970, 9999]（ISO 时间戳在
+/// 长度 < 19（完整 "YYYY-MM-DDTHH:MM:SS"）即不可解析；分隔符位必须为
+/// `- - T/t/空格 : :`；年份钳到 [1970, 9999]（ISO 时间戳在
 /// 1970 前没有现实意义，且 _civil_from_days 只对 z>=0 成立）。
 fn _iso_to_unix_ms(iso : String) -> Int64? {
   if iso.length() < 19 {
+    return None
+  }
+  // R131：形状先于数值——旧实现把分隔符位置当任意字符跳过，垃圾串可入值。
+  // 空格并列接受（与 ops 侧文档口径一致），其余位置一律严格。
+  if iso[4] != '-' ||
+    iso[7] != '-' ||
+    (iso[10] != 'T' && iso[10] != 't' && iso[10] != ' ') ||
+    iso[13] != ':' ||
+    iso[16] != ':' {
     return None
   }
   let digit = fn(a : Int32) -> Int32? {
@@ -335,7 +368,7 @@ fn _iso_to_unix_ms(iso : String) -> Int64? {
     mon < 1 ||
     mon > 12 ||
     day < 1 ||
-    day > 31 ||
+    day > _days_in_month(year, mon) ||
     hour > 23 ||
     min > 59 ||
     sec > 59 {
