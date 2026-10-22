@@ -48,7 +48,7 @@
 ## 遗留风险
 
 1. **GitHub 面取证缺口**：TASK-013/014/015 的 `origin/*` 分支存在性无法确认（443 超时）；若 GitHub 侧分支仍在，这三单仍有清标记的对象，需要网络可达时补一次 `git ls-remote origin`。
-2. **任务池是「YAML 方言」而非严格 YAML（本单新发现，设计面已有取舍）**：23 份里 **10 份 `yaml.safe_load` 失败**——其中 9 份含 `- [ ] …` 复选框行（flow sequence 后接裸标量，严格解析报 `expected <block end>, but found '<scalar>'`），另 TASK-023 含控制字符 `#x0008`。但 `check_backlog_yaml_integrity.py` 抬头已明写「本仓对台账的消费方式是逐行正则反解，不是 YAML 解析」，故 `- [ ]` 属**既有方言**，不宜按 YAML 标准单方面改写（会连带影响所有行级消费方）。真正无损可修的只有 TASK-023 的 2 个控制字符（原意应是正则 ``，被写成 0x08）；建议后续单：清 TASK-023 + 给完整性尺加一条「控制字符」判据（stdlib 正则即可，与方言无关），`- [ ]` 是否改严格 YAML 由 owner 决定。
+2. **任务池是「YAML 方言」而非严格 YAML（本单新发现，设计面已有取舍）**：23 份里 **10 份 `yaml.safe_load` 失败**——其中 9 份含 `- [ ] …` 复选框行（flow sequence 后接裸标量，严格解析报 `expected <block end>, but found '<scalar>'`），另 TASK-023 含控制字符 `#x0008`。但 `check_backlog_yaml_integrity.py` 抬头已明写「本仓对台账的消费方式是逐行正则反解，不是 YAML 解析」，故 `- [ ]` 属**既有方言**，不宜按 YAML 标准单方面改写（会连带影响所有行级消费方）。真正无损可修的只有 TASK-023 的 2 个控制字符（原意应是正则 `\b`，被写成 0x08）；建议后续单：清 TASK-023 + 给完整性尺加一条「控制字符」判据（stdlib 正则即可，与方言无关），`- [ ]` 是否改严格 YAML 由 owner 决定。
 3. **TASK-010 的「完成」无点名**：本单只转 `in_review`；主线没有点名 TASK-010 的 commit，owner 若要 `done` 需补点名或裁定 dropped。
 4. **叠支次序**：先合 R118（`slave/fix/audit-branch-delete-face-r118`）再合本支；若本支先合，R118 的两笔会随之入线（均为本机交付，无冲突）。
 
