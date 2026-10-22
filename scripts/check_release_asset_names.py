@@ -337,7 +337,7 @@ def judge(texts):
                         "--retry N 才是"
                         "「只重试瞬时」的上限）——注意针必须带次数，`--retry` 单独当子串会被 `--retry-delay` 喂绿")
     # R13 钉「文档离线线里的资产名版本字面量不许落后于 moon.mod」（BUG-120）：R1 只扫安装器（禁写死默认值），
-    # J4 只认 `@x.y.z` 式版本声明 ⇒ README 里 `-LocalZip …ist-mbt-js-v0.3.4.zip` 这条**用户会照抄**的资产名
+    # J4 只认 `@x.y.z` 式版本声明 ⇒ README 里 `-LocalZip …fist-mbt-js-v0.3.4.zip` 这条**用户会照抄**的资产名
     # 正好落在两面守卫之间，没人认领；版本一前进，离线/内网线就把用户指向一个不存在的资产。
     # 只数"以数字开头的版本串"，模板形态（v$VERSION / v<新版本>）不是字面量，一律放行。
     lit = sorted({m.group(1) for m in re.finditer(
