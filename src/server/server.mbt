@@ -6587,7 +6587,7 @@ pub async fn run_server() -> Unit {
           "项目目录（可选, 相对路径如 ., 不传则依 task_id 或 CWD）",
         ),
         "artifacts": array_prop(
-          "要验证的交付产物数组（必填）。每项：{path, contains?, not_contains?, min_chars?} 检查文件；或 {check_key} 引用 external_results 中的外部 run_check 结果",
+          "要验证的交付产物数组（必填）。每项：{path, contains?, not_contains?, min_chars?} 检查文件；或 {check_key, contains?, not_contains?} 引用 external_results 中的外部 run_check 结果（check_key 产物不接受 min_chars，声明即判 spec 非法；contains/not_contains 对 stdout 生效，外部结果非对象时无 stdout 可验 → fail）",
         ),
         "evidence": string_prop(
           "agent 报告字符串（示意层弱证据；硬门全过时可选参考）",
