@@ -71,6 +71,7 @@ You can browse and install extra skills here:
   观测到 0.1.20261012）分属不同 moon fmt 世代，输出可能不一致。以本地
   `moon fmt` 落盘 + `moon fmt --check` 通过为准；并发 WIP 收口后跑一次
   nightly 全仓重排，统一风格后即可撤销 `continue-on-error`、恢复 fmt 门强度。
+- **本机 `moon fmt --check` 不可用（BUG-381，2026-10-22 实测）**：moon 0.1.20261016 的 `--check` 管线报 `_build/wasm-gc/release/format/…: No such file` + `fatal: cannot hash` 且 rc=-1，**与本仓无关的 3 文件最小工程同样复现** ⇒ 工具链缺陷。判它请用 `python scripts/check_fmt_gate.py`：`0` 干净 / `2` 不可测（拒绝判红也拒绝判绿）/ `1` 真格式差异；格式门权威面以 CI（Linux nightly）为准。
 - 标准提交流程：`moon fmt` → `moon info && moon fmt`（同步 `.mbti`）→
   `moon test --target js` 全绿 → `git commit`。
 
