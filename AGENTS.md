@@ -100,6 +100,16 @@ You can browse and install extra skills here:
 > 直接 `node main.js` 会报 `require is not defined`。`scripts/mcp_smoke.py` / `demo.ps1` 启动前会自动调
 > `scripts/patch_esm_main.py` 注入 require shim（幂等）；手动跑 server 请先 `python scripts/patch_esm_main.py`。
 
+> **JS 测试在本机跑不起来？先看这一条（BUG-380 根因，2026-10-22 实测）**：
+> `moon test --target js` 会把测试选择面作为**一整段 JSON 参数**交给测试产物；若 PATH 上的 `node`
+> 落在 **`node.cmd` / `node.bat` 垫片**（例如 DSH 桌面端的 `%APPDATA%\dsh-desktop\harness\.desktop-bin\node.cmd`），
+> 参数经 `cmd.exe` 转发会**吞掉引号**，产物收到残缺 JSON →
+> `failed to parse args: Unterminated string in JSON`、`Error: failed to run test for target Js`。
+> **对照实验**：同一 payload，垫片 rc=1「Expected property name or '}'」；真 `node.exe` rc=0 并正常打印
+> `----- BEGIN MOON TEST RESULT -----`。⇒ 坏的是垫片转发，不是 moon、不是本仓、更不是测试代码。
+> **常驻入口**：`python scripts/moon_test_env.py [moon test 的参数…]`——按目录内容剔垫片、校验真 `.exe`、
+> 跑测试并核对汇总行；rc 契约 0/1/2（2=判据无法自证）。实测清理后全仓 **1387/1387 passed, rc=0**。
+
 ### native 目标构建环境要求
 
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
