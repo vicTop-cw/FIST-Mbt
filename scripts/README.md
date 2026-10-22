@@ -308,3 +308,13 @@
 - 配套 `check_bug_refs.py`（BUG-373 引用面普查）与 `fist-gate.py --scan`（分支普查）互为补充。
 - `fist-pr-automator.py` — **PR 自动化**：把一个本地分支/提交整理成可审的 PR 描述并（可选）推送建 PR；
   注意：文件必须是 **UTF-8（可带 BOM）**，UTF-16 会让 Python 与 ps1 双端都读成乱码（同日 cef1e9cb 已修）。
+
+- `commit_bug335_lock.ps1`（2026-10-20 18:54 `901eca8c` 入仓，此前从未登记）— **提交成对性收尾助手（脚本自述）**：等并发 agent 把含 `publish_parallel_route` 的 `src/server/server.mbt` 提交进 HEAD 后，**只提交**配套锁 `src/server/bug335_ns_route_wbtest.mbt`；脚本自身规则写明「DO NOT commit server.mbt（concurrent agent owns it）」与「Safe to run repeatedly」——存在的理由是「锁引用未提交函数时单独提交锁 = 给 src/server 引入编译红」。⚠ **脚本文件头自称对应 BUG-339 / BUG-335，但账本抬头面查无此二号**（356 条唯一编号里都没有；本行初版照抄了脚本的编号，经 `check_bug_reference_integrity` 同族排查后改为如实标注）：编号来源未入账，引用时别当账本事实。用法 `pwsh scripts/commit_bug335_lock.ps1`。
+### 2026-10-21 补登记：`fist-gate.py`（R74 合并线新件，`check_scripts_index` 现读红）
+- `fist-gate.py`（454aea3a 入仓）— **统一门禁链（合并前一条命令全跑）**：脚本自述
+  `merge_markers / fmt / build / ps_encoding / store_path` 五段，退出码约定
+  **0=pass / 1=fail / 2=degraded**（2 专给「判据自身取不到量」，不冒用 1 那一档）。
+  merge_markers 段在本仓根上直接调 `scripts/blackbox/check_merge_markers.py`、对任意目标树则
+  按 `git ls-files` 逐文件扫行首标记；其余段分别跑 `moon fmt --check`、`moon build`、
+  `check_ps_encoding.py` 与库路径隔离检查。用途是让 slave/* 分支合入前有一条可复现的本地门，
+  不必等 CI。用法 `python scripts/fist-gate.py [目标树]`。
