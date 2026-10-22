@@ -1,7 +1,7 @@
 id: TASK-005
 title: "合入者巡检报告自动生成 — 15 分钟定时→backlog 注入"
 priority: P1
-status: backlog
+status: in_review
 assignee: atomcode
 discovered_by: lead
 discovered_at: "2026-10-21T19:45:00+08:00"
@@ -28,3 +28,4 @@ evidence:
   - .git/fist/tasks/ 目录已建好，缺注入器
 
 blocked_by: []
+status_note: "R111 对账转 in_review：--scan 已落地（ahead/cherry_plus/conflict_markers/src_lines_changed/suggested_action 五字段 + 巡检 prompt 行；S2/S6 自证）；验收④「scan 产物的状态从 backlog→claimed→done 可被下一轮看到」未取证（scan 固定写 status: backlog，认领生命周期在 fist-task-pool.py），不冒 done。"
