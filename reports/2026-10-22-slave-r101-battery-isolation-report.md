@@ -79,3 +79,20 @@
 - 实锤②：`scripts/mcp_bug_loop.py` 写 `memory/bugs.md` 的既有路径；`scripts/check_demo_isolation.py` 的覆盖面只到 `FIST_DB_PATH`。
 - 规范依据：`AI-DEVELOPMENT-STANDARD.md` 通用 5 条（文档即实现 / 确定性优先 / 增量零回归）与「尺子必须先证明自己会红」；BUG-369 退出码字母表；AGENTS.md 金条五/八。
 - 基点：`gitcode/main = f656001`（本分支开工前已 fetch 对表，主仓未落后）。
+
+## 追记（同分支、提交后 4 分钟内取到的一发活体证据）
+
+- 本单元 commit + push 之后，`git status` 冒出一个未跟踪文件 `memory/whisperer-head.txt`，内容是
+  `35908909795c4aad2e0b77b5a9d6c77dfe1ad946|2026-10-22 12:48:48`（本单元 commit 的完整 SHA + 时刻）。
+  来源不是 git 钩子（`.git/hooks/` 里除 sample 一无所有），而是 `scripts/whisperer.py:33` 的
+  `HEAD_STATE_FILE = ROOT / "memory" / "whisperer-head.txt"` —— 我先前那一发被中断的全量电池里，
+  whisperer 那格作为**包装进程的子进程活了下来**（宿主层报的是包装脚本的退出码，见「资源消耗」），
+  跑完把状态写进了仓库的 `memory/` 面。
+- 为什么这一格值得单独写：**本仓没有任何判据会因为「多了一个未跟踪文件」而红**，而它恰好落在 `memory/` 这个
+  被日志/账本占据的目录里 —— 下一次巡检或 e2e 再跑一次，`git add -A` 类习惯就会把它当交付物一起提交。
+  `check_battery_isolation.py` 的 `untracked-added` 规则如果包住这一格，读数会是
+  `POLLUTED untracked-added memory/whisperer-head.txt`（rc=1），点名而不静默。这正是 R101 立项时那条
+  「接线要等清单本身有判据」的风险面，现在有了第二个真实样本。
+- 处置：该文件是运行态标记（下次巡检自己重建），由我自己这一轮引出，已 `rm` 并 `git status` 复核；
+  **没有**顺手把它 `.gitignore` 掉、也**没有**给 whisperer 改状态文件位置 —— 那是主机 TASK-009 那一族的边界，
+  交回 owner 认。
