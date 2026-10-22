@@ -195,22 +195,6 @@ jobs:
           python3 scripts/check_store_tables_wired.py --selftest
           python3 scripts/check_store_tables_wired.py
 
-      - name: PowerShell encoding guard (BUG-88：无 BOM 的非 ASCII .ps1 在 PS5.1 下解析期即炸)
-        shell: bash
-        run: |
-          python3 scripts/check_ps_encoding.py --selftest
-          python3 scripts/check_ps_encoding.py
-
-      - name: Template control-char guard (templates/*.md 禁裸控制字符——裸 CR 会吃掉工具名首字母)
-        shell: bash
-        # 2026-10-14 普查：7 份 pipeline_mode_*.md 曾因转义序列解释混入裸 CR，把 task_plan_deep 吃成
-        # ask_plan_deep、reject 吃成 eject ⇒ 执行者调不到工具。判据只判"裸"控制字符：CRLF 是
-        # Windows autocrlf checkout 注入的合法行尾，被容忍；配套 .gitattributes `templates/*.md text eol=lf`
-        # 从源头钉 checkout 行尾（双保险）。
-        run: |
-          python3 scripts/check_template_ctrl.py --selftest
-          python3 scripts/check_template_ctrl.py
-
       - name: Exit-code contract guard (BUG-369：自述的退出码契约必须与 ast 实现面同色)
         shell: bash
         # 普查实测：`raise SystemExit("中文串")` 的退出码是 **1 不是 2**——四把尺（check_mbti_sync /

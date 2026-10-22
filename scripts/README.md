@@ -260,3 +260,11 @@
   本轮补了 fmt/build 两臂的**环境态分类**：冷格式化器（缺 `_build/wasm-gc/release/format/`）与依赖缓存
   格式过旧（`moon.mod.json no longer supported`）都报 DEGRADED 并给可执行提示，不再冒充'代码红'；
   `FIST_GATE_FMT_STRICT=1` 可把 fmt 世代差转硬红。用法 `python scripts/fist-gate.py [--scan|--selftest] [树]`。
+
+### 2026-10-21 TASK-003：`check_ci_step_position.py`
+- `check_ci_step_position.py` — **CI 步骤位置守卫（TASK-003）**：`Migrate mooncakes dep manifests` 失败时
+  其后步骤被 GitHub Actions **skip**，故**静态预检族**（冲突标记 / PS 编码 / 模板控制字符 / 脚本索引 / 本尺）
+  必须排在 Migrate **之前**，否则最需要出声时沉默（实测：259b56a8 的 3 处冲突标记进 master，CI 无感）。
+  P1 预检族越位=rc1 并列名；P2 其它构建后 gate 只报计数与清单（本仓实测 30 个，硬堵无意义）；
+  P3 无 Migrate 步 / yml 空 ⇒ rc2 自拒。`--selftest` 7 格。**不依赖 PyYAML**（runner 未必有），
+  自带极简步骤解析器——判据不该把"自己会不会崩"交给环境。
