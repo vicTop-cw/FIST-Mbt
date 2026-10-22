@@ -36,12 +36,15 @@ node --enable-source-maps _build/js/debug/test/src/engine/engine.blackbox_test.j
 3. 用清理后的 PATH（+ 可用的 moonc override）跑 `moon test`，把参数原样透传；
 4. 按本仓契约出 rc：**0=全绿 / 1=有红 / 2=判据无法自证**，
    并核对汇总行 `Total tests: N, passed: N, failed: 0`（BUG-142：`moon test` 自身退出码不可靠，
-   崩了也可能回 0 ⇒ 判绿必须看汇总行，不能只看 rc）。
+   崩了也可能回 0 ⇒ 判绿必须看汇总行，不能只看 rc）；
+5. **R126**：静态核对服务端 spawn 原语（`src/server/run_check_js.mbt`）是否也在 spawn 前
+   注入同一份 shim 环境——MCP 的 `run_check` 由 server 直连执行，server 被宿主拉起时
+   本脚本的 Python 入口不在链路上。
 
 用法：
   python scripts/moon_test_env.py                 # 全仓
   python scripts/moon_test_env.py src/engine      # 只跑某包（参数原样透传给 moon test）
-  python scripts/moon_test_env.py --selftest      # 只验"垫片识别 + 清理"的纯逻辑
+  python scripts/moon_test_env.py --selftest      # 离线验垫片识别/清理 + 服务端 spawn 面
   python scripts/moon_test_env.py --dry-run       # 只打印将要执行的环境与命令
 """
 import os
@@ -95,6 +98,8 @@ def resolve_node(clean):
 
 
 DEFAULT_MOONC_SHIM = os.path.join(os.path.expanduser("~"), ".moon-shim", "shim.exe")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SERVER_SPAWN_REL = os.path.join("src", "server", "run_check_js.mbt")
 
 
 def pick_moonc_override(env_value, shim_path, shim_exists, is_windows):
@@ -104,6 +109,38 @@ def pick_moonc_override(env_value, shim_path, shim_exists, is_windows):
     if is_windows and shim_exists:
         return shim_path, "discovered"
     return "", "none"
+
+
+def server_spawn_env_violations(text):
+    """服务端 spawn 原语是否在 spawn 前把 moonc shim 环境交给子进程（R126，纯函数）。
+
+    `run_check` 由 server 的 js `spawn` 原语执行；server 被宿主直连 `node cli.js serve`
+    拉起时不经过任何 Python 入口，本文件的发现规则必须在原语层再落一次。空文本 =
+    判据面缺失，必须点名，绝不把「没读到」当「合规」。
+    """
+    if not text or not text.strip():
+        return ["读不到 src/server/run_check_js.mbt"]
+    out = []
+    if "moon-shim" not in text or "shim.exe" not in text:
+        out.append("未发现 ~/.moon-shim/shim.exe 自动发现")
+    if "win32" not in text:
+        out.append("未发现 win32 平台门")
+    if "!env.MOONC_OVERRIDE" not in text:
+        out.append("未发现显式 MOONC_OVERRIDE 优先")
+    spawn_lines = [ln for ln in text.splitlines() if re.search(r"spawn\(\s*cmd\s*,\s*args", ln)]
+    if not spawn_lines:
+        out.append("未找到 spawn(cmd, args, …) 调用点")
+    elif not any(re.search(r"\benv\b", ln) for ln in spawn_lines):
+        out.append("spawn 选项未带 env（注入的环境不会交给子进程）")
+    return out
+
+
+def read_server_spawn_text(root=ROOT):
+    try:
+        with open(os.path.join(root, SERVER_SPAWN_REL), encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
 
 
 def selftest():
@@ -145,13 +182,32 @@ def selftest():
     cell("override-skipped-when-missing", pick_moonc_override("", fake_shim, False, True), ("", "none"))
     cell("override-skipped-non-windows", pick_moonc_override("", fake_shim, True, False), ("", "none"))
 
+    # R126：服务端 spawn 原语面——正/反四支 + 空面自拒 + 真现状面必须绿
+    server_clean = (
+        "const env = { ...process.env }\n"
+        "if (!env.MOONC_OVERRIDE && process.platform === 'win32') {\n"
+        "  const shim = join(homedir(), '.moon-shim', 'shim.exe')\n"
+        "  if (existsSync(shim)) env.MOONC_OVERRIDE = shim\n"
+        "}\n"
+        "child = spawn(cmd, args, { cwd: workdir || '.', stdio: ['ignore', 'pipe', 'pipe'], env })\n"
+    )
+    cell("server-spawn-clean", server_spawn_env_violations(server_clean), [])
+    cell("server-spawn-env-dropped",
+         any("env" in v for v in server_spawn_env_violations(server_clean.replace(", env }", " }"))), True)
+    cell("server-spawn-shim-dropped",
+         any("moon-shim" in v for v in server_spawn_env_violations(server_clean.replace(".moon-shim", ".x"))), True)
+    cell("server-spawn-platform-gate-dropped",
+         any("win32" in v for v in server_spawn_env_violations(server_clean.replace("'win32'", "'linux'"))), True)
+    cell("server-spawn-face-missing", server_spawn_env_violations(""), ["读不到 src/server/run_check_js.mbt"])
+    cell("server-spawn-live", server_spawn_env_violations(read_server_spawn_text()), [])
+
     bad = [(n, w) for n, ok, w in cells if not ok]
     if bad:
         print("SELFTEST FAIL：")
         for n, w in bad:
             print("  - %s：%s" % (n, w))
         return 1
-    print("SELFTEST OK（%d 格：垫片目录识别两档 + PATH 清理三档 + node 解析两档 + moonc 覆盖四档）" % len(cells))
+    print("SELFTEST OK（%d 格：垫片目录识别两档 + PATH 清理三档 + node 解析两档 + moonc 覆盖四档 + 服务端 spawn 面六档）" % len(cells))
     return 0
 
 

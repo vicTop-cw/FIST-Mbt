@@ -111,6 +111,9 @@ You can browse and install extra skills here:
 > **常驻入口**：`python scripts/moon_test_env.py [moon test 的参数…]`——按目录内容剔垫片、校验真 `.exe`、
 > 跑测试并核对汇总行；rc 契约 0/1/2（2=判据无法自证）；Windows 上另自动发现 `~/.moon-shim/shim.exe` 并设
 > `MOONC_OVERRIDE`，绕开 moonc 的 `\\?\` 路径 ICE（工具链缺陷，见账本 BUG-380）。实测清理后全仓 **1387/1387 passed, rc=0**。
+> **MCP 执行面同源（R126）**：`run_check` 走 server 的 js `spawn` 原语，server 被宿主直连 `node cli.js serve` 拉起时
+> 不经过任何 Python 入口——原语层同样自动发现 `~/.moon-shim/shim.exe` 并注入 `MOONC_OVERRIDE`（显式 env 优先、
+> 非 Windows 透传）；`run_check`/`executor_run`/`ocr_scan` 共用这一层，判据不再把工具链 ICE 记成任务失败。
 
 ### native 目标构建环境要求
 
