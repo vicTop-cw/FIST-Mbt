@@ -200,7 +200,8 @@ SKIP 5 格全部是缺 temp/ 前置（`temp/pt27.log` ×2、`temp/chk47.json` ×
 - **那条红说的是我自己**：`check_delivery_gap` 裸跑 rc=1 的内容是「HEAD 领先 3 个提交、tip 不在任何远端分支上」。
   它量的是**交付态**而不是代码，且 `git branch -r --contains` 在我推完之后就会命中 ⇒ 归 0。
   所以不登记 `expected`、不豁免、不降棘轮——**给它登记期望等于把「还没交付」这件事洗成常态**。
-  这是本仓第一格量交付态的电池格，推完复跑取的是权威读数（见下）。
+  这是本仓第一格量交付态的电池格，推完复跑取的是权威读数。
+- **推后权威读数**（`05b881b6` 已推 `gitcode` 后同树复跑）：全量电池 **rc=0 / 54 格 / 失败 0 / SKIP 5 / 缺执行面 0**，其中 `check_delivery_gap.py` 该格现读 **rc=0 exp=0**（回执「3 个分支，其中 0 个存在未推送提交」）——证明上面那条归因是实测而不是说法；`MOONC_OVERRIDE=… moon check --target js` **rc=0 / 31 tasks / 508 warnings / 0 errors**（与主线同读数 ⇒ 本单元零新增 warning）。
 - **另一单的文案债（本单元不代改，点名即可）**：`blackbox/check_merge_markers.py` 的 FAIL 抬头写
   「跟踪面存在冲突标记（1 处）」，而同一份输出里 `VIOLATION L1` 点名的是**读不到正文的 gitlink**
   `.agents/worktrees/fix/display-rank-boundary`。抬头与读数不同义 ⇒ 读的人会以为有我漏解的冲突标记。
