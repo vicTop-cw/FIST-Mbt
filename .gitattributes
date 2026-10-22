@@ -29,3 +29,5 @@
 #   钉 `text eol=lf` 后：① git 存 LF 不再被 autocrlf 转成 CRLF 掩盖改动；② checkout 一律 LF，
 #   裸 CR 无法从 Windows 工作树重新进入。安全边界：只列 templates/*.md，不加 `* text=auto`。
 templates/*.md  text eol=lf
+# 钩子脚本必须 LF：CRLF 会让 POSIX sh 在 `sh -n`/执行时报 unexpected end of file。
+.githooks/* text eol=lf
