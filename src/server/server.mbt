@@ -773,7 +773,7 @@ fn executor_persist_note(res : Result[String, String]) -> (Bool, String) {
 /// 漂移过程与活证据见 memory/bugs.md 的 BUG-16 条目）。现收敛到本常量；回归测试
 /// （src/server/fist-mbt_wbtest.mbt）逐字比对它与 moon.mod 里 version 的声明值，并断言本文件
 /// 不再残留任何硬编码版本字面量——所以这段说明本身也不写旧版本号，否则会被回归锁误伤。
-let project_version : String = "0.3.9"
+let project_version : String = "0.3.10"
 
 ///|
 /// —— 结果转换辅助 ——
@@ -1176,13 +1176,19 @@ fn _instrument(
   tool : String,
   input_schema : Json,
   handler : async (Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError],
-) -> async (Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+) -> async (@mcp.RequestContext, Json) -> Result[
+  @mcp.ToolResult,
+  @mcp_types.MCPError,
+] {
   // BUG-19：`schema(props, required)` 过去**只声明不校验**——缺必填参数会落到 handler 的
   // `get_str(args, "x")` 拿到 ""，再被下游当成「任务不存在」或直接返回假成功。契约在这里补齐：
   // 缺 required 一律拒，并写清缺哪几个（调用方看 tools/list 的 inputSchema 即可自证）。
   let required = schema_required(input_schema)
   let props = schema_properties(input_schema)
-  async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+  async fn(_ctx : @mcp.RequestContext, args : Json) -> Result[
+    @mcp.ToolResult,
+    @mcp_types.MCPError,
+  ] {
     let t0 = @env.now().reinterpret_as_int64()
     let params_json = args.stringify()
     let miss = missing_required(args, required)
@@ -1238,12 +1244,16 @@ pub fn instrumented_tool(
   input_schema : Json,
   handler : async (Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError],
 ) -> @mcp.MCPServer {
-  s.tool(
-    name,
-    description,
-    input_schema,
-    _instrument(name, input_schema, handler),
-  )
+  try {
+    s.tool(
+      name,
+      description,
+      input_schema,
+      _instrument(name, input_schema, handler),
+    )
+  } catch {
+    _ => s
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1631,10 +1641,13 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "run_check",
-    "外部判据检查（**宿主命令执行能力**：服务端真实 spawn 进程，防自写自测恒绿；请勿暴露给不可信客户端）。自 Round 2 起执行面**默认收紧**（BUG-4 收口，判定在 src/server/run_check_guard.mbt）：① cmd 必须在白名单内——默认只放项目脚本解释器 moon/node/python/python3/py/bash/sh/zsh/powershell/pwsh（集合来源=call_log 实测调用面）或**项目内的**相对判据脚本（如 `scripts/check.sh`）；② workdir 必须在任务 project_dir 子树内（默认即 project_dir 本身；**相对 workdir 按任务 project_dir 相对解析，`.` 就是该任务的项目目录本身**，与 project_dir 是绝对还是相对无关 —— BUG-51 统一口径，实际 spawn 的 cwd 用归一后的绝对形态）。注意这条口径与 `report_bug`/`bug_list` 的 `project_dir` **相反**：那个参数是 bug 账的落盘根，只接受相对 store 根的路径（拒绝绝对路径/盘符/`..`）。越界（`..` 上跳、跨盘、脱离子树、绝对 workdir 配相对 project_dir）直接拒绝。要扩展白名单只有两条路：把判据脚本写进项目目录按相对路径调用，或由**运维侧**设环境变量 FIST_RUN_CHECK_ALLOW=git,cargo（调用方传参不能给自己扩权）。被拒的尝试一律落审计（audit_log 本进程 + call_log 跨进程）。参数：task_id 任务id、cmd 可执行命令、args 参数数组(可选)、workdir 工作目录(默认任务 project_dir；相对路径按任务 project_dir 解析，绝对路径须在项目子树内)、timeout_ms 超时毫秒(默认120000)（注：时间戳由服务端盖章，不接受调用方注入 now）。真实 spawn 子进程运行 cmd，退出码 0 记为 passed、否则 failed，结果 JSON（含 stdout/stderr）落库 specs 表（spec_type=check）；[gate:required] 任务的 verify 依赖本记录且校验新鲜度。返回 {ok, check_id, task_id, round, status, stdout_tail, stderr_tail, output_truncated, note}：**顶层的 ok 只表示「判据已跑完并落库」**（spawn 成功即 true，与判据通过与否无关），**判据通过与否只看 status**（passed/failed，服务端由子进程退出码推导，调用方声称的 passed 无效）。别拿 ok 当结论：BUG-83 实测有驱动以顶层 ok 汇总出『判据 11/11 通过』，而同一份回执里 status=failed 的那条就躺在旁边。stdout/stderr 各带**末 2000 字符**（判据的关键信息在结尾；BUG-75 前只回退出码，failed 时举不出红在哪、只能本地重跑同一条命令，等于退回本工具要防的自述路径），完整输出仍存 specs.content 供库内复核。",
+    "外部判据检查（**宿主命令执行能力**：服务端真实 spawn 进程，防自写自测恒绿；请勿暴露给不可信客户端）。自 Round 2 起执行面**默认收紧**（BUG-4 收口，判定在 src/server/run_check_guard.mbt）：① cmd 必须在白名单内——默认只放项目脚本解释器 moon/node/python/python3/py/bash/sh/zsh/powershell/pwsh（集合来源=call_log 实测调用面）或**项目内的**相对判据脚本（如 `scripts/check.sh`）；② workdir 必须在任务 project_dir 子树内（默认即 project_dir 本身；**相对 workdir 按任务 project_dir 相对解析，`.` 就是该任务的项目目录本身**，与 project_dir 是绝对还是相对无关 —— BUG-51 统一口径，实际 spawn 的 cwd 用归一后的绝对形态）。注意这条口径与 `report_bug`/`bug_list` 的 `project_dir` **相反**：那个参数是 bug 账的落盘根，只接受相对 store 根的路径（拒绝绝对路径/盘符/`..`）。越界（`..` 上跳、跨盘、脱离子树、绝对 workdir 配相对 project_dir）直接拒绝。要扩展白名单只有两条路：把判据脚本写进项目目录按相对路径调用，或由**运维侧**设环境变量 FIST_RUN_CHECK_ALLOW=git,cargo（调用方传参不能给自己扩权）。被拒的尝试一律落审计（audit_log 本进程 + call_log 跨进程）。**任务定位走 namespace→store 映射**（BUG-374/378）：本工具与 claim/execute/submit 同一路由（namespace 缺省 default），**任务在指定 ns 不存在时直接拒绝、绝不执行命令**（BUG-376：旧实现“命令已执行但无任务可挂、记录消失”正是 ns 验收门无法满足与 verify 空记录判完成的根）。参数：task_id 任务id、namespace 命名空间(可选,默认default；与写类工具同路由)、cmd 可执行命令、args 参数数组(可选)、workdir 工作目录(默认任务 project_dir；相对路径按任务 project_dir 解析，绝对路径须在项目子树内)、timeout_ms 超时毫秒(默认120000)（注：时间戳由服务端盖章，不接受调用方注入 now）。真实 spawn 子进程运行 cmd，退出码 0 记为 passed、否则 failed，结果 JSON（含 stdout/stderr）落库 specs 表（spec_type=check）；[gate:required] 任务的 verify 依赖本记录且校验新鲜度。返回 {ok, check_id, task_id, round, status, namespace, stdout_tail, stderr_tail, output_truncated, note}：**顶层的 ok 只表示「判据已跑完并落库」**（spawn 成功即 true，与判据通过与否无关），**判据通过与否只看 status**（passed/failed，服务端由子进程退出码推导，调用方声称的 passed 无效）。别拿 ok 当结论：BUG-83 实测有驱动以顶层 ok 汇总出『判据 11/11 通过』，而同一份回执里 status=failed 的那条就躺在旁边。stdout/stderr 各带**末 2000 字符**（判据的关键信息在结尾；BUG-75 前只回退出码，failed 时举不出红在哪、只能本地重跑同一条命令，等于退回本工具要防的自述路径），完整输出仍存 specs.content 供库内复核。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；与 claim/execute/submit 同一映射，任务在 ns 不存在时直接拒绝）",
+        ),
         "cmd": string_prop(
           "要执行的外部命令（必填，受 BUG-4 白名单约束）：默认允许 moon/node/python/python3/py/bash/sh/zsh/powershell/pwsh，或项目内相对判据脚本（scripts/xxx.sh）；扩展靠运维侧环境变量 FIST_RUN_CHECK_ALLOW",
         ),
@@ -1653,6 +1666,11 @@ pub async fn run_server() -> Unit {
       if task_id == "" || cmd == "" {
         return Err(@mcp_types.ToolError("run_check: task_id 与 cmd 必填"))
       }
+      // BUG-374/378：任务定位与写类工具走**同一** namespace→store 映射。
+      // 旧实现恒用模块级 engine（只查根库 fist-mbt.db），ns 任务 claim/execute/submit
+      // 可见、get/run_check/verify 却查不到 ⇒ ns 验收门永远无法满足。
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
       let args_arr = get_array(args, "args").map(fn(j) {
         match j {
           String(s) => s
@@ -1667,8 +1685,10 @@ pub async fn run_server() -> Unit {
         Some(reason) => return Err(run_check_deny(task_id, "unknown", reason))
         None => ()
       }
-      // 定位任务（取项目目录作默认 workdir；任务不存在也允许执行，仅不落库）
-      match engine.get_task(task_id) {
+      // 定位任务（取项目目录作默认 workdir；任务不存在**直接拒绝**——
+      // BUG-374/376：旧实现"仍执行命令但不落库"制造半途态，判据跑完记录消失，
+      // verify 无记录仍可判完成、gate 可被绕过。消灭半途态：不落库就不执行。）
+      match eng.get_task(task_id) {
         Some(t) => {
           let workdir = get_str(args, "workdir", default=t.project_dir)
           // BUG-4 fix（Round 2）：workdir 必须落在任务 project_dir 子树内。
@@ -1704,9 +1724,19 @@ pub async fn run_server() -> Unit {
                   }
                 _ => "failed"
               }
-              match
-                engine.gate_check_record(task_id, res.stringify(), status, now) {
-                Ok(rec) => Ok(@mcp.ToolResult::text(rec.stringify()))
+              // BUG-374/378：落库必须走与任务同一引擎（同一库），否则记录落到
+              // 根库、verify 在 ns 库查不到 ⇒ 验收门仍不满足。
+              match eng.gate_check_record(task_id, res.stringify(), status, now) {
+                Ok(rec) => {
+                  let rec2 = match rec {
+                    Object(m) => {
+                      m.set("namespace", Json::string(ns))
+                      Json::object(m)
+                    }
+                    _ => rec
+                  }
+                  Ok(@mcp.ToolResult::text(rec2.stringify()))
+                }
                 Err(e) => Err(@mcp_types.ToolError(e))
               }
             }
@@ -1714,28 +1744,10 @@ pub async fn run_server() -> Unit {
           }
         }
         None => {
-          // 任务不存在：仍执行命令并返回结果，但不落库（无任务可挂）。
-          // BUG-4（Round 2）：这条分支同样过白名单（上面已判），workdir 则**钉死在 server
-          // cwd 子树**（等价于 project_dir="."），越界照旧拒绝并落审计——不因为
-          // 「没有任务」就放开执行面。
-          let workdir = get_str(args, "workdir", default=".")
-          match run_check_workdir_denied(workdir, ".") {
-            Some(reason) => {
-              let hint = "（任务 \{task_id} 不存在，workdir 只允许 server cwd 子树内的相对路径，如 `.`）"
-              return Err(run_check_deny(task_id, "unknown", reason + hint))
-            }
-            None => ()
-          }
-          let r = run_check_external(cmd, args_arr, workdir, timeout_ms)
-          match r {
-            Ok(res) =>
-              Err(
-                @mcp_types.ToolError(
-                  "任务不存在: \{task_id}（命令已执行，结果: \{res.stringify()}，未落库）",
-                ),
-              )
-            Err(e) => Err(@mcp_types.ToolError(e))
-          }
+          // BUG-374/376：任务不存在 → 拒绝并落审计，**不执行命令**（半途态禁令）。
+          // 文案回执实际查的 ns，驱动可据此核对命名空间是否传错。
+          let hint = "任务不存在: \{task_id}（namespace=\{ns}），已拒绝执行判据（请先 claim/execute 建任务，或核对 namespace 是否与写类工具一致）"
+          Err(run_check_deny(task_id, "unknown", hint))
         }
       }
     },
@@ -3347,23 +3359,30 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "mode_templates",
-    "检查 templates/pipeline_mode_*.md 全部存在性，返回 {templates:{advance:true,...}, missing:[...]}。mode 参数预检用。名单从模式注册表 all_modes() 反解，不硬编码——注册表加模式而这里漏检查就是『模板缺席没人报』（BUG-118 同族：判据看不见样本就等于没判）。",
+    "检查 templates/pipeline_mode_*.md 全部存在性，返回 {root, templates:{advance:true,...}, probes:{advance:'<绝对探测路径>',...}, missing:[...]}。mode 参数预检用。名单从模式注册表 all_modes() 反解，不硬编码——注册表加模式而这里漏检查就是『模板缺席没人报』（BUG-118 同族：判据看不见样本就等于没判）。判定基准根 = FIST_MODE_TEMPLATES_ROOT（未设则为 server 进程 cwd），与 mode_list 的 template_path 同根（BUG-375：旧实现相对 cwd 判存在，业务目录下必然 7/7 missing 误报）；missing 时回执 probes 里的实际探测绝对路径，驱动可据此人工核对而非盲改。",
     schema({}, []),
     fn(_args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       // 名单从模式注册表反解：注册表加模式而这里漏名单 ⇒ 模板缺席永远没人报
       let names = @ops.all_modes().map(fn(j) { get_str(j, "mode") })
+      // BUG-375：判定基准与 mode_list 的 template_path 同一根（env 优先，cwd 兜底）。
+      let root = @ops.templates_root()
       let exists : Map[String, Json] = Map([])
+      let probes : Map[String, Json] = Map([])
       let missing : Array[Json] = []
       for n in names {
-        let p = @ops.mode_template_path(n)
+        // 用统一基准的**探测绝对路径**判存在；missing 时把该路径回执出来
+        let p = @ops.template_probe_path(n)
         let ok = @fs.path_exists(p)
         exists.set(n, Json::boolean(ok))
+        probes.set(n, Json::string(p))
         if !ok {
           missing.push(Json::string(n))
         }
       }
       let m : Map[String, Json] = Map([])
+      m.set("root", Json::string(root))
       m.set("templates", Json::object(exists))
+      m.set("probes", Json::object(probes))
       m.set("missing", Json::array(missing))
       Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
     },
@@ -3963,13 +3982,15 @@ pub async fn run_server() -> Unit {
     "FIST 七条金条",
     "FIST-Mbt 的七条不可动摇原则（机器可读 JSON）",
     "application/json",
-    fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
-      Ok({
-        uri: "fist://principles",
-        content: @mcp_resource.ResourceContent::Text(
-          @core.principles_json().stringify(),
-        ),
-      })
+    fn(_ctx : @mcp.RequestContext) -> Result[
+      @mcp.ResourceReadResult,
+      @mcp.MCPError,
+    ] {
+      Ok(@mcp.ResourceReadResult::text(
+        @core.principles_json().stringify(),
+        uri="fist://principles",
+        mime_type="application/json",
+      ))
     },
   )
   s1 = s1.resource(
@@ -3977,13 +3998,15 @@ pub async fn run_server() -> Unit {
     "任务概览",
     "当前任务总数与各状态统计",
     "application/json",
-    fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
-      Ok({
-        uri: "fist://overview",
-        content: @mcp_resource.ResourceContent::Text(
-          overview_json().stringify(),
-        ),
-      })
+    fn(_ctx : @mcp.RequestContext) -> Result[
+      @mcp.ResourceReadResult,
+      @mcp.MCPError,
+    ] {
+      Ok(@mcp.ResourceReadResult::text(
+        overview_json().stringify(),
+        uri="fist://overview",
+        mime_type="application/json",
+      ))
     },
   )
 
@@ -3992,11 +4015,15 @@ pub async fn run_server() -> Unit {
     "项目地图",
     "fist-mbt 结构地图（Repo Map）：src/ 各子包职责、MCP 工具分组、入口引导，供 AI agent 首读定位，避免全项目盲目探索",
     "application/json",
-    fn() -> Result[@mcp_resource.ResourceReadResult, @mcp.MCPError] {
-      Ok({
-        uri: "fist://map",
-        content: @mcp_resource.ResourceContent::Text(map_json().stringify()),
-      })
+    fn(_ctx : @mcp.RequestContext) -> Result[
+      @mcp.ResourceReadResult,
+      @mcp.MCPError,
+    ] {
+      Ok(@mcp.ResourceReadResult::text(
+        map_json().stringify(),
+        uri="fist://map",
+        mime_type="application/json",
+      ))
     },
   )
 
@@ -4005,50 +4032,60 @@ pub async fn run_server() -> Unit {
     "fist:check_in",
     "任务打卡引导：认领/开工前的检查清单",
     [
-      {
-        name: "task_id",
-        description: Some("要认领/开工的任务 id"),
-        required: Some(true),
-      },
+      @mcp_types.PromptArgument::new(
+        "task_id",
+        description="要认领/开工的任务 id",
+        required=true,
+      ),
     ],
-    fn(args : Json) -> Result[@mcp_types.GetPromptResult, @mcp.MCPError] {
+    fn(_ctx : @mcp.RequestContext, args : Json) -> Result[
+      @mcp_types.GetPromptResult,
+      @mcp.MCPError,
+    ] {
       let task_id = get_str(args, "task_id")
-      Ok({
-        description: Some("FIST 任务打卡检查清单"),
-        messages: [
-          {
-            role: "user",
-            content: @mcp_types.ContentItem::Text(
-              "请为任务 \{task_id} 打卡。检查：1) 我已确认任务描述与交付标准；2) 我使用 claim 认领、execute 记录交付物；3) 完成后用 submit 提交验收。",
+      Ok(
+        @mcp_types.GetPromptResult::new(
+          [
+            @mcp_types.PromptMessage::new(
+              @mcp_types.Role::User,
+              @mcp_types.ContentBlock::text(
+                "请为任务 \{task_id} 打卡。检查：1) 我已确认任务描述与交付标准；2) 我使用 claim 认领、execute 记录交付物；3) 完成后用 submit 提交验收。",
+              ),
             ),
-          },
-        ],
-      })
+          ],
+          description="FIST 任务打卡检查清单",
+        ),
+      )
     },
   )
   s1 = s1.prompt(
     "fist:verify",
     "验收引导：提交后的验收清单",
     [
-      {
-        name: "task_id",
-        description: Some("要验收的任务 id"),
-        required: Some(true),
-      },
+      @mcp_types.PromptArgument::new(
+        "task_id",
+        description="要验收的任务 id",
+        required=true,
+      ),
     ],
-    fn(args : Json) -> Result[@mcp_types.GetPromptResult, @mcp.MCPError] {
+    fn(_ctx : @mcp.RequestContext, args : Json) -> Result[
+      @mcp_types.GetPromptResult,
+      @mcp.MCPError,
+    ] {
       let task_id = get_str(args, "task_id")
-      Ok({
-        description: Some("FIST 任务验收清单"),
-        messages: [
-          {
-            role: "user",
-            content: @mcp_types.ContentItem::Text(
-              "请验收任务 \{task_id}。检查：1) 交付物是否满足描述标准；2) 使用 verify 通过；3) 通过后可用 archive 归档。",
+      Ok(
+        @mcp_types.GetPromptResult::new(
+          [
+            @mcp_types.PromptMessage::new(
+              @mcp_types.Role::User,
+              @mcp_types.ContentBlock::text(
+                "请验收任务 \{task_id}。检查：1) 交付物是否满足描述标准；2) 使用 verify 通过；3) 通过后可用 archive 归档。",
+              ),
             ),
-          },
-        ],
-      })
+          ],
+          description="FIST 任务验收清单",
+        ),
+      )
     },
   )
   s1 = instrumented_tool(

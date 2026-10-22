@@ -11,7 +11,7 @@
 
 name = "vicTop-cw/fist-mbt"
 
-version = "0.3.9"
+version = "0.3.10"
 
 readme = "README.mbt.md"
 
@@ -26,8 +26,8 @@ preferred_target = "js"
 description = "FIST commander task orchestration rewritten in pure MoonBit, exposed as an MCP server."
 
 import {
-  "mizchi/sqlite@0.3.1",
-  "colmugx/mcp@0.17.4",
+  "daqing/sqlite@0.4.0",
+  "colmugx/mcp@0.18.1",
   "moonbitlang/async@0.22.3",
   "moonbitlang/x@0.5.5",
   "cc06b/mooncry@0.13.1",

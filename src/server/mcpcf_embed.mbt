@@ -367,7 +367,7 @@ fn tool_watchdog(args : Json) -> @mcp.ToolResult {
 
 ///|
 /// 注册 mcpcf.* 内部工具到现有 server（链式调用，返回扩展后的 server）。
-pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
+pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer raise @mcp_types.MCPError {
   let s1 = s.tool(
     "mcpcf.ops_init",
     "Initialize the embedded FIST engine (SQLite preferred, memory fallback). Parameters: data_dir (optional, overrides MCPCONFTEST_DATA_DIR). Returns backend and db path.",
@@ -382,7 +382,10 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(_ctx : @mcp.RequestContext, args : Json) -> Result[
+      @mcp.ToolResult,
+      @mcp_types.MCPError,
+    ] {
       Ok(tool_ops_init(args))
     },
   )
@@ -412,7 +415,10 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(_ctx : @mcp.RequestContext, args : Json) -> Result[
+      @mcp.ToolResult,
+      @mcp_types.MCPError,
+    ] {
       Ok(tool_run_batch(args))
     },
   )
@@ -436,7 +442,10 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(_ctx : @mcp.RequestContext, args : Json) -> Result[
+      @mcp.ToolResult,
+      @mcp_types.MCPError,
+    ] {
       Ok(tool_verify(args))
     },
   )
@@ -460,7 +469,10 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(_ctx : @mcp.RequestContext, args : Json) -> Result[
+      @mcp.ToolResult,
+      @mcp_types.MCPError,
+    ] {
       Ok(tool_circuit(args))
     },
   )
@@ -476,7 +488,10 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(_ctx : @mcp.RequestContext, args : Json) -> Result[
+      @mcp.ToolResult,
+      @mcp_types.MCPError,
+    ] {
       Ok(tool_report(args))
     },
   )
@@ -498,7 +513,10 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(_ctx : @mcp.RequestContext, args : Json) -> Result[
+      @mcp.ToolResult,
+      @mcp_types.MCPError,
+    ] {
       Ok(tool_review(args))
     },
   )
@@ -518,7 +536,10 @@ pub fn embed_mcpcf_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
         }),
       }),
     }),
-    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+    fn(_ctx : @mcp.RequestContext, args : Json) -> Result[
+      @mcp.ToolResult,
+      @mcp_types.MCPError,
+    ] {
       Ok(tool_watchdog(args))
     },
   )

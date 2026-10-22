@@ -164,10 +164,19 @@ if ($installed.Count -eq 0) {
 }
 
 # ---------- Shim ----------
+# BUG-377：shim 指向**稳定发布入口**（InstallDir 下的 fist-mbt.js / fist-mbt.exe），
+# 绝不指向 _build/js/debug/...（_build 可被 moon clean 清空 ⇒ 命令全部不可用）。
+# 生成前硬校验目标存在：不存在就打印可读失败原因并退出，不产"指向空文件的 shim"。
 $shim = "$env:USERPROFILE\.local\bin\fist-mbt.cmd"
 $jsBin = Join-Path $InstallDir "fist-mbt.js"
 $nativeBin = Join-Path $InstallDir "fist-mbt.exe"
 $patchPy = Join-Path $InstallDir "patch_esm_main.py"
+if (-not (Test-Path $jsBin) -and -not (Test-Path $nativeBin)) {
+    Write-Host "❌ 未找到可执行构建产物：$InstallDir 下既无 fist-mbt.js 也无 fist-mbt.exe" -ForegroundColor Red
+    Write-Host "   请先运行 build_release.ps1 或提供 -Source <含 fist-mbt.js 的目录>，再执行安装。" -ForegroundColor Red
+    Write-Host "   为避免生成指向不存在文件的 shim（BUG-377），安装已中止。" -ForegroundColor Red
+    exit 1
+}
 $content = @"
 @echo off
 REM FIST-Mbt shim — v$Version

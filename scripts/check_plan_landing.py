@@ -217,6 +217,28 @@ def ratchet(n, ceiling):
     return False, ""
 
 
+# P7 B 档：外部宿主文件的**精确路径名单**（BUG-367）。src/adapter.js / src/eac.js / src/eac-login.js /
+# src/vault.js 是浏览器扩展等别的宿主用到的件，不是本仓 MoonBit 包的源码；拿本仓跟踪面当分母，
+# 计划文档里提到它们必然报 missing。加豁免=改这份常量名单，被 repo 审（绝不按目录/后缀大面豁免）。
+EXTERNAL_HOST_FILES = ("src/adapter.js", "src/eac.js", "src/eac-login.js", "src/vault.js")
+
+
+def exempt_reason(p):
+    """P7 纯判据：命中 B/C 档豁免 ⇒ 返回 (态名, 处置话术)；不命中 ⇒ None。
+    B 档：精确名单；C 档：scripts/ 下 basename 以 `_` 开头（本仓约定的一次性临时件）。
+    只替换 missing（调用方保证 on-disk 优先）；按窄形写，反证在 selftest 里钉死（不误伤 src/foo.js、
+    scripts/normal.py 这种非豁免形状）。"""
+    if p in EXTERNAL_HOST_FILES:
+        return ("external",
+                "**外部宿主文件**（BUG-367 B 档：src/adapter.js 等属别的宿主，本仓跟踪面当分母必然报 missing）"
+                "⇒ 只出数不判红")
+    if p.startswith("scripts/") and os.path.basename(p).startswith("_"):
+        return ("scratch",
+                "**历史一次性临时件**（BUG-367 C 档：`_` 前缀=本仓约定的临时件，同 cleanup_artifacts 口径）"
+                "⇒ 只出数不判红")
+    return None
+
+
 def fatal_reason(n_enum, n_readable, n_paths):
     """P2 防空转的三条判据（纯函数，供 `--selftest` 直接考）。任一成立即 FATAL，返回那条因由。
     本轮把它从 main 里三处 `raise SystemExit("FATAL …")` 抽出来，实测顺手抓了一条自己的缺陷：
@@ -276,6 +298,11 @@ def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None):
                 findings.append((doc, p, "on-disk",
                                  "**实现已在工作树磁盘上、只是没进跟踪面** ⇒ 出路是 `git add` 并提交", face, []))
                 continue
+            # P7 豁免：外部宿主 / `_` 前缀临时件只替换 missing（on-disk 已优先，见上）。
+            ex = exempt_reason(p)
+            if ex:
+                findings.append((doc, p, ex[0], ex[1], face, []))
+                continue
             mv = find_moved(p, moved_universe)
             if mv:
                 findings.append((doc, p, "moved",
@@ -290,13 +317,15 @@ def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None):
 
 
 def split_faces(findings, all_faces):
-    """(判定面, 搬家态, 存档面)。moved **恒不进判定面**（P5），`--all-faces` 只把存档面拉进判定面。
-    抽成纯函数是为了让「搬家态不判红」这条律有夹具，而不是只活在 main 的某一次打印里。"""
+    """(判定面, 搬家态, 豁免态, 存档面)。moved **恒不进判定面**（P5），P7 的 external/scratch 同样
+    只出数不判红；`--all-faces` 只把存档面拉进判定面。抽成纯函数是为了让「搬家态不判红」「豁免态不判红」
+    这两条律都有夹具，而不是只活在 main 的某一次打印里。"""
     pool = findings if all_faces else [x for x in findings if x[4] == "活文档"]
     moved = [x for x in pool if x[2] == "moved"]
-    live = [x for x in pool if x[2] != "moved"]
+    exempt = [x for x in pool if x[2] in ("external", "scratch")]
+    live = [x for x in pool if x[2] not in ("moved", "external", "scratch")]
     archived = [x for x in findings if x[4] == "存档面"]
-    return live, moved, archived
+    return live, moved, exempt, archived
 
 
 def verdict_rc(live_n, over, gate):
@@ -451,13 +480,38 @@ def selftest():
     # 9) P5 的下游：搬家态不进判定面（split_faces 是纯函数，故这条律有夹具而非只在打印里）
     mixed = [("l.md", "docs/x.md", "moved", "", "活文档", ["docs/archive/x.md"]),
              ("l.md", "src/gone.mbt", "missing", "", "活文档", []),
+             ("l.md", "src/adapter.js", "external", "", "活文档", []),
              ("docs/archive/o.md", "docs/y.md", "moved", "", "存档面", ["docs/archive/y.md"])]
-    live, mv, arch = split_faces(mixed, False)
-    cell("split-moved-out-of-verdict", len(live) == 1 and len(mv) == 1 and len(arch) == 1, True)
-    print("  ok  split-moved-out-of-verdict（判定面只留 missing %d 条，搬家 %d 条单列）" % (len(live), len(mv)))
-    live_a, mv_a, _ = split_faces(mixed, True)
-    cell("all-faces-still-excludes-moved", len(mv_a) == 2 and not [x for x in live_a if x[2] == "moved"], True)
-    print("  ok  all-faces-still-excludes-moved（--all-faces 拉进存档面也不拉搬家态：%d 条仍单列）" % len(mv_a))
+    live, mv, ex, arch = split_faces(mixed, False)
+    cell("split-moved-out-of-verdict", len(live) == 1 and len(mv) == 1 and len(ex) == 1 and len(arch) == 1, True)
+    print("  ok  split-moved-out-of-verdict（判定面只留 missing %d 条，搬家 %d 条、豁免 %d 条单列）"
+          % (len(live), len(mv), len(ex)))
+    live_a, mv_a, ex_a, _ = split_faces(mixed, True)
+    cell("all-faces-still-excludes-moved",
+         len(mv_a) == 2 and len(ex_a) == 1 and not [x for x in live_a if x[2] in ("moved", "external", "scratch")],
+         True)
+    print("  ok  all-faces-still-excludes-moved（--all-faces 拉进存档面也不拉搬家态/豁免态：%d 条仍单列）"
+          % (len(mv_a) + len(ex_a)))
+
+    # 9b) P7 豁免：外部宿主精确名单 / scripts/ `_` 前缀 ⇒ external/scratch，只出数不判红
+    f8, _ = judge({"a.md": ["src/adapter.js"]}, set(), set())
+    cell("external-detected", len(f8) == 1 and f8[0][2] == "external", True)
+    print("  ok  external-detected（src/adapter.js 属外部宿主 ⇒ external 态）")
+    f9, _ = judge({"a.md": ["scripts/_ai_prompt.md"]}, set(), set())
+    cell("scratch-detected", len(f9) == 1 and f9[0][2] == "scratch", True)
+    print("  ok  scratch-detected（scripts/_ai_prompt.md 属一次性临时件 ⇒ scratch 态）")
+    # 反证①：豁免名单外 src/*.js 仍报 missing（不给整目录/后缀开免检牌）
+    fa, _ = judge({"a.md": ["src/foo.js"]}, set(), set())
+    cell("exempt-not-overbroad-external", len(fa) == 1 and fa[0][2] == "missing", True)
+    print("  ok  exempt-not-overbroad-external（src/foo.js 不在名单 ⇒ 仍 missing）")
+    # 反证②：scripts/ 下非 `_` 前缀仍报 missing
+    fb, _ = judge({"a.md": ["scripts/normal.py"]}, set(), set())
+    cell("exempt-not-overbroad-scratch", len(fb) == 1 and fb[0][2] == "missing", True)
+    print("  ok  exempt-not-overbroad-scratch（scripts/normal.py 无 `_` 前缀 ⇒ 仍 missing）")
+    # 反证③：豁免不抢 on-disk（点名处自己在磁盘 ⇒ 优先报 on-disk，P7 只替换 missing）
+    fc, _ = judge({"a.md": ["src/adapter.js"]}, set(), {"src/adapter.js"})
+    cell("exempt-does-not-eat-on-disk", len(fc) == 1 and fc[0][2] == "on-disk", True)
+    print("  ok  exempt-does-not-eat-on-disk（豁免件点名处自己在磁盘 ⇒ 仍报 on-disk）")
 
     # 10) P6 棘轮：只许降；超限并红、有余量只给建议
     over, txt = ratchet(26, 25)
@@ -480,8 +534,8 @@ def selftest():
     print("  ok  rc-口径 4 格 + 不产 2（诊断/门禁各自成立，2 只留给 FATAL）")
 
     # 12) 上限常量与本轮实测存量的关系：不许把上限写成小于已知存量（那等于一落地就假红）
-    cell("ceiling-not-below-known-stock", VERDICT_GAP_CEILING >= 25, True)
-    print("  ok  ceiling-not-below-known-stock（VERDICT_GAP_CEILING=%d ≥ 本轮实测存量 25）" % VERDICT_GAP_CEILING)
+    cell("ceiling-not-below-known-stock", VERDICT_GAP_CEILING >= 18, True)
+    print("  ok  ceiling-not-below-known-stock（VERDICT_GAP_CEILING=%d ≥ 本轮实测存量 18（A 档））" % VERDICT_GAP_CEILING)
 
     # 13) P2 防空转三条各给因由，且顺序固定（枚举 → 可读 → 条数）
     cell("fatal-no-docs-enum", (fatal_reason(0, 0, 0) or "").startswith("一份文档都没枚举到"), True)
@@ -511,7 +565,8 @@ def selftest():
     print("SELFTEST OK（%d 格：抽取口径 9 格（`<…>`/`*` 形态、日期与变量占位、形态出数反证、"
           "「路径:行号」剥离 + 同串正反证、绝对路径、目录形态、非仓内）/ 干净不误报 / on-disk 必报 / "
           "missing 必报 / 跟踪目录反解 3 格 / P4 分面 3 格 / 空转计数 / P5 搬家 7 格（检出、深层子目录仍认、"
-          "父目录不相干/顶层点名/抢白 on-disk/未跟踪候选 4 条反证、目录形态搬家）/ 搬家不进判定面 2 格 / "
+          "父目录不相干/顶层点名/抢白 on-disk/未跟踪候选 4 条反证、目录形态搬家）/ 搬家+豁免不进判定面 2 格 / "
+          "P7 豁免 6 格（external/scratch 检出、名单外/非 `_` 前缀 2 条反证、不抢 on-disk 反证）/ "
           "P6 棘轮 3 格 / 退出码两口径 5 格 / 上限常量 1 格 / P2 空转三条 4 格 / 模式互斥 2 格 / FATAL 出口码 1 格）"
           % len(cells))
     return 0
@@ -573,7 +628,7 @@ def main():
     if fr:
         return emit_fatal(fr)
 
-    live, moved, archived = split_faces(findings, args.all_faces)
+    live, moved, exempt, archived = split_faces(findings, args.all_faces)
     if args.all_faces:
         # 上限是按**默认活文档面**标定的；--all-faces 把存档面拉进判定面后是另一个宇宙（实测 25 → 38）。
         # 这里不比对、只说明 —— 拿没标定过的口径去判红，和红得莫名是同一件事。
@@ -590,6 +645,8 @@ def main():
             extra = "；存档面另有 %d 条只报不判（--all-faces 可计入）" % len(archived)
         if moved:
             extra += "；另有搬家态 %d 条单独出数（P5，不判红）" % len(moved)
+        if exempt:
+            extra += "；另有豁免态 %d 条单独出数（P7，外部宿主/临时件不判红）" % len(exempt)
         print("PASS 计划落点核对：%d 份文档的 %d 条仓内点名路径**全部在跟踪面**（形态说明 %d 条不认作落点、单独出数）%s"
               % (len(doc_paths), n, len(shape_notes), extra))
         for doc, p, kind, hint, face, mv in sorted(moved, key=lambda x: (x[1], x[0])):
@@ -600,8 +657,9 @@ def main():
     missing = [x for x in live if x[2] == "missing"]
     print("INFO 计划落点核对（%d 份文档、%d 条点名路径、形态说明 %d 条已出数不比对）："
           "判定面未在跟踪面 %d 条（磁盘上有 %d 条、都没有 %d 条）；搬家态另有 %d 条单列入 P5、不进判定面；"
-          "%s"
+          "豁免态 %d 条单列入 P7、不进判定面；%s"
           % (len(doc_paths), n, len(shape_notes), len(live), len(on_disk), len(missing), len(moved),
+             len(exempt),
              ("存档面 %d 条已按 --all-faces 计入判定面" % len(archived)) if args.all_faces
              else ("存档面另有 %d 条只报不判" % len(archived))))
     if rnote:
@@ -614,6 +672,11 @@ def main():
               % len(moved))
         for doc, p, kind, hint, face, mv in sorted(moved, key=lambda x: (x[1], x[0])):
             print("  - [moved] %s 点名 `%s` → 跟踪面实际位置 %s" % (doc, p, "、".join(mv)))
+    if exempt:
+        print("  …豁免态（P7：外部宿主 / `_` 前缀临时件 ⇒ 只出数不判红）%d 条："
+              % len(exempt))
+        for doc, p, kind, hint, face, mv in sorted(exempt, key=lambda x: (x[1], x[0])):
+            print("  - [%s] %s 点名 `%s` ——%s" % (kind, doc, p, hint))
     if archived and not args.all_faces:
         print("  …存档面（docs/archive/、reports/）%d 条，分布在 %d 份文档：%s"
               % (len(archived), len({x[0] for x in archived}),

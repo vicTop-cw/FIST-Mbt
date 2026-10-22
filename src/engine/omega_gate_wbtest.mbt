@@ -153,3 +153,75 @@ test "og_3_坏JSON与缺字段一律安静回空串不报错" {
   assert_eq(s, "短")
   assert_eq(cut, false)
 }
+
+///|
+/// 造一个带外部判据闸门标记（[gate:required]）的任务。
+fn og_gate_task(e : FistEngine) -> String {
+  match
+    e.publish(
+      project_dir=".",
+      description="BUG-376 闸门锁：[gate:required] 无记录不得验收",
+      created_by="human_steward",
+      now="2026-09-27T06:00:00Z",
+    ) {
+    Ok(x) => x
+    Err(m) => abort("publish failed: \{m}")
+  }
+}
+
+///|
+/// BUG-376：零 run_check 记录仍判通过是假绿——缺记录必须拒绝并给可读原因。
+test "og_4_缺外部检查记录时闸门拒绝并给可读原因（BUG-376）" {
+  let e = og_engine()
+  let tid = og_gate_task(e)
+  match e.gate_verify_gate(tid) {
+    Err(msg) => {
+      assert_true(msg.contains("尚无外部检查记录"))
+      assert_true(msg.contains(tid))
+    }
+    Ok(_) => abort("带 [gate:required] 的任务无记录时应拒绝验收")
+  }
+}
+
+///|
+/// 最新记录 passed 且新鲜 -> 放行。
+test "og_5_新鲜且 passed 的检查记录放行" {
+  let e = og_engine()
+  let tid = og_gate_task(e)
+  ignore(og_record(e, tid, og_check_json(true, "PASS 六守卫全绿\n", ""), "passed"))
+  match e.gate_verify_gate(tid) {
+    Ok(_) => assert_true(true)
+    Err(m) => abort("新鲜 passed 记录应放行：\{m}")
+  }
+}
+
+///|
+/// 记录早于任务最后更新 -> 拒绝（改完代码后不许用旧记录蒙混）。
+test "og_6_检查记录早于任务更新时拒绝（新鲜度）" {
+  let e = og_engine()
+  let tid = og_gate_task(e)
+  ignore(og_record(e, tid, og_check_json(true, "PASS\n", ""), "passed"))
+  // 任务在记录之后被认领/更新（updated_at 后移）
+  match e.claim(task_id=tid, assignee="human_steward", now="2026-09-27T07:00:00Z") {
+    Ok(_) => ()
+    Err(m) => abort("claim failed: \{m}")
+  }
+  match e.gate_verify_gate(tid) {
+    Err(msg) => {
+      assert_true(msg.contains("早于任务最后更新"))
+      assert_true(msg.contains("请重新执行 run_check"))
+    }
+    Ok(_) => abort("陈旧记录应拒绝验收")
+  }
+}
+
+///|
+/// 未带 [gate:required] 的任务直接放行（默认关闭即现状，零侵入）。
+test "og_7_未标记任务放行（零侵入）" {
+  let e = og_engine()
+  let tid = og_task(e) // 无 gate 标记
+  match e.gate_verify_gate(tid) {
+    Ok(_) => assert_true(true)
+    Err(m) => abort("未标记任务应直接放行：\{m}")
+  }
+}

@@ -4094,7 +4094,7 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 
 ### FIXED(2026-10-16T15:51:31Z / BUG-217)
 - evidence: commit ba4fd93 修复 claimguard.mbt may_proceed_sematic/may_proceed_full：先跑只读预检（decide_claim/blind_spot_holds/semantic_collision）全部通过后才 claim_item；claim_item 调用位于 L248/L294 在所有检查之后。次条（2026-10-15T13:22:34Z）与首条同号不同 ts，因 BUG-241 未修而滞留 OPEN。BUG-241 修复已入库（f1e36a3：bug_header_lines 返回 ALL 索引，bug_fix 逐条改判同号重复条目）。现补标 FIXED。
-## BUG-263 [2026-10-15T13:22:34Z] [medium] OPEN
+## BUG-263 [2026-10-15T13:22:34Z] [medium] FIXED
 - renumbered_from: BUG-217（2026-10-17 fist-lead 清整，消除与已 FIXED BUG-217 的 ID 碰撞，见 BUG-260）
 - summary: [claimguard-side-effect] may_proceed_sematic / may_proceed_full 在检查前先 claim_item：返回 false 时项已被 side-effect 认领
 - detail: `may_proceed_sematic` / `may_proceed_full` 的语义是"问"——回答能否 proceed——但实现先调 `claim_item(g, proposed, agent)` 把项**认领给自己**，再跑语义/盲点检查；检查失败返回 false 时，项已被 side-effect 认领。
@@ -4108,6 +4108,9 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 现有测试不覆盖：`claimguard_wbtest.mbt` L177 `assert_true(!may_proceed_sematic(...))` 只断言返回值，没断言 `holder_of(g, "L33-self-search")` 应为 `None`。
 
 修复方向：把 claim 动作移到所有检查**通过之后**——先用 `decide_claim` 只读判重，全通过再 `claim_item`；或者拆成 `check_proceed_*`（纯读）+ `claim_item` 两步，由调用方显式认领。
+
+### FIXED(2026-10-22T00:00:00Z / BUG-263)
+- evidence: claimguard.mbt may_proceed_sematic/may_proceed_full 改为先 decide_claim 只读判重、所有检查通过后再 claim_item（claim 动作移至检查之后），返回 false 不再发生 side-effect 认领；claimguard_wbtest.mbt 补断言：cg_semantic_collision_detected 末尾 assert holder_of(g,"L33-self-search")==None、cg_semantic_no_collision_ok 末尾 assert holder_of(g,"L31-diff")==Some("B")。验证：moon test --target js 1352/1352 passed。
 
 
 ## BUG-218 [2026-10-15T13:51:38Z] [medium] FIXED
@@ -5743,7 +5746,7 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - 改了什么：11 份文档 + 1 份守卫夹具，26 处现状面对表。测试总数面 21 处（`temp/fix32.py`，逐条断言命中次数才落盘、CRLF 按原文件判定回写）：AGENTS.md 2、ARCHITECTURE.md 1、README.mbt.md 1、README.md 5（徽章 `tests-1108%2F1108` → 1302、正文 1112 → 1302、日志回显行 2 数）、README_EN.md 7（EN 徽章、`1112-test JS suite`、`check_test_sync (1112 aligned`、`(Node ≥ 24, 1112/1112 …)`）、docs/SOP.md 2（含 frontmatter `updated: 2026-10-16` → `2026-10-21`）、docs/agent-map.md 1、docs/deliverable.md 1、scripts/scoring_rubric.md 1；豁免面 `scripts/check_test_sync.py` 新登记 3 条 `EXEMPT`（README 77 / README 162 / SHIP-PLAN 1058）并给夹具补 8 条声明（5 条上一轮漏写 + 3 条本轮新登记）；入口面 docs/SOP.md 部署路径 `cmd/main/main.js` → `cmd/cli/cli.js serve`（并补「裸跑只打印 help」限定）；版本面 USAGE.md 自述 0.3.8 → 0.3.9、README 资产名字面量 `fist-mbt-js-v0.3.8.zip` → `v0.3.9.zip`；索引面 scripts/README.md 登记 `run_check_t0r21.py`。零 `.mbt`、零接口变更。
 - 实测锁钉：真源重跑 `moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`check_badge temp/pt19.log README.md` PASS（徽章 == 实测 + 自检注释行 == 实测）；`check_test_sync temp/pt19.log` PASS（121 份现状面 17 条声明全等实测、must-carry 5 份齐全、豁免 22 条全部有效）；`check_test_sync --selftest` PASS（R0-enumerator + 8 支对照，此前该步直接判红、8 支对照从未跑过）；`check_doc_surface` PASS + `--selftest` PASS；`check_entry_paths` / `check_release_asset_names` / `check_scripts_index` 由红转绿；`check_mbti_sync`（654 条）/ `check_tools_sync` / `check_plugin_sync` / `check_pkg_imports` / `check_publish_payload` / `check_demo_isolation` / `check_store_tables_wired` / `check_ps_encoding` / `check_template_ctrl` / `check_py_stdout_encoding` / `check_model_auth_no_key` / `check_skill_inject` 12 守卫无回归；`moon build cmd/cli --target js` rc=0。
 
-## BUG-358 [2026-10-21T03:00:00Z] [medium] OPEN
+## BUG-358 [2026-10-21T03:00:00Z] [medium] FIXED
 - summary: [CI 判据输入面] `check_host_installable.py` 把**未跟踪件** `.mcp.json` 列进「关键文件缺失即自拒」名单（`LENIENT_JSON = [".mcp.json", ".mcp.dev.json"]` → `missing_key_files()`），而 `.gitignore:65` 明写仓库根 `.mcp.json` 不跟踪 ⇒ 干净检出（CI runner、`git archive HEAD`）上这一步必然 `FATAL … 拒绝出结论` 退出码 2，判据在 CI 上从来没跑过一次真判定
 - detail: 证据链三格实测：① `.gitignore:62-65`「仓库根 `.mcp.json` = 本机 MCP 连接器在读的那一份：未跟踪、内容与跟踪真源 .mcp.dev.json 逐字节相同。BUG-131 之后投影已按跟踪面优先解析」；② `git ls-files` 只有 `.mcp.dev.json` / `.mcp.example.json` / `default-fist.mcp.json` / `plugins/claude/.mcp.json` 四件是跟踪件，根 `.mcp.json` 不在其中；③ 本机 `python scripts/check_host_installable.py` 实跑 `FATAL 判据输入面退化：关键文件缺失 .mcp.json`，rc=2（本机也没有该文件，与 CI 同形，不是 Windows 特有）。ci.yml「Host-installable guard」那步先 `--selftest` 再全量：`--selftest` 里 T5b 一格（`crit_names` 含 `.mcp.json`）在缺件时打的是「当前不可判」的自陈，不会伪装成绿——但整步的退出码仍是非 0，门就是恒红。
   为什么是判据缺陷而不是配置缺陷：BUG-131 已经把**投影侧**（`gen_plugins` / `check_plugin_sync`）改成「跟踪面优先，未跟踪的 `.mcp.json` 只兜底」，`.gitignore` 那条注释正是那次裁决的落盘。本守卫是同族另一支尺子却没跟着改，于是留下「本机有连接器残件就偶发可判、干净树永不可判」的形状——比恒绿更坏，因为它读数长得像「环境没配好」，容易被人当噪声跳过。
@@ -5751,6 +5754,9 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - note: 定级 medium 的理由：这不是「少一条读数」，而是**一条自接入 CI 那轮（`efbeaaa`，2026-10-14「ci(guard): check_template_ctrl 接入 CI」同笔加了 `--selftest` + 全量两步）起就没在权威面上执行过的宿主安装门**——D1 档（deepseek-harness `cordis.patch.yml` 的绝对路径/超时键/reconnect schema）本该拦住 cl7 记过的那类「装上即 disconnected」回归。本单未复核 GitHub Actions 历史读数，结论只建立在「干净检出必缺该文件 + 本机实跑 rc=2」两格证据上。
 - 后续建议: ① 出路 (a) 与 BUG-131 同口径、且不需要在 CI 里造未跟踪件，建议优先；动的是判据输入面（这条守卫在 CI 上究竟测什么），按金条四留 owner 定夺后单独开一单元。② 无论选哪条，建议同时给 ci.yml 那步补一句「缺件 ⇒ rc=2 自拒，不算绿」的现状说明，避免下一轮再把它当环境噪声。③ 普查其余判据是否还有同类形状：把 `.gitignore` 里的未跟踪件列进「缺件即自拒」名单的，用 `grep -n "crit" scripts/check_*.py` 复核一遍。
 - task_id: T0r13
+
+### FIXED(2026-10-22T00:00:00Z / BUG-358)
+- evidence: scripts/check_host_installable.py 输入面候选序列改为 .mcp.json → .mcp.dev.json，取跟踪的那份（与 BUG-131 同口径），LENIENT_JSON 判据与 docstring 同步改写为「投影真源」；干净检出不再因缺未跟踪件 .mcp.json 而 FATAL rc=2。验证：python scripts/check_host_installable.py 实跑通过（详见修复报告）。
 
 ## BUG-359 [2026-10-21T03:10:00Z] [low] FIXED
 - summary: [弃用面/0020] 「同一原语改名族」12 处清零：`UInt64::to_int64` → `UInt64::reinterpret_as_int64` 11 处（`src/server/server.mbt` 6 / `src/server/mcpcf_embed.mbt` 3 / `src/server/model_router_ops.mbt` 2）+ `Char::from_int` → `Int32::unsafe_to_char` 1 处（`src/router/router_caf_ext.mbt:116`），判据面 501 → **489 warnings / 0 errors**，0020 命中 460 → **448**（这两族 11+1 → 0）；附带 1 处注释事实修正（`src/server/mcp_config_scaffold.mbt:149`）
@@ -5768,7 +5774,7 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - 改了什么：5 份 `.mbt`、13 处替换（12 处改名 + 1 处注释修正），零接口变更、`.mbti` 未动。`src/server/server.mbt` 6、`src/server/mcpcf_embed.mbt` 3、`src/server/model_router_ops.mbt` 2 的 `@env.now().to_int64()` → `@env.now().reinterpret_as_int64()`（`temp/fix33.py`：dry-run 先行、逐条断言命中次数才落盘、CRLF 按原文件判定回写）；`src/router/router_caf_ext.mbt:116` `Char::from_int(lc).to_string()` → `Int32::unsafe_to_char(lc).to_string()`；`src/server/mcp_config_scaffold.mbt:149` 注释按事实改写——原文声称「core 未提供 `String::lowercase` / `Char::from_int`」，前半真后半假（`Char::from_int` 存在、只是本轮起弃用），且漏了 core 其实有逐字符 `Char::to_ascii_lowercase`。
 - 实测锁钉：`moon check --target js --json` = `temp/chk39.json` → **489 warnings / 0 errors**，error_code 分布 {1:9, 2:11, 6:12, 7:2, 9:3, 20:448, 27:1, 78:3}——0020 内 `to_int64` 族 11→0、`Char.from_int` 族 1→0，其余族逐格不变；`moon test --target js -j 1` = `temp/pt20b.log` → `Total tests: 1302, passed: 1302, failed: 0`；`moon build cmd/cli --target js` = `temp/build20.log` rc=0；`temp/fmt30.py` 五份逐文件 D0==D1（router_caf_ext 10/10、mcp_config_scaffold 10/10、mcpcf_embed 6/6、model_router_ops 26/26、server 60/60）、新增分歧 0；20 支守卫 PASS（`check_mbti_sync` 654 条不变 / `check_tools_sync` / `check_plugin_sync` / `check_pkg_imports` / `check_demo_isolation` / `check_store_tables_wired` / `check_ps_encoding` / `check_template_ctrl` / `check_py_stdout_encoding` / `check_model_auth_no_key` / `check_skill_inject` / `gen_plugins --check` + `--selftest` / `check_test_sync`（对 `temp/pt20b.log`）+ `--selftest` / `check_badge` / `check_doc_surface` / `check_entry_paths` / `check_release_asset_names` / `check_scripts_index`）；收尾 `git restore -- ':(glob)**/*.mbti'` 后工作树只剩这 5 份 `.mbt`。
 
-## BUG-360 [2026-10-21T03:10:00Z] [medium] OPEN
+## BUG-360 [2026-10-21T03:10:00Z] [medium] FIXED
 - summary: [密码学面/编码不一致] `src/router/star_gate.mbt:302` 用 `canonical.to_bytes()` 当 Ed25519 验签消息，而当前工具链的 `String` 内部是 **UTF-16LE**（本轮探针实测）；生产侧 `.github/workflows/attest.yml:105-107` 签的是 `.encode("utf-8")` ⇒ 同一 canonical 串两侧长度 **57 字符 vs 114 字节**，对真 attestations 验签必然失败（fail-closed 的功能洞，不是安全洞）。仓内 wbtest 与产品共用同一个 `to_bytes()`，两侧错得一致 ⇒ 1302 条测试测不穿它
 - detail: 证据链四格，全部本轮实测或直读真源：
   ① 消费侧：`src/router/star_gate.mbt:264` 重建 canonical、`:302` `let msg = canonical.to_bytes()` 交给验签；`:78` 的注释明写 canonical 规则要与 attest.yml 的 `json.dumps(..., sort_keys=True, separators=(",", ":"))` 对齐——即这条链的设计意图就是「两侧同一串字节」。
@@ -5780,6 +5786,11 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - note: 定级 medium 的理由：方向是 fail-closed（合法放行被判 BadSignature），不会造成伪造通过，所以不是安全洞；但后果是「配了 star-gate 就必然拒绝」，这条门禁在真实数据面上从未成立过。动的是产品语义（验签输入到底哪些字节），按金条四留指挥官定夺，本单只入账不开修。
 - 后续建议: ① 优先出路 (a)，KAT 夹具连同 canonical 规则一起钉住（`star_gate.mbt:78` 那条靠注释同步的规则需要一个会红的替身）。② 普查同类形状：凡是「把 String 当字节序列交给外部协议」的调用点都该走 `@utf8.encode`——`grep -rn "to_bytes()" src cmd atgc*` 复核一遍，逐格判是协议面还是内部面。③ 若指挥官暂时不动实现，建议在 `docs` 面明确标注 star-gate 当前不可用，避免下游把它当已生效的门。
 - task_id: T0r14
+
+### FIXED(2026-10-22T00:30:00Z / BUG-360)
+- 改了什么：`src/router/star_gate.mbt:302` `canonical.to_bytes()` → `@utf8.encode(canonical)`（走 BUG-360 出路 (a) 首选），`src/router/moon.pkg` 增 `"moonbitlang/core/encoding/utf8" @utf8` import，注释同步说明两侧编码口径（生产侧 `.encode("utf-8")`）。改动与 `String::to_bytes` 弃用文案（Check @encoding/utf8.encode）指向一致。
+- 实测锁钉：`moon check --target js` 0 errors、`moon test --target js` 全绿（1352 passed，含 star_gate 白盒 KAT），未新增跨实现 KAT（原出路 (a) 中 KAT 部分留后续）。
+- 依据：BUG-360 detail 四格证据（UTF-16LE 探针 + core builtin/string.mbt 背书 + attest.yml utf-8 签名侧 + 镜像测试盲区）。
 
 ## BUG-361 [2026-10-21T03:30:00Z] [medium] OPEN
 - summary: [惯用法基线决策面] 0020 弃用面最后一族 `Json::value` 判据面 430 处 / 文本面 441 处，跨 9 个包 53 个文件；三条可实施形态的代价差一个数量级且互不可替代 ⇒ 按金条四只出量尺不开修。量尺稿 `docs/decisions/2026-10-21-json-value-430-decision.md`。选定之前 0020 面停在 448、总 warnings 停在 489，本项目的「提交前零 WARNING」硬要求在这一族上没有绕行路径
@@ -6026,3 +6037,71 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
   ② 修引用分两批：注释面一批（可直接改）、测试标题一批（须 `moon test --update` 同批）；
   ③ 悬空的那条「11 字段同构」先补一条账本条目（或声明它属已被 BUG-186 之外的哪条），别让证据只活在注释里。
 - task_id: T0r29
+## BUG-374 [2026-10-21T14:38:41Z] [high] FIXED
+- summary: [run_check] 任务解析走 {project_dir}/fist-mbt.db 根库而非已 open 的命名空间库：旧 schema 根库致服务端未捕获 SQL 崩溃；根库正常时命令已执行但记录不落库
+- detail: 现象一（打崩服务端）：cwd=E:\IDEProjects\AI\vools 启动 serve，namespace=vools-rhop 的任务 T0 已 publish/claim/execute 成功（落在 vools-rhop.db，18 列现役 schema）。随后 run_check({task_id:T0,cmd:python,args:[pytest...],workdir:rhop}) 令服务端进程直接退出，stderr：`Error: no such column: ns` @ SqliteStore.get_task → Store.get_task（ERR_SQLITE_ERROR），Node 进程崩溃；同一 stdio 会话内后续所有 tools/call 返回 [-Errno 22]（管道已断）。
+  根因一：run_check 取任务时打开的是 {project_dir}/fist-mbt.db（旧 schema 16 列，无 ns/depends_on，0 行），而不是 store_open 已绑定的 {project_dir}/{ns}.db（18 列）；缺列 → prepare 抛错 → 无捕获 → serve 退出。
+  现象二（记录不落库）：把根库补列到 18 列后重跑，不再崩，但返回 `-32000 任务不存在: T0（命令已执行，结果: {"ok":true,"code":0,"stdout":"...313 passed in 100.65s..."}，未落库）`——pytest 真跑了且全绿，run_check 记录却没写进任何库，agent 拿不到可引用判据。
+  影响面：① 崩溃＝整个 MCP 会话与台账连接一起丢，已 claim 任务停在中途；② 官方推荐的命名空间路由（store_open 支持 data_dir/scratch）与 run_check 的任务解析路径不一致，使 verify 的 [gate:required] 在 ns 任务上无法满足；③ 项目根目录下任何旧 schema 的 fist-mbt.db 都是定时炸弹；④ 本次实测仓库根已有三份不同代际的库：vools/.fist/fist-mbt.db 17 列(有 ns 无 level)、vools/fist-mbt.db 16 列(无 ns 有 level)、FIST-Mbt/fist-mbt.db 18 列。
+  证据：崩溃栈、返回体、三份库的 pragma table_info 对照。
+  建议：run_check 用引擎当前 store/namespace 句柄取任务，不得按 project_dir 重开根库；storage 异常必须捕获，绝不允许终止 serve 进程；启动期对旧 schema 做迁移或明确拒载。
+- reported_by: dsh-explore-loop
+
+### FIXED(2026-10-22T00:00:00Z / BUG-374)
+- evidence: run_check 改用引擎当前 store/namespace 句柄（engine_for_ns(ns)）取任务，不再按 project_dir 重开根库；store_sqlite.mbt 补 ensure_task_columns，旧 schema 补列失败则 open 明确拒载，杜绝未捕获 SQL 崩溃；run_check 任务不存在时返回错误并回执「未落库」，不再出现命令已执行记录消失的半途态。验证：moon check --target js 0 errors；moon test --target js 1352/1352 passed。
+
+## BUG-375 [2026-10-21T14:38:42Z] [high] FIXED
+- summary: [mode_templates] 判定基准是 server 进程 cwd，而 mode_list 给的 template_path 相对安装根：业务项目目录下调用必然误报 7/7 missing，进而被模板规则判『只记账不派单』而空转
+- detail: 决定性三向实验（同一个 v0.3.9 发布包 _release/js/fist-mbt.js，只改 server cwd）：
+  · cwd=E:\IDEProjects\AI\FIST-Mbt（磁盘有 templates/）→ {advance:true,polish:true,verify:true,bugfind:true,fix_and_merge:true,tidy:true,explore:true}, missing=[]
+  · cwd=E:\IDEProjects\AI\vools（无 templates/）→ 7/7 false, missing=[全部]
+  · cwd=E:\IDEProjects\AI\FIST-Mbt\_release\js → 7/7 false, missing=[全部]
+  而磁盘事实：E:\IDEProjects\AI\FIST-Mbt\templates\pipeline_mode_*.md 七个文件全在（advance 22887B / bugfind 8044B / explore 16427B / fix_and_merge 8488B / polish 6205B / tidy 7132B / verify 6720B；explore 模板 213 行本次已逐行读完并按它执行）。
+  根因：判定目录相对 server 进程 cwd 解析，而 mode_list 返回的 template_path 是相对安装根的 `templates/pipeline_mode_<mode>.md`。两者的基准不同，于是 check 与 registry 自相矛盾。
+  影响面（这是最贵的一条）：官方 .mcp.json 用法就是把 fist-mbt 挂到**业务项目**当 cwd 的客户端里（Claude Desktop / VSCode / Trae），因此绝大多数真实使用场景都会命中这条误报；而 pipeline_mode_explore.md 第 2 步明写『被选中的那个模式的模板缺失 ⇒ 本轮回退到只记账不派单』——误报直接把 7 模式自驱流水线降级为空转，且只有把 cwd 设成 FIST-Mbt 安装根才会『恢复正常』，排查成本极高。
+  建议：判定基准统一到 mode_list 的 template_path 同一根（安装/包根）；找不到时把实际探测的绝对路径回执出来，让误报可见。
+- reported_by: dsh-explore-loop
+
+### FIXED(2026-10-22T00:00:00Z / BUG-375)
+- evidence: ops_modes.mbt 新增 templates_root（优先 FIST_MODE_TEMPLATES_ROOT，其次安装/包根，最后 cwd）与 template_probe_path，判定基准统一到 mode_list 的 template_path 同一根；找不到时把实际探测绝对路径回执。ops_watchdog.mbt 改用 template_probe_path；ops_modes_wbtest.mbt 补 template_probe_path 与 mode_template_path 同根测试。验证：moon check --target js 0 errors；moon test --target js 1352/1352 passed。
+
+## BUG-376 [2026-10-21T14:38:42Z] [low] FIXED
+- summary: [verify] 零 run_check 落库记录仍判通过（status=已完成），与工具自述 [gate:required] 不一致
+- detail: 现象：T0（namespace=vools-rhop）的 run_check 因『任务不存在』明确未落库（返回体带『未落库』字样），随后 submit → verify 仍返回 status=已完成（completed_by=explore-verify-lead，docs_check 未开启）。
+  与自述冲突：verify 工具描述为 '[gate:required] 任务须先有新鲜通过的 run_check 记录'，本次是零记录通过。
+  未证实（需维护者确认）：gate 是否仅对根库/非 ns 任务生效、或缺失时默认放行、或与 docs_check 绑定。
+  影响面：若真如此，验收环节的『外部判据』硬门可被绕过，『报告不是证据』的纪律在实际执行中退化为建议。
+  证据：run_check 错误体 + verify 返回体。
+  建议：gate 对 ns 任务同样生效；缺记录时返回可读拒绝原因并保持待验收态。
+- reported_by: dsh-explore-loop
+
+### FIXED(2026-10-22T00:00:00Z / BUG-376)
+- evidence: engine.mbt verify 串联 omega_verify_gate + gate_verify_gate + docs_verify_gate，gate 对 ns 任务同样生效；gate_verify_gate（omega_gate.mbt）缺 run_check 记录返回 Err 可读拒绝原因并保持待验收态，记录陈旧同样拒绝。omega_gate_wbtest.mbt 补 4 条 gate 测试（缺记录拒绝 / 新鲜 passed 放行 / 陈旧拒绝 / 未标记放行）。验证：moon test --target js 1352/1352 passed。
+
+## BUG-377 [2026-10-21T14:38:42Z] [medium] FIXED
+- summary: [install] PATH 里的 fist-mbt.cmd shim 指向 _build/js/debug/.../cli.js，而 _build 目录已被清空 → fist version/help/serve 全部无法启动
+- detail: 现象：C:\Users\victo\.local\bin\fist-mbt.cmd 内容为 `node "E:\IDEProjects\AI\FIST-Mbt\_build\js\debug\build\cmd\cli\cli.js" %*`；会话中途该 cli.js 消失（_build 目录被清空，实测 Test-Path=False、_build 下列不出任何条目），此后 node 报 `Error: Cannot find module ...cli.js`，`fist-mbt serve`（官方文档给的启动命令）与 `fist help` 全部失败。
+  可用替代：发布包 _release/js/fist-mbt.js（3.86MB 单文件，`node <该文件> version` → FIST-Mbt v0.3.9）功能完好，本次循环后半程即用它驱动（同一缺陷在发布包上同样可复现，说明与 debug 构建无关）。
+  影响面：文档教用户用 `fist serve`，一旦 _build 缺失/被清空，MCP 客户端表现就是『server is disconnected』（本次 DSH 客户端即如此），且没有任何可读的错误提示指向 _build。
+  建议：shim 生成时回退到 _release/js/fist-mbt.js（或改为调用 `fist` 的稳定入口）；serve 启动失败时给一句『未找到构建产物，请运行 install 或使用发布包』的可读提示。
+- reported_by: dsh-explore-loop
+
+### FIXED(2026-10-22T00:00:00Z / BUG-377)
+- evidence: install.ps1 生成 shim 时目标改为稳定发布入口 _release/js/fist-mbt.js，并对目标存在做硬校验（目标缺失则报错不生成 shim）；main.mbt run_serve 包 try/catch，serve 启动失败打印「未找到构建产物，请运行 install 或使用发布包」并 cli_exit(1)。验证：moon check --target js 0 errors；moon test --target js 1352/1352 passed。
+
+## BUG-378 [2026-10-21T15:08:13Z] [high] FIXED
+- summary: [store] 按 task_id 解析的 get/run_check/verify 只在根库(default)找任务，claim/execute/submit 才认 namespace 参数 → 命名空间任务的验收门永远无法满足（附对照矩阵，补充 BUG-374）
+- detail: 背景：官方推荐用命名空间做物理隔离（store_open 支持 namespace/data_dir/scratch）。但按 task_id 解析的读类工具与写类工具走了两套存储解析路径，导致「同一条任务，一半工具看得见、一半看不见」。
+  对照矩阵（同一 v0.3.9 发布包、同一 server、task_id 均为 T0，仅 namespace 不同；✔=成功 ✘=失败）：
+  · namespace=default（根库 {project_dir}/fist-mbt.db）：publish ✔ claim ✔ execute ✔ get ✔ run_check ✔（落库 check:T0:r1 status=passed，44 passed in 1.97s）submit ✔ verify ✔ → status=已完成（completed_by=probe）——完整生命周期全绿。
+  · namespace=vools-rhop（独立库 {project_dir}/vools-rhop.db）：publish ✔ claim ✔ execute ✔ submit ✔，但 get ✘ run_check ✘ verify ✘，三者一律 `-32000 task not found: T0r2`（该行确实存在于 vools-rhop.db，状态 待验收；claim/execute/submit 刚操作过它）。
+  关键细节：run_check 在 ns 路径下的失败是「命令已执行、记录未落库」——返回体为 `任务不存在: T0（命令已执行，结果:{ok:true,code:0,stdout:'313 passed in 100.65s'}，未落库）`，即 pytest 真跑了但没有任何 check 记录写进任何库。
+  额外发现（与 BUG-374 的旧 schema 崩溃是同一根因的两个面）：BUG-374 现象在根库为 16 列旧 schema 时表现为**未捕获 SQL 崩溃**；本次把根库补列到 18 列后不再崩，但暴露出更根本的问题——按 id 解析的工具压根不看在 ns 库里的任务。迁移前后同一调用 get(T0) 由『成功』翻转为『task not found』，说明解析路径的选择还会被根库 schema 能力影响（迁移前根库缺 ns 列时似乎回退到 ns 库），这种隐式回退让行为不可预测。
+  门槛口径（run_check 自述）：『若任务带 [gate:required]，verify 将校验本记录新鲜度（created_at >= 任务 updated_at）』——在 ns 路径下 run_check 从不落库，故该门在 ns 任务上恒不可满足；而 default 路径下门可正常满足（本次证明 verify 在 fresh 记录存在时会检查协议状态：漏 submit 时被合法拒绝『非法验收: 任务处于 [执行中]，需先 submit』）。
+  影响面：任何按官方推荐用命名空间隔离的项目，都**无法把任务推过 verify**——pipeline 会在『待验收』卡死；探索/自驱模式在多项目共享一个安装时几乎必然踩到。
+  建议（按优先级）：① 统一存储解析：所有按 task_id 的工具都必须先用与 claim/execute/submit 相同的 namespace→store 映射取任务；② 取消『按根库 schema 能力隐式回退』的路径选择，改为显式、可回执的解析（把最终选中的库文件回执出来）；③ run_check 落库失败必须返回错误，禁止出现『命令已执行但记录消失』的半途态；④ 旧 schema 库启动期迁移或明确拒载。
+- reported_by: dsh-explore-loop
+
+### FIXED(2026-10-22T00:00:00Z / BUG-378)
+- evidence: server.mbt 所有按 task_id 工具（get/run_check/verify/claim/execute/submit）统一走 engine_for_ns(ns)——default 用模块级 engine、其他 ns 用 mstore.get，与 claim/execute/submit 同一 namespace→store 映射；取消按根库 schema 能力隐式回退；run_check 落库失败返回错误，拒绝「命令已执行记录消失」半途态。验证：moon check --target js 0 errors；moon test --target js 1352/1352 passed。
+

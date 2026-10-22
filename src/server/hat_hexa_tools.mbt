@@ -18,8 +18,9 @@
 ///|
 /// 把 HexaMind 三工具注册到 MCPServer 上并返回扩展后的 server。
 pub fn embed_hexa_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
-  let mut s1 = s
-  s1 = instrumented_tool(
+  try {
+    let mut s1 = s
+    s1 = instrumented_tool(
     s1,
     "hat_run",
     "HexaMind 六元派发（P0 单轮并行，纯计算只读）：解析 config_json → 给每个已选六元生成单元任务（角色 prompt + 模型车道 + 采样参数 + 输出契约）+ 星核合成任务 + 黑↔黄 / 红↔绿 辩论对。**本工具不发任何模型调用**：每个任务带 executor_hint=ofm 与 dry_run_shape，把 prompt 喂 executor_run 即可真实执行。参数：config_json(必填，含 topic/hats/hat_policy)、round(可选,默认 1)。返回 plan。",
@@ -90,6 +91,9 @@ pub fn embed_hexa_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
     },
   )
   s1
+  } catch {
+    _ => s
+  }
 }
 
 // ---------------------------------------------------------------------------
