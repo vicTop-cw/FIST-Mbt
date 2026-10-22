@@ -425,3 +425,38 @@ test "bug348_used_elsewhere_skips_decl_line_only" {
   let cps3 : Array[String] = ["  let cost = cost", "}"]
   assert_false(scan_variable_used_elsewhere(cps3, 1, "cost"))
 }
+
+///|
+/// severity 档位与聚合兜底同一口径——未知档归 0（info），
+/// 否则过滤和 by_severity 计数会各说各话。
+test "scan_severity_rank_mapping" {
+  assert_eq(scan_severity_rank("high"), 3)
+  assert_eq(scan_severity_rank("medium"), 2)
+  assert_eq(scan_severity_rank("low"), 1)
+  assert_eq(scan_severity_rank("info"), 0)
+  assert_eq(scan_severity_rank("weird"), 0)
+  assert_eq(scan_severity_rank(""), 0)
+}
+
+///|
+test "scan_min_severity_rank_parse" {
+  let rank_of = fn(raw : String) -> Int32 {
+    match scan_min_severity_rank(raw) {
+      Ok(r) => r
+      Err(_) => -999
+    }
+  }
+  assert_eq(rank_of(""), -1)
+  assert_eq(rank_of("   "), -1)
+  assert_eq(rank_of("HIGH"), 3)
+  assert_eq(rank_of("  Medium "), 2)
+  assert_eq(rank_of("low"), 1)
+  assert_eq(rank_of("INFO"), 0)
+  match scan_min_severity_rank("severe") {
+    Ok(_) => abort("非法 min_severity 必须 Err")
+    Err(e) => {
+      assert_true(e.contains("min_severity"))
+      assert_true(e.contains("high|medium|low|info"))
+    }
+  }
+}
