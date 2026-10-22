@@ -138,8 +138,7 @@ SPECIAL_CASES = [
     gated("check_deprecated_text_census.py", DUMP, "--dump-distribution", DUMP),
     gated("check_deprecated_site_list.py", DUMP, DUMP),
     case("check_deprecated_site_list.py", "--selftest"),
-    expected("cleanup_artifacts.py", 1,
-             "预存红：工作树 DIRTY（temp/ 与 *.db 是运行物，本仓不 git clean 它们）", "--check"),
+    case("cleanup_artifacts.py", "--check"),
     # ── 本轮（电池只读缺陷）按实测事实补的三格：不硬凑 0 ──
     expected("check_bug_reference_integrity.py", 1,
              "已知棘轮超限：现读 17 条悬空注释引用 > 上限 1（BUG-373 待逐条修）；修到 1 条后自然转绿"),

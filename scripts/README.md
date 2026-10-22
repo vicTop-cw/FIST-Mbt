@@ -176,3 +176,15 @@
 
 - `fist-gate.py`（R74 入仓）— **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段，
   退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量，不冒用 1）。用法 `python scripts/fist-gate.py [树]`。
+
+### 2026-10-22 登记：`whisperer.py`
+
+- `whisperer.py` — **风语者巡检自动化（TASK-009）**：Step 0-4（HEAD 安全门 → 分支普查 → 候选任务卡 → issue 扫描）。
+  旗标 `--scan-only`（默认）/ `--auto-merge` / `--selftest`（也接受 `--self-test`）。
+- 配套 `check_bug_refs.py`（BUG-373 引用面普查）与 `fist-gate.py --scan`（分支普查）互为补充。
+
+### 2026-10-22 登记：`fist-pr-automator.py`
+
+- `fist-pr-automator.py` — **PR 自动化**：把一个本地分支/提交整理成可审的 PR 描述并（可选）推送建 PR；
+  与 `slave-branch-merge.ps1`（合并面）、`whisperer.py`（巡检面）同属分支治理三件套。
+  注意：文件必须是 **UTF-8（可带 BOM）**，UTF-16 会让 Python 与 ps1 双端都读成乱码（同日 cef1e9cb 已修）。
