@@ -151,6 +151,18 @@ pub fn FistEngine::claim(
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
     Some(t) => {
+      // ===== P0-2: Claim 硬门 — 军衔门 =====
+      let task_level = t.get_level()
+      let arank = estimate_rank(assignee)
+      let arank_s = arank.to_string()
+      let tlevel_s = task_level.to_string()
+      let tname = level_to_rank(task_level)
+      if !rank_can_claim(arank, task_level) {
+        return Err(
+          "RANK_GATE: assignee \{assignee} (rank=\{arank_s}) cannot claim task level \{tlevel_s} (task_rank=\{tname}). 需要更高军衔或让 human_steward/leader 认领后分派。",
+        )
+      }
+      // ===== End P0-2 =====
       if !self.deps_satisfied(task_id) {
         return Err("依赖未满足，不可领取: \{task_id}")
       }
@@ -1530,5 +1542,39 @@ pub fn FistEngine::publish_with_deps(
   match self.store.create_task(t) {
     Ok(_) => Ok(id)
     Err(e) => Err(e)
+  }
+}
+
+///|
+fn estimate_rank(assignee : String) -> Int32 {
+  if assignee == "human_steward" || assignee == "human" {
+    0
+  } else if assignee.starts_with("leader") ||
+    assignee.starts_with("polish-lead") {
+    6
+  } else if assignee.starts_with("atomcode") || assignee.starts_with("aider") {
+    4
+  } else {
+    5
+  }
+}
+
+///|
+fn rank_can_claim(arank : Int32, tlevel : Int32) -> Bool {
+  arank == 0 || arank <= tlevel
+}
+
+///|
+fn level_to_rank(lvl : Int32) -> String {
+  match lvl {
+    0 => "司令"
+    1 => "军长"
+    2 => "师长"
+    3 => "旅长"
+    4 => "团长"
+    5 => "营长"
+    6 => "连长"
+    7 => "排长"
+    _ => "士兵"
   }
 }
