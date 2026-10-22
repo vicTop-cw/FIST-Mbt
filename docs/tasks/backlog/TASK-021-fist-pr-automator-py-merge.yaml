@@ -1,0 +1,14 @@
+id: TASK-021
+title: "裁 fist-pr-automator.py 的自动合入面（默认 merge + 强推权在脚本）"
+dedupe_key: "01a35d45747f4f31"
+priority: P1
+status: backlog
+assignee: atomcode
+discovered_by: whisperer-script
+discovered_at: "2026-10-22T01:41:15+00:00"
+
+problem: >
+  cef1e9c 入仓 scripts/fist-pr-automator.py 三参跑法 <pr.yaml> <github|gitcode> 会依次做：跑 fist-gate → git push -u → curl 开 PR/MR（GitHub v3 / GitCode v5，token 从环境变量）→ 默认 merge（squash）。即本仓第一支『自己完成不可逆合入』的脚本，与 AGENTS.md 金条四（不可逆操作只出方案+预案，执行权留指挥官/用户）和 owner 既有裁决『推分支后只交 MR 链接，不代开 MR』正面冲突。另两条已实测的接线事实：无参跑法 raise SystemExit(str) ⇒ 恒 rc=1，被 run_guards 自动发现兜底时会造永久红格（R94 已进 EXCLUDE_EXACT，电池只留 --selftest 一格）；gate 档 rc>=1 才停，rc=2（判据无法自证）也停，这一条是对的。需要裁决：保留人工触发（README 已标『人工触发』）/ 给它加 --dry-run 与 merge:false 默认 / 或下线合入分支只留开 MR。
+
+evidence: |
+  scripts/fist-pr-automator.py pipeline() 内 sh(['git','push','-u',...]) + merge(num, repo, tok, platform)，merge 默认 conf.get('merge','true')!='false' 即执行；python scripts/run_guards.py --list 在 cef1e9c 上给该脚本自动补了无参电池格；AGENTS.md『角色边界（金条四）』与 owner 裁决『我给 MR 链接』。
