@@ -23,6 +23,8 @@ if hasattr(_sys.stderr, "reconfigure"):
     _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import json, os, subprocess, sys
 from datetime import datetime, timedelta, timezone
+
+from moon_env_probe import moon_env
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 NODE = os.environ.get("FIST_NODE", "node")
 # BUG-122：README/USAGE/agent-map/deliverable 四处都教人**裸跑**这份自检或 demo，而不带 FIST_DB_PATH 时
@@ -68,7 +70,8 @@ def walk_tree(node, acc):
 
 def main():
     # 1. 构建 + patch + 拉起 server
-    subprocess.run(["moon", "build", "--target", "js", "cmd/cli"], cwd=ROOT, check=True, capture_output=True)
+    subprocess.run(["moon", "build", "--target", "js", "cmd/cli"], cwd=ROOT, check=True,
+                   capture_output=True, env=moon_env())
     import importlib.util
     spec = importlib.util.spec_from_file_location("patch_esm_main", os.path.join(ROOT, "scripts", "patch_esm_main.py"))
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); mod.patch(MAIN)
