@@ -30,13 +30,13 @@
 | `check_scripts_index.py` / `check_doc_surface.py` | rc=0 / rc=0 |
 | `check_backlog_status_staleness.py` | rc=1（主线存量 9 条落差，R111 分支修好但未合入，本单不代修） |
 
-- 人工变异核验：把 README 锚点任一键改错 ⇒ 全量 rc=1 并点名该键；删锚点 ⇒ rc=2。
-  （实现已由 selftest M1-M11 的合成夹具机械化，以上两步另跑一次佐证。）
+- 人工变异核验（真跑后已还原，`git status` 干净）：README 锚点 `rulers=83`→`82` ⇒ 全量 rc=1
+  （「登记落后」逐键点名）；整行删掉 ⇒ rc=2（「条目里没有 BATTERY-REGISTRATION 锚点」）。
 
 ## 资源消耗
 
 - 单个副机执行会话，无子代理；本单不改 `.mbt`，未跑 `moon` 工具链（CI 侧仍会跑）。
-- 全量电池：见交单前最终读数（日志写仓外）。
+- 全量电池（推后跑，`FIST_DB_PATH` 改道）：rc=0 / 58 格 / 失败 0 / SKIP 5 / 缺执行面 0。
 
 ## 任务分配记录
 
