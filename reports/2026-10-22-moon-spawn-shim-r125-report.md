@@ -24,6 +24,7 @@
 | 索引/自述 | `check_scripts_index.py` / `check_selftest_inventory_doc.py` | 均 rc=0；31 条判定族逐一对表通过 |
 | 编码面 | `check_py_stdout_encoding.py --all` | rc=0，该带闸 107 份 / 已带 107 份 |
 | 命名面（预存红） | `check_scripts_naming.py` | rc=1：N1 无角色 22 > 上限 16、N2 连字符 5 > 上限 4；电池已按 `expected=1` 登记（清单含主线 BUG-327 刻意降级的 `_` 临时件与 `_tool_registry.py`），非本单引入 |
+| 电池终读（叠线后） | `python scripts/run_guards.py`（tip `483887b2`） | 66 格 / 失败 0 / SKIP 5 / 缺执行面 0，rc=0 |
 
 ## 3. 改动清单
 
@@ -37,11 +38,12 @@
 
 - 会话轮次：副机自驱 R125 轮；主要耗时在冷/热构建验证与两轮治理守卫。
 - 外部资源：零网络、零依赖安装；shim 为本机既有件（`~/.moon-shim/shim.exe`），未入仓。
-- 测试读数：端到端 1 发 rc=0；探针自检 11/11；全量电池终读见 §5。
+- 测试读数：端到端 2 发（叠线前后）均 rc=0；探针自检 11/11；全量电池 66 格 / 失败 0，见 §5。
 
 ## 5. 电池终读
 
-- 待填（post-push 全量 `python scripts/run_guards.py`）。
+- `python scripts/run_guards.py`（叠线后 tip `483887b2`）：**66 格 / 失败 0 / SKIP 5 / 缺执行面 0，rc=0**。SKIP 5 格全是 `temp/` 前置件缺失（`check_badge` / `check_test_sync` / `check_deprecated_*`），不构成证据也不计失败。
+- 新增两格在列：`moon_env_probe.py` 裸跑 `11 份接线 / 3 份白名单 / 违例 0`；`--selftest` `11 格（反解：D×5 / A×4 / L×2）`。`check_delivery_gap.py` 同轮 rc=0（0 个未推送提交）。
 
 ## 6. 任务分配记录
 
