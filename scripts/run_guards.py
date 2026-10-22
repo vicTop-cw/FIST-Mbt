@@ -24,7 +24,7 @@ gitignore，写完即丢）。实测这条手抄链：11 份电池（5、7–16�
      不计失败——但 SKIP 不等于"这格有执行面"：G1 只认名字在不在电池里，不看它跑没跑。
 
 用法：
-  python scripts/run_guards.py              # 跑全量，逐格打 rc/期望/结论行
+  python scripts/run_guards.py              # 跑全量，逐格先打判定列（PASS/FAIL）再打 rc/期望/口径/尾行
   python scripts/run_guards.py --list       # 只打覆盖表（尺 × CI × 电池）
   python scripts/run_guards.py --selftest   # 合成夹具自证 G1/G2/G3
 退出码：0=无失败（允许 SKIP 与预存红按期望命中）/ 1=有格越期望或有尺无人跑 / 2=电池自拒。
@@ -666,6 +666,20 @@ def face_report():
 
 CASE_TIMEOUT_SEC = 600
 
+# 记账口径（kind）与判定（ok）是两件事：kind 只说明这格按哪条律记账，不说明它过没过。
+KIND_TAG = {"gate": "门禁", "diag": "诊断", "known-red": "预存红"}
+
+
+def case_line(kind, ok, rc, expect, name, tail):
+    r"""逐格读数行：判定列在最前，口径列在后。
+
+    旧写法把标签直接从 kind 取（gate→"OK"），于是一条 rc=1 exp=0 的门禁格照印 "OK"，
+    红只出现在末尾汇总——先读这一行的消费者（人和 AI）看到的是一盏绿灯。本仓对这一类
+    「一行看不出问题」的形状有名字（R106 的「空产物反证」同源）。
+    """
+    return "%-4s rc=%-2s exp=%-2s %-56s %s %s" % (
+        "PASS" if ok else "FAIL", rc, expect, name, KIND_TAG.get(kind, kind), tail)
+
 
 def run_battery(case_timeout=CASE_TIMEOUT_SEC):
     rows, missing, ci, battery, guards, resident = face_report()
@@ -706,8 +720,7 @@ def run_battery(case_timeout=CASE_TIMEOUT_SEC):
         # R49：树态诊断格可以声明"多个都正确的读数"（allow），不把环境差异误报成 FAIL。
         allow = c.get("allow")
         ok = p.returncode in allow if allow else (p.returncode == c["expect"])
-        tag = {"gate": "OK", "diag": "诊断", "known-red": "预存红"}[c["kind"]]
-        print("rc=%-2s exp=%-2s %-56s %s %s" % (p.returncode, c["expect"], c["name"], tag, tail))
+        print(case_line(c["kind"], ok, p.returncode, c["expect"], c["name"], tail))
         if not ok:
             fails.append((c["name"], p.returncode, c["expect"], c["why"], tail))
     print("\n=== 汇总 ===")
@@ -823,6 +836,16 @@ def selftest():
     cell("g1-still-red-for-real-orphan-with-resident-exempt",
          check_faces(guards + ["check_orphan.py"], ci, battery, missing + ["check_orphan.py"],
                      resident=resident)[0], 1)
+    # R121 本体：逐格行的判定列必须来自 ok，不是来自 kind。旧写法 gate→"OK" 让红格印成
+    # 绿灯（红只在汇总里），三格分别钉住「红不印 OK」「命中印 PASS」「预存红仍带口径标注」。
+    _red = case_line("gate", False, 1, 0, "check_x.py", "FATAL: boom")
+    _hit = case_line("gate", True, 0, 0, "check_x.py", "PASS 12/12")
+    _knw = case_line("known-red", True, 1, 1, "check_y.py", "按登记")
+    cell("inline-verdict-red-never-printed-as-ok",
+         _red.startswith("FAIL") and "OK" not in _red, True)
+    cell("inline-verdict-green-printed-as-pass", _hit.startswith("PASS"), True)
+    cell("inline-known-red-still-labeled-by-kind",
+         _knw.startswith("PASS") and "预存红" in _knw, True)
     print("  ok  现状读数：%d 把尺 / CI 面 %d / 电池面 %d / 缺面 %d / 常驻豁免 %d"
           % (len(guards), len(ci & set(guards)), len(battery & set(guards)), len(missing),
              len(resident)))
@@ -841,7 +864,8 @@ def selftest():
           " + 非门禁族不被自动补格 / gen_plugins 仍是门禁族 / plan_landing 已进电池 / "
           "plan_landing 门禁格与诊断格并存且诊断格 why 带构成 / "
           "常驻分类器咬 serve_forever 与 run_forever 且不误咬干净尺 / 常驻面逐条点名不静默 / "
-          "电池里没有裸跑的常驻格 / 有常驻豁免时真孤儿仍判红）" % len(cells))
+          "电池里没有裸跑的常驻格 / 有常驻豁免时真孤儿仍判红 / "
+          "逐格判定列取自 verdict 而非 kind（红不印成 OK / 命中印 PASS / 预存红仍带口径标注））" % len(cells))
     return 0
 
 

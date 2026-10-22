@@ -56,8 +56,9 @@
 3. **想加/改 MCP 工具** → `src/server/server.mbt` 用 `.tool(name, desc, schema, handler)`，handler 经 `_instrument` 包装（自动 call_log）。
 4. **想动存储** → `src/store/store_sqlite.mbt`（表结构在 `moon.pkg` 初始化处）。
 5. **想跑通即走** → `python scripts/mcp_smoke.py` / `scripts/enrich_selfdrive.py`。
-6. **提交前想确认守卫面** → `python scripts/run_guards.py`（仓内电池真源，35 格：逐格打 rc/期望/结论，
-   预存红按声明的期望值命中、不算失败但也写在汇总里）。**别在 `temp/` 里另写一份电池**：
+6. **提交前想确认守卫面** → `python scripts/run_guards.py`（仓内电池真源，逐格行首是判定列
+   `PASS`/`FAIL`，其后才是 rc/期望/口径/结论行，`grep ^FAIL` 直接捞红格；格数从汇总行现读，
+   不在这抄数）。预存红按声明的期望值命中、不算失败，但行内仍带 `预存红` 口径标注。**别在 `temp/` 里另写一份电池**：
    历轮 11 份手写电池的格数是 13 → 30 → 37 全靠回忆，漏的那格永远不会被发现漏了（BUG-366）。
 
 ## 五、约定与雷区（别踩）
