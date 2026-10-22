@@ -1,0 +1,311 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/store"
+
+import {
+  "daqing/sqlite",
+  "moonbitlang/core/debug",
+  "vicTop-cw/fist-mbt/src/core",
+}
+
+// Values
+pub fn aggregate_stats(@sqlite.Database) -> Json
+
+pub fn assistant_claim_action(AssistantReg?, String, String, String) -> (Bool, String, String)
+
+pub fn executions_table_sql() -> String
+
+pub fn init_executions_table(@sqlite.Database) -> Bool
+
+pub fn insert_execution(@sqlite.Database, ExecutionRecord) -> Result[Unit, String]
+
+pub fn list_all_executions(@sqlite.Database) -> Array[ExecutionRecord]
+
+pub fn lock_acquire_action(FileLock?, String, String) -> (Bool, String)
+
+pub fn rsv_action((String, String, String)?, String, String) -> (Bool, String)
+
+pub fn specs_table_sql() -> String
+
+// Errors
+
+// Types and methods
+pub struct AssistantReg {
+  agent : String
+  mode : String
+  is_primary : Bool
+  registered_at : String
+  heartbeat_at : String
+  status : String
+} derive(Eq, @debug.Debug)
+pub fn AssistantReg::equal(Self, Self) -> Bool
+pub fn AssistantReg::new(agent~ : String, mode~ : String, is_primary~ : Bool, registered_at~ : String, heartbeat_at~ : String, status~ : String) -> Self
+pub fn AssistantReg::not_equal(Self, Self) -> Bool
+pub fn AssistantReg::to_json(Self) -> Json
+pub fn AssistantReg::to_repr(Self) -> @debug.Repr
+
+pub struct ExecutionRecord {
+  id : String
+  task_id : String
+  executor : String
+  model : String
+  tokens_in : Int32
+  tokens_out : Int32
+  cost : Double
+  duration_ms : Int32
+  rate_limited : Bool
+  failure_reason : String
+  created_at : String
+}
+
+pub struct FileLock {
+  lock_id : String
+  batch_id : String
+  scope : String
+  agent : String
+  status : String
+  ts : String
+  ttl_until : String
+  meta : String
+} derive(Eq, @debug.Debug)
+pub fn FileLock::equal(Self, Self) -> Bool
+pub fn FileLock::new(lock_id~ : String, batch_id~ : String, scope~ : String, agent~ : String, status? : String, ts? : String, ttl_until? : String, meta? : String) -> Self
+pub fn FileLock::not_equal(Self, Self) -> Bool
+pub fn FileLock::renew(Self, ttl_until~ : String, ts~ : String) -> Self
+pub fn FileLock::to_json(Self) -> Json
+pub fn FileLock::to_repr(Self) -> @debug.Repr
+
+pub struct LockAcquireOutcome {
+  granted : Bool
+  action : String
+  prev_agent : String
+  agent : String
+  ttl_until : String
+  violation_logged : Bool
+} derive(@debug.Debug)
+pub fn LockAcquireOutcome::to_repr(Self) -> @debug.Repr
+
+pub struct LockViolation {
+  ts : String
+  agent : String
+  scope : String
+  reason : String
+  lock_id : String
+} derive(Eq, @debug.Debug)
+pub fn LockViolation::equal(Self, Self) -> Bool
+pub fn LockViolation::new(ts~ : String, agent~ : String, scope~ : String, reason~ : String, lock_id~ : String) -> Self
+pub fn LockViolation::not_equal(Self, Self) -> Bool
+pub fn LockViolation::to_json(Self) -> Json
+pub fn LockViolation::to_repr(Self) -> @debug.Repr
+
+pub struct MemoryStore {
+  tasks : Map[String, @core.Task]
+  specs : Map[String, SpecRecord]
+  mut default_ns : String
+  call_logs : Array[Json]
+  reservations : Map[String, (String, String, String)]
+  executors : Map[String, (String, String)]
+  file_locks : Map[String, FileLock]
+  lock_violations : Array[LockViolation]
+  assistant_reg : Map[String, AssistantReg]
+}
+pub fn MemoryStore::assistant_get(Self, String) -> AssistantReg?
+pub fn MemoryStore::assistant_list(Self) -> Array[AssistantReg]
+pub fn MemoryStore::assistant_set_status(Self, String, String) -> Bool
+pub fn MemoryStore::assistant_upsert(Self, AssistantReg) -> Unit
+pub fn MemoryStore::clear(Self) -> Unit
+pub fn MemoryStore::create_task(Self, @core.Task) -> Result[Unit, String]
+pub fn MemoryStore::delete_task(Self, String) -> Result[Unit, String]
+pub fn MemoryStore::executor_clear(Self) -> Bool
+pub fn MemoryStore::executor_list(Self) -> Array[(String, String, String)]
+pub fn MemoryStore::executor_save(Self, name~ : String, abilities_json~ : String, created_at~ : String) -> Result[String, String]
+pub fn MemoryStore::get_spec(Self, String) -> SpecRecord?
+pub fn MemoryStore::get_task(Self, String) -> @core.Task?
+pub fn MemoryStore::list_specs_by_task(Self, String) -> Array[SpecRecord]
+pub fn MemoryStore::list_tasks(Self) -> Array[@core.Task]
+pub fn MemoryStore::list_tasks_in(Self, String) -> Array[@core.Task]
+pub fn MemoryStore::lock_violations_list(Self) -> Array[LockViolation]
+pub fn MemoryStore::lock_violations_push(Self, LockViolation) -> Unit
+pub fn MemoryStore::locks_get(Self, String) -> FileLock?
+pub fn MemoryStore::locks_list(Self) -> Array[FileLock]
+pub fn MemoryStore::locks_release(Self, String, String) -> Bool
+pub fn MemoryStore::locks_sweep(Self, String) -> Int32
+pub fn MemoryStore::locks_try_acquire(Self, FileLock) -> LockAcquireOutcome
+pub fn MemoryStore::locks_upsert(Self, FileLock) -> Unit
+pub fn MemoryStore::new() -> Self
+pub fn MemoryStore::recent_call_logs(Self, limit? : Int32) -> Array[Json]
+pub fn MemoryStore::rsv_get(Self, String) -> (String, String, String)?
+pub fn MemoryStore::rsv_list(Self) -> Array[(String, String, String)]
+pub fn MemoryStore::rsv_release(Self, String, String) -> Bool
+pub fn MemoryStore::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[String, String]
+pub fn MemoryStore::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[RsvOutcome, String]
+pub fn MemoryStore::update_spec_status(Self, String, String, String, String) -> Result[Unit, String]
+pub fn MemoryStore::update_task(Self, @core.Task) -> Result[Unit, String]
+pub fn MemoryStore::update_task_if_status(Self, @core.Task, String) -> Result[Unit, String]
+pub fn MemoryStore::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
+pub fn MemoryStore::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int32, seq~ : Int32) -> Result[Unit, String]
+
+pub struct MultiStore {
+  stores : Map[String, SqliteStore]
+  data_dir : String
+}
+pub fn MultiStore::close(Self, String) -> Unit
+pub fn MultiStore::close_all(Self) -> Unit
+pub fn MultiStore::data_dir_ok(String) -> Bool
+pub fn MultiStore::get(Self, String) -> SqliteStore?
+pub fn MultiStore::new(data_dir? : String) -> Self
+pub fn MultiStore::ns_list(Self) -> Array[String]
+pub fn MultiStore::ns_stats(Self) -> Json
+pub fn MultiStore::open(Self, ns~ : String, data_dir~ : String) -> Bool
+pub fn MultiStore::safe_ns(String) -> String?
+
+pub struct RsvOutcome {
+  reserved : Bool
+  action : String
+  prev_agent : String
+  agent : String
+  ttl_until : String
+}
+
+pub struct SpecRecord {
+  id : String
+  task_id : String
+  spec_type : String
+  content : String
+  status : String
+  created_at : String
+  updated_at : String
+} derive(Eq, @debug.Debug)
+pub fn SpecRecord::equal(Self, Self) -> Bool
+pub fn SpecRecord::new(id~ : String, task_id~ : String, spec_type? : String, content? : String, status? : String, created_at? : String, updated_at? : String) -> Self
+pub fn SpecRecord::not_equal(Self, Self) -> Bool
+pub fn SpecRecord::to_json(Self) -> Json
+pub fn SpecRecord::to_repr(Self) -> @debug.Repr
+
+pub struct SqliteStore {
+  db : @sqlite.Database?
+}
+pub fn SqliteStore::archive_task(Self, @core.Task, archived_at~ : String) -> Result[Unit, String]
+pub fn SqliteStore::assistant_get(Self, String) -> AssistantReg?
+pub fn SqliteStore::assistant_list(Self) -> Array[AssistantReg]
+pub fn SqliteStore::assistant_set_status(Self, String, String) -> Bool
+pub fn SqliteStore::assistant_upsert(Self, AssistantReg) -> Unit
+pub fn SqliteStore::cb_get(Self, String, String) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)?
+pub fn SqliteStore::cb_save(Self, String, String, String, Int32, Int32, Int32, Int32, Int32, Int32, String) -> Result[Unit, String]
+pub fn SqliteStore::clear(Self) -> Unit
+pub fn SqliteStore::create_task(Self, @core.Task) -> Result[Unit, String]
+pub fn SqliteStore::db_path_from_env(String?) -> String
+pub fn SqliteStore::default_db_path() -> String
+pub fn SqliteStore::delete_heartbeat(Self, String) -> Result[Unit, String]
+pub fn SqliteStore::delete_task(Self, String) -> Result[Unit, String]
+pub fn SqliteStore::ensure_specs_table(Self) -> Bool
+pub fn SqliteStore::evolve_bump_child(Self, String) -> Bool
+pub fn SqliteStore::evolve_list(Self) -> Array[Json]
+pub fn SqliteStore::evolve_upsert(Self, id~ : String, parent_id~ : String, goal~ : String, note~ : String, code~ : String, score~ : Double, parts_json~ : String, created_at~ : String) -> Result[Unit, String]
+pub fn SqliteStore::executor_clear(Self) -> Bool
+pub fn SqliteStore::executor_list(Self) -> Array[(String, String, String)]
+pub fn SqliteStore::executor_save(Self, name~ : String, abilities_json~ : String, created_at~ : String) -> Result[String, String]
+pub fn SqliteStore::get_spec(Self, String) -> SpecRecord?
+pub fn SqliteStore::get_task(Self, String) -> @core.Task?
+pub fn SqliteStore::list_all_heartbeats(Self) -> Array[(String, String, String, String)]
+pub fn SqliteStore::list_archived(Self) -> Array[(String, String)]
+pub fn SqliteStore::list_heartbeat_intervals(Self, String, limit? : Int32) -> Array[Int32]
+pub fn SqliteStore::list_saga_actions(Self, String, String) -> Array[(Int32, String, String, String, String)]
+pub fn SqliteStore::list_specs_by_task(Self, String) -> Array[SpecRecord]
+pub fn SqliteStore::list_tasks(Self) -> Array[@core.Task]
+pub fn SqliteStore::list_tasks_in(Self, String) -> Array[@core.Task]
+pub fn SqliteStore::lock_violations_list(Self) -> Array[LockViolation]
+pub fn SqliteStore::lock_violations_push(Self, LockViolation) -> Unit
+pub fn SqliteStore::locks_get(Self, String) -> FileLock?
+pub fn SqliteStore::locks_list(Self) -> Array[FileLock]
+pub fn SqliteStore::locks_release(Self, String, String) -> Bool
+pub fn SqliteStore::locks_sweep(Self, String) -> Int32
+pub fn SqliteStore::locks_try_acquire(Self, FileLock) -> LockAcquireOutcome
+pub fn SqliteStore::locks_upsert(Self, FileLock) -> Unit
+pub fn SqliteStore::mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int32]) -> Result[Unit, String]
+pub fn SqliteStore::new() -> Self?
+pub fn SqliteStore::open(String) -> Self?
+pub fn SqliteStore::read_heartbeat(Self, String) -> (String, String, String)
+pub fn SqliteStore::recent_call_logs(Self, limit? : Int32) -> Array[Json]
+pub fn SqliteStore::record_execution(Self, task_id~ : String, executor~ : String, model~ : String, tokens_in~ : Int32, tokens_out~ : Int32, cost~ : Double, duration_ms~ : Int32, rate_limited~ : Bool, failure_reason~ : String, created_at~ : String) -> Result[Unit, String]
+pub fn SqliteStore::rsv_get(Self, String) -> (String, String, String)?
+pub fn SqliteStore::rsv_list(Self) -> Array[(String, String, String)]
+pub fn SqliteStore::rsv_release(Self, String, String) -> Bool
+pub fn SqliteStore::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[String, String]
+pub fn SqliteStore::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[RsvOutcome, String]
+pub fn SqliteStore::update_spec_status(Self, String, String, String, String) -> Result[Unit, String]
+pub fn SqliteStore::update_task(Self, @core.Task) -> Result[Unit, String]
+pub fn SqliteStore::update_task_if_status(Self, @core.Task, String) -> Result[Unit, String]
+pub fn SqliteStore::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
+pub fn SqliteStore::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int32, seq~ : Int32) -> Result[Unit, String]
+pub fn SqliteStore::write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
+pub fn SqliteStore::write_heartbeat_interval(Self, task_id~ : String, interval_sec~ : Int32, ts~ : String) -> Result[Unit, String]
+pub fn SqliteStore::write_saga_action(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, created_at~ : String) -> Result[Unit, String]
+
+pub enum StoreBackend {
+  Mem(MemoryStore)
+  Sql(SqliteStore)
+}
+pub fn StoreBackend::assistant_get(Self, String) -> AssistantReg?
+pub fn StoreBackend::assistant_list(Self) -> Array[AssistantReg]
+pub fn StoreBackend::assistant_set_status(Self, String, String) -> Bool
+pub fn StoreBackend::assistant_upsert(Self, AssistantReg) -> Unit
+pub fn StoreBackend::backend_name(Self) -> String
+pub fn StoreBackend::cb_get(Self, String, String) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)?
+pub fn StoreBackend::cb_save(Self, String, String, String, Int32, Int32, Int32, Int32, Int32, Int32, String) -> Result[Unit, String]
+pub fn StoreBackend::clear(Self) -> Unit
+pub fn StoreBackend::cost_stats(Self) -> Json
+pub fn StoreBackend::create_task(Self, @core.Task) -> Result[Unit, String]
+pub fn StoreBackend::delete_heartbeat(Self, String) -> Result[Unit, String]
+pub fn StoreBackend::delete_task(Self, String) -> Result[Unit, String]
+pub fn StoreBackend::executor_clear(Self) -> Bool
+pub fn StoreBackend::executor_list(Self) -> Array[(String, String, String)]
+pub fn StoreBackend::executor_save(Self, name~ : String, abilities_json~ : String, created_at~ : String) -> Result[String, String]
+pub fn StoreBackend::get_spec(Self, String) -> SpecRecord?
+pub fn StoreBackend::get_task(Self, String) -> @core.Task?
+pub fn StoreBackend::list_all_heartbeats(Self) -> Array[(String, String, String, String)]
+pub fn StoreBackend::list_heartbeat_intervals(Self, String, limit? : Int32) -> Array[Int32]
+pub fn StoreBackend::list_saga_actions(Self, String, String) -> Array[(Int32, String, String, String, String)]
+pub fn StoreBackend::list_specs_by_task(Self, String) -> Array[SpecRecord]
+pub fn StoreBackend::list_tasks(Self) -> Array[@core.Task]
+pub fn StoreBackend::list_tasks_in(Self, String) -> Array[@core.Task]
+pub fn StoreBackend::lock_violations_list(Self) -> Array[LockViolation]
+pub fn StoreBackend::lock_violations_push(Self, LockViolation) -> Unit
+pub fn StoreBackend::locks_get(Self, String) -> FileLock?
+pub fn StoreBackend::locks_list(Self) -> Array[FileLock]
+pub fn StoreBackend::locks_release(Self, String, String) -> Bool
+pub fn StoreBackend::locks_sweep(Self, String) -> Int32
+pub fn StoreBackend::locks_try_acquire(Self, FileLock) -> LockAcquireOutcome
+pub fn StoreBackend::locks_upsert(Self, FileLock) -> Unit
+pub fn StoreBackend::mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int32]) -> Result[Unit, String]
+pub fn StoreBackend::memory() -> Self
+pub fn StoreBackend::read_heartbeat(Self, String) -> (String, String, String)
+pub fn StoreBackend::recent_call_logs(Self, limit? : Int32) -> Array[Json]
+pub fn StoreBackend::record_execution(Self, task_id~ : String, executor~ : String, model~ : String, tokens_in~ : Int32, tokens_out~ : Int32, cost~ : Double, duration_ms~ : Int32, rate_limited~ : Bool, failure_reason~ : String, created_at~ : String) -> Result[Unit, String]
+pub fn StoreBackend::rsv_get(Self, String) -> (String, String, String)?
+pub fn StoreBackend::rsv_list(Self) -> Array[(String, String, String)]
+pub fn StoreBackend::rsv_release(Self, String, String) -> Bool
+pub fn StoreBackend::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[String, String]
+pub fn StoreBackend::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[RsvOutcome, String]
+pub fn StoreBackend::set_namespace(Self, String) -> Unit
+pub fn StoreBackend::sqlite(SqliteStore) -> Self
+pub fn StoreBackend::sqlite_store(Self) -> SqliteStore?
+pub fn StoreBackend::update_spec_status(Self, String, String, String, String) -> Result[Unit, String]
+pub fn StoreBackend::update_task(Self, @core.Task) -> Result[Unit, String]
+pub fn StoreBackend::update_task_if_status(Self, @core.Task, String) -> Result[Unit, String]
+pub fn StoreBackend::upsert_spec(Self, SpecRecord) -> Result[Unit, String]
+pub fn StoreBackend::write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int32, seq~ : Int32) -> Result[Unit, String]
+pub fn StoreBackend::write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
+pub fn StoreBackend::write_heartbeat_interval(Self, task_id~ : String, interval_sec~ : Int32, ts~ : String) -> Result[Unit, String]
+pub fn StoreBackend::write_saga_action(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, created_at~ : String) -> Result[Unit, String]
+
+// Type aliases
+
+// Traits
+pub trait Store {
+  fn create_task(Self, @core.Task) -> Result[Unit, String]
+  fn get_task(Self, String) -> @core.Task?
+  fn update_task(Self, @core.Task) -> Result[Unit, String]
+  fn list_tasks(Self) -> Array[@core.Task]
+  fn delete_task(Self, String) -> Result[Unit, String]
+  fn clear(Self) -> Unit
+}

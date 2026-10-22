@@ -1,0 +1,176 @@
+# attest.yml —— Star 门 · 授权签名清单发布（方向二 P1-a，D1=签名清单+TTL）
+#
+# 模型：fist-mbt 不实时查 GitHub（证伪 A 里被绕过的脆弱设计），而是：
+#   1) 本 workflow 定期拉取 stargazer 列表；
+#   2) 用仓库 secrets 里的 Ed25519 私钥对「授权名单 + 签发时间戳」签名；
+#   3) 把 { list, issued_at, ttl_seconds, public_key, signature } 发布到 GitHub Pages；
+#   4) fist-mbt 侧拉取清单，用 public_key 验签 + 校验 login ∈ 名单 + 校验 (now - issued_at) <= ttl_seconds。
+#
+# 诚实边界（见 docs/improvement-plan-20261010.md §3.2）：
+#   - 客户端验签的清单可被「用户自己改本地缓存」绕过 —— 这是弱门禁/仪式感门禁，不是强门禁。
+#   - 要强门禁必须自建服务端网关（计划里列为远期、需用户自备主机）。
+#   - 「算力由 GitHub 承担」的准确表述：GitHub 只承担【证明发布】（本 workflow + Pages）；
+#     推理算力在用户自己的厂商免费端点上。
+#
+# 依赖：
+#   repo secrets:
+#     STAR_GATE_PAT            : 可读 stargazers 的 PAT（classic，scope 含 user；默认
+#                                github.token 会被 403，2026-10-13 实跑现形）
+#     ED25519_PRIVATE_KEY_HEX : 32 字节私钥的 hex（seed）。生成：
+#        python -c "import nacl.signing;print(nacl.signing.SigningKey.generate().encode().hex())"
+#     对应公钥会由 workflow 计算并写进清单。
+#   repo 设置需开启 Pages（Deploy from branch 或 GitHub Actions 均可，推荐 Actions）。
+
+name: Star gate attestation
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"          # 每 6 小时一次（TTL 兜底刷新）
+  workflow_dispatch: {}            # 手动触发
+  watch:                           # 有人 star/unstar 时立刻刷新
+    types: [started]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: star-gate-attest
+  cancel-in-progress: false
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # attest.yml 全程 import nacl（签发 + selfcheck 验签），而 ubuntu-latest 不自带 PyNaCl——
+      # 不装则 python 步骤直接 ModuleNotFoundError。此前 secret/Pages 一直没配，本 workflow
+      # 从未真跑到这一步，所以这个依赖缺口从没现形（2026-10-13 实跑暴露并修）。
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyNaCl
+        run: python -m pip install --quiet pynacl
+
+      - name: Build & sign attestation
+        env:
+          # 默认 github.token 拿 stargazers 会 403（2026-10-13 实跑 run#4 现形：
+          # 装好 PyNaCl、密钥校验全过，死在 GET /stargazers HTTP 403 Forbidden）。
+          # 改用 repo secret `STAR_GATE_PAT`（classic PAT，scope 含 user，可读 stargazers）。
+          GH_TOKEN: ${{ secrets.STAR_GATE_PAT }}
+          ED25519_PRIVATE_KEY_HEX: ${{ secrets.ED25519_PRIVATE_KEY_HEX }}
+        run: |
+          python - <<'PY'
+          import os, json, time, base64, urllib.request, nacl.signing, nacl.encoding
+
+          token = os.environ["GH_TOKEN"]
+          key_hex = os.environ["ED25519_PRIVATE_KEY_HEX"]
+          if not key_hex:
+              raise SystemExit("MISSING ED25519_PRIVATE_KEY_HEX in repo secrets")
+          seed = bytes.fromhex(key_hex)
+          if len(seed) != 32:
+              raise SystemExit("ED25519_PRIVATE_KEY_HEX must be 32 bytes (64 hex chars)")
+
+          # 拉 stargazer 列表（分页）
+          logins = []
+          page = 1
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+          while True:
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}/stargazers?per_page=100&page={page}",
+                  headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+              )
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  batch = json.load(r)
+              if not batch:
+                  break
+              logins.extend(u["login"] for u in batch if isinstance(u, dict) and u.get("login"))
+              if len(batch) < 100:
+                  break
+              page += 1
+              if page > 500:
+                  break
+
+          logins = sorted(set(logins))
+          issued_at = int(time.time())
+          ttl_seconds = 6 * 3600  # 与 cron 间隔一致；用户取消 star 后最多 ttl 内仍可解锁
+
+          signing_key = nacl.signing.SigningKey(seed)
+          # 2026-10-13 实跑 run#5 现形：当前 PyNaCl 的 encode() 没有 hex= 关键字参数
+          # （TypeError: Encodable.encode() got an unexpected keyword argument 'hex'），用 encoder= 显式传。
+          public_key_hex = signing_key.verify_key.encode(encoder=nacl.encoding.HexEncoder).decode()
+          canonical = json.dumps({"list": logins, "issued_at": issued_at, "ttl_seconds": ttl_seconds},
+                                 sort_keys=True, separators=(",", ":")).encode("utf-8")
+          sig = signing_key.sign(canonical).signature
+
+          payload = {
+              "format": "fist-star-gate-attestation/v1",
+              "repo": repo,
+              "list": logins,
+              "issued_at": issued_at,
+              "ttl_seconds": ttl_seconds,
+              "public_key_hex": public_key_hex,
+              "signature_hex": sig.hex(),
+              "algorithm": "ed25519",
+          }
+          os.makedirs("_attest", exist_ok=True)
+          with open("_attest/attestation.json", "w") as f:
+              json.dump(payload, f, indent=2)
+          print(f"attested {len(logins)} stargazers, ttl={ttl_seconds}s, pubkey={public_key_hex[:16]}…")
+          PY
+
+      # Pages served URL 要对齐文档承诺的 `/_attest/attestation.json`：upload-pages-artifact
+      # 把 path 指向目录的**内容**当站点根发布，直接 path: _attest 会让清单落在站点根
+      # （…/FIST-Mbt/attestation.json），与 star_gate.mbt 注释、.mcp.example.json 解锁说明、
+      # reports 里写的 `_attest/attestation.json` 全对不上（照抄的人 404，2026-10-13 实测现形）。
+      # staging 一层再上传，served 路径即带 _attest/ 前缀。
+      - name: Stage Pages bundle
+        run: mkdir -p pages_out/_attest && cp _attest/attestation.json pages_out/_attest/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages_out
+
+      # selfcheck 不能拿 github-pages 那个 bundle 当数据源：它是 pages 专用的 artifact.tar
+      # （download-artifact 解 zip 后留下一个没再解开的 tar），open("_attest/attestation.json")
+      # 必 FileNotFoundError（2026-10-13 run#6 现形）。另上一份普通 artifact 供 selfcheck 精确取。
+      - uses: actions/upload-artifact@v4
+        with:
+          name: star-gate-attestation
+          path: _attest
+
+      - uses: actions/deploy-pages@v4
+
+  # 自证：验签自己签的清单必须通过（防止 workflow 改坏了没人知道）
+  selfcheck:
+    needs: attest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install PyNaCl
+        run: python -m pip install --quiet pynacl
+      - uses: actions/download-artifact@v4
+        with:
+          name: star-gate-attestation
+          path: _attest
+      - name: Verify signature
+        run: |
+          python - <<'PY'
+          import json, nacl.signing
+          with open("_attest/attestation.json") as f:
+              p = json.load(f)
+          canon = json.dumps({"list": p["list"], "issued_at": p["issued_at"], "ttl_seconds": p["ttl_seconds"]},
+                             sort_keys=True, separators=(",", ":")).encode("utf-8")
+          pub = nacl.signing.VerifyKey(bytes.fromhex(p["public_key_hex"]))
+          try:
+              pub.verify(canon, bytes.fromhex(p["signature_hex"]))
+              print("SELFTEST OK: signature valid")
+          except Exception as e:
+              raise SystemExit(f"SELFTEST FAILED: {e}")
+          PY

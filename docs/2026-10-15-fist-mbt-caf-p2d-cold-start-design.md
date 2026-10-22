@@ -1,0 +1,274 @@
+# CAF P2d 设计文档 · 冷启动启发式
+
+> 状态：✅ **已实施**（2026-10-15 Goal-2 Round 23）
+> 依赖：P2c wiring（实施后接线，`model_router_ops.mbt` 仍 WIP）；不阻塞 P2c（纯函数层独立实现）
+> 更新者：caf-agent
+> 更新日期：2026-10-15（Goal-2 Round 23 实施）
+
+> **实施记录（Round 23）**：用独立文件 `src/router/router_caf_ext.mbt` 实施（零冲突，不碰并发 agent WIP 的 `router_caf.mbt`）。
+> 新增 `caf_soft_reorder_with_preference` + 7 条测试（`src/router/router_caf_ext_wbtest.mbt`）。
+> 验证：`src/router` 145/145（138+7），全仓 1124/1124 零回归。
+> 剩余：接线到 `model_router_ops.mbt` 的 P2c wiring 中（依赖 P2c 释放）。
+
+> **R31 更新（router 层统一已完成，commit `2a669ef`）**：P2c 与 P2d 在
+> `src/router/model_router_caf.mbt` 统一——新增 `caf_reorder_combined`，
+> `pick_caf` / `apply_caf` / `pick_caf_dry_run` 都加
+> `caf_default_preference? : Array[String] = []` 与 `caf_min_evidences? : Int = 10`。
+> 默认（偏好空）行为与 R29 完全一致（零回归）；偏好非空时记忆充足走
+> `caf_soft_reorder`（成功率排序）、记忆不足走 `caf_soft_reorder_with_preference`（冷启动偏好）。
+> 新增 3 条白盒锁 caf_pref_1~3（零回归 / 记忆不足按偏好重排 / 记忆充足退化为证据排序），
+> router 160/160 全绿。
+>
+> **Round 33 更新**：`RouterConfig` 加 `caf_default_preference` / `caf_min_evidences`
+> 字段**已落地**（commit `c54fe68`）——`struct` + `default()`（默认 `[]`/10，零回归）+
+> `from_json`（缺字段→默认，坏类型→默认 + warning）+ `to_json` + `clone_pools` +
+> `router_state` merge 全链路透传；一次性补齐 20 处 wbtest 构造点（regex 20/20 命中），
+> 更新 `cfg_ofm_2` 顶层键集合锁（7→9），新增 `caf_cfg_1`（默认值 + JSON 往返）/
+> `caf_cfg_2`（偏好字段从 config 读出并透传 `pick_caf`）。router 164/164 全绿。
+> 字段的 JSON 投影面 = `caf_default_preference: ["模型名", …]`（`Array[String]`，Json::Array of
+> Json::String）与 `caf_min_evidences: <Int>`（Json::Number，沿用 BUG-26 的 `to_int()` 饱和语义）。
+>
+> **剩余（§2.3 接线）**：`model_router_ops.mbt` 里把 config 字段透传给 `pick_caf` +
+> `executor_run` 后 `caf_memory.push` + status 展示 `caf_memory_status_text`。仅剩
+> `model_router_ops.mbt`（并发 agent WIP）一处，待释放后照 §2.3 收口。
+>
+> **Round 34 更新**：`caf_soft_reorder_with_preference` 补 3 条边界锁（commit `6059b5f`）——
+> ① 空候选集 + 非空偏好 + 空记忆 → 返回空不 panic；② `min_evidences=0` 语义钉死
+> （stats 非空即视为证据充足 → 退化成功率排序，等价「0 = any evidence counts」）；
+> ③ 全零 stats（`total=0`）+ `min_evidences=10` → `evidence_total=0` 走偏好路径
+> （记忆「有记录但全零」仍按不足处理）。配套 `caf_memory_status_text` 2 条边界锁
+> （单模型多条聚合整数除法截断；全失败记录不产出 NaN/Inf）。
+> router 169/169，全仓 1174/1174 全绿。`issue_scan src/router` 634 findings 全 low/info
+> （0 high/0 medium），`min_evidences=0` 语义经锁验证与文档一致，无需改实现。
+
+> **A/B 预演（Round 25）**：`scripts/caf_p2d_coldstart_ab.py` 验证冷启动偏好的**场景依赖**性质：
+> - **成本敏感场景**：baseline（选最便宜的）最优，每成功成本 2.000。**P2d 反而不优**（2.703）。
+> - **成功率敏感场景**：P2d（偏好高成功率）最优，成功率 91.0% vs baseline 50.0%。**P2d 优于 baseline 41 个百分点**。
+> **结论**：默认偏好不应盲目设成"选成功率最高的"，应**按业务目标配置**（成本敏感 → 成本最低；成功率敏感 → 成功率最高）。
+
+## 0. 问题陈述
+
+P2c wiring 完成后，`use_caf_memory=true` 但记忆为空时，`caf_soft_reorder` 返回原序（零回归，已测试）。
+但冷启动阶段（记忆 < 阈值）时，路由没有偏好——如果原序是 `m_free, m_mid, m_premium`，
+冷启动时每次都选 `m_free`，可能因 `m_free` 成功率低而浪费成本。
+
+**目标**：记忆不足时，让路由有"默认偏好"（如按配置的模型优先级排序）。
+
+## 1. 设计原则
+
+- **零回归**：不修改 `caf_soft_reorder` 签名（现有 32 条测试保持不动）。
+- **新增函数**：`caf_soft_reorder_with_preference` 作为扩展。
+- **默认关闭**：偏好为空时行为与 `caf_soft_reorder` 完全一致。
+- **纯函数**：不 IO，不依赖 P2c wiring 的实现细节。
+
+## 2. 变更集（P2d 最小改动）
+
+### 2.1 新增函数：`caf_soft_reorder_with_preference`
+
+文件：`src/router/router_caf.mbt`
+
+```moonbit
+///| 冷启动启发式：
+///| 当记忆不足（stats 为空或 total < min_evidences）时，
+///| 按 default_preference 排序候选（偏好在前的优先）。
+///| 记忆充足时退化为 caf_soft_reorder（纯成功率/成本排序）。
+///| preference 为空 → 行为与 caf_soft_reorder 完全一致（零回归）。
+pub fn caf_soft_reorder_with_preference(
+  candidates : Array[String],
+  stats : Array[CafModelStats],
+  default_preference : Array[String],
+  min_evidences : Int,
+) -> Array[String] {
+  // 记忆充足 → 退化为 caf_soft_reorder
+  if stats.length() > 0 && evidence_total(stats) >= min_evidences {
+    return caf_soft_reorder(candidates, stats)
+  }
+  // 记忆不足 → 按偏好排序（偏好在前的优先），偏好外的保持原序
+  if default_preference.length() == 0 {
+    return candidates
+  }
+  let mut result : Array[String] = []
+  let mut rest : Array[String] = candidates
+  for pref in default_preference {
+    // 找到 pref 在 rest 里的位置，取出并加入 result
+    let mut idx = -1
+    for i in 0..<rest.length() {
+      if rest[i] == pref {
+        idx = i
+        break
+      }
+    }
+    if idx >= 0 {
+      result = result + [rest[idx]]
+      rest = remove_at(rest, idx)
+    }
+  }
+  // 剩下的按原序追加
+  for r in rest {
+    result = result + [r]
+  }
+  result
+}
+```
+
+辅助函数 `evidence_total` 和 `remove_at` 需新增：
+
+```moonbit
+///| 统计所有模型的 evidence 总数
+fn evidence_total(stats : Array[CafModelStats]) -> Int {
+  let mut total = 0
+  for s in stats {
+    total = total + s.total
+  }
+  total
+}
+
+///| 从数组中删除指定索引元素（返回新数组）
+fn remove_at(arr : Array[String], idx : Int) -> Array[String] {
+  let mut out : Array[String] = []
+  for i in 0..<arr.length() {
+    if i != idx {
+      out = out + [arr[i]]
+    }
+  }
+  out
+}
+```
+
+### 2.2 新增测试：`caf_soft_reorder_with_preference`
+
+文件：`src/router/router_caf_wbtest.mbt`
+
+- `caf_pref_empty_baseline`：preference 空 + 记忆不足 → 返回原序（零回归）
+- `caf_pref_memory_enough_fallback`：记忆充足 → 退化到 `caf_soft_reorder`（成功率排序）
+- `caf_pref_orders_preference`：记忆不足 + preference=[m_premium, m_mid, m_free] → 按偏好排序
+- `caf_pref_unknown_preference`：preference 里的模型不在候选 → 跳过，不 panic
+- `caf_pref_preserves_unmatched`：preference 外的候选保持原序追加
+
+### 2.3 接线（P2c wiring 之后）
+
+文件：`src/server/model_router_ops.mbt`（P2c wiring 中加）
+
+```moonbit
+// P2c wiring 里加：
+if use_caf_memory {
+  // 记忆不足且配置了默认偏好 → 用冷启动启发式
+  let ordered = caf_soft_reorder_with_preference(
+    candidates, knn_stats, config.caf_default_preference, config.caf_min_evidences
+  )
+  ...
+} else {
+  // 现有逻辑
+  ...
+}
+```
+
+RouterConfig 新增字段（`src/router/model_router.mbt`）：
+
+```moonbit
+pub struct RouterConfig {
+  ...
+  ///| P2d：冷启动默认偏好（记忆不足时按此排序，空=零回归）
+  caf_default_preference : Array[String],
+  ///| P2d：记忆充足阈值（默认 10 条 evidence）
+  caf_min_evidences : Int,
+}
+```
+
+`default()` 中初始化为 `[]` 和 `10`。
+
+## 3. 验收标准
+
+1. **零回归**：`caf_soft_reorder_with_preference(candidates, [], [], _)` == `caf_soft_reorder(candidates, [])` == 原序
+2. **冷启动偏好**：记忆不足 + `default_preference=[m_premium]` → `m_premium` 排第一
+3. **记忆充足退化**：记忆充足 → 与 `caf_soft_reorder` 一致（成功率排序）
+4. **偏好外的候选保持原序**：`preference=[m_premium]`，候选 `[m_free, m_mid, m_premium]` → 结果 `[m_premium, m_free, m_mid]`
+5. **未知偏好安全**：`preference=["ghost"]` 不 panic，候选保持原序
+6. **全仓零回归**：`moon test --target js` ≥ 1115/1115
+
+## 4. 风险与对策
+
+| 风险 | 对策 |
+|---|---|
+| 冷启动偏好可能选错模型 | 默认偏好可由用户配置；P2c 完成后可加"自适应默认偏好"（按历史平均成功率初始化） |
+| 签名变化导致 .mbti 漂移 | 用新函数而非修改旧函数；加 pub fn 后跑 `moon info` 同步 .mbti |
+| 与并发 agent 冲突 | router_caf.mbt 是 WIP（并发 agent 守卫）；实施前 `git status` 确认，若 WIP 则只写文档不写代码 |
+
+## 5. 实施步骤（P2c wiring 释放后按序）
+
+1. `git status` 确认 `src/router/router_caf.mbt` 干净（若非，等并发 agent 提交）
+2. 按 2.1 加 `caf_soft_reorder_with_preference` + 辅助函数
+3. 按 2.2 加 5 条测试
+4. `moon fmt` + `moon info` + `moon test --target js src/router`（期望 143 全绿）
+5. `moon test --target js`（全仓零回归，期望 ≥1115）
+6. 接线到 `model_router_ops.mbt`（P2c 完成后）
+
+## 6. 与 P2c 的关系
+
+- **不阻塞 P2c**：P2c 实施 P2a/P2b 核心到 pick 流程；P2d 是独立扩展。
+- **P2c 后接线**：P2c wiring 里加 `caf_soft_reorder_with_preference` 调用。
+- **顺序**：P2c 优先（核心能力），P2d 次之（优化）。
+- **验收标准 3（dry_run 预览）**：P2d 不影响标准 3，标准 3 仍由 P2c 的 dry_run 路径验证。
+
+## 7. 资源估算
+
+| 项 | 估算 |
+|---|---|
+| 代码行数（src/router） | ~60 行（函数 + 辅助） |
+| 测试行数（src/router_wbtest） | ~60 行（5 条测试） |
+| 接线行数（model_router_ops） | ~10 行（P2c wiring 里加） |
+| 全仓测试数 | 1115 → ~1120（+5） |
+
+---
+
+## 进度 · Round 35（2026-10-15）
+
+**§2.3 server 接线仍阻塞**：审计并发 agent 的 `model_router_ops.mbt` WIP diff（4/9），
+改动为 `ends_with`→`has_suffix`（字符串 API）与 `build_command(..., workdir="")`，
+**完全无关 CAF 接线区域**；但同文件多 agent 混改有 commit 污染风险，故 R35 放弃介入。
+改为钉接线的**契约前置**：
+
+- **新增 2 条契约锁**（`caf_cfg_3~4`，`src/router/model_router_caf_wbtest.mbt`）：
+  - `caf_cfg_3`：`caf_default_preference` 坏类型（String）→ 降级 `[]` + warning，正常 min 不牵连
+  - `caf_cfg_4`：`caf_min_evidences` 坏类型（String）→ 降级默认 10 + warning
+- **意义**：R33 的 `from_json` 已实现坏类型降级但无锁；接线依赖此健壮性（config 类型不对不得 panic）。
+  锁双向区分：正确降级通过 / panic 或静默坏值即红。
+- **验证**：router **171/171**，全仓 **1176/1176**，0 errors。
+
+**接线建议（R36 起）**：CAF 逻辑放独立文件 `src/server/model_router_caf_ops.mbt`，只加最少调用点；
+提交用 `git commit --only <path>` 防共享 repo commit 污染（R35 已实际踩到：误提交并发 agent 3 文件，
+已回滚）。
+
+---
+
+## 进度 · Round 36（2026-10-15）
+
+**§2.3 server 接线仍阻塞**（`model_router_ops.mbt` 4/9，工作树 89+ 文件）。改为完成接线的**持久化前置**。
+
+**发现缺口**：`CafMemory::to_json` 是**聚合快照**（total/count/by_model），不含原始 records，
+只能展示、**无法恢复记忆**；`from_json` 全库 0 匹配。即接线完成后 server 重启会丢光 CAF 记忆。
+
+**新增逐条持久化层**（独立文件，不碰并发域）：
+
+| 函数 | 作用 | 关键契约 |
+|---|---|---|
+| `caf_memory_dump(mem) : Json` | 逐条导出（时间序）+ `max_size` | 保留原始记录可完整往返 |
+| `caf_memory_load(json) : (CafMemory, Array[String])` | 从逐条 JSON 恢复 | 坏类型降级 + warning，绝不 panic |
+
+**格式**（与 `model-router-{ns}.json` 同形态，落盘 `memory/model-router-caf-{ns}.json`）：
+```json
+{ "max_size": Int,
+  "records": [ { "feature_hash": Int, "model": Str, "ok": Bool,
+                 "cost": Double, "ts": Str }, ... ] }
+```
+
+**恢复顺序守恒**：`load` 用 `new(max_size)` + 逐条 `push`；因 `push` 后 `all()` 从 index 0 遍历，
+只要 `dump` 按 `all()` 序导出、`load` 按序 `push`，恢复后 `all()` 序一致。
+
+**验证**：router **175/175**，全仓 **1180/1180**，0 errors。新增 4 条往返锁
+（空 / 多条逐字段 / records 坏类型 / 坏字段单条跳过）。
+
+**落盘未接**：本层是纯计算序列化（不碰文件 IO，避免与并发 agent server IO 冲突）。
+
+**R37 首选接线序**：`executor_run` 前 `caf_memory_load` 恢复 → 后 `caf_memory_dump` 落盘 →
+status 工具用 `caf_memory_status_text`（已有）展示。

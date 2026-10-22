@@ -1,0 +1,30 @@
+id: TASK-004
+title: "反向 diff 检测 — 删远多于增 = 自动拒绝"
+priority: P3
+status: backlog
+assignee: atomcode
+discovered_by: lead
+discovered_at: "2026-10-21T19:15:00+08:00"
+
+problem: >
+ slave/fix/battery-expectations-r73 分支 diff 显示 718 deletions / 191 insertions，
+ 删的比增的多 3.7 倍。内容是 AtomCode 把合入者已经合的东西"revert"回自己的版本
+ （issue_scan.mbt 从合入者的 2714 行砍回 1800 行 = -914 行）。
+
+ 这种反向改动应该被自动识别并拒绝进入合入者终审队列——要么是 rebase 错了方向，
+ 要么是 merge 时取错了一边。
+
+scope:
+  - scripts/fist-gate.py（合入者前置过滤器）
+  - scripts/slave-branch-merge.ps1
+
+acceptance:
+  - [ ] fist-gate.py 加 diff 检测：-insertions > deletions*1.5 时标记为 REVERT-PATTERN
+  - [ ] REVERT-PATTERN 分支自动进入 failed 目录，不进 claimable 队列
+  - [ ] 日志写明哪几个文件删远多于增、差值是多少
+
+evidence:
+  - git diff HEAD gitcode/slave/fix/battery-expectations-r73 --stat: 718 deletions / 191 insertions
+  - issue_scan.mbt 单文件 -457/+0（从 2714 砍到 2257）
+
+blocked_by: []

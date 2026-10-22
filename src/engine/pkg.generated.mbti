@@ -1,0 +1,213 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/engine"
+
+import {
+  "vicTop-cw/fist-mbt/src/core",
+  "vicTop-cw/fist-mbt/src/evolve",
+  "vicTop-cw/fist-mbt/src/store",
+}
+
+// Values
+pub const COMPLEXITY_L1 : String = "L1_simple"
+
+pub const COMPLEXITY_L2 : String = "L2_standard"
+
+pub const COMPLEXITY_L3 : String = "L3_complex"
+
+pub const COMPLEXITY_L4 : String = "L4_irreversible"
+
+pub const COST_TIER_FREE : String = "free"
+
+pub const COST_TIER_HOLD : String = "hold"
+
+pub const COST_TIER_PREMIUM : String = "premium"
+
+pub fn advance_mark_prefix() -> String
+
+pub fn boundary_probe_hint() -> String
+
+pub fn boundary_probe_slice() -> String
+
+pub fn budget_check(Double, Double) -> Json
+
+pub fn budget_check_json(Json) -> Json
+
+pub fn ch_desc(String, String, String) -> String
+
+pub fn challenge_strategies() -> Array[String]
+
+pub fn check_scope_permission(String, String) -> Result[PermissionRule, String]
+
+pub fn deps_ready_memo(Array[String], Map[String, Bool]) -> Bool
+
+pub fn extract_difficulty(String) -> String
+
+pub fn gate_enabled(@core.Task) -> Bool
+
+pub fn gate_mark() -> String
+
+pub fn infer_role_from_agent(String) -> String
+
+pub fn mc_percentile_index(Int32, Int32) -> Int32
+
+pub fn omega_author_prefix() -> String
+
+pub fn omega_clean_slice(String) -> String
+
+pub fn omega_enabled(@core.Task) -> Bool
+
+pub fn omega_escalation_id(String, String, Int32) -> String
+
+pub fn omega_mark() -> String
+
+pub fn omega_max_rounds_default() -> Int32
+
+pub fn omega_norm_max_rounds(Int32) -> Int32
+
+pub fn omega_result_id(String, Int32) -> String
+
+pub fn omega_spec_id(String, Int32) -> String
+
+pub fn phi_accrual(Array[Int32], Int32, threshold? : Int32) -> Json
+
+pub fn phi_coerce_seconds(Double) -> Int32?
+
+pub fn phi_domain_error(Array[Int32], Int32) -> String
+
+pub fn plan_route(String, n_files? : Int32) -> Json
+
+pub fn root_task_id() -> String
+
+pub fn route(String, String) -> Json
+
+pub fn schedule_json(Json) -> Json
+
+pub fn schedule_task(String, n_files? : Int32) -> Json
+
+pub let scope_permissions : Array[PermissionRule]
+
+// Errors
+
+// Types and methods
+pub struct FistEngine {
+  store : @store.StoreBackend
+}
+pub fn FistEngine::all_subtasks_completed(Self, @core.Task) -> Bool
+pub fn FistEngine::archive(Self, task_id~ : String, by~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::archive_force(Self, task_id~ : String, by~ : String, force~ : Bool, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::assistant_active_primary(Self) -> @store.AssistantReg?
+pub fn FistEngine::assistant_get(Self, String) -> @store.AssistantReg?
+pub fn FistEngine::assistant_list(Self) -> Array[@store.AssistantReg]
+pub fn FistEngine::assistant_set_status(Self, String, String) -> Bool
+pub fn FistEngine::assistant_upsert(Self, @store.AssistantReg) -> Unit
+pub fn FistEngine::audit_execute_gate(Self, String, String) -> Result[Unit, String]
+pub fn FistEngine::budget_split_by_dag(Self, Int32, root? : String, ns? : String) -> Json
+pub fn FistEngine::challenge(Self, task_id~ : String, by~ : String, factor? : Int32, strat? : String, now~ : String, critic? : @evolve.Archive?) -> Result[Json, String]
+pub fn FistEngine::children_index(Self) -> Map[String, Array[String]]
+pub fn FistEngine::children_of(Self, String) -> Array[@core.Task]
+pub fn FistEngine::circuit_fail(Self, ns? : String, circuit~ : String, now_secs~ : Int32, window_secs? : Int32, threshold? : Int32, recovery_secs? : Int32) -> Json
+pub fn FistEngine::circuit_status(Self, ns? : String, circuit~ : String, now_secs~ : Int32, probe_limit? : Int32) -> Json
+pub fn FistEngine::circuit_succeed(Self, ns? : String, circuit~ : String, now_secs~ : Int32) -> Json
+pub fn FistEngine::claim(Self, task_id~ : String, assignee~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::cold_publish(Self, ns~ : String, description~ : String, created_by~ : String, project_dir~ : String, now~ : String, level? : Int32) -> Result[String, String]
+pub fn FistEngine::cost_stats(Self) -> Json
+pub fn FistEngine::critical_path(Self) -> Array[String]
+pub fn FistEngine::dag_ascii(Self, ns~ : String) -> String
+pub fn FistEngine::dag_cost_route(Self) -> Json
+pub fn FistEngine::dag_depend(Self, task_id~ : String, dep_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::dag_mc(Self, ns? : String, root_task_id? : String, deadline? : Int32, samples? : Int32, seed? : Int32) -> Json
+pub fn FistEngine::dag_schedule(Self) -> Json
+pub fn FistEngine::dag_slack_analysis(Self) -> Json
+pub fn FistEngine::delete_task(Self, String) -> Result[Unit, String]
+pub fn FistEngine::deps_satisfied(Self, String) -> Bool
+pub fn FistEngine::dispatch_next(Self, String, String, String, String) -> Json
+pub fn FistEngine::docs_verify_gate(Self, String) -> Result[Unit, String]
+pub fn FistEngine::eval_feedback(Self, String, task_id? : String) -> Json
+pub fn FistEngine::execute(Self, task_id~ : String, deliverable~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::execute_with_meta(Self, task_id~ : String, deliverable~ : String, now~ : String, executor? : String, model? : String, tokens_in? : Int32, tokens_out? : Int32, cost? : Double, duration_ms? : Int32, rate_limited? : Bool, failure_reason? : String) -> Result[@core.Task, String]
+pub fn FistEngine::executor_clear(Self) -> Bool
+pub fn FistEngine::executor_list(Self) -> Array[(String, String, String)]
+pub fn FistEngine::executor_save(Self, name~ : String, abilities_json~ : String, created_at~ : String) -> Result[String, String]
+pub fn FistEngine::executor_trust(Self) -> Map[String, Double]
+pub fn FistEngine::gate_check_record(Self, String, String, String, String) -> Result[Json, String]
+pub fn FistEngine::gate_verify_gate(Self, String) -> Result[Unit, String]
+pub fn FistEngine::get_task(Self, String) -> @core.Task?
+pub fn FistEngine::goal_drift_check(Self, String, subtask_id? : String, ns? : String) -> Json
+pub fn FistEngine::heartbeat_backend(Self) -> String
+pub fn FistEngine::list_all(Self) -> Array[@core.Task]
+pub fn FistEngine::list_by_status(Self, @core.TaskStatus) -> Array[@core.Task]
+pub fn FistEngine::list_in_ns(Self, String) -> Array[@core.Task]
+pub fn FistEngine::lock_violations_list(Self) -> Array[@store.LockViolation]
+pub fn FistEngine::lock_violations_record(Self, ts~ : String, agent~ : String, scope~ : String, reason~ : String, lock_id~ : String) -> Unit
+pub fn FistEngine::locks_get(Self, String) -> @store.FileLock?
+pub fn FistEngine::locks_list(Self) -> Array[@store.FileLock]
+pub fn FistEngine::locks_release(Self, String, String) -> Bool
+pub fn FistEngine::locks_sweep(Self, String) -> Int32
+pub fn FistEngine::locks_try_acquire(Self, @store.FileLock) -> @store.LockAcquireOutcome
+pub fn FistEngine::locks_upsert(Self, @store.FileLock) -> Unit
+pub fn FistEngine::new(store? : @store.StoreBackend) -> Self
+pub fn FistEngine::omega_auto_lesson(Self, Int32, String, String, String, String) -> Bool
+pub fn FistEngine::omega_count(Self, String, String, String) -> Int32
+pub fn FistEngine::omega_count_type(Self, String, String) -> Int32
+pub fn FistEngine::omega_execute_gate(Self, String) -> Result[Unit, String]
+pub fn FistEngine::omega_latest(Self, String, String) -> @store.SpecRecord?
+pub fn FistEngine::omega_records(Self, String) -> Array[@store.SpecRecord]
+pub fn FistEngine::omega_result_verify(Self, task_id~ : String, reviewer~ : String, verdict~ : String, reason? : String, now~ : String, max_rounds? : Int32) -> Result[Json, String]
+pub fn FistEngine::omega_spec_create(Self, task_id~ : String, author~ : String, content~ : String, now~ : String, max_rounds? : Int32) -> Result[Json, String]
+pub fn FistEngine::omega_spec_review(Self, task_id~ : String, reviewer~ : String, verdict~ : String, reason? : String, now~ : String, max_rounds? : Int32) -> Result[Json, String]
+pub fn FistEngine::omega_status(Self, String) -> Result[Json, String]
+pub fn FistEngine::omega_verify_gate(Self, String) -> Result[Unit, String]
+pub fn FistEngine::open_sqlite(String) -> Self?
+pub fn FistEngine::parallelism(Self) -> Int32
+pub fn FistEngine::pause_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::pick_next(Self, String, String, String, String, skill? : String) -> Json
+pub fn FistEngine::plan(Self, task_id~ : String, split_n? : Int32, by~ : String, now~ : String) -> Result[Array[String], String]
+pub fn FistEngine::plan_deep(Self, task_id~ : String, split_n? : Int32, by~ : String, spec? : Json?, now~ : String, omega_strong_verify? : Bool, gradient? : Bool, calibrate? : Array[Double]?, gradient_dag? : Bool, reinject_context? : Bool, boundary_probe? : Bool) -> Result[Json, String]
+pub fn FistEngine::plan_exec_order(Self, String) -> Json
+pub fn FistEngine::plan_revise(Self, String, feedback? : Array[Json], ns? : String) -> Json
+pub fn FistEngine::progress_gate(Self, String, Int32, Int32) -> Json
+pub fn FistEngine::publish(Self, project_dir~ : String, description~ : String, created_by~ : String, now~ : String, ns? : String, level? : Int32) -> Result[String, String]
+pub fn FistEngine::publish_next_round(Self, ns~ : String, description~ : String, created_by~ : String, prev_task_id~ : String, now~ : String, level? : Int32) -> Result[String, String]
+pub fn FistEngine::publish_parallel(Self, ns~ : String, description~ : String, created_by~ : String, project_dir~ : String, now~ : String, level? : Int32) -> Result[String, String]
+pub fn FistEngine::publish_with_deps(Self, project_dir~ : String, description~ : String, depends_on? : Array[String], created_by? : String, now? : String, ns? : String, level? : Int32) -> Result[String, String]
+pub fn FistEngine::ready_tasks(Self, ns_filter? : String) -> Array[@core.Task]
+pub fn FistEngine::reject_task(Self, task_id~ : String, reason? : String, by~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::reopen_task(Self, String, String) -> Result[@core.Task, String]
+pub fn FistEngine::resume_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::retry_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::rsv_get(Self, String) -> (String, String, String)?
+pub fn FistEngine::rsv_list(Self) -> Array[(String, String, String)]
+pub fn FistEngine::rsv_release(Self, String, String) -> Bool
+pub fn FistEngine::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[String, String]
+pub fn FistEngine::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[@store.RsvOutcome, String]
+pub fn FistEngine::saga_register(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, now~ : String) -> Result[Json, String]
+pub fn FistEngine::saga_repair(Self, ns? : String, String, failed_step~ : String, mark? : Bool) -> Result[Json, String]
+pub fn FistEngine::saga_rollback(Self, ns? : String, String, mark? : Bool) -> Result[Json, String]
+pub fn FistEngine::store_delete_heartbeat(Self, task_id~ : String) -> Result[Unit, String]
+pub fn FistEngine::store_list_heartbeat_intervals(Self, String) -> Array[Int32]
+pub fn FistEngine::store_list_heartbeats(Self) -> Array[(String, String, String, String)]
+pub fn FistEngine::store_list_saga_actions(Self, String, String) -> Array[(Int32, String, String, String, String)]
+pub fn FistEngine::store_mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int32]) -> Result[Unit, String]
+pub fn FistEngine::store_read_heartbeat_last_seen(Self, String) -> String
+pub fn FistEngine::store_recent_call_logs(Self, limit? : Int32) -> Array[Json]
+pub fn FistEngine::store_write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int32, seq~ : Int32) -> Result[Unit, String]
+pub fn FistEngine::store_write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
+pub fn FistEngine::store_write_heartbeat_interval(Self, task_id~ : String, interval_sec~ : Int32, ts~ : String) -> Result[Unit, String]
+pub fn FistEngine::store_write_saga_action(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, created_at~ : String) -> Result[Unit, String]
+pub fn FistEngine::submit(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::supervisor_kill_apply_pause(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::supervisor_kill_plan(Self, task_id~ : String, by~ : String, reason~ : String, force? : Bool, apply_pause? : Bool, now? : String) -> Json
+pub fn FistEngine::supervisor_reminder_tick(Self, now~ : String, stale_hours? : Int32, pending_hours? : Int32) -> Json
+pub fn FistEngine::supervisor_status(Self, ns_filter? : String) -> Json
+pub fn FistEngine::supervisor_task_tree(Self, String) -> Result[Json, String]
+pub fn FistEngine::supervisor_task_upsert(Self, project_dir~ : String, by~ : String, Array[Json], now~ : String, ns? : String) -> Json
+pub fn FistEngine::topo_sort(Self, Array[String]) -> Array[String]
+pub fn FistEngine::transition_contract(Self, String, String, assignee? : String, completed_by? : String, force? : Bool) -> Json
+pub fn FistEngine::triage(Self, String, String, String, skill? : String) -> Json
+pub fn FistEngine::verify(Self, task_id~ : String, verifier~ : String, now~ : String, docs_check? : Bool) -> Result[@core.Task, String]
+
+type PermissionRule
+
+// Type aliases
+
+// Traits
