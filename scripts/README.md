@@ -204,7 +204,7 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
 > 它因此**不许进守卫电池**：`run_guards.py` 的 `EXCLUDE_EXACT` 显式点名它，`--selftest` 里有一格「危险脚本不得拿无参兜底格」的普查判据咬住这个形状（R94）。
 > 只读探测/入池那一半在副机分支上另址 `whisperer_patrol.py`（双活解，等 TASK-019 裁决）。
 > 旗标口径以 main 为准：`99bacbe` 已把 `--self-test` / `--selftest` 两个形状收进同一 dest，副机 R96 首稿写「只认带连字符的、照抄习惯会打空」已被这一版作废。
-- `fist-pr-automator.py` — **yaml → PR → 门禁 → 合并流水线**：读一份 PR 定义 yaml，本地跑统一门禁，推分支，再用 curl 经 `GITHUB_TOKEN`/`GITCODE_TOKEN` 开 PR/MR，等门绿后合并。rc：0=ok / 1=blocked / 2=degraded；纯 ASCII、只用标准库（`check_py_stdout_encoding` 对它出的是 E2 预告：今天不红，写第一句中文结论就得补闸）。**未裁面**：它的默认动作是 `merge`，与金条四「不可逆操作只出方案 + 预案」和副机「推分支后只交 MR 链接、不代开 MR」的口径正面撞 ⇒ 已入池 TASK-021 等 owner 裁决；本条只登记现状，不为它背书。
+- `fist-pr-automator.py` — **yaml → PR → 门禁 →（显式）合并流水线**：读一份 PR 定义 yaml，本地跑统一门禁，推分支，再用 curl 经 `GITHUB_TOKEN`/`GITCODE_TOKEN` 开 PR/MR；**合入默认关**——只有 yaml 明写 `merge: true` 才走 squash 合并（R113/TASK-021：不可逆动作的执行权留在调用者手里，缺省/`false`/`yes` 一律不合）。`--dry-run` 只打印将执行的步骤（不起子进程、不碰网络、不读 token 值），先看计划再跑。rc：0=ok / 1=blocked / 2=degraded 或用法自拒；纯 ASCII、只用标准库（`check_py_stdout_encoding` 对它出的是 E2 预告：今天不红，写第一句中文结论就得补闸）。
 - `check_bug_refs.py` — **代码注释/测试标题里的 `BUG-n` ↔ 账本抬头 对表尺（BUG-373，主机 `cef1e9c` 落仓）**：三档 OK/ORPHAN/CLOSED，`--selftest` + `--bugs <账本>`。**与 `check_bug_reference_integrity.py`（副机 R48）是同一意图的两把尺**，而 main 这版被 peer 分支 `slave/fix/bug-refs-guard-semantics`（`484aced`）实测三处硬伤：假自测 / 退出码反用 / 把正常注释当违规 ⇒ 登记归登记，语义修复归那条分支，两把尺的分工与合并由 TASK-020 裁决。**这条登记不是选边**：它只让 `check_scripts_index` 出真实缺口。
 **重复读数（本轮清掉的 4 行）**：`run_guards.py` 曾同时挂 4 条自述互不相同的条目（24 把尺/34 格失败 2、24 把尺/35 格、26 把尺/38 格 ×2 逐字相同），`check_bug_reference_integrity.py` 挂 2 条逐字相同。`check_scripts_index` 只查「名字在不在」，重复与互斥读数一律放过 —— 这就是「同一工具多份历史读数并存」能躺在索引文件里没人管的机理。处理：留 R48 现读那条，删被取代的 2 条与逐字重复的 1 条，另删 `check_bug_reference_integrity.py` 的逐字重复 1 条。还有一条**假阳形状**必须记：散文引子 `- \`check_plugin_sync.py\` 的索引缺口补齐登记（…）：` 按行首反引号名统计会被当成条目/重复，但它不是 —— 计数式检测的第一手误差就长这样，所以本轮按内容逐条判定、不按计数删除。
 
@@ -224,10 +224,8 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
 ### 2026-10-22 登记：whisperer.py
 - whisperer.py — **风语者巡检自动化（TASK-009）**：Step 0-4（HEAD 安全门 → 分支普查 → 候选任务卡 →
   issue 扫描）；旗标 --scan-only（默认）/ --auto-merge / --selftest。
-### 2026-10-22 登记：
-ist-pr-automator.py
-- 
-ist-pr-automator.py — **PR 自动化**：把本地分支/提交整理成可审 PR 描述并（可选）推送建 PR；
+### 2026-10-22 登记：`fist-pr-automator.py`
+- `fist-pr-automator.py` — **PR 自动化**：把本地分支/提交整理成可审 PR 描述并（可选）推送建 PR；
   与 slave-branch-merge.ps1（合并面）、whisperer.py（巡检面）同属分支治理三件套。
   注意文件必须是 **UTF-8**（UTF-16 会让 Python 与 ps1 双端都读成乱码，同日 cef1e9cb 已修）。
 ### 2026-10-22 登记：`fist-pr-automator.py`
@@ -715,15 +713,17 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
   这一把只能当报告面；要给「悬空（ORPHAN）」上硬门，请走已接 CI 的 `check_bug_reference_integrity.py`
   （J1 族，棘轮已压到 0，判据口径不同：只管悬空不管引到已关号）。两份同族实现待裁，见 TASK-020。
   用法 `python scripts/check_bug_refs.py [--selftest|--strict] [--bugs memory/bugs.md]`。
-- `fist-pr-automator.py`（2026-10-22 `cef1e9c` 主机入仓）— **yaml → 门 → push → 开 PR/MR → merge 流水线**：
-  三参跑法 `python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode>`，读 `branch`/`title`/`base`/
+- `fist-pr-automator.py`（2026-10-22 `cef1e9c` 主机入仓，R113 收紧默认）— **yaml → 门 → push → 开 PR/MR →（显式）merge 流水线**：
+  三参跑法 `python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode> [--dry-run]`，读 `branch`/`title`/`base`/
   `repo`/`remote`/`gate`/`merge` 字段，先跑 `scripts/fist-gate.py`（rc≥1 即停），再 `git push -u`，
   然后用 curl 打 GitHub API v3 / GitCode API v5（token 只从 `GITHUB_TOKEN`/`GITCODE_TOKEN` 环境变量读），
-  默认还会 `merge`（squash）。rc：0=ok / 1=blocked / 2=degraded；`--selftest` 一格守它自带的
-  最小 yaml 解析器。**这是本仓唯一会「自己合并代码」的脚本**，与金条四（不可逆操作执行权留人）正面冲突，
-  因此 `EXCLUDE_EXACT` 排除其无参自动发现格（无参 `raise SystemExit(str)` ⇒ 恒 rc=1 的永久红格），
-  电池里只保留 `--selftest` 一格；合入动作本身挂 TASK-021 待裁，任何自动化都不得默认调它。
-  用法 `python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode>`（人工触发）。
+  **只有 yaml 明写 `merge: true` 才 `merge`（squash）**；缺省/`false`/其它值一律打印 `merge=off` 并停手
+  （R113/TASK-021：不可逆动作不许由缺省值触发）。`--dry-run` 打印计划即返回 0——不起子进程、不碰网络、
+  不读 token 值；参数个数不对或平台名不是 `github|gitcode` 一律 rc=2 自拒。rc：0=ok / 1=blocked /
+  2=degraded 或用法自拒；`--selftest` 覆盖 yaml 解析 / merge 两向语义 / 计划文本 / dry-run 零副作用 /
+  用法自拒。**本脚本不进 CI 与电池自动面**（`run_guards` 按白名单归为非门禁族，`--list` 可见、电池面为空），
+  改流水线语义时必须人工点名跑 `--selftest`；合入动作在 R113 后默认关闭，任何自动化都不得替调用者打开。
+  用法 `python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode> [--dry-run]`（人工触发）。
 
 # scripts/ 脚本分类规范
 
