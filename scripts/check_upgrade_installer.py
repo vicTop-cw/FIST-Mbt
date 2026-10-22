@@ -288,7 +288,7 @@ def j_selftest():
         fails.append("现状面 FATAL：%s" % fatal)
     if problems:
         fails.append("现状面就红（先修产品再谈守卫）：%s" % problems[0])
-    ran.append("real-surface")
+    ran.append("RS×1")
     return fails, ran
 
 
@@ -300,7 +300,9 @@ def main(argv):
             for f in fails:
                 print("  - " + f)
             return 2
-        print("SELFTEST OK: %s——合成违例全红、干净输入全绿、现状面不误红" % "+".join(ran))
+        tot = sum(int(t.split("×")[1]) if "×" in t else 1 for t in ran)
+        print("SELFTEST OK: %d 格（反解：%s）——合成违例全红、干净输入全绿、现状面不误红"
+              % (tot, " / ".join(ran)))
         return 0
 
     problems, fatal, notes = run_all()
