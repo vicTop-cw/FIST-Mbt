@@ -96,8 +96,10 @@ def synth_tasks(rows):
 
 def selftest():
     fails = []
+    executed = []
 
     def cell(name, ok):
+        executed.append(name)
         if ok:
             print("  OK   %s" % name)
         else:
@@ -136,7 +138,7 @@ def selftest():
     cell("parser-rejects-yaml-without-id", parse_yaml("title: x\nstatus: backlog\n") is None)
     cell("parser-reads-id-status-priority", parse_yaml("id: TASK-042\npriority: P1\nstatus: backlog\n")
          == {"id": "TASK-042", "status": "backlog", "priority": "P1"})
-    return fails, 11
+    return fails, executed
 
 
 def fatal(msg):
@@ -159,11 +161,17 @@ def resolve_rev(explicit):
 def main(argv):
     args = list(argv)
     if "--selftest" in args:
-        fails, n = selftest()
+        fails, executed = selftest()
         if fails:
-            print("SELFTEST FAIL: %d/%d 格红 -> %s" % (len(fails), n, ",".join(fails)))
+            print("SELFTEST FAIL: %d/%d 格红 -> %s" % (len(fails), len(executed), ",".join(fails)))
             return 1
-        print("SELFTEST OK: %d 格（合成违例必红 3 + 反向对照不误红 4 + 规则失明对照 2 + 解析面自证 2）" % n)
+        fam = {}
+        for name in executed:
+            key = name.split("-")[0][:1].upper()
+            fam[key] = fam.get(key, 0) + 1
+        print("SELFTEST OK: %d 格（反解：%s，族名取自已执行格子名首段首字母，不手写计数）"
+              % (len(executed), " / ".join("%s×%d" % (k, v) if v > 1 else k
+                                           for k, v in sorted(fam.items()))))
         return 0
 
     show_open = "--show-open" in args
