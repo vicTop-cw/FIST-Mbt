@@ -178,6 +178,14 @@
   PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
   去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
   用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
+  R100 补自证面 `-SelfTest`（`powershell -NoProfile -File scripts/slave-branch-merge.ps1 -SelfTest`）：
+  黑名单（`$SKIP_EXACT` / `$SKIP_GLOB` / `Restore-Blacklisted`）入仓以来零自证格，失明的发现成本是一整次
+  `moon build` [3002] lexing error。本档在 %TEMP% 沙箱 git 仓里造违例再断言盘面与索引，8 格 = 黑名单 C1-C5
+  （精确名回退 HEAD / 新增毒文件删盘+删索引 / glob 新增件 / glob 命中且有 HEAD 版本时回退 / 未暂存的工作树不许动手）
+  + 变异台 M1-M2（名单改瞎 ⇒ 对应格必须转红，否则断言是幻影）+ 沙箱哨兵 S8（当前目录不得有 moon.mod）。
+  退出码 0 全绿 / 1 判据红 / 2 尺子无法自证（git 缺失、TEMP 不可用；两档实测各取到一次），不 fetch、不 pick、不 push。
+  实踩注记：`param()` 里给**带行内注释的 `[switch]`** 再加一个参数必须补逗号，否则 PS5.1 把红打在既有那一行上
+  （`MissingEndParenthesisInFunctionParameterList`）——基线 0 错、加一行即炸，报错位置不指真凶。
 
 ### 2026-10-21 补登记：`fist-gate.py`
 
