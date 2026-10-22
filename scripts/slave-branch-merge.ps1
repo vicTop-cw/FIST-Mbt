@@ -506,6 +506,14 @@ Write-Host "  将删除 $($toDelete.Count) 个分支:" -ForegroundColor Gray
 foreach ($b in $toDelete) { Write-Host "    🗑️ $b" }
 foreach ($b in $toDelete) {
   $name = $b -replace '^gitcode/', ''
+  # R50：删之前过一道**硬门 + 留痕**——远端基线 + 内容等价；未合即拒删，并把读数写进
+  # <git-dir>/fist/delete-audit.jsonl，事后可复盘"删掉的到底合没合"。
+  $audit = python scripts/audit_branch_delete.py $b --base $base 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host ("    ⛔ 拒删 {0}：{1}" -f $name, ($audit | Select-Object -Last 1)) -ForegroundColor Red
+    continue
+  }
+  Write-Host ("    🗑️ 删除 {0}（{1}）" -f $name, ($audit | Select-Object -Last 1)) -ForegroundColor Gray
   git push gitcode --delete $name 2>&1 | Out-Null
 }
 
@@ -957,6 +965,14 @@ Write-Host "  将删除 $($toDelete.Count) 个分支:" -ForegroundColor Gray
 foreach ($b in $toDelete) { Write-Host "    🗑️ $b" }
 foreach ($b in $toDelete) {
   $name = $b -replace '^gitcode/', ''
+  # R50：删之前过一道**硬门 + 留痕**——远端基线 + 内容等价；未合即拒删，并把读数写进
+  # <git-dir>/fist/delete-audit.jsonl，事后可复盘"删掉的到底合没合"。
+  $audit = python scripts/audit_branch_delete.py $b --base $base 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host ("    ⛔ 拒删 {0}：{1}" -f $name, ($audit | Select-Object -Last 1)) -ForegroundColor Red
+    continue
+  }
+  Write-Host ("    🗑️ 删除 {0}（{1}）" -f $name, ($audit | Select-Object -Last 1)) -ForegroundColor Gray
   git push gitcode --delete $name 2>&1 | Out-Null
 }
 
@@ -1216,6 +1232,14 @@ Write-Host "  将删除 $($toDelete.Count) 个分支:" -ForegroundColor Gray
 foreach ($b in $toDelete) { Write-Host "    🗑️ $b" }
 foreach ($b in $toDelete) {
   $name = $b -replace '^gitcode/', ''
+  # R50：删之前过一道**硬门 + 留痕**——远端基线 + 内容等价；未合即拒删，并把读数写进
+  # <git-dir>/fist/delete-audit.jsonl，事后可复盘"删掉的到底合没合"。
+  $audit = python scripts/audit_branch_delete.py $b --base $base 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host ("    ⛔ 拒删 {0}：{1}" -f $name, ($audit | Select-Object -Last 1)) -ForegroundColor Red
+    continue
+  }
+  Write-Host ("    🗑️ 删除 {0}（{1}）" -f $name, ($audit | Select-Object -Last 1)) -ForegroundColor Gray
   git push gitcode --delete $name 2>&1 | Out-Null
 }
 
@@ -1458,6 +1482,14 @@ Write-Host "  将删除 $($toDelete.Count) 个分支:" -ForegroundColor Gray
 foreach ($b in $toDelete) { Write-Host "    🗑️ $b" }
 foreach ($b in $toDelete) {
   $name = $b -replace '^gitcode/', ''
+  # R50：删之前过一道**硬门 + 留痕**——远端基线 + 内容等价；未合即拒删，并把读数写进
+  # <git-dir>/fist/delete-audit.jsonl，事后可复盘"删掉的到底合没合"。
+  $audit = python scripts/audit_branch_delete.py $b --base $base 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host ("    ⛔ 拒删 {0}：{1}" -f $name, ($audit | Select-Object -Last 1)) -ForegroundColor Red
+    continue
+  }
+  Write-Host ("    🗑️ 删除 {0}（{1}）" -f $name, ($audit | Select-Object -Last 1)) -ForegroundColor Gray
   git push gitcode --delete $name 2>&1 | Out-Null
 }
 
@@ -1752,6 +1784,14 @@ Write-Host "  将删除 $($toDelete.Count) 个分支:" -ForegroundColor Gray
 foreach ($b in $toDelete) { Write-Host "    🗑️ $b" }
 foreach ($b in $toDelete) {
   $name = $b -replace '^gitcode/', ''
+  # R50：删之前过一道**硬门 + 留痕**——远端基线 + 内容等价；未合即拒删，并把读数写进
+  # <git-dir>/fist/delete-audit.jsonl，事后可复盘"删掉的到底合没合"。
+  $audit = python scripts/audit_branch_delete.py $b --base $base 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host ("    ⛔ 拒删 {0}：{1}" -f $name, ($audit | Select-Object -Last 1)) -ForegroundColor Red
+    continue
+  }
+  Write-Host ("    🗑️ 删除 {0}（{1}）" -f $name, ($audit | Select-Object -Last 1)) -ForegroundColor Gray
   git push gitcode --delete $name 2>&1 | Out-Null
 }
 
