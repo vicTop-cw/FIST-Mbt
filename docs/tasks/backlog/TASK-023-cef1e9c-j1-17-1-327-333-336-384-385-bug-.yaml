@@ -11,9 +11,9 @@ status_note: "R111 对账转 done：check_bug_reference_integrity.py 现读 J1=0
 problem: >
   cef1e9c 上 `python scripts/check_bug_reference_integrity.py` rc=1（判定面 17 条，DANGLING_COMMENT_CEILING=1）。这条红随电池一起传染：该尺在 run_guards 宇宙里拿的是自动发现的无参格，所以 main 的 `python scripts/run_guards.py` 也有一格红。
   按编号分解（实测 17=7+4+3+1+1+1）：BUG-327 7 处（ocr_scan.mbt:385/394/414/548/551 + server.mbt:2839/2945）、BUG-333 4 处（issue_scan.mbt:2327/2469 + issue_scan_test.mbt:218/596）、BUG-384 3 处（issue_scan_wbtest.mbt:126/139/156）、BUG-385 1 处（同文件 168）、BUG-336 1 处（engine_dag_ext.mbt:745）、BUG-147 1 处（engine.mbt:231）。
-  成因不是「代码引错号」而是**账本滞后**：HEAD 的 memory/bugs.md 里 `^## BUG-(327|333|336|384|385)` 五个抬头全部读到 0，而这五条在副机 r80 的账本 blob d7f7e60:memory/bugs.md 里逐条齐备（该 blob 比 HEAD 多 9 行，正是这批补账）——r80 那条分支从未合入 main（详见项目记忆「账本世系分叉」：master 与主机线同号双义、374~385 未回 master）。
+  成因不是「代码引错号」而是**账本滞后**：HEAD 的 memory/bugs.md 里 `^## BUG-(327|333|336|384|385)\b` 五个抬头全部读到 0，而这五条在副机 r80 的账本 blob d7f7e60:memory/bugs.md 里逐条齐备（该 blob 比 HEAD 多 9 行，正是这批补账）——r80 那条分支从未合入 main（详见项目记忆「账本世系分叉」：master 与主机线同号双义、374~385 未回 master）。
   唯一真错号是 BUG-147：全历史任何 rev 的 bugs.md 都没有这个抬头，R76 已定性并给出改号方案（147→176，站点面实测过）。
   可一次做完的配方：①把 d7f7e60 里那五条抬头 verbatim 搬到 main 的 memory/bugs.md（工艺已固化：取 HEAD blob + 在 LF 空间插入，边界按 `^## BUG-\d+` 切，纯插入 +9 行，不要整文件重排）；②改 `src/engine/engine.mbt:231` 的 `BUG-147` → `BUG-176`（注释面单点，不动代码）；③把 `DANGLING_COMMENT_CEILING` 从 1 降到 0，并把 `--selftest` 里那条「真语料恰好 1 条注释悬空」的标定格一并改成 0 悬空标定；④跑 `moon fmt --check` + `moon info && moon fmt`（改的是注释，理论上 .mbti 不变，仍要实跑证明）。
 
 evidence: |
-  python scripts/check_bug_reference_integrity.py ⇒ rc=1，INFO 行「判定面 J1 悬空-注释面：17 条（上限 1，只许下降）」+ 17 行逐站点 file:line；git show HEAD:memory/bugs.md | grep -cE '^## BUG-(327|333|336|384|385)' ⇒ 0；git show d7f7e60:memory/bugs.md | grep -cE 同式 ⇒ 5；行数差 9；git log --all -S'## BUG-333' -- memory/bugs.md ⇒ d7f7e60（副机 R80 搬运件，未进 main）。
+  python scripts/check_bug_reference_integrity.py ⇒ rc=1，INFO 行「判定面 J1 悬空-注释面：17 条（上限 1，只许下降）」+ 17 行逐站点 file:line；git show HEAD:memory/bugs.md | grep -cE '^## BUG-(327|333|336|384|385)\b' ⇒ 0；git show d7f7e60:memory/bugs.md | grep -cE 同式 ⇒ 5；行数差 9；git log --all -S'## BUG-333' -- memory/bugs.md ⇒ d7f7e60（副机 R80 搬运件，未进 main）。
