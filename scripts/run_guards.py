@@ -63,11 +63,14 @@ def expected(script, rc, why, *args, kind="known-red"):
             "argv": list(args), "expect": rc, "needs": [], "why": why, "kind": kind}
 
 
-def gated(script, need, *args):
-    """依赖 temp/ 临时件的 case：缺前置即 SKIP（打印，不静默）。"""
+def gated(script, need, *args, expect=0, why="依赖 temp 临时件", kind="gate"):
+    """依赖 temp/ 临时件（或树态目录）的 case：缺前置即 SKIP（打印，不静默）。
+
+    BUG-368：前置可以是**目录**（如 `temp/` 树态）；且树态相关格的期望值可能不是 0
+    （运行态树里 cleanup --check 正确读 rc=1），故 expect/why 做成显式入参。"""
     return {"name": "%s %s" % (script, " ".join(args)), "script": script,
-            "argv": list(args), "expect": 0, "needs": [need], "why": "依赖 temp 临时件",
-            "kind": "gate"}
+            "argv": list(args), "expect": expect, "needs": [need], "why": why,
+            "kind": kind}
 
 
 def discover_scripts():
@@ -307,7 +310,8 @@ def run_battery():
     py = sys.executable
     fails, skips = [], []
     for c in CASES:
-        miss = [n for n in c["needs"] if not os.path.isfile(os.path.join(ROOT, n))]
+        # BUG-368：前置既可能是文件（temp/*.json）也可能是目录（temp/ 树态）⇒ 用 exists
+        miss = [n for n in c["needs"] if not os.path.exists(os.path.join(ROOT, n))]
         if miss:
             skips.append((c["name"], "缺前置 " + " ".join(miss)))
             print("SKIP  %-56s %s" % (c["name"], "缺前置 " + " ".join(miss)))
