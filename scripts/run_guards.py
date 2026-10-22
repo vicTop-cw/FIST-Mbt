@@ -141,7 +141,7 @@ SPECIAL_CASES = [
     case("blackbox/check_merge_markers.py"),
     # —— 诊断型：退出码语义不是门禁，把当轮真读数钉成期望值（数字变了就现形）——
     expected("check_plan_landing.py", 1,
-             "诊断口径：判定面 36 条活文档点名落点未落地（BUG-367 A/B/C 三档留裁决；R72 在 master 基点现读，36>25 棘轮超限属预存内容红）；另有搬家态 3 条单列"
+             "诊断口径：判定面 25 条活文档点名落点未落地（BUG-367 A/B/C 三档留裁决）；另有搬家态 3 条单列"
              "（P5，不判红）、存档面 17 条只报不判。读出 0 算这格漂移；判据空转自 R41 起给真 rc=2"
              "（改前 SystemExit(str) 只给 1，那个 2 是幻影 ⇒ BUG-369）",
              kind="diag"),

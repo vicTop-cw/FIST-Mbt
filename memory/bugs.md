@@ -6203,3 +6203,312 @@ moonbit-private-field-leak）用的是裸子串匹配，在 src 全量扫描里�
 - task_id: T0r51
 ### FIXED(2026-10-21T08:24:32Z / BUG-384, BUG-385)
 - evidence: 真源 src/server/issue_scan.mbt 四条降噪规则（empty-match 只认单臂 / noop-assignment 只认 self.x=self.x / private-field-leak 敏感词改全词匹配 / shared-mutable 只认初始化式为 obj.field），白盒锁 src/server/issue_scan_wbtest.mbt。同基线 A/B（gitcode master 1646596 工作树，扫 src）：命中 1668→967，empty-match 110→0、noop 39→0、private-field-leak 90→2（残留为 src/evolve/github_client.mbt:294/296 真敏感词 token）、shared-mutable 465→1（残留 src/ops/ops_loop.mbt:199）。moon test --target js 1351/1351 passed 0 failed。
+## 记账规则（本文件的状态词汇与计数口径 · 2026-09-27 立）
+
+**状态**写在条目抬头的最后一个字段（`## BUG-n [时间] [严重度] 状态`），**可就地修改**——它只表达
+"当前还剩哪些没修"，是工作清单而非证据；改掉旧状态不销毁历史，历史由下面的叙述面承载。
+**叙述面**（条目正文、`### FIXED(...)` 小记、`reports/*`、`memory/2026-09-*.md` 轮次段、
+`CHANGELOG.md` 轮次段、已完成的 `T0r*` 任务行）**只追加、不改写、不删除**，包括写错的那些——
+抹掉证伪材料就等于把自己改写成"一直是对的"。
+
+**抬头文法**（判据按此解析，形态不符即红）：
+
+行首示例（为避免被按行计数的判据当成条目，这里不写成行首形态）：
+
+- `## BUG-n [ISO 时间] [critical|high|medium|low] 状态 [→BUG-m]`　← `→BUG-m` 只有 DUPLICATE 必须带
+- `### FIXED(<日期 轮次> / BUG-a[, BUG-b …])`　← 抬头里的编号集合＝本条小记点名收掉的条目
+
+| 状态 | 含义 | 立此状态需要的证据 |
+|---|---|---|
+| `OPEN` | 未修（含"本轮结转"） | 无；结转必须在正文写明理由与出路 |
+| `FIXED` | 已修 | 必须有一条**点名本编号**的 `### FIXED(… / BUG-nn)` 小记，写清改了哪个真源、哪条锁钉住 |
+| `FALSE_POSITIVE` | 误报（复核后不是缺陷，或本就是设计） | 必须写明复核依据：该面自己的定位声明 / 实测数据 / 规范出处 |
+| `DUPLICATE` | 重复入账 | 必须点名被并入的主编号，且主编号自身不能是 `DUPLICATE` |
+
+**计数口径**（对外投影的唯一来源）：
+
+- `待修 = 抬头状态为 OPEN 的条目数`；`已修 / 误报 / 重复` 各按抬头状态计数。
+- **不再用「条目数 − 小记条数」**：一条小记可能收 1~16 条，也可能一条都不收（Round 1~3 的 22 条
+  小记抬头里没有编号，机器无法归属）。把"小记有几条"当成"修了几条"就是历史上那句假数的来源。
+- **判据不许自证**：数字只从抬头状态反解；投影句、插件正文都由它派生，两者不同源。
+
+**硬门**（`scripts/gen_plugins.py` 生成前自检，任一不成立即拒绝生成、不产出"看起来正常"的插件）：
+
+1. 标 `FIXED` 的条目必须被至少一条小记抬头点名（防空口标修好）。
+2. 被小记点名的条目必须已标 `FIXED`（防修了没标——Round 1~3 全是这一类）。
+3. `DUPLICATE` 指向的主编号必须存在、不是 `DUPLICATE`，且主编号状态不得比副本更差。
+4. 状态词汇不在闭集内 ⇒ 红（防 `Fixed`/`fixed`/`已修` 各写一套）。
+
+## 追记(2026-10-10T17:20:00Z) —— [寻虫-修复-打磨-验证] 闭环证据留痕（BUG-133 之后新一轮）
+
+- **背景**：上一轮已把 140 条 open bug 全清（含 BUG-133 sqlite FFI 修复），OPEN=0。本轮目标是以 issue_scan 扫 `src/` 90 条命中 + open bug 清单逐条甄别真缺陷 vs 假阳性，并修复**扫描器自身缺 guard-awareness** 的能力缺口。
+- **① 寻虫结论（2 个 subagent 分工审计）**：
+  - substring-overrun 13 处：**0 真实缺陷**——全部有 `length()` 守卫或字面量范围安全（`"A"[0]`、`"0123456789"[d]` 等）；
+  - index-out-of-bounds / string-index / unprotected-division：**0 真实缺陷**——所有 `rows[0]` / `arr[0]` / `data[0]` 前都有 `is_empty()` 或 `length() < 19` / `n>=10` clamp 守卫；
+  - unwrap / unsafe-get / possible-overflow / ignore：**0 真实缺陷**——`unwrap` 前有 `is_some()` / `Some` 模式匹配，overflow 是 `* 10` 有界循环（受输入长度约束）。
+  - **结论：90 条命中全是假阳性**，因为扫描器**不知道守卫存在**——它按行匹配 `rows[0]` 模式，不看前一行有没有 `if rows.is_empty() { return }`。
+- **② 修复（真源 = 扫描器自身，不是业务代码）**：`src/server/issue_scan.mbt` 的 `scan_finding_guarded`：
+  - **反向迭代** prev_lines（原为正向，导致 `fn ` 边界在第一行就 break，后面的守卫永远看不见）；
+  - **`fn ` 边界即停**（`return false`），防止跨函数误判；
+  - **集成层只传同函数体内的前几行**（`prev_window` 由命中行往回走到 `fn ` 为止），不再把整文件塞进去；
+  - **当前行也查**（同行守卫 `if rows.is_empty() { rows[0] }`）；
+  - `scan_finding_guarded` 从 `priv` 改为 `pub` 以便单测。
+- **③ 打磨**：新增 3 个回归测试（`src/server/issue_scan_test.mbt`）：
+  - `lint_8_guard_filter_keeps_real_hits_drops_guarded`（数组守卫：只留第 8 行 unguarded，压掉第 4 行 guarded）；
+  - `lint_9_substring_guard_filter`（substring 守卫：只留第 5 行 unguarded）；
+  - `lint_10_guard_function_direct`（`scan_finding_guarded` 直接单测：含守卫→true、跨 `fn`→false）。
+- **④ 验证（证据梯 L4，全实测）**：
+  - `moon test --target js --no-render src/server` → **176/176 Passed=0 Failed**；
+  - `moon test --target js --no-render`（全量）→ **636/636 Passed=0 Failed**；
+  - `pwsh ./scripts/native-env.ps1 -Run "moon test --target native --no-render"`（全量 native）→ **636/636 Passed=0 Failed**；
+  - CLI 实测（`python scripts/issue_scan.py`）：`temp/lint_test_guard` 4→2（只剩 unguarded 第 8 行）、`temp/lint_test_sub` 2→1（只剩 unguarded 第 5 行）；
+  - `issue_scan src`：**total=64、high=0、med=23、low=41**——剩余均为字面量范围安全 / doc 注释误报 / 有界循环 possible-overflow，已人工甄别为**非真实缺陷**。
+- **commit**：`46cecaa` `fix(issue_scan): guard-aware filter now scans prev lines backward within function scope`（2 files changed, 410 insertions）。
+- **口径**：本条为**证据留痕**，不开新 BUG 抬头（因为缺陷本体不在业务代码里，而是扫描器能力缺口，已由本次直接补齐）。如需在账本里作为独立缺陷条目，可后续单独上报。
+
+## 根因（实测）
+
+- `src/` 下共 **226 个 .mbt** 文件。
+- `issue_scan` 递归收集 {dir} 下 .mbt + 31 条规则逐行匹配（内建 11 + ocr-local 20）。
+- 根 `.mcp.json` 全局 `timeout_ms: 30000`（30 秒），客户端在此预算内等不到响应即掐断。
+
+## 影响
+
+- **不是代码 bug**：`src/diff` 单文件正常返回 44 条 findings（16 low + 20 info + 5 low match-exhaustive + 5 low array + 6 low shared-mutable，全为子串近似规则的假阳性低噪）。
+- **是工具可用性缺陷**：`bugfind` 模式的 `require_issue_scan` 键需要真实跑 issue_scan 全 src 扫寻虫，但按现状**全 src 一次都扫不完**，寻虫闭环在真实规模下断链。
+- `scripts/check_doc_surface.py` J 系列只比对文档面，看不到这条运行时超时。
+
+## 建议修复方向（两条，择一或并存）
+
+1. **调大 `timeout_ms`**：`.mcp.json` 把 30000 → 120000（issue_scan 是唯一需要长预算的工具；其余工具本地都秒级）。改前需确认 120s 内 226 文件 × 31 规则能跑完。
+2. **issue_scan 加增量/分批能力**：支持按子目录递归分批（如 `src/server`、`src/store`…），调用方自己分片，避免单次全仓。需改 `src/server/issue_scan.mbt`（当前为并发会话 WIP，本轮未动）。
+
+## 实测读数（`src/diff/diff.mbt`，证明工具本身可用）
+
+`{"scanned_files":1,"total_findings":44,"truncated":true,"include_tests":false,"by_severity":{"high":0,"medium":0,"low":16},"by_rule":[...5 条规则...]}`
+
+其中 `moonbit-array-index-bounds` 报的 `dp[i-1][j-1]` 等（L60/62/65/79/101）经人工核实为**假阳性**：`diff_lines` 的 DP 从 i=1,j=1 起，`dp[0][*]` 是哨兵行，无越界。但这是判据层面的低噪，不改变「工具超时」这条独立缺陷成立。
+
+
+### FIXED(2026-10-15T04:21:31Z / BUG-162)
+- evidence: src/server/issue_scan.mbt 三处：① scan_match_lines 预计算 is_comment[]（原每条规则对每行重判 trim+has_prefix，33×58500 次降为 58500 次），预筛改用 StringView.contains（flat slice）替代 String.contains（rope）；② 守卫过滤只对 6 条可守卫规则（substring-overrun/unprotected-division/possible-overflow/index-out-of-bounds/string-index/secs-overflow）走 mem_read+split+prev_window 全套，其余 ~8000 findings 直接透传；③ 文件内容 fc 按文件缓存（原每条命中重复 mem_read）。实测 `python scripts/fist.py call issue_scan --dir src --max_findings 0`：58s → 9.0s（BUG-18 的 30s 预算内），scanned_files=117、total_findings=9102、19 条 per-rule 计数与基线逐条相同（scan_finding_guarded 对非 6 条规则恒返回 false=不过滤，故输出字节一致）。moon test --target js 全仓 1058/1058 通过。
+## 影响
+
+- **对标准 MCP 客户端不可用**：Claude Desktop、Cursor、VS Code MCP、Cline 等标准客户端握手时发送 `2024-11-05` 或 `2025-06-18`，会被 `-32022` 拒绝 ⇒ 发布版的 `fist-mbt serve` 在主流 MCP 生态里**连不上**。
+- **只有 DSH harness 能用**：本机 harness 被定制为发送 `2026-07-28`，所以这里能用。但这是唯一能用它的客户端。
+- **与 AGENTS.md 声称冲突**：AGENTS.md 说「本项目通过 `.mcp.json` 暴露 `fist-mbt` MCP Server」，未提及必须用非标准协议版本。第三方按文档接入会直接失败。
+- **mcp_config_scaffold 生成的配置**会给目标项目写 `fist.mcp.json`，但协议版本不兼容时目标项目的客户端同样连不上——cl1「MCP 工具存在」在这一面是空的。
+
+## 根因（并发会话 WIP，本轮未动）
+
+`src/server/stdio_js.mbt:54` 有 `const MCP_PROTOCOL_VERSION : String = "2026-07-28"`，L49 注释 `// BUG-161: MCP 2026-07-28 兼容层`。当前实现只认这一个版本，`supportedVersions: ["2026-07-28"]`。
+
+## 建议修复方向
+
+1. **版本协商**：`supportedVersions` 增加标准版本（至少 `2025-06-18`，可选 `2024-11-05`），`initialize` 时按客户端 `protocolVersion` 选择响应版本（标准 MCP 语义）。
+2. **降级**：客户端发标准版本时，用标准语义处理；客户端发 `2026-07-28` 时，用自定义扩展语义。
+3. **文档诚实标注**：若坚持只支持 `2026-07-28`，必须在 README/AGENTS 显式声明「本 server speak MCP 2026-07-28，需配套客户端」，否则第三方按 MCP 标准接入失败且无解释。
+
+## 实测脚本
+
+临时脚本 `temp/mcp_probe7.py`（不落库）：`subprocess.Popen(["node","dist/fist-mbt.js","serve"])` → 发送 `initialize` with `protocolVersion` → 读回 JSON-RPC 响应。三分支（标准 2024-11-05 / 2025-06-18 / 自定义 2026-07-28）结果如上表。
+
+### FIXED(2026-10-15T13:35:00Z / BUG-163)
+- 修复文件: `src/server/stdio_js.mbt`
+- 根因: MCP 库 (`colmugx/mcp`) 硬编码 `ProtocolVersion = "2026-07-28"`，标准客户端发送 2025-06-18/2024-11-05 被 -32022 拒绝
+- 修复方案: 在兼容层拦截协议版本——`ensure_full_meta_map` 无条件覆盖 `_meta.protocolVersion` 为 2026-07-28（让内部服务器接受），`compat_request` 提取客户端原始版本并返回，`compat_response`/`build_legacy_init_response` 将客户端原始版本回显到响应中
+- 验证: `moon build --target js` 0 errors, `moon test --target js` 1067/1067 passed, 端到端探针 `temp/mcp_probe_bug163.py` 3/3 协议版本全部接受（2025-06-18, 2024-11-05, 2026-07-28）
+
+
+
+## 根因链（三环）
+1. `mut root = None` → 预扫描 `infer_expr_type(NoneLit)` 返回 `Any`，`vars["root"]` 被写成 `Any`。
+2. `root = insert(root, 5)` → 预扫描 `infer_expr_type(insert(...))` 返回 `TreeNode<Int>` 直接覆盖 `vars["root"]`，丢失「root 是 Option<TreeNode<Int>>」的事实。
+3. Let-vs-Assign 判定：`Stmt::Assign` 分支才做 `Some(...)` 包装；但旧判定 `!block_declared.contains(name)` 在第二次赋值时为 false → 走了 `Stmt::Let` → 无 `Some(...)` 包装 → E0308。
+
+## 修复（三件套，均在 `src\ir\builder\convert_stmt.rs`）
+1. Let-vs-Assign 条件改为 `block_declared.contains(name) && !block_declared_so_far.contains(name)`（新增 `block_declared_so_far` 跟踪当前块已处理绑定）。
+2. `ty.is_none()` 且 value 是 `NoneLit`/`Ident("None")` → 用 `Option(Any)` 而非 `infer_expr_type(value)`（预扫描不再把 None 猜成裸 Any）。
+3. Assign 分支 target_ty 从 `ctx.vars.get(name)` 取（保留用户注解/Option 包装）。
+
+## 连带发现：容器追加路径缺 .clone()
+Assign 代码生成 `out = out + [ts[idx]]` → 触发 `container_append_rhs` → 生成 `out.push(ts[idx as usize])`（无 .clone()）→ `Vec<IrType>` 非 Copy → E0507。ListLit 元素位代码生成（`src\ir\codegen\expr_gen.rs` L6091-6108）已有同类收敛，Assign 容器追加路径补齐同款 `maybe_clone` 闭包。
+
+## 验证
+- `TEMP\marvis-probe\bst.exe` 编译运行，输出 `1 3 5 7 9`。
+- 全量 `cargo test` 0 失败（~800 tests，含 `tests\codegen_corner_fixes.rs`、`find_bug_bugs.rs`、`demo_codegen_compile`、`lz_ir_bootstrap`、`perf_opt_gates` 等 39 个 suite）。
+- reported_by: lang-zone-polisher
+
+
+
+### FIXED(2026-10-17T01:32:44Z / BUG-256)
+- evidence: 修复三件套落在 src/ir/builder/convert_stmt.rs（Let-vs-Assign 条件 + block_declared_so_far + None 预扫描 Option(Any) + Assign target_ty 从 ctx.vars 取）；连带修复 src/ir/codegen/stmt_gen.rs 的 Assign 容器追加路径，补 ListLit 同款 maybe_clone（Var/IndexGet 且非 Copy → .clone()）治 E0507。验证：TEMP/marvis-probe/bst.exe 输出 1 3 5 7 9；全量 cargo test 0 失败（~800 tests，39 suites）。
+## 最小复现（3 例隔离，$env:TEMP/tnr_repro/）
+- m1 `let s = 0; s = s + 1; print(s);` → exit=0, **0.2s**（两个绑定点均原生 i64）
+- m2 `let s = 0; s = s + 1.5; print(s);` → **exit=4, 30.2s 超时**（一个原生 + 一个非原生）★
+- m3 `let s = 1.5; s = s + 1.5; print(s);` → exit=0, **0.1s**（两个均非原生 Val）
+⇒ 判据精确落在「同一变量既有恒原生绑定点、又有恒非原生绑定点」这一**混合**情形，与「变量是 Val 所以慢」无关。
+
+## 根因（读码定位）
+`src/codegen/lirgen.rs:455-484 compute_stable_i64` 的不动点循环（:467-482）**非单调**：
+```
+loop { let mut changed=false;
+  for (var,expr) in &sites {
+    let native = self.is_native_expr_stable(expr,&stable,&lit_env);
+    if native && !stable.contains(var) { stable.insert(var); changed=true; }
+    else if !native && stable.contains(var) { stable.remove(var); changed=true; } } 
+  if !changed { break } }
+```
+`collect_i64_sites`（:362-415）把**每个** Let(:370-374) 与 Assign(:375-377) 都推进 `sites`，故同一变量可有多条绑定点。当站点 A 恒原生（如 `Lit::Int`，:342 恒 true）、站点 B 恒非原生（如含索引/浮点 args，:356 `_ => false`）时，每趟 A 插入、B 删除，`changed` 每趟恒 true ⇒ **永不 break**。函数内无迭代上限、无「整趟集合未变」判据、无单调化（未改为「仅当所有站点 native 才保留」的单调收敛）。
+对照：`is_native_expr_stable` 的 `Lit(Int)` 分支与 `Var` 的 `lit_env` 分支使 A 站点的 native 判定**与 stable 无关**，这正是抖动的必要条件。
+
+## 危害面
+1. **任意合法程序的转译失败**：`let x = <int>;` 之后被赋任何非 i64 值（动态索引 `s = s + data[i]`、浮点累加 `s = s + 1.5`、字符串/容器）即触发。这是极常见的累加器写法。
+2. **该修复自述的动机用例直接挂死**：`lirgen.rs:320` 注释逐字以 `g11_alg_array_sum` 为背景，而 g11 现在恰好超时。
+3. **CLI 守卫只挡住症状、且泄漏线程**：`transpile_with_guard`（src/cli/mod.rs:1440-1457）用 `recv_timeout(GUARD_TIMEOUT=30s)`；超时分支 `Err(_timeout) => Err(E9006)` **不 join worker**（只有 Ok 分支 `let _ = worker.join()`），死循环线程被遗弃并继续 100% CPU 自旋。
+4. **直连 API 无守卫 ⇒ 真正 hang**：`transpile_lir/transpile_lir_src`（lirgen.rs:182-194）是公开入口，`src/ir/mod.rs:173/198/209/222` 的测试直接调用它；一旦测试语料含混合绑定点，测试将**永久挂起**（DGM 库中已有 `[lesson] test-hang-masks-drift` 同族教训）。
+5. **语料零测试覆盖 ⇒ 静默**：全仓检索 `corpus/transpile`、`g11_alg` 仅命中 `src/codegen/lirgen.rs:320` 该条**注释**，没有任何测试驱动 `corpus/transpile/*.tnr`。这正是本次回归能在 6545 全绿下存活的原因（lib 6545 passed / bins 22 passed 均绿）。
+
+## 回归性质
+`cd5157b`（唯一新增提交，`src/codegen/lirgen.rs` +180/-8）以「方向 B 函数体级定点分析」替换原增量式登记，注释自述增量式在 `let mut s = 0i64; s = s + data[i]` 上产出 E0308 类型不匹配而崩。本次修法把「编译期类型错误」换成了「编译期不收敛」，**从可诊断的 E0308 退化为不可诊断的挂死**，且动机用例本身未被验证即入库。
+
+## 修复方向（建议，供 owner 采纳）
+- 把判定改为**单调**语义：变量纳入 stable 当且仅当其**全部**绑定点在「上一轮 stable」下均 native；用 `added/removed` 双缓冲单趟提交（避免同趟内插入即被下游读到），每趟只按「集合是否变化」决定是否继续 ⇒ 因 stable 只减不增（或只增不减），必然有限步收敛。
+- 或保守但零风险的兜底：加迭代上限（如 `sites.len()+8` 轮）并在超出时退化为空 stable 集（全部按 Val 发射，语义仍正确，只是不做 i64 特化）——特化是纯优化，退化不影响正确性。
+- 补回归锁：把 `corpus/transpile/*.tnr` 接进测试（至少 g11 + m1/m2/m3 三例），并把 m2 这类 3 行混合绑定点程序设为「必须 <1s 返回」的判据；同时给 `transpile_with_guard` 超时分支补 worker 回收/进程级兜底。
+- reported_by: tnr-polisher
+- task_id: T0r5
+
+
+
+### FIXED(2026-10-17T02:22:09Z / BUG-257)
+- evidence: 真源 src/codegen/lirgen.rs（+86/-26，patches/bug257_stable_i64_and_let_type.patch）。三处根因同批修复，全部实跑验证：
+① 不收敛（死循环）：compute_stable_i64 原「单趟内既插入又移除 + changed 判停」改为单调递减归纳式不动点（初始化乐观纳入，按不健全剔除，只减不增），并加 sites.len()+2 轮上限 + 非收敛兜底清空（退化为全 Val，特化是纯优化不影响语义）。
+② 健全性：新增 ISiteKind{Init,Update} 区分绑定点——Init 在不含自身的 stable 下判定（初值是类型 ground），Update 允许自引用（归纳：初值定 i64 则更新保型即恒 i64）。既修混合站点误判，又保住 `i=i+1` 这类自引用累加器的 i64 特化（此前的替代方案会丢失方向 A–E 全部收益）。
+③ 类型不一致（E0308）：Let 发射路径原按单条初值增量 insert/remove 覆盖分析结论（违反 struct 字段注释「只读，不再增量改」），且已发出的 `let` 行无法被后续 Assign 的「降级」撤回 → `let mut s = 0i64; … s = <Val>;`。现改为只读 + 当 v∉i64_vars 且初值为原生 i64 时显式装箱 tnr_rt::lit_int(..)。
+断言锁/判据：cargo test --release --lib = 6545 passed/0 failed；--bins = 22 passed/0 failed；corpus/transpile 39/39 transpile OK；最小复现 m1..m5 + 语料 g11 全部 `--run`（transpile+rustc+执行）exit 0：m1 int64(1)、m2 float64(1.5)、m3 float64(3)、m4 int64(1)、m5 int64(1)、g11 输出 31/[3,1,4,1,5,9,2,6]/8/31。修复前：m2/m5/g11 = E0308 或 30s E9006 超时。
+## 判据（可离线复跑）
+- `Get-ChildItem corpus\transpile\*.tnr | % { tnr transpile $_ --backend lir }` → 每份都应 exit 0（本会话修复后实测 OK=39 FAIL=0；修复前 g11 为 E9006 超时）。
+- 对每份 `.tnr`：`tnr transpile X.tnr --backend lir --run` 与 `X.expected.txt` 逐行比对（`lir_only` 标记的文件跳过 --run，如 g13_do_while）。
+- 负向对照（证明非空洞）：把 g11 的 `while i < 8` 改成 `while i < 0`，期望首行 dtype 变化 → 判据能分辨，不是恒绿。
+
+## 修复方向（建议）
+1. 把 `corpus/transpile` 接入 `cargo test`（新增 `tests/corpus_transpile.rs`：遍历语料，逐份 `transpile_lir_src` 断言 Ok + `--run` 或至少 rustc 通过；对 `*.expected.txt` 做逐行比对，`*.lir_only` 只断言转译成功）。这同时是 BUG-257 类回归的天然回归锁。
+2. 明确 g11 首行 dtype 的正确期望：若 Int64 累加是有意为之（精度上更优，>2^53 不丢），则更新 `expected.txt`；若应保持 float64，则属语义变更需另立缺陷。**本条目不预设答案**，只指出「金标准与实际不符且无人守卫」这一事实。
+3. 建议在语料 README/守卫中写明：新增/变更语料必须同步 `expected.txt` 并纳入测试，禁止手改 expected 以迁就实现。
+- reported_by: tnr-polisher
+- task_id: T0r6
+
+## 根因（`bug_list` + 解析证实：ID 碰撞，不是「小记/抬头不一致」）
+
+`memory/bugs.md` 里 `BUG-185` / `BUG-186` / `BUG-217` 各挂了两条不同 bug：
+
+| ID | status=FIXED（旧 bug，有小记） | status=OPEN（新 bug，不同内容） |
+|---|---|---|
+| BUG-185 | `ops_watchdog.mbt 静默吞噬 heal 错误`（FIXED 2026-10-15T08:46:00） | `[判据] e2e_irm_line 真面档探针恒红：probe() 用 [ -x 'fist' ] 裸词…`（ts=2026-10-15T08:44:07） |
+| BUG-186 | `ops_heal.mbt heal_stale_tasks_by_phi 静默吞噬 reopen_task 错误`（FIXED 2026-10-15T08:50:00） | `[看护] e2e_irm_line --real 无 PATH/shim/产物目录还原保护…`（ts=2026-10-15T08:44:07） |
+| BUG-217 | `自驱发布静默吞错——selfdrive_publish_next 在发布失败时把失败折叠进 skipped`（FIXED 2026-10-15T13:20:00） | `[claimguard-side-effect] may_proceed_sematic / may_proceed_full 在检查前先 claim_item…`（ts=2026-10-15T13:22:34） |
+
+**机理**：`report_bug` 的 ID 分配对这三条复用了已存在的 BUG-185/186/217。`gen_plugins.py --check` 扫到 `### FIXED(…)` 小记点名 BUG-185/186/217，再去 `## BUG-n` 抬头查状态时，**读到的是 OPEN 那条**（或抬头被覆盖）→ 判为「被小记点名但状态不是 FIXED」→ FATAL（BUG-9 记账规则的互锁硬门被误触发）。
+
+## 影响
+
+- **cl7 一源四态断线**：插件态（atomcode/codearts/deepseek-harness/claude 四宿主）与真源不一致。
+- **`check_plugin_sync` 从 R223 的 PASS 变为 FAIL** —— cl7 红，CI 判据会挡发布。
+- 真源工具数 = 166（check_plugin_sync 明说），而 AGENTS.md 自述「140+」、R223 交付物「129」、`fist://map` J14「102」—— 四个数全不一致，工具计数自述全线漂移。
+
+## 建议修复（清整，指挥官/agent 决策）
+
+1. **把 OPEN 那三条 BUG-185/186/217 重新编号**（或改判合并），消除 ID 碰撞；FIXED 三条保留原小记。
+2. **`report_bug` 在 ID 分配前查重**：若目标 ID 已存在，自动分配下一个空闲 ID。
+3. 统一 `.mcp.json` 启动参数到单一真源（修 J5）。
+- reported_by: fist-lead
+
+
+
+### FIXED(2026-10-17T02:36:17Z / BUG-260)
+- evidence: 2026-10-17 fist-lead：①把 memory/bugs.md 里 3 条 OPEN 重复条目重编号（BUG-185(OPEN)→BUG-261、BUG-186(OPEN)→BUG-262、BUG-217(OPEN)→BUG-263，各带 renumbered_from 追溯），FIXED 三条（BUG-185/186/217 原号）保留原小记；②消除 ID 碰撞后 `python scripts/gen_plugins.py` 重生成 OK（166 工具 / v0.3.8 / BUG-1~263 共 263 条入账：8 待修/235 已修/10 重复并入/8 误报）；③`python scripts/check_plugin_sync.py` 由 R232 的 FAIL（exit 1）变为 **PASS**（4 宿主 / 64 个生成文件 / 166 工具 / v0.3.8 / 启动参数真源 .mcp.dev.json），J1 FATAL 与 J5 双双解除。遗留（不属本 bug 收口）：`report_bug` 分配 ID 前查重的代码根因仍 OPEN（本 bug 只清账本卫生，未改 src/）。
+## 根因
+`src/engine/engine_dag_ext.mbt` L657 `load = self.executor_loads(reg_names)` 只在路由循环**前**一次性快照活跃负载；L744 把任务写进 `routed` 却**从不更新 `load`**。于是 L732-739 的等成本平局 tiebreak（"相等取负载最低"）对本次路由自身的累计分配失明——平局时 `nl < bl` 恒假（两执行者负载都=初始值），`best` 永远停在先注册者 → 整轮路由全堆给先注册执行者，负载均衡形同虚设。
+## 实证（白盒 RED→GREEN）
+`src/engine/dag_ext_test.mbt` 新增 `dag_cost_route: 等成本平局按累计负载均分（BUG-336）`：2 个同能力执行者 + 4 独立灵活任务（+ 旁链垫 makespan=3）→ 修复前 `alice=4, bob=0`（RED），修复后 `alice=2, bob=2`（GREEN）。
+## 修复
+L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best){...}; ignore(load.set(best, prev_load + 1))`——把本次分配计入累计负载，后续等成本平局任务才转向其他执行者。
+## 验证
+`moon test --target js` = 1339/1339（新增 1 锁）；`moon fmt` 干净（engine 文件）。
+
+
+
+### FIXED(2026-10-19T09:04:03Z / BUG-336)
+- evidence: 修复点 src/engine/engine_dag_ext.mbt L741-749：routed.set(id, best) 之后追加 load.set(best, prev_load + 1)，把本次分配计入累计负载。白盒锁 src/engine/dag_ext_test.mbt `dag_cost_route: 等成本平局按累计负载均分（BUG-336）` RED(alice=4,bob=0)→GREEN(alice=2,bob=2)。全量 moon test --target js=1339/1339。
+
+## BUG-381 [2026-10-22T05:00:45Z] [high] OPEN
+- summary: [判据盲区] check_mbti_sync 对泛型顶层 `pub fn[T : …]` 双向隐形——声明与定义两侧正则都要求 fn 后有空格，[ 开头的类型参数列表两侧皆不匹配 ⇒ 这类声明不进判据宇宙；master 上它对悬空的 rhop_poll_once 判 PASS（675 条"全有定义"），正是本轮编译回归溜过的那道门
+- detail: 现象（2026-10-22 实测，master f6560010）：`python scripts/check_mbti_sync.py` 报
+「PASS … 24 份 .mbti 的 **675** 条 pub 声明（6 种形状）在同包 .mbt 里都有定义」，
+而 `src/ops/pkg.generated.mbti` 里 `pub fn[T : @rhop.RhopCipher] rhop_poll_once(...)` 在 `src/**` **零定义**
+（该丢件正是 master 三臂 CI 恒红在 Migrate 的根因，见 BUG-374/PR#12）。判据给的是**假绿**。
+
+根因：SHAPES["fn"] 两侧正则都要求 `fn` 后**有空格再接名字**——
+声明侧 `^\s*pub fn (\w+)`、定义侧 `^\s*(?:pub(?:\(all\))? )?fn (\w+)`。
+泛型顶层 fn 的写法是 `pub fn[T : …] name(...)`（`fn` 后紧跟 `[`），两侧 `\w+` 都匹配不上
+⇒ **这类声明根本不进判据宇宙**，源件丢了它也无从判红。实测对声明与定义两行单独跑正则均返回 None。
+
+影响面：全仓当且仅当 1 个泛型顶层 fn（就是 rhop_poll_once）⇒ 这条盲区恰好罩住了本轮唯一的编译回归；
+若将来泛型顶层 fn 增多，本尺对它们的悬空声明一律判 PASS（假绿面随数量线性扩大）。
+
+修法（已在本会话实测两向）：两侧正则放宽为可选 `[...]` 段
+（`^\s*pub fn(?:\[[^\]]*\])? (\w+)` / `^\s*(?:pub(?:\(all\))? )?fn(?:\[[^\]]*\])? (\w+)`），
+`--selftest` 增三格：泛型声明入集 / 泛型定义入集 / 悬空泛型声明必红（三格在旧正则下必红，构成变异自证）；
+汇总自述同步补「泛型顶层 fn 两格 + 悬空一格」（J10 判据范围自述==实现）。
+读数：master 上由「675 PASS」变「676 条扫描、1 违例，精确点名 src/ops/pkg.generated.mbti 的 rhop_poll_once」；
+在含该实现的分支（PR#12）上仍 **PASS 676 条、零误报**。
+
+限制（如实标注）：只认单行类型参数列表；`pub fn[\n  T : Foo,\n] name` 这类跨行写法的名字在后续行，
+仍需改为跨行状态机（本仓现无此形态）。
+- reported_by: lead-2 (PR#12 取证时实测)
+
+## BUG-382 [2026-10-22T05:06:29Z] [medium] OPEN
+- summary: [CI native 臂] reapply.sh 硬失败于已移除依赖 mizchi/sqlite——v0.3.10 换 daqing/sqlite@0.4.0 后 .mooncakes/mizchi 永不存在，native 双臂卡在 Reapply 步、heap gate 判据被挡（修于 PR #15）
+- detail: 现象（PR #15 CI 实测，job 119622405259 / 119616495085）：`bash patches/sqlite-bug133/reapply.sh --force` 报
+`找不到目标 stub.c：…/.mooncakes/mizchi/sqlite/stub.c`，rc=1，native 双臂因此每跑必停在 `Reapply` 步。
+
+根因：reapply.sh L32 把 TARGET_STUB 钉死 `mizchi/sqlite`；v0.3.10(9e0064a0) 把 native 后端换成
+`daqing/sqlite@0.4.0`（不透明外部类型 `type Sqlite3` + `#borrow`，133 族缺陷大概率不存在）。
+本机实测 `.mooncakes/` 已无 mizchi 目录（`Test-Path .mooncakes/mizchi` = False），只有 daqing；
+而 `daqing/sqlite/stub.c` 已用 `moonbit_make_bytes`（14 处）⇒ 旧补丁对新后端不适用，
+但脚本仍无条件硬失败 ⇒ 把 owner 裁决③设的 `Native heap gate` 挡在门口，native 覆盖「断且沉默」。
+
+修法（已实现于 PR #15，PR #13 为同内容旧基线版已关闭）：`backend_state()` 读 moon.mod 判
+mizchi / switched / unknown 三态——确证已不声明 mizchi ⇒ SKIP + exit 0 放行到 heap gate 真验；
+仍 mizchi 却没解包 / 读不到 moon.mod ⇒ 维持硬失败（unknown 不猜成「已换」，保留 2026-10-13
+「moon update 不解包」纠正注记）。`--selftest` 四格合成树驱动（S1 已换⇒SKIP0 / S2 仍mizchi未解包⇒失败1 /
+S3 读不到⇒保守失败1 / S4 已是修复版⇒跳过0），S1=0 与 S2=1 的差异即分类生效自证。
+实测：bash -n rc=0；--selftest 4/4 OK；daqing worktree 三模式(apply/--force/--verify) 全 SKIP rc=0。
+
+编号说明：本条最初以 BUG-380 入账，随后账本被并行 lane 重写（BUG-379/380 被重新分配为
+orphan-test 与 Windows moon-test-runner 两条），原条目丢失，故按新号重录。后续层 BUG-383 另记。
+- reported_by: lead-2（重录：原 BUG-380）
+
+## BUG-383 [2026-10-22T05:06:55Z] [medium] OPEN
+- summary: [CI native 判据漂移] e2e_native_heap_probe.py 自含小项目钉死 import mizchi/sqlite——主仓换 daqing 后 owner 裁决③的 heap gate 测的是旧后端；reapply 解锁后门仍不覆盖真正发布的 FFI 形态（BUG-382 的后续层，三档处置留 owner）
+- detail: 现象（静态取证）：`scripts/blackbox/e2e_native_heap_probe.py` 在 `temp/native_heap_probe` **自建**小项目
+（PROBE_DIR，moon.pkg 由脚本 L93-96 现写），`MOON_PKG` 钉死 `import "mizchi/sqlite"`，main.mbt 只走该依赖的
+公开 API 制造分配压力。即：它测的是 **mizchi** 的崩溃概率，与主仓当前后端无关。
+
+v0.3.10 后 `src/store` 全走 daqing；owner 裁决③「探针当门」的语义因此漂移到旧后端上——即使 BUG-382
+（reapply 硬失败）被修掉、SKIP 放行到 gate，门读数也只回答"mizchi 会不会崩"，不回答"我们真正发布的
+daqing FFI 会不会崩"。若 133 族缺陷在 daqing 上确实不存在，这道门就从判据变成遗物（且它的存在会继续
+把 mizchi 依赖带进 CI 构建路径）。
+
+处置选项（CI 判据语义变更，金条四留 owner/指挥官拍）：
+① 探针改指 daqing/sqlite（公开 API 同形：`Database::open/exec/prepare`、`SqlValue::Int/Text` 已核对兼容）
+   → 门继续当"现后端内存安全抽检"，须重跑 `--runs 12` 建新基线（0/N 契约语义沿用）。
+② 判定 daqing FFI 形态（opaque extern type + #borrow）从根上没有 133 族缺陷 → 撤 native 双臂的 heap gate
+   + reapply 两步、退役 `patches/sqlite-bug133/`，J11 守卫随之自然失效。
+③ 过渡期双探针（mizchi 历史 + daqing 现役）分开报读数——成本最高，不建议。
+判据：选一之前须先真跑 ① 形态的 `--runs 12` 拿 daqing 实测（探针 POSIX-only 出数，Windows 需 native-env.ps1 或 WSL）。
+
+编号说明：本条最初以 BUG-381 入账，账本被并行 lane 重写后原条目丢失，故按新号重录。
+- reported_by: lead-2（重录：原 BUG-381）
+

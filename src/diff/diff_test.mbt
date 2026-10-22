@@ -164,3 +164,27 @@ test "render_json 空操作序列" {
   let s = @diff.render_json([])
   assert_eq(s, "[]")
 }
+
+///|
+/// 附证：split_lines 原实现把以 \n 结尾的末尾空行静默丢掉，
+/// 导致 diff_lines("a\n", "a") 判为无差异（尾部换行差异漏报）。以下用例
+/// 压末尾空行识别路径。
+
+///|
+test "diff_lines 末尾空行差异" {
+  // "a\n" = ["a",""], "a" = ["a"]，差一个空行 → 应报 Delete("")
+  let ops = @diff.diff_lines("a\n", "a")
+  assert_eq(ops.length(), 2)
+  assert_eq(ops[0].kind(), "equal")
+  assert_eq(ops[1].kind(), "delete")
+}
+
+///|
+test "diff_lines 多行末尾空行差异" {
+  // "a\nb\n" = ["a","b",""], "a\nb" = ["a","b"]，差末尾空行
+  let ops = @diff.diff_lines("a\nb\n", "a\nb")
+  assert_eq(ops.length(), 3)
+  assert_eq(ops[0].kind(), "equal")
+  assert_eq(ops[1].kind(), "equal")
+  assert_eq(ops[2].kind(), "delete")
+}
