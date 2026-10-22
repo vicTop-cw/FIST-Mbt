@@ -210,3 +210,31 @@
 - `fist-pr-automator.py` — **yaml → PR → 门禁 → 合并流水线**：读一份 PR 定义 yaml，本地跑统一门禁，推分支，再用 curl 经 `GITHUB_TOKEN`/`GITCODE_TOKEN` 开 PR/MR，等门绿后合并。rc：0=ok / 1=blocked / 2=degraded；纯 ASCII、只用标准库（`check_py_stdout_encoding` 对它出的是 E2 预告：今天不红，写第一句中文结论就得补闸）。**未裁面**：它的默认动作是 `merge`，与金条四「不可逆操作只出方案 + 预案」和副机「推分支后只交 MR 链接、不代开 MR」的口径正面撞 ⇒ 已入池 TASK-021 等 owner 裁决；本条只登记现状，不为它背书。
 - `check_bug_refs.py` — **代码注释/测试标题里的 `BUG-n` ↔ 账本抬头 对表尺（BUG-373，主机 `cef1e9c` 落仓）**：三档 OK/ORPHAN/CLOSED，`--selftest` + `--bugs <账本>`。**与 `check_bug_reference_integrity.py`（副机 R48）是同一意图的两把尺**，而 main 这版被 peer 分支 `slave/fix/bug-refs-guard-semantics`（`484aced`）实测三处硬伤：假自测 / 退出码反用 / 把正常注释当违规 ⇒ 登记归登记，语义修复归那条分支，两把尺的分工与合并由 TASK-020 裁决。**这条登记不是选边**：它只让 `check_scripts_index` 出真实缺口。
 **重复读数（本轮清掉的 4 行）**：`run_guards.py` 曾同时挂 4 条自述互不相同的条目（24 把尺/34 格失败 2、24 把尺/35 格、26 把尺/38 格 ×2 逐字相同），`check_bug_reference_integrity.py` 挂 2 条逐字相同。`check_scripts_index` 只查「名字在不在」，重复与互斥读数一律放过 —— 这就是「同一工具多份历史读数并存」能躺在索引文件里没人管的机理。处理：留 R48 现读那条，删被取代的 2 条与逐字重复的 1 条，另删 `check_bug_reference_integrity.py` 的逐字重复 1 条。还有一条**假阳形状**必须记：散文引子 `- \`check_plugin_sync.py\` 的索引缺口补齐登记（…）：` 按行首反引号名统计会被当成条目/重复，但它不是 —— 计数式检测的第一手误差就长这样，所以本轮按内容逐条判定、不按计数删除。
+
+### 2026-10-22 新增：`check_dist_snapshot.py` / `refresh_dist.py`
+- `check_dist_snapshot.py` — **仓内发布快照 `dist/fist-mbt.js` 的版本守卫**：快照内嵌
+  `project__version` 必须 == `moon.mod`。存在理由：`scripts/mcp_compat_shim.js` 的**默认服务端**就是
+  `node dist/fist-mbt.js serve`，README 也把它当"发布版"引用；实测快照停在 **0.3.9** 而 moon.mod 已是
+  **0.3.10** ⇒ 照文档连过去的人/agent 拿到旧版本 + 旧工具集（shim 注释里甚至写着 148 工具/v0.3.8）。
+  `check_release_asset_names` 明确不扫 dist，这一格此前**无人认领**。`--selftest` 8 格真断言；
+  读不到版本/缺文件 ⇒ rc=2（判据无样本绝不放行）。
+- `refresh_dist.py` — **刷新快照的一条命令**：`moon build --target js --release cmd/cli` →
+  `patch_esm_main.py` 注入 ESM shim → 拷贝到 `dist/fist-mbt.js` → 跑上面那把尺自证。`--dry-run` 只打印计划。
+  实测 2026-10-22：刷新后 `node dist/fist-mbt.js version` = **FIST-Mbt v0.3.10**（用户视角真读数）。
+  注意：当前 moonc 世代产出的 bundle 比仓内快照大（release 108675 行 vs 快照 83765 行），
+  刷新会带来大 diff 属预期——**快照本该由发布流程产出**，故本仓只固化命令、不代提交产物。
+### 2026-10-22 登记：whisperer.py
+- whisperer.py — **风语者巡检自动化（TASK-009）**：Step 0-4（HEAD 安全门 → 分支普查 → 候选任务卡 →
+  issue 扫描）；旗标 --scan-only（默认）/ --auto-merge / --selftest。
+### 2026-10-22 登记：ist-pr-automator.py
+- ist-pr-automator.py — **PR 自动化**：把本地分支/提交整理成可审 PR 描述并（可选）推送建 PR；
+  与 slave-branch-merge.ps1（合并面）、whisperer.py（巡检面）同属分支治理三件套。
+  注意文件必须是 **UTF-8**（UTF-16 会让 Python 与 ps1 双端都读成乱码，同日 cef1e9cb 已修）。
+### 2026-10-22 登记：`fist-pr-automator.py`
+- `fist-pr-automator.py` — **PR 自动化**：把本地分支/提交整理成可审 PR 描述并（可选）推送建 PR；
+  与 `slave-branch-merge.ps1`（合并面）、`whisperer.py`（巡检面）同属分支治理三件套。
+  文件必须是 **UTF-8**（UTF-16 会让 Python 与 ps1 双端都读成乱码，同日 cef1e9cb 已修）。
+### 2026-10-22 补登记：`check_bug_refs.py`
+- `check_bug_refs.py` — 工具类辅助脚本（本次补登记；职责见脚本头部 docstring）。
+### 2026-10-22 补登记：`fist-gate.py`
+- `fist-gate.py` — **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段 + `--scan` 分支普查 + `--selftest`；退出码 0=pass / 1=fail / 2=degraded。
