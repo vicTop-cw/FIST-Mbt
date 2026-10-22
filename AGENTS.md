@@ -109,7 +109,8 @@ You can browse and install extra skills here:
 > **对照实验**：同一 payload，垫片 rc=1「Expected property name or '}'」；真 `node.exe` rc=0 并正常打印
 > `----- BEGIN MOON TEST RESULT -----`。⇒ 坏的是垫片转发，不是 moon、不是本仓、更不是测试代码。
 > **常驻入口**：`python scripts/moon_test_env.py [moon test 的参数…]`——按目录内容剔垫片、校验真 `.exe`、
-> 跑测试并核对汇总行；rc 契约 0/1/2（2=判据无法自证）。实测清理后全仓 **1387/1387 passed, rc=0**。
+> 跑测试并核对汇总行；rc 契约 0/1/2（2=判据无法自证）；Windows 上另自动发现 `~/.moon-shim/shim.exe` 并设
+> `MOONC_OVERRIDE`，绕开 moonc 的 `\\?\` 路径 ICE（工具链缺陷，见账本 BUG-380）。实测清理后全仓 **1387/1387 passed, rc=0**。
 
 ### native 目标构建环境要求
 

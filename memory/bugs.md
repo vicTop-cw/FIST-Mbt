@@ -6158,13 +6158,16 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 验证：`moon check --target js` → **rc=0（0 errors，`[4021]` 计数 0）**。
 - reported_by: agent-skill-docs（R37 实测）
 
-## BUG-380 [2026-10-22T11:20:00Z] [high] OPEN
+## BUG-380 [2026-10-22T11:20:00Z] [high] FIXED
 - summary: [toolchain] Windows 上 `moon test --target js` 的**执行面**失败：测试 harness 报 `failed to parse args: Unterminated string in JSON at position N` 后 `The test executable exited with exit code: 1`
 - detail: 实测（本机 moon 0.1.20261016 + Node ≥24）：编译绿的前提下 `moon test --target js` 仍 rc=-1，成片 `failed to parse args: Unterminated string in JSON`；**pristine master 上 `moon test src/core` 复现同一现象**⇒ 与本轮改动无关。
 同族证据：仓内 `reports/2026-10-21-slave-rhop-poll-once-fix-report.md` 记「裸 `moon fmt` 因 `\?\` 路径 ICE」，两处都指向 Windows 长路径前缀 `\\?\` 进入 moon 的参数序列化/子进程调用。
 影响：**权威稳定门槛（JS 后端全量 `moon test`）在本机不可读**——只能读到 `moon check` 面。
 建议：① 复现最小用例（空包 + 一条 test）并上报 moon 上游；② 短期以 `moon test --target js <pkg>` 逐包跑绕过，或在 CI（Linux runner）上读全量；③ 若确认为 `\\?\` 前缀导致，检查 moon 的 `--test-args` 序列化与 worktree 长路径设置。
 - reported_by: agent-skill-docs（R37 实测）
+
+### FIXED(2026-10-22T11:51:00Z / BUG-380)
+- evidence: 两道坑都在常驻入口 scripts/moon_test_env.py 收口（R54 + R124）：① PATH 上的 node.cmd 垫片吞 JSON 引号（见上追记）；② 清干净 PATH 后冷编译面 moonc 的 \\?\ 路径 ICE（Sys_error("\\\\?: Invalid argument")，moon 0.1.20261016 / Windows；最小工程同现，工具链缺陷）——Windows 上自动发现 ~/.moon-shim/shim.exe 并设 MOONC_OVERRIDE（显式环境变量优先；该 shim 剥离 \\?\ 前缀后转发真 moonc），找不到就照跑并在 ICE 出现时点名成因给 rc=2。实测（2026-10-22 R124，master 8e6e5444 基线）：无 override 的 moon check --target js rc=1 ICE、设 override 后 0 errors；python scripts/moon_test_env.py 全仓 1387/1387 passed, rc=0；--selftest 12 格全绿。工具链本体仍未上游修复（同族 fmt 面见 BUG-388）。
 
 ### FIXED(2026-10-22T11:20:00Z / BUG-379)
 - evidence: `git rm src/ops/rhop_native_wbtest.mbt`（孤儿测试：引用从未存在的 `rhop_poll_once`）+ `moon info` 重生成 `src/ops/pkg.generated.mbti`（孤儿声明消失）；实测 `moon check --target js` **rc=0 / 0 errors / `[4021]` 计数 0**（修前 6 × `[4021] is unbound`，`moon test` 10s 内即编译红）。配套新开 BUG-380 记录 runner 面预存缺陷。
