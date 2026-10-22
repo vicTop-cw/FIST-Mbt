@@ -2,7 +2,7 @@
 
 - 日期：2026-10-22
 - 分支：`slave/fix/moon-spawn-shim-r125`
-- 基线：`gitcode/master` @ `2531e6ad`
+- 基线：`gitcode/master` @ `ede53f30`（开工 2531e6ad；R124 于本单交付期间并入主线，已叠线）
 - 判据：`python scripts/fist.py call issue_scan` 自动重建不再 ICE；`moon_env_probe.py` 普查 11 份接线 / 违例 0
 
 ## 1. 结果摘要（结论 / 证据 / 分析）
@@ -51,7 +51,7 @@
 ## 7. 遗留风险
 
 - 普查是文件级判据：同一文件里只要出现 `moon_env(` 就放行，无法保证每个 spawn 点都带 `env=`；这是为兼容 `fist-gate.py` 的 `run()` 间接层做的取舍，行级判据会与间接层互掐。
-- `moon_test_env.py` 暂列白名单：R124 的 MR 尚未并入 master；两边逻辑同源，合入后应删白名单并把发现规则收敛到 `moon_env_probe`（否则同规则两份实现会漂）。
+- `moon_test_env.py` 仍列白名单：R124 已并入 master（ede53f30），但本单不改其 12 格自检面；后续单应把发现规则收敛到 `moon_env_probe` 并删白名单（否则同规则两份实现会漂）。
 - `scripts/blackbox/*` 与 PowerShell 构建脚本（`build_release.ps1` 等）不在本单扫描面；native 探针在 CI Linux 上跑，不涉及 Windows ICE。
 - shim 仍是机器级依赖（宿主既有绕法，不在仓库内）；换机/重装需重建，未修 moon 上游。
 - 发现但**未在本单修**：`scripts/fist-mbt-web.py` 的 `ensure_mcp_build()` 只判产物是否存在、不判新鲜度，与 docstring「已存在且新鲜」不符（源码更新后可能静默用旧产物）。建议另单登记。
