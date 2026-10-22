@@ -191,10 +191,16 @@
   `docs/tasks/backlog/TASK-NNN-*.yaml`（编号递增；每份 yaml 落一行机器锚 `dedupe_key: <sha1(key)[:16]>`，
   同键重跑即跳过——键的散文会漂，锚不会；ABORT 分支级发现按去掉远端前缀的分支名入池，
   gitcode/ 与 origin/ 两条镜面只占一单，P1）；默认扫描+写 yaml，
-  `--scan-only` 只出报告，`--apply` 额外做 ff-only 无分叉快进合入（真合并仍是人的决定），
-  `--no-fetch` 离线档。rc：0=无事 / 1=无法自证 / 2=发现待办。
-  `--selftest` 六格：干净分支巡检 / 干净标记 / pool_findings 逐类入池 / 重跑幂等且镜面去重 /
-  整串中文键不落到 `TASK-NNN-.yaml`（退化为键哈希 slug）/ 沙箱写不动真任务池。
+  `--scan-only` 只出报告，`--apply` 额外做 ff-only 无分叉快进合入（真合并仍是人的决定）——
+  快进的落点是**当前签出分支**，所以 R94 起有三道前置：工作树干净 + HEAD 就站在基线对应的本地分支上
+  + 逐条 `--ff-only` 且第一条不合常理即停；任一不成立即整批不动并把原因打报告（上一版没有前置、
+  非零 rc 全被吞掉、每轮还空转一次 `git checkout`），
+  `--no-fetch` 离线档。rc：0=无事 / 1=无法自证或 `--apply` 被前置挡住 / 2=发现待办。
+  `--selftest` 十格：干净分支巡检 / 干净标记 / pool_findings 逐类入池 / 重跑幂等且镜面去重 /
+  整串中文键不落到 `TASK-NNN-.yaml`（退化为键哈希 slug）/ 沙箱写不动真任务池 /
+  `--apply` 四格（基线上快进成功且基线 sha 前进 / 错签出整批不动 / 脏树整批不动 / 分叉分支永不进快进面）。
+  四格各有变异对照：拿掉任一道前置、或把合并面放宽到全部处置，必有对应格红；本轮正是这四格抓到
+  `probe_branches` 里 `merge-base` 漏传 `cwd`（真仓 cwd 恰等于 ROOT，这一格在真实跑法里看不见）。
   用法 `python scripts/whisperer_patrol.py [--scan-only|--apply] [--no-fetch] [--selftest]`。
 - `whisperer.py`（2026-10-22 主机 b0693a6 入仓，gitcode/main 线）— **风语者 Step 0-4 编排真源**：
   `--scan-only`（默认）/`--auto-merge`/`--self-test`，旗名带连字符，与本文件的 `--selftest` 不是同一个旗。
