@@ -22,10 +22,18 @@ node --enable-source-maps _build/js/debug/test/src/engine/engine.blackbox_test.j
 ⇒ 坏的不是 moon、不是本仓、更不是测试代码，而是**经由 `.cmd` 垫片转发时丢失的 JSON 引号**。
 把该垫片目录从 PATH 移除后：`moon test --target js` = **1387/1387 passed, rc=0（15s）**。
 
+## 第二道坑（R124）：清干净 PATH 仍可能在编译面炸
+`node` 修好之后，`moon test` 的**编译面**还有一颗雷：moon 0.1.20261016 在 Windows 上把
+`-o` / `-all-pkgs` 等输出路径写成 `\\?\F:\…` 长路径前缀，moonc 打开时直接
+`Sys_error("\\\\?: Invalid argument")`（与本仓代码无关，最小工程同样复现；同族见 BUG-388 的
+`moon fmt --check` 面）。本机既有绕法是 `MOONC_OVERRIDE` 指向一个**剥离 `\\?\` 前缀再转发**的 shim。
+本脚本在 Windows 上自动发现 `~/.moon-shim/shim.exe`（显式 `MOONC_OVERRIDE` 优先），找不到就照跑，
+但一旦输出里出现 ICE 会**点名成因**并给 rc=2——不把它洗成测试红、也不假装绿。
+
 ## 这个脚本做什么
 1. 递归剔除 PATH 里"含有 `node.cmd` 垫片"的目录（判据是**目录内容**，不是写死路径）；
 2. 校验 `node` 现在解析到**真实 `.exe`**（不是 `.cmd`/`.bat`）；解析不到就 rc=2（拒绝出数）；
-3. 用清理后的 PATH 跑 `moon test`，把参数原样透传；
+3. 用清理后的 PATH（+ 可用的 moonc override）跑 `moon test`，把参数原样透传；
 4. 按本仓契约出 rc：**0=全绿 / 1=有红 / 2=判据无法自证**，
    并核对汇总行 `Total tests: N, passed: N, failed: 0`（BUG-142：`moon test` 自身退出码不可靠，
    崩了也可能回 0 ⇒ 判绿必须看汇总行，不能只看 rc）。
@@ -86,6 +94,18 @@ def resolve_node(clean):
     return "", False, "清理后的 PATH 里找不到 node"
 
 
+DEFAULT_MOONC_SHIM = os.path.join(os.path.expanduser("~"), ".moon-shim", "shim.exe")
+
+
+def pick_moonc_override(env_value, shim_path, shim_exists, is_windows):
+    """挑 moonc 覆盖：显式 env 优先；Windows 上发现本机 shim 就用；否则不设（非 Windows 无此 ICE）。"""
+    if env_value:
+        return env_value, "env"
+    if is_windows and shim_exists:
+        return shim_path, "discovered"
+    return "", "none"
+
+
 def selftest():
     cells = []
 
@@ -118,13 +138,20 @@ def selftest():
     finally:
         shutil.rmtree(base, ignore_errors=True)
 
+    # moonc 覆盖选择：显式 env 优先 / Windows 自动发现 / 缺失与非 Windows 不设
+    fake_shim = os.path.join(base, "shim.exe")
+    cell("override-env-wins", pick_moonc_override(r"C:/x/shim.exe", fake_shim, True, True), (r"C:/x/shim.exe", "env"))
+    cell("override-discovers-windows", pick_moonc_override("", fake_shim, True, True), (fake_shim, "discovered"))
+    cell("override-skipped-when-missing", pick_moonc_override("", fake_shim, False, True), ("", "none"))
+    cell("override-skipped-non-windows", pick_moonc_override("", fake_shim, True, False), ("", "none"))
+
     bad = [(n, w) for n, ok, w in cells if not ok]
     if bad:
         print("SELFTEST FAIL：")
         for n, w in bad:
             print("  - %s：%s" % (n, w))
         return 1
-    print("SELFTEST OK（%d 格：垫片目录识别两档 + PATH 清理三档 + node 解析两档）" % len(cells))
+    print("SELFTEST OK（%d 格：垫片目录识别两档 + PATH 清理三档 + node 解析两档 + moonc 覆盖四档）" % len(cells))
     return 0
 
 
@@ -140,8 +167,21 @@ def main(argv):
     if not node or not real:
         print("  FATAL 清理后仍拿不到真实 node.exe ⇒ 拒绝出数（rc=2，不冒用 0/1 两档）")
         return 2
+    override, owhy = pick_moonc_override(
+        os.environ.get("MOONC_OVERRIDE", ""),
+        DEFAULT_MOONC_SHIM,
+        os.path.isfile(DEFAULT_MOONC_SHIM),
+        os.name == "nt",
+    )
+    if override:
+        print("  moonc override：%s（%s）" % (
+            override, "环境变量显式指定" if owhy == "env" else r"自动发现本机 shim（剥离 \\?\ 前缀）"))
+    elif os.name == "nt":
+        print(r"  moonc override：未找到 —— 冷编译可能撞 moonc 的 \\?\ 路径 ICE（工具链缺陷，见 scripts/README.md）")
     env = dict(os.environ)
     env["PATH"] = clean
+    if override:
+        env["MOONC_OVERRIDE"] = override
     cmd = ["moon", "test", "--target", "js"] + args
     print("  执行：%s" % " ".join(cmd))
     if dry:
@@ -159,6 +199,9 @@ def main(argv):
     if "failed to parse args" in out:
         print("  判据失败：测试产物收到残缺 JSON（说明 PATH 垫片没清干净或 moon 用了别的 node）")
         return 1
+    if "Sys_error" in out and "Invalid argument" in out:
+        print(r"  判据无法自证：moonc 撞上 `\\?\` 路径 ICE（工具链缺陷）——设 MOONC_OVERRIDE 指向剥离前缀的 shim，或把编译面交给 CI（Linux）")
+        return 2
     if m is None:
         print("  判据无法自证：没有汇总行 `Total tests: …` ⇒ rc=2（BUG-142：不许只凭 moon 的退出码判绿）")
         return 2
