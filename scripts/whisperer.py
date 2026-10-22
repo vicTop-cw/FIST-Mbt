@@ -128,45 +128,84 @@ def step1_branch_scan():
     return (mc, ab, merge_candidates)
 
 def auto_merge(candidates):
-    """对 MERGE-CODE 分支做 git checkout + markers 检查 + build + commit + push"""
-    print("[Step 1b] 自动合入 MERGE-CODE 分支")
+    """对 MERGE-CODE 分支做**三方 cherry-pick**（R43 起，取代整文件覆盖）。
+
+    为什么改（2026-10-22 实测取证）：旧实现用 `git checkout <ref> -- <file>` 把分支上的
+    **整份文件**搬到 HEAD。分支若落后于 master，这会把 master 上更新的行**原样删回去**——
+    实测 `slave/fix/dist-snapshot-guard` 的 `scripts/README.md` 会删掉 master 的
+    「### 2026-10-22 登记：whisperer.py」整段（-37/+5 的形状），`pre-commit-marker-gate` 同族。
+    这正是 TASK-004「REVERT-PATTERN」在**自动合并器自己身上**的实例：覆盖式合并会把
+    "合并"做成"回退"。改成 cherry-pick 独有提交后，改动以三方合并落盘，master 的新内容不会被抹掉。
+
+    纪律不变（只增不减）：
+      - 工作树必须干净，否则不动手（宁可不合，不可猜）；
+      - 分支自带冲突标记（markers>0）→ 跳过；
+      - pick 冲突时：**memory/reports/plugins/docs 取 theirs**（append-only 面，取远端更安全），
+        其余冲突 → `cherry-pick --abort` + `reset --hard`，整支跳过留人工（不硬塞、不覆盖）；
+      - markers 判据 + `moon build` 两道门，任一不过 → `reset --hard` 回滚本支。
+    """
+    print("[Step 1b] 自动合入 MERGE-CODE 分支（三方 cherry-pick）")
+    import shutil
+
     merged = 0
     for c in candidates:
         ref = c["ref"]
-        if c["markers"] > 0: continue
-        print(f"  🟢 {ref} cherry+={c['cherry']} src±={c['src_lines']}")
-        # 拿到 ref 里的文件列表
-        files = sh("git", "diff", "--name-only", "HEAD", ref).splitlines()
-        if not files: continue
-        safe = [f for f in files if any(f.startswith(p) for p in ("src/", "scripts/", "cmd/", ".github/"))]
-        if not safe: continue
-        # checkout 干净文件
-        for f in safe:
-            run(["git", "checkout", ref, "--", f])
-        # markers 检查
-        mc_r = run(["python", "scripts/blackbox/check_merge_markers.py"])
-        if mc_r.returncode != 0:
-            print(f"    ❌ markers 红，跳过")
-            run(["git", "checkout", "HEAD", "--"] + safe)
+        if c["markers"] > 0:
+            print(f"  ⚠ 跳过 {ref}：自带未解决冲突标记")
             continue
-        # build（只跑 MoonBit 源码，不跑依赖更新）
-        import shutil
+        if sh("git", "status", "--porcelain").strip():
+            print("  ⚠ 工作树不干净（有未提交改动）→ 本轮不合入，避免把别人的改动卷进来")
+            break
+        unique = [h for h in sh("git", "rev-list", "--reverse", f"HEAD..{ref}").split() if h]
+        if not unique:
+            print(f"  = 跳过 {ref}：无独有提交（内容已在 HEAD 里）")
+            continue
+        print(f"  🟢 {ref} cherry+={c['cherry']} src±={c['src_lines']}（{len(unique)} 个提交）")
+        picked, failed = 0, False
+        for h in unique:
+            msg = sh("git", "log", "-1", "--format=%s", h).strip()
+            r = run(["git", "cherry-pick", h])
+            if r.returncode != 0:
+                conf = sh("git", "diff", "--name-only", "--diff-filter=U").split()
+                soft = [f for f in conf if f.startswith(("memory/", "reports/", "plugins/", "docs/"))]
+                hard = [f for f in conf if f not in soft]
+                if soft and not hard:
+                    for f in soft:
+                        run(["git", "checkout", "--theirs", f])
+                        print(f"      theirs: {f}")
+                    run(["git", "add", "-A"])
+                    r2 = subprocess.run(["git", "-c", "core.editor=true", "cherry-pick", "--continue"],
+                                        cwd=ROOT, capture_output=True, text=True)
+                    if r2.returncode == 0:
+                        picked += 1
+                        continue
+                run(["git", "cherry-pick", "--abort"])
+                run(["git", "reset", "--hard", "HEAD"])
+                print(f"    ❌ 冲突于 {h[:7]}（{msg[:40]}；硬冲突: {', '.join(hard) or '-'}）→ 整支跳过，留人工")
+                failed = True
+                break
+            picked += 1
+        if failed:
+            continue
+        # 门①：仓库内冲突标记判据（live）
+        mc = run(["python", "scripts/blackbox/check_merge_markers.py"])
+        if mc.returncode != 0:
+            run(["git", "reset", "--hard", f"HEAD~{picked}"])
+            print("    ❌ markers 红 → 回滚本支")
+            continue
+        # 门②：构建
         shutil.rmtree("_build", ignore_errors=True)
-        b_r = run(["moon", "build", "--target", "js", "src/server", "src/engine",
-                    "src/store", "src/router", "src/ops"])
-        err_count = b_r.stdout.count("Error:")
-        if err_count > 0:
-            print(f"    ❌ build 有 Error，跳过")
-            run(["git", "checkout", "HEAD", "--"] + safe)
+        b = run(["moon", "build", "--target", "js", "src/server", "src/engine",
+                 "src/store", "src/router", "src/ops"])
+        if b.stdout.count("Error:") > 0:
+            run(["git", "reset", "--hard", f"HEAD~{picked}"])
+            print("    ❌ build 有 Error → 回滚本支")
             continue
-        # commit + push
-        run(["git", "add"] + safe)
-        run(["git", "commit", "-m", f"merge(branch): {ref} — auto by whisperer"])
         run(["git", "push", "gitcode", "HEAD:main", "HEAD:master"])
         run(["git", "push", "origin", "HEAD:main", "HEAD:master"])
         merged += 1
-        print(f"    ✅ 合入")
-    print(f"  合计: {merged} 个合入")
+        print(f"    ✅ 合入 {picked} 个提交")
+    print(f"  合计: {merged} 个分支合入")
     return merged
 
 # ============================================================
@@ -244,6 +283,66 @@ def selftest():
         print(f"  ✅ G2 import 不崩")
     except Exception as e:
         print(f"  ❌ G2 import 崩: {e}"); rc = 2
+    # G3: auto_merge 不许再用"整文件覆盖"（R43）。这不是风格洁癖——
+    # 覆盖式合并实测会把 master 更新的行删回去（scripts/README.md 一次 -37/+5），
+    # 即"合并"做成"回退"。用源码自省钉住：把 checkout <ref> -- <file> 改回来这里必红。
+    import inspect
+    src = inspect.getsource(auto_merge)
+    if '"checkout", ref, "--"' in src or "'checkout', ref, '--'" in src:
+        print("  ❌ G3 auto_merge 仍含整文件覆盖（git checkout <ref> -- <file>）——会回退 master 内容")
+        rc = 2
+    elif "cherry-pick" not in src:
+        print("  ❌ G3 auto_merge 里找不到 cherry-pick（判据失去锚点，无法自证）")
+        rc = 2
+    else:
+        print("  ✅ G3 auto_merge 用三方 cherry-pick，无整文件覆盖")
+    # G4: 行为级自证 —— 在临时仓库里把"整文件覆盖"与"cherry-pick"各跑一遍：
+    #     覆盖会丢掉 master 后加的行（这就是它把"合并"做成"回退"的机理），cherry-pick 不会。
+    import tempfile
+    import shutil as _shutil
+    d = tempfile.mkdtemp(prefix="whisperer-g4-")
+
+    def g(*a):
+        return subprocess.run(["git"] + list(a), cwd=d, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace")
+
+    try:
+        g("init", "-q", "-b", "master", ".")
+        g("config", "user.email", "t@t")
+        g("config", "user.name", "t")
+        io = __import__("io")
+        io.open(os.path.join(d, "README.md"), "w", encoding="utf-8").write("A\n")
+        g("add", "-A"); g("commit", "-qm", "base")
+        # 分支：在 base 上加 C
+        g("checkout", "-q", "-b", "slave")
+        io.open(os.path.join(d, "README.md"), "w", encoding="utf-8").write("A\nC\n")
+        g("commit", "-qam", "branch-C")
+        # master：在 base 上加 B（模拟 master 前进）
+        g("checkout", "-q", "master")
+        io.open(os.path.join(d, "README.md"), "w", encoding="utf-8").write("A\nB\n")
+        g("commit", "-qam", "master-B")
+        # (1) 旧行为：整文件覆盖
+        g("checkout", "slave", "--", "README.md")
+        overlay = io.open(os.path.join(d, "README.md"), encoding="utf-8").read()
+        g("checkout", "HEAD", "--", "README.md")
+        # (2) 新行为：cherry-pick 分支独有提交
+        head = g("rev-parse", "HEAD").stdout.strip()
+        g("cherry-pick", "--no-commit", "slave")
+        g("commit", "-qm", "pick-C")
+        picked = io.open(os.path.join(d, "README.md"), encoding="utf-8").read()
+        if "B\n" in overlay:
+            print("  ❌ G4 夹具失效：整文件覆盖竟然保留了 master 的 B 行（判据无法自证）")
+            rc = 2
+        elif "B\n" not in picked or "C\n" not in picked:
+            print(f"  ❌ G4 cherry-pick 未同时保留 B 与 C：{picked!r}")
+            rc = 2
+        else:
+            print("  ✅ G4 覆盖式合并丢 master 行（已证缺陷真实）/ cherry-pick 同时保留 B+C")
+    except Exception as e:
+        print(f"  ❌ G4 执行异常: {e}")
+        rc = 2
+    finally:
+        _shutil.rmtree(d, ignore_errors=True)
     return rc
 
 # ============================================================
