@@ -66,6 +66,21 @@ def expected(script, rc, why, *args, kind="known-red"):
             "argv": list(args), "expect": rc, "needs": [], "why": why, "kind": kind}
 
 
+def tolerant(script, allow, why, *args, kind="diag"):
+    """**树态诊断格**：允许若干个"都算正确读数"的 rc（如 0 与 1），且照实打印真实 rc。
+
+    为什么需要它（R49 实测）：`cleanup_artifacts.py --check` 的 rc 反映**工作树脏不脏**，
+    不是代码健康：隔离树/空 `temp/` 读 0，`temp/` 有残留或脚本区有 `_` 临时文件读 1。
+    原先写死 `expect=1` ⇒ 干净 worktree 里电池**恒 FAIL**（假红）；写死 0 又在真脏树里假绿。
+    试过"按 temp/ 是否存在算期望"，两侧实测都不成立（空 `temp/` 目录仍然 CLEAN）——
+    判据与脚本看的不是同一个条件，猜状态只会换一种假红。所以此格只报读数、不判健康：
+    rc ∈ allow 即通过，`诊断` 标签 + 末尾读数照实打印，人一眼能看到"这次读到几"。
+    """
+    c = expected(script, allow[0], why, *args, kind=kind)
+    c["allow"] = tuple(allow)
+    return c
+
+
 def gated(script, need, *args, expect=0, why="依赖 temp 临时件", kind="gate"):
     """依赖 temp/ 临时件（或树态目录）的 case：缺前置即 SKIP（打印，不静默）。
 
@@ -219,8 +234,13 @@ SPECIAL_CASES = [
     # ── 兑现（R108）：主线 `866e2e65` 把 dist 快照刷到与 moon.mod 同版 ⇒ 这一格现读 got=0，"
     #    登记的红已不成立。按本文件自订的律「被检内容修好 ⇒ 把期望改回 0」转回门禁格，依据一起删。──
     case("check_dist_snapshot.py"),
-    expected("cleanup_artifacts.py", 1,
-             "预存红：工作树 DIRTY（temp/ 与 *.db 是运行物，本仓不 git clean 它们）", "--check"),
+    # —— R49：这一格**只报读数不判健康**。cleanup --check 的 rc 取决于工作树脏不脏
+    #    （temp/ 残留、`_` 临时脚本 ⇒ 1；隔离树/空 temp ⇒ 0），不是代码健康。
+    #    写死 1 ⇒ 干净 worktree 恒假红；写死 0 ⇒ 真脏树假绿；按 temp/ 存在算期望也不行
+    #    （空目录仍 CLEAN，探针与脚本看的不是同一条件——两侧都实测过）。故允许 {0,1} 并照实打印。 ——
+    tolerant("cleanup_artifacts.py", (0, 1),
+             "树态诊断：temp/ 残留或 `_` 临时脚本存在时读 1，否则读 0；两读都正确，本格只报读数",
+             "--check"),
     # ── 这一格是「预存红被修好 ⇒ 期望改回 0」那条律的一次兑现（不是我们替它改的读数）──
     # R106 现读：判定面 J1 悬空-注释面 0 条，棘轮上限也已在 R76（BUG-373 出路②）归 0 ⇒
     # 原来的 expected(...,1) 依据自写的那句「修到自然转绿后把期望改回 0」到期，转回门禁格。
@@ -681,7 +701,9 @@ def run_battery(case_timeout=CASE_TIMEOUT_SEC):
             continue
         out = ((p.stdout or "") + ("\n" + p.stderr if p.stderr else "")).strip().splitlines()
         tail = out[-1][:120] if out else ""
-        ok = p.returncode == c["expect"]
+        # R49：树态诊断格可以声明"多个都正确的读数"（allow），不把环境差异误报成 FAIL。
+        allow = c.get("allow")
+        ok = p.returncode in allow if allow else (p.returncode == c["expect"])
         tag = {"gate": "OK", "diag": "诊断", "known-red": "预存红"}[c["kind"]]
         print("rc=%-2s exp=%-2s %-56s %s %s" % (p.returncode, c["expect"], c["name"], tag, tail))
         if not ok:
