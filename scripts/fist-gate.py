@@ -699,3 +699,272 @@ if __name__ == "__main__":
         sys.exit(scan(ROOT)[0])
     if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist-gate.py [--selftest|--scan]")
     sys.exit(gate(ROOT))
+# -*- coding: utf-8 -*-
+"""scripts/fist-gate.py - unified gate chain (merge_markers/fmt/build/ps_encoding/store_path) + --scan branch census. rc: 0=pass/scan-output 1=fail 2=degraded."""
+import re, subprocess, sys, tempfile
+from datetime import datetime
+from pathlib import Path
+# 统一把 stdout/stderr 钉成 UTF-8（CI 在 Linux UTF-8 下是无损 no-op）。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+ROOT = Path(__file__).resolve().parent.parent
+EXC = ("_build", "temp", ".git", "node_modules")
+def run(cmd, cwd=None): return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+def tracked(root):
+    r = run(["git", "-C", str(root), "ls-files", "-z"])
+    return None if r.returncode else [f for f in r.stdout.split("\0") if f.strip()]
+def pick(files, suffix, prefix=""): return [f for f in files if f.startswith(prefix) and f.endswith(suffix) and not any(x in Path(f).parts for x in EXC)]
+def ck_mm(root):
+    if root == ROOT:
+        r = run(["python", "scripts/blackbox/check_merge_markers.py"], cwd=root)
+        out = (r.stdout.strip().splitlines() or ["no output"])[-1]
+        return (2, "DEGRADED merge_markers: " + out) if r.returncode == 2 else (r.returncode, out)
+    fs = tracked(root)
+    if fs is None: return 2, "DEGRADED merge_markers: git unavailable"
+    bad = [f for f in fs if any(l.startswith(("<<<<<<<", "=======", ">>>>>>>")) for l in (root / f).read_text(encoding="utf-8", errors="replace").splitlines())]
+    return (1, "FAIL merge_markers: " + ", ".join(bad)) if bad else (0, "merge_markers: %d files ok" % len(fs))
+def ck_fmt(root):
+    r = run(["moon", "fmt", "--check"], cwd=root)
+    if r.returncode == 0: return 0, "moon fmt --check: clean"
+    if r.returncode == 1: return 1, "moon fmt --check: format diff"
+    return 2, "DEGRADED fmt: rc=%d %s" % (r.returncode, ((r.stderr + r.stdout).strip().splitlines() or ["no output"])[-1])
+def ck_build(root):
+    r = run(["moon", "build", "--target", "js", "src/server", "src/engine", "src/store", "src/router", "src/ops"], cwd=root)
+    return (0, "build: rc=0, 0 errors") if r.returncode == 0 else (1, "build FAIL rc=%d tail: %s" % (r.returncode, (r.stdout + r.stderr)[-160:]))
+def ck_ps(root):
+    fs = tracked(root)
+    if fs is None: return 2, "DEGRADED ps_encoding: git unavailable"
+    ps = pick(fs, ".ps1")
+    if not ps: return 2, "DEGRADED ps_encoding: no tracked .ps1 (empty scan)"
+    bad = [f for f in ps if any(x > 127 for x in (root / f).read_bytes()) and not (root / f).read_bytes().startswith(b"\xef\xbb\xbf")]
+    return (1, "FAIL ps_encoding: " + ", ".join(bad)) if bad else (0, "ps_encoding: %d .ps1 ASCII/BOM ok" % len(ps))
+def ck_sp(root):
+    fs = tracked(root)
+    if fs is None: return 2, "DEGRADED store_path: git unavailable"
+    st = [f for f in pick(fs, ".mbt", "src/store/") if not f.endswith("_test.mbt")]
+    if not st: return 2, "DEGRADED store_path: no src/store/*.mbt (empty scan)"
+    pat = re.compile(r'"[^"\n]*(?:C:|c:)[\\/][^"\n]*"|"[^"\n]*/(?:etc|home|usr|var|root)/[^"\n]*"|"[^"\n]*\\\\[A-Za-z][^"\n]*"')
+    bad = [f for f in st if pat.search((root / f).read_text(encoding="utf-8", errors="replace"))]
+    return (1, "FAIL store_path: " + ", ".join(bad)) if bad else (0, "store_path: %d store files ok" % len(st))
+def ck_ws(root):
+    # 风语者探测面自证：只跑 whisperer_patrol.py --selftest（扫描产物是输出不是门，真发现走 backlog yaml）。
+    # R93 起指向 patrol 引擎而非 whisperer.py——后者的 Step 0 会 reset --hard + 强推共享线（TASK-018），
+    # 且它的旗名是 `--self-test`，喂 `--selftest` 只会拿到 argparse 的 rc=2 幻影红。
+    # 脚本取真实安装位（合成仓里没有副本，patrol 自证自建临时仓、不依赖被检 root）
+    ws = Path(__file__).resolve().parent / "whisperer_patrol.py"
+    r = run([sys.executable or "python", str(ws), "--selftest"], cwd=root)
+    if r.returncode:
+        return 1, "FAIL whisperer: 自证 rc=%d %s" % (r.returncode, ((r.stdout + r.stderr).strip().splitlines() or ["no output"])[-1])
+    return 0, "whisperer: " + ((r.stdout.strip().splitlines() or ["ok"])[0])
+CHECKS = [("merge_markers", ck_mm), ("fmt", ck_fmt), ("build", ck_build), ("ps_encoding", ck_ps), ("store_path", ck_sp), ("whisperer", ck_ws)]
+def safe(name, fn, root):
+    try: return fn(root)
+    except Exception as e: return 2, "DEGRADED %s: %s" % (name, e)
+def gate(root):
+    rc = 0
+    for name, fn in CHECKS:
+        c, line = safe(name, fn, root)
+        print(("FAIL " if c == 1 else "DEGRADED " if c == 2 else "PASS ") + name + ": " + line)
+        rc = max(rc, c)
+    return rc
+
+# --- TASK-005: --scan 分支普查（合入者巡检的自动进料口） -----------------
+# rc 契约：0 = 有产出（含发现，发现是输出不是失败）；2 = 判据无法自证（远端分支枚举不到 / 无 master-main 基点）。
+def remote_refs(root):
+    r = run(["git", "-C", str(root), "branch", "-r", "--format", "%(refname)"], cwd=root)
+    if r.returncode: return None
+    out = []
+    for l in r.stdout.splitlines():
+        l = l.strip()
+        if l.startswith("refs/remotes/") and not l.endswith("/HEAD"):
+            out.append(l[len("refs/remotes/"):])
+    return out
+def pick_base(refs):
+    for cand in ("gitcode/master", "gitcode/main", "origin/master", "origin/main", "master"):
+        if cand in refs: return cand
+    return None
+def gout(root, *args):
+    r = run(["git", "-C", str(root)] + list(args), cwd=root)
+    return "" if r.returncode else r.stdout
+def scan_branch(root, base, ref):
+    ahead = gout(root, "rev-list", "--count", "%s..%s" % (base, ref)).strip()
+    ahead = int(ahead) if ahead.isdigit() else 0
+    cherry_plus = sum(1 for l in gout(root, "cherry", base, ref).splitlines() if l.startswith("+"))
+    numstat = gout(root, "diff", "--numstat", "%s...%s" % (base, ref), "--", "src", "scripts", "cmd", "moon.pkg")
+    code_files, src_lines = [], 0
+    adds = dels = 0
+    revert_files = []
+    for line in numstat.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3: continue
+        add, dele, path = parts[0], parts[1], parts[2]
+        code_files.append(path)
+        if add.isdigit(): src_lines += int(add)
+        if dele.isdigit(): src_lines += int(dele)
+        # TASK-004 反向 diff 检测：删远多于增 = 疑似把已合入内容 revert 回旧版
+        if add.isdigit() and dele.isdigit():
+            a, d = int(add), int(dele)
+            adds += a; dels += d
+            if d >= 20 and d > a * 1.5: revert_files.append({"path": path, "del": d, "add": a})
+    revert_files.sort(key=lambda f: -f["del"])
+    revert_files = revert_files[:5]
+    revert = dels >= 50 and dels > adds * 1.5
+    markers = []
+    for path in code_files:
+        body = gout(root, "show", "%s:%s" % (ref, path))
+        if any(l.startswith(("<<<<<<<", ">>>>>>>")) for l in body.splitlines()):
+            markers.append(path)
+    if markers: action = "ABORT/人工解冲突：分支自带未解决冲突标记"
+    elif ahead == 0 and cherry_plus == 0: action = "DROP：base 已包含分支全部提交（可删分支/关 MR）"
+    elif cherry_plus == 0: action = "DROP：全部提交内容已等价存在于 base（cherry 无 +）"
+    elif revert: action = "REVERT-PATTERN：删远多于增（%d-/+%d）——疑似把已合入内容 revert 回旧版/rebase 取错方向，人工复核" % (dels, adds)
+    elif src_lines == 0: action = "MERGE-LOW-RISK：纯文档/流水账改动，低风险合入"
+    else: action = "MERGE-CODE：有 src/scripts 代码改动——先过统一门链（fist-gate.py）再合入"
+    return {"branch": ref, "base": base, "ahead": ahead, "cherry_plus": cherry_plus,
+            "conflict_markers": markers, "src_lines_changed": src_lines, "code_files": code_files,
+            "del_lines": dels, "add_lines": adds, "revert_pattern": int(revert),
+            "revert_files": ["%s(-%d/+%d)" % (f["path"], f["del"], f["add"]) for f in revert_files],
+            "suggested_action": action}
+def yaml_cell(v):
+    if isinstance(v, int): return str(v)
+    if isinstance(v, list): return "[" + ", ".join('"%s"' % x for x in v) + "]" if v else "[]"
+    return '"%s"' % str(v).replace("\\", "\\\\").replace('"', '\\"')
+def write_scan_yaml(path, row):
+    # TASK-004：REVERT-PATTERN 分支进 failed 队列（status 字段），不进 claimable backlog
+    status = "failed" if str(row.get("suggested_action", "")).startswith("REVERT-PATTERN") else "backlog"
+    body = ["status: %s" % status, "source: fist-gate.py scan"]
+    body += ["%s: %s" % (k, yaml_cell(v)) for k, v in row.items()]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(body) + "\n", encoding="utf-8")
+def scan(root, do_fetch=True):
+    refs = remote_refs(root)
+    if refs is None or not refs: return 2, "scan: no remote branches enumerable (fetch first / no remotes)"
+    base = pick_base(refs)
+    if base is None: return 2, "scan: no master/main base ref among remote branches"
+    fetch_note = ""
+    if do_fetch:
+        fr = run(["git", "-C", str(root), "fetch", "--all", "--prune"], cwd=root)
+        if fr.returncode: fetch_note = "DEGRADED fetch rc=%d（用既有远端引用继续）\n" % fr.returncode
+        refs = remote_refs(root) or refs
+    out_dir = Path(root) / ".git" / "fist" / "tasks" / "backlog"
+    rows = []
+    for ref in refs:
+        if ref == base or ref.rsplit("/", 1)[-1] in ("master", "main"): continue
+        row = scan_branch(root, base, ref)
+        row["scanned_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+        write_scan_yaml(out_dir / (ref + ".yaml"), row)
+        rows.append(row)
+    stale = 0
+    if out_dir.is_dir():
+        live = {ref + ".yaml" for ref in refs if ref != base and ref.rsplit("/", 1)[-1] not in ("master", "main")}
+        for p in list(out_dir.rglob("*.yaml")):
+            if p.relative_to(out_dir).as_posix() not in live:
+                p.unlink(); stale += 1
+    print(fetch_note + "scan: base=%s 分支 %d 个 → %s（清掉 stale yaml %d 份）" % (base, len(rows), out_dir, stale))
+    for row in sorted(rows, key=lambda r: (-r["src_lines_changed"], r["branch"])):
+        print("  %-52s ahead=%-3d cherry+=%-3d src±=%-5d markers=%d → %s" % (
+            row["branch"], row["ahead"], row["cherry_plus"], row["src_lines_changed"],
+            len(row["conflict_markers"]), row["suggested_action"]))
+        if row.get("revert_pattern"):
+            print("    REVERT-PATTERN 文件级证据（删远多于增 Top5）：%s" %
+                  ("；".join(row["revert_files"]) or "-"))
+    print("巡检 prompt 追加句：『每次巡检先跑 python scripts/fist-gate.py --scan，把"
+          ".git/fist/tasks/backlog/ 下的新 yaml 里值得处理的问题提升为 docs/tasks/backlog/*.yaml』")
+    return 0, "scan: %d branches" % len(rows)
+
+def selftest():
+    executed, fails = [], []
+    def repo(files):
+        d = Path(tempfile.mkdtemp(prefix="fg-"))
+        run(["git", "init", "-q"], cwd=d); run(["git", "config", "user.email", "t@t"], cwd=d); run(["git", "config", "user.name", "t"], cwd=d)
+        for rel, body in files.items():
+            p = d / rel; p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(body) if isinstance(body, bytes) else p.write_text(body, encoding="utf-8")
+        run(["git", "add", "-A"], cwd=d); run(["git", "commit", "-qm", "f"], cwd=d)
+        return d
+    def probe(name, fn, d, want, label):
+        c, line = safe(name, fn, d); executed.append(label % (name, c))
+        if c != want: fails.append("%s rc=%d want %d: %s" % (name, c, want, line))
+    bad = repo({"x.mbt": "a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> t\n", "bad.ps1": b"Write-Output '\xc4\xe2\xba\xba'\n", "src/store/x.mbt": "let p = \"C:\\\\data\"\n"})
+    for name, fn in [("merge_markers", ck_mm), ("ps_encoding", ck_ps), ("store_path", ck_sp)]: probe(name, fn, bad, 1, "G1 %s red-on-inject rc=%d")
+    clean = repo({"ok.ps1": b"Write-Output 'ascii'\n", "src/store/y.mbt": "let p = \"data\"\n", "a.mbt": "def f() = 1\n"})
+    for name, fn in [("merge_markers", ck_mm), ("ps_encoding", ck_ps), ("store_path", ck_sp)]: probe(name, fn, clean, 0, "G2 %s green-on-clean rc=%d")
+    probe("ps_encoding", ck_ps, repo({"a.mbt": "def f() = 1\n"}), 2, "G3 %s empty-scan self-reject rc=%d")
+    c, line = safe("whisperer", ck_ws, clean); executed.append("G5 whisperer green-on-clean (rc=%d)" % c)
+    if c != 0: fails.append("G5 whisperer rc=%d: %s" % (c, line))
+    for name, fn in [("fmt", ck_fmt), ("build", ck_build)]: c, line = safe(name, fn, ROOT); executed.append("G4 %s observable-on-real (rc=%d)" % (name, c)); fails.append("G4 %s rc=%d degraded: %s" % (name, c, line)) if c not in (0, 1) else None
+    # --- TASK-005 scan cells (offline: local repo as "origin") ---
+    def scan_origin(branches, merged=(), base_files=None):
+        org = Path(tempfile.mkdtemp(prefix="fg-org-"))
+        run(["git", "init", "-q", "-b", "master"], cwd=org); run(["git", "config", "user.email", "t@t"], cwd=org); run(["git", "config", "user.name", "t"], cwd=org)
+        for rel, body in (base_files or {"r.txt": "base\n"}).items():
+            p = org / rel; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(body, encoding="utf-8")
+        run(["git", "add", "-A"], cwd=org); run(["git", "commit", "-qm", "base"], cwd=org)
+        for name, files in branches.items():
+            run(["git", "checkout", "-q", "-b", name], cwd=org)
+            for rel, body in files.items():
+                p = org / rel; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(body, encoding="utf-8")
+            run(["git", "add", "-A"], cwd=org); run(["git", "commit", "-qm", name], cwd=org)
+            run(["git", "checkout", "-q", "master"], cwd=org)
+        for name in merged:
+            run(["git", "merge", "-q", "--ff-only", name], cwd=org)
+        loc = Path(tempfile.mkdtemp(prefix="fg-loc-"))
+        run(["git", "init", "-q"], cwd=loc); run(["git", "config", "user.email", "t@t"], cwd=loc); run(["git", "config", "user.name", "t"], cwd=loc)
+        run(["git", "remote", "add", "origin", str(org)], cwd=loc); run(["git", "fetch", "-q", "origin"], cwd=loc)
+        return loc
+    def yaml_at(loc, name):
+        p = loc / ".git" / "fist" / "tasks" / "backlog" / ("origin/%s.yaml" % name)
+        return p, (p.read_text(encoding="utf-8") if p.exists() else "")
+    c, line = scan(repo({}), do_fetch=False)
+    executed.append("S1 scan-no-remote-self-reject rc=%d" % c)
+    if c != 2: fails.append("S1 scan on repo without remotes rc=%d want 2" % c)
+    loc = scan_origin({"feature": {"src/lib.mbt": "a\nb\nc\n"}})
+    c, line = scan(loc, do_fetch=False)
+    _, y = yaml_at(loc, "feature")
+    ok = c == 0 and "ahead: 1" in y and "cherry_plus: 1" in y and "src_lines_changed: 3" in y and "suggested_action: \"MERGE-CODE" in y
+    executed.append("S2 scan-code-branch-yaml fields (rc=%d)" % c)
+    if not ok: fails.append("S2 scan code branch rc=%d yaml mismatch: %s" % (c, y[:200]))
+    loc = scan_origin({"docs-only": {"docs/note.md": "hi\n"}})
+    scan(loc, do_fetch=False)
+    _, y = yaml_at(loc, "docs-only")
+    executed.append("S3 scan-docs-only-merges-low-risk")
+    if "suggested_action: \"MERGE-LOW-RISK" not in y: fails.append("S3 docs-only action mismatch: %s" % y[:200])
+    loc = scan_origin({"feat-a": {"src/a.mbt": "x\n"}}, merged=("feat-a",))
+    scan(loc, do_fetch=False)
+    _, y = yaml_at(loc, "feat-a")
+    executed.append("S4 scan-merged-branch-drop")
+    if "ahead: 0" not in y or "suggested_action: \"DROP" not in y: fails.append("S4 merged branch mismatch: %s" % y[:200])
+    loc = scan_origin({"marked": {"scripts/m.py": "a\n<<<<<<< HEAD\nb\n"}})
+    scan(loc, do_fetch=False)
+    _, y = yaml_at(loc, "marked")
+    executed.append("S5 scan-conflict-markers-abort")
+    if "conflict_markers: [\"scripts/m.py\"]" not in y or "suggested_action: \"ABORT" not in y: fails.append("S5 markers mismatch: %s" % y[:200])
+    loc = scan_origin({"feat-b": {"src/b.mbt": "y\n"}})
+    stale_p = loc / ".git" / "fist" / "tasks" / "backlog" / ("origin/ghost.yaml")
+    stale_p.parent.mkdir(parents=True, exist_ok=True); stale_p.write_text("stale: true\n", encoding="utf-8")
+    scan(loc, do_fetch=False)
+    executed.append("S6 scan-prunes-stale-yaml")
+    if stale_p.exists(): fails.append("S6 stale yaml not pruned")
+    big = "\n".join("line%d" % i for i in range(60)) + "\n"
+    loc = scan_origin({"reverter": {"src/lib.mbt": "x\n"}}, base_files={"src/lib.mbt": big})
+    scan(loc, do_fetch=False)
+    _, y = yaml_at(loc, "reverter")
+    executed.append("S7 scan-revert-pattern-failed-queue (rc=%d)" % c)
+    if "suggested_action: \"REVERT-PATTERN" not in y or "status: failed" not in y or "revert_pattern: 1" not in y or "revert_files: [\"src/lib.mbt(-60/+1)\"]" not in y:
+        fails.append("S7 revert mismatch: %s" % y[:300])
+    loc = scan_origin({"small-del": {"src/lib.mbt": "\n".join("line%d" % i for i in range(50)) + "\n"}}, base_files={"src/lib.mbt": big})
+    scan(loc, do_fetch=False)
+    _, y = yaml_at(loc, "small-del")
+    executed.append("S8 scan-small-delete-not-revert")
+    if "REVERT-PATTERN" in y or "status: failed" in y: fails.append("S8 small delete false-positive: %s" % y[:300])
+    print("SELFTEST %s (grid: %s)" % ("OK" if not fails else "FAIL", " / ".join(executed)))
+    for f in fails: print("SELFTEST FAIL " + f)
+    return 0 if not fails else 2
+if __name__ == "__main__":
+    if "--selftest" in sys.argv[1:]: sys.exit(selftest())
+    if "--scan" in sys.argv[1:]:
+        sys.exit(scan(ROOT)[0])
+    if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist-gate.py [--selftest|--scan]")
+    sys.exit(gate(ROOT))
