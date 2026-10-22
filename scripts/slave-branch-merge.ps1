@@ -483,14 +483,22 @@ $allSlaves = git branch -r 2>$null | Select-String 'gitcode/slave/' | ForEach-Ob
 $toDelete = @()
 foreach ($slave in $allSlaves) {
   $slaveHead = git rev-parse $slave 2>$null
-  $mb = git merge-base HEAD $slave 2>$null
+  # ⚠ R46：基线用**已推送的远端**，不用本地 HEAD。
+  # 本地 main 可能领先远端几百个提交（2026-10-22 实测：本地领先 origin/master 207 个），
+  # 用 HEAD 判"已完全包含"会把未交付的分支当已合并删掉。
+  $base = git rev-parse origin/master 2>$null
+  if (-not $base) { $base = git rev-parse gitcode/master 2>$null }
+  if (-not $base) { Write-Host "    ⚠ 取不到远端基线，跳过删除判定"; continue }
+  $mb = git merge-base $base $slave 2>$null
   if ($mb -eq $slaveHead) {
     $toDelete += $slave
   } else {
-    # 也按 message 匹配
-    $headMsg = git log -1 --format="%s" $slave 2>$null
-    $headMessages = git log --format="%s" HEAD 2>$null
-    if ($headMessages -contains $headMsg) { $toDelete += $slave }
+    # ⚠ R46：**不再用 commit message 撞车当"已合并"**（message 相同 ≠ 内容进远端）。
+    # 改判据：内容等价 —— git cherry 无 '+' 行 且 diff 无文件。
+    $cherryPlus = @(git cherry $base $slave 2>$null | Select-String '^\+').Count
+    $diffFiles = @(git diff --name-only $base $slave 2>$null | Where-Object { $_.Trim() -ne "" }).Count
+    if ($cherryPlus -eq 0 -and $diffFiles -eq 0) { $toDelete += $slave }
+    else { Write-Host ("    ↺ 保留 $slave（未合：cherry+={0} diff={1}）" -f $cherryPlus, $diffFiles) -ForegroundColor Yellow }
   }
 }
 
@@ -926,14 +934,22 @@ $allSlaves = git branch -r 2>$null | Select-String 'gitcode/slave/' | ForEach-Ob
 $toDelete = @()
 foreach ($slave in $allSlaves) {
   $slaveHead = git rev-parse $slave 2>$null
-  $mb = git merge-base HEAD $slave 2>$null
+  # ⚠ R46：基线用**已推送的远端**，不用本地 HEAD。
+  # 本地 main 可能领先远端几百个提交（2026-10-22 实测：本地领先 origin/master 207 个），
+  # 用 HEAD 判"已完全包含"会把未交付的分支当已合并删掉。
+  $base = git rev-parse origin/master 2>$null
+  if (-not $base) { $base = git rev-parse gitcode/master 2>$null }
+  if (-not $base) { Write-Host "    ⚠ 取不到远端基线，跳过删除判定"; continue }
+  $mb = git merge-base $base $slave 2>$null
   if ($mb -eq $slaveHead) {
     $toDelete += $slave
   } else {
-    # 也按 message 匹配
-    $headMsg = git log -1 --format="%s" $slave 2>$null
-    $headMessages = git log --format="%s" HEAD 2>$null
-    if ($headMessages -contains $headMsg) { $toDelete += $slave }
+    # ⚠ R46：**不再用 commit message 撞车当"已合并"**（message 相同 ≠ 内容进远端）。
+    # 改判据：内容等价 —— git cherry 无 '+' 行 且 diff 无文件。
+    $cherryPlus = @(git cherry $base $slave 2>$null | Select-String '^\+').Count
+    $diffFiles = @(git diff --name-only $base $slave 2>$null | Where-Object { $_.Trim() -ne "" }).Count
+    if ($cherryPlus -eq 0 -and $diffFiles -eq 0) { $toDelete += $slave }
+    else { Write-Host ("    ↺ 保留 $slave（未合：cherry+={0} diff={1}）" -f $cherryPlus, $diffFiles) -ForegroundColor Yellow }
   }
 }
 
@@ -1177,14 +1193,22 @@ $allSlaves = git branch -r 2>$null | Select-String 'gitcode/slave/' | ForEach-Ob
 $toDelete = @()
 foreach ($slave in $allSlaves) {
   $slaveHead = git rev-parse $slave 2>$null
-  $mb = git merge-base HEAD $slave 2>$null
+  # ⚠ R46：基线用**已推送的远端**，不用本地 HEAD。
+  # 本地 main 可能领先远端几百个提交（2026-10-22 实测：本地领先 origin/master 207 个），
+  # 用 HEAD 判"已完全包含"会把未交付的分支当已合并删掉。
+  $base = git rev-parse origin/master 2>$null
+  if (-not $base) { $base = git rev-parse gitcode/master 2>$null }
+  if (-not $base) { Write-Host "    ⚠ 取不到远端基线，跳过删除判定"; continue }
+  $mb = git merge-base $base $slave 2>$null
   if ($mb -eq $slaveHead) {
     $toDelete += $slave
   } else {
-    # 也按 message 匹配
-    $headMsg = git log -1 --format="%s" $slave 2>$null
-    $headMessages = git log --format="%s" HEAD 2>$null
-    if ($headMessages -contains $headMsg) { $toDelete += $slave }
+    # ⚠ R46：**不再用 commit message 撞车当"已合并"**（message 相同 ≠ 内容进远端）。
+    # 改判据：内容等价 —— git cherry 无 '+' 行 且 diff 无文件。
+    $cherryPlus = @(git cherry $base $slave 2>$null | Select-String '^\+').Count
+    $diffFiles = @(git diff --name-only $base $slave 2>$null | Where-Object { $_.Trim() -ne "" }).Count
+    if ($cherryPlus -eq 0 -and $diffFiles -eq 0) { $toDelete += $slave }
+    else { Write-Host ("    ↺ 保留 $slave（未合：cherry+={0} diff={1}）" -f $cherryPlus, $diffFiles) -ForegroundColor Yellow }
   }
 }
 
@@ -1411,14 +1435,22 @@ $allSlaves = git branch -r 2>$null | Select-String 'gitcode/slave/' | ForEach-Ob
 $toDelete = @()
 foreach ($slave in $allSlaves) {
   $slaveHead = git rev-parse $slave 2>$null
-  $mb = git merge-base HEAD $slave 2>$null
+  # ⚠ R46：基线用**已推送的远端**，不用本地 HEAD。
+  # 本地 main 可能领先远端几百个提交（2026-10-22 实测：本地领先 origin/master 207 个），
+  # 用 HEAD 判"已完全包含"会把未交付的分支当已合并删掉。
+  $base = git rev-parse origin/master 2>$null
+  if (-not $base) { $base = git rev-parse gitcode/master 2>$null }
+  if (-not $base) { Write-Host "    ⚠ 取不到远端基线，跳过删除判定"; continue }
+  $mb = git merge-base $base $slave 2>$null
   if ($mb -eq $slaveHead) {
     $toDelete += $slave
   } else {
-    # 也按 message 匹配
-    $headMsg = git log -1 --format="%s" $slave 2>$null
-    $headMessages = git log --format="%s" HEAD 2>$null
-    if ($headMessages -contains $headMsg) { $toDelete += $slave }
+    # ⚠ R46：**不再用 commit message 撞车当"已合并"**（message 相同 ≠ 内容进远端）。
+    # 改判据：内容等价 —— git cherry 无 '+' 行 且 diff 无文件。
+    $cherryPlus = @(git cherry $base $slave 2>$null | Select-String '^\+').Count
+    $diffFiles = @(git diff --name-only $base $slave 2>$null | Where-Object { $_.Trim() -ne "" }).Count
+    if ($cherryPlus -eq 0 -and $diffFiles -eq 0) { $toDelete += $slave }
+    else { Write-Host ("    ↺ 保留 $slave（未合：cherry+={0} diff={1}）" -f $cherryPlus, $diffFiles) -ForegroundColor Yellow }
   }
 }
 
