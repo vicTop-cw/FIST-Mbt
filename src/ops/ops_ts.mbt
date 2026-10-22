@@ -12,7 +12,11 @@ fn char_int(c : Char) -> Int32 {
 fn parse_digits(chars : Array[Char], start : Int32, len~ : Int32) -> Int32 {
   let mut v = 0
   for i = 0; i < len; i = i + 1 {
-    v = v * 10 + char_int(chars[start + i])
+    let c = chars[start + i]
+    if c < '0' || c > '9' {
+      return -1
+    }
+    v = v * 10 + char_int(c)
   }
   v
 }
@@ -51,11 +55,36 @@ pub fn iso_to_secs(s : String) -> Int32 {
   if year > 2091 {
     return -1
   }
+  // R128：字段范围校验。`parse_digits` 不做范围检查——`2091-12-99T...` 的 day=99
+  // 会让 days=24888，`days * 86400` 越过 Int32（issue_scan secs-overflow 实测命中）。
+  // 非数字字符由 parse_digits 返回 -1，同样落到下面的范围检查。
+  // 非法字段一律按解析失败返回 -1；hour/min/sec 同样要挡，否则 day 合法时仍可能越界。
+  if mon < 1 || mon > 12 {
+    return -1
+  }
+  if day < 1 || day > 31 {
+    return -1
+  }
+  if hour < 0 || hour > 23 {
+    return -1
+  }
+  if min < 0 || min > 59 {
+    return -1
+  }
+  if sec < 0 || sec > 59 {
+    return -1
+  }
   // 月起点累计天数（非闰年近似，同体系比较足够；索引 = 真实月份-1）
   let accum : Array[Int32] = [
     0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334,
   ]
-  let month_days = if mon >= 1 && mon <= 12 { accum[mon - 1] } else { 0 }
+  let month_days = accum[mon - 1]
+  // 字段已校验且 2024 ≤ year ≤ 2091 ⇒ days ≤ 24820；乘法走 Int64（同 server.mbt 口径），
+  // 再窄化回 Int32：即使未来放宽 year 上界，这里也不会静默绕回。
   let days = (year - 2024) * 365 + month_days + day
-  days * 86400 + hour * 3600 + min * 60 + sec
+  let total_secs : Int64 = days.to_int64() * 86400L +
+    hour.to_int64() * 3600L +
+    min.to_int64() * 60L +
+    sec.to_int64()
+  total_secs.to_int()
 }
