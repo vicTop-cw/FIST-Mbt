@@ -1,10 +1,50 @@
 #!/bin/sh
-
+# FIST-Mbt pre-commit 钩子（TASK-001②）：冲突标记不许进 commit。
+#
+# 为什么这三步（缺一不可）：
+#   1) 先让判据自证（--selftest）：尺子本身坏了就拒绝放行，不许"绿得不知所以"；
+#   2) live 扫全跟踪面：标记进跟踪面后 CI 只能事后知道——259b56a8 就是这么带 3 处标记进
+#      master 的（`.mbt` 带标记直接崩编译，`moon build` 报一片 Error）；
+#   3) `git diff --cached --check`：兜住暂存面里的行首标记/尾随空格一类"提交前就能看见"的脏。
+# 环境变量：
+#   FIST_PRECOMMIT_SKIP_MOON=1  跳过 moon check（本机依赖缓存/格式化器未预热时用；CI 仍会查）
 set -e
 
-if ! command -v moon >/dev/null 2>&1; then
-  echo "error: moon not found on PATH; install it or run 'mise install'" >&2
+PY=python3
+command -v "$PY" >/dev/null 2>&1 || PY=python
+command -v "$PY" >/dev/null 2>&1 || { echo "error: 找不到 python/python3 —— 标记判据无从运行，拒绝提交" >&2; exit 1; }
+
+MARKER="scripts/blackbox/check_merge_markers.py"
+if [ -f "$MARKER" ]; then
+  echo "[pre-commit] 1/3 冲突标记判据自证（--selftest）..."
+  if ! "$PY" "$MARKER" --selftest; then
+    echo "error: check_merge_markers.py 自检失败——尺子本身坏了，拒绝提交（别用 --no-verify 绕过）" >&2
+    exit 1
+  fi
+  echo "[pre-commit] 2/3 扫描跟踪面冲突标记（live）..."
+  if ! "$PY" "$MARKER"; then
+    echo "error: 跟踪面存在未解决冲突标记——先解干净再提交" >&2
+    exit 1
+  fi
+else
+  echo "[pre-commit] 警告：$MARKER 不存在（不在仓库根？），跳过标记判据" >&2
+fi
+
+echo "[pre-commit] 3/3 暂存面 check（git diff --cached --check）..."
+if ! git diff --cached --check; then
+  echo "error: 暂存面有冲突标记/尾随空格一类问题——修完再提交" >&2
   exit 1
 fi
 
+if [ "${FIST_PRECOMMIT_SKIP_MOON:-0}" = "1" ]; then
+  echo "[pre-commit] 已按 FIST_PRECOMMIT_SKIP_MOON=1 跳过 moon check（CI 仍会查）"
+  exit 0
+fi
+
+if ! command -v moon >/dev/null 2>&1; then
+  echo "error: moon not found on PATH; install it or set FIST_PRECOMMIT_SKIP_MOON=1" >&2
+  exit 1
+fi
+
+echo "[pre-commit] moon check ..."
 moon check

@@ -238,3 +238,16 @@
 - `check_bug_refs.py` — 工具类辅助脚本（本次补登记；职责见脚本头部 docstring）。
 ### 2026-10-22 补登记：`fist-gate.py`
 - `fist-gate.py` — **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段 + `--scan` 分支普查 + `--selftest`；退出码 0=pass / 1=fail / 2=degraded。
+
+### 2026-10-21 TASK-001②：`install_git_hooks.py`
+- `install_git_hooks.py` — **git 钩子安装/核对器（幂等）**：`--install` 设置 `core.hooksPath=.githooks`
+  并补可执行位；`--check` 只核对（0=已生效 / 1=未生效 / 2=环境不完整）。存在理由：`.githooks/pre-commit`
+  早在仓里但 `core.hooksPath` 从未设置 ⇒ 钩子**默认不生效**，"每个 commit 前跑冲突标记判据"这条
+  一直没落到本地提交面（CI 只管推送后）。见 `.githooks/README.md`。
+- `fist-gate.py` — **统一门禁链**（R74 入仓）：`merge_markers / fmt / build / ps_encoding / store_path` 五段 +
+  `--scan` 分支普查 + `--selftest`。退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量）。
+  用法 `python scripts/fist-gate.py [--scan|--selftest] [树]`。
+### 2026-10-22 补登记：`whisperer.py`
+- `whisperer.py` — **风语者巡检自动化（TASK-009）**：Step 0-4 一把跑（拉远端分支 → 逐分支普查 →
+  生成 `.git/fist/tasks/backlog/*.yaml` 候选任务卡 → 打印建议动作）。含 HEAD 安全门：检出到
+  detached/非预期提交面时把篡改记录写 `memory/whisperer-tamper.log`（见 cfb63365）。用法见脚本 `--help`。
