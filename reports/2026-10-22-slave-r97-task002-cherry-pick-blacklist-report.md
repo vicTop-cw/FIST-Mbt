@@ -47,7 +47,7 @@
    （R95 的 `scripts/NAMING.md` + `check_scripts_naming.py` 同样未合，所以本单基点上那条命名尺连文件都不存在，
    跑它只能得到 rc=2 file-not-found）。**合序 r96 → r97 即转绿**；在 r97 里重复登记会与自家 MR 撞同一面，故不做。
 2. **`check_doc_surface` rc=1（预存红）**：`USAGE.md` 自述 0.3.9 ≠ `moon.mod` 0.3.10（真源 170 工具）。
-   修法只在 `slave/integrate/r93-on-cef1e9c-r94`，owner 按合序取一份。
+   修法现有两条线：`slave/integrate/r93-on-cef1e9c-r94` 与主机今日在飞单线 `fix/bug-refs-ledger-backfill`（`c27d6e7` 的 J1 补账里同时把 `USAGE.md` 0.3.9 → 0.3.10）。两支与我 r96/r97 **零文件重叠**（merge-tree/diff 实测），任取一份即转绿。副机首稿只点了一条线，是没先 fetch 就写现状。
 3. **黑名单是「撤出索引」而不是「拒绝合并」**：命中文件被还原成 HEAD 版本或删除，逐条点名但仍继续跑。
    若某个旧 slave commit 的*唯一*内容就是 poison 面，本单会把它的实质内容清空后照发提交——
    需要「清空即跳过该 commit」时，是策略裁决项（TASK-002 验收没写，副机不自作主张加严）。
