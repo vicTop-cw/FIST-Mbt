@@ -1,0 +1,19 @@
+id: TASK-022
+title: "裁定四支同伴分支与 r94 集成分支的合序（TASK-004 与电池面各两份实现）"
+dedupe_key: "0307e8a849535dbb"
+priority: P1
+status: backlog
+assignee: atomcode
+discovered_by: whisperer-script
+discovered_at: "2026-10-22T01:44:46+00:00"
+
+problem: >
+  git merge-tree 实测 HEAD(940ba77) 对 gitcode 上四支同伴分支**每一支都冲突**，且两处不是文本擦碰而是同一单的两份设计：
+    1) TASK-004 双份——本分支含副机 40d303f，同伴 bdedc73 另有一份 REVERT-PATTERN，且附带修了 --scan 在 worktree 里崩的 gitdir 真 bug；冲突文件 memory/2026-10-21.md + scripts/fist-gate.py。
+    2) 电池面反向设计——本分支走 TASK-007 自动发现 + EXCLUDE_EXACT（尺 88→84）；同伴 2be0c89 把电池改成只读白名单（96格/45红/改工作树 → 41格/0红/只读）。run_guards.py 能自动合，scripts/README.md 与日志冲突。好消息：两种设计都封掉了 whisperer.py 无参强推格，谁赢这一险都关。
+    3) a457aea（TASK-001② pre-commit 门 + install_git_hooks.py）与本分支文件面互补，只撞 README/日志 ⇒ 低风险可叠。
+    4) 4da1126 与 slave/fix/whisperer-selftest-and-scan-gitdir 同一提交两条 ref（同伴推的 + 主机收的），动 whisperer.py + fist-gate.py，与本分支 fist-gate 第 6 查改址面 auto-merge 通过，但 memory/2026-10-22.md 是 add/add 冲突。
+  TASK-001 硬门前这五张单叠在一起，合并 agent 直 cherry-pick 必被 marker 门整笔回滚（设计如此），先裁合序再动。
+
+evidence: |
+  git merge-tree --write-tree --name-only HEAD <ref> 逐支实测（rc=1 即冲突，逐条点名）：vs bdedc73 ⇒ memory/2026-10-21.md、scripts/fist-gate.py；vs 2be0c89 ⇒ memory/2026-10-21.md、scripts/README.md（run_guards.py auto-merge）；vs a457aea ⇒ memory/2026-10-21.md、scripts/README.md；vs 4da1126（两条 ref 同提交）⇒ memory/2026-10-22.md(add/add)、scripts/README.md（fist-gate.py auto-merge）。各支 delta：bdedc73 3 文件 +147/-16；2be0c89 3 文件 +105/-5；a457aea 7 文件 +225/-17；4da1126 5 文件 +75/-8。
