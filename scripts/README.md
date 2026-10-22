@@ -216,8 +216,9 @@
 ### 2026-10-22 新增：`check_dist_snapshot.py` / `refresh_dist.py`
 - `check_dist_snapshot.py` — **仓内发布快照 `dist/fist-mbt.js` 的版本守卫**：快照内嵌
   `project__version` 必须 == `moon.mod`。存在理由：`scripts/mcp_compat_shim.js` 的**默认服务端**就是
-  `node dist/fist-mbt.js serve`，README 也把它当"发布版"引用；实测快照停在 **0.3.9** 而 moon.mod 已是
-  **0.3.10** ⇒ 照文档连过去的人/agent 拿到旧版本 + 旧工具集（shim 注释里甚至写着 148 工具/v0.3.8）。
+  `node dist/fist-mbt.js serve`，README 也把它当"发布版"引用；实测快照曾落后 `moon.mod` 一个版本
+  （发布实况见 `BACKLOG.md` 的发布条目，本文不再抄第二处版本号）⇒ 照文档连过去的人/agent 拿到旧版本 +
+  旧工具集（shim 注释里甚至写着更旧的工具数与版本）。
   `check_release_asset_names` 明确不扫 dist，这一格此前**无人认领**。`--selftest` 8 格真断言；
   读不到版本/缺文件 ⇒ rc=2（判据无样本绝不放行）。
 - `refresh_dist.py` — **刷新快照的一条命令**：`moon build --target js --release cmd/cli` →
