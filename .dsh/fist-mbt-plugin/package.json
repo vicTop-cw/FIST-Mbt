@@ -1,10 +1,12 @@
 {
   "name": "@victop/fist-mbt",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "private": true,
   "type": "module",
   "description": "FIST-Mbt MCP server integration — task orchestration and self-driving loops",
-  "author": {"name": "vicTop"},
+  "author": {
+    "name": "vicTop"
+  },
   "repository": "https://github.com/vicTop-cw/fist-mbt",
   "dsh": {
     "bundle": {
