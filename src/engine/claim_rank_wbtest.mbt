@@ -37,6 +37,67 @@ fn cr_publish(e : FistEngine, desc : String, level : Int32) -> String {
 }
 
 ///|
+/// Gate2-a：`extract_needs` 解析（需要:/need:/requires:/能力: + 三种分隔符）。
+test "Gate2-a: extract_needs 关键词与分隔符" {
+  assert_eq(extract_needs("需要: python, json"), ["python", "json"])
+  // 顿号与全角逗号：原实现只 split ASCII 逗号 ⇒ 这里曾是"整串当一个标签"的误拒源
+  assert_eq(extract_needs("需要: python、json"), ["python", "json"])
+  assert_eq(extract_needs("need: a，b"), ["a", "b"])
+  assert_eq(extract_needs("requires: rust"), ["rust"])
+  assert_eq(extract_needs("能力：gpu"), ["gpu"])
+  assert_eq(extract_needs("能力: gpu, cuda"), ["gpu", "cuda"])
+  // 没有关键词行 ⇒ 空（不能把普通描述当能力需求）
+  assert_eq(extract_needs("普通任务：修个 bug"), [])
+  assert_eq(extract_needs(""), [])
+}
+
+///|
+/// Gate2-b：能力门拒绝——abilities 缺一格必须 Err 且文案含 ABILITY_GATE 与缺失项。
+test "Gate2-b: 能力不足被拒且点名缺失项" {
+  let reg = @executor.ExecutorRegistry::new().add_ability("worker1", ["python"])
+  let e = FistEngine::new(registry=reg)
+  let tid = cr_publish(e, "实现接口\n需要: python, json", 6)
+  let msg = cr_err_of(e.claim(task_id=tid, assignee="worker1", now="2026-10-22T01:00:00Z"))
+  assert_true(msg.contains("ABILITY_GATE"))
+  assert_true(msg.contains("json"))
+}
+
+///|
+/// Gate2-c：能力齐备 ⇒ 放行（正例，防"门装成一刀切"）。
+test "Gate2-c: 能力齐备放行" {
+  let reg = @executor.ExecutorRegistry::new().add_ability("worker1", ["python", "json"])
+  let e = FistEngine::new(registry=reg)
+  let tid = cr_publish(e, "实现接口\n需要: python, json", 6)
+  match e.claim(task_id=tid, assignee="worker1", now="2026-10-22T01:00:00Z") {
+    Ok(_) => ()
+    Err(m) => abort("能力齐备应放行，实际被拒: " + m)
+  }
+}
+
+///|
+/// Gate2-d：**未注册 abilities 的 assignee 跳过能力门**（代码注释明写的"降级零回归"契约）。
+test "Gate2-d: 未注册执行者跳过能力门" {
+  let e = FistEngine::new()
+  let tid = cr_publish(e, "实现接口\n需要: python, json", 6)
+  match e.claim(task_id=tid, assignee="leader_a", now="2026-10-22T01:00:00Z") {
+    Ok(_) => ()
+    Err(m) => abort("未注册 abilities 应跳过能力门，实际被拒: " + m)
+  }
+}
+
+///|
+/// Gate2-e：任务没有"需要:"行 ⇒ 无 needs ⇒ 能力门不触发。
+test "Gate2-e: 无 needs 的任务不触发能力门" {
+  let reg = @executor.ExecutorRegistry::new().add_ability("worker1", ["python"])
+  let e = FistEngine::new(registry=reg)
+  let tid = cr_publish(e, "普通任务，无能力需求", 6)
+  match e.claim(task_id=tid, assignee="worker1", now="2026-10-22T01:00:00Z") {
+    Ok(_) => ()
+    Err(m) => abort("无 needs 任务应放行，实际被拒: " + m)
+  }
+}
+
+///|
 /// G1：`estimate_rank` 五档 + 前缀匹配。
 test "rank_gate G1: estimate_rank 五档映射" {
   assert_eq(estimate_rank("human_steward"), 0) // 司令（例外通吃）

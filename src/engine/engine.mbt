@@ -1636,11 +1636,18 @@ fn extract_needs(desc : String) -> Array[String] {
         ""
       }
       if after.length() > 0 {
+        // 分隔符：ASCII 逗号 / 顿号「、」/ 全角逗号「，」——docstring 承诺"逗号/顿号分隔"，
+        // 而原实现只 split 了 ASCII 逗号 ⇒ 写成「需要: python、json」时整串被当成单个标签，
+        // 能力门会把它和 abilities 比对失败，**把合格执行者误拒**（本轮实测发现）。
         let parts = after.split(",")
         for p_sv in parts {
-          let t = p_sv.trim().to_owned()
-          if t.length() > 0 {
-            result.push(t)
+          for q_sv in p_sv.split("、") {
+            for r_sv in q_sv.split("，") {
+              let tag = r_sv.trim().to_owned()
+              if tag.length() > 0 {
+                result.push(tag)
+              }
+            }
           }
         }
       }
