@@ -4,21 +4,21 @@ package "vicTop-cw/fist-mbt/src/display"
 // Values
 pub fn commissar_rank() -> String
 
-pub fn is_officer(Int) -> Bool
+pub fn is_officer(Int32) -> Bool
 
-pub fn leaf_label(Int) -> String
+pub fn leaf_label(Int32) -> String
 
 pub fn marshal_rank() -> String
 
-pub fn officer_levels() -> Int
+pub fn officer_levels() -> Int32
 
 pub fn officer_table() -> Array[String]
 
 pub fn pool_label_of(String) -> String
 
-pub fn rank_of(Int) -> String
+pub fn rank_of(Int32) -> String
 
-pub fn role_label(String, Int) -> String
+pub fn role_label(String, Int32) -> String
 
 pub fn soldier_mission(String) -> String
 
@@ -26,7 +26,7 @@ pub fn soldier_model_tier(String) -> String
 
 pub fn soldier_rank() -> String
 
-pub fn soldier_type_count() -> Int
+pub fn soldier_type_count() -> Int32
 
 pub fn soldier_type_of(String) -> String
 
@@ -38,7 +38,7 @@ pub fn staff_hierarchy(String) -> String
 
 pub fn staff_label(String) -> String
 
-pub fn staff_title_count() -> Int
+pub fn staff_title_count() -> Int32
 
 pub fn staff_titles() -> Array[String]
 

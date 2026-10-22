@@ -16,7 +16,7 @@ pub fn apply_fix(Json, String) -> Json
 
 pub fn batch_verify(Array[(String, String)]) -> Json
 
-pub fn batch_verify_fix(Array[Json], max_rounds? : Int) -> Json
+pub fn batch_verify_fix(Array[Json], max_rounds? : Int32) -> Json
 
 pub fn calc_coverage(Array[String], Json) -> Double
 
@@ -52,9 +52,9 @@ pub fn run_tests(Json, (Json) -> Result[Json, String]) -> Array[Json]
 
 pub fn score_to_json(ScoreResult) -> Json
 
-pub fn spec_scoring(Json, Int, Int) -> ScoreResult
+pub fn spec_scoring(Json, Int32, Int32) -> ScoreResult
 
-pub fn spec_scoring_str(String, Int, Int) -> Json
+pub fn spec_scoring_str(String, Int32, Int32) -> Json
 
 pub fn summarize(Array[Json]) -> Json
 
@@ -65,6 +65,8 @@ pub fn validate_schema(Json) -> Array[String]
 pub fn validate_spec_json(String) -> Result[Json, String]
 
 pub fn verify_fingerprint(Json) -> Result[Unit, String]
+
+pub fn verify_fix_with_evidence(Array[(String, String)]) -> Json
 
 pub fn verify_single_spec(String, String) -> Json
 
