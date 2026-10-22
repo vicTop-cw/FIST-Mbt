@@ -79,8 +79,11 @@ def discover_scripts():
     # whisperer.py（主机 Step 0-4 编排真源）连自证格都不进：它的 Step 0 会对共享线
     # `git reset --hard` + `git push --force HEAD:main HEAD:master`（TASK-018），
     # 无人值守电池里绝不该跑；`--self-test` 也会 fetch + fist-gate --scan 走网络。裁决前保持排除。
+    # fist-pr-automator.py（cef1e9c 入仓）同理：三参跑法是 push + 开 PR/MR + merge（读
+    # GITHUB_TOKEN/GITCODE_TOKEN），零参数跑法 usage 里 raise SystemExit(str) ⇒ 恒给 rc=1
+    # 的永久红格。自证面另用 SPECIAL_CASES 的 --selftest 格守 yaml 解析器，不走自动发现。
     EXCLUDE_EXACT = {"__init__.py", "run_guards.py", "fist-mbt-http.py", "fist-mbt-web.py", "fist.py",
-                     "whisperer.py"}
+                     "whisperer.py", "fist-pr-automator.py"}
     EXCLUDE_PREFIX = ("test_", "verify_", "selfdrive_")
     out = []
     for base, prefix in ((SCRIPTS_DIR, ""), (BLACKBOX_DIR, "blackbox/")):
@@ -124,6 +127,13 @@ SPECIAL_CASES = [
     #     注意 whisperer.py（主机 Step 0-4 编排真源）**不进电池也不进自证格**，见 EXCLUDE_EXACT。——
     case("whisperer_patrol.py", "--selftest"),
     case("fist-gate.py", "--selftest"),
+    # —— R94：cef1e9c 入仓的两把新尺点名进电池，不走自动发现兜底。
+    #     check_bug_refs（BUG-373 引用对账）无参=只报告 rc=0，另补自证格；
+    #     fist-pr-automator 已进 EXCLUDE_EXACT（无参恒 rc=1 永久红 + 三参会 push/开 MR/merge），
+    #     这里只收 --selftest 一格守它的 yaml 解析器。——
+    case("check_bug_refs.py"),
+    case("check_bug_refs.py", "--selftest"),
+    case("fist-pr-automator.py", "--selftest"),
     # —— R55：blackbox 尺进宇宙也进电池（相对 scripts/ 点名，路径含子目录）——
     case("blackbox/check_merge_markers.py", "--selftest"),
     case("blackbox/check_merge_markers.py"),

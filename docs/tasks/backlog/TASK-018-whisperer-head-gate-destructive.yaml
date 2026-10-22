@@ -23,3 +23,20 @@ evidence: |
       run(["git", "push", "gitcode", "HEAD:main", "HEAD:master", "--force"])
       run(["git", "push", "origin", "HEAD:main", "HEAD:master", "--force"])
   主机自证：9e0064a "feat(core): v0.3.10 ... （d541f613 cherry-pick, 风语者 HEAD 安全门手动回救）"
+
+  R94 追记（这条比 R90 立单时更硬：不用人去跑 whisperer，守卫电池已经替它排好了无参格）：
+  cef1e9c 的 scripts/run_guards.py 里 EXCLUDE_EXACT 只有 {"__init__.py", "run_guards.py"}，
+  而 TASK-007 的自动发现会把每个未点名脚本补一格**无参**跑法，
+  main() 里 step0_head_safety() 在 --scan-only/--auto-merge 分流之前就先执行，
+  所以 `python scripts/run_guards.py` 本身就等于「checkout master → 视情况 reset --hard → 两远端强推」。
+  实测读数（隔离 worktree temp/wt-main，只 --list 未跑电池）：
+    whisperer.py            CI=-  电池=电池
+    fist-gate.py            CI=-  电池=电池
+    fist-pr-automator.py    CI=-  电池=电池
+    check_bug_refs.py       CI=-  电池=电池
+    尺 88 把 / CI 面 28 / 电池面 88 / 缺执行面 0
+  同轮另两把尺在 cef1e9c 上真红：check_scripts_index rc=1（4 支未登记）、
+  check_doc_surface rc=1（USAGE.md 0.3.9 != moon.mod 0.3.10）——两条已在 R94 分支修掉。
+  副机侧的临时封堵：run_guards EXCLUDE_EXACT 加 whisperer.py/fist-pr-automator.py，
+  这是排除不是裁决，Step 0 本体仍按上面三条方案等裁。
+

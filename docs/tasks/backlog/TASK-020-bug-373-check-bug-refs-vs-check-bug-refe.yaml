@@ -1,0 +1,14 @@
+id: TASK-020
+title: "BUG-373 两把判据同族并存，需裁口径或合尺"
+dedupe_key: "16000cc54591293e"
+priority: P2
+status: backlog
+assignee: atomcode
+discovered_by: whisperer-script
+discovered_at: "2026-10-22T01:41:15+00:00"
+
+problem: >
+  cef1e9c 主机入仓 scripts/check_bug_refs.py（BUG-373 代码引用↔账本对账，三档 OK/ORPHAN/CLOSED，默认只报告），与副机 R48 立、已接 CI 的 scripts/check_bug_reference_integrity.py（J1 悬空族，棘轮压到 0）同族并存。两份对『什么叫引用坏了』的判据不同：新尺把『引到已 FIXED 号』也算违例（CLOSED），旧尺只管账本里查无此号（悬空）。若日后有人把 --strict 接进 CI，现状面会当场永久红——实测默认档命中量已到『还有 7177 处』这一档，绝大多数是 CLOSED。需要裁决：合一把尺（CLOSED 降级为报告项）还是两份并存、各钉一面（并存则 README 已写清分工）。
+
+evidence: |
+  python scripts/check_bug_refs.py --selftest rc=0；python scripts/check_bug_refs.py rc=0（报告面命中 7177+，含大量 CLOSED）；ls scripts/ | grep -i bug_ref ⇒ check_bug_refs.py 与 check_bug_reference_integrity.py 同时在册；scripts/README.md 两条目已分别写明口径与现状读数。
