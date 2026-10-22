@@ -69,16 +69,19 @@ FAIL rc=2  exp=0  check_battery_count_doc.py     门禁 FATAL: run_guards --list
 | 主干门 | `moon check --target js` | **0 errors**（`ran 146 tasks, 508 warnings, 0 errors`） |
 | 主干测试 | `moon test --target js` | `Total tests: 1387, passed: 1387, failed: 0.`（本分支不改任何 `.mbt`，`git diff --name-only` 只有 3 份文档/脚本） |
 | 主线叠加 | `git merge-tree` 预判 → `git merge gitcode/main`（5 commits） | 预判冲突标记 0 ⇒ 实际 merge rc=0；主线那 3 行改动在 `SPECIAL_CASES` 里（`:239`），与本单改动区（`:667-681`、`:709`、`:826+`）不相交 |
+| 交单 | `git push gitcode slave/fix/guards-inline-verdict-r121` | rc=0，新分支落地；MR 入口交 owner |
 | 合入门 | `python scripts/whisperer.py --fast` | **rc=1 预存红（主线现状码）**：本分支基点未含 R120 的 whisperer 修法，主线 Step 0 把「本地 HEAD ≠ gitcode/main」判成篡改并处方 `git reset --hard ccca1db`——本单是 feature 分支，领先/落后是常态形状。逐字：`⚠️ 本地 HEAD 与远端 main 不一致（篡改） / → 跑 --scan-only 恢复，或手动 git reset --hard ccca1db`。不采纳（金条四），见 R120 报告与 MR |
 | **全量电池（叠主线后、交单前）** | `python scripts/run_guards.py` | rc=1：**60 格 / 失败 1 / SKIP 5 / 缺执行面 0**。新格式自己抓到那一格红并逐字点名：`FAIL rc=1  exp=0  check_delivery_gap.py  门禁 … 会删掉尚未交付的通道分支`；同一条在旧格式下会印成 `rc=1 exp=0 check_delivery_gap.py OK`。**这一格是本分支自己的未推送状态**（单跑 `check_delivery_gap.py` 现读：`HEAD 30dde2d0 ahead=2 files=3 pushed=False ✗ 未交付`，base=`origin/master`），不是回归 |
 | 徽章对表 | `python scripts/check_badge.py ~/fist_r121_test.log README.md` | rc=1 **预存红（主线本体）**：`README 徽章 1382/1382 ≠ 实际测试数 1387/1387` |
 | 测试数声明 | `python scripts/check_test_sync.py ~/fist_r121_test.log` | rc=1 **预存红**：R2 缺 1387 声明三面（`docs/deliverable.md`、`docs/agent-map.md`、`scripts/scoring_rubric.md`）+ R3 防空转 |
 | 预存红归属自证 | 在 `F:/AI/Fist-Mbt-wt-r115`（`docs/agent-map.md` 未被本单改动，`git diff --name-only HEAD` 为空）跑同一条尺 | 同样报 `R2 docs/agent-map.md 未出现实测总数 1387 的声明` ⇒ **agent-map 那条红不是本单改出来的**，是主线联动漏账 |
+| **全量电池（交单后，权威）** | `python scripts/run_guards.py` | rc=0：**60 格 / 失败 0 / SKIP 5 / 缺执行面 0**，`grep -c ^FAIL` = **0**。上一条那格红随推送归零：单跑 `check_delivery_gap.py` 由 rc=1 转 **rc=0**（`HEAD d72d5a6a ahead=3 files=5 pushed=True ✓`）⇒ 实证它是"本分支未推送"的诚实读数而非回归。格数 59→60 不是本单加的，来自主线 `26322fc0` 给 `audit_branch_delete.py` 补的那格 |
 
 ## 资源消耗
 
-- 单轮副机会话：约 12 分钟工具时间；电池 3 次全量（前/后/终，每次约 90-120s）、`--selftest` 2 次、
-  `moon check` + `moon test --target js` 各 1 次、变异 4 支（每支重跑自检）。
+- 单轮副机会话：约 14 分钟工具时间；电池 **4 次全量**（基点现状 / 改后（与文档编辑并发，只作格式冒烟）/
+  叠主线后 / 交单后，每次约 90-120s）、`--selftest` 3 次、`moon check` + `moon test --target js` 各 1 次、
+  变异 4 支（每支重跑自检）。
 - 无新增依赖、无网络写动作（`git fetch` 只读 + 一次 `git push` 交单）。
 
 ## 任务分配记录
