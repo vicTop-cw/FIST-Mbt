@@ -216,6 +216,9 @@ SPECIAL_CASES = [
     #    「缺面清单：audit_branch_delete.py」，它连带 check_battery_count_doc / selftest-inventory
     #    两格一起红。本脚本裸跑要分支参数且会写 <git-dir>/fist/delete-audit.jsonl，只有 --selftest
     #    是只读面（temp 仓自建自清），故手写点名自检格。──
+    # —— R55：`moon fmt --check` 的可判性闸（BUG-381）。只跑 --selftest：
+    #    真跑要起 moon 进程，且本机恒 DEGRADED ⇒ 不进电池的判据面。 ——
+    case("check_fmt_gate.py", "--selftest"),
     case("audit_branch_delete.py", "--selftest"),
     # —— R106：宇宙并成全集后 `--list` 第一次把这三把尺的**现读红**摆出来。按本文件的律，
     #    预存红「照写期望值 + 依据」而不是豁免：被检内容修好之后这一格自己会翻红，逼下一位
