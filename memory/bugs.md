@@ -5447,6 +5447,27 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 ### FIXED(2026-10-17T16:01:10Z / BUG-323)
 - evidence: semantic.py 行 1063-1079 修改：为 VarRef 和 IdRef 添加作用域检查，产生 UNDEFINED_VAR/UNDEFINED_FUNC 诊断
 
+## BUG-327 [2026-10-19T01:51:59Z] [medium] FIXED
+- summary: ocr_scan 的 OCR LLM review 对 MoonBit .mbt 恒不可达（unsupported_ext 全拦），bugfind 的 require_ocr 门是伪能力/可静默满足
+- detail: 实测证据（2026-10-19，opencodereview.exe @alibaba-group+ocr-win32-x64@1.12.9）：
+1) `ocr_scan subcmd=scan path=src/server` → `total_files=81, reviewable_count=0, excluded_count=81`，全部 `exclude_reason: unsupported_ext`。
+2) 显式单文件 `ocr scan --preview --path src/server/issue_scan.mbt` → 仍 `exclude_reason: unsupported_ext`（1/1 排除）。
+3) `ocr rules check src/server/issue_scan.mbt` → 匹配 `default` 规则（Source: System built-in）—— 规则层**不拒** .mbt。
+4) `ocr scan --help`：有 `--exclude`（只会加排除）与 `--rule`（规则 JSON），**无 `--include` 扩展名旗**；`ocr config` 无扩展名白名单键；CLI 无逃生门。
+
+结论：排除发生在 scan 的文件遍历阶段（二进制硬编码扩展名白名单不含 .mbt），规则层本可处理。MoonBit 项目下 OCR LLM review 恒不可达。
+
+影响：① AGENTS.md 宣称的「内建规则 + OCR LLM review 双轨互补」对 MoonBit 只有单轨；② 自驱 bugfind 模式的 `require_ocr` 约束在本项目不可满足，但 `ocr_scan` 顶层回执 `ok=true / exit_code=0` 会让只看 ok 的门禁误判「已 review」——伪能力/静默通过。
+
+建议修复方向：`ocr_scan` 在目标路径含 .mbt 且 reviewable_count=0 时显式返回 `ok=false` + 明确 reason（fail-loud，防门禁被静默满足），或将该局限显式写入 bugfind 的 require_ocr 判据与 AGENTS.md（诚实标注单轨）。
+- reported_by: fist-mbt-round5-lead
+- task_id: T0r588
+- 追记(2026-10-19T12:0x+08:00, Round 13 / b2d1920+faf0186): 本条目建议修复方向的部分 1（`ocr_scan` 对 .mbt 显式 fail-loud）已落地并分两小步：① 上轮 `ocr_effective_ok` 把「`ok=true` 但 `reviewable=0` 且 `excluded>0`」判 `ok=false`（dir `src/server/` 走此分支，实测 82 excluded → ok=false）；② **本轮实测发现部分 1 仍有一条盲区（记 BUG-327b）**：显式单文件 `path=src/ocr_scan.mbt` 时 OCR 二进制报 `reviewable_count=0, excluded_count=0, files=[]`——与「空目录」同形，被 `ocr_fake_green_check` 的空目录豁免判 `reviewed=true`，顶层 `ok=true` 假绿幸存。修复：新增纯函数 `ocr_reviewed_final(stdout_reviewed, path)`——目标为单个 `.mbt` 文件时强制 `reviewed=false`（fail-closed）并回显 notice「目标为单个 .mbt 文件（OCR 白名单外扩展名），LLM review 未真正执行；顶层 ok 已强制 fail-closed」，接线进 `ocr_scan_impl`（`reviewed2`/`fake_notice2`）；配套白盒锁 `BUG-327b_ocr_reviewed_final_single_mbt_fail_closed`。发布版 dist 真跑实证：`src/ocr_scan.mbt` → `ok=false` + 上述 notice；`src/server/`（目录）→ `ok=false` 零回归。**注意**：同一条路径两种目标形状（单文件 vs 目录）走的是两条不同假绿分支，任何一边单独修都会留下另一边——现已双分支都 fail-closed。**部分 2（`require_ocr` 门禁接线到 `.mbt` 非可审查性）仍未做**，阻塞在 `src/server/server.mbt`（并发 agent WIP），故本条目**保持 OPEN**。
+
+
+### FIXED(2026-10-21T07:27:39Z / BUG-327)
+- evidence: 部分2 已落地（提交 ebaa2c1）：src/server/ocr_scan.mbt 新增纯函数 ocr_gate_state（unavailable / degraded / satisfied）与 IO 薄壳 ocr_capability_json（probe 二进制 + project_dir 根 moon.mod 判 MoonBit 目标）；pipeline_tick 与 watchdog_tick 两处 bugfind 预检共用同一构造，回执新增 moonbit_target / mbt_reviewable / gate / note——二进制在但目标是 MoonBit 项目时 gate=degraded，不再按 available=true 伪满足 require_ocr。实测：pipeline_tick(project_dir=temp/t41moon 含 moon.mod) → moonbit_target=true / mbt_reviewable=false / gate=unavailable（本机无 OCR 二进制）；temp/t41plain → moonbit_target=false / gate=unavailable；纯函数白盒锁 4 条覆盖 degraded 与 satisfied 分支。moon check 504 warnings/0 errors；moon test 1348/1348/0（基线 1344 + 4）；src/server 348/348；电池 38 格/5 红/5 SKIP/0 缺执行面（五条预存红未代修）。部分1（ocr_effective_ok 假绿 ok=false）与 BUG-327b（单 .mbt 文件 fail-closed）此前已落地。
+
 ## BUG-328 [2026-10-20T12:47:00Z] [high] FIXED
 - summary: [16 个测试文件 + src/store/store_sqlite.mbt] moonc 0.10.16 删除 `Result::is_ok/is_err` 与 `try?` —— HEAD 在现行工具链下 `moon check --target js` 报 26 errors，全仓不可编译
 - detail: 2026-10-20 副机（moon 0.1.20261016 / moonc v0.10.16+b1a0e846e）实测：HEAD 的 `moon check --target js --json` = 26 errors / 641 warnings，分两族——
@@ -5501,6 +5522,24 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - note: 判据本身别反过来当门：`check_mbti_sync.py` 只判 `pub fn` 名字在不在，不判类型拼写，所以 revert `.mbti` 不会新增红。上一版子代理报的"16 个文件 fmt 幂等通过"其实是**先把 Int 改成 Int32 才通过**的——这条要记进交接：新版 moonfmt 的幂等前提改了拼写，不是格式。
 - task_id: T0-slave-moonc-0.10.16-result-api
 
+
+## BUG-336 [2026-10-19T09:03:42Z] [medium] FIXED
+- summary: dag_cost_route 负载感知冻结：load 只在循环前一次性快照，路由循环内从不更新累计负载 → 等成本平局时全堆给先注册执行者（1180 任务 59% 给单一执行者）
+- detail: ## 现象
+dogfood `dag_cost_route`（R77 成本路由）：1180 个 slack>0 未认领任务中 59%（701）堆给单个执行者 `marvis`，负载感知声明失效。
+## 根因
+`src/engine/engine_dag_ext.mbt` L657 `load = self.executor_loads(reg_names)` 只在路由循环**前**一次性快照活跃负载；L744 把任务写进 `routed` 却**从不更新 `load`**。于是 L732-739 的等成本平局 tiebreak（"相等取负载最低"）对本次路由自身的累计分配失明——平局时 `nl < bl` 恒假（两执行者负载都=初始值），`best` 永远停在先注册者 → 整轮路由全堆给先注册执行者，负载均衡形同虚设。
+## 实证（白盒 RED→GREEN）
+`src/engine/dag_ext_test.mbt` 新增 `dag_cost_route: 等成本平局按累计负载均分（BUG-336）`：2 个同能力执行者 + 4 独立灵活任务（+ 旁链垫 makespan=3）→ 修复前 `alice=4, bob=0`（RED），修复后 `alice=2, bob=2`（GREEN）。
+## 修复
+L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best){...}; ignore(load.set(best, prev_load + 1))`——把本次分配计入累计负载，后续等成本平局任务才转向其他执行者。
+## 验证
+`moon test --target js` = 1339/1339（新增 1 锁）；`moon fmt` 干净（engine 文件）。
+
+
+
+### FIXED(2026-10-19T09:04:03Z / BUG-336)
+- evidence: 修复点 src/engine/engine_dag_ext.mbt L741-749：routed.set(id, best) 之后追加 load.set(best, prev_load + 1)，把本次分配计入累计负载。白盒锁 src/engine/dag_ext_test.mbt `dag_cost_route: 等成本平局按累计负载均分（BUG-336）` RED(alice=4,bob=0)→GREEN(alice=2,bob=2)。全量 moon test --target js=1339/1339。
 
 ## BUG-342 [2026-10-20T14:39:00Z] [medium] FIXED
 - summary: [依赖面] 16 条 `unused_package`(0029) 全清 —— 暴露 moon.pkg 的 import 作用域口径：`for "test"` 不覆盖 `*_wbtest.mbt`，白盒测试依赖必须写 `for "wbtest"`

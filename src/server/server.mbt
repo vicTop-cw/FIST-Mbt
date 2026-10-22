@@ -529,7 +529,7 @@ fn get_str(args : Json, key : String, default~ : String = "") -> String {
 
 ///|
 /// 从 JSON 参数中读取整数，缺省回退默认值。
-/// BUG-192：`Double::to_int()` 对超 Int32 域的值**饱和**（BUG-26 实测：1e300 → Int max），
+/// BUG-194：`Double::to_int()` 对超 Int32 域的值**饱和**（BUG-26 实测：1e300 → Int max），
 /// 会让超时/阈值/配额类参数静默变成天量值（如 `timeout_ms=2147483647` 永不超时、
 /// `phi_threshold` 永不判 suspect）；越界/NaN 一律回落默认。
 fn get_int(args : Json, key : String, default~ : Int32 = 3) -> Int32 {
@@ -6543,7 +6543,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "issue_scan",
-    "规则驱动源码扫描（打磨收尾引入的自驱能力）：递归收集 {dir} 下 .mbt 文件，用内建规则逐行匹配（11 条原始 MoonBit 高危规则：除零/空数组下标/无保护 unwrap/unsafe_get/无保护整除/substring 越界/ignore 丢错/字符串下标/潜在溢出/空集合单例/secs 溢出；+ 20 条 ocr-local moonbit-rules.json 融合规则：result-discard/map-set-no-rebind/noop-assignment/插值转义/match 非穷尽/数组下标/unsafe_unwrap/async_main/敏感字段泄漏/路径穿越/JSON 注入/浮点相等/竞态/资源泄漏/大数溢出/abort 死代码/空 match/长函数/共享可变——共 31 条），产出 findings（rule/severity/file/line/code）。降噪（BUG-15）：**整行注释（trim 后以 /// 或 // 起始）不参与匹配**，doc 注释里的散文不再被当成代码命中；**规则表所在文件（issue_scan.mbt 且含 `fn scan_rules(`）整体跳过**，pattern/hint 字面量不再自命中（scanned_files 仍如实计数）。返回 {scanned_files,total_findings,include_tests,by_severity,by_rule,findings}；命中可直接喂给 report_bug（summary='[rule:id] file:line code'）形成扫描→上报→修复闭环；命中仍只是候选，须由调用方读上下文/实跑复核后才是 bug。参数：dir(必填，相对项目子目录如 src)、rules_file(可选，外部规则 JSON 路径，ocr-local moonbit-rules.json 风格：非空则真实读取并解析，同名外部规则覆盖内建；空则仅内建，行为与不传一致)、max_findings(可选默认 100，输出上限)、include_tests(可选默认 false：是否扫描 _test/_wbtest 测试文件——默认跳过以降噪、聚焦产品代码)。",
+    "规则驱动源码扫描（打磨收尾引入的自驱能力）：递归收集 {dir} 下 .mbt 文件，用内建规则逐行匹配（11 条原始 MoonBit 高危规则：除零/空数组下标/无保护 unwrap/unsafe_get/无保护整除/substring 越界/ignore 丢错/字符串下标/潜在溢出/空集合单例/secs 溢出；+ 20 条 ocr-local moonbit-rules.json 融合规则：result-discard/map-set-no-rebind/noop-assignment/插值转义/match 非穷尽/数组下标/unsafe_unwrap/async_main/敏感字段泄漏/路径穿越/JSON 注入/浮点相等/竞态/资源泄漏/大数溢出/abort 死代码/空 match/长函数/共享可变——共 31 条），产出 findings（rule/severity/file/line/code）。降噪（BUG-15）：**整行注释（trim 后以 /// 或 // 起始）不参与匹配**，doc 注释里的散文不再被当成代码命中；**规则表所在文件（issue_scan.mbt 且含 `fn scan_rules(`）整体跳过**，pattern/hint 字面量不再自命中（scanned_files 仍如实计数）。返回 {scanned_files,total_findings,include_tests,min_severity,filtered_out,by_severity,by_rule,findings}；命中可直接喂给 report_bug（summary='[rule:id] file:line code'）形成扫描→上报→修复闭环；命中仍只是候选，须由调用方读上下文/实跑复核后才是 bug。参数：dir(必填，相对项目子目录如 src)、rules_file(可选，外部规则 JSON 路径，ocr-local moonbit-rules.json 风格：非空则真实读取并解析，同名外部规则覆盖内建；空则仅内建，行为与不传一致)、max_findings(可选默认 100，输出上限)、include_tests(可选默认 false：是否扫描 _test/_wbtest 测试文件——默认跳过以降噪、聚焦产品代码)、min_severity(可选默认空串=不过滤；取 high|medium|low|info，低于该档的命中计入 filtered_out 不进 findings，非法值显式报错)。",
     schema(
       {
         "dir": string_prop(
@@ -6556,6 +6556,9 @@ pub async fn run_server() -> Unit {
         "include_tests": bool_prop(
           "是否扫描测试文件 _test/_wbtest(可选，默认 false 跳过)",
         ),
+        "min_severity": string_prop(
+          "严重度下限(可选，high|medium|low|info，空串=不过滤；非法值报错)",
+        ),
       },
       ["dir"],
     ),
@@ -6564,7 +6567,9 @@ pub async fn run_server() -> Unit {
       let rules_file = get_str(args, "rules_file")
       let max_findings = get_int(args, "max_findings", default=100)
       let include_tests = get_bool(args, "include_tests", default=false)
-      match issue_scan(dir, rules_file, max_findings, include_tests~) {
+      let min_severity = get_str(args, "min_severity")
+      match
+        issue_scan(dir, rules_file, max_findings, include_tests~, min_severity~) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }

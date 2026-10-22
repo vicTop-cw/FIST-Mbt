@@ -1,5 +1,5 @@
 ///|
-/// BUG-189 回归：split_n=4 时 "难" 档不可达（原 third*2=4 与 pos 上限重合）。
+/// BUG-172 回归：split_n=4 时 "难" 档不可达（原 third*2=4 与 pos 上限重合）。
 /// 修正后 split_n>=3 的三档（易/中/难）都应各自可达。
 test "difficulty_label_all_tiers_reachable" {
   for split_n in 3..<=6 {
@@ -24,7 +24,7 @@ test "difficulty_label_all_tiers_reachable" {
 }
 
 ///|
-/// BUG-189 回归：整段仍单调不减（前易后难），档位序只升不降。
+/// BUG-172 回归：整段仍单调不减（前易后难），档位序只升不降。
 /// 档序复刻黑盒测试 decompose_quickcheck_test.mbt 的 diff_order（whitebox 不可见）。
 fn local_diff_order(s : String) -> Int32 {
   match s {
