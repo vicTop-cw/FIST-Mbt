@@ -278,3 +278,9 @@
 
 ### 2026-10-22 补登记：`fist-pr-automator.py`
 - `fist-pr-automator.py` — 工具类辅助脚本（本次补登记；职责见脚本头部 docstring）。
+
+### 2026-10-22 补登记（`check_scripts_index` 现读四把漏网尺：升版时落了登记）
+- `fist-gate.py` — **统一门禁链 + 分支普查（Tier2 治理，风语者线）**：一次跑齐 `merge_markers / fmt / build / ps_encoding / store_path` 五段，退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量，绝不冒用 1 冒充业务红）。fmt/build 两臂各自区分**环境态与代码红**：冷格式化器（缺 `_build/wasm-gc/release/format/`）与依赖缓存过旧（`moon.mod.json no longer supported`）报 DEGRADED 并给可执行提示，`FIST_GATE_FMT_STRICT=1` 可把 fmt 世代差转硬红。`--scan` 分支普查是合入者巡检的自动进料口（枚举远端分支的 src/scripts 净差 + 冲突标记前置门）；`--selftest` 逐格驱动。**判据链必须只读**（绝不自行预热格式化器，那是 BUG-330 世代不匹配会改 330 个文件的来源）。用法 `python scripts/fist-gate.py [--scan|--selftest] [树]`。
+- `whisperer.py` — **风语者（Whisperer）自动化巡检**：Step 0 HEAD 安全门（篡改则记录并拒跑，见 `memory/whisperer-tamper.log`）→ Step 1 分支普查（调 `fist-gate.py --scan`）→ Step 2 agent 认领检测 → Step 3 问题扫描自动写 `docs/tasks/backlog/*.yaml`。`--selftest` 驱动各步。Windows GBK 终端会炸 emoji，脚本首行强钉 stdout/stderr UTF-8。用法 `python scripts/whisperer.py [--selftest]`。
+- `check_bug_refs.py` — **引用面 BUG-N 对表守卫**：代码注释与测试标题里的 `BUG-n` 必须在 `memory/bugs.md` 账本抬头有对应条目（悬空引用即红），与 `check_bug_reference_integrity.py`（棘轮只报面）互补——本尺直接判红。账本编号自解析 `^## BUG-(\d+)\b`（不 import gen_plugins，判据不自证）。用法 `python scripts/check_bug_refs.py`。
+- `fist-pr-automator.py` — **yaml → PR → gate → merge 流水线自动化**：读任务 yaml，走「建 PR → 挂统一门禁（`fist-gate.py`）→ 门禁绿则合」的闭环（git + curl，凭据 `GITHUB_TOKEN`/`GITCODE_TOKEN` 只从环境注入）。UTF-16→UTF-8 且去 BOM 收口（BUG-88 同族，Windows PowerShell 按 ANSI 读会解析期炸）。用法 `python scripts/fist-pr-automator.py`（详见脚本 docstring）。
