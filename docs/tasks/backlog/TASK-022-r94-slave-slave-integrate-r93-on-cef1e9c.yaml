@@ -2,10 +2,11 @@ id: TASK-022
 title: "裁定四支同伴分支与 r94 集成分支的合序（TASK-004 与电池面各两份实现）"
 dedupe_key: "0307e8a849535dbb"
 priority: P1
-status: backlog
+status: in_review
 assignee: atomcode
 discovered_by: whisperer-script
 discovered_at: "2026-10-22T01:44:46+00:00"
+status_note: "R111 对账转 in_review：合并面复议——bdedc73 已合入；a457aea 的 install_git_hooks.py 与 4da1126 的 whisperer gitdir/selftest 修复已分别以其他提交进主线；2be0c89 的白名单设计未采用，但其风险面（whisperer 无参强推格）已被 run_guards 危险无参普查封住。合序已无待行动作，但正式裁决未落字 ⇒ 不冒 done。"
 
 problem: >
   git merge-tree 实测 HEAD(940ba77) 对 gitcode 上四支同伴分支**每一支都冲突**，且两处不是文本擦碰而是同一单的两份设计：
