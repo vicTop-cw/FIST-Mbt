@@ -195,3 +195,18 @@
 ### 2026-10-22 登记：`whisperer.py`
 
 - `whisperer.py` — **风语者巡检自动化（TASK-009）**：Step 0-4 一把跑（HEAD 安全门 → 分支普查 →
+
+| **无前缀** | **旧口径（R96 废止）**：曾把「无前缀」当「正式、可复用」的同义词 ⇒ 名字读不出角色也没人管，而 `_` 前缀才被当临时件。现行口径见 [`NAMING.md`](NAMING.md)：角色必须写在名字的两端之一（前缀表或后缀表），由 `check_scripts_naming.py` 钉成只许下降的棘轮（N1 16/16、N2 4/4）。 | 保留但**记债**，改名按 NAMING.md 末节的成本档逐批改 | `mcp_smoke.py`（`_smoke` 后缀读得出角色，合格）；`fist.py`/`whisperer.py`/`issue_scan.py`（既无前缀又无后缀，在 N1 名单里） |
+3. **正式工具**：名字带角色（`NAMING.md` 的前缀表或后缀表之一）+ 文件头 docstring 说明用途/用法/前置 + 退出码约定（R96 改：原条写「无前缀」，与 TASK-008 立案的判据「看文件名猜不出它是门禁还是工具」自相矛盾，已按 NAMING.md 收口）。
+### 2026-10-22 R96 补登记（`check_scripts_index` 现读三件漏网尺 · main 的 CI 因此一直红）
+本节三条都是**登记**不是新工具：文件早已在 main 里（`git ls-tree gitcode/main scripts/` 命中），但 `scripts/README.md` 逐名 grep 为 0 ⇒ `check_scripts_index.py` rc=1，而它在 ci.yml:117 是无豁免的一步 ⇒ **main 的 CI 面从这三件落仓那天起就红着**。副机 R96 实测顺手把同名重复条目也清了（见本节末「重复读数」）。
+> **R96 追记（`whisperer.py` 的危险面，登记归登记、这条必须点名）**：上面那条只写它做什么，没写它**会对共享线动手**——
+> `step0_head_safety()` 在巡检拍里执行 `git checkout master` + `git reset --hard` + `git push --force HEAD:main HEAD:master`
+> （两个远端），判据把「本地有未推提交/工作树脏」一律读成篡改 ⇒ 主机自己已被这道门开过火（`9e0064a` 提交信息就是「风语者 HEAD 安全门手动回救」）。
+> 它因此**不许进守卫电池**：`run_guards.py` 的 `EXCLUDE_EXACT` 显式点名它，`--selftest` 里有一格「危险脚本不得拿无参兜底格」的普查判据咬住这个形状（R94）。
+> 只读探测/入池那一半在副机分支上另址 `whisperer_patrol.py`（双活解，等 TASK-019 裁决）。
+> 旗标口径以 main 为准：`99bacbe` 已把 `--self-test` / `--selftest` 两个形状收进同一 dest，副机 R96 首稿写「只认带连字符的、照抄习惯会打空」已被这一版作废。
+- `fist-gate.py` — **合链门串（统一门禁链）**：一次跑 `merge_markers` / `fmt` / `build` / `ps_encoding` / `store_path` 五门，外加 `--scan` 分支普查（TASK-005 的自动生成 backlog yaml 面）与 REVERT-PATTERN 反向 diff 检测（TASK-004）。rc：0=pass 或出扫描产物 / 1=fail / 2=degraded（子门不可用，绝不冒用 1）。命名欠债见 `NAMING.md`：N1+N2 双债，它是合入门却读不出角色，改名会同时动 CI 引用面，建议与 CI 步骤名一起改。
+- `fist-pr-automator.py` — **yaml → PR → 门禁 → 合并流水线**：读一份 PR 定义 yaml，本地跑统一门禁，推分支，再用 curl 经 `GITHUB_TOKEN`/`GITCODE_TOKEN` 开 PR/MR，等门绿后合并。rc：0=ok / 1=blocked / 2=degraded；纯 ASCII、只用标准库（`check_py_stdout_encoding` 对它出的是 E2 预告：今天不红，写第一句中文结论就得补闸）。**未裁面**：它的默认动作是 `merge`，与金条四「不可逆操作只出方案 + 预案」和副机「推分支后只交 MR 链接、不代开 MR」的口径正面撞 ⇒ 已入池 TASK-021 等 owner 裁决；本条只登记现状，不为它背书。
+- `check_bug_refs.py` — **代码注释/测试标题里的 `BUG-n` ↔ 账本抬头 对表尺（BUG-373，主机 `cef1e9c` 落仓）**：三档 OK/ORPHAN/CLOSED，`--selftest` + `--bugs <账本>`。**与 `check_bug_reference_integrity.py`（副机 R48）是同一意图的两把尺**，而 main 这版被 peer 分支 `slave/fix/bug-refs-guard-semantics`（`484aced`）实测三处硬伤：假自测 / 退出码反用 / 把正常注释当违规 ⇒ 登记归登记，语义修复归那条分支，两把尺的分工与合并由 TASK-020 裁决。**这条登记不是选边**：它只让 `check_scripts_index` 出真实缺口。
+**重复读数（本轮清掉的 4 行）**：`run_guards.py` 曾同时挂 4 条自述互不相同的条目（24 把尺/34 格失败 2、24 把尺/35 格、26 把尺/38 格 ×2 逐字相同），`check_bug_reference_integrity.py` 挂 2 条逐字相同。`check_scripts_index` 只查「名字在不在」，重复与互斥读数一律放过 —— 这就是「同一工具多份历史读数并存」能躺在索引文件里没人管的机理。处理：留 R48 现读那条，删被取代的 2 条与逐字重复的 1 条，另删 `check_bug_reference_integrity.py` 的逐字重复 1 条。还有一条**假阳形状**必须记：散文引子 `- \`check_plugin_sync.py\` 的索引缺口补齐登记（…）：` 按行首反引号名统计会被当成条目/重复，但它不是 —— 计数式检测的第一手误差就长这样，所以本轮按内容逐条判定、不按计数删除。
