@@ -12,13 +12,16 @@ docs/tasks/backlog/TASK-NNN-*.yaml 交给下游 agent（AtomCode/副机）认领
 风语者的核心价值是发现问题，不是修问题；自己只处理合并者层面的事（ff-only 合入）。
 
 模式（rc 契约：0=跑完有产出 / 1=判据无法自证 / 2=发现待办问题已入池）：
-- `python scripts/whisperer.py`            扫描 + 写 yaml（发现才写，编号递增不重复）
-- `python scripts/whisperer.py --scan-only` 只扫描出报告：不写 yaml、不合入（CI/fist-gate 用）
-- `python scripts/whisperer.py --apply`    扫描 + 写 yaml + **ff-only 自动合入**可快进分支（真合并是人的决定，本旗只做无分叉的快进）
-- `python scripts/whisperer.py --no-fetch` 跳过 git fetch（离线/CI 无网络或 fist-gate 快查）
-- `python scripts/whisperer.py --selftest` 合成仓自证六格：干净分支/干净标记 + 写侧四格
+- `python scripts/whisperer_patrol.py`            扫描 + 写 yaml（发现才写，编号递增不重复）
+- `python scripts/whisperer_patrol.py --scan-only` 只扫描出报告：不写 yaml、不合入（CI/fist-gate 用）
+- `python scripts/whisperer_patrol.py --apply`    扫描 + 写 yaml + **ff-only 自动合入**可快进分支
+  （真合并是人的决定，本旗只做无分叉的快进；落点是**当前签出分支**，所以前置三条不成立就整批不动：
+  工作树干净 / HEAD 就在基线对应的本地分支上 / 逐条 `--ff-only`，第一条不合常理即停）
+- `python scripts/whisperer_patrol.py --no-fetch` 跳过 git fetch（离线/CI 无网络或 fist-gate 快查）
+- `python scripts/whisperer_patrol.py --selftest` 合成仓自证十格：干净分支/干净标记 + 写侧四格
   （pool_findings 逐类入池 / 重跑幂等且镜面分支只入一次 / 整串中文键不落到 `TASK-NNN-.yaml` /
-  沙箱写不动真任务池）
+  沙箱写不动真任务池）+ `--apply` 面四格（基线上快进成功 / 错签出整批不动 / 脏树不动 /
+  分叉分支永不进快进面）
 
 探测面四项：①分支巡检（ahead/cherry 等价/冲突标记）②docs 散落普查 ③scripts 命名
 ④守卫覆盖（run_guards --list 读数）。写侧铁律：yaml 幂等——每份 yaml 落一行机器锚
@@ -81,7 +84,7 @@ def probe_branches(base, cwd=None):
             entry["action"] = "ABORT-CONFLICT-MARKERS"
         elif n_ahead == 0 or plus == 0:
             entry["action"] = "DROP-ALREADY-IN-BASE"
-        elif run(["git", "merge-base", "--is-ancestor", base, name]).returncode == 0:
+        elif run(["git", "merge-base", "--is-ancestor", base, name], cwd=cwd).returncode == 0:
             entry["action"] = "FF-MERGE-CANDIDATE"
         else:
             entry["action"] = "REVIEW"
@@ -91,18 +94,34 @@ def probe_branches(base, cwd=None):
     return out, notes
 
 
-def ff_merge(base):
-    merged = []
-    branches, _ = probe_branches(base)
-    for e in (branches or []):
+def ff_merge(base, cwd=None):
+    """`--apply` 的唯一写面：把无分叉可快进的远端分支 ff 进基线。返回 (merged, problems)。
+
+    上一版没有前置，落点是 **当下签出的分支** 而不是 base：在 feature 分支上跑 `--apply`，
+    被快进的是那条 feature 分支自己；且 `git checkout cur` 每轮一次空转、非零 rc 全被吞掉。
+    现在三条前置任一不成立就整批不动（返回 problems，main 据此判 rc=1）。
+    """
+    cur = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd).stdout.strip()
+    expected = base.split("/", 1)[1] if "/" in base else base
+    if run(["git", "status", "--porcelain"], cwd=cwd).stdout.strip():
+        return [], ["工作树不干净（git status --porcelain 非空），--apply 整批不动"]
+    if cur != expected:
+        return [], ["当前签出在 %s，基线是 %s：ff 的落点是当前分支，绝不盲合"
+                    "（先 checkout %s 再 --apply）" % (cur or "?", base, expected)]
+    branches, _ = probe_branches(base, cwd=cwd)
+    if branches is None:
+        return [], ["分支巡检无法出数，--apply 整批不动"]
+    merged, problems = [], []
+    for e in branches:
         if e["action"] != "FF-MERGE-CANDIDATE" or e["conflict_markers"]:
             continue
-        cur = run(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
-        r = run(["git", "merge", "--ff-only", e["branch"]])
-        if r.returncode == 0:
-            merged.append(e["branch"])
-        run(["git", "checkout", cur])
-    return merged
+        r = run(["git", "merge", "--ff-only", e["branch"]], cwd=cwd)
+        if r.returncode:
+            problems.append("%s rc=%d %s" % (e["branch"], r.returncode,
+                                             (r.stderr or r.stdout).strip()[-160:]))
+            break
+        merged.append(e["branch"])
+    return merged, problems
 
 
 def probe_docs():
@@ -204,6 +223,53 @@ def selftest():
     b1, n1 = probe_branches("HEAD", cwd=d)
     ok1 = b1 is not None and not n1
     ok2 = has_markers("HEAD", cwd=d) == []
+    # --apply 面四格（R94）：上一版 selftest 从不进 ff_merge，「ff 的落点是当前签出分支
+    # 而不是 base」这一级错合没有对照。沙箱里手搓远端跟踪 ref，不碰任何真共享线。
+    def tip(ref):
+        return run(["git", "rev-parse", ref], cwd=d).stdout.strip()
+
+    def commit(msg, fname, body):
+        open(os.path.join(d, fname), "w").write(body)
+        run(["git", "add", "-A"], cwd=d)
+        run(["git", "commit", "-qm", msg], cwd=d)
+
+    def uref(ref, sha):
+        run(["git", "update-ref", ref, sha], cwd=d)
+
+    if tip("--abbrev-ref HEAD") != "main":
+        run(["git", "branch", "-m", "main"], cwd=d)
+    s0 = tip("HEAD")
+    uref("refs/remotes/origin/main", s0)
+    commit("base+1", "f1.md", "one\n")
+    s1 = tip("HEAD")
+    uref("refs/remotes/origin/feat-ff", s1)
+    run(["git", "reset", "--hard", "-q", s0], cwd=d)
+    m_a, p_a = ff_merge("origin/main", cwd=d)
+    okA = m_a == ["origin/feat-ff"] and p_a == [] and tip("main") == s1
+    # 分叉线：基线先前进到 s1，父提交是 s0 的 side 才真算分叉（否则仍是 base 的后代）
+    uref("refs/remotes/origin/main", s1)
+    run(["git", "checkout", "-q", "-b", "side", s0], cwd=d)
+    commit("side", "f2.md", "two\n")
+    s_div = tip("HEAD")
+    uref("refs/remotes/origin/diverged", s_div)
+    run(["git", "checkout", "-q", "main"], cwd=d)
+    run(["git", "branch", "-q", "-D", "side"], cwd=d)
+    # 再挂一条可快进的候选，然后走两步「错签出」「脏树」，证明前置真的挡住整批
+    commit("base+2", "f3.md", "three\n")
+    s2 = tip("HEAD")
+    uref("refs/remotes/origin/feat-ff2", s2)
+    run(["git", "reset", "--hard", "-q", s1], cwd=d)
+    run(["git", "checkout", "-q", "-b", "feat", s1], cwd=d)
+    m_c, p_c = ff_merge("origin/main", cwd=d)
+    okC = m_c == [] and len(p_c) == 1 and tip("main") == s1
+    run(["git", "checkout", "-q", "main"], cwd=d)
+    open(os.path.join(d, "dirty.md"), "w").write("uncommitted\n")
+    m_d, p_d = ff_merge("origin/main", cwd=d)
+    okD = m_d == [] and len(p_d) == 1 and tip("main") == s1
+    os.remove(os.path.join(d, "dirty.md"))
+    m_b, p_b = ff_merge("origin/main", cwd=d)
+    okB = (m_b == ["origin/feat-ff2"] and p_b == [] and tip("main") == s2
+           and tip("refs/remotes/origin/diverged") == s_div)
     # 写侧三格：入池走 pool_findings（main 的写面）。此前 selftest 只跑到 --scan-only 面，
     # 「少传一个参数就 TypeError」与「幂等锚从未生效」都藏在这一格的暗区里
     real_dir = globals()["TASKS_DIR"]
@@ -230,11 +296,15 @@ def selftest():
         globals()["TASKS_DIR"] = real_dir
     r1 = len(os.listdir(real_dir)) if os.path.isdir(real_dir) else -1
     ok5 = r0 == r1
+    all_ok = all([ok1, ok2, ok3, ok3b, ok4, ok5, okA, okB, okC, okD])
     print("SELFTEST %s (grid: clean-branch-probe=%s clean-marker-probe=%s pool-findings=%s "
-          "pool-idempotent+mirror-dedupe=%s zh-only-key-slug=%s sandbox=%d→%d real-pool-untouched=%s %d→%d)"
-          % ("OK" if all([ok1, ok2, ok3, ok3b, ok4, ok5]) else "FAIL",
-             ok1, ok2, ok3, ok3b, ok4, n0, len(os.listdir(tdir)), ok5, r0, r1))
-    return 0 if (ok1 and ok2 and ok3 and ok3b and ok4 and ok5) else 2
+          "pool-idempotent+mirror-dedupe=%s zh-only-key-slug=%s sandbox=%d→%d real-pool-untouched=%s %d→%d "
+          "apply-ff-on-base=%s apply-refuses-wrong-checkout=%s apply-refuses-dirty-tree=%s "
+          "apply-merges-pending-and-skips-diverged=%s)"
+          % ("OK" if all_ok else "FAIL",
+             ok1, ok2, ok3, ok3b, ok4, n0, len(os.listdir(tdir)), ok5, r0, r1,
+             okA, okC, okD, okB))
+    return 0 if all_ok else 2
 
 
 def pool_findings(notes, governance, cells):
@@ -293,7 +363,9 @@ def main():
     if branches is None:
         print("FATAL 分支巡检无法出数")
         return 1
-    merged = ff_merge(base) if apply else []
+    merged, merge_problems = ([], [])
+    if apply:
+        merged, merge_problems = ff_merge(base)
     stats, governance = probe_docs()
     naming = probe_scripts()
     cells = probe_guards()
@@ -304,13 +376,15 @@ def main():
               % (e["branch"], e["action"], e["ahead"], e["cherry_plus"], len(e["conflict_markers"])))
     if merged:
         print("ff-only 已合入：%s" % ", ".join(merged))
+    for p in merge_problems:
+        print("ff-only 未动：%s" % p)
     print("docs 散落：%s；治理主题散在 %d 个文件" % (stats, len(governance)))
     print("scripts 命名待定：%d 个（%s）" % (len(naming), ", ".join(naming[:5]) or "-"))
     print("守卫电池格数：%s" % cells)
     new = [] if scan_only else pool_findings(notes, governance, cells)
     print("新 yaml：%s" % (new or "无（幂等跳过或 scan-only）"))
-    rc = 2 if (notes or new) else 0
-    print("WHISPERER rc=%d（0=无事 / 2=已发现待办）" % rc)
+    rc = 1 if merge_problems else (2 if (notes or new) else 0)
+    print("WHISPERER rc=%d（0=无事 / 1=--apply 被前置挡住或判据坏 / 2=已发现待办）" % rc)
     return rc
 
 
