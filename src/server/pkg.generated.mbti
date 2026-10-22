@@ -98,7 +98,7 @@ pub fn instrumented_tool(@colmugx/mcp/server.MCPServer, String, String, Json, as
 
 pub fn is_ocr_subcmd(String) -> Bool
 
-pub fn issue_scan(String, String, Int32, include_tests? : Bool) -> Result[Json, String]
+pub fn issue_scan(String, String, Int32, include_tests? : Bool, min_severity? : String) -> Result[Json, String]
 
 pub async fn laya_decide_external(String, Array[String], String, String, Int32) -> Result[Json, String]
 
