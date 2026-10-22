@@ -9,11 +9,14 @@
 （14 个顶层键各 2 次，第二份停在 `open_item`，缺 `result`/`acceptance_met`/`status_note`）。
 人工去重一次会再长回来，所以把它变成常驻门。
 
-判据（三条，只有前两条判红）：
+判据（四条：R1/R2/R4 判红，R3 只诊断）：
   R1 顶层键唯一：同一文件里 `^[a-z_][a-z0-9_]*:` 反解出的键出现 >1 次 ⇒ 违例（整块重复的形状）。
   R2 抬头齐全：必须有 `id` / `title` / `priority` / `status` 四个键（缺任一 = 消费面读不到任务身份）。
   R3 只诊断不判红：`acceptance_met` 在场却仍写 `status: backlog` 时打一行 DIAG——这是「状态等 owner
      盖章」，不是文件坏了；把别人的裁决写成我的红，下一位只会把整把尺关掉。
+  R4 无控制字符：正文里出现 C0 控制字符（`\x00`-`\x08` / `\x0b` / `\x0c` / `\x0e`-`\x1f`）⇒ 违例。
+      TASK-023 实测：两处正则里的 `\b` 被写成 0x08 退格字节，grep/正则照跑但永远命不中——人眼看着是 `\b`，机器读的是退格。
+      `\t` 与 `\r\n` 是合法排版空白，不进判据面（把正常文件打红只会让尺子被关掉）。
 
 退出码：0=PASS；1=有违例（逐条点名文件与键名）；2=判据无法自证（扫描目录不存在/扫描面为空，
         缺样本＝没测，绝不报绿）；4=尺子自己坏了（未捕获异常，BUG-369 契约）。
@@ -35,6 +38,7 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 TOP_KEY = re.compile(r'^([a-z_][a-z0-9_]*):', re.M)
+CTRL_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
 REQUIRED = ('id', 'title', 'priority', 'status')
 
 GOOD = 'id: TASK-900\ntitle: "x"\npriority: P1\nstatus: backlog\nacceptance:\n  - [ ] 一条\n'
@@ -56,6 +60,12 @@ def check_text(text):
     missing = [k for k in REQUIRED if k not in keys]
     if missing:
         viol.append('R2 抬头缺键：%s' % ', '.join(missing))
+    ctrl = CTRL_RE.findall(text)
+    if ctrl:
+        first = CTRL_RE.search(text)
+        line_no = text.count('\n', 0, first.start()) + 1
+        viol.append('R4 含 %d 个控制字符（首个 0x%02x 在第 %d 行）'
+                    % (len(ctrl), ord(ctrl[0]), line_no))
     diag = []
     if 'acceptance_met' in keys and re.search(r'^status:[ \t]*backlog[ \t]*$', text, re.M):
         diag.append('acceptance_met 已在却仍写 status=backlog（待 owner 盖章，不计失败）')
@@ -85,7 +95,7 @@ def run(root):
     if viol_n:
         print('FAIL 台账完整性不成立：整块重复会让逐行反解的读法拿到截断抄本（R109 实锤形状）')
         return 1
-    print('PASS backlog 顶层键唯一且抬头齐全')
+    print('PASS backlog 顶层键唯一、抬头齐全且无控制字符')
     return 0
 
 
@@ -143,6 +153,18 @@ def selftest():
             done.append('C9 真面变异必红')
         finally:
             shutil.move(backup, stale)
+
+    with tempfile.TemporaryDirectory() as d:
+        write(d, 'TASK-906-ctrl.yaml',
+              GOOD + "evidence: |\n  grep '^## BUG-(1|2)" + chr(8) + "' 命不中\n")
+        assert run(d) == 1, 'C10 失败：控制字符没抓到'
+        done.append('C10 控制字符必红')
+        os.remove(os.path.join(d, 'TASK-906-ctrl.yaml'))
+
+        write(d, 'TASK-907-tab.yaml', GOOD + 'evidence: |\n\t制表符与换行是合法空白\n')
+        assert run(d) == 0, 'C11 失败：制表/换行被误判成控制字符'
+        done.append('C11 制表/换行不误红')
+        os.remove(os.path.join(d, 'TASK-907-tab.yaml'))
     print('SELFTEST OK（格子从已执行对照反解：%s）' % ' / '.join(done))
     return 0
 
