@@ -33,15 +33,32 @@ def sh(*args, cwd=None):
 HEAD_STATE_FILE = ROOT / "memory" / "whisperer-head.txt"
 
 def step0_head_safety(full=True):
-    """HEAD 安全门。full=True 全量（fetch+reset 篡改），full=False fast 模式（仅读 hash 对比，<3s）"""
-    if full:
-        print("[Step 0] HEAD 安全门（full）")
-    else:
-        pass  # fast 模式 main() 会打印精简头
+    """HEAD 安全门。full=True 全量（fetch+reset 篡改），full=False fast 模式（<5s，含 fetch）"""
+    # ========== 两个远程都 fetch ==========
+    run(["git", "fetch", "gitcode", "main", "master"], capture=True)
+    run(["git", "fetch", "origin", "main", "master"], capture=True)
 
     local = sh("git", "rev-parse", "HEAD")
     gc = sh("git", "rev-parse", "gitcode/main")
     og = sh("git", "rev-parse", "origin/main")
+
+    # ========== 主仓定义 ==========
+    # gitcode = 主仓（VictorTop/Fist-Mbt），origin = 镜像（vicTop-cw/FIST-Mbt）
+    # 策略：origin 任何时候落后 gitcode → 自动同步（--force 安全：gitcode 不会落后）
+    mirror_fixed = False
+    mirror_reason = ""
+    if gc != og:
+        diff_ahead = sh("git", "rev-list", "--count", f"origin/main..gitcode/main").strip()
+        diff_behind = sh("git", "rev-list", "--count", f"gitcode/main..origin/main").strip()
+        diff_ahead = int(diff_ahead) if diff_ahead.isdigit() else 0
+        diff_behind = int(diff_behind) if diff_behind.isdigit() else 0
+        if diff_ahead > 0 or diff_behind > 0:
+            print(f"  🔀 origin/main ({og[:7]}) ≠ gitcode/main ({gc[:7]}) — 镜像不同步！")
+            print(f"     gitcode 领先 {diff_ahead} / 落后 {diff_behind}")
+            run(["git", "push", "origin", f"{gc}:refs/heads/main", f"{gc}:refs/heads/master", "--force"])
+            mirror_fixed = True
+            mirror_reason = f"origin 镜像已同步 {og[:7]}→{gc[:7]} (+{diff_ahead}/-{diff_behind})"
+            og = gc
 
     # 读上次 HEAD 状态（fast 模式用来检测"最近有没有被碰"）
     prev_hash = None
@@ -59,7 +76,10 @@ def step0_head_safety(full=True):
 
     tampered = False
     tamper_reason = ""
-    if gc == og and gc != local:
+    if gc != og:
+        tampered = True
+        tamper_reason = f"两个远程 main 不一致（gitcode={gc[:7]} origin={og[:7]}）"
+    elif gc != local:
         tampered = True
         tamper_reason = "本地 HEAD 与远端 main 不一致（篡改）"
     elif prev_hash and prev_hash != local and local != gc:
@@ -99,6 +119,8 @@ def step0_head_safety(full=True):
         status = f"✅ 三端一致，稳定 {stable_minutes}min"
     else:
         status = "✅ 三端一致"
+    if mirror_fixed:
+        status += f"（{mirror_reason}）"
     return (local[:7], status)
 
 # ============================================================
