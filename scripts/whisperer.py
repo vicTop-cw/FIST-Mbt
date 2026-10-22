@@ -170,12 +170,26 @@ def step3_issue_scan():
 def selftest():
     print("[self-test] 风语者自检")
     rc = 0
-    # G1: fist-gate.py --scan 能跑
-    r = run(["python", "scripts/fist-gate.py", "--scan"])
-    if r.returncode != 0 and "SELFTEST" not in r.stdout:
-        print(f"  ❌ G1 fist-gate.py --scan rc={r.returncode}"); rc = 2
+    # G1: fist-gate.py --scan 能跑。
+    # 三点是实测补的（2026-10-22）：
+    #   (a) 必须 cwd=ROOT —— 否则在任何别的目录里跑自检都会「找不到 scripts/fist-gate.py」，
+    #       看起来像判据坏了；
+    #   (b) 红要自己说清原因：只印 rc=N 等于把「我没量到」和「下游坏了」混成一个红，
+    #       人得自己去猜（本项目「红着没人读」的起点就是这个）。这里印末行 + 提示；
+    #   (c) rc=2 是 DEGRADED（下游判据拒绝出数），既不是绿也不是"代码坏了"，单列一档。
+    r = run(["python", "scripts/fist-gate.py", "--scan"], cwd=ROOT)
+    tail = ([l for l in ((r.stdout or "") + (r.stderr or "")).splitlines() if l.strip()] or ["(无输出)"])[-1].strip()
+    if r.returncode == 0:
+        print("  ✅ G1 fist-gate.py --scan 正常")
+    elif r.returncode == 2:
+        print(f"  ⚠ G1 fist-gate.py --scan DEGRADED rc=2：{tail[:120]}")
+        print("      （下游判据自己拒绝出数，不是本脚本坏了；先修下游再复检）")
     else:
-        print(f"  ✅ G1 fist-gate.py --scan 正常")
+        print(f"  ❌ G1 fist-gate.py --scan rc={r.returncode}：{tail[:160]}")
+        if "FileNotFoundError" in tail or "No such file" in tail:
+            print("      提示：常见根因在 **git worktree** 里 `.git` 是文件而非目录；"
+                  "scan 已改用 `git rev-parse --absolute-git-dir`，若仍红请看上面的 traceback")
+        rc = 2
     # G2: HEAD 安全门逻辑 import 不崩
     try:
         from whisperer import step0_head_safety, step1_branch_scan, step2_agent_claim, step3_issue_scan
@@ -192,7 +206,9 @@ def main():
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--scan-only", action="store_true", help="Step 0-2 + Step 3 扫描（默认）")
     g.add_argument("--auto-merge", action="store_true", help="Step 0-2 + 自动合入 + Step 3")
-    g.add_argument("--self-test", action="store_true", help="selftest 模式")
+    # 全仓惯例是 `--selftest`（无连字符），本工具原先只认 `--self-test` ⇒ 统一跑 `--selftest` 的
+    # 自动化会在它身上拿到 argparse rc=2，被误读成"判据坏了"。两个都收，输出一致。
+    g.add_argument("--self-test", "--selftest", dest="self_test", action="store_true", help="selftest 模式")
     args = ap.parse_args()
 
     if args.self_test:

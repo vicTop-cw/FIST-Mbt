@@ -171,3 +171,10 @@
   PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
   去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
   用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
+
+### 2026-10-22 登记：`whisperer.py`
+
+- `whisperer.py` — **风语者巡检自动化（TASK-009）**：Step 0-4 一把跑（HEAD 安全门 → 分支普查 →
+  候选任务卡 → issue 扫描）。旗标 `--scan-only`（默认）/ `--auto-merge` / `--selftest`（**也接受
+  `--self-test`**，与全仓惯例对齐）。自检 G1 会真跑 `fist-gate.py --scan` 并区分
+  绿 / DEGRADED(rc=2) / 红（红要印末行原因，不只印 rc）。
