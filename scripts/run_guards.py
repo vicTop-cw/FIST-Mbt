@@ -216,6 +216,9 @@ SPECIAL_CASES = [
     #    「缺面清单：audit_branch_delete.py」，它连带 check_battery_count_doc / selftest-inventory
     #    两格一起红。本脚本裸跑要分支参数且会写 <git-dir>/fist/delete-audit.jsonl，只有 --selftest
     #    是只读面（temp 仓自建自清），故手写点名自检格。──
+    # —— R54：`moon test` 的环境垫片问题（BUG-380）。**只跑 --selftest**——
+    #    真跑全仓测试要 11s 且会起一堆 node 进程，电池必须只读且快。 ——
+    case("moon_test_env.py", "--selftest"),
     case("audit_branch_delete.py", "--selftest"),
     # —— R106：宇宙并成全集后 `--list` 第一次把这三把尺的**现读红**摆出来。按本文件的律，
     #    预存红「照写期望值 + 依据」而不是豁免：被检内容修好之后这一格自己会翻红，逼下一位
