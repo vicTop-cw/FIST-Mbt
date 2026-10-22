@@ -36,7 +36,7 @@ SPAWN_RE = re.compile(r"""\[\s*["']moon["']""")
 
 # 不接线的既有面：理由必须非空（selftest 盯这一格）。新增条目 = 一次显式决定。
 ALLOWLIST = {
-    "moon_test_env.py": "R124 自带同一发现逻辑（MR 待合）；合入后可删本行",
+    "moon_test_env.py": "R124 自带同一发现逻辑；为避免改动其 12 格自检面，去重收敛留后续单",
     "check_fmt_gate.py": "只 spawn `moon fmt --check`，不经 moonc 编译面",
     "check_exit_code_contract.py": '`["moon"]` 出现在生成的夹具字符串里，不是真 spawn',
 }
