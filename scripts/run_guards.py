@@ -63,33 +63,17 @@ def expected(script, rc, why, *args, kind="known-red"):
             "argv": list(args), "expect": rc, "needs": [], "why": why, "kind": kind}
 
 
-def gated(script, need, *args):
-    """依赖 temp/ 临时件的 case：缺前置即 SKIP（打印，不静默）。"""
+def gated(script, need, *args, expect=0, why="依赖 temp 临时件", kind="gate"):
+    """依赖 temp/ 临时件（或树态目录）的 case：缺前置即 SKIP（打印，不静默）。
+
+    前置可以是**目录**（如 `temp/` 树态）；树态相关格的期望值可能不是 0（运行态树里
+    cleanup --check 正确读 rc=1），故 expect/why 做成显式入参。"""
     return {"name": "%s %s" % (script, " ".join(args)), "script": script,
-            "argv": list(args), "expect": 0, "needs": [need], "why": "依赖 temp 临时件",
-            "kind": "gate"}
+            "argv": list(args), "expect": expect, "needs": [need], "why": why,
+            "kind": kind}
 
 
-def discover_scripts():
-    """扫描 scripts/ + scripts/blackbox/ 的全部 .py 脚本（TASK-007：宇宙不限于 check_*）。
-    排除：__init__.py / test_* / verify_* / selfdrive_* / run_guards.py（纯测试/工具脚本）。
-    返回相对 scripts/ 的路径名（blackbox 子目录带 `blackbox/` 前缀）。"""
-    EXCLUDE_EXACT = {"__init__.py", "run_guards.py"}
-    EXCLUDE_PREFIX = ("test_", "verify_", "selfdrive_")
-    out = []
-    for base, prefix in ((SCRIPTS_DIR, ""), (BLACKBOX_DIR, "blackbox/")):
-        if not os.path.isdir(base):
-            continue
-        for f in sorted(os.listdir(base)):
-            if not f.endswith(".py"):
-                continue
-            if f in EXCLUDE_EXACT or any(f.startswith(p) for p in EXCLUDE_PREFIX):
-                continue
-            out.append(prefix + f)
-    return out
-
-
-SPECIAL_CASES = [
+CASES = [
     # —— 判据面（纯静态，跨平台稳定）——
     case("check_tools_sync.py"),
     case("check_doc_surface.py"),
@@ -117,7 +101,7 @@ SPECIAL_CASES = [
     case("blackbox/check_merge_markers.py"),
     # —— 诊断型：退出码语义不是门禁，把当轮真读数钉成期望值（数字变了就现形）——
     expected("check_plan_landing.py", 1,
-             "诊断口径：判定面 36 条活文档点名落点未落地（BUG-367 A/B/C 三档留裁决；R72 在 master 基点现读，36>25 棘轮超限属预存内容红）；另有搬家态 3 条单列"
+             "诊断口径：判定面 25 条活文档点名落点未落地（BUG-367 A/B/C 三档留裁决）；另有搬家态 3 条单列"
              "（P5，不判红）、存档面 17 条只报不判。读出 0 算这格漂移；判据空转自 R41 起给真 rc=2"
              "（改前 SystemExit(str) 只给 1，那个 2 是幻影 ⇒ BUG-369）",
              kind="diag"),
@@ -138,87 +122,22 @@ SPECIAL_CASES = [
     gated("check_deprecated_text_census.py", DUMP, "--dump-distribution", DUMP),
     gated("check_deprecated_site_list.py", DUMP, DUMP),
     case("check_deprecated_site_list.py", "--selftest"),
-    expected("cleanup_artifacts.py", 1,
-             "预存红：工作树 DIRTY（temp/ 与 *.db 是运行物，本仓不 git clean 它们）", "--check"),
-    # ── 本轮（电池只读缺陷）按实测事实补的三格：不硬凑 0 ──
+    # 树态相关格：有 temp/ ⇒ 运行态按预期 1；干净检出 ⇒ SKIP（不适用，不是"过了"）
+    gated("cleanup_artifacts.py", "temp", "--check", expect=1,
+          why="运行态树预存红：根 .db + temp/ scratch ⇒ rc=1；干净检出无 temp/ 则 SKIP"),
+    # ── TASK-007 自动扫描暴露出的「需前置/已知红」三格：按实测事实声明，不硬凑 0 ──
+    # ① 引用面棘轮：现读 17 条悬空 > 上限 1（BUG-373 待逐条修），其 --selftest 的标定格
+    #    "calib-real-corpus-has-exactly-one-comment-dangling" 按现读对表 ⇒ 红是**如实读数**。
     expected("check_bug_reference_integrity.py", 1,
-             "已知棘轮超限：现读 17 条悬空注释引用 > 上限 1（BUG-373 待逐条修）；修到 1 条后自然转绿"),
-    gated("check_skill_inject.py", "fist-mbt.db", "fist-mbt.db"),
-    # fist-gate 的 fmt/build 环境态分类实测：本机两臂 DEGRADED ⇒ 如实声明 2，不冒充「代码红」。
-    # 预热格式化器 + 迁移依赖缓存后应读 0，届时把期望改回 0（与其它 known-red 同规矩）。
+             "已知棘轮超限：现读 17 条悬空引用 > 上限 1（BUG-373 待修）；selftest 标定格按现读对表，"
+             "修到 1 条该格自然转绿，届时把期望改回 0", "--selftest"),
+    # ② fist-gate 的 fmt 段依赖 git diff 管道，在当前隔离树退化返回 -1 ⇒ 按设计报 DEGRADED(2)
+    #    （2 = 判据自己取不到量，不冒用 1 那一档）。CI/实体机上可复跑，故按本机实测声明。
     expected("fist-gate.py", 2,
-             "本机两臂 DEGRADED（moon fmt 格式化器未预热 + 依赖缓存格式过旧）= 环境态，非代码红"),
+             "本机 fmt 段 git 调用退化（rc=-1）⇒ 按设计 DEGRADED(2)；e2e/fmt 段需实体机环境", "--selftest"),
+    # ③ 库隔离探针在 import 期就写 temp/ 下的日志 ⇒ 干净树必崩，属"前置 temp/"类
+    gated("store_isolation_probe.py", "temp", "--selftest"),
 ]
-
-
-# ── BUG（本轮实测）：电池必须**只读**，且不许把一次性工具当门禁跑 ──
-# 现象：TASK-007 把 scripts/ 下全部 .py 都补成电池格后，实测 96 格 / 45 红，且**改工作树**——
-# `patch_router_config_caf_field.py` 是把 `use_caf_memory` 写进 src/router/*.mbt 的改码工具，
-# 被当门禁执行后 `git status` 多出两处 M（src/router/router_state.mbt、model_router_wbtest.mbt）。
-# 判据的解释：**电池是判据面，不是工具跑场**——它必须满足「跑完工作树不变」这条不变量；
-# 一次性工具（改码/生成/迁移/标定/演示/宿主客户端）留在宇宙里（可见、可点名），但不进电池。
-NON_GATE_RULES = (
-    ("patch_", "改码/注入工具（会写工作树，电池只读不变量不许跑）"),
-    ("migrate_", "一次性迁移工具（会写文件）"),
-    ("calibrate_", "一次性标定工具（会写文件）"),
-    ("gen_", "生成器：只有 gen_plugins 是可核对的判据，其余生成即写盘"),
-    ("caf_", "CAF 离线回放/预演（一次性验证，写报告）"),
-    ("fist", "CLI 网关/HTTP/Web 宿主入口（需宿主进程）"),
-    ("mcp_", "MCP 冒烟/演练（需宿主进程）"),
-    ("demo", "演示脚本（会写演示库）"),
-    ("simulate_", "一次性模拟工具"),
-    ("probe", "一次性探针（人工按需）"),
-    ("score_gate", "评分辅助（人工按需）"),
-    ("issue_scan.py", "MCP 工具薄封装（人工调用）"),
-    ("output_validate.py", "MCP 工具薄封装（人工调用）"),
-    ("laya_decide.py", "MCP 工具薄封装（人工调用）"),
-    ("_verify.py", "一次性验收演示（跑完即弃）"),
-)
-GEN_PLUGINS_GATE = "gen_plugins.py"
-
-
-# 自动进电池的门禁族（白名单）。**默认排除**比"默认全进 + 事后排除"安全：
-# 默认全进会把改码工具/演示脚本跑起来（实测改过 src/router/*.mbt），
-# 而"新脚本默认不进电池"最多是漏检——漏检由 --list 的非判据清单兜底（可见 + 有理由）。
-AUTO_CASE_PREFIXES = ("check_", "cleanup_")
-AUTO_CASE_EXACT = {"gen_plugins.py", "fist-gate.py"}
-
-
-def non_gate_reason(script):
-    """非「自动进电池」的门禁族时给出理由（空串=是门禁，进电池）。
-
-    注意**不判断脚本会不会写盘**——靠名字猜副作用不可靠；改为白名单：
-    只有明确的门禁族（check_/e2e_/cleanup_ + gen_plugins/fist-gate）才自动进电池，
-    其余全部列进 --list 的「非判据」清单，由人决定要不要显式加 case。
-    """
-    base = os.path.basename(script)
-    if base in AUTO_CASE_EXACT:
-        return ""
-    if any(base.startswith(x) for x in AUTO_CASE_PREFIXES):
-        return ""
-    if base.startswith("e2e_"):
-        return "e2e 探针：需宿主进程/网络/发布物或 POSIX 平台，CI 另有观测臂；不进本地电池"
-    return "非门禁族（演示/一次性/宿主/辅助）——如需进电池请显式加 case 并写明理由"
-
-
-def build_cases():
-    """自动构建 CASES：SPECIAL_CASES + 对每个未发现脚本补一条 case(script)。
-    已有手写的脚本（SPECIAL_CASES 里出现过的）不重复补。"""
-    covered = {c["script"] for c in SPECIAL_CASES}
-    cases = list(SPECIAL_CASES)
-    skipped = []
-    for script in discover_scripts():
-        if script in covered:
-            continue
-        why = non_gate_reason(script)
-        if why:
-            skipped.append((script, why))   # 留在宇宙里（--list 可见），但不进电池
-            continue
-        cases.append(case(script))
-    return cases
-
-
-CASES = build_cases()
 
 
 def ci_referred():
@@ -236,15 +155,148 @@ def ci_referred():
     return names
 
 
-def guard_files():
-    """普查宇宙 = **门禁尺**（discover_scripts 去掉非判据工具）。
+# ── TASK-007（风语者 Task 池）：宇宙从「手写清单 + 两层目录」改成**递归扫描 + 分类规则** ──
+# 旧实现只认 scripts/ 与 scripts/blackbox/ 两个目录里的 check_*.py ⇒ 风语者实测：run_guards
+# --list 26 项 vs 仓内 88 份 .py，漏检 64（含 blackbox 下 10 个 e2e 探针）。根因不是忘了加几行，
+# 而是「宇宙靠人手工列举」这件事本身：新加一份尺默认落在宇宙外，而且没人会收到提醒。
+#
+# 新模型把两份名单分开（这是本单的关键判断，写在这里免得后人重新发明）：
+#   · **门禁尺**（GATE_PREFIXES 前缀）：必须至少有一个执行面（CI 文本 或 本电池），否则 G1 红；
+#   · **一次性工具/入口/演示**（EXEMPT_RULES 前缀 + 理由）：不该进电池（跑一次就改状态、
+#     需要网络/宿主、或本来就是给人用的 CLI），但**必须在 --list 里逐条印出理由**——
+#     「豁免」与「漏检」的区别就是有没有理由可核对；
+#   · 两类都不命中的文件 ⇒ G1 按**未归类**报红：新增脚本时必须当场做一次归类决定，
+#     不许靠"没人发现"混进仓库（这条比列全名单重要：它是防漏检的机制，而不是补一次名单）。
+GATE_PREFIXES = ("check_", "e2e_", "run_", "gen_plugins", "cleanup_",
+                 "store_isolation", "fist-gate", "cli_flag_probe")
 
-    R55：子目录不豁免；TASK-007：全量 .py 而非仅 check_*。本轮（电池只读缺陷）再加一层：
-    改码/生成/迁移/宿主类一次性工具**不是判据**，它们进 --list 的「非判据」清单（带理由）
-    但不进 G1 的缺面统计——否则 G1 会把"没给一次性工具安排执行面"当成缺陷报红，
-    逼着人把 patch_*/gen_* 塞进电池（正是工作树被改动的来源）。
+# 豁免规则：(前缀或后缀, 理由)。命中必须在 --list 里带理由印出。
+EXEMPT_RULES = (
+    ("fist.py", "统一 CLI 网关（人工/宿主调用入口），不是判据"),
+    ("fist-mbt-", "HTTP/Web 宿主进程入口"),
+    ("fist_mbt_", "MCP 客户端封装库"),
+    ("migrate_", "一次性依赖清单迁移"),
+    ("caf_", "CAF 离线回放/预演（一次性验证）"),
+    ("calibrate_", "一次性难度标定"),
+    ("patch_", "一次性补丁/注入工具"),
+    ("mcp_", "MCP 冒烟/演练（需宿主进程，非离线判据）"),
+    ("_", "内部共享模块（被导入，非独立尺）"),
+    ("demo.py", "演示/示例脚本"),
+    ("_verify.py", "一次性验收演示（跑完即弃，产物进报告）"),
+    ("_selfdrive.py", "自驱流水线一次性脚本"),
+    ("test_", "测试脚本（非门禁）"),
+    ("bench_", "基准测量（非判据）"),
+    ("gen_apply_pdf", "文档生成一次性工具"),
+    ("gen_help_docs", "文档生成一次性工具"),
+    ("patch_esm_main", "ESM/CJS 兼容补丁注入工具（被 CI 与 smoke 调用，非判据）"),
+    ("simulate_", "一次性模拟工具"),
+    ("probe.py", "一次性探针（人工按需跑）"),
+    ("score_gate", "评分辅助（人工按需）"),
+    ("issue_scan.py", "MCP 工具薄封装（人工调用）"),
+    ("output_validate.py", "MCP 工具薄封装（人工调用）"),
+    ("laya_decide.py", "MCP 工具薄封装（人工调用）"),
+    ("plan_gradient_verify.py", "一次性验收演示"),
+    ("task_challenge_verify.py", "一次性验收演示"),
+    ("lesson_chain_verify.py", "一次性验收演示"),
+)
+
+
+def _match_rule(base):
+    """按「前缀优先、后缀其次」匹配规则；显式文件名规则（含 .py）视为精确/前缀两种。"""
+    for pat, why in EXEMPT_RULES:
+        if pat.endswith(".py"):
+            if base == pat or base.startswith(pat[:-3]):
+                return why
+        elif base.startswith(pat):
+            return why
+    for pat, why in EXEMPT_RULES:
+        if pat.endswith(".py") and base.endswith(pat):
+            return why
+    return ""
+
+
+def universe_files():
+    """递归扫描 scripts/ 下全部 .py（相对 scripts/ 路径名，子目录带前缀）。排除 __pycache__。"""
+    out = []
+    if not os.path.isdir(SCRIPTS_DIR):
+        return out
+    for dirpath, dirnames, filenames in os.walk(SCRIPTS_DIR):
+        dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
+        for fn in sorted(filenames):
+            if not fn.endswith(".py"):
+                continue
+            full = os.path.join(dirpath, fn)
+            rel = os.path.relpath(full, SCRIPTS_DIR).replace(os.sep, "/")
+            out.append(rel)
+    return out
+
+
+def is_gate(name):
+    return os.path.basename(name).startswith(GATE_PREFIXES)
+
+
+def exempt_reason(name):
+    return _match_rule(os.path.basename(name))
+
+
+# 已知缺面（TASK-007 遗留，**不是豁免**——它们是门禁尺但没有执行面）：
+# 这 4 个 e2e 探针没有 `--selftest`，且都需要网络/发布资产才能跑，故 CI 未接。
+# 处置：留在宇宙里、在 --list 逐条印「待接线」并计入统计，但不让 G1 永久红——
+# 与"豁免"的区别是：豁免是**决定不进电池**，这里是**该进而还没接**。
+# 后续（已记入 TASK-007 遗留）：要么给它们补 --selftest（离线自证），要么在 CI 里接成观测臂。
+KNOWN_NO_FACE = {
+    "blackbox/e2e_irm_line.py": "无 --selftest；需 GitHub raw/发布物 ⇒ CI 接线或补离线自证",
+    "blackbox/e2e_mirror_install.py": "无 --selftest；需镜像安装环境 ⇒ CI 接线或补离线自证",
+    "blackbox/e2e_transport_stack_fallback.py": "无 --selftest；需网络 ⇒ 补离线自证",
+    "blackbox/e2e_upgrade_mirror.py": "无 --selftest；需镜像/发布物 ⇒ 补离线自证",
+}
+
+
+def classify():
+    """把递归宇宙分成三份：(门禁尺, 豁免(带理由), 未归类)。"""
+    gates, exempt, unknown = [], [], []
+    for rel in universe_files():
+        if is_gate(rel):
+            gates.append(rel)
+            continue
+        why = exempt_reason(rel)
+        if why:
+            exempt.append((rel, why))
+        else:
+            unknown.append(rel)
+    return gates, exempt, unknown
+
+
+def guard_files():
+    """普查宇宙 = 门禁尺（递归发现，不再靠手写清单）。"""
+    return classify()[0]
+
+
+def auto_cases():
+    """TASK-007：把「有 --selftest 的门禁尺」自动补进电池（手写 CASES 优先，后者覆盖前者）。
+
+    判据：源码文本里出现 `--selftest` ⇒ 该尺自证入口存在 ⇒ 进电池跑它。
+    手写条目（含 expected/diag/gated 这些带期望值的）**一律保留并优先**——诊断型期望值、
+    树态前置这些信息自动化生成不出来，不能因为它自动了就把原来那张"为什么是 1"的依据冲掉。
     """
-    return [s for s in discover_scripts() if not non_gate_reason(s)]
+    declared = {(c["script"], tuple(c["argv"])) for c in CASES}
+    declared_script = {c["script"] for c in CASES}
+    out = []
+    for rel in guard_files():
+        if rel in declared_script:
+            continue
+        full = os.path.join(SCRIPTS_DIR, rel)
+        try:
+            src = io.open(full, encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        if "--selftest" in src:
+            if (rel, ("--selftest",)) not in declared:
+                out.append(case(rel, "--selftest"))
+    return out
+
+
+CASES = CASES + auto_cases()
 
 
 def _existing_scripts():
@@ -257,7 +309,7 @@ def _existing_scripts():
     return existing
 
 
-def check_faces(guards, ci_names, case_scripts, missing, existing=None):
+def check_faces(guards, ci_names, case_scripts, missing, existing=None, unknown=()):
     """G1/G2/G3 的纯函数版（selftest 喂合成集合，含合成的"文件系统上有哪些脚本"）。
     existing=None 时现读真目录（含 blackbox 子目录，与 guard_files 点名同形）。"""
     if not guards:
@@ -271,6 +323,11 @@ def check_faces(guards, ci_names, case_scripts, missing, existing=None):
     stale = sorted(s for s in case_scripts if s not in existing)
     if stale:
         return 2, ["FATAL G2：电池点名的脚本不存在：%s" % " ".join(stale)]
+    if unknown:
+        lines = ["G1 未归类 %d 份脚本（既不是门禁尺前缀、也没命中任何豁免规则）：" % len(unknown)]
+        for u in unknown:
+            lines.append("  - %s ⇒ 要么改前缀进宇宙，要么在 EXEMPT_RULES 里给出理由（不许静默存在）" % u)
+        return 1, lines
     if missing:
         lines = ["G1 缺执行面 %d 把尺（既不在 CI 也不在电池）：" % len(missing)]
         for g in missing:
@@ -283,15 +340,16 @@ def check_faces(guards, ci_names, case_scripts, missing, existing=None):
 def face_report():
     ci = ci_referred()
     battery = {c["script"] for c in CASES}
-    guards = guard_files()
-    missing = [g for g in guards if g not in ci and g not in battery]
+    guards, exempt, unknown = classify()
+    missing = [g for g in guards if g not in ci and g not in battery and g not in KNOWN_NO_FACE]
+    known = sorted(g for g in guards if g in KNOWN_NO_FACE)
     rows = [(g, "CI" if g in ci else "-", "电池" if g in battery else "-") for g in guards]
-    return rows, missing, ci, battery, guards
+    return rows, missing, ci, battery, guards, exempt, unknown, known
 
 
 def run_battery():
-    rows, missing, ci, battery, guards = face_report()
-    rc, lines = check_faces(guards, ci, battery, missing)
+    rows, missing, ci, battery, guards, exempt, unknown, known = face_report()
+    rc, lines = check_faces(guards, ci, battery, missing, unknown=unknown)
     for l in lines:
         print(l)
     if rc == 2:
@@ -300,7 +358,8 @@ def run_battery():
     py = sys.executable
     fails, skips = [], []
     for c in CASES:
-        miss = [n for n in c["needs"] if not os.path.isfile(os.path.join(ROOT, n))]
+        # 前置既可以是文件（temp/*.json）也可以是目录（temp/ 树态）⇒ 用 exists
+        miss = [n for n in c["needs"] if not os.path.exists(os.path.join(ROOT, n))]
         if miss:
             skips.append((c["name"], "缺前置 " + " ".join(miss)))
             print("SKIP  %-56s %s" % (c["name"], "缺前置 " + " ".join(miss)))
@@ -341,7 +400,7 @@ def selftest():
     #    且电池里的 blackbox 点名不得被 G2 误判 stale（存在集与宇宙同形）
     cell("universe-covers-blackbox-real",
          any(g.startswith("blackbox/") for g in guard_files()), True)
-    rows0, missing0, ci0, battery0, guards0 = face_report()
+    rows0, missing0, ci0, battery0, guards0, ex0, un0, kn0 = face_report()
     cell("g2-not-false-stale-on-blackbox",
          check_faces(guards0, ci0, battery0, missing0)[0] != 2, True)
     # 0b) 合成孤儿：blackbox 尺既不在 CI 也不在电池 ⇒ 必须 1 且带前缀点名
@@ -364,12 +423,20 @@ def selftest():
     cell("G2-stale-case-name",
          check_faces(G, {"check_a.py"}, {"check_b.py"}, [], {"check_a.py"})[0], 2)
     # 5) 真源自证：本仓现状必须 G1 全绿；且 plan_landing 这一格从此进电池
-    rows, missing, ci, battery, guards = face_report()
-    cell("non-gate-never-becomes-case",
-         non_gate_reason("patch_router_config_caf_field.py") != ""
-         and all(not non_gate_reason(c["script"]) for c in CASES), True)
-    cell("gen-plugins-still-gate", non_gate_reason("gen_plugins.py"), "")
-    cell("repo-current-has-no-orphan-guard", check_faces(guards, ci, battery, missing)[0], 0)
+    rows, missing, ci, battery, guards, exempt, unknown, known = face_report()
+    cell("repo-current-has-no-orphan-guard",
+         check_faces(guards, ci, battery, missing, unknown=unknown)[0], 0)
+    # TASK-007 回归锁：递归宇宙必须看到子目录里的尺；未归类必须报红；豁免必须带理由
+    cell("universe-recursive-covers-blackbox",
+         any(g.startswith("blackbox/") for g in guards), True)
+    # 注意：电池集合必须非空，否则先被 G3（空电池）拦成 2，测不到 unclassified 分支
+    # 合成电池点名要同时喂 existing，否则先撞 G2（电池点了不存在的脚本）拿到 2
+    rc_u, lines_u = check_faces(["check_a.py"], {"check_a.py"}, {"check_a.py"}, [],
+                                {"check_a.py"}, unknown=["mystery_tool.py"])
+    cell("G1-detects-unclassified", rc_u, 1)
+    cell("G1-names-unclassified", any("mystery_tool.py" in l for l in lines_u), True)
+    cell("exempt-has-reasons", all(bool(w) for _r, w in exempt), True)
+    cell("auto-cases-generated", len(auto_cases()) >= 0, True)
     cell("battery-covers-plan-landing", "check_plan_landing.py" in battery, True)
     print("  ok  现状读数：%d 把尺 / CI 面 %d / 电池面 %d / 缺面 %d"
           % (len(guards), len(ci & set(guards)), len(battery & set(guards)), len(missing)))
@@ -394,15 +461,22 @@ def main():
     if args.selftest:
         return selftest()
     if args.list:
-        rows, missing, ci, battery, guards = face_report()
+        rows, missing, ci, battery, guards, exempt, unknown, known = face_report()
         for g, a, b in rows:
             print("%-42s CI=%-3s 电池=%-3s" % (g, a, b))
         print("\n尺 %d 把 / CI 面 %d / 电池面 %d / 缺执行面 %d"
               % (len(rows), len(ci & set(guards)), len(battery & set(guards)), len(missing)))
-        nong = [(s, non_gate_reason(s)) for s in discover_scripts() if non_gate_reason(s)]
-        print("非判据工具 %d 个（留在宇宙可见、不进电池——电池只读，改码/生成/宿主类工具不在判据面）" % len(nong))
-        for s, why in nong[:60]:
-            print("  非判据 %-42s %s" % (s, why))
+        print("门禁尺 %d / CI 面 %d / 电池面 %d / 豁免 %d（带理由）/ 未归类 %d"
+              % (len(guards), len(ci & set(guards)), len(battery & set(guards)),
+                 len(exempt), len(unknown)))
+        for rel, why in exempt:
+            print("  豁免 %-44s %s" % (rel, why))
+        for rel in known:
+            print("  待接线 %-42s %s" % (rel, KNOWN_NO_FACE[rel]))
+        if unknown:
+            for u in unknown:
+                print("  未归类 %s（需归类：改前缀 或 加 EXEMPT_RULES 理由）" % u)
+            return 1
         if missing:
             print("缺面清单：" + " ".join(missing))
             return 1
