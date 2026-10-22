@@ -1,0 +1,28 @@
+id: TASK-019
+title: "TASK-009 出现两份 scripts/whisperer.py 实现，合入前须裁决真源"
+priority: P1
+status: backlog
+assignee: commander
+discovered_by: slave-agent-r90
+discovered_at: "2026-10-22T01:12:30+00:00"
+
+problem: >
+  同一个 TASK-009 现在有两份真源：① gitcode/main 的 b0693a6 版（218 行，Step 0-4 编排：
+  HEAD 安全门 / fist-gate --scan / agent claim / issue scan / selftest 两格，旗名 `--self-test`）；
+  ② slave/docs/task006-docs-structure-r85（939b4eb）版（313 行，探测+入池面：四类处置、
+  dedupe_key 幂等锚、镜面分支去重、pool_findings 六格自证 rc=0，旗名 `--selftest`，无写侧副作用）。
+  两份文件名相同 ⇒ r85 的 MR 必与 main 撞冲突，且任选一边都把另一边的能力整块丢掉。
+  建议裁决：以 main 的 Step 0-4 为编排真源，把 r85 的探测/入池面并进去（或改名
+  whisperer_probe.py 双活），并统一到同一个自证旗名。裁决权在合并者，副机不自行改名。
+
+evidence: |
+  git log --oneline gitcode/main -3 ⇒ 9e0064a / cfb6336 / b0693a6 feat(whisperer): scripts/whisperer.py — 风语者 Step 0-4 自动化（TASK-009）
+  wc -l：main 版 218 行 / r85 版 313 行；git rev-list --left-right --count gitcode/main...HEAD ⇒ 4 / 6
+  两份都占 docs/tasks/backlog/TASK-009-whisperer-automation.yaml 这一个单号
+  R93 追记（副机已交解法，等裁决不必空等）：集成分支 slave/integrate/r85-on-v0.3.10-r93 把 r85 整套
+  叠到新 main 9e0064a 上，撞车面实测只有 2 个文件（memory/2026-10-21.md 纯追加 + 本文件 add/add）。
+  解法是**双活不是合并**：main 的 scripts/whisperer.py 保持逐字节不动（Step 0-4 编排真源），
+  副机的探测/入池面改址 scripts/whisperer_patrol.py（六格自证 rc=0），三处接线跟着改：
+  fist-gate 第 6 查指 patrol、run_guards 电池格指 patrol、whisperer.py 进 EXCLUDE_EXACT
+  ——因为它裸跑就会执行 Step 0 的 reset --hard + 强推共享线（TASK-018），无人值守电池绝不能跑它。
+

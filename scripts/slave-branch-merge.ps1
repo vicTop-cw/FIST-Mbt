@@ -66,6 +66,7 @@ if ($codeBranches.Count -eq 0) {
 Write-Host "`n[4/6] Cherry-pick 代码 commits..." -ForegroundColor Yellow
 $pickCount = 0
 $skipCount = 0
+$markerSkip = 0
 
 foreach ($slave in $codeBranches) {
   Write-Host "`n  --- $slave ---" -ForegroundColor Magenta
@@ -95,12 +96,23 @@ foreach ($slave in $codeBranches) {
       git add -A 2>$null
     }
     
+    # TASK-001 硬前置门禁：冲突标记未解完不许 commit（259b56a8 实证：带标记 commit 短暂进 master，
+    # moon build 20 errors）。rc!=0 → 本笔 pick 整笔回滚（git reset --hard 只回滚本 driver 的
+    # --no-commit 暂存面，不动他人工作），宁可漏合、不可带标记进 commit；被跳过的 pick 在日志点名。
+    python scripts/blackbox/check_merge_markers.py 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host "      ❌ 冲突标记未解完（check_merge_markers rc=$LASTEXITCODE）——本笔 pick 回滚，不进 commit" -ForegroundColor Red
+      git reset --hard HEAD 2>&1 | Out-Null
+      $markerSkip++
+      continue
+    }
+
     git commit -m "$msg (from $shortHash)" 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) { $pickCount++ }
   }
 }
 
-Write-Host "`n  Picked: $pickCount commits, Skipped (no code): $skipCount" -ForegroundColor Green
+Write-Host "`n  Picked: $pickCount commits, Skipped (no code): $skipCount, Skipped (conflict markers, TASK-001 gate): $markerSkip" -ForegroundColor Green
 
 # 5. 循环清冲突标记（最多 10 轮）
 Write-Host "`n[5/6] 清理残留冲突标记..." -ForegroundColor Yellow
@@ -174,6 +186,13 @@ $hasUncommitted = $true
 try { git diff --cached --quiet 2>$null; if ($LASTEXITCODE -eq 0) { $hasUncommitted = $false } } catch { }
 if ($hasUncommitted) {
   git commit -m "chore: 清理 slave branch merge 残留冲突标记" 2>&1 | Out-Null
+}
+
+# TASK-001 push 前总闸：标记判据 rc=0 才允许 push（rc=1 面上有标记 / rc=2 判据无法自证，一律不推）
+python scripts/blackbox/check_merge_markers.py 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "  ❌ push 前总闸：check_merge_markers rc=$LASTEXITCODE —— 工作树仍有冲突标记，拒绝 push，人工处理" -ForegroundColor Red
+  return
 }
 
 Write-Host "Push 所有远端..." -ForegroundColor Yellow

@@ -1,0 +1,25 @@
+id: TASK-018
+title: "主机版 whisperer 的 Step 0 HEAD 安全门会 reset --hard + force push 到 main/master"
+priority: P1
+status: backlog
+assignee: commander
+discovered_by: slave-agent-r90
+discovered_at: "2026-10-22T01:12:30+00:00"
+
+problem: >
+  gitcode/main 上 b0693a6/cfb6336 引入的 scripts/whisperer.py 的 step0_head_safety()
+  在巡检拍里无条件执行 `git checkout master` → `git reset --hard <gitcode/main>` →
+  `git push --force HEAD:main HEAD:master` 两个远端。判据 `gc == og and gc != local`
+  把「本地 master 领先于远端（有未推的正常提交）」与「工作树有未提交改动」一律读成篡改，
+  回应是丢弃本地提交、抹掉未提交工作，并对共享线做 force push。
+  这一门已经在主机自己身上开过火——9e0064a 的提交信息里写着「风语者 HEAD 安全门手动回救」。
+  定时/无人值守脚本不该带不可逆动作；请裁决改成「只报警 + 需要显式 --recover 才动」，
+  或把 force push 从巡检面彻底摘掉。
+
+evidence: |
+  git show gitcode/main:scripts/whisperer.py 第 32-54 行：
+    run(["git", "checkout", "master"])
+    if gc == og and gc != local: ... run(["git", "reset", "--hard", gc])
+      run(["git", "push", "gitcode", "HEAD:main", "HEAD:master", "--force"])
+      run(["git", "push", "origin", "HEAD:main", "HEAD:master", "--force"])
+  主机自证：9e0064a "feat(core): v0.3.10 ... （d541f613 cherry-pick, 风语者 HEAD 安全门手动回救）"
