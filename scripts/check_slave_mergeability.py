@@ -125,6 +125,73 @@ def scan(base, remotes, keep=False, limit=0):
     return rows, 0
 
 
+def apply_merges(base, rows, execute=False):
+    """把 ok 分支的独有提交 cherry-pick 到 base（默认只打印命令，不执行）。
+
+    纪律（与 slave-branch-merge.ps1 / whisperer.auto_merge 同一条底线）：
+      - **绝不 force-push**，只做 `git push origin HEAD:master`（快进或普通推送，被拒就报错让人看）；
+      - 工作树必须干净，否则一件都不动；
+      - 每支落完跑两道门（冲突标记判据 + moon build），红就 `reset --hard` 回滚该支；
+      - 冲突不猜：`cherry-pick --abort` + `reset --hard`，整支跳过。
+    返回 (merged, skipped, dry_run)。
+    """
+    oks = [r for r in rows if r["kind"] == "ok"]
+    if not oks:
+        print("apply: 没有可合分支（ok=0）")
+        return 0, 0, not execute
+    if not execute:
+        print("\n[DRY-RUN] 将执行（加 --yes 真跑）：")
+        for r in oks:
+            print("  git cherry-pick $(git rev-list --reverse %s..%s)" % (base, r["branch"]))
+        print("  然后：python scripts/blackbox/check_merge_markers.py && moon build --target js <5 pkgs>")
+        print("  最后：git push origin HEAD:master（不 force）")
+        return 0, len(oks), True
+    if sh("git", "status", "--porcelain", cwd=ROOT)[1].strip():
+        print("apply: 工作树不干净 → 拒绝执行（宁可不合，不可猜）")
+        return 0, len(oks), False
+    merged, skipped = 0, 0
+    for r in oks:
+        ref = r["branch"]
+        rc, out = git("rev-list", "--reverse", "%s..%s" % (base, ref))
+        commits = [c for c in out.split() if c] if rc == 0 else []
+        if not commits:
+            skipped += 1
+            continue
+        ok_all = True
+        for c in commits:
+            if git("cherry-pick", c, cwd=ROOT)[0] != 0:
+                git("cherry-pick", "--abort", cwd=ROOT)
+                git("reset", "--hard", "HEAD", cwd=ROOT)
+                print("  ✗ %s 冲突于 %s → 整支跳过" % (ref, c[:7]))
+                ok_all = False
+                break
+        if not ok_all:
+            skipped += 1
+            continue
+        # 门①：冲突标记
+        if subprocess.run([sys.executable, "scripts/blackbox/check_merge_markers.py"], cwd=ROOT,
+                          capture_output=True).returncode != 0:
+            git("reset", "--hard", "HEAD~%d" % len(commits), cwd=ROOT)
+            print("  ✗ %s markers 红 → 回滚" % ref)
+            skipped += 1
+            continue
+        # 门②：构建
+        b = subprocess.run(["moon", "build", "--target", "js", "src/server", "src/engine",
+                            "src/store", "src/router", "src/ops"], cwd=ROOT,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if (b.stdout or "").count("Error:") > 0:
+            git("reset", "--hard", "HEAD~%d" % len(commits), cwd=ROOT)
+            print("  ✗ %s build 有 Error → 回滚" % ref)
+            skipped += 1
+            continue
+        merged += 1
+        print("  ✓ %s 合入 %d 个提交" % (ref, len(commits)))
+    if merged:
+        rc, out = git("push", "origin", "HEAD:master", cwd=ROOT)
+        print("  push origin HEAD:master → rc=%d %s" % (rc, out.strip()[:120]))
+    return merged, skipped, False
+
+
 def selftest():
     """临时仓库造 clean / conflict / contained 三支，断言分类与真实 cherry-pick 行为。"""
     cells = []
@@ -200,6 +267,9 @@ def main():
     ap.add_argument("--strict", action="store_true", help="有冲突 ⇒ rc=1")
     ap.add_argument("--keep", action="store_true", help="保留临时 worktree 现场")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--apply", action="store_true",
+                    help="把判定为 ok 的分支真跑 cherry-pick（默认 dry-run 只打印将执行的命令）")
+    ap.add_argument("--yes", action="store_true", help="与 --apply 同用：确认真的执行（防手滑）")
     args = ap.parse_args()
     if args.selftest:
         return selftest()
@@ -221,6 +291,9 @@ def main():
     error = sum(1 for r in rows if r["kind"] == "error")
     print("\n汇总：共 %d 支 | 可合 %d | 已含于 base %d | 冲突 %d | 含 merge commit（需 -m 人工指定主线）%d | 无法判定 %d"
           % (len(rows), ok, contained, conflict, merge, error))
+    if args.apply:
+        m, s, dry = apply_merges(args.base, rows, execute=args.yes)
+        print("apply: merged=%d skipped=%d %s" % (m, s, "(dry-run)" if dry else ""))
     if conflict or merge or error:
         print("提示：冲突支需先 rebase/自解（append-only 日志可用 union，README 可'theirs+补回我方段'）")
         return 1 if args.strict else 0
