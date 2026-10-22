@@ -105,6 +105,60 @@ def stray_underscore_scripts():
     return out
 
 
+# 每档最多点名多少个（超过则折叠成「其余 N 件」——日志可读性与可核对性的折中）
+MAX_NAMES = 20
+
+
+def format_lines(root_stray, tfiles, uscripts, exempt):
+    """把三档残留渲染成**逐条点名**的行（BUG-368：只报档数时无法核对「623」由什么构成）。
+
+    返回 (lines, dirty)。dirty=有无应清理项。豁免项单独出行——它证明「跟踪真源不在此档」
+    这条约定真的生效了，而不是被静默跳过（BUG-334 的豁免若失效，读数会退回虚报）。
+    """
+    lines = []
+    dirty = bool(root_stray or tfiles or uscripts)
+    if dirty:
+        lines.append(
+            "DIRTY: 仓库残留 %d 个根 .db + %d 个 temp/ 文件 + %d 个 scripts/ `_` 临时脚本（共 %d）"
+            % (len(root_stray), len(tfiles), len(uscripts),
+               len(root_stray) + len(tfiles) + len(uscripts))
+        )
+        buckets = (("根 .db", root_stray), ("temp/", tfiles), ("scripts/ `_` 临时脚本", [r for _a, r in uscripts]))
+        for label, items in buckets:
+            if not items:
+                continue
+            shown = items[:MAX_NAMES]
+            for it in shown:
+                lines.append("  - [%s] %s" % (label, it))
+            if len(items) > MAX_NAMES:
+                lines.append("  - [%s] … 其余 %d 件（上限 %d 件点名）" % (label, len(items) - MAX_NAMES, MAX_NAMES))
+    if exempt:
+        for it in exempt[:MAX_NAMES]:
+            lines.append("  - [豁免·git 跟踪真源] %s" % it)
+        if len(exempt) > MAX_NAMES:
+            lines.append("  - [豁免·git 跟踪真源] … 其余 %d 件" % (len(exempt) - MAX_NAMES))
+    return lines, dirty
+
+
+def exempt_tracked_underscore():
+    """scripts/ 下 `_` 前缀的**已跟踪**脚本（正式资产，BUG-334/BUG-368 的豁免面）。
+
+    单独取出来只为把它印进读数：豁免必须可见，否则「1 个 `_` 临时脚本」这种虚报
+    无法从输出上分辨是「真残留」还是「跟踪真源被误数」。"""
+    sdir = os.path.join(ROOT, "scripts")
+    out = []
+    if not os.path.isdir(sdir):
+        return out
+    for name in sorted(os.listdir(sdir)):
+        full = os.path.join(sdir, name)
+        if not (name.startswith("_") and os.path.isfile(full) and name.endswith(_TMP_SCRIPT_EXT)):
+            continue
+        rel = os.path.join("scripts", name)
+        if is_git_tracked(rel):
+            out.append(rel)
+    return out
+
+
 def selftest():
     """BUG-334 回归锁（判据无法自证绝不报绿）：`_`前缀规则必须豁免 git 跟踪资产、仍抓真临时脚本。
 
@@ -140,10 +194,30 @@ def selftest():
                 os.remove(tmp_abs)
             except OSError:
                 pass
+    # S4（BUG-368）：读数必须**逐条点名**，只给档数就无法核对构成
+    lines4, dirty4 = format_lines(["a.db"], ["temp/x.db"], [], [])
+    joined = "\n".join(lines4)
+    if not dirty4 or "a.db" not in joined or "temp/x.db" not in joined:
+        fails.append("S4: format_lines 未逐条点名（BUG-368：档数不可核对）")
+    # S5：超过上限要折叠成「其余 N 件」，但总数仍如实给出
+    many = ["d%d.db" % i for i in range(MAX_NAMES + 3)]
+    lines5, _ = format_lines(many, [], [], [])
+    j5 = "\n".join(lines5)
+    if "其余 %d 件" % 3 not in j5:
+        fails.append("S5: 超上限未折叠（应打印「其余 3 件」）")
+    if ("共 %d）" % len(many)) not in lines5[0]:
+        fails.append("S5: 折叠后总数未如实给出")
+    # S6：豁免面必须可见（跟踪真源不进残留档、但要印出来证明豁免生效）
+    lines6, dirty6 = format_lines([], [], [], ["scripts/_tool_registry.py"])
+    if dirty6:
+        fails.append("S6: 只有豁免项时不该判 dirty")
+    if not any("豁免" in l and "_tool_registry.py" in l for l in lines6):
+        fails.append("S6: 豁免项未印出（豁免不可见 ⇒ 虚报无法与真残留区分）")
     if fails:
         print("SELFTEST FAIL: " + "; ".join(fails))
         return 1
-    print("SELFTEST PASS: S1 tracked 识别 / S2 `_tool_registry.py` 豁免 / S3 真临时脚本仍被抓")
+    print("SELFTEST PASS: S1 tracked 识别 / S2 `_tool_registry.py` 豁免 / S3 真临时脚本仍被抓 / "
+          "S4 逐条点名 / S5 超上限折叠且报总数 / S6 豁免面可见")
     return 0
 
 
@@ -161,13 +235,16 @@ def main():
             tfiles.append(moved)
     total = len(root_stray) + len(tfiles)
     if check_only:
-        if total != 0 or uscripts:
-            print(
-                f"DIRTY: 仓库残留 {len(root_stray)} 个根 .db + {len(tfiles)} 个 temp/ 文件 "
-                f"+ {len(uscripts)} 个 scripts/ `_` 临时脚本（共 {total + len(uscripts)}）"
-            )
+        exempt = exempt_tracked_underscore()
+        lines, dirty = format_lines(root_stray, tfiles, uscripts, exempt)
+        for line in lines:
+            print(line)
+        if dirty:
             sys.exit(1)
-        print("CLEAN: 仓库根仅 fist-mbt.db，temp/ 无残留，scripts/ 无 `_` 临时脚本 — 整洁")
+        print(
+            "CLEAN: 仓库根仅 fist-mbt.db，temp/ 无残留，scripts/ 无 `_` 临时脚本 — 整洁"
+            + ("（豁免 %d 件 git 跟踪的 `_` 真源：%s）" % (len(exempt), ", ".join(exempt)) if exempt else "")
+        )
         return
     if total == 0 and not uscripts:
         print("CLEAN: 无需清理（仓库根仅 fist-mbt.db，temp/ 无残留，scripts/ 无临时脚本）")
