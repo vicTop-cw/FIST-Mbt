@@ -6169,3 +6169,37 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 
 ### FIXED(2026-10-21T11:02:58Z / BUG-358)
 - evidence: BUG-358 修复已在 master 线：ea6eba6c 是 origin/master 祖先（git merge-base --is-ancestor 实测 rc=0）。判据采纳本单出路(a)——check_host_installable.py 现以 REQUIRED_MCP_JSON=[".mcp.dev.json"] 只把跟踪真源列进「关键文件缺失即自拒」名单，根 .mcp.json 留在 LENIENT_JSON 宽松档（缺失合法 continue），并在源码注释点名本单与 BUG-131 同口径。行为复测：在无根 .mcp.json 的干净 worktree（temp/m18 @ origin/master，git ls-files 面无该件）全量跑该守卫 rc=0 PASS；修复前同形场景必 rc=2 永不产出结论（本机当时有连接器残件才偶发可判＝假绿）。CI 侧从此真跑判定，不再恒红也不再被当噪声跳过。
+
+## BUG-333 [2026-10-19T05:54:08Z] [medium] OPEN
+- summary: issue_scan 精度不足：src 全量 9925 命中中 72.7%（7219）为编译期已保证/子串近似噪音（match-exhaustive 编译器强制=100% 假阳、unused-variable/long-function 为近似启发），使"扫描→上报→修复"闭环不可用
+- detail: 实测 `issue_scan dir=src max_findings=100`：scanned_files=129, total_findings=9925（截断）。by_rule 全表精确求和 = 9925。其中：
+- moonbit-unused-variable 4259（info）：自述「子串近似 let 声明点，实际使用性需人工/编译器复核」——编译器已对真正未使用变量给警告，故绝大多数为假阳性。
+- moonbit-match-exhaustive 1513（low）：MoonBit 编译器**强制** match 穷尽（不穷尽 = 编译错误），代码 1338 测试全过、编译通过 ⇒ **100% 假阳性**。
+- moonbit-long-function 1447（info）：自述「行数精确判定见 OCR 双轨」，本就是启发式，非 bug。
+- moonbit-json-injection 1409（low）：子串近似，Json API 是否转义需逐条核实。
+- 其余（array-index-bounds 159 / empty-match 109 / race-condition 9 / resource-leak 7 / dead-code 6 / floating-point-equality 2 等）抽查全为假阳性：float-eq 命中的是 rule-id 字符串里的 "float"；dead-code 的 abort 全在 claimguard_wbtest.mbt 测试断言（故意测错误路径）；resource-leak 全仓 grep File::open/sqlite.open 零命中。
+**前三项合计 7219/9925 = 72.7%**。后果：「扫描→上报→修复」闭环不可用——执行者不可能 triage 9925 条里 73% 已知为噪音的命中，于是闭环要么被绕过、要么被「全报 bug」淹没真实缺陷。同族于 BUG-330（守卫 false-positive）/BUG-329（selftest 崩溃）的「判据精度」族。
+建议：默认降噪——①`--min-severity` 或按 rule 白/黑名单过滤（默认关掉 unused-variable/long-function/match-exhaustive 三高噪音项，或降为 info-only）；②match-exhaustive 直接不产（编译器已保证）；③对剩余 low 项挂 `confirmed=false` 要求调用方喂 run_check 复核后才 report_bug（boundary_probe 已是这个语义，可复用）。
+- reported_by: lead
+- 追记(2026-10-20T20:40Z, R8): **建议②已落地** —— `src/server/issue_scan.mbt` 新增 `scan_denoise_default_skip(rule_id)`（默认跳过 `moonbit-match-exhaustive`，编译器强制穷尽 ⇒ 100% 假阳），在 findings 收集处过滤。端到端验证（本地产物 `_build/js/debug/build/cmd/cli/cli.js` 直跑真 MCP `issue_scan dir=src`）：total_findings 9998→8475（−1523 全部为 match-exhaustive，by_rule 已无该项）；`unused-variable` 4283 / `long-function` 1470 保持 info 级保留。白盒锁 `BUG-333 match-exhaustive denoised by default`（同时断言硬门规则 div-by-zero/substring-overrun/unprotected-division 绝不被默认降噪）。全量 `moon test --target js` = 1347/1347 零回归。规则仍在表内（31 条不变，rule 计数/文档面守卫不受影响），`rules_file` 无 `enabled` 抑制位（只支持 severity 覆盖）故无法在调用侧禁用其余项。**建议①`--min-severity`/按 rule 白名单、建议③ `confirmed=false` 仍 OPEN**，且①需在 `src/server/server.mbt` 工具签名侧加参数（并发 agent WIP，收敛后再做）。
+## BUG-384 [2026-10-21T08:23:29Z] [low] FIXED
+`issue_scan` 的 ocr-local 三条规则（moonbit-empty-match / moonbit-noop-assignment /
+moonbit-private-field-leak）用的是裸子串匹配，在 src 全量扫描里产出 239 条命中、几乎全为假阳：
+- empty-match `_ => ()` 110 条：多臂 match 的 catch-all 空手臂是正常写法，旧规则只要行内含该子串就报；
+- noop-assignment `: self.` 39 条：结构体字面量 `id: self.id`、字段读取全被当成自赋值；
+- private-field-leak `password`/`secret`/`token` 90 条：`tokens_in`/`max_tokens` 这类词内子串也算命中。
+【修复】`scan_match_lines` 命中后按规则做结构过滤：empty-match 只在「整个 match 仅一条 `_ => ()`
+手臂」时报；noop 只认 `self.x = self.x`（右侧同名且行尾只余空白）；private-field-leak 改为整词匹配。
+真源 `src/server/issue_scan.mbt`，成对白盒锁在 `src/server/issue_scan_wbtest.mbt`。
+- task_id: T0r51
+## BUG-385 [2026-10-21T08:23:29Z] [low] FIXED
+`moonbit-shared-mutable` 的 needle 是裸子串 `let mut `，src 全量 465 条命中全部是普通可变局部量
+（`let mut i = 0`、`let mut sum = 0.0`），规则意图「派生自字段的局部副本、改动不回写」一条都没抓到，
+是 100% 假阳。
+【修复】只认初始化表达式恰为 `obj.field` 的形状：`let mut ` 词界、赋值号排除 `==`、首段与次段都须
+是标识符（数字起始排除 `0.0`/`1.0` 浮点字面量）、`.field` 后只允许空白（含 CRLF 工作树的 `
+`）。
+真源 `src/server/issue_scan.mbt`，成对白盒锁（含 CRLF 行尾锁）在 `src/server/issue_scan_wbtest.mbt`。
+- task_id: T0r51
+### FIXED(2026-10-21T08:24:32Z / BUG-384, BUG-385)
+- evidence: 真源 src/server/issue_scan.mbt 四条降噪规则（empty-match 只认单臂 / noop-assignment 只认 self.x=self.x / private-field-leak 敏感词改全词匹配 / shared-mutable 只认初始化式为 obj.field），白盒锁 src/server/issue_scan_wbtest.mbt。同基线 A/B（gitcode master 1646596 工作树，扫 src）：命中 1668→967，empty-match 110→0、noop 39→0、private-field-leak 90→2（残留为 src/evolve/github_client.mbt:294/296 真敏感词 token）、shared-mutable 465→1（残留 src/ops/ops_loop.mbt:199）。moon test --target js 1351/1351 passed 0 failed。
