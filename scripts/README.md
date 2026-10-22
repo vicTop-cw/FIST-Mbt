@@ -284,3 +284,21 @@
 - `whisperer.py` — **风语者（Whisperer）自动化巡检**：Step 0 HEAD 安全门（篡改则记录并拒跑，见 `memory/whisperer-tamper.log`）→ Step 1 分支普查（调 `fist-gate.py --scan`）→ Step 2 agent 认领检测 → Step 3 问题扫描自动写 `docs/tasks/backlog/*.yaml`。`--selftest` 驱动各步。Windows GBK 终端会炸 emoji，脚本首行强钉 stdout/stderr UTF-8。用法 `python scripts/whisperer.py [--selftest]`。
 - `check_bug_refs.py` — **引用面 BUG-N 对表守卫**：代码注释与测试标题里的 `BUG-n` 必须在 `memory/bugs.md` 账本抬头有对应条目（悬空引用即红），与 `check_bug_reference_integrity.py`（棘轮只报面）互补——本尺直接判红。账本编号自解析 `^## BUG-(\d+)\b`（不 import gen_plugins，判据不自证）。用法 `python scripts/check_bug_refs.py`。
 - `fist-pr-automator.py` — **yaml → PR → gate → merge 流水线自动化**：读任务 yaml，走「建 PR → 挂统一门禁（`fist-gate.py`）→ 门禁绿则合」的闭环（git + curl，凭据 `GITHUB_TOKEN`/`GITCODE_TOKEN` 只从环境注入）。UTF-16→UTF-8 且去 BOM 收口（BUG-88 同族，Windows PowerShell 按 ANSI 读会解析期炸）。用法 `python scripts/fist-pr-automator.py`（详见脚本 docstring）。
+
+### 2026-10-22 补登记（v0.3.10 升版对齐时 `check_scripts_index` 现读两把漏网尺 + 一把假登记）
+- `check_bug_refs.py` — **引用面「代码里的 BUG-n」↔ 账本存在性守卫（BUG-373 出路面）**：全仓扫
+  `BUG-<n>` 引用，三档判定——OK（账本里有）/ ORPHAN（引用了但账本没有这个编号）/ CLOSED（引用了
+  已关条目，注释没清）。账本编号自解析 `memory/bugs.md` 抬头（不 import gen_plugins，判据不自证）。
+  **默认只报不判（rc=0），`--strict` 才升格：ORPHAN→2、CLOSED→1**——与只报面的
+  `check_bug_reference_integrity.py`（棘轮+构成读数）互补：前者盯「关没关干净」，本尺盯「存不存在」。
+  用法 `python scripts/check_bug_refs.py [--selftest|--strict] [--bugs <path>]`。
+- `fist-pr-automator.py` — **yaml → PR → gate → merge 流水线自动化**：读 PR 定义 yaml → 本地跑统一
+  门禁（`fist-gate.py`）→ push 分支 → curl 开 PR/MR（`GITHUB_TOKEN`/`GITCODE_TOKEN` 只从环境注入，
+  不落盘不回显）→ 等门禁绿 → 合入。退出码 **0=ok / 1=blocked / 2=degraded**。纯 ASCII、stdlib only
+  （不依赖 PyYAML/requests，与全仓判据「不把自己的可用性交给环境」同律）。用法见脚本 docstring。
+- `fist-gate.py` — **统一门禁链升格为独立条目**：此前它在本索引里只在 `whisperer.py` 条目的正文里
+  被**顺带提及**（`check_scripts_index` 按子串匹配判「已登记」——巧合绿，whisperer 文案一改它就裸奔）。
+  现按本仓纪律点名登记：**五段链 `merge_markers / fmt / build / ps_encoding / store_path`**，退出码
+  **0=pass / 1=fail / 2=degraded**（判据自己取不到量绝不冒用 1 冒充业务红）；fmt/build 两臂区分
+  **环境态与代码红**（冷格式化器、依赖缓存过旧报 DEGRADED + 可执行提示，判据链保持只读、绝不自行
+  预热）；`--scan` 分支普查（合入者巡检自动进料口）、`--selftest` 逐格驱动。
