@@ -74,3 +74,36 @@ test "iso_to_secs: 19 字符完整时间戳秒段正常解析" {
   let s = iso_to_secs("2024-01-01T00:00:01")
   assert_eq(s, 86401)
 }
+
+///|
+/// R128：字段范围校验。`parse_digits` 只按两位数字累加、不校验范围——
+/// `year=2091, day=99` 时 days = 67*365 + 334 + 99 = 24888，
+/// `days * 86400 = 2,150,323,200 > 2^31-1`，旧实现 Int32 绕回。
+test "iso_to_secs: day=99 返回 -1（R128 Int32 溢出）" {
+  assert_eq(iso_to_secs("2091-12-99T23:59:59"), -1)
+}
+
+///|
+/// R128：月/日/时/分/秒越界一律按解析失败返回 -1（此前 mon 越界被静默按 0 处理）。
+test "iso_to_secs: 月日时分秒越界返回 -1" {
+  assert_eq(iso_to_secs("2091-13-31T23:59:59"), -1)
+  assert_eq(iso_to_secs("2091-00-31T23:59:59"), -1)
+  assert_eq(iso_to_secs("2091-12-00T23:59:59"), -1)
+  assert_eq(iso_to_secs("2091-12-31T24:00:00"), -1)
+  assert_eq(iso_to_secs("2091-12-31T23:60:00"), -1)
+  assert_eq(iso_to_secs("2091-12-31T23:59:60"), -1)
+}
+
+///|
+/// R128：parse_digits 遇非数字字符返回 -1（'a' 的 char_int 是 49，落在秒段合法区间内，
+/// 只靠范围检查挡不住，必须逐字符验数字）。
+test "iso_to_secs: 非数字字段返回 -1" {
+  assert_eq(iso_to_secs("20x1-12-31T23:59:59"), -1)
+  assert_eq(iso_to_secs("2024-01-01T00:00:0a"), -1)
+}
+
+///|
+/// R128：Int64 计算 + 窄化的上界边界读数不变（2,144,534,399 仍在 Int32 内）。
+test "iso_to_secs: 2091-12-31T23:59:59 边界值仍可解析" {
+  assert_eq(iso_to_secs("2091-12-31T23:59:59"), 2_144_534_399)
+}
