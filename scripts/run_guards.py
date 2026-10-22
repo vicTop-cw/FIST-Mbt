@@ -30,6 +30,7 @@ gitignore，写完即丢）。实测这条手抄链：11 份电池（5、7–16�
 退出码：0=无失败（允许 SKIP 与预存红按期望命中）/ 1=有格越期望或有尺无人跑 / 2=电池自拒。
 """
 import argparse
+import inspect
 import io
 import os
 import re
@@ -46,6 +47,8 @@ WORKFLOWS = os.path.join(ROOT, ".github", "workflows")
 DUMP = "temp/chk47.json"
 TESTLOG = "temp/pt27.log"
 SCRIPTS_DIR = os.path.join(ROOT, "scripts")
+# 自锁（R105 同款机理）：本文件自己就在递归宇宙里，电池里放一格「跑电池」= 无限套娃。
+SELF = os.path.basename(os.path.abspath(__file__))
 # R55 实测宇宙漏洞：普查只扫 scripts/ 顶层 ⇒ 放在 scripts/blackbox/ 的尺（check_merge_markers）
 # 天然漏出普查——「零执行面的尺=坏着的尺」（BUG-366 本文件立的律）对子目录里的尺是盲的。
 BLACKBOX_DIR = os.path.join(SCRIPTS_DIR, "blackbox")
@@ -114,8 +117,15 @@ def is_resident(rel):
 SPECIAL_CASES = [
     # —— 判据面（纯静态，跨平台稳定）——
     case("check_tools_sync.py"),
-    case("check_doc_surface.py"),
-    case("check_doc_surface.py", "--selftest"),
+    # —— R106 预存红登记（电池自 770478c1 起跑不起来，这几格的红从没被任何人读到过）：
+    #    照写读数 + 成因，不动被检内容。被检内容修好后 got≠expect 当场现形，逼下一位改的人
+    #    把期望改回 0——这是本文件自订的律，不是给红脸上色。 ——
+    expected("check_doc_surface.py", 1,
+             "预存红：J4 判 scripts/README.md 里第二处发布版本自述 0.3.9（HEAD 起就有，"
+             "该行是叙述 dist 快照落后于 moon.mod 0.3.10 的句子），交文档面那一单删字面量并指向 "
+             "BACKLOG.md；本单元只登记读数"),
+    expected("check_doc_surface.py", 2, "同一处 J4 真实现状面红 ⇒ 自检按「先判解析器坏再判文档坏」出 2",
+             "--selftest"),
     case("check_mbti_sync.py"),
     case("check_mbti_sync.py", "--selftest"),
     case("check_store_tables_wired.py"),
@@ -128,14 +138,21 @@ SPECIAL_CASES = [
     case("check_release_asset_names.py"),
     case("check_publish_payload.py"),
     case("check_publish_payload.py", "--selftest"),
-    case("check_plugin_sync.py"),
-    case("gen_plugins.py", "--check"),
+    expected("check_plugin_sync.py", 1,
+             "预存红：J1 插件态漂移，根因是 gen_plugins --check 那格（账本编号唯一门 + "
+             "小记↔抬头状态对表），修好账本后此格自绿"),
+    expected("gen_plugins.py", 2,
+             "预存红：真源自证失败——BUG-333×2 / BUG-384×2 抬头编号重复 + BUG-384 被小记点名但"
+             "状态非 FIXED（memory/bugs.md 内容债，归主机 R47 那一族；本单元不改账本）", "--check"),
     case("gen_plugins.py", "--selftest"),
     case("check_upgrade_installer.py"),
     case("check_plan_landing.py", "--selftest"),
     # —— R84 (TASK-003)：gate 步骤位置纪律 ——
-    case("check_ci_step_position.py"),
-    case("check_ci_step_position.py", "--selftest"),
+    expected("check_ci_step_position.py", 1,
+             "预存红：位置违规 35 条 > 棘轮上限 34（ci.yml 里 Migrate 之后无 position-why 锚的"
+             "gate 步骤，属 CI workflow 内容债；升档是人的决定，本单元不改常量"),
+    expected("check_ci_step_position.py", 2,
+             "同一处棘轮超限 ⇒ 自检 T9「真源现状 rc=0」不成立，按判据自拒出 2", "--selftest"),
     # —— R55：blackbox 尺进宇宙也进电池（相对 scripts/ 点名，路径含子目录）——
     case("blackbox/check_merge_markers.py", "--selftest"),
     case("blackbox/check_merge_markers.py"),
@@ -150,8 +167,9 @@ SPECIAL_CASES = [
     #    fist-gate.py（454aea3）未在 scripts/README.md 登记（TASK-003/004 施工面，R81 点名）。
     #    主机一登记，got 0 ≠ expect 1 当场现形，逼着把期望改回 0。 ——
     expected("check_scripts_index.py", 1,
-             "预存红：fist-gate.py 未在 scripts/README.md 登记（TASK-003/004 面，主机在办；"
-             "修好后此格期望改回 0）"),
+             "预存红（R106 现读换因）：原依据点名的 fist-gate.py 已由主机登记入 scripts/README.md，"
+             "现在红的是 merge-prompt.txt（提示词素材，不是 .py 却进了正式辅助脚本面）；"
+             "登记或删除归文档那一单，本单元只改记读数"),
     # —— 编码面：R58 期望值回归 0——BUG-355/332 一族已在主仓修完（现读真源：--selftest 绿、
     #    --all 面「该带闸 85 份/已带 85 份」全过）。按本文件自订的律「预存红被修好 ⇒ 下一次
     #    改动的人把期望改回 0，数字变了不改进期望就现形」，此处正是那一次改动。
@@ -172,11 +190,29 @@ SPECIAL_CASES = [
     #    R98 全量电池实测：这格裸跑打的是 rc=0 绿灯，却往 src/router 的 struct literal 里再插一份
     #    同名字段（幂等门查错行）⇒ 盘面编译必红。自检格不碰盘，改的是「尺子能不能自证」。
     case("patch_router_config_caf_field.py", "--selftest"),
+    # —— 风语者（TASK-009 / R86）：宇宙并成全集后这两把尺第一次进了账，于是「它有面吗」必须被
+    #    回答而不是被跳过。--selftest 离线自证（本机实测 rc=0），故手写点名进电池；裸跑会走
+    #    --auto-merge / 写任务池，那是不可逆面，不在判据面里。
+    case("whisperer.py", "--selftest"),
+    case("whisperer_patrol.py", "--selftest"),
+    # —— R106：宇宙并成全集后 `--list` 第一次把这三把尺的**现读红**摆出来。按本文件的律，
+    #    预存红「照写期望值 + 依据」而不是豁免：被检内容修好之后这一格自己会翻红，逼下一位
+    #    改动的人把期望改回 0（数字变了不改进期望就现形）。这里只登记读数，不动被检脚本。
+    expected("check_backlog_status_staleness.py", 1,
+             "现读 9 条状态落差 > 上限 4（任务池里 backlog/done 与提交面对不上，属内容债，"
+             "逐条核对归任务池那一单；上限不许为了让电池变绿而上调）"),
+    expected("check_scripts_naming.py", 1,
+             "现读 2 条命名判定面 > 棘轮上限（NAMING.md 词法棘轮，改名要同批下调上限，"
+             "见 scripts/NAMING.md）"),
+    expected("check_dist_snapshot.py", 1,
+             "本机 moonc 世代产出的 bundle 比仓内快照大（实测 release 108k 行 vs 快照 83k 行）"
+             "⇒ 副机工具链与主仓钉版不同代，刷新快照属发布流程动作，不在电池里做"),
     expected("cleanup_artifacts.py", 1,
              "预存红：工作树 DIRTY（temp/ 与 *.db 是运行物，本仓不 git clean 它们）", "--check"),
-    # ── 本轮（电池只读缺陷）按实测事实补的三格：不硬凑 0 ──
-    expected("check_bug_reference_integrity.py", 1,
-             "已知棘轮超限：现读 17 条悬空注释引用 > 上限 1（BUG-373 待逐条修）；修到 1 条后自然转绿"),
+    # ── 这一格是「预存红被修好 ⇒ 期望改回 0」那条律的一次兑现（不是我们替它改的读数）──
+    # R106 现读：判定面 J1 悬空-注释面 0 条，棘轮上限也已在 R76（BUG-373 出路②）归 0 ⇒
+    # 原来的 expected(...,1) 依据自写的那句「修到自然转绿后把期望改回 0」到期，转回门禁格。
+    case("check_bug_reference_integrity.py"),
     gated("check_skill_inject.py", "fist-mbt.db", "fist-mbt.db"),
     expected("fist-gate.py", 2,
              "fmt 段依赖 git diff 管道，本机退化 rc=-1 ⇒ 按设计 DEGRADED(2)；实体机/CI 复跑"),
@@ -317,6 +353,59 @@ def ci_referred():
 UNIVERSE_EXCLUDE_RE = re.compile(r"(^_|^test_|^verify_|^selfdrive_|_verify\.py$|_selfdrive)")
 
 
+# —— R106（2026-10-22 实测）：以下三件（+ 上面的 universe_files）本体在 2bd4dbf2（R82/TASK-007）
+# 就存在，其后一次「手动解冲突合入」把**定义**删了、把**调用面**留着 ⇒ is_gate / exempt_reason /
+# classify 当场 NameError ⇒ `--selftest` 与 `--list` 全起不来，CI（ci.yml 那两步）整条红了一天。
+# 定义与调用被拆到两次改动里，正是这类事故的形状；下面的 selftest 格把「宇宙必须是递归的、
+# 且含 blackbox 尺」钉成判据，不再靠「跑起来才发现」。
+GATE_PREFIXES = ("check_", "e2e_", "run_", "gen_plugins", "cleanup_",
+                 "store_isolation", "fist-gate", "cli_flag_probe")
+
+# 豁免规则：(前缀或后缀, 理由)。命中必须在 --list 里带理由印出。
+EXEMPT_RULES = (
+    ("fist.py", "统一 CLI 网关（人工/宿主调用入口），不是判据"),
+    ("fist-mbt-", "HTTP/Web 宿主进程入口"),
+    ("fist_mbt_", "MCP 客户端封装库"),
+    ("migrate_", "一次性依赖清单迁移"),
+    ("caf_", "CAF 离线回放/预演（一次性验证）"),
+    ("calibrate_", "一次性难度标定"),
+    ("patch_", "一次性补丁/注入工具"),
+    ("mcp_", "MCP 冒烟/演练（需宿主进程，非离线判据）"),
+    ("_", "内部共享模块（被导入，非独立尺）"),
+    ("demo.py", "演示/示例脚本"),
+    ("_verify.py", "一次性验收演示（跑完即弃，产物进报告）"),
+    ("_selfdrive.py", "自驱流水线一次性脚本"),
+    ("test_", "测试脚本（非门禁）"),
+    ("bench_", "基准测量（非判据）"),
+    ("gen_apply_pdf", "文档生成一次性工具"),
+    ("gen_help_docs", "文档生成一次性工具"),
+    ("patch_esm_main", "ESM/CJS 兼容补丁注入工具（被 CI 与 smoke 调用，非判据）"),
+    ("simulate_", "一次性模拟工具"),
+    ("probe.py", "一次性探针（人工按需跑）"),
+    ("score_gate", "评分辅助（人工按需）"),
+    ("issue_scan.py", "MCP 工具薄封装（人工调用）"),
+    ("output_validate.py", "MCP 工具薄封装（人工调用）"),
+    ("laya_decide.py", "MCP 工具薄封装（人工调用）"),
+    ("plan_gradient_verify.py", "一次性验收演示"),
+    ("task_challenge_verify.py", "一次性验收演示"),
+    ("lesson_chain_verify.py", "一次性验收演示"),
+)
+
+
+def _match_rule(base):
+    """按「前缀优先、后缀其次」匹配规则；显式文件名规则（含 .py）视为精确/前缀两种。"""
+    for pat, why in EXEMPT_RULES:
+        if pat.endswith(".py"):
+            if base == pat or base.startswith(pat[:-3]):
+                return why
+        elif base.startswith(pat):
+            return why
+    for pat, why in EXEMPT_RULES:
+        if pat.endswith(".py") and base.endswith(pat):
+            return why
+    return ""
+
+
 # R82：登记面——「不该被自动电池跑」的脚本必须在此点名 + why，否则按缺面判红。
 # 与 CASES 的分工：CASES 是「要跑的」，REGISTRY 是「在册但不自动跑的」（起服务/需网络/
 # 平台前提/一次性补丁/纯辅助库）。点名失效（脚本删了）由 G2 扩展面抓。
@@ -350,18 +439,11 @@ REGISTRY = {
     "pentad_fist.py": "Pentad 外部项目驱动器（长跑）",
     "score_gate.py": "评分器 CLI（读数型，无门禁语义）",
     "simulate_head_commit.py": "辅助库（check_bug_reference_integrity 引用其 simulate_head_commit，不单独跑）",
+    "install_git_hooks.py": "本机 git 钩子安装/体检（--install 写 .git/hooks 与 core.hooksPath；"
+                            "--selftest 读的是**这台机器装没装**，副机/CI 上必 rc=1 属环境态不是判据红）",
+    "refresh_dist.py": "dist 快照刷新计划/执行（要 moon build 产物并写盘；无 --selftest 旗标，"
+                       "跑法见 scripts/README.md 同名条目）",
 }
-
-
-def guard_files():
-    """普查宇宙 = **门禁尺**（discover_scripts 去掉非判据工具）。
-
-    R55：子目录不豁免；TASK-007：全量 .py 而非仅 check_*。本轮（电池只读缺陷）再加一层：
-    改码/生成/迁移/宿主类一次性工具**不是判据**，它们进 --list 的「非判据」清单（带理由）
-    但不进 G1 的缺面统计——否则 G1 会把"没给一次性工具安排执行面"当成缺陷报红，
-    逼着人把 patch_*/gen_* 塞进电池（正是工作树被改动的来源）。
-    """
-    return [s for s in discover_scripts() if not non_gate_reason(s)]
 
 
 def is_gate(name):
@@ -385,6 +467,29 @@ KNOWN_NO_FACE = {
 }
 
 
+def universe_files():
+    """递归扫描 scripts/ 下全部 .py（相对 scripts/ 路径名，子目录带前缀）。排除 __pycache__。
+
+    本体在 2bd4dbf2（TASK-007 / R82）落过一次，其后一次手动解冲突把它从 `classify()` 的调用面上
+    删掉了 ⇒ 全电池 `NameError` 起不来（2026-10-22 实测 `--list` rc=1）。宇宙一旦被改窄或改没，
+    G1「无人缺面」就会以 rc=0 的形态骗人，所以这一份清单必须是真源。
+    """
+    out = []
+    if not os.path.isdir(SCRIPTS_DIR):
+        return out
+    for dirpath, dirnames, filenames in os.walk(SCRIPTS_DIR):
+        dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
+        for fn in sorted(filenames):
+            if not fn.endswith(".py"):
+                continue
+            full = os.path.join(dirpath, fn)
+            rel = os.path.relpath(full, SCRIPTS_DIR).replace(os.sep, "/")
+            if UNIVERSE_EXCLUDE_RE.search(rel):
+                continue
+            out.append(rel)
+    return out
+
+
 def classify():
     """把递归宇宙分成三份：(门禁尺, 豁免(带理由), 未归类)。"""
     gates, exempt, unknown = [], [], []
@@ -401,8 +506,34 @@ def classify():
 
 
 def guard_files():
-    """普查宇宙 = 门禁尺（递归发现，不再靠手写清单）。"""
-    return classify()[0]
+    """普查宇宙（G1 的对象）= 递归扫到的**每一份**脚本（R106 把两份并排的设计合起来）。
+
+    `classify()` 的三份（门禁尺 / 豁免带理由 / 未归类）是**记账口径**，不是宇宙本身：
+    宇宙只取「前缀像门禁尺」的那些，`whisperer.py` / `refresh_dist.py` 这类新工具就天然在账外，
+    「无人缺面」于是变成宇宙被改窄的奖励——R106 那次 NameError（定义被合并删掉、调用面留着）
+    正是这条假绿路径的近亲。所以：宇宙 = 全集，一份脚本要么有执行面（CI / 电池 / 登记），
+    要么有豁免理由（EXEMPT_RULES / KNOWN_NO_FACE / 常驻），两样都没有 ⇒ 缺面点名报红。
+    """
+    return universe_files()
+
+
+def auto_case_for(rel, src, declared_script, declared_argv):
+    """R106：把「这一份该不该自动补一格」从循环体里抽成**纯函数**。
+
+    为什么要抽：合并后这台机器在现状树上产 **0 格**——`build_cases()` 已按脚本名给每份可发现
+    脚本补了无参格，而本函数按名字排除，于是 `auto_cases()` 恒空。恒空的产物让任何「拿真产物
+    反证」的自检格退化成 `all([])` 式的空转绿灯（本仓「空扫描即自拒」的同一口径）。
+    入参可控之后，自检用合成宇宙驱动它，机器哪天坏了会自己红，而不是靠产物非空来许愿。
+    """
+    if rel == SELF or rel in declared_script:
+        return None
+    if non_gate_reason(rel) or is_resident_src(src):
+        return None
+    if "--selftest" not in src:
+        return None
+    if (rel, ("--selftest",)) in declared_argv:
+        return None
+    return case(rel, "--selftest")
 
 
 def auto_cases():
@@ -416,20 +547,23 @@ def auto_cases():
     declared_script = {c["script"] for c in CASES}
     out = []
     for rel in guard_files():
-        if rel in declared_script:
-            continue
         full = os.path.join(SCRIPTS_DIR, rel)
         try:
             src = io.open(full, encoding="utf-8", errors="replace").read()
         except OSError:
             continue
-        if "--selftest" in src:
-            if (rel, ("--selftest",)) not in declared:
-                out.append(case(rel, "--selftest"))
+        c = auto_case_for(rel, src, declared_script, declared)
+        if c is not None:
+            out.append(c)
     return out
 
 
-CASES = CASES + auto_cases()
+# R106：自动补格在 import 期一次算完并**留底**。之后第二次再调 auto_cases() 只会得到空表——
+# 它以「CASES 里已点名的脚本」为排除集，而自己那批格子此刻已经躺在 CASES 里了。
+# 于是任何「运行期再推导一次」的写法（电池汇总的手写/自动拆分、自检格里的反证面）都会读到 0，
+# 把一台真在干活的机器读成一格空转。留底就是这台机器的现读凭证。
+AUTO_CASES = auto_cases()
+CASES = CASES + AUTO_CASES
 
 
 def _existing_scripts():
@@ -444,7 +578,7 @@ def _existing_scripts():
     return existing
 
 
-def check_faces(guards, ci_names, case_scripts, missing, existing=None, resident=()):
+def check_faces(guards, ci_names, case_scripts, missing, existing=None, resident=(), registry=()):
     """G1/G2/G3 的纯函数版（selftest 喂合成集合，含合成的"文件系统上有哪些脚本"）。
     existing=None 时现读真目录（scripts/**/*.py 递归，与 guard_files 同形）。
     registry=R82 登记面（脚本名集合）：与 CI/电池同权构成执行面。"""
@@ -480,10 +614,18 @@ def face_report():
     guards_all = guard_files()
     # 常驻服务：只有「没有手写有界格子」的那些才豁免；一旦有人给它补了带旗标的一格，
     # 它就回到宇宙里当尺使（豁免是形状豁免，不是身份豁免）。
-    resident = sorted(g for g in guards_all if g not in battery and is_resident(g))
+    # `g != SELF`：本文件自己就写着 `RESIDENT_MARKERS = ("serve_forever(", "run_forever(")` ⇒
+    # 文本嗅探会命中**定义本身**，把尺子报成常驻服务。自锁要显式，不能靠这条意外。
+    resident = sorted(g for g in guards_all
+                      if g != SELF and g not in battery and is_resident(g))
     rset = set(resident)
     guards = [g for g in guards_all if g not in rset]
-    missing = [g for g in guards if g not in ci and g not in battery]
+    # R106：登记面（REGISTRY）与待接线（KNOWN_NO_FACE）、豁免理由（EXEMPT_RULES）都是账——
+    # a86edc36 写的「登记与 CI/电池同权构成执行面」在合并里只剩 check_faces 函数体里的 `registry`，
+    # 调用面没传，等于登记不顶用；豁免面同理从没被任何判定读过。
+    exempted = {rel for rel, _why in classify()[1]}
+    faces = ci | battery | set(REGISTRY) | set(KNOWN_NO_FACE) | exempted
+    missing = [g for g in guards if g not in faces]
     rows = [(g, "CI" if g in ci else "-", "电池" if g in battery else "-") for g in guards]
     return rows, missing, ci, battery, guards, resident
 
@@ -493,16 +635,17 @@ CASE_TIMEOUT_SEC = 600
 
 def run_battery(case_timeout=CASE_TIMEOUT_SEC):
     rows, missing, ci, battery, guards, resident = face_report()
-    rc, lines = check_faces(guards, ci, battery, missing, resident=resident)
+    rc, lines = check_faces(guards, ci, battery, missing, resident=resident,
+                            registry=set(REGISTRY))
     for l in lines:
         print(l)
     if rc == 2:
         return 2
-    cases_all = CASES + auto_cases(battery, ci, guards)
-    if len(cases_all) > len(CASES):
-        print("\n（R82 自动补格 %d：宇宙里新落的无 CI 面静态尺，见 auto_cases）"
-              % (len(cases_all) - len(CASES)))
-    print("\n=== 电池 %d 格 ===" % len(cases_all))
+    # R106：自动补格在 import 期就并进 CASES 了（`CASES = CASES + auto_cases()`），
+    # 这里再调一次只会把同一批格子算两遍——旧写法 `auto_cases(battery, ci, guards)` 还是
+    # 另一版（a86edc36）的三参签名，合并后签名与调用面不同形 ⇒ TypeError，被上面那道
+    # 「未捕获异常 ⇒ 4」的门抓出来（这正是那一档要区分的形状）。
+    print("\n=== 电池 %d 格 ===" % len(CASES))
     py = sys.executable
     fails, skips = [], []
     for c in CASES:
@@ -532,9 +675,17 @@ def run_battery(case_timeout=CASE_TIMEOUT_SEC):
         if not ok:
             fails.append((c["name"], p.returncode, c["expect"], c["why"], tail))
     print("\n=== 汇总 ===")
+    # 拆分从 import 期的留底读，不在这里二次推导：auto_cases() 的排除集已含它自己的产物。
+    # 现状自动格 = 0（build_cases 先按名补齐），读数照实写 0 并给成因——把「自动 0」印成
+    # 一行看不出问题的数字，就是下一位读者以为这台机器退休了的开始。
+    auto_n = len(AUTO_CASES)
     print("格数 %d（手写 %d + 自动 %d）/ 失败 %d / SKIP %d / 缺执行面 %d"
-          % (len(cases_all), len(CASES), len(cases_all) - len(CASES),
+          % (len(CASES), len(CASES) - auto_n, auto_n,
              len(fails), len(skips), len(missing)))
+    if auto_n == 0:
+        print("  自动补格 0 的成因：build_cases() 已按脚本名为每份可发现脚本补无参格，"
+              "auto_case_for 的名字排除集因此恒命中；机器本身由 --selftest 的 7 格合成对照钉住"
+              "（见 selftest），不是退休。")
     for name, got, exp, why, tail in fails:
         print("  FAIL %s got=%s expect=%s :: %s" % (name, got, exp, tail))
         if why:
@@ -556,6 +707,12 @@ def selftest():
     FS = set(G)  # 合成"文件系统上有哪些脚本"
     # 0) R55 宇宙修复本体：现读真宇宙必须含 blackbox 尺（宇宙被改窄回顶层-only 时这格当场红），
     #    且电池里的 blackbox 点名不得被 G2 误判 stale（存在集与宇宙同形）
+    cell("universe-is-recursive-census",
+         guard_files() == universe_files()
+         and any(x.startswith("blackbox/") for x in universe_files())
+         and not any(UNIVERSE_EXCLUDE_RE.search(x) for x in universe_files()), True)
+    cell("classify-partition-alive",
+         len(classify()[1]) > 0 and all(is_gate(g) for g in classify()[0]), True)
     cell("universe-covers-blackbox-real",
          any(g.startswith("blackbox/") for g in guard_files()), True)
     rows0, missing0, ci0, battery0, guards0, resident0 = face_report()
@@ -581,12 +738,43 @@ def selftest():
     cell("G2-stale-case-name",
          check_faces(G, {"check_a.py"}, {"check_b.py"}, [], {"check_a.py"})[0], 2)
     # 5) 真源自证：本仓现状必须 G1 全绿；且 plan_landing 这一格从此进电池
-    rows, missing, ci, battery, guards = face_report()
-    cell("non-gate-never-becomes-case",
+    rows, missing, ci, battery, guards, resident = face_report()
+    # 钉的是**自动补格**这条机器。R106：现状树上这台机器产 0 格（`build_cases()` 已按名把每份
+    # 可发现脚本补了无参格，排除集于是永远命中），所以反证**不能**落在真产物上——`all(对空表)`
+    # 恒真就是一盏没人认领的绿灯。改成合成宇宙驱动纯函数 `auto_case_for`，四种输入各有对错。
+    _decl_s = {"check_bare.py", "check_already.py"}
+    _decl_a = {("check_already.py", ("--selftest",))}
+    _src_st = "def main():\n    pass  # --selftest\n"
+    cell("auto-case-produces-selftest-cell",
+         list((auto_case_for("check_new.py", _src_st, _decl_s, _decl_a) or {}).get("argv", [])),
+         ["--selftest"])
+    cell("auto-case-skips-non-gate",
+         auto_case_for("demo_tool.py", _src_st, _decl_s, _decl_a), None)
+    cell("auto-case-skips-resident",
+         auto_case_for("check_bridge.py", "  app.run_forever()\n", _decl_s, _decl_a), None)
+    cell("auto-case-skips-already-declared-name",
+         auto_case_for("check_bare.py", _src_st, _decl_s, _decl_a), None)
+    cell("auto-case-skips-already-declared-argv",
+         auto_case_for("check_already.py", _src_st, _decl_s, _decl_a), None)
+    cell("auto-case-skips-no-selftest-flag",
+         auto_case_for("check_plain.py", "print('ok')\n", _decl_s, _decl_a), None)
+    cell("auto-case-skips-self",
+         auto_case_for(SELF, _src_st, set(), set()), None)
+    cell("non-gate-never-becomes-auto-case",
          non_gate_reason("patch_router_config_caf_field.py") != ""
-         and all(not non_gate_reason(c["script"]) for c in CASES), True)
+         and all(not non_gate_reason(c["script"]) for c in AUTO_CASES), True)
     cell("gen-plugins-still-gate", non_gate_reason("gen_plugins.py"), "")
-    cell("repo-current-has-no-orphan-guard", check_faces(guards, ci, battery, missing)[0], 0)
+    cell("repo-current-has-no-orphan-guard",
+         check_faces(guards, ci, battery, missing, registry=set(REGISTRY))[0], 0)
+    cell("known-no-face-not-counted-as-missing",
+         all(k not in missing for k in KNOWN_NO_FACE), True)
+    cell("census-wider-than-gate-prefix", any(not is_gate(g) for g in guards), True)
+    # R106 第二处同形缺陷：run_battery 里 `auto_cases(battery, ci, guards)` 是**另一版**的三参签名，
+    # 合并后调用面与定义不同形 ⇒ 只有真跑电池才炸（`--selftest`/`--list` 都摸不到那一行）。
+    # arity 对表是这一类「定义与调用被拆到两次改动」最便宜的常驻锁。
+    cell("auto-cases-arity-matches-call-site",
+         len(inspect.signature(auto_cases).parameters), 0)
+    cell("battery-has-no-self-case", any(c["script"] == SELF for c in CASES), False)
     cell("battery-covers-plan-landing", "check_plan_landing.py" in battery, True)
     # 6) R98 本体：常驻服务型脚本（自己不会结束）既不能被裸跑进电池，也不能悄悄从宇宙里消失
     cell("resident-src-flags-serve-forever",
@@ -609,8 +797,12 @@ def selftest():
         for nm, why in bad:
             print("  - %s：%s" % (nm, why))
         return 1
-    print("SELFTEST OK（%d 格：宇宙覆盖 blackbox 真尺 + G2 不误判其 stale / G1 抓 blackbox 孤儿 + 带前缀点名 / G1 干净 / G1 抓漏面尺 + 必点名 / G3 三种空宇宙各自拒 / "
-          "G2 电池点了不存在的脚本自拒 / 真源现状全绿 / plan_landing 已进电池 / "
+    print("SELFTEST OK（%d 格：宇宙=递归全集且排除族不入宇宙 + 分类机器活着 + 覆盖 blackbox 真尺 / "
+          "G2 不误判 blackbox stale / G1 抓 blackbox 孤儿 + 带前缀点名 / G1 干净 / G1 抓漏面尺 + 必点名 / "
+          "G3 三种空宇宙各自拒 / G2 电池点了不存在的脚本自拒 / 真源现状全绿（登记面入账）/ "
+          "待接线不计缺面 / 宇宙宽于门禁前缀清单 / 电池里没有自我递归格 / "
+          "自动补格纯函数七面（产格 / 跳非门禁 / 跳常驻 / 跳已点名脚本名 / 跳已点名旗标 / 跳无 selftest / 跳本尺）"
+          " + 非门禁族不被自动补格 / gen_plugins 仍是门禁族 / plan_landing 已进电池 / "
           "plan_landing 门禁格与诊断格并存且诊断格 why 带构成 / "
           "常驻分类器咬 serve_forever 与 run_forever 且不误咬干净尺 / 常驻面逐条点名不静默 / "
           "电池里没有裸跑的常驻格 / 有常驻豁免时真孤儿仍判红）" % len(cells))
@@ -632,6 +824,11 @@ def main():
             print("%-42s CI=%-3s 电池=%-3s" % (g, a, b))
         print("\n尺 %d 把 / CI 面 %d / 电池面 %d / 缺执行面 %d"
               % (len(rows), len(ci & set(guards)), len(battery & set(guards)), len(missing)))
+        _g, _e, _u = classify()
+        print("分类记账：门禁尺 %d / 豁免（带理由）%d / 未归类 %d"
+              % (len(_g), len(_e), len(_u)))
+        for rel in sorted(set(KNOWN_NO_FACE)):
+            print("  待接线 %-42s %s" % (rel, KNOWN_NO_FACE[rel]))
         nong = [(s, non_gate_reason(s)) for s in discover_scripts() if non_gate_reason(s)]
         print("非判据工具 %d 个（留在宇宙可见、不进电池——电池只读，改码/生成/宿主类工具不在判据面）" % len(nong))
         for s, why in nong[:60]:
@@ -644,4 +841,15 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except BaseException:
+        # R106 的形状：一次手动解冲突把 GATE_PREFIXES / EXEMPT_RULES / _match_rule / universe_files
+        # 的定义删了、调用面留着 ⇒ 模块 import 期 NameError。旧写法让这种「尺子坏了」长得
+        # 和「判据判红」一模一样（都是 1），读日志的人只能靠有没有 traceback 区分。
+        import traceback
+        traceback.print_exc()
+        sys.stderr.write("RULER BROKEN: run_guards.py 未捕获异常 ⇒ 4（不是判红，不冒用 1）" + chr(10))
+        sys.exit(4)
