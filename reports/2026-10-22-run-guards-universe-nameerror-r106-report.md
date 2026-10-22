@@ -181,3 +181,27 @@ SKIP 5 格全部是缺 temp/ 前置（`temp/pt27.log` ×2、`temp/chk47.json` ×
 | `fist-gate.py` | 2 | 预存红 | fmt 段依赖 `git diff` 管道，本机退化 rc=-1 ⇒ 按设计 DEGRADED | 实体机/CI 复跑 |
 | `blackbox/check_merge_markers.py` | 1 | 预存红（**本单元新登记**） | 主线跟踪面含 gitlink `.agents/worktrees/fix/display-rank-boundary` | 主线出该条目 |
 | `check_plan_landing.py` | 1 | 诊断口径（非门禁） | 判定面 25 条活文档点名落点未落地（BUG-367 A/B/C 三档留裁决）+ 搬家态 3 条单列 | 等人裁决，读数变了就现形 |
+
+---
+
+## 追记三 · 交单前主仓又前进了两次：叠 `3eec0901` + 接主线新尺 `check_delivery_gap`
+
+写追记二的过程中 `gitcode/master` 又动了：`3eec0901` 已经是**主线 merge 掉我上一轮推送的 `bc7b4677`**
+再加上 `e4ce1197`（删分支判据换成「远端基线 + 内容等价」，并落一支新尺 `scripts/check_delivery_gap.py`）。
+坑 27 当场复发第二次——所以「叠主线」不是一次动作，而是**每次交单前都要重跑的动作**。
+
+- **冲突面实测**：`git merge-tree --write-tree --name-only HEAD gitcode/master` 只回一个 tree 号、
+  不列冲突 ⇒ auto-merge 干净。我没有沿用追记一「README 必撞」的结论（那正是坑 10 点名的错形）。
+  合并净落地 2 个文件（`check_delivery_gap.py` +158、`slave-branch-merge.ps1` +72/−20）。
+- **主线带来的红（我接住的那一条）**：新尺 `check_delivery_gap.py` 进了仓但没进 `scripts/README.md` 索引
+  ⇒ `check_scripts_index` 现读 rc=1。按 R94 立的同一条 lane（新尺落主线 ⇒ 副机接线并补索引）处理：
+  README 尾部补一条真条目，并把 run_guards 抄本里的普查读数按 `--selftest` 现读联动
+  （**电池 53→54 格、尺 79→80 把、宇宙 81→82 份、电池面 41→42**，30 份抄本同改，锚点命中数断言 == 30 才写盘）。
+- **那条红说的是我自己**：`check_delivery_gap` 裸跑 rc=1 的内容是「HEAD 领先 3 个提交、tip 不在任何远端分支上」。
+  它量的是**交付态**而不是代码，且 `git branch -r --contains` 在我推完之后就会命中 ⇒ 归 0。
+  所以不登记 `expected`、不豁免、不降棘轮——**给它登记期望等于把「还没交付」这件事洗成常态**。
+  这是本仓第一格量交付态的电池格，推完复跑取的是权威读数（见下）。
+- **另一单的文案债（本单元不代改，点名即可）**：`blackbox/check_merge_markers.py` 的 FAIL 抬头写
+  「跟踪面存在冲突标记（1 处）」，而同一份输出里 `VIOLATION L1` 点名的是**读不到正文的 gitlink**
+  `.agents/worktrees/fix/display-rank-boundary`。抬头与读数不同义 ⇒ 读的人会以为有我漏解的冲突标记。
+  修法是把「输入面不完整」这一档单独成句，属该尺 owner 的一单，我只在这里点名（实测两行照抄）。
