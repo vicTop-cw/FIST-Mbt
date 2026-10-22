@@ -114,7 +114,13 @@ pub fn eval_disjoint_scopes(
 /// 只有 live 的他者持有才判 `conflict`。
 pub fn eval_no_overlap(state : WorldState, action : PlannedAction) -> Verdict {
   let reasons : Array[String] = []
+  let seen : Set[String] = Set([])
   for s in action.scopes {
+    // 同一 action 里重复申报同一 scope：只对第一个实例裁决，避免重复冲突消息
+    if seen.contains(s) {
+      continue
+    }
+    seen.add(s)
     match find_active(state, s) {
       None => () // 空闲，无冲突
       Some(r) => {
