@@ -26,7 +26,7 @@ scope:
   - 不改文件内容（纯重命名 + ref）
 
 acceptance:
-  - [ ] 写一份 scripts/NAMING.md 规范：前缀 → 语义映射表
+  - [x] 写一份 scripts/NAMING.md 规范：前缀 → 语义映射表（R95 已交付，判据 `scripts/check_scripts_naming.py` 读它的两条 anchor 行做宇宙分类）
   - [ ] 每个无前缀脚本按规范重命名（先动 scripts/ 顶层，子目录低优先级）
   - [ ] CI / run_guards.py / docs/ 里的引用全部更新
   - [ ] git mv（保留历史），不删除旧文件
@@ -38,3 +38,17 @@ evidence: |
   score_gate.py, pentad_fist.py, ...
 
 blocked_by: []
+delivery_r95: |
+  副机 R95 交第一批（分支 slave/ci/task008-scripts-naming-r95）：
+  - scripts/NAMING.md：定律三条（角色写在名字两端之一 / 分隔符只有下划线 / 归档面不回写）+ 角色前缀表 13 项 + 角色后缀表 12 项。
+  - scripts/check_scripts_naming.py：判定面 N1 无角色名（上限 16）+ N2 连字符名（上限 4），棘轮只许下降；
+    词表从 NAMING.md 现读不抄第二份；子目录同形面只报不判（现读 0/12）；自拒真给 2（宇宙空 / NAMING.md 缺 / anchor 0 词）。
+    --selftest 十格含 real-ceiling-matches-measured（上限必须等于现状读数）；真树变异台实测：落一份 mystery_thing.py ⇒ rc=1，删除 ⇒ rc=0。
+  - 接线：ci.yml「Scripts naming guard」步（--selftest + 全量）、run_guards 自动发现（89 把尺 / 缺面 0）、scripts/README.md 登记。
+  实测把 TASK-008 的原口径拆成两半（这是 acceptance 第 2/3 条需要 owner 裁决的原因）：
+  ①「~50 个无前缀」里 29 份的角色写在后缀上（*_verify/_probe/_demo/_smoke 等），按「猜不出用途」这条它们本来就合格；只看前缀读数虚高一倍。
+  ②剩下 16 份真债，改名总成本实测 1224 处引用：活面 163（scripts/ + .github/，32 份文件）/ 归档面 944（memory+reports+stories+docs，227 份）/ 其余 117（根文档、plugins 投影、dist 产物、cmd/）。
+    归档面记的是当时真跑过的命令，为一次改名回写它们就是把记录改成事后叙述 —— 与 acceptance 第 3 条「docs/ 里的引用全部更新」正面冲突。
+  因此本单剩余面不是「机械改 50 个名字」，而是一个范围裁决：改名是否只动活面（引用留在归档面的旧名，靠 NAMING.md 的映射表解释），
+  还是连归档面一起回写（记录失真换一致性）。副机倾向：只动活面 + 在 NAMING.md 留一张「旧名 → 新名」映射，等 owner 定档后按 N1 棘轮逐批改。
+  债清单与每份的改名建议已写在 scripts/NAMING.md 末节（含每档活面引用数，改名前按档量它自己的成本）。
