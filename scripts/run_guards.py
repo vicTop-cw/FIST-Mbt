@@ -74,7 +74,13 @@ def discover_scripts():
     """扫描 scripts/ + scripts/blackbox/ 的全部 .py 脚本（TASK-007：宇宙不限于 check_*）。
     排除：__init__.py / test_* / verify_* / selfdrive_* / run_guards.py（纯测试/工具脚本）。
     返回相对 scripts/ 的路径名（blackbox 子目录带 `blackbox/` 前缀）。"""
-    EXCLUDE_EXACT = {"__init__.py", "run_guards.py"}
+    # fist-mbt-http/web 常驻 serve 子进程：capture_output 会因子进程握住 stdout 管道挂死（R84 实证）；
+    # fist.py 是交互入口。均不适合进无人值守电池。
+    # whisperer.py（主机 Step 0-4 编排真源）连自证格都不进：它的 Step 0 会对共享线
+    # `git reset --hard` + `git push --force HEAD:main HEAD:master`（TASK-018），
+    # 无人值守电池里绝不该跑；`--self-test` 也会 fetch + fist-gate --scan 走网络。裁决前保持排除。
+    EXCLUDE_EXACT = {"__init__.py", "run_guards.py", "fist-mbt-http.py", "fist-mbt-web.py", "fist.py",
+                     "whisperer.py"}
     EXCLUDE_PREFIX = ("test_", "verify_", "selfdrive_")
     out = []
     for base, prefix in ((SCRIPTS_DIR, ""), (BLACKBOX_DIR, "blackbox/")):
@@ -112,6 +118,12 @@ SPECIAL_CASES = [
     case("gen_plugins.py", "--selftest"),
     case("check_upgrade_installer.py"),
     case("check_plan_landing.py", "--selftest"),
+    # —— R86/R88/R93：风语者探测面与统一门链只进自证格。
+    #     whisperer_patrol 无参=扫描+写 yaml 会弄脏工作树；fist-gate 无参=跑 moon fmt/build，
+    #     本机 env 红且与门链自身重复。
+    #     注意 whisperer.py（主机 Step 0-4 编排真源）**不进电池也不进自证格**，见 EXCLUDE_EXACT。——
+    case("whisperer_patrol.py", "--selftest"),
+    case("fist-gate.py", "--selftest"),
     # —— R55：blackbox 尺进宇宙也进电池（相对 scripts/ 点名，路径含子目录）——
     case("blackbox/check_merge_markers.py", "--selftest"),
     case("blackbox/check_merge_markers.py"),
