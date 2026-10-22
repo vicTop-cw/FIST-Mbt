@@ -143,6 +143,10 @@ SPECIAL_CASES = [
     gated("check_deprecated_text_census.py", DUMP, "--dump-distribution", DUMP),
     gated("check_deprecated_site_list.py", DUMP, DUMP),
     case("check_deprecated_site_list.py", "--selftest"),
+    # —— 会改跟踪面的补丁脚本：只跑有界自检，不许裸跑（脚本名一旦被本表点名，自动补格就不再裸跑）。
+    #    R98 全量电池实测：这格裸跑打的是 rc=0 绿灯，却往 src/router 的 struct literal 里再插一份
+    #    同名字段（幂等门查错行）⇒ 盘面编译必红。自检格不碰盘，改的是「尺子能不能自证」。
+    case("patch_router_config_caf_field.py", "--selftest"),
     expected("cleanup_artifacts.py", 1,
              "预存红：工作树 DIRTY（temp/ 与 *.db 是运行物，本仓不 git clean 它们）", "--check"),
     # ── 本轮（电池只读缺陷）按实测事实补的三格：不硬凑 0 ──
