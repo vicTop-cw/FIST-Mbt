@@ -60,3 +60,37 @@ test "caf_ts_5_分隔符错返回-1" {
     abort("分隔符形状错应返回 -1")
   }
 }
+
+///|
+/// R130：不存在的日历日必须返回 -1——旧实现只挡 d>31，`2024-02-30` 与
+/// `2024-04-31` 被 days_from_civil 静默归一成下月 1 日（与 03-01 / 05-01 同值）。
+test "caf_ts_7_不存在的日历日返回-1" {
+  if @router.iso_to_secs("2024-02-30T00:00:00Z") != -1 {
+    abort("2024-02-30 应返回 -1")
+  }
+  if @router.iso_to_secs("2024-04-31T00:00:00Z") != -1 {
+    abort("2024-04-31 应返回 -1")
+  }
+  if @router.iso_to_secs("2023-02-29T00:00:00Z") != -1 {
+    abort("2023-02-29 应返回 -1")
+  }
+}
+
+///|
+/// R130：合法日期往返锁——iso→秒→iso 必须逐字回到原串（含 Z）。
+test "caf_ts_8_iso秒往返一致" {
+  let stamps : Array[String] = [
+    "1970-01-01T00:00:00Z", "2024-02-28T23:59:59Z", "2024-02-29T00:00:00Z", "2024-03-01T00:00:00Z",
+    "2025-02-28T23:59:59Z", "2037-12-31T23:59:59Z",
+  ]
+  for s in stamps {
+    let secs = @router.iso_to_secs(s)
+    if secs < 0 {
+      abort("\{s} 应可解析")
+    }
+    let back = @router.secs_to_iso(secs)
+    if back != s {
+      abort("往返不一致：\{s} -> \{back}")
+    }
+  }
+}
