@@ -4,7 +4,8 @@
 # 流程: fetch → 扫描哪些分支有 src/scripts/cmd/moon.pkg 改动 → 逐个 cherry-pick → 清冲突标记 → build → push → 删已合并分支
 
 param(
-  [switch]$DryRun  # 只扫描不执行
+  [switch]$DryRun,   # 只扫描不执行
+  [switch]$SelfTest  # R100：只跑沙箱自证格，不合并、不 fetch、不 push
 )
 
 # ── TASK-002：cherry-pick 黑名单（实测教训）──────────────────────────────
@@ -49,7 +50,233 @@ function Restore-Blacklisted {
   return $touched
 }
 
+# ── R100：黑名单自证面（-SelfTest）──────────────────────────────────────
+# 为什么要这一档：TASK-002 的黑名单是「把毒路径摘出跟踪面」的唯一执行面，入仓以来没有任何
+# 一格能证明它摘得动。R97 实踩的代价是 `moon build` 当场 [3002] lexing error——也就是说
+# 「黑名单失明」的发现成本是一整次构建崩溃，而不是一行 FAIL。尺子必须先证明自己会红。
+# 本档在 %TEMP% 的沙箱 git 仓里跑：逐格造违例 → 调 Restore-Blacklisted → 断言盘面与索引。
+# 绝不 cd 进真仓、绝不读改任何跟踪文件、绝不起网络。沙箱跑完即删。
+# 退出码三档（本仓契约）：0 全绿 / 1 判据红 / 2 尺子无法自证（git 缺失或沙箱建不起来，绝不冒用 1）。
+# M1/M2 是变异台：把名单改瞎 ⇒ 对应格必须转红，否则说明 C1/C3 的断言是幻影。
+
+function Invoke-STGit {
+  # 原生命令一律走这里：EAP 在函数作用域内降到 Continue——Stop 下 git 的 stderr 会变成终止错误
+  # （BUG-109 那一格），那样「git 打了句警告」就能被读成「判据红」。断言只看盘面，不看异常。
+  param([Parameter(ValueFromRemainingArguments = $true)][string[]]$GitArgs)
+  $ErrorActionPreference = "Continue"
+  $out = & git @GitArgs 2>&1
+  $rc = $LASTEXITCODE
+  $text = ($out | Out-String)
+  return [pscustomobject]@{ Rc = $rc; Out = $text }
+}
+
+function Write-STFile {
+  param([string]$Rel, [string]$Text)
+  $full = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine((Get-Location).Path, $Rel))
+  $dir = Split-Path $full -Parent
+  if (-not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
+  [System.IO.File]::WriteAllText($full, $Text)
+}
+
+function Read-STFile {
+  param([string]$Rel)
+  $full = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine((Get-Location).Path, $Rel))
+  if (-not (Test-Path $full)) { return $null }
+  return [System.IO.File]::ReadAllText($full)
+}
+
+function Reset-STSandbox {
+  # 每格开跑前清回种子态：格与格之间不得互相喂状态，否则后一格的绿是前一格的遗产。
+  $null = Invoke-STGit 'reset' '-q' '--hard' 'HEAD'
+  $null = Invoke-STGit 'clean' '-fdq'
+}
+
+function New-STSandbox {
+  $ErrorActionPreference = "Continue"
+  $tmp = $env:TEMP
+  if (-not $tmp) { return $null }
+  try {
+    $root = Join-Path $tmp ('fist-merge-st-' + [Guid]::NewGuid().ToString('N').Substring(0, 12))
+    if (Test-Path $root) { return $null }
+    $null = New-Item -ItemType Directory -Path $root
+  } catch {
+    return $null
+  }
+  if ((Invoke-STGit '-C' $root 'init' '-q').Rc -ne 0) { return $null }
+  # 沙箱自带身份与 EOL 策略：既不依赖全局 git 配置，也不让 autocrlf 把断言变成运气测试。
+  $null = Invoke-STGit '-C' $root 'config' 'user.name' 'selftest'
+  $null = Invoke-STGit '-C' $root 'config' 'user.email' 'selftest@invalid.local'
+  $null = Invoke-STGit '-C' $root 'config' 'core.autocrlf' 'false'
+  $null = Invoke-STGit '-C' $root 'config' 'core.safecrlf' 'false'
+  return $root
+}
+
+function Remove-STSandbox {
+  param([string]$Root)
+  $ErrorActionPreference = "Continue"
+  if ($Root -and (Test-Path $Root)) { Remove-Item -Recurse -Force $Root }
+}
+
+function Set-STSeed {
+  Write-STFile 'src/ops/moon.pkg' 'HEAD-MARKER'
+  Write-STFile 'src/ops/rhop_native.mbt' 'HEAD-RHOP'
+  Write-STFile 'src/ops/keep.mbt' 'HEAD-KEEP'
+  $null = Invoke-STGit 'add' '-A'
+  $null = Invoke-STGit 'commit' '-q' '-m' 'seed'
+  if ((Invoke-STGit 'rev-parse' '--verify' 'HEAD').Rc -ne 0) { return $false }
+  if ((Read-STFile 'src/ops/moon.pkg') -ne 'HEAD-MARKER') { return $false }
+  return $true
+}
+
+function Invoke-STCell {
+  param([string]$Name, [ScriptBlock]$Body)
+  $ErrorActionPreference = "Continue"
+  Reset-STSandbox
+  $verdict = $null
+  try {
+    $verdict = & $Body
+  } catch {
+    $verdict = '抛出异常：' + $_.Exception.Message
+  }
+  if ($verdict -eq $true) {
+    Write-Host ('  OK   ' + $Name) -ForegroundColor DarkGray
+    return
+  }
+  Write-Host ('  FAIL ' + $Name + '  got=' + $verdict) -ForegroundColor Red
+  $script:ST_FAILURES += $Name
+}
+
+function Invoke-MergeSelfTest {
+  $script:ST_FAILURES = @()
+  Write-Host '=== slave-branch-merge.ps1 -SelfTest（沙箱自证，不合并任何东西）===' -ForegroundColor Cyan
+
+  if ((Invoke-STGit 'version').Rc -ne 0) {
+    Write-Host 'SELFTEST BLOCKED: 本会话取不到 git，尺子无法自证' -ForegroundColor Red
+    return 2
+  }
+  $root = New-STSandbox
+  if (-not $root) {
+    Write-Host 'SELFTEST BLOCKED: 沙箱仓建不起来（TEMP 不可写或 git init 失败）' -ForegroundColor Red
+    return 2
+  }
+
+  $dir0 = (Get-Location).Path
+  $seeded = $false
+  try {
+    Set-Location $root
+    $seeded = Set-STSeed
+    if (-not $seeded) {
+      Write-Host 'SELFTEST BLOCKED: 沙箱种子提交建不起来' -ForegroundColor Red
+      return 2
+    }
+
+    $cells = @(
+      @('C1 exact-path-staged-reverts-to-head', {
+          Write-STFile 'src/ops/moon.pkg' 'PICKED-DIRTY'
+          $null = Invoke-STGit 'add' '-A'
+          $t = Restore-Blacklisted 'selftest-C1'
+          if ($t -lt 1) { return "touched=$t（该摘的没摘）" }
+          if ((Read-STFile 'src/ops/moon.pkg') -ne 'HEAD-MARKER') { return '盘面未回到 HEAD 版本' }
+          if ((Invoke-STGit 'diff' '--cached' '--name-only' 'src/ops/moon.pkg').Out.Trim() -ne '') { return '索引仍留脏' }
+          return $true
+        }),
+      @('C2 new-poison-file-removed-from-disk-and-index', {
+          Write-STFile 'src/ops/rhop_poll.mbt' 'function rhop_poll() {}'
+          $null = Invoke-STGit 'add' '-A'
+          $t = Restore-Blacklisted 'selftest-C2'
+          if (Test-Path 'src/ops/rhop_poll.mbt') { return '盘上新文件未被删除' }
+          if ((Invoke-STGit 'ls-files' 'src/ops/rhop_poll.mbt').Out.Trim() -ne '') { return '索引仍留该新增文件' }
+          if ($t -lt 1) { return "touched=$t" }
+          return $true
+        }),
+      @('C3 glob-only-new-file-removed', {
+          Write-STFile 'src/ops/rhop_probe.mbt' 'function rhop_probe() {}'
+          $null = Invoke-STGit 'add' '-A'
+          $null = Restore-Blacklisted 'selftest-C3'
+          if (Test-Path 'src/ops/rhop_probe.mbt') { return 'SKIP_GLOB 没覆盖到非精确名' }
+          if ((Invoke-STGit 'ls-files' 'src/ops/rhop_probe.mbt').Out.Trim() -ne '') { return '索引仍留该新增文件' }
+          return $true
+        }),
+      @('C4 glob-path-with-head-version-reverts', {
+          Write-STFile 'src/ops/rhop_native.mbt' 'PICKED-RHOP-DIRTY'
+          $null = Invoke-STGit 'add' '-A'
+          $t = Restore-Blacklisted 'selftest-C4'
+          if ((Read-STFile 'src/ops/rhop_native.mbt') -ne 'HEAD-RHOP') { return 'glob 命中且有 HEAD 版本时未回退' }
+          if ($t -lt 1) { return "touched=$t" }
+          return $true
+        }),
+      @('C5 unstaged-worktree-is-left-alone', {
+          # 现状刻画格：函数只认索引面。生产路径成立是因为 cherry-pick --no-commit 的产物是暂存态；
+          # 这条边界写进 README，不写成「已修复」。
+          Write-STFile 'src/ops/moon.pkg' 'WORKTREE-WIP'
+          $t = Restore-Blacklisted 'selftest-C5'
+          if ($t -ne 0) { return "未暂存却被动手（touched=$t）——函数形状与本档声明不符" }
+          if ((Read-STFile 'src/ops/moon.pkg') -ne 'WORKTREE-WIP') { return '未暂存的工作树被改写' }
+          return $true
+        }),
+      @('M1 mutation-skiplist-blind-turns-red', {
+          # 变异台：名单清空 ⇒ C1 那一格的动作必须失效。若仍回退，说明断言是幻影。
+          Write-STFile 'src/ops/moon.pkg' 'PICKED-DIRTY'
+          $null = Invoke-STGit 'add' '-A'
+          $orig = $script:SKIP_EXACT
+          try {
+            $script:SKIP_EXACT = @()
+            $t = Restore-Blacklisted 'mutant-M1'
+            if ($t -ne 0) { return "变异台不咬人：名单已空却 touched=$t" }
+            if ((Read-STFile 'src/ops/moon.pkg') -ne 'PICKED-DIRTY') { return '变异台不咬人：名单已空却仍回退了' }
+          } finally {
+            $script:SKIP_EXACT = $orig
+          }
+          return $true
+        }),
+      @('M2 mutation-glob-blind-turns-red', {
+          Write-STFile 'src/ops/rhop_probe.mbt' 'function rhop_probe() {}'
+          $null = Invoke-STGit 'add' '-A'
+          $orig = $script:SKIP_GLOB
+          try {
+            $script:SKIP_GLOB = @('never-matching-pattern-*')
+            $null = Restore-Blacklisted 'mutant-M2'
+            if (-not (Test-Path 'src/ops/rhop_probe.mbt')) { return '变异台不咬人：glob 已改瞎却仍删了文件' }
+            # 复原后同一违例必须立刻被摘掉——证明名单是承重的，不是装饰。
+            $script:SKIP_GLOB = $orig
+            $null = Restore-Blacklisted 'mutant-M2-restore'
+            if (Test-Path 'src/ops/rhop_probe.mbt') { return '名单复原后没能摘掉' }
+          } finally {
+            $script:SKIP_GLOB = $orig
+          }
+          return $true
+        }),
+      @('S8 sandbox-sentinel-not-standing-in-repo', {
+          $here = (Get-Location).Path
+          if (-not $here.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { return "不在沙箱内：$here" }
+          if (Test-Path 'moon.mod') { return '当前目录有 moon.mod——可能站在真仓里' }
+          if (Test-Path '.git') { return $true }
+          return '沙箱不是 git 仓'
+        })
+    )
+
+    foreach ($c in $cells) { Invoke-STCell $c[0] $c[1] }
+  } catch {
+    Write-Host ('SELFTEST BLOCKED: 沙箱阶段异常 ' + $_.Exception.Message) -ForegroundColor Red
+    return 2
+  } finally {
+    Set-Location $dir0
+    Remove-STSandbox $root
+  }
+
+  $n = $cells.Count
+  if ($script:ST_FAILURES.Count -gt 0) {
+    Write-Host ('SELFTEST FAIL: ' + $script:ST_FAILURES.Count + '/' + $n + ' 格红 → ' + ($script:ST_FAILURES -join ',')) -ForegroundColor Red
+    return 1
+  }
+  Write-Host ('SELFTEST OK: ' + $n + ' 格全绿（黑名单 C1-C5 / 变异台 M1-M2 / 沙箱哨兵 S8），沙箱已删') -ForegroundColor Green
+  return 0
+}
+
 $ErrorActionPreference = "Stop"
+
+# R100：自证档必须在任何真实动作之前分叉出去——走到这里就绝不 fetch/cherry-pick/push。
+if ($SelfTest) { exit (Invoke-MergeSelfTest) }
 
 Write-Host "=== FIST-Mbt Slave Branch Merger ===" -ForegroundColor Cyan
 Write-Host ""
