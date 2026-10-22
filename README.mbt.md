@@ -23,7 +23,3 @@ FIST 指挥官任务分配体系——纯 MoonBit 实现，同时作为 MCP Serv
 ## 许可
 
 Apache-2.0
-
-- **双后端**：JS（默认，MCP server）与 Native（SQLite）均可运行，测试全绿（JS 端 **1353/1353**，含 quickcheck 属性测试；Native 端本轮未复跑）。
-
-- **双后端**：JS（默认，MCP server）与 Native（SQLite）均可运行，测试全绿（JS 端 **1347/1347**，含 quickcheck 属性测试；Native 端本轮未复跑）。
