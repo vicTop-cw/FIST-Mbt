@@ -1659,6 +1659,86 @@ fn scan_guard_has_suffix_cut(
 }
 
 ///|
+/// 形态 F：字面量前缀/后缀守卫。`s.substring(start="需要:".length())` 的 start 取自
+/// 字面量长度；若同一窗口内该字符串（或其 `to_owned()` 等价副本）已被
+/// `has_prefix`/`has_suffix(<同一字面量>)` 判定，则目标串长度必 ≥ 该字面量 ⇒ start 不越界。
+/// 实测 `extract_needs` 的 6 条命中即此形态（守卫在 `sv`，substring 在其副本 `s` 上）。
+/// 保守边界：副本只认 `let v = src` / `let v = src.to_owned()`（trim 等可能缩短，不放行）；
+/// 字面量含转义/引号不判；找不到守卫就保留（拿不准不抑制）。
+fn scan_guard_prefix_literal(
+  prev_lines : Array[String],
+  code : String,
+  vn : String,
+) -> Bool {
+  if vn.is_empty() {
+    return false
+  }
+  let se = scan_substring_start_expr(code).trim().to_owned()
+  let suffix = ".length()"
+  if se.length() <= suffix.length() || !se.has_suffix(suffix) {
+    return false
+  }
+  let head = se[0:se.length() - suffix.length()].to_owned()
+  if head.length() < 2 || head[0] != '"' || head[head.length() - 1] != '"' {
+    return false
+  }
+  let lit = head[1:head.length() - 1].to_owned()
+  if lit.is_empty() || lit.contains("\\") || lit.contains("\"") {
+    return false
+  }
+  // 受检名字集合：substring 接收者本身 + 其等价副本的源变量
+  let names : Array[String] = [vn]
+  for p in prev_lines {
+    let t = p.trim().to_owned()
+    let pref = "let " + vn + " = "
+    if t.has_prefix(pref) {
+      let rhs = t[pref.length():t.length()].trim().to_owned()
+      let src = if rhs.has_suffix(".to_owned()") {
+        rhs[0:rhs.length() - 11].to_owned()
+      } else {
+        rhs
+      }
+      if scan_is_ident_str(src) {
+        names.push(src)
+      }
+    }
+  }
+  let lit_q = "\"" + lit + "\""
+  for p in prev_lines {
+    let t = p.trim()
+    for nm in names {
+      if t.contains(nm + ".has_prefix(" + lit_q + ")") ||
+        t.contains(nm + ".has_suffix(" + lit_q + ")") {
+        return true
+      }
+    }
+  }
+  // 同一行形态：`if s.has_prefix("x") { s.substring(start="x".length()) }`
+  let ct = code.trim()
+  for nm in names {
+    if ct.contains(nm + ".has_prefix(" + lit_q + ")") ||
+      ct.contains(nm + ".has_suffix(" + lit_q + ")") {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// 是否为纯标识符（形态 F 判定副本源变量用）。
+fn scan_is_ident_str(s : String) -> Bool {
+  if s.is_empty() {
+    return false
+  }
+  for c in s {
+    if !scan_is_ident_char(c) {
+      return false
+    }
+  }
+  true
+}
+
+///|
 /// 在 prev 行里找该 var 是否被 `is_empty()` 守卫（同形 `if var.is_empty()` / `var.is_empty()`）。
 fn scan_guard_is_empty(prev : String, vn : String) -> Bool {
   let t = prev.trim().to_owned()
@@ -1905,6 +1985,10 @@ pub fn scan_finding_guarded(
       if scan_guard_multi_line_length(prev_lines, code, vn) {
         return true
       }
+      // 形态 F：字面量前缀/后缀守卫（`sv.has_prefix("x")` 守卫 `s.substring(start="x".length())`，s 为 sv 的 to_owned 副本）
+      if scan_guard_prefix_literal(prev_lines, code, vn) {
+        return true
+      }
       // 形态 E：has_suffix 间接长度（`let cut = if names.has_suffix(...) { 2 } else { 0 }`）
       if scan_guard_has_suffix_cut(prev_lines, code, vn) {
         return true
@@ -2031,32 +2115,23 @@ pub fn scan_finding_guarded(
 }
 
 ///|
-/// 对整批 findings 做守卫过滤：返回没被守卫的（即真待判）那些。
-fn scan_filter_guarded(
-  findings : Array[ScanFinding],
-  file_content : Array[String],
-) -> Array[ScanFinding] {
-  let out : Array[ScanFinding] = []
-  for hit in findings {
-    let ln = hit.line
-    // BUG-268：近邻窗口由 6 扩到 12，覆盖 `let upper = "..."` 等字面量定义
-    // 与 for 循环头相距较远的形态 B 场景（如 mcs_lower 中定义与使用隔 9 行）。
-    let prev_start = if ln - 12 < 1 { 1 } else { ln - 12 }
-    let prev_end = ln - 1
-    let prev_lines : Array[String] = []
-    if prev_end >= prev_start {
-      let mut i = prev_start - 1
-      while i <= prev_end - 1 {
-        if i >= 0 && i < file_content.length() {
-          prev_lines.push(file_content[i])
-        }
-        i = i + 1
-      }
+/// 取命中行的近邻上文窗口（最近一行在前，倒序），至多 12 行，遇 `fn ` 行即停。
+/// 生产过滤与单测必须走同一构造：曾经生产侧只取 10 行而测试侧取 12 行，
+/// 形态 F 的 `let s = sv.to_owned()` 距第 6 条 substring 恰好 12 行
+/// （engine.mbt:1636 → 1648），少一行就丢副本关系、漏抑制（R127 实测）。
+fn scan_prev_window(
+  file_lines : Array[String],
+  line_no : Int32,
+) -> Array[String] {
+  let out : Array[String] = []
+  let mut i = line_no - 2
+  while i >= 0 && out.length() < 12 && i < file_lines.length() {
+    let line_str = file_lines[i]
+    if line_str.trim().to_owned().has_prefix("fn ") {
+      break
     }
-    if scan_finding_guarded(hit.code, hit.rule, prev_lines) {
-      continue
-    }
-    out.push(hit)
+    out.push(line_str)
+    i = i - 1
   }
   out
 }
@@ -2472,22 +2547,8 @@ pub fn issue_scan(
         ls
       }
     }
+    let prev_window = scan_prev_window(fc_lines, hit.line)
     let hit_idx = hit.line - 1
-    let prev_window : Array[String] = []
-    if hit_idx > 0 {
-      let mut i = hit_idx - 1
-      while i >= 0 {
-        let line_str = fc_lines[i]
-        if line_str.trim().to_owned().has_prefix("fn ") {
-          break
-        }
-        prev_window.push(line_str)
-        i = i - 1
-        if prev_window.length() >= 10 {
-          break
-        }
-      }
-    }
     let hit_line = if hit_idx >= 0 && hit_idx < fc_lines.length() {
       fc_lines[hit_idx]
     } else {
