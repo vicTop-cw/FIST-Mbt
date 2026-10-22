@@ -12,13 +12,15 @@ pub fn root_task_id() -> String {
 /// store 为后端路由（内存 / SQLite），业务逻辑不感知具体实现。
 pub struct FistEngine {
   store : @store.StoreBackend
+  registry : @executor.ExecutorRegistry
 }
 
 ///|
 pub fn FistEngine::new(
   store~ : @store.StoreBackend = @store.StoreBackend::memory(),
+  registry~ : @executor.ExecutorRegistry = @executor.ExecutorRegistry::new(),
 ) -> FistEngine {
-  { store, }
+  { store, registry, }
 }
 
 ///|
@@ -162,7 +164,28 @@ pub fn FistEngine::claim(
           "RANK_GATE: assignee \{assignee} (rank=\{arank_s}) cannot claim task level \{tlevel_s} (task_rank=\{tname}). 需要更高军衔或让 human_steward/leader 认领后分派。",
         )
       }
-      // ===== End P0-2 =====
+      // ===== End P0-2 Gate 1 =====
+
+      // ===== P0-2 Gate 2: 能力门 — assignee abilities 覆盖任务 need =====
+      // 从任务 description 抽 "需要:" / "need:" / "requires:" 关键词
+      // 降级：assignee 未注册 abilities → 跳过 gate 不阻塞（零回归）
+      let abs = self.registry.abilities_of(assignee)
+      if abs.length() > 0 {
+        let desc = t.get_description()
+        let needs = extract_needs(desc)
+        if needs.length() > 0 {
+          let missing = needs.filter(fn(n : String) { !abs.contains(n) })
+          if missing.length() > 0 {
+            let missing_s = missing.join(", ")
+            let abs_s = abs.join(", ")
+            return Err(
+              "ABILITY_GATE: assignee \{assignee} abilities (\{abs_s}) missing required: \{missing_s}. 任务需要能力标签不匹配。",
+            )
+          }
+        }
+      }
+      // ===== End Gate 2 =====
+
       if !self.deps_satisfied(task_id) {
         return Err("依赖未满足，不可领取: \{task_id}")
       }
@@ -1577,4 +1600,51 @@ fn level_to_rank(lvl : Int32) -> String {
     7 => "排长"
     _ => "士兵"
   }
+}
+
+///|
+/// 从任务 description 抽取所需能力关键词。
+/// 识别：需要: / need: / requires: / 能力:
+/// 每行一个标签，逗号/顿号分隔。
+fn extract_needs(desc : String) -> Array[String] {
+  // 极简版：识别 "需要:" / "need:" / "requires:" / "能力:" 开头的行
+  let result : Array[String] = []
+  let lines = desc.split("\n").to_array()
+  for line in lines {
+    let sv = line.trim()
+    let has_need = sv.has_prefix("需要:") ||
+      sv.has_prefix("需要：") ||
+      sv.has_prefix("need:") ||
+      sv.has_prefix("requires:") ||
+      sv.has_prefix("能力:") ||
+      sv.has_prefix("能力：")
+    if has_need {
+      let s = sv.to_owned()
+      let after = if sv.has_prefix("需要:") {
+        s.substring(start="需要:".length()).trim()
+      } else if sv.has_prefix("需要：") {
+        s.substring(start="需要：".length()).trim()
+      } else if sv.has_prefix("need:") {
+        s.substring(start="need:".length()).trim()
+      } else if sv.has_prefix("requires:") {
+        s.substring(start="requires:".length()).trim()
+      } else if sv.has_prefix("能力:") {
+        s.substring(start="能力:".length()).trim()
+      } else if sv.has_prefix("能力：") {
+        s.substring(start="能力：".length()).trim()
+      } else {
+        ""
+      }
+      if after.length() > 0 {
+        let parts = after.split(",")
+        for p_sv in parts {
+          let t = p_sv.trim().to_owned()
+          if t.length() > 0 {
+            result.push(t)
+          }
+        }
+      }
+    }
+  }
+  result
 }
