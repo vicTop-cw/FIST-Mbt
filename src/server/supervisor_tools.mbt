@@ -90,8 +90,8 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
         "task_id": string_prop("目标任务 id（必填）"),
         "by": string_prop("操作者身份（必填）"),
         "reason": string_prop("终止理由（必填）"),
-        "force": string_prop("是否强制（可选，默认 false）"),
-        "apply_pause": string_prop(
+        "force": bool_prop("是否强制（可选，默认 false）"),
+        "apply_pause": bool_prop(
           "是否同时执行可逆暂停（可选，默认 false；kill 本体永不自动执行）",
         ),
       },
@@ -101,8 +101,8 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
       let task_id = get_str(args, "task_id")
       let by = get_str(args, "by")
       let reason = get_str(args, "reason")
-      let force = get_str(args, "force") == "true"
-      let apply_pause = get_str(args, "apply_pause") == "true"
+      let force = get_bool(args, "force")
+      let apply_pause = get_bool(args, "apply_pause")
       let plan = engine.supervisor_kill_plan(
         task_id~,
         by~,
@@ -160,7 +160,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
     schema(
       {
         "target": string_prop("按目标过滤(可选)"),
-        "include_consumed": string_prop(
+        "include_consumed": bool_prop(
           "是否包含已消费(可选，默认 false)",
         ),
       },
@@ -168,7 +168,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let target = get_str(args, "target")
-      let include_consumed = get_str(args, "include_consumed") == "true"
+      let include_consumed = get_bool(args, "include_consumed")
       let items = supervisor_guidance_list(target~, include_consumed~)
       Ok(
         @mcp.ToolResult::text(
@@ -264,7 +264,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
   let s1 = instrumented_tool(
     s1,
     "supervisor_reminder_tick",
-    "超级管家·提醒者轮询：一次全库提醒检查——R1 未消费引导 + R2 停滞任务(活跃超 stale_hours 未更新) + R3 待处理超时(pending 超 pending_hours 未被接管)，产出提醒清单。只读，不注入不修改。参数：now(可选)、stale_hours(可选默认24)、pending_hours(可选默认48)、include_consumed(可选默认false，是否列出已消费引导)。",
+    "超级管家·提醒者轮询：一次全库提醒检查——R1 未消费引导 + R2 停滞任务(活跃超 stale_hours 未更新) + R3 待处理超时(pending 超 pending_hours 未被接管)，产出提醒清单。只读，不注入不修改。参数：now(可选)、stale_hours(可选默认24)、pending_hours(可选默认48)、include_consumed(可选默认false，布尔；true 时另出 guidance_consumed_count/guidance_consumed，已消费引导不参与 total_reminders)。返回：reminder_count/reminders、guidance_unconsumed_count/guidance_unconsumed、total_reminders。",
     schema(
       {
         "now": string_prop("检查基准时间(可选，默认当前时间)"),
@@ -272,7 +272,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
         "pending_hours": string_prop(
           "待处理超时小时数(可选，默认48)",
         ),
-        "include_consumed": string_prop(
+        "include_consumed": bool_prop(
           "是否同时列出已消费引导(可选，默认false)",
         ),
       },
@@ -282,7 +282,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
       let now = get_str(args, "now", default=now_default())
       let stale_h = str_to_int(get_str(args, "stale_hours"), 24)
       let pending_h = str_to_int(get_str(args, "pending_hours"), 48)
-      let include_consumed = get_str(args, "include_consumed") == "true"
+      let include_consumed = get_bool(args, "include_consumed")
       let tick = engine.supervisor_reminder_tick(
         now~,
         stale_hours=stale_h,
@@ -290,6 +290,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
       )
       let guidance = supervisor_guidance_list(target="", include_consumed~)
       let unconsumed = guidance.filter(fn(g) { !g.consumed })
+      let consumed = guidance.filter(fn(g) { g.consumed })
       let base_count = match tick {
         Json::Object(m) =>
           match m.get("reminder_count") {
@@ -311,6 +312,19 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
         "guidance_unconsumed",
         Json::array(unconsumed.map(guidance_to_json)),
       )
+      // include_consumed=true 时把已消费引导一并交出：过去先取回、再被上面那道
+      // filter 丢掉，参数在 schema 与文案里都 advertised，读数却恒为空（幻影参数）。
+      // total_reminders 口径不动（仍 = base + 未消费），已消费另键报告，零回归。
+      if include_consumed {
+        out.set(
+          "guidance_consumed_count",
+          Json::number(consumed.length().to_double()),
+        )
+        out.set(
+          "guidance_consumed",
+          Json::array(consumed.map(guidance_to_json)),
+        )
+      }
       out.set(
         "total_reminders",
         Json::number((base_count + unconsumed.length()).to_double()),
