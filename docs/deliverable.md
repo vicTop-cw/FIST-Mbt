@@ -124,3 +124,5 @@ python scripts/mcp_smoke.py
 - Dynamic/Marketplace 能力路由（executor 抽象层朝"能力注册+按负载/专长分配"）为远期项。
 
 *（内容由AI生成，仅供参考）*
+
+| 测试 | **`moon test --target js` 1353/1353**（2026-10-22 CI (js, ubuntu) 实测，四模式流水线自我迭代 Round 1~3 收口；native 轨见 AGENTS.md「已知边界」） |
