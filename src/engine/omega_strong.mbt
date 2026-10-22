@@ -59,6 +59,43 @@ pub fn omega_clean_slice(s : String) -> String {
 }
 
 ///|
+/// 切到某个标记首次出现处之前（沿用 omega_author_of 的「迭代首个元素即返回」写法，
+/// 不对数组下标取，避免潜在越界）。无该标记则原样返回。
+fn cut_before(s : String, mark : String) -> String {
+  if !s.contains(mark) {
+    return s
+  }
+  for part in s.split(mark) {
+    return part.to_owned()
+  }
+  s
+}
+
+///|
+/// 去掉「拆解引擎自己追加」的计划标注，只留任务本体描述（R113）。
+/// `omega_clean_slice` 只洗强验证标记，而 gradient / reinject_context / boundary_probe /
+/// spec 指纹四项同样会在递归下钻时被逐层重喂（child.description 当作下一层的
+/// parent_desc，且又被嵌进「更简单变体」引用与「父计划」字段），实测 2 层拆分叶子
+/// 1996 字节、根部仅 12 字节，并出现同一叶两个互相矛盾的梯度档。
+/// 逐标记顺序截断 = 截在最靠前的那个标记之前，因此对已叠加多层的文本也能一次洗净。
+/// 标记面必须与 decompose_rec 写入端一字不差（含前导空格）。
+pub fn strip_plan_annotations(s : String) -> String {
+  let markers : Array[String] = [
+    " [难度梯度 ",
+    " [父计划:",
+    " | [父计划: ",
+    " [边界四问",
+    " [spec:",
+    omega_mark(),
+  ]
+  let mut out = s
+  for m in markers {
+    out = cut_before(out, m)
+  }
+  out.trim().to_owned()
+}
+
+///|
 /// 默认最大打回轮次。
 pub fn omega_max_rounds_default() -> Int32 {
   3
