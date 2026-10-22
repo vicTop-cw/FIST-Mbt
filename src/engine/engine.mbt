@@ -1094,15 +1094,18 @@ pub fn FistEngine::plan_deep(
       if split_n < 1 {
         return Err("split_n 必须 >= 1")
       }
+      // 对「本身已被拆解过一次」的任务再拆（如二次 plan_deep 下钻/重拆）时，
+      // 父描述里自带的引擎标注不得再当切割底稿（R113）。
+      let parent_desc = strip_plan_annotations(parent.description)
       let slices = match spec {
         Some(s) =>
           @decompose.decompose_slices(
             s,
             split_n,
-            parent_desc=parent.description,
+            parent_desc~,
           )
         None =>
-          @decompose.default_slices(split_n, parent_desc=parent.description)
+          @decompose.default_slices(split_n, parent_desc~)
       }
       match
         self.decompose_rec(
@@ -1151,6 +1154,10 @@ fn FistEngine::decompose_rec(
   }
   // 边界审视叶（默认关闭零回归）：给"spec 没写的域外行为"一个可领取、可验收的归属，
   // 补掉递归拆解后被压缩掉的全局视角（atgc-merge 归因报告机理 1）。
+  // biz_slices = 调用方看得见的业务片数：这一片是引擎追加的元叶，不在调用方的切片计数里。
+  // 旧实现只拿撑大后的 slices.length() 比 calibrate 长度，一开 boundary_probe，
+  // 按切片给的校准数组就长度不符而整段静默失效（R113 实测：calibrate=[4,2,1] 全部回落位置档）。
+  let biz_slices = slices.length()
   let slices = if boundary_probe {
     slices + [boundary_probe_slice()]
   } else {
@@ -1167,7 +1174,10 @@ fn FistEngine::decompose_rec(
   for i = 0; i < slices.length(); i = i + 1 {
     let idx = i + 1
     let cid = @core.child_id(parent_id=parent.get_id(), idx~)
-    let slice_text = slices[i]
+    // 切割底稿不得带上一层的引擎标注：R113 实测 gradient+reinject 全开时，
+    // 已标注的文本被当作下一层的 parent_desc 再喂，标注按层叠乘（2 层树叶子 1996B / 根 12B），
+    // 同一叶内还会并存两个互相矛盾的梯度档。
+    let slice_text = strip_plan_annotations(slices[i])
     let base_desc = if spec_hash == "" {
       omega_clean_slice(slice_text)
     } else {
@@ -1180,6 +1190,8 @@ fn FistEngine::decompose_rec(
       // 难度校准（可选）：调用方按切片给真实/投影难度(0..5)，长度须与切片一致才生效；
       // 否则回退到位置三分档（由易到难）。默认缺省=纯位置档，零回归。
       let calibrated = match calibrate {
+        Some(arr) if arr.length() == biz_slices && idx <= biz_slices =>
+          Some(arr[idx - 1])
         Some(arr) if arr.length() == n_slices => Some(arr[idx - 1])
         _ => None
       }
@@ -1207,7 +1219,7 @@ fn FistEngine::decompose_rec(
     // 子任务拿到父计划 = 真正"知其所以然"，而非孤立切片。
     let reinjected = if reinject_context {
       full_desc +
-      " | [父计划: \{parent.description} · 剩余兄弟: \{n_slices - idx}]"
+      " | [父计划: \{strip_plan_annotations(parent.description)} · 剩余兄弟: \{n_slices - idx}]"
     } else {
       full_desc
     }
@@ -1252,9 +1264,11 @@ fn FistEngine::decompose_rec(
     }
     // 递归下钻：仅非叶节点继续派生拆分
     let kids_arr : Array[Json] = if !child.is_leaf() {
+      // 下钻底稿只取任务本体：child.description 带着本层的梯度/回注/边界/强验证标注，
+      // 原样再喂会让标注按层叠乘（R113）。
       let next_slices = @decompose.default_slices(
         child.split_n,
-        parent_desc=child.description,
+        parent_desc=strip_plan_annotations(child.description),
       )
       match
         self.decompose_rec(

@@ -87,6 +87,8 @@ pub fn schedule_task(String, n_files? : Int32) -> Json
 
 pub let scope_permissions : Array[PermissionRule]
 
+pub fn strip_plan_annotations(String) -> String
+
 // Errors
 
 // Types and methods
