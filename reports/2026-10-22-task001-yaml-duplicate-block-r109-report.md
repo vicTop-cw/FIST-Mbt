@@ -27,7 +27,7 @@
 - `git diff --numstat` ⇒ `0 42`（**只删不加**，权威块文字未动，评审可只看删除面）。
 - `python scripts/check_backlog_status_staleness.py` ⇒ **rc=1 / 落差 9 条 / 上限 4**（与去重前**同一读数**
   ⇒ 本改动不移动那条棘轮，`run_guards.py` 里引用「现读 9 条」的期望依据文字仍然准确，无需联动）。
-- `check_doc_surface` rc=0、`check_scripts_index` rc=0、`check_publish_payload` 待推后读数。
+- `check_doc_surface` rc=0、`check_scripts_index` rc=0；推后 `check_publish_payload` rc=0（本份报告入库后自解）。
 
 ## 预存红点名（rc + 成因，均非本单元引入）
 
@@ -67,3 +67,12 @@
   而本机 `moon` 需 `MOONC_OVERRIDE` 才能跑，属每机一次的决定）。
 - 读数：本机实跑 `check_backlog_status_staleness.py`、`check_doc_surface.py`、`check_scripts_index.py`、
   `blackbox/check_merge_markers.py`。
+
+## 推后权威读数（本机实跑）
+
+- 推送后 `check_delivery_gap` ⇒ **rc=0**「汇总：3 个分支，其中 0 个存在未推送提交」，`check_publish_payload` ⇒ **rc=0**。
+- 全量电池 `python scripts/run_guards.py` ⇒ **rc=1 / 54 格 / 失败 1 / SKIP 5 / 缺执行面 0**。
+  唯一失败格是 `check_dist_snapshot.py got=0 expect=1`——**不是本单面**：本分支基点是主线 tip，
+  而「把这一格期望兑现成门禁格」正是并行那单 R108（`slave/fix/dist-snapshot-expectation-cashout-r108`）
+  的全部内容；两单合入任意顺序都不冲突（R108 动 `scripts/run_guards.py`，本单只动 backlog yaml）。
+  两单任一先落地后，另一单的电池读数就会少这一格。
