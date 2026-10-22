@@ -38,3 +38,23 @@ evidence: |
 
 blocked_by: []
 
+# ── 执行回填（AtomCode / 2026-10-21T20:55+08:00）──
+result: >
+  已实现并自证。宇宙改为**递归扫描 scripts/**/*.py + 分类规则**（不再是手写清单）：
+    门禁尺 GATE_PREFIXES = check_ / e2e_ / run_ / gen_plugins / cleanup_ / store_isolation /
+      fist-gate / cli_flag_probe ⇒ 必须至少一个执行面（CI 或电池），否则 G1 红；
+    其余必须命中 EXEMPT_RULES（前缀/后缀 + **理由**）并在 --list 逐条印出；
+    两类都不命中 ⇒ G1 按「未归类」报红（新增脚本必须当场归类，不许靠没人发现混进仓）。
+  CASES 自动生成：有 `--selftest` 的门禁尺若未手写条目，自动补一格（手写 expected/diag/gated 优先，
+  诊断型期望值不被自动生成冲掉）。
+  实测：--list 26 → **43 把门禁尺**（CI 28 / 电池 39 / 缺面 0 / 豁免 45 带理由 / 未归类 0）；
+  电池 36 → **50 格，失败 0，SKIP 7**；selftest 13 → **18 格**全绿。
+  4 个无 --selftest 的 e2e 探针（e2e_irm_line / e2e_mirror_install / e2e_transport_stack_fallback /
+  e2e_upgrade_mirror）显式列入 KNOWN_NO_FACE 并在 --list 印「待接线 + 缺什么」，不计入缺面——
+  「豁免」= 决定不进电池，「待接线」= 该进而还没接，两者分开记。
+acceptance_met:
+  - "CASES 自动扫描生成：✅（递归 + 前缀过滤 + selftest 自动补格）"
+  - "所有 scripts/blackbox/*.py 进宇宙：✅（10 个 e2e + check_merge_markers；4 个待接线点名）"
+  - "--list 26 → 40+：✅ 43"
+  - "不引入回归（诊断型 expected 保留）：✅（check_plan_landing 诊断格等原样保留）"
+pr_branch: feat/task-007-run-guards-universe

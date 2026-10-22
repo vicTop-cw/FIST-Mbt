@@ -268,3 +268,10 @@
   P1 预检族越位=rc1 并列名；P2 其它构建后 gate 只报计数与清单（本仓实测 30 个，硬堵无意义）；
   P3 无 Migrate 步 / yml 空 ⇒ rc2 自拒。`--selftest` 7 格。**不依赖 PyYAML**（runner 未必有），
   自带极简步骤解析器——判据不该把"自己会不会崩"交给环境。
+
+### 2026-10-21 TASK-007 补登记：`fist-gate.py`
+- `fist-gate.py`（R74 入仓）— **统一门禁链**：脚本自述 `merge_markers / fmt / build / ps_encoding / store_path`
+  五段，退出码 **0=pass / 1=fail / 2=degraded**（2 专给「判据自己取不到量」，不冒用 1 那一档）。
+  本仓根上 merge_markers 段直接调 `scripts/blackbox/check_merge_markers.py`，任意目标树则按
+  `git ls-files` 逐文件扫行首标记；其余段跑 `moon fmt --check` / `moon build` / `check_ps_encoding.py`
+  与库路径隔离检查。用途：slave/* 分支合入前一条命令跑完本地门。用法 `python scripts/fist-gate.py [树]`。
