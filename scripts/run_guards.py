@@ -220,9 +220,10 @@ SPECIAL_CASES = [
     #    因为 C9 真面变异格是「再有人抄一份」的唯一机器读数。
     case("check_backlog_yaml_integrity.py"),
     case("check_backlog_yaml_integrity.py", "--selftest"),
-    expected("check_backlog_status_staleness.py", 1,
-             "现读 9 条状态落差 > 上限 4（任务池里 backlog/done 与提交面对不上，属内容债，"
-             "逐条核对归任务池那一单；上限不许为了让电池变绿而上调）"),
+    # ── 兑现（R117）：R111 那一单把 9 条落差逐条核过转 in_review/done，并把尺内棘轮降到 0；
+    #    现读 `扫描面=gitcode/main | 落差 0 条 / 上限 0 条` ⇒ 登记的那条红已不成立。
+    #    按本文件自订的律「被检内容修好 ⇒ 把期望改回 0」，转回门禁格，依据一起删。
+    case("check_backlog_status_staleness.py"),
     expected("check_scripts_naming.py", 1,
              "现读 2 条命名判定面 > 棘轮上限（NAMING.md 词法棘轮，改名要同批下调上限，"
              "见 scripts/NAMING.md）"),
