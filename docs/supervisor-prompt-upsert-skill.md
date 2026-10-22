@@ -83,7 +83,12 @@ supervisor_reminder_tick(stale_hours: 24, pending_hours: 48)
   - R1 未消费引导（`include_consumed=false` 时只看待投递）。
   - R2 停滞任务（活跃超 `stale_hours` 未更新）。
   - R3 待处理超时（`pending` 超 `pending_hours` 未被接管）。
-- 返回：提醒清单（**只读**，不注入不修改）。
+- 返回：`reminder_count` / `reminders`、`guidance_unconsumed_count` / `guidance_unconsumed`、
+  `total_reminders`（= 提醒数 + 未消费引导数）；`include_consumed=true` 时**另出**
+  `guidance_consumed_count` / `guidance_consumed`，已消费引导**不计入** `total_reminders`。
+  这两个键是 R110 补的：参数早就 advertised，但 handler 先取全量再无条件滤掉已消费，
+  所以真布尔传上去读数恒为空——修复前 `include_consumed` 只能按字符串 `"true"` 传才不被
+  inputSchema 拒，而那正是本工具想收的形状（现收紧为 boolean，字符串一律 -32602 拒收）。
 
 ## 已知边界
 
