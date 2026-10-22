@@ -161,7 +161,7 @@ pub fn FistEngine::claim(
       let tname = level_to_rank(task_level)
       if !rank_can_claim(arank, task_level) {
         return Err(
-          "RANK_GATE: assignee \{assignee} (rank=\{arank_s}) cannot claim task level \{tlevel_s} (task_rank=\{tname}). 需要更高军衔或让 human_steward/leader 认领后分派。",
+          "RANK_GATE: assignee \{assignee} (rank=\{arank_s}) cannot claim task level=\{tlevel_s} (task_rank=\{tname}). 需要更高军衔或让 human_steward/leader 认领后分派。",
         )
       }
       // ===== End P0-2 Gate 1 =====
