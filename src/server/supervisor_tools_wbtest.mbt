@@ -490,3 +490,185 @@ test "supervisor_task_tree 聚合" {
     Err(_) => ()
   }
 }
+
+///|
+/// R114 跨库折叠：total/计数累加、by_namespace 按**物理库**计数，
+/// progress 由「已完成+已归档 / 合并 total」重算——各库百分比取平均会把
+/// 「一库做完、三库没动」报成「做了一半」（100% 与 0% 平均 = 50%，正确是 25%）。
+test "supervisor_status_fold 跨库合并" {
+  let a = Json::object({
+    "total": Json::number(1.0),
+    "by_status": Json::object({ "已完成": Json::number(1.0) }),
+    "by_namespace": Json::object({ "ghostA": Json::number(1.0) }),
+    "progress_pct": Json::number(100.0),
+    "active_count": Json::number(0.0),
+    "active": Json::array([]),
+  })
+  let b = Json::object({
+    "total": Json::number(3.0),
+    "by_status": Json::object({ "待领取": Json::number(3.0) }),
+    "by_namespace": Json::object({ "ghostB": Json::number(3.0) }),
+    "progress_pct": Json::number(0.0),
+    "active_count": Json::number(1.0),
+    "active": Json::array([Json::object({ "id": Json::string("T0") })]),
+  })
+  let m = supervisor_status_fold([("ghostA", a), ("ghostB", b)])
+  ps_must(
+    ps_num(m, "total") == 4.0,
+    "合并 total 应为 4，实际 \{ps_num(m, "total")}",
+  )
+  ps_must(
+    ps_num(m, "progress_pct") == 25.0,
+    "progress 应由计数重算为 25，不能取两库均值，实际 \{ps_num(m, "progress_pct")}",
+  )
+  let bs = json_field_obj(m, "by_status")
+  ps_must(
+    json_num_of(bs.get("已完成").unwrap_or(Json::null())) == 1.0 &&
+    json_num_of(bs.get("待领取").unwrap_or(Json::null())) == 3.0,
+    "by_status 应逐库累加",
+  )
+  let bn = json_field_obj(m, "by_namespace")
+  ps_must(
+    json_num_of(bn.get("ghostA").unwrap_or(Json::null())) == 1.0 &&
+    json_num_of(bn.get("ghostB").unwrap_or(Json::null())) == 3.0,
+    "by_namespace 应按物理库计数（管家顺着这条读数才能把任务取回）",
+  )
+  let act = json_field_arr(m, "active")
+  ps_must(act.length() == 1, "active 应拼接各库活跃项")
+  ps_must(
+    json_field_str(act[0], "namespace") == "ghostB",
+    "active 每条要盖来源库，实际 \{json_field_str(act[0], "namespace")}",
+  )
+  ps_must(
+    ps_num(m, "active_count") == 1.0,
+    "active_count 应与拼接后的条数一致",
+  )
+  let z = supervisor_status_fold([])
+  ps_must(
+    ps_num(z, "total") == 0.0 && ps_num(z, "progress_pct") == 0.0,
+    "空折叠必须报 0，不许凭空给百分比",
+  )
+}
+
+///|
+/// 追加键工具：只加不改语义、同名以管家算出的为准、非对象不得被塞键。
+test "supervisor_stamp 追加与覆盖" {
+  let s1 = supervisor_stamp(Json::object({ "a": Json::number(1.0) }), {
+    "b": Json::string("x"),
+  })
+  ps_must(json_field_str(s1, "b") == "x", "extra 键必须落进去")
+  ps_must(ps_num(s1, "a") == 1.0, "原键不得被改动")
+  let s2 = supervisor_stamp(
+    Json::object({ "namespace": Json::string("旧值") }),
+    { "namespace": Json::string("ghostA") },
+  )
+  ps_must(
+    json_field_str(s2, "namespace") == "ghostA",
+    "同名键以寻址结果为准，不能留着上一次的库名",
+  )
+  let s3 = supervisor_stamp(Json::string("裸串"), { "k": Json::number(1.0) })
+  ps_must(
+    json_field_str(s3, "k") == "" && json_field_str(s3, "") == "",
+    "非对象读数应原样返回，不崩也不塞键",
+  )
+}
+
+///|
+/// 提醒跨库拼接：条数取实条数（不采信各库自报的 reminder_count），阈值回显保留。
+test "supervisor_reminder_fold 跨库拼接" {
+  let p1 = Json::object({
+    "ts": Json::string("2026-10-22T00:00:00Z"),
+    "stale_hours": Json::number(24.0),
+    "reminder_count": Json::number(9.0),
+    "reminders": Json::array([Json::object({ "task_id": Json::string("T0") })]),
+  })
+  let p2 = Json::object({
+    "ts": Json::string("2026-10-22T00:00:00Z"),
+    "reminder_count": Json::number(1.0),
+    "reminders": Json::array([
+      Json::object({ "task_id": Json::string("T1") }),
+      Json::object({ "task_id": Json::string("T2") }),
+    ]),
+  })
+  let f = supervisor_reminder_fold([("ghostA", p1), ("ghostB", p2)])
+  ps_must(
+    ps_num(f, "reminder_count") == 3.0,
+    "reminder_count 应为实条数 3（各库自报 9/1 不作数），实际 \{ps_num(f, "reminder_count")}",
+  )
+  let rs = json_field_arr(f, "reminders")
+  ps_must(rs.length() == 3, "reminders 应逐库拼接")
+  ps_must(
+    json_field_str(rs[0], "namespace") == "ghostA" &&
+    json_field_str(rs[2], "namespace") == "ghostB",
+    "每条提醒要带来源库",
+  )
+  ps_must(
+    json_field_str(f, "ts") == "2026-10-22T00:00:00Z",
+    "ts 这类阈值回显要保留，调用方才知道基准时间",
+  )
+  ps_must(
+    supervisor_reminder_fold([]).stringify() != "",
+    "空折叠不得崩溃",
+  )
+}
+
+///|
+/// G2 判读只看 G2 那道门：别的门发红不能冒充「目标不存在」。
+test "supervisor_kill_g2_missing 只看 G2" {
+  let missing = Json::object({
+    "gates": Json::array([
+      Json::object({
+        "gate": Json::string("G1_identity"),
+        "passed": Json::boolean(true),
+      }),
+      Json::object({
+        "gate": Json::string("G2_exists"),
+        "passed": Json::boolean(false),
+      }),
+    ]),
+  })
+  let present = Json::object({
+    "gates": Json::array([
+      Json::object({
+        "gate": Json::string("G2_exists"),
+        "passed": Json::boolean(true),
+      }),
+      Json::object({
+        "gate": Json::string("G3_protected_planner"),
+        "passed": Json::boolean(false),
+      }),
+    ]),
+  })
+  ps_must(supervisor_kill_g2_missing(missing), "G2 发红应判为未命中")
+  ps_must(
+    !supervisor_kill_g2_missing(present),
+    "G3 拦下不等于目标不存在，不该挂 ns_hint",
+  )
+  ps_must(
+    !supervisor_kill_g2_missing(Json::number(1.0)),
+    "非对象读数不得被判成未命中",
+  )
+}
+
+///|
+/// 撞号点名：歧义文案只列真正命中的库，空候选必须显式说「无」而非空串。
+test "supervisor_ambiguous_msg 点名命中的每个库" {
+  let hits : Array[(String, @engine.FistEngine)] = [
+    ("ghostA", sup_engine()),
+    ("ghostB", sup_engine()),
+  ]
+  let msg = supervisor_ambiguous_msg("T0", hits)
+  ps_must(
+    msg.contains("ghostA") && msg.contains("ghostB"),
+    "命中的每个库都要点名，实际 \{msg}",
+  )
+  ps_must(!msg.contains("default"), "没命中的库不许出现在点名里")
+  ps_must(
+    msg.contains("namespace"),
+    "要给出出路：点名 namespace 重试",
+  )
+  ps_must(
+    supervisor_scanned_names([]) == "（无）",
+    "空候选范围要显式报「无」，空串会被读成「没搜」而不是「没搜到」",
+  )
+}
