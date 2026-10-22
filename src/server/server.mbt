@@ -2739,7 +2739,8 @@ pub async fn run_server() -> Unit {
           phi_gate~,
           phi_threshold~,
           mode~,
-          flush_bug_queue~,
+          // R53 / BUG-354：watchdog_tick 已删掉这个死参数（handler 自己的 auto_flush 段才是真实现，
+      // 见下面 `flush_bug_queue 追加段`），此处不再传。
         ) {
         Ok(j) => {
           // —— flush_bug_queue 追加段（append-only，不改上面任何代码）——
