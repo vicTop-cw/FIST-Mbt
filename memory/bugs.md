@@ -6127,3 +6127,73 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 
 ### FIXED(2026-10-22T11:20:00Z / BUG-379)
 - evidence: `git rm src/ops/rhop_native_wbtest.mbt`（孤儿测试：引用从未存在的 `rhop_poll_once`）+ `moon info` 重生成 `src/ops/pkg.generated.mbti`（孤儿声明消失）；实测 `moon check --target js` **rc=0 / 0 errors / `[4021]` 计数 0**（修前 6 × `[4021] is unbound`，`moon test` 10s 内即编译红）。配套新开 BUG-380 记录 runner 面预存缺陷。
+## BUG-381 [2026-10-22T05:00:45Z] [high] OPEN
+- summary: [判据盲区] check_mbti_sync 对泛型顶层 `pub fn[T : …]` 双向隐形——声明与定义两侧正则都要求 fn 后有空格，[ 开头的类型参数列表两侧皆不匹配 ⇒ 这类声明不进判据宇宙；master 上它对悬空的 rhop_poll_once 判 PASS（675 条"全有定义"），正是本轮编译回归溜过的那道门
+- detail: 现象（2026-10-22 实测，master f6560010）：`python scripts/check_mbti_sync.py` 报
+「PASS … 24 份 .mbti 的 **675** 条 pub 声明（6 种形状）在同包 .mbt 里都有定义」，
+而 `src/ops/pkg.generated.mbti` 里 `pub fn[T : @rhop.RhopCipher] rhop_poll_once(...)` 在 `src/**` **零定义**
+（该丢件正是 master 三臂 CI 恒红在 Migrate 的根因，见 BUG-374/PR#12）。判据给的是**假绿**。
+
+根因：SHAPES["fn"] 两侧正则都要求 `fn` 后**有空格再接名字**——
+声明侧 `^\s*pub fn (\w+)`、定义侧 `^\s*(?:pub(?:\(all\))? )?fn (\w+)`。
+泛型顶层 fn 的写法是 `pub fn[T : …] name(...)`（`fn` 后紧跟 `[`），两侧 `\w+` 都匹配不上
+⇒ **这类声明根本不进判据宇宙**，源件丢了它也无从判红。实测对声明与定义两行单独跑正则均返回 None。
+
+影响面：全仓当且仅当 1 个泛型顶层 fn（就是 rhop_poll_once）⇒ 这条盲区恰好罩住了本轮唯一的编译回归；
+若将来泛型顶层 fn 增多，本尺对它们的悬空声明一律判 PASS（假绿面随数量线性扩大）。
+
+修法（已在本会话实测两向）：两侧正则放宽为可选 `[...]` 段
+（`^\s*pub fn(?:\[[^\]]*\])? (\w+)` / `^\s*(?:pub(?:\(all\))? )?fn(?:\[[^\]]*\])? (\w+)`），
+`--selftest` 增三格：泛型声明入集 / 泛型定义入集 / 悬空泛型声明必红（三格在旧正则下必红，构成变异自证）；
+汇总自述同步补「泛型顶层 fn 两格 + 悬空一格」（J10 判据范围自述==实现）。
+读数：master 上由「675 PASS」变「676 条扫描、1 违例，精确点名 src/ops/pkg.generated.mbti 的 rhop_poll_once」；
+在含该实现的分支（PR#12）上仍 **PASS 676 条、零误报**。
+
+限制（如实标注）：只认单行类型参数列表；`pub fn[\n  T : Foo,\n] name` 这类跨行写法的名字在后续行，
+仍需改为跨行状态机（本仓现无此形态）。
+- reported_by: lead-2 (PR#12 取证时实测)
+
+## BUG-382 [2026-10-22T05:06:29Z] [medium] OPEN
+- summary: [CI native 臂] reapply.sh 硬失败于已移除依赖 mizchi/sqlite——v0.3.10 换 daqing/sqlite@0.4.0 后 .mooncakes/mizchi 永不存在，native 双臂卡在 Reapply 步、heap gate 判据被挡（修于 PR #15）
+- detail: 现象（PR #15 CI 实测，job 119622405259 / 119616495085）：`bash patches/sqlite-bug133/reapply.sh --force` 报
+`找不到目标 stub.c：…/.mooncakes/mizchi/sqlite/stub.c`，rc=1，native 双臂因此每跑必停在 `Reapply` 步。
+
+根因：reapply.sh L32 把 TARGET_STUB 钉死 `mizchi/sqlite`；v0.3.10(9e0064a0) 把 native 后端换成
+`daqing/sqlite@0.4.0`（不透明外部类型 `type Sqlite3` + `#borrow`，133 族缺陷大概率不存在）。
+本机实测 `.mooncakes/` 已无 mizchi 目录（`Test-Path .mooncakes/mizchi` = False），只有 daqing；
+而 `daqing/sqlite/stub.c` 已用 `moonbit_make_bytes`（14 处）⇒ 旧补丁对新后端不适用，
+但脚本仍无条件硬失败 ⇒ 把 owner 裁决③设的 `Native heap gate` 挡在门口，native 覆盖「断且沉默」。
+
+修法（已实现于 PR #15，PR #13 为同内容旧基线版已关闭）：`backend_state()` 读 moon.mod 判
+mizchi / switched / unknown 三态——确证已不声明 mizchi ⇒ SKIP + exit 0 放行到 heap gate 真验；
+仍 mizchi 却没解包 / 读不到 moon.mod ⇒ 维持硬失败（unknown 不猜成「已换」，保留 2026-10-13
+「moon update 不解包」纠正注记）。`--selftest` 四格合成树驱动（S1 已换⇒SKIP0 / S2 仍mizchi未解包⇒失败1 /
+S3 读不到⇒保守失败1 / S4 已是修复版⇒跳过0），S1=0 与 S2=1 的差异即分类生效自证。
+实测：bash -n rc=0；--selftest 4/4 OK；daqing worktree 三模式(apply/--force/--verify) 全 SKIP rc=0。
+
+编号说明：本条最初以 BUG-380 入账，随后账本被并行 lane 重写（BUG-379/380 被重新分配为
+orphan-test 与 Windows moon-test-runner 两条），原条目丢失，故按新号重录。后续层 BUG-383 另记。
+- reported_by: lead-2（重录：原 BUG-380）
+
+## BUG-383 [2026-10-22T05:06:55Z] [medium] OPEN
+- summary: [CI native 判据漂移] e2e_native_heap_probe.py 自含小项目钉死 import mizchi/sqlite——主仓换 daqing 后 owner 裁决③的 heap gate 测的是旧后端；reapply 解锁后门仍不覆盖真正发布的 FFI 形态（BUG-382 的后续层，三档处置留 owner）
+- detail: 现象（静态取证）：`scripts/blackbox/e2e_native_heap_probe.py` 在 `temp/native_heap_probe` **自建**小项目
+（PROBE_DIR，moon.pkg 由脚本 L93-96 现写），`MOON_PKG` 钉死 `import "mizchi/sqlite"`，main.mbt 只走该依赖的
+公开 API 制造分配压力。即：它测的是 **mizchi** 的崩溃概率，与主仓当前后端无关。
+
+v0.3.10 后 `src/store` 全走 daqing；owner 裁决③「探针当门」的语义因此漂移到旧后端上——即使 BUG-382
+（reapply 硬失败）被修掉、SKIP 放行到 gate，门读数也只回答"mizchi 会不会崩"，不回答"我们真正发布的
+daqing FFI 会不会崩"。若 133 族缺陷在 daqing 上确实不存在，这道门就从判据变成遗物（且它的存在会继续
+把 mizchi 依赖带进 CI 构建路径）。
+
+处置选项（CI 判据语义变更，金条四留 owner/指挥官拍）：
+① 探针改指 daqing/sqlite（公开 API 同形：`Database::open/exec/prepare`、`SqlValue::Int/Text` 已核对兼容）
+   → 门继续当"现后端内存安全抽检"，须重跑 `--runs 12` 建新基线（0/N 契约语义沿用）。
+② 判定 daqing FFI 形态（opaque extern type + #borrow）从根上没有 133 族缺陷 → 撤 native 双臂的 heap gate
+   + reapply 两步、退役 `patches/sqlite-bug133/`，J11 守卫随之自然失效。
+③ 过渡期双探针（mizchi 历史 + daqing 现役）分开报读数——成本最高，不建议。
+判据：选一之前须先真跑 ① 形态的 `--runs 12` 拿 daqing 实测（探针 POSIX-only 出数，Windows 需 native-env.ps1 或 WSL）。
+
+编号说明：本条最初以 BUG-381 入账，账本被并行 lane 重写后原条目丢失，故按新号重录。
+- reported_by: lead-2（重录：原 BUG-381）
+

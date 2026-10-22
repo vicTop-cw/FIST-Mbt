@@ -93,7 +93,7 @@ pub fn diff_lines(old : String, new : String) -> Array[DiffOp] {
 }
 
 ///|
-/// 按行分割（保留行内容，不含换行符；末尾空行忽略）。
+/// 按行分割（保留行内容，不含换行符；末尾若有空行则保留）。
 fn split_lines(s : String) -> Array[String] {
   let lines : Array[String] = []
   let mut start = 0
@@ -105,6 +105,10 @@ fn split_lines(s : String) -> Array[String] {
   }
   if start < s.length() {
     lines.push(s[start:].to_owned())
+  } else if start > 0 && s[start - 1] == '\n' {
+    // 以 \n 结尾的末尾空行不能被静默丢掉：原实现忽略它导致
+    // diff_lines("a\n", "a") 判为无差异（尾部换行差异漏报）。
+    lines.push("")
   }
   lines
 }
