@@ -50,6 +50,21 @@ jobs:
           python3 scripts/check_mbti_sync.py --selftest
           python3 scripts/check_mbti_sync.py
 
+      # position-why: R84 (TASK-003)。观测臂而非硬门禁——--gate 现读 rc=1（判定面 36 > 上限 25，
+      # 超 11 条），真门禁化是升档决定（BUG-367 ④），留 owner 裁决；红不红如实给读数。
+      - name: Plan-landing ratchet gate (观测臂：升档待 owner 裁，BUG-367 ④)
+        shell: bash
+        continue-on-error: true
+        run: python3 scripts/check_plan_landing.py --gate
+
+      # position-why: R84 (TASK-003 ①③)。CI #275 实证 Migrate 失败会 skip 其后全部步骤——
+      # 本守卫管的就是这个放大器，自己必须住在 Migrate 之前。
+      - name: CI-step-position guard (TASK-003：gate 步骤位置纪律 + position-why 棘轮)
+        shell: bash
+        run: |
+          python3 scripts/check_ci_step_position.py --selftest
+          python3 scripts/check_ci_step_position.py
+
       - name: Migrate mooncakes dep manifests (新版 moon 拒旧 moon.mod.json，check/test 全线的公共前置)
         shell: bash
         run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
