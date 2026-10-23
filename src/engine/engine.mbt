@@ -1629,11 +1629,11 @@ fn extract_needs(desc : String) -> Array[String] {
     if has_need {
       let s = sv.to_owned()
       let after = if sv.has_prefix("需要:") {
-        s.substring(start="需要:".length()).trim()
+        s["需要:".length():].trim()
       } else if sv.has_prefix("需要：") {
-        s.substring(start="需要：".length()).trim()
+        s["需要：".length():].trim()
       } else if sv.has_prefix("need:") {
-        s.substring(start="need:".length()).trim()
+        s["need:".length():].trim()
       } else if sv.has_prefix("requires:") {
         s.substring(start="requires:".length()).trim()
       } else if sv.has_prefix("能力:") {

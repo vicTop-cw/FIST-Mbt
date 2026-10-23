@@ -85,7 +85,7 @@ fn mr_try_parse(raw : String) -> Result[Json, Unit] {
 /// 坏 JSON 是证据：只计数告警，绝不删除/覆盖（与 `mr_read` 同款"坏状态不删"纪律）。
 fn mr_caf_read_diag(project_dir : String, ns : String) -> (Bool, Bool, Json) {
   let path = mr_caf_state_path(project_dir, ns)
-  if not(@fs.path_exists(path)) {
+  if !(@fs.path_exists(path)) {
     return (false, false, Json::null())
   }
   let raw = @fs.read_file_to_string(path, encoding="utf8") catch { _ => "" }
@@ -885,7 +885,7 @@ async fn ofm_execute_http(
   }
   let fail_kind = @router.classify_ofm_failure(http_status, resp.error_type)
   let quota_note = if routed_by_pool {
-    match mr_record_only(project_dir, ns~, model, ok=not(resp.is_error)) {
+    match mr_record_only(project_dir, ns~, model, ok=!resp.is_error) {
       Ok(_) => "recorded(\{model})"
       Err(e) => "record_failed: \{e}"
     }
