@@ -13,6 +13,15 @@ Standard library only (sys, re). No third-party dependencies.
 import re
 import sys
 
+# BUG-138（BUG-58 同族）：本脚本往 stderr 打中文结论（❌ 那两行）——Windows 默认 cp936
+# 控制台下 print 会当场 UnicodeEncodeError，拿到 traceback 而不是 verdict，而且崩在结论行
+# 之前留下的 rc 会被读成「缺陷在场」（判据自己的崩不许冒用被测的退出码）。
+# CI 在 Linux UTF-8 下是无损 no-op。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 MAIN_REFS = {"refs/heads/main"}
 BLOCK_MSG = (
     "❌ 主仓只允许指挥官 merge 合入，禁止直 push gitcode/main"
