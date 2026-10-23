@@ -1227,6 +1227,10 @@ pub fn FistEngine::plan_revise(
   let sub = self.subtree_ids(root_task_id)
   // 显式反馈表：task_id -> ok（覆盖读状态）
   let fb : Map[String, Bool] = Map([])
+  // R137：被丢弃的反馈必须计数——旧实现静默 `_ => ()`，可 basis 只看 feedback.is_empty()，
+  // 于是「一条都没生效」也会回 basis="feedback"，把状态读数冒称成反馈依据。
+  let mut fb_ignored = 0
+  let parsed_ids : Array[String] = []
   for f in feedback {
     let tid_opt = match f.value("task_id") {
       Some(Json::String(s)) => Some(s)
@@ -1242,11 +1246,35 @@ pub fn FistEngine::plan_revise(
       _ => None
     }
     match (tid_opt, ok_opt) {
-      (Some(tid), Some(okv)) => fb.set(tid, okv)
-      _ => ()
+      (Some(tid), Some(okv)) =>
+        if tid == "" {
+          fb_ignored = fb_ignored + 1
+        } else {
+          fb.set(tid, okv)
+          parsed_ids.push(tid)
+        }
+      _ => fb_ignored = fb_ignored + 1
     }
   }
-  let basis = if feedback.is_empty() { "status" } else { "feedback" }
+  let mut fb_unmatched = 0
+  for tid in parsed_ids {
+    if !sub.contains(tid) {
+      fb_unmatched = fb_unmatched + 1
+    }
+  }
+  let fb_applied = parsed_ids.length() - fb_unmatched
+  let flags : Array[String] = []
+  if fb_ignored > 0 {
+    flags.push("feedback_unparsed:" + fb_ignored.to_string())
+  }
+  if fb_unmatched > 0 {
+    flags.push("feedback_unmatched:" + fb_unmatched.to_string())
+  }
+  let basis = if feedback.is_empty() || fb_applied == 0 {
+    "status"
+  } else {
+    "feedback"
+  }
   // 证据判定：ok / no / ?
   let ev : Map[String, String] = Map([])
   for id in sub {
@@ -1344,6 +1372,13 @@ pub fn FistEngine::plan_revise(
     "ok": Json::boolean(true),
     "root_task_id": Json::string(root_task_id),
     "basis": Json::string(basis),
+    "feedback": Json::object({
+      "total": Json::number(feedback.length().to_double()),
+      "applied": Json::number(fb_applied.to_double()),
+      "ignored": Json::number(fb_ignored.to_double()),
+      "unmatched": Json::number(fb_unmatched.to_double()),
+    }),
+    "flags": Json::array(flags.map(fn(s) { Json::string(s) })),
     "keep_count": Json::number(keep.length().to_double()),
     "rework_count": Json::number(rework.length().to_double()),
     "ready_count": Json::number(ready.length().to_double()),
@@ -1351,7 +1386,7 @@ pub fn FistEngine::plan_revise(
     "rework": Json::array(rework.map(fn(s) { Json::string(s) })),
     "ready": Json::array(ready.map(fn(s) { Json::string(s) })),
     "note": Json::string(
-      "反馈驱动的计划修订（ReAct 交错 + CoPAL 分级纠正蒸馏）：keep=已证有效承诺保留 / rework=失败或其依赖链受牵连需返工（控涟漪）/ ready=依赖全部有效且未执行，下一步可做。",
+      "反馈驱动的计划修订（ReAct 交错 + CoPAL 分级纠正蒸馏）：keep=已证有效承诺保留 / rework=失败或其依赖链受牵连需返工（控涟漪）/ ready=依赖全部有效且未执行，下一步可做。feedback 条目须为 {task_id: 非空字符串, ok: 布尔}：类型不符计入 feedback.ignored（flags=feedback_unparsed:N），任务不在子树计入 feedback.unmatched（flags=feedback_unmatched:N）；只有至少一条真正作用到本子树时才回 basis=\"feedback\"，否则按真实状态出计划并回 basis=\"status\"。",
     ),
   })
 }

@@ -1,6 +1,6 @@
 import {
   "cc06b/mooncry/lib" @mooncry,
-  "moonbitlang/core/encoding/utf8" @utf8,
+  "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/debug",
   "moonbitlang/core/json",
 }
