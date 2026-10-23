@@ -27,8 +27,13 @@ if hasattr(sys.stderr, "reconfigure"):
 ROOT = Path(__file__).resolve().parent.parent
 EXC = ("_build", "temp", ".git", "node_modules")
 
-def run(cmd, cwd=None, capture=True):
-    r = subprocess.run(cmd, cwd=cwd or ROOT, capture_output=capture, text=True, encoding="utf-8", errors="replace")
+# R125 纪律：spawn `moon` 的常驻入口必须带 MOONC_OVERRIDE——干净 PATH + 冷 _build 时
+# moonc 会撞 `Sys_error("\\\\?: Invalid argument")` 路径 ICE（工具链缺陷，见 BUG-380 同族），
+# 不接线就会把工具链故障记成「分支构建失败」。本脚本的 auto_merge 门② 会真跑 moon build。
+from moon_env_probe import moon_env
+
+def run(cmd, cwd=None, capture=True, env=None):
+    r = subprocess.run(cmd, cwd=cwd or ROOT, capture_output=capture, text=True, encoding="utf-8", errors="replace", env=env)
     return r
 
 def sh(*args, cwd=None):
@@ -275,7 +280,7 @@ def auto_merge(candidates):
         # 门②：构建
         shutil.rmtree("_build", ignore_errors=True)
         b = run(["moon", "build", "--target", "js", "src/server", "src/engine",
-                 "src/store", "src/router", "src/ops"])
+                 "src/store", "src/router", "src/ops"], env=moon_env())
         if b.stdout.count("Error:") > 0:
             run(["git", "reset", "--hard", f"HEAD~{picked}"])
             print("    ❌ build 有 Error → 回滚本支")
