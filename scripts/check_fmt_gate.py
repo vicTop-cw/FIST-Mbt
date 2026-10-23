@@ -47,7 +47,7 @@ BROKEN_SIGNATURES = (
 )
 
 
-def classify(moon_rc, output):
+def run(moon_rc, output):
     """纯函数：把 (moon 的 rc, 输出) 判成 'clean' / 'degraded' / 'red'。
 
     - 只有 rc==0 才是 clean；
@@ -70,17 +70,17 @@ def selftest():
     def cell(name, got, want):
         cells.append((name, got == want, "got=%r want=%r" % (got, want)))
 
-    cell("clean-when-rc0", classify(0, "Finished. moon: ran 3 tasks"), "clean")
+    cell("clean-when-rc0", run(0, "Finished. moon: ran 3 tasks"), "clean")
     cell("degraded-on-format-dir-missing",
-         classify(-1, 'error: open("\\\\?\\E:\\p\\_build\\wasm-gc\\release\\format\\lib.mbt"): No such file\n'
+         run(-1, 'error: open("\\\\?\\E:\\p\\_build\\wasm-gc\\release\\format\\lib.mbt"): No such file\n'
                       'fatal: cannot hash \\\\?\\E:\\p\\_build\\wasm-gc\\release\\format\\lib.mbt\n'
                       'Error: failed when formatting project'), "degraded")
     cell("degraded-even-without-backslash",
-         classify(1, "error: _build/wasm-gc/release/format/a.mbt: No such file"), "degraded")
+         run(1, "error: _build/wasm-gc/release/format/a.mbt: No such file"), "degraded")
     cell("red-on-plain-diff",
-         classify(1, "--- a/lib.mbt\n+++ b/lib.mbt\n@@ -1 +1 @@\n-old\n+new"), "red")
-    cell("red-on-generic-failure", classify(255, "Error: fmt found unformatted files"), "red")
-    cell("rc0-wins-over-noise", classify(0, "warning: something\nFinished."), "clean")
+         run(1, "--- a/lib.mbt\n+++ b/lib.mbt\n@@ -1 +1 @@\n-old\n+new"), "red")
+    cell("red-on-generic-failure", run(255, "Error: fmt found unformatted files"), "red")
+    cell("rc0-wins-over-noise", run(0, "warning: something\nFinished."), "clean")
 
     bad = [(n, w) for n, ok, w in cells if not ok]
     if bad:
@@ -98,7 +98,7 @@ def main(argv):
     p = subprocess.run(["moon", "fmt", "--check"], cwd=ROOT, capture_output=True, text=True,
                        encoding="utf-8", errors="replace")
     out = (p.stdout or "") + (p.stderr or "")
-    verdict = classify(p.returncode, out)
+    verdict = run(p.returncode, out)
     first = [l for l in out.strip().splitlines() if l.strip()][:2]
     print("  moon fmt --check rc=%d" % p.returncode)
     for l in first:

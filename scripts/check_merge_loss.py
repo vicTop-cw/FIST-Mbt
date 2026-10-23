@@ -85,7 +85,7 @@ def file_lines(cwd, rev, path):
     return {l.strip() for l in out.splitlines() if l.strip()}
 
 
-def analyze(cwd, rev="HEAD", paths=DEFAULT_PATHS, only_registration=True):
+def run(cwd, rev="HEAD", paths=DEFAULT_PATHS, only_registration=True):
     """返回 (verdict, detail): verdict ∈ {"clean","loss","unknown"}。"""
     rc, parents = git(["rev-list", "--parents", "-n", "1", rev], cwd)
     if rc != 0:
@@ -159,7 +159,7 @@ def selftest():
         g("merge", "--no-ff", "--no-commit", "-m", "merge A (lossy)", "sideA")
         w("scripts/README.md", base_readme + "- `gamma.py` — B 侧新增（保留）\n")
         g("add", "-A"); g("commit", "-q", "-m", "merge A (lossy)")
-        verdict, detail = analyze(d, "HEAD", paths=("scripts/README.md",))
+        verdict, detail = run(d, "HEAD", paths=("scripts/README.md",))
         cell("detects-loss", verdict, "loss")
         cell("loss-count-1", len(detail.get("missing", [])), 1)
         cell("loss-names-line", "beta.py" in detail["missing"][0]["line"], True)
@@ -179,14 +179,14 @@ def selftest():
         r1 = g("merge", "-q", "--no-ff", "-m", "merge D", "sideD")
         r2 = g("merge", "-q", "--no-ff", "-m", "merge C", "sideC")
         cell("fixture-merges-succeed", (r1.returncode, r2.returncode), (0, 0))
-        verdict2, _ = analyze(d, "HEAD", paths=("scripts/run_guards.py", "scripts/README.md"))
+        verdict2, _ = run(d, "HEAD", paths=("scripts/run_guards.py", "scripts/README.md"))
         cell("clean-merge-no-false-positive", verdict2, "clean")
 
         # 场景 C：非 merge commit ⇒ unknown（拒绝出结论）
         g("checkout", "-q", "-B", "plain")
         w("scripts/README.md", read("scripts/README.md") + "- `zeta.py` — 普通提交\n")
         g("add", "-A"); g("commit", "-qm", "plain commit")
-        verdict3, _ = analyze(d, "HEAD", paths=("scripts/README.md",))
+        verdict3, _ = run(d, "HEAD", paths=("scripts/README.md",))
         cell("non-merge-unknown", verdict3, "unknown")
     finally:
         shutil.rmtree(d, ignore_errors=True)
@@ -211,7 +211,7 @@ def main(argv):
     if args.selftest:
         return selftest()
     paths = tuple(p.strip() for p in args.paths.split(",") if p.strip()) or DEFAULT_PATHS
-    verdict, detail = analyze(ROOT, args.rev, paths, only_registration=not args.all_lines)
+    verdict, detail = run(ROOT, args.rev, paths, only_registration=not args.all_lines)
     if verdict == "unknown":
         print("  判据无法自证：%s（rc=2，拒绝判绿也拒绝判红）" % detail.get("reason"))
         return 2

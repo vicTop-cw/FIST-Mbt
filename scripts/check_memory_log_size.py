@@ -98,6 +98,18 @@ def selftest():
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
+    # 调用面锁（BUG-405）：selftest 必须能从调用图到达 main/run 面——否则
+    # 「--selftest 绿」与「真跑判据」是两条脱钩的路（BUG-366 一族）。喂 temp root，
+    # run 的 IO 走 temp 夹具，不触仓库现状面（hermetic H1 不红）。
+    d2 = tempfile.mkdtemp(prefix="memlog-callface-")
+    try:
+        os.makedirs(os.path.join(d2, "memory"), exist_ok=True)
+        io.open(os.path.join(d2, "memory", "empty.md"), "w", encoding="utf-8").close()
+        rc = run(d2, 2.0, 0.5)
+        cell("callface-run-rc-0", rc, 0)
+    finally:
+        shutil.rmtree(d2, ignore_errors=True)
+
     bad = [(n, w) for n, ok, w in cells if not ok]
     if bad:
         print("SELFTEST FAIL：")
@@ -108,15 +120,8 @@ def selftest():
     return 0
 
 
-def main(argv):
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--max-mb", type=float, default=2.0)
-    ap.add_argument("--max-dup-ratio", type=float, default=0.5)
-    ap.add_argument("--selftest", action="store_true")
-    args = ap.parse_args(argv)
-    if args.selftest:
-        return selftest()
-    d = os.path.join(ROOT, "memory")
+def run(root, max_mb, max_dup_ratio):
+    d = os.path.join(root, "memory")
     if not os.path.isdir(d):
         print("FATAL 扫描面为空（%s 不存在）—— 判据无法自证，拒绝报绿" % d)
         return 2
@@ -128,7 +133,7 @@ def main(argv):
     for f in files:
         p = os.path.join(d, f)
         try:
-            st = scan(p, args.max_mb, args.max_dup_ratio)
+            st = scan(p, max_mb, max_dup_ratio)
         except OSError as e:
             print("  %-26s 读不动: %s" % (f, e))
             reds.append((f, "unreadable"))
@@ -141,13 +146,26 @@ def main(argv):
             reds.append((f, st["verdict"]))
     if reds:
         print("\nFAIL %d 个日志文件失控（体积 > %.1f MB 或重复率 > %.0f%%）："
-              % (len(reds), args.max_mb, args.max_dup_ratio * 100))
+              % (len(reds), max_mb, max_dup_ratio * 100))
         print("  失控追加会让 `git push` 被 GitHub 100MB 限制直接拒收（R59 实测：整条 origin 线冻结），")
         print("  也会让 `git worktree add` OOM。处置：按空行分段去重（保留首次出现的段块）后提交，")
         print("  历史面的大 blob 只能靠 filter-repo 重写（**不可逆，须 owner 裁决**）。")
         return 1
     print("\nPASS 全部 %d 个日志文件在体积与重复度上限内" % len(files))
     return 0
+
+
+def main(argv):
+    """CLI 入口：解析 argv 后把判据逻辑交给 run(root, …)。selftest 走 run 的 temp 夹具。"""
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--max-mb", type=float, default=2.0)
+    ap.add_argument("--max-dup-ratio", type=float, default=0.5)
+    ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--root", default="")
+    args = ap.parse_args(argv)
+    if args.selftest:
+        return selftest()
+    return run(args.root or ROOT, args.max_mb, args.max_dup_ratio)
 
 
 if __name__ == "__main__":
