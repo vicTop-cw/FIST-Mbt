@@ -530,6 +530,10 @@ REGISTRY = {
     "blackbox/e2e_guard_mutation.py": "端到端探针：「判据会不会咬」变异测试（clone + 造违例 + 复跑），跑法见 scripts/README.md",
     "blackbox/e2e_upgrade_mirror.py": "端到端探针：升级镜像真装（网络 + 沙箱），跑法见 scripts/README.md",
     "blackbox/patch_esm_main.py": "构建辅助：mcp_smoke/demo 启动前幂等注入 require shim（CI 在用，不单独当格跑）",
+    # 2026-10-24（R46）：夹具 git 环境隔离的**单一真源**——纯辅助库（只定义 `isolated_git_env()`），
+    # 无独立判据语义；它的正确性由 `check_git_sandbox_hygiene.py`（普查棘轮）+ 自身 `--selftest`
+    # 8 格 + 8 个接线脚本的 selftest 共同覆盖，故进 REGISTRY 带理由而不单独当格。
+    "git_env.py": "辅助库：夹具 git 环境隔离单一真源（isolated_git_env），正确性由沙箱普查棘轮与自身 selftest 覆盖",
     "caf_offline_replay.py": "CAF 实验重放（长跑/需语料）",
     "caf_p2c_ab_preflight.py": "CAF A/B 预检（长跑/需语料）",
     "caf_p2d_coldstart_ab.py": "CAF 冷启动 A/B（长跑/需语料）",
