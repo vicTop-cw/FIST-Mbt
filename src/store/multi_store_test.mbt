@@ -234,3 +234,51 @@ test "data_dir 只接受相对路径（BUG-78 成对）" {
   assert_true(ms.ns_list().contains("b78ok"))
   ms.close_all()
 }
+
+///|
+/// 回归锁（2026-10-23，R28）：`MultiStore::new` 必须补建缺失的 `data_dir` 树。
+///
+/// 缺陷形状（产品修复已在 main 落地，本锁补的是"没锁"）：`SqliteStore::open` 把
+/// `{data_dir}/{ns}.db` 原样交给 SQLite，而 **SQLite 不创建中间目录**；干净检出上 `.fist-mbt/data`
+/// 不存在 ⇒ 打开命名空间库时 js 侧 daqing FFI **throw**（不是返回 null）⇒ 未捕获异常打死 serve。
+/// 实测触发路径就是本仓对外宣称的一键自检 `python scripts/mcp_smoke.py`（干净树上先崩在 publish）。
+test "multi_store: 深层 data_dir 下打开命名空间库会补建目录（干净检出不再 unable to open）" {
+  let base = "temp/r28_mkdir_case"
+  let deep = base + "/a/b"
+  // 自内向外清场（remove_dir 只删空目录）⇒ 下面的 assert_false 才真证明"原本不存在"
+  for p in [deep, base + "/a", base] {
+    @fs.remove_dir(p) catch {
+      _ => ()
+    }
+  }
+  assert_false(@fs.path_exists(deep))
+  let ms = @store.MultiStore::new(data_dir=deep)
+  // 断言**有效行为**而不是"new 有没有预建目录"：main 的设计是在 open 时兜底补建
+  // （`MultiStore::get/open → SqliteStore::open → ensure_db_parent_dir`），
+  // new 本身不建目录也能工作。锁实现细节会把正常重构误判成回归。
+  assert_true(ms.open(ns="r28deep", data_dir=""))
+  ms.close_all()
+  assert_true(@fs.path_exists(deep + "/r28deep.db"))
+}
+
+///|
+/// 回归锁（2026-10-23，R28）：`SqliteStore::open` 必须为**任意 db 路径**补建父目录。
+///
+/// 覆盖 `MultiStore::new` 管不到的那一面：调用方把 `FIST_DB_PATH` 指到**不存在的深层目录**。
+/// 同一根因（SQLite 不建中间目录 + FFI 打开失败是 throw），这一面由 `ensure_db_parent_dir` 兜住。
+test "sqlite_store: open 补建深层父目录（FIST_DB_PATH 指新目录不再抛）" {
+  let base = "temp/r28_deep_case"
+  let deep = base + "/x/y"
+  for p in [deep, base + "/x", base] {
+    @fs.remove_dir(p) catch {
+      _ => ()
+    }
+  }
+  assert_false(@fs.path_exists(deep))
+  let db_path = deep + "/probe.db"
+  match @store.SqliteStore::open(db_path) {
+    None => abort("open 失败：深层父目录未被补建 ⇒ 这类 FIST_DB_PATH 仍会打死 serve")
+    Some(s) => ignore(s.clear())
+  }
+  assert_true(@fs.path_exists(db_path))
+}
