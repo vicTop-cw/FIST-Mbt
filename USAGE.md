@@ -32,7 +32,7 @@ FIST 指挥官任务分配体系（原 Python 版 FIST）的 **纯 MoonBit 原�
 
 ## 2. 前置与构建
 
-依赖：MoonBit 工具链 ≥ `0.1.20260827`（需支持 `errdefer` 与 `async`）。
+依赖：MoonBit 工具链 ≥ `0.1.20261016`（本仓使用 `is` 模式匹配表达式，更早的工具链在 `moon check` 阶段即红）。
 
 ```bash
 moon check                  # 类型检查
