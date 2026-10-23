@@ -517,8 +517,11 @@ REGISTRY = {
     "fist_mbt_mcp_client.py": "MCP 客户端演示（需 server 活着）",
     "gen_apply_pdf.py": "按需生成器（产出报告 PDF，无门禁语义）",
     "gen_help_docs.py": "按需生成器（产出帮助文档，drift 由 doc_surface 面另判）",
-    "fix_esm_require.py": "构建后置修复（给 moon 的 ESM 产物注入 createRequire 垫片，幂等；由 mcp_smoke/demo 启动链调用，不单独当格跑）",
-    "pol_keeper_run.py": "POL 长跑守卫（需宿主进程持续存活，无固定入参）",
+    # 2026-10-24： /  两条登记已撤——它们指向的脚本
+    # **不在跟踪面**（ 第 110/111/135/137 行点名忽略，只存在于本机工作树）。
+    # 为什么必须撤：G2 判据「登记面点名的脚本不存在 ⇒ FATAL(rc=2)」在别的机器/CI 上会把
+    # **整台电池**卡死在 FATAL ⇒ 90+ 格一个都跑不出来（ 实测就是这条）。
+    # 登记表是「在册但不当格跑」的说明，脚本不在仓里就不该在册——与 BUG-373「先入账再引用」同律。
     "issue_scan.py": "MCP issue_scan 的 CLI 辅助入口（能力面由 src/server 白盒锁覆盖）",
     "laya_decide.py": "Laya 决策 CLI（无门禁语义）",
     "mcp_bug_loop.py": "MCP bug 闭环长跑（需 server 活着）",
@@ -557,16 +560,53 @@ KNOWN_NO_FACE = {
 }
 
 
+def _tracked_scripts():
+    """Git 跟踪面里的 `scripts/` 脚本集合（相对 `scripts/` 的路径）。
+
+    **为什么宇宙必须先过这一面**（2026-10-24 实测的整台电池 FATAL）：
+    `.gitignore` 里有几份**本机专属**脚本（`pol_keeper_run.py` / `pol_keeper_wrapper.ps1` /
+    `pol_keeper_prompt.md` / `fix_esm_require.py`，见 `.gitignore` 第 110/111/135/137 行）。
+    旧的 `os.walk` 宇宙把工作树当宇宙 ⇒ 这些「本机有、仓里没有」的文件被要求有执行面，
+    G1 报缺面 ⇒ 有人把它们塞进 REGISTRY 图个 rc=0 ⇒ G2「登记点名的脚本不存在」在
+    **别的机器/CI 上**把整台电池卡在 FATAL(rc=2)，90+ 格一个跑不出来（`5be75f1e` 的现场）。
+
+    换个方向修：宇宙只该是**仓库里真有、且会被别人克隆到**的那批脚本。工作树里的
+    gitignored 文件是「这台机器的私人物件」，不构成「缺面」。取不到 git（非仓 / 无 git）时
+    返回 None ⇒ 调用方退回全扫（保持离线可用，不把「读不到」当「没有」）。
+    """
+    try:
+        p = subprocess.run(
+            ["git", "-C", ROOT, "ls-files", "-z", "--", "scripts"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if p.returncode != 0:
+        return None
+    tracked = set()
+    for rel in p.stdout.decode("utf-8", "replace").split("\0"):
+        if not rel:
+            continue
+        rel = rel.replace("\\", "/")
+        if rel.startswith("scripts/"):
+            tracked.add(rel[len("scripts/"):])
+    return tracked or None
+
+
 def universe_files():
     """递归扫描 scripts/ 下全部 .py（相对 scripts/ 路径名，子目录带前缀）。排除 __pycache__。
 
     本体在 2bd4dbf2（TASK-007 / R82）落过一次，其后一次手动解冲突把它从 `classify()` 的调用面上
     删掉了 ⇒ 全电池 `NameError` 起不来（2026-10-22 实测 `--list` rc=1）。宇宙一旦被改窄或改没，
     G1「无人缺面」就会以 rc=0 的形态骗人，所以这一份清单必须是真源。
+
+    2026-10-24 补：宇宙再叠一道 **Git 跟踪面**过滤（见 `_tracked_scripts`）——gitignored 的
+    本机私人物件不算「仓里的脚本」，否则 G1 会要求为它们建执行面、G2 会在别人机器上 FATAL。
     """
     out = []
     if not os.path.isdir(SCRIPTS_DIR):
         return out
+    tracked = _tracked_scripts()
     for dirpath, dirnames, filenames in os.walk(SCRIPTS_DIR):
         dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
         for fn in sorted(filenames):
@@ -575,6 +615,8 @@ def universe_files():
             full = os.path.join(dirpath, fn)
             rel = os.path.relpath(full, SCRIPTS_DIR).replace(os.sep, "/")
             if UNIVERSE_EXCLUDE_RE.search(rel):
+                continue
+            if tracked is not None and rel not in tracked:
                 continue
             out.append(rel)
     return out
