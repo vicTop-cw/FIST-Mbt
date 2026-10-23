@@ -6,11 +6,11 @@
 pre-commit 钩子里把三发 "fixture" 提交写进宿主 HEAD（钩子导出的 `GIT_DIR`/`GIT_INDEX_FILE`
 压过 `git -C <临时目录>`）；主线 `3a715a4c` 修的 `core.bare=true` 是同机制的第二实现；本会话
 普查又抓到新交付的 `check_push_guard`/`check_hardcoded_paths` 各自带一发（已修，走
-`git_sandbox.sandbox_env`）。**修一处配一把尺**——这次的尺是普查棘轮：全仓同形一次扫净，
+`git_env.isolated_git_env`）。**修一处配一把尺**——这次的尺是普查棘轮：全仓同形一次扫净，
 存量按现读封顶只许降，新尺忘隔离当场红。
 
 判据（AST 静态，不执行被检脚本、不跑 git、不动工作树）：
-  · 被检面：`scripts/**/*.py`（排除 git_sandbox.py 与本尺自身）。
+  · 被检面：`scripts/**/*.py`（排除 git_env.py 与本尺自身）。
   · 沙箱语境 = 文件里出现 `mkdtemp` / `TemporaryDirectory` 的使用（AST 调用节点）。
   · git 写面 = `subprocess.run/Popen/check_output/check_call(["git", <init|add|commit|rm>, ...])`
     （AST：字符串**提及**不算——`check_pkg_imports` 注释里的「git add」不误报；selftest
@@ -150,7 +150,7 @@ def offenders(root: Path):
     scanned = 0
     for rel in rels:
         base = rel.replace("\\", "/").split("/")[-1]
-        if base == SELF or base == "git_sandbox.py":
+        if base == SELF or base == "git_env.py":
             continue
         p = root / rel
         if not p.is_file():
