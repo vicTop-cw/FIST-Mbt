@@ -57,6 +57,7 @@ import subprocess
 import sys
 import tempfile
 from contextlib import redirect_stdout
+from git_env import isolated_git_env
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -79,7 +80,7 @@ CONTRACT_NOTE = ("moon.mod / 任意层级 moon.pkg / src/core/*.mbt / 任意 *.m
 
 def git(args, cwd):
     p = subprocess.run(["git"] + list(args), cwd=cwd, capture_output=True,
-                       text=True, encoding="utf-8", errors="replace")
+                       text=True, encoding="utf-8", errors="replace", env=isolated_git_env())
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
@@ -287,7 +288,7 @@ def selftest():
 
     def g(*a):
         return subprocess.run(["git"] + list(a), cwd=cwd, capture_output=True,
-                              text=True, encoding="utf-8", errors="replace")
+                              text=True, encoding="utf-8", errors="replace", env=isolated_git_env())
 
     def w(p, s):
         full = os.path.join(cwd, p)

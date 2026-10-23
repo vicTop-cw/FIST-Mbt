@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from git_env import isolated_git_env
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -36,7 +37,7 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 def git(*args, cwd=None):
     r = subprocess.run(["git"] + list(args), cwd=cwd or ROOT, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
+                       encoding="utf-8", errors="replace", env=isolated_git_env())
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
@@ -89,7 +90,7 @@ def selftest():
 
     def g(*a, cwd=d):
         return subprocess.run(["git"] + list(a), cwd=cwd, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace")
+                              encoding="utf-8", errors="replace", env=isolated_git_env())
     try:
         g("init", "-q", "-b", "master", ".")
         g("config", "user.email", "t@t")

@@ -30,6 +30,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from git_env import isolated_git_env
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -125,9 +126,13 @@ def selftest() -> list[str]:
 
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "t@t"], cwd=root, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "t"], cwd=root, capture_output=True)
+        # R46：夹具里的 git 调用必须带 isolated_git_env()——否则在 pre-commit 钩子环境里，
+        # git 注入的 GIT_DIR/GIT_INDEX_FILE 会盖过 cwd，把夹具的 init/config/add 落到**真仓**上
+        # （R44 实测：真工作树被连写 9 个 fixture 提交、本仓身份被改成 t/t@t）。
+        genv = isolated_git_env()
+        subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True, env=genv)
+        subprocess.run(["git", "config", "user.email", "t@t"], cwd=root, capture_output=True, env=genv)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=root, capture_output=True, env=genv)
 
         (root / "scripts").mkdir()
         (root / "reports").mkdir()
@@ -139,7 +144,7 @@ def selftest() -> list[str]:
         (root / "scripts" / "ok.py").write_text('P = "E:/repo/proj"\n', encoding="utf-8")
         # C4 家目录形状
         (root / "scripts" / "home.py").write_text('H = r"C:\\Users\\victo\\.dsh"\n', encoding="utf-8")
-        subprocess.run(["git", "add", "-A"], cwd=root, capture_output=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, capture_output=True, env=genv)
 
         files = current_face(root)
         cell("C0 扫描面非空", bool(files), "git ls-files 取不到当前面")
