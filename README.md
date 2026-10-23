@@ -3,17 +3,33 @@
 > **fist-mbt —— AI 自驱式开发的项目管理者**：一等的打磨对象只有两件——**自驱**与**递归拆解**，
 > 而它迭代自己所用的，正是这两件能力（实证见下文引言）。
 
-[![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
+[![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20261016-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1382%2F1382-brightgreen)](./src)
+[![Tests](https://img.shields.io/badge/tests-1387%2F1387-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
 **FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **170 个 MCP 工具**（17 组）暴露给任意 MCP 客户端。
 
-**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 1382 项测试全绿、跨环境可复现。
+**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 1387 项测试全绿、跨环境可复现。
 
 > 它用**它自己的**自驱式 + 递归拆解把自己打磨到了可交付态——完整自我迭代证据见 `docs/selfdrive-walkthrough.md`，CLI `python scripts/fist.py call project_standards` 可一键拉取本项目遵守的 AI 开发规范。
 > 「它说自己有效」不算证据：本项目的**叙事与实证面**在伴生仓 **fist-evidence** <https://github.com/vicTop-cw/fist-evidence>——三组受控实验 + 十份真实项目驱动实例（覆盖八项目），报告/日志/裁判测试一字可回溯（详见「资源」节）。
+
+---
+
+## ⚠️ 环境要求（先看这一节：装错工具链会直接编不过）
+
+- **MoonBit ≥ 0.1.20261016**——本仓使用 `is` 模式匹配表达式（`d799f56` 起替代已移除的 `is_ok` / `is_err`），更早的工具链在 `moon check` 阶段就会红。新环境先 `moon update` 刷新 registry（依赖全公开，无私有包）。
+- **Node.js ≥ 24**（JS 目标必需）——SQLite JS 后端依赖 `node:sqlite` 的 `returnArrays`；node < 24 会退化为对象行，列读取为空。
+- **Native 目标**：系统 SQLite 开发库（`sqlite3.h` + `sqlite3.lib`）。一键装载：`pwsh ./scripts/native-env.ps1`；Windows 需 VS Build Tools，细节见 AGENTS.md「native 目标构建环境要求」。
+- **Windows 上跑 `moon test --target js`**：若 PATH 上的 `node` 是 `node.cmd` / `.bat` 垫片，测试参数经 `cmd.exe` 转发会吞掉引号（BUG-380）⇒ 用 `python scripts/moon_test_env.py --target js`（自动剔除垫片并注入 `MOONC_OVERRIDE`，同时绕开 moonc 的 `\\?\` 路径 ICE）。
+
+> **JS 后端**：`moon test --target js` = **1387/1387**（2026-10-22 Windows 实测；权威稳定门槛 = JS 后端）。
+> **Native 后端**：2026-10-01 在 WSL ubuntu-22.04 实测 `moon test --target native -j 1` = **572/572**（与 JS 同数，工作树含上几轮构建残留时）；
+> 同一 commit 的 `git archive HEAD` **干净树**上同一条命令必崩（native 测试二进制被信号打死），根因在依赖的 native FFI，
+> 见账本 BUG-133 与判据 `scripts/blackbox/e2e_native_heap_probe.py`；上一版这句写的是「native 未复跑」，就此作废。边界条款见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
+> **CI 的 native 臂已按 2026-10-01 owner 裁决③改造**：两条臂都在全量测试前挂 `Native heap gate (BUG-133 探针当门)`，
+> 跑的就是上面那支判据；红话逐字点名 BUG-133，`crashes=0/12` 才放行全量测试（测试步骤没删，依赖修好后这一臂自己恢复覆盖）。
 
 ---
 
@@ -32,7 +48,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 1. ✅ MCP 工具注册了？ → `server.mbt` instrumented_tool 块
 2. ✅ CLI 封装到位？ → `scripts/fist.py call <tool>` 或独立 `scripts/xxx.py`
 3. ✅ Skill 文档写了？ → `docs/xxx-skill.md`
-4. ✅ `moon test` 全绿？ → 1382/1382 零回归（`--target js`，本轮 CI 实测）
+4. ✅ `moon test` 全绿？ → 1387/1387 零回归（`--target js`，本轮 CI 实测）
 5. ✅ 交付物过 `output_validate` L4 硬门？ → verdict=pass
 6. ✅ README / AGENTS.md 计数同步？ → 工具数、测试数
 7. ✅ 插件态已重生成且与真源一致？ → `python scripts/gen_plugins.py && python scripts/check_plugin_sync.py`（cl7）
@@ -103,7 +119,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 # 1. 构建 + 测试
 moon update            # 首次：刷新 registry 索引
 moon build --target js cmd/cli
-moon test --target js  # → Total tests: 1382, passed: 1382, failed: 0
+moon test --target js  # → Total tests: 1387, passed: 1387, failed: 0
 
 # 2. 启动 MCP Server（STDIO）
 python scripts/patch_esm_main.py  # ESM shim（moonc ≥0.10.14 输出 ESM，sqlite JS 桩用 CJS）
@@ -212,19 +228,6 @@ fist doctor        # 5 项健康检查
 5. 🏷️ **工具命名即文档** — 动宾结构、语义化参数名；名实不符=契约说谎
 
 ---
-
-## 环境要求
-
-- **MoonBit ≥ 0.1.20260827**（支持 errdefer 与 async）
-- **Node.js ≥ 24**（JS 目标必需，SQLite JS 后端依赖 node:sqlite）
-- **Native 目标**：系统 SQLite 开发库（sqlite3.h + sqlite3.lib）。一键装载：`pwsh ./scripts/native-env.ps1`
-
-> **JS 后端**：`moon test --target js` = **1382/1382**（2026-10-21 Windows 实测，含 C-A-F 反馈记忆层、一源四态 cl7、CAF 属性测试、模型路由与外部执行器合并）。
-> **Native 后端**：2026-10-01 在 WSL ubuntu-22.04 实测 `moon test --target native -j 1` = **572/572**（与 JS 同数，工作树含上几轮构建残留时）；
-> 同一 commit 的 `git archive HEAD` **干净树**上同一条命令必崩（native 测试二进制被信号打死），根因在依赖的 native FFI，
-> 见账本 BUG-133 与判据 `scripts/blackbox/e2e_native_heap_probe.py`；上一版这句写的是「native 未复跑」，就此作废。边界条款见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
-> **CI 的 native 臂已按 2026-10-01 owner 裁决③改造**：两条臂都在全量测试前挂 `Native heap gate (BUG-133 探针当门)`，
-> 跑的就是上面那支判据；红话逐字点名 BUG-133，`crashes=0/12` 才放行全量测试（测试步骤没删，依赖修好后这一臂自己恢复覆盖）。
 
 ## 架构
 
