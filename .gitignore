@@ -150,3 +150,10 @@ dist/
 /src/server/bug335_ns_route_wbtest.mbt
 .git/fist/
 .agents/worktrees/
+
+# 流水账（memory/*.md 日日志）：614MB 级大文件膨胀 git 历史 + 每次合并必撞冲突，
+# 账本 bugs.md / product.md / target.md / task.md / links.md / rules.json / research/
+# / reviews/ 均为结构化核心记忆，单独保留在 git 里。
+memory/2026-*.md
+memory/thinking.md
+memory/archive/thinking.archive.md
