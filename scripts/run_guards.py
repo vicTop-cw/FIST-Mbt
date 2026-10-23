@@ -518,6 +518,10 @@ REGISTRY = {
     "blackbox/e2e_lock_xproc.py": "端到端探针：跨进程锁竞争，需运行前提，跑法见 scripts/README.md",
     "blackbox/e2e_mirror_install.py": "端到端探针：真下载镜像安装（网络 + 沙箱），跑法见 scripts/README.md",
     "blackbox/e2e_transport_stack_fallback.py": "端到端探针：TLS 换栈真装（网络 + 沙箱），跑法见 scripts/README.md",
+    # 2026-10-24（R44）：变异探针要 `git clone --depth 1` 出临时仓并在里面造违例——属
+    # 「需平台前提的 e2e」族，进 REGISTRY 而不进自动电池（真跑一次数分钟）。
+    # 实测 BITES 5 / BLUNT 0 / SKIP 0，跑法见 scripts/README.md。
+    "blackbox/e2e_guard_mutation.py": "端到端探针：「判据会不会咬」变异测试（clone + 造违例 + 复跑），跑法见 scripts/README.md",
     "blackbox/e2e_upgrade_mirror.py": "端到端探针：升级镜像真装（网络 + 沙箱），跑法见 scripts/README.md",
     "blackbox/patch_esm_main.py": "构建辅助：mcp_smoke/demo 启动前幂等注入 require shim（CI 在用，不单独当格跑）",
     "caf_offline_replay.py": "CAF 实验重放（长跑/需语料）",

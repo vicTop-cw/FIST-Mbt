@@ -162,11 +162,16 @@ def selftest():
         same = top.returncode == 0 and Path(top.stdout.strip() or "/nonexistent").resolve() == d.resolve()
         inside = str(d.resolve()).startswith(str(ROOT.resolve()) + os.sep)
         if inside or not own or not same:
-            raise SystemExit(
+            # BUG-369 契约：判据失灵类必给 **rc=2**。`SystemExit("字符串")` 的退出码是 **1**
+            # （Python 语义：非整数参数 ⇒ 打印到 stderr 并 exit 1），而本判据的承诺面把
+            # 「含 FATAL 的判据失灵类」指派给 2 ⇒ 写成字符串就是**假契约**。
+            # check_exit_code_contract 的 R2 站点类指派矛盾当场抓到这一处。
+            sys.stderr.write(
                 "FATAL 夹具仓没有独立成功（own=%s same=%s inside_root=%s top=%r dir=%s）"
-                "——继续跑就会把外层仓库当夹具提交（R44 实测事故），拒绝继续"
+                "——继续跑就会把外层仓库当夹具提交（R44 实测事故），拒绝继续\n"
                 % (own, same, inside, (top.stdout or top.stderr).strip()[:200], d)
             )
+            raise SystemExit(2)
         subprocess.run(["git", "config", "user.email", "t@t"], cwd=d, capture_output=True, text=True, env=env)
         subprocess.run(["git", "config", "user.name", "t"], cwd=d, capture_output=True, text=True, env=env)
         for rel, body in fixture.items():
