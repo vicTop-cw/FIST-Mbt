@@ -28,7 +28,7 @@ moon test --target js src/engine（经 scripts/moon_test_env.py）
 
 ### 2.5 散文缺陷的红前对照（旧实现 + 新测试）
 
-把 `src/engine/engine_eval.mbt` 临时还原为上一提交（`10968923`）的版本，只跑新测试：
+把 `src/engine/engine_eval.mbt` 临时还原为主线（`92d0edba`）的旧实现，只跑新测试：
 
 ```
 汇总：Total tests 200 / passed 197 / failed 3
@@ -113,7 +113,8 @@ end 由前缀长度决定、不可能越界，属扫描器已知误报；本单�
 
 ## 十一、终读（电池）
 
-- 电池 `python scripts/run_guards.py`（交付态、工作树含本单全部改动）：**格数 68（手写 68 + 自动 0）/ 失败 0 / SKIP 5 / 缺执行面 0**，rc=0（日志 `temp/r135_battery.log`）。
-- 首跑唯一红 `whisperer.py --selftest got=TIMEOUT expect=0` 是另一支 agent 同时跑电池抢机器所致；该格单独复跑 rc=0（G1~G4 OK），终跑未再复现 ⇒ 未登记为期望红。
+- 电池 `python scripts/run_guards.py`（提交 `e8fc8a0f` 已推送后的交付态）：**格数 68（手写 68 + 自动 0）/ 失败 0 / SKIP 5 / 缺执行面 0**，rc=0（日志 `temp/r135e_battery.log`）。
+- 前一发（同内容但未入库）唯一红 `check_publish_payload` 是「新测试文件还没进 index ⇒ `moon publish` 会把它打进载荷」的登记顺序噪声；`git add` 后该格单独复跑 rc=0（1337 件 / 未跟踪 0）。
+- 中间一发（已提交但未推送）唯一红 `check_delivery_gap` 是「本地领先 = 未交付」的判据本色；推送后转为 rc=0，终发不再复现。
 - 5 个 SKIP 均为缺 `temp/pt27.log` / `temp/chk47.json` 前置的既有格（`check_badge` / `check_test_sync` / `check_deprecated_text_census` ×2 / `check_deprecated_site_list`），与本单改动无关，不计失败也不构成通过证据。
-- 结论：代码面 197/197（`src/engine`）、全量 1394/1394、电池 68/0/5/0 三面同一工作树读数，交付态不挂已知红。
+- 结论：代码面 200/200（`src/engine`）、全量 1411/1411（`moon_test_env.py` rc=0）、电池 68/0/5/0 三面同一工作树读数，交付态不挂已知红。
