@@ -164,3 +164,40 @@ test "wg_5_write_gate_audit_records_reject" {
   assert_true(r2 is Err(_))
   assert_eq(al.entries().length(), 2)
 }
+
+///|
+/// 便利：ns 写门返回 Err 且文案含关键字。
+fn nwg_err(ns : String, needle : String) -> Bool {
+  match ns_write_gate(ns) {
+    Err(e) => e.contains(needle)
+    Ok(_) => false
+  }
+}
+
+///|
+/// ns 写门锁 1：default / 空 ns 一律拒绝（污染源），且指路"先 store_open"。
+test "nwg_1_default_and_empty_rejected" {
+  assert_true(nwg_err("default", "拒绝写入 default"))
+  assert_true(nwg_err("", "拒绝写入 default"))
+  assert_true(nwg_err("", "store_open"))
+}
+
+///|
+/// ns 写门锁 2：合法项目 ns 允许写入（字母数字 / 下划线 / 连字符）。
+test "nwg_2_legal_ns_allowed" {
+  assert_true(ns_write_gate("fist-mbt-refactor") is Ok(_))
+  assert_true(ns_write_gate("cron-auto") is Ok(_))
+  assert_true(ns_write_gate("tnr_polish") is Ok(_))
+  assert_true(ns_write_gate("T0r3alpha9") is Ok(_))
+}
+
+///|
+/// ns 写门锁 3：非法 ns 拒绝（空格 / 路径穿越 / 盘符 / 前导分隔符 / 点号）。
+/// 与 `MultiStore::safe_ns` 同族口径：只放字母数字与 _ -。
+test "nwg_3_illegal_ns_rejected" {
+  assert_true(nwg_err("../evil", "非法命名空间"))
+  assert_true(nwg_err("C:default", "非法命名空间"))
+  assert_true(nwg_err("/abs/path", "非法命名空间"))
+  assert_true(nwg_err("my ns", "非法命名空间"))
+  assert_true(nwg_err("T0r3.alpha9", "非法命名空间"))
+}

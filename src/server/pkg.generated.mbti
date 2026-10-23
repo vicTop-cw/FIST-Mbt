@@ -139,6 +139,8 @@ pub fn memory_link(String, String, String, String) -> Result[Json, String]
 
 pub fn model_auth_status_impl(String, ns~ : String) -> Result[Json, String]
 
+pub fn ns_write_gate(String) -> Result[Unit, String]
+
 pub fn ocr_build_args(project_dir~ : String, subcmd~ : String, path? : String, rules_file? : String) -> Result[Array[String], String]
 
 pub fn ocr_capability_json(String) -> Json

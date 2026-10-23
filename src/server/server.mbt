@@ -1418,7 +1418,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "publish",
-    "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)、level 任务层级（可选，0..7，默认 6 连长级；上游显式声明 x级 则覆盖）。返回 {task_id, namespace, message}，其中 namespace 是任务**实际落在**的 ns（BUG-23：过去只回 task_id，把键名写成 ns 会静默落进 default 而无从发现）。参数名逐字对 inputSchema：与本工具已声明参数同根（互为子串）的错名（ns/desc/project 这类）直接拒绝，不做静默忽略。",
+    "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)、level 任务层级（可选，0..7，默认 6 连长级；上游显式声明 x级 则覆盖）。返回 {task_id, namespace, message}，其中 namespace 是任务**实际落在**的 ns（BUG-23：过去只回 task_id，把键名写成 ns 会静默落进 default 而无从发现）。参数名逐字对 inputSchema：与本工具已声明参数同根（互为子串）的错名（ns/desc/project 这类）直接拒绝，不做静默忽略。⚠ namespace 传 default 或留空会**立即返回 Err**（ns 写门 T0r1 第②步）：请先 `store_open(ns=<你的项目命名空间>)` 再发布——default.db 已被外部项目（cron-auto/Pentad/bugs 等）污染 2300+ 条任务，写 default 会造成跨项目混表。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -1438,6 +1438,13 @@ pub async fn run_server() -> Unit {
       let created_by = get_str(args, "created_by", default="human_steward")
       let level = get_int(args, "level", default=6)
       let ts = now_default()
+      // T0r1 第②步（止血）：publish 拒绝写入 default/空 ns，堵住外部项目污染 default.db。
+      // 门在 handler 层——engine.publish 默认 ns="default" 保持兼容（存量测试/CLI 直调不受影响），
+      // 但 MCP 客户端（含 cron-auto 等定时进程）走本入口时必须先 store_open 自己的 ns。
+      let g = ns_write_gate(ns)
+      if g is Err(ge) {
+        return Err(@mcp_types.ToolError(ge))
+      }
       let r = engine_for_ns(ns).publish(
         project_dir~,
         description~,

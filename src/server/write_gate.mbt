@@ -153,3 +153,34 @@ pub fn write_gate_audit(
     }
   }
 }
+
+///|
+/// ns 写门（T0r1 第②步 · 止血）：publish 等**新建**类工具拒绝写入 default/空命名空间，
+/// 强制调用方先 `store_open` 自己项目的 ns。
+///
+/// 根因：`publish` 默认 `ns="default"`，而外部项目（cron-auto / Pentad / bugs 等）
+/// 的定时进程从不传 ns——于是它们全部落进 default.db，与 FIST-Mbt 本项目任务
+/// 混成一张表（实测 default ns 含 2300+ 外部项目任务，`supervisor_status` 的
+/// `by_namespace.default` 一度报到 2400+）。
+///
+/// 只拦**新建**（publish / publish_parallel / dag_publish）：claim/execute/submit 是
+/// 对既有任务的**状态迁移**，按 task_id 寻址不按 ns 新建行，不属污染源，不设门。
+///
+/// ns 合法性复用仓库唯一真源 `@store.MultiStore::safe_ns`（与 BUG-64 同族口径），
+/// 不另设一套规则。返回 Ok 表示允许写入；Err 给出指路文案。
+pub fn ns_write_gate(ns : String) -> Result[Unit, String] {
+  if ns == "" || ns == "default" {
+    return Err(
+      "ns_gate: 拒绝写入 default 命名空间：请先 store_open(ns=<你的项目命名空间>) " +
+      "再发布，避免跨项目任务污染 default.db",
+    )
+  }
+  if @store.MultiStore::safe_ns(ns) is None {
+    return Err(
+      "ns_gate: 非法命名空间: " +
+      ns +
+      "（仅允许字母数字与 _ / -）",
+    )
+  }
+  Ok(())
+}
