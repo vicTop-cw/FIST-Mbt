@@ -179,6 +179,17 @@ SPECIAL_CASES = [
              "gate 步骤，属 CI workflow 内容债；升档是人的决定，本单元不改常量"),
     expected("check_ci_step_position.py", 2,
              "同一处棘轮超限 ⇒ 自检 T9「真源现状 rc=0」不成立，按判据自拒出 2", "--selftest"),
+    # —— 远端状态读数（2026-10-24）：这两格红的是**远端形态**，不是仓内容债 ——
+    # filter-repo 重写历史后，多数通道支与当前 `gitcode/main` 已**无共同祖先**（`git merge`
+    # 会拒绝 unrelated histories）⇒ 合并面只能走 cherry-pick（本会话全程即如此）。这不是缺陷
+    # 而是要如实点名的合并形态；按 diag 口径把当轮真读数钉住，数字漂移就现形。
+    expected("check_branch_ancestry.py", 1,
+             "诊断口径：filter-repo 重写后 196 支与 gitcode/main 无共同祖先（merge 拒绝 unrelated "
+             "histories）⇒ 合并只能 cherry-pick；本地临时支（test/ work/）已清，剩余为远端通道支",
+             kind="diag"),
+    expected("check_delivery_gap.py", 1,
+             "诊断口径：gitcode/master 落后 main 1113 提交 / 262 文件（master 是历史基线镜像，"
+             "权威面是 gitcode/main）", kind="diag"),
     # —— R55：blackbox 尺进宇宙也进电池（相对 scripts/ 点名，路径含子目录）——
     case("blackbox/check_merge_markers.py", "--selftest"),
     # R106 曾登记预存红：主线把某 agent 的 git worktree 以 gitlink(mode 160000) 提交进跟踪面
