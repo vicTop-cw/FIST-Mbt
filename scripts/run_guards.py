@@ -187,9 +187,10 @@ SPECIAL_CASES = [
              "诊断口径：filter-repo 重写后 196 支与 gitcode/main 无共同祖先（merge 拒绝 unrelated "
              "histories）⇒ 合并只能 cherry-pick；本地临时支（test/ work/）已清，剩余为远端通道支",
              kind="diag"),
-    expected("check_delivery_gap.py", 1,
-             "诊断口径：gitcode/master 落后 main 1113 提交 / 262 文件（master 是历史基线镜像，"
-             "权威面是 gitcode/main）", kind="diag"),
+    # 2026-10-24 追记：`check_diff_scope.pick_base()` 改用「离 HEAD 最近的候选」后，本尺的
+    # base 也稳定落到 main ⇒ 「master 落后 1113 提交」那个读数不再出现，实测 **0 个分支有未推送提交**
+    # （rc=0）。按本文件自订的律「预存红被修好 ⇒ 把期望改回 0」转回门禁格。
+    case("check_delivery_gap.py"),
     # —— R55：blackbox 尺进宇宙也进电池（相对 scripts/ 点名，路径含子目录）——
     case("blackbox/check_merge_markers.py", "--selftest"),
     # R106 曾登记预存红：主线把某 agent 的 git worktree 以 gitlink(mode 160000) 提交进跟踪面
@@ -350,7 +351,7 @@ GEN_PLUGINS_GATE = "gen_plugins.py"
 # 默认全进会把改码工具/演示脚本跑起来（实测改过 src/router/*.mbt），
 # 而"新脚本默认不进电池"最多是漏检——漏检由 --list 的非判据清单兜底（可见 + 有理由）。
 AUTO_CASE_PREFIXES = ("check_", "cleanup_")
-AUTO_CASE_EXACT = {"gen_plugins.py", "fist-gate.py"}
+AUTO_CASE_EXACT = {"gen_plugins.py", "fist-gate.py", "check_repo_shape.py"}
 
 
 def non_gate_reason(script):

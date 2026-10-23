@@ -17,6 +17,15 @@ This is the cell run_guards' battery executes.
 import re
 import sys
 
+# BUG-58：守卫的“红”必须是判据红。BLOCK_MSG 含 ❌ 与中文，Windows 默认 GBK 控制台下
+# print 会直接 UnicodeEncodeError——拿到 traceback 而不是 verdict，本地就等于“守卫不可信”。
+# 统一把 stdout 钉成 UTF-8（CI 在 Linux UTF-8 下是无损 no-op）。stderr 由调用方钩子转发，
+# 此处一并钉住以免 hook stderr 路径在 GBK 下炸（BUG-138 同源）。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 MAIN_REFS = {"refs/heads/main"}
 BLOCK_MSG = (
     "❌ 主仓只允许指挥官 merge 合入，禁止直 push gitcode/main"
