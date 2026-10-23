@@ -1098,14 +1098,8 @@ pub fn FistEngine::plan_deep(
       // 父描述里自带的引擎标注不得再当切割底稿（R113）。
       let parent_desc = strip_plan_annotations(parent.description)
       let slices = match spec {
-        Some(s) =>
-          @decompose.decompose_slices(
-            s,
-            split_n,
-            parent_desc~,
-          )
-        None =>
-          @decompose.default_slices(split_n, parent_desc~)
+        Some(s) => @decompose.decompose_slices(s, split_n, parent_desc~)
+        None => @decompose.default_slices(split_n, parent_desc~)
       }
       match
         self.decompose_rec(
@@ -1253,6 +1247,9 @@ fn FistEngine::decompose_rec(
       level=@core.child_level(parent.get_level()),
       created_at=now,
       depends_on=dag_dep,
+      // BUG-389 方向②：把 Omega 门禁判据写进不可覆盖的元数据列 omega_required，
+      // 不依赖 description 里的 [omega:required] 文本（upsert 覆盖描述不再丢开关）。
+      omega_required=omega_strong_verify,
     )
     match self.store.create_task(child) {
       Ok(_) => ()

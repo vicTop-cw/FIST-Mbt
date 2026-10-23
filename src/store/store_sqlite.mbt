@@ -97,7 +97,7 @@ pub fn SqliteStore::new() -> SqliteStore? {
 /// 初始化 schema：tasks 为完整任务表，specs/runs/heartbeats/archive 为后续阶段预置骨架。
 fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
   let sqls : Array[String] = [
-    "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority TEXT NOT NULL DEFAULT '中', importance TEXT NOT NULL DEFAULT '中', depth INTEGER NOT NULL DEFAULT 3, split_n INTEGER NOT NULL DEFAULT 3, level INTEGER NOT NULL DEFAULT 6, status TEXT NOT NULL DEFAULT '待领取', assignee TEXT DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT 'deferred', depends_on TEXT NOT NULL DEFAULT '[]')",
+    "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority TEXT NOT NULL DEFAULT '中', importance TEXT NOT NULL DEFAULT '中', depth INTEGER NOT NULL DEFAULT 3, split_n INTEGER NOT NULL DEFAULT 3, level INTEGER NOT NULL DEFAULT 6, status TEXT NOT NULL DEFAULT '待领取', assignee TEXT DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT 'deferred', depends_on TEXT NOT NULL DEFAULT '[]', omega_required INTEGER NOT NULL DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS specs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', spec_type TEXT NOT NULL DEFAULT 'spec', content TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', run_type TEXT NOT NULL DEFAULT 'verify', status TEXT NOT NULL DEFAULT 'running', detail TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL DEFAULT '', finished_at TEXT DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS heartbeats (agent_id TEXT NOT NULL, task_id TEXT NOT NULL, last_seen TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', PRIMARY KEY (agent_id, task_id))",
@@ -169,29 +169,29 @@ fn SqliteStore::ensure_task_columns(self : SqliteStore) -> Bool {
       if !probe_ok {
         return false
       }
-      // 现役 18 列中旧代际库可能缺失的列：
-      // 16 列版（无 ns/depends_on）、17 列版（有 ns 无 level）。其余列
-      // （parent_id/priority/importance/...）自 16 列版起即存在，无需补。
+      // 现役 19 列中旧代际库可能缺失的列：
+      // 16 列版（无 ns/depends_on）、17 列版（有 ns 无 level）、18 列版（无 omega_required）。
+      // 其余列（parent_id/priority/importance/...）自 16 列版起即存在，无需补。
+      // BUG-389 方向②：Omega 门禁开关判据从 description 文本移到不可覆盖的元数据列
+      // omega_required（旧库缺列时默认 0=关闭，向后兼容）。
       let needed : Array[(String, String)] = [
         (
-          "ns",
-          "ALTER TABLE tasks ADD COLUMN ns TEXT NOT NULL DEFAULT 'default'",
+          "ns", "ALTER TABLE tasks ADD COLUMN ns TEXT NOT NULL DEFAULT 'default'",
         ),
         (
-          "level",
-          "ALTER TABLE tasks ADD COLUMN level INTEGER NOT NULL DEFAULT 6",
+          "level", "ALTER TABLE tasks ADD COLUMN level INTEGER NOT NULL DEFAULT 6",
         ),
         (
-          "completed_by",
-          "ALTER TABLE tasks ADD COLUMN completed_by TEXT DEFAULT ''",
+          "completed_by", "ALTER TABLE tasks ADD COLUMN completed_by TEXT DEFAULT ''",
         ),
         (
-          "cleanup_mode",
-          "ALTER TABLE tasks ADD COLUMN cleanup_mode TEXT NOT NULL DEFAULT 'deferred'",
+          "cleanup_mode", "ALTER TABLE tasks ADD COLUMN cleanup_mode TEXT NOT NULL DEFAULT 'deferred'",
         ),
         (
-          "depends_on",
-          "ALTER TABLE tasks ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]'",
+          "depends_on", "ALTER TABLE tasks ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]'",
+        ),
+        (
+          "omega_required", "ALTER TABLE tasks ADD COLUMN omega_required INTEGER NOT NULL DEFAULT 0",
         ),
       ]
       let mut ok = true
@@ -213,7 +213,7 @@ fn SqliteStore::ensure_task_columns(self : SqliteStore) -> Bool {
 
 ///|
 fn SqliteStore::task_columns() -> String {
-  "id, parent_id, project_dir, ns, priority, importance, depth, split_n, level, status, assignee, description, deliverable, created_at, updated_at, completed_by, cleanup_mode, depends_on"
+  "id, parent_id, project_dir, ns, priority, importance, depth, split_n, level, status, assignee, description, deliverable, created_at, updated_at, completed_by, cleanup_mode, depends_on, omega_required"
 }
 
 ///|
@@ -287,6 +287,12 @@ fn SqliteStore::bind_task_values(
       ),
     ),
   )
+  ignore(
+    stmt.bind(
+      19,
+      @sqlite.SqlValue::Int(if t.get_omega_required() { 1 } else { 0 }),
+    ),
+  )
 }
 
 ///|
@@ -357,6 +363,12 @@ fn SqliteStore::bind_task_update_values(
       ),
     ),
   )
+  ignore(
+    stmt.bind(
+      17,
+      @sqlite.SqlValue::Int(if t.get_omega_required() { 1 } else { 0 }),
+    ),
+  )
 }
 
 ///|
@@ -404,6 +416,7 @@ fn row_to_task(stmt : @sqlite.Statement) -> @core.Task {
   let assignee_raw = str_from_bytes(stmt.column_text(10))
   let completed_raw = str_from_bytes(stmt.column_text(15))
   let depends_raw = str_from_bytes(stmt.column_text(17))
+  let omega_raw = stmt.column_int(18)
   @core.Task::from_db(
     str_from_bytes(stmt.column_text(0)),
     if parent_raw == "" {
@@ -435,6 +448,7 @@ fn row_to_task(stmt : @sqlite.Statement) -> @core.Task {
     },
     str_from_bytes(stmt.column_text(16)),
     _json_to_array(depends_raw),
+    omega_raw != 0,
   )
 }
 
@@ -449,7 +463,7 @@ impl Store for SqliteStore with fn create_task(self, task) {
         Some(_) => return Err("task already exists: \{task.get_id()}")
         None => ()
       }
-      let sql = "INSERT INTO tasks (\{SqliteStore::task_columns()}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+      let sql = "INSERT INTO tasks (\{SqliteStore::task_columns()}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: create_task")
         Some(stmt) => {
@@ -496,14 +510,14 @@ impl Store for SqliteStore with fn update_task(self, task) {
       if self.get_task(task.get_id()) is None {
         return Err("task not found: \{task.get_id()}")
       }
-      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ? WHERE id = ?"
+      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ?, omega_required = ? WHERE id = ?"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: update_task")
         Some(stmt) => {
           SqliteStore::bind_task_update_values(stmt, task)
           ignore(
             stmt.bind(
-              17,
+              18,
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, task.get_id())),
             ),
           )
@@ -529,20 +543,20 @@ pub fn SqliteStore::update_task_if_status(
   match self.db {
     None => Err("sqlite store 未打开")
     Some(db) => {
-      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ? WHERE id = ? AND status = ?"
+      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ?, omega_required = ? WHERE id = ? AND status = ?"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: update_task_if_status")
         Some(stmt) => {
           SqliteStore::bind_task_update_values(stmt, task)
           ignore(
             stmt.bind(
-              17,
+              18,
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, task.get_id())),
             ),
           )
           ignore(
             stmt.bind(
-              18,
+              19,
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, expected_status)),
             ),
           )
