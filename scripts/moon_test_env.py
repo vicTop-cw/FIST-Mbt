@@ -20,7 +20,7 @@ node --enable-source-maps _build/js/debug/test/src/engine/engine.blackbox_test.j
 | `C:\\Program Files\\nodejs\\node.exe` + 同一 payload | **rc=0**，正常打出 `----- BEGIN MOON TEST RESULT -----` |
 
 ⇒ 坏的不是 moon、不是本仓、更不是测试代码，而是**经由 `.cmd` 垫片转发时丢失的 JSON 引号**。
-把该垫片目录从 PATH 移除后：`moon test --target js` = **1387/1387 passed, rc=0（15s）**。
+把该垫片目录从 PATH 移除后：`moon test --target js` = **1415/1415 passed, rc=0（15s）**。
 
 ## 第二道坑（R124）：清干净 PATH 仍可能在编译面炸
 `node` 修好之后，`moon test` 的**编译面**还有一颗雷：moon 0.1.20261016 在 Windows 上把
