@@ -94,25 +94,19 @@ test "BUG-4 workdir：绝对 project_dir 本身必须放行（Round 1 版在这�
   // 实测调用面 38/51 次就是 workdir == 任务的绝对 project_dir
   let abs = "E:/proj/AI/Cypy"
   assert_true(@server.run_check_workdir_in_project(abs, abs))
-  assert_true(
-    @server.run_check_workdir_in_project("E:\\proj\\AI\\Cypy", abs),
-  )
+  assert_true(@server.run_check_workdir_in_project("E:\\proj\\AI\\Cypy", abs))
   assert_true(@server.run_check_workdir_in_project(abs + "/sub", abs))
   assert_true(
     @server.run_check_workdir_in_project(abs + "/scripts/../tests", abs),
   )
   // 同盘但不在子树内 → 拒
-  assert_false(
-    @server.run_check_workdir_in_project("E:/proj/AI/Pentad", abs),
-  )
+  assert_false(@server.run_check_workdir_in_project("E:/proj/AI/Pentad", abs))
   // 靠 `..` 跳出项目 → 拒
   assert_false(@server.run_check_workdir_in_project(abs + "/../Pentad", abs))
   // 跨盘 → 拒
   assert_false(@server.run_check_workdir_in_project("D:/Windows", abs))
   // 绝对 workdir 配相对 project_dir（形态不一致，无法判定归属）→ 拒
-  assert_false(
-    @server.run_check_workdir_in_project("E:/proj/AI/Cypy", "."),
-  )
+  assert_false(@server.run_check_workdir_in_project("E:/proj/AI/Cypy", "."))
 }
 
 ///|
@@ -188,9 +182,7 @@ test "BUG-51 执行面 cwd 归一：混形态给绝对路径，同形态逐字�
   )
   // 反斜杠绝对 project_dir 同样归一（实测调用面里有 E:\... 形态）
   assert_eq(
-    @server.run_check_effective_workdir(
-      "scripts", "E:\\proj\\AI\\FIST-Mbt",
-    ),
+    @server.run_check_effective_workdir("scripts", "E:\\proj\\AI\\FIST-Mbt"),
     abs + "/scripts",
   )
   // 同形态调用逐字返回原值 ⇒ 既有 38/51 次绝对用法零回归

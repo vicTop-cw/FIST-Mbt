@@ -44,7 +44,7 @@ fn exit_code_of(cmd : Subcmd) -> Int32 {
 ///|
 /// doctor 的失败计数（BUG-391 的接线点）：⏭️ 跳过不等于失败，但 `❌` 必须能被退出码看见。
 /// 单独成函数是为了让这条判决有白盒锁——`run_doctor` 自己要在真引擎上跑，测不到这一格。
-fn doctor_failed_count(ok : Int, total : Int, skip : Int) -> Int {
+fn doctor_failed_count(ok : Int32, total : Int32, skip : Int32) -> Int32 {
   total - ok - skip
 }
 
@@ -54,9 +54,9 @@ const DOCTOR_DB_NAME : String = "_fist_doctor_check.db"
 
 ///|
 /// 路径里最后一个分隔符（`/` 或 `\`）的下标；纯相对名返回 None。
-fn last_path_sep(p : String) -> Int? {
+fn last_path_sep(p : String) -> Int32? {
   let n = p.length()
-  let mut acc : Int? = None
+  let mut acc : Int32? = None
   let mut i = 0
   while i < n {
     let c = p[i]

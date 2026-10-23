@@ -347,9 +347,7 @@ test "bug4_run_check_workdir_ok" {
   assert_false(@server.run_check_workdir_ok("C:/Windows", "temp/proj"))
   // Round 1 会误拒、Round 2 必须放行：绝对 project_dir 本身（实测调用面主形态）
   assert_true(
-    @server.run_check_workdir_ok(
-      "E:/proj/AI/Cypy", "E:/proj/AI/Cypy",
-    ),
+    @server.run_check_workdir_ok("E:/proj/AI/Cypy", "E:/proj/AI/Cypy"),
   )
 }
 

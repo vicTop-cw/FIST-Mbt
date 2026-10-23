@@ -277,7 +277,10 @@ test "sqlite_store: open 补建深层父目录（FIST_DB_PATH 指新目录不再
   assert_false(@fs.path_exists(deep))
   let db_path = deep + "/probe.db"
   match @store.SqliteStore::open(db_path) {
-    None => abort("open 失败：深层父目录未被补建 ⇒ 这类 FIST_DB_PATH 仍会打死 serve")
+    None =>
+      abort(
+        "open 失败：深层父目录未被补建 ⇒ 这类 FIST_DB_PATH 仍会打死 serve",
+      )
     Some(s) => ignore(s.clear())
   }
   assert_true(@fs.path_exists(db_path))
