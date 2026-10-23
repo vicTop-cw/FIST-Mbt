@@ -49,7 +49,7 @@ native 与 js 双端均通过 `tools/list`（147 工具含 7 个 mcpcf.*）+ 实
    ```
    node --import <repo>/scripts/js_serve_preload.mjs <repo>/_build/js/debug/build/cmd/cli/cli.js serve
    ```
-   要求 Node >= 22.5（`node:sqlite` 内置模块）。Node 会打印 SQLite ExperimentalWarning，无碍。
+   要求 Node ≥ 24（`node:sqlite` 内置模块自 22.5 起有，但本仓 JS 后端用的是 `returnArrays`，node < 24 退化为对象行、列读取为空 ⇒ 地板取 24，与 README「环境要求」与 CI 的 `node-version` 同一真源 `toolchain.json`）。Node 会打印 SQLite ExperimentalWarning，无碍。
 3. 协议注意（2026-07-28）：
    - `initialize` 已从协议移除，发送会得到 -32601 "Method not found: initialize"（预期行为，非错误）；
    - 每个请求 `params` 必须携带 `_meta`：`io.modelcontextprotocol/protocolVersion` +
