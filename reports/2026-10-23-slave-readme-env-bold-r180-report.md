@@ -1,4 +1,4 @@
-# R127 · README 环境要求前移 + 工具链地板钉 0.1.20261016 + 测试计数 1382→1387
+# R180 · README 环境要求前移 + 工具链地板钉 0.1.20261016 + 测试计数 1382→1387
 
 **分支** `slave/docs/readme-env-bold-r127` · **主提交** `86209cca`（父 `dcefdeb8`）· **MR** <https://gitcode.com/VictorTop/Fist-Mbt/merge_requests/new?source_branch=slave/docs/readme-env-bold-r127>
 
@@ -47,7 +47,7 @@ docs/agent-map.md 1/1, docs/deliverable.md 1/1, scripts/scoring_rubric.md 1/1
 
 ### 2.5 清单自证尺（R126 车道，仓外快照）
 
-R126 的 `check_slave_task_list.py` 未合入主线；用 `git show slave/feat/check-slave-task-list-r126:scripts/check_slave_task_list.py` 的快照对 R127 工作树复跑：
+R126 的 `check_slave_task_list.py` 未合入主线；用 `git show slave/feat/check-slave-task-list-r126:scripts/check_slave_task_list.py` 的快照对 R180 工作树复跑：
 
 - 判定面：任务行 28 / 证据锚点 57（其中内容级 21）/ 文件级在场 14
 - 状态分布实算：`已落地 9 / 部分 8 / 未开工 8 / 作废 3` —— 与本单改后的文首自述一致（D3 归零）
@@ -64,7 +64,7 @@ R126 的 `check_slave_task_list.py` 未合入主线；用 `git show slave/feat/c
 
 ## 五、遗留风险
 
-1. **与 R126 的合并顺序**：两支都动 `docs/2026-10-20-slave-tasks.md`。R126 已把 header 改成 57/28/14、锚点重指；R127 改的是分布 9/8/8/3 与 POLISH-04/05 两行。建议先合 R126 再合 R127；冲突时 header 结构与内容两行取 R126、分布行取 R127，合完用 R126 尺复跑确认只剩本单已归零的 D3 不再红。
+1. **与 R126 的合并顺序**：两支都动 `docs/2026-10-20-slave-tasks.md`。R126 已把 header 改成 57/28/14、锚点重指；R180 改的是分布 9/8/8/3 与 POLISH-04/05 两行。建议先合 R126 再合 R180；冲突时 header 结构与内容两行取 R126、分布行取 R180，合完用 R126 尺复跑确认只剩本单已归零的 D3 不再红。
 2. **92MB 当日日志**：`memory/2026-10-22.md` 在 HEAD 为 91,342,559 B / 528,301 行，`grep -c '^## R'` = 21,956——其中 18 个节标题各出现 1,155 次，另有 4 个 ×105、2 个 ×315、6 个 ×15。非本单引入，但会拖慢任何基于该文件的扫描/追加；建议独立立项（R128）做「按节头去重、保留每节最后一份、纯删举证」。
 3. **英文 README 的位置不对齐**：`README_EN.md` 只修正了地板/徽章，Requirements 仍在正文中段；是否前移待 owner 裁决（避免双语结构各自演化）。
 4. **新旧工具链的预期红**：把地板写成 0.1.20261016 后，用更旧 moon 的读者会在 `is` 表达式处红——这是正确行为（原地板 20260827 是错的），不是回归。

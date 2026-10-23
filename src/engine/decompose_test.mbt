@@ -570,7 +570,7 @@ test "plan_deep 开关全开时标注不逐层叠乘：每叶一档梯度、一�
       boundary_probe=true,
     ) {
     Err(m) => abort("plan_deep 全开失败: \{m}")
-    Ok(_) => {
+    Ok(_) =>
       for t in e.list_all() {
         if t.get_id() == id {
           ()
@@ -585,7 +585,6 @@ test "plan_deep 开关全开时标注不逐层叠乘：每叶一档梯度、一�
           assert_eq(dp_count(t.description, "[边界四问") <= 1, true)
         }
       }
-    }
   }
 }
 
@@ -608,9 +607,18 @@ test "plan_deep boundary_probe 开启时 calibrate 仍按业务片生效（旧�
       let kids = e.children_of(id)
       // 3 片业务 + 1 片引擎追加的边界审视叶
       assert_eq(kids.length(), 4)
-      assert_eq(kids[0].description.contains("[难度梯度 1/4:难 d=4]"), true)
-      assert_eq(kids[1].description.contains("[难度梯度 2/4:中 d=3]"), true)
-      assert_eq(kids[2].description.contains("[难度梯度 3/4:易 d=1]"), true)
+      assert_eq(
+        kids[0].description.contains("[难度梯度 1/4:难 d=4]"),
+        true,
+      )
+      assert_eq(
+        kids[1].description.contains("[难度梯度 2/4:中 d=3]"),
+        true,
+      )
+      assert_eq(
+        kids[2].description.contains("[难度梯度 3/4:易 d=1]"),
+        true,
+      )
       assert_eq(kids[3].description.contains("[边界审视"), true)
     }
   }
@@ -630,7 +638,7 @@ test "plan_deep 默认关闭开关时下钻底稿不重复挂 spec 指纹（叠�
       now="2026-10-22T00:04:00Z",
     ) {
     Err(m) => abort("plan_deep 默认失败: \{m}")
-    Ok(_) => {
+    Ok(_) =>
       for t in e.list_all() {
         if t.get_id() == id {
           ()
@@ -638,6 +646,5 @@ test "plan_deep 默认关闭开关时下钻底稿不重复挂 spec 指纹（叠�
           assert_eq(dp_count(t.description, "fnv1a64:test-spec-hash"), 1)
         }
       }
-    }
   }
 }

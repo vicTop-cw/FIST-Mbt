@@ -20,7 +20,7 @@ node --enable-source-maps _build/js/debug/test/src/engine/engine.blackbox_test.j
 | `C:\\Program Files\\nodejs\\node.exe` + 同一 payload | **rc=0**，正常打出 `----- BEGIN MOON TEST RESULT -----` |
 
 ⇒ 坏的不是 moon、不是本仓、更不是测试代码，而是**经由 `.cmd` 垫片转发时丢失的 JSON 引号**。
-把该垫片目录从 PATH 移除后：`moon test --target js` = **1387/1387 passed, rc=0（15s）**。
+把该垫片目录从 PATH 移除后：`moon test --target js` = **1415/1415 passed, rc=0（15s）**。
 
 ## 第二道坑（R124）：清干净 PATH 仍可能在编译面炸
 `node` 修好之后，`moon test` 的**编译面**还有一颗雷：moon 0.1.20261016 在 Windows 上把
@@ -247,6 +247,19 @@ def main(argv):
     tail = [l for l in out.strip().splitlines() if l.strip()][-6:]
     for l in tail:
         print("  | " + l[:150])
+    # 2026-10-23：失败时**必须点名是哪条测试**。原先只打最后 6 行，而 moon 的失败行在更早的输出里
+    # ⇒ 判据在最需要信息的那一刻恰好把它藏掉了（与 check_scripts_naming 的 `--show` 不可达同族缺陷）。
+    # 过滤刻意**只认 moon 的失败形状**，不认 "failed" 泛词：第一版用 `\bfailed\b|error\[` 太松，
+    # 把诊断上下文里的源码行（如 `match result.value("failed") {`）也当成失败行打了出来——
+    # 面板里混进无关行，就没人知道哪行才是结论。
+    RX_TEST_FAIL = re.compile(
+        r"(?:\btest\b.*\bfailed:)|(?:\bFAILED:\s)|(?:panicked at)|(?:❌)"
+    )
+    fail_lines = [l for l in out.splitlines() if RX_TEST_FAIL.search(l)]
+    if fail_lines:
+        print("  ---- 失败行（摘出，最多 20 条）----")
+        for l in fail_lines[:20]:
+            print("  F| " + l[:200])
     m = None
     for line in out.splitlines():
         mm = re.search(r"Total tests:\s*(\d+),\s*passed:\s*(\d+),\s*failed:\s*(\d+)", line)
