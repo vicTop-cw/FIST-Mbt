@@ -13,3 +13,12 @@ problem: >
 evidence: |
   whisperer probe_guards()
 status_note: "R112 交付：新增 check_battery_count_doc.py（7 键两向对表 + 15 格自证 + CI/电池双执行面），README 增加 BATTERY-REGISTRATION 锚点；交付时读数 rulers=83 ci=40 battery=45 missing=0 gate=55 exempt=26 unclassified=4 逐键一致。转 done 需主线收录本提交点名（R2 UNPROVEN-DONE 判据）。R119 兑现：主线 b224e770 已点名本 id（R2 条件满足）⇒ 转 done"
+# ── R123 对账重盖章（gitcode/main rebase 到 origin/master 788c5823，原 proof commit 不再可达）──
+rebase_proven:
+  dropped_by: "gitcode/main rebase onto origin/master 788c5823（旧线 proof commit 未迁到新线）"
+  dropped_proof_commits: ["b224e770", "5f19fccd"]
+  verified_on: "origin/master 788c5823（gitcode/main 587a1b5c 含同批交付物）"
+  reading:
+    - "scripts/check_battery_count_doc.py 在主线"
+    - "R123 锚点漂移已修：check_battery_count_doc.py ⇒ PASS 逐键一致 rc=0；--selftest ⇒ SELFTEST OK 15 格 rc=0"
+  note: "R2 UNPROVEN-DONE 重盖章：交付物在新线齐全，丢失的只是 rebase 上的 proof 引文。"
