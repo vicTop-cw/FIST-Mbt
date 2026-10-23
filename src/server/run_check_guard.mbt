@@ -87,7 +87,7 @@ priv struct RcPath {
 /// 相对路径出现越过根的 `..` 记 escaped=true（越界的主作案形态）。
 fn rc_path(s0 : String) -> RcPath {
   // 注意：必须 replace_all——String::replace 只换**第一处**（实测把
-  // `E:\repo\Cypy` 变成 `E:/workspace\AI\Cypy`，段列表整个错位）。
+  // `E:\repo\Cypy` 变成 `E:/repo\Cypy`，段列表整个错位）。
   let s = s0.replace_all(old="\\", new="/")
   let mut drive = ""
   let mut rest = s
