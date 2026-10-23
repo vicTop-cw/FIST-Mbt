@@ -276,6 +276,12 @@ SPECIAL_CASES = [
     gated("check_skill_inject.py", "fist-mbt.db", "fist-mbt.db"),
     expected("fist-gate.py", 2,
              "fmt 段依赖 git diff 管道，本机退化 rc=-1 ⇒ 按设计 DEGRADED(2)；实体机/CI 复跑"),
+    # ── R134：轮次号在 reports/ 交付面被不同单元复用（R110/R113/R118/R121 各两组）是
+    #    「编号没有认领面」的直接后果——两支各自读开工时刻的远端快照，谁先推谁占号。历史
+    #    4 组进 docs/tasks/unit-number-baseline.txt 棘轮；新撞号 / 基线过期 / 悬空认领三态
+    #    都红，S9 是「真源现状面必须绿」的活格。
+    case("check_unit_number_unique.py"),
+    case("check_unit_number_unique.py", "--selftest"),
 ]
 
 
