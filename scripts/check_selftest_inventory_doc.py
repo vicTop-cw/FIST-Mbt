@@ -156,7 +156,7 @@ def doc_face(root=None):
     text = io.open(path, encoding="utf-8-sig", errors="replace").read()
     marks = list(BULLET_RE.finditer(text))
     if not marks:
-        return None, "%s 里一条 `- \`xxx.py\` —` 条目都没解析到（扫描面空转）" % DOC, []
+        return None, "%s 里一条 `- \\`xxx.py\\` —` 条目都没解析到（扫描面空转）" % DOC, []
     face = {}
     skipped = []
     for i, m in enumerate(marks):

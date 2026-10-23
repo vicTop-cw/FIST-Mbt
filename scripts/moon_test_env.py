@@ -24,9 +24,9 @@ node --enable-source-maps _build/js/debug/test/src/engine/engine.blackbox_test.j
 
 ## 第二道坑（R124）：清干净 PATH 仍可能在编译面炸
 `node` 修好之后，`moon test` 的**编译面**还有一颗雷：moon 0.1.20261016 在 Windows 上把
-`-o` / `-all-pkgs` 等输出路径写成 `\\?\F:\…` 长路径前缀，moonc 打开时直接
+`-o` / `-all-pkgs` 等输出路径写成 `\\?\\F:\\…` 长路径前缀，moonc 打开时直接
 `Sys_error("\\\\?: Invalid argument")`（与本仓代码无关，最小工程同样复现；同族见 BUG-388 的
-`moon fmt --check` 面）。本机既有绕法是 `MOONC_OVERRIDE` 指向一个**剥离 `\\?\` 前缀再转发**的 shim。
+`moon fmt --check` 面）。本机既有绕法是 `MOONC_OVERRIDE` 指向一个**剥离 `\\?\\` 前缀再转发**的 shim。
 本脚本在 Windows 上自动发现 `~/.moon-shim/shim.exe`（显式 `MOONC_OVERRIDE` 优先），找不到就照跑，
 但一旦输出里出现 ICE 会**点名成因**并给 rc=2——不把它洗成测试红、也不假装绿。
 
@@ -44,8 +44,15 @@ node --enable-source-maps _build/js/debug/test/src/engine/engine.blackbox_test.j
 用法：
   python scripts/moon_test_env.py                 # 全仓
   python scripts/moon_test_env.py src/engine      # 只跑某包（参数原样透传给 moon test）
+  python scripts/moon_test_env.py moon test --target js   # 容错：完整命令写进来了也行
   python scripts/moon_test_env.py --selftest      # 离线验垫片识别/清理 + 服务端 spawn 面
   python scripts/moon_test_env.py --dry-run       # 只打印将要执行的环境与命令
+  python scripts/moon_test_env.py --raw-log <path>   # 把 moon 原始 stdout 完整落盘（BUG-394 修法 A）
+
+## BUG-394 修法 A：英文汇总行原样透传
+标准输出的末行是 moon 原始英文汇总行 `Total tests: N, passed: N, failed: F`（判据认的形状，
+check_badge / check_test_sync 直接消费它）；中文 `汇总：` 行保留给人类。可选 `--raw-log <path>`
+把 moon 原始 stdout 完整落盘到调用方指定路径（判据/审计的原始证据面）。
 """
 import os
 import re
@@ -57,6 +64,11 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 SHIM_NAMES = ("node.cmd", "node.bat")
+
+# BUG-394：判据认的英文汇总行形状（check_badge / check_test_sync 共用）。
+# 修法 A：本脚本把 moon 原始输出里的这条英文行**原样透传**到自己的标准输出，
+# 使标准入口的输出能直接被两把尺消费（此前只自印中文 `汇总：` 形状，判据无法自证）。
+RX_SUMMARY = re.compile(r"Total tests:\s*(\d+),\s*passed:\s*(\d+),\s*failed:\s*(\d+)")
 
 
 def split_path(path):
@@ -143,6 +155,62 @@ def read_server_spawn_text(root=ROOT):
         return ""
 
 
+def parse_raw_log(argv):
+    """从 argv 摘出 `--raw-log <path>`（BUG-394 修法 A 的可选参数）。
+
+    返回 (路径或 None, 剩余 argv)。幂等：没有该参数就原样返回 argv，不改变其它参数。
+    参数缺失/为空 ⇒ 失败可读（BUG-369），直接 SystemExit 点名，绝不静默吞掉调用方写错的地方。
+    """
+    if "--raw-log" not in argv:
+        return None, argv
+    i = argv.index("--raw-log")
+    if i + 1 >= len(argv) or not argv[i + 1]:
+        raise SystemExit("FATAL: --raw-log 需要一个非空路径参数（用法：--raw-log <path>）")
+    return argv[i + 1], [a for j, a in enumerate(argv) if j not in (i, i + 1)]
+
+
+def english_summary_line(text):
+    """从 moon 原始输出里**原样**摘出第一条英文汇总行（判据认的形状，逐字节透传）。
+
+    没有就返回 None（判据会走 rc=2，不冒用 0/1 两档）。纯函数，便于自检。
+    """
+    if not text:
+        return None
+    for line in text.splitlines():
+        if RX_SUMMARY.search(line):
+            return line
+    return None
+
+
+def write_raw_log(path, moon_stdout):
+    """把 moon 原始 stdout 完整落盘（BUG-394 修法 A）。失败只点名不改判据（--raw-log 是便利面）。"""
+    try:
+        with open(path, "w", encoding="utf-8", errors="replace") as f:
+            f.write(moon_stdout or "")
+    except OSError as e:
+        print("  判据警告：--raw-log 落盘失败（%s）：%s —— 原始 stdout 未落盘，不影响判据" % (path, e))
+
+
+def strip_redundant_moon_prefix(args):
+    """容错：调用方若把完整命令 `moon test --target js …` 也传了进来（BUG-394 自证用），
+    去掉重复前缀，避免把字面 `moon` 当成包路径喂给 moon test。幂等：不匹配就原样返回。"""
+    rest = args
+    if rest[:2] == ["moon", "test"]:
+        rest = rest[2:]
+        if rest[:2] == ["--target", "js"]:
+            rest = rest[2:]
+    return rest
+
+
+def _raises_system_exit(fn):
+    """自检辅助：调用 fn 是否以 SystemExit 收场（失败可读面：参数写错必须点名，不许静默）。"""
+    try:
+        fn()
+    except SystemExit:
+        return True
+    return False
+
+
 def selftest():
     cells = []
 
@@ -201,21 +269,36 @@ def selftest():
     cell("server-spawn-face-missing", server_spawn_env_violations(""), ["读不到 src/server/run_check_js.mbt"])
     cell("server-spawn-live", server_spawn_env_violations(read_server_spawn_text()), [])
 
+    # BUG-394 修法 A：--raw-log 解析 / 英文汇总行原样透传 / 冗余命令前缀容错
+    cell("raw-log-no-arg", parse_raw_log(["a", "b"]), (None, ["a", "b"]))
+    cell("raw-log-extract", parse_raw_log(["a", "--raw-log", "/tmp/x", "b"]), ("/tmp/x", ["a", "b"]))
+    cell("raw-log-empty-arg-errors",
+         _raises_system_exit(lambda: parse_raw_log(["a", "--raw-log"])), True)
+    cell("english-summary-found",
+         english_summary_line("hello\nTotal tests: 5, passed: 5, failed: 0\nworld"),
+         "Total tests: 5, passed: 5, failed: 0")
+    cell("english-summary-absent", english_summary_line("no summary here"), None)
+    cell("english-summary-empty", english_summary_line(""), None)
+    cell("strip-prefix-full", strip_redundant_moon_prefix(["moon", "test", "--target", "js", "src/x"]), ["src/x"])
+    cell("strip-prefix-idempotent", strip_redundant_moon_prefix(["src/x"]), ["src/x"])
+    cell("strip-prefix-moon-test-only", strip_redundant_moon_prefix(["moon", "test"]), [])
+
     bad = [(n, w) for n, ok, w in cells if not ok]
     if bad:
         print("SELFTEST FAIL：")
         for n, w in bad:
             print("  - %s：%s" % (n, w))
         return 1
-    print("SELFTEST OK（%d 格：垫片目录识别两档 + PATH 清理三档 + node 解析两档 + moonc 覆盖四档 + 服务端 spawn 面六档）" % len(cells))
+    print("SELFTEST OK（%d 格：垫片目录识别两档 + PATH 清理三档 + node 解析两档 + moonc 覆盖四档 + 服务端 spawn 面六档 + BUG-394 透传九档）" % len(cells))
     return 0
 
 
 def main(argv):
     if "--selftest" in argv:
         return selftest()
-    args = [a for a in argv if a not in ("--dry-run",)]
+    raw_log, argv = parse_raw_log(argv)
     dry = "--dry-run" in argv
+    args = strip_redundant_moon_prefix([a for a in argv if a not in ("--dry-run",)])
     clean, dropped, _kept = clean_path(os.environ.get("PATH", ""))
     node, real, why = resolve_node(clean)
     print("  PATH 垫片目录：%d 个%s" % (len(dropped), ("（" + "; ".join(dropped) + "）") if dropped else ""))
@@ -244,6 +327,8 @@ def main(argv):
         return 0
     p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
     out = (p.stdout or "") + (p.stderr or "")
+    if raw_log:
+        write_raw_log(raw_log, p.stdout or "")
     tail = [l for l in out.strip().splitlines() if l.strip()][-6:]
     for l in tail:
         print("  | " + l[:150])
@@ -260,11 +345,8 @@ def main(argv):
         print("  ---- 失败行（摘出，最多 20 条）----")
         for l in fail_lines[:20]:
             print("  F| " + l[:200])
-    m = None
-    for line in out.splitlines():
-        mm = re.search(r"Total tests:\s*(\d+),\s*passed:\s*(\d+),\s*failed:\s*(\d+)", line)
-        if mm:
-            m = mm
+    moon_line = english_summary_line(out)
+    m = RX_SUMMARY.search(moon_line) if moon_line else None
     if "failed to parse args" in out:
         print("  判据失败：测试产物收到残缺 JSON（说明 PATH 垫片没清干净或 moon 用了别的 node）")
         return 1
@@ -276,6 +358,9 @@ def main(argv):
         return 2
     total, passed, failed = int(m.group(1)), int(m.group(2)), int(m.group(3))
     print("  汇总：Total tests %d / passed %d / failed %d" % (total, passed, failed))
+    # BUG-394 修法 A：把 moon 原始英文汇总行**原样透传**到标准输出——这是 check_badge /
+    # check_test_sync 认的形状。中文 `汇总：` 行保留给人类；英文行才是两把尺能直接消费的入口。
+    print(moon_line)
     if failed != 0 or passed != total:
         return 1
     return 0
