@@ -2,7 +2,12 @@
 
 > 本文档为 selfdrive 审视/门禁的净拉取源：Next Tasks 应从这里取。
 > 由三份调研去重收敛生成：`memory/research/competition.md`、`memory/research/five-directions.md`、`memory/research/future-roadmap.md`。
-> 状态枚举 `pending | done`。锚点事实：**120 工具 / 442 测试**（`moon test --target js` Windows 实测全绿，含 quickcheck 属性测试；native 轨本轮未复跑）/ JS+Native 双后端 / CI 三绿 / evolve 已在测试内。计数同步见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
+> 状态枚举 `pending | done`。锚点事实：**工具数与测试数一律不在本文抄写**——抄一个数就是下一颗漂移雷
+> （本行原本写着「120 工具 / 442 测试 / CI 三绿」，那三个数分别落后真源 50 个工具、近千条测试，而全仓没有一把尺扫 BACKLOG 的计数面）。
+> 计数只指真源与对表尺：工具面真源 = `src/server/server.mbt` 注册表，尺 `scripts/check_tools_sync.py`；
+> 测试面真源 = README 徽章行 + `moon test --target js` 汇总行，尺 `scripts/check_test_sync.py` / `scripts/check_badge.py`。
+> 后端形状与门槛：**JS 后端是权威稳定门槛**；native 轨的崩溃面与关闭条件见 `AI-DEVELOPMENT-STANDARD.md` §7 及账本 BUG-133，
+> 本仓不写「JS+Native 双端同版全绿」，也不写「CI 三绿」。evolve 已在测试内。计数同步机制见 `scripts/check_tools_sync.py` / `check_test_sync.py`。
 
 | P级 | 事项 | 来源 | 状态 | 对应review/commit |
 |-----|------|------|------|-------------------|
