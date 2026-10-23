@@ -31,3 +31,12 @@
 templates/*.md  text eol=lf
 # 钩子脚本必须 LF：CRLF 会让 POSIX sh 在 `sh -n`/执行时报 unexpected end of file。
 .githooks/* text eol=lf
+
+# `.mbti` 必须 LF（2026-10-23 加，源自 `moon info` 后工作树恒脏的实测）：
+#   `moon info` 生成的 `.mbti` 字节本来就是 LF，`core.autocrlf=true` 在 checkout 时把它转成 CRLF，
+#   于是「没改任何语义、只跑了一次 `moon info`」就让 core/engine/server 三份 `.mbti` 变 dirty，
+#   `git status` 恒有 CRLF 噪声，提交时还得手动 `git add --` 排除、极易误提交格式噪声。
+#   钉 `eol=lf` 后：git blob 存 LF、checkout 也一律 LF，`moon info` 跑多少次都不会再翻脏。
+#   安全边界（沿用本文件既有口径）：HEAD 里 `.mbti` blob 实测纯 LF（`git cat-file` CR=0），
+#   加 `eol=lf` 不会触发 renormalize 把已在跟踪的文件刷脏；也**不加** `* text=auto`。
+*.mbti   text eol=lf
