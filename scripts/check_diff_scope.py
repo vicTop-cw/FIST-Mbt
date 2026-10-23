@@ -94,6 +94,33 @@ def short_name(cwd, ref):
     return out.strip() if rc == 0 and out.strip() else ref
 
 
+def pick_base(cwd, head="HEAD"):
+    """在 BASE_CANDIDATES 里挑**离 head 最近的一支**当 base（读不到任何候选 ⇒ 返回 ""）。
+
+    2026-10-24（R35）：原实现「第一个能解析的候选就赢」= `gitcode/master` 常赢，而本仓两个镜像
+    常年落后本地 `main` 数十笔（实测 59 笔）⇒ 任何 worker 分支相对它都像"动了全仓"：
+    实测 D1/D2 判定面 110 条，其中 CONTRACT_TOUCH 11 条**全是主线自己的改动**。
+    假违例一多，这条治理面就没人看了——所以按「最新已知干线」取 base；
+    距离相同或都读不到距离时，退回 BASE_CANDIDATES 的书写顺序（与原行为同底，不新增自拒面）。
+    """
+    best = None
+    for cand in BASE_CANDIDATES:
+        if not resolve(cwd, cand):
+            continue
+        rc, out = git(["rev-list", "--count", "%s..%s" % (cand, head)], cwd)
+        dist = int(out.strip()) if rc == 0 and (out or "").strip().isdigit() else None
+        if dist is None:
+            continue
+        if best is None or dist < best[0]:
+            best = (dist, cand)
+    if best:
+        return best[1]
+    for cand in BASE_CANDIDATES:
+        if resolve(cwd, cand):
+            return cand
+    return ""
+
+
 def name_of_pattern(pat):
     """声明里的分支模式：允许 `remotes/<r>/` 与 `refs/heads/` 前缀噪音，只留最后两段可比的形。"""
     p = pat.strip()
@@ -461,7 +488,7 @@ def selftest():
         branch = short_name(ROOT, "HEAD")
         scopes_path = os.path.join(ROOT, SCOPES_REL)
         text = open(scopes_path, encoding="utf-8").read() if os.path.exists(scopes_path) else ""
-        base_ref = next((c for c in BASE_CANDIDATES if resolve(ROOT, c)), None)
+        base_ref = pick_base(ROOT) or None  # 与生产路径同源：取离 HEAD 最近的候选（见 pick_base 注释）
         on_claims, _errs = parse_claims(text)
         on_claim = find_claim(on_claims, branch) if branch != "HEAD" else None
         if base_ref and on_claim:
@@ -504,10 +531,7 @@ def run(argv, root):
 
     base = a.base
     if not base:
-        for cand in BASE_CANDIDATES:
-            if resolve(root, cand):
-                base = cand
-                break
+        base = pick_base(root)
     if not base:
         print("FATAL 判据无法自证：base 一个都探测不到（试过的名字：%s）" % " ".join(BASE_CANDIDATES))
         return 2
