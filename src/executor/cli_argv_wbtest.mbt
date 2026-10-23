@@ -41,20 +41,21 @@ test "cf_3_退出码非 0 归 NONZERO_EXIT，处方是读 stderr 不是装环境
 test "cf_4_code 折成 -1 归 SIGNAL_KILLED，且 -11 不被前缀误吞" {
   // 判据用精确相等而不是 contains：`exit code -11` 里含 `exit code -1` 这个前缀，
   // 用 contains 会把「被信号杀」与「真退出码 -11（Linux 上常见于 SIGSEGV 的 shell 转发）」混成一档。
-  assert_eq(
-    classify_cli_failure("exit code -1"),
-    CliFailure::SignalKilled,
-  )
+  assert_eq(classify_cli_failure("exit code -1"), CliFailure::SignalKilled)
   assert_eq(classify_cli_failure("exit code -11"), CliFailure::NonZeroExit)
   assert_true(
-    cli_failure_hint("aider", CliFailure::SignalKilled).contains("不是执行器缺失"),
+    cli_failure_hint("aider", CliFailure::SignalKilled).contains(
+      "不是执行器缺失",
+    ),
   )
 }
 
 ///|
 test "cf_5_本侧调度或解析失败归 DISPATCH_FAILED：坏的是尺不是执行器" {
   assert_eq(
-    classify_cli_failure("run_check: 子进程调度失败（js 运行时异常）"),
+    classify_cli_failure(
+      "run_check: 子进程调度失败（js 运行时异常）",
+    ),
     CliFailure::DispatchFailed,
   )
   let k = classify_cli_failure("run_check: 子进程结果 JSON 解析失败")
@@ -68,7 +69,9 @@ test "cf_5_本侧调度或解析失败归 DISPATCH_FAILED：坏的是尺不是�
 test "cf_6_无线索留 UNKNOWN，不猜归因（空串同样不猜）" {
   assert_eq(classify_cli_failure("boom"), CliFailure::Unknown)
   assert_eq(classify_cli_failure(""), CliFailure::Unknown)
-  assert_true(cli_failure_hint("aider", CliFailure::Unknown).contains("宁可留 Unknown"))
+  assert_true(
+    cli_failure_hint("aider", CliFailure::Unknown).contains("宁可留 Unknown"),
+  )
 }
 
 ///|
@@ -93,11 +96,7 @@ test "cf_8_标签面逐字钉住：调用方按 failure_kind 字符串分支，�
       CliFailure::Unknown.label(),
     ],
     [
-      "NOT_EXECUTABLE",
-      "TIMEOUT",
-      "NONZERO_EXIT",
-      "SIGNAL_KILLED",
-      "DISPATCH_FAILED",
+      "NOT_EXECUTABLE", "TIMEOUT", "NONZERO_EXIT", "SIGNAL_KILLED", "DISPATCH_FAILED",
       "UNKNOWN",
     ],
   )

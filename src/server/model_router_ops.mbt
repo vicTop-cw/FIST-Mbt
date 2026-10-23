@@ -85,7 +85,7 @@ fn mr_try_parse(raw : String) -> Result[Json, Unit] {
 /// 坏 JSON 是证据：只计数告警，绝不删除/覆盖（与 `mr_read` 同款"坏状态不删"纪律）。
 fn mr_caf_read_diag(project_dir : String, ns : String) -> (Bool, Bool, Json) {
   let path = mr_caf_state_path(project_dir, ns)
-  if !(@fs.path_exists(path)) {
+  if !@fs.path_exists(path) {
     return (false, false, Json::null())
   }
   let raw = @fs.read_file_to_string(path, encoding="utf8") catch { _ => "" }

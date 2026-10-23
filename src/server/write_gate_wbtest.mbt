@@ -97,19 +97,14 @@ test "wg_3_no_project_dir_fail_closed" {
   assert_true(wg_is_no_dir(write_gate("", "memory/target.md")))
   // project_dir 是合法**绝对**根时不得误杀：MCP 客户端真实传 `E:/proj/AI/rx-mbt`
   // 这类绝对路径，判成 NoProjectDir 会让门本身变成瘫痪开关。此时照样按白名单裁决。
-  assert_true(
-    wg_is_allow(write_gate("E:/proj/AI/rx-mbt", "memory/target.md")),
-  )
+  assert_true(wg_is_allow(write_gate("E:/proj/AI/rx-mbt", "memory/target.md")))
   assert_true(wg_is_allow(write_gate("C:/abs", "memory/target.md")))
   assert_true(wg_is_allow(write_gate("/abs", "memory/target.md")))
   assert_true(wg_is_allow(write_gate("\\abs", "memory/target.md")))
   assert_true(wg_is_allow(write_gate("a/../b", "memory/target.md")))
   // 即便 project_dir 是绝对路径，越界的**目标路径**照样 Reject（门钉在 rel 上）
   assert_true(
-    wg_reject_contains(
-      write_gate("E:/proj/AI/rx-mbt", "src/foo.mbt"),
-      "越界",
-    ),
+    wg_reject_contains(write_gate("E:/proj/AI/rx-mbt", "src/foo.mbt"), "越界"),
   )
   assert_true(
     wg_reject_contains(

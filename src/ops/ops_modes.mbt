@@ -111,10 +111,11 @@ pub fn mode_template_path(mode : String) -> String {
 pub fn templates_root() -> String {
   match @env.get_env_var("FIST_MODE_TEMPLATES_ROOT") {
     Some(v) if v != "" => v
-    _ => match @env.current_dir() {
-      None => "."
-      Some(d) => d
-    }
+    _ =>
+      match @env.current_dir() {
+        None => "."
+        Some(d) => d
+      }
   }
 }
 

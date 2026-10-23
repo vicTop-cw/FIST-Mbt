@@ -149,11 +149,11 @@ async fn run_serve() -> Unit {
   eprintln("")
   // BUG-377：shim 指向的构建产物被清空时（_build 空、_release 未装），
   // 至少给出可读提示而不是只剩 node 的 Cannot find module 堆栈。
-  try {
-    @server.run_server()
-  } catch {
+  @server.run_server() catch {
     _ => {
-      eprintln("[fist] serve 启动失败：未找到构建产物，请运行 install 或使用发布包")
+      eprintln(
+        "[fist] serve 启动失败：未找到构建产物，请运行 install 或使用发布包",
+      )
       cli_exit(1)
     }
   }
