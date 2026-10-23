@@ -297,6 +297,31 @@ jobs:
           python3 scripts/check_host_installable.py --selftest
           python3 scripts/check_host_installable.py
 
+      # position-why: 纯文本判据（读跟踪面 + 本地子进程跑 stdin 语义矩阵），不依赖 moon 产物、
+      # 不需要 _build；与 Battery/Doc-dup 同族——Migrate 崩掉时正是「安装面/登记面还能不能信」
+      # 最需要出声的时刻。
+      - name: Push-guard sustainability guard (直推拦截跟踪面+语义矩阵生效性，BUG-389(2))
+        shell: bash
+        # position-why: 同族文本判据；自证先行，尺坏了不许放行。
+        run: |
+          python3 scripts/check_push_guard.py --selftest
+          python3 scripts/check_push_guard.py
+          python3 scripts/check_direct_push.py --selftest
+
+      - name: Machine-path guard (当前面禁止本机身份路径；DSH 安装面模板/渲染双态回归锁)
+        shell: bash
+        # position-why: 与 Push-guard 同族——纯文本回归锁，不依赖构建产物；与 check_host_installable
+        # 相邻同因（安装面双态与路径清零是同一批交付的两半）。
+        run: |
+          python3 scripts/check_hardcoded_paths.py --selftest
+          python3 scripts/check_hardcoded_paths.py
+
+      - name: DSH patch render self-proof (模板→本机渲染幂等；漂移即红)
+        shell: bash
+        # position-why: 纯文本渲染自证，不依赖构建产物；紧随安装面判据。
+        run: |
+          python3 scripts/render_dsh_patch.py --selftest
+
       - name: Skill-inject guard (evolve_asset_register 注入路径可测命中)
         shell: bash
         run: |

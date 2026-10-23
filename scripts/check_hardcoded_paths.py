@@ -14,8 +14,9 @@
   · 豁免面（**只追加的叙述历史**，改了等于伪造历史）：`CHANGELOG.md` `reports/**` `memory/**`
     `docs/archive/**`；`dist/**`（构建产物，随发布重建）；`.agents/**` `temp/**`（本地产物）；
     `*.mbti`（生成接口）。
-  · 违例 token（机器身份，不是「所有绝对路径」）：`E:/IDEProjects` 类工程目录名、`Users/<user>`
-    形式的家目录。**测试夹具里合成盘符路径（`E:/repo/...`）不算违例**——那是形状输入，不是
+  · 违例 token（机器身份，不是「所有绝对路径」）：本机工程目录名一类（词表 `_MACHINE_DIRS`，
+    构造时拆成两段——本文件若出现该词的整体字面量会被自己扫红，这是有意的自锁）、
+    `Users/<user>` 形式的家目录。**测试夹具里合成盘符路径（`E:/repo/...`）不算违例**——那是形状输入，不是
     某台机器的绑定。本判据抓的是「这台机器是谁」，不是「有没有绝对路径」。
 
 退出码契约：0 = 当前面无本机身份路径 / 1 = 命中违例（逐条点名文件:行） / 2 = 判据无法自证
@@ -123,14 +124,17 @@ def selftest() -> list[str]:
 
         (root / "scripts").mkdir()
         (root / "reports").mkdir()
+        # 违例词运行时拼接（字面量会被尺子自己扫红——自锁是有意的，拼法绕开即可）
+        leak = "E:/" + _MACHINE_DIRS[0] + "/AI/x"
         # C1 违例：当前面写出工程目录名
-        (root / "scripts" / "bad.py").write_text('PROJ = "E:/IDEProjects/AI/x"\n', encoding="utf-8")
+        (root / "scripts" / "bad.py").write_text('PROJ = "%s"\n' % leak, encoding="utf-8")
         # C2 豁免面：报告里的历史路径不判
-        (root / "reports" / "old.md").write_text("E:/IDEProjects/AI/x\n", encoding="utf-8")
+        (root / "reports" / "old.md").write_text(leak + "\n", encoding="utf-8")
         # C3 干净：合成盘符形状（不是某台机器的绑定）
         (root / "scripts" / "ok.py").write_text('P = "E:/repo/proj"\n', encoding="utf-8")
-        # C4 家目录形状
-        (root / "scripts" / "home.py").write_text('H = r"C:\\Users\\victo\\.dsh"\n', encoding="utf-8")
+        # C4 家目录形状（用户名运行时拼接；raw 串保持反斜杠形状，见 _HOME_USERS）
+        home_line = 'H = r"C:\\Users\\%s\\.dsh"\n' % _HOME_USERS[0]
+        (root / "scripts" / "home.py").write_text(home_line, encoding="utf-8")
         subprocess.run(["git", "add", "-A"], cwd=root, capture_output=True)
 
         files = current_face(root)
