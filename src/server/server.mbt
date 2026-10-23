@@ -41,7 +41,9 @@ let audit : @ops.AuditLog = @ops.AuditLog::new()
 
 ///|
 /// 模块级多库管理器（M5 多租户：namespace 隔离的持久化，内部可变性模式）。
-let mstore : @store.MultiStore = @store.MultiStore::new(data_dir=".")
+/// 默认 data_dir = `.fist-mbt/data`（相对 server cwd，cwd 即目标项目根）：所有命名空间
+/// 库落到 `<target>/.fist-mbt/data/<ns>.db`，不再硬编码回 server 进程 cwd 的仓库根。
+let mstore : @store.MultiStore = @store.MultiStore::new()
 
 ///|
 /// 多租户引擎路由：按 ns 返回对应持久化引擎（M5 库级物理隔离闭环）。
@@ -1218,10 +1220,10 @@ fn _instrument(
   // 缺 required 一律拒，并写清缺哪几个（调用方看 tools/list 的 inputSchema 即可自证）。
   let required = schema_required(input_schema)
   let props = schema_properties(input_schema)
-  async fn(_ctx : @mcp.RequestContext, args : Json) -> Result[
-    @mcp.ToolResult,
-    @mcp_types.MCPError,
-  ] {
+  async fn(
+    _ctx : @mcp.RequestContext,
+    args : Json,
+  ) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
     let t0 = @env.now().reinterpret_as_int64()
     let params_json = args.stringify()
     let miss = missing_required(args, required)
@@ -1277,14 +1279,12 @@ pub fn instrumented_tool(
   input_schema : Json,
   handler : async (Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError],
 ) -> @mcp.MCPServer {
-  try {
-    s.tool(
-      name,
-      description,
-      input_schema,
-      _instrument(name, input_schema, handler),
-    )
-  } catch {
+  s.tool(
+    name,
+    description,
+    input_schema,
+    _instrument(name, input_schema, handler),
+  ) catch {
     _ => s
   }
 }
@@ -1759,7 +1759,8 @@ pub async fn run_server() -> Unit {
               }
               // BUG-374/378：落库必须走与任务同一引擎（同一库），否则记录落到
               // 根库、verify 在 ns 库查不到 ⇒ 验收门仍不满足。
-              match eng.gate_check_record(task_id, res.stringify(), status, now) {
+              match
+                eng.gate_check_record(task_id, res.stringify(), status, now) {
                 Ok(rec) => {
                   let rec2 = match rec {
                     Object(m) => {
@@ -3221,6 +3222,18 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let ns = get_str(args, "namespace", default="default")
+      // T0r3 写入门禁：先过门 + 落审计（init 创建 memory/ 四件套 + reviews 目录）
+      match
+        write_gate_audit(
+          project_dir,
+          "memory/thinking.md",
+          audit,
+          now_default(),
+          "selfdrive_init",
+        ) {
+        Ok(_) => ()
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
       match @ops.selfdrive_memory_init(project_dir, ns~) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -3248,6 +3261,18 @@ pub async fn run_server() -> Unit {
       let content = get_str(args, "content")
       let ns = get_str(args, "namespace", default="default")
       let ts = now_default()
+      // T0r3 写入门禁：先过门 + 落审计，再交给纯函数（越界 fail-closed）
+      match
+        write_gate_audit(
+          project_dir,
+          "memory/" + kind + ".md",
+          audit,
+          ts,
+          "selfdrive_append",
+        ) {
+        Ok(_) => ()
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
       match
         @ops.selfdrive_memory_append(project_dir, ns~, kind~, content~, now=ts) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
@@ -3293,6 +3318,18 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let ns = get_str(args, "namespace", default="default")
+      // T0r3 写入门禁：先过门 + 落审计（导出视图覆盖写 memory/task.md）
+      match
+        write_gate_audit(
+          project_dir,
+          "memory/task.md",
+          audit,
+          now_default(),
+          "selfdrive_export_tasks",
+        ) {
+        Ok(_) => ()
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
       // BUG-82：时间戳服务端盖章（不接受调用方注入 now，见 BUG-33 政策）
       match
         @ops.selfdrive_export_tasks(engine, project_dir, ns, now=now_default()) {
@@ -3467,6 +3504,18 @@ pub async fn run_server() -> Unit {
       let kind = get_str(args, "kind", default="target")
       let content = get_str(args, "content")
       let ts = now_default()
+      // T0r3 写入门禁：先过门 + 落审计，再交给纯函数
+      match
+        write_gate_audit(
+          project_dir,
+          "memory/" + kind + ".md",
+          audit,
+          ts,
+          "memory_consolidate",
+        ) {
+        Ok(_) => ()
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
       match memory_consolidate(project_dir, task_id, kind, content, ts) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -3491,6 +3540,23 @@ pub async fn run_server() -> Unit {
       let project_dir = get_str(args, "project_dir")
       let kind = get_str(args, "kind")
       let max_chars = get_int(args, "max_chars", default=2000)
+      // T0r3 写入门禁：先过门 + 落审计（kind 缺省＝四件套全处理，按 target 过门）
+      let gate_rel = if kind == "" {
+        "memory/target.md"
+      } else {
+        "memory/" + kind + ".md"
+      }
+      match
+        write_gate_audit(
+          project_dir,
+          gate_rel,
+          audit,
+          now_default(),
+          "memory_gc",
+        ) {
+        Ok(_) => ()
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
       let j = if kind == "" {
         memory_gc_all(project_dir, max_chars)
       } else {
@@ -3517,6 +3583,18 @@ pub async fn run_server() -> Unit {
       let from = get_str(args, "from")
       let to = get_str(args, "to")
       let note = get_str(args, "note")
+      // T0r3 写入门禁：先过门 + 落审计，再交给纯函数
+      match
+        write_gate_audit(
+          project_dir,
+          "memory/links.md",
+          audit,
+          now_default(),
+          "memory_link",
+        ) {
+        Ok(_) => ()
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
       match memory_link(project_dir, from, to, note) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -4016,15 +4094,16 @@ pub async fn run_server() -> Unit {
     "FIST 七条金条",
     "FIST-Mbt 的七条不可动摇原则（机器可读 JSON）",
     "application/json",
-    fn(_ctx : @mcp.RequestContext) -> Result[
-      @mcp.ResourceReadResult,
-      @mcp.MCPError,
-    ] {
-      Ok(@mcp.ResourceReadResult::text(
-        @core.principles_json().stringify(),
-        uri="fist://principles",
-        mime_type="application/json",
-      ))
+    fn(
+      _ctx : @mcp.RequestContext,
+    ) -> Result[@mcp.ResourceReadResult, @mcp.MCPError] {
+      Ok(
+        @mcp.ResourceReadResult::text(
+          @core.principles_json().stringify(),
+          uri="fist://principles",
+          mime_type="application/json",
+        ),
+      )
     },
   )
   s1 = s1.resource(
@@ -4032,15 +4111,16 @@ pub async fn run_server() -> Unit {
     "任务概览",
     "当前任务总数与各状态统计",
     "application/json",
-    fn(_ctx : @mcp.RequestContext) -> Result[
-      @mcp.ResourceReadResult,
-      @mcp.MCPError,
-    ] {
-      Ok(@mcp.ResourceReadResult::text(
-        overview_json().stringify(),
-        uri="fist://overview",
-        mime_type="application/json",
-      ))
+    fn(
+      _ctx : @mcp.RequestContext,
+    ) -> Result[@mcp.ResourceReadResult, @mcp.MCPError] {
+      Ok(
+        @mcp.ResourceReadResult::text(
+          overview_json().stringify(),
+          uri="fist://overview",
+          mime_type="application/json",
+        ),
+      )
     },
   )
 
@@ -4049,15 +4129,16 @@ pub async fn run_server() -> Unit {
     "项目地图",
     "fist-mbt 结构地图（Repo Map）：src/ 各子包职责、MCP 工具分组、入口引导，供 AI agent 首读定位，避免全项目盲目探索",
     "application/json",
-    fn(_ctx : @mcp.RequestContext) -> Result[
-      @mcp.ResourceReadResult,
-      @mcp.MCPError,
-    ] {
-      Ok(@mcp.ResourceReadResult::text(
-        map_json().stringify(),
-        uri="fist://map",
-        mime_type="application/json",
-      ))
+    fn(
+      _ctx : @mcp.RequestContext,
+    ) -> Result[@mcp.ResourceReadResult, @mcp.MCPError] {
+      Ok(
+        @mcp.ResourceReadResult::text(
+          map_json().stringify(),
+          uri="fist://map",
+          mime_type="application/json",
+        ),
+      )
     },
   )
 
@@ -4072,10 +4153,10 @@ pub async fn run_server() -> Unit {
         required=true,
       ),
     ],
-    fn(_ctx : @mcp.RequestContext, args : Json) -> Result[
-      @mcp_types.GetPromptResult,
-      @mcp.MCPError,
-    ] {
+    fn(
+      _ctx : @mcp.RequestContext,
+      args : Json,
+    ) -> Result[@mcp_types.GetPromptResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       Ok(
         @mcp_types.GetPromptResult::new(
@@ -4102,10 +4183,10 @@ pub async fn run_server() -> Unit {
         required=true,
       ),
     ],
-    fn(_ctx : @mcp.RequestContext, args : Json) -> Result[
-      @mcp_types.GetPromptResult,
-      @mcp.MCPError,
-    ] {
+    fn(
+      _ctx : @mcp.RequestContext,
+      args : Json,
+    ) -> Result[@mcp_types.GetPromptResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       Ok(
         @mcp_types.GetPromptResult::new(
@@ -5860,7 +5941,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "store_open",
-    "打开（或复用）一个命名空间。参数：namespace、data_dir(可选，默认当前目录；**只接受相对 server 进程 cwd 的相对路径**——含 .. / 前导分隔符 / 盘符一律拒。BUG-78：过去 data_dir 原样拼接，指到哪就往哪建 .db，『命名空间物理隔离』形同虚设)、scratch(可选，true 时库落 temp/ 临时区，不污染仓库根)。返回 {namespace, opened, data_dir, path}；失败原因分列（非法 ns 与非法 data_dir 不合并成一句『打开失败』，否则调用方不知道该改哪个参数）。",
+    "打开（或复用）一个命名空间。参数：namespace、data_dir(可选，**缺省落 `<target>/.fist-mbt/data/`**（server 以目标项目根为 cwd 启动，即目标项目私有目录，不落 server cwd 根）；只接受相对 server 进程 cwd 的相对路径——含 .. / 前导分隔符 / 盘符一律拒。BUG-78：过去 data_dir 原样拼接，指到哪就往哪建 .db，『命名空间物理隔离』形同虚设)、scratch(可选，true 时库落 temp/ 临时区，不污染仓库根)。返回 {namespace, opened, data_dir, path}；失败原因分列（非法 ns 与非法 data_dir 不合并成一句『打开失败』，否则调用方不知道该改哪个参数）。",
     schema(
       {
         "namespace": string_prop("命名空间（必填）"),
@@ -5875,7 +5956,7 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
-      let mut dir = get_str(args, "data_dir", default=".")
+      let mut dir = get_str(args, "data_dir", default="")
       let scratch = get_bool(args, "scratch", default=false)
       // 临时命名空间：强制落到 temp/（gitignore），不污染仓库根
       if scratch {
@@ -5883,6 +5964,21 @@ pub async fn run_server() -> Unit {
           _ => ()
         }
         dir = "temp"
+      }
+      // T0r3「核心写入门禁」：不传 data_dir 时**不再**落到 server 进程 cwd 根，
+      // 而是走 MultiStore 默认 `.fist-mbt/data/`（多库/多租户台账落目标项目私有目录）。
+      // 空串是"用默认"的信号，不走 data_dir_ok（data_dir_ok 会拒空）；实传值仍严格校验。
+      if dir.is_empty() {
+        dir = ".fist-mbt/data"
+        // `@fs.create_dir` 不递归（见 model_router_ops.mbt 同款三层建目录），
+        // 而 SqliteStore 只建文件不建目录——缺了这两层，默认落点会在首个
+        // store_open 直接 `unable to open database file` 崩掉整个 server。
+        @fs.create_dir(".fist-mbt") catch {
+          _ => ()
+        }
+        @fs.create_dir(dir) catch {
+          _ => ()
+        }
       }
       // BUG-78：原因分列再动手——把非法 ns 和非法 data_dir 合并成一句"打开失败"，
       // 调用方就只能猜该改哪个参数（本项目对拒绝文案的一贯要求：自带出路）
@@ -6025,6 +6121,12 @@ pub async fn run_server() -> Unit {
       let auto_push = get_bool(args, "auto_push", default=false)
       let remote_fallback_raw = get_str(args, "remote_fallback")
       let ts = now_default()
+      // T0r3 写入门禁：先过门 + 落审计，再交给纯函数
+      match
+        write_gate_audit(project_dir, "memory/bugs.md", audit, ts, "report_bug") {
+        Ok(_) => ()
+        Err(e) => return Err(@mcp_types.ToolError(e))
+      }
       let bug_result = match
         report_bug(
           project_dir,
