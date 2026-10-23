@@ -73,6 +73,33 @@ def _git_rc(root, *args):
     return p.returncode, p.stderr.decode("utf-8", "replace").strip()[:120]
 
 
+def _git_out(root, *args):
+    """沙箱专用：回 (rc, stdout)，不抛。"""
+    p = subprocess.run(("git",) + args, cwd=root, stdout=subprocess.PIPE,
+                       stderr=subprocess.PIPE)
+    return p.returncode, p.stdout.decode("utf-8", "replace").strip()
+
+
+def _is_own_worktree(dirpath):
+    """夹具必须是**它自己**的 git 工作树根。
+
+    为什么不能靠 `ls-files` 抛异常：Git 2.x 在非仓目录里 `ls-files` 是**不报错**的——
+    它把当前目录当隐式工作树（`--cached` 回空、`--others` 照列未跟踪件），于是旧版
+    `_sandbox_ok` 的 `try/except RuntimeError` 永远接不住「这里根本不是仓」。
+    实测（M4 变异格暴露）：`C:\\Users\\victo\\AppData\\Local\\Temp\\<dir>` 这类目录会
+    向上命中祖先仓（`C:/Users/victo`），`ls-files` 全部 rc=0 ⇒ 自证格成了装饰。
+    判据改成「`--show-toplevel` == 夹具自身路径」，才对「读不到 git 面」真正发红。
+    """
+    rc, out = _git_out(dirpath, "rev-parse", "--show-toplevel")
+    if rc != 0 or not out:
+        return False
+    try:
+        return (os.path.normcase(os.path.realpath(out))
+                == os.path.normcase(os.path.realpath(dirpath)))
+    except OSError:
+        return False
+
+
 def surfaces(root):
     """返回 (会被公开的件, 未跟踪未忽略的件, 被 moon 排除的点号跟踪件)。"""
     tracked = set(_git(root, "ls-files", "--cached"))
@@ -151,6 +178,10 @@ def _sandbox(dirpath):
 
 def _sandbox_ok(dirpath):
     """沙箱形状自证：夹具要证明「判据判的东西真在场」，否则绿色是白给的。"""
+    # 先证「这确实是它自己的仓」——`ls-files` 在非仓目录不抛（Git 2.x 隐式工作树），
+    # 旧版靠异常分流会让本函数在非仓目录回 True（M4 变异格抓到）。
+    if not _is_own_worktree(dirpath):
+        return False, "读不到夹具面（%s 不是它自己的 git 工作树根）" % dirpath
     try:
         will_ship, _leaky, _dropped = surfaces(dirpath)
     except RuntimeError as e:
