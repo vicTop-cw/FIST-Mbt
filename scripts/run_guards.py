@@ -159,6 +159,12 @@ SPECIAL_CASES = [
     case("check_release_asset_names.py"),
     case("check_publish_payload.py"),
     case("check_publish_payload.py", "--selftest"),
+    # —— R141/R155 落仓的两支工具面带自检：render_dsh_patch（模板→本机渲染，
+    #    selftest 6 格）、run_light_wt（轻量 worktree 生命周期，selftest 10 格）。
+    #    二者落仓时只登记进 scripts/README.md，未接任何执行面 ⇒ run_guards G1 现读
+    #    「缺面清单」点名；此处按本文件纪律手写点名自检格（非 check_* 亦须有面）。 ——
+    case("render_dsh_patch.py", "--selftest"),
+    case("run_light_wt.py", "--selftest"),
     # —— R106 追记（叠 gitcode/master b465915f 之后现读）：下面三格原来的 expected 非 0 已被主线
     #    修好（账本撞号收敛 + `scripts/merge-prompt.txt` 出跟踪面），got 0 ≠ expect 当场现形 ⇒
     #    按本文件自订的律「预存红被修好 ⇒ 把期望改回 0」转回门禁格。 ——
@@ -511,6 +517,8 @@ REGISTRY = {
     "fist_mbt_mcp_client.py": "MCP 客户端演示（需 server 活着）",
     "gen_apply_pdf.py": "按需生成器（产出报告 PDF，无门禁语义）",
     "gen_help_docs.py": "按需生成器（产出帮助文档，drift 由 doc_surface 面另判）",
+    "fix_esm_require.py": "构建后置修复（给 moon 的 ESM 产物注入 createRequire 垫片，幂等；由 mcp_smoke/demo 启动链调用，不单独当格跑）",
+    "pol_keeper_run.py": "POL 长跑守卫（需宿主进程持续存活，无固定入参）",
     "issue_scan.py": "MCP issue_scan 的 CLI 辅助入口（能力面由 src/server 白盒锁覆盖）",
     "laya_decide.py": "Laya 决策 CLI（无门禁语义）",
     "mcp_bug_loop.py": "MCP bug 闭环长跑（需 server 活着）",
