@@ -1,5 +1,8 @@
 import {
   "vicTop-cw/fist-mbt/src/core",
+  // R152：CliFailure 走 derive(Eq, Debug)（与 src/router 的 OfmFailure 同形），
+  // `pub extend ... Debug::{to_repr}` 需要 debug 包在面上。
+  "moonbitlang/core/debug",
 }
 
 supported_targets = "js+native"

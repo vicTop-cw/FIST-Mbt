@@ -1418,7 +1418,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "publish",
-    "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)、level 任务层级（可选，0..7，默认 6 连长级；上游显式声明 x级 则覆盖）。返回 {task_id, namespace, message}，其中 namespace 是任务**实际落在**的 ns（BUG-23：过去只回 task_id，把键名写成 ns 会静默落进 default 而无从发现）。参数名逐字对 inputSchema：与本工具已声明参数同根（互为子串）的错名（ns/desc/project 这类）直接拒绝，不做静默忽略。",
+    "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)、level 任务层级（可选，0..7，默认 6 连长级；上游显式声明 x级 则覆盖）。返回 {task_id, namespace, message}，其中 namespace 是任务**实际落在**的 ns（BUG-23：过去只回 task_id，把键名写成 ns 会静默落进 default 而无从发现）。参数名逐字对 inputSchema：与本工具已声明参数同根（互为子串）的错名（ns/desc/project 这类）直接拒绝，不做静默忽略。⚠ namespace 传 default 或留空会**立即返回 Err**（ns 写门 T0r1 第②步）：请先 `store_open(ns=<你的项目命名空间>)` 再发布——default.db 已被外部项目（cron-auto/Pentad/bugs 等）污染 2300+ 条任务，写 default 会造成跨项目混表。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -1438,6 +1438,13 @@ pub async fn run_server() -> Unit {
       let created_by = get_str(args, "created_by", default="human_steward")
       let level = get_int(args, "level", default=6)
       let ts = now_default()
+      // T0r1 第②步（止血）：publish 拒绝写入 default/空 ns，堵住外部项目污染 default.db。
+      // 门在 handler 层——engine.publish 默认 ns="default" 保持兼容（存量测试/CLI 直调不受影响），
+      // 但 MCP 客户端（含 cron-auto 等定时进程）走本入口时必须先 store_open 自己的 ns。
+      let g = ns_write_gate(ns)
+      if g is Err(ge) {
+        return Err(@mcp_types.ToolError(ge))
+      }
       let r = engine_for_ns(ns).publish(
         project_dir~,
         description~,
@@ -5969,15 +5976,24 @@ pub async fn run_server() -> Unit {
       // 而是走 MultiStore 默认 `.fist-mbt/data/`（多库/多租户台账落目标项目私有目录）。
       // 空串是"用默认"的信号，不走 data_dir_ok（data_dir_ok 会拒空）；实传值仍严格校验。
       if dir.is_empty() {
-        dir = ".fist-mbt/data"
-        // `@fs.create_dir` 不递归（见 model_router_ops.mbt 同款三层建目录），
-        // 而 SqliteStore 只建文件不建目录——缺了这两层，默认落点会在首个
-        // store_open 直接 `unable to open database file` 崩掉整个 server。
-        @fs.create_dir(".fist-mbt") catch {
-          _ => ()
-        }
-        @fs.create_dir(dir) catch {
-          _ => ()
+        // BUG-389 修复：BUG-78 把默认 data_dir 改成 `.fist-mbt/data/` 但没迁存量库，
+        // cwd 根仍留有 `<ns>.db`——server 重启后 store_open 落新空库，同 ns 任务"凭空消失"
+        // （2026-10-23 实测：fist-mbt-refactor 40 条 / tnr-polish 23 条 / tql-b5 1 条全部丢失）。
+        // 打开前先检测旧位置存量库：存在则复用旧库（任务不丢），否则才落 BUG-78 新默认。
+        let legacy_exists = legacy_store_exists(ns)
+        if legacy_exists {
+          dir = "."
+        } else {
+          dir = ".fist-mbt/data"
+          // `@fs.create_dir` 不递归（见 model_router_ops.mbt 同款三层建目录），
+          // 而 SqliteStore 只建文件不建目录——缺了这两层，默认落点会在首个
+          // store_open 直接 `unable to open database file` 崩掉整个 server。
+          @fs.create_dir(".fist-mbt") catch {
+            _ => ()
+          }
+          @fs.create_dir(dir) catch {
+            _ => ()
+          }
         }
       }
       // BUG-78：原因分列再动手——把非法 ns 和非法 data_dir 合并成一句"打开失败"，
@@ -7200,7 +7216,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "executor_run",
-    "把任务交给外部执行器真跑（宿主命令能力，默认收紧）：执行器名**只能**是白名单 aider | atomcode | ofm，或 `executor_register` 已注册的自定义执行器（注册即可用，跨重启可复现）。aider/atomcode 走本地 CLI spawn（argv 形状由 src/executor/cli_argv.mbt 固定，不经过 shell，提示词里的 ; $() 反引号都只是字面量，可执行文件名由登记表推导——调用方无法借本工具注入任意命令）；自定义执行器走受限 CLI 通道（binary=注册名、argv=[prompt]，同样不经 shell）；**ofm 走并存 HTTP 通道**（`executor_run_impl` 按 `executor` 分流，不经 build_command）：真 POST `{ofm_endpoint}/chat/completions`，端点 env `FIST_OFM_ENDPOINT` 优先、`config.ofm_endpoint` 兜底，`Authorization: Bearer` 的 key 只在 server 进程环境变量里读、**回执绝不回显**，失败按 `classify_ofm_failure` 归因（网络/401/5xx/其他）。model 留空时先向 model_route 要一个模型并记账（路由↔执行器接线点；自定义执行器与 atomcode 同规——跳过 FIST 路由防模型名跨命名空间错配）；无可用模型直接失败不猜模型。结果 ok=false 时附可诊断 error/hint/failure_kind，绝不静默成功。参数：project_dir(必填)、executor(必填 aider|atomcode|ofm 或已注册自定义执行器)、prompt(必填，非空且不含 NUL)、model(可选，留空则路由决定)、namespace(可选)、timeout_ms(可选默认 180000)、dry_run(可选默认 false：CLI 通道只回显将执行的 argv、OFM 通道只回显将发送的请求体 URL，一个进程/一个网络请求都不起，先审后跑)（注：时间戳由服务端盖章）。执行需 js/node 运行时；native 构建返回明确拒绝。",
+    "把任务交给外部执行器真跑（宿主命令能力，默认收紧）：执行器名**只能**是白名单 aider | atomcode | ofm，或 `executor_register` 已注册的自定义执行器（注册即可用，跨重启可复现）。aider/atomcode 走本地 CLI spawn（argv 形状由 src/executor/cli_argv.mbt 固定，不经过 shell，提示词里的 ; $() 反引号都只是字面量，可执行文件名由登记表推导——调用方无法借本工具注入任意命令）；自定义执行器走受限 CLI 通道（binary=注册名、argv=[prompt]，同样不经 shell）；**ofm 走并存 HTTP 通道**（`executor_run_impl` 按 `executor` 分流，不经 build_command）：真 POST `{ofm_endpoint}/chat/completions`，端点 env `FIST_OFM_ENDPOINT` 优先、`config.ofm_endpoint` 兜底，`Authorization: Bearer` 的 key 只在 server 进程环境变量里读、**回执绝不回显**，失败按 `classify_ofm_failure` 归因（网络/401/5xx/其他）。model 留空时先向 model_route 要一个模型并记账（路由↔执行器接线点；自定义执行器与 atomcode 同规——跳过 FIST 路由防模型名跨命名空间错配）；无可用模型直接失败不猜模型。结果 ok=false 时附可诊断 error/hint/failure_kind，绝不静默成功。**CLI 通道的 failure_kind 由 classify_cli_failure 按 spawn 原语的 error 文本归因**：NOT_EXECUTABLE（进程没起来，ENOENT/EACCES）/ TIMEOUT（起来了但跑满 timeout_ms，产物很可能已落盘，先验文件系统再决定重派）/ NONZERO_EXIT（退出码非 0）/ SIGNAL_KILLED（node 给 code=null，折成 -1）/ DISPATCH_FAILED（本侧调度或结果解析失败，坏的是尺不是执行器）/ UNKNOWN（无线索，不猜）；成功时 failure_kind=NONE。hint 随档而变——只有 NOT_EXECUTABLE 才配说「可执行文件不可用」。**换模型重试（P1.1 fallback 链）按 cli_retry_policy 准入**：NONZERO_EXIT / SIGNAL_KILLED / UNKNOWN 才换候选；NOT_EXECUTABLE（PATH 问题，换谁都一样）与 TIMEOUT（时长预算，换候选会带全新预算重跑整单、而首跑产物多半已落盘）**不换、直接返回可处置处方**，回执另带 `retry_skipped` 说明为什么没换（该字段只在政策跳过时出现；预算耗尽/无候选不会伪装成政策跳过）。本侧 DISPATCH_FAILED 一律不重试也不记模型冷却账——模型根本没跑起来。参数：project_dir(必填)、executor(必填 aider|atomcode|ofm 或已注册自定义执行器)、prompt(必填，非空且不含 NUL)、model(可选，留空则路由决定)、namespace(可选)、timeout_ms(可选默认 180000)、dry_run(可选默认 false：CLI 通道只回显将执行的 argv、OFM 通道只回显将发送的请求体 URL，一个进程/一个网络请求都不起，先审后跑)（注：时间戳由服务端盖章）。执行需 js/node 运行时；native 构建返回明确拒绝。",
     schema(
       {
         "project_dir": string_prop(

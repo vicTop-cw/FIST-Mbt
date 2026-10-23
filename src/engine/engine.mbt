@@ -1098,14 +1098,8 @@ pub fn FistEngine::plan_deep(
       // 父描述里自带的引擎标注不得再当切割底稿（R113）。
       let parent_desc = strip_plan_annotations(parent.description)
       let slices = match spec {
-        Some(s) =>
-          @decompose.decompose_slices(
-            s,
-            split_n,
-            parent_desc~,
-          )
-        None =>
-          @decompose.default_slices(split_n, parent_desc~)
+        Some(s) => @decompose.decompose_slices(s, split_n, parent_desc~)
+        None => @decompose.default_slices(split_n, parent_desc~)
       }
       match
         self.decompose_rec(
@@ -1586,10 +1580,10 @@ pub fn FistEngine::publish_with_deps(
 fn estimate_rank(assignee : String) -> Int32 {
   if assignee == "human_steward" || assignee == "human" {
     0
-  } else if assignee.starts_with("leader") ||
-    assignee.starts_with("polish-lead") {
+  } else if assignee.has_prefix("leader") ||
+    assignee.has_prefix("polish-lead") {
     6
-  } else if assignee.starts_with("atomcode") || assignee.starts_with("aider") {
+  } else if assignee.has_prefix("atomcode") || assignee.has_prefix("aider") {
     4
   } else {
     5
@@ -1635,11 +1629,11 @@ fn extract_needs(desc : String) -> Array[String] {
     if has_need {
       let s = sv.to_owned()
       let after = if sv.has_prefix("需要:") {
-        s.substring(start="需要:".length()).trim()
+        s["需要:".length():].trim()
       } else if sv.has_prefix("需要：") {
-        s.substring(start="需要：".length()).trim()
+        s["需要：".length():].trim()
       } else if sv.has_prefix("need:") {
-        s.substring(start="need:".length()).trim()
+        s["need:".length():].trim()
       } else if sv.has_prefix("requires:") {
         s.substring(start="requires:".length()).trim()
       } else if sv.has_prefix("能力:") {

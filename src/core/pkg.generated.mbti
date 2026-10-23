@@ -115,7 +115,7 @@ pub fn Task::retry(Self) -> Result[Self, String]
 pub fn Task::split(Self) -> Result[Self, String]
 pub fn Task::status_to_string(Self) -> String
 pub fn Task::submit(Self) -> Result[Self, String]
-pub fn Task::to_json(Self) -> Json
+pub fn Task::to_json(Self, desc_limit? : Int32) -> Json
 pub fn Task::to_repr(Self) -> @debug.Repr
 pub fn Task::with_deliverable(Self, String, String) -> Self
 pub fn Task::with_depends_on(Self, String, String) -> Self

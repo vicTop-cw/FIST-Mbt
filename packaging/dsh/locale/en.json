@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "FIST-Mbt",
+    "description": "FIST commander task orchestration over MCP: seven-state task lifecycle, DAG scheduling, self-driving loops and Omega verification, with a prebuilt CLI (no build step)."
+  }
+}

@@ -29,7 +29,7 @@ META = {
     "io.modelcontextprotocol/clientCapabilities": {},
     "io.modelcontextprotocol/clientInfo": {"name": "pentad-fist-driver", "version": "0.1"},
 }
-MAIN_JS = "_build/js/debug/build/cmd/cli/cli.js"
+MAIN_JS = os.path.join(_FIST_ROOT, "_build/js/debug/build/cmd/cli/cli.js")
 
 
 def rpc(proc, method, **payload):

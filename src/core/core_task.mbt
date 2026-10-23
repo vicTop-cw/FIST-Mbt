@@ -651,7 +651,28 @@ pub fn child_id(parent_id~ : String, idx~ : Int32) -> String {
 
 ///|
 /// 任务转 JSON（供 MCP resource / tool 输出）
-pub fn Task::to_json(self : Task) -> Json {
+
+///|
+/// 给 AI 编排用的描述截断：`s[0:max]` 按字节切，需回退到 UTF-8 字符边界，
+/// 否则会把中文/emoji 切成半个字符（输出非法 UTF-8）。`desc_limit <= 0` 原样返回。
+fn desc_clip(s : String, desc_limit : Int32) -> String {
+  if desc_limit <= 0 || s.length() <= desc_limit {
+    s
+  } else {
+    let mut cut = desc_limit
+    // 回退：跳过 UTF-8 continuation bytes（0b10xxxxxx），落在字符起点上
+    while cut > 0 && s[cut].land(0xC0) == 0x80 {
+      cut = cut - 1
+    }
+    s[0:cut].to_owned() + "…"
+  }
+}
+
+///|
+/// 任务 JSON。`desc_limit > 0` 时 description 被截断到该字节上限（字符边界安全），
+/// 供查询/管家类工具按需控体积——否则膨胀的任务描述（gradient/父计划/边界四问等元信息
+/// 递归继承后动辄数 KB）会把 MCP 返回体积炸掉。默认 -1 = 不截断（零回归）。
+pub fn Task::to_json(self : Task, desc_limit~ : Int32 = -1) -> Json {
   let m : Map[String, Json] = Map([])
   m.set("id", Json::string(self.id))
   match self.parent_id {
@@ -670,7 +691,7 @@ pub fn Task::to_json(self : Task) -> Json {
     Some(a) => m.set("assignee", Json::string(a))
     None => m.set("assignee", Json::null())
   }
-  m.set("description", Json::string(self.description))
+  m.set("description", Json::string(desc_clip(self.description, desc_limit)))
   m.set("deliverable", Json::string(self.deliverable))
   m.set("created_at", Json::string(self.created_at))
   m.set("updated_at", Json::string(self.updated_at))
