@@ -52,10 +52,24 @@ GIT_ENV_SCRUB = (
 
 
 def isolated_git_env(base=None):
-    """返回一份剥掉 `GIT_ENV_SCRUB` 的环境副本（默认基于 `os.environ`，不改原环境）。"""
+    """返回一份剥掉隔离变量的环境副本（默认基于 `os.environ`，不改原环境）。
+
+    2026-10-24（R3/R4 吸收）：除 `GIT_ENV_SCRUB` 的显式清单外，再按**前缀**剥
+    `GIT_CONFIG_*`（`GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` / `GIT_CONFIG_COUNT` …）、
+    `GIT_AUTHOR_*` / `GIT_COMMITTER_*`（夹具提交不该继承宿主的作者身份），
+    并设 `GIT_CONFIG_NOSYSTEM=1` —— CI runner 的系统级 gitconfig 可能配了 `hooksPath` /
+    模板，那同样会污染沙箱（R4 的 `sandbox_env()` 口径，两侧并成一个真源）。
+    """
     env = dict(os.environ if base is None else base)
-    for k in GIT_ENV_SCRUB:
-        env.pop(k, None)
+    for k in list(env):
+        if (
+            k in GIT_ENV_SCRUB
+            or k.startswith("GIT_CONFIG_")
+            or k.startswith("GIT_AUTHOR_")
+            or k.startswith("GIT_COMMITTER_")
+        ):
+            env.pop(k, None)
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
     return env
 
 
