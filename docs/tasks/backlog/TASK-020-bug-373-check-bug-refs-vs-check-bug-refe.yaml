@@ -13,3 +13,11 @@ problem: >
 
 evidence: |
   python scripts/check_bug_refs.py --selftest rc=0；python scripts/check_bug_refs.py rc=0（报告面命中 7177+，含大量 CLOSED）；ls scripts/ | grep -i bug_ref ⇒ check_bug_refs.py 与 check_bug_reference_integrity.py 同时在册；scripts/README.md 两条目已分别写明口径与现状读数。
+# ── R123 对账重盖章（gitcode/main rebase 到 origin/master 788c5823，原 proof commit 不再可达）──
+rebase_proven:
+  dropped_by: "gitcode/main rebase onto origin/master 788c5823（旧线 proof commit 未迁到新线）"
+  dropped_proof_commits: ["21a883a9", "81e0df3a", "cef1e9cb", "dc709c40", "91976cb2"]
+  verified_on: "origin/master 788c5823（gitcode/main 587a1b5c 含同批交付物）"
+  reading:
+    - "python scripts/check_bug_refs.py --strict ⇒ rc=0（注释面 ORPHAN ≤ 棘轮 3）"
+  note: "R2 UNPROVEN-DONE 重盖章：交付物在新线齐全，丢失的只是 rebase 上的 proof 引文。"
