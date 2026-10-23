@@ -653,18 +653,29 @@ pub fn child_id(parent_id~ : String, idx~ : Int32) -> String {
 /// 任务转 JSON（供 MCP resource / tool 输出）
 
 ///|
-/// 给 AI 编排用的描述截断：`s[0:max]` 按字节切，需回退到 UTF-8 字符边界，
-/// 否则会把中文/emoji 切成半个字符（输出非法 UTF-8）。`desc_limit <= 0` 原样返回。
+/// 给 AI 编排用的描述截断：`desc_limit` 是 **UTF-8 字节上限**（与 `Task::to_json` 的
+/// `desc_limit~` 契约一致），按字节切后回退到 UTF-8 字符边界，否则会把中文/emoji
+/// 切成半个字符（输出非法 UTF-8）。`desc_limit <= 0` 原样返回。
+///
+/// 为什么必须走 `@utf8.encode`：MoonBit 的 `String::length()` 返回的是 **UTF-16
+/// code unit 数**（不是字节数），`s[i]` 取的是 UTF-16 code unit——原实现用
+/// `s[cut].land(0xC0) == 0x80` 做 UTF-8 continuation 检测在 UTF-16 上**永远不成立**，
+/// 等于把 `desc_limit` 当成了"字符数"而非"字节数"（BUG-360 已钉过 `String::to_bytes()`
+/// 是 UTF-16LE 的坑，统一走 `@utf8.encode`）。
 fn desc_clip(s : String, desc_limit : Int32) -> String {
-  if desc_limit <= 0 || s.length() <= desc_limit {
+  let bytes = @utf8.encode(s)
+  if desc_limit <= 0 || bytes.length() <= desc_limit {
     s
   } else {
     let mut cut = desc_limit
     // 回退：跳过 UTF-8 continuation bytes（0b10xxxxxx），落在字符起点上
-    while cut > 0 && s[cut].land(0xC0) == 0x80 {
+    while cut > 0 && bytes[cut].land(0xC0) == 0x80 {
       cut = cut - 1
     }
-    s[0:cut].to_owned() + "…"
+    let clipped = @utf8.decode(Bytes::from_array(bytes[0:cut].to_array())) catch {
+      _ => ""
+    }
+    clipped + "…"
   }
 }
 
