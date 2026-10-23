@@ -142,6 +142,11 @@ SPECIAL_CASES = [
     # 与 `check_scripts_index` 那次「文档写进被检文件名」是同一族：**登记红面的文字本身就是被检面**。
     case("check_doc_surface.py"),
     case("check_doc_surface.py", "--selftest"),
+    # —— 2026-10-23 DSH 安装面可移植化：新增两把尺，按 G1 必须同时进电池与 CI 面。
+    #    模板→渲染的幂等自证与「当前面禁本机身份路径」回归锁，都是纯文本判据、无产物依赖。 ——
+    case("check_hardcoded_paths.py"),
+    case("check_hardcoded_paths.py", "--selftest"),
+    case("render_dsh_patch.py", "--selftest"),
     # —— R126：副机认领入口（docs/2026-10-20-slave-tasks.md）的自证尺。裸跑判「证据锚点指不指
     #    得到真源 + 文首计数自述对不对」，--selftest 判「这把尺能不能发红」（18 格合成树）。
     #    手写点名两格而不靠自动补格：自动补格只补裸跑，自检格必须点名（本文件既有纪律）。
