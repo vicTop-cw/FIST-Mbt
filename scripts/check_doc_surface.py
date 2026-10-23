@@ -874,6 +874,49 @@ def j14_tool_count_claims():
     return problems
 
 
+# ---- J17 BACKLOG 现状段计数必须点名真源（R175 把「120 工具 / 442 测试」撤成指针，本条钉住它不复发）----
+RE_J17_COUNT = re.compile(r"(?<![\dA-Za-z.:/-])(\d{2,5})\s*(?:个)?\s*(?:条|项)?\s*(?:工具|测试|用例)")
+RE_J17_POINTER = re.compile(r"(真源|single source|check_tools_sync|check_test_sync|check_badge|server\.mbt|徽章)")
+
+
+def j17_backlog_anchor_count_problems(text):
+    """`BACKLOG.md` 文首现状段（第一张 `|` 表之前的那段）里的计数，必须**同一行**点名计数真源。
+
+    为什么只管文首：该文件是 selfdrive 审视环的**净拉取源**（文首自己写着「Next Tasks 应从这里取」），
+    下一轮 planner 会把文首的数字当现状继承；而表格行是各轮的历史列（与 `check_test_sync` EXEMPT
+    表里"当轮实测数"同型，改写即伪造一次没发生的测量）⇒ 刻意不判，只判现状断言面。
+    为什么"带真源指针"就放行：允许文档引述"某个数出自哪个真源"，禁止的是**裸数字**。
+    """
+    head = []
+    for line in text.splitlines():
+        if line.lstrip().startswith("|"):
+            break
+        head.append(line)
+    if not [l for l in head if l.strip()]:
+        return ["FATAL J17 BACKLOG.md 现状段为空/读不到 ⇒ 这一格对照面不存在，判据空转不冒绿"]
+    problems = []
+    for ln, line in enumerate(head, 1):
+        if not RE_J17_COUNT.search(line) or RE_J17_POINTER.search(line):
+            continue
+        problems.append(
+            "J17 BACKLOG.md:%d 现状段携带裸计数「%s」⇒ 净拉取源里的数字会被下一轮当成现状继承，"
+            "而全仓没有任何尺扫这份文件的计数面。处置：撤数改指真源"
+            "（工具=`src/server/server.mbt` + `check_tools_sync.py`；测试=README 徽章行 + "
+            "`check_test_sync.py`/`check_badge.py`）" % (ln, line.strip()[:70]))
+    return problems
+
+
+def j17_backlog_anchor_count_consistency(backlog_rel):
+    """BACKLOG 路径既可能以绝对形、也可能以相对形传进来（沿用 J4 那份变量），两种都试 ⇒ 不因传参形状误报。"""
+    for cand in (backlog_rel, os.path.join(str(ROOT), str(backlog_rel))):
+        try:
+            with open(cand, encoding="utf-8", errors="replace") as fh:
+                return j17_backlog_anchor_count_problems(fh.read())
+        except Exception:
+            continue
+    return ["FATAL J17 读不到 BACKLOG.md（试过 %s）⇒ 判据无法自证" % (backlog_rel,)]
+
+
 # ---- J15 文档文件名日期前缀规范（R12 新增）：docs/ 里带日期戳的文件必须 YYYY-MM-DD- 开头 ----
 # 为什么要有：docs/ 是评估/决策归档目录（如 2026-10-10-mizchi-llm-eval.md），
 # 文件名带日期（如 improvement-plan-20260929.md 里的 20260929）却不用 `YYYY-MM-DD-` 前缀时，
@@ -1335,6 +1378,18 @@ def j_selftest():
     j14_real = j14_tool_count_claims()
     if j14_real:
         fails.append("J14 在真实现状面上就红了（先判尺子，再判被测）：" + j14_real[0])
+    # J17（BACKLOG 现状段裸计数）：四支缺一不可——裸数必红、同行点名真源不误红、表格历史行不判、现状段空必自拒。
+    if not any("裸计数" in p for p in j17_backlog_anchor_count_problems(
+            "# T\n> 状态枚举。锚点事实：**120 工具 / 442 测试** / CI 三绿\n\n| P级 | 事项 |\n")):
+        fails.append("J17 抓不到『现状段裸计数』→ 净拉取源抄回来的数字又没人判（R175 那三个数会复发）")
+    if j17_backlog_anchor_count_problems(
+            "# T\n> 计数不抄写：工具面真源 = `src/server/server.mbt` 注册表（170 个工具）\n"):
+        fails.append("J17 误红『同行已点名真源』的引述（恒红判据不可信）")
+    if j17_backlog_anchor_count_problems(
+            "# T\n> 说明行\n\n| P0 | done(JS 全量 737/737 通过 + 8 条测试) |\n"):
+        fails.append("J17 把表格历史行判红了 → 那些是各轮当轮实测数，改写等于伪造一次没发生的测量")
+    if not any("FATAL J17" in p for p in j17_backlog_anchor_count_problems("| 直接就是表头\n")):
+        fails.append("J17 现状段为空时不自拒 → 没读到对照面不等于没有问题")
     # J15（文档文件名日期前缀）：三支缺一不可——缺前缀必红、带前缀不误红、扫描面空必自拒。
     if not any("未用 `YYYY-MM-DD-` 前缀" in p for p in j15_docs_date_prefix_problems(
             [Path("2026-10-10-x.md"), Path("decision-20260929.md")])):
@@ -1564,6 +1619,7 @@ def main(argv):
     problems += j13_release_status_consistency()
     problems += j14_tool_count_claims()
     problems += j15_docs_date_prefix_consistency()
+    problems += j17_backlog_anchor_count_consistency(BACKLOG)
     problems += j17_toolchain_floor_consistency()
 
     if problems:
