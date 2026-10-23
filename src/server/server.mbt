@@ -5976,15 +5976,24 @@ pub async fn run_server() -> Unit {
       // 而是走 MultiStore 默认 `.fist-mbt/data/`（多库/多租户台账落目标项目私有目录）。
       // 空串是"用默认"的信号，不走 data_dir_ok（data_dir_ok 会拒空）；实传值仍严格校验。
       if dir.is_empty() {
-        dir = ".fist-mbt/data"
-        // `@fs.create_dir` 不递归（见 model_router_ops.mbt 同款三层建目录），
-        // 而 SqliteStore 只建文件不建目录——缺了这两层，默认落点会在首个
-        // store_open 直接 `unable to open database file` 崩掉整个 server。
-        @fs.create_dir(".fist-mbt") catch {
-          _ => ()
-        }
-        @fs.create_dir(dir) catch {
-          _ => ()
+        // BUG-389 修复：BUG-78 把默认 data_dir 改成 `.fist-mbt/data/` 但没迁存量库，
+        // cwd 根仍留有 `<ns>.db`——server 重启后 store_open 落新空库，同 ns 任务"凭空消失"
+        // （2026-10-23 实测：fist-mbt-refactor 40 条 / tnr-polish 23 条 / tql-b5 1 条全部丢失）。
+        // 打开前先检测旧位置存量库：存在则复用旧库（任务不丢），否则才落 BUG-78 新默认。
+        let legacy_exists = legacy_store_exists(ns)
+        if legacy_exists {
+          dir = "."
+        } else {
+          dir = ".fist-mbt/data"
+          // `@fs.create_dir` 不递归（见 model_router_ops.mbt 同款三层建目录），
+          // 而 SqliteStore 只建文件不建目录——缺了这两层，默认落点会在首个
+          // store_open 直接 `unable to open database file` 崩掉整个 server。
+          @fs.create_dir(".fist-mbt") catch {
+            _ => ()
+          }
+          @fs.create_dir(dir) catch {
+            _ => ()
+          }
         }
       }
       // BUG-78：原因分列再动手——把非法 ns 和非法 data_dir 合并成一句"打开失败"，
