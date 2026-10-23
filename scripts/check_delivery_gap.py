@@ -47,6 +47,47 @@ def verdict_of(ahead, pushed):
     return "ok" if pushed else "gap"
 
 
+def classify_divergence(a_only, b_only):
+    """纯函数：两条线互相领先的提交数 ⇒ 形态。
+
+    - 都为 0 ⇒ "same"（同一提交）；
+    - 只有一侧领先 ⇒ "ff"（可快进追上；`a_only=0` 表示 b 领先 a，反之亦然）；
+    - 两侧都领先 ⇒ "diverged"（真分叉：需要有人手工合）。
+    为什么单列这一格：本仓**两条远端线**（`origin/master` 面向 GitHub，`gitcode/main` 是合并机器人的真实整合线）
+    会周期性错位；R46 我就因为拿 `origin` 当基准核对，得出过"修的全丢了"的错误结论——实际内容都在 `gitcode` 上。
+    把错位量出来（而不是靠记忆里"哪条是主line"），这类误判就不会再发生。
+    """
+    a_only, b_only = int(a_only), int(b_only)
+    if a_only == 0 and b_only == 0:
+        return "same"
+    if a_only == 0 or b_only == 0:
+        return "ff"
+    return "diverged"
+
+
+def inspect_cross(a, b):
+    """比较两个远端 ref：返回 {a, b, a_only, b_only, files, verdict}。"""
+    rc_a, _ = git("rev-parse", "--verify", "--quiet", a)
+    rc_b, _ = git("rev-parse", "--verify", "--quiet", b)
+    if rc_a != 0 or rc_b != 0:
+        return None
+    rc1, s1 = git("rev-list", "--count", "%s..%s" % (b, a))
+    rc2, s2 = git("rev-list", "--count", "%s..%s" % (a, b))
+    if rc1 != 0 or rc2 != 0:
+        return None
+    a_only = int(s1.strip() or 0) if s1.strip().isdigit() else 0
+    b_only = int(s2.strip() or 0) if s2.strip().isdigit() else 0
+    files = 0
+    if a_only or b_only:
+        # 用**两点**语法：三点 `A...B` 只算 merge-base→B，反向调用会得 0 个文件
+        # （实测反向 `gitcode/main...origin/master` = 0，而两点 = 27）⇒ 判据会随入参顺序变，不能用。
+        rc, d = git("diff", "--name-only", a, b)
+        if rc == 0:
+            files = len([f for f in d.splitlines() if f.strip()])
+    return {"a": a, "b": b, "a_only": a_only, "b_only": b_only, "files": files,
+            "verdict": classify_divergence(a_only, b_only)}
+
+
 def inspect(base, ref):
     rc, tip = git("rev-parse", "--verify", "--quiet", ref)
     if rc != 0:
@@ -75,6 +116,9 @@ def selftest():
     cell("no-ahead", verdict_of(0, False), "ok")
     cell("ahead-pushed", verdict_of(3, True), "ok")
     cell("ahead-unpushed", verdict_of(3, False), "gap")
+    cell("div-same", classify_divergence(0, 0), "same")
+    cell("div-ff", classify_divergence(0, 18), "ff")
+    cell("div-diverged", classify_divergence(2, 3), "diverged")
 
     import io
     d = tempfile.mkdtemp(prefix="gap-")
@@ -117,7 +161,31 @@ def selftest():
     return 0
 
 
+def main_compare(a, b):
+    got = inspect_cross(a, b)
+    if got is None:
+        print("  判据无法自证：取不到 %s 或 %s（rc=2，拒绝判绿也拒绝判红）" % (a, b))
+        return 2
+    print("  跨远端断层：%s → %s" % (a, b))
+    print("    %-24s 独有 %d 个提交" % (a, got["a_only"]))
+    print("    %-24s 独有 %d 个提交" % (b, got["b_only"]))
+    print("    形态：%s（差异文件 %d 个）" % (got["verdict"], got["files"]))
+    if got["verdict"] == "same":
+        print("PASS 两条线同一提交")
+        return 0
+    if got["verdict"] == "ff":
+        lag = a if got["b_only"] else b
+        lead = b if got["b_only"] else a
+        print("FAIL 单向落后：`%s` 落后 `%s`（可快进；若这条线对外可见，用户/CI 读到的是旧内容）"
+              % (lag, lead))
+        return 1
+    print("FAIL 真分叉：两条线各有独有提交，需要有人手工合并")
+    return 1
+
+
 def main():
+    if len(sys.argv) >= 4 and sys.argv[1] == "--compare":
+        return main_compare(sys.argv[2], sys.argv[3])
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--base", default="origin/master")
