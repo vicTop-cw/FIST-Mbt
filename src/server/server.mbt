@@ -2774,7 +2774,7 @@ pub async fn run_server() -> Unit {
           phi_threshold~,
           mode~,
           // R53 / BUG-354：watchdog_tick 已删掉这个死参数（handler 自己的 auto_flush 段才是真实现，
-      // 见下面 `flush_bug_queue 追加段`），此处不再传。
+          // 见下面 `flush_bug_queue 追加段`），此处不再传。
         ) {
         Ok(j) => {
           // —— flush_bug_queue 追加段（append-only，不改上面任何代码）——
@@ -4396,12 +4396,12 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "plan_revise",
-    "反馈驱动的计划修订（R98，ReAct arXiv 2210.03629 / CoPAL arXiv 2310.07263 蒸馏）：把「拆完即弃」升级为「执行中持续修订」——给定根任务及子任务执行反馈，计算计划三分：keep（已证有效、承诺保留）/ rework（失败或其依赖链受牵连，需返工，控级联不涟漪）/ ready（依赖全部有效且未执行，下一步可做）。feedback 缺省读真实状态（已完成/已归档=ok；已打回/已暂停=否；其余=未证）；传 [{task_id, ok}] 可显式覆盖。纯计算、只读不写库（决策建议，执行权在 agent/指挥官，与 saga 返回补偿序列同一抽象层）。参数：root_task_id 根任务（必填）、feedback 执行反馈数组（可选，[{task_id, ok}]）、namespace（可选默认 default）。返回 { ok, root_task_id, basis: status|feedback, keep_count, rework_count, ready_count, keep, rework, ready, note }。",
+    "反馈驱动的计划修订（R98，ReAct arXiv 2210.03629 / CoPAL arXiv 2310.07263 蒸馏）：把「拆完即弃」升级为「执行中持续修订」——给定根任务及子任务执行反馈，计算计划三分：keep（已证有效、承诺保留）/ rework（失败或其依赖链受牵连，需返工，控级联不涟漪）/ ready（依赖全部有效且未执行，下一步可做）。feedback 缺省读真实状态（已完成/已归档=ok；已打回/已暂停=否；其余=未证）；传 [{task_id, ok}] 可显式覆盖。条目必须是 {task_id: 非空字符串, ok: 布尔}：类型不符计入 feedback.ignored（flags=feedback_unparsed:N），任务不在本子树计入 feedback.unmatched（flags=feedback_unmatched:N）；只有至少一条真正生效时 basis 才是 feedback，否则按真实状态出计划并回 basis=status——被丢弃的反馈不再冒称计划依据。纯计算、只读不写库（决策建议，执行权在 agent/指挥官，与 saga 返回补偿序列同一抽象层）。参数：root_task_id 根任务（必填）、feedback 执行反馈数组（可选，[{task_id, ok}]）、namespace（可选默认 default）。返回 { ok, root_task_id, basis: status|feedback, feedback:{total,applied,ignored,unmatched}, flags, keep_count, rework_count, ready_count, keep, rework, ready, note }。",
     schema(
       {
         "root_task_id": string_prop("根任务 id（必填）"),
         "feedback": array_prop(
-          "执行反馈数组（可选，[{task_id, ok}]，缺省读真实状态）",
+          "执行反馈数组（可选，[{task_id: 非空字符串, ok: 布尔}]，缺省读真实状态；类型不符计入 feedback.ignored 并进 flags）",
         ),
         "namespace": string_prop("命名空间（可选默认 default）"),
       },
