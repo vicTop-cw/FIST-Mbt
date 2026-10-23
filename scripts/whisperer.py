@@ -2,17 +2,22 @@
 """scripts/whisperer.py — 风语者（Whisperer）自动化巡检脚本。
 把定时任务 prompt 里的 Step 0-4 装进一个 Python 文件。
 用法:
-  python scripts/whisperer.py --fast           # P0-1 新增：只跑 Step 0 HEAD 安全门（<3s）
+  python scripts/whisperer.py --fast           # P0-1 新增：只跑 Step 0 HEAD 状态门（<3s）
   python scripts/whisperer.py --scan-only      # Step 0-2 + Step 3 扫描，不自动合入
-  python scripts/whisperer.py --auto-merge    # Step 0-2 + 自动合入 MERGE-CODE 分支 + Step 3
+  python scripts/whisperer.py --auto-merge     # Step 0-2 + 自动合入 MERGE-CODE 分支 + Step 3
   python scripts/whisperer.py --self-test      # selftest: 对干净树跑一遍，必须 0 异常
   python scripts/whisperer.py                  # 默认 --scan-only
-退出码: 0=全绿 1=有失败 2=自身异常"""
+  python scripts/whisperer.py --sync-mirror    # 附加旗标：巡检时显式把 origin 镜像强推到 gitcode 现值
+Step 0 的边界（R120 收口，别把它读回旧口径）：
+  落后 / 领先主仓线都是**常态**（本仓整条 slave 工作流活在 feature 分支上），只有
+  「互不为祖先的真分叉」与「祖先关系量不到」才是异常。本门**只读数、只出方案**：
+  不 checkout、不 reset、不 push 共享线——旧版把 `local != 远端 main` 一律判成篡改，
+  并在默认模式里真的 `git reset --hard` + `git push --force HEAD:main HEAD:master`（两远端），
+  等于每 15 分钟替所有在feature 分支上工作的人做一次不可逆裁决。
+退出码: 0=正常（含 behind/ahead） 1=真分叉或量不到（需人工） 2=脚本自身异常"""
 import argparse, os, re, subprocess, sys
 from datetime import datetime
 from pathlib import Path
-
-from moon_env_probe import moon_env
 # 强制 stdout/stderr UTF-8（Windows GBK 终端会炸 emoji）
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -23,47 +28,106 @@ ROOT = Path(__file__).resolve().parent.parent
 EXC = ("_build", "temp", ".git", "node_modules")
 
 def run(cmd, cwd=None, capture=True):
-    r = subprocess.run(cmd, cwd=cwd or ROOT, capture_output=capture, text=True, encoding="utf-8",
-                       errors="replace", env=moon_env())
+    r = subprocess.run(cmd, cwd=cwd or ROOT, capture_output=capture, text=True, encoding="utf-8", errors="replace")
     return r
 
 def sh(*args, cwd=None):
     return run(list(args), cwd=cwd).stdout.strip()
 
 # ============================================================
-# Step 0 — HEAD 安全门（拆分 fast + full）
+# Step 0 — HEAD 状态门（R120：落后 ≠ 篡改；本门只读数、只出方案，永不动手）
 # ============================================================
 HEAD_STATE_FILE = ROOT / "memory" / "whisperer-head.txt"
 
-def step0_head_safety(full=True):
-    """HEAD 安全门。full=True 全量（fetch+reset 篡改），full=False fast 模式（<5s，含 fetch）"""
-    # ========== 两个远程都 fetch ==========
+def _is_ancestor(a, b):
+    """a 是 b 的祖先 → True；确认不是 → False；git 答不了 → None。
+
+    「量不到」绝不能折成 False：浅克隆 / 缺 ref 时 git 也回非 0，折成 False 就把
+    工具链问题读成「本地被篡改」——那正是 R120 之前这道门开火的形状。
+    """
+    r = run(["git", "merge-base", "--is-ancestor", a, b])
+    if r.returncode == 0:
+        return True
+    if r.returncode == 1:
+        return False
+    return None
+
+def _rev_count(spec):
+    """rev-list --count；非数字（缺 ref / 浅克隆）回 None，不冒充 0。"""
+    out = sh("git", "rev-list", "--count", spec)
+    return int(out) if out.strip().isdigit() else None
+
+def classify_head_state(local, gc, anc_local_gc, anc_gc_local):
+    """纯函数：只吃已解析的事实，不调 git、不决定任何修复动作。
+
+    state ∈ same / behind / ahead / diverged / unknown。
+    R120 的立论：feature 分支上 `local != gc` 是**常态**（本仓整条 slave 工作流就活在
+    feature 分支上），旧判据把它一律读成「篡改」，于是巡检拍每 15 分钟就往共享线上打
+    一次 `git reset --hard` + 两记 `push --force HEAD:main HEAD:master`。
+    """
+    if not local or not gc:
+        return ("unknown", "本地或远端 ref 解析为空，关系无从判定")
+    if local == gc:
+        return ("same", "本地 HEAD 与主仓线同一提交")
+    if anc_local_gc is None or anc_gc_local is None:
+        return ("unknown", "git 未能回答祖先关系（浅克隆 / 缺 ref / 工具链）——按「没量到」处置，不出修复动作")
+    if anc_local_gc:
+        return ("behind", "本地落后主仓线：主线前进了，本地工作没被改")
+    if anc_gc_local:
+        return ("ahead", "本地领先主仓线：含未合入提交，feature 分支的常态")
+    return ("diverged", "本地与主仓线互不为祖先：真分叉，需人工裁决")
+
+def head_plan_text(state, local, gc, branch):
+    """只出方案（执行权在人）：把「真要动，动的是什么」写清楚，本函数不执行任何东西。"""
+    if state == "behind":
+        return ("  → 常规处置：git merge " + gc[:7] + "（或 rebase）。当前分支 "
+                + (branch or "(detached)") + " 未受影响，本门不会替你动")
+    if state == "ahead":
+        return ("  → 常规处置：交付面未闭合，push 本分支后由 owner 开 MR；主仓线 " + gc[:7] + " 不受影响")
+    if state == "diverged":
+        return ("  → 方案（执行权在人）：先 `git log --oneline " + gc[:7] + "..HEAD` 与 `HEAD.." + gc[:7]
+                + "` 看清两侧，再决定 rebase/merge；确需回稳的 `git reset --hard` 属不可逆动作，本门拒绝代跑")
+    if state == "unknown":
+        return "  → 先修工具链 / 补 fetch：祖先关系量不到时，任何修复动作都是盲动"
+    return "  → 无需处置"
+
+def step0_head_safety(full=True, sync_mirror=False):
+    """HEAD 状态门。**只读数、只出方案：不 checkout、不 reset、不 push**（金条四）。
+
+    full=True 为巡检拍，full=False 为 fast（同一判据、更少输出）。
+    返回 (head7, status)；status 以 "⚠️" 开头只剩两档：真分叉 / 量不到。
+    """
+    # ========== 两个远程都 fetch（只读） ==========
     run(["git", "fetch", "gitcode", "main", "master"], capture=True)
     run(["git", "fetch", "origin", "main", "master"], capture=True)
 
     local = sh("git", "rev-parse", "HEAD")
     gc = sh("git", "rev-parse", "gitcode/main")
     og = sh("git", "rev-parse", "origin/main")
+    branch = sh("git", "branch", "--show-current")
 
     # ========== 主仓定义 ==========
     # gitcode = 主仓（VictorTop/Fist-Mbt），origin = 镜像（vicTop-cw/FIST-Mbt）
-    # 策略：origin 任何时候落后 gitcode → 自动同步（--force 安全：gitcode 不会落后）
-    mirror_fixed = False
-    mirror_reason = ""
-    if gc != og:
-        diff_ahead = sh("git", "rev-list", "--count", f"origin/main..gitcode/main").strip()
-        diff_behind = sh("git", "rev-list", "--count", f"gitcode/main..origin/main").strip()
-        diff_ahead = int(diff_ahead) if diff_ahead.isdigit() else 0
-        diff_behind = int(diff_behind) if diff_behind.isdigit() else 0
-        if diff_ahead > 0 or diff_behind > 0:
-            print(f"  🔀 origin/main ({og[:7]}) ≠ gitcode/main ({gc[:7]}) — 镜像不同步！")
-            print(f"     gitcode 领先 {diff_ahead} / 落后 {diff_behind}")
-            run(["git", "push", "origin", f"{gc}:refs/heads/main", f"{gc}:refs/heads/master", "--force"])
-            mirror_fixed = True
-            mirror_reason = f"origin 镜像已同步 {og[:7]}→{gc[:7]} (+{diff_ahead}/-{diff_behind})"
-            og = gc
+    # R120：镜像同步从「默认自动强推」降为「默认只报，显式 --sync-mirror 才动」——
+    # 强推共享线是不可逆动作，不该是巡检拍的缺省副作用（owner 口径：GitHub 那边不用管）。
+    mirror_note = ""
+    if gc and og and gc != og:
+        diff_ahead = _rev_count("origin/main..gitcode/main")
+        diff_behind = _rev_count("gitcode/main..origin/main")
+        print("  🔀 origin/main (%s) ≠ gitcode/main (%s) — 镜像不同步（gitcode 领先 %s / 落后 %s）" % (
+            og[:7], gc[:7],
+            diff_ahead if diff_ahead is not None else "?",
+            diff_behind if diff_behind is not None else "?"))
+        if sync_mirror:
+            r = run(["git", "push", "origin", "%s:refs/heads/main" % gc, "%s:refs/heads/master" % gc, "--force"])
+            ok = r.returncode == 0
+            mirror_note = ("镜像已同步 %s→%s" % (og[:7], gc[:7])) if ok else ("镜像同步失败 rc=%s" % r.returncode)
+            print("  %s --sync-mirror：origin 指向 %s（%s）" % ("✅" if ok else "❌", gc[:7], mirror_note))
+        else:
+            mirror_note = "镜像未同步（%s≠%s，需要时加 --sync-mirror）" % (og[:7], gc[:7])
+            print("  → 未动镜像：本门默认不强推共享线")
 
-    # 读上次 HEAD 状态（fast 模式用来检测"最近有没有被碰"）
+    # 读上次 HEAD 状态（只用来给读数加「动了多久 / 动过没有」的上下文）
     prev_hash = None
     prev_ts = None
     if HEAD_STATE_FILE.exists():
@@ -77,53 +141,43 @@ def step0_head_safety(full=True):
     HEAD_STATE_FILE.parent.mkdir(exist_ok=True)
     HEAD_STATE_FILE.write_text(f"{local}|{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
 
-    tampered = False
-    tamper_reason = ""
-    if gc != og:
-        tampered = True
-        tamper_reason = f"两个远程 main 不一致（gitcode={gc[:7]} origin={og[:7]}）"
-    elif gc != local:
-        tampered = True
-        tamper_reason = "本地 HEAD 与远端 main 不一致（篡改）"
-    elif prev_hash and prev_hash != local and local != gc:
-        tampered = True
-        tamper_reason = f"HEAD 从 {prev_hash[:7]} 变到 {local[:7]}（非风语者触发）"
+    state, why = classify_head_state(local, gc, _is_ancestor(local, gc), _is_ancestor(gc, local))
+    # HEAD 自上次巡检的移动：在 feature 分支上是日常工作，只有真分叉时才是可疑证据
+    moved = ""
+    if prev_hash and prev_hash != local:
+        moved = "（HEAD 自上次巡检 %s → %s）" % (prev_hash[:7], local[:7])
 
-    if tampered and full:
-        # 篡改事件记录 + 自动恢复
-        log_path = ROOT / "memory" / "whisperer-tamper.log"
-        tamper = sh("git", "log", "-1", "--oneline", local)
-        author = sh("git", "log", "-1", "--format=%an <%ae>", local)
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_line = f"[{ts}] 本地 HEAD={local[:7]} 被篡改: {tamper} | {author} → 恢复到 {gc[:7]}\n"
-        log_path.parent.mkdir(exist_ok=True)
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(log_line)
-        print(f"  ⚠️ HEAD 被篡改！{tamper[:80]}")
-        print(f"  → 恢复到 {gc[:7]}，篡改记录写入 memory/whisperer-tamper.log")
-        run(["git", "reset", "--hard", gc])
-        run(["git", "push", "gitcode", "HEAD:main", "HEAD:master", "--force"])
-        run(["git", "push", "origin", "HEAD:main", "HEAD:master", "--force"])
-        return (gc[:7], f"⚠️ HEAD被篡改已恢复 ({tamper[:40]})")
-    elif tampered and not full:
-        # fast 模式只告警，不恢复
-        print(f"  ⚠️ {tamper_reason}")
-        print(f"  → 跑 --scan-only 恢复，或手动 git reset --hard {gc[:7]}")
-        return (local[:7], f"⚠️ HEAD 不一致: local={local[:7]} remote={gc[:7]}")
+    if state in ("diverged", "unknown"):
+        if state == "diverged":
+            log_path = ROOT / "memory" / "whisperer-tamper.log"
+            tamper = sh("git", "log", "-1", "--oneline", local)
+            author = sh("git", "log", "-1", "--format=%an <%ae>", local)
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            log_path.parent.mkdir(exist_ok=True)
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write("[%s] 分叉 本地 HEAD=%s%s: %s | %s 主仓线=%s（只记录不动手，R120）\n" % (
+                    ts, local[:7], moved, tamper, author, gc[:7]))
+            print("  ⚠️ HEAD 与主仓线分叉！%s%s" % (tamper[:80], moved))
+        else:
+            print("  ⚠️ HEAD 状态量不到：%s%s" % (why, moved))
+        print(head_plan_text(state, local, gc, branch))
+        label = "真分叉" if state == "diverged" else "量不到"
+        return (local[:7], "⚠️ %s：local=%s remote=%s（%s）" % (label, local[:7], gc[:7], why))
 
-    if prev_hash and prev_hash == local and local == gc:
-        # HEAD 稳定：计数
+    # same / behind / ahead 都是正常态，不是警报
+    if state == "same":
         stable_minutes = 0
         try:
             prev_dt = datetime.strptime(prev_ts, "%Y-%m-%d %H:%M:%S")
             stable_minutes = int((datetime.now() - prev_dt).total_seconds() / 60)
         except Exception:
             pass
-        status = f"✅ 三端一致，稳定 {stable_minutes}min"
+        extra = "，稳定 %dmin" % stable_minutes if prev_hash == local else ""
+        status = "✅ 与主仓线一致%s" % extra
     else:
-        status = "✅ 三端一致"
-    if mirror_fixed:
-        status += f"（{mirror_reason}）"
+        status = "✅ %s%s" % (why, moved)
+    if mirror_note:
+        status += "（%s）" % mirror_note
     return (local[:7], status)
 
 # ============================================================
@@ -368,6 +422,172 @@ def selftest():
         rc = 2
     finally:
         _shutil.rmtree(d, ignore_errors=True)
+    # ---- H 族（R120）：Step 0 的状态判定与「绝不动手」—— 全部在临时仓库里跑，不碰本仓、不碰网络 ----
+    # 立论：旧版 Step 0 把 `local != 远端 main` 一律判成「篡改」，并在**默认模式**里真的
+    # `git reset --hard` + `git push --force HEAD:main HEAD:master`（两远端）。
+    # 本仓整条 slave 工作流活在 feature 分支上 ⇒ 每一次巡检拍都是一次不可逆裁决。
+    # 这几格钉的是「落后/领先不再报警」+「任何写动作都不发出」。
+    import tempfile as _tf
+    import shutil as _sh
+    import pathlib as _pl
+
+    hd = _tf.mkdtemp(prefix="whisperer-h-")
+    calls = []
+    wt = os.path.join(hd, "wt")
+
+    def _git_at(cwd, *a):
+        return subprocess.run(["git"] + list(a), cwd=cwd, capture_output=True,
+                              text=True, encoding="utf-8", errors="replace")
+
+    def _stub_run(cmd, cwd=None, capture=True):
+        """记录每一条 argv，然后**只在临时工作树里**真跑（fetch 走本地裸库，不发网络）。
+
+        签名与被替换的 run() 对齐：cmd 是**已含 "git" 的完整 argv**，这里不许再补一遍
+        （补了每条命令都变成 `git git …`，夹具会静默读空、把「量不到」当成正常态）。
+        """
+        calls.append(list(cmd))
+        return subprocess.run(cmd, cwd=wt, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace")
+
+    def _reset_calls_since():
+        return [c for c in calls if "reset" in c or "checkout" in c or "push" in c]
+
+    def _step(full=True, sync_mirror=False):
+        # patch 必须打在**被测函数自己的 globals** 上。G2 那行 `from whisperer import
+        # step0_head_safety` 会 import 出第二个模块对象，函数真身活在 whisperer.* 而不是
+        # __main__.* —— 早先版本 patch globals() 打的是错的那一份，自检于是拿着夹具的名义
+        # 去跑真仓（含一次对 origin 的 --force 推送尝试），读数全是真仓的、且随时可能动手。
+        g = step0_head_safety.__globals__
+        saved = (g["run"], g["ROOT"], g["HEAD_STATE_FILE"])
+        g["run"] = _stub_run
+        g["ROOT"] = _pl.Path(wt)
+        g["HEAD_STATE_FILE"] = _pl.Path(wt) / "whisperer-head.txt"
+        try:
+            return step0_head_safety(full=full, sync_mirror=sync_mirror)
+        finally:
+            g["run"], g["ROOT"], g["HEAD_STATE_FILE"] = saved
+
+    try:
+        # 两个「远端」：gc.git = 主仓线，og.git = 镜像；seed 用来往它们推进 main
+        _git_at(hd, "init", "-q", "--bare", "-b", "main", "gc.git")
+        _git_at(hd, "init", "-q", "--bare", "-b", "main", "og.git")
+        seed = os.path.join(hd, "seed")
+        os.makedirs(seed)
+        _git_at(seed, "init", "-q", "-b", "main", ".")
+        _git_at(seed, "config", "user.email", "t@t")
+        _git_at(seed, "config", "user.name", "t")
+        io.open(os.path.join(seed, "f.txt"), "w", encoding="utf-8").write("A\n")
+        _git_at(seed, "add", "-A")
+        _git_at(seed, "commit", "-qm", "A")
+        # 真仓两面都有 main + master（Step 0 的 fetch 用的是 `fetch <remote> main master`
+        # 多 refspec——缺任一条 git 整条 fetch 直接 rc=128，ref 一步不前进，夹具会伪装成「线没动」）。
+        _git_at(seed, "push", "-q", os.path.join(hd, "gc.git"), "main", "main:master")
+        _git_at(seed, "push", "-q", os.path.join(hd, "og.git"), "main", "main:master")
+
+        os.makedirs(wt)
+        _git_at(wt, "init", "-q", ".")
+        _git_at(wt, "config", "user.email", "t@t")
+        _git_at(wt, "config", "user.name", "t")
+        _git_at(wt, "remote", "add", "gitcode", os.path.join(hd, "gc.git"))
+        _git_at(wt, "remote", "add", "origin", os.path.join(hd, "og.git"))
+        _git_at(wt, "fetch", "-q", "gitcode")
+        _git_at(wt, "fetch", "-q", "origin")
+        _git_at(wt, "checkout", "-q", "-b", "slave", "gitcode/main")
+        # 在飞工作：一个已跟踪文件的未提交改动 + 一个未跟踪新文件。
+        # 旧版 Step 0 的 reset --hard 会抹掉前者（后者只是陪衬，reset 不动未跟踪件）。
+        io.open(os.path.join(wt, "f.txt"), "w", encoding="utf-8").write("在飞改动\n")
+
+        def _wip_kept():
+            return io.open(os.path.join(wt, "f.txt"), encoding="utf-8").read().strip() == "在飞改动"
+
+        # H1 四态 + 量不到：纯函数面，逐档判定，不许把「量不到」折成篡改
+        def _cs(l, g, a1, a2):
+            return classify_head_state(l, g, a1, a2)
+        h1 = (_cs("x", "x", None, None)[0] == "same"
+              and _cs("x", "y", True, False)[0] == "behind"
+              and _cs("x", "y", False, True)[0] == "ahead"
+              and _cs("x", "y", False, False)[0] == "diverged"
+              and _cs("x", "y", None, None)[0] == "unknown"
+              and _cs("", "y", True, True)[0] == "unknown"
+              and "篡改" not in _cs("x", "y", True, False)[1]
+              and "篡改" not in _cs("x", "y", None, None)[1])
+        print("  " + ("✅" if h1 else "❌") + " H1 classify_head_state 四态齐备，behind/unknown 文案不含「篡改」")
+        if not h1:
+            rc = 1
+
+        # H2 落后主线：绿灯 + 零写动作 + HEAD 未动 + 在飞改动没被抹
+        _git_at(seed, "commit", "-q", "--allow-empty", "-m", "B")
+        _git_at(seed, "push", "-q", os.path.join(hd, "gc.git"), "main", "main:master")
+        head_before = _git_at(wt, "rev-parse", "HEAD").stdout.strip()
+        del calls[:]
+        h2_head, h2_status = _step()
+        h2 = (h2_status.startswith("✅") and "落后" in h2_status
+              and h2_head == head_before[:7]  # 绊线：读到的必须是夹具 HEAD，不是本仓 HEAD
+              and head_before == _git_at(wt, "rev-parse", "HEAD").stdout.strip()
+              and _wip_kept() and not _reset_calls_since())
+        print("  " + ("✅" if h2 else "❌") + " H2 落后主线=绿灯且零写动作（HEAD 未动、在飞改动仍在、读的是夹具）：%s" % h2_status[:30])
+        if not h2:
+            rc = 1
+
+        # H3 领先主线（feature 分支含未合入提交）：同样绿灯 —— 旧版在这一档直接 reset，抹掉整条分支工作
+        _git_at(wt, "merge", "-q", "--ff-only", "gitcode/main")
+        _git_at(wt, "commit", "-q", "--allow-empty", "-m", "C-unit")
+        del calls[:]
+        h3_head, h3_status = _step()
+        h3 = (h3_status.startswith("✅") and "领先" in h3_status
+              and _git_at(wt, "rev-parse", "HEAD").stdout.strip()
+              != _git_at(wt, "rev-parse", "gitcode/main").stdout.strip()
+              and _wip_kept() and not _reset_calls_since())
+        print("  " + ("✅" if h3 else "❌") + " H3 领先主线=绿灯（旧版在此 reset --hard 抹掉本分支工作）：%s" % h3_status[:30])
+        if not h3:
+            rc = 1
+
+        # H4 真分叉才报 ⚠️（互不为祖先），且仍然只出方案、不动手
+        _git_at(seed, "checkout", "-q", "-b", "side")
+        _git_at(seed, "commit", "-q", "--allow-empty", "-m", "D")
+        _git_at(seed, "push", "-q", os.path.join(hd, "gc.git"), "side:main", "side:master")
+        del calls[:]
+        h4_head, h4_status = _step()
+        wrote = _reset_calls_since()
+        h4 = (h4_status.startswith("⚠️") and "分叉" in h4_status
+              and not [c for c in wrote if c[1] in ("reset", "checkout", "push")]
+              and _wip_kept()
+              and os.path.exists(os.path.join(wt, "memory", "whisperer-tamper.log")))
+        print("  " + ("✅" if h4 else "❌") + " H4 真分叉报 ⚠️、只记日志不改状态（写动作面 %d 条）：%s" % (len(wrote), h4_status[:30]))
+        if not h4:
+            rc = 1
+
+        # H5 镜像不同步默认不动手；显式 --sync-mirror 才允许 push，且只推 origin、不推主仓线
+        del calls[:]
+        _step()
+        auto_push = [c for c in calls if "push" in c]
+        del calls[:]
+        _step(sync_mirror=True)
+        opt_push = [c for c in calls if "push" in c]
+        h5 = (not auto_push and len(opt_push) == 1 and "origin" in opt_push[0]
+              and "gitcode" not in opt_push[0])
+        print("  " + ("✅" if h5 else "❌") + " H5 镜像强推摘成显式旗标（默认 push=%d 条；--sync-mirror 时 %d 条且只指 origin）" % (len(auto_push), len(opt_push)))
+        if not h5:
+            rc = 1
+
+        # H6 源码自省：Step 0 里不许再出现 reset/checkout；--force 只许出现在 push origin 那一行；
+        #     判定函数必须保持纯（不调 git），否则上面几格的读数不可信。
+        s0 = inspect.getsource(step0_head_safety)
+        force_lines = [l for l in s0.splitlines() if "--force" in l]
+        h6 = ('"reset"' not in s0 and '"checkout"' not in s0
+              and bool(force_lines) and all(("push" in l and "origin" in l) for l in force_lines)
+              and "sync_mirror" in s0
+              and "run(" not in inspect.getsource(classify_head_state)
+              and "sh(" not in inspect.getsource(classify_head_state))
+        print("  " + ("✅" if h6 else "❌") + " H6 Step 0 无 reset/checkout、--force 只在显式镜像臂、classify 保持纯函数（force 行数=%d）" % len(force_lines))
+        if not h6:
+            rc = 2
+    except Exception as e:
+        print("  ❌ H 族执行异常: %r" % (e,))
+        rc = 2
+    finally:
+        # 桩的还原在 _step 的 finally 里按函数真身 globals 做，这里只收尾夹具
+        _sh.rmtree(hd, ignore_errors=True)
     return rc
 
 # ============================================================
@@ -382,6 +602,10 @@ def main():
     # 全仓惯例是 `--selftest`（无连字符），本工具原先只认 `--self-test` ⇒ 统一跑 `--selftest` 的
     # 自动化会在它身上拿到 argparse rc=2，被误读成"判据坏了"。两个都收，输出一致。
     g.add_argument("--self-test", "--selftest", dest="self_test", action="store_true", help="selftest 模式")
+    # R120：镜像强推从 Step 0 的缺省副作用里摘出来，改成显式旗标——
+    # 不加它，巡检拍一个 push 都不发；加了它也只推 origin 镜像，永不推主仓线。
+    g.add_argument("--sync-mirror", action="store_true",
+                   help="显式把 origin 镜像强推到 gitcode/main 现值（默认不做任何 push）")
     args = ap.parse_args()
 
     if args.self_test:
@@ -389,22 +613,22 @@ def main():
 
     if args.fast:
         # ==================== FAST MODE ====================
-        print(f"⚡ {datetime.now().strftime('%H:%M:%S')} 风语者 fast HEAD 巡检 (<3s)")
+        print(f"⚡ {datetime.now().strftime('%H:%M:%S')} 风语者 fast HEAD 状态巡检 (<3s)")
         try:
-            head, head_status = step0_head_safety(full=False)
+            head, head_status = step0_head_safety(full=False, sync_mirror=args.sync_mirror)
         except Exception as e:
             print(f"FATAL: {e}")
             sys.exit(2)
         print(f"HEAD: {head} | {head_status}")
         print(f"下次 1min（fast）/ 15min（full）")
-        # 退出码：不一致=1，一致=0
+        # 退出码：真分叉/量不到=1，其余（含落后、领先）=0
         sys.exit(1 if "⚠️" in head_status else 0)
 
     # ==================== FULL MODE ====================
     print(f"🔍 {datetime.now().strftime('%H:%M:%S')} 风语者巡检")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     try:
-        head, head_status = step0_head_safety(full=True)
+        head, head_status = step0_head_safety(full=True, sync_mirror=args.sync_mirror)
         mc, ab, candidates = step1_branch_scan()
         if args.auto_merge and candidates:
             auto_merge(candidates)
@@ -414,8 +638,9 @@ def main():
         print(f"FATAL: {e}")
         sys.exit(2)
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print(f"HEAD: {head} | 下次 15min")
-    sys.exit(0)
+    print(f"HEAD: {head} | {head_status} | 下次 15min")
+    # R120：巡检拍的退出码与 fast 同一口径（旧版这里恒 0，把分叉也吞成绿灯）
+    sys.exit(1 if "⚠️" in head_status else 0)
 
 if __name__ == "__main__":
     main()
