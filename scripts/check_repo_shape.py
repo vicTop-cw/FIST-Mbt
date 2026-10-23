@@ -34,6 +34,9 @@ import os
 import subprocess
 import sys
 
+# R46 单一真源：夹具 git 调用一律走隔离环境（钩子注入的 GIT_DIR 优先级高于 cwd）
+from git_env import isolated_git_env
+
 # BUG-138（BUG-58 同族）：本脚本会打中文结论——Windows cp936 控制台下 print 会当场
 # UnicodeEncodeError，拿到 traceback 而不是 verdict。CI 的 UTF-8 下是无损 no-op。
 if hasattr(sys.stdout, "reconfigure"):
@@ -45,13 +48,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def git(args, cwd=None):
-    """跑 git，返回 (rc, stdout)。不抛——读不到由调用方按「无法自证」处置。"""
+    """跑 git，返回 (rc, stdout)。不抛——读不到由调用方按「无法自证」处置。
+
+    R46 纪律：夹具/探测型 git 调用必须带 `env=isolated_git_env()`——钩子进程里的
+    `GIT_DIR` / `GIT_INDEX_FILE` 优先级高于 cwd，会把操作打到真仓上
+    （check_git_sandbox_hygiene 普查会点名漏传的站点）。
+    """
     try:
         p = subprocess.run(
             ["git"] + list(args),
             cwd=cwd or ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env=isolated_git_env(),
         )
     except (OSError, subprocess.SubprocessError):
         return 1, ""
@@ -142,11 +151,15 @@ def selftest():
 
     def box(bare_cfg=None, init=False):
         d = tempfile.mkdtemp(prefix="reposhape-")
+        env = isolated_git_env()
         if init:
-            subprocess.run(["git", "init", "-q"], cwd=d, capture_output=True)
+            subprocess.run(["git", "init", "-q"], cwd=d, capture_output=True, env=env)
         if bare_cfg is not None:
             subprocess.run(
-                ["git", "config", "core.bare", bare_cfg], cwd=d, capture_output=True
+                ["git", "config", "core.bare", bare_cfg],
+                cwd=d,
+                capture_output=True,
+                env=env,
             )
         return d
 
