@@ -237,6 +237,8 @@ SPECIAL_CASES = [
     #    裸跑在本机恒 DEGRADED(2)，自动补格会把它当红；本表点名后自动格就不再裸跑。 ——
     # —— R57：合并丢行探测。只跑 --selftest（合成仓库造丢行）；真跑要读真 merge 历史。 ——
     case("check_merge_loss.py", "--selftest"),
+    # —— R66：失基分支检测。只跑 --selftest（离线自证）；裸跑读真实 ref 会按现状报红。 ——
+    case("check_branch_ancestry.py", "--selftest"),
     case("check_fmt_gate.py", "--selftest"),
     case("audit_branch_delete.py", "--selftest"),
     # —— R55：`moon fmt --check` 的可判性闸（BUG-381）。只跑 --selftest：
