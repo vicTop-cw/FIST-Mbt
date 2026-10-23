@@ -251,7 +251,87 @@ def selftest():
     if rc != 2:
         fails.append("C5 空跟踪面 main 返回 %s（应为 2 自拒，不许冒用 0）" % rc)
 
-    print("SELFTEST %s（干净不误红 + 变异必红 + 空扫描自拒；格子从已执行对照反解：%s）"
+    # C7 正向毒化对照（R46：C7/C8 由 slave/clean-dsh-recur-r3 支 graft 进主线 R45 实现）。
+    # main 的 new_repo 自带 own/same/inside 反证（夹具没独立成功就 rc=2 自拒）——那是「自拒」面；
+    # 本格补「正向锁」面：把 os.environ 毒化成 pre-commit 钩子态（GIT_DIR/GIT_INDEX_FILE 指向
+    # 替身宿主仓），跑真实 new_repo，断言宿主 HEAD 纹丝不动；再用同一毒化 env 裸跑一次 commit
+    # 作变异对照——**不 scrub 必须泄漏**，否则正向锁是假绿（本仓「拿空产物反证」同律）。
+    executed.append("C7 毒化环境不泄漏宿主 + 裸跑对照必泄漏")
+    try:
+        host = Path(tempfile.mkdtemp(prefix="cmk-host-"))
+        henv = isolated_git_env()
+        subprocess.run(["git", "init", "-q"], cwd=host, capture_output=True, env=henv)
+        subprocess.run(["git", "config", "user.email", "h@h"], cwd=host, capture_output=True, env=henv)
+        subprocess.run(["git", "config", "user.name", "h"], cwd=host, capture_output=True, env=henv)
+        (host / "seed.txt").write_text("seed\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=host, capture_output=True, env=henv)
+        subprocess.run(["git", "commit", "-qm", "seed"], cwd=host, capture_output=True, env=henv)
+
+        def host_count():
+            return subprocess.run(["git", "rev-list", "--count", "HEAD"], cwd=host,
+                                  capture_output=True, text=True, env=henv).stdout.strip()
+
+        before = host_count()
+        poison = {"GIT_DIR": str(host / ".git"),
+                  "GIT_INDEX_FILE": str(host / ".git" / "index")}
+        saved = {k: os.environ.get(k) for k in poison}
+        os.environ.update(poison)
+        try:
+            new_repo({"x.py": CLEAN_PY})  # 真实路径：内部 isolated_git_env 应剥毒
+            after = host_count()
+            if after != before:
+                fails.append("C7 泄漏：毒化环境（钩子态）下 new_repo 仍把提交写进宿主 HEAD"
+                             "（%s→%s）——isolated_git_env 未生效或被改坏" % (before, after))
+            leakd = Path(tempfile.mkdtemp(prefix="cmk-leak-"))
+            (leakd / "y.py").write_text(CLEAN_PY, encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=leakd, capture_output=True,
+                           env=dict(os.environ))
+            subprocess.run(["git", "commit", "-qm", "fixture"], cwd=leakd, capture_output=True,
+                           env=dict(os.environ))
+            if host_count() == before:
+                fails.append("C7 变异对照不成立：未 scrub 的裸跑也没泄漏 ⇒ 毒化姿势不对，"
+                             "正向锁的红永远等不到（假绿）")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+    except Exception as e:
+        fails.append("C7 隔离格自身异常（按 BUG-369 契约不给判据红，但必须修）：%s" % e)
+
+    # C8 与共享件 scripts/git_sandbox.py 的词表对表（R46）。为什么钉：blackbox 顶层 sys.path
+    # 不含 scripts/（直跑 import 不到）⇒ 本件自带实现；两处各持一份词表正是本仓反复返工的
+    # 漂移形状（首跑当场抓出：本件剥 GIT_CEILING_DIRECTORIES 而共享件不剥——已把共享件收成并集）。
+    # 不变量（诚实口径）：**根因面（仓库定位变量）两边都必须剥净**；config 前缀/NOSYSTEM 是
+    # 共享件的加防面，不是主线实现的红灯线（主线靠剥 GIT_DIR 让 git config 落进夹具自己的
+    # .git/config，C7 正向锁证的就是这一层）。
+    executed.append("C8 词表对表：根因面两实现等强剥净")
+    try:
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location(
+            "git_sandbox", str(Path(__file__).resolve().parent.parent / "git_sandbox.py"))
+        shared = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(shared)
+        missing_here = [k for k in GIT_ENV_SCRUB if k not in shared.GIT_CONTROL_VARS]
+        if missing_here:
+            fails.append("C8 词表漂移：本件剥 %s 而共享件不剥——按共享件接线的尺会漏这一发"
+                         % ", ".join(missing_here))
+        # 同一份「全表毒化」喂两边：根因面变量必须双双剥净（两实现等强的可执行定义）
+        poison2 = {k: "/poison/%s" % k for k in GIT_ENV_SCRUB}
+        poison2["PATH"] = os.environ.get("PATH", "")
+        m_mine = isolated_git_env(poison2)
+        m_shared = shared.sandbox_env(poison2)
+        leaked_mine = [k for k in GIT_ENV_SCRUB if k in m_mine]
+        leaked_shared = [k for k in GIT_ENV_SCRUB if k in m_shared]
+        if leaked_mine or leaked_shared:
+            fails.append("C8 行为漂移：根因面未剥净（本件漏 %s / 共享件漏 %s）"
+                         % (leaked_mine, leaked_shared))
+    except Exception as e:
+        fails.append("C8 共享件读不到（漂移无从对表，按红处理）：%s" % e)
+
+    print("SELFTEST %s（干净不误红 + 变异必红 + 空扫描自拒 + 毒化不泄漏宿主 + 词表对表；"
+          "格子从已执行对照反解：%s）"
           % ("OK" if not fails else "FAIL", " / ".join(executed)))
     for f in fails:
         print("SELFTEST FAIL " + f)

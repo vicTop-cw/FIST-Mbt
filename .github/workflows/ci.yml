@@ -293,9 +293,43 @@ jobs:
 
       - name: Host-installable guard (deepseek-harness 宿主侧真的能装上)
         shell: bash
+        # position-why: 本尺只读 .dsh 模板/渲染件与 MCP 配置文本面，不依赖 moon 产物；与
+        # Machine-path/Push-guard 同族相邻（同一批 DSH 安装面交付）。
         run: |
           python3 scripts/check_host_installable.py --selftest
           python3 scripts/check_host_installable.py
+
+      # position-why: 纯文本判据（跟踪面 + 本地子进程 stdin 语义矩阵），不依赖 moon 产物。
+      - name: Push-guard sustainability guard (直推拦截跟踪面+语义矩阵生效性，BUG-389(2))
+        shell: bash
+        # position-why: 同族文本判据；自证先行，尺坏了不许放行。check_direct_push 只点名
+        # --selftest（禁裸跑：读 stdin 会挂电池管道，见 run_guards 同段注释）。
+        run: |
+          python3 scripts/check_push_guard.py --selftest
+          python3 scripts/check_push_guard.py
+          python3 scripts/check_direct_push.py --selftest
+
+      - name: Machine-path guard (当前面禁本机身份路径 + .dsh 渲染件回跟踪面结构锁)
+        shell: bash
+        # position-why: 与 Push-guard/Host-installable 同族纯文本回归锁，不依赖构建产物；
+        # 安装面双态与路径清零是同一批交付的两半，故相邻。
+        run: |
+          python3 scripts/check_hardcoded_paths.py --selftest
+          python3 scripts/check_hardcoded_paths.py
+
+      - name: Git-sandbox hygiene ratchet (判据沙箱 git 必须与宿主隔离，防自证污染宿主)
+        shell: bash
+        # position-why: 纯 AST 静态普查（不建临时仓、不跑 git、不动工作树），不依赖构建产物；
+        # 与 Machine-path/Push-guard 同族守卫面相邻——同属「判据自身不许对环境有副作用」这一批。
+        run: |
+          python3 scripts/check_git_sandbox_hygiene.py --selftest
+          python3 scripts/check_git_sandbox_hygiene.py
+
+      - name: DSH patch render self-proof (模板→本机渲染幂等；漂移即红)
+        shell: bash
+        # position-why: 纯文本渲染自证，不依赖构建产物；紧随安装面判据。
+        run: |
+          python3 scripts/render_dsh_patch.py --selftest
 
       - name: Skill-inject guard (evolve_asset_register 注入路径可测命中)
         shell: bash

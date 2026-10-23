@@ -46,19 +46,21 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from git_sandbox import sandbox_env  # 沙箱 git 隔离单一真源（R4：防自证把合成提交写进宿主 index/HEAD）
 HOOK_REL = ".githooks/pre-push"
 SCRIPT_REL = "scripts/check_direct_push.py"
 HOOKS_PATH = ".githooks"
 
 
-def git(*args, cwd=None):
+def git(*args, cwd=None, env=None):
     return subprocess.run(["git"] + list(args), cwd=cwd or ROOT,
                           capture_output=True, text=True,
-                          encoding="utf-8", errors="replace")
+                          encoding="utf-8", errors="replace", env=env)
 
 
-def is_tracked(rel, cwd=None):
-    return git("ls-files", "--error-unmatch", rel, cwd=cwd).returncode == 0
+def is_tracked(rel, cwd=None, env=None):
+    return git("ls-files", "--error-unmatch", rel, cwd=cwd, env=env).returncode == 0
 
 
 def py_exec():
@@ -84,8 +86,10 @@ LINE_FEATURE = ("refs/heads/feat/x aaaa refs/heads/feat/x bbbb "
                 "gitcode.com:VictorTop/Fist-Mbt.git\n")
 
 
-def check(root):
-    """对给定仓根跑 H/S/E 三面。返回 (rc, lines)。"""
+def check(root, env=None):
+    """对给定仓根跑 H/S/E 三面。返回 (rc, lines)。
+    env=None ⇒ 读宿主仓（live 正确语义：H1/H2/E1 就是要看这台机器真实的跟踪面/安装态）。
+    selftest 传 scrubbed env（sandbox_env()），否则 is_tracked/E1 会读到宿主索引（同一形地雷）。"""
     out = []
     problems = []
     hook = os.path.join(root, HOOK_REL)
@@ -109,11 +113,11 @@ def check(root):
     # H1 / H2 跟踪面
     if not os.path.isfile(hook):
         problems.append("H1 `.githooks/pre-push` 不在盘上（钩子真源失踪）")
-    elif not is_tracked(HOOK_REL, cwd=root):
+    elif not is_tracked(HOOK_REL, cwd=root, env=env):
         problems.append("H1 `.githooks/pre-push` 存在但**未被 git 跟踪**（又回到本机手装态）")
     if not os.path.isfile(script):
         problems.append("H2 `scripts/check_direct_push.py` 不在盘上")
-    elif not is_tracked(SCRIPT_REL, cwd=root):
+    elif not is_tracked(SCRIPT_REL, cwd=root, env=env):
         problems.append("H2 `scripts/check_direct_push.py` 未被 git 跟踪")
 
     # H3 壳引用脑（文本锚，壳与脑不得分家）
@@ -150,13 +154,13 @@ def check(root):
     except Exception as e:
         return 2, ["FATAL 判据无法自证：子进程运行异常 %s" % e]
 
-    # E1 本机安装态（只报不判）
-    r = git("config", "--get", "core.hooksPath", cwd=root)
+    # E1 本机安装态（只报不判）——env 透传：selftest 查沙箱仓时不读宿主 config
+    r = git("config", "--get", "core.hooksPath", cwd=root, env=env)
     val = (r.stdout or "").strip()
     if val.replace("\\", "/").rstrip("/") == HOOKS_PATH:
         out.append("E1 core.hooksPath=.githooks ⇒ 跟踪壳生效（PASS）")
     else:
-        hp = git("rev-parse", "--git-path", "hooks/pre-push", cwd=root)
+        hp = git("rev-parse", "--git-path", "hooks/pre-push", cwd=root, env=env)
         path = (hp.stdout or "").strip()
         shared = path and os.path.isfile(os.path.join(root, path) if not os.path.isabs(path) else path)
         if val:
@@ -174,6 +178,7 @@ def check(root):
 def selftest():
     """合成仓自证：干净树全绿；H1/H2/H3/S1/S2 各造违例必须红；变异台证明断言咬人。"""
     fails = []
+    senv = sandbox_env()  # 沙箱全部 git 调用走隔离 env（被钩子调用时不读/不写宿主）
     if git("--version").returncode != 0:
         print("SELFTEST BLOCKED：git 不可用，尺子无法自证")
         return 2
@@ -184,9 +189,9 @@ def selftest():
 
     def mk_tree():
         td = tempfile.mkdtemp(prefix="push-guard-st-")
-        git("init", "-q", cwd=td)
-        git("config", "user.email", "st@local", cwd=td)
-        git("config", "user.name", "st", cwd=td)
+        git("init", "-q", cwd=td, env=senv)
+        git("config", "user.email", "st@local", cwd=td, env=senv)
+        git("config", "user.name", "st", cwd=td, env=senv)
         h = os.path.join(td, ".githooks")
         os.makedirs(h)
         s = os.path.join(td, "scripts")
@@ -195,8 +200,8 @@ def selftest():
         shutil.copy(os.path.join(ROOT, SCRIPT_REL), os.path.join(s, "check_direct_push.py"))
         shutil.copy(os.path.join(ROOT, "scripts", "install_git_hooks.py"),
                     os.path.join(s, "install_git_hooks.py"))
-        git("add", "-A", cwd=td)
-        git("commit", "-qm", "seed", cwd=td)
+        git("add", "-A", cwd=td, env=senv)
+        git("commit", "-qm", "seed", cwd=td, env=senv)
         return td
 
     def cleanup(td):
@@ -205,7 +210,7 @@ def selftest():
     try:
         # C1 干净合成树 ⇒ 跟踪面+语义面绿（E1 WARN 不出红）
         td = mk_tree()
-        rc, lines = check(td)
+        rc, lines = check(td, env=senv)
         bad = [l for l in lines if l.strip().startswith("- H") or l.strip().startswith("- S")]
         if rc != 1 or bad:
             # 注意：合成树里 E1 可能 WARN，rc 必须 0；H/S 必须无违例
@@ -218,15 +223,15 @@ def selftest():
         # C2 删钩子 ⇒ H1 红
         td = mk_tree()
         os.remove(os.path.join(td, HOOK_REL))
-        rc, lines = check(td)
+        rc, lines = check(td, env=senv)
         if not any("H1" in l for l in lines):
             fails.append("C2 钩子失踪没被 H1 抓到：%s" % lines)
         cleanup(td)
 
         # C3 钩子未跟踪 ⇒ H1 红（tracked 断言必须咬人）
         td = mk_tree()
-        git("rm", "--cached", "-q", ".githooks/pre-push", cwd=td)
-        rc, lines = check(td)
+        git("rm", "--cached", "-q", ".githooks/pre-push", cwd=td, env=senv)
+        rc, lines = check(td, env=senv)
         if not any("未被 git 跟踪" in l for l in lines):
             fails.append("C3 钩子脱跟踪没被抓到：%s" % lines)
         cleanup(td)
@@ -234,9 +239,9 @@ def selftest():
         # C4 壳漂移（不引用脚本）⇒ H3 红
         td = mk_tree()
         open(os.path.join(td, HOOK_REL), "w", encoding="utf-8").write("#!/bin/sh\nexit 0\n")
-        git("add", "-A", cwd=td)
-        git("commit", "-qm", "drift", cwd=td)
-        rc, lines = check(td)
+        git("add", "-A", cwd=td, env=senv)
+        git("commit", "-qm", "drift", cwd=td, env=senv)
+        rc, lines = check(td, env=senv)
         if not any("H3" in l for l in lines):
             fails.append("C4 壳脑分家没被 H3 抓到：%s" % lines)
         cleanup(td)
@@ -250,7 +255,7 @@ def selftest():
             fails.append("C4b 变异台失效：安装器 REQUIRED 形状变了，同步本自检")
         else:
             open(ip, "w", encoding="utf-8").write(it2)
-            rc, lines = check(td)
+            rc, lines = check(td, env=senv)
             if not any("H0" in l for l in lines):
                 fails.append("C4b 安装器脱钩没被 H0 抓到：%s" % lines)
         cleanup(td)
@@ -264,9 +269,9 @@ def selftest():
             fails.append("C5 变异台失效：找不到语义锚点（实现形状变了，同步本自检）")
         else:
             open(sp, "w", encoding="utf-8").write(t2)
-            git("add", "-A", cwd=td)
-            git("commit", "-qm", "loose", cwd=td)
-            rc, lines = check(td)
+            git("add", "-A", cwd=td, env=senv)
+            git("commit", "-qm", "loose", cwd=td, env=senv)
+            rc, lines = check(td, env=senv)
             if not any("S1a" in l for l in lines):
                 fails.append("C5 语义改松没被 S1a 抓到：%s" % lines)
         cleanup(td)
@@ -280,7 +285,7 @@ def selftest():
             fails.append("C6 变异台失效：锚点未命中")
         else:
             open(sp, "w", encoding="utf-8").write(t2)
-            rc, lines = check(td)
+            rc, lines = check(td, env=senv)
             if not any("S1b" in l or "S1c" in l for l in lines):
                 fails.append("C6 误伤面没被抓到：%s" % lines)
         cleanup(td)

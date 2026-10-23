@@ -10,13 +10,14 @@ cwd 不是本仓（`check_host_installable.py` D1 严格档正是为此而设，
 
 所以安装面拆成两态：
   · 跟踪真源  `.dsh/fist-mbt-plugin/cordis.patch.yml.tpl` —— 模板，禁止任何绝对路径，
-    只含 `{{FIST_MBT_CLI}}` / `{{FIST_MBT_ROOT}}` 两个占位符；
+    只含 `{{FIST_MBT_LAUNCHER}}` / `{{FIST_MBT_ROOT}}` 两个占位符；
   · 本地产物  `.dsh/fist-mbt-plugin/cordis.patch.yml` —— 本脚本渲染，已 gitignore，
     `package.json` 的 `dsh.bundle.patch` 指向的正是它（安装面形状不变，DSH 照旧读）。
 
 路径来源全部由「本仓自身位置」推导，零硬编码，优先级从高到低：
-  CLI：`--cli` > env `FIST_MBT_CLI` > `<root>/_build/js/debug/build/cmd/cli/cli.js`
-        > `<root>/_build/js/release/build/cmd/cli/cli.js` > `_build/js/*/build/cmd/*/cli.js` 兜底
+  入口：`--cli` > env `FIST_MBT_CLI` > `packaging/dsh/launch-mcp.mjs`（机器无关 launcher，
+        内部挑最新 `_build/js/*` 产物、回退 `dist/fist-mbt.js`，serve 内置）
+      > `<root>/_build/js/debug/build/cmd/cli/cli.js` > release > `_build/js/*` glob 兜底
   根：  `--root` > env `FIST_MBT_HOME` > 由本脚本位置反推（scripts/ 的上一层）
 
 用法：
@@ -40,7 +41,8 @@ if hasattr(sys.stderr, "reconfigure"):
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TPL_REL = ".dsh/fist-mbt-plugin/cordis.patch.yml.tpl"
 OUT_REL = ".dsh/fist-mbt-plugin/cordis.patch.yml"
-PLACEHOLDERS = ("{{FIST_MBT_CLI}}", "{{FIST_MBT_ROOT}}")
+PLACEHOLDERS = ("{{FIST_MBT_LAUNCHER}}", "{{FIST_MBT_ROOT}}")
+LAUNCHER_REL = "packaging/dsh/launch-mcp.mjs"
 
 # 绝对路径形状：盘符 `X:/` 或 `X:\\`、POSIX 前导 `/`、UNC `\\host\share`。
 ABS_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|/|\\\\)")
@@ -77,6 +79,9 @@ def find_cli(root: Path, cli_override: str | None) -> tuple[str | None, str]:
         if p.exists():
             return to_posix(p), "env FIST_MBT_CLI"
         return None, f"env FIST_MBT_CLI 指向的产物不存在: {to_posix(p)}"
+    launcher = root / LAUNCHER_REL
+    if launcher.exists():
+        return to_posix(launcher), LAUNCHER_REL
     for rel in ("_build/js/debug/build/cmd/cli/cli.js",
                 "_build/js/release/build/cmd/cli/cli.js"):
         p = root / rel
@@ -86,7 +91,8 @@ def find_cli(root: Path, cli_override: str | None) -> tuple[str | None, str]:
     if cands:
         newest = max(cands, key=lambda c: c.stat().st_mtime)
         return to_posix(newest), f"_build glob 兜底({newest.parent.parent.parent.name})"
-    return None, "找不到 _build/js/*/build/cmd/*/cli.js——先 `moon build --target js` 再渲染"
+    return None, (f"缺 {LAUNCHER_REL}，且找不到 _build/js/*/build/cmd/*/cli.js"
+                  "——checkout 不完整或先 `moon build --target js`")
 
 
 def render_text(tpl: str, cli: str, root: str) -> str:
@@ -136,14 +142,14 @@ def selftest() -> list[str]:
             fails.append(f"{name} — {note}")
 
     # ① 模板判据咬人：盘符泄漏必红
-    bad_tpl = "cwd: 'E:/somewhere/repo'\nargs:\n  - '{{FIST_MBT_CLI}}'\n  - 'serve'\n"
+    bad_tpl = "cwd: 'E:/somewhere/repo'\nargs:\n  - '{{FIST_MBT_LAUNCHER}}'\n  - 'serve'\n"
     cell("T1 模板盘符泄漏→红", any("盘符" in p for p in template_problems(bad_tpl)))
     # ② 干净模板→绿
-    clean_tpl = ("args:\n  - '{{FIST_MBT_CLI}}'\n  - 'serve'\ncwd: '{{FIST_MBT_ROOT}}'\n")
+    clean_tpl = ("args:\n  - '{{FIST_MBT_LAUNCHER}}'\n  - 'serve'\ncwd: '{{FIST_MBT_ROOT}}'\n")
     cell("T2 干净模板→绿", not template_problems(clean_tpl), str(template_problems(clean_tpl)))
     # ③ 缺占位符→红
     cell("T3 缺 CLI 占位符→红",
-         any("FIST_MBT_CLI" in p for p in template_problems("cwd: '{{FIST_MBT_ROOT}}'")))
+         any("FIST_MBT_LAUNCHER" in p for p in template_problems("cwd: '{{FIST_MBT_ROOT}}'")))
     # ④ 渲染件残留占位符→红
     cell("T4 渲染件残留占位符→红",
          any("残留占位符" in p for p in rendered_problems("cwd: '{{FIST_MBT_ROOT}}'")))
