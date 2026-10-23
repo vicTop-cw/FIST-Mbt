@@ -54,7 +54,7 @@ EXIT_SHAPE_NAMES = ("exit", "SystemExit")
 SUBPROCESS_NAMES = ("Popen", "check_output", "call", "run", "check_call")
 FATAL_PROMISE_KEYS = ("4=", "4 =", "FATAL", "尺子自己坏了")
 # 棘轮上限：只许下降。存量属别的单元的文件，本单不代修，故钉在基点现读而不是 0。
-J2_GAP_CEILING = 40
+J2_GAP_CEILING = 30
 J1_GAP_CEILING = 0
 PRINT_CAP = 30
 
