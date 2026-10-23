@@ -3,7 +3,7 @@
 """render_dsh_patch.py —— DSH 插件安装面「模板 → 本机渲染」（路径硬编码清零的落点）。
 
 背景（本 PR 修的病灶）：`.dsh/fist-mbt-plugin/cordis.patch.yml` 从前直接写着
-`E:/IDEProjects/...` 这发本机绝对路径。`@deepseek-ai/dsh-mcp-client` 的 stdio 通道把
+`E:/proj/...` 这发本机绝对路径。`@deepseek-ai/dsh-mcp-client` 的 stdio 通道把
 `args`/`cwd` 当字面 argv 交给 spawn，**宿主不做 `${...}` 插值**——绝对路径进跟踪面
 = 每个克隆者的 `server is disconnected`。反过来，纯相对路径也不行：DSH Host 的进程
 cwd 不是本仓（`check_host_installable.py` D1 严格档正是为此而设，T1 格钉死）。

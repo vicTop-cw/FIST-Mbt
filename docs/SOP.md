@@ -37,7 +37,7 @@ updated: 2026-10-16
 
 - `moon test --target js` 全量 = 1415/1415 绿
 - 单模块：`moon test --target js src/<module>`
-- 环境：`$env:MOON_HOME = "C:\Users\victo\.moon"`
+- 环境：`$env:MOON_HOME = "C:\Users\<user>\.moon"`
 
 ## 发布
 

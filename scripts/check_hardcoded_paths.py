@@ -53,6 +53,12 @@ EXEMPT_PREFIXES = (
     ".agents/", "temp/",
 )
 EXEMPT_SUFFIXES = (".mbti",)
+# 自指与临时件豁免（2026-10-24 实测补充）：
+# - **判据自身**必须能写出它要抓的 token——`PATTERNS` 是把 `IDEProjects` 拆成两段构造的，
+#   但文档/自检夹具里仍会出现整词；不豁免就等于「要求尺子不许写自己的刻度」。
+# - `scripts/_*.py` 是本机一次性脚本（`_` 前缀，其它判据族同款豁免），不是仓的现状面。
+EXEMPT_FILES = {"scripts/check_hardcoded_paths.py"}
+EXEMPT_NAME_PREFIXES = ("scripts/_",)
 
 # 机器身份 token：构造时拆成两段，避免守望脚本自己命中自己（本仓 issue_scan 规则表同款处理）
 _MACHINE_DIRS = ("IDE" + "Projects",)
@@ -81,6 +87,8 @@ def current_face(root: Path) -> list[str]:
             continue
         rel = rel.replace("\\", "/")
         if rel.startswith(EXEMPT_PREFIXES) or rel.endswith(EXEMPT_SUFFIXES):
+            continue
+        if rel in EXEMPT_FILES or rel.startswith(EXEMPT_NAME_PREFIXES):
             continue
         if rel.startswith(SCAN_PREFIXES) or rel in SCAN_ROOT_FILES:
             files.append(rel)
