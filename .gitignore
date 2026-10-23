@@ -157,3 +157,6 @@ dist/
 memory/2026-*.md
 memory/thinking.md
 memory/archive/thinking.archive.md
+
+# npm pack output (publish artifacts stay out of git)
+/*.tgz

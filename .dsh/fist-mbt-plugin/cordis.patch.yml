@@ -1,10 +1,9 @@
-# FIST-Mbt plugin patch.
+﻿# FIST-Mbt — local (this checkout) DSH bundle layer.
 #
-# stdio transport → the built JS CLI at the repo root. Paths are absolute and
-# `cwd` is pinned: the DSH Host's own cwd is not this repo, and the CLI resolves
-# its relative args (and bootstraps its SQLite ledger) against the process cwd.
-# Shapes mirror the repo's own tracked source of truth `.mcp.dev.json`, and the
-# dsh-mcp-client Config schema (toolCallTimeoutMs, not timeout_ms).
+# This is the development install: it points straight at the checkout, and the
+# shared launcher prefers the newest `_build/js/.../cli.js`, so a rebuild is
+# picked up without editing this file. The published package uses the portable
+# layer in `packaging/dsh/cordis.patch.yml`.
 
 - insert:
     - id: fist-mbt-mcp
@@ -14,13 +13,14 @@
         transport: 'stdio'
         command: 'node'
         args:
-          - 'E:/IDEProjects/AI/FIST-Mbt/_build/js/debug/build/cmd/cli/cli.js'
-          - 'serve'
-        cwd: 'E:/IDEProjects/AI/FIST-Mbt'
-        toolCallTimeoutMs: 30000
+          - 'F:/AI/Fist-Mbt/packaging/dsh/launch-mcp.mjs'
+        cwd: 'F:/AI/Fist-Mbt'
+        toolCallTimeoutMs: 300000
         failOnStartupError: false
         reconnect:
           enabled: true
           initialDelayMs: 500
           maxDelayMs: 30000
           maxAttempts: 10
+        env:
+          FIST_PROJECT_DIR: 'F:/AI/Fist-Mbt'

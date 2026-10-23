@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "FIST-Mbt",
+    "description": "接入 FIST 指挥官任务编排 MCP 服务：七态任务生命周期、DAG 排程、自驱闭环与 Omega 强验证；自带预构建 CLI，安装无需构建。"
+  }
+}
