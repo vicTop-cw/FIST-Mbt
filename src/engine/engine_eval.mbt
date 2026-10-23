@@ -4,7 +4,32 @@
 /// 纯计算只读不写库（决策建议，执行权在调用方；与 plan_revise 反馈修订互补）。
 
 ///|
-/// 从反馈文本解析某 `## 段名` 下的 `- 列表项`（遇到下一个 `## ` 标题即结束）。
+/// 列表项正文（行已 trim）：`- ` / `* ` / `+ ` 或有序标记 `1. ` / `1) `。
+/// 非列表行返回 None——`## Defects` 下写「（无）」这类自由文本仍按零缺陷处理。
+fn list_item_text(line : String) -> String? {
+  let n = line.length()
+  if n >= 2 {
+    let c0 = line[0]
+    if (c0 == '-' || c0 == '*' || c0 == '+') && line[1] == ' ' {
+      return Some(line[2:n].to_owned())
+    }
+  }
+  let mut i : Int32 = 0
+  while i < n && line[i] >= '0' && line[i] <= '9' {
+    i = i + 1
+  }
+  if i > 0 &&
+    i + 1 < n &&
+    (line[i] == '.' || line[i] == ')') &&
+    line[i + 1] == ' ' {
+    return Some(line[i + 2:n].to_owned())
+  }
+  None
+}
+
+///|
+/// 从反馈文本解析某 `## 段名` 下的列表项（遇到下一个 `## ` 标题即结束）。
+/// R135：只认 `- ` 会把 `* ` / `+ ` / 有序列表写下的缺陷静默吞成「零缺陷 → pass」。
 fn parse_section(text : String, header : String) -> Array[String] {
   let out : Array[String] = []
   let mut in_section = false
@@ -12,12 +37,46 @@ fn parse_section(text : String, header : String) -> Array[String] {
     let t = line.trim()
     if t.has_prefix("## ") {
       in_section = t == "## " + header
-    } else if in_section && t.has_prefix("- ") {
-      let s = t.to_owned()
-      // R1 bugfind：substring-overrun——`has_prefix("- ")` 保证 length>=2，
-      // 但仍显式守卫，让静态扫描能确定性证明 end<=length
-      if s.length() >= 2 {
-        out.push(s[2:s.length()].to_owned())
+    } else if in_section {
+      match list_item_text(t.to_owned()) {
+        Some(item) => out.push(item)
+        None => ()
+      }
+    }
+  }
+  out
+}
+
+///|
+/// 「本段无内容」的显式标记（大小写不敏感）。`## Defects` 下只有这些词时才算零缺陷；
+/// 其余散文一律按「有缺陷但没按列表写」对待（fail-closed，见 prose_lines）。
+fn is_none_marker(line : String) -> Bool {
+  let s = line.to_lower()
+  s == "无" ||
+  s == "无缺陷" ||
+  s == "暂无" ||
+  s == "暂无缺陷" ||
+  s == "（无）" ||
+  s == "(无)" ||
+  s == "none" ||
+  s == "n/a"
+}
+
+///|
+/// 某段里的「散文行」：非空、非列表项、也不是「无内容」标记。
+/// R135 同族收口：`## Defects` 下写「缺陷：A 和 B」这种散文时，旧实现读成零缺陷 → pass；
+/// 写不出结论的反馈不该被判成可收敛，这里只计数、由调用方 fail-closed。
+fn prose_lines(text : String, header : String) -> Array[String] {
+  let out : Array[String] = []
+  let mut in_section = false
+  for line in text.split("\n") {
+    let t = line.trim().to_owned()
+    if t.has_prefix("## ") {
+      in_section = t == "## " + header
+    } else if in_section && t != "" {
+      match list_item_text(t) {
+        Some(_) => ()
+        None => if !is_none_marker(t) { out.push(t) }
       }
     }
   }
@@ -47,16 +106,22 @@ pub fn FistEngine::eval_feedback(
   let evidence = parse_section(feedback, "Evidence")
   let fix = parse_section(feedback, "Fix")
   let acceptance = parse_section(feedback, "Acceptance")
+  let prose = prose_lines(feedback, "Defects")
   let d = defects.length()
   let e = evidence.length()
   let f = fix.length()
   let a = acceptance.length()
+  let p = prose.length()
   let flags : Array[String] = []
   if d > 0 && e == 0 {
     flags.push("evidence_missing")
   }
   if d > 0 && f == 0 {
     flags.push("fix_missing")
+  }
+  if p > 0 {
+    // 有缺陷文本却没按列表写 ⇒ 缺陷数不可信，宁可 fail 也不判 pass
+    flags.push("defects_unparsed:" + p.to_string())
   }
   let missing : Array[String] = []
   let has_defects = section_present(feedback, "Defects")
@@ -78,12 +143,13 @@ pub fn FistEngine::eval_feedback(
   if missing.length() > 0 {
     flags.push("section_missing:" + missing.join(","))
   }
-  let verdict = if d == 0 && a > 0 { "pass" } else { "fail" }
-  let (sc_d, sc_e, sc_f, sc_a) = (
+  let verdict = if d == 0 && p == 0 && a > 0 { "pass" } else { "fail" }
+  let (sc_d, sc_e, sc_f, sc_a, sc_p) = (
     d.to_double(),
     e.to_double(),
     f.to_double(),
     a.to_double(),
+    p.to_double(),
   )
   Json::object({
     "ok": Json::boolean(true),
@@ -99,11 +165,12 @@ pub fn FistEngine::eval_feedback(
       "evidence": Json::number(sc_e),
       "fix": Json::number(sc_f),
       "acceptance": Json::number(sc_a),
+      "defects_unparsed": Json::number(sc_p),
     }),
     "verdict": Json::string(verdict),
     "flags": Json::array(flags.map(Json::string)),
     "note": Json::string(
-      "反馈收敛（Evaluator-Optimizer schema 蒸馏）：feedback 归一为 Defects/Evidence/Fix/Acceptance 四段式——无缺陷且 acceptance 非空 → pass 可收敛；否则 fail 定向回灌（Defects→Fix→再 eval→pass 闭环，硬上限防死循环）。",
+      "反馈收敛（Evaluator-Optimizer schema 蒸馏）：feedback 归一为 Defects/Evidence/Fix/Acceptance 四段式——无缺陷（且 Defects 段没有未按列表写的散文）且 acceptance 非空 → pass 可收敛；否则 fail 定向回灌（Defects→Fix→再 eval→pass 闭环，硬上限防死循环）。散文缺陷计 defects_unparsed 并 fail-closed。",
     ),
   })
 }
