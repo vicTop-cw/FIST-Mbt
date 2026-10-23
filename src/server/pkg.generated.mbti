@@ -105,6 +105,10 @@ pub async fn laya_decide_external(String, Array[String], String, String, Int32) 
 
 pub async fn laya_probe_available(String, Array[String], String, Int32) -> Result[Bool, String]
 
+pub fn legacy_store_exists(String) -> Bool
+
+pub fn legacy_store_exists_in(String, String) -> Bool
+
 pub fn lookup_injected_assets_in(@evolve.Archive, String) -> Json
 
 pub fn mcp_config_scaffold_impl(String, String, Array[String]) -> Result[Json, String]
