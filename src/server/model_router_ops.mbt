@@ -1171,8 +1171,10 @@ async fn executor_run_impl(
       [("retried", Json::array(retried.map(fn(x) { Json::string(x) })))]
     match res {
       Err(e) =>
-        // 进程没起来（ENOENT 一类）不消耗配额，所以重试无需记账；
-        // 但模型可靠性已受疑 → 标记冷却（P1.1 冷却/自动摘除）
+        // 走到这里说明原语连结果 JSON 都没给出来（调度失败/解析失败），不是模型答错，
+        // 所以不记配额账；但模型可靠性确实无从确证 → 仍按 P1.1 标记冷却。
+        // 旧注释写的是「进程没起来（ENOENT 一类）」——ENOENT 其实以 ok=false 正常返回，
+        // 落在下面的 Ok 分支，这条注释把下一位读代码的人往错方向带（2026-10-23 实测校正）。
         if attempt_idx + 1 < max_retries &&
           attempt_idx + 1 < fallback_models.length() {
           let note = mr_retry_note(
@@ -1187,6 +1189,10 @@ async fn executor_run_impl(
           attempt_model = fallback_models[attempt_idx]
           should_retry = true
         } else {
+          // 这里的 Err 只可能是 run_check_external 自己的两条文本（调度失败 / 结果解析失败），
+          // 也就是「尺子坏了」；进程起不来（ENOENT）那一类原语是以 ok=false **正常返回**的，
+          // 走下面的 Ok 分支。归因交给 classify_cli_failure，不再由这里断言执行器没装。
+          let kind = @executor.classify_cli_failure(e)
           return mr_obj(
             [("ok", Json::boolean(false))] +
             head +
@@ -1194,8 +1200,9 @@ async fn executor_run_impl(
             [
               ("executed", Json::boolean(false)),
               ("exit_code", Json::number(-1.0)),
+              ("failure_kind", Json::string(kind.label())),
               ("error", Json::string(e)),
-              ("hint", Json::string(@executor.executor_missing_hint(executor))),
+              ("hint", Json::string(@executor.cli_failure_hint(executor, kind))),
             ],
           )
         }
@@ -1255,10 +1262,13 @@ async fn executor_run_impl(
           } else {
             "not_routed(调用方显式指定 model，不代记账)"
           }
+          // 失败归因按原语 error 文本分档。旧口径把「跑满超时」「退出码非 0」「信号杀」
+          // 全说成「可执行文件不可用」，等于把三类相反处置并成一条错处方。
+          let fail_kind = @executor.classify_cli_failure(errtxt)
           let hint = if okk {
             "外部执行器返回 0；成果仍需按证据梯 L4 用 output_validate 到文件系统验证（报告不是证据）"
           } else {
-            @executor.executor_missing_hint(executor)
+            @executor.cli_failure_hint(executor, fail_kind)
           }
           return mr_obj(
             [("ok", Json::boolean(okk))] +
@@ -1268,6 +1278,10 @@ async fn executor_run_impl(
               ("executed", Json::boolean(true)),
               ("quota", Json::string(quota_note)),
               ("exit_code", Json::number(code.to_double())),
+              (
+                "failure_kind",
+                Json::string(if okk { "NONE" } else { fail_kind.label() }),
+              ),
               (
                 "cost_estimate",
                 Json::number(if executor == "atomcode" { 0.0 } else { -1.0 }),

@@ -2,6 +2,7 @@
 package "vicTop-cw/fist-mbt/src/executor"
 
 import {
+  "moonbitlang/core/debug",
   "vicTop-cw/fist-mbt/src/core",
 }
 
@@ -13,6 +14,10 @@ pub fn aider_argv(prompt~ : String, model~ : String, edit_format? : String, map_
 pub fn atomcode_argv(prompt~ : String, model~ : String, workdir? : String, auto_yes? : Bool) -> Result[Array[String], String]
 
 pub fn build_command(executor~ : String, prompt~ : String, model~ : String, workdir? : String) -> Result[(String, Array[String]), String]
+
+pub fn classify_cli_failure(String) -> CliFailure
+
+pub fn cli_failure_hint(String, CliFailure) -> String
 
 pub fn delegate_execute(@core.Task, ExecContext) -> ExecResult
 
@@ -31,6 +36,19 @@ pub fn split_need_tags(String) -> Array[String]
 // Errors
 
 // Types and methods
+pub enum CliFailure {
+  NotExecutable
+  Timeout
+  NonZeroExit
+  SignalKilled
+  DispatchFailed
+  Unknown
+} derive(Eq, @debug.Debug)
+pub fn CliFailure::equal(Self, Self) -> Bool
+pub fn CliFailure::label(Self) -> String
+pub fn CliFailure::not_equal(Self, Self) -> Bool
+pub fn CliFailure::to_repr(Self) -> @debug.Repr
+
 pub struct ExecContext {
   project_dir : String
   task_id : String
