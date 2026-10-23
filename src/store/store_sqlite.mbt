@@ -2709,8 +2709,18 @@ pub struct AgentRecord {
 }
 
 ///|
-/// 注册 agent（指纹即身份）。首次出现则 INSERT（并落一条 fail-closed 的默认 ACL），
-/// 已存在则仅刷新 `pid`/`last_seen`/`status`（身份不变，进程实例换新）。
+/// 注册 agent（指纹即身份）。首次出现则 INSERT，已存在则仅刷新
+/// `pid`/`last_seen`/`status`（身份不变，进程实例换新）。
+///
+/// **职责边界（BUG-404）**：本函数**只写 `agents` 表，不落默认 ACL**——
+/// 原注释称「并落一条 fail-closed 的默认 ACL」，实际 body 无任何 `agent_acl` INSERT。
+/// 默认 ACL 的真源在 **server 层**的 `agents_acl_ensure`（`src/server/server.mbt`，
+/// `agent_touch_first_seen` 调用链保证），不在 store 层。
+/// **后果**：任何绕过 server 层 `agents_acl_ensure` 的直连 store 调用
+/// （现成的就是 `agents_heartbeat`）会留下「有 agent 身份、无 ACL 行」的中间态；
+/// `agents_acl_check` 对此返回 `Err("ACL 无记录（fail-closed）")`——仍 fail-closed，
+/// 不是安全洞，但「注释承诺的默认 ACL 自动落」在这条路径上从不发生。
+/// 需要「注册即落 ACL」语义时，调用方必须先过 server 层 `agents_acl_ensure`。
 pub fn SqliteStore::agents_register(
   self : SqliteStore,
   agent_id~ : String,
