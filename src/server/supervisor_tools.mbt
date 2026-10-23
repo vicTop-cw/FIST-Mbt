@@ -299,13 +299,19 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
   let s1 = instrumented_tool(
     s1,
     "supervisor_status",
-    "超级管家·查看项目状态：全库/指定命名空间的任务全景（by_status/by_namespace/进度/活跃任务列表）。纯读。参数：namespace(可选；不传=真·跨库全库聚合，遍历 default + 所有已打开 ns；传了=只查该 ns 的物理库，打不开则发红不静默回落)。返回：total/by_status/by_namespace/progress_pct/active_count/active，另附 scope(all-namespaces|namespace) 与 namespaces_scanned；active 每条带 namespace（取回它要点名哪个 ns）。",
+    "超级管家·查看项目状态：全库/指定命名空间的任务全景（by_status/by_namespace/进度/活跃任务列表）。纯读。参数：namespace(可选；不传=真·跨库全库聚合，遍历 default + 所有已打开 ns；传了=只查该 ns 的物理库，打不开则发红不静默回落)、detail(可选默认 false；true=active 每条任务返回完整 description，false=description 截断到 200 字节——task_plan_deep 开满 gradient/reinject_context/boundary_probe 后描述会递归膨胀到数 KB，默认截断控 MCP 返回体积)。返回：total/by_status/by_namespace/progress_pct/active_count/active，另附 scope(all-namespaces|namespace) 与 namespaces_scanned；active 每条带 namespace（取回它要点名哪个 ns）。",
     schema(
-      { "namespace": string_prop("命名空间(可选，不传=全库聚合)") },
+      {
+        "namespace": string_prop("命名空间(可选，不传=全库聚合)"),
+        "detail": bool_prop(
+          "返回完整任务描述(可选默认 false；false 时 description 截断到 200 字节)",
+        ),
+      },
       [],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
+      let detail = get_bool(args, "detail")
       let cands = supervisor_ns_candidates(ns)
       let ns_err = supervisor_ns_unavailable(ns)
       if ns_err != "" {
@@ -315,7 +321,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
       let scanned : Array[String] = []
       for (name, eng) in cands {
         // 每库取全量：库本身就是 ns，再按 Task.ns 列过滤会把「列值写错但落点对」的行漏掉
-        parts.push((name, eng.supervisor_status(ns_filter="")))
+        parts.push((name, eng.supervisor_status(ns_filter="", detail~)))
         scanned.push(name)
       }
       Ok(
@@ -340,17 +346,19 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
   let s1 = instrumented_tool(
     s1,
     "supervisor_task_tree",
-    "超级管家·任务树状态与进度：从 root_id 递归聚合子树，每节点带 subtree_done/subtree_total 完成度与 summary 所需字段。纯读。参数：root_id(必填)、namespace(可选；不传=按 default→其余已打开 ns 寻址，传了=只查该 ns)。返回：root_id/tree，另附 namespace(命中库)；未命中时错误点名已搜索的 ns，不与「任务不存在」混成一条；同 id 在多个 ns 都存在时拒绝猜库、要求点名 namespace。",
+    "超级管家·任务树状态与进度：从 root_id 递归聚合子树，每节点带 subtree_done/subtree_total 完成度与 summary 所需字段。纯读。参数：root_id(必填)、namespace(可选；不传=按 default→其余已打开 ns 寻址，传了=只查该 ns)、detail(可选默认 false；true=各节点 task 返回完整 description，false=截断到 200 字节控体积)。返回：root_id/tree，另附 namespace(命中库)；未命中时错误点名已搜索的 ns，不与「任务不存在」混成一条；同 id 在多个 ns 都存在时拒绝猜库、要求点名 namespace。",
     schema(
       {
         "root_id": string_prop("根任务 id（必填）"),
         "namespace": string_prop("命名空间(可选，不传=跨 ns 寻址)"),
+        "detail": bool_prop("返回完整任务描述(可选默认 false)"),
       },
       ["root_id"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let root_id = get_str(args, "root_id")
       let ns = get_str(args, "namespace")
+      let detail = get_bool(args, "detail")
       let ns_err = supervisor_ns_unavailable(ns)
       if ns_err != "" {
         return Err(@mcp_types.ToolError(ns_err))
@@ -370,7 +378,7 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
         )
       }
       let (found_ns, eng) = hits[0]
-      match eng.supervisor_task_tree(root_id) {
+      match eng.supervisor_task_tree(root_id, detail~) {
         Ok(j) =>
           Ok(
             @mcp.ToolResult::text(

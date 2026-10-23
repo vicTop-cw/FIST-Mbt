@@ -6,9 +6,14 @@
 
 ///|
 /// 全库（或指定 ns）状态聚合：供 supervisor_status 使用。纯读。
+/// `detail=false`（默认）时 active 里每个任务的 description 截断到 200 字节
+/// （字符边界安全，见 `@core.desc_clip`），控 MCP 返回体积——task_plan_deep 开满
+/// gradient/reinject_context/boundary_probe 后描述会递归膨胀到数 KB，全量回传会炸。
+/// `detail=true` 返回完整描述（调用方按需取全文）。
 pub fn FistEngine::supervisor_status(
   self : FistEngine,
   ns_filter~ : String = "",
+  detail~ : Bool = false,
 ) -> Json {
   let tasks = self.list_all()
   let by_status : Map[String, Int32] = Map([])
@@ -16,6 +21,7 @@ pub fn FistEngine::supervisor_status(
   let active : Array[Json] = []
   let mut done = 0
   let mut total = 0
+  let desc_limit = if detail { -1 } else { 200 }
   for t in tasks {
     let st = t.status_to_string()
     if t.ns == ns_filter || ns_filter == "" {
@@ -30,7 +36,7 @@ pub fn FistEngine::supervisor_status(
       let a = t.get_status()
       let is_active = !a.is_pending() && !a.is_completed() && !a.is_archived()
       if is_active {
-        active.push(t.to_json())
+        active.push(t.to_json(desc_limit~))
       }
     }
   }
@@ -55,10 +61,12 @@ pub fn FistEngine::supervisor_status(
 
 ///|
 /// 任务树节点：递归聚合子任务完成度。返回 (节点 JSON, 子树完成数, 子树总数)。纯读。
+/// `desc_limit > 0` 时节点 task 的 description 截断（控返回体积，与 supervisor_status 同口径）。
 fn FistEngine::supervisor_tree_node(
   self : FistEngine,
   idx : Map[String, Array[String]],
   task_id : String,
+  desc_limit : Int32,
 ) -> (Json, Int32, Int32)? {
   match self.get_task(task_id) {
     None => None
@@ -69,7 +77,7 @@ fn FistEngine::supervisor_tree_node(
       match idx.get(task_id) {
         Some(ids) =>
           for cid in ids {
-            match self.supervisor_tree_node(idx, cid) {
+            match self.supervisor_tree_node(idx, cid, desc_limit) {
               Some((cj, done, total)) => {
                 child_done = child_done + done
                 child_total = child_total + total
@@ -86,7 +94,7 @@ fn FistEngine::supervisor_tree_node(
       }
       child_total = child_total + 1
       let node : Json = Json::object({
-        "task": t.to_json(),
+        "task": t.to_json(desc_limit~),
         "subtree_total": Json::number(child_total.to_double()),
         "subtree_done": Json::number(child_done.to_double()),
         "children": Json::array(children),
@@ -98,15 +106,18 @@ fn FistEngine::supervisor_tree_node(
 
 ///|
 /// 任务树状态与进度汇报：root 起递归，每节点带 subtree_done/subtree_total。
+/// `detail=false`（默认）时各节点 task 的 description 截断到 200 字节（与 supervisor_status 同口径）。
 pub fn FistEngine::supervisor_task_tree(
   self : FistEngine,
   root_id : String,
+  detail~ : Bool = false,
 ) -> Result[Json, String] {
   match self.get_task(root_id) {
     None => Err("task not found: \{root_id}")
     Some(_) => {
       let idx = self.children_index()
-      match self.supervisor_tree_node(idx, root_id) {
+      let desc_limit = if detail { -1 } else { 200 }
+      match self.supervisor_tree_node(idx, root_id, desc_limit) {
         None => Err("task not found: \{root_id}")
         Some((tree, _done, _total)) =>
           Ok(Json::object({ "root_id": Json::string(root_id), "tree": tree }))
