@@ -27,5 +27,13 @@ jobs:
       - name: Refresh registry (first build)
         run: moon update
 
+      # fist-gate.py 的 ck_fmt 走 `moon fmt --check`；该判据在格式化器未预热时
+      # 恒报 DEGRADED（rc=2 ⇒ 门链 rc>=1 失败），让 gate.yml 在干净 runner 上
+      # 永远红（BUG-388 在 CI 侧的复现面）。这里先跑一次写模式 `moon fmt` 把
+      # _build/wasm-gc/release/format/ 预热出来，ck_fmt 才有真判据可依；
+      # 若分支代码确有格式差异，ck_fmt 会按 hard red 报出，门链照样拦得住。
+      - name: Warm formatter so `moon fmt --check` is decidable (BUG-388 CI side)
+        run: moon fmt
+
       - name: Run unified gate chain
         run: python3 scripts/fist-gate.py
