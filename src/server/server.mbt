@@ -6,10 +6,20 @@
 /// 运行时优先接入 SQLite 内建数据库（本项目根目录 fist-mbt.db 持久化）；
 /// 打开失败（如缺 libsqlite3）自动回退内存版，保证 server 总能启动。
 fn make_engine() -> @engine.FistEngine {
-  match @store.SqliteStore::new() {
+  let eng = match @store.SqliteStore::new() {
     Some(s) => @engine.FistEngine::new(store=@store.StoreBackend::sqlite(s))
     None => @engine.FistEngine::new()
   }
+  // T0r5：server 启动即给自身 agent 落一次注册 + 伪 pid 换绑，
+  // 让 ACL 的 pid_bound 从"server 这个进程实例"起算（sqlite 后端才有效）。
+  let ts = now_default()
+  agent_touch_first_seen(
+    eng, "fist-mbt", "default", "server", "Leader", "通信兵", ts,
+  )
+  ignore(
+    eng.agents_set_pid(agent_id=agent_fp("fist-mbt"), pid=current_pid_token()),
+  )
+  eng
 }
 
 ///|
@@ -425,6 +435,77 @@ fn iso_minus_secs(iso : String, secs : Int32) -> String {
   let days = (total_sec / 86400L).to_int()
   let (y, m, d) = _civil_from_days(days)
   "\{y}-\{_pad2(m)}-\{_pad2(d)}T\{_pad2(hour)}:\{_pad2(min)}:\{_pad2(sec)}Z"
+}
+
+///|
+/// agent 指纹：把调用方自述的 `agent_id` 原文映射为不可逆指纹，
+/// 落库/比对都只用指纹（防止日志与 ACL 面被任意长/含特殊字符的原文污染）。
+/// 指纹只认原文（`fnv1a64("agent_id:" ++ raw)`）；`pubkey_fp` 另行
+/// 用 `fnv1a64("pubkey:" ++ hex)` 派生（T0r5：密钥指纹面）。
+fn agent_fp(raw : String) -> String {
+  @omega.fnv1a64("agent_id:" + raw)
+}
+
+///|
+/// 当前进程的伪 pid：`@env.now()` 无真实 OS-PID 面，退化为
+/// `now_ms / 1000 % 2000000000` 的 Int32（进程启动即固定一次，
+/// 生命周期内不变），用于把 ACL 的 `pid_bound` 落到具体进程实例上。
+/// Int32 上限 ~2.1e9，模 2e9 保证不溢出（2038 前有效）。
+fn current_pid_token() -> Int32 {
+  let ms = @env.now().reinterpret_as_int64()
+  if ms < 0L {
+    return 0
+  }
+  (ms / 1000L % 2000000000L).to_int()
+}
+
+///|
+/// 首次访问自动注册：落默认 ACL（can_write=false）+ 首拍注册（pid 换绑），
+/// 保证"第一次出现即登记 + 默认 fail-closed"。失败不阻塞主流程。
+fn agent_touch_first_seen(
+  eng : @engine.FistEngine,
+  raw_agent_id : String,
+  ns : String,
+  agent_type : String,
+  role : String,
+  soldier : String,
+  now : String,
+) -> Unit {
+  let fp = agent_fp(raw_agent_id)
+  // 默认 ACL 先落地（fail-closed 底线）
+  ignore(eng.agents_acl_ensure(agent_id=fp, ns~, now~))
+  // 首拍注册（ON CONFLICT 幂等；pid 换绑在 server 启动时做）
+  ignore(
+    eng.agents_register(
+      agent_id=fp,
+      agent_type~,
+      role~,
+      soldier~,
+      pubkey_fp="",
+      pid=current_pid_token(),
+      now~,
+    ),
+  )
+}
+
+///|
+/// 写面 ACL 硬门：`agents_acl_check(write=true)` 失败即拒绝（can_write=0 → Err）。
+/// 内存后端无持久化 ACL 面，不设门（放行），保证 server/wbtest 既有路径零回归；
+/// **sqlite 后端**（生产面）才真正执行 fail-closed。返回 Ok 才能继续写操作。
+fn agent_write_gate(
+  eng : @engine.FistEngine,
+  raw_agent_id : String,
+  ns : String,
+) -> Result[Unit, String] {
+  if eng.heartbeat_backend() != "sqlite" {
+    return Ok(())
+  }
+  eng.agents_acl_check(
+    agent_id=agent_fp(raw_agent_id),
+    ns~,
+    write=true,
+    current_pid=current_pid_token(),
+  )
 }
 
 ///|
@@ -1588,7 +1669,17 @@ pub async fn run_server() -> Unit {
       let assignee = get_str(args, "assignee")
       let ts = now_default()
       let inject = get_str(args, "inject")
-      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
+      // T0r5：首次访问自动注册 agent + 默认 ACL（can_write=false 落地）
+      agent_touch_first_seen(
+        eng, assignee, ns, "claim", "Executor", "工兵", ts,
+      )
+      // T0r5：写面 ACL 硬门（sqlite 后端 fail-closed）
+      match agent_write_gate(eng, assignee, ns) {
+        Err(e) => return Err(@mcp_types.ToolError("acl: " + e))
+        Ok(_) => ()
+      }
       match eng.claim(task_id~, assignee~, now=ts) {
         Err(e) => Err(@mcp_types.ToolError(e))
         Ok(t) => {
@@ -1630,7 +1721,8 @@ pub async fn run_server() -> Unit {
       let task_id = get_str(args, "task_id")
       let deliverable = get_str(args, "deliverable")
       let ts = now_default()
-      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
       // 提取可选执行元数据（向后兼容：无元数据时行为同旧版 execute）
       let executor = get_str(args, "executor", default="manual")
       let model = get_str(args, "model", default="")
@@ -1640,6 +1732,14 @@ pub async fn run_server() -> Unit {
       let duration_ms = get_int(args, "duration_ms", default=0)
       let rate_limited = get_bool(args, "rate_limited", default=false)
       let failure_reason = get_str(args, "failure_reason", default="")
+      // T0r5：首次访问自动注册 + 默认 ACL + 写面硬门
+      agent_touch_first_seen(
+        eng, executor, ns, "execute", "Executor", "工兵", ts,
+      )
+      match agent_write_gate(eng, executor, ns) {
+        Err(e) => return Err(@mcp_types.ToolError("acl: " + e))
+        Ok(_) => ()
+      }
       // 调用 execute_with_meta：同时写入 executions 表 + 流转任务状态
       to_result(
         eng.execute_with_meta(
@@ -2583,6 +2683,11 @@ pub async fn run_server() -> Unit {
             Ok(_) => true
             Err(_) => false
           }
+          // T0r5：agent PID 心跳 —— server 进程以伪 pid 在 agents 表留痕，
+          // 让 ACL 的 pid_bound 能对应到"哪个进程实例"（server 首次出现即登记）。
+          agent_touch_first_seen(
+            engine, "fist-mbt", "default", "server", "Leader", "通信兵", ts,
+          )
           let hb_backend = engine.heartbeat_backend()
           Ok(
             @mcp.ToolResult::text(
