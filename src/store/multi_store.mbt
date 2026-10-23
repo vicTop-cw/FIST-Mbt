@@ -156,6 +156,77 @@ pub fn MultiStore::ns_list(self : MultiStore) -> Array[String] {
 }
 
 ///|
+/// 逐层创建目录（`@fs.create_dir` 只建单层，父层缺失会 raise）。
+///
+/// **为什么需要**（BUG-390）：`SqliteStore::open` 把 `{data_dir}/{ns}.db` 原样交给 SQLite，
+/// 而 **SQLite 不创建中间目录**；干净检出上 `.fist-mbt/data` 并不存在
+/// ⇒ 第一次打开命名空间库就抛 `unable to open database file`（js 侧 daqing FFI 是 **throw**，
+/// 不是返回 null）⇒ 未捕获异常直接打死 serve 进程。
+/// 复现（干净树）：`python scripts/mcp_smoke.py` —— 本仓对外宣称的「一键自检」——
+/// `tools/list`(170 工具) 与 `issue_scan` 都 PASS，随后 ns=mcp-smoke 的库打开时进程退出，
+/// 报错栈 `MultiStore::get → SqliteStore::open → new DatabaseSync`。
+fn ensure_dir_tree(dir : String) -> Unit {
+  let chars = dir.to_array()
+  let n = chars.length()
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if c == '/' || c == '\\' {
+      if i > 0 {
+        let prefix = dir[0:i].to_owned()
+        // 盘符根（`E:` / `C:`）不当目录建：建它没意义，多数系统也直接拒
+        if !(prefix.length() == 2 && prefix[1] == ':') {
+          @fs.create_dir(prefix) catch {
+            _ => ()
+          }
+        }
+      }
+    }
+    i = i + 1
+  }
+  if n > 0 {
+    let last = chars[n - 1]
+    if last != '/' && last != '\\' {
+      if !(dir.length() == 2 && dir[1] == ':') {
+        @fs.create_dir(dir) catch {
+          _ => ()
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 为**任意** db 路径补建父目录（`SqliteStore::open` 的前置兜底）。
+///
+/// 覆盖 `MultiStore::new` 管不到的那一面：调用方把 `FIST_DB_PATH` 之类指到不存在的深层目录时，
+/// 仍会抛（BUG-390）。
+fn ensure_db_parent_dir(db_path : String) -> Unit {
+  if db_path == "" || db_path == ":memory:" {
+    return
+  }
+  let chars = db_path.to_array()
+  let n = chars.length()
+  let mut last = -1
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if c == '/' || c == '\\' {
+      last = i
+    }
+    i = i + 1
+  }
+  if last <= 0 {
+    return
+  }
+  let parent = db_path[0:last].to_owned()
+  if parent == "" || (parent.length() == 2 && parent[1] == ':') {
+    return
+  }
+  ensure_dir_tree(parent)
+}
+
+///|
 /// 每个已打开 ns 的任务数统计（直接用该 ns 库的 tasks 表 COUNT）。
 /// 返回 Json 数组，元素形如 {"ns": "...", "total": N}。
 pub fn MultiStore::ns_stats(self : MultiStore) -> Json {

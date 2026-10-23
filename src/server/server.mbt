@@ -6,10 +6,20 @@
 /// 运行时优先接入 SQLite 内建数据库（本项目根目录 fist-mbt.db 持久化）；
 /// 打开失败（如缺 libsqlite3）自动回退内存版，保证 server 总能启动。
 fn make_engine() -> @engine.FistEngine {
-  match @store.SqliteStore::new() {
+  let eng = match @store.SqliteStore::new() {
     Some(s) => @engine.FistEngine::new(store=@store.StoreBackend::sqlite(s))
     None => @engine.FistEngine::new()
   }
+  // T0r5：server 启动即给自身 agent 落一次注册 + 伪 pid 换绑，
+  // 让 ACL 的 pid_bound 从"server 这个进程实例"起算（sqlite 后端才有效）。
+  let ts = now_default()
+  agent_touch_first_seen(
+    eng, "fist-mbt", "default", "server", "Leader", "通信兵", ts,
+  )
+  ignore(
+    eng.agents_set_pid(agent_id=agent_fp("fist-mbt"), pid=current_pid_token()),
+  )
+  eng
 }
 
 ///|
@@ -425,6 +435,91 @@ fn iso_minus_secs(iso : String, secs : Int32) -> String {
   let days = (total_sec / 86400L).to_int()
   let (y, m, d) = _civil_from_days(days)
   "\{y}-\{_pad2(m)}-\{_pad2(d)}T\{_pad2(hour)}:\{_pad2(min)}:\{_pad2(sec)}Z"
+}
+
+///|
+/// agent 指纹：把调用方自述的 `agent_id` 原文映射为不可逆指纹，
+/// 落库/比对都只用指纹（防止日志与 ACL 面被任意长/含特殊字符的原文污染）。
+/// 指纹只认原文（`fnv1a64("agent_id:" ++ raw)`）；`pubkey_fp` 另行
+/// 用 `fnv1a64("pubkey:" ++ hex)` 派生（T0r5：密钥指纹面）。
+fn agent_fp(raw : String) -> String {
+  @omega.fnv1a64("agent_id:" + raw)
+}
+
+///|
+/// 当前进程的伪 pid：`@env.now()` 无真实 OS-PID 面，退化为
+/// `now_ms / 1000 % 2000000000` 的 Int32（进程启动即固定一次，
+/// 生命周期内不变），用于把 ACL 的 `pid_bound` 落到具体进程实例上。
+/// Int32 上限 ~2.1e9，模 2e9 保证不溢出（2038 前有效）。
+///
+/// **实现必须兑现注释**：首次调用固化缓存，之后恒返回同一 pid。
+/// 原实现每次调用都重取 `@env.now()`——秒级漂移 ⇒ 同一进程内注册后过几秒，
+/// `agent_write_gate` 里 `current_pid_token()` 就与注册时不同，`pid_bound=1`
+/// 时误报「ACL 绑定旧进程实例（pid 已换）」把合法写操作拒掉。测试面
+/// （store_sqlite_agents_wbtest.mbt）恒传硬编码 `current_pid`，这条漂移零覆盖。
+/// 用单元素容器做进程级缓存（MoonBit 顶层不支持 `let mut`）。
+let cached_pid_token : Array[Int32] = Array::make(1, -1)
+
+///|
+fn current_pid_token() -> Int32 {
+  if cached_pid_token[0] >= 0 {
+    return cached_pid_token[0]
+  }
+  let ms = @env.now().reinterpret_as_int64()
+  if ms < 0L {
+    return 0
+  }
+  cached_pid_token[0] = (ms / 1000L % 2000000000L).to_int()
+  cached_pid_token[0]
+}
+
+///|
+/// 首次访问自动注册：落默认 ACL（can_write=false）+ 首拍注册（pid 换绑），
+/// 保证"第一次出现即登记 + 默认 fail-closed"。失败不阻塞主流程。
+fn agent_touch_first_seen(
+  eng : @engine.FistEngine,
+  raw_agent_id : String,
+  ns : String,
+  agent_type : String,
+  role : String,
+  soldier : String,
+  now : String,
+) -> Unit {
+  let fp = agent_fp(raw_agent_id)
+  // 默认 ACL 先落地（fail-closed 底线）
+  ignore(eng.agents_acl_ensure(agent_id=fp, ns~, now~))
+  // 首拍注册（ON CONFLICT 幂等；pid 换绑在 server 启动时做）
+  ignore(
+    eng.agents_register(
+      agent_id=fp,
+      agent_type~,
+      role~,
+      soldier~,
+      pubkey_fp="",
+      pid=current_pid_token(),
+      now~,
+    ),
+  )
+}
+
+///|
+/// 写面 ACL 硬门：`agents_acl_check(write=true)` 失败即拒绝（can_write=0 → Err）。
+/// 内存后端无持久化 ACL 面，不设门（放行），保证 server/wbtest 既有路径零回归；
+/// **sqlite 后端**（生产面）才真正执行 fail-closed。返回 Ok 才能继续写操作。
+fn agent_write_gate(
+  eng : @engine.FistEngine,
+  raw_agent_id : String,
+  ns : String,
+) -> Result[Unit, String] {
+  if eng.heartbeat_backend() != "sqlite" {
+    return Ok(())
+  }
+  eng.agents_acl_check(
+    agent_id=agent_fp(raw_agent_id),
+    ns~,
+    write=true,
+    current_pid=current_pid_token(),
+  )
 }
 
 ///|
@@ -1418,7 +1513,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "publish",
-    "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)、level 任务层级（可选，0..7，默认 6 连长级；上游显式声明 x级 则覆盖）。返回 {task_id, namespace, message}，其中 namespace 是任务**实际落在**的 ns（BUG-23：过去只回 task_id，把键名写成 ns 会静默落进 default 而无从发现）。参数名逐字对 inputSchema：与本工具已声明参数同根（互为子串）的错名（ns/desc/project 这类）直接拒绝，不做静默忽略。",
+    "发布根任务（仅限人类指挥官）。参数：project_dir 项目目录、description 任务描述、namespace 命名空间(默认 default)、created_by 创建者身份(默认 human_steward)、level 任务层级（可选，0..7，默认 6 连长级；上游显式声明 x级 则覆盖）。返回 {task_id, namespace, message}，其中 namespace 是任务**实际落在**的 ns（BUG-23：过去只回 task_id，把键名写成 ns 会静默落进 default 而无从发现）。参数名逐字对 inputSchema：与本工具已声明参数同根（互为子串）的错名（ns/desc/project 这类）直接拒绝，不做静默忽略。⚠ namespace 传 default 或留空会**立即返回 Err**（ns 写门 T0r1 第②步）：请先 `store_open(ns=<你的项目命名空间>)` 再发布——default.db 已被外部项目（cron-auto/Pentad/bugs 等）污染 2300+ 条任务，写 default 会造成跨项目混表。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -1438,6 +1533,13 @@ pub async fn run_server() -> Unit {
       let created_by = get_str(args, "created_by", default="human_steward")
       let level = get_int(args, "level", default=6)
       let ts = now_default()
+      // T0r1 第②步（止血）：publish 拒绝写入 default/空 ns，堵住外部项目污染 default.db。
+      // 门在 handler 层——engine.publish 默认 ns="default" 保持兼容（存量测试/CLI 直调不受影响），
+      // 但 MCP 客户端（含 cron-auto 等定时进程）走本入口时必须先 store_open 自己的 ns。
+      let g = ns_write_gate(ns)
+      if g is Err(ge) {
+        return Err(@mcp_types.ToolError(ge))
+      }
       let r = engine_for_ns(ns).publish(
         project_dir~,
         description~,
@@ -1581,7 +1683,17 @@ pub async fn run_server() -> Unit {
       let assignee = get_str(args, "assignee")
       let ts = now_default()
       let inject = get_str(args, "inject")
-      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
+      // T0r5：首次访问自动注册 agent + 默认 ACL（can_write=false 落地）
+      agent_touch_first_seen(
+        eng, assignee, ns, "claim", "Executor", "工兵", ts,
+      )
+      // T0r5：写面 ACL 硬门（sqlite 后端 fail-closed）
+      match agent_write_gate(eng, assignee, ns) {
+        Err(e) => return Err(@mcp_types.ToolError("acl: " + e))
+        Ok(_) => ()
+      }
       match eng.claim(task_id~, assignee~, now=ts) {
         Err(e) => Err(@mcp_types.ToolError(e))
         Ok(t) => {
@@ -1623,7 +1735,8 @@ pub async fn run_server() -> Unit {
       let task_id = get_str(args, "task_id")
       let deliverable = get_str(args, "deliverable")
       let ts = now_default()
-      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      let ns = get_str(args, "namespace", default="default")
+      let eng = engine_for_ns(ns)
       // 提取可选执行元数据（向后兼容：无元数据时行为同旧版 execute）
       let executor = get_str(args, "executor", default="manual")
       let model = get_str(args, "model", default="")
@@ -1633,6 +1746,14 @@ pub async fn run_server() -> Unit {
       let duration_ms = get_int(args, "duration_ms", default=0)
       let rate_limited = get_bool(args, "rate_limited", default=false)
       let failure_reason = get_str(args, "failure_reason", default="")
+      // T0r5：首次访问自动注册 + 默认 ACL + 写面硬门
+      agent_touch_first_seen(
+        eng, executor, ns, "execute", "Executor", "工兵", ts,
+      )
+      match agent_write_gate(eng, executor, ns) {
+        Err(e) => return Err(@mcp_types.ToolError("acl: " + e))
+        Ok(_) => ()
+      }
       // 调用 execute_with_meta：同时写入 executions 表 + 流转任务状态
       to_result(
         eng.execute_with_meta(
@@ -2576,6 +2697,11 @@ pub async fn run_server() -> Unit {
             Ok(_) => true
             Err(_) => false
           }
+          // T0r5：agent PID 心跳 —— server 进程以伪 pid 在 agents 表留痕，
+          // 让 ACL 的 pid_bound 能对应到"哪个进程实例"（server 首次出现即登记）。
+          agent_touch_first_seen(
+            engine, "fist-mbt", "default", "server", "Leader", "通信兵", ts,
+          )
           let hb_backend = engine.heartbeat_backend()
           Ok(
             @mcp.ToolResult::text(
@@ -5969,15 +6095,24 @@ pub async fn run_server() -> Unit {
       // 而是走 MultiStore 默认 `.fist-mbt/data/`（多库/多租户台账落目标项目私有目录）。
       // 空串是"用默认"的信号，不走 data_dir_ok（data_dir_ok 会拒空）；实传值仍严格校验。
       if dir.is_empty() {
-        dir = ".fist-mbt/data"
-        // `@fs.create_dir` 不递归（见 model_router_ops.mbt 同款三层建目录），
-        // 而 SqliteStore 只建文件不建目录——缺了这两层，默认落点会在首个
-        // store_open 直接 `unable to open database file` 崩掉整个 server。
-        @fs.create_dir(".fist-mbt") catch {
-          _ => ()
-        }
-        @fs.create_dir(dir) catch {
-          _ => ()
+        // BUG-389 修复：BUG-78 把默认 data_dir 改成 `.fist-mbt/data/` 但没迁存量库，
+        // cwd 根仍留有 `<ns>.db`——server 重启后 store_open 落新空库，同 ns 任务"凭空消失"
+        // （2026-10-23 实测：fist-mbt-refactor 40 条 / tnr-polish 23 条 / tql-b5 1 条全部丢失）。
+        // 打开前先检测旧位置存量库：存在则复用旧库（任务不丢），否则才落 BUG-78 新默认。
+        let legacy_exists = legacy_store_exists(ns)
+        if legacy_exists {
+          dir = "."
+        } else {
+          dir = ".fist-mbt/data"
+          // `@fs.create_dir` 不递归（见 model_router_ops.mbt 同款三层建目录），
+          // 而 SqliteStore 只建文件不建目录——缺了这两层，默认落点会在首个
+          // store_open 直接 `unable to open database file` 崩掉整个 server。
+          @fs.create_dir(".fist-mbt") catch {
+            _ => ()
+          }
+          @fs.create_dir(dir) catch {
+            _ => ()
+          }
         }
       }
       // BUG-78：原因分列再动手——把非法 ns 和非法 data_dir 合并成一句"打开失败"，
@@ -7200,7 +7335,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "executor_run",
-    "把任务交给外部执行器真跑（宿主命令能力，默认收紧）：执行器名**只能**是白名单 aider | atomcode | ofm，或 `executor_register` 已注册的自定义执行器（注册即可用，跨重启可复现）。aider/atomcode 走本地 CLI spawn（argv 形状由 src/executor/cli_argv.mbt 固定，不经过 shell，提示词里的 ; $() 反引号都只是字面量，可执行文件名由登记表推导——调用方无法借本工具注入任意命令）；自定义执行器走受限 CLI 通道（binary=注册名、argv=[prompt]，同样不经 shell）；**ofm 走并存 HTTP 通道**（`executor_run_impl` 按 `executor` 分流，不经 build_command）：真 POST `{ofm_endpoint}/chat/completions`，端点 env `FIST_OFM_ENDPOINT` 优先、`config.ofm_endpoint` 兜底，`Authorization: Bearer` 的 key 只在 server 进程环境变量里读、**回执绝不回显**，失败按 `classify_ofm_failure` 归因（网络/401/5xx/其他）。model 留空时先向 model_route 要一个模型并记账（路由↔执行器接线点；自定义执行器与 atomcode 同规——跳过 FIST 路由防模型名跨命名空间错配）；无可用模型直接失败不猜模型。结果 ok=false 时附可诊断 error/hint/failure_kind，绝不静默成功。参数：project_dir(必填)、executor(必填 aider|atomcode|ofm 或已注册自定义执行器)、prompt(必填，非空且不含 NUL)、model(可选，留空则路由决定)、namespace(可选)、timeout_ms(可选默认 180000)、dry_run(可选默认 false：CLI 通道只回显将执行的 argv、OFM 通道只回显将发送的请求体 URL，一个进程/一个网络请求都不起，先审后跑)（注：时间戳由服务端盖章）。执行需 js/node 运行时；native 构建返回明确拒绝。",
+    "把任务交给外部执行器真跑（宿主命令能力，默认收紧）：执行器名**只能**是白名单 aider | atomcode | ofm，或 `executor_register` 已注册的自定义执行器（注册即可用，跨重启可复现）。aider/atomcode 走本地 CLI spawn（argv 形状由 src/executor/cli_argv.mbt 固定，不经过 shell，提示词里的 ; $() 反引号都只是字面量，可执行文件名由登记表推导——调用方无法借本工具注入任意命令）；自定义执行器走受限 CLI 通道（binary=注册名、argv=[prompt]，同样不经 shell）；**ofm 走并存 HTTP 通道**（`executor_run_impl` 按 `executor` 分流，不经 build_command）：真 POST `{ofm_endpoint}/chat/completions`，端点 env `FIST_OFM_ENDPOINT` 优先、`config.ofm_endpoint` 兜底，`Authorization: Bearer` 的 key 只在 server 进程环境变量里读、**回执绝不回显**，失败按 `classify_ofm_failure` 归因（网络/401/5xx/其他）。model 留空时先向 model_route 要一个模型并记账（路由↔执行器接线点；自定义执行器与 atomcode 同规——跳过 FIST 路由防模型名跨命名空间错配）；无可用模型直接失败不猜模型。结果 ok=false 时附可诊断 error/hint/failure_kind，绝不静默成功。**CLI 通道的 failure_kind 由 classify_cli_failure 按 spawn 原语的 error 文本归因**：NOT_EXECUTABLE（进程没起来，ENOENT/EACCES）/ TIMEOUT（起来了但跑满 timeout_ms，产物很可能已落盘，先验文件系统再决定重派）/ NONZERO_EXIT（退出码非 0）/ SIGNAL_KILLED（node 给 code=null，折成 -1）/ DISPATCH_FAILED（本侧调度或结果解析失败，坏的是尺不是执行器）/ UNKNOWN（无线索，不猜）；成功时 failure_kind=NONE。hint 随档而变——只有 NOT_EXECUTABLE 才配说「可执行文件不可用」。**换模型重试（P1.1 fallback 链）按 cli_retry_policy 准入**：NONZERO_EXIT / SIGNAL_KILLED / UNKNOWN 才换候选；NOT_EXECUTABLE（PATH 问题，换谁都一样）与 TIMEOUT（时长预算，换候选会带全新预算重跑整单、而首跑产物多半已落盘）**不换、直接返回可处置处方**，回执另带 `retry_skipped` 说明为什么没换（该字段只在政策跳过时出现；预算耗尽/无候选不会伪装成政策跳过）。本侧 DISPATCH_FAILED 一律不重试也不记模型冷却账——模型根本没跑起来。参数：project_dir(必填)、executor(必填 aider|atomcode|ofm 或已注册自定义执行器)、prompt(必填，非空且不含 NUL)、model(可选，留空则路由决定)、namespace(可选)、timeout_ms(可选默认 180000)、dry_run(可选默认 false：CLI 通道只回显将执行的 argv、OFM 通道只回显将发送的请求体 URL，一个进程/一个网络请求都不起，先审后跑)（注：时间戳由服务端盖章）。执行需 js/node 运行时；native 构建返回明确拒绝。",
     schema(
       {
         "project_dir": string_prop(

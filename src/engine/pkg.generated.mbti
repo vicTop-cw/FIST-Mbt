@@ -96,6 +96,13 @@ pub struct FistEngine {
   store : @store.StoreBackend
   registry : @executor.ExecutorRegistry
 }
+pub fn FistEngine::agents_acl_check(Self, agent_id~ : String, ns~ : String, write~ : Bool, current_pid~ : Int32) -> Result[Unit, String]
+pub fn FistEngine::agents_acl_ensure(Self, agent_id~ : String, ns~ : String, now~ : String) -> Result[Unit, String]
+pub fn FistEngine::agents_acl_grant(Self, agent_id~ : String, ns~ : String, can_read~ : Bool, can_write~ : Bool, pid_bound~ : Bool, now~ : String, by~ : String) -> Result[Unit, String]
+pub fn FistEngine::agents_get(Self, String) -> @store.AgentRecord?
+pub fn FistEngine::agents_register(Self, agent_id~ : String, agent_type~ : String, role~ : String, soldier~ : String, pubkey_fp~ : String, pid~ : Int32, now~ : String) -> Result[Unit, String]
+pub fn FistEngine::agents_set_pid(Self, agent_id~ : String, pid~ : Int32) -> Result[Unit, String]
+pub fn FistEngine::agents_stale_check(Self, String) -> Array[@store.AgentRecord]
 pub fn FistEngine::all_subtasks_completed(Self, @core.Task) -> Bool
 pub fn FistEngine::archive(Self, task_id~ : String, by~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::archive_force(Self, task_id~ : String, by~ : String, force~ : Bool, now~ : String) -> Result[@core.Task, String]
@@ -202,8 +209,8 @@ pub fn FistEngine::submit(Self, task_id~ : String, now~ : String) -> Result[@cor
 pub fn FistEngine::supervisor_kill_apply_pause(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::supervisor_kill_plan(Self, task_id~ : String, by~ : String, reason~ : String, force? : Bool, apply_pause? : Bool, now? : String) -> Json
 pub fn FistEngine::supervisor_reminder_tick(Self, now~ : String, stale_hours? : Int32, pending_hours? : Int32) -> Json
-pub fn FistEngine::supervisor_status(Self, ns_filter? : String) -> Json
-pub fn FistEngine::supervisor_task_tree(Self, String) -> Result[Json, String]
+pub fn FistEngine::supervisor_status(Self, ns_filter? : String, detail? : Bool) -> Json
+pub fn FistEngine::supervisor_task_tree(Self, String, detail? : Bool) -> Result[Json, String]
 pub fn FistEngine::supervisor_task_upsert(Self, project_dir~ : String, by~ : String, Array[Json], now~ : String, ns? : String) -> Json
 pub fn FistEngine::topo_sort(Self, Array[String]) -> Array[String]
 pub fn FistEngine::transition_contract(Self, String, String, assignee? : String, completed_by? : String, force? : Bool) -> Json

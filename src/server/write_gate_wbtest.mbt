@@ -164,3 +164,72 @@ test "wg_5_write_gate_audit_records_reject" {
   assert_true(r2 is Err(_))
   assert_eq(al.entries().length(), 2)
 }
+
+///|
+/// 便利：ns 写门返回 Err 且文案含关键字。
+fn nwg_err(ns : String, needle : String) -> Bool {
+  match ns_write_gate(ns) {
+    Err(e) => e.contains(needle)
+    Ok(_) => false
+  }
+}
+
+///|
+/// ns 写门锁 1：default / 空 ns 一律拒绝（污染源），且指路"先 store_open"。
+test "nwg_1_default_and_empty_rejected" {
+  assert_true(nwg_err("default", "拒绝写入 default"))
+  assert_true(nwg_err("", "拒绝写入 default"))
+  assert_true(nwg_err("", "store_open"))
+}
+
+///|
+/// ns 写门锁 2：合法项目 ns 允许写入（字母数字 / 下划线 / 连字符）。
+test "nwg_2_legal_ns_allowed" {
+  assert_true(ns_write_gate("fist-mbt-refactor") is Ok(_))
+  assert_true(ns_write_gate("cron-auto") is Ok(_))
+  assert_true(ns_write_gate("tnr_polish") is Ok(_))
+  assert_true(ns_write_gate("T0r3alpha9") is Ok(_))
+}
+
+///|
+/// ns 写门锁 3：非法 ns 拒绝（空格 / 路径穿越 / 盘符 / 前导分隔符 / 点号）。
+/// 与 `MultiStore::safe_ns` 同族口径：只放字母数字与 _ -。
+test "nwg_3_illegal_ns_rejected" {
+  assert_true(nwg_err("../evil", "非法命名空间"))
+  assert_true(nwg_err("C:default", "非法命名空间"))
+  assert_true(nwg_err("/abs/path", "非法命名空间"))
+  assert_true(nwg_err("my ns", "非法命名空间"))
+  assert_true(nwg_err("T0r3.alpha9", "非法命名空间"))
+}
+
+///|
+/// BUG-389 锁 1：旧位置存量库检测——目录/文件不存在时 false，真有 `<ns>.db` 才 true。
+/// 复现路径：BUG-78 改默认 data_dir 但没迁存量库，cwd 根留 `<ns>.db`，重启后落新空库
+/// → 任务"凭空消失"。此锁钉住 legacy_store_exists_in 的检测逻辑，防回归到静默开空库。
+test "lsm_1_legacy_store_detected" {
+  // 目录不存在 → false（is_file raise IOError 被 catch 成 false）
+  assert_false(legacy_store_exists_in("temp/bug389-nonexistent-dir", "alpha"))
+  // 目录存在但无 <ns>.db → false
+  @fs.create_dir("temp/bug389-test") catch {
+    _ => ()
+  }
+  assert_false(legacy_store_exists_in("temp/bug389-test", "alpha"))
+  // 写 <ns>.db → true（存量库被识别）
+  @fs.write_string_to_file("temp/bug389-test/alpha.db", "") catch {
+    _ => ()
+  }
+  assert_true(legacy_store_exists_in("temp/bug389-test", "alpha"))
+  // 别的 ns 仍 false（不误判）
+  assert_false(legacy_store_exists_in("temp/bug389-test", "beta"))
+  // 清理
+  @fs.remove_file("temp/bug389-test/alpha.db") catch {
+    _ => ()
+  }
+}
+
+///|
+/// BUG-389 锁 2：便捷版 `legacy_store_exists` 在无存量库的 ns 上返回 false（不会误开旧库）。
+/// 测试只在 temp/ 做文件存在性探测，不落 cwd 根，避免污染仓库根。
+test "lsm_2_no_legacy_false" {
+  assert_false(legacy_store_exists("this-ns-has-no-legacy-db-xyz"))
+}

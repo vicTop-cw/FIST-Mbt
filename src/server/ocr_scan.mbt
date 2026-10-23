@@ -401,7 +401,7 @@ pub fn ocr_reviewed_final(
   stdout_reviewed : Bool,
   path : String,
 ) -> (Bool, String) {
-  if stdout_reviewed && path.ends_with(".mbt") {
+  if stdout_reviewed && path.has_suffix(".mbt") {
     (
       false, "目标为单个 .mbt 文件（OCR 白名单外扩展名），LLM review 未真正执行；顶层 ok 已强制 fail-closed",
     )
