@@ -653,19 +653,34 @@ pub fn child_id(parent_id~ : String, idx~ : Int32) -> String {
 /// 任务转 JSON（供 MCP resource / tool 输出）
 
 ///|
-/// 给 AI 编排用的描述截断：`s[0:max]` 按字节切，需回退到 UTF-8 字符边界，
-/// 否则会把中文/emoji 切成半个字符（输出非法 UTF-8）。`desc_limit <= 0` 原样返回。
+/// 给 AI 编排用的描述截断：**按 UTF-8 字节上限**截断并回退到字符边界。
+///
+/// 为什么按字节而不是按 `String` 码元（2026-10-23 实测修正）：本工具链的 `String` 内部是 UTF-16，
+/// 原先的实现 `if s.length() <= desc_limit` + `s[cut]` 是**码元**语义，而本函数的契约（以及它的用途）
+/// 是「控 MCP 返回**体积**」——体积是字节。旧实现在纯中文描述上会把 6 字节当成 6 个字符，
+/// 实测 `desc_clip("一二三四五六七八九十", 6)` 返回 `"一二三四五六…"` 而不是 `"一二…"`，
+/// 与随本函数同一提交落地的 `core_task_desc_clip_wbtest.mbt:44`（dc_3，期望 `"一二…"`）直接矛盾。
+/// 现在先按 UTF-8 编码取真实字节数，超限才切，并在切点回退到 continuation byte 之前
+/// （0b10xxxxxx），保证解出来仍是合法 UTF-8。
+/// `desc_limit <= 0` 原样返回（零回归锚）。
 fn desc_clip(s : String, desc_limit : Int32) -> String {
-  if desc_limit <= 0 || s.length() <= desc_limit {
-    s
-  } else {
-    let mut cut = desc_limit
-    // 回退：跳过 UTF-8 continuation bytes（0b10xxxxxx），落在字符起点上
-    while cut > 0 && s[cut].land(0xC0) == 0x80 {
-      cut = cut - 1
-    }
-    s[0:cut].to_owned() + "…"
+  if desc_limit <= 0 {
+    return s
   }
+  let bytes = @encoding.encode(UTF8, s)
+  if bytes.length() <= desc_limit {
+    return s
+  }
+  let mut cut = desc_limit
+  // 回退：continuation byte 形如 0b10xxxxxx ⇒ 退到字符起始字节
+  while cut > 0 && bytes[cut].to_int().land(0xC0) == 0x80 {
+    cut = cut - 1
+  }
+  let sb = StringBuilder()
+  @encoding.decode_to(bytes[0:cut], sb, encoding=UTF8) catch {
+    _ => ()
+  }
+  sb.to_string() + "…"
 }
 
 ///|
