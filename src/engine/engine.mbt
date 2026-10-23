@@ -1580,10 +1580,10 @@ pub fn FistEngine::publish_with_deps(
 fn estimate_rank(assignee : String) -> Int32 {
   if assignee == "human_steward" || assignee == "human" {
     0
-  } else if assignee.starts_with("leader") ||
-    assignee.starts_with("polish-lead") {
+  } else if assignee.has_prefix("leader") ||
+    assignee.has_prefix("polish-lead") {
     6
-  } else if assignee.starts_with("atomcode") || assignee.starts_with("aider") {
+  } else if assignee.has_prefix("atomcode") || assignee.has_prefix("aider") {
     4
   } else {
     5
