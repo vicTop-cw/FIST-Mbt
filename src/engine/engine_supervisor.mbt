@@ -419,7 +419,10 @@ pub fn FistEngine::supervisor_task_upsert(
               } else {
                 let mut c = t
                 if item.description != "" {
-                  c = c.with_description(item.description, now)
+                  c = c.with_description(
+                    preserve_plan_markers(t.description, item.description),
+                    now,
+                  )
                 }
                 if item.priority != "" {
                   c = c.with_priority(item.priority, now)

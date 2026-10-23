@@ -488,6 +488,94 @@ test "omega_audit_gate_non_empty_passes" {
 }
 
 ///|
+/// BUG-389 单元锁 ①：旧描述含 [omega:required]、新描述不含 → 结果仍含该标记。
+/// （若丢失，omega_spec_create 会把「标记被 supervisor 覆盖」误报成「用户没开 Omega」。）
+test "preserve_plan_markers_keeps_omega_mark" {
+  let old = "实现缓存层 [omega:required]  [难度梯度 3]"
+  let new = "实现缓存层"
+  let got = @engine.preserve_plan_markers(old, new)
+  assert_true(got.contains("[omega:required]"))
+  // 用户写的新描述本体必须原样保留
+  assert_true(got.contains("实现缓存层"))
+}
+
+///|
+/// BUG-389 单元锁 ②：旧描述含 [边界四问 标记 → 结果仍含（含前导空格整段补回）。
+test "preserve_plan_markers_keeps_boundary_mark" {
+  let old = "校验空输入 [边界四问:空输入/极值/非法输入/资源极限——须有用例或声明不适用]"
+  let new = "校验空输入"
+  let got = @engine.preserve_plan_markers(old, new)
+  // 按清单补回的是标记前缀 " [边界四问"（与 strip_plan_annotations 同一份清单）
+  assert_true(got.contains("[边界四问"))
+}
+
+///|
+/// BUG-389 单元锁 ③：旧描述不含任何标记、新描述也不含 → 原样返回（不追加空格、不改文本）。
+test "preserve_plan_markers_noop_when_no_markers" {
+  let old = "普通根任务"
+  let new = "新描述"
+  let got = @engine.preserve_plan_markers(old, new)
+  assert_eq(got, new)
+}
+
+///|
+/// BUG-389 单元锁 ④：新描述已含 [omega:required] → 不重复追加（幂等，防标记累积）。
+test "preserve_plan_markers_no_duplicate_when_present" {
+  let old = "任务 [omega:required]"
+  let new = "任务 [omega:required]"
+  let got = @engine.preserve_plan_markers(old, new)
+  // 只出现一次
+  let parts = got.split("[omega:required]")
+  assert_eq(parts.length(), 2)
+}
+
+///|
+/// BUG-389 端到端锁：supervisor_task_upsert 更新描述时不丢 decomposer 结构标记，
+/// omega 门禁仍能读到 [omega:required]，omega_spec_create 不再误报「未开启 Omega 强验证」。
+test "preserve_plan_markers_survives_supervisor_upsert" {
+  let e = os_engine()
+  let id = os_publish(e, desc="超级管家更新根任务")
+  os_split(e, id, true)
+  let cid = os_first_child(e, id)
+  // 前置：子任务确实带着强验证标记
+  match e.get_task(cid) {
+    Some(t) => assert_true(t.get_description().contains("[omega:required]"))
+    None => abort("child missing: \{cid}")
+  }
+  // 超级管家更新描述：只写业务文本，不带任何结构标记
+  let item = Json::object({
+    "task_id": Json::string(cid),
+    "description": Json::string("缓存层重写，含 LRU 与 TTL"),
+    "priority": Json::string(""),
+    "depends_on": Json::array([]),
+  })
+  let r = e.supervisor_task_upsert(
+    project_dir="/proj/omega",
+    by="human_steward",
+    [item],
+    now="2026-09-17T10:30:00Z",
+  )
+  let rs = r.stringify()
+  assert_true(rs.contains("\"action\":\"updated\""))
+  // 标记必须仍在 description 里（BUG-389 修复点）
+  match e.get_task(cid) {
+    Some(t) => assert_true(t.get_description().contains("[omega:required]"))
+    None => abort("child missing after upsert: \{cid}")
+  }
+  // 门禁不再误报：语料创建通道放行
+  match
+    e.omega_spec_create(
+      task_id=cid,
+      author="spec_author",
+      content="缓存层验收标准",
+      now="2026-09-17T10:31:00Z",
+    ) {
+    Ok(_) => ()
+    Err(m) => abort("标记保留后语料创建不应被门禁拦下: \{m}")
+  }
+}
+
+///|
 /// 预执行审计门禁 Round 8 扩展：占位符交付物（fake-GREEN 形状）被拒。
 /// 「done」/「完成」/「ok」/「yes」/「通过」这类词整串等于时，账本记完成但无产物可核，
 /// 正是 BUG-29 done_no_artifact 病灶形状；大小写/标点容忍。
