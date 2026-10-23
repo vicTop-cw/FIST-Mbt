@@ -297,6 +297,22 @@ jobs:
           python3 scripts/check_host_installable.py --selftest
           python3 scripts/check_host_installable.py
 
+      # position-why: 本步读的是「安装面模板 + 脚本/文档当前面」的文本面，不依赖 moon 产物、
+      # 不需要 _build（干净 checkout 上唯一能判安装面双态的位置）；放在 Migrate 之后不会因缺产物误红，
+      # 前置的 Check(js) 只负责编译面。硬编码回归锁与宿主可装性同源，故紧随其后。
+      - name: Machine-path guard (当前面禁止本机身份路径；DSH 安装面模板/渲染双态回归锁)
+        shell: bash
+        # position-why: 文本面判据，不依赖 _build 产物；与 Host-installable 同源相邻。
+        run: |
+          python3 scripts/check_hardcoded_paths.py --selftest
+          python3 scripts/check_hardcoded_paths.py
+
+      - name: DSH patch render self-proof (模板→本机渲染幂等；漂移即红)
+        shell: bash
+        # position-why: 纯文本渲染自证，不依赖构建产物；紧随安装面判据。
+        run: |
+          python3 scripts/render_dsh_patch.py --selftest
+
       - name: Skill-inject guard (evolve_asset_register 注入路径可测命中)
         shell: bash
         run: |

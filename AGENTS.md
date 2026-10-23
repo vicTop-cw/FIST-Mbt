@@ -5,8 +5,9 @@ This is a [MoonBit](https://docs.moonbitlang.com) project.
 You can browse and install extra skills here:
 <https://github.com/moonbitlang/skills>
 
-本地已克隆 MoonBit skills 仓库，技能可直接从本地读取：
-`E:\IDEProjects\moonbit-skills`（结构：`skills/<name>/SKILL.md`，进入项目会话时按需加载其中的技能）。
+本地可克隆 MoonBit skills 仓库（<https://github.com/moonbitlang/skills>），技能直接从本地读取：
+克隆位置因人而异——建议置环境变量 `MOONBIT_SKILLS_ROOT` 指向克隆根（结构 `skills/<name>/SKILL.md`），
+进入项目会话时按需加载其中的技能。
 
 ## FIST 指挥官模式（默认行为）
 

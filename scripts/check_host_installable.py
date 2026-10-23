@@ -13,7 +13,12 @@
   D1 · DSH 宿主面（`plugins/**` 之外的真安装面）：`.dsh/fist-mbt-plugin/`
      · package.json：`name` 合法 npm 名（`@scope/pkg` 或 `pkg`，仅 `[A-Za-z0-9._-]` 与一个 `/`）；
        `version` 是合法语义版本（`x.y.z`）且 **== moon.mod 的 version**。
-     · cordis.patch.yml —— **严格档**（这是 DSH 真安装面，错了就 disconnected）：
+     · cordis.patch.yml.tpl —— **模板档（跟踪真源，本 PR 起为安装面的唯一入仓形态）**：
+          ① 两个占位符 `{{FIST_MBT_CLI}}` / `{{FIST_MBT_ROOT}}` 齐全；
+          ② **不得含任何本机绝对路径**（盘符 / 家目录）——模板绑定某台机器 = 每个克隆者
+             拿到都 disconnected；
+          ③ 占位符替换成合成绝对路径后，必须满足下面的严格档（模板形状 == 可装形状）。
+     · cordis.patch.yml —— **渲染件（本地产物，已 gitignore）**，在场时走严格档：
          ① YAML 可解析（PyYAML 缺失时退化到缩进/键值结构检查，不静默跳过）；
          ② `insert` 目标 `id` 与 `name` 非空（`name` 是被注入的插件 id，离线无法核验
             宿主注册表，故只验形状不验存在性）；
@@ -55,7 +60,8 @@
        默认模板只能选一个主形状（Claude Code 形状）。判据按宿主分档认这个事实。
 
 扫描面（缺关键文件 → 自拒 exit 2）：
-  `.dsh/fist-mbt-plugin/{package.json, cordis.patch.yml}`（D1）
+  `.dsh/fist-mbt-plugin/{package.json, cordis.patch.yml.tpl}`（D1：模板=跟踪真源）
+  `.dsh/fist-mbt-plugin/cordis.patch.yml`（D1：本机渲染件，**可选**——干净检出不产它）
   `.mcp.json` / `.mcp.dev.json` / `plugins/**/.mcp.json`（D2）
   `default-fist.mcp.json`（D3）
   `moon.mod`（D1 的版本基线）
@@ -88,6 +94,10 @@ ROOT = Path(__file__).resolve().parent.parent
 
 DSH_DIR = ".dsh/fist-mbt-plugin"
 DSH_MANIFEST = DSH_DIR + "/package.json"
+# 安装面双态（本 PR 起）：跟踪真源是模板（占位符、零本机路径），渲染件是本地产物
+# 由 scripts/render_dsh_patch.py 按当前仓位置生成（已 gitignore）。判据必须认这个事实：
+# 干净检出只有模板、没有渲染件 —— 只校验模板；本机有渲染件时再叠加严格档。
+DSH_PATCH_TPL = DSH_DIR + "/cordis.patch.yml.tpl"
 DSH_PATCH = DSH_DIR + "/cordis.patch.yml"
 LENIENT_JSON = [".mcp.json", ".mcp.dev.json"]
 # BUG-358：只有「跟踪真源」才允许进关键清单。根 `.mcp.json` 被 .gitignore `/.mcp.json`
@@ -172,8 +182,30 @@ def _walk_yaml(node, problems: list[str], path: str = "") -> None:
                 _walk_yaml(v, problems, path + "/%d" % i)
 
 
+def dsh_template_problems(tpl: str) -> list[str]:
+    """模板档（跟踪真源）：安装面双态的「源」这一侧必须与任何一台机器解耦。
+    判据：① 两个占位符齐全；② 不得出现盘符/家目录绝对路径；③ 渲染后仍须过严格档。"""
+    problems: list[str] = []
+    for ph in ("{{FIST_MBT_CLI}}", "{{FIST_MBT_ROOT}}"):
+        if ph not in tpl:
+            problems.append("cordis.patch.yml.tpl 缺占位符 %s（渲染件将漏值/残留）" % ph)
+    m = re.search(r"[A-Za-z]:[\\/]", tpl)
+    if m:
+        line = tpl[:m.start()].count("\n") + 1
+        problems.append("cordis.patch.yml.tpl 第 %d 行出现盘符绝对路径（模板禁止任何本机路径）" % line)
+    if re.search(r"(?:^|[\s'\"])(?:/home/|/Users/)", tpl):
+        problems.append("cordis.patch.yml.tpl 出现家目录路径（模板禁止绑定某台机器）")
+    # 占位符替换成合成绝对路径后，严格档必须绿（模板形状 == 可装形状）
+    synth = (tpl
+             .replace("{{FIST_MBT_CLI}}", "E:/__tpl__/_build/js/debug/build/cmd/cli/cli.js")
+             .replace("{{FIST_MBT_ROOT}}", "E:/__tpl__"))
+    sub_problems, _ = dsh_patch_problems(synth)
+    problems.extend("模板渲染后不满足严格档：" + p for p in sub_problems)
+    return problems
+
+
 def dsh_patch_problems(patch: str) -> tuple[list[str], bool]:
-    """严格档：DSH cordis.patch.yml。返回 (违例列表, 是否成功结构化解析)。"""
+    """严格档：DSH cordis.patch.yml（渲染件，绝对路径安装面）。返回 (违例列表, 是否成功结构化解析)。"""
     problems: list[str] = []
     parsed_ok = True
 
@@ -333,7 +365,7 @@ def missing_key_files(root: Path = ROOT) -> list[str]:
     """跟踪真源齐不齐。BUG-358：关键清单只收 REQUIRED_MCP_JSON（跟踪件），
     不收被 gitignore 的根 .mcp.json——否则任何干净 checkout（CI、副机 clone）都会
     因缺这个本机件而自拒 exit 2，判据形同虚设。root 供 --selftest 注入合成树。"""
-    crit = [DSH_MANIFEST, DSH_PATCH, DEFAULT_TEMPLATE, MOON_MOD] + REQUIRED_MCP_JSON
+    crit = [DSH_MANIFEST, DSH_PATCH_TPL, DEFAULT_TEMPLATE, MOON_MOD] + REQUIRED_MCP_JSON
     return [c for c in crit if not (root / c).exists()]
 
 
@@ -359,8 +391,8 @@ CLEAN_DSH_CFG = {
     "serverName": "fist-mbt",
     "transport": "stdio",
     "command": "node",
-    "args": ["E:/IDEProjects/AI/FIST-Mbt/_build/js/debug/build/cmd/cli/cli.js", "serve"],
-    "cwd": "E:/IDEProjects/AI/FIST-Mbt",
+    "args": ["E:/repo/FIST-Mbt/_build/js/debug/build/cmd/cli/cli.js", "serve"],
+    "cwd": "E:/repo/FIST-Mbt",
     "toolCallTimeoutMs": 30000,
     "failOnStartupError": False,
     "reconnect": {"enabled": True, "initialDelayMs": 500, "maxDelayMs": 30000, "maxAttempts": 10},
@@ -486,7 +518,7 @@ def selftest() -> list[str]:
     with tempfile.TemporaryDirectory() as td:
         fake = Path(td)
         (fake / DSH_MANIFEST).parent.mkdir(parents=True, exist_ok=True)
-        for rel in [DSH_MANIFEST, DSH_PATCH, DEFAULT_TEMPLATE, MOON_MOD, ".mcp.dev.json"]:
+        for rel in [DSH_MANIFEST, DSH_PATCH_TPL, DEFAULT_TEMPLATE, MOON_MOD, ".mcp.dev.json"]:
             (fake / rel).parent.mkdir(parents=True, exist_ok=True)
             (fake / rel).write_text("{}", encoding="utf-8")
         # 故意【不】创建 .mcp.json —— 模拟干净 CI checkout
@@ -504,14 +536,27 @@ def selftest() -> list[str]:
     if read_moon_version() is None:
         fails.append("T6 读不到 moon.mod 版本 → D1 的 version==moon.mod 无法判定")
 
-    # T7 现状 DSH 面不红（尺子自证：当前 cordis.patch.yml 是「真正可用」样本）
+    # T7 现状模板必须绿（双态之「源」）：这是干净检出上唯一在场的安装面真源
+    real_tpl = ROOT / DSH_PATCH_TPL
+    if real_tpl.exists():
+        rp = dsh_template_problems(real_tpl.read_text(encoding="utf-8"))
+        if rp:
+            fails.append("T7 现状 DSH 模板红了（应为绿）：" + rp[0])
+    else:
+        fails.append("T7 找不到现状 DSH 模板 → 判据扫描面选错了")
+    # T7b 渲染件若在场则严格档绿；缺席不算红（本地产物、干净检出合法态）
     real = ROOT / DSH_PATCH
     if real.exists():
         rp, _ = dsh_patch_problems(real.read_text(encoding="utf-8"))
         if rp:
-            fails.append("T7 现状 DSH patch 红了（应为绿）：" + rp[0])
-    else:
-        fails.append("T7 找不到现状 DSH patch → 判据扫描面选错了")
+            fails.append("T7b 本机渲染件红了（应为绿）：" + rp[0])
+    # T7c 模板硬编码泄漏必须红（本 PR 的核心回归锁：绝对路径不许回到跟踪面）
+    leak = "- insert:\n    - id: x\n      name: 'y'\n      config:\n        args:\n          - 'E:/__leak__/cli.js'\n"
+    if not dsh_template_problems(leak):
+        fails.append("T7c 模板写死盘符路径却没被判红 → 硬编码回归锁失效")
+    # T7d 模板缺占位符必须红
+    if not any("占位符" in p for p in dsh_template_problems("cwd: 'x'\n")):
+        fails.append("T7d 模板缺占位符却没被判红")
 
     # T8 字段白名单反解：必须真的能从 src 反解到 toolCallTimeoutMs（防硬编码漂移）
     fields = read_form_field_whitelist()
@@ -564,7 +609,12 @@ def main(argv: list[str]) -> int:
     except Exception as e:
         problems.append("DSH manifest 无法 JSON 解析：%s" % e)
 
-    # D1 · patch（严格档）
+    # D1 · patch（双态：模板必须干净；渲染件在场时叠加严格档）
+    tp = ROOT / DSH_PATCH_TPL
+    if tp.exists():
+        problems.extend(dsh_template_problems(tp.read_text(encoding="utf-8")))
+    else:
+        problems.append("DSH 模板 %s 不存在（跟踪真源缺失）" % DSH_PATCH_TPL)
     pp = ROOT / DSH_PATCH
     if pp.exists():
         patch_problems, parsed_ok = dsh_patch_problems(pp.read_text(encoding="utf-8"))
@@ -573,7 +623,9 @@ def main(argv: list[str]) -> int:
             # PyYAML 缺失时只做退化检查，无法给出严格结论 → 但不算输入面退化
             pass
     else:
-        problems.append("DSH patch %s 不存在（真安装面缺失）" % DSH_PATCH)
+        # 渲染件是本地产物（gitignore）：干净检出/CI 上不存在是合法态，不算违例。
+        warns.append("本机渲染件 %s 缺席（干净检出合法态）：装 DSH 插件前跑 "
+                     "`python scripts/render_dsh_patch.py` 生成" % DSH_PATCH)
 
     # D2 · 宽松档
     for rel in LENIENT_JSON:

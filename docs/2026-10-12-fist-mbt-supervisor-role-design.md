@@ -42,7 +42,7 @@ AIGC:
 | Agent 分级（kill 白名单依据） | 同上 | `role=planner` 拳长（不可杀）/ `role=sublead` 拳节（不可杀）/ `role=worker` 执行者（可杀） | 设计态 |
 | **提醒者 Reminder**（轮询调度监督，不执行） | `docs\2026-10-12-fist-mbt-reminder-role-plan.md` | 职责 R1 引导提醒 / R2 方向偏离 / R3 事项提醒 / R4 心跳汇报；轮询周期 10/30/10 分钟；偏离检测口径见独立计划 §4 | 计划待实施（夜间开发批次） |
 
-### 1.3 FIST 框架参照（E:\IDEProjects\AI\_archive\FIST，v2.3.0）
+### 1.3 FIST 框架参照（E:\workspace\AI\_archive\FIST，v2.3.0）
 
 层级：**人类 → human_steward 人类管家 → leader 拳长 → 拳节（searcher/reviewer/cleaner/verifier/documenter）→ executor 执行者**。
 注册：`agents` 表（agent_id/role/name/focus/permissions/status）+ `roles`/`whoami`/`register`/`sink-skill` 命令；`human_steward` 唯一 skill 沉淀权。

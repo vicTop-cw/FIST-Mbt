@@ -177,7 +177,7 @@ fn scan_rules() -> Array[ScanRule] {
       hint: "显式 Int32 的 secs 计算须加天数上界守卫（如 if days > 24855 兜底）或改用 Int64；默认 Int 无需处理",
     },
     // ===== 档 1：ocr-local moonbit-rules.json 的 20 条规则融合（2026-10-13 ocr-local 融入 bugfind）=====
-    // 内建自 ocr-local 的 MoonBit 规则集（E:\IDEProjects\AI\ocr-local\rules\moonbit-rules.json 的
+    // 内建自 ocr-local 的 MoonBit 规则集（E:\repo\ocr-local\rules\moonbit-rules.json 的
     // name/severity/pattern 投影）。pattern 取其稳定字面量 needle（子串匹配，免 regex 依赖）；
     // 语义与外部文件一致，同名外部规则可通过 rules_file 覆盖内建（见 scan_merge_rules）。
     {
