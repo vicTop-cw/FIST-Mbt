@@ -348,7 +348,7 @@ test "bug4_run_check_workdir_ok" {
   // Round 1 会误拒、Round 2 必须放行：绝对 project_dir 本身（实测调用面主形态）
   assert_true(
     @server.run_check_workdir_ok(
-      "E:/IDEProjects/AI/Cypy", "E:/IDEProjects/AI/Cypy",
+      "E:/repo/Cypy", "E:/repo/Cypy",
     ),
   )
 }

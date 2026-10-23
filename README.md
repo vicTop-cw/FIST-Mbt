@@ -135,6 +135,19 @@ python scripts/fist.py call store_open --namespace scratch --scratch true
 python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path":"moon.mod","contains":"vicTop-cw"}]'
 ```
 
+### 在 DeepSeek Harness 里安装（插件态）
+
+npm 包自带预构建 CLI（`dist/fist-mbt.js`），装插件不需要 moon、不需要源码构建：
+
+```bash
+dsh plugin --profile web add fist-mbt        # 命令行宿主；桌面端在「设置 → 插件」里装
+fist-mbt-mcp                                  # 可选：只想要终端里的 stdio server（npx fist-mbt-mcp 亦可）
+```
+
+装好后 MCP server `fist-mbt` 随会话启动，工具数**以 `tools/list` 为准**。账本（SQLite）落在
+`~/.fist-mbt/`，可用 `FIST_MBT_DATA` 改位置；运行环境需要 **Node ≥ 24**（`node:sqlite`）。
+插件层真源是 `packaging/dsh/cordis.patch.yml`（社区安装）与 `.dsh/fist-mbt-plugin/cordis.patch.yml`（本机源码安装）。
+
 ### 黑盒用户（无需源码）
 
 Release zip 只含 MoonBit 编译产物，零源码依赖：

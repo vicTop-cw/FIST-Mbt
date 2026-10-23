@@ -142,6 +142,20 @@ SPECIAL_CASES = [
     # 与 `check_scripts_index` 那次「文档写进被检文件名」是同一族：**登记红面的文字本身就是被检面**。
     case("check_doc_surface.py"),
     case("check_doc_surface.py", "--selftest"),
+    # —— 2026-10-23 BUG-389(2) 可持续性：推送守卫两把尺。**必须手写点名 check_direct_push.py
+    #    的 --selftest 格**：它从 stdin 读 pre-push ref 行，自动补的裸跑格在电池环境
+    #    （capture_output 不给 stdin）会挂在管道上空转到 timeout（R98 口径：尺子不结束不是
+    #    判据红，是空转）。点名后 covered 按脚本名去重，自动发现不再补裸跑格。
+    #    check_push_guard 裸跑是只读全量判据（跟踪面 + 本地子进程语义矩阵），两格都要。 ——
+    case("check_direct_push.py", "--selftest"),
+    case("check_push_guard.py"),
+    case("check_push_guard.py", "--selftest"),
+    # —— run_light_wt.py（WT-03 轻量 worktree 生命周期）：**只点名 --selftest**，禁自动裸跑格——
+    #    裸跑会 `git worktree add` / 动 git 配置，跑完工作树必变（电池「跑完工作树不变」不变量）。
+    #    它的 --selftest 21 格（A 词法×4 / B 状态机×2 / C 创建×4 / D 回收×2 / E 边界×4 /
+    #    F TTL×3 / G 回退轨×2）在 %TEMP% 合成沙箱跑，本机实测 rc=0 且工作树零改动；
+    #    自动发现曾把它记成「缺执行面」（G1 红），点名即解。 ——
+    case("run_light_wt.py", "--selftest"),
     # —— R126：副机认领入口（docs/2026-10-20-slave-tasks.md）的自证尺。裸跑判「证据锚点指不指
     #    得到真源 + 文首计数自述对不对」，--selftest 判「这把尺能不能发红」（18 格合成树）。
     #    手写点名两格而不靠自动补格：自动补格只补裸跑，自检格必须点名（本文件既有纪律）。

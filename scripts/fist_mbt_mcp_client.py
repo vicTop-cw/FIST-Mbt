@@ -17,8 +17,28 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-PROJ = r"E:\IDEProjects\AI\FIST-Mbt"
-JS = os.path.join(os.environ["LOCALAPPDATA"], "FIST-Mbt", "fist-mbt.js")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# 仓根由本文件位置反推（scripts/ 的上一层）——不再写死任何一台机器的盘符路径；
+# 需要指向别的 checkout 时用 env FIST_MBT_HOME 覆盖（同 render_dsh_patch.py 口径）。
+PROJ = os.environ.get("FIST_MBT_HOME") or os.path.dirname(_HERE)
+# 发布态 CLI 缺省取安装器的落点（%LOCALAPPDATA%\FIST-Mbt\fist-mbt.js）；
+# 存在仓内 _build 产物时优先用它，便于开发机直接验证未发布的改动。
+def _pick_js() -> str:
+    env_js = os.environ.get("FIST_MBT_CLI")
+    if env_js:
+        return env_js
+    local = os.environ.get("LOCALAPPDATA")
+    installed = os.path.join(local, "FIST-Mbt", "fist-mbt.js") if local else ""
+    if installed and os.path.exists(installed):
+        return installed
+    for rel in ("_build/js/debug/build/cmd/cli/cli.js", "_build/js/release/build/cmd/cli/cli.js"):
+        cand = os.path.join(PROJ, rel)
+        if os.path.exists(cand):
+            return cand
+    return installed or os.path.join(PROJ, "dist", "fist-mbt.js")
+
+
+JS = _pick_js()
 PROTOCOL = "2026-07-28"
 
 
