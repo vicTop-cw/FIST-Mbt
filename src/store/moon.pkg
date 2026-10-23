@@ -2,6 +2,7 @@ import {
   "vicTop-cw/fist-mbt/src/core",
   "daqing/sqlite",
   "moonbitlang/x/encoding",
+  "moonbitlang/x/fs",
   "moonbitlang/core/env",
   "moonbitlang/core/json",
   "moonbitlang/core/debug",
