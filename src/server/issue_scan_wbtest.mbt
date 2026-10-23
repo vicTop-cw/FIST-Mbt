@@ -427,6 +427,98 @@ test "bug348_used_elsewhere_skips_decl_line_only" {
 }
 
 ///|
+/// R127：形态 F 字面量前缀/后缀守卫——`extract_needs` 的 6 条 substring 命中是
+/// `let s = sv.to_owned()` + `sv.has_prefix("需要:")` + `s.substring(start="需要:".length())`。
+/// 守卫成立时 start 必 ≤ 长度，应豁免；守卫缺失/字面量不匹配/副本可能缩短时仍判真阳性。
+test "scan_guard_prefix_literal_字面量前后缀守卫" {
+  let need = q() + "需要:" + q()
+  let call = "s.substring(start=" + need + ".length()).trim()"
+  let guarded = scan_finding_guarded(call, "substring-overrun", [
+    "let s = sv.to_owned()",
+    "} else if sv.has_prefix(" + need + ") {",
+  ])
+  assert_true(guarded)
+  // 同变量 + has_suffix
+  let guarded_suffix = scan_finding_guarded(
+    "x.substring(start=" + q() + ".json" + q() + ".length())",
+    "substring-overrun",
+    ["if x.has_suffix(" + q() + ".json" + q() + ") {"],
+  )
+  assert_true(guarded_suffix)
+  // 反例 1：无守卫
+  let unguarded = scan_finding_guarded(call, "substring-overrun", [])
+  assert_false(unguarded)
+  // 反例 2：守卫的是别的字面量
+  let wrong_lit = scan_finding_guarded(call, "substring-overrun", [
+    "let s = sv.to_owned()",
+    "if sv.has_prefix(" + q() + "能力:" + q() + ") {",
+  ])
+  assert_false(wrong_lit)
+  // 反例 3：副本经过 trim，可能比原串短
+  let trimmed_copy = scan_finding_guarded(call, "substring-overrun", [
+    "let s = sv.trim()",
+    "if sv.has_prefix(" + need + ") {",
+  ])
+  assert_false(trimmed_copy)
+  // 反例 4：无副本关系，守卫的是别的变量
+  let other_var = scan_finding_guarded(call, "substring-overrun", [
+    "if other.has_prefix(" + need + ") {",
+  ])
+  assert_false(other_var)
+}
+
+///|
+/// R127：近邻窗口是生产过滤与单测共用的同一构造——`engine.extract_needs` 第 6 条
+/// substring（`能力：` 分支）距 `let s = sv.to_owned()` 恰好 12 行，窗口少一行就丢副本关系。
+/// 下面按真实行距铺 14 行：正例必须抑制，而「旧 10 行窗口」形态必须仍判真阳性。
+test "scan_prev_window_十二行窗口保住副本关系" {
+  let lit = q() + "能力：" + q()
+  let lines : Array[String] = [
+    "fn extract_needs(desc : String) -> Array[String] {",
+    "  let s = sv.to_owned()",
+    "  let a = 1",
+    "  let b = 2",
+    "  let c = 3",
+    "  let d = 4",
+    "  let e = 5",
+    "  let f = 6",
+    "  let g = 7",
+    "  let h = 8",
+    "  let i = 9",
+    "  let j = 10",
+    "  } else if sv.has_prefix(" + lit + ") {",
+    "    s.substring(start=" + lit + ".length()).trim()",
+  ]
+  let hit_line = lines[13]
+  let window = scan_prev_window(lines, 14)
+  assert_true(window.length() == 12)
+  assert_true(scan_finding_guarded(hit_line, "substring-overrun", window))
+  // 旧 10 行窗口（最近 10 行，副本定义被截掉）必须仍判真阳性——
+  // 若有人把上限改回 10，这一格会失败。
+  let old_window : Array[String] = []
+  for k in 0..<10 {
+    old_window.push(window[k])
+  }
+  assert_false(scan_finding_guarded(hit_line, "substring-overrun", old_window))
+  // `fn ` 行是窗口边界：跨过函数头时不取旧函数的副本定义
+  let cross : Array[String] = ["  let s = sv.to_owned()", "fn other() {"]
+  let mut k = 0
+  while k < 10 {
+    cross.push("  let p" + k.to_string() + " = " + k.to_string())
+    k = k + 1
+  }
+  cross.push("  s.substring(start=" + lit + ".length())")
+  let cross_window = scan_prev_window(cross, 13)
+  let mut has_copy = false
+  for p in cross_window {
+    if p.trim() == "let s = sv.to_owned()" {
+      has_copy = true
+    }
+  }
+  assert_false(has_copy)
+}
+
+///|
 /// severity 档位与聚合兜底同一口径——未知档归 0（info），
 /// 否则过滤和 by_severity 计数会各说各话。
 test "scan_severity_rank_mapping" {
