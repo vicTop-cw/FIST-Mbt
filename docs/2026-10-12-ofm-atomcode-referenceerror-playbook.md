@@ -37,7 +37,7 @@ Get-CimInstance Win32_Process -Filter "ProcessId=<PID>" | Select-Object Name,Com
 
 ```powershell
 # ① 进程入口包的源码树（DSH 装在哪）——本机用户态插件通常在 profiles 下
-$dshHome = "C:\Users\victo\.dsh"
+$dshHome = "C:\Users/<user>\.dsh"
 
 # ② 用 findstr，别用 Get-ChildItem -Recurse + Select-String（在 node_modules 上慢到超时）
 cmd /c "findstr /s /m /i /c:atomcode `"$dshHome\*.js`" `"$dshHome\*.mjs`" `"$dshHome\*.ts`" `"$dshHome\*.json`""
@@ -119,7 +119,7 @@ const wire = sealed || kilo || atomcode ? 'chat' : wireFor(entry.id)   // wire �
 
 ## 来源
 
-- 案发代码：`C:\Users\victo\.dsh\profiles\web\node_modules\dsh-our-free-model\src\adapter.js`
+- 案发代码：`C:\Users/<user>\.dsh\profiles\web\node_modules\dsh-our-free-model\src\adapter.js`
 - 修复备份：同目录 `adapter.js.bak-20261012-atomcode`
 - 上游真源建议落点：`dsh-our-free-model` 插件源码仓库（本地这份为应急补丁）
 - 关联记录：`memory/2026-10-12.md`「P0.3 上游 500 根因定位与修复」、

@@ -54,13 +54,13 @@
 
 内容结构（Markdown 表格，不复制报告原文，只蒸馏）：
 - 表头：`| 方向 | 机制 | 来源 | 对应模块 | 优先级 | BACKLOG引用 | 状态 |`
-- 全部 18 行照 `C:\Users\victo\.openclaw\workspace\fist-mbt五方向业界调研报告_20260924-1430.md`「五、综合」表抄入，状态列标 `pending`；已由前几轮覆盖的（如心beat 的「Did it work?」现状）标 `done` 并注明。
+- 全部 18 行照 `C:\Users/<user>\<本机质量参照文档>`「五、综合」表抄入，状态列标 `pending`；已由前几轮覆盖的（如心beat 的「Did it work?」现状）标 `done` 并注明。
 - 顶部注明「来源报告 + 蒸馏日期」。
 
 - [ ] **Step 2: 写 competition.md（P0-P3 去重）**
 
 - 表头：`| P级 | 事项 | 建议来源 | 当前态 | 状态 |`
-- 依 `C:\Users\victo\.openclaw\workspace\fist-mbt参赛评估与加强建议_20260924-1438.md` 的 P0-P3，去重对齐当前事实（61 工具/148 测试/CI 三绿）：如「验证 evolve」标 `done(已在148测试)`；README AIGC 清理、async 升级、30秒演示、scoring.mbt、申报书 PDF、mooncakes 发布、quickcheck、mizchi/llm、ARCHITECTURE、英文 README 各自当前态据实标。
+- 依 `C:\Users/<user>\<本机质量参照文档>` 的 P0-P3，去重对齐当前事实（61 工具/148 测试/CI 三绿）：如「验证 evolve」标 `done(已在148测试)`；README AIGC 清理、async 升级、30秒演示、scoring.mbt、申报书 PDF、mooncakes 发布、quickcheck、mizchi/llm、ARCHITECTURE、英文 README 各自当前态据实标。
 
 - [ ] **Step 3: 主标准快检**：两文件无盘符/绝对路径（M1）；无既有测试受影响（M2）。
 

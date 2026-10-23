@@ -151,6 +151,11 @@ dist/
 .git/fist/
 .agents/worktrees/
 
+# # DSH 插件安装面的「本机渲染态」：跟踪真源是 cordis.patch.yml.tpl（模板，占位符、零绝对路径），
+# cordis.patch.yml 由 scripts/render_dsh_patch.py 按当前仓位置生成。把任何一台机器的
+# 绝对路径写进跟踪面 = 给每个克隆者埋一发 `server is disconnected`（宿主对 args/cwd 不做插值）。
+/.dsh/fist-mbt-plugin/cordis.patch.yml
+
 # 流水账（memory/*.md 日日志）：614MB 级大文件膨胀 git 历史 + 每次合并必撞冲突，
 # 账本 bugs.md / product.md / target.md / task.md / links.md / rules.json / research/
 # / reviews/ 均为结构化核心记忆，单独保留在 git 里。

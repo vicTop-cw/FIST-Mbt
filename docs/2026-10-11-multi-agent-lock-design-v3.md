@@ -2,7 +2,7 @@
 
 > 相对 v2 的升级：落实用户 5 条确认（kill 只能杀执行者 / TTL 可配置 / reason 先行 / 副助理机制 / 业界调研对照）。
 > 命令源：[docs/2026-10-11-multi-agent-lock-design-v2.md](2026-10-11-multi-agent-lock-design-v2.md) + 用户第 2 轮确认。
-> 工作目录：`E:\IDEProjects\AI\FIST-Mbt`。
+> 工作目录：`E:\workspace\AI\FIST-Mbt`。
 
 ---
 

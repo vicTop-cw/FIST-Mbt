@@ -74,7 +74,7 @@ fn write_gate_allowlist_hint() -> String {
 ///|
 /// `project_dir` 合法性（**宽容口径**）：只拒空串 → `NoProjectDir`（fail-closed）。
 /// 注意**不要**对 `project_dir` 套 `write_gate_path_ok` 的盘符/前导分隔符判据——
-/// MCP 客户端传的 `project_dir` 是合法**绝对**路径（如 `E:/IDEProjects/AI/rx-mbt`），
+/// MCP 客户端传的 `project_dir` 是合法**绝对**路径（如 `E:/repo/rx-mbt`），
 /// 把它当非法会误杀所有真实调用；越界判定只作用于**相对目标路径** `rel`。
 fn write_gate_project_dir_ok(p : String) -> Bool {
   !p.is_empty()

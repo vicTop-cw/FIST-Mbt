@@ -39,7 +39,7 @@ if hasattr(sys.stderr, "reconfigure"):
 
 def _find_root() -> str:
     """仓库根按 moon.mod 定位，不按「向上几层」的层数猜——
-    这份脚本从 temp/ 跑和将来从 scripts/blackbox/ 跑，深度差一层，写死层数会一路指向 E:\\IDEProjects\\AI。"""
+    这份脚本从 temp/ 跑和将来从 scripts/blackbox/ 跑，深度差一层，写死层数会一路指向 E:\\workspace\\AI。"""
     d = os.path.dirname(os.path.abspath(__file__))
     while True:
         if os.path.isfile(os.path.join(d, "moon.mod")):

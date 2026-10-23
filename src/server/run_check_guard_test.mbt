@@ -92,27 +92,23 @@ test "BUG-4 扩展位：调用方显式登记才生效，且不改变默认集�
 ///|
 test "BUG-4 workdir：绝对 project_dir 本身必须放行（Round 1 版在这里会红）" {
   // 实测调用面 38/51 次就是 workdir == 任务的绝对 project_dir
-  let abs = "E:/IDEProjects/AI/Cypy"
+  let abs = "E:/repo/Cypy"
   assert_true(@server.run_check_workdir_in_project(abs, abs))
   assert_true(
-    @server.run_check_workdir_in_project("E:\\IDEProjects\\AI\\Cypy", abs),
+    @server.run_check_workdir_in_project("E:\\repo\\Cypy", abs),
   )
   assert_true(@server.run_check_workdir_in_project(abs + "/sub", abs))
   assert_true(
     @server.run_check_workdir_in_project(abs + "/scripts/../tests", abs),
   )
   // 同盘但不在子树内 → 拒
-  assert_false(
-    @server.run_check_workdir_in_project("E:/IDEProjects/AI/Pentad", abs),
-  )
+  assert_false(@server.run_check_workdir_in_project("E:/repo/Pentad", abs))
   // 靠 `..` 跳出项目 → 拒
   assert_false(@server.run_check_workdir_in_project(abs + "/../Pentad", abs))
   // 跨盘 → 拒
   assert_false(@server.run_check_workdir_in_project("D:/Windows", abs))
   // 绝对 workdir 配相对 project_dir（形态不一致，无法判定归属）→ 拒
-  assert_false(
-    @server.run_check_workdir_in_project("E:/IDEProjects/AI/Cypy", "."),
-  )
+  assert_false(@server.run_check_workdir_in_project("E:/repo/Cypy", "."))
 }
 
 ///|
@@ -157,7 +153,7 @@ test "BUG-4 workdir 拒绝文案必须自带出路（说清接受什么形态，
 /// 修复前这三条 ALLOW 全红（`.` 配绝对 project_dir 被"与项目不同根"打断，
 /// 正是模板第 3 步卡住的位置）；反向的 REJECT 若被放宽则是真漏洞。
 test "BUG-51 相对 workdir 按任务 project_dir 解析：`.` 与子目录放行、上跳仍拒" {
-  let abs = "E:/IDEProjects/AI/FIST-Mbt"
+  let abs = "E:/repo/FIST-Mbt"
   // ALLOW：合法用法（含"丑但在树内"——只测拒绝侧会把过严实现也判成通过）
   assert_true(@server.run_check_workdir_in_project(".", abs))
   assert_true(@server.run_check_workdir_in_project("scripts", abs))
@@ -176,7 +172,7 @@ test "BUG-51 相对 workdir 按任务 project_dir 解析：`.` 与子目录放�
 /// BUG-51：守卫放行相对 workdir 之后，真正 spawn 的 cwd 必须是归一后的绝对形态。
 /// 只改判定不改执行面 = 判据说"在项目里"而进程跑在 server cwd，比拒绝更糟。
 test "BUG-51 执行面 cwd 归一：混形态给绝对路径，同形态逐字不动" {
-  let abs = "E:/IDEProjects/AI/FIST-Mbt"
+  let abs = "E:/repo/FIST-Mbt"
   assert_eq(@server.run_check_effective_workdir(".", abs), abs)
   assert_eq(
     @server.run_check_effective_workdir("scripts", abs),
@@ -189,7 +185,7 @@ test "BUG-51 执行面 cwd 归一：混形态给绝对路径，同形态逐字�
   // 反斜杠绝对 project_dir 同样归一（实测调用面里有 E:\... 形态）
   assert_eq(
     @server.run_check_effective_workdir(
-      "scripts", "E:\\IDEProjects\\AI\\FIST-Mbt",
+      "scripts", "E:\\repo\\FIST-Mbt",
     ),
     abs + "/scripts",
   )

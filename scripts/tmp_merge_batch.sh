@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 
-cd /e/IDEProjects/AI/FIST-Mbt
+# 仓根由脚本位置反推（scripts/ 的上一层），不写死任何一台机器的 checkout 路径。
+cd "$(dirname "$0")/.."
 
 branches=(
   "gitcode/slave/fix/memory-log-dup-r133"

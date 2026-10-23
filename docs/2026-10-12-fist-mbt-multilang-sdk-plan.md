@@ -78,7 +78,7 @@ AIGC:
 
 ### 2.3 发布位置（收窄版）
 - 契约随 FIST-Mbt 仓维护（`scripts/fist-mbt-http.py` + `docs/openapi/fist.yaml`），不另建仓
-- actus 动作层在用户自己的 `E:\IDEProjects\AI\actus\` 项目内实现（独立，用户确认必做）
+- actus 动作层在用户自己的 `E:\workspace\AI\actus\` 项目内实现（独立，用户确认必做）
 - vools 融合层在用户 vools 项目内实现（Python）
 - 不新建任何 fist-* 客户端仓
 
@@ -133,7 +133,7 @@ actus 不做"又一个 SDK"，而是把 fist-mbt 变成**一套可复用动作**
 - 回填：结果按动作契约结构回填 actus demo / web 展示
 
 ### 6.3 落地
-- 目录：`E:\IDEProjects\AI\actus\`（actus 项目内）+ 契约样例随 FIST-Mbt 仓内 `docs/openapi/fist.yaml`
+- 目录：`E:\workspace\AI\actus\`（actus 项目内）+ 契约样例随 FIST-Mbt 仓内 `docs/openapi/fist.yaml`
 - 产出：
   1. `#!config` 动作解析器
   2. 动作注册表（内置 fist-mbt 140+ 工具的"动作化"映射分类：计划类/执行类/验证类/路由类/锁类/帽子类）
@@ -163,7 +163,7 @@ actus 不做"又一个 SDK"，而是把 fist-mbt 变成**一套可复用动作**
 | HTTP 桥 | fist-mbt-api | FIST-Mbt 仓内 `scripts/fist-mbt-http.py` |
 | 契约 | OpenAPI 3.x | FIST-Mbt 仓内 `docs/openapi/fist.yaml` |
 | vools 融合层 | fist.vools_task | 用户 vools 项目内（Python） |
-| actus 动作层 | fist-actions | `E:\IDEProjects\AI\actus\`（独立项目，用户确认必做） |
+| actus 动作层 | fist-actions | `E:\workspace\AI\actus\`（独立项目，用户确认必做） |
 | 语言最小示例 | README / docs/examples | FIST-Mbt 仓内 `docs/examples/<lang>/`（可选，文档级） |
 *（内容由AI生成，仅供参考）*
 *（内容由AI生成，仅供参考）*

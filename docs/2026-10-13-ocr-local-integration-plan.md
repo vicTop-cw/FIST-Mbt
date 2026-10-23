@@ -60,7 +60,7 @@ FIST-Mbt 的 `bugfind` 模式在 `src/ops/ops_modes.mbt:125-130` 声明了三把
 
 ## 2. 两侧现状盘点
 
-### 2.1 ocr-local（`E:\IDEProjects\AI\ocr-local`）
+### 2.1 ocr-local（`E:\workspace\AI\ocr-local`）
 
 | 资产 | 说明 |
 |---|---|
@@ -384,8 +384,8 @@ FIST-Mbt 的 `bugfind` 模式在 `src/ops/ops_modes.mbt:125-130` 声明了三把
 
 ### 9.1 前置（评审机准备）
 
-1. `git -C E:\IDEProjects\AI\FIST-Mbt checkout v0.3.9`（或评审分支）。
-2. 确认 OCR 二进制可探测：设 `FIST_OCR_BIN` 指向 ocr-local 的 `opencode review.exe`；或保持 `E:\IDEProjects\AI\ocr-local` 目录结构不变走 glob 探测。
+1. `git -C E:\workspace\AI\FIST-Mbt checkout v0.3.9`（或评审分支）。
+2. 确认 OCR 二进制可探测：设 `FIST_OCR_BIN` 指向 ocr-local 的 `opencode review.exe`；或保持 `E:\workspace\AI\ocr-local` 目录结构不变走 glob 探测。
 3. 确认发布版已同步（§8）：`fist --version` 输出 `0.3.9`。
 
 ### 9.2 演示步骤与预期输出
