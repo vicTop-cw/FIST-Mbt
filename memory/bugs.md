@@ -6624,3 +6624,9 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 为什么这条值得单开：① AGENTS「JS 测试在本机跑不起来？先看这一条」把 `moon_test_env.py` 定为**唯一推荐的常驻入口**，而 CI 用裸 `moon test --target js > /tmp/moon_test.log`——两条进料路径给出的日志形状不同，判据只认 CI 那一条；本地按文档跑的人在尺上看到的是「解析失败」，最自然的误读是「我的测试数不对」，而真实情况是尺读不到（BUG-142 那条「判绿以汇总行为准」在本地这一路恰好被形状挡住了）。② 这一格在 `run_guards.py` 里也是同一形状：`TESTLOG = temp/pt27.log`，谁手写谁就得知道要写逗号形状，否则 `check_badge`/`check_test_sync` 两格自拒——**判据对进料格式的要求没有写在任何自述里**（与本仓 R10/J10 那条「尺的自述要说清自己判不了什么」同族）。
 - 处置建议（两条出路，本单未动）：A. 让常驻入口**同时**原样透传 moon 的机器可读汇总行（或在 `汇总：` 之外补一行 `Total tests: N, passed: N, failed: N`），使本地日志天然可被既有尺读取；B. 让尺的 `RX_LOG` 接受斜杠分隔形状。**注意别与 R178 车道撞面**：那一支正在给 `check_test_sync`/`check_badge` 拆「漏传实参 → rc=2 REJECT」档（见当日台账现读），B 案动的是同一文件，合入时按同一批次收口即可；A 案动 `moon_test_env.py`，与那一支不相交。
 - 关联: BUG-142（判绿以汇总行为准）、BUG-350（check_test_sync 日志面假绿修尺）、BUG-382（自检失败路径 rc=0 同形）、BUG-388（本机 `moon fmt --check` 量不出来：同一类「工具链/入口与判据格式不匹配」）。
+
+## BUG-402 [2026-10-23T17:14:15Z] [medium] OPEN
+- summary: cl7 一源四态插件投影落后——账本新增 1 条（379→380 条 / 16→17 条待修）后未重跑 gen_plugins.py，插件态与真源不一致
+- detail: check_plugin_sync.py（cl7 四态 checklist 之一）在 main 上持续红：README.md + 4 宿主 SKILL.md/instructions.append.md 共 9 个生成文件与真源投影不一致。根因=真源 memory/bugs.md 最后改动（4a54f5dd BUG-391/392/393 + 后续 394）在插件态最后生成**之后**，fist-bot 改真源后漏跑 scripts/gen_plugins.py。影响=插件用户拿到的账本计数（379/16 待修）落后真源（380/17 待修），一源四态违约。
+- 关联: cl7 / scripts/check_plugin_sync.py / scripts/gen_plugins.py / memory/bugs.md
+- 修法: 重跑 gen_plugins.py 重新生成四宿主插件态（本分支已生成，check_plugin_sync 由 FAIL 转 PASS，4 宿主 / 64 个生成文件 / 170 工具 / v0.3.10 与真源一致）
