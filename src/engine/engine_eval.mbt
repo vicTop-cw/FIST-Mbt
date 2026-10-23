@@ -4,7 +4,32 @@
 /// 纯计算只读不写库（决策建议，执行权在调用方；与 plan_revise 反馈修订互补）。
 
 ///|
-/// 从反馈文本解析某 `## 段名` 下的 `- 列表项`（遇到下一个 `## ` 标题即结束）。
+/// 列表项正文（行已 trim）：`- ` / `* ` / `+ ` 或有序标记 `1. ` / `1) `。
+/// 非列表行返回 None——`## Defects` 下写「（无）」这类自由文本仍按零缺陷处理。
+fn list_item_text(line : String) -> String? {
+  let n = line.length()
+  if n >= 2 {
+    let c0 = line[0]
+    if (c0 == '-' || c0 == '*' || c0 == '+') && line[1] == ' ' {
+      return Some(line[2:n].to_owned())
+    }
+  }
+  let mut i : Int32 = 0
+  while i < n && line[i] >= '0' && line[i] <= '9' {
+    i = i + 1
+  }
+  if i > 0 &&
+    i + 1 < n &&
+    (line[i] == '.' || line[i] == ')') &&
+    line[i + 1] == ' ' {
+    return Some(line[i + 2:n].to_owned())
+  }
+  None
+}
+
+///|
+/// 从反馈文本解析某 `## 段名` 下的列表项（遇到下一个 `## ` 标题即结束）。
+/// R135：只认 `- ` 会把 `* ` / `+ ` / 有序列表写下的缺陷静默吞成「零缺陷 → pass」。
 fn parse_section(text : String, header : String) -> Array[String] {
   let out : Array[String] = []
   let mut in_section = false
@@ -12,12 +37,10 @@ fn parse_section(text : String, header : String) -> Array[String] {
     let t = line.trim()
     if t.has_prefix("## ") {
       in_section = t == "## " + header
-    } else if in_section && t.has_prefix("- ") {
-      let s = t.to_owned()
-      // R1 bugfind：substring-overrun——`has_prefix("- ")` 保证 length>=2，
-      // 但仍显式守卫，让静态扫描能确定性证明 end<=length
-      if s.length() >= 2 {
-        out.push(s[2:s.length()].to_owned())
+    } else if in_section {
+      match list_item_text(t.to_owned()) {
+        Some(item) => out.push(item)
+        None => ()
       }
     }
   }
