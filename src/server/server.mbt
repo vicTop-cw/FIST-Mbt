@@ -451,12 +451,26 @@ fn agent_fp(raw : String) -> String {
 /// `now_ms / 1000 % 2000000000` 的 Int32（进程启动即固定一次，
 /// 生命周期内不变），用于把 ACL 的 `pid_bound` 落到具体进程实例上。
 /// Int32 上限 ~2.1e9，模 2e9 保证不溢出（2038 前有效）。
+///
+/// **实现必须兑现注释**：首次调用固化缓存，之后恒返回同一 pid。
+/// 原实现每次调用都重取 `@env.now()`——秒级漂移 ⇒ 同一进程内注册后过几秒，
+/// `agent_write_gate` 里 `current_pid_token()` 就与注册时不同，`pid_bound=1`
+/// 时误报「ACL 绑定旧进程实例（pid 已换）」把合法写操作拒掉。测试面
+/// （store_sqlite_agents_wbtest.mbt）恒传硬编码 `current_pid`，这条漂移零覆盖。
+/// 用单元素容器做进程级缓存（MoonBit 顶层不支持 `let mut`）。
+let cached_pid_token : Array[Int32] = Array::make(1, -1)
+
+///|
 fn current_pid_token() -> Int32 {
+  if cached_pid_token[0] >= 0 {
+    return cached_pid_token[0]
+  }
   let ms = @env.now().reinterpret_as_int64()
   if ms < 0L {
     return 0
   }
-  (ms / 1000L % 2000000000L).to_int()
+  cached_pid_token[0] = (ms / 1000L % 2000000000L).to_int()
+  cached_pid_token[0]
 }
 
 ///|

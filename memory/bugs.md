@@ -6624,3 +6624,8 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 为什么这条值得单开：① AGENTS「JS 测试在本机跑不起来？先看这一条」把 `moon_test_env.py` 定为**唯一推荐的常驻入口**，而 CI 用裸 `moon test --target js > /tmp/moon_test.log`——两条进料路径给出的日志形状不同，判据只认 CI 那一条；本地按文档跑的人在尺上看到的是「解析失败」，最自然的误读是「我的测试数不对」，而真实情况是尺读不到（BUG-142 那条「判绿以汇总行为准」在本地这一路恰好被形状挡住了）。② 这一格在 `run_guards.py` 里也是同一形状：`TESTLOG = temp/pt27.log`，谁手写谁就得知道要写逗号形状，否则 `check_badge`/`check_test_sync` 两格自拒——**判据对进料格式的要求没有写在任何自述里**（与本仓 R10/J10 那条「尺的自述要说清自己判不了什么」同族）。
 - 处置建议（两条出路，本单未动）：A. 让常驻入口**同时**原样透传 moon 的机器可读汇总行（或在 `汇总：` 之外补一行 `Total tests: N, passed: N, failed: N`），使本地日志天然可被既有尺读取；B. 让尺的 `RX_LOG` 接受斜杠分隔形状。**注意别与 R178 车道撞面**：那一支正在给 `check_test_sync`/`check_badge` 拆「漏传实参 → rc=2 REJECT」档（见当日台账现读），B 案动的是同一文件，合入时按同一批次收口即可；A 案动 `moon_test_env.py`，与那一支不相交。
 - 关联: BUG-142（判绿以汇总行为准）、BUG-350（check_test_sync 日志面假绿修尺）、BUG-382（自检失败路径 rc=0 同形）、BUG-388（本机 `moon fmt --check` 量不出来：同一类「工具链/入口与判据格式不匹配」）。
+
+## BUG-401 [2026-10-23T16:24:46Z] [medium] OPEN
+- summary: current_pid_token 契约与实现不符——注释「进程启动即固定一次」，实现却每次调用重取 @env.now()，秒级漂移致 pid_bound=1 误报换实例
+- detail: fn current_pid_token() 声称生命周期内不变，但函数体每次调用都取当前时间戳。同一进程内 agent_touch_first_seen 注册后过几秒，agent_write_gate 的 current_pid 就与注册时不同 ⇒ pid_bound=1 时误报「ACL 绑定旧进程实例（pid 已换）」把合法写操作拒掉。测试面 store_sqlite_agents_wbtest.mbt 恒传硬编码 current_pid，这条漂移零覆盖（注释与实现的双重违约无人钉）。
+- 关联: T0r5 agent-fingerprint / src/server/server.mbt current_pid_token / src/store/store_sqlite.mbt agents_acl_check
