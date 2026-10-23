@@ -114,7 +114,7 @@ You can browse and install extra skills here:
 > `----- BEGIN MOON TEST RESULT -----`。⇒ 坏的是垫片转发，不是 moon、不是本仓、更不是测试代码。
 > **常驻入口**：`python scripts/moon_test_env.py [moon test 的参数…]`——按目录内容剔垫片、校验真 `.exe`、
 > 跑测试并核对汇总行；rc 契约 0/1/2（2=判据无法自证）；Windows 上另自动发现 `~/.moon-shim/shim.exe` 并设
-> `MOONC_OVERRIDE`，绕开 moonc 的 `\\?\` 路径 ICE（工具链缺陷，见账本 BUG-380）。实测清理后全仓 **1415/1415 passed, rc=0**。
+> `MOONC_OVERRIDE`，绕开 moonc 的 `\\?\` 路径 ICE（工具链缺陷，见账本 BUG-380）。实测清理后全仓 **1449/1449 passed, rc=0**。
 > **MCP 执行面同源（R126）**：`run_check` 走 server 的 js `spawn` 原语，server 被宿主直连 `node cli.js serve` 拉起时
 > 不经过任何 Python 入口——原语层同样自动发现 `~/.moon-shim/shim.exe` 并注入 `MOONC_OVERRIDE`（显式 env 优先、
 > 非 Windows 透传）；`run_check`/`executor_run`/`ocr_scan` 共用这一层，判据不再把工具链 ICE 记成任务失败。
@@ -123,7 +123,7 @@ You can browse and install extra skills here:
 
 > 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
 > Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
-> **JS 后端**：`moon test --target js` = **1415/1415**（2026-10-23 Windows 本机实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并 + 多管家/supervisor 工具 + web 面板 M0 + 五语言接入示例 + CAF 属性测试与边界探针 + BUG-333 默认降噪锁等后续追加）。
+> **JS 后端**：`moon test --target js` = **1449/1449**（2026-10-23 Windows 本机实测，四模式流水线自我迭代 Round 1~3 收口 + 一源四态 cl7 + 模型路由与外部执行器合并 + 多管家/supervisor 工具 + web 面板 M0 + 五语言接入示例 + CAF 属性测试与边界探针 + BUG-333 默认降噪锁等后续追加）。
 > **Native 后端**：2026-10-01 在 WSL(Linux ubuntu-22.04) 实测 `moon test --target native -j 1` = **572/572**（工作树带既往构建残留时）；
 > 同一 commit 的 `git archive HEAD` **干净树**上同一条命令必崩，根因见账本 BUG-133（依赖的 native FFI），
 > 崩没崩由 `scripts/blackbox/e2e_native_heap_probe.py` 说话，不据任何旧数宣称双端同版全绿。
@@ -148,7 +148,7 @@ You can browse and install extra skills here:
   就给出过 `3/12` 与 `0/12` 两端（2026-10-02 WSL，逐跑 rc 分解见账本 BUG-133 追记）⇒ `crashes=0/N` 只说明
   "这一支样本没抽中"，不许据此写「native 已修」；BUG-133 的关闭条件因此是两格（抽检连发 0 崩溃 + 干净树全量通过）。
   退出码是契约（`0` 全跑完 / `1` 有崩溃 / `3` 平台或工具链不给量、拒绝出数 / `4` 尺子自己坏了——含判据未捕获异常，
-  绝不冒用 `1` 那一档）。**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 1415/1415）**，见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
+  绝不冒用 `1` 那一档）。**权威稳定门槛 = JS 后端（Node ≥ 24，本轮 1449/1449）**，见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
    但 `moon test` 自身的退出码**不可靠**（moon 0.1.20260920 实测：测试可执行文件 SIGABRT 时 `moon test` 仍回 exit 0，BUG-142）——**判绿以 `Total tests: N, passed: N, failed: 0` 汇总行为准**，exit 0 只是必要条件；只查退出码的脚本会把崩溃判成通过。
 
 > **BUG-133 已在依赖侧修复（2026-10-10）**：`mizchi/sqlite` 的 `stub.c` 已改写成
