@@ -159,6 +159,12 @@ SPECIAL_CASES = [
     case("check_release_asset_names.py"),
     case("check_publish_payload.py"),
     case("check_publish_payload.py", "--selftest"),
+    # —— R141/R155 落仓的两支工具面带自检：render_dsh_patch（模板→本机渲染，
+    #    selftest 6 格）、run_light_wt（轻量 worktree 生命周期，selftest 10 格）。
+    #    二者落仓时只登记进 scripts/README.md，未接任何执行面 ⇒ run_guards G1 现读
+    #    「缺面清单」点名；此处按本文件纪律手写点名自检格（非 check_* 亦须有面）。 ——
+    case("render_dsh_patch.py", "--selftest"),
+    case("run_light_wt.py", "--selftest"),
     # —— R106 追记（叠 gitcode/master b465915f 之后现读）：下面三格原来的 expected 非 0 已被主线
     #    修好（账本撞号收敛 + `scripts/merge-prompt.txt` 出跟踪面），got 0 ≠ expect 当场现形 ⇒
     #    按本文件自订的律「预存红被修好 ⇒ 把期望改回 0」转回门禁格。 ——
@@ -237,6 +243,16 @@ SPECIAL_CASES = [
     #    裸跑在本机恒 DEGRADED(2)，自动补格会把它当红；本表点名后自动格就不再裸跑。 ——
     # —— R57：合并丢行探测。只跑 --selftest（合成仓库造丢行）；真跑要读真 merge 历史。 ——
     case("check_merge_loss.py", "--selftest"),
+    # —— R153：自检 hermetic 守卫（把 R151 那条口径「`--selftest` 只许合成夹具」做成常驻判据）。
+    #    --selftest 在 temp 里造被检脚本，属只读快格 ⇒ 门禁格；裸跑要扫真仓 scripts/ 全树（递归，含
+    #    blackbox/），现读红档 72 处（W=10 / R=48 / G=14，分布在 24 把尺）+ 记账档 5 处（T=4 落约定
+    #    temp/、S=1 自 spawn）；立尺这一单不代修那 72 条，按本文件的律「预存红照写期望值 + 依据」登记，
+    #    被检面修到 0 之后这一格自己翻红，逼下一位把期望改回 0。 ——
+    case("check_selftest_hermetic.py", "--selftest"),
+    expected("check_selftest_hermetic.py", 1,
+             "R153 立尺现读：自检体真源读写红档 72 处（W=写探针进真树 10 / R=读现状面 48 / G=打真仓 14，"
+             "分布在 24 把尺），另记账档 5 处（T=4 约定的 gitignored temp/、S=1 隔离自 spawn）只点名不判红；"
+             "本单只把形状变成常驻可见，不代修这 72 条——逐条核实归后续单"),
     case("check_fmt_gate.py", "--selftest"),
     case("audit_branch_delete.py", "--selftest"),
     # —— R55：`moon fmt --check` 的可判性闸（BUG-381）。只跑 --selftest：
@@ -501,6 +517,8 @@ REGISTRY = {
     "fist_mbt_mcp_client.py": "MCP 客户端演示（需 server 活着）",
     "gen_apply_pdf.py": "按需生成器（产出报告 PDF，无门禁语义）",
     "gen_help_docs.py": "按需生成器（产出帮助文档，drift 由 doc_surface 面另判）",
+    "fix_esm_require.py": "构建后置修复（给 moon 的 ESM 产物注入 createRequire 垫片，幂等；由 mcp_smoke/demo 启动链调用，不单独当格跑）",
+    "pol_keeper_run.py": "POL 长跑守卫（需宿主进程持续存活，无固定入参）",
     "issue_scan.py": "MCP issue_scan 的 CLI 辅助入口（能力面由 src/server 白盒锁覆盖）",
     "laya_decide.py": "Laya 决策 CLI（无门禁语义）",
     "mcp_bug_loop.py": "MCP bug 闭环长跑（需 server 活着）",

@@ -167,3 +167,143 @@ pub fn build_command(
       )
   }
 }
+
+///|
+/// CLI 通道（aider / atomcode / 受限自定义执行器这类本地 spawn）的失败归因档。
+/// 与 ofm 通道的 `OfmFailure` 同族：**归不出来就 `Unknown`，绝不猜**。
+///
+/// 立项理由（2026-10-23 实测）：spawn 原语 `run_check_external` 对「进程没起来 / 跑满超时 /
+/// 被信号杀」**一律以 ok=false 落地、永不 reject**，而调用面此前把这三类一起说成
+/// 「可执行文件不可用」。跑满一单 atomcode 任务后回执是
+/// `ok=false / exit_code=-1 / error_tail="timeout after 900000ms"` + 「不可用」提示——
+/// 而进程活着、产物与 diff 都在盘上。「没等到」与「没装」的处置完全相反
+/// （前者先验产物再决定要不要重派，后者去修环境），把前者报成后者会让人重派一单已经干完的活。
+pub enum CliFailure {
+  NotExecutable
+  Timeout
+  NonZeroExit
+  SignalKilled
+  DispatchFailed
+  Unknown
+} derive(Eq, Debug)
+
+///|
+pub extend CliFailure with Eq::{not_equal, equal}
+
+///|
+pub extend CliFailure with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+/// 回执里 `failure_kind` 的稳定标签面（调用方可据此分支，不靠自然语言提示）。
+pub fn CliFailure::label(self : CliFailure) -> String {
+  match self {
+    NotExecutable => "NOT_EXECUTABLE"
+    Timeout => "TIMEOUT"
+    NonZeroExit => "NONZERO_EXIT"
+    SignalKilled => "SIGNAL_KILLED"
+    DispatchFailed => "DISPATCH_FAILED"
+    Unknown => "UNKNOWN"
+  }
+}
+
+///|
+/// 按 spawn 原语回执的 `error` 文本归因。文本形状是原语自己拼的、固定四类：
+///   · `timeout after <ms>ms` → `Timeout`（看门狗杀的，进程起来过）
+///   · `exit code <n>`        → `NonZeroExit`；`n == -1` 是 node 把 `code=null`
+///                              （信号终止/崩溃）折出来的哨兵 → `SignalKilled`
+///   · `spawn <bin> ENOENT` 一类（node `err.message`）→ `NotExecutable`
+///   · `run_check_external` 自己的两条 Err（调度失败 / 结果解析失败）→ `DispatchFailed`
+///     ——这一类坏的是**我们这一侧**，不是外部执行器
+/// 顺序即判据：先认「尺子自己坏了」，再认超时，再认起不来，最后才看退出码。
+pub fn classify_cli_failure(error : String) -> CliFailure {
+  let e = error.trim()
+  if e.contains("子进程调度失败") ||
+    e.contains("结果 JSON 解析失败") {
+    DispatchFailed
+  } else if e.contains("timeout after") {
+    Timeout
+  } else if e.contains("ENOENT") || e.contains("EACCES") || e.contains("spawn") {
+    NotExecutable
+  } else if e == "exit code -1" {
+    SignalKilled
+  } else if e.contains("exit code") {
+    NonZeroExit
+  } else {
+    // 拿不到线索就留档，不替调用方编一个原因
+    Unknown
+  }
+}
+
+///|
+/// 换模型重试的准入判据（P1.1 fallback 链）。返回 `(值得重试?, 为什么)`。
+///
+/// 为什么要有这一格：`executor_run_impl` 的重试环过去只看「没成功且还有候选」，
+/// 于是三类**与模型无关**的失败也会被拿去换模型——`NOT_EXECUTABLE` 是 PATH 问题，
+/// 换哪个模型都是同一条 ENOENT，重试 N 遍就把同一次失败重跑 N 遍、还白记 N 次冷却账；
+/// `DISPATCH_FAILED` 坏的是本侧（进程没调度起来/结果 JSON 没解析出来），模型根本没跑过，
+/// 给它记「不可靠」是把尺子的问题算到执行器头上；`TIMEOUT` 是时长预算，换模型会带着
+/// 一份**全新的** `timeout_ms` 把整单重跑，而第一跑的产物很可能已经在盘上
+/// （2026-10-23 实测：atomcode 跑满 900s 后产物与 diff 齐全）。
+/// 这三类该给的是可处置处方（修 PATH / 立案本侧 / 提预算或拆小），不是第 N 次同样的调用。
+pub fn cli_retry_policy(kind : CliFailure) -> (Bool, String) {
+  match kind {
+    NotExecutable =>
+      (
+        false, "NOT_EXECUTABLE 不换模型重试：可执行文件不在 PATH 与模型无关，换候选只会把同一条失败重跑一遍，还会白记一次冷却账。先修安装/PATH（或注册绝对路径）。",
+      )
+    DispatchFailed =>
+      (
+        false, "DISPATCH_FAILED 不换模型重试，也不给模型记账：坏的是本侧调度或结果解析，模型根本没跑起来。请把 error 原文连同本回执立案到 src/server。",
+      )
+    Timeout =>
+      (
+        false, "TIMEOUT 不换模型重试：这是时长预算问题，换候选会带一份全新的 timeout_ms 把整单重跑，而第一跑的产物很可能已落盘。先按文件系统验证，再决定提 timeout_ms 或把任务拆小。",
+      )
+    NonZeroExit =>
+      (
+        true, "NONZERO_EXIT 换模型重试：进程跑完了但答案不合格，换候选模型有意义。",
+      )
+    SignalKilled =>
+      (
+        true, "SIGNAL_KILLED 换模型重试：进程被信号终止/崩溃，按 P1.1 记一次不可靠并试下一候选。",
+      )
+    Unknown =>
+      (
+        true, "UNKNOWN 换模型重试：归不出类，按既有 P1.1 保守处理（宁试一次候选，也不静默成功）。",
+      )
+  }
+}
+
+///|
+/// 按归因档给出**可处置**的提示。只有 `NotExecutable` 才配说「可执行文件不可用」
+/// （那正是 `executor_missing_hint` 的原有职责，原样复用不改字）。
+pub fn cli_failure_hint(name : String, kind : CliFailure) -> String {
+  match kind {
+    NotExecutable => executor_missing_hint(name)
+    Timeout =>
+      "外部执行器 '" +
+      name +
+      "' 起来了，但在超时预算内没退出——这是时长预算问题，不是执行器没装。" +
+      "进程很可能已经写出产物：先按文件系统验证（output_validate / 直接读工作树与 diff）" +
+      "再决定要不要重派，别把「没等到」当成「没干成」。确需重跑请提高 timeout_ms，" +
+      "或把任务拆小到单轮能跑完。"
+    NonZeroExit =>
+      "外部执行器 '" +
+      name +
+      "' 起来了、退出码非 0：按 error/stderr 定位业务原因。" +
+      "二进制显然在 PATH 里（否则拿不到退出码），不要按「不可执行」处置；" +
+      "产物面仍以文件系统为准。"
+    SignalKilled =>
+      "外部执行器 '" +
+      name +
+      "' 被信号终止或崩溃（node 给 code=null，这里折成 -1）：优先怀疑崩溃/内存，" +
+      "不是执行器缺失；带 stderr 立案，产物面以文件系统为准。"
+    DispatchFailed =>
+      "MoonBit 侧没能调度子进程或没能解析其结果 JSON——坏的是这一侧，不是外部执行器。" +
+      "请把本回执连同 error 原文一起立案，不要照「安装执行器」的提示处置。"
+    Unknown =>
+      "外部执行器 '" +
+      name +
+      "' 失败但归不出类：把 error 原文带上再判。宁可留 Unknown，也不猜一个归因把处置带偏。"
+  }
+}

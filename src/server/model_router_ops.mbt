@@ -85,7 +85,7 @@ fn mr_try_parse(raw : String) -> Result[Json, Unit] {
 /// 坏 JSON 是证据：只计数告警，绝不删除/覆盖（与 `mr_read` 同款"坏状态不删"纪律）。
 fn mr_caf_read_diag(project_dir : String, ns : String) -> (Bool, Bool, Json) {
   let path = mr_caf_state_path(project_dir, ns)
-  if not(@fs.path_exists(path)) {
+  if !(@fs.path_exists(path)) {
     return (false, false, Json::null())
   }
   let raw = @fs.read_file_to_string(path, encoding="utf8") catch { _ => "" }
@@ -202,6 +202,32 @@ fn mr_opt_arr_field(key : String, arr : Array[String]) -> Array[(String, Json)] 
     []
   } else {
     [(key, mr_warn_arr(arr))]
+  }
+}
+
+///|
+/// 同样「非空才出字段」：`retry_skipped` 只在**因政策跳过**时出现，
+/// 缺省就代表「重试预算/候选链」那条常规原因，调用方不必分辨两种空。
+fn mr_opt_str_field(key : String, text : String) -> Array[(String, Json)] {
+  if text.is_empty() {
+    []
+  } else {
+    [(key, Json::string(text))]
+  }
+}
+
+///|
+/// 「这一笔为什么不记路由配额账」的**如实**理由。旧文案对两种完全不同的情形都说
+/// 「调用方显式指定 model」：BUG-238 之后 atomcode（与自定义执行器同规）在 model 留空时
+/// **按设计跳过 FIST 路由**，模型由执行器自身 `default_model` 决定——把这条执行器规则
+/// 说成「用户越权覆盖池」，会让排查者去查调用方传参，而真正的答案在执行器命名空间不通。
+fn mr_quota_skip_note(executor : String, caller_model : String) -> String {
+  if !caller_model.is_empty() {
+    "not_routed(caller_supplied_model：调用方显式指定 model，配额账由调用方自己负责)"
+  } else if executor == "atomcode" {
+    "not_routed(executor_skips_router：atomcode 按 BUG-238 不走 FIST 路由（池名与 provider 命名空间不通），模型取执行器自身 default_model，本侧无账可记)"
+  } else {
+    "not_routed(custom_executor_channel：自定义执行器与 atomcode 同规跳过路由，模型名不在 FIST 池内，无账可记)"
   }
 }
 
@@ -885,7 +911,7 @@ async fn ofm_execute_http(
   }
   let fail_kind = @router.classify_ofm_failure(http_status, resp.error_type)
   let quota_note = if routed_by_pool {
-    match mr_record_only(project_dir, ns~, model, ok=not(resp.is_error)) {
+    match mr_record_only(project_dir, ns~, model, ok=!resp.is_error) {
       Ok(_) => "recorded(\{model})"
       Err(e) => "record_failed: \{e}"
     }
@@ -1170,35 +1196,31 @@ async fn executor_run_impl(
       ] +
       [("retried", Json::array(retried.map(fn(x) { Json::string(x) })))]
     match res {
-      Err(e) =>
-        // 进程没起来（ENOENT 一类）不消耗配额，所以重试无需记账；
-        // 但模型可靠性已受疑 → 标记冷却（P1.1 冷却/自动摘除）
-        if attempt_idx + 1 < max_retries &&
-          attempt_idx + 1 < fallback_models.length() {
-          let note = mr_retry_note(
-            attempt_model,
-            mr_record_failure(project_dir, ns~, attempt_model),
-          )
-          if note != "" {
-            cooldown_errors = cooldown_errors + [note]
-          }
-          retried = retried + [attempt_model]
-          attempt_idx = attempt_idx + 1
-          attempt_model = fallback_models[attempt_idx]
-          should_retry = true
-        } else {
-          return mr_obj(
-            [("ok", Json::boolean(false))] +
-            head +
-            mr_opt_arr_field("cooldown_errors", cooldown_errors) +
-            [
-              ("executed", Json::boolean(false)),
-              ("exit_code", Json::number(-1.0)),
-              ("error", Json::string(e)),
-              ("hint", Json::string(@executor.executor_missing_hint(executor))),
-            ],
-          )
-        }
+      Err(e) => {
+        // 这里的 Err 只可能是 run_check_external 自己的两条文本（调度失败 / 结果解析失败），
+        // 也就是「尺子坏了」；进程起不来（ENOENT）那一类原语是以 ok=false **正常返回**的，
+        // 走下面的 Ok 分支。归因交给 classify_cli_failure，不再由这里断言执行器没装。
+        //
+        // R156：这一类**不换模型重试、也不给模型记冷却**。旧代码在这里照常换候选并
+        // `mr_record_failure`——可本侧调度失败与模型无关，换候选只会把同一条失败重跑
+        // `max_retries` 遍，还把「MoonBit 自己没 spawn 起来」算成模型不可靠（账记歪了
+        // 之后 P1.1 的自动摘除会摘错模型）。
+        let kind = @executor.classify_cli_failure(e)
+        let (_, why_skip) = @executor.cli_retry_policy(kind)
+        return mr_obj(
+          [("ok", Json::boolean(false))] +
+          head +
+          mr_opt_arr_field("cooldown_errors", cooldown_errors) +
+          [
+            ("executed", Json::boolean(false)),
+            ("exit_code", Json::number(-1.0)),
+            ("failure_kind", Json::string(kind.label())),
+            ("error", Json::string(e)),
+            ("hint", Json::string(@executor.cli_failure_hint(executor, kind))),
+          ] +
+          mr_opt_str_field("retry_skipped", why_skip),
+        )
+      }
       Ok(j) => {
         let jm : Map[String, Json] = match j {
           Json::Object(mm) => mm
@@ -1221,8 +1243,15 @@ async fn executor_run_impl(
           _ => ""
         }
         let tail = if !errtxt.is_empty() { errtxt } else { stderrtxt }
-        // 进程真起来的一方才记账（BUG-61：Err 分支是 ENOENT，没起进程就不消耗）
+        // 归因先算，重试与回执都用同一档（旧 BUG-61 那句「Err 分支是 ENOENT」已被实测推翻：
+        // ENOENT 走的就是这里的 Ok 分支）
+        let fail_kind = @executor.classify_cli_failure(errtxt)
+        let (may_retry, why_skip) = @executor.cli_retry_policy(fail_kind)
+        // 进程真起来的一方才记账；R156 再加一道政策门——与模型无关的失败档
+        // （NOT_EXECUTABLE / TIMEOUT / DISPATCH_FAILED）换候选不会改变结论，
+        // 直接落到最终返回，把回执留给可处置处方。
         if !okk &&
+          may_retry &&
           attempt_idx + 1 < max_retries &&
           attempt_idx + 1 < fallback_models.length() {
           if routed_by_pool {
@@ -1253,12 +1282,17 @@ async fn executor_run_impl(
               Err(e) => "record_failed: \{e}"
             }
           } else {
-            "not_routed(调用方显式指定 model，不代记账)"
+            // 旧口径在这里不分青红皂白说「调用方显式指定 model」，可 atomcode / 自定义执行器
+            // 的 model 常常是**空的**（按 BUG-238 设计跳过路由）——那句回执把锅甩给调用方，
+            // 而调用方什么都没指定。理由必须由分支条件给出，不能由这里猜。
+            mr_quota_skip_note(executor, model)
           }
+          // 失败归因按原语 error 文本分档。旧口径把「跑满超时」「退出码非 0」「信号杀」
+          // 全说成「可执行文件不可用」，等于把三类相反处置并成一条错处方。
           let hint = if okk {
             "外部执行器返回 0；成果仍需按证据梯 L4 用 output_validate 到文件系统验证（报告不是证据）"
           } else {
-            @executor.executor_missing_hint(executor)
+            @executor.cli_failure_hint(executor, fail_kind)
           }
           return mr_obj(
             [("ok", Json::boolean(okk))] +
@@ -1269,12 +1303,26 @@ async fn executor_run_impl(
               ("quota", Json::string(quota_note)),
               ("exit_code", Json::number(code.to_double())),
               (
+                "failure_kind",
+                Json::string(if okk { "NONE" } else { fail_kind.label() }),
+              ),
+              (
                 "cost_estimate",
                 Json::number(if executor == "atomcode" { 0.0 } else { -1.0 }),
               ),
               ("error_tail", Json::string(tail)),
               ("hint", Json::string(hint)),
-            ],
+            ] +
+            // 只在「政策判定不值得换模型」时出这个字段；预算耗尽/没候选是另一条常规原因，
+            // 不该被读成政策跳过。
+            mr_opt_str_field(
+              "retry_skipped",
+              if !okk && !may_retry {
+                why_skip
+              } else {
+                ""
+              },
+            ),
           )
         }
       }

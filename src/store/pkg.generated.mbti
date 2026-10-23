@@ -29,6 +29,18 @@ pub fn specs_table_sql() -> String
 // Errors
 
 // Types and methods
+pub struct AgentRecord {
+  agent_id : String
+  agent_type : String
+  role : String
+  soldier : String
+  pid : Int32
+  pubkey_fp : String
+  first_seen : String
+  last_seen : String
+  status : String
+}
+
 pub struct AssistantReg {
   agent : String
   mode : String
@@ -184,6 +196,14 @@ pub fn SpecRecord::to_repr(Self) -> @debug.Repr
 pub struct SqliteStore {
   db : @sqlite.Database?
 }
+pub fn SqliteStore::agents_acl_check(Self, agent_id~ : String, ns~ : String, write~ : Bool, current_pid~ : Int32) -> Result[Unit, String]
+pub fn SqliteStore::agents_acl_ensure(Self, agent_id~ : String, ns~ : String, now~ : String) -> Result[Unit, String]
+pub fn SqliteStore::agents_acl_grant(Self, agent_id~ : String, ns~ : String, can_read~ : Bool, can_write~ : Bool, pid_bound~ : Bool, now~ : String, by~ : String) -> Result[Unit, String]
+pub fn SqliteStore::agents_get(Self, String) -> AgentRecord?
+pub fn SqliteStore::agents_heartbeat(Self, agent_id~ : String, agent_type~ : String, role~ : String, soldier~ : String, pid~ : Int32, now~ : String) -> Result[Unit, String]
+pub fn SqliteStore::agents_register(Self, agent_id~ : String, agent_type~ : String, role~ : String, soldier~ : String, pubkey_fp~ : String, pid~ : Int32, now~ : String) -> Result[Unit, String]
+pub fn SqliteStore::agents_set_pid(Self, agent_id~ : String, pid~ : Int32) -> Result[Unit, String]
+pub fn SqliteStore::agents_stale_check(Self, String) -> Array[AgentRecord]
 pub fn SqliteStore::archive_task(Self, @core.Task, archived_at~ : String) -> Result[Unit, String]
 pub fn SqliteStore::assistant_get(Self, String) -> AssistantReg?
 pub fn SqliteStore::assistant_list(Self) -> Array[AssistantReg]
