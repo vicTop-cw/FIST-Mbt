@@ -2,7 +2,7 @@
 ///
 /// 分层理由（一源四态 r2/r3）：纯决策与状态 schema 都在 `src/router`（可单测、零 IO），
 /// argv 构造在 `src/executor`（可审、零 IO），本文件只做三件必须 IO 的事：
-///   1. 状态落盘 `{project_dir}/memory/model-router-{ns}.json`（跨进程可复现，不靠内存）
+///   1. 状态落盘 `{project_dir}/.fist-mbt/data/model-router-{ns}.json`（跨进程可复现，不靠内存）
 ///   2. 时间戳由服务端 `now_default()` 盖章（BUG-33：不接受调用方注入 now）
 ///   3. spawn 外部执行器（复用 run_check_external 的 js 原语；native 明确拒绝）
 ///
@@ -25,10 +25,20 @@ fn mr_check_ns(ns : String) -> String? {
 }
 
 ///|
+/// 状态落盘目录（`<target>/.fist-mbt/data`）：双层目录治理（见
+/// `fist-mbt/plans/2026-10-22-fist-dir-layout-governance-proposal.md` §3.1）——
+/// `.fist-mbt/` 机器独有、gitignore，`data/` 装 SQLite 库与模型路由状态。
+/// 旧布局 `{project_dir}/memory/model-router-*.json` 不再新写；读侧按同一路径读，
+/// 迁移后不再读写旧账本（旧文件原样保留不删）。
+fn mr_state_dir(project_dir : String) -> String {
+  project_dir + "/.fist-mbt/data"
+}
+
+///|
 /// 状态文件路径（project_dir 必须相对且不含穿越；沿用 bugreport 的同一条校验）
 fn mr_state_path(project_dir : String, ns : String) -> String {
   let safe_ns = if ns.is_empty() { "default" } else { ns }
-  project_dir + "/memory/model-router-" + safe_ns + ".json"
+  mr_state_dir(project_dir) + "/model-router-" + safe_ns + ".json"
 }
 
 ///|
@@ -55,7 +65,7 @@ fn mr_read(project_dir : String, ns : String) -> Json {
 /// dry_run 预览只读它、绝不创建（文件不存在 = 空记忆，零回归）。
 fn mr_caf_state_path(project_dir : String, ns : String) -> String {
   let safe_ns = if ns.is_empty() { "default" } else { ns }
-  project_dir + "/memory/model-router-caf-" + safe_ns + ".json"
+  mr_state_dir(project_dir) + "/model-router-caf-" + safe_ns + ".json"
 }
 
 ///|
@@ -87,6 +97,21 @@ fn mr_caf_read_diag(project_dir : String, ns : String) -> (Bool, Bool, Json) {
   match mr_try_parse(raw) {
     Ok(j) => (true, false, j)
     Err(_) => (true, true, Json::null())
+  }
+}
+
+///|
+/// 建状态目录（`<target>/.fist-mbt/data`）逐层创建：`@fs.create_dir` 不递归，
+/// project_dir / `.fist-mbt` / `.fist-mbt/data` 分三步，幂等（已存在则忽略）。
+fn mr_ensure_state_dir(project_dir : String) -> Unit {
+  @fs.create_dir(project_dir) catch {
+    _ => ()
+  }
+  @fs.create_dir(project_dir + "/.fist-mbt") catch {
+    _ => ()
+  }
+  @fs.create_dir(mr_state_dir(project_dir)) catch {
+    _ => ()
   }
 }
 
@@ -129,9 +154,7 @@ fn mr_caf_push_evidence(
       ts~,
     ),
   )
-  @fs.create_dir(project_dir + "/memory") catch {
-    _ => ()
-  }
+  mr_ensure_state_dir(project_dir)
   @fs.write_string_to_file(
     path,
     @router.caf_memory_dump(mem).stringify(),
@@ -143,19 +166,13 @@ fn mr_caf_push_evidence(
 }
 
 ///|
-/// 写状态（建 memory/ 目录；失败返回 Err，绝不静默）
+/// 写状态（建 `.fist-mbt/data/` 目录；失败返回 Err，绝不静默）
 fn mr_save(
   r : @router.ModelRouter,
   project_dir : String,
   ns : String,
 ) -> Result[Unit, String] {
-  // 逐层建目录（@fs.create_dir 不递归）：project_dir 本身也可能还不存在
-  @fs.create_dir(project_dir) catch {
-    _ => ()
-  }
-  @fs.create_dir(project_dir + "/memory") catch {
-    _ => ()
-  }
+  mr_ensure_state_dir(project_dir)
   let path = mr_state_path(project_dir, ns)
   @fs.write_string_to_file(path, r.to_state().stringify(), encoding="utf8") catch {
     _ =>

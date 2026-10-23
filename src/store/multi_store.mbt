@@ -13,7 +13,11 @@ pub struct MultiStore {
 
 ///|
 /// 构造：仅记录根目录，不打开任何库（惰性）。
-pub fn MultiStore::new(data_dir~ : String = ".") -> MultiStore {
+/// 默认 `".fist-mbt/data"`（**相对 server 进程 cwd**，经 data_dir_ok 校验）：server 由
+/// `.mcp.json` 以目标项目根为 cwd 启动，故默认落点即 `<target>/.fist-mbt/data`
+/// （`.fist-mbt/` 机器独有、gitignore；见 scripts/fist-init.py 双骨架）。调用方显式传
+/// data_dir 仍完全按传入值落盘（测试/scratch 隔离零回归）。
+pub fn MultiStore::new(data_dir~ : String = ".fist-mbt/data") -> MultiStore {
   { stores: Map([]), data_dir, }
 }
 

@@ -6,6 +6,7 @@ import {
   "vicTop-cw/fist-mbt/src/core",
   "vicTop-cw/fist-mbt/src/engine",
   "vicTop-cw/fist-mbt/src/evolve",
+  "vicTop-cw/fist-mbt/src/ops",
   "vicTop-cw/fist-mbt/src/store",
 }
 
@@ -212,10 +213,24 @@ pub fn self_search_runner_default() -> ((String, Array[String]) -> Result[String
 
 pub fn selfdrive_round_tick(Json) -> Json
 
+pub fn write_gate(String, String) -> WriteVerdict
+
+pub fn write_gate_audit(String, String, @ops.AuditLog, String, String) -> Result[Unit, String]
+
+pub fn write_gate_ok(String, String) -> Result[Unit, String]
+
+pub fn write_gate_path_ok(String) -> Bool
+
 // Errors
 
 // Types and methods
 type ScanCtx
+
+pub enum WriteVerdict {
+  Allow
+  Reject(String)
+  NoProjectDir
+}
 
 // Type aliases
 
