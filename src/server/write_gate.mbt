@@ -184,3 +184,25 @@ pub fn ns_write_gate(ns : String) -> Result[Unit, String] {
   }
   Ok(())
 }
+
+///|
+/// BUG-389（BUG-78 修复的迁移缺口）：检测 cwd 根旧位置存量库 `<ns>.db` 是否存在。
+///
+/// BUG-78 把 store_open 默认 data_dir 改成 `.fist-mbt/data/`（多库落目标项目私有目录），
+/// 但没迁存量库——cwd 根仍留有 BUG-78 前默认落点的 `<ns>.db`。server 重启后
+/// store_open 落新空库，同 ns 任务"凭空消失"（2026-10-23 实测：fist-mbt-refactor 40 条、
+/// tnr-polish 23 条、tql-b5 1 条全部丢失，只能靠 sqlite3 手工查旧库找回）。
+///
+/// 返回 true 表示旧位置有存量库，调用方应复用旧库（`data_dir="."`）而非静默开新空库。
+/// 复用旧库是过渡兼容：新库仍按 BUG-78 落 `.fist-mbt/data/`，旧库迁移由调用方择机搬移。
+pub fn legacy_store_exists_in(dir : String, ns : String) -> Bool {
+  @fs.is_file(dir + "/" + ns + ".db") catch {
+    _ => false
+  }
+}
+
+///|
+/// 便捷版：检测 cwd（server 进程工作目录）根位置的存量库。
+pub fn legacy_store_exists(ns : String) -> Bool {
+  legacy_store_exists_in(".", ns)
+}
