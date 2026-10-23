@@ -1,0 +1,17 @@
+# 轮次号认领基线（R134 建立）
+#
+# 用途：`scripts/check_unit_number_unique.py` 的棘轮面。`reports/<日期>-<slug>-r<编号>-report.md`
+# 的 slug 是单元身份；同一编号出现两个不同 slug = 两个单元撞号。历史撞号登记在这里，
+# 判据要求「实际 slug 集合与基线逐字相等」：
+#   - 新单元取到已占用的编号（新增 slug）⇒ 红，必须改号；
+#   - 基线里的 slug 在 reports/ 里消失（少 slug）⇒ 红，必须同批收紧基线；
+#   - 基线点名的编号一份报告都找不到（悬空）⇒ 红。
+# 本文件只许收紧（删组/删 slug 并同批修复报告面），不许为了过红而放宽。
+#
+# 格式：R<编号> <slug> [slug…]（# 开头为注释）
+
+R110 backlog-yaml-integrity-gate supervisor-bool-flags-schema
+R113 plan-deep-annotation-compound pr-automator-safe-defaults
+R118 audit-branch-delete-face readme-staleness-onsite-reading
+R121 guards-inline-verdict text-control-char
+R126 mcp-server-moon-env slave-task-list-selfproof-ruler
