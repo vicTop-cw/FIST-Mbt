@@ -30,6 +30,7 @@
 `--selftest` 的格子清单**从已执行格子反解**，不手写计数。
 """
 import ast
+import os
 import re
 import subprocess
 import sys
@@ -44,6 +45,25 @@ if hasattr(sys.stderr, "reconfigure"):
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
+# 2026-10-24（R45 定位）：**钩子进程会被注入 GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE**。
+# `git commit` 执行 pre-commit 钩子时，这些变量指向**外层真仓**；夹具里 `subprocess.run(["git", …], cwd=temp)`
+# 继承它们之后，git 会**忽略 cwd** 直接操作真仓索引 —— 实测后果：`git add -A` 把夹具文件塞进真仓索引、
+# 随后 `commit -qm fixture` 在用户分支上落提交（真工作树被连写 9 个 `fixture` 提交、树被换成夹具文件、
+# 真仓 repo config 的 user 被改成夹具身份 t/t@t）。这不是"夹具写错目录"，而是**环境变量穿透**。
+GIT_ENV_SCRUB = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+                 "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_PREFIX",
+                 "GIT_NAMESPACE", "GIT_CEILING_DIRECTORIES")
+
+
+def isolated_git_env(base=None):
+    """剥掉 git 自上而下注入的仓库定位变量，只留普通环境（夹具必须用它跑 git）。"""
+    env = dict(os.environ if base is None else base)
+    for k in GIT_ENV_SCRUB:
+        env.pop(k, None)
+    return env
+
+
+
 # 行首精确的三种冲突标记（按 git 原样：顶格）。
 RE_OURS = re.compile(r"^<{7}(?: |$)")
 RE_SEP = re.compile(r"^={7}$")
@@ -52,9 +72,15 @@ RE_THEIRS = re.compile(r"^>{7}(?: |$)")
 
 def tracked_files(root):
     """git 跟踪面文件名清单（用 git 而不是走磁盘 glob，保证与 CI checkout 看到的面一致）。
-    不在仓库 / git 不可用 ⇒ 返回 None（调用方自拒，绝不报绿）。"""
+    不在仓库 / git 不可用 ⇒ 返回 None（调用方自拒，绝不报绿）。
+
+    R45：`env=isolated_git_env()` 是必须的——本判据**就在 pre-commit 钩子里跑**，而 git 会给钩子
+    注入 `GIT_DIR` / `GIT_WORK_TREE` / `GIT_INDEX_FILE` / `GIT_PREFIX`；不剥掉就会出现
+    "1399 个跟踪文件全部读不到"（路径被前缀/工作树变量带偏）⇒ 判据自拒，把整个提交挡住。
+    """
     r = subprocess.run(["git", "-C", str(root), "ls-files", "-z"],
-                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+                       capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       env=isolated_git_env())
     if r.returncode != 0:
         return None
     return [f for f in r.stdout.split("\0") if f.strip()]
@@ -121,17 +147,35 @@ def selftest():
     fails = []
 
     def new_repo(fixture):
+        """造一个**真正独立**的夹具仓（R44 事故 + R45 机制定位后的硬化）。
+
+        R44 硬化：三条自证（不在被检仓内 / 真建出 .git / show-toplevel 就是它自己）。
+        R45 硬化（本笔的核心）：**每条 git 调用都带 `env=isolated_git_env()`** —— 否则在 pre-commit
+        钩子里跑时，`GIT_DIR`/`GIT_INDEX_FILE` 会把夹具的 add/commit 直接落到用户的真仓上。
+        """
+        env = isolated_git_env()
         d = Path(tempfile.mkdtemp(prefix="cmk-"))
-        subprocess.run(["git", "init", "-q"], cwd=d, capture_output=True, text=True)
-        subprocess.run(["git", "config", "user.email", "t@t"], cwd=d, capture_output=True, text=True)
-        subprocess.run(["git", "config", "user.name", "t"], cwd=d, capture_output=True, text=True)
+        subprocess.run(["git", "init", "-q"], cwd=d, capture_output=True, text=True, env=env)
+        top = subprocess.run(["git", "-C", str(d), "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
+        own = (d / ".git").exists()
+        same = top.returncode == 0 and Path(top.stdout.strip() or "/nonexistent").resolve() == d.resolve()
+        inside = str(d.resolve()).startswith(str(ROOT.resolve()) + os.sep)
+        if inside or not own or not same:
+            raise SystemExit(
+                "FATAL 夹具仓没有独立成功（own=%s same=%s inside_root=%s top=%r dir=%s）"
+                "——继续跑就会把外层仓库当夹具提交（R44 实测事故），拒绝继续"
+                % (own, same, inside, (top.stdout or top.stderr).strip()[:200], d)
+            )
+        subprocess.run(["git", "config", "user.email", "t@t"], cwd=d, capture_output=True, text=True, env=env)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=d, capture_output=True, text=True, env=env)
         for rel, body in fixture.items():
             fp = d / rel
             fp.parent.mkdir(parents=True, exist_ok=True)
             fp.write_text(body, encoding="utf-8")
         if fixture:
-            subprocess.run(["git", "add", "-A"], cwd=d, capture_output=True, text=True)
-            subprocess.run(["git", "commit", "-qm", "fixture"], cwd=d, capture_output=True, text=True)
+            subprocess.run(["git", "add", "-A"], cwd=d, capture_output=True, text=True, env=env)
+            subprocess.run(["git", "commit", "-qm", "fixture"], cwd=d, capture_output=True, text=True, env=env)
         return d
 
     CONFLICT = ("def f():\n"
