@@ -58,3 +58,12 @@ acceptance_met:
   - "--list 26 → 40+：✅ 43"
   - "不引入回归（诊断型 expected 保留）：✅（check_plan_landing 诊断格等原样保留）"
 pr_branch: feat/task-007-run-guards-universe
+# ── R123 对账重盖章（gitcode/main rebase 到 origin/master 788c5823，原 proof commit 不再可达）──
+rebase_proven:
+  dropped_by: "gitcode/main rebase onto origin/master 788c5823（旧线 proof commit 未迁到新线）"
+  dropped_proof_commits: ["155f224c", "c9e3465e", "db43e5d7", "56916f02"]
+  verified_on: "origin/master 788c5823（gitcode/main 587a1b5c 含同批交付物）"
+  reading:
+    - "python scripts/run_guards.py --list ⇒ 尺 93 把 / CI 面 43 / 电池面 55 / 缺执行面 0"
+    - "宇宙含 scripts/blackbox/e2e 探针 24 个（漏检前 10 个已回宇宙）"
+  note: "R2 UNPROVEN-DONE 重盖章：交付物在新线齐全，丢失的只是 rebase 上的 proof 引文。"
