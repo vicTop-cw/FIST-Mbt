@@ -102,3 +102,48 @@ test "cf_8_标签面逐字钉住：调用方按 failure_kind 字符串分支，�
     ],
   )
 }
+
+///|
+test "cf_9_与模型无关的三档不换候选：重试只会把同一条失败重跑" {
+  // 这一格钉的是 R156 的立项理由：旧重试环只看「没成功且还有候选」，
+  // 于是 PATH 问题/超时问题被拿去换模型重试 N 遍，还白记 N 次模型冷却账。
+  let (ne_retry, ne_why) = cli_retry_policy(CliFailure::NotExecutable)
+  let (to_retry, to_why) = cli_retry_policy(CliFailure::Timeout)
+  let (df_retry, df_why) = cli_retry_policy(CliFailure::DispatchFailed)
+  assert_false(ne_retry)
+  assert_false(to_retry)
+  assert_false(df_retry)
+  // 理由必须点名档位本身——回执里的 `retry_skipped` 要能让调用方对上是哪一档拦的
+  assert_true(ne_why.contains("NOT_EXECUTABLE"))
+  assert_true(to_why.contains("TIMEOUT"))
+  assert_true(df_why.contains("DISPATCH_FAILED"))
+}
+
+///|
+test "cf_10_模型侧三档照旧换候选：P1.1 的既有语义零回归" {
+  let (a, _) = cli_retry_policy(CliFailure::NonZeroExit)
+  let (b, _) = cli_retry_policy(CliFailure::SignalKilled)
+  let (c, _) = cli_retry_policy(CliFailure::Unknown)
+  assert_true(a)
+  assert_true(b)
+  assert_true(c)
+}
+
+///|
+test "cf_11_TIMEOUT 的处方是验产物+提预算，不是重装执行器" {
+  let (_, why) = cli_retry_policy(CliFailure::Timeout)
+  assert_true(why.contains("时长预算"))
+  assert_true(why.contains("文件系统"))
+  assert_true(why.contains("timeout_ms"))
+  assert_true(!why.contains("不可用"))
+}
+
+///|
+test "cf_12_DISPATCH_FAILED 明确不给模型记账：坏的是本侧" {
+  let (_, why) = cli_retry_policy(CliFailure::DispatchFailed)
+  assert_true(why.contains("不记账") || why.contains("不给模型记"))
+  assert_true(why.contains("本侧"))
+  // 反向对照：NOT_EXECUTABLE 的处方指向安装，而不是「立案到 src/server」
+  let (_, w2) = cli_retry_policy(CliFailure::NotExecutable)
+  assert_true(w2.contains("PATH"))
+}

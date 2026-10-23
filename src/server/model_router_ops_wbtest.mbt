@@ -989,3 +989,25 @@ test "caf_dr_10_失败执行push_ok_false_CAF学成败" {
   // 两条都落进同一记忆：末条为成功侧、总数 = 2，验证"追加"而非"覆盖"
   assert_eq(caf_read_rec_count(caf_path), 2)
 }
+
+///|
+test "mo_11_跳过记账的三种理由分明：不把执行器规则说成调用方越权" {
+  // R156 立项理由：旧文案对三种完全不同的情形都说「调用方显式指定 model」，
+  // 而实测 atomcode 那一笔 model 是**空的**（BUG-238 按设计跳过路由）——
+  // 回执把执行器命名空间不通，写成调用方越权覆盖池，排查方向整个指反。
+  let supplied = mr_quota_skip_note("aider", "glm-4.7")
+  assert_true(supplied.contains("caller_supplied_model"))
+  assert_true(supplied.contains("调用方显式指定 model"))
+  let atomic = mr_quota_skip_note("atomcode", "")
+  assert_true(atomic.contains("executor_skips_router"))
+  assert_true(atomic.contains("BUG-238"))
+  // 反向对照：atomcode 空 model 时绝不能再出现「调用方显式指定」那句
+  assert_false(atomic.contains("调用方显式指定 model"))
+  let custom = mr_quota_skip_note("my-cli", "")
+  assert_true(custom.contains("custom_executor_channel"))
+  assert_false(custom.contains("调用方显式指定 model"))
+  // 三条理由必须两两不同名，否则等于回到一句万能废话
+  assert_false(supplied.contains("executor_skips_router"))
+  assert_false(supplied.contains("custom_executor_channel"))
+  assert_false(atomic.contains("custom_executor_channel"))
+}
