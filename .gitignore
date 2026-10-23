@@ -160,3 +160,7 @@ memory/archive/thinking.archive.md
 
 # npm pack output (publish artifacts stay out of git)
 /*.tgz
+
+# 临时验证 worktree（嵌入式 git 仓 ⇒ 绝不能被 add，否则变成 gitlink 160000，
+# 让 check_merge_markers 等判据「有跟踪文件读不到」；2026-10-24 实测踩过一次）
+/.verify-wt
