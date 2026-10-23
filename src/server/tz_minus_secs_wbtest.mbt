@@ -76,3 +76,24 @@ test "BUG-196：_iso_to_unix_ms 闰日边界（2024-02-29 合法）" {
     abort("2024-02-29 应可解析")
   }
 }
+
+///|
+/// R131：分隔符形状必须成立——旧实现只按固定下标取数字，`2024x01x01T00x00x00`
+/// 会被当成合法时间戳（分隔符位置的字符从未被检查）。
+test "R131：_iso_to_unix_ms 分隔符形状错返回 None" {
+  assert_eq(_iso_to_unix_ms("2024x01x01T00x00x00Z"), None)
+  assert_eq(_iso_to_unix_ms("2024-01-01X00:00:00Z"), None)
+  assert_eq(_iso_to_unix_ms("2024-01-01T00;00:00Z"), None)
+  // 空格分隔仍须接受（ops 侧文档口径；不因收紧形状而回归）
+  if _iso_to_unix_ms("2024-01-01 00:00:00Z") is None {
+    abort("空格分隔应可解析")
+  }
+}
+
+///|
+/// R131：不存在的日历日必须 None——旧实现 d≤31 放行，2024-02-30 与 2024-03-01 同值。
+test "R131：_iso_to_unix_ms 不存在的日历日返回 None" {
+  assert_eq(_iso_to_unix_ms("2024-02-30T00:00:00Z"), None)
+  assert_eq(_iso_to_unix_ms("2024-04-31T00:00:00Z"), None)
+  assert_eq(_iso_to_unix_ms("2023-02-29T00:00:00Z"), None)
+}
