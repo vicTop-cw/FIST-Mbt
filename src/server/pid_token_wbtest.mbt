@@ -19,13 +19,14 @@ test "BUG-401 pid_token 首次调用固化缓存" {
         fail("缓存已固化但返回值不一致: \{v} != \{prev}")
       }
     None => {
-      if !after.is_some() {
-        fail(
-          "首次调用未固化缓存: before=\{before} v=\{v} after=\{after}",
-        )
-      }
-      if v != after.unwrap() {
-        fail("返回值与固化值不一致: \{v} != \{after.unwrap()}")
+      // 2026-10-24：`Option::is_some()` 已弃用，改用模式匹配（原写法还让 abort 串里的
+      // `after` 走 Show ⇒ 两条 deprecated 警告，纯噪声）。
+      match after {
+        Some(v2) =>
+          if v != v2 {
+            fail("返回值与固化值不一致: \{v} != \{v2}")
+          }
+        None => fail("首次调用未固化缓存（before=None）: v=\{v}")
       }
       if v < 0 {
         fail("pid_token 非负: \{v}")
