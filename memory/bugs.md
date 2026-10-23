@@ -6624,3 +6624,26 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 为什么这条值得单开：① AGENTS「JS 测试在本机跑不起来？先看这一条」把 `moon_test_env.py` 定为**唯一推荐的常驻入口**，而 CI 用裸 `moon test --target js > /tmp/moon_test.log`——两条进料路径给出的日志形状不同，判据只认 CI 那一条；本地按文档跑的人在尺上看到的是「解析失败」，最自然的误读是「我的测试数不对」，而真实情况是尺读不到（BUG-142 那条「判绿以汇总行为准」在本地这一路恰好被形状挡住了）。② 这一格在 `run_guards.py` 里也是同一形状：`TESTLOG = temp/pt27.log`，谁手写谁就得知道要写逗号形状，否则 `check_badge`/`check_test_sync` 两格自拒——**判据对进料格式的要求没有写在任何自述里**（与本仓 R10/J10 那条「尺的自述要说清自己判不了什么」同族）。
 - 处置建议（两条出路，本单未动）：A. 让常驻入口**同时**原样透传 moon 的机器可读汇总行（或在 `汇总：` 之外补一行 `Total tests: N, passed: N, failed: N`），使本地日志天然可被既有尺读取；B. 让尺的 `RX_LOG` 接受斜杠分隔形状。**注意别与 R178 车道撞面**：那一支正在给 `check_test_sync`/`check_badge` 拆「漏传实参 → rc=2 REJECT」档（见当日台账现读），B 案动的是同一文件，合入时按同一批次收口即可；A 案动 `moon_test_env.py`，与那一支不相交。
 - 关联: BUG-142（判绿以汇总行为准）、BUG-350（check_test_sync 日志面假绿修尺）、BUG-382（自检失败路径 rc=0 同形）、BUG-388（本机 `moon fmt --check` 量不出来：同一类「工具链/入口与判据格式不匹配」）。
+
+## BUG-390 [2026-10-23T15:30:31Z] [high] OPEN
+- summary: [store] SqliteStore::open 兜底补建父目录——FIST_DB_PATH 指到不存在的深层目录不再打死 serve
+- detail: FIST_DB_PATH 指向不存在的深层目录时 `SqliteStore::open` 直接失败（serve 起不来）。处置：open 前兜底 `ensure_dir_tree` 补建父目录（src/store/store_sqlite.mbt），配套 `src/store/moon.pkg` 加 `moonbitlang/x/fs` 依赖（commit 0f4ffe8c）。
+- 注: 本条目为回填——原 commit 手写 BUG-390 未走 report_bug 原子分配，账本一直缺这一格（BUG-390 曾被两个不同 commit 复用）。
+
+
+## BUG-397 [2026-10-23T15:30:31Z] [medium] OPEN
+- summary: [build] .mbti 恒脏——.gitattributes 钉 *.mbti eol=lf + 判据闸
+- detail: moon info 生成的 .mbti 字节本来 LF，但 Windows `core.autocrlf=true` checkout 时转 CRLF，导致「没改任何语义、只跑一次 moon info」就让 core/engine/server 三份 .mbti 变 dirty，git status 恒有 CRLF 噪声。处置：.gitattributes 钉 `*.mbti eol=lf` + 判据闸（commit 1ef98f8f）。
+- 注: 回填条目——原 commit 手写 BUG-397 未走 report_bug。
+
+
+## BUG-398 [2026-10-23T15:30:31Z] [medium] OPEN
+- summary: [guard] check_branch_ancestry.py——防合并不了的双门之一
+- detail: 新增 `scripts/check_branch_ancestry.py` 判据：校验待合并分支相对 base 的祖先关系，防「分支与 main 分叉过远 / 需要非快进合并」导致合并动作卡死（commit ad5d38df）。
+- 注: 回填条目——原 commit 手写 BUG-398 未走 report_bug。
+
+
+## BUG-399 [2026-10-23T15:30:31Z] [medium] OPEN
+- summary: [guard] check_memory_log_size.py——memory 失控追加的闸
+- detail: 新增 `scripts/check_memory_log_size.py` 判据：限制 `memory/*.md` 体积，防无人值守自驱下 memory 日志无限追加（commit ad5d38df）。
+- 注: 回填条目——原 commit 手写 BUG-399 未走 report_bug（同一 commit 与 BUG-398 共用）。
