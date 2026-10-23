@@ -58,8 +58,8 @@ META = {
 
 def find_main() -> str:
     for p in MAIN_CANDIDATES:
-        if os.path.exists(p):
-            return p
+        if os.path.exists(os.path.join(_FIST_ROOT, p)):
+            return os.path.join(_FIST_ROOT, p)
     return ""
 
 
