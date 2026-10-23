@@ -42,6 +42,7 @@ import ast
 import io
 import os
 import sys
+import warnings
 from contextlib import redirect_stdout
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -113,7 +114,13 @@ def analyze(path):
     """静态收一张表：自检函数、调用面锚点、`4` 出现位置（是否落在 except 内）。"""
     name = os.path.basename(path)
     txt = read_text(path)
-    tree = ast.parse(txt)
+    # 被检脚本的正则/文案里常有不合法转义（`\F` `\{` `\w` `\``）——那对 Python 是 SyntaxWarning，
+    # 由 ast.parse 打到 stderr 上，本尺的结论行被几十条 warning 淹掉（且 <unknown> 的定位无法追）。
+    # 判据判的是「自检有没有跑到调用面」，不是那些字符串写得规不规范（后者归 check_py_escape 族）；
+    # 故在解析这一格里显式忽略 SyntaxWarning，别让 warning 噪声冒充当尺子的输出。
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        tree = ast.parse(txt)
     par = ancestors(tree)
     funcs = {}
     for n in ast.walk(tree):
