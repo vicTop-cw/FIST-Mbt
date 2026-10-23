@@ -18,7 +18,8 @@ var STATE = {
   sse: null,                // EventSource 实例
   sseOpen: false,           // SSE 状态
   selectedId: null,         // 当前选中任务
-  expanded: {}              // 任务 id -> true（展开态）
+  expanded: {},             // 任务 id -> true（展开态）
+  currentPage: "board"      // 当前页面：board / stateflow / health / pulse
 };
 
 /* =====================================================================
@@ -248,6 +249,7 @@ async function fetchStatus() {
     var total = (summary.total_tasks != null ? summary.total_tasks : summary.total) || null;
     STATE.byStatus = byStatus;
     STATE.flatCount = total != null ? total : STATE.flatCount;
+    STATE._lastSummary = summary;  // 缓存给脉冲页用
     populateNsSelect(summary.active_namespaces);
     renderStatusBar(STATE.byStatus, STATE.flatCount);
     return payload;
@@ -442,6 +444,176 @@ function switchNs(ns) {
 }
 
 /* =====================================================================
+ * WEB-02 · 状态流转 / 健康卡 / 脉冲 三页
+ * ===================================================================== */
+
+/** 切换页面：隐藏所有 page-* 容器，显示目标页，触发对应数据拉取 */
+function switchPage(page) {
+  STATE.currentPage = page;
+  var layout = document.querySelector(".layout");
+  var isBoard = page === "board";
+  // board 页用双列（树+详情），其余单列占满
+  if (layout) layout.classList.toggle("single", !isBoard);
+  ["board", "stateflow", "health", "pulse"].forEach(function (p) {
+    var el = $("page-" + p);
+    if (el) el.style.display = (p === page) ? "" : "none";
+  });
+  // board 页有详情面板，需要额外处理
+  var detail = $("page-board-detail");
+  if (detail) detail.style.display = isBoard ? "" : "none";
+  // 标签栏高亮
+  document.querySelectorAll(".tab").forEach(function (btn) {
+    btn.classList.toggle("active", btn.getAttribute("data-page") === page);
+  });
+  // 拉取当前页数据
+  if (page === "stateflow") fetchStateflow();
+  else if (page === "health") fetchHealth();
+  else if (page === "pulse") fetchPulse();
+}
+
+/** 拉取状态流转图 */
+async function fetchStateflow() {
+  var view = $("stateflow-view");
+  if (!view) return;
+  try {
+    var url = "/api/stateflow?ns=" + encodeURIComponent(STATE.ns);
+    var payload = await jget(url);
+    if (!payload || payload.ok === false) throw new Error((payload && payload.error) || "接口返回异常");
+    renderStateflow(payload.stateflow);
+  } catch (e) {
+    view.innerHTML = '<div class="empty">加载失败: ' + Pure.esc(e.message) + "</div>";
+  }
+}
+
+/** 渲染状态流转图 */
+function renderStateflow(data) {
+  var view = $("stateflow-view");
+  if (!view) return;
+  if (!data) { view.innerHTML = '<div class="empty">暂无数据</div>'; return; }
+  var ascii = data.ascii || "(空)";
+  var counts = data.counts || {};
+  var inFlow = data.in_flow != null ? data.in_flow : 0;
+
+  var countRows = Object.keys(counts).map(function (st) {
+    return '<tr><td>' + Pure.badgeHTML(st) + "</td><td><b>" + counts[st] + "</b></td></tr>";
+  }).join("");
+
+  view.innerHTML = ""
+    + '<pre class="ascii-flow">' + Pure.esc(ascii) + "</pre>"
+    + '<h3>在流任务</h3>'
+    + '<p class="big-num">' + inFlow + " <span class='muted'>个任务处于活跃状态</span></p>"
+    + '<h3>状态分布</h3>'
+    + '<table class="count-table"><tr><th>状态</th><th>数量</th></tr>' + countRows + "</table>";
+}
+
+/** 拉取健康卡 */
+async function fetchHealth() {
+  var view = $("health-view");
+  if (!view) return;
+  try {
+    var url = "/api/health?ns=" + encodeURIComponent(STATE.ns);
+    var payload = await jget(url);
+    if (!payload || payload.ok === false) throw new Error((payload && payload.error) || "接口返回异常");
+    renderHealth(payload.health);
+  } catch (e) {
+    view.innerHTML = '<div class="empty">加载失败: ' + Pure.esc(e.message) + "</div>";
+  }
+}
+
+/** 渲染健康卡 */
+function renderHealth(data) {
+  var view = $("health-view");
+  if (!view) return;
+  if (!data) { view.innerHTML = '<div class="empty">暂无数据</div>'; return; }
+  var grade = data.grade || "unknown";
+  var gradeClass = "grade-" + grade;
+  var gradeText = { "healthy": "健康", "attention": "需关注", "stalled": "停滞", "empty": "空", "unknown": "未知" }[grade] || grade;
+
+  var blockedIds = data.blocked_tasks || [];
+  var blockedHtml = blockedIds.length > 0
+    ? '<h3>阻塞任务（' + blockedIds.length + "）</h3><div class='chip-list'>"
+    + blockedIds.map(function (id) { return '<span class="chip">' + Pure.esc(String(id)) + "</span>"; }).join("")
+    + "</div>"
+    : "";
+
+  view.innerHTML = ""
+    + '<div class="health-grade ' + gradeClass + '">'
+    + '<span class="grade-label">' + gradeText + "</span>"
+    + '<span class="grade-version">v' + Pure.esc(data.version || "?") + "</span>"
+    + "</div>"
+    + '<div class="health-grid">'
+    + '<div class="health-stat"><b>' + (data.total_tasks != null ? data.total_tasks : 0) + '</b><span>总任务</span></div>'
+    + '<div class="health-stat"><b>' + (data.in_flight != null ? data.in_flight : 0) + '</b><span>执行中</span></div>'
+    + '<div class="health-stat"><b>' + (data.ready != null ? data.ready : 0) + '</b><span>待领取</span></div>'
+    + '<div class="health-stat"><b>' + (data.done != null ? data.done : 0) + '</b><span>已完成</span></div>'
+    + '<div class="health-stat"><b>' + (data.blocked != null ? data.blocked : 0) + '</b><span>阻塞</span></div>'
+    + '<div class="health-stat"><b>' + (data.reviewing != null ? data.reviewing : 0) + '</b><span>待验收</span></div>'
+    + '<div class="health-stat"><b>' + (data.archived != null ? data.archived : 0) + '</b><span>已归档</span></div>'
+    + "</div>"
+    + (data.residue_over_baseline
+      ? '<div class="warn-banner">⚠ 已完成但无交付物：' + (data.done_no_artifact != null ? data.done_no_artifact : 0)
+        + "（基线 " + (data.done_no_artifact_baseline != null ? data.done_no_artifact_baseline : 0) + "）——残留高出基线</div>"
+      : "")
+    + blockedHtml;
+}
+
+/** 拉取脉冲（status_summary 已由 fetchStatus 缓存，这里直接用缓存渲染） */
+async function fetchPulse() {
+  var view = $("pulse-view");
+  if (!view) return;
+  try {
+    // 复用已有 status 数据，若无则拉一次
+    var summary = STATE._lastSummary;
+    if (!summary) {
+      var payload = await jget("/api/status");
+      summary = extractSummary(payload) || payload;
+      STATE._lastSummary = summary;
+    }
+    renderPulse(summary);
+  } catch (e) {
+    view.innerHTML = '<div class="empty">加载失败: ' + Pure.esc(e.message) + "</div>";
+  }
+}
+
+/** 渲染脉冲页 */
+function renderPulse(summary) {
+  var view = $("pulse-view");
+  if (!view) return;
+  if (!summary) { view.innerHTML = '<div class="empty">暂无数据</div>'; return; }
+
+  var byStatus = summary.by_status || summary.byStatus || {};
+  var byDiff = summary.by_difficulty || {};
+  var activeNs = summary.active_namespaces || [];
+  var total = summary.total_tasks != null ? summary.total_tasks : summary.total || 0;
+  var version = summary.version || "?";
+
+  var statusRows = Object.keys(byStatus).map(function (st) {
+    var pct = total > 0 ? ((byStatus[st] / total) * 100).toFixed(1) : "0";
+    return '<tr><td>' + Pure.badgeHTML(st) + "</td><td><b>" + byStatus[st] + '</b></td><td>' + pct + "%</td></tr>";
+  }).join("");
+
+  var diffRows = Object.keys(byDiff).map(function (d) {
+    return '<div class="diff-stat"><b>' + byDiff[d] + '</b><span>' + Pure.esc(d) + "</span></div>";
+  }).join("");
+
+  var nsChips = activeNs.map(function (ns) {
+    return '<span class="chip">' + Pure.esc(ns) + "</span>";
+  }).join("") || '<span class="muted">无活跃命名空间</span>';
+
+  view.innerHTML = ""
+    + '<div class="pulse-header">'
+    + '<span class="pulse-version">v' + Pure.esc(version) + "</span>"
+    + '<span class="pulse-total">总任务 <b>' + total + "</b></span>"
+    + "</div>"
+    + '<h3>状态分布</h3>'
+    + '<table class="count-table"><tr><th>状态</th><th>数量</th><th>占比</th></tr>' + statusRows + "</table>"
+    + '<h3>难度结构（待领取）</h3>'
+    + '<div class="diff-grid">' + (diffRows || '<span class="muted">无待领取任务</span>') + "</div>"
+    + '<h3>活跃命名空间</h3>'
+    + '<div class="chip-list">' + nsChips + "</div>";
+}
+
+/* =====================================================================
  * SSE
  * ===================================================================== */
 
@@ -519,6 +691,11 @@ function init() {
   };
   var closeBtn = $("error-close");
   if (closeBtn) closeBtn.onclick = hideError;
+
+  // 标签栏切换
+  document.querySelectorAll(".tab").forEach(function (btn) {
+    btn.onclick = function () { switchPage(btn.getAttribute("data-page")); };
+  });
 
   // 任务树点击委托
   $("task-tree").onclick = function (ev) {
