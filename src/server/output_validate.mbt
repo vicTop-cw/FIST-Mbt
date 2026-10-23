@@ -126,6 +126,15 @@ fn artifact_spec_errors(a : Json) -> String {
       if !nc {
         return "not_contains 必须是字符串（String），不能是数字/布尔/null——否则会被静默当成空串、不检查 invariant"
       }
+      // R132：check_key 产物没有「文件字符数」口径，min_chars 过去被静默忽略
+      //（硬门按更弱的 ok 判 pass）——与 BUG-31/BUG-209 同族，组合不合法即拒绝。
+      let has_mc = match m.get("min_chars") {
+        Some(_) => true
+        None => false
+      }
+      if has_key && has_mc {
+        return "check_key 产物不支持 min_chars（外部结果没有文件字符数口径，会被静默忽略=假 pass）；要校验 stdout 请用 contains/not_contains"
+      }
       ""
     }
     _ => "不是 JSON 对象"
@@ -461,12 +470,23 @@ fn check_external_artifact(
         String(s) => s == "passed" || s == "ok" || s == "true"
         _ => false
       }
+      // R132：声明了 stdout 不变量却拿到非对象结果——没有 stdout 可校验，
+      // 旧实现直接按 ok 判 pass（BUG-143 同族：invariant 被静默忽略）。
+      let has_inv = !spec.contains.is_empty() || !spec.not_contains.is_empty()
       match val {
         true =>
-          {
-            artifact: "external:" + key,
-            ok: true,
-            detail: "OK（外部检查 passed）",
+          if has_inv {
+            {
+              artifact: "external:" + key,
+              ok: false,
+              detail: "外部结果不是对象（无 stdout），无法校验 contains/not_contains——不得静默忽略（R132）",
+            }
+          } else {
+            {
+              artifact: "external:" + key,
+              ok: true,
+              detail: "OK（外部检查 passed）",
+            }
           }
         false =>
           {
