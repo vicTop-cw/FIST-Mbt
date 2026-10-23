@@ -159,7 +159,7 @@ def promise_face(text):
 
 
 def readme_slice(readme, base):
-    """README 条目面：只吃 `- \`<base>\`` 起、到下一条条目止（别处对本名的提及不得记进本账）。"""
+    """README 条目面：只吃 `- \\`<base>\\`` 起、到下一条条目止（别处对本名的提及不得记进本账）。"""
     lines = readme.splitlines()
     start = None
     for idx, line in enumerate(lines):

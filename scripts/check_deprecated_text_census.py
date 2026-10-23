@@ -28,7 +28,7 @@
 `Check @encoding/utf8.encode`（`.to_bytes(` 3 / 判据 3，逐行重合）。其余三族的弃用点在**语义**上，
 名称级普查给出的读数荒谬：`Show` 族名称级 `\bShow\b` 全仓只有 **2** 处而判据 **8** 处，且那 2 处是
 0027 的 `derive(Eq, Debug, Show)` 与一条 `extend StarVerdict with Show::{to_string, output}`，
-与 8 个判据行**无一重合**；真实站点分散在 `.to_string()`(435) / `inspect(`(39) / 字符串插值 `\{}`(859)
+与 8 个判据行**无一重合**；真实站点分散在 `.to_string()`(435) / `inspect(`(39) / 字符串插值 `\\{}`(859)
 三种写法里，并集 1333 处对判据 11 处 ⇒ 上限要写到 1322 才不红，棘轮当场失去意义。FFI `Array` 判据
 3 处全在 `extern "js" fn` 的形参/字段上，而 `: Array[` 在跟踪面有 953 处——「是否处在 extern 块内」是
 跨行事实，行级正则表达不了。隐式提升判据 1 处、`.run(` 7 处，同理。这三族要收口只能按 `error_code`
