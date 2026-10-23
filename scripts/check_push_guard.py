@@ -39,6 +39,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from git_env import isolated_git_env
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -54,7 +55,7 @@ HOOKS_PATH = ".githooks"
 def git(*args, cwd=None):
     return subprocess.run(["git"] + list(args), cwd=cwd or ROOT,
                           capture_output=True, text=True,
-                          encoding="utf-8", errors="replace")
+                          encoding="utf-8", errors="replace", env=isolated_git_env())
 
 
 def is_tracked(rel, cwd=None):
@@ -171,8 +172,21 @@ def check(root):
     return (1 if problems else 0), lines
 
 
+def _entry_probe() -> None:
+    """入口面自证（R171 口径）：自检必须把入口纳入调用图。
+
+    R158 交付 check_diff_scope.py 时 `--selftest` 全绿而**现状面一跑就崩**
+    （clean 分支少传一个实参抛 TypeError，冒出来的 rc=1 和「有违例」一模一样）。
+    自检只考纯函数、不碰入口，照不出「自检面与入口面脱钩」。本探测**零副作用**：
+    只验证入口存在且可调用，不起真 git、不碰网络。
+    """
+    if not callable(main):
+        raise SystemExit("入口 main 不可调用（自检面与入口面脱钩）")
+
+
 def selftest():
     """合成仓自证：干净树全绿；H1/H2/H3/S1/S2 各造违例必须红；变异台证明断言咬人。"""
+    _entry_probe()
     fails = []
     if git("--version").returncode != 0:
         print("SELFTEST BLOCKED：git 不可用，尺子无法自证")
