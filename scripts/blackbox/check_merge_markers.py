@@ -251,7 +251,83 @@ def selftest():
     if rc != 2:
         fails.append("C5 空跟踪面 main 返回 %s（应为 2 自拒，不许冒用 0）" % rc)
 
-    print("SELFTEST %s（干净不误红 + 变异必红 + 空扫描自拒；格子从已执行对照反解：%s）"
+    # C7 正向毒化对照（R6：本支 graft 进主线 R45 实现）。main 的 new_repo 自带 own/same/inside
+    # 反证——那是「夹具没独立成功就自拒」面；本格补「正向锁」面：把 os.environ 毒化成 pre-commit
+    # 钩子态（GIT_DIR/GIT_INDEX_FILE 指向替身宿主仓），跑真实 new_repo（内部 isolated_git_env 应剥毒），
+    # 断言宿主 HEAD 纹丝不动；再用同一毒化 env 裸跑一次 commit 作变异对照——不 scrub 必须泄漏，
+    # 否则正向锁是假绿（本仓「拿空产物反证」同律）。这是 main 缺的那把：C1–C6 全是判据面，无一测隔离。
+    executed.append("C7 毒化环境不泄漏宿主 + 裸跑对照必泄漏")
+    try:
+        host = Path(tempfile.mkdtemp(prefix="cmk-host-"))
+        henv = isolated_git_env()
+        subprocess.run(["git", "init", "-q"], cwd=host, capture_output=True, env=henv)
+        subprocess.run(["git", "config", "user.email", "h@h"], cwd=host, capture_output=True, env=henv)
+        subprocess.run(["git", "config", "user.name", "h"], cwd=host, capture_output=True, env=henv)
+        (host / "seed.txt").write_text("seed\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=host, capture_output=True, env=henv)
+        subprocess.run(["git", "commit", "-qm", "seed"], cwd=host, capture_output=True, env=henv)
+
+        def host_count():
+            return subprocess.run(["git", "rev-list", "--count", "HEAD"], cwd=host,
+                                  capture_output=True, text=True, env=henv).stdout.strip()
+
+        before = host_count()
+        poison = {"GIT_DIR": str(host / ".git"),
+                  "GIT_INDEX_FILE": str(host / ".git" / "index")}
+        saved = {k: os.environ.get(k) for k in poison}
+        os.environ.update(poison)
+        try:
+            new_repo({"x.py": CLEAN_PY})  # 真实路径：内部 isolated_git_env 应剥毒
+            after = host_count()
+            if after != before:
+                fails.append("C7 泄漏：毒化环境（钩子态）下 new_repo 仍把提交写进宿主 HEAD"
+                             "（%s→%s）——isolated_git_env 未生效或被改坏" % (before, after))
+            leakd = Path(tempfile.mkdtemp(prefix="cmk-leak-"))
+            (leakd / "y.py").write_text(CLEAN_PY, encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=leakd, capture_output=True, env=dict(os.environ))
+            subprocess.run(["git", "commit", "-qm", "fixture"], cwd=leakd, capture_output=True,
+                           env=dict(os.environ))
+            if host_count() == before:
+                fails.append("C7 变异对照不成立：未 scrub 的裸跑也没泄漏 ⇒ 毒化姿势不对，"
+                             "正向锁的红永远等不到（假绿）")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+    except SystemExit as se:
+        fails.append("C7 毒化格触到夹具自拒（new_repo 独立断言没过）：%s" % se)
+    except Exception as e:
+        fails.append("C7 隔离格自身异常（按 BUG-369 契约不给判据红，但必须修）：%s" % e)
+
+    # C8 与共享件 scripts/git_env.py 的词表对表（R6）。为什么钉：本判据**就在 pre-commit 钩子里跑**、
+    # blackbox 顶层 sys.path 不含 scripts/（直跑 import 不到）⇒ 本件自带一份 GIT_ENV_SCRUB；
+    # 而 git_env.py 是全仓隔离的单一真源件——两份词表并存正是本仓反复返工的漂移形状（R5 那次
+    # 实测抓出过 GIT_CEILING_DIRECTORIES 单边剥的漂移）。不变量（诚实口径）：**两份 GIT_ENV_SCRUB
+    # 必须逐字相等**（根因面等强）；git_env 的前缀剥（CONFIG/AUTHOR）+NOSYSTEM 是加防面，不要求本件对等。
+    executed.append("C8 词表对表：本件 GIT_ENV_SCRUB == git_env.GIT_ENV_SCRUB")
+    try:
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location(
+            "git_env", str(Path(__file__).resolve().parent.parent / "git_env.py"))
+        shared = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(shared)
+        if tuple(GIT_ENV_SCRUB) != tuple(shared.GIT_ENV_SCRUB):
+            only_mine = [k for k in GIT_ENV_SCRUB if k not in shared.GIT_ENV_SCRUB]
+            only_shared = [k for k in shared.GIT_ENV_SCRUB if k not in GIT_ENV_SCRUB]
+            fails.append("C8 词表漂移：本件多剥 %s / git_env 多剥 %s——两份不等强，"
+                         "按其中一份接线的尺会漏另一份拦的雷" % (only_mine or "[]", only_shared or "[]"))
+        poison2 = {k: "/poison/%s" % k for k in GIT_ENV_SCRUB}
+        poison2["PATH"] = os.environ.get("PATH", "")
+        leaked = [k for k in GIT_ENV_SCRUB if k in isolated_git_env(poison2)]
+        if leaked:
+            fails.append("C8 本件 scrub 行为回退：根因面未剥净（漏 %s）" % leaked)
+    except Exception as e:
+        fails.append("C8 共享件读不到（漂移无从对表，按红处理）：%s" % e)
+
+    print("SELFTEST %s（干净不误红 + 变异必红 + 空扫描自拒 + 毒化不泄漏宿主 + 词表对表；"
+          "格子从已执行对照反解：%s）"
           % ("OK" if not fails else "FAIL", " / ".join(executed)))
     for f in fails:
         print("SELFTEST FAIL " + f)

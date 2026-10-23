@@ -165,6 +165,12 @@ SPECIAL_CASES = [
     #    「缺面清单」点名；此处按本文件纪律手写点名自检格（非 check_* 亦须有面）。 ——
     case("render_dsh_patch.py", "--selftest"),
     case("run_light_wt.py", "--selftest"),
+    # —— R3/R6：check_direct_push 是 pre-push 钩子的判定本体，**裸跑格必须禁**——它从 stdin 读
+    #    git 的 pre-push ref 行，电池环境（capture_output 不给 stdin）会挂在管道上空转到 timeout
+    #    （R98 口径：尺子不结束不是判据红，是空转）。手写点名 --selftest 后 covered 按脚本名去重，
+    #    自动发现不再补裸跑格。R6 注：合并吸收普查尺时这两格又被吞了一次，按同批律补回。 ——
+    case("check_direct_push.py", "--selftest"),
+    case("check_git_sandbox_hygiene.py", "--selftest"),
     # —— R106 追记（叠 gitcode/master b465915f 之后现读）：下面三格原来的 expected 非 0 已被主线
     #    修好（账本撞号收敛 + `scripts/merge-prompt.txt` 出跟踪面），got 0 ≠ expect 当场现形 ⇒
     #    按本文件自订的律「预存红被修好 ⇒ 把期望改回 0」转回门禁格。 ——
@@ -551,6 +557,8 @@ REGISTRY = {
     "pentad_fist.py": "Pentad 外部项目驱动器（长跑）",
     "score_gate.py": "评分器 CLI（读数型，无门禁语义）",
     "simulate_head_commit.py": "辅助库（check_bug_reference_integrity 引用其 simulate_head_commit，不单独跑）",
+    "git_env.py": "辅助库（R45/R46：isolated_git_env 单一真源，被 8 支夹具尺 import；无独立门禁语义，"
+                  "覆盖由 check_git_sandbox_hygiene 普查格 + check_merge_markers C8 逐字对表格承担）",
     "install_git_hooks.py": "本机 git 钩子安装/体检（--install 写 .git/hooks 与 core.hooksPath；"
                             "--selftest 读的是**这台机器装没装**，副机/CI 上必 rc=1 属环境态不是判据红）",
     "refresh_dist.py": "dist 快照刷新计划/执行（要 moon build 产物并写盘；无 --selftest 旗标，"

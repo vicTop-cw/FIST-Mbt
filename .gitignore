@@ -164,3 +164,9 @@ memory/archive/thinking.archive.md
 # 临时验证 worktree（嵌入式 git 仓 ⇒ 绝不能被 add，否则变成 gitlink 160000，
 # 让 check_merge_markers 等判据「有跟踪文件读不到」；2026-10-24 实测踩过一次）
 /.verify-wt
+
+# DSH 插件开发层安装面的「本机渲染态」：跟踪真源是 cordis.patch.yml.tpl（模板、占位符、
+# 零绝对路径），cordis.patch.yml 由 scripts/render_dsh_patch.py 按当前仓位置生成。
+# 合并通道三次把某台机的渲染件重新跟踪回 main（E:/ 一次、F:/ 两次）；判据
+# check_hardcoded_paths 的 D1 结构锁 + 这条 ignore 一起钉死：渲染件永不进跟踪面。
+/.dsh/fist-mbt-plugin/cordis.patch.yml

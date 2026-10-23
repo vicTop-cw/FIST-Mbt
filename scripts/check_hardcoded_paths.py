@@ -71,12 +71,16 @@ PATTERNS = [
 ]
 
 
-def current_face(root: Path) -> list[str]:
-    """git 跟踪面里属于「当前面」的文件（正斜杠相对路径）。取不到 git 返回空。"""
+def current_face(root: Path, env=None) -> list[str]:
+    """git 跟踪面里属于「当前面」的文件（正斜杠相对路径）。取不到 git 返回空。
+    env=None 读宿主（live 正确语义）；selftest 传 isolated_git_env()——R46 给本尺的 git 写调用
+    接了隔离，但 **ls-files 这条读调用漏了**：钩子环境 GIT_DIR 会把它引到宿主索引，
+    selftest 拿宿主文件清单去沙箱目录逐个 is_file() ⇒ 全读不到 ⇒ probs 空 ⇒ C1 误红/假绿摇摆。"""
     try:
         out = subprocess.run(
             ["git", "-C", str(root), "ls-files", "-z"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
+            env=env,
         )
     except Exception:
         return []
@@ -97,11 +101,27 @@ def current_face(root: Path) -> list[str]:
 
 
 def scan(root: Path, files: list[str]) -> list[str]:
-    """逐文件逐行找机器身份 token。返回 `rel:lineno: 命中词` 形状的违例清单。"""
+    """逐文件逐行找机器身份 token。返回 `rel:lineno: 命中词` 形状的违例清单。
+
+    两面（R6 重加 D 面结构锁——main 吸收普查尺时把它吞了，导致 F:/ 活雷再入跟踪面无人拦）：
+      · A 面（词表）：本机身份 token（工程目录名 / 家目录）。只认已知 token，**会漏未知机器的根**
+        （F:/AI/Fist-Mbt 复发实锤——这就是光靠词表防不住回归的原因）。
+      · D 面（结构锁，与盘符形状无关）：
+          D1 `.dsh/**/cordis.patch.yml`（非 .tpl）**被 git 跟踪即违例**——渲染件=本地产物，
+             跟踪真源只有 .tpl；换任何机器根都咬得住；
+          D2 `.dsh/**` 的 YAML 里 args/cwd/env 标量值含盘符绝对路径即违例
+             （`{{占位符}}`/`${变量}` 豁免——模板态的合法形状）。
+    """
     problems: list[str] = []
     for rel in files:
         p = root / rel
         if not p.is_file():
+            continue
+        # D1：渲染件回跟踪面（结构锁，不看内容——先判再 continue，内容面另算）
+        if (rel.startswith(".dsh/") and rel.endswith("cordis.patch.yml")
+                and not rel.endswith(".tpl")):
+            problems.append("%s:1: 渲染件被重新跟踪（`.dsh/**/cordis.patch.yml` 必须是本地产物，"
+                            "跟踪真源只有 .tpl）" % rel)
             continue
         try:
             text = p.read_text(encoding="utf-8", errors="replace")
@@ -113,6 +133,13 @@ def scan(root: Path, files: list[str]) -> list[str]:
                 if m:
                     problems.append("%s:%d: `%s`（当前面不得写出本机身份路径）"
                                     % (rel, i, m.group(0)))
+            # D2：.dsh YAML 的值面盘符锁（key: 形与 - 列表项形都覆盖——args 路径写在 `- 'F:/...'` 行）
+            if rel.startswith(".dsh/") and rel.endswith((".yml", ".yaml")):
+                m2 = re.search(r"(?:^|[\s:\-])['\"]?([A-Za-z]:[\\/]\S*?)['\"]?\s*$", line)
+                if m2 and "{{" not in line and "${" not in line:
+                    problems.append("%s:%d: `.dsh` YAML 值面出现盘符绝对路径 `%s`"
+                                    "（模板只许 {{占位符}}；渲染件不得在跟踪面）"
+                                    % (rel, i, m2.group(1)))
     return problems
 
 
@@ -144,15 +171,27 @@ def selftest() -> list[str]:
         (root / "scripts" / "ok.py").write_text('P = "E:/repo/proj"\n', encoding="utf-8")
         # C4 家目录形状
         (root / "scripts" / "home.py").write_text('H = r"C:\\Users\\victo\\.dsh"\n', encoding="utf-8")
+        # D1 违例：渲染件回跟踪面（结构锁——未知机器根 Z:/ 也咬得住，词表面抓不到）
+        (root / ".dsh" / "fist-mbt-plugin").mkdir(parents=True)
+        (root / ".dsh" / "fist-mbt-plugin" / "cordis.patch.yml").write_text(
+            "args:\n  - 'Z:/someone/tool/launch.mjs'\n", encoding="utf-8")
+        # D1 合法：模板态（.tpl 带占位符）不判
+        (root / ".dsh" / "fist-mbt-plugin" / "cordis.patch.yml.tpl").write_text(
+            "args:\n  - '{{FIST_MBT_CLI}}'\ncwd: '{{FIST_MBT_ROOT}}'\n", encoding="utf-8")
+        # D2 违例：.dsh YAML 值面盘符（key: 形；列表项形由 D1 夹具的 `- 'Z:/...'` 覆盖）
+        (root / ".dsh" / "pkg.yml").write_text("cwd: 'F:/AI/x'\n", encoding="utf-8")
         subprocess.run(["git", "add", "-A"], cwd=root, capture_output=True, env=genv)
 
-        files = current_face(root)
+        files = current_face(root, env=genv)
         cell("C0 扫描面非空", bool(files), "git ls-files 取不到当前面")
         probs = scan(root, files)
         cell("C1 工程目录名→红", any("bad.py:" in p for p in probs), str(probs))
         cell("C2 豁免面不误红", not any("old.md" in p for p in probs), str(probs))
         cell("C3 合成盘符不误红", not any("ok.py" in p for p in probs), str(probs))
         cell("C4 家目录→红", any("home.py:" in p for p in probs), str(probs))
+        cell("D1 渲染件回跟踪→红", any("渲染件被重新跟踪" in p for p in probs), str(probs))
+        cell("D1b 模板态不误红", not any("cordis.patch.yml.tpl" in p for p in probs), str(probs))
+        cell("D2 值面盘符（key/列表形）→红", any("值面出现盘符" in p for p in probs), str(probs))
         # C5 变异台：把扫描面收成「只豁免」⇒ 必空，调用方据空自拒（防「削空=假绿」）
         cell("C5 空扫描面可识别", not current_face(root / "reports") , "应无跟踪文件")
 
@@ -167,8 +206,8 @@ def main(argv: list[str]) -> int:
             for f in fails:
                 print("  - " + f)
             return 1
-        print("SELFTEST OK 硬编码回归锁可红可绿（工程目录名/家目录 必红；"
-              "豁免历史面/合成盘符形状 不误红；空扫描面可识别）")
+        print("SELFTEST OK 硬编码回归锁可红可绿（工程目录名/家目录 必红；D 面结构锁：渲染件回跟踪/"
+              "值面盘符 必红，模板态不误红；豁免历史面/合成盘符形状 不误红；空扫描面可识别）")
         return 0
 
     files = current_face(ROOT)
