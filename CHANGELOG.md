@@ -13,6 +13,20 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.11 (T0r3：核心写入门禁——启动后不得任意落笔) - 2026-10-22
+
+### 本轮性质：写入门禁（fail-closed）+ `store_open` 默认落点归位
+
+- **新增写入门禁**（`src/server/write_gate.mbt`，纯函数三态裁决）
+  - `write_gate(project_dir, rel) → Allow | Reject(reason) | NoProjectDir`
+  - 白名单 = `<target>/.fist-mbt/`、`<target>/fist-mbt/`、`<target>/memory/`、`<target>/reports/`、`<target>/plans/`（均在目标项目内）
+  - Reject：越界路径（绝对路径/盘符/`..`/前导分隔符/白名单外相对路径）；NoProjectDir：`project_dir` 非法（fail-closed）
+  - `write_gate_ok`（纯函数用，Err 即拒）/ `write_gate_audit`（闭包用，拒时自动落一条 `write_gate:reject` 审计）
+- **接线**：`memory_consolidate` / `memory_gc_one` / `memory_gc_all` / `memory_link` / `report_bug` / `github_queue_append` 入口加门（`server` 包纯函数，Err/error-JSON fail-closed）；`selfdrive_init` / `selfdrive_append` / `selfdrive_export_tasks` / `memory_consolidate` / `memory_gc` / `memory_link` / `report_bug` 的 MCP 闭包先过门+落审计（`ops` 包实现不能反向依赖 `server` 包，故在闭包边界收口）
+- **`store_open` 默认落点归位**：不传 `data_dir` 时由原来的 server cwd 根（`"."`）改为 MultiStore 默认 `.fist-mbt/data/`，台账不再落仓库根；实传值仍严格 `data_dir_ok` 校验
+- **测试**（`src/server/write_gate_wbtest.mbt`，5 条白盒锁 wg_1~wg_5）：三态逐一锁死 + `write_gate_ok` 形态 + `write_gate_audit` 越界必落审计
+- **验证**：`moon check` 零错误；blackbox 577/577、whitebox 792 中仅 `src\engine` 28/29（**预存在**，未触碰）、internal 11/11
+
 ## v0.3.10 (分布式文件锁系统：新增 4 个锁工具 + 双后端) - 2026-10-11
 
 ### 本轮性质：多 agent 并发编辑冲突预防——分布式文件锁系统

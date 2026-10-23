@@ -273,6 +273,11 @@ pub fn report_bug(
       "（合法值：critical/high/medium/low；缺省 medium。BUG-88：闭集必须等于抬头文法）",
     )
   }
+  // T0r3 写入门禁：越界 fail-closed，绝不落笔
+  match write_gate_ok(project_dir, "memory/bugs.md") {
+    Ok(_) => ()
+    Err(e) => return Err(e)
+  }
   mem_ensure_dir(mem_dir(project_dir))
   let path = bug_file_path(project_dir)
   let old = match mem_read(path) {
