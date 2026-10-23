@@ -129,7 +129,7 @@ node _build/js/debug/build/cmd/cli/cli.js serve   # 必须带 serve：裸跑只�
 FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
 
 # 4. CLI 通用网关（一源四态·CLI 形态）
-python scripts/fist.py list-tools                     # 列出 166 个工具（实测 tools/list）
+python scripts/fist.py list-tools                     # 全量工具名清单（数量以本命令末行为准，不抄数——抄一次就是下一次漂移）
 python scripts/fist.py call project_standards          # AI 开发规范
 python scripts/fist.py call store_open --namespace scratch --scratch true
 python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path":"moon.mod","contains":"vicTop-cw"}]'
