@@ -235,6 +235,46 @@ pub fn classify_cli_failure(error : String) -> CliFailure {
 }
 
 ///|
+/// 换模型重试的准入判据（P1.1 fallback 链）。返回 `(值得重试?, 为什么)`。
+///
+/// 为什么要有这一格：`executor_run_impl` 的重试环过去只看「没成功且还有候选」，
+/// 于是三类**与模型无关**的失败也会被拿去换模型——`NOT_EXECUTABLE` 是 PATH 问题，
+/// 换哪个模型都是同一条 ENOENT，重试 N 遍就把同一次失败重跑 N 遍、还白记 N 次冷却账；
+/// `DISPATCH_FAILED` 坏的是本侧（进程没调度起来/结果 JSON 没解析出来），模型根本没跑过，
+/// 给它记「不可靠」是把尺子的问题算到执行器头上；`TIMEOUT` 是时长预算，换模型会带着
+/// 一份**全新的** `timeout_ms` 把整单重跑，而第一跑的产物很可能已经在盘上
+/// （2026-10-23 实测：atomcode 跑满 900s 后产物与 diff 齐全）。
+/// 这三类该给的是可处置处方（修 PATH / 立案本侧 / 提预算或拆小），不是第 N 次同样的调用。
+pub fn cli_retry_policy(kind : CliFailure) -> (Bool, String) {
+  match kind {
+    NotExecutable =>
+      (
+        false, "NOT_EXECUTABLE 不换模型重试：可执行文件不在 PATH 与模型无关，换候选只会把同一条失败重跑一遍，还会白记一次冷却账。先修安装/PATH（或注册绝对路径）。",
+      )
+    DispatchFailed =>
+      (
+        false, "DISPATCH_FAILED 不换模型重试，也不给模型记账：坏的是本侧调度或结果解析，模型根本没跑起来。请把 error 原文连同本回执立案到 src/server。",
+      )
+    Timeout =>
+      (
+        false, "TIMEOUT 不换模型重试：这是时长预算问题，换候选会带一份全新的 timeout_ms 把整单重跑，而第一跑的产物很可能已落盘。先按文件系统验证，再决定提 timeout_ms 或把任务拆小。",
+      )
+    NonZeroExit =>
+      (
+        true, "NONZERO_EXIT 换模型重试：进程跑完了但答案不合格，换候选模型有意义。",
+      )
+    SignalKilled =>
+      (
+        true, "SIGNAL_KILLED 换模型重试：进程被信号终止/崩溃，按 P1.1 记一次不可靠并试下一候选。",
+      )
+    Unknown =>
+      (
+        true, "UNKNOWN 换模型重试：归不出类，按既有 P1.1 保守处理（宁试一次候选，也不静默成功）。",
+      )
+  }
+}
+
+///|
 /// 按归因档给出**可处置**的提示。只有 `NotExecutable` 才配说「可执行文件不可用」
 /// （那正是 `executor_missing_hint` 的原有职责，原样复用不改字）。
 pub fn cli_failure_hint(name : String, kind : CliFailure) -> String {
