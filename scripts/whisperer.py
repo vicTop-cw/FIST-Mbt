@@ -22,9 +22,9 @@ if hasattr(sys.stderr, "reconfigure"):
 ROOT = Path(__file__).resolve().parent.parent
 EXC = ("_build", "temp", ".git", "node_modules")
 
-def run(cmd, cwd=None, capture=True):
+def run(cmd, cwd=None, capture=True, timeout=None):
     r = subprocess.run(cmd, cwd=cwd or ROOT, capture_output=capture, text=True, encoding="utf-8",
-                       errors="replace", env=moon_env())
+                       errors="replace", env=moon_env(), timeout=timeout)
     return r
 
 def sh(*args, cwd=None):
@@ -289,18 +289,26 @@ def selftest():
     #   (b) 红要自己说清原因：只印 rc=N 等于把「我没量到」和「下游坏了」混成一个红，
     #       人得自己去猜（本项目「红着没人读」的起点就是这个）。这里印末行 + 提示；
     #   (c) rc=2 是 DEGRADED（下游判据拒绝出数），既不是绿也不是"代码坏了"，单列一档。
-    r = run(["python", "scripts/fist-gate.py", "--scan"], cwd=ROOT)
-    tail = ([l for l in ((r.stdout or "") + (r.stderr or "")).splitlines() if l.strip()] or ["(无输出)"])[-1].strip()
-    if r.returncode == 0:
-        print("  ✅ G1 fist-gate.py --scan 正常")
-    elif r.returncode == 2:
-        print(f"  ⚠ G1 fist-gate.py --scan DEGRADED rc=2：{tail[:120]}")
-        print("      （下游判据自己拒绝出数，不是本脚本坏了；先修下游再复检）")
-    else:
-        print(f"  ❌ G1 fist-gate.py --scan rc={r.returncode}：{tail[:160]}")
-        if "FileNotFoundError" in tail or "No such file" in tail:
-            print("      提示：常见根因在 **git worktree** 里 `.git` 是文件而非目录；"
-                  "scan 已改用 `git rev-parse --absolute-git-dir`，若仍红请看上面的 traceback")
+    # G1 网络隔离（TASK-203）：--scan 默认 `git fetch --all`，网络/锁竞争可把 subprocess 挂死、
+    # 拖累整份电池超时。自检面改走 --offline（只用本地缓存远端引用）并加 120s 硬限；
+    # 真超时按 DEGRADED(2) 报并给出指向，不挂死调用方。
+    try:
+        r = run(["python", "scripts/fist-gate.py", "--scan", "--offline"], cwd=ROOT, timeout=120)
+        tail = ([l for l in ((r.stdout or "") + (r.stderr or "")).splitlines() if l.strip()] or ["(无输出)"])[-1].strip()
+        if r.returncode == 0:
+            print("  ✅ G1 fist-gate.py --scan（--offline，只用本地缓存远端引用）正常")
+        elif r.returncode == 2:
+            print(f"  ⚠ G1 fist-gate.py --scan DEGRADED rc=2：{tail[:120]}")
+            print("      （下游判据自己拒绝出数，不是本脚本坏了；先修下游再复检）")
+        else:
+            print(f"  ❌ G1 fist-gate.py --scan rc={r.returncode}：{tail[:160]}")
+            if "FileNotFoundError" in tail or "No such file" in tail:
+                print("      提示：常见根因在 **git worktree** 里 `.git` 是文件而非目录；"
+                      "scan 已改用 `git rev-parse --absolute-git-dir`，若仍红请看上面的 traceback")
+            rc = 2
+    except subprocess.TimeoutExpired:
+        print("  ⚠ G1 fist-gate.py --scan 超时（120s 硬限）——改用 --offline 后仍挂；"
+              "DEGRADED rc=2，先查 git 锁/网络再复检")
         rc = 2
     # G2: HEAD 安全门逻辑 import 不崩
     try:

@@ -396,8 +396,10 @@ def selftest():
 if __name__ == "__main__":
     if "--selftest" in sys.argv[1:]: sys.exit(selftest())
     if "--scan" in sys.argv[1:]:
-        sys.exit(scan(ROOT)[0])
-    if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist-gate.py [--selftest|--scan]")
+        # --offline（TASK-203）：跳过 fetch，只用本地已缓存的远端引用做普查。
+        # fetch 会阻塞（网络/锁），自检面不该由判据把调用方挂死。
+        sys.exit(scan(ROOT, do_fetch=("--offline" not in sys.argv[1:]))[0])
+    if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist-gate.py [--selftest|--scan [--offline]]")
     sys.exit(gate(ROOT))
 # -*- coding: utf-8 -*-
 """scripts/fist-gate.py - unified gate chain (merge_markers/fmt/build/ps_encoding/store_path) + --scan branch census. rc: 0=pass/scan-output 1=fail 2=degraded."""
@@ -702,8 +704,10 @@ def selftest():
 if __name__ == "__main__":
     if "--selftest" in sys.argv[1:]: sys.exit(selftest())
     if "--scan" in sys.argv[1:]:
-        sys.exit(scan(ROOT)[0])
-    if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist-gate.py [--selftest|--scan]")
+        # --offline（TASK-203）：跳过 fetch，只用本地已缓存的远端引用做普查。
+        # fetch 会阻塞（网络/锁），自检面不该由判据把调用方挂死。
+        sys.exit(scan(ROOT, do_fetch=("--offline" not in sys.argv[1:]))[0])
+    if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist-gate.py [--selftest|--scan [--offline]]")
     sys.exit(gate(ROOT))
 # -*- coding: utf-8 -*-
 """scripts/fist-gate.py - unified gate chain (merge_markers/fmt/build/ps_encoding/store_path) + --scan branch census. rc: 0=pass/scan-output 1=fail 2=degraded."""
@@ -973,8 +977,10 @@ def selftest():
 if __name__ == "__main__":
     if "--selftest" in sys.argv[1:]: sys.exit(selftest())
     if "--scan" in sys.argv[1:]:
-        sys.exit(scan(ROOT)[0])
-    if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist-gate.py [--selftest|--scan]")
+        # --offline（TASK-203）：跳过 fetch，只用本地已缓存的远端引用做普查。
+        # fetch 会阻塞（网络/锁），自检面不该由判据把调用方挂死。
+        sys.exit(scan(ROOT, do_fetch=("--offline" not in sys.argv[1:]))[0])
+    if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist-gate.py [--selftest|--scan [--offline]]")
     sys.exit(gate(ROOT))
 # -*- coding: utf-8 -*-
 """scripts/fist-gate.py - unified gate chain (merge_markers/fmt/build/ps_encoding/store_path) + --scan branch census. rc: 0=pass/scan-output 1=fail 2=degraded."""
@@ -1379,6 +1385,8 @@ def selftest():
 if __name__ == "__main__":
     if "--selftest" in sys.argv[1:]: sys.exit(selftest())
     if "--scan" in sys.argv[1:]:
-        sys.exit(scan(ROOT)[0])
-    if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist-gate.py [--selftest|--scan]")
+        # --offline（TASK-203）：跳过 fetch，只用本地已缓存的远端引用做普查。
+        # fetch 会阻塞（网络/锁），自检面不该由判据把调用方挂死。
+        sys.exit(scan(ROOT, do_fetch=("--offline" not in sys.argv[1:]))[0])
+    if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist-gate.py [--selftest|--scan [--offline]]")
     sys.exit(gate(ROOT))
