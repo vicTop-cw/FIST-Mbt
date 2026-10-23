@@ -17,6 +17,13 @@ R133 实测它被反复「整文件追加给自己」放大到 **91 MB / 25770 �
 退出码：0=PASS；1=有违例（逐条点名文件与重复块）；
         2=判据无法自证（memory 目录不存在 / 一份每日日志都没枚举到，缺样本＝没测，绝不报绿）；
         4=尺子自己坏了（未捕获异常，BUG-369 契约）。
+空宇宙特例（788c5823 既成策略）：`memory/YYYY-MM-DD.md` 自该 commit 起被 `.gitignore`
+（`memory/2026-*.md`）整体剔出 git 跟踪面，故干净 checkout（=CI 面）上一份日日志都没有，
+**不是坏环境而是既定策略的自然结果**。此时若判据能证明「日日志缺席跟踪面」是策略
+（仓库根 `.gitignore` 确有匹配 `memory/YYYY-MM-DD.md` 的规则），走 **空宇宙豁免：rc=0**，
+并打一行明确说明——不判红、也不拿「没读到」当「对上了」。锚点不成立（无该规则）才
+回真·无法自证（rc=2）。豁免只对「确实一份都没有」生效：`memory/` 下一旦出现任何一份
+日日志，立刻退回真正的去重面，重复块照样 rc=1，绝不假绿。
 用法：python scripts/check_memory_log_dedupe.py [--root <目录>] [--selftest] [--fix]
   --fix  按首次出现顺序原地去重（每块保留一份，CRLF 原样保留）；写后复验唯一块集合不变，
          任何丢失按 rc=4 自拒。只对 `YYYY-MM-DD.md` 生效，绝不碰 bugs.md 等账本。
@@ -48,6 +55,86 @@ def list_daily(root):
         return None
     return sorted(os.path.basename(p) for p in glob.glob(os.path.join(root, '*.md'))
                   if DAILY_RE.match(os.path.basename(p)))
+
+
+def daily_log_ignored_by_gitignore(scan_root):
+    """空宇宙豁免的**策略锚点**：`.gitignore` 是否确有规则匹配 `memory/YYYY-MM-DD.md`。
+
+    788c5823 起日日志被 `memory/2026-*.md`（及同类 `memory/20??-*.md`）剔出 git 跟踪面。
+    判定规则：从**扫描根自身**向上逐层找 `.gitignore`（就近优先，直到根盘/无父目录为止）。
+    这既让「干净 checkout 的默认 `memory/`」能找到仓库根那份声明，也让一个**独立临时面**
+    不会被仓库根的规则误豁免——锚点必须「覆盖这个扫描面」才算成立。
+    锚点不成立＝空扫描面就是真·无法自证，必须 rc=2。只读 `.gitignore`，不调 git、不写文件。
+    """
+    cur = os.path.abspath(scan_root)
+    while True:
+        gi = os.path.join(cur, '.gitignore')
+        if os.path.isfile(gi):
+            if _gitignore_ignores_daily(gi):
+                return True
+        nxt = os.path.dirname(cur)
+        if nxt == cur:
+            return False
+        cur = nxt
+
+
+def _gitignore_ignores_daily(gi_path):
+    """单份 `.gitignore` 里是否有规则匹配 `memory/YYYY-MM-DD.md`。"""
+    try:
+        with open(gi_path, 'r', encoding='utf-8', errors='replace') as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return False
+    probe = 'memory/2026-01-01.md'
+    for raw in lines:
+        line = raw.rstrip()
+        if not line or line.startswith('#'):
+            continue
+        # 去掉未转义 `#` 起的注释（转义首字符保留）
+        out, hash_esc = [], False
+        for c in line:
+            if c == '\\':
+                hash_esc = True
+                continue
+            if c == '#' and not hash_esc:
+                break
+            out.append(c)
+            hash_esc = False
+        line = ''.join(out).strip()
+        if not line:
+            continue
+        pat = line.lstrip('/')  # 忽略仓库根锚定 `/`：memory/ 本就在根下
+        if pat in ('memory', 'memory/'):
+            return True  # 整目录忽略 ⇒ 覆盖一切日日志
+        if pat.startswith('memory/'):
+            sub = pat[len('memory/'):]
+            if sub == probe[len('memory/'):]:
+                return True
+            if '*' in sub:  # 本仓只用 `*`（如 `2026-*.md`）；`?`/`[]`/`**` 保守按字面
+                if not sub.startswith('*') and not probe[len('memory/'):].startswith(sub.split('*')[0]):
+                    continue
+                if not sub.endswith('*') and not probe[len('memory/'):].endswith(sub.split('*')[-1]):
+                    continue
+                return True
+    return False
+
+
+def empty_universe_verdict(scan_root):
+    """空宇宙三分：`broken`（目录不存在）/ `empty_policy`（策略豁免）/ `empty_unproven`（真失败）。
+
+    返回 (kind, 说明)。有样本时调用方不该走到这里；这里只回答「为什么是空的」。
+    """
+    if not os.path.isdir(scan_root):
+        return 'broken', '扫描目录不存在：%s' % scan_root
+    if daily_log_ignored_by_gitignore(scan_root):
+        return 'empty_policy', (
+            '.gitignore 确有忽略 `memory/YYYY-MM-DD.md` 的规则'
+            '（日日志已剔 git 跟踪，788c5823 既成策略）'
+        )
+    return 'empty_unproven', '扫描面为空且 .gitignore 未证明忽略日日志'
+
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def split_blocks(text):
@@ -107,7 +194,19 @@ def run(root):
         print('FATAL 扫描目录不存在：%s ⇒ 无从判定，绝不报绿' % root)
         return 2
     if not files:
-        print('FATAL 扫描面为空（%s 下一份 YYYY-MM-DD.md 都没枚举到）⇒ 缺样本＝没测' % root)
+        kind, why = empty_universe_verdict(root)
+        if kind == 'empty_policy':
+            print('MEMLOG=empty-universe 空宇宙豁免（rc=0）：%s 下一份 YYYY-MM-DD.md 都没有，'
+                  '且 %s——日日志缺席跟踪面是既定策略的自然结果，'
+                  '不是坏环境、也不是「缺样本＝没测」；不判红、也不拿「没读到」当「对上了」。'
+                  '一旦 %s 下出现任何一份日日志，本尺立刻退回真去重面。'
+                  % (root, why, root))
+            return 0
+        if kind == 'broken':
+            print('FATAL 扫描目录不存在：%s ⇒ 无从判定，绝不报绿' % root)
+            return 2
+        print('FATAL 扫描面为空（%s 下一份 YYYY-MM-DD.md 都没枚举到）且 %s ⇒ 缺样本＝没测，绝不报绿'
+              % (root, why))
         return 2
     viol_n = 0
     for f in files:
@@ -159,8 +258,8 @@ def dedupe_file(path):
 def fix(root):
     files = list_daily(root)
     if files is None or not files:
-        print('FATAL 扫描面不可用（%s）⇒ 不去重' % root)
-        return 2
+        # 空宇宙与目录缺失都交给 run() 判：策略锚点成立则 rc=0 豁免，否则 rc=2 绝不报绿。
+        return run(root)
     for f in files:
         p = os.path.join(root, f)
         before, after = dedupe_file(p)
@@ -223,6 +322,23 @@ def selftest():
         done.append('C6 空面必自拒')
         assert run(os.path.join(d, 'nope')) == 2, 'C7 失败：目录不存在没自拒'
         done.append('C7 目录不存在必自拒')
+
+    with tempfile.TemporaryDirectory() as d:
+        # C9：空宇宙 ≠ 空宇宙豁免——.gitignore 若没忽略日日志（策略锚点不成立），仍 rc=2
+        with open(os.path.join(d, '.gitignore'), 'w', encoding='utf-8') as fh:
+            fh.write('node_modules/\n')  # 无关规则：不构成锚点
+        assert run(d) == 2, 'C9 失败：锚点不成立的空面被误豁免'
+        done.append('C9 锚点不成立不豁免')
+        # C10：锚点成立（.gitignore 确有 memory/20??-*.md）时，空宇宙走豁免 rc=0
+        with open(os.path.join(d, '.gitignore'), 'w', encoding='utf-8') as fh:
+            fh.write('memory/2026-*.md\n')
+        assert daily_log_ignored_by_gitignore(d) is True, 'C10 失败：锚点未识别'
+        assert run(d) == 0, 'C10 失败：锚点成立的空宇宙没豁免'
+        done.append('C10 锚点成立空宇宙豁免 rc=0')
+        # C11：同一临时面一旦放进日日志，立刻退回真去重面——有整块重复仍必红（防假绿）
+        write(d, '2026-01-01.md', BIG + '\n' + BIG)
+        assert run(d) == 1, 'C11 失败：豁免后真重复被放行（假绿）'
+        done.append('C11 有日志仍真去重（假绿反锁）')
 
     print('SELFTEST OK（格子从已执行对照反解：%s）' % ' / '.join(done))
     return 0
