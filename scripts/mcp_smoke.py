@@ -197,7 +197,12 @@ def main():
         print(f"PASS publish → {task_id}")
 
         # Step 3 · get
-        r = rpc(proc, "tools/call", name="get", arguments={"task_id": task_id})
+        # 必须带上建任务时用的同一个 ns：任务落在 ns=NS 的库里，而按 task_id 解析的读类工具
+        # **不带 namespace 时只看 default 库**（本机实测 2026-10-23，main @ 7dd172eb：
+        # no-ns ⇒ `JSON-RPC error: task not found: T0`；带 ns ⇒ 正常返回）。
+        # 这处一直没暴露，是因为更早的崩溃（干净检出缺 `.fist-mbt/data`、SQLite 打不开库直接打死 serve）
+        # 把整条自检挡在 publish 那一步——两个缺陷叠在一起，修掉前一个才露出这一个。
+        r = rpc(proc, "tools/call", name="get", arguments={"task_id": task_id, "namespace": NS})
         got = json.loads(r["result"]["content"][0]["text"])
         if got.get("id") != task_id or got.get("status") != "待领取":
             fail(f"get 未命中或状态异常: {got}")
