@@ -8,9 +8,9 @@
 > **结构级 41 条**（文件存在 + 行号不越界）失配 0；**内容级 40 条**（那一行确实含所声称的记号）失配 0。
 > 状态词表：`已落地` / `部分` / `未开工` / `作废` / `无法取证`（最后一词只在确实拿不到证据时使用，必须写明缺哪一面）。
 >
-> **为什么要对账**：对账前 28 行全标 `[ ]`（未认领），而改判后的分布是 **已落地 8 / 部分 8 / 未开工 9 / 作废 3**
+> **为什么要对账**：对账前 28 行全标 `[ ]`（未认领），而改判后的分布是 **已落地 9 / 部分 8 / 未开工 8 / 作废 3**
 > （从状态列机器计数，非手抄：`grep -cE '^\| (CAF|GUARD|MULTI|WEB|WT|SHIP|POLISH|MISC)-[0-9]+ \|'` = 28）。
-> 已落地那 8 行（GUARD-01/02/03、WT-04、SHIP-03、POLISH-01/06、MISC-01）早已进主线并挂进 CI 与电池。
+> 已落地那 9 行（GUARD-01/02/03、WT-04、SHIP-03、POLISH-01/04/06、MISC-01）：其中 POLISH-04 由副机 R127 本分支落地（待合入），其余早已进主线并挂进 CI 与电池。
 > 本仓对这一形状早有判据（`bug_list` 的
 > `open_with_linked_done`：「账本说没修、任务库说修完了」），但清单面此前没有任何对表机制，所以它能红着没人读。
 > 行数顺带纠正：建单时的口头计数是 22，`grep` 实读编号行是 **28**（Slice 1..8 = 2+3+3+2+7+3+6+2）。
@@ -96,8 +96,8 @@
 | POLISH-01 | README 顶部 3 行内落死一句话卖点 | `docs/polish-readme-slogan` | `已落地` | `README.md:3` 起的首屏 blockquote 即卖点（"AI 自驱式开发的项目管理者……一等的打磨对象只有两件——**自驱**与**递归拆解**"），位于徽章行之前、前 20 行内 | 新 | `docs/polish-plan.md` A | README 前 20 行可见 |
 | POLISH-02 | docs/selfdrive-walkthrough.md 真实运行 trace | `docs/selfdrive-walkthrough` | `部分` | 文档在跟踪面（65 行），`:3` 自述「全部命令/JSON 均为本机 + WSL 实机执行过的真实 trace，非虚构」，§1 有 `selfdrive_*` 真实序列、§2 九态链。**两处不合格**：① 它创建于 `88a781f7`（2026-09-24，早于本清单），不是「从主机跑完的 trace 复制」这一单；② `docs/selfdrive-walkthrough.md:56` 仍写「**148 项测试** JS+Native 双端全绿」，而实测总数早已前进 ⇒ 这份 trace 的读数陈旧，属"文档即实现"律下的活口 | 新 | 同上 B | 从主机跑完的 trace 复制（副机无 FIST-Mbt MCP server 活库） |
 | POLISH-03 | CI native job 去掉 continue-on-error（BUG-133 闭环） | `fix/native-ci-green` | `部分` | **测试臂已收紧**：`.github/workflows/ci.yml:409` 的 `Test (native)` 无 `continue-on-error`，`:410` 逐字写「退出码照原样退出（exit `$rc`，不加 continue-on-error）」，红只补 `::error::` 注解；`fist-ci.yml` 同规按 rc 分档退出。账本侧 `memory/bugs.md:2595` BUG-133 抬头已是 `FIXED`。**release 臂不能摘**：`scripts/check_release_asset_names.py:257` 的 R8 判据**反向要求** `build-native-linux` 必须带 `continue-on-error: true`（`.github/workflows/release.yml:105`/`:140`），摘了那把尺就红。其余残留 `continue-on-error`（`.github/workflows/ci.yml:57`/`:114`/`:171`/`:469`）分属计划落点棘轮观测臂、fmt 门、公网安装 e2e 观测臂，都不是本单点名对象 ⇒ 字面「CI native job 去掉 coe」只能达成一半，验收「干净树 `moon test --target native -j 1` 全绿」需 `git archive HEAD` 真跑才能判，本单未跑 | BUG-133 | 同上 C | 干净树 `moon test --target native -j 1` 全绿 |
-| POLISH-04 | 环境要求（Node≥24 / moon ≥0.1.20261016）移到 README 最显眼处 | `docs/readme-env-bold` | `未开工` | 三格都不满足：① `README.md:216` 的「环境要求」仍在正文中段（全文 288 行，位于末段），未前移；② 全文 `⚠` 计数 0，无强调标记；③ **版本地板自相矛盾**——`README.md:218` 写「MoonBit ≥ 0.1.20260827」，而 AGENTS.md「Tooling」与本仓钉版要求 **≥ 0.1.20261016**（`is` 模式匹配表达式依赖此版）。照 README 装环境的 agent 会拿到编不过主线代码的工具链 ⇒ 这一单优先级高于本 Slice 其余项 | 新 | 同上 D | README "环境要求"节加 ⚠️ + 版本号 |
-| POLISH-05 | docs/known-boundaries.md 主动自曝 node:sqlite 实验警告 + native 配置复杂度 | `docs/known-boundaries` | `部分` | 指定文件不在跟踪面（`git ls-files docs` 无 `known-boundaries`）。**内容其实已在规范面**：`AI-DEVELOPMENT-STANDARD.md:104` 的 `## 7. 已知边界`（含 native/BUG-133/Node≥24 权威门槛）+ `README.md:222-227` 的同款自曝 ⇒ 本单剩的是「独立可点名的文件 + 30-50 行摘要」这一层，不是从零写自曝；动手前先裁决是否该由 §7 拆分，别造第二个真源 | 新 | 同上 E | 新文件 30-50 行 |
+| POLISH-04 | 环境要求（Node≥24 / moon ≥0.1.20261016）移到 README 最显眼处 | `docs/readme-env-bold` | `已落地` | 三格已按验收落地：① 环境要求节前移到首屏引言之后、`一源四态`之前（`README.md:20`「环境要求」）；② 节标题带 ⚠️（全文仅此一处）；③ 版本地板改为 `README.md:22`（「MoonBit ≥ 0.1.20261016」），并写明 `is` 模式匹配表达式与 `is_ok`/`is_err` 被移除的由来，与 AGENTS.md「Tooling」一致。同批补两条照 README 装环境会踩的坑：Node ≥ 24 的 `returnArrays` 退化、Windows 上 `node.cmd` 垫片吞引号（BUG-380）。顺带把测试读数 1382 同步到实测 1387（19 条声明，`check_test_sync` 现读 rc=0） | 新 | 同上 D | README "环境要求"节加 ⚠️ + 版本号 |
+| POLISH-05 | docs/known-boundaries.md 主动自曝 node:sqlite 实验警告 + native 配置复杂度 | `docs/known-boundaries` | `部分` | 指定文件不在跟踪面（`git ls-files docs` 无 `known-boundaries`）。**内容其实已在规范面**：`AI-DEVELOPMENT-STANDARD.md:104` 的 `## 7. 已知边界`（含 native/BUG-133/Node≥24 权威门槛）+ `README.md:27`（「JS 后端」）+ `README.md:28`（「Native 后端」）的同款自曝 ⇒ 本单剩的是「独立可点名的文件 + 30-50 行摘要」这一层，不是从零写自曝；动手前先裁决是否该由 §7 拆分，别造第二个真源 | 新 | 同上 E | 新文件 30-50 行 |
 | POLISH-06 | **拳头 Logo** + assets/ + gen_plugins 加 assets 拷贝步骤 | `feature/fist-logo-assets` | `已落地` | `assets/fist-logo.svg` + `assets/README.md` 在跟踪面；`scripts/gen_plugins.py:316` 定义 `copy_assets()`（按字节复制、不做占位符渲染）并在 `:521` 作为投影末步调用；产物四宿主齐全：`plugins/{atomcode,claude,codearts,deepseek-harness}/assets/fist-logo.svg` | 新 | `docs/improvement-plan-20261010.md` §2.2 | assets/fist-logo.svg 存在 + plugins/*/assets/ 拷贝 |
 
 ---
