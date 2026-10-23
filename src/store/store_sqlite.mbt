@@ -2882,6 +2882,10 @@ pub fn SqliteStore::agents_acl_ensure(
   ns~ : String,
   now~ : String,
 ) -> Result[Unit, String] {
+  // `now` 是公开契约的一部分（与 agents_acl_grant 同形，调用方统一传时刻），
+  // 但 agent_acl 表没有 created_at 列 —— 默认 ACL 只断言"存在即 fail-closed"，
+  // 首次写入时刻不是判据面。保留参数不破坏调用面，此处显式消费掉。
+  ignore(now)
   match self.db {
     None => Err("sqlite store 未打开")
     Some(db) => {
