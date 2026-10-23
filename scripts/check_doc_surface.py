@@ -874,6 +874,32 @@ def j14_tool_count_claims():
     return problems
 
 
+def j18_quickstart_tool_count_problems(readme_text, n):
+    """J18（2026-10-24 R41 新增）：README「快速开始」里 `fist.py list-tools` 那一行的注释若抄了
+    工具数，必须等于实测。
+
+    为什么单开这一格：`check_tools_sync` 的声明形状是窄口径（`N 个 MCP 工具` / `工具 N 个` /
+    `N 工具注册`），而 README 快速开始写的是「列出 **166** 个工具（实测 tools/list）」——一形不匹配
+    ⇒ 真源 170、注释 166、命令实跑 152 三者各说各话，两把尺全绿。**抄数必漂**，所以这一格的口径是
+    「要么别写数、要么写对数」。
+    """
+    if not readme_text:
+        return []
+    problems = []
+    for line in readme_text.splitlines():
+        if "fist.py list-tools" not in line:
+            continue
+        for m in re.finditer(r"(?<![\d.])(\d{2,4})\s*个工具", line):
+            got = int(m.group(1))
+            if got != n:
+                problems.append(
+                    "J18 README 快速开始的 `fist.py list-tools` 注释写「%d 个工具」，实测 %d ⇒ "
+                    "抄数必漂：改成不写数（『数量以本命令末行为准』）或写对 %d"
+                    % (got, n, n)
+                )
+    return problems
+
+
 # ---- J17 BACKLOG 现状段计数必须点名真源（R175 把「120 工具 / 442 测试」撤成指针，本条钉住它不复发）----
 RE_J17_COUNT = re.compile(r"(?<![\dA-Za-z.:/-])(\d{2,5})\s*(?:个)?\s*(?:条|项)?\s*(?:工具|测试|用例)")
 RE_J17_POINTER = re.compile(r"(真源|single source|check_tools_sync|check_test_sync|check_badge|server\.mbt|徽章)")
@@ -1619,7 +1645,22 @@ def main(argv):
     problems += j13_release_status_consistency()
     problems += j14_tool_count_claims()
     problems += j15_docs_date_prefix_consistency()
-    problems += j17_backlog_anchor_count_consistency(BACKLOG)
+    # J18（README 快速开始的工具数注释 == 实测，R41）：三格——抄错数必红 / 不写数不误红 /
+    # 真实现状面不许误红（先判尺子，再判被测）。
+    bad18 = "python scripts/fist.py list-tools   # 列出 166 个工具（实测 tools/list）\n"
+    if not any("J18" in p for p in j18_quickstart_tool_count_problems(bad18, 170)):
+        fails.append(
+            "J18 抓不到『快速开始注释抄错工具数』→ 真源 170、注释 166、命令实跑 152 会各说各话"
+        )
+    ok18 = "python scripts/fist.py list-tools   # 全量工具名清单（数量以本命令末行为准，不抄数）\n"
+    if j18_quickstart_tool_count_problems(ok18, 170):
+        fails.append("J18 对『不写数』的正解误红（恒红判据不可信）")
+    j18_real = j18_quickstart_tool_count_problems(
+        README.read_text(encoding="utf-8") if README.exists() else "", 170
+    )
+    if j18_real:
+        fails.append("J18 在真实现状面上就红了（先判尺子，再判被测）：" + j18_real[0])
+        problems += j18_quickstart_tool_count_problems(readme_txt, n)
     problems += j17_toolchain_floor_consistency()
 
     if problems:
