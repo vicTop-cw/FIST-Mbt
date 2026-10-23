@@ -86,8 +86,8 @@ def _is_own_worktree(dirpath):
     为什么不能靠 `ls-files` 抛异常：Git 2.x 在非仓目录里 `ls-files` 是**不报错**的——
     它把当前目录当隐式工作树（`--cached` 回空、`--others` 照列未跟踪件），于是旧版
     `_sandbox_ok` 的 `try/except RuntimeError` 永远接不住「这里根本不是仓」。
-    实测（M4 变异格暴露）：`C:\\Users\\victo\\AppData\\Local\\Temp\\<dir>` 这类目录会
-    向上命中祖先仓（`C:/Users/victo`），`ls-files` 全部 rc=0 ⇒ 自证格成了装饰。
+    实测（M4 变异格暴露）：`C:\\Users\\<user>\\AppData\\Local\\Temp\\<dir>` 这类目录会
+    向上命中祖先仓（`C:/Users/<user>`），`ls-files` 全部 rc=0 ⇒ 自证格成了装饰。
     判据改成「`--show-toplevel` == 夹具自身路径」，才对「读不到 git 面」真正发红。
     """
     rc, out = _git_out(dirpath, "rev-parse", "--show-toplevel")

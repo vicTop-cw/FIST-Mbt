@@ -17,7 +17,7 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-PROJ = r"E:\IDEProjects\AI\FIST-Mbt"
+PROJ = r"E:\proj\AI\FIST-Mbt"
 JS = os.path.join(os.environ["LOCALAPPDATA"], "FIST-Mbt", "fist-mbt.js")
 PROTOCOL = "2026-07-28"
 
