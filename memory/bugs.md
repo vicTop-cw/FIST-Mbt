@@ -6647,3 +6647,11 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - summary: [guard] check_memory_log_size.py——memory 失控追加的闸
 - detail: 新增 `scripts/check_memory_log_size.py` 判据：限制 `memory/*.md` 体积，防无人值守自驱下 memory 日志无限追加（commit ad5d38df）。
 - 注: 回填条目——原 commit 手写 BUG-399 未走 report_bug（同一 commit 与 BUG-398 共用）。
+
+
+## BUG-401 [2026-10-23T16:24:46Z] [medium] OPEN
+- summary: [agent-fingerprint] `current_pid_token()` 契约与实现不符——注释「进程启动即固定一次，生命周期内不变」，实现却每次调用重取 `@env.now()`，秒级漂移致 `pid_bound=1` 误报换实例
+- detail: `src/server/server.mbt` 的 `current_pid_token()` 注释声称生命周期内不变，函数体却每次调用都取当前时间戳。同一进程内 `agent_touch_first_seen` 注册后过几秒，`agent_write_gate` 的 `current_pid` 就与注册时不同 ⇒ `agents_acl_check` 的 `pid_bound=1` 分支误报「ACL 绑定旧进程实例（pid 已换）」把合法写操作拒掉——安全门自己把好人挡门外。测试面 `store_sqlite_agents_wbtest.mbt` 恒传硬编码 `current_pid`（123/999），这条漂移零覆盖，注释与实现的双重违约无人钉。
+- 修法：首次调用固化缓存（MoonBit 顶层不支持 `let mut`，用 `Array[Int32?]` 单元素容器，`None` = 未固化）。新增 `src/server/pid_token_wbtest.mbt` 两条白盒锁：① 首次调用填缓存 ② 后续调用复用同一值。还原原版后该测试文件编译即败（`cached_pid_token` 未定义）⇒ 契约破坏可被钉住。
+- 实测：`python scripts/moon_test_env.py src/server` → Total tests 387 / passed 387 / failed 0（385 原有 + 2 新增）。
+- 关联: T0r5 agent-fingerprint / src/server/server.mbt current_pid_token / src/store/store_sqlite.mbt agents_acl_check
