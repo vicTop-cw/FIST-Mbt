@@ -1,0 +1,38 @@
+#!/bin/sh
+# FIST-Mbt pre-push hook — block direct push to gitcode/main (AGENTS.md red line).
+#
+# History (BUG-389(2)): this interception first lived only in the machine-local
+# $GIT_COMMON_DIR/hooks/, hand-installed, and it called a script that was NOT
+# tracked in git. Result: (a) pushing from any worktree died with a python
+# traceback (shell too fragile), and (b) the whole guard's existence depended on
+# one uncommitted file on one machine. This tracked version is the single source
+# of truth; install it with `python scripts/install_git_hooks.py --install`
+# (sets core.hooksPath=.githooks). `scripts/check_push_guard.py` answers whether
+# the interception is actually in force (tracked hook + tracked script + live
+# stdin semantics), so a silent fail-open can no longer rot unnoticed.
+#
+# stdin format from git: <local-ref> <local-oid> <remote-ref> <remote-oid> [<remote-url>]
+# Decision logic lives in scripts/check_direct_push.py (do not duplicate it here).
+set -e
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+SCRIPT="$ROOT/scripts/check_direct_push.py"
+
+PY=python3
+command -v "$PY" >/dev/null 2>&1 || PY=python
+if ! command -v "$PY" >/dev/null 2>&1; then
+  # Without python the guard cannot run — refuse to fail open silently:
+  # a push is exactly the moment the red line needs its checkpoint.
+  echo "[pre-push] error: python/python3 not found — cannot run direct-push guard" >&2
+  echo "[pre-push]        install python, or override deliberately: git push --no-verify" >&2
+  exit 1
+fi
+
+if [ ! -f "$SCRIPT" ]; then
+  # Tracked in normal checkouts; reaching here means a stripped tree.
+  # Loud warning (not silent), and check_push_guard.py flags the untracked state.
+  echo "[pre-push] warning: $SCRIPT missing — direct-push interception INACTIVE on this checkout" >&2
+  exit 0
+fi
+
+"$PY" "$SCRIPT"

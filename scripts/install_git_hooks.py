@@ -7,6 +7,12 @@ TASK-001 里"每个 commit 合入前自动跑 check_merge_markers"这条其实�
 （CI 那步只管推送后）。实测：`git config --get core.hooksPath` 为空。
 本脚本把"装钩子"变成一条可复现命令，并提供 `--check` 供守卫/CI 核对，避免"文件在、没生效"。
 
+BUG-389(2) 追记：`pre-push`（直推 gitcode/main 拦截）此前只存在于**本机手装**的
+`$GIT_COMMON_DIR/hooks/`，安装器不认识它 ⇒ 钩子真源不在仓内、换机/清理即静默退化。
+现收编为 `.githooks/pre-push`（跟踪件）并进 REQUIRED——**安装器即真源**。
+"装了没装"看本脚本 `--check`；"装的内容对不对、拦得住拦不住"看 `scripts/check_push_guard.py`
+（跟踪面 + stdin 语义矩阵，CI-safe）。
+
 用法：
   python scripts/install_git_hooks.py --check     # 只核对（0=已生效 / 1=未生效且可安装 / 2=环境不完整）
   python scripts/install_git_hooks.py --install   # 设置 core.hooksPath=.githooks 并校验可执行位
@@ -21,7 +27,9 @@ if hasattr(sys.stdout, "reconfigure"):
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 HOOKS_REL = ".githooks"
-REQUIRED = ("pre-commit",)
+# BUG-389(2)：pre-push（直推 main 拦截）收编进跟踪面 + REQUIRED——此前它只活在本机手装的
+# $GIT_COMMON_DIR/hooks/，安装器不认识 ⇒ 钩子真源不在仓内，换机/清理即静默退化成 fail-open。
+REQUIRED = ("pre-commit", "pre-push")
 
 
 def git(*args):
