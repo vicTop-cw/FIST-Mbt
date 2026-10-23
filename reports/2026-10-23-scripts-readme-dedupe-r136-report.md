@@ -9,12 +9,12 @@
 
 ## 结果摘要
 
-`scripts/README.md` 被多轮合并反复拼接成 1144 行 / 247 KB：**115 个脚本名对应 341 个登记块**，
-同名登记最多 7 份，读数互相打架（`run_guards.py` 一条并存 26 把尺/24 把尺等四种说法）。
+`scripts/README.md` 被多轮合并反复拼接成 1144 行 / 247 KB：**117 个脚本名对应 341 个登记块**，
+同名最多 11 份（`fist-gate.py`），读数互相打架（`run_guards.py` 一条并存 26 把尺/24 把尺等四种说法）。
 R48 的 `check_doc_dup.py` 用「>150 字的长条目行」判定，短副本全部滤掉，于是这份文件在旧尺下
 **照报绿**；而它只被电池的自动无参格跑到，`--selftest` 与 CI 面都没有它。
 
-本单把 README 重整为 **272 行 / 115 个登记块（一名一块）**，并把尺改成按**整块**判定（含续行、
+本单把 README 重整为 **272 行 / 115 个登记块（117 个脚本名，一行双名的那块保留）**，并把尺改成按**整块**判定（含续行、
 无长度门槛），补 21 格真断言自检，四面接线（电池裸跑+自检 / README 自登记 / BATTERY-REGISTRATION
 锚点 / ci.yml 预检步）。
 
@@ -40,10 +40,12 @@ SELFTEST OK: 21 格（短条目/整块/散文排除/多名字/--fix 整块删与
 rc=0
 ```
 
-- 无损性：修前 115 个名字 → 修后 115 个（配对行 `lesson_selfdrive.py` / `scratch_selfdrive.py`
-  作为一行双名字保留，按名字计 116）；`missing=[]`、`dups={}`、非逐字保留块 `[]`（保留块全部逐字取自原文）。
+- 无损性：修前 117 个名字 → 修后 117 个（配对行 `lesson_selfdrive.py` / `scratch_selfdrive.py`
+  作为一行双名字保留，故块数 115 < 名字数 117）；`missing=[]`、`dups=[]`、非逐字保留块 `[]`（保留块全部逐字取自原文）。
 - `--fix` 在副本上的实测：1144 → 616 行、115 块、0 重名；本单的 272 行是人工重整（分三组 + 历史补记），
   不是机械删除的产物。
+- 推后电池终读（`run_guards.py`，含本单两格）：**格数 69 / 失败 0 / SKIP 5 / 缺执行面 0，rc=0**；
+  其中 `check_doc_dup.py` = `272 行，登记块 115，无重复登记`、`--selftest` = `21 格`。
 - 四面接线现读：`check_battery_count_doc.py` PASS（`rulers=89 ci=43 battery=51 missing=0 gate=59 exempt=27 unclassified=5`）；
   `ci.yml` 新步挂在 `Migrate mooncakes dep manifests` **之前**；`check_ci_step_position.py` 现读仍为
   预存红 `35 > 34`（本单未加一条，步子在 Migrate 前）。
