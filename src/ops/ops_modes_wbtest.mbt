@@ -867,5 +867,5 @@ test "modes: template_probe_path 与 mode_template_path 同根（BUG-375）" {
     assert_eq(probe, root + "/" + rel)
   }
   // 兜底路径语义一致：probe 一定以模板相对路径收尾（可读、可探测）
-  assert_true(probe.ends_with(rel))
+  assert_true(probe.has_suffix(rel))
 }

@@ -69,7 +69,7 @@ test "dc_4 to_json desc_limit 生效、description 被截断" {
   let j = dc_task(long).to_json(desc_limit=20)
   let d = dc_desc_of(j)
   assert_eq(d.contains(dc_long_str("abcdefghij", 40)), false)
-  assert_eq(d.ends_with("…"), true)
+  assert_eq(d.has_suffix("…"), true)
   // 截断后长度应 <= limit + 省略号
   assert_eq(d.length() <= 21, true)
 }
