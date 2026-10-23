@@ -152,7 +152,10 @@ def api(url, token, method="POST", data=None):
 
             "-H", "Accept: application/json", "-H", "Content-Type: application/json"]
 
-    if data is not None: args += ["-d", json.dumps(data, ensure_ascii=False)]
+    # Windows + 中文 body：ensure_ascii=False 让 curl 收到 UTF-8 字节，经 cmd.exe
+    # 转发时按 ACP 编码被拆坏 → GitHub 回 HTTP 400 "Validation Failed"。
+    # 改成 ensure_ascii=True 走纯 ASCII \uXXXX 转义，跨 shell 稳。
+    if data is not None: args += ["-d", json.dumps(data, ensure_ascii=True)]
 
     args.append(url)
 
