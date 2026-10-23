@@ -376,6 +376,127 @@ pub fn FistEngine::store_list_heartbeat_intervals(
 }
 
 ///|
+/// 注册 agent（进程级指纹身份；仅 SQLite 后端可用，内存后端 Err）。
+/// agent_id 由调用方（server 层）以 fnv1a64 指纹计算，store 保持哈希无关。
+pub fn FistEngine::agents_register(
+  self : FistEngine,
+  agent_id~ : String,
+  agent_type~ : String,
+  role~ : String,
+  soldier~ : String,
+  pubkey_fp~ : String,
+  pid~ : Int32,
+  now~ : String,
+) -> Result[Unit, String] {
+  match self.store.sqlite_store() {
+    None => Err("agent registry 仅 SQLite 后端可用")
+    Some(s) =>
+      s.agents_register(
+        agent_id~,
+        agent_type~,
+        role~,
+        soldier~,
+        pubkey_fp~,
+        pid~,
+        now~,
+      )
+  }
+}
+
+///|
+/// 读单个 agent 的持久化身份（无记录 None；仅 SQLite 后端）。
+pub fn FistEngine::agents_get(
+  self : FistEngine,
+  agent_id : String,
+) -> @store.AgentRecord? {
+  match self.store.sqlite_store() {
+    None => None
+    Some(s) => s.agents_get(agent_id)
+  }
+}
+
+///|
+/// 换绑进程实例（server 启动时调用；仅 SQLite 后端）。
+pub fn FistEngine::agents_set_pid(
+  self : FistEngine,
+  agent_id~ : String,
+  pid~ : Int32,
+) -> Result[Unit, String] {
+  match self.store.sqlite_store() {
+    None => Err("agent registry 仅 SQLite 后端可用")
+    Some(s) => s.agents_set_pid(agent_id~, pid~)
+  }
+}
+
+///|
+/// 确保默认 ACL（fail-closed 底线；仅 SQLite 后端）。
+pub fn FistEngine::agents_acl_ensure(
+  self : FistEngine,
+  agent_id~ : String,
+  ns~ : String,
+  now~ : String,
+) -> Result[Unit, String] {
+  match self.store.sqlite_store() {
+    None => Err("agent ACL 仅 SQLite 后端可用")
+    Some(s) => s.agents_acl_ensure(agent_id~, ns~, now~)
+  }
+}
+
+///|
+/// ACL 检查（调用前先 ensure；仅 SQLite 后端）。
+pub fn FistEngine::agents_acl_check(
+  self : FistEngine,
+  agent_id~ : String,
+  ns~ : String,
+  write~ : Bool,
+  current_pid~ : Int32,
+) -> Result[Unit, String] {
+  match self.store.sqlite_store() {
+    None => Err("agent ACL 仅 SQLite 后端可用")
+    Some(s) => s.agents_acl_check(agent_id~, ns~, write~, current_pid~)
+  }
+}
+
+///|
+/// 授权/收权（仅 SQLite 后端）。
+pub fn FistEngine::agents_acl_grant(
+  self : FistEngine,
+  agent_id~ : String,
+  ns~ : String,
+  can_read~ : Bool,
+  can_write~ : Bool,
+  pid_bound~ : Bool,
+  now~ : String,
+  by~ : String,
+) -> Result[Unit, String] {
+  match self.store.sqlite_store() {
+    None => Err("agent ACL 仅 SQLite 后端可用")
+    Some(s) =>
+      s.agents_acl_grant(
+        agent_id~,
+        ns~,
+        can_read~,
+        can_write~,
+        pid_bound~,
+        now~,
+        by~,
+      )
+  }
+}
+
+///|
+/// 陈旧 agent 扫描（仅 SQLite 后端；内存后端返回空）。
+pub fn FistEngine::agents_stale_check(
+  self : FistEngine,
+  cutoff : String,
+) -> Array[@store.AgentRecord] {
+  match self.store.sqlite_store() {
+    None => []
+    Some(s) => s.agents_stale_check(cutoff)
+  }
+}
+
+///|
 /// 登记 Saga 补偿步骤（R92，durable action log；委托给 store 后端）。
 pub fn FistEngine::store_write_saga_action(
   self : FistEngine,

@@ -96,6 +96,13 @@ pub struct FistEngine {
   store : @store.StoreBackend
   registry : @executor.ExecutorRegistry
 }
+pub fn FistEngine::agents_acl_check(Self, agent_id~ : String, ns~ : String, write~ : Bool, current_pid~ : Int32) -> Result[Unit, String]
+pub fn FistEngine::agents_acl_ensure(Self, agent_id~ : String, ns~ : String, now~ : String) -> Result[Unit, String]
+pub fn FistEngine::agents_acl_grant(Self, agent_id~ : String, ns~ : String, can_read~ : Bool, can_write~ : Bool, pid_bound~ : Bool, now~ : String, by~ : String) -> Result[Unit, String]
+pub fn FistEngine::agents_get(Self, String) -> @store.AgentRecord?
+pub fn FistEngine::agents_register(Self, agent_id~ : String, agent_type~ : String, role~ : String, soldier~ : String, pubkey_fp~ : String, pid~ : Int32, now~ : String) -> Result[Unit, String]
+pub fn FistEngine::agents_set_pid(Self, agent_id~ : String, pid~ : Int32) -> Result[Unit, String]
+pub fn FistEngine::agents_stale_check(Self, String) -> Array[@store.AgentRecord]
 pub fn FistEngine::all_subtasks_completed(Self, @core.Task) -> Bool
 pub fn FistEngine::archive(Self, task_id~ : String, by~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::archive_force(Self, task_id~ : String, by~ : String, force~ : Bool, now~ : String) -> Result[@core.Task, String]
