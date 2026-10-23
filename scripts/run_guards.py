@@ -245,6 +245,10 @@ SPECIAL_CASES = [
     #    因为 C9 真面变异格是「再有人抄一份」的唯一机器读数。
     case("check_backlog_yaml_integrity.py"),
     case("check_backlog_yaml_integrity.py", "--selftest"),
+    # ── R133：2026-10-22 日志被整文件自我追加放大到 91MB / 25770 块仅 56 唯一 ──
+    #    手工去重不留机器面就会长回来；去重后裸跑 rc=0，--selftest 8 格含 --fix 无损对照。
+    case("check_memory_log_dedupe.py"),
+    case("check_memory_log_dedupe.py", "--selftest"),
     # ── 兑现（R117）：R111 那一单把 9 条落差逐条核过转 in_review/done，并把尺内棘轮降到 0；
     #    现读 `扫描面=gitcode/main | 落差 0 条 / 上限 0 条` ⇒ 登记的那条红已不成立。
     #    按本文件自订的律「被检内容修好 ⇒ 把期望改回 0」，转回门禁格，依据一起删。
