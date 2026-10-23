@@ -6577,3 +6577,14 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 处置（R55 已落）：新增 `scripts/check_fmt_gate.py` 三档闸（`0` 干净 / **`2` DEGRADED 不可测** / `1` 真 diff），`--selftest` 6 格；已登记索引与守卫电池；AGENTS 提交门禁补口径。实测该闸真跑返回 **rc=2 DEGRADED**（正是期望档）。
 - note: 编号说明——本条最初被我误写成 `BUG-381`，但 `BUG-381` 在主线早已被占（`check_mbti_sync` 泛型盲区，已 FIXED），故另立本编号；R55 的更正提交里写清了这件事。
 - 后续建议: ① 格式门权威面交给 CI（Linux nightly）；② 升级 moon 后先跑 `python scripts/check_fmt_gate.py`，转 `0` 即可把该闸降为普通门禁；③ 与 BUG-330（fmt 世代漂移）一并复核。
+
+## BUG-389 [2026-10-23T04:10:00Z] [critical] OPEN
+- summary: [仓级事故] `memory/2026-10-22.md` 失控追加到 613.31 MB / 3,698,202 行（同一段重复成万次，不同章节仅 51 个）⇒ GitHub 拒收整条 origin 交付线、本地 git OOM；上游已停跟踪该批日记，本笔补第二道防线
+- detail: 实测（2026-10-23，重写前 `gitcode/main` `92d0edba`）：工作树文件 613.31 MB；blob 639,407,674 B；行数 3,698,202；不同章节 **51**；单个 `## R70 …` 标题出现 **180,386 次**；278,383 段块中 **278,280 重复（99.9%）**；历史增长 87.11 → 174.23 → 261.34 → 348.45 → 435.56 → 522.67 → 609.79 MB（每提交约 +87 MB）。
+  两层后果均实测：① `git push origin` 被 GitHub pre-receive 拒——`File memory/2026-10-22.md is 609.79 MB; this exceeds GitHub's file size limit of 100.00 MB` ⇒ 那段时间 origin/master 落后 gitcode/main 18 个提交，且基于该线的分支都推不上 GitHub；② `git worktree add` 直接 `fatal: Out of memory, malloc failed (tried to allocate 639407675 bytes)`。
+  同类更小两处：`memory/2026-10-21.md`（1.15 MB，重复率 83.9%）、`memory/thinking.md`（0.11 MB，54.3%）。
+- 处置（两段，均已落）：
+  ① **上游树面修复**：`788c5823 chore: remove memory diary (25 files, incl. 614MB blob) from git tracking`——把这批日记停止跟踪，并在 `.gitignore` 点名 `memory/2026-*.md` / `memory/thinking.md` / `memory/archive/thinking.archive.md`；**历史也已重写**（`92d0edba` 不再是主线祖先），故 610MB blob 已不在主线对象图里。
+  ② **本笔（第二道防线）**：新增 `scripts/check_memory_log_size.py`——体积 > 2 MB 红；空行分段后完全重复段块占比 > 50% 红（正常日志≈0，事故现场 99.9%），`--selftest` 9 格，rc 0/1/2。作用是防止再有人把日记 `git add` 回来、或换名继续长（`.gitignore` 只管名字，管不住体积）。
+- 本地补救读数（供复盘，不进仓）：三份日志按"空行分段 + 保留首次段块"去重——`2026-10-22.md` 613.31 → 0.23 MB（**章节 51 → 51 零丢失**）、`2026-10-21.md` 1.15 → 0.31 MB（59 → 59）、`thinking.md` 0.11 → 0.04 MB（228 → 228）。
+- note: 本轮我曾把这项修复提在**重写前**的旧基线上（`d359c69b`），会把已停跟踪的 25 份日志 add 回来；已删除该分支的 origin/gitcode/slave 三处远端引用，并在最新主线 `788c5823` 上重做为只含尺+登记+记账的版本。

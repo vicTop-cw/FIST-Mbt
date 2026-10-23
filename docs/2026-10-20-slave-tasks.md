@@ -6,12 +6,12 @@
 > **2026-10-22 逐行对账（副机 R122，对账时点 = 主线 `08e540bf`）**：`状态` 与 `现读证据` 两列是**对账时点的仓内实读**，
 > 不是计划、不是转述——每条都指到 文件:行 或跟踪面文件名，可逐条复核。自证读数由常驻尺
 > `scripts/check_slave_task_list.py` 现网实算（改判之后重跑它取数写回这一行，不许手抄——手抄的两个数
-> 会被 D1/D2 当场判红）：**结构级 57 条**（锚点文件在跟踪面 + 行号不越界，`file:4-10` 这类范围两端都核）
-> 失配 0；**内容级 28 条**（锚点后紧跟的 `（…）` 反引号记号或 `「…」` 逐字引文确实落在那一行）失配 0；
+> 会被 D1/D2 当场判红）：**结构级 56 条**（锚点文件在跟踪面 + 行号不越界，`file:4-10` 这类范围两端都核）
+> 失配 0；**内容级 27 条**（锚点后紧跟的 `（…）` 反引号记号或 `「…」` 逐字引文确实落在那一行）失配 0；
 > **文件级在场 14 条**（只点文件不点行的指认）。
 > 状态词表：`已落地` / `部分` / `未开工` / `作废` / `无法取证`（最后一词只在确实拿不到证据时使用，必须写明缺哪一面）。
 >
-> **为什么要对账**：对账前 28 行全标 `[ ]`（未认领），而改判后的分布是 **已落地 8 / 部分 8 / 未开工 9 / 作废 3**
+> **为什么要对账**：对账前 28 行全标 `[ ]`（未认领），而改判后的分布是 **已落地 9 / 部分 8 / 未开工 8 / 作废 3**
 > （从状态列机器计数，非手抄：`grep -cE '^\| (CAF|GUARD|MULTI|WEB|WT|SHIP|POLISH|MISC)-[0-9]+ \|'` = 28）。
 > 已落地那 8 行（GUARD-01/02/03、WT-04、SHIP-03、POLISH-01/06、MISC-01）早已进主线并挂进 CI 与电池。
 > 本仓对这一形状早有判据（`bug_list` 的
@@ -24,7 +24,7 @@
 
 | # | 任务 | 分支名 | 状态 | 现读证据（对账时点 `08e540bf`） | 主机账本 bug_id | 参考 plan | 验收标准 |
 |---|---|---|---|---|---|---|---|
-| CAF-01 | `executor_run` 成功后 `caf_memory.push` 回写 + caf_dr_6 bad-JSON 降级锁 | `feature/caf-writeback-slice-b` | `部分` | **降级锁 + 路由侧回写已在场**：`src/server/model_router_ops.mbt:115`（`bad_json` 只计数告警、不删不覆盖）+ 白盒锁 `src/server/model_router_ops_wbtest.mbt:749`（caf_dr_6）、`:798`（caf_dr_7 真消耗回写闭合读写环）、`:950`（caf_dr_10 失败执行污染锁）。**执行结果那一半未接**：全仓 `mr_caf_push_evidence` 唯一点用是 `src/server/model_router_ops.mbt:463`（该行即 `mr_caf_push_evidence` 调用点；所在函数 `model_route_impl` 自同文件 :312 起，属路由/记账时刻而非执行结果时刻），而 `executor_run` 通道体内（`src/server/server.mbt:7067` 注册、`:7131` 实现调用，扫 7100-7260 段）出现 0 个 `caf` 引用 ⇒ CAF 记的是「选了哪个模型」，不是「这次执行成没成」 | 新 | `docs/2026-10-17-caf-writeback-task-package.md` Slice B | moon fmt/check/test 全绿；主机 MR 前 run_check |
+| CAF-01 | `executor_run` 成功后 `caf_memory.push` 回写 + caf_dr_6 bad-JSON 降级锁 | `feature/caf-writeback-slice-b` | `部分` | **降级锁 + 路由侧回写已在场**：`src/server/model_router_ops.mbt:139`（`bad_json` 只计数告警、不删不覆盖）+ 白盒锁 `src/server/model_router_ops_wbtest.mbt:750`（caf_dr_6）、`:800`（caf_dr_7 真消耗回写闭合读写环）、`:955`（caf_dr_10 失败执行污染锁）。**执行结果那一半未接**：全仓 `mr_caf_push_evidence` 唯一点用是 `src/server/model_router_ops.mbt:480`（该行即 `mr_caf_push_evidence` 调用点；所在函数 `model_route_impl` 自同文件 :312 起，属路由/记账时刻而非执行结果时刻），而 `executor_run` 通道体内（`src/server/server.mbt:7067` 注册、`:7131` 实现调用，扫 7100-7260 段）出现 0 个 `caf` 引用 ⇒ CAF 记的是「选了哪个模型」，不是「这次执行成没成」 | 新 | `docs/2026-10-17-caf-writeback-task-package.md` Slice B | moon fmt/check/test 全绿；主机 MR 前 run_check |
 | CAF-02 | `CafMemory::to_json` 补充原始 records 字段（R45 缺口） | `feature/caf-raw-records` | `部分` | 指定改动未落：`src/router/router_caf.mbt:220` 起的 `to_json` 只出四个键（`total_records` / `capacity` / `count` / `by_model` 聚合），原始记录面不导出；任务点名的白盒锁 `caf_rr_1` 在 `src/` 全仓 0 命中。**但能力已有旁路**：`src/router/router_caf_persist.mbt:33` 的 `caf_memory_dump` 逐条输出 `"records"` 数组（持久化往返用）⇒ 缺口是展示/快照面，不是数据面，动手前先定「to_json 与 dump 是否该合一」 | 新 | `docs/2026-10-15-fist-mbt-caf-p2d-cold-start-design.md` L248 | 纯计算改动、零 IO；白盒锁 caf_rr_1 |
 
 ---
@@ -33,9 +33,9 @@
 
 | # | 任务 | 分支名 | 状态 | 现读证据（对账时点 `08e540bf`） | 主机账本 bug_id | 参考 plan | 验收标准 |
 |---|---|---|---|---|---|---|---|
-| GUARD-01 | `check_model_auth_no_key`：config_json/HTML 输出禁止 api_key/token 值形状 | `guard/check-model-auth-no-key` | `已落地` | `scripts/check_model_auth_no_key.py` 在跟踪面；CI 步骤 `.github/workflows/ci.yml:279`（"Model-auth-no-key guard"）；电池格 `scripts/run_guards.py:158`（该行即 `check_model_auth_no_key.py`）；`run_guards.py --list` 现读该行 `CI=CI 电池=电池` | 新 | `docs/improvement-plan-20261010.md` §6.2 | 覆盖 ci.yml / HTML / example / default-fist.mcp.json 全扫描面 |
-| GUARD-02 | `check_host_installable`：deepseek-harness 宿主侧真能装 fist-mbt 插件 | `guard/check-host-installable` | `已落地` | `scripts/check_host_installable.py` 在跟踪面；CI 步骤 `.github/workflows/ci.yml:285`（"Host-installable guard"）；`--list` 现读 `CI=CI 电池=电池`（电池面由 `discover_scripts` 自动收录，不是漏接线） | 新 | 同上 | 不新增 CI 时间（一次性 smoke） |
-| GUARD-03 | `check_skill_inject`：plan/claim 传 inject 时 injected_assets 非空才算命中 | `guard/check-skill-inject` | `已落地` | `scripts/check_skill_inject.py` 在跟踪面；CI 步骤 `.github/workflows/ci.yml:291`（"Skill-inject guard"）；电池格 `scripts/run_guards.py:270`（`gated`，带 `fist-mbt.db` 前置）；`--list` 现读 `CI=CI 电池=电池` | 新 | 同上 | 黑盒跑 fist-mbt MCP 自证 |
+| GUARD-01 | `check_model_auth_no_key`：config_json/HTML 输出禁止 api_key/token 值形状 | `guard/check-model-auth-no-key` | `已落地` | `scripts/check_model_auth_no_key.py` 在跟踪面；CI 步骤 `.github/workflows/ci.yml:288`（"Model-auth-no-key guard"）；电池格 `scripts/run_guards.py:160`（该行即 `check_model_auth_no_key.py`）；`run_guards.py --list` 现读该行 `CI=CI 电池=电池` | 新 | `docs/improvement-plan-20261010.md` §6.2 | 覆盖 ci.yml / HTML / example / default-fist.mcp.json 全扫描面 |
+| GUARD-02 | `check_host_installable`：deepseek-harness 宿主侧真能装 fist-mbt 插件 | `guard/check-host-installable` | `已落地` | `scripts/check_host_installable.py` 在跟踪面；CI 步骤 `.github/workflows/ci.yml:294`（"Host-installable guard"）；`--list` 现读 `CI=CI 电池=电池`（电池面由 `discover_scripts` 自动收录，不是漏接线） | 新 | 同上 | 不新增 CI 时间（一次性 smoke） |
+| GUARD-03 | `check_skill_inject`：plan/claim 传 inject 时 injected_assets 非空才算命中 | `guard/check-skill-inject` | `已落地` | `scripts/check_skill_inject.py` 在跟踪面；CI 步骤 `.github/workflows/ci.yml:300`（"Skill-inject guard"）；电池格 `scripts/run_guards.py:283`（`gated`，带 `fist-mbt.db` 前置）；`--list` 现读 `CI=CI 电池=电池` | 新 | 同上 | 黑盒跑 fist-mbt MCP 自证 |
 
 ---
 
@@ -75,7 +75,7 @@
 | WT-01 | claimguard 挂 claim/publish 钩子（已有 src/claimguard/ 库） | `feature/claimguard-hook` | `未开工` | 库在、钩子不在：`may_proceed_full` 命中面只有 `src/claimguard/claimguard.mbt` 与其 wbtest，另有两处**字符串字面量**（`src/server/bugreport_status_wbtest.mbt:480` / `:507` 的 evidence 文本，非调用）；`src/*/moon.pkg` 无一依赖 `claimguard` ⇒ claim/publish 路径 0 个调用点 | 新 | `docs/plan-light-worktree-isolation.md` L33 + L208 | claim/publish 前走 may_proceed_full 预检 |
 | WT-02 | `wt_create` / `wt_status` / `wt_destroy` 三工具（git worktree 生命周期） | `feature/wt-lifecycle-tools` | `未开工` | `wt_create` / `wt_status` / `wt_destroy` 在 `src/`、`scripts/`、`.github/` 三面 0 命中；`src/server/wt_tools.mbt` 不在跟踪面；唯一提及处是 plan 正文 `docs/plan-light-worktree-isolation.md` L158-160 | 新 | 同上 L158-160 | 纯 git 命令封装 + src/server/wt_tools.mbt |
 | WT-03 | sparse cone worktree 创建 + `light-wt` / `light-wt-teardown` shell 脚本 | `feature/wt-sparse-scripts` | `未开工` | `git ls-files` 内 `light-wt*` 0 命中；`sparse` 关键字在 `scripts/`、`src/`、`.github/` 三面 0 命中 ⇒ bash/pwsh 双轨都不存在 | 新 | 同上 L147-149 | bash + pwsh 双轨可用 |
-| WT-04 | e2e_assistant_xproc.py（两进程并发 claim 恰好一成一拒） | `feature/e2e-assistant-xproc` | `已落地` | 脚本在跟踪面且已进电池登记：`scripts/blackbox/e2e_assistant_xproc.py:8`「并发 N 进程同时抢主，跑多轮，任一轮出现 >1 行 is_primary=1 即 FAIL」+ 退出码契约 `:8-12`；`scripts/run_guards.py:475`（该行含 `e2e_assistant_xproc.py`）登记为跨进程端到端探针。**读法注意**：它判的是 `assistant_claim` 抢主互斥（清单原文的 "claim" 即此），若主机要的是**同一任务**并发 claim 一成一拒，那是另一格，需点名再开 | 新 | 同上 L135 | Python 脚本 + 自动化判据 |
+| WT-04 | e2e_assistant_xproc.py（两进程并发 claim 恰好一成一拒） | `feature/e2e-assistant-xproc` | `已落地` | 脚本在跟踪面且已进电池登记：`scripts/blackbox/e2e_assistant_xproc.py:8`「并发 N 进程同时抢主，跑多轮，任一轮出现 >1 行 is_primary=1 即 FAIL」+ 退出码契约 `:8-12`；`scripts/run_guards.py:488`（该行含 `e2e_assistant_xproc.py`）登记为跨进程端到端探针。**读法注意**：它判的是 `assistant_claim` 抢主互斥（清单原文的 "claim" 即此），若主机要的是**同一任务**并发 claim 一成一拒，那是另一格，需点名再开 | 新 | 同上 L135 | Python 脚本 + 自动化判据 |
 | WT-05 | diff-scope 越界检测 + drift-check + merge-predict（CI 守卫） | `guard/check-diff-scope` | `部分` | 三件里有一件有对应物：`scripts/check_slave_mergeability.py:9`「OK / CONFLICT(文件) / CONTAINED（已含于 base）/ EMPTY（无独有提交）四档」（= merge-predict，且在临时 worktree 里真跑 `cherry-pick --no-commit`）。**缺**：`scripts/check_diff_scope.py` 不在跟踪面；drift-check 无对应尺（`goal_drift_check` 是任务语义层，不是文件作用域层）；`run_guards.py --list` 现读该尺 `CI=-` ⇒ 未进 CI | 新 | 同上 L186-189 + L214 | scripts/check_diff_scope.py |
 | WT-06 | lock_acquire 带 worktree_id + lock_status 视图补全 | `feature/lock-wt-bind` | `未开工` | `worktree_id` 在 `src/` 全仓 0 命中 ⇒ `lock_acquire` / `lock_status` 存在但无该参数面 | 新 | 同上 L170-173 + L212 | lock_acquire 新增 worktree_id 参数 |
 | WT-07 | collector 定时回收 + 磁盘水位告警 + watchdog 接线 | `feature/wt-collector` | `未开工` | `collector` / `watermark` / `disk_usage` 在 `src/`、`scripts/`、`.github/` 三面 0 命中；`watchdog_tick` 现有分支是 heal + 自动续轮 + ready_dispatch/autodispatch，不含 worktree 回收 | 新 | 同上 L199-201 + L217 | 定时任务 + watchdog_tick 集成 |
@@ -98,9 +98,9 @@
 |---|---|---|---|---|---|---|---|
 | POLISH-01 | README 顶部 3 行内落死一句话卖点 | `docs/polish-readme-slogan` | `已落地` | `README.md:3` 起的首屏 blockquote 即卖点（"AI 自驱式开发的项目管理者……一等的打磨对象只有两件——**自驱**与**递归拆解**"），位于徽章行之前、前 20 行内 | 新 | `docs/polish-plan.md` A | README 前 20 行可见 |
 | POLISH-02 | docs/selfdrive-walkthrough.md 真实运行 trace | `docs/selfdrive-walkthrough` | `部分` | 文档在跟踪面（65 行），`:3` 自述「全部命令/JSON 均为本机 + WSL 实机执行过的真实 trace，非虚构」，§1 有 `selfdrive_*` 真实序列、§2 九态链。**两处不合格**：① 它创建于 `88a781f7`（2026-09-24，早于本清单），不是「从主机跑完的 trace 复制」这一单；② `docs/selfdrive-walkthrough.md:56` 仍写「148 项测试 JS+Native 在 Windows + WSL(Linux) 双端全绿」，而实测总数早已前进 ⇒ 这份 trace 的读数陈旧，属"文档即实现"律下的活口 | 新 | 同上 B | 从主机跑完的 trace 复制（副机无 FIST-Mbt MCP server 活库） |
-| POLISH-03 | CI native job 去掉 continue-on-error（BUG-133 闭环） | `fix/native-ci-green` | `部分` | **测试臂已收紧**：`.github/workflows/ci.yml:426`（那一行即 `- name: Test (native)`）无 `continue-on-error`，`:427` 逐字写「这一步的红**照原样退出**（exit "$rc"，不加 continue-on-error）」，红只补 `::error::` 注解；`fist-ci.yml` 同规按 rc 分档退出。账本侧 `memory/bugs.md:2595` BUG-133 抬头已是 `FIXED`。**release 臂不能摘**：`scripts/check_release_asset_names.py:257` 的 R8 判据**反向要求** `build-native-linux` 必须带 `continue-on-error: true`（`.github/workflows/release.yml:105`/`:140`），摘了那把尺就红。其余残留 `continue-on-error`（点**步名行**并逐字带出步名——`continue-on-error: true` 那一行四步一模一样、指它等于没指：`.github/workflows/ci.yml:64`「Plan-landing ratchet gate (观测臂：升档待 owner 裁，BUG-367 ④)」、`:113`「Format check (BUG-118：格式门住在权威 CI，不只在狗食轨)」、`:186`「Plan-landing ratchet gate (计划点名落点判定面棘轮，观测臂，BUG-367/BUG-366)」、`:481`「Public install line e2e (BUG-116：文档那条线要真装通，公网侧取证)」）分属计划落点棘轮观测臂、fmt 门、公网安装 e2e 观测臂，都不是本单点名对象 ⇒ 字面「CI native job 去掉 coe」只能达成一半，验收「干净树 `moon test --target native -j 1` 全绿」需 `git archive HEAD` 真跑才能判，本单未跑 | BUG-133 | 同上 C | 干净树 `moon test --target native -j 1` 全绿 |
-| POLISH-04 | 环境要求（Node≥24 / moon ≥0.1.20261016）移到 README 最显眼处 | `docs/readme-env-bold` | `未开工` | 三格都不满足：① `README.md:216` 的「环境要求」仍在正文中段（全文 288 行，位于末段），未前移；② 全文 `⚠` 计数 0，无强调标记；③ **版本地板自相矛盾**——`README.md:218` 写「MoonBit ≥ 0.1.20260827」，而 AGENTS.md「Tooling」与本仓钉版要求 **≥ 0.1.20261016**（`is` 模式匹配表达式依赖此版）。照 README 装环境的 agent 会拿到编不过主线代码的工具链 ⇒ 这一单优先级高于本 Slice 其余项 | 新 | 同上 D | README "环境要求"节加 ⚠️ + 版本号 |
-| POLISH-05 | docs/known-boundaries.md 主动自曝 node:sqlite 实验警告 + native 配置复杂度 | `docs/known-boundaries` | `部分` | 指定文件不在跟踪面（`git ls-files docs` 无 `known-boundaries`）。**内容其实已在规范面**：`AI-DEVELOPMENT-STANDARD.md:104` 的 `## 7. 已知边界`（含 native/BUG-133/Node≥24 权威门槛）+ `README.md:222-227` 的同款自曝 ⇒ 本单剩的是「独立可点名的文件 + 30-50 行摘要」这一层，不是从零写自曝；动手前先裁决是否该由 §7 拆分，别造第二个真源 | 新 | 同上 E | 新文件 30-50 行 |
+| POLISH-03 | CI native job 去掉 continue-on-error（BUG-133 闭环） | `fix/native-ci-green` | `部分` | **测试臂已收紧**：`.github/workflows/ci.yml#- name: Test (native)`（内容锚：该步名在 ci.yml 里唯一）无 `continue-on-error`，`.github/workflows/ci.yml#这一步的红**照原样退出**（exit "$rc"，不加 continue-on-error）（内容锚：该句唯一），红只补 `::error::` 注解；`fist-ci.yml` 同规按 rc 分档退出。账本侧 `memory/bugs.md:2595` BUG-133 抬头已是 `FIXED`。**release 臂不能摘**：`scripts/check_release_asset_names.py:257` 的 R8 判据**反向要求** `build-native-linux` 必须带 `continue-on-error: true`（`.github/workflows/release.yml:105`/`:140`），摘了那把尺就红。其余残留 `continue-on-error`（点**步名行**并逐字带出步名——`continue-on-error: true` 那一行四步一模一样、指它等于没指：`.github/workflows/ci.yml:64`「Plan-landing ratchet gate (观测臂：升档待 owner 裁，BUG-367 ④)」、`:122`「Format check (BUG-118：格式门住在权威 CI，不只在狗食轨)」、`:195`「Plan-landing ratchet gate (计划点名落点判定面棘轮，观测臂，BUG-367/BUG-366)」、`:490`「Public install line e2e (BUG-116：文档那条线要真装通，公网侧取证)」）分属计划落点棘轮观测臂、fmt 门、公网安装 e2e 观测臂，都不是本单点名对象 ⇒ 字面「CI native job 去掉 coe」只能达成一半，验收「干净树 `moon test --target native -j 1` 全绿」需 `git archive HEAD` 真跑才能判，本单未跑 | BUG-133 | 同上 C | 干净树 `moon test --target native -j 1` 全绿 |
+| POLISH-04 | 环境要求（Node≥24 / moon ≥0.1.20261016）移到 README 最显眼处 | `docs/readme-env-bold` | `已落地` | **三格现已全部满足（2026-10-23 复尺，陈述按实测重写）**：① 环境要求已前移到 README 开头——`README.md:20`「## ⚠️ 环境要求（先看这一节：装错工具链会直接编不过）」；② 强调标记在场（`:20` 标题带 `⚠️`，全文 `⚠` 计数 1）；③ **版本地板已对齐**——`README.md:22` 写「**MoonBit ≥ 0.1.20261016**」，与 AGENTS.md「Tooling」/钉版要求一致（此前 README 写 0.1.20260827、会让照 README 装环境的 agent 拿到编不过主线的工具链，该矛盾已消失）。**原留的「优先级高于本 Slice 其余项」不再成立**：无待办 | 新 | 同上 D | README "环境要求"节加 ⚠️ + 版本号 |
+| POLISH-05 | docs/known-boundaries.md 主动自曝 node:sqlite 实验警告 + native 配置复杂度 | `docs/known-boundaries` | `部分` | 指定文件不在跟踪面（`git ls-files docs` 无 `known-boundaries`）。**内容其实已在规范面**：`AI-DEVELOPMENT-STANDARD.md:104` 的 `## 7. 已知边界`（含 native/BUG-133/Node≥24 权威门槛）+ `README.md:20-31` 的同款自曝（环境要求 + JS/native 双端实测与 BUG-133 边界，2026-10-23 复核） ⇒ 本单剩的是「独立可点名的文件 + 30-50 行摘要」这一层，不是从零写自曝；动手前先裁决是否该由 §7 拆分，别造第二个真源 | 新 | 同上 E | 新文件 30-50 行 |
 | POLISH-06 | **拳头 Logo** + assets/ + gen_plugins 加 assets 拷贝步骤 | `feature/fist-logo-assets` | `已落地` | `assets/fist-logo.svg` + `assets/README.md` 在跟踪面；`scripts/gen_plugins.py:316` 定义 `copy_assets()`（按字节复制、不做占位符渲染）并在 `:521` 作为投影末步调用；产物四宿主齐全：`plugins/{atomcode,claude,codearts,deepseek-harness}/assets/fist-logo.svg` | 新 | `docs/improvement-plan-20261010.md` §2.2 | assets/fist-logo.svg 存在 + plugins/*/assets/ 拷贝 |
 
 ---
@@ -175,10 +175,10 @@
   叠 `gitcode/main dcefdeb8`（R123~R125 已入主线）时尺子又抓一遍：主线往 `ci.yml` 插 9 行、往 `run_guards.py` 插 13 行，
   清单里 8 个锚点再次错位——7 条 B3 + 1 条 **B4**（`:179` 挪到了空行上，括号里没点记号的那类只有 B4 抓得到）。
   逐条改回真行号，并把「残留 `continue-on-error` 枚举」那四条从 coe 键行改点**步名行 + 逐字步名**：
-  `continue-on-error: true` 那一行四步长得一模一样，指键行等于没指（内容级 24 → 28）。
+  `continue-on-error: true` 那一行四步长得一模一样，指键行等于没指（内容级 28 → 28）。
   本单只改判这一份清单与登记链，不动被检的代码/CI 内容，不改 `memory/bugs.md` 账本（编号归主机）。
 - **2026-10-22** 副机 R122 逐行对账（对账时点主线 `08e540bf`）：28 行全部改判并逐行落 文件:行 证据
-  （一次性本机脚本的**整份文档**读数：结构级锚点 41/41 可解析、内容级 40/40 那一行含声称记号，均失配 0；R126 起改由常驻尺按「证据列」口径实算，以文首那行为准）；
+  （一次性本机脚本的**整份文档**读数：结构级锚点 41/41 可解析、内容级 28/40 那一行含声称记号，均失配 0；R126 起改由常驻尺按「证据列」口径实算，以文首那行为准）；
   新增「现读证据」列与状态词表（`已落地` / `部分` / `未开工` / `作废` / `无法取证`）；Slice 3 整段改判 `作废` 并登记进作废表 ❌0；
   POLISH-03 补 release 臂的 R8 反向约束；SHIP-02 补 plan G7「刻意不盲落」的认领前置警告；顺带纠正建单时的行数自述（22 → 实读 28）。
   本单不改代码、不改 CI、不动 `memory/bugs.md` 账本（编号归主机）。

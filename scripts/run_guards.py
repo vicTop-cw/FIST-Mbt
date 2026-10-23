@@ -131,6 +131,8 @@ def is_resident(rel):
 
 SPECIAL_CASES = [
     # —— 判据面（纯静态，跨平台稳定）——
+    # —— R60：memory 日志失控闸（613 MB 事故）。只跑 --selftest，不在此读全部真日志。 ——
+    case("check_memory_log_size.py", "--selftest"),
     case("check_tools_sync.py"),
     # —— R106 预存红登记（电池自 770478c1 起跑不起来，这几格的红从没被任何人读到过）：
     #    照写读数 + 成因，不动被检内容。被检内容修好后 got≠expect 当场现形，逼下一位改的人

@@ -526,7 +526,7 @@ def selftest():
 
 
 def main(argv):
-    doc, root, show_face = None, ROOT, False
+    doc, root, show_face, suggest = None, ROOT, False, False
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -534,6 +534,8 @@ def main(argv):
             return selftest()
         elif a == "--show-face":
             show_face = True
+        elif a == "--suggest-anchors":
+            suggest = True
         elif a == "--doc":
             i += 1
             doc = argv[i]
@@ -545,6 +547,49 @@ def main(argv):
             return 0
         i += 1
     doc_path = doc if (doc and os.path.isabs(doc)) else os.path.join(root, doc or DEFAULT_DOC)
+    if suggest:
+        # 只读建议器：**不改文档**，只打印每条失配锚点"按现状该指哪儿"。
+        # 为什么只建议不自动改：R63 实测自动改会连环翻车——行号挪了、括号里的记号还是旧名，
+        # 下一轮把新行号配旧记号再报一次红；更糟的是把记号指到"也含它但语义无关"的行就能骗过判据（R61 踩过）。
+        rows = parse_rows(io.open(doc_path, encoding="utf-8", errors="replace").read())
+        anchors, _s, _c, _f = collect_anchors(rows, os.path.abspath(root), tracked_files(root))
+        tips = []
+        for a in anchors:
+            # 三类都要给建议：结构坏(B1/B2)、指到空行(B4)、**内容记号不在那一行(B3)**。
+            # 第一版只挑前两类，B3 全被漏掉——那正是失配的大头（实测 20 条里 17 条是 B3）。
+            if a["ok"] and not a.get("blank") and not (a.get("content") and not a.get("content_ok")):
+                continue
+            rel, ln = a["file"], a["line"]
+            ap = os.path.join(os.path.abspath(root), *rel.replace("\\", "/").split("/"))
+            if not os.path.isfile(ap):
+                tips.append((a["row"], rel, ln, u"文件不存在"))
+                continue
+            src = io.open(ap, encoding="utf-8", errors="replace").read().splitlines()
+            toks = a.get("tokens") or []
+            cands = []
+            for tk in toks:
+                cands += [i + 1 for i, l in enumerate(src) if tk in l]
+            if not cands:
+                cands = [i + 1 for i, l in enumerate(src) if l.strip()]
+            if not cands:
+                tips.append((a["row"], rel, ln, u"文件里没有可用锚点"))
+                continue
+            best = min(cands, key=lambda x: abs(x - ln))
+            uniq = [tk for tk in toks if sum(1 for l in src if tk in l) == 1]
+            if uniq:
+                tip = u"%s#%s（内容锚，记号唯一）" % (rel, uniq[0])
+            elif toks:
+                tip = u"%s:%d（记号多处出现，内容锚不可用，只能行号锚）" % (rel, best)
+            else:
+                tip = u"%s:%d（原锚点无记号，建议补一个唯一记号）" % (rel, best)
+            tips.append((a["row"], rel, ln, tip))
+        if not tips:
+            print(u"  没有失配锚点，无需建议")
+            return 0
+        print(u"  失配锚点建议（**只读，未改文档**；落笔前请按语义确认）：")
+        for rid, rel, ln, tip in tips:
+            print(u"    %-14s %s:%s → %s" % (rid, rel, ln, tip))
+        return 0
     sink = []
     rc = run(doc_path, os.path.abspath(root), sink)
     print(u"\n".join(sink))
