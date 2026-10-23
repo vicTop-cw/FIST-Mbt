@@ -22,7 +22,7 @@
   </svg>
   <div class="title">
     <h1>fist-mbt Dashboard</h1>
-    <p>一源五态 · 态5 Web 管理面板 · M0 任务看板</p>
+    <p>一源五态 · 态5 Web 管理面板 · 任务看板 + 状态流转 + 健康卡 + 脉冲</p>
   </div>
   <div class="controls">
     <label class="ctl">
@@ -41,18 +41,44 @@
   <!-- 顶部状态计数条 -->
   <div id="status-bar" class="status-bar"><span class="muted">加载中…</span></div>
 
+  <!-- 标签栏 -->
+  <nav class="tabs">
+    <button class="tab active" data-page="board">任务看板</button>
+    <button class="tab" data-page="stateflow">状态流转</button>
+    <button class="tab" data-page="health">健康卡</button>
+    <button class="tab" data-page="pulse">脉冲</button>
+  </nav>
+
   <div class="layout">
-    <!-- 任务树区 -->
-    <section class="card tree-card">
+    <!-- 任务树区（任务看板页） -->
+    <section class="card tree-card" id="page-board">
       <h2>任务树 / DAG <span class="sub">按深度缩进 · 点击行查看详情</span></h2>
       <div id="task-tree"><div class="empty">加载中…</div></div>
     </section>
 
-    <!-- 详情面板 -->
-    <aside class="card detail-card">
+    <!-- 详情面板（任务看板页） -->
+    <aside class="card detail-card" id="page-board-detail">
       <h2 id="detail-title">任务详情</h2>
       <div id="detail-panel"><div class="empty">← 在左侧选择一个任务查看详情</div></div>
     </aside>
+
+    <!-- 状态流转页 -->
+    <section class="card flow-card" id="page-stateflow" style="display:none">
+      <h2>状态流转 <span class="sub">Task 生命周期合法迁移图 + 当前分布</span></h2>
+      <div id="stateflow-view"><div class="empty">加载中…</div></div>
+    </section>
+
+    <!-- 健康卡页 -->
+    <section class="card health-card" id="page-health" style="display:none">
+      <h2>项目健康卡 <span class="sub">单次调用看全项目健康</span></h2>
+      <div id="health-view"><div class="empty">加载中…</div></div>
+    </section>
+
+    <!-- 脉冲页 -->
+    <section class="card pulse-card" id="page-pulse" style="display:none">
+      <h2>项目脉冲 <span class="sub">by_status · by_difficulty · active_namespaces</span></h2>
+      <div id="pulse-view"><div class="empty">加载中…</div></div>
+    </section>
   </div>
 
   <!-- 错误条 -->

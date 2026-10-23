@@ -27,7 +27,7 @@
 > **JS 后端**：`moon test --target js` = **1387/1387**（2026-10-22 Windows 实测；权威稳定门槛 = JS 后端）。
 > **Native 后端**：2026-10-01 在 WSL ubuntu-22.04 实测 `moon test --target native -j 1` = **572/572**（与 JS 同数，工作树含上几轮构建残留时）；
 > 同一 commit 的 `git archive HEAD` **干净树**上同一条命令必崩（native 测试二进制被信号打死），根因在依赖的 native FFI，
-> 见账本 BUG-133 与判据 `scripts/blackbox/e2e_native_heap_probe.py`；上一版这句写的是「native 未复跑」，就此作废。边界条款见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」。
+> 见账本 BUG-133 与判据 `scripts/blackbox/e2e_native_heap_probe.py`；上一版这句写的是「native 未复跑」，就此作废。边界条款见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」与 [`docs/known-boundaries.md`](docs/known-boundaries.md)（面向评审的完整自曝面）。
 > **CI 的 native 臂已按 2026-10-01 owner 裁决③改造**：两条臂都在全量测试前挂 `Native heap gate (BUG-133 探针当门)`，
 > 跑的就是上面那支判据；红话逐字点名 BUG-133，`crashes=0/12` 才放行全量测试（测试步骤没删，依赖修好后这一臂自己恢复覆盖）。
 
@@ -134,6 +134,19 @@ python scripts/fist.py call project_standards          # AI 开发规范
 python scripts/fist.py call store_open --namespace scratch --scratch true
 python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path":"moon.mod","contains":"vicTop-cw"}]'
 ```
+
+### 在 DeepSeek Harness 里安装（插件态）
+
+npm 包自带预构建 CLI（`dist/fist-mbt.js`），装插件不需要 moon、不需要源码构建：
+
+```bash
+dsh plugin --profile web add fist-mbt        # 命令行宿主；桌面端在「设置 → 插件」里装
+fist-mbt-mcp                                  # 可选：只想要终端里的 stdio server（npx fist-mbt-mcp 亦可）
+```
+
+装好后 MCP server `fist-mbt` 随会话启动，工具数**以 `tools/list` 为准**。账本（SQLite）落在
+`~/.fist-mbt/`，可用 `FIST_MBT_DATA` 改位置；运行环境需要 **Node ≥ 24**（`node:sqlite`）。
+插件层真源是 `packaging/dsh/cordis.patch.yml`（社区安装）与 `.dsh/fist-mbt-plugin/cordis.patch.yml`（本机源码安装）。
 
 ### 黑盒用户（无需源码）
 
