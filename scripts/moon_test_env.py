@@ -263,6 +263,14 @@ def main(argv):
         return 2
     total, passed, failed = int(m.group(1)), int(m.group(2)), int(m.group(3))
     print("  汇总：Total tests %d / passed %d / failed %d" % (total, passed, failed))
+    # BUG-394（A 案）：本入口被 AGENTS「JS 测试在本机跑不起来？先看这一条」定为
+    # 唯一推荐的常驻入口，而 CI 用裸 `moon test --target js > log`——两条进料路径
+    # 给判据的日志形状不同：斜杠分隔 vs `Total tests: N, passed: N, failed: N`。
+    # `check_test_sync.py` / `check_badge.py` 的 RX_LOG 只认冒号+逗号形状，原样把
+    # 上面的「汇总：…」喂给它们永远「无法从参数/日志解析测试总数」（实测 rc=1）。
+    # 处置：本入口**同时**原样透传 moon 的机器可读汇总行，使本地日志天然可被
+    # 既有判据读取。**不动判据**（与 R178 车道不相交），只让进料对齐。
+    print("Total tests: %d, passed: %d, failed: %d" % (total, passed, failed))
     if failed != 0 or passed != total:
         return 1
     return 0
