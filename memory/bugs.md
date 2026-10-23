@@ -6577,3 +6577,26 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 处置（R55 已落）：新增 `scripts/check_fmt_gate.py` 三档闸（`0` 干净 / **`2` DEGRADED 不可测** / `1` 真 diff），`--selftest` 6 格；已登记索引与守卫电池；AGENTS 提交门禁补口径。实测该闸真跑返回 **rc=2 DEGRADED**（正是期望档）。
 - note: 编号说明——本条最初被我误写成 `BUG-381`，但 `BUG-381` 在主线早已被占（`check_mbti_sync` 泛型盲区，已 FIXED），故另立本编号；R55 的更正提交里写清了这件事。
 - 后续建议: ① 格式门权威面交给 CI（Linux nightly）；② 升级 moon 后先跑 `python scripts/check_fmt_gate.py`，转 `0` 即可把该闸降为普通门禁；③ 与 BUG-330（fmt 世代漂移）一并复核。
+
+## BUG-389 [2026-10-23T17:40:00Z] [high] OPEN
+- summary: [判据自证] `scripts/moon_test_env.py` 的汇总行是中英形状不符——只打印中文形状 `汇总：Total tests N / passed N / failed F`，未透传判据要的英文形状 `Total tests: N, passed: N, failed: F`；⇒ `check_badge`/`check_test_sync` 在标准入口下**无法自证**（`FATAL: 未在日志中找到 'Total tests:' 行`，rc=1），只能靠临时脚本绕
+- detail: 现象（原始命令 + 原文行 + rc）：
+  ```
+  python scripts/moon_test_env.py moon test --target js
+  # moon_test_env 自检行的原文（它用 `汇总：` 前缀 + 空格/斜杠分隔，非英文逗号/冒号形状）：
+  #   汇总：Total tests 1413 / passed 1413 / failed 0
+  # 把这段输出原样喂给判据入口：
+  python scripts/check_badge.py <moon_test_env 的输出>
+  #   FATAL: 未在日志中找到 'Total tests:' 行
+  # rc=1（即便全仓测试 1413/1413 全绿）
+  ```
+  判据面要求（`scripts/check_badge.py` / `scripts/check_test_sync.py`）用的是**英文逗号+冒号**形状：
+  `Total tests:\s*(\d+),\s*passed:\s*(\d+),\s*failed:\s*(\d+)`（正则逐字对不上中文形状的 `Total tests N / passed N / failed N`）。
+- 根因：`scripts/moon_test_env.py` 只**自印**一条中文 `汇总：` 汇总行（`print("  汇总：Total tests %d / passed %d / failed %d" % …)`），
+  没把 moon 产出的**英文原始汇总行** `Total tests: N, passed: N, failed: F` 透传/落盘；
+  于是下游 `check_badge`/`check_test_sync` 的日志面读不到它认的那一行 ⇒ 判据入口**无法自证**。
+- 影响：`check_badge`（README 徽标数校验）/`check_test_sync`（脚本-声明-日志三面同步）在**标准入口** `moon_test_env.py` 下全部拿不到读数，只能靠临时脚本把英文行捞出来再喂；CI 的 js 轨这两支也因此失去「从标准入口自证」的能力。
+  **关键区分**：全量测试本身是 1413/1413 全绿——这是「判据读不到判据要的那一行」，不是「测试没跑过」；不要把自证失败误记成测试红。
+- 建议修法（**不改判据的英文形状契约**）：给 `scripts/moon_test_env.py` 增 `--raw-log <path>`，把 moon 原始英文汇总行（乃至整段输出）透传落盘供判据读取；或最少把英文 `Total tests: N, passed: N, failed: F` 那一行**原样回显**到 stdout，让 `check_badge`/`check_test_sync` 能直接吃标准入口的输出。两种修法都保判据契约不变，改动面只落在入口脚本。
+- 边界（本条不开修）：本条目只做**立项登记**，不修改 `moon_test_env.py`/`check_badge.py`/`check_test_sync.py` 本体；修复归后续单。
+- reported_by: lead-2（2026-10-23 实测；全量测试 1413/1413 全绿，判据 rc=1）
