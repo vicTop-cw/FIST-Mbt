@@ -33,7 +33,7 @@
 
 1. **`tmp_merge_batch.ps1` / `tmp_merge_batch.sh` 不该登记，该处置**：两份是历史一次性批量合并脚本——`.ps1` 里硬编码一串 `gitcode/slave/...` 分支名，`.sh` 里硬编码 `cd /e/IDEProjects/AI/FIST-Mbt`（**主机的绝对路径**，副机上也跑不通）。把它们写进 `scripts/README.md` 等于给垃圾桶发索引号。**处置=删除或移出跟踪面，属不可逆动作，留 owner 确认**；本单不代删。
 2. **`check_scripts_index.py` 自己的判据缺口（两条，同一把尺）**：① 「README 里出现文件名或去扩展名基名」即算登记 ⇒ **任何一处顺带提到都销掉一条 FAIL**（R153 报告 §八·9 用仓外快照做过因果实验：塞一次文件名 ⇒ 5 项变 4 项，删掉 ⇒ 回 5 项）；② 它把 `tmp_` 前缀的一次性脚本当「正式辅助脚本」要求登记。合起来的形状是：FAIL 数可以被散文稀释，而真垃圾要靠 owner 删——判据把力气花在了错的一边。归后续单。
-3. **`check_memory_log_dup.py --selftest` 在 master 上正红**：`FAIL S9 仓库内一份日志都没读到`，红因是 `788c5823` 把 `memory/YYYY-MM-DD.md` 移出跟踪面，而它的自检 `find_logs(os.path.join(REPO_ROOT, "memory"))` 读的是**仓库现状面**。登记条目没写这条（任务包没要求），但下一条相关单必须写：**它正是 R153 那把新尺 `check_selftest_hermetic.py` 现在常驻抓的形状**——本单交付后重跑该尺，`check_memory_log_dup.py` 会以 `[R] … 经形参 \`base_dir\` 交给 find_logs()` 出现在红档里。
+3. **`check_memory_log_dup.py --selftest` 的 S9 那一格，红绿由一个不被 git 跟踪的本地文件决定**：报的是 `FAIL S9 仓库内一份日志都没读到`，根因是 `788c5823` 把 `memory/YYYY-MM-DD.md` 移出跟踪面，而它的自检 `find_logs(os.path.join(REPO_ROOT, "memory"))` 读的是**工作树现状面**。实测（交单前补做，防止把「本地红」写成「主线红」）：仓外快照 `git archive gitcode/master`（盘上无当日日志）rc=1、本工作树（无当日日志）rc=1，而 `Fist-Mbt-r153` 与主机 `Fist-Mbt`（本地日报在盘）rc=0 且打印 `SELFTEST OK`；单变量对照＝在快照里手写一份合成当日日志 ⇒ rc 1→0，删掉 ⇒ 0→1。⇒ 它是**不可复现读数**，不是恒红；`FAIL`/`OK` 文本与 rc 严格绑定，没有假绿。登记条目没写这条（任务包没要求），但下一条相关单必须写：**它正是 R153 那把新尺 `check_selftest_hermetic.py` 现在常驻抓的形状**——本单交付后重跑该尺，`check_memory_log_dup.py` 会以 `[R] … 经形参 \`base_dir\` 交给 find_logs()` 出现在红档里；改法是把 S9 换成合成夹具目录，修完 CI 上才有一个可复现的读数。
 4. **与 R153 的 README 同文件并发**：R153 动 line 262 的 `BATTERY-REGISTRATION` 锚点 + line 807 区的新条目；本单动 line 800 前的三行登记。行不同、文件同一，合并时按 `check_merge_loss.py` 现读逐侧核对（别裸解）。
 
 ## 五、验收清单（本单口径）
