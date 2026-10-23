@@ -78,3 +78,14 @@
   `app.asar` 内 `@deepseek-ai/dsh-mcp-client` stdio 分支（2026-10-23 实测）。
 - 本仓口径：`docs/2026-10-20-slave-dev-playbook.md`、`scripts/README.md`、
   `scripts/check_host_installable.py`、`scripts/check_ci_step_position.py`。
+
+## 追记（CI 第一轮红 → 修）
+
+- 首推 CI 唯一失败步骤：`Battery-count registration guard`（README 登记 ↔ `run_guards.py` 现读）。
+  根因：两把新尺只进了 README 索引与 ci.yml，没进电池 ⇒ 读数漂移
+  （rulers 90→95 / ci 42→45 / battery 52→57 / gate 60→64 / unclassified 5→6）。
+- 修复（同笔 `fa762e8b`）：`run_guards.py` 补 3 个 case，README 的 `BATTERY-REGISTRATION` 锚点同批改数；
+  复跑 `check_battery_count_doc.py` → PASS（逐键一致）。
+- 排查中发现的**预存红（与本 PR 无关）**：`check_unit_number_unique.py --selftest` 在本机 rc=1
+  （该文件本 PR 零改动），导致 `check_selftest_inventory_doc.py` 走「无法自证」2 号档；
+  `check_merge_loss.py` 在非 merge commit 上按设计拒绝出数（rc=2）。两条都不改。
