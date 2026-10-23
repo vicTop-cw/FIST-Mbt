@@ -6416,11 +6416,11 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "eval_feedback",
-    "反馈收敛（R111，Evaluator-Optimizer schema 蒸馏：Anthropic E/O 模式 + Self-Refine arXiv 2303.17651 + Reflexion arXiv 2303.11366 + zubi.ai 四段式）：把自由文本反馈归一为 Defects/Evidence/Fix/Acceptance 四段式契约 + 确定性 verdict——无缺陷且 acceptance 非空 → pass（optimizer 可收敛）；否则 fail + flags（evidence_missing / fix_missing / section_missing:...）。纯计算只读不写库（决策建议，执行权在调用方；与 plan_revise 反馈修订互补：反馈从叙事升级为可计算契约）。参数：feedback(必填，含 ## Defects / ## Evidence / ## Fix / ## Acceptance 段，各段 - 列表项)、task_id(可选)。返回 { ok, task_id, schema:{defects,evidence,fix,acceptance}, counts, verdict, flags, note }。",
+    "反馈收敛（R111，Evaluator-Optimizer schema 蒸馏：Anthropic E/O 模式 + Self-Refine arXiv 2303.17651 + Reflexion arXiv 2303.11366 + zubi.ai 四段式）：把自由文本反馈归一为 Defects/Evidence/Fix/Acceptance 四段式契约 + 确定性 verdict——无缺陷且 acceptance 非空 → pass（optimizer 可收敛）；否则 fail + flags（evidence_missing / fix_missing / section_missing:...）。纯计算只读不写库（决策建议，执行权在调用方；与 plan_revise 反馈修订互补：反馈从叙事升级为可计算契约）。参数：feedback(必填，含 ## Defects / ## Evidence / ## Fix / ## Acceptance 段，各段列表项（- / * / + 或 1. / 1)）)、task_id(可选)。返回 { ok, task_id, schema:{defects,evidence,fix,acceptance}, counts, verdict, flags, note }。",
     schema(
       {
         "feedback": string_prop(
-          "反馈文本（必填，含 ## Defects / ## Evidence / ## Fix / ## Acceptance 段，各段 - 列表项）",
+          "反馈文本（必填，含 ## Defects / ## Evidence / ## Fix / ## Acceptance 段，各段列表项（- / * / + 或 1. / 1)））",
         ),
         "task_id": string_prop("关联任务 id(可选)"),
       },
