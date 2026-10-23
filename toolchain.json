@@ -1,0 +1,8 @@
+{
+  "moonbit": "0.1.20261016",
+  "node": "24",
+  "why_moonbit": "本仓使用 `is` 模式匹配表达式（d799f56 起替代已移除的 is_ok / is_err），更早的工具链在 moon check 阶段即红。",
+  "why_node": "JS 后端的 SQLite 依赖 node:sqlite 的 returnArrays；node < 24 退化为对象行，列读取为空。",
+  "how_to_bump": "改这里 = 改全仓地板：先升本机 moon / Node，跑 moon check + moon test --target js 全绿，再把 README / README_EN / USAGE / AGENTS 与 docs 里的地板改成同一个值，最后 python scripts/check_doc_surface.py --selftest 与全量各跑一次。",
+  "authority_note": "工具链版本地板的唯一机器可读真源。与 moon.mod 的 version（本项目模块版本，check_doc_surface 的 moon_version() 读的那个）是两个不同的东西，别混判。"
+}

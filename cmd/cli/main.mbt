@@ -46,7 +46,7 @@ async fn main {
     Serve => run_serve()
     Version => run_version()
     Demo => run_demo()
-    Doctor => run_doctor()
+    Doctor => if !run_doctor() { cli_exit(1) }
     Upgrade => run_upgrade()
     Help => run_help(args)
     NoArgs => print_help()
@@ -149,11 +149,11 @@ async fn run_serve() -> Unit {
   eprintln("")
   // BUG-377：shim 指向的构建产物被清空时（_build 空、_release 未装），
   // 至少给出可读提示而不是只剩 node 的 Cannot find module 堆栈。
-  try {
-    @server.run_server()
-  } catch {
+  @server.run_server() catch {
     _ => {
-      eprintln("[fist] serve 启动失败：未找到构建产物，请运行 install 或使用发布包")
+      eprintln(
+        "[fist] serve 启动失败：未找到构建产物，请运行 install 或使用发布包",
+      )
       cli_exit(1)
     }
   }
@@ -327,11 +327,77 @@ fn run_demo() -> Unit {
 }
 
 ///|
-/// doctor：5 项只读健康检查，输出 ✅/❌
+/// doctor 检查 4 的闭环本体：publish → claim → plan → 叶子生命周期 → verify(根) → 归档。
+/// 每步的 `Err` 带步名上抛，不再被吞成 `Bool`——这一格长期恒红却无人能定位，
+/// 正是因为只印一句「闭环失败」（BUG-393）。
+/// `verify(根)` 是必需一步：`verify(叶)` 的向上归并只把根推到「待验收」，
+/// 而 archive 的前置门是 `is_completed()` ⇒ 少这一格必被「仅已完成任务可归档」拒绝。
+fn doctor_closed_loop() -> Result[Unit, String] {
+  let now = "2026-09-27T10:00:00Z"
+  let e = @engine.FistEngine::new()
+  let root_id = match
+    e.publish(
+      project_dir="./",
+      description="doctor 闭环最小版",
+      created_by="human_steward",
+      now~,
+      ns="doctor-check",
+    ) {
+    Ok(id) => id
+    Err(m) => return Err("publish: \{m}")
+  }
+  match e.claim(task_id=root_id, assignee="leader", now~) {
+    Ok(_) => ()
+    Err(m) => return Err("claim(root): \{m}")
+  }
+  match e.plan(task_id=root_id, split_n=1, by="agent", now~) {
+    Ok(_) => ()
+    Err(m) => return Err("plan(root): \{m}")
+  }
+  let kids = e.children_of(root_id)
+  if kids.is_empty() {
+    return Err("plan(root): 无子任务")
+  }
+  let kid_id = kids[0].get_id()
+  let _ = e.claim(task_id=kid_id, assignee="w", now~)
+  // 审计门禁(R10)会拒绝 "done"/"完成"/"ok" 等占位符交付物，
+  // 闭环探针须用真实交付物，否则 execute 被拒导致 [4/5] 恒红。
+  match
+    e.execute(
+      task_id=kid_id,
+      deliverable="doctor 闭环探针：七态机最小闭环通过",
+      now~,
+    ) {
+    Ok(_) => ()
+    Err(m) => return Err("execute(kid): \{m}")
+  }
+  match e.submit(task_id=kid_id, now~) {
+    Ok(_) => ()
+    Err(m) => return Err("submit(kid): \{m}")
+  }
+  match e.verify(task_id=kid_id, verifier="leader", now~) {
+    Ok(_) => ()
+    Err(m) => return Err("verify(kid): \{m}")
+  }
+  match e.verify(task_id=root_id, verifier="leader", now~) {
+    Ok(_) => ()
+    Err(m) => return Err("verify(root): \{m}")
+  }
+  match e.archive(task_id=root_id, by="human_steward", now~) {
+    Ok(_) => Ok(())
+    Err(m) => return Err("archive(root): \{m}")
+  }
+}
+
+///|
+/// doctor：5 项只读健康检查，输出 ✅/❌，返回是否无失败项（false=有 ❌）
 /// 全程不修改任何持久化数据（store 用内存后端）
-fn run_doctor() -> Unit {
+/// ⏭️ 跳过不算失败：`e2e_irm_line.py` 的安装自检线要求 `doctor=0`，
+/// 把"工具链不给量"判成"安装坏了"就是 BUG-142 那格反向的错
+fn run_doctor() -> Bool {
   let ref_total = [0]
   let ref_ok = [0]
+  let ref_skip = [0]
 
   // —— 检查 1：engine 能创建 ——
   ref_total[0] = ref_total[0] + 1
@@ -404,80 +470,24 @@ fn run_doctor() -> Unit {
 
   // —— 检查 4：七态机闭环最小版（depth=2，单叶子）——
   ref_total[0] = ref_total[0] + 1
-  let e4 = @engine.FistEngine::new()
-  let now = "2026-09-27T10:00:00Z"
-  let c4 = e4.publish(
-    project_dir="./",
-    description="doctor 闭环最小版",
-    created_by="human_steward",
-    now~,
-    ns="doctor-check",
-  )
-  let e4_ok = match c4 {
-    Err(_) => false
-    Ok(root_id) =>
-      match e4.claim(task_id=root_id, assignee="leader", now~) {
-        Err(_) => false
-        Ok(_) =>
-          match e4.plan(task_id=root_id, split_n=1, by="agent", now~) {
-            Err(_) => false
-            Ok(_) => {
-              let kids = e4.children_of(root_id)
-              if kids.is_empty() {
-                false
-              } else {
-                let kid_id = kids[0].get_id()
-                let _ = e4.claim(task_id=kid_id, assignee="w", now~)
-                // 审计门禁(R10)会拒绝 "done"/"完成"/"ok" 等占位符交付物，
-                // 闭环探针须用真实交付物，否则 execute 被拒导致 [4/5] 恒红。
-                let ex = match
-                  e4.execute(
-                    task_id=kid_id,
-                    deliverable="doctor 闭环探针：七态机最小闭环通过",
-                    now~,
-                  ) {
-                  Err(_) => false
-                  Ok(_) =>
-                    match e4.submit(task_id=kid_id, now~) {
-                      Err(_) => false
-                      Ok(_) =>
-                        match
-                          e4.verify(task_id=kid_id, verifier="leader", now~) {
-                          Err(_) => false
-                          Ok(_) =>
-                            match
-                              e4.archive(
-                                task_id=root_id,
-                                by="human_steward",
-                                now~,
-                              ) {
-                              Err(_) => false
-                              Ok(_) => true
-                            }
-                        }
-                    }
-                }
-                ex
-              }
-            }
-          }
-      }
-  }
-  if e4_ok {
-    ref_ok[0] = ref_ok[0] + 1
-    println("✅ [4/5] 七态机闭环（最小版 depth=2）")
-  } else {
-    println("❌ [4/5] 七态机闭环失败")
+  match doctor_closed_loop() {
+    Ok(_) => {
+      ref_ok[0] = ref_ok[0] + 1
+      println("✅ [4/5] 七态机闭环（最小版 depth=2）")
+    }
+    Err(why) => println("❌ [4/5] 七态机闭环失败：\{why}")
   }
 
   // —— 检查 5：SQLite store（真实尝试，失败自动 skip 不阻塞）——
   ref_total[0] = ref_total[0] + 1
-  let tmp_db = "_fist_doctor_check.db"
+  let tmp_db = doctor_db_path(@env.get_env_var("FIST_DB_PATH"))
   match @engine.FistEngine::open_sqlite(tmp_db) {
-    None =>
+    None => {
+      ref_skip[0] = ref_skip[0] + 1
       println(
         "⏭️ [5/5] SQLite store 跳过（open_sqlite 返回 None，可能 ESM require 不可用）",
       )
+    }
     Some(e) => {
       // 最小闭环: open_sqlite + publish（具名参数，跟 demo 一致）
       let pub_res = e.publish(
@@ -495,12 +505,16 @@ fn run_doctor() -> Unit {
   }
 
   // 汇总
+  let failed = doctor_failed_count(ref_ok[0], ref_total[0], ref_skip[0])
   println("")
   println("--- 汇总 ---")
   println("\{ref_ok[0]}/\{ref_total[0]} checks 通过")
-  if ref_ok[0] == ref_total[0] {
-    println("🎉 全部通过 ✅")
+  if failed > 0 {
+    println("⚠️  有 \{failed} 项失败")
+  } else if ref_skip[0] > 0 {
+    println("⏭️  有 \{ref_skip[0]} 项跳过（不计失败）")
   } else {
-    println("⚠️  有 \{ref_total[0] - ref_ok[0]} 项失败")
+    println("🎉 全部通过 ✅")
   }
+  failed == 0
 }

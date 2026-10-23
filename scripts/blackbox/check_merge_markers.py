@@ -30,6 +30,7 @@
 `--selftest` 的格子清单**从已执行格子反解**，不手写计数。
 """
 import ast
+import os
 import re
 import subprocess
 import sys
@@ -44,6 +45,25 @@ if hasattr(sys.stderr, "reconfigure"):
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
+# 2026-10-24（R45 定位）：**钩子进程会被注入 GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE**。
+# `git commit` 执行 pre-commit 钩子时，这些变量指向**外层真仓**；夹具里 `subprocess.run(["git", …], cwd=temp)`
+# 继承它们之后，git 会**忽略 cwd** 直接操作真仓索引 —— 实测后果：`git add -A` 把夹具文件塞进真仓索引、
+# 随后 `commit -qm fixture` 在用户分支上落提交（真工作树被连写 9 个 `fixture` 提交、树被换成夹具文件、
+# 真仓 repo config 的 user 被改成夹具身份 t/t@t）。这不是"夹具写错目录"，而是**环境变量穿透**。
+GIT_ENV_SCRUB = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+                 "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_PREFIX",
+                 "GIT_NAMESPACE", "GIT_CEILING_DIRECTORIES")
+
+
+def isolated_git_env(base=None):
+    """剥掉 git 自上而下注入的仓库定位变量，只留普通环境（夹具必须用它跑 git）。"""
+    env = dict(os.environ if base is None else base)
+    for k in GIT_ENV_SCRUB:
+        env.pop(k, None)
+    return env
+
+
+
 # 行首精确的三种冲突标记（按 git 原样：顶格）。
 RE_OURS = re.compile(r"^<{7}(?: |$)")
 RE_SEP = re.compile(r"^={7}$")
@@ -52,9 +72,15 @@ RE_THEIRS = re.compile(r"^>{7}(?: |$)")
 
 def tracked_files(root):
     """git 跟踪面文件名清单（用 git 而不是走磁盘 glob，保证与 CI checkout 看到的面一致）。
-    不在仓库 / git 不可用 ⇒ 返回 None（调用方自拒，绝不报绿）。"""
+    不在仓库 / git 不可用 ⇒ 返回 None（调用方自拒，绝不报绿）。
+
+    R45：`env=isolated_git_env()` 是必须的——本判据**就在 pre-commit 钩子里跑**，而 git 会给钩子
+    注入 `GIT_DIR` / `GIT_WORK_TREE` / `GIT_INDEX_FILE` / `GIT_PREFIX`；不剥掉就会出现
+    "1399 个跟踪文件全部读不到"（路径被前缀/工作树变量带偏）⇒ 判据自拒，把整个提交挡住。
+    """
     r = subprocess.run(["git", "-C", str(root), "ls-files", "-z"],
-                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+                       capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       env=isolated_git_env())
     if r.returncode != 0:
         return None
     return [f for f in r.stdout.split("\0") if f.strip()]
@@ -121,17 +147,40 @@ def selftest():
     fails = []
 
     def new_repo(fixture):
+        """造一个**真正独立**的夹具仓（R44 事故 + R45 机制定位后的硬化）。
+
+        R44 硬化：三条自证（不在被检仓内 / 真建出 .git / show-toplevel 就是它自己）。
+        R45 硬化（本笔的核心）：**每条 git 调用都带 `env=isolated_git_env()`** —— 否则在 pre-commit
+        钩子里跑时，`GIT_DIR`/`GIT_INDEX_FILE` 会把夹具的 add/commit 直接落到用户的真仓上。
+        """
+        env = isolated_git_env()
         d = Path(tempfile.mkdtemp(prefix="cmk-"))
-        subprocess.run(["git", "init", "-q"], cwd=d, capture_output=True, text=True)
-        subprocess.run(["git", "config", "user.email", "t@t"], cwd=d, capture_output=True, text=True)
-        subprocess.run(["git", "config", "user.name", "t"], cwd=d, capture_output=True, text=True)
+        subprocess.run(["git", "init", "-q"], cwd=d, capture_output=True, text=True, env=env)
+        top = subprocess.run(["git", "-C", str(d), "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
+        own = (d / ".git").exists()
+        same = top.returncode == 0 and Path(top.stdout.strip() or "/nonexistent").resolve() == d.resolve()
+        inside = str(d.resolve()).startswith(str(ROOT.resolve()) + os.sep)
+        if inside or not own or not same:
+            # BUG-369 契约：判据失灵类必给 **rc=2**。`SystemExit("字符串")` 的退出码是 **1**
+            # （Python 语义：非整数参数 ⇒ 打印到 stderr 并 exit 1），而本判据的承诺面把
+            # 「含 FATAL 的判据失灵类」指派给 2 ⇒ 写成字符串就是**假契约**。
+            # check_exit_code_contract 的 R2 站点类指派矛盾当场抓到这一处。
+            sys.stderr.write(
+                "FATAL 夹具仓没有独立成功（own=%s same=%s inside_root=%s top=%r dir=%s）"
+                "——继续跑就会把外层仓库当夹具提交（R44 实测事故），拒绝继续\n"
+                % (own, same, inside, (top.stdout or top.stderr).strip()[:200], d)
+            )
+            raise SystemExit(2)
+        subprocess.run(["git", "config", "user.email", "t@t"], cwd=d, capture_output=True, text=True, env=env)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=d, capture_output=True, text=True, env=env)
         for rel, body in fixture.items():
             fp = d / rel
             fp.parent.mkdir(parents=True, exist_ok=True)
             fp.write_text(body, encoding="utf-8")
         if fixture:
-            subprocess.run(["git", "add", "-A"], cwd=d, capture_output=True, text=True)
-            subprocess.run(["git", "commit", "-qm", "fixture"], cwd=d, capture_output=True, text=True)
+            subprocess.run(["git", "add", "-A"], cwd=d, capture_output=True, text=True, env=env)
+            subprocess.run(["git", "commit", "-qm", "fixture"], cwd=d, capture_output=True, text=True, env=env)
         return d
 
     CONFLICT = ("def f():\n"
@@ -202,7 +251,87 @@ def selftest():
     if rc != 2:
         fails.append("C5 空跟踪面 main 返回 %s（应为 2 自拒，不许冒用 0）" % rc)
 
-    print("SELFTEST %s（干净不误红 + 变异必红 + 空扫描自拒；格子从已执行对照反解：%s）"
+    # C7 正向毒化对照（R46：C7/C8 由 slave/clean-dsh-recur-r3 支 graft 进主线 R45 实现）。
+    # main 的 new_repo 自带 own/same/inside 反证（夹具没独立成功就 rc=2 自拒）——那是「自拒」面；
+    # 本格补「正向锁」面：把 os.environ 毒化成 pre-commit 钩子态（GIT_DIR/GIT_INDEX_FILE 指向
+    # 替身宿主仓），跑真实 new_repo，断言宿主 HEAD 纹丝不动；再用同一毒化 env 裸跑一次 commit
+    # 作变异对照——**不 scrub 必须泄漏**，否则正向锁是假绿（本仓「拿空产物反证」同律）。
+    executed.append("C7 毒化环境不泄漏宿主 + 裸跑对照必泄漏")
+    try:
+        host = Path(tempfile.mkdtemp(prefix="cmk-host-"))
+        henv = isolated_git_env()
+        subprocess.run(["git", "init", "-q"], cwd=host, capture_output=True, env=henv)
+        subprocess.run(["git", "config", "user.email", "h@h"], cwd=host, capture_output=True, env=henv)
+        subprocess.run(["git", "config", "user.name", "h"], cwd=host, capture_output=True, env=henv)
+        (host / "seed.txt").write_text("seed\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=host, capture_output=True, env=henv)
+        subprocess.run(["git", "commit", "-qm", "seed"], cwd=host, capture_output=True, env=henv)
+
+        def host_count():
+            return subprocess.run(["git", "rev-list", "--count", "HEAD"], cwd=host,
+                                  capture_output=True, text=True, env=henv).stdout.strip()
+
+        before = host_count()
+        poison = {"GIT_DIR": str(host / ".git"),
+                  "GIT_INDEX_FILE": str(host / ".git" / "index")}
+        saved = {k: os.environ.get(k) for k in poison}
+        os.environ.update(poison)
+        try:
+            new_repo({"x.py": CLEAN_PY})  # 真实路径：内部 isolated_git_env 应剥毒
+            after = host_count()
+            if after != before:
+                fails.append("C7 泄漏：毒化环境（钩子态）下 new_repo 仍把提交写进宿主 HEAD"
+                             "（%s→%s）——isolated_git_env 未生效或被改坏" % (before, after))
+            leakd = Path(tempfile.mkdtemp(prefix="cmk-leak-"))
+            (leakd / "y.py").write_text(CLEAN_PY, encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=leakd, capture_output=True,
+                           env=dict(os.environ))
+            subprocess.run(["git", "commit", "-qm", "fixture"], cwd=leakd, capture_output=True,
+                           env=dict(os.environ))
+            if host_count() == before:
+                fails.append("C7 变异对照不成立：未 scrub 的裸跑也没泄漏 ⇒ 毒化姿势不对，"
+                             "正向锁的红永远等不到（假绿）")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+    except Exception as e:
+        fails.append("C7 隔离格自身异常（按 BUG-369 契约不给判据红，但必须修）：%s" % e)
+
+    # C8 与共享件 scripts/git_sandbox.py 的词表对表（R46）。为什么钉：blackbox 顶层 sys.path
+    # 不含 scripts/（直跑 import 不到）⇒ 本件自带实现；两处各持一份词表正是本仓反复返工的
+    # 漂移形状（首跑当场抓出：本件剥 GIT_CEILING_DIRECTORIES 而共享件不剥——已把共享件收成并集）。
+    # 不变量（诚实口径）：**根因面（仓库定位变量）两边都必须剥净**；config 前缀/NOSYSTEM 是
+    # 共享件的加防面，不是主线实现的红灯线（主线靠剥 GIT_DIR 让 git config 落进夹具自己的
+    # .git/config，C7 正向锁证的就是这一层）。
+    executed.append("C8 词表对表：根因面两实现等强剥净")
+    try:
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location(
+            "git_sandbox", str(Path(__file__).resolve().parent.parent / "git_sandbox.py"))
+        shared = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(shared)
+        missing_here = [k for k in GIT_ENV_SCRUB if k not in shared.GIT_CONTROL_VARS]
+        if missing_here:
+            fails.append("C8 词表漂移：本件剥 %s 而共享件不剥——按共享件接线的尺会漏这一发"
+                         % ", ".join(missing_here))
+        # 同一份「全表毒化」喂两边：根因面变量必须双双剥净（两实现等强的可执行定义）
+        poison2 = {k: "/poison/%s" % k for k in GIT_ENV_SCRUB}
+        poison2["PATH"] = os.environ.get("PATH", "")
+        m_mine = isolated_git_env(poison2)
+        m_shared = shared.sandbox_env(poison2)
+        leaked_mine = [k for k in GIT_ENV_SCRUB if k in m_mine]
+        leaked_shared = [k for k in GIT_ENV_SCRUB if k in m_shared]
+        if leaked_mine or leaked_shared:
+            fails.append("C8 行为漂移：根因面未剥净（本件漏 %s / 共享件漏 %s）"
+                         % (leaked_mine, leaked_shared))
+    except Exception as e:
+        fails.append("C8 共享件读不到（漂移无从对表，按红处理）：%s" % e)
+
+    print("SELFTEST %s（干净不误红 + 变异必红 + 空扫描自拒 + 毒化不泄漏宿主 + 词表对表；"
+          "格子从已执行对照反解：%s）"
           % ("OK" if not fails else "FAIL", " / ".join(executed)))
     for f in fails:
         print("SELFTEST FAIL " + f)

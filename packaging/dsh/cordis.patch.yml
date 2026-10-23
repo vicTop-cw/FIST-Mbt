@@ -1,0 +1,33 @@
+# FIST-Mbt — DSH community bundle layer.
+#
+# Everything here is resolved at load time, so the same file works from a
+# profile install of the npm package:
+#
+#   command  the Node runtime that is already running DSH (Electron hosts run
+#            it as Node through ELECTRON_RUN_AS_NODE), so no separate `node`
+#            on PATH and no Node-version mismatch with the host
+#   args     the launcher inside this package, resolved through the profile's
+#            own module resolution (baseUrl) — never a machine-specific path
+#
+# The launcher then starts the bundled release snapshot (`dist/fist-mbt.js`)
+# in a per-user data directory, so installs need no build step and the SQLite
+# ledger has somewhere stable to live.
+
+- insert:
+    - id: fist-mbt-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: 'fist-mbt'
+        transport: 'stdio'
+        command: !!js process.execPath
+        args:
+          - !!js "process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('fist-mbt/launch-mcp.mjs')"
+        toolCallTimeoutMs: 300000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+          initialDelayMs: 500
+          maxDelayMs: 30000
+          maxAttempts: 10
+        env:
+          ELECTRON_RUN_AS_NODE: '1'

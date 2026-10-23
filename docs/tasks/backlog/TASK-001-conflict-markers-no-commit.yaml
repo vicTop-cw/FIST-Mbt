@@ -58,3 +58,14 @@ acceptance_met:
   - "② cherry-pick 全解 + git diff --check + selftest 过才允许 commit：✅（pre-commit 钩子三步 + 合并驱动脚本）"
   - "③ slave-branch-merge.ps1 加 cherry-pick 后自动标记扫描：✅（前一轮落地）"
 status_note: "R111 对账转 done（三条全部落地）；钩子仍需每人跑一次 install_git_hooks.py --install 才生效（README 已写）"
+# ── R123 对账重盖章（gitcode/main rebase 到 origin/master 788c5823，原 proof commit 不再可达）──
+rebase_proven:
+  dropped_by: "gitcode/main rebase onto origin/master 788c5823（旧线 proof commit 未迁到新线）"
+  dropped_proof_commits: ["7fc6769e", "3a2fb362", "a0240bf0", "4822e263", "433bfacc"]
+  verified_on: "origin/master 788c5823（gitcode/main 587a1b5c 含同批交付物）"
+  artifacts_present:
+    - "scripts/check_backlog_yaml_integrity.py（R110 台账键唯一门）"
+    - "scripts/install_git_hooks.py（--install 幂等安装）"
+    - ".githooks/pre-commit（判据自证 → live 全跟踪面 → git diff --cached --check）"
+  environmental: "core.hooksPath 未设置是环境面（须每人 --install 一次），不是本任务交付缺陷"
+  note: "R2 UNPROVEN-DONE 重盖章：交付物在新线齐全，丢失的只是 rebase 上的 proof 引文。"

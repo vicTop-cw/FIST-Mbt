@@ -159,6 +159,21 @@ SPECIAL_CASES = [
     case("check_release_asset_names.py"),
     case("check_publish_payload.py"),
     case("check_publish_payload.py", "--selftest"),
+    # —— R141/R155 落仓的两支工具面带自检：render_dsh_patch（模板→本机渲染，
+    #    selftest 6 格）、run_light_wt（轻量 worktree 生命周期，selftest 10 格）。
+    #    二者落仓时只登记进 scripts/README.md，未接任何执行面 ⇒ run_guards G1 现读
+    #    「缺面清单」点名；此处按本文件纪律手写点名自检格（非 check_* 亦须有面）。 ——
+    case("render_dsh_patch.py", "--selftest"),
+    case("run_light_wt.py", "--selftest"),
+    # —— R3（BUG-389(2) 收口）：check_direct_push 是 pre-push 钩子的判定本体，**裸跑格必须禁**——
+    #    它从 stdin 读 git 的 pre-push ref 行，电池环境（capture_output 不给 stdin）会挂在管道上
+    #    空转到 timeout（R98 口径：尺子不结束不是判据红，是空转）。手写点名 --selftest 后
+    #    covered 按脚本名去重，自动发现不再补裸跑格。check_push_guard 裸跑是只读全量判据
+    #    （跟踪面 + 本地子进程语义矩阵），自动格即可，与自检格并存。 ——
+    case("check_direct_push.py", "--selftest"),
+    # —— R4 沙箱隔离普查棘轮：新尺忘给 git 沙箱传 scrubbed env 当场红（现读 9 存量只许降）。
+    #    live 模式只读宿主跟踪面（git ls-files），不建临时仓 ⇒ 无写副作用，自检格+自动裸跑格皆可入。 ——
+    case("check_git_sandbox_hygiene.py", "--selftest"),
     # —— R106 追记（叠 gitcode/master b465915f 之后现读）：下面三格原来的 expected 非 0 已被主线
     #    修好（账本撞号收敛 + `scripts/merge-prompt.txt` 出跟踪面），got 0 ≠ expect 当场现形 ⇒
     #    按本文件自订的律「预存红被修好 ⇒ 把期望改回 0」转回门禁格。 ——
@@ -173,6 +188,18 @@ SPECIAL_CASES = [
              "gate 步骤，属 CI workflow 内容债；升档是人的决定，本单元不改常量"),
     expected("check_ci_step_position.py", 2,
              "同一处棘轮超限 ⇒ 自检 T9「真源现状 rc=0」不成立，按判据自拒出 2", "--selftest"),
+    # —— 远端状态读数（2026-10-24）：这两格红的是**远端形态**，不是仓内容债 ——
+    # filter-repo 重写历史后，多数通道支与当前 `gitcode/main` 已**无共同祖先**（`git merge`
+    # 会拒绝 unrelated histories）⇒ 合并面只能走 cherry-pick（本会话全程即如此）。这不是缺陷
+    # 而是要如实点名的合并形态；按 diag 口径把当轮真读数钉住，数字漂移就现形。
+    expected("check_branch_ancestry.py", 1,
+             "诊断口径：filter-repo 重写后 196 支与 gitcode/main 无共同祖先（merge 拒绝 unrelated "
+             "histories）⇒ 合并只能 cherry-pick；本地临时支（test/ work/）已清，剩余为远端通道支",
+             kind="diag"),
+    # 2026-10-24 追记：`check_diff_scope.pick_base()` 改用「离 HEAD 最近的候选」后，本尺的
+    # base 也稳定落到 main ⇒ 「master 落后 1113 提交」那个读数不再出现，实测 **0 个分支有未推送提交**
+    # （rc=0）。按本文件自订的律「预存红被修好 ⇒ 把期望改回 0」转回门禁格。
+    case("check_delivery_gap.py"),
     # —— R55：blackbox 尺进宇宙也进电池（相对 scripts/ 点名，路径含子目录）——
     case("blackbox/check_merge_markers.py", "--selftest"),
     # R106 曾登记预存红：主线把某 agent 的 git worktree 以 gitlink(mode 160000) 提交进跟踪面
@@ -237,6 +264,16 @@ SPECIAL_CASES = [
     #    裸跑在本机恒 DEGRADED(2)，自动补格会把它当红；本表点名后自动格就不再裸跑。 ——
     # —— R57：合并丢行探测。只跑 --selftest（合成仓库造丢行）；真跑要读真 merge 历史。 ——
     case("check_merge_loss.py", "--selftest"),
+    # —— R153：自检 hermetic 守卫（把 R151 那条口径「`--selftest` 只许合成夹具」做成常驻判据）。
+    #    --selftest 在 temp 里造被检脚本，属只读快格 ⇒ 门禁格；裸跑要扫真仓 scripts/ 全树（递归，含
+    #    blackbox/），现读红档 72 处（W=10 / R=48 / G=14，分布在 24 把尺）+ 记账档 5 处（T=4 落约定
+    #    temp/、S=1 自 spawn）；立尺这一单不代修那 72 条，按本文件的律「预存红照写期望值 + 依据」登记，
+    #    被检面修到 0 之后这一格自己翻红，逼下一位把期望改回 0。 ——
+    case("check_selftest_hermetic.py", "--selftest"),
+    expected("check_selftest_hermetic.py", 1,
+             "R153 立尺现读：自检体真源读写红档 72 处（W=写探针进真树 10 / R=读现状面 48 / G=打真仓 14，"
+             "分布在 24 把尺），另记账档 5 处（T=4 约定的 gitignored temp/、S=1 隔离自 spawn）只点名不判红；"
+             "本单只把形状变成常驻可见，不代修这 72 条——逐条核实归后续单"),
     case("check_fmt_gate.py", "--selftest"),
     case("audit_branch_delete.py", "--selftest"),
     # —— R55：`moon fmt --check` 的可判性闸（BUG-381）。只跑 --selftest：
@@ -279,8 +316,11 @@ SPECIAL_CASES = [
     # 原来的 expected(...,1) 依据自写的那句「修到自然转绿后把期望改回 0」到期，转回门禁格。
     case("check_bug_reference_integrity.py"),
     gated("check_skill_inject.py", "fist-mbt.db", "fist-mbt.db"),
-    expected("fist-gate.py", 2,
-             "fmt 段依赖 git diff 管道，本机退化 rc=-1 ⇒ 按设计 DEGRADED(2)；实体机/CI 复跑"),
+    # 2026-10-24：原预存红「fmt 段依赖 git diff 管道，本机退化 rc=-1 ⇒ 按设计 DEGRADED(2)」
+    # 已不成立——实测 `moon fmt` 预热出 `_build/wasm-gc/release/format/` 之后，fmt 段判
+    # **PASS（moon fmt --check: clean）**，六门全 PASS、rc=0。按本文件自订的律
+    # 「被检内容修好 ⇒ 把期望改回 0」转回门禁格（预存红是借条，不是免检牌）。
+    case("fist-gate.py"),
     # ── R134：轮次号在 reports/ 交付面被不同单元复用（R110/R113/R118/R121 各两组）是
     #    「编号没有认领面」的直接后果——两支各自读开工时刻的远端快照，谁先推谁占号。历史
     #    4 组进 docs/tasks/unit-number-baseline.txt 棘轮；新撞号 / 基线过期 / 悬空认领三态
@@ -320,7 +360,7 @@ GEN_PLUGINS_GATE = "gen_plugins.py"
 # 默认全进会把改码工具/演示脚本跑起来（实测改过 src/router/*.mbt），
 # 而"新脚本默认不进电池"最多是漏检——漏检由 --list 的非判据清单兜底（可见 + 有理由）。
 AUTO_CASE_PREFIXES = ("check_", "cleanup_")
-AUTO_CASE_EXACT = {"gen_plugins.py", "fist-gate.py"}
+AUTO_CASE_EXACT = {"gen_plugins.py", "fist-gate.py", "check_repo_shape.py"}
 
 
 def non_gate_reason(script):
@@ -487,6 +527,10 @@ REGISTRY = {
     "blackbox/e2e_lock_xproc.py": "端到端探针：跨进程锁竞争，需运行前提，跑法见 scripts/README.md",
     "blackbox/e2e_mirror_install.py": "端到端探针：真下载镜像安装（网络 + 沙箱），跑法见 scripts/README.md",
     "blackbox/e2e_transport_stack_fallback.py": "端到端探针：TLS 换栈真装（网络 + 沙箱），跑法见 scripts/README.md",
+    # 2026-10-24（R44）：变异探针要 `git clone --depth 1` 出临时仓并在里面造违例——属
+    # 「需平台前提的 e2e」族，进 REGISTRY 而不进自动电池（真跑一次数分钟）。
+    # 实测 BITES 5 / BLUNT 0 / SKIP 0，跑法见 scripts/README.md。
+    "blackbox/e2e_guard_mutation.py": "端到端探针：「判据会不会咬」变异测试（clone + 造违例 + 复跑），跑法见 scripts/README.md",
     "blackbox/e2e_upgrade_mirror.py": "端到端探针：升级镜像真装（网络 + 沙箱），跑法见 scripts/README.md",
     "blackbox/patch_esm_main.py": "构建辅助：mcp_smoke/demo 启动前幂等注入 require shim（CI 在用，不单独当格跑）",
     "caf_offline_replay.py": "CAF 实验重放（长跑/需语料）",
@@ -501,6 +545,11 @@ REGISTRY = {
     "fist_mbt_mcp_client.py": "MCP 客户端演示（需 server 活着）",
     "gen_apply_pdf.py": "按需生成器（产出报告 PDF，无门禁语义）",
     "gen_help_docs.py": "按需生成器（产出帮助文档，drift 由 doc_surface 面另判）",
+    # 2026-10-24： /  两条登记已撤——它们指向的脚本
+    # **不在跟踪面**（ 第 110/111/135/137 行点名忽略，只存在于本机工作树）。
+    # 为什么必须撤：G2 判据「登记面点名的脚本不存在 ⇒ FATAL(rc=2)」在别的机器/CI 上会把
+    # **整台电池**卡死在 FATAL ⇒ 90+ 格一个都跑不出来（ 实测就是这条）。
+    # 登记表是「在册但不当格跑」的说明，脚本不在仓里就不该在册——与 BUG-373「先入账再引用」同律。
     "issue_scan.py": "MCP issue_scan 的 CLI 辅助入口（能力面由 src/server 白盒锁覆盖）",
     "laya_decide.py": "Laya 决策 CLI（无门禁语义）",
     "mcp_bug_loop.py": "MCP bug 闭环长跑（需 server 活着）",
@@ -511,6 +560,9 @@ REGISTRY = {
     "pentad_fist.py": "Pentad 外部项目驱动器（长跑）",
     "score_gate.py": "评分器 CLI（读数型，无门禁语义）",
     "simulate_head_commit.py": "辅助库（check_bug_reference_integrity 引用其 simulate_head_commit，不单独跑）",
+    "git_sandbox.py": "辅助库（R4：sandbox_env 单一真源，被 check_push_guard/check_hardcoded_paths/"
+                      "check_merge_markers import；无独立门禁语义，覆盖由 check_git_sandbox_hygiene "
+                      "普查格 + check_merge_markers C8 逐字对表格承担）",
     "install_git_hooks.py": "本机 git 钩子安装/体检（--install 写 .git/hooks 与 core.hooksPath；"
                             "--selftest 读的是**这台机器装没装**，副机/CI 上必 rc=1 属环境态不是判据红）",
     "refresh_dist.py": "dist 快照刷新计划/执行（要 moon build 产物并写盘；无 --selftest 旗标，"
@@ -539,16 +591,53 @@ KNOWN_NO_FACE = {
 }
 
 
+def _tracked_scripts():
+    """Git 跟踪面里的 `scripts/` 脚本集合（相对 `scripts/` 的路径）。
+
+    **为什么宇宙必须先过这一面**（2026-10-24 实测的整台电池 FATAL）：
+    `.gitignore` 里有几份**本机专属**脚本（`pol_keeper_run.py` / `pol_keeper_wrapper.ps1` /
+    `pol_keeper_prompt.md` / `fix_esm_require.py`，见 `.gitignore` 第 110/111/135/137 行）。
+    旧的 `os.walk` 宇宙把工作树当宇宙 ⇒ 这些「本机有、仓里没有」的文件被要求有执行面，
+    G1 报缺面 ⇒ 有人把它们塞进 REGISTRY 图个 rc=0 ⇒ G2「登记点名的脚本不存在」在
+    **别的机器/CI 上**把整台电池卡在 FATAL(rc=2)，90+ 格一个跑不出来（`5be75f1e` 的现场）。
+
+    换个方向修：宇宙只该是**仓库里真有、且会被别人克隆到**的那批脚本。工作树里的
+    gitignored 文件是「这台机器的私人物件」，不构成「缺面」。取不到 git（非仓 / 无 git）时
+    返回 None ⇒ 调用方退回全扫（保持离线可用，不把「读不到」当「没有」）。
+    """
+    try:
+        p = subprocess.run(
+            ["git", "-C", ROOT, "ls-files", "-z", "--", "scripts"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if p.returncode != 0:
+        return None
+    tracked = set()
+    for rel in p.stdout.decode("utf-8", "replace").split("\0"):
+        if not rel:
+            continue
+        rel = rel.replace("\\", "/")
+        if rel.startswith("scripts/"):
+            tracked.add(rel[len("scripts/"):])
+    return tracked or None
+
+
 def universe_files():
     """递归扫描 scripts/ 下全部 .py（相对 scripts/ 路径名，子目录带前缀）。排除 __pycache__。
 
     本体在 2bd4dbf2（TASK-007 / R82）落过一次，其后一次手动解冲突把它从 `classify()` 的调用面上
     删掉了 ⇒ 全电池 `NameError` 起不来（2026-10-22 实测 `--list` rc=1）。宇宙一旦被改窄或改没，
     G1「无人缺面」就会以 rc=0 的形态骗人，所以这一份清单必须是真源。
+
+    2026-10-24 补：宇宙再叠一道 **Git 跟踪面**过滤（见 `_tracked_scripts`）——gitignored 的
+    本机私人物件不算「仓里的脚本」，否则 G1 会要求为它们建执行面、G2 会在别人机器上 FATAL。
     """
     out = []
     if not os.path.isdir(SCRIPTS_DIR):
         return out
+    tracked = _tracked_scripts()
     for dirpath, dirnames, filenames in os.walk(SCRIPTS_DIR):
         dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
         for fn in sorted(filenames):
@@ -557,6 +646,8 @@ def universe_files():
             full = os.path.join(dirpath, fn)
             rel = os.path.relpath(full, SCRIPTS_DIR).replace(os.sep, "/")
             if UNIVERSE_EXCLUDE_RE.search(rel):
+                continue
+            if tracked is not None and rel not in tracked:
                 continue
             out.append(rel)
     return out

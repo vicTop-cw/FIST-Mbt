@@ -57,7 +57,9 @@ test "Gate2-b: 能力不足被拒且点名缺失项" {
   let reg = @executor.ExecutorRegistry::new().add_ability("worker1", ["python"])
   let e = FistEngine::new(registry=reg)
   let tid = cr_publish(e, "实现接口\n需要: python, json", 6)
-  let msg = cr_err_of(e.claim(task_id=tid, assignee="worker1", now="2026-10-22T01:00:00Z"))
+  let msg = cr_err_of(
+    e.claim(task_id=tid, assignee="worker1", now="2026-10-22T01:00:00Z"),
+  )
   assert_true(msg.contains("ABILITY_GATE"))
   assert_true(msg.contains("json"))
 }
@@ -65,7 +67,9 @@ test "Gate2-b: 能力不足被拒且点名缺失项" {
 ///|
 /// Gate2-c：能力齐备 ⇒ 放行（正例，防"门装成一刀切"）。
 test "Gate2-c: 能力齐备放行" {
-  let reg = @executor.ExecutorRegistry::new().add_ability("worker1", ["python", "json"])
+  let reg = @executor.ExecutorRegistry::new().add_ability("worker1", [
+    "python", "json",
+  ])
   let e = FistEngine::new(registry=reg)
   let tid = cr_publish(e, "实现接口\n需要: python, json", 6)
   match e.claim(task_id=tid, assignee="worker1", now="2026-10-22T01:00:00Z") {
@@ -81,7 +85,8 @@ test "Gate2-d: 未注册执行者跳过能力门" {
   let tid = cr_publish(e, "实现接口\n需要: python, json", 6)
   match e.claim(task_id=tid, assignee="leader_a", now="2026-10-22T01:00:00Z") {
     Ok(_) => ()
-    Err(m) => abort("未注册 abilities 应跳过能力门，实际被拒: " + m)
+    Err(m) =>
+      abort("未注册 abilities 应跳过能力门，实际被拒: " + m)
   }
 }
 
@@ -151,7 +156,9 @@ test "rank_gate G3: level_to_rank 映射与越界" {
 test "rank_gate G4: 连长认领团长级任务被拒且文案含 RANK_GATE" {
   let e = FistEngine::new()
   let tid = cr_publish(e, "团长级任务（level=4）", 4)
-  let msg = cr_err_of(e.claim(task_id=tid, assignee="leader_a", now="2026-10-22T01:00:00Z"))
+  let msg = cr_err_of(
+    e.claim(task_id=tid, assignee="leader_a", now="2026-10-22T01:00:00Z"),
+  )
   assert_true(msg.contains("RANK_GATE"))
   // 文案要能读出双方军衔，否则运维无法判断是"没权限"还是"任务建错了"
   assert_true(msg.contains("rank=6"))
@@ -163,7 +170,8 @@ test "rank_gate G4: 连长认领团长级任务被拒且文案含 RANK_GATE" {
 test "rank_gate G4: 人类指挥官放行（司令例外）" {
   let e = FistEngine::new()
   let tid = cr_publish(e, "团长级任务（level=4）", 4)
-  match e.claim(task_id=tid, assignee="human_steward", now="2026-10-22T01:00:00Z") {
+  match
+    e.claim(task_id=tid, assignee="human_steward", now="2026-10-22T01:00:00Z") {
     Ok(t) => assert_eq(t.assignee, Some("human_steward"))
     Err(m) => abort("司令应可认领任意级任务，实际被拒: \{m}")
   }
@@ -190,11 +198,14 @@ test "rank_gate G4: 同级/下级任务放行" {
 test "rank_gate G4: atomcode 团长认领旅长级任务被拒" {
   let e = FistEngine::new()
   let tid = cr_publish(e, "旅长级任务（level=3）", 3)
-  let msg = cr_err_of(e.claim(task_id=tid, assignee="atomcode-r91", now="2026-10-22T01:00:00Z"))
+  let msg = cr_err_of(
+    e.claim(task_id=tid, assignee="atomcode-r91", now="2026-10-22T01:00:00Z"),
+  )
   assert_true(msg.contains("RANK_GATE"))
   // 同一任务 atomcode 领 level=4 应放行（另一个用例已覆盖同级，这里确认门不误伤相邻档）
   let t4 = cr_publish(e, "团长级任务（level=4）", 4)
-  match e.claim(task_id=t4, assignee="atomcode-r91", now="2026-10-22T01:00:00Z") {
+  match
+    e.claim(task_id=t4, assignee="atomcode-r91", now="2026-10-22T01:00:00Z") {
     Ok(_) => ()
     Err(m) => abort("团长级任务应放行，实际被拒: \{m}")
   }
