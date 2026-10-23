@@ -17,7 +17,7 @@ HEAD 的 `src/server/pkg.generated.mbti`（`moon info` 生成的接口面，文�
   M1 每个 `<pkg>/pkg.generated.mbti` 里的 `pub fn <name>` 声明，**同包的 `.mbt` 文件里
      必须能找到 `pub fn <name>` 定义**（文本级：同名顶层 pub fn 即算）。找不到即红，
      并点名"接口面声明了但实现未提交"。
-     派生方法例外：`\w+` 在 `pub fn T::m(...)` 上只收到 `T`，而 `derive(Eq, Debug)` 生成的
+     派生方法例外：`\\w+` 在 `pub fn T::m(...)` 上只收到 `T`，而 `derive(Eq, Debug)` 生成的
      方法在源码里没有 `fn` 文本 ⇒ 源侧把**带 derive 标注的类型名**也收进 `fn` 定义集
      （`collect_defs` 的 derive 承载格）。类型没带 derive 时照红，真缺实现不放水。
   待确认：`pub let` / `pub const` / `pub type` 等其它声明形状**本轮不判**（先只在 `pub fn` 上做实）。
@@ -120,7 +120,7 @@ def collect_defs(text):
     """从源 .mbt 正文收集 {形状: {定义名}}（只认源侧正则，允许 pub(all)/无前缀）。
 
     `fn` 形状额外收下**带 `derive(...)` 的类型名**：`.mbti` 里 `pub fn T::to_repr(...)`
-    这类行按现有正则两侧都只收到 `T`（`\w+` 停在 `::` 前），而 derive 生成的方法在源码里
+    这类行按现有正则两侧都只收到 `T`（`\\w+` 停在 `::` 前），而 derive 生成的方法在源码里
     没有 `fn` 文本、只有闭合行上的 `derive(Eq, Debug)` 标注。不收这一格，`0079`
     的 `pub extend T with ...::{...}` 修复就会让"只有派生方法、没有手写方法"的类型误红
     （实测 12 个类型）。收进来之后仍然判得住真正的缺实现：类型没带 derive ⇒ 照红。

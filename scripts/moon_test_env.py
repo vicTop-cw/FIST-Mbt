@@ -24,9 +24,9 @@ node --enable-source-maps _build/js/debug/test/src/engine/engine.blackbox_test.j
 
 ## 第二道坑（R124）：清干净 PATH 仍可能在编译面炸
 `node` 修好之后，`moon test` 的**编译面**还有一颗雷：moon 0.1.20261016 在 Windows 上把
-`-o` / `-all-pkgs` 等输出路径写成 `\\?\F:\…` 长路径前缀，moonc 打开时直接
+`-o` / `-all-pkgs` 等输出路径写成 `\\?\\F:\\…` 长路径前缀，moonc 打开时直接
 `Sys_error("\\\\?: Invalid argument")`（与本仓代码无关，最小工程同样复现；同族见 BUG-388 的
-`moon fmt --check` 面）。本机既有绕法是 `MOONC_OVERRIDE` 指向一个**剥离 `\\?\` 前缀再转发**的 shim。
+`moon fmt --check` 面）。本机既有绕法是 `MOONC_OVERRIDE` 指向一个**剥离 `\\?\\` 前缀再转发**的 shim。
 本脚本在 Windows 上自动发现 `~/.moon-shim/shim.exe`（显式 `MOONC_OVERRIDE` 优先），找不到就照跑，
 但一旦输出里出现 ICE 会**点名成因**并给 rc=2——不把它洗成测试红、也不假装绿。
 
