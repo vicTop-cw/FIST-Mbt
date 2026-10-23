@@ -1,0 +1,39 @@
+id: BUG-395-desc-clip-utf8
+branch: feat/fix-desc-clip-utf8
+title: "fix(core): desc_clip 按 UTF-8 字节上限截断——修 pre-existing 测试红 + 实现与契约不符（BUG-395）"
+base: main
+merge: false
+gate: true
+remote: origin
+priority: P1
+body: |
+  `Task::to_json` 的 `desc_limit~` 契约是**UTF-8 字节上限**（core_task.mbt 注释明说「截断到该字节上限（字符边界安全）」），
+  但 `desc_clip` 实现按 **UTF-16 code unit 数**截断——实现与契约不符，且留下 pre-existing 测试红。
+
+  ## 现象
+  `desc_clip("一二三四五六七八九十", 6)` 返回 `"一二三四五六…"`（6 字符），
+  而契约（dc_3 测试期望）是 6 **字节** = 2 个中文字符 + `"…"` = `"一二…"`。
+  测试 `src/core/core_task_desc_clip_wbtest.mbt:44`（dc_3）红：`"一二三四五六…" != "一二…"`。
+
+  ## 根因
+  MoonBit `String::length()` 返回 **UTF-16 code unit 数**（不是字节数），`s[i]` 取的是 UTF-16 code unit。
+  原实现用 `s[cut].land(0xC0) == 0x80` 做 UTF-8 continuation 检测，在 UTF-16 上**永远不成立**
+  （中文码位 0x4E00+，`land(0xC0)` ≠ 0x80）——等于把 `desc_limit` 静默当成了"字符数"而非"字节数"。
+
+  ## 影响
+  `Task::to_json(desc_limit=…)` 的 description 截断长度错误：同字节上限下，中文/emoji 描述比契约允许的
+  长 2~3 倍（每中文 3 UTF-8 字节 vs 1 UTF-16 unit），膨胀查询/管家类工具的 JSON 体积。
+
+  ## 修法
+  - `desc_clip` 改用 `@utf8.encode(s)` 拿真 UTF-8 字节，按 `desc_limit` 字节切 + UTF-8 continuation 回退，
+    `@utf8.decode(Bytes::from_array(bytes[0:cut].to_array())) catch { _ => "" }` 转回 String 再拼 `"…"`。
+  - `src/core/moon.pkg` 加 `moonbitlang/core/encoding/utf8` 依赖（**BUG-360 已钉过** `String::to_bytes()`
+    是 UTF-16LE 的坑，统一走 `@utf8.encode`；src/router、src/omega 已用同款）。
+  - `memory/bugs.md` 补账 BUG-395（本条目）。
+
+  ## 证据
+  - `moon check src/core`：通过（0 错误）
+  - `moon test --target js src/core`：**18/18 passed**（原 17/18 failed 1）
+  - `moon test --target js` 全量：**1442/1442 passed failed 0**（原 1442/1441 failed 1）
+    —— pre-existing 红清零且**零回归**
+  - `moon fmt --check`：通过

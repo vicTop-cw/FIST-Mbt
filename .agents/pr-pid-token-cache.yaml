@@ -1,0 +1,69 @@
+id: BUG-401-pid-token-process-stable
+branch: fix/pid-token-cache
+title: "fix(agent-fingerprint): current_pid_token 进程内固化（BUG-401）——注释承诺一次，实现每次都取时钟"
+base: main
+merge: false
+gate: true
+remote: origin
+priority: P2
+body: |
+  ## 病灶：注释与实现双重违约（T0r5 新功能）
+  `fn current_pid_token()`（src/server/server.mbt）注释写：
+  > 退化为 `now_ms / 1000 % 2000000000` 的 Int32（进程启动即固定一次，生命周期内不变）
+
+  但函数体**每次调用都重取 `@env.now()`**：
+
+  ```mbt
+  fn current_pid_token() -> Int32 {
+    let ms = @env.now().reinterpret_as_int64()  // ← 每次调用取当前时钟
+    ...
+    (ms / 1000L % 2000000000L).to_int()
+  }
+  ```
+
+  ## 影响：安全门把好人挡门外
+  同一进程内 `agent_touch_first_seen`（用当时的 `current_pid_token()` 注册 pid）后过几秒，
+  `agent_write_gate`（claim/execute 写面硬门）里 `current_pid_token()` 就与注册时不同 ⇒
+  `agents_acl_check` 的 `pid_bound=1` 分支误报
+  「ACL 绑定旧进程实例（pid 已换）」**把合法写操作拒掉**。
+
+  ## 测试盲区：注释与实现的双重违约无人钉
+  `src/store/store_sqlite_agents_wbtest.mbt`（本功能配套测试）恒传**硬编码** `current_pid`（123/999），
+  **从未调 `current_pid_token()`**——秒级漂移零覆盖，契约破坏无人拦。
+
+  ## 修法：首次调用固化缓存
+  ```mbt
+  let cached_pid_token : Array[Int32] = Array::make(1, -1)  // MoonBit 顶层不支持 let mut，用单元素容器
+
+  fn current_pid_token() -> Int32 {
+    if cached_pid_token[0] >= 0 {
+      return cached_pid_token[0]
+    }
+    let ms = @env.now().reinterpret_as_int64()
+    if ms < 0L {
+      return 0
+    }
+    cached_pid_token[0] = (ms / 1000L % 2000000000L).to_int()
+    cached_pid_token[0]
+  }
+  ```
+  首次调用固化，之后恒返回同一 pid——注释承诺兑现。
+
+  ## 白盒锁：新增 `pid_token_wbtest.mbt`（2 条）
+  ① 首次调用固化缓存（读容器状态断言）
+  ② 后续调用复用同一值（多次调用恒等）
+
+  **有效性验证**：`git stash push src/server/server.mbt` 还原原版后，测试文件**编译即败**
+  （`cached_pid_token` 未定义）⇒ 契约破坏可被钉住，不再依赖「同秒碰巧相等」的假绿测试。
+
+  ## 证据
+  | 检查 | 结果 |
+  |---|---|
+  | `moon check src/server` | **0 errors**（修前 6 errors：`let mut` 顶层不支持 / `Array::of` 无此方法，均已适配） |
+  | `moon test src/server` | **387/387**（385 基线 + 2 新增） |
+  | 全量 `moon test --target js` | **1449/1448 failed 1**（failed 1 = src/core desc_clip BUG-395 预存，另分支 `fix/fix-desc-clip-utf8` 已修）——**零新增回归** |
+  | 还原原版 + 新测试 | 编译失败（`cached_pid_token` 未定义）⇒ 契约破坏可测 |
+
+  ## 关联
+  - `BUG-395`（desc_clip UTF-8 截断）——同类的注释/实现违约，同为 fist-bot 未合并
+  - T0r5 agent-fingerprint（本地 main `92c74d88`）——本 PR 基于此

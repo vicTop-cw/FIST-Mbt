@@ -1,0 +1,58 @@
+id: BUG-390-397-398-399-400-backfill-wiring
+branch: fix/backfill-ghost-bugs
+title: "治理收口：回填 4 个幽灵 BUG 编号（390/397/398/399）+ 接线两个从没跑过的守卫（BUG-400）"
+base: main
+merge: false
+gate: true
+remote: origin
+priority: P2
+body: |
+  两个相关治理修复（同一分支，两个 commit）：
+
+  ## ① 回填 4 个幽灵 BUG 编号（`ebf3738b`）
+  `BUG-390/397/398/399` 被多个 commit message 引用，但 `memory/bugs.md` 里这些编号**一直不存在**
+  （账本曾最高 389/394）——手写编号绕过了 `report_bug` 原子分配。
+
+  `scripts/check_commit_bug_refs.py` 跑在本地 main（`origin/main..HEAD` = 24 commit）上抓出 **4 个 ORPHAN**：
+
+  | 编号 | commit | 内容 |
+  |---|---|---|
+  | BUG-390 | `0f4ffe8c` | SqliteStore::open 兜底补建父目录 |
+  | BUG-397 | `1ef98f8f` | .mbti 恒脏——.gitattributes eol=lf |
+  | BUG-398 | `ad5d38df` | check_branch_ancestry.py |
+  | BUG-399 | `ad5d38df` | check_memory_log_size.py |
+
+  这 4 个都是**真修复**（fist-bot 已落地，只是未走 `report_bug`），所以正确动作是**回填账本条目**，
+  不是改判据容忍幽灵——否则判据就成了摆设。
+
+  ## ② 接线两个从没跑过的守卫（BUG-400，`380beaad`）
+  上面 BUG-398/399 对应的是两个守卫脚本，但 `ad5d38df` 落仓时**从未接进任何 workflow**
+  （8 个 workflow grep 全 0 命中、`run_guards.py` 未注册、README 未登记）——只 `--selftest` 自己跑
+  = **没人跑的尺，等于没尺**（本仓 R74 修过同类：`check_merge_markers.py` 落仓 5 小时没接 CI）。
+
+  **接线**：
+  - `check_memory_log_size.py` → ci.yml「Memory-log size gate」步（R59）
+    - 背景：`memory/2026-10-22.md` 长到 **613.31 MB / 3,698,202 行**，GitHub 拒收把整条
+      origin 交付线冻死，本地 git 操作 OOM——就是「没闸」的下场
+    - 放 Migrate 之前（同 merge-marker 教训：之后的判据会被 skip）
+  - `check_branch_ancestry.py` → gate.yml「Branch-ancestry gate」步（R66）
+    - 背景：613MB 事故后主线被重写（`92d0edba` → `788c5823`），早先 PR 分支基点成孤儿，
+      `git merge` 报 `refusing to merge unrelated histories`——「分支绿、尺全过、merge-tree
+      报无冲突」却物理合并不了，合并机器人只能空转
+    - PR gate 跑，`fetch-depth: 0` 已取整段历史，能真正测出 orphan
+  - `scripts/README.md` 登记这两把尺（`check_scripts_index` 要求）
+
+  ## 证据
+  | 检查 | 结果 |
+  |---|---|
+  | `check_commit_bug_refs.py`（本地 main 24 commit） | **补账前 rc=1 FAIL（4 ORPHAN）→ 补账后 rc=0 PASS** |
+  | 两把尺 `--selftest` | OK（memory 9 格 / ancestry 6 格） |
+  | `check_memory_log_size.py` 默认扫描 | PASS（6 文件，bugs.md 0.96MB / 重复率 6.0%） |
+  | `check_branch_ancestry.py --branches HEAD` | PASS（可合并） |
+  | ci.yml / gate.yml YAML | 语法合法 |
+  | `run_guards.py --list` | 两守卫 `CI=CI 电池=电池`（**从缺面变成有执行面**） |
+  | `check_scripts_index.py` | 两把尺已登记（不再报漏登记） |
+
+  ## 关联
+  - PR「check_commit_bug_refs.py — commit message 面 BUG-N 完整性判据」——①是被它抓出的幽灵的回填
+  - `BUG-395`（desc_clip UTF-8 截断）——同类手写编号问题

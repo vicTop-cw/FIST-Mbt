@@ -1,0 +1,63 @@
+id: BUG-403-404-agent-fp-honest
+branch: fix/agent-fp-honest
+title: "fix(agent-fp): 诚实降级两条与实现不符的注释承诺（BUG-403/404）"
+base: main
+merge: false
+gate: true
+remote: origin
+priority: P2
+body: |
+  ## 病灶：注释承诺安全性质/职责，实现不符
+  在 agent-fingerprint（T0r5）新安全代码里，两处注释与实现不符，且配套测试用硬编码
+  pid、零覆盖——正是 BUG-401（current_pid_token）能逃逸的同一系统性缺口。
+
+  ## BUG-403（medium）：「不可逆指纹」其实是裸 FNV-1a + `pubkey_fp` 幻影
+  - 注释 `src/server/server.mbt:441-444`：称 agent 指纹是「**不可逆指纹**」、
+    「`pubkey_fp` 另行用 `fnv1a64("pubkey:" ++ hex)` 派生（T0r5：密钥指纹面）」。
+  - 实现 `:445-446`：`fn agent_fp(raw) = @omega.fnv1a64("agent_id:" + raw)`。
+    FNV-1a（`src/omega/spec.mbt:34-52`，offset `0xcbf29ce484222325` + prime
+    `0x100000001b3`）**无 HMAC、无 salt**，非密码学哈希——乘奇素数 + 异或链条
+    **可逆**，短 `agent_id` 可反解原文，也可对任意目标值直接构造前像。
+  - **`pubkey_fp` 幻影**：全仓 `grep '"pubkey:"'` 只命中注释那一行，**无任何代码
+    真正派生它**；所有写入点恒传 `pubkey_fp=""`（`server.mbt:484`、
+    `store_sqlite.mbt:2794`）。若未来按注释接「公钥钉身份」，会静默绑定到空串
+    （等于没有键位绑定）。
+  - **实际杀伤**：agent_id 是自报名字、本身非机密，「指纹泄漏原文」杀伤有限；
+    但「不可逆」承诺误导安全判断，「密钥指纹面」是实打实的死承诺。
+
+  ## BUG-404（low）：「注册并落默认 ACL」从未发生
+  - 注释 `src/store/store_sqlite.mbt:2712-2713`：称注册时「首次出现则 INSERT
+    （**并落一条 fail-closed 的默认 ACL**）」。
+  - 实现 `:2719-2776`：只 `INSERT INTO agents … ON CONFLICT DO UPDATE`，
+    **无任何 `agent_acl` INSERT**。默认 ACL 真源在 **server 层**的
+    `agents_acl_ensure`（`server.mbt:477-484`，`agent_touch_first_seen` 调用链保证）。
+  - **旁路**：`agents_heartbeat`（`store_sqlite.mbt:2777-2794`）直连
+    `agents_register`，产生「有 agent 身份、无 ACL 行」中间态。
+  - **实际杀伤**：`agents_acl_check` 对无记录返回 `Err("ACL 无记录（fail-closed）")`
+    ——仍 fail-closed，**不是安全洞**；但「注释承诺的默认 ACL 自动落」在直连 store
+    路径上从不发生，未来按注释写代码的人会得到静默意外。
+
+  ## 同源系统缺口（附 BUG-401/403/404 三单）
+  `store_sqlite_agents_wbtest.mbt` 是这条新安全代码的**唯一**覆盖，全用硬编码 pid
+  （`:22 pid=1001`、`:80 pid=777`、`:170 current_pid=999`…）；`grep
+  "current_pid_token\|agent_fp" src/*test*.mbt src/*wbtest*.mbt` = **空** →
+  「进程启动即固定一次」这类注释承诺在测试里恒真（因为喂的是常量），实现怎么漂移
+  都绿着——BUG-401 的逃逸形状。
+
+  ## 修法：诚实降级注释（不改变运行时行为）
+  - BUG-403：改称「非密码学短标识」（不承诺单向性/防碰撞），标注 `pubkey_fp` 当前
+    未接线、不得在安全断言里依赖。要真身份认证需换 HMAC-SHA256 或真正接线 `pubkey_fp`。
+  - BUG-404：诚实描述职责边界（本函数只写 `agents` 表，ACL 由 server 层
+    `agents_acl_ensure` 落）。如需「注册即落 ACL」原子语义，把 ACL ensure 并入
+    register 或把 `agents_heartbeat` 改成先 ensure。
+  - 系统缺口：三单都应附回归锁——用真实 `current_pid_token()` 而非字面量驱动
+    register→acl_grant(pid_bound=true)→acl_check。
+
+  ## 验证
+  - 改动面：**纯注释**（`git diff` 无代码 + 行），`moon fmt` 不涉及，运行时行为零变化。
+  - 覆盖现状：`current_pid_token` / `agent_fp` 在测试里零覆盖（见上）——
+    本 PR 只改注释，不改变该零覆盖事实，但把承诺与实现对齐到诚实边界。
+
+  ## 关联
+  - 同类违约：`fix/pid-token-cache`（BUG-401 current_pid_token 契约与实现不符）
+  - 同类漂移：`fix/cl7-plugin-sync`（BUG-402 一源四态 cl7 插件投影落后）

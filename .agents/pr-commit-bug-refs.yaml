@@ -1,0 +1,35 @@
+id: BUG-400-commit-bug-refs
+branch: feat/commit-bug-refs-clean
+title: "feat(scripts): check_commit_bug_refs.py — commit message 面 BUG-N 完整性判据（补 R48/R115 盲区）"
+base: main
+merge: false
+gate: true
+remote: origin
+priority: P2
+body: |
+  补上两把既有尺都不覆盖的 **commit message 面** BUG-N 完整性判据。
+
+  ## 为什么需要
+  `check_bug_reference_integrity.py`（R48）只扫 `.mbt` 注释面，`check_bug_refs.py`（R115）扫代码/文档面，
+  两把尺都不扫 `git log` 的 commit message。实测 `git log --format=%B origin/main..HEAD` 引用
+  `BUG-390/397/398/399`，而 `memory/bugs.md` 里这些编号**全都不存在**（账本最高 389）——
+  commit 引用了账本里没有的 bug 编号，且 `BUG-390` 被两个不同 bug 复用（`0f4ffe8c` 标 BUG-390=SqliteStore::open、
+  bug_list 面标 BUG-390=pre-push 拦截），编号**从未经 report_bug 原子分配**（手动编号绕过 API）。
+
+  ## 本尺判定
+  - **ORPHAN** = 未推送 commit message 里引用的 BUG-N，账本里没有该编号
+  - `PHANTOM_COMMIT_CEILING=0`：判据**只扫 `origin/main..HEAD`**（即将进 main 的新 commit），**不含**已 push 进 main 的历史
+    （那些引用的 390/397/398/399 不在扫面内）——所以任何新 commit 引用的 BUG-N **必须**在账本里，否则即红；棘轮只许降不许升
+  - **夹具降档**：编号 >= 900（BUG-901/999）是 selftest 合成夹具，机械跳过不计孤儿
+  - **只扫 `origin/main..HEAD`**（即将进 main 的 commit），不扫全部历史——判据是「新 commit 不得引入幽灵编号」
+  - `--selftest` 6 格（提取/夹具/边界/ceiling/账本/实测）
+
+  ## 当前读数
+  干净分支：0 孤儿 / ceiling=0，PASS。
+  **变异验证**（证明判据会红，非摆设）：`--allow-empty` 加一条引 `BUG-888`（账本无此号）的 commit →
+  判据 `rc=1` 报 `FAIL：孤儿编号超 ceiling`；`reset` 回干净 commit → `rc=0` PASS。
+  `--selftest` 6 格自包含（不依赖真实账本内容，随分支世系变化也稳定）。
+
+  ## 回归
+  仅新增 `.py` 判据 + `scripts/README.md` 登记，不触碰 `.mbt`。moon test 基线 1427/1426（1 失败为 main 上
+  pre-existing，stash 我的改动后复跑确认相同），本分支零新增回归。

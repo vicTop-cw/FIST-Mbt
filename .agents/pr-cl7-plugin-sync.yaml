@@ -1,0 +1,43 @@
+id: BUG-402-cl7-plugin-sync
+branch: fix/cl7-plugin-sync
+title: "fix(plugin-sync): 重跑 gen_plugins.py 对齐 cl7 一源四态（BUG-402）——账本计数 379→380 条"
+base: main
+merge: false
+gate: true
+remote: origin
+priority: P2
+body: |
+  ## 病灶：cl7 一源四态守卫在 main 上持续红
+  `check_plugin_sync.py`（project_standards 的 7 项四态 checklist 之 cl7）持续 FAIL：
+  README.md + 4 宿主（atomcode/claude/codearts/deepseek-harness）SKILL.md /
+  instructions.append.md 共 **9 个生成文件与真源投影不一致**。
+
+  ## 根因：改真源后漏跑生成器
+  生成器读的四个真源面里，`memory/bugs.md` 最后改动（`4a54f5dd` BUG-391/392/393 +
+  后续 BUG-394）发生在插件态最后生成**之后**：
+
+  | 面 | 最后改动 | 说明 |
+  |---|---|---|
+  | `memory/bugs.md`（账本） | `4a54f5dd`（+后续 394） | **新增 1 条**：379→380 条 / 16→17 条待修 |
+  | `plugins/`（插件态） | `4a54f5dd` | 停在**旧计数 379/16** |
+
+  即：fist-bot 往账本加了条目，但**没重跑 `scripts/gen_plugins.py`**，插件态落后于真源。
+  插件用户拿到的账本计数（379 条 / 16 待修）落后真源（380 条 / 17 待修）——一源四态违约。
+
+  ## 修法
+  ```
+  python scripts/gen_plugins.py   # 重新生成四宿主插件态
+  ```
+
+  ## 验证（修前 → 修后）
+  | 判据 | 修前 | 修后 |
+  |---|---|---|
+  | `check_plugin_sync.py` | FAIL 插件态（一源四态 cl7）不一致 | **PASS 插件态一致：4 宿主 / 64 个生成文件 / 170 工具 / v0.3.10 / 启动参数真源 .mcp.dev.json** |
+  | `gen_plugins.py --check` | FAIL 插件态漂移（9 个文件与真源投影不一致） | **OK 插件态与真源一致** |
+
+  diff 内容：`ledger=BUG-1~394 共 379 条入账：16 条待修` → `共 380 条入账：17 条待修`
+  （README/SKILL.md 的 `description`/`ledger`/`Known issues ledger` 三处，4 宿主 × 2 + 1）。
+
+  ## 关联
+  - `cl7` 四态 checklist（一源四态）——`project_standards` 工具机器投影
+  - 同类违约：`fix/pid-token-cache`（BUG-401 current_pid_token 契约与实现不符）
