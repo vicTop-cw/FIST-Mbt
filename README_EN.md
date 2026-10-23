@@ -4,7 +4,7 @@
 > Only two things are polished as first-class objects: **self-driving** and **recursive decomposition** —
 > and the project iterates on itself with exactly those two (see the note below).
 
-[![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20260827-blue)](https://www.moonbitlang.com)
+[![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20261016-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
 [![Tests](https://img.shields.io/badge/tests-1387%2F1387-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
@@ -33,7 +33,7 @@ node _build/js/debug/build/cmd/cli/cli.js serve   # start the MCP server (STDIO)
 > global `fist serve`. Note that `python scripts/fist.py` is the **CLI gateway** with only two subcommands,
 > `list-tools` and `call`; it has **no** `serve` subcommand.
 
-**Requirements**: MoonBit toolchain ≥ 0.1.20260827; **Node.js ≥ 24** for the JS target (the SQLite JS backend relies on `node:sqlite` `returnArrays`; older Node silently returns object rows and reads fail); Native target needs a system SQLite dev library (`libsqlite3-dev` on Linux; `sqlite3.h/sqlite3.lib` + MSVC on Windows — `pwsh ./scripts/native-env.ps1` loads it).
+**Requirements**: MoonBit toolchain ≥ 0.1.20261016 (this repo uses `is` pattern expressions, available since `d799f56` — earlier toolchains fail at `moon check`); **Node.js ≥ 24** for the JS target (the SQLite JS backend relies on `node:sqlite` `returnArrays`; older Node silently returns object rows and reads fail); Native target needs a system SQLite dev library (`libsqlite3-dev` on Linux; `sqlite3.h/sqlite3.lib` + MSVC on Windows — `pwsh ./scripts/native-env.ps1` loads it).
 
 **One-command self-check (for reviewers):**
 
