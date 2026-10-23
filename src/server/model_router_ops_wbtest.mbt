@@ -80,7 +80,10 @@ fn mo_prep(ns : String) -> String {
   @fs.create_dir(d) catch {
     _ => ()
   }
-  @fs.remove_file(d + "/memory/model-router-" + ns + ".json") catch {
+  @fs.create_dir(d + "/.fist-mbt/data") catch {
+    _ => ()
+  }
+  @fs.remove_file(d + "/.fist-mbt/data/model-router-" + ns + ".json") catch {
     _ => ()
   }
   d
@@ -120,7 +123,7 @@ test "mo_2_状态走文件：第二次调用看得见第一次的用量与档位
   assert_true(mo_bool(j1, "ok"))
   assert_eq(
     mo_str(j1, "state_path"),
-    "temp/mo_ops/memory/model-router-mo2.json",
+    "temp/mo_ops/.fist-mbt/data/model-router-mo2.json",
   )
   // BUG-62 后语义：只问不消耗 ⇒ persisted=false（没记账）。但显式给了 config 时池**定义**
   // 会被播种进状态文件——这正是 BUG-61 接线的前提：executor_run 自动记账那一笔不带 config，
@@ -141,7 +144,9 @@ test "mo_2_状态走文件：第二次调用看得见第一次的用量与档位
   assert_eq(mo_warn_count(j3), 0)
   let st = mo_unwrap(model_router_status_impl(d, ns="mo2"))
   assert_true(mo_bool(st, "exists"))
-  assert_true(@fs.path_exists("temp/mo_ops/memory/model-router-mo2.json"))
+  assert_true(
+    @fs.path_exists("temp/mo_ops/.fist-mbt/data/model-router-mo2.json"),
+  )
 }
 
 ///|
@@ -361,7 +366,7 @@ fn must_contain(hay : String, needle : String) -> Unit {
 /// 只断言 used==0 的锁看不见这一半，所以这里做**逐字节对照**。
 test "mo_9_查询逐字节不改写状态文件，消耗才改写" {
   let d = mo_prep("mo9")
-  let dir = "temp/mo_ops/memory"
+  let dir = "temp/mo_ops/.fist-mbt/data"
   @fs.create_dir(dir) catch {
     _ => ()
   }
@@ -506,7 +511,7 @@ test "ma_3_伪造/残缺 attestation：verdict 归 unreadable 或 bad_format 且
 ///|
 test "ma_4_impl 端到端零副作用：不建状态文件、gate 与 pools 都在位" {
   let d = mo_prep("ma4")
-  let path = "temp/mo_ops/memory/model-router-ma4.json"
+  let path = "temp/mo_ops/.fist-mbt/data/model-router-ma4.json"
   must_not_exist(path)
   let j = mo_unwrap(model_auth_status_impl(d, ns="ma4"))
   assert_true(mo_bool(j, "ok"))
@@ -561,7 +566,7 @@ fn caf_cfg(use_caf : Bool) -> Json {
 /// caf_dr 用独立目录：复用 mo_prep，额外清掉 CAF 状态文件（保证每次从"无记忆"起步）。
 fn caf_prep(ns : String) -> String {
   let d = mo_prep(ns)
-  @fs.remove_file("temp/mo_ops/memory/model-router-caf-" + ns + ".json") catch {
+  @fs.remove_file("temp/mo_ops/.fist-mbt/data/model-router-caf-" + ns + ".json") catch {
     _ => ()
   }
   d
@@ -676,8 +681,8 @@ test "caf_dr_4_零副作用不落盘" {
   assert_eq(mo_str(j1, "caf_state_path"), mo_str(j2, "caf_state_path"))
   must_not_exist(mo_str(j1, "state_path"))
   must_not_exist(mo_str(j1, "caf_state_path"))
-  must_not_exist("temp/mo_ops/memory/model-router-caf_dr4.json")
-  must_not_exist("temp/mo_ops/memory/model-router-caf-caf_dr4.json")
+  must_not_exist("temp/mo_ops/.fist-mbt/data/model-router-caf_dr4.json")
+  must_not_exist("temp/mo_ops/.fist-mbt/data/model-router-caf-caf_dr4.json")
 }
 
 ///|
@@ -697,7 +702,7 @@ test "caf_dr_5_有记忆时 basis 有条目" {
       ),
     )
   }
-  let caf_dir = "temp/mo_ops/memory"
+  let caf_dir = "temp/mo_ops/.fist-mbt/data"
   @fs.create_dir(caf_dir) catch {
     _ => ()
   }
@@ -748,10 +753,10 @@ fn caf_read_rec_count(path : String) -> Int32 {
 /// 坏文件本身保留不删（坏状态是证据，与 mr_read 同款纪律）。
 test "caf_dr_6_坏记忆JSON降级不panic" {
   let d = caf_prep("caf_dr6")
-  @fs.create_dir("temp/mo_ops/memory") catch {
+  @fs.create_dir("temp/mo_ops/.fist-mbt/data") catch {
     _ => ()
   }
-  let caf_path = "temp/mo_ops/memory/model-router-caf-caf_dr6.json"
+  let caf_path = "temp/mo_ops/.fist-mbt/data/model-router-caf-caf_dr6.json"
   let bad = "{ 这不是合法 JSON @@"
   @fs.write_string_to_file(caf_path, bad, encoding="utf8") catch {
     _ => abort("预写坏 JSON 失败")
@@ -797,7 +802,7 @@ test "caf_dr_6_坏记忆JSON降级不panic" {
 /// 并且随后在同 ns 的 dry_run 能看见历史依据（basis 非空）——闭合标准 3 的读写两半。
 test "caf_dr_7_真消耗回写CAF记忆并闭合读写闭环" {
   let d = caf_prep("caf_dr7")
-  let caf_path = "temp/mo_ops/memory/model-router-caf-caf_dr7.json"
+  let caf_path = "temp/mo_ops/.fist-mbt/data/model-router-caf-caf_dr7.json"
   // 先播 1 条既有 evidence，验证 push 是"追加"而非"覆盖"
   let seed = @router.CafMemory::new()
   seed.push(
@@ -811,7 +816,7 @@ test "caf_dr_7_真消耗回写CAF记忆并闭合读写闭环" {
       ts="2026-10-17T00:00:00Z",
     ),
   )
-  @fs.create_dir("temp/mo_ops/memory") catch {
+  @fs.create_dir("temp/mo_ops/.fist-mbt/data") catch {
     _ => ()
   }
   @fs.write_string_to_file(
@@ -877,7 +882,7 @@ test "caf_dr_8_未开启use_caf_memory真消耗不写CAF文件" {
     ),
   )
   assert_true(mo_bool(j, "persisted"))
-  must_not_exist("temp/mo_ops/memory/model-router-caf-caf_dr8.json")
+  must_not_exist("temp/mo_ops/.fist-mbt/data/model-router-caf-caf_dr8.json")
 }
 
 ///|
@@ -886,10 +891,10 @@ test "caf_dr_8_未开启use_caf_memory真消耗不写CAF文件" {
 /// 主路径（记账）不受影响。
 test "caf_dr_9_坏JSON记忆push不覆盖不删除" {
   let d = caf_prep("caf_dr9")
-  @fs.create_dir("temp/mo_ops/memory") catch {
+  @fs.create_dir("temp/mo_ops/.fist-mbt/data") catch {
     _ => ()
   }
-  let caf_path = "temp/mo_ops/memory/model-router-caf-caf_dr9.json"
+  let caf_path = "temp/mo_ops/.fist-mbt/data/model-router-caf-caf_dr9.json"
   let bad = "{ 这不是合法 JSON @@"
   @fs.write_string_to_file(caf_path, bad, encoding="utf8") catch {
     _ => abort("预写坏 JSON 失败")
@@ -955,7 +960,7 @@ fn caf_read_last_ok(path : String) -> Bool {
 /// 不触发 OFM/CLI 真执行（与 caf_dr_7 同口径的最小可验一格）。
 test "caf_dr_10_失败执行push_ok_false_CAF学成败" {
   let d = caf_prep("caf_dr10")
-  let caf_path = "temp/mo_ops/memory/model-router-caf-caf_dr10.json"
+  let caf_path = "temp/mo_ops/.fist-mbt/data/model-router-caf-caf_dr10.json"
   // 失败执行：显式 ok=false → 写进 CAF 记忆的是 ok=false（而非默认 true）
   let j = mo_unwrap(
     model_route_impl(

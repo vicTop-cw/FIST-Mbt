@@ -68,6 +68,11 @@ pub fn github_queue_append(
       "github_queue_append: github_repo 不能为空（格式 owner/repo）",
     )
   }
+  // T0r3 写入门禁：越界 fail-closed，绝不落笔
+  match write_gate_ok(project_dir, "memory/bugs_pending_github.json") {
+    Ok(_) => ()
+    Err(e) => return Err(e)
+  }
   let existing = extract_arr(github_queue_read(project_dir))
   for entry in existing {
     match entry {

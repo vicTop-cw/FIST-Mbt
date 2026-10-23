@@ -121,6 +121,11 @@ pub fn memory_consolidate(
   if !mem_kinds_contain(kind) {
     return Err("memory_consolidate: 非法 kind: \{kind}")
   }
+  // T0r3 写入门禁：越界 fail-closed，绝不落笔
+  match write_gate_ok(project_dir, "memory/" + kind + ".md") {
+    Ok(_) => ()
+    Err(e) => return Err(e)
+  }
   mem_ensure_dir(mem_dir(project_dir))
   let p = mem_kind_path(project_dir, kind)
   let body = if kind == "thinking" {
@@ -188,6 +193,16 @@ pub fn memory_gc_one(
       "kind": Json::string(kind),
       "error": Json::string(msg),
     })
+  }
+  // T0r3 写入门禁：越界 fail-closed，绝不落笔
+  match write_gate_ok(project_dir, "memory/" + kind + ".md") {
+    Ok(_) => ()
+    Err(e) =>
+      return Json::object({
+        "gc": Json::boolean(false),
+        "kind": Json::string(kind),
+        "error": Json::string(e),
+      })
   }
   let p = mem_kind_path(project_dir, kind)
   let content = match mem_read(p) {
@@ -272,6 +287,11 @@ pub fn memory_link(
 ) -> Result[Json, String] {
   if from.is_empty() || to.is_empty() {
     return Err("memory_link: from 与 to 均必填")
+  }
+  // T0r3 写入门禁：越界 fail-closed，绝不落笔
+  match write_gate_ok(project_dir, "memory/links.md") {
+    Ok(_) => ()
+    Err(e) => return Err(e)
   }
   mem_ensure_dir(mem_dir(project_dir))
   let p = mem_links_path(project_dir)

@@ -4,7 +4,7 @@
 /// 与 `CafMemory::to_json` 的差异：`to_json` 是**聚合快照**（total/count/by_model），
 /// 只用于展示，不含原始记录，**无法恢复记忆**；本层保留逐条记录可完整往返。
 ///
-/// 格式（与 `model-router-{ns}.json` 同形态，落盘 `memory/model-router-caf-{ns}.json`）：
+/// 格式（与 `model-router-{ns}.json` 同形态，落盘 `.fist-mbt/data/model-router-caf-{ns}.json`）：
 /// {
 ///   "max_size": Int,
 ///   "records": [ { "feature_hash": Int, "model": Str, "ok": Bool,
