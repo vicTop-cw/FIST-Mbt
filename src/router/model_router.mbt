@@ -507,6 +507,28 @@ fn two(v : Int32) -> String {
 }
 
 ///|
+/// R130：`iso_to_secs` 原只挡 `d > 31`，`2024-02-30` 会被 Hinnant 算法归一成
+/// `2024-03-01`（与后者同值），`2024-04-31` 同样静默入值。按真实日历挡。
+fn is_leap_year(y : Int32) -> Bool {
+  (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+///|
+fn days_in_month(y : Int32, m : Int32) -> Int32 {
+  if m == 2 {
+    if is_leap_year(y) {
+      29
+    } else {
+      28
+    }
+  } else if m == 4 || m == 6 || m == 9 || m == 11 {
+    30
+  } else {
+    31
+  }
+}
+
+///|
 /// ISO8601 → epoch 秒；非法/越界/缺位一律返回 -1（调用方必须显式处理，不得当作 0 秒）
 pub fn iso_to_secs(s : String) -> Int32 {
   let cs = s.to_array()
@@ -556,7 +578,12 @@ pub fn iso_to_secs(s : String) -> Int32 {
   // 旧代码 `y > 9999` 形同虚设——它允许 y 到 9999，而 2038 起就溢出。
   // 收窄到 `y > 2037`（与 ops_ts 的 BUG-217 不同口径：model_router 用 1970 epoch，
   // ops_ts 用 2024 参考，故安全年份边界不同）。
-  if y < 1970 || y > 2037 || mo < 1 || mo > 12 || d < 1 || d > 31 {
+  if y < 1970 ||
+    y > 2037 ||
+    mo < 1 ||
+    mo > 12 ||
+    d < 1 ||
+    d > days_in_month(y, mo) {
     return -1
   }
   if h > 23 || mi > 59 || sec > 60 {
