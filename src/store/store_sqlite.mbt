@@ -16,6 +16,12 @@ pub struct SqliteStore {
 ///|
 /// 打开数据库并初始化五表 schema。失败返回 None（调用方决定是否 abort / 回退内存）。
 pub fn SqliteStore::open(db_path : String) -> SqliteStore? {
+  // SQLite **不创建中间目录**：`FIST_DB_PATH`（或任何调用方）指到不存在的深层目录时，
+  // js 侧 daqing FFI 会在 `DatabaseSync` 构造时 **throw**（不是返回 null），而本函数下面的
+  // `match @sqlite.Database::open(...)` 接不住 ⇒ 未捕获异常打死 serve 进程。
+  // 命名空间库那条路径已由 `MultiStore::new` 补建 data_dir 覆盖（见 multi_store.mbt）；
+  // 这里兜住「任意 db 路径」这一面（BUG-390 报告里点名的遗留项 ①）。
+  ensure_db_parent_dir(db_path)
   match @sqlite.Database::open(db_path) {
     None => None
     Some(db) => {
