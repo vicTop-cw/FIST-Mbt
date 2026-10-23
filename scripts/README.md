@@ -1,12 +1,16 @@
 # scripts/ 脚本分类规范
 
 > 目的：项目整洁——临时脚本任务完即清理，正式工具统一管理，避免根目录/scripts 堆垃圾。
+>
+> **本文件是 `scripts/` 的唯一索引**（R136 重整）：每个脚本名下只允许**一条**登记块（续行缩进两格属于同一块）；
+> 新增脚本把条目写进唯一一份「现有正式工具速查」的对应分组，**不要再整段复制本文件**。
+> 两道机器门：`check_scripts_index.py` 管「正式脚本一个都不能漏登记」，`check_doc_dup.py` 管「同名只允许一条」。
 
 ## 命名约定
 
 | 前缀 | 含义 | 处理 | 示例 |
 |---|---|---|---|
-| **无前缀** | 正式、可复用工具 | 保留，写入 README 说明 | `mcp_smoke.py`、`patch_esm_main.py`、`omega_lesson_verify.py`、`demo.ps1`、`gen_apply_pdf.py` |
+| **无前缀** | **旧口径（R96 废止）**：曾把「无前缀」当「正式、可复用」的同义词 ⇒ 名字读不出角色也没人管，而 `_` 前缀才被当临时件。现行口径见 [`NAMING.md`](NAMING.md)：角色必须写在名字的两端之一（前缀表或后缀表），由 `check_scripts_naming.py` 钉成只许下降的棘轮（上限读数跑 `--show-ceiling` 现读）。 | 保留但**记债**，改名按 `NAMING.md` 末节的成本档逐批改 | `mcp_smoke.py`（`_smoke` 后缀读得出角色，合格）；`fist.py`/`whisperer.py`/`issue_scan.py`（既无前缀又无后缀，在 N1 名单里） |
 | **`_` 前缀** | 临时/一次性/诊断脚本 | **任务完即删**，或移入 `temp/`（gitignored） | `_diag_*.py`、`_scratch_probe.py` |
 | `m9_* / m18_*` | 历史迁移遗留 | gitignore 覆盖；无需再产生 | — |
 
@@ -14,7 +18,7 @@
 
 1. **不产生带 `_` 前缀的正式工具**：`_` = 临时代码生成物，用完即删。
 2. **临时产物落 `temp/` 或系统 tmp**：不要污染仓库根；`temp/` 已在 `.gitignore`。
-3. **正式工具**：无前缀 + 文件头 docstring 说明用途/用法/前置 + 退出码约定。
+3. **正式工具**：名字带角色（`NAMING.md` 的前缀表或后缀表之一）+ 文件头 docstring 说明用途/用法/前置 + 退出码约定（R96 改：原条写「无前缀」，与 TASK-008 立案的判据「看文件名猜不出它是门禁还是工具」自相矛盾，已按 NAMING.md 收口）。
 4. **改完即验**：新增/改动脚本后，确保它能在干净环境跑（依赖公开）。
 5. **不留绝对路径**：脚本内路径用 `os.path.join(dirname, ...)` 或环境变量，禁止硬编码盘符。
 
@@ -33,18 +37,6 @@
 - `js_serve_preload.mjs` — **ESM require shim 的「免改产物」替代路径**：与 `patch_esm_main.py` 治同一个病（moonc 对 `cmd/cli` 输出 ESM bundle，而 `mizchi/sqlite` 生成的绑定在顶层调 `require("node:sqlite")`，ESM 作用域里没有裸 `require` ⇒ `node cli.js serve` 起服务前就 `ReferenceError: require is not defined`；仅 JS target 的启动面问题，native 不受影响），但**不改产物文件**，而是用 `node --import <repo>/scripts/js_serve_preload.mjs <repo>/_build/js/debug/build/cmd/cli/cli.js serve` 在运行时经 `createRequire(import.meta.url)` 把 `require` 挂到 `globalThis`。两条路径二选一：patch 路线落盘可被 `patch_esm_main.py` 幂等复跑、preload 路线零改写产物但每个 `node` 调用点都得带 `--import`。Node 会对 SQLite 打 `ExperimentalWarning`（无害）。
 - `mcp_compat_shim.js` — **协议兼容 shim（BUG-161 / BUG-163 dist 产物外部缓解层）**：fist-mbt server 讲非标协议 `2026-07-28`（colmugx/mcp@0.17.4 移除 `initialize`、强制 `params._meta` 三元组），标准 MCP 客户端（Claude Desktop / VS Code / cursor，讲 `2024-11-05` 或 `2025-06-18`）直连 `fist serve` 会吃 `-32022 Unsupported protocol version`。本 shim 是 **dist 产物 `dist/fist-mbt.js`** 的外部等价层：拦截标准 `initialize` → 补 `_meta` 三元组 → 改写为 `server/discover`，响应再重写为标准 `initialize`（`protocolVersion` 回写客户端请求档）；其余**有 id 的请求**也补 `_meta`（server 每个请求都强制要求），通知（无 id）原样透传。2026-10-15 实测（dist 产物 = 148 工具，版本号以 [BACKLOG.md](../BACKLOG.md) 的 release-fact 条目为准）：`2025-06-18` 与 `2024-11-05` 都能完成握手，`tools/list` / `tools/call`（status_summary / project_health 真数据）/ `resources/list` 均正常。已知 server 侧限制：`ping` 返回 `-32601 Method not found: ping`（非 shim 问题）。与并发 agent 在 `src/server/stdio_js.mbt` 的 `compat_request`/`compat_response` 是**同一思路的两条路线**：shim 免改 server 源码、立即可用；内建 compat 要等源码提交 + 重新出包。用法：`.mcp.json` 里 `command` 指 `node scripts/mcp_compat_shim.js`（可加 `--server node <dist> serve` 覆盖默认）。
 - `test_shim_handshake.py` — **shim 回归测试（BUG-163 验收判据）**：通过 `scripts/mcp_compat_shim.js` 代理发布版 `dist/fist-mbt.js serve`，跑标准 MCP 客户端完整握手序列（initialize 2025-06-18/2024-11-05 两档 → notifications/initialized → tools/list → resources/list → ping/logging/setLevel/completion/complete stub）。全过 exit 0；dist 不存在 exit 2。用法：`python scripts/test_shim_handshake.py`。
-
-**2026-10-15 Round 126 补充**：
-- **修正工具数**：`node dist/fist-mbt.js help` 报 148（help 文本 stale），但经 shim 的 MCP `tools/list` 返回 **166 个工具**——**dist 的 MCP 工具层实际是最新的**，stale 的只是 help 命令文本。BUG-155 的 FIXED 小记声称 `git rm dist/fist-mbt.js` 但 HEAD 仍含该文件，假绿（Round 125 报告已点名）。
-- 配套回归测试 `test_shim_handshake.py`。
-
-**2026-10-15 Round 124 更新**：
-- **A1 stub**：`logging/setLevel` / `completion/complete`（MCP 可选特性，server 未实现返回 `-32601`）——shim 拦截并返回 `{}` / `{completion:{values:[]}}`，比 `-32601` 更友好（Claude Desktop 会做 `setLevel`）。
-- **A3 崩溃修复**：`child.on('exit', code => process.exit(code ?? 0))` 在子进程被 signal 终止时 `code` 为 `null`，旧写法会**误报成功退出 0**；现改为 signal 时 exit 1、code null 时 exit 1。
-- **A2 无需改**：`stdio: ['pipe','pipe','inherit']` 已把 server 的 stderr 直通终端（此前误以为 DEVNULL，实为探针侧设置）。
-- **A4 请求超时**（2026-10-15 Round 137）：server 长时间不响应时回 `-32000`，默认 30s，可用环境变量 `FIST_SHIM_TIMEOUT_MS` 覆盖。通知（无 id）不计时；`t.unref?.()` 保证 server 死掉时 shim 能立即退出。实测假 server 不响应 → 500ms 后正确回 `-32000`。
-- **A5 已正确**：`_meta` 只对**有 id 的请求**注入（`msg.id !== undefined` 判定），`notifications/*` 无 id 原样透传，不误注入。
-- **A7 `.mcp.json` 示例**（2026-10-15 Round 139 升级）：shim 文件头注释内嵌的示例改用**发布版 `mcp_config_scaffold`** 校验生成——表单只写环境变量名占位（真值走 server 进程环境变量），含 `api_key`/`token`/`secret` 形状的表单会被整笔拒绝。实测传 shim 接入偏好返回合法 `fist.mcp.json` 正文（自动注入 `FIST_PROJECT_DIR`）。
 - `migrate_mooncakes_modjson.sh` — **依赖清单迁移器（新版 moon 拒绝旧 `moon.mod.json` 的出路，2026-10-13 实测）**：moon 0.1.20261012+ 解析依赖图时，对 `.mooncakes/<dep>/moon.mod.json`（旧格式清单）直接报 `Failed to resolve the module dependency graph … 'is no longer supported'. Run 'moon fmt' to migrate to 'moon.mod'` ⇒ release.yml `build-js` 红在 `Build JS target`、`release` 被 skip ⇒ **公网 Release 零资产**（`fist-mbt-js-v<版本>.zip` 全 404）。**为什么本地永远复现不出来**：本机 moon 钉在 0.1.20260920（老版接受现状），而 `.mooncakes/` 在 `.gitignore` 里由 `moon update` 重生成——与 BUG-112「装了全局 moon、快照复跑是绿的」同形，只在 runner 现形。**为什么必须循环而非一次性 find**：依赖是**惰性解包**的，每次 build 只释放当前解析需要的包、并只报第一个过期件。WSL 隔离副本（`git archive HEAD` 干净树 + CI 同版 moon 0.1.20261012）实测收敛序列：iter1 `mizchi/sqlite` → iter2 `Tigls/mb-getrandom` → iter3 `build rc=0`（终态 `old_json=0 new_toml=8`，幂等复跑首轮即 no-op；原件 `temp/final6_direct.txt`）。**为什么在被点名的依赖目录里跑 `moon fmt`、而不是仓库根**：仓库根 `moon fmt` 不递归 `.mooncakes`（实测残留照旧）且会顺手重写仓库自己的 `.mbt`（mtime 变化，CI 里制造 diff 噪音）；官方报错语义就是「把**这个模块**的清单迁成新格式」，就地 fmt 实测产出 `moon.mod` 并删旧 json。**纪律**与 `patches/sqlite-bug133/reapply.sh --force` 同族——必须跟在 `moon update` 之后、`moon build` 之前跑（`moon update` 会重生成 `.mooncakes` 冲掉迁移）。**非迁移错误一律原样透传 exit 1，绝不吞真错误**；老版 moon 首轮 build 即 rc=0 ⇒ 天然 no-op 零回归。用法：`bash scripts/migrate_mooncakes_modjson.sh ["build 命令"，默认 "moon build --target js"]`（0=build 过；1=非迁移错误/路径失灵/迭代耗尽；`--selftest` 用合成 build 命令逐格驱动根因分流表，0=七格全绿、1=某格红、2=一格没跑——BUG-324 的实锤是「兜底那格里反引号被 bash 当命令替换」，即最需要说话的分支自己先坏掉，故自检额外验「输出不得漏出 shell 自身错误」，并新增第 ④ 格把编译器 ICE 归到工具链缺陷、不再误导人去改源码）。已挂 `release.yml` 的 `Build JS target` 与 `build-native-linux` 两处；**ci.yml 未挂**（其失败步是 `Check (js)` 的 python 守卫读数，`Test (js)` 那步的 moon 命令实测未撞迁移错误，按最小改动原则不动）。
 - `check_badge.py` — **README 测试徽章一致性守卫（R34）**：比对 `moon test` 实测测试数与 README 徽章 `tests-N%2FN`，不一致即退出码 1（挂 CI 作"徽章不过时可复现"门禁，杜绝手改漏同步）。已经在 `.github/workflows/ci.yml` 的 JS 轨道里自动执行。
 - `check_tools_sync.py` — **工具清单单一真源守卫（R46）**：以 `src/server/server.mbt` 实际注册工具名为唯一真源，校验 AGENTS 表格工具名 ⊆ 真源、真源全部入 AGENTS、README/AGENTS/deliverable/scoring_rubric 工具总数==实测（双向防幽灵/漏写）。已在 ci.yml JS 两轨自动执行。
@@ -71,7 +63,6 @@
 - `check_deprecated_text_census.py` — **弃用调用「判据面 vs 文本面」普查棘轮（BUG-362 建议②）**：编译器判据会静默少报——2026-10-21 实测 `Json::value` 一族判据面 430 处、`git ls-files "*.mbt"` 文本面 441 处，差的 11 处分散在 8 个文件（`match recv.value("k") {}` 形状判据不发火）⇒「判据面归零」这句话不构成「弃用调用清零」的证据。本守卫把那个差额从盲区变成表内上限：**R0** 条目必须有非空 `audited`（缺依据的登记=免检牌）；**R1** 输入面哨兵（dump 可解析、`diagnostics` 非空、跟踪 .mbt ≥100，判据命中越出跟踪宇宙即 FATAL——防有人把宇宙换成 walk，`.mooncakes/moonbitlang/x/time/weekday.mbt` 的 `Weekday.value()` 同名不同物会 +7 得一个假缺口）；**R2** 反向包含（判据命中的 (file,line) 必须被本族文本正则覆盖，判据数 > 文本数同样按脱钩算）；**R3** 棘轮（缺口 ≤ `gap_ceiling` 才绿，超出即红并列逐文件差额）；**R4** 死条目（文本面与判据面双 0 ⇒ 红，整条下线，不许留当免检牌）。**收紧只打印建议、不判红**：差额数字随工具链版本浮动，强制等于上限会把一次正常升级变成红灯，而红灯被忽略一次整把尺就废（与 `check_test_sync` 的豁免失效律故意不同，理由写在 docstring）。退出码 0=PASS 或分布读数成功 / 1=棘轮超限或死条目 / 2=判据无法自证。`--selftest` 17 支合成对照——真判据 10 支（干净不误红 / 空诊断 / 宇宙被换小 / 判据落点无文本 / 判据越出宇宙 / 缺口超限 / 死条目 / 缺审计依据 / 收紧只提示 / **判据多于文本的负缺口**）+ 分布 7 支（同 code 多形状必须分列 / 只差引号字面量与数字的两条必须并形 / marker 全命中=已入表 / 同形状只命中一半=**部分入表** / 空 dump 读 rc=2 / 表内条目 0 命中要点名 / 不同 code 不并块且报告永不给 1）。**族表现状 2 条**：`Json::value`（上限 11）与 `Check @encoding/utf8.encode`（站点级代理 `\.to_bytes\(`，判据 3 / 文本 3、上限 0——三处即 BUG-360 的 Ed25519 验签洞本体，本条同时钉住它的修复进度）。**哪些族进不了这张表**（R36 实测，只收语法族）：`Show` 族名称级 `\bShow\b` 全仓 2 处 < 判据 8 处，且那 2 处是 0027 的 `derive(Eq, Debug, Show)` 与一条 `extend ... with Show::{...}`，与判据行无一重合；真站点散在 `.to_string()`(435)/`inspect(`(39)/插值 `\{`(859)，并集 1333 对判据 11 ⇒ 上限要写到 1322 才不红。FFI `Array` 判据 3 处全在 `extern "js" fn` 形参上而 `: Array[` 有 953 处（extern 归属是跨行事实）；隐式提升判据 1 处对 `.run(` 7 处。两条探针实测：名称级入表 ⇒ rc=2（尺子拒绝代读），站点并集入表 ⇒ rc=1 且缺口 1322。缺席型族（unused 系、0078 契约面 437 对判据 3）同理无文本可普——判据报的是「缺席」不是「在场」。用法：`python scripts/check_deprecated_text_census.py <moon check --json dump>`（CI 权威 js-ubuntu 臂已挂 selftest + 真判据两步）；`python scripts/check_deprecated_text_census.py --dump-distribution <dump>` = **这张族表的进料口（R37）**：按 `error_code` × 归一化消息形状分组，一次打全「每个形状几处、落在几个文件、被表内哪条认领、还有几种没入表」——实测在 `temp/chk43.json` 上把 0020 拆成 430 / 8 / 3 / 3 / 3 / 1，全 dump 读成 8 个 code / 15 种形状 / 489 处，与上一单为拆族临时写的 8 份 `temp/probe42.py`–`probe49.py` 的读数逐格相同，所以拆族这一步从此不必重写探针。三条设计口径：① **不挂 CI**——报告没有资格判红，本模式只可能返回 0 或 2，红门只留给真判据；② 归一**只**抹引号字面量与数字、不抹裸标识符，宁可让 0009 的三处排三行，也不把两个族并成一行（并族=其中一族在读数里隐身，正是这把尺最怕的失效方向）；③ 认领判断对**原始** message 测 marker（归一会把 `utf8` 写成 `utf<n>`，对形状测就永远命中不了表里的 `utf8.encode`），同形状内只命中一半会读成「部分入表」，那是表与真源脱钩的进料信号，比静默少报早一步现形。
 - `check_deprecated_site_list.py` — **语义族「站点清单 + 结构归属」读数器（BUG-362 追记 / R38，只读数不判红）**：普查棘轮的族表只收语法族、`--dump-distribution` 只答「每个形状几处」，剩下六族要拍板缺的是**每处到底长在什么结构上**。本工具把判据行逐个落成 `file:line:col` + 按 loc 起止列切出的精确源码片段 + 结构归属：Show 族分「to_string() 调用 / 字符串插值 \{…} / inspect() 实参 / 未分类」并标出所在条目是测试面还是生产面（决定改动波及的是断言文本还是用户可见输出）；FFI `Array` 族回溯**顶层条目抬头**，实测 3/3 的 extern "js" 抬头在站点上方 1–2 行（`不能（本行无 extern token，归属在上方 N 行）`），这就是上一单说「行级正则读得到形状、读不到归属」的机械化；隐式提升族从判据文本反解 `impl … for …` 再回本文件定位 impl 段（实测站点第 71 行落在段 50–56/57–68 **之外**）；0027 族读出 derive 列表并判 `Debug 已在列表=是 ⇒ 删一个 token 即可，不用补实现`；0078 族判可见性（实测 3/3 私有转换辅助）。**真源读数（temp/chk44.json）**：六族合计判据行 19 / 站点 16 / 文件 11，其中 **3 个站点被两条 Show 判据文本同时命中**（`Use Debug instead of Show` 8 行 + `…for collections` 3 行 ⇒ 并集站点只有 8 个）——行级普查的两种失真同框：静默少报（判据<文本）与重复计费（行数>站点数）；按 11 行派工就会多算 3 处。utf8 那 3 条不在本清单（它能进棘轮表，两支尺收同族会互相掩盖）。**退出码只有 0 和 2，永远不给 1，且不挂 CI**（报告没有资格判红，与 `--dump-distribution` 同律）。自保判据：S1 dump 可解析且 `diagnostics` 非空（实测一份新 dump 的 `messages` 键是空的、489 条全在 `diagnostics`，按错键读会得到「判据 0 处」的静默假绿——上一单的探针就栽在这上面）；S2 跟踪面 .mbt ≥100（宇宙同 `git ls-files "*.mbt"`，与棘轮表同律）；S3 站点越出跟踪面；S4 行号越界 / 列切片为空 / 站点跨行；S5 某族全部切片都不含本族点名的符号 ⇒ 一律 rc=2 并点名，S6 族读 0 处照常 rc=0 但打「不构成已清空」免责句。`--selftest` **20 支**：Show 双文本并站 / 三形状 / 测试面-生产面 / 未知形状不硬塞 / FFI 跨行 / **FFI 同行反证（证明「读不到」是条件不是口号）** / 提升 impl 段定位 / derive 含 Debug / 0078 私有与 pub 两档 / S1–S5 五支自拒 / 零读数免责 / 全清单零读数指回 code 面 / 报告永不给 1。**两支真数据变异对照**（不是合成件）：M1 把 6 族 marker 各改一个字母（命中 19 条）⇒ rc=0 + 「大概率是判据文本漂移而不是族已清空」；M2 把表内族 loc 起止列整体 +3 ⇒ rc=2 并点名 S5。一条实测出的不对称：只有判据点名符号的族（Array/Show(0027)/Result）能自证列口径，Show 的 0020 判据不点名 token，同一份变异里它 8 个站点全读成「未分类」——数字不会自拒，但小结一片「未分类」就是进料信号。用法：`python scripts/check_deprecated_site_list.py temp/chk44.json`｜`--selftest`。
 - `check_bug_reference_integrity.py` — **引用面「代码里的 BUG-N」↔ 账本抬头编号 对表器（BUG-373 出路①，R48 新增，只报不判 + 一条棘轮）**：把跟踪面 `.mbt` 里所有 `BUG-<n>` 引用按**出现面**分三类——comment（`//` 之后）/ string（双引号字面量内，多为 wbtest 合成语料）/ code（正常应为 0，出现即解析器读错面）；账本编号集合由本脚本自己解析 `^## BUG-(\d+)\b`（不 import gen_plugins，判据不自证）。**判定面只有 J1 悬空-注释面**：上限 `DANGLING_COMMENT_CEILING = 0`（R48 现读唯一一条 = `src/engine/engine.mbt:227` 引 BUG-147、账本无该抬头；**R76 改判收口**：147 系错号、真身 BUG-176 幽灵元数据已改注，BUG-327×7 / BUG-336×1 的「悬空」实为主机账本世系未合入 master 的滞后——抬头在 `slave/fix/bugfind-ocr-gate-honesty` 等分支逐字在案，同批 verbatim 补账后现读 0），只许降不许升；**只报面必须出数**：S1 悬空-字面量（合成语料）/ S1b 夹具说明注释（同文件 string 面出现同号 ⇒ 机械降档，治首跑 2 条假红）/ S2 疑似无归属（编号在集合内但条目正文没提该文件 basename、同目录 `.mbt`、`src/<pkg>` 或 `` `<pkg>` `` 的最松层——同包一层实测救回 163 处合法跨文件引用，所以只作疑似）/ S3 跨文件同编号（信息面）。**R48 现读**：宇宙 290 份 `.mbt` / 账本唯一编号 356 / 引用点 946 / 涉及编号 157（comment 615 / string 331 / code 0）⇒ J1 1 / S1 35 / S1b 2 / S2 195 / S3 113。自拒：git 枚举失败、0 份 `.mbt`、账本零抬头、引用解析为 0 ⇒ FATAL 真给 2（`--probe-empty-root` 子进程锁进程码）。`--selftest` 10 格（含标定格「真语料悬空数 == 上限常数」（R48 时为 1，R76 降档后为 0）与空宇宙 rc=2 子进程格）。**为什么第一版不让 S1/S2 判红**：本仓「假红比漏判更贵」，946 处一次性开判红等于逼人无视这把尺；逐条核过再上棘轮。执行面三处齐备：ci.yml「Bug-reference integrity guard」跑 `--selftest` + 全量、`run_guards.py` 电池一格、本条 README 登记。用法：`python scripts/check_bug_reference_integrity.py [--selftest|--dump|--show-ceiling]`（0=J1 在棘轮上限内 / 1=超上限 / 2=判据无法自证）。
-- `check_plugin_sync.py` 的索引缺口补齐登记（本轮 cl7 落地时实测出的历史欠账）：
 - `flush_github.mjs` — **GitHub 缺陷外发通道 Node 入口**：走 MCP stdio 调 `github_flush_execute`，把 `report_bug` 入账的缺陷推到远端 issue。用法：`node scripts/flush_github.mjs [--limit 50] [--timeout-ms 30000]`（需 `GITHUB_TOKEN`，凭据只从环境注入）。
 - `output_validate.py` — **交付物硬门 CLI 形态**：`output_validate`(R113) 的命令行入口（与 MCP/skill 同一真源），逐件校验 path/check_key + invariant，退出码即门禁结论。用法：`python scripts/output_validate.py <project_dir> --artifacts '[{"path":"README.md","contains":"FIST"}]'`。
 - `mcp_bug_loop.py` — **修复闭环历史验证脚本（Round 1）**：对 5 个已修 bug 逐个走 publish→claim→execute→submit→verify 的 MCP 客户端；保留作活证据，非日常工具（一次性验证，跑前注意命名空间隔离）。
@@ -110,7 +101,6 @@
 - `blackbox/e2e_http_contract.py` — **HTTP 契约 v1 活体自证（docs/openapi/fist.yaml 的判据面）**：契约只登记被真实服务的端点（`x-implementation: served|pre-existing`），而「服务着」此前只在我的开发机上验过一次——实现漂移（改桥、剥壳规则动、`_meta` 补齐失效、工具面改名）会让 yaml 静默变成假承诺。六臂缺一即 FAIL：**A** 起桥（端口取 OS 空闲，不写死避免 CI 自撞；缺 cmd/cli 产物即 REFUSED exit 2 不假绿）/ **B** `GET /tools` 剥壳生效且带 `inputSchema`（自描述驱动是契约立身之本，丢了它 yaml 的承诺就是空话；仍是 jsonrpc 信封=剥壳没生效）/ **C** 真调 `mode_list`（只读零副作用）出 `ok=true` + `data` 有内容 + `result` 原样保留（这条同时钉住桥替调用方补齐 `_meta` 那格——缺了服务端直接 `-32602`）/ **D** body 非对象必须 400（不静默当空 arguments）/ **E** 未知工具 502 且桥不崩（下一臂还要用同一条桥）/ **F** 老 `/mcp` `tools/list` 仍正常回执（加新口没有破坏既有通用口，零回归）。结论行带基数门，臂集合与声明逐字不等即判「尺子坏了」exit 2。台账一律改道 `temp/http-contract-e2e.db`（BUG-122/90：不写仓库根 `fist-mbt.db`）。用法：`moon build --target js cmd/cli && python scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js && python scripts/blackbox/e2e_http_contract.py`（0=六臂全过 / 1=有臂红 / 2=前置不满足或尺子坏了）。权威 CI `ci.yml` JS 轨「HTTP contract self-proof」已挂这一步。
 - `blackbox/e2e_native_heap_probe.py` — **native 后端内存安全判据（BUG-130 定因 / BUG-133 承重）**：在 `temp/native_heap_probe/` 现生成一个只 import `mizchi/sqlite` 的可执行包（300 轮 open/exec/prepare/bind/step/column/finalize/close + 分配压力），**一行 FIST 业务码都不含**，连跑 N 次按退出码分格（0 / 139=SIGSEGV / 134=SIGABRT / 其它信号）并报 glibc 原文（实测出现过 `munmap_chunk(): invalid pointer` 与 `free(): invalid pointer`）。判据方向**刻意反向**：`crashes=0/N`（自身 exit 0）才放行 CI 的 native 全量测试那一臂；只要还有崩溃就显式点名 BUG-133 未修，不许把「门红着」改写成「已知边界」。起手一道预编译门（探针编译不过就直接 `exit 4` 并报「尺子坏了」，既往同类脚本两次因自身语法问题把「没跑成」读成「全红」）。退出码是**契约**，CI 的 native 臂按它四档分流（2026-10-01 owner 裁决③：`ci.yml` 的 `Native heap gate (BUG-133 探针当门)` 与 `fist-ci.yml` 同名步骤都跑这一支，且门在 `Test (native` **之前**——只有 0 才放行全量）：`0`=N 次全跑完 / `1`=有崩溃（点名 BUG-133）/ `3`=平台或工具链不给量，拒绝出数 / `4`=探针自己编译不过，尺子坏了。`--selftest` 四组：rc 分解 5 格写死期望 + 计数口径正负对照各一支（纯 ok 必须 0、掺一次 SIGSEGV 必须 1）+ **rc 隔离成对对照** 2 支（故意让判据自己抛 `TimeoutExpired` ⇒ 必须报 4，`SystemExit(3)` ⇒ 必须原样透传，不吞成 0）+ 构建门真跑 1 格（故意喂一份明知编译不过的探针，要求被拒；非 POSIX 或无 moon 时**显式打 SKIPPED**，不拿「没跑到」当「跑过」）。输出通道也在契约里：脚本起手把 stdout/stderr 重配成 UTF-8——Windows 默认 cp936 控制台上打印 `⇒` 会抛 UnicodeEncodeError，**崩在结论行之前留下 rc=1**，而 1 恰是「缺陷在场」那一档（2026-10-01 实测：同一份 `--selftest` 修复前 rc=1、修复后 rc=0）。**`crashes=0/N` 不等于缺陷已修**：这是概率性失效，同一支尺、同一次会话里连跑两发就给出过 `3/12` 与 `0/12` 两端（2026-10-02 WSL，逐跑 rc 分解见账本 BUG-133 追记），它只决定 native 全量测试这一臂跑不跑，BUG-133 的关闭条件是两格（抽检连发都 0 崩溃 + `git archive HEAD` 干净树上 native 全量通过）。只在 POSIX 出真读数，Windows 侧无 native 工具链时**拒绝出数**（exit 3），不拿没跑成当跑过；用法 `python scripts/blackbox/e2e_native_heap_probe.py [--runs 12] [--selftest] [--dry]`。
 - `gen_help_docs.py` — 从 `src/server/server.mbt` 反解 `tool_groups` 并打印分组/工具清单，**只读、不写任何 .mbt**。**边界（BUG-123）**：它反解的是 MCP 资源面 `fist://map` 的**定位图**（12 组、组值是省略公共前缀的简写，如 `succeed status`），**不是** 129 个工具的注册表，也不能与 `tools/list` 做机械差集（简写会把「未点名」虚报到 73）。⇒ `cmd/cli/help_topics.mbt::help_tools()` 的文案**不许**照它落笔（那会把 CLI 帮助从 13 组/129 倒退回 12 组/107）；CLI 侧权威面是 `node cli.js help tools` 的回执 + AGENTS/README 工具表（`check_tools_sync` 的 J1/J2 钉「逐个可查 + 分组和==实测」）。扫描方式也从 lazy 正则改成花括号配平（旧写法在块内出现 `})` 时会静默截断）。
-ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）之间，两版守卫都不看这一格 ⇒ 版本一前进，照抄离线/内网线就 404）：README 里以数字开头的 `fist-mbt-js-v<版本>.zip` 必须 == `moon.mod`，无基线即自拒；模板形态 `v$VERSION` 不误红（两支自证：漂移必红 + 模板不红）。`--selftest` 的格子清单**从已执行格子反解**，不手写计数（手写曾造出幻影：R5 那一格因"变异只改注释"被跳过，自述里却照写 `R5×2`）。用法：`python scripts/check_release_asset_names.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。
 - `check_demo_isolation.py` — **spawn 面隔离守卫（BUG-122 起、BUG-124 收全的常驻判据）**：凡 `scripts/**.py` 里 `Popen` 起 `serve` 的脚本，必须同文件把 `FIST_DB_PATH` 交给子进程（`os.environ[...] =` / `os.environ.setdefault` / `env.setdefault` / `env=dict(...)` / `env={...}` 五种形状之一），否则判 I1——仓库根 `fist-mbt.db` 是自举台账，文档四处教人裸跑这类脚本，旧版每裸跑一次就往真实台账里塞一条演示任务与几行调用。豁免面 `EXEMPT` 与显式子句 `EXPLICIT_CLAUSES` 每一项都必须锚点成立（文件存在 + 理由非空 + 确实 spawn 或属显式子句），漂到无关文件判 I2；扫描面吃不到任何 spawn 脚本判 FATAL(2)（判据空转不报绿）。`--selftest` 六支从已执行格子反解：G1 干净不误红 / M1 摘改道针必红 / M1b 只加注释不误红 / M2 豁免面漂移必红 / M3 空扫描必自拒 / M3b 入口级空扫描自拒（把 `scan` 换成空面直接调 `main()`）。**BUG-351**：M3 原先调 `scan({})` 时 `_files()` 仍枚举真实文件、扫描面恒非空，只测了不可达分支——自证式假绿；现在 `scan(files=[])` 真构造空扫描，判定抽成 main 与自检共用的 `judge()`，三支变异（删空扫描门 / 让 `files` 注入失效 / main 绕过 judge）各自必红。实测现状面 33 个 spawn 脚本全部合规（30 个带默认改道针 + 2 个显式子句，另 1 项豁免锚点成立）。用法：`python scripts/check_demo_isolation.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。权威 CI `ci.yml` JS 轨已挂「先 --selftest 再全量」两步。
 - `check_py_stdout_encoding.py` — **脚本 stdout 编码闸（BUG-138，BUG-58 的 Python 兄弟面）**：默认扫描面**从 `.github/workflows/*.yml` 反解**（不手写清单——手写族名必然落后于新增脚本，J10/BUG-122 的老账）；`--all` 把面扩到 **glob 全部 `scripts/**/*.py` + `docs/examples/**/*.py`，排除 `_` 前缀临时脚本**（BACKLOG P3 扩面：非 CI 调用面的脚本被人手跑得更多，同样会在本机崩，且 glob 才兜得住带连字符的文件名如 `scripts/fist-mbt-http.py`——反解正则 `[\w/-]+` 那一格只有 glob 认得出；examples 面是 2026-10-13 我自己新加的 `docs/examples/python/http_client.py` 触发的，它有中文 print 却落在只 walk `scripts/` 的老面外；排除 `_` 前缀与 `check_scripts_index`「`_`=即用即清、不要求登记」同口径——扩面时曾把未跟踪的 `scripts/_tmp_boundary_omega.py` 错纳进来判红，那是把临时件当正式面的假红，不是产品坏）。判据：会 `print` + 正文含非 ASCII ⇒ 必须含 `sys.stdout.reconfigure` 那两行；缺则 E1 红。为什么值得单独一条：守卫在 Windows 默认 cp936 控制台上**一红就崩在结论行之前**——打印中文结论里的 `⇒` 抛 UnicodeEncodeError，留下 traceback + rc=1，而 1 恰是「缺陷在场」那一档（判据自己的崩冒用了被测的退出码，`e2e_native_heap_probe` 为此专门设了 4 号档）。2026-10-07 本机实测两次打到：`check_publish_payload.py` 打 VIOLATION 时崩、守卫族跑器同一位置崩。纯 ASCII 的脚本不判红、只出 E2 预告（把今天不坏的当面违例=现状面被自己的尺子打回，**且预告不计入退出码**——这是扩面不误伤的前提）；workflow 点名盘上不存在的脚本判 E0/rc=2；扫描面里一份「该带闸」的都解析不到判 FATAL/rc=2。`--selftest` 七格：G1 带闸不误红 / M1 摘闸必红 / M2 纯 ASCII 只预告不判红（成对：也不许判红）/ M3 空扫描必自拒 / M4 悬空点名必红 / M5 `--all` 面是 CI 面超集且扩面后现状仍不绿转红 / M6 **直接调 `main()` 两档（默认 + --all）走真输出行**——照出 PASS/FAIL 文案里的格式化 bug（本轮 selftest 补这格前，`main` 的 PASS 行就写错过占位符抛 TypeError 崩在结论行，正是这条守卫自己要防的形状，尺子先于被测坏掉）。现状读数：CI 反解 23 份、23 该带闸、23 已带；`--all` 全量 64 份候选、63 该带闸、63 已带（含 `docs/examples/python/http_client.py`；已排除 `_tmp_boundary_omega.py` 等 `_` 前缀临时件）（2026-10-13 一批补齐 32 份非 CI 面：`atgc_selfdrive_demo`/`award_demo`/`blackbox/{patch_esm_main,e2e_transport_stack_fallback}`/`calibrate_goal_drift`/`check_desc_enum_sync`/`dag_depend_verify`/`dispatch_verify`/`enhance_verify`/`enrich_selfdrive`/`evolve_critic_verify`/`executor_route_verify`/`gen_apply_pdf`/`gen_help_docs`/`issue_scan`/`laya_decide`/`lesson_*`/`log_fix_selfdrive`/`map_verify`/`mcp_bug_loop`/`mcp_smoke`/`omega_lesson_verify`/`output_validate`/`pentad_fist`/`plan_gradient_verify`/`score_gate`/`scratch_*`/`task_challenge_verify`/`test_mcp_bugs`，插入点由 ast 跳 docstring 与 `__future__` 计算、每份 py_compile 复验）。**BUG-138 追记的非 CI 残余面已收口**。用法：`python scripts/check_py_stdout_encoding.py [--selftest] [--all]`（0=PASS，1=违例，2=判据无法自证）。权威 CI `ci.yml` JS 轨「Py-stdout encoding guard」挂「--selftest → CI 面 → --all 面」三条。
 - `check_publish_payload.py` — **发布载荷面守卫（BUG-127 的常驻判据）**：`moon publish` 的打包面是 **工作树 − `.gitignore`**，不是 git 跟踪面，且点号开头的文件/目录一律不进包。本次发布（版本号只在 `BACKLOG.md` 的发布条目自述，这里刻意不写）之后把注册表真交付的载荷解出来对表，量到两个方向各一处：载荷里**多** 1 件不在 git 里（`__cli_pkg.mbt.tmp`），载荷里**少** 18 件在 git 里（`.github/*`、`.githooks/*`、`.codeartsdoer/*`、`.gitignore`、`.mcp.dev.json`、`.mcp.example.json`、`docs/*/.gitkeep`、`plugins/claude/.claude-plugin/*`、`plugins/claude/.mcp.json`）。判据：P1 未被 ignore 挡住又没被跟踪的非点号文件 ⇒ 红（下一次发布会把它公开）；P2 红面里出现凭据形状 ⇒ 单独点名（那不是卫生问题而是事故，已发版本撤不回）；P3 打包面列不出任何文件 ⇒ FATAL(2) 自拒。`--selftest` 四支：G1 干净不误红（工作树带未跟踪件时自动换 G1'：逐件点名且无幻影红）/ M1 造未跟踪件必红 / M2 造被 `*.log` 挡住的件必不红 / M3 红面里塞凭据形状必点名 P2；造件在 `finally` 里逐个删并复核盘上无残留。离线可跑（不起服务、不联网、不发 publish）。用法：`python scripts/check_publish_payload.py [--selftest]`。**跑在任何一次 `moon publish` 之前**，红就停下——别用"扫过 git 面"当"扫过公开面"。
@@ -119,13 +109,116 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
 - `cli_flag_probe.py` — **CLI 调用面判据（BUG-106 + BUG-114）**：起真产物 `node _build/js/debug/build/cmd/cli/cli.js <arm>` 看真 rc、读真首行，三档缺一不可——`version/--version/-V` 必须 rc=0 且首行回显 moon.mod 的版本；`help/--help/-h` 必须 rc=0、不落"未知子命令"文案、且回显版本；未知参数必须 rc≠0（`fist --version || exit 0` 那类包装会把失败读成成功）。为什么白盒测试不够：`cmd/cli/subcmd_wbtest.mbt` 钉的是 `parse_subcmd`/`exit_code_of` 两个纯函数，入口被改回字符串 match、或 `cli_exit` 被摘掉，它照样全绿。文案针从 `cmd/cli/main.mbt` 反解、版本针从 `moon.mod` 反解，两处都不抄字面量。`--selftest` 七格（R1 版本旗被当未知 / R2 未知回 0 / R3 版本自述落后 / R6 帮助面说谎 / R4 缺臂 / R5 零样本必自拒 / G1 干净必绿）。产物缺失或 PATH 无 node ⇒ rc=2 自拒。用法：`python scripts/cli_flag_probe.py [--selftest] [--product <cli.js>]`。
 - `audit_branch_delete.py` — **通道分支删除的硬门 + 审计（R50）**：删 `slave/*` 分支前必须能证明它**已合并到远端基线**（`merge-base <base> <branch> == tip`，或 `git cherry` 无 `+` 且 `diff` 为空）；不通过就 **REFUSE-DELETE（rc=1，不许删）**，并把读数追加到 `<git-dir>/fist/delete-audit.jsonl`（branch/base/tip/contained/cherry_plus/diff_files/diff_sample/verdict），事后可复盘"删掉的到底合没合"。`slave-branch-merge.ps1` 的 5 处删除循环已在 delete 前接上本脚本；`--selftest` 7 格真断言（已合可删/未合拒删/缺失不可判/审计两行与字段齐备）。**R118 接线**：落仓时漏了执行面 ⇒ `run_guards --list` 现读「缺面清单：audit_branch_delete.py」，连带 `check_battery_count_doc` / `check_selftest_inventory_doc` 两格红；现手写点名进电池（`--selftest` 格，temp 仓自建自清，不碰共享线），裸跑仍由 ps1 清理段按分支调用。
 - `moon_env_probe.py` — **常驻入口的 moon 子进程环境探针（R125）**：本仓有 8 个常驻脚本自己 spawn `moon build/check`（`fist.py` 的 BUG-32 自动重建、`fist-mbt-web.py`、`fist-gate.py`、`whisperer.py`、`check_slave_mergeability.py`、`simulate_head_commit.py`、`refresh_dist.py`、`award_demo.py`），干净 PATH + `_build` 冷缓存时都会撞 moonc 的 `Sys_error("\\\\?: Invalid argument")`，把工具链缺陷报成业务失败。本模块把 R124 在 `moon_test_env.py` 里的发现规则收成单一真源：显式 `MOONC_OVERRIDE` 优先；Windows 且 `~/.moon-shim/shim.exe` 存在则自动注入；其他平台原样透传（零回归）。**不带参数**=静态普查 `scripts/*.py` 的 spawn 面是否都接了 `moon_env()`（未接线的逐份点名 rc=1；扫描面为空自拒 rc=2；白名单 `moon_test_env.py` / `check_fmt_gate.py` / `check_exit_code_contract.py` 逐条带理由）。`--selftest` 十一格（反解：D×5 / A×4 / L×2），发现规则四态 + `moon_env` 注入不改 `base` + 合成违例必点名 + 干净不误红 + 白名单放行 + 空扫描自拒 + 真现状面必须绿。用法：`python scripts/moon_env_probe.py [--selftest]`（0=OK，1=有未接线入口，2=判据无法自证）。
-
 - `moon_test_env.py` — **让 `moon test` 真能跑（BUG-380 根因修复的常驻入口，R54）**：`moon test --target js` 把测试选择面作为**一整段 JSON 参数**交给测试产物，而 PATH 上的 `node.cmd` 垫片（DSH 桌面端 `.desktop-bin\node.cmd`）经 `cmd.exe` 转发会**吞掉引号**，测试产物收到残缺 JSON ⇒ `failed to parse args: Unterminated string in JSON`、整个测试面在你机器上等于不存在（台账 BUG-380 的真凶）。本脚本按**目录内容**（含 `node.cmd`/`node.bat`）剔除垫片目录、校验 `node` 落在真实 `.exe`，再跑 `moon test` 并**核对汇总行**`Total tests: N, passed: N, failed: 0`（BUG-142：`moon test` 的退出码不可靠）。rc 契约 **0=全绿 / 1=有红 / 2=判据无法自证**；`--selftest` 8 格真断言；`--dry-run` 只报环境不动手。实测：清理前全仓测试 rc=1 且一条都跑不出；清理后 **1387/1387 passed, rc=0（11s）**。**第二道坑（R124 实测）**：清干净 PATH 后冷编译仍会撞 moonc 的 `\\?\` 路径 ICE（`Sys_error("\\\\?: Invalid argument")`，moon 0.1.20261016 / Windows 的工具链缺陷，与 BUG-388 的 fmt 面同族）——R124 之前本脚本在冷编译时必 rc=2。现在 Windows 上自动发现 `~/.moon-shim/shim.exe` 并设 `MOONC_OVERRIDE`（显式环境变量优先），找不到就照跑、但 ICE 出现时点名成因并 rc=2；`--selftest` 由 8 格增至 12 格。
-- `check_doc_dup.py` — **文档条目重复尺 + 机械修复（R48）**：抓 `scripts/README.md` 这类索引被合并反复拼接后的「同脚本多份说明」（措辞不同、数字不同，例：`run_guards.py` 并存 26 把尺/24 把尺两版共 6 条）。判据只看长条目行（>150 字且以 `- ` 或 `**` 开头），**按脚本名归组**，同键 ≥2 条即红；`--fix` 机械去重（每键保留最长那条，其余删除），`--selftest` 10 格真断言。实测 2026-10-22：首轮 992 行冗余 → 去重 378 行；半小时后合并又回涨 14 行 ⇒ 需要每轮盯着。
+- `check_doc_dup.py` — **登记块重复尺 + 机械修复（R48 立，R136 硬化并进电池）**：抓 `scripts/README.md` 这类索引被合并反复拼接后的「同脚本多份说明」（措辞不同、数字不同，例：`fist-gate.py` 一个名字挂 11 块）。**R136 起按块判**：登记块 = 行首 `- ` + 反引号脚本名（支持 `- `a.py` / `b.py` —` 与 `- `a.py` + `b.md` —`）+ 紧跟 `—`/`（`，**缩进续行属于同一块**；同一名字被 >1 块登记即红，点名行号与浪费字节。**两条硬化各有实测依据**：① 取消 R48 的 `len > 150` 门槛——重建前 341 块里 38 个重名、232 块冗余、66KB 浪费，旧尺却照报「无重复长条目」，因为重复副本大多短于 150 字；② `--fix` 改**整块删**（R48 只删首行，实测留下「条目头被吃掉、只剩半句」的孤儿续行）。散文引子 `- `check_plugin_sync.py` 的索引缺口补齐登记（…）：`、表格行、`**` 段落都不参与判定（假阳形状已记档，不许回潮）。`--selftest` 21 格真断言（短条目/续行归属/多名字/散文排除/整块删/幂等）；rc 0=干净 / 1=有重复 / 2=扫描面为空 / 4=尺子自己坏了。**为什么必须接线**：R48 落仓后只有电池的自动无参格在跑它（长度门槛让它在 232 块冗余面前照样报绿），`--selftest` 没人跑、CI 面完全没有它——写了没人核的尺等于没有（R106 同律）。
 - `check_delivery_gap.py` — **交付断层尺（R46）**：把"本地已合"与"已交付"分开量——对给定 base（默认 origin/master，可 `--base gitcode/main`）逐本地分支算 `rev-list --count <base>..<ref>`、动的文件数、以及 tip 是否已出现在任何远端分支；退出码 0/1/2（2 = base 取不到，判据无法自证就拒绝出结论）。来由：2026-10-22 实测本地 main 一度领先 origin/master 207 个提交而未推送，而清理流程用本地 HEAD 判"已包含"，两者叠加会把未交付的分支当已合并删掉。
 - `check_doc_surface.py` — **文档面一致性守卫（Round 2 验证模式产物，BUG-22/30 的机械化闭环）**：以 `server.mbt` 注册表为真源，校验 ① 每个工具在 AGENTS **和** README 逐个可查（防"标题数字对、正文没跟上"）；② README 功能全景分组计数之和==实测**且标题自述的「N 组」==正文实际分组标题数**（R39/BUG-363②：此前只比和，README 标题写 17 组而正文 18 个分组标题、和恰好=170 也照样绿——和相等不代表组没漏）；③ 各文档自述版本==`moon.mod`（历史/时间线文件豁免）；④ 反幻影哨兵——真源解析到 <=100 个工具即 FATAL(2)，绝不因空清单报 PASS。用法：`python scripts/check_doc_surface.py`（0=PASS，1=漂移，2=无法自证）。**R116 新增**：J6 规范正文(`AI-DEVELOPMENT-STANDARD.md`)↔机器投影(`project_standards.mbt`) 的 id/版本一致；J7 规范性表面（README/AGENTS/docs/templates/对外工具描述）禁残留「三形态/一源三态」旧口径；J8 `templates/*.md` 里对已注册工具的调用示例与参数表，顶层参数必须 ∈ 真源 schema 且不缺 required（`_instrument` 只校验 required，未知键静默丢弃）；`--selftest` 对合成违例必须发红；J9 `server.mbt` 每个工具描述的**返回契约**——必查清单必须写「返回 {…}」（认中文「返回」）、歧义键（如 `run_check` 的 ok/status）必须分工、写了契约的工具数走棘轮只许升；J10 AGENTS/模板/插件真源里「J1-JN」式范围声明 == 本脚本反解出的实现上界（少写=声明滞后，多写=幻影判据）；J11 CI 的 native 门步骤 ↔ 账本/规范面**三向对表**（账上 `BUG-133` 仍 OPEN ⇒ 两条 native 臂各必须有且只有一道名字含 heap gate 的步骤、必须挂在 `Test (native` **之前**、规范面反引号逐字点名的步名必须**等于** workflow 里的步名；单转 FIXED 后这一格自然失效，不留恒红判据。三支尺子自保：账本读不到那条单 ⇒ FATAL、一份 workflow 都没读到 ⇒ FATAL、解析不到 `- name:` ⇒ 本格不作数）；J4 子判据：注册表**发布版本**只在 `BACKLOG.md` 一处自述（本机无注册表复核通道，第二处只能与权威面打架）。J12 CI 的 `if:` 守卫里不许钉分支名（BUG-132 的恒假门形状：`if:` 出现 refs/heads/ 引用即红——分支名一变那道门就永不可能运行，而它在读数里长得像「未触发所以正常」的绿灯位；分支过滤交回 on.push.branches。扫描面从 .github/workflows/*.yml 目录派生，且只看**剔掉注释之后的代码面**（删 nightly 时留的墓碑注释里正当引用着旧条件，不剔就是自家注释喂回针，R9 同型）；五支对照：钉分支必红 / 注释不红 / tag 守卫不红 / 空扫描必自拒 / 现状不红）；**J13** CHANGELOG 各节标题里的「GitHub Release 未发布」是**现在时**断言，一旦该节的盖章戳晚于权威面的 published 时刻就落盘即假（BUG-135 实测：那一节的标题戳比权威读数晚约 27 小时）——权威面做成 `BACKLOG.md` 末尾机器可读的 `release-fact: v<版本> github-published=<ISO> asset=<名> bytes=<N>` 标记行（散文里的「同一版本号」不可解析），判据只抓「戳晚于事实」那一档：**戳早于 published 不误红**（历史准确）、**权威面没记这一版则不作数**，而两面任一为空、标记残缺、同版本两条标记、版本与资产名打架都判红；违例文案里的路径统一走 `rel_posix()`（POSIX 分隔）——账本/报告要**逐字**引用回执，同一支尺在两台上打印两种文案就没法对表。**R39 补登记（此前索引只写到 J13，J14/J15 两格有实现无登记=本行自己也是「文档落后于真源」的样本）**：**J14** 工具计数自述↔真源对表，扫描面是**按面白名单** `J14_FACES`（现为 5 面：`src/server/server.mbt` 资源面 / `cmd/cli/help_topics.mbt` CLI 帮助面 / `ARCHITECTURE.md` 架构自述面 / `templates/tool_use_rubric.md` 提示词模板面 / `docs/agent-map.md` 项目地图面），三面全空即 FATAL 自拒（防空转）；BUG-363① 的成因正是「白名单少一面」+「`check_tools_sync` 的两条正则都不认中文三元组」（`RE_TOOL_CLAIM` 要求字面含 MCP、`RE_TRIPLE` 只认英文），于是地图写 122 而真源 170 齐绿；**刻意不用宽口径**——`temp/probe52.py` 实测把正则放宽成通用「N 个工具」会在现状面命中 20 处，多数是历史截面记录（本仓定律：历史面不改数），放宽等于逼人伪造历史。**J15** `docs/` 归档文档文件名日期前缀形状。认领新面时必须同时补正/反两支 selftest 夹具（含「分组简写不得误伤」那一支反证），否则新面只是第二条「有分支无夹具」的空门。ci.yml 先跑 `--selftest` 再跑全量（BUG-89：自检从不被执行 = 自检坏了也报绿）。
-- `commit_bug335_lock.ps1` — **BUG-339 提交配对自动补全器**：只提交 `src/server/bug335_ns_route_wbtest.mbt` 这一份（幂等可重跑，`-SkipTest` 跳过测试步），供该单的配对提交自动化。
-- `slave-branch-merge.ps1` — **副机分支一键合并（主机侧工具）**：fetch gitcode 后扫描 `slave/*` 分支，逐个 cherry-pick 到 master，随后清冲突标记 → build → push → 删已合并分支；`-DryRun` 只出方案不动树。
+- `commit_bug335_lock.ps1`（2026-10-20 18:54 `901eca8c` 入仓，此前从未登记）— **提交成对性收尾助手（脚本自述）**：等并发 agent 把含 `publish_parallel_route` 的 `src/server/server.mbt` 提交进 HEAD 后，**只提交**配套锁 `src/server/bug335_ns_route_wbtest.mbt`；脚本自身规则写明「DO NOT commit server.mbt（concurrent agent owns it）」与「Safe to run repeatedly」——存在的理由是「锁引用未提交函数时单独提交锁 = 给 src/server 引入编译红」。⚠ **脚本文件头自称对应 BUG-339 / BUG-335，但账本抬头面查无此二号**（356 条唯一编号里都没有；本行初版照抄了脚本的编号，经 `check_bug_reference_integrity` 同族排查后改为如实标注）：编号来源未入账，引用时别当账本事实。用法 `pwsh scripts/commit_bug335_lock.ps1`。
+- `slave-branch-merge.ps1`（2026-10-21 17:00 `c689f027` 入仓，此前从未登记）— **`gitcode/slave/*`
+  批量合并驱动器（合并 agent 的执行面）**：fetch → 扫哪些分支动了 src/scripts/cmd/moon.pkg →
+  逐个 cherry-pick → 清冲突标记 → build → push → 删已合并分支；`-DryRun` 只扫描不执行，
+  开头先备份 HEAD。**入仓时缺 UTF-8 BOM 被 `check_ps_encoding` 判红**（887 个非 ASCII 字节；
+  PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
+  去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
+  **2026-10-22 R97 / TASK-002 追加面 —— cherry-pick 黑名单 + `-SelfTest` 自证**：
+  `$SkipPaths` = `^src/ops/moon\.pkg$` + `^src/ops/rhop.*\.mbt$`，`$PoisonNames` 单独点名
+  `src/ops/rhop_poll.mbt`（旧 AtomCode commit 里的它和 HEAD 的 `rhop_native.mbt` 重复定义，build 必崩）。
+  pick 循环在提交前撤名单（`git reset` 清索引 → HEAD 有的还原、HEAD 没有的删文件，逐条打印 `poison:`/`黑名单:`
+  不静默丢），第 5.5 步再对盘上做一遍兜底普查（名单文件也可能被 checkout/copy 带进来，不只 cherry-pick 一条路）。
+  `-SelfTest` 在 `%TEMP%` 建沙箱 git 仓真造一次 cherry-pick 冲突（G0/G0b 先证明「冲突确实存在且落在 moon.pkg 上」，
+  否则后面全是空跑），零副作用：不碰本仓、不合并、不推送。退出码 0 全过 / 1 有格失败 / 2 沙箱起不来（尺子
+  无法自证绝不冒用 1 那一档）。**变异台两支都已实跑**：① 把 `^src/ops/rhop.*\.mbt$` 改成 `^src/ops/NOPE.*\.mbt$`
+  ⇒ 通过 13 / 失败 7、rc=1（P2/P3/P4/P8/G1/G2/G3 同批发红）；② 把 `rhop_native.mbt` 塞进 `$PoisonNames`
+  ⇒ 通过 19 / 失败 1、rc=1（P11 单独发红，钉住「盘上兜底不许把 HEAD 的干净实现报成 poison」）。
+  干净树 20 / 0、rc=0；三档 ok+FAIL 格数都等于 20，没有静默跳过的格。
+  用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`｜`-SelfTest`。
+- `whisperer.py`（2026-10-22 主机 b0693a6 入仓，gitcode/main 线）— **风语者 Step 0-4 编排真源**：
+  `--scan-only`（默认）/`--auto-merge`/`--self-test`，旗名带连字符，与本文件的 `--selftest` 不是同一个旗。
+  **刻意不进 run_guards 电池、也不进 fist-gate 门链**：它的 Step 0 HEAD 安全门在巡检拍里执行
+  `git checkout master` + `git reset --hard` + `git push --force HEAD:main HEAD:master`（两远端），
+  无人值守跑它等于让定时脚本对共享线强推——已入池 TASK-018（P1）待裁决，裁决前面包保持排除。
+  与 `whisperer_patrol.py` 的分工：这份管编排（含合入动作），那份管探测与入池（零共享线副作用）。
+> **R96 追记（`whisperer.py` 的危险面，登记归登记、这条必须点名）**：上面那条只写它做什么，没写它**会对共享线动手**——
+> `step0_head_safety()` 在巡检拍里执行 `git checkout master` + `git reset --hard` + `git push --force HEAD:main HEAD:master`
+> （两个远端），判据把「本地有未推提交/工作树脏」一律读成篡改 ⇒ 主机自己已被这道门开过火（`9e0064a` 提交信息就是「风语者 HEAD 安全门手动回救」）。
+> 它因此**不许进守卫电池**：`run_guards.py` 的 `EXCLUDE_EXACT` 显式点名它，`--selftest` 里有一格「危险脚本不得拿无参兜底格」的普查判据咬住这个形状（R94）。
+> 只读探测/入池那一半在副机分支上另址 `whisperer_patrol.py`（双活解，等 TASK-019 裁决）。
+> 旗标口径以 main 为准：`99bacbe` 已把 `--self-test` / `--selftest` 两个形状收进同一 dest，副机 R96 首稿写「只认带连字符的、照抄习惯会打空」已被这一版作废。
+- `fist-pr-automator.py`（2026-10-22 `cef1e9c` 主机入仓，R113 收紧默认）— **yaml → 门 → push → 开 PR/MR →（显式）merge 流水线**：
+  三参跑法 `python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode> [--dry-run]`，读 `branch`/`title`/`base`/
+  `repo`/`remote`/`gate`/`merge` 字段，先跑 `scripts/fist-gate.py`（rc≥1 即停），再 `git push -u`，
+  然后用 curl 打 GitHub API v3 / GitCode API v5（token 只从 `GITHUB_TOKEN`/`GITCODE_TOKEN` 环境变量读），
+  **只有 yaml 明写 `merge: true` 才 `merge`（squash）**；缺省/`false`/其它值一律打印 `merge=off` 并停手
+  （R113/TASK-021：不可逆动作不许由缺省值触发）。`--dry-run` 打印计划即返回 0——不起子进程、不碰网络、
+  不读 token 值；参数个数不对或平台名不是 `github|gitcode` 一律 rc=2 自拒。rc：0=ok / 1=blocked /
+  2=degraded 或用法自拒；`--selftest` 覆盖 yaml 解析 / merge 两向语义 / 计划文本 / dry-run 零副作用 /
+  用法自拒。**本脚本不进 CI 与电池自动面**（`run_guards` 按白名单归为非门禁族，`--list` 可见、电池面为空），
+  改流水线语义时必须人工点名跑 `--selftest`；合入动作在 R113 后默认关闭，任何自动化都不得替调用者打开。
+  用法 `python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode> [--dry-run]`（人工触发）。
+- `check_bug_refs.py`（2026-10-22 `cef1e9c` 主机入仓，BUG-373 出路①的第二把尺；R115/TASK-020 定面）—
+  **代码/文档里 `BUG-n` 引用 ↔ 账本 `memory/bugs.md` 对账**：`git ls-files` 取跟踪面（.mbt/.py/.md/.yml/
+  .yaml/.json/.ps1/.sh/.toml），`EXCL`（`_build`/`temp`/`.git`/`plugins`/`reports`/`docs/archive` 等）
+  R115 起**真生效**（此前只声明没过滤，`reports/` 169 条噪音就是这么进来的）。逐行正则对账本抬头分三档，
+  并按面分类：comment（`//`/`#` 之后）/ string（代码字面量）/ narrative（文档）。**`--strict` 只判
+  注释面 ORPHAN**，棘轮 `STRICT_ORPHAN_CEILING=3`（现读 3 条全在 `commit_bug335_lock.ps1` 注释；
+  测试文件的夹具说明注释按 S1b 降档）；字面量与叙述面只报，CLOSED 仅信息（`--strict-closed` 才升格）。
+  与已接 CI 的 `check_bug_reference_integrity.py`（`.mbt` 注释面 J1=0）**两把尺并存、各钉一面**。
+  **现状读数（2026-10-22 R115 本机实测）**：7103 处引用 / OK 667 / ORPHAN 206（comment 3、string 67、
+  narrative 136）/ CLOSED 6230；默认与 `--strict` 均 rc=0。`--selftest` 24 格（三档计数、三面分类、
+  夹具降档、排除面、退出码/棘轮、真语料校准），rc：0=通过/只报告 / 1=注释面 ORPHAN 超棘轮或
+  `--strict-closed` 命中 / 2=账本不存在。
+  用法 `python scripts/check_bug_refs.py [--selftest|--strict] [--bugs memory/bugs.md]`。
+- `check_dist_snapshot.py` — **仓内发布快照 `dist/fist-mbt.js` 的版本守卫**：快照内嵌
+  `project__version` 必须 == `moon.mod`。存在理由：`scripts/mcp_compat_shim.js` 的**默认服务端**就是
+  `node dist/fist-mbt.js serve`，README 也把它当"发布版"引用；实测快照曾落后 `moon.mod` 一个版本
+  （发布实况见 `BACKLOG.md` 的发布条目，本文不再抄第二处版本号）⇒ 照文档连过去的人/agent 拿到旧版本 +
+  旧工具集（shim 注释里甚至写着更旧的工具数与版本）。
+  `check_release_asset_names` 明确不扫 dist，这一格此前**无人认领**。`--selftest` 8 格真断言；
+  读不到版本/缺文件 ⇒ rc=2（判据无样本绝不放行）。
+- `refresh_dist.py` — **刷新快照的一条命令**：`moon build --target js --release cmd/cli` →
+  `patch_esm_main.py` 注入 ESM shim → 拷贝到 `dist/fist-mbt.js` → 跑上面那把尺自证。`--dry-run` 只打印计划。
+  实测 2026-10-22：刷新后 `node dist/fist-mbt.js version` = **FIST-Mbt v0.3.10**（用户视角真读数）。
+  注意：当前 moonc 世代产出的 bundle 比仓内快照大（release 108675 行 vs 快照 83765 行），
+  刷新会带来大 diff 属预期——**快照本该由发布流程产出**，故本仓只固化命令、不代提交产物。
+- `install_git_hooks.py` — **git 钩子安装/核对器（幂等）**：`--install` 设置 `core.hooksPath=.githooks`
+  并补可执行位；`--check` 只核对（0=已生效 / 1=未生效 / 2=环境不完整）。存在理由：`.githooks/pre-commit`
+  早在仓里但 `core.hooksPath` 从未设置 ⇒ 钩子**默认不生效**，"每个 commit 前跑冲突标记判据"这条
+  一直没落到本地提交面（CI 只管推送后）。见 `.githooks/README.md`。
+- `run_guards.py` — **守卫回归电池的唯一真源（R40 / BUG-366）**：`check_*.py` 这 26 把尺「红不红」看 CI，但「本地每轮复跑哪几格」从来没有真源——历轮都是一份 `temp/run_guardsNN.py`，temp/ 被 gitignore、写完即丢，格数全靠人回忆（实测这条手抄链：11 份电池 5、7–16 = 13×7 → 30 → 33 → 37 → 37 格）。漏抄不是「少跑一格」，是「那格永远不会被发现漏了」：**`check_plan_landing` 自 2026-10-14 落仓起 CI 里没有、11 份电池逐份 grep 全 0 命中，于是它带着「`src/x.mbt:108/121/134` 整串当路径 ⇒ 已跟踪文件报 missing」的虚报缺陷躺了一周**（本轮实测：56 条读数里 2 条虚报 / 8 条日期与变量占位噪音 / 17 条落在存档面）。判据 **G1** 每把 `check_*.py` 至少一个执行面（CI ∪ 电池，两侧名单都现读、不另抄清单——抄的那份就是下一个漂移点）；**G2** 电池点名的脚本不存在 ⇒ FATAL；**G3** 尺数 0 / CI 一把都没解析到 / 电池为空 ⇒ FATAL（空宇宙会让「无人缺面」以 rc=0 骗人）；每条 case 带 `expect`，预存红**照写期望值 + 依据**（`kind="known-red"`）而不是豁免，数字被修好就说明显；诊断型读数是 `kind="diag"`；依赖 temp 件的 case 缺前置打 SKIP，但 **SKIP 不构成「这格过了」的证据**，G1 只认名字在不在电池里。真源读数（R41 复读）：**35 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0；24 把尺 = CI 面 21 ∪ 电池面 22**（R48 现读：38 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0；26 把尺 = CI 面 23 ∪ 电池面 24）（R40 首跑当时是 34 格 / 失败 2，那两条红是「本文件尚未入库」造成的顺序性自红，登记后归 0）。`--selftest` 37 格（R121 现读：34 格 + 逐格判定列三格；R106 现读：电池 53 格 / 失败 0 / SKIP 5 / 缺执行面 0；宇宙 81 份脚本 = 尺 79 把 + 常驻豁免 2 份（只点名不入电池），CI 面 39 ∪ 电池面 41 ∪ 登记 30 ∪ 豁免 26 ∪ 待接线 4；自动补格 0 格，成因见 ④）：G1 干净 / G1 抓漏面尺且必点名 / G3 三种空宇宙各自拒 / G2 自拒 / 真源现状全绿 / plan_landing 已进电池 / **R41 两格：plan_landing 的门禁格与诊断格必须并存，且诊断格的 why 必带构成**（读数只给一个孤零零的 rc 不算证据）。**R106 再钉「宇宙的真源是递归全集，不是门禁前缀清单」**（2026-10-22 副机实测）：一次「手动解冲突合入」把 R82 的 `GATE_PREFIXES` / `EXEMPT_RULES` / `_match_rule` / `universe_files` 四个**定义**删了、把 `is_gate` / `exempt_reason` / `classify` 三个**调用面**留着 ⇒ import 期 NameError，`--selftest` 与 `--list` 一起起不来，ci.yml「Guard execution-face」那两步整条红了一整天——而电池里没有任何一格能看见这件事。三处收口：① 宇宙 = `scripts/**/*.py` 递归全集（`UNIVERSE_EXCLUDE_RE` 的测试/一次性/内部辅助族不入账），`classify()` 的门禁尺/豁免/未归类改成**记账口径**而不是宇宙本身；② 执行面是三面（CI ∪ 电池 ∪ 登记 `REGISTRY`），再加豁免理由（`EXEMPT_RULES`）与待接线（`KNOWN_NO_FACE`）两份点名账，五者皆无 ⇒ 缺面红——登记面原先只在 `check_faces` 函数体里有个 `registry` 而调用面没传，等于登记不顶用；③ 未捕获异常走 **4 号档**（BUG-369 契约：「尺子自己坏了」不许长得像「判据判红」的 1），并补 `auto_cases` arity 对表格钉住「定义与调用被拆到两次改动」这一类。④ 自动补格这台机器在现状树产 **0 格**（`build_cases()` 先按脚本名给每份可发现脚本补了无参格，`auto_case_for` 的名字排除因此恒命中），于是把它的判据从循环体抽成纯函数、用 7 面合成对照钉住——拿空产物反证就是 `all([])` 式的无人认领绿灯（R105 的 X5 同源）。同批把电池里**从没被读到过**的预存红按实测登记：`check_doc_surface` J4（scripts/README.md 里第二处发布版本自述（当时的号已过时，此处不写具体号以免与当前自述混淆））、`gen_plugins --check` 2（BUG-333/384 抬头编号重复 + BUG-384 被小记点名但状态非 FIXED）连带 `check_plugin_sync` 1、`check_ci_step_position` 1（位置违规 35 > 棘轮上限 34）连带其 `--selftest` 2、`check_scripts_index` 的换因（fist-gate.py 已登记，现红在那份提示词素材件（.txt 而非 .py，登记与否归文档那一单）未登记）；并把判定面已归零的 `check_bug_reference_integrity` 期望从 1 改回 0（本文件自订的律到期兑现）。宇宙全集化后第一次进账的三份账也当场结清：`whisperer.py` / `whisperer_patrol.py` 有 `--selftest` ⇒ 手写进电池，`install_git_hooks.py`（查本机 git 钩子态、`--install` 有写面）/ `refresh_dist.py`（要构建产物并写盘）⇒ 进 `REGISTRY` 带理由。**变异实测**：把 plan_landing 从 CASES 里摘掉 ⇒ `--list` 与 G1 立刻 rc=1 并点名它（正是那周的形状的机械化复现）。本工具的两个模式在 ci.yml「Guard execution-face」步里执行（`--selftest` + `--list`），所以这条门自己不会重蹈「写了没人跑」。用法：`python scripts/run_guards.py`｜`--list`｜`--selftest`（0=无失败 / 1=有格越期望或有尺无人跑 / 2=电池自拒）。**R82 宇宙扩展（TASK-007，P1）**：`guard_files()` 改 `os.walk` 递归——宇宙从 scripts/ 顶层扩到 **scripts/ 全树含 blackbox/**（排除 `__pycache__` 与 `_`/`test_`/`verify_`/`selfdrive_` 前缀族），现读 **67 份**（此前 26，blackbox 里落了不接线的尺如 `check_merge_markers.py` 正是 R58 指出的盲区本体）；新增第三执行面**登记面（REGISTRY）**——在册但不自动跑的脚本（servers/长跑/网络/平台前置/helpers/生成器/黑盒 e2e/证据型历史脚本）每条带 why，复用本仓 `schema-reserved` 的点名预留律：G1 改「CI ∪ 电池 ∪ 登记三面皆无才算孤儿」，G2 反向抓「脚本删了登记没删」的 stale 条目（与 store 表接线守卫两向发红同构）；`auto_cases()` 对新落仓的 `check_*` 自动补电池格（手写 36 + 自动 0，已知尺零重复）；CI 引用面正则放宽后实测 CI 真跑 38 份（旧正则看不见 5 支 blackbox e2e 探针与 cli_flag_probe）；电池 **36 格 / 失败 0 / SKIP 5（缺 temp 前置，不构成通过证据）/ 预存红 2**（`check_scripts_index` rc=1 = fist-gate.py 未登记、`cleanup_artifacts --check` rc=1 = 工作树残留，均按电池律 `expected()` 声明 + 依据）；`--selftest` 扩到 **19 格**（新增：宇宙≥40 + blackbox 全员在宇宙 / G2 stale 登记自拒 / G1 登记面不算缺面 / auto_cases 生成与零重复）。
+  **R121 行内判定列（副机实测缺陷）**：旧版逐格行的标签直接从记账口径取（`tag = {"gate": "OK", ...}[c["kind"]]`），于是一条 `rc=2 exp=0` 的门禁格照印 `OK`——实测本机 R120 分支上那两条链红就是这么躺在一行绿灯里的：`rc=2  exp=0  check_battery_count_doc.py   OK FATAL: run_guards --list rc=1：缺面清单：audit_branch_delete.py`，尾行自己写着 FATAL，行内标签却写着 OK，红只在末尾汇总出现。逐行读输出的人（和 AI）先看到的是绿灯，这与 R106 立的「空产物反证」「把『自动 0』印成一行看不出问题的数字」同族。修法：判定列从 `ok` 取并放进行首（`PASS`/`FAIL`），口径降级成第二个标签列（`门禁`/`诊断`/`预存红`），于是 `grep ^FAIL` 直接捞红格、`grep ^SKIP` 捞跳过格；`--selftest` 加三格合成对照钉住（红不印 OK / 命中印 PASS / 预存红仍带口径标注），四支变异实测各有对应红格（判定列恒印 OK→1 格红 / 判定列挪出行首→3 格红 / 口径列抹掉→1 格红 / 判定列反了→3 格红），还原逐字相同。**`--list` 面不动**：`check_battery_count_doc.py` 抄的是 `--list` 汇总行文法，逐格行没有机器消费者（本仓实测只有它读电池输出），改的是人读面。
+  **BATTERY-REGISTRATION（机器可读锚点；`check_battery_count_doc.py` 逐键对表，改数必须同批）**：`rulers=89 ci=43 battery=51 missing=0 gate=59 exempt=27 unclassified=5`（现读来源：`python scripts/run_guards.py --list`）
+- `whisperer_patrol.py`（2026-10-21 R86 入仓为 `whisperer.py`，R90 收写侧，R93 改址让位）— **风语者探测/入池引擎（TASK-009）**：分支巡检
+  （ahead/cherry 等价/冲突标记单发 `git grep`，四类处置 ABORT/DROP/FF-MERGE-CANDIDATE/REVIEW）
+  + docs 散落普查 + scripts 命名普查 + 守卫电池格数读数，发现由 `pool_findings()` 写成
+  `docs/tasks/backlog/TASK-NNN-*.yaml`（编号递增；每份 yaml 落一行机器锚 `dedupe_key: <sha1(key)[:16]>`，
+  同键重跑即跳过——键的散文会漂，锚不会；ABORT 分支级发现按去掉远端前缀的分支名入池，
+  gitcode/ 与 origin/ 两条镜面只占一单，P1）；默认扫描+写 yaml，
+  `--scan-only` 只出报告，`--apply` 额外做 ff-only 无分叉快进合入（真合并仍是人的决定）——
+  快进的落点是**当前签出分支**，所以 R94 起有三道前置：工作树干净 + HEAD 就站在基线对应的本地分支上
+  + 逐条 `--ff-only` 且第一条不合常理即停；任一不成立即整批不动并把原因打报告（上一版没有前置、
+  非零 rc 全被吞掉、每轮还空转一次 `git checkout`），
+  `--no-fetch` 离线档。rc：0=无事 / 1=无法自证或 `--apply` 被前置挡住 / 2=发现待办。
+  `--selftest` 十格：干净分支巡检 / 干净标记 / pool_findings 逐类入池 / 重跑幂等且镜面去重 /
+  整串中文键不落到 `TASK-NNN-.yaml`（退化为键哈希 slug）/ 沙箱写不动真任务池 /
+  `--apply` 四格（基线上快进成功且基线 sha 前进 / 错签出整批不动 / 脏树整批不动 / 分叉分支永不进快进面）。
+  四格各有变异对照：拿掉任一道前置、或把合并面放宽到全部处置，必有对应格红；本轮正是这四格抓到
+  `probe_branches` 里 `merge-base` 漏传 `cwd`（真仓 cwd 恰等于 ROOT，这一格在真实跑法里看不见）。
+  用法 `python scripts/whisperer_patrol.py [--scan-only|--apply] [--no-fetch] [--selftest]`。
+- `check_backlog_yaml_integrity.py` — **backlog 台账顶层键唯一性守卫（R110）**：任务池 yaml 的消费面是**逐行正则**而不是 YAML 解析（`- [ ]` 复选框让 `yaml.safe_load` 在抬头就 ParserError），所以「同一个 `id:` 出现两次」不会有任何机器读数——R109 实测 `TASK-001-conflict-markers-no-commit.yaml` 里躺着一份截断抄本（`acceptance_met` 只在完整块里，半截那份没有），两份并读时后写者赢、任务池直接读错状态。三条判据：R1 顶层键不得重复 / R2 抬头四键 `id,title,priority,status` 必须齐 / R3 出现 `acceptance_met` 却没写 `status` 只记**诊断**不计失败（盖章归 owner，不代修）。扫描面空或目录缺失 ⇒ rc=2 自拒，绝不冒绿；未捕获异常走 4 号档（BUG-369 契约）。`--selftest` 九格含 C9 真面变异（复制真实台账尾部追加半截再断言必红，`finally` 还原字节相同）。
+- `check_text_control_chars.py` — **文本面 C0/DEL 控制字符零容忍门（R121）**：写 `\b`/`\a`/`\v`/`\f`/`\e`/`\0` 时被转义链吃成**不可见字节**（0x08/0x07/0x0b/0x0c/0x1b/0x00，字母本体丢失）——人眼看着正常、工具不报错，文件照样能提交能发布，只是 grep/正则永远命不中，读者拿到的不是作者以为的那段字。R119/R120 连中三份制品后，R121 全仓实测 **12 份文件 30 处**（任务池、memory、reports、**一把守卫脚本自己**），逐处按上下文还原字母；`check_backlog_yaml_integrity.py` 的 R4 只管任务池，其余面此前无人认领 ⇒ 本尺把整个文本面做成零容忍门。判据：C0 控制字符（0x00-0x08 / 0x0b / 0x0c / 0x0e-0x1f；**制表 0x09、换行 0x0a、回车 0x0d 是合法排版空白**）+ DEL 0x7f；扫描面 = 仓根递归的文本扩展名白名单（.md/.py/.ps1/.sh/.yaml/.yml/.json/.txt/.mbt/.mbti/.cmd/.pkg + `moon.mod`/`.gitignore`/`.gitattributes`），跳过 .git/.mooncakes/_build/target/temp 等生成与本地目录。空扫描面或根目录不存在 ⇒ rc=2 自拒，绝不报绿；未捕获异常走 4 号档（BUG-369 契约）。`--selftest` 九格（G×4 / M×3 / R×2）：干净不误红（制表/CRLF 合法）/ 非文本扩展不误扫 / 清场后回绿 / 真现状面必绿 + 0x08、DEL、嵌套目录 ESC 各必红 + 空面与目录缺失各自拒。用法：`python scripts/check_text_control_chars.py [--root <目录>|--selftest]`（0=干净 / 1=有控制字符 / 2=判据无法自证 / 4=尺子自己坏了）。
+- `check_backlog_status_staleness.py` — **任务池状态 ↔ 主线盖章证据 对表判据（R102）**：「commit subject 点名了 TASK-0NN，而 `docs/tasks/backlog/TASK-*.yaml` 的 `status` 还停在 `backlog`」这条落差本仓此前没有任何判据会红（与 `bug_list` 的 `open_with_linked_done` 同形，只是发生在任务池面）。四条规则 R1 STALE（已点名 + 仍 `backlog`）/ R2 UNPROVEN-DONE（`done` 却主线无任何点名，终态必须有据）/ R3 OPEN（从未点名且 `backlog` ⇒ 只报不判）/ R4 STALE-BRANCH（yaml 点名的分支已在主线 subject 里出现、`status` 仍 `backlog` ⇒ 活随分支并线而 subject 没点名 TASK id，R1 看不见；R123 实测 TASK-014/015——分支 `fix/guard-docstring-correct-measurement` 已随 e3f76387 并线、`fix/guards-parse-dead-after-marker-clear` 已随 f84eac58 并线，而任务池还写 `backlog`，下一轮巡检会再派一次。分支名从 yaml 正文按 feat/fix/slave/docs/chore/ci/refactor/test 前缀反解，文件路径不冒充分支；只认主线 subject、不看远端 refs ⇒ 离线可判）；**判定面只许下降**：落差条数 > `STALE_CEILING` 才红（rc=1 并逐条点名），低于上限只打印收紧建议、不判红也不自动改数（同 `check_plan_landing` P6 / `check_deprecated_text_census` R3 口径）。扫描面优先 `gitcode/main`、次 `git/main`、都取不到才退 HEAD —— 本地在副机分支上、CI 在 main 的 checkout 上必须读**同一条线**，否则基线数字随分支漂（2026-10-22 实测：副机分支上 TASK-004 尚未点名 = 4 条落差，main 上已盖章 = 少一条）；`--rev <rev>` 可显式指定。`--selftest` 16 格（M×3 / P×3 / R×6 / V×4，族名从已执行格子名首段首字母反解）= 合成违例必红 4 + 反向对照不误红 6 + 规则失明对照 3 + 解析面自证 3；盘上实测两档（R118 现读对表）：within `落差 0 / 上限 0 / 超限 0` rc=0（R111 把存量 9 条落差逐条核对盖章、`STALE_CEILING` 由 4 降到 0，R117 随后把电池里那条「必红」期望兑现成门禁格 ⇒ 盘上已无超限存量）、`FIST_BACKLOG_DIR` 指到空目录 rc=2（一份可解析 yaml 都没有 ⇒ 空扫描必自拒，不冒用 1）；红档（落差 > 上限）在盘上不可复现，改由 `--selftest` 里点名超限的合成违例格钉住。backlog 目录可用 `FIST_BACKLOG_DIR` 覆盖（沙箱自证用）。用法：`python scripts/check_backlog_status_staleness.py [--selftest] [--show-open] [--rev <rev>]`。
+- `check_release_asset_names.py` — **分发面同源守卫（BUG-103 + BUG-105 + BUG-107 + BUG-109 + BUG-111 + BUG-112 + BUG-113 + BUG-114 + BUG-116 + BUG-120）**：安装器（`install_onecmd.ps1` / `install.sh`）与 `build_release.ps1`/`release.yml` 必须共用 `fist-mbt-js-v<moon.mod 版本>.zip` 这一个资产名；R1 禁给版本号写字面量默认值（写死一个字 ⇒ 用户跑不带参数的 `irm | iex` 永远 404）、R2 必须真的解析 `moon.mod` 里的 `version = "…"`、R3 三处资产名模板同源、R4 版本解析为空必须 `exit 1`（不许静默用猜的版本）；**R5 命令名两类 shell 都可见**——Windows 安装器除 `.cmd` 外必须再写**无扩展名**的 `#!/bin/sh` shim 并带「四件齐否则 `exit 1`」的门，WSL/Linux 侧必须 `cat` 出无扩展名 shim 且 `chmod +x`（POSIX shell 不解析 PATHEXT ⇒ 只给 `.cmd` 时 `fist` 在 Git Bash 里就是 command not found）。**R6 钉「200 不等于拿到文件」**（BUG-107 公网实测）：GitCode 三种 raw 形状匿名 GET 都回 HTTP 200 + 一整页 HTML ⇒ 文档首选安装线必须是 GitHub **master** 的 raw 直链（写成 main 取不到），且两个安装器都要对 moon.mod 响应做 HTML 形状检查、下载后验 zip 魔数 `PK`——只按「200 + 大于 10KB」放行，一页 HTML 就能被当成资产送去解压。**R7 钉「装完的自检不许假绿」**（BUG-109，端到端实测）：脚本顶部是 `$ErrorActionPreference="Stop"`，原生命令的 stderr 经 `2>&1` 会变成终止错误，而 node:sqlite 每次启动都打 `ExperimentalWarning` ⇒ 旧自检的两个 `try { } catch { }` 必然吞错、紧随其后的 `✅ fist-mbt.js 可执行` 却无条件打印，`& fist version` 的 catch 还把"shim 跑通了"报成"当前会话 PATH 未刷新"；三支子判据=不许空 catch / 原生调用必须"临时降 EAP + `2>$null`"封装 / ✅ 必须挂在 `if ($jsVer)` 分支上。必读文件缺席即 FATAL（判据无法自证不出假绿）；**R8 钉「发布作业不许顶掉分发」**（BUG-111，本轮那个标签触发的 `FIST-Mbt Blackbox Release` 是 run 1 且失败、Release 零资产，而 `git archive HEAD` 快照里复跑 CI 的 JS 三步全绿 ⇒ 根因是 `release` 作业引用 `needs.meta.outputs.version` 却没把 `meta` 放进自己的 needs，还把可选的 `build-native-linux` 当一票否决项）：判 release.yml 三件事——needs 含 meta、needs 不含 native、native-linux 带 `continue-on-error: true`。`--selftest` 三十八格变异（R1×2 / R2 / R3×2 / R4 / R5×2 / R6×3 / R7×3 / R8×3 / R9×5 / R10×2 / R11×5 / R12×2 / R13×2 / R14×5，一份权威清单、从已执行格子反解）+ 干净不误红（R8 的干净支要加载真 release.yml，否则"读不到 release.yml"会把干净输入判红）。**R9 钉「工具链 bootstrap 与 CI 同源」**（BUG-112：匿名 `/actions/runs/<id>/jobs` 的失败步骤名给出 `build-js` 红在 `Build JS target`、`build-native-linux` 红在 `Build native`、`release` 是 `skipped` ⇒ runner 上没有 `moon`；`release.yml` 用了 `install/unix`（少 `.sh`）且没把 `$HOME/.moon/bin` 写进 `GITHUB_PATH`，而同仓跑通过的 `ci.yml` / `fist-ci.yml` 两条都有）：判据只看**去掉 `#` 注释行之后**的代码面——第一版被我在 release.yml 写的注释里那个 "GITHUB_PATH" 喂回针，「摘掉导出行」那格变异不红，是 `--selftest` 当场抓到的（被检面从 `.github/workflows/` **目录派生**，逻辑名 `wf:<文件名>`，只判代码面里真跑了 `moon build|test|update|ide|check` 的那几份；一个 workflow 都没读到即 `R9 FATAL` 拒绝出数。为什么不再用手写名单：实测 `gate.yml` 与 `fist-bug-sync.yml` 都跑 moon，却不在旧的三名字名单里 ⇒ 新 workflow 天生在盲区，与 J12 的"手写清单必然落后于新增 workflow"同口径）。`--selftest` 里 R9 那五支的构成：release.yml 两支变异 + 目录里新 workflow 摘掉导出行必红 + 不跑 moon 的合成 workflow 不误红 + 空面必自拒（格数只在上面那份清单里写一次——两处抄数就是两份账，由 `check_selftest_inventory_doc.py` 对表）。**R10 钉「文档线必须 BOM 安全」**（BUG-113：`irm` 把脚本的 UTF-8 BOM 留成首字符 U+FEFF ⇒ `iex` 在 `param()` 处报「赋值表达式的左侧无效」，而同一个脚本 `-File` 跑一切正常 ⇒ 全绿的 e2e 照不出用户照抄的那一行）：安装器与 README 两侧的文档线都要 `TrimStart([char]0xFEFF)`。**R11 钉「源码版本常量不许落后于 moon.mod」**（BUG-114：moon.mod 已经前进，`src/server/server.mbt` 的 `project_version` 却纹丝不动 ⇒ 公网装出来的 `fist version` 回上一版，而横幅/文档/插件态都说新版；文档面守卫只比"文档 ↔ moon.mod"看不见这一格，`src/server/fist-mbt_wbtest.mbt` 里那条常驻锁在 master 上一直红着、没人读）：`let project_version` 与 `cmd/cli` 侧扫到的任何 `const *VERSION*` 必须 == moon.mod，读不到基线即自拒、该可选面不存在时不误红。**R12 钉「下载重试只许对准传输层错误」**（BUG-116 实测：本机走系统代理时 `Invoke-WebRequest` 会瞬时抛"基础连接已经关闭"，同一时刻 curl 取同一 URL 却得 200 + `PK` ⇒ 一次失败就换源会把抖动放大成"装不上"；而 404/403/"给的不是 zip" 是确定性结论，重试只拖慢用户）：必须保留"拿到 HTTP 响应就 break"的闸 + 重试带退避间隔，两支变异必红。**R13 钉「文档离线线的资产名版本字面量不许落后于 moon.mod」**（BUG-120：README 的 `-LocalZip …
+- `check_battery_count_doc.py` — **电池规模读数 ↔ README 登记 对表守卫（R112 / TASK-017）**：`run_guards.py --list` 的读数（尺数 / CI 面 / 电池面 / 缺执行面 + 分类记账）与 `scripts/README.md` 里 `run_guards.py` 条目的机器可读锚点 `BATTERY-REGISTRATION` 逐键对表——**两个方向都红**：现读少于登记（欠格：格子或尺在登记后被删）与现读多于登记（登记落后：新增尺/格子没同批改数）都点名到键，缺执行面 > 0 也在这里点名。锚点缺失 / 缺键 / 值非整数 / 多份抄本打架 / `--list` 跑不起来 ⇒ 判据无法自证走 2 号档，绝不拿「没读到」当「对上了」。**为什么需要它**：TASK-017 就是 whisperer 探测时抓到的形状——R106 登记「宇宙 81 份 = 尺 79 把」，R110/R111 之后实测已前进，而 README 那串历史读数没人对表；手抄的当前读数必然在下一次加尺时落后，读数本身也得有守卫。**与 `check_selftest_inventory_doc.py` 的分工**：那把尺对表「每把脚本自己的 `--selftest` 每族几格」，本尺对表「电池的规模读数」，判据面不重叠。`--selftest` 十五格（G×3 / M×11 / R）：干净不误红 / 真格式解析 / 抄本一致不误红 / 七个键逐个漂移必红 / 锚点缺失自拒 / 键值坏形态自拒 / 抄本打架自拒 / 空读数自拒 / 真 README + 真 `--list` 现状面必须绿。用法：`python scripts/check_battery_count_doc.py [--selftest]`（0=逐键一致 / 1=漂移 / 2=判据无法自证 / 4=尺子自己坏了）。
+- `check_selftest_inventory_doc.py` — **「格子计数自述 ↔ 已执行格子反解」对表守卫（R104）**：`--selftest` 清单从已执行格子反解早就是纪律（`check_release_asset_names.py` 自己就打这一行），但**文档抄的是另一份手数字**。R103 把 R9 从两格加到五格时，实现面自己改了读数，`scripts/README.md` 那一行靠人记得改——改之前它写的还是旧格数、与真源差三格。实现会自证，文档不会：读者按落后的格数判断覆盖面，多出来的格子就永远没人知道存在。四类判定逐条点名：**X1 计数漂移**（文档族格数 ≠ 实现反解同族）/ **X2 幻影族**（文档写了某族几格，实现清单里这一族一格都没跑）/ **X3 总数滞后**（清单前的「N 格 / N 支」自述 ≠ 被对表族数合计 ⇒ 逼「一份文档只留一份权威清单」，分批抄的数字必然落后）/ **X4 自述失联**（跑那把尺的 `--selftest` 拿不到「反解」锚点：脚本不在 / 旗标不认 / 超时 / 清单文法改了 / 自检本身红 ⇒ 判据无法自证，走 2 号档不冒用 1）。判定面从 `scripts/README.md` 的 `- \`xxx.py\` —` 条目语法**派生**（不手写尺子清单）。文法口径两条都由实测逼出：只认 **ASCII 斜杠分隔、至少两族、且至少一族带乘数** 的名单——`scripts/README.md:85` 那类「某族记了几条」是**校准读数**（加号分隔、单族），`cli_flag_probe.py` 那条是**裸族名单**（无乘数），两类都必须解析成零自述，否则文档写「某族找到 7 条」就被当格数判红。**AGENTS.md 面本轮不入**：它的格数自述夹在几百字散文行中间、一行点十几把尺，「最近的前一个文件名」这类归属启发式会把账记到错的尺上（假红比漏红更坏），先把归属做成机械可定再扩。**与 `check_doc_surface` J10 的分工**（J9 口径）：J10 比判据**编号范围**（族在不在），本尺比**每族几格 + 一共几格**（量对不对），判据面互不重叠。`--selftest` 二十五格（G1 干净不误红 / M1 漂移 / M2 幻影 / M3 总数滞后 / M3b 中文数字与族计数同口径 / M4 校准读数不认 / M4b 单族不认 / M4c 大写词组不当族 / M4d 非 R 族名认得出 / M4e 优先级缩写不当族 / M5 裸名单不认 / M6 失联记档 / M7 脚本缺席记档 / M8-M9 空面必自拒 / M10 主流程判红 / M11-M12 失联走 2 号档 / M13-M14 真实现状面必须绿 + 判定面非空 / M15 自锁——本尺条目任抄本都不进判定面，否则 `run_inventory` 会 spawn 自己 / M16 「格/支」单位门是承重的 / M17 真 README 里本尺确被跳过 / M18 抄本打架必红 / M19 抄本一致不误红），清单从已执行格子反解，不手写计数。**R105 扩面三条**（都由实测定形，不是锦上添花）：① 族名文法从 `R\d+` 泛到 `≤3 大写字母 + 可选数字`，靠词界与 `NOISE` 缩写表挡住 `PASS / FAIL×2 / OK`、`P0×2 / P1` 这类形状——泛化当场抓到 `check_upgrade_installer.py` 有 18 格自述而实现给不出锚点（X4→rc=2），本轮把它的 `--selftest` 补成 `十九格（G1×5 / G2×5 / G3×8 / RS×1）` 反解行、README 七份抄本同步；② 同名条目**逐份并入**而非末份覆盖，实测 `scripts/README.md` 把整份条目列表重复了 7 遍，R104 只改了其中一份 ⇒ 另 6 份仍写 `十七格变异`——合并后 X3 立刻点名「总数自述 17/38」，本轮 6 份全部同步，此后抄本不一致就是红；③ `check_backlog_status_staleness.py` 的 11 格改成从已执行格子名首段反解（`M×2 / P×2 / R×4 / V×3`），判定面从 1 把尺长到 3 把。**本尺不自判**：README 里本尺条目不参与对表（自判 = 递归 spawn），跳过份数打印在判定面读数里，藏起来不算锁。用法：`python scripts/check_selftest_inventory_doc.py [--selftest] [--show-face]`（0=对表通过 / 1=X1|X2|X3 违例 / 2=判据无法自证 / 4=尺子自己坏了）。
+- `check_slave_task_list.py` — **副机认领入口自证守卫（R126）**：`docs/2026-10-20-slave-tasks.md` 是副机线的认领入口，下一位照「状态」列取单——那一列写错，就是把已做完的再做一遍、把没做的当成做了。R122 逐行取证时文首那份自证读数是**手抄**的，尺子不在场，改判之后没人能复核那两个数（J10 声明滞后的副机形状）。本尺把「入口能不能自证」做成常驻判定面：**A** 不误红对照（带点目录 `.github/…`、只点文件不点行的文件级在场指认、干净清单整体不误红）/ **B** 锚点必红对照（B1 文件不在跟踪面、B2 行号越界、B3 内容级记号不在那一行、B4 锚点指到**空行**、B5 范围锚点 `:4-10` 只核下端把上端漏掉）/ **C** 认领口径（状态为 已落地/部分 却没有任何一条证据指得到在场真源、证据列整列为空、状态词表越界）/ **D** 文首计数自述（结构级 / 内容级 / 失配 三个数与尺实算逐一对表，手抄即红）/ **E** 自拒对照（清单读不到、判定面为空一律走 2 号档，绝不拿「没读到」当「对上了」）。三条口径都由实测逼出：① 判定面**只看证据列**——状态列的归属启发式会把账记到错的尺上（假红比漏红更坏）；② 内容级要核对的记号**从文档自己的括号里取**（紧跟锚点的 `` `x` `` 反引号或「…」逐字引文），尺内不写记号表，否则那张表就是下一颗漂移雷；③ 「无法取证」必须写明非空——它空着就是「没人核过」被读成「都核过了」。与 `check_doc_surface`（文档表面：版本/分组/工具数自述）、`check_plan_landing`（计划点名落点）判据面不重叠：本尺只管这一份清单的证据 ↔ 真源。`--selftest` 十八格（A×3 / B×5 / C×4 / D×4 / E×2），清单从 temp 合成树里已执行格子反解，不手写计数。用法：`python scripts/check_slave_task_list.py [--selftest] [--show-face] [--doc <路径>] [--root <仓根>]`（0=自证通过 / 1=违例逐条点名 / 2=判据无法自证 / 4=尺子自己坏了）。
+- `check_battery_isolation.py` — **git 面隔离守卫（R101，与上一条同一隔离族，钉的是另一方向）**：`check_demo_isolation` 钉「库改道」（`FIST_DB_PATH`），钉不到「文件面被写脏」。本尺只回答一个问题——**被包住的那条命令跑完之后，git 跟踪面与未跟踪面变没变**。两条自家实锤驱动它落地：①2026-10-22 R98 全量电池把 `src/router/router_state.mbt` / `model_router_wbtest.mbt` 在 working tree 里刷成「同一个 struct literal 里 `use_caf_memory` 重复插入」（编译必红的形状，真因是电池里某格跑了会改跟踪面的补丁脚本，R99 已修），而「电池脏了跟踪面」这件事当时**没有任何判据会红**，收场靠手工 `git checkout --`；②`mcp_bug_loop.py` 这类 e2e 会把演示行写进真台账 `memory/bugs.md`。快照 = `git diff HEAD` 逐文件切块哈希 + `git ls-files --others --exclude-standard` 清单，**刻意不看 mtime**：只被 touch 而内容未变不算污染；反之状态字母不变、内容又插了一份（R98 那一形）必须抓得到，所以按 diff 切片取哈希而不按 `git status` 的行取。五条承重规则 `diff-added` / `diff-content` / `diff-cleaned` / `untracked-added` / `untracked-cleaned`——后两条 `UNDIRTY` 档别删：命令把「本来就脏」的文件洗掉同样是改了工作树状态，该点名而不是静默。被包命令自己的退出码只回显在 `WRAPPED_RC=<n>` 行上，**绝不借用本判据的退出码字母表**（`sys.exit(p.returncode)` 那一类透传正是 `check_exit_code_contract` 点名抓的不透明出口，BUG-369）。退出码 0=两面未变 / 1=检出变化并逐条点名 / 2=判据无法自证（不在 git 仓、取不到 git、被包命令根本没起来＝什么都没测到，空扫描必自拒不冒用 1）/ 4=尺子自己坏了（`RULER BROKEN`）。`--selftest` 9 格 = 合成违例必红 5 + 干净反向对照 1 + 规则失明对照 3（摘掉承重规则后同一份违例必须变成「看不见」，否则那条断言是幻影）。用法：`python scripts/check_battery_isolation.py [--selftest] [--repo <dir>] [-- <cmd...>]`；不带 `--` 裸跑＝有界自检（快照 → 空操作子进程 → 快照，本仓实测 rc=0）。
+- `fist-task-pool.py` — **任务池 yaml 管理器（`.git/fist/tasks/`，风语者 Tier2 执行面）**：
+  子命令 `init | publish <yaml> | claim <tid> <machine> | release <tid> | archive <tid> | fail <tid> |
+  list [--status X] [--machine Y]`，把 backlog/claimed/done/failed 四态目录与 machines.yaml 注册表管成
+  文件协议（多机认领防抢）。自带极简 yaml 解析（同 `check_ci_step_position.py` 的纪律：判据/工具不把自己的
+  可用性交给 PyYAML 是否在环境里）。出错 `ERROR <msg>` 走 stderr、exit 1。**登记补注**：本件由
+  `38bb7358`（PR #5 线）合入 master 时漏了索引登记——`check_scripts_index` 现读第三条红，随本单补齐；
+  与同文件 `slave-branch-merge.ps1`/`whisperer.py` 的登记方式一致（按 ` - \`<name>\`` 抬头形状点名）。
 
 **自驱闭环（selfdrive）**
 - `log_fix_selfdrive.py` — call_log 缺陷修复自驱闭环。
@@ -135,6 +228,7 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
 - `lesson_selfdrive.py` / `scratch_selfdrive.py` — 失败回流 / 临时隔离 技能自驱闭环。
 
 **能力 E2E 验证（verify）**
+> 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/cli` + `patch_esm_main` → node）。
 - `map_verify.py` — 项目地图（`fist://map`）E2E。
 - `lesson_verify.py` — 失败回流（evolve_lesson 独立工具）E2E。
 - `lesson_chain_selfdrive.py` — 打回→lesson 归档→dead_ends 闭环演示。
@@ -154,991 +248,25 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
 - `ns_route_probe.py` — **多租户库级物理隔离闭环探针（stage1）**：验证 C1 业务工具带 namespace 路由到独立库 / C2 默认库无该任务行 / C3 全流程在 ns 库内流转 / C4 负例 not found。
 - `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
 
-> 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/cli` + `patch_esm_main` → node）。
+## 历史补记（去重后仅保留一份 · 非索引）
 
+> R136 把本文件此前叠在一起的 7 份快照压成一份索引：历史备注只留这一份，新事实写进对应条目或 `reports/`，不要在这里追加快照。
 
-### 2026-10-21 R59 补登记（`check_scripts_index` 现读三件漏网尺）
-
-- `check_doc_surface.py` — **文档面单一真源守卫（BUG-22/BUG-30 的判据化，J1~J16 档）**：以
-  `src/server/server.mbt` 注册表为工具真源，逐名校验 AGENTS/README 覆盖（J2）、分组标题数字之和
-  == N 且「N 组」== 实解析组数（J3）、`vicTop-cw/fist-mbt@x.y.z` 当前自述 == `moon.mod` 版本且
-  发布版本权威自述只许 BACKLOG.md 一处（J4）、清单为空时反幻影哨兵直接 FATAL 不许 PASS（J5）、
-  规范正文 ↔ `project_standards` 机器投影的规则 id/版本一致（J6）等。**这行不是新登记而是复权**：
-  本条原先就在本文件里，被 `f259d797`「全仓清冲突标记·取 theirs」连带冲突区一起删掉
-  （实证：`f259d797^:scripts/README.md` 含 `check_doc_surface`、`origin/master` 起为 0，
-  该次 diff 同时留着 `<<<<<<< HEAD` 与被吃掉的正文行）——sweep 顺手删登记，正是 R57 记的
-  「取 theirs 的连带删除」在文档面的复发。用法 `python scripts/check_doc_surface.py [--selftest]`。
-- `commit_bug335_lock.ps1`（2026-10-20 18:54 `901eca8c` 入仓，此前从未登记）— **BUG-339 提交
-  成对性收尾助手**：等并发 agent 把含 `publish_parallel_route` 的 `src/server/server.mbt` 提交进
-  HEAD 后，**只提交**配套锁 `src/server/bug335_ns_route_wbtest.mbt`；脚本自身规则写明
-  「DO NOT commit server.mbt（concurrent agent owns it）」且「Safe to run repeatedly」——
-  存在的理由就是 BUG-339 的教训：锁引用未提交函数时单独提交锁 = 给 src/server 引入编译红。
-  用法 `pwsh scripts/commit_bug335_lock.ps1`。
-- `slave-branch-merge.ps1`（2026-10-21 17:00 `c689f027` 入仓，此前从未登记）— **`gitcode/slave/*`
-  批量合并驱动器（合并 agent 的执行面）**：fetch → 扫哪些分支动了 src/scripts/cmd/moon.pkg →
-  逐个 cherry-pick → 清冲突标记 → build → push → 删已合并分支；`-DryRun` 只扫描不执行，
-  开头先备份 HEAD。**入仓时缺 UTF-8 BOM 被 `check_ps_encoding` 判红**（887 个非 ASCII 字节；
-  PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
-  去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
-  用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
-  R100 补自证面 `-SelfTest`（`powershell -NoProfile -File scripts/slave-branch-merge.ps1 -SelfTest`）：
-  黑名单（`$SKIP_EXACT` / `$SKIP_GLOB` / `Restore-Blacklisted`）入仓以来零自证格，失明的发现成本是一整次
-  `moon build` [3002] lexing error。本档在 %TEMP% 沙箱 git 仓里造违例再断言盘面与索引，8 格 = 黑名单 C1-C5
-  （精确名回退 HEAD / 新增毒文件删盘+删索引 / glob 新增件 / glob 命中且有 HEAD 版本时回退 / 未暂存的工作树不许动手）
-  + 变异台 M1-M2（名单改瞎 ⇒ 对应格必须转红，否则断言是幻影）+ 沙箱哨兵 S8（当前目录不得有 moon.mod）。
-  退出码 0 全绿 / 1 判据红 / 2 尺子无法自证（git 缺失、TEMP 不可用；两档实测各取到一次），不 fetch、不 pick、不 push。
-  实踩注记：`param()` 里给**带行内注释的 `[switch]`** 再加一个参数必须补逗号，否则 PS5.1 把红打在既有那一行上
-  （`MissingEndParenthesisInFunctionParameterList`）——基线 0 错、加一行即炸，报错位置不指真凶。
-
-### 2026-10-21 补登记：`fist-gate.py`
-
-- `fist-gate.py`（R74 入仓）— **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段，
-  退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量，不冒用 1）。用法 `python scripts/fist-gate.py [树]`。
-
-### 2026-10-22 登记：`whisperer.py`
-
-- `whisperer.py` — **风语者巡检自动化（TASK-009）**：Step 0-4 一把跑（HEAD 安全门 → 分支普查 →
-
-| **无前缀** | **旧口径（R96 废止）**：曾把「无前缀」当「正式、可复用」的同义词 ⇒ 名字读不出角色也没人管，而 `_` 前缀才被当临时件。现行口径见 [`NAMING.md`](NAMING.md)：角色必须写在名字的两端之一（前缀表或后缀表），由 `check_scripts_naming.py` 钉成只许下降的棘轮（N1 16/16、N2 4/4）。 | 保留但**记债**，改名按 NAMING.md 末节的成本档逐批改 | `mcp_smoke.py`（`_smoke` 后缀读得出角色，合格）；`fist.py`/`whisperer.py`/`issue_scan.py`（既无前缀又无后缀，在 N1 名单里） |
-3. **正式工具**：名字带角色（`NAMING.md` 的前缀表或后缀表之一）+ 文件头 docstring 说明用途/用法/前置 + 退出码约定（R96 改：原条写「无前缀」，与 TASK-008 立案的判据「看文件名猜不出它是门禁还是工具」自相矛盾，已按 NAMING.md 收口）。
-### 2026-10-22 R96 补登记（`check_scripts_index` 现读三件漏网尺 · main 的 CI 因此一直红）
-本节三条都是**登记**不是新工具：文件早已在 main 里（`git ls-tree gitcode/main scripts/` 命中），但 `scripts/README.md` 逐名 grep 为 0 ⇒ `check_scripts_index.py` rc=1，而它在 ci.yml:117 是无豁免的一步 ⇒ **main 的 CI 面从这三件落仓那天起就红着**。副机 R96 实测顺手把同名重复条目也清了（见本节末「重复读数」）。
-> **R96 追记（`whisperer.py` 的危险面，登记归登记、这条必须点名）**：上面那条只写它做什么，没写它**会对共享线动手**——
-> `step0_head_safety()` 在巡检拍里执行 `git checkout master` + `git reset --hard` + `git push --force HEAD:main HEAD:master`
-> （两个远端），判据把「本地有未推提交/工作树脏」一律读成篡改 ⇒ 主机自己已被这道门开过火（`9e0064a` 提交信息就是「风语者 HEAD 安全门手动回救」）。
-> 它因此**不许进守卫电池**：`run_guards.py` 的 `EXCLUDE_EXACT` 显式点名它，`--selftest` 里有一格「危险脚本不得拿无参兜底格」的普查判据咬住这个形状（R94）。
-> 只读探测/入池那一半在副机分支上另址 `whisperer_patrol.py`（双活解，等 TASK-019 裁决）。
-> 旗标口径以 main 为准：`99bacbe` 已把 `--self-test` / `--selftest` 两个形状收进同一 dest，副机 R96 首稿写「只认带连字符的、照抄习惯会打空」已被这一版作废。
-- `fist-pr-automator.py` — **yaml → PR → 门禁 →（显式）合并流水线**：读一份 PR 定义 yaml，本地跑统一门禁，推分支，再用 curl 经 `GITHUB_TOKEN`/`GITCODE_TOKEN` 开 PR/MR；**合入默认关**——只有 yaml 明写 `merge: true` 才走 squash 合并（R113/TASK-021：不可逆动作的执行权留在调用者手里，缺省/`false`/`yes` 一律不合）。`--dry-run` 只打印将执行的步骤（不起子进程、不碰网络、不读 token 值），先看计划再跑。rc：0=ok / 1=blocked / 2=degraded 或用法自拒；纯 ASCII、只用标准库（`check_py_stdout_encoding` 对它出的是 E2 预告：今天不红，写第一句中文结论就得补闸）。
-- `check_bug_refs.py` — **代码注释/测试标题里的 `BUG-n` ↔ 账本抬头 对表尺（BUG-373，主机 `cef1e9c` 落仓）**：三档 OK/ORPHAN/CLOSED，`--selftest` + `--bugs <账本>`。peer 分支 `slave/fix/bug-refs-guard-semantics`（`484aced`）修的假自测/退出码/CLOSED 误判已并入；**R115/TASK-020 裁决：与 `check_bug_reference_integrity.py` 两把尺并存、各钉一面**——前者管 `.mbt` 注释面悬空（CI 棘轮 0），本尺管全仓普查 + 可分面的 `--strict`（只判注释面 ORPHAN，字面量/叙述面只报）。**这条登记不是选边**：它只让 `check_scripts_index` 出真实缺口。
+**2026-10-15 Round 126 补充**：
+- **修正工具数**：`node dist/fist-mbt.js help` 报 148（help 文本 stale），但经 shim 的 MCP `tools/list` 返回 **166 个工具**——**dist 的 MCP 工具层实际是最新的**，stale 的只是 help 命令文本。BUG-155 的 FIXED 小记声称 `git rm dist/fist-mbt.js` 但 HEAD 仍含该文件，假绿（Round 125 报告已点名）。
+- 配套回归测试 `test_shim_handshake.py`。
+**2026-10-15 Round 124 更新**：
+- **A1 stub**：`logging/setLevel` / `completion/complete`（MCP 可选特性，server 未实现返回 `-32601`）——shim 拦截并返回 `{}` / `{completion:{values:[]}}`，比 `-32601` 更友好（Claude Desktop 会做 `setLevel`）。
+- **A3 崩溃修复**：`child.on('exit', code => process.exit(code ?? 0))` 在子进程被 signal 终止时 `code` 为 `null`，旧写法会**误报成功退出 0**；现改为 signal 时 exit 1、code null 时 exit 1。
+- **A2 无需改**：`stdio: ['pipe','pipe','inherit']` 已把 server 的 stderr 直通终端（此前误以为 DEVNULL，实为探针侧设置）。
+- **A4 请求超时**（2026-10-15 Round 137）：server 长时间不响应时回 `-32000`，默认 30s，可用环境变量 `FIST_SHIM_TIMEOUT_MS` 覆盖。通知（无 id）不计时；`t.unref?.()` 保证 server 死掉时 shim 能立即退出。实测假 server 不响应 → 500ms 后正确回 `-32000`。
+- **A5 已正确**：`_meta` 只对**有 id 的请求**注入（`msg.id !== undefined` 判定），`notifications/*` 无 id 原样透传，不误注入。
+- **A7 `.mcp.json` 示例**（2026-10-15 Round 139 升级）：shim 文件头注释内嵌的示例改用**发布版 `mcp_config_scaffold`** 校验生成——表单只写环境变量名占位（真值走 server 进程环境变量），含 `api_key`/`token`/`secret` 形状的表单会被整笔拒绝。实测传 shim 接入偏好返回合法 `fist.mcp.json` 正文（自动注入 `FIST_PROJECT_DIR`）。
 **重复读数（本轮清掉的 4 行）**：`run_guards.py` 曾同时挂 4 条自述互不相同的条目（24 把尺/34 格失败 2、24 把尺/35 格、26 把尺/38 格 ×2 逐字相同），`check_bug_reference_integrity.py` 挂 2 条逐字相同。`check_scripts_index` 只查「名字在不在」，重复与互斥读数一律放过 —— 这就是「同一工具多份历史读数并存」能躺在索引文件里没人管的机理。处理：留 R48 现读那条，删被取代的 2 条与逐字重复的 1 条，另删 `check_bug_reference_integrity.py` 的逐字重复 1 条。还有一条**假阳形状**必须记：散文引子 `- \`check_plugin_sync.py\` 的索引缺口补齐登记（…）：` 按行首反引号名统计会被当成条目/重复，但它不是 —— 计数式检测的第一手误差就长这样，所以本轮按内容逐条判定、不按计数删除。
-
-### 2026-10-22 新增：`check_dist_snapshot.py` / `refresh_dist.py`
-- `check_dist_snapshot.py` — **仓内发布快照 `dist/fist-mbt.js` 的版本守卫**：快照内嵌
-  `project__version` 必须 == `moon.mod`。存在理由：`scripts/mcp_compat_shim.js` 的**默认服务端**就是
-  `node dist/fist-mbt.js serve`，README 也把它当"发布版"引用；实测快照曾落后 `moon.mod` 一个版本
-  （发布实况见 `BACKLOG.md` 的发布条目，本文不再抄第二处版本号）⇒ 照文档连过去的人/agent 拿到旧版本 +
-  旧工具集（shim 注释里甚至写着更旧的工具数与版本）。
-  `check_release_asset_names` 明确不扫 dist，这一格此前**无人认领**。`--selftest` 8 格真断言；
-  读不到版本/缺文件 ⇒ rc=2（判据无样本绝不放行）。
-- `refresh_dist.py` — **刷新快照的一条命令**：`moon build --target js --release cmd/cli` →
-  `patch_esm_main.py` 注入 ESM shim → 拷贝到 `dist/fist-mbt.js` → 跑上面那把尺自证。`--dry-run` 只打印计划。
-  实测 2026-10-22：刷新后 `node dist/fist-mbt.js version` = **FIST-Mbt v0.3.10**（用户视角真读数）。
-  注意：当前 moonc 世代产出的 bundle 比仓内快照大（release 108675 行 vs 快照 83765 行），
-  刷新会带来大 diff 属预期——**快照本该由发布流程产出**，故本仓只固化命令、不代提交产物。
-### 2026-10-22 登记：whisperer.py
-- whisperer.py — **风语者巡检自动化（TASK-009）**：Step 0-4（HEAD 安全门 → 分支普查 → 候选任务卡 →
-  issue 扫描）；旗标 --scan-only（默认）/ --auto-merge / --selftest。
-### 2026-10-22 登记：`fist-pr-automator.py`
-- `fist-pr-automator.py` — **PR 自动化**：把本地分支/提交整理成可审 PR 描述并（可选）推送建 PR；
-  与 slave-branch-merge.ps1（合并面）、whisperer.py（巡检面）同属分支治理三件套。
-  注意文件必须是 **UTF-8**（UTF-16 会让 Python 与 ps1 双端都读成乱码，同日 cef1e9cb 已修）。
-### 2026-10-22 登记：`fist-pr-automator.py`
-- `fist-pr-automator.py` — **PR 自动化**：把本地分支/提交整理成可审 PR 描述并（可选）推送建 PR；
-  与 `slave-branch-merge.ps1`（合并面）、`whisperer.py`（巡检面）同属分支治理三件套。
-  文件必须是 **UTF-8**（UTF-16 会让 Python 与 ps1 双端都读成乱码，同日 cef1e9cb 已修）。
-### 2026-10-22 补登记：`check_bug_refs.py`
-- `check_bug_refs.py` — 工具类辅助脚本（本次补登记；职责见脚本头部 docstring）。
-### 2026-10-22 补登记：`fist-gate.py`
-
-### 2026-10-21 TASK-001②：`install_git_hooks.py`
-- `install_git_hooks.py` — **git 钩子安装/核对器（幂等）**：`--install` 设置 `core.hooksPath=.githooks`
-  并补可执行位；`--check` 只核对（0=已生效 / 1=未生效 / 2=环境不完整）。存在理由：`.githooks/pre-commit`
-  早在仓里但 `core.hooksPath` 从未设置 ⇒ 钩子**默认不生效**，"每个 commit 前跑冲突标记判据"这条
-  一直没落到本地提交面（CI 只管推送后）。见 `.githooks/README.md`。
-- `fist-gate.py` — **统一门禁链**（R74 入仓）：`merge_markers / fmt / build / ps_encoding / store_path` 五段 +
-  `--scan` 分支普查 + `--selftest`。退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量）。
-  用法 `python scripts/fist-gate.py [--scan|--selftest] [树]`。
-### 2026-10-22 补登记：`whisperer.py`
-- `whisperer.py` — **风语者巡检自动化（TASK-009）**：Step 0-4 一把跑（拉远端分支 → 逐分支普查 →
-  生成 `.git/fist/tasks/backlog/*.yaml` 候选任务卡 → 打印建议动作）。含 HEAD 安全门：检出到
-  detached/非预期提交面时把篡改记录写 `memory/whisperer-tamper.log`（见 cfb63365）。用法见脚本 `--help`。
-
-
-- `run_guards.py` — **守卫回归电池的唯一真源（R40 / BUG-366）**：`check_*.py` 这 26 把尺「红不红」看 CI，但「本地每轮复跑哪几格」从来没有真源——历轮都是一份 `temp/run_guardsNN.py`，temp/ 被 gitignore、写完即丢，格数全靠人回忆（实测这条手抄链：11 份电池 5、7–16 = 13×7 → 30 → 33 → 37 → 37 格）。漏抄不是「少跑一格」，是「那格永远不会被发现漏了」：**`check_plan_landing` 自 2026-10-14 落仓起 CI 里没有、11 份电池逐份 grep 全 0 命中，于是它带着「`src/x.mbt:108/121/134` 整串当路径 ⇒ 已跟踪文件报 missing」的虚报缺陷躺了一周**（本轮实测：56 条读数里 2 条虚报 / 8 条日期与变量占位噪音 / 17 条落在存档面）。判据 **G1** 每把 `check_*.py` 至少一个执行面（CI ∪ 电池，两侧名单都现读、不另抄清单——抄的那份就是下一个漂移点）；**G2** 电池点名的脚本不存在 ⇒ FATAL；**G3** 尺数 0 / CI 一把都没解析到 / 电池为空 ⇒ FATAL（空宇宙会让「无人缺面」以 rc=0 骗人）；每条 case 带 `expect`，预存红**照写期望值 + 依据**（`kind="known-red"`）而不是豁免，数字被修好就说明显；诊断型读数是 `kind="diag"`；依赖 temp 件的 case 缺前置打 SKIP，但 **SKIP 不构成「这格过了」的证据**，G1 只认名字在不在电池里。真源读数（R41 复读）：**35 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0；24 把尺 = CI 面 21 ∪ 电池面 22**（R48 现读：38 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0；26 把尺 = CI 面 23 ∪ 电池面 24）（R40 首跑当时是 34 格 / 失败 2，那两条红是「本文件尚未入库」造成的顺序性自红，登记后归 0）。`--selftest` 37 格（R121 现读：34 格 + 逐格判定列三格；R106 现读：电池 53 格 / 失败 0 / SKIP 5 / 缺执行面 0；宇宙 81 份脚本 = 尺 79 把 + 常驻豁免 2 份（只点名不入电池），CI 面 39 ∪ 电池面 41 ∪ 登记 30 ∪ 豁免 26 ∪ 待接线 4；自动补格 0 格，成因见 ④）：G1 干净 / G1 抓漏面尺且必点名 / G3 三种空宇宙各自拒 / G2 自拒 / 真源现状全绿 / plan_landing 已进电池 / **R41 两格：plan_landing 的门禁格与诊断格必须并存，且诊断格的 why 必带构成**（读数只给一个孤零零的 rc 不算证据）。**R106 再钉「宇宙的真源是递归全集，不是门禁前缀清单」**（2026-10-22 副机实测）：一次「手动解冲突合入」把 R82 的 `GATE_PREFIXES` / `EXEMPT_RULES` / `_match_rule` / `universe_files` 四个**定义**删了、把 `is_gate` / `exempt_reason` / `classify` 三个**调用面**留着 ⇒ import 期 NameError，`--selftest` 与 `--list` 一起起不来，ci.yml「Guard execution-face」那两步整条红了一整天——而电池里没有任何一格能看见这件事。三处收口：① 宇宙 = `scripts/**/*.py` 递归全集（`UNIVERSE_EXCLUDE_RE` 的测试/一次性/内部辅助族不入账），`classify()` 的门禁尺/豁免/未归类改成**记账口径**而不是宇宙本身；② 执行面是三面（CI ∪ 电池 ∪ 登记 `REGISTRY`），再加豁免理由（`EXEMPT_RULES`）与待接线（`KNOWN_NO_FACE`）两份点名账，五者皆无 ⇒ 缺面红——登记面原先只在 `check_faces` 函数体里有个 `registry` 而调用面没传，等于登记不顶用；③ 未捕获异常走 **4 号档**（BUG-369 契约：「尺子自己坏了」不许长得像「判据判红」的 1），并补 `auto_cases` arity 对表格钉住「定义与调用被拆到两次改动」这一类。④ 自动补格这台机器在现状树产 **0 格**（`build_cases()` 先按脚本名给每份可发现脚本补了无参格，`auto_case_for` 的名字排除因此恒命中），于是把它的判据从循环体抽成纯函数、用 7 面合成对照钉住——拿空产物反证就是 `all([])` 式的无人认领绿灯（R105 的 X5 同源）。同批把电池里**从没被读到过**的预存红按实测登记：`check_doc_surface` J4（scripts/README.md 里第二处发布版本自述（当时的号已过时，此处不写具体号以免与当前自述混淆））、`gen_plugins --check` 2（BUG-333/384 抬头编号重复 + BUG-384 被小记点名但状态非 FIXED）连带 `check_plugin_sync` 1、`check_ci_step_position` 1（位置违规 35 > 棘轮上限 34）连带其 `--selftest` 2、`check_scripts_index` 的换因（fist-gate.py 已登记，现红在那份提示词素材件（.txt 而非 .py，登记与否归文档那一单）未登记）；并把判定面已归零的 `check_bug_reference_integrity` 期望从 1 改回 0（本文件自订的律到期兑现）。宇宙全集化后第一次进账的三份账也当场结清：`whisperer.py` / `whisperer_patrol.py` 有 `--selftest` ⇒ 手写进电池，`install_git_hooks.py`（查本机 git 钩子态、`--install` 有写面）/ `refresh_dist.py`（要构建产物并写盘）⇒ 进 `REGISTRY` 带理由。**变异实测**：把 plan_landing 从 CASES 里摘掉 ⇒ `--list` 与 G1 立刻 rc=1 并点名它（正是那周的形状的机械化复现）。本工具的两个模式在 ci.yml「Guard execution-face」步里执行（`--selftest` + `--list`），所以这条门自己不会重蹈「写了没人跑」。用法：`python scripts/run_guards.py`｜`--list`｜`--selftest`（0=无失败 / 1=有格越期望或有尺无人跑 / 2=电池自拒）。**R82 宇宙扩展（TASK-007，P1）**：`guard_files()` 改 `os.walk` 递归——宇宙从 scripts/ 顶层扩到 **scripts/ 全树含 blackbox/**（排除 `__pycache__` 与 `_`/`test_`/`verify_`/`selfdrive_` 前缀族），现读 **67 份**（此前 26，blackbox 里落了不接线的尺如 `check_merge_markers.py` 正是 R58 指出的盲区本体）；新增第三执行面**登记面（REGISTRY）**——在册但不自动跑的脚本（servers/长跑/网络/平台前置/helpers/生成器/黑盒 e2e/证据型历史脚本）每条带 why，复用本仓 `schema-reserved` 的点名预留律：G1 改「CI ∪ 电池 ∪ 登记三面皆无才算孤儿」，G2 反向抓「脚本删了登记没删」的 stale 条目（与 store 表接线守卫两向发红同构）；`auto_cases()` 对新落仓的 `check_*` 自动补电池格（手写 36 + 自动 0，已知尺零重复）；CI 引用面正则放宽后实测 CI 真跑 38 份（旧正则看不见 5 支 blackbox e2e 探针与 cli_flag_probe）；电池 **36 格 / 失败 0 / SKIP 5（缺 temp 前置，不构成通过证据）/ 预存红 2**（`check_scripts_index` rc=1 = fist-gate.py 未登记、`cleanup_artifacts --check` rc=1 = 工作树残留，均按电池律 `expected()` 声明 + 依据）；`--selftest` 扩到 **19 格**（新增：宇宙≥40 + blackbox 全员在宇宙 / G2 stale 登记自拒 / G1 登记面不算缺面 / auto_cases 生成与零重复）。
-  **R121 行内判定列（副机实测缺陷）**：旧版逐格行的标签直接从记账口径取（`tag = {"gate": "OK", ...}[c["kind"]]`），于是一条 `rc=2 exp=0` 的门禁格照印 `OK`——实测本机 R120 分支上那两条链红就是这么躺在一行绿灯里的：`rc=2  exp=0  check_battery_count_doc.py   OK FATAL: run_guards --list rc=1：缺面清单：audit_branch_delete.py`，尾行自己写着 FATAL，行内标签却写着 OK，红只在末尾汇总出现。逐行读输出的人（和 AI）先看到的是绿灯，这与 R106 立的「空产物反证」「把『自动 0』印成一行看不出问题的数字」同族。修法：判定列从 `ok` 取并放进行首（`PASS`/`FAIL`），口径降级成第二个标签列（`门禁`/`诊断`/`预存红`），于是 `grep ^FAIL` 直接捞红格、`grep ^SKIP` 捞跳过格；`--selftest` 加三格合成对照钉住（红不印 OK / 命中印 PASS / 预存红仍带口径标注），四支变异实测各有对应红格（判定列恒印 OK→1 格红 / 判定列挪出行首→3 格红 / 口径列抹掉→1 格红 / 判定列反了→3 格红），还原逐字相同。**`--list` 面不动**：`check_battery_count_doc.py` 抄的是 `--list` 汇总行文法，逐格行没有机器消费者（本仓实测只有它读电池输出），改的是人读面。
-  **BATTERY-REGISTRATION（机器可读锚点；`check_battery_count_doc.py` 逐键对表，改数必须同批）**：`rulers=89 ci=42 battery=51 missing=0 gate=59 exempt=27 unclassified=5`（现读来源：`python scripts/run_guards.py --list`）
-
-- `fist-gate.py`（R74 入仓）— **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段 +
-  本轮补了 fmt/build 两臂的**环境态分类**：冷格式化器（缺 `_build/wasm-gc/release/format/`）与依赖缓存
-  格式过旧（`moon.mod.json no longer supported`）都报 DEGRADED 并给可执行提示，不再冒充'代码红'；
-  `FIST_GATE_FMT_STRICT=1` 可把 fmt 世代差转硬红。用法 `python scripts/fist-gate.py [--scan|--selftest] [树]`。
-
-### 2026-10-21 TASK-003：`check_ci_step_position.py`
-- `check_ci_step_position.py` — **CI 步骤位置守卫（TASK-003）**：`Migrate mooncakes dep manifests` 失败时
-  其后步骤被 GitHub Actions **skip**，故**静态预检族**（冲突标记 / PS 编码 / 模板控制字符 / 脚本索引 / 本尺）
-  必须排在 Migrate **之前**，否则最需要出声时沉默（实测：259b56a8 的 3 处冲突标记进 master，CI 无感）。
-  P1 预检族越位=rc1 并列名；P2 其它构建后 gate 只报计数与清单（本仓实测 30 个，硬堵无意义）；
-  P3 无 Migrate 步 / yml 空 ⇒ rc2 自拒。`--selftest` 7 格。**不依赖 PyYAML**（runner 未必有），
-  自带极简步骤解析器——判据不该把"自己会不会崩"交给环境。
-
-### 2026-10-21 TASK-007 补登记：`fist-gate.py`
-- `fist-gate.py`（R74 入仓）— **统一门禁链**：脚本自述 `merge_markers / fmt / build / ps_encoding / store_path`
-  五段，退出码 **0=pass / 1=fail / 2=degraded**（2 专给「判据自己取不到量」，不冒用 1 那一档）。
-  本仓根上 merge_markers 段直接调 `scripts/blackbox/check_merge_markers.py`，任意目标树则按
-  `git ls-files` 逐文件扫行首标记；其余段跑 `moon fmt --check` / `moon build` / `check_ps_encoding.py`
-  与库路径隔离检查。用途：slave/* 分支合入前一条命令跑完本地门。用法 `python scripts/fist-gate.py [树]`。
-
-### 2026-10-22 补登记：`fist-pr-automator.py`
-- `fist-pr-automator.py` — 工具类辅助脚本（本次补登记；职责见脚本头部 docstring）。
-
-### 2026-10-22 补登记（`check_scripts_index` 现读四把漏网尺：升版时落了登记）
-- `whisperer.py` — **风语者（Whisperer）自动化巡检**：Step 0 HEAD 安全门（篡改则记录并拒跑，见 `memory/whisperer-tamper.log`）→ Step 1 分支普查（调 `fist-gate.py --scan`）→ Step 2 agent 认领检测 → Step 3 问题扫描自动写 `docs/tasks/backlog/*.yaml`。`--selftest` 驱动各步。Windows GBK 终端会炸 emoji，脚本首行强钉 stdout/stderr UTF-8。用法 `python scripts/whisperer.py [--selftest]`。
-
-### 2026-10-22 补登记（v0.3.10 升版对齐时 `check_scripts_index` 现读两把漏网尺 + 一把假登记）
-- `check_bug_refs.py` — **引用面「代码里的 BUG-n」↔ 账本存在性守卫（BUG-373 出路面，R115/TASK-020 定面）**：全仓扫
-  `BUG-<n>` 引用，三档判定——OK（账本里有）/ ORPHAN（引用了但账本没有这个编号）/ CLOSED（引用了
-  已关条目，仅信息）。账本编号自解析 `memory/bugs.md` 抬头（不 import gen_plugins，判据不自证）。
-  每条引用按**面**分类：comment（`//`/`#` 之后）/ string（代码字面量）/ narrative（`.md` 等文档）；
-  **默认只报不判（rc=0），`--strict` 只判注释面 ORPHAN**——超过 `STRICT_ORPHAN_CEILING` 才 rc=1，
-  测试文件里注释面编号若在同文件字面量面出现按 S1b 降档（夹具说明注释）。CLOSED 默认仅信息，
-  `--strict-closed` 才升格。与 `check_bug_reference_integrity.py`（`.mbt` 注释面 J1 棘轮，CI 面）分工：
-  那把守 `.mbt` 单面，本尺守全仓普查与跨文件类型的面分类。
-  用法 `python scripts/check_bug_refs.py [--selftest|--strict] [--bugs <path>]`。
-- `fist-pr-automator.py` — **yaml → PR → gate → merge 流水线自动化**：读 PR 定义 yaml → 本地跑统一
-  门禁（`fist-gate.py`）→ push 分支 → curl 开 PR/MR（`GITHUB_TOKEN`/`GITCODE_TOKEN` 只从环境注入，
-  不落盘不回显）→ 等门禁绿 → 合入。退出码 **0=ok / 1=blocked / 2=degraded**。纯 ASCII、stdlib only
-  （不依赖 PyYAML/requests，与全仓判据「不把自己的可用性交给环境」同律）。用法见脚本 docstring。
-- `fist-gate.py` — **统一门禁链升格为独立条目**：此前它在本索引里只在 `whisperer.py` 条目的正文里
-  被**顺带提及**（`check_scripts_index` 按子串匹配判「已登记」——巧合绿，whisperer 文案一改它就裸奔）。
-  现按本仓纪律点名登记：**五段链 `merge_markers / fmt / build / ps_encoding / store_path`**，退出码
-  **0=pass / 1=fail / 2=degraded**（判据自己取不到量绝不冒用 1 冒充业务红）；fmt/build 两臂区分
-  **环境态与代码红**（冷格式化器、依赖缓存过旧报 DEGRADED + 可执行提示，判据链保持只读、绝不自行
-  预热）；`--scan` 分支普查（合入者巡检自动进料口）、`--selftest` 逐格驱动。
-
-- `whisperer.py` — **风语者巡检自动化（TASK-009）**：Step 0-4（HEAD 安全门 → 分支普查 → 候选任务卡 → issue 扫描）。
-  旗标 `--scan-only`（默认）/ `--auto-merge` / `--selftest`（也接受 `--self-test`）。
 - 配套 `check_bug_refs.py`（BUG-373 引用面普查）与 `fist-gate.py --scan`（分支普查）互为补充。
-- `fist-pr-automator.py` — **PR 自动化**：把一个本地分支/提交整理成可审的 PR 描述并（可选）推送建 PR；
-  注意：文件必须是 **UTF-8（可带 BOM）**，UTF-16 会让 Python 与 ps1 双端都读成乱码（同日 cef1e9cb 已修）。
-
-- `commit_bug335_lock.ps1`（2026-10-20 18:54 `901eca8c` 入仓，此前从未登记）— **提交成对性收尾助手（脚本自述）**：等并发 agent 把含 `publish_parallel_route` 的 `src/server/server.mbt` 提交进 HEAD 后，**只提交**配套锁 `src/server/bug335_ns_route_wbtest.mbt`；脚本自身规则写明「DO NOT commit server.mbt（concurrent agent owns it）」与「Safe to run repeatedly」——存在的理由是「锁引用未提交函数时单独提交锁 = 给 src/server 引入编译红」。⚠ **脚本文件头自称对应 BUG-339 / BUG-335，但账本抬头面查无此二号**（356 条唯一编号里都没有；本行初版照抄了脚本的编号，经 `check_bug_reference_integrity` 同族排查后改为如实标注）：编号来源未入账，引用时别当账本事实。用法 `pwsh scripts/commit_bug335_lock.ps1`。
-### 2026-10-21 补登记：`fist-gate.py`（R74 合并线新件，`check_scripts_index` 现读红）
-- `fist-gate.py`（454aea3a 入仓）— **统一门禁链（合并前一条命令全跑）**：脚本自述
-  `merge_markers / fmt / build / ps_encoding / store_path` 五段，退出码约定
-  **0=pass / 1=fail / 2=degraded**（2 专给「判据自身取不到量」，不冒用 1 那一档）。
-  merge_markers 段在本仓根上直接调 `scripts/blackbox/check_merge_markers.py`、对任意目标树则
-  按 `git ls-files` 逐文件扫行首标记；其余段分别跑 `moon fmt --check`、`moon build`、
-  `check_ps_encoding.py` 与库路径隔离检查。用途是让 slave/* 分支合入前有一条可复现的本地门，
-  不必等 CI。用法 `python scripts/fist-gate.py [目标树]`。
-# scripts/ 脚本分类规范
-
-> 目的：项目整洁——临时脚本任务完即清理，正式工具统一管理，避免根目录/scripts 堆垃圾。
-
-## 命名约定
-
-| 前缀 | 含义 | 处理 | 示例 |
-|---|---|---|---|
-| **无前缀** | 正式、可复用工具 | 保留，写入 README 说明 | `mcp_smoke.py`、`patch_esm_main.py`、`omega_lesson_verify.py`、`demo.ps1`、`gen_apply_pdf.py` |
-| **`_` 前缀** | 临时/一次性/诊断脚本 | **任务完即删**，或移入 `temp/`（gitignored） | `_diag_*.py`、`_scratch_probe.py` |
-| `m9_* / m18_*` | 历史迁移遗留 | gitignore 覆盖；无需再产生 | — |
-
-## 约束（Golden Rule）
-
-1. **不产生带 `_` 前缀的正式工具**：`_` = 临时代码生成物，用完即删。
-2. **临时产物落 `temp/` 或系统 tmp**：不要污染仓库根；`temp/` 已在 `.gitignore`。
-3. **正式工具**：无前缀 + 文件头 docstring 说明用途/用法/前置 + 退出码约定。
-4. **改完即验**：新增/改动脚本后，确保它能在干净环境跑（依赖公开）。
-5. **不留绝对路径**：脚本内路径用 `os.path.join(dirname, ...)` 或环境变量，禁止硬编码盘符。
-
-## 现有正式工具速查
-
-**基础 / 演示**
-- `patch_esm_main.py` — moonc≥0.10.14 ESM 输出注入 createRequire shim（幂等）。
-
-**2026-10-15 Round 126 补充**：
-- **修正工具数**：`node dist/fist-mbt.js help` 报 148（help 文本 stale），但经 shim 的 MCP `tools/list` 返回 **166 个工具**——**dist 的 MCP 工具层实际是最新的**，stale 的只是 help 命令文本。BUG-155 的 FIXED 小记声称 `git rm dist/fist-mbt.js` 但 HEAD 仍含该文件，假绿（Round 125 报告已点名）。
-- 配套回归测试 `test_shim_handshake.py`。
-
-**2026-10-15 Round 124 更新**：
-- **A1 stub**：`logging/setLevel` / `completion/complete`（MCP 可选特性，server 未实现返回 `-32601`）——shim 拦截并返回 `{}` / `{completion:{values:[]}}`，比 `-32601` 更友好（Claude Desktop 会做 `setLevel`）。
-- **A3 崩溃修复**：`child.on('exit', code => process.exit(code ?? 0))` 在子进程被 signal 终止时 `code` 为 `null`，旧写法会**误报成功退出 0**；现改为 signal 时 exit 1、code null 时 exit 1。
-- **A2 无需改**：`stdio: ['pipe','pipe','inherit']` 已把 server 的 stderr 直通终端（此前误以为 DEVNULL，实为探针侧设置）。
-- **A4 请求超时**（2026-10-15 Round 137）：server 长时间不响应时回 `-32000`，默认 30s，可用环境变量 `FIST_SHIM_TIMEOUT_MS` 覆盖。通知（无 id）不计时；`t.unref?.()` 保证 server 死掉时 shim 能立即退出。实测假 server 不响应 → 500ms 后正确回 `-32000`。
-- **A5 已正确**：`_meta` 只对**有 id 的请求**注入（`msg.id !== undefined` 判定），`notifications/*` 无 id 原样透传，不误注入。
-- **A7 `.mcp.json` 示例**（2026-10-15 Round 139 升级）：shim 文件头注释内嵌的示例改用**发布版 `mcp_config_scaffold`** 校验生成——表单只写环境变量名占位（真值走 server 进程环境变量），含 `api_key`/`token`/`secret` 形状的表单会被整笔拒绝。实测传 shim 接入偏好返回合法 `fist.mcp.json` 正文（自动注入 `FIST_PROJECT_DIR`）。
-- `check_test_sync.py` — **测试总数单一真源守卫（R47；BUG-50 收口时判据重设计）**：从 `moon test` 日志
-  或 `--total N` 取实测总数，四条判据——**R1** 反向扫全部现状面文档（含 README_EN/BACKLOG，2026-10-21 实测 131 份），
-  每条测试总数声明必须 == 实测（窄口径六种形状：`N/N` 等值对、`N 项|个|条 [测试|用例] 全绿|通过|passed`、
-  `total=N`、日志回显 `Total tests: N, passed: N`、`N-test`、`(N aligned`；不等值对是引文/年份/编号，不算声明；
-  后两种是 BUG-382 补的——版本号与日期文件名里同样出现的 `N-test` 子串带反向对照、不误红）；
-  都没有即红）；**R4** 历史数/别的 target 必须在 `EXEMPT` 里逐条点名 `(文件, 数, 理由)`，条目失效也判红。
-  历史记录（`memory/`、`reports/`、`CHANGELOG.md`、`docs/superpowers/plans/`、`YYYY-MM-DD` 前缀文件）
-  整面豁免。**BUG-350**：日志面判绿必须 `passed == Total tests` 且 `failed == 0`（旧格式不写 failed 时只校验
-  passed==total）——只取 `Total tests` 会把 `passed:3, failed:1344` 的近乎全挂日志判绿；输入日志文件缺失时
-  友好报错而非 traceback。**BUG-382**：E/F 两种形状此前完全不在口径内，文档同步时靠人工 grep 才发现
-  README_EN 的同类写法会留成自洽假账；同轮变异自检还抓出 `run_case` 失败路径返回二元组、调用点
-  `is None` 永不成立 ⇒ 文档面变异只打 FAIL 行而 rc=0，已改为返回 `None` 并加退出码传导格。`--selftest`
-  用 20 个变体证明判据会红（11 个文档面 + 6 个纯函数日志面 + 2 个真入口子进程对照 + 1 个失败路径
-  退出码传导格，含"自洽的谎"型、"不得误抓引文"与"不得误抓版本号/日期文件名"反向对照）。
-  已在 ci.yml JS 轨自动执行（真判据 + selftest 两条步骤）。
-- `check_plugin_sync.py` 的索引缺口补齐登记（本轮 cl7 落地时实测出的历史欠账）：
-- `mcp_bug_loop.py` — **修复闭环历史验证脚本（Round 1）**：对 5 个已修 bug 逐个走 publish→claim→execute→submit→verify 的 MCP 客户端；保留作活证据，非日常工具（一次性验证，跑前注意命名空间隔离）。
-- `pentad_fist.py` — **Pentad 衍生项目 MCP 客户端**：基于 `mcp_smoke.py` 的 rpc 模式注册 Pentad 项目并开 `omega_strong_verify` + `call_log`，供跨项目自驱演示。
-- `test_mcp_bugs.py` — **缺陷相关工具的 MCP 冒烟测试**：对 `report_bug/bug_list/run_check` 等做端到端调用；与 `mcp_bug_loop.py` 同批历史脚本，保留作证据。
-- `demo.ps1` — 一键演示（build+patch+smoke）。
-- `laya_decide.py` — **Laya 决策 sidecar**：把 Laya ML 模型包成可被 fist-mbt MCP server 调用的 JSON sidecar（冷启动选档/探测）。
-- `native-env.ps1` — Windows native 环境一键装载（VS + sqlite-dev）。
-- `gen_apply_pdf.py` — 一页项目申报书 PDF 生成（个人档，不入库）。
-ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）之间，两版守卫都不看这一格 ⇒ 版本一前进，照抄离线/内网线就 404）：README 里以数字开头的 `fist-mbt-js-v<版本>.zip` 必须 == `moon.mod`，无基线即自拒；模板形态 `v$VERSION` 不误红（两支自证：漂移必红 + 模板不红）。`--selftest` 的格子清单**从已执行格子反解**，不手写计数（手写曾造出幻影：R5 那一格因"变异只改注释"被跳过，自述里却照写 `R5×2`）。用法：`python scripts/check_release_asset_names.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。
-
-**自驱闭环（selfdrive）**
-- `log_fix_selfdrive.py` — call_log 缺陷修复自驱闭环。
-- `enhance_verify.py` — 三块增强 E2E 验证。
-- `enrich_selfdrive.py` — 获奖提升增强自驱闭环。
-- `atgc_selfdrive_demo.py` — ATGC 极简双链虚拟机自驱+Omega DEMO。
-- `lesson_selfdrive.py` / `scratch_selfdrive.py` — 失败回流 / 临时隔离 技能自驱闭环。
-
-**能力 E2E 验证（verify）**
-- `map_verify.py` — 项目地图（`fist://map`）E2E。
-- `lesson_verify.py` — 失败回流（evolve_lesson 独立工具）E2E。
-- `lesson_chain_selfdrive.py` — 打回→lesson 归档→dead_ends 闭环演示。
-- `dag_depend_verify.py` — DAG 显式依赖 E2E。
-- `scratch_verify.py` — `store_open(scratch)` 临时隔离 E2E。
-- `omega_lesson_verify.py` — **Omega 打回自动落 [lesson] + 进程内可见** E2E（三类打回自动沉淀 + scratch 隔离 + 结束精确清理根库）。
-- `plan_gradient_verify.py` — `task_plan_deep gradient=true` 难度梯度 + 更简单变体 E2E（默认关闭零回归 + scratch 隔离）。
-- `evolve_critic_verify.py` — `evolve_critic` Critic 防漂移门禁 E2E（84 工具 + 放行/拒收/收紧阈值 + 只评审不写库）。
-- `task_challenge_verify.py` — `task_challenge` Challenger 进阶变体 E2E（84 工具 + [challenge]溯源/扩规模 + 未完成任务拒绝 + scratch 隔离）。
-- `caf_offline_replay.py` — **CAF 离线回放验证脚本**：用历史执行记录离线回放构建 ACRouter 记忆表，复现按成功率排序的模型优先级（与人工标注一致），验证 C-A-F 学习路由的验收标准 1。
-- `caf_p2c_ab_preflight.py` — **CAF P2c 接线 A/B 预演验证（验收标准 2）**：模拟 P2c 接线后的 A/B 对比，验证 `use_caf_memory` 接线后的路由质量。
-- `caf_p2d_coldstart_ab.py` — **CAF P2d 冷启动 A/B 预演（2026-10-15 Goal-2 Round 25）**：冷启动场景下对比开/关 CAF 记忆的路由表现。
-- `patch_router_config_caf_field.py` — **RouterConfig 构造点补字段**：批量给 `RouterConfig` 构造点补 `use_caf_memory` 字段（P2c 前置步骤）。
-- `ns_route_probe.py` — **多租户库级物理隔离闭环探针（stage1）**：验证 C1 业务工具带 namespace 路由到独立库 / C2 默认库无该任务行 / C3 全流程在 ns 库内流转 / C4 负例 not found。
-- `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
-
-> 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/cli` + `patch_esm_main` → node）。
-
-
-### 2026-10-21 R59 补登记（`check_scripts_index` 现读三件漏网尺）
-
-- `check_doc_surface.py` — **文档面单一真源守卫（BUG-22/BUG-30 的判据化，J1~J16 档）**：以
-  `src/server/server.mbt` 注册表为工具真源，逐名校验 AGENTS/README 覆盖（J2）、分组标题数字之和
-  == N 且「N 组」== 实解析组数（J3）、`vicTop-cw/fist-mbt@x.y.z` 当前自述 == `moon.mod` 版本且
-  发布版本权威自述只许 BACKLOG.md 一处（J4）、清单为空时反幻影哨兵直接 FATAL 不许 PASS（J5）、
-  规范正文 ↔ `project_standards` 机器投影的规则 id/版本一致（J6）等。**这行不是新登记而是复权**：
-  本条原先就在本文件里，被 `f259d797`「全仓清冲突标记·取 theirs」连带冲突区一起删掉
-  （实证：`f259d797^:scripts/README.md` 含 `check_doc_surface`、`origin/master` 起为 0，
-  该次 diff 同时留着 `<<<<<<< HEAD` 与被吃掉的正文行）——sweep 顺手删登记，正是 R57 记的
-  「取 theirs 的连带删除」在文档面的复发。用法 `python scripts/check_doc_surface.py [--selftest]`。
-- `commit_bug335_lock.ps1`（2026-10-20 18:54 `901eca8c` 入仓，此前从未登记）— **BUG-339 提交
-  成对性收尾助手**：等并发 agent 把含 `publish_parallel_route` 的 `src/server/server.mbt` 提交进
-  HEAD 后，**只提交**配套锁 `src/server/bug335_ns_route_wbtest.mbt`；脚本自身规则写明
-  「DO NOT commit server.mbt（concurrent agent owns it）」且「Safe to run repeatedly」——
-  存在的理由就是 BUG-339 的教训：锁引用未提交函数时单独提交锁 = 给 src/server 引入编译红。
-  用法 `pwsh scripts/commit_bug335_lock.ps1`。
-- `slave-branch-merge.ps1`（2026-10-21 17:00 `c689f027` 入仓，此前从未登记）— **`gitcode/slave/*`
-  批量合并驱动器（合并 agent 的执行面）**：fetch → 扫哪些分支动了 src/scripts/cmd/moon.pkg →
-  逐个 cherry-pick → 清冲突标记 → build → push → 删已合并分支；`-DryRun` 只扫描不执行，
-  开头先备份 HEAD。**入仓时缺 UTF-8 BOM 被 `check_ps_encoding` 判红**（887 个非 ASCII 字节；
-  PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
-  去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
-  **2026-10-22 R97 / TASK-002 追加面 —— cherry-pick 黑名单 + `-SelfTest` 自证**：
-  `$SkipPaths` = `^src/ops/moon\.pkg$` + `^src/ops/rhop.*\.mbt$`，`$PoisonNames` 单独点名
-  `src/ops/rhop_poll.mbt`（旧 AtomCode commit 里的它和 HEAD 的 `rhop_native.mbt` 重复定义，build 必崩）。
-  pick 循环在提交前撤名单（`git reset` 清索引 → HEAD 有的还原、HEAD 没有的删文件，逐条打印 `poison:`/`黑名单:`
-  不静默丢），第 5.5 步再对盘上做一遍兜底普查（名单文件也可能被 checkout/copy 带进来，不只 cherry-pick 一条路）。
-  `-SelfTest` 在 `%TEMP%` 建沙箱 git 仓真造一次 cherry-pick 冲突（G0/G0b 先证明「冲突确实存在且落在 moon.pkg 上」，
-  否则后面全是空跑），零副作用：不碰本仓、不合并、不推送。退出码 0 全过 / 1 有格失败 / 2 沙箱起不来（尺子
-  无法自证绝不冒用 1 那一档）。**变异台两支都已实跑**：① 把 `^src/ops/rhop.*\.mbt$` 改成 `^src/ops/NOPE.*\.mbt$`
-  ⇒ 通过 13 / 失败 7、rc=1（P2/P3/P4/P8/G1/G2/G3 同批发红）；② 把 `rhop_native.mbt` 塞进 `$PoisonNames`
-  ⇒ 通过 19 / 失败 1、rc=1（P11 单独发红，钉住「盘上兜底不许把 HEAD 的干净实现报成 poison」）。
-  干净树 20 / 0、rc=0；三档 ok+FAIL 格数都等于 20，没有静默跳过的格。
-  用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`｜`-SelfTest`。
-
-### 2026-10-22 登记：`whisperer.py`
-
-- `whisperer.py` — **风语者巡检自动化（TASK-009）**：Step 0-4 一把跑（HEAD 安全门 → 分支普查 →
-  候选任务卡 → issue 扫描）。旗标 `--scan-only`（默认）/ `--auto-merge` / `--selftest`（**也接受
-  `--self-test`**，与全仓惯例对齐）。自检 G1 会真跑 `fist-gate.py --scan` 并区分
-  绿 / DEGRADED(rc=2) / 红（红要印末行原因，不只印 rc）。
-# scripts/ 脚本分类规范
-
-> 目的：项目整洁——临时脚本任务完即清理，正式工具统一管理，避免根目录/scripts 堆垃圾。
-
-## 命名约定
-
-| 前缀 | 含义 | 处理 | 示例 |
-|---|---|---|---|
-| **无前缀** | 正式、可复用工具 | 保留，写入 README 说明 | `mcp_smoke.py`、`patch_esm_main.py`、`omega_lesson_verify.py`、`demo.ps1`、`gen_apply_pdf.py` |
-| **`_` 前缀** | 临时/一次性/诊断脚本 | **任务完即删**，或移入 `temp/`（gitignored） | `_diag_*.py`、`_scratch_probe.py` |
-| `m9_* / m18_*` | 历史迁移遗留 | gitignore 覆盖；无需再产生 | — |
-
-## 约束（Golden Rule）
-
-1. **不产生带 `_` 前缀的正式工具**：`_` = 临时代码生成物，用完即删。
-2. **临时产物落 `temp/` 或系统 tmp**：不要污染仓库根；`temp/` 已在 `.gitignore`。
-3. **正式工具**：无前缀 + 文件头 docstring 说明用途/用法/前置 + 退出码约定。
-4. **改完即验**：新增/改动脚本后，确保它能在干净环境跑（依赖公开）。
-5. **不留绝对路径**：脚本内路径用 `os.path.join(dirname, ...)` 或环境变量，禁止硬编码盘符。
-
-## 现有正式工具速查
-
-**基础 / 演示**
-- `patch_esm_main.py` — moonc≥0.10.14 ESM 输出注入 createRequire shim（幂等）。
-
-**2026-10-15 Round 126 补充**：
-- **修正工具数**：`node dist/fist-mbt.js help` 报 148（help 文本 stale），但经 shim 的 MCP `tools/list` 返回 **166 个工具**——**dist 的 MCP 工具层实际是最新的**，stale 的只是 help 命令文本。BUG-155 的 FIXED 小记声称 `git rm dist/fist-mbt.js` 但 HEAD 仍含该文件，假绿（Round 125 报告已点名）。
-- 配套回归测试 `test_shim_handshake.py`。
-
-**2026-10-15 Round 124 更新**：
-- **A1 stub**：`logging/setLevel` / `completion/complete`（MCP 可选特性，server 未实现返回 `-32601`）——shim 拦截并返回 `{}` / `{completion:{values:[]}}`，比 `-32601` 更友好（Claude Desktop 会做 `setLevel`）。
-- **A3 崩溃修复**：`child.on('exit', code => process.exit(code ?? 0))` 在子进程被 signal 终止时 `code` 为 `null`，旧写法会**误报成功退出 0**；现改为 signal 时 exit 1、code null 时 exit 1。
-- **A2 无需改**：`stdio: ['pipe','pipe','inherit']` 已把 server 的 stderr 直通终端（此前误以为 DEVNULL，实为探针侧设置）。
-- **A4 请求超时**（2026-10-15 Round 137）：server 长时间不响应时回 `-32000`，默认 30s，可用环境变量 `FIST_SHIM_TIMEOUT_MS` 覆盖。通知（无 id）不计时；`t.unref?.()` 保证 server 死掉时 shim 能立即退出。实测假 server 不响应 → 500ms 后正确回 `-32000`。
-- **A5 已正确**：`_meta` 只对**有 id 的请求**注入（`msg.id !== undefined` 判定），`notifications/*` 无 id 原样透传，不误注入。
-- **A7 `.mcp.json` 示例**（2026-10-15 Round 139 升级）：shim 文件头注释内嵌的示例改用**发布版 `mcp_config_scaffold`** 校验生成——表单只写环境变量名占位（真值走 server 进程环境变量），含 `api_key`/`token`/`secret` 形状的表单会被整笔拒绝。实测传 shim 接入偏好返回合法 `fist.mcp.json` 正文（自动注入 `FIST_PROJECT_DIR`）。
-- `check_test_sync.py` — **测试总数单一真源守卫（R47；BUG-50 收口时判据重设计）**：从 `moon test` 日志
-  或 `--total N` 取实测总数，四条判据——**R1** 反向扫全部现状面文档（含 README_EN/BACKLOG，2026-10-21 实测 131 份），
-  每条测试总数声明必须 == 实测（窄口径六种形状：`N/N` 等值对、`N 项|个|条 [测试|用例] 全绿|通过|passed`、
-  `total=N`、日志回显 `Total tests: N, passed: N`、`N-test`、`(N aligned`；不等值对是引文/年份/编号，不算声明；
-  后两种是 BUG-382 补的——版本号与日期文件名里同样出现的 `N-test` 子串带反向对照、不误红）；
-  都没有即红）；**R4** 历史数/别的 target 必须在 `EXEMPT` 里逐条点名 `(文件, 数, 理由)`，条目失效也判红。
-  历史记录（`memory/`、`reports/`、`CHANGELOG.md`、`docs/superpowers/plans/`、`YYYY-MM-DD` 前缀文件）
-  整面豁免。**BUG-350**：日志面判绿必须 `passed == Total tests` 且 `failed == 0`（旧格式不写 failed 时只校验
-  passed==total）——只取 `Total tests` 会把 `passed:3, failed:1344` 的近乎全挂日志判绿；输入日志文件缺失时
-  友好报错而非 traceback。**BUG-382**：E/F 两种形状此前完全不在口径内，文档同步时靠人工 grep 才发现
-  README_EN 的同类写法会留成自洽假账；同轮变异自检还抓出 `run_case` 失败路径返回二元组、调用点
-  `is None` 永不成立 ⇒ 文档面变异只打 FAIL 行而 rc=0，已改为返回 `None` 并加退出码传导格。`--selftest`
-  用 20 个变体证明判据会红（11 个文档面 + 6 个纯函数日志面 + 2 个真入口子进程对照 + 1 个失败路径
-  退出码传导格，含"自洽的谎"型、"不得误抓引文"与"不得误抓版本号/日期文件名"反向对照）。
-  已在 ci.yml JS 轨自动执行（真判据 + selftest 两条步骤）。
-- `check_plugin_sync.py` 的索引缺口补齐登记（本轮 cl7 落地时实测出的历史欠账）：
-- `mcp_bug_loop.py` — **修复闭环历史验证脚本（Round 1）**：对 5 个已修 bug 逐个走 publish→claim→execute→submit→verify 的 MCP 客户端；保留作活证据，非日常工具（一次性验证，跑前注意命名空间隔离）。
-- `pentad_fist.py` — **Pentad 衍生项目 MCP 客户端**：基于 `mcp_smoke.py` 的 rpc 模式注册 Pentad 项目并开 `omega_strong_verify` + `call_log`，供跨项目自驱演示。
-- `test_mcp_bugs.py` — **缺陷相关工具的 MCP 冒烟测试**：对 `report_bug/bug_list/run_check` 等做端到端调用；与 `mcp_bug_loop.py` 同批历史脚本，保留作证据。
-- `demo.ps1` — 一键演示（build+patch+smoke）。
-- `laya_decide.py` — **Laya 决策 sidecar**：把 Laya ML 模型包成可被 fist-mbt MCP server 调用的 JSON sidecar（冷启动选档/探测）。
-- `native-env.ps1` — Windows native 环境一键装载（VS + sqlite-dev）。
-- `gen_apply_pdf.py` — 一页项目申报书 PDF 生成（个人档，不入库）。
-ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）之间，两版守卫都不看这一格 ⇒ 版本一前进，照抄离线/内网线就 404）：README 里以数字开头的 `fist-mbt-js-v<版本>.zip` 必须 == `moon.mod`，无基线即自拒；模板形态 `v$VERSION` 不误红（两支自证：漂移必红 + 模板不红）。`--selftest` 的格子清单**从已执行格子反解**，不手写计数（手写曾造出幻影：R5 那一格因"变异只改注释"被跳过，自述里却照写 `R5×2`）。用法：`python scripts/check_release_asset_names.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。
-
-**自驱闭环（selfdrive）**
-- `log_fix_selfdrive.py` — call_log 缺陷修复自驱闭环。
-- `enhance_verify.py` — 三块增强 E2E 验证。
-- `enrich_selfdrive.py` — 获奖提升增强自驱闭环。
-- `atgc_selfdrive_demo.py` — ATGC 极简双链虚拟机自驱+Omega DEMO。
-- `lesson_selfdrive.py` / `scratch_selfdrive.py` — 失败回流 / 临时隔离 技能自驱闭环。
-
-**能力 E2E 验证（verify）**
-- `map_verify.py` — 项目地图（`fist://map`）E2E。
-- `lesson_verify.py` — 失败回流（evolve_lesson 独立工具）E2E。
-- `lesson_chain_selfdrive.py` — 打回→lesson 归档→dead_ends 闭环演示。
-- `dag_depend_verify.py` — DAG 显式依赖 E2E。
-- `scratch_verify.py` — `store_open(scratch)` 临时隔离 E2E。
-- `omega_lesson_verify.py` — **Omega 打回自动落 [lesson] + 进程内可见** E2E（三类打回自动沉淀 + scratch 隔离 + 结束精确清理根库）。
-- `plan_gradient_verify.py` — `task_plan_deep gradient=true` 难度梯度 + 更简单变体 E2E（默认关闭零回归 + scratch 隔离）。
-- `evolve_critic_verify.py` — `evolve_critic` Critic 防漂移门禁 E2E（84 工具 + 放行/拒收/收紧阈值 + 只评审不写库）。
-- `task_challenge_verify.py` — `task_challenge` Challenger 进阶变体 E2E（84 工具 + [challenge]溯源/扩规模 + 未完成任务拒绝 + scratch 隔离）。
-- `caf_offline_replay.py` — **CAF 离线回放验证脚本**：用历史执行记录离线回放构建 ACRouter 记忆表，复现按成功率排序的模型优先级（与人工标注一致），验证 C-A-F 学习路由的验收标准 1。
-- `caf_p2c_ab_preflight.py` — **CAF P2c 接线 A/B 预演验证（验收标准 2）**：模拟 P2c 接线后的 A/B 对比，验证 `use_caf_memory` 接线后的路由质量。
-- `caf_p2d_coldstart_ab.py` — **CAF P2d 冷启动 A/B 预演（2026-10-15 Goal-2 Round 25）**：冷启动场景下对比开/关 CAF 记忆的路由表现。
-- `patch_router_config_caf_field.py` — **RouterConfig 构造点补字段**：批量给 `RouterConfig` 构造点补 `use_caf_memory` 字段（P2c 前置步骤）。
-- `ns_route_probe.py` — **多租户库级物理隔离闭环探针（stage1）**：验证 C1 业务工具带 namespace 路由到独立库 / C2 默认库无该任务行 / C3 全流程在 ns 库内流转 / C4 负例 not found。
-- `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
-
-> 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/cli` + `patch_esm_main` → node）。
-
-
-### 2026-10-21 R59 补登记（`check_scripts_index` 现读三件漏网尺）
-
-- `check_doc_surface.py` — **文档面单一真源守卫（BUG-22/BUG-30 的判据化，J1~J16 档）**：以
-  `src/server/server.mbt` 注册表为工具真源，逐名校验 AGENTS/README 覆盖（J2）、分组标题数字之和
-  == N 且「N 组」== 实解析组数（J3）、`vicTop-cw/fist-mbt@x.y.z` 当前自述 == `moon.mod` 版本且
-  发布版本权威自述只许 BACKLOG.md 一处（J4）、清单为空时反幻影哨兵直接 FATAL 不许 PASS（J5）、
-  规范正文 ↔ `project_standards` 机器投影的规则 id/版本一致（J6）等。**这行不是新登记而是复权**：
-  本条原先就在本文件里，被 `f259d797`「全仓清冲突标记·取 theirs」连带冲突区一起删掉
-  （实证：`f259d797^:scripts/README.md` 含 `check_doc_surface`、`origin/master` 起为 0，
-  该次 diff 同时留着 `<<<<<<< HEAD` 与被吃掉的正文行）——sweep 顺手删登记，正是 R57 记的
-  「取 theirs 的连带删除」在文档面的复发。用法 `python scripts/check_doc_surface.py [--selftest]`。
-- `slave-branch-merge.ps1`（2026-10-21 17:00 `c689f027` 入仓，此前从未登记）— **`gitcode/slave/*`
-  批量合并驱动器（合并 agent 的执行面）**：fetch → 扫哪些分支动了 src/scripts/cmd/moon.pkg →
-  逐个 cherry-pick → 清冲突标记 → build → push → 删已合并分支；`-DryRun` 只扫描不执行，
-  开头先备份 HEAD。**入仓时缺 UTF-8 BOM 被 `check_ps_encoding` 判红**（887 个非 ASCII 字节；
-  PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
-  去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
-  用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
-  **R81（TASK-001）加冲突标记硬门**：每次 cherry-pick 在 `git commit` 之前跑
-  `check_merge_markers.py`，rc!=0（含 rc=2 判据自拒）即 abort 该 pick 不 commit（fail-closed）；
-  收尾 commit 之前再过一遍，不过则不 commit 不 push——堵死 259b56a8「解冲突未完就 commit 进 master」
-  那条通路。顺手修同文件 BUG-109 同族缺陷：EAP=Stop 下 `git fetch --all 2>&1` 遇远端 stderr
-  即终止全脚本，fetch 一行改临时降 EAP（同文件其余 `2>&1` 位点同族隐患未动，见 R81 报告）。
-# scripts/ 脚本分类规范
-
-> 目的：项目整洁——临时脚本任务完即清理，正式工具统一管理，避免根目录/scripts 堆垃圾。
-
-## 命名约定
-
-| 前缀 | 含义 | 处理 | 示例 |
-|---|---|---|---|
-| **无前缀** | 正式、可复用工具 | 保留，写入 README 说明 | `mcp_smoke.py`、`patch_esm_main.py`、`omega_lesson_verify.py`、`demo.ps1`、`gen_apply_pdf.py` |
-| **`_` 前缀** | 临时/一次性/诊断脚本 | **任务完即删**，或移入 `temp/`（gitignored） | `_diag_*.py`、`_scratch_probe.py` |
-| `m9_* / m18_*` | 历史迁移遗留 | gitignore 覆盖；无需再产生 | — |
-
-## 约束（Golden Rule）
-
-1. **不产生带 `_` 前缀的正式工具**：`_` = 临时代码生成物，用完即删。
-2. **临时产物落 `temp/` 或系统 tmp**：不要污染仓库根；`temp/` 已在 `.gitignore`。
-3. **正式工具**：无前缀 + 文件头 docstring 说明用途/用法/前置 + 退出码约定。
-4. **改完即验**：新增/改动脚本后，确保它能在干净环境跑（依赖公开）。
-5. **不留绝对路径**：脚本内路径用 `os.path.join(dirname, ...)` 或环境变量，禁止硬编码盘符。
-
-## 现有正式工具速查
-
-**基础 / 演示**
-- `patch_esm_main.py` — moonc≥0.10.14 ESM 输出注入 createRequire shim（幂等）。
-
-**2026-10-15 Round 126 补充**：
-- **修正工具数**：`node dist/fist-mbt.js help` 报 148（help 文本 stale），但经 shim 的 MCP `tools/list` 返回 **166 个工具**——**dist 的 MCP 工具层实际是最新的**，stale 的只是 help 命令文本。BUG-155 的 FIXED 小记声称 `git rm dist/fist-mbt.js` 但 HEAD 仍含该文件，假绿（Round 125 报告已点名）。
-- 配套回归测试 `test_shim_handshake.py`。
-
-**2026-10-15 Round 124 更新**：
-- **A1 stub**：`logging/setLevel` / `completion/complete`（MCP 可选特性，server 未实现返回 `-32601`）——shim 拦截并返回 `{}` / `{completion:{values:[]}}`，比 `-32601` 更友好（Claude Desktop 会做 `setLevel`）。
-- **A3 崩溃修复**：`child.on('exit', code => process.exit(code ?? 0))` 在子进程被 signal 终止时 `code` 为 `null`，旧写法会**误报成功退出 0**；现改为 signal 时 exit 1、code null 时 exit 1。
-- **A2 无需改**：`stdio: ['pipe','pipe','inherit']` 已把 server 的 stderr 直通终端（此前误以为 DEVNULL，实为探针侧设置）。
-- **A4 请求超时**（2026-10-15 Round 137）：server 长时间不响应时回 `-32000`，默认 30s，可用环境变量 `FIST_SHIM_TIMEOUT_MS` 覆盖。通知（无 id）不计时；`t.unref?.()` 保证 server 死掉时 shim 能立即退出。实测假 server 不响应 → 500ms 后正确回 `-32000`。
-- **A5 已正确**：`_meta` 只对**有 id 的请求**注入（`msg.id !== undefined` 判定），`notifications/*` 无 id 原样透传，不误注入。
-- **A7 `.mcp.json` 示例**（2026-10-15 Round 139 升级）：shim 文件头注释内嵌的示例改用**发布版 `mcp_config_scaffold`** 校验生成——表单只写环境变量名占位（真值走 server 进程环境变量），含 `api_key`/`token`/`secret` 形状的表单会被整笔拒绝。实测传 shim 接入偏好返回合法 `fist.mcp.json` 正文（自动注入 `FIST_PROJECT_DIR`）。
-- `check_test_sync.py` — **测试总数单一真源守卫（R47；BUG-50 收口时判据重设计）**：从 `moon test` 日志
-  或 `--total N` 取实测总数，四条判据——**R1** 反向扫全部现状面文档（含 README_EN/BACKLOG，2026-10-21 实测 131 份），
-  每条测试总数声明必须 == 实测（窄口径六种形状：`N/N` 等值对、`N 项|个|条 [测试|用例] 全绿|通过|passed`、
-  `total=N`、日志回显 `Total tests: N, passed: N`、`N-test`、`(N aligned`；不等值对是引文/年份/编号，不算声明；
-  后两种是 BUG-382 补的——版本号与日期文件名里同样出现的 `N-test` 子串带反向对照、不误红）；
-  都没有即红）；**R4** 历史数/别的 target 必须在 `EXEMPT` 里逐条点名 `(文件, 数, 理由)`，条目失效也判红。
-  历史记录（`memory/`、`reports/`、`CHANGELOG.md`、`docs/superpowers/plans/`、`YYYY-MM-DD` 前缀文件）
-  整面豁免。**BUG-350**：日志面判绿必须 `passed == Total tests` 且 `failed == 0`（旧格式不写 failed 时只校验
-  passed==total）——只取 `Total tests` 会把 `passed:3, failed:1344` 的近乎全挂日志判绿；输入日志文件缺失时
-  友好报错而非 traceback。**BUG-382**：E/F 两种形状此前完全不在口径内，文档同步时靠人工 grep 才发现
-  README_EN 的同类写法会留成自洽假账；同轮变异自检还抓出 `run_case` 失败路径返回二元组、调用点
-  `is None` 永不成立 ⇒ 文档面变异只打 FAIL 行而 rc=0，已改为返回 `None` 并加退出码传导格。`--selftest`
-  用 20 个变体证明判据会红（11 个文档面 + 6 个纯函数日志面 + 2 个真入口子进程对照 + 1 个失败路径
-  退出码传导格，含"自洽的谎"型、"不得误抓引文"与"不得误抓版本号/日期文件名"反向对照）。
-  已在 ci.yml JS 轨自动执行（真判据 + selftest 两条步骤）。
-- `check_plugin_sync.py` 的索引缺口补齐登记（本轮 cl7 落地时实测出的历史欠账）：
-- `mcp_bug_loop.py` — **修复闭环历史验证脚本（Round 1）**：对 5 个已修 bug 逐个走 publish→claim→execute→submit→verify 的 MCP 客户端；保留作活证据，非日常工具（一次性验证，跑前注意命名空间隔离）。
-- `pentad_fist.py` — **Pentad 衍生项目 MCP 客户端**：基于 `mcp_smoke.py` 的 rpc 模式注册 Pentad 项目并开 `omega_strong_verify` + `call_log`，供跨项目自驱演示。
-- `test_mcp_bugs.py` — **缺陷相关工具的 MCP 冒烟测试**：对 `report_bug/bug_list/run_check` 等做端到端调用；与 `mcp_bug_loop.py` 同批历史脚本，保留作证据。
-- `demo.ps1` — 一键演示（build+patch+smoke）。
-- `laya_decide.py` — **Laya 决策 sidecar**：把 Laya ML 模型包成可被 fist-mbt MCP server 调用的 JSON sidecar（冷启动选档/探测）。
-- `native-env.ps1` — Windows native 环境一键装载（VS + sqlite-dev）。
-- `gen_apply_pdf.py` — 一页项目申报书 PDF 生成（个人档，不入库）。
-ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）之间，两版守卫都不看这一格 ⇒ 版本一前进，照抄离线/内网线就 404）：README 里以数字开头的 `fist-mbt-js-v<版本>.zip` 必须 == `moon.mod`，无基线即自拒；模板形态 `v$VERSION` 不误红（两支自证：漂移必红 + 模板不红）。`--selftest` 的格子清单**从已执行格子反解**，不手写计数（手写曾造出幻影：R5 那一格因"变异只改注释"被跳过，自述里却照写 `R5×2`）。用法：`python scripts/check_release_asset_names.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。
-
-**自驱闭环（selfdrive）**
-- `log_fix_selfdrive.py` — call_log 缺陷修复自驱闭环。
-- `enhance_verify.py` — 三块增强 E2E 验证。
-- `enrich_selfdrive.py` — 获奖提升增强自驱闭环。
-- `atgc_selfdrive_demo.py` — ATGC 极简双链虚拟机自驱+Omega DEMO。
-- `lesson_selfdrive.py` / `scratch_selfdrive.py` — 失败回流 / 临时隔离 技能自驱闭环。
-
-**能力 E2E 验证（verify）**
-- `map_verify.py` — 项目地图（`fist://map`）E2E。
-- `lesson_verify.py` — 失败回流（evolve_lesson 独立工具）E2E。
-- `lesson_chain_selfdrive.py` — 打回→lesson 归档→dead_ends 闭环演示。
-- `dag_depend_verify.py` — DAG 显式依赖 E2E。
-- `scratch_verify.py` — `store_open(scratch)` 临时隔离 E2E。
-- `omega_lesson_verify.py` — **Omega 打回自动落 [lesson] + 进程内可见** E2E（三类打回自动沉淀 + scratch 隔离 + 结束精确清理根库）。
-- `plan_gradient_verify.py` — `task_plan_deep gradient=true` 难度梯度 + 更简单变体 E2E（默认关闭零回归 + scratch 隔离）。
-- `evolve_critic_verify.py` — `evolve_critic` Critic 防漂移门禁 E2E（84 工具 + 放行/拒收/收紧阈值 + 只评审不写库）。
-- `task_challenge_verify.py` — `task_challenge` Challenger 进阶变体 E2E（84 工具 + [challenge]溯源/扩规模 + 未完成任务拒绝 + scratch 隔离）。
-- `caf_offline_replay.py` — **CAF 离线回放验证脚本**：用历史执行记录离线回放构建 ACRouter 记忆表，复现按成功率排序的模型优先级（与人工标注一致），验证 C-A-F 学习路由的验收标准 1。
-- `caf_p2c_ab_preflight.py` — **CAF P2c 接线 A/B 预演验证（验收标准 2）**：模拟 P2c 接线后的 A/B 对比，验证 `use_caf_memory` 接线后的路由质量。
-- `caf_p2d_coldstart_ab.py` — **CAF P2d 冷启动 A/B 预演（2026-10-15 Goal-2 Round 25）**：冷启动场景下对比开/关 CAF 记忆的路由表现。
-- `patch_router_config_caf_field.py` — **RouterConfig 构造点补字段**：批量给 `RouterConfig` 构造点补 `use_caf_memory` 字段（P2c 前置步骤）。
-- `ns_route_probe.py` — **多租户库级物理隔离闭环探针（stage1）**：验证 C1 业务工具带 namespace 路由到独立库 / C2 默认库无该任务行 / C3 全流程在 ns 库内流转 / C4 负例 not found。
-- `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
-
-> 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/cli` + `patch_esm_main` → node）。
-
-
-### 2026-10-21 R59 补登记（`check_scripts_index` 现读三件漏网尺）
-
-- `check_doc_surface.py` — **文档面单一真源守卫（BUG-22/BUG-30 的判据化，J1~J16 档）**：以
-  `src/server/server.mbt` 注册表为工具真源，逐名校验 AGENTS/README 覆盖（J2）、分组标题数字之和
-  == N 且「N 组」== 实解析组数（J3）、`vicTop-cw/fist-mbt@x.y.z` 当前自述 == `moon.mod` 版本且
-  发布版本权威自述只许 BACKLOG.md 一处（J4）、清单为空时反幻影哨兵直接 FATAL 不许 PASS（J5）、
-  规范正文 ↔ `project_standards` 机器投影的规则 id/版本一致（J6）等。**这行不是新登记而是复权**：
-  本条原先就在本文件里，被 `f259d797`「全仓清冲突标记·取 theirs」连带冲突区一起删掉
-  （实证：`f259d797^:scripts/README.md` 含 `check_doc_surface`、`origin/master` 起为 0，
-  该次 diff 同时留着 `<<<<<<< HEAD` 与被吃掉的正文行）——sweep 顺手删登记，正是 R57 记的
-  「取 theirs 的连带删除」在文档面的复发。用法 `python scripts/check_doc_surface.py [--selftest]`。
-- `commit_bug335_lock.ps1`（2026-10-20 18:54 `901eca8c` 入仓，此前从未登记）— **BUG-339 提交
-  成对性收尾助手**：等并发 agent 把含 `publish_parallel_route` 的 `src/server/server.mbt` 提交进
-  HEAD 后，**只提交**配套锁 `src/server/bug335_ns_route_wbtest.mbt`；脚本自身规则写明
-  「DO NOT commit server.mbt（concurrent agent owns it）」且「Safe to run repeatedly」——
-  存在的理由就是 BUG-339 的教训：锁引用未提交函数时单独提交锁 = 给 src/server 引入编译红。
-  用法 `pwsh scripts/commit_bug335_lock.ps1`。
-- `slave-branch-merge.ps1`（2026-10-21 17:00 `c689f027` 入仓，此前从未登记）— **`gitcode/slave/*`
-  批量合并驱动器（合并 agent 的执行面）**：fetch → 扫哪些分支动了 src/scripts/cmd/moon.pkg →
-  逐个 cherry-pick → 清冲突标记 → build → push → 删已合并分支；`-DryRun` 只扫描不执行，
-  开头先备份 HEAD。**入仓时缺 UTF-8 BOM 被 `check_ps_encoding` 判红**（887 个非 ASCII 字节；
-  PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
-  去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
-  用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
 - **R87 追记（fist-gate.py，TASK-004）**：`--scan` 加**反向 diff 检测（REVERT-PATTERN）**——
   分支对基点的 src/scripts/cmd numstat 满足「删 ≥50 行且 删 > 增×1.5」即判疑似 revert
   （把合入者已合的内容砍回旧版，r73 实证形状 -718/+191），yaml `status: failed`
   （不进 claimable backlog）+ 文件级证据 Top5（`path(-删/+增)`）打进 yaml 与巡检日志；
   文件级阈值 20 行防小删误报；判定序在 DROP 之后、MERGE 之前（ABORT 冲突标记仍最高）。
   自证格 S7（-60/+1 必进 failed 队列）/ S8（小删不误红），`--selftest` 十九格。
-- `fist-gate.py`（2026-10-21 `defbe27` 一带入仓，此前从未登记）— **统一门链（五查 → 六查）**：
-  merge_markers / fmt / build / ps_encoding / store_path 五查 + R86 起第 6 查 `whisperer`
-  （R93 起指向 `whisperer_patrol.py --selftest` 自证，不再是 `whisperer.py`——后者旗名是
-  `--self-test`，喂 `--selftest` 只拿到 argparse 的 rc=2 幻影红；扫描产物是输出不是门）。另有 `--scan` 分支普查
-  子命令（TASK-005）：枚举远端分支对基点逐个出 ahead/cherry+/代码改动/冲突标记 → 自动写
-  `.git/fist/tasks/backlog/origin/<branch>.yaml`（stale 自动清），给合并 agent 当进料口；
-  `--selftest` 十九格（G1-G5 门链红绿/自拒 + S1-S8 扫描桩）。
-  用法 `python scripts/fist-gate.py [--selftest|--scan]`。
-- `whisperer_patrol.py`（2026-10-21 R86 入仓为 `whisperer.py`，R90 收写侧，R93 改址让位）— **风语者探测/入池引擎（TASK-009）**：分支巡检
-  （ahead/cherry 等价/冲突标记单发 `git grep`，四类处置 ABORT/DROP/FF-MERGE-CANDIDATE/REVIEW）
-  + docs 散落普查 + scripts 命名普查 + 守卫电池格数读数，发现由 `pool_findings()` 写成
-  `docs/tasks/backlog/TASK-NNN-*.yaml`（编号递增；每份 yaml 落一行机器锚 `dedupe_key: <sha1(key)[:16]>`，
-  同键重跑即跳过——键的散文会漂，锚不会；ABORT 分支级发现按去掉远端前缀的分支名入池，
-  gitcode/ 与 origin/ 两条镜面只占一单，P1）；默认扫描+写 yaml，
-  `--scan-only` 只出报告，`--apply` 额外做 ff-only 无分叉快进合入（真合并仍是人的决定）——
-  快进的落点是**当前签出分支**，所以 R94 起有三道前置：工作树干净 + HEAD 就站在基线对应的本地分支上
-  + 逐条 `--ff-only` 且第一条不合常理即停；任一不成立即整批不动并把原因打报告（上一版没有前置、
-  非零 rc 全被吞掉、每轮还空转一次 `git checkout`），
-  `--no-fetch` 离线档。rc：0=无事 / 1=无法自证或 `--apply` 被前置挡住 / 2=发现待办。
-  `--selftest` 十格：干净分支巡检 / 干净标记 / pool_findings 逐类入池 / 重跑幂等且镜面去重 /
-  整串中文键不落到 `TASK-NNN-.yaml`（退化为键哈希 slug）/ 沙箱写不动真任务池 /
-  `--apply` 四格（基线上快进成功且基线 sha 前进 / 错签出整批不动 / 脏树整批不动 / 分叉分支永不进快进面）。
-  四格各有变异对照：拿掉任一道前置、或把合并面放宽到全部处置，必有对应格红；本轮正是这四格抓到
-  `probe_branches` 里 `merge-base` 漏传 `cwd`（真仓 cwd 恰等于 ROOT，这一格在真实跑法里看不见）。
-  用法 `python scripts/whisperer_patrol.py [--scan-only|--apply] [--no-fetch] [--selftest]`。
-- `whisperer.py`（2026-10-22 主机 b0693a6 入仓，gitcode/main 线）— **风语者 Step 0-4 编排真源**：
-  `--scan-only`（默认）/`--auto-merge`/`--self-test`，旗名带连字符，与本文件的 `--selftest` 不是同一个旗。
-  **刻意不进 run_guards 电池、也不进 fist-gate 门链**：它的 Step 0 HEAD 安全门在巡检拍里执行
-  `git checkout master` + `git reset --hard` + `git push --force HEAD:main HEAD:master`（两远端），
-  无人值守跑它等于让定时脚本对共享线强推——已入池 TASK-018（P1）待裁决，裁决前面包保持排除。
-  与 `whisperer_patrol.py` 的分工：这份管编排（含合入动作），那份管探测与入池（零共享线副作用）。
-- `check_bug_refs.py`（2026-10-22 `cef1e9c` 主机入仓，BUG-373 出路①的第二把尺；R115/TASK-020 定面）—
-  **代码/文档里 `BUG-n` 引用 ↔ 账本 `memory/bugs.md` 对账**：`git ls-files` 取跟踪面（.mbt/.py/.md/.yml/
-  .yaml/.json/.ps1/.sh/.toml），`EXCL`（`_build`/`temp`/`.git`/`plugins`/`reports`/`docs/archive` 等）
-  R115 起**真生效**（此前只声明没过滤，`reports/` 169 条噪音就是这么进来的）。逐行正则对账本抬头分三档，
-  并按面分类：comment（`//`/`#` 之后）/ string（代码字面量）/ narrative（文档）。**`--strict` 只判
-  注释面 ORPHAN**，棘轮 `STRICT_ORPHAN_CEILING=3`（现读 3 条全在 `commit_bug335_lock.ps1` 注释；
-  测试文件的夹具说明注释按 S1b 降档）；字面量与叙述面只报，CLOSED 仅信息（`--strict-closed` 才升格）。
-  与已接 CI 的 `check_bug_reference_integrity.py`（`.mbt` 注释面 J1=0）**两把尺并存、各钉一面**。
-  **现状读数（2026-10-22 R115 本机实测）**：7103 处引用 / OK 667 / ORPHAN 206（comment 3、string 67、
-  narrative 136）/ CLOSED 6230；默认与 `--strict` 均 rc=0。`--selftest` 24 格（三档计数、三面分类、
-  夹具降档、排除面、退出码/棘轮、真语料校准），rc：0=通过/只报告 / 1=注释面 ORPHAN 超棘轮或
-  `--strict-closed` 命中 / 2=账本不存在。
-  用法 `python scripts/check_bug_refs.py [--selftest|--strict] [--bugs memory/bugs.md]`。
-- `fist-pr-automator.py`（2026-10-22 `cef1e9c` 主机入仓，R113 收紧默认）— **yaml → 门 → push → 开 PR/MR →（显式）merge 流水线**：
-  三参跑法 `python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode> [--dry-run]`，读 `branch`/`title`/`base`/
-  `repo`/`remote`/`gate`/`merge` 字段，先跑 `scripts/fist-gate.py`（rc≥1 即停），再 `git push -u`，
-  然后用 curl 打 GitHub API v3 / GitCode API v5（token 只从 `GITHUB_TOKEN`/`GITCODE_TOKEN` 环境变量读），
-  **只有 yaml 明写 `merge: true` 才 `merge`（squash）**；缺省/`false`/其它值一律打印 `merge=off` 并停手
-  （R113/TASK-021：不可逆动作不许由缺省值触发）。`--dry-run` 打印计划即返回 0——不起子进程、不碰网络、
-  不读 token 值；参数个数不对或平台名不是 `github|gitcode` 一律 rc=2 自拒。rc：0=ok / 1=blocked /
-  2=degraded 或用法自拒；`--selftest` 覆盖 yaml 解析 / merge 两向语义 / 计划文本 / dry-run 零副作用 /
-  用法自拒。**本脚本不进 CI 与电池自动面**（`run_guards` 按白名单归为非门禁族，`--list` 可见、电池面为空），
-  改流水线语义时必须人工点名跑 `--selftest`；合入动作在 R113 后默认关闭，任何自动化都不得替调用者打开。
-  用法 `python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode> [--dry-run]`（人工触发）。
-
-# scripts/ 脚本分类规范
-
-> 目的：项目整洁——临时脚本任务完即清理，正式工具统一管理，避免根目录/scripts 堆垃圾。
-
-## 命名约定
-
-| 前缀 | 含义 | 处理 | 示例 |
-|---|---|---|---|
-| **无前缀** | 正式、可复用工具 | 保留，写入 README 说明 | `mcp_smoke.py`、`patch_esm_main.py`、`omega_lesson_verify.py`、`demo.ps1`、`gen_apply_pdf.py` |
-| **`_` 前缀** | 临时/一次性/诊断脚本 | **任务完即删**，或移入 `temp/`（gitignored） | `_diag_*.py`、`_scratch_probe.py` |
-| `m9_* / m18_*` | 历史迁移遗留 | gitignore 覆盖；无需再产生 | — |
-
-## 约束（Golden Rule）
-
-1. **不产生带 `_` 前缀的正式工具**：`_` = 临时代码生成物，用完即删。
-2. **临时产物落 `temp/` 或系统 tmp**：不要污染仓库根；`temp/` 已在 `.gitignore`。
-3. **正式工具**：无前缀 + 文件头 docstring 说明用途/用法/前置 + 退出码约定。
-4. **改完即验**：新增/改动脚本后，确保它能在干净环境跑（依赖公开）。
-5. **不留绝对路径**：脚本内路径用 `os.path.join(dirname, ...)` 或环境变量，禁止硬编码盘符。
-
-## 现有正式工具速查
-
-**基础 / 演示**
-- `patch_esm_main.py` — moonc≥0.10.14 ESM 输出注入 createRequire shim（幂等）。
-
-**2026-10-15 Round 126 补充**：
-- **修正工具数**：`node dist/fist-mbt.js help` 报 148（help 文本 stale），但经 shim 的 MCP `tools/list` 返回 **166 个工具**——**dist 的 MCP 工具层实际是最新的**，stale 的只是 help 命令文本。BUG-155 的 FIXED 小记声称 `git rm dist/fist-mbt.js` 但 HEAD 仍含该文件，假绿（Round 125 报告已点名）。
-- 配套回归测试 `test_shim_handshake.py`。
-
-**2026-10-15 Round 124 更新**：
-- **A1 stub**：`logging/setLevel` / `completion/complete`（MCP 可选特性，server 未实现返回 `-32601`）——shim 拦截并返回 `{}` / `{completion:{values:[]}}`，比 `-32601` 更友好（Claude Desktop 会做 `setLevel`）。
-- **A3 崩溃修复**：`child.on('exit', code => process.exit(code ?? 0))` 在子进程被 signal 终止时 `code` 为 `null`，旧写法会**误报成功退出 0**；现改为 signal 时 exit 1、code null 时 exit 1。
-- **A2 无需改**：`stdio: ['pipe','pipe','inherit']` 已把 server 的 stderr 直通终端（此前误以为 DEVNULL，实为探针侧设置）。
-- **A4 请求超时**（2026-10-15 Round 137）：server 长时间不响应时回 `-32000`，默认 30s，可用环境变量 `FIST_SHIM_TIMEOUT_MS` 覆盖。通知（无 id）不计时；`t.unref?.()` 保证 server 死掉时 shim 能立即退出。实测假 server 不响应 → 500ms 后正确回 `-32000`。
-- **A5 已正确**：`_meta` 只对**有 id 的请求**注入（`msg.id !== undefined` 判定），`notifications/*` 无 id 原样透传，不误注入。
-- **A7 `.mcp.json` 示例**（2026-10-15 Round 139 升级）：shim 文件头注释内嵌的示例改用**发布版 `mcp_config_scaffold`** 校验生成——表单只写环境变量名占位（真值走 server 进程环境变量），含 `api_key`/`token`/`secret` 形状的表单会被整笔拒绝。实测传 shim 接入偏好返回合法 `fist.mcp.json` 正文（自动注入 `FIST_PROJECT_DIR`）。
-- `check_test_sync.py` — **测试总数单一真源守卫（R47；BUG-50 收口时判据重设计）**：从 `moon test` 日志
-  或 `--total N` 取实测总数，四条判据——**R1** 反向扫全部现状面文档（含 README_EN/BACKLOG，2026-10-21 实测 131 份），
-  每条测试总数声明必须 == 实测（窄口径六种形状：`N/N` 等值对、`N 项|个|条 [测试|用例] 全绿|通过|passed`、
-  `total=N`、日志回显 `Total tests: N, passed: N`、`N-test`、`(N aligned`；不等值对是引文/年份/编号，不算声明；
-  后两种是 BUG-382 补的——版本号与日期文件名里同样出现的 `N-test` 子串带反向对照、不误红）；
-  都没有即红）；**R4** 历史数/别的 target 必须在 `EXEMPT` 里逐条点名 `(文件, 数, 理由)`，条目失效也判红。
-  历史记录（`memory/`、`reports/`、`CHANGELOG.md`、`docs/superpowers/plans/`、`YYYY-MM-DD` 前缀文件）
-  整面豁免。**BUG-350**：日志面判绿必须 `passed == Total tests` 且 `failed == 0`（旧格式不写 failed 时只校验
-  passed==total）——只取 `Total tests` 会把 `passed:3, failed:1344` 的近乎全挂日志判绿；输入日志文件缺失时
-  友好报错而非 traceback。**BUG-382**：E/F 两种形状此前完全不在口径内，文档同步时靠人工 grep 才发现
-  README_EN 的同类写法会留成自洽假账；同轮变异自检还抓出 `run_case` 失败路径返回二元组、调用点
-  `is None` 永不成立 ⇒ 文档面变异只打 FAIL 行而 rc=0，已改为返回 `None` 并加退出码传导格。`--selftest`
-  用 20 个变体证明判据会红（11 个文档面 + 6 个纯函数日志面 + 2 个真入口子进程对照 + 1 个失败路径
-  退出码传导格，含"自洽的谎"型、"不得误抓引文"与"不得误抓版本号/日期文件名"反向对照）。
-  已在 ci.yml JS 轨自动执行（真判据 + selftest 两条步骤）。
-- `check_plugin_sync.py` 的索引缺口补齐登记（本轮 cl7 落地时实测出的历史欠账）：
-- `mcp_bug_loop.py` — **修复闭环历史验证脚本（Round 1）**：对 5 个已修 bug 逐个走 publish→claim→execute→submit→verify 的 MCP 客户端；保留作活证据，非日常工具（一次性验证，跑前注意命名空间隔离）。
-- `pentad_fist.py` — **Pentad 衍生项目 MCP 客户端**：基于 `mcp_smoke.py` 的 rpc 模式注册 Pentad 项目并开 `omega_strong_verify` + `call_log`，供跨项目自驱演示。
-- `test_mcp_bugs.py` — **缺陷相关工具的 MCP 冒烟测试**：对 `report_bug/bug_list/run_check` 等做端到端调用；与 `mcp_bug_loop.py` 同批历史脚本，保留作证据。
-- `demo.ps1` — 一键演示（build+patch+smoke）。
-- `laya_decide.py` — **Laya 决策 sidecar**：把 Laya ML 模型包成可被 fist-mbt MCP server 调用的 JSON sidecar（冷启动选档/探测）。
-- `native-env.ps1` — Windows native 环境一键装载（VS + sqlite-dev）。
-- `gen_apply_pdf.py` — 一页项目申报书 PDF 生成（个人档，不入库）。
-- `check_backlog_yaml_integrity.py` — **backlog 台账顶层键唯一性守卫（R110）**：任务池 yaml 的消费面是**逐行正则**而不是 YAML 解析（`- [ ]` 复选框让 `yaml.safe_load` 在抬头就 ParserError），所以「同一个 `id:` 出现两次」不会有任何机器读数——R109 实测 `TASK-001-conflict-markers-no-commit.yaml` 里躺着一份截断抄本（`acceptance_met` 只在完整块里，半截那份没有），两份并读时后写者赢、任务池直接读错状态。三条判据：R1 顶层键不得重复 / R2 抬头四键 `id,title,priority,status` 必须齐 / R3 出现 `acceptance_met` 却没写 `status` 只记**诊断**不计失败（盖章归 owner，不代修）。扫描面空或目录缺失 ⇒ rc=2 自拒，绝不冒绿；未捕获异常走 4 号档（BUG-369 契约）。`--selftest` 九格含 C9 真面变异（复制真实台账尾部追加半截再断言必红，`finally` 还原字节相同）。
-- `check_text_control_chars.py` — **文本面 C0/DEL 控制字符零容忍门（R121）**：写 `\b`/`\a`/`\v`/`\f`/`\e`/`\0` 时被转义链吃成**不可见字节**（0x08/0x07/0x0b/0x0c/0x1b/0x00，字母本体丢失）——人眼看着正常、工具不报错，文件照样能提交能发布，只是 grep/正则永远命不中，读者拿到的不是作者以为的那段字。R119/R120 连中三份制品后，R121 全仓实测 **12 份文件 30 处**（任务池、memory、reports、**一把守卫脚本自己**），逐处按上下文还原字母；`check_backlog_yaml_integrity.py` 的 R4 只管任务池，其余面此前无人认领 ⇒ 本尺把整个文本面做成零容忍门。判据：C0 控制字符（0x00-0x08 / 0x0b / 0x0c / 0x0e-0x1f；**制表 0x09、换行 0x0a、回车 0x0d 是合法排版空白**）+ DEL 0x7f；扫描面 = 仓根递归的文本扩展名白名单（.md/.py/.ps1/.sh/.yaml/.yml/.json/.txt/.mbt/.mbti/.cmd/.pkg + `moon.mod`/`.gitignore`/`.gitattributes`），跳过 .git/.mooncakes/_build/target/temp 等生成与本地目录。空扫描面或根目录不存在 ⇒ rc=2 自拒，绝不报绿；未捕获异常走 4 号档（BUG-369 契约）。`--selftest` 九格（G×4 / M×3 / R×2）：干净不误红（制表/CRLF 合法）/ 非文本扩展不误扫 / 清场后回绿 / 真现状面必绿 + 0x08、DEL、嵌套目录 ESC 各必红 + 空面与目录缺失各自拒。用法：`python scripts/check_text_control_chars.py [--root <目录>|--selftest]`（0=干净 / 1=有控制字符 / 2=判据无法自证 / 4=尺子自己坏了）。
-- `check_backlog_status_staleness.py` — **任务池状态 ↔ 主线盖章证据 对表判据（R102）**：「commit subject 点名了 TASK-0NN，而 `docs/tasks/backlog/TASK-*.yaml` 的 `status` 还停在 `backlog`」这条落差本仓此前没有任何判据会红（与 `bug_list` 的 `open_with_linked_done` 同形，只是发生在任务池面）。四条规则 R1 STALE（已点名 + 仍 `backlog`）/ R2 UNPROVEN-DONE（`done` 却主线无任何点名，终态必须有据）/ R3 OPEN（从未点名且 `backlog` ⇒ 只报不判）/ R4 STALE-BRANCH（yaml 点名的分支已在主线 subject 里出现、`status` 仍 `backlog` ⇒ 活随分支并线而 subject 没点名 TASK id，R1 看不见；R123 实测 TASK-014/015——分支 `fix/guard-docstring-correct-measurement` 已随 e3f76387 并线、`fix/guards-parse-dead-after-marker-clear` 已随 f84eac58 并线，而任务池还写 `backlog`，下一轮巡检会再派一次。分支名从 yaml 正文按 feat/fix/slave/docs/chore/ci/refactor/test 前缀反解，文件路径不冒充分支；只认主线 subject、不看远端 refs ⇒ 离线可判）；**判定面只许下降**：落差条数 > `STALE_CEILING` 才红（rc=1 并逐条点名），低于上限只打印收紧建议、不判红也不自动改数（同 `check_plan_landing` P6 / `check_deprecated_text_census` R3 口径）。扫描面优先 `gitcode/main`、次 `git/main`、都取不到才退 HEAD —— 本地在副机分支上、CI 在 main 的 checkout 上必须读**同一条线**，否则基线数字随分支漂（2026-10-22 实测：副机分支上 TASK-004 尚未点名 = 4 条落差，main 上已盖章 = 少一条）；`--rev <rev>` 可显式指定。`--selftest` 16 格（M×3 / P×3 / R×6 / V×4，族名从已执行格子名首段首字母反解）= 合成违例必红 4 + 反向对照不误红 6 + 规则失明对照 3 + 解析面自证 3；盘上实测两档（R118 现读对表）：within `落差 0 / 上限 0 / 超限 0` rc=0（R111 把存量 9 条落差逐条核对盖章、`STALE_CEILING` 由 4 降到 0，R117 随后把电池里那条「必红」期望兑现成门禁格 ⇒ 盘上已无超限存量）、`FIST_BACKLOG_DIR` 指到空目录 rc=2（一份可解析 yaml 都没有 ⇒ 空扫描必自拒，不冒用 1）；红档（落差 > 上限）在盘上不可复现，改由 `--selftest` 里点名超限的合成违例格钉住。backlog 目录可用 `FIST_BACKLOG_DIR` 覆盖（沙箱自证用）。用法：`python scripts/check_backlog_status_staleness.py [--selftest] [--show-open] [--rev <rev>]`。
-- `check_release_asset_names.py` — **分发面同源守卫（BUG-103 + BUG-105 + BUG-107 + BUG-109 + BUG-111 + BUG-112 + BUG-113 + BUG-114 + BUG-116 + BUG-120）**：安装器（`install_onecmd.ps1` / `install.sh`）与 `build_release.ps1`/`release.yml` 必须共用 `fist-mbt-js-v<moon.mod 版本>.zip` 这一个资产名；R1 禁给版本号写字面量默认值（写死一个字 ⇒ 用户跑不带参数的 `irm | iex` 永远 404）、R2 必须真的解析 `moon.mod` 里的 `version = "…"`、R3 三处资产名模板同源、R4 版本解析为空必须 `exit 1`（不许静默用猜的版本）；**R5 命令名两类 shell 都可见**——Windows 安装器除 `.cmd` 外必须再写**无扩展名**的 `#!/bin/sh` shim 并带「四件齐否则 `exit 1`」的门，WSL/Linux 侧必须 `cat` 出无扩展名 shim 且 `chmod +x`（POSIX shell 不解析 PATHEXT ⇒ 只给 `.cmd` 时 `fist` 在 Git Bash 里就是 command not found）。**R6 钉「200 不等于拿到文件」**（BUG-107 公网实测）：GitCode 三种 raw 形状匿名 GET 都回 HTTP 200 + 一整页 HTML ⇒ 文档首选安装线必须是 GitHub **master** 的 raw 直链（写成 main 取不到），且两个安装器都要对 moon.mod 响应做 HTML 形状检查、下载后验 zip 魔数 `PK`——只按「200 + 大于 10KB」放行，一页 HTML 就能被当成资产送去解压。**R7 钉「装完的自检不许假绿」**（BUG-109，端到端实测）：脚本顶部是 `$ErrorActionPreference="Stop"`，原生命令的 stderr 经 `2>&1` 会变成终止错误，而 node:sqlite 每次启动都打 `ExperimentalWarning` ⇒ 旧自检的两个 `try { } catch { }` 必然吞错、紧随其后的 `✅ fist-mbt.js 可执行` 却无条件打印，`& fist version` 的 catch 还把"shim 跑通了"报成"当前会话 PATH 未刷新"；三支子判据=不许空 catch / 原生调用必须"临时降 EAP + `2>$null`"封装 / ✅ 必须挂在 `if ($jsVer)` 分支上。必读文件缺席即 FATAL（判据无法自证不出假绿）；**R8 钉「发布作业不许顶掉分发」**（BUG-111，本轮那个标签触发的 `FIST-Mbt Blackbox Release` 是 run 1 且失败、Release 零资产，而 `git archive HEAD` 快照里复跑 CI 的 JS 三步全绿 ⇒ 根因是 `release` 作业引用 `needs.meta.outputs.version` 却没把 `meta` 放进自己的 needs，还把可选的 `build-native-linux` 当一票否决项）：判 release.yml 三件事——needs 含 meta、needs 不含 native、native-linux 带 `continue-on-error: true`。`--selftest` 三十八格变异（R1×2 / R2 / R3×2 / R4 / R5×2 / R6×3 / R7×3 / R8×3 / R9×5 / R10×2 / R11×5 / R12×2 / R13×2 / R14×5，一份权威清单、从已执行格子反解）+ 干净不误红（R8 的干净支要加载真 release.yml，否则"读不到 release.yml"会把干净输入判红）。**R9 钉「工具链 bootstrap 与 CI 同源」**（BUG-112：匿名 `/actions/runs/<id>/jobs` 的失败步骤名给出 `build-js` 红在 `Build JS target`、`build-native-linux` 红在 `Build native`、`release` 是 `skipped` ⇒ runner 上没有 `moon`；`release.yml` 用了 `install/unix`（少 `.sh`）且没把 `$HOME/.moon/bin` 写进 `GITHUB_PATH`，而同仓跑通过的 `ci.yml` / `fist-ci.yml` 两条都有）：判据只看**去掉 `#` 注释行之后**的代码面——第一版被我在 release.yml 写的注释里那个 "GITHUB_PATH" 喂回针，「摘掉导出行」那格变异不红，是 `--selftest` 当场抓到的（被检面从 `.github/workflows/` **目录派生**，逻辑名 `wf:<文件名>`，只判代码面里真跑了 `moon build|test|update|ide|check` 的那几份；一个 workflow 都没读到即 `R9 FATAL` 拒绝出数。为什么不再用手写名单：实测 `gate.yml` 与 `fist-bug-sync.yml` 都跑 moon，却不在旧的三名字名单里 ⇒ 新 workflow 天生在盲区，与 J12 的"手写清单必然落后于新增 workflow"同口径）。`--selftest` 里 R9 那五支的构成：release.yml 两支变异 + 目录里新 workflow 摘掉导出行必红 + 不跑 moon 的合成 workflow 不误红 + 空面必自拒（格数只在上面那份清单里写一次——两处抄数就是两份账，由 `check_selftest_inventory_doc.py` 对表）。**R10 钉「文档线必须 BOM 安全」**（BUG-113：`irm` 把脚本的 UTF-8 BOM 留成首字符 U+FEFF ⇒ `iex` 在 `param()` 处报「赋值表达式的左侧无效」，而同一个脚本 `-File` 跑一切正常 ⇒ 全绿的 e2e 照不出用户照抄的那一行）：安装器与 README 两侧的文档线都要 `TrimStart([char]0xFEFF)`。**R11 钉「源码版本常量不许落后于 moon.mod」**（BUG-114：moon.mod 已经前进，`src/server/server.mbt` 的 `project_version` 却纹丝不动 ⇒ 公网装出来的 `fist version` 回上一版，而横幅/文档/插件态都说新版；文档面守卫只比"文档 ↔ moon.mod"看不见这一格，`src/server/fist-mbt_wbtest.mbt` 里那条常驻锁在 master 上一直红着、没人读）：`let project_version` 与 `cmd/cli` 侧扫到的任何 `const *VERSION*` 必须 == moon.mod，读不到基线即自拒、该可选面不存在时不误红。**R12 钉「下载重试只许对准传输层错误」**（BUG-116 实测：本机走系统代理时 `Invoke-WebRequest` 会瞬时抛"基础连接已经关闭"，同一时刻 curl 取同一 URL 却得 200 + `PK` ⇒ 一次失败就换源会把抖动放大成"装不上"；而 404/403/"给的不是 zip" 是确定性结论，重试只拖慢用户）：必须保留"拿到 HTTP 响应就 break"的闸 + 重试带退避间隔，两支变异必红。**R13 钉「文档离线线的资产名版本字面量不许落后于 moon.mod」**（BUG-120：README 的 `-LocalZip …
-ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）之间，两版守卫都不看这一格 ⇒ 版本一前进，照抄离线/内网线就 404）：README 里以数字开头的 `fist-mbt-js-v<版本>.zip` 必须 == `moon.mod`，无基线即自拒；模板形态 `v$VERSION` 不误红（两支自证：漂移必红 + 模板不红）。`--selftest` 的格子清单**从已执行格子反解**，不手写计数（手写曾造出幻影：R5 那一格因"变异只改注释"被跳过，自述里却照写 `R5×2`）。用法：`python scripts/check_release_asset_names.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。
-- `check_battery_count_doc.py` — **电池规模读数 ↔ README 登记 对表守卫（R112 / TASK-017）**：`run_guards.py --list` 的读数（尺数 / CI 面 / 电池面 / 缺执行面 + 分类记账）与 `scripts/README.md` 里 `run_guards.py` 条目的机器可读锚点 `BATTERY-REGISTRATION` 逐键对表——**两个方向都红**：现读少于登记（欠格：格子或尺在登记后被删）与现读多于登记（登记落后：新增尺/格子没同批改数）都点名到键，缺执行面 > 0 也在这里点名。锚点缺失 / 缺键 / 值非整数 / 多份抄本打架 / `--list` 跑不起来 ⇒ 判据无法自证走 2 号档，绝不拿「没读到」当「对上了」。**为什么需要它**：TASK-017 就是 whisperer 探测时抓到的形状——R106 登记「宇宙 81 份 = 尺 79 把」，R110/R111 之后实测已前进，而 README 那串历史读数没人对表；手抄的当前读数必然在下一次加尺时落后，读数本身也得有守卫。**与 `check_selftest_inventory_doc.py` 的分工**：那把尺对表「每把脚本自己的 `--selftest` 每族几格」，本尺对表「电池的规模读数」，判据面不重叠。`--selftest` 十五格（G×3 / M×11 / R）：干净不误红 / 真格式解析 / 抄本一致不误红 / 七个键逐个漂移必红 / 锚点缺失自拒 / 键值坏形态自拒 / 抄本打架自拒 / 空读数自拒 / 真 README + 真 `--list` 现状面必须绿。用法：`python scripts/check_battery_count_doc.py [--selftest]`（0=逐键一致 / 1=漂移 / 2=判据无法自证 / 4=尺子自己坏了）。
-- `check_selftest_inventory_doc.py` — **「格子计数自述 ↔ 已执行格子反解」对表守卫（R104）**：`--selftest` 清单从已执行格子反解早就是纪律（`check_release_asset_names.py` 自己就打这一行），但**文档抄的是另一份手数字**。R103 把 R9 从两格加到五格时，实现面自己改了读数，`scripts/README.md` 那一行靠人记得改——改之前它写的还是旧格数、与真源差三格。实现会自证，文档不会：读者按落后的格数判断覆盖面，多出来的格子就永远没人知道存在。四类判定逐条点名：**X1 计数漂移**（文档族格数 ≠ 实现反解同族）/ **X2 幻影族**（文档写了某族几格，实现清单里这一族一格都没跑）/ **X3 总数滞后**（清单前的「N 格 / N 支」自述 ≠ 被对表族数合计 ⇒ 逼「一份文档只留一份权威清单」，分批抄的数字必然落后）/ **X4 自述失联**（跑那把尺的 `--selftest` 拿不到「反解」锚点：脚本不在 / 旗标不认 / 超时 / 清单文法改了 / 自检本身红 ⇒ 判据无法自证，走 2 号档不冒用 1）。判定面从 `scripts/README.md` 的 `- \`xxx.py\` —` 条目语法**派生**（不手写尺子清单）。文法口径两条都由实测逼出：只认 **ASCII 斜杠分隔、至少两族、且至少一族带乘数** 的名单——`scripts/README.md:85` 那类「某族记了几条」是**校准读数**（加号分隔、单族），`cli_flag_probe.py` 那条是**裸族名单**（无乘数），两类都必须解析成零自述，否则文档写「某族找到 7 条」就被当格数判红。**AGENTS.md 面本轮不入**：它的格数自述夹在几百字散文行中间、一行点十几把尺，「最近的前一个文件名」这类归属启发式会把账记到错的尺上（假红比漏红更坏），先把归属做成机械可定再扩。**与 `check_doc_surface` J10 的分工**（J9 口径）：J10 比判据**编号范围**（族在不在），本尺比**每族几格 + 一共几格**（量对不对），判据面互不重叠。`--selftest` 二十五格（G1 干净不误红 / M1 漂移 / M2 幻影 / M3 总数滞后 / M3b 中文数字与族计数同口径 / M4 校准读数不认 / M4b 单族不认 / M4c 大写词组不当族 / M4d 非 R 族名认得出 / M4e 优先级缩写不当族 / M5 裸名单不认 / M6 失联记档 / M7 脚本缺席记档 / M8-M9 空面必自拒 / M10 主流程判红 / M11-M12 失联走 2 号档 / M13-M14 真实现状面必须绿 + 判定面非空 / M15 自锁——本尺条目任抄本都不进判定面，否则 `run_inventory` 会 spawn 自己 / M16 「格/支」单位门是承重的 / M17 真 README 里本尺确被跳过 / M18 抄本打架必红 / M19 抄本一致不误红），清单从已执行格子反解，不手写计数。**R105 扩面三条**（都由实测定形，不是锦上添花）：① 族名文法从 `R\d+` 泛到 `≤3 大写字母 + 可选数字`，靠词界与 `NOISE` 缩写表挡住 `PASS / FAIL×2 / OK`、`P0×2 / P1` 这类形状——泛化当场抓到 `check_upgrade_installer.py` 有 18 格自述而实现给不出锚点（X4→rc=2），本轮把它的 `--selftest` 补成 `十九格（G1×5 / G2×5 / G3×8 / RS×1）` 反解行、README 七份抄本同步；② 同名条目**逐份并入**而非末份覆盖，实测 `scripts/README.md` 把整份条目列表重复了 7 遍，R104 只改了其中一份 ⇒ 另 6 份仍写 `十七格变异`——合并后 X3 立刻点名「总数自述 17/38」，本轮 6 份全部同步，此后抄本不一致就是红；③ `check_backlog_status_staleness.py` 的 11 格改成从已执行格子名首段反解（`M×2 / P×2 / R×4 / V×3`），判定面从 1 把尺长到 3 把。**本尺不自判**：README 里本尺条目不参与对表（自判 = 递归 spawn），跳过份数打印在判定面读数里，藏起来不算锁。用法：`python scripts/check_selftest_inventory_doc.py [--selftest] [--show-face]`（0=对表通过 / 1=X1|X2|X3 违例 / 2=判据无法自证 / 4=尺子自己坏了）。
-- `check_slave_task_list.py` — **副机认领入口自证守卫（R126）**：`docs/2026-10-20-slave-tasks.md` 是副机线的认领入口，下一位照「状态」列取单——那一列写错，就是把已做完的再做一遍、把没做的当成做了。R122 逐行取证时文首那份自证读数是**手抄**的，尺子不在场，改判之后没人能复核那两个数（J10 声明滞后的副机形状）。本尺把「入口能不能自证」做成常驻判定面：**A** 不误红对照（带点目录 `.github/…`、只点文件不点行的文件级在场指认、干净清单整体不误红）/ **B** 锚点必红对照（B1 文件不在跟踪面、B2 行号越界、B3 内容级记号不在那一行、B4 锚点指到**空行**、B5 范围锚点 `:4-10` 只核下端把上端漏掉）/ **C** 认领口径（状态为 已落地/部分 却没有任何一条证据指得到在场真源、证据列整列为空、状态词表越界）/ **D** 文首计数自述（结构级 / 内容级 / 失配 三个数与尺实算逐一对表，手抄即红）/ **E** 自拒对照（清单读不到、判定面为空一律走 2 号档，绝不拿「没读到」当「对上了」）。三条口径都由实测逼出：① 判定面**只看证据列**——状态列的归属启发式会把账记到错的尺上（假红比漏红更坏）；② 内容级要核对的记号**从文档自己的括号里取**（紧跟锚点的 `` `x` `` 反引号或「…」逐字引文），尺内不写记号表，否则那张表就是下一颗漂移雷；③ 「无法取证」必须写明非空——它空着就是「没人核过」被读成「都核过了」。与 `check_doc_surface`（文档表面：版本/分组/工具数自述）、`check_plan_landing`（计划点名落点）判据面不重叠：本尺只管这一份清单的证据 ↔ 真源。`--selftest` 十八格（A×3 / B×5 / C×4 / D×4 / E×2），清单从 temp 合成树里已执行格子反解，不手写计数。用法：`python scripts/check_slave_task_list.py [--selftest] [--show-face] [--doc <路径>] [--root <仓根>]`（0=自证通过 / 1=违例逐条点名 / 2=判据无法自证 / 4=尺子自己坏了）。
-
-**自驱闭环（selfdrive）**
-- `log_fix_selfdrive.py` — call_log 缺陷修复自驱闭环。
-- `enhance_verify.py` — 三块增强 E2E 验证。
-- `enrich_selfdrive.py` — 获奖提升增强自驱闭环。
-- `atgc_selfdrive_demo.py` — ATGC 极简双链虚拟机自驱+Omega DEMO。
-- `lesson_selfdrive.py` / `scratch_selfdrive.py` — 失败回流 / 临时隔离 技能自驱闭环。
-
-**能力 E2E 验证（verify）**
-- `map_verify.py` — 项目地图（`fist://map`）E2E。
-- `lesson_verify.py` — 失败回流（evolve_lesson 独立工具）E2E。
-- `lesson_chain_selfdrive.py` — 打回→lesson 归档→dead_ends 闭环演示。
-- `dag_depend_verify.py` — DAG 显式依赖 E2E。
-- `scratch_verify.py` — `store_open(scratch)` 临时隔离 E2E。
-- `omega_lesson_verify.py` — **Omega 打回自动落 [lesson] + 进程内可见** E2E（三类打回自动沉淀 + scratch 隔离 + 结束精确清理根库）。
-- `plan_gradient_verify.py` — `task_plan_deep gradient=true` 难度梯度 + 更简单变体 E2E（默认关闭零回归 + scratch 隔离）。
-- `evolve_critic_verify.py` — `evolve_critic` Critic 防漂移门禁 E2E（84 工具 + 放行/拒收/收紧阈值 + 只评审不写库）。
-- `task_challenge_verify.py` — `task_challenge` Challenger 进阶变体 E2E（84 工具 + [challenge]溯源/扩规模 + 未完成任务拒绝 + scratch 隔离）。
-- `caf_offline_replay.py` — **CAF 离线回放验证脚本**：用历史执行记录离线回放构建 ACRouter 记忆表，复现按成功率排序的模型优先级（与人工标注一致），验证 C-A-F 学习路由的验收标准 1。
-- `caf_p2c_ab_preflight.py` — **CAF P2c 接线 A/B 预演验证（验收标准 2）**：模拟 P2c 接线后的 A/B 对比，验证 `use_caf_memory` 接线后的路由质量。
-- `caf_p2d_coldstart_ab.py` — **CAF P2d 冷启动 A/B 预演（2026-10-15 Goal-2 Round 25）**：冷启动场景下对比开/关 CAF 记忆的路由表现。
-- `patch_router_config_caf_field.py` — **RouterConfig 构造点补字段**：批量给 `RouterConfig` 构造点补 `use_caf_memory` 字段（P2c 前置步骤）。
-- `ns_route_probe.py` — **多租户库级物理隔离闭环探针（stage1）**：验证 C1 业务工具带 namespace 路由到独立库 / C2 默认库无该任务行 / C3 全流程在 ns 库内流转 / C4 负例 not found。
-- `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
-
-> 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/cli` + `patch_esm_main` → node）。
-
-
-### 2026-10-21 R59 补登记（`check_scripts_index` 现读三件漏网尺）
-
-- `check_doc_surface.py` — **文档面单一真源守卫（BUG-22/BUG-30 的判据化，J1~J16 档）**：以
-  `src/server/server.mbt` 注册表为工具真源，逐名校验 AGENTS/README 覆盖（J2）、分组标题数字之和
-  == N 且「N 组」== 实解析组数（J3）、`vicTop-cw/fist-mbt@x.y.z` 当前自述 == `moon.mod` 版本且
-  发布版本权威自述只许 BACKLOG.md 一处（J4）、清单为空时反幻影哨兵直接 FATAL 不许 PASS（J5）、
-  规范正文 ↔ `project_standards` 机器投影的规则 id/版本一致（J6）等。**这行不是新登记而是复权**：
-  本条原先就在本文件里，被 `f259d797`「全仓清冲突标记·取 theirs」连带冲突区一起删掉
-  （实证：`f259d797^:scripts/README.md` 含 `check_doc_surface`、`origin/master` 起为 0，
-  该次 diff 同时留着 `<<<<<<< HEAD` 与被吃掉的正文行）——sweep 顺手删登记，正是 R57 记的
-  「取 theirs 的连带删除」在文档面的复发。用法 `python scripts/check_doc_surface.py [--selftest]`。
-- `commit_bug335_lock.ps1`（2026-10-20 18:54 `901eca8c` 入仓，此前从未登记）— **BUG-339 提交
-  成对性收尾助手**：等并发 agent 把含 `publish_parallel_route` 的 `src/server/server.mbt` 提交进
-  HEAD 后，**只提交**配套锁 `src/server/bug335_ns_route_wbtest.mbt`；脚本自身规则写明
-  「DO NOT commit server.mbt（concurrent agent owns it）」且「Safe to run repeatedly」——
-  存在的理由就是 BUG-339 的教训：锁引用未提交函数时单独提交锁 = 给 src/server 引入编译红。
-  用法 `pwsh scripts/commit_bug335_lock.ps1`。
-- `slave-branch-merge.ps1`（2026-10-21 17:00 `c689f027` 入仓，此前从未登记）— **`gitcode/slave/*`
-  批量合并驱动器（合并 agent 的执行面）**：fetch → 扫哪些分支动了 src/scripts/cmd/moon.pkg →
-  逐个 cherry-pick → 清冲突标记 → build → push → 删已合并分支；`-DryRun` 只扫描不执行，
-  开头先备份 HEAD。**入仓时缺 UTF-8 BOM 被 `check_ps_encoding` 判红**（887 个非 ASCII 字节；
-  PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
-  去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
-  用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
-
-### 2026-10-21 TASK-003：`check_ci_step_position.py`
-
-- `check_ci_step_position.py` — **CI 步骤位置守卫（TASK-003）**：`Migrate mooncakes dep manifests` 失败时
-  其后步骤被 GitHub Actions **skip**，故**静态预检族**（冲突标记 / PS 编码 / 模板控制字符 / 脚本索引 / 本尺）
-  必须排在 Migrate **之前**，否则最需要出声时沉默（实测：259b56a8 的 3 处冲突标记进 master，CI 无感）。
-  P1 预检族越位=rc1 并列名；P2 其它构建后 gate 只报计数与清单（本仓实测 30 个，硬堵无意义）；
-  P3 无 Migrate 步 / yml 空 ⇒ rc2 自拒。`--selftest` 7 格。**不依赖 PyYAML**（runner 未必有），
-  自带极简步骤解析器——判据不该把"自己会不会崩"交给环境。
-
-### 2026-10-21 补登记：`fist-gate.py`
-
-- `fist-gate.py`（R74 入仓）— **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段 +
-  `--scan` 分支普查 + `--selftest`。退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量）。
-  本轮补了 fmt/build 两臂的**环境态分类**：冷格式化器（缺 `_build/wasm-gc/release/format/`）与依赖缓存
-  格式过旧（`moon.mod.json no longer supported`）都报 DEGRADED 并给可执行提示，不再冒充'代码红'；
-  `FIST_GATE_FMT_STRICT=1` 可把 fmt 世代差转硬红。用法 `python scripts/fist-gate.py [--scan|--selftest] [树]`。
-# scripts/ 脚本分类规范
-
-> 目的：项目整洁——临时脚本任务完即清理，正式工具统一管理，避免根目录/scripts 堆垃圾。
-
-## 命名约定
-
-| 前缀 | 含义 | 处理 | 示例 |
-|---|---|---|---|
-| **无前缀** | 正式、可复用工具 | 保留，写入 README 说明 | `mcp_smoke.py`、`patch_esm_main.py`、`omega_lesson_verify.py`、`demo.ps1`、`gen_apply_pdf.py` |
-| **`_` 前缀** | 临时/一次性/诊断脚本 | **任务完即删**，或移入 `temp/`（gitignored） | `_diag_*.py`、`_scratch_probe.py` |
-| `m9_* / m18_*` | 历史迁移遗留 | gitignore 覆盖；无需再产生 | — |
-
-## 约束（Golden Rule）
-
-1. **不产生带 `_` 前缀的正式工具**：`_` = 临时代码生成物，用完即删。
-2. **临时产物落 `temp/` 或系统 tmp**：不要污染仓库根；`temp/` 已在 `.gitignore`。
-3. **正式工具**：无前缀 + 文件头 docstring 说明用途/用法/前置 + 退出码约定。
-4. **改完即验**：新增/改动脚本后，确保它能在干净环境跑（依赖公开）。
-5. **不留绝对路径**：脚本内路径用 `os.path.join(dirname, ...)` 或环境变量，禁止硬编码盘符。
-
-## 现有正式工具速查
-
-**基础 / 演示**
-- `patch_esm_main.py` — moonc≥0.10.14 ESM 输出注入 createRequire shim（幂等）。
-
-**2026-10-15 Round 126 补充**：
-- **修正工具数**：`node dist/fist-mbt.js help` 报 148（help 文本 stale），但经 shim 的 MCP `tools/list` 返回 **166 个工具**——**dist 的 MCP 工具层实际是最新的**，stale 的只是 help 命令文本。BUG-155 的 FIXED 小记声称 `git rm dist/fist-mbt.js` 但 HEAD 仍含该文件，假绿（Round 125 报告已点名）。
-- 配套回归测试 `test_shim_handshake.py`。
-
-**2026-10-15 Round 124 更新**：
-- **A1 stub**：`logging/setLevel` / `completion/complete`（MCP 可选特性，server 未实现返回 `-32601`）——shim 拦截并返回 `{}` / `{completion:{values:[]}}`，比 `-32601` 更友好（Claude Desktop 会做 `setLevel`）。
-- **A3 崩溃修复**：`child.on('exit', code => process.exit(code ?? 0))` 在子进程被 signal 终止时 `code` 为 `null`，旧写法会**误报成功退出 0**；现改为 signal 时 exit 1、code null 时 exit 1。
-- **A2 无需改**：`stdio: ['pipe','pipe','inherit']` 已把 server 的 stderr 直通终端（此前误以为 DEVNULL，实为探针侧设置）。
-- **A4 请求超时**（2026-10-15 Round 137）：server 长时间不响应时回 `-32000`，默认 30s，可用环境变量 `FIST_SHIM_TIMEOUT_MS` 覆盖。通知（无 id）不计时；`t.unref?.()` 保证 server 死掉时 shim 能立即退出。实测假 server 不响应 → 500ms 后正确回 `-32000`。
-- **A5 已正确**：`_meta` 只对**有 id 的请求**注入（`msg.id !== undefined` 判定），`notifications/*` 无 id 原样透传，不误注入。
-- **A7 `.mcp.json` 示例**（2026-10-15 Round 139 升级）：shim 文件头注释内嵌的示例改用**发布版 `mcp_config_scaffold`** 校验生成——表单只写环境变量名占位（真值走 server 进程环境变量），含 `api_key`/`token`/`secret` 形状的表单会被整笔拒绝。实测传 shim 接入偏好返回合法 `fist.mcp.json` 正文（自动注入 `FIST_PROJECT_DIR`）。
-- `check_test_sync.py` — **测试总数单一真源守卫（R47；BUG-50 收口时判据重设计）**：从 `moon test` 日志
-  或 `--total N` 取实测总数，四条判据——**R1** 反向扫全部现状面文档（含 README_EN/BACKLOG，2026-10-21 实测 131 份），
-  每条测试总数声明必须 == 实测（窄口径六种形状：`N/N` 等值对、`N 项|个|条 [测试|用例] 全绿|通过|passed`、
-  `total=N`、日志回显 `Total tests: N, passed: N`、`N-test`、`(N aligned`；不等值对是引文/年份/编号，不算声明；
-  后两种是 BUG-382 补的——版本号与日期文件名里同样出现的 `N-test` 子串带反向对照、不误红）；
-  都没有即红）；**R4** 历史数/别的 target 必须在 `EXEMPT` 里逐条点名 `(文件, 数, 理由)`，条目失效也判红。
-  历史记录（`memory/`、`reports/`、`CHANGELOG.md`、`docs/superpowers/plans/`、`YYYY-MM-DD` 前缀文件）
-  整面豁免。**BUG-350**：日志面判绿必须 `passed == Total tests` 且 `failed == 0`（旧格式不写 failed 时只校验
-  passed==total）——只取 `Total tests` 会把 `passed:3, failed:1344` 的近乎全挂日志判绿；输入日志文件缺失时
-  友好报错而非 traceback。**BUG-382**：E/F 两种形状此前完全不在口径内，文档同步时靠人工 grep 才发现
-  README_EN 的同类写法会留成自洽假账；同轮变异自检还抓出 `run_case` 失败路径返回二元组、调用点
-  `is None` 永不成立 ⇒ 文档面变异只打 FAIL 行而 rc=0，已改为返回 `None` 并加退出码传导格。`--selftest`
-  用 20 个变体证明判据会红（11 个文档面 + 6 个纯函数日志面 + 2 个真入口子进程对照 + 1 个失败路径
-  退出码传导格，含"自洽的谎"型、"不得误抓引文"与"不得误抓版本号/日期文件名"反向对照）。
-  已在 ci.yml JS 轨自动执行（真判据 + selftest 两条步骤）。
-- `check_plugin_sync.py` 的索引缺口补齐登记（本轮 cl7 落地时实测出的历史欠账）：
-- `mcp_bug_loop.py` — **修复闭环历史验证脚本（Round 1）**：对 5 个已修 bug 逐个走 publish→claim→execute→submit→verify 的 MCP 客户端；保留作活证据，非日常工具（一次性验证，跑前注意命名空间隔离）。
-- `pentad_fist.py` — **Pentad 衍生项目 MCP 客户端**：基于 `mcp_smoke.py` 的 rpc 模式注册 Pentad 项目并开 `omega_strong_verify` + `call_log`，供跨项目自驱演示。
-- `test_mcp_bugs.py` — **缺陷相关工具的 MCP 冒烟测试**：对 `report_bug/bug_list/run_check` 等做端到端调用；与 `mcp_bug_loop.py` 同批历史脚本，保留作证据。
-- `demo.ps1` — 一键演示（build+patch+smoke）。
-- `laya_decide.py` — **Laya 决策 sidecar**：把 Laya ML 模型包成可被 fist-mbt MCP server 调用的 JSON sidecar（冷启动选档/探测）。
-- `native-env.ps1` — Windows native 环境一键装载（VS + sqlite-dev）。
-- `gen_apply_pdf.py` — 一页项目申报书 PDF 生成（个人档，不入库）。
-ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）之间，两版守卫都不看这一格 ⇒ 版本一前进，照抄离线/内网线就 404）：README 里以数字开头的 `fist-mbt-js-v<版本>.zip` 必须 == `moon.mod`，无基线即自拒；模板形态 `v$VERSION` 不误红（两支自证：漂移必红 + 模板不红）。`--selftest` 的格子清单**从已执行格子反解**，不手写计数（手写曾造出幻影：R5 那一格因"变异只改注释"被跳过，自述里却照写 `R5×2`）。用法：`python scripts/check_release_asset_names.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。
-- `check_battery_isolation.py` — **git 面隔离守卫（R101，与上一条同一隔离族，钉的是另一方向）**：`check_demo_isolation` 钉「库改道」（`FIST_DB_PATH`），钉不到「文件面被写脏」。本尺只回答一个问题——**被包住的那条命令跑完之后，git 跟踪面与未跟踪面变没变**。两条自家实锤驱动它落地：①2026-10-22 R98 全量电池把 `src/router/router_state.mbt` / `model_router_wbtest.mbt` 在 working tree 里刷成「同一个 struct literal 里 `use_caf_memory` 重复插入」（编译必红的形状，真因是电池里某格跑了会改跟踪面的补丁脚本，R99 已修），而「电池脏了跟踪面」这件事当时**没有任何判据会红**，收场靠手工 `git checkout --`；②`mcp_bug_loop.py` 这类 e2e 会把演示行写进真台账 `memory/bugs.md`。快照 = `git diff HEAD` 逐文件切块哈希 + `git ls-files --others --exclude-standard` 清单，**刻意不看 mtime**：只被 touch 而内容未变不算污染；反之状态字母不变、内容又插了一份（R98 那一形）必须抓得到，所以按 diff 切片取哈希而不按 `git status` 的行取。五条承重规则 `diff-added` / `diff-content` / `diff-cleaned` / `untracked-added` / `untracked-cleaned`——后两条 `UNDIRTY` 档别删：命令把「本来就脏」的文件洗掉同样是改了工作树状态，该点名而不是静默。被包命令自己的退出码只回显在 `WRAPPED_RC=<n>` 行上，**绝不借用本判据的退出码字母表**（`sys.exit(p.returncode)` 那一类透传正是 `check_exit_code_contract` 点名抓的不透明出口，BUG-369）。退出码 0=两面未变 / 1=检出变化并逐条点名 / 2=判据无法自证（不在 git 仓、取不到 git、被包命令根本没起来＝什么都没测到，空扫描必自拒不冒用 1）/ 4=尺子自己坏了（`RULER BROKEN`）。`--selftest` 9 格 = 合成违例必红 5 + 干净反向对照 1 + 规则失明对照 3（摘掉承重规则后同一份违例必须变成「看不见」，否则那条断言是幻影）。用法：`python scripts/check_battery_isolation.py [--selftest] [--repo <dir>] [-- <cmd...>]`；不带 `--` 裸跑＝有界自检（快照 → 空操作子进程 → 快照，本仓实测 rc=0）。
-
-**自驱闭环（selfdrive）**
-- `log_fix_selfdrive.py` — call_log 缺陷修复自驱闭环。
-- `enhance_verify.py` — 三块增强 E2E 验证。
-- `enrich_selfdrive.py` — 获奖提升增强自驱闭环。
-- `atgc_selfdrive_demo.py` — ATGC 极简双链虚拟机自驱+Omega DEMO。
-- `lesson_selfdrive.py` / `scratch_selfdrive.py` — 失败回流 / 临时隔离 技能自驱闭环。
-
-**能力 E2E 验证（verify）**
-- `map_verify.py` — 项目地图（`fist://map`）E2E。
-- `lesson_verify.py` — 失败回流（evolve_lesson 独立工具）E2E。
-- `lesson_chain_selfdrive.py` — 打回→lesson 归档→dead_ends 闭环演示。
-- `dag_depend_verify.py` — DAG 显式依赖 E2E。
-- `scratch_verify.py` — `store_open(scratch)` 临时隔离 E2E。
-- `omega_lesson_verify.py` — **Omega 打回自动落 [lesson] + 进程内可见** E2E（三类打回自动沉淀 + scratch 隔离 + 结束精确清理根库）。
-- `plan_gradient_verify.py` — `task_plan_deep gradient=true` 难度梯度 + 更简单变体 E2E（默认关闭零回归 + scratch 隔离）。
-- `evolve_critic_verify.py` — `evolve_critic` Critic 防漂移门禁 E2E（84 工具 + 放行/拒收/收紧阈值 + 只评审不写库）。
-- `task_challenge_verify.py` — `task_challenge` Challenger 进阶变体 E2E（84 工具 + [challenge]溯源/扩规模 + 未完成任务拒绝 + scratch 隔离）。
-- `caf_offline_replay.py` — **CAF 离线回放验证脚本**：用历史执行记录离线回放构建 ACRouter 记忆表，复现按成功率排序的模型优先级（与人工标注一致），验证 C-A-F 学习路由的验收标准 1。
-- `caf_p2c_ab_preflight.py` — **CAF P2c 接线 A/B 预演验证（验收标准 2）**：模拟 P2c 接线后的 A/B 对比，验证 `use_caf_memory` 接线后的路由质量。
-- `caf_p2d_coldstart_ab.py` — **CAF P2d 冷启动 A/B 预演（2026-10-15 Goal-2 Round 25）**：冷启动场景下对比开/关 CAF 记忆的路由表现。
-- `patch_router_config_caf_field.py` — **RouterConfig 构造点补字段**：批量给 `RouterConfig` 构造点补 `use_caf_memory` 字段（P2c 前置步骤）。
-- `ns_route_probe.py` — **多租户库级物理隔离闭环探针（stage1）**：验证 C1 业务工具带 namespace 路由到独立库 / C2 默认库无该任务行 / C3 全流程在 ns 库内流转 / C4 负例 not found。
-- `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
-
-> 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/cli` + `patch_esm_main` → node）。
-
-
-### 2026-10-21 R59 补登记（`check_scripts_index` 现读三件漏网尺）
-
-- `check_doc_surface.py` — **文档面单一真源守卫（BUG-22/BUG-30 的判据化，J1~J16 档）**：以
-  `src/server/server.mbt` 注册表为工具真源，逐名校验 AGENTS/README 覆盖（J2）、分组标题数字之和
-  == N 且「N 组」== 实解析组数（J3）、`vicTop-cw/fist-mbt@x.y.z` 当前自述 == `moon.mod` 版本且
-  发布版本权威自述只许 BACKLOG.md 一处（J4）、清单为空时反幻影哨兵直接 FATAL 不许 PASS（J5）、
-  规范正文 ↔ `project_standards` 机器投影的规则 id/版本一致（J6）等。**这行不是新登记而是复权**：
-  本条原先就在本文件里，被 `f259d797`「全仓清冲突标记·取 theirs」连带冲突区一起删掉
-  （实证：`f259d797^:scripts/README.md` 含 `check_doc_surface`、`origin/master` 起为 0，
-  该次 diff 同时留着 `<<<<<<< HEAD` 与被吃掉的正文行）——sweep 顺手删登记，正是 R57 记的
-  「取 theirs 的连带删除」在文档面的复发。用法 `python scripts/check_doc_surface.py [--selftest]`。
-- `commit_bug335_lock.ps1`（2026-10-20 18:54 `901eca8c` 入仓，此前从未登记）— **BUG-339 提交
-  成对性收尾助手**：等并发 agent 把含 `publish_parallel_route` 的 `src/server/server.mbt` 提交进
-  HEAD 后，**只提交**配套锁 `src/server/bug335_ns_route_wbtest.mbt`；脚本自身规则写明
-  「DO NOT commit server.mbt（concurrent agent owns it）」且「Safe to run repeatedly」——
-  存在的理由就是 BUG-339 的教训：锁引用未提交函数时单独提交锁 = 给 src/server 引入编译红。
-  用法 `pwsh scripts/commit_bug335_lock.ps1`。
-- `slave-branch-merge.ps1`（2026-10-21 17:00 `c689f027` 入仓，此前从未登记）— **`gitcode/slave/*`
-  批量合并驱动器（合并 agent 的执行面）**：fetch → 扫哪些分支动了 src/scripts/cmd/moon.pkg →
-  逐个 cherry-pick → 清冲突标记 → build → push → 删已合并分支；`-DryRun` 只扫描不执行，
-  开头先备份 HEAD。**入仓时缺 UTF-8 BOM 被 `check_ps_encoding` 判红**（887 个非 ASCII 字节；
-  PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
-  去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
-  用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
-
-### 2026-10-22 登记：`whisperer.py`
-
-- `whisperer.py` — **风语者巡检自动化（TASK-009）**：Step 0-4 一把跑（HEAD 安全门 → 分支普查 →
-  候选任务卡 → issue 扫描）。旗标 `--scan-only`（默认）/ `--auto-merge` / `--selftest`（**也接受
-  `--self-test`**，与全仓惯例对齐）。自检 G1 会真跑 `fist-gate.py --scan` 并区分
-  绿 / DEGRADED(rc=2) / 红（红要印末行原因，不只印 rc）。
-
-### 2026-10-22 补登记（v0.3.10 升版对齐时 `check_scripts_index` 现读三把漏网尺 + 一把假登记）
-
-- `check_bug_refs.py` — 详见前文同名条目（R115/TASK-020 定面：`--strict` 只判注释面 ORPHAN，
-  字面量/叙述面只报，CLOSED 仅信息；与 `check_bug_reference_integrity.py` 两把尺并存、各钉一面）。
-  用法 `python scripts/check_bug_refs.py [--selftest|--strict] [--bugs <path>]`。
-- `fist-pr-automator.py` — **yaml → PR → gate → merge 流水线自动化**：读 PR 定义 yaml → 本地跑统一
-  门禁（`fist-gate.py`）→ push 分支 → curl 开 PR/MR（`GITHUB_TOKEN`/`GITCODE_TOKEN` 只从环境注入，
-  不落盘不回显）→ 等门禁绿 → 合入。退出码 **0=ok / 1=blocked / 2=degraded**。纯 ASCII、stdlib only
-  （不依赖 PyYAML/requests，与全仓判据「不把自己的可用性交给环境」同律）。用法见脚本 docstring。
-- `fist-gate.py` — **统一门禁链升格为独立条目**：此前它在本索引里只在 `whisperer.py` 条目的正文里
-  被**顺带提及**（`check_scripts_index` 按子串匹配判「已登记」——巧合绿，whisperer 文案一改它就裸奔）。
-  现按本仓纪律点名登记：**五段链 `merge_markers / fmt / build / ps_encoding / store_path`**，退出码
-  预热）；`--scan` 分支普查（合入者巡检自动进料口）、`--selftest` 逐格驱动。
-  用法 `python scripts/fist-gate.py [--scan|--selftest] [树]`。
-- `fist-task-pool.py` — **任务池 yaml 管理器（`.git/fist/tasks/`，风语者 Tier2 执行面）**：
-  子命令 `init | publish <yaml> | claim <tid> <machine> | release <tid> | archive <tid> | fail <tid> |
-  list [--status X] [--machine Y]`，把 backlog/claimed/done/failed 四态目录与 machines.yaml 注册表管成
-  文件协议（多机认领防抢）。自带极简 yaml 解析（同 `check_ci_step_position.py` 的纪律：判据/工具不把自己的
-  可用性交给 PyYAML 是否在环境里）。出错 `ERROR <msg>` 走 stderr、exit 1。**登记补注**：本件由
-  `38bb7358`（PR #5 线）合入 master 时漏了索引登记——`check_scripts_index` 现读第三条红，随本单补齐；
-  与同文件 `slave-branch-merge.ps1`/`whisperer.py` 的登记方式一致（按 ` - \`<name>\`` 抬头形状点名）。
-# scripts/ 脚本分类规范
-
-> 目的：项目整洁——临时脚本任务完即清理，正式工具统一管理，避免根目录/scripts 堆垃圾。
-
-## 命名约定
-
-| 前缀 | 含义 | 处理 | 示例 |
-|---|---|---|---|
-| **无前缀** | 正式、可复用工具 | 保留，写入 README 说明 | `mcp_smoke.py`、`patch_esm_main.py`、`omega_lesson_verify.py`、`demo.ps1`、`gen_apply_pdf.py` |
-| **`_` 前缀** | 临时/一次性/诊断脚本 | **任务完即删**，或移入 `temp/`（gitignored） | `_diag_*.py`、`_scratch_probe.py` |
-| `m9_* / m18_*` | 历史迁移遗留 | gitignore 覆盖；无需再产生 | — |
-
-## 约束（Golden Rule）
-
-1. **不产生带 `_` 前缀的正式工具**：`_` = 临时代码生成物，用完即删。
-2. **临时产物落 `temp/` 或系统 tmp**：不要污染仓库根；`temp/` 已在 `.gitignore`。
-3. **正式工具**：无前缀 + 文件头 docstring 说明用途/用法/前置 + 退出码约定。
-4. **改完即验**：新增/改动脚本后，确保它能在干净环境跑（依赖公开）。
-5. **不留绝对路径**：脚本内路径用 `os.path.join(dirname, ...)` 或环境变量，禁止硬编码盘符。
-
-## 现有正式工具速查
-
-**基础 / 演示**
-- `patch_esm_main.py` — moonc≥0.10.14 ESM 输出注入 createRequire shim（幂等）。
-
-**2026-10-15 Round 126 补充**：
-- **修正工具数**：`node dist/fist-mbt.js help` 报 148（help 文本 stale），但经 shim 的 MCP `tools/list` 返回 **166 个工具**——**dist 的 MCP 工具层实际是最新的**，stale 的只是 help 命令文本。BUG-155 的 FIXED 小记声称 `git rm dist/fist-mbt.js` 但 HEAD 仍含该文件，假绿（Round 125 报告已点名）。
-- 配套回归测试 `test_shim_handshake.py`。
-
-**2026-10-15 Round 124 更新**：
-- **A1 stub**：`logging/setLevel` / `completion/complete`（MCP 可选特性，server 未实现返回 `-32601`）——shim 拦截并返回 `{}` / `{completion:{values:[]}}`，比 `-32601` 更友好（Claude Desktop 会做 `setLevel`）。
-- **A3 崩溃修复**：`child.on('exit', code => process.exit(code ?? 0))` 在子进程被 signal 终止时 `code` 为 `null`，旧写法会**误报成功退出 0**；现改为 signal 时 exit 1、code null 时 exit 1。
-- **A2 无需改**：`stdio: ['pipe','pipe','inherit']` 已把 server 的 stderr 直通终端（此前误以为 DEVNULL，实为探针侧设置）。
-- **A4 请求超时**（2026-10-15 Round 137）：server 长时间不响应时回 `-32000`，默认 30s，可用环境变量 `FIST_SHIM_TIMEOUT_MS` 覆盖。通知（无 id）不计时；`t.unref?.()` 保证 server 死掉时 shim 能立即退出。实测假 server 不响应 → 500ms 后正确回 `-32000`。
-- **A5 已正确**：`_meta` 只对**有 id 的请求**注入（`msg.id !== undefined` 判定），`notifications/*` 无 id 原样透传，不误注入。
-- **A7 `.mcp.json` 示例**（2026-10-15 Round 139 升级）：shim 文件头注释内嵌的示例改用**发布版 `mcp_config_scaffold`** 校验生成——表单只写环境变量名占位（真值走 server 进程环境变量），含 `api_key`/`token`/`secret` 形状的表单会被整笔拒绝。实测传 shim 接入偏好返回合法 `fist.mcp.json` 正文（自动注入 `FIST_PROJECT_DIR`）。
-- `check_test_sync.py` — **测试总数单一真源守卫（R47；BUG-50 收口时判据重设计）**：从 `moon test` 日志
-  或 `--total N` 取实测总数，四条判据——**R1** 反向扫全部现状面文档（含 README_EN/BACKLOG，2026-10-21 实测 131 份），
-  每条测试总数声明必须 == 实测（窄口径六种形状：`N/N` 等值对、`N 项|个|条 [测试|用例] 全绿|通过|passed`、
-  `total=N`、日志回显 `Total tests: N, passed: N`、`N-test`、`(N aligned`；不等值对是引文/年份/编号，不算声明；
-  后两种是 BUG-382 补的——版本号与日期文件名里同样出现的 `N-test` 子串带反向对照、不误红）；
-  都没有即红）；**R4** 历史数/别的 target 必须在 `EXEMPT` 里逐条点名 `(文件, 数, 理由)`，条目失效也判红。
-  历史记录（`memory/`、`reports/`、`CHANGELOG.md`、`docs/superpowers/plans/`、`YYYY-MM-DD` 前缀文件）
-  整面豁免。**BUG-350**：日志面判绿必须 `passed == Total tests` 且 `failed == 0`（旧格式不写 failed 时只校验
-  passed==total）——只取 `Total tests` 会把 `passed:3, failed:1344` 的近乎全挂日志判绿；输入日志文件缺失时
-  友好报错而非 traceback。**BUG-382**：E/F 两种形状此前完全不在口径内，文档同步时靠人工 grep 才发现
-  README_EN 的同类写法会留成自洽假账；同轮变异自检还抓出 `run_case` 失败路径返回二元组、调用点
-  `is None` 永不成立 ⇒ 文档面变异只打 FAIL 行而 rc=0，已改为返回 `None` 并加退出码传导格。`--selftest`
-  用 20 个变体证明判据会红（11 个文档面 + 6 个纯函数日志面 + 2 个真入口子进程对照 + 1 个失败路径
-  退出码传导格，含"自洽的谎"型、"不得误抓引文"与"不得误抓版本号/日期文件名"反向对照）。
-  已在 ci.yml JS 轨自动执行（真判据 + selftest 两条步骤）。
-- `check_plugin_sync.py` 的索引缺口补齐登记（本轮 cl7 落地时实测出的历史欠账）：
-- `mcp_bug_loop.py` — **修复闭环历史验证脚本（Round 1）**：对 5 个已修 bug 逐个走 publish→claim→execute→submit→verify 的 MCP 客户端；保留作活证据，非日常工具（一次性验证，跑前注意命名空间隔离）。
-- `pentad_fist.py` — **Pentad 衍生项目 MCP 客户端**：基于 `mcp_smoke.py` 的 rpc 模式注册 Pentad 项目并开 `omega_strong_verify` + `call_log`，供跨项目自驱演示。
-- `test_mcp_bugs.py` — **缺陷相关工具的 MCP 冒烟测试**：对 `report_bug/bug_list/run_check` 等做端到端调用；与 `mcp_bug_loop.py` 同批历史脚本，保留作证据。
-- `demo.ps1` — 一键演示（build+patch+smoke）。
-- `laya_decide.py` — **Laya 决策 sidecar**：把 Laya ML 模型包成可被 fist-mbt MCP server 调用的 JSON sidecar（冷启动选档/探测）。
-- `native-env.ps1` — Windows native 环境一键装载（VS + sqlite-dev）。
-- `gen_apply_pdf.py` — 一页项目申报书 PDF 生成（个人档，不入库）。
-ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）之间，两版守卫都不看这一格 ⇒ 版本一前进，照抄离线/内网线就 404）：README 里以数字开头的 `fist-mbt-js-v<版本>.zip` 必须 == `moon.mod`，无基线即自拒；模板形态 `v$VERSION` 不误红（两支自证：漂移必红 + 模板不红）。`--selftest` 的格子清单**从已执行格子反解**，不手写计数（手写曾造出幻影：R5 那一格因"变异只改注释"被跳过，自述里却照写 `R5×2`）。用法：`python scripts/check_release_asset_names.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。
-- `commit_bug335_lock.ps1` — **BUG-339 提交配对自动补全器**：只提交 `src/server/bug335_ns_route_wbtest.mbt` 这一份（幂等可重跑，`-SkipTest` 跳过测试步），供该单的配对提交自动化。
-
-**自驱闭环（selfdrive）**
-- `log_fix_selfdrive.py` — call_log 缺陷修复自驱闭环。
-- `enhance_verify.py` — 三块增强 E2E 验证。
-- `enrich_selfdrive.py` — 获奖提升增强自驱闭环。
-- `atgc_selfdrive_demo.py` — ATGC 极简双链虚拟机自驱+Omega DEMO。
-- `lesson_selfdrive.py` / `scratch_selfdrive.py` — 失败回流 / 临时隔离 技能自驱闭环。
-
-**能力 E2E 验证（verify）**
-- `map_verify.py` — 项目地图（`fist://map`）E2E。
-- `lesson_verify.py` — 失败回流（evolve_lesson 独立工具）E2E。
-- `lesson_chain_selfdrive.py` — 打回→lesson 归档→dead_ends 闭环演示。
-- `dag_depend_verify.py` — DAG 显式依赖 E2E。
-- `scratch_verify.py` — `store_open(scratch)` 临时隔离 E2E。
-- `omega_lesson_verify.py` — **Omega 打回自动落 [lesson] + 进程内可见** E2E（三类打回自动沉淀 + scratch 隔离 + 结束精确清理根库）。
-- `plan_gradient_verify.py` — `task_plan_deep gradient=true` 难度梯度 + 更简单变体 E2E（默认关闭零回归 + scratch 隔离）。
-- `evolve_critic_verify.py` — `evolve_critic` Critic 防漂移门禁 E2E（84 工具 + 放行/拒收/收紧阈值 + 只评审不写库）。
-- `task_challenge_verify.py` — `task_challenge` Challenger 进阶变体 E2E（84 工具 + [challenge]溯源/扩规模 + 未完成任务拒绝 + scratch 隔离）。
-- `caf_offline_replay.py` — **CAF 离线回放验证脚本**：用历史执行记录离线回放构建 ACRouter 记忆表，复现按成功率排序的模型优先级（与人工标注一致），验证 C-A-F 学习路由的验收标准 1。
-- `caf_p2c_ab_preflight.py` — **CAF P2c 接线 A/B 预演验证（验收标准 2）**：模拟 P2c 接线后的 A/B 对比，验证 `use_caf_memory` 接线后的路由质量。
-- `caf_p2d_coldstart_ab.py` — **CAF P2d 冷启动 A/B 预演（2026-10-15 Goal-2 Round 25）**：冷启动场景下对比开/关 CAF 记忆的路由表现。
-- `patch_router_config_caf_field.py` — **RouterConfig 构造点补字段**：批量给 `RouterConfig` 构造点补 `use_caf_memory` 字段（P2c 前置步骤）。
-- `ns_route_probe.py` — **多租户库级物理隔离闭环探针（stage1）**：验证 C1 业务工具带 namespace 路由到独立库 / C2 默认库无该任务行 / C3 全流程在 ns 库内流转 / C4 负例 not found。
-- `board_ascii`（内建 MCP 工具 + 测试）— 实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（`src/server/board_ascii_test.mbt` 全绿）。
-
-> 所有 `*_verify.py` 共用同一 MCP STDIO 启动模式（`moon build --target js cmd/cli` + `patch_esm_main` → node）。
-
-
-### 2026-10-21 R59 补登记（`check_scripts_index` 现读三件漏网尺）
-
-- `check_doc_surface.py` — **文档面单一真源守卫（BUG-22/BUG-30 的判据化，J1~J16 档）**：以
-  `src/server/server.mbt` 注册表为工具真源，逐名校验 AGENTS/README 覆盖（J2）、分组标题数字之和
-  == N 且「N 组」== 实解析组数（J3）、`vicTop-cw/fist-mbt@x.y.z` 当前自述 == `moon.mod` 版本且
-  发布版本权威自述只许 BACKLOG.md 一处（J4）、清单为空时反幻影哨兵直接 FATAL 不许 PASS（J5）、
-  规范正文 ↔ `project_standards` 机器投影的规则 id/版本一致（J6）等。**这行不是新登记而是复权**：
-  本条原先就在本文件里，被 `f259d797`「全仓清冲突标记·取 theirs」连带冲突区一起删掉
-  （实证：`f259d797^:scripts/README.md` 含 `check_doc_surface`、`origin/master` 起为 0，
-  该次 diff 同时留着 `<<<<<<< HEAD` 与被吃掉的正文行）——sweep 顺手删登记，正是 R57 记的
-  「取 theirs 的连带删除」在文档面的复发。用法 `python scripts/check_doc_surface.py [--selftest]`。
-- `commit_bug335_lock.ps1`（2026-10-20 18:54 `901eca8c` 入仓，此前从未登记）— **BUG-339 提交
-  成对性收尾助手**：等并发 agent 把含 `publish_parallel_route` 的 `src/server/server.mbt` 提交进
-  HEAD 后，**只提交**配套锁 `src/server/bug335_ns_route_wbtest.mbt`；脚本自身规则写明
-  「DO NOT commit server.mbt（concurrent agent owns it）」且「Safe to run repeatedly」——
-  存在的理由就是 BUG-339 的教训：锁引用未提交函数时单独提交锁 = 给 src/server 引入编译红。
-  用法 `pwsh scripts/commit_bug335_lock.ps1`。
-- `slave-branch-merge.ps1`（2026-10-21 17:00 `c689f027` 入仓，此前从未登记）— **`gitcode/slave/*`
-  批量合并驱动器（合并 agent 的执行面）**：fetch → 扫哪些分支动了 src/scripts/cmd/moon.pkg →
-  逐个 cherry-pick → 清冲突标记 → build → push → 删已合并分支；`-DryRun` 只扫描不执行，
-  开头先备份 HEAD。**入仓时缺 UTF-8 BOM 被 `check_ps_encoding` 判红**（887 个非 ASCII 字节；
-  PS5.1 按 ANSI 读会把中文吞进引号、解析期即炸，BUG-88 一族），本轮补 BOM 修复——内容零改动，
-  去 BOM 后与 HEAD 逐字节相同（autocrlf 下 git 视图只有第 1 行差一个 BOM）。
-  用法 `pwsh scripts/slave-branch-merge.ps1 -DryRun`。
-
-### 2026-10-21 补登记：`fist-gate.py`
-
-- `fist-gate.py`（R74 入仓）— **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段 +
-  `--scan` 分支普查 + `--selftest`。退出码 **0=pass / 1=fail / 2=degraded**（2 = 判据自己取不到量，不冒用 1）。
-  fmt/build 两臂带**环境态分类**：冷格式化器（缺 `_build/wasm-gc/release/format/`）与依赖缓存
-  格式过旧（`moon.mod.json no longer supported`）都报 DEGRADED 并给可执行提示，不再冒充'代码红'；
-  `FIST_GATE_FMT_STRICT=1` 可把 fmt 世代差转硬红。用法 `python scripts/fist-gate.py [--scan|--selftest] [树]`。
-
-### 2026-10-22 登记：`whisperer.py`
-
-- `whisperer.py` — **风语者巡检自动化（TASK-009）**：把定时任务 prompt 里的 Step 0-4 装进一个 Python 文件——
-  Step 0 HEAD 安全门 / Step 1 分支普查（调 `fist-gate.py --scan`）/ Step 2 分类（DROP/MERGE-CODE）/ Step 3-4 合入与回写。
-  模式：`--fast`（P0-1：只跑 Step 0 安全门，<3s，每次合入前确认 HEAD 没漂）、`--scan-only`（Step 0-2+3 扫描不自动合入，
-  默认）、`--auto-merge`（Step 0-2 + 自动合入 MERGE-CODE 分支 + Step 3）、`--selftest`。
