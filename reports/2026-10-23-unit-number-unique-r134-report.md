@@ -16,9 +16,10 @@
 ## 资源消耗
 
 - 1 个副机 agent（无子代理派发）；工具调用以文件读写 + 守卫复跑为主。
-- 全量电池（交单态，日志仓外 `~/r134_battery.log`）：格数 68（手写 68 + 自动 0）/ 失败 2 / SKIP 5 / 缺执行面 0，rc=1。两条失败按口径点名：
-  - `check_publish_payload.py` got=1：新脚本尚未入 git 跟踪面 ⇒ 会被 `moon publish` 公开带上；**stage 后自消**（交付态红，不登记期望）。
-  - `whisperer.py --selftest` got=TIMEOUT：其 G1 调 `fist-gate.py --scan`，后者 `git fetch --all --prune` **无超时上限**，与同时段另一支主仓电池的同一格一起卡满 600s ⇒ 环境态超时，非本单改动；改进建议见「后续建议」。
+- 全量电池（推后首读，日志仓外 `~/r134_battery_post.log`）：格数 70（手写 70 + 自动 0）/ 失败 1 / SKIP 5 / 缺执行面 0，rc=1。
+  - `check_slave_task_list.py` got=1：**本单插入 6 行把清单里 WT-04 的 `run_guards.py:469` 锚点挤到 475**，主线新并入的认领入口尺当场抓到 B3/B4/D1 三条（正是它自己文档里写过的「锚点位移」形状）。已按该尺纪律把锚点改回真行号 `:475`（内容未变），复跑 `PASS 认领入口自证通过` rc=0。
+  - SKIP 5 格全是缺前置临时件（`temp/pt27.log` ×2、`temp/chk47.json` ×3），不计失败也不构成通过证据。
+  - 本单早前一发（叠线前）`whisperer.py --selftest` 曾卡满 600s：其 G1 调 `fist-gate.py --scan`，后者的 `git fetch --all --prune` **无超时上限**；本发网络未卡故通过。根因留给后续建议第 4 条。
 - 无 `.mbt` 改动 ⇒ 未跑 `moon build/test`；未产生 `.mbti` 刷脏。
 - 未新增依赖、未触网写操作（仅 `git fetch`/`ls-remote` 只读）。
 
@@ -59,6 +60,7 @@
 - 新尺：`scripts/check_unit_number_unique.py`（11 格自检，S9 为真源活格）。
 - 基线：`docs/tasks/unit-number-baseline.txt`（5 组，17 行含头注释）。
 - 登记：`scripts/run_guards.py`（两格）、`scripts/README.md`（锚点 + 2026-10-23 条目）。
+- 锚点修复：`docs/2026-10-20-slave-tasks.md` 的 WT-04 证据行 `scripts/run_guards.py:469` → `:475`（本单插入 6 行所致，内容逐字未改）。
 - 当日日志：`memory/2026-10-23.md`（R134 段）。
 - 电池日志：`~/r134_battery.log`（仓外；含逐格判定列与末行 `rc=`）。
 - 交单基点：`gitcode/master` = `92d0edba`；分支 `slave/feat/unit-number-unique-r134`。
