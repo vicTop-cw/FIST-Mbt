@@ -247,6 +247,17 @@ def main(argv):
     tail = [l for l in out.strip().splitlines() if l.strip()][-6:]
     for l in tail:
         print("  | " + l[:150])
+    # 2026-10-23：失败时**必须点名是哪条测试**。原先只打最后 6 行，而 moon 的失败行在更早的输出里
+    # ⇒ 判据在最需要信息的那一刻恰好把它藏掉了（与 check_scripts_naming 的 `--show` 不可达同族缺陷）。
+    # 这里额外摘出失败行；成功时一条都不打（保持原输出的克制）。
+    fail_lines = [
+        l for l in out.splitlines()
+        if re.search(r"\bfailed\b|FAILED|❌|error\[|panicked", l) and "failed: 0" not in l
+    ]
+    if fail_lines:
+        print("  ---- 失败行（摘出，最多 20 条）----")
+        for l in fail_lines[:20]:
+            print("  F| " + l[:200])
     m = None
     for line in out.splitlines():
         mm = re.search(r"Total tests:\s*(\d+),\s*passed:\s*(\d+),\s*failed:\s*(\d+)", line)
