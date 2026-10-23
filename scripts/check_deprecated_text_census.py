@@ -86,7 +86,14 @@ FAMILIES = [
     {
         "name": "Json::value(0020 deprecated accessor)",
         "error_code": 20,
-        "judge_marker": "Suggestion:",
+        # 2026-10-24 收紧（R2 到期兑现）：原 `judge_marker` 是裸 `"Suggestion:"`——太宽，
+        # 把**所有** deprecated 建议都收进本族了。实测反例：`src/executor/registry_test.mbt:176`
+        # 的 `match j.as_bool()` 报的是
+        # `Suggestion: if json is True { Some(true) } else if json is False {...}`（Json::as_bool），
+        # 行内没有 `.value(` ⇒ 文本面抓不到 ⇒ R2「判据命中未被本族文本正则覆盖」发红。
+        # 改成 Json::value 的**专属**建议文本（来自 core/json/json.mbt:79 的 #deprecated 串），
+        # 让判据面与文本面量的是同一个东西。
+        "judge_marker": "if json is Object(obj) { obj.get(key) } else { None }",
         "text_regex": r"\.value\(",
         "gap_ceiling": 11,
         "audited": (
@@ -99,24 +106,12 @@ FAMILIES = [
             "上限 11 即这 11 处，改完一处即可收紧，清零后本条目整条下线（R4）。"
         ),
     },
-    {
-        "name": "Check @encoding/utf8.encode(0020 via String::to_bytes)",
-        "error_code": 20,
-        "judge_marker": "utf8.encode",
-        "text_regex": r"\.to_bytes\(",
-        "gap_ceiling": 0,
-        "audited": (
-            "2026-10-21 普查：判据面 3 处与文本面 3 处逐行重合、缺口 0。站点 "
-            "src/router/star_gate.mbt:302 / src/router/star_gate_wbtest.mbt:22,350，"
-            "三处都是 `canonical.to_bytes()`——即 BUG-360 记的那条「String 内部 UTF-16LE、"
-            "生产签名侧用 UTF-8」验签洞的本体，本条目量的是它还剩几处。名称级正则 "
-            "`utf8\\.encode\\(` 在跟踪面只有 1 处（注释里），按它登记会得到负缺口（3 > 1）"
-            "⇒ 走 R2 现形，所以这里用站点级代理。上限 0 的已知误红面：若将来在非 String "
-            "接收者上新写 `.to_bytes(`（编译器不发判据），R3 会红并列逐文件差额，正确处置是"
-            "把正则收窄（带上接收者形状），不是抬上限。BUG-360 修完后两面归 0 ⇒ R4 发红，"
-            "那时该做的动作就是把这条整条删掉。"
-        ),
-    },
+    # 2026-10-24 下线（R4 到期兑现）：原「Check @encoding/utf8.encode(0020 via
+    # String::to_bytes)」条目——它的 audited 原文就写着「BUG-360 修完后两面归 0 ⇒ R4 发红，
+    # 那时该做的动作就是把这条整条删掉」。本轮实测：判据面 0 / 文本面 0（`check_deprecated_text_census
+    # temp/chk47.json` 的 R4 就是这条），即 BUG-360 的 Ed25519 验签洞三处站点
+    # （star_gate.mbt:302 + star_gate_wbtest.mbt:22,350）已全部不在跟踪面。
+    # 按本仓「表内条目双 0 ⇒ 整条下线，不许留着当免检牌」的律删除。
 ]
 
 

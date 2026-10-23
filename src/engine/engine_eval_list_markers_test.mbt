@@ -6,8 +6,12 @@
 /// 对照组：`## Defects\n（无）` 这种非列表的自由文本仍应是「无缺陷」，不许误红。
 
 ///|
+/// 2026-10-24：`Json::value` 已弃用（core/json 的 #deprecated 指向
+/// `if json is Object(obj) { obj.get(key) } else { None }`）——测试辅助函数也用新形态，
+/// 否则 check_deprecated_text_census 的缺口会多出这一处（它的族表只收真实调用点）。
 fn efx_verdict(j : Json) -> String {
-  match j.value("verdict") {
+  let v = if j is Object(obj) { obj.get("verdict") } else { None }
+  match v {
     Some(Json::String(s)) => s
     _ => abort("verdict 缺失: " + j.stringify())
   }
@@ -15,7 +19,8 @@ fn efx_verdict(j : Json) -> String {
 
 ///|
 fn efx_count(j : Json, key : String) -> Int32 {
-  match j.value("counts") {
+  let c = if j is Object(obj) { obj.get("counts") } else { None }
+  match c {
     Some(Json::Object(m)) =>
       match m.get(key) {
         Some(Json::Number(n, ..)) => n.to_int()
