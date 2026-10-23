@@ -1,12 +1,14 @@
 /// rhop_native 白盒：force_polling 轮询核心（异机 / 网络 FS / native 兜底）
 /// 造 .rhop 夹具，验证解码 / 去重 / 坏文件跳过 / 版本门禁。
 ///
-/// 夹具为什么不用 `@rhop.rhop_send`（BUG-389，2026-10-22 暴露）：
+/// 夹具为什么不用 `@rhop.rhop_send`（2026-10-22 CI 首次真跑 native 全量时暴露）：
 /// 该函数在依赖侧是**目标分片**——`rhop_js.mbt` 是真实现，`rhop_native.mbt` 只
 /// `println("native 目标暂不可用…")` 后返回，**不落盘也不报错**。native 上用它造夹具，
 /// 目录里永远是 0 个 `.rhop`，三个用例会稳定假红 `0 != 1`。本文件测的是**本仓的
 /// `rhop_poll_once`**，与依赖侧写盘能力无关，故夹具改走等价纯函数 + `@fs` 直写（见 rn_send）。
 /// 此前该文件在 js 上全绿而 native 从未跑过（被崩溃挡住），所以这处缺陷长期不可见。
+/// 编号不入注释：账本（memory/bugs.md）由并发 lane 维护、编号会重排，写死会撞
+/// `check_bug_reference_integrity` 的悬空引用棘轮；出处见提交信息与账本描述。
 ///
 /// BUG-343 根因：测试共享 temp/rhop_poll_<name>/ 目录，连续跑残留 .rhop
 /// 文件污染断言（got1.length 期望 1 实际 2）。修复：rn_dir 开头先清理
