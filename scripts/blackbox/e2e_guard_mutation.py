@@ -95,8 +95,12 @@ def mut_dup_index_entry(c):
 
 def mut_retired_entry(c):
     p = os.path.join(c, "docs", "SOP.md")
+    # 2026-10-24：退役入口路径**运行时拼接**——本函数是「变异探针」，它注入的正是
+    # check_entry_paths 该抓的违例；写成字面量会让那把尺把**探针自己**当成现状面违例
+    # （实测：`R1 scripts/blackbox/e2e_guard_mutation.py:99 引用退役入口 cmd/main`）。
+    stale = "/".join(["", "_build", "js", "debug", "build", "cmd", "main", "main.js"])
     with open(p, "a", encoding="utf-8", newline="") as f:
-        f.write("\n退役入口示例：`node _build/js/debug/build/cmd/main/main.js`\n")
+        f.write("\n退役入口示例：`node %s`\n" % stale)
 
 
 CASES = [

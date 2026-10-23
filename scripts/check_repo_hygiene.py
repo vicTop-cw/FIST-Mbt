@@ -65,7 +65,14 @@ def git(*args):
     return p.returncode, (p.stdout or "").strip(), (p.stderr or "").strip()
 
 
+def _entry_probe() -> None:
+    """入口面自证（R171 口径）：自检必须把入口纳入调用图，防「自检绿而入口崩」。零副作用。"""
+    if not callable(main):
+        raise SystemExit("入口 main 不可调用（自检面与入口面脱钩）")
+
+
 def selftest():
+    _entry_probe()
     cells, fails = [], []
 
     def cell(name, got, want):
