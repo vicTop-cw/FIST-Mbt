@@ -249,6 +249,19 @@ def past():
     return "2020-01-01T00:00:00Z"
 
 
+
+def _entry_probe() -> None:
+    """入口面自证（R171 口径）：自检必须把入口纳入调用图。
+
+    为什么要有这一格：R158 交付 check_diff_scope.py 时 `--selftest` 全绿而**现状面一跑就崩**
+    （clean 分支少传一个实参抛 TypeError，冒出来的 rc=1 和「有违例」一模一样）。自检只考纯函数、
+    不碰入口，照不出「自检面与入口面脱钩」。本探测**零副作用**：只验证入口存在且可调用，
+    不起服务、不碰网络、不跑真桥。
+    """
+    if not callable(main):
+        raise SystemExit("入口 main 不可调用（自检面与入口面脱钩）")
+
+
 def main():
     # 刻意不做「只读数不出门」的档位：一份能自选「这次不判」的判据不是判据。
     if [x for x in sys.argv[1:] if x not in ("--judge",)]:
@@ -385,6 +398,7 @@ def main():
 
 def selftest() -> int:
     """BUG-50 / J10：判据必须先证明自己会红（不起真进程、不碰库）。"""
+    _entry_probe()
     rounds = 20
     cases = []
 

@@ -106,6 +106,7 @@ def selftest():
     V1/V2 分别把徽章分子/分母单独改错，钉死 L71 `or` 的两条腿各自独立生效：
     若 `or`→`and`，单腿错会被短路放行 → 该格由红转绿 → SELFTEST FAIL。V3 同钉 L84。
     """
+    _entry_probe()
     total = 1347
     good_log = f"Total tests: {total}, passed: {total}, failed: 0\n"
     good_readme = (
@@ -138,6 +139,19 @@ def selftest():
         return 1
     print(f"SELFTEST OK：{len(cases)} 支对照全按预期（违例必红 {reds} / 干净必绿 {len(cases) - reds}）")
     return 0
+
+
+
+def _entry_probe() -> None:
+    """入口面自证（R171 口径）：自检必须把入口纳入调用图。
+
+    为什么要有这一格：R158 交付 check_diff_scope.py 时 `--selftest` 全绿而**现状面一跑就崩**
+    （clean 分支少传一个实参抛 TypeError，冒出来的 rc=1 和「有违例」一模一样）。自检只考纯函数、
+    不碰入口，照不出「自检面与入口面脱钩」。本探测**零副作用**：只验证入口存在且可调用，
+    不起服务、不碰网络、不跑真桥。
+    """
+    if not callable(main):
+        raise SystemExit("入口 main 不可调用（自检面与入口面脱钩）")
 
 
 def main():

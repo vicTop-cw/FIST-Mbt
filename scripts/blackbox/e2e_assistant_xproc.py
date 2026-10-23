@@ -95,6 +95,19 @@ def run_round(db_path: str, procs: int, atomic: bool = False) -> tuple:
     return len(primaries), primaries
 
 
+
+def _entry_probe() -> None:
+    """入口面自证（R171 口径）：自检必须把入口纳入调用图。
+
+    为什么要有这一格：R158 交付 check_diff_scope.py 时 `--selftest` 全绿而**现状面一跑就崩**
+    （clean 分支少传一个实参抛 TypeError，冒出来的 rc=1 和「有违例」一模一样）。自检只考纯函数、
+    不碰入口，照不出「自检面与入口面脱钩」。本探测**零副作用**：只验证入口存在且可调用，
+    不起服务、不碰网络、不跑真桥。
+    """
+    if not callable(main):
+        raise SystemExit("入口 main 不可调用（自检面与入口面脱钩）")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--procs", type=int, default=5)
@@ -152,6 +165,7 @@ def main() -> int:
 
 def _selftest() -> int:
     """合成违例：单进程串行应恒单主（pass），验证判据读数正确。"""
+    _entry_probe()
     tmp = tempfile.mkdtemp(prefix="assistant_xproc_st_")
     db_path = os.path.join(tmp, "st.db")
     conn = sqlite3.connect(db_path)

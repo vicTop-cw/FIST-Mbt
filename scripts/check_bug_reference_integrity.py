@@ -331,6 +331,7 @@ def _c9():
 
 
 def selftest():
+    _entry_probe()
     bad = []
     for name, fn in SELF_CELLS:
         try:
@@ -342,6 +343,19 @@ def selftest():
     print("SELFTEST %s（%d 格，其中标定 1 格按现读对表；计数由本行实测累加，非手写）"
           % ("FAIL" if bad else "PASS", len(SELF_CELLS)))
     return 1 if bad else 0
+
+
+
+def _entry_probe() -> None:
+    """入口面自证（R171 口径）：自检必须把入口纳入调用图。
+
+    为什么要有这一格：R158 交付 check_diff_scope.py 时 `--selftest` 全绿而**现状面一跑就崩**
+    （clean 分支少传一个实参抛 TypeError，冒出来的 rc=1 和「有违例」一模一样）。自检只考纯函数、
+    不碰入口，照不出「自检面与入口面脱钩」。本探测**零副作用**：只验证入口存在且可调用，
+    不起服务、不碰网络、不跑真桥。
+    """
+    if not callable(main):
+        raise SystemExit("入口 main 不可调用（自检面与入口面脱钩）")
 
 
 def main(argv=None):

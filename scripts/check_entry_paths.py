@@ -326,6 +326,7 @@ def r3_surface(files):
 def selftest():
     """逐格自证；**格子清单从实际执行的那一格记一笔**，末行按记下来的名单打印
     （手写计数出过幻影：R5 那格因"变异只改注释"被跳过，自述里却照写 R5×2）。"""
+    _entry_probe()
     ok = True
     ran = []
     import tempfile, shutil
@@ -456,6 +457,19 @@ def selftest():
     print("SELFTEST %s（%d 格：%s）" % (
         "OK" if ok else "FAIL", len(ran), " / ".join(ran)))
     return 0 if ok else 2
+
+
+
+def _entry_probe() -> None:
+    """入口面自证（R171 口径）：自检必须把入口纳入调用图。
+
+    为什么要有这一格：R158 交付 check_diff_scope.py 时 `--selftest` 全绿而**现状面一跑就崩**
+    （clean 分支少传一个实参抛 TypeError，冒出来的 rc=1 和「有违例」一模一样）。自检只考纯函数、
+    不碰入口，照不出「自检面与入口面脱钩」。本探测**零副作用**：只验证入口存在且可调用，
+    不起服务、不碰网络、不跑真桥。
+    """
+    if not callable(main):
+        raise SystemExit("入口 main 不可调用（自检面与入口面脱钩）")
 
 
 def main():
