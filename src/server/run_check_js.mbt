@@ -5,7 +5,13 @@
 ///   1) spawn(cmd, args, { cwd, stdio: ['ignore','pipe','pipe'] })——不继承 stdin；
 ///   2) 超时 kill + 兜底 resolve（JS 端永不 reject，一切异常都进 JSON 字段）；
 ///   3) 结果 JSON.stringify 为字符串，MoonBit 侧 @json.parse 解包——与
-///      stdio_js.mbt 的 JSON 桥接惯例一致。
+///      stdio_js.mbt 的 JSON 桥接惯例一致；
+///   4) **R126（BUG-380 同族第三面）**：`run_check` 是宿主判据执行面，server 可能被
+///      宿主直连 `node cli.js serve` 拉起（不经 R125 接线的 scripts/*.py），此时子进程
+///      继承的 PATH/env 里没有 `MOONC_OVERRIDE` ⇒ Windows 上 `moon check/build/test`
+///      撞 moonc 的 `\\?\` 输出路径 ICE，判据把工具链缺陷记成任务失败。修在 spawn
+///      原语这一层：显式 `MOONC_OVERRIDE` 优先；Windows 且 `~/.moon-shim/shim.exe`
+///      存在则注入。`run_check`/`executor_run`/`ocr_scan` 三个复用点一次生效。
 /// 仅 js target 编译（见 moon.pkg targets 配置）。
 
 ///|
@@ -29,6 +35,18 @@ extern "js" fn js_run_command(
 ) -> @js_async.Promise[String] =
   #| async (cmd, args, workdir, timeoutMs) => {
   #|   const { spawn } = await import('node:child_process')
+  #|   // R126：moonc 把 `\\?\` 前缀写进 -o 路径时本机 Windows 必 ICE；显式值优先，
+  #|   // 垫片存在才注入（非 Windows / 无垫片机器上 env 与 process.env 等价，零回归）。
+  #|   const env = { ...process.env }
+  #|   if (!env.MOONC_OVERRIDE && process.platform === 'win32') {
+  #|     try {
+  #|       const { homedir } = await import('node:os')
+  #|       const { existsSync } = await import('node:fs')
+  #|       const { join } = await import('node:path')
+  #|       const shim = join(homedir(), '.moon-shim', 'shim.exe')
+  #|       if (existsSync(shim)) env.MOONC_OVERRIDE = shim
+  #|     } catch (e) {}
+  #|   }
   #|   return new Promise((resolve) => {
   #|     const MAX_BYTES = 1048576
   #|     let stdout = ''
@@ -60,7 +78,7 @@ extern "js" fn js_run_command(
   #|     }, timeoutMs)
   #|     let child
   #|     try {
-  #|       child = spawn(cmd, args, { cwd: workdir || '.', stdio: ['ignore', 'pipe', 'pipe'] })
+  #|       child = spawn(cmd, args, { cwd: workdir || '.', stdio: ['ignore', 'pipe', 'pipe'], env })
   #|     } catch (err) {
   #|       finish({ ok: false, code: -1, error: String((err && err.message) || err), stdout: '', stderr: '', stdout_capped: false, stderr_capped: false })
   #|       return
