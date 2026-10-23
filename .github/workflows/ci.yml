@@ -90,6 +90,15 @@ jobs:
           python3 scripts/check_slave_task_list.py --selftest
           python3 scripts/check_slave_task_list.py
 
+      # position-why: 本尺只读 scripts/README.md 与 git 跟踪面，不依赖 moon。住在 Migrate 之前
+      # 与查登记的两条同因：Migrate 崩掉时索引重复照样需要出声（R136 实测：7 份快照叠出
+      # 38 个重名 / 232 块冗余，而 R48 的旧尺因长度门槛照报绿）。
+      - name: Doc-duplicate guard (索引同名登记块只许一条，R48/R136)
+        shell: bash
+        run: |
+          python3 scripts/check_doc_dup.py --selftest
+          python3 scripts/check_doc_dup.py
+
       - name: Migrate mooncakes dep manifests (新版 moon 拒旧 moon.mod.json，check/test 全线的公共前置)
         shell: bash
         run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
