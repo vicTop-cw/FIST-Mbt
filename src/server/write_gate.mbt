@@ -153,3 +153,56 @@ pub fn write_gate_audit(
     }
   }
 }
+
+///|
+/// ns 写门（T0r1 第②步 · 止血）：publish 等**新建**类工具拒绝写入 default/空命名空间，
+/// 强制调用方先 `store_open` 自己项目的 ns。
+///
+/// 根因：`publish` 默认 `ns="default"`，而外部项目（cron-auto / Pentad / bugs 等）
+/// 的定时进程从不传 ns——于是它们全部落进 default.db，与 FIST-Mbt 本项目任务
+/// 混成一张表（实测 default ns 含 2300+ 外部项目任务，`supervisor_status` 的
+/// `by_namespace.default` 一度报到 2400+）。
+///
+/// 只拦**新建**（publish / publish_parallel / dag_publish）：claim/execute/submit 是
+/// 对既有任务的**状态迁移**，按 task_id 寻址不按 ns 新建行，不属污染源，不设门。
+///
+/// ns 合法性复用仓库唯一真源 `@store.MultiStore::safe_ns`（与 BUG-64 同族口径），
+/// 不另设一套规则。返回 Ok 表示允许写入；Err 给出指路文案。
+pub fn ns_write_gate(ns : String) -> Result[Unit, String] {
+  if ns == "" || ns == "default" {
+    return Err(
+      "ns_gate: 拒绝写入 default 命名空间：请先 store_open(ns=<你的项目命名空间>) " +
+      "再发布，避免跨项目任务污染 default.db",
+    )
+  }
+  if @store.MultiStore::safe_ns(ns) is None {
+    return Err(
+      "ns_gate: 非法命名空间: " +
+      ns +
+      "（仅允许字母数字与 _ / -）",
+    )
+  }
+  Ok(())
+}
+
+///|
+/// BUG-389（BUG-78 修复的迁移缺口）：检测 cwd 根旧位置存量库 `<ns>.db` 是否存在。
+///
+/// BUG-78 把 store_open 默认 data_dir 改成 `.fist-mbt/data/`（多库落目标项目私有目录），
+/// 但没迁存量库——cwd 根仍留有 BUG-78 前默认落点的 `<ns>.db`。server 重启后
+/// store_open 落新空库，同 ns 任务"凭空消失"（2026-10-23 实测：fist-mbt-refactor 40 条、
+/// tnr-polish 23 条、tql-b5 1 条全部丢失，只能靠 sqlite3 手工查旧库找回）。
+///
+/// 返回 true 表示旧位置有存量库，调用方应复用旧库（`data_dir="."`）而非静默开新空库。
+/// 复用旧库是过渡兼容：新库仍按 BUG-78 落 `.fist-mbt/data/`，旧库迁移由调用方择机搬移。
+pub fn legacy_store_exists_in(dir : String, ns : String) -> Bool {
+  @fs.is_file(dir + "/" + ns + ".db") catch {
+    _ => false
+  }
+}
+
+///|
+/// 便捷版：检测 cwd（server 进程工作目录）根位置的存量库。
+pub fn legacy_store_exists(ns : String) -> Bool {
+  legacy_store_exists_in(".", ns)
+}

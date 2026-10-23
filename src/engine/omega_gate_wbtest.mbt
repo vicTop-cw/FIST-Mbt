@@ -188,7 +188,14 @@ test "og_4_缺外部检查记录时闸门拒绝并给可读原因（BUG-376）" 
 test "og_5_新鲜且 passed 的检查记录放行" {
   let e = og_engine()
   let tid = og_gate_task(e)
-  ignore(og_record(e, tid, og_check_json(true, "PASS 六守卫全绿\n", ""), "passed"))
+  ignore(
+    og_record(
+      e,
+      tid,
+      og_check_json(true, "PASS 六守卫全绿\n", ""),
+      "passed",
+    ),
+  )
   match e.gate_verify_gate(tid) {
     Ok(_) => assert_true(true)
     Err(m) => abort("新鲜 passed 记录应放行：\{m}")
@@ -202,7 +209,8 @@ test "og_6_检查记录早于任务更新时拒绝（新鲜度）" {
   let tid = og_gate_task(e)
   ignore(og_record(e, tid, og_check_json(true, "PASS\n", ""), "passed"))
   // 任务在记录之后被认领/更新（updated_at 后移）
-  match e.claim(task_id=tid, assignee="human_steward", now="2026-09-27T07:00:00Z") {
+  match
+    e.claim(task_id=tid, assignee="human_steward", now="2026-09-27T07:00:00Z") {
     Ok(_) => ()
     Err(m) => abort("claim failed: \{m}")
   }
