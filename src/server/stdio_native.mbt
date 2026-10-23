@@ -5,11 +5,7 @@
 /// 打印原语，故此处保持静默，日志由上层/运行环境兜底。
 async fn run_stdio_target(s : @mcp.MCPServer) -> Unit {
   // 挂载 mcpconftest 嵌入层的 mcpcf.* 内部工具
-  let s1 = try {
-    embed_mcpcf_tools(s)
-  } catch {
-    _ => s
-  }
+  let s1 = embed_mcpcf_tools(s) catch { _ => s }
   s1.run_stdio() catch {
     _ => ()
   }

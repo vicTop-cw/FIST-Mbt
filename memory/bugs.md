@@ -6577,3 +6577,8 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 处置（R55 已落）：新增 `scripts/check_fmt_gate.py` 三档闸（`0` 干净 / **`2` DEGRADED 不可测** / `1` 真 diff），`--selftest` 6 格；已登记索引与守卫电池；AGENTS 提交门禁补口径。实测该闸真跑返回 **rc=2 DEGRADED**（正是期望档）。
 - note: 编号说明——本条最初被我误写成 `BUG-381`，但 `BUG-381` 在主线早已被占（`check_mbti_sync` 泛型盲区，已 FIXED），故另立本编号；R55 的更正提交里写清了这件事。
 - 后续建议: ① 格式门权威面交给 CI（Linux nightly）；② 升级 moon 后先跑 `python scripts/check_fmt_gate.py`，转 `0` 即可把该闸降为普通门禁；③ 与 BUG-330（fmt 世代漂移）一并复核。
+## BUG-389 [2026-10-23T05:19:36Z] [medium] OPEN
+- summary: [omega] task_plan_deep 注入的 [omega:required] 标记在 supervisor_task_upsert 更新描述时被静默覆盖丢失，omega_spec_create 误报「未开启 Omega 强验证」
+- detail: 现象：task_plan_deep(omega_strong_verify=true) 把 [omega:required] 标记写进子任务 description；随后调用 supervisor_task_upsert（action=updated）更新描述时，若新描述不含该标记，标记被静默覆盖丢失。再调 omega_spec_create 报「任务 [T0.1.1] 未开启 Omega 强验证（description 缺少 [omega:required] 标记），无需创建语料」——把一个「标记丢失」的流程事故伪装成「用户没开 Omega」。实测：T0.1.1 等 6 叶在 upsert 后 omega_spec_create 全红，二次 upsert 补回标记才通过。根因：Omega 门禁从 description 文本读标记（字符串匹配），而描述是可被合法更新的字段；标记没有独立载体（如任务元数据列/标志位）。修法方向：① supervisor_task_upsert 更新 description 时保留既有 [omega:required]/[难度梯度]/[边界四问] 等 decomposer 注入的标记；或② Omega 门禁从任务元数据（如 omega_required: bool 列）读取而非描述文本（描述可被覆盖，元数据列才是身份载体）。证据：本会话 T0.1.1–T0.5.3 共 13 叶，upsert 后首轮 omega_spec_create 全部报「未开启」，补标记后全通过。
+- task_id: T0r741
+

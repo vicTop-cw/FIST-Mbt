@@ -226,11 +226,7 @@ fn build_legacy_init_response(
 
 ///|
 async fn run_stdio_target(s : @mcp.MCPServer) -> Unit {
-  let s1 = try {
-    embed_mcpcf_tools(s)
-  } catch {
-    _ => s
-  }
+  let s1 = embed_mcpcf_tools(s) catch { _ => s }
   let stdin_web = js_stdin_web().wait() catch {
     _ => {
       js_eprintline("fist-mbt: cannot bridge process.stdin")
