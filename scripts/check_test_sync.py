@@ -161,6 +161,25 @@ EXEMPT = [
     ("README.md", "77", "里程碑表 `M8 | 2026-09` 行的当轮读数（同行自带日期=历史叙述，改写即伪造一次没发生的测量）"),
     ("README.md", "162", "里程碑表 `Engine 回归 | 2026-10-17` 行里 `moon test --target js src/engine` 的**单包**读数（非全量总数声明）"),
     ("docs/SHIP-PLAN-BLACKBOX-v2.md", "1058", "文首自述「日期：2026-09-28 ｜ v1.0」并挂「现状指针：本文件是 v0.3.0-beta 期的计划面记录」的规划快照（与 docs/improvement-plan-20261010.md 的 737 同型）"),
+
+    # 2026-10-24（R186，统帅裁决 A）：`docs/probe-authoring.md` 是 δ 的《探针写作规范》，
+    # 里面这些数字是**故意红的教学示例**——用来演示「探针必须能红，而断言恒真就是假绿」。
+    # 它们住在正文表格/行文里（不在围栏代码块内，所以围栏豁免照不到），
+    # R1 会把它们当成「项目自述测试总数」，于是**文档越忠实地演示错误，判据越红**。
+    #
+    # 为什么选「逐条 EXEMPT」而不是让 δ 改写法（统帅裁决）：
+    # ① 判据已能跳过围栏块，但这些读数不在块里；要挪就得改他人文档；
+    # ② EXEMPT 是**诚实的**：明确说「这份文档里的测试数是教学示例，不是项目自述」。
+    # 三个数字各登记一次（206 出现在两处、102 与 205 各一处），
+    # 配一格自证 `probe-authoring-exempt-is-active`（见 selftest）防「误豁免」：
+    # 该文件里出现**别的**数字时仍必须红。
+    ("docs/probe-authoring.md", "206",
+     "**教学示例，故意红**：δ《探针写作规范》里演示假绿的示例读数（`206/206 全绿` 而读数一行没出），"
+     "不是项目自述测试数；改它等于抹掉这份规范的教学价值"),
+    ("docs/probe-authoring.md", "102",
+     "**教学示例，故意红**：同文档里「测试名完整可见（102/102）」的举例读数，非项目自述"),
+    ("docs/probe-authoring.md", "205",
+     "**教学示例，故意红**：同文档日志回显示例里的 `passed: 205`（与 206 配对演示 runner 截断），非项目自述"),
 ]
 
 # 历史记录类别：整路径豁免（按日期追加，改写即伪造历史）
@@ -394,6 +413,12 @@ def selftest() -> int:
         # 本轮新登记的 EXEMPT 条目必须在夹具里各有声明（R4 的设计如此，见上），
         # 否则 baseline-clean 会因"豁免失效"而红。此份供 improvement-plan 的 737 那条用。
         "docs/improvement-plan-20261010.md": "日期快照型规划文档：当轮 JS 全量测试 737/737 全绿（非现状断言）",
+        # R186：`docs/probe-authoring.md` 的三条教学示例豁免（206/102/205）必须在夹具里有声明，
+        # 否则 R4「豁免条目已失效」会让 baseline-clean 恒红 —— 实测正是这样被抓出来的。
+        "docs/probe-authoring.md": (
+            "得 **206/206 全绿** 而读数一行没出（教学示例：故意造的假绿）\n"
+            "但**测试名完整可见**（102/102）\n"
+            "Total tests: 206, passed: 205, failed: 1\n"),
         "docs/other.md": "无关文字：测试 105/104 是引文，1986/1997 是年份",
         "memory/2026-09-26.md": "当日记录写 406/406（历史面豁免）",
         "reports/2026-09-26-x.md": "报告写 406/406（历史面豁免）",
@@ -485,6 +510,24 @@ def selftest() -> int:
     d = dict(base)
     d["docs/polish-plan.md"] = "初稿快照已更新为 " + _pair(total)
     if run_case("R4 stale-exemption", d, want="R4 豁免条目已失效") is None:
+        return 1
+
+    # 6) R186：`docs/probe-authoring.md` 的教学读数被豁免**且**那豁免是**窄**的
+    #    ⑥-a 已登记的教学数字（206/102/205）⇒ 不该红（否则豁免没生效，5 条红照旧）
+    d = dict(base)
+    d["docs/probe-authoring.md"] = (
+        "得 **206/206 全绿** 而读数一行没出\n"
+        "但**测试名完整可见**（102/102）\n"
+        "Total tests: 206, passed: 205, failed: 1\n")
+    if run_case("R186 teaching-numbers-exempted", d, want=None) is None:
+        return 1
+    #    ⑥-b 同一文件里出现**别的**数字 ⇒ 必须照常报红。
+    #    这一格是**防误豁免**的关键：确保 EXEMPT 是「按数字点名」而不是「按文件全免」。
+    #    若哪天有人把这条改成文件级豁免，本格立刻红。
+    d = dict(base)
+    d["docs/probe-authoring.md"] = "全仓 **999/999 全绿**（这个数字不在豁免表里）"
+    if run_case("R186 unlisted-number-in-teaching-doc-still-red", d,
+                want="R1 docs/probe-authoring.md") is None:
         return 1
     # 6) 假阳性对照：不等值对（引文/年份/编号）不得被当声明
     d = dict(base)
