@@ -40,8 +40,11 @@ pub fn omega_author_prefix() -> String {
 
 ///|
 /// 任务是否处于强验证模式（未打标记 = 关闭 = 既有行为）。
+/// BUG-389 方向②：门禁判据以 tasks 元数据列 omega_required 为准（description 被
+/// supervisor_task_upsert 覆盖后仍成立）；description 里的 [omega:required] 标记
+/// 保留为旧数据的兜底兼容（两者取或）。
 pub fn omega_enabled(t : @core.Task) -> Bool {
-  t.description.contains(omega_mark())
+  t.get_omega_required() || t.description.contains(omega_mark())
 }
 
 ///|

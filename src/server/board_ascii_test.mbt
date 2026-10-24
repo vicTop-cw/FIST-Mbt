@@ -140,6 +140,7 @@ test "health_check：healthy + latency 百分位——3 完成 1 待领取，p50
       },
       "",
       [],
+      false,
     )
     ignore(e.store.create_task(t))
   }
@@ -212,6 +213,7 @@ test "health_check：latency p50/p90 用最近秩 (n-1)*p（BUG-207）" {
       Some("ver_1"),
       "",
       [],
+      false,
     )
     ignore(e.store.create_task(t))
   }
