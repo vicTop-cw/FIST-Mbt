@@ -46,8 +46,57 @@ TEXT_EXT = (".py", ".md", ".ps1", ".sh", ".mbt", ".mjs", ".json", ".yaml", ".yml
 ROOT_SCAN_EXT = (".py",)
 TEMP_PREFIX = "_"          # 本仓约定：`_` 前缀＝临时/诊断脚本，用完即删（与 check_scripts_index 同口径）
 DROPPED_ROOT_PY = []       # 每次 candidates() 刷新：仓库根**未入库**因而被放下的 .py（盲区必须可见）
+# ── 判例-17 / R183：判据要区分「讨论」与「指令」──────────────────────────
+#
+# 本守卫的意图是**别把用户指向死入口**。但 .py 的非执行文本有两种承载形式：
+#   1. 行首 # 的注释行 —— 早先已豁免（PY_COMMENT_LINE）；
+#   2. 三引号 docstring 块 —— 作用与注释完全等同（Python 不执行），却漏在豁免面外。
+#
+# R183 实测：check_esm_bundle_runnable.py 的 docstring 里写「cmd/main 的产物是
+# _build/js/debug/build/cmd/main/main.js」，解释**产物目录映射规律**，被判「引用退役
+# 入口 2 处」—— 那句话恰恰是**禁止误读**的说明，不是操作指引。patch_esm_main.py
+# 的两处同形（解释「原实现只 patch 最大的那个」的历史）。
+#
+# 口径：**「提到某个字符串」不等于「指示使用它」**。用户面（docs/、根 *.md）全量扫；
+# 开发者面（scripts/**）的非执行文本不判。
+# 同族先例：check_release_asset_names 的 R9（只看去掉 # 注释行之后的代码面）、
+# e2e_guard_mutation 的 mut_retired_entry（运行时拼接字面量）。
+#
+# 实现（stripped_docstring_lines）：逐行切分三引号状态，返回处于 docstring 内的行号集合。
+# 同行内开闭配对的（赋值里的三引号）不构成块，且不污染后续行。
 PY_COMMENT_LINE = re.compile(r"^\s*#")   # 只放过**整行**注释（行尾注释连着代码仍判）——见 mentions() 的口径说明
 
+
+
+def stripped_docstring_lines(text):
+    lines = (text or "").split(chr(10))
+    inside, quote = set(), None
+    for idx, line in enumerate(lines, 1):
+        rest = line
+        while True:
+            if quote is None:
+                pos3 = rest.find(chr(34) * 3)
+                pos1 = rest.find(chr(39) * 3)
+                cand = min([p for p in (pos3, pos1) if p >= 0], default=-1)
+                if cand < 0:
+                    break
+                quote = (chr(34) * 3) if (cand == pos3 and (pos1 < 0 or pos3 <= pos1)) else (chr(39) * 3)
+                inside.add(idx)
+                rest = rest[cand + 3:]
+                close = rest.find(quote)
+                if close >= 0:
+                    rest = rest[close + 3:]
+                    quote = None
+                    continue
+                break
+            else:
+                close = rest.find(quote)
+                inside.add(idx)
+                if close < 0:
+                    break
+                rest = rest[close + 3:]
+                quote = None
+    return inside
 
 
 def executable_entries(root):
@@ -148,6 +197,7 @@ def mentions(rel, text, retired):
     """
     hits = []
     is_py = rel.endswith(".py")
+    doc_lines = stripped_docstring_lines(text) if is_py else set()
     for e in retired:
         needle = "cmd/" + e
         for i, line in enumerate(text.split("\n"), 1):
@@ -155,6 +205,8 @@ def mentions(rel, text, retired):
             if needle not in norm:
                 continue
             if is_py and PY_COMMENT_LINE.match(norm):
+                continue
+            if is_py and i in doc_lines:
                 continue
             if not ACTIONABLE.search(norm):
                 continue
@@ -452,6 +504,58 @@ def selftest():
         if r3_surface(["scripts/a.py", "docs/b.md", "scripts/c.mbt"]) != 1 or r3_surface(["README.md"]) != 0:
             print("SELFTEST FAIL：r3_surface 计数错 ⇒ 主程序的「空面自拒」门形同虚设")
             ok = False
+        # ---- R183 / 判例-17 成组自证：「讨论」不判、「指令」必判 --------------------
+        retired_t = ["main"]
+        DQ = chr(34)
+        TQ = DQ * 3
+        doc_py = "".join([
+            TQ + "模块说明：cmd/main 的产物是 _build/js/debug/build/cmd/main/main.js。" + TQ + chr(10),
+            "def f():" + chr(10),
+            "    " + TQ + "早先只 node _build/js/debug/build/cmd/main/main.js。" + TQ + chr(10),
+            "    return 1" + chr(10),
+        ])
+        if mentions("scripts/doc_only.py", doc_py, retired_t):
+            print("SELFTEST FAIL：docstring 里的退役入口被误报 ⇒ 判例-17 回退：%s"
+                  % (mentions("scripts/doc_only.py", doc_py, retired_t),))
+            ok = False
+        ran.append("e2e-retired-in-comment-not-flagged")
+
+        code_py = "".join([
+            "def f():" + chr(10),
+            "    " + TQ + "普通说明，无路径。" + TQ + chr(10),
+            "    return " + DQ + "node _build/js/debug/build/cmd/main/main.js" + DQ + chr(10),
+        ])
+        if not mentions("scripts/code_real.py", code_py, retired_t):
+            print("SELFTEST FAIL：代码面里的退役入口没被判红 ⇒ docstring 豁免把人一锅端了")
+            ok = False
+        ran.append("e2e-retired-in-code-flagged")
+
+        mixed_py = "".join([
+            TQ + "cmd/main 只是说明。" + TQ + chr(10),
+            "CMD = " + DQ + "moon run cmd/main" + DQ + chr(10),
+        ])
+        mixed_hits = mentions("scripts/mixed.py", mixed_py, retired_t)
+        if len(mixed_hits) != 1 or mixed_hits[0][1] != 2:
+            print("SELFTEST FAIL：同文件 docstring 豁免削弱了活代码判定（实得 %s）" % (mixed_hits,))
+            ok = False
+        ran.append("e2e-docstring-exempt-does-not-weaken-code-face")
+
+        md_text = "- 跑 node _build/js/debug/build/cmd/main/main.js 即可" + chr(10)
+        if not mentions("README.md", md_text, retired_t):
+            print("SELFTEST FAIL：用户面 .md 里的退役入口没被判红 ⇒ 豁免越界到用户面")
+            ok = False
+        ran.append("e2e-user-face-still-flagged")
+
+        one_line = "x = " + TQ + "inline" + TQ + chr(10) + "code_here" + chr(10)
+        if 2 in stripped_docstring_lines(one_line):
+            print("SELFTEST FAIL：同行内开闭的三引号把后续代码行误判成 docstring")
+            ok = False
+        block = TQ + chr(10) + "line2" + chr(10) + "line3" + chr(10) + TQ + chr(10) + "code here" + chr(10)
+        if stripped_docstring_lines(block) != {1, 2, 3, 4}:
+            print("SELFTEST FAIL：docstring 块行号切分错（实得 %s）"
+                  % (sorted(stripped_docstring_lines(block)),))
+            ok = False
+        ran.append("e2e-docstring-line-splitter")
     finally:
         shutil.rmtree(box, ignore_errors=True)
     print("SELFTEST %s（%d 格：%s）" % (
