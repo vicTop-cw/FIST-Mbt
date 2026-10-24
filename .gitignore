@@ -197,6 +197,13 @@ memory/archive/thinking.archive.md
 # `.br_*.txt` 是分支普查的中间读数）——同为「跑完即弃」，不是仓库资产。
 /.tmp*.patch
 /.br_*.txt
+# 一次性探针脚本（2026-10-24 tidy 任务 F-04）：`delta_probe2.sh` 只做分支 delta 普查
+# （遍历 `origin/<b>^..<b>` 打印统计），跑完即弃，不是 `scripts/` 的常驻判据入口。
+/.agents/delta_probe2.sh
+# 外部项目提交的「问题报告」原件（Pentad 统帅报的 ESM/CJS 崩溃、namespace 路由陷阱）——
+# 已由司令-ε 脱敏 + 补入库说明后落 `reports/`（正本在那边），根目录这份是**原始投递件**，
+# 与 `_archive/` 同性质：留作证据链，但不进跟踪面、不进发布包。
+/ISSUE_*.md
 
 # DSH 插件安装面的**本地产物**（渲染自 cordis.patch.yml.tpl，含本机绝对路径）
 # 为什么必 ignore：@deepseek-ai/dsh-mcp-client 的 stdio 通道把 args/cwd 当**字面 argv** 交给 spawn，
