@@ -11,6 +11,7 @@
 - **跑 MCP Server**：`moon build --target js cmd/cli && python scripts/patch_esm_main.py` → `node _build/js/debug/build/cmd/cli/cli.js`
 - **一键自检**：`python scripts/mcp_smoke.py`（实测 170 个工具 + publish/get 链路 + issue_scan 命中校验；这个数由 `check_doc_surface.py` 的 J14 项目地图面钉住，改工具数时这张图必须跟着改）
 - **找目标项目潜问题**：`issue_scan`（MCP 工具）/ `python scripts/issue_scan.py <dir>`（CLI）/ [技能文档](issue-scan-skill.md)（skill）三处手写形态 + 插件态投影（四态），规则驱动扫描，命中喂 `report_bug` 闭环
+- **多步闭环怎么转**：[组合环编排技能文档](loop-mode-skill.md)——`loop_create`/`loop_tick`/`loop_status` 管「转几轮、何时停」，`mode_list`/`mode_templates` 管「每步做什么」；[看护闭环技能文档](phi-accrual-heal-skill.md)——`phi_accrual` 概率式判活 → `heal` 回滚 → `watchdog_tick` 单入口编排
 - **语言**：MoonBit；测试用 `suite`/`test` 而非 `@test def`；guard/match 冒号后换行。
 
 ## 二、src/ 各子包职责地图（谁管什么）
