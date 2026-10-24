@@ -180,6 +180,19 @@ EXEMPT = [
      "**教学示例，故意红**：同文档里「测试名完整可见（102/102）」的举例读数，非项目自述"),
     ("docs/probe-authoring.md", "205",
      "**教学示例，故意红**：同文档日志回显示例里的 `passed: 205`（与 206 配对演示 runner 截断），非项目自述"),
+
+    # 2026-10-25（判例-39，统帅裁决）：**判例正文里的「病历数字」属于历史面，不得随现状更新**。
+    # `scripts/README.md` 里 `check_badge` / `moon_test_env` 两条的说明中，`1455` 是**判例-25 的病历原文**
+    # （「快照停在 1455、而现状 1457，判据却 PASS 绿 —— 这就是本单的病灶」）。
+    # 判例的价值在于记录「当时是什么样、我们怎么发现的」：把病历史上的旧数字改成 1457，
+    # 等于说「当时就已经是 1457」⇒ 后人读不出「为什么要有这条判例」。与 reports/ 历史面同一条律。
+    # 粒度说明：EXEMPT 的键是 `(文件, 数字)`，不是 `(文件:行)`；豁免理由里点名是哪几行，
+    # 配一格自证 `judge-script-readme-casefile-exempt`（见 selftest）钉住「同一文件里出现**别的**
+    # 旧数仍必须红」——豁免是给「这个数」的，不是给「这个文件」的。
+    ("scripts/README.md", "1455",
+     "**判例-25 的病历原文**（`check_badge.py` / `moon_test_env.py` 两条说明里）："
+     "「快照停在 1455 而现状 1457，判据却 PASS 绿」是本单的病灶记录；"
+     "改成 1457 即伪造病历史（判例-39：判例正文的旧数字不得随现状更新）"),
 ]
 
 # 历史记录类别：整路径豁免（按日期追加，改写即伪造历史）
@@ -419,12 +432,22 @@ def selftest() -> int:
             "得 **206/206 全绿** 而读数一行没出（教学示例：故意造的假绿）\n"
             "但**测试名完整可见**（102/102）\n"
             "Total tests: 206, passed: 205, failed: 1\n"),
+        # 判例-39：`scripts/README.md` 的 1455 是判例-25 的病历原文；豁免条目同样必须在夹具里有声明，
+        # 否则 R4「豁免条目已失效」会让 baseline-clean 恒红（与上面 R186 那组同一设计）。
+        # 措辞要带测试语义关键词（窄口径 A 要求 `N/N` 同行出现「测试/全绿/通过/passed」），
+        # 否则 collect_claims 根本收不到 ⇒ 声明白写、R4 恒红（实测踩过一次）。
+        "scripts/README.md": "判例-25 的病历原文：快照停在测试 **1455/1455** 全绿，而现状 1457，判据却 PASS",
         "docs/other.md": "无关文字：测试 105/104 是引文，1986/1997 是年份",
         "memory/2026-09-26.md": "当日记录写 406/406（历史面豁免）",
         "reports/2026-09-26-x.md": "报告写 406/406（历史面豁免）",
     }
     sweeps = sorted(base) + ["CHANGELOG.md", "docs/superpowers/plans/2026-09-24-p.md",
                              "docs/echo.md"]
+    # 判例-39：`scripts/README.md` 必须进扫描面——否则夹具里那条 1455 病历声明根本不被读到，
+    # R4 会判「豁免条目失效」，baseline-clean 恒红（实测踩过：加了声明但没加扫描面 = 白加）。
+    if "scripts/README.md" not in sweeps:
+        sweeps.append("scripts/README.md")
+        sweeps.sort()
     base["CHANGELOG.md"] = "v0.2.5 时 406/406"
     base["docs/superpowers/plans/2026-09-24-p.md"] = "当时仍 148/148"
     # 日志回显形状（D）：README 的自检示例行，本轮实测只有 check_badge 抓到 ⇒ 纳入同一口径
@@ -528,6 +551,19 @@ def selftest() -> int:
     d["docs/probe-authoring.md"] = "全仓 **999/999 全绿**（这个数字不在豁免表里）"
     if run_case("R186 unlisted-number-in-teaching-doc-still-red", d,
                 want="R1 docs/probe-authoring.md") is None:
+        return 1
+    #    ⑥-c（判例-39）`scripts/README.md` 的病历数字 1455 已豁免，同一文件里**别的**旧数仍必须红。
+    #    两格成对：豁免真的按「数字」生效（不是按文件全免），且豁免不是「整份 README 都放行」。
+    #    注意：`d = dict(base)` 只覆盖该文件，别的豁免条目声明仍在 ⇒ 不会触发 R4。
+    d = dict(base)
+    d["scripts/README.md"] = "判例-25 的病历：快照停在测试 **1455/1455** 全绿，而现状 1457"
+    if run_case("judge-script-readme-casefile-exempt", d, want=None) is None:
+        return 1
+    d = dict(base)
+    d["scripts/README.md"] = (
+        "判例-25 的病历：测试 **1455/1455** 全绿；另有一条历史读数 **1234/1234** 全绿（不在豁免表里）")
+    if run_case("casefile-exempt-is-not-file-wide", d,
+                want="R1 scripts/README.md") is None:
         return 1
     # 6) 假阳性对照：不等值对（引文/年份/编号）不得被当声明
     d = dict(base)
