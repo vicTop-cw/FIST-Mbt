@@ -74,6 +74,53 @@
 | `cl6-doc-sync` | medium | README/AGENTS 工具数、测试数、版本号与真源/`moon.mod` 同步（J2/J3/J4） |
 | `cl7-plugin-forms-sync` | hard | `python scripts/gen_plugins.py && python scripts/check_plugin_sync.py` 绿（四宿主 == 真源投影） |
 
+## 4.1 尺的覆盖面自证（判例-16 / 判例-23）
+
+> **尺子只量它自己认领的面，没认领的面等于不存在。**
+> 所以「我覆盖什么」这件事本身必须有判据，否则尺的绿只是在说「我看的那一小块没问题」。
+
+### 规则（两条，都是 hard）
+
+| id | gate | 规范 |
+|---|---|---|
+| `coverage-self-proof` | hard | **任何 `check_*.py` 若声称「我覆盖 X」，必须有一条自证格断言「实际覆盖集合 == 从真源反解的集合」**。禁写死数字。真源举例：`moon.pkg` 的 `pkgtype(kind:"executable")` / `git ls-files '*.mbti'` / `server.mbt` 的工具注册数 / 跟踪面文件名。 |
+| `coverage-claim-explicit` | medium | **不得声称超过实际能验的面**：尺的 docstring 里写「扫描面 = 全仓 `*.mbti`」而代码只遍历 3 份，就是契约说谎（与 BUG-43「清单工具写成检查工具」同族）。要么改代码，要么把声称改窄并写明缺口。 |
+
+**判例-16（范围）**：覆盖面 < 主张面 ⇒ 漏掉的部分永远不被发现。
+**判例-23（深度）**：面是全的，但**识别方式可绕过**（如按函数名认调用面，改名即绕过）——
+两者是不同病：16 靠「对表真源」治，23 靠「改识别形状（AST/调用图）」治。**修 23 属判据语义变更，不要混进覆盖面补丁。**
+
+### 操作形态（一条自证格的模板）
+
+```python
+# 断言：实际覆盖面 == 从真源反解的集合（对表两个真源，不写死数字）
+_pkgs = executable_pkg_dirs(ROOT)            # 真源 1：扫 moon.pkg 的 pkgtype
+_resolved, _unbuilt = resolve_bundles(ROOT, _pkgs)
+cell("e2e-coverage-covers-all-built-executables", len(_resolved), len(_pkgs) - len(_unbuilt))
+# 附带三条更便宜的护栏：
+#   ① 覆盖面非空（空面会让后续检查静默全绿）
+#   ② 覆盖面 ⊇ 兜底清单（动态取数不得漏掉关键产物）
+#   ③ 覆盖面数 == 真源总数（数字来自两边现算，任一边漂了都红）
+```
+
+### 反面实例（2026-10-24 实测三个，**全部由「不硬编码」暴露**）
+
+| 尺 | 写死的清单 | 真源现读 | 后果 |
+|---|---|---|---|
+| `check_esm_bundle_runnable` | `DEFAULT_BUNDLE = ".../cmd/cli/cli.js"` | 4 个 `executable` 包 | 4 个 bundle 只验 1 个；`commissar.js` / `smoke.js` 漏网不被发现 |
+| `check_mbti_eol` | 3 份 `MBTI_FILES` | `git ls-files '*.mbti'` = 24 份 | 另外 21 份谁被 autocrlf 刷脏都报绿 |
+| `check_entry_paths` | 豁免面只认 `#` 注释行 | `.py` 的非执行文本还有 docstring 块 | 4 处假阳（解释历史的 docstring 被判「引用退役入口」） |
+
+三把尺修好后都**立刻暴露了原先看不见的东西**：`check_esm_bundle_runnable` 扩面后当场抓到
+自己按 `basename(pkg_dir)` 拼路径的错；`check_mbti_eol` 扩面后当场抓到
+`src/core/pkg.generated.mbti` 已 dirty。**不硬编码 = 覆盖面变大 = 立刻暴露你自己看不见的错。**
+
+### 常驻自检
+
+`scripts/check_coverage_face.py` 扫 `scripts/check_*.py`，把「有硬编码小清单、且清单进了判定路径」
+的形状报出来（可能窄 + 现读真源 + 建议）。它**只报不判**——目标不是「找出所有窄清单」
+（做不到），是**「让窄清单变得可见」**（做得到）。
+
 ## 5. 一轮标准流程（自驱式四模式）
 
 `bugfind`（寻虫，只读+入账）→ `fix_and_merge`（修复，带回归锁）→ `verify`（验证，只读稽核 + L4 门禁）→ `polish`（打磨，格式/文档/蒸馏），× N 轮。
