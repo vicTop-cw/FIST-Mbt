@@ -164,3 +164,40 @@ memory/archive/thinking.archive.md
 # 临时验证 worktree（嵌入式 git 仓 ⇒ 绝不能被 add，否则变成 gitlink 160000，
 # 让 check_merge_markers 等判据「有跟踪文件读不到」；2026-10-24 实测踩过一次）
 /.verify-wt
+
+# ── 2026-10-24 瘦身（task-4，owner 报 gitcode 容量告警「有些东西就别放进去了」）─────────
+# `.agents/` 下 agent 的一次性产物：判据日志 `_gate*.txt` / `_js_log.txt` / `_test_log.txt`、
+# PR 列表快照 `_prs*.json`（单个 300KB 级）、`scripts/audit_branch_delete.py` 的一次性普查
+# 脚本 `_slim_*`。全部**未跟踪**且是「跑完即弃」的中间件，没有一件属于仓库资产。
+# 只锚 `_` 前缀（`/.agents/_*`），不整目录挡：`.agents/pr-*.yaml` 是已跟踪的 PR 描述真源，
+# 上面 `.agents/worktrees/` 是 worktree 护栏，两者都不许被这条规则盖住。
+/.agents/_*
+# `.agents/pr-*.yaml` = `scripts/fist-pr-automator.py` 当轮读的 PR 描述草稿：已跟踪的那 6 份是
+# 真源，**未跟踪的**同族（2026-10-24 实测 6 份：pr-automator-windows-json / pr-gate-chain-fmt-warmup
+# / pr-j2-call-face / pr-moon-env-summary-shape / pr-omega-mark-keep / pr-omega-required-column）
+# 是各家 agent 的当轮草稿，开完 PR 即弃。gitignore 对已跟踪文件无效 ⇒ 下面这条只吃未跟踪的那批，
+# 已跟踪的真源不受影响（`git ls-files .agents/pr-*.yaml` 仍是 6 份）。
+/.agents/pr-*.yaml
+# `.agents/` 下一次性操作脚本族（开 PR / 查 CI / 跳门）：随当轮临时任务存在，
+# 不是 `scripts/` 的常驻判据入口；留在工作树供当轮使用，但一律不进仓、不进发布包。
+/.agents/batch_open_prs.py
+/.agents/check_gate_common.py
+/.agents/check_main_ci.py
+/.agents/check_merged_ci.py
+/.agents/check_pr_ci.py
+/.agents/check_pr_ci_detail.py
+/.agents/fix_memory_389.py
+/.agents/list_prs.py
+/.agents/open_one_pr.py
+/.agents/open_prs.sh
+/.agents/set_gate_bypass.py
+# 仓库根的临时 patch / 分支普查读数（`.tmp*.patch` 是给他人 reverify 的一次性补丁文本，
+# `.br_*.txt` 是分支普查的中间读数）——同为「跑完即弃」，不是仓库资产。
+/.tmp*.patch
+/.br_*.txt
+
+# DSH 插件安装面的**本地产物**（渲染自 cordis.patch.yml.tpl，含本机绝对路径）
+# 为什么必 ignore：@deepseek-ai/dsh-mcp-client 的 stdio 通道把 args/cwd 当**字面 argv** 交给 spawn，
+# 宿主不做 ${...} 插值 ⇒ 绝对路径进跟踪面 = 每个克隆者的 server is disconnected。
+# 渲染：python scripts/render_dsh_patch.py
+/.dsh/fist-mbt-plugin/cordis.patch.yml
