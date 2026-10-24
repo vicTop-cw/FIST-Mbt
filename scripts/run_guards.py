@@ -208,6 +208,14 @@ SPECIAL_CASES = [
     # 参数（缺省行为即自证），所以可以直接进电池；夹具全程 `isolated_git_env()`。
     case("check_index_gitlinks.py", "--selftest"),
     case("blackbox/e2e_precommit_gitlink_gate.py", "--selftest"),
+    # —— R180：master 镜像判据（同一个「对齐 master」动作人工做了 5 次，治本是立一条命令）——
+    # `gitcode/master` 是默认分支镜像，**没有任何自动化维护它**（实测 workflows 里
+    # `refs/heads/master` 零命中）⇒ main 一推进它就落后，只看默认分支的人读到的都是旧基线。
+    # 本尺判据模式只读；`--apply` 才推，且**只快进**（`merge-base --is-ancestor` 不成立即
+    # refuse），**不支持 force**（给 `--force` 直接 rc=1 拒绝）。
+    # 电池只跑 `--selftest`：纯函数四态 + 临时裸远端端到端（含「分叉必拒」「dry-run 不推」
+    # 两条硬线格），零网络、零写盘、夹具全程 `isolated_git_env()`。
+    case("check_master_mirror.py", "--selftest"),
     # R106 曾登记预存红：主线把某 agent 的 git worktree 以 gitlink(mode 160000) 提交进跟踪面
     # （`.agents/worktrees/fix/display-rank-boundary`，`4a7bf82a` 带入）⇒ 判据读不到正文，L1 后 rc=1。
     # R116 收口：`git rm --cached` 删该条目 + `.gitignore` 忽略 `.agents/worktrees/`，期望按预存红律改回 0。
