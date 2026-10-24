@@ -122,6 +122,7 @@ pub fn Task::to_repr(Self) -> @debug.Repr
 pub fn Task::with_deliverable(Self, String, String) -> Self
 pub fn Task::with_depends_on(Self, String, String) -> Self
 pub fn Task::with_description(Self, String, String) -> Self
+pub fn Task::with_omega_required(Self, Bool, String) -> Self
 pub fn Task::with_priority(Self, String, String) -> Self
 pub fn Task::with_updated_at(Self, String) -> Self
 
