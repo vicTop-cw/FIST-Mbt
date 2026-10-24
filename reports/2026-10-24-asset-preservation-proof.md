@@ -9,46 +9,70 @@
 
 ---
 
-## 0. 一页摘要
+## 0. 一页摘要（**owner 只看这一页即可决策**）
 
 ### 0.1 一句话结论
 
-**按本证明，可无条件删除的面只有「本地分支」与「少数干净 worktree」；远程分支一支都不许删。**
+**可无条件删除的面只有「本地分支」与「35 个干净 worktree」。远程分支一支都不许删**（每一支都还有未蒸馏的 commit message）。
 
-| 面 | 规模（v1/v2 实测） | 绿=可删 | 黄=须先蒸馏 | 红=禁止删 |
+### 0.2 按本证明可执行的动作
+
+| 动作 | 数量 | 前提 | 权威清单 |
+|---|---|---|---|
+| 删**本地分支** | **65 支** | 无条件（`main..<br>` 为空） | §2.2 |
+| 删 **worktree 目录** | **35 个** | 三条件全过（§3.6.2） | `temp/audit/worktrees_v4_pass.json` |
+| 删 **origin 远程分支** | **14 支** | **先蒸馏** commit message | §2.6 |
+| 删 **gitcode 远程分支** | **0 支** | — | 151 支每支都有未蒸馏史料 |
+| 清 **12 个本地产物目录** | 12 个 | 已进 `.gitignore`（`f9bac4b5`） | task-10 报告 §3.1 |
+
+### 0.3 三条不可删的红线
+
+| # | 红线 | 为什么 |
+|---|---|---|
+| 1 | **`origin/feat/fix-desc-clip-utf8`** | `desc_clip()` 用 `String::length()`（UTF-16 code unit）当**字节上限**；main:675-676 注释**自己承认**该 bug、`core_task_desc_clip_wbtest.mbt:44` 是**红测试** ⇒ 真缺陷，**应合入** |
+| 2 | **`origin/fix/agent-fp-honest`** | `pubkey_fp` 死承诺（全仓无派生、写入点恒传 `""`）+ `fnv1a64` 号称不可逆实为**可反解** ⇒ **应合入** |
+| 3 | **3 个 `FIST-Mbt-slave-*` 克隆** | 含 main 上**不存在**的 `docs/design-*.md`：GUARD-01（扫描面缺口，**当前不泄漏**，风险是将来硬编码抓不住）/ WT-02（`wt_create` 等三工具未交付） |
+
+### 0.4 两个必须 owner 裁决的
+
+1. **清理期间是否暂停 `sync-from-gitcode.yml`** —— 它每 6h 对 GitHub `--force` 全分支，清理结果可能被自动改写（§6.1）
+2. **`sync` 的 `|| echo "push failed"` 静默吞掉 103 支推送失败** —— 要不要修（§6.2，判例-9）
+
+### 0.5 各面规模总表
+
+| 面 | 规模 | 🟢可删 | 🟡须先蒸馏 | 🔴禁删 |
 |---|---|---|---|---|
-| gitcode 远程分支 | **153** | 0 | 151 | 1（+1 名特殊项） |
-| origin 远程分支 | **51** | 0 | 48 | 1（+1 名特殊项） |
-| 本地分支 | **153** | **65**（执行组已执行） | 85 | 1（+2 名特殊项） |
-| worktree | **54** | **35**（v4 三条件口径定案，§3.6.1） | 6（须人工确认幻影） | **11**（8 dirty + 2 conflict + 1 目录缺失） |
-| 兄弟目录 | **38**（非 34） | 0 | 0 | 38（其中 12 需 owner 裁决） |
+| gitcode 远程分支 | **153** | 0 | 151 | 2 |
+| origin 远程分支 | **51** | 0 | 48 | 3（§0.3 两条 + 1） |
+| 本地分支 | **153** | **65** | 85 | 3 |
+| worktree | **54** | **35** | 6 | 11 |
+| 兄弟目录 | **38**（非 34） | 0 | 0 | 38（12 需裁决） |
 
-### 0.2 ⚠️ v3 三处数字订正（必须与正文一起读）
+### 0.6 ⚠️ 三处数字订正（v3/v4，必须与正文一起读）
 
-| # | v1/v2 原文 | v3 订正 | 依据 |
+| # | v1/v2 原文 | 订正 | 依据 |
 |---|---|---|---|
-| **①** | §2.2：绿档 65 支里「**6 支**被 worktree 占用」 | **实为 4 支**（`cmd-gamma` / `lightwt/cmd-alpha` / `lightwt/cmd-zeta` / `worktree/skill-docs2`）；另 2 支（`fix/battery-tree-state-cell` / `fix/merge-cleanup-content-based`）的 `.agents/worktrees/` 目录**已不在** `git worktree list` | 执行组实测 + 本版 `temp/audit/v3_verify.py`（绿档现仅 4 支，与占用集交集 2 支） |
-| **②** | §3.6：「**21 个** worktree 可删」 | **该数已作废。** v3 重算 GREEN 34；**v4 按三条件口径定案 = 35**（① porcelain=0 ② `--not --all`=0 ③ `ls-files -u`=0）。冲突态 2 个已在 35 之外，**不需再减**。完整名单在 `temp/audit/worktrees_v4_pass.json` 与 §3.6.1 | `temp/audit/wt_final34.py` |
-| **③** | §3.3/§3.6：用「**HEAD 是 main 祖先**」判 worktree 干净 | **该判据不适用**：5 个 mergeability 的 HEAD 是 `b5c8a366`/`3897d378`，`b5c8a366` **不是 main 祖先**（实测 `merge-base --is-ancestor` = NO），但它被 **30+ 个 ref 持有** ⇒ 无独有 commit。**改用 `git rev-list HEAD --not --all` = 0**，不要求 HEAD 是 main 祖先 | 见 §3.6.2（含「34 vs 3」三口径并列说明） |
+| **①** | 绿档 65 支里「**6 支**被 worktree 占用」 | **实为 4 支**（`cmd-gamma`/`cmd-alpha`/`cmd-zeta`/`skill-docs2`）；另 2 支目录**已不在** `worktree list` | `temp/audit/v3_verify.py` |
+| **②** | 「**21 个** worktree 可删」 | **作废**：v3 重算 34 → **v4 三条件定案 35**（冲突态 2 个已在 35 之外，**不需再减**） | `temp/audit/wt_final34.py` |
+| **③** | 「**HEAD 是 main 祖先**」判 worktree 干净 | **不适用**（该判据近恒假）。改用 `git rev-list HEAD --not --all` = 0 | §3.6.2 |
 
-### 0.3 执行进度快照（v3 写作时点，`main = 5e27f443`）
+### 0.7 执行进度快照（§2/§3 是审计时点读数，执行现状以执行组报告为准）
 
-| 项 | v1/v2 读数 | v3 现测 | 差异 |
-|---|---|---|---|
-| 本地分支（除 main/master） | 153 | **91** | 执行组已删约 62 支 |
-| worktree（`git worktree list`） | 54 | **51** | 已 remove 若干 |
-| 绿档（`main..<br>` 为空） | 65 | **4** | 已基本执行完 |
+| 项 | v1/v2 | 现测 |
+|---|---|---|
+| 本地分支（除 main/master） | 153 | **91** |
+| worktree 登记项 | 54 | **49** |
+| 绿档（`main..<br>` 为空） | 65 | **4** |
 
-> **v3 的 §2/§3 保留的是「审计时点」的快照读数**（因为它们是该时点的事实陈述），
-> **执行现状以执行组报告为准**：`reports/2026-10-24-branch-cleanup-execution.md`（**非本文件作品，本版不改它**）。
+> 执行组报告：`reports/2026-10-24-branch-cleanup-execution.md`（**非本文件作品，本版不改它**）。
 
-### 0.4 本版新增的最重要一条：判例-10b
 
-**`git diff --numstat` 读的是「工作树 vs index」，不含 index。**
-用它判「相对 HEAD 有无改动」会**双向误判**：既漏掉只在 index 里的改动（假阴性），
-也把「index 与工作树都改、互相抵消」看成零改动（假零）。
+### 0.8 本报告最核心的一条方法论：判例-10b / 10c
 
-**实测复现（两个仍在的 worktree，`temp/audit/v3_verify.py`）**：
+**10b：`git diff --numstat` 读的是「工作树 vs index」，不含 index。** 用它判「相对 HEAD 有无改动」**双向误判**。
+**10c：`numstat` 的 `0 0` 有两种含义** —— 「无差异」和「**无法计算（冲突态）**」。
+
+**实测复现（`temp/audit/v3_verify.py`）**：
 
 ```
                        mergeability-bn5486xy   mergeability-xd7gqcjf
@@ -59,8 +83,7 @@ porcelain 分布              24 A / 79 AA         25 A / 32 AA
 ```
 
 ⇒ **v1/v2 里「全 M 无 untracked ⇒ 疑幻影 ⇒ 可删」的 8 个 worktree、以及 §5.3「须先验 `--numstat`」的 8 项，
-全部按 `--numstat` 验过，结论一律无效，v3 已重验。**详见 §2.6.6。
-
+结论一律无效，v3/v4 已重验。**详见 §2.6.6。
 
 ---
 
