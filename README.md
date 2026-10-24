@@ -217,7 +217,7 @@ fist doctor        # 5 项健康检查
 | `python scripts/check_host_installable.py` | 宿主可装守卫：deepseek-harness 宿主侧真的能装上（补 cl7「等于投影」却「装不上」的旧边界） |
 | `python scripts/check_skill_inject.py` | 注入命中守卫：evolve_asset_register 注入路径可测命中（plan/claim 传了 `inject` 时 `injected_assets` 非空才算命中） |
 
-更多 walkthrough 见 `docs/selfdrive-walkthrough.md`、`docs/issue-scan-skill.md`、`docs/output-validate-skill.md`。
+更多 walkthrough 见 `docs/selfdrive-walkthrough.md`、`docs/issue-scan-skill.md`、`docs/output-validate-skill.md`、`docs/loop-mode-skill.md`（组合环编排 × 自驱七模式）、`docs/phi-accrual-heal-skill.md`（Phi Accrual 判活 × 心跳回滚 × 看门狗编排）。
 
 ---
 
