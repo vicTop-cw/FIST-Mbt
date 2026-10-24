@@ -758,3 +758,23 @@ pub fn Task::with_priority(
 ) -> Task {
   { ..self, priority, updated_at: now, }
 }
+
+///|
+/// 设置 Omega 强验证元数据列（`omega_required`），并更新时间戳。
+/// 与 `with_description` 的文本标记路径**互为补集**：本方法只动元数据面，
+/// 不改描述文本 —— 两者由 `omega_enabled()` 的 `||` 合并为单一判据（判例-16：不要引第 5 种判法）。
+///
+/// 为什么要有：BUG-389 方向② 把门禁判据搬进元数据列之后，描述被
+/// `supervisor_task_upsert` 覆盖也不会丢开关；但**没有对应的写入入口**。
+/// F3 继承锁（`omega_required_column_wbtest.mbt` 的 wb1）必须把「父任务已开着 Omega」
+/// 这条前置真的落库——用 `with_description` 塞文本标记等于绕开元数据面，锁就测不到单真源。
+///
+/// 它**不是**产品面的「关闭入口」：引擎侧写入点仍只有 `decompose_rec` 那一处
+/// （单调 OR，见 engine.mbt 的 F2 留痕）；显式关闭语义属 advance 面，不在本单。
+pub fn Task::with_omega_required(
+  self : Task,
+  omega_required : Bool,
+  now : String,
+) -> Task {
+  { ..self, omega_required, updated_at: now, }
+}

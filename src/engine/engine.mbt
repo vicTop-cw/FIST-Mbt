@@ -1323,8 +1323,28 @@ fn FistEngine::decompose_rec(
     } else {
       ""
     }
-    // Omega 强验证开关（默认关闭）：开启时为本层子任务打标记，使其受门禁约束
-    let full_desc = if omega_strong_verify {
+    // Omega 强验证开关（默认关闭）：开启时为本层子任务打标记，使其受门禁约束。
+    //
+    // F3 修正（2026-10-24，在线缺陷）：判据**不是**本次 plan_deep 的入参，而是
+    // 「本次入参为真」**或**「父任务已开着 Omega」。旧写法只看入参 ⇒ 父任务开着
+    // `[omega:required]`、调用方调 plan_deep 时**不传** omega_strong_verify 时，
+    // 整棵子树的 omega_required 全落 false ⇒ omega_spec_create / omega_spec_review /
+    // omega_result_verify 对整棵子树直接放行（门禁在「拆分」这一步静默失效）。
+    // 复现读数（δ bugfind 编码）：PHk2L2P1 = 父开着 / 拆 2 个子任务 / 2 个丢失门禁。
+    //
+    // 「父是否开着」只走**单一真源** `omega_enabled(parent)`（元数据列 get_omega_required()
+    // 取或 description 里的 [omega:required] 文本），本文件不复制那套判法——
+    // 复制一份就是第 5 种判法，下一颗漂移雷。
+    // 递归下钻天然成立：上一层的 child 就是下一层的 parent，开关沿链逐层传导。
+    //
+    // F2 留痕（不在本单实现）：`||` 是**单调 OR** —— 一旦子任务被标上 omega_required，
+    // 后续任何一次 plan_deep（哪怕入参 false、哪怕父被改成 false）都不会把它清回去，
+    // 全仓也**没有** omega_required=false 的赋值点 ⇒ 误开只能手工改库。
+    // 这是**有意的**：门禁开关是「加严」方向，可自动加严、不可自动放松——自动放松会让
+    // 一次参数笔误把一整棵子树的验收门禁悄悄关掉，而那正是本条缺陷的形状。
+    // 「显式关闭入口」（谁有权关、关了留什么痕）属 advance 面，不在 fix_and_merge 范围。
+    let omega_on = omega_strong_verify || omega_enabled(parent)
+    let full_desc = if omega_on {
       base_desc + grad_suffix + " " + omega_mark()
     } else {
       base_desc + grad_suffix
@@ -1370,7 +1390,8 @@ fn FistEngine::decompose_rec(
       depends_on=dag_dep,
       // BUG-389 方向②：把 Omega 门禁判据写进不可覆盖的元数据列 omega_required，
       // 不依赖 description 里的 [omega:required] 文本（upsert 覆盖描述不再丢开关）。
-      omega_required=omega_strong_verify,
+      // F3：继承父任务的开关（omega_on 见上文），别再只看本次入参。
+      omega_required=omega_on,
     )
     match self.store.create_task(child) {
       Ok(_) => ()
