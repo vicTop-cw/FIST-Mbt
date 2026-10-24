@@ -169,7 +169,9 @@ memory/archive/thinking.archive.md
 # `.agents/` 下 agent 的一次性产物：判据日志 `_gate*.txt` / `_js_log.txt` / `_test_log.txt`、
 # PR 列表快照 `_prs*.json`（单个 300KB 级）、`scripts/audit_branch_delete.py` 的一次性普查
 # 脚本 `_slim_*`。全部**未跟踪**且是「跑完即弃」的中间件，没有一件属于仓库资产。
-# 只锚 `_` 前缀（`/.agents/_*`），不整目录挡：`.agents/pr-*.yaml` 是已跟踪的 PR 描述真源，
+# 只锚 `_` 前缀（`/.agents/_*
+/.agents/*_probe.sh
+/.agents/*_probe2.sh`），不整目录挡：`.agents/pr-*.yaml` 是已跟踪的 PR 描述真源，
 # 上面 `.agents/worktrees/` 是 worktree 护栏，两者都不许被这条规则盖住。
 /.agents/_*
 # `.agents/pr-*.yaml` = `scripts/fist-pr-automator.py` 当轮读的 PR 描述草稿：已跟踪的那 6 份是
