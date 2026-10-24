@@ -6682,3 +6682,11 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 修法：注释补「职责边界（BUG-404）」段，写明本函数只写 `agents` 表、默认 ACL 真源在 server 层、直连 store 调用的中间态后果与「注册即落 ACL」的正确调用顺序。**代码行为零改动**（纯注释）。
 - 实测：`sed -n '2731,2790p' src/store/store_sqlite.mbt | grep -c "acl"` = 0（函数体前 60 行无 acl 字样）。
 - 关联: src/store/store_sqlite.mbt agents_register / src/server/server.mbt agents_acl_ensure / 来源分支 origin/fix/agent-fp-honest@a3740ecf
+
+## BUG-405 [2026-10-24T10:25:00Z] [medium] OPEN
+- summary: [dsh-plugin-install-face] `.dsh/fist-mbt-plugin/cordis.patch.yml`（DSH 插件安装面）被覆盖成**硬编码旧机器路径 `F:/AI/Fist-Mbt`**——仓库实际在 `E:/IDEProjects/AI/FIST-Mbt`，旧路径不存在 ⇒ DSH 起 server 即 `server is disconnected`（2026-10-24 实测，用户报告 fist-mbt 服务不可用）
+- detail: ① 该文件本应是 `render_dsh_patch.py` 从 `cordis.patch.yml.tpl`（占位符 `{{FIST_MBT_CLI}}`/`{{FIST_MBT_ROOT}}`，零硬编码）渲染出的**本地产物**（`.gitignore` line 203 已挡跟踪面）；但当前内容被改成 `packaging/dsh/launch-mcp.mjs` + 硬编码 `F:/AI/Fist-Mbt`（3 处：args/cwd/env.FIST_PROJECT_DIR）—— 非 render 格式，**是某次操作直接改写了渲染件**。② `check_hardcoded_paths.py` D1 严格档只查"渲染件是否回跟踪面"，**不查本地产物内部的路径正确性**（已 ignore 不进跟踪面）⇒ 这种"硬编码覆盖本地渲染件"的污染形态当前无守卫可抓。③ 发布态 `packaging/dsh/cordis.patch.yml` 无此问题（`process.execPath` + `createRequire(baseUrl)` 动态解析，零硬编码）—— 只有开发态 `.dsh/` 这层中招。
+- 修法（已做）：`python3 scripts/render_dsh_patch.py` 重新渲染 → 指向 `E:/IDEProjects/AI/FIST-Mbt/_build/js/release/build/cmd/cli/cli.js` + `serve`，cwd 正确。**防复发建议**：给 `render_dsh_patch.py --check` 加一条"渲染件里不得出现任何已知历史机器路径"的形状锁（词表 + 形状双面），让本地产物内部的路径污染也能被 `run_guards` 抓。
+- 后续建议: 同源隐患：`locale/*.json` 也曾被写本机路径（check_hardcoded_paths.py line 103 提到 `cordis.patch.yml,locale/*.json` 是 `F:/AI/Fist-Mbt` 位置高发区）—— 建议一并复查 `.dsh/fist-mbt-plugin/locale/` 是否残留旧路径。
+- landed: 渲染器优先级 bug 同轮顺手修（BUG-405 关联）——`render_dsh_patch.py` 硬编码 `debug` 先于 `release`，而两者是独立构建目录（release 10:19 最新、debug 07:42 旧，渲染器仍选 debug ⇒ DSH 连到旧 CLI）。已改为两形态并存时按 `st_mtime` 取新（与 glob 兜底同一律），`--check` PASS + `--selftest` OK + `check_hardcoded_paths` PASS（572 文件干净）。
+- 关联: .dsh/fist-mbt-plugin/cordis.patch.yml / scripts/render_dsh_patch.py / scripts/check_hardcoded_paths.py / 来源用户报告 2026-10-24

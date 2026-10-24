@@ -77,11 +77,19 @@ def find_cli(root: Path, cli_override: str | None) -> tuple[str | None, str]:
         if p.exists():
             return to_posix(p), "env FIST_MBT_CLI"
         return None, f"env FIST_MBT_CLI 指向的产物不存在: {to_posix(p)}"
+    # debug 与 release 是两个独立构建目录，谁新谁旧取决于最近一次 `moon build`
+    # 用什么 flag；硬编码 debug 优先会在「release 已重建、debug 还是旧件」时把渲染件
+    # 指回旧产物（2026-10-24 实测：release 10:19 最新、debug 07:42 旧，渲染器仍选 debug）
+    # ⇒ 两形态并存时按 mtime 取新，与下方 glob 兜底同一律。
+    known = []
     for rel in ("_build/js/debug/build/cmd/cli/cli.js",
                 "_build/js/release/build/cmd/cli/cli.js"):
         p = root / rel
         if p.exists():
-            return to_posix(p), rel
+            known.append((p.stat().st_mtime, p, rel))
+    if known:
+        _, p, rel = max(known, key=lambda t: t[0])
+        return to_posix(p), rel
     cands = sorted(root.glob("_build/js/*/build/cmd/*/cli.js"))
     if cands:
         newest = max(cands, key=lambda c: c.stat().st_mtime)
