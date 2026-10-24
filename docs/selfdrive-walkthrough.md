@@ -53,7 +53,7 @@ archive   → 已归档（可再归档）
 
 - **自驱 ≠ 死循环**：审视报告被 `[review:file:idx]` 消费后幂等跳过；无新报告即 `idle`/`waiting` 停住（见 docs「自驱 vs watchdog」）。
 - **递归拆解**：每条根任务可经 `task_plan_deep` 继续拆成多层子任务树。
-- **跨环境可信**：148 项测试 JS+Native 在 Windows + WSL(Linux) 双端全绿（见 README 环境要求）。
+- **跨环境可信**：权威门槛是 **JS 目标**的测试全绿——测试数只有一个真源（README 徽章，由 `scripts/check_test_sync.py` / `check_badge.py` 打到实测数对表，本文不抄数，抄一次就是下一次漂移）。Native 轨在**干净检出面**上受依赖侧 FFI 缺陷约束（账本 BUG-133），崩没崩由 `scripts/blackbox/e2e_native_heap_probe.py` 说话；因此这里**不写「JS+Native 双端同版全绿」**——那句曾长期挂在本文，与 README/AGENTS 的披露自相矛盾。
 
 ## 4. 评审一键验证路径
 

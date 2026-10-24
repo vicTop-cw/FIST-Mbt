@@ -33,6 +33,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from git_env import isolated_git_env
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -58,7 +59,7 @@ def is_registration(line):
 
 def git(args, cwd):
     p = subprocess.run(["git"] + args, cwd=cwd, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
+                       encoding="utf-8", errors="replace", env=isolated_git_env())
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
@@ -124,7 +125,7 @@ def selftest():
 
     def g(*a):
         return subprocess.run(["git"] + list(a), cwd=d, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace")
+                              encoding="utf-8", errors="replace", env=isolated_git_env())
 
     def w(p, s):
         full = os.path.join(d, p)

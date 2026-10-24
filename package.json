@@ -1,0 +1,58 @@
+{
+  "name": "fist-mbt",
+  "version": "0.3.10",
+  "type": "module",
+  "description": "FIST commander task orchestration as an MCP server (170+ tools): seven-state task lifecycle, hierarchical decomposition, DAG scheduling, self-driving loops, Omega verification and a SQLite ledger. Ships a prebuilt CLI, so DSH installs it with no build step.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "vicTop"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vicTop-cw/FIST-Mbt.git"
+  },
+  "homepage": "https://github.com/vicTop-cw/FIST-Mbt",
+  "bugs": {
+    "url": "https://github.com/vicTop-cw/FIST-Mbt/issues"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "mcp",
+    "task-orchestration",
+    "self-driving",
+    "moonbit",
+    "agent"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "bin": {
+    "fist-mbt-mcp": "packaging/dsh/launch-mcp.mjs"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    "./launch-mcp.mjs": "./packaging/dsh/launch-mcp.mjs",
+    "./locale/*.json": "./packaging/dsh/locale/*.json",
+    "./icon": "./packaging/dsh/icon.svg"
+  },
+  "files": [
+    "packaging/dsh/cordis.patch.yml",
+    "packaging/dsh/launch-mcp.mjs",
+    "packaging/dsh/locale/",
+    "packaging/dsh/icon.svg",
+    "dist/fist-mbt.js"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./packaging/dsh/cordis.patch.yml"
+    }
+  },
+  "meta": {
+    "title": "FIST-Mbt",
+    "description": "FIST commander task orchestration over MCP: seven-state task lifecycle, DAG scheduling, self-driving loops and Omega verification, with a prebuilt CLI (no build step)."
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

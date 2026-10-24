@@ -3,7 +3,7 @@
 """scripts/gen_plugins.py — 一源四态·插件态生成器（cl7 的生成侧）。
 
 背景：三形态（MCP / CLI / Skill）里 skill 正文长期放在仓库外的兄弟目录
-（`E:\\IDEProjects\\moonbit-skills\\skills\\fist-mbt`），没人守卫，数字漂成「41 个工具」
+（`E:\\proj\\moonbit-skills\\skills\\fist-mbt`），没人守卫，数字漂成「41 个工具」
 也没人发现——这正是 BUG-22/30 记的「文档面落后于真源、守卫覆盖面窄于主张」。
 插件态（第四态）如果继续手写，必然重复同样的腐烂。所以本脚本把四个宿主的插件
 **全部生成为真源的投影**，人只改 `plugins/source/`，不改 `plugins/<host>/`。

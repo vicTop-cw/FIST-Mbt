@@ -651,7 +651,43 @@ pub fn child_id(parent_id~ : String, idx~ : Int32) -> String {
 
 ///|
 /// 任务转 JSON（供 MCP resource / tool 输出）
-pub fn Task::to_json(self : Task) -> Json {
+
+///|
+/// 给 AI 编排用的描述截断：**按 UTF-8 字节上限**截断并回退到字符边界。
+///
+/// 为什么按字节而不是按 `String` 码元（2026-10-23 实测修正）：本工具链的 `String` 内部是 UTF-16，
+/// 原先的实现 `if s.length() <= desc_limit` + `s[cut]` 是**码元**语义，而本函数的契约（以及它的用途）
+/// 是「控 MCP 返回**体积**」——体积是字节。旧实现在纯中文描述上会把 6 字节当成 6 个字符，
+/// 实测 `desc_clip("一二三四五六七八九十", 6)` 返回 `"一二三四五六…"` 而不是 `"一二…"`，
+/// 与随本函数同一提交落地的 `core_task_desc_clip_wbtest.mbt:44`（dc_3，期望 `"一二…"`）直接矛盾。
+/// 现在先按 UTF-8 编码取真实字节数，超限才切，并在切点回退到 continuation byte 之前
+/// （0b10xxxxxx），保证解出来仍是合法 UTF-8。
+/// `desc_limit <= 0` 原样返回（零回归锚）。
+fn desc_clip(s : String, desc_limit : Int32) -> String {
+  if desc_limit <= 0 {
+    return s
+  }
+  let bytes = @encoding.encode(UTF8, s)
+  if bytes.length() <= desc_limit {
+    return s
+  }
+  let mut cut = desc_limit
+  // 回退：continuation byte 形如 0b10xxxxxx ⇒ 退到字符起始字节
+  while cut > 0 && bytes[cut].to_int().land(0xC0) == 0x80 {
+    cut = cut - 1
+  }
+  let sb = StringBuilder()
+  @encoding.decode_to(bytes[0:cut], sb, encoding=UTF8) catch {
+    _ => ()
+  }
+  sb.to_string() + "…"
+}
+
+///|
+/// 任务 JSON。`desc_limit > 0` 时 description 被截断到该字节上限（字符边界安全），
+/// 供查询/管家类工具按需控体积——否则膨胀的任务描述（gradient/父计划/边界四问等元信息
+/// 递归继承后动辄数 KB）会把 MCP 返回体积炸掉。默认 -1 = 不截断（零回归）。
+pub fn Task::to_json(self : Task, desc_limit~ : Int32 = -1) -> Json {
   let m : Map[String, Json] = Map([])
   m.set("id", Json::string(self.id))
   match self.parent_id {
@@ -670,7 +706,7 @@ pub fn Task::to_json(self : Task) -> Json {
     Some(a) => m.set("assignee", Json::string(a))
     None => m.set("assignee", Json::null())
   }
-  m.set("description", Json::string(self.description))
+  m.set("description", Json::string(desc_clip(self.description, desc_limit)))
   m.set("deliverable", Json::string(self.deliverable))
   m.set("created_at", Json::string(self.created_at))
   m.set("updated_at", Json::string(self.updated_at))

@@ -17,3 +17,12 @@ problem: >
 
 evidence: |
   python scripts/check_bug_reference_integrity.py ⇒ rc=1，INFO 行「判定面 J1 悬空-注释面：17 条（上限 1，只许下降）」+ 17 行逐站点 file:line；git show HEAD:memory/bugs.md | grep -cE '^## BUG-(327|333|336|384|385)\b' ⇒ 0；git show d7f7e60:memory/bugs.md | grep -cE 同式 ⇒ 5；行数差 9；git log --all -S'## BUG-333' -- memory/bugs.md ⇒ d7f7e60（副机 R80 搬运件，未进 main）。
+# ── R123 对账重盖章（gitcode/main rebase 到 origin/master 788c5823，原 proof commit 不再可达）──
+rebase_proven:
+  dropped_by: "gitcode/main rebase onto origin/master 788c5823（旧线 proof commit 未迁到新线）"
+  dropped_proof_commits: ["cef1e9cb"]
+  verified_on: "origin/master 788c5823（gitcode/main 587a1b5c 含同批交付物）"
+  reading:
+    - "python scripts/check_bug_reference_integrity.py ⇒ 判定面 J1 悬空-注释面：0 条（上限 0）rc=0"
+    - "src/engine/engine.mbt 已含 BUG-176 注释（BUG-147 改号落地）"
+  note: "R2 UNPROVEN-DONE 重盖章：交付物在新线齐全，丢失的只是 rebase 上的 proof 引文。"
