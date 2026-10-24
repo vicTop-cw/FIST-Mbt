@@ -332,7 +332,6 @@ git cherry main origin/fix/omega-mark-keep             → + d91e077a
 **不能把「命令没打印」当「值为 0」。**
 
 #### 2.6.5 判例-8 扩展（采纳统帅的三源模型）
-
 `git diff --diff-filter=A` 判出「非空」**只是线索，不是结论**。至少三种假阳性源：
 
 | # | 假阳性源 | 本仓实例 | 判据 |
@@ -509,6 +508,12 @@ git rev-parse origin/fix/omega-required-column:src/engine/omega_required_column_
 
 > 方法论提醒：`git grep -c` 在**零命中时不打印任何行**（不是打印 `file:0`），
 > 于是「命令无输出」被误读成「null/未命中」。**判「有无命中」必须用 `git grep -l`（返回码 + 文件名），不要用 `-c` 的无输出当否定证据。**
+>
+> **判例-10（统帅定名，本会话最典型的一个假阴性形状）：**
+> **真正的判据不是「命令输出是什么」，而是「命令的返回码是什么」。**
+> `git grep -c` → 零命中 `rc=1` 且**无输出**；有命中 `rc=0`。**判 rc 不判输出。**
+> 同理 `git rev-parse --quiet`、`git cat-file -e`、`git merge-base --is-ancestor` 都是「rc 才是答案」的形状。
+> **假阴性比假阳性贵**：假阳性让你多查一次，假阴性让你**删掉还有用的东西**。
 
 #### 2.6.2 三支真增量的逐项建议
 
