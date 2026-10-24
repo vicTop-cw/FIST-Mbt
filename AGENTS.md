@@ -102,6 +102,20 @@ You can browse and install extra skills here:
 **为什么写进纪律而不只写进工具**：工具要人记得调用，纪律是默认行为。
 **`--` 是一个词，记不住就没有防线。**
 
+### 往 `scripts/` 加 `.py` 必须同批给执行面（2026-10-24 立 · 判例-5 同族）
+
+**一天内 3 次踩中**（`tmp_audit_preservation_scan.py` / `commit_scoped.sh` / `badge_anchor.py`），
+每次的后果都是 `check_battery_count_doc` **FATAL，全仓门禁停摆**。
+
+往跟踪面加任何 `scripts/*.py`，必须在**同一笔提交**里给它一个执行面，三选一：
+1. `case("x.py", ...)` 进电池；2. `expected(..., kind="diag"|"known-red")` 带理由；
+3. `EXEMPT_RULES` 带理由（**仅限「被导入的共享模块 / 一次性工具」**）。
+
+**更简单的办法：共享模块以 `_` 开头**（`_badge_anchor.py` / `_tool_registry.py` 已是惯例），
+自动命中既有的 `("_", ...)` 豁免规则，**不需要新加豁免**。
+
+判据自己会抓：`check_battery_count_doc` 报 `缺面清单：x.py` 就是漏了这一步。
+
 ### 变异对照必做（2026-10-24 立 · 判例-29/30）
 
 **任何判据的 `--selftest`，必须至少有一格是「变异对照」**：把被测机制改坏，断言锁会红。
