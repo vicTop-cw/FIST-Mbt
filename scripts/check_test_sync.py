@@ -71,6 +71,29 @@ def anchor_problems(snapshot_path, cwd=None):
     return _anchor.anchor_problems(snapshot_path, cwd=cwd)
 
 
+def run_fresh(snapshot_path, cwd=None):
+    """`--fresh`：判前真跑一次全仓 `moon test --target js`，落快照 + 锚点。返回 (ok, tail)。
+
+    为什么在判据里跑而不是让人记得手跑：`temp/pt27.log` 的 mtime 停在 19:54，
+    之后全仓多了 2 个测试没人再跑过 ——「记得手跑」不是机制。
+    跑不出真值 ⇒ 调用方走 rc=2（诚实沉默），不拿旧快照冒充现实。
+    """
+    env_script = Path(str(ROOT)) / "scripts" / "moon_test_env.py"
+    if not env_script.is_file():
+        return False, "moon_test_env.py 不在：%s" % env_script
+    p = subprocess.run([sys.executable, str(env_script), "--target", "js",
+                        "--raw-log", snapshot_path],
+                       cwd=cwd or str(ROOT), capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    out = (p.stdout or "") + (p.stderr or "")
+    tail = "\n".join([x for x in out.strip().splitlines() if "Total tests" in x]
+                     or out.strip().splitlines()[-3:])
+    if p.returncode != 0:
+        return False, tail or ("moon_test_env rc=%d（无输出）" % p.returncode)
+    badge_anchor.write_anchor(snapshot_path, cwd=cwd)
+    return True, tail
+
+
 _anchor = badge_anchor
 
 # BUG-58：守卫的“红”必须是判据红。Windows 默认 GBK 控制台下，中文结论里的 ↔ 等字符
@@ -656,9 +679,12 @@ def log_not_green(counts):
 
 
 def main():
-    args = sys.argv[1:]
-    if args == ["--selftest"]:
+    raw_args = sys.argv[1:]
+    if raw_args == ["--selftest"]:
         return selftest()
+    # R25（判例-25/33）：`--fresh` = 判前真跑一次全仓，跑完重写快照 + 源码面锚点。
+    fresh = "--fresh" in raw_args
+    args = [a for a in raw_args if a != "--fresh"]
     total = None
     if args and args[0] == "--total" and len(args) >= 2:
         total = int(args[1])
@@ -667,7 +693,15 @@ def main():
         if not log_path.is_file():
             print(f"REJECT 测试日志不存在：{args[0]}（判据输入面缺失，拒绝出结论）")
             return 2
-        # 判例-25：与 check_badge 共用同一份源码面锚点（scripts/badge_anchor.py）。
+        if fresh:
+            ok, tail = run_fresh(str(log_path))
+            print("FRESH 真跑全仓：%s" % ("成功" if ok else "失败"))
+            for ln in tail.splitlines():
+                print("  " + ln)
+            if not ok:
+                print("REJECT --fresh 跑不出真值（rc≠0）⇒ rc=2，不拿旧快照冒充现实")
+                return 2
+        # 判例-25：与 check_badge 共用同一份源码面锚点（scripts/_badge_anchor.py）。
         # 没有这一关，「换个人只跑本尺」照样会被旧快照骗绿——那正是判例-25 的病灶。
         aprobs, _ainfo = anchor_problems(str(log_path))
         if aprobs:

@@ -273,8 +273,16 @@ SPECIAL_CASES = [
     case("check_py_stdout_encoding.py", "--selftest"),
     case("check_py_stdout_encoding.py", "--all"),
     # —— 依赖临时件的 case：缺前置 ⇒ SKIP 并点名 ——
-    gated("check_badge.py", TESTLOG, TESTLOG, "README.md"),
-    gated("check_test_sync.py", TESTLOG, TESTLOG),
+    # R25（判例-25/33）：两把吃**同一份** `temp/pt27.log` 快照的尺。
+    # 旧形状里快照停在 1455、README 也 1455 ⇒ 一致 ⇒ PASS，而现状 1457 ⇒ **判据在说谎**。
+    # 现在两把尺都先验 `<快照>.src` 源码面锚点：缺失/过期 ⇒ rc=2（诚实沉默），
+    # 于是电池里这两格在本机快照过期时是红的——**红着是诚实的**。
+    # `--fresh` 让判据判前真跑一次全仓（实测约 7~9 分钟，一次覆盖整轮电池），跑完重写快照+锚点
+    # ⇒ 电池里跑就是真绿或真红，不靠「谁记得手跑一下」。
+    # 逃生口 `FIST_BADGE_FRESH=0`：跳过 fresh ⇒ 本格 SKIP，且 SKIP 理由必须写清
+    # **跳过了什么能力的证明**（判例-33：不带说明的 SKIP 在汇总里会被读成「这格没问题」）。
+    gated("check_badge.py", TESTLOG, TESTLOG, "README.md", "--fresh"),
+    gated("check_test_sync.py", TESTLOG, TESTLOG, "--fresh"),
     case("check_test_sync.py", "--selftest"),
     gated("check_deprecated_text_census.py", DUMP, DUMP),
     case("check_deprecated_text_census.py", "--selftest"),
@@ -417,6 +425,14 @@ GEN_PLUGINS_GATE = "gen_plugins.py"
 # 而"新脚本默认不进电池"最多是漏检——漏检由 --list 的非判据清单兜底（可见 + 有理由）。
 AUTO_CASE_PREFIXES = ("check_", "cleanup_")
 AUTO_CASE_EXACT = {"gen_plugins.py", "fist-gate.py", "check_repo_shape.py"}
+
+
+# ── 判例-33：性能逃生口 `FIST_BADGE_FRESH=0` ──────────────────────────────────
+# 默认开（电池里就真跑，7~9 分钟也值）；显式 0 才关。关的时候必须**说出跳过了什么**，
+# 否则「SKIP」在汇总里跟在「这格没问题」长得一样。
+def fresh_enabled():
+    """`--fresh` 类格子要不要真跑。只有显式 `FIST_BADGE_FRESH=0` 才关（默认开）。"""
+    return os.environ.get("FIST_BADGE_FRESH", "").strip() != "0"
 
 
 def non_gate_reason(script):
@@ -893,6 +909,15 @@ def run_battery(case_timeout=CASE_TIMEOUT_SEC):
         if miss:
             skips.append((c["name"], "缺前置 " + " ".join(miss)))
             print("SKIP  %-56s %s" % (c["name"], "缺前置 " + " ".join(miss)))
+            continue
+        # 判例-33：性能逃生口。`FIST_BADGE_FRESH=0` 跳过 `--fresh`（判前真跑全仓）时，
+        # 本格只证明了「文档 == 快照」，**没有**证明「文档 == 现实」——
+        # 不带这句说明的 SKIP，在汇总里会被读成「这格没问题」，那就是又一种假绿。
+        if "--fresh" in c["argv"] and not fresh_enabled():
+            why = ("SKIP 新鲜度检验（FIST_BADGE_FRESH=0）：本格只证明了「文档 == 快照」，"
+                   "未证明「文档 == 现实」——快照可能比代码旧（判例-25）")
+            skips.append((c["name"], why))
+            print("SKIP  %-56s %s" % (c["name"], why))
             continue
         tmo = c.get("timeout") or case_timeout
         try:
