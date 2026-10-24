@@ -112,6 +112,16 @@ jobs:
           python3 scripts/check_doc_dup.py --selftest
           python3 scripts/check_doc_dup.py
 
+      # R59/BUG-399 接线：ad5d38df 落了 scripts/check_memory_log_size.py 却从未接进任何 workflow——
+      # 613MB 事故（memory/2026-10-22.md 长到 613.31 MB / 3,698,202 行，GitHub 拒收把整条
+      # origin 交付线冻死）就是「没闸」的下场。本尺只读 memory/*.md 工作树文件（体积 + 重复度），
+      # 不依赖 moon；放 Migrate 之前（同 merge-marker 教训：之后的判据会被 skip）。
+      - name: Memory-log size gate (R59/BUG-399：memory/*.md 体积 + 重复度失控闸)
+        shell: bash
+        run: |
+          python3 scripts/check_memory_log_size.py --selftest
+          python3 scripts/check_memory_log_size.py
+
       - name: Migrate mooncakes dep manifests (新版 moon 拒旧 moon.mod.json，check/test 全线的公共前置)
         shell: bash
         run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
