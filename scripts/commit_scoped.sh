@@ -182,6 +182,102 @@ run_selftest() {
   ( COMMIT_SCOPED_CWD="$d" bash "$SELF" "$(msgfile "$d")" sub >/dev/null 2>&1 )
   cell "s8-dir-reject" "$?" "2"
 
+  # ---- s10-race-window-narrowed：**变异对照格**（本脚本的核心格）----
+  #
+  # 测的到底是什么：`git commit -- <paths>` 能不能挡住「add 之后被并发塞进索引的东西」。
+  #
+  # 为什么不用 sleep 造竞态（首版踩坑）：靠 `( sleep 0.05; git add b ) &` 抢时序
+  # **不确定** —— 慢一点就变成「前置格先看见 b」，被 s2 那格拦掉，s10 假失败，
+  # 且落盘面读到上一发残留。**用时间抢窗口的测试本身不可靠。**
+  #
+  # 确定性造法：手工复刻脚本的两步，在两步之间**确定性注入**污染：
+  #   git add a.txt                 <-- 脚本第 2 步等价
+  #   git add b.txt                 <-- 并发 agent 在窗口里塞的
+  #   git commit -F CM.txt -- a.txt <-- 脚本第 5 步等价
+  # 断言：索引里有 2 个，落盘面只有 1 个。
+  # 反证：把最后一条改成裸 `git commit -F CM.txt`，落盘面就是 a.txt+b.txt => 这格红。
+  d="$TMPROOT/s10"; mkfixture "$d"
+  if [ -d "$d" ]; then
+    (
+      cd "$d" || exit 1
+      printf 'a2\n' > a.txt
+      printf 'b2\n' > b.txt
+      printf 'm\n' > CM.txt
+      git add -- a.txt >/dev/null 2>&1
+      git add -- b.txt >/dev/null 2>&1
+      staged10="$(git diff --cached --name-only | LC_ALL=C sort | tr '\n' ' ')"
+      git commit -q -F CM.txt -- a.txt >/dev/null 2>&1
+      landed10="$(git show --name-only --pretty=format: HEAD | grep -v '^$' | LC_ALL=C sort | tr '\n' ' ')"
+      cells=$((cells+1))
+      if [ "$landed10" = "a.txt " ]; then
+        say "  OK   s10-race-window-narrowed（索引 [${staged10}]=> 落盘 [${landed10}]）"
+      else
+        say "  FAIL s10-race-window-narrowed: 索引=[${staged10}] 落盘=[${landed10}]（期望落盘只有 a.txt）"
+        fails=$((fails+1))
+      fi
+    )
+  fi
+
+
+  # ---- s10b-race-through-script：**走脚本真实路径**的竞态格 ----
+  #
+  # 为什么还要这一格（2026-10-24 变异实测抓出来的缺口）：
+  #   把脚本步骤 5 的 `-- "${DECLARED[@]}"` 拿掉后，**s10 照样绿** ——
+  #   因为 s10 只是手工复刻了「带 -- 的 git commit」，测的是 git 的机制，
+  #   **根本没走脚本的实现路径**。⇒ 机制格不能替代「实现路径格」。
+  #   这与判例-3（改名不是接线）同族：**测了相邻的东西，不等于测了它**。
+  #
+  # 造法：用 GIT_INDEX_FILE 让「脚本看到的索引」与「我预埋污染的索引」分离不可行
+  # （脚本会重设 cwd）。改用最直接的方式：脚本跑前把要污染的 b.txt 用
+  # `git update-index --add --cacheinfo` 预埋进索引 —— 但这会被前置格拦（s2 场景）。
+  # ⇒ 真正可行的确定性造法：**让前置格看到干净索引的同一瞬间，索引里已有污染**，
+  #    靠 `git update-index` 在 add 之前把 b.txt 标成"已暂存但无差异"不成立……
+  #
+  # 结论（诚实）：这条路径在单进程 selftest 里**无法确定性造出竞态**。
+  # 所以本格改为**结构断言**：直接检查脚本源码里步骤 5 确实带了 `--`。
+  # 它不是行为测试，是**实现面锁** —— 能挡住「有人把 -- 删了」这一类回归。
+  # 行为面由 s10 覆盖（git 机制），实现面由本格覆盖（脚本确实用了它）。两者缺一不可。
+  # ⚠️ 2026-10-24 变异实测抓到的第二个坑：**锁会匹配到它自己的字符串**。
+  # 首版写 `case $src in *'commit_args=(-F "$MSG_FILE" --)'*)` ——
+  # 该模式串本身就出现在本文件的这一行里，于是把真实代码行变异掉之后，
+  # 匹配仍然命中的是**这行的模式串**，锁恒绿（自指假绿）。
+  # 处置：只看**行首锚定**的真实赋值行（^commit_args=），且要求该行以 ` --)` 结尾。
+  cells=$((cells+1))
+  step5_ok=0
+  while IFS= read -r ln; do
+    case "$ln" in
+      'commit_args=(-F "$MSG_FILE" --)') step5_ok=1 ;;
+    esac
+  done < <(grep -E '^commit_args=\(' "$SELF" 2>/dev/null || true)
+  if [ "$step5_ok" = "1" ]; then
+    say "  OK   s10b-implementation-uses-dashdash（步骤5 的 commit_args 带 --，行首锚定）"
+  else
+    say "  FAIL s10b-implementation-uses-dashdash: 步骤5 的 commit_args 没带 --（收窄机制被移除或改写）"
+    fails=$((fails+1))
+  fi
+
+
+  # ---- s11-dashdash-argument-order：防「-F 放 -- 之后」那个坑 ----
+  # 直接验 git 的语义：正确顺序能出 commit，错误顺序报 outside repository。
+  d="$TMPROOT/s11"; mkfixture "$d" && ( cd "$d" || exit 1; printf 'a3\n' > a.txt; git add -- a.txt )
+  if [ -d "$d" ]; then
+    (
+      cd "$d" || exit 1
+      printf 'm\n' > CM.txt
+      # 错误顺序：-- 之后跟 -F（会被当 pathspec）
+      if git commit -q -- a.txt -F CM.txt >/dev/null 2>&1; then bad=0; else bad=1; fi
+      # 正确顺序：-F 在 -- 之前
+      if git commit -q -F CM.txt -- a.txt >/dev/null 2>&1; then good=0; else good=1; fi
+      cells=$((cells+1))
+      if [ "$bad" = "1" ] && [ "$good" = "0" ]; then
+        say "  OK   s11-dashdash-argument-order（-- 后跟 -F 被拒 / -F 在前成功）"
+      else
+        say "  FAIL s11-dashdash-argument-order: bad_rc=$bad good_rc=$good（期望 1 / 0）"
+        fails=$((fails+1))
+      fi
+    )
+  fi
+
   # ---- s9-not-a-repo：不在 git 仓 => exit 2 ----
   # 2026-10-24 实测坑：mktemp -d 落在 $TMPDIR（本机 C:/Users/<u>/），而该目录上溯
   # 存在一个游离的 C:/Users/<u>/.git ⇒ git 认它是仓库，「不在仓库」这格永远造不出来
@@ -276,21 +372,40 @@ for p in "${DECLARED[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# 步骤 3：核暂存面 == 申报面（集合逐字相等）
+# 步骤 3：核暂存面 vs 申报面 —— 现在是 **WARN**，不是致命错
+#
+# 语义变更（2026-10-24 tidy 实测 + 统领裁决）：
+#   旧版把「暂存面 ≠ 申报面」判 REJECT(1)。那是**两半法**：检测到别人的东西就拒绝。
+#   但 tidy 实测：`git add` 之后到 `commit` 之前的窗口里，并发 agent 会持续往索引塞东西；
+#   `git restore --staged` 回滚**完又被塞**（挡不住）。
+#   真正的**事中阻止**是 `git commit -- <paths>`（见步骤 5）：
+#     · 实测索引里有 `a.txt b.txt` 时，`git commit -- a.txt` 落盘面**只有 a.txt**
+#   所以这一步降级为 WARN：告诉人「索引里有别人的东西，我用 -- 收窄了」，
+#   而不是拒绝提交（拒绝只会让人反复重试，窗口照样在）。
+#
+# 仍然保留的价值：**事前**发现「申报路径根本没生效」（missing 那一侧仍是硬错 ——
+# 那说明路径写错/文件不存在，`-- <paths>` 也救不了）。
 # ---------------------------------------------------------------------------
 staged="$(git_ diff --cached --name-only | LC_ALL=C sort -u)"
+extra=""; missing=""
 if [ "$staged" != "$declared_sorted" ]; then
   extra="$(LC_ALL=C comm -13 <(printf '%s\n' "$declared_sorted") <(printf '%s\n' "$staged") | grep -v '^$' || true)"
   missing="$(LC_ALL=C comm -23 <(printf '%s\n' "$declared_sorted") <(printf '%s\n' "$staged") | grep -v '^$' || true)"
-  err "REJECT(1) 暂存面 ≠ 申报面（有东西被并发 add 进来，或申报路径未生效）"
-  [ -n "$extra" ]   && { err "  多出来的（不属于你的申报面）："; printf '%s\n' "$extra"   | sed 's/^/    + /' >&2; }
-  [ -n "$missing" ] && { err "  缺失的（申报了但没进暂存）：";     printf '%s\n' "$missing" | sed 's/^/    - /' >&2; }
-  # 只把「多出来的」剔出暂存（那是别人的面）；缺失的不动（可能是路径写错）
-  if [ -n "$extra" ]; then
-    while IFS= read -r f; do [ -n "$f" ] && git_ restore --staged -- "$f" >/dev/null 2>&1 || true; done <<< "$extra"
-    err "  已把多出来的路径剔出暂存（不动工作树）。请复核后重跑。"
-  fi
+fi
+
+# missing = 申报了但不在暂存面 ⇒ 硬错（路径写错 / 文件无差异 / add 被拒）
+if [ -n "$missing" ]; then
+  err "REJECT(1) 申报的路径没有进入暂存面（路径写错、或文件无实际改动）"
+  printf '%s\n' "$missing" | sed 's/^/    - /' >&2
+  err "  处置：确认路径正确、且该文件确有内容改动（纯 EOL/权限差异会被判 numstat 0 0）。"
   exit 1
+fi
+
+# extra = 别人的东西被并发塞进索引 ⇒ WARN（`-- <paths>` 会兜住）
+if [ -n "$extra" ]; then
+  err "WARN 索引里有不属于申报面的内容（并发 agent 塞进来的）—— 本脚本用 \`git commit -- <paths>\` 收窄，不会带走它们："
+  printf '%s\n' "$extra" | sed 's/^/    + /' >&2
+  err "  （不剔出暂存：剔了它们会被再塞回来，回滚挡不住窗口；收窄由步骤 5 负责。）"
 fi
 
 # ---------------------------------------------------------------------------
@@ -323,9 +438,26 @@ if [ -n "$zero_zero" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 步骤 5：commit（**不**自动 --no-verify）
+# 步骤 5：commit —— **`git commit -- <paths>`（事中阻止）**，且不自动 --no-verify
+#
+# 这是本脚本的核心机制，也是「两半法」与「真收窄」的分界：
+#   · 两半法（步骤 3 + 步骤 6）= **事后发现**「有东西被带走了」
+#   · `-- <paths>` = **事中阻止**「它压根进不了这次提交」
+#
+# 实测（2026-10-24，/tmp 夹具）：
+#   索引: a.txt b.txt   `git commit -F msg -- a.txt`  → 落盘面: a.txt  ✅ 只有 1 个
+#   反证: 裸 `git commit -F msg`                      → 落盘面: a.txt b.txt  ❌ 被带走
+#
+# ⚠️ 参数顺序坑（tidy 踩过）：
+#   `-F` / `-m` 等**选项必须放在 `--` 之前**；放后面会被当成 pathspec。
+#   实测错误顺序 `git commit -- a.txt -F msg` 报
+#     "fatal: <msg path> is outside repository" —— 报错完全指错方向（看着像路径问题）。
+#   下面把顺序写死，并在参数校验期就拦截「用户自己传了 -- 之后的选项」这种情况。
 # ---------------------------------------------------------------------------
-if ! out="$(git_ commit -F "$MSG_FILE" 2>&1)"; then
+commit_args=(-F "$MSG_FILE" --)
+for p in "${DECLARED[@]}"; do commit_args+=("$p"); done
+
+if ! out="$(git_ commit "${commit_args[@]}" 2>&1)"; then
   err "$out"
   reject_1 "git commit 失败（钩子拒绝或其它原因；本脚本不自动 --no-verify）"
 fi
