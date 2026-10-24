@@ -55,7 +55,9 @@ ReferenceError: require is not defined in ES module scope
     python scripts/check_esm_bundle_runnable.py --selftest
 """
 import argparse
+import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -68,16 +70,172 @@ if hasattr(sys.stderr, "reconfigure"):
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-DEFAULT_BUNDLE = os.path.join("_build", "js", "debug", "build", "cmd", "cli", "cli.js")
+# ── 覆盖面：从 `moon.pkg` 反解，**不硬编码**（判例-16 / R183）────────────────
+#
+# **为什么不再写死 cli.js**（判例-16「判据覆盖必须 ≥ 修复覆盖」）：
+# `scripts/patch_esm_main.py` 的修复面是 `_build/js/debug/build/**` 下**全部** >100KB 的
+# bundle（实测 4 个：cmd/cli、cmd/main、cmd/commissar、smoke），而本尺原先只验
+# `cmd/cli/cli.js` 一个。⇒ 若 `commissar.js` / `smoke.js` 某天没被垫片覆盖，**本尺看不见**，
+# 而电池里那一格跑的又是 `--selftest`，连这条窄覆盖也照不到。判据面 < 修复面 = 真缺陷。
+#
+# 覆盖面真源 = **各包 `moon.pkg` 的 `pkgtype(kind: "executable")`**（`check_entry_paths.py`
+# 同源口径），而不是一份手抄清单。这样：
+#   · 新增/搬移 executable 包（如 `smoke/` → `cmd/smoke/`）**自动纳入**，不必改本文件；
+#   · 删除某个 executable 包 ⇒ 覆盖面自动收窄，不会留下指向幽灵产物的死格。
+#
+# 扫描面是**仓库内任意层级的 `moon.pkg`**（不限 `cmd/*`）：本仓 `smoke/` 现在就在根下第二层，
+# 将来也可能再搬；写死前缀就是下一个漂移点。
+EXEC_PKG_RE = r"pkgtype\(\s*kind\s*:\s*\"executable\"\s*\)"
+SCAN_SKIP_DIRS = {".git", "_build", ".mooncakes", "__pycache__", "node_modules", "temp", "_archive"}
+
+
+def executable_pkg_dirs(root):
+    """仓库内所有声明 `pkgtype(kind: "executable")` 的包目录（仓库相对、`/` 分隔、已排序）。
+
+    跳过构建产物与依赖目录；`.agents/worktrees/` 下是各分支的副本，不是本仓真源 ⇒ 一并跳过。
+    """
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel_dir = os.path.relpath(dirpath, root).replace("\\", "/")
+        if rel_dir == ".":
+            rel_dir = ""
+        parts = [p for p in rel_dir.split("/") if p]
+        # 剪枝：构建/依赖/临时目录、以及 worktree 副本
+        if any(p in SCAN_SKIP_DIRS for p in parts):
+            dirnames[:] = []
+            continue
+        if parts[:2] == [".agents", "worktrees"]:
+            dirnames[:] = []
+            continue
+        if "moon.pkg" not in filenames:
+            continue
+        try:
+            with open(os.path.join(dirpath, "moon.pkg"), "r", encoding="utf-8", errors="replace") as f:
+                txt = f.read()
+        except OSError:
+            continue
+        if re.search(EXEC_PKG_RE, txt):
+            found.append(rel_dir)
+    return sorted(found)
+
+
+def bundles_for_pkg(pkg_dir):
+    """把包目录反解成它在 `_build/js/debug/build/` 下的**候选** bundle 路径。
+
+    **产物目录 = 包目录原样**（不是 `basename`）——本仓实测：
+        `cmd/cli/`       → `_build/js/debug/build/cmd/cli/cli.js`
+        `cmd/main/`      → `_build/js/debug/build/cmd/main/main.js`
+        `smoke/`         → `_build/js/debug/build/smoke/smoke.js`
+    即 `<build>/<pkg_dir>/<basename>.js`。早先按 `basename(pkg_dir)` 拼会漏掉 `cmd/`
+    这层 ⇒ `cmd/*` 的产物一个都解析不到（第一次实跑就暴露了，这正是「不硬编码」的价值
+    —— 写死 `cmd/cli/cli.js` 的话这个错永远看不见）。
+
+    产物**文件名**仍可能与包目录名不同（历史上 `cmd/main` 的产物就叫 `main.js`），
+    故给出按优先级排列的候选，取第一个存在的。
+    """
+    build = os.path.join("_build", "js", "debug", "build", *pkg_dir.split("/"))
+    name = os.path.basename(pkg_dir)
+    return [
+        os.path.join(build, name + ".js"),
+        os.path.join(build, "main.js"),
+    ]
+
+
+def resolve_bundles(root, pkg_dirs):
+    """(resolved, unresolved)：resolved = [(pkg_dir, 存在的 bundle 相对路径)]。
+
+    **未构建不算缺陷**（CI 上未必先 build）——但 resolve 结果要参与「覆盖面对表」自证格，
+    所以把两者都返回，由调用方如实出数。
+    """
+    resolved, unresolved = [], []
+    for pkg in pkg_dirs:
+        hit = next((c for c in bundles_for_pkg(pkg) if os.path.isfile(os.path.join(root, c))), None)
+        (resolved.append((pkg, hit)) if hit else unresolved.append(pkg))
+    return resolved, unresolved
 
 # 根因分类标签（供 CI 注解与报告引用，字符串稳定）
 KIND_OK = "OK"
 KIND_SHIM_MISSING = "SHIM_MISSING"
 KIND_ESM_CJS_REQUIRE = "ESM_CJS_REQUIRE"
 KIND_OTHER_CRASH = "OTHER_CRASH"
+KIND_UNBUILT = "UNBUILT"
 
 # 崩溃特征串（来自 BUG-406 实测输出）
 _REQUIRE_RE = "require is not defined"
+
+# ── ESM 加载探针（判例-16 扩面后新增的一档，**B3'**）──────────────────────────
+#
+# **为什么必须有这一档**：扩面到全部 executable 后，发现 `cmd/commissar` 的产物**没有
+# `version` 子命令**（它打印用法后 `exit(1)`），`cmd/main` 的 `version` 只往 stderr 写
+# ExperimentalWarning —— 于是旧的 B3「跑 `version` 看回执」对这两支**假红**：
+# 它们根本没崩，只是不打版本号。守在「能不能跑 version」上等于把入口口径写死了。
+#
+# 正确的问题是：**这个 bundle 作为 ESM 模块，加载时会不会因 CJS 互操作崩**。
+# 这正好是 BUG-406 的病根（ESM 作用域没有 `require`），且与入口有没有子命令**无关**。
+#
+# 探针用 `import(pathToFileURL(p).href)`：Windows 盘符路径直接喂 ESM loader 会报
+# `Received protocol 'e:'`（实测踩过），必须转 file:// URL。
+# 探针把结果打成一行 JSON，**判据只看这一行**——不依赖进程 rc（模块可能在 import 期
+# 就 `process.exit`，例如 commissar 的用法提示）也不依赖 stderr 噪声。
+_ESM_PROBE_JS = r"""
+import { pathToFileURL } from 'node:url';
+const p = process.argv[1];
+const emit = (rec) => console.log('__ESM_PROBE__' + JSON.stringify(rec));
+// 先占位：若 bundle 在 import 期就 process.exit（实测 cmd/commissar 打印用法即 exit(1)），
+// 后面那次 emit 永远不会执行 —— 而「能跑到 exit」本身就证明 ESM 加载没崩。
+// 所以先打一条 IMPORT_STARTED，再在 finally/成功后打结论；调用方按「最后一条」读。
+emit({ loaded: false, kind: 'OTHER', err: 'import did not return (bundle exited during import)' });
+let out = { loaded: false, kind: 'OTHER', err: null };
+try {
+  await import(pathToFileURL(p).href);
+  out.loaded = true;
+  out.kind = 'IMPORT_OK';
+} catch (e) {
+  const name = String((e && e.name) || '');
+  const msg = String((e && e.message) || '');
+  out.err = (name + ': ' + msg).slice(0, 300);
+  out.kind = (name === 'ReferenceError' && msg.indexOf('require is not defined') >= 0)
+    ? 'ESM_CJS_REQUIRE' : 'OTHER';
+}
+emit(out);
+"""
+
+
+def classify_esm_probe(stdout):
+    """纯函数：解析 ESM 探针输出的**最后一条** `__ESM_PROBE__` 行，给 (kind, detail)。
+
+    返回 kind ∈ {OK, ESM_CJS_REQUIRE, OTHER_CRASH}，与 classify_run 同一套标签，
+    于是上层不必关心用的是哪一档。
+
+    读**最后一条**而不是第一条：探针先打 `IMPORT_STARTED` 占位，再打结论。
+    - 若 bundle 在 import 期 `process.exit`（如 `cmd/commissar` 打印用法即退出），
+      **只剩占位那条** —— 但它能跑到 exit，说明 ESM 加载本身没崩 ⇒ 判 OK。
+    - 若 import 抛错，两条都在，最后一条是真正的分类。
+
+    判据只看 `__ESM_PROBE__` 那几行；一条都没有 ⇒ 探针自己坏了，不冒充通过。
+    """
+    lines = [ln for ln in (stdout or "").splitlines() if ln.startswith("__ESM_PROBE__")]
+    if not lines:
+        return (KIND_OTHER_CRASH, "ESM 探针没有输出 `__ESM_PROBE__` 行 ⇒ 探针自身失败，拒绝报绿")
+    try:
+        rec = json.loads(lines[-1][len("__ESM_PROBE__"):])
+    except ValueError:
+        return (KIND_OTHER_CRASH, "ESM 探针输出不是合法 JSON ⇒ 探针自身坏了")
+    if rec.get("kind") == "ESM_CJS_REQUIRE":
+        return (KIND_ESM_CJS_REQUIRE,
+                "ESM 加载即崩：require is not defined ⇒ 该 bundle 没被垫片覆盖（BUG-406 形状）%s"
+                % ("；" + rec["err"] if rec.get("err") else ""))
+    if resp_ok(rec):
+        return (KIND_OK, "ESM 加载正常（无 CJS 互操作崩溃）")
+    if len(lines) == 1 and "did not return" in (rec.get("err") or ""):
+        # 只有占位行 ⇒ bundle 在 import 期自行退出。能走到那一步就说明 ESM 加载没崩。
+        return (KIND_OK, "ESM 加载正常（bundle 在 import 期自行退出，未触发 CJS 互操作崩溃）")
+    return (KIND_OTHER_CRASH, "ESM 加载异常：%s" % (rec.get("err") or "未知"))
+
+
+def resp_ok(rec):
+    """探针记录里「模块成功被 ESM 加载」的判据（单独拆出便于单测）。"""
+    return bool(rec.get("loaded") or rec.get("kind") == "IMPORT_OK")
 
 
 # ── 纯函数（可单测，不依赖 node/文件系统）──────────────────────────────────────
@@ -158,39 +316,66 @@ def run_bundle(path, args=("version",), timeout=120):
             (p.stderr or b"").decode("utf-8", "replace"))
 
 
+def run_esm_probe(path, timeout=120):
+    """用 `node --input-type=module -e <探针>` 加载 bundle，返回探针 stdout。
+
+    **不跑 `version`，只验「能不能作为 ESM 被加载」**（见 _ESM_PROBE_JS 上方的理由）。
+    进程可能在 import 期 `process.exit`（如 commissar 打印用法即退出）——探针把结论
+    打在**加载成功之后**，所以「先打印再 exit」的入口照样能给出 IMPROT_OK。
+    """
+    p = subprocess.run(
+        ["node", "--input-type=module", "-e", _ESM_PROBE_JS, os.path.abspath(path)],
+        cwd=os.path.dirname(path) or ".",
+        capture_output=True,
+        timeout=timeout,
+    )
+    return (p.stdout or b"").decode("utf-8", "replace")
+
+
 def check(bundle):
-    """全四档。返回 (rc, kind, detail, stdout, stderr)。
+    """全档。返回 (rc, kind, detail, stdout, stderr)。
 
-    **档位优先级**（实测校准）：B1 存在性 → **B3/B4 真跑并分类** → B2 垫片静态核。
+    **档位优先级**（判例-16 扩面后重校）：B1 存在性 → **B3' ESM 加载探针** →
+    （`version` 回执作为**加分证据**，不是必要条件）→ B2 垫片静态核。
 
-    为什么 B3/B4 排在 B2 前面：两个原因——
-    1. **精确性**：真跑出来的根因（`ESM_CJS_REQUIRE`）比静态推断（`SHIM_MISSING`）
-       更接近真相。同一个"缺垫片"毛病，真跑能直接指出是 `require is not defined`；
-    2. **`node` 不可用时的退化**：CI 上若没装 node，B3 跑不了，此时**退回 B2 静态核**
-       仍然能挡住「忘跑 patch」这一形 —— 判据不因缺 node 就整体失效。
+    为什么以 **ESM 探针**为主判据而不是「跑 `version` 看回执」：
+      · 扩面后发现 `cmd/commissar` **没有 version 子命令**（打印用法即 exit(1)）、
+        `cmd/main` 的 version 只往 stderr 写 ExperimentalWarning —— 旧口径对这两支**假红**。
+        它们根本没崩，只是不打版本号；「是不是 ESM 崩溃」与「有没有 version 子命令」无关。
+      · ESM 探针直接回答 BUG-406 的真问题：**加载时 require 可用吗**，对全部入口同口径。
+      · `version` 回执仍保留为**诊断证据**（打印出来给人看），移出判定面。
+
+    为什么 B3' 仍排在 B2 前面：node 不可用时退回 B2 静态核，判据不因缺 node 整体失效。
     """
     ok, kind, detail = bundle_checks(bundle)
     if not ok and kind == "MISSING":
         return (2, kind, detail, "", "")
 
-    # 先真跑（B3/B4）；node 不在或静态已判缺垫片时退回静态结论
     if shutil.which("node") is not None:
         try:
-            out, err = run_bundle(bundle)
+            probe_out = run_esm_probe(bundle)
         except subprocess.TimeoutExpired:
-            return (1, KIND_OTHER_CRASH, "跑 `version` 超时（120s）⇒ 产物挂死", "", "")
-        kind2, detail2 = classify_run(out, err)
+            return (1, KIND_OTHER_CRASH, "ESM 加载探针超时（120s）⇒ 产物挂死", "", "")
+        kind2, detail2 = classify_esm_probe(probe_out)
+        # version 回执：**只作诊断**（打在 stdout 里给人读），不作为判定面
+        diag = ""
+        try:
+            vout, verr = run_bundle(bundle)
+            if vout.strip():
+                diag = "version 回执：%s" % vout.strip().splitlines()[0][:80]
+        except (subprocess.TimeoutExpired, OSError):
+            diag = "version 回执：跑不起来（不影响 ESM 判定）"
         if kind2 != KIND_OK:
-            return (1, kind2, detail2, out, err)
+            return (1, kind2, detail2, probe_out, diag)
         # 真跑正常，但静态仍报缺垫片 ⇒ 以静态为准（垫片缺失是确定的缺陷）
         if not ok:
-            return (1, kind, detail, out, err)
-        return (0, KIND_OK, detail2, out, err)
+            return (1, kind, detail, probe_out, diag)
+        return (0, KIND_OK, detail2, probe_out, diag)
 
     # node 不可用：静态档兜底；静态过了就算无法自证（不报绿也不冤枉）
     if not ok:
         return (1, kind, detail, "", "")
-    return (2, "MISSING", "PATH 上没有 node ⇒ 真跑档无法执行，判据无法自证", "", "")
+    return (2, "MISSING", "PATH 上没有 node ⇒ ESM 探针档无法执行，判据无法自证", "", "")
 
 
 # ── 自证 ───────────────────────────────────────────────────────────────────────
@@ -271,10 +456,51 @@ def selftest():
 
         # 保险：真仓当前 bundle（若已构建且已 patch）应当 rc=0 —— 但**不**作为自证硬格，
         # 因为 CI 上可能没构建。这里只把它记成诊断读数，不参与 fails。
-        real = os.path.join(ROOT, DEFAULT_BUNDLE)
-        if os.path.isfile(real):
-            rrc, rkind, _, _, _ = check(real)
-            cells.append("diag-real-bundle(rc=%d,kind=%s)" % (rrc, rkind))
+        # 覆盖面已改为「全部 executable 包」，故只对**已构建**的那些出诊断（不再写死 cli.js）。
+        _real_res, _real_unres = resolve_bundles(ROOT, executable_pkg_dirs(ROOT))
+        for _pkg, _rel in _real_res:
+            rrc, rkind, _, _, _ = check(os.path.join(ROOT, _rel))
+            cells.append("diag-real-bundle(%s: rc=%d,kind=%s)" % (_pkg, rrc, rkind))
+
+        # ── 判例-16 结构性护栏：**判据验的面 == moon.pkg 反解的 executable 面** ──────
+        # 这条格防的就是「修复扩到 4 个 bundle、判据停在 1 个」复发。
+        # 它直接对表两个真源，**不写任何数字**：executable 包清单 vs 本尺实际会验的清单。
+        _pkgs = executable_pkg_dirs(ROOT)
+        _res, _unres = resolve_bundles(ROOT, _pkgs)
+        cell("e2e-coverage-from-pkg-not-hardcoded",
+             # 覆盖面必须来自反解：至少枚举到本仓已知的 executable 包集合，
+             # 且 `cmd/cli`（发布入口）一定在其中——为空即证明扫描面坏了。
+             ("cmd/cli" in _pkgs, len(_pkgs) > 0),
+             (True, True))
+        cell("e2e-coverage-covers-all-built-executables",
+             # 已构建的 executable 产物数 == 本尺准备逐件验的数量（判据面 == 修复面）
+             len(_res), len([p for p in _pkgs
+                             if any(os.path.isfile(os.path.join(ROOT, c))
+                                    for c in bundles_for_pkg(p))]))
+        # 每个 executable 包都必须能反解出**非空**的候选 bundle 路径（否则该包永远验不到）
+        cell("e2e-every-executable-has-bundle-candidate",
+             all(len(bundles_for_pkg(p)) > 0 for p in _pkgs), True)
+        # 反解出的候选必须落在 _build/js/debug/build/<pkgbasename>/ 下（防路径拼接写错）
+        cell("e2e-bundle-candidates-under-build-dir",
+             all(c.replace("\\", "/").startswith("_build/js/debug/build/")
+                 for p in _pkgs for c in bundles_for_pkg(p)), True)
+
+        # ── 判例-16 的核心场景：**修复面漏网的 bundle 必须被判据抓住** ──────────────
+        # 司令-β 从修复面实测：smoke.js 是 executable、产物存在，但 patch_esm_main 旧实现
+        # 只 patch 最大的那个（恒为 cli.js），smoke.js 漏网 ⇒ 加载即
+        # ReferenceError: require is not defined。（这与司令-α 从判据面看到的
+        # DEFAULT_BUNDLE 只验 1 个是同一根因的两个方向。）
+        unpatched = os.path.join(tmp, "unpatched_exec.mjs")
+        with open(unpatched, "w", encoding="utf-8") as f:
+            f.write("const s = require('node:sqlite');\nconsole.log('never reached');\n")
+        # ① 静态档必须报 SHIM_MISSING
+        uok, ukind, _ = bundle_checks(unpatched)
+        cell("e2e-unpatched-executable-detected",
+             (uok, ukind), (False, KIND_SHIM_MISSING))
+        # ② 探针档必须报 ESM_CJS_REQUIRE（真加载崩，且归类正确、不混进 OTHER_CRASH）
+        urc, ukind2, _, _, _ = check(unpatched)
+        cell("e2e-unpatched-classified-not-generic-crash",
+             (urc, ukind2), (1, KIND_ESM_CJS_REQUIRE))
 
         # 入口面（J2 口径）：真调 main(["--selftest"])
         if not _ENTRY_PROBED[0]:
@@ -304,13 +530,58 @@ def run(argv):
     ap = argparse.ArgumentParser(
         description="打包产物「真能跑」判据（BUG-406：ESM 作用域缺 require）")
     ap.add_argument("--selftest", action="store_true", help="自证（造好/坏 bundle 各跑一遍）")
-    ap.add_argument("--bundle", default=None, help="指定 bundle 路径（缺省 debug cli.js）")
+    ap.add_argument("--bundle", default=None,
+                    help="只验指定 bundle（缺省扫**全部** executable 包的产物，判例-16）")
     args = ap.parse_args(argv)
 
     if args.selftest:
         return selftest()
 
-    bundle = args.bundle or os.path.join(ROOT, DEFAULT_BUNDLE)
+    # 显式指定 ⇒ 单件（保持旧用法）
+    if args.bundle:
+        return _report_one(args.bundle)
+
+    # 默认面 = 从 moon.pkg 反解出的**全部** executable 包（判例-16：覆盖面 ≥ 修复面）
+    pkg_dirs = executable_pkg_dirs(ROOT)
+    if not pkg_dirs:
+        print("FATAL 判据无法自证：仓库内一份 `pkgtype(kind: \"executable\")` 都没枚举到 —— "
+              "正则或扫描面坏了，拒绝报绿")
+        return 2
+    resolved, unresolved = resolve_bundles(ROOT, pkg_dirs)
+    if not resolved:
+        print("FATAL 判据无法自证：%d 个 executable 包一个产物都没构建（先 `moon build --target js`）"
+              % len(pkg_dirs))
+        print("      待构建：" + " / ".join(pkg_dirs))
+        return 2
+
+    worst = 0
+    lines = []
+    for pkg, rel in resolved:
+        rc, kind, detail, _, _ = check(os.path.join(ROOT, rel))
+        lines.append((pkg, rel, rc, kind, detail))
+        worst = max(worst, rc)
+    # 未构建的包单独出数（不算红，但必须可见——静默丢弃就是「数字凭空少」）
+    for pkg in unresolved:
+        lines.append((pkg, "(未构建)", None, KIND_UNBUILT, "该 executable 包没有产物，跳过真验"))
+
+    n_ok = sum(1 for _, _, rc, _, _ in lines if rc == 0)
+    for pkg, rel, rc, kind, detail in lines:
+        tag = {0: "PASS", 1: "FAIL", 2: "FATAL", None: "DIAG"}[rc]
+        print("%s [%s] %-28s %s" % (tag, kind, pkg, detail))
+        if rc == 1:
+            print("      修法：python scripts/patch_esm_main.py")
+    print("覆盖面：executable 包 %d 个 → 已验 %d / 未构建 %d / 通过 %d"
+          % (len(pkg_dirs), len(resolved), len(unresolved), n_ok))
+
+    if worst == 1:
+        return 1
+    if worst == 2:
+        return 2
+    return 0
+
+
+def _report_one(bundle):
+    """单件报告的旧路径（`--bundle` 显式指定时）。"""
     rc, kind, detail, out, err = check(bundle)
 
     if rc == 2:
