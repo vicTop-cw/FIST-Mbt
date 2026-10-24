@@ -774,10 +774,34 @@ J14_FACES = (
     # RE_J14_CLAIM 会吃「数字+个工具」形状，地图 §三 分组表里「生命周期(14)」这类导航简写
     # 不含「工具」二字，不被误伤；只有真正总数主张进比对。
     ("docs/agent-map.md", "项目地图面"),
+    # B2（C·verify task-19 发现、I·polish 复核，2026-10-24）：docs/deliverable.md 是
+    # **验收方照单收货的那份清单**（"期望输出：PASS tools/list → N 个 MCP 工具"），
+    # 它手写的工具数此前不在任何一面的比对里。
+    # **但只加这一面是空门** —— 见下面的 RE_J14_CLAIM 新支（B3）：
+    # 该文件的核心主张写成 `| MCP 工具 | **170**（+ 3 resources + 2 prompts） |`，
+    # 旧正则要求「数字紧跟工具」（中间只允许 个/MCP），表格的 `| **` 隔断了它 ⇒
+    # 加面之后仍一处解析不到。**两处必须同批改**（zeta 的原话：否则加了面还是空门）。
+    #
+    # ⚠️ 这一面必须**去掉历史沿革表**再比（实测：全文直接比会误伤 19 处）：
+    # 该文件 §三 是「功能沿革」表，每个功能行写着**当时的增量读数**
+    # （`R92 … 91→93 工具` / `R100 … 96→97 工具`…）—— 那些是**史料**，不是当前主张，
+    # 拿真源 170 去比它们必然全红，而且是**判据错**不是文档错。
+    # 故本面用 `J14_TRIM` 标注：只取「§四 自驱增强证据（功能沿革表）」**之前**的当前读数区
+    # （§一 10 秒自检 + §二 硬指标 + §三 核心能力），沿革表整段不进比对面。
+    ("docs/deliverable.md", "验收清单面", r"^## 四、自驱增强证据"),
 )
 J14_HELP = "cmd/cli/help_topics.mbt"
+# B3（2026-10-24）：旧正则只认「数字紧跟工具」的紧邻形态：
+#     r"(\d{2,4})\s*(?:个\s*)?(?:MCP\s*)?工具|(\d{2,4})\s*MCP\s*tools"
+# Markdown 表格里的计数主张写作 `| MCP 工具 | **170** |` ——「工具」在前一格、数字在后一格，
+# 中间隔着 `|` 与 `**` ⇒ 旧正则一条都吃不到（实测 miss）。
+# 新支 3/4 补表格两向（标签在前 / 数字在前），**只在 2~4 位数字时命中**，避免把
+# `---` 分隔行或 `|` 表头行吃进来；原两支保留，向后兼容。
 RE_J14_CLAIM = re.compile(
-    r"(\d{2,4})\s*(?:个\s*)?(?:MCP\s*)?工具|(\d{2,4})\s*MCP\s*tools"
+    r"(\d{2,4})\s*(?:个\s*)?(?:MCP\s*)?工具"        # 原支 1：170 个工具 / 170 个 MCP 工具
+    r"|(\d{2,4})\s*MCP\s*tools"                      # 原支 2：170 MCP tools
+    r"|工具\s*\|[\s*|]*?(\d{2,4})\b"                 # B3 支 3：| MCP 工具 | **170**
+    r"|\b(\d{2,4})\b[\s*|]*\|\s*(?:MCP\s*)?工具"     # B3 支 4：| **170** | MCP 工具 |
 )
 RE_J14_GROUP = re.compile(r'^\s*"\s*\[[A-Za-z][A-Za-z0-9 -]*\s+(\d+)\]', re.M)
 RE_J14_GROUPN = re.compile(r"\((\d+) groups\)")
@@ -790,13 +814,28 @@ RE_J16_HELP_ENTRY = re.compile(
 
 def j14_count_problems(texts, n):
     """纯判定：{相对路径: 正文} → 违例清单。自述数字 != 真源计数即红；
-    三面一处都解析不到 ⇒ FATAL 自拒（扫描面饿死被读成"没有问题"是这类尺子最常见的死法）。"""
+    各面一处都解析不到 ⇒ FATAL 自拒（扫描面饿死被读成"没有问题"是这类尺子最常见的死法）。
+
+    面表项可以是 2 元 `(rel, label)` 或 3 元 `(rel, label, trim_regex)`：
+    3 元的那一面在比对前会**按 trim_regex 切断正文**（只保留它之前的部分）——
+    用于「同一份文件里既有当前主张又有历史沿革」的面（见 docs/deliverable.md 的注释）。
+    """
     problems = []
     hits = 0
-    for rel, label in J14_FACES:
+    for face in J14_FACES:
+        rel, label = face[0], face[1]
+        trim = face[2] if len(face) > 2 else None
         text = texts.get(rel, "")
+        if trim:
+            m_trim = re.search(trim, text, re.M)
+            if m_trim:
+                text = text[: m_trim.start()]
         for m in RE_J14_CLAIM.finditer(text):
-            got = m.group(1) or m.group(2)
+            # B3：正则现在有 4 支（原 2 + 表格 2）⇒ 必须从**第一个非 None 的 group** 取数。
+            # 写成 `group(1) or group(2)` 会让新支（group 3/4）取到 None ⇒ int(None) 崩。
+            got = next((g for g in m.groups() if g), None)
+            if got is None:
+                continue
             hits += 1
             if int(got) != n:
                 line = text[: m.start()].count("\n") + 1
@@ -804,7 +843,7 @@ def j14_count_problems(texts, n):
                     f"J14 {label}（{rel}:{line}）自述「{m.group(0)}」，真源注册表是 {n} 个"
                     " ⇒ 计数搬家时这一面没人跟着改")
     if hits == 0:
-        faces = ", ".join(r for r, _ in J14_FACES)
+        faces = ", ".join(f[0] for f in J14_FACES)
         problems.append(f"FATAL J14 各面（{faces}）一处工具计数自述都没解析到 ⇒ 判据饿死，不报绿")
     return problems
 
@@ -863,7 +902,8 @@ def j16_help_tool_names_problems(help_text, tools):
 
 def j14_tool_count_claims():
     texts = {}
-    for rel, _label in J14_FACES:
+    for face in J14_FACES:
+        rel = face[0]
         p = ROOT / rel
         texts[rel] = p.read_text(encoding="utf-8", errors="replace") if p.is_file() else ""
     tools = real_tools()
@@ -1388,6 +1428,47 @@ def j_selftest():
     if not any("项目地图面" in p for p in j14_count_problems(
             {"docs/agent-map.md": J14_MAP_OK.replace("170 个工具", "122 个工具")}, 170)):
         fails.append("J14 对『地图面总数落后于真源』不敏感 → BUG-363 那类盲区会重犯")
+
+    # ── B1/B2/B3（2026-10-24，C·verify 发现、I·polish 修）────────────────────────
+    # 三格都是「**造一个真违例，断言判据咬它**」——不是断言判据 PASS。
+    #
+    # B3：Markdown 表格形态 `| MCP 工具 | **170** |`。旧正则要求「数字紧跟工具」，
+    #     表格的 `|` 与 `**` 隔断了它 ⇒ 该形态**一条都吃不到**（实测 miss）。
+    #     这一格必须红：把 170 写成 122，判据要报出来。若正则退回旧版，本格立刻失败。
+    _j14_tbl_bad = "| MCP 工具 | **122**（+ 3 resources + 2 prompts） |\n"
+    if not any("真源注册表是" in p for p in j14_count_problems(
+            {"docs/deliverable.md": _j14_tbl_bad}, 170)):
+        fails.append("B3 表格形态 `| MCP 工具 | **122** |` 未被当成计数主张 → "
+                     "RE_J14_CLAIM 的表格支失效（加面也是空门）")
+    _j14_tbl_ok = "| MCP 工具 | **170**（+ 3 resources + 2 prompts） |\n"
+    if j14_count_problems({"docs/deliverable.md": _j14_tbl_ok}, 170):
+        fails.append("B3 表格形态正确读数被误红 → 新支过度匹配")
+
+    # B2：`docs/deliverable.md` 必须在 J14_FACES 里，且**历史沿革表要被裁掉**。
+    # 两件事各断言一次：只加面不裁剪会误伤沿革表（实测 19 处全红），
+    # 只裁剪不加面则该面根本无人比。
+    _faces = {f[0] for f in J14_FACES}
+    if "docs/deliverable.md" not in _faces:
+        fails.append("B2 docs/deliverable.md 不在 J14_FACES → 验收清单面的工具数无人比")
+    _hist = ("| 61 Saga | 新增两工具（R92，91→93 工具） |\n"
+             "| 62 MC | 新增 dag_mc（R94，93→94 工具） |\n"
+             "## 四、自驱增强证据\n")
+    _curr = "| MCP 工具 | **170**（+ 3 resources + 2 prompts） |\n"
+    # 注意顺序：裁剪点是「## 四、自驱增强证据」这一行**之前**的部分——
+    # 沿革表必须在它之后，才验证得到「沿革表被切掉了」。
+    _fixture_deliverable = _curr + "## 四、自驱增强证据\n" + _hist
+    if j14_count_problems({"docs/deliverable.md": _fixture_deliverable}, 170):
+        fails.append("B2 历史沿革表的增量读数（91→93 工具等）被当成当前主张 → 裁剪点没生效")
+    # 反证：把当前读数区改成错的，裁剪之后**仍然必须红**（否则裁剪把整个面切没了）
+    _fixture_bad = "| MCP 工具 | **122** |\n## 四、自驱增强证据\n" + _hist
+    if not any("真源注册表是" in p for p in j14_count_problems(
+            {"docs/deliverable.md": _fixture_bad}, 170)):
+        fails.append("B2 裁剪把当前读数区一起切掉了 → 该面成了空门")
+
+    # B3 反向：分隔行/表头不得被当成计数主张（否则每个 markdown 表格都误红）
+    if j14_count_problems({"docs/deliverable.md": "| 项 | 现值 |\n| --- | --- |\n"
+                                                 "| MCP 工具 | **170** |\n"}, 170):
+        fails.append("B3 表头/分隔行被误当成计数主张")
     # BUG-363②：README 标题的「N 组」自述 ↔ 实际分组标题数（只比和抓不到少一组多一组）。
     J3_TXT = "## 功能全景（170 个 MCP 工具 · 2 组）\n### A（100）\n### B（70）\n"
     if j3_readme_group_count_problems(J3_TXT, [100, 70]):
