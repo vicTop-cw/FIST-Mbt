@@ -78,6 +78,26 @@
 
 **lead 的 11 个 PR 全部 `mergeable=True`**（无 base 冲突，GitHub API 确认）。
 
+> ### 📐 上表「文件」列算法订正（司令-δ 实测，2026-10-24）
+>
+> 上表 #20~#24 的 **98 / 99 / 104 / 104 / 108** 是按 **三点语法** `origin/main...branch`
+> 算的——三点是 `merge-base(A,B)` 到 B 的**对称差**，它把「分支落后于 main 的那一大段历史」
+> 也算进了文件数，所以**严重夸大**。
+>
+> 按 **`branch^..branch`**（该支自己那**一个** commit 真正改了什么）重算，真增量是：
+>
+> | PR | 上表（三点，夸大） | 真增量（`branch^..branch`） |
+> |---|---|---|
+> | #20 fix/backfill-ghost-bugs | 98 | **3** |
+> | #21 fix/pid-token-cache | 99 | **3** |
+> | #22 fix/cl7-plugin-sync | 104 | **10** |
+> | #23 fix/agent-fp-honest | 104 | **3** |
+> | #24 fix/j2-call-face | 108 | **3** |
+>
+> **判读纪律**：量「这一支改了什么」用 **两点 + `^..`**（`branch^..branch` 或 `main..branch`）；
+> 三点 `...` 只用来回答「两支相对 merge-base 各自差多少」，**不能当增量**。
+> ⇒ 「污染」的正确处理是**只取这 3~10 个文件的核心改动**，绝不是丢弃整支。
+
 ---
 
 ## 2. ⚠️ 污染 PR（#20-#24）必须单独处理
@@ -96,6 +116,22 @@
   - #24：5 个判据自检补调用面锚点（J2 缺口 45→40）
   - **注意**：这些核心改动可能已被 fist-bot 以不同 commit message squash 进 tip，`git log --grep` 找不到。**用 `git diff origin/main...origin/$br -- <core files>` 提取改动内容**。
 - **方案 B（快，但接受 fist-bot 提交一起入 main）**：直接 merge，但**需先确认** fist-bot 的这些提交已在本地 main（`f1cd6eb5`）且已通过验收。**风险**：fist-bot 的提交可能未验收，且会重复（如果 fist-bot 自己也在开 PR 合入同一批提交）。
+
+> ### 🛑 统帅实测否决：方案 B 禁止执行（2026-10-24）
+>
+> **本节「方案 B」的前提「fist-bot 的提交已在本地 main」不成立。**
+>
+> 实测（17 支逐支 `git diff --diff-filter=D --name-only HEAD <branch>`）：**每一支**都列出
+> main 上**已经存在**的文件，数量 **21~53 个**。
+> 「`diff-filter=D` 列出 main 已有文件」只有一个含义：**分支顶树里没有这些文件** ⇒
+> 分支顶树是**旧基线**。
+>
+> 所以 `git merge` 不是「把 fist-bot 的提交带进来」，而是**拿旧树覆盖 main**——
+> 21~53 个 main 现有文件会被**删掉**。方案 B 描述的风险（"可能未验收""会重复"）
+> 全部低估了真实后果：真实后果是**内容倒退**。
+>
+> **禁止执行方案 B。** 也不要用任何等价的「整支 merge / 整支 cherry-pick」变体，
+> 判据只有一条：`git diff --diff-filter=D --name-only HEAD <branch>` **非空 ⇒ 只取增量**。
 
 **lead 建议方案 A**—— 干净 PR 优先合，污染 PR 让 fist-bot 自己走本地 main 同步流程（fist-bot 已开 #28/#30/#31 自己的 PR 流）。
 
@@ -146,6 +182,22 @@
 ---
 
 ## 4. 每个干净 PR 的详情（合并前核验用）
+
+> ### ⏱️ 本节门禁读数已过时——以实测为准（2026-10-24 收口）
+>
+> 本节的测试读数（尤其下面 PR#29 那条「`Total tests: 1421, passed: 1421`（基线 1417）」）
+> 是**手册写作时**的快照，**现在不成立**：
+>
+> | 口径 | 数值 | 来源 |
+> |---|---|---|
+> | 手册写的（过时） | 1421 / 1421（基线 1417） | 本节原文 |
+> | main 现基线 | **1451 / 1451** | 本仓 AGENTS.md 实测口径 |
+> | 司令-δ 摘完 omega 后实测 | **1455 / 1455, failed 0** | 本轮实跑 |
+>
+> **判读纪律**：本节任何 `1421` / `1417` 字样只当**历史记录**读，不要拿它当「零回归」的比较基准。
+> 比回归请用**当下现跑**的 `Total tests: N, passed: N, failed: 0`，且按 BUG-142 口径
+> **只认汇总行、不认 exit 0**（`moon test` 在测试产物 SIGABRT 时仍可能回 0）。
+> 本节其余「改了哪些文件 / 修了什么」的事实性描述仍然有效。
 
 ### PR#26 `fix/gate-chain-fmt-warmup`（**最先**）
 - 提交：`6acf2a3d`（1 提交，author `vicTop-cw`）
@@ -223,6 +275,26 @@ python3 scripts/run_guards.py             # 守卫电池，真实红应为 0
 - **B**：仿 `Plan-landing ratchet gate` 先例（ci.yml line 191-197 已带 continue-on-error: true），把 `CI-step-position guard` 步骤加 `continue-on-error: true`（line 194 注释正是这个思路——"内容归零后把 continue-on-error 摘掉转硬门"）
 
 **在 owner 裁决前**：合并 agent 可**绕过 wait_gate 直接 merge**（`gh pr merge --squash` 或 API `PUT /pulls/<n>/merge`），但需**确认 js ubuntu failure 确实是观测臂**（如上根因），**且** gate chain 已绿。**或**先等 owner 裁决再合。
+
+> ### 🛑 统帅实测否决：不给「绕过 wait_gate 直接 merge」这条选项（2026-10-24）
+>
+> **绕过 `wait_gate` = 绕过所有 CI 门禁。** 这不是"跳过一条卡住的观测臂"，
+> 而是"把整套 check-run 的否决权一次交出去"——`wait_gate` 存在的唯一理由就是
+> 它是那些 check-run 的**唯一汇合点**；绕过它，`check + test (js)` 红了也照合，
+> 真红（代码/测试/守卫）和假红（观测臂）**在合入那一刻无法区分**。
+>
+> 即便加上"需确认 js ubuntu failure 确实是观测臂"这个限定条件，**也不给这条常规选项**：
+> 「确认是观测臂」这一步本身没有机械判据，落在执行者的自由心证上；
+> 而这条路的失败模式（把真红当观测臂合进 main）不可逆、且事后极难归因。
+>
+> **正解就在本节自己写的 A/B 两条**：观测臂问题（`POSITION_WHY_CEILING = 34` 存量标定，
+> 实测 35 > 34）是**编排层存量债**，解法是 **owner 裁决升档**（A：给理由后调常量）
+> 或 **owner 裁决降门**（B：加 `continue-on-error: true` 并按先例记档）——
+> **不是绕门**。裁决前就**等**，不做不可逆动作。
+>
+> 另请注意：本节讨论的 gate chain 恒红根因（cold formatter / BUG-388）**已在 workflow 层修掉**
+> （`gate.yml` 在 gate chain 前插了 `moon fmt` 预热），所以「gate chain 已绿」这条前提
+> 在新基线上不再是问题——真正卡住的只剩观测臂棘轮，那更该走 A/B 裁决而不是绕。
 
 ---
 
