@@ -1,0 +1,23 @@
+# docs/tasks/diff-scope-claims.txt —— 分支作用域声明面（R158，主机任务 WT-05）
+#
+# 谁读它：scripts/check_diff_scope.py（D1 越界 / D2 契约）。判据把「先写边界再动手」这条
+# AGENTS.md 任务包要求从人话变成机器面——**没有声明也是违例**（NOCLAIM），因为没边界就没有
+# 「越界」这个概念。
+#
+# 谁来写：**分支的 owner 自己**。别人的分支由别人点名边界，才叫声明；由第三方代填就成了猜测面，
+# 出错时既没人认领也没法回溯。新开一支就往本文件追加一行（尾追加是本文件唯一的撞点，
+# 与 R147 那类「登记面尾追加互吃」同源，所以本尺的 D4 同文件交错判据正好把它管住）。
+#
+# 文法（匹配语义只有两形，细节见 check_diff_scope.py 模块 docstring）：
+#   分支模式 <TAB 或空格> 路径模式 …〔 contract〕
+#   · 以 `*` 结尾 ⇒ 去掉 `*` 后整串前缀匹配（`scripts/*` 含任意深度；前缀里带不带 `/` 由书写者负责）
+#   · 其余 ⇒ 整串精确匹配
+#   · 保留字 `contract` 单独占一个 token ⇒ 放行 D2（契约面 = moon.mod / 任意层级 moon.pkg /
+#     src/core/*.mbt / 任意 *.mbti）。**契约变更按标准只走主线或契约 PR**，worker 支带这个字是要人审的。
+#   · `#` 起注释、空行跳过；一条都没解析出来 ⇒ 判据自拒（rc=2），不报绿。
+#
+# 主线内置豁免（master / main 不需要声明）：主线自己就是边界。
+
+# R158：新尺本体 + 索引/电池/CI 接线 + 报告。带 .github/* 是因为本单往 ci.yml 的既有步骤里
+# 追加了一条自证命令；不碰契约面 ⇒ 不带 contract。
+slave/feat/diff-scope-guard-r158	scripts/* docs/tasks/* reports/* memory/* .github/*

@@ -77,9 +77,18 @@
       文件名不带日期戳时读者无从判断这条评估是哪个时间点做出的。目录里一份 .md 都
       枚举不到 ⇒ FATAL 自拒（删空目录骗不过）。
 
+  J17 工具链地板 ↔ toolchain.json 单一真源对表（R141 新增）：MoonBit 工具链与 Node 的版本地板
+      此前只有散文、没有真源、没有尺（`moon_version()` 读的是 moon.mod 的模块版本，不是工具链）。
+      现状规范表面的每条地板声明（含 `≥`、徽章、`精确` 式钉版）必须 == `toolchain.json`；
+      必须声明地板的面把地板删光 ⇒ 红；CI 的 `node-version` 也必须 == pin。
+      读不到 pin / 枚举不到 .md / 一个地板都解析不到 ⇒ FATAL 自拒。
+      引文（`「…」`）与历史面（reports/ memory/ docs/archive/ CHANGELOG BACKLOG）与生成副本
+      （plugins/<host>/）豁免——判的是现状承诺，不是当时的记录。
+
 设计约束：不改被校验的文档、不写库、纯只读。
 """
 import inspect
+import json
 import os
 import re
 import subprocess
@@ -865,6 +874,75 @@ def j14_tool_count_claims():
     return problems
 
 
+def j18_quickstart_tool_count_problems(readme_text, n):
+    """J18（2026-10-24 R41 新增）：README「快速开始」里 `fist.py list-tools` 那一行的注释若抄了
+    工具数，必须等于实测。
+
+    为什么单开这一格：`check_tools_sync` 的声明形状是窄口径（`N 个 MCP 工具` / `工具 N 个` /
+    `N 工具注册`），而 README 快速开始写的是「列出 **166** 个工具（实测 tools/list）」——一形不匹配
+    ⇒ 真源 170、注释 166、命令实跑 152 三者各说各话，两把尺全绿。**抄数必漂**，所以这一格的口径是
+    「要么别写数、要么写对数」。
+    """
+    if not readme_text:
+        return []
+    problems = []
+    for line in readme_text.splitlines():
+        if "fist.py list-tools" not in line:
+            continue
+        for m in re.finditer(r"(?<![\d.])(\d{2,4})\s*个工具", line):
+            got = int(m.group(1))
+            if got != n:
+                problems.append(
+                    "J18 README 快速开始的 `fist.py list-tools` 注释写「%d 个工具」，实测 %d ⇒ "
+                    "抄数必漂：改成不写数（『数量以本命令末行为准』）或写对 %d"
+                    % (got, n, n)
+                )
+    return problems
+
+
+# ---- J17 BACKLOG 现状段计数必须点名真源（R175 把「120 工具 / 442 测试」撤成指针，本条钉住它不复发）----
+RE_J17_COUNT = re.compile(r"(?<![\dA-Za-z.:/-])(\d{2,5})\s*(?:个)?\s*(?:条|项)?\s*(?:工具|测试|用例)")
+RE_J17_POINTER = re.compile(r"(真源|single source|check_tools_sync|check_test_sync|check_badge|server\.mbt|徽章)")
+
+
+def j17_backlog_anchor_count_problems(text):
+    """`BACKLOG.md` 文首现状段（第一张 `|` 表之前的那段）里的计数，必须**同一行**点名计数真源。
+
+    为什么只管文首：该文件是 selfdrive 审视环的**净拉取源**（文首自己写着「Next Tasks 应从这里取」），
+    下一轮 planner 会把文首的数字当现状继承；而表格行是各轮的历史列（与 `check_test_sync` EXEMPT
+    表里"当轮实测数"同型，改写即伪造一次没发生的测量）⇒ 刻意不判，只判现状断言面。
+    为什么"带真源指针"就放行：允许文档引述"某个数出自哪个真源"，禁止的是**裸数字**。
+    """
+    head = []
+    for line in text.splitlines():
+        if line.lstrip().startswith("|"):
+            break
+        head.append(line)
+    if not [l for l in head if l.strip()]:
+        return ["FATAL J17 BACKLOG.md 现状段为空/读不到 ⇒ 这一格对照面不存在，判据空转不冒绿"]
+    problems = []
+    for ln, line in enumerate(head, 1):
+        if not RE_J17_COUNT.search(line) or RE_J17_POINTER.search(line):
+            continue
+        problems.append(
+            "J17 BACKLOG.md:%d 现状段携带裸计数「%s」⇒ 净拉取源里的数字会被下一轮当成现状继承，"
+            "而全仓没有任何尺扫这份文件的计数面。处置：撤数改指真源"
+            "（工具=`src/server/server.mbt` + `check_tools_sync.py`；测试=README 徽章行 + "
+            "`check_test_sync.py`/`check_badge.py`）" % (ln, line.strip()[:70]))
+    return problems
+
+
+def j17_backlog_anchor_count_consistency(backlog_rel):
+    """BACKLOG 路径既可能以绝对形、也可能以相对形传进来（沿用 J4 那份变量），两种都试 ⇒ 不因传参形状误报。"""
+    for cand in (backlog_rel, os.path.join(str(ROOT), str(backlog_rel))):
+        try:
+            with open(cand, encoding="utf-8", errors="replace") as fh:
+                return j17_backlog_anchor_count_problems(fh.read())
+        except Exception:
+            continue
+    return ["FATAL J17 读不到 BACKLOG.md（试过 %s）⇒ 判据无法自证" % (backlog_rel,)]
+
+
 # ---- J15 文档文件名日期前缀规范（R12 新增）：docs/ 里带日期戳的文件必须 YYYY-MM-DD- 开头 ----
 # 为什么要有：docs/ 是评估/决策归档目录（如 2026-10-10-mizchi-llm-eval.md），
 # 文件名带日期（如 improvement-plan-20260929.md 里的 20260929）却不用 `YYYY-MM-DD-` 前缀时，
@@ -907,6 +985,148 @@ def j15_docs_date_prefix_consistency():
         return ["FATAL J15 docs/ 目录不存在 ⇒ 评估归档面缺失"]
     files = sorted(d.glob("*.md"))
     return j15_docs_date_prefix_problems(files)
+
+
+# ---- J17 工具链地板 ↔ toolchain.json 单一真源对表（R141 / 副机清单「对账后仍缺的一面」#4）----
+# 为什么单立一格：本仓有两族地板——MoonBit 工具链（`is` 模式匹配表达式自 d799f56 需要 0.1.20261016）与
+# Node（`node:sqlite` 的 returnArrays 需要 ≥24）。它们散在 README / README_EN / USAGE / AGENTS / 规范正文 /
+# 各 docs 的散文里，此前**既没有机器可读真源、也没有一把尺认领过**：`moon_version()` 读的是 moon.mod 的
+# **模块版本**（与工具链版本同名不同物，`check_dist_snapshot.py` / `check_host_installable.py` 里同款混判），
+# README 首屏的 `badge/MoonBit-<版本>` 徽章由零把尺验证。
+# 这不是假想风险：主机清单 POLISH-04 记的正是「README 教 0.1.20260827、代码要 0.1.20261016，照文档装环境的
+# agent 第一发 moon check 就崩」。那一单只改了字、没补尺 ⇒ 本尺上岗第一跑就抓到
+# `docs/2026-10-12-mcpcf-embed-serve.md` 写「要求 Node >= 22.5」，与 README 的 ≥24 互相矛盾（同形状复发），
+# 又抓到 CI 的 `node-version` 与文档地板没有任何对表关系。
+# 判据方向：① 现状规范表面每条地板声明的值 == toolchain.json（含徽章与「精确」式钉版）；
+# ② 必须声明地板的面把地板删了 ⇒ 红（消解违例不是修法，同 J4「权威被删空必红」）；
+# ③ CI 的 `node-version` == pin 的 node（文档说的和 CI 跑的必须是同一台机器）；
+# ④ 读不到 toolchain.json / 现状面枚举为空 / 一个地板都解析不到 ⇒ FATAL 自拒，绝不拿"没读到"当绿灯。
+# 豁免：`「…」`/`『…』` 之内是**转述别人的旧值**（副机清单 POLISH-04 那一行正是这形状），不判；
+# reports/ memory/ docs/archive/ 与 CHANGELOG / BACKLOG 是历史陈述面（口径同 J4 的 pub_surfaces），
+# plugins/<host>/ 是生成副本（cl7 逐字节比真源，判真源即可）——都不判。
+TOOLCHAIN_PIN = ROOT / "toolchain.json"
+FLOOR_HISTORICAL_DIRS = ("reports/", "memory/", "docs/archive/")
+FLOOR_HISTORICAL_FILES = ("CHANGELOG.md", "BACKLOG.md")
+FLOOR_REQUIRED_MOONBIT = ("README.md", "README_EN.md", "USAGE.md", "AGENTS.md")
+FLOOR_REQUIRED_NODE = ("README.md", "README_EN.md", "AGENTS.md")
+RE_MOON_FLOOR = re.compile(r"(?:MoonBit|moon)\D{0,12}?(?:≥|>=)\s*`?v?(\d{1,2}\.\d{1,2}\.\d{4,10})")
+RE_MOON_BADGE = re.compile(r"badge/MoonBit-(\d{1,2}\.\d{1,2}\.\d{4,10})")
+RE_MOON_EXACT_BEFORE = re.compile(r"(\d{1,2}\.\d{1,2}\.\d{4,10})[^\d\n]{0,10}?精确")
+RE_MOON_EXACT_AFTER = re.compile(r"精确[^\d\n]{0,10}?(\d{1,2}\.\d{1,2}\.\d{4,10})")
+RE_NODE_FLOOR = re.compile(r"[Nn]ode(?:\.js)?[^\d\n]{0,14}?(?:≥|>=)\s*v?(\d+(?:\.\d+)*)")
+RE_NODE_CI_VERSION = re.compile(r"node-version:\s*['\"]?(\d+)")
+RE_FLOOR_QUOTE = re.compile(r"「[^」]*」|『[^』]*』")
+
+
+def vtuple(v):
+    parts = [int(x) for x in str(v).split(".") if x.isdigit()]
+    return tuple(parts)
+
+
+def veq(a, b):
+    """`24` 与 `24.0` 是同一个地板：短的一侧补零再比。"""
+    x, y = vtuple(a), vtuple(b)
+    n = max(len(x), len(y))
+    return x + (0,) * (n - len(x)) == y + (0,) * (n - len(y))
+
+
+def floor_face_of(rel):
+    """现状规范表面 norm / 历史陈述豁免 historical / 生成投影豁免 generated。"""
+    if rel.startswith(FLOOR_HISTORICAL_DIRS) or rel in FLOOR_HISTORICAL_FILES:
+        return "historical"
+    if rel.startswith("plugins/") and not rel.startswith("plugins/source/"):
+        return "generated"
+    return "norm"
+
+
+def floor_claims(text):
+    """一份正文 → [(行号, 键, 值, 原文)]；CJK 引号内的转述已剔除。"""
+    out = []
+    for i, line in enumerate(text.splitlines(), 1):
+        spans = [(m.start(), m.end()) for m in RE_FLOOR_QUOTE.finditer(line)]
+        for rx, key in ((RE_MOON_FLOOR, "moonbit"), (RE_MOON_BADGE, "moonbit"),
+                        (RE_MOON_EXACT_BEFORE, "moonbit"), (RE_MOON_EXACT_AFTER, "moonbit"),
+                        (RE_NODE_FLOOR, "node")):
+            for m in rx.finditer(line):
+                if any(a <= m.start() < b for a, b in spans):
+                    continue
+                out.append((i, key, m.group(1), m.group(0).strip()))
+    return out
+
+
+def j17_floor_problems(pin, face_texts, ci_texts=None):
+    """纯判据：pin + {相对路径: 正文} + {workflow: 正文} → 违例清单（自测拿合成输入直接考它）。"""
+    if not pin or not pin.get("moonbit") or not pin.get("node"):
+        return [f"FATAL J17 读不到 {TOOLCHAIN_PIN.name} 的 moonbit/node 真源 ⇒ 判据没有基线，拒绝出绿灯"]
+    if not face_texts:
+        return ["FATAL J17 跟踪面一份 .md 都没枚举到 ⇒ 扫描面饿死，不等于没问题（git 不可用也走这一档）"]
+    claims = {rel: floor_claims(t) for rel, t in face_texts.items() if floor_face_of(rel) == "norm"}
+    if not any(claims.values()):
+        return ["FATAL J17 现状面上一个地板声明都没解析到 ⇒ 解析器或口径失效（把声明全删光骗不过这一档）"]
+    problems = []
+    for rel, cs in sorted(claims.items()):
+        for ln, key, val, frag in cs:
+            want = str(pin[key])
+            if not veq(val, want):
+                problems.append(
+                    f"J17 {rel}:{ln} 声明 {key} 地板「{val}」（{frag}）!= 真源 {TOOLCHAIN_PIN.name} 的 {want}"
+                    " ⇒ 照文档装环境的 agent 第一发 build/check 就崩")
+    for rel in FLOOR_REQUIRED_MOONBIT:
+        if not any(k == "moonbit" for _, k, _, _ in claims.get(rel, [])):
+            problems.append(
+                f"J17 {rel} 不再声明 MoonBit 工具链地板 ⇒ 正身消失不是合规（同 J4「权威被删空必红」）")
+    for rel in FLOOR_REQUIRED_NODE:
+        if not any(k == "node" for _, k, _, _ in claims.get(rel, [])):
+            problems.append(f"J17 {rel} 不再声明 Node 地板 ⇒ 对外表面没有地板，读者会拿到跑不起来的 Node")
+    for wf, text in sorted((ci_texts or {}).items()):
+        for m in RE_NODE_CI_VERSION.finditer(text):
+            ln = text[:m.start()].count("\n") + 1
+            if not veq(m.group(1), pin["node"]):
+                problems.append(
+                    f"J17 {wf}:{ln} CI 的 node-version={m.group(1)} != 真源 {pin['node']}"
+                    " ⇒ 文档教的环境与 CI 实际跑的环境不是同一台机器")
+    return problems
+
+
+def pin_toolchain():
+    if not TOOLCHAIN_PIN.is_file():
+        return {}
+    try:
+        return json.loads(TOOLCHAIN_PIN.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def j17_tracked_md():
+    """跟踪面 .md → {posix 相对路径: 正文}。git 不可用 ⇒ 空字典，由判据自拒（不猜、不静默）。"""
+    try:
+        r = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z", "--", "*.md"],
+                           capture_output=True)
+        names = [n.decode("utf-8", "replace") for n in r.stdout.split(b"\0") if n]
+    except Exception:
+        return {}
+    out = {}
+    for rel in names:
+        p = ROOT / rel
+        if p.is_file():
+            out[rel.replace("\\", "/")] = p.read_text(encoding="utf-8", errors="replace")
+    return out
+
+
+def j17_ci_node_texts():
+    d = ROOT / ".github" / "workflows"
+    if not d.is_dir():
+        return {}
+    out = {}
+    for p in sorted(d.glob("*.yml")):
+        t = p.read_text(encoding="utf-8", errors="replace")
+        if RE_NODE_CI_VERSION.search(t):
+            out[rel_posix(p)] = t
+    return out
+
+
+def j17_toolchain_floor_consistency():
+    return j17_floor_problems(pin_toolchain(), j17_tracked_md(), j17_ci_node_texts())
 
 
 # ---- J4 子判据：注册表发布版本只能有一处自述（BUG-30 建议①，编号不扩，免得 J10 范围自述说谎）----
@@ -1184,6 +1404,18 @@ def j_selftest():
     j14_real = j14_tool_count_claims()
     if j14_real:
         fails.append("J14 在真实现状面上就红了（先判尺子，再判被测）：" + j14_real[0])
+    # J17（BACKLOG 现状段裸计数）：四支缺一不可——裸数必红、同行点名真源不误红、表格历史行不判、现状段空必自拒。
+    if not any("裸计数" in p for p in j17_backlog_anchor_count_problems(
+            "# T\n> 状态枚举。锚点事实：**120 工具 / 442 测试** / CI 三绿\n\n| P级 | 事项 |\n")):
+        fails.append("J17 抓不到『现状段裸计数』→ 净拉取源抄回来的数字又没人判（R175 那三个数会复发）")
+    if j17_backlog_anchor_count_problems(
+            "# T\n> 计数不抄写：工具面真源 = `src/server/server.mbt` 注册表（170 个工具）\n"):
+        fails.append("J17 误红『同行已点名真源』的引述（恒红判据不可信）")
+    if j17_backlog_anchor_count_problems(
+            "# T\n> 说明行\n\n| P0 | done(JS 全量 737/737 通过 + 8 条测试) |\n"):
+        fails.append("J17 把表格历史行判红了 → 那些是各轮当轮实测数，改写等于伪造一次没发生的测量")
+    if not any("FATAL J17" in p for p in j17_backlog_anchor_count_problems("| 直接就是表头\n")):
+        fails.append("J17 现状段为空时不自拒 → 没读到对照面不等于没有问题")
     # J15（文档文件名日期前缀）：三支缺一不可——缺前缀必红、带前缀不误红、扫描面空必自拒。
     if not any("未用 `YYYY-MM-DD-` 前缀" in p for p in j15_docs_date_prefix_problems(
             [Path("2026-10-10-x.md"), Path("decision-20260929.md")])):
@@ -1228,6 +1460,61 @@ def j_selftest():
             fails.append("J8 对『臆造参数 check_results』不敏感")
         if "contains" in [k for k in keys if k not in reg["output_validate"]["props"]]:
             fails.append("J8 把子 schema 键 contains 误伤为臆造参数（应只看 depth-1）")
+    # J17（工具链地板 ↔ toolchain.json，R141）：八支缺一不可——地板落后必红、徽章落后必红、
+    # 精确式钉版必红、引文/历史面/生成副本不误红、地板被删光必红、CI node-version 漂移必红、
+    # 三档自拒必自拒，再加一支「真实现状面不许误红」（先判尺子，再判被测）。
+    pin17 = {"moonbit": "0.1.20261016", "node": "24"}
+    ok17 = {
+        "README.md": ("- [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20261016-blue)](x)\n"
+                      "- **MoonBit ≥ 0.1.20261016**——本仓使用 `is` 模式匹配\n"
+                      "- **Node.js ≥ 24**（JS 目标必需）\n"),
+        "README_EN.md": "**Requirements**: MoonBit toolchain ≥ 0.1.20261016; **Node.js ≥ 24**\n",
+        "USAGE.md": "依赖：MoonBit 工具链 ≥ `0.1.20261016`。\n",
+        "AGENTS.md": "> **moon 工具链 ≥ 0.1.20261016**；**JS 目标需 Node.js ≥ 24**\n",
+    }
+    clean17 = j17_floor_problems(pin17, ok17, {".github/workflows/ci.yml": "node-version: '24'\n"})
+    if clean17:
+        fails.append("J17 对干净的现状面误红（恒红判据不可信）：" + clean17[0])
+    stale = dict(ok17)
+    stale["README.md"] = ok17["README.md"].replace("MoonBit ≥ 0.1.20261016", "MoonBit ≥ 0.1.20260827")
+    if not any("!= 真源" in p for p in j17_floor_problems(pin17, stale, {})):
+        fails.append("J17 抓不到『文档地板落后于真源』→ POLISH-04 的形状（README 教 0827、代码要 1016）会重犯")
+    badge_drift = dict(ok17)
+    badge_drift["README.md"] = ok17["README.md"].replace("MoonBit-0.1.20261016-blue", "MoonBit-0.1.20260901-blue")
+    if not any("moonbit 地板" in p for p in j17_floor_problems(pin17, badge_drift, {})):
+        fails.append("J17 对首屏徽章的版本漂移不敏感 → 徽章是最先被读到、也最没人验的一行")
+    exact_drift = dict(ok17)
+    exact_drift["docs/playbook.md"] = "| **moon 工具链** | **0.1.20260920** 精确 |\n"
+    if not any("!= 真源" in p for p in j17_floor_problems(pin17, exact_drift, {})):
+        fails.append("J17 抓不到『精确钉版』式地板声明（副机 playbook 的写法）→ 只认 ≥ 会漏掉一整族表面")
+    quote = dict(ok17)
+    quote["docs/2026-10-20-slave-tasks.md"] = "③ 版本地板自相矛盾——写「MoonBit ≥ 0.1.20260827」，而要求 ≥ 0.1.20261016\n"
+    hist = dict(ok17)
+    hist["reports/2026-10-20-x.md"] = "需 moon ≥ 0.1.20260101\n"
+    hist["BACKLOG.md"] = "旧理由「需工具链 ≥0.1.20260921」双错\n"
+    gen = dict(ok17)
+    gen["plugins/claude/SKILL.md"] = "MoonBit ≥ 0.1.20260101\n"
+    for label, texts in (("CJK 引号内的转述", quote), ("历史陈述面", hist), ("生成投影副本", gen)):
+        hit = j17_floor_problems(pin17, texts, {})
+        if hit:
+            fails.append(f"J17 对{label}误红 → 把当时的记录当现状断言，判据会变成没人敢留的恒红灯：{hit[0]}")
+    gone = dict(ok17)
+    gone["README.md"] = "- 安装见 USAGE.md\n- **Node.js ≥ 24**（JS 目标必需）\n"
+    if not any("不再声明 MoonBit 工具链地板" in p for p in j17_floor_problems(pin17, gone, {})):
+        fails.append("J17 在『把地板从 README 删掉』时不红 → 删正身消解违例成了最省事的修法")
+    ci_drift = j17_floor_problems(pin17, ok17, {".github/workflows/ci.yml": "node-version: '22'\n"})
+    if not any("CI 的 node-version" in p for p in ci_drift):
+        fails.append("J17 抓不到『CI 跑的 Node 与文档地板不一致』→ 文档说 24、CI 装 22 时绿灯照旧")
+    if not any("FATAL J17" in p for p in j17_floor_problems({}, ok17, {})):
+        fails.append("J17 读不到 toolchain.json 时不自拒 → 没有基线的绿灯是假绿灯")
+    if not any("扫描面饿死" in p for p in j17_floor_problems(pin17, {}, {})):
+        fails.append("J17 枚举不到 .md 时不自拒 → git 挂了照样报绿")
+    silent = {"docs/a.md": "随便一句话，没有版本\n"}
+    if not any("FATAL J17" in p for p in j17_floor_problems(pin17, silent, {})):
+        fails.append("J17 在一个地板都解析不到时不自拒 → 解析器失效等于判据消失")
+    j17_real = j17_toolchain_floor_consistency()
+    if j17_real:
+        fails.append("J17 在真实现状面上就红了（先判尺子，再判被测）：" + j17_real[0])
     return fails
 
 
@@ -1358,6 +1645,23 @@ def main(argv):
     problems += j13_release_status_consistency()
     problems += j14_tool_count_claims()
     problems += j15_docs_date_prefix_consistency()
+    # J18（README 快速开始的工具数注释 == 实测，R41）：三格——抄错数必红 / 不写数不误红 /
+    # 真实现状面不许误红（先判尺子，再判被测）。
+    bad18 = "python scripts/fist.py list-tools   # 列出 166 个工具（实测 tools/list）\n"
+    if not any("J18" in p for p in j18_quickstart_tool_count_problems(bad18, 170)):
+        fails.append(
+            "J18 抓不到『快速开始注释抄错工具数』→ 真源 170、注释 166、命令实跑 152 会各说各话"
+        )
+    ok18 = "python scripts/fist.py list-tools   # 全量工具名清单（数量以本命令末行为准，不抄数）\n"
+    if j18_quickstart_tool_count_problems(ok18, 170):
+        fails.append("J18 对『不写数』的正解误红（恒红判据不可信）")
+    j18_real = j18_quickstart_tool_count_problems(
+        README.read_text(encoding="utf-8") if README.exists() else "", 170
+    )
+    if j18_real:
+        fails.append("J18 在真实现状面上就红了（先判尺子，再判被测）：" + j18_real[0])
+        problems += j18_quickstart_tool_count_problems(readme_txt, n)
+    problems += j17_toolchain_floor_consistency()
 
     if problems:
         print(f"FAIL 文档面不一致（真源 {n} 工具 / moon.mod {mv}）：")
@@ -1368,7 +1672,7 @@ def main(argv):
         f"PASS 文档面一致：{n} 工具在 AGENTS/README 逐个可查、分组和={n}、当前自述版本={mv}、"
         "J6 规范正文↔投影一致、J7 无旧口径、J8 模板调用面契约干净、"
         "J9 返回契约（必查清单 + 歧义键分工 + 棘轮）未退化、J10 判据范围自述==实现、"
-        "J11 CI native 门步骤↔账本/规范面 三向对表、J12 CI 的 if: 不钉分支名（恒假门）、J13 发布状态短语↔BACKLOG release-fact 对表、J14 工具计数自述与 CLI 分组和↔真源对表、J15 docs/ 归档文档文件名日期前缀"
+        "J11 CI native 门步骤↔账本/规范面 三向对表、J12 CI 的 if: 不钉分支名（恒假门）、J13 发布状态短语↔BACKLOG release-fact 对表、J14 工具计数自述与 CLI 分组和↔真源对表、J15 docs/ 归档文档文件名日期前缀、J17 工具链地板↔toolchain.json 单一真源对表"
     )
     return 0
 

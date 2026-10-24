@@ -16,6 +16,12 @@ pub struct SqliteStore {
 ///|
 /// 打开数据库并初始化五表 schema。失败返回 None（调用方决定是否 abort / 回退内存）。
 pub fn SqliteStore::open(db_path : String) -> SqliteStore? {
+  // SQLite **不创建中间目录**：`FIST_DB_PATH`（或任何调用方）指到不存在的深层目录时，
+  // js 侧 daqing FFI 会在 `DatabaseSync` 构造时 **throw**（不是返回 null），而本函数下面的
+  // `match @sqlite.Database::open(...)` 接不住 ⇒ 未捕获异常打死 serve 进程。
+  // 命名空间库那条路径已由 `MultiStore::new` 补建 data_dir 覆盖（见 multi_store.mbt）；
+  // 这里兜住「任意 db 路径」这一面（BUG-390 报告里点名的遗留项 ①）。
+  ensure_db_parent_dir(db_path)
   match @sqlite.Database::open(db_path) {
     None => None
     Some(db) => {
@@ -97,7 +103,7 @@ pub fn SqliteStore::new() -> SqliteStore? {
 /// 初始化 schema：tasks 为完整任务表，specs/runs/heartbeats/archive 为后续阶段预置骨架。
 fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
   let sqls : Array[String] = [
-    "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority TEXT NOT NULL DEFAULT '中', importance TEXT NOT NULL DEFAULT '中', depth INTEGER NOT NULL DEFAULT 3, split_n INTEGER NOT NULL DEFAULT 3, level INTEGER NOT NULL DEFAULT 6, status TEXT NOT NULL DEFAULT '待领取', assignee TEXT DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT 'deferred', depends_on TEXT NOT NULL DEFAULT '[]')",
+    "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority TEXT NOT NULL DEFAULT '中', importance TEXT NOT NULL DEFAULT '中', depth INTEGER NOT NULL DEFAULT 3, split_n INTEGER NOT NULL DEFAULT 3, level INTEGER NOT NULL DEFAULT 6, status TEXT NOT NULL DEFAULT '待领取', assignee TEXT DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT 'deferred', depends_on TEXT NOT NULL DEFAULT '[]', omega_required INTEGER NOT NULL DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS specs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', spec_type TEXT NOT NULL DEFAULT 'spec', content TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', run_type TEXT NOT NULL DEFAULT 'verify', status TEXT NOT NULL DEFAULT 'running', detail TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL DEFAULT '', finished_at TEXT DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS heartbeats (agent_id TEXT NOT NULL, task_id TEXT NOT NULL, last_seen TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', PRIMARY KEY (agent_id, task_id))",
@@ -123,6 +129,10 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     // 这里两条都做：新库由建表清单覆盖，旧库由 cost_stats 的 ensure 兜住。
     executions_table_sql(),
     "CREATE TABLE IF NOT EXISTS circuit_breakers (ns TEXT NOT NULL DEFAULT 'default', circuit TEXT NOT NULL DEFAULT '', state TEXT NOT NULL DEFAULT 'closed', failures INTEGER NOT NULL DEFAULT 0, window_secs INTEGER NOT NULL DEFAULT 60, threshold INTEGER NOT NULL DEFAULT 3, recovery_secs INTEGER NOT NULL DEFAULT 30, opened_at INTEGER NOT NULL DEFAULT 0, last_fail_ts INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT '', PRIMARY KEY (ns, circuit))",
+    // Agent 指纹注册表（进程级身份）：agent_id 即指纹哈希，跨进程持久；pid 可换绑
+    "CREATE TABLE IF NOT EXISTS agents (agent_id TEXT PRIMARY KEY, agent_type TEXT NOT NULL DEFAULT 'unknown', role TEXT NOT NULL DEFAULT 'Executor', soldier TEXT NOT NULL DEFAULT '工兵', pid INTEGER NOT NULL DEFAULT 0, pubkey_fp TEXT NOT NULL DEFAULT '', first_seen TEXT NOT NULL DEFAULT '', last_seen TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active')",
+    // Agent ACL：默认 can_write=0（fail-closed），按 ns 授权
+    "CREATE TABLE IF NOT EXISTS agent_acl (agent_id TEXT NOT NULL, ns TEXT NOT NULL, can_read INTEGER NOT NULL DEFAULT 1, can_write INTEGER NOT NULL DEFAULT 0, pid_bound INTEGER NOT NULL DEFAULT 0, revoked_at TEXT NOT NULL DEFAULT '', revoked_by TEXT NOT NULL DEFAULT '', PRIMARY KEY (agent_id, ns))",
   ]
   match self.db {
     None => false
@@ -169,29 +179,29 @@ fn SqliteStore::ensure_task_columns(self : SqliteStore) -> Bool {
       if !probe_ok {
         return false
       }
-      // 现役 18 列中旧代际库可能缺失的列：
-      // 16 列版（无 ns/depends_on）、17 列版（有 ns 无 level）。其余列
-      // （parent_id/priority/importance/...）自 16 列版起即存在，无需补。
+      // 现役 19 列中旧代际库可能缺失的列：
+      // 16 列版（无 ns/depends_on）、17 列版（有 ns 无 level）、18 列版（无 omega_required）。
+      // 其余列（parent_id/priority/importance/...）自 16 列版起即存在，无需补。
+      // BUG-389 方向②：Omega 门禁开关判据从 description 文本移到不可覆盖的元数据列
+      // omega_required（旧库缺列时默认 0=关闭，向后兼容）。
       let needed : Array[(String, String)] = [
         (
-          "ns",
-          "ALTER TABLE tasks ADD COLUMN ns TEXT NOT NULL DEFAULT 'default'",
+          "ns", "ALTER TABLE tasks ADD COLUMN ns TEXT NOT NULL DEFAULT 'default'",
         ),
         (
-          "level",
-          "ALTER TABLE tasks ADD COLUMN level INTEGER NOT NULL DEFAULT 6",
+          "level", "ALTER TABLE tasks ADD COLUMN level INTEGER NOT NULL DEFAULT 6",
         ),
         (
-          "completed_by",
-          "ALTER TABLE tasks ADD COLUMN completed_by TEXT DEFAULT ''",
+          "completed_by", "ALTER TABLE tasks ADD COLUMN completed_by TEXT DEFAULT ''",
         ),
         (
-          "cleanup_mode",
-          "ALTER TABLE tasks ADD COLUMN cleanup_mode TEXT NOT NULL DEFAULT 'deferred'",
+          "cleanup_mode", "ALTER TABLE tasks ADD COLUMN cleanup_mode TEXT NOT NULL DEFAULT 'deferred'",
         ),
         (
-          "depends_on",
-          "ALTER TABLE tasks ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]'",
+          "depends_on", "ALTER TABLE tasks ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]'",
+        ),
+        (
+          "omega_required", "ALTER TABLE tasks ADD COLUMN omega_required INTEGER NOT NULL DEFAULT 0",
         ),
       ]
       let mut ok = true
@@ -213,7 +223,7 @@ fn SqliteStore::ensure_task_columns(self : SqliteStore) -> Bool {
 
 ///|
 fn SqliteStore::task_columns() -> String {
-  "id, parent_id, project_dir, ns, priority, importance, depth, split_n, level, status, assignee, description, deliverable, created_at, updated_at, completed_by, cleanup_mode, depends_on"
+  "id, parent_id, project_dir, ns, priority, importance, depth, split_n, level, status, assignee, description, deliverable, created_at, updated_at, completed_by, cleanup_mode, depends_on, omega_required"
 }
 
 ///|
@@ -287,6 +297,12 @@ fn SqliteStore::bind_task_values(
       ),
     ),
   )
+  ignore(
+    stmt.bind(
+      19,
+      @sqlite.SqlValue::Int(if t.get_omega_required() { 1 } else { 0 }),
+    ),
+  )
 }
 
 ///|
@@ -357,6 +373,12 @@ fn SqliteStore::bind_task_update_values(
       ),
     ),
   )
+  ignore(
+    stmt.bind(
+      17,
+      @sqlite.SqlValue::Int(if t.get_omega_required() { 1 } else { 0 }),
+    ),
+  )
 }
 
 ///|
@@ -404,6 +426,7 @@ fn row_to_task(stmt : @sqlite.Statement) -> @core.Task {
   let assignee_raw = str_from_bytes(stmt.column_text(10))
   let completed_raw = str_from_bytes(stmt.column_text(15))
   let depends_raw = str_from_bytes(stmt.column_text(17))
+  let omega_raw = stmt.column_int(18)
   @core.Task::from_db(
     str_from_bytes(stmt.column_text(0)),
     if parent_raw == "" {
@@ -435,6 +458,7 @@ fn row_to_task(stmt : @sqlite.Statement) -> @core.Task {
     },
     str_from_bytes(stmt.column_text(16)),
     _json_to_array(depends_raw),
+    omega_raw != 0,
   )
 }
 
@@ -449,7 +473,7 @@ impl Store for SqliteStore with fn create_task(self, task) {
         Some(_) => return Err("task already exists: \{task.get_id()}")
         None => ()
       }
-      let sql = "INSERT INTO tasks (\{SqliteStore::task_columns()}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+      let sql = "INSERT INTO tasks (\{SqliteStore::task_columns()}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: create_task")
         Some(stmt) => {
@@ -496,14 +520,14 @@ impl Store for SqliteStore with fn update_task(self, task) {
       if self.get_task(task.get_id()) is None {
         return Err("task not found: \{task.get_id()}")
       }
-      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ? WHERE id = ?"
+      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ?, omega_required = ? WHERE id = ?"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: update_task")
         Some(stmt) => {
           SqliteStore::bind_task_update_values(stmt, task)
           ignore(
             stmt.bind(
-              17,
+              18,
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, task.get_id())),
             ),
           )
@@ -529,20 +553,20 @@ pub fn SqliteStore::update_task_if_status(
   match self.db {
     None => Err("sqlite store 未打开")
     Some(db) => {
-      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ? WHERE id = ? AND status = ?"
+      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ?, omega_required = ? WHERE id = ? AND status = ?"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: update_task_if_status")
         Some(stmt) => {
           SqliteStore::bind_task_update_values(stmt, task)
           ignore(
             stmt.bind(
-              17,
+              18,
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, task.get_id())),
             ),
           )
           ignore(
             stmt.bind(
-              18,
+              19,
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, expected_status)),
             ),
           )
@@ -856,6 +880,16 @@ impl Store for SqliteStore with fn clear(self) {
       ignore(
         db.exec(
           "CREATE TABLE IF NOT EXISTS lock_violations (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', lock_id TEXT NOT NULL DEFAULT '')",
+        ),
+      )
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS agents (agent_id TEXT PRIMARY KEY, agent_type TEXT NOT NULL DEFAULT 'unknown', role TEXT NOT NULL DEFAULT 'Executor', soldier TEXT NOT NULL DEFAULT '工兵', pid INTEGER NOT NULL DEFAULT 0, pubkey_fp TEXT NOT NULL DEFAULT '', first_seen TEXT NOT NULL DEFAULT '', last_seen TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active')",
+        ),
+      )
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS agent_acl (agent_id TEXT NOT NULL, ns TEXT NOT NULL, can_read INTEGER NOT NULL DEFAULT 1, can_write INTEGER NOT NULL DEFAULT 0, pid_bound INTEGER NOT NULL DEFAULT 0, revoked_at TEXT NOT NULL DEFAULT '', revoked_by TEXT NOT NULL DEFAULT '', PRIMARY KEY (agent_id, ns))",
         ),
       )
       ignore(db.exec("DELETE FROM tasks"))
@@ -2668,6 +2702,400 @@ pub fn SqliteStore::recent_call_logs(
             m.set("ok", Json::boolean(stmt.column_int(7) != 0))
             m.set("runtime_ms", Json::number(stmt.column_int(8).to_double()))
             out.push(Json::object(m))
+          }
+          stmt.finalize()
+          out
+        }
+      }
+    }
+  }
+}
+
+///|
+/// AgentRecord —— `agents` 表的一行（进程级身份；`agent_id` 即指纹哈希，跨进程持久）。
+/// `pid` 是进程实例标记（本仓不暴露 OS-PID，由 server 层以启动毫秒推导的实例 token 注入），
+/// 同一指纹换 `pid` 视为"同一身份换进程"——身份不变、活体续期；`pid` 与上次不同即判旧实例已死。
+pub struct AgentRecord {
+  agent_id : String
+  agent_type : String
+  role : String
+  soldier : String
+  pid : Int32
+  pubkey_fp : String
+  first_seen : String
+  last_seen : String
+  status : String
+}
+
+///|
+/// 注册 agent（指纹即身份）。首次出现则 INSERT（并落一条 fail-closed 的默认 ACL），
+/// 已存在则仅刷新 `pid`/`last_seen`/`status`（身份不变，进程实例换新）。
+pub fn SqliteStore::agents_register(
+  self : SqliteStore,
+  agent_id~ : String,
+  agent_type~ : String,
+  role~ : String,
+  soldier~ : String,
+  pubkey_fp~ : String,
+  pid~ : Int32,
+  now~ : String,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "INSERT INTO agents (agent_id, agent_type, role, soldier, pid, pubkey_fp, first_seen, last_seen, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active') ON CONFLICT(agent_id) DO UPDATE SET pid=excluded.pid, last_seen=excluded.last_seen, status='active'"
+      match db.prepare(sql) {
+        None => Err("sqlite prepare 失败: agents_register")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_type)),
+            ),
+          )
+          ignore(
+            stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, role))),
+          )
+          ignore(
+            stmt.bind(
+              4,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, soldier)),
+            ),
+          )
+          ignore(stmt.bind(5, @sqlite.SqlValue::Int(pid)))
+          ignore(
+            stmt.bind(
+              6,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, pubkey_fp)),
+            ),
+          )
+          ignore(
+            stmt.bind(7, @sqlite.SqlValue::Text(@encoding.encode(UTF8, now))),
+          )
+          ignore(
+            stmt.bind(8, @sqlite.SqlValue::Text(@encoding.encode(UTF8, now))),
+          )
+          let exec_ok = stmt.execute()
+          stmt.finalize()
+          if exec_ok {
+            Ok(())
+          } else {
+            Err("sqlite 注册 agent 失败: \{agent_id}")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 进程级心跳：刷新 `pid`/`last_seen` 并置回 active。`agent_id` 未注册则先注册（agent_type 取调用方给出值）。
+pub fn SqliteStore::agents_heartbeat(
+  self : SqliteStore,
+  agent_id~ : String,
+  agent_type~ : String,
+  role~ : String,
+  soldier~ : String,
+  pid~ : Int32,
+  now~ : String,
+) -> Result[Unit, String] {
+  self.agents_register(
+    agent_id~,
+    agent_type~,
+    role~,
+    soldier~,
+    pubkey_fp="",
+    pid~,
+    now~,
+  )
+}
+
+///|
+/// 读单个 agent 的持久化身份（无记录返回 None）。
+pub fn SqliteStore::agents_get(
+  self : SqliteStore,
+  agent_id : String,
+) -> AgentRecord? {
+  match self.db {
+    None => None
+    Some(db) => {
+      let sql = "SELECT agent_id, agent_type, role, soldier, pid, pubkey_fp, first_seen, last_seen, status FROM agents WHERE agent_id = ?"
+      match db.prepare(sql) {
+        None => None
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_id)),
+            ),
+          )
+          let rec = if stmt.step() {
+            Some(AgentRecord::{
+              agent_id: str_from_bytes(stmt.column_text(0)),
+              agent_type: str_from_bytes(stmt.column_text(1)),
+              role: str_from_bytes(stmt.column_text(2)),
+              soldier: str_from_bytes(stmt.column_text(3)),
+              pid: stmt.column_int(4),
+              pubkey_fp: str_from_bytes(stmt.column_text(5)),
+              first_seen: str_from_bytes(stmt.column_text(6)),
+              last_seen: str_from_bytes(stmt.column_text(7)),
+              status: str_from_bytes(stmt.column_text(8)),
+            })
+          } else {
+            None
+          }
+          stmt.finalize()
+          rec
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 换绑进程实例（server 启动时调用）：仅刷新 `pid`，不动 `first_seen`/`last_seen`。
+pub fn SqliteStore::agents_set_pid(
+  self : SqliteStore,
+  agent_id~ : String,
+  pid~ : Int32,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "UPDATE agents SET pid = ? WHERE agent_id = ?"
+      match db.prepare(sql) {
+        None => Err("sqlite prepare 失败: agents_set_pid")
+        Some(stmt) => {
+          ignore(stmt.bind(1, @sqlite.SqlValue::Int(pid)))
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_id)),
+            ),
+          )
+          let exec_ok = stmt.execute()
+          stmt.finalize()
+          if exec_ok {
+            Ok(())
+          } else {
+            Err("sqlite 换绑 pid 失败: \{agent_id}")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 确保一条默认 ACL（can_read=1, can_write=0, pid_bound=0）——fail-closed 底线。
+/// 已存在则不动（授权变更只经 `agents_acl_grant`）。
+pub fn SqliteStore::agents_acl_ensure(
+  self : SqliteStore,
+  agent_id~ : String,
+  ns~ : String,
+  now~ : String,
+) -> Result[Unit, String] {
+  // `now` 是公开契约的一部分（与 agents_acl_grant 同形，调用方统一传时刻），
+  // 但 agent_acl 表没有 created_at 列 —— 默认 ACL 只断言"存在即 fail-closed"，
+  // 首次写入时刻不是判据面。保留参数不破坏调用面，此处显式消费掉。
+  ignore(now)
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "INSERT OR IGNORE INTO agent_acl (agent_id, ns, can_read, can_write, pid_bound, revoked_at, revoked_by) VALUES (?, ?, 1, 0, 0, '', '')"
+      match db.prepare(sql) {
+        None => Err("sqlite prepare 失败: agents_acl_ensure")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          let exec_ok = stmt.execute()
+          stmt.finalize()
+          if exec_ok {
+            Ok(())
+          } else {
+            Err("sqlite 默认 ACL 落库失败: \{agent_id}/\{ns}")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// ACL 检查（调用前先 `agents_acl_ensure`）。`write=true` 且 `can_write=0` 即 Err；
+/// `write=false` 且 `can_read=0` 即 Err。`pid_bound=1` 且 `agents.pid` 与当前 pid 不同视为换实例 → Err。
+pub fn SqliteStore::agents_acl_check(
+  self : SqliteStore,
+  agent_id~ : String,
+  ns~ : String,
+  write~ : Bool,
+  current_pid~ : Int32,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "SELECT a.can_read, a.can_write, a.pid_bound, g.pid FROM agent_acl a LEFT JOIN agents g ON g.agent_id = a.agent_id WHERE a.agent_id = ? AND a.ns = ?"
+      match db.prepare(sql) {
+        None => Err("sqlite prepare 失败: agents_acl_check")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          let verdict = if stmt.step() {
+            let can_read = stmt.column_int(0)
+            let can_write = stmt.column_int(1)
+            let pid_bound = stmt.column_int(2)
+            let bound_pid = stmt.column_int(3)
+            stmt.finalize()
+            if pid_bound != 0 && bound_pid != current_pid {
+              Err(
+                "ACL 绑定旧进程实例（pid_bound=1 且 pid 已换），需重新授权: \{agent_id}/\{ns}",
+              )
+            } else if write && can_write == 0 {
+              Err("ACL 默认拒绝写（can_write=0）: \{agent_id}/\{ns}")
+            } else if !write && can_read == 0 {
+              Err("ACL 拒绝读（can_read=0）: \{agent_id}/\{ns}")
+            } else {
+              Ok(())
+            }
+          } else {
+            stmt.finalize()
+            Err("ACL 无记录（fail-closed）: \{agent_id}/\{ns}")
+          }
+          verdict
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 授权/收权（UPSERT）：`can_read`/`can_write` 直接覆盖；`pid_bound=1` 时绑定当前 `agents.pid`，
+/// 之后换进程实例即失效。`now` 写入 revoked_at/revoked_by 仅用于吊销记录（can_write=0 且 pid_bound=0）。
+pub fn SqliteStore::agents_acl_grant(
+  self : SqliteStore,
+  agent_id~ : String,
+  ns~ : String,
+  can_read~ : Bool,
+  can_write~ : Bool,
+  pid_bound~ : Bool,
+  now~ : String,
+  by~ : String,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      // 先取该 agent 当前 pid（供 pid_bound=1 绑定）
+      let bound_pid = match
+        db.prepare("SELECT pid FROM agents WHERE agent_id = ?") {
+        None => 0
+        Some(s2) => {
+          ignore(
+            s2.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_id))),
+          )
+          let p = if s2.step() { s2.column_int(0) } else { 0 }
+          s2.finalize()
+          p
+        }
+      }
+      let revoke = if !can_write && !pid_bound { now } else { "" }
+      let revoke_by = if !can_write && !pid_bound { by } else { "" }
+      let sql = "INSERT INTO agent_acl (agent_id, ns, can_read, can_write, pid_bound, revoked_at, revoked_by) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(agent_id, ns) DO UPDATE SET can_read=excluded.can_read, can_write=excluded.can_write, pid_bound=excluded.pid_bound, revoked_at=excluded.revoked_at, revoked_by=excluded.revoked_by"
+      match db.prepare(sql) {
+        None => Err("sqlite prepare 失败: agents_acl_grant")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(3, @sqlite.SqlValue::Int(if can_read { 1 } else { 0 })),
+          )
+          ignore(
+            stmt.bind(4, @sqlite.SqlValue::Int(if can_write { 1 } else { 0 })),
+          )
+          ignore(
+            stmt.bind(
+              5,
+              @sqlite.SqlValue::Int(if pid_bound { bound_pid } else { 0 }),
+            ),
+          )
+          ignore(
+            stmt.bind(6, @sqlite.SqlValue::Text(@encoding.encode(UTF8, revoke))),
+          )
+          ignore(
+            stmt.bind(
+              7,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, revoke_by)),
+            ),
+          )
+          let exec_ok = stmt.execute()
+          stmt.finalize()
+          if exec_ok {
+            Ok(())
+          } else {
+            Err("sqlite 授权失败: \{agent_id}/\{ns}")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 陈旧 agent 扫描：返回 `last_seen` 早于 `cutoff`（或从未心跳）的 agent 列表。
+/// `cutoff` 与 `last_seen` 同为 `YYYY-MM-DDTHH:MM:SSZ`，字典序比较成立。
+pub fn SqliteStore::agents_stale_check(
+  self : SqliteStore,
+  cutoff : String,
+) -> Array[AgentRecord] {
+  let out : Array[AgentRecord] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT agent_id, agent_type, role, soldier, pid, pubkey_fp, first_seen, last_seen, status FROM agents WHERE status = 'active' AND (last_seen = '' OR last_seen < ?)"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, cutoff))),
+          )
+          while stmt.step() {
+            out.push(AgentRecord::{
+              agent_id: str_from_bytes(stmt.column_text(0)),
+              agent_type: str_from_bytes(stmt.column_text(1)),
+              role: str_from_bytes(stmt.column_text(2)),
+              soldier: str_from_bytes(stmt.column_text(3)),
+              pid: stmt.column_int(4),
+              pubkey_fp: str_from_bytes(stmt.column_text(5)),
+              first_seen: str_from_bytes(stmt.column_text(6)),
+              last_seen: str_from_bytes(stmt.column_text(7)),
+              status: str_from_bytes(stmt.column_text(8)),
+            })
           }
           stmt.finalize()
           out

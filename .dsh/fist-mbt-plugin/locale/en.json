@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "FIST-Mbt",
+    "description": "Connect the FIST-Mbt MCP server (task orchestration, seven-state lifecycle, self-driving loops, Omega verification). Always launches the newest build in the latest build, so tools and version follow the repository."
+  }
+}

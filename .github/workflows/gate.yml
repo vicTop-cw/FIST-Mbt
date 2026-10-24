@@ -27,5 +27,16 @@ jobs:
       - name: Refresh registry (first build)
         run: moon update
 
+      # BUG-388 CI side：`ck_fmt()` 在**全新 worktree** 里跑 `moon fmt --check` 时，
+      # moon 的格式化器产物（`_build/wasm-gc/release/format/`）还不存在 ⇒ 直接 rc=-1
+      # （`No such file` + `cannot hash`），`classify_fmt` 判 cold-formatter ⇒ DEGRADED(2)
+      # ⇒ `fist-gate.py` rc=2 ⇒ gate action `on: rc>=1` 恒失败。
+      # 修法：**在 workflow 层**先用写模式 `moon fmt` 预热，判据本身仍只读（门链必须只读，
+      # 见 fist-gate.py 的 ck_fmt 注释与 AGENTS.md BUG-388 段）。实测：预热前 fmt=DEGRADED/rc=2，
+      # 预热后六门全 PASS/rc=0。写模式只落 `_build` 产物，不改仓库文件内容（numstat=0）。
+      # 本 workflow 无 `Migrate mooncakes` 步骤 ⇒ 位置纪律不适用（check_ci_step_position.py F3 豁免面）。
+      - name: Warm formatter so `moon fmt --check` is decidable (BUG-388 CI side)
+        run: moon fmt
+
       - name: Run unified gate chain
         run: python3 scripts/fist-gate.py

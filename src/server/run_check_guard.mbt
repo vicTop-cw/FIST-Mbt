@@ -13,8 +13,8 @@
 /// 解析 run_check 的入参（判据脚本 temp/r2_runcheck_surface.py，原始留档
 /// temp/r2_calllog_raw.json），真实用过的 cmd 恰为 `moon`(x7)、`python`(x14)、
 /// `bash`(x22)、`powershell`(x6)、`D:/Program Files/Git/usr/bin/bash.exe`(x2)；
-/// workdir 恰为「任务自己的 project_dir」（含绝对形态 `E:/IDEProjects/AI/Cypy`、
-/// `E:\IDEProjects\AI\Cypy`、`E:/IDEProjects/ai/Pentad`、`E:/IDEProjects/AI/Actus`）
+/// workdir 恰为「任务自己的 project_dir」（含绝对形态 `E:/proj/AI/Cypy`、
+/// `E:\proj\Cypy`、`E:/proj/AI/Pentad`、`E:/proj/AI/Actus`）
 /// 或 `.`（当 project_dir 为 `.` 时）。
 /// 所以默认白名单必须含 {moon, python, bash, powershell}（外加同类解释器 node/sh/zsh 与
 /// 跨平台别名 python3/py/pwsh），且**绝对路径的 workdir == project_dir 必须放行**——
@@ -87,7 +87,7 @@ priv struct RcPath {
 /// 相对路径出现越过根的 `..` 记 escaped=true（越界的主作案形态）。
 fn rc_path(s0 : String) -> RcPath {
   // 注意：必须 replace_all——String::replace 只换**第一处**（实测把
-  // `E:\IDEProjects\AI\Cypy` 变成 `E:/IDEProjects\AI\Cypy`，段列表整个错位）。
+  // `E:\proj\Cypy` 变成 `E:/proj\Cypy`，段列表整个错位）。
   let s = s0.replace_all(old="\\", new="/")
   let mut drive = ""
   let mut rest = s

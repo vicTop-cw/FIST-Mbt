@@ -105,6 +105,10 @@ pub async fn laya_decide_external(String, Array[String], String, String, Int32) 
 
 pub async fn laya_probe_available(String, Array[String], String, Int32) -> Result[Bool, String]
 
+pub fn legacy_store_exists(String) -> Bool
+
+pub fn legacy_store_exists_in(String, String) -> Bool
+
 pub fn lookup_injected_assets_in(@evolve.Archive, String) -> Json
 
 pub fn mcp_config_scaffold_impl(String, String, Array[String]) -> Result[Json, String]
@@ -138,6 +142,8 @@ pub fn memory_gc_one(String, String, Int32) -> Json
 pub fn memory_link(String, String, String, String) -> Result[Json, String]
 
 pub fn model_auth_status_impl(String, ns~ : String) -> Result[Json, String]
+
+pub fn ns_write_gate(String) -> Result[Unit, String]
 
 pub fn ocr_build_args(project_dir~ : String, subcmd~ : String, path? : String, rules_file? : String) -> Result[Array[String], String]
 

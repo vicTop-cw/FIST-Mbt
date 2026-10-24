@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "FIST-Mbt",
+    "description": "接入 FIST-Mbt MCP 服务（任务编排、七态生命周期、自驱闭环、Omega 强验证）。始终启动 the latest build 下的最新构建，工具与版本随仓库升级。"
+  }
+}

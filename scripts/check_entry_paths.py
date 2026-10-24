@@ -234,9 +234,99 @@ def launcher_serve_check(root, files):
     return problems
 
 
+ROOT_NAME = r"(?:ROOT|_FIST_ROOT|FIST_ROOT|REPO_ROOT|WORKDIR)"
+BARE_ART = re.compile(r"""['"]((?:_build|target)/[^'"]*\.js)['"]""")
+ART_VAR = re.compile(r"^\s*(\w+)\s*=\s*['\"](?:_build|target)/[^'\"]*\.js['\"]\s*$")
+ART_LIST = re.compile(r"^\s*(\w+)\s*=\s*\[(.*?)\]", re.S)
+LOOP_VAR = re.compile(r"^\s*for\s+(\w+)\s+in\s+(\w+)\s*:")
+JOINED = re.compile(r"os\.path\.join\(\s*" + ROOT_NAME + r"\b")
+CWD_ROOT = re.compile(r"cwd\s*=\s*" + ROOT_NAME + r"\b")
+EXISTS_CALL = re.compile(r"os\.path\.(?:exists|isfile|stat)\(\s*([^()]*)\)")
+SPAWN_LINE = re.compile(r"(?:Popen|subprocess\.(?:run|call|check_output|check_call))\(")
+RETURN_BARE = re.compile(r"^\s*return\s+(\w+)\s*$")
+
+
+def _rel_artifact_names(text):
+    """收集"装着裸相对产物路径"的名字：直接赋值、列表字面量、以及对前两者取迭代的 for 变量。
+
+    只做一层传播（for v in NAME），不做跨函数数据流——本仓的产物寻址都在模块常量与
+    紧邻的消费点里，真要跨函数传相对路径，那已经不是本守卫的形状了。
+    """
+    names = set()
+    for line in text.split("\n"):
+        m = ART_VAR.match(line)
+        if m:
+            names.add(m.group(1))
+    for m in ART_LIST.finditer(text):
+        if BARE_ART.search(m.group(2)):
+            names.add(m.group(1))
+    changed = True
+    while changed:
+        changed = False
+        for line in text.split("\n"):
+            m = LOOP_VAR.match(line)
+            if m and m.group(2) in names and m.group(1) not in names:
+                names.add(m.group(1))
+                changed = True
+    return names
+
+
+def cwd_relative_artifact_check(root, files):
+    """R3：产物路径若以**裸相对路径**被消费，判据就按调用方当前目录解释 ⇒ 发红。
+
+    为什么值得钉（R159 实测形状）：`scripts/fist.py` / `scripts/mcp_smoke.py` 的 `find_main()`
+    把候选写成 `"_build/js/debug/build/cmd/cli/cli.js"` 再 `os.path.exists(p)`——从仓库根跑正常，
+    从别的目录跑就报「未找到构建产物」，而产物**确实在那儿**（主仓该文件 exists=True 时旧码仍回 `''`）。
+    宿主按绝对路径调用入口脚本是常规用法，所以这一格坏掉时，报错文案会把人引去重跑构建。
+
+    合法形状两种（都不红）：①消费点被 `os.path.join(ROOT|_FIST_ROOT|…)` 包住；
+    ②起进程时 `cwd=ROOT|_FIST_ROOT|…`（子进程的相对路径按那个目录解释，构造上就对了）。
+    范围声明：整行注释豁免（与 R1 同口径，注释不参与执行）；只认 `.js` 产物形状；
+    跨函数把相对路径传出去、或经 shell 字符串间接起进程的，不在本判据面内。
+    """
+    problems = []
+    for rel in files:
+        if rel in SELF_EXEMPT or not rel.endswith(".py"):
+            continue
+        p = os.path.join(root, rel)
+        if not os.path.isfile(p):
+            continue
+        txt = io.open(p, encoding="utf-8", errors="replace").read()
+        if not BARE_ART.search(txt):
+            continue
+        names = _rel_artifact_names(txt)
+        for i, line in enumerate(txt.split("\n"), 1):
+            if PY_COMMENT_LINE.match(line.replace("\\", "/")):
+                continue
+            for m in EXISTS_CALL.finditer(line):
+                arg = m.group(1).strip()
+                if not arg or JOINED.search(arg):
+                    continue
+                if arg in names or BARE_ART.search(arg):
+                    problems.append(
+                        "R3 %s:%d 裸相对产物路径按调用方 CWD 判存在：%s（修法：os.path.join(<仓库根>, …) 或起进程时钉 cwd=<仓库根>）"
+                        % (rel, i, line.strip()[:110]))
+            if SPAWN_LINE.search(line) and not CWD_ROOT.search(line):
+                seg = line[line.index("("):]
+                for m in BARE_ART.finditer(seg):
+                    problems.append("R3 %s:%d 起进程的 argv 里产物是裸相对路径且未钉 cwd=<仓库根>：%s"
+                                    % (rel, m.start(), line.strip()[:110]))
+            for m in RETURN_BARE.finditer(line):
+                if m.group(1) in names:
+                    problems.append("R3 %s:%d 把裸相对产物路径当结果返回给调用方：%s"
+                                    % (rel, i, line.strip()[:110]))
+    return problems
+
+
+def r3_surface(files):
+    """R3 的扫描面计数：参与产物寻址判定的 .py 份数（0 份 ⇒ 主程序必须自拒，不许冒绿）。"""
+    return len([f for f in files if f.endswith(".py")])
+
+
 def selftest():
     """逐格自证；**格子清单从实际执行的那一格记一笔**，末行按记下来的名单打印
     （手写计数出过幻影：R5 那格因"变异只改注释"被跳过，自述里却照写 R5×2）。"""
+    _entry_probe()
     ok = True
     ran = []
     import tempfile, shutil
@@ -322,11 +412,64 @@ def selftest():
             print("SELFTEST FAIL：tracked=None 时必须把非 `_` 根 .py 全判，实得 %r %r" % (keep7, drop7))
             ok = False
         ran.append("取不到 git 反向兜底")
+        # ---- R3 成组自证（R159 实测形状：违例必红 / 两种合法形状不误红 / 只改注释不误红 / 计数逻辑承重）----
+        with io.open(os.path.join(d, "r3_bad.py"), "w", encoding="utf-8") as f:
+            f.write('MAIN_CANDIDATES = [\n    "_build/js/debug/build/cmd/cli/cli.js",\n]\n'
+                    'def find_main():\n'
+                    '    for p in MAIN_CANDIDATES:\n'
+                    '        if os.path.exists(p):\n'
+                    '            return p\n'
+                    '    return ""\n')
+        with io.open(os.path.join(d, "r3_join.py"), "w", encoding="utf-8") as f:
+            f.write('MAIN_CANDIDATES = [\n    "_build/js/debug/build/cmd/cli/cli.js",\n]\n'
+                    'def find_main():\n'
+                    '    for p in MAIN_CANDIDATES:\n'
+                    '        if os.path.exists(os.path.join(_FIST_ROOT, p)):\n'
+                    '            return os.path.join(_FIST_ROOT, p)\n'
+                    '    return ""\n')
+        with io.open(os.path.join(d, "r3_cwd.py"), "w", encoding="utf-8") as f:
+            f.write('MAIN = "_build/js/debug/build/cmd/cli/cli.js"\n'
+                    'proc = subprocess.Popen([NODE, MAIN, "serve"], cwd=ROOT)\n')
+        with io.open(os.path.join(d, "r3_comment.py"), "w", encoding="utf-8") as f:
+            f.write('# 旧形状：os.path.exists(p) 里的 p 来自 "_build/js/debug/build/cmd/cli/cli.js"（历史说明，不执行）\n'
+                    'MAIN = "_build/js/debug/build/cmd/cli/cli.js"\n'
+                    'proc = subprocess.Popen([NODE, os.path.join(ROOT, MAIN), "serve"], cwd=ROOT)\n')
+        r3 = cwd_relative_artifact_check(box, ["scripts/r3_bad.py", "scripts/r3_join.py",
+                                              "scripts/r3_cwd.py", "scripts/r3_comment.py"])
+        ran.append("R3 裸相对产物必红")
+        if not any("r3_bad.py" in x for x in r3):
+            print("SELFTEST FAIL：R3 抓不到「候选是裸相对路径 + exists/return 直接用」⇒ R159 那类缺陷会重犯：%s" % (r3,))
+            ok = False
+        ran.append("R3 合法 join / cwd=ROOT 不误红")
+        if any("r3_join.py" in x or "r3_cwd.py" in x for x in r3):
+            print("SELFTEST FAIL：R3 把两种合法形状判红了（ROOT 拼接、cwd=ROOT 都构造上正确）：%s" % (r3,))
+            ok = False
+        ran.append("R3 只改注释不误红")
+        if any("r3_comment.py" in x for x in r3):
+            print("SELFTEST FAIL：R3 红在注释上（注释不参与执行，红必须来自活代码）：%s" % (r3,))
+            ok = False
+        ran.append("R3 扫描面计数承重")
+        if r3_surface(["scripts/a.py", "docs/b.md", "scripts/c.mbt"]) != 1 or r3_surface(["README.md"]) != 0:
+            print("SELFTEST FAIL：r3_surface 计数错 ⇒ 主程序的「空面自拒」门形同虚设")
+            ok = False
     finally:
         shutil.rmtree(box, ignore_errors=True)
     print("SELFTEST %s（%d 格：%s）" % (
         "OK" if ok else "FAIL", len(ran), " / ".join(ran)))
     return 0 if ok else 2
+
+
+
+def _entry_probe() -> None:
+    """入口面自证（R171 口径）：自检必须把入口纳入调用图。
+
+    为什么要有这一格：R158 交付 check_diff_scope.py 时 `--selftest` 全绿而**现状面一跑就崩**
+    （clean 分支少传一个实参抛 TypeError，冒出来的 rc=1 和「有违例」一模一样）。自检只考纯函数、
+    不碰入口，照不出「自检面与入口面脱钩」。本探测**零副作用**：只验证入口存在且可调用，
+    不起服务、不碰网络、不跑真桥。
+    """
+    if not callable(main):
+        raise SystemExit("入口 main 不可调用（自检面与入口面脱钩）")
 
 
 def main():
@@ -351,6 +494,12 @@ def main():
     problems = problems + launcher_serve_check(
         ROOT, [r for r in files
                if r not in HISTORY_FILES and not r.startswith(HISTORY_PREFIXES)])
+    r3_files = [r for r in files
+                if r not in HISTORY_FILES and not r.startswith(HISTORY_PREFIXES)]
+    if r3_surface(r3_files) == 0:
+        print("FATAL R3 扫描面为空：没有任何 .py 参与产物寻址判定 ⇒ 缺样本＝没测，拒绝报绿")
+        return 2
+    problems = problems + cwd_relative_artifact_check(ROOT, r3_files)
     print("入口清单：%s｜发布 cmd/%s｜退役 cmd/%s｜扫描面 %d 份（历史面除外）" % (
         ", ".join("cmd/" + e for e in entries), ship,
         ", ".join(retired) if retired else "（无）", scanned))
@@ -368,7 +517,7 @@ def main():
         print("FAIL 现状面仍有 %d 处违例（发布入口是 cmd/%s，用户按这些说明跑的是另一棵 / 裸跑只打印 help）" % (
             len(problems), ship))
         return 1
-    print("PASS R1 退役入口引用 0 处、R2 缺 serve 启动器 0 个（扫描面 %d 份文件，历史面与守卫自身除外）"
+    print("PASS R1 退役入口引用 0 处、R2 缺 serve 启动器 0 个、R3 裸相对产物寻址 0 处（扫描面 %d 份文件，历史面与守卫自身除外）"
           % scanned)
     return 0
 
