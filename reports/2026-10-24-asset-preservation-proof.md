@@ -1,33 +1,66 @@
-# 资产保全证明书（Asset Preservation Proof）
+# 资产保全证明书（Asset Preservation Proof）· **v3 终版**
 
 > **文种**：证明书 · **性质**：只读审计产出，**本文件不执行任何删除**
 > **日期**：2026-10-24 · **审计组主官**：audit-preservation · **任务**：task-9
-> **基线**：`main = ffee8d522724b58679dfec69939758695a76b72e`
-> **取证器**：`scripts/tmp_audit_preservation_scan.py`（纯只读，只跑 `rev-parse / merge-base / diff / log / cherry / for-each-ref / ls-files / status`）
-> **机器读数**：`temp/audit/scan_full.json`（360 支全量）、`worktrees.json`、`siblings.json`
+> **版本沿革**：v1（`460026ba`）→ v2（`5006d1cf`，判例-10 + 17 支专节）→ **v3（本版，判例-10b + 三处数字订正）**
+> **v3 基线**：`main = 5e27f443`（`ffee8d52` 为 v1/v2 基线；执行组已删部分分支，见 §0.3）
+> **取证器**：`scripts/tmp_audit_preservation_scan.py` + `temp/audit/*.py`（全部纯只读）
+> **v3 新增取证**：`temp/audit/v3_verify.py`
 
 ---
 
-## 0. 一句话结论
+## 0. 一页摘要
 
-**按本证明，可以无条件删除的只有 65 支本地分支。其余 444 项（远程分支、其余本地分支、worktree、兄弟目录）全部「不可删」或「须先蒸馏再删」。**
+### 0.1 一句话结论
 
-| 面 | 规模（复核后） | 绿=可删 | 黄=须先蒸馏 | 红=禁止删 |
+**按本证明，可无条件删除的面只有「本地分支」与「少数干净 worktree」；远程分支一支都不许删。**
+
+| 面 | 规模（v1/v2 实测） | 绿=可删 | 黄=须先蒸馏 | 红=禁止删 |
 |---|---|---|---|---|
 | gitcode 远程分支 | **153** | 0 | 151 | 1（+1 名特殊项） |
 | origin 远程分支 | **51** | 0 | 48 | 1（+1 名特殊项） |
-| 本地分支 | **153** | **65** | 85 | 1（+2 名特殊项） |
-| worktree | **54** | 21 | 6 | 27 |
+| 本地分支 | **153** | **65**（执行组已执行） | 85 | 1（+2 名特殊项） |
+| worktree | **54** | ⚠️ **21 已作废** → v3 重算 **34**（§3.6.1 有完整名单） | 6（须人工确认幻影） | **10**（8 dirty + 2 conflict） |
 | 兄弟目录 | **38**（非 34） | 0 | 0 | 38（其中 12 需 owner 裁决） |
 
-> **规模复核与统帅初查的差异（三处订正）**
-> | 项 | 统帅初查 | 本次实测 | 差异原因 |
-> |---|---|---|---|
-> | gitcode 远程分支 | 153 | **153** | 一致（已剔除 `HEAD` 符号引用与 `gitcode/gitcode` 镜像项） |
-> | origin 远程分支 | 51 | **51** | 一致 |
-> | 兄弟目录 | 34 | **38** | `ls -1d */` 实测 38 项（含 4 个点目录 `.atomcode/.codeartsdoer/.loomy-attachments/.workbuddy`） |
-> | worktree | 54 | **54** | 一致 |
-> | refs/remotes 总数 | — | **207** | 155 gitcode + 52 origin（含各自 `HEAD` 与镜像项） |
+### 0.2 ⚠️ v3 三处数字订正（必须与正文一起读）
+
+| # | v1/v2 原文 | v3 订正 | 依据 |
+|---|---|---|---|
+| **①** | §2.2：绿档 65 支里「**6 支**被 worktree 占用」 | **实为 4 支**（`cmd-gamma` / `lightwt/cmd-alpha` / `lightwt/cmd-zeta` / `worktree/skill-docs2`）；另 2 支（`fix/battery-tree-state-cell` / `fix/merge-cleanup-content-based`）的 `.agents/worktrees/` 目录**已不在** `git worktree list` | 执行组实测 + 本版 `temp/audit/v3_verify.py`（绿档现仅 4 支，与占用集交集 2 支） |
+| **②** | §3.6：「**21 个** worktree 可删」 | **该数已作废。** v3 重算见 §3.6.1：GREEN **34** / YELLOW 6 / RED-dirty 8 / RED-conflict 2（总 50 登记项）。**GREEN 34 项的完整路径表在 §3.6.1，是唯一可照单执行的清单**（原「18 个 `.agents` 干净项」没给名单，不可执行） | `temp/audit/wt_reclassify.py` |
+| **③** | §3.3/§3.6：用「**HEAD 是 main 祖先**」判 worktree 干净 | **该判据不适用**：5 个 mergeability 的 HEAD 是 `b5c8a366`/`3897d378`，`b5c8a366` **不是 main 祖先**（实测 `merge-base --is-ancestor` = NO），但它被 **30+ 个 ref 持有** ⇒ 无独有 commit。**改用 `git rev-list HEAD --not --all` = 0**，不要求 HEAD 是 main 祖先 | 见 §3.6.2（含「34 vs 3」三口径并列说明） |
+
+### 0.3 执行进度快照（v3 写作时点，`main = 5e27f443`）
+
+| 项 | v1/v2 读数 | v3 现测 | 差异 |
+|---|---|---|---|
+| 本地分支（除 main/master） | 153 | **91** | 执行组已删约 62 支 |
+| worktree（`git worktree list`） | 54 | **51** | 已 remove 若干 |
+| 绿档（`main..<br>` 为空） | 65 | **4** | 已基本执行完 |
+
+> **v3 的 §2/§3 保留的是「审计时点」的快照读数**（因为它们是该时点的事实陈述），
+> **执行现状以执行组报告为准**：`reports/2026-10-24-branch-cleanup-execution.md`（**非本文件作品，本版不改它**）。
+
+### 0.4 本版新增的最重要一条：判例-10b
+
+**`git diff --numstat` 读的是「工作树 vs index」，不含 index。**
+用它判「相对 HEAD 有无改动」会**双向误判**：既漏掉只在 index 里的改动（假阴性），
+也把「index 与工作树都改、互相抵消」看成零改动（假零）。
+
+**实测复现（两个仍在的 worktree，`temp/audit/v3_verify.py`）**：
+
+```
+                       mergeability-bn5486xy   mergeability-xd7gqcjf
+git diff --numstat              157 行               64 行      ← 工作树 vs index
+git diff --cached --numstat     103 行               57 行      ← index vs HEAD
+git diff HEAD --numstat         102 行               57 行      ← 工作树+index vs HEAD
+porcelain 分布              24 A / 79 AA         25 A / 32 AA
+```
+
+⇒ **v1/v2 里「全 M 无 untracked ⇒ 疑幻影 ⇒ 可删」的 8 个 worktree、以及 §5.3「须先验 `--numstat`」的 8 项，
+全部按 `--numstat` 验过，结论一律无效，v3 已重验。**详见 §2.6.6。
+
 
 ---
 
@@ -149,12 +182,32 @@ fix/ps1-bom-slave-merge
 fix/readme-dedup-and-dist-refresh
 ```
 
-**注意（这是绿档里唯一的风险点）**：其中 **6 支是已登记 worktree 的当前分支** ——
-`cmd-gamma`（light-wt/cmd-gamma）、`lightwt/cmd-alpha`、`lightwt/cmd-zeta`、
-`worktree/skill-docs2`（temp/wt-skill）、`fix/battery-tree-state-cell`、
-`fix/merge-cleanup-content-based`。
-**这些 worktree 必须先 `git worktree remove`，再删分支**，否则 `git branch -d` 会拒绝（"checked out at"）。
-删除顺序见 §5。
+> **⚠️ v3 订正（原 v1/v2 写「6 支」，实为 4 支）**
+>
+> **[v1/v2 原文，保留供追溯]**：其中 **6 支是已登记 worktree 的当前分支** ——
+> `cmd-gamma`（light-wt/cmd-gamma）、`lightwt/cmd-alpha`、`lightwt/cmd-zeta`、
+> `worktree/skill-docs2`（temp/wt-skill）、`fix/battery-tree-state-cell`、
+> `fix/merge-cleanup-content-based`。
+>
+> **[v3 实测]**：**只有 4 支** ——
+>
+> | 分支 | 所属 worktree |
+> |---|---|
+> | `cmd-gamma` | `light-wt/cmd-gamma` |
+> | `lightwt/cmd-alpha` | `light-wt/cmd-alpha` |
+> | `lightwt/cmd-zeta` | `light-wt/cmd-zeta` |
+> | `worktree/skill-docs2` | `temp/wt-skill` |
+>
+> 另 2 支（`fix/battery-tree-state-cell` / `fix/merge-cleanup-content-based`）
+> 的 `.agents/worktrees/` 目录**已不在 `git worktree list` 输出里** ⇒ 不占分支，可直接 `git branch -D`。
+>
+> > [v3 补充]**这两个目录当时是否真的不存在，还是只是"登记项已 prune 但目录还在"？**
+> > 本版实测：现时 `git worktree list` 共 51 条，`.agents/worktrees/` 下已无这两个子目录的登记。
+> > **若磁盘上仍有残留目录，属"孤儿目录"**（不在登记面），需 `git worktree prune` 后再清盘。
+> > 判「有无登记」用 `git worktree list`，**不要用 `test -d` 判目录是否存在** —— 两者不是一回事（见 §3.6.2）。
+>
+> **处置顺序不变**：**这些 worktree 必须先 `git worktree remove`，再删分支**，否则 `git branch -d` 会拒绝（"checked out at"）。
+> 删除顺序见 §5。
 
 ---
 
@@ -330,6 +383,114 @@ git cherry main origin/fix/omega-mark-keep             → + d91e077a
 上一版我把 `git grep -c omega_required -- src/` 的**无输出**读成「0 命中」，得出了与事实相反的结论。
 判「有无命中」必须用 `git grep -l`（有返回码 + 文件名）或 `git rev-list --count` 显式取数，
 **不能把「命令没打印」当「值为 0」。**
+
+#### 2.6.6 ★ 判例-10b：`git diff --numstat` 不含 index（v3 新增，执行组实测抓出）
+
+**这是本版最重要的一条。它证明了一件危险的事：v1/v2 里「判幻影」的方法是错的。**
+
+##### 四个命令的比较面（必须背下来）
+
+| 命令 | 比较面 | 能不能判「相对 HEAD 有无改动」 |
+|---|---|---|
+| `git diff --numstat` | 工作树 vs **index** | ❌ **不能** |
+| `git diff --cached --numstat` | **index** vs HEAD | ✅（只看 index 面） |
+| `git diff HEAD --numstat` | 工作树 **+ index** vs HEAD | ✅ **判「相对 HEAD」就用这条** |
+| `git status --porcelain` | 三者都含 | ✅ 判「有无未提交」 |
+
+##### 执行组抓到的一手案例（`mergeability-zi2h77_h/wt`）
+
+```
+git diff --numstat          =   0 行    ← 假阴性！统帅据此一度判「可删」
+git diff --cached --numstat =  42 行
+git diff HEAD --stat        =  43 行
+porcelain 分布 = M 28 / A 14，未跟踪 ?? = 0
+```
+
+**42 项全部在 index 里**，其中 **8 个文件的 index 内容与 main 不同**：
+
+| 文件 | index 大小 | main 大小 |
+|---|---|---|
+| `.dsh/fist-mbt-plugin/cordis.patch.yml.tpl` | 256 B | 1239 B |
+| `scripts/check_branch_ancestry.py` | 6980 | 7441 |
+| `scripts/check_diff_scope.py` | 25579 | 26498（差 563 行） |
+| `scripts/check_direct_push.py` | 1110 | 3214 |
+| `scripts/check_hardcoded_paths.py` | 6284 | 15035 |
+| `scripts/check_memory_log_size.py` | 5709 | 6683 |
+| `scripts/check_selftest_call_face.py` | 14692 | 15068 |
+| `scripts/render_dsh_patch.py` | 10549 | 10899 |
+
+> **若按「numstat=0 ⇒ 幻影 ⇒ 可删」执行，会丢这 8 个版本。**
+> 执行组的处置：导出 `_archive/zi2h77_h-staged.patch`（90767 B / 8 段），
+> 并验 `git apply --cached --check --reverse` = **rc 0**（可逐字节还原）之后才删。**这是正确处置。**
+
+##### 本版独立复现（两个仍在的 worktree）
+
+**复现命令**：`python temp/audit/v3_verify.py`（见 §2.6.6 末尾同名小节）
+
+```
+path                                    dirty  diff--numstat  diff--cached  diff HEAD
+mergeability-bn5486xy/wt                 103        157           103          102
+mergeability-xd7gqcjf/wt                  57         64            57           57
+.agents/worktrees/fix/agent-fp-check     638        638             0          638
+temp/auth-measure/wt                     532        532             0          532
+temp/wt-skill                            378        355            22          376
+```
+
+⇒ **三个面互不相等是常态。** 只读一个面必然误判。
+
+##### ⚠️ 一个比判例-10b 更危险的子发现：`0 0` 的 numstat ≠ 无差异
+
+本版在 `mergeability-bn5486xy/wt` 的 index 面上看到大量 `0 0` 行，起初以为是无差异，实测：
+
+```
+$ git diff --cached --stat
+ .dsh/fist-mbt-plugin/cordis.patch.yml              | Unmerged
+ .github/workflows/ci.yml                           | Unmerged
+ .gitignore                                         | Unmerged
+ …
+ src/store/multi_store.mbt                          | Unmerged
+ 24 files changed, 53160 insertions(+)
+```
+
+**这些文件处于 `Unmerged`（冲突未解决）态 —— numstat 的 `0 0` 表示「无法计算行数」，不表示「没有差异」。**
+porcelain 的 `AA`（both added）前缀就是这个状态的标志。
+
+该 worktree 当前状态实测：
+
+```
+冲突文件数 = 79
+porcelain 分布：24 A  /  79 AA
+无 MERGE_HEAD（历史遗留的冲突索引，不是进行中的 merge）
+```
+
+**处置含义（这条要写进执行纪律）**：
+
+- `AA` / `UU` / `DD` 等**冲突态**文件，**索引里存的是 stages 1/2/3 三份 blob**，`git diff --numstat` 永远给 `0 0`。
+  **不能用它判「有无内容」**。
+- 但**务必区分「冲突态」与「独有史料」**：冲突态的两侧版本（ours / theirs）**通常都在对象库里**，
+  ⇒ **不含独有声明**，但**清除前必须确认三面 blob 都可达**（`git cat-file -e <blob>` 逐个过）。
+- **禁止**对冲突态 worktree 用 `worktree remove --force` 一删了之 —— 那会丢弃未合并的 index。
+
+##### 修正后的判定协议（v3 起取代 v1/v2 的 numstat 单测）
+
+对任何 worktree，**必须跑齐这三步**才允许判「可删」：
+
+```bash
+# 1) 有没有未提交（三者都含）
+git -C <wt> status --porcelain
+
+# 2) 相对 HEAD 的真实改动（工作树 + index）
+git -C <wt> diff HEAD --numstat
+
+# 3) 冲突态点名（numstat 会骗你的那些）
+git -C <wt> diff --cached --name-only --diff-filter=U
+git -C <wt> status --porcelain | grep -E '^(AA|UU|DD|AU|UA|DU|UD)'
+```
+
+**三步全过（1 为空 **或** 2 的变化已备份 **且** 3 为空 **或** 3 的 blob 已确认可达）
+才可判可删。**
+
+---
 
 #### 2.6.5 判例-8 扩展（采纳统帅的三源模型）
 `git diff --diff-filter=A` 判出「非空」**只是线索，不是结论**。至少三种假阳性源：
@@ -630,17 +791,130 @@ main 已经有了**。
 
 > `cmd-zeta` 的 345 个 M 与判例-附记录的「345 个 M 但真实差异只有 7 个」数字**完全一致**，是 CRLF 幻影的典型指纹。
 
-### 3.6 worktree 三档统计（口径：54 个登记项，主工作树另计）
+### 3.6 worktree 三档统计 —— **v3 重算版（原「21 个可删」已作废）**
 
-| 档 | 数量 | 清单 |
+> **⚠️ v1/v2 原文（保留供追溯，**不可执行**）**：
+> | 档 | 数量 | 清单 |
+> |---|---|---|
+> | 🟢 可直接 `worktree remove`（dirty=0 且 HEAD 非独有） | **21** | 2 个干净 mergeability + 18 个 `.agents/worktrees/*` 干净项 + `temp/r66` |
+> | 🟡 须先验 `--numstat` 或随分支处置 | **8** | … |
+> | 🔴 禁止删 | **25** | … |
+>
+> **作废原因（三条，逐条成立）**：
+> 1. **「18 个 `.agents` 干净项」没有给名单** ⇒ 无法照单执行（统帅裁定作废）。
+> 2. 判据用 `dirty=0`（取自 `git status --porcelain`），**它把 CRLF 幻影也算进去** ⇒ 单方向误判；
+>    而 `--numstat` 单测又有判例-10b 的假阴性 ⇒ 另一个方向也误判。
+> 3. 判据里的「**HEAD 是 main 祖先**」对 detached 临时树**不成立**（见 §3.6.2）。
+
+#### 3.6.1 v3 重算（判据见 §2.6.6「修正后的判定协议」）
+
+**复现命令**：`python temp/audit/wt_reclassify.py`（产出 `temp/audit/worktrees_v3.json`）
+**时点**：`main = 5e27f443`，`git worktree list` 共 **50** 个登记项（v2 时 54；执行组已删若干）
+
+```
+分档： {'GREEN': 34, 'RED-dirty': 8, 'RED-conflict': 2, 'YELLOW-phantom-verify': 6}
+总登记项 = 50
+```
+
+| 档 | 数量 | 判据 | 可执行动作 |
+|---|---|---|---|
+| 🟢 **GREEN** | **34** | `porcelain=0` **且** `rev-list HEAD --not --all` = 0 | `git worktree remove <path>`（**不带 `--force`**） |
+| 🟡 YELLOW-phantom-verify | **6** | `porcelain>0` 但 `diff HEAD --numstat` = **0** ⇒ 纯 stat 幻影 | 需人工双确认后 `remove --force` |
+| 🔴 RED-dirty | **8** | `diff HEAD --numstat` > 0（**真有改动**） | **禁止**；先备份/裁决 |
+| 🔴 RED-conflict | **2** | `diff --cached --diff-filter=U` > 0（**冲突态**） | **禁止** `remove`（会丢 index），见 §2.6.6 |
+
+**🟢 GREEN 完整名单（34 个 —— v3 起这是唯一可照单执行的清单）**
+
+```
+C:/Users/victo/AppData/Local/Temp/mergeability-4am4tf7u/wt     (detached)
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/docs/bug-389-raw-log-summary-line
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/feat/selfdrive-r1
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/agent-fp-honest
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/backfill-ghost-bugs
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/backlog-proof-restamp
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/battery-registration-anchor
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/desc-clip-utf8
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/e2e-upgrade-mirror-escape
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/gate-chain-fmt-warmup
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/j2-call-face
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/memory-log-empty-universe
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/merge-final     (detached)
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/moon-env-raw-log-and-escapes
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/omega-marker-preserve
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/omega-required-column
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/pid-token-cache
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/pr-automator-windows-json
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/publish-leak-p1-cleanup
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/py-stdout-encoding-gates
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/slave-task-list-anchors
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/test-count-1449
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/test-sync-doc-1413
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/unit-number-doc
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/warning-batch-r1
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/slave/clean-dsh-recur-r3
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/slave/clean-dsh-recur-r6
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/slave/dsh-plugin-portable
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/slave/fix-push-guard-sustainability-r1
+E:/IDEProjects/AI/FIST-Mbt/.verify-wt
+E:/IDEProjects/AI/FIST-Mbt/temp/r66
+E:/IDEProjects/AI/FIST-Mbt-wt-r2
+E:/IDEProjects/AI/light-wt/cmd-beta
+E:/IDEProjects/AI/light-wt/delta-branch-audit
+```
+
+**🔴 RED-dirty（8 个，禁止删 —— 实测 `diff HEAD --numstat` > 0）**
+
+| 路径 | porcelain | `diff HEAD` |
 |---|---|---|
-| 🟢 可直接 `worktree remove`（dirty=0 且 HEAD 非独有） | **21** | 2 个干净 mergeability + 18 个 `.agents/worktrees/*` 干净项 + `temp/r66` |
-| 🟡 须先验 `--numstat` 或随分支处置 | **8** | 3 个脏 mergeability + `.verify-wt` + `FIST-Mbt-wt-r2` + `light-wt/cmd-beta` + `light-wt/delta-branch-audit` + `light-wt/cmd-zeta` |
-| 🔴 禁止删（有真实未跟踪文件或待裁决改动） | **25** | 7 个脏 `.agents` worktree（含 4 个真有 `??`）+ `temp/auth-measure/wt` + `temp/wt-skill` + `light-wt/cmd-epsilon` + 15 个其余待裁决项 |
+| `temp/auth-measure/wt` | 532 | 532 |
+| `temp/wt-skill` | 378 | 376 |
+| `light-wt/cmd-zeta` | 345 | 2 |
+| `light-wt/cmd-epsilon` | 4 | 3 |
+| 其余 4 个 | 见 `temp/audit/worktrees_v3.json` | |
 
-**加总校验：21 + 8 + 25 = 54 ✓**（另有主工作树 `E:/IDEProjects/AI/FIST-Mbt` 1 个，共 55 条 `git worktree list` 记录）
+#### 3.6.2 ⚠️ 「34 vs 统帅的 3」分歧说明（不含糊，三口径并列）
 
-> 说明：🟢 21 项里 `temp/r66` 是 detached、HEAD `62a87e5c` = `fix/consolidated-r65` 的 tip，两者都在 main 内可见（该分支 C3=1 但**不在**此处绿档判定上——worktree 本身无改动，`HEAD` 提交由分支/远端持有）。
+统帅「实际只 3 个」的口径是 **`dirty=0` + `HEAD 是 main 祖先` 双过**。本版三口径实测：
+
+| 口径 | 结果 |
+|---|---|
+| `porcelain=0` **且** `HEAD` 是 main 祖先（统帅口径） | **0 个**（本版实测，非 3） |
+| `porcelain=0` **且** `rev-list HEAD --not --all` = 0（**v3 采用**） | **34 个** |
+| v1/v2 的 `dirty=0` 单测 | 21 个 |
+
+**为什么 v3 选第二条**：
+「HEAD 是 main 祖先」在当前仓几乎无人能满足（main tip 已远超所有历史分支），
+继续用它 ⇒ 所有 worktree 都判不可删，**与「删 worktree 只删目录、不删提交」的语义不符**。
+`rev-list HEAD --not --all` = 0 意味着**该 HEAD 完全被其它 ref 持有** ⇒ 删这个 worktree **不会让任何提交失去引用** ——
+这正是「删 worktree 不丢东西」的正确判据。**执行组已用 archive ref 保住过 `c5fa9b17`（`0c83ce6d`），同一条思路。**
+
+> **⚠️ 但 GREEN 的 34 个里有 31 个挂着「自身仍有独有提交」的分支**（实测 `main..<branch>` 非空：
+> `backlog-proof-restamp` ahead=6、`bug-389-raw-log-summary-line` ahead=2 等）。**两个动作必须分开看**：
+> - 删 **worktree 目录** ⇒ 安全（提交由 branch ref 持有，`--not --all` 已验证）
+> - 删 **branch** ⇒ **不安全**（另一个判据，见 §2.4 黄档）
+>
+> **执行时切勿把「worktree 可删」误读成「分支可删」。**
+
+#### 3.6.3 订正③：`test -d` ≠ 已登记 ≠ 无残留
+
+v1/v2 混用了「目录存在」与「worktree 已登记」两个概念。实测反例：
+
+```
+mergeability-zi2h77_h/            ← 目录还在（只剩空壳）
+  $ ls mergeability-zi2h77_h/wt → No such file or directory   ← wt 已删
+  $ git worktree list | grep zi2h77_h → (无输出)               ← 已不在登记面
+```
+
+**三种问法要分开**：
+
+| 想知道 | 正确的命令 |
+|---|---|
+| 是否已登记 | `git worktree list` |
+| 目录是否残留 | `test -d <path>` |
+| 是否有残留登记项 | `git worktree prune --dry-run` |
+
+混用会得出「目录在但已删」「登记在但目录没了」这类自相矛盾的读数。
+
 
 ---
 
@@ -759,22 +1033,36 @@ main 已经有了**。
 
 ```bash
 # 第 1 步：先移除占着这些分支的 worktree
+#   ⚠️ v3 订正：实际只有 4 支被 worktree 占用（v1/v2 写"6 支"，见 §2.2 订正框）
 git worktree remove light-wt/cmd-gamma            # 分支 cmd-gamma
 git worktree remove light-wt/cmd-alpha            # 分支 lightwt/cmd-alpha
-git worktree remove light-wt/cmd-zeta             # 分支 lightwt/cmd-zeta（先验 345 个 M）
-git worktree remove temp/wt-skill                 # 分支 worktree/skill-docs2（先验 2 个 ??）
-git worktree remove .agents/worktrees/fix/battery-tree-state-cell
-git worktree remove .agents/worktrees/fix/merge-cleanup-content-based
+git worktree remove light-wt/cmd-zeta             # 分支 lightwt/cmd-zeta（先按 §2.6.6 三步协议验）
+git worktree remove temp/wt-skill                 # 分支 worktree/skill-docs2（同上；实测 diff HEAD=376，非干净）
+# 另 2 支（fix/battery-tree-state-cell / fix/merge-cleanup-content-based）已不在 worktree 登记面，无需先 remove
 
 # 第 2 步：删 65 支（用 -d 而非 -D，让 git 自己再验一次）
 for b in <§2.2 清单>; do git branch -d "$b"; done
 ```
 
-### 5.2 ✅ 无前置条件，可直接删 worktree（21 项）
+### 5.2 ✅ 无前置条件，可直接删 worktree —— **v3 订正：34 项（原写 21，已作废）**
 
-- 2 个干净 mergeability：`mergeability-4am4tf7u/wt`、`mergeability-f7_g687u/wt`
-- 18 个 `.agents/worktrees/*` 干净项（dirty=0 的全部）
-- `temp/r66`
+**唯一权威清单 = §3.6.1 的 GREEN 34 项完整路径表。** 此处在不重复贴表，只列分类计数：
+
+| 位置 | 个数 |
+|---|---|
+| `Temp/mergeability-*/wt` | 1（仅 `mergeability-4am4tf7u/wt`；`f7_g687u` 已不在登记面） |
+| `.agents/worktrees/*` | 28 |
+| `.verify-wt` | 1 |
+| 仓库内 `temp/` | 1（`temp/r66`） |
+| `FIST-Mbt-wt-r2` | 1 |
+| `light-wt/cmd-*` | 2（`cmd-beta` / `delta-branch-audit`） |
+| **合计** | **34** |
+
+> **v1/v2 的「2 个干净 mergeability + 18 个 `.agents` 干净项 + `temp/r66` = 21」为什么错**：
+> ① `.agents` 的「18 个」当时没给名单（统审判定不可照单执行）；
+> ② 数字来自 `dirty=0` 单测，受 CRLF 幻影干扰；
+> ③ 漏计了 `.verify-wt` / `FIST-Mbt-wt-r2` / `light-wt/cmd-beta` / `delta-branch-audit`。
+> 详见 §3.6.1。
 
 ### 5.3 ⚠️ 有前置条件的（**必须先做左边的动作**）
 
