@@ -11,15 +11,39 @@
     python scripts/check_badge.py --selftest
 
 退出码契约（R178，对齐本仓 0/1/2/4 分档）：
-    0 = 徽章与实测一致
+    0 = 徽章与实测一致（且快照的源码面锚点与现在同源）
     1 = 违例在场（徽章数字与实测不符 / README 缺徽章或缺自检注释 / 测试有失败）
-    2 = **判据无法自证**（实参个数不对、被检文件读不到、日志里没有 `Total tests:` 汇总行）
+    2 = **判据无法自证**（实参个数不对、被检文件读不到、日志里没有 `Total tests:` 汇总行、
+        **或快照的源码面锚点与现在不同源 —— SNAPSHOT-STALE，见下**）
     4 = 尺子自己坏了（未捕获异常，绝不冒用 1 那一档）
 
 为什么要把 2 从 1 里拆出来：R175 实测踩过——漏传 `<moon_test_log>` 时旧实现回 rc=1 并只打一行
-usage，消费者唯一的读法就是"徽章守卫判红"，于是把一次**调用形状错**写进了交付报告的预存红清单。
+usage，消费者唯一的读法就是"徽章守卫判红"，于是把一次**调用形状错**写进了交付报告的预存红清��。
 「尺子没跑到被检面」和「被检面有缺陷」必须是两个数字。
+
+## 判例-25：真源是「可过期快照」时的两面（2026-10-24）
+
+**病灶实测**：`temp/pt27.log` 停在 `Total tests: 1455`（2026-10-24 19:54 手跑一次，之后没人再跑），
+而真实现状是 1457。按旧实现：**README 的 1455 == 快照的 1455 ⇒ PASS 绿**。
+—— 两个都停在同一个旧值，于是「一致」被读成「正确」。这不是判据不准，**是判据在说谎**。
+
+两条路都不许说谎：
+
+- **B'（默认，裸跑）**：快照必须**自带源码面锚点**，且锚点必须等于现在。
+  锚点 = `<snapshot>.src`，内容两行：`head=<sha>` 与 `code=<porcelain 摘要>`，只覆盖
+  **源码语义面**（`*.mbt` / `*.pkg` / `*.mod` / `moon.mod`）。缺失或不等 ⇒
+  `rc=2 SNAPSHOT-STALE`（**诚实沉默**，不是 PASS、也不是违例红）。
+  看的是**代码变没变**，不是 mtime 变没变（判据的真源若是文件系统事实，必须验证它是否代表语义事实）。
+  文档（`*.md` 等）改动**不**让锚点失效——改文档不会改测试数。
+- **A（`--fresh`）**：判前真跑一次全仓 `moon_test_env.py --raw-log <snapshot>`，
+  跑完**重写快照与锚点**，于是「文档 == 现实」被真正证明。成本实测约 7~8 分钟，
+  `run_guards` 的格子用它（一次跑覆盖整轮电池）。
+
+**文案纪律**：证明不了现实时**不许用「实测」这个词**。旧文案
+`PASS … == 实测 1455/1455` 里的「实测」指的不是现实，是快照 —— 那本身就在放大假绿。
+新文案把快照路径、mtime、源码面 sha 一起打出来。
 """
+import hashlib
 import os
 import re
 import subprocess
@@ -29,6 +53,12 @@ import tempfile
 
 REJECT = "reject"    # 判据无法自证：被检面/调用形状不可用
 VIOLATE = "violate"  # 违例在场
+
+# 源码语义面：只有这些文件的改动才可能改变测试数。文档改动一律不影响锚点。
+CODE_PATTERNS = ["*.mbt", "*.pkg", "*.mod", "moon.mod"]
+ANCHOR_SUFFIX = ".src"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MOON_TEST_ENV = os.path.join(ROOT, "scripts", "moon_test_env.py")
 
 
 # BUG-58：守卫的“红”必须是判据红。Windows 默认 GBK 控制台下，中文结论里的 ↔ 等字符
@@ -69,6 +99,7 @@ def parse_readme_selfcheck_count(readme_text):
 
 def judge(log_text, readme_text):
     """纯判定：返回 (problems, info)。problems 空 == 绿。
+    （不含快照新鲜度——那是文件系统面，见 `snapshot_anchor` / `anchor_problems`。）
 
     BUG-360：判据从 main() 抽出成可单测的纯函数——selftest 直接喂合成串，
     `or`→`and` 变异（分子/分母任一错被短路放行）必被 V1/V2/V3 抓到。
@@ -128,6 +159,8 @@ def selftest():
     吃掉、报 usage exit 1，所以「改坏判据会不会红」从没人锁过。
     V1/V2 分别把徽章分子/分母单独改错，钉死 L71 `or` 的两条腿各自独立生效：
     若 `or`→`and`，单腿错会被短路放行 → 该格由红转绿 → SELFTEST FAIL。V3 同钉 L84。
+
+    A1~A5（判例-25）：快照锚点面。A2 是病灶本体——旧实现里「快照过期」= PASS 绿。
     """
     _entry_probe()
     total = 1347
@@ -176,20 +209,50 @@ def selftest():
         p_rm = os.path.join(td, "README.md")
         with open(p_rm, "w", encoding="utf-8") as f:
             f.write(good_readme)
+        # 锚点面的「现在」指纹：先算出来，后面各夹具都要用它写锚点（顺序有讲究——
+        # 先写 p_notal 的锚点再算 now_line 会 UnboundLocalError，实测踩过）
+        head, digest = code_fingerprint(cwd=ROOT)
+        now_line = anchor_line(head, digest)
         p_notal = os.path.join(td, "no-total.log")
         with open(p_notal, "w", encoding="utf-8") as f:
             f.write("moon test 跑完了\n")
+        # E3 要考的是「日志无汇总行」，必须先过锚点面这一关，否则考到的是 A2
+        with open(anchor_path(p_notal), "w", encoding="utf-8") as f:
+            f.write(now_line + "\n")
         p_stale = os.path.join(td, "stale-README.md")
         with open(p_stale, "w", encoding="utf-8") as f:
             f.write(good_readme.replace(f"tests-{total}%2F", "tests-9999%2F"))
         me = os.path.abspath(__file__)
         missing = os.path.join(td, "does-not-exist.log")
+
+        # A 面（判例-25）：快照新鲜度。纯文件面夹具，不跑全仓、不碰网络。
+        # A2 是病灶本体：旧实现里「快照过期」= PASS 绿；现在必须是 rc=2（诚实沉默）。
+        p_anch = os.path.join(td, "anchored.log")
+        with open(p_anch, "w", encoding="utf-8") as f:
+            f.write(good_log)
+        write_anchor(p_anch, cwd=td)  # 夹具目录里 git 不可用 ⇒ 空锚点，下面显式写锚点
+        head, digest = code_fingerprint(cwd=ROOT)
+        now_line = anchor_line(head, digest)
+        # A1 场景：锚点 == 现在（直接写当前指纹，模拟「刚刚跑过」）
+        with open(anchor_path(p_anch), "w", encoding="utf-8") as f:
+            f.write(now_line + "\n")
+        p_noanch = os.path.join(td, "noanchor.log")
+        with open(p_noanch, "w", encoding="utf-8") as f:
+            f.write(good_log)
+        p_oldanch = os.path.join(td, "oldanchor.log")
+        with open(p_oldanch, "w", encoding="utf-8") as f:
+            f.write(good_log)
+        with open(anchor_path(p_oldanch), "w", encoding="utf-8") as f:
+            f.write("code=deadbeef@0123456789abcdef\n")
+
         entry_cases = [
             ("E1 无实参 rc=2", [me], 2),
             ("E2 被检文件读不到 rc=2", [me, missing, p_rm], 2),
             ("E3 日志无汇总行 rc=2", [me, p_notal, p_rm], 2),
-            ("E4 徽章过期 rc=1", [me, p_log, p_stale], 1),
-            ("E5 干净 rc=0", [me, p_log, p_rm], 0),
+            ("E4 徽章过期 rc=1", [me, p_anch, p_stale], 1),
+            ("E5 干净 rc=0", [me, p_anch, p_rm], 0),
+            ("A2 快照锚点缺失 rc=2", [me, p_noanch, p_rm], 2),
+            ("A3 快照锚点过期 rc=2", [me, p_oldanch, p_rm], 2),
         ]
         for name, tail, want_rc in entry_cases:
             r = subprocess.run([sys.executable] + tail, capture_output=True,
@@ -206,9 +269,123 @@ def selftest():
         return 1
     print(f"SELFTEST OK：{len(cases) + len(entry_cases)} 支对照全按预期"
           f"（判据违例必红 {reds} / 干净必绿 {len(cases) - reds} / 入口分档 {len(entry_cases)}，"
-          f"计数从 cases 与 entry_cases 反解，不手写）")
+          f"含判例-25 A2/A3 快照锚点面；计数从 cases 与 entry_cases 反解，不手写）")
     return 0
 
+
+
+# ── 判例-25：快照的源码面锚点 ────────────────────────────────────────────────
+
+
+def _git(args, cwd=None):
+    """只读 git 调用（不经 shell）。失败返回 (rc, "", err)，由调用方判 2 而不是崩。"""
+    p = subprocess.run(["git"] + list(args), cwd=cwd or ROOT, capture_output=True,
+                       text=True, encoding="utf-8", errors="replace")
+    return p.returncode, (p.stdout or ""), (p.stderr or "")
+
+
+def code_fingerprint(cwd=None):
+    """源码语义面的指纹（纯函数式：只读 git）。
+
+    = 最近一笔**改动源码面**的提交 sha + 工作树源码面 porcelain 的摘要。
+    为什么不用 mtime：mtime 是**文件系统事实**，不是**代码事实**——
+    文档提交也会刷新仓库状态，`touch` 一下也能把旧内容扮成新快照。
+    只覆盖 `CODE_PATTERNS`：改 `*.md` 不会改变测试数，不该让快照失效。
+    返回 (head_sha, porcelain_digest)；git 不可用返回 ("", "")。
+    """
+    rc, out, _ = _git(["log", "-1", "--format=%H", "--"] + CODE_PATTERNS, cwd=cwd)
+    if rc != 0:
+        return "", ""
+    head = out.strip()
+    rc, out, _ = _git(["status", "--porcelain", "--"] + CODE_PATTERNS, cwd=cwd)
+    if rc != 0:
+        return head, "STATUS-FAILED"
+    digest = hashlib.sha256(out.encode("utf-8", "replace")).hexdigest()[:16]
+    return head, digest
+
+
+def anchor_path(snapshot_path):
+    return snapshot_path + ANCHOR_SUFFIX
+
+
+def anchor_line(head, digest):
+    """锚点文件的一行（写盘/比对用同一形状，避免两处拼串漂移）。"""
+    return "code=%s@%s" % (head or "?", digest or "?")
+
+
+def write_anchor(snapshot_path, cwd=None):
+    """把当前源码面指纹写到 `<snapshot>.src`。返回写入的行（失败返回空串，由调用方判 2）。"""
+    head, digest = code_fingerprint(cwd=cwd)
+    if not head:
+        return ""
+    line = anchor_line(head, digest)
+    try:
+        with open(anchor_path(snapshot_path), "w", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        return ""
+    return line
+
+
+def read_anchor(snapshot_path):
+    """读 `<snapshot>.src`。缺失/坏形状 ⇒ 空串（调用方按 SNAPSHOT-STALE 处理，不猜）。"""
+    p = anchor_path(snapshot_path)
+    if not os.path.isfile(p):
+        return ""
+    try:
+        with open(p, encoding="utf-8") as f:
+            line = f.readline().strip()
+    except OSError:
+        return ""
+    return line if line.startswith("code=") else ""
+
+
+def anchor_problems(snapshot_path, cwd=None):
+    """快照新鲜度判据：锚点必须是**现在**的源码面指纹，否则 REJECT（rc=2，诚实沉默）。
+
+    返回 (problems, info)，problems 每项 (kind, text)，kind 恒为 REJECT——
+    「快照过期」永远不是违例红：那是**判据证明不了现实**，不是「README 写错了」。
+    刻意不比较 mtime：见 `code_fingerprint` 的 docstring。
+    """
+    info = {"anchor": "", "now": ""}
+    stored = read_anchor(snapshot_path)
+    head, digest = code_fingerprint(cwd=cwd)
+    now = anchor_line(head, digest) if head else ""
+    info["anchor"], info["now"] = stored, now
+    if not now:
+        return [(REJECT, "REJECT 源码面指纹取不到（git 不可用 / 不在仓库内）⇒ rc=2，不猜")], info
+    if not stored:
+        return [(REJECT,
+                 f"REJECT SNAPSHOT-STALE: 快照 {snapshot_path} 没有源码面锚点"
+                 f"（缺 {os.path.basename(anchor_path(snapshot_path))}）⇒ 无从证明它与现在的代码同源。"
+                 f"用 `--fresh` 重跑一次生成锚点；rc=2，不冒用违例红")], info
+    if stored != now:
+        return [(REJECT,
+                 f"REJECT SNAPSHOT-STALE: 快照源码面 {stored} ≠ 现在 {now}"
+                 f" ⇒ 本判据只能证明「文档 == 快照」，不能证明「文档 == 现实」⇒ rc=2，拒绝出绿。"
+                 f"用 `--fresh` 重跑一次")], info
+    return [], info
+
+
+def run_fresh(snapshot_path, cwd=None):
+    """A 方案：判前真跑一次全仓 `moon test --target js`，落快照 + 锚点。返回 (ok, tail)。
+
+    为什么放在判据里而不是让人记得手跑：`temp/pt27.log` 的 mtime 停在 19:54，
+    之后全仓多了 2 个测试没人再跑过 —— 「记得手跑」不是机制。
+    超时/失败都不改判据档：跑不出真值 ⇒ 调用方走 rc=2（诚实沉默）。
+    """
+    if not os.path.isfile(MOON_TEST_ENV):
+        return False, "moon_test_env.py 不在：%s" % MOON_TEST_ENV
+    p = subprocess.run([sys.executable, MOON_TEST_ENV, "--target", "js", "--raw-log", snapshot_path],
+                       cwd=cwd or ROOT, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    out = (p.stdout or "") + (p.stderr or "")
+    tail = "\n".join([x for x in out.strip().splitlines() if "Total tests" in x] or
+                     out.strip().splitlines()[-3:])
+    if p.returncode != 0:
+        return False, tail or ("moon_test_env rc=%d（无输出）" % p.returncode)
+    write_anchor(snapshot_path, cwd=cwd)
+    return True, tail
 
 
 def _entry_probe() -> None:
@@ -224,18 +401,43 @@ def _entry_probe() -> None:
 
 
 def main():
-    if len(sys.argv) == 2 and sys.argv[1] == "--selftest":
+    argv = sys.argv[1:]
+    if len(argv) == 1 and argv[0] == "--selftest":
         return selftest()
-    if len(sys.argv) != 3:
-        print("用法: python scripts/check_badge.py <moon_test_log> <README.md> | --selftest")
-        print(f"REJECT 调用形状错：需要 2 个实参，收到 {len(sys.argv) - 1} 个"
+    # A 方案（判例-25）：--fresh 判前真跑一次全仓，跑完重写快照 + 源码面锚点。
+    fresh = "--fresh" in argv
+    if fresh:
+        argv = [a for a in argv if a != "--fresh"]
+    if len(argv) != 2:
+        print("用法: python scripts/check_badge.py [--fresh] <moon_test_log> <README.md> | --selftest")
+        print(f"REJECT 调用形状错：需要 2 个实参，收到 {len(argv)} 个"
               f"（判据没跑到被检面 ⇒ rc=2，不冒用违例红 rc=1）")
         return 2
-    log_path, readme_path = sys.argv[1], sys.argv[2]
-    for label, p in (("测试日志", log_path), ("README", readme_path)):
-        if not os.path.isfile(p):
-            print(f"REJECT {label}读不到：{p}（被检面缺失，判据拒绝出结论 ⇒ rc=2）")
+    log_path, readme_path = argv
+    if not os.path.isfile(readme_path):
+        print(f"REJECT README读不到：{readme_path}（被检面缺失，判据拒绝出结论 ⇒ rc=2）")
+        return 2
+
+    if fresh:
+        ok, tail = run_fresh(log_path)
+        print("FRESH 真跑全仓：%s" % ("成功" if ok else "失败"))
+        for ln in tail.splitlines():
+            print("  " + ln)
+        if not ok:
+            print("REJECT --fresh 跑不出真值（rc≠0）⇒ rc=2，不拿旧快照冒充现实")
             return 2
+
+    if not os.path.isfile(log_path):
+        print(f"REJECT 测试日志读不到：{log_path}（被检面缺失，判据拒绝出结论 ⇒ rc=2）")
+        return 2
+
+    # 判例-25 B'：先验「快照是不是现在的代码跑出来的」——过期就诚实沉默，不许 PASS。
+    # --fresh 跑完已重写锚点，这里必然通过；裸跑则这一格是唯一的防线。
+    aprobs, ainfo = anchor_problems(log_path)
+    for _, t in aprobs:
+        print(t)
+    if aprobs:
+        return 2
 
     with open(log_path, encoding="utf-8", errors="replace") as f:
         log_text = f.read()
@@ -253,8 +455,19 @@ def main():
     total = info["total"]
     n, d = info["badge"]
     sn, sp = info["sc"]
-    print(f"PASS 徽章一致：README tests-{n}%2F{d} == 实测 {total}/{total}")
-    print(f"PASS 自检注释一致：README 『→ Total tests: {sn}, passed: {sp}』 == 实测 {total}")
+    # 文案纪律（判例-25）：「实测」只配指现实。这里能证明的是
+    # 「README == 快照（且快照的源码面 == 现在）」，所以逐项把证据打出来。
+    try:
+        mtime = os.path.getmtime(log_path)
+        import datetime
+        stamp = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+    except (OSError, ValueError):
+        stamp = "?"
+    head = ainfo["now"].split("@")[0].replace("code=", "")[:12]
+    print(f"PASS 徽章一致：README tests-{n}%2F{d} == 快照 {log_path} @ {stamp}"
+          f"（源码面 {head}）")
+    print(f"PASS 自检注释一致：README 『→ Total tests: {sn}, passed: {sp}』 == 快照 {log_path}")
+    print(f"PASS 快照同源：源码面 {ainfo['now']} == 现在（文档改动不影响该锚点）")
     return 0
 
 
