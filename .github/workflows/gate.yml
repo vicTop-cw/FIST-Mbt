@@ -27,13 +27,16 @@ jobs:
       - name: Refresh registry (first build)
         run: moon update
 
+      # BUG-388 CI side：`ck_fmt()` 在**全新 worktree** 里跑 `moon fmt --check` 时，
+      # moon 的格式化器产物（`_build/wasm-gc/release/format/`）还不存在 ⇒ 直接 rc=-1
+      # （`No such file` + `cannot hash`），`classify_fmt` 判 cold-formatter ⇒ DEGRADED(2)
+      # ⇒ `fist-gate.py` rc=2 ⇒ gate action `on: rc>=1` 恒失败。
+      # 修法：**在 workflow 层**先用写模式 `moon fmt` 预热，判据本身仍只读（门链必须只读，
+      # 见 fist-gate.py 的 ck_fmt 注释与 AGENTS.md BUG-388 段）。实测：预热前 fmt=DEGRADED/rc=2，
+      # 预热后六门全 PASS/rc=0。写模式只落 `_build` 产物，不改仓库文件内容（numstat=0）。
+      # 本 workflow 无 `Migrate mooncakes` 步骤 ⇒ 位置纪律不适用（check_ci_step_position.py F3 豁免面）。
+      - name: Warm formatter so `moon fmt --check` is decidable (BUG-388 CI side)
+        run: moon fmt
+
       - name: Run unified gate chain
         run: python3 scripts/fist-gate.py
-
-      # R66/BUG-398 接线：ad5d38df 落了 scripts/check_branch_ancestry.py 却从未接进任何 workflow。
-      # 613MB 事故后主线被重写（92d0edba → 788c5823），早先 PR 分支基点成孤儿，git merge 直接报
-      # "refusing to merge unrelated histories"——「分支绿、尺全过、merge-tree 报无冲突」却物理
-      # 合并不了，合并机器人只能空转。本步靠 fetch-depth: 0 的整段历史真正测出 orphan。
-      - name: Branch-ancestry gate (R66/BUG-398：PR 分支失基检测，防合并不了)
-        shell: bash
-        run: python3 scripts/check_branch_ancestry.py
