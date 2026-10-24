@@ -383,3 +383,85 @@ git branch <原分支名> <§3 表中的 tip sha>
 ---
 
 **报告完成 · commander-alpha · 2026-10-24**
+
+---
+
+## 11. R3 / R4 / R5 复验（判例-10b 口径，2026-10-24 14:55）
+
+### R3：`c5fa9b17` 保全 ✅ 已完成
+
+```bash
+git branch archive/cmd-alpha-c5fa9b17 c5fa9b17
+# 实测: git for-each-ref --contains c5fa9b17 → refs/heads/archive/cmd-alpha-c5fa9b17
+git worktree remove E:/IDEProjects/AI/light-wt/cmd-alpha      # 前置 dirty=0 → rc 0
+git branch -D lightwt/cmd-alpha                                # rc 0 (was 46a62ef7)
+```
+**读后：本地分支 92（`lightwt/cmd-alpha` 已走到此前的 62 里）→ 仍 92（含新增 archive 分支）**；worktree 51 → **50**。
+
+### R4/R5：三处判据读数（**结论：全部不是 CRLF 幻影**）
+
+判据用能看见 index 的命令（判例-10b）：
+
+| 对象 | dirty | `git diff --numstat` | `git diff --cached` | **`git diff HEAD`（判据）** |
+|---|---|---|---|---|
+| `cmd-zeta` | 345 | 2 行 | 0 行 | **2 行** |
+| `wt-skill` | 378 | 355 行 | 22 行 | **376 行** |
+| `mergeability-bn5486xy` | 103 | 158 行 | 103 行 | **103 行** |
+| `mergeability-xd7gqcjf` | 57 | 64 行 | 57 行 | **57 行** |
+
+逐文件比对 main（CRLF 归一化后比较）：
+
+| 对象 | 改动文件 | 与 main 等价（含 CRLF 归一） | **真差异** | **main 无此文件** |
+|---|---|---|---|---|
+| `cmd-zeta` | 345 | 334 | **11** | 0 |
+| `wt-skill` | 376 | — | 见下 | **2 个 `??`** |
+| `bn5486xy` | 103 | 0 | **78** | **25** |
+| `xd7gqcjf` | 57 | 0 | **31** | **26** |
+
+**⇒ 没有一处是「删除行 = 新增行」的对称 CRLF 幻影。按统帅口径「有真改动 → 停下来报」，执行组停手。**
+
+#### `cmd-zeta`：345 项里 334 项是幻影，**11 项是真差异**
+
+```
+.github/workflows/gate.yml          README.mbt.md
+reports/2026-10-24-lead-pr-merge-manual.md
+src/core/core_task.mbt              src/engine/engine.mbt
+src/engine/engine_execute_r2_test.mbt   src/engine/engine_supervisor.mbt
+src/engine/omega_strong.mbt         src/server/board_ascii_test.mbt
+src/server/supervisor_tools_wbtest.mbt  src/store/store_sqlite.mbt
+```
+> 注意：这 11 项**名字与司令-δ 的 omega 工作面高度重合**（`core_task` / `engine` / `omega_strong` / `supervisor_tools` / `store_sqlite`），**但方向上需单独判断**（是 omega 差量的来源，还是旧基线残留）。**执行组不裁判**，交统帅/审计组。
+
+#### `wt-skill`：2 个真实未跟踪文件（**不在 git 里，删即永久丢失**）
+
+```
+?? docs/loop-mode-skill.md
+?? docs/phi-accrual-heal-skill.md
+```
+
+#### `bn5486xy` / `xd7gqcjf`：**25 / 26 个 main 里不存在的文件**
+
+两处共同清单（`memory/*` 全部）：
+```
+memory/2026-09-24.md … memory/2026-10-22-version-align.md, memory/2026-10-22.md, memory/thinking.md
+.dsh/fist-mbt-plugin/cordis.patch.yml   (0 B，空文件)
+```
+`xd7gqcjf` 另有 `memory/2026-10-23.md`（1,330 B）。
+**`memory/2026-2026*.md` 在 main 的 `.gitignore` 里被规则 `memory/2026-*.md` 挡住** ⇒ 这些是 worktree 本地产物，不是跟踪面。
+
+> **一处须点名的异常**：`xd7gqcjf` 的 `memory/2026-10-22.md` 达 **384,918,972 字符 / 3,698,202 行**，
+> 其中 **`## R70 fix/whisperer-selftest-and-scan-gitdir` 标题出现 19,110 次**，单个行首片段重复 1,549 次
+> ⇒ 这是**日志被反复 append 的污染文件**，不是有价值的独有史料。但它体积过大，**导出代价与风险都高**，交统帅裁决。
+
+---
+
+## 12. 需裁决清单（R4/R5 全部停留在此）
+
+| # | 对象 | 停留理由 | 建议 |
+|---|---|---|---|
+| 1 | `cmd-zeta` / `lightwt/cmd-zeta` | 11 项真差异（含 omega 工作面同名文件） | 先判那 11 项是「omega 差量来源」还是「旧基线残留」——**前者要先摘取，后者才可 clean 后删** |
+| 2 | `wt-skill` / `worktree/skill-docs2` | 2 个真实 `??`（`docs/loop-mode-skill.md` / `docs/phi-accrual-heal-skill.md`） | 先 `git add` 进某分支或 `mv _archive/`，再 clean 后删 |
+| 3 | `mergeability-bn5486xy` | 78 项真差异 + 25 个 main 无的文件 | 那 25 个都是 `.gitignore` 挡住的本地 `memory/*` 产物 ⇒ 可安全丢；78 项真差异需逐个看 |
+| 4 | `mergeability-xd7gqcjf` | 31 项真差异 + 26 个 main 无的文件（含 384 MB 污染日志） | 同 3；384 MB 文件本身无保全价值（已证污染），但删除前建议保留一份头部样本 |
+
+**执行组本轮在上述四处的动作：0。未删、未 clean、未导出。**
