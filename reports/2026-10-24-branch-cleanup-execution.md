@@ -340,3 +340,46 @@ git branch <原分支名> <§3 表中的 tip sha>
 ## 7. 门禁读数
 
 （见文末「8. 交差门禁」一节，统一列出）
+
+---
+
+## 8. 交差门禁（2026-10-24 14:35 实测）
+
+| 门禁 | 读数 | 结论 |
+|---|---|---|
+| `moon check --target js` | `Finished. moon: ran 31 tasks, now up to date (501 warnings, 0 errors)` | ✅ **0 errors**（501 warnings 与 main 基线同读数） |
+| 三端一致 | 报告提交 `d06f6542` 落 main；`gitcode/main` 同步待推 | ⏳ 提交仅本地，未推远端正（纪律：禁开 PR、禁 force push） |
+| `git ls-files -s \| awk '$1=="160000"'` | 空 | ✅ 无 gitlink |
+| `git cat-file -e <tip>` 对 62 支被删 tip | **62 / 62 成功** | ✅ 对象全在库，ref 可重建 |
+| `_archive/zi2h77_h-staged.patch` | 90,767 B / 8 diff 段 / 反向还原 rc=0 | ✅ 可逐字节还原 |
+
+---
+
+## 9. 缺口与风险
+
+| # | 缺口 / 风险 | 影响 | 建议 |
+|---|---|---|---|
+| R1 | **origin 远程分支 14 支未动** | 任务书授权内，但统帅本轮明令「先别动」 | 待 owner 裁决「清理期是否暂停 `sync-from-gitcode.yml`」，否则删了会被 6 小时内的 `push --force` 还原 |
+| R2 | **gitcode 155 支一支未动** | 授权 0 支 | 按纪律执行，无缺口 |
+| R3 | `lightwt/cmd-alpha` 的 `c5fa9b17` 未被任何 ref 持有 | 移 worktree 即丢该 commit 对象（内容已由统帅落库 `f1cd6eb5`） | 若要保留，先 `git branch <name> c5fa9b17` 再移 worktree |
+| R4 | `lightwt/cmd-zeta`(345) / `worktree/skill-docs2`(378) 未复验 | 3 支绿档分支因此未删 | 按判例-10b 用 `git diff HEAD --numstat` 复验；`wt-skill` 另有 **2 个真实 `??` 文件**须先裁决 |
+| R5 | `mergeability-bn5486xy`(103) / `xd7gqcjf`(57) 未处置 | 不影响授权内动作 | 同 R4，须先看 index 面 |
+| R6 | 证明书 §3.6「18 个 `.agents` 干净项」无名单 | 已作废，改逐支现算 | 转审计组回写 v3 |
+| R7 | 证明书 §2.2「6 支被占用」实测为 **4 支** | 已在本报告订正 | 转审计组回写 v3 |
+| R8 | 主仓另有两个未跟踪件 `.agents/delta_probe2.sh` / `scripts/tmp_audit_preservation_scan.py` | 非本次产出，未动 | 属取证器/临时件，交瘦身组或审计组处置 |
+| R9 | 报告提交 `d06f6542` 仅本地 | 远端未同步 | 按纪律未推；须统帅决定推送通道 |
+
+---
+
+## 10. 未执行项汇总（对账用）
+
+| 授权动作 | 授权数 | 实际执行 | 差额与原因 |
+|---|---|---|---|
+| 删本地分支 | 65 | **62** | −3：均被 worktree 占用且 dirty ≠ 0（§4） |
+| 删 worktree | 21 | **3** | −18：证明书 §3.6 的「21」无名单；按统帅新口径「逐支现算，不预设数量」，实际满足「dirty=0 + HEAD 已在 main」的只有 3 个 |
+| 删 origin 远程分支 | 14 | **0** | 统帅本轮明令暂缓（R1） |
+| 删 gitcode 远程分支 | **0** | **0** | ✅ 一支未动 |
+
+---
+
+**报告完成 · commander-alpha · 2026-10-24**
