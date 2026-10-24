@@ -54,6 +54,7 @@
 `if run_case(...) is None` ⇒ 文档面变异只打印 FAIL 行、`selftest()` 仍一路走到 rc=0。失败路径
 改为返回 `None`，并在末尾加一格「退出码传导」把这条形状钉住（旧版下该格当场红）。
 """
+import os
 import re
 import subprocess
 import sys
@@ -62,7 +63,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 # 判例-25：测试数快照的源码面锚点只有一份真源（scripts/badge_anchor.py），
 # 与 check_badge 共用；本尺只**调用**不复制。
-import badge_anchor  # noqa: E402
+import _badge_anchor as badge_anchor  # noqa: E402  (判例-25：锚点单一真源，_ 前缀=内部共享模块)
 
 
 def anchor_problems(snapshot_path, cwd=None):
@@ -592,6 +593,29 @@ def selftest() -> int:
             return 1
         done[0] += 1
         print("  ok  REJECT-no-summary")
+        # 实现路径格（判例-29/30）：**运行时注入**，不是模式串匹配源码
+        # （模式串自己就在文件里 ⇒ 自指假绿）。把共用模块的 anchor_problems 换成抛异常版，
+        # 断言本尺的透传函数真的调到它——若有人又复制一份锚点，这格必绿 ⇒ 立刻现形。
+        _saved = badge_anchor.anchor_problems
+
+        def _boom(snapshot_path, cwd=None):
+            raise RuntimeError("注入：共用锚点模块被调用了")
+
+        try:
+            badge_anchor.anchor_problems = _boom
+            got_inject = False
+            try:
+                anchor_problems(os.path.join(td, "inj.log"))
+            except RuntimeError as exc:
+                got_inject = "注入" in str(exc)
+        finally:
+            badge_anchor.anchor_problems = _saved
+        if not got_inject:
+            print("SELFTEST FAIL [ANCHOR-INJECT] 注入桩后本尺没走共用模块"
+                  "（自己复制了一份锚点？判例-29）")
+            return 1
+        done[0] += 1
+        print("  ok  ANCHOR-INJECT")
     # 退出码传导锁（BUG-382）：上一批变异已实测——E/F 两格打印了 FAIL 行，但 selftest 仍返回 0，
     # 因为 run_case 失败时返回 (None, None)、调用点的 `is None` 永不成立。这里直接考失败路径的形状。
     q = run_case("rc-propagation-probe", dict(base), want="R1 不存在的路径", quiet=True)
