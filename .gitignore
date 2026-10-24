@@ -203,3 +203,22 @@ memory/archive/thinking.archive.md
 # 宿主不做 ${...} 插值 ⇒ 绝对路径进跟踪面 = 每个克隆者的 server is disconnected。
 # 渲染：python scripts/render_dsh_patch.py
 /.dsh/fist-mbt-plugin/cordis.patch.yml
+
+# ── 本地产物 / 工作区残渣（2026-10-24 治理：P0 收口）──────────────────────
+# 为什么必须 ignore：`check_publish_payload.py`（BUG-127）的打包面是
+# **「工作树 − .gitignore」**，不是 git 跟踪面。下述目录都是 0 跟踪但**未被忽略**，
+# 曾长期落在 `moon publish` 的扫描面上（共约 48MB / 385 文件）。
+# 判定依据：`reports/2026-10-24-structure-gap-analysis.md`（task-10）§0 一页摘要 P0 段。
+# 本轮回填时 grep 未见凭据形状内容，但「没扫到」不等于「不会有」——先挡住再谈清理。
+/_archive/
+/backups/
+/_scratch/
+/_scratch-rounds/
+/.Fist-Mbt/
+/.fist/
+/_release/
+/logs/
+/target/
+/origin/
+/_proj_lang-zone/
+/_proj_vools/
