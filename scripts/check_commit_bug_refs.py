@@ -23,14 +23,15 @@ bug_list 面标 BUG-390=pre-push 拦截），编号**从未经 report_bug 原子
   python scripts/check_commit_bug_refs.py --selftest     # 自检
   python scripts/check_commit_bug_refs.py --show-ceiling # 显示当前 ceiling
 """
+import io
 import os
 import re
 import subprocess
 import sys
+from contextlib import redirect_stdout
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 LEDGER = os.path.join(ROOT, "memory", "bugs.md")
 # 棘轮：判据只扫 origin/main..HEAD（即将进 main 的新 commit），**不含**已 push 进 main 的
@@ -98,6 +99,17 @@ def main():
         return 0
     if "--selftest" in args:
         return selftest()
+    return run()
+
+
+def run():
+    """真判据调用面：扫账本 + 未推送 commit，出读数与退出码。
+
+    独立成函数是为了让 `--selftest` 能**真驱动调用面**（而不是只考纯函数）——
+    `check_selftest_call_face.py` 的 J2 只认函数名 main/run/cli，而本脚本的
+    selftest 原先只考 BUG_RE / is_red / ledger 三个纯函数，「打印行 + 退出码」
+    那一层从没被自检走过（BUG-366 一族的脱钩形状）。
+    """
     ledger = read_ledger()
     orphan = scan(ledger)
     for sha, n, msg in orphan:
@@ -141,12 +153,22 @@ def selftest():
     orphan = scan(read_ledger())
     cell("real-orphan<=ceiling", len(orphan) <= PHANTOM_COMMIT_CEILING, True)
 
+    # 格7：调用面锁（J2）——自检必须**真驱动 run()**，而不是只考纯函数。
+    # 否则「--selftest 绿」与「真跑判据」是两条脱钩的路（BUG-366 一族）。
+    # run() 本身只读账本 + git log，是 hermetic 的：不写盘、不改仓库面。
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = run()
+    out = buf.getvalue()
+    cell("callface-run-rc", rc in (0, 1), True)
+    cell("callface-run-prints", "ceiling" in out, True)
+
     if fails:
         print("selftest FAIL（%d 格）：" % len(fails))
         for f in fails:
             print("  - " + f)
         return 1
-    print("selftest PASS（6 格：提取/夹具/边界/ceiling/账本/实测）")
+    print("selftest PASS（7 格：提取/夹具/边界/ceiling/账本/实测/调用面）")
     return 0
 
 

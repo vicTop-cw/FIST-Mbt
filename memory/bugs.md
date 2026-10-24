@@ -6668,3 +6668,17 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - **与 BUG-383 口径的冲突点（本轮以本机实读纠正旧口径，此处只并列、不改写上文）**：BUG-383 段写「`daqing/sqlite@0.4.0`（不透明外部类型 `type Sqlite3` + `#borrow`，133 族缺陷大概率不存在）」，本追记的来源读数与之**相反**（daqing 上该族缺陷确实在场，并已被 `stub-daqing.c` 修掉）。`stub-daqing.c` 的存在本身就是「daqing 需要修」的反证，`reapply.sh` 自 v0.3.10 起对 daqing 从 SKIP 改为真打补丁亦是同向。后续若有人据 BUG-383 那段推断「daqing 天然安全」，请先读本追记。
 - **方法学（可复用的那一条）**：概率缺陷验收不要用「连跑 N 次没崩」，要用 `valgrind --error-exitcode=99` 这类**能给出确定 0/1 判定**的尺；`0/N` 只说明这一支样本没抽中。这与本条 2026-10-02 追记立的「抽检面 + 干净树全量」两格口径不冲突——valgrind 读数可以升级替换 ① 抽检面，但**不能**替代 ② 干净树全量通过。
 - reported_by: commander-alpha（来源分支 `gitcode/fix/daqing-ffi-uaf-patch@6cd2b770`；按 owner 裁决只取可核读数，不 cherry-pick 该支 24 份流水账）
+
+## BUG-403 [2026-10-24T10:05:00Z] [low] OPEN
+- summary: [honesty] `agent_fp` 注释宣称「不可逆指纹」且 `pubkey_fp` 由 `fnv1a64("pubkey:"++hex)` 派生——FNV-1a 非密码学哈希（可逆），且 `pubkey_fp` 全仓无任何派生代码、所有写入点恒传空串（死承诺）
+- detail: `src/server/server.mbt` 的 `agent_fp()` 注释两处与实现不符。① `fnv1a64` 是 FNV-1a 64 位，乘奇素数 + 异或的链条**可逆**，短 `agent_id` 可反解原文、亦可对任意目标值构造前像 ⇒ 不承诺单向性/抗碰撞，只做「定长短标识 + 去原文污染」。把它当「不可逆指纹/身份认证」是安全语义的过度承诺。② 注释称 `pubkey_fp` 另行由 `fnv1a64("pubkey:"++hex)` 派生（T0r5 密钥指纹面），但全仓 grep 无任何派生代码，唯一写入点 `pubkey_fp=""` 硬编码（`server.mbt` 与 `store_sqlite.mbt` 各一处）⇒ 若未来按注释接入「公钥钉身份」，会静默绑定到空串（等于没有键位绑定）。
+- 修法：注释诚实降级——改述为「非密码学短标识」，明写不得当身份认证用；`pubkey_fp` 段补「当前未接线，接线前必须视为占位，不得在安全断言里依赖」。**代码行为零改动**（纯注释）。
+- 实测：`grep -rn "pubkey_fp" --include=*.mbt src/` ⇒ 写入点 `server.mbt:498` 与 `store_sqlite.mbt:2813` 均为 `pubkey_fp=""`，无派生函数。
+- 关联: T0r5 agent-fingerprint / src/server/server.mbt agent_fp / 来源分支 origin/fix/agent-fp-honest@a3740ecf
+
+## BUG-404 [2026-10-24T10:05:00Z] [low] OPEN
+- summary: [honesty] `agents_register` 注释宣称「首次出现则 INSERT（并落一条 fail-closed 的默认 ACL）」——实际 body 无任何 `agent_acl` INSERT，默认 ACL 真源在 server 层 `agents_acl_ensure`
+- detail: `src/store/store_sqlite.mbt` 的 `SqliteStore::agents_register()` 注释把「落默认 ACL」写成本函数职责，但函数体只有一条 `INSERT INTO agents … ON CONFLICT(agent_id) DO UPDATE`，无任何 ACL 写入。默认 ACL 实际由 server 层 `agents_acl_ensure`（`agent_touch_first_seen` 调用链）保证。**后果**：任何绕过 server 层 `agents_acl_ensure` 的直连 store 调用（现成的就是 `agents_heartbeat`）会留下「有 agent 身份、无 ACL 行」的中间态；`agents_acl_check` 对此返回 `Err("ACL 无记录（fail-closed）")`——仍 fail-closed，**不是安全洞**，但「注释承诺的默认 ACL 自动落」在这条路径上从不发生。
+- 修法：注释补「职责边界（BUG-404）」段，写明本函数只写 `agents` 表、默认 ACL 真源在 server 层、直连 store 调用的中间态后果与「注册即落 ACL」的正确调用顺序。**代码行为零改动**（纯注释）。
+- 实测：`sed -n '2731,2790p' src/store/store_sqlite.mbt | grep -c "acl"` = 0（函数体前 60 行无 acl 字样）。
+- 关联: src/store/store_sqlite.mbt agents_register / src/server/server.mbt agents_acl_ensure / 来源分支 origin/fix/agent-fp-honest@a3740ecf
