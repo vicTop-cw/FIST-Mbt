@@ -1444,6 +1444,17 @@ def j_selftest():
     if j14_count_problems({"docs/deliverable.md": _j14_tbl_ok}, 170):
         fails.append("B3 表格形态正确读数被误红 → 新支过度匹配")
 
+    # 面表形状一致性（2026-10-24 统帅提醒后补）：J14_FACES 的项**允许 2 元或 3 元混用**
+    # （3 元 = 额外带裁剪正则，见 docs/deliverable.md）。真正的约束是：
+    # **任何 unpack 点都按 len 取**（现全部为 `f[0]` / `f[1]`，不写 `for a, b in ...`）。
+    # 加第三列时若有一处写成 `for rel, label in ...` 就会
+    # `ValueError: too many values to unpack` —— 主文档判据整体**真崩**（不是假红）。
+    # ⇒ 断言的是「每项至少 2 元」+「shape 一致仅对需要 3 元的项」，**不是**「全部等长」。
+    if not all(len(f) >= 2 for f in J14_FACES):
+        fails.append("J14_FACES 出现不足 2 元的项 → 缺 (rel, label)")
+    if not all(len(f) == 3 for f in J14_FACES if len(f) > 2):
+        fails.append("J14_FACES 出现 >3 元的项 → 无对应字段")
+
     # B2：`docs/deliverable.md` 必须在 J14_FACES 里，且**历史沿革表要被裁掉**。
     # 两件事各断言一次：只加面不裁剪会误伤沿革表（实测 19 处全红），
     # 只裁剪不加面则该面根本无人比。
@@ -1482,6 +1493,31 @@ def j_selftest():
     if not any("找不到「功能全景」标题行" in p for p in j3_readme_group_count_problems(
             "# 没有这一行的 README\n", [1, 2])):
         fails.append("J3 在整张对照面不存在时不自拒")
+
+    # ── B1（2026-10-24）：正文里的「N 组」也必须进面 ────────────────────────────
+    # 三格对应统帅要求的三个方向：
+    #   ① 正文写错必须抓到（这正是原实现的盲区：zeta 报的 README:11「17 组」）
+    #   ② 标题写错必须抓到（**防回退**：拆函数时别把原有能力弄丢）
+    #   ③ 无关语境不误报（判例-34 面过宽的反向防线）
+    _J3_HEAD = "## 功能全景（170 个 MCP 工具 · 2 组）\n### A（100）\n### B（70）\n"
+    _body_bad = ("全部以 **170 个 MCP 工具**（17 组）暴露给任意客户端\n" + _J3_HEAD)
+    if not any("正文自述「17 组」" in p
+               for p in j3_readme_group_count_problems(_body_bad, [100, 70])):
+        fails.append("B1 正文里的「17 组」没被抓到 → J3 仍只读标题行，"
+                     "zeta 报的 README:11 那类漂移会重犯")
+    _body_ok = ("全部以 **170 个 MCP 工具**（2 组）暴露给任意客户端\n" + _J3_HEAD)
+    if j3_readme_group_count_problems(_body_ok, [100, 70]):
+        fails.append("B1 正文里的正确组数被误红 → 正文扫描过度匹配")
+    _head_bad = ("全部以 **170 个 MCP 工具**（2 组）暴露\n"
+                 "## 功能全景（170 个 MCP 工具 · 3 组）\n### A（100）\n### B（70）\n")
+    if not any("功能全景标题自述" in p
+               for p in j3_readme_group_count_problems(_head_bad, [100, 70])):
+        fails.append("B1 拆函数后标题面能力回退 → 标题写错不再被抓（防回退格）")
+    _unrelated = ("分 3 组测试跑，Phase 6 组合环全链路\n" + _J3_HEAD)
+    if j3_readme_group_count_problems(_unrelated, [100, 70]):
+        fails.append("B1 误吃无关语境（「分 3 组测试」/「Phase 6 组合环」）"
+                     " → 判例-34 面过宽")
+
     j14_real = j14_tool_count_claims()
     if j14_real:
         fails.append("J14 在真实现状面上就红了（先判尺子，再判被测）：" + j14_real[0])
@@ -1629,6 +1665,33 @@ def readme_group_counts(text):
 
 RE_J3_HEADING = re.compile(r"^##+\s*功能全景.*$", re.M)
 RE_J3_GROUPN = re.compile(r"(\d+)\s*组")
+# B1（2026-10-24，C·verify 发现、统帅批修）：J3 原先**只读 `^## 功能全景` 那一行**，
+# 正文里同义的「（N 组）」自述从不进面。实测盲区：
+#     README.md:11  全部以 **170 个 MCP 工具**（17 组）暴露…   ← 正文，J3 看不见
+#     README.md:58  ## 功能全景（170 个 MCP 工具 · 18 组）      ← 标题，J3 唯一读的那行
+# zeta 已把 L11 修成 18，但**判据盲区还在** —— 下次有人写错正文照样抓不到。
+#
+# ⚠️ 判例-34「判据面过宽是面窄的反向病」：直接全文扫 `\d+ 组` 会误吃
+#   「分 3 组测试」「Phase 6 组合环」一类无关句式（实测全仓扫只有 2 处是真主张，
+#   但那是当前文本形态，不能把判据建在"当前文本恰好干净"上）。
+# 故**收紧到工具语境**：`N 组` 必须与「MCP 工具 / 个工具 / tools」同行或紧邻，
+# 才当成「工具分组数」的主张；其它语境一律不进面（宁可不报，也不误报）。
+RE_J3_GROUP_CTX = re.compile(r"(MCP\s*工具|个\s*工具|\btools?\b)", re.I)
+
+
+def j3_readme_group_claims_fulltext(readme_txt):
+    """B1：全文扫「工具语境下的 N 组」自述。返回 [(行号, 数字, 该行)]。
+
+    判据面比 `j3_readme_group_count_problems`（只读标题行）宽：**标题 + 正文都进面**。
+    语境门槛见 `RE_J3_GROUP_CTX` 注释（防判例-34 面过宽）。
+    """
+    out = []
+    for ln, line in enumerate(readme_txt.splitlines(), 1):
+        if not RE_J3_GROUP_CTX.search(line):
+            continue
+        for m in RE_J3_GROUPN.finditer(line):
+            out.append((ln, int(m.group(1)), line.strip()))
+    return out
 
 
 def j3_readme_group_count_problems(readme_txt, parsed_counts):
@@ -1643,10 +1706,29 @@ def j3_readme_group_count_problems(readme_txt, parsed_counts):
                 f"，而正文解析到 {len(parsed_counts)} 个分组标题 ⇒ 组数这一格没人声明，读不到不报绿"]
     bad = [c for c in claims if c != len(parsed_counts)]
     if not bad:
-        return []
+        # B1：标题对了**还不够** —— 正文里的同义主张同样要对表。
+        # 原实现到这里就 return []，于是 README:11「（17 组）」这种正文漂移永远抓不到。
+        return j3_body_group_problems(readme_txt, len(parsed_counts), parsed_counts)
     return [f"J3 README 功能全景标题自述「{', '.join(str(c) for c in bad)} 组」，"
             f"实际解析到 {len(parsed_counts)} 个分组标题（和={sum(parsed_counts)}）"
             " ⇒ 分组增删只改了和没改组数，或标题数字滞后"]
+
+
+def j3_body_group_problems(readme_txt, n_groups, parsed_counts):
+    """B1：正文里「工具语境下的 N 组」也必须 == 实际分组数。
+
+    为什么要拆成独立函数：`j3_readme_group_count_problems` 的既有自证格（三条）都只喂
+    标题面文本，如果直接把正文扫描塞进它，那三条格的语义会被悄悄改宽。拆开后
+    标题面行为**逐字不变**，正文面有自己的一组格。
+    """
+    problems = []
+    for ln, num, line in j3_readme_group_claims_fulltext(readme_txt):
+        if num != n_groups:
+            problems.append(
+                f"J3 README:{ln} 正文自述「{num} 组」≠ 实际 {n_groups} 个分组标题"
+                f"（和={sum(parsed_counts)}）⇒ 组数搬家时正文没跟着改"
+                f"（该行：{line[:60]}…）")
+    return problems
 
 
 
