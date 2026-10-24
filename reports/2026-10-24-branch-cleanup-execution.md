@@ -465,3 +465,66 @@ memory/2026-09-24.md … memory/2026-10-22-version-align.md, memory/2026-10-22.m
 | 4 | `mergeability-xd7gqcjf` | 31 项真差异 + 26 个 main 无的文件（含 384 MB 污染日志） | 同 3；384 MB 文件本身无保全价值（已证污染），但删除前建议保留一份头部样本 |
 
 **执行组本轮在上述四处的动作：0。未删、未 clean、未导出。**
+
+---
+
+## 13. 第 4 批 · worktree 删除（v4 权威清单 35 项，全部执行）
+
+**权威清单**：`temp/audit/worktrees_v4_pass.json`（审计组 v4 定案：passed 35 / failed 14）
+**判据（三条，逐项删前重跑，不信任清单本身）**：
+```
+① git -C <path> status --porcelain   为空
+② git -C <path> rev-list HEAD --not --all  为空（HEAD 不含独有提交）
+③ git -C <path> ls-files -u          为空（无冲突态）
+```
+
+### 13.1 二次核验读数
+
+`python temp/v4_recheck.py`（独立重跑，非引用审计组结果）：**35 项三条判据全部通过，0 项不全过。**
+核验输出落 `temp/v4_recheck.json`。
+
+### 13.2 执行读数（分 7 批，每批 5 项，剔除空片后 5 批实效）
+
+| 批 | 删除 | worktree 数（含主工作树） |
+|---|---|---|
+| 批 1 | 5（`4am4tf7u` / `bug-389-raw-log-summary-line` / `selfdrive-r1` / `agent-fp-check` / `agent-fp-honest`） | 50 → 44 |
+| 批 2 | 5（`gate-chain-fmt-warmup` / `j2-call-face` / `memory-log-empty-universe` / `merge-final` / `moon-env-raw-log-and-escapes`） | 44 → 39 |
+| 批 3 | 5（`py-stdout-encoding-gates` / `slave-task-list-anchors` / `test-count-1449` / `test-sync-doc-1413` / `unit-number-doc`） | 39 → 34 |
+| 批 4 | 5（`.verify-wt` / `temp/r66` / `FIST-Mbt-wt-r2` / `light-wt/cmd-beta` / `light-wt/delta-branch-audit`） | 34 → 29 |
+| 续批 1 | 5（`backfill-ghost-bugs` / `backlog-proof-restamp` / `battery-registration-anchor` / `desc-clip-utf8` / `e2e-upgrade-mirror-escape`） | 29 → 24 |
+| 续批 2 | 5（`omega-marker-preserve` / `omega-required-column` / `pid-token-cache` / `pr-automator-windows-json` / `publish-leak-p1-cleanup`） | 24 → 19 |
+| 续批 3 | 5（`warning-batch-r1` / `slave/clean-dsh-recur-r3` / `slave/clean-dsh-recur-r6` / `slave/dsh-plugin-portable` / `slave/fix-push-guard-sustainability-r1`） | 19 → 14 |
+
+**全部 `git worktree remove` 常规路径 rc=0（未触发 `--force`）。**
+
+> **一处执行器缺陷（非判据问题）**：初版分批脚本按 `(bn-1)*5` 对全局 todo 切片，
+> 删满 20 项后列表缩短，第 5/6 批切到空片（显示「0 项」）。发现后改写为「每次从头切 5 个」
+> （`temp/del_wt_rest.py`）继续，剩余 15 项一次补齐，**未漏删一项**。
+
+### 13.3 删后交叉核对（闭合证据）
+
+```
+现登记 worktree = 14（含主工作树）
+  MAIN   E:/IDEProjects/AI/FIST-Mbt
+  其余 13 项 —— **全部**在 v4 `failed` 清单内（永久禁删）
+未预期的残留 worktree = 0
+```
+
+对我之前 R5 停手的两个对象，v4 已归 `RED-conflict` 永久禁删，与本报告 §12 的停手判定一致：
+`mergeability-bn5486xy`（`n_u`=158 冲突）、`mergeability-xd7gqcjf`（`n_u`=64 冲突）。
+
+### 13.4 本批并发纪律执行记录（统帅新纪律）
+
+每批删完即跑 `git diff --cached --name-only` 查暂存面 —— **全部为空，无一例带走他人暂存内容**。
+（本组在本批之前确实制造过一次险情：`7684cf99` 之前的 `git add` 让本组 4 个文件处于预暂存态，
+审计组 `git add` 单文件时把它们一并带进了暂存面、被 trailing whitespace 钩子拦下才没误提交。
+本组随后按新纪律 `git restore --staged` 后只 add 自己 4 个文件并成功提交 `7684cf99`，事已闭环。）
+
+### 13.5 读数汇总
+
+| 项 | 本轮前 | 本轮后 |
+|---|---|---|
+| worktree 登记数（含主工作树） | 50 | **14** |
+| └ 可删项 | 50 | **0** |
+| └ 禁删项（v4 failed） | 13 | **13** |
+| 本地分支数 | 92 | 91 |
