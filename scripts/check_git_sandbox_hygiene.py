@@ -34,6 +34,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from git_env import isolated_git_env  # noqa: E402  （T11 端到端夹具用；本判据自身读只读面）
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
@@ -148,6 +151,7 @@ def offenders(root: Path):
         return None
     bad = []
     scanned = 0
+    collected = []
     for rel in rels:
         base = rel.replace("\\", "/").split("/")[-1]
         if base == SELF or base == "git_env.py":
@@ -161,11 +165,51 @@ def offenders(root: Path):
         except OSError:
             continue
         sandbox, calls = analyze_source(code)
+        # R184：聚合走被测过的 `aggregate()`（与 T5/T6 同一判定律），不再就地重写一遍
         if sandbox:
-            missing = [ln for ln, has_env in calls if not has_env]
-            if missing:
-                bad.append((rel.replace("\\", "/"), sorted(missing)))
+            collected.append((rel.replace("\\", "/"), calls))
+    bad = aggregate(collected)
     return bad, scanned
+
+
+# ── R184：聚合层与棘轮层拆成**可测纯函数**（判例-18「自证必须覆盖整条链」）──────────
+#
+# 为什么拆：B·verify 变异测试实锤 —— 把 `offenders` 改成恒返回空，`--selftest` 照样绿。
+# 因为原 selftest 四格只测检测器 `analyze_source`，而「检测结果 → 违例清单」的聚合
+# 与「违例数 vs DIRTY_CEILING」的棘轮判定**从不在自证面内**。
+# ⇒ 假绿长在「检测器」与「聚合器」的接缝上。拆成纯函数后，三层各自可被断言。
+
+
+def aggregate(scanned_calls):
+    """纯函数：把 {rel: [(行号, 是否带 env), ...]} 聚成违例清单 [(rel, [缺失行号...])]。
+
+    与 `offenders()` 尾段是**同一判定**（`sandbox` 语境已在调用前判过，这里只负责聚合）：
+    只保留「有缺 env 调用」的脚本；全带 env 的脚本不进清单。
+    """
+    bad = []
+    for rel, calls in scanned_calls:
+        missing = [ln for ln, has_env in calls if not has_env]
+        if missing:
+            bad.append((rel, sorted(missing)))
+    return bad
+
+
+def judge_ratchet(n, ceiling):
+    """纯函数：棘轮三支判定。返回 (rc, message)。
+
+    - `n > ceiling`            ⇒ rc=1（超棘轮：新尺忘隔离，或升了存量）
+    - `n == 0 and ceiling > 0` ⇒ rc=1（**还完债常量没改回 0** —— 登记落后同样是红）
+    - 其余                     ⇒ rc=0（在上限内）
+
+    这两支都必须被自证覆盖：只测「超限必红」会漏掉「债务还清后常量忘了收」那一支，
+    而那正是棘轮**只许降不许升**这条律的另一半。
+    """
+    if n > ceiling:
+        return (1, "FAIL 沙箱隔离违例超棘轮：%d > 上限 %d（新尺忘隔离，或升了存量——升档是人的决定）"
+                % (n, ceiling))
+    if n == 0 and ceiling > 0:
+        return (1, "FAIL 棘轮登记落后：现读 0 违例，上限仍是 %d——还完债请把常量改回 0" % ceiling)
+    return (0, "")
 
 
 def selftest():
@@ -201,6 +245,60 @@ hint = "git commit 之前必须 fmt"
     cell("T3 无沙箱语境的宿主写→不算违例（whisperer 形）", not sandbox3)
     sandbox4, calls4 = analyze_source(MENTION)
     cell("T4 字符串提及 git add→零调用节点（check_pkg_imports 假阳形）", not calls4)
+
+    # ── R184：聚合层 + 棘轮层自证（判例-18）──────────────────────────────────
+    # 这两组格补的是原 selftest 的盲区：T1–T4 只测检测器，把 `offenders` 改成恒返回空
+    # 时原自检照样绿。现在「检测 → 聚合 → 棘轮」三层各有断言。
+    agg = aggregate([("a.py", [(10, True), (12, False)]), ("b.py", [(3, True)])])
+    cell("T5 聚合层：缺 env 的调用必进违例清单", agg == [("a.py", [12])], str(agg))
+    agg2 = aggregate([("c.py", [(1, True), (2, True)])])
+    cell("T6 聚合层：全带 env 的脚本不进清单", agg2 == [], str(agg2))
+
+    rc_over, _ = judge_ratchet(5, 2)
+    cell("T7 棘轮：违例数 > 上限 ⇒ 必红", rc_over == 1, str(rc_over))
+    rc_in, _ = judge_ratchet(2, 2)
+    cell("T8 棘轮：违例数 == 上限 ⇒ 放行", rc_in == 0, str(rc_in))
+    rc_zero, _ = judge_ratchet(0, 2)
+    cell("T9 棘轮：0 违例但常量没改回 0 ⇒ 必红", rc_zero == 1, str(rc_zero))
+    rc_zero2, _ = judge_ratchet(0, 0)
+    cell("T10 棘轮：0 违例且常量 0 ⇒ 放行", rc_zero2 == 0, str(rc_zero2))
+
+    # ── T11：**真跑 offenders()**（端到端，临时 git 仓库）─────────────────────
+    # 为什么必须真跑：上面 T5–T10 测的是拆出来的纯函数，若有人把 `offenders()` 里
+    # 的 `aggregate(collected)` 换成 `bad = []`，纯函数格全绿而聚合**实际失效** ——
+    # 变异测试实测正是这样（"offenders always-empty" 仍绿）。这一格把入口也纳入。
+    import tempfile as _tf
+    import shutil as _sh
+    tmpd = _tf.mkdtemp(prefix="gsh-probe-")
+    try:
+        subprocess.run(["git", "init", "-q"], cwd=tmpd, capture_output=True,
+                       env=isolated_git_env())
+        os.makedirs(os.path.join(tmpd, "scripts"), exist_ok=True)
+        # 造一个**缺 env 的 git 写调用**（应被判违例）
+        with open(os.path.join(tmpd, "scripts", "bad_probe.py"), "w", encoding="utf-8") as f:
+            f.write("import subprocess, tempfile\n"
+                    "d = tempfile.mkdtemp()\n"
+                    "subprocess.run(['git', 'add', '-A'], cwd=d)\n")
+        # 再放一个**全带 env** 的（不应进清单）——两文件对照才能证明聚合在区分
+        with open(os.path.join(tmpd, "scripts", "good_probe.py"), "w", encoding="utf-8") as f:
+            f.write("import subprocess, tempfile\n"
+                    "d = tempfile.mkdtemp()\n"
+                    "subprocess.run(['git', 'add', '-A'], cwd=d, env={'PATH': '/x'})\n")
+        env = isolated_git_env()
+        subprocess.run(["git", "add", "-A"], cwd=tmpd, capture_output=True, env=env)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                        "commit", "-qm", "seed"], cwd=tmpd, capture_output=True, env=env)
+        res = offenders(Path(tmpd))
+        if res is None:
+            cell("T11 offenders() 端到端：git 跟踪面可读", False, "offenders 返回 None")
+        else:
+            bad, scanned = res
+            names = [r for r, _ in bad]
+            cell("T11 offenders() 端到端：扫到两份探针", scanned == 2, "scanned=%s" % scanned)
+            cell("T12 offenders() 端到端：缺 env 的进清单、带 env 的不进",
+                 names == ["scripts/bad_probe.py"], "bad=%s" % names)
+    finally:
+        _sh.rmtree(tmpd, ignore_errors=True)
     if fails:
         print("SELFTEST FAIL：检测器自身有问题")
         for f in fails:
@@ -227,14 +325,12 @@ def main(argv):
         print("FATAL 判据无法自证：scripts/ 一个 .py 都没扫到（空宇宙不出绿）")
         return 2
     n = len(bad)
-    if n > DIRTY_CEILING:
-        print("FAIL 沙箱隔离违例超棘轮：%d > 上限 %d（新尺忘隔离，或升了存量——升档是人的决定）"
-              % (n, DIRTY_CEILING))
+    # R184：棘轮判定走被测过的 `judge_ratchet()`（与 T7–T10 同一判定律）
+    rc, msg = judge_ratchet(n, DIRTY_CEILING)
+    if rc != 0:
+        print(msg)
         for rel, lns in bad:
             print("  - %s（缺 env 的 git 写调用行：%s）" % (rel, ",".join(map(str, lns))))
-        return 1
-    if n == 0 and DIRTY_CEILING > 0:
-        print("FAIL 棘轮登记落后：现读 0 违例，上限仍是 %d——还完债请把常量改回 0" % DIRTY_CEILING)
         return 1
     if args.show:
         for rel, lns in bad:
