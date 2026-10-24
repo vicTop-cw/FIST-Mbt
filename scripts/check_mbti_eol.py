@@ -11,7 +11,7 @@ core/engine/server 三份 `.mbti` 变 dirty，`git status` 恒有 CRLF 噪声，
 修复：`.gitattributes` 钉 `*.mbti text eol=lf`（git blob 存 LF、checkout 也一律 LF）。
 
 ## 这个尺子怎么判（三档）
-- **rc=0 PASS**：`.gitattributes` 规则在 + 3 个 `.mbti` HEAD blob 纯 LF（加规则不会触发
+- **rc=0 PASS**：`.gitattributes` 规则在 + **跟踪面全部 `.mbti`** 的 HEAD blob 纯 LF（加规则不会触发
   renormalize 把已在跟踪的文件刷脏）+ 工作树 3 个 `.mbti` 不 dirty（eol 真正生效）。
 - **rc=1 FAIL**：规则缺失 / HEAD blob 有 CR / 工作树 `.mbti` 有未提交改动。
 - **rc=3 SKIP**：不是 git 仓库（读不到 HEAD），诚实跳过不误红。
@@ -34,11 +34,34 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 GITATTR = ".gitattributes"
 MBTI_GLOB = "*.mbti"
-MBTI_FILES = (
+# 覆盖面真源 = **git 跟踪面里的全部 `.mbti`**，不是一份手抄清单（判例-16 / R43）。
+#
+# **为什么改**：早先这里是 3 份硬编码（core/engine/server 的 pkg.generated.mbti），
+# 而全仓跟踪着 24 份 `.mbti`。⇒ 另外 21 份谁被 autocrlf 刷成 CRLF，本尺**照样报绿**。
+# 这正是判例-16「判据覆盖必须 ≥ 主张的覆盖」的形状：尺说自己管「`.mbti` 行尾」，
+# 实际只看了其中 1/8。
+#
+# 兜底：取不到 git 跟踪面（非仓库/裸仓库）时退回下面这 3 份，
+# 让「无 git 环境」仍能覆盖最关键的产物，且 SKIP(3) 分支会如实说明无法验 blob。
+MBTI_FILES_FALLBACK = (
     "src/core/pkg.generated.mbti",
     "src/engine/pkg.generated.mbti",
     "src/server/pkg.generated.mbti",
 )
+
+
+def tracked_mbti_files():
+    """git 跟踪面里的全部 `.mbti`（排序）。取不到 ⇒ 返回兜底 3 份。"""
+    try:
+        r = subprocess.run(["git", "ls-files", "--", MBTI_GLOB],
+                           cwd=ROOT, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=60)
+    except Exception:
+        return list(MBTI_FILES_FALLBACK)
+    if r.returncode != 0:
+        return list(MBTI_FILES_FALLBACK)
+    files = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()]
+    return sorted(files) if files else list(MBTI_FILES_FALLBACK)
 
 
 def rules_cover_mbti(gitattributes_content):
@@ -105,6 +128,28 @@ def selftest():
     cell("blob-empty", blob_has_cr(b""), False)
     cell("blob-none", blob_has_cr(None), False)
 
+    # ── 判例-16 结构性护栏：覆盖面必须来自**跟踪面**，不是手抄清单 ──────────
+    # 早先 MBTI_FILES 硬编码 3 份（core/engine/server），而跟踪面有 24 份 ⇒ 另外 21 份
+    # 谁被 autocrlf 刷成 CRLF，本尺照样报绿。这条格钉住「扩面真的生效」。
+    cov_ok = True
+    _files = tracked_mbti_files()
+    if not _files:
+        print("SELFTEST FAIL：tracked_mbti_files() 返回空 ⇒ 覆盖面为空，判据会静默全绿")
+        cov_ok = False
+    if not set(MBTI_FILES_FALLBACK).issubset(set(_files)):
+        _miss = sorted(set(MBTI_FILES_FALLBACK) - set(_files))
+        print("SELFTEST FAIL：动态覆盖面漏了兜底清单里的 %s" % (_miss,))
+        cov_ok = False
+    _r = subprocess.run(["git", "ls-files", "--", MBTI_GLOB], cwd=ROOT,
+                        capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if _r.returncode == 0:
+        _truth = len([x for x in _r.stdout.splitlines() if x.strip()])
+        if _truth and _truth != len(_files):
+            print("SELFTEST FAIL：覆盖面 %d 份 != 跟踪面 %d 份 ⇒ 判据面窄于追踪面"
+                  % (len(_files), _truth))
+            cov_ok = False
+    cells.append(("coverage-from-tracked-surface", cov_ok, ""))
+
     bad = [(n, w) for n, ok, w in cells if not ok]
     if bad:
         print("SELFTEST FAIL：")
@@ -113,7 +158,9 @@ def selftest():
         return 1
     n_rule = len([n for n, _, _ in cells if n.startswith("rule")])
     n_blob = len([n for n, _, _ in cells if n.startswith("blob")])
-    print("SELFTEST OK（%d 格：规则 %d / blob %d）" % (len(cells), n_rule, n_blob))
+    n_cov = len([n for n, _, _ in cells if n.startswith("coverage")])
+    print("SELFTEST OK（%d 格：规则 %d / blob %d / 覆盖面 %d）"
+          % (len(cells), n_rule, n_blob, n_cov))
     return 0
 
 
@@ -138,8 +185,9 @@ def main(argv):
     if rc != 0:
         print("SKIP(3) 不是 git 仓库（读不到 HEAD），无法验 blob/工作树——诚实跳过不误红")
         return 3
+    mbti_files = tracked_mbti_files()
     cr_files = []
-    for rel in MBTI_FILES:
+    for rel in mbti_files:
         cr, blob, _ = git("cat-file", "blob", "HEAD:" + rel)
         if cr != 0:
             print("SKIP(3) HEAD 无 `%s`——无法验 blob" % rel)
@@ -152,7 +200,7 @@ def main(argv):
         return 1
 
     # 3) 工作树不 dirty（eol 生效）
-    cr, status, _ = git("status", "--porcelain", "--", *MBTI_FILES)
+    cr, status, _ = git("status", "--porcelain", "--", *mbti_files)
     dirty = [l for l in (status or "").splitlines() if l.strip()]
     if dirty:
         print("FAIL 工作树 `.mbti` 有未提交改动（dirty），eol=lf 未生效：")
