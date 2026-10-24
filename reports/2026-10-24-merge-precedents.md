@@ -106,6 +106,44 @@ CALL_FACE_FUNCS = ("main", "run", "cli")
 
 ---
 
+## 判例-6：**删除一个跟踪件，会让所有历史分支都"新增"它**（规模级假阳性）
+
+**现象**：Step 3 的「新 ahead 扫描」某一轮报 **148 支分支全都有新文件**，而且**全是同一个文件**：
+
+```
+gitcode/docs/bug-389-raw-log-summary-line: .dsh/fist-mbt-plugin/cordis.patch.yml
+gitcode/feat/agent-fingerprint-pid-guard: .dsh/fist-mbt-plugin/cordis.patch.yml
+… 共 148 条
+```
+
+**根因**：该文件在本轮被 `git rm --cached` 掉（它渲染了本机绝对路径 `F:/AI/Fist-Mbt`，是产物不是资产）。
+`git cat-file -e HEAD:.dsh/fist-mbt-plugin/cordis.patch.yml` → **不存在**。
+于是 `git diff --diff-filter=A HEAD <branch>` 对每一支都报「该分支新增了这个文件」——
+**因为 master 面上它不存在了，所以任何还带着它的分支都成了「新增」**。
+
+**为什么这是系统性假阳性，不是 148 个真分支**：
+`--diff-filter=A` 的语义是「相对 base **新增**」，它比较的是**两棵树的差**，而"删除"与"某分支从未有"在同一次比较里**不可区分**。
+删除件越核心（被大量历史分支带过），假阳性规模越大 —— 这是**删除动作的必然副产物**，不是分支质量问题。
+
+**判据（看到就停下来查，别逐个分支去核内容）**：
+> 当 `--diff-filter=A` 的结果**高度同构**（同一个/同一组文件出现在大量分支上）时，
+> **先查该文件在 base 上是否被删除过**：
+> ```bash
+> git log --oneline --diff-filter=D --name-only -- <file>   # base 侧删过它吗
+> git cat-file -e HEAD:<file> 2>/dev/null || echo "base 上没有它"
+> ```
+> 若确认是删除件 ⇒ 这批"新增"是**假阳性**，该在扫描的排除面里按前缀剔掉，而不是当 148 条线索去读。
+
+**本仓实例的收口**：
+- 删除点 = `164e2d69`（「清掉 .dsh 本机路径泄漏」），`git cat-file -e HEAD:.dsh/fist-mbt-plugin/cordis.patch.yml` 确认 main 上**不存在**；
+- 护栏 = `.gitignore:203` `/.dsh/fist-mbt-plugin/cordis.patch.yml`（渲染自 `cordis.patch.yml.tpl`，产物不进跟踪面）；
+- 排除后真实新面孔只剩 **1 个**（已判定重复的 `git_sandbox.py`）。
+
+**给后续扫描的固定排除面**：`.dsh/` 整个目录都是**本机渲染产物**（同 `.verify-wt`、`temp/`），
+按 `^\.dsh/` 前缀剔除是**长期正确**的，不是为这一次打的补丁。
+
+---
+
 ## 附：本批环境读数修正（手册 §7 的订正）
 
 | 手册说 | 实测 |
@@ -125,5 +163,5 @@ CALL_FACE_FUNCS = ("main", "run", "cli")
 | 司令-β | 发现 `.dsh` 本机路径泄漏（`F:/AI/Fist-Mbt` 3 处 + `locale/*.json` 2 处）、B 面口径两次收窄的实测依据 |
 | 司令-γ | 「拿旧基线当分支顶树」的量化（`+3xx/-2xxx`、缺 4-10 文件） |
 | 司令-δ | 判例-3（改名不是接线）、判例-4（`-1` 哨兵）、手册三条推翻、`branch^..branch` 算法纠正 |
-| 司令-ε | `patch-id` 相等作为「同补丁重复应用」的决定性判据、gitlink pre-commit 硬门 |
+| 司令-ε | `patch-id` 相等作为「同补丁重复应用」的决定性判据、gitlink pre-commit 硬门、判例-6（删除跟踪件 ⇒ 全分支假阳性） |
 | 瘦身组 | `.git` 3.2G→1.4G、分支清理硬门「不放宽前提下可释放量≈0」的诚实结论 |

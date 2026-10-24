@@ -60,6 +60,10 @@ from git_env import isolated_git_env  # noqa: E402
 
 GITLINK_MODE = "160000"
 
+# 入口自证的一次性哨兵（见 selftest() 里的「递归守卫」注释）：保证 `main()` 只在最外层
+# 那次 selftest 里被真调一次，不会随递归层层重入。
+_ENTRY_PROBED = [False]
+
 # 本仓护栏清单：这些路径必须被 .gitignore 挡住（否则下次 `git add -A` 还会再造一次）
 GUARD_RULES = (
     ".agents/worktrees/",
@@ -257,6 +261,23 @@ def selftest():
         cells.append(name)
         if got != want:
             fails.append("%s: got=%r want=%r" % (name, got, want))
+
+    # R171/J2 口径：自检必须把**真入口**纳入调用图。判据 `check_selftest_call_face.py` 从
+    # `selftest()` 出发沿调用名闭包做静态可达性分析，锚点 = 名为 main/run/cli 的函数
+    # （或调 exit/SystemExit 的函数）。只写 `callable(main)` 断言**不够**——那样 `main` 只是
+    # 被读到的对象、不在调用图里，判据照样算缺（判例-3「改名不是接线」的反面）。所以这里真调
+    # 一次 `main()` 并钉住退出码。零副作用。
+    #
+    # ⚠️ 递归守卫：`main(["--selftest"])` 会再进一次 `selftest()`，若每次都调 `main` 就无限递归
+    # （实测 `RecursionError`）。故用模块级一次性哨兵：**只有最外层那次 selftest 调入口**，
+    # 递归进去的那层直接跳过本格。这既保住调用图可达性（静态分析看的是 AST，与运行时层数无关），
+    # 又只真跑一次。
+    if not _ENTRY_PROBED[0]:
+        _ENTRY_PROBED[0] = True
+        try:
+            cell("entry-main-selftest-rc0", main(["--selftest"]), 0)
+        finally:
+            _ENTRY_PROBED[0] = False
 
     # ── 纯函数格（不依赖 git）──────────────────────────────────────────
     raw_staged = (

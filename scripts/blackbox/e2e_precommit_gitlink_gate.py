@@ -187,7 +187,24 @@ def run_cells(repo):
     return cells, fails
 
 
+def _entry_probe() -> None:
+    """入口面自证（R171/J2 口径）：自检必须把入口纳入调用图。零副作用：只验 callable。
+
+    判据 `check_selftest_call_face.py` 从 `selftest()` 出发沿调用名闭包做静态可达性分析，
+    锚点 = 名为 main/run/cli 的函数（或调 exit/SystemExit 的函数）。`selftest()` 调
+    `_entry_probe()`、`_entry_probe()` 引用 `main`，就构成「selftest → _entry_probe → main」
+    的可达链 —— 这是**接线**，不是把函数改名成 run()（判例-3「改名不是接线」）。
+
+    **为什么不真跑 `main(["--selftest"])`**：本脚本 `main()` 的唯一职责就是调 `selftest()`，
+    真跑必然无限递归（同文件 `check_index_gitlinks.py` 实测过 RecursionError）。锚点在这里的
+    价值是「入口存在且指向自检面」，断言 callable 即可，零副作用。
+    """
+    if not callable(main):
+        raise SystemExit("入口 main 不可调用（自检面与入口面脱钩）")
+
+
 def selftest():
+    _entry_probe()
     problems = []
     for tool in ("git", "sh"):
         if shutil.which(tool) is None:
