@@ -43,22 +43,25 @@ usage，消费者唯一的读法就是"徽章守卫判红"，于是把一次**�
 `PASS … == 实测 1455/1455` 里的「实测」指的不是现实，是快照 —— 那本身就在放大假绿。
 新文案把快照路径、mtime、源码面 sha 一起打出来。
 """
-import hashlib
 import os
 import re
 import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# 判例-25：锚点口径只有一份真源（scripts/badge_anchor.py），本尺只**调用**不复制。
+# 两把吃同一类快照的尺（本尺 / check_test_sync）各写一份锚点 = 两份口径必然漂。
+import badge_anchor  # noqa: E402
+
 
 REJECT = "reject"    # 判据无法自证：被检面/调用形状不可用
 VIOLATE = "violate"  # 违例在场
 
-# 源码语义面：只有这些文件的改动才可能改变测试数。文档改动一律不影响锚点。
-CODE_PATTERNS = ["*.mbt", "*.pkg", "*.mod", "moon.mod"]
-ANCHOR_SUFFIX = ".src"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MOON_TEST_ENV = os.path.join(ROOT, "scripts", "moon_test_env.py")
+# 单测要把锚点逻辑换成桩（证明本尺**真的**调了共用模块，而不是自己又写了一份）
+_anchor = badge_anchor
 
 
 # BUG-58：守卫的“红”必须是判据红。Windows 默认 GBK 控制台下，中文结论里的 ↔ 等字符
@@ -211,13 +214,12 @@ def selftest():
             f.write(good_readme)
         # 锚点面的「现在」指纹：先算出来，后面各夹具都要用它写锚点（顺序有讲究——
         # 先写 p_notal 的锚点再算 now_line 会 UnboundLocalError，实测踩过）
-        head, digest = code_fingerprint(cwd=ROOT)
-        now_line = anchor_line(head, digest)
+        now_line = badge_anchor.current_anchor(cwd=ROOT)
         p_notal = os.path.join(td, "no-total.log")
         with open(p_notal, "w", encoding="utf-8") as f:
             f.write("moon test 跑完了\n")
         # E3 要考的是「日志无汇总行」，必须先过锚点面这一关，否则考到的是 A2
-        with open(anchor_path(p_notal), "w", encoding="utf-8") as f:
+        with open(badge_anchor.anchor_path(p_notal), "w", encoding="utf-8") as f:
             f.write(now_line + "\n")
         p_stale = os.path.join(td, "stale-README.md")
         with open(p_stale, "w", encoding="utf-8") as f:
@@ -230,11 +232,8 @@ def selftest():
         p_anch = os.path.join(td, "anchored.log")
         with open(p_anch, "w", encoding="utf-8") as f:
             f.write(good_log)
-        write_anchor(p_anch, cwd=td)  # 夹具目录里 git 不可用 ⇒ 空锚点，下面显式写锚点
-        head, digest = code_fingerprint(cwd=ROOT)
-        now_line = anchor_line(head, digest)
         # A1 场景：锚点 == 现在（直接写当前指纹，模拟「刚刚跑过」）
-        with open(anchor_path(p_anch), "w", encoding="utf-8") as f:
+        with open(badge_anchor.anchor_path(p_anch), "w", encoding="utf-8") as f:
             f.write(now_line + "\n")
         p_noanch = os.path.join(td, "noanchor.log")
         with open(p_noanch, "w", encoding="utf-8") as f:
@@ -242,8 +241,8 @@ def selftest():
         p_oldanch = os.path.join(td, "oldanchor.log")
         with open(p_oldanch, "w", encoding="utf-8") as f:
             f.write(good_log)
-        with open(anchor_path(p_oldanch), "w", encoding="utf-8") as f:
-            f.write("code=deadbeef@0123456789abcdef\n")
+        with open(badge_anchor.anchor_path(p_oldanch), "w", encoding="utf-8") as f:
+            f.write(badge_anchor.ANCHOR_PREFIX + "deadbeef" + "@0123456789abcdef\n")
 
         entry_cases = [
             ("E1 无实参 rc=2", [me], 2),
@@ -264,107 +263,58 @@ def selftest():
             print(f"  {name:<22} rc={r.returncode} 期望 {want_rc} "
                   f"{'符合预期' if ok else '**不符预期**（traceback 同判不符）'}")
 
+    # 调用面锁（判例-29：机制格 ≠ 实现路径格）：把共用模块换成**桩**，
+    # 若本尺仍然自己算锚点（复制过一份），这一格必绿 ⇒ 立刻现形。
+    calls = {"n": 0}
+
+    class _StubAnchor:
+        ANCHOR_PREFIX = badge_anchor.ANCHOR_PREFIX
+
+        @staticmethod
+        def anchor_problems(snapshot_path, cwd=None):
+            calls["n"] += 1
+            return [("reject", "STUB: 共用模块被调用")], {"anchor": "", "now": ""}
+
+    global _anchor
+    saved = _anchor
+    try:
+        _anchor = _StubAnchor
+        stub_probs, _ = anchor_problems("anything.log")
+    finally:
+        _anchor = saved
+    ok_call = (calls["n"] == 1) and bool(stub_probs) and "STUB" in stub_probs[0][1]
+    if not ok_call:
+        bad += 1
+    print(f"  {'C1 真的调了共用模块':<22} {'是' if ok_call else '否'}  "
+          f"{'符合预期' if ok_call else '**不符预期**（自己算了一份锚点？判例-29）'}")
+
     if bad:
-        print(f"SELFTEST FAIL：{bad} 项不符预期（判据 {len(cases)} 支 + 入口 {len(entry_cases)} 支）")
+        print(f"SELFTEST FAIL：{bad} 项不符预期"
+              f"（判据 {len(cases)} 支 + 入口 {len(entry_cases)} 支 + 调用面 1 支）")
         return 1
-    print(f"SELFTEST OK：{len(cases) + len(entry_cases)} 支对照全按预期"
-          f"（判据违例必红 {reds} / 干净必绿 {len(cases) - reds} / 入口分档 {len(entry_cases)}，"
-          f"含判例-25 A2/A3 快照锚点面；计数从 cases 与 entry_cases 反解，不手写）")
+    print(f"SELFTEST OK：{len(cases) + len(entry_cases) + 1} 支对照全按预期"
+          f"（判据违例必红 {reds} / 干净必绿 {len(cases) - reds} / 入口分档 {len(entry_cases)} + "
+          f"调用面 1，含判例-25 A2/A3 快照锚点面与 C1 共用模块调用面；"
+          f"计数从 cases 与 entry_cases 反解，不手写）")
     return 0
 
 
 
 # ── 判例-25：快照的源码面锚点 ────────────────────────────────────────────────
-
-
-def _git(args, cwd=None):
-    """只读 git 调用（不经 shell）。失败返回 (rc, "", err)，由调用方判 2 而不是崩。"""
-    p = subprocess.run(["git"] + list(args), cwd=cwd or ROOT, capture_output=True,
-                       text=True, encoding="utf-8", errors="replace")
-    return p.returncode, (p.stdout or ""), (p.stderr or "")
-
-
-def code_fingerprint(cwd=None):
-    """源码语义面的指纹（纯函数式：只读 git）。
-
-    = 最近一笔**改动源码面**的提交 sha + 工作树源码面 porcelain 的摘要。
-    为什么不用 mtime：mtime 是**文件系统事实**，不是**代码事实**——
-    文档提交也会刷新仓库状态，`touch` 一下也能把旧内容扮成新快照。
-    只覆盖 `CODE_PATTERNS`：改 `*.md` 不会改变测试数，不该让快照失效。
-    返回 (head_sha, porcelain_digest)；git 不可用返回 ("", "")。
-    """
-    rc, out, _ = _git(["log", "-1", "--format=%H", "--"] + CODE_PATTERNS, cwd=cwd)
-    if rc != 0:
-        return "", ""
-    head = out.strip()
-    rc, out, _ = _git(["status", "--porcelain", "--"] + CODE_PATTERNS, cwd=cwd)
-    if rc != 0:
-        return head, "STATUS-FAILED"
-    digest = hashlib.sha256(out.encode("utf-8", "replace")).hexdigest()[:16]
-    return head, digest
-
-
-def anchor_path(snapshot_path):
-    return snapshot_path + ANCHOR_SUFFIX
-
-
-def anchor_line(head, digest):
-    """锚点文件的一行（写盘/比对用同一形状，避免两处拼串漂移）。"""
-    return "code=%s@%s" % (head or "?", digest or "?")
-
-
-def write_anchor(snapshot_path, cwd=None):
-    """把当前源码面指纹写到 `<snapshot>.src`。返回写入的行（失败返回空串，由调用方判 2）。"""
-    head, digest = code_fingerprint(cwd=cwd)
-    if not head:
-        return ""
-    line = anchor_line(head, digest)
-    try:
-        with open(anchor_path(snapshot_path), "w", encoding="utf-8") as f:
-            f.write(line + "\n")
-    except OSError:
-        return ""
-    return line
-
-
-def read_anchor(snapshot_path):
-    """读 `<snapshot>.src`。缺失/坏形状 ⇒ 空串（调用方按 SNAPSHOT-STALE 处理，不猜）。"""
-    p = anchor_path(snapshot_path)
-    if not os.path.isfile(p):
-        return ""
-    try:
-        with open(p, encoding="utf-8") as f:
-            line = f.readline().strip()
-    except OSError:
-        return ""
-    return line if line.startswith("code=") else ""
+#
+# 锚点的**唯一真源**是 `scripts/badge_anchor.py`（两把吃同类快照的尺共用）。
+# 这里只留一层薄代理：目的不是再实现一次，而是让 selftest 能把 `_anchor` 换成桩，
+# 断言「本尺确实走了共用模块」——判例-29：机制格 ≠ 实现路径格。
 
 
 def anchor_problems(snapshot_path, cwd=None):
-    """快照新鲜度判据：锚点必须是**现在**的源码面指纹，否则 REJECT（rc=2，诚实沉默）。
+    """透传到共用模块（`_anchor` 可被单测替换成桩）。"""
+    return _anchor.anchor_problems(snapshot_path, cwd=cwd)
 
-    返回 (problems, info)，problems 每项 (kind, text)，kind 恒为 REJECT——
-    「快照过期」永远不是违例红：那是**判据证明不了现实**，不是「README 写错了」。
-    刻意不比较 mtime：见 `code_fingerprint` 的 docstring。
-    """
-    info = {"anchor": "", "now": ""}
-    stored = read_anchor(snapshot_path)
-    head, digest = code_fingerprint(cwd=cwd)
-    now = anchor_line(head, digest) if head else ""
-    info["anchor"], info["now"] = stored, now
-    if not now:
-        return [(REJECT, "REJECT 源码面指纹取不到（git 不可用 / 不在仓库内）⇒ rc=2，不猜")], info
-    if not stored:
-        return [(REJECT,
-                 f"REJECT SNAPSHOT-STALE: 快照 {snapshot_path} 没有源码面锚点"
-                 f"（缺 {os.path.basename(anchor_path(snapshot_path))}）⇒ 无从证明它与现在的代码同源。"
-                 f"用 `--fresh` 重跑一次生成锚点；rc=2，不冒用违例红")], info
-    if stored != now:
-        return [(REJECT,
-                 f"REJECT SNAPSHOT-STALE: 快照源码面 {stored} ≠ 现在 {now}"
-                 f" ⇒ 本判据只能证明「文档 == 快照」，不能证明「文档 == 现实」⇒ rc=2，拒绝出绿。"
-                 f"用 `--fresh` 重跑一次")], info
-    return [], info
+
+def write_anchor(snapshot_path, cwd=None):
+    """透传到共用模块。"""
+    return _anchor.write_anchor(snapshot_path, cwd=cwd)
 
 
 def run_fresh(snapshot_path, cwd=None):
@@ -372,7 +322,7 @@ def run_fresh(snapshot_path, cwd=None):
 
     为什么放在判据里而不是让人记得手跑：`temp/pt27.log` 的 mtime 停在 19:54，
     之后全仓多了 2 个测试没人再跑过 —— 「记得手跑」不是机制。
-    超时/失败都不改判据档：跑不出真值 ⇒ 调用方走 rc=2（诚实沉默）。
+    跑不出真值 ⇒ 调用方走 rc=2（诚实沉默），不拿旧快照冒充现实。
     """
     if not os.path.isfile(MOON_TEST_ENV):
         return False, "moon_test_env.py 不在：%s" % MOON_TEST_ENV

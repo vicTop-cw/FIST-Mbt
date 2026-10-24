@@ -59,6 +59,19 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+# 判例-25：测试数快照的源码面锚点只有一份真源（scripts/badge_anchor.py），
+# 与 check_badge 共用；本尺只**调用**不复制。
+import badge_anchor  # noqa: E402
+
+
+def anchor_problems(snapshot_path, cwd=None):
+    """透传共用模块（`_anchor` 可被自检换成桩，证明本尺确实走了它——判例-29）。"""
+    return _anchor.anchor_problems(snapshot_path, cwd=cwd)
+
+
+_anchor = badge_anchor
+
 # BUG-58：守卫的“红”必须是判据红。Windows 默认 GBK 控制台下，中文结论里的 ↔ 等字符
 # 会让 print 直接 UnicodeEncodeError——拿到 traceback 而不是 verdict，本地就等于“守卫不可信”。
 # 统一把 stdout/stderr 钉成 UTF-8（CI 在 Linux UTF-8 下是无损 no-op）。
@@ -518,6 +531,9 @@ def selftest() -> int:
         p_fail = Path(td) / "fail.log"
         p_fail.write_text(
             "Total tests: 1347, passed: 3, failed: 1344\n", encoding="utf-8")
+        # 判例-25/32：加了锚点前置之后，本格必须**先过锚点面**才考得到「日志未全绿」，
+        # 否则它静默改考前面那一步（A 前置把 E 格串味的同一形状，实测踩过一次）。
+        badge_anchor.write_anchor(str(p_fail))
         r = subprocess.run(
             [sys.executable, str(Path(__file__).resolve()), str(p_fail)],
             capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -530,6 +546,7 @@ def selftest() -> int:
         p_ok = Path(td) / "ok.log"
         p_ok.write_text(
             "Total tests: 1347, passed: 1347, failed: 0\n", encoding="utf-8")
+        badge_anchor.write_anchor(str(p_ok))  # 同上：先过锚点面，本格才考得到文档面
         r = subprocess.run(
             [sys.executable, str(Path(__file__).resolve()), str(p_ok)],
             capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -625,6 +642,13 @@ def main():
         log_path = Path(args[0])
         if not log_path.is_file():
             print(f"REJECT 测试日志不存在：{args[0]}（判据输入面缺失，拒绝出结论）")
+            return 2
+        # 判例-25：与 check_badge 共用同一份源码面锚点（scripts/badge_anchor.py）。
+        # 没有这一关，「换个人只跑本尺」照样会被旧快照骗绿——那正是判例-25 的病灶。
+        aprobs, _ainfo = anchor_problems(str(log_path))
+        if aprobs:
+            for _k, t in aprobs:
+                print(t)
             return 2
         log = log_path.read_text(encoding="utf-8", errors="replace")
         counts = parse_log_counts(log)
