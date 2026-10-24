@@ -180,11 +180,21 @@ SPECIAL_CASES = [
     case("check_upgrade_installer.py"),
     case("check_plan_landing.py", "--selftest"),
     # —— R84 (TASK-003)：gate 步骤位置纪律 ——
+    # 【这是债，不是判据坏了】（R185 登记，理由按统帅要求写全，防止下一轮有人去改常量）
+    # 判据**工作正常**：它如实报告 `ci.yml` 里 Migrate 之后有 35 个 gate 步骤缺 position-why 锚，
+    # 超过钉住的上限 34。红的含义是「CI workflow 内容债累积了」，不是「判据算错了」。
+    # **出路只有一条**：给人裁决——要么真正补锚点（降实测面），要么由 owner 明示升档。
+    # **禁止**：为了让这格变绿去改 `POSITION_WHY_CEILING`（那等于把债务判成无债）。
     expected("check_ci_step_position.py", 1,
-             "预存红：位置违规 35 条 > 棘轮上限 34（ci.yml 里 Migrate 之后无 position-why 锚的"
-             "gate 步骤，属 CI workflow 内容债；升档是人的决定，本单元不改常量"),
+             "预存红（债非坏）：位置违规 35 条 > 棘轮上限 34（ci.yml 里 Migrate 之后无 position-why "
+             "锚的 gate 步骤）。**判据工作正常，它正确报告了 CI workflow 内容债**——不是判据算错，"
+             "也不是常量该动。出路是人裁决：补锚点（真还债）或 owner 明示升档；"
+             "禁止为了变绿去改 POSITION_WHY_CEILING（那等于把债判成无债）",
+             kind="known-red"),
     expected("check_ci_step_position.py", 2,
-             "同一处棘轮超限 ⇒ 自检 T9「真源现状 rc=0」不成立，按判据自拒出 2", "--selftest"),
+             "级联：同一处棘轮超限 ⇒ 自检格 T9「真源现状 rc=0」不成立，判据按契约自拒出 2。"
+             "**这是债的连带效应，不是第二笔债**：主债修好后本格自动转绿", "--selftest",
+             kind="known-red"),
     # —— 远端状态读数（2026-10-24）：这两格红的是**远端形态**，不是仓内容债 ——
     # filter-repo 重写历史后，多数通道支与当前 `gitcode/main` 已**无共同祖先**（`git merge`
     # 会拒绝 unrelated histories）⇒ 合并面只能走 cherry-pick（本会话全程即如此）。这不是缺陷
@@ -326,9 +336,24 @@ SPECIAL_CASES = [
     #    现读 `扫描面=gitcode/main | 落差 0 条 / 上限 0 条` ⇒ 登记的那条红已不成立。
     #    按本文件自订的律「被检内容修好 ⇒ 把期望改回 0」，转回门禁格，依据一起删。
     case("check_backlog_status_staleness.py"),
+    # 【这是债，不是判据坏了】（R185 登记，理由按统帅要求写全）
+    # 判据工作正常：它如实数出 N1/N2 命名债仍在棘轮上限之上。红的含义是「命名债没还完」。
+    # 出路：把 N1/N2 真正降到上限内（改名 + 同批下调上限）；禁止为了变绿去改上限常量。
     expected("check_scripts_naming.py", 1,
-             "现读 2 条命名判定面 > 棘轮上限（NAMING.md 词法棘轮，改名要同批下调上限，"
-             "见 scripts/NAMING.md）"),
+             "预存红（债非坏）：现读 2 条命名判定面 > 棘轮上限（N1 无角色名 + N2 连字符名，"
+             "见 scripts/NAMING.md）。**判据工作正常，它正确报告了命名债**——不是判据算错。"
+             "出路：改名还债并同批下调上限；禁止为变绿改常量（放宽是人的决定）",
+             kind="known-red"),
+    # 【这是债，不是判据坏了】（R185 新增登记——此前这把尺**完全没进电池**，
+    # 它的 rc=1 从未在任何门禁面显形，属于判例-5「判据存在但没接线」的同族）
+    # 判据工作正常：判定面 5 条「自述与实现不同色」> 钉住上限 0。
+    # 出路（判据自己写明的两条）：把码改真，或把承诺改真；改上限常量不算出路。
+    expected("check_exit_code_contract.py", 1,
+             "预存红（债非坏）：判定面 5 条 > 棘轮上限 0 —— 5 处「自述退出码契约与 ast 实现面不同色」。"
+             "**判据工作正常，它正确报告了契约债**；它是本仓唯一检查「文档自述退出码 == 代码实际返回」"
+             "的尺。出路只有两条：把码改真 / 把承诺改真；改上限常量绕过不算出路。"
+             "**此前它没进电池**（判例-5 同族），本登记同时把它接进执行面",
+             kind="known-red"),
     # ── 兑现（R108）：主线 `866e2e65` 把 dist 快照刷到与 moon.mod 同版 ⇒ 这一格现读 got=0，"
     #    登记的红已不成立。按本文件自订的律「被检内容修好 ⇒ 把期望改回 0」转回门禁格，依据一起删。──
     case("check_dist_snapshot.py"),
@@ -984,6 +1009,24 @@ def selftest():
     cell("known-no-face-not-counted-as-missing",
          all(k not in missing for k in KNOWN_NO_FACE), True)
     cell("census-wider-than-gate-prefix", any(not is_gate(g) for g in guards), True)
+
+    # ── R185：「登记 known-red = 欠债」必须显形且带理由 ──────────────────────────
+    # 统帅要求：「理由必须写清『这是债不是坏』——否则每轮有人以为判据坏了去改常量」。
+    # 这几格把该要求**变成可执行断言**，而不是只留在注释里：
+    #   ① 每个 known-red 格必须带非空 why（空 why = 发了张免检牌，判据不属于任何人）；
+    #   ② 三把棘轮债必须在册 —— 少一条说明有人**删了登记**而不是把债还了。
+    _kr = [c for c in CASES if c.get("kind") == "known-red"]
+    cell("known-red-all-have-why", all((c.get("why") or "").strip() for c in _kr), True)
+    _kr_scripts = {c.get("script") for c in _kr}
+    cell("known-red-covers-three-ratchet-debts",
+         {"check_ci_step_position.py", "check_exit_code_contract.py",
+          "check_scripts_naming.py"} <= _kr_scripts, True)
+    # ③ 三把的 why 必须写明「债非坏」的口径词（防止有人把理由改成一句"已知红"就交差）
+    _kr_why = " ".join((c.get("why") or "") for c in _kr
+                       if c.get("script") in ("check_ci_step_position.py",
+                                              "check_exit_code_contract.py",
+                                              "check_scripts_naming.py"))
+    cell("known-red-why-says-debt-not-broken", "债非坏" in _kr_why, True)
     # R106 第二处同形缺陷：run_battery 里 `auto_cases(battery, ci, guards)` 是**另一版**的三参签名，
     # 合并后调用面与定义不同形 ⇒ 只有真跑电池才炸（`--selftest`/`--list` 都摸不到那一行）。
     # arity 对表是这一类「定义与调用被拆到两次改动」最便宜的常驻锁。
