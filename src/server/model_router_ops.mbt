@@ -26,7 +26,7 @@ fn mr_check_ns(ns : String) -> String? {
 
 ///|
 /// 状态落盘目录（`<target>/.fist-mbt/data`）：双层目录治理（见
-/// `fist-mbt/plans/2026-10-22-fist-dir-layout-governance-proposal.md` §3.1）——
+/// `docs/plans/2026-10-22-fist-dir-layout-governance-proposal.md` §3.1）——
 /// `.fist-mbt/` 机器独有、gitignore，`data/` 装 SQLite 库与模型路由状态。
 /// 旧布局 `{project_dir}/memory/model-router-*.json` 不再新写；读侧按同一路径读，
 /// 迁移后不再读写旧账本（旧文件原样保留不删）。

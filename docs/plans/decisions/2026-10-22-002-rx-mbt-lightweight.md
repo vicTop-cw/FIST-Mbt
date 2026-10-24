@@ -1,6 +1,6 @@
 ---
 decision_id: DEC-2026-10-22-002
-proposal: fist-mbt/plans/2026-10-22-rx-mbt-lightweight-proposal.md
+proposal: docs/plans/2026-10-22-rx-mbt-lightweight-proposal.md
 decided_by: human_steward
 decided_at: 2026-10-22T16:07:00+08:00
 decision: approved

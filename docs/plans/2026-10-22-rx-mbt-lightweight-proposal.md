@@ -170,4 +170,4 @@ RX-MBT 是**完整 RxJS 式库**（Observable/Observer/Subject/Clock/TriggerRegi
 2. **熔断器是否保留半开态**？（我倾向**保留**——BUG-34 修过，只换底层时钟）
 3. **是否纳入 `rx-mbt-governance` 任务树作为功能 F**（依赖功能 C 写入门禁）？还是独立命名空间？
 
-定案后本提案状态改 `已定案`，写进 `fist-mbt/plans/decisions/`。
+定案后本提案状态改 `已定案`，写进 `docs/plans/decisions/`。
