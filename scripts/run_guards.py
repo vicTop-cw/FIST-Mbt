@@ -532,6 +532,11 @@ EXEMPT_RULES = (
     ("plan_gradient_verify.py", "一次性验收演示"),
     ("task_challenge_verify.py", "一次性验收演示"),
     ("lesson_chain_verify.py", "一次性验收演示"),
+    (
+        "tmp_audit_preservation_scan.py",
+        "资产保全取证器（一次性只读取证；入库是留史料，不是尺——"
+        "它的输出已在 reports/2026-10-24-asset-preservation-proof.md 里逐条落定）",
+    ),
 )
 
 
