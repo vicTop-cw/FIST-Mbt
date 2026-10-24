@@ -6683,6 +6683,7 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 实测：`sed -n '2731,2790p' src/store/store_sqlite.mbt | grep -c "acl"` = 0（函数体前 60 行无 acl 字样）。
 - 关联: src/store/store_sqlite.mbt agents_register / src/server/server.mbt agents_acl_ensure / 来源分支 origin/fix/agent-fp-honest@a3740ecf
 
+
 ## BUG-405 [2026-10-24T10:25:00Z] [medium] OPEN
 - summary: [dsh-plugin-install-face] `.dsh/fist-mbt-plugin/cordis.patch.yml`（DSH 插件安装面）被覆盖成**硬编码旧机器路径 `F:/AI/Fist-Mbt`**——仓库实际在 `E:/IDEProjects/AI/FIST-Mbt`，旧路径不存在 ⇒ DSH 起 server 即 `server is disconnected`（2026-10-24 实测，用户报告 fist-mbt 服务不可用）
 - detail: ① 该文件本应是 `render_dsh_patch.py` 从 `cordis.patch.yml.tpl`（占位符 `{{FIST_MBT_CLI}}`/`{{FIST_MBT_ROOT}}`，零硬编码）渲染出的**本地产物**（`.gitignore` line 203 已挡跟踪面）；但当前内容被改成 `packaging/dsh/launch-mcp.mjs` + 硬编码 `F:/AI/Fist-Mbt`（3 处：args/cwd/env.FIST_PROJECT_DIR）—— 非 render 格式，**是某次操作直接改写了渲染件**。② `check_hardcoded_paths.py` D1 严格档只查"渲染件是否回跟踪面"，**不查本地产物内部的路径正确性**（已 ignore 不进跟踪面）⇒ 这种"硬编码覆盖本地渲染件"的污染形态当前无守卫可抓。③ 发布态 `packaging/dsh/cordis.patch.yml` 无此问题（`process.execPath` + `createRequire(baseUrl)` 动态解析，零硬编码）—— 只有开发态 `.dsh/` 这层中招。
@@ -6690,3 +6691,10 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 后续建议: 同源隐患：`locale/*.json` 也曾被写本机路径（check_hardcoded_paths.py line 103 提到 `cordis.patch.yml,locale/*.json` 是 `F:/AI/Fist-Mbt` 位置高发区）—— 建议一并复查 `.dsh/fist-mbt-plugin/locale/` 是否残留旧路径。
 - landed: 渲染器优先级 bug 同轮顺手修（BUG-405 关联）——`render_dsh_patch.py` 硬编码 `debug` 先于 `release`，而两者是独立构建目录（release 10:19 最新、debug 07:42 旧，渲染器仍选 debug ⇒ DSH 连到旧 CLI）。已改为两形态并存时按 `st_mtime` 取新（与 glob 兜底同一律），`--check` PASS + `--selftest` OK + `check_hardcoded_paths` PASS（572 文件干净）。
 - 关联: .dsh/fist-mbt-plugin/cordis.patch.yml / scripts/render_dsh_patch.py / scripts/check_hardcoded_paths.py / 来源用户报告 2026-10-24
+
+## BUG-406 [2026-10-24T17:15:00Z] [high] OPEN
+- summary: [packaging] 打包产物在 ESM 作用域里用 CJS `require("node:sqlite")` ⇒ `doctor`/`version`/`serve` 全部 `ReferenceError: require is not defined in ES module scope`，SQLite store 完全不可用；`moon check` 全绿但产物跑不起（外部项目 Pentad 统帅实测报告）
+- detail: `package.json` 声明 `"type": "module"` ⇒ Node 把 `.js` 当 ESM；上游 `daqing/sqlite@0.4.0` 的 JS FFI（`sqlite_js.mbt:13`）写着 CJS 形态 `(path, opts) => new (require("node:sqlite").DatabaseSync)(path, opts)`，被 MoonBit 原样打进 ESM 产物。ESM 作用域没有 `require` ⇒ 崩。**影响面**：`doctor`/`version`/`serve` 全崩（MCP server 起不来、持久化层全挂），只有 `demo`（纯内存 store）可用。**本仓不能在打包配置层根治**（缺陷在依赖源码），故 `patch_esm_main.py` 的 LOCAL-SHIM（`createRequire(import.meta.url)`）是唯一可立即解锁的手段。
+- 修法：① 立即——构建后跑 `python scripts/patch_esm_main.py` 注入 shim（已验证：patch 前 `version` 崩、patch 后 rc=0 且 `doctor` 5/5 通过）；② 根治——上游 `daqing/sqlite` 把该行改 ESM 形态，本仓升依赖；③ **判据**——新增 `scripts/check_esm_bundle_runnable.py`（17 格自证）把「产物能不能跑」变成提交前/CI 可查的一格，因为 `moon check` 只验源码、从不执行 bundle。
+- 实测：未 patch 的 `_build/js/debug/build/cmd/cli/cli.js` 跑 `version` ⇒ `ReferenceError ... cli.js:2455`（rc=1）；跑 `patch_esm_main.py` 后同一命令 ⇒ `FIST-Mbt v0.3.10`（rc=0）、`doctor` ⇒ 5/5 checks 通过（rc=0）。判据反向验证：对未 patch 产物 ⇒ `FAIL [ESM_CJS_REQUIRE]` rc=1；对已 patch ⇒ `PASS [OK]` rc=0。
+- 关联: ISSUE_ESM_CJS_BUNDLE_CRASH.md（已入库 reports/2026-10-24-external-issue-esm-cjs-bundle-crash.md）/ scripts/patch_esm_main.py / scripts/check_esm_bundle_runnable.py / 上游 daqing/sqlite@0.4.0 sqlite_js.mbt:13 / 外部报告人 Pentad 统帅
