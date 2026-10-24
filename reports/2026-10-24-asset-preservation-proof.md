@@ -1,8 +1,8 @@
-# 资产保全证明书（Asset Preservation Proof）· **v3 终版**
+# 资产保全证明书（Asset Preservation Proof）· **v4 终版**
 
 > **文种**：证明书 · **性质**：只读审计产出，**本文件不执行任何删除**
 > **日期**：2026-10-24 · **审计组主官**：audit-preservation · **任务**：task-9
-> **版本沿革**：v1（`460026ba`）→ v2（`5006d1cf`，判例-10 + 17 支专节）→ **v3（本版，判例-10b + 三处数字订正）**
+> **版本沿革**：v1（`460026ba`）→ v2（`5006d1cf`，判例-10）→ v3（`8bcce1a7`，判例-10b）→ **v4（本版，判例-10c + worktree 口径定案 35）**
 > **v3 基线**：`main = 5e27f443`（`ffee8d52` 为 v1/v2 基线；执行组已删部分分支，见 §0.3）
 > **取证器**：`scripts/tmp_audit_preservation_scan.py` + `temp/audit/*.py`（全部纯只读）
 > **v3 新增取证**：`temp/audit/v3_verify.py`
@@ -20,7 +20,7 @@
 | gitcode 远程分支 | **153** | 0 | 151 | 1（+1 名特殊项） |
 | origin 远程分支 | **51** | 0 | 48 | 1（+1 名特殊项） |
 | 本地分支 | **153** | **65**（执行组已执行） | 85 | 1（+2 名特殊项） |
-| worktree | **54** | ⚠️ **21 已作废** → v3 重算 **34**（§3.6.1 有完整名单） | 6（须人工确认幻影） | **10**（8 dirty + 2 conflict） |
+| worktree | **54** | **35**（v4 三条件口径定案，§3.6.1） | 6（须人工确认幻影） | **11**（8 dirty + 2 conflict + 1 目录缺失） |
 | 兄弟目录 | **38**（非 34） | 0 | 0 | 38（其中 12 需 owner 裁决） |
 
 ### 0.2 ⚠️ v3 三处数字订正（必须与正文一起读）
@@ -28,7 +28,7 @@
 | # | v1/v2 原文 | v3 订正 | 依据 |
 |---|---|---|---|
 | **①** | §2.2：绿档 65 支里「**6 支**被 worktree 占用」 | **实为 4 支**（`cmd-gamma` / `lightwt/cmd-alpha` / `lightwt/cmd-zeta` / `worktree/skill-docs2`）；另 2 支（`fix/battery-tree-state-cell` / `fix/merge-cleanup-content-based`）的 `.agents/worktrees/` 目录**已不在** `git worktree list` | 执行组实测 + 本版 `temp/audit/v3_verify.py`（绿档现仅 4 支，与占用集交集 2 支） |
-| **②** | §3.6：「**21 个** worktree 可删」 | **该数已作废。** v3 重算见 §3.6.1：GREEN **34** / YELLOW 6 / RED-dirty 8 / RED-conflict 2（总 50 登记项）。**GREEN 34 项的完整路径表在 §3.6.1，是唯一可照单执行的清单**（原「18 个 `.agents` 干净项」没给名单，不可执行） | `temp/audit/wt_reclassify.py` |
+| **②** | §3.6：「**21 个** worktree 可删」 | **该数已作废。** v3 重算 GREEN 34；**v4 按三条件口径定案 = 35**（① porcelain=0 ② `--not --all`=0 ③ `ls-files -u`=0）。冲突态 2 个已在 35 之外，**不需再减**。完整名单在 `temp/audit/worktrees_v4_pass.json` 与 §3.6.1 | `temp/audit/wt_final34.py` |
 | **③** | §3.3/§3.6：用「**HEAD 是 main 祖先**」判 worktree 干净 | **该判据不适用**：5 个 mergeability 的 HEAD 是 `b5c8a366`/`3897d378`，`b5c8a366` **不是 main 祖先**（实测 `merge-base --is-ancestor` = NO），但它被 **30+ 个 ref 持有** ⇒ 无独有 commit。**改用 `git rev-list HEAD --not --all` = 0**，不要求 HEAD 是 main 祖先 | 见 §3.6.2（含「34 vs 3」三口径并列说明） |
 
 ### 0.3 执行进度快照（v3 写作时点，`main = 5e27f443`）
@@ -490,6 +490,40 @@ git -C <wt> status --porcelain | grep -E '^(AA|UU|DD|AU|UA|DU|UD)'
 **三步全过（1 为空 **或** 2 的变化已备份 **且** 3 为空 **或** 3 的 blob 已确认可达）
 才可判可删。**
 
+##### 判例-10c（v4 新增，统帅定名）：`numstat` 的 `0 0` 有两种含义
+
+> **`numstat` 的 `0 0` 有两种含义：「无差异」和「无法计算（冲突态）」。**
+> 判「有无内容」必须看 `--stat` 的 `| Unmerged` 或 `git ls-files -u`（非空 = 冲突态）。
+> **冲突态 worktree 禁止 `remove --force`** —— 会丢未合并的 index。
+
+**为什么单独立一条**：`0 0` 在两种语义下**长得一模一样**。判例-10b 讲的是「读错了面」，
+本条讲的是「面读对了，但那个数本身有二义性」——**它们是两个独立的坑**。
+
+**实测（`mergeability-bn5486xy/wt`）**
+
+```
+$ git diff --cached --numstat | head -3
+0	0	.dsh/fist-mbt-plugin/cordis.patch.yml      ← 看起来「无差异」
+0	0	.github/workflows/ci.yml
+0	0	.gitignore
+
+$ git diff --cached --stat | tail -1
+ 24 files changed, 53160 insertions(+)              ← 实际 24 个文件、5.3 万行
+
+$ git ls-files -u | wc -l
+79                                                   ← 79 个 unmerged entry
+$ git rev-parse MERGE_HEAD
+不存在                                                ← 历史遗留冲突索引，不是进行中的 merge
+```
+
+**三支独立探针（判「有无内容」用它们，不要用 `numstat` 的 `0 0`）：**
+
+| 探针 | 冲突态表现 |
+|---|---|
+| `git diff --cached --stat` | `| Unmerged` |
+| `git ls-files -u` | 非空（含 stage 1/2/3 三份 entry） |
+| `git status --porcelain` | 前缀为 `AA` / `UU` / `DD` / `AU` / `UA` / `DU` / `UD` |
+
 ---
 
 #### 2.6.5 判例-8 扩展（采纳统帅的三源模型）
@@ -806,29 +840,33 @@ main 已经有了**。
 >    而 `--numstat` 单测又有判例-10b 的假阴性 ⇒ 另一个方向也误判。
 > 3. 判据里的「**HEAD 是 main 祖先**」对 detached 临时树**不成立**（见 §3.6.2）。
 
-#### 3.6.1 v3 重算（判据见 §2.6.6「修正后的判定协议」）
+#### 3.6.1 v4 定案重算（三条件口径见 §3.6.2）
 
-**复现命令**：`python temp/audit/wt_reclassify.py`（产出 `temp/audit/worktrees_v3.json`）
-**时点**：`main = 5e27f443`，`git worktree list` 共 **50** 个登记项（v2 时 54；执行组已删若干）
+**复现命令**：`python temp/audit/wt_final34.py`（产出 `temp/audit/worktrees_v4_pass.json`）
+**时点**：`git worktree list` 共 **49** 个可判登记项（`main = 5e27f443`）
 
 ```
-分档： {'GREEN': 34, 'RED-dirty': 8, 'RED-conflict': 2, 'YELLOW-phantom-verify': 6}
-总登记项 = 50
+三条件全过 PASS = 35
+未过 FAIL      = 14
 ```
 
 | 档 | 数量 | 判据 | 可执行动作 |
 |---|---|---|---|
-| 🟢 **GREEN** | **34** | `porcelain=0` **且** `rev-list HEAD --not --all` = 0 | `git worktree remove <path>`（**不带 `--force`**） |
-| 🟡 YELLOW-phantom-verify | **6** | `porcelain>0` 但 `diff HEAD --numstat` = **0** ⇒ 纯 stat 幻影 | 需人工双确认后 `remove --force` |
+| 🟢 **PASS** | **35** | ① porcelain=0 ② `--not --all`=0 ③ `ls-files -u`=0 | `git worktree remove <path>`（**不带 `--force`**） |
+| 🟡 幻影待验 | **6** | `porcelain>0` 但 `diff HEAD --numstat` = **0** ⇒ 纯 stat 幻影 | 需人工双确认后 `remove --force` |
 | 🔴 RED-dirty | **8** | `diff HEAD --numstat` > 0（**真有改动**） | **禁止**；先备份/裁决 |
-| 🔴 RED-conflict | **2** | `diff --cached --diff-filter=U` > 0（**冲突态**） | **禁止** `remove`（会丢 index），见 §2.6.6 |
+| 🔴 RED-conflict | **2** | `ls-files -u` 非空（**冲突态**） | **禁止** `remove`（会丢 index），见 §2.6.6 判例-10c |
 
-**🟢 GREEN 完整名单（34 个 —— v3 起这是唯一可照单执行的清单）**
+> **v3 曾报 GREEN=34（按 `porcelain + --not --all` 两条件）。v4 加第三条件后独立重算得 35 ——
+> 差的 `fix/agent-fp-check` 是 v3 脚本的 detached 分支漏计，不是判据差异。以 35 为准。**
+
+**🟢 PASS 完整名单（35 个 —— v4 起这是唯一可照单执行的清单）**
 
 ```
 C:/Users/victo/AppData/Local/Temp/mergeability-4am4tf7u/wt     (detached)
 E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/docs/bug-389-raw-log-summary-line
 E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/feat/selfdrive-r1
+E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/agent-fp-check     (detached)   ← v4 补入
 E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/agent-fp-honest
 E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/backfill-ghost-bugs
 E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/backlog-proof-restamp
@@ -872,21 +910,33 @@ E:/IDEProjects/AI/light-wt/delta-branch-audit
 | `light-wt/cmd-epsilon` | 4 | 3 |
 | 其余 4 个 | 见 `temp/audit/worktrees_v3.json` | |
 
-#### 3.6.2 ⚠️ 「34 vs 统帅的 3」分歧说明（不含糊，三口径并列）
+#### 3.6.2 「34 vs 3」分歧说明 → **v4 定案：三条件口径，实为 35**
 
-统帅「实际只 3 个」的口径是 **`dirty=0` + `HEAD 是 main 祖先` 双过**。本版三口径实测：
+统帅口径是 **`dirty=0` + `HEAD` 是 main 祖先** 双过。四口径实测：
 
 | 口径 | 结果 |
 |---|---|
-| `porcelain=0` **且** `HEAD` 是 main 祖先（统帅口径） | **0 个**（本版实测，非 3） |
-| `porcelain=0` **且** `rev-list HEAD --not --all` = 0（**v3 采用**） | **34 个** |
+| `porcelain=0` **且** `HEAD` 是 main 祖先 | **0 个**（本审计严格全算；统帅 awk 口径实测 3 个，差在 detached/空值是否跳过） |
+| `porcelain=0` **且** `rev-list HEAD --not --all` = 0 | **34 个**（v3） |
+| **三条件全过（① porcelain=0 ② `--not --all`=0 ③ `ls-files -u`=0）** | **35 个**（**v4 定案**） |
 | v1/v2 的 `dirty=0` 单测 | 21 个 |
 
-**为什么 v3 选第二条**：
-「HEAD 是 main 祖先」在当前仓几乎无人能满足（main tip 已远超所有历史分支），
-继续用它 ⇒ 所有 worktree 都判不可删，**与「删 worktree 只删目录、不删提交」的语义不符**。
-`rev-list HEAD --not --all` = 0 意味着**该 HEAD 完全被其它 ref 持有** ⇒ 删这个 worktree **不会让任何提交失去引用** ——
-这正是「删 worktree 不丢东西」的正确判据。**执行组已用 archive ref 保住过 `c5fa9b17`（`0c83ce6d`），同一条思路。**
+**v4 定案口径（统帅批准）**
+
+```
+可删 worktree = 三条全过
+  ① git status --porcelain 为空
+  ② git rev-list HEAD --not --all 为空
+  ③ git ls-files -u 为空（= 不在 RED-conflict 名单）
+```
+
+**35 = 34（v3）+ 1（`fix/agent-fp-check`，v3 脚本漏计）**。
+`mergeability-bn5486xy` / `xd7gqcjf` 两个冲突态**已在 35 之外**，**不需要再减 2**。
+权威清单：`temp/audit/worktrees_v4_pass.json`。
+
+**为什么「HEAD 是 main 祖先」不能当主判据**：它在当前仓近乎恒假（main tip 已远超所有历史分支），
+用它 ⇒ 几乎所有 worktree 都判不可删，**与「删 worktree 只删目录、不删提交」的语义不符**。
+`--not --all` = 0 才精确对应「删了不丢引用」。
 
 > **⚠️ 但 GREEN 的 34 个里有 31 个挂着「自身仍有独有提交」的分支**（实测 `main..<branch>` 非空：
 > `backlog-proof-restamp` ahead=6、`bug-389-raw-log-summary-line` ahead=2 等）。**两个动作必须分开看**：
@@ -1051,12 +1101,36 @@ for b in <§2.2 清单>; do git branch -d "$b"; done
 | 位置 | 个数 |
 |---|---|
 | `Temp/mergeability-*/wt` | 1（仅 `mergeability-4am4tf7u/wt`；`f7_g687u` 已不在登记面） |
-| `.agents/worktrees/*` | 28 |
+| `.agents/worktrees/*` | 29（含 `fix/agent-fp-check`，v4 补入，见下） |
 | `.verify-wt` | 1 |
 | 仓库内 `temp/` | 1（`temp/r66`） |
 | `FIST-Mbt-wt-r2` | 1 |
 | `light-wt/cmd-*` | 2（`cmd-beta` / `delta-branch-audit`） |
-| **合计** | **34** |
+| **合计** | **35** |
+
+> **v4 订正：34 → 35。** 按统帅三条件口径**独立重算**（`temp/audit/wt_final34.py`，逐条独立执行、不沿用分档结论）
+> 得 **35 项全过**，与 v3 的 34 交叉验证差集为：
+> ```
+> 上次有本次无: []
+> 本次有上次无: ['E:/IDEProjects/AI/FIST-Mbt/.agents/worktrees/fix/agent-fp-check']
+> ```
+> **`fix/agent-fp-check` 实测三项全绿**：`porcelain=0` / `diff HEAD=0` / `ls-files -u=0` /
+> `rev-list HEAD --not --all=0`，且**HEAD `92c74d88` 还是 main 祖先**。
+> v3 漏计根因：该 worktree 是 detached，分档脚本把 `beyond_all` 记为 `"?"` 后落入降档分支，**不是判据问题而是脚本分支覆盖不全**。
+> **v4 起的权威清单 = `temp/audit/worktrees_v4_pass.json` 的 35 项。**
+
+**三条件口径（统帅定案，v4 采用）**
+
+```
+可删 worktree = 三条全过：
+  ① git status --porcelain 为空          （无未提交、无冲突态）
+  ② git rev-list HEAD --not --all 为空    （删了不丢引用）
+  ③ 不在 RED-conflict 名单里              （独立探针 git ls-files -u 为空）
+```
+
+实测结果：**PASS 35 / FAIL 14 / 登记项 49**（`agent-fp-check` 之外还有 1 项目录缺失未计入）。
+**`mergeability-bn5486xy` / `xd7gqcjf` 两个冲突态 worktree 不在 PASS 里**（它们在 RED-conflict 档），
+⇒ **35 已是剔除冲突态后的数，不需要再减 2。**
 
 > **v1/v2 的「2 个干净 mergeability + 18 个 `.agents` 干净项 + `temp/r66` = 21」为什么错**：
 > ① `.agents` 的「18 个」当时没给名单（统审判定不可照单执行）；
