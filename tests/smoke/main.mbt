@@ -1,7 +1,9 @@
 ///|
 /// FIST-Mbt sqlite smoke walker（M1 验收辅助，非交付代码）
 /// 直接驱动 SqliteStore + Store trait，跨连接验证持久化。
-/// 运行：moon build --target js 后 node 运行生成的 smoke.js。
+/// 运行：moon build --target js tests/smoke 后 node 运行生成的 tests/smoke/smoke.js
+/// （ESM 产物须先 `python scripts/patch_esm_main.py <该产物路径>` 注入 require shim，
+///  否则 `node:sqlite` 的 CJS `require` 在 ESM 作用域报 ReferenceError；见 tests/README.md）。
 fn check(cond : Bool, name : String) -> Unit {
   if cond {
     println("PASS  \{name}")
