@@ -6655,3 +6655,16 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 修法：首次调用固化缓存（MoonBit 顶层不支持 `let mut`，用 `Array[Int32?]` 单元素容器，`None` = 未固化）。新增 `src/server/pid_token_wbtest.mbt` 两条白盒锁：① 首次调用填缓存 ② 后续调用复用同一值。还原原版后该测试文件编译即败（`cached_pid_token` 未定义）⇒ 契约破坏可被钉住。
 - 实测：`python scripts/moon_test_env.py src/server` → Total tests 387 / passed 387 / failed 0（385 原有 + 2 新增）。
 - 关联: T0r5 agent-fingerprint / src/server/server.mbt current_pid_token / src/store/store_sqlite.mbt agents_acl_check
+
+### 追记(2026-10-24T08:50:00Z / BUG-133) —— 换后端 daqing 后同族缺陷复刻（读数不可复核，仅作线索）
+- **为什么归在此条而不是新开**：本轮修的是**同一族**缺陷在**另一个宿主**上的复刻（换依赖只换了宿主，没换掉缺陷）。下文分两档写：「已在本仓逐字可核」与「仅在来源分支内存档、本机不可复核」，按统帅裁决「不确定的数字不写，宁缺勿造」执行。
+- **取证条件（来源）**：`gitcode/fix/daqing-ffi-uaf-patch` 顶树 `6cd2b770`（2026-10-22T20:01:07+08:00，`docs(memory): R85 …`）。**测量平台 = WSL2 Linux**（该支 memory 自述；本机 Windows 无 valgrind 出数面）。
+- **已在本仓逐字可核的那部分**：
+  · 修法：`patches/sqlite-bug133/stub-daqing.c` 与 mizchi 版同构——指针返回改 `moonbit_make_external_object(finalizer, size)` 包成外部对象（释放交 GC finalizer）；指针入参由取 payload 的宏（`DB()` / `STMT()`）取出；`close` / `finalize` 内部置 NULL 使 finalizer 幂等。
+  · 该文件**已在 main 跟踪面**，且 HEAD 与 `6cd2b770` 的 blob **逐字节相等**（`git rev-parse HEAD:patches/sqlite-bug133/stub-daqing.c` = `6db1dba0…` ⇒ 两侧同 blob）——即补丁本身不再有增量，本条追记的是它的**验收读数**。
+  · 机理与本条 2026-10-10 那段 mizchi 根修同源（裸指针当 MoonBit 对象回传 ⇒ `finalize` 后 GC 二次 drop）。
+- **仅在来源分支内存档、本机不可复核的读数（不写进任何「已量过」的措辞）**：`valgrind --track-origins` 修前 `ERROR SUMMARY: 1800 errors` → 修后 `0 errors from 0 contexts`；探针单轮 `PROBE DONE total=153900`；native 全量 `Total tests: 1387, passed: 1384, failed: 3`（3 条失败全在 `src/ops/rhop_native_wbtest.mbt` 的 `0 != 1`）。本机复核 `wsl -e bash -lc 'ls /tmp/vg*.log'` ⇒ **日志已不存在**（该支自述日志在会话级 `/tmp/vg2.log`，未留档），故这些数字**不进关闭条件**，只作线索。
+- **本机可核且与上述相符的面（决定性证据在 main 的代码注释里，不是本追记自述）**：`src/ops/rhop_native_wbtest.mbt` 现读文件头自述「**此前该文件在 js 上全绿而 native 从未跑过（被崩溃挡住）**，所以这处缺陷长期不可见」，其夹具已改成不经 `@rhop.rhop_send` 的等价纯函数 + `@fs` 直写——这正是「修好内存安全后立刻暴露一批因崩溃从未执行过的逻辑失败」那条教训在本仓落地的形状。
+- **与 BUG-383 口径的冲突点（本轮以本机实读纠正旧口径，此处只并列、不改写上文）**：BUG-383 段写「`daqing/sqlite@0.4.0`（不透明外部类型 `type Sqlite3` + `#borrow`，133 族缺陷大概率不存在）」，本追记的来源读数与之**相反**（daqing 上该族缺陷确实在场，并已被 `stub-daqing.c` 修掉）。`stub-daqing.c` 的存在本身就是「daqing 需要修」的反证，`reapply.sh` 自 v0.3.10 起对 daqing 从 SKIP 改为真打补丁亦是同向。后续若有人据 BUG-383 那段推断「daqing 天然安全」，请先读本追记。
+- **方法学（可复用的那一条）**：概率缺陷验收不要用「连跑 N 次没崩」，要用 `valgrind --error-exitcode=99` 这类**能给出确定 0/1 判定**的尺；`0/N` 只说明这一支样本没抽中。这与本条 2026-10-02 追记立的「抽检面 + 干净树全量」两格口径不冲突——valgrind 读数可以升级替换 ① 抽检面，但**不能**替代 ② 干净树全量通过。
+- reported_by: commander-alpha（来源分支 `gitcode/fix/daqing-ffi-uaf-patch@6cd2b770`；按 owner 裁决只取可核读数，不 cherry-pick 该支 24 份流水账）
