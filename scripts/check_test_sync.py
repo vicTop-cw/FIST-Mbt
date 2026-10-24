@@ -35,6 +35,13 @@
 
 任一违例即 FAIL（退出码非 0）。R1 的豁免表条目若已失效（不再命中任何声明）同样 FAIL。
 
+退出码契约（R178，对齐本仓 0/1/2 分档）：
+  0 = 现状面声明全部等于实测；
+  1 = **违例在场**（R1~R5 任一条，或日志面未全绿 `passed != Total tests` / `failed != 0`）；
+  2 = **判据无法自证**（没给 `<moon_test_log>` 也没给 `--total`、日志文件不存在、
+      日志里解析不到汇总行）——这三种情况下判据连实测数都没拿到，报 1 就是拿"没跑到"
+      冒用"跑出来有缺陷"。R175 实测踩过：漏传实参得 rc=1，被读成一条预存红写进了报告。
+
 **BUG-350**：日志面判绿必须看 passed/failed，不能只取 `Total tests`——否则
 `Total tests: 1347, passed: 3, failed: 1344` 这种"几乎全挂"的日志照样 PASS。
 现行口径：`passed == Total tests` 且 `failed == 0`；旧格式不写 failed 时只校验 passed==total。
@@ -492,7 +499,7 @@ def selftest() -> int:
             [sys.executable, str(Path(__file__).resolve()), str(p_fail)],
             capture_output=True, text=True, encoding="utf-8", errors="replace")
         out = (r.stdout or "") + (r.stderr or "")
-        if r.returncode == 0 or "未全绿" not in out:
+        if r.returncode != 1 or "未全绿" not in out:
             print(f"SELFTEST FAIL [LOG-entry-fail] 入口对近乎全挂的日志未判红：rc={r.returncode} out={out!r}")
             return 1
         done[0] += 1
@@ -509,6 +516,42 @@ def selftest() -> int:
             return 1
         done[0] += 1
         print("  ok  LOG-entry-green")
+        # R178 分档入口锁：调用形状/输入面缺失必须落 rc=2，不许冒用 1——消费者只会把 1 读成
+        # 「测试总数守卫判红」，R175 实测就这么差点把一次漏传实参写成一条假预存红。
+        # 另一侧由上面 LOG-entry-fail 那格钉住（已从 rc!=0 收紧成 rc!=1）。
+        r = subprocess.run([sys.executable, str(Path(__file__).resolve())],
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        out = (r.stdout or "") + (r.stderr or "")
+        if r.returncode != 2 or "REJECT" not in out:
+            print(f"SELFTEST FAIL [REJECT-no-arg] 无实参应 rc=2 并点名 REJECT："
+                  f"rc={r.returncode} out={out[:160]!r}")
+            return 1
+        done[0] += 1
+        print("  ok  REJECT-no-arg")
+        p_missing = Path(td) / "does-not-exist.log"
+        r = subprocess.run([sys.executable, str(Path(__file__).resolve()), str(p_missing)],
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        out = (r.stdout or "") + (r.stderr or "")
+        if r.returncode != 2 or "REJECT" not in out or "Traceback" in out:
+            print(f"SELFTEST FAIL [REJECT-missing-log] 日志读不到应 rc=2 且不崩："
+                  f"rc={r.returncode} out={out[:160]!r}")
+            return 1
+        done[0] += 1
+        print("  ok  REJECT-missing-log")
+        p_notal = Path(td) / "no-summary.log"
+        p_notal.write_text("moon test \u8dd1\u5b8c\u4e86\n", encoding="utf-8")
+        r = subprocess.run([sys.executable, str(Path(__file__).resolve()), str(p_notal)],
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        out = (r.stdout or "") + (r.stderr or "")
+        if r.returncode != 2 or "REJECT" not in out:
+            print(f"SELFTEST FAIL [REJECT-no-summary] 日志无汇总行应 rc=2："
+                  f"rc={r.returncode} out={out[:160]!r}")
+            return 1
+        done[0] += 1
+        print("  ok  REJECT-no-summary")
     # 退出码传导锁（BUG-382）：上一批变异已实测——E/F 两格打印了 FAIL 行，但 selftest 仍返回 0，
     # 因为 run_case 失败时返回 (None, None)、调用点的 `is None` 永不成立。这里直接考失败路径的形状。
     q = run_case("rc-propagation-probe", dict(base), want="R1 不存在的路径", quiet=True)
@@ -558,21 +601,21 @@ def main():
     elif args:
         log_path = Path(args[0])
         if not log_path.is_file():
-            print(f"FAIL 测试日志不存在：{args[0]}（判据输入面缺失，拒绝出结论）")
-            return 1
+            print(f"REJECT 测试日志不存在：{args[0]}（判据输入面缺失，拒绝出结论）")
+            return 2
         log = log_path.read_text(encoding="utf-8", errors="replace")
         counts = parse_log_counts(log)
         if counts is None:
-            print("FAIL 无法从参数/日志解析测试总数")
-            return 1
+            print("REJECT 无法从参数/日志解析测试总数")
+            return 2
         why = log_not_green(counts)
         if why:
             print(f"FAIL 测试日志未全绿：{why}（BUG-350：只取 Total tests 会把几乎全挂的日志判绿）")
             return 1
         total = counts[0]
     if total is None:
-        print("FAIL 无法从参数/日志解析测试总数")
-        return 1
+        print("REJECT 无法从参数/日志解析测试总数")
+        return 2
     return run(str(total))
 
 
