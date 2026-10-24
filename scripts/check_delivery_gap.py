@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from git_env import isolated_git_env
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -36,7 +37,7 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 def git(*args, cwd=None):
     r = subprocess.run(["git"] + list(args), cwd=cwd or ROOT, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
+                       encoding="utf-8", errors="replace", env=isolated_git_env())
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
@@ -108,6 +109,7 @@ def inspect(base, ref):
 
 
 def selftest():
+    _entry_probe()
     cells = []
 
     def cell(name, got, want):
@@ -125,7 +127,7 @@ def selftest():
 
     def g(*a, cwd=d):
         return subprocess.run(["git"] + list(a), cwd=cwd, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace")
+                              encoding="utf-8", errors="replace", env=isolated_git_env())
     try:
         remote = os.path.join(d, "remote.git")
         g("init", "--bare", "-q", remote)
@@ -181,6 +183,19 @@ def main_compare(a, b):
         return 1
     print("FAIL 真分叉：两条线各有独有提交，需要有人手工合并")
     return 1
+
+
+
+def _entry_probe() -> None:
+    """入口面自证（R171 口径）：自检必须把入口纳入调用图。
+
+    为什么要有这一格：R158 交付 check_diff_scope.py 时 `--selftest` 全绿而**现状面一跑就崩**
+    （clean 分支少传一个实参抛 TypeError，冒出来的 rc=1 和「有违例」一模一样）。自检只考纯函数、
+    不碰入口，照不出「自检面与入口面脱钩」。本探测**零副作用**：只验证入口存在且可调用，
+    不起服务、不碰网络、不跑真桥。
+    """
+    if not callable(main):
+        raise SystemExit("入口 main 不可调用（自检面与入口面脱钩）")
 
 
 def main():

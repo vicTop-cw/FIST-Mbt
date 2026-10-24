@@ -7,7 +7,7 @@
 
 `FIST-Mbt` 是**纯 MoonBit 实现的 MCP Server**：一个「AI 指挥官」式任务编排器——发布根任务，递归拆解成多层子任务，经认领/执行/提交/验收/归档闭环；含 DGM 自进化档案库（evolve）与 Omega 强验证。全栈 MoonBit，JS+Native 双后端，SQLite 持久化。
 
-- **构建/测试**：`moon check` / `moon test --target js`（**1387 项全绿**，2026-10-21 Windows 实测）
+- **构建/测试**：`moon check` / `moon test --target js`（**1455 项全绿**，2026-10-23 Windows 实测）
 - **跑 MCP Server**：`moon build --target js cmd/cli && python scripts/patch_esm_main.py` → `node _build/js/debug/build/cmd/cli/cli.js`
 - **一键自检**：`python scripts/mcp_smoke.py`（实测 170 个工具 + publish/get 链路 + issue_scan 命中校验；这个数由 `check_doc_surface.py` 的 J14 项目地图面钉住，改工具数时这张图必须跟着改）
 - **找目标项目潜问题**：`issue_scan`（MCP 工具）/ `python scripts/issue_scan.py <dir>`（CLI）/ [技能文档](issue-scan-skill.md)（skill）三处手写形态 + 插件态投影（四态），规则驱动扫描，命中喂 `report_bug` 闭环
@@ -33,23 +33,36 @@
 
 > **边界（BUG-123 / BUG-363）**：本表组名与组值是手写的导航简写（省略公共前缀，如`succeed status`），**不等于** `tools/list` 的注册表，也不能与真源做机械差集。逐组的权威清单在 README「功能全景」，由 `check_doc_surface.py` 的 J3 同时钉「分组数字之和 == 真源」与「标题组数 == 实际分组标题数」；这张地图自己只钉**总数主张**那一句（J14 项目地图面）。本表尚未覆盖的分组（GitHub/GitCode 同步、超级管家、六顶帽、项目助理、嵌入式 MCPCf、模型路由·外部执行器、开发模式等）记在 BUG-364，改写本表属内容决策，留裁决。
 
-| 组 | 工具 |
+| 族 | 代表工具（省略公共前缀，如 `dag_*` 的 `*` 段） |
 |---|---|
-| 生命周期(14) | publish/publish_parallel/plan/claim/execute/submit/verify/reject/retry/pause/resume/reopen_task/archive/delete |
-| 查询(2) | list/get |
-| 运维(13) | task_plan_deep/conflicts_check/heartbeat/heal/watchdog_tick/task_cleanup/phi_accrual/saga_register/saga_rollback/saga_repair/circuit_fail/circuit_succeed/circuit_status |
-| 运维·日志/缺陷/成本/调度(12) | call_log/bug_list/report_bug/run_check/issue_scan/schedule/pipeline_tick/cost_stats/cost_budget_check/cost_budget_split/progress_gate/laya_decide |
-| 自驱闭环(9) | selfdrive_init/append/get/export_tasks/review_tick/review_ready/publish_next/parse_next_tasks/pick_next（+ selfdrive_dispatch 见 Marketplace） |
-| 看板/脉冲/预订/推荐+DAG(20) | dag_critical_path/parallelism/ascii/check/ready/sort/depend/publish/slack/schedule/cost_route/mc/plan_revise/goal_drift_check、board_ascii、status_summary、project_health/health_check、reserve_scope/check/release、task_triage |
-| 自我记忆与自进化(11) | memory_consolidate/gc/link、evolve_submit/sample/snapshot/distill/lesson/critic/asset_register、task_challenge |
-| Marketplace·能力路由(5) | executor_register、executor_auction、executor_route、executor_clear、selfdrive_dispatch（能力登记/置信度拍卖/专长+信任+负载路由/重置/自动派单，R30-R33/R87 跨进程持久化） |
-| 审计/权限(2) | audit_permission/log |
-| 多租户(3) | store_open/list/close |
-| 强验证(6) | omega_spec_create/review/result_verify/status/verify/verify_fix |
-| 衍生·ATGC-old(3) | atgc_old_compile/run/talk |
-| 其它(辅助) | evolve_self_search、cmd/cli 示例、HTTP/SSE 桥接（fist-mbt-http.py）… |
+| 生命周期 | publish / plan / claim / execute / submit / verify / reject / retry / pause / resume / reopen_task / archive / delete |
+| 查询 | list / get |
+| 运维 | task_plan_deep / conflicts_check / heartbeat / heal / watchdog_tick / task_cleanup / phi_accrual / saga_\* / circuit_\* / tx_contract |
+| 运维 · 日志 / 缺陷 / 成本 / 调度 | call_log / bug_list / bug_fix / bug_mark_status / report_bug / issue_scan / boundary_probe / eval_feedback / run_check / output_validate / schedule / pipeline_tick / cost_\* / progress_gate / project_standards / text_diff / laya_decide / rank_of / soldier_\* / staff_label_of / loop_\* |
+| 自驱闭环 | selfdrive_\*（init / append / get / export_tasks / review_tick / review_ready / publish_next / parse_next_tasks / pick_next / dispatch） |
+| 项目看板 / 脉冲 / 预订 / 推荐 + DAG | dag_\*（critical_path / parallelism / ascii / check / ready / sort / depend / publish / slack / schedule / cost_route / mc）/ plan_revise / goal_drift_check / board_ascii / state_flow_ascii / status_summary / project_health / health_check / reserve_\* / lock_\* / task_triage |
+| 自我记忆与自进化 | memory_\*（consolidate / gc / link）/ evolve_\*（submit / sample / snapshot / distill / lesson / critic / asset_register）/ task_challenge |
+| Marketplace·执行者能力路由 | executor_\*（register / route / auction / clear）/ selfdrive_dispatch |
+| 审计与权限 | audit_permission / audit_log |
+| 多租户命名空间 | store_open / store_list / store_close |
+| Omega 强验证 | omega_\*（spec_create / spec_review / result_verify / status / verify / verify_fix） |
+| 开发模式与模板 | mode_list / mode_templates |
+| GitHub/GitCode 同步 · 缺陷上报通道 | github_\* / gitcode_\*（env_check / queue_status / flush_plan / flush_execute / queue_mark_sent / issue_close / issue_comment / issue_webhook_parse） |
+| 模型路由 · 外部执行器 | model_auth_status / model_route / model_router_status / model_router_reset / executor_run |
+| 六顶帽 · 辩论裁决 | hat_list / debate_convene / debate_register / debate_verdict / hat_run / hat_debate / hat_merge |
+| 项目助理 | assistant_claim / assistant_status / assistant_sweep / assistant_resign / assistant_heartbeat |
+| 超级管家专属工具 | supervisor_status / supervisor_task_tree / supervisor_kill_plan / supervisor_prompt_\* / supervisor_task_upsert / supervisor_reminder_tick |
+| 嵌入式 MCPCf | mcpcf.\*（ops_init / circuit / report / review / run_batch / verify / watchdog） |
+| 衍生子项目 · ATGC-old | atgc_old_compile / atgc_old_run / atgc_old_talk |
 
-## 四、入口引导（agent 该怎么走）
+> **本表的承诺只到「族」这一层，不承诺逐工具穷举**（2026-10-24 定点修，BUG-364）：
+> 旧表在组名后缀手写计数（12 行带计数、和=100），其中约四成的族根本没列——读者会把"和=100"当成
+> "全量"，而真源是 **170 个工具**（本行是唯一允许出现工具数的地方，由 `check_doc_surface.py` J14 钉住）。计数是抄来的、工具是长出来的，两者必然漂；所以本表**去掉所有计数**，
+> 只保留族与代表工具，并把"全量"交给单一真源：
+> · 全量清单：`python scripts/fist.py list-tools`（= `tools/list` 实测）
+> · 工具数与文档/插件/徽章对齐：`python scripts/check_tools_sync.py`（判据守，不靠人抄）
+>
+> ## 四、入口引导（agent 该怎么走）
 
 1. **想懂业务流** → 读 `README.md`、`ARCHITECTURE.md`、`USAGE.md`。
 2. **想改某层逻辑** → 见上表定位到 `src/<包>`，再读该包 `pkg.generated.mbti` 看公开接口。

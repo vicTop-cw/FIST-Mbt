@@ -16,11 +16,16 @@ smoke_*.db、decompose_persist.db、alpha.db 等 .db / -shm / -wal），并在 t
     一律不动——只清 `git ls-files --others`（untracked），从根上避免误删已跟踪临时文件；
   - --check 模式只报告残留数量（0 = 干净），不删任何文件。
 
+`--selftest`（R179 起改打合成夹具）：S1/S2/S3 全部打在 temp 下一份**真 git 仓**沙箱上
+（里面有已跟踪的 `scripts/_tool_registry.py` 作豁免面对象、可造未跟踪的 `_` 探针作残留面对象），
+不再往真 `scripts/` 树写探针——判据自证不许以别人的工作树为代价（R153 的 hermetic 律）。
+仓根经**必填形参**注入（默认参流进 I/O 是本仓明文标注的判据漏红面，不走）。
+
 用法：
   python scripts/cleanup_artifacts.py          # 清理 + 打印各文件
   python scripts/cleanup_artifacts.py --check  # 只报告残留数（可作 CI 守卫）
 """
-import os, sys, subprocess
+import os, sys, shutil, subprocess, tempfile
 
 # BUG-138（BUG-58 同族）：守卫的红必须是判据红。Windows 默认 cp936 控制台上打印中文结论里的
 # ⇒ 等字符会让 print 当场 UnicodeEncodeError——拿到 traceback 而不是 verdict，而且崩在结论行之前
@@ -37,11 +42,11 @@ KEEP_SIDECAR = {"fist-mbt.db-shm", "fist-mbt.db-wal"}
 SUFFIXES = (".db", ".db-shm", ".db-wal")
 
 
-def stray_root_dbs():
+def stray_root_dbs(root):
     """仓库根下应删的生成物（排除 KEEP）。返回相对路径列表。"""
     out = []
-    for name in sorted(os.listdir(ROOT)):
-        full = os.path.join(ROOT, name)
+    for name in sorted(os.listdir(root)):
+        full = os.path.join(root, name)
         if not os.path.isfile(full):
             continue
         if name in KEEP or name in KEEP_SIDECAR:
@@ -51,10 +56,10 @@ def stray_root_dbs():
     return out
 
 
-def temp_files():
+def temp_files(root):
     """temp/ 下应清理的 scratch 生成物。返回相对路径列表。"""
     out = []
-    tdir = os.path.join(ROOT, "temp")
+    tdir = os.path.join(root, "temp")
     if not os.path.isdir(tdir):
         return out
     for name in sorted(os.listdir(tdir)):
@@ -68,25 +73,25 @@ def temp_files():
 _TMP_SCRIPT_EXT = (".py", ".ps1", ".sh")
 
 
-def is_git_tracked(relpath):
+def is_git_tracked(relpath, root):
     """relpath 是否被 git 跟踪。跟踪=正式资产，cleanup 一律不动（BUG-334）。"""
     try:
         r = subprocess.run(
             ["git", "ls-files", "--error-unmatch", "--", relpath],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=ROOT,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=root,
         )
         return r.returncode == 0
     except OSError:
         return False
 
 
-def stray_underscore_scripts():
+def stray_underscore_scripts(root):
     """scripts/ 下 `_` 前缀的**未跟踪**临时脚本（正式工具目录不应留）。返回绝对路径+相对名列表。
 
     BUG-334：git 跟踪的 `_` 脚本是正式资产（如 `scripts/_tool_registry.py` 工具注册单一真源，
     被 7 个守卫/生成器导入），移走即当场 ImportError 红一片。故此处只放行 untracked。
     """
-    sdir = os.path.join(ROOT, "scripts")
+    sdir = os.path.join(root, "scripts")
     out = []
     if not os.path.isdir(sdir):
         return out
@@ -99,7 +104,7 @@ def stray_underscore_scripts():
         ):
             continue
         rel = os.path.join("scripts", name)
-        if is_git_tracked(rel):
+        if is_git_tracked(rel, root):
             continue
         out.append((full, rel))
     return out
@@ -140,12 +145,12 @@ def format_lines(root_stray, tfiles, uscripts, exempt):
     return lines, dirty
 
 
-def exempt_tracked_underscore():
+def exempt_tracked_underscore(root):
     """scripts/ 下 `_` 前缀的**已跟踪**脚本（正式资产，BUG-334/BUG-368 的豁免面）。
 
     单独取出来只为把它印进读数：豁免必须可见，否则「1 个 `_` 临时脚本」这种虚报
     无法从输出上分辨是「真残留」还是「跟踪真源被误数」。"""
-    sdir = os.path.join(ROOT, "scripts")
+    sdir = os.path.join(root, "scripts")
     out = []
     if not os.path.isdir(sdir):
         return out
@@ -154,46 +159,147 @@ def exempt_tracked_underscore():
         if not (name.startswith("_") and os.path.isfile(full) and name.endswith(_TMP_SCRIPT_EXT)):
             continue
         rel = os.path.join("scripts", name)
-        if is_git_tracked(rel):
+        if is_git_tracked(rel, root):
             out.append(rel)
     return out
+
+
+def _git_rc(dirpath, *args):
+    p = subprocess.run(("git",) + args, cwd=dirpath, stdout=subprocess.PIPE,
+                       stderr=subprocess.PIPE)
+    return p.returncode, p.stderr.decode("utf-8", "replace").strip()[:120]
+
+
+def _rmtree(path):
+    """删合成仓根。git 把对象写成只读，Windows 上 rmtree 不处理只读会 PermissionError——
+    夹具清不干净就是往别人机器上留垃圾，故清位重试而非吞掉异常。"""
+    def _clear(func, p, _exc):
+        try:
+            os.chmod(p, 0o700)
+            func(p)
+        except OSError:
+            pass
+    shutil.rmtree(path, onerror=_clear)
+
+
+TRACKED_PROBE = os.path.join("scripts", "_tool_registry.py")
+
+
+def _sandbox(dirpath, stage=True):
+    """temp 下的合成仓根：真 git 仓 + `scripts/` 目录 + 一份已跟踪的 `_tool_registry.py`。
+
+    夹具必须是**真 git 仓**——S1/S2/S3 判的就是「跟踪 vs 未跟踪」这条线。非 git 目录里
+    `git ls-files --error-unmatch` 恒失败，两个面塌成同一档，S2 会以内「豁免生效」的名义
+    放行一个坏掉的跟踪探测。
+    """
+    rc, err = _git_rc(dirpath, "init", "-q")
+    if rc != 0:
+        raise RuntimeError("沙箱 git init 失败（rc=%d）：%s" % (rc, err))
+    os.makedirs(os.path.join(dirpath, "scripts"))
+    with open(os.path.join(dirpath, "scripts", "_tool_registry.py"), "w", encoding="utf-8") as fh:
+        fh.write("# 夹具里的工具注册真源（BUG-334 豁免面的合成对应物）\n")
+    with open(os.path.join(dirpath, "scripts", "keep.py"), "w", encoding="utf-8") as fh:
+        fh.write("# 非 `_` 前缀的正式工具，作夹具的对照背景\n")
+    if stage:
+        rc, err = _git_rc(dirpath, "add", "-A")
+        if rc != 0:
+            raise RuntimeError("沙箱 git add 失败（rc=%d）：%s" % (rc, err))
+        rc, err = _git_rc(dirpath, "-c", "user.name=selftest", "-c",
+                          "user.email=selftest@sandbox.invalid", "commit", "-q", "-m", "夹具基线")
+        if rc != 0:
+            raise RuntimeError("沙箱 git commit 失败（rc=%d）：%s" % (rc, err))
+    return dirpath
+
+
+def _sandbox_ok(dirpath):
+    """夹具形状自证：豁免面（tracked `_` 脚本）与残留面（untracked `_` 脚本）必须**分别**真在场。
+
+    两档塌成一档时，「`_tool_registry.py` 不在候选里」这条断言就再也分辨不出是豁免生效
+    还是跟踪探测坏了——绿色白给。
+    """
+    if not is_git_tracked(TRACKED_PROBE, dirpath):
+        return False, "夹具里没有已跟踪的 `_` 脚本 ⇒ 豁免面无物可证，S2 的绿是白给的"
+    witness = os.path.join("scripts", "_sandbox_witness.py")
+    witness_abs = os.path.join(dirpath, witness)
+    with open(witness_abs, "w", encoding="utf-8") as fh:
+        fh.write("# 残留面见证件\n")
+    try:
+        if witness not in [rel for _abs, rel in stray_underscore_scripts(dirpath)]:
+            return False, "夹具里的未跟踪 `_` 脚本没进候选 ⇒ 残留面无物可证，S3 的绿是白给的"
+    finally:
+        try:
+            os.remove(witness_abs)
+        except OSError:
+            pass
+    return True, ""
 
 
 def selftest():
     """BUG-334 回归锁（判据无法自证绝不报绿）：`_`前缀规则必须豁免 git 跟踪资产、仍抓真临时脚本。
 
+    - S0 夹具形状自证：temp 合成仓根里 tracked 面与 untracked 面各就各位（另配 M1 变异对照）。
     - S1 tracked 识别：`is_git_tracked("scripts/_tool_registry.py")` 必须为 True
-      （该文件是 git 跟踪的工具注册单一真源，若 git 探测坏了则后续豁免全失效）。
+      （夹具里它就是被 git add 过的真跟踪件，探测坏了则后续豁免全失效）。
     - S2 豁免生效：`stray_underscore_scripts()` 不得包含 `_tool_registry.py`。
-    - S3 仍抓真临时脚本：新建一个 untracked `_` 脚本，必须出现在候选中（否则规则被豁免规则误杀）。
+    - S3 仍抓真临时脚本：在夹具里新建 untracked `_` 脚本，必须出现在候选中（否则规则被豁免规则误杀）。
+    - S4/S5/S6 是纯函数格（`format_lines`），不碰盘。
+    S1-S3 全打在 temp 合成仓根上，真 `scripts/` 树一字节不动（R153 的 hermetic 律）。
     """
     fails = []
-    # S1
-    if not is_git_tracked(os.path.join("scripts", "_tool_registry.py")):
-        fails.append("S1: is_git_tracked('scripts/_tool_registry.py') 应为 True（git 探测失效）")
-    # S2
-    rels = [rel for _abs, rel in stray_underscore_scripts()]
-    if os.path.join("scripts", "_tool_registry.py") in rels:
-        fails.append("S2: _tool_registry.py 被误判为临时脚本（BUG-334 复现）")
-    # S3
-    tmp_name = "_cleanup_selftest_tmp.py"
-    tmp_abs = os.path.join(ROOT, "scripts", tmp_name)
-    created = False
+    box = None
     try:
-        with open(tmp_abs, "w", encoding="utf-8") as fh:
-            fh.write("# selftest probe\n")
-        created = True
-        rels2 = [rel for _abs, rel in stray_underscore_scripts()]
-        if os.path.join("scripts", tmp_name) not in rels2:
-            fails.append("S3: 真 `_` 临时脚本未被捕获（豁免规则误杀）")
-    except OSError as e:
-        fails.append(f"S3: 无法创建探针临时脚本：{e}")
+        try:
+            box = _sandbox(os.path.abspath(tempfile.mkdtemp(prefix="ca-selftest-")))
+        except (RuntimeError, OSError) as e:
+            print("SELFTEST FAIL: 合成夹具起不来 ⇒ 判据看不见输入面，绝不报绿：%s" % e)
+            return 1
+        # S0
+        ok, why = _sandbox_ok(box)
+        if not ok:
+            fails.append("S0: %s" % why)
+        # M1 变异对照：跟踪面抽空的夹具必被 S0 自拒（不配这格，S0 只是「一切正常时的顺手绿」）
+        bad = os.path.abspath(tempfile.mkdtemp(prefix="ca-selftest-bad-"))
+        try:
+            _sandbox(bad, stage=False)
+            bok, _bwhy = _sandbox_ok(bad)
+        except (RuntimeError, OSError) as e:
+            bok = False
+            fails.append("M1: 变异夹具起不来（无法对照）：%s" % e)
+        finally:
+            _rmtree(bad)
+        if bok:
+            fails.append("M1: 跟踪面为空的夹具仍被 S0 放行 ⇒ 自证格是装饰")
+        # S1
+        if not is_git_tracked(TRACKED_PROBE, box):
+            fails.append("S1: is_git_tracked('scripts/_tool_registry.py') 应为 True（git 探测失效）")
+        # S2
+        rels = [rel for _abs, rel in stray_underscore_scripts(box)]
+        if TRACKED_PROBE in rels:
+            fails.append("S2: _tool_registry.py 被误判为临时脚本（BUG-334 复现）")
+        # S3
+        tmp_rel = os.path.join("scripts", "_cleanup_selftest_tmp.py")
+        tmp_abs = os.path.join(box, tmp_rel)
+        created = False
+        try:
+            with open(tmp_abs, "w", encoding="utf-8") as fh:
+                fh.write("# selftest probe\n")
+            created = True
+            rels2 = [rel for _abs, rel in stray_underscore_scripts(box)]
+            if tmp_rel not in rels2:
+                fails.append("S3: 真 `_` 临时脚本未被捕获（豁免规则误杀）")
+        except OSError as e:
+            fails.append(f"S3: 无法创建探针临时脚本：{e}")
+        finally:
+            if created:
+                try:
+                    os.remove(tmp_abs)
+                except OSError:
+                    pass
     finally:
-        if created:
-            try:
-                os.remove(tmp_abs)
-            except OSError:
-                pass
+        if box is not None:
+            _rmtree(box)
+            if os.path.exists(box):
+                fails.append("夹具没清干净：%s" % box)
     # S4（BUG-368）：读数必须**逐条点名**，只给档数就无法核对构成
     lines4, dirty4 = format_lines(["a.db"], ["temp/x.db"], [], [])
     joined = "\n".join(lines4)
@@ -216,8 +322,8 @@ def selftest():
     if fails:
         print("SELFTEST FAIL: " + "; ".join(fails))
         return 1
-    print("SELFTEST PASS: S1 tracked 识别 / S2 `_tool_registry.py` 豁免 / S3 真临时脚本仍被抓 / "
-          "S4 逐条点名 / S5 超上限折叠且报总数 / S6 豁免面可见")
+    print("SELFTEST PASS: S0 夹具形状自证（含 M1 变异对照）/ S1 tracked 识别 / S2 `_tool_registry.py` 豁免 / "
+          "S3 真临时脚本仍被抓（S0-S3 打在 temp 合成仓根）/ S4 逐条点名 / S5 超上限折叠且报总数 / S6 豁免面可见")
     return 0
 
 
@@ -225,9 +331,9 @@ def main():
     if "--selftest" in sys.argv[1:]:
         sys.exit(selftest())
     check_only = "--check" in sys.argv[1:]
-    root_stray = stray_root_dbs()
-    tfiles = temp_files()
-    uscripts = stray_underscore_scripts()
+    root_stray = stray_root_dbs(ROOT)
+    tfiles = temp_files(ROOT)
+    uscripts = stray_underscore_scripts(ROOT)
     # 已跨到 temp/ 的临时脚本也算 temp 残留（一并清掉，幂等）
     for _abs, rel in uscripts:
         moved = os.path.join(ROOT, "temp", os.path.basename(rel))
@@ -235,7 +341,7 @@ def main():
             tfiles.append(moved)
     total = len(root_stray) + len(tfiles)
     if check_only:
-        exempt = exempt_tracked_underscore()
+        exempt = exempt_tracked_underscore(ROOT)
         lines, dirty = format_lines(root_stray, tfiles, uscripts, exempt)
         for line in lines:
             print(line)
@@ -261,7 +367,7 @@ def main():
         except OSError as e:
             print(f"!! 移入失败 {rel}: {e}")
     # 移入后 temp/ 有了这些文件，走统一 temp 清理（若为临时脚本则一并删除）
-    tfiles2 = temp_files()
+    tfiles2 = temp_files(ROOT)
     for rel in tfiles2:
         p = os.path.join(ROOT, rel)
         try:

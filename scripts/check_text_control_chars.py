@@ -24,6 +24,7 @@ import argparse
 import io
 import os
 import re
+import subprocess
 import sys
 import tempfile
 
@@ -33,14 +34,54 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 2026-10-24 实测：旧 SKIP_DIRS 漏了 `.verify-wt`（临时验证 worktree＝**另一个完整工作树副本**，
+# 里面还有自己的 _build/_build 缓存）与 `.agents`（agent 侧 worktree 登记）。`os.walk` 递归进
+# `.verify-wt` 时本尺在电池里跑成 rc=143（SIGTERM：整格被超时杀），而裸跑又"看起来能跑完"
+# ⇒ 判据在真正的执行面上是失效的。工作树副本与 agent 寄存器不是「仓库文本面」，一律剪掉。
 SKIP_DIRS = {".git", ".mooncakes", "node_modules", "_build", "target", "temp", "dist",
-             ".qoder", ".vscode"}
+             ".qoder", ".vscode", ".verify-wt", ".agents", ".claude", ".idea", "__pycache__"}
 TEXT_EXTS = {".md", ".py", ".ps1", ".sh", ".yaml", ".yml", ".json", ".txt", ".mbt",
              ".mbti", ".cmd", ".pkg"}
 EXTRA_NAMES = {"moon.mod", ".gitignore", ".gitattributes"}
 
 
+def _tracked_text_files(root):
+    """Git 跟踪面里的文本文件（绝对路径）。取不到 git（非仓/无 git）返回 None ⇒ 调用方退回 os.walk。"""
+    try:
+        p = subprocess.run(["git", "-C", root, "ls-files", "-z"],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if p.returncode != 0:
+        return None
+    out = []
+    for rel in p.stdout.decode("utf-8", "replace").split("\0"):
+        if not rel:
+            continue
+        rel = rel.replace("\\", "/")
+        base = os.path.basename(rel)
+        if base in EXTRA_NAMES or os.path.splitext(base)[1].lower() in TEXT_EXTS:
+            full = os.path.join(root, rel.replace("/", os.sep))
+            if os.path.isfile(full):
+                out.append(full)
+    return out or None
+
+
 def text_files(root):
+    """文本面：优先取 **Git 跟踪面**（口径同 run_guards.universe_files / check_scripts_index）。
+
+    **为什么必须限定跟踪面**（2026-10-24 实测两发）：
+    - 旧实现 `os.walk(仓根)` 会走进同级的**非本仓目录**（本机仓根下并排放着
+      `_proj_lang-zone/`、`_proj_vools/` 这类别的工程），一跑 14262 处违例，全是别人的文件；
+    - 即使加了 SKIP_DIRS，递归 `.verify-wt/`（完整工作树副本）也会让整格在电池里被超时杀掉
+      （rc=143 SIGTERM）——判据在真正的执行面上等于失效。
+    判据要判的是「**这个仓库里**的文本」，不是「这台机器磁盘上的文本」。
+    取不到 git 时退回 os.walk（离线可用，不把「读不到」当「没有」）。
+    """
+    tracked = _tracked_text_files(root)
+    if tracked is not None:
+        yield from sorted(tracked)
+        return
     for dp, dn, fn in os.walk(root):
         dn[:] = sorted(d for d in dn if d not in SKIP_DIRS)
         for f in sorted(fn):

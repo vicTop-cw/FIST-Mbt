@@ -6577,3 +6577,116 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 处置（R55 已落）：新增 `scripts/check_fmt_gate.py` 三档闸（`0` 干净 / **`2` DEGRADED 不可测** / `1` 真 diff），`--selftest` 6 格；已登记索引与守卫电池；AGENTS 提交门禁补口径。实测该闸真跑返回 **rc=2 DEGRADED**（正是期望档）。
 - note: 编号说明——本条最初被我误写成 `BUG-381`，但 `BUG-381` 在主线早已被占（`check_mbti_sync` 泛型盲区，已 FIXED），故另立本编号；R55 的更正提交里写清了这件事。
 - 后续建议: ① 格式门权威面交给 CI（Linux nightly）；② 升级 moon 后先跑 `python scripts/check_fmt_gate.py`，转 `0` 即可把该闸降为普通门禁；③ 与 BUG-330（fmt 世代漂移）一并复核。
+## BUG-389 [2026-10-23T05:19:36Z] [medium] OPEN
+- summary: [omega] task_plan_deep 注入的 [omega:required] 标记在 supervisor_task_upsert 更新描述时被静默覆盖丢失，omega_spec_create 误报「未开启 Omega 强验证」
+- detail: 现象：task_plan_deep(omega_strong_verify=true) 把 [omega:required] 标记写进子任务 description；随后调用 supervisor_task_upsert（action=updated）更新描述时，若新描述不含该标记，标记被静默覆盖丢失。再调 omega_spec_create 报「任务 [T0.1.1] 未开启 Omega 强验证（description 缺少 [omega:required] 标记），无需创建语料」——把一个「标记丢失」的流程事故伪装成「用户没开 Omega」。实测：T0.1.1 等 6 叶在 upsert 后 omega_spec_create 全红，二次 upsert 补回标记才通过。根因：Omega 门禁从 description 文本读标记（字符串匹配），而描述是可被合法更新的字段；标记没有独立载体（如任务元数据列/标志位）。修法方向：① supervisor_task_upsert 更新 description 时保留既有 [omega:required]/[难度梯度]/[边界四问] 等 decomposer 注入的标记；或② Omega 门禁从任务元数据（如 omega_required: bool 列）读取而非描述文本（描述可被覆盖，元数据列才是身份载体）。证据：本会话 T0.1.1–T0.5.3 共 13 叶，upsert 后首轮 omega_spec_create 全部报「未开启」，补标记后全通过。
+- task_id: T0r741
+
+
+## BUG-391 [2026-10-23T07:57:30Z] [high] FIXED
+- summary: [CLI 自检面] `fist doctor` 的退出码不反映它自己的判决——五项检查里出现 `❌` 仍 `rc=0`，无人值守门与安装自检把它读成绿
+- detail: 代码面（`cmd/cli/main.mbt`）：`main` 的子命令 match 里只有 `Unknown` 分支接了 `cli_exit(1)`（`:53-57`），`Doctor => run_doctor()`（`:49`）走的是无退出码路径；`run_doctor() -> Unit`（`:332`）从头到尾只 `println`，末尾汇总（`:497-506`）在 `ref_ok != ref_total` 时打印 `⚠️  有 N 项失败` 后**函数返回 unit**，没有任何 `cli_exit`。⇒ 退出码恒 0 与检查项实际红绿无关。
+- 实测（2026-10-23 R172 副机 dogfooding，发货产物 `dist/fist-mbt.js` v0.3.10）：在空目录 `/tmp/dp_r172` 里 `FIST_DB_PATH=…/redirected.db node dist/fist-mbt.js doctor` 回执
+  ```
+  ❌ [4/5] 七态机闭环失败
+  4/5 checks 通过
+  ⚠️  有 1 项失败
+  ```
+  **同一命令 rc=0**。同一次运行里 `Unknown` 子命令的 `cli_exit(1)` 是生效的 ⇒ 不是产物/打包问题，是 doctor 这一支没接线。
+- 影响：① README/AGENTS 把 `fist doctor` 写成安装自检面，而本仓对自检产物定过性「装完的自检不许假绿」（BUG-109 的 R7 那格）——doctor 正是这一条没被任何尺覆盖的实例；② 无人值守车道（`watchdog_tick` / `pipeline_tick` / `executor_run`）与安装脚本一律按 rc 记账，坏 4/5 也报绿 ⇒ 这是「绿着没人问」，与「红着没人读等于没锁」（账本多处）对称的另一半；③ 判据面只锁了 `moon test` 的汇总行（BUG-142），CLI 侧的「汇总行说不、退出码说是」无人认领。
+- 实际修复（R172 交付，本单已动代码）：`run_doctor()` 改为返回判决 `Bool`，`main` 的 `Doctor` 臂接 `if !run_doctor() { cli_exit(1) }`；失败计数抽成纯函数 `doctor_failed_count(ok,total,skip)=total-ok-skip`（⏭️ 跳过不算失败），白盒锁 5 格在 `cmd/cli/subcmd_wbtest.mbt` 的 subcmd-3。**没有采用立案时设想的三档契约**（0 全过 / 1 有 `❌` / 2 有跳过）：`scripts/blackbox/e2e_irm_line.py` 的安装自检线逐字要求 `doctor=0`，把「工具链不给量」判成「安装坏了」正是 BUG-142 那格反向的错——跳过留在 `0` 档，汇总改印 `⏭️ 有 N 项跳过（不计失败）`。
+- 关联: BUG-109（自检不许假绿）、BUG-142（退出码不可靠 ⇒ 判绿以汇总行为准）、BUG-369/BUG-388（退出码契约家族）、BUG-382（自检失败路径 rc=0 同形）。
+
+## BUG-392 [2026-10-23T07:57:45Z] [medium] FIXED
+- summary: [存储隔离] `doctor` 的 SQLite 探针把库文件硬编码成相对 cwd 的 `_fist_doctor_check.db`，`FIST_DB_PATH` 改道针对它无效 ⇒ 用户跑一次自检就在当前目录（在主仓里就是仓库根）落一个 135 KB 脏文件
+- detail: `cmd/cli/main.mbt:475` `let tmp_db = "_fist_doctor_check.db"`，直接交 `@engine.FistEngine::open_sqlite(tmp_db)`（`:476`）——显式相对路径由进程 cwd 解析，且**显式路径优先于** `FIST_DB_PATH` 那一层默认改道，所以环境变量对它不起作用。
+- 实测（2026-10-23 R172，同一次 `/tmp/dp_r172` 运行）：跑完后目录里**同时**有两个 135,168 字节的库：`redirected.db`（`FIST_DB_PATH` 指向的默认存储，说明改道针对其它路径是生效的）与 `_fist_doctor_check.db`（doctor 自造、落在 cwd）。本会话第一次是在主仓根 `F:\AI\Fist-Mbt` 跑出后者的，手工删掉才让 `git status` 回到干净面。
+- 影响：与 `check_demo_isolation.py`（BUG-122/124）判的「`Popen` 起 `serve` 必须传 `FIST_DB_PATH`」是同一后果、**不同形状**——那一支尺只扫子进程 spawn 面，看不见同进程内的显式路径，属"改道路径有两条、尺子只认一条"的覆盖面缝（BUG-62/BUG-127 同族）。实际代价：① 照 README 裸跑 `fist doctor` 会污染用户任意当前目录；② 在工作树里跑直接把 `git status` 弄脏，而本仓多条判据（R158 `check_diff_scope.py`、`check_battery_isolation.py`、`fist-gate` 提交门）都以「工作树干净」为前提 ⇒ 造出与缺陷无关的假红。
+- 实际修复（R172 交付）：新增纯函数 `doctor_db_path(env_value)`（`cmd/cli/subcmd.mbt`）——`FIST_DB_PATH` 指向带目录的路径时，把体检库拼进同一目录并沿用原分隔符风格；未设置 / 空串 / 纯相对名三格逐字维持旧行为。检查 5 由写死相对名改为 `doctor_db_path(@env.get_env_var("FIST_DB_PATH"))`。白盒锁 6 格在 subcmd-4，含「纯相对名不许凭空造出 `/_…` 越界路径」的反向对照。实测对照：修复前 scratch cwd 留下 `_fist_doctor_check.db`(135,168 B) 与 `redirected.db` 两份；修复后 scratch cwd 为空、两份库同落改道针所在目录。**未覆盖面（如实标注）**：没设 `FIST_DB_PATH` 时体检库仍落 cwd——这与 `SqliteStore::new()` 的默认面同口径，本单的边界是「改道针必须对每一条落笔路径生效」，不是重定义默认面；探针结束后删库、以及给 `check_demo_isolation.py` 增「同进程显式路径」一格留作下一单（别只修不锁）。
+- 关联: BUG-122/BUG-124（demo 隔离）、BUG-90（`store_isolation_probe.py`：`FIST_DB_PATH` 必须真的改道）、BUG-62（改道面与记账面对表）。
+
+## BUG-393 [2026-10-23T08:37:00Z] [high] FIXED
+- summary: [CLI 自检面] `fist doctor` 的检查 4（七态机闭环）在 master 上恒红——闭环序列缺 `verify(根)`，`archive(根)` 必被「仅已完成任务可归档，当前状态: 待验收」拒绝；又因每步 `Err` 被吞成 `Bool`、只印一句「闭环失败」，恒红数周而无人能定位
+- detail: 机理（引擎门）：`verify(叶)` 的向上归并只把根任务推到「待验收」，不代替根自己 complete；而 `archive` 的前置门是 `is_completed()` ⇒ `doctor` 直接 `archive(root)` 必被拒。两条旁证：① `demo` 臂第 7 步本来就是 `verify(根)→archive(根)`，同机 `moon run cmd/cli -- demo` 7/7 全绿；② 同一探针序列在 `src/engine/engine_doctor_closed_loop_test.mbt` 里带 `verify(根)`。
+- 这是一次**修好又丢**：本机分支 `slave/fix/doctor-check4-root-verify`（commit `32e9881c`，2026-10-20）已做过这个修复，但该分支既未推送也未合入 gitcode master ⇒ master 上这一格一直红；它当时按主机线编号登记，而主机账本世系未合入 master（本仓 master 面无该抬头），所以这条缺陷在 master 面上从来没有编号。
+- 为什么长期无人看见：BUG-391（`doctor` 出现 `❌` 仍 `rc=0`）把这一格锁在「绿着没人问」里，`e2e_irm_line.py` 的 `doctor=0` 判据因此是空门。接上退出码之后，这一格才第一次以 rc 的形式露头 ⇒ 两个缺陷是同一条链上的两层遮罩，只修其一都会把另一层留在暗处。
+- 实测（R172 单变量对照，同一产物只差 `verify(root)` 那 4 行）：删掉 → `❌ [4/5] 七态机闭环失败：archive(root): 仅已完成任务可归档，当前状态: 待验收` 且 `rc=1`；补回 → `✅ [4/5]` + `5/5 checks 通过` + `rc=0`。
+- 实际修复（R172 交付）：检查 4 的 8 层嵌套 match 抽成私有 `doctor_closed_loop() -> Result[Unit, String]`，补 `verify(根)`，每步失败即 `return Err("<步名>: <原文>")`，`❌` 行打印真实原因（下次再红就一眼看见是哪一步、哪句拒绝拦下的）。`moon check --target js cmd/cli` = 0 errors / 3 warnings（逐条与 `git show gitcode/master:cmd/cli/main.mbt` 对表：`to_string` 弃用与 `should_upgrade` 未用两条本就在案，本单增量 0）；`python scripts/moon_test_env.py cmd/cli` = Total tests 10 / passed 10 / failed 0。
+- reported_by: slave-r172（dogfooding `fist doctor` + demo 臂旁证 + 单变量变异对照）
+- 关联: BUG-391（rc 遮罩）、BUG-142（判绿以汇总行为准）、BUG-109（自检不许假绿）。
+
+### FIXED(2026-10-23T08:38:00Z / BUG-391, BUG-392, BUG-393)
+
+- evidence: R172 一单交付——代码落 `cmd/cli/main.mbt` + `cmd/cli/subcmd.mbt`，白盒锁落 `cmd/cli/subcmd_wbtest.mbt`（subcmd-3/4 共 11 格）。运行时三格对照（本单实测，非自述）：① 发货产物 v0.3.10 与 R172 产物给出同一条 `4/5 checks 通过 / ⚠️ 有 1 项失败`，前者 `rc=0`、后者 `rc=1`（BUG-391）；② 带 `FIST_DB_PATH` 的 scratch 目录里，修复前落两个 135,168 字节的库（其中一个在 cwd）、修复后 cwd 为空且两份同落改道针目录（BUG-392）；③ 抽掉 `verify(root)` 那 4 行的对照构建打出 `archive(root): 仅已完成任务可归档，当前状态: 待验收` 且 `rc=1`，补回后 `5/5 checks 通过` / `rc=0`（BUG-393）。
+## BUG-394 [2026-10-23T09:58:00Z] [medium] OPEN
+- summary: [判据接线] 常驻测试入口 `scripts/moon_test_env.py` 打印的汇总行是 `Total tests 1415 / passed 1415 / failed 0`（斜杠分隔），而 `check_test_sync.py` / `check_badge.py` 的 `RX_LOG` 只认 `Total tests: N, passed: N`（冒号 + 逗号）⇒ 用本仓推荐入口跑全量的人，把它的日志原样喂给这两把尺，永远得到「无法从参数/日志解析测试总数」
+- detail: 实测（R172，2026-10-23 本机）：`python scripts/moon_test_env.py` 全量 = `Total tests 1415 / passed 1415 / failed 0`（1415 全绿）；把这份日志交给 `check_test_sync.py mtfull_r172.log` → **rc=1** 且正文只有「FAIL 无法从参数/日志解析测试总数」；把同一读数按逗号形状归一（`Total tests: 1415, passed: 1415, failed: 0`）再喂 → **rc=0** `PASS 测试总数单一真源一致：实测 1415；扫描现状面 136 份文档，23 条声明全部等于实测`。⇒ 红的那一格坏的是**日志形状**，不是文档、不是测试、也不是判据的判定面。
+- 为什么这条值得单开：① AGENTS「JS 测试在本机跑不起来？先看这一条」把 `moon_test_env.py` 定为**唯一推荐的常驻入口**，而 CI 用裸 `moon test --target js > /tmp/moon_test.log`——两条进料路径给出的日志形状不同，判据只认 CI 那一条；本地按文档跑的人在尺上看到的是「解析失败」，最自然的误读是「我的测试数不对」，而真实情况是尺读不到（BUG-142 那条「判绿以汇总行为准」在本地这一路恰好被形状挡住了）。② 这一格在 `run_guards.py` 里也是同一形状：`TESTLOG = temp/pt27.log`，谁手写谁就得知道要写逗号形状，否则 `check_badge`/`check_test_sync` 两格自拒——**判据对进料格式的要求没有写在任何自述里**（与本仓 R10/J10 那条「尺的自述要说清自己判不了什么」同族）。
+- 处置建议（两条出路，本单未动）：A. 让常驻入口**同时**原样透传 moon 的机器可读汇总行（或在 `汇总：` 之外补一行 `Total tests: N, passed: N, failed: N`），使本地日志天然可被既有尺读取；B. 让尺的 `RX_LOG` 接受斜杠分隔形状。**注意别与 R178 车道撞面**：那一支正在给 `check_test_sync`/`check_badge` 拆「漏传实参 → rc=2 REJECT」档（见当日台账现读），B 案动的是同一文件，合入时按同一批次收口即可；A 案动 `moon_test_env.py`，与那一支不相交。
+- 关联: BUG-142（判绿以汇总行为准）、BUG-350（check_test_sync 日志面假绿修尺）、BUG-382（自检失败路径 rc=0 同形）、BUG-388（本机 `moon fmt --check` 量不出来：同一类「工具链/入口与判据格式不匹配」）。
+
+## BUG-390 [2026-10-23T15:30:31Z] [high] OPEN
+- summary: [store] SqliteStore::open 兜底补建父目录——FIST_DB_PATH 指到不存在的深层目录不再打死 serve
+- detail: FIST_DB_PATH 指向不存在的深层目录时 `SqliteStore::open` 直接失败（serve 起不来）。处置：open 前兜底 `ensure_dir_tree` 补建父目录（src/store/store_sqlite.mbt），配套 `src/store/moon.pkg` 加 `moonbitlang/x/fs` 依赖（commit 0f4ffe8c）。
+- 注: 本条目为回填——原 commit 手写 BUG-390 未走 report_bug 原子分配，账本一直缺这一格（BUG-390 曾被两个不同 commit 复用）。
+
+
+## BUG-397 [2026-10-23T15:30:31Z] [medium] OPEN
+- summary: [build] .mbti 恒脏——.gitattributes 钉 *.mbti eol=lf + 判据闸
+- detail: moon info 生成的 .mbti 字节本来 LF，但 Windows `core.autocrlf=true` checkout 时转 CRLF，导致「没改任何语义、只跑一次 moon info」就让 core/engine/server 三份 .mbti 变 dirty，git status 恒有 CRLF 噪声。处置：.gitattributes 钉 `*.mbti eol=lf` + 判据闸（commit 1ef98f8f）。
+- 注: 回填条目——原 commit 手写 BUG-397 未走 report_bug。
+
+
+## BUG-398 [2026-10-23T15:30:31Z] [medium] OPEN
+- summary: [guard] check_branch_ancestry.py——防合并不了的双门之一
+- detail: 新增 `scripts/check_branch_ancestry.py` 判据：校验待合并分支相对 base 的祖先关系，防「分支与 main 分叉过远 / 需要非快进合并」导致合并动作卡死（commit ad5d38df）。
+- 注: 回填条目——原 commit 手写 BUG-398 未走 report_bug。
+
+
+## BUG-399 [2026-10-23T15:30:31Z] [medium] OPEN
+- summary: [guard] check_memory_log_size.py——memory 失控追加的闸
+- detail: 新增 `scripts/check_memory_log_size.py` 判据：限制 `memory/*.md` 体积，防无人值守自驱下 memory 日志无限追加（commit ad5d38df）。
+- 注: 回填条目——原 commit 手写 BUG-399 未走 report_bug（同一 commit 与 BUG-398 共用）。
+
+
+## BUG-401 [2026-10-23T16:24:46Z] [medium] OPEN
+- summary: [agent-fingerprint] `current_pid_token()` 契约与实现不符——注释「进程启动即固定一次，生命周期内不变」，实现却每次调用重取 `@env.now()`，秒级漂移致 `pid_bound=1` 误报换实例
+- detail: `src/server/server.mbt` 的 `current_pid_token()` 注释声称生命周期内不变，函数体却每次调用都取当前时间戳。同一进程内 `agent_touch_first_seen` 注册后过几秒，`agent_write_gate` 的 `current_pid` 就与注册时不同 ⇒ `agents_acl_check` 的 `pid_bound=1` 分支误报「ACL 绑定旧进程实例（pid 已换）」把合法写操作拒掉——安全门自己把好人挡门外。测试面 `store_sqlite_agents_wbtest.mbt` 恒传硬编码 `current_pid`（123/999），这条漂移零覆盖，注释与实现的双重违约无人钉。
+- 修法：首次调用固化缓存（MoonBit 顶层不支持 `let mut`，用 `Array[Int32?]` 单元素容器，`None` = 未固化）。新增 `src/server/pid_token_wbtest.mbt` 两条白盒锁：① 首次调用填缓存 ② 后续调用复用同一值。还原原版后该测试文件编译即败（`cached_pid_token` 未定义）⇒ 契约破坏可被钉住。
+- 实测：`python scripts/moon_test_env.py src/server` → Total tests 387 / passed 387 / failed 0（385 原有 + 2 新增）。
+- 关联: T0r5 agent-fingerprint / src/server/server.mbt current_pid_token / src/store/store_sqlite.mbt agents_acl_check
+
+### 追记(2026-10-24T08:50:00Z / BUG-133) —— 换后端 daqing 后同族缺陷复刻（读数不可复核，仅作线索）
+- **为什么归在此条而不是新开**：本轮修的是**同一族**缺陷在**另一个宿主**上的复刻（换依赖只换了宿主，没换掉缺陷）。下文分两档写：「已在本仓逐字可核」与「仅在来源分支内存档、本机不可复核」，按统帅裁决「不确定的数字不写，宁缺勿造」执行。
+- **取证条件（来源）**：`gitcode/fix/daqing-ffi-uaf-patch` 顶树 `6cd2b770`（2026-10-22T20:01:07+08:00，`docs(memory): R85 …`）。**测量平台 = WSL2 Linux**（该支 memory 自述；本机 Windows 无 valgrind 出数面）。
+- **已在本仓逐字可核的那部分**：
+  · 修法：`patches/sqlite-bug133/stub-daqing.c` 与 mizchi 版同构——指针返回改 `moonbit_make_external_object(finalizer, size)` 包成外部对象（释放交 GC finalizer）；指针入参由取 payload 的宏（`DB()` / `STMT()`）取出；`close` / `finalize` 内部置 NULL 使 finalizer 幂等。
+  · 该文件**已在 main 跟踪面**，且 HEAD 与 `6cd2b770` 的 blob **逐字节相等**（`git rev-parse HEAD:patches/sqlite-bug133/stub-daqing.c` = `6db1dba0…` ⇒ 两侧同 blob）——即补丁本身不再有增量，本条追记的是它的**验收读数**。
+  · 机理与本条 2026-10-10 那段 mizchi 根修同源（裸指针当 MoonBit 对象回传 ⇒ `finalize` 后 GC 二次 drop）。
+- **仅在来源分支内存档、本机不可复核的读数（不写进任何「已量过」的措辞）**：`valgrind --track-origins` 修前 `ERROR SUMMARY: 1800 errors` → 修后 `0 errors from 0 contexts`；探针单轮 `PROBE DONE total=153900`；native 全量 `Total tests: 1387, passed: 1384, failed: 3`（3 条失败全在 `src/ops/rhop_native_wbtest.mbt` 的 `0 != 1`）。本机复核 `wsl -e bash -lc 'ls /tmp/vg*.log'` ⇒ **日志已不存在**（该支自述日志在会话级 `/tmp/vg2.log`，未留档），故这些数字**不进关闭条件**，只作线索。
+- **本机可核且与上述相符的面（决定性证据在 main 的代码注释里，不是本追记自述）**：`src/ops/rhop_native_wbtest.mbt` 现读文件头自述「**此前该文件在 js 上全绿而 native 从未跑过（被崩溃挡住）**，所以这处缺陷长期不可见」，其夹具已改成不经 `@rhop.rhop_send` 的等价纯函数 + `@fs` 直写——这正是「修好内存安全后立刻暴露一批因崩溃从未执行过的逻辑失败」那条教训在本仓落地的形状。
+- **与 BUG-383 口径的冲突点（本轮以本机实读纠正旧口径，此处只并列、不改写上文）**：BUG-383 段写「`daqing/sqlite@0.4.0`（不透明外部类型 `type Sqlite3` + `#borrow`，133 族缺陷大概率不存在）」，本追记的来源读数与之**相反**（daqing 上该族缺陷确实在场，并已被 `stub-daqing.c` 修掉）。`stub-daqing.c` 的存在本身就是「daqing 需要修」的反证，`reapply.sh` 自 v0.3.10 起对 daqing 从 SKIP 改为真打补丁亦是同向。后续若有人据 BUG-383 那段推断「daqing 天然安全」，请先读本追记。
+- **方法学（可复用的那一条）**：概率缺陷验收不要用「连跑 N 次没崩」，要用 `valgrind --error-exitcode=99` 这类**能给出确定 0/1 判定**的尺；`0/N` 只说明这一支样本没抽中。这与本条 2026-10-02 追记立的「抽检面 + 干净树全量」两格口径不冲突——valgrind 读数可以升级替换 ① 抽检面，但**不能**替代 ② 干净树全量通过。
+- reported_by: commander-alpha（来源分支 `gitcode/fix/daqing-ffi-uaf-patch@6cd2b770`；按 owner 裁决只取可核读数，不 cherry-pick 该支 24 份流水账）
+
+## BUG-403 [2026-10-24T10:05:00Z] [low] OPEN
+- summary: [honesty] `agent_fp` 注释宣称「不可逆指纹」且 `pubkey_fp` 由 `fnv1a64("pubkey:"++hex)` 派生——FNV-1a 非密码学哈希（可逆），且 `pubkey_fp` 全仓无任何派生代码、所有写入点恒传空串（死承诺）
+- detail: `src/server/server.mbt` 的 `agent_fp()` 注释两处与实现不符。① `fnv1a64` 是 FNV-1a 64 位，乘奇素数 + 异或的链条**可逆**，短 `agent_id` 可反解原文、亦可对任意目标值构造前像 ⇒ 不承诺单向性/抗碰撞，只做「定长短标识 + 去原文污染」。把它当「不可逆指纹/身份认证」是安全语义的过度承诺。② 注释称 `pubkey_fp` 另行由 `fnv1a64("pubkey:"++hex)` 派生（T0r5 密钥指纹面），但全仓 grep 无任何派生代码，唯一写入点 `pubkey_fp=""` 硬编码（`server.mbt` 与 `store_sqlite.mbt` 各一处）⇒ 若未来按注释接入「公钥钉身份」，会静默绑定到空串（等于没有键位绑定）。
+- 修法：注释诚实降级——改述为「非密码学短标识」，明写不得当身份认证用；`pubkey_fp` 段补「当前未接线，接线前必须视为占位，不得在安全断言里依赖」。**代码行为零改动**（纯注释）。
+- 实测：`grep -rn "pubkey_fp" --include=*.mbt src/` ⇒ 写入点 `server.mbt:498` 与 `store_sqlite.mbt:2813` 均为 `pubkey_fp=""`，无派生函数。
+- 关联: T0r5 agent-fingerprint / src/server/server.mbt agent_fp / 来源分支 origin/fix/agent-fp-honest@a3740ecf
+
+## BUG-404 [2026-10-24T10:05:00Z] [low] OPEN
+- summary: [honesty] `agents_register` 注释宣称「首次出现则 INSERT（并落一条 fail-closed 的默认 ACL）」——实际 body 无任何 `agent_acl` INSERT，默认 ACL 真源在 server 层 `agents_acl_ensure`
+- detail: `src/store/store_sqlite.mbt` 的 `SqliteStore::agents_register()` 注释把「落默认 ACL」写成本函数职责，但函数体只有一条 `INSERT INTO agents … ON CONFLICT(agent_id) DO UPDATE`，无任何 ACL 写入。默认 ACL 实际由 server 层 `agents_acl_ensure`（`agent_touch_first_seen` 调用链）保证。**后果**：任何绕过 server 层 `agents_acl_ensure` 的直连 store 调用（现成的就是 `agents_heartbeat`）会留下「有 agent 身份、无 ACL 行」的中间态；`agents_acl_check` 对此返回 `Err("ACL 无记录（fail-closed）")`——仍 fail-closed，**不是安全洞**，但「注释承诺的默认 ACL 自动落」在这条路径上从不发生。
+- 修法：注释补「职责边界（BUG-404）」段，写明本函数只写 `agents` 表、默认 ACL 真源在 server 层、直连 store 调用的中间态后果与「注册即落 ACL」的正确调用顺序。**代码行为零改动**（纯注释）。
+- 实测：`sed -n '2731,2790p' src/store/store_sqlite.mbt | grep -c "acl"` = 0（函数体前 60 行无 acl 字样）。
+- 关联: src/store/store_sqlite.mbt agents_register / src/server/server.mbt agents_acl_ensure / 来源分支 origin/fix/agent-fp-honest@a3740ecf
+
+## BUG-405 [2026-10-24T10:25:00Z] [medium] OPEN
+- summary: [dsh-plugin-install-face] `.dsh/fist-mbt-plugin/cordis.patch.yml`（DSH 插件安装面）被覆盖成**硬编码旧机器路径 `F:/AI/Fist-Mbt`**——仓库实际在 `E:/IDEProjects/AI/FIST-Mbt`，旧路径不存在 ⇒ DSH 起 server 即 `server is disconnected`（2026-10-24 实测，用户报告 fist-mbt 服务不可用）
+- detail: ① 该文件本应是 `render_dsh_patch.py` 从 `cordis.patch.yml.tpl`（占位符 `{{FIST_MBT_CLI}}`/`{{FIST_MBT_ROOT}}`，零硬编码）渲染出的**本地产物**（`.gitignore` line 203 已挡跟踪面）；但当前内容被改成 `packaging/dsh/launch-mcp.mjs` + 硬编码 `F:/AI/Fist-Mbt`（3 处：args/cwd/env.FIST_PROJECT_DIR）—— 非 render 格式，**是某次操作直接改写了渲染件**。② `check_hardcoded_paths.py` D1 严格档只查"渲染件是否回跟踪面"，**不查本地产物内部的路径正确性**（已 ignore 不进跟踪面）⇒ 这种"硬编码覆盖本地渲染件"的污染形态当前无守卫可抓。③ 发布态 `packaging/dsh/cordis.patch.yml` 无此问题（`process.execPath` + `createRequire(baseUrl)` 动态解析，零硬编码）—— 只有开发态 `.dsh/` 这层中招。
+- 修法（已做）：`python3 scripts/render_dsh_patch.py` 重新渲染 → 指向 `E:/IDEProjects/AI/FIST-Mbt/_build/js/release/build/cmd/cli/cli.js` + `serve`，cwd 正确。**防复发建议**：给 `render_dsh_patch.py --check` 加一条"渲染件里不得出现任何已知历史机器路径"的形状锁（词表 + 形状双面），让本地产物内部的路径污染也能被 `run_guards` 抓。
+- 后续建议: 同源隐患：`locale/*.json` 也曾被写本机路径（check_hardcoded_paths.py line 103 提到 `cordis.patch.yml,locale/*.json` 是 `F:/AI/Fist-Mbt` 位置高发区）—— 建议一并复查 `.dsh/fist-mbt-plugin/locale/` 是否残留旧路径。
+- landed: 渲染器优先级 bug 同轮顺手修（BUG-405 关联）——`render_dsh_patch.py` 硬编码 `debug` 先于 `release`，而两者是独立构建目录（release 10:19 最新、debug 07:42 旧，渲染器仍选 debug ⇒ DSH 连到旧 CLI）。已改为两形态并存时按 `st_mtime` 取新（与 glob 兜底同一律），`--check` PASS + `--selftest` OK + `check_hardcoded_paths` PASS（572 文件干净）。
+- 关联: .dsh/fist-mbt-plugin/cordis.patch.yml / scripts/render_dsh_patch.py / scripts/check_hardcoded_paths.py / 来源用户报告 2026-10-24

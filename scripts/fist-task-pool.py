@@ -3,6 +3,10 @@
 Commands: init | publish <yaml> | claim <tid> <machine> | release <tid> | archive <tid> | fail <tid> | list [--status X] [--machine Y]"""
 import re, shutil, sys
 from pathlib import Path
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parent.parent
 T = ROOT / ".git" / "fist" / "tasks"
 M = ROOT / ".git" / "fist" / "machines.yaml"
