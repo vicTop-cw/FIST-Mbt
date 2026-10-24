@@ -27,11 +27,23 @@ ROOT = os.path.dirname(os.path.abspath(__file__)) + os.sep + ".."
 ROOT = os.path.normpath(ROOT)
 def _find_executable_js() -> str | None:
     """自动发现 _build/js/debug/build/cmd/*/ 下的可执行产物（最大的 .js）。
-    硬编码路径兼容旧行为，优先用自动发现。"""
+    硬编码路径兼容旧行为，优先用自动发现。
+    保留此函数供旧调用方/文档；**新逻辑见 _find_all_bundles**。"""
+    all = _find_all_bundles()
+    return all[0] if all else None
+
+
+def _find_all_bundles() -> list[str]:
+    """发现 cmd/*/ 下**所有**可执行 bundle（>100KB 的 .js）。
+
+    BUG-406（统帅 R36）：原实现只取"最大的那个"，于是 `cmd/main/main.js` 被 patch 了，
+    而 `cmd/cli/cli.js`、`cmd/commissar/commissar.js` **漏网**——它们同样含
+    `require("node:sqlite")`（来自上游 daqing/sqlite），同样会 ESM 崩溃。
+    改为 patch **全部**，并在脚本用法注释里说明任何 runner 在 `moon build` 后调用即可。"""
     build_dir = os.path.join(ROOT, '_build', 'js', 'debug', 'build')
     if not os.path.isdir(build_dir):
-        return None
-    candidates = []
+        return []
+    found = []
     for root, dirs, files in os.walk(build_dir):
         for f in files:
             if f.endswith('.js') and not f.endswith('.mbti.js'):
@@ -40,12 +52,11 @@ def _find_executable_js() -> str | None:
                     sz = os.path.getsize(fp)
                 except OSError:
                     continue
-                if sz > 100_000:  # 产物 > 100KB
-                    candidates.append((sz, fp))
-    if not candidates:
-        return None
-    candidates.sort(reverse=True)  # 最大的那个
-    return candidates[0][1]
+                if sz > 100_000:
+                    found.append(fp)
+    # 按大小降序（最大的在前，保持旧行为的顺序直觉）
+    found.sort(key=lambda p: os.path.getsize(p), reverse=True)
+    return found
 
 
 # 注释示例: 手动指定时 python scripts/patch_esm_main.py _build/js/debug/build/cmd/cli/cli.js
@@ -71,13 +82,19 @@ if __name__ == "__main__":
         print(__doc__)
         sys.exit(0)
     if len(sys.argv) > 1:
-        target = sys.argv[1]
-    else:
-        auto = _find_executable_js()
-        if not auto:
-            print("ERROR: no executable .js found in _build/js/debug/build/. Run 'moon build --target js <pkg>' first.", file=sys.stderr)
-            sys.exit(1)
-        target = auto
-    changed = patch(target)
-    print(("patched " if changed else "up to date  ") + target)
+        # 显式指定：仍支持单文件（旧用法）
+        changed = patch(sys.argv[1])
+        print(("patched " if changed else "up to date  ") + sys.argv[1])
+        sys.exit(0)
+    # 自动发现：patch **所有**可执行 bundle（BUG-406 修复点）
+    bundles = _find_all_bundles()
+    if not bundles:
+        print("ERROR: no executable .js found in _build/js/debug/build/. Run 'moon build --target js <pkg>' first.", file=sys.stderr)
+        sys.exit(1)
+    total_changed = 0
+    for target in bundles:
+        changed = patch(target)
+        total_changed += 1 if changed else 0
+        print(("patched " if changed else "up to date  ") + target)
+    print("total patched: %d / %d bundles" % (total_changed, len(bundles)))
     sys.exit(0)
