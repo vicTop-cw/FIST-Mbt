@@ -199,6 +199,15 @@ SPECIAL_CASES = [
     case("check_delivery_gap.py"),
     # —— R55：blackbox 尺进宇宙也进电池（相对 scripts/ 点名，路径含子目录）——
     case("blackbox/check_merge_markers.py", "--selftest"),
+    # —— R179：gitlink(mode 160000) 门（瘦身组报「51 个已注册 worktree = 51 颗雷」）——
+    # 两格：① 判据自身 19 格自证（纯函数识别核 + 临时仓端到端：造雷必拦 / 修复命令真能修好 /
+    # 护栏装上后 `git add -A` 不再造雷 / 非 git 目录自拒 2）；② **钩子端到端** 9 格——
+    # 把真 `.githooks/pre-commit` 拷进临时仓、`core.hooksPath` 指过去，跑真 `git commit`，
+    # 证明「gitlink 提交被拒且 HEAD 不动」+「合法提交放行且 HEAD 前进」。
+    # ② 存在的理由：钩子写了不等于接上了（`core.hooksPath` 曾长期为空）。它自带 `--selftest`
+    # 参数（缺省行为即自证），所以可以直接进电池；夹具全程 `isolated_git_env()`。
+    case("check_index_gitlinks.py", "--selftest"),
+    case("blackbox/e2e_precommit_gitlink_gate.py", "--selftest"),
     # R106 曾登记预存红：主线把某 agent 的 git worktree 以 gitlink(mode 160000) 提交进跟踪面
     # （`.agents/worktrees/fix/display-rank-boundary`，`4a7bf82a` 带入）⇒ 判据读不到正文，L1 后 rc=1。
     # R116 收口：`git rm --cached` 删该条目 + `.gitignore` 忽略 `.agents/worktrees/`，期望按预存红律改回 0。
