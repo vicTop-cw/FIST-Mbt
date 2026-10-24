@@ -1,6 +1,6 @@
 ---
 decision_id: DEC-2026-10-22-001
-proposal: fist-mbt/plans/2026-10-22-fist-dir-layout-governance-proposal.md
+proposal: docs/plans/2026-10-22-fist-dir-layout-governance-proposal.md
 decided_by: human_steward
 decided_at: 2026-10-22T15:10:00+08:00
 decision: approved

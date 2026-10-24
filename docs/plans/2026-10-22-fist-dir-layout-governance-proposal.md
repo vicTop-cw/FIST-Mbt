@@ -92,4 +92,4 @@ Agent 提案 → plans/*-proposal.md (status: 提案中)
 
 - 本提案由 `lead` 提出，经指挥官 `human_steward` 于 2026-10-22 批准。
 - 定案后按 Phase 1→5 拆分为任务发布到 fist-mbt DB，重的交副机。
-- 本文件移入 `fist-mbt/plans/` 作为治理框架的**第 1 份已定案提案**。
+- 本文件移入 `docs/plans/` 作为治理框架的**第 1 份已定案提案**（原 `fist-mbt/plans/`，2026-10-24 迁移）。
