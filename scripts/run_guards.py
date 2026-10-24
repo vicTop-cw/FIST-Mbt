@@ -216,6 +216,23 @@ SPECIAL_CASES = [
     # 电池只跑 `--selftest`：纯函数四态 + 临时裸远端端到端（含「分叉必拒」「dry-run 不推」
     # 两条硬线格），零网络、零写盘、夹具全程 `isolated_git_env()`。
     case("check_master_mirror.py", "--selftest"),
+    # —— R182：打包产物「真能跑」判据（BUG-405 / 外部项目 Pentad 报的阻断性 bug）——
+    # `package.json` 是 `"type": "module"`，而上游 `daqing/sqlite` 的 JS FFI 用 CJS
+    # `require("node:sqlite")` ⇒ ESM 作用域 ReferenceError，`doctor`/`version`/`serve` 全崩。
+    # **`moon check` 全绿、`moon build` 也全绿** —— 源码没问题，坏的是产物；
+    # 本仓此前**没有任何一格执行过 bundle**。电池只跑 `--selftest`（造好/坏 bundle 各跑一遍）：
+    # 真产物档要先 build + patch，太慢且依赖构建态，由 CI 在构建之后调。
+    case("check_esm_bundle_runnable.py", "--selftest"),
+    # —— R181：worktree 三条件只读判据（诊断尺，「可删」≠「该删」）——
+    # 司令-α 实测：11 个禁删 worktree **26 分钟内 4 项变可删** ⇒ 「不可删」不是固有属性，
+    # 而是某一时刻的读数；拿旧快照决定删/留必漏。本尺每条随时可跑、一律现读。
+    # 它是**诊断尺**：rc=1 表示「发现 N 个可删项，请人看一眼」，不是门禁失败 ⇒ 用 tolerant，
+    # 0（无可删）与 1（有可删）都是正确读数；写死 expect 会在另一种树上假红/假绿。
+    # **本脚本没有任何删除路径**——只报读数，删除由人/架构决定。
+    tolerant("check_worktree_hygiene.py", (0, 1),
+             "诊断口径：rc=1 = 发现可删 worktree（≠ 该删），rc=0 = 全部至少不满足一条；"
+             "两者都是正确读数，取决于当时工作树脏不脏。判据只读不删",
+             kind="diag"),
     # R106 曾登记预存红：主线把某 agent 的 git worktree 以 gitlink(mode 160000) 提交进跟踪面
     # （`.agents/worktrees/fix/display-rank-boundary`，`4a7bf82a` 带入）⇒ 判据读不到正文，L1 后 rc=1。
     # R116 收口：`git rm --cached` 删该条目 + `.gitignore` 忽略 `.agents/worktrees/`，期望按预存红律改回 0。
