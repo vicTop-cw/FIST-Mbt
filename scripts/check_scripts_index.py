@@ -44,6 +44,72 @@ README = SCRIPTS / "README.md"
 # 无需登记的固定文件（文档/配套数据，非"工具"）
 IGNORE_NAMES = {"README.md", "scoring_rubric.md", "_score_probe.py"}
 
+
+def exempt_basenames():
+    """从 `run_guards.EXEMPT_RULES` 读「**显式文件名**」豁免（只认 base 完全相等的那些）。
+
+    ## 为什么要有这一条（判例-16 的反向：判据面口径不一致）
+
+    `run_guards.py` 的宇宙只扫 `.py`（`if not f.endswith(".py"): continue`），
+    而本判据扫 `scripts/` 下**所有被跟踪文件**（含 `.sh`）。同一件事
+    「这个脚本是不是正式工具、要不要登记」，两个真源给出不同答案 ——
+    `tmp_audit_preservation_scan.py` 就因此被夹在中间：run_guards 说「一次性取证器，豁免」，
+    本判据说「没登记，是缺口」。
+
+    ## 为什么只认「显式文件名」不认「前缀族」
+
+    `EXEMPT_RULES` 里有两类：
+      · 显式文件名（以 `.py` 结尾，如 `"tmp_audit_preservation_scan.py"`）—— **精确**，可放心复用
+      · 前缀族（如 `"probe.py"` / `"simulate_"` / `"score_gate"`）—— **宽**，
+        自动豁免它们会连带放过将来新增的同前缀脚本 ⇒ 判据面**过宽**（判据面窄的反向病）
+    故这里只收前者，且要求 base **完全相等**（不是前缀匹配，也不是后缀匹配）。
+
+    取不到 run_guards（import 失败 / 无该属性）⇒ 返回空集（**退回严格模式，宁可报红**，
+    绝不因为读不到豁免表就让判据静默变宽）。
+    """
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "_run_guards_for_exempt", str(SCRIPTS / "run_guards.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)          # run_guards 的模块级定义无副作用（只定义常量/函数）
+        rules = getattr(mod, "EXEMPT_RULES", None) or ()
+    except Exception:
+        return {}
+    # run_guards._match_rule 对**所有** .py 结尾条目都做前缀匹配
+    # （`base == pat or base.startswith(pat[:-3])`）⇒ 每条 .py 规则天生是前缀族。
+    # 区别只在于 stem 是不是「有意做前缀的通用词根」。下面的词表就是这条分界：
+    # 落在表里的 ⇒ 前缀族（不当作精确豁免）；其余 ⇒ 当作显式文件名。
+    # 保守原则：判不准的一律按前缀族处理（= 不豁免 = 判据更严，宁可多报一条红）。
+    GENERIC_STEMS = {
+        "probe", "demo", "verify", "selfdrive", "tmp", "test", "scan",
+        "_verify", "_selfdrive", "scratch", "experiment", "playground",
+    }
+
+    def _is_prefix_family(stem):
+        """该 stem 是否通用词根（⇒ 规则本意是按前缀覆盖一族文件）。"""
+        if stem.startswith("_"):          # 以 _ 开头 = 明确的一族一次性脚本
+            return True
+        if stem in GENERIC_STEMS:
+            return True
+        # 单段且过短（<=5）也按通用词根处理：`demo` / `tmp` 这类
+        if "_" not in stem and len(stem) <= 5:
+            return True
+        return False
+
+    out = {}
+    for item in rules:
+        try:
+            pat, why = item
+        except (TypeError, ValueError):
+            continue
+        if not (isinstance(pat, str) and isinstance(why, str) and pat.endswith(".py")):
+            continue
+        if _is_prefix_family(pat[:-3]):
+            continue                      # 前缀族：自动豁免会连带放过一族，不认
+        out.setdefault(pat, why)
+    return out
+
 # 文件名字符集：文件名里出现的、构成"一个词"的字符（字母/数字/下划线/连字符）。
 # 完整文件名 / 基名要作为「完整词」被登记，其前后不得紧邻这些字符——`.`（扩展名分隔）
 # / 空格 / 反引号 / CJK 都不是文件名字符，故都视为词界。
@@ -125,7 +191,15 @@ def check() -> int:
         print(f"FAIL 缺少索引 {README}")
         return 1
     index_text = README.read_text(encoding="utf-8")
+    # 判例-16 反向（口径不一致）：run_guards 已判「一次性工具、豁免」的，本判据不再要求登记。
+    # 只认显式文件名 —— 前缀族不自动豁免（否则判据面过宽）。豁免必须**打印理由**，不静默。
+    exempt = exempt_basenames()
     missing = missing_scripts(formal_scripts(), index_text)
+    skipped = [m for m in missing if m in exempt]
+    missing = [m for m in missing if m not in exempt]
+    for m in skipped:
+        print("  豁免（run_guards.EXEMPT_RULES 显式文件名规则）：%s —— %s"
+              % (m, exempt[m][:120]))
     if missing:
         print("FAIL 以下正式辅助脚本未在 scripts/README.md 登记（工具统一管理缺口）：")
         for m in missing:
@@ -139,8 +213,31 @@ def selftest() -> int:
     """判据自检（合成对照，不碰真 README）：证明子串假绿已消除、真登记不误伤。"""
     cells = []
 
+
     def cell(name, ok, detail):
         cells.append((name, ok, detail))
+
+
+    # ── 判例-16 反向：豁免面必须**只认显式文件名**（判据面不得变宽）────────────────
+    # ① 显式文件名规则生效（tmp_audit_preservation_scan.py 在 run_guards 里就是这个形状）
+    ex = exempt_basenames()
+    cell(
+        "exempt-explicit-filename-taken",
+        ("tmp_audit_preservation_scan.py" in ex),
+        "run_guards.EXEMPT_RULES 里的显式文件名条目必须被本判据认到",
+    )
+    # ② 前缀族规则**不得**被收进来（否则将来新增 probe_xxx.py 会被静默放过）
+    cell(
+        "exempt-prefix-family-rejected",
+        not any(k in ("probe.py", "simulate_", "score_gate") for k in ex.keys()),
+        "前缀族规则（probe.py / simulate_ / score_gate）不得自动豁免 —— 判据面过宽",
+    )
+    # ③ 豁免表里的每个 key 都必须以 .py 结尾（结构护栏：只收显式文件名）
+    cell(
+        "exempt-all-keys-are-explicit-py",
+        all(k.endswith(".py") for k in ex.keys()),
+        "豁免表只许含显式文件名（.py 结尾）",
+    )
 
     # ① 本单要求的对照格：子串命中但完整文件名不在索引里 ⇒ 必须判红（判为未登记）。
     #    索引里只有 fist-mbt-http.py（fist 是其子串），既无完整文件名 fist.py 也无独立
