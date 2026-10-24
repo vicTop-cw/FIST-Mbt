@@ -1368,6 +1368,9 @@ fn FistEngine::decompose_rec(
       level=@core.child_level(parent.get_level()),
       created_at=now,
       depends_on=dag_dep,
+      // BUG-389 方向②：把 Omega 门禁判据写进不可覆盖的元数据列 omega_required，
+      // 不依赖 description 里的 [omega:required] 文本（upsert 覆盖描述不再丢开关）。
+      omega_required=omega_strong_verify,
     )
     match self.store.create_task(child) {
       Ok(_) => ()

@@ -181,6 +181,10 @@ pub struct Task {
   cleanup_mode : String
   /// 依赖的任务 id 列表（这些任务完成后，本任务才可领取）
   depends_on : Array[String]
+  /// BUG-389 方向②：Omega 门禁开关判据从 description 文本移到不可覆盖的元数据列。
+  /// plan_deep(omega_strong_verify=true) 写子任务时置 true；supervisor_task_upsert
+  /// 覆盖描述不会影响本字段。
+  omega_required : Bool
 } derive(Eq, Debug)
 
 ///|
@@ -224,6 +228,12 @@ pub fn Task::get_level(self : Task) -> Int32 {
 ///|
 pub fn Task::get_description(self : Task) -> String {
   self.description
+}
+
+///|
+/// BUG-389 方向②：Omega 门禁开关元数据（description 被覆盖后仍为真）
+pub fn Task::get_omega_required(self : Task) -> Bool {
+  self.omega_required
 }
 
 ///|
@@ -283,6 +293,7 @@ pub fn Task::new(
   created_at~ : String = "",
   ns~ : String = "default",
   depends_on~ : Array[String] = [],
+  omega_required~ : Bool = false,
 ) -> Task {
   {
     id,
@@ -311,6 +322,7 @@ pub fn Task::new(
     completed_by: None,
     cleanup_mode,
     depends_on,
+    omega_required,
   }
 }
 
@@ -335,6 +347,7 @@ pub fn Task::from_db(
   completed_by : String?,
   cleanup_mode : String,
   depends_on : Array[String],
+  omega_required : Bool,
 ) -> Task {
   let status = match TaskStatus::from_string(status_s) {
     Some(s) => s
@@ -359,6 +372,7 @@ pub fn Task::from_db(
     completed_by,
     cleanup_mode,
     depends_on,
+    omega_required,
   }
 }
 
@@ -720,6 +734,7 @@ pub fn Task::to_json(self : Task, desc_limit~ : Int32 = -1) -> Json {
     Json::array(self.depends_on.map(fn(d) { Json::string(d) })),
   )
   m.set("is_leaf", Json::boolean(self.is_leaf()))
+  m.set("omega_required", Json::boolean(self.omega_required))
   Json::object(m)
 }
 
