@@ -418,6 +418,77 @@ test "supervisor_task_upsert 三路径" {
     ps_num(r1, "ok_count") == 1.0,
     "created 用例 ok_count 应为 1，实际 \{ps_num(r1, "ok_count")}",
   )
+
+  // ④ BUG-389：decomposer 注入的 [omega:required] 标记不得被 upsert 静默覆盖。
+  // 旧描述开着 Omega、新描述不带标记时，必须保留标记——否则 omega_spec_create
+  // 把「标记丢失」误报成「用户没开 Omega」。
+  let omega_root = match
+    e.publish(
+      project_dir="pd",
+      description="omega-root [omega:required]",
+      created_by="human_steward",
+      now~,
+    ) {
+    Ok(id) => id
+    Err(x) => abort("publish omega-root 失败: \{x}")
+  }
+  let r6 = e.supervisor_task_upsert(
+    project_dir="pd",
+    by="human_steward",
+    [
+      Json::object({
+        "task_id": Json::string(omega_root),
+        "description": Json::string("仅改文本，不带标记"),
+      }),
+    ],
+    now~,
+  )
+  let res6 = sup_results(r6)
+  ps_must(
+    sup_any_field(res6, "action", "updated"),
+    "omega-root 应 action=updated",
+  )
+  let saved = match e.get_task(omega_root) {
+    Some(t) => t
+    None => abort("get omega-root 失败")
+  }
+  ps_must(
+    saved.get_description().contains("[omega:required]"),
+    "BUG-389：upsert 覆盖描述后 [omega:required] 标记必须保留",
+  )
+
+  // ⑤ BUG-389 反例：任务本就未开 Omega，覆盖后仍不应凭空长出标记。
+  let plain_root = match
+    e.publish(
+      project_dir="pd",
+      description="plain-root",
+      created_by="human_steward",
+      now~,
+    ) {
+    Ok(id) => id
+    Err(x) => abort("publish plain-root 失败: \{x}")
+  }
+  ignore(
+    e.supervisor_task_upsert(
+      project_dir="pd",
+      by="human_steward",
+      [
+        Json::object({
+          "task_id": Json::string(plain_root),
+          "description": Json::string("普通任务"),
+        }),
+      ],
+      now~,
+    ),
+  )
+  let saved2 = match e.get_task(plain_root) {
+    Some(t) => t
+    None => abort("get plain-root 失败")
+  }
+  ps_must(
+    !saved2.get_description().contains("[omega:required]"),
+    "BUG-389：未开 Omega 的任务覆盖后不得凭空长出标记",
+  )
 }
 
 ///|
