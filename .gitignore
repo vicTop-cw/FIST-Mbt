@@ -191,6 +191,10 @@ memory/archive/thinking.archive.md
 /.agents/open_one_pr.py
 /.agents/open_prs.sh
 /.agents/set_gate_bypass.py
+# 同类一次性 shell 探针（分支普查/delta 比对等）不再逐条点名：
+# 与上面 Python 族同约——留在工作树供当轮使用，但一律不进仓、不进发布包。
+# （2026-10-24 实测 .agents/delta_probe{,2}.sh 就是这一族，未 ignore 未跟踪 ⇒ 被 check_publish_payload 记潜在泄漏面）
+/.agents/*.sh
 # 仓库根的临时 patch / 分支普查读数（`.tmp*.patch` 是给他人 reverify 的一次性补丁文本，
 # `.br_*.txt` 是分支普查的中间读数）——同为「跑完即弃」，不是仓库资产。
 /.tmp*.patch
