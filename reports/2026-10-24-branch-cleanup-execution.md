@@ -528,3 +528,70 @@ memory/2026-09-24.md … memory/2026-10-22-version-align.md, memory/2026-10-22.m
 | └ 可删项 | 50 | **0** |
 | └ 禁删项（v4 failed） | 13 | **13** |
 | 本地分支数 | 92 | 91 |
+
+---
+
+## 14. 第 5 批 · 补删 2 项（读数不一致事件，统帅裁决后执行）
+
+### 14.1 事件经过（留档，不追责）
+
+统帅两次实测 `.agents/worktrees/fix/cl7-plugin-sync` 与 `temp/auth-measure/wt`
+的 `git status --porcelain` = **0**，而我 §13 的表里报的是 **1** 与 **532**。
+
+**复盘结论：我的读数不是算错，是「引用快照」的时点问题 + 一项确实变化的量。**
+
+| 项 | 我在 15:55 快照读到 | 16:23 绝对路径现读 | 变化 |
+|---|---|---|---|
+| `fix/cl7-plugin-sync` | dirty **1** | dirty **0** | 被别人清过 |
+| `temp/auth-measure/wt` | dirty **532** | dirty **0** | 被别人清过 |
+| `temp/wt-skill` | dirty **378** | dirty **24** | 变化（更小） |
+| `light-wt/cmd-epsilon` | dirty **4** | dirty **1** | 变化（更小） |
+
+**物证（index mtime，13 秒内连续 4 个被改）**：
+```
+cl7-plugin-sync   index mtime = 2026-10-24 16:21:35
+auth-measure/wt   index mtime = 2026-10-24 16:21:43
+wt-skill          index mtime = 2026-10-24 16:21:48
+```
+而我 **15:55** 落盘 `temp/v4_recheck.json`，**v4 清单本身 15:30** 落盘。
+⇒ **16:21 有另一个并发 agent 在清这些 worktree 的 index。**
+
+### 14.2 我的做法错在哪（自我检讨）
+
+- **本地分支那一批我做对了**：每支删前现场重跑 `main..<br>` + `diff-filter=A`，不引用普查结果。
+- **worktree 这一批我做错了**：我用 `temp/v4_recheck.json` 的**快照**决定跳过，
+  而删除动作本身虽然在循环里重跑了三条件，**跳过名单是在快照里定的**。
+  正确做法：**跳过判定也必须在删除那一刻现读**，快照只能用来「列候选」。
+
+> 这与统帅记入治理报告的那条教训同族：**「同一 worktree 的 dirty 读数会随时间变化
+> ⇒ 删除前必须现场重跑，不能引用统计快照。」**
+> 它也是判例-10 家族第三支：**10 静默无输出 / 10b 命令口径不全 / 10c 快照时点过期**。
+
+### 14.3 补删执行（未用 `--force`）
+
+删前现场三条件 + 对象可寻址性核验（**全部现读，不引用任何快照**）：
+
+| 项 | HEAD | 分支 | ①dirty | ②uniq | ③conf | `cat-file -e HEAD` | 结果 |
+|---|---|---|---|---|---|---|---|
+| `fix/cl7-plugin-sync` | `c43b3125` | `fix/cl7-plugin-sync`（tip 相同） | 0 | 0 | 0 | ✅ 在 | ✅ `worktree remove` rc=0 |
+| `temp/auth-measure/wt` | `dd0ba8b9` | detached | 0 | 0 | 0 | ✅ 在 | ✅ `worktree remove` rc=0 |
+
+**两次 `git worktree remove` 均 rc=0，未触发 `--force`。**
+
+### 14.4 最终 worktree 全表（12 个）
+
+```
+E:/IDEProjects/AI/FIST-Mbt                        270d0865 [main]          主工作树
+C:/Users/victo/.../mergeability-bn5486xy/wt       b5c8a366  detached      RED-conflict（③=158）
+C:/Users/victo/.../mergeability-xd7gqcjf/wt       b5c8a366  detached      RED-conflict（③=64）
+.agents/worktrees/feat/agent-fingerprint          54471f9e  [feat/...]    ①dirty=334
+.agents/worktrees/fix/agent-pid-instance-lock     676f610b  [fix/...]     ①dirty=85
+.agents/worktrees/fix/bug-triage                  f6225ff2  detached      ①dirty=49
+.agents/worktrees/fix/display-rank-boundary       08c5e9e6  [fix/...]     ①dirty=224
+.agents/worktrees/fix/moon-env-summary-shape      311adb09  [fix/...]     ①dirty=1
+.agents/worktrees/fix/omega-mark-keep             d91e077a  [fix/...]     ①dirty=135
+.agents/worktrees/fix/plan-gate                   c934359b  detached      ①dirty=110
+temp/wt-skill                                     aa60bc20  [worktree/...] ①dirty=24
+E:/IDEProjects/AI/light-wt/cmd-epsilon            75d3b801  detached      ①dirty=1
+```
+**11 个非主树项，逐一至少不满足一条判据（现读，16:2x 时刻）。**
