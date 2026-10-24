@@ -77,19 +77,16 @@ def find_cli(root: Path, cli_override: str | None) -> tuple[str | None, str]:
         if p.exists():
             return to_posix(p), "env FIST_MBT_CLI"
         return None, f"env FIST_MBT_CLI 指向的产物不存在: {to_posix(p)}"
-    # debug 与 release 是两个独立构建目录，谁新谁旧取决于最近一次 `moon build`
-    # 用什么 flag；硬编码 debug 优先会在「release 已重建、debug 还是旧件」时把渲染件
-    # 指回旧产物（2026-10-24 实测：release 10:19 最新、debug 07:42 旧，渲染器仍选 debug）
-    # ⇒ 两形态并存时按 mtime 取新，与下方 glob 兜底同一律。
-    known = []
-    for rel in ("_build/js/debug/build/cmd/cli/cli.js",
-                "_build/js/release/build/cmd/cli/cli.js"):
+    # release 优先、debug 兜底：DSH 插件安装面面对的是最终用户，装的是正式发布态，
+    # 而 debug 只是开发调试件（未 strip、带 debug 符号/断言）。两形态并存时**不能**按
+    # mtime 挑新——debug 可能因刚跑过一次 `moon build`（不带 --release）而比 release 新，
+    # 但那不代表它更"对"（2026-10-24 实测：debug 17:18、release 16:13，render 因此漂到
+    # debug，DSH 起的是调试产物）。开发应 `moon build --release`，不是靠猜谁新。
+    for rel in ("_build/js/release/build/cmd/cli/cli.js",
+                "_build/js/debug/build/cmd/cli/cli.js"):
         p = root / rel
         if p.exists():
-            known.append((p.stat().st_mtime, p, rel))
-    if known:
-        _, p, rel = max(known, key=lambda t: t[0])
-        return to_posix(p), rel
+            return to_posix(p), rel
     cands = sorted(root.glob("_build/js/*/build/cmd/*/cli.js"))
     if cands:
         newest = max(cands, key=lambda c: c.stat().st_mtime)
@@ -180,12 +177,20 @@ def selftest() -> list[str]:
         cell("T9 --cli 覆盖生效", got is not None and src == "--cli", f"got={got} src={src}")
         got2, why = find_cli(root, None)
         cell("T10 无产物→None+出路点名", got2 is None and "moon build" in why, f"why={why}")
-        # ⑪ 默认 debug 路径命中
-        dflt = root / "_build/js/debug/build/cmd/cli/cli.js"
+        # ⑪ 默认 release 产物命中（DSH 安装面=正式发布态；debug 仅兜底）
+        dflt = root / "_build/js/release/build/cmd/cli/cli.js"
         dflt.parent.mkdir(parents=True, exist_ok=True)
         dflt.write_text("//", encoding="utf-8")
         got3, src3 = find_cli(root, None)
-        cell("T11 默认 debug 产物命中", got3 is not None and "debug" in src3, f"src={src3}")
+        cell("T11 默认 release 产物命中", got3 is not None and "release" in src3, f"src={src3}")
+        # ⑫ release+debug 并存时必选 release（debug 刚 build 过也不许反超——
+        #    2026-10-24 实测 debug 17:18 > release 16:13，按 mtime 挑新会把 DSH 指到调试件）
+        dbg = root / "_build/js/debug/build/cmd/cli/cli.js"
+        dbg.parent.mkdir(parents=True, exist_ok=True)
+        dbg.write_text("//", encoding="utf-8")
+        got4, src4 = find_cli(root, None)
+        cell("T12 release+debug 并存选 release",
+             got4 is not None and "release" in src4 and "debug" not in src4, f"src={src4}")
         # ⑫ 模板+渲染真源现状：仓库里那份 tpl 必须过模板判据
         tpl_p = REPO_ROOT / TPL_REL
         if tpl_p.exists():

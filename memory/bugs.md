@@ -6690,3 +6690,75 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 后续建议: 同源隐患：`locale/*.json` 也曾被写本机路径（check_hardcoded_paths.py line 103 提到 `cordis.patch.yml,locale/*.json` 是 `F:/AI/Fist-Mbt` 位置高发区）—— 建议一并复查 `.dsh/fist-mbt-plugin/locale/` 是否残留旧路径。
 - landed: 渲染器优先级 bug 同轮顺手修（BUG-405 关联）——`render_dsh_patch.py` 硬编码 `debug` 先于 `release`，而两者是独立构建目录（release 10:19 最新、debug 07:42 旧，渲染器仍选 debug ⇒ DSH 连到旧 CLI）。已改为两形态并存时按 `st_mtime` 取新（与 glob 兜底同一律），`--check` PASS + `--selftest` OK + `check_hardcoded_paths` PASS（572 文件干净）。
 - 关联: .dsh/fist-mbt-plugin/cordis.patch.yml / scripts/render_dsh_patch.py / scripts/check_hardcoded_paths.py / 来源用户报告 2026-10-24
+
+## BUG-406 [2026-10-24T15:55:00Z] [high] OPEN
+- summary: [esm-cjs-bundle-crash] CLI/`serve` 整体崩溃：打包产物 `_build/js/debug/build/cmd/cli/cli.js` 在 ESM 作用域里调用 CommonJS 的 `require("node:sqlite")` ⇒ `ReferenceError: require is not defined in ES module scope`；`package.json` 声明 `"type": "module"` ⇒ 该 `.js` 被当 ESM ⇒ `fist-mbt doctor`/`version`/`serve` 全部崩溃，SQLite store（`SqliteStore.open`）完全不可用，MCP 持久化层随之中断
+- detail: 复现（`E:\IDEProjects\AI\FIST-Mbt`）：`fist-mbt doctor` → 崩溃，退出码 1，stderr 指向 `cli.js:2454`：`const _M0FP26daqing6sqlite19new__database__sync = (path, opts) => new (require("node:sqlite").DatabaseSync)(path, opts);`。根因：打包器（moon/esbuild 一类）生成 `node:sqlite` 的 CJS 互操作时**漏了 ESM 垫片**（`createRequire(import.meta.url)`）；该 bundle 里 `require(` **恰好只有 1 处**，故是打包产物层面的互操作缺陷，非源码广泛使用 `require`。影响面：`doctor`/`version`/`serve` 全崩；`demo` 走纯内存 store 不受影响（可用）。建议修法（任选）：① bundle 顶部补 `import { createRequire } from "node:module"; const require = createRequire(import.meta.url);`；② 改 ESM `import { DatabaseSync } from "node:sqlite"`（Node 22+）；③ 打包配置针对 `type: module` 的 `.js` 显式垫片 CJS 互操作，并加一条启动自检进 CI。另：同次探测发现 `doctor` 的 `[4/5] 七态机闭环` 报失败而 `fist-mbt demo`（同一七态闭环）全绿——两处对同一闭环的断言/实现不一致，建议对齐。
+- **统帅 R31 局部解锁（非根治）**：已在**两处打包产物**顶部插入 ESM `require` 垫片
+  `import { createRequire } from "node:module"; const require = createRequire(import.meta.url);`
+  —— debug `_build/js/debug/build/cmd/cli/cli.js` 与 release `_build/js/release/build/cmd/cli/cli.js`。
+  实测：`fist-mbt doctor` 由崩溃 → **5/5 全通过**、`version` → 0.3.10、`demo` → 七态闭环全绿、
+  `serve` 不再崩。**但这是打包产物层面的临时补丁**：重新 `moon build` 会覆盖，**根治须修打包配置**
+  （见上文三条建议）并加启动自检进 CI。
+- **根因定位（统帅 R35，上游依赖）**：`require("node:sqlite")` 来自 **`daqing/sqlite@0.4.0`** 的
+  MoonBit JS FFI 声明 `sqlite_js.mbt:13`：
+  `extern "js" fn new_database_sync(...) = #| (path, opts) => new (require("node:sqlite").DatabaseSync)(path, opts)`
+  —— 该 **`require` 是 CJS 语法**，被 MoonBit 打包进 **ESM**（`package.json "type":"module"`）产物后 ESM 作用域无 `require`。
+  **根治须修上游**：`daqing/sqlite` 把 `sqlite_js.mbt:13` 的 `require("node:sqlite")` 改成 ESM 形态
+  （Node 22+ 的 `import { DatabaseSync } from "node:sqlite"`，或 MoonBit 的 `#external`/`import` FFI 声明），
+  重发新版本；FIST-Mbt 侧把依赖升到修好的版本。
+  **本仓无法在打包配置层根治**（缺陷在依赖源码里），故本地垫片是唯一可立即解锁的手段。
+- **构建层修复（统帅 R36）**：仓库既有 `scripts/patch_esm_main.py`（BUG-138 同族）原本只 patch
+  `_build/js/debug/build/` 下**最大的**一个 bundle（`main.js`），于是 `cmd/cli/cli.js`、
+  `cmd/commissar/commissar.js`、`smoke/smoke.js` **漏网**——它们同样含 `require("node:sqlite")`，
+  同样 ESM 崩溃。已把脚本改为 **patch 全部**可执行 bundle（新增 `_find_all_bundles()`），
+  并把我自己 R31 加的**手动垫片**从 `cli.js` 移除、改由该脚本统一打（单一真源，rebuild 后重跑即可）。
+  实测：脚本 patch 4/4 bundle（cli/main/commissar/smoke）；`fist-mbt doctor` 5/5、`version` 0.3.10、
+  `commissar` 不再崩。**根治仍在上游 `daqing/sqlite`**（见上），但**本仓已可稳定解锁**（脚本化、非手工）。
+- reported_by: pentad-commander
+- related: _build/js/debug/build/cmd/cli/cli.js:2454 / package.json "type":"module" / src/store/SqliteStore.mbt
+
+## BUG-407 [2026-10-24T15:55:00Z] [high] OPEN — read 工具默认 ns="default"，`store_open` 打开的 ns 不自动生效（namespace 路由静默陷阱）
+- **状态**: OPEN
+- **严重度**: 高
+- **领域**: server 多租户路由 / MCP 工具
+- **发现**: 2026-10-24 统帅 R37（实测 fist-mbt 全链路自驱 demo）
+- **复现**（R37 diag）:
+  1. `store_open(namespace="diag-probe", scratch=true)` → `{"active_namespaces":["diag-probe"]}`
+  2. `publish(namespace="diag-probe", ...)` → `{"task_id":"T0","namespace":"diag-probe","message":"已发布根任务"}`
+  3. `get(task_id="T0")` → `{"error":{"code":-32000,"message":"task not found: T0"}}`  ❌
+  4. `get(task_id="T0", namespace="diag-probe")` → 命中任务 ✅
+- **根因**: `server.mbt` 的 `get`/`task_plan_deep`/`list`/`board_ascii` 等 read 工具
+  参数 `namespace` 默认 `"default"`（见 `get` schema `L2118-2120`、`task_plan_deep` schema `L2197-2199`），
+  而 `engine_for_ns(ns)`（L63-72）对**未 open 的 ns 静默回退到默认库**。于是：
+  - `store_open` 打开了 `diag-probe` 并**回显** `active_namespaces:["diag-probe"]`，
+    但**不改变**后续 read 工具生效的 ns；
+  - 调用方若只按 `store_open` 的回显以为"已切到该 ns"，再调 `get(task_id)`（不带 ns）→
+    落进 `default` 库 → `task not found`，**看起来像任务凭空消失**。
+- **影响面（R41 扩大）**: 影响面**不止读工具**——`claim`/`execute`/`verify`/`archive`/`submit`
+  等 write 工具同样默认 `namespace="default"`（R41 实测 `claim(T0)` 不带 ns -> `task not found`，
+  带 ns 命中）。**写入落错库比读错库更危险**：若 default 库恰好有同名 `task_id`，`claim(T0)` 不带 ns
+  可能**对别的项目**的 T0 生效——跨项目污染。判据相应扩为：`claim(task_id, assignee)` 不带 ns 应命中。
+- **影响面**: 任何走 `store_open → publish → get/list/plan_deep` 闭环的 MCP 客户端
+  （award_demo.py、自驱脚本、外部 agent）都会踩中。R37 实测 `scripts/award_demo.py`
+  在 `publish → task_plan_deep` 环节报 `task not found: T0`，即此。
+- **建议修法**（择一）:
+  - **A（推荐，最小侵入）**: `store_open` 把打开的 ns 记为 **session 当前 ns**，
+    read 工具（get/list/plan_deep/board_ascii…）未显式传 `namespace` 时默认用它；
+    显式传 `default`/空 仍回退（保留旧语义与跨库显式指定）。
+  - **B**: read 工具 `namespace` 缺省时不再静默回退默认库，而是**先查 session active ns**，
+    无则提示"先用 store_open 或显式传 namespace"（fail-loud，避免静默错库）。
+  - **C（文档侧）**: 至少把 `get`/`plan_deep` schema 的 namespace 说明改成
+    "⚠ 默认 default；用 store_open 打开的 ns **不会自动生效**，必须显式传入"，
+    并给 `store_open` 回显里点一句"后续 read 请显式带 namespace=…"。
+- **判据**: `store_open(ns=X)` 后 `get(task_id=<X 中刚发布的任务>)`（**不带** namespace）应命中；
+  或 fail-loud 提示缺 ns，而不是静默 `task not found`。
+- **reported_by**: pentad-commander
+- **issue 文档**: `ISSUE_NAMESPACE_ROUTING_TRAP.md`（仓库根，与 ISSUE_ESM_CJS_BUNDLE_CRASH.md 同体例）
+
+## BUG-408 [2026-10-24T18:20:00Z] [medium] OPEN
+- summary: render_dsh_patch 的「release/debug 按 mtime 取新」本身是错的——debug 刚 build 过就能反超 release，把 DSH 指到调试件
+- detail: 上一条 BUG-405 关联修复把 `find_cli` 从「硬编码 debug 优先」改成「两形态并存按 st_mtime 取新」，本意是修「release 已重建还选旧 debug」。但 mtime 语义**同样会反噬**：2026-10-24 18:00 实测 fist-bot 刚跑过一次 `moon build`（不带 --release）⇒ debug `_build/js/debug/build/cmd/cli/cli.js` mtime 17:18 > release 16:13 ⇒ 渲染件又漂回 debug，`--check` FAIL，DSH 起的是调试产物（未 strip、带 debug 符号）。根因：**"谁新"不等于"谁对"**——DSH 插件安装面面对最终用户，应装正式发布态 release；debug 只是开发调试件。修法：**release 优先、debug 仅兜底**（release 不存在才用 debug），不按 mtime 挑。
+- landed: `find_cli` 改为 `for rel in (release, debug): if exists: return`；`--selftest` T11 从「默认 debug 命中」改为「默认 release 命中」，并**新增 T12**「release+debug 并存必选 release」（debug 刚 build 过也不许反超，防 mtime 复读）。`--selftest` OK、`--check` PASS（cli 来源=release）、`check_hardcoded_paths` PASS（573 跟踪文件干净）。
+- 后续建议: 开发侧应 `moon build --release cmd/cli`（正式产物），不要靠猜谁新；若担心 release 长期落后源码，可给 `--check` 加一条「release 与 debug 共存时 debug 更新时间比 release 新即告警」的软提示（但选型仍 fixed release）。
+- reported_by: lead
