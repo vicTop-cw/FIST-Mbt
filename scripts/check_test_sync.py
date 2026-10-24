@@ -204,9 +204,32 @@ def enumerator_gaps(swept, tracked):
 
 
 def collect_claims(text: str):
-    """从一份文档正文里抽出"测试总数声明"（窄口径）。返回 [(数字, 形状, 行号)]。"""
+    """从一份文档正文里抽出"测试总数声明"（窄口径）。返回 [(数字, 形状, 行号)]。
+
+    **2026-10-24 新增：围栏代码块内的行不算"项目自述"**
+
+    背景：δ 入库的 `docs/probe-authoring.md`（《探针写作规范》）被 R1 判红，
+    但其中住在 ``` 代码块里的那几处（`Total tests: 206, passed: 206, failed: 0`）
+    **是教学示例**——正是"故意造出来的假读数"，用来演示「探针必须能红」。
+
+    修法**只动这一条**：跳过 ```` ``` ```` / `~~~` 围住的块内行。
+
+    **为什么不做更激进的收法（三种都实测过，全部反向破坏，留档防复发）**：
+      · 抹掉全部行内反引号 ⇒ AGENTS.md 里「实测 `moon test …` = **572/572**」的
+        `moon test` 被一起吃掉 → RX_KEY 不命中 → 该真读数从采集面消失 →
+        对应 EXEMPT 判「失效」(R4 红)，**且真漂移同时看不见**；
+      · `N/N` 要求全量语境词 ⇒ 教学句压住了，但 EXEMPT 表十几条历史读数全失去命中 → 8→10 条红；
+      · 只抹「含数字的反引号片段」⇒ 同样 8→10 条红。
+    围栏块是**最无争议的边界**：正文里的真实主张从不出现在代码块内。
+    """
     hits = []
+    in_fence = False
     for ln, line in enumerate(text.splitlines(), 1):
+        if line.lstrip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         if not RX_KEY.search(line):
             continue
         for m in RX_PAIR.finditer(line):
