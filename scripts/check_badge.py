@@ -52,7 +52,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # 判例-25：锚点口径只有一份真源（scripts/badge_anchor.py），本尺只**调用**不复制。
 # 两把吃同一类快照的尺（本尺 / check_test_sync）各写一份锚点 = 两份口径必然漂。
-import badge_anchor  # noqa: E402
+import _badge_anchor as badge_anchor  # noqa: E402  (判例-25：锚点单一真源，_ 前缀=内部共享模块)
 
 
 REJECT = "reject"    # 判据无法自证：被检面/调用形状不可用
