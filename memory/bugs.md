@@ -6701,12 +6701,23 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - landed: 渲染器优先级 bug 同轮顺手修（BUG-405 关联）——`render_dsh_patch.py` 硬编码 `debug` 先于 `release`，而两者是独立构建目录（release 10:19 最新、debug 07:42 旧，渲染器仍选 debug ⇒ DSH 连到旧 CLI）。已改为两形态并存时按 `st_mtime` 取新（与 glob 兜底同一律），`--check` PASS + `--selftest` OK + `check_hardcoded_paths` PASS（572 文件干净）。
 - 关联: .dsh/fist-mbt-plugin/cordis.patch.yml / scripts/render_dsh_patch.py / scripts/check_hardcoded_paths.py / 来源用户报告 2026-10-24
 
-## BUG-406 [2026-10-24T17:15:00Z] [high] OPEN
+## BUG-406 [2026-10-24T17:15:00Z] [high] FIXED
 - summary: [packaging] 打包产物在 ESM 作用域里用 CJS `require("node:sqlite")` ⇒ `doctor`/`version`/`serve` 全部 `ReferenceError: require is not defined in ES module scope`，SQLite store 完全不可用；`moon check` 全绿但产物跑不起（外部项目 Pentad 统帅实测报告）
 - detail: `package.json` 声明 `"type": "module"` ⇒ Node 把 `.js` 当 ESM；上游 `daqing/sqlite@0.4.0` 的 JS FFI（`sqlite_js.mbt:13`）写着 CJS 形态 `(path, opts) => new (require("node:sqlite").DatabaseSync)(path, opts)`，被 MoonBit 原样打进 ESM 产物。ESM 作用域没有 `require` ⇒ 崩。**影响面**：`doctor`/`version`/`serve` 全崩（MCP server 起不来、持久化层全挂），只有 `demo`（纯内存 store）可用。**本仓不能在打包配置层根治**（缺陷在依赖源码），故 `patch_esm_main.py` 的 LOCAL-SHIM（`createRequire(import.meta.url)`）是唯一可立即解锁的手段。
 - 修法：① 立即——构建后跑 `python scripts/patch_esm_main.py` 注入 shim（已验证：patch 前 `version` 崩、patch 后 rc=0 且 `doctor` 5/5 通过）；② 根治——上游 `daqing/sqlite` 把该行改 ESM 形态，本仓升依赖；③ **判据**——新增 `scripts/check_esm_bundle_runnable.py`（17 格自证）把「产物能不能跑」变成提交前/CI 可查的一格，因为 `moon check` 只验源码、从不执行 bundle。
 - 实测：未 patch 的 `_build/js/debug/build/cmd/cli/cli.js` 跑 `version` ⇒ `ReferenceError ... cli.js:2455`（rc=1）；跑 `patch_esm_main.py` 后同一命令 ⇒ `FIST-Mbt v0.3.10`（rc=0）、`doctor` ⇒ 5/5 checks 通过（rc=0）。判据反向验证：对未 patch 产物 ⇒ `FAIL [ESM_CJS_REQUIRE]` rc=1；对已 patch ⇒ `PASS [OK]` rc=0。
 - 关联: ISSUE_ESM_CJS_BUNDLE_CRASH.md（已入库 reports/2026-10-24-external-issue-esm-cjs-bundle-crash.md）/ scripts/patch_esm_main.py / scripts/check_esm_bundle_runnable.py / 上游 daqing/sqlite@0.4.0 sqlite_js.mbt:13 / 外部报告人 Pentad 统帅
+
+### FIXED(2026-10-25T10:04:19Z / BUG-406)
+- evidence: commit a5523ec4 + 前置 46c1382d 面收口。症状「打包产物跑不起」已消除，判据覆盖 debug+release 两 profile：
+
+**① patch 覆盖两个 profile（本次追记的真残留）**：`patch_esm_main.py::_find_all_bundles()` 原硬编码 `_build/js/debug/build`。但打包/安装面与宿主实际拉起的是 **release** —— 实测本机 DSH Desktop 拉起的 MCP server 跑 release 产物、从 10-24 20:50 起 18 小时一直崩在未 patch 的旧 bundle 上（`ReferenceError: require is not defined in ES module scope`），所有 agent 看到的工具面是旧版 170 个。修后 patch 面 5 → **6 个 bundle**（release cli 进入）；实测 `node _build/js/release/build/cmd/cli/cli.js version` → `FIST-Mbt v0.3.10` rc=0。
+
+**② 判据覆盖两个 profile**：`check_esm_bundle_runnable.py` 的 `bundles_for_pkg()` 加 `profile` 参数（默认 debug 零回归）、`resolve_bundles()` 透传、主流程拆 `_run_profile()` 并新增 `--profile {debug,release,both}`；selftest 新增 `e2e-bundle-candidates-release-profile` 一格（断言 release 候选路径形态正确）⇒ **26 → 27 格全绿**。实测：默认 4/4 PASS；`--profile both` = debug 4/4 PASS + release 1 已验（另 3 未构建，DIAG 可见不算红）。
+
+**③ 立即解锁手段仍在**：`patch_esm_main.py` 的 LOCAL-SHIM（`createRequire(import.meta.url)`）继续是唯一可立即解锁的手段（缺陷在上游依赖源码，本仓不能在打包配置层根治）。
+
+**仍然开放的边界（不假装已根治）**：上游 `daqing/sqlite@0.4.0` 仍输出 CJS `require` ⇒ 本仓只能 patch（修法②需上游改 ESM 形态）；`moon build --release` 后不会自动 patch，需手动/CI 显式调用；CI 目前只跑 `--selftest` 未跑真判据（release 面需 `--profile both` + 先 build release）。
 ## BUG-407 [2026-10-24T15:54:58Z] [high] FIXED
 - summary: list 可见但 get --namespace 找不到：任务 namespace 字段与实际落库不一致（namespace 查询路由到空 store）
 - detail: 复现步骤（fist-mbt v0.3.10）：
