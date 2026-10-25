@@ -1,0 +1,698 @@
+diff --git a/.dsh/fist-mbt-plugin/cordis.patch.yml b/.dsh/fist-mbt-plugin/cordis.patch.yml
+deleted file mode 100644
+index 5b9324da..00000000
+--- a/.dsh/fist-mbt-plugin/cordis.patch.yml
++++ /dev/null
+@@ -1,26 +0,0 @@
+-﻿# FIST-Mbt — local (this checkout) DSH bundle layer.
+-#
+-# This is the development install: it points straight at the checkout, and the
+-# shared launcher prefers the newest `_build/js/.../cli.js`, so a rebuild is
+-# picked up without editing this file. The published package uses the portable
+-# layer in `packaging/dsh/cordis.patch.yml`.
+-
+-- insert:
+-    - id: fist-mbt-mcp
+-      name: '@deepseek-ai/dsh-mcp-client'
+-      config:
+-        serverName: 'fist-mbt'
+-        transport: 'stdio'
+-        command: 'node'
+-        args:
+-          - 'F:/AI/Fist-Mbt/packaging/dsh/launch-mcp.mjs'
+-        cwd: 'F:/AI/Fist-Mbt'
+-        toolCallTimeoutMs: 300000
+-        failOnStartupError: false
+-        reconnect:
+-          enabled: true
+-          initialDelayMs: 500
+-          maxDelayMs: 30000
+-          maxAttempts: 10
+-        env:
+-          FIST_PROJECT_DIR: 'F:/AI/Fist-Mbt'
+diff --git a/.dsh/fist-mbt-plugin/cordis.patch.yml.tpl b/.dsh/fist-mbt-plugin/cordis.patch.yml.tpl
+index 8199518e..26739b57 100644
+--- a/.dsh/fist-mbt-plugin/cordis.patch.yml.tpl
++++ b/.dsh/fist-mbt-plugin/cordis.patch.yml.tpl
+@@ -1,21 +1,27 @@
+-# FIST-Mbt plugin patch — **模板态**（跟踪真源，禁止出现任何本机绝对路径）。
++# FIST-Mbt 开发层插件 patch — **模板态**（跟踪真源，禁止出现任何本机绝对路径）。
+ #
+ # 为什么是模板：`@deepseek-ai/dsh-mcp-client` 的 stdio 通道把 `args`/`cwd` 当**字面
+ # argv** 直接交给 `child_process.spawn`，DSH 宿主侧**不做美元花括号变量插值**（实测：
+ # app.asar 内 mcp-client 的 stdio 分支只读 `command`/`args`/`cwd`/`env` 四个键）。
+ # 所以任何写进这里的绝对路径都只对「写它的那台机器」成立——把本机盘符路径提交进
+-# 跟踪面，等于给每个克隆者埋一发 `server is disconnected`。
++# 跟踪面，等于给每个克隆者埋一发 `server is disconnected`（BUG-389 同族教训）。
+ #
+-# 本文件由 `render_dsh_patch.py` 渲染成同目录的 `cordis.patch.yml`（本地产物、已
+-# gitignore）。占位符只有两个，值都由渲染器从「本仓自身位置」推导，零硬编码：
++# 本文件由 `scripts/render_dsh_patch.py` 渲染成同目录的 `cordis.patch.yml`
++# （本地产物、已 gitignore）。`package.json` 的 `dsh.bundle.patch` 指向渲染件，
++# 安装面形状不变（DSH 照旧读一份 YAML），只是路径每台机器各自生成。占位符两个：
+ #
+-#   {{FIST_MBT_CLI}}   JS 可执行产物的绝对路径（正斜杠形态）
+-#   {{FIST_MBT_ROOT}}  本仓根的绝对路径（正斜杠形态）——CLI 以此为 cwd，
+-#                      相对 args 与 SQLite 台账引导都按它解析
++#   {{FIST_MBT_LAUNCHER}}  本仓 `packaging/dsh/launch-mcp.mjs` 的绝对路径（正斜杠形态）
++#                          —— launcher 机器无关：内部经 import.meta.url 解析包根，
++#                          优先挑 `_build/js/*` 最新产物、回退 `dist/fist-mbt.js`，
++#                          并自带 Node>=24 / node:sqlite 检查与 ESM require shim。
++#   {{FIST_MBT_ROOT}}      本仓根的绝对路径（正斜杠形态）——CLI 以此为 cwd，
++#                          相对 args 与 SQLite 台账引导都按它解析；同时写进
++#                          env.FIST_PROJECT_DIR（server 侧项目锚点）。
+ #
+-# 形状对齐本仓跟踪真源 `.mcp.dev.json`，字段名对齐 dsh-mcp-client Config schema
+-# （`toolCallTimeoutMs`，不是 `timeout_ms`；reconnect 只认 enabled/initialDelayMs/
+-# maxDelayMs/maxAttempts）。
++# 形状对齐同仓的社区层 `packaging/dsh/cordis.patch.yml`（那份零绝对路径、走 profile
++# 模块解析，面向 npm 安装；本层面向「源码 checkout + DSH link 安装」）。字段名对齐
++# dsh-mcp-client Config schema（`toolCallTimeoutMs`，不是 `timeout_ms`；reconnect 只认
++# enabled/initialDelayMs/maxDelayMs/maxAttempts）。
+
+ - insert:
+     - id: fist-mbt-mcp
+@@ -25,11 +31,12 @@
+         transport: 'stdio'
+         command: 'node'
+         args:
+-          - '{{FIST_MBT_CLI}}'
+-          - 'serve'
++          - '{{FIST_MBT_LAUNCHER}}'
+         cwd: '{{FIST_MBT_ROOT}}'
+-        toolCallTimeoutMs: 30000
++        toolCallTimeoutMs: 300000
+         failOnStartupError: false
++        env:
++          FIST_PROJECT_DIR: '{{FIST_MBT_ROOT}}'
+         reconnect:
+           enabled: true
+           initialDelayMs: 500
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 585da8bc..0b95a4f3 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -293,10 +293,44 @@ jobs:
+
+       - name: Host-installable guard (deepseek-harness 宿主侧真的能装上)
+         shell: bash
++        # position-why: 本尺只读 .dsh 模板/渲染件与 MCP 配置文本面，不依赖 moon 产物；与
++        # Machine-path/Push-guard/Git-sandbox-hygiene 同族相邻（同一批安装面/沙箱隔离交付）。
+         run: |
+           python3 scripts/check_host_installable.py --selftest
+           python3 scripts/check_host_installable.py
+
++      # position-why: 纯文本判据（跟踪面 + 本地子进程 stdin 语义矩阵），不依赖 moon 产物。
++      - name: Push-guard sustainability guard (直推拦截跟踪面+语义矩阵生效性，BUG-389(2))
++        shell: bash
++        # position-why: 同族文本判据；自证先行，尺坏了不许放行。check_direct_push 只点名
++        # --selftest（禁裸跑：读 stdin 会挂 CI 管道，见 run_guards 同段注释）。
++        run: |
++          python3 scripts/check_push_guard.py --selftest
++          python3 scripts/check_push_guard.py
++          python3 scripts/check_direct_push.py --selftest
++
++      - name: Machine-path guard (当前面禁本机身份路径 + .dsh 渲染件回跟踪面结构锁)
++        shell: bash
++        # position-why: 与 Push-guard/Host-installable 同族纯文本回归锁，不依赖构建产物；
++        # 安装面双态与路径清零是同一批交付的两半，故相邻。
++        run: |
++          python3 scripts/check_hardcoded_paths.py --selftest
++          python3 scripts/check_hardcoded_paths.py
++
++      - name: Git-sandbox hygiene ratchet (判据沙箱 git 必须与宿主隔离，防自证污染宿主)
++        shell: bash
++        # position-why: 纯 AST 静态普查（不建临时仓、不跑 git、不动工作树），不依赖构建产物；
++        # 与 Machine-path/Host-installable 同族守卫面相邻（同属「判据自身不许对环境有副作用」）。
++        run: |
++          python3 scripts/check_git_sandbox_hygiene.py --selftest
++          python3 scripts/check_git_sandbox_hygiene.py
++
++      - name: DSH patch render self-proof (模板→本机渲染幂等；漂移即红)
++        shell: bash
++        # position-why: 纯文本渲染自证，不依赖构建产物；紧随安装面判据。
++        run: |
++          python3 scripts/render_dsh_patch.py --selftest
++
+       - name: Skill-inject guard (evolve_asset_register 注入路径可测命中)
+         shell: bash
+         run: |
+diff --git a/.gitignore b/.gitignore
+index 4eb29ab9..71dd33d6 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -164,3 +164,9 @@ memory/archive/thinking.archive.md
+ # 临时验证 worktree（嵌入式 git 仓 ⇒ 绝不能被 add，否则变成 gitlink 160000，
+ # 让 check_merge_markers 等判据「有跟踪文件读不到」；2026-10-24 实测踩过一次）
+ /.verify-wt
++
++# DSH 插件开发层安装面的「本机渲染态」：跟踪真源是 cordis.patch.yml.tpl（模板、占位符、
++# 零绝对路径），cordis.patch.yml 由 scripts/render_dsh_patch.py 按当前仓位置生成。
++# 合并通道三次把某台机的渲染件重新跟踪回 main（E:/ 一次、F:/ 两次）；判据
++# check_hardcoded_paths 的 D1 结构锁 + 这条 ignore 一起钉死：渲染件永不进跟踪面。
++/.dsh/fist-mbt-plugin/cordis.patch.yml
+diff --git a/docs/2026-10-20-slave-tasks.md b/docs/2026-10-20-slave-tasks.md
+index 920a4287..bd75ada3 100644
+--- a/docs/2026-10-20-slave-tasks.md
++++ b/docs/2026-10-20-slave-tasks.md
+@@ -35,7 +35,7 @@
+ |---|---|---|---|---|---|---|---|
+ | GUARD-01 | `check_model_auth_no_key`：config_json/HTML 输出禁止 api_key/token 值形状 | `guard/check-model-auth-no-key` | `已落地` | `scripts/check_model_auth_no_key.py` 在跟踪面；CI 步骤 `.github/workflows/ci.yml:288`（"Model-auth-no-key guard"）；电池格 `scripts/run_guards.py:158`（该行即 `check_model_auth_no_key.py`）；`run_guards.py --list` 现读该行 `CI=CI 电池=电池` | 新 | `docs/improvement-plan-20261010.md` §6.2 | 覆盖 ci.yml / HTML / example / default-fist.mcp.json 全扫描面 |
+ | GUARD-02 | `check_host_installable`：deepseek-harness 宿主侧真能装 fist-mbt 插件 | `guard/check-host-installable` | `已落地` | `scripts/check_host_installable.py` 在跟踪面；CI 步骤 `.github/workflows/ci.yml:294`（"Host-installable guard"）；`--list` 现读 `CI=CI 电池=电池`（电池面由 `discover_scripts` 自动收录，不是漏接线） | 新 | 同上 | 不新增 CI 时间（一次性 smoke） |
+-| GUARD-03 | `check_skill_inject`：plan/claim 传 inject 时 injected_assets 非空才算命中 | `guard/check-skill-inject` | `已落地` | `scripts/check_skill_inject.py` 在跟踪面；CI 步骤 `.github/workflows/ci.yml:300`（"Skill-inject guard"）；电池格 `scripts/run_guards.py:309`（`gated`，带 `fist-mbt.db` 前置）；`--list` 现读 `CI=CI 电池=电池` | 新 | 同上 | 黑盒跑 fist-mbt MCP 自证 |
++| GUARD-03 | `check_skill_inject`：plan/claim 传 inject 时 injected_assets 非空才算命中 | `guard/check-skill-inject` | `已落地` | `scripts/check_skill_inject.py` 在跟踪面；CI 步骤 `.github/workflows/ci.yml:334`（"Skill-inject guard"）；电池格 `scripts/run_guards.py:315`（`gated`，带 `fist-mbt.db` 前置）；`--list` 现读 `CI=CI 电池=电池` | 新 | 同上 | 黑盒跑 fist-mbt MCP 自证 |
+
+ ---
+
+@@ -75,7 +75,7 @@
+ | WT-01 | claimguard 挂 claim/publish 钩子（已有 src/claimguard/ 库） | `feature/claimguard-hook` | `未开工` | 库在、钩子不在：`may_proceed_full` 命中面只有 `src/claimguard/claimguard.mbt` 与其 wbtest，另有两处**字符串字面量**（`src/server/bugreport_status_wbtest.mbt:480` / `:507` 的 evidence 文本，非调用）；`src/*/moon.pkg` 无一依赖 `claimguard` ⇒ claim/publish 路径 0 个调用点 | 新 | `docs/plan-light-worktree-isolation.md` L33 + L208 | claim/publish 前走 may_proceed_full 预检 |
+ | WT-02 | `wt_create` / `wt_status` / `wt_destroy` 三工具（git worktree 生命周期） | `feature/wt-lifecycle-tools` | `未开工` | `wt_create` / `wt_status` / `wt_destroy` 在 `src/`、`scripts/`、`.github/` 三面 0 命中；`src/server/wt_tools.mbt` 不在跟踪面；唯一提及处是 plan 正文 `docs/plan-light-worktree-isolation.md` L158-160 | 新 | 同上 L158-160 | 纯 git 命令封装 + src/server/wt_tools.mbt |
+ | WT-03 | sparse cone worktree 创建 + `light-wt` / `light-wt-teardown` shell 脚本 | `feature/wt-sparse-scripts` | `未开工` | `git ls-files` 内 `light-wt*` 0 命中；`sparse` 关键字在 `scripts/`、`src/`、`.github/` 三面 0 命中 ⇒ bash/pwsh 双轨都不存在 | 新 | 同上 L147-149 | bash + pwsh 双轨可用 |
+-| WT-04 | e2e_assistant_xproc.py（两进程并发 claim 恰好一成一拒） | `feature/e2e-assistant-xproc` | `已落地` | 脚本在跟踪面且已进电池登记：`scripts/blackbox/e2e_assistant_xproc.py:8`「并发 N 进程同时抢主，跑多轮，任一轮出现 >1 行 is_primary=1 即 FAIL」+ 退出码契约 `:8-12`；`scripts/run_guards.py:517`（该行含 `e2e_assistant_xproc.py`）登记为跨进程端到端探针。**读法注意**：它判的是 `assistant_claim` 抢主互斥（清单原文的 "claim" 即此），若主机要的是**同一任务**并发 claim 一成一拒，那是另一格，需点名再开 | 新 | 同上 L135 | Python 脚本 + 自动化判据 |
++| WT-04 | e2e_assistant_xproc.py（两进程并发 claim 恰好一成一拒） | `feature/e2e-assistant-xproc` | `已落地` | 脚本在跟踪面且已进电池登记：`scripts/blackbox/e2e_assistant_xproc.py:8`「并发 N 进程同时抢主，跑多轮，任一轮出现 >1 行 is_primary=1 即 FAIL」+ 退出码契约 `:8-12`；`scripts/run_guards.py:523`（该行含 `e2e_assistant_xproc.py`）登记为跨进程端到端探针。**读法注意**：它判的是 `assistant_claim` 抢主互斥（清单原文的 "claim" 即此），若主机要的是**同一任务**并发 claim 一成一拒，那是另一格，需点名再开 | 新 | 同上 L135 | Python 脚本 + 自动化判据 |
+ | WT-05 | diff-scope 越界检测 + drift-check + merge-predict（CI 守卫） | `guard/check-diff-scope` | `部分` | 三件里有一件有对应物：`scripts/check_slave_mergeability.py:9`「OK / CONFLICT(文件) / CONTAINED（已含于 base）/ EMPTY（无独有提交）四档」（= merge-predict，且在临时 worktree 里真跑 `cherry-pick --no-commit`）。**缺**：`scripts/check_diff_scope.py` 不在跟踪面；drift-check 无对应尺（`goal_drift_check` 是任务语义层，不是文件作用域层）；`run_guards.py --list` 现读该尺 `CI=-` ⇒ 未进 CI | 新 | 同上 L186-189 + L214 | scripts/check_diff_scope.py |
+ | WT-06 | lock_acquire 带 worktree_id + lock_status 视图补全 | `feature/lock-wt-bind` | `未开工` | `worktree_id` 在 `src/` 全仓 0 命中 ⇒ `lock_acquire` / `lock_status` 存在但无该参数面 | 新 | 同上 L170-173 + L212 | lock_acquire 新增 worktree_id 参数 |
+ | WT-07 | collector 定时回收 + 磁盘水位告警 + watchdog 接线 | `feature/wt-collector` | `未开工` | `collector` / `watermark` / `disk_usage` 在 `src/`、`scripts/`、`.github/` 三面 0 命中；`watchdog_tick` 现有分支是 heal + 自动续轮 + ready_dispatch/autodispatch，不含 worktree 回收 | 新 | 同上 L199-201 + L217 | 定时任务 + watchdog_tick 集成 |
+@@ -98,7 +98,7 @@
+ |---|---|---|---|---|---|---|---|
+ | POLISH-01 | README 顶部 3 行内落死一句话卖点 | `docs/polish-readme-slogan` | `已落地` | `README.md:3` 起的首屏 blockquote 即卖点（"AI 自驱式开发的项目管理者……一等的打磨对象只有两件——**自驱**与**递归拆解**"），位于徽章行之前、前 20 行内 | 新 | `docs/polish-plan.md` A | README 前 20 行可见 |
+ | POLISH-02 | docs/selfdrive-walkthrough.md 真实运行 trace | `docs/selfdrive-walkthrough` | `部分` | 文档在跟踪面（65 行），`:3` 自述「全部命令/JSON 均为本机 + WSL 实机执行过的真实 trace，非虚构」，§1 有 `selfdrive_*` 真实序列、§2 九态链。**两处不合格**：① 它创建于 `88a781f7`（2026-09-24，早于本清单），不是「从主机跑完的 trace 复制」这一单；② `docs/selfdrive-walkthrough.md:56` 的陈旧双端全绿读数**已由 r160 修复**——该行现改为：权威门槛落到 JS 目标、测试数只指 README 徽章这一单一真源，并明写不写双端同版全绿；`docs/polish-plan.md` 顶部另加存档说明 ⇒ 本项 ② 已归零，仅剩 ①（非主机 trace 复制）仍 `部分` | 新 | 同上 B | 从主机跑完的 trace 复制（副机无 FIST-Mbt MCP server 活库） |
+-| POLISH-03 | CI native job 去掉 continue-on-error（BUG-133 闭环） | `fix/native-ci-green` | `部分` | **测试臂已收紧**：`.github/workflows/ci.yml:435`（那一行即 `- name: Test (native)`）无 `continue-on-error`，`:436` 逐字写「这一步的红**照原样退出**（exit "$rc"，不加 continue-on-error）」，红只补 `::error::` 注解；`fist-ci.yml` 同规按 rc 分档退出。账本侧 `memory/bugs.md:2595` BUG-133 抬头已是 `FIXED`。**release 臂不能摘**：`scripts/check_release_asset_names.py:257` 的 R8 判据**反向要求** `build-native-linux` 必须带 `continue-on-error: true`（`.github/workflows/release.yml:105`/`:140`），摘了那把尺就红。其余残留 `continue-on-error`（点**步名行**并逐字带出步名——`continue-on-error: true` 那一行四步一模一样、指它等于没指：`.github/workflows/ci.yml:64`「Plan-landing ratchet gate (观测臂：升档待 owner 裁，BUG-367 ④)」、`:122`「Format check (BUG-118：格式门住在权威 CI，不只在狗食轨)」、`:195`「Plan-landing ratchet gate (计划点名落点判定面棘轮，观测臂，BUG-367/BUG-366)」、`:490`「Public install line e2e (BUG-116：文档那条线要真装通，公网侧取证)」）分属计划落点棘轮观测臂、fmt 门、公网安装 e2e 观测臂，都不是本单点名对象 ⇒ 字面「CI native job 去掉 coe」只能达成一半，验收「干净树 `moon test --target native -j 1` 全绿」需 `git archive HEAD` 真跑才能判，本单未跑 | BUG-133 | 同上 C | 干净树 `moon test --target native -j 1` 全绿 |
++| POLISH-03 | CI native job 去掉 continue-on-error（BUG-133 闭环） | `fix/native-ci-green` | `部分` | **测试臂已收紧**：`.github/workflows/ci.yml:469`（那一行即 `- name: Test (native)`）无 `continue-on-error`，`:470` 逐字写「这一步的红**照原样退出**（exit "$rc"，不加 continue-on-error）」，红只补 `::error::` 注解；`fist-ci.yml` 同规按 rc 分档退出。账本侧 `memory/bugs.md:2595` BUG-133 抬头已是 `FIXED`。**release 臂不能摘**：`scripts/check_release_asset_names.py:257` 的 R8 判据**反向要求** `build-native-linux` 必须带 `continue-on-error: true`（`.github/workflows/release.yml:105`/`:140`），摘了那把尺就红。其余残留 `continue-on-error`（点**步名行**并逐字带出步名——`continue-on-error: true` 那一行四步一模一样、指它等于没指：`.github/workflows/ci.yml:64`「Plan-landing ratchet gate (观测臂：升档待 owner 裁，BUG-367 ④)」、`:122`「Format check (BUG-118：格式门住在权威 CI，不只在狗食轨)」、`:195`「Plan-landing ratchet gate (计划点名落点判定面棘轮，观测臂，BUG-367/BUG-366)」、`:524`「Public install line e2e (BUG-116：文档那条线要真装通，公网侧取证)」）分属计划落点棘轮观测臂、fmt 门、公网安装 e2e 观测臂，都不是本单点名对象 ⇒ 字面「CI native job 去掉 coe」只能达成一半，验收「干净树 `moon test --target native -j 1` 全绿」需 `git archive HEAD` 真跑才能判，本单未跑 | BUG-133 | 同上 C | 干净树 `moon test --target native -j 1` 全绿 |
+ | POLISH-04 | 环境要求（Node≥24 / moon ≥0.1.20261016）移到 README 最显眼处 | `docs/readme-env-bold` | `未开工` | 三格都不满足：① `README.md:20` 的「环境要求」仍在正文中段（全文 288 行，位于末段），未前移；② 全文 `⚠` 计数 0，无强调标记；③ **版本地板自相矛盾**——`README.md:22` 写「MoonBit ≥ 0.1.20261016」，而 AGENTS.md「Tooling」与本仓钉版要求 **≥ 0.1.20261016**（`is` 模式匹配表达式依赖此版）。照 README 装环境的 agent 会拿到编不过主线代码的工具链 ⇒ 这一单优先级高于本 Slice 其余项 | 新 | 同上 D | README "环境要求"节加 ⚠️ + 版本号 |
+ | POLISH-05 | docs/known-boundaries.md 主动自曝 node:sqlite 实验警告 + native 配置复杂度 | `docs/known-boundaries` | `部分` | 指定文件不在跟踪面（`git ls-files docs` 无 `known-boundaries`）。**内容其实已在规范面**：`AI-DEVELOPMENT-STANDARD.md:104` 的 `## 7. 已知边界`（含 native/BUG-133/Node≥24 权威门槛）+ `README.md:222-227` 的同款自曝 ⇒ 本单剩的是「独立可点名的文件 + 30-50 行摘要」这一层，不是从零写自曝；动手前先裁决是否该由 §7 拆分，别造第二个真源 | 新 | 同上 E | 新文件 30-50 行 |
+ | POLISH-06 | **拳头 Logo** + assets/ + gen_plugins 加 assets 拷贝步骤 | `feature/fist-logo-assets` | `已落地` | `assets/fist-logo.svg` + `assets/README.md` 在跟踪面；`scripts/gen_plugins.py:316` 定义 `copy_assets()`（按字节复制、不做占位符渲染）并在 `:521` 作为投影末步调用；产物四宿主齐全：`plugins/{atomcode,claude,codearts,deepseek-harness}/assets/fist-logo.svg` | 新 | `docs/improvement-plan-20261010.md` §2.2 | assets/fist-logo.svg 存在 + plugins/*/assets/ 拷贝 |
+diff --git a/scripts/README.md b/scripts/README.md
+index 1eca6c23..4c2c87ee 100644
+--- a/scripts/README.md
++++ b/scripts/README.md
+@@ -102,7 +102,7 @@
+ - `check_ci_step_position.py` — **CI「gate 步骤位置」守卫（TASK-003，R84）**：CI #275 实证 `Migrate mooncakes dep manifests` 一步失败会 skip 其后全部步骤——CI #98/#99 起这是本仓两次 master 级坏状态的公共放大器（merge-marker gate 第一次接线就放在 Migrate 之后，恰在最需要出声时沉默）。判据按 workflow 文本逐 job 解析步骤块：**F1（判定面，棘轮）**——凡被分类为 gate 的步骤（name 命中 `gate|guard|守卫|门禁` 或 run 块引用 `scripts/check_*.py`）位置在 Migrate **之后**且步骤块内没有 `position-why:` 锚点 ⇒ 违例（锚点必须在块内，块外前一行属于上一步）。**F2（只报不判）**——带 `continue-on-error: true` 的步骤逐处点名（不限 gate 名：fmt 降门那两格的步骤名是 `Format check`，按名字分类必漏——首跑实测 3 处 = ci.yml 两格 + fist-ci.yml 一格）；**F3（只报不判）**——无 Migrate 步骤的 workflow 里的 gate 步骤豁免说明。棘轮上限 `POSITION_WHY_CEILING = 34` 按 R84 首跑存量标定、只许降；升档是人的决定。自拒：workflows 目录缺 / 无 yml / 任一文件 0 步骤 / 全仓 0 个 Migrate 基准 ⇒ rc=2（空扫描不出绿）。`--selftest` 九格（T1 后置无锚必红 / T2 后置有锚不红 / T3 前置无锚不红 / T4 无 Migrate 豁免 / T5 continue-on-error 出数不判红 / T6 空文本零步骤 / T7 非 gate 步骤不抓 / T8 check_ 脚本引用也算 gate / T9 真源现状锁上限内）；自检开发时当场抓出三处自家 bug（合成格 rc 用了棘轮而非检测、F3 误入棘轮计数、F2 按 gate 名分类漏真 coe 步骤）——修正后才 OK。ci.yml 已加两步（均在 Migrate 之前、各带 position-why）：`CI-step-position guard`（selftest + 全量，真门禁）与 `Plan-landing ratchet gate`（观测臂 continue-on-error，--gate 现读 rc=1 判定面 36 > 上限 25，真门禁化=升档待 owner 裁、BUG-367 ④）。用法：`python scripts/check_ci_step_position.py [--selftest]`（0=棘轮上限内 / 1=超上限 / 2=无法自证）。电池面：`run_guards.py` SPECIAL_CASES 两格。
+ - `check_plan_landing.py` — **计划文档「点名落点」↔ 跟踪面 核对（默认只读诊断，`--gate` 是棘轮真门禁）**：扫 `docs/` 里反引号中的仓内路径（`src/x.mbt` / `scripts/y.py` / 目录形态如 `src/diff`），给出四态——`tracked`（在跟踪面）/ `on-disk`（**实现已在工作树磁盘上、只是没进跟踪面** ⇒ 出路是 `git add` 并提交）/ `moved`（**点名路径不在跟踪面、但同名文件在点名的那个目录之下** ⇒ 大概率是归档/搬家，不是没写）/ `missing`（跟踪面与磁盘都没有）。为什么要有它：本会话反复遇到「计划说某文件已实现/将新增，但该文件不在 HEAD」——supervisor-tools 计划的测试锁文件根本不存在、两个新增实现（1093 行）在磁盘却不在 HEAD；web-dashboard 的 M0 后端「README 登记已入库、本体却未跟踪」；人工逐份核对要读十几份文档、几十个路径，极易漏。**默认模式刻意不是门禁**：计划写「将新增尚不存在的文件」是合法的 ⇒ `missing` 只是诊断读数（R41 起的 `--gate` 是另一回事：它不判「有没有 missing」，判「比已核存量多出几条」，见下）。防空转：零文档或零路径 ⇒ FATAL。`--selftest` **11 格**（抽取三格 / 干净不误报 / on-disk 必报 / missing 必报 / **目录反解 + 已跟踪目录不误报 + 未跟踪目录必报** / 空转计数）；**变异实测 4/4 被抓住**。**首跑即抓到本工具两处自身缺陷并修**：① `disk_set` 只收文件 ⇒ `cmd/cli` / `src/store` / `src/router` 等**存在的目录**被误报 missing（82 条里占 24 条）；② 单独的 `startswith('/')` 绝对路径拦截是**死代码**（`TOP_DIRS` 闸已排除），变异无格可抓 ⇒ 已删并改用 `extract-rejects-abs-only` 格锁定。**R40 又抓到两条、并把读数分成三面（BUG-365）**：③ 「路径:行号」引用没剥后缀 ⇒ `src/server/mcpcf_embed.mbt:108/121/134` 整串当路径，而 `os.path.basename("…/134")="134"` 不含点、恰好通过 `base_ok` ⇒ **跟踪面上存在的文件被报 missing**（这条从 2026-10-14 躺到 2026-10-21，因为它同时不在 CI 也不在任何一份电池里——见 `run_guards.py`）；④ 既有占位过滤只认 `<...>`/`*`，`memory/YYYY-MM-DD.md`、`yyyyMMdd.HH.mm.ss`、`caf-{ns}.json` 这类日期/变量形态被当落点。现在 P3 剥后缀 + P3-b 认日期/变量形态，且**被排除的形态单独出数**（静默丢弃=数字凭空少，下轮无人能查少的是噪音还是缺陷）；P4 把 `docs/archive/`、`reports/` 两族**名字自称存档**的文档分到「只报不判」面（白名单刻意不扩到 `docs/superpowers/` 这类「旧但不自称存档」的目录——用命名兜底把数字做漂亮，缺陷一条没少）。真源读数（R41 复读）：**54 份文档 / 354 条点名路径 ⇒ 判定面 25 条未落地 + 搬家态 3 条单列（P5，不进判定面）+ 存档面 17 条只报不判 + 形态说明 26 条不认作落点**（R40 当时判定面是 28 条；更早一次报满 56 条、无分面）。`--selftest` 由 11 格扩到 **19 格**（抽取口径 9 格：`<…>`/`*`、日期与变量占位、形态出数反证、「路径:行号」剥离 + 同串不带行号的正反证、绝对路径、目录形态、非仓内 / 干净不误报 / on-disk / missing / 跟踪目录 3 格 / **P4 分面 3 格**（含「存档面独红 ⇒ 判定档空」反证与「白名单不过宽」反证）/ 空转计数）。新增 `--all-faces` 让存档面也计入退出码。**R41 三条新定律 + 一处幻影**：① **搬家态（P5）只证「同名 + 落在点名的那个目录之下」，不证同一份内容**；它只做「从 missing 里换出来」这一件事——不许吃掉 `on-disk`、不许碰顶层点名（没有父目录可核的宁可留在判定面）、候选必须本身在跟踪面。机械可证的事实不该靠人改文档，这是 BUG-367 D 类三条读数的修法。② **棘轮 + 真门禁（P6）**：判定面条数上限 `VERDICT_GAP_CEILING = 25`（= 2026-10-21 实测存量），默认模式只报不判、`--gate` 才判 ⇒ 「计划写将新增所以本来就不存在」的合法性仍由默认模式保住，「新增的没写出来」由 CI 那一步红；缺口缩小脚本自己提示、不阻断，**放宽上限是人的决定**（「这批计划是不是作废了」属内容裁决，按金条四留指挥官）。③ **模式互斥不是洁癖**：`--gate` 与 `--all-faces` 同时打开 ⇒ 当场拒（rc=2）。上限是按活文档面标定的，去掉这道闸实测同一份存量从 25 跳到 38、门禁反而给 **0**——在未标定的宇宙上比数，红是假的、绿也是假的，而「绿得莫名」比红更坏。④ **文档自述的 `2=判据无法自证` 在 R41 之前是幻影**：三处空转都写 `raise SystemExit("FATAL …")`，而字符串形式退出码是 **1 不是 2**（`python -c` 实测）⇒ 改为 `emit_fatal()` + `SystemExit(2)`，并有一格专门锁「FATAL 那条出口的码真是 2」。同族用 **ast 数真调用点**重扫（上一版正则普查有两条口径缺陷：把 docstring 里的字样当站点、把 `sys.exit(main())` 这种**正常透传**当「有整式出口」，本轮都踩过）：**3 份纯幻影** = `check_mbti_sync.py`（7 处串式 FATAL）/ `check_pkg_imports.py`（6 处）/ `check_template_ctrl.py`（1 处），自述 2 而代码里一条 2 都给不出；另 **1 份半形** = `simulate_head_commit.py`（moon 超时那条走 `return 2` 真给 2，其余 4 处 FATAL 走串式给 1，其中「PATH 上没有 moon」那条**文案自己写着「（rc=2）」**）⇒ 这四份本轮未改，记 **BUG-369**。**变异实测 8 支**：每支被自己认领的夹具抓住（含退出码面），6 格对照全绿；`--selftest` 由 19 格扩到 **44 格**。执行面三处齐备：ci.yml「Guard execution-face census」跑 `--selftest`、ci.yml「Plan-landing ratchet gate」跑 `--gate`、`run_guards.py` 电池里诊断格与门禁格并存。用法：`python scripts/check_plan_landing.py [<文档路径>...] [--selftest] [--all-faces] [--gate]`（0=该模式无条件成立 / 1=判定面有落点未落地（诊断口径）或门禁超限 / 2=判据无法自证或模式互斥）。
+ - `blackbox/e2e_mirror_install.py` — **端到端镜像安装（BUG-108）**：本机 `http.server` 挂一个镜像目录（`moon.mod` 从仓库取、资产 zip 由已装产物现打包），用 `-BaseUrl` 让安装器**真的走下载**装进沙箱，再验命令可用。为什么要有它：`-LocalZip` 是跳过下载，而 URL 拼装/状态码/HTML sniff/zip 魔数/解压/ESM patch/shim/PATH/自检全在被跳过的那段里，公网 Release 又要有推送授权才存在 ⇒ 这段此前一次都没跑过。三条沙箱硬约束自证（子进程 env 把 LOCALAPPDATA/USERPROFILE/TEMP 指到 `temp/b108-sandbox`、HKCU 用户级 PATH 跑前抓原值跑完**逐字还原**并复核、真安装目录产物跑前跑后 sha256 必须相同），反面对照把资产换成 20KB HTML 页 ⇒ 必须 `rc!=0` 且点名"前两字节不是 PK"。前置不满足（非 Windows／无已装产物）⇒ **rc=3 并报缺什么**，跳过不算通过。
+-- `blackbox/check_merge_markers.py` — **「未解决冲突标记被提交进跟踪面」硬门禁（R74 接入 CI）**：只看行首精确三元组/落单侧（正文提及不误红），L0 空扫描自拒；`--selftest` 五格（干净不误红/未解决必红/半截必红/提及不误红/空扫自拒）。实测血证：f259d79 清完 9 文件 2 分钟后 259b56a 又带进 3 份——脚本落了 5 小时没接 CI，标记二次入库无人拦。
++- `blackbox/check_merge_markers.py` — **「未解决冲突标记被提交进跟踪面」硬门禁（R74 接入 CI）**：只看行首精确三元组/落单侧（正文提及不误红），L0 空扫描自拒；`--selftest` 八格（C1 干净不误红 / C2 未解决必红 / C3 半截必红 / C4 提及不误红 / C6 无标记但解析死必红 / C5 空扫自拒 / **C7 正向毒化对照**（把 os.environ 毒化成钩子态跑真实 new_repo，宿主 HEAD 必不动 + 不 scrub 裸跑必泄漏——防隔离「正向锁」假绿）/ **C8 词表对表**（本件自带 GIT_ENV_SCRUB 必须逐字等于 git_env.GIT_ENV_SCRUB——两份词表并存是漂移形状，R5 曾实测抓出单边剥 GIT_CEILING_DIRECTORIES））。实测血证：f259d79 清完 9 文件 2 分钟后 259b56a 又带进 3 份——脚本落了 5 小时没接 CI，标记二次入库无人拦。
+ - `blackbox/e2e_irm_line.py` — **字面文档线端到端（BUG-113 + BUG-116）**：从 README **反解** Windows 安装线原样执行（反解不到即 FATAL 自拒；不硬编码命令 ⇒ 文档与判据跑同一串字节）。**两臂**：主臂 `irm | iex`（.NET 栈）与兜底臂 `curl.exe --retry 5 --retry-delay 2 --retry-all-errors -fsSL … -o …; powershell -File …`（Schannel 栈）——本机同日两次采样 `irm` 6/6 传输层红、同一循环 `curl.exe` 6/6 得 200/16011 字节 ⇒ 兜底不是免疫，是把红概率换了一条腿；兜底臂的旗位整段照抄、`-o` 与 `-File` 同路径、URL 与主线同源均为属性检查（四处变异实测全红）。默认沙箱档：env 把 LOCALAPPDATA/USERPROFILE/TEMP 指 `temp/irm-sandbox`、沙箱 bin 顶 PATH、HKCU 用户级 PATH 逐字还原、真安装目录 sha 只读核对；`--real` 才落真面（跑前备份产物、不绿自动还原），README 仍是裸 `irm … | iex` 时拒绝执行。跑的是真公网：moon.mod 反解版本 → Release 资产 → 解压 → ESM patch → shim → 自检。**诚实的边界**：两臂只覆盖「取脚本」这一发，安装器**内部**下载 zip 仍走 .NET `Invoke-WebRequest`（链路整断时两条线一起红，那种情况只剩 `-LocalZip` 离线线）。归因先按源分段（GitCode 的 403/HTML 是 R6 记下的镜像形状，不进 GitHub 侧结论），传输层排在"缺针"之前。
+ - `blackbox/e2e_transport_stack_fallback.py` — **安装器内部取数换 TLS 栈的承重判据（BUG-116 内部半 / 判据 R14）**：复用 `e2e_mirror_install.py` 的镜像与沙箱 harness，同一镜像跑三格——**A** 把 installer 内部两处 .NET 取数（moon.mod 与资产 zip）一律换成抛「无 Response 的 WebException」（=传输层形状），curl 在 PATH ⇒ 必须 rc=0 且回执带 ASCII 记号 `curl-fallback`；**B** 同 A 但把 `$script:CurlExe` 置空 ⇒ 必须 rc!=0（这一格是 A 的对照：没它，A 的绿可能只是镜像好取）；**C** 干净 installer 正向 ⇒ 必须 rc=0（证明夹具没把真路径改坏）。A/B 同态即判据坏。跑完逐字还原用户 PATH、真安装产物 sha256 只读核对。两条踩过的口径写进 docstring：针必须挑 ASCII（cp936 控制台把中文打成 `?`，拿中文当针会假红）、变异副本必须带 UTF-8 BOM 写（含中文的 .ps1 无 BOM ⇒ PS5.1 解析期即坏，第一版因此把三格全跑红，那次的红是尺子坏）。前置不满足 ⇒ rc=3 并报缺什么（真安装目录没产物就无处取镜像）。用法：`python scripts/blackbox/e2e_transport_stack_fallback.py`。
+ - `blackbox/e2e_heartbeat_xproc.py` — **跨进程看护判据（BUG-119）**：起**两个**真 `node cli.js serve`（各自 `FIST_DB_PATH` 隔离库，绝不碰仓库根台账），8 臂成对锁住「无心跳行不等于首拍即死」「A 进程上报的心跳 B 进程读得到」「已暂停不回滚」「活动时钟超 timeout 仍回滚」「判死却回滚不了必须走 `skipped` 披露」。为什么不是单元测试：`ops_test.mbt` 的夹具是 MemoryStore + 同进程 Heartbeat、`ops_watchdog_test.mbt` 只有一个进程，两格都结构上照不到跨进程面。承重证明：同一份判据在 `git archive HEAD` 旧码树上 **3 绿 5 红**。权威 CI（`ci.yml` js-ubuntu「Heartbeat cross-process guard」）已挂这一步。
+@@ -210,7 +210,7 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
+
+ - `run_guards.py` — **守卫回归电池的唯一真源（R40 / BUG-366）**：`check_*.py` 这 26 把尺「红不红」看 CI，但「本地每轮复跑哪几格」从来没有真源——历轮都是一份 `temp/run_guardsNN.py`，temp/ 被 gitignore、写完即丢，格数全靠人回忆（实测这条手抄链：11 份电池 5、7–16 = 13×7 → 30 → 33 → 37 → 37 格）。漏抄不是「少跑一格」，是「那格永远不会被发现漏了」：**`check_plan_landing` 自 2026-10-14 落仓起 CI 里没有、11 份电池逐份 grep 全 0 命中，于是它带着「`src/x.mbt:108/121/134` 整串当路径 ⇒ 已跟踪文件报 missing」的虚报缺陷躺了一周**（本轮实测：56 条读数里 2 条虚报 / 8 条日期与变量占位噪音 / 17 条落在存档面）。判据 **G1** 每把 `check_*.py` 至少一个执行面（CI ∪ 电池，两侧名单都现读、不另抄清单——抄的那份就是下一个漂移点）；**G2** 电池点名的脚本不存在 ⇒ FATAL；**G3** 尺数 0 / CI 一把都没解析到 / 电池为空 ⇒ FATAL（空宇宙会让「无人缺面」以 rc=0 骗人）；每条 case 带 `expect`，预存红**照写期望值 + 依据**（`kind="known-red"`）而不是豁免，数字被修好就说明显；诊断型读数是 `kind="diag"`；依赖 temp 件的 case 缺前置打 SKIP，但 **SKIP 不构成「这格过了」的证据**，G1 只认名字在不在电池里。真源读数（R41 复读）：**35 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0；24 把尺 = CI 面 21 ∪ 电池面 22**（R48 现读：38 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0；26 把尺 = CI 面 23 ∪ 电池面 24）（R40 首跑当时是 34 格 / 失败 2，那两条红是「本文件尚未入库」造成的顺序性自红，登记后归 0）。`--selftest` 37 格（R121 现读：34 格 + 逐格判定列三格；R106 现读：电池 53 格 / 失败 0 / SKIP 5 / 缺执行面 0；宇宙 81 份脚本 = 尺 79 把 + 常驻豁免 2 份（只点名不入电池），CI 面 39 ∪ 电池面 41 ∪ 登记 30 ∪ 豁免 26 ∪ 待接线 4；自动补格 0 格，成因见 ④）：G1 干净 / G1 抓漏面尺且必点名 / G3 三种空宇宙各自拒 / G2 自拒 / 真源现状全绿 / plan_landing 已进电池 / **R41 两格：plan_landing 的门禁格与诊断格必须并存，且诊断格的 why 必带构成**（读数只给一个孤零零的 rc 不算证据）。**R106 再钉「宇宙的真源是递归全集，不是门禁前缀清单」**（2026-10-22 副机实测）：一次「手动解冲突合入」把 R82 的 `GATE_PREFIXES` / `EXEMPT_RULES` / `_match_rule` / `universe_files` 四个**定义**删了、把 `is_gate` / `exempt_reason` / `classify` 三个**调用面**留着 ⇒ import 期 NameError，`--selftest` 与 `--list` 一起起不来，ci.yml「Guard execution-face」那两步整条红了一整天——而电池里没有任何一格能看见这件事。三处收口：① 宇宙 = `scripts/**/*.py` 递归全集（`UNIVERSE_EXCLUDE_RE` 的测试/一次性/内部辅助族不入账），`classify()` 的门禁尺/豁免/未归类改成**记账口径**而不是宇宙本身；② 执行面是三面（CI ∪ 电池 ∪ 登记 `REGISTRY`），再加豁免理由（`EXEMPT_RULES`）与待接线（`KNOWN_NO_FACE`）两份点名账，五者皆无 ⇒ 缺面红——登记面原先只在 `check_faces` 函数体里有个 `registry` 而调用面没传，等于登记不顶用；③ 未捕获异常走 **4 号档**（BUG-369 契约：「尺子自己坏了」不许长得像「判据判红」的 1），并补 `auto_cases` arity 对表格钉住「定义与调用被拆到两次改动」这一类。④ 自动补格这台机器在现状树产 **0 格**（`build_cases()` 先按脚本名给每份可发现脚本补了无参格，`auto_case_for` 的名字排除因此恒命中），于是把它的判据从循环体抽成纯函数、用 7 面合成对照钉住——拿空产物反证就是 `all([])` 式的无人认领绿灯（R105 的 X5 同源）。同批把电池里**从没被读到过**的预存红按实测登记：`check_doc_surface` J4（scripts/README.md 里第二处发布版本自述（当时的号已过时，此处不写具体号以免与当前自述混淆））、`gen_plugins --check` 2（BUG-333/384 抬头编号重复 + BUG-384 被小记点名但状态非 FIXED）连带 `check_plugin_sync` 1、`check_ci_step_position` 1（位置违规 35 > 棘轮上限 34）连带其 `--selftest` 2、`check_scripts_index` 的换因（fist-gate.py 已登记，现红在那份提示词素材件（.txt 而非 .py，登记与否归文档那一单）未登记）；并把判定面已归零的 `check_bug_reference_integrity` 期望从 1 改回 0（本文件自订的律到期兑现）。宇宙全集化后第一次进账的三份账也当场结清：`whisperer.py` / `whisperer_patrol.py` 有 `--selftest` ⇒ 手写进电池，`install_git_hooks.py`（查本机 git 钩子态、`--install` 有写面）/ `refresh_dist.py`（要构建产物并写盘）⇒ 进 `REGISTRY` 带理由。**变异实测**：把 plan_landing 从 CASES 里摘掉 ⇒ `--list` 与 G1 立刻 rc=1 并点名它（正是那周的形状的机械化复现）。本工具的两个模式在 ci.yml「Guard execution-face」步里执行（`--selftest` + `--list`），所以这条门自己不会重蹈「写了没人跑」。用法：`python scripts/run_guards.py`｜`--list`｜`--selftest`（0=无失败 / 1=有格越期望或有尺无人跑 / 2=电池自拒）。**R82 宇宙扩展（TASK-007，P1）**：`guard_files()` 改 `os.walk` 递归——宇宙从 scripts/ 顶层扩到 **scripts/ 全树含 blackbox/**（排除 `__pycache__` 与 `_`/`test_`/`verify_`/`selfdrive_` 前缀族），现读 **67 份**（此前 26，blackbox 里落了不接线的尺如 `check_merge_markers.py` 正是 R58 指出的盲区本体）；新增第三执行面**登记面（REGISTRY）**——在册但不自动跑的脚本（servers/长跑/网络/平台前置/helpers/生成器/黑盒 e2e/证据型历史脚本）每条带 why，复用本仓 `schema-reserved` 的点名预留律：G1 改「CI ∪ 电池 ∪ 登记三面皆无才算孤儿」，G2 反向抓「脚本删了登记没删」的 stale 条目（与 store 表接线守卫两向发红同构）；`auto_cases()` 对新落仓的 `check_*` 自动补电池格（手写 36 + 自动 0，已知尺零重复）；CI 引用面正则放宽后实测 CI 真跑 38 份（旧正则看不见 5 支 blackbox e2e 探针与 cli_flag_probe）；电池 **36 格 / 失败 0 / SKIP 5（缺 temp 前置，不构成通过证据）/ 预存红 2**（`check_scripts_index` rc=1 = fist-gate.py 未登记、`cleanup_artifacts --check` rc=1 = 工作树残留，均按电池律 `expected()` 声明 + 依据）；`--selftest` 扩到 **19 格**（新增：宇宙≥40 + blackbox 全员在宇宙 / G2 stale 登记自拒 / G1 登记面不算缺面 / auto_cases 生成与零重复）。
+   **R121 行内判定列（副机实测缺陷）**：旧版逐格行的标签直接从记账口径取（`tag = {"gate": "OK", ...}[c["kind"]]`），于是一条 `rc=2 exp=0` 的门禁格照印 `OK`——实测本机 R120 分支上那两条链红就是这么躺在一行绿灯里的：`rc=2  exp=0  check_battery_count_doc.py   OK FATAL: run_guards --list rc=1：缺面清单：audit_branch_delete.py`，尾行自己写着 FATAL，行内标签却写着 OK，红只在末尾汇总出现。逐行读输出的人（和 AI）先看到的是绿灯，这与 R106 立的「空产物反证」「把『自动 0』印成一行看不出问题的数字」同族。修法：判定列从 `ok` 取并放进行首（`PASS`/`FAIL`），口径降级成第二个标签列（`门禁`/`诊断`/`预存红`），于是 `grep ^FAIL` 直接捞红格、`grep ^SKIP` 捞跳过格；`--selftest` 加三格合成对照钉住（红不印 OK / 命中印 PASS / 预存红仍带口径标注），四支变异实测各有对应红格（判定列恒印 OK→1 格红 / 判定列挪出行首→3 格红 / 口径列抹掉→1 格红 / 判定列反了→3 格红），还原逐字相同。**`--list` 面不动**：`check_battery_count_doc.py` 抄的是 `--list` 汇总行文法，逐格行没有机器消费者（本仓实测只有它读电池输出），改的是人读面。
+-  **BATTERY-REGISTRATION（机器可读锚点；`check_battery_count_doc.py` 逐键对表，改数必须同批）**：`rulers=108 ci=43 battery=69 missing=0 gate=77 exempt=27 unclassified=6`（现读来源：`python scripts/run_guards.py --list`）
++  **BATTERY-REGISTRATION（机器可读锚点；`check_battery_count_doc.py` 逐键对表，改数必须同批）**：`rulers=110 ci=48 battery=70 missing=0 gate=78 exempt=27 unclassified=7`（现读来源：`python scripts/run_guards.py --list`）
+
+
+ ### 2026-10-21 TASK-003：`check_ci_step_position.py`
+@@ -630,7 +630,7 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
+ - `check_selftest_call_face.py` — **「`--selftest` 到底跑没跑调用面」守卫（R171，副机自立项）**：R158 交付 `check_diff_scope.py` 时 `--selftest` 全绿而**现状面一跑就崩**——`DIFFSCOPE=clean` 那行少传一个实参抛 `TypeError`，冒出来的 rc=1 长得和「有违例」一模一样。自检为什么抓不到？因为它只考纯函数、没考「入口调用面」。本尺判「每个带 `--selftest` 的脚本，其自检必须至少真调一次 main/入口」，把「自检绿而入口崩」这一格单独钉住。用法：`python scripts/check_selftest_call_face.py [--selftest]`。
+ - `check_branch_ancestry.py` — **PR 分支「失基」检测（R66 / TASK-BRANCH-ANCESTRY-201）**：主线被重写（`92d0edba` → `788c5823`，即 2026-10-22 那 613MB 事故的收口）之后，**早先开出的 PR 分支基点成了孤儿**——`git merge` 不再走 fast-forward，`git cherry` 也可能把「补丁已在主线」误判成「未合」，实测代价是 2 小时人工排查。判据：对每个候选分支算 `merge-base`，基点不在当前主线祖先链上即判「失基」并给出重建建议（`rebase --onto`）。这一格直接服务合并面：分支失基时第一动作不是合并，而是先重建。用法：`python scripts/check_branch_ancestry.py [--selftest]`。
+ - `check_direct_push.py` — **pre-push 钩子：禁止直 push `gitcode/main`**：读 git pre-push 的 stdin 格式（`<local-ref> <local-sha> <remote-ref> <remote-sha> [remote-url]`），命中「remote-ref == `refs/heads/main` 且 remote-url 含 `gitcode`」即拦截并打红线说明（主仓只允许指挥官 merge 合入）；其余一律静默放行。**归档位（本会话实测复现的 BUG-138 同族形状）**：本脚本往 stderr 打中文结论，Windows 默认 cp936 控制台会让 print 当场 `UnicodeEncodeError` ⇒ 拿到 traceback 而非 verdict、且崩在结论行之前的 rc 会被读成「缺陷在场」；已按全仓统一形状补 `sys.stdout/stderr.reconfigure(encoding="utf-8", errors="replace")` 闸。
+-- `check_hardcoded_paths.py` — **「当前面不得写出本机身份路径」守卫（硬编码回归锁）**：`.dsh/fist-mbt-plugin/cordis.patch.yml` 曾把 `E:/<本机>/_build/...` 直接写进跟踪面，宿主读到的就是「写它的那台机器」的路径 —— 别的克隆者拿到即 `server is disconnected`；同类坏味道还有把某个用户的 home、某人的工程目录名写进脚本/文档/测试注释。本仓口径「修一处必配一把尺」⇒ 该修完立刻立此判据拦回归：扫描现状面（历史面 `memory/` `reports/` `docs/archive/` 与 `plugins/<host>/` 生成副本豁免）禁止出现本机绝对路径形状（盘符路径 / `/Users/<name>/` / `/home/<name>/`）。`--selftest` 合成对照证明能发红且干净面不误红。用法：`python scripts/check_hardcoded_paths.py [--selftest]`。
++- `check_hardcoded_paths.py` — **「当前面不得写出本机身份路径」守卫（硬编码回归锁）**：`.dsh/fist-mbt-plugin/cordis.patch.yml` 曾把 `E:/<本机>/_build/...` 直接写进跟踪面，宿主读到的就是「写它的那台机器」的路径 —— 别的克隆者拿到即 `server is disconnected`；同类坏味道还有把某个用户的 home、某人的工程目录名写进脚本/文档/测试注释。本仓口径「修一处必配一把尺」⇒ 该修完立刻立此判据拦回归：扫描现状面（历史面 `memory/` `reports/` `docs/archive/` 与 `plugins/<host>/` 生成副本豁免）禁止出现本机绝对路径形状（盘符路径 / `/Users/<name>/` / `/home/<name>/`）。**R3/R6 D 面结构锁**（词表面只认已知 token，抓不到换一台机的未知根——F:/ 复发两次实锤）：D1 `.dsh/**/cordis.patch.yml`（非 .tpl）**被 git 跟踪即红**（渲染件=本地产物的结构不变量，与盘符形状无关）；D2 `.dsh` YAML 的 args/cwd/env 值面含盘符绝对路径即红（`{{占位符}}`/`${}` 模板态豁免）。selftest 九格（C0–C5 + D1/D1b/D2）。selftest 的 ls-files 也走 `isolated_git_env()`（R46 只给写调用接了、读调用漏过——钩子下会读到宿主索引）。`--selftest` 合成对照证明能发红且干净面不误红。用法：`python scripts/check_hardcoded_paths.py [--selftest]`。
+ - `check_memory_log_dedupe.py` — **每日日志重复块门（R133，由实踩立成常驻判据）**：`memory/YYYY-MM-DD.md` 是副机/主机 agent 手工追加的当日审计面。R133 实测它被反复「整文件追加给自己」放大到 **91MB / 25770 个 `## ` 块，其中只有 56 块唯一**（同一 R70 块重复 1155 次，R106 重复 3465 次）；前一日 `2026-10-21.md` 也有 R23–R25 各 9 重。这些块**逐字节相同、零信息**，却把 clone/pull、检索与审阅成本整体拖垮，而此前没有任何机器面会红。判据：按 `## ` 切块做唯一性统计，重复块数超阈即红并点名重复次数最高的块；`--fix` 可无损去重（保留首次出现，与 `memory_gc` 的按字数截尾归档互补）。用法：`python scripts/check_memory_log_dedupe.py [--fix|--selftest]`。
+ - `check_memory_log_size.py` — **`memory/*.md` 失控追加的闸（R59）**：2026-10-23 实测 `memory/2026-10-22.md` 在 `gitcode/main` 上长到 **613.31 MB / 3,698,202 行**——同一段叙述被追加成千上万次（`## R70 …` 标题出现 **180,386 次**，而不同章节只有 **51 个**），历史里每提交增长约 87MB（87 → 174 → … → 610）。这是仓级事故（clone/push/CI 全被拖垮），不是排版问题。判据：单份 `memory/*.md` 超过体积/行数上限即红，并点名「最大单文件 + 增长趋势」；与 `check_memory_log_dedupe.py`（块级重复）互补——一个守体积、一个守结构。用法：`python scripts/check_memory_log_size.py [--selftest]`。
+
+diff --git a/scripts/blackbox/check_merge_markers.py b/scripts/blackbox/check_merge_markers.py
+index 0301eb94..140a5803 100644
+--- a/scripts/blackbox/check_merge_markers.py
++++ b/scripts/blackbox/check_merge_markers.py
+@@ -251,7 +251,83 @@ def selftest():
+     if rc != 2:
+         fails.append("C5 空跟踪面 main 返回 %s（应为 2 自拒，不许冒用 0）" % rc)
+
+-    print("SELFTEST %s（干净不误红 + 变异必红 + 空扫描自拒；格子从已执行对照反解：%s）"
++    # C7 正向毒化对照（R6：本支 graft 进主线 R45 实现）。main 的 new_repo 自带 own/same/inside
++    # 反证——那是「夹具没独立成功就自拒」面；本格补「正向锁」面：把 os.environ 毒化成 pre-commit
++    # 钩子态（GIT_DIR/GIT_INDEX_FILE 指向替身宿主仓），跑真实 new_repo（内部 isolated_git_env 应剥毒），
++    # 断言宿主 HEAD 纹丝不动；再用同一毒化 env 裸跑一次 commit 作变异对照——不 scrub 必须泄漏，
++    # 否则正向锁是假绿（本仓「拿空产物反证」同律）。这是 main 缺的那把：C1–C6 全是判据面，无一测隔离。
++    executed.append("C7 毒化环境不泄漏宿主 + 裸跑对照必泄漏")
++    try:
++        host = Path(tempfile.mkdtemp(prefix="cmk-host-"))
++        henv = isolated_git_env()
++        subprocess.run(["git", "init", "-q"], cwd=host, capture_output=True, env=henv)
++        subprocess.run(["git", "config", "user.email", "h@h"], cwd=host, capture_output=True, env=henv)
++        subprocess.run(["git", "config", "user.name", "h"], cwd=host, capture_output=True, env=henv)
++        (host / "seed.txt").write_text("seed\n", encoding="utf-8")
++        subprocess.run(["git", "add", "-A"], cwd=host, capture_output=True, env=henv)
++        subprocess.run(["git", "commit", "-qm", "seed"], cwd=host, capture_output=True, env=henv)
++
++        def host_count():
++            return subprocess.run(["git", "rev-list", "--count", "HEAD"], cwd=host,
++                                  capture_output=True, text=True, env=henv).stdout.strip()
++
++        before = host_count()
++        poison = {"GIT_DIR": str(host / ".git"),
++                  "GIT_INDEX_FILE": str(host / ".git" / "index")}
++        saved = {k: os.environ.get(k) for k in poison}
++        os.environ.update(poison)
++        try:
++            new_repo({"x.py": CLEAN_PY})  # 真实路径：内部 isolated_git_env 应剥毒
++            after = host_count()
++            if after != before:
++                fails.append("C7 泄漏：毒化环境（钩子态）下 new_repo 仍把提交写进宿主 HEAD"
++                             "（%s→%s）——isolated_git_env 未生效或被改坏" % (before, after))
++            leakd = Path(tempfile.mkdtemp(prefix="cmk-leak-"))
++            (leakd / "y.py").write_text(CLEAN_PY, encoding="utf-8")
++            subprocess.run(["git", "add", "-A"], cwd=leakd, capture_output=True, env=dict(os.environ))
++            subprocess.run(["git", "commit", "-qm", "fixture"], cwd=leakd, capture_output=True,
++                           env=dict(os.environ))
++            if host_count() == before:
++                fails.append("C7 变异对照不成立：未 scrub 的裸跑也没泄漏 ⇒ 毒化姿势不对，"
++                             "正向锁的红永远等不到（假绿）")
++        finally:
++            for k, v in saved.items():
++                if v is None:
++                    os.environ.pop(k, None)
++                else:
++                    os.environ[k] = v
++    except SystemExit as se:
++        fails.append("C7 毒化格触到夹具自拒（new_repo 独立断言没过）：%s" % se)
++    except Exception as e:
++        fails.append("C7 隔离格自身异常（按 BUG-369 契约不给判据红，但必须修）：%s" % e)
++
++    # C8 与共享件 scripts/git_env.py 的词表对表（R6）。为什么钉：本判据**就在 pre-commit 钩子里跑**、
++    # blackbox 顶层 sys.path 不含 scripts/（直跑 import 不到）⇒ 本件自带一份 GIT_ENV_SCRUB；
++    # 而 git_env.py 是全仓隔离的单一真源件——两份词表并存正是本仓反复返工的漂移形状（R5 那次
++    # 实测抓出过 GIT_CEILING_DIRECTORIES 单边剥的漂移）。不变量（诚实口径）：**两份 GIT_ENV_SCRUB
++    # 必须逐字相等**（根因面等强）；git_env 的前缀剥（CONFIG/AUTHOR）+NOSYSTEM 是加防面，不要求本件对等。
++    executed.append("C8 词表对表：本件 GIT_ENV_SCRUB == git_env.GIT_ENV_SCRUB")
++    try:
++        import importlib.util as _ilu
++        _spec = _ilu.spec_from_file_location(
++            "git_env", str(Path(__file__).resolve().parent.parent / "git_env.py"))
++        shared = _ilu.module_from_spec(_spec)
++        _spec.loader.exec_module(shared)
++        if tuple(GIT_ENV_SCRUB) != tuple(shared.GIT_ENV_SCRUB):
++            only_mine = [k for k in GIT_ENV_SCRUB if k not in shared.GIT_ENV_SCRUB]
++            only_shared = [k for k in shared.GIT_ENV_SCRUB if k not in GIT_ENV_SCRUB]
++            fails.append("C8 词表漂移：本件多剥 %s / git_env 多剥 %s——两份不等强，"
++                         "按其中一份接线的尺会漏另一份拦的雷" % (only_mine or "[]", only_shared or "[]"))
++        poison2 = {k: "/poison/%s" % k for k in GIT_ENV_SCRUB}
++        poison2["PATH"] = os.environ.get("PATH", "")
++        leaked = [k for k in GIT_ENV_SCRUB if k in isolated_git_env(poison2)]
++        if leaked:
++            fails.append("C8 本件 scrub 行为回退：根因面未剥净（漏 %s）" % leaked)
++    except Exception as e:
++        fails.append("C8 共享件读不到（漂移无从对表，按红处理）：%s" % e)
++
++    print("SELFTEST %s（干净不误红 + 变异必红 + 空扫描自拒 + 毒化不泄漏宿主 + 词表对表；"
++          "格子从已执行对照反解：%s）"
+           % ("OK" if not fails else "FAIL", " / ".join(executed)))
+     for f in fails:
+         print("SELFTEST FAIL " + f)
+diff --git a/scripts/check_hardcoded_paths.py b/scripts/check_hardcoded_paths.py
+index 0bed45ab..8d35c101 100644
+--- a/scripts/check_hardcoded_paths.py
++++ b/scripts/check_hardcoded_paths.py
+@@ -71,12 +71,16 @@ PATTERNS = [
+ ]
+
+
+-def current_face(root: Path) -> list[str]:
+-    """git 跟踪面里属于「当前面」的文件（正斜杠相对路径）。取不到 git 返回空。"""
++def current_face(root: Path, env=None) -> list[str]:
++    """git 跟踪面里属于「当前面」的文件（正斜杠相对路径）。取不到 git 返回空。
++    env=None 读宿主（live 正确语义）；selftest 传 isolated_git_env()——R46 给本尺的 git 写调用
++    接了隔离，但 **ls-files 这条读调用漏了**：钩子环境 GIT_DIR 会把它引到宿主索引，
++    selftest 拿宿主文件清单去沙箱目录逐个 is_file() ⇒ 全读不到 ⇒ probs 空 ⇒ C1 误红/假绿摇摆。"""
+     try:
+         out = subprocess.run(
+             ["git", "-C", str(root), "ls-files", "-z"],
+             capture_output=True, text=True, encoding="utf-8", errors="replace",
++            env=env,
+         )
+     except Exception:
+         return []
+@@ -97,12 +101,28 @@ def current_face(root: Path) -> list[str]:
+
+
+ def scan(root: Path, files: list[str]) -> list[str]:
+-    """逐文件逐行找机器身份 token。返回 `rel:lineno: 命中词` 形状的违例清单。"""
++    """逐文件逐行找机器身份 token。返回 `rel:lineno: 命中词` 形状的违例清单。
++
++    两面（R6 重加 D 面结构锁——main 吸收普查尺时把它吞了，导致 F:/ 活雷再入跟踪面无人拦）：
++      · A 面（词表）：本机身份 token（工程目录名 / 家目录）。只认已知 token，**会漏未知机器的根**
++        （F:/AI/Fist-Mbt 复发实锤——这就是光靠词表防不住回归的原因）。
++      · D 面（结构锁，与盘符形状无关）：
++          D1 `.dsh/**/cordis.patch.yml`（非 .tpl）**被 git 跟踪即违例**——渲染件=本地产物，
++             跟踪真源只有 .tpl；换任何机器根都咬得住；
++          D2 `.dsh/**` 的 YAML 里 args/cwd/env 标量值含盘符绝对路径即违例
++             （`{{占位符}}`/`${变量}` 豁免——模板态的合法形状）。
++    """
+     problems: list[str] = []
+     for rel in files:
+         p = root / rel
+         if not p.is_file():
+             continue
++        # D1：渲染件回跟踪面（结构锁，不看内容——先判再 continue，内容面另算）
++        if (rel.startswith(".dsh/") and rel.endswith("cordis.patch.yml")
++                and not rel.endswith(".tpl")):
++            problems.append("%s:1: 渲染件被重新跟踪（`.dsh/**/cordis.patch.yml` 必须是本地产物，"
++                            "跟踪真源只有 .tpl）" % rel)
++            continue
+         try:
+             text = p.read_text(encoding="utf-8", errors="replace")
+         except Exception:
+@@ -113,6 +133,13 @@ def scan(root: Path, files: list[str]) -> list[str]:
+                 if m:
+                     problems.append("%s:%d: `%s`（当前面不得写出本机身份路径）"
+                                     % (rel, i, m.group(0)))
++            # D2：.dsh YAML 的值面盘符锁（key: 形与 - 列表项形都覆盖——args 路径写在 `- 'F:/...'` 行）
++            if rel.startswith(".dsh/") and rel.endswith((".yml", ".yaml")):
++                m2 = re.search(r"(?:^|[\s:\-])['\"]?([A-Za-z]:[\\/]\S*?)['\"]?\s*$", line)
++                if m2 and "{{" not in line and "${" not in line:
++                    problems.append("%s:%d: `.dsh` YAML 值面出现盘符绝对路径 `%s`"
++                                    "（模板只许 {{占位符}}；渲染件不得在跟踪面）"
++                                    % (rel, i, m2.group(1)))
+     return problems
+
+
+@@ -144,15 +171,27 @@ def selftest() -> list[str]:
+         (root / "scripts" / "ok.py").write_text('P = "E:/repo/proj"\n', encoding="utf-8")
+         # C4 家目录形状
+         (root / "scripts" / "home.py").write_text('H = r"C:\\Users\\victo\\.dsh"\n', encoding="utf-8")
++        # D1 违例：渲染件回跟踪面（结构锁——未知机器根 Z:/ 也咬得住，词表面抓不到）
++        (root / ".dsh" / "fist-mbt-plugin").mkdir(parents=True)
++        (root / ".dsh" / "fist-mbt-plugin" / "cordis.patch.yml").write_text(
++            "args:\n  - 'Z:/someone/tool/launch.mjs'\n", encoding="utf-8")
++        # D1 合法：模板态（.tpl 带占位符）不判
++        (root / ".dsh" / "fist-mbt-plugin" / "cordis.patch.yml.tpl").write_text(
++            "args:\n  - '{{FIST_MBT_CLI}}'\ncwd: '{{FIST_MBT_ROOT}}'\n", encoding="utf-8")
++        # D2 违例：.dsh YAML 值面盘符（key: 形；列表项形由 D1 夹具的 `- 'Z:/...'` 覆盖）
++        (root / ".dsh" / "pkg.yml").write_text("cwd: 'F:/AI/x'\n", encoding="utf-8")
+         subprocess.run(["git", "add", "-A"], cwd=root, capture_output=True, env=genv)
+
+-        files = current_face(root)
++        files = current_face(root, env=genv)
+         cell("C0 扫描面非空", bool(files), "git ls-files 取不到当前面")
+         probs = scan(root, files)
+         cell("C1 工程目录名→红", any("bad.py:" in p for p in probs), str(probs))
+         cell("C2 豁免面不误红", not any("old.md" in p for p in probs), str(probs))
+         cell("C3 合成盘符不误红", not any("ok.py" in p for p in probs), str(probs))
+         cell("C4 家目录→红", any("home.py:" in p for p in probs), str(probs))
++        cell("D1 渲染件回跟踪→红", any("渲染件被重新跟踪" in p for p in probs), str(probs))
++        cell("D1b 模板态不误红", not any("cordis.patch.yml.tpl" in p for p in probs), str(probs))
++        cell("D2 值面盘符（key/列表形）→红", any("值面出现盘符" in p for p in probs), str(probs))
+         # C5 变异台：把扫描面收成「只豁免」⇒ 必空，调用方据空自拒（防「削空=假绿」）
+         cell("C5 空扫描面可识别", not current_face(root / "reports") , "应无跟踪文件")
+
+@@ -167,8 +206,8 @@ def main(argv: list[str]) -> int:
+             for f in fails:
+                 print("  - " + f)
+             return 1
+-        print("SELFTEST OK 硬编码回归锁可红可绿（工程目录名/家目录 必红；"
+-              "豁免历史面/合成盘符形状 不误红；空扫描面可识别）")
++        print("SELFTEST OK 硬编码回归锁可红可绿（工程目录名/家目录 必红；D 面结构锁：渲染件回跟踪/"
++              "值面盘符 必红，模板态不误红；豁免历史面/合成盘符形状 不误红；空扫描面可识别）")
+         return 0
+
+     files = current_face(ROOT)
+diff --git a/scripts/check_host_installable.py b/scripts/check_host_installable.py
+index d3ae47b4..072667bf 100644
+--- a/scripts/check_host_installable.py
++++ b/scripts/check_host_installable.py
+@@ -13,7 +13,12 @@
+   D1 · DSH 宿主面（`plugins/**` 之外的真安装面）：`.dsh/fist-mbt-plugin/`
+      · package.json：`name` 合法 npm 名（`@scope/pkg` 或 `pkg`，仅 `[A-Za-z0-9._-]` 与一个 `/`）；
+        `version` 是合法语义版本（`x.y.z`）且 **== moon.mod 的 version**。
+-     · cordis.patch.yml —— **严格档**（这是 DSH 真安装面，错了就 disconnected）：
++     · cordis.patch.yml.tpl —— **模板档（跟踪真源，本 PR 起为安装面的唯一入仓形态）**：
++          ① 两个占位符 `{{FIST_MBT_LAUNCHER}}` / `{{FIST_MBT_ROOT}}` 齐全；
++          ② **不得含任何本机绝对路径**（盘符 / 家目录）——模板绑定某台机器 = 每个克隆者
++             拿到都 disconnected；
++          ③ 占位符替换成合成绝对路径后，必须满足下面的严格档（模板形状 == 可装形状）。
++     · cordis.patch.yml —— **渲染件（本地产物，已 gitignore）**，在场时走严格档：
+          ① YAML 可解析（PyYAML 缺失时退化到缩进/键值结构检查，不静默跳过）；
+          ② `insert` 目标 `id` 与 `name` 非空（`name` 是被注入的插件 id，离线无法核验
+             宿主注册表，故只验形状不验存在性）；
+@@ -55,7 +60,8 @@
+        默认模板只能选一个主形状（Claude Code 形状）。判据按宿主分档认这个事实。
+
+ 扫描面（缺关键文件 → 自拒 exit 2）：
+-  `.dsh/fist-mbt-plugin/{package.json, cordis.patch.yml}`（D1）
++  `.dsh/fist-mbt-plugin/{package.json, cordis.patch.yml.tpl}`（D1：模板=跟踪真源）
++  `.dsh/fist-mbt-plugin/cordis.patch.yml`（D1：本机渲染件，**可选**——干净检出不产它）
+   `.mcp.json` / `.mcp.dev.json` / `plugins/**/.mcp.json`（D2）
+   `default-fist.mcp.json`（D3）
+   `moon.mod`（D1 的版本基线）
+@@ -88,6 +94,10 @@ ROOT = Path(__file__).resolve().parent.parent
+
+ DSH_DIR = ".dsh/fist-mbt-plugin"
+ DSH_MANIFEST = DSH_DIR + "/package.json"
++# 安装面双态（本 PR 起）：跟踪真源是模板（占位符、零本机路径），渲染件是本地产物
++# 由 scripts/render_dsh_patch.py 按当前仓位置生成（已 gitignore）。判据必须认这个事实：
++# 干净检出只有模板、没有渲染件 —— 只校验模板；本机有渲染件时再叠加严格档。
++DSH_PATCH_TPL = DSH_DIR + "/cordis.patch.yml.tpl"
+ DSH_PATCH = DSH_DIR + "/cordis.patch.yml"
+ LENIENT_JSON = [".mcp.json", ".mcp.dev.json"]
+ # BUG-358：只有「跟踪真源」才允许进关键清单。根 `.mcp.json` 被 .gitignore `/.mcp.json`
+@@ -172,8 +182,30 @@ def _walk_yaml(node, problems: list[str], path: str = "") -> None:
+                 _walk_yaml(v, problems, path + "/%d" % i)
+
+
++def dsh_template_problems(tpl: str) -> list[str]:
++    """模板档（跟踪真源）：安装面双态的「源」这一侧必须与任何一台机器解耦。
++    判据：① 两个占位符齐全；② 不得出现盘符/家目录绝对路径；③ 渲染后仍须过严格档。"""
++    problems: list[str] = []
++    for ph in ("{{FIST_MBT_LAUNCHER}}", "{{FIST_MBT_ROOT}}"):
++        if ph not in tpl:
++            problems.append("cordis.patch.yml.tpl 缺占位符 %s（渲染件将漏值/残留）" % ph)
++    m = re.search(r"[A-Za-z]:[\\/]", tpl)
++    if m:
++        line = tpl[:m.start()].count("\n") + 1
++        problems.append("cordis.patch.yml.tpl 第 %d 行出现盘符绝对路径（模板禁止任何本机路径）" % line)
++    if re.search(r"(?:^|[\s'\"])(?:/home/|/Users/)", tpl):
++        problems.append("cordis.patch.yml.tpl 出现家目录路径（模板禁止绑定某台机器）")
++    # 占位符替换成合成绝对路径后，严格档必须绿（模板形状 == 可装形状）
++    synth = (tpl
++             .replace("{{FIST_MBT_LAUNCHER}}", "E:/__tpl__/packaging/dsh/launch-mcp.mjs")
++             .replace("{{FIST_MBT_ROOT}}", "E:/__tpl__"))
++    sub_problems, _ = dsh_patch_problems(synth)
++    problems.extend("模板渲染后不满足严格档：" + p for p in sub_problems)
++    return problems
++
++
+ def dsh_patch_problems(patch: str) -> tuple[list[str], bool]:
+-    """严格档：DSH cordis.patch.yml。返回 (违例列表, 是否成功结构化解析)。"""
++    """严格档：DSH cordis.patch.yml（渲染件，绝对路径安装面）。返回 (违例列表, 是否成功结构化解析)。"""
+     problems: list[str] = []
+     parsed_ok = True
+
+@@ -333,7 +365,7 @@ def missing_key_files(root: Path = ROOT) -> list[str]:
+     """跟踪真源齐不齐。BUG-358：关键清单只收 REQUIRED_MCP_JSON（跟踪件），
+     不收被 gitignore 的根 .mcp.json——否则任何干净 checkout（CI、副机 clone）都会
+     因缺这个本机件而自拒 exit 2，判据形同虚设。root 供 --selftest 注入合成树。"""
+-    crit = [DSH_MANIFEST, DSH_PATCH, DEFAULT_TEMPLATE, MOON_MOD] + REQUIRED_MCP_JSON
++    crit = [DSH_MANIFEST, DSH_PATCH_TPL, DEFAULT_TEMPLATE, MOON_MOD] + REQUIRED_MCP_JSON
+     return [c for c in crit if not (root / c).exists()]
+
+
+@@ -359,8 +391,8 @@ CLEAN_DSH_CFG = {
+     "serverName": "fist-mbt",
+     "transport": "stdio",
+     "command": "node",
+-    "args": ["E:/proj/AI/FIST-Mbt/_build/js/debug/build/cmd/cli/cli.js", "serve"],
+-    "cwd": "E:/proj/AI/FIST-Mbt",
++    "args": ["E:/repo/FIST-Mbt/_build/js/debug/build/cmd/cli/cli.js", "serve"],
++    "cwd": "E:/repo/FIST-Mbt",
+     "toolCallTimeoutMs": 30000,
+     "failOnStartupError": False,
+     "reconnect": {"enabled": True, "initialDelayMs": 500, "maxDelayMs": 30000, "maxAttempts": 10},
+@@ -486,7 +518,7 @@ def selftest() -> list[str]:
+     with tempfile.TemporaryDirectory() as td:
+         fake = Path(td)
+         (fake / DSH_MANIFEST).parent.mkdir(parents=True, exist_ok=True)
+-        for rel in [DSH_MANIFEST, DSH_PATCH, DEFAULT_TEMPLATE, MOON_MOD, ".mcp.dev.json"]:
++        for rel in [DSH_MANIFEST, DSH_PATCH_TPL, DEFAULT_TEMPLATE, MOON_MOD, ".mcp.dev.json"]:
+             (fake / rel).parent.mkdir(parents=True, exist_ok=True)
+             (fake / rel).write_text("{}", encoding="utf-8")
+         # 故意【不】创建 .mcp.json —— 模拟干净 CI checkout
+@@ -504,14 +536,27 @@ def selftest() -> list[str]:
+     if read_moon_version() is None:
+         fails.append("T6 读不到 moon.mod 版本 → D1 的 version==moon.mod 无法判定")
+
+-    # T7 现状 DSH 面不红（尺子自证：当前 cordis.patch.yml 是「真正可用」样本）
++    # T7 现状模板必须绿（双态之「源」）：这是干净检出上唯一在场的安装面真源
++    real_tpl = ROOT / DSH_PATCH_TPL
++    if real_tpl.exists():
++        rp = dsh_template_problems(real_tpl.read_text(encoding="utf-8"))
++        if rp:
++            fails.append("T7 现状 DSH 模板红了（应为绿）：" + rp[0])
++    else:
++        fails.append("T7 找不到现状 DSH 模板 → 判据扫描面选错了")
++    # T7b 渲染件若在场则严格档绿；缺席不算红（本地产物、干净检出合法态）
+     real = ROOT / DSH_PATCH
+     if real.exists():
+         rp, _ = dsh_patch_problems(real.read_text(encoding="utf-8"))
+         if rp:
+-            fails.append("T7 现状 DSH patch 红了（应为绿）：" + rp[0])
+-    else:
+-        fails.append("T7 找不到现状 DSH patch → 判据扫描面选错了")
++            fails.append("T7b 本机渲染件红了（应为绿）：" + rp[0])
++    # T7c 模板硬编码泄漏必须红（本 PR 的核心回归锁：绝对路径不许回到跟踪面）
++    leak = "- insert:\n    - id: x\n      name: 'y'\n      config:\n        args:\n          - 'E:/__leak__/cli.js'\n"
++    if not dsh_template_problems(leak):
++        fails.append("T7c 模板写死盘符路径却没被判红 → 硬编码回归锁失效")
++    # T7d 模板缺占位符必须红
++    if not any("占位符" in p for p in dsh_template_problems("cwd: 'x'\n")):
++        fails.append("T7d 模板缺占位符却没被判红")
+
+     # T8 字段白名单反解：必须真的能从 src 反解到 toolCallTimeoutMs（防硬编码漂移）
+     fields = read_form_field_whitelist()
+@@ -564,7 +609,12 @@ def main(argv: list[str]) -> int:
+     except Exception as e:
+         problems.append("DSH manifest 无法 JSON 解析：%s" % e)
+
+-    # D1 · patch（严格档）
++    # D1 · patch（双态：模板必须干净；渲染件在场时叠加严格档）
++    tp = ROOT / DSH_PATCH_TPL
++    if tp.exists():
++        problems.extend(dsh_template_problems(tp.read_text(encoding="utf-8")))
++    else:
++        problems.append("DSH 模板 %s 不存在（跟踪真源缺失）" % DSH_PATCH_TPL)
+     pp = ROOT / DSH_PATCH
+     if pp.exists():
+         patch_problems, parsed_ok = dsh_patch_problems(pp.read_text(encoding="utf-8"))
+@@ -573,7 +623,9 @@ def main(argv: list[str]) -> int:
+             # PyYAML 缺失时只做退化检查，无法给出严格结论 → 但不算输入面退化
+             pass
+     else:
+-        problems.append("DSH patch %s 不存在（真安装面缺失）" % DSH_PATCH)
++        # 渲染件是本地产物（gitignore）：干净检出/CI 上不存在是合法态，不算违例。
++        warns.append("本机渲染件 %s 缺席（干净检出合法态）：装 DSH 插件前跑 "
++                     "`python scripts/render_dsh_patch.py` 生成" % DSH_PATCH)
+
+     # D2 · 宽松档
+     for rel in LENIENT_JSON:
+diff --git a/scripts/render_dsh_patch.py b/scripts/render_dsh_patch.py
+index 6eb6c1fe..fb062f50 100644
+--- a/scripts/render_dsh_patch.py
++++ b/scripts/render_dsh_patch.py
+@@ -3,19 +3,20 @@
+ """render_dsh_patch.py —— DSH 插件安装面「模板 → 本机渲染」（路径硬编码清零的落点）。
+
+ 背景（本 PR 修的病灶）：`.dsh/fist-mbt-plugin/cordis.patch.yml` 从前直接写着
+-`E:/proj/...` 这发本机绝对路径。`@deepseek-ai/dsh-mcp-client` 的 stdio 通道把
++渲染者机器上的绝对路径（某台机的盘符 + 工程目录名）。`@deepseek-ai/dsh-mcp-client` 的 stdio 通道把
+ `args`/`cwd` 当字面 argv 交给 spawn，**宿主不做 `${...}` 插值**——绝对路径进跟踪面
+ = 每个克隆者的 `server is disconnected`。反过来，纯相对路径也不行：DSH Host 的进程
+ cwd 不是本仓（`check_host_installable.py` D1 严格档正是为此而设，T1 格钉死）。
+
+ 所以安装面拆成两态：
+   · 跟踪真源  `.dsh/fist-mbt-plugin/cordis.patch.yml.tpl` —— 模板，禁止任何绝对路径，
+-    只含 `{{FIST_MBT_CLI}}` / `{{FIST_MBT_ROOT}}` 两个占位符；
++    只含 `{{FIST_MBT_LAUNCHER}}` / `{{FIST_MBT_ROOT}}` 两个占位符；
+   · 本地产物  `.dsh/fist-mbt-plugin/cordis.patch.yml` —— 本脚本渲染，已 gitignore，
+     `package.json` 的 `dsh.bundle.patch` 指向的正是它（安装面形状不变，DSH 照旧读）。
+
+ 路径来源全部由「本仓自身位置」推导，零硬编码，优先级从高到低：
+-  CLI：`--cli` > env `FIST_MBT_CLI` > `<root>/_build/js/debug/build/cmd/cli/cli.js`
++  入口：`--cli` > env `FIST_MBT_CLI` > `packaging/dsh/launch-mcp.mjs`（机器无关 launcher，
++#         内部挑最新 `_build/js/*` 产物、回退 `dist/fist-mbt.js`）> `<root>/_build/js/debug/build/cmd/cli/cli.js`
+         > `<root>/_build/js/release/build/cmd/cli/cli.js` > `_build/js/*/build/cmd/*/cli.js` 兜底
+   根：  `--root` > env `FIST_MBT_HOME` > 由本脚本位置反推（scripts/ 的上一层）
+
+@@ -40,7 +41,8 @@ if hasattr(sys.stderr, "reconfigure"):
+ REPO_ROOT = Path(__file__).resolve().parents[1]
+ TPL_REL = ".dsh/fist-mbt-plugin/cordis.patch.yml.tpl"
+ OUT_REL = ".dsh/fist-mbt-plugin/cordis.patch.yml"
+-PLACEHOLDERS = ("{{FIST_MBT_CLI}}", "{{FIST_MBT_ROOT}}")
++PLACEHOLDERS = ("{{FIST_MBT_LAUNCHER}}", "{{FIST_MBT_ROOT}}")
++LAUNCHER_REL = "packaging/dsh/launch-mcp.mjs"
+
+ # 绝对路径形状：盘符 `X:/` 或 `X:\\`、POSIX 前导 `/`、UNC `\\host\share`。
+ ABS_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|/|\\\\)")
+@@ -60,7 +62,13 @@ def to_posix(p: Path | str) -> str:
+
+
+ def find_cli(root: Path, cli_override: str | None) -> tuple[str | None, str]:
+-    """按优先级找 JS 可执行产物。返回 (正斜杠绝对路径或 None, 来源说明)。"""
++    """按优先级找 stdio 入口。返回 (正斜杠绝对路径或 None, 来源说明)。
++
++    默认入口 = `packaging/dsh/launch-mcp.mjs`（机器无关 launcher：自己解析包根、
++    挑 `_build/js/*` 最新产物、回退 `dist/fist-mbt.js`，并带 Node>=24 / node:sqlite
++    与 ESM require 检查）。为什么不让 patch 直指 `_build/.../cli.js`：那要求渲染时
++    产物已存在，且把「入口搬家」的维护点摊到每台机器上；launcher 一次渲染、随构建自愈。
++    `--cli` / env `FIST_MBT_CLI` 仍可显式钉到某个具体产物（调试未发布改动用）。"""
+     if cli_override:
+         p = Path(cli_override)
+         if not p.is_absolute():
+@@ -68,7 +76,7 @@ def find_cli(root: Path, cli_override: str | None) -> tuple[str | None, str]:
+         p = p.resolve()
+         if p.exists():
+             return to_posix(p), "--cli"
+-        return None, f"--cli 指向的产物不存在: {to_posix(p)}"
++        return None, f"--cli 指向的入口不存在: {to_posix(p)}"
+     env = os.environ.get("FIST_MBT_CLI", "").strip()
+     if env:
+         p = Path(env)
+@@ -76,7 +84,11 @@ def find_cli(root: Path, cli_override: str | None) -> tuple[str | None, str]:
+             p = (root / p).resolve()
+         if p.exists():
+             return to_posix(p), "env FIST_MBT_CLI"
+-        return None, f"env FIST_MBT_CLI 指向的产物不存在: {to_posix(p)}"
++        return None, f"env FIST_MBT_CLI 指向的入口不存在: {to_posix(p)}"
++    launcher = root / LAUNCHER_REL
++    if launcher.exists():
++        return to_posix(launcher), LAUNCHER_REL
++    # 回退：老形状（社区层未落地时也能起 server），再不行才要求构建。
+     for rel in ("_build/js/debug/build/cmd/cli/cli.js",
+                 "_build/js/release/build/cmd/cli/cli.js"):
+         p = root / rel
+@@ -86,7 +98,8 @@ def find_cli(root: Path, cli_override: str | None) -> tuple[str | None, str]:
+     if cands:
+         newest = max(cands, key=lambda c: c.stat().st_mtime)
+         return to_posix(newest), f"_build glob 兜底({newest.parent.parent.parent.name})"
+-    return None, "找不到 _build/js/*/build/cmd/*/cli.js——先 `moon build --target js` 再渲染"
++    return None, (f"缺 {LAUNCHER_REL}，且找不到 _build/js/*/build/cmd/*/cli.js"
++                  "——checkout 不完整或先 `moon build --target js`")
+
+
+ def render_text(tpl: str, cli: str, root: str) -> str:
+@@ -136,14 +149,14 @@ def selftest() -> list[str]:
+             fails.append(f"{name} — {note}")
+
+     # ① 模板判据咬人：盘符泄漏必红
+-    bad_tpl = "cwd: 'E:/somewhere/repo'\nargs:\n  - '{{FIST_MBT_CLI}}'\n  - 'serve'\n"
++    bad_tpl = "cwd: 'E:/somewhere/repo'\nargs:\n  - '{{FIST_MBT_LAUNCHER}}'\n  - 'serve'\n"
+     cell("T1 模板盘符泄漏→红", any("盘符" in p for p in template_problems(bad_tpl)))
+     # ② 干净模板→绿
+-    clean_tpl = ("args:\n  - '{{FIST_MBT_CLI}}'\n  - 'serve'\ncwd: '{{FIST_MBT_ROOT}}'\n")
++    clean_tpl = ("args:\n  - '{{FIST_MBT_LAUNCHER}}'\n  - 'serve'\ncwd: '{{FIST_MBT_ROOT}}'\n")
+     cell("T2 干净模板→绿", not template_problems(clean_tpl), str(template_problems(clean_tpl)))
+     # ③ 缺占位符→红
+-    cell("T3 缺 CLI 占位符→红",
+-         any("FIST_MBT_CLI" in p for p in template_problems("cwd: '{{FIST_MBT_ROOT}}'")))
++    cell("T3 缺 LAUNCHER 占位符→红",
++         any("FIST_MBT_LAUNCHER" in p for p in template_problems("cwd: '{{FIST_MBT_ROOT}}'")))
+     # ④ 渲染件残留占位符→红
+     cell("T4 渲染件残留占位符→红",
+          any("残留占位符" in p for p in rendered_problems("cwd: '{{FIST_MBT_ROOT}}'")))
+diff --git a/scripts/run_guards.py b/scripts/run_guards.py
+index 674e7b22..4aa693a5 100644
+--- a/scripts/run_guards.py
++++ b/scripts/run_guards.py
+@@ -165,6 +165,12 @@ SPECIAL_CASES = [
+     #    「缺面清单」点名；此处按本文件纪律手写点名自检格（非 check_* 亦须有面）。 ——
+     case("render_dsh_patch.py", "--selftest"),
+     case("run_light_wt.py", "--selftest"),
++    # —— R3/R6：check_direct_push 是 pre-push 钩子的判定本体，**裸跑格必须禁**——它从 stdin 读
++    #    git 的 pre-push ref 行，电池环境（capture_output 不给 stdin）会挂在管道上空转到 timeout
++    #    （R98 口径：尺子不结束不是判据红，是空转）。手写点名 --selftest 后 covered 按脚本名去重，
++    #    自动发现不再补裸跑格。R6 注：合并吸收普查尺时这两格又被吞了一次，按同批律补回。 ——
++    case("check_direct_push.py", "--selftest"),
++    case("check_git_sandbox_hygiene.py", "--selftest"),
+     # —— R106 追记（叠 gitcode/master b465915f 之后现读）：下面三格原来的 expected 非 0 已被主线
+     #    修好（账本撞号收敛 + `scripts/merge-prompt.txt` 出跟踪面），got 0 ≠ expect 当场现形 ⇒
+     #    按本文件自订的律「预存红被修好 ⇒ 把期望改回 0」转回门禁格。 ——
+@@ -551,6 +557,8 @@ REGISTRY = {
+     "pentad_fist.py": "Pentad 外部项目驱动器（长跑）",
+     "score_gate.py": "评分器 CLI（读数型，无门禁语义）",
+     "simulate_head_commit.py": "辅助库（check_bug_reference_integrity 引用其 simulate_head_commit，不单独跑）",
++    "git_env.py": "辅助库（R45/R46：isolated_git_env 单一真源，被 8 支夹具尺 import；无独立门禁语义，"
++                  "覆盖由 check_git_sandbox_hygiene 普查格 + check_merge_markers C8 逐字对表格承担）",
+     "install_git_hooks.py": "本机 git 钩子安装/体检（--install 写 .git/hooks 与 core.hooksPath；"
+                             "--selftest 读的是**这台机器装没装**，副机/CI 上必 rc=1 属环境态不是判据红）",
+     "refresh_dist.py": "dist 快照刷新计划/执行（要 moon build 产物并写盘；无 --selftest 旗标，"

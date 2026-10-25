@@ -1,0 +1,1740 @@
+diff --git a/.dsh/fist-mbt-plugin/cordis.patch.yml b/.dsh/fist-mbt-plugin/cordis.patch.yml
+deleted file mode 100644
+index 5b9324da..00000000
+--- a/.dsh/fist-mbt-plugin/cordis.patch.yml
++++ /dev/null
+@@ -1,26 +0,0 @@
+-﻿# FIST-Mbt — local (this checkout) DSH bundle layer.
+-#
+-# This is the development install: it points straight at the checkout, and the
+-# shared launcher prefers the newest `_build/js/.../cli.js`, so a rebuild is
+-# picked up without editing this file. The published package uses the portable
+-# layer in `packaging/dsh/cordis.patch.yml`.
+-
+-- insert:
+-    - id: fist-mbt-mcp
+-      name: '@deepseek-ai/dsh-mcp-client'
+-      config:
+-        serverName: 'fist-mbt'
+-        transport: 'stdio'
+-        command: 'node'
+-        args:
+-          - 'F:/AI/Fist-Mbt/packaging/dsh/launch-mcp.mjs'
+-        cwd: 'F:/AI/Fist-Mbt'
+-        toolCallTimeoutMs: 300000
+-        failOnStartupError: false
+-        reconnect:
+-          enabled: true
+-          initialDelayMs: 500
+-          maxDelayMs: 30000
+-          maxAttempts: 10
+-        env:
+-          FIST_PROJECT_DIR: 'F:/AI/Fist-Mbt'
+diff --git a/.dsh/fist-mbt-plugin/cordis.patch.yml.tpl b/.dsh/fist-mbt-plugin/cordis.patch.yml.tpl
+index 8432a5d3..26739b57 100644
+--- a/.dsh/fist-mbt-plugin/cordis.patch.yml.tpl
++++ b/.dsh/fist-mbt-plugin/cordis.patch.yml.tpl
+@@ -1,3 +1,44 @@
+-fatal: ambiguous argument 'gitcode\slave\dsh-plugin-portable;.dsh\fist-mbt-plugin\cordis.patch.yml.tpl': unknown revision or path not in the working tree.
+-Use '--' to separate paths from revisions, like this:
+-'git <command> [<revision>...] -- [<file>...]'
++# FIST-Mbt 开发层插件 patch — **模板态**（跟踪真源，禁止出现任何本机绝对路径）。
++#
++# 为什么是模板：`@deepseek-ai/dsh-mcp-client` 的 stdio 通道把 `args`/`cwd` 当**字面
++# argv** 直接交给 `child_process.spawn`，DSH 宿主侧**不做美元花括号变量插值**（实测：
++# app.asar 内 mcp-client 的 stdio 分支只读 `command`/`args`/`cwd`/`env` 四个键）。
++# 所以任何写进这里的绝对路径都只对「写它的那台机器」成立——把本机盘符路径提交进
++# 跟踪面，等于给每个克隆者埋一发 `server is disconnected`（BUG-389 同族教训）。
++#
++# 本文件由 `scripts/render_dsh_patch.py` 渲染成同目录的 `cordis.patch.yml`
++# （本地产物、已 gitignore）。`package.json` 的 `dsh.bundle.patch` 指向渲染件，
++# 安装面形状不变（DSH 照旧读一份 YAML），只是路径每台机器各自生成。占位符两个：
++#
++#   {{FIST_MBT_LAUNCHER}}  本仓 `packaging/dsh/launch-mcp.mjs` 的绝对路径（正斜杠形态）
++#                          —— launcher 机器无关：内部经 import.meta.url 解析包根，
++#                          优先挑 `_build/js/*` 最新产物、回退 `dist/fist-mbt.js`，
++#                          并自带 Node>=24 / node:sqlite 检查与 ESM require shim。
++#   {{FIST_MBT_ROOT}}      本仓根的绝对路径（正斜杠形态）——CLI 以此为 cwd，
++#                          相对 args 与 SQLite 台账引导都按它解析；同时写进
++#                          env.FIST_PROJECT_DIR（server 侧项目锚点）。
++#
++# 形状对齐同仓的社区层 `packaging/dsh/cordis.patch.yml`（那份零绝对路径、走 profile
++# 模块解析，面向 npm 安装；本层面向「源码 checkout + DSH link 安装」）。字段名对齐
++# dsh-mcp-client Config schema（`toolCallTimeoutMs`，不是 `timeout_ms`；reconnect 只认
++# enabled/initialDelayMs/maxDelayMs/maxAttempts）。
++
++- insert:
++    - id: fist-mbt-mcp
++      name: '@deepseek-ai/dsh-mcp-client'
++      config:
++        serverName: 'fist-mbt'
++        transport: 'stdio'
++        command: 'node'
++        args:
++          - '{{FIST_MBT_LAUNCHER}}'
++        cwd: '{{FIST_MBT_ROOT}}'
++        toolCallTimeoutMs: 300000
++        failOnStartupError: false
++        env:
++          FIST_PROJECT_DIR: '{{FIST_MBT_ROOT}}'
++        reconnect:
++          enabled: true
++          initialDelayMs: 500
++          maxDelayMs: 30000
++          maxAttempts: 10
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+new file mode 100644
+index 00000000..451ab3fa
+--- /dev/null
++++ b/.githooks/pre-push
+@@ -0,0 +1,38 @@
++#!/bin/sh
++# FIST-Mbt pre-push hook — block direct push to gitcode/main (AGENTS.md red line).
++#
++# History (BUG-389(2)): this interception first lived only in the machine-local
++# $GIT_COMMON_DIR/hooks/, hand-installed, and it called a script that was NOT
++# tracked in git. Result: (a) pushing from any worktree died with a python
++# traceback (shell too fragile), and (b) the whole guard's existence depended on
++# one uncommitted file on one machine. This tracked version is the single source
++# of truth; install it with `python scripts/install_git_hooks.py --install`
++# (sets core.hooksPath=.githooks). `scripts/check_push_guard.py` answers whether
++# the interception is actually in force (tracked hook + tracked script + live
++# stdin semantics), so a silent fail-open can no longer rot unnoticed.
++#
++# stdin format from git: <local-ref> <local-oid> <remote-ref> <remote-oid> [<remote-url>]
++# Decision logic lives in scripts/check_direct_push.py (do not duplicate it here).
++set -e
++
++ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
++SCRIPT="$ROOT/scripts/check_direct_push.py"
++
++PY=python3
++command -v "$PY" >/dev/null 2>&1 || PY=python
++if ! command -v "$PY" >/dev/null 2>&1; then
++  # Without python the guard cannot run — refuse to fail open silently:
++  # a push is exactly the moment the red line needs its checkpoint.
++  echo "[pre-push] error: python/python3 not found — cannot run direct-push guard" >&2
++  echo "[pre-push]        install python, or override deliberately: git push --no-verify" >&2
++  exit 1
++fi
++
++if [ ! -f "$SCRIPT" ]; then
++  # Tracked in normal checkouts; reaching here means a stripped tree.
++  # Loud warning (not silent), and check_push_guard.py flags the untracked state.
++  echo "[pre-push] warning: $SCRIPT missing — direct-push interception INACTIVE on this checkout" >&2
++  exit 0
++fi
++
++"$PY" "$SCRIPT"
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 585da8bc..2efd5282 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -297,6 +297,31 @@ jobs:
+           python3 scripts/check_host_installable.py --selftest
+           python3 scripts/check_host_installable.py
+
++      # position-why: 纯文本判据（读跟踪面 + 本地子进程跑 stdin 语义矩阵），不依赖 moon 产物、
++      # 不需要 _build；与 Battery/Doc-dup 同族——Migrate 崩掉时正是「安装面/登记面还能不能信」
++      # 最需要出声的时刻。
++      - name: Push-guard sustainability guard (直推拦截跟踪面+语义矩阵生效性，BUG-389(2))
++        shell: bash
++        # position-why: 同族文本判据；自证先行，尺坏了不许放行。
++        run: |
++          python3 scripts/check_push_guard.py --selftest
++          python3 scripts/check_push_guard.py
++          python3 scripts/check_direct_push.py --selftest
++
++      - name: Machine-path guard (当前面禁止本机身份路径；DSH 安装面模板/渲染双态回归锁)
++        shell: bash
++        # position-why: 与 Push-guard 同族——纯文本回归锁，不依赖构建产物；与 check_host_installable
++        # 相邻同因（安装面双态与路径清零是同一批交付的两半）。
++        run: |
++          python3 scripts/check_hardcoded_paths.py --selftest
++          python3 scripts/check_hardcoded_paths.py
++
++      - name: DSH patch render self-proof (模板→本机渲染幂等；漂移即红)
++        shell: bash
++        # position-why: 纯文本渲染自证，不依赖构建产物；紧随安装面判据。
++        run: |
++          python3 scripts/render_dsh_patch.py --selftest
++
+       - name: Skill-inject guard (evolve_asset_register 注入路径可测命中)
+         shell: bash
+         run: |
+diff --git a/.gitignore b/.gitignore
+index b13417c0..92205a36 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -151,12 +151,14 @@ dist/
+ .git/fist/
+ .agents/worktrees/
+
++# DSH 插件安装面的「本机渲染态」：跟踪真源是 cordis.patch.yml.tpl（模板，占位符、零绝对路径），
++# cordis.patch.yml 由 scripts/render_dsh_patch.py 按当前仓位置生成。把任何一台机器的
++# 绝对路径写进跟踪面 = 给每个克隆者埋一发 `server is disconnected`（宿主对 args/cwd 不做插值）。
++/.dsh/fist-mbt-plugin/cordis.patch.yml
++
+ # 流水账（memory/*.md 日日志）：614MB 级大文件膨胀 git 历史 + 每次合并必撞冲突，
+ # 账本 bugs.md / product.md / target.md / task.md / links.md / rules.json / research/
+ # / reviews/ 均为结构化核心记忆，单独保留在 git 里。
+ memory/2026-*.md
+ memory/thinking.md
+ memory/archive/thinking.archive.md
+-
+-# npm pack output (publish artifacts stay out of git)
+-/*.tgz
+diff --git a/AGENTS.md b/AGENTS.md
+index 362588a8..22572739 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -5,8 +5,9 @@ This is a [MoonBit](https://docs.moonbitlang.com) project.
+ You can browse and install extra skills here:
+ <https://github.com/moonbitlang/skills>
+
+-本地已克隆 MoonBit skills 仓库，技能可直接从本地读取：
+-`E:\IDEProjects\moonbit-skills`（结构：`skills/<name>/SKILL.md`，进入项目会话时按需加载其中的技能）。
++本地可克隆 MoonBit skills 仓库（<https://github.com/moonbitlang/skills>），技能直接从本地读取：
++克隆位置因人而异——建议置环境变量 `MOONBIT_SKILLS_ROOT` 指向克隆根（结构 `skills/<name>/SKILL.md`），
++进入项目会话时按需加载其中的技能。
+
+ ## FIST 指挥官模式（默认行为）
+
+diff --git a/docs/SOP.md b/docs/SOP.md
+index dcc7598a..4c88dea1 100644
+--- a/docs/SOP.md
++++ b/docs/SOP.md
+@@ -37,7 +37,7 @@ updated: 2026-10-16
+
+ - `moon test --target js` 全量 = 1387/1387 绿
+ - 单模块：`moon test --target js src/<module>`
+-- 环境：`$env:MOON_HOME = "C:\Users\victo\.moon"`
++- 环境：`$env:MOON_HOME = "$env:USERPROFILE\.moon"`
+
+ ## 发布
+
+diff --git a/docs/design-push-guard-sustainability.md b/docs/design-push-guard-sustainability.md
+new file mode 100644
+index 00000000..6db58401
+--- /dev/null
++++ b/docs/design-push-guard-sustainability.md
+@@ -0,0 +1,47 @@
++# 设计：推送守卫可持续化 + 当前面路径硬编码清零（合并吞面回收）
++
++> 分支 `slave/fix-push-guard-sustainability-r1`（基线 `fcd210b8` = gitcode/main）。
++> 承接 FIST 任务 ns=`self-iterate-r1` T0 + 账本 BUG-389(2)。目标：让「直推 gitcode/main 拦截」
++> 不再依赖某台机器的手装文件，并把被合并通道吞掉的「路径硬编码清零」现状面回收干净。
++
++## 目标（一句话）
++pre-push 拦截收进跟踪面 + 安装器即真源 + 一把「拦截当前是否生效」的尺；同时把当前面
++（脚本/插件真源/文档/源码注释/测试夹具）的机器身份路径清零，并回收 PR#17 被合并吃掉的登记面。
++
++## 要改哪些文件（精确路径）
++| 文件 | 动作 |
++|---|---|
++| `.githooks/pre-push` | 新增：跟踪态钩子壳（`exec python check_direct_push.py`，无 python 即拒、不静默 fail-open） |
++| `scripts/install_git_hooks.py` | `REQUIRED` 收编 `pre-push`（安装器=真源），文档补 BUG-389(2) 追记 |
++| `scripts/check_direct_push.py` | 抽出纯函数 `decide()` + `--selftest` 语义矩阵（7 格）；`main` 从 stdin 读 |
++| `scripts/check_push_guard.py` | 新增尺：H0 安装器 REQUIRED / H1-H3 钩子+脑在跟踪面且壳引用脑 / S1 stdin 语义矩阵 / S2 壳未掐 stdin；E1 本机安装态只报不判。`--selftest` 六格（含两格变异台） |
++| `.dsh/fist-mbt-plugin/cordis.patch.yml.tpl` | 开发层模板化：占位符 `{{FIST_MBT_LAUNCHER}}`/`{{FIST_MBT_ROOT}}`，形状对齐社区层 launch-mcp.mjs |
++| `.dsh/fist-mbt-plugin/cordis.patch.yml` | **脱跟踪**（gitignore）：本机渲染产物 |
++| `scripts/render_dsh_patch.py` | 默认入口改 `packaging/dsh/launch-mcp.mjs`（机器无关、随构建自愈）；占位符改名 |
++| `scripts/check_hardcoded_paths.py` | 修自命中：文档去字面量、fixture 运行时拼接（尺写进自己被检面会自锁扫红） |
++| `scripts/check_host_installable.py` | D1 模板占位符改名，保持双态档 |
++| `scripts/run_guards.py` | 点名 `check_direct_push --selftest`（禁裸跑格，防挂 stdin 空转）+ `check_push_guard` 两格 + `run_light_wt --selftest`（补 G1 缺面） |
++| `scripts/README.md` | 登记 16 个缺登记脚本（含 PR#17 被吞的 render/hardcoded + 我的新尺）+ BATTERY-REGISTRATION 同批改数 |
++| `.github/workflows/ci.yml` | 接 Push-guard / Machine-path / render 三格（position-why 锚点在步骤块内） |
++| `scripts/{_run_check_t0r21,fist_mbt_mcp_client,tmp_merge_batch}.py/.sh`、`gen_plugins.py`、`scoring_rubric.md`、`blackbox/e2e_reserve_xproc.py` | 机器身份路径 → env/相对/中性 |
++| `AGENTS.md`、`docs/SOP.md`、`plugins/source/SKILL.commander.md`、6 份 docs | 同上（四宿主经 gen_plugins 重投影） |
++| `src/server/{write_gate,run_check_guard,issue_scan}.mbt` + 3 测试夹具 | 中性化机器身份字面量，**保留 main 的 ns_write_gate/legacy 覆盖**（235 行 base 版为底，只换字面量） |
++
++## 不改哪些文件（边界）
++- `src/core/**`（`dc_3` 基线预存红，pristine 基线同红取证 → 指路并行修复单 `feat/fix-desc-clip-utf8`，不占号不越界修）。
++- 只追加历史面（`CHANGELOG.md`/`reports/`/`memory/` 叙述段/`docs/archive/`）、构建产物 `dist/`、生成件 `*.mbti`。
++- 不碰 `packaging/dsh/`（社区发布层，b5c8a366 已在位且零绝对路径）。
++- `doc_dup`/`slave_task_list`/`unit_number` 的基线预存红不在本 PR 处置（另开车道，避免成合并撞车磁石）。
++
++## 四态覆盖
++- cl1 MCP 工具：无新增工具（纯脚本/守卫面）。cl6 文档：README 登记 + 本设计 + 汇报。
++- cl7 插件态：gen_plugins 重投影 + check_plugin_sync PASS。测试：src/server 384/384。
++
++## 验收标准（可执行）
++1. `check_push_guard --selftest` + 全量 → rc 0；`check_direct_push --selftest` → rc 0
++2. `check_hardcoded_paths --selftest` + 全量 → rc 0（当前面零机器身份）
++3. `render_dsh_patch --selftest` + 开发层 `--check` → rc 0
++4. `check_host_installable --selftest` + 全量 → rc 0（干净检出无渲染件也不自拒）
++5. `check_plugin_sync` / `check_scripts_index` / `check_ci_step_position`(≤34) / `check_battery_count_doc` → PASS
++6. `moon check --target js` → 0 errors；`moon_test_env --target js src/server` → 全绿
++7. `run_guards --list` → 缺执行面 0
+diff --git a/plugins/README.md b/plugins/README.md
+index 48b85e52..afe6ad8e 100644
+--- a/plugins/README.md
++++ b/plugins/README.md
+@@ -14,4 +14,4 @@
+   行尾归一，否则 autocrlf 克隆会把整棵投影判红，见 BUG-102；判据自身有 `gen_plugins.py --selftest` 五格，
+   第五格钉「启动参数真源文件名不被本机未跟踪残留决定」（BUG-131：本机绿 / CI 红的源头）），
+   手改插件、忘重生成、数字漂移都会红。
+-- 当前投影：170 工具 / v0.3.10 / 缺陷账本 BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）
++- 当前投影：170 工具 / v0.3.10 / 缺陷账本 BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）
+diff --git a/plugins/atomcode/skills/fist-commander/SKILL.md b/plugins/atomcode/skills/fist-commander/SKILL.md
+index 8d96941a..816d1cec 100644
+--- a/plugins/atomcode/skills/fist-commander/SKILL.md
++++ b/plugins/atomcode/skills/fist-commander/SKILL.md
+@@ -4,7 +4,7 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。
+ ---
+ <!-- generated by scripts/gen_plugins.py from plugins/source/ — DO NOT EDIT BY HAND
+      host=atomcode tools=170 version=0.3.10
+-     ledger=BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
++     ledger=BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
+ # FIST 指挥官(fistcode 默认模式)
+
+ 你是 **FIST 指挥官**(人类管家之上的调度层)。fistcode 采用 FIST 机制作为默认工作方式:理解意图 → 分流 → 派单 → 终审 → 沉淀汇报。
+@@ -62,8 +62,8 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。
+
+ 任务结束(终审通过后)立即:
+
+-1. 追加当日日志:`E:/IDEProjects/Ai/Fist/memory/YYYY-MM-DD.md`(决策 / 结论 / 可复用经验)
+-2. 生成汇报:`E:/IDEProjects/Ai/Fist/reports/YYYY-MM-DD-<任务名>-report.md`
++1. 追加当日日志:`<FIST 根>/memory/YYYY-MM-DD.md`(决策 / 结论 / 可复用经验)
++2. 生成汇报:`<FIST 根>/reports/YYYY-MM-DD-<任务名>-report.md`
+    必填:结果摘要 / 资源消耗(模型与工具清单) / 任务分配记录 / 遗留风险 / 后续建议 / 超额内容(无则写"无") / 来源(URL + 日期)
+
+ ## 5. 超额优化(金条六)
+@@ -76,13 +76,16 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。
+
+ ## 7. 路径约定
+
++> **全部由配置给出，不写死任何一台机器的路径。** FIST 根 = 你正在指挥的项目仓根
++> （缺省即本 skill 所在工作区；可用环境变量 `FIST_MBT_HOME` 显式指定）。
++
+ | 项 | 值 |
+ |---|---|
+-| FIST 根 | `E:/IDEProjects/Ai/Fist` |
+-| FIST SKILL 全文 | `E:/IDEProjects/Ai/Fist/FIST-SKILL.md`(本 skill 的展开版,冲突时以它为准) |
+-| fistcode 二进制 | `E:/IDEProjects/Ai/DownLoads/fistcode/target/debug/atomcode.exe` |
+-| zeroai 代理 | `http://127.0.0.1:2016/v1`(OpenAI 兼容,key=`sk-zeroai-local`) |
+-| 第三方模型可用性清单 | `E:/IDEProjects/Ai/Fist/skills/MODEL-AVAILABILITY.md` |
++| FIST 根 | `<FIST 根>`（= 目标项目仓根；缺省当前工作区，或 `$FIST_MBT_HOME`） |
++| FIST SKILL 全文 | `<FIST 根>/FIST-SKILL.md`(本 skill 的展开版,冲突时以它为准;可选) |
++| fistcode 二进制 | `$FIST_FISTCODE_BIN`（可选；缺省走 PATH 上的 `atomcode`） |
++| zeroai 代理 | `$FIST_ZEROAI_BASE`（可选，缺省 `http://127.0.0.1:2016/v1`；OpenAI 兼容） |
++| 第三方模型可用性清单 | `<FIST 根>/skills/MODEL-AVAILABILITY.md`(可选) |
+
+ ## 8. 自检
+
+diff --git a/plugins/atomcode/skills/fist-mbt/SKILL.md b/plugins/atomcode/skills/fist-mbt/SKILL.md
+index 3c8220f5..e6968a56 100644
+--- a/plugins/atomcode/skills/fist-mbt/SKILL.md
++++ b/plugins/atomcode/skills/fist-mbt/SKILL.md
+@@ -1,10 +1,10 @@
+ ---
+ name: fist-mbt
+-description: Use this skill when the user needs help with FIST-Mbt, a pure MoonBit MCP server (170 tools, single source of truth) for FIST commander task orchestration and self-driving development loops. Use it when working with FIST task lifecycle (publish/claim/plan/execute/submit/verify/archive), the seven development modes (advance / polish / verify / bugfind / fix_and_merge / tidy / explore - identifiers as accepted by mode_list), Omega strong verification, DAG dependencies, multi-tenant namespaces, SQLite storage, Laya decision routing, or the meta-prompt templates for unattended pipelines. Helps navigate the codebase, run closed-loop self-driving sessions, and avoid known pitfalls (bug ledger: BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）).
++description: Use this skill when the user needs help with FIST-Mbt, a pure MoonBit MCP server (170 tools, single source of truth) for FIST commander task orchestration and self-driving development loops. Use it when working with FIST task lifecycle (publish/claim/plan/execute/submit/verify/archive), the seven development modes (advance / polish / verify / bugfind / fix_and_merge / tidy / explore - identifiers as accepted by mode_list), Omega strong verification, DAG dependencies, multi-tenant namespaces, SQLite storage, Laya decision routing, or the meta-prompt templates for unattended pipelines. Helps navigate the codebase, run closed-loop self-driving sessions, and avoid known pitfalls (bug ledger: BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）).
+ ---
+ <!-- generated by scripts/gen_plugins.py from plugins/source/ — DO NOT EDIT BY HAND
+      host=atomcode tools=170 version=0.3.10
+-     ledger=BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
++     ledger=BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
+ # FIST-Mbt
+
+ Use this skill to work with the FIST-Mbt codebase — a pure MoonBit implementation of the FIST commander task allocation system, exposed as an **MCP server with 170 tools (真源=src/server/server.mbt；守卫 scripts/check_tools_sync.py) + 3 resources + 2 prompts**, plus self-driving (selfdrive) loops, Omega strong verification, and an ecosystem of meta-prompt modes.
+@@ -67,7 +67,7 @@ src/
+ - Windows native target has a rare heap corruption under parallel test (`-j 1` mitigates); **JS backend (Node ≥ 24) is the authoritative gate**.
+ - ESM: run `python scripts/patch_esm_main.py` before `node main.js`; JS backend also ships `scripts/fist.py` (Python driver) — often the simplest route.
+
+-## Known issues ledger (BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） — live truth in `memory/bugs.md`)
++## Known issues ledger (BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） — live truth in `memory/bugs.md`)
+
+ Full details: `memory/bugs.md` in the FIST-Mbt repo. High: BUG-1 (caller-supplied timestamps break ledger non-repudiation), BUG-4 (run_check = unrestricted host command execution; no allowlist), BUG-14 (laya_decide contract). Medium: BUG-2/3/5/8/9/12/15/16 as above. Low: BUG-10 (superseded by 13), BUG-11 (bug_id vs id field naming), BUG-13 (self-correction of 10). Do not re-report duplicates; check `memory/bugs.md` first.
+
+diff --git a/plugins/claude/skills/fist-commander/SKILL.md b/plugins/claude/skills/fist-commander/SKILL.md
+index 8bac5fcb..0e4d7dec 100644
+--- a/plugins/claude/skills/fist-commander/SKILL.md
++++ b/plugins/claude/skills/fist-commander/SKILL.md
+@@ -4,7 +4,7 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。
+ ---
+ <!-- generated by scripts/gen_plugins.py from plugins/source/ — DO NOT EDIT BY HAND
+      host=claude tools=170 version=0.3.10
+-     ledger=BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
++     ledger=BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
+ # FIST 指挥官(fistcode 默认模式)
+
+ 你是 **FIST 指挥官**(人类管家之上的调度层)。fistcode 采用 FIST 机制作为默认工作方式:理解意图 → 分流 → 派单 → 终审 → 沉淀汇报。
+@@ -62,8 +62,8 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。
+
+ 任务结束(终审通过后)立即:
+
+-1. 追加当日日志:`E:/IDEProjects/Ai/Fist/memory/YYYY-MM-DD.md`(决策 / 结论 / 可复用经验)
+-2. 生成汇报:`E:/IDEProjects/Ai/Fist/reports/YYYY-MM-DD-<任务名>-report.md`
++1. 追加当日日志:`<FIST 根>/memory/YYYY-MM-DD.md`(决策 / 结论 / 可复用经验)
++2. 生成汇报:`<FIST 根>/reports/YYYY-MM-DD-<任务名>-report.md`
+    必填:结果摘要 / 资源消耗(模型与工具清单) / 任务分配记录 / 遗留风险 / 后续建议 / 超额内容(无则写"无") / 来源(URL + 日期)
+
+ ## 5. 超额优化(金条六)
+@@ -76,13 +76,16 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。
+
+ ## 7. 路径约定
+
++> **全部由配置给出，不写死任何一台机器的路径。** FIST 根 = 你正在指挥的项目仓根
++> （缺省即本 skill 所在工作区；可用环境变量 `FIST_MBT_HOME` 显式指定）。
++
+ | 项 | 值 |
+ |---|---|
+-| FIST 根 | `E:/IDEProjects/Ai/Fist` |
+-| FIST SKILL 全文 | `E:/IDEProjects/Ai/Fist/FIST-SKILL.md`(本 skill 的展开版,冲突时以它为准) |
+-| fistcode 二进制 | `E:/IDEProjects/Ai/DownLoads/fistcode/target/debug/atomcode.exe` |
+-| zeroai 代理 | `http://127.0.0.1:2016/v1`(OpenAI 兼容,key=`sk-zeroai-local`) |
+-| 第三方模型可用性清单 | `E:/IDEProjects/Ai/Fist/skills/MODEL-AVAILABILITY.md` |
++| FIST 根 | `<FIST 根>`（= 目标项目仓根；缺省当前工作区，或 `$FIST_MBT_HOME`） |
++| FIST SKILL 全文 | `<FIST 根>/FIST-SKILL.md`(本 skill 的展开版,冲突时以它为准;可选) |
++| fistcode 二进制 | `$FIST_FISTCODE_BIN`（可选；缺省走 PATH 上的 `atomcode`） |
++| zeroai 代理 | `$FIST_ZEROAI_BASE`（可选，缺省 `http://127.0.0.1:2016/v1`；OpenAI 兼容） |
++| 第三方模型可用性清单 | `<FIST 根>/skills/MODEL-AVAILABILITY.md`(可选) |
+
+ ## 8. 自检
+
+diff --git a/plugins/claude/skills/fist-mbt/SKILL.md b/plugins/claude/skills/fist-mbt/SKILL.md
+index 38b0f1bd..50ccbc75 100644
+--- a/plugins/claude/skills/fist-mbt/SKILL.md
++++ b/plugins/claude/skills/fist-mbt/SKILL.md
+@@ -1,10 +1,10 @@
+ ---
+ name: fist-mbt
+-description: Use this skill when the user needs help with FIST-Mbt, a pure MoonBit MCP server (170 tools, single source of truth) for FIST commander task orchestration and self-driving development loops. Use it when working with FIST task lifecycle (publish/claim/plan/execute/submit/verify/archive), the seven development modes (advance / polish / verify / bugfind / fix_and_merge / tidy / explore - identifiers as accepted by mode_list), Omega strong verification, DAG dependencies, multi-tenant namespaces, SQLite storage, Laya decision routing, or the meta-prompt templates for unattended pipelines. Helps navigate the codebase, run closed-loop self-driving sessions, and avoid known pitfalls (bug ledger: BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）).
++description: Use this skill when the user needs help with FIST-Mbt, a pure MoonBit MCP server (170 tools, single source of truth) for FIST commander task orchestration and self-driving development loops. Use it when working with FIST task lifecycle (publish/claim/plan/execute/submit/verify/archive), the seven development modes (advance / polish / verify / bugfind / fix_and_merge / tidy / explore - identifiers as accepted by mode_list), Omega strong verification, DAG dependencies, multi-tenant namespaces, SQLite storage, Laya decision routing, or the meta-prompt templates for unattended pipelines. Helps navigate the codebase, run closed-loop self-driving sessions, and avoid known pitfalls (bug ledger: BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）).
+ ---
+ <!-- generated by scripts/gen_plugins.py from plugins/source/ — DO NOT EDIT BY HAND
+      host=claude tools=170 version=0.3.10
+-     ledger=BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
++     ledger=BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
+ # FIST-Mbt
+
+ Use this skill to work with the FIST-Mbt codebase — a pure MoonBit implementation of the FIST commander task allocation system, exposed as an **MCP server with 170 tools (真源=src/server/server.mbt；守卫 scripts/check_tools_sync.py) + 3 resources + 2 prompts**, plus self-driving (selfdrive) loops, Omega strong verification, and an ecosystem of meta-prompt modes.
+@@ -67,7 +67,7 @@ src/
+ - Windows native target has a rare heap corruption under parallel test (`-j 1` mitigates); **JS backend (Node ≥ 24) is the authoritative gate**.
+ - ESM: run `python scripts/patch_esm_main.py` before `node main.js`; JS backend also ships `scripts/fist.py` (Python driver) — often the simplest route.
+
+-## Known issues ledger (BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） — live truth in `memory/bugs.md`)
++## Known issues ledger (BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） — live truth in `memory/bugs.md`)
+
+ Full details: `memory/bugs.md` in the FIST-Mbt repo. High: BUG-1 (caller-supplied timestamps break ledger non-repudiation), BUG-4 (run_check = unrestricted host command execution; no allowlist), BUG-14 (laya_decide contract). Medium: BUG-2/3/5/8/9/12/15/16 as above. Low: BUG-10 (superseded by 13), BUG-11 (bug_id vs id field naming), BUG-13 (self-correction of 10). Do not re-report duplicates; check `memory/bugs.md` first.
+
+diff --git a/plugins/codearts/skills/fist-commander/SKILL.md b/plugins/codearts/skills/fist-commander/SKILL.md
+index da53a2c1..0815f789 100644
+--- a/plugins/codearts/skills/fist-commander/SKILL.md
++++ b/plugins/codearts/skills/fist-commander/SKILL.md
+@@ -4,7 +4,7 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。
+ ---
+ <!-- generated by scripts/gen_plugins.py from plugins/source/ — DO NOT EDIT BY HAND
+      host=codearts tools=170 version=0.3.10
+-     ledger=BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
++     ledger=BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
+ # FIST 指挥官(fistcode 默认模式)
+
+ 你是 **FIST 指挥官**(人类管家之上的调度层)。fistcode 采用 FIST 机制作为默认工作方式:理解意图 → 分流 → 派单 → 终审 → 沉淀汇报。
+@@ -62,8 +62,8 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。
+
+ 任务结束(终审通过后)立即:
+
+-1. 追加当日日志:`E:/IDEProjects/Ai/Fist/memory/YYYY-MM-DD.md`(决策 / 结论 / 可复用经验)
+-2. 生成汇报:`E:/IDEProjects/Ai/Fist/reports/YYYY-MM-DD-<任务名>-report.md`
++1. 追加当日日志:`<FIST 根>/memory/YYYY-MM-DD.md`(决策 / 结论 / 可复用经验)
++2. 生成汇报:`<FIST 根>/reports/YYYY-MM-DD-<任务名>-report.md`
+    必填:结果摘要 / 资源消耗(模型与工具清单) / 任务分配记录 / 遗留风险 / 后续建议 / 超额内容(无则写"无") / 来源(URL + 日期)
+
+ ## 5. 超额优化(金条六)
+@@ -76,13 +76,16 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。
+
+ ## 7. 路径约定
+
++> **全部由配置给出，不写死任何一台机器的路径。** FIST 根 = 你正在指挥的项目仓根
++> （缺省即本 skill 所在工作区；可用环境变量 `FIST_MBT_HOME` 显式指定）。
++
+ | 项 | 值 |
+ |---|---|
+-| FIST 根 | `E:/IDEProjects/Ai/Fist` |
+-| FIST SKILL 全文 | `E:/IDEProjects/Ai/Fist/FIST-SKILL.md`(本 skill 的展开版,冲突时以它为准) |
+-| fistcode 二进制 | `E:/IDEProjects/Ai/DownLoads/fistcode/target/debug/atomcode.exe` |
+-| zeroai 代理 | `http://127.0.0.1:2016/v1`(OpenAI 兼容,key=`sk-zeroai-local`) |
+-| 第三方模型可用性清单 | `E:/IDEProjects/Ai/Fist/skills/MODEL-AVAILABILITY.md` |
++| FIST 根 | `<FIST 根>`（= 目标项目仓根；缺省当前工作区，或 `$FIST_MBT_HOME`） |
++| FIST SKILL 全文 | `<FIST 根>/FIST-SKILL.md`(本 skill 的展开版,冲突时以它为准;可选) |
++| fistcode 二进制 | `$FIST_FISTCODE_BIN`（可选；缺省走 PATH 上的 `atomcode`） |
++| zeroai 代理 | `$FIST_ZEROAI_BASE`（可选，缺省 `http://127.0.0.1:2016/v1`；OpenAI 兼容） |
++| 第三方模型可用性清单 | `<FIST 根>/skills/MODEL-AVAILABILITY.md`(可选) |
+
+ ## 8. 自检
+
+diff --git a/plugins/codearts/skills/fist-mbt/SKILL.md b/plugins/codearts/skills/fist-mbt/SKILL.md
+index 742142fa..f2d183b3 100644
+--- a/plugins/codearts/skills/fist-mbt/SKILL.md
++++ b/plugins/codearts/skills/fist-mbt/SKILL.md
+@@ -1,10 +1,10 @@
+ ---
+ name: fist-mbt
+-description: Use this skill when the user needs help with FIST-Mbt, a pure MoonBit MCP server (170 tools, single source of truth) for FIST commander task orchestration and self-driving development loops. Use it when working with FIST task lifecycle (publish/claim/plan/execute/submit/verify/archive), the seven development modes (advance / polish / verify / bugfind / fix_and_merge / tidy / explore - identifiers as accepted by mode_list), Omega strong verification, DAG dependencies, multi-tenant namespaces, SQLite storage, Laya decision routing, or the meta-prompt templates for unattended pipelines. Helps navigate the codebase, run closed-loop self-driving sessions, and avoid known pitfalls (bug ledger: BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）).
++description: Use this skill when the user needs help with FIST-Mbt, a pure MoonBit MCP server (170 tools, single source of truth) for FIST commander task orchestration and self-driving development loops. Use it when working with FIST task lifecycle (publish/claim/plan/execute/submit/verify/archive), the seven development modes (advance / polish / verify / bugfind / fix_and_merge / tidy / explore - identifiers as accepted by mode_list), Omega strong verification, DAG dependencies, multi-tenant namespaces, SQLite storage, Laya decision routing, or the meta-prompt templates for unattended pipelines. Helps navigate the codebase, run closed-loop self-driving sessions, and avoid known pitfalls (bug ledger: BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）).
+ ---
+ <!-- generated by scripts/gen_plugins.py from plugins/source/ — DO NOT EDIT BY HAND
+      host=codearts tools=170 version=0.3.10
+-     ledger=BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
++     ledger=BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
+ # FIST-Mbt
+
+ Use this skill to work with the FIST-Mbt codebase — a pure MoonBit implementation of the FIST commander task allocation system, exposed as an **MCP server with 170 tools (真源=src/server/server.mbt；守卫 scripts/check_tools_sync.py) + 3 resources + 2 prompts**, plus self-driving (selfdrive) loops, Omega strong verification, and an ecosystem of meta-prompt modes.
+@@ -67,7 +67,7 @@ src/
+ - Windows native target has a rare heap corruption under parallel test (`-j 1` mitigates); **JS backend (Node ≥ 24) is the authoritative gate**.
+ - ESM: run `python scripts/patch_esm_main.py` before `node main.js`; JS backend also ships `scripts/fist.py` (Python driver) — often the simplest route.
+
+-## Known issues ledger (BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） — live truth in `memory/bugs.md`)
++## Known issues ledger (BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） — live truth in `memory/bugs.md`)
+
+ Full details: `memory/bugs.md` in the FIST-Mbt repo. High: BUG-1 (caller-supplied timestamps break ledger non-repudiation), BUG-4 (run_check = unrestricted host command execution; no allowlist), BUG-14 (laya_decide contract). Medium: BUG-2/3/5/8/9/12/15/16 as above. Low: BUG-10 (superseded by 13), BUG-11 (bug_id vs id field naming), BUG-13 (self-correction of 10). Do not re-report duplicates; check `memory/bugs.md` first.
+
+diff --git a/plugins/deepseek-harness/instructions.append.md b/plugins/deepseek-harness/instructions.append.md
+index d43030d5..152e472a 100644
+--- a/plugins/deepseek-harness/instructions.append.md
++++ b/plugins/deepseek-harness/instructions.append.md
+@@ -6,5 +6,5 @@
+ - 本 harness 走 FIST 指挥官模式：意图 → 分流 → 派单 → 终审 → 沉淀汇报；不亲力亲为可分配工作。
+ - MCP server `fist-mbt`（170 工具 / v0.3.10）经仓库根 `.mcp.dev.json` 暴露；
+   工具清单唯一真源是 `src/server/server.mbt`，**以 tools/list 为准**，任何文档数字都可能滞后。
+-- 已知缺陷账本：BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）（真源 `memory/bugs.md`，状态位可就地改、叙述面只追加）。
++- 已知缺陷账本：BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）（真源 `memory/bugs.md`，状态位可就地改、叙述面只追加）。
+ - 详细操作见 `skills/fist-mbt/SKILL.md` 与 `references/`（同为生成产物）。
+diff --git a/plugins/deepseek-harness/skills/fist-mbt/SKILL.md b/plugins/deepseek-harness/skills/fist-mbt/SKILL.md
+index a21400fc..4f640a14 100644
+--- a/plugins/deepseek-harness/skills/fist-mbt/SKILL.md
++++ b/plugins/deepseek-harness/skills/fist-mbt/SKILL.md
+@@ -1,10 +1,10 @@
+ ---
+ name: fist-mbt
+-description: Use this skill when the user needs help with FIST-Mbt, a pure MoonBit MCP server (170 tools, single source of truth) for FIST commander task orchestration and self-driving development loops. Use it when working with FIST task lifecycle (publish/claim/plan/execute/submit/verify/archive), the seven development modes (advance / polish / verify / bugfind / fix_and_merge / tidy / explore - identifiers as accepted by mode_list), Omega strong verification, DAG dependencies, multi-tenant namespaces, SQLite storage, Laya decision routing, or the meta-prompt templates for unattended pipelines. Helps navigate the codebase, run closed-loop self-driving sessions, and avoid known pitfalls (bug ledger: BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）).
++description: Use this skill when the user needs help with FIST-Mbt, a pure MoonBit MCP server (170 tools, single source of truth) for FIST commander task orchestration and self-driving development loops. Use it when working with FIST task lifecycle (publish/claim/plan/execute/submit/verify/archive), the seven development modes (advance / polish / verify / bugfind / fix_and_merge / tidy / explore - identifiers as accepted by mode_list), Omega strong verification, DAG dependencies, multi-tenant namespaces, SQLite storage, Laya decision routing, or the meta-prompt templates for unattended pipelines. Helps navigate the codebase, run closed-loop self-driving sessions, and avoid known pitfalls (bug ledger: BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则）).
+ ---
+ <!-- generated by scripts/gen_plugins.py from plugins/source/ — DO NOT EDIT BY HAND
+      host=deepseek-harness tools=170 version=0.3.10
+-     ledger=BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
++     ledger=BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） -->
+ # FIST-Mbt
+
+ Use this skill to work with the FIST-Mbt codebase — a pure MoonBit implementation of the FIST commander task allocation system, exposed as an **MCP server with 170 tools (真源=src/server/server.mbt；守卫 scripts/check_tools_sync.py) + 3 resources + 2 prompts**, plus self-driving (selfdrive) loops, Omega strong verification, and an ecosystem of meta-prompt modes.
+@@ -67,7 +67,7 @@ src/
+ - Windows native target has a rare heap corruption under parallel test (`-j 1` mitigates); **JS backend (Node ≥ 24) is the authoritative gate**.
+ - ESM: run `python scripts/patch_esm_main.py` before `node main.js`; JS backend also ships `scripts/fist.py` (Python driver) — often the simplest route.
+
+-## Known issues ledger (BUG-1~388 共 375 条入账：15 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） — live truth in `memory/bugs.md`)
++## Known issues ledger (BUG-1~389 共 376 条入账：16 条待修 / 340 条已修 / 11 条重复并入 / 9 条误报（按条目抬头状态计数；叙述面只追加，见 memory/bugs.md 记账规则） — live truth in `memory/bugs.md`)
+
+ Full details: `memory/bugs.md` in the FIST-Mbt repo. High: BUG-1 (caller-supplied timestamps break ledger non-repudiation), BUG-4 (run_check = unrestricted host command execution; no allowlist), BUG-14 (laya_decide contract). Medium: BUG-2/3/5/8/9/12/15/16 as above. Low: BUG-10 (superseded by 13), BUG-11 (bug_id vs id field naming), BUG-13 (self-correction of 10). Do not re-report duplicates; check `memory/bugs.md` first.
+
+diff --git a/plugins/source/SKILL.commander.md b/plugins/source/SKILL.commander.md
+index 9bc50a89..1801b8f5 100644
+--- a/plugins/source/SKILL.commander.md
++++ b/plugins/source/SKILL.commander.md
+@@ -60,8 +60,8 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。
+
+ 任务结束(终审通过后)立即:
+
+-1. 追加当日日志:`E:/IDEProjects/Ai/Fist/memory/YYYY-MM-DD.md`(决策 / 结论 / 可复用经验)
+-2. 生成汇报:`E:/IDEProjects/Ai/Fist/reports/YYYY-MM-DD-<任务名>-report.md`
++1. 追加当日日志:`<FIST 根>/memory/YYYY-MM-DD.md`(决策 / 结论 / 可复用经验)
++2. 生成汇报:`<FIST 根>/reports/YYYY-MM-DD-<任务名>-report.md`
+    必填:结果摘要 / 资源消耗(模型与工具清单) / 任务分配记录 / 遗留风险 / 后续建议 / 超额内容(无则写"无") / 来源(URL + 日期)
+
+ ## 5. 超额优化(金条六)
+@@ -74,13 +74,16 @@ description: "FIST 指挥官模式 — 松耦合三层融合的默认行为。
+
+ ## 7. 路径约定
+
++> **全部由配置给出，不写死任何一台机器的路径。** FIST 根 = 你正在指挥的项目仓根
++> （缺省即本 skill 所在工作区；可用环境变量 `FIST_MBT_HOME` 显式指定）。
++
+ | 项 | 值 |
+ |---|---|
+-| FIST 根 | `E:/IDEProjects/Ai/Fist` |
+-| FIST SKILL 全文 | `E:/IDEProjects/Ai/Fist/FIST-SKILL.md`(本 skill 的展开版,冲突时以它为准) |
+-| fistcode 二进制 | `E:/IDEProjects/Ai/DownLoads/fistcode/target/debug/atomcode.exe` |
+-| zeroai 代理 | `http://127.0.0.1:2016/v1`(OpenAI 兼容,key=`sk-zeroai-local`) |
+-| 第三方模型可用性清单 | `E:/IDEProjects/Ai/Fist/skills/MODEL-AVAILABILITY.md` |
++| FIST 根 | `<FIST 根>`（= 目标项目仓根；缺省当前工作区，或 `$FIST_MBT_HOME`） |
++| FIST SKILL 全文 | `<FIST 根>/FIST-SKILL.md`(本 skill 的展开版,冲突时以它为准;可选) |
++| fistcode 二进制 | `$FIST_FISTCODE_BIN`（可选；缺省走 PATH 上的 `atomcode`） |
++| zeroai 代理 | `$FIST_ZEROAI_BASE`（可选，缺省 `http://127.0.0.1:2016/v1`；OpenAI 兼容） |
++| 第三方模型可用性清单 | `<FIST 根>/skills/MODEL-AVAILABILITY.md`(可选) |
+
+ ## 8. 自检
+
+diff --git a/reports/2026-10-24-push-guard-sustainability-report.md b/reports/2026-10-24-push-guard-sustainability-report.md
+new file mode 100644
+index 00000000..13ad5fad
+--- /dev/null
++++ b/reports/2026-10-24-push-guard-sustainability-report.md
+@@ -0,0 +1,61 @@
++# 汇报：推送守卫可持续化 + 当前面路径硬编码清零（回收 PR#17 被吞面）
++
++- 日期：2026-10-24
++- 分支：`slave/fix-push-guard-sustainability-r1`（基线 `fcd210b8` = gitcode/main）
++- 设计：`docs/design-push-guard-sustainability.md`
++- FIST：ns `self-iterate-r1` T0 · 账本：BUG-389(2) 承接（dc_3 红指路并行单 `feat/fix-desc-clip-utf8`，不占号）
++
++## 结果摘要
++
++1. **pre-push 拦截收进跟踪面**：新增 `.githooks/pre-push`（壳只 `exec check_direct_push.py`，
++   无 python 即拒、不静默 fail-open）；`install_git_hooks.REQUIRED` 加 `pre-push` ⇒ **安装器即真源**，
++   换机/清理不再退化成 fail-open。判定本体 `check_direct_push.py` 抽出纯函数 `decide()` + `--selftest` 语义矩阵。
++2. **新尺 `check_push_guard.py`（缺口③）**：H0 安装器 REQUIRED / H1-H3 钩子+脑在跟踪面且壳引用脑 +
++   stdin 未掐 / S1 真起子进程喂 5 格 stdin 语义矩阵 / E1 本机安装态**只报不判**（CI 干净 clone 恒 WARN，
++   拦的是「跟踪面本身坏了」）。`--selftest` 六格含两格变异台（语义改松→S1a 红、误伤→S1b/c 红）。
++3. **回收 PR#17 被合并吞掉的硬编码清零面**：AGENTS/SOP/6 份 docs/插件真源（四宿主重投影）/
++   `scripts/{fist_mbt_mcp_client,_run_check_t0r21,tmp_merge_batch,gen_plugins,scoring_rubric,e2e_reserve_xproc}`/
++   `src/server` 6 文件的机器身份路径清零。开发层 `.dsh/.../cordis.patch.yml` 脱跟踪 + 模板化
++   （`{{FIST_MBT_LAUNCHER}}`/`{{FIST_MBT_ROOT}}`，形状对齐社区层 `packaging/dsh/launch-mcp.mjs`）。
++4. **修 `check_hardcoded_paths.py` 自命中**：文档去字面量 + fixture 运行时拼接（尺写进自己被检面即自锁扫红）。
++5. **三面登记对齐**：README 补 16 条缺登记（PR#17 被吞的 render/hardcoded + 我的新尺 + 既有 11 条），
++   `run_guards` 点名 `check_direct_push --selftest`（禁裸跑格，防挂 stdin 空转）+ `check_push_guard` 两格 +
++   `run_light_wt --selftest`（补 G1 缺面→**缺执行面 0**），BATTERY-REGISTRATION 同批改数（105/47/66/0/74/27/6），
++   ci.yml 接 3 格（position-why 锚点在步骤块内，棘轮未升）。
++
++## 资源消耗
++- 模型：DSH 会话内同机；工具 moon 0.1.20261016 / Node v25.2.1（经 moon_test_env 剔 node.cmd 垫片）/ Python 3.13 / gh 凭据走 api.github.com（github:443 本机不可达）。
++- 工时：单轮多步；主要耗时在全量测试（~2min×3，含一次覆盖回退返工）与恢复被吞面。
++
++## 任务分配记录
++- FIST 任务：ns `self-iterate-r1` publish→claim→execute→submit（verify 留人类终审）。
++- 子代理：无（多文件判据对齐需逐格核对，拆分反增合并风险）。
++
++## 遗留风险
++1. **覆盖回退返工（本轮已修）**：初版误用 branch 的 `write_gate_wbtest.mbt`（155 行）覆盖了 main 的
++   235 行版，丢了 `ns_write_gate`/`legacy_store_exists` 12 处测试 → 全量 1427/1422。改回 base 版为底、
++   仅中性化字面量后恢复 384/384。**教训**：跨基线恢复文件必须以「当前 main 版」为底，不能拿旧 PR 版。
++2. **dc_3 基线预存红（已指路并行修复单，本 PR 不修不占号）**：`src/core` desc_clip 的 UTF-8 字节边界回退在本机
++   String 码点语义下失效。pristine 基线 `fcd210b8` 同红取证（`git worktree add --detach`）。
++   曾以 BUG-390 入账，后查合并线 gitcode/main 已存在同号（store 干净树条目）且并行单
++   `feat/fix-desc-clip-utf8`（0b94ac1ce8，账本 393/394/395）已在修——**撤条**：合过去会炸门④（抬头唯一），
++   修复单也落定则成"账本说没修、任务库说修完了"的矛盾。判据面留给 desc_clip 修复单：
++   `python scripts/moon_test_env.py --target js src/core`（本机 18 跑 1 红 / 修后 18/18）。
++3. **本机 moon fmt 世代会重排全仓 .mbt（BUG-388 家族）**：已用 `revert_and_neutralize.py` 回滚 fmt churn，
++   只保留 6 个 src 目标文件的中性化改动；fmt 权威面以 CI（Linux nightly）为准。
++4. `doc_dup`（38 重名/232 冗余块）/`slave_task_list`（19 失配）/`unit_number` 是基线预存红，另开车道，
++   本 PR 登记面均为唯一新名（dup 计数 38→38 未增），不混入避免成合并撞车磁石。
++
++## 后续建议
++1. 合入后本机跑 `python scripts/render_dsh_patch.py`（DSH 重连即用新安装面）。
++2. 下一单：dc_3 修复（desc_clip 走字节 API）或确认 CI nightly 是否仍字节语义（若是则本条 FALSE_POSITIVE）。
++3. doc_dup 存量清整单（232 冗余块机械去重）。
++
++## 超额内容
++- 回收了 PR#17 被合并通道吃掉的 16 条 README 登记 + 3 格 CI + 电池格（不止 BUG-389(2) 本身）。
++- `run_light_wt --selftest` 21 格验明纯逻辑可进电池，顺带解掉 G1 缺面红。
++
++## 来源
++- BUG-389(2) 账本（memory/bugs.md，本机 pre-push traceback 实测）；
++- `packaging/dsh/launch-mcp.mjs`（b5c8a366 社区层，2026-10-23 读）；
++- 本仓口径：docs/2026-10-20-slave-dev-playbook.md、run_guards G1/check_merge_loss 三面契约。
+diff --git a/scripts/README.md b/scripts/README.md
+index e25a0d80..9893f7a5 100644
+--- a/scripts/README.md
++++ b/scripts/README.md
+@@ -85,6 +85,21 @@
+ - `check_scripts_naming.py` — **scripts/ 命名的词法门（TASK-008 第一批，R95 新增）**：TASK-008 原口径「~50 个无前缀脚本全部改名」实测两点把它拆开：①那 50 份里 **29 份的角色写在后缀上**（`*_verify.py`/`*_probe.py`/`*_demo.py`/`*_smoke.py`），只看前缀会把演示件与验证件一起算成债、读数虚高一倍；②剩下 **16 份真债**的改名成本是 1224 处引用，其中 **944 处落在 `memory/` `reports/` `stories/` `docs/` 归档面**（那些行记的是当时真跑过的命令，回写它们=把记录改成事后叙述）。本判据因此不替 owner 决定改不改名，它把债钉成只许下降的数并挡住新入场。**词法真源在文档不在代码**：两份角色表从 `scripts/NAMING.md` 的 `naming-roles-prefix:` / `naming-roles-suffix:` 两条 anchor 行现读（代码与文档各持一份词法就是下一颗漂移雷）。**判定面两条**：N1 无角色名（顶层 `.py` 既无前缀又无后缀）上限 16、N2 连字符名（basename 含 `-`，不可 import 且 shell/Python 切词不同）上限 4；**只报不判必须出数**：子目录同形读数（现读 0/12，`e2e_` 收进前缀表后黑盒面自己干净了）。分类一律取 basename —— 拿整条路径比前缀会把 `blackbox/check_*.py` 算成债。自拒真给 2：宇宙空 / `NAMING.md` 读不到 / anchor 解析到 0 个词（读不到词法却报「都合规」是最便宜的假绿）。`--selftest` 十格由 `cells` 现数（clean-synth-green / new-roleless-red / suffix-role-not-counted / prefix-role-not-in-n1 / hyphen-in-n2 / empty-universe-and-missing-doc-selfrefuse / empty-role-table-selfrefuse / real-ceiling-matches-measured / subdir-name-classified-by-basename / ceiling-drift-detected），其中 `real-ceiling-matches-measured` 钉「上限必须 == 现状读数」（上限烂掉比没上限更贵），真树变异台另测：现场落一份 `scripts/mystery_thing.py` ⇒ 判定面 1 条 rc=1，删除后回 rc=0。用法：`python scripts/check_scripts_naming.py [--show|--show-ceiling|--selftest]`（0=判定面在棘轮上限内 / 1=超限 / 2=判据无法自证，真给 2）。执行面三处齐备：ci.yml「Scripts naming guard」跑 `--selftest` + 全量、`run_guards.py` 自动发现进电池、本条 README 登记；规范正文见 `scripts/NAMING.md`（含 16 份债清单与改名建议）。
+ - `check_store_tables_wired.py` — **store schema 接线守卫（BUG-28）**：以 `src/store/store_sqlite.mbt` 的 CREATE TABLE 清单为真源，逐张表对两件事——要么在 `src/**` 里有写入点（INSERT/UPDATE/DELETE/REPLACE），要么在 store 源文件里用机器可读的 `schema-reserved: <表名>` 显式声明为预留。两个方向都发红：「无写入点且未声明」= 第二张 runs（恒 0 行的死 schema 被当可用能力）；「声明预留却有写入点」= 声明滞后。解析不到任何表 ⇒ FATAL(2)（空扫描面不出绿）。`--selftest` 用合成违例证明判据会红、干净输入不误红。用法：`python scripts/check_store_tables_wired.py`（0=PASS，1=违例，2=无法自证）。
+ - `check_model_auth_no_key.py` — **文件面「真凭据值形状」守卫（方向五）**：扫仓库**可见面**（`fist-config.html` / `default-fist.mcp.json` / `.mcp.json` / `.mcp.dev.json` / `plugins/**/.mcp.json` / `src/server/mcp_config_scaffold.mbt` 的凭据白名单常量 / `src/router/` / `docs/` / `README*.md`），只认**凭据值形状**不认键名（键名 `api_key`/`token`/`secret` 等是合法占位符，不误红）。红面：`sk-` / `Bearer ` / `AIza` / `ghp_`/`gho_`/`github_pat_`/`glpat-`/`ya29.`/`xoxb-`/`xoxp-`/`pk_live_`/`rk_live_` / `AKIA` 前缀，40+ 长 base64 令牌形状（**只在凭据键值上下文**里判，长文件名与 `// ----` 注释分隔线不误红），`FIST_GITHUB_TOKEN=xxx` 中 xxx 非 `${...}`/`<...>`/空。与 `check_publish_payload` 的 P2 互补（P2 管 `moon publish` 公开面，本守卫管仓库内可见面）。用法：`python scripts/check_model_auth_no_key.py [--selftest]`（0=PASS，1=违例，2=判据无法自证/输入面退化）。
++- `check_direct_push.py` — **pre-push 拦截的判定本体**：读 git 的 pre-push stdin 行（`<local-ref> <local-oid> <remote-ref> <remote-oid> <remote-url>`），只拦「远端 ref == refs/heads/main 且 url 含 gitcode」；畸形行/空输入一律 fail-open（不许在解析噪声上误杀正常交付）。`.githooks/pre-push` 是壳、本文件是脑——壳只 `exec python 本文件`，判定逻辑不外流。`--selftest` 跑 7 格纯语义矩阵（拦 gitcode/main / 不拦 github·feature·空·畸形·缺 url / 大小写不敏感），电池只点名这一格（裸跑会挂 stdin 空转，见 `run_guards.py` 同段注释）。rc 0=放行 / 1=拦截。
++- `check_push_guard.py` — **「直推拦截当前是否生效」判据（BUG-389(2) 缺口③）**：钩子此前只活在本机手装的 `$GIT_COMMON_DIR/hooks/`，换机/清理即静默退化 fail-open 且无人出声。本尺三面：H0 安装器 REQUIRED 含 pre-push（安装器即真源）、H1/H2 钩子壳与判定脑都在 git 跟踪面、H3 壳引用脑（壳脑分家=壳漂移）+ S2 stdin 未被掐；S1 真起本地子进程喂 5 格 stdin 语义矩阵；E1（core.hooksPath/手装态）只报不判——CI 干净 clone 上恒 WARN，拦的是「跟踪面本身坏了」。用法：`python scripts/check_push_guard.py [--selftest]`（0=跟踪+语义全绿（允许 E1 WARN）/ 1=H·S 违例点名 / 2=python 或 git 跑不动、判据无法自证）。`--selftest` 六格合成仓（干净不误红 / 钩子失踪 / 脱跟踪 / 壳漂移 / 安装器脱钩 / 语义改松与误伤两格变异台必红）。
++- `render_dsh_patch.py` — **DSH 插件安装面「模板 → 本机渲染」**（路径硬编码清零的落点）：跟踪真源是 `.dsh/fist-mbt-plugin/cordis.patch.yml.tpl`（占位符 `{{FIST_MBT_LAUNCHER}}`/`{{FIST_MBT_ROOT}}`、零绝对路径），渲染件 `cordis.patch.yml` 由本脚本按「脚本自身位置反推的仓根」生成（已 gitignore）——宿主对 stdio 的 `args`/`cwd` 不做变量插值，只能一台机器渲染一次。默认入口 `packaging/dsh/launch-mcp.mjs`（机器无关 launcher：内部挑最新 `_build/js/*`、回退 `dist/fist-mbt.js`，自带 Node>=24/node:sqlite/ESM require 检查；产物随构建自愈，渲染不依赖先 build），`--root`/`FIST_MBT_HOME`、`--cli`/`FIST_MBT_CLI` 可覆盖。`--check` 判渲染件与「模板×本机路径」是否漂移；`--selftest` 十三格离线自证。用法：`python scripts/render_dsh_patch.py [--check|--selftest]`（0/1/2）。
++- `check_hardcoded_paths.py` — **「当前面不得写出本机身份路径」回归锁**：扫 git 跟踪面的现状面（`.dsh/ scripts/ src/ cmd/ plugins/ .github/` + 根级现状文档），抓工程目录名与家目录形状的机器身份 token；豁免只追加的叙述历史（CHANGELOG/reports/memory/docs/archive）、构建产物（dist）、本地产物与 `.mbti`。抓的是「这台机器是谁」而不是「有没有绝对路径」——测试夹具里的合成盘符形状不误红；违例词表运行时拼接，**尺子写进自己被检面会自锁扫红**（有意）。用法：`python scripts/check_hardcoded_paths.py [--selftest]`（0=干净 / 1=违例逐条点名 / 2=扫描面为空自拒）。
++- `check_branch_ancestry.py` — **PR 分支 ancestry 失效探测（R66）**：主线被重写（如 613MB 事故收口）后，早先开出的分支基点成孤儿，`git merge` 直接 `refusing to merge unrelated histories`——而 merge-tree 不校验历史相关性，「无冲突」读数骗人。判据逐支验 merge-base 存在性与可达性，失效分支点名（合并机器人只读这份清单，不对物理合不了的分支空转）。`--selftest` 沙箱合成两形。
++- `check_diff_scope.py` — **分支改动面 / 契约 / 越界 / 热区登记面守卫（R158，WT-05）**：多 agent 通道同一基点十几支在飞时，批处理合并的 `git checkout --ours .` 会整树吃掉另一支的登记面（README 索引行/电池格），两侧改不同位置连冲突提示都不产生。本尺从 diff 算每支的改动文件集，判①越界（动了它不该动的）②撞契约（登记面热区）③两支改动重叠面点名——补 `check_slave_mergeability.py` 看不见的「越界/撞契约」两维。`--selftest` 合成树，`DIFFSCOPE=clean` 是诊断臂。
++- `check_memory_log_dup.py` / `check_memory_log_dedupe.py` — **每日日志重复块门（R133）**：`memory/YYYY-MM-DD.md` 是金条五的追加面，实测被「整文件自我追加」放大到 91 MB / 25770 块（唯一块仅 56）。只判「同一份日志里逐字相同的 `## ` 块 ≥2 份」这一形（抬头同正文异是不同结论，本尺无权删），`--fix` 无损去重；dup 版先立项、dedupe 版收口（≥200 字符块门槛），并存互为对照。rc 0/1/2/4（BUG-369 契约，未捕获异常走 4 不冒用 1）。
++- `check_memory_log_size.py` — **memory/*.md 失控追加的闸（R59）**：`memory/2026-10-22.md` 曾在 gitcode/main 长到 613.31 MB / 370 万行（`## R70` 标题重复 18 万次），GitHub pre-receive 直接拒收、clone/pull 成本整垮。判据按单文件体积与「同抬头重复次数」发红；豁免面与 dedupe 两尺分工见脚本头。用法：`python scripts/check_memory_log_size.py [--selftest]`。
++- `check_merge_loss.py` — **合并「丢行」探测（R57）**：登记面三份手写副本（README 索引行 / `run_guards.py` case 格 / `BATTERY-REGISTRATION` 锚点）多次被合并机器人整行吃掉且不产生冲突提示（R48/R49/R55→R56 实证）。对指定（或最近一个）merge commit 逐侧算「该侧相对祖先新增的行 − 合并结果」，缺席即丢行；默认只盯登记面，`--paths` 可扩。rc 0/1/2（非 merge commit 走 2 拒绝出数）。
++- `check_script_single_copy.py` — **脚本单副本守卫（整文件串接探测）**：`scripts/fist-gate.py` 曾被三次「手动解冲突」串成 4 份全文件副本（四套 `__main__` 块），首个 `sys.exit` 让进程当场退出 ⇒ 只有最老一份在执行，其余全是死代码而所有读数以为它们在跑。判据对 `scripts/**/*.py` 找「同一文件第二份模块头/`__main__` 块」形状。
++- `check_selftest_call_face.py` — **「--selftest 绿≠尺真能跑」的调用面守卫（R158 一课）**：R158 交付 check_diff_scope 时自检全绿而现状一跑就崩（打印行少传一参的 TypeError 冒成 rc=1；自检只考 judge() 纯函数，run()/main() 整层在自证面之外）。两条 AST 静态判据：J1 自证调用面可达性、J2 NO_CALL_FACE 只报不判。不 import、不执行被检脚本。
++- `check_selftest_hermetic.py` — **自证封闭性守卫（R151 根因面）**：`--selftest` 一旦混入真源读（真 README / `run_guards --list` / git），账一落后尺子就红——battery 的 R1 格曾把「README 锚点落后」判成「夹具坏了」并连带 inventory 的 X4 失联。H1 判自检体调用闭包里不得含 I/O 原语、H2 点名真源读臂（须显式豁免带理由）。
++- `run_light_wt.py` — **轻量 worktree 沙箱生命周期（WT-03 两格验收落点）**：主副机共仓时多条车道同时 `checkout`/`worktree add` 互踩工作树；本工具按任务开 sparse cone 沙箱（只铺 1~3 包、分钟级 TTL），`light-wt` 创建 + `light-wt-teardown` 幂等回收 + `status` 状态机供 collector 消费。**禁电池裸跑格**（写 git 配置/真实 worktree，跑完工作树必变）：`run_guards.py` 只点名它的 `--selftest`（10 格纯逻辑）。
++- `tmp_merge_batch.ps1` / `tmp_merge_batch.sh` — **一次性批量合并助手（本地运维件，非 CI 判据）**：按硬编码分支清单逐个 `git merge`、冲突时保留我方并追加 `--- MERGE-INCOMING ---` 存档，最后 `moon check` + 推双远端。仓根由脚本位置反推（sh 侧 `$(dirname "$0")/..`），不写死任何机器的 checkout 路径；`.ps1` 进不了电池（只自动发现 `scripts/**/*.py`），跑法见脚本头。
++
+ - `check_host_installable.py` — **宿主侧「真的能装上」守卫（cl7 的补丁）**：`check_plugin_sync` 只验「插件态 == 投影」，投影一致 ≠ 真能装上（本轮实测 deepseek-harness 首轮 patch 用了宿主不认识的 `timeout_ms`、相对 `_build/...` 按 Host cwd 解析 ⇒ `server is disconnected`）。**按宿主分三档，避免一刀切误报**：**D1 DSH 宿主严格档**（`.dsh/fist-mbt-plugin/cordis.patch.yml`）——`args`/`cwd` 必须绝对或 `${...}` 变量（相对 `_build/...` 红）、超时必须 `toolCallTimeoutMs`（禁 `timeout_ms`）、`reconnect` 键只能 `{enabled, initialDelayMs, maxDelayMs, maxAttempts}`（禁 `intervalMs`/`maxRetries`/`delayMs`）；**D2 Claude 宿主宽松档**（`plugins/**/.mcp.json` + `.mcp.json`/`.mcp.dev.json`）——相对路径不判、`timeout_ms` 与「混入 DSH reconnect 键名」只打 **info WARN 不计入 exit 1**、reconnect 的 `intervalMs/maxRetries/delayMs` 是 Claude 合法键名；**D3 默认模板**（`default-fist.mcp.json`）——只判 JSON 合法 + `mcpServers` 非空 + `command` 非空 + 无 `${未定义占位符}`，reconnect 键名完全不判（通用填表起点，Claude 形状是合法默认）。**三宿主 reconnect schema 本就不同名**（DSH=`initialDelayMs/maxDelayMs/maxAttempts`，Claude=`intervalMs/maxRetries/delayMs`），判据认这个事实、不逼通用模板改键名。字段白名单反解自 `src/server/mcp_config_scaffold.mbt` 的 `mcp_form_field_whitelist`，不硬编码。用法：`python scripts/check_host_installable.py [--selftest]`（0=PASS，1=违例，2=判据无法自证）。
+ - `check_skill_inject.py` — **「plan/claim 的 inject 真的能命中资产」守卫（BUG-139 同族）**：`evolve_asset_register` 把外部资产注册进 DGM，plan/claim 的 `inject` 按关键词子串检索——匹配逻辑若退化，inject 恒空（注册再多也注入不进去），此前无人认领。**S1 静态主判据**：`src/server/server.mbt` 的 `lookup_injected_assets_in` 必须真按 `,` 分割 inject、并对 `art.goal` **或** `art.note` 做子串匹配（`.contains(k)`）；**匹配键是 goal+note，不含 code**（code 只在命中结果回传，真源实况，如实自述）。**S2 白盒锁**：`src/server/memory_test.mbt` 的 `memory_13_lookup_injected_assets_hit_and_empty` 必须在位。**S3 落库资产反查**：DGM 资产持久化在 SQLite `evolve_artifacts` 表（非 `memory/*.md`），逐条验 `goal` 含 `[asset]<source>`、`note`/`code` 非空；表里 0 条 `[asset]` 或表读不到 ⇒ **自拒 exit 2**（档案面空，roundtrip 无对象，不静默绿）。只做静态命中 + 落库反查，**不黑盒真调 MCP**。用法：`python scripts/check_skill_inject.py [--selftest]`（0=PASS，1=违例，2=档案面空或判据无法自证）。
+ - `demo.ps1` — 一键演示（build+patch+smoke）。
+@@ -260,7 +275,7 @@ ist-mbt-js-v0.3.4.zip` 落在 R1（只扫安装器）与 J4（只认 `@x.y.z`）
+
+ - `run_guards.py` — **守卫回归电池的唯一真源（R40 / BUG-366）**：`check_*.py` 这 26 把尺「红不红」看 CI，但「本地每轮复跑哪几格」从来没有真源——历轮都是一份 `temp/run_guardsNN.py`，temp/ 被 gitignore、写完即丢，格数全靠人回忆（实测这条手抄链：11 份电池 5、7–16 = 13×7 → 30 → 33 → 37 → 37 格）。漏抄不是「少跑一格」，是「那格永远不会被发现漏了」：**`check_plan_landing` 自 2026-10-14 落仓起 CI 里没有、11 份电池逐份 grep 全 0 命中，于是它带着「`src/x.mbt:108/121/134` 整串当路径 ⇒ 已跟踪文件报 missing」的虚报缺陷躺了一周**（本轮实测：56 条读数里 2 条虚报 / 8 条日期与变量占位噪音 / 17 条落在存档面）。判据 **G1** 每把 `check_*.py` 至少一个执行面（CI ∪ 电池，两侧名单都现读、不另抄清单——抄的那份就是下一个漂移点）；**G2** 电池点名的脚本不存在 ⇒ FATAL；**G3** 尺数 0 / CI 一把都没解析到 / 电池为空 ⇒ FATAL（空宇宙会让「无人缺面」以 rc=0 骗人）；每条 case 带 `expect`，预存红**照写期望值 + 依据**（`kind="known-red"`）而不是豁免，数字被修好就说明显；诊断型读数是 `kind="diag"`；依赖 temp 件的 case 缺前置打 SKIP，但 **SKIP 不构成「这格过了」的证据**，G1 只认名字在不在电池里。真源读数（R41 复读）：**35 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0；24 把尺 = CI 面 21 ∪ 电池面 22**（R48 现读：38 格 / 失败 0 / SKIP 0 / 缺执行面的尺 0；26 把尺 = CI 面 23 ∪ 电池面 24）（R40 首跑当时是 34 格 / 失败 2，那两条红是「本文件尚未入库」造成的顺序性自红，登记后归 0）。`--selftest` 37 格（R121 现读：34 格 + 逐格判定列三格；R106 现读：电池 53 格 / 失败 0 / SKIP 5 / 缺执行面 0；宇宙 81 份脚本 = 尺 79 把 + 常驻豁免 2 份（只点名不入电池），CI 面 39 ∪ 电池面 41 ∪ 登记 30 ∪ 豁免 26 ∪ 待接线 4；自动补格 0 格，成因见 ④）：G1 干净 / G1 抓漏面尺且必点名 / G3 三种空宇宙各自拒 / G2 自拒 / 真源现状全绿 / plan_landing 已进电池 / **R41 两格：plan_landing 的门禁格与诊断格必须并存，且诊断格的 why 必带构成**（读数只给一个孤零零的 rc 不算证据）。**R106 再钉「宇宙的真源是递归全集，不是门禁前缀清单」**（2026-10-22 副机实测）：一次「手动解冲突合入」把 R82 的 `GATE_PREFIXES` / `EXEMPT_RULES` / `_match_rule` / `universe_files` 四个**定义**删了、把 `is_gate` / `exempt_reason` / `classify` 三个**调用面**留着 ⇒ import 期 NameError，`--selftest` 与 `--list` 一起起不来，ci.yml「Guard execution-face」那两步整条红了一整天——而电池里没有任何一格能看见这件事。三处收口：① 宇宙 = `scripts/**/*.py` 递归全集（`UNIVERSE_EXCLUDE_RE` 的测试/一次性/内部辅助族不入账），`classify()` 的门禁尺/豁免/未归类改成**记账口径**而不是宇宙本身；② 执行面是三面（CI ∪ 电池 ∪ 登记 `REGISTRY`），再加豁免理由（`EXEMPT_RULES`）与待接线（`KNOWN_NO_FACE`）两份点名账，五者皆无 ⇒ 缺面红——登记面原先只在 `check_faces` 函数体里有个 `registry` 而调用面没传，等于登记不顶用；③ 未捕获异常走 **4 号档**（BUG-369 契约：「尺子自己坏了」不许长得像「判据判红」的 1），并补 `auto_cases` arity 对表格钉住「定义与调用被拆到两次改动」这一类。④ 自动补格这台机器在现状树产 **0 格**（`build_cases()` 先按脚本名给每份可发现脚本补了无参格，`auto_case_for` 的名字排除因此恒命中），于是把它的判据从循环体抽成纯函数、用 7 面合成对照钉住——拿空产物反证就是 `all([])` 式的无人认领绿灯（R105 的 X5 同源）。同批把电池里**从没被读到过**的预存红按实测登记：`check_doc_surface` J4（scripts/README.md 里第二处发布版本自述（当时的号已过时，此处不写具体号以免与当前自述混淆））、`gen_plugins --check` 2（BUG-333/384 抬头编号重复 + BUG-384 被小记点名但状态非 FIXED）连带 `check_plugin_sync` 1、`check_ci_step_position` 1（位置违规 35 > 棘轮上限 34）连带其 `--selftest` 2、`check_scripts_index` 的换因（fist-gate.py 已登记，现红在那份提示词素材件（.txt 而非 .py，登记与否归文档那一单）未登记）；并把判定面已归零的 `check_bug_reference_integrity` 期望从 1 改回 0（本文件自订的律到期兑现）。宇宙全集化后第一次进账的三份账也当场结清：`whisperer.py` / `whisperer_patrol.py` 有 `--selftest` ⇒ 手写进电池，`install_git_hooks.py`（查本机 git 钩子态、`--install` 有写面）/ `refresh_dist.py`（要构建产物并写盘）⇒ 进 `REGISTRY` 带理由。**变异实测**：把 plan_landing 从 CASES 里摘掉 ⇒ `--list` 与 G1 立刻 rc=1 并点名它（正是那周的形状的机械化复现）。本工具的两个模式在 ci.yml「Guard execution-face」步里执行（`--selftest` + `--list`），所以这条门自己不会重蹈「写了没人跑」。用法：`python scripts/run_guards.py`｜`--list`｜`--selftest`（0=无失败 / 1=有格越期望或有尺无人跑 / 2=电池自拒）。**R82 宇宙扩展（TASK-007，P1）**：`guard_files()` 改 `os.walk` 递归——宇宙从 scripts/ 顶层扩到 **scripts/ 全树含 blackbox/**（排除 `__pycache__` 与 `_`/`test_`/`verify_`/`selfdrive_` 前缀族），现读 **67 份**（此前 26，blackbox 里落了不接线的尺如 `check_merge_markers.py` 正是 R58 指出的盲区本体）；新增第三执行面**登记面（REGISTRY）**——在册但不自动跑的脚本（servers/长跑/网络/平台前置/helpers/生成器/黑盒 e2e/证据型历史脚本）每条带 why，复用本仓 `schema-reserved` 的点名预留律：G1 改「CI ∪ 电池 ∪ 登记三面皆无才算孤儿」，G2 反向抓「脚本删了登记没删」的 stale 条目（与 store 表接线守卫两向发红同构）；`auto_cases()` 对新落仓的 `check_*` 自动补电池格（手写 36 + 自动 0，已知尺零重复）；CI 引用面正则放宽后实测 CI 真跑 38 份（旧正则看不见 5 支 blackbox e2e 探针与 cli_flag_probe）；电池 **36 格 / 失败 0 / SKIP 5（缺 temp 前置，不构成通过证据）/ 预存红 2**（`check_scripts_index` rc=1 = fist-gate.py 未登记、`cleanup_artifacts --check` rc=1 = 工作树残留，均按电池律 `expected()` 声明 + 依据）；`--selftest` 扩到 **19 格**（新增：宇宙≥40 + blackbox 全员在宇宙 / G2 stale 登记自拒 / G1 登记面不算缺面 / auto_cases 生成与零重复）。
+   **R121 行内判定列（副机实测缺陷）**：旧版逐格行的标签直接从记账口径取（`tag = {"gate": "OK", ...}[c["kind"]]`），于是一条 `rc=2 exp=0` 的门禁格照印 `OK`——实测本机 R120 分支上那两条链红就是这么躺在一行绿灯里的：`rc=2  exp=0  check_battery_count_doc.py   OK FATAL: run_guards --list rc=1：缺面清单：audit_branch_delete.py`，尾行自己写着 FATAL，行内标签却写着 OK，红只在末尾汇总出现。逐行读输出的人（和 AI）先看到的是绿灯，这与 R106 立的「空产物反证」「把『自动 0』印成一行看不出问题的数字」同族。修法：判定列从 `ok` 取并放进行首（`PASS`/`FAIL`），口径降级成第二个标签列（`门禁`/`诊断`/`预存红`），于是 `grep ^FAIL` 直接捞红格、`grep ^SKIP` 捞跳过格；`--selftest` 加三格合成对照钉住（红不印 OK / 命中印 PASS / 预存红仍带口径标注），四支变异实测各有对应红格（判定列恒印 OK→1 格红 / 判定列挪出行首→3 格红 / 口径列抹掉→1 格红 / 判定列反了→3 格红），还原逐字相同。**`--list` 面不动**：`check_battery_count_doc.py` 抄的是 `--list` 汇总行文法，逐格行没有机器消费者（本仓实测只有它读电池输出），改的是人读面。
+-  **BATTERY-REGISTRATION（机器可读锚点；`check_battery_count_doc.py` 逐键对表，改数必须同批）**：`rulers=90 ci=42 battery=52 missing=0 gate=60 exempt=27 unclassified=5`（现读来源：`python scripts/run_guards.py --list`）
++  **BATTERY-REGISTRATION（机器可读锚点；`check_battery_count_doc.py` 逐键对表，改数必须同批）**：`rulers=105 ci=47 battery=66 missing=0 gate=74 exempt=27 unclassified=6`（现读来源：`python scripts/run_guards.py --list`）
+
+ - `fist-gate.py`（R74 入仓）— **统一门禁链**：`merge_markers / fmt / build / ps_encoding / store_path` 五段 +
+   本轮补了 fmt/build 两臂的**环境态分类**：冷格式化器（缺 `_build/wasm-gc/release/format/`）与依赖缓存
+diff --git a/scripts/_run_check_t0r21.py b/scripts/_run_check_t0r21.py
+index 30fa2ca5..50caef6a 100644
+--- a/scripts/_run_check_t0r21.py
++++ b/scripts/_run_check_t0r21.py
+@@ -1,6 +1,14 @@
+ #!/usr/bin/env python3
+-"""T0r2.1 run_check 判据：moon test src/engine 全绿即通过（BUG-253 修复回归）。"""
+-import subprocess, sys
++"""T0r2.1 run_check 判据：moon test src/engine 全绿即通过（BUG-253 修复回归）。
++
++路径全部由本文件位置 / 环境推导，零本机硬编码：
++  · 仓根 = scripts/ 的上一层（可用 env FIST_MBT_HOME 覆盖）
++  · moon = env FIST_MOON_BIN > PATH 上的 moon > ~/.moon/bin/moon[.exe]
++"""
++import os
++import shutil
++import subprocess
++import sys
+
+
+ # BUG-58/138 stdout/stderr UTF-8 重配：本脚本 print 非 ASCII，
+@@ -10,9 +18,32 @@ if hasattr(sys.stdout, "reconfigure"):
+ if hasattr(sys.stderr, "reconfigure"):
+     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+-cmd = [r"C:\Users\victo\.moon\bin\moon.exe", "test", "src/engine"]
++REPO_ROOT = os.environ.get("FIST_MBT_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++
++
++def pick_moon() -> str | None:
++    env_bin = os.environ.get("FIST_MOON_BIN")
++    if env_bin:
++        return env_bin
++    found = shutil.which("moon")
++    if found:
++        return found
++    home = os.path.expanduser("~")
++    for name in ("moon.exe", "moon"):
++        cand = os.path.join(home, ".moon", "bin", name)
++        if os.path.exists(cand):
++            return cand
++    return None
++
++
++moon = pick_moon()
++if not moon:
++    print("ERR 找不到 moon：设 FIST_MOON_BIN，或把 moon 放进 PATH / ~/.moon/bin")
++    sys.exit(2)
++
++cmd = [moon, "test", "src/engine"]
+ try:
+-    p = subprocess.run(cmd, cwd=r"E:\IDEProjects\AI\FIST-Mbt", capture_output=True, text=True, timeout=600)
++    p = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=600)
+ except Exception as e:
+     print(f"ERR spawn: {e}")
+     sys.exit(2)
+diff --git a/scripts/blackbox/e2e_reserve_xproc.py b/scripts/blackbox/e2e_reserve_xproc.py
+index 8126e456..e2a9c710 100644
+--- a/scripts/blackbox/e2e_reserve_xproc.py
++++ b/scripts/blackbox/e2e_reserve_xproc.py
+@@ -39,7 +39,7 @@ if hasattr(sys.stderr, "reconfigure"):
+
+ def _find_root() -> str:
+     """仓库根按 moon.mod 定位，不按「向上几层」的层数猜——
+-    这份脚本从 temp/ 跑和将来从 scripts/blackbox/ 跑，深度差一层，写死层数会一路指向 E:\\IDEProjects\\AI。"""
++    这份脚本从 temp/ 跑和将来从 scripts/blackbox/ 跑，深度差一层，写死层数会一路指向 E:\\workspace\\AI。"""
+     d = os.path.dirname(os.path.abspath(__file__))
+     while True:
+         if os.path.isfile(os.path.join(d, "moon.mod")):
+diff --git a/scripts/check_direct_push.py b/scripts/check_direct_push.py
+index 59c0a220..6b9657ab 100644
+--- a/scripts/check_direct_push.py
++++ b/scripts/check_direct_push.py
+@@ -2,12 +2,16 @@
+ """FIST-Mbt pre-push guard: block direct push to gitcode/main.
+
+ Reads the pre-push hook stdin format:
+-    <local-ref> <local-sha> <remote-ref> <remote-sha> [remote-url]
++    <local-ref> <local-sha> <remote-ref> <remote-oid> [remote-url]
+
+ Block condition: remote-ref == refs/heads/main AND remote-url contains "gitcode".
+ Anything else exits 0 (silent pass).
+
+ Standard library only (sys, re). No third-party dependencies.
++
++`--selftest` runs the decision matrix in-process (no git, no network): the block
++rule itself is asserted, so the hook's behaviour can be checked without pushing.
++This is the cell run_guards' battery executes.
+ """
+
+ import re
+@@ -20,20 +24,58 @@ BLOCK_MSG = (
+ )
+
+
+-def main() -> int:
++def decide(lines) -> bool:
++    """Pure rule: True = the push must be blocked.
++
++    Malformed lines (<4 fields) are skipped — never fail closed on parse noise.
++    """
+     blocked = False
+-    for line in sys.stdin:
++    for line in lines:
+         parts = line.strip().split()
+         if len(parts) < 4:
+-            # Malformed pre-push line: never fail closed on parse errors.
+             continue
+         remote_ref = parts[2]
+         remote_url = parts[4] if len(parts) > 4 else ""
+         if remote_ref in MAIN_REFS and re.search(r"gitcode", remote_url, re.IGNORECASE):
+             blocked = True
+-            print(BLOCK_MSG, file=sys.stderr)
++    return blocked
++
++
++def selftest() -> int:
++    # pre-push stdin 行形状：<local-ref> <local-oid> <remote-ref> <remote-oid> <remote-url>
++    # （5 字段；判定读 parts[2]=remote-ref 与 parts[4]=remote-url。上一版 fixture 多写一个
++    # 字段 ⇒ remote-ref 落在 oid 上，两格必假红——selftest 自己就是把它抓出来的那只眼。）
++    cases = [
++        ("refs/heads/main o1 refs/heads/main o2 gitcode.com:V/F.git", True, "直推 gitcode/main 必须拦"),
++        ("refs/heads/main o1 refs/heads/main o2 github.com:V/F.git", False, "推 github main 不拦"),
++        ("refs/heads/feat/x o1 refs/heads/feat/x o2 gitcode.com:V/F.git", False, "推 feature 分支不拦"),
++        ("", False, "空输入 fail-open"),
++        ("garbage", False, "畸形行 fail-open"),
++        ("refs/heads/main o1 refs/heads/main o2", False, "缺 remote-url 不拦（无从判定）"),
++        ("refs/heads/master o1 refs/heads/main o2 GITCODE.com:V/F.git", True, "大小写不敏感"),
++    ]
++    fails = []
++    for line, want, why in cases:
++        got = decide([line])
++        if got != want:
++            fails.append("%s：期望 %s 实回 %s" % (why, want, got))
++    if fails:
++        print("SELFTEST FAIL：直推拦截语义漂移")
++        for f in fails:
++            print("  - " + f)
++        return 1
++    print("SELFTEST OK 直推拦截语义 %d 格全中（拦 gitcode/main / 不拦 github·feature·畸形·空）" % len(cases))
++    return 0
++
++
++def main(argv) -> int:
++    if "--selftest" in argv:
++        return selftest()
++    blocked = decide(sys.stdin)
++    if blocked:
++        print(BLOCK_MSG, file=sys.stderr)
+     return 1 if blocked else 0
+
+
+ if __name__ == "__main__":
+-    sys.exit(main())
++    sys.exit(main(sys.argv[1:]))
+diff --git a/scripts/check_hardcoded_paths.py b/scripts/check_hardcoded_paths.py
+index cae27cf6..c5b18699 100644
+--- a/scripts/check_hardcoded_paths.py
++++ b/scripts/check_hardcoded_paths.py
+@@ -14,8 +14,9 @@
+   · 豁免面（**只追加的叙述历史**，改了等于伪造历史）：`CHANGELOG.md` `reports/**` `memory/**`
+     `docs/archive/**`；`dist/**`（构建产物，随发布重建）；`.agents/**` `temp/**`（本地产物）；
+     `*.mbti`（生成接口）。
+-  · 违例 token（机器身份，不是「所有绝对路径」）：`E:/IDEProjects` 类工程目录名、`Users/<user>`
+-    形式的家目录。**测试夹具里合成盘符路径（`E:/repo/...`）不算违例**——那是形状输入，不是
++  · 违例 token（机器身份，不是「所有绝对路径」）：本机工程目录名一类（词表 `_MACHINE_DIRS`，
++    构造时拆成两段——本文件若出现该词的整体字面量会被自己扫红，这是有意的自锁）、
++    `Users/<user>` 形式的家目录。**测试夹具里合成盘符路径（`E:/repo/...`）不算违例**——那是形状输入，不是
+     某台机器的绑定。本判据抓的是「这台机器是谁」，不是「有没有绝对路径」。
+
+ 退出码契约：0 = 当前面无本机身份路径 / 1 = 命中违例（逐条点名文件:行） / 2 = 判据无法自证
+@@ -123,14 +124,17 @@ def selftest() -> list[str]:
+
+         (root / "scripts").mkdir()
+         (root / "reports").mkdir()
++        # 违例词运行时拼接（字面量会被尺子自己扫红——自锁是有意的，拼法绕开即可）
++        leak = "E:/" + _MACHINE_DIRS[0] + "/AI/x"
+         # C1 违例：当前面写出工程目录名
+-        (root / "scripts" / "bad.py").write_text('PROJ = "E:/IDEProjects/AI/x"\n', encoding="utf-8")
++        (root / "scripts" / "bad.py").write_text('PROJ = "%s"\n' % leak, encoding="utf-8")
+         # C2 豁免面：报告里的历史路径不判
+-        (root / "reports" / "old.md").write_text("E:/IDEProjects/AI/x\n", encoding="utf-8")
++        (root / "reports" / "old.md").write_text(leak + "\n", encoding="utf-8")
+         # C3 干净：合成盘符形状（不是某台机器的绑定）
+         (root / "scripts" / "ok.py").write_text('P = "E:/repo/proj"\n', encoding="utf-8")
+-        # C4 家目录形状
+-        (root / "scripts" / "home.py").write_text('H = r"C:\\Users\\victo\\.dsh"\n', encoding="utf-8")
++        # C4 家目录形状（用户名运行时拼接；raw 串保持反斜杠形状，见 _HOME_USERS）
++        home_line = 'H = r"C:\\Users\\%s\\.dsh"\n' % _HOME_USERS[0]
++        (root / "scripts" / "home.py").write_text(home_line, encoding="utf-8")
+         subprocess.run(["git", "add", "-A"], cwd=root, capture_output=True)
+
+         files = current_face(root)
+diff --git a/scripts/check_host_installable.py b/scripts/check_host_installable.py
+index d2af7d89..072667bf 100644
+--- a/scripts/check_host_installable.py
++++ b/scripts/check_host_installable.py
+@@ -13,7 +13,12 @@
+   D1 · DSH 宿主面（`plugins/**` 之外的真安装面）：`.dsh/fist-mbt-plugin/`
+      · package.json：`name` 合法 npm 名（`@scope/pkg` 或 `pkg`，仅 `[A-Za-z0-9._-]` 与一个 `/`）；
+        `version` 是合法语义版本（`x.y.z`）且 **== moon.mod 的 version**。
+-     · cordis.patch.yml —— **严格档**（这是 DSH 真安装面，错了就 disconnected）：
++     · cordis.patch.yml.tpl —— **模板档（跟踪真源，本 PR 起为安装面的唯一入仓形态）**：
++          ① 两个占位符 `{{FIST_MBT_LAUNCHER}}` / `{{FIST_MBT_ROOT}}` 齐全；
++          ② **不得含任何本机绝对路径**（盘符 / 家目录）——模板绑定某台机器 = 每个克隆者
++             拿到都 disconnected；
++          ③ 占位符替换成合成绝对路径后，必须满足下面的严格档（模板形状 == 可装形状）。
++     · cordis.patch.yml —— **渲染件（本地产物，已 gitignore）**，在场时走严格档：
+          ① YAML 可解析（PyYAML 缺失时退化到缩进/键值结构检查，不静默跳过）；
+          ② `insert` 目标 `id` 与 `name` 非空（`name` 是被注入的插件 id，离线无法核验
+             宿主注册表，故只验形状不验存在性）；
+@@ -55,7 +60,8 @@
+        默认模板只能选一个主形状（Claude Code 形状）。判据按宿主分档认这个事实。
+
+ 扫描面（缺关键文件 → 自拒 exit 2）：
+-  `.dsh/fist-mbt-plugin/{package.json, cordis.patch.yml}`（D1）
++  `.dsh/fist-mbt-plugin/{package.json, cordis.patch.yml.tpl}`（D1：模板=跟踪真源）
++  `.dsh/fist-mbt-plugin/cordis.patch.yml`（D1：本机渲染件，**可选**——干净检出不产它）
+   `.mcp.json` / `.mcp.dev.json` / `plugins/**/.mcp.json`（D2）
+   `default-fist.mcp.json`（D3）
+   `moon.mod`（D1 的版本基线）
+@@ -88,6 +94,10 @@ ROOT = Path(__file__).resolve().parent.parent
+
+ DSH_DIR = ".dsh/fist-mbt-plugin"
+ DSH_MANIFEST = DSH_DIR + "/package.json"
++# 安装面双态（本 PR 起）：跟踪真源是模板（占位符、零本机路径），渲染件是本地产物
++# 由 scripts/render_dsh_patch.py 按当前仓位置生成（已 gitignore）。判据必须认这个事实：
++# 干净检出只有模板、没有渲染件 —— 只校验模板；本机有渲染件时再叠加严格档。
++DSH_PATCH_TPL = DSH_DIR + "/cordis.patch.yml.tpl"
+ DSH_PATCH = DSH_DIR + "/cordis.patch.yml"
+ LENIENT_JSON = [".mcp.json", ".mcp.dev.json"]
+ # BUG-358：只有「跟踪真源」才允许进关键清单。根 `.mcp.json` 被 .gitignore `/.mcp.json`
+@@ -172,8 +182,30 @@ def _walk_yaml(node, problems: list[str], path: str = "") -> None:
+                 _walk_yaml(v, problems, path + "/%d" % i)
+
+
++def dsh_template_problems(tpl: str) -> list[str]:
++    """模板档（跟踪真源）：安装面双态的「源」这一侧必须与任何一台机器解耦。
++    判据：① 两个占位符齐全；② 不得出现盘符/家目录绝对路径；③ 渲染后仍须过严格档。"""
++    problems: list[str] = []
++    for ph in ("{{FIST_MBT_LAUNCHER}}", "{{FIST_MBT_ROOT}}"):
++        if ph not in tpl:
++            problems.append("cordis.patch.yml.tpl 缺占位符 %s（渲染件将漏值/残留）" % ph)
++    m = re.search(r"[A-Za-z]:[\\/]", tpl)
++    if m:
++        line = tpl[:m.start()].count("\n") + 1
++        problems.append("cordis.patch.yml.tpl 第 %d 行出现盘符绝对路径（模板禁止任何本机路径）" % line)
++    if re.search(r"(?:^|[\s'\"])(?:/home/|/Users/)", tpl):
++        problems.append("cordis.patch.yml.tpl 出现家目录路径（模板禁止绑定某台机器）")
++    # 占位符替换成合成绝对路径后，严格档必须绿（模板形状 == 可装形状）
++    synth = (tpl
++             .replace("{{FIST_MBT_LAUNCHER}}", "E:/__tpl__/packaging/dsh/launch-mcp.mjs")
++             .replace("{{FIST_MBT_ROOT}}", "E:/__tpl__"))
++    sub_problems, _ = dsh_patch_problems(synth)
++    problems.extend("模板渲染后不满足严格档：" + p for p in sub_problems)
++    return problems
++
++
+ def dsh_patch_problems(patch: str) -> tuple[list[str], bool]:
+-    """严格档：DSH cordis.patch.yml。返回 (违例列表, 是否成功结构化解析)。"""
++    """严格档：DSH cordis.patch.yml（渲染件，绝对路径安装面）。返回 (违例列表, 是否成功结构化解析)。"""
+     problems: list[str] = []
+     parsed_ok = True
+
+@@ -333,7 +365,7 @@ def missing_key_files(root: Path = ROOT) -> list[str]:
+     """跟踪真源齐不齐。BUG-358：关键清单只收 REQUIRED_MCP_JSON（跟踪件），
+     不收被 gitignore 的根 .mcp.json——否则任何干净 checkout（CI、副机 clone）都会
+     因缺这个本机件而自拒 exit 2，判据形同虚设。root 供 --selftest 注入合成树。"""
+-    crit = [DSH_MANIFEST, DSH_PATCH, DEFAULT_TEMPLATE, MOON_MOD] + REQUIRED_MCP_JSON
++    crit = [DSH_MANIFEST, DSH_PATCH_TPL, DEFAULT_TEMPLATE, MOON_MOD] + REQUIRED_MCP_JSON
+     return [c for c in crit if not (root / c).exists()]
+
+
+@@ -359,8 +391,8 @@ CLEAN_DSH_CFG = {
+     "serverName": "fist-mbt",
+     "transport": "stdio",
+     "command": "node",
+-    "args": ["E:/IDEProjects/AI/FIST-Mbt/_build/js/debug/build/cmd/cli/cli.js", "serve"],
+-    "cwd": "E:/IDEProjects/AI/FIST-Mbt",
++    "args": ["E:/repo/FIST-Mbt/_build/js/debug/build/cmd/cli/cli.js", "serve"],
++    "cwd": "E:/repo/FIST-Mbt",
+     "toolCallTimeoutMs": 30000,
+     "failOnStartupError": False,
+     "reconnect": {"enabled": True, "initialDelayMs": 500, "maxDelayMs": 30000, "maxAttempts": 10},
+@@ -486,7 +518,7 @@ def selftest() -> list[str]:
+     with tempfile.TemporaryDirectory() as td:
+         fake = Path(td)
+         (fake / DSH_MANIFEST).parent.mkdir(parents=True, exist_ok=True)
+-        for rel in [DSH_MANIFEST, DSH_PATCH, DEFAULT_TEMPLATE, MOON_MOD, ".mcp.dev.json"]:
++        for rel in [DSH_MANIFEST, DSH_PATCH_TPL, DEFAULT_TEMPLATE, MOON_MOD, ".mcp.dev.json"]:
+             (fake / rel).parent.mkdir(parents=True, exist_ok=True)
+             (fake / rel).write_text("{}", encoding="utf-8")
+         # 故意【不】创建 .mcp.json —— 模拟干净 CI checkout
+@@ -504,14 +536,27 @@ def selftest() -> list[str]:
+     if read_moon_version() is None:
+         fails.append("T6 读不到 moon.mod 版本 → D1 的 version==moon.mod 无法判定")
+
+-    # T7 现状 DSH 面不红（尺子自证：当前 cordis.patch.yml 是「真正可用」样本）
++    # T7 现状模板必须绿（双态之「源」）：这是干净检出上唯一在场的安装面真源
++    real_tpl = ROOT / DSH_PATCH_TPL
++    if real_tpl.exists():
++        rp = dsh_template_problems(real_tpl.read_text(encoding="utf-8"))
++        if rp:
++            fails.append("T7 现状 DSH 模板红了（应为绿）：" + rp[0])
++    else:
++        fails.append("T7 找不到现状 DSH 模板 → 判据扫描面选错了")
++    # T7b 渲染件若在场则严格档绿；缺席不算红（本地产物、干净检出合法态）
+     real = ROOT / DSH_PATCH
+     if real.exists():
+         rp, _ = dsh_patch_problems(real.read_text(encoding="utf-8"))
+         if rp:
+-            fails.append("T7 现状 DSH patch 红了（应为绿）：" + rp[0])
+-    else:
+-        fails.append("T7 找不到现状 DSH patch → 判据扫描面选错了")
++            fails.append("T7b 本机渲染件红了（应为绿）：" + rp[0])
++    # T7c 模板硬编码泄漏必须红（本 PR 的核心回归锁：绝对路径不许回到跟踪面）
++    leak = "- insert:\n    - id: x\n      name: 'y'\n      config:\n        args:\n          - 'E:/__leak__/cli.js'\n"
++    if not dsh_template_problems(leak):
++        fails.append("T7c 模板写死盘符路径却没被判红 → 硬编码回归锁失效")
++    # T7d 模板缺占位符必须红
++    if not any("占位符" in p for p in dsh_template_problems("cwd: 'x'\n")):
++        fails.append("T7d 模板缺占位符却没被判红")
+
+     # T8 字段白名单反解：必须真的能从 src 反解到 toolCallTimeoutMs（防硬编码漂移）
+     fields = read_form_field_whitelist()
+@@ -564,7 +609,12 @@ def main(argv: list[str]) -> int:
+     except Exception as e:
+         problems.append("DSH manifest 无法 JSON 解析：%s" % e)
+
+-    # D1 · patch（严格档）
++    # D1 · patch（双态：模板必须干净；渲染件在场时叠加严格档）
++    tp = ROOT / DSH_PATCH_TPL
++    if tp.exists():
++        problems.extend(dsh_template_problems(tp.read_text(encoding="utf-8")))
++    else:
++        problems.append("DSH 模板 %s 不存在（跟踪真源缺失）" % DSH_PATCH_TPL)
+     pp = ROOT / DSH_PATCH
+     if pp.exists():
+         patch_problems, parsed_ok = dsh_patch_problems(pp.read_text(encoding="utf-8"))
+@@ -573,7 +623,9 @@ def main(argv: list[str]) -> int:
+             # PyYAML 缺失时只做退化检查，无法给出严格结论 → 但不算输入面退化
+             pass
+     else:
+-        problems.append("DSH patch %s 不存在（真安装面缺失）" % DSH_PATCH)
++        # 渲染件是本地产物（gitignore）：干净检出/CI 上不存在是合法态，不算违例。
++        warns.append("本机渲染件 %s 缺席（干净检出合法态）：装 DSH 插件前跑 "
++                     "`python scripts/render_dsh_patch.py` 生成" % DSH_PATCH)
+
+     # D2 · 宽松档
+     for rel in LENIENT_JSON:
+diff --git a/scripts/check_push_guard.py b/scripts/check_push_guard.py
+new file mode 100644
+index 00000000..8ceb835d
+--- /dev/null
++++ b/scripts/check_push_guard.py
+@@ -0,0 +1,317 @@
++#!/usr/bin/env python3
++# -*- coding: utf-8 -*-
++"""scripts/check_push_guard.py — 「直推 main 拦截当前是否生效」判据（BUG-389(2) 缺口③）。
++
++**为什么需要它**：pre-push 拦截（scripts/check_direct_push.py）此前只有两格读数都答不上问题——
++钩子装在共享 `$GIT_COMMON_DIR/hooks/`（本机手装、不在跟踪面），而"拦得住房不住房"没有任何
++判据：换机/清理 ⇒ 手装壳退化成 fail-open，拦截静默失效，没人看见。本尺把三件事收成一条可跑
++读数（全部**只读 + 本地子进程**，无网络 ⇒ CI 可跑）：
++
++判据面（红）：
++  H1 `.githooks/pre-push` 存在且被 git 跟踪（收编进跟踪面是 BUG-389(2) 的修法本体）
++  H2 `scripts/check_direct_push.py` 存在且被 git 跟踪
++  H3 `.githooks/pre-push` 文本引用 `check_direct_push.py`（壳与脑不得分家——分家即壳漂移）
++  S1 stdin 语义矩阵（真起本地子进程喂 check_direct_push.py，逐格验 rc）：
++     推 gitcode/main  → 必须 rc=1（拦住）
++     推 github main   → 必须 rc=0（不是本拦截的对象）
++     推 feature 分支  → 必须 rc=0（正常交付通道不许误伤）
++     畸形行/空输入    → 必须 rc=0（按文档 fail-open，判据不许把它改成 fail-close）
++  S2 壳语义同构：把钩子壳对 stdin 的处理方式（`"$PY" "$SCRIPT"` 直传、无中间吞管道）
++     以文本锚点核对（`check_direct_push` 引用存在已由 H3 判，这里补「stdin 未被重定向丢弃」锚）
++
++只报不判（环境态，永远不出红）：
++  E1 `core.hooksPath`：== `.githooks` ⇒ `PASS(生效=跟踪壳)`；未设置但共享 hooks/ 有手装 pre-push
++     ⇒ `WARN(手装在本机，非跟踪面——merge 后请跑 install_git_hooks.py --install)`；两者皆无 ⇒
++     `WARN(本机未装，直推拦截不生效；跑 install_git_hooks.py --install)`。CI 上是干净 clone，
++     E1 恒 WARN，不拦 PR——拦的是"跟踪面本身坏了"，本机装没装由安装器与读数负责。
++
++退出码契约：0=跟踪面+语义面全绿（允许 E1 WARN）/ 1=H/S 违例（点名）/ 2=判据无法自证
++（git 跑不动 / 子进程起不来 / 脚本缺失导致语义无从验证）。
++
++用法：
++  python scripts/check_push_guard.py            # 全量判据
++  python scripts/check_push_guard.py --selftest # 合成仓自证可红可绿（temp 沙箱，零副作用）
++"""
++import argparse
++import os
++import re
++import shutil
++import subprocess
++import sys
++import tempfile
++
++if hasattr(sys.stdout, "reconfigure"):
++    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
++if hasattr(sys.stderr, "reconfigure"):
++    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
++
++ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
++HOOK_REL = ".githooks/pre-push"
++SCRIPT_REL = "scripts/check_direct_push.py"
++HOOKS_PATH = ".githooks"
++
++
++def git(*args, cwd=None):
++    return subprocess.run(["git"] + list(args), cwd=cwd or ROOT,
++                          capture_output=True, text=True,
++                          encoding="utf-8", errors="replace")
++
++
++def is_tracked(rel, cwd=None):
++    return git("ls-files", "--error-unmatch", rel, cwd=cwd).returncode == 0
++
++
++def py_exec():
++    for cand in ("python3", "python"):
++        p = shutil.which(cand)
++        if p:
++            return p
++    return None
++
++
++def run_stdin(script_path, stdin_text, py):
++    r = subprocess.run([py, script_path], input=stdin_text, capture_output=True,
++                       text=True, encoding="utf-8", errors="replace", timeout=30)
++    return r.returncode
++
++
++# pre-push stdin 行形状：<local-ref> <local-oid> <remote-ref> <remote-oid> <remote-url>
++LINE_GITCODE_MAIN = ("refs/heads/main aaaa refs/heads/main bbbb "
++                     "gitcode.com:VictorTop/Fist-Mbt.git\n")
++LINE_GITHUB_MAIN = ("refs/heads/main aaaa refs/heads/main bbbb "
++                    "github.com:vicTop-cw/FIST-Mbt.git\n")
++LINE_FEATURE = ("refs/heads/feat/x aaaa refs/heads/feat/x bbbb "
++                "gitcode.com:VictorTop/Fist-Mbt.git\n")
++
++
++def check(root):
++    """对给定仓根跑 H/S/E 三面。返回 (rc, lines)。"""
++    out = []
++    problems = []
++    hook = os.path.join(root, HOOK_REL)
++    script = os.path.join(root, SCRIPT_REL)
++
++    # H0 安装器即真源：pre-push 必须在 REQUIRED 里。
++    # 为什么单列一格：安装器是钩子的唯一安装面；`REQUIRED` 一旦被改回只剩 pre-commit，
++    # `--install` 就把 pre-push 当无关文件跳过 chmod/核对 ⇒ 跟踪壳存在而安装面不认（静默漂移）。
++    il = os.path.join(root, "scripts", "install_git_hooks.py")
++    if os.path.isfile(il):
++        try:
++            itext = open(il, encoding="utf-8", errors="replace").read()
++            m = re.search(r"^REQUIRED\s*=\s*\((.*?)\)", itext, re.M)
++            if not m or "pre-push" not in m.group(1):
++                problems.append("H0 install_git_hooks.REQUIRED 未含 pre-push（安装器与钩子脱钩）")
++        except OSError as e:
++            problems.append("H0 安装器读不动：%s" % e)
++    else:
++        problems.append("H0 `scripts/install_git_hooks.py` 失踪（安装面真源不在位）")
++
++    # H1 / H2 跟踪面
++    if not os.path.isfile(hook):
++        problems.append("H1 `.githooks/pre-push` 不在盘上（钩子真源失踪）")
++    elif not is_tracked(HOOK_REL, cwd=root):
++        problems.append("H1 `.githooks/pre-push` 存在但**未被 git 跟踪**（又回到本机手装态）")
++    if not os.path.isfile(script):
++        problems.append("H2 `scripts/check_direct_push.py` 不在盘上")
++    elif not is_tracked(SCRIPT_REL, cwd=root):
++        problems.append("H2 `scripts/check_direct_push.py` 未被 git 跟踪")
++
++    # H3 壳引用脑（文本锚，壳与脑不得分家）
++    if os.path.isfile(hook):
++        try:
++            body = open(hook, encoding="utf-8", errors="replace").read()
++            if "check_direct_push.py" not in body:
++                problems.append("H3 `.githooks/pre-push` 未引用 check_direct_push.py（壳漂移）")
++            # S2 壳语义锚：脚本必须吃到 stdin（钩子由 git 以 stdin 喂 ref 行；
++            # `| head`、重定向 /dev/null、或把 stdin 换成参数都会让拦截瞎掉）
++            if re.search(r"<\s*/dev/null", body):
++                problems.append("S2 钩子壳把 stdin 掐了（/dev/null）⇒ 拦截永远看不到 ref 行")
++        except OSError as e:
++            problems.append("H3 钩子读不动：%s" % e)
++
++    # S1 语义矩阵（真子进程，逐格验 rc）
++    py = py_exec()
++    if py is None:
++        return 2, ["FATAL 判据无法自证：找不到 python/python3，语义矩阵无从运行"]
++    if not os.path.isfile(script):
++        return 2, ["FATAL 判据无法自证：%s 不在盘上，S 面无法运行" % script]
++    cells = [
++        ("S1a 推 gitcode/main 必须拦", LINE_GITCODE_MAIN, 1),
++        ("S1b 推 github main 不拦", LINE_GITHUB_MAIN, 0),
++        ("S1c 推 feature 分支不拦", LINE_FEATURE, 0),
++        ("S1d 空输入 fail-open", "", 0),
++        ("S1e 畸形行 fail-open", "garbage-line\n", 0),
++    ]
++    try:
++        for name, stdin_text, want in cells:
++            got = run_stdin(script, stdin_text, py)
++            if got != want:
++                problems.append("%s：期望 rc=%d，实回 rc=%d" % (name, want, got))
++    except Exception as e:
++        return 2, ["FATAL 判据无法自证：子进程运行异常 %s" % e]
++
++    # E1 本机安装态（只报不判）
++    r = git("config", "--get", "core.hooksPath", cwd=root)
++    val = (r.stdout or "").strip()
++    if val.replace("\\", "/").rstrip("/") == HOOKS_PATH:
++        out.append("E1 core.hooksPath=.githooks ⇒ 跟踪壳生效（PASS）")
++    else:
++        hp = git("rev-parse", "--git-path", "hooks/pre-push", cwd=root)
++        path = (hp.stdout or "").strip()
++        shared = path and os.path.isfile(os.path.join(root, path) if not os.path.isabs(path) else path)
++        if val:
++            out.append("E1 WARN core.hooksPath=%r 未指向 .githooks（本机安装态，不判红）" % val)
++        elif shared:
++            out.append("E1 WARN 本机在用共享目录手装 pre-push（非跟踪面）；merge 后请跑 "
++                       "python scripts/install_git_hooks.py --install")
++        else:
++            out.append("E1 WARN 本机未装钩子 ⇒ 直推拦截不生效；跑 python scripts/install_git_hooks.py --install")
++
++    lines = out + [("  - " + p) for p in problems]
++    return (1 if problems else 0), lines
++
++
++def selftest():
++    """合成仓自证：干净树全绿；H1/H2/H3/S1/S2 各造违例必须红；变异台证明断言咬人。"""
++    fails = []
++    if git("--version").returncode != 0:
++        print("SELFTEST BLOCKED：git 不可用，尺子无法自证")
++        return 2
++    py = py_exec()
++    if py is None:
++        print("SELFTEST BLOCKED：python 不可用")
++        return 2
++
++    def mk_tree():
++        td = tempfile.mkdtemp(prefix="push-guard-st-")
++        git("init", "-q", cwd=td)
++        git("config", "user.email", "st@local", cwd=td)
++        git("config", "user.name", "st", cwd=td)
++        h = os.path.join(td, ".githooks")
++        os.makedirs(h)
++        s = os.path.join(td, "scripts")
++        os.makedirs(s)
++        shutil.copy(os.path.join(ROOT, HOOK_REL), os.path.join(h, "pre-push"))
++        shutil.copy(os.path.join(ROOT, SCRIPT_REL), os.path.join(s, "check_direct_push.py"))
++        shutil.copy(os.path.join(ROOT, "scripts", "install_git_hooks.py"),
++                    os.path.join(s, "install_git_hooks.py"))
++        git("add", "-A", cwd=td)
++        git("commit", "-qm", "seed", cwd=td)
++        return td
++
++    def cleanup(td):
++        shutil.rmtree(td, ignore_errors=True)
++
++    try:
++        # C1 干净合成树 ⇒ 跟踪面+语义面绿（E1 WARN 不出红）
++        td = mk_tree()
++        rc, lines = check(td)
++        bad = [l for l in lines if l.strip().startswith("- H") or l.strip().startswith("- S")]
++        if rc != 1 or bad:
++            # 注意：合成树里 E1 可能 WARN，rc 必须 0；H/S 必须无违例
++            if bad:
++                fails.append("C1 干净合成树出现 H/S 违例：%s" % bad)
++            if rc != 0:
++                fails.append("C1 干净合成树 rc=%d（应为 0，E1 WARN 不判红）：%s" % (rc, lines))
++        cleanup(td)
++
++        # C2 删钩子 ⇒ H1 红
++        td = mk_tree()
++        os.remove(os.path.join(td, HOOK_REL))
++        rc, lines = check(td)
++        if not any("H1" in l for l in lines):
++            fails.append("C2 钩子失踪没被 H1 抓到：%s" % lines)
++        cleanup(td)
++
++        # C3 钩子未跟踪 ⇒ H1 红（tracked 断言必须咬人）
++        td = mk_tree()
++        git("rm", "--cached", "-q", ".githooks/pre-push", cwd=td)
++        rc, lines = check(td)
++        if not any("未被 git 跟踪" in l for l in lines):
++            fails.append("C3 钩子脱跟踪没被抓到：%s" % lines)
++        cleanup(td)
++
++        # C4 壳漂移（不引用脚本）⇒ H3 红
++        td = mk_tree()
++        open(os.path.join(td, HOOK_REL), "w", encoding="utf-8").write("#!/bin/sh\nexit 0\n")
++        git("add", "-A", cwd=td)
++        git("commit", "-qm", "drift", cwd=td)
++        rc, lines = check(td)
++        if not any("H3" in l for l in lines):
++            fails.append("C4 壳脑分家没被 H3 抓到：%s" % lines)
++        cleanup(td)
++
++        # C4b 安装器 REQUIRED 摘掉 pre-push ⇒ H0 红（安装面与钩子脱钩的静默漂移）
++        td = mk_tree()
++        ip = os.path.join(td, "scripts", "install_git_hooks.py")
++        it = open(ip, encoding="utf-8", errors="replace").read()
++        it2 = it.replace('REQUIRED = ("pre-commit", "pre-push")', 'REQUIRED = ("pre-commit",)')
++        if it2 == it:
++            fails.append("C4b 变异台失效：安装器 REQUIRED 形状变了，同步本自检")
++        else:
++            open(ip, "w", encoding="utf-8").write(it2)
++            rc, lines = check(td)
++            if not any("H0" in l for l in lines):
++                fails.append("C4b 安装器脱钩没被 H0 抓到：%s" % lines)
++        cleanup(td)
++
++        # C5 变异台：语义被改松（永不拦）⇒ S1a 必红
++        td = mk_tree()
++        sp = os.path.join(td, SCRIPT_REL)
++        t = open(sp, encoding="utf-8", errors="replace").read()
++        t2 = t.replace("return 1 if blocked else 0", "return 0")
++        if t2 == t:
++            fails.append("C5 变异台失效：找不到语义锚点（实现形状变了，同步本自检）")
++        else:
++            open(sp, "w", encoding="utf-8").write(t2)
++            git("add", "-A", cwd=td)
++            git("commit", "-qm", "loose", cwd=td)
++            rc, lines = check(td)
++            if not any("S1a" in l for l in lines):
++                fails.append("C5 语义改松没被 S1a 抓到：%s" % lines)
++        cleanup(td)
++
++        # C6 变异台：语义改死（啥都拦）⇒ S1c 必红
++        td = mk_tree()
++        sp = os.path.join(td, SCRIPT_REL)
++        t = open(sp, encoding="utf-8", errors="replace").read()
++        t2 = t.replace("return 1 if blocked else 0", "return 1")
++        if t2 == t:
++            fails.append("C6 变异台失效：锚点未命中")
++        else:
++            open(sp, "w", encoding="utf-8").write(t2)
++            rc, lines = check(td)
++            if not any("S1b" in l or "S1c" in l for l in lines):
++                fails.append("C6 误伤面没被抓到：%s" % lines)
++        cleanup(td)
++    except Exception as e:
++        print("SELFTEST BLOCKED：沙箱异常 %s" % e)
++        return 2
++
++    if fails:
++        print("SELFTEST FAIL：判据自身有问题")
++        for f in fails:
++            print("  - " + f)
++        return 1
++    print("SELFTEST OK 推送守卫判据可红可绿（钩子失踪/脱跟踪/壳漂移/语义改松/误伤 必红；"
++          "干净合成树 不误红；E1 环境态只报不判）")
++    return 0
++
++
++def main():
++    ap = argparse.ArgumentParser(description="直推拦截生效性判据（BUG-389(2)）")
++    ap.add_argument("--selftest", action="store_true", help="合成仓自证")
++    args = ap.parse_args()
++    if args.selftest:
++        return selftest()
++    rc, lines = check(ROOT)
++    for l in lines:
++        print(l)
++    if rc == 0:
++        print("PASS 推送守卫：跟踪面（钩子+脚本+引用）在位，stdin 语义矩阵逐格命中；"
++              "本机安装态见 E1（WARN 不拦 CI）")
++    return rc
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/fist_mbt_mcp_client.py b/scripts/fist_mbt_mcp_client.py
+index e02cc78c..fd163ac9 100644
+--- a/scripts/fist_mbt_mcp_client.py
++++ b/scripts/fist_mbt_mcp_client.py
+@@ -17,8 +17,28 @@ if hasattr(sys.stdout, "reconfigure"):
+ if hasattr(sys.stderr, "reconfigure"):
+     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+-PROJ = r"E:\IDEProjects\AI\FIST-Mbt"
+-JS = os.path.join(os.environ["LOCALAPPDATA"], "FIST-Mbt", "fist-mbt.js")
++_HERE = os.path.dirname(os.path.abspath(__file__))
++# 仓根由本文件位置反推（scripts/ 的上一层）——不再写死任何一台机器的盘符路径；
++# 需要指向别的 checkout 时用 env FIST_MBT_HOME 覆盖（同 render_dsh_patch.py 口径）。
++PROJ = os.environ.get("FIST_MBT_HOME") or os.path.dirname(_HERE)
++# 发布态 CLI 缺省取安装器的落点（%LOCALAPPDATA%\FIST-Mbt\fist-mbt.js）；
++# 存在仓内 _build 产物时优先用它，便于开发机直接验证未发布的改动。
++def _pick_js() -> str:
++    env_js = os.environ.get("FIST_MBT_CLI")
++    if env_js:
++        return env_js
++    local = os.environ.get("LOCALAPPDATA")
++    installed = os.path.join(local, "FIST-Mbt", "fist-mbt.js") if local else ""
++    if installed and os.path.exists(installed):
++        return installed
++    for rel in ("_build/js/debug/build/cmd/cli/cli.js", "_build/js/release/build/cmd/cli/cli.js"):
++        cand = os.path.join(PROJ, rel)
++        if os.path.exists(cand):
++            return cand
++    return installed or os.path.join(PROJ, "dist", "fist-mbt.js")
++
++
++JS = _pick_js()
+ PROTOCOL = "2026-07-28"
+
+
+diff --git a/scripts/gen_plugins.py b/scripts/gen_plugins.py
+index 54d478e0..98edf2dd 100644
+--- a/scripts/gen_plugins.py
++++ b/scripts/gen_plugins.py
+@@ -3,7 +3,7 @@
+ """scripts/gen_plugins.py — 一源四态·插件态生成器（cl7 的生成侧）。
+
+ 背景：三形态（MCP / CLI / Skill）里 skill 正文长期放在仓库外的兄弟目录
+-（`E:\\IDEProjects\\moonbit-skills\\skills\\fist-mbt`），没人守卫，数字漂成「41 个工具」
++（`E:\\workspace\\moonbit-skills\\skills\\fist-mbt`），没人守卫，数字漂成「41 个工具」
+ 也没人发现——这正是 BUG-22/30 记的「文档面落后于真源、守卫覆盖面窄于主张」。
+ 插件态（第四态）如果继续手写，必然重复同样的腐烂。所以本脚本把四个宿主的插件
+ **全部生成为真源的投影**，人只改 `plugins/source/`，不改 `plugins/<host>/`。
+diff --git a/scripts/install_git_hooks.py b/scripts/install_git_hooks.py
+index a128b520..cfda9463 100644
+--- a/scripts/install_git_hooks.py
++++ b/scripts/install_git_hooks.py
+@@ -7,6 +7,12 @@ TASK-001 里"每个 commit 合入前自动跑 check_merge_markers"这条其实
+ （CI 那步只管推送后）。实测：`git config --get core.hooksPath` 为空。
+ 本脚本把"装钩子"变成一条可复现命令，并提供 `--check` 供守卫/CI 核对，避免"文件在、没生效"。
+
++BUG-389(2) 追记：`pre-push`（直推 gitcode/main 拦截）此前只存在于**本机手装**的
++`$GIT_COMMON_DIR/hooks/`，安装器不认识它 ⇒ 钩子真源不在仓内、换机/清理即静默退化。
++现收编为 `.githooks/pre-push`（跟踪件）并进 REQUIRED——**安装器即真源**。
++"装了没装"看本脚本 `--check`；"装的内容对不对、拦得住拦不住"看 `scripts/check_push_guard.py`
++（跟踪面 + stdin 语义矩阵，CI-safe）。
++
+ 用法：
+   python scripts/install_git_hooks.py --check     # 只核对（0=已生效 / 1=未生效且可安装 / 2=环境不完整）
+   python scripts/install_git_hooks.py --install   # 设置 core.hooksPath=.githooks 并校验可执行位
+@@ -21,7 +27,9 @@ if hasattr(sys.stdout, "reconfigure"):
+
+ ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+ HOOKS_REL = ".githooks"
+-REQUIRED = ("pre-commit",)
++# BUG-389(2)：pre-push（直推 main 拦截）收编进跟踪面 + REQUIRED——此前它只活在本机手装的
++# $GIT_COMMON_DIR/hooks/，安装器不认识 ⇒ 钩子真源不在仓内，换机/清理即静默退化成 fail-open。
++REQUIRED = ("pre-commit", "pre-push")
+
+
+ def git(*args):
+diff --git a/scripts/render_dsh_patch.py b/scripts/render_dsh_patch.py
+index 1525a267..fb062f50 100644
+--- a/scripts/render_dsh_patch.py
++++ b/scripts/render_dsh_patch.py
+@@ -3,19 +3,20 @@
+ """render_dsh_patch.py —— DSH 插件安装面「模板 → 本机渲染」（路径硬编码清零的落点）。
+
+ 背景（本 PR 修的病灶）：`.dsh/fist-mbt-plugin/cordis.patch.yml` 从前直接写着
+-`E:/IDEProjects/...` 这发本机绝对路径。`@deepseek-ai/dsh-mcp-client` 的 stdio 通道把
++渲染者机器上的绝对路径（某台机的盘符 + 工程目录名）。`@deepseek-ai/dsh-mcp-client` 的 stdio 通道把
+ `args`/`cwd` 当字面 argv 交给 spawn，**宿主不做 `${...}` 插值**——绝对路径进跟踪面
+ = 每个克隆者的 `server is disconnected`。反过来，纯相对路径也不行：DSH Host 的进程
+ cwd 不是本仓（`check_host_installable.py` D1 严格档正是为此而设，T1 格钉死）。
+
+ 所以安装面拆成两态：
+   · 跟踪真源  `.dsh/fist-mbt-plugin/cordis.patch.yml.tpl` —— 模板，禁止任何绝对路径，
+-    只含 `{{FIST_MBT_CLI}}` / `{{FIST_MBT_ROOT}}` 两个占位符；
++    只含 `{{FIST_MBT_LAUNCHER}}` / `{{FIST_MBT_ROOT}}` 两个占位符；
+   · 本地产物  `.dsh/fist-mbt-plugin/cordis.patch.yml` —— 本脚本渲染，已 gitignore，
+     `package.json` 的 `dsh.bundle.patch` 指向的正是它（安装面形状不变，DSH 照旧读）。
+
+ 路径来源全部由「本仓自身位置」推导，零硬编码，优先级从高到低：
+-  CLI：`--cli` > env `FIST_MBT_CLI` > `<root>/_build/js/debug/build/cmd/cli/cli.js`
++  入口：`--cli` > env `FIST_MBT_CLI` > `packaging/dsh/launch-mcp.mjs`（机器无关 launcher，
++#         内部挑最新 `_build/js/*` 产物、回退 `dist/fist-mbt.js`）> `<root>/_build/js/debug/build/cmd/cli/cli.js`
+         > `<root>/_build/js/release/build/cmd/cli/cli.js` > `_build/js/*/build/cmd/*/cli.js` 兜底
+   根：  `--root` > env `FIST_MBT_HOME` > 由本脚本位置反推（scripts/ 的上一层）
+
+@@ -40,7 +41,8 @@ if hasattr(sys.stderr, "reconfigure"):
+ REPO_ROOT = Path(__file__).resolve().parents[1]
+ TPL_REL = ".dsh/fist-mbt-plugin/cordis.patch.yml.tpl"
+ OUT_REL = ".dsh/fist-mbt-plugin/cordis.patch.yml"
+-PLACEHOLDERS = ("{{FIST_MBT_CLI}}", "{{FIST_MBT_ROOT}}")
++PLACEHOLDERS = ("{{FIST_MBT_LAUNCHER}}", "{{FIST_MBT_ROOT}}")
++LAUNCHER_REL = "packaging/dsh/launch-mcp.mjs"
+
+ # 绝对路径形状：盘符 `X:/` 或 `X:\\`、POSIX 前导 `/`、UNC `\\host\share`。
+ ABS_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|/|\\\\)")
+@@ -60,7 +62,13 @@ def to_posix(p: Path | str) -> str:
+
+
+ def find_cli(root: Path, cli_override: str | None) -> tuple[str | None, str]:
+-    """按优先级找 JS 可执行产物。返回 (正斜杠绝对路径或 None, 来源说明)。"""
++    """按优先级找 stdio 入口。返回 (正斜杠绝对路径或 None, 来源说明)。
++
++    默认入口 = `packaging/dsh/launch-mcp.mjs`（机器无关 launcher：自己解析包根、
++    挑 `_build/js/*` 最新产物、回退 `dist/fist-mbt.js`，并带 Node>=24 / node:sqlite
++    与 ESM require 检查）。为什么不让 patch 直指 `_build/.../cli.js`：那要求渲染时
++    产物已存在，且把「入口搬家」的维护点摊到每台机器上；launcher 一次渲染、随构建自愈。
++    `--cli` / env `FIST_MBT_CLI` 仍可显式钉到某个具体产物（调试未发布改动用）。"""
+     if cli_override:
+         p = Path(cli_override)
+         if not p.is_absolute():
+@@ -68,7 +76,7 @@ def find_cli(root: Path, cli_override: str | None) -> tuple[str | None, str]:
+         p = p.resolve()
+         if p.exists():
+             return to_posix(p), "--cli"
+-        return None, f"--cli 指向的产物不存在: {to_posix(p)}"
++        return None, f"--cli 指向的入口不存在: {to_posix(p)}"
+     env = os.environ.get("FIST_MBT_CLI", "").strip()
+     if env:
+         p = Path(env)
+@@ -76,7 +84,11 @@ def find_cli(root: Path, cli_override: str | None) -> tuple[str | None, str]:
+             p = (root / p).resolve()
+         if p.exists():
+             return to_posix(p), "env FIST_MBT_CLI"
+-        return None, f"env FIST_MBT_CLI 指向的产物不存在: {to_posix(p)}"
++        return None, f"env FIST_MBT_CLI 指向的入口不存在: {to_posix(p)}"
++    launcher = root / LAUNCHER_REL
++    if launcher.exists():
++        return to_posix(launcher), LAUNCHER_REL
++    # 回退：老形状（社区层未落地时也能起 server），再不行才要求构建。
+     for rel in ("_build/js/debug/build/cmd/cli/cli.js",
+                 "_build/js/release/build/cmd/cli/cli.js"):
+         p = root / rel
+@@ -86,7 +98,8 @@ def find_cli(root: Path, cli_override: str | None) -> tuple[str | None, str]:
+     if cands:
+         newest = max(cands, key=lambda c: c.stat().st_mtime)
+         return to_posix(newest), f"_build glob 兜底({newest.parent.parent.parent.name})"
+-    return None, "找不到 _build/js/*/build/cmd/*/cli.js——先 `moon build --target js` 再渲染"
++    return None, (f"缺 {LAUNCHER_REL}，且找不到 _build/js/*/build/cmd/*/cli.js"
++                  "——checkout 不完整或先 `moon build --target js`")
+
+
+ def render_text(tpl: str, cli: str, root: str) -> str:
+@@ -136,14 +149,14 @@ def selftest() -> list[str]:
+             fails.append(f"{name} — {note}")
+
+     # ① 模板判据咬人：盘符泄漏必红
+-    bad_tpl = "cwd: 'E:/somewhere/repo'\nargs:\n  - '{{FIST_MBT_CLI}}'\n  - 'serve'\n"
++    bad_tpl = "cwd: 'E:/somewhere/repo'\nargs:\n  - '{{FIST_MBT_LAUNCHER}}'\n  - 'serve'\n"
+     cell("T1 模板盘符泄漏→红", any("盘符" in p for p in template_problems(bad_tpl)))
+     # ② 干净模板→绿
+-    clean_tpl = ("args:\n  - '{{FIST_MBT_CLI}}'\n  - 'serve'\ncwd: '{{FIST_MBT_ROOT}}'\n")
++    clean_tpl = ("args:\n  - '{{FIST_MBT_LAUNCHER}}'\n  - 'serve'\ncwd: '{{FIST_MBT_ROOT}}'\n")
+     cell("T2 干净模板→绿", not template_problems(clean_tpl), str(template_problems(clean_tpl)))
+     # ③ 缺占位符→红
+-    cell("T3 缺 CLI 占位符→红",
+-         any("FIST_MBT_CLI" in p for p in template_problems("cwd: '{{FIST_MBT_ROOT}}'")))
++    cell("T3 缺 LAUNCHER 占位符→红",
++         any("FIST_MBT_LAUNCHER" in p for p in template_problems("cwd: '{{FIST_MBT_ROOT}}'")))
+     # ④ 渲染件残留占位符→红
+     cell("T4 渲染件残留占位符→红",
+          any("残留占位符" in p for p in rendered_problems("cwd: '{{FIST_MBT_ROOT}}'")))
+diff --git a/scripts/run_guards.py b/scripts/run_guards.py
+index f043a498..d19acc25 100644
+--- a/scripts/run_guards.py
++++ b/scripts/run_guards.py
+@@ -142,6 +142,20 @@ SPECIAL_CASES = [
+     # 与 `check_scripts_index` 那次「文档写进被检文件名」是同一族：**登记红面的文字本身就是被检面**。
+     case("check_doc_surface.py"),
+     case("check_doc_surface.py", "--selftest"),
++    # —— 2026-10-23 BUG-389(2) 可持续性：推送守卫两把尺。**必须手写点名 check_direct_push.py
++    #    的 --selftest 格**：它从 stdin 读 pre-push ref 行，自动补的裸跑格在电池环境
++    #    （capture_output 不给 stdin）会挂在管道上空转到 timeout（R98 口径：尺子不结束不是
++    #    判据红，是空转）。点名后 covered 按脚本名去重，自动发现不再补裸跑格。
++    #    check_push_guard 裸跑是只读全量判据（跟踪面 + 本地子进程语义矩阵），两格都要。 ——
++    case("check_direct_push.py", "--selftest"),
++    case("check_push_guard.py"),
++    case("check_push_guard.py", "--selftest"),
++    # —— run_light_wt.py（WT-03 轻量 worktree 生命周期）：**只点名 --selftest**，禁自动裸跑格——
++    #    裸跑会 `git worktree add` / 动 git 配置，跑完工作树必变（电池「跑完工作树不变」不变量）。
++    #    它的 --selftest 21 格（A 词法×4 / B 状态机×2 / C 创建×4 / D 回收×2 / E 边界×4 /
++    #    F TTL×3 / G 回退轨×2）在 %TEMP% 合成沙箱跑，本机实测 rc=0 且工作树零改动；
++    #    自动发现曾把它记成「缺执行面」（G1 红），点名即解。 ——
++    case("run_light_wt.py", "--selftest"),
+     # —— R126：副机认领入口（docs/2026-10-20-slave-tasks.md）的自证尺。裸跑判「证据锚点指不指
+     #    得到真源 + 文首计数自述对不对」，--selftest 判「这把尺能不能发红」（18 格合成树）。
+     #    手写点名两格而不靠自动补格：自动补格只补裸跑，自检格必须点名（本文件既有纪律）。
+diff --git a/scripts/scoring_rubric.md b/scripts/scoring_rubric.md
+index 101cf547..2d299cbc 100644
+--- a/scripts/scoring_rubric.md
++++ b/scripts/scoring_rubric.md
+@@ -26,7 +26,7 @@
+ - `p3` = 三等级获奖概率
+
+ > 参考（用于「美观 / 演示可复现」维度，非终版）：README/30 秒演示应达到的水准可对照开源工作区草稿
+-> `C:\Users\victo\.openclaw\workspace\fist-mbt_README_v2.md`（仅为质量参照，不代表当前 README 现状）。
++> `<本机质量参照文档>`（仅为质量参照，不代表当前 README 现状）。
+
+ ## 规定输出（严格照此执行）
+
+diff --git a/scripts/tmp_merge_batch.sh b/scripts/tmp_merge_batch.sh
+index bd54dea5..96471ee0 100644
+--- a/scripts/tmp_merge_batch.sh
++++ b/scripts/tmp_merge_batch.sh
+@@ -1,7 +1,8 @@
+ #!/bin/bash
+ set -e
+
+-cd /e/IDEProjects/AI/FIST-Mbt
++# 仓根由脚本位置反推（scripts/ 的上一层），不写死任何一台机器的 checkout 路径。
++cd "$(dirname "$0")/.."
+
+ branches=(
+   "gitcode/slave/fix/memory-log-dup-r133"
+diff --git a/src/server/bugreport_test.mbt b/src/server/bugreport_test.mbt
+index 557ee6a8..ffc1a34f 100644
+--- a/src/server/bugreport_test.mbt
++++ b/src/server/bugreport_test.mbt
+@@ -348,7 +348,7 @@ test "bug4_run_check_workdir_ok" {
+   // Round 1 会误拒、Round 2 必须放行：绝对 project_dir 本身（实测调用面主形态）
+   assert_true(
+     @server.run_check_workdir_ok(
+-      "E:/IDEProjects/AI/Cypy", "E:/IDEProjects/AI/Cypy",
++      "E:/repo/Cypy", "E:/repo/Cypy",
+     ),
+   )
+ }
+diff --git a/src/server/issue_scan.mbt b/src/server/issue_scan.mbt
+index 2bdf95c1..82862f5b 100644
+--- a/src/server/issue_scan.mbt
++++ b/src/server/issue_scan.mbt
+@@ -177,7 +177,7 @@ fn scan_rules() -> Array[ScanRule] {
+       hint: "显式 Int32 的 secs 计算须加天数上界守卫（如 if days > 24855 兜底）或改用 Int64；默认 Int 无需处理",
+     },
+     // ===== 档 1：ocr-local moonbit-rules.json 的 20 条规则融合（2026-10-13 ocr-local 融入 bugfind）=====
+-    // 内建自 ocr-local 的 MoonBit 规则集（E:\IDEProjects\AI\ocr-local\rules\moonbit-rules.json 的
++    // 内建自 ocr-local 的 MoonBit 规则集（<WORKSPACE>\ocr-local\rules\moonbit-rules.json 的
+     // name/severity/pattern 投影）。pattern 取其稳定字面量 needle（子串匹配，免 regex 依赖）；
+     // 语义与外部文件一致，同名外部规则可通过 rules_file 覆盖内建（见 scan_merge_rules）。
+     {
+diff --git a/src/server/run_check_guard.mbt b/src/server/run_check_guard.mbt
+index 70c1d286..09380e78 100644
+--- a/src/server/run_check_guard.mbt
++++ b/src/server/run_check_guard.mbt
+@@ -13,8 +13,8 @@
+ /// 解析 run_check 的入参（判据脚本 temp/r2_runcheck_surface.py，原始留档
+ /// temp/r2_calllog_raw.json），真实用过的 cmd 恰为 `moon`(x7)、`python`(x14)、
+ /// `bash`(x22)、`powershell`(x6)、`D:/Program Files/Git/usr/bin/bash.exe`(x2)；
+-/// workdir 恰为「任务自己的 project_dir」（含绝对形态 `E:/IDEProjects/AI/Cypy`、
+-/// `E:\IDEProjects\AI\Cypy`、`E:/IDEProjects/ai/Pentad`、`E:/IDEProjects/AI/Actus`）
++/// workdir 恰为「任务自己的 project_dir」（含绝对形态 `E:/repo/Cypy`、
++/// `E:\repo\Cypy`、`E:/repo/Pentad`、`E:/repo/Actus`）
+ /// 或 `.`（当 project_dir 为 `.` 时）。
+ /// 所以默认白名单必须含 {moon, python, bash, powershell}（外加同类解释器 node/sh/zsh 与
+ /// 跨平台别名 python3/py/pwsh），且**绝对路径的 workdir == project_dir 必须放行**——
+@@ -87,7 +87,7 @@ priv struct RcPath {
+ /// 相对路径出现越过根的 `..` 记 escaped=true（越界的主作案形态）。
+ fn rc_path(s0 : String) -> RcPath {
+   // 注意：必须 replace_all——String::replace 只换**第一处**（实测把
+-  // `E:\IDEProjects\AI\Cypy` 变成 `E:/IDEProjects\AI\Cypy`，段列表整个错位）。
++  // `E:\repo\Cypy` 变成 `E:/repo\Cypy`，段列表整个错位）。
+   let s = s0.replace_all(old="\\", new="/")
+   let mut drive = ""
+   let mut rest = s
+diff --git a/src/server/run_check_guard_test.mbt b/src/server/run_check_guard_test.mbt
+index 15fccdb2..c09a9d08 100644
+--- a/src/server/run_check_guard_test.mbt
++++ b/src/server/run_check_guard_test.mbt
+@@ -92,10 +92,10 @@ test "BUG-4 扩展位：调用方显式登记才生效，且不改变默认集
+ ///|
+ test "BUG-4 workdir：绝对 project_dir 本身必须放行（Round 1 版在这里会红）" {
+   // 实测调用面 38/51 次就是 workdir == 任务的绝对 project_dir
+-  let abs = "E:/IDEProjects/AI/Cypy"
++  let abs = "E:/repo/Cypy"
+   assert_true(@server.run_check_workdir_in_project(abs, abs))
+   assert_true(
+-    @server.run_check_workdir_in_project("E:\\IDEProjects\\AI\\Cypy", abs),
++    @server.run_check_workdir_in_project("E:\\repo\\Cypy", abs),
+   )
+   assert_true(@server.run_check_workdir_in_project(abs + "/sub", abs))
+   assert_true(
+@@ -103,7 +103,7 @@ test "BUG-4 workdir：绝对 project_dir 本身必须放行（Round 1 版在这
+   )
+   // 同盘但不在子树内 → 拒
+   assert_false(
+-    @server.run_check_workdir_in_project("E:/IDEProjects/AI/Pentad", abs),
++    @server.run_check_workdir_in_project("E:/repo/Pentad", abs),
+   )
+   // 靠 `..` 跳出项目 → 拒
+   assert_false(@server.run_check_workdir_in_project(abs + "/../Pentad", abs))
+@@ -111,7 +111,7 @@ test "BUG-4 workdir：绝对 project_dir 本身必须放行（Round 1 版在这
+   assert_false(@server.run_check_workdir_in_project("D:/Windows", abs))
+   // 绝对 workdir 配相对 project_dir（形态不一致，无法判定归属）→ 拒
+   assert_false(
+-    @server.run_check_workdir_in_project("E:/IDEProjects/AI/Cypy", "."),
++    @server.run_check_workdir_in_project("E:/repo/Cypy", "."),
+   )
+ }
+
+@@ -157,7 +157,7 @@ test "BUG-4 workdir 拒绝文案必须自带出路（说清接受什么形态，
+ /// 修复前这三条 ALLOW 全红（`.` 配绝对 project_dir 被"与项目不同根"打断，
+ /// 正是模板第 3 步卡住的位置）；反向的 REJECT 若被放宽则是真漏洞。
+ test "BUG-51 相对 workdir 按任务 project_dir 解析：`.` 与子目录放行、上跳仍拒" {
+-  let abs = "E:/IDEProjects/AI/FIST-Mbt"
++  let abs = "E:/repo/FIST-Mbt"
+   // ALLOW：合法用法（含"丑但在树内"——只测拒绝侧会把过严实现也判成通过）
+   assert_true(@server.run_check_workdir_in_project(".", abs))
+   assert_true(@server.run_check_workdir_in_project("scripts", abs))
+@@ -176,7 +176,7 @@ test "BUG-51 相对 workdir 按任务 project_dir 解析：`.` 与子目录放
+ /// BUG-51：守卫放行相对 workdir 之后，真正 spawn 的 cwd 必须是归一后的绝对形态。
+ /// 只改判定不改执行面 = 判据说"在项目里"而进程跑在 server cwd，比拒绝更糟。
+ test "BUG-51 执行面 cwd 归一：混形态给绝对路径，同形态逐字不动" {
+-  let abs = "E:/IDEProjects/AI/FIST-Mbt"
++  let abs = "E:/repo/FIST-Mbt"
+   assert_eq(@server.run_check_effective_workdir(".", abs), abs)
+   assert_eq(
+     @server.run_check_effective_workdir("scripts", abs),
+@@ -189,7 +189,7 @@ test "BUG-51 执行面 cwd 归一：混形态给绝对路径，同形态逐字
+   // 反斜杠绝对 project_dir 同样归一（实测调用面里有 E:\... 形态）
+   assert_eq(
+     @server.run_check_effective_workdir(
+-      "scripts", "E:\\IDEProjects\\AI\\FIST-Mbt",
++      "scripts", "E:\\repo\\FIST-Mbt",
+     ),
+     abs + "/scripts",
+   )
+diff --git a/src/server/write_gate.mbt b/src/server/write_gate.mbt
+index 8a87a733..1dc782ec 100644
+--- a/src/server/write_gate.mbt
++++ b/src/server/write_gate.mbt
+@@ -74,7 +74,7 @@ fn write_gate_allowlist_hint() -> String {
+ ///|
+ /// `project_dir` 合法性（**宽容口径**）：只拒空串 → `NoProjectDir`（fail-closed）。
+ /// 注意**不要**对 `project_dir` 套 `write_gate_path_ok` 的盘符/前导分隔符判据——
+-/// MCP 客户端传的 `project_dir` 是合法**绝对**路径（如 `E:/IDEProjects/AI/rx-mbt`），
++/// MCP 客户端传的 `project_dir` 是合法**绝对**路径（如 `E:/repo/rx-mbt`），
+ /// 把它当非法会误杀所有真实调用；越界判定只作用于**相对目标路径** `rel`。
+ fn write_gate_project_dir_ok(p : String) -> Bool {
+   !p.is_empty()
+diff --git a/src/server/write_gate_wbtest.mbt b/src/server/write_gate_wbtest.mbt
+index 2f8ab7dd..0636fe85 100644
+--- a/src/server/write_gate_wbtest.mbt
++++ b/src/server/write_gate_wbtest.mbt
+@@ -95,10 +95,10 @@ test "wg_2_reject_out_of_scope_src_absolute_dotdot" {
+ test "wg_3_no_project_dir_fail_closed" {
+   // 只有 project_dir 为空才 NoProjectDir（fail-closed：宁拒不放）
+   assert_true(wg_is_no_dir(write_gate("", "memory/target.md")))
+-  // project_dir 是合法**绝对**根时不得误杀：MCP 客户端真实传 `E:/IDEProjects/AI/rx-mbt`
++  // project_dir 是合法**绝对**根时不得误杀：MCP 客户端真实传 `E:/repo/rx-mbt`
+   // 这类绝对路径，判成 NoProjectDir 会让门本身变成瘫痪开关。此时照样按白名单裁决。
+   assert_true(
+-    wg_is_allow(write_gate("E:/IDEProjects/AI/rx-mbt", "memory/target.md")),
++    wg_is_allow(write_gate("E:/repo/rx-mbt", "memory/target.md")),
+   )
+   assert_true(wg_is_allow(write_gate("C:/abs", "memory/target.md")))
+   assert_true(wg_is_allow(write_gate("/abs", "memory/target.md")))
+@@ -107,19 +107,19 @@ test "wg_3_no_project_dir_fail_closed" {
+   // 即便 project_dir 是绝对路径，越界的**目标路径**照样 Reject（门钉在 rel 上）
+   assert_true(
+     wg_reject_contains(
+-      write_gate("E:/IDEProjects/AI/rx-mbt", "src/foo.mbt"),
++      write_gate("E:/repo/rx-mbt", "src/foo.mbt"),
+       "越界",
+     ),
+   )
+   assert_true(
+     wg_reject_contains(
+-      write_gate("E:/IDEProjects/AI/rx-mbt", "C:/temp/x.md"),
++      write_gate("E:/repo/rx-mbt", "C:/temp/x.md"),
+       "越界",
+     ),
+   )
+   assert_true(
+     wg_reject_contains(
+-      write_gate("E:/IDEProjects/AI/rx-mbt", "../escape.md"),
++      write_gate("E:/repo/rx-mbt", "../escape.md"),
+       "越界",
+     ),
+   )

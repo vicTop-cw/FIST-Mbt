@@ -1,0 +1,11 @@
+D	.dsh/fist-mbt-plugin/cordis.patch.yml
+M	.dsh/fist-mbt-plugin/cordis.patch.yml.tpl
+M	.github/workflows/ci.yml
+M	.gitignore
+M	docs/2026-10-20-slave-tasks.md
+M	scripts/README.md
+M	scripts/blackbox/check_merge_markers.py
+M	scripts/check_hardcoded_paths.py
+M	scripts/check_host_installable.py
+M	scripts/render_dsh_patch.py
+M	scripts/run_guards.py
