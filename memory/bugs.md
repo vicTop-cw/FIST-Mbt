@@ -6725,7 +6725,7 @@ B) 或让 namespace 查询先查物理库、查不到再回落到 default 并按
 
 ### FIXED(2026-10-25T04:10:18Z / BUG-407)
 - evidence: 实测验证修复（2026-10-25 12:05）：store_open 后 list(namespace=tnr-polish) 返回 T0、get(namespace=tnr-polish, task_id=T0) 成功返回完整任务、list/get(namespace=tnr-tql) 同理（T0/T0r2-T0r5 五条全部可取）。原复现的「list 可见但按 ns 查不到」不再复现——namespace 路由已能命中物理库并返回带 ns 标签的任务。证据面：fist-bot 后续 commit（1449→1457 测试增长期间）修复了 BUG-389 legacy_store_exists 复用旧库路径，使 ns 路由与落库一致。
-## BUG-408 [2026-10-24T17:30:08Z] [high] OPEN
+## BUG-408 [2026-10-24T17:30:08Z] [high] FIXED
 - summary: namespace ACL 拒绝 claim（can_write=0），但同 ns 的 publish 成功、audit_permission(agent,claim)=allowed —— 三道门结论互相矛盾且不可自救
 - detail: 复现（explore R63）：
 1) store_open(namespace="tnr-polish") 后 publish(project_dir="../Tnr", namespace="tnr-polish") → 成功，返回 task_id=T0。
@@ -6749,3 +6749,7 @@ bug 记到同级项目（../Tnr）的账本——而本 bug 恰恰要报给 fist
 建议：让 claim 走与 publish 同一 ACL 判定路径（或让 publish 也受同一 can_write 门约束）；
 audit_permission 纳入 ns ACL 维度（返回 effective_allowed + 拒绝来源）；错误信息附授予方式。
 - reported_by: lead-explore
+
+
+### FIXED(2026-10-25T04:45:43Z / BUG-408)
+- evidence: commit 46c1382d（28 文件）收口。① 真根因「不可自救」已消除：agents_acl_grant 此前只是 store/engine 方法、从未暴露为 MCP 工具，现补 agent_acl_grant 工具面（src/server/server.mbt 审计段，SQLite 后端 fail-closed 不变、can_read/can_write 缺省 true、pid_bound 可选），ACL 拒绝后可自助授权。② 错误文案附三条出路（src/store/store_sqlite.mbt:agents_acl_check）：agents_acl_grant 具体调用形态 / 首次接入先 store_open / 明说 audit_permission 与 ns ACL 是两道独立门。③ 「publish 能写而 claim 被拒」的矛盾已定位并显式标注原因（publish 走 human_steward 特权、claim 走 agent_write_gate 的 ns ACL），不再静默——但让两道门合一属契约变更（会让 publish 也受 ns ACL 约束或让 claim 失去 ACL 保护），未在本单做，已在 AGENTS.md 审计段与本工具回执里写清。验证：moon test --target js 1457/1457；check_tools_sync / check_doc_surface / check_plugin_sync 全 PASS；mcp_smoke PASS（171 工具 tools/list 可调用）；CLI `fist help tools` 显示 [Other 9] 含 agent_acl_grant。
