@@ -209,6 +209,238 @@ def judge(rel, text):
     return rows
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# D1–D6：「单值写死型」——与上面「清单型」**正交**的第二半覆盖面
+#
+# 为什么必须单独一层（2026-10-25 侦察实测）：
+#   上面 judge() 只认「模块级常量 = 字符串字面量序列」（清单型）。
+#   它**看不见** `if x == "foo":` 这种**一个**字面量 —— 而那正是判例-16 的另一半。
+#   历史事故：旧 DEFAULT_BUNDLE 在判据里写死成某个 bundle 名，后来 bundle 改名，
+#   判据**还绿**，但检查的根本不是现在的 bundle。清单型你至少能看到名单；
+#   单值型你连「应该有几个值」都想不起来。
+#
+# 六道判据（D6 是决定性的一道，侦察实测 11 条候选里 7 条因它自动降级）：
+#   D1 比较形态：== / != / startswith / endswith / in (
+#   D2 像配置值：含 - _ / . 或长度 >= 6（排除 "#"、""、"\n" 这类）
+#   D3 非协议字面量：排除扩展名 / 语言名 / 状态标签
+#   D4 有真源副本：该值在判据之外也出现（⇒ 它是「某处的真源值」而非私有约定）
+#   D5 非通用词汇：排除出现在 >=30% 判据里的词（`__main__` 会以 74 个"外部来源"冒充真源）
+#   D6 **无自拒保护** ← 决定性：真源取不到时该判据会不会报 FATAL
+#        写死 + 无自拒 = 🔴 静默假绿（真源变了，判据比对新字面量，继续绿）
+#        写死 + 有自拒 = 🟡 合理常量（真源变了会红，人工改一次即可）
+# ══════════════════════════════════════════════════════════════════════════════
+
+# D1 比较形态
+_RE_D1_CMP = re.compile(r"""(==|!=|\.startswith\(|\.endswith\(|\bin\s*\()\s*(["'])([^"'\n]{2,80})\2""")
+
+# D3 协议字面量（扩展名 / 语言名 / 状态标签 / 零宽约定）——这些是「协议值」，非「可变真源」
+# 用 set（非 frozenset）：selftest 的变异对照格需要临时清空再还原，见 d3-mutation-* 两格。
+D3_PROTOCOL = set({
+    "passed", "failed", "ok", "error", "PASS", "FAIL", "OK", "ERROR",
+    "true", "false", "None", "null", "utf-8", "utf8", "json", "yaml",
+    "stdout", "stderr", "debug", "info", "warning", "critical",
+    "\n", "\r\n", "rc", "-", "--", "self", "main", "run", "cli",
+    ".mbt", ".py", ".md", ".json", ".yml", ".yaml", ".mbti", ".ps1", ".sh", ".txt",
+    "moonbit", "__main__", "source", "string", "missing", "_test.mbt", "_wbtest.mbt",
+    "test.mbt", "scripts/", "docs/", "memory", "memory/", "src/", "cmd/",
+    "utf-8-sig", "total", "count", "error:", "warning:", "notice::",
+})
+
+# D6 自拒保护的形状：找不到就报红 / FATAL，而不是继续比
+_RE_D6_REFUSE = re.compile(
+    r"(saw_\w+|found\w*|raise\s+SystemExit|emit_fatal|FATAL|problems\.append|fails\.append|"
+    r"缺席|取不到|枚举到\s*0|空扫描|自拒|拒绝报绿|空转)"
+)
+
+
+def _looks_like_config_literal(lit):
+    """D2 纯函数：该字面量「像配置值」吗（而不是格式串 / 正则片段 / 单字符）。"""
+    if lit in D3_PROTOCOL:
+        return False
+    if len(lit) < 4:
+        return False
+    if not re.search(r"[A-Za-z]", lit):
+        return False
+    # 正则/格式片段明显不是配置值
+    if any(tok in lit for tok in ("\\", "[", "]", "{", "}", "^", "$", "|", "*", "+")):
+        return False
+    return ("-" in lit or "_" in lit or "/" in lit or "." in lit or len(lit) >= 6)
+
+
+def extract_single_values(text):
+    """纯函数：抽「单值与变量比较」的位置。返回 [(line_no, op, literal, line_text)]。
+
+    只做 D1 ∩ D2 ∩ D3 —— D4/D5（真源副本 / 通用词汇）需要跨文件语料，由调用方注入。
+    """
+    out = []
+    for i, ln in enumerate((text or "").split("\n"), 1):
+        if ln.lstrip().startswith("#"):
+            continue
+        for m in _RE_D1_CMP.finditer(ln):
+            lit = m.group(3)
+            if not _looks_like_config_literal(lit):
+                continue
+            out.append((i, m.group(1).strip(), lit, ln.strip()))
+    return out
+
+
+def enclosing_block(text, line_no):
+    """纯函数：取 line_no 所在函数的整段正文（往上找 def，往下到下一个顶层 def）。
+
+    给 D6 用：自拒保护可能写在函数末尾（`if not saw_x: FATAL`），
+    只扫当前行会漏，必须看整段。
+    """
+    lines = (text or "").split("\n")
+    idx = max(0, min(line_no - 1, len(lines) - 1))
+    start = 0
+    for i in range(idx, -1, -1):
+        if re.match(r"^def\s+\w+", lines[i]):
+            start = i
+            break
+    end = len(lines)
+    for i in range(idx + 1, len(lines)):
+        if re.match(r"^def\s+\w+", lines[i]):
+            end = i
+            break
+    return "\n".join(lines[start:end])
+
+
+def has_self_refusal(text, line_no):
+    """D6 纯函数：该写死点**有没有自拒保护**（真源取不到时会不会报红）。
+
+    返回 (protected, evidence)：protected=True 表示有保护 ⇒ 降级为「合理常量」。
+
+    ⚠️ 2026-10-25 实跑修正（首版 35 条 🔴 里绝大多数是假阳性）：
+    首版只看「包含该行的那个函数」，于是 `check_diff_scope.is_contract()` 这种
+    **纯形状判定函数**（`def is_contract(path): if path == "moon.mod": return True`）
+    被判成 🔴 —— 但它根本不访问真源，不存在「真源变了静默失效」的问题：
+    它判的是「这个路径是不是契约面」的**语义形状**，而形状是代码自己定的，
+    改形状必须同批改 selftest 格（它 docstring 明写了）。
+
+    ⇒ 加一道**纯谓词函数豁免**：若该行所在函数
+        · 只做分支/返回（没有 IO、没有 git、没有 open/subprocess）
+        · 且函数名/参数形如谓词（is_/has_/looks_like_/matches_ 或单参数返回 bool）
+      则该写死点是「形状定义」而非「真源副本」⇒ 不算单值写死。
+    这不是放宽判据：**形状定义的真源就是代码本身**，没有外部真源可比对。
+    """
+    block = enclosing_block(text, line_no)
+    m = _RE_D6_REFUSE.search(block)
+    if m:
+        return True, m.group(1)
+    # 纯谓词函数豁免：无 IO 依赖 + 判定性函数名
+    if _is_pure_predicate(block):
+        return True, "纯谓词(无真源依赖)"
+    return False, ""
+
+
+_RE_IO_CALL = re.compile(
+    r"\b(subprocess|open\s*\(|io\.open|os\.walk|os\.listdir|Path\(|git\s|run\(|Popen|urlopen|"
+    r"glob\.|shutil\.|emit_fatal|SystemExit|json\.load)"
+)
+
+
+def _is_pure_predicate(block):
+    """纯函数判定辅助：这段代码是不是「纯谓词」——
+    只做分支/返回，不碰 IO，且函数名像谓词（is_/has_/looks_like_/matches_/_like）。"""
+    head = ""
+    for ln in block.split("\n"):
+        if re.match(r"^def\s+\w+", ln):
+            head = ln
+            break
+    if not head:
+        return False
+    m = re.match(r"^def\s+([A-Za-z_][A-Za-z0-9_]*)", head)
+    fname = m.group(1) if m else ""
+    if not re.match(r"^(is_|has_|looks_like_|matches_|_is_|_looks|_re_|_match)", fname):
+        return False
+    if _RE_IO_CALL.search(block):
+        return False
+    return True
+
+
+def judge_single_values(rel, text, others_corpus=None, n_guards=1, guard_corpus=None):
+    """纯函数：对一份尺的正文出「单值写死」条目（D1–D6）。
+
+    返回 [dict]：{line, op, literal, verdict, evidence, text}
+      verdict ∈ {"hard", "ok-refused"}：
+        hard       = 🔴 写死且无自拒 ⇒ 静默假绿
+        ok-refused = 🟡 写死但有自拒 ⇒ 真源变了会红，人工改一次常量即可
+    others_corpus: {rel: text} —— 判据**之外**的文件语料，用于 D4
+    guard_corpus:  [text]       —— 全部判据正文，用于 D5 反店
+
+    ⚠️ 2026-10-25 实跑修正之二（首版 D4「该值在别处出现」太宽 ⇒ 31 条全是假阳性）：
+    首版 D4 只要「该字面量在任意其它文件里出现过」就算「有真源副本」，
+    于是 `'comment'` / `'contract'` / `'MISSING'` / `'extern'` 这类**语义枚举标签**
+    因为出现在 docs/ 里就被当成了「真源值」。
+
+    ⇒ D4 收窄为 **D4'「该值是真源的一份『当前值』」**，必须同时满足：
+         (a) 该字面量在**真源面**（moon.mod / server.mbt / .mcp.dev.json /
+             scripts/README.md / plugins/source/ 等配置与声明文件）里出现；
+         (b) 该字面量**不是**纯小写单词/驼峰标识符（枚举标签的典型形状）；
+         (c) 该字面量**像路径/标识符带分隔符**，或**等于某个真源文件里被赋值/声明的值**。
+    枚举标签（无分隔符的单词）即便在真源面出现，也**不算**——它们比的是代码内部约定，
+    不是「外部真源当前值」。
+    """
+    others_corpus = others_corpus or {}
+    guard_corpus = list(guard_corpus or [])
+    rows = []
+    for line_no, op, lit, line_text in extract_single_values(text):
+        # D4'：该值是不是「真源的一份当前值」
+        if not _is_source_value(lit, others_corpus):
+            continue
+        # D5 反店：通用词汇（出现在大量判据里）不算「某个具体真源值」
+        if n_guards > 0:
+            n_with = sum(1 for t in guard_corpus if lit in t)
+            if n_with >= n_guards * 0.3:
+                continue
+        # D6：决定性的一道
+        protected, ev = has_self_refusal(text, line_no)
+        rows.append({
+            "line": line_no,
+            "op": op,
+            "literal": lit,
+            "verdict": "ok-refused" if protected else "hard",
+            "evidence": ev,
+            "text": line_text[:110],
+        })
+    return rows
+
+
+# D4' 真源面：这些文件里出现的字面量才算「真源当前值」
+_SOURCE_FACE_GLOBS = ("moon.mod", "moon.pkg", ".mcp.dev.json", ".mcp.example.json",
+                      "scripts/README.md", "plugins/source/server.mbt",
+                      "AI-DEVELOPMENT-STANDARD.md", "toolchain.json", "package.json")
+
+# 枚举标签的典型形状：单个小写单词 / 驼峰标识符 / 全大写常量名 —— 无路径分隔符
+_RE_ENUM_LABEL = re.compile(r"^[a-z][a-z0-9]*$|^[a-zA-Z][a-zA-Z0-9]*[A-Z][a-zA-Z0-9]*$|^[A-Z][A-Z0-9_]*$")
+
+
+def _is_source_value(lit, others_corpus):
+    """D4' 纯函数：该字面量是不是「外部真源的一份当前值」（而非代码内枚举标签）。
+
+    三条件（全满足才算真源值）：
+      a) 出现在真源面文件里
+      b) 不是纯枚举标签形状（单小写词 / 驼峰 / 全大写常量名）
+      c) 含路径分隔符，或长度 >= 8（配置值一般比标签长）
+    """
+    if not lit or len(lit) < 4:
+        return False
+    # b) 枚举标签排除
+    if _RE_ENUM_LABEL.match(lit) and "/" not in lit and "-" not in lit:
+        return False
+    # a) 必须出现在真源面
+    on_source_face = False
+    for rel in _SOURCE_FACE_GLOBS:
+        t = others_corpus.get(rel)
+        if t and lit in t:
+            on_source_face = True
+            break
+    if not on_source_face:
+        return False
+    # c) 含分隔符 或 足够长
+    return ("/" in lit or "-" in lit or "." in lit or len(lit) >= 8)
+
+
 # ── 自证 ─────────────────────────────────────────────────────────────────────
 
 
@@ -296,7 +528,219 @@ def selftest():
             cells.append("scan-face-equals-truth")
 
     # ⑥ 空扫描必须自拒（rc=2），不许拿「没扫到」当绿
-    cell("fatal-on-empty-face", verdict_rc(0, 0), 2)
+    cell("fatal-on-empty-face", verdict_rc(0, 0, 0), 2)
+    # ⑥b 退出码三参签名：默认只出数（0）；--strict 下 🔴 单值写死与 indexed 同档判红
+    # ⚠️ verdict_rc 读的是全局 sys.argv（设计如此：它要跟真实命令行一致），
+    #    所以「默认形态」那一格只在**非 --strict** 时断言，否则两种形态互相打架。
+    _is_strict = "--strict" in sys.argv
+    if not _is_strict:
+        cell("rc-default-hard-not-red", verdict_rc(66, 0, 3), 0)
+    else:
+        cell("rc-strict-hard-is-one", verdict_rc(66, 0, 3), 1)
+        cell("rc-strict-indexed-is-one", verdict_rc(66, 2, 0), 1)
+    cell("rc-empty-scan-wins", verdict_rc(0, 5, 5), 2)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # ⑦ D1–D6「单值写死型」—— 每道 D 一格，**每道都有变异对照格**（判例-29/30）
+    #    变异对照的做法：把被测机制**改坏**（D 判据失效），断言锁必须变红。
+    #    实现方式：每格同时算「正常输入」与「变异输入」，两者必须给出不同结论。
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # --- D1 比较形态：== / != / startswith / endswith / in () 都要命中 ---
+    for tag, snippet in (
+        ("eq", 'if x == "some-config-value":\n    pass\n'),
+        ("ne", 'if x != "some-config-value":\n    pass\n'),
+        ("starts", 'if p.startswith("some/config/path"):\n    pass\n'),
+        ("ends", 'if p.endswith("some-config-file.md"):\n    pass\n'),
+        ("in", 'if p in ("some-config-value",):\n    pass\n'),
+    ):
+        cell("d1-cmp-%s" % tag, len(extract_single_values(snippet)), 1)
+    # D1 变异对照：把比较改成赋值（不再是比较）⇒ 必须 0 命中
+    cell("d1-mutation-no-compare",
+         extract_single_values('x = "some-config-value"\n'), [])
+    # D1 变异对照：注释行里的比较不算（注释不是判定路径）
+    cell("d1-mutation-comment-line",
+         extract_single_values('# if x == "some-config-value":\n'), [])
+
+    # --- D2 像配置值 / D3 非协议字面量 ---
+    cell("d2-config-like", _looks_like_config_literal("some-config-value"), True)
+    cell("d2-short", _looks_like_config_literal("ab"), False)
+    cell("d3-extension", _looks_like_config_literal(".mbt"), False)
+    cell("d3-status", _looks_like_config_literal("unknown"), True)   # 非协议表内 ⇒ 仍是配置值候选
+    cell("d3-protocol", _looks_like_config_literal("passed"), False)
+    cell("d3-regex-frag", _looks_like_config_literal("a|b*"), False)
+    # D2/D3 变异对照：把 D3 协议表清空后，".mbt" 会变成「像配置值」⇒ 判据失去一层过滤
+    _saved = set(D3_PROTOCOL)
+    try:
+        D3_PROTOCOL.clear()
+        cell("d3-mutation-protocol-table-empty",
+             _looks_like_config_literal(".mbt"), True)
+    finally:
+        D3_PROTOCOL.update(_saved)
+    cell("d3-mutation-restored", _looks_like_config_literal(".mbt"), False)
+
+    # --- D4 有真源副本：值在判据**外**也出现才算「真源值」 ---
+    _src_d4 = 'if p == "shared-config-value":\n    pass\n'
+    cell("d4-has-elsewhere",
+         len(judge_single_values("scripts/check_a.py", _src_d4,
+                                 others_corpus={"moon.mod": 'name = "shared-config-value"\n'},
+                                 n_guards=0)), 1)
+    cell("d4-no-elsewhere",
+         len(judge_single_values("scripts/check_a.py", _src_d4,
+                                 others_corpus={"moon.mod": "nothing here\n"},
+                                 n_guards=0)), 0)
+    # D4 变异对照：others_corpus 为空 ⇒ 全部丢弃（判据不会凭空报）
+    cell("d4-mutation-empty-corpus",
+         len(judge_single_values("scripts/check_a.py", _src_d4,
+                                 others_corpus={}, n_guards=0)), 0)
+
+    # --- D5 反店：通用词汇不许冒充真源（普通词汇会以大量"外部来源"混进来）---
+    # ⚠️ 变异格设计教训：首版用 `__main__` 测，它同时在 D3 协议表里 ⇒ D3 先把它滤掉了，
+    #    于是「反店关闭」也仍是 0 命中 ⇒ 该格测的不是 D5（判例-29「机制格≠实现路径格」）。
+    #    改用**不在 D3 表内**的词，才能让 D5 成为唯一决定因素。
+    _common = "generic-shared-word"
+    _src_d5 = 'if p == "%s":\n    pass\n' % _common
+    _gc = ['if p == "%s":\n' % _common for _ in range(10)]
+    _oc = {"x.py": 'p = "%s"\n' % _common}
+    cell("d5-common-word-filtered",
+         len(judge_single_values("scripts/check_a.py", _src_d5,
+                                 others_corpus=_oc, n_guards=10, guard_corpus=_gc)), 0)
+    # D5 变异对照：把 n_guards 置 0（反店关闭）⇒ 同一个词会被报出来
+    # 注意：必须用**能过 D4' 的值**（含分隔符 + 出现在真源面），否则 D4' 先挡掉，测不到 D5。
+    _d5_oc = {"moon.mod": 'name = "%s"\n' % _common}
+    cell("d5-mutation-refractory-off",
+         len(judge_single_values("scripts/check_a.py", _src_d5,
+                                 others_corpus=_d5_oc, n_guards=0, guard_corpus=_gc)), 1)
+    # 另补一格：`__main__` 必须被 D3 挡（不是 D5）——两条过滤各司其职
+    cell("d5-main-guard-is-d3-not-d5",
+         len(judge_single_values("scripts/check_a.py",
+                                 'if __name__ == "__main__":\n    pass\n',
+                                 others_corpus={"x.py": '__main__\n'}, n_guards=0)), 0)
+
+    # --- D6 自拒保护：**决定性的一道** ---
+    # 有自拒：函数末尾 FATAL ⇒ 🟡 ok-refused
+    _d6_protected = (
+        'def check():\n'
+        '    if p == "shared-config-value":\n'
+        '        return 0\n'
+        '    if not saw_any:\n'
+        '        raise SystemExit(emit_fatal("FATAL 空扫描，拒绝报绿"))\n'
+        '    return 0\n'
+    )
+    _r6p = judge_single_values("scripts/check_a.py", _d6_protected,
+                               others_corpus={"moon.mod": '"shared-config-value"\n'}, n_guards=0)
+    cell("d6-with-refusal-is-ok-refused",
+         [(r["literal"], r["verdict"]) for r in _r6p],
+         [("shared-config-value", "ok-refused")])
+    # 无自拒：直接 return，没有任何「取不到就红」⇒ 🔴 hard
+    _d6_unprotected = (
+        'def check():\n'
+        '    if p == "shared-config-value":\n'
+        '        return 0\n'
+        '    return 0\n'
+    )
+    _r6u = judge_single_values("scripts/check_a.py", _d6_unprotected,
+                               others_corpus={"moon.mod": '"shared-config-value"\n'}, n_guards=0)
+    cell("d6-without-refusal-is-hard",
+         [(r["literal"], r["verdict"]) for r in _r6u],
+         [("shared-config-value", "hard")])
+    # **D6 变异对照（判例-30：改坏的是代码不是注释）**：
+    #   把自拒那行从函数体里删掉 ⇒ 同一条写死必须从 ok-refused 翻成 hard。
+    _d6_mutated = _d6_protected.replace(
+        '    if not saw_any:\n'
+        '        raise SystemExit(emit_fatal("FATAL 空扫描，拒绝报绿"))\n', '')
+    cell("d6-mutation-drop-refusal-flips-to-hard",
+         [r["verdict"] for r in judge_single_values(
+             "scripts/check_a.py", _d6_mutated,
+             others_corpus={"moon.mod": '"shared-config-value"\n'}, n_guards=0)],
+         ["hard"])
+    # D6 实现面锁（判例-29：机制格 ≠ 实现路径格）：
+    #   直接断言本文件源码里 has_self_refusal 真被 judge_single_values 调用
+    #   —— 否则把 D6 从实现里摘掉，上面那些纯函数格照样绿。
+    try:
+        _selfsrc = io.open(os.path.join(ROOT, SELF_REL), encoding="utf-8",
+                           errors="replace").read()
+    except OSError:
+        _selfsrc = ""
+    cell("d6-implementation-wired",
+         bool(re.search(r"protected,\s*ev\s*=\s*has_self_refusal\(", _selfsrc)), True)
+    # 变异对照（对源码做替换后断言接线消失）：证明上面那格真在盯实现路径
+    cell("d6-implementation-wired-mutation",
+         bool(re.search(r"protected,\s*ev\s*=\s*has_self_refusal\(",
+                        _selfsrc.replace("protected, ev = has_self_refusal(", "# disabled("))),
+         False)
+
+    # --- D4' 真源值 vs 枚举标签（**实跑 31 条假阳性之后的修正格**）---
+    # 真源面语料：只有这些文件里出现的值才算「真源当前值」
+    _oc_real = {"moon.mod": 'name = "vicTop-cw/fist-mbt"\n',
+                "scripts/README.md": "see vicTop-cw/fist-mbt for details\n"}
+    # 真阳性：写死模块名（正是 DEFAULT_BUNDLE 事故形状）+ 无自拒 ⇒ hard
+    _src_tp = ('def check(imp):\n'
+               '    if imp.startswith("vicTop-cw/fist-mbt"):\n'
+               '        return True\n'
+               '    return False\n')
+    cell("d4-real-source-value-is-hard",
+         [(r["literal"], r["verdict"]) for r in judge_single_values(
+             "scripts/check_a.py", _src_tp, others_corpus=_oc_real, n_guards=0)],
+         [("vicTop-cw/fist-mbt", "hard")])
+    # **反向变异对照（判例-30）**：把真源面语料换掉 ⇒ 同一份代码不再报
+    #   （证明它真在比对真源面，不是无脑命中）
+    cell("d4-mutation-no-source-face-no-report",
+         judge_single_values("scripts/check_a.py", _src_tp,
+                             others_corpus={"docs/a.md": "vicTop-cw/fist-mbt\n"}, n_guards=0), [])
+    # 枚举标签：即便在 docs 里出现，也不许报（首版 31 条假阳性的形状）
+    _src_label = ('def classify(kind):\n'
+                  '    if kind == "comment":\n'
+                  '        return 1\n'
+                  '    return 0\n')
+    cell("d4-enum-label-not-reported",
+         judge_single_values("scripts/check_a.py", _src_label,
+                             others_corpus={"docs/a.md": "comment contract extern\n"},
+                             n_guards=0), [])
+    # 同一枚举标签放进**真源面**也不报（形状判据独立于"出现在哪"）
+    cell("d4-enum-label-in-source-face-still-not-reported",
+         judge_single_values("scripts/check_a.py", _src_label,
+                             others_corpus={"moon.mod": "comment\n"}, n_guards=0), [])
+    # **D4' 变异对照**：把 `_RE_ENUM_LABEL` 替换成永不匹配 ⇒ 枚举标签会被报出来
+    # 注意：为了让本格只测「枚举过滤」这一件事，样本必须**能过 D4' 的 a/c 两条**
+    #（出现在真源面 + 含分隔符），否则 D4' 先挡掉，测的就不是枚举过滤了。
+    _label_src = ('def classify(kind):\n'
+                  '    if kind == "enum/comment":\n'
+                  '        return 1\n'
+                  '    return 0\n')
+    _label_oc = {"moon.mod": "enum/comment\n"}
+    _saved_enum = _RE_ENUM_LABEL.pattern
+    try:
+        globals()["_RE_ENUM_LABEL"] = re.compile(r"(?!x)x")
+        cell("d4-mutation-enum-filter-off-reports-label",
+             len(judge_single_values("scripts/check_a.py", _label_src,
+                                     others_corpus=_label_oc, n_guards=0)), 1)
+    finally:
+        globals()["_RE_ENUM_LABEL"] = re.compile(_saved_enum)
+    # 还原后：`enum/comment` 形如带分隔符的值 ⇒ 不再被当枚举标签挡掉，仍会被报（这是正确行为）
+    cell("d4-mutation-enum-filter-restored",
+         len(judge_single_values("scripts/check_a.py", _label_src,
+                                 others_corpus=_label_oc, n_guards=0)), 1)
+    # 而纯单词标签 `comment` 必须被 D4' 的枚举形状挡掉（真阴性）
+    cell("d4-plain-word-label-not-reported",
+         judge_single_values("scripts/check_a.py", _src_label,
+                             others_corpus={"moon.mod": "comment\n"}, n_guards=0), [])
+
+    # --- D6 纯谓词豁免（实跑 `is_contract` 假阳性之后的修正格）---
+    _pred = ('def is_contract(path):\n'
+             '    if path == "moon.mod":\n'
+             '        return True\n'
+             '    return False\n')
+    cell("d6-pure-predicate-exempt",
+         _is_pure_predicate(_pred), True)
+    # **反向变异对照**：同一段代码加一行 IO ⇒ 不再是纯谓词 ⇒ 必须回到 hard
+    _pred_io = ('def is_contract(path):\n'
+                '    import subprocess\n'
+                '    if path == "moon.mod":\n'
+                '        return True\n'
+                '    return False\n')
+    cell("d6-mutation-predicate-with-io-not-exempt",
+         _is_pure_predicate(_pred_io), False)
 
     print("SELFTEST %s（%d 格：%s）" % ("OK" if not fails else "FAIL", len(cells), " / ".join(cells)))
     for f in fails:
@@ -304,13 +748,49 @@ def selftest():
     return 0 if not fails else 1
 
 
-def verdict_rc(n_guards, n_indexed):
-    """纯函数：由读数给退出码（便于单测）。空扫描=2；--strict 且有 indexed=1；否则 0。"""
+def verdict_rc(n_guards, n_indexed, n_hard=0):
+    """纯函数：由读数给退出码（便于单测）。
+
+    0 = 出数合格；1 = `--strict` 且有 indexed 型或 🔴 单值写死；2 = 空扫描（判据无法自证）。
+
+    🔴 单值写死（写死 + 无自拒）与 indexed 同属「需要人处置」的一档：
+    它们都是「判据看着在跑、实际没在把守当前真源」的形状。
+    """
     if n_guards <= 0:
         return 2
-    if n_indexed > 0 and "--strict" in sys.argv:
+    if (n_indexed > 0 or n_hard > 0) and "--strict" in sys.argv:
         return 1
     return 0
+
+
+# D4 的「判据之外」语料面：源码 / 配置 / 文档的真实源，**不含 check_*.py**。
+# 为什么不含：判据之间互相抄同一个字面量，不能算「有真源副本」——
+# 那会把「两个尺子抄了同一个错值」误报成「该值有真源」。
+_OTHER_CORPUS_GLOBS = ("src", "cmd", "docs", "templates", "plugins", ".github", "packaging")
+
+
+def _load_other_corpus(root=None):
+    """读「判据之外」的文件正文 → {rel: text}。取不到 git ⇒ 返回 {}（D4 全丢，不凭空报）。"""
+    root = root or ROOT
+    try:
+        r = subprocess.run(["git", "ls-files", "-z", "--", *_OTHER_CORPUS_GLOBS],
+                           cwd=root, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=120)
+    except Exception:
+        return {}
+    if r.returncode != 0:
+        return {}
+    out = {}
+    for rel in (r.stdout or "").split("\0"):
+        rel = rel.strip()
+        if not rel or os.path.basename(rel).startswith("check_"):
+            continue
+        try:
+            out[rel] = io.open(os.path.join(root, rel), encoding="utf-8",
+                               errors="replace").read()
+        except OSError:
+            continue
+    return out
 
 
 # ── 入口 ─────────────────────────────────────────────────────────────────────
@@ -336,6 +816,7 @@ def run(argv):
         return emit_fatal("FATAL 扫描面为空（%s 命中 0 份）—— 判据空转，拒绝报绿" % SCAN_GLOB)
 
     rows, unreadable = [], []
+    guard_corpus = []
     for rel in guards:
         p = os.path.join(ROOT, rel)
         try:
@@ -343,9 +824,29 @@ def run(argv):
         except OSError:
             unreadable.append(rel)
             continue
+        guard_corpus.append(txt)
         for name, n, line, kind, hint in judge(rel, txt):
             rows.append({"guard": rel, "const": name, "items": n, "line": line,
                          "kind": kind, "hint": hint})
+
+    # ── D1–D6：「单值写死型」正交面 ────────────────────────────────────────
+    # D4 的「判据之外」语料：只取源码/配置/文档的真实源文件（不含 check_*.py），
+    # 否则「判据之间互相抄同一个字面量」会被误当成「有真源副本」。
+    others_corpus = _load_other_corpus()
+    single_rows = []
+    for rel in guards:
+        p = os.path.join(ROOT, rel)
+        try:
+            txt = io.open(p, encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        for r in judge_single_values(rel, txt, others_corpus=others_corpus,
+                                     n_guards=len(guards), guard_corpus=guard_corpus):
+            r["guard"] = rel
+            single_rows.append(r)
+
+    n_hard = sum(1 for r in single_rows if r["verdict"] == "hard")
+    n_refused = sum(1 for r in single_rows if r["verdict"] == "ok-refused")
 
     n_indexed = sum(1 for r in rows if r["kind"] == "indexed")
     n_iterated = sum(1 for r in rows if r["kind"] == "iterated")
@@ -353,32 +854,58 @@ def run(argv):
     if args.json:
         print(json.dumps({"guards": len(guards), "unreadable": unreadable,
                           "findings": rows, "indexed": n_indexed,
-                          "iterated": n_iterated}, ensure_ascii=False, indent=1))
-        return verdict_rc(len(guards), n_indexed)
+                          "iterated": n_iterated,
+                          "single_value": single_rows,
+                          "single_hard": n_hard, "single_refused": n_refused},
+                         ensure_ascii=False, indent=1))
+        return verdict_rc(len(guards), n_indexed, n_hard)
 
     print("扫描面：%d 份 check_*.py（真源 git ls-files '%s'）" % (len(guards), SCAN_GLOB))
     if unreadable:
         print("  读不到 %d 份：%s" % (len(unreadable), ", ".join(unreadable[:5])))
-    if not rows:
-        print("PASS 未发现「硬编码小清单 + 进了判定路径」的形状（%d 份尺全查）" % len(guards))
-        return verdict_rc(len(guards), n_indexed)
 
-    print("可能窄的清单 %d 条（indexed %d / iterated %d）" % (len(rows), n_indexed, n_iterated))
-    for r in rows:
-        tag = ("**可能只处理子集**（按固定下标取某几条）" if r["kind"] == "indexed"
-               else "需人工确认：若是「手抄清单当成了真源」则窄（判例-16 最深伤害形态）")
-        print("  [%s] %-46s %-22s %2d 项  L%d"
-              % (r["kind"], r["guard"], r["const"], r["items"], r["line"]))
-        print("        %s" % tag)
-        print("        建议：%s" % r["hint"])
-        if r["kind"] == "iterated":
-            print("        怎么判：清单的内容是不是「全部面」？"
-                  "若是手抄的子集（例：写死 3 份而真源有 24 份）⇒ 窄，"
-                  "应改从真源反解；若清单本身就是全部面（例：要求这 5 份必须携带某数）⇒ 不窄。")
+    # 第一半：清单型
+    if not rows:
+        print("PASS 清单型：未发现「硬编码小清单 + 进了判定路径」的形状（%d 份尺全查）" % len(guards))
+    else:
+        print("可能窄的清单 %d 条（indexed %d / iterated %d）" % (len(rows), n_indexed, n_iterated))
+        for r in rows:
+            tag = ("**可能只处理子集**（按固定下标取某几条）" if r["kind"] == "indexed"
+                   else "需人工确认：若是「手抄清单当成了真源」则窄（判例-16 最深伤害形态）")
+            print("  [%s] %-46s %-22s %2d 项  L%d"
+                  % (r["kind"], r["guard"], r["const"], r["items"], r["line"]))
+            print("        %s" % tag)
+            print("        建议：%s" % r["hint"])
+            if r["kind"] == "iterated":
+                print("        怎么判：清单的内容是不是「全部面」？"
+                      "若是手抄的子集（例：写死 3 份而真源有 24 份）⇒ 窄，"
+                      "应改从真源反解；若清单本身就是全部面（例：要求这 5 份必须携带某数）⇒ 不窄。")
+
+    # 第二半：单值写死型（D1–D6）
     print()
-    print("读法：indexed 型才可疑（常量按固定下标取某几条）；iterated 型清单本身就是全部面，"
-          "列出只为让你一眼排除。本尺只报不判 —— 判「该不该反解」要人读语义。")
-    return verdict_rc(len(guards), n_indexed)
+    print("单值写死型（D1–D6 正交面）：%d 条（🔴 无自拒 %d / 🟡 有自拒 %d）"
+          % (len(single_rows), n_hard, n_refused))
+    for r in single_rows:
+        if r["verdict"] == "hard":
+            print("  [🔴 hard] %-40s L%-5d %s %r"
+                  % (r["guard"], r["line"], r["op"], r["literal"]))
+            print("         %s" % r["text"])
+            print("         **无自拒保护**：真源改了它不会红 ⇒ 静默假绿。"
+                  "修法：真源取不到时报 FATAL（emit_fatal），别继续比旧字面量。")
+    if n_refused:
+        print("  🟡 有自拒（%d 条，真源变了会红，人工改一次常量即可，不判红）：" % n_refused)
+        for r in single_rows:
+            if r["verdict"] == "ok-refused":
+                print("     %-40s L%-5d %r  （自拒 = %s）"
+                      % (r["guard"], r["line"], r["literal"], r["evidence"]))
+
+    print()
+    print("读法：")
+    print("  清单型 —— indexed 型才可疑（按固定下标取某几条）；iterated 型列出只为让你一眼排除。")
+    print("  单值型 —— **🔴 hard 才是缺陷**（写死 + 无自拒 = 静默假绿）；"
+          "🟡 有自拒只是「要人工改一次常量」，不进缺陷清单。")
+    print("  本尺只报不判 —— 判「该不该反解」要人读语义。")
+    return verdict_rc(len(guards), n_indexed, n_hard)
 
 
 def main(argv):
