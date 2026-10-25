@@ -39,7 +39,7 @@ def ps_surfaces(root=None):
     return sorted(str(p) for p in Path(base).rglob("*.ps1"))
 
 
-def ps_encoding_problems(paths):
+def run(paths):
     """纯判据：喂 .ps1 路径清单，出违例列表。空清单 ⇒ 判据自己红（P2）。"""
     if not paths:
         return ["扫描面为空：一个 .ps1 都没抓到 ≠ 没有问题，先判枚举器坏"]
@@ -75,23 +75,23 @@ def j_selftest():
         ok_ascii = tmp / "ascii.ps1"
         ok_ascii.write_bytes(b'Write-Host "download ok"')
 
-        if not ps_encoding_problems([str(bad)]):
+        if not run([str(bad)]):
             fails.append("P1 对『无 BOM 且含非 ASCII』不敏感 → 判据是装饰")
-        if ps_encoding_problems([str(ok_bom), str(ok_ascii)]):
+        if run([str(ok_bom), str(ok_ascii)]):
             fails.append("P1 对合规输入误红（恒红判据不可信）")
-        if not ps_encoding_problems([]):
+        if not run([]):
             fails.append("P2 空扫描面不红（枚举器坏了会以全绿通过）")
         # 变异对照：同一文件加/去 BOM 必须翻转判定，否则判据数的是文件名而不是字节
         bad.write_bytes(BOM + bad.read_bytes())
-        if ps_encoding_problems([str(bad)]):
+        if run([str(bad)]):
             fails.append("P1 加了 BOM 仍判红 → 它没在读字节")
         ok_ascii.write_bytes('Write-Host "中文"'.encode("utf-8"))
-        if not ps_encoding_problems([str(ok_ascii)]):
+        if not run([str(ok_ascii)]):
             fails.append("P1 对『ASCII 文件被改成非 ASCII 且仍无 BOM』不敏感")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    real = ps_encoding_problems(ps_surfaces())
+    real = run(ps_surfaces())
     if real:
         fails.append("P1 在真实现状面上就红了（先判判据，再判产品）：" + real[0])
     if not ps_surfaces():
@@ -117,7 +117,7 @@ def main(argv):
     if not paths:
         print("FATAL: 扫描面为空，本次判定不可信")
         return 2
-    problems = ps_encoding_problems(paths)
+    problems = run(paths)
     if problems:
         print(f"FAIL PowerShell 编码守卫：{len(problems)} 处违例（共扫 {len(paths)} 个 .ps1）")
         for p in problems:
