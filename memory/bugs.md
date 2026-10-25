@@ -4330,7 +4330,7 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 
 ### FIXED(2026-10-16T14:45:49Z / BUG-241)
 - evidence: 根因：bug_header_line(src/server/bugreport.mbt:516-528) 只返回首个命中行；当 BUG-217 等编号在 bugs.md 存在多条独立条目时，bug_fix 只改首条，真正待闭环的那条永久 OPEN。修复：新增 bug_header_lines 返回全部命中行，bug_fix 改为逐条遍历改判（named 去重、insert_at 取末条末尾）。moon test --target js src/server = 316/316 pass（新增 BUG-241 白盒测试验证同号两条 217 都被改判 heading_changed=2、各自保留原 ts/sev、小记只落一次且落在末条之后、邻居正文不被吞）；全量 moon test --target js = 1259/1259 pass。文件：src/server/bugreport.mbt(+bug_header_lines/-single-match) + src/server/bugreport_status_wbtest.mbt(+BUG-241 测试)。
-## BUG-242 [2026-10-16T12:58:23Z] [high] OPEN
+## BUG-242 [2026-10-16T12:58:23Z] [high] FALSE_POSITIVE
 - summary: [Pentad/DEMO-08] spawn(&lt;actor 实例&gt;) 被运行时拒绝：'spawn() requires an actor type name, got Struct'，而该 demo 与文档期望传实例
 - detail: 复现：`p5c run DEMO/08_concurrency/concurrency.p5` → exit 1，stderr `Runtime error: spawn() requires an actor type name, got Struct`。`Counter` 已正确声明为 `api @actor Counter:`（concurrency.p5:39），构造函数 `api Counter::new() -> Counter = Counter { n: 0 }`（:48）返回实例；demo 以 `let c = spawn(Counter.new())`（:55，另 :74/:114/:224 同形）调用，期望输出 `<Counter actor ref>`。运行时只接受「actor 类型名」而拒绝实例值。证据：e2e_golden 判据中 DEMO/08 为 RUNFAIL（RUNFAIL=4→2 后仍红），`p5c check` 却绿（静态检查未覆盖该语义）。影响：整个 @actor/spawn 发货面跑不通。发现轮：p5c 组合流水线 R1（清整/寻虫），复现于 2026-10-16。DEMO/09 已由本次提交修复缺 fetch_url 桩，同族但不同因。
 - reported_by: pentad-combo-r1
@@ -4381,6 +4381,7 @@ BUG-204 修复引入的 -1 哨兵只在「当前节点自身被重入」（L112 
 - **附录速查表 §24.1 三处残留已清（2026-10-18）**：`SYNTAX.md:4215` + `24-附录07-prelude-API与常量总表.md:18` 的 `is_subtag` 说明仍写反（「`a` 是否在 `b` 祖先链上」——BUG-258② 在 §16.5 改了方向，**速查表未同步**）；`SYNTAX.md:4230` + `24-*.md:33` 的 `s.close()` 触发点仍写「结束 actor 消息流」（BUG-242(b) 裁决 actor 无消息流，未同步）。已四处改齐。
   **教训（跨章节 + 跨份）**：同源拷贝不只在"分册 vs 真值"之间——**附录速查表（§24.1/§21 等）与正文（§16.5/§14.1）也是两份拷贝**，且**附录章节同样有分册**（`24-*.md`）。改正文语义须同步所有**引用该语义的速查表行**；`is_subtag` 方向、BUG-242(b) 无队列两条裁决共出现在 §16.5 正文 + §24.1 速查表（真值+分册）+ §21 标记总表等多处，**逐表扫齐**才干净。本轮 BUG-258② 落地已累计漏 3 层（分册 §16.5 → 真值 §16.5 → §24.1 真值+分册）。
 
+- false_positive(2026-10-25T12:53:14Z): 跨项目误记：本单是 **Pentad 项目**的运行时缺陷（`[Pentad/DEMO-08] spawn(<actor 实例>) 被运行时拒绝` —— actor 模型 spawn 语义，属 Pentad 的解释器/运行时面），由 Pentad 侧 agent 用 report_bug 上报时默认落到了 FIST-Mbt 本仓账本（report_bug 的 project_dir 契约默认 cwd）。FIST-Mbt 代码面不含 actor 模型、不实现 spawn 语义，无可修之物。正确归属：Pentad 项目自己的 memory/bugs.md。
 ## BUG-243 [2026-10-16T12:58:27Z] [high] FIXED
 - summary: [Pentad/DEMO-01] @duck X 与 @interface X 同名被判「duplicate type definition」，鸭子类型 demo 因此整份不可 check/run
 - detail: 复现：`p5c check DEMO/01_types/interface_duck.p5` → rc=1，首行 `duplicate type definition: Comparable`（`Hashable` 同因）。源码：:61 `api @interface Comparable:` 与 :180 `api @duck Comparable:`（:80 `@interface Hashable` / :183 `@duck Hashable`）。该 demo 的意图正是「接口（@interface）与鸭子类型（@duck）并存」：:187 `api @function sort<T <: Comparable>(xs)` 用接口约束、:190 `dedup_duck<T <: Hashable>` 用 duck 约束、:201 `print(conforms(Int, Comparable))`。当前编译器把 @interface 与 @duck 视为同一类型命名空间 → 重复定义，整个 demo 无法 check/run（e2e_golden 中 DEMO/01 为 RUNFAIL，也是 pin 表里剩余的 1 红）。影响：§19 duck typing 发货面不可用。发现轮：p5c 组合流水线 R1。
@@ -4526,7 +4527,7 @@ DEMO/10 五处原红现全绿：:199 has_tag(Point,@type) False→**True**；:20
 
 ### FIXED(2026-10-16T16:15:08Z / BUG-254)
 - evidence: src/server/server.mbt circuit_fail handler 增加正数校验：window_secs/threshold/recovery_secs 均须 >= 1，否则返回 ToolError 并说明原因（threshold<=0 首败即熔断；window_secs<=0 永不累计失败）。验证：moon test --target js src/engine = 162/162 绿。
-## BUG-255 [2026-10-17T01:03:18Z] [medium] OPEN
+## BUG-255 [2026-10-17T01:03:18Z] [medium] FALSE_POSITIVE
 - summary: [Pentad/DEMO-09 §16] @stream 在 @observe 内 for 迭代不产出事件：期望 handled: event1/event2 完全缺失（推送被静默丢弃）
 - detail: 复现：`p5c run DEMO/09_reactive/reactive.p5`（rc=0，跑到哨兵 DEMO reactive OK），§16 完整示例事件总线：:248 `box @stream #[replay(10)] event_bus = Source()`；:250-252 `api @observe handle_events() = for ev <- event_bus: print("handled:", ev)`；:254-255 `event_bus.push("event1")` / `push("event2")`，内联期望输出 `handled: event1, handled: event2`。实得输出里**完全没有 handled: 行**（整份 103 行输出逐行核过），即 `@stream` 值在 `for ev <- <stream>` 迭代时产出空序列 ⇒ 观察者虽被触发但循环体从不执行，事件被静默丢弃。规范依据：SYNTAX/15 §15.6（@stream 事件流语义，:134 亦述「@stream 同 @signal 锚定 box、走 __get/__set 通道」）。同文档 §15.2 的信号读 __get 分派本轮已实现（见 BUG-245），本条是 @stream 侧的另一半缺口。影响：DEMO/09 因此**不可注册 golden**（判据要求输出与文档一致，本项目拒绝把未满足期望冻成基准）。发现轮：p5c 组合流水线 R7（寻虫），复现于 2026-10-17。
 - reported_by: pentad-combo-r1
@@ -4555,6 +4556,7 @@ DEMO/10 五处原红现全绿：:199 has_tag(Point,@type) False→**True**；:20
     同 commit 另把两处逐字重复的 `:=` 通知块抽成 `notify_reactive_write()`（纯重构，实测输出逐字不变）。
 
 
+- false_positive(2026-10-25T12:53:14Z): 跨项目误记：**Pentad 项目**的 `@stream` / `@observe` 事件语义缺陷（`[Pentad/DEMO-09 §16] @stream 在 @observe 内 for 迭代不产出事件`）。`@stream`/`@observe` 是 Pentad 的 DSL 标记，FIST-Mbt 无此语法面。正确归属：Pentad 账本。
 ## BUG-256 [2026-10-17T01:32:33Z] [high] FIXED
 - summary: [ledger-lifecycle] 重复赋值容器追加 `out = out + [ts[idx]]` 生成 `out.push(ts[idx])` 触发 E0507 cannot move out of index（Assign 代码路径触发容器原地追加优化，但缺 ListLit 元素位的 .clone() 收敛）
 - detail: ## 现象
@@ -4632,7 +4634,7 @@ loop { let mut changed=false;
 ② 健全性：新增 ISiteKind{Init,Update} 区分绑定点——Init 在不含自身的 stable 下判定（初值是类型 ground），Update 允许自引用（归纳：初值定 i64 则更新保型即恒 i64）。既修混合站点误判，又保住 `i=i+1` 这类自引用累加器的 i64 特化（此前的替代方案会丢失方向 A–E 全部收益）。
 ③ 类型不一致（E0308）：Let 发射路径原按单条初值增量 insert/remove 覆盖分析结论（违反 struct 字段注释「只读，不再增量改」），且已发出的 `let` 行无法被后续 Assign 的「降级」撤回 → `let mut s = 0i64; … s = <Val>;`。现改为只读 + 当 v∉i64_vars 且初值为原生 i64 时显式装箱 tnr_rt::lit_int(..)。
 断言锁/判据：cargo test --release --lib = 6545 passed/0 failed；--bins = 22 passed/0 failed；corpus/transpile 39/39 transpile OK；最小复现 m1..m5 + 语料 g11 全部 `--run`（transpile+rustc+执行）exit 0：m1 int64(1)、m2 float64(1.5)、m3 float64(3)、m4 int64(1)、m5 int64(1)、g11 输出 31/[3,1,4,1,5,9,2,6]/8/31。修复前：m2/m5/g11 = E0308 或 30s E9006 超时。
-## BUG-258 [2026-10-17T01:53:20Z] [medium] OPEN
+## BUG-258 [2026-10-17T01:53:20Z] [medium] FALSE_POSITIVE
 - summary: [Pentad/SYNTAX] §16 标记树条文三处自相矛盾：16.1 两棵图画法冲突（@type 兄弟 vs 子）、16.5:251 is_subtag 方向写反、16.5:246 Tag 集合内引号口径缺定档
 - detail: 实现标记树反射（Pentad commit 4156750 / BUG-244）时撞到三处条文问题，均属**文档**缺陷（代码已按证据取舍并注释，勿再重复发现）：
 
@@ -4690,7 +4692,8 @@ is_subtag(@infix, @method) // 期望 True（§16.5:245 / DEMO/10:203，裸 @infi
 **修复方向（推荐 D：条文补糖规则，零代码）**：§16.6 追加一条例外——「**反射内建函数**（`tag_of`/`has_tag`/`is_subtag`/`tags_of`）的标记实参可**裸写**（实参类型已固定为标记，语法糖免反引号）；其余值位置（`let` / 一般实参 / 返回）仍须反引号」。与 ③ 选项 C 同批落地，即解锁 DEMO/10 golden。**需 owner 裁决**（因涉及 §16.6 通则 vs 特例的取舍，不单方面定档）。
 
 
-## BUG-259 [2026-10-17T02:22:09Z] [medium] OPEN
+- false_positive(2026-10-25T12:53:14Z): 跨项目误记：**Pentad 项目**的语法规范自相矛盾（`[Pentad/SYNTAX] §16 标记树条文三处自相矛盾：16.1 两棵图画法冲突、16.5:251…`）。这是 Pentad 规范文档的内容一致性缺陷，与 FIST-Mbt 的 MoonBit 源码无关。正确归属：Pentad 账本。
+## BUG-259 [2026-10-17T02:22:09Z] [medium] FALSE_POSITIVE
 - summary: [Tnr] corpus/transpile 39 份语料零测试驱动：金标准静默漂移（g11 首行 dtype float64→int64 已与 expected.txt 不符），且本轮 lirgen 死循环回归能在 6545 全绿下存活
 - detail: ## 现象（2026-10-17 实测，HEAD f234752 + 本会话 lirgen 修复）
 1. **零测试驱动**：全仓检索 `corpus/transpile`、`g11_alg` 只命中 `src/codegen/lirgen.rs` 的一条**注释**（:320 以 g11_alg_array_sum 为背景说明），没有任何 test/bench 读取 `corpus/transpile/*.tnr` 或比对其 `*.expected.txt`。`cargo test --release --lib/--bins/--all-targets` 全程不触达语料。
@@ -4709,6 +4712,7 @@ is_subtag(@infix, @method) // 期望 True（§16.5:245 / DEMO/10:203，裸 @infi
 - reported_by: tnr-polisher
 - task_id: T0r6
 
+- false_positive(2026-10-25T12:53:14Z): 跨项目误记：**Tnr 项目**的语料测试缺口（`[Tnr] corpus/transpile 39 份语料零测试驱动：金标准静默漂移（g11 首行 dtype float64→int64）`）。语料与 transpile 金标准都在 Tnr 仓内，FIST-Mbt 无 corpus/transpile 面。正确归属：Tnr 账本。
 ## BUG-260 [2026-10-17T02:30:17Z] [high] FIXED
 - summary: [ledger-id-collision] 缺陷账本 BUG-185/186/217 各出现两次（FIXED+OPEN 混挂同一 ID），导致 gen_plugins.py --check FATAL、check_plugin_sync.py FAIL（cl7 插件态断线）
 - detail: ## 现象（2026-10-17 实跑）
@@ -4854,13 +4858,14 @@ print(r)                 // 期望 ()，实得 None
 
 ### FIXED(2026-10-17T11:23:14Z / BUG-272)
 - evidence: 在 src/engine/engine_contract.mbt 给 contract_try/transition_contract 增加 force? 可选参数，archive 分支按 force 建模 BUG-227 强制归档路径（force=true 走 Task::archive_force，放行 已暂停/已打回 非流态滞留；force=false 与 Task::archive 完全同义，默认生命周期锚零回归）；MCP 工具 tx_contract 在 src/server/server.mbt 增加 force 布尔参数并透传（schema + 描述同步）。锁钉：src/engine/engine_contract_test.mbt 新增两条 BUG-272 白盒锁 tc_r109_t9（已暂停任务 force=false 拒 / force=true 放行 allowed+已归档，且契约只读不落库）与 tc_r109_t10（在流态 已领取 force=true 仍拒）；src/engine 全量 moon test --target js 164/164 通过、src/server 316/316 通过，moon check src/engine 与 src/server 均 0 errors。
-## BUG-273 [2026-10-17T03:21:46Z] [high] OPEN
+## BUG-273 [2026-10-17T03:21:46Z] [high] FALSE_POSITIVE
 - summary: BUG-267: str 变换方法（trim/to_upper/replace 等）IR 类型推断为 Any，导致 str 拼接误走 LzAdd 分派
 - detail: lookup_builtin_method_ret 未收录 str 变换方法（trim/trim_start/trim_end/to_upper/to_lower/capitalize/replace/repeat/reverse/strip/pad_start/pad_end/upper/lower/chars）。`result = result + s.trim()` 中 s.trim() 类型为 Any，BinOp + 的 is_poly_add_ty 命中（Any/Generic）→ 生成 LzAdd::__add__(result, s.trim())，需 String+String，但 s.trim() 是 &str → E0308。
 修复：在 infer.rs 的 IrType::Str 与 IrType::Ref(Str) 分支加入上述方法返回 Str（chars 返回 Iterator<Str>）；并在 expr_gen.rs 的 str 变换方法调用末尾追加 .to_string()（Rust String::trim() 返回 &str，LZ 语义要求 owned String，否则 `let cleaned = raw.trim()` 报 E0308）。
 - reported_by: dsh-agent
 
-## BUG-274 [2026-10-17T03:22:01Z] [high] OPEN
+- false_positive(2026-10-25T12:55:03Z): 跨项目误记：**兹语言（zhi/lz）项目**的类型推断缺陷。detail 里 `lookup_builtin_method_ret` 未收录 str 变换方法（trim/to_upper/replace 等），`result = result + s.trim()` 中 `s.trim()` 类型为 Any 导致误走 LzAdd 分派 —— 这是兹语言的 IR 类型推断器（`result = result + ...` / `LzAdd` 是 lz IR 形态）。FIST-Mbt 是纯 MoonBit 项目、`src/` 下无 zhi/codegen/lz 包。正确归属：兹语言账本（其 BUG-267 同族）。
+## BUG-274 [2026-10-17T03:22:01Z] [high] FALSE_POSITIVE
 - summary: BUG-268: for 循环遍历 str 时循环变量类型推断错误（Any），且 Rust char 与 IR Str 语义不对齐
 - detail: for c in s（s 为 str）时，loop 变量 c 的 IR 类型为 Any（elem_ty 推断仅处理 IrType::Named 的 args，str 回退 Any）→ `result + c` 走 is_poly_add_ty → LzAdd::__add__(result, c) 报 E0308。修复 elem_ty 加入 IrType::Str/String 分支。但 Rust 侧 `for c in s.chars()` 的 c 是 char，IR ty 却是 Str（LZ 单字符语义），导致：
 1. 拼接语境 `&c[..]` 对 char 报 E0608 → 新增 str_loop_vars 集合，拼接路径生成 `c.to_string().as_str()`。
@@ -4868,18 +4873,21 @@ print(r)                 // 期望 ()，实得 None
 测试证据：tests/str_boundary.rs c8_pattern_methods（raw.trim()）和 find_bug_libs lib_string（ord(ch)）均已通过，全套 867 测试通过。
 - reported_by: dsh-agent
 
-## BUG-275 [2026-10-17T03:38:12Z] [high] OPEN
+- false_positive(2026-10-25T12:55:03Z): 跨项目误记：**兹语言**的类型推断缺陷（`for 循环遍历 str 时循环变量类型推断错误（Any），且 Rust char 与 IR Str 语义不对齐`）。「Rust char 与 IR Str」明确指向兹语言的 Rust 实现侧（FIST-Mbt 无 Rust 代码）。正确归属：兹语言账本（其 BUG-268 同族）。
+## BUG-275 [2026-10-17T03:38:12Z] [high] FALSE_POSITIVE
 - summary: BUG-275: str.split()/lines() 迭代器元素类型未登记，循环变量 Any 导致拼接误走 LzAdd 分派
 - detail: `for part in s.split(",")` 中循环变量 part 类型为 Any（lookup_builtin_method_ret 未登记 split/lines/split_whitespace 等返回 &str 迭代器的方法）→ `out = out + part` 走 is_poly_add_ty → LzAdd::__add__(out, part) 报 E0308（LzAdd 需 String+String，part 是 &str）。修复：在 infer.rs 的 IrType::Str 与 IrType::Ref(Str) 分支加入 split/lines/split_whitespace/splitn/rsplit 等返回 Iterator<Str>。与 BUG-267 同族（str 方法返回类型未登记）。
 测试证据：TEMP/str_probe2.lz test_split_join("a,b,c") → "abc"；全套测试通过。
 - reported_by: dsh-agent
 
-## BUG-276 [2026-10-17T03:50:27Z] [medium] OPEN
+- false_positive(2026-10-25T12:55:04Z): 跨项目误记：**兹语言**的类型推断缺陷（`str.split()/lines() 迭代器元素类型未登记，循环变量 Any 导致拼接误走 LzAdd 分派`）。`LzAdd` 是 lz IR 的加法分派，与 FIST-Mbt 无关。正确归属：兹语言账本。
+## BUG-276 [2026-10-17T03:50:27Z] [medium] FALSE_POSITIVE
 - summary: BUG-276: str::splitn/rsplitn/repeat 的 n 参数未从 i64 转 usize
 - detail: str::splitn/rsplitn/repeat 的 n 参数在 Rust std 是 usize，但 LZ int 是 i64。`s.splitn(2, ",")` 生成 `2i64` → E0308。与 take/skip（L3938）同一转换逻辑缺失。修复：在 expr_gen.rs 的 Vec 索引转换段后追加，检测 method 为 splitn/rsplitn/repeat 且首参 Int 时生成 `as usize`。
 测试证据：TEMP/str_probe3.lz test_splitn("a,b,c") → 2、test_repeat_concat("x") → "xxx"；全套测试通过。
 - reported_by: dsh-agent
 
+- false_positive(2026-10-25T12:55:04Z): 跨项目误记：**兹语言**的 codegen 缺陷（`str::splitn/rsplitn/repeat 的 n 参数未从 i64 转 usize`）。i64→usize 是 Rust 侧类型转换，兹语言的 codegen 生成 Rust 代码时缺转换。FIST-Mbt 无 Rust/i64/usize 面。正确归属：兹语言账本。
 ## BUG-277 [2026-10-17T04:10:33Z] [medium] FIXED
 - summary: R59 T0r621-626 stuck with atomcode-3 sticky assignee — no recovery path, 6 tasks permanently blocked
 - detail: 6 tasks (T0r621, T0r622, T0r623, T0r624, T0r625, T0r626) in ns fist-opt-20261016 are stuck in 已领取 status with assignee=atomcode-3. The agent atomcode-3 is no longer active, but these tasks cannot be reclaimed because: 1) claim requires 待领取 status; 2) retry requires 已打回; 3) heal would need the agent to have heartbeat timeout, but no heartbeat was ever set. Result: permanent deadlock with no legal state transition path. Affects 6 tasks in the R59 round.
@@ -5387,7 +5395,7 @@ All 58 probe outputs match expected; cargo test --release running.
 
 ### FIXED(2026-10-17T12:20:30Z / BUG-320)
 - evidence: vools/datetime/utils.py vDate 交换后加守卫 `if not isinstance(fmt, (str, type(None))): fmt = None`。108 条新测试全通过，覆盖率 17% → 92%。
-## BUG-321 [2026-10-17T12:31:33Z] [high] OPEN
+## BUG-321 [2026-10-17T12:31:33Z] [high] FALSE_POSITIVE
 - summary: [codegen] BlockExpr 子 CodeGen 不继承 current_expected_ty → match 臂尾 Option 值被误加 .unwrap()（iter.lz Zip::size_hint E0308）
 - detail: 根因：expr_gen.rs 的 `ExprKind::BlockExpr` 分支用 `CodeGen::new()` 创建子 CodeGen，复制了 current_ret_ty / current_fn_ret_ty / enum_variant_* 等，但**没有复制 `current_expected_ty`**（新实例恒为 None）。于是 `let hi: Option<int> = { match (hi_a, hi_b) { case (Some(x), Some(y)) => Some(min(x, y)); case _ => None } }` 中，外层 Let 已在 L959 把 current_expected_ty 设为 Some(Option<int>)，但 match 臂生成时经 BlockExpr 落到子 CodeGen，expected_ty 变回 None。stmt_gen.rs:1782 的尾值 unwrap 启发式只看 current_ret_ty（函数返回 Tuple，非 Option）→ 对 Option 臂尾 `Some(min(x,y))` 加 `.unwrap()` → `Some(min(x,y)).unwrap()` 为 i64，塞进 Option<i64> 绑定 → E0308（DEMO/lz_std/iter.lz L173 `Some(min(x, y))` 实为 LZ 源码，unwrap 是代码生成错误注入）。
 
@@ -5400,6 +5408,7 @@ All 58 probe outputs match expected; cargo test --release running.
 
 
 
+- false_positive(2026-10-25T12:55:04Z): 跨项目误记：**兹语言**的 codegen 缺陷。detail 明写根因在 `expr_gen.rs` 的 `ExprKind::BlockExpr` 分支用 `CodeGen::new()` 创建子 CodeGen 时没复制 `current_expected_ty` —— 这是 **Rust 源文件**（`.rs`），而 FIST-Mbt 是纯 MoonBit 项目（`src/` 下无任何 .rs、无 codegen/lz 包）。报错形态 `iter.lz Zip::size_hint E0308` 里的 `.lz` 是兹语言文件扩展名、E0308 是 Rust 类型错误码。正确归属：兹语言账本。
 ## BUG-322 [2026-10-17T15:50:01Z] [medium] FIXED
 - summary: [parser.py] _内联默认 方法在地支耗尽时静默丢弃默认值 — `佘` 名称不被接受
 - detail: parser.py 的 _内联默认 方法（行 1974-2011）在收集默认值时检查 `if 名 in _DIZHI:`，但当地支计数超过 12 时，_infer_params 会分配 `佘` 作为名称。由于 `佘` 不在 _DIZHI 列表中，默认值被静默丢弃。
@@ -6586,12 +6595,21 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 处置（R55 已落）：新增 `scripts/check_fmt_gate.py` 三档闸（`0` 干净 / **`2` DEGRADED 不可测** / `1` 真 diff），`--selftest` 6 格；已登记索引与守卫电池；AGENTS 提交门禁补口径。实测该闸真跑返回 **rc=2 DEGRADED**（正是期望档）。
 - note: 编号说明——本条最初被我误写成 `BUG-381`，但 `BUG-381` 在主线早已被占（`check_mbti_sync` 泛型盲区，已 FIXED），故另立本编号；R55 的更正提交里写清了这件事。
 - 后续建议: ① 格式门权威面交给 CI（Linux nightly）；② 升级 moon 后先跑 `python scripts/check_fmt_gate.py`，转 `0` 即可把该闸降为普通门禁；③ 与 BUG-330（fmt 世代漂移）一并复核。
-## BUG-389 [2026-10-23T05:19:36Z] [medium] OPEN
+## BUG-389 [2026-10-23T05:19:36Z] [medium] FIXED
 - summary: [omega] task_plan_deep 注入的 [omega:required] 标记在 supervisor_task_upsert 更新描述时被静默覆盖丢失，omega_spec_create 误报「未开启 Omega 强验证」
 - detail: 现象：task_plan_deep(omega_strong_verify=true) 把 [omega:required] 标记写进子任务 description；随后调用 supervisor_task_upsert（action=updated）更新描述时，若新描述不含该标记，标记被静默覆盖丢失。再调 omega_spec_create 报「任务 [T0.1.1] 未开启 Omega 强验证（description 缺少 [omega:required] 标记），无需创建语料」——把一个「标记丢失」的流程事故伪装成「用户没开 Omega」。实测：T0.1.1 等 6 叶在 upsert 后 omega_spec_create 全红，二次 upsert 补回标记才通过。根因：Omega 门禁从 description 文本读标记（字符串匹配），而描述是可被合法更新的字段；标记没有独立载体（如任务元数据列/标志位）。修法方向：① supervisor_task_upsert 更新 description 时保留既有 [omega:required]/[难度梯度]/[边界四问] 等 decomposer 注入的标记；或② Omega 门禁从任务元数据（如 omega_required: bool 列）读取而非描述文本（描述可被覆盖，元数据列才是身份载体）。证据：本会话 T0.1.1–T0.5.3 共 13 叶，upsert 后首轮 omega_spec_create 全部报「未开启」，补标记后全通过。
 - task_id: T0r741
 
 
+
+### FIXED(2026-10-25T12:52:13Z / BUG-389)
+- evidence: 修法① 已落地 + 回归锁在册（2026-10-25 20:50 验证）：
+
+**代码面**：`supervisor_task_upsert` 更新 description 时保留 decomposer 注入的标记（`[omega:required]` / `[难度梯度]` / `[边界四问]`），不再静默覆盖。同时 `tasks` 表已有 `omega_required INTEGER NOT NULL DEFAULT 0` 独立列（store_sqlite.mbt:106 建表 + :204 旧库迁移 `ALTER TABLE tasks ADD COLUMN omega_required`），即报告修法② 的「元数据列作为身份载体」也已具备（双保险，门禁不再只能靠 description 文本匹配）。
+
+**回归锁**：`src/server/supervisor_tools_wbtest.mbt:422-457` 有格 ④「BUG-389：decomposer 注入的 [omega:required] 标记不得被 upsert 静默覆盖」——造一个开着 Omega 的 omega-root（description 带 `[omega:required]`），再用 `supervisor_task_upsert` 把描述换成「仅改文本，不带标记」，断言 `saved.get_description().contains("[omega:required]")` 为真。这正是报告里「13 叶 upsert 后首轮 omega_spec_create 全报未开启」的最小复现形状。
+
+**实测**：`python scripts/moon_test_env.py --target js src/server` = **387/387 passed, 0 failed**（含该格）。⇒ 「标记丢失被伪装成用户没开 Omega」不再发生。
 ## BUG-391 [2026-10-23T07:57:30Z] [high] FIXED
 - summary: [CLI 自检面] `fist doctor` 的退出码不反映它自己的判决——五项检查里出现 `❌` 仍 `rc=0`，无人值守门与安装自检把它读成绿
 - detail: 代码面（`cmd/cli/main.mbt`）：`main` 的子命令 match 里只有 `Unknown` 分支接了 `cli_exit(1)`（`:53-57`），`Doctor => run_doctor()`（`:49`）走的是无退出码路径；`run_doctor() -> Unit`（`:332`）从头到尾只 `println`，末尾汇总（`:497-506`）在 `ref_ok != ref_total` 时打印 `⚠️  有 N 项失败` 后**函数返回 unit**，没有任何 `cli_exit`。⇒ 退出码恒 0 与检查项实际红绿无关。
@@ -6627,38 +6645,38 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 ### FIXED(2026-10-23T08:38:00Z / BUG-391, BUG-392, BUG-393)
 
 - evidence: R172 一单交付——代码落 `cmd/cli/main.mbt` + `cmd/cli/subcmd.mbt`，白盒锁落 `cmd/cli/subcmd_wbtest.mbt`（subcmd-3/4 共 11 格）。运行时三格对照（本单实测，非自述）：① 发货产物 v0.3.10 与 R172 产物给出同一条 `4/5 checks 通过 / ⚠️ 有 1 项失败`，前者 `rc=0`、后者 `rc=1`（BUG-391）；② 带 `FIST_DB_PATH` 的 scratch 目录里，修复前落两个 135,168 字节的库（其中一个在 cwd）、修复后 cwd 为空且两份同落改道针目录（BUG-392）；③ 抽掉 `verify(root)` 那 4 行的对照构建打出 `archive(root): 仅已完成任务可归档，当前状态: 待验收` 且 `rc=1`，补回后 `5/5 checks 通过` / `rc=0`（BUG-393）。
-## BUG-394 [2026-10-23T09:58:00Z] [medium] OPEN
+## BUG-394 [2026-10-23T09:58:00Z] [medium] FIXED
 - summary: [判据接线] 常驻测试入口 `scripts/moon_test_env.py` 打印的汇总行是 `Total tests 1415 / passed 1415 / failed 0`（斜杠分隔），而 `check_test_sync.py` / `check_badge.py` 的 `RX_LOG` 只认 `Total tests: N, passed: N`（冒号 + 逗号）⇒ 用本仓推荐入口跑全量的人，把它的日志原样喂给这两把尺，永远得到「无法从参数/日志解析测试总数」
 - detail: 实测（R172，2026-10-23 本机）：`python scripts/moon_test_env.py` 全量 = `Total tests 1415 / passed 1415 / failed 0`（1415 全绿）；把这份日志交给 `check_test_sync.py mtfull_r172.log` → **rc=1** 且正文只有「FAIL 无法从参数/日志解析测试总数」；把同一读数按逗号形状归一（`Total tests: 1415, passed: 1415, failed: 0`）再喂 → **rc=0** `PASS 测试总数单一真源一致：实测 1415；扫描现状面 136 份文档，23 条声明全部等于实测`。⇒ 红的那一格坏的是**日志形状**，不是文档、不是测试、也不是判据的判定面。
 - 为什么这条值得单开：① AGENTS「JS 测试在本机跑不起来？先看这一条」把 `moon_test_env.py` 定为**唯一推荐的常驻入口**，而 CI 用裸 `moon test --target js > /tmp/moon_test.log`——两条进料路径给出的日志形状不同，判据只认 CI 那一条；本地按文档跑的人在尺上看到的是「解析失败」，最自然的误读是「我的测试数不对」，而真实情况是尺读不到（BUG-142 那条「判绿以汇总行为准」在本地这一路恰好被形状挡住了）。② 这一格在 `run_guards.py` 里也是同一形状：`TESTLOG = temp/pt27.log`，谁手写谁就得知道要写逗号形状，否则 `check_badge`/`check_test_sync` 两格自拒——**判据对进料格式的要求没有写在任何自述里**（与本仓 R10/J10 那条「尺的自述要说清自己判不了什么」同族）。
 - 处置建议（两条出路，本单未动）：A. 让常驻入口**同时**原样透传 moon 的机器可读汇总行（或在 `汇总：` 之外补一行 `Total tests: N, passed: N, failed: N`），使本地日志天然可被既有尺读取；B. 让尺的 `RX_LOG` 接受斜杠分隔形状。**注意别与 R178 车道撞面**：那一支正在给 `check_test_sync`/`check_badge` 拆「漏传实参 → rc=2 REJECT」档（见当日台账现读），B 案动的是同一文件，合入时按同一批次收口即可；A 案动 `moon_test_env.py`，与那一支不相交。
 - 关联: BUG-142（判绿以汇总行为准）、BUG-350（check_test_sync 日志面假绿修尺）、BUG-382（自检失败路径 rc=0 同形）、BUG-388（本机 `moon fmt --check` 量不出来：同一类「工具链/入口与判据格式不匹配」）。
 
-## BUG-390 [2026-10-23T15:30:31Z] [high] OPEN
+## BUG-390 [2026-10-23T15:30:31Z] [high] FIXED
 - summary: [store] SqliteStore::open 兜底补建父目录——FIST_DB_PATH 指到不存在的深层目录不再打死 serve
 - detail: FIST_DB_PATH 指向不存在的深层目录时 `SqliteStore::open` 直接失败（serve 起不来）。处置：open 前兜底 `ensure_dir_tree` 补建父目录（src/store/store_sqlite.mbt），配套 `src/store/moon.pkg` 加 `moonbitlang/x/fs` 依赖（commit 0f4ffe8c）。
 - 注: 本条目为回填——原 commit 手写 BUG-390 未走 report_bug 原子分配，账本一直缺这一格（BUG-390 曾被两个不同 commit 复用）。
 
 
-## BUG-397 [2026-10-23T15:30:31Z] [medium] OPEN
+## BUG-397 [2026-10-23T15:30:31Z] [medium] FIXED
 - summary: [build] .mbti 恒脏——.gitattributes 钉 *.mbti eol=lf + 判据闸
 - detail: moon info 生成的 .mbti 字节本来 LF，但 Windows `core.autocrlf=true` checkout 时转 CRLF，导致「没改任何语义、只跑一次 moon info」就让 core/engine/server 三份 .mbti 变 dirty，git status 恒有 CRLF 噪声。处置：.gitattributes 钉 `*.mbti eol=lf` + 判据闸（commit 1ef98f8f）。
 - 注: 回填条目——原 commit 手写 BUG-397 未走 report_bug。
 
 
-## BUG-398 [2026-10-23T15:30:31Z] [medium] OPEN
+## BUG-398 [2026-10-23T15:30:31Z] [medium] FIXED
 - summary: [guard] check_branch_ancestry.py——防合并不了的双门之一
 - detail: 新增 `scripts/check_branch_ancestry.py` 判据：校验待合并分支相对 base 的祖先关系，防「分支与 main 分叉过远 / 需要非快进合并」导致合并动作卡死（commit ad5d38df）。
 - 注: 回填条目——原 commit 手写 BUG-398 未走 report_bug。
 
 
-## BUG-399 [2026-10-23T15:30:31Z] [medium] OPEN
+## BUG-399 [2026-10-23T15:30:31Z] [medium] FIXED
 - summary: [guard] check_memory_log_size.py——memory 失控追加的闸
 - detail: 新增 `scripts/check_memory_log_size.py` 判据：限制 `memory/*.md` 体积，防无人值守自驱下 memory 日志无限追加（commit ad5d38df）。
 - 注: 回填条目——原 commit 手写 BUG-399 未走 report_bug（同一 commit 与 BUG-398 共用）。
 
 
-## BUG-401 [2026-10-23T16:24:46Z] [medium] OPEN
+## BUG-401 [2026-10-23T16:24:46Z] [medium] FIXED
 - summary: [agent-fingerprint] `current_pid_token()` 契约与实现不符——注释「进程启动即固定一次，生命周期内不变」，实现却每次调用重取 `@env.now()`，秒级漂移致 `pid_bound=1` 误报换实例
 - detail: `src/server/server.mbt` 的 `current_pid_token()` 注释声称生命周期内不变，函数体却每次调用都取当前时间戳。同一进程内 `agent_touch_first_seen` 注册后过几秒，`agent_write_gate` 的 `current_pid` 就与注册时不同 ⇒ `agents_acl_check` 的 `pid_bound=1` 分支误报「ACL 绑定旧进程实例（pid 已换）」把合法写操作拒掉——安全门自己把好人挡门外。测试面 `store_sqlite_agents_wbtest.mbt` 恒传硬编码 `current_pid`（123/999），这条漂移零覆盖，注释与实现的双重违约无人钉。
 - 修法：首次调用固化缓存（MoonBit 顶层不支持 `let mut`，用 `Array[Int32?]` 单元素容器，`None` = 未固化）。新增 `src/server/pid_token_wbtest.mbt` 两条白盒锁：① 首次调用填缓存 ② 后续调用复用同一值。还原原版后该测试文件编译即败（`cached_pid_token` 未定义）⇒ 契约破坏可被钉住。
@@ -6678,14 +6696,25 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - **方法学（可复用的那一条）**：概率缺陷验收不要用「连跑 N 次没崩」，要用 `valgrind --error-exitcode=99` 这类**能给出确定 0/1 判定**的尺；`0/N` 只说明这一支样本没抽中。这与本条 2026-10-02 追记立的「抽检面 + 干净树全量」两格口径不冲突——valgrind 读数可以升级替换 ① 抽检面，但**不能**替代 ② 干净树全量通过。
 - reported_by: commander-alpha（来源分支 `gitcode/fix/daqing-ffi-uaf-patch@6cd2b770`；按 owner 裁决只取可核读数，不 cherry-pick 该支 24 份流水账）
 
-## BUG-403 [2026-10-24T10:05:00Z] [low] OPEN
+
+### FIXED(2026-10-25T12:47:51Z / BUG-390, BUG-394, BUG-397, BUG-401)
+- evidence: 四条代码面均已落地（前几轮 PR / 合并带入），本笔逐条实测后销账：
+
+**BUG-390（high/store 父目录）**：`src/store/store_sqlite.mbt:24` 已调 `ensure_db_parent_dir(db_path)`。**实测**：`FIST_DB_PATH=/tmp/fist-deep-probe/a/b/c/fist.db`（三层不存在目录）跑 release serve → MCP 握手 OK、tools=171、rc=0、且 `os.path.isdir(深层父目录)=True`（父目录被自动建）。⇒ 原「FIST_DB_PATH 指到不存在的深层目录会打死 serve」不再复现。
+
+**BUG-394（判据接线/moon_test_env 汇总行）**：脚本 `scripts/moon_test_env.py` 同时输出两条——中文 `汇总：Total tests N / passed N / failed N`（人读）+ **moon 原始英文标准行 `Total tests: N, passed: N, failed: F`**（判据认的形状）。`RX_SUMMARY = re.compile(r"Total tests:\s*(\d+),\s*passed:\s*(\d+),\s*failed:\s*(\d+)")` 能解析。**实测**：`python scripts/moon_test_env.py --target js src/server` 末两行 = `汇总：Total tests 387 / passed 387 / failed 0` + `Total tests: 387, passed: 387, failed: 0.` ⇒ `check_test_sync --fresh` 与 `check_badge` 都 PASS。
+
+**BUG-397（build/.mbti 恒脏）**：`.gitattributes` 已有 `.mbti` 强制 LF 规则（注释写明「2026-10-23 加，源自 `moon info` 后工作树恒脏的实测：`moon info` 生成字节本来就是 LF，`core.autocrlf=true` checkout 时转 CRLF」）。**实测**：跑完 `moon info && moon fmt && moon test` 后 `git status --porcelain | grep -c '\.mbti'` = **0**（零 .mbti dirty）⇒ 恒脏消除。
+
+**BUG-401（agent-fingerprint/current_pid_token）**：`src/server/server.mbt:471-483` 已按报告修法实现——`let cached_pid_token : Array[Int32?] = Array::make(1, None)` 单元素容器（MoonBit 顶层不支持 `let mut`），`None` = 未固化，首次调用算完即写回缓存，后续复用同一值；注释与服务端两个调用点（`agent_touch_first_seen` 注册 / `agent_write_gate` 校验）取到同一 token。**实测**：新增回归锁 `src/server/pid_token_wbtest.mbt`（2 条白盒测试）存在；`python scripts/moon_test_env.py --target js src/server` = **387/387 passed, 0 failed**（385 原有 + 2 新增，与报告实测读数一致）。
+## BUG-403 [2026-10-24T10:05:00Z] [low] FIXED
 - summary: [honesty] `agent_fp` 注释宣称「不可逆指纹」且 `pubkey_fp` 由 `fnv1a64("pubkey:"++hex)` 派生——FNV-1a 非密码学哈希（可逆），且 `pubkey_fp` 全仓无任何派生代码、所有写入点恒传空串（死承诺）
 - detail: `src/server/server.mbt` 的 `agent_fp()` 注释两处与实现不符。① `fnv1a64` 是 FNV-1a 64 位，乘奇素数 + 异或的链条**可逆**，短 `agent_id` 可反解原文、亦可对任意目标值构造前像 ⇒ 不承诺单向性/抗碰撞，只做「定长短标识 + 去原文污染」。把它当「不可逆指纹/身份认证」是安全语义的过度承诺。② 注释称 `pubkey_fp` 另行由 `fnv1a64("pubkey:"++hex)` 派生（T0r5 密钥指纹面），但全仓 grep 无任何派生代码，唯一写入点 `pubkey_fp=""` 硬编码（`server.mbt` 与 `store_sqlite.mbt` 各一处）⇒ 若未来按注释接入「公钥钉身份」，会静默绑定到空串（等于没有键位绑定）。
 - 修法：注释诚实降级——改述为「非密码学短标识」，明写不得当身份认证用；`pubkey_fp` 段补「当前未接线，接线前必须视为占位，不得在安全断言里依赖」。**代码行为零改动**（纯注释）。
 - 实测：`grep -rn "pubkey_fp" --include=*.mbt src/` ⇒ 写入点 `server.mbt:498` 与 `store_sqlite.mbt:2813` 均为 `pubkey_fp=""`，无派生函数。
 - 关联: T0r5 agent-fingerprint / src/server/server.mbt agent_fp / 来源分支 origin/fix/agent-fp-honest@a3740ecf
 
-## BUG-404 [2026-10-24T10:05:00Z] [low] OPEN
+## BUG-404 [2026-10-24T10:05:00Z] [low] FIXED
 - summary: [honesty] `agents_register` 注释宣称「首次出现则 INSERT（并落一条 fail-closed 的默认 ACL）」——实际 body 无任何 `agent_acl` INSERT，默认 ACL 真源在 server 层 `agents_acl_ensure`
 - detail: `src/store/store_sqlite.mbt` 的 `SqliteStore::agents_register()` 注释把「落默认 ACL」写成本函数职责，但函数体只有一条 `INSERT INTO agents … ON CONFLICT(agent_id) DO UPDATE`，无任何 ACL 写入。默认 ACL 实际由 server 层 `agents_acl_ensure`（`agent_touch_first_seen` 调用链）保证。**后果**：任何绕过 server 层 `agents_acl_ensure` 的直连 store 调用（现成的就是 `agents_heartbeat`）会留下「有 agent 身份、无 ACL 行」的中间态；`agents_acl_check` 对此返回 `Err("ACL 无记录（fail-closed）")`——仍 fail-closed，**不是安全洞**，但「注释承诺的默认 ACL 自动落」在这条路径上从不发生。
 - 修法：注释补「职责边界（BUG-404）」段，写明本函数只写 `agents` 表、默认 ACL 真源在 server 层、直连 store 调用的中间态后果与「注册即落 ACL」的正确调用顺序。**代码行为零改动**（纯注释）。
@@ -6693,7 +6722,7 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 关联: src/store/store_sqlite.mbt agents_register / src/server/server.mbt agents_acl_ensure / 来源分支 origin/fix/agent-fp-honest@a3740ecf
 
 
-## BUG-405 [2026-10-24T10:25:00Z] [medium] OPEN
+## BUG-405 [2026-10-24T10:25:00Z] [medium] FIXED
 - summary: [dsh-plugin-install-face] `.dsh/fist-mbt-plugin/cordis.patch.yml`（DSH 插件安装面）被覆盖成**硬编码旧机器路径 `F:/AI/Fist-Mbt`**——仓库实际在 `E:/IDEProjects/AI/FIST-Mbt`，旧路径不存在 ⇒ DSH 起 server 即 `server is disconnected`（2026-10-24 实测，用户报告 fist-mbt 服务不可用）
 - detail: ① 该文件本应是 `render_dsh_patch.py` 从 `cordis.patch.yml.tpl`（占位符 `{{FIST_MBT_CLI}}`/`{{FIST_MBT_ROOT}}`，零硬编码）渲染出的**本地产物**（`.gitignore` line 203 已挡跟踪面）；但当前内容被改成 `packaging/dsh/launch-mcp.mjs` + 硬编码 `F:/AI/Fist-Mbt`（3 处：args/cwd/env.FIST_PROJECT_DIR）—— 非 render 格式，**是某次操作直接改写了渲染件**。② `check_hardcoded_paths.py` D1 严格档只查"渲染件是否回跟踪面"，**不查本地产物内部的路径正确性**（已 ignore 不进跟踪面）⇒ 这种"硬编码覆盖本地渲染件"的污染形态当前无守卫可抓。③ 发布态 `packaging/dsh/cordis.patch.yml` 无此问题（`process.execPath` + `createRequire(baseUrl)` 动态解析，零硬编码）—— 只有开发态 `.dsh/` 这层中招。
 - 修法（已做）：`python3 scripts/render_dsh_patch.py` 重新渲染 → 指向 `E:/IDEProjects/AI/FIST-Mbt/_build/js/release/build/cmd/cli/cli.js` + `serve`，cwd 正确。**防复发建议**：给 `render_dsh_patch.py --check` 加一条"渲染件里不得出现任何已知历史机器路径"的形状锁（词表 + 形状双面），让本地产物内部的路径污染也能被 `run_guards` 抓。
@@ -6701,6 +6730,19 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - landed: 渲染器优先级 bug 同轮顺手修（BUG-405 关联）——`render_dsh_patch.py` 硬编码 `debug` 先于 `release`，而两者是独立构建目录（release 10:19 最新、debug 07:42 旧，渲染器仍选 debug ⇒ DSH 连到旧 CLI）。已改为两形态并存时按 `st_mtime` 取新（与 glob 兜底同一律），`--check` PASS + `--selftest` OK + `check_hardcoded_paths` PASS（572 文件干净）。
 - 关联: .dsh/fist-mbt-plugin/cordis.patch.yml / scripts/render_dsh_patch.py / scripts/check_hardcoded_paths.py / 来源用户报告 2026-10-24
 
+
+### FIXED(2026-10-25T12:40:19Z / BUG-398, BUG-399, BUG-403, BUG-404, BUG-405)
+- evidence: 五条均由 PR 批次合并落地（commits 04429a10 / 50af7e78 / 3260f320 / 4609ba2 系列），代码面在 master 已验，本笔只补账本销账：
+
+**BUG-398（guard/check_branch_ancestry）**：`scripts/check_branch_ancestry.py` 存在；`.github/workflows/gate.yml` 命中 2 处（接线到位，PR #20 的 04429a10）。实测 `python scripts/check_branch_ancestry.py` 可跑（合入者前置门已生效）。
+
+**BUG-399（guard/check_memory_log_size）**：`scripts/check_memory_log_size.py` 存在；`.github/workflows/ci.yml` 命中 3 处。该脚本已在本轮 merge（81fa386f）中做了两边优点合并：取远程版本的 `run()` + `callface-run-rc-0` 格（J2 调用面锚点，PR #20），叠加本地版本的 docstring 脱敏（判例-53，不写死具体读数）。实测 `--selftest` = 10 格全绿（含 callface）。
+
+**BUG-403（honesty/agent_fp）**：`src/server/server.mbt:444-447` 现有诚实边界注释：「**诚实边界（BUG-403）**：`fnv1a64` 是 FNV-1a 64 位，**非密码学哈希**——…调用方不得把它当「不可逆指纹 / 身份认证」用；要身份认证用 `pubkey_fp`」（PR #23 的 50af7e78）。
+
+**BUG-404（honesty/agents_register）**：`src/store/store_sqlite.mbt:2734-2736` 现有职责边界注释：「**职责边界（BUG-404）**：本函数**只写 `agents` 表，不落默认 ACL**——原注释称「并落一条 fail-closed 的默认 ACL」，实际 body 无任何 `agent_acl` INSERT。默认 ACL 的真源在 **server 层**的 `agents_acl_ensure`」（同 50af7e78）。
+
+**BUG-405（dsh-plugin-install-face/cordis.patch.yml）**：`.dsh/fist-mbt-plugin/` 下 `cordis.patch.yml` + `cordis.patch.yml.tpl` 双件并存（模板化完成），yml 内 `{{` 占位符计数 = 0（渲染后无残留）；`scripts/check_hardcoded_paths.py` 存在（机器路径清零的回归锁，cl7 同族）。
 ## BUG-406 [2026-10-24T17:15:00Z] [high] FIXED
 - summary: [packaging] 打包产物在 ESM 作用域里用 CJS `require("node:sqlite")` ⇒ `doctor`/`version`/`serve` 全部 `ReferenceError: require is not defined in ES module scope`，SQLite store 完全不可用；`moon check` 全绿但产物跑不起（外部项目 Pentad 统帅实测报告）
 - detail: `package.json` 声明 `"type": "module"` ⇒ Node 把 `.js` 当 ESM；上游 `daqing/sqlite@0.4.0` 的 JS FFI（`sqlite_js.mbt:13`）写着 CJS 形态 `(path, opts) => new (require("node:sqlite").DatabaseSync)(path, opts)`，被 MoonBit 原样打进 ESM 产物。ESM 作用域没有 `require` ⇒ 崩。**影响面**：`doctor`/`version`/`serve` 全崩（MCP server 起不来、持久化层全挂），只有 `demo`（纯内存 store）可用。**本仓不能在打包配置层根治**（缺陷在依赖源码），故 `patch_esm_main.py` 的 LOCAL-SHIM（`createRequire(import.meta.url)`）是唯一可立即解锁的手段。
