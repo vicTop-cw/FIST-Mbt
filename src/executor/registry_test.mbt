@@ -29,7 +29,7 @@ test "route_pick：按 覆盖 desc → 负载 asc → 名称 asc 排序" {
   let load : Map[String, Int32] = Map([("ex-A", 3), ("ex-B", 0), ("ex-C", 0)])
   let j = reg.route_pick("编排", load)
   // 覆盖率最高的是 ex-A(1.0) 与 ex-B(1.0)；同覆盖下负载小的 ex-B(0) 在 ex-A(3) 前
-  match j.value("best") {
+  match jget(j, "best") {
     Some(Object(m)) =>
       match m.get("name") {
         Some(String(n)) => assert_eq(n, "ex-B")
@@ -46,7 +46,7 @@ test "check_name_order：同覆盖同负载按名称字母序" {
   ignore(reg.add_ability("abc", ["编排"]))
   let load : Map[String, Int32] = Map([])
   let j = reg.route_pick("编排", load)
-  match j.value("best") {
+  match jget(j, "best") {
     Some(Object(m)) =>
       match m.get("name") {
         Some(String(n)) => assert_eq(n, "abc")
@@ -66,7 +66,7 @@ test "route_pick_with_trust：覆盖 desc → 信任 desc → 负载 asc（R80 �
   // 同覆盖(1.0)下：ex-A trust 0.9 > ex-B trust 0.3 → ex-A 优先（信任轴压过负载差异）
   let trust : Map[String, Double] = Map([("ex-A", 0.9), ("ex-B", 0.3)])
   let j = reg.route_pick_with_trust("编排", load, trust)
-  match j.value("best") {
+  match jget(j, "best") {
     Some(Object(m)) =>
       match m.get("name") {
         Some(String(n)) => assert_eq(n, "ex-A")
@@ -75,7 +75,7 @@ test "route_pick_with_trust：覆盖 desc → 信任 desc → 负载 asc（R80 �
     _ => abort("best 不应为空: " + j.stringify())
   }
   // 每条候选应带 trust 字段；注册表含系统执行者(manual/McpDelegateExecutor)，总数 ≥ 3
-  match j.value("candidates") {
+  match jget(j, "candidates") {
     Some(Array(cs)) =>
       if cs.length() < 3 {
         abort(
@@ -87,13 +87,13 @@ test "route_pick_with_trust：覆盖 desc → 信任 desc → 负载 asc（R80 �
       }
     _ => abort("candidates 缺失: " + j.stringify())
   }
-  match j.value("basis") {
+  match jget(j, "basis") {
     Some(String(s)) => if !s.contains("信任") { abort("basis 内容: " + s) }
     _ => abort("basis 缺失: " + j.stringify())
   }
   // 信任相同(均无历史 → 0.5 中性)时回退负载轴：ex-B(0) 优先于 ex-A(3)
   let j2 = reg.route_pick_with_trust("编排", load, Map([]))
-  match j2.value("best") {
+  match jget(j2, "best") {
     Some(Object(m)) =>
       match m.get("name") {
         Some(String(n)) => if n != "ex-B" { abort("j2 best 名称: " + n) }
@@ -113,7 +113,7 @@ test "auction_pick：能力覆盖>0 方可竞拍；默认出价=覆盖率；无�
   let load : Map[String, Int32] = Map([("ex-A", 2), ("ex-B", 0)])
   let j = reg.auction_pick("编排", load, Map([]), Map([]))
   // 参与竞拍者：ex-A(1.0)、ex-B(1.0)；ex-C(0.0)/ex-D(0.0)/系统执行者(空能力) 被能力门槛挡下
-  match j.value("count") {
+  match jget(j, "count") {
     Some(Number(n, ..)) =>
       if n != 2.0 {
         abort("count 应为 2: " + j.stringify())
@@ -122,7 +122,7 @@ test "auction_pick：能力覆盖>0 方可竞拍；默认出价=覆盖率；无�
   }
   // ex-A 出价=覆盖率1.0、无历史→校准 0.5、负载2→折扣 1/3 → score 0.5/3≈0.167
   // ex-B 出价=1.0、校准 0.5、负载0→折扣 1 → score 0.5 → 胜者 ex-B（负载折扣分胜负）
-  match j.value("winner") {
+  match jget(j, "winner") {
     Some(Object(m)) =>
       match m.get("name") {
         Some(String(n)) =>
@@ -133,7 +133,7 @@ test "auction_pick：能力覆盖>0 方可竞拍；默认出价=覆盖率；无�
       }
     _ => abort("winner 不应为空: " + j.stringify())
   }
-  match j.value("basis") {
+  match jget(j, "basis") {
     Some(String(s)) =>
       if !s.contains("校准") || !s.contains("拍卖") {
         abort("basis 内容: " + s)
@@ -152,7 +152,7 @@ test "auction_pick：胜者诅咒防护——过度自信者被校准折扣击�
   let trust : Map[String, Double] = Map([("ex-A", 0.3), ("ex-B", 0.6)])
   let j = reg.auction_pick("编排", Map([]), trust, bid)
   // ex-A: 校准 1-0.6=0.4 → 0.9×0.4=0.36；ex-B: 校准 1.0 → 0.6×1.0=0.6 → ex-B 胜
-  match j.value("winner") {
+  match jget(j, "winner") {
     Some(Object(m)) =>
       match m.get("name") {
         Some(String(n)) =>
@@ -164,14 +164,14 @@ test "auction_pick：胜者诅咒防护——过度自信者被校准折扣击�
     _ => abort("winner 不应为空: " + j.stringify())
   }
   // ex-A 行应标记 overconfident=true（出价 > 兑现率），证明"过度自信被识别"
-  match j.value("bids") {
+  match jget(j, "bids") {
     Some(Array(cs)) => {
       let mut found = false
       for c in cs {
-        match c.value("name") {
+        match jget(c, "name") {
           Some(String(n)) =>
             if n == "ex-A" {
-              match c.value("overconfident") {
+              match jget(c, "overconfident") {
                 Some(j) =>
                   match j.as_bool() {
                     Some(b) =>
@@ -205,7 +205,7 @@ test "auction_pick：负载折扣分胜负 + 空 need 无竞拍者" {
   let trust : Map[String, Double] = Map([("ex-A", 0.8), ("ex-B", 0.8)])
   let load : Map[String, Int32] = Map([("ex-A", 0), ("ex-B", 3)])
   let j = reg.auction_pick("编排", load, trust, bid)
-  match j.value("winner") {
+  match jget(j, "winner") {
     Some(Object(m)) =>
       match m.get("name") {
         Some(String(n)) =>
@@ -218,14 +218,14 @@ test "auction_pick：负载折扣分胜负 + 空 need 无竞拍者" {
   }
   // 空 need：无能力可覆盖 → 无竞拍者 → winner null、count 0
   let j2 = reg.auction_pick("", Map([]), Map([]), Map([]))
-  match j2.value("count") {
+  match jget(j2, "count") {
     Some(Number(n, ..)) =>
       if n != 0.0 {
         abort("空 need count 应为 0: " + j2.stringify())
       }
     _ => abort("count 缺失: " + j2.stringify())
   }
-  match j2.value("winner") {
+  match jget(j2, "winner") {
     Some(Null) => ()
     _ => abort("空 need winner 应为 null: " + j2.stringify())
   }

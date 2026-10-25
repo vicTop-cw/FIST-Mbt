@@ -279,7 +279,7 @@ test "loop_tick: open_bug 降 50%+ → exceeded" {
 test "loop_to_json: 基本字段完整" {
   let lp = loop_create("j", ["advance", "bugfind"], "t0")
   let j = loop_to_json(lp)
-  match j.value("name") {
+  match jget(j, "name") {
     Some(n) =>
       assert_true(
         match n {
@@ -289,7 +289,7 @@ test "loop_to_json: 基本字段完整" {
       )
     None => assert_true(false)
   }
-  match j.value("steps") {
+  match jget(j, "steps") {
     Some(s) =>
       assert_true(
         match s {
@@ -299,7 +299,7 @@ test "loop_to_json: 基本字段完整" {
       )
     None => assert_true(false)
   }
-  match j.value("status") {
+  match jget(j, "status") {
     Some(s) =>
       match s {
         Json::String("active") => assert_true(true)

@@ -397,7 +397,7 @@ pub fn ExecutorRegistry::auction_pick(
 ///|
 /// 读 Json 对象的数值字段。
 fn num(j : Json, key : String) -> Double {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::Number(n, ..)) => n
     _ => 0.0
   }
@@ -406,7 +406,7 @@ fn num(j : Json, key : String) -> Double {
 ///|
 /// 读 Json 对象的字符串字段。
 fn str(j : Json, key : String) -> String {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::String(s)) => s
     _ => ""
   }
