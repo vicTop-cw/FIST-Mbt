@@ -248,19 +248,36 @@ def run_server():
 
 
 def cmd_list_tools(proc):
-    """列出所有 MCP 工具名（从 server.mbt 解析）。"""
-    server_mbt = os.path.join(os.path.dirname(__file__), "..", "src", "server", "server.mbt")
-    if os.path.isfile(server_mbt):
-        content = open(server_mbt, encoding="utf-8").read()
-        names = re.findall(r'instrumented_tool\(\s*\w+,\s*"([a-z_]+)"', content)
-        names = sorted(set(names))
-        for n in names:
-            print(n)
-        print(f"\n共 {len(names)} 个工具")
-    else:
-        # fallback: 用 list 工具看 store_open 后能否拿到工具列表
-        print("无法解析 src/server/server.mbt（不在项目根？）")
-        sys.exit(1)
+    """列出所有 MCP 工具名 —— 口径委托 `_tool_registry.real_tools()`（单一真源）。
+
+    **为什么不再自己写正则（2026-10-25 收口，判例-16 同族）**：
+    旧实现只用 `instrumented_tool(\\w+, "([a-z_]+)")` 扫 `src/server/server.mbt` **一个文件**，
+    于是漏掉注册在别的文件里的工具 + 名字含 `.` 的工具，实测只报 152 而真源是 170：
+      · `supervisor_*` 8 个（`supervisor_tools.mbt`）
+      · `mcpcf.*`     7 个（`mcpcf_embed.mbt`，名字带 `.` ⇒ `[a-z_]+` 不匹配）
+      · `hat_run/hat_debate/hat_merge` 3 个（`hat_hexa_tools.mbt`）
+    危害形状特别隐蔽：**守卫全部走 `real_tools()`（读 170）永远绿，只有人手动敲本命令才看到 152**
+    ⇒ 判据看不见入口。把读取逻辑收敛到 `_tool_registry` 这一处后，
+    下次工具注册再搬家只改那一个文件，本命令自动跟上。
+    旁证：同文件 `_tool_registry.py` 的注释早已记录过同一个坑（5 个消费者各写一份 ⇒ 假绿/互掐），
+    本命令是**第 6 个消费者**，此前被漏在收口之外。
+    """
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from _tool_registry import MIN_EXPECTED, real_tools
+
+    names = real_tools()
+    if len(names) <= MIN_EXPECTED:
+        # 反幻影：解析退化时报错，不静默打成"少了一些工具"的正常清单
+        print(f"FATAL 只解析到 {len(names)} 个工具（应 >{MIN_EXPECTED}）——"
+              f"真源扫描面失效，本清单不可信", file=sys.stderr)
+        sys.exit(2)
+    for n in names:
+        print(n)
+    # 汇总行走 stderr：**stdout 保持纯清单**（一行一个工具名），
+    # 这样 `fist.py list-tools | wc -l` 直接等于工具数，与真源 `real_tools()` 可机械对表
+    # （新守卫 `check_fist_list_tools_sync.py` 就是按这个契约量的）。
+    # 旧实现在 stdout 里多打一行空行 + 一行汇总 ⇒ `wc -l` = 工具数 + 2，是对表时的经典陷阱（判例-43 同族）。
+    print(f"共 {len(names)} 个工具", file=sys.stderr)
 
 
 def cmd_call(proc, tool_name, kwargs):

@@ -132,6 +132,12 @@ def is_resident(rel):
 SPECIAL_CASES = [
     # —— 判据面（纯静态，跨平台稳定）——
     case("check_tools_sync.py"),
+    # 2026-10-25：CLI 入口 `fist.py list-tools` 的计数 ↔ 真源对表。
+    # 为什么单立一格：六支文档守卫全部走 `_tool_registry.real_tools()`（读 170）⇒ 永远绿，
+    # 而 `fist.py list-tools` 曾自写正则只扫 server.mbt 一个文件、且 `[a-z_]+` 不认点号 ⇒ 只报 152。
+    # 守卫绿、入口少 18，用户面看不见（判例-16 家族）。全量跑 + --selftest 两格并存。
+    case("check_fist_list_tools_sync.py"),
+    case("check_fist_list_tools_sync.py", "--selftest"),
     # —— R106 预存红登记（电池自 770478c1 起跑不起来，这几格的红从没被任何人读到过）：
     #    照写读数 + 成因，不动被检内容。被检内容修好后 got≠expect 当场现形，逼下一位改的人
     #    把期望改回 0——这是本文件自订的律，不是给红脸上色。 ——
