@@ -34,26 +34,35 @@ def _find_executable_js() -> str | None:
 
 
 def _find_all_bundles() -> list[str]:
-    """发现 cmd/*/ 下**所有**可执行 bundle（>100KB 的 .js）。
+    """发现 `_build/js/{debug,release}/build/` 下**所有**可执行 bundle（>100KB 的 .js）。
 
     BUG-406（统帅 R36）：原实现只取"最大的那个"，于是 `cmd/main/main.js` 被 patch 了，
     而 `cmd/cli/cli.js`、`cmd/commissar/commissar.js` **漏网**——它们同样含
     `require("node:sqlite")`（来自上游 daqing/sqlite），同样会 ESM 崩溃。
-    改为 patch **全部**，并在脚本用法注释里说明任何 runner 在 `moon build` 后调用即可。"""
-    build_dir = os.path.join(ROOT, '_build', 'js', 'debug', 'build')
-    if not os.path.isdir(build_dir):
-        return []
+    改为 patch **全部**，并在脚本用法注释里说明任何 runner 在 `moon build` 后调用即可。
+
+    BUG-406 追记（2026-10-25）：又发现**只扫 debug profile** —— `moon build --release`
+    的产物（打包/安装面、DSH Desktop 等宿主实际拉起的那份）从没被 patch，
+    `node _build/js/release/build/cmd/cli/cli.js version` 照样
+    `ReferenceError: require is not defined in ES module scope`。
+    实测：本机 MCP server 由宿主用 release profile 拉起、跑了 18 小时仍崩在旧产物上。
+    现同时扫 debug + release，两个 profile 都覆盖。
+    """
     found = []
-    for root, dirs, files in os.walk(build_dir):
-        for f in files:
-            if f.endswith('.js') and not f.endswith('.mbti.js'):
-                fp = os.path.join(root, f)
-                try:
-                    sz = os.path.getsize(fp)
-                except OSError:
-                    continue
-                if sz > 100_000:
-                    found.append(fp)
+    for profile in ("debug", "release"):
+        build_dir = os.path.join(ROOT, "_build", "js", profile, "build")
+        if not os.path.isdir(build_dir):
+            continue
+        for root, dirs, files in os.walk(build_dir):
+            for f in files:
+                if f.endswith(".js") and not f.endswith(".mbti.js"):
+                    fp = os.path.join(root, f)
+                    try:
+                        sz = os.path.getsize(fp)
+                    except OSError:
+                        continue
+                    if sz > 100_000:
+                        found.append(fp)
     # 按大小降序（最大的在前，保持旧行为的顺序直觉）
     found.sort(key=lambda p: os.path.getsize(p), reverse=True)
     return found
