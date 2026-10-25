@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 170 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 171 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -5990,6 +5990,78 @@ pub async fn run_server() -> Unit {
   )
 
   // ---- 审计工具 ----
+  s1 = instrumented_tool(
+    s1,
+    "agent_acl_grant",
+    "授予/收权某 agent 在某命名空间的读写权限。**BUG-408 收口**：ACL 拒绝后此前无任何 MCP 面可自救（agents_acl_grant 只是 store 方法，未暴露为工具）——本工具补上这条自救路径。仅 SQLite 后端可用（内存后端显式报错，不静默成功）。can_read/can_write 缺省即授权读写（fail-open 仅限显式调用本工具，默认 ACL 仍是 fail-closed）；pid_bound=true 时绑定当前进程实例，换进程即失效（防跨实例越权）。参数：agent_id(必填)、namespace(必填)、can_read(可选默认true)、can_write(可选默认true)、pid_bound(可选默认false)、by(可选默认human_steward)。",
+    schema(
+      {
+        "agent_id": string_prop(
+          "agent 身份（必填，与 claim 的 assignee 同源）",
+        ),
+        "namespace": string_prop("命名空间（必填）"),
+        "can_read": bool_prop("是否授予读权限（可选默认 true）"),
+        "can_write": bool_prop("是否授予写权限（可选默认 true）"),
+        "pid_bound": bool_prop(
+          "是否绑定当前进程实例（可选默认 false）",
+        ),
+        "by": string_prop("授权者身份（可选默认 human_steward）"),
+      },
+      ["agent_id", "namespace"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let agent_id = get_str(args, "agent_id")
+      let ns = get_str(args, "namespace")
+      if agent_id == "" || ns == "" {
+        return Err(
+          @mcp_types.ToolError(
+            "agent_acl_grant: agent_id / namespace 均不能为空（哪个为空就补哪个）",
+          ),
+        )
+      }
+      let can_read = get_bool(args, "can_read", default=true)
+      let can_write = get_bool(args, "can_write", default=true)
+      let pid_bound = get_bool(args, "pid_bound", default=false)
+      let by = get_str(args, "by", default="human_steward")
+      let ts = now_default()
+      let eng = engine_for_ns(ns)
+      match
+        eng.agents_acl_grant(
+          agent_id=agent_fp(agent_id),
+          ns~,
+          can_read~,
+          can_write~,
+          pid_bound~,
+          now=ts,
+          by~,
+        ) {
+        Err(e) =>
+          Err(
+            @mcp_types.ToolError(
+              "agent_acl_grant: " +
+              e +
+              "。若报「仅 SQLite 后端可用」说明当前后端是内存版——ACL 面不存在，也就无所谓拒绝（claim 会直接放行）",
+            ),
+          )
+        Ok(_) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "agent_id": Json::string(agent_id),
+                "namespace": Json::string(ns),
+                "can_read": Json::boolean(can_read),
+                "can_write": Json::boolean(can_write),
+                "pid_bound": Json::boolean(pid_bound),
+                "by": Json::string(by),
+                "message": Json::string(
+                  "已落库。注意 audit_permission 只反映角色矩阵、不反映 ns ACL（两道独立门）——授权后 claim 才会真正可写",
+                ),
+              }).stringify(),
+            ),
+          )
+      }
+    },
+  )
   s1 = instrumented_tool(
     s1,
     "audit_permission",

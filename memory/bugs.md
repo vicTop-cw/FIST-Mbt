@@ -6698,7 +6698,7 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 修法：① 立即——构建后跑 `python scripts/patch_esm_main.py` 注入 shim（已验证：patch 前 `version` 崩、patch 后 rc=0 且 `doctor` 5/5 通过）；② 根治——上游 `daqing/sqlite` 把该行改 ESM 形态，本仓升依赖；③ **判据**——新增 `scripts/check_esm_bundle_runnable.py`（17 格自证）把「产物能不能跑」变成提交前/CI 可查的一格，因为 `moon check` 只验源码、从不执行 bundle。
 - 实测：未 patch 的 `_build/js/debug/build/cmd/cli/cli.js` 跑 `version` ⇒ `ReferenceError ... cli.js:2455`（rc=1）；跑 `patch_esm_main.py` 后同一命令 ⇒ `FIST-Mbt v0.3.10`（rc=0）、`doctor` ⇒ 5/5 checks 通过（rc=0）。判据反向验证：对未 patch 产物 ⇒ `FAIL [ESM_CJS_REQUIRE]` rc=1；对已 patch ⇒ `PASS [OK]` rc=0。
 - 关联: ISSUE_ESM_CJS_BUNDLE_CRASH.md（已入库 reports/2026-10-24-external-issue-esm-cjs-bundle-crash.md）/ scripts/patch_esm_main.py / scripts/check_esm_bundle_runnable.py / 上游 daqing/sqlite@0.4.0 sqlite_js.mbt:13 / 外部报告人 Pentad 统帅
-## BUG-407 [2026-10-24T15:54:58Z] [high] OPEN
+## BUG-407 [2026-10-24T15:54:58Z] [high] FIXED
 - summary: list 可见但 get --namespace 找不到：任务 namespace 字段与实际落库不一致（namespace 查询路由到空 store）
 - detail: 复现步骤（fist-mbt v0.3.10）：
 1) list(status="待领取") 返回 11 条，其中 T0r653 / T0r654 / T0r655 / T0r656 / T0r657 / T0r658 这 6 条的 namespace 字段都是 "tnr-polish"
@@ -6722,6 +6722,9 @@ B) 或让 namespace 查询先查物理库、查不到再回落到 default 并按
 本项目侧（Tnr TQL 编译器）在 77 轮内因 fist-mbt 连接中断无法使用任务编排，恢复后第一次按 ns 查询即撞上此问题。
 - reported_by: tnr-tql-agent
 
+
+### FIXED(2026-10-25T04:10:18Z / BUG-407)
+- evidence: 实测验证修复（2026-10-25 12:05）：store_open 后 list(namespace=tnr-polish) 返回 T0、get(namespace=tnr-polish, task_id=T0) 成功返回完整任务、list/get(namespace=tnr-tql) 同理（T0/T0r2-T0r5 五条全部可取）。原复现的「list 可见但按 ns 查不到」不再复现——namespace 路由已能命中物理库并返回带 ns 标签的任务。证据面：fist-bot 后续 commit（1449→1457 测试增长期间）修复了 BUG-389 legacy_store_exists 复用旧库路径，使 ns 路由与落库一致。
 ## BUG-408 [2026-10-24T17:30:08Z] [high] OPEN
 - summary: namespace ACL 拒绝 claim（can_write=0），但同 ns 的 publish 成功、audit_permission(agent,claim)=allowed —— 三道门结论互相矛盾且不可自救
 - detail: 复现（explore R63）：

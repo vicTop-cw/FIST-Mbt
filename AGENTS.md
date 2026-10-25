@@ -372,10 +372,11 @@ You can browse and install extra skills here:
 | `executor_clear` | 清空全部执行者能力注册（Marketplace 重置/整洁，防测试残留） |
 | `selfdrive_dispatch` | 能力路由自动派单（R32/R33）：取 triage 顶部可领取任务 → 确定所需能力（显式 `want` 优先，否则从任务描述自动抽取已注册能力标签，R33 免手传）→ 经 executor_route 找最佳执行者 → **直接认领给该执行者**（待领取→已领取）；无匹配时回退 `agent`，把"推荐"落成动作 |
 
-### 审计与权限（2）
+### 审计与权限（3）
 | 工具 | 说明 |
 |---|---|
-| `audit_permission` | 角色权限查询 |
+| `agent_acl_grant` | 授予/收权某 agent 在某命名空间的读写权限（**BUG-408 收口**）：ACL 拒绝后此前无任何 MCP 面可自救——`agents_acl_grant` 只是 store 方法、未暴露为工具。本工具补上这条自救路径。仅 SQLite 后端可用（内存后端显式报错，不静默成功）；`can_read`/`can_write` 缺省即授权读写（fail-open 仅限显式调用本工具，默认 ACL 仍是 fail-closed）；`pid_bound=true` 绑定当前进程实例，换进程即失效。真源 `src/server/server.mbt` + `src/engine/engine.mbt:462` + `src/store/store_sqlite.mbt:2994` |
+| `audit_permission` | 角色权限查询（**注意**：只反映角色矩阵、不反映 ns ACL——两道独立门，见 BUG-408） |
 | `audit_log` | 追加式审计日志 |
 
 ### 多租户命名空间（3）
