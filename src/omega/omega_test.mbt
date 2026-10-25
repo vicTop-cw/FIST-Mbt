@@ -61,7 +61,7 @@ test "expand_parameters 展开参数化用例" {
     "{\"op\":\"t\",\"version\":\"1.0\",\"tests\":[{\"parameters\":{\"mode\":[\"deferred\",\"immediate\"],\"days\":[1,2]},\"input\":{\"mode\":\"${mode}\",\"days\":\"${days}\"},\"expected\":\"r\"}]}",
   )
   let exp = @omega.expand_parameters(spec)
-  match exp.value("tests") {
+  match jget(exp, "tests") {
     Some(Array(a)) => {
       assert_eq(a.length(), 2)
       match a[0].value("input") {
@@ -90,7 +90,7 @@ test "expand_parameters 参数长度不一致时退化保留原测试" {
     "{\"op\":\"t\",\"version\":\"1.0\",\"tests\":[{\"parameters\":{\"mode\":[\"a\",\"b\"],\"days\":[1]},\"input\":{\"mode\":\"${mode}\"},\"expected\":\"r\"}]}",
   )
   let exp = @omega.expand_parameters(spec)
-  match exp.value("tests") {
+  match jget(exp, "tests") {
     Some(Array(a)) => assert_eq(a.length(), 1)
     _ => abort("tests 缺失")
   }
@@ -214,23 +214,23 @@ test "gate run_tests 跑批 normal + error 路径" {
   let results = @omega.run_tests(spec, fn(
     input : Json,
   ) -> Result[Json, String] {
-    match input.value("x") {
+    match jget(input, "x") {
       Some(Number(n, ..)) if n == 1.0 => Ok(Json::number(1.0))
       _ => Err("boom: something failed")
     }
   })
   assert_eq(results.length(), 2)
   let r0 = results[0]
-  match r0.value("passed") {
+  match jget(r0, "passed") {
     Some(True) => ()
     _ => abort("r0 passed 缺失")
   }
   let r1 = results[1]
-  match r1.value("type") {
+  match jget(r1, "type") {
     Some(String(s)) => assert_eq(s, "error")
     _ => abort("r1 type 缺失")
   }
-  match r1.value("passed") {
+  match jget(r1, "passed") {
     Some(True) => () // 期望 error 且错误信息包含 bom
     _ => abort("r1 passed 缺失")
   }
@@ -243,11 +243,11 @@ test "gate summarize 汇总准确率" {
   results[2] = Json::object({ "passed": @json.to_json(true) })
   results[3] = Json::object({ "passed": @json.to_json(true) })
   let s = @omega.summarize(results)
-  match s.value("accuracy") {
+  match jget(s, "accuracy") {
     Some(Number(n, ..)) => assert_eq(n, 75.0)
     _ => abort("accuracy 缺失")
   }
-  match s.value("passed") {
+  match jget(s, "passed") {
     Some(Number(n, ..)) => assert_eq(n, 3.0)
     _ => abort("passed 缺失")
   }
@@ -259,7 +259,7 @@ test "check_report_format 五段式校验" {
   let results = @omega.check_report_format(ok_text)
   assert_eq(results.length(), 5)
   for r in results {
-    match r.value("passed") {
+    match jget(r, "passed") {
       Some(True) => ()
       _ => abort("passed 缺失")
     }

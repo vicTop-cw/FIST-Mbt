@@ -98,11 +98,11 @@ test "scoring_perfect" {
   )
   let j = @omega.spec_scoring_str(spec_str, 4, 4)
 
-  let s = match j.value("score") {
+  let s = match jget(j, "score") {
     Some(Number(n, ..)) => n
     _ => -1.0
   }
-  let pass = match j.value("pass") {
+  let pass = match jget(j, "pass") {
     Some(True) => true
     Some(False) => false
     _ => false
@@ -127,7 +127,7 @@ test "scoring_bad_fingerprint" {
   // 篡改：把 laws 里 L1 换成 L2，fingerprint 就失效
   let tampered = spec_str.replace(old="L1", new="L2")
   let j = @omega.spec_scoring_str(tampered, 2, 2)
-  let fp_ok = match j.value("fingerprint_ok") {
+  let fp_ok = match jget(j, "fingerprint_ok") {
     Some(True) => true
     Some(False) => false
     _ => true // 默认 true，若 false 则是真篡改
@@ -145,7 +145,7 @@ test "scoring_bad_schema" {
     "tests": Json::array([]),
   })
   let j = @omega.spec_scoring_str(Json::stringify(bad), 1, 1)
-  let schema_ok = match j.value("schema_ok") {
+  let schema_ok = match jget(j, "schema_ok") {
     Some(True) => true
     Some(False) => false
     _ => true
@@ -167,11 +167,11 @@ test "scoring_zero_accuracy" {
     ]),
   )
   let j = @omega.spec_scoring_str(spec_str, 4, 0)
-  let acc = match j.value("accuracy") {
+  let acc = match jget(j, "accuracy") {
     Some(Number(n, ..)) => n
     _ => -1.0
   }
-  let pass = match j.value("pass") {
+  let pass = match jget(j, "pass") {
     Some(True) => true
     Some(False) => false
     _ => true
@@ -184,11 +184,11 @@ test "scoring_zero_accuracy" {
 /// 非法 JSON 字符串 → fail-closed（score=0, pass=false），不 panic
 test "scoring_bad_json_no_panic" {
   let j = @omega.spec_scoring_str("not json{", 1, 1)
-  let score = match j.value("score") {
+  let score = match jget(j, "score") {
     Some(Number(n, ..)) => n
     _ => -1.0
   }
-  let pass = match j.value("pass") {
+  let pass = match jget(j, "pass") {
     Some(True) => true
     Some(False) => false
     _ => true
@@ -202,7 +202,7 @@ test "scoring_bad_json_no_panic" {
 test "scoring_no_batch_no_panic" {
   let spec_str = mk_spec(["L1"], Json::array([]))
   let j = @omega.spec_scoring_str(spec_str, 0, 0)
-  let acc = match j.value("accuracy") {
+  let acc = match jget(j, "accuracy") {
     Some(Number(n, ..)) => n
     _ => -1.0
   }

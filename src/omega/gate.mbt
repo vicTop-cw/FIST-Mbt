@@ -95,15 +95,15 @@ fn to_elem_set(v : Json) -> Set[String] {
 ///|
 /// 按断言类型检查，返回 (passed, detail)。
 fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
-  let kind = match expected.value("$assert") {
+  let kind = match jget(expected, "$assert") {
     Some(String(s)) => s
     _ => return (false, "未知断言类型")
   }
   match kind {
     "approx" => {
-      let target_n = as_number(json_or(expected.value("value"), Json::null()))
+      let target_n = as_number(json_or(jget(expected, "value"), Json::null()))
       let actual_n = as_number(actual)
-      let eps = match expected.value("epsilon") {
+      let eps = match jget(expected, "epsilon") {
         Some(v) =>
           match as_number(v) {
             Some(e) => e
@@ -121,7 +121,7 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
       }
     }
     "regex" => {
-      let pattern = match expected.value("pattern") {
+      let pattern = match jget(expected, "pattern") {
         Some(String(s)) => s
         _ => ""
       }
@@ -130,7 +130,7 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
     }
     "subset" => {
       // expected ⊆ actual
-      let exp = to_elem_set(json_or(expected.value("value"), Json::null()))
+      let exp = to_elem_set(json_or(jget(expected, "value"), Json::null()))
       let act = to_elem_set(actual)
       let missing : Array[String] = []
       exp.each(fn(e) { if !act.contains(e) { missing.push(e) } })
@@ -139,7 +139,7 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
     }
     "superset" => {
       // actual ⊆ expected
-      let exp = to_elem_set(json_or(expected.value("value"), Json::null()))
+      let exp = to_elem_set(json_or(jget(expected, "value"), Json::null()))
       let act = to_elem_set(actual)
       let extra : Array[String] = []
       act.each(fn(a) { if !exp.contains(a) { extra.push(a) } })
@@ -147,10 +147,10 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
       (ok, "superset: 多余 [\{extra.join(", ")}] -> \{ok}")
     }
     "type" => {
-      let want = match expected.value("value") {
+      let want = match jget(expected, "value") {
         Some(String(s)) => s
         _ =>
-          match expected.value("name") {
+          match jget(expected, "name") {
             Some(String(s)) => s
             _ => ""
           }
@@ -163,10 +163,10 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
       )
     }
     "exists" => {
-      let key = match expected.value("key") {
+      let key = match jget(expected, "key") {
         Some(v) => text_of(v)
         None =>
-          match expected.value("value") {
+          match jget(expected, "value") {
             Some(v) => text_of(v)
             None => ""
           }
@@ -176,11 +176,11 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
     }
     "range" => {
       let actual_n = as_number(actual)
-      let lo = match expected.value("min") {
+      let lo = match jget(expected, "min") {
         Some(v) => as_number(v)
         None => None
       }
-      let hi = match expected.value("max") {
+      let hi = match jget(expected, "max") {
         Some(v) => as_number(v)
         None => None
       }
@@ -208,14 +208,14 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
       }
     }
     "eq" => {
-      let target = json_or(expected.value("value"), Json::null())
+      let target = json_or(jget(expected, "value"), Json::null())
       let ok = canonical_json(actual) == canonical_json(target)
       (ok, "eq: '\{actual.stringify()}' == '\{target.stringify()}' -> \{ok}")
     }
     "custom" => {
       // 用户自定义不变量集：rules 数组，每条 {op, field?, value} 声明式约束。
       // 全部规则通过才算通过（合取语义），逐条短路返回第一条失败详情。
-      let rules = match expected.value("rules") {
+      let rules = match jget(expected, "rules") {
         Some(Array(a)) => a
         _ => return (false, "custom: rules 字段缺失或非数组")
       }
@@ -250,20 +250,20 @@ fn check_assert(actual : Json, expected : Json) -> (Bool, String) {
 ///   {"op":"exists","field":"key"}
 /// 不传 field 则对 actual 整体应用 op。
 fn check_custom_rule(actual : Json, rule : Json) -> (Bool, String) {
-  let op = match rule.value("op") {
+  let op = match jget(rule, "op") {
     Some(String(s)) => s
     _ => return (false, "规则缺 op 字段")
   }
   // 可选 field 提取
-  let target = match rule.value("field") {
+  let target = match jget(rule, "field") {
     Some(String(f)) =>
-      match actual.value(f) {
+      match jget(actual, f) {
         Some(v) => v
         None => return (false, "字段缺失: '\{f}'")
       }
     _ => actual
   }
-  let value = json_or(rule.value("value"), Json::null())
+  let value = json_or(jget(rule, "value"), Json::null())
   match op {
     "eq" => {
       let ok = canonical_json(target) == canonical_json(value)
@@ -330,10 +330,10 @@ fn exists_check(actual : Json, key : String) -> Bool {
 pub fn check_expected(actual : Json, expected : Json) -> (Bool, String) {
   match expected {
     Object(m) if m.contains("$assert") => {
-      let field = expected.value("field")
+      let field = jget(expected, "field")
       match field {
         Some(String(f)) => {
-          let sub = actual.value(f)
+          let sub = jget(actual, f)
           match sub {
             Some(v) => {
               let (ok, detail) = check_assert(v, expected)
@@ -367,19 +367,19 @@ pub fn run_tests(
   evaluator : (Json) -> Result[Json, String],
 ) -> Array[Json] {
   let expanded = expand_parameters(spec)
-  let tests = match expanded.value("tests") {
+  let tests = match jget(expanded, "tests") {
     Some(Array(a)) => a
     _ => return []
   }
   let results : Array[Json] = []
   for i in 0..<tests.length() {
     let t = tests[i]
-    let input = json_or(t.value("input"), Json::null())
+    let input = json_or(jget(t, "input"), Json::null())
     let (ok, value) = match evaluator(input) {
       Ok(v) => (true, v)
       Err(e) => (false, Json::string(e))
     }
-    match t.value("error") {
+    match jget(t, "error") {
       Some(String(expected_err)) => {
         let value_str = text_of(value)
         let passed = !ok && value_str.contains(expected_err)
@@ -395,7 +395,7 @@ pub fn run_tests(
         )
       }
       _ => {
-        let exp = json_or(t.value("expected"), Json::null())
+        let exp = json_or(jget(t, "expected"), Json::null())
         if !ok {
           // evaluator 出错（无匹配 error 字段）→ 直接失败，不把错误字符串当正常值走 check_expected
           results.push(
@@ -432,7 +432,7 @@ pub fn run_tests(
 pub fn summarize(results : Array[Json]) -> Json {
   let mut passed : Int32 = 0
   for r in results {
-    match r.value("passed") {
+    match jget(r, "passed") {
       Some(True) => passed = passed + 1
       _ => ()
     }

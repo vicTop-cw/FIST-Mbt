@@ -134,7 +134,7 @@ pub fn compute_fingerprint(spec : Json) -> String {
 ///|
 /// 校验 fingerprint 是否与内容匹配。
 pub fn verify_fingerprint(spec : Json) -> Result[Unit, String] {
-  let fp = match spec.value("fingerprint") {
+  let fp = match jget(spec, "fingerprint") {
     Some(String(s)) => s
     _ => return Err("缺少 fingerprint 字段")
   }
@@ -162,11 +162,11 @@ pub fn validate_schema(spec : Json) -> Array[String] {
     return errors
   }
   for field in required_fields {
-    if spec.value(field) is None {
+    if jget(spec, field) is None {
       errors.push("缺少必填字段: \{field}")
     }
   }
-  match spec.value("tests") {
+  match jget(spec, "tests") {
     Some(Array(tests)) =>
       for i in 0..<tests.length() {
         let t = tests[i]
@@ -174,11 +174,11 @@ pub fn validate_schema(spec : Json) -> Array[String] {
           errors.push("tests[\{i}] 必须是对象")
           continue
         }
-        if t.value("input") is None {
+        if jget(t, "input") is None {
           errors.push("tests[\{i}] 缺少 input")
         }
-        let has_exp = !(t.value("expected") is None)
-        let has_err = !(t.value("error") is None)
+        let has_exp = !(jget(t, "expected") is None)
+        let has_err = !(jget(t, "error") is None)
         if !has_exp && !has_err {
           errors.push("tests[\{i}] 缺少 expected 或 error")
         }
@@ -216,16 +216,16 @@ pub fn validate_spec_json(s : String) -> Result[Json, String] {
         }),
       )
     Ok(_) => {
-      let op = match spec.value("op") {
+      let op = match jget(spec, "op") {
         Some(String(s)) => s
         _ => ""
       }
-      let ver = match spec.value("version") {
+      let ver = match jget(spec, "version") {
         Some(String(s)) => s
         _ => ""
       }
       let expanded = expand_parameters(spec)
-      let expanded_n = match expanded.value("tests") {
+      let expanded_n = match jget(expanded, "tests") {
         Some(Array(a)) => a.length()
         _ => 0
       }
@@ -362,14 +362,14 @@ fn json_literal_text(v : Json) -> String {
 ///|
 /// 展开参数化测试，返回新 spec。无参数化时返回原 spec 引用。
 pub fn expand_parameters(spec : Json) -> Json {
-  let tests = match spec.value("tests") {
+  let tests = match jget(spec, "tests") {
     Some(Array(a)) => a
     _ => return spec
   }
   let expanded : Array[Json] = []
   let mut need_replace : Bool = false
   for t in tests {
-    match t.value("parameters") {
+    match jget(t, "parameters") {
       Some(Object(pm)) if pm.length() > 0 => {
         let entries = collect_param_entries(pm)
         let counts : Array[Int32] = entries.map(fn(e) { e.1.length() })
