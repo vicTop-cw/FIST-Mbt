@@ -119,8 +119,8 @@ def executable_pkg_dirs(root):
     return sorted(found)
 
 
-def bundles_for_pkg(pkg_dir):
-    """把包目录反解成它在 `_build/js/debug/build/` 下的**候选** bundle 路径。
+def bundles_for_pkg(pkg_dir, profile="debug"):
+    """把包目录反解成它在 `_build/js/<profile>/build/` 下的**候选** bundle 路径。
 
     **产物目录 = 包目录原样**（不是 `basename`）——本仓实测：
         `cmd/cli/`       → `_build/js/debug/build/cmd/cli/cli.js`
@@ -132,8 +132,13 @@ def bundles_for_pkg(pkg_dir):
 
     产物**文件名**仍可能与包目录名不同（历史上 `cmd/main` 的产物就叫 `main.js`），
     故给出按优先级排列的候选，取第一个存在的。
+
+    **`profile` 参数（BUG-406 追记 2026-10-25）**：原实现硬编码 `debug`。但打包/安装面
+    与宿主（如 DSH Desktop）实际拉起的是 **release** profile —— 实测本机 MCP server 由
+    宿主用 release 拉起、跑了 18 小时仍崩在未 patch 的旧产物上，而判据面从未扫过它。
+    默认仍是 `debug`（零回归），调用方可显式传 `release` 或跑 `--profile both`。
     """
-    build = os.path.join("_build", "js", "debug", "build", *pkg_dir.split("/"))
+    build = os.path.join("_build", "js", profile, "build", *pkg_dir.split("/"))
     name = os.path.basename(pkg_dir)
     return [
         os.path.join(build, name + ".js"),
@@ -141,15 +146,18 @@ def bundles_for_pkg(pkg_dir):
     ]
 
 
-def resolve_bundles(root, pkg_dirs):
+def resolve_bundles(root, pkg_dirs, profile="debug"):
     """(resolved, unresolved)：resolved = [(pkg_dir, 存在的 bundle 相对路径)]。
 
     **未构建不算缺陷**（CI 上未必先 build）——但 resolve 结果要参与「覆盖面对表」自证格，
     所以把两者都返回，由调用方如实出数。
+
+    `profile` 透传给 `bundles_for_pkg`（BUG-406 追记：release 是打包/宿主拉起的那份）。
     """
     resolved, unresolved = [], []
     for pkg in pkg_dirs:
-        hit = next((c for c in bundles_for_pkg(pkg) if os.path.isfile(os.path.join(root, c))), None)
+        hit = next((c for c in bundles_for_pkg(pkg, profile)
+                    if os.path.isfile(os.path.join(root, c))), None)
         (resolved.append((pkg, hit)) if hit else unresolved.append(pkg))
     return resolved, unresolved
 
@@ -484,6 +492,11 @@ def selftest():
         cell("e2e-bundle-candidates-under-build-dir",
              all(c.replace("\\", "/").startswith("_build/js/debug/build/")
                  for p in _pkgs for c in bundles_for_pkg(p)), True)
+        # BUG-406 追记：release profile 的候选形态同样必须正确 —— 打包/安装面与宿主
+        # （DSH Desktop 实测）拉起的是 release 产物，判据面此前从未扫过它。
+        cell("e2e-bundle-candidates-release-profile",
+             all(c.replace("\\", "/").startswith("_build/js/release/build/")
+                 for p in _pkgs for c in bundles_for_pkg(p, "release")), True)
 
         # ── 判例-16 的核心场景：**修复面漏网的 bundle 必须被判据抓住** ──────────────
         # 司令-β 从修复面实测：smoke.js 是 executable、产物存在，但 patch_esm_main 旧实现
@@ -530,6 +543,9 @@ def run(argv):
     ap = argparse.ArgumentParser(
         description="打包产物「真能跑」判据（BUG-406：ESM 作用域缺 require）")
     ap.add_argument("--selftest", action="store_true", help="自证（造好/坏 bundle 各跑一遍）")
+    ap.add_argument("--profile", default="debug", choices=["debug", "release", "both"],
+                    help="扫描哪个构建 profile（默认 debug 零回归；release = 打包/宿主实际拉起的那份；"
+                         "both = 两个 profile 各验一遍 —— BUG-406 追记：硬编码 debug 时 release 面是盲区）")
     ap.add_argument("--bundle", default=None,
                     help="只验指定 bundle（缺省扫**全部** executable 包的产物，判例-16）")
     args = ap.parse_args(argv)
@@ -547,10 +563,24 @@ def run(argv):
         print("FATAL 判据无法自证：仓库内一份 `pkgtype(kind: \"executable\")` 都没枚举到 —— "
               "正则或扫描面坏了，拒绝报绿")
         return 2
-    resolved, unresolved = resolve_bundles(ROOT, pkg_dirs)
+    # BUG-406 追记：profile 可多选（both 时 debug + release 各验一遍，任一红即红）
+    profiles = ["debug", "release"] if args.profile == "both" else [args.profile]
+    exit_code = 0
+    for profile in profiles:
+        if len(profiles) > 1:
+            print("── profile=%s ──" % profile)
+        rc = _run_profile(profile, pkg_dirs)
+        if rc != 0:
+            exit_code = rc
+    return exit_code
+
+
+def _run_profile(profile, pkg_dirs):
+    """单 profile 的验面（拆出来让 `--profile both` 能各跑一遍）。"""
+    resolved, unresolved = resolve_bundles(ROOT, pkg_dirs, profile)
     if not resolved:
-        print("FATAL 判据无法自证：%d 个 executable 包一个产物都没构建（先 `moon build --target js`）"
-              % len(pkg_dirs))
+        print("FATAL 判据无法自证：%d 个 executable 包一个产物都没构建（先 `moon build --target js%s`）"
+              % (len(pkg_dirs), " --release" if profile == "release" else ""))
         print("      待构建：" + " / ".join(pkg_dirs))
         return 2
 
