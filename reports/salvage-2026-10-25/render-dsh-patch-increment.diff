@@ -1,0 +1,75 @@
+diff --git a/scripts/render_dsh_patch.py b/scripts/render_dsh_patch.py
+index 3f57b1bc..d3b771ac 100644
+--- a/scripts/render_dsh_patch.py
++++ b/scripts/render_dsh_patch.py
+@@ -77,23 +77,27 @@ def find_cli(root: Path, cli_override: str | None) -> tuple[str | None, str]:
+         if p.exists():
+             return to_posix(p), "env FIST_MBT_CLI"
+         return None, f"env FIST_MBT_CLI 指向的产物不存在: {to_posix(p)}"
+-    # debug 与 release 是两个独立构建目录，谁新谁旧取决于最近一次 `moon build`
+-    # 用什么 flag；硬编码 debug 优先会在「release 已重建、debug 还是旧件」时把渲染件
+-    # 指回旧产物（2026-10-24 实测：release 10:19 最新、debug 07:42 旧，渲染器仍选 debug）
+-    # ⇒ 两形态并存时按 mtime 取新，与下方 glob 兜底同一律。
+-    known = []
+-    for rel in ("_build/js/debug/build/cmd/cli/cli.js",
+-                "_build/js/release/build/cmd/cli/cli.js"):
++    # release 优先、debug 兜底：DSH 插件安装面面对的是最终用户，装的是正式发布态，
++    # 而 debug 只是开发调试件（未 strip、带 debug 符号/断言）。两形态并存时**不能**按
++    # mtime 挑新——debug 可能因刚跑过一次 `moon build`（不带 --release）而比 release 新，
++    # 但那不代表它更「对」（2026-10-24 实测：debug 17:18、release 16:13，mtime 挑新把
++    # 渲染件漂到 debug，DSH 起的是调试产物；BUG-405 的硬编码 debug 优先与 mtime 挑新
++    # 是同一坑的两种变体）。开发应 `moon build --release`，不是靠猜谁新。
++    for rel in ("_build/js/release/build/cmd/cli/cli.js",
++                "_build/js/debug/build/cmd/cli/cli.js"):
+         p = root / rel
+         if p.exists():
+-            known.append((p.stat().st_mtime, p, rel))
+-    if known:
+-        _, p, rel = max(known, key=lambda t: t[0])
+-        return to_posix(p), rel
++            return to_posix(p), rel
++    # glob 兜底：同律——release 目录下的产物优先于 debug 目录（按构建形态而非 mtime）。
+     cands = sorted(root.glob("_build/js/*/build/cmd/*/cli.js"))
+     if cands:
+-        newest = max(cands, key=lambda c: c.stat().st_mtime)
+-        return to_posix(newest), f"_build glob 兜底({newest.parent.parent.parent.name})"
++        def _shape(c: Path) -> tuple[int, str]:
++            """排序键：release 目录产物优先（key=0），其余按目录名排后（key=1）。"""
++            parts = c.parts
++            kind = 0 if ("release" in parts or c.parent.parent.name == "release") else 1
++            return (kind, str(c))
++        best = sorted(cands, key=_shape)[0]
++        return to_posix(best), f"_build glob 兜底({best.parent.parent.parent.name})"
+     return None, "找不到 _build/js/*/build/cmd/*/cli.js——先 `moon build --target js` 再渲染"
+
+
+@@ -185,11 +189,26 @@ def selftest() -> list[str]:
+         dflt.parent.mkdir(parents=True, exist_ok=True)
+         dflt.write_text("//", encoding="utf-8")
+         got3, src3 = find_cli(root, None)
+-        cell("T11 默认 debug 产物命中", got3 is not None and "debug" in src3, f"src={src3}")
+-        # ⑫ 模板+渲染真源现状：仓库里那份 tpl 必须过模板判据
++        cell("T11 仅 debug 存在→debug 命中", got3 is not None and "debug" in src3, f"src={src3}")
++        # ⑫ release+debug 并存必选 release（变异对照：把 release 删掉或改回 mtime 挑新
++        #    会让本格红——这是 BUG-408 的锁，不是「正常路径通过」的自述）
++        rel = root / "_build/js/release/build/cmd/cli/cli.js"
++        rel.parent.mkdir(parents=True, exist_ok=True)
++        rel.write_text("// release", encoding="utf-8")
++        got4, src4 = find_cli(root, None)
++        cell("T12 release+debug 并存→release 命中", got4 is not None and "release" in src4,
++             f"got={got4} src={src4}")
++        # ⑬ glob 兜底：只有 release 目录里的任意 cli.js 时也按形态优先，不按 mtime
++        only_glob = Path(td) / "alt"
++        g = only_glob / "_build" / "js" / "release" / "build" / "cmd" / "cli" / "cli.js"
++        g.parent.mkdir(parents=True, exist_ok=True)
++        g.write_text("// glob-release", encoding="utf-8")
++        got5, src5 = find_cli(only_glob, None)
++        cell("T13 glob 兜底 release 目录优先", got5 is not None and "release" in src5, f"src={src5}")
++        # ⑭ 模板+渲染真源现状：仓库里那份 tpl 必须过模板判据
+         tpl_p = REPO_ROOT / TPL_REL
+         if tpl_p.exists():
+-            cell("T13 仓内模板无泄漏", not template_problems(tpl_p.read_text(encoding="utf-8")),
++            cell("T14 仓内模板无泄漏", not template_problems(tpl_p.read_text(encoding="utf-8")),
+                  str(template_problems(tpl_p.read_text(encoding="utf-8"))))
+
+     if fails:
