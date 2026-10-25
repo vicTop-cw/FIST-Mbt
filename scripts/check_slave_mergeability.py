@@ -20,12 +20,15 @@ cherry-pick 时撞冲突（append-only 日志、`scripts/README.md` 追加重叠
   python scripts/check_slave_mergeability.py --selftest
 """
 import argparse
+import atexit
 import io
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 from moon_env_probe import moon_env
 from git_env import isolated_git_env
@@ -196,6 +199,49 @@ def apply_merges(base, rows, execute=False):
     return merged, skipped, False
 
 
+def _force_rm(func, path, exc_info):
+    """Windows 上的 rmtree 单点补救：`.git/objects` 里的文件是只读的，直接删 PermissionError。
+
+    先把目标改成可写再重试一次本点；仍失败则抛回给 rmtree 走 _cleanup_paths 的 WARN 路径。
+    """
+    try:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+    except Exception:
+        raise
+
+
+def _cleanup_paths(*paths):
+    """清理 selftest 临时现场（BUG-409）。
+
+    两个缺陷各自对应一行：
+    1. **`finally` 不保证执行** —— 进程被杀/超时/Ctrl-C 时 finally 不跑，现场永久留在系统
+       Temp。缓解：调用方在 mkdtemp 后立刻 `atexit.register(_cleanup_paths, ...)`，正常路径
+       在 finally 里 unregister；被 SIGKILL 时仍会残留，但已是能做的最大值。
+    2. **`ignore_errors=True` 静默吞掉清理失败** —— 清理失败必须出声并点名路径，
+       否则「泄漏」既不被发现也不被报告（与本仓「绝不静默」口径相反）。
+
+    另加一层 Windows 现实补救：`.git` 里的对象文件带只读属性，`rmtree` 会 PermissionError；
+    先等 0.3s 让 git 子进程释放句柄，再用 `onerror=_force_rm` 逐点改权限重试。
+    """
+    for p in paths:
+        if not p or not os.path.exists(p):
+            continue
+        try:
+            shutil.rmtree(p)
+            continue
+        except Exception:
+            pass
+        time.sleep(0.3)  # 给 git 子进程一点时间释放句柄
+        try:
+            shutil.rmtree(p, onerror=_force_rm)
+        except Exception as exc:  # 清理失败必须点名，不许静默
+            print(
+                "WARN 清理失败，临时现场残留：%s（%r）—— 请手工删除" % (p, exc),
+                file=sys.stderr,
+            )
+
+
 def selftest():
     """临时仓库造 clean / conflict / contained 三支，断言分类与真实 cherry-pick 行为。"""
     cells = []
@@ -213,6 +259,10 @@ def selftest():
 
     # 端到端格：造真仓库
     d = tempfile.mkdtemp(prefix="mergeability-st-")
+    wt = os.path.abspath(os.path.join(d, "..", "wt-" + os.path.basename(d)))
+    # BUG-409：finally 在进程被 SIGKILL / 硬超时时不跑 —— 先注册 atexit 兜一手，
+    # 正常路径在 finally 里 unregister（避免重复清理刷 WARN）。
+    atexit.register(_cleanup_paths, d, wt)
     def g(*a, cwd=d):
         return subprocess.run(["git"] + list(a), cwd=cwd, capture_output=True, text=True,
                               encoding="utf-8", errors="replace", env=isolated_git_env())
@@ -239,8 +289,6 @@ def selftest():
         io.open(os.path.join(d, "a.txt"), "w", encoding="utf-8").write("master-change\n")
         g("commit", "-qam", "master-advance")
         base2 = g("rev-parse", "HEAD").stdout.strip()
-        wt = os.path.join(d, "..", "wt-" + os.path.basename(d))
-        wt = os.path.abspath(wt)
         g("worktree", "add", "--detach", wt, base2)
         # 让 clean 与 conflict 都能被 cherry-pick 到 base 上
         for name, want in (("clean", "ok"), ("conflict", "conflict"), ("contained", "contained")):
@@ -249,8 +297,25 @@ def selftest():
             pick_rc, files = simulate(base2, wt, commits) if commits else (0, [])
             cell("e2e-" + name, classify(len(commits), pick_rc, files), want)
     finally:
-        shutil.rmtree(d, ignore_errors=True)
-        shutil.rmtree(os.path.abspath(os.path.join(d, "..", "wt-" + os.path.basename(d))), ignore_errors=True)
+        # BUG-409：清理失败必须出声（原实现 ignore_errors=True 静默吞掉，泄漏既不被发现也不被报告）
+        # Windows 上 git 会持有 worktree 目录句柄，直接 rmtree 必 PermissionError ——
+        # 先解注册（worktree remove --force）、再 prune 残注册、最后才删目录。
+        for cleanup_argv in (
+            ["worktree", "remove", "--force", wt],
+            ["worktree", "prune"],
+        ):
+            try:
+                subprocess.run(
+                    ["git"] + cleanup_argv, cwd=d, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", env=isolated_git_env(), timeout=30,
+                )
+            except Exception:
+                pass  # 解注册失败不阻断清理，最终 _cleanup_paths 会出声点名
+        _cleanup_paths(d, wt)
+        try:
+            atexit.unregister(_cleanup_paths)
+        except Exception:
+            pass
 
     bad = [(n, w) for n, ok, w in cells if not ok]
     if bad:
