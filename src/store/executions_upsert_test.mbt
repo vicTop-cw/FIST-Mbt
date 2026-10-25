@@ -11,7 +11,7 @@ fn _reset_exec(path : String) -> Unit {
 ///|
 /// 读回聚合统计中某数值键（缺失返回 -1，便于断言缺失即失败）
 fn _stat_d(j : Json, key : String) -> Double {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Number(n, ..)) => n
     _ => -1.0
   }

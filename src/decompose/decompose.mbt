@@ -29,7 +29,7 @@ pub fn decompose_slices(
 ) -> Array[String] {
   match spec {
     Object(_) =>
-      match spec.value("laws") {
+      match jget(spec, "laws") {
         Some(Array(laws)) => {
           let out : Array[String] = []
           for l in laws {
@@ -65,7 +65,7 @@ pub fn default_slices(split_n : Int32, parent_desc~ : String) -> Array[String] {
 pub fn spec_hash_of(spec : Json?) -> String {
   match spec {
     Some(s) =>
-      match s.value("fingerprint") {
+      match jget(s, "fingerprint") {
         Some(String(f)) => f
         _ => ""
       }

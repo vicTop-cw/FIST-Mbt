@@ -140,7 +140,7 @@ pub let star_release_default_pubkey_hex : String = "01773e6ed3ff3fceaaf545a3f26a
 ///|
 /// 从已解析的 Json 里提取验签所需字段。任一字段缺失或类型不符 → None（调用方按 BadFormat 处理）。
 fn star_extract_fields(j : Json) -> StarAttestData? {
-  let list = match j.value("list") {
+  let list = match jget(j, "list") {
     Some(Array(items)) => {
       let out : Array[String] = []
       for item in items {
@@ -153,19 +153,19 @@ fn star_extract_fields(j : Json) -> StarAttestData? {
     }
     _ => return None
   }
-  let issued_at = match j.value("issued_at") {
+  let issued_at = match jget(j, "issued_at") {
     Some(Number(n, ..)) => n.to_int64()
     _ => return None
   }
-  let ttl_seconds = match j.value("ttl_seconds") {
+  let ttl_seconds = match jget(j, "ttl_seconds") {
     Some(Number(n, ..)) => n.to_int64()
     _ => return None
   }
-  let public_key_hex = match j.value("public_key_hex") {
+  let public_key_hex = match jget(j, "public_key_hex") {
     Some(String(s)) => s
     _ => return None
   }
-  let signature_hex = match j.value("signature_hex") {
+  let signature_hex = match jget(j, "signature_hex") {
     Some(String(s)) => s
     _ => return None
   }
@@ -230,7 +230,7 @@ fn star_gate_verify_impl(
   }
   // ② 格式与算法先验：不是本门产物就不该继续判，避免把别的东西误当成有效证明
   //    （BadFormat 也覆盖字段缺失/类型错：见 star_extract_fields 返回 None 的分支）
-  match j.value("format") {
+  match jget(j, "format") {
     Some(String(f)) if f == "fist-star-gate-attestation/v1" => ()
     _ =>
       return star_outcome(
@@ -240,7 +240,7 @@ fn star_gate_verify_impl(
         now_epoch,
       )
   }
-  match j.value("algorithm") {
+  match jget(j, "algorithm") {
     Some(String(a)) if a == "ed25519" => ()
     _ =>
       return star_outcome(

@@ -36,7 +36,7 @@ test "cost_stats: 表被摘掉后只读聚合必须自保并回零值" {
           // 第二格：模拟"早于补表建号的老库"——表不存在时读聚合
           assert_eq(db.exec("DROP TABLE IF EXISTS executions"), true)
           let j = StoreBackend::sqlite(s).cost_stats()
-          match j.value("total_records") {
+          match jget(j, "total_records") {
             Some(Number(n, ..)) => assert_eq(n, 0.0)
             _ =>
               fail(
