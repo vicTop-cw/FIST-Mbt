@@ -887,7 +887,7 @@ test "watchdog R51: ns 下无人值守派发预览给出可自动派发的下一
   wd_publish(e, "cron-preview") // T0 待领取
   let j = wd_tick_omega_ok(e, "2026-09-17T10:00:00Z", ns="cron-preview")
   // 无下一轮描述 -> 不续轮；detail.ready_dispatch_preview 应指向可派发的 T0
-  match j.value("detail") {
+  match jget(j, "detail") {
     Some(Object(d)) =>
       match d.get("ready_dispatch_preview") {
         Some(Object(p)) =>
@@ -928,7 +928,7 @@ test "watchdog R57: autodispatch=true + ns 待领取任务 + store 执行者 -> 
   // 无活跃任务、无续轮 -> idle
   assert_eq(wd_action(j), "idle")
   // detail.autodispatch 应派发成功并将 T0 认领给 worker-57
-  match j.value("detail") {
+  match jget(j, "detail") {
     Some(Object(d)) =>
       match d.get("autodispatch") {
         Some(Object(ad)) => {
@@ -962,7 +962,7 @@ test "watchdog R57: autodispatch=false 时绝不认领（零回归回归确认�
   let j = wd_tick_ok(e, "2026-09-17T10:00:10Z", ns="cron-no-dispatch")
   assert_eq(wd_action(j), "idle")
   // detail.autodispatch 应为 null，任务仍待领取、无人认领
-  match j.value("detail") {
+  match jget(j, "detail") {
     Some(Object(d)) => assert_eq(d.get("autodispatch"), Some(Json::null()))
     _ => abort("detail 缺失")
   }
@@ -1013,11 +1013,11 @@ test "watchdog R90: phi_gate 概率判活早于固定 timeout（间隔5s、静�
     Ok(j) => j
     Err(m) => abort("phi watchdog_tick 失败: " + m)
   }
-  match j.value("healed") {
+  match jget(j, "healed") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 1)
     _ => abort("phi_gate healed 缺失: " + j.stringify())
   }
-  match j.value("healed_tasks") {
+  match jget(j, "healed_tasks") {
     Some(Array(a)) => assert_eq(a.length(), 1)
     _ => abort("phi_gate healed_tasks 缺失: " + j.stringify())
   }
@@ -1039,7 +1039,7 @@ test "watchdog R90: phi_gate 概率判活早于固定 timeout（间隔5s、静�
     Ok(j) => j
     Err(m) => abort("fixed watchdog_tick 失败: " + m)
   }
-  match j2.value("healed") {
+  match jget(j2, "healed") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
     _ => abort("fixed healed 缺失: " + j2.stringify())
   }
@@ -1069,7 +1069,7 @@ test "watchdog BUG-27: 单次心跳后停摆 -> phi_gate 两态都回滚（兜�
     Ok(j) => j
     Err(m) => abort("phi_gate watch 失败: " + m)
   }
-  match j.value("healed") {
+  match jget(j, "healed") {
     Some(Number(n, ..)) =>
       if n.to_int() != 1 {
         abort(
@@ -1084,7 +1084,7 @@ test "watchdog BUG-27: 单次心跳后停摆 -> phi_gate 两态都回滚（兜�
     None => abort("T0 应存在")
   }
   // 披露栏：这条是兜底救的，不是 φ 判的（缺这栏时"为什么没救/靠什么救的"只能读源码）
-  match j.value("detail") {
+  match jget(j, "detail") {
     Some(Object(d)) =>
       match d.get("phi_timeout_fallback_ids") {
         Some(Array(a)) =>
@@ -1113,7 +1113,7 @@ test "watchdog BUG-27: 单次心跳后停摆 -> phi_gate 两态都回滚（兜�
     Ok(j) => j
     Err(m) => abort("固定 timeout watch 失败: " + m)
   }
-  match j2.value("healed") {
+  match jget(j2, "healed") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 1)
     _ => abort("固定 timeout healed 缺失: " + j2.stringify())
   }
@@ -1133,7 +1133,7 @@ test "watchdog BUG-27: 单次心跳后停摆 -> phi_gate 两态都回滚（兜�
     Ok(j) => j
     Err(m) => abort("新鲜心跳 watch 失败: " + m)
   }
-  match j3.value("healed") {
+  match jget(j3, "healed") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
     _ => abort("新鲜心跳不得被兜底误伤: " + j3.stringify())
   }

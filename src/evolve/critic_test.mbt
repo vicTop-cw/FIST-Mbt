@@ -25,11 +25,11 @@ fn cr_add(arc : @evolve.Archive, note : String) -> Unit {
 test "evolve_critic 空库：放行且 sim=0" {
   let arc = cr_engine()
   let j = @evolve.critic_review(arc, "全新的独立目标设计", 0.9)
-  match j.value("admit") {
+  match jget(j, "admit") {
     Some(True) => ()
     _ => abort("空库应直接放行: " + j.stringify())
   }
-  match j.value("sim") {
+  match jget(j, "sim") {
     Some(Number(n, ..)) => assert_eq(n, 0.0)
     _ => abort("空库 sim 应为 0: " + j.stringify())
   }
@@ -44,11 +44,11 @@ test "evolve_critic 重复漂移：与档案库高重合 → 建议拒绝" {
   let j = @evolve.critic_review(
     arc, "专注解析器前端词法分析的实现", 0.9,
   )
-  match j.value("admit") {
+  match jget(j, "admit") {
     Some(False) => ()
     _ => abort("高重合应判漂移拒收: " + j.stringify())
   }
-  match j.value("reason") {
+  match jget(j, "reason") {
     Some(String(r)) => assert_eq(r.contains("课程漂移"), true)
     _ => abort("reason 应提及课程漂移: " + j.stringify())
   }
@@ -61,11 +61,11 @@ test "evolve_critic 全新目标：放行且理由含放行" {
   let j = @evolve.critic_review(
     arc, "抽象语法树到四进制字节码的转译器设计", 0.9,
   )
-  match j.value("admit") {
+  match jget(j, "admit") {
     Some(True) => ()
     _ => abort("低重合应放行: " + j.stringify())
   }
-  match j.value("reason") {
+  match jget(j, "reason") {
     Some(String(r)) => assert_eq(r.contains("放行"), true)
     _ => abort("reason 应含放行: " + j.stringify())
   }
@@ -78,7 +78,7 @@ test "evolve_critic 低稳健性：平均分低于阈值 → 拒收" {
   let j = @evolve.critic_review(
     arc, "某些支离破碎的半成品思路", 0.1,
   )
-  match j.value("admit") {
+  match jget(j, "admit") {
     Some(False) => ()
     _ => abort("低分应拒收: " + j.stringify())
   }
@@ -92,7 +92,7 @@ test "evolve_critic 中性 score=0.5：不得被一个没算过的分数一票�
   let j = @evolve.critic_review(
     arc, "把模型路由的决策与 IO 分包的可检锚点", 0.5,
   )
-  match j.value("admit") {
+  match jget(j, "admit") {
     Some(True) => ()
     _ => abort("未计分应按新颖度放行: " + j.stringify())
   }
@@ -102,13 +102,13 @@ test "evolve_critic 中性 score=0.5：不得被一个没算过的分数一票�
   let dup = @evolve.critic_review(
     arc2, "专注解析器前端词法分析的实现", 0.5,
   )
-  match dup.value("admit") {
+  match jget(dup, "admit") {
     Some(False) => ()
     _ => abort("高重合仍须拒收: " + dup.stringify())
   }
   // 成对：真给了低分照旧拒收（显式 score 的加权语义不变）
   let low = @evolve.critic_review(arc, "又一个全新的独立目标", 0.1)
-  match low.value("admit") {
+  match jget(low, "admit") {
     Some(False) => ()
     _ => abort("显式低分应拒收: " + low.stringify())
   }

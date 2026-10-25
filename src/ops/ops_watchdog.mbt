@@ -382,7 +382,7 @@ pub fn watchdog_tick(
   // 只读快照，供外部 cron/agent 一看就知道"此刻可对哪条按能力/难度自动接单"。
   let ready_preview : Json = if ns != "" {
     let tri = engine.triage(heal_ns, "watchdog", "")
-    match tri.value("suggestion") {
+    match jget(tri, "suggestion") {
       Some(Object(sm)) => {
         let tid = match sm.get("task_id") {
           Some(Json::String(s)) => s

@@ -227,7 +227,7 @@ pub fn heal_stale_tasks_by_phi(
                 elapsed,
                 threshold=phi_threshold,
               )
-              match j.value("verdict") {
+              match jget(j, "verdict") {
                 Some(String(v)) =>
                   if v == "rejected" || v == "insufficient" {
                     // BUG-26/27 同族：判不了也要回落 timeout，不许弃权
