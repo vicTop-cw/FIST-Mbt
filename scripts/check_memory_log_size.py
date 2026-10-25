@@ -98,7 +98,7 @@ def selftest():
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
-    # 调用面锁（J2）：selftest 必须能从调用图到达 run 面——否则
+    # 调用面锁（BUG-405）：selftest 必须能从调用图到达 main/run 面——否则
     # 「--selftest 绿」与「真跑判据」是两条脱钩的路（BUG-366 一族）。喂 temp root，
     # run 的 IO 走 temp 夹具，不触仓库现状面（hermetic H1 不红）。
     d2 = tempfile.mkdtemp(prefix="memlog-callface-")
@@ -120,27 +120,7 @@ def selftest():
     return 0
 
 
-def main(argv):
-    """CLI 入口：解析 argv 后把判据逻辑交给 run(root, …)；selftest 走 run 的 temp 夹具。"""
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--max-mb", type=float, default=2.0)
-    ap.add_argument("--max-dup-ratio", type=float, default=0.5)
-    ap.add_argument("--selftest", action="store_true")
-    ap.add_argument("--root", default="")
-    args = ap.parse_args(argv)
-    if args.selftest:
-        return selftest()
-    return run(args.root or ROOT, args.max_mb, args.max_dup_ratio)
-
-
 def run(root, max_mb, max_dup_ratio):
-    """真判据调用面：扫 `<root>/memory/*.md`，出读数与退出码。
-
-    独立成函数是为了让 `--selftest` 能**真驱动调用面**（而不是只考 scan 纯函数）——
-    `check_selftest_call_face.py` 的 J2 要求自检的调用图到得了 main/run/退出码面，
-    否则「--selftest 绿」与「真跑判据」是两条脱钩的路（BUG-366 一族）。
-    `root` 可注入 ⇒ 自检喂 temp 夹具，不触仓库现状面（hermetic）。
-    """
     d = os.path.join(root, "memory")
     if not os.path.isdir(d):
         print("FATAL 扫描面为空（%s 不存在）—— 判据无法自证，拒绝报绿" % d)
@@ -173,6 +153,19 @@ def run(root, max_mb, max_dup_ratio):
         return 1
     print("\nPASS 全部 %d 个日志文件在体积与重复度上限内" % len(files))
     return 0
+
+
+def main(argv):
+    """CLI 入口：解析 argv 后把判据逻辑交给 run(root, …)。selftest 走 run 的 temp 夹具。"""
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--max-mb", type=float, default=2.0)
+    ap.add_argument("--max-dup-ratio", type=float, default=0.5)
+    ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--root", default="")
+    args = ap.parse_args(argv)
+    if args.selftest:
+        return selftest()
+    return run(args.root or ROOT, args.max_mb, args.max_dup_ratio)
 
 
 if __name__ == "__main__":
