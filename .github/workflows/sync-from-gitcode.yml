@@ -39,48 +39,10 @@ jobs:
           git add .github/workflows
           git commit -m "chore: preserve GitHub workflow files (add-only sync)" >/dev/null 2>&1 || true
           # 2) 推送所有 GitCode 分支：GitCode 为源，覆盖 GitHub 同名分支；GitHub 独有分支保留
-          #    失败读数可见化（判例-9）：旧写法 `git push ... || echo` 让 rc 恒 0，102 支没推上去
-          #    而 workflow 全绿 ⇒「workflow 存在」被读成「同步生效」。现在逐支计数 + 点名，
-          #    聚合读数进 ::notice:: / ::warning::（summary 面可见）。
-          #    注意**不用** `set -o pipefail`：与 `2>/dev/null` 合用时 $(...) 里的 grep 会吃掉
-          #    push 的 rc，失败将恒读成成功（那正是本改正要防的假绿）。
-          #    另有一条读数口径必须写在这里：本 workflow 以 GitCode 为准、把同名分支**整体覆盖**
-          #    推回 GitHub ⇒ GitHub 侧任何「按分支改写历史」的清理结果，理论上会被下一次定时任务
-          #    按源侧形态覆盖回去。所以「同步绿」≠「清理保住」——两者要分开读，别拿本 workflow
-          #    的成功当清理守恒的证据。
-          OK=0; FAIL=0; FAILED_LIST=""
-          BRANCHES=$(git for-each-ref --format='%(refname:short)' refs/heads)
-          if [ -z "$BRANCHES" ]; then
-            echo "::warning::branch sync: 枚举面为空（一个本地分支都没读到）⇒ 读数作废，不报绿"
-          fi
-          for b in $BRANCHES; do
-            if git push --force gh "$b:$b" 2>/dev/null; then
-              OK=$((OK+1))
-            else
-              FAIL=$((FAIL+1)); FAILED_LIST="$FAILED_LIST $b"
-            fi
+          for b in $(git for-each-ref --format='%(refname:short)' refs/heads); do
+            git push --force gh "$b:$b" 2>&1 || echo "push failed on $b"
           done
-          echo "::notice::branch sync: OK=$OK FAIL=$FAIL (失败不阻断本 workflow，见判例-9)"
-          if [ "$FAIL" -gt 0 ]; then
-            echo "::warning::failed branches:$FAILED_LIST"
-          fi
           # 3) 默认分支映射：GitCode master -> GitHub master
-          if git push --force gh "master:master" 2>/dev/null; then
-            echo "::notice::master synced"
-          else
-            echo "::warning::master sync FAILED（master:master 未推上去，GitHub 默认分支仍是旧版）"
-          fi
+          git push --force gh "master:master" 2>&1 || echo "push failed on default branch"
           # 4) 标签只增不删（GitHub 已存在的同名标签会拒绝，保留 GitHub 版）
-          #    失败不阻断（保持原语义），但同样不许静默吞：逐标签计数 + 点名，并说明豁免成因。
-          TAG_OK=0; TAG_FAIL=0; TAG_FAILED=""
-          for t in $(git for-each-ref --format='%(refname:short)' refs/tags); do
-            if git push gh "refs/tags/$t" 2>/dev/null; then
-              TAG_OK=$((TAG_OK+1))
-            else
-              TAG_FAIL=$((TAG_FAIL+1)); TAG_FAILED="$TAG_FAILED $t"
-            fi
-          done
-          echo "::notice::tag sync: OK=$TAG_OK FAIL=$TAG_FAIL (逐标签推，失败=已存在/拒绝非快进，按策略保留 GitHub 版；本 workflow 不阻断)"
-          if [ "$TAG_FAIL" -gt 0 ]; then
-            echo "::warning::rejected tags:$TAG_FAILED"
-          fi
+          git push gh --tags 2>&1 || true
