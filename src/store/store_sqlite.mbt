@@ -2971,7 +2971,12 @@ pub fn SqliteStore::agents_acl_check(
                 "ACL 绑定旧进程实例（pid_bound=1 且 pid 已换），需重新授权: \{agent_id}/\{ns}",
               )
             } else if write && can_write == 0 {
-              Err("ACL 默认拒绝写（can_write=0）: \{agent_id}/\{ns}")
+              // BUG-408：原文案只说 can_write=0，调用方无法自救（不知道谁能授予、怎么授予），
+              // 也看不出「publish 成功而 claim 被拒」是两道门（角色矩阵 vs ns ACL）结论不同所致。
+              // 这里附足三条出路，让错误本身可行动。
+              Err(
+                "ACL 默认拒绝写（can_write=0）: \{agent_id}/\{ns}。出路：① 由 human_steward 执行 agents_acl_grant(agent_id=\"{agent_id}\", ns=\"{ns}\", can_write=true) 授予写权；② 若这是首次接入该 ns，先 store_open(ns=\"{ns}\") 建立会话再重试；③ 注意 audit_permission 只反映角色矩阵、不反映 ns ACL（两道独立门，见 BUG-408）——角色矩阵 allowed 不代表本 ns 可写",
+              )
             } else if !write && can_read == 0 {
               Err("ACL 拒绝读（can_read=0）: \{agent_id}/\{ns}")
             } else {
