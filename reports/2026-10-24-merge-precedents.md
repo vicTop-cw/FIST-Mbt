@@ -351,6 +351,8 @@ git rev-list HEAD --not --branches --remotes --tags
 | **判例-36** | **修判据时把判据改瞎**：收窄豁免面试错 5 轮，前三种收法全部反向破坏（真读数消失 / 反而更糟），只有「只跳过围栏代码块」有效 | ε task-26 回传 |
 | **判例-37** | **自证格也会过度拟合**（与判例-34 对称）：格子过宽 = 漏判、过严 = 误判；正确性判据是「它红的时候红的是不是真问题」 | ε task-26 §六 |
 | **判例-47** | **判例集必须有正文落盘**：只在对话里立的编号 = 未落盘的判例，必须显式列在册里，不能沉默 | `2026-10-25-overnight-governance-digest.md` §3.5 |
+| **判例-51** | **`git status` 的 `A` 标记 ≠ blob 不在对象库**：`A` 只说明「在本 worktree 索引里 staged」，不等于「内容只存在于这个 worktree」。**`git fsck --lost-found` 只找 dangling（无引用）对象，历史可达的不在其中。** ⇒ **判 A 态文件是否可恢复，看 `git log --all --format=%H -- <path>` 非空即可恢复，不能只看 `status`。**（实证：δ 报 22 个 A 态文件，`git log --all` 全部可达；α 仅凭 fsck 的 dangling 结论判「A 态不可恢复」是错的） | `2026-10-25-phase2-directory-cleanup.md` 教训 2 |
+| **判例-54** | **删除报错 ≠ 删除失败**：`git push --delete` 对不存在的 ref 报 `error: remote ref does not exist` 且 rc 非 0，**但这条 error 的语义是「你要删的东西已经不在了」= 目标态已达成**。判例-41 说「远端不可达 ≠ 远端是空的」，判例-54 说「删除报错 ≠ 删除失败」。**⇒ 判「删没删」看不存在的那个东西，不看你命令的 rc。**（实证：A 档 13 支里 7 支远端早已不存在，7 次「失败」实为目标态已达成） | 本册 · 2026-10-25 origin 清理实测（γ） |
 
 > ⚠️ **本表只登记「已落盘正文」的判例。** 判例 23–27 / 29–34 / 38–41 的正文在
 > `AI-DEVELOPMENT-STANDARD.md` §4.1、`AGENTS.md`、`docs/probe-authoring.md`，
