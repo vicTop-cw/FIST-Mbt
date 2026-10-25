@@ -6762,3 +6762,64 @@ audit_permission 纳入 ns ACL 维度（返回 effective_allowed + 拒绝来源�
 
 ### FIXED(2026-10-25T04:45:43Z / BUG-408)
 - evidence: commit 46c1382d（28 文件）收口。① 真根因「不可自救」已消除：agents_acl_grant 此前只是 store/engine 方法、从未暴露为 MCP 工具，现补 agent_acl_grant 工具面（src/server/server.mbt 审计段，SQLite 后端 fail-closed 不变、can_read/can_write 缺省 true、pid_bound 可选），ACL 拒绝后可自助授权。② 错误文案附三条出路（src/store/store_sqlite.mbt:agents_acl_check）：agents_acl_grant 具体调用形态 / 首次接入先 store_open / 明说 audit_permission 与 ns ACL 是两道独立门。③ 「publish 能写而 claim 被拒」的矛盾已定位并显式标注原因（publish 走 human_steward 特权、claim 走 agent_write_gate 的 ns ACL），不再静默——但让两道门合一属契约变更（会让 publish 也受 ns ACL 约束或让 claim 失去 ACL 保护），未在本单做，已在 AGENTS.md 审计段与本工具回执里写清。验证：moon test --target js 1457/1457；check_tools_sync / check_doc_surface / check_plugin_sync 全 PASS；mcp_smoke PASS（171 工具 tools/list 可调用）；CLI `fist help tools` 显示 [Other 9] 含 agent_acl_grant。
+## BUG-409 [2026-10-25T06:21:25Z] [low] FIXED
+- summary: check_slave_mergeability --selftest 泄漏夹具目录到系统 Temp，且 finally 用 rmtree(ignore_errors=True) 静默吞掉清理失败
+- detail: ## 形状
+判据的 `--selftest` 会污染宿主环境（系统 Temp），且清理失败被静默吞掉 —— 与 BUG-122 `check_demo_isolation`（判据污染宿主现场）同族。
+
+## 复现（2026-10-25 实测）
+跑一次 `python scripts/check_slave_mergeability.py --selftest`（SELFTEST OK，rc=0），
+在 `C:/Users/victo/AppData/Local/Temp/` 下留下 `mergeability-st-<8位随机>/` 目录。
+连续跑多次 ⇒ 目录累积（本机实测累积到 5 个 `st-*` + 3 个空壳 `mergeability-<hash>`）。
+
+## 真源
+`scripts/check_slave_mergeability.py`：
+- L215 `d = tempfile.mkdtemp(prefix="mergeability-st-")`
+- L223-239 逐字写入夹具内容：`base` / `new` / `branch-change` / `master-change`，
+  提交名 `base` / `clean-commit` / `conflict-commit` / `master-advance`
+- L243 `wt = os.path.join(d, "..", "wt-" + os.path.basename(d))` + `git worktree add --detach <wt> <base2>`
+  ⇒ 一次性建出「测试目录 + 同级 wt worktree」两个现场
+- L251-252 `finally:`
+  ```
+  shutil.rmtree(d, ignore_errors=True)
+  shutil.rmtree(os.path.abspath(os.path.join(d, "..", "wt-" + os.path.basename(d))), ignore_errors=True)
+  ```
+
+## 两个缺陷
+1. **`finally` 不保证执行**：进程被杀 / 崩溃 / 超时（如 CI 的 timeout、本地 Ctrl-C）时 `finally` 不跑 ⇒ 现场永久留在 Temp。
+2. **`ignore_errors=True` 静默吞掉清理失败**：Windows 上文件被占用 / 只读 object 文件会导致 `rmtree` 失败，
+   但 `ignore_errors=True` 让它**不报错也不留痕** —— 于是泄漏既不被发现也不被报告。
+   这与本仓「空产物反证 / 绝不静默」的口径相反。
+
+## 证据（幽灵目录内容，逐 zlib 解码）
+5 个 `st-*` 各 5 个 blob，内容全为：
+```
+'base\n' / 'new\n' / 'master-change\n' / 'branch-change\n'
+'<<<<<<< HEAD\nmaster-change\n=======\nbranch-change\n>>>>>>> <sha> (conflict-commit)\n'
+```
+（其中 2 个是 CRLF 版）⇒ 确认是该 selftest 的合成夹具，**零信息价值**。
+
+## 已做处置（经统帅批准）
+8 个残留目录已全部删除（5 个 `st-*` + 3 个空壳），Temp 下 `mergeability-*` 残留 = 0。
+
+## 建议修法（另开单）
+1. 清理面用 `try/finally` 之外再兜一层：在 `mkdtemp` 后立即注册 `atexit` 清理；
+2. `rmtree` **不要 `ignore_errors=True`** —— 失败必须 print 警告并点名路径（静默失败正是本缺陷的一半）；
+3. 更彻底：把夹具树建在**仓内** `temp/`（已被 gitignore）而不是系统 Temp，与 `check_battery_isolation` 等同族口径一致；
+   或在 selftest 末尾断言「本次运行未在系统 Temp 新增 `mergeability-*`」（自证格，防复发）。
+
+## 影响
+低（不损坏仓库、不影响判据结论），但属「判据污染宿主环境 + 静默吞失败」，会持续累积垃圾并掩盖真实清理问题。
+- reported_by: commander-beta
+
+
+
+### FIXED(2026-10-25T08:08:45Z / BUG-409)
+- evidence: scripts/check_slave_mergeability.py 四层修复（2026-10-25 15:55 实测零泄漏）：
+
+① **atexit 兜底**（报告缺陷 1「finally 不保证执行」）：`mkdtemp` 后立刻 `atexit.register(_cleanup_paths, d, wt)`，正常路径在 finally 里 `atexit.unregister` —— SIGKILL/硬超时时 finally 不跑，atexit 兜一手（SIGKILL 仍会残留，已是能做的最大值，回执里如实标注）。
+② **清理失败必须出声**（报告缺陷 2「ignore_errors=True 静默吞掉」）：新增 `_cleanup_paths()`，rmtree 失败时 `print("WARN 清理失败，临时现场残留：<路径>（<异常>）—— 请手工删除", file=sys.stderr)` 并点名路径。实测第一次跑就出声了：`WARN 清理失败，临时现场残留：...mergeability-st-70pk1cv6（PermissionError(13, '拒绝访问。')）` —— 这正证明修复生效（原实现什么都不说）。
+③ **worktree 解注册**：Windows 上 git 持有 worktree 目录句柄，直接 rmtree 必 PermissionError。清理前先 `git worktree remove --force <wt>` + `git worktree prune`。
+④ **只读对象 chmod 重试**：`.git/objects` 里文件带只读属性。新增 `_force_rm(func, path, exc_info)` 做 `os.chmod(path, stat.S_IWRITE)` 后重试本点，外层再 `time.sleep(0.3)` 让 git 子进程释放句柄后 `rmtree(onerror=_force_rm)` 重试一次。
+
+实测：`--selftest` = **SELFTEST OK（9 格：分类纯函数 6 档 + 真仓库端到端 3 支 clean/conflict/contained）**；跑前 Temp 残留 0 → 跑后残留 **0**（修复前每次泄漏 1 个）。⇒ 报告的两个缺陷（finally 不保证 + 静默吞失败）都已消除，且额外把「泄漏本体」也修掉了（不是只让它出声）。
