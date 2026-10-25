@@ -264,16 +264,16 @@ test "dag_slack: 瓶颈与松弛分析——关键路径 slack=0、旁支 slack>
   // 图：A→B→C（链长3）与 A→D→E（链长3），均最长 -> 全部 5 任务在关键路径（slack=0）
   let e = dag_test_engine()
   let j = e.dag_slack_analysis()
-  match j.value("makespan") {
+  match jget(j, "makespan") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 2) // A(0)->B/D(1)->C/E(2)
     _ => abort("makespan 缺失: " + j.stringify())
   }
-  match j.value("critical") {
+  match jget(j, "critical") {
     Some(Array(a)) => assert_eq(a.length(), 5) // A,B,C,D,E 全 slack=0
     _ => abort("critical 缺失")
   }
   // A 与 C：earliest=0、latest=0（关键），slack=0
-  match j.value("slack_map") {
+  match jget(j, "slack_map") {
     Some(Object(sm)) =>
       match sm.get("A") {
         Some(Object(a)) =>
@@ -307,7 +307,7 @@ test "dag_slack: 瓶颈与松弛分析——关键路径 slack=0、旁支 slack>
     )
   }
   let j2 = e2.dag_slack_analysis()
-  match j2.value("makespan") {
+  match jget(j2, "makespan") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 1) // A(0)->B/C(1)
     _ => abort("e2 makespan 缺失")
   }
@@ -339,7 +339,7 @@ test "dag_slack: 瓶颈与松弛分析——关键路径 slack=0、旁支 slack>
     ),
   )
   let j3 = e3.dag_slack_analysis()
-  match j3.value("cycle") {
+  match jget(j3, "cycle") {
     Some(Array(a)) => assert_eq(a.length(), 2) // X,Y 成环被标出
     _ => abort("环应被检测: " + j3.stringify())
   }
@@ -351,11 +351,11 @@ test "dag_schedule: 排程视图——critical/flexible 分批 + assignee 附带
   let e = dag_test_engine()
   ignore(e.claim(task_id="A", assignee="leader_a", now="2026-01-01T00:01:00Z"))
   let j = e.dag_schedule()
-  match j.value("critical_batch") {
+  match jget(j, "critical_batch") {
     Some(Array(cb)) => assert_eq(cb.length(), 5) // A,B,C,D,E 全关键
     _ => abort("critical_batch 缺失: " + j.stringify())
   }
-  match j.value("flexible_batch") {
+  match jget(j, "flexible_batch") {
     Some(Array(fb)) => assert_eq(fb.length(), 0) // 无松弛
     _ => abort("flexible_batch 缺失")
   }
@@ -379,7 +379,7 @@ test "dag_schedule: 排程视图——critical/flexible 分批 + assignee 附带
   }
   let j2 = e2.dag_schedule()
   // A critical（slack=0）、B critical（slack=0，无后继但仍须做完）
-  match j2.value("critical_batch") {
+  match jget(j2, "critical_batch") {
     Some(Array(cb)) => assert_eq(cb.length(), 2)
     _ => abort("e2 critical_batch 缺失")
   }
@@ -429,17 +429,17 @@ test "dag_schedule R75: 负载感知——flexible 未认领任务附 suggest=�
   // 给 w2 一个活跃任务（执行中）→ w2 负载1 > w1 负载0 → X 未认领建议派给 w1
   ignore(e.claim(task_id="C", assignee="w2", now="2026-01-01T00:01:00Z"))
   let j = e.dag_schedule()
-  match j.value("flexible_batch") {
+  match jget(j, "flexible_batch") {
     Some(Array(fb)) => {
       assert_true(fb.length() >= 2) // X,Y 有 slack 进 flexible
       // X 或 Y 未认领且 suggest=w1（负载低）
       let mut found_suggest = false
       for row in fb {
-        let asg = match row.value("assignee") {
+        let asg = match jget(row, "assignee") {
           Some(Json::String(s)) => s
           _ => ""
         }
-        let sug = match row.value("suggest") {
+        let sug = match jget(row, "suggest") {
           Some(Json::String(s)) => s
           _ => ""
         }
@@ -497,35 +497,35 @@ test "dag_cost_route: 能力约束+切换税+总成本（R77 STAR 式成本路�
   }
   let j = e.dag_cost_route()
   // 仅 D 是 flexible 且未认领
-  match j.value("cost_route") {
+  match jget(j, "cost_route") {
     Some(Array(cr)) => {
       assert_eq(cr.length(), 1)
-      match cr[0].value("task_id") {
+      match jget(cr[0], "task_id") {
         Some(Json::String(s)) => assert_eq(s, "D")
         _ => abort("task_id 缺失")
       }
       // 能力约束：D want=json -> 路由 bob（alice 无 json 被排除）
-      match cr[0].value("assignee") {
+      match jget(cr[0], "assignee") {
         Some(Json::String(s)) => assert_eq(s, "bob")
         _ => abort("assignee 缺失")
       }
       // est=3（难）；switch=1（依赖 A=alice≠bob）；total=4
-      match cr[0].value("est_cost") {
+      match jget(cr[0], "est_cost") {
         Some(Number(n, ..)) => assert_eq(n.to_int(), 3)
         _ => abort("est_cost 缺失")
       }
-      match cr[0].value("switch_cost") {
+      match jget(cr[0], "switch_cost") {
         Some(Number(n, ..)) => assert_eq(n.to_int(), 1)
         _ => abort("switch_cost 缺失")
       }
-      match cr[0].value("total") {
+      match jget(cr[0], "total") {
         Some(Number(n, ..)) => assert_eq(n.to_int(), 4)
         _ => abort("total 缺失")
       }
     }
     _ => abort("cost_route 缺失: " + j.stringify())
   }
-  match j.value("total_est_cost") {
+  match jget(j, "total_est_cost") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 4)
     _ => abort("total_est_cost 缺失: " + j.stringify())
   }
@@ -567,15 +567,15 @@ test "dag_cost_route: 同执行者免切换税 + 空注册表跳过（R77）" {
     Err(m) => abort("e2 claim A failed: \{m}")
   }
   let j = e.dag_cost_route()
-  match j.value("cost_route") {
+  match jget(j, "cost_route") {
     Some(Array(cr)) => {
       assert_eq(cr.length(), 1)
-      match cr[0].value("assignee") {
+      match jget(cr[0], "assignee") {
         Some(Json::String(s)) => assert_eq(s, "alice")
         _ => abort("e2 assignee 缺失")
       }
       // 与依赖 A=alice 相同执行者 -> 免切换税
-      match cr[0].value("switch_cost") {
+      match jget(cr[0], "switch_cost") {
         Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
         _ => abort("e2 switch_cost 缺失")
       }
@@ -603,11 +603,11 @@ test "dag_cost_route: 同执行者免切换税 + 空注册表跳过（R77）" {
     )
   }
   let j3 = e3.dag_cost_route()
-  match j3.value("cost_route") {
+  match jget(j3, "cost_route") {
     Some(Array(cr)) => assert_eq(cr.length(), 0)
     _ => abort("e3 cost_route 缺失: " + j3.stringify())
   }
-  match j3.value("total_est_cost") {
+  match jget(j3, "total_est_cost") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
     _ => abort("e3 total_est_cost 缺失")
   }
@@ -661,11 +661,11 @@ test "dag_cost_route: 等成本平局按累计负载均分（BUG-336 负载感�
   let j = e.dag_cost_route()
   let mut alice_cnt = 0
   let mut bob_cnt = 0
-  match j.value("cost_route") {
+  match jget(j, "cost_route") {
     Some(Array(cr)) => {
       assert_eq(cr.length(), 4)
       for r in cr {
-        match r.value("assignee") {
+        match jget(r, "assignee") {
           Some(Json::String(s)) =>
             if s == "alice" {
               alice_cnt = alice_cnt + 1
@@ -709,39 +709,39 @@ test "budget_split_by_dag: 预算按依赖图阶段切分（R81 ZEBRA 蒸馏）"
     )
   }
   let j = e.budget_split_by_dag(10)
-  match j.value("stages") {
+  match jget(j, "stages") {
     Some(Array(st)) => {
       // 三阶段：0/1/2
       assert_eq(st.length(), 3)
       // 份额和 == 总预算（向下取整 + 余数补给最大权重阶段）
       let mut sum = 0
       for s in st {
-        match s.value("share") {
+        match jget(s, "share") {
           Some(Number(n, ..)) => sum = sum + n.to_int()
           _ => ()
         }
       }
       assert_eq(sum, 10)
       // 阶段 0（A，权重 3/6）占 5 份额
-      match st[0].value("level") {
+      match jget(st[0], "level") {
         Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
         _ => abort("stage0 level 缺失")
       }
     }
     _ => abort("stages 缺失: " + j.stringify())
   }
-  match j.value("total_budget") {
+  match jget(j, "total_budget") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 10)
     _ => abort("total_budget 缺失")
   }
   // 空仓库：stages 空、total_budget 保真
   let e2 = @engine.FistEngine::new()
   let j2 = e2.budget_split_by_dag(7)
-  match j2.value("stages") {
+  match jget(j2, "stages") {
     Some(Array(st)) => assert_eq(st.length(), 0)
     _ => abort("e2 stages 缺失: " + j2.stringify())
   }
-  match j2.value("total_budget") {
+  match jget(j2, "total_budget") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 7)
     _ => abort("e2 total_budget 缺失")
   }
@@ -782,19 +782,19 @@ test "progress_gate：OK 判决（线性+保守均充足，自动估算 spent=2�
   let e = progress_gate_engine()
   let j = e.progress_gate("P", 10, 0)
   // progress = 1/3（1 done / 3 任务）
-  match j.value("progress") {
+  match jget(j, "progress") {
     Some(Number(n, ..)) =>
       if n - 1.0 / 3.0 > 0.000000001 || n - 1.0 / 3.0 < -0.000000001 {
         abort("progress 应为 1/3: " + j.stringify())
       }
     _ => abort("progress 缺失: " + j.stringify())
   }
-  match j.value("spent") {
+  match jget(j, "spent") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 2)
     _ => abort("spent 缺失: " + j.stringify())
   }
   // 线性=燃尽率6×剩余2/3=4，保守=4.8；remaining=8 → 均充足 → OK
-  match j.value("verdict") {
+  match jget(j, "verdict") {
     Some(String(v)) =>
       if v != "OK" {
         abort("verdict 应为 OK: " + j.stringify())
@@ -808,14 +808,14 @@ test "progress_gate：CAUTION 判决（线性可行但保守缓冲不足）" {
   let e = progress_gate_engine()
   // spent_override=3 → 燃尽率 9、线性 6、保守 7.2；remaining=7 → 线性可行、保守超 → CAUTION
   let j = e.progress_gate("P", 10, 3)
-  match j.value("verdict") {
+  match jget(j, "verdict") {
     Some(String(v)) =>
       if v != "CAUTION" {
         abort("verdict 应为 CAUTION: " + j.stringify())
       }
     _ => abort("verdict 缺失: " + j.stringify())
   }
-  match j.value("action") {
+  match jget(j, "action") {
     Some(String(a)) =>
       if !a.contains("降档") && !a.contains("缩减") {
         abort("action 应建议降档/缩范围: " + a)
@@ -829,14 +829,14 @@ test "progress_gate：ESCALATE 判决（线性已超支）+ 双路径数字" {
   let e = progress_gate_engine()
   // spent_override=5 → 燃尽率 15、线性 10、保守 12；remaining=5 → 线性即超 → ESCALATE
   let j = e.progress_gate("P", 10, 5)
-  match j.value("verdict") {
+  match jget(j, "verdict") {
     Some(String(v)) =>
       if v != "ESCALATE" {
         abort("verdict 应为 ESCALATE: " + j.stringify())
       }
     _ => abort("verdict 缺失: " + j.stringify())
   }
-  match j.value("projection") {
+  match jget(j, "projection") {
     Some(Object(o)) => {
       match o.get("linear") {
         Some(Number(n, ..)) =>
@@ -871,7 +871,7 @@ test "progress_gate：未开工=OK / 全完成=OK / 空任务+非法预算=ok:fa
   )
   ignore(e0.store.create_task(t))
   let j0 = e0.progress_gate("P0", 5, 0)
-  match j0.value("verdict") {
+  match jget(j0, "verdict") {
     Some(String(v)) =>
       if v != "OK" {
         abort("未开工 verdict 应为 OK: " + j0.stringify())
@@ -889,20 +889,20 @@ test "progress_gate：未开工=OK / 全完成=OK / 空任务+非法预算=ok:fa
   ignore(e.submit(task_id="P", now="2026-09-05T10:11:00Z"))
   ignore(e.verify(task_id="P", verifier="ver_1", now="2026-09-05T10:12:00Z"))
   let j1 = e.progress_gate("P", 10, 0)
-  match j1.value("verdict") {
+  match jget(j1, "verdict") {
     Some(String(v)) =>
       if v != "OK" {
         abort("全完成 verdict 应为 OK: " + j1.stringify())
       }
     _ => abort("j1 verdict 缺失: " + j1.stringify())
   }
-  match j1.value("progress") {
+  match jget(j1, "progress") {
     Some(Number(n, ..)) => assert_eq(n, 1.0)
     _ => abort("j1 progress 缺失: " + j1.stringify())
   }
   // 空任务 / 非法预算 → ok:false
   let j2 = e.progress_gate("NOPE", 10, 0)
-  let b_ok2 = match j2.value("ok") {
+  let b_ok2 = match jget(j2, "ok") {
     Some(j) =>
       match j {
         Json::True => true
@@ -913,7 +913,7 @@ test "progress_gate：未开工=OK / 全完成=OK / 空任务+非法预算=ok:fa
   }
   assert_eq(b_ok2, false)
   let j3 = e.progress_gate("P", 0, 0)
-  let b_ok3 = match j3.value("ok") {
+  let b_ok3 = match jget(j3, "ok") {
     Some(j) =>
       match j {
         Json::True => true
@@ -980,7 +980,7 @@ fn plan_revise_engine() -> @engine.FistEngine {
 /// 读出 plan_revise JSON 的某字符串数组桶（keep/rework/ready）。
 fn prv_list(j : Json, key : String) -> Array[String] {
   let out : Array[String] = []
-  match j.value(key) {
+  match jget(j, key) {
     Some(Array(a)) =>
       for x in a {
         match x {
@@ -996,7 +996,7 @@ fn prv_list(j : Json, key : String) -> Array[String] {
 ///|
 /// 读出 plan_revise JSON 的 basis。
 fn prv_basis(j : Json) -> String {
-  match j.value("basis") {
+  match jget(j, "basis") {
     Some(Json::String(s)) => s
     _ => abort("basis 缺失: " + j.stringify())
   }
@@ -1088,7 +1088,7 @@ test "plan_revise：feedback 显式 no → rework（未开工下游级联，控�
 test "plan_revise：根任务不存在 → ok:false" {
   let e = @engine.FistEngine::new()
   let j = e.plan_revise("NOPE")
-  let b_ok_pr = match j.value("ok") {
+  let b_ok_pr = match jget(j, "ok") {
     Some(jj) =>
       match jj {
         Json::True => true
@@ -1103,13 +1103,13 @@ test "plan_revise：根任务不存在 → ok:false" {
 ///|
 /// 读出 goal_drift_check 中某子任务的 verdict。
 fn gdc_verdict(j : Json, id : String) -> String {
-  match j.value("checks") {
+  match jget(j, "checks") {
     Some(Array(a)) =>
       for x in a {
-        match x.value("subtask_id") {
+        match jget(x, "subtask_id") {
           Some(Json::String(s)) =>
             if s == id {
-              match x.value("verdict") {
+              match jget(x, "verdict") {
                 Some(Json::String(v)) => return v
                 _ => abort("verdict 缺失: " + j.stringify())
               }
@@ -1125,7 +1125,7 @@ fn gdc_verdict(j : Json, id : String) -> String {
 ///|
 /// 读出 goal_drift_check counts 中某类计数。
 fn gdc_count(j : Json, key : String) -> Int32 {
-  let obj = match j.value("counts") {
+  let obj = match jget(j, "counts") {
     Some(Object(o)) => o
     _ => return 0
   }
@@ -1165,13 +1165,13 @@ test "goal_drift_check：aligned 与 drift_suspect（偏离根目标，附 re_an
   assert_eq(gdc_count(j, "aligned"), 1)
   assert_eq(gdc_count(j, "drift_suspect"), 1)
   // drift_suspect 的 re_anchor 提示为 true
-  match j.value("checks") {
+  match jget(j, "checks") {
     Some(Array(a)) =>
       for x in a {
-        match x.value("subtask_id") {
+        match jget(x, "subtask_id") {
           Some(Json::String(s)) =>
             if s == "B" {
-              let b_re = match x.value("re_anchor") {
+              let b_re = match jget(x, "re_anchor") {
                 Some(jj) =>
                   match jj {
                     Json::True => true
@@ -1218,7 +1218,7 @@ test "goal_drift_check：redundant_suspect（与兄弟重复，防重复子目�
   assert_eq(gdc_count(j, "redundant_suspect"), 2)
   // subtask_id 过滤：只校验单条
   let j1 = e.goal_drift_check("G2", subtask_id="C")
-  match j1.value("checks") {
+  match jget(j1, "checks") {
     Some(Array(a)) => assert_eq(a.length(), 1)
     _ => abort("checks 缺失: " + j1.stringify())
   }
@@ -1228,7 +1228,7 @@ test "goal_drift_check：redundant_suspect（与兄弟重复，防重复子目�
 test "goal_drift_check：根任务不存在 → ok:false" {
   let e = @engine.FistEngine::new()
   let j = e.goal_drift_check("NOPE")
-  let b_ok_gd = match j.value("ok") {
+  let b_ok_gd = match jget(j, "ok") {
     Some(jj) =>
       match jj {
         Json::True => true
@@ -1271,7 +1271,7 @@ fn b20_engine() -> @engine.FistEngine {
 ///|
 /// 读 cost_budget_split 返回体里的作用域自证字段
 fn b20_scope(j : Json) -> (String, Int32) {
-  let kind = match j.value("scope") {
+  let kind = match jget(j, "scope") {
     Some(Object(sm)) =>
       match sm.get("scope_kind") {
         Some(String(s)) => s
@@ -1279,7 +1279,7 @@ fn b20_scope(j : Json) -> (String, Int32) {
       }
     _ => "<无 scope 字段>"
   }
-  let cnt = match j.value("scope") {
+  let cnt = match jget(j, "scope") {
     Some(Object(sm)) =>
       match sm.get("scoped_task_count") {
         Some(Number(n, ..)) => n.to_int()
@@ -1315,18 +1315,18 @@ test "BUG-20：cost_budget_split 作用域真参与取数 + 负预算拒绝" {
   assert_eq(all_cnt, 6)
   // ④ 负预算：拒绝且不切出负份额
   let neg = e.budget_split_by_dag(-50)
-  match neg.value("verdict") {
+  match jget(neg, "verdict") {
     Some(String(v)) => assert_eq(v, "rejected")
     _ => abort("负预算未被拒绝: " + neg.stringify())
   }
-  match neg.value("stages") {
+  match jget(neg, "stages") {
     Some(Array(rows)) => assert_eq(rows.length(), 0)
     _ => abort("负预算不得产出任何阶段: " + neg.stringify())
   }
   assert_eq(b20_share_sum(neg), 0)
   // ⑤ 根任务不存在：insufficient，而不是悄悄退回全库（那正是本条缺陷的形状）
   let ghost = e.budget_split_by_dag(100, root="T999")
-  match ghost.value("verdict") {
+  match jget(ghost, "verdict") {
     Some(String(v)) => assert_eq(v, "insufficient")
     _ => abort("不存在的根任务应 insufficient: " + ghost.stringify())
   }
@@ -1338,7 +1338,7 @@ test "BUG-20：cost_budget_split 作用域真参与取数 + 负预算拒绝" {
 /// 把 stages[*].share 求和（自己算，不接受实现自报的总数）
 fn b20_share_sum(j : Json) -> Int32 {
   let mut sum = 0
-  match j.value("stages") {
+  match jget(j, "stages") {
     Some(Array(rows)) =>
       for r in rows {
         match r {
@@ -1371,25 +1371,25 @@ test "progress_gate：BUG-165 进度 0% 但有消耗 → ESCALATE 且 burn_rate=
   // 认领 → 非待领取（已开工），progress 仍 0，started_weight=2（中档）
   ignore(e.claim(task_id="P1", assignee="exec_1", now="2026-09-05T10:01:00Z"))
   let j = e.progress_gate("P1", 5, 0)
-  match j.value("progress") {
+  match jget(j, "progress") {
     Some(Number(n, ..)) => assert_eq(n, 0.0)
     _ => abort("progress 应 0: " + j.stringify())
   }
-  match j.value("burn_rate") {
+  match jget(j, "burn_rate") {
     Some(Number(n, ..)) =>
       if n != -1.0 {
         abort("burn_rate 应为 sentinel -1.0: " + j.stringify())
       }
     _ => abort("burn_rate 缺失: " + j.stringify())
   }
-  match j.value("verdict") {
+  match jget(j, "verdict") {
     Some(String(v)) =>
       if v == "OK" {
         abort("BUG-165：progress=0 有消耗不得判 OK: " + j.stringify())
       }
     _ => abort("verdict 缺失: " + j.stringify())
   }
-  match j.value("action") {
+  match jget(j, "action") {
     Some(String(a)) =>
       if !a.contains("不可计算") {
         abort("action 应说明燃尽率不可计算: " + a)
@@ -1403,7 +1403,7 @@ test "progress_gate：BUG-165 进度 0% 但有消耗 → ESCALATE 且 burn_rate=
 test "progress_gate：BUG-166 负预算回显实收值并带齐契约字段" {
   let e = progress_gate_engine()
   let j = e.progress_gate("P", -5, 0)
-  let b_ok_neg = match j.value("ok") {
+  let b_ok_neg = match jget(j, "ok") {
     Some(x) =>
       match x {
         Json::True => true
@@ -1413,7 +1413,7 @@ test "progress_gate：BUG-166 负预算回显实收值并带齐契约字段" {
     _ => abort("ok 缺失: " + j.stringify())
   }
   assert_eq(b_ok_neg, false)
-  match j.value("budget") {
+  match jget(j, "budget") {
     Some(Number(n, ..)) =>
       if n != -5.0 {
         abort(
@@ -1423,11 +1423,11 @@ test "progress_gate：BUG-166 负预算回显实收值并带齐契约字段" {
       }
     _ => abort("budget 缺失: " + j.stringify())
   }
-  match j.value("verdict") {
+  match jget(j, "verdict") {
     Some(String(v)) => assert_eq(v, "rejected")
     _ => abort("verdict 应为 rejected: " + j.stringify())
   }
-  match j.value("action") {
+  match jget(j, "action") {
     Some(String(a)) =>
       if !a.contains("必须为正") {
         abort("action 应说明预算须为正: " + a)
@@ -1436,11 +1436,11 @@ test "progress_gate：BUG-166 负预算回显实收值并带齐契约字段" {
   }
   // 文档承诺字段齐备（spent/remaining/progress/burn_rate/remaining_work/projection）
   for key in ["spent", "remaining", "progress", "burn_rate", "remaining_work"] {
-    if j.value(key) is None {
+    if jget(j, key) is None {
       abort("字段缺失 " + key + ": " + j.stringify())
     }
   }
-  match j.value("projection") {
+  match jget(j, "projection") {
     Some(Object(o)) =>
       if o.get("linear") is None || o.get("conservative") is None {
         abort("projection 缺 linear/conservative: " + j.stringify())
@@ -1464,25 +1464,25 @@ test "progress_gate：BUG-169 已完成但超支 → ESCALATE 而非 OK" {
   ignore(e.verify(task_id="P", verifier="ver_1", now="2026-09-05T10:12:00Z"))
   // budget=10、spent_override=15 → remaining=-5（超支），progress=1.0
   let j = e.progress_gate("P", 10, 15)
-  match j.value("progress") {
+  match jget(j, "progress") {
     Some(Number(n, ..)) => assert_eq(n, 1.0)
     _ => abort("progress 应 1.0: " + j.stringify())
   }
-  match j.value("remaining") {
+  match jget(j, "remaining") {
     Some(Number(n, ..)) =>
       if n != -5.0 {
         abort("remaining 应 -5: " + j.stringify())
       }
     _ => abort("remaining 缺失: " + j.stringify())
   }
-  match j.value("verdict") {
+  match jget(j, "verdict") {
     Some(String(v)) =>
       if v == "OK" {
         abort("BUG-169：已完成但超支不得判 OK: " + j.stringify())
       }
     _ => abort("verdict 缺失: " + j.stringify())
   }
-  match j.value("action") {
+  match jget(j, "action") {
     Some(String(a)) =>
       if !a.contains("超支") {
         abort("action 应说明超支: " + a)

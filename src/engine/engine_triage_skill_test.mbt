@@ -25,7 +25,7 @@ fn tsk_publish(e : @engine.FistEngine, desc : String) -> String {
 ///|
 /// 取 triage 返回的 tasks 数组（已按排行序）。
 fn tsk_tasks(j : Json) -> Array[Json] {
-  match j.value("tasks") {
+  match jget(j, "tasks") {
     Some(Array(arr)) => arr
     _ => abort("tasks 缺失: " + j.stringify())
   }
@@ -33,7 +33,7 @@ fn tsk_tasks(j : Json) -> Array[Json] {
 
 ///|
 fn tsk_id(row : Json) -> String {
-  match row.value("id") {
+  match jget(row, "id") {
     Some(String(s)) => s
     _ => abort("id 缺失: " + row.stringify())
   }
@@ -57,7 +57,7 @@ fn tsk_first(j : Json) -> String {
 fn tsk_skill_hits(j : Json, id : String) -> Array[String] {
   for row in tsk_tasks(j) {
     if tsk_id(row) == id {
-      return match row.value("skill_hits") {
+      return match jget(row, "skill_hits") {
         Some(Array(h)) =>
           h.map(fn(v) {
             match v {
@@ -74,7 +74,7 @@ fn tsk_skill_hits(j : Json, id : String) -> Array[String] {
 
 ///|
 fn tsk_sugg_mode(j : Json) -> String {
-  match j.value("suggestion") {
+  match jget(j, "suggestion") {
     Some(Object(m)) =>
       match m.get("mode") {
         Some(String(s)) => s
@@ -96,7 +96,7 @@ test "skill 路由正路径：tdd 命中任务排头部，suggestion.mode==fix_a
   // SKILL→MODE：tdd → fix_and_merge
   assert_eq(tsk_sugg_mode(j), "fix_and_merge")
   // skill 参数应回显
-  match j.value("skill") {
+  match jget(j, "skill") {
     Some(String(s)) => assert_eq(s, "tdd")
     _ => abort("skill 应回显")
   }
@@ -113,7 +113,7 @@ test "skill 空串零回归锁：排序与不传 skill 一致，skill_hits 全�
   assert_eq(tsk_ids(j0), tsk_ids(j1))
   // 所有任务 skill_hits 都为空数组
   for row in tsk_tasks(j0) {
-    match row.value("skill_hits") {
+    match jget(row, "skill_hits") {
       Some(Array(arr)) => assert_eq(arr.length(), 0)
       _ => abort("skill_hits 应存在且为数组")
     }

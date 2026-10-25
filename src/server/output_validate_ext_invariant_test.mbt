@@ -18,7 +18,7 @@ fn r132ov_json(r : Result[Json, String]) -> Json {
 
 ///|
 fn r132ov_verdict(j : Json) -> String {
-  match j.value("verdict") {
+  match jget(j, "verdict") {
     Some(String(s)) => s
     _ => abort("缺 verdict: " + j.stringify())
   }
@@ -27,10 +27,10 @@ fn r132ov_verdict(j : Json) -> String {
 ///|
 fn r132ov_details(j : Json) -> String {
   let mut out = ""
-  match j.value("checks") {
+  match jget(j, "checks") {
     Some(Array(arr)) =>
       for c in arr {
-        match c.value("detail") {
+        match jget(c, "detail") {
           Some(String(s)) => out = out + " | " + s
           _ => ()
         }

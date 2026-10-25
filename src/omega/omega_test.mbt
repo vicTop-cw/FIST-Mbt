@@ -64,7 +64,7 @@ test "expand_parameters 展开参数化用例" {
   match jget(exp, "tests") {
     Some(Array(a)) => {
       assert_eq(a.length(), 2)
-      match a[0].value("input") {
+      match jget(a[0], "input") {
         Some(Object(m)) => {
           let mode = m.get("mode")
           match mode {
@@ -265,7 +265,7 @@ test "check_report_format 五段式校验" {
     }
   }
   let bad = @omega.check_report_format("只有结论")
-  match bad[1].value("passed") {
+  match jget(bad[1], "passed") {
     Some(False) => ()
     _ => abort("passed 缺失")
   }

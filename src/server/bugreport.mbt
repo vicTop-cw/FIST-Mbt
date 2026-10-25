@@ -382,7 +382,7 @@ pub fn bug_list_with_links(
   match bug_list(project_dir) {
     Err(e) => Err(e)
     Ok(j) => {
-      let entries = match j.value("bugs") {
+      let entries = match jget(j, "bugs") {
         Some(Array(a)) => a
         _ => []
       }

@@ -22,7 +22,7 @@ fn mc_mk(
 ///|
 /// 读顶层数值字段。
 fn mc_num(j : Json, key : String) -> Double {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Number(n, ..)) => n
     _ => abort("缺 \{key}: " + j.stringify())
   }
@@ -31,7 +31,7 @@ fn mc_num(j : Json, key : String) -> Double {
 ///|
 /// 读 makespan.mean。
 fn mc_meanspan(j : Json) -> Double {
-  match j.value("makespan") {
+  match jget(j, "makespan") {
     Some(Object(m)) =>
       match m.get("mean") {
         Some(Number(n, ..)) => n
@@ -74,7 +74,7 @@ test "dag_mc：负 deadline 被钳制到 0 并如实标注，不伪装成 0% 按
   mc_mk(e, "B", "MC 任务 B [难度梯度 难]", ["A"])
   let j = e.dag_mc(deadline=-5, seed=7)
   // deadline_requested 如实回显调用方给的 -5
-  match j.value("deadline_requested") {
+  match jget(j, "deadline_requested") {
     Some(Number(n, ..)) =>
       if n != -5.0 {
         abort("deadline_requested 应回显 -5: " + j.stringify())
@@ -82,7 +82,7 @@ test "dag_mc：负 deadline 被钳制到 0 并如实标注，不伪装成 0% 按
     _ => abort("缺 deadline_requested: " + j.stringify())
   }
   // deadline_capped 必须 true
-  match j.value("deadline_capped") {
+  match jget(j, "deadline_capped") {
     Some(True) => ()
     _ => abort("负 deadline 应标注 deadline_capped=true: " + j.stringify())
   }
@@ -95,7 +95,7 @@ test "dag_mc：负 deadline 被钳制到 0 并如实标注，不伪装成 0% 按
   }
   // 正向对照：deadline=100 应该 deadline_capped=false
   let j2 = e.dag_mc(deadline=100, seed=7)
-  match j2.value("deadline_capped") {
+  match jget(j2, "deadline_capped") {
     Some(False) => ()
     Some(True) => abort("正向 deadline 不应标 capped: " + j2.stringify())
     _ => abort("缺 deadline_capped: " + j2.stringify())
@@ -129,13 +129,13 @@ test "dag_mc：关键度——最长路径任务 freq≈1，旁路易任务不�
 /// 读 criticality 中指定 task_id 的 critical_freq（找不到返回 -1.0）。
 fn mc_crit_freq(j : Json, id : String) -> Double {
   let result : Array[Double] = [-1.0]
-  match j.value("criticality") {
+  match jget(j, "criticality") {
     Some(Array(a)) =>
       for i = 0; i < a.length(); i = i + 1 {
-        match a[i].value("task_id") {
+        match jget(a[i], "task_id") {
           Some(String(s)) =>
             if s == id {
-              match a[i].value("critical_freq") {
+              match jget(a[i], "critical_freq") {
                 Some(Number(n, ..)) => result[0] = n
                 _ => result[0] = -1.0
               }
@@ -152,7 +152,7 @@ fn mc_crit_freq(j : Json, id : String) -> Double {
 test "dag_mc：空作用域返回 insufficient（不崩溃）" {
   let e = @engine.FistEngine::new()
   let j = e.dag_mc()
-  match j.value("insufficient") {
+  match jget(j, "insufficient") {
     Some(True) => ()
     _ => abort("空库应 insufficient: " + j.stringify())
   }
@@ -199,7 +199,7 @@ test "mc_percentile_index：边界退化" {
 ///|
 /// 读 makespan.min。
 fn mc_span_min(j : Json) -> Double {
-  match j.value("makespan") {
+  match jget(j, "makespan") {
     Some(Object(m)) =>
       match m.get("min") {
         Some(Number(n, ..)) => n
@@ -212,7 +212,7 @@ fn mc_span_min(j : Json) -> Double {
 ///|
 /// 读 makespan.max。
 fn mc_span_max(j : Json) -> Double {
-  match j.value("makespan") {
+  match jget(j, "makespan") {
     Some(Object(m)) =>
       match m.get("max") {
         Some(Number(n, ..)) => n

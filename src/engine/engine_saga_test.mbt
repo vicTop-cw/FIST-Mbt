@@ -60,7 +60,7 @@ fn saga_reg_task(
 ///|
 /// 读出 rollback JSON 的 pending_count。
 fn saga_pending_count(j : Json) -> Int32 {
-  match j.value("pending_count") {
+  match jget(j, "pending_count") {
     Some(Number(n, ..)) => n.to_int()
     _ => abort("pending_count 缺失: " + j.stringify())
   }
@@ -70,10 +70,10 @@ fn saga_pending_count(j : Json) -> Int32 {
 /// 读出 rollback JSON 的 pending 步骤名（保持 JSON 顺序）。
 fn saga_steps(j : Json) -> Array[String] {
   let out : Array[String] = []
-  match j.value("pending") {
+  match jget(j, "pending") {
     Some(Array(a)) =>
       for x in a {
-        match x.value("step") {
+        match jget(x, "step") {
           Some(String(s)) => out.push(s)
           _ => abort("step 缺失")
         }
@@ -161,10 +161,10 @@ test "clear 清空 saga_log（防测试/scratch 跨次残留）" {
 /// 读出 repair JSON 的 compensate 步骤名（保持切片内 LIFO 顺序）。
 fn saga_repair_compensate(j : Json) -> Array[String] {
   let out : Array[String] = []
-  match j.value("compensate") {
+  match jget(j, "compensate") {
     Some(Array(a)) =>
       for x in a {
-        match x.value("step") {
+        match jget(x, "step") {
           Some(String(s)) => out.push(s)
           _ => abort("compensate step 缺失")
         }
@@ -178,10 +178,10 @@ fn saga_repair_compensate(j : Json) -> Array[String] {
 /// 读出 repair JSON 的 keep 步骤名（保留承诺，保持前向顺序）。
 fn saga_repair_keep(j : Json) -> Array[String] {
   let out : Array[String] = []
-  match j.value("keep") {
+  match jget(j, "keep") {
     Some(Array(a)) =>
       for x in a {
-        match x.value("step") {
+        match jget(x, "step") {
           Some(String(s)) => out.push(s)
           _ => abort("keep step 缺失")
         }
@@ -194,7 +194,7 @@ fn saga_repair_keep(j : Json) -> Array[String] {
 ///|
 /// 读出 repair JSON 的 basis（depends_on / order）。
 fn saga_repair_basis(j : Json) -> String {
-  match j.value("basis") {
+  match jget(j, "basis") {
     Some(String(s)) => s
     _ => abort("basis 缺失: " + j.stringify())
   }

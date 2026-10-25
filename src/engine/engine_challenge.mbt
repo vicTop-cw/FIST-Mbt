@@ -59,7 +59,7 @@ fn bump_importance(imp : String) -> String {
 ///|
 /// 从 critic_review 的 Json 中读 sim（与档案库最相似资产重合度）。
 fn review_sim(review : Json) -> Double {
-  match review.value("sim") {
+  match jget(review, "sim") {
     Some(Json::Number(d, ..)) => d
     _ => 0.0
   }

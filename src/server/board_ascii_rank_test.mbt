@@ -29,7 +29,7 @@ fn bar_publish(
 /// 读出看板 ascii 正文。
 fn bar_ascii(e : @engine.FistEngine, ns~ : String = "") -> String {
   let j = @server.render_board_ascii(e.list_all(), ns)
-  match j.value("ascii") {
+  match jget(j, "ascii") {
     Some(Json::String(s)) => s
     _ => abort("ascii 缺失: " + j.stringify())
   }

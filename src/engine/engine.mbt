@@ -1431,7 +1431,7 @@ fn FistEngine::decompose_rec(
           gradient_dag, reinject_context, boundary_probe,
         ) {
         Ok(subtree) =>
-          match subtree.value("children") {
+          match jget(subtree, "children") {
             Some(Array(a)) => a
             _ => []
           }

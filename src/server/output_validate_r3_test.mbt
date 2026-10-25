@@ -14,7 +14,7 @@ fn r3ov_json(r : Result[Json, String]) -> Json {
 
 ///|
 fn r3ov_verdict(j : Json) -> String {
-  match j.value("verdict") {
+  match jget(j, "verdict") {
     Some(String(s)) => s
     _ => abort("缺 verdict: " + j.stringify())
   }
@@ -24,10 +24,10 @@ fn r3ov_verdict(j : Json) -> String {
 /// 把所有 check 的 detail 拼成一段文本，便于断言"错误信息点名了未知键"。
 fn r3ov_details(j : Json) -> String {
   let mut out = ""
-  match j.value("checks") {
+  match jget(j, "checks") {
     Some(Array(arr)) =>
       for c in arr {
-        match c.value("detail") {
+        match jget(c, "detail") {
           Some(String(s)) => out = out + " | " + s
           _ => ()
         }

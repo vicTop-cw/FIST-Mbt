@@ -93,7 +93,7 @@ fn b9_between(text : String, start : String, end : String) -> String {
 
 ///|
 fn b9_str(j : Json, key : String) -> String {
-  match j.value(key) {
+  match jget(j, key) {
     Some(String(s)) => s
     _ => ""
   }
@@ -101,7 +101,7 @@ fn b9_str(j : Json, key : String) -> String {
 
 ///|
 fn b9_int(j : Json, key : String) -> Int32 {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Number(n, ..)) => n.to_int()
     _ => -1
   }
@@ -109,7 +109,7 @@ fn b9_int(j : Json, key : String) -> Int32 {
 
 ///|
 fn b9_bool(j : Json, key : String) -> Bool {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::True) => true
     Some(Json::False) => false
     _ => false

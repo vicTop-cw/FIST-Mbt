@@ -6,7 +6,7 @@
 
 ///|
 fn r3mc_num(j : Json, key : String) -> Double {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Number(n, ..)) => n
     _ => abort("缺 " + key + ": " + j.stringify())
   }
@@ -14,7 +14,7 @@ fn r3mc_num(j : Json, key : String) -> Double {
 
 ///|
 fn r3mc_bool(j : Json, key : String) -> Bool {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::True) => true
     Some(Json::False) => false
     _ => abort("缺 " + key + ": " + j.stringify())
@@ -23,7 +23,7 @@ fn r3mc_bool(j : Json, key : String) -> Bool {
 
 ///|
 fn r3mc_str(j : Json, key : String) -> String {
-  match j.value(key) {
+  match jget(j, key) {
     Some(String(s)) => s
     _ => abort("缺 " + key + ": " + j.stringify())
   }

@@ -17,7 +17,7 @@ fn contract_engine(db_path : String) -> @engine.FistEngine {
 
 ///|
 fn cx_verdict(j : Json) -> String {
-  match j.value("verdict") {
+  match jget(j, "verdict") {
     Some(Json::String(s)) => s
     _ => abort("verdict 缺失: " + j.stringify())
   }
@@ -25,7 +25,7 @@ fn cx_verdict(j : Json) -> String {
 
 ///|
 fn cx_phase(j : Json) -> String {
-  match j.value("phase") {
+  match jget(j, "phase") {
     Some(Json::String(s)) => s
     _ => abort("phase 缺失: " + j.stringify())
   }
@@ -33,7 +33,7 @@ fn cx_phase(j : Json) -> String {
 
 ///|
 fn cx_reasons(j : Json) -> Array[String] {
-  match j.value("reasons") {
+  match jget(j, "reasons") {
     Some(Json::Array(arr)) =>
       arr.map(fn(v) {
         match v {
@@ -47,7 +47,7 @@ fn cx_reasons(j : Json) -> Array[String] {
 
 ///|
 fn cx_target(j : Json) -> String {
-  match j.value("target_state") {
+  match jget(j, "target_state") {
     Some(Json::String(s)) => s
     _ => abort("target_state 缺失: " + j.stringify())
   }
@@ -194,7 +194,7 @@ test "tx_contract：reopen on 已归档 前置拒绝" {
 test "tx_contract：BUG-167 任务不存在回执契约件字段齐全" {
   let e = contract_engine("tc_r109_t7.db")
   let j = e.transition_contract("NOPE", "execute")
-  let b_ok = match j.value("ok") {
+  let b_ok = match jget(j, "ok") {
     Some(x) =>
       match x {
         Json::True => true
@@ -210,7 +210,7 @@ test "tx_contract：BUG-167 任务不存在回执契约件字段齐全" {
   assert_eq(reasons.length(), 1)
   assert_eq(reasons[0], "任务不存在: NOPE")
   assert_eq(cx_target(j), "")
-  let b_ss = match j.value("state_stable") {
+  let b_ss = match jget(j, "state_stable") {
     Some(x) =>
       match x {
         Json::True => true

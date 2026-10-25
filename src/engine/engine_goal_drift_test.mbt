@@ -64,13 +64,13 @@ fn b25_tree(
 ///|
 /// 读出某子任务的数值字段（drift_score/redundancy_score）
 fn b25_score(j : Json, id : String, key : String) -> Double {
-  match j.value("checks") {
+  match jget(j, "checks") {
     Some(Array(a)) =>
       for x in a {
-        match x.value("subtask_id") {
+        match jget(x, "subtask_id") {
           Some(Json::String(s)) =>
             if s == id {
-              match x.value(key) {
+              match jget(x, key) {
                 Some(Json::Number(n, ..)) => return n
                 _ => abort("\{key} 缺失: " + x.stringify())
               }
@@ -86,13 +86,13 @@ fn b25_score(j : Json, id : String, key : String) -> Double {
 ///|
 /// 读出某子任务的布尔字段（advisory/re_anchor）
 fn b25_flag(j : Json, id : String, key : String) -> Bool {
-  match j.value("checks") {
+  match jget(j, "checks") {
     Some(Array(a)) =>
       for x in a {
-        match x.value("subtask_id") {
+        match jget(x, "subtask_id") {
           Some(Json::String(s)) =>
             if s == id {
-              let b_sub = match x.value(key) {
+              let b_sub = match jget(x, key) {
                 Some(v) =>
                   match v {
                     Json::True => true
@@ -114,7 +114,7 @@ fn b25_flag(j : Json, id : String, key : String) -> Bool {
 ///|
 /// 读出顶层布尔字段
 fn b25_top_flag(j : Json, key : String) -> Bool {
-  match j.value(key) {
+  match jget(j, key) {
     Some(v) =>
       match v {
         Json::True => true
@@ -143,7 +143,7 @@ test "BUG-25：中文改写型子任务——判据仍发红，但返回体自�
   assert_eq(b25_flag(j, "C2", "advisory"), true)
   assert_eq(b25_flag(j, "C3", "advisory"), true)
   // 返回体自带标定出处（调用方不必回忆 README 就能看到"这判据的假阳性是多少"）
-  match j.value("calibration") {
+  match jget(j, "calibration") {
     Some(Object(c)) => {
       match c.get("reworded_pairs_suspect") {
         Some(Json::Number(n, ..)) => assert_true(n > 0.5)
@@ -158,7 +158,7 @@ test "BUG-25：中文改写型子任务——判据仍发红，但返回体自�
     _ => abort("calibration 缺失: " + j.stringify())
   }
   // note 里必须写明"不可作打回硬门"——J10 口径：自述范围==实现
-  match j.value("note") {
+  match jget(j, "note") {
     Some(Json::String(s)) => assert_true(s.contains("非硬门"))
     _ => abort("note 缺失")
   }

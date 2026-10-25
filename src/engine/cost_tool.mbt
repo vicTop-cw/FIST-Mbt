@@ -65,11 +65,11 @@ pub fn budget_check_json(args : Json) -> Json {
   // BUG-211：缺 limit 时不得回退 100.0（那会谎报「预算充足」）。
   // 回退 0.0 → 走 budget_check 的非法预算分支（valid=false / rejected）。
   // 注意：MCP schema 已声明 limit 必填，本分支是直连/宽松客户端的防御面。
-  let limit = match args.value("limit") {
+  let limit = match jget(args, "limit") {
     Some(Number(n, ..)) => n
     _ => 0.0
   }
-  let current = match args.value("current") {
+  let current = match jget(args, "current") {
     Some(Number(n, ..)) => n
     _ => 0.0
   }

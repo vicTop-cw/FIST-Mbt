@@ -36,15 +36,15 @@ test "dispatch_next: 注册执行者能力 → 按负载路由并认领给最佳
   let j = e.dispatch_next(
     "", "fallback-agent", "编排", "2026-09-26T10:01:00Z",
   )
-  match j.value("dispatched") {
+  match jget(j, "dispatched") {
     Some(True) => ()
     _ => abort("应派发成功: " + j.stringify())
   }
-  match j.value("task_id") {
+  match jget(j, "task_id") {
     Some(String(tid)) => assert_eq(tid, id)
     _ => abort("task_id 缺失")
   }
-  match j.value("to_executor") {
+  match jget(j, "to_executor") {
     Some(String(to)) => assert_eq(to, "worker-A")
     _ => abort("to_executor 缺失")
   }
@@ -69,11 +69,11 @@ test "dispatch_next: 无可派发任务时不派发、不改动" {
   let j = e.dispatch_next(
     "", "fallback-agent", "编排", "2026-09-26T10:01:00Z",
   )
-  match j.value("dispatched") {
+  match jget(j, "dispatched") {
     Some(False) => ()
     _ => abort("空仓库不应派发: " + j.stringify())
   }
-  match j.value("task_id") {
+  match jget(j, "task_id") {
     Some(String(tid)) => assert_eq(tid, "")
     _ => abort("task_id 应为空串")
   }
@@ -100,16 +100,16 @@ test "dispatch_next: want 为空时从任务描述自动抽取能力并路由（
     Ok(_) => e.dispatch_next("", "fallback-agent", "", "2026-09-26T10:01:00Z")
     Err(m) => abort("publish failed: " + m)
   }
-  match j.value("dispatched") {
+  match jget(j, "dispatched") {
     Some(True) => ()
     _ => abort("应派发成功: " + j.stringify())
   }
   // 自动抽取到"仪表"，路由命中 nete
-  match j.value("want") {
+  match jget(j, "want") {
     Some(String(w)) => assert_eq(w, "仪表")
     _ => abort("want 缺失: " + j.stringify())
   }
-  match j.value("to_executor") {
+  match jget(j, "to_executor") {
     Some(String(to)) => assert_eq(to, "nete")
     _ => abort("to_executor 缺失")
   }

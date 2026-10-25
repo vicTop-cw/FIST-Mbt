@@ -269,7 +269,7 @@ test "gc-07: flush_plan 生成的 curl 命令包含 gitcode.com + PRIVATE-TOKEN 
   gc_enqueue(d, "GC-1", "GitCode bug title", "detail", "high", "99999")
 
   let plan = gc_ok(gitcode_flush_plan(d, "99999", 5), "flush_plan")
-  let items = match plan.value("plan") {
+  let items = match jget(plan, "plan") {
     Some(Array(a)) => a
     _ => abort("plan 缺 plan 数组")
   }
@@ -294,13 +294,13 @@ test "gc-08: flush_plan 生成的 payload_json 含标题与 description（带 bu
   )
 
   let plan = gc_ok(gitcode_flush_plan(d, "5555", 5), "flush_plan")
-  let items = match plan.value("plan") {
+  let items = match jget(plan, "plan") {
     Some(Array(a)) => a
     _ => abort("plan 数组为空")
   }
   assert_eq(items.length(), 1)
   let item = items[0]
-  let pj = match item.value("payload_json") {
+  let pj = match jget(item, "payload_json") {
     Some(String(s)) => s
     _ => abort("缺 payload_json")
   }
@@ -334,7 +334,7 @@ test "gc-09: GitCode token 占位符必须逐字是 ${FIST_GITCODE_TOKEN}（拆�
   gc_enqueue(d, "GC-TOK-1", "标题", "d", "medium", "123")
 
   let plan = gc_ok(gitcode_flush_plan(d, "123", 5), "flush_plan")
-  let items = match plan.value("plan") {
+  let items = match jget(plan, "plan") {
     Some(Array(a)) => a
     _ => abort("plan 空")
   }
@@ -375,7 +375,7 @@ test "gc-11: flush_plan limit 参数限制生成数量" {
   gc_enqueue(d, "GC-4", "title4", "d", "low", "100")
 
   let plan = gc_ok(gitcode_flush_plan(d, "100", 2), "flush_plan(limit=2)")
-  let items = match plan.value("plan") {
+  let items = match jget(plan, "plan") {
     Some(Array(a)) => a
     _ => []
   }
@@ -523,7 +523,7 @@ test "gc-17: queue_status pending_list 每条 GitCode 条目都带 gitcode_proje
   gc_enqueue(d, "GC-PR1", "bug PR1", "d", "medium", "888")
 
   let s = gc_ok(gitcode_queue_status(d, ""), "status")
-  let pl = match s.value("pending_list") {
+  let pl = match jget(s, "pending_list") {
     Some(Array(a)) => a
     _ => abort("缺 pending_list")
   }
@@ -572,7 +572,7 @@ test "gc-19: curl 命令鉴权头是 PRIVATE-TOKEN（不是 GitHub 的 Bearer）
   gc_enqueue(d, "GC-AUTH-1", "auth test", "d", "low", "123")
 
   let plan = gc_ok(gitcode_flush_plan(d, "123", 5), "flush_plan")
-  let items = match plan.value("plan") {
+  let items = match jget(plan, "plan") {
     Some(Array(a)) => a
     _ => abort("plan 空")
   }
@@ -596,7 +596,7 @@ test "gc-20: flush_plan 多条不同 project_id 混合时只处理匹配的" {
   gh_enqueue(d, "GH-FAKE", "GH fake", "owner/repo")
 
   let plan100 = gc_ok(gitcode_flush_plan(d, "100", 10), "flush_plan 100")
-  let items100 = match plan100.value("plan") {
+  let items100 = match jget(plan100, "plan") {
     Some(Array(a)) => a
     _ => []
   }
@@ -607,7 +607,7 @@ test "gc-20: flush_plan 多条不同 project_id 混合时只处理匹配的" {
   }
 
   let plan200 = gc_ok(gitcode_flush_plan(d, "200", 10), "flush_plan 200")
-  let items200 = match plan200.value("plan") {
+  let items200 = match jget(plan200, "plan") {
     Some(Array(a)) => a
     _ => []
   }
@@ -625,7 +625,7 @@ test "gc-21: flush_plan curl URL 格式正确（POST gitcode.com api v4）" {
   gc_enqueue(d, "GC-URL-1", "url test", "d", "critical", "777")
 
   let plan = gc_ok(gitcode_flush_plan(d, "777", 5), "flush_plan")
-  let items = match plan.value("plan") {
+  let items = match jget(plan, "plan") {
     Some(Array(a)) => a
     _ => abort("plan 空")
   }

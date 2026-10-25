@@ -66,7 +66,7 @@ test "task_challenge 对已完成任务发布进阶变体：新根带 [challenge
     Err(m) => abort("challenge on completed should succeed: \{m}")
     Ok(j) => {
       // new_id 应为顺延根任务（非源任务 T0 → T0r2）
-      let new_id = match j.value("new_id") {
+      let new_id = match jget(j, "new_id") {
         Some(String(s)) => s
         _ => abort("missing new_id: " + j.stringify())
       }
@@ -106,11 +106,11 @@ test "task_challenge 拒绝未完成任务，且策略回退到底  scale" {
     ) {
     Err(m) => abort("challenge with bogus strat should succeed: \{m}")
     Ok(j) => {
-      match j.value("strat") {
+      match jget(j, "strat") {
         Some(String(s)) => assert_eq(s, "scale")
         _ => abort("strat should fallback to scale")
       }
-      let new_id = match j.value("new_id") {
+      let new_id = match jget(j, "new_id") {
         Some(String(s)) => s
         _ => abort("missing new_id")
       }
@@ -138,7 +138,7 @@ test "task_challenge critic 门禁：空库放行（critic_status=admitted 且�
     ) {
     Err(m) => abort("空库门禁应放行: \{m}")
     Ok(j) =>
-      match j.value("critic_status") {
+      match jget(j, "critic_status") {
         Some(String(s)) => assert_eq(s, "admitted")
         _ => abort("critic_status 应为 admitted: " + j.stringify())
       }
@@ -165,11 +165,11 @@ test "task_challenge critic 门禁：当前策略漂移 → 自动降档到非�
     ) {
     Err(m) => abort("漂移应自动降档而非报错: \{m}")
     Ok(j) => {
-      match j.value("critic_status") {
+      match jget(j, "critic_status") {
         Some(String(s)) => assert_eq(s, "degraded")
         _ => abort("critic_status 应为 degraded: " + j.stringify())
       }
-      match j.value("strat") {
+      match jget(j, "strat") {
         Some(String(s)) => assert_eq(s, "generalize")
         _ => abort("漂移后应降档到 generalize: " + j.stringify())
       }
