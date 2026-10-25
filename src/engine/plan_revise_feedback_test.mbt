@@ -29,7 +29,7 @@ fn prf_engine(
 
 ///|
 fn prf_basis(j : Json) -> String {
-  match j.value("basis") {
+  match jget(j, "basis") {
     Some(Json::String(s)) => s
     _ => abort("basis 缺失: " + j.stringify())
   }
@@ -37,7 +37,7 @@ fn prf_basis(j : Json) -> String {
 
 ///|
 fn prf_fb_count(j : Json, key : String) -> Int32 {
-  match j.value("feedback") {
+  match jget(j, "feedback") {
     Some(Json::Object(m)) =>
       match m.get(key) {
         Some(Json::Number(n, ..)) => n.to_int()
@@ -50,7 +50,7 @@ fn prf_fb_count(j : Json, key : String) -> Int32 {
 ///|
 fn prf_flags(j : Json) -> Array[String] {
   let out : Array[String] = []
-  match j.value("flags") {
+  match jget(j, "flags") {
     Some(Json::Array(a)) =>
       for x in a {
         match x {
@@ -121,7 +121,7 @@ test "prf_3 混写：有效条目照常生效，废条目计数暴露" {
   assert_eq(prf_fb_count(j, "ignored"), 1)
   assert_eq(prf_has_flag(prf_flags(j), "feedback_unparsed:"), true)
   // X 被显式 ok → keep；Y 依赖 X → ready
-  let keep = match j.value("keep") {
+  let keep = match jget(j, "keep") {
     Some(Json::Array(a)) =>
       a.map(fn(x) {
         match x {

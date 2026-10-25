@@ -526,7 +526,7 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
   for id in ids {
     let mut sl = -1
     let mut ea = -1
-    match slack.value("slack_map") {
+    match jget(slack, "slack_map") {
       Some(Object(sm)) =>
         match sm.get(id) {
           Some(Object(o)) => {
@@ -565,11 +565,11 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
   }
   // 弹性批按最早开始排序（可并行窗口）
   flexible_batch.sort_by(fn(a : Json, b : Json) -> Int32 {
-    let ae = match a.value("earliest") {
+    let ae = match jget(a, "earliest") {
       Some(Number(n, ..)) => n
       _ => 0.0
     }
-    let be = match b.value("earliest") {
+    let be = match jget(b, "earliest") {
       Some(Number(n, ..)) => n
       _ => 0.0
     }
@@ -583,7 +583,7 @@ pub fn FistEngine::dag_schedule(self : FistEngine) -> Json {
   })
   // R75 负载感知：flexible 批中未认领任务建议派给活跃负载最低的已注册执行者
   let flexible_adv : Array[Json] = flexible_batch.map(fn(row) {
-    let asg = match row.value("assignee") {
+    let asg = match jget(row, "assignee") {
       Some(Json::String(s)) => s
       _ => ""
     }
@@ -634,7 +634,7 @@ pub fn FistEngine::dag_cost_route(self : FistEngine) -> Json {
   let slack = self.dag_slack_analysis()
   // R12-R10 性能：`dag_slack_analysis` 现已在返回里带上 topo order（见 slack_analysis 结果），
   // 直接复用，省掉一次 `dag_topo_order()`（那又是一次全库 read + Kahn 遍历）。
-  let order = match slack.value("order") {
+  let order = match jget(slack, "order") {
     Some(Json::Array(arr)) =>
       arr.filter_map(fn(v) {
         match v {
@@ -668,7 +668,7 @@ pub fn FistEngine::dag_cost_route(self : FistEngine) -> Json {
   for id in order {
     // 只处理 slack>0（flexible）且未认领的任务
     let mut sl = -1
-    match slack.value("slack_map") {
+    match jget(slack, "slack_map") {
       Some(Object(sm)) =>
         match sm.get(id) {
           Some(Object(o)) =>
@@ -883,7 +883,7 @@ pub fn FistEngine::budget_split_by_dag(
   let slack = self.dag_slack_analysis()
   // 每任务 earliest 作为阶段
   let level_of : Map[String, Int32] = Map([])
-  match slack.value("slack_map") {
+  match jget(slack, "slack_map") {
     Some(Object(sm)) =>
       for id in sm.keys() {
         match sm.get(id) {
@@ -985,7 +985,7 @@ pub fn FistEngine::budget_split_by_dag(
     )
   }
   let mut makespan = 0
-  match slack.value("makespan") {
+  match jget(slack, "makespan") {
     Some(Number(n, ..)) => makespan = n.to_int()
     _ => ()
   }
@@ -1232,11 +1232,11 @@ pub fn FistEngine::plan_revise(
   let mut fb_ignored = 0
   let parsed_ids : Array[String] = []
   for f in feedback {
-    let tid_opt = match f.value("task_id") {
+    let tid_opt = match jget(f, "task_id") {
       Some(Json::String(s)) => Some(s)
       _ => None
     }
-    let ok_opt = match f.value("ok") {
+    let ok_opt = match jget(f, "ok") {
       Some(j) =>
         match j {
           Json::True => Some(true)

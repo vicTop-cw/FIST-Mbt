@@ -184,7 +184,7 @@ fn sync_db_executors() -> Unit {
 /// 从参数解析可选出价表 {执行者: 0..1 置信度}（可选参数，缺省返回空表=按覆盖率自动出价）。
 fn json_bid_map(args : Json, key : String) -> Map[String, Double] {
   let m : Map[String, Double] = Map([])
-  match args.value(key) {
+  match jget(args, key) {
     Some(Json::Object(o)) =>
       for (k, v) in o {
         match v {
@@ -200,7 +200,7 @@ fn json_bid_map(args : Json, key : String) -> Map[String, Double] {
 ///|
 /// 读 Json 对象的字符串字段（复用式，等价 executor 包内私有 num/str）。
 fn jstr(j : Json, key : String) -> String {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::String(s)) => s
     _ => ""
   }
@@ -209,7 +209,7 @@ fn jstr(j : Json, key : String) -> String {
 ///|
 /// 读 Json 对象的数值字段。
 fn jnum(j : Json, key : String) -> Double {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::Number(n, ..)) => n
     _ => 0.0
   }
@@ -1178,7 +1178,7 @@ fn _log_call(
 /// schema 声明的 required 参数名（BUG-19 用；解析不到就返回空数组=不新增约束）。
 fn schema_required(input_schema : Json) -> Array[String] {
   let out : Array[String] = []
-  match input_schema.value("required") {
+  match jget(input_schema, "required") {
     Some(Json::Array(arr)) =>
       for j in arr {
         match j {
@@ -1195,7 +1195,7 @@ fn schema_required(input_schema : Json) -> Array[String] {
 /// schema 声明的参数名（inputSchema.properties 的键）。解析不到返回空数组=不做未知键判定。
 fn schema_properties(input_schema : Json) -> Array[String] {
   let out : Array[String] = []
-  match input_schema.value("properties") {
+  match jget(input_schema, "properties") {
     Some(Object(map)) =>
       for (k, _) in map {
         if k != "" {
@@ -1282,7 +1282,7 @@ fn misnamed_args(args : Json, props : Array[String]) -> Array[(String, String)] 
 fn missing_required(args : Json, required : Array[String]) -> Array[String] {
   let out : Array[String] = []
   for name in required {
-    let blank = match args.value(name) {
+    let blank = match jget(args, name) {
       None => true
       Some(Json::Null) => true
       Some(Json::String(s)) => s.trim() == ""
@@ -4973,7 +4973,7 @@ pub async fn run_server() -> Unit {
       sync_db_executors()
       // 1. 取顶部可领取任务
       let tr = engine_for_ns(ns).triage(ns, agent, want)
-      let sug = match tr.value("suggestion") {
+      let sug = match jget(tr, "suggestion") {
         Some(Json::Object(o)) => o
         _ => Map([])
       }
@@ -5004,7 +5004,7 @@ pub async fn run_server() -> Unit {
       let need = if want != "" { want } else { auto_need(desc) }
       let load = executor_loads(engine)
       let route = exec_reg.route_pick(need, load)
-      let best = match route.value("best") {
+      let best = match jget(route, "best") {
         Some(Json::Object(o)) => o
         _ => Map([])
       }
@@ -5643,9 +5643,9 @@ pub async fn run_server() -> Unit {
       let specs_raw = get_array(args, "specs")
       let spec_files : Array[(String, String)] = []
       for item in specs_raw {
-        match item.value("file_name") {
+        match jget(item, "file_name") {
           Some(String(fname)) => {
-            let content = match item.value("content") {
+            let content = match jget(item, "content") {
               Some(String(s)) => s
               _ => ""
             }
@@ -5678,9 +5678,9 @@ pub async fn run_server() -> Unit {
       let max_rounds = get_int(args, "max_rounds", default=3)
       let all_spec_contents : Array[(String, String)] = []
       for item in specs_raw {
-        match item.value("file_name") {
+        match jget(item, "file_name") {
           Some(String(fname)) => {
-            let content = match item.value("content") {
+            let content = match jget(item, "content") {
               Some(String(s)) => s
               _ => ""
             }
@@ -5694,7 +5694,7 @@ pub async fn run_server() -> Unit {
       // 第一轮：批量验证获取失败项
       let verify_result = @omega.batch_verify(all_spec_contents)
       let failed_results : Array[Json] = []
-      match verify_result.value("failed_details") {
+      match jget(verify_result, "failed_details") {
         Some(Array(fd)) =>
           for fr in fd {
             failed_results.push(fr)
@@ -5830,13 +5830,13 @@ pub async fn run_server() -> Unit {
         }
         idx = idx + 1
       }
-      let el = match args.value("elapsed") {
+      let el = match jget(args, "elapsed") {
         Some(Json::Number(n, ..)) => @engine.phi_coerce_seconds(n)
         _ => None
       }
       let bad = offs
       if el == None {
-        let shown = match args.value("elapsed") {
+        let shown = match jget(args, "elapsed") {
           Some(j) => j.stringify()
           None => "缺失"
         }
@@ -5855,7 +5855,7 @@ pub async fn run_server() -> Unit {
         Some(v) => v
         None => 0
       }
-      let threshold = match args.value("threshold") {
+      let threshold = match jget(args, "threshold") {
         None => 8
         Some(Json::Null) => 8
         Some(Json::Number(n, ..)) =>

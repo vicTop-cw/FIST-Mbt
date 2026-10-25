@@ -88,7 +88,7 @@ fn gh_field(j : Json, key : String) -> String {
 ///|
 /// plan 数组取值：缺字段一律 abort，不回退空数组（空数组会把"没生成"读成"生成 0 条"）
 fn b35_items(j : Json, what : String) -> Array[Json] {
-  match j.value("plan") {
+  match jget(j, "plan") {
     Some(Array(a)) => a
     _ => abort(what + " 缺 plan 数组: " + j.stringify())
   }
@@ -98,7 +98,7 @@ fn b35_items(j : Json, what : String) -> Array[Json] {
 /// 一条 plan 项（或单条 plan）的 --data 段解成 Json，并顺带锁住 BUG-87 的占位符字面存活。
 /// 三条路径（flush / comment / close）共用这一个判据，防止"只修了 flush 那一处"。
 fn b35_data(item : Json, what : String) -> Json {
-  let cmd = match item.value("curl_command") {
+  let cmd = match jget(item, "curl_command") {
     Some(String(s)) => s
     _ => abort(what + " 缺 curl_command: " + item.stringify())
   }
@@ -164,13 +164,13 @@ test "BUG-35：github_flush_plan 生成的 --data 是合法 JSON（多行正文 
   assert_true(body.contains("详情第二行"))
   assert_true(body.contains("don't"))
   assert_true(body.contains("\"引号\""))
-  let labels = match parsed.value("labels") {
+  let labels = match jget(parsed, "labels") {
     Some(Array(a)) => a
     _ => abort("labels 不是数组: " + parsed.stringify())
   }
   assert_eq(labels.length(), 2)
   // ③ payload_json 旁路字段（Windows 下 --data @file 的正身，不必反向解 shell 引号）
-  let pj = match item.value("payload_json") {
+  let pj = match jget(item, "payload_json") {
     Some(String(s)) => s
     _ => abort("payload_json 缺失: " + item.stringify())
   }
@@ -276,7 +276,7 @@ test "BUG-224_flush_plan_skips_empty_bug_id" {
   let items = b35_items(plan, "flush_plan")
   // 只有带非空 bug_id 的那条能进 plan——空 bug_id 行必须被排除
   assert_eq(items.length(), 1)
-  let bid = match items[0].value("bug_id") {
+  let bid = match jget(items[0], "bug_id") {
     Some(String(s)) => s
     _ => abort("plan 项缺 bug_id: " + items[0].stringify())
   }

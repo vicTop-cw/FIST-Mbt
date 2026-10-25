@@ -28,7 +28,7 @@ fn jb(j : Json, key : String) -> Bool {
 ///|
 /// 取顶层 results 数组（upsert 回执）。
 fn sup_results(r : Json) -> Array[Json] {
-  match r.value("results") {
+  match jget(r, "results") {
     Some(Json::Array(a)) => a
     _ => abort("upsert 回执缺少 results 数组")
   }

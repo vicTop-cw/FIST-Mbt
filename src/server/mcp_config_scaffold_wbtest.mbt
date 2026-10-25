@@ -52,7 +52,7 @@ fn mcs_run_err(
 
 ///|
 fn mcs_str(j : Json, key : String) -> String {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::String(s)) => s
     _ => "<缺 String 字段 " + key + ">"
   }
@@ -60,7 +60,7 @@ fn mcs_str(j : Json, key : String) -> String {
 
 ///|
 fn mcs_arr(j : Json, key : String) -> Array[Json] {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::Array(arr)) => arr
     _ => []
   }
@@ -70,7 +70,7 @@ fn mcs_arr(j : Json, key : String) -> Array[Json] {
 /// 从返回体的 `json` 字段里取 mcpServers.<name> 的某字段，返回紧凑 stringify（便于 contains 断言）。
 fn mcs_server_field(text : String, name : String, key : String) -> String {
   let j = @json.parse(text) catch { _ => Json::object({}) }
-  match j.value("mcpServers") {
+  match jget(j, "mcpServers") {
     Some(Json::Object(servers)) =>
       match servers.get(name) {
         Some(Json::Object(conf)) =>

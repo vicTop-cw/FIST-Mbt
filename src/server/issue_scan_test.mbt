@@ -101,7 +101,7 @@ test "lint_4_test_file_skipped_by_default" {
 ///|
 /// BUG-15 加固：取 findings 数组（结构异常返回空）。
 fn lint_findings(j : Json) -> Array[Json] {
-  match j.value("findings") {
+  match jget(j, "findings") {
     Some(Array(a)) => a
     _ => []
   }
@@ -111,7 +111,7 @@ fn lint_findings(j : Json) -> Array[Json] {
 /// BUG-15 加固：命中是否落在指定文件后缀上。
 fn lint_any_file_suffix(items : Array[Json], suffix : String) -> Bool {
   items.any(fn(f) {
-    match f.value("file") {
+    match jget(f, "file") {
       Some(String(s)) => s.has_suffix(suffix)
       _ => false
     }
@@ -121,7 +121,7 @@ fn lint_any_file_suffix(items : Array[Json], suffix : String) -> Bool {
 ///|
 /// 命中行号（缺失返回 -1）。
 fn lint_line(f : Json) -> Int32 {
-  match f.value("line") {
+  match jget(f, "line") {
     Some(Number(n, ..)) => n.to_int()
     _ => -1
   }
@@ -201,7 +201,7 @@ test "lint_7_no_high_hits_left_in_src_omega_bug15" {
       )
     }
   }
-  let high = match j.value("by_severity") {
+  let high = match jget(j, "by_severity") {
     Some(Object(m)) =>
       match m.get("high") {
         Some(Number(n, ..)) => n.to_int()
@@ -237,7 +237,7 @@ test "lint_9_by_severity_has_info_bucket" {
     Err(_) => return
   }
   let total = mem_int(j, "total_findings")
-  let buckets = match j.value("by_severity") {
+  let buckets = match jget(j, "by_severity") {
     Some(Object(m)) => m
     _ => Map([])
   }
@@ -404,7 +404,7 @@ fn lint_268_no_medium(
     if !is_sub {
       continue
     }
-    let fp = match f.value("file") {
+    let fp = match jget(f, "file") {
       Some(String(s)) => s.has_suffix(file_suffix)
       _ => false
     }

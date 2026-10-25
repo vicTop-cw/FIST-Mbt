@@ -179,7 +179,7 @@ test "BUG-18：no_sidecar 逃生门存在、默认关闭，且描述写明预算
 ///|
 test "BUG-3：audit_log 返回体自我说明（scope/note），空结果不等于没有治理动作" {
   let empty = audit_log_payload([])
-  match empty.value("scope") {
+  match jget(empty, "scope") {
     Some(Json::String(s)) => assert_eq(s, "process")
     _ =>
       abort(
@@ -187,14 +187,14 @@ test "BUG-3：audit_log 返回体自我说明（scope/note），空结果不等�
         empty.stringify(),
       )
   }
-  match empty.value("note") {
+  match jget(empty, "note") {
     Some(Json::String(n)) => {
       assert_true(n.contains("call_log"))
       assert_true(n.contains("空"))
     }
     _ => abort("缺 note：审计面会伪装成什么都没发生")
   }
-  match empty.value("entries") {
+  match jget(empty, "entries") {
     Some(Json::Array(arr)) => assert_eq(arr.length(), 0)
     _ => abort("entries 字段缺失")
   }
@@ -209,17 +209,17 @@ test "BUG-3：audit_log 返回体自我说明（scope/note），空结果不等�
   )
   let full = audit_log_payload(log.entries())
   assert_eq(r2_json_int_field(full.stringify(), "count"), 1)
-  match full.value("entries") {
+  match jget(full, "entries") {
     Some(Json::Array(arr)) => {
       assert_eq(arr.length(), 1)
-      match arr[0].value("action") {
+      match jget(arr[0], "action") {
         Some(Json::String(a)) => assert_eq(a, "run_check_denied")
         _ => abort("条目缺 action")
       }
     }
     _ => abort("有条目时 entries 缺失")
   }
-  match full.value("scope") {
+  match jget(full, "scope") {
     Some(Json::String(s)) => assert_eq(s, "process")
     _ => abort("scope 丢失")
   }

@@ -322,21 +322,21 @@ test "plan_deep gradient_dag 把更简单变体落成真实 DAG 前驱链；默�
     Err(m) => abort("gradient_dag plan_deep failed: \{m}")
     Ok(tree) => {
       // 返回树顶层三兄弟：首个无依赖，后续各依赖前一兄弟
-      match tree.value("tree") {
+      match jget(tree, "tree") {
         None => abort("tree missing")
         Some(root_tree) =>
-          match root_tree.value("children") {
+          match jget(root_tree, "children") {
             None => abort("children missing")
             Some(Array(cs)) =>
               for j = 0; j < cs.length(); j = j + 1 {
-                let dep = match cs[j].value("depends_on") {
+                let dep = match jget(cs[j], "depends_on") {
                   Some(Array(a)) => a
                   _ => []
                 }
                 if j == 0 {
                   assert_eq(dep.is_empty(), true)
                 } else {
-                  let prev_id = match cs[j - 1].value("id") {
+                  let prev_id = match jget(cs[j - 1], "id") {
                     Some(Json::String(s)) => s
                     _ => ""
                   }
@@ -387,18 +387,18 @@ test "plan_exec_order 输出 DAG 序执行计划：依赖先于被依赖，携�
     Ok(_) => {
       // 返回树顶层 3 兄弟均由易到难连链；exec_order 全后代扁平拓扑序
       let ej = e.plan_exec_order(id)
-      match ej.value("order") {
+      match jget(ej, "order") {
         None => abort("order missing")
         Some(Array(seq)) => {
           let idx : Map[String, Int32] = Map([])
           for k = 0; k < seq.length(); k = k + 1 {
-            let oid = match seq[k].value("id") {
+            let oid = match jget(seq[k], "id") {
               Some(Json::String(s)) => s
               _ => abort("id missing")
             }
             idx.set(oid, k)
             // 每个后代都应有难度档（gradient 开启）
-            let d = match seq[k].value("difficulty") {
+            let d = match jget(seq[k], "difficulty") {
               Some(Json::String(s)) => s
               _ => ""
             }
@@ -406,11 +406,11 @@ test "plan_exec_order 输出 DAG 序执行计划：依赖先于被依赖，携�
           }
           // DAG 序不变量：任一任务其 depends_on 中的前驱在序中下标必须更小
           for k = 0; k < seq.length(); k = k + 1 {
-            let deps = match seq[k].value("depends_on") {
+            let deps = match jget(seq[k], "depends_on") {
               Some(Array(a)) => a
               _ => []
             }
-            let oid = match seq[k].value("id") {
+            let oid = match jget(seq[k], "id") {
               Some(Json::String(s)) => s
               _ => ""
             }

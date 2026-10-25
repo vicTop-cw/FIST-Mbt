@@ -20,7 +20,7 @@ fn ps_must(cond : Bool, msg : String) -> Unit {
 
 ///|
 fn ps_str(j : Json, key : String) -> String {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::String(s)) => s
     _ => "<缺 String 字段 " + key + ">"
   }
@@ -28,7 +28,7 @@ fn ps_str(j : Json, key : String) -> String {
 
 ///|
 fn ps_arr_len(j : Json, key : String) -> Int32 {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::Array(arr)) => arr.length()
     _ => -1
   }
@@ -36,7 +36,7 @@ fn ps_arr_len(j : Json, key : String) -> Int32 {
 
 ///|
 fn ps_num(j : Json, key : String) -> Double {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::Number(n, ..)) => n
     _ => -1.0
   }
@@ -83,7 +83,7 @@ test "R116：checklist 7 项，cl7-plugin-forms-sync 为 hard 门" {
   )
   let mut gate7 = "<无 cl7>"
   let mut ids = ""
-  match j.value("checklist") {
+  match jget(j, "checklist") {
     Some(Json::Array(arr)) =>
       for item in arr {
         let id = ps_str(item, "id")

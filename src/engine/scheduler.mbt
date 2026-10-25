@@ -164,11 +164,11 @@ pub fn schedule_task(desc : String, n_files~ : Int32 = 1) -> Json {
 /// 从 JSON 参数中计算 schedule（供 MCP 工具调用）。
 /// 输入 JSON：{ "description": String, "n_files"? : Int }
 pub fn schedule_json(args : Json) -> Json {
-  let desc = match args.value("description") {
+  let desc = match jget(args, "description") {
     Some(String(s)) => s
     _ => ""
   }
-  let n_files = match args.value("n_files") {
+  let n_files = match jget(args, "n_files") {
     Some(Number(n, ..)) => n.to_int()
     _ => 1
   }

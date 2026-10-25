@@ -54,7 +54,7 @@ fn FistEngine::executor_loads(
 ///|
 /// 读 Json 对象的字符串字段（内部辅助）。
 fn _jstr(j : Json, key : String) -> String {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::String(s)) => s
     _ => ""
   }
@@ -91,7 +91,7 @@ pub fn FistEngine::dispatch_next(
   let tri = self.triage(ns, agent, want)
   let top = _jstr(tri, "task_id") // triage 顶层 task_id 字段（若顶层是 suggestion 则回退解析）
   let top2 : String = if top == "" {
-    match tri.value("suggestion") {
+    match jget(tri, "suggestion") {
       Some(Object(sm)) => _jstr(Json::object(sm), "task_id")
       _ => ""
     }
@@ -125,12 +125,12 @@ pub fn FistEngine::dispatch_next(
   let names = reg.list()
   let load = self.executor_loads(names)
   let route = reg.route_pick(want_eff, load)
-  let best = match route.value("best") {
+  let best = match jget(route, "best") {
     Some(Object(b)) => _jstr(Json::object(b), "name")
     _ => ""
   }
   let to = if best != "" { best } else { agent }
-  let remaining = match tri.value("count") {
+  let remaining = match jget(tri, "count") {
     Some(Json::Number(n, ..)) => if n > 1.0 { (n - 1.0).to_int() } else { 0 }
     _ => 0
   }

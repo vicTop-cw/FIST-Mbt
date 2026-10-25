@@ -22,7 +22,7 @@ fn ba_publish(e : @engine.FistEngine, desc : String) -> String {
 ///|
 /// 读出 health_check 的 grade。
 fn hc_grade(j : Json) -> String {
-  match j.value("grade") {
+  match jget(j, "grade") {
     Some(Json::String(s)) => s
     _ => abort("grade 缺失: " + j.stringify())
   }
@@ -31,7 +31,7 @@ fn hc_grade(j : Json) -> String {
 ///|
 /// 读出 health_check signals 中某信号 verdict。
 fn hc_signal_verdict(j : Json, key : String) -> String {
-  let obj = match j.value("signals") {
+  let obj = match jget(j, "signals") {
     Some(Object(o)) => o
     _ => return ""
   }
@@ -39,7 +39,7 @@ fn hc_signal_verdict(j : Json, key : String) -> String {
     Some(x) => x
     _ => return ""
   }
-  match sj.value("verdict") {
+  match jget(sj, "verdict") {
     Some(Json::String(v)) => v
     _ => ""
   }
@@ -147,11 +147,11 @@ test "health_check：healthy + latency 百分位——3 完成 1 待领取，p50
   let j = @server.render_health_check(e.list_all(), "default")
   assert_eq(hc_signal_verdict(j, "latency"), "ok")
   assert_eq(hc_grade(j), "healthy")
-  match j.value("signals") {
+  match jget(j, "signals") {
     Some(Object(o)) =>
       match o.get("latency") {
         Some(sj) =>
-          match sj.value("p50_secs") {
+          match jget(sj, "p50_secs") {
             Some(Json::Number(n, ..)) => assert_eq(n.to_int(), 120)
             _ => abort("p50_secs 缺失: " + j.stringify())
           }
@@ -164,7 +164,7 @@ test "health_check：healthy + latency 百分位——3 完成 1 待领取，p50
 ///|
 /// 读 health_check latency 信号中的数值字段（p50_secs / p90_secs）。
 fn hc_latency_num(j : Json, key : String) -> Double {
-  let obj = match j.value("signals") {
+  let obj = match jget(j, "signals") {
     Some(Object(o)) => o
     _ => abort("signals 缺失: " + j.stringify())
   }
@@ -172,7 +172,7 @@ fn hc_latency_num(j : Json, key : String) -> Double {
     Some(x) => x
     _ => abort("latency 缺失: " + j.stringify())
   }
-  match sj.value(key) {
+  match jget(sj, key) {
     Some(Json::Number(n, ..)) => n
     _ => abort("\{key} 缺失: " + j.stringify())
   }
@@ -257,7 +257,7 @@ test "board_ascii 按状态分组 + 深度缩进 + 状态合计" {
   assert_true(j.contains("[待领取]"))
   assert_true(j.contains("[执行中]"))
   // counts 对象非空（渲染了至少一个状态分组，行断言已覆盖多状态分组）
-  let cnt = match board.value("counts") {
+  let cnt = match jget(board, "counts") {
     Some(Object(m)) => m
     _ => abort("counts 缺失")
   }
@@ -310,7 +310,8 @@ test "status_summary 项目脉冲：总量 + 按状态计数 + 活跃命名空�
   let s = @server.render_status_summary(tasks, ["default"], "0.2.4").stringify()
   // 总量 = 引擎任务数
   match
-    @server.render_status_summary(tasks, ["default"], "0.2.4").value(
+    jget(
+      @server.render_status_summary(tasks, ["default"], "0.2.4"),
       "total_tasks",
     ) {
     Some(Number(n, ..)) => assert_eq(n.to_int(), tasks.length())
@@ -323,7 +324,8 @@ test "status_summary 项目脉冲：总量 + 按状态计数 + 活跃命名空�
   assert_true(s.contains("待领取"))
   // by_difficulty 不变量：各难度档数量之和 == 待领取任务数（复用 extract_difficulty，支柱②）
   match
-    @server.render_status_summary(tasks, ["default"], "0.2.4").value(
+    jget(
+      @server.render_status_summary(tasks, ["default"], "0.2.4"),
       "by_difficulty",
     ) {
     Some(Object(dm)) => {
@@ -369,7 +371,7 @@ test "status_summary 支持 namespace 过滤：只统计该 ns" {
     ["default"],
     "0.2.4",
   )
-  match scoped.value("total_tasks") {
+  match jget(scoped, "total_tasks") {
     Some(Number(n, ..)) => assert_true(n.to_int() >= 1)
     _ => abort("scoped total_tasks 缺失: " + scoped.stringify())
   }
@@ -379,7 +381,7 @@ test "status_summary 支持 namespace 过滤：只统计该 ns" {
     [],
     "0.2.4",
   )
-  match zero.value("total_tasks") {
+  match jget(zero, "total_tasks") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
     _ => abort("zero total_tasks 缺失: " + zero.stringify())
   }
@@ -429,7 +431,7 @@ test "board_ascii 每行标注难度档（复用 extract_difficulty，支柱①+
     ),
   )
   let j = @server.render_board_ascii(e.list_all(), "")
-  match j.value("ascii") {
+  match jget(j, "ascii") {
     Some(String(s)) => assert_true(s.contains("难度["))
     _ => abort("ascii 缺失")
   }
@@ -440,7 +442,7 @@ test "project_health 健康卡：聚合六类计数 + 等级判定（R68）" {
   let e = ba_engine()
   // 空库 -> empty
   let h0 = @server.render_project_health(e.list_all(), "0.2.4")
-  match h0.value("grade") {
+  match jget(h0, "grade") {
     Some(String(g)) => assert_eq(g, "empty")
     _ => abort("空库 grade 应 empty")
   }
@@ -448,26 +450,26 @@ test "project_health 健康卡：聚合六类计数 + 等级判定（R68）" {
   let root = ba_publish(e, "健康根任务")
   ignore(e.claim(task_id=root, assignee="leader_a", now="2026-09-25T11:00:00Z"))
   let h1 = @server.render_project_health(e.list_all(), "0.2.4")
-  match h1.value("grade") {
+  match jget(h1, "grade") {
     Some(String(g)) => assert_eq(g, "healthy")
     _ => abort("有进行应 healthy")
   }
-  match h1.value("in_flight") {
+  match jget(h1, "in_flight") {
     Some(Number(n, ..)) => assert_true(n >= 1.0)
     _ => abort("in_flight 缺失")
   }
   // 暂停 -> 计入 blocked，grade 降为 attention
   ignore(e.pause_task(task_id=root, now="2026-09-25T11:01:00Z"))
   let h2 = @server.render_project_health(e.list_all(), "0.2.4")
-  match h2.value("grade") {
+  match jget(h2, "grade") {
     Some(String(g)) => assert_eq(g, "attention")
     _ => abort("有阻塞应 attention")
   }
-  match h2.value("blocked_tasks") {
+  match jget(h2, "blocked_tasks") {
     Some(Array(a)) => assert_true(a.length() >= 1)
     _ => abort("blocked_tasks 应含被暂停任务")
   }
-  match h2.value("blocked") {
+  match jget(h2, "blocked") {
     Some(Number(n, ..)) => assert_true(n >= 1.0)
     _ => abort("blocked 计数缺失")
   }
@@ -508,7 +510,7 @@ fn b29_done(id : String, deliv : String) -> @core.Task {
 ///|
 /// 读顶层整数字段
 fn b29_num(j : Json, key : String) -> Int32 {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::Number(n, ..)) => n.to_int()
     _ => abort("\{key} 缺失: " + j.stringify())
   }
@@ -517,7 +519,7 @@ fn b29_num(j : Json, key : String) -> Int32 {
 ///|
 /// 读顶层整数字段（state_flow 用，缺失返回 0 fail-open）
 fn sf_num(j : Json, key : String) -> Int32 {
-  match j.value(key) {
+  match jget(j, key) {
     Some(Json::Number(n, ..)) => n.to_int()
     _ => 0
   }
@@ -526,7 +528,7 @@ fn sf_num(j : Json, key : String) -> Int32 {
 ///|
 /// 读顶层布尔字段
 fn b29_bool(j : Json, key : String) -> Bool {
-  match j.value(key) {
+  match jget(j, key) {
     Some(v) =>
       match v {
         Json::True => true
@@ -547,7 +549,7 @@ test "BUG-29：已完成单列 done_no_artifact 档——status_summary / board 
   ]
   let s = @server.render_status_summary(tasks, ["default"], "0.3.0")
   // 已完成=4，其中无交付物=2（旧口径把两者混为一谈，指挥官按 status 判进度就把探针读成成果）
-  match s.value("by_status") {
+  match jget(s, "by_status") {
     Some(Object(m)) =>
       match m.get("已完成") {
         Some(Json::Number(n, ..)) => assert_eq(n.to_int(), 4)
@@ -558,7 +560,7 @@ test "BUG-29：已完成单列 done_no_artifact 档——status_summary / board 
   assert_eq(b29_num(s, "done_no_artifact"), 2)
   let b = @server.render_board_ascii(tasks, "default")
   assert_eq(b29_num(b, "done_no_artifact"), 2)
-  match b.value("ascii") {
+  match jget(b, "ascii") {
     Some(Json::String(a)) => {
       assert_true(a.contains("已完成:4(无交付物2)"))
       // 作用域一致性：board 的计数按 ns 过滤后仍与 status_summary 同源
@@ -572,7 +574,7 @@ test "BUG-29：已完成单列 done_no_artifact 档——status_summary / board 
 ///|
 /// 读 project_health 的 grade（与上方既有用例同口径，BUG-29 棘轮用例复用）
 fn ph_grade(j : Json) -> String {
-  match j.value("grade") {
+  match jget(j, "grade") {
     Some(Json::String(g)) => g
     _ => abort("grade 缺失: " + j.stringify())
   }
@@ -641,7 +643,7 @@ test "state_flow_ascii_shows_lifecycle" {
     e.execute(task_id=c0, deliverable="成果 v1", now="2026-09-25T11:03:00Z"),
   )
   let j = @server.render_state_flow_ascii(e.list_all(), "")
-  let ascii = match j.value("ascii") {
+  let ascii = match jget(j, "ascii") {
     Some(Json::String(s)) => s
     _ => abort("ascii 缺失")
   }
@@ -654,7 +656,7 @@ test "state_flow_ascii_shows_lifecycle" {
   assert_true(ascii.contains("执行中="))
   assert_true(ascii.contains("待领取="))
   // 在流任务 ≥ 1
-  let infl = match j.value("in_flow") {
+  let infl = match jget(j, "in_flow") {
     Some(Json::Number(n, ..)) => n.to_int()
     _ => abort("in_flow 缺失")
   }
@@ -665,7 +667,7 @@ test "state_flow_ascii_shows_lifecycle" {
 /// 状态流转 ASCII：空仓 → 当前分布 (空)，在流 = 0。
 test "state_flow_ascii_empty_store" {
   let j = @server.render_state_flow_ascii([], "nosuch")
-  let ascii = match j.value("ascii") {
+  let ascii = match jget(j, "ascii") {
     Some(Json::String(s)) => s
     _ => abort("ascii 缺失")
   }
@@ -701,15 +703,15 @@ test "property_ascii_views_consistency_seeded" {
     let board = @server.render_board_ascii(tasks, "")
     let state = @server.render_state_flow_ascii(tasks, "")
     let summary = @server.render_status_summary(tasks, ["default"], "0.3.8")
-    match board.value("ascii") {
+    match jget(board, "ascii") {
       Some(Json::String(s)) => assert_true(s.length() > 0)
       _ => abort("board ascii 缺失")
     }
-    match state.value("ascii") {
+    match jget(state, "ascii") {
       Some(Json::String(s)) => assert_true(s.length() > 0)
       _ => abort("state ascii 缺失")
     }
-    match summary.value("total_tasks") {
+    match jget(summary, "total_tasks") {
       Some(Json::Number(n, ..)) => assert_eq(n.to_int(), tasks.length())
       _ => abort("status_summary total_tasks 缺失")
     }

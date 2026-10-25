@@ -25,13 +25,13 @@ fn tr_publish(e : @engine.FistEngine, desc : String) -> String {
 ///|
 /// 在 triage 返回里查找 id 任务，断言其 depends_on 恰为 [dep]。找到返回 true。
 fn triage_row_has_dep(j : Json, id : String, dep : String) -> Bool {
-  match j.value("tasks") {
+  match jget(j, "tasks") {
     Some(Array(arr)) => {
       let mut found = false
       for row in arr {
-        match row.value("id") {
+        match jget(row, "id") {
           Some(String(s)) if s == id =>
-            match row.value("depends_on") {
+            match jget(row, "depends_on") {
               Some(Array(d)) if d.length() == 1 =>
                 match d[0] {
                   String(did) if did == dep => found = true
@@ -62,19 +62,19 @@ test "task_triage 返回可领取排行 + suggestion，且带难度标签" {
     ),
   )
   let j = e.triage("", "exec_demo", "")
-  match j.value("count") {
+  match jget(j, "count") {
     Some(Number(n, ..)) => assert_true(n.to_int() >= 1)
     _ => abort("count 缺失: " + j.stringify())
   }
   // suggestion 应指向某可领取任务
-  match j.value("suggestion") {
+  match jget(j, "suggestion") {
     Some(Object(_)) => ()
     _ => abort("应有 suggestion: " + j.stringify())
   }
   // 至少第一条任务带难度标签（gradient 的 易/中/难 或 叶(可执行) 兜底）
-  match j.value("tasks") {
+  match jget(j, "tasks") {
     Some(Array(arr)) if !arr.is_empty() =>
-      match arr[0].value("difficulty") {
+      match jget(arr[0], "difficulty") {
         Some(String(d)) =>
           assert_true(
             d == "易" || d == "中" || d == "难" || d.contains("叶"),
@@ -90,17 +90,17 @@ test "task_triage 按 namespace 过滤：命中当前集合内该 ns，未命中
   let e = tr_engine()
   ignore(tr_publish(e, "甲项目任务"))
   let j_x = e.triage("default", "exec_demo", "")
-  match j_x.value("count") {
+  match jget(j_x, "count") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 1)
     _ => abort("count 缺失 default: " + j_x.stringify())
   }
   // 不存在的 ns → count 0 且无 suggestion
   let j_z = e.triage("no-such-ns", "exec_demo", "")
-  match j_z.value("count") {
+  match jget(j_z, "count") {
     Some(Number(n, ..)) => assert_eq(n.to_int(), 0)
     _ => abort("count 缺失 z")
   }
-  match j_z.value("suggestion") {
+  match jget(j_z, "suggestion") {
     None => ()
     _ => abort("空 ns 不应有 suggestion")
   }
@@ -132,7 +132,7 @@ test "task_triage 能力偏好路由：want 命中的候选排头部" {
   }
   // 再说 want=编排：编排那条应排头部
   let j = e.triage("", "exec_demo", "编排")
-  match j.value("suggestion") {
+  match jget(j, "suggestion") {
     Some(Object(m)) =>
       match m.get("task_id") {
         Some(String(tid)) =>
@@ -145,7 +145,7 @@ test "task_triage 能力偏好路由：want 命中的候选排头部" {
     _ => abort("应有 suggestion")
   }
   // want 应回显在返回里
-  match j.value("want") {
+  match jget(j, "want") {
     Some(String(w)) => assert_eq(w, "编排")
     _ => abort("want 应回显")
   }
@@ -186,17 +186,17 @@ test "selfdrive_pick_next 按推荐取走一条并认领；无可领取时不改
   let e = tr_engine()
   let id = tr_publish(e, "打磨编排引擎调度")
   let j = e.pick_next("", "exec_demo", "编排", "2026-09-05T10:01:00Z")
-  match j.value("claimed") {
+  match jget(j, "claimed") {
     Some(True) => ()
     _ => abort("应认领成功: " + j.stringify())
   }
-  match j.value("picked") {
+  match jget(j, "picked") {
     Some(String(pid)) => assert_eq(pid, id)
     _ => abort("picked 应等于根任务")
   }
   // 认领后该任务不再是待领取，再取单应无可领取
   let j2 = e.pick_next("", "exec_demo", "", "2026-09-05T10:02:00Z")
-  match j2.value("claimed") {
+  match jget(j2, "claimed") {
     Some(False) => ()
     _ => abort("已认领后再取应无可领取: " + j2.stringify())
   }

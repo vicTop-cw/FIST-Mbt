@@ -4,7 +4,7 @@
 
 ///|
 fn ef_verdict(j : Json) -> String {
-  match j.value("verdict") {
+  match jget(j, "verdict") {
     Some(Json::String(s)) => s
     _ => abort("verdict 缺失: " + j.stringify())
   }
@@ -12,7 +12,7 @@ fn ef_verdict(j : Json) -> String {
 
 ///|
 fn ef_count(j : Json, key : String) -> Int32 {
-  match j.value("counts") {
+  match jget(j, "counts") {
     Some(Json::Object(m)) =>
       match m.get(key) {
         Some(Json::Number(n, ..)) => n.to_int()
@@ -24,7 +24,7 @@ fn ef_count(j : Json, key : String) -> Int32 {
 
 ///|
 fn ef_schema_items(j : Json, key : String) -> Array[String] {
-  match j.value("schema") {
+  match jget(j, "schema") {
     Some(Json::Object(m)) =>
       match m.get(key) {
         Some(Json::Array(arr)) =>
@@ -42,7 +42,7 @@ fn ef_schema_items(j : Json, key : String) -> Array[String] {
 
 ///|
 fn ef_flags(j : Json) -> Array[String] {
-  match j.value("flags") {
+  match jget(j, "flags") {
     Some(Json::Array(arr)) =>
       arr.map(fn(v) {
         match v {

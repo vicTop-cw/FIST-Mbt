@@ -21,12 +21,12 @@ fn bp_engine(root_desc : String) -> @engine.FistEngine {
 /// 递归收集树里所有子任务 id。
 fn bp_ids(j : Json) -> Array[String] {
   let mut out : Array[String] = []
-  match j.value("tree") {
+  match jget(j, "tree") {
     Some(tree) =>
-      match tree.value("children") {
+      match jget(tree, "children") {
         Some(Array(arr)) =>
           for n in arr {
-            match n.value("id") {
+            match jget(n, "id") {
               Some(String(id)) => out = out + [id]
               _ => ()
             }

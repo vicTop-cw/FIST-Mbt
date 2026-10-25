@@ -677,7 +677,7 @@ fn mr_att_int64(attestation : String, key : String) -> Int64 {
     return 0L
   }
   let j : Json = @json.parse(attestation) catch { _ => return 0L }
-  match j.value(key) {
+  match jget(j, key) {
     Some(Number(n, ..)) => n.to_int64()
     _ => 0L
   }
