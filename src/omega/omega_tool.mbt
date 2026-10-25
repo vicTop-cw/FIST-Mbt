@@ -274,6 +274,12 @@ pub fn batch_verify(spec_contents : Array[(String, String)]) -> Json {
 ///
 /// 输入：failed_results 为 batch_verify 的 failed_details 数组。
 /// 返回：{ rounds[], final_accuracy, fixes_applied[], needs_human_review[] }
+///
+/// **参数 `max_rounds`（BUG-354 出路 c）**：轮次上限，本函数体内**不消费**它——
+/// 因为上面那条诚实性约束把本函数压成了「零修复能力的分类器」（所有失败项直接
+/// 标 needs_human_review，没有可迭代的修复轮次，轮次上限自然无处生效）。
+/// 保留形参是为 pub 契约稳定（`.mbti` 已公开该签名）；真正的轮次控制在上层
+/// `omega_verify_fix` 工具里另有实现。
 pub fn batch_verify_fix(
   failed_results : Array[Json],
   max_rounds~ : Int32 = 3,

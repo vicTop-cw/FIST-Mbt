@@ -84,6 +84,12 @@ fn split_remedy(task_id : String, st : @core.TaskStatus) -> String {
 ///|
 /// 对指定任务生成子任务树（一层）。非原子任务才可拆分。
 /// 返回生成的子任务 id 列表。
+///
+/// **参数 `by`（BUG-354 出路 c）**：拆解者身份。本函数体内**不消费**它——任务面
+/// 没有「谁拆解的」落点，审计面靠 `instrumented_tool` 的 `call_log` 记原始入参
+/// （跨进程可查）。保留形参是为契约稳定（`plan` 是 pub 接口 + MCP 入参 schema
+/// 的一部分，删它会收缩对外契约）。要真正消费需动 store schema（加历史字段），
+/// 属行为变更，未在本轮做。
 pub fn FistEngine::plan(
   self : FistEngine,
   task_id~ : String,
@@ -943,6 +949,11 @@ pub fn FistEngine::publish_next_round(
 /// 仅用于 cron-auto 等自动化命名空间，语义等同「人类指挥官发布首轮」
 /// 但审计日志标记为 watchdog 自动发布。
 ///
+/// **参数 `created_by`（BUG-354 出路 c）**：本函数体内**不消费**它——上面这句
+/// 「审计日志标记为 watchdog 自动发布」是**设计意图**，当前实现并未把
+/// `created_by` 写进任何审计字段（该语义只靠调用方自己传值，无落点）。保留形参
+/// 理由同 `plan`：删它会收缩 pub 契约；要真正消费需在 store 层加标记字段。
+///
 /// 安全边界：
 ///   - 仅允许作用于非 default 命名空间；
 ///   - 该命名空间必须为空（已有任务时拒绝，避免重复发布）。
@@ -1050,6 +1061,11 @@ pub fn FistEngine::reopen_task(
 
 ///|
 /// 验收拒绝（reject）：待验收 -> 已打回
+///
+/// **参数 `by`（BUG-354 出路 c）**：驳回者身份。本函数体内**不消费**它——「谁驳回的」
+/// 在任务状态面没有落点（`reason` 会落库，`by` 不会）。审计面靠 `call_log` 的原始
+/// 入参。保留形参理由同 `plan`：它是 pub 接口 + MCP 入参 schema 的一部分，删它会
+/// 收缩对外契约；要真正消费需动 store schema，属行为变更。
 pub fn FistEngine::reject_task(
   self : FistEngine,
   task_id~ : String,

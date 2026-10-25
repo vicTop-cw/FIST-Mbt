@@ -130,6 +130,11 @@ pub fn Artifact::create(
 ///|
 /// 加权滚轮采样：p_i ∝ s_i · h_i，返回选中产物（空库 None）。
 /// rand 注入 `() -> Double`（[0,1) 均匀），保证可测试。
+///
+/// **参数 `lam`（BUG-354 出路 c）**：softmax 温度形参，本函数体内**不参与计算**——
+/// 性能分量实际用 saturating 映射 `score / (score + a0)`（单调、无需 exp），
+/// 所以 `lam` 是历史残留形状。保留形参是为 pub 契约稳定（删它会动 `.mbti` 与
+/// 调用点）；若将来改用真正的 softmax 权重，`lam` 才是它的入口。
 pub fn Archive::sample_parent(
   self : Archive,
   lam~ : Double = 8.0,

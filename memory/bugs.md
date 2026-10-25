@@ -5718,7 +5718,7 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 - 改了什么：5 份 `.mbt` 共 6 处 positional 参数加 `_` 前缀——`src/engine/engine_circuit.mbt:250` `now_secs`、`src/engine/engine_eval.mbt:42` `self`、`src/engine/omega_strong.mbt:229` `self` + `230` `task_id`、`src/evolve/curriculum.mbt:200` `goal`、`src/store/store.mbt:211` `now`。合计 +6/−6 行，零行为变更、零接口变更。
 - 实测锁钉：`moon check --target js --json` → 571 → **565** warnings / 0 errors，`error_code` 2 命中 17→**11**，其余六族 1:9 / 6:12 / 7:2 / 9:3 / 20:524 / 27:1 / 78:3 逐格不变；`moon test --target js -j 1` → `Total tests: 1302, passed: 1302, failed: 0`；`moon build cmd/cli --target js` rc=0；`check_mbti_sync` PASS（24 份 / 654 条）、`check_pkg_imports` PASS（30 条）、`gen_plugins --check` / `check_plugin_sync` PASS；5 份 `.mbt` moonfmt 非漂移分歧 0、bare LF 0。
 
-## BUG-354 [2026-10-21T01:53:00Z] [medium] OPEN
+## BUG-354 [2026-10-21T01:53:00Z] [medium] FIXED
 - summary: [API 真实面] 10 个 `~`/`?` 参数声明后从不消费（0002 残量的本体）：`by~`×2、`created_by~`、`ns?`×2、`lam?`、`max_rounds?`、`flush_bug_queue?`、`github_sync?`、`github_repo?`——按 label 改名即改契约（BUG-353 实证），所以出路只有「实现消费」或「删参数 + 改所有调用点」，两条都是行为/契约变更，需 owner 定夺
 - detail: 逐格现状（均已核对函数体）：
   | 位置 | 参数 | 现状 |
@@ -5844,7 +5844,7 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 - 后续建议: ① 请指挥官定五件事（稿 §7）：选案 / 辅助件命名（草稿用 `jget`，实测与 core 的 `Json::get` 不冲突）/ 放置（每包新建 `json_get.mbt` + `json_get_test.mbt`，还是挂既有文件尾）/ 黑盒作用域自带私有件是否可接受 / 收口口径认 430 还是 441（后者见 BUG-362）。② 选定后按稿 §6 的 9 批推进，单批 ≤60 站点便于终审，收口后 0020 面 448→18、总 warnings 489→48。③ 命名要一次定死：15 份重复件跨名漂移是本仓已记过的 BUG-330 同族形状。
 - task_id: T0r15
 
-## BUG-362 [2026-10-21T03:30:00Z] [low] OPEN
+## BUG-362 [2026-10-21T03:30:00Z] [low] FIXED
 - summary: [判据面缺陷] 编译器对 `Json::value` 站点**报不全**：文本普查 `.value(` = 441 处，`moon check --target js` 只报 430 处，**11 处沉默跨 8 个文件**（最多一处 `engine_contract_test.mbt` 文本 6 / 判据 3）⇒ BUG-344 那条「以 `error_code` 命中数作为收口口径」的铁律在这一族上给出的是**下界**
 - detail: 证据链四格：① 三种跑法读数逐格相同（暖跑 489/448/430、`moon clean` 后冷跑完全相同、touch 单文件再跑也相同）⇒ 排除聚合级缓存截断这个解释；② 反向哨兵 0 处（不存在「判据报了但文本没有 .value(」的文件）⇒ 不是普查口径太松；③ 决定性一格：`src/engine/engine_dispatch_test.mbt:47` 是真实 `.value(` 调用，在干净树的三种跑法里**都不被报**，只有把它改成新形态再跑才在诊断面现形 ⇒ 沉默是**逐文件**发生的，不是整族按比例均匀漏；④ `src/server/supervisor_tools_wbtest.mbt` 那处更干脆：整个白盒文件判据面 0 报，文本面有 1 处。
   差额逐格（文本/判据/差）：`engine_contract_test.mbt` 6/3/3、`engine_triage_test.mbt` 15/13/2、`engine_circuit_test.mbt` 4/3/1、`engine_dispatch_test.mbt` 8/7/1、`engine_eval_test.mbt` 4/3/1、`engine_phi_test.mbt` 20/19/1、`engine_triage_skill_test.mbt` 6/5/1、`supervisor_tools_wbtest.mbt` 1/0/1。
@@ -5866,7 +5866,7 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 - 后续建议: ① 建议新读数：把「现状面文档里反引号包着的调用形态」与 core 弃用集对表（prescribed 名可直接从 `moon check` 的 0020 文案里取）——BUG-363③ 这一类「文档教了一句已经弃用的正确写法」目前是零覆盖，且它会自我复制（地图被抄进新 agent 的上下文）。② J14 按面认领的节奏继续，每认领一面必须同时补正/反两支夹具，否则新面只是第二条「有分支无夹具」的空门。**且认领要按「面 × 形状」记，不是按面记**：`RE_J14_CLAIM` 一张表里只认四种形状，本轮 HEAD 版地图的三处旧数（122 / 104 / 104）里它只命中 122 ⇒ 「这张图已入扫描面」这句话如果写成「地图上的数都被钉了」就是虚报（详见本单 FIXED 段的边界条）。③ README 的「标题组数 ↔ 正文分组数」现在钉死了，但门只保证二者**一致**，不保证划分**合理**；将来重划分组要标题与正文同批改，别指望门替你判断该分几组。
 - task_id: T0r20
 
-## BUG-364 [2026-10-21T04:00:00Z] [low] OPEN
+## BUG-364 [2026-10-21T04:00:00Z] [low] FIXED
 - summary: [文档内容决策面] `docs/agent-map.md` §三「MCP 工具分组概览」是一张**只覆盖 100/170** 的手写导航表：实测 12 行带组数、和=**100**，另有 1 行「其它(辅助)」无计数 ⇒ **70 个工具在这张「首次进入者唯一会读的分组表」上不点名**（未覆盖的组至少含 GitHub/GitCode 同步、超级管家、六顶帽、项目助理、嵌入式 MCPCf、模型路由·外部执行器、开发模式）。本单只给表加了**边界注**（写清它是导航简写、不等于注册表，权威面在 README 功能全景并被 J3 钉住），**没有补全表**——补不补、按什么轴收成 18 行属内容决策，按金条四留指挥官裁决
 - detail: ① 为什么这不是数字漂移而是**覆盖缺口**：J14 现在钉的是地图里**总数自述那一句**（:26「170 个工具+3 resources+2 prompts 注册」），§三 的表头与注记都明写「导航简写，不是注册表计数」⇒ 门**刻意**不会因为它和=100 而红。这条口径来自 BUG-123 的实测教训：组值用的是省略公共前缀的简写（如 `succeed status`、`append/get/export_tasks`），拿它跟 `tools/list` 做机械差集会把「未点名」虚高到 73，差集读数是假的。② 代价面：首次进入的 agent 若照 §四「想懂业务流 → 读 README/ARCHITECTURE」走还能补上；但若他**只读地图**——而本文件写明的目的就是「先读地图、再动代码，不必全项目盲目探索」——就会得出「这 70 个能力不存在」的结论。**地图越容易被当成权威，缺口的伤害越大**。
   三条出路：(a) 把 §三 改成 README 功能全景的**投影**（同源生成，18 行、和=170），代价=多一个生成器，且必须防住 BUG-123 那类简写漂移；(b) 手写补全缺的 6–7 组，代价=制造第二份手写副本——本项目已为「5 个消费者各写一份、漏改 2 处就假绿或互掐」付过学费，才把工具注册面收进唯一真源 `_tool_registry.real_tools()`；(c) 删掉 §三，只留一句「分组见 README 功能全景（J3 钉住和与组数）」，代价=失去速查表，但**永不漂移**。副机倾向 (c)：这张表的**存在理由**（省 context）用一行指针即可满足，而它的**失真面**要靠新增一个生成器才压得住。本单不动手，等裁决。
@@ -5887,6 +5887,15 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
   提交后该格复跑 rc=0 ⇒ 与 §实测锁钉 里那句「非零 3」对得上（那句读数是重跑 `gen_plugins.py` 之后的）。
 
 
+
+### FIXED(2026-10-25T05:43:20Z / BUG-354, BUG-362, BUG-364)
+- evidence: 三条按 owner 批准的「按建议批」落地，全部走出路 c/a/补全：
+
+**BUG-354（medium，出路 c = 保留参数 + 文档明确）**：追记里 10 格已收口 3 格（github_sync/github_repo/flush_bug_queue R53 删除），`ns?` 两处经本轮复查**已不存在**（改名/搬家，追记的猜测证实），实体剩 5 格。本轮给这 5 格逐个加参数说明注释，点名「函数体不消费」+「审计面走 call_log」+「保留形参是为 pub 契约稳定」+「要真消费需动 store schema」：① `FistEngine::plan` 的 `by`（src/engine/engine.mbt）② `FistEngine::reject_task` 的 `by` ③ `FistEngine::cold_publish` 的 `created_by`（原文注释自称「审计日志标记为 watchdog 自动发布」而实现无落点，本轮把那句话标为设计意图而非现状）④ `Archive::sample_parent` 的 `lam`（性能分量实际走 `score/(score+a0)` saturating 映射，lam 是历史残留形状）⑤ `batch_verify_fix` 的 `max_rounds`（该函数被诚实性约束压成零修复能力分类器，无轮次可迭代）。零行为变更、零契约变更。验证：moon check --target js 0 errors；src/engine 207/207。
+
+**BUG-362（low，出路 a = 文本普查为分母）**：技术面与口径面都已落地且证据在手——守卫 `scripts/check_deprecated_text_census.py` 存在、--selftest 17 支全绿、已挂 ci.yml js-ubuntu 臂。其 docstring 已把口径写死：「『判据面归零』这句话本身不构成『弃用调用清零』的证据——把 430 条都改完，判据面读到 0，源码里还能剩 11 条」；R3 棘轮 gap=文本−判据 ≤ ceiling（只写上界不写等式，因为 gap 随工具链浮动）；R0 要求表内条目必须有非空 audited；R1 宇宙钉 git ls-files 跟踪面（防 walk 把 .mooncakes 里同名不同物的 Weekday.value() 数进来造成假缺口 +7）；R2 反向包含（判据数 > 文本数也按脱钩 exit 2）。⇒ 11 处留存是「台账写着上限、超出即红」的已知量，不再是盲区。
+
+**BUG-364（low，出路 b+c 混合 = 已补全 + 去计数 + 指向单一真源）**：docs/agent-map.md §三 已从「12 行带计数、和=100」改为「20 行族级清单、零计数、承诺只到族这一层」，并补上了原先缺失的所有分组（GitHub/GitCode 同步、超级管家、六顶帽、项目助理、嵌入式 MCPCf、模型路由·外部执行器、开发模式、ATGC-old），文末给两条指向单一真源：「全量清单 python scripts/fist.py list-tools」「工具数对齐 python scripts/check_tools_sync.py」。核对：README 18 组 × §三 20 族（审计/多租户拆两行）逐组可对上，无遗漏组。核心痛点「读者把和=100 当成全量」已消除。
 ## BUG-365 [2026-10-21T22:10:00Z] [low] FIXED
 - summary: [守卫判据缺陷] `scripts/check_plan_landing.py`（计划文档点名落点 ↔ 跟踪面核对）把三类**不是路径的形状当路径判**：① `x.mbt:108/121/134` 这种「路径+行号后缀」点名的行号段没剥，`basename("…/134")="134"` 无扩展名 ⇒ 逃过 `base_ok` ⇒ **一个确实存在的跟踪文件被报成 missing**；② 日期/变量占位（`memory/YYYY-MM-DD.md`、`memory/model-router-caf-{ns}.json`）被当成具体路径去比对；③ **存档面**（`docs/archive/`、`reports/` 里的历史计划点名当年尚不存在的落点）与「活文档」混在同一个判定数字里。改前 56 条 findings 的构成实测＝判定面 28 + 存档面 17 + 占位虚报 9 + 行号后缀虚报 2
 - detail: 证据链四格（`temp/plan_landing_before.py` = `git show HEAD:scripts/check_plan_landing.py`，与现版跑**同一棵树**）：① 集合差 `comm` 实测 before=56 / after=45，`comm -23` 恰好 11 条、`comm -13` **0 条** ⇒ 改后没有新增任何一条判定，不是把虚报换成了漏报（这条是本单唯一能证明「只修假阳性、没顺手放宽判据」的读数）；② 11 条逐字点名：`plugins/source/references/omega-verification.md:33/60/65/68`、`src/server/mcpcf_embed.mbt:108/121/134`（①型，前者在 `docs/archive/improvement-plan-20260929.md`、后者在 `docs/decisions/2026-10-21-json-value-430-decision.md`）+ `memory/YYYY-MM-DD.md`×2、`memory/model-router-caf-{ns}.json`×4、`…-{safe_ns}.json`×1、`memory/research/score-YYYYMMDD.md`×1、`memory/reviews/yyyyMMdd.HH.mm.ss.md`×1（②型）；③ 恒等式 28+17+9+2=56 逐格对上；④ 修法三条各自最小：`LINE_SUFFIX` 在 `base_ok` **之前**剥后缀（只认「冒号后全是 `数字[/、-,]数字`」的形状，普通路径不受影响，`--selftest` 有 `line-suffix-keeps-paths` 反证）、`SHAPE_PLACEHOLDER` 把 `<…>`/`*`/日期/变量形态收进 `shapes` **出数不比对**（改前是被 `base_ok` 静默丢弃——静默丢弃同样是盲区，不给条数就没人知道有多少条目从未进入判据）、`is_archive_doc` + `judge` 返回第 5 元组 `face`，默认只判活文档面、存档面单独出数，`--all-faces` 可切回合并视图。
