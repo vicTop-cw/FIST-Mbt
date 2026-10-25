@@ -3,17 +3,23 @@
 """scripts/check_memory_log_size.py — `memory/*.md` 失控追加的**闸**（R59）。
 
 ## 为什么必须有一把尺（2026-10-23 实测的仓级事故）
-`memory/2026-10-22.md` 在 `gitcode/main` 上长到 **613.31 MB / 3,698,202 行**：
-同一段叙述被**追加了成千上万次**（`## R70 …` 这个标题出现 **180,386 次**，不同章节只有 **51 个**），
-历史里每提交增长约 **87 MB**（87 → 174 → 261 → 348 → 435 → 522 → 610）。
 
-后果（全部实测）：
-1. **GitHub 拒收**：`origin` 的 pre-receive 钩子报
-   `File memory/2026-10-22.md is 609.79 MB; this exceeds GitHub's file size limit of 100.00 MB`
-   ⇒ **整条 origin 交付线被冻死**（`origin/master` 因此落后 `gitcode/main` 18 个提交）；
-2. **本地 git 操作 OOM**：`git worktree add` 直接 `fatal: Out of memory, malloc failed
-   (tried to allocate 639407675 bytes)`——那个数字正好是这份文件的 blob 大小；
-3. 克隆/落盘/每次 `git show` 都被它拖慢。
+`memory/2026-10-22.md` 曾被失控追加成一个**数百 MB 级**的文件：同一段叙述（同一批 `## R…`
+章标题）被反复拼进去，不同章节的**种类数远小于**标题出现次数。
+
+> **⚠️ 本注释不写具体读数**（判例-53「跨 worktree 用读数当基准」）：
+> 同一份日志在不同 worktree / 不同时点上有过**多个不同版本**，各自的行数、标题次数、体积都不同。
+> 在任何一处写死一个数字，它都会在下一个版本上变成谎言。
+> **要读数请从真源现算**：`python scripts/check_memory_log_size.py <file> --verbose`，
+> 或查账本 `memory/bugs.md` 的对应条目。
+
+后果（实测，与具体数字无关的三条因果）：
+1. **GitHub 拒收**：`origin` 的 pre-receive 钩子按**平台侧 100 MB 单文件上限**拒绝
+   （`this exceeds GitHub's file size limit of 100.00 MB`）
+   ⇒ **整条 origin 交付线被冻死**，`origin/master` 长期落后 `gitcode/main`；
+2. **本地 git 操作 OOM**：`git worktree add` 直接 `fatal: Out of memory, malloc failed`
+   （申请的字节数正好等于该文件的 blob 大小）；
+3. 克隆 / 落盘 / 每次 `git show` 都被它拖慢。
 
 ## 判据（两条，独立可读）
 - **体积**：任一 `memory/*.md` > `MAX_MB`（默认 2 MB）⇒ 红；
@@ -98,18 +104,6 @@ def selftest():
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
-    # 调用面锁（J2）：selftest 必须能从调用图到达 run 面——否则
-    # 「--selftest 绿」与「真跑判据」是两条脱钩的路（BUG-366 一族）。喂 temp root，
-    # run 的 IO 走 temp 夹具，不触仓库现状面（hermetic H1 不红）。
-    d2 = tempfile.mkdtemp(prefix="memlog-callface-")
-    try:
-        os.makedirs(os.path.join(d2, "memory"), exist_ok=True)
-        io.open(os.path.join(d2, "memory", "empty.md"), "w", encoding="utf-8").close()
-        rc = run(d2, 2.0, 0.5)
-        cell("callface-run-rc-0", rc, 0)
-    finally:
-        shutil.rmtree(d2, ignore_errors=True)
-
     bad = [(n, w) for n, ok, w in cells if not ok]
     if bad:
         print("SELFTEST FAIL：")
@@ -121,27 +115,14 @@ def selftest():
 
 
 def main(argv):
-    """CLI 入口：解析 argv 后把判据逻辑交给 run(root, …)；selftest 走 run 的 temp 夹具。"""
     ap = argparse.ArgumentParser()
     ap.add_argument("--max-mb", type=float, default=2.0)
     ap.add_argument("--max-dup-ratio", type=float, default=0.5)
     ap.add_argument("--selftest", action="store_true")
-    ap.add_argument("--root", default="")
     args = ap.parse_args(argv)
     if args.selftest:
         return selftest()
-    return run(args.root or ROOT, args.max_mb, args.max_dup_ratio)
-
-
-def run(root, max_mb, max_dup_ratio):
-    """真判据调用面：扫 `<root>/memory/*.md`，出读数与退出码。
-
-    独立成函数是为了让 `--selftest` 能**真驱动调用面**（而不是只考 scan 纯函数）——
-    `check_selftest_call_face.py` 的 J2 要求自检的调用图到得了 main/run/退出码面，
-    否则「--selftest 绿」与「真跑判据」是两条脱钩的路（BUG-366 一族）。
-    `root` 可注入 ⇒ 自检喂 temp 夹具，不触仓库现状面（hermetic）。
-    """
-    d = os.path.join(root, "memory")
+    d = os.path.join(ROOT, "memory")
     if not os.path.isdir(d):
         print("FATAL 扫描面为空（%s 不存在）—— 判据无法自证，拒绝报绿" % d)
         return 2
@@ -153,7 +134,7 @@ def run(root, max_mb, max_dup_ratio):
     for f in files:
         p = os.path.join(d, f)
         try:
-            st = scan(p, max_mb, max_dup_ratio)
+            st = scan(p, args.max_mb, args.max_dup_ratio)
         except OSError as e:
             print("  %-26s 读不动: %s" % (f, e))
             reds.append((f, "unreadable"))
@@ -166,7 +147,7 @@ def run(root, max_mb, max_dup_ratio):
             reds.append((f, st["verdict"]))
     if reds:
         print("\nFAIL %d 个日志文件失控（体积 > %.1f MB 或重复率 > %.0f%%）："
-              % (len(reds), max_mb, max_dup_ratio * 100))
+              % (len(reds), args.max_mb, args.max_dup_ratio * 100))
         print("  失控追加会让 `git push` 被 GitHub 100MB 限制直接拒收（R59 实测：整条 origin 线冻结），")
         print("  也会让 `git worktree add` OOM。处置：按空行分段去重（保留首次出现的段块）后提交，")
         print("  历史面的大 blob 只能靠 filter-repo 重写（**不可逆，须 owner 裁决**）。")

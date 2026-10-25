@@ -131,6 +131,8 @@ def is_resident(rel):
 
 SPECIAL_CASES = [
     # —— 判据面（纯静态，跨平台稳定）——
+    # R59：memory 日志失控闸。只跑 --selftest（真日志可能极大，不在这里全量读）。
+    case("check_memory_log_size.py", "--selftest"),
     case("check_tools_sync.py"),
     # 2026-10-25：CLI 入口 `fist.py list-tools` 的计数 ↔ 真源对表。
     # 为什么单立一格：六支文档守卫全部走 `_tool_registry.real_tools()`（读 170）⇒ 永远绿，
@@ -239,6 +241,15 @@ SPECIAL_CASES = [
     # 本仓此前**没有任何一格执行过 bundle**。电池只跑 `--selftest`（造好/坏 bundle 各跑一遍）：
     # 真产物档要先 build + patch，太慢且依赖构建态，由 CI 在构建之后调。
     case("check_esm_bundle_runnable.py", "--selftest"),
+    # —— R187：判据变异探针（把本会话踩过两次的坑固化成工具）——
+    # `scripts/_mutation_probe.py` 是**独立工具**（`--selftest` / `--func` 可命令行跑），
+    # 不是「被导入的共享模块」⇒ **不借用 `("_", "内部共享模块")` 那条豁免**，给显式执行面。
+    # 它验的事：对判据施语义级变异（S1 `==0→!=0` / S3 `return 0→1` / S4 `if not x→if x`），
+    # 跑它的 `--selftest`，并按**三重判定**归类 —— 关键在于 `CRASHED` 这一档：
+    # 本会话两次把「脚本没跑起来」（import 崩 / 类型不匹配崩）读成「判据咬住了」，
+    # 那一档就是为挡这两个误判而立的（判例-50 / 判例-62）。
+    # 电池只跑 `--selftest`（纯函数 + 变异对照 14 格，零外部依赖）。
+    case("_mutation_probe.py", "--selftest"),
     # —— R181：worktree 三条件只读判据（诊断尺，「可删」≠「该删」）——
     # 司令-α 实测：11 个禁删 worktree **26 分钟内 4 项变可删** ⇒ 「不可删」不是固有属性，
     # 而是某一时刻的读数；拿旧快照决定删/留必漏。本尺每条随时可跑、一律现读。
