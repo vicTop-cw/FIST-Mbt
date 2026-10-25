@@ -49,7 +49,7 @@ def git(args, cwd):
     return p.returncode, (p.stdout or "").strip(), (p.stderr or "").strip()
 
 
-def classify(cwd, main, branch):
+def run(cwd, main, branch):
     """返回 (kind, detail)。kind ∈ {merged, mergeable, orphan, missing}。"""
     rc, _o, _e = git(["rev-parse", "--verify", "--quiet", branch], cwd)
     if rc != 0:
@@ -124,21 +124,21 @@ def selftest():
         # ① mergeable：从 main 开一支并加提交
         g("checkout", "-q", "-b", "feat/ok")
         w("b.txt", "2\n"); g("add", "-A"); g("commit", "-qm", "b")
-        cell("classify-mergeable", classify(d, "main", "feat/ok")[0], "mergeable")
+        cell("run-mergeable", run(d, "main", "feat/ok")[0], "mergeable")
         cell("candidates-include-ok", "feat/ok" in list_candidates(d, "main"), True)
 
         # ② merged：把该分支合进 main
         g("checkout", "-q", "main"); g("merge", "-q", "--no-ff", "-m", "m", "feat/ok")
-        cell("classify-merged", classify(d, "main", "feat/ok")[0], "merged")
+        cell("run-merged", run(d, "main", "feat/ok")[0], "merged")
 
         # ③ orphan：另起一个**无共同祖先**的根（--orphan + 独立提交）
         g("checkout", "-q", "--orphan", "feat/orphan")
         g("rm", "-rq", "--cached", ".")
         w("z.txt", "z\n"); g("add", "-A"); g("commit", "-qm", "orphan-root")
-        cell("classify-orphan", classify(d, "main", "feat/orphan")[0], "orphan")
+        cell("run-orphan", run(d, "main", "feat/orphan")[0], "orphan")
 
         # ④ 不存在的分支
-        cell("classify-missing", classify(d, "main", "feat/nope")[0], "missing")
+        cell("run-missing", run(d, "main", "feat/nope")[0], "missing")
 
         # ⑤ 候选枚举：orphan 有 main 之外的提交 ⇒ 必须被列为候选
         cell("candidates-include-orphan", "feat/orphan" in list_candidates(d, "main"), True)
@@ -192,7 +192,7 @@ def main(argv):
 
     orphans = []
     for b in cands:
-        kind, detail = classify(ROOT, main_ref, b)
+        kind, detail = run(ROOT, main_ref, b)
         tag = {"merged": "已并入", "mergeable": "可合并", "orphan": "**失基**", "missing": "缺失"}[kind]
         print("  %-44s %-8s %s" % (b, tag, detail))
         if kind == "orphan":
