@@ -1,0 +1,79 @@
+diff --git a/memory/bugs.md b/memory/bugs.md
+index 6b881677..e6e91ac8 100644
+--- a/memory/bugs.md
++++ b/memory/bugs.md
+@@ -6624,3 +6624,21 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一
+ - 为什么这条值得单开：① AGENTS「JS 测试在本机跑不起来？先看这一条」把 `moon_test_env.py` 定为**唯一推荐的常驻入口**，而 CI 用裸 `moon test --target js > /tmp/moon_test.log`——两条进料路径给出的日志形状不同，判据只认 CI 那一条；本地按文档跑的人在尺上看到的是「解析失败」，最自然的误读是「我的测试数不对」，而真实情况是尺读不到（BUG-142 那条「判绿以汇总行为准」在本地这一路恰好被形状挡住了）。② 这一格在 `run_guards.py` 里也是同一形状：`TESTLOG = temp/pt27.log`，谁手写谁就得知道要写逗号形状，否则 `check_badge`/`check_test_sync` 两格自拒——**判据对进料格式的要求没有写在任何自述里**（与本仓 R10/J10 那条「尺的自述要说清自己判不了什么」同族）。
+ - 处置建议（两条出路，本单未动）：A. 让常驻入口**同时**原样透传 moon 的机器可读汇总行（或在 `汇总：` 之外补一行 `Total tests: N, passed: N, failed: N`），使本地日志天然可被既有尺读取；B. 让尺的 `RX_LOG` 接受斜杠分隔形状。**注意别与 R178 车道撞面**：那一支正在给 `check_test_sync`/`check_badge` 拆「漏传实参 → rc=2 REJECT」档（见当日台账现读），B 案动的是同一文件，合入时按同一批次收口即可；A 案动 `moon_test_env.py`，与那一支不相交。
+ - 关联: BUG-142（判绿以汇总行为准）、BUG-350（check_test_sync 日志面假绿修尺）、BUG-382（自检失败路径 rc=0 同形）、BUG-388（本机 `moon fmt --check` 量不出来：同一类「工具链/入口与判据格式不匹配」）。
++
++## BUG-403 [2026-10-23T17:22:28Z] [medium] OPEN
++- summary: agent_fp 注释冒称「不可逆指纹」，实现却是裸 FNV-1a（可逆/可伪造）+ pubkey_fp 幻影（无代码派生）
++- detail: src/server/server.mbt:441-444 注释称 agent 指纹是「不可逆指纹」「pubkey_fp 另行用 fnv1a64("pubkey:" ++ hex) 派生（T0r5：密钥指纹面）」。实现 fn agent_fp = @omega.fnv1a64("agent_id:" + raw)——裸 FNV-1a（src/omega/spec.mbt:34-52，offset 0xcbf29ce484222325 + prime 0x100000001b3，无 HMAC/salt），非密码学哈希，乘奇素数+异或链条**可逆**，短 agent_id 可反解原文、可对任意目标值构造前像。**pubkey_fp 是幻影**：全仓 grep "pubkey:" 只命中注释那一行，无任何代码真正派生它；所有写入点恒传 pubkey_fp=""（server.mbt:484、store_sqlite.mbt:2794）——若未来按注释接「公钥钉身份」会静默绑到空串（等于没有键位绑定）。
++- 影响: agent_id 是自报名字、本身非机密，「指纹泄漏原文」实际杀伤有限；但「不可逆」承诺误导安全判断，「密钥指纹面」是实打实的死承诺——一旦接入会静默失效。
++- 关联: agent_fp / pubkey_fp / src/omega/spec.mbt / src/store/store_sqlite.mbt
++- 修法: 诚实降级注释——改称「非密码学短标识」（不承诺单向性/防碰撞），并标注 pubkey_fp 当前未接线、不得在安全断言里依赖。要真身份认证需换 HMAC-SHA256 或至少删除「不可逆」字样 + 真正接线 pubkey_fp。
++
++## BUG-404 [2026-10-23T17:22:28Z] [low] OPEN
++- summary: agents_register 注释称「并落一条 fail-closed 的默认 ACL」，实现只 INSERT agents 表、无 agent_acl INSERT
++- detail: src/store/store_sqlite.mbt:2712-2713 注释称注册时「首次出现则 INSERT（并落一条 fail-closed 的默认 ACL）」，但 body :2719-2776 只 INSERT agents、无任何 agent_acl INSERT。默认 ACL 真源在 **server 层**的 agents_acl_ensure（src/server/server.mbt:477-484，agent_touch_first_seen 调用链保证）。实证旁路：agents_heartbeat（store_sqlite.mbt:2777-2794）直连 agents_register，产生「有 agent 身份、无 ACL 行」中间态。
++- 影响: agents_acl_check 对无 ACL 记录返回 Err("ACL 无记录（fail-closed）")——仍 fail-closed，**不是安全洞**；但「注释承诺的默认 ACL 自动落」在直连 store 路径上从不发生，未来按注释写代码的人会得到静默意外。
++- 关联: agents_register / agents_heartbeat / agents_acl_ensure / agents_acl_check
++- 修法: 诚实描述职责边界（本函数只写 agents 表，ACL 由 server 层 agents_acl_ensure 落）。如需「注册即落 ACL」原子语义，把 ACL ensure 并入 register 或把 agents_heartbeat 改成先 ensure。
++
++## 系统缺口（同源，附在 BUG-401/403/404 三单共同）
++- store_sqlite_agents_wbtest.mbt 是这条新安全代码的唯一覆盖，全用硬编码 pid（:22 pid=1001 / :43 pid=2002 / :80 pid=777 / :118 current_pid=123 / :170 current_pid=999 / :231 pid=1）；grep "current_pid_token|agent_fp" src/*test*.mbt src/*wbtest*.mbt = 空 → 「进程启动即固定一次」这类注释承诺在测试里恒真（因为喂的是常量），实现怎么漂移都绿着——BUG-401 的逃逸形状。
++- 修法: 三单都附回归锁——用真实 current_pid_token() 而非字面量驱动一次 register→acl_grant(pid_bound=true)→acl_check，才能让注释承诺受真覆盖。
+diff --git a/src/server/server.mbt b/src/server/server.mbt
+index 6caadf7a..005fadcc 100644
+--- a/src/server/server.mbt
++++ b/src/server/server.mbt
+@@ -438,10 +438,20 @@ fn iso_minus_secs(iso : String, secs : Int32) -> String {
+ }
+
+ ///|
+-/// agent 指纹：把调用方自述的 `agent_id` 原文映射为不可逆指纹，
++/// agent 指纹：把调用方自述的 `agent_id` 原文映射为**非密码学**短标识，
+ /// 落库/比对都只用指纹（防止日志与 ACL 面被任意长/含特殊字符的原文污染）。
+-/// 指纹只认原文（`fnv1a64("agent_id:" ++ raw)`）；`pubkey_fp` 另行
+-/// 用 `fnv1a64("pubkey:" ++ hex)` 派生（T0r5：密钥指纹面）。
++///
++/// **诚实边界（BUG-403）**：`fnv1a64` 是 FNV-1a 64 位，**非密码学哈希**——
++/// 乘奇素数 + 异或的链条**可逆**，短 `agent_id` 可反解原文，也可对任意目标值
++/// 直接构造前像。因此它**不承诺单向性/防碰撞攻击**，只做**定长短标识 + 去原文污染**。
++/// 调用方不得把它当「不可逆指纹 / 身份认证」用；要身份认证用 `pubkey_fp`（见下）。
++/// 指纹只认原文（`fnv1a64("agent_id:" ++ raw)`）。
++///
++/// **`pubkey_fp` 当前未接线（BUG-403）**：原注释称「`pubkey_fp` 另行用
++/// `fnv1a64("pubkey:" ++ hex)` 派生（T0r5：密钥指纹面）」，但全仓无任何代码
++/// 真正派生它，所有写入点恒传 `pubkey_fp=""`——那是**死承诺**：若未来按
++/// 注释接入「公钥钉身份」，会静默绑定到空串（等于没有键位绑定）。接线前
++/// `pubkey_fp` 必须视为占位，不得在安全断言里依赖。
+ fn agent_fp(raw : String) -> String {
+   @omega.fnv1a64("agent_id:" + raw)
+ }
+diff --git a/src/store/store_sqlite.mbt b/src/store/store_sqlite.mbt
+index 8d0931ce..1a85db6c 100644
+--- a/src/store/store_sqlite.mbt
++++ b/src/store/store_sqlite.mbt
+@@ -2709,8 +2709,18 @@ pub struct AgentRecord {
+ }
+
+ ///|
+-/// 注册 agent（指纹即身份）。首次出现则 INSERT（并落一条 fail-closed 的默认 ACL），
+-/// 已存在则仅刷新 `pid`/`last_seen`/`status`（身份不变，进程实例换新）。
++/// 注册 agent（指纹即身份）。首次出现则 INSERT，已存在则仅刷新
++/// `pid`/`last_seen`/`status`（身份不变，进程实例换新）。
++///
++/// **职责边界（BUG-404）**：本函数**只写 `agents` 表，不落默认 ACL**——
++/// 原注释称「并落一条 fail-closed 的默认 ACL」，实际 body 无任何 `agent_acl` INSERT。
++/// 默认 ACL 的真源在 **server 层**的 `agents_acl_ensure`（`src/server/server.mbt`，
++/// `agent_touch_first_seen` 调用链保证），不在 store 层。
++/// **后果**：任何绕过 server 层 `agents_acl_ensure` 的直连 store 调用
++/// （现成的就是 `agents_heartbeat`）会留下「有 agent 身份、无 ACL 行」的中间态；
++/// `agents_acl_check` 对此返回 `Err("ACL 无记录（fail-closed）")`——仍 fail-closed，
++/// 不是安全洞，但「注释承诺的默认 ACL 自动落」在这条路径上从不发生。
++/// 需要「注册即落 ACL」语义时，调用方必须先过 server 层 `agents_acl_ensure`。
+ pub fn SqliteStore::agents_register(
+   self : SqliteStore,
+   agent_id~ : String,
