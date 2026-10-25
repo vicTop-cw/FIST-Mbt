@@ -82,7 +82,7 @@ pub fn calc_coverage(laws : Array[String], tests : Json) -> Double {
 ///   passed      跑批通过数
 pub fn spec_scoring(spec : Json, total : Int32, passed : Int32) -> ScoreResult {
   // 从 spec 里取字段（缺省给空值）
-  let laws : Array[String] = match spec.value("laws") {
+  let laws : Array[String] = match jget(spec, "laws") {
     Some(Array(arr)) => {
       let out : Array[String] = []
       for a in arr {
@@ -95,7 +95,7 @@ pub fn spec_scoring(spec : Json, total : Int32, passed : Int32) -> ScoreResult {
     }
     _ => []
   }
-  let tests : Json = match spec.value("tests") {
+  let tests : Json = match jget(spec, "tests") {
     Some(t) => t
     None => Json::null()
   }

@@ -100,7 +100,7 @@ pub fn fix_fp_mismatch(spec : Json) -> Json {
 ///|
 /// 格式偏差修复：规范 expected 的序列化格式
 pub fn fix_format_deviation(spec : Json) -> Json {
-  let tests = match spec.value("tests") {
+  let tests = match jget(spec, "tests") {
     Some(Array(a)) => a
     _ => return spec
   }
@@ -238,7 +238,7 @@ pub fn batch_verify(spec_contents : Array[(String, String)]) -> Json {
   for pair in spec_contents {
     let (fname, content) = pair
     let r = verify_single_spec(fname, content)
-    match r.value("ok") {
+    match jget(r, "ok") {
       Some(True) => passed = passed + 1
       _ => failed_details.push(r)
     }
@@ -290,11 +290,11 @@ pub fn batch_verify_fix(
 
   // 语义错误 → 直接标记人工审查（未做任何修复）
   for fail_r in failed_results {
-    let fname = match fail_r.value("file_name") {
+    let fname = match jget(fail_r, "file_name") {
       Some(String(s)) => s
       _ => "unknown"
     }
-    let errors = match fail_r.value("errors") {
+    let errors = match jget(fail_r, "errors") {
       Some(Array(a)) => a
       _ => []
     }
@@ -360,11 +360,11 @@ pub fn verify_fix_with_evidence(
 ) -> Json {
   // 1. 初始批量验证
   let initial = batch_verify(spec_contents)
-  let total = match initial.value("total") {
+  let total = match jget(initial, "total") {
     Some(Number(n, ..)) => n.to_int()
     _ => 0
   }
-  let passed_init = match initial.value("passed") {
+  let passed_init = match jget(initial, "passed") {
     Some(Number(n, ..)) => n.to_int()
     _ => 0
   }
@@ -373,18 +373,18 @@ pub fn verify_fix_with_evidence(
   } else {
     100.0
   }
-  let failed_details : Array[Json] = match initial.value("failed_details") {
+  let failed_details : Array[Json] = match jget(initial, "failed_details") {
     Some(Array(a)) => a
     _ => []
   }
   // 2. 失败项提取：file_name + errors
   let failed_meta : Array[(String, String)] = []
   for fr in failed_details {
-    let fname = match fr.value("file_name") {
+    let fname = match jget(fr, "file_name") {
       Some(String(s)) => s
       _ => ""
     }
-    let errors = match fr.value("errors") {
+    let errors = match jget(fr, "errors") {
       Some(Array(a)) => a
       _ => []
     }
@@ -472,7 +472,7 @@ pub fn verify_fix_with_evidence(
     }
     let fixed_json = apply_fix(spec_json, rc)
     let r = verify_single_spec(fname, fixed_json.stringify())
-    match r.value("ok") {
+    match jget(r, "ok") {
       Some(True) => true
       _ => false
     }

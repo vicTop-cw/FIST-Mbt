@@ -5,7 +5,7 @@
 // —— JSON 辅助：从结果 Json 中提取 ok / errors 字段 ——
 
 fn result_ok(r : Json) -> Bool {
-  match r.value("ok") {
+  match jget(r, "ok") {
     Some(True) => true
     _ => false
   }
@@ -13,7 +13,7 @@ fn result_ok(r : Json) -> Bool {
 
 ///|
 fn result_errors(r : Json) -> Array[Json] {
-  match r.value("errors") {
+  match jget(r, "errors") {
     Some(Array(a)) => a
     _ => []
   }
@@ -64,7 +64,7 @@ test "fix_struct_missing fills missing fields" {
     "op", "version", "definition", "preconditions", "laws", "tests", "fingerprint",
   ]
   for field in required {
-    match fixed.value(field) {
+    match jget(fixed, field) {
       Some(_) => ()
       None => abort("必填字段 \{field} 未被填充")
     }
@@ -77,7 +77,7 @@ test "fix_fp_mismatch recomputes fingerprint" {
   let spec_str = "{\"op\":\"report\",\"version\":\"1.0\",\"definition\":{\"sig\":\"a\"},\"preconditions\":[\"x\"],\"laws\":[\"L\"],\"tests\":[{\"input\":{\"a\":\"1\"},\"expected\":\"ok\"}],\"fingerprint\":\"fnv1a64:wrong0000000000\"}"
   let spec = parse(spec_str)
   let fixed = @omega.fix_fp_mismatch(spec)
-  match fixed.value("fingerprint") {
+  match jget(fixed, "fingerprint") {
     Some(String(s)) => assert_eq(s, "fnv1a64:dd1bc62c4d988913")
     _ => abort("fingerprint 未被修复")
   }
@@ -87,7 +87,7 @@ test "fix_fp_mismatch recomputes fingerprint" {
 test "fix_semantic_error marks human review" {
   let spec = parse("{\"op\":\"t\",\"tests\":[]}")
   let fixed = @omega.fix_semantic_error(spec)
-  match fixed.value("_needs_human_review") {
+  match jget(fixed, "_needs_human_review") {
     Some(True) => ()
     _ => abort("应标记 needs_human_review")
   }
@@ -98,7 +98,7 @@ test "apply_fix dispatches to correct strategy" {
   let spec = parse("{\"op\":\"t\"}")
   let fixed = @omega.apply_fix(spec, @omega.ROOT_CAUSE_STRUCT_MISSING)
   // 应填充缺失字段
-  match fixed.value("tests") {
+  match jget(fixed, "tests") {
     Some(_) => ()
     _ => abort("结构缺失修复未生效")
   }
@@ -142,11 +142,11 @@ test "batch_verify all passing returns 100pct no veto" {
     ),
   ]
   let result = @omega.batch_verify(specs)
-  match result.value("accuracy") {
+  match jget(result, "accuracy") {
     Some(Number(n, ..)) => assert_eq(n, 100.0)
     _ => abort("accuracy 缺失")
   }
-  match result.value("veto") {
+  match jget(result, "veto") {
     Some(False) => ()
     _ => abort("不应一票否决")
   }
@@ -161,15 +161,15 @@ test "batch_verify one failing triggers veto" {
     ("bad.json", "{\"op\":\"t\"}"),
   ]
   let result = @omega.batch_verify(specs)
-  match result.value("accuracy") {
+  match jget(result, "accuracy") {
     Some(Number(n, ..)) => assert_eq(n, 50.0)
     _ => abort("accuracy 缺失")
   }
-  match result.value("veto") {
+  match jget(result, "veto") {
     Some(True) => ()
     _ => abort("应一票否决")
   }
-  match result.value("failed") {
+  match jget(result, "failed") {
     Some(Number(n, ..)) => assert_eq(n, 1.0)
     _ => abort("failed 计数缺失")
   }
@@ -179,7 +179,7 @@ test "batch_verify one failing triggers veto" {
 test "batch_verify empty corpus returns 0 accuracy" {
   let specs : Array[(String, String)] = []
   let result = @omega.batch_verify(specs)
-  match result.value("total") {
+  match jget(result, "total") {
     Some(Number(n, ..)) => assert_eq(n, 0.0)
     _ => abort("total 缺失")
   }
@@ -191,7 +191,7 @@ test "batch_verify empty corpus returns 0 accuracy" {
 test "batch_verify_fix empty failed returns 100pct" {
   let failed : Array[Json] = []
   let result = @omega.batch_verify_fix(failed)
-  match result.value("final_accuracy") {
+  match jget(result, "final_accuracy") {
     Some(Number(n, ..)) => assert_eq(n, 100.0)
     _ => abort("final_accuracy 缺失")
   }
@@ -207,7 +207,7 @@ test "batch_verify_fix semantic cause triggers human review" {
     }),
   ]
   let result = @omega.batch_verify_fix(failed)
-  match result.value("needs_human_review") {
+  match jget(result, "needs_human_review") {
     Some(Array(a)) => assert_eq(a.length(), 1)
     _ => abort("needs_human_review 缺失")
   }
@@ -223,7 +223,7 @@ test "batch_verify_fix respects max_rounds" {
     }),
   ]
   let result = @omega.batch_verify_fix(failed, max_rounds=2)
-  match result.value("total_rounds") {
+  match jget(result, "total_rounds") {
     Some(Number(n, ..)) => if n > 2.0 { abort("超出 max_rounds") }
     _ => ()
   }
