@@ -177,6 +177,38 @@ fn parse_artifact(a : Json) -> ArtifactSpec? {
 }
 
 ///|
+/// 文件不存在时的诊断尾巴（BUG-412）。
+///
+/// **病灶**：`full = mem_join(project_dir, spec.path)` 里的 `project_dir` 若给相对值
+/// （典型是 `"."`），它就是相对 **server 进程 cwd** 而非调用方自己的工作目录 ——
+/// 跨项目调用时真实存在的文件会被判「不存在」（假 RED），而回执只说
+/// `文件不存在: ./tql/xxx.md`，调用方无从看出「相对的是哪个根」。
+///
+/// **修法**：把基准根（server cwd）与「该相对路径在 cwd 下其实存在」这一事实写进
+/// 错误文案，并明说跨项目要传绝对 `project_dir`。**不改解析语义**（改语义等于让
+/// server 去猜调用方 cwd，MCP 协议不带这个信息）。
+fn path_miss_hint(project_dir : String, full : String) -> String {
+  let cwd = bug_server_cwd()
+  let hit_note = if cwd.is_empty() {
+    "（server cwd 取不到：无法给出绝对落点，请改用绝对 project_dir）"
+  } else {
+    let candidate = mem_join(cwd, full)
+    if @fs.path_exists(candidate) {
+      "；**该文件在 server cwd 下其实存在**：" +
+      candidate +
+      " ⇒ 说明 path 写对了、基准根不对"
+    } else {
+      "（已按 server 进程 cwd 解析为：" + candidate + "，该处也不存在）"
+    }
+  }
+  "。基准 project_dir=\"" +
+  project_dir +
+  "\"，相对 path 按 **server 进程 cwd** 解析" +
+  hit_note +
+  "。跨项目请传绝对 project_dir（如 \"E:/IDEProjects/AI/Tnr\"）"
+}
+
+///|
 /// 对单个 file artifact 执行检查（存在性→非空→invariant，短路返回）。
 fn check_file_artifact(
   project_dir : String,
@@ -200,7 +232,7 @@ fn check_file_artifact(
     return {
       artifact: spec.path,
       ok: false,
-      detail: "文件不存在: \{full}",
+      detail: "文件不存在: \{full}\{path_miss_hint(project_dir, full)}",
     }
   }
   // 3) 读取内容
@@ -631,6 +663,14 @@ pub fn output_validate(
       "evidence": Json::string(evidence),
       "note": Json::string(note),
       "parsed_artifacts": Json::number(parsed_count.to_double()),
+      // BUG-412：回显基准目录。原回执只有 `文件不存在: ./tql/xxx.md`，
+      // 调用方看不出"这个 ./ 相对的是谁"——跨项目调用时（server cwd ≠ 调用方 cwd）
+      // 会把真实存在的文件读成假 RED。这里把两个根都摆出来：
+      //   project_dir  = 调用方传的那个（可能相对）
+      //   base_dir     = 相对 path 实际解析到的绝对目录（= server 进程 cwd；
+      //                  取不到时为空串，不拿 "." 冒充绝对落点）
+      "project_dir": Json::string(project_dir),
+      "base_dir": Json::string(bug_server_cwd()),
     }),
   )
 }
