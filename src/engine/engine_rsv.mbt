@@ -15,7 +15,18 @@ pub fn FistEngine::rsv_set(
   created_at~ : String,
 ) -> Result[String, String] {
   // 权限门禁：先过权限，再预订（BUG-413 三态分流）
-  let role = infer_role_from_agent(agent)
+  //
+  // BUG-418：角色**先查权威面 `agents.role`**（显式声明），查不到才退到收窄后的推断。
+  // 旧实现只用名字推断 ⇒ 自称 `commander-*` 即可拿 HumanSteward（可主动利用的越权面）。
+  //
+  // ⚠️ 关键陷阱：`agents.agent_id` 是 16 位指纹（`@omega.fnv1a64("agent_id:" + raw)`），
+  // 而这里收到的是调用方自由填的**原始名** ⇒ 必须自己算指纹再查，
+  // 直接传原始名永远查不到（那会让 (a) 静默失效，等于只做了 (b)）。
+  let declared = match self.agents_get(agent_fp_of(agent)) {
+    None => None
+    Some(rec) => Some(rec.role)
+  }
+  let (role, _role_source) = resolve_agent_role(agent, declared)
   match check_scope_permission(scope, role) {
     // RoleDenied 是**硬拒** —— HumanSteward 保护路径必须继续拒绝，绝不放行
     RoleDenied(e) => Err(e)
@@ -38,7 +49,12 @@ pub fn FistEngine::rsv_try_set(
   created_at~ : String,
 ) -> Result[@store.RsvOutcome, String] {
   // 权限门禁：先过权限，再进后端裁决（BUG-413 三态分流）
-  let role = infer_role_from_agent(agent)
+  // BUG-418：角色先查权威面 `agents.role`（同上，必须自己算指纹）。
+  let declared = match self.agents_get(agent_fp_of(agent)) {
+    None => None
+    Some(rec) => Some(rec.role)
+  }
+  let (role, _role_source) = resolve_agent_role(agent, declared)
   match check_scope_permission(scope, role) {
     RoleDenied(e) => Err(e)
     Allowed => self.store.rsv_try_set(scope~, agent~, ttl_until~, created_at~)

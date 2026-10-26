@@ -25,6 +25,8 @@ pub const COST_TIER_PREMIUM : String = "premium"
 
 pub fn advance_mark_prefix() -> String
 
+pub fn agent_fp_of(String) -> String
+
 pub fn boundary_probe_hint() -> String
 
 pub fn boundary_probe_slice() -> String
@@ -67,6 +69,8 @@ pub fn omega_max_rounds_default() -> Int32
 
 pub fn omega_norm_max_rounds(Int32) -> Int32
 
+pub fn omega_orphan_of_archived_parent(@core.Task, @core.TaskStatus?) -> Bool
+
 pub fn omega_result_id(String, Int32) -> String
 
 pub fn omega_spec_id(String, Int32) -> String
@@ -78,6 +82,8 @@ pub fn phi_coerce_seconds(Double) -> Int32?
 pub fn phi_domain_error(Array[Int32], Int32) -> String
 
 pub fn plan_route(String, n_files? : Int32) -> Json
+
+pub fn resolve_agent_role(String, String?) -> (String, String)
 
 pub fn root_task_id() -> String
 
