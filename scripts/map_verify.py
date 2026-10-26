@@ -9,7 +9,7 @@ if hasattr(_sys.stdout, "reconfigure"):
     _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(_sys.stderr, "reconfigure"):
     _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-import json, os, re, subprocess, sys
+import json, os, subprocess
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 NODE = os.environ.get("FIST_NODE", "node")
 # BUG-122 同型收口：不带 FIST_DB_PATH 裸跑会把演示数据写进仓库根的自举台账 fist-mbt.db。
@@ -21,7 +21,11 @@ MAIN = "_build/js/debug/build/cmd/cli/cli.js"
 META = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
         "io.modelcontextprotocol/clientCapabilities": {},
         "io.modelcontextprotocol/clientInfo": {"name": "map-verify", "version": "1.0"}}
-RE_TOOL = re.compile(r'instrumented_tool\(\s*s1\s*,\s*"([^"]+)"')
+# 2026-10-26 Lane D：删掉一行死代码 `RE_TOOL = re.compile(r'instrumented_tool\(...')`。
+# 依据——全仓 `grep RE_TOOL` 只有它自己那一行定义、零使用；且它与
+# `scripts/check_doc_surface.py:143` 的 `RE_TOOL` **逐字相同**（那份才是真在用的，
+# 见 `check_doc_surface.py:190` 的 `RE_TOOL_BLOCK_START.finditer`）⇒ 本文件这份是
+# 复制残留。留着会让 `pyflakes` 永远报一条假噪音，也会让人误以为本脚本解析工具名。
 
 def rpc(proc, method, **payload):
     params = {"_meta": META}; params.update(payload)
