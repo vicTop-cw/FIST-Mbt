@@ -7198,7 +7198,7 @@ Lane I 报告 `reports/2026-10-26-lane-i-archive-execution.md` + `temp/audit/lan
 **实测**：`python scripts/moon_test_env.py --target js src/engine` = **219/219 passed, 0 failed**（含上述 5 格）。
 
 **为什么这是真修而非改状态**：修法直接改的是「归档门怎么判」这个实现，不是账本抬头；且判据从「父任务已归档」这个**客观状态**读，而不是从调用方声明的名字/描述读 —— 这与 BUG-418（拿不可信的名字做权限判定）是相反方向的正确示范。
-## BUG-418 [2026-10-26T09:59:21Z] [high] OPEN
+## BUG-418 [2026-10-26T09:59:21Z] [high] FIXED
 - summary: [authz] `infer_role_from_agent` 从 agent 名字宽松推断角色 ⇒ 命名 `leader-xxx` 即可越过所有 Leader 级保护（含 `src/engine/` 引擎层），是能被主动利用的越权面
 - detail: ## 现象（Lane Q 实测，`src/engine/` 只读诊断）
 
@@ -7252,6 +7252,31 @@ grep -n "infer_role_from_agent" src/engine/*.mbt src/server/*.mbt
 Lane Q 报告 `reports/2026-10-26-bug413-reserve-scope-third-state-report.md` @ `5c2e6bea`。
 - reported_by: lead-explore(Lane Q 实测)
 
+
+### FIXED(2026-10-26T13:48:44Z / BUG-418)
+- evidence: commit ed8dffdf（4 文件）。两条腿修（单做一条都不够）：(b) 收窄推断 —— src/engine/engine_scope_perm.mbt 的 infer_role_from_agent 从「contains(commander)/contains(human_steward)/contains(leader)/contains(lead)/contains(polish)/contains(optimization) 子串匹配」改成「整名精确匹配」（human_steward/human ⇒ HumanSteward，leader/lead ⇒ Leader，其余 Executor）。保留 human_steward 整名是因为人类指挥官自报就是这两个名字，关掉会把合法路径一起关死；攻击面是子串/前缀不是整名。(a) 权威面优先 —— 新增 resolve_agent_role(name, declared) -> (role, source)，agents.role 优先标 source="declared"，查不到才退推断标 "inferred"；engine_rsv.mbt 的 rsv_set/rsv_try_set 两个调用点改为先查 agents.role。关键陷阱（Lane S 实测，专设锁 4 钉住）：reserve_scope 的 agent 是调用方自由填的原始名（未哈希），而 agents.agent_id 是 16 位指纹 ⇒ 必须先算指纹，新增 agent_fp_of(raw) 实现与 server 侧逐字同构 @omega.fnv1a64("agent_id:" + raw)（server.mbt 的 agent_fp 是包内私有 engine 看不到）；直接传原始名永远查不到会让 (a) 静默失效、role_source 恒 inferred、等于只做了 (b)。回归锁：新增 engine_role_resolve_wbtest.mbt 4 条（锁1=16 个攻击名含 commander-fake/my-commander/COMMANDER 大写/human-steward 变体/leader-x 后缀/polish-lane 旧规则全拿 Executor；锁2=declared HumanSteward 拿到且 source=declared、空串/None 退推断且 source=inferred；锁3=leader/lead/LEADER 整名仍 Leader 防修过头；锁4=钉 agent_fp_of(raw)!=raw、长度16、与 @omega.fnv1a64 逐字相等、不同输入不同指纹）。验证：moon check --target js = 53 warnings 0 errors；moon_test_env --target js src/engine = 230/230/0 全绿（含本笔 4 条锁 + 另两个并行 lane 的 role wbtest，设计兼容）。迁移影响面几乎为零（库内 active agents 仅 2 个，agent_id 全是 16 位指纹，无可读的 commander-*/leader-* 名字）。未做另立：三道门角色来源仍不统一（audit_permission 硬编码矩阵 / agent_acl 表 / infer_role_from_agent 推断），本次只修第三道。
+
+### FIXED(2026-10-26T14:12:37Z / BUG-418)
+- evidence: 修法 + 端到端锁双落地，**核心攻击面（子串匹配）实测关闭**：
+
+**① 修法**（并发 lane 落地并已提交，非本笔）：commit `ed8dffdf`「fix(authz): BUG-418 角色推断收窄为「整名精确匹配」+ 权威面 agents.role 优先」，4 文件（`engine_scope_perm.mbt` +70 / `engine_rsv.mbt` +20 / `pkg.generated.mbti` +6 / 自带纯函数锁 `engine_role_resolve_wbtest.mbt` 4 格）。
+**修前逐字**：`if a.contains("commander") || a.contains("human_steward") || a == "human" { HumanSteward } else if a.contains("leader") || a.contains("lead") || a.contains("polish") || a.contains("optimization") { Leader }` ⇒ `lane-b-leader` 拿到 Leader 面、`not-a-commander` 拿到 HumanSteward 面（可订 `src/store/store_sqlite.mbt` / `moon.mod`）。
+**修后**：`infer_role_from_agent` 改整名精确匹配 + 新增 `agent_fp_of()` / `resolve_agent_role(name, declared)`；`rsv_*` 先 `agents_get(agent_fp_of(agent))` 取 `agents.role`（declared 优先、推断兜底）。
+
+**② 端到端锁**（本笔提交 `bb892db1`，333 行 / 6 格）：`src/engine/engine_scope_perm_role_wbtest.mbt` —— 全部走 `FistEngine::rsv_try_set`（`reserve_scope` 真实调用路径），因为已提交的 4 格只测三个**纯函数**，而「角色结果有没有真进 `match check_scope_permission`」在 `engine_rsv` 里（纯函数全绿 + 接线改成常量也能过 —— 判例-29 机制格 ≠ 实现路径格）。
+- `wb1` 12 个子串/前缀名（`lane-b-leader` / `leader-foo` / `polish-lane` / `commander-in-chief` / `not-a-commander`…）→ **全 Executor**
+- `wb3` **端到端** 5 组名字打 5 类 scope（`src/engine/` / `src/router/` / `store_sqlite.mbt` / `server.mbt` / `moon.mod`）→ **全 Err**（实测 `leader-xxx` 拿不到 Leader 保护）
+- `wb4` 端到端 `human_steward` 订同样 scope → **全 Ok**（合法路径不退化）
+- `wb5` A 案权威面端到端：登记 `role=Leader` 放行 / 同族未登记拒绝 / 登记 Leader 仍进不了 HumanSteward 面（防 `agents_get(agent_fp_of(name))` 写错导致 A 案静默失效而纯函数锁全绿）
+- `wb6` 变异对照（旧规则提权 vs 新实现 fail-closed）+ 函数体扫描（体内无 `.contains(`，只扫函数体避开注释字面量 —— 判例-30）
+
+**③ 实测**：`moon test src/engine` = **229/229 passed, 0 failed**（229 = 基线 219 + 修法自带 4 + 本笔 6）；`moon check --target js` = **0 errors**；修前同一批锁未改实现时 = `229 / 226 passed / 3 failed`（锁真在看）。
+
+**④ 诚实边界（残留已新立，不塞进本条）**：
+- 单词 `leader` / `lead` **整名**仍买到 Leader 军官面（已提交修法有意保留；与「只有 human_steward/human 算特权」的 B 案口径不一致，属政策取舍）
+- A 案查表键仍是调用方**自报名字**：`agent="fist-mbt"` 可继承 `server.mbt:16-18` 写的 `role="Leader"`（残留面只到 Leader 级，HumanSteward 面仍 DENIED）
+- `claim`/`execute` 的 `agent_touch_first_seen` 对任意 assignee 写 `role="Executor"` 且 `ON CONFLICT` 不更新 ⇒ 统帅被这样注册过后**永久锁死**在 HumanSteward 面外
+- `lock_acquire` 完全无权限门（`engine_rsv.mbt:108-109` 注释自述「暂时没接」）⇒ 协作锁可绕过权限判定
 ## BUG-419 [2026-10-26T10:00:08Z] [medium] FIXED
 - summary: [scope-perm] `find_matching_rule` 注释称「最长 pattern 优先」但实现是「第一条匹配即返回」⇒ 未来插入更宽的前缀规则会静默遮蔽窄规则，保护被绕过或功能悄悄坏掉，两个方向都无报错无测试红
 - detail: ## 现象（Lane Q 只读诊断发现）
@@ -7371,3 +7396,202 @@ BUG-407 已标 FIXED，当时验证的是「**真分库**场景」：`store_list
 ## 连带发现（同一次实测）
 
 `archive(force=true)` 对「根任务 + 描述残留 `[omega:required]`」的僵尸（T0r741/T0r745）**永远过不了 Omega 门** —— 因为 `omega_orphan_of_archived_parent` 有一格「根任务无父 ⇒ 不豁免」（`src/engine/omega_strong.mbt:95-99`）。而这类僵尸的修复目标（BUG-389）已 FIXED，它们的存在意义已消失。这一条与 BUG-417 同族但方向不同（BUG-417 是「有父已归档」的孤儿，本条是「无父的根僵尸」）。
+## BUG-421 [2026-10-26T14:14:16Z] [medium] OPEN
+- summary: [authz] BUG-418 残留：整名 `leader` / `lead` 仍买到 Leader 军官面（子串面已关，单词面还在）—— 与「只有 human_steward/human 算特权」的口径不一致，属政策取舍待裁
+- detail: ## 现象（BUG-418 修法的残留，2026-10-26 Lane Q 实测）
+
+BUG-418 的修法（commit `ed8dffdf`）把 `infer_role_from_agent` 从**子串匹配**收窄为**整名精确匹配**，子串/前缀/大小写变体全部塌回 Executor（实测 `lane-b-leader` / `leader-foo` / `polish-lane` / `commander-in-chief` / `not-a-commander` 全 Err ✅）。
+
+**但整名 `leader` / `lead` 仍被列入 Leader 白名单**：
+
+```
+ALLOWED agent=leader  src/engine/engine_scope_perm.mbt · src/core/core_task.mbt · cmd/cli/main.mbt
+ALLOWED agent=lead    src/router/model_router.mbt
+DENIED  agent=leader  src/store/store_sqlite.mbt   ← 统帅面仍挡住（残留只到 Leader 级）
+DENIED  agent=leader-x src/engine/*                ← 子串已失效
+```
+
+⇒ 攻击者只要把 agent 名字**恰好**叫 `leader`（或 `lead`），仍可获得 Leader 级保护面（`src/core/`、`src/engine/`、`src/router/`、`cmd/`、`plugins/`、`moon.pkg`）。**名字仍是通行证**，只是从「任意子串」收窄成一个单词。
+
+## 与「B 案口径」的不一致
+
+BUG-418 修复期给的口径是：**只有 `human_steward` / `human` 两个精确匹配算特权，其余一律 fail-closed，并加「不可从名字推断 Leader」的硬注释**。
+
+已提交修法**有意保留**了 `a == "leader" || a == "lead"` 分支（其自带的 `role_resolve_wb3` 锁明确钉 `leader → Leader`，理由「关掉会把军官自报这条路关死」）。这属**政策取舍**，不是实现疏漏 —— 所以本条单独立案让 owner 裁决，而不是悄悄改掉那个锁。
+
+## 修法建议（2 处 + 1 个锁改判）
+
+```moonbit
+// src/engine/engine_scope_perm.mbt
+pub fn infer_role_from_agent(agent_name : String) -> String {
+  let a = agent_name.to_lower()
+  if a == "human_steward" || a == "human" { "HumanSteward" }
+  else { "Executor" } // ⚠️ 硬约束：角色不可从名字推断 Leader；Leader 只来自 agents.role
+}
+```
+1. 删掉 `else if a == "leader" || a == "lead" { "Leader" }` 分支
+2. 加硬注释「Leader 只来自 agents.role（已登记身份）」
+3. 把 `engine_role_resolve_wbtest.mbt::role_resolve_wb3`（钉 leader/lead→Leader）**改判为 →Executor**，并把 `"leader"` / `"lead"` 加进 `engine_scope_perm_role_wbtest.mbt::wb1` 的名单
+
+## 风险（为什么这是 medium 而非 low）
+
+- 这是**唯一还从名字拿军官面**的路径（子串面已关）；关掉它才能说「角色不再从名字推断」
+- 但关掉后，任何靠「自报 leader 名字」跑无人值守流水线的调用方会**立刻失效** ⇒ 需要 owner 确认「现有调用方是否依赖自报 leader」再执行
+
+## 关联
+- BUG-418（主条，已 FIXED）：子串匹配面关闭
+- 同批新立：A 案查表键仍是自报名字 / claim·execute 注册面毒化 human_steward / lock_acquire 无权限门
+- 判据：`src/engine/engine_scope_perm_role_wbtest.mbt`（wb1/wb3/wb4/wb5 端到端）+ `src/engine/engine_role_resolve_wbtest.mbt`（wb3 纯函数格，需改判）
+- reported_by: lead(Lane Q 回传 + 指挥官终审)
+
+## BUG-422 [2026-10-26T14:14:19Z] [medium] OPEN
+- summary: [authz] BUG-418 残留：A 案查表键仍是调用方自报名字 —— 报已登记身份名（如 `fist-mbt`）即可继承其 agents.role，拿到 Leader 级保护面
+- detail: ## 现象（BUG-418 修法**新增**的一小片面，2026-10-26 Lane Q 实测）
+
+BUG-418 的修法引入「权威面优先」：`engine_rsv.mbt` 的 `rsv_set` / `rsv_try_set` 先调
+`self.agents_get(agent_fp_of(agent))` 取 `agents.role`，取到就用它裁决。
+
+**问题**：`agent_fp_of(agent)` 的输入 `agent` 是 **MCP `reserve_scope(agent=…)` 原样透传的自报串** —— 指纹由名字推出 ⇒ 攻击者只要报一个**已登记的身份名**，就能继承那个身份的角色。
+
+**实测**：
+
+```
+ALLOWED agent=fist-mbt  src/engine/* · src/core/*      ← 命中 server.mbt:16-18 启动时写的 role="Leader"
+DENIED  agent=fist-mbt  src/store/store_sqlite.mbt · moon.mod   ← HumanSteward 面仍挡住
+```
+
+⇒ `agent="fist-mbt"`（项目自己的 server 身份）可拿到 **Leader 级**保护面。
+**修前**这个名字含 `fist-mbt` 不含 leader/commander/human_steward，会被推成 Executor（无特权）。**修法新增了这一小片面**。
+
+## 根因
+
+**授权判定仍以「调用方自报的名字」为查表键**，只是查的表从「名字模式」换成了「agents 表」。身份没有被核验，只是被**改名**了。
+
+## 修法方向（A 案完整路径，跨模块）
+
+1. **MCP 面**（`src/server/server.mbt`，HumanSteward 独占）给 `reserve_scope` / `lock_*` 增加**已核验身份**：连接期会话令牌，或 `agents.pubkey_fp` 签名（该列已存在但**全仓恒空**，所有写入点传 `""` —— 见 BUG-403/404 的诚实边界）
+2. 角色只从「已核验身份」对应的 `agents` 行读；`agent` 名字降级为**显示字段、不参与裁决**
+3. 之后 `infer_role_from_agent` 整体删除，回归锁改成「名字完全不参与裁决」
+
+## 临时缓解（若 A 案排不上）
+
+- `reserve_scope` 增加 `declared_role` 显式参数 + 校验（调用方必须明说自己要什么角色，而不是让系统从名字猜）
+- 或把 `agents.role` 的写入面收进 HumanSteward 独占（现在是 `agent_touch_first_seen` 对任意 assignee 都写 `"Executor"`，见新立的「注册面毒化」条）
+
+## 关联
+- BUG-418（主条）：子串面关闭
+- BUG-403/404：`pubkey_fp` 死承诺（全仓恒空）—— 本条正是它后果的第一次实际暴露
+- 同批新立：单词 leader 仍买军官面 / 注册面毒化 human_steward / lock_acquire 无权限门
+- reported_by: lead(Lane Q 回传 + 指挥官终审)
+
+## BUG-423 [2026-10-26T14:17:00Z] [high] OPEN
+- summary: [authz] BUG-418 副作用：claim/execute 的 agent_touch_first_seen 对任意 assignee 写 role="Executor" 且 ON CONFLICT 不更新 role ⇒ 统帅被这样注册过后永久锁死在 HumanSteward 面外
+- detail: ## 现象（功能性雷，2026-10-26 Lane Q 实测）
+
+两条注册路径共同构成死锁：
+
+1. **`agent_touch_first_seen`**（`src/server/server.mbt:1716` 的 claim / `:1777` 的 execute）对**任意 assignee** 调 `agents_register(role="Executor")`
+2. **`agents_register` 的 `ON CONFLICT` 只刷新 `pid`/`last_seen`/`status`，不更新 `role`**
+
+⇒ 一旦有人以 `human_steward` 作为 assignee 认领/执行过任务，那个身份就被**永久固定为 `role="Executor"`**。
+
+而 BUG-418 的修法让角色判定**优先读 `agents.role`**（declared 优先）⇒ 统帅角色被这条毒化路径永久锁死在 HumanSteward 面之外。
+
+**实测**：
+
+```
+DENIED  agent=human_steward（被 claim 以 role="Executor" 注册过）
+        scope=src/store/store_sqlite.mbt
+```
+
+即：**合法统帅本人**调 `reserve_scope` 订 `src/store/store_sqlite.mbt`（他的独占面）会被拒。
+
+## 根因
+
+两件事互相踩：
+- 「先用后注册」的便利（`agent_touch_first_seen` 让任意名字自动登记）
+- 「注册不覆盖 role」的防提权（`ON CONFLICT DO UPDATE` 不含 `role`，本意是防「低权路径改高权角色」）
+
+组合起来的副作用是：**第一次出现的 role 终生有效**，而第一次出现往往来自低权路径（claim/execute）。防提权的设计反过来毒化了合法身份。
+
+## 修法方向（三选一）
+
+**A 案（推荐）：整名白名单当下限**
+```moonbit
+// 角色 = max(declared, inferred) —— declared 可以抬高，但不能压低
+let role = max_role(declared, infer_role_from_agent(name))
+```
+配套：`source` 字段记 `"whitelisted"` / `"declared"`，让来源可审计。
+- 优点：`human_steward` 即使被标 Executor，白名单也把它抬回 HumanSteward
+- 风险：等于保留「名字能抬高角色」的路径（需与 BUG-421 一起裁）
+
+**B 案：注册面区分「身份首登」与「低权覆盖 role」**
+`agents_register` 拆成两条：
+- `agents_first_seen(agent_id, role)` —— 仅当 agent 不存在时 INSERT（首登定角色）
+- `agents_touch(agent_id, pid, last_seen, status)` —— 只刷新心跳字段，**永不触碰 role**
+- 优点：职责清晰，`role` 只由显式的 `agents_register`（HumanSteward 独占）设置
+- 缺点：要改调用点（`agent_touch_first_seen` 不再传 role）
+
+**C 案：最低限度止血**
+`agent_touch_first_seen` 不再写 `role="Executor"`，改为不写 role（用 schema 默认值/空串表示「未声明」），让推断兜底。
+- 优点：一行改动，立刻解开死锁
+- 缺点：`agents.role` 会出现「未声明」态，需要 `resolve_agent_role` 兼容
+
+## 测试建议
+
+回归锁应覆盖：
+1. `human_steward` 先被 claim 注册成 Executor → 再 `reserve_scope` 订 `store_sqlite.mbt` → **必须 Ok**
+2. 未登记名字 `leader-foo` → 仍 Err（不因修这条而放开 BUG-418）
+3. 显式 `agents_register(role="Leader")` 的 agent → 仍能过军官门
+
+## 关联
+- BUG-418（主条）：角色判定改为 declared 优先 —— 本条是它的副作用
+- BUG-404（已 FIXED）：`agents_register` 只写 agents 表不落 ACL（同族职责边界）
+- 同批新立：单词 leader 仍买军官面 / A 案查表键仍是自报名字 / lock_acquire 无权限门
+- reported_by: lead(Lane Q 回传 + 指挥官终审)
+
+## BUG-424 [2026-10-26T14:17:00Z] [high] OPEN
+- summary: [authz] lock_acquire / lock_renew 完全没有权限门（engine_rsv.mbt:108-109 注释自述「暂时没接」）⇒ reserve_scope 收口后，改 src/engine/ 的协作锁仍可绕过权限判定
+- detail: ## 现象（2026-10-26 Lane Q 只读诊断 + 指挥官复核）
+
+`reserve_scope` 走角色门（BUG-418 已收窄），但**同族的物理锁 `lock_acquire` 完全没有权限门**。
+
+`src/engine/engine_rsv.mbt:108-109` 注释自述「暂时没接」（权限门）。
+
+⇒ 即使 `reserve_scope` 全部收口，**改 `src/engine/` 的协作锁仍可绕过权限判定**：
+任何 agent 都能 `lock_acquire(scope="src/engine/engine.mbt")` 拿到独占锁。
+
+## 影响面
+
+- `reserve_scope` 是「软预订」（防并发编辑冲突），`lock_acquire` 是「硬锁」（TTL + 违例接管）
+- 后者没有权限门 ⇒ 两条路径的**安全强度不一致**：软的那条有门、硬的那条没有
+- 攻击面：低权 agent 可以锁住高权 agent 的工作面（**拒绝服务型**，不是提权型 —— 但它能阻塞 Leader/HumanSteward 的编辑）
+
+## 修法方向
+
+`lock_acquire` / `lock_renew` / `lock_release` 三处都接同一个角色门（复用 `check_scope_permission`）：
+
+```moonbit
+// engine_rsv.mbt 的 lock_* 入口
+let role = self.resolve_agent_role(agent)   // BUG-418 修法后的统一角色解析
+match check_scope_permission(scope, role) {
+  Allowed => { /* 继续原逻辑 */ }
+  RoleDenied(msg) => Err("lock 拒绝: \{msg}")
+}
+```
+
+**注意**：`lock_release` 的语义特殊 —— 「释放自己的锁」不应该被角色门拦（否则拿不到锁的人也无法清理自己之前拿的锁）。建议：
+- `lock_acquire` / `lock_renew` —— **必须**过门
+- `lock_release` —— **只校验持有者身份**（`agent` 与库里 `held_by` 一致），不过角色门
+
+## 测试建议
+
+1. `agent="lane-b-audit"`（Executor）`lock_acquire(scope="src/engine/engine.mbt")` → **必须 Err**
+2. `agent="human_steward"` 同样调用 → **必须 Ok**
+3. `lock_release` 不受角色门影响（锁的主人能释放自己的锁）
+
+## 关联
+- BUG-418（主条）：`reserve_scope` 的角色收窄
+- BUG-421/422/423（同批新立）：角色来源的三条残留
+- 两者合起来的完整结论：**「软预订有门、硬锁没门」是不一致的安全边界**
+- reported_by: lead(Lane Q 回传 + 指挥官终审)
