@@ -140,19 +140,73 @@ pub enum ScopeVerdict {
 }
 
 ///|
-/// 从 agent 名字推断角色（宽松推断，不是安全门禁）。
-/// fail-soft：宁可放行也不要卡死开发。
+/// agent 原始名 → 落库主键指纹（BUG-418）。
+///
+/// **为什么 engine 里要有这一份**：`server.mbt` 的 `agent_fp` 是**包内私有**
+/// （`fn agent_fp(raw)`，无 `pub`），engine 包看不到它；而 `reserve_scope` 收到的
+/// `agent` 是调用方自由填的**原始名**（文档示例就是 `exec_1`），
+/// 而 `agents.agent_id` 落的是 16 位指纹。
+///
+/// ⇒ 想查 `agents.role` 必须先自己算指纹。**直接传原始名永远查不到**
+/// （那会让「查权威角色」静默失效，等于没修）。实现必须与 `server.mbt` 逐字同构：
+/// `@omega.fnv1a64("agent_id:" + raw)`。
+///
+/// 本条被白盒锁 `rswb_4` 钉住：断言「原始名查不到、指纹查得到」。
+pub fn agent_fp_of(raw : String) -> String {
+  @omega.fnv1a64("agent_id:" + raw)
+}
+
+///|
+/// 从 agent 名字推断角色（**BUG-418 收窄后：只做缺省提示，不是授权依据**）。
+///
+/// ⚠️ BUG-418 前的实现用 `contains("commander")` 做**子串**匹配 ⇒
+/// 任何自称 `commander-fake` 的 agent 都能拿到 HumanSteward，进而过 HumanSteward 保护门。
+/// **那不是「文档不准」，是可主动利用的越权面。**
+///
+/// 收窄规则（BUG-418 裁决 (b)，按「整名精确匹配」而非「永不返回高角色」）：
+///   · **禁止**「前缀/子串命中即给高角色」—— 这才是攻击面
+///   · **允许**整名精确匹配：`human_steward` / `human` / `leader` / `lead`
+///     人类指挥官与军官自报的就是这几个固定名字，关掉这条路会把合法路径一起关死
+///   · 其余一律 Executor
+///
+/// ⇒ `commander-fake` → Executor（不再靠 commander 子串）；`human_steward` → HumanSteward（合法）
+///
+/// **权威面仍是 `agents.role`**（见 `resolve_agent_role`）：本函数只在查不到声明时做兜底，
+/// 且回执会带 `role_source="inferred"` 让调用方知道这是猜的。
 pub fn infer_role_from_agent(agent_name : String) -> String {
   let a = agent_name.to_lower()
-  if a.contains("commander") || a.contains("human_steward") || a == "human" {
+  // 整名精确匹配（大小写已归一）。子串/前缀一律不给高角色。
+  if a == "human_steward" || a == "human" {
     "HumanSteward"
-  } else if a.contains("leader") ||
-    a.contains("lead") ||
-    a.contains("polish") ||
-    a.contains("optimization") {
+  } else if a == "leader" || a == "lead" {
     "Leader"
   } else {
-    "Executor" // 默认最宽松
+    "Executor"
+  }
+}
+
+///|
+/// 解析 agent 的**权威角色**与**来源**（BUG-418 裁决 (a)）。
+///
+/// 优先级：`agents.role`（显式声明，权威） > `infer_role_from_agent`（缺省提示）。
+///
+/// `declared` 由调用方查库传入（`agents_get(agent_id).role`），保持本函数纯、可单测、无 IO。
+/// 查不到（None / 空串）⇒ 退到推断，且**推断结果只可能是 Executor 或 Leader**（见上）。
+///
+/// 返回 `(role, source)`，`source` ∈ {`"declared"`, `"inferred"`} ——
+/// 调用方据此知道这个角色是**派下来的**还是**猜的**（BUG-418 的可观测性要求）。
+pub fn resolve_agent_role(
+  agent_name : String,
+  declared : String?,
+) -> (String, String) {
+  match declared {
+    Some(r) =>
+      if r != "" {
+        (r, "declared")
+      } else {
+        (infer_role_from_agent(agent_name), "inferred")
+      }
+    None => (infer_role_from_agent(agent_name), "inferred")
   }
 }
 
