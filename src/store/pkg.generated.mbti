@@ -12,6 +12,10 @@ pub fn aggregate_stats(@sqlite.Database) -> Json
 
 pub fn assistant_claim_action(AssistantReg?, String, String, String) -> (Bool, String, String)
 
+pub fn db_file_exists(String) -> Bool
+
+pub fn db_file_task_count(String) -> Int32
+
 pub fn executions_table_sql() -> String
 
 pub fn init_executions_table(@sqlite.Database) -> Bool
@@ -22,9 +26,17 @@ pub fn list_all_executions(@sqlite.Database) -> Array[ExecutionRecord]
 
 pub fn lock_acquire_action(FileLock?, String, String) -> (Bool, String)
 
+pub fn migrate_legacy_store(String, String, String, force? : Bool) -> StoreMigration
+
 pub fn rsv_action((String, String, String)?, String, String) -> (Bool, String)
 
 pub fn specs_table_sql() -> String
+
+pub fn store_migration_applies(String) -> Bool
+
+pub fn store_migration_note(String, String, String, Int32, Int32) -> String
+
+pub fn store_migration_reason(Bool, Int32, Bool, Int32, Bool) -> String
 
 // Errors
 
@@ -319,6 +331,21 @@ pub fn StoreBackend::write_call_log(Self, ts~ : String, tool~ : String, caller~ 
 pub fn StoreBackend::write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
 pub fn StoreBackend::write_heartbeat_interval(Self, task_id~ : String, interval_sec~ : Int32, ts~ : String) -> Result[Unit, String]
 pub fn StoreBackend::write_saga_action(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, created_at~ : String) -> Result[Unit, String]
+
+pub struct StoreMigration {
+  reason : String
+  applied : Bool
+  from : String
+  to : String
+  legacy_tasks : Int32
+  new_tasks : Int32
+  moved_tasks : Int32
+  backup : String
+  note : String
+}
+pub fn StoreMigration::skipped(String) -> Self
+pub fn StoreMigration::skipped_at(String, String, String) -> Self
+pub fn StoreMigration::to_json(Self) -> Json
 
 // Type aliases
 

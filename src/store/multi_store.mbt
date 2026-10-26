@@ -257,3 +257,429 @@ pub fn MultiStore::ns_stats(self : MultiStore) -> Json {
   })
   Json::object(m)
 }
+
+// ---------------------------------------------------------------------------
+// T0r744 · BUG-78 迁移缺口：旧位置存量库 → BUG-78 新默认位置的**真迁移**
+//
+// 背景：BUG-78 把 store_open 的默认落点从「server cwd 根 `<ns>.db`」改成
+// 「`<target>/.fist-mbt/data/<ns>.db`」，但**没有迁移存量库**。BUG-389 只补了
+// 「检测到旧库就复用旧位置」（永远不搬），于是：
+//   ① 旧库永远停在 cwd 根（默认路径形同虚设，且新位置留下空壳库）；
+//   ② 用户先跑出 `.fist-mbt/data/<ns>.db` 空壳、旧位置又有真库时，两边歧义无裁定；
+//   ③ 做了没做、做了多少，回执里看不出来。
+//
+// 本节补的正是这三件：判定（纯函数）/ 迁移（复制，不销毁）/ 回执（moved_tasks 等）。
+// ---------------------------------------------------------------------------
+
+///|
+/// 文件名探测：是普通文件则 true。
+///
+/// `@fs.is_file` 在路径缺失时 raise（不是返回 false），迁移判定只关心"在不在"，
+/// 所以这里一律折成 false——判定逻辑不该被一次 IO 异常打断。
+pub fn db_file_exists(path : String) -> Bool {
+  @fs.is_file(path) catch {
+    _ => false
+  }
+}
+
+///|
+/// SQLite 文件头探测（16 字节 `SQLite format 3\0`）。
+///
+/// **为什么必须先探文件头**（实测踩到，不是防御性编程）：`node:sqlite` 的 `prepare`
+/// 在非 SQLite 文件上抛的是**裸 JS 异常**（`file is not a database`），而 MoonBit 的
+/// `try/catch` 只管自家 error 类型，**接不住裸 JS 异常**——一次脏文件就把 serve 打死。
+/// 所以脏文件必须在 `Database::open` **之前**被挡掉。
+///
+/// 代价说明：`@fs` 只有整读接口，探 16 字节也要整份读盘。迁移路径本来就要整份复制
+/// （read_file_to_bytes → write_bytes_to_file），量级一致；这条只在「库文件已存在」
+/// 时才走，不是热路径。
+fn looks_like_sqlite(path : String) -> Bool {
+  let data : Bytes? = Some(@fs.read_file_to_bytes(path)) catch { _ => None }
+  match data {
+    None => false
+    Some(b) => {
+      if b.length() < 16 {
+        return false
+      }
+      // "SQLite format 3\0" 的逐字节 ASCII
+      let magic : FixedArray[Int32] = [
+        83, 81, 76, 105, 116, 101, 32, 102, 111, 114, 109, 97, 116, 32, 51, 0,
+      ]
+      let mut i = 0
+      let mut ok = true
+      while i < 16 {
+        if b[i].to_int() != magic[i] {
+          ok = false
+        }
+        i = i + 1
+      }
+      ok
+    }
+  }
+}
+
+///|
+/// 只读标量查询：打开库文件跑一条返回单值的 SQL。前置条件由调用方保证
+/// （文件存在且过了 `looks_like_sqlite`）——这里不重复探测。
+fn db_file_scalar(path : String, sql : String) -> Int32 {
+  let mut n = 0
+  match @sqlite.Database::open(path) {
+    None => ()
+    Some(db) => {
+      match db.prepare(sql) {
+        None => ()
+        Some(stmt) => {
+          if stmt.step() {
+            n = stmt.column_int(0)
+          }
+          stmt.finalize()
+        }
+      }
+      db.close()
+    }
+  }
+  n
+}
+
+///|
+/// 只读任务计数（迁移判定与迁移后校验共用）：打开某个库文件数 `tasks` 行数。
+///
+/// **不建 schema、不切 WAL、不补列**——只读探针不该改动物证。对比之下
+/// `SqliteStore::open` 会顺手 CREATE TABLE + `PRAGMA journal_mode=WAL`，
+/// 于是"探一下空壳"就把空壳变成了"有全套新表的新库"，判定证据被自己改掉。
+///
+/// 三道闸（每一道都对应一个实测会打死进程或误判的形状）：
+/// 1. 文件不存在 → 0；
+/// 2. 文件头不是 SQLite → 0（裸 JS 异常接不住，见 `looks_like_sqlite`）；
+/// 3. 先问 `sqlite_master` 有没有 `tasks` 表——**任何合法库都有 sqlite_master**，
+///    而对缺表的库直接 `SELECT ... FROM tasks` 同样抛裸 JS 异常
+///    （`no such table: tasks`，BUG-94 同族），接不住 ⇒ 空壳库必须先走这一步。
+pub fn db_file_task_count(path : String) -> Int32 {
+  if !db_file_exists(path) {
+    return 0
+  }
+  if !looks_like_sqlite(path) {
+    return 0
+  }
+  let has_tasks = db_file_scalar(
+    path, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='tasks'",
+  )
+  if has_tasks == 0 {
+    return 0
+  }
+  db_file_scalar(path, "SELECT COUNT(*) FROM tasks")
+}
+
+///|
+/// 迁移判定（纯函数，零 IO）：给定两边的存在性与任务数，判定这次 store_open 该不该搬库。
+///
+/// 返回闭集（每个取值都有对应文案，见 `store_migration_note`）：
+/// - `no-legacy`        旧位置没有库（全新项目，正常落新位置）
+/// - `legacy-only`      **只有**旧库 → 搬（BUG-78 的正常升级路径）
+/// - `empty-target`     两边都有但新位置是空壳（0 条）且旧库有数据 → 搬（本次要治的形状）
+/// - `both-empty`       两边都有但都空 → 不搬（没有内容可搬）
+/// - `target-has-data`  旧库空壳、新位置有数据 → 不搬
+/// - `already-migrated` 新位置行数 ≥ 旧库 → 判为上次迁移的产物，不重复搬（幂等重入）
+/// - `conflict`         两边都有数据且新位置不覆盖旧库 → **不自动搬**（自动覆盖会丢数据）
+/// - `forced`           `migrate=true` 且旧库有数据 → 搬（新库先留档）
+/// - `legacy-empty`     `migrate=true` 但旧库没有任务 → 不搬
+pub fn store_migration_reason(
+  legacy_present : Bool,
+  legacy_tasks : Int32,
+  new_present : Bool,
+  new_tasks : Int32,
+  force : Bool,
+) -> String {
+  if !legacy_present {
+    return "no-legacy"
+  }
+  if !new_present {
+    return "legacy-only"
+  }
+  if force {
+    // 显式要求迁移：旧库有数据才动；旧库是空壳则没有可搬的东西
+    if legacy_tasks > 0 {
+      return "forced"
+    }
+    return "legacy-empty"
+  }
+  if new_tasks == 0 {
+    if legacy_tasks > 0 {
+      return "empty-target"
+    }
+    return "both-empty"
+  }
+  if legacy_tasks == 0 {
+    return "target-has-data"
+  }
+  if new_tasks >= legacy_tasks {
+    return "already-migrated"
+  }
+  "conflict"
+}
+
+///|
+/// 该判定是否**真搬**文件（只有这三档会写目标位置，其余一律只读判定）。
+pub fn store_migration_applies(reason : String) -> Bool {
+  reason == "legacy-only" || reason == "empty-target" || reason == "forced"
+}
+
+///|
+/// 迁移判定的人话说明（回执 `note` 字段的唯一真源）。
+///
+/// 每一档都必须点出**两边路径与行数**——"做了没有/做了多少"要靠回执自证，
+/// 而不是让调用方去猜（T0r744 的第三项验收）。
+pub fn store_migration_note(
+  reason : String,
+  legacy_path : String,
+  new_path : String,
+  legacy_tasks : Int32,
+  new_tasks : Int32,
+) -> String {
+  match reason {
+    "no-legacy" =>
+      "旧位置无存量库（\{legacy_path} 不存在）：按 BUG-78 默认落新位置，无需迁移"
+    "legacy-only" =>
+      "旧位置有库、新位置没有：自动迁移 \{legacy_tasks} 条任务到 \{new_path}" +
+      "（旧库原件保留在 \{legacy_path} 当备份，未删除/未改名）"
+    "empty-target" =>
+      "新位置是空壳（0 条）、旧位置有 \{legacy_tasks} 条：按空壳覆盖迁移" +
+      "（旧库原件保留当备份）"
+    "both-empty" => "两边都是空库，不迁移"
+    "already-migrated" =>
+      "新位置已有 \{new_tasks} 条 ≥ 旧位置 \{legacy_tasks} 条：判为上次迁移的产物，不重复迁移"
+    "target-has-data" =>
+      "旧库是空壳、新位置有 \{new_tasks} 条：不迁移"
+    "conflict" =>
+      "两边都有数据（新 \{new_tasks} 条 / 旧 \{legacy_tasks} 条）且新位置不覆盖旧库：" +
+      "**不自动迁移**（自动覆盖会丢数据）。本次开新位置；旧库原件未动，仍在 \{legacy_path}。" +
+      "两条出路：① store_open(migrate=true) 用旧库覆盖新位置（新库先留档 .replaced-bak）；" +
+      "② store_open(data_dir=\".\") 继续用旧位置"
+    "forced" =>
+      "migrate=true 强制：用旧库（\{legacy_tasks} 条）覆盖 \{new_path}，新库原件已留档 .replaced-bak"
+    "legacy-empty" =>
+      "migrate=true 但旧库没有任务，没有内容可搬，不迁移"
+    "invalid-ns" => "命名空间非法，不做迁移"
+    "explicit-data-dir" =>
+      "调用方显式指定了 data_dir（或 scratch=true）：按传入位置打开，不参与默认落点的迁移判定"
+    "already-open" =>
+      "该命名空间在本进程里已经打开：不在活库上搬文件（会和 WAL/锁搅在一起），本次只沿用既有句柄"
+    "invalid-legacy" =>
+      "旧位置存在但文件头不是 SQLite（\{legacy_path}）：不迁移——把脏文件/半截文件" +
+      "搬进新默认位置只会把问题放大，也不会让任务变得可见。请人工核对旧文件后再处理"
+    "same-dir" => "旧位置与新位置是同一个目录，无需迁移"
+    _ => "未识别的迁移判定：\{reason}"
+  }
+}
+
+///|
+/// 迁移结论（回执的数据源）。字段全部是"这次 open 到底做了什么"的自证：
+/// 走哪个位置、有没有搬、搬了多少条、旧库/新库各多少条、备份落在哪。
+pub struct StoreMigration {
+  reason : String
+  applied : Bool
+  from : String
+  to : String
+  legacy_tasks : Int32
+  new_tasks : Int32
+  moved_tasks : Int32
+  backup : String
+  note : String
+}
+
+///|
+/// 不迁移的结论工厂（显式 data_dir / ns 已打开 / 非法 ns 等旁路用同一形状回执，
+/// 免得调用方要在两种结构之间分支）。
+pub fn StoreMigration::skipped(reason : String) -> StoreMigration {
+  StoreMigration::skipped_at(reason, "", "")
+}
+
+///|
+/// 同上，但点名两边路径（"为什么没迁"要能指到具体文件）。
+pub fn StoreMigration::skipped_at(
+  reason : String,
+  from : String,
+  to : String,
+) -> StoreMigration {
+  {
+    reason,
+    applied: false,
+    from,
+    to,
+    legacy_tasks: 0,
+    new_tasks: 0,
+    moved_tasks: 0,
+    backup: "",
+    note: store_migration_note(reason, from, to, 0, 0),
+  }
+}
+
+///|
+/// 回执 JSON（`store_open` 的 `migration` 字段唯一真源）。
+pub fn StoreMigration::to_json(self : StoreMigration) -> Json {
+  Json::object({
+    "reason": Json::string(self.reason),
+    "applied": Json::boolean(self.applied),
+    "from": Json::string(self.from),
+    "to": Json::string(self.to),
+    "legacy_tasks": Json::number(self.legacy_tasks.to_double()),
+    "new_tasks": Json::number(self.new_tasks.to_double()),
+    "migrated_tasks": Json::number(self.moved_tasks.to_double()),
+    "backup": Json::string(self.backup),
+    "note": Json::string(self.note),
+  })
+}
+
+///|
+/// 逐字节复制文件；读不出/写不进/空文件一律 false（迁移判定要据此拒绝"搬了个空壳"）。
+fn copy_file_bytes(src : String, dst : String) -> Bool {
+  let data : Bytes? = Some(@fs.read_file_to_bytes(src)) catch { _ => None }
+  match data {
+    None => false
+    Some(bytes) => {
+      if bytes.length() == 0 {
+        return false
+      }
+      let wrote : Unit? = Some(@fs.write_bytes_to_file(dst, bytes)) catch {
+        _ => None
+      }
+      match wrote {
+        None => false
+        Some(_) => true
+      }
+    }
+  }
+}
+
+///|
+/// 删文件（不存在/删不掉都不算错——清理侧车是"尽力而为"，失败不该阻断迁移）。
+fn remove_file_quiet(path : String) -> Unit {
+  @fs.remove_file(path) catch {
+    _ => ()
+  }
+}
+
+///|
+/// 只读打开并尝试把 WAL 内容并入主库（`wal_checkpoint(TRUNCATE)`）。
+///
+/// 为什么需要：一个被 kill 的进程会在 `<db>-wal` 里留下最后一段已提交事务，
+/// 主库文件本身**不含**那一段。只复制 `.db` 就会丢数据（"迁移完反而少了几条"）。
+/// 先 checkpoint 让主库自包含；checkpoint 失败/非 WAL 库不阻断——
+/// 下面的复制会把 `-wal` 侧车一并搬走当兜底。
+///
+/// 这里**不用 try/catch**：调用方已确认文件是合法 SQLite，且实测（node 24）
+/// 对非 WAL 库跑 wal_checkpoint 不抛；而裸 JS 异常本来也接不住（见 `looks_like_sqlite`），
+/// 写个 try 只会让读者以为这里有保护。
+fn checkpoint_db_quiet(path : String) -> Unit {
+  match @sqlite.Database::open(path) {
+    None => ()
+    Some(db) => {
+      ignore(db.exec("PRAGMA wal_checkpoint(TRUNCATE)"))
+      db.close()
+    }
+  }
+}
+
+///|
+/// 旧位置 → BUG-78 新默认位置的**真迁移**（T0r744）。
+///
+/// 判定见 `store_migration_reason`：只有 `legacy-only` / `empty-target` / `forced`
+/// 会真的搬。搬迁口径（每一条都对应一个实测会丢数据的坑）：
+/// 1. **复制而不是移动**：旧库原字节留在旧位置当备份，不删除、不改名——
+///    不可逆动作不自动做（本仓纪律），回执点名两边路径供人收尾；
+/// 2. `-wal` 侧车一并复制（先试 checkpoint）：只搬主库会丢最后一段事务；
+/// 3. 目标位置的 `-wal` / `-shm` **先删**：把新主库换掉却留着旧侧车，
+///    SQLite 会拿陈旧 WAL 帧覆盖新内容（换库场景的标准坑）；
+/// 4. `forced`（两边都有数据）覆盖前先把新库整份复制成 `<new>.db.replaced-bak`，
+///    连同它的 `-wal`，不销毁新库内容；
+/// 5. 落盘后做**内容级校验**（新库 `tasks` 行数 ≥ 旧库行数），不是只看文件存在——
+///    "搬了个空壳/半截文件"必须判失败。
+pub fn migrate_legacy_store(
+  legacy_dir : String,
+  new_dir : String,
+  ns : String,
+  force~ : Bool = false,
+) -> StoreMigration {
+  let legacy_path = legacy_dir + "/" + ns + ".db"
+  let new_path = new_dir + "/" + ns + ".db"
+  // 非法 ns 或同一个目录：直接给结论，不做任何文件动作
+  if MultiStore::safe_ns(ns) is None {
+    return StoreMigration::skipped("invalid-ns")
+  }
+  if legacy_dir == new_dir {
+    return StoreMigration::skipped("same-dir")
+  }
+  let legacy_present = db_file_exists(legacy_path)
+  let new_present = db_file_exists(new_path)
+  // 旧文件不是 SQLite（脏文件/半截文件/被人换成了别的东西）：搬它只会把问题放大，
+  // 且搬完 store_open 打开它同样要炸 ⇒ 明确拒绝并点名路径，不做任何写动作。
+  if legacy_present && !looks_like_sqlite(legacy_path) {
+    return StoreMigration::skipped_at("invalid-legacy", legacy_path, new_path)
+  }
+  let legacy_tasks = if legacy_present {
+    db_file_task_count(legacy_path)
+  } else {
+    0
+  }
+  let new_tasks = if new_present { db_file_task_count(new_path) } else { 0 }
+  let reason = store_migration_reason(
+    legacy_present, legacy_tasks, new_present, new_tasks, force,
+  )
+  let note = store_migration_note(
+    reason, legacy_path, new_path, legacy_tasks, new_tasks,
+  )
+  let base : StoreMigration = {
+    reason,
+    applied: false,
+    from: legacy_path,
+    to: new_path,
+    legacy_tasks,
+    new_tasks,
+    moved_tasks: 0,
+    backup: "",
+    note,
+  }
+  if !store_migration_applies(reason) {
+    return base
+  }
+  // —— 真搬 ——（记录字段不可变：每档返回一处构造，避免"改了一半"的半截结论）
+  ensure_dir_tree(new_dir)
+  let dst_wal = new_path + "-wal"
+  let dst_shm = new_path + "-shm"
+  // ④ 覆盖前留档（新库有内容时才留；空壳没有留档价值）
+  let mut backup = ""
+  if new_present && new_tasks > 0 {
+    let bak = new_path + ".replaced-bak"
+    if copy_file_bytes(new_path, bak) {
+      if db_file_exists(dst_wal) {
+        ignore(copy_file_bytes(dst_wal, bak + "-wal"))
+      }
+      backup = bak
+    }
+  }
+  // ③ 换主库前清掉目标侧车
+  remove_file_quiet(dst_wal)
+  remove_file_quiet(dst_shm)
+  // ② 让旧主库自包含，再整份搬（含兜底侧车）
+  checkpoint_db_quiet(legacy_path)
+  if !copy_file_bytes(legacy_path, new_path) {
+    return {
+      ..base,
+      backup,
+      note: "迁移失败：\{legacy_path} 读不出或写入 \{new_path} 失败（旧库原件未动）",
+    }
+  }
+  if db_file_exists(legacy_path + "-wal") {
+    ignore(copy_file_bytes(legacy_path + "-wal", dst_wal))
+  }
+  // ⑤ 内容级校验：行数没跟上就是没搬成
+  let got = db_file_task_count(new_path)
+  if got < legacy_tasks {
+    return {
+      ..base,
+      backup,
+      note: "迁移校验失败：\{new_path} 只有 \{got} 条 < 旧库 \{legacy_tasks} 条（旧库原件未动）",
+    }
+  }
+  { ..base, applied: true, moved_tasks: legacy_tasks, backup, }
+}
