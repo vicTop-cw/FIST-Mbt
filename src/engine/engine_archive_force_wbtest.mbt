@@ -70,6 +70,150 @@ test "archive_force/force=false 与 archive 同义：拒暂停态（向后兼容
   )
 }
 
+// ——— BUG-417：orphan 豁免必须**接线成立**，不能只在纯函数里绿 ———
+//
+// `omega_orphan_wbtest.mbt` 锁的是判据本身（纯函数、无 IO）；它绿**不证明** engine 这一侧
+// 真的把「父状态」喂进去了。诊断 BUG-417 时正是这条缝隙最难查：判据层四格全绿，
+// 而 engine 面的 `self.get_task(pid)` / `is_archived()` / `omega_enabled` 三处任一接线错位，
+// 外部观测到的都只是同一句「尚未做成果复验」。故这里补 engine 层成对锁（判例-29：机制格 ≠ 实现路径格）。
+
+///|
+/// 造一个**已归档**父任务（描述不含标记，自身不触发 Omega 门）。
+fn af_archived_parent(e : FistEngine, id : String) -> Unit {
+  ignore(
+    e.store.create_task(
+      @core.Task::new(
+        id~,
+        project_dir="/proj/demo",
+        description="普通父任务 \{id}",
+        created_at="2026-01-01T00:00:00Z",
+      ),
+    ),
+  )
+  ignore(e.pause_task(task_id=id, now="2026-01-01T00:00:01Z"))
+  match
+    e.archive_force(
+      task_id=id,
+      by="human_steward",
+      force=true,
+      now="2026-01-01T00:00:02Z",
+    ) {
+    Ok(_) => ()
+    // 造父不成功就别继续：否则后面每一格都在测一个不存在的父（假绿来源）
+    Err(err) => abort("af_archived_parent 造父失败: \{err}")
+  }
+}
+
+///|
+/// 造一个「描述含标记、元数据列可指定」的子任务并迁到已暂停。
+fn af_child(
+  e : FistEngine,
+  id : String,
+  parent : String,
+  omega_required : Bool,
+) -> Unit {
+  let desc = "子任务单元 1 | " + omega_mark()
+  ignore(
+    e.store.create_task(
+      @core.Task::new(
+        id~,
+        project_dir="/proj/demo",
+        description=desc,
+        parent_id=parent,
+        omega_required~,
+        created_at="2026-01-01T00:00:00Z",
+      ),
+    ),
+  )
+  ignore(e.pause_task(task_id=id, now="2026-01-01T00:00:01Z"))
+}
+
+///|
+/// 锁 5（接线锁·正例）：父已归档 + 元数据 false + 描述含标记 ⇒ engine 放行并落库。
+/// 这一格红的形态就是 BUG-417 原报：同一句「尚未做成果复验」。
+test "archive_force/BUG-417 孤儿 Omega（父已归档）在 engine 面真的放行" {
+  let e = FistEngine::new()
+  af_archived_parent(e, "AFP1")
+  af_child(e, "AFC1", "AFP1", false)
+  let r = e.archive_force(
+    task_id="AFC1",
+    by="human_steward",
+    force=true,
+    now="2026-01-01T00:00:03Z",
+  )
+  assert_true(r is Ok(_))
+  // 落库确认：豁免不是「跳过门禁后没写」，状态真的变了
+  assert_eq(
+    e.store.get_task("AFC1").unwrap().get_status().to_string(),
+    "已归档",
+  )
+}
+
+///|
+/// 锁 6（接线锁·反例）：父**未**归档 ⇒ engine 仍拦（豁免不得由「父查不到」退化成放行）。
+test "archive_force/BUG-417 父未归档时 engine 仍拦孤儿形状的任务" {
+  let e = FistEngine::new()
+  ignore(
+    e.store.create_task(
+      @core.Task::new(
+        id="AFP2",
+        project_dir="/proj/demo",
+        description="普通父任务 AFP2",
+        created_at="2026-01-01T00:00:00Z",
+      ),
+    ),
+  )
+  af_child(e, "AFC2", "AFP2", false)
+  let msg = force_err_of(
+    e.archive_force(
+      task_id="AFC2",
+      by="human_steward",
+      force=true,
+      now="2026-01-01T00:00:03Z",
+    ),
+  )
+  assert_true(msg.contains("Omega 门禁拦截归档"))
+  assert_true(msg.contains("尚未做成果复验"))
+  // 拦下就得真的没动：状态仍是已暂停
+  assert_eq(
+    e.store.get_task("AFC2").unwrap().get_status().to_string(),
+    "已暂停",
+  )
+}
+
+///|
+/// 锁 7（接线锁·核心 fail-closed）：元数据列真开 ⇒ 父已归档也**不得**豁免。
+test "archive_force/BUG-417 正经 Omega 任务（元数据列开）父已归档也不放行" {
+  let e = FistEngine::new()
+  af_archived_parent(e, "AFP3")
+  af_child(e, "AFC3", "AFP3", true)
+  let msg = force_err_of(
+    e.archive_force(
+      task_id="AFC3",
+      by="human_steward",
+      force=true,
+      now="2026-01-01T00:00:03Z",
+    ),
+  )
+  assert_true(msg.contains("Omega 门禁拦截归档"))
+}
+
+///|
+/// 锁 8（接线锁·根任务）：无父 + 描述含标记 ⇒ 仍拦（判据必须自己确认「确实有父」）。
+test "archive_force/BUG-417 根任务的标记不构成豁免理由" {
+  let e = FistEngine::new()
+  af_child(e, "AFC4", "", false)
+  let msg = force_err_of(
+    e.archive_force(
+      task_id="AFC4",
+      by="human_steward",
+      force=true,
+      now="2026-01-01T00:00:03Z",
+    ),
+  )
+  assert_true(msg.contains("Omega 门禁拦截归档"))
+}
+
 ///|
 test "archive_force/force=true 归档暂停态并落库持久化" {
   let e = FistEngine::new()
