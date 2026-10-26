@@ -94,6 +94,36 @@ pub fn FileLock::new(
 }
 
 ///|
+/// BUG-424：`FileLock.agent` 的**读访问器**。
+///
+/// 为什么需要它：本 struct 的字段都是**包内私有**（无 `pub` 修饰）⇒ engine 侧跨包
+/// 既不能写 struct literal、也不能直接读字段（BUG-413 已实测编译器拒绝 4036/4033）。
+/// 而 `engine_rsv.mbt` 的锁权限门必须读「谁要这把锁」来判角色。
+///
+/// 只读不改：不提供 setter，避免绕开 `renew` 的时序语义。
+pub fn FileLock::agent_of(self : FileLock) -> String {
+  self.agent
+}
+
+///|
+/// BUG-424：`FileLock.scope` 的读访问器（理由同 `agent_of`）—— 权限门要拿 scope 去查规则表。
+pub fn FileLock::scope_of(self : FileLock) -> String {
+  self.scope
+}
+
+///|
+/// BUG-424：`FileLock.status` 的读访问器。
+///
+/// 用途：`locks_try_acquire` 的 `legacy_grant` 特判要判「这条现有锁是不是还活着」
+/// （`status == "active"`）—— 只有活着且属于自己的锁才允许在权限门之后续期。
+///
+/// **只读不改**：本仓惯例（同 `agent_of` / `scope_of`）—— 不给 setter，
+/// 改 status 必须走 `renew` / `locks_try_acquire` 那条带时序语义的路。
+pub fn FileLock::status_of(self : FileLock) -> String {
+  self.status
+}
+
+///|
 /// 续期：返回同锁的新 ttl_until + ts，status 重置为 active。
 pub fn FileLock::renew(
   self : FileLock,
