@@ -7456,7 +7456,7 @@ BUG-407 已标 FIXED，当时验证的是「**真分库**场景」：`store_list
   **C 案不阻碍 B 案**：迁移完成后 `warning` 自动消失（`main_db_tasks` 归零）。
   **未覆盖面**：`list`（返回体是数组，加 warning 会改合约形状）、其余 ns 路由工具
   （claim/execute/submit/verify/…/dag_*）仍是原文案（探针+文案可直接复用）。
-## BUG-421 [2026-10-26T14:14:16Z] [medium] OPEN
+## BUG-421 [2026-10-26T14:14:16Z] [medium] FIXED
 - summary: [authz] BUG-418 残留：整名 `leader` / `lead` 仍买到 Leader 军官面（子串面已关，单词面还在）—— 与「只有 human_steward/human 算特权」的口径不一致，属政策取舍待裁
 - detail: ## 现象（BUG-418 修法的残留，2026-10-26 Lane Q 实测）
 
@@ -7504,7 +7504,7 @@ pub fn infer_role_from_agent(agent_name : String) -> String {
 - 判据：`src/engine/engine_scope_perm_role_wbtest.mbt`（wb1/wb3/wb4/wb5 端到端）+ `src/engine/engine_role_resolve_wbtest.mbt`（wb3 纯函数格，需改判）
 - reported_by: lead(Lane Q 回传 + 指挥官终审)
 
-## BUG-422 [2026-10-26T14:14:19Z] [medium] OPEN
+## BUG-422 [2026-10-26T14:14:19Z] [medium] FIXED
 - summary: [authz] BUG-418 残留：A 案查表键仍是调用方自报名字 —— 报已登记身份名（如 `fist-mbt`）即可继承其 agents.role，拿到 Leader 级保护面
 - detail: ## 现象（BUG-418 修法**新增**的一小片面，2026-10-26 Lane Q 实测）
 
@@ -7544,6 +7544,43 @@ DENIED  agent=fist-mbt  src/store/store_sqlite.mbt · moon.mod   ← HumanStewar
 - 同批新立：单词 leader 仍买军官面 / 注册面毒化 human_steward / lock_acquire 无权限门
 - reported_by: lead(Lane Q 回传 + 指挥官终审)
 
+
+### FIXED(2026-10-26T19:01:31Z / BUG-421, BUG-422)
+- evidence: 同笔收口（commit `eecf05f7`，9 文件 +700/−134）——**两条必须同笔**：R7 报告警告「单独修 421 是白修」（删了名字白名单，但 A 案查表键仍可冒用已登记名继承角色），同笔即消解。
+
+## BUG-421：整名 `leader`/`lead` 提权面 → 已删白名单
+
+`engine_scope_perm.mbt` 的 `infer_role_from_agent` 只剩 `human_steward`/`human` ⇒ HumanSteward，**其余一律 Executor**，并落硬注释「角色不可从名字推断 Leader；Leader 只来自 `agents.role`（已登记身份）」。
+**连带改判 3 处原本钉错误行为的锁**：`role_resolve_wb3_exact_leader_still_works` → **`..._exact_leader_is_executor`**；`scope_role_wb1` 名单加 `leader/lead/LEADER/Lead`；`lock_perm_wb2_leader_allowed_on_engine` → **`lock_perm_wb2_leader_name_denied_on_engine`**（钉 `permission_denied`），并新增 **`lock_perm_wb2b_registered_leader_allowed_on_engine`** 把「军官只来自登记」这条正道也钉住。
+
+## BUG-422：查表键仍是自报名字 → B 案三层
+
+**不选 A**：`agents.pubkey_fp` **全仓恒空**（BUG-403/404 的死承诺）⇒ 无可信身份源。
+**不选 C**：会把「服务端登记过的执行者拿到被授予角色」这条**唯一正道**一起关死，而收益为 0 —— 现网唯一 Leader 记录恰好就是要挡的 **server 自身份**（挡掉它即可，不必废掉机制）。
+
+| 层 | 落点 | 作用 |
+|---|---|---|
+| **取数侧**（store） | `agent_record_is_process_self(rec)` = `agent_type=="server"` + `SqliteStore::agents_role_for_judgment` | 查表但把**本进程自身份整条剔除**（返回 None）⇒ `server.mbt:16-18` 写的 `fist-mbt/server/Leader` 彻底退出裁决 |
+| **接线侧**（engine） | `declared_role_for_judgment(eng, agent)`，`rsv_set`/`rsv_try_set`/`locks_try_acquire` **三条门全改走它** | 旧实现三处**各抄一遍** `.agents_get(...).role` ⇒ 改一处漏两处就是半个越权口 |
+| **政策侧**（纯函数） | `role_rank` + `inheritable_role`（只允许 `Executor`/`Leader` 继承，**HumanSteward 与未知值永不继承**）+ `resolve_agent_role` 改**下限语义** | `inferred` 是地板，declared 不能降级，且只有 ≥ 推断时才生效 |
+
+**实测矩阵**（临时探针复刻 server 启动注册，跑完即删）：
+- **修前**：`agent=leader` 与 `agent=fist-mbt` 在 `src/engine/` `src/core/` `src/router/` `cmd/` **全 ALLOWED**（后者 `role_source=declared`）
+- **修后**：`leader/lead/LEADER/fist-mbt × 5 scope` = **20/20 DENIED**；`human_steward × 5 scope` 仍 **ALLOWED**（合法路径未退化）
+
+**变异对照 4 组**（每次 `assert count(old)==1` 锁唯一上下文 —— 判例-30）：
+`M1` 塞回名字白名单 ⇒ engine **237/243（6 红）**，恢复 243/243 ｜ `M2` 删 self-identity 过滤 ⇒ engine 242/243（`wb8`@:490）+ store 79/80 ｜ **`M2b`（判例-29）机制保留、接线退回未过滤** ⇒ engine 242/243 红=`wb8`@:502（**端到端**那条）⇒ 端到端锁真在看**接线**不只测机制 ｜ `M3` `inheritable_role` 放回 HumanSteward ⇒ 241/243（`wb8`@:571 + `role_resolve_wb2`@:79）
+
+**会不会破坏调用方（全仓 grep + 库实测）**：① 生产代码 **0 处**依赖（`src/` 无以 `agent="leader"` 调 reserve/lock）；② `by="leader"` 的 13 处 `scripts/*.py` 是 `plan`/`task_plan_deep` 的**拆解拳长标签**，不参与 `check_scope_permission`；③ **call_log 入参面实测纠正了 R7 的口径**（R7 按 `caller` 列说「0 调用方」）——`agent` 恰为 `leader` 的真实调用有 **3 条**（全在 2026-10-11、`ok=1`，其中 seq=219 打的正是 Leader 保护面 `src/router/model_router_wbtest.mbt`，**确实吃过白名单**）；**近 16 天 0 条、流水线 0 条** ⇒ 不破坏现有调用方。
+
+**实测**：`moon check` = 0 errors ｜ `src/engine` **243/243**（基线 240）｜ `src/store` **85/85** ｜ 抽验 `claimguard` 57/57、`ops` 208/208
+
+## 已封 vs 仍可被冒用（**别读成「已全部收口」**）
+
+**已封**：① 任何 `agent_type=="server"` 记录（**结构性**判据 ⇒ server 改名也挡）；② declared 里的 HumanSteward（`inheritable_role` **永不继承**）；③ 军官单词（含大小写变体）。
+**仍可被冒用（现网 0 条）**：④ **非 server 类型 + 被显式授予 Leader** 的登记名 —— 制造它需要内部写入面（MCP 面无 `agents_register`）；彻底收口只能靠认证身份（A 案）或彻底不用 declared（C 案）。⑤ `locks_upsert` 仍是裸通道（BUG-424 已标注，本笔未动）。
+**相邻未修（已另立案 BUG-430）**：⑥ `engine.mbt:1770 estimate_rank` 是**另一条**「名字判军衔」的路，被 `claim` 的 RANK_GATE 直接用于**放行/拒绝认领** —— 与 reserve_scope 角色门是两条独立的路，本笔一行未动。
+**语义收紧须知**：⑦ `role_resolve_wb2` 已改判（declared=HumanSteward 现在**不生效**、退推断）—— 这是加固不是回归，现网 0 条 HS 记录 ⇒ 零现实影响；⑧ 未知角色值从「照抄」变「忽略」（更严）。
 ## BUG-423 [2026-10-26T14:17:00Z] [high] FIXED
 - summary: [authz] BUG-418 副作用：claim/execute 的 agent_touch_first_seen 对任意 assignee 写 role="Executor" 且 ON CONFLICT 不更新 role ⇒ 统帅被这样注册过后永久锁死在 HumanSteward 面外
 - detail: ## 现象（功能性雷，2026-10-26 Lane Q 实测）
@@ -8163,3 +8200,366 @@ BUG-424（`legacy_grant` 引入，本条的来源）· BUG-145（互斥由后端
 
 ### FIXED(2026-10-26T17:55:08Z / BUG-429)
 - evidence: commit e3457b20（2 文件）。改在 src/engine/engine_rsv.mbt 的 locks_try_acquire legacy_grant 分支：原写法 o.relabel("renewed_legacy_grant", o.granted) 无条件打标，现改为 if o.granted { o.relabel("renewed_legacy_grant", true) } else { o }。缺陷：locks_get(:202) 与 locks_try_acquire(:205) 是两次独立 IO，中间别的 agent 可抢到同一把锁且 ttl 新鲜 ⇒ 本次写被后端拒 ⇒ granted=false，此时回执变成 granted=false + action="renewed_legacy_grant" + agent=别人 —— 三个字段互相矛盾；同文件 Unregistered 分支写对了 if o.granted，legacy 分支漏抄。修复后被后端拒时保留后端原标签（conflict/taken_over 是更硬的信息）。同时确认了更重要的一件事：legacy_grant 不是「先读后写」——Lane AD 的判据是「读到的值能不能改变裁决，不是有没有读两次」；locks_get 那次读只能把结果推向更保守（不像自己⇒直接拒绝），无法让本该被拒的请求变成 granted，因为 granted 永远由后端 ON CONFLICT ... WHERE + 写后回读算（store_sqlite.mbt:1438，且 :1439 ignore(may_write) 明确本地裁决不决定发不发那笔写）⇒ 它是附加闸门不是裁决器。回归锁新增 src/engine/lock_legacy_grant_wbtest.mbt 3 条：锁1=行为正例，自己续自己 active 锁⇒granted=true 且 action=renewed_legacy_grant；锁2=接线格，断言 if o.granted { 那道闸真在源码里 + 反向断言不许再出现无条件 relabel(..., o.granted)；锁3=反例，别人持有的 active 锁⇒硬拒且不许标 legacy。锁2 是源码文本断言（诚实标注脆弱，因 granted=false 那一半没有任何行为面能覆盖，单线程构造不出「两次 IO 之间被抢锁」且判例-31 不许 sleep 抢时序）。验证：moon check --target js = 57 warnings 0 errors；moon_test_env --target js src/engine = 240/240/0 全绿（改前 237，+3）。附带确认三条纪律全部成立：lock_acquire_action 逐字委托 rsv_action；SQLite ON CONFLICT ... WHERE 三子句与 rsv_action 四分支逐条对应；agent_touch_first_seen 的 CASE WHEN 在单条语句内求值无读后写窗口；claim 用 update_task_if_status 的原子 CAS 且完全不调 rsv_*。
+## BUG-430 [2026-10-26T18:47:23Z] [high] OPEN
+- summary: [arch] MCP 工具面零认证 —— 所有 agent 身份参数可自报，reserve_scope/lock_acquire 的角色判定本质上是 advisory（C1 pubkey_fp 全空 / C2 pid 可算 / C3 无会话层）
+- detail: ## 形状（架构级缺口，不是某个 bug）
+
+**本项目的 MCP 工具面没有任何认证层。** 所有以 `agent` 为参数的工具体，
+其身份来源都是**调用方自报的字符串**，从 schema 到引擎到 store **无一处校验**。
+
+Lane AF 的证据链（四层，逐层实测）：
+
+| 层 | 读数 |
+|---|---|
+| **① MCP schema** | `reserve_scope` 的 `agent` 是裸 `string_prop` |
+| **② 工具体** | `get_str(args, "agent")` 直取，无校验 |
+| **③ 引擎** | 裸传入 `rsv_set` / `rsv_try_set` / `locks_try_acquire` |
+| **④ store** | 只当字段值写库/查表，从不验证 |
+
+**⇒ 这解释了整条 authz 链上 BUG-418/421/422/424 为什么反复「修了还有新的」：
+它们不是独立缺陷，是同一个架构缺口的四个投影。**
+
+## 三条硬约束（为什么现在修不掉）
+
+- **C1：`pubkey_fp` 全空** —— `agents` 表 3 行全是 `pubkey_fp=''`（BUG-403 记过「死承诺」）。
+  **没有公钥就没有不可伪造的身份锚点。**
+- **C2：`pid` 可算** —— `current_pid_token()` 名为 pid，实为
+  `floor(Unix 秒) % 2e9` = **服务器启动时刻的秒数**（`server.mbt:603-613`）。
+  不随机、可反推 ⇒ **只能当「进程实例指纹」，不能当「身份凭据」**（见判例「可计算的值不是凭据」）。
+- **C3：无会话层** —— MCP 是长连接，但没有任何 per-connection 的身份上下文。
+  `reserve_scope` 收到的 `agent` 就是客户端自己填的那个字符串。
+
+## 已修到什么程度（诚实标注）
+
+| 缺陷 | 状态 | 剩余 |
+|---|---|---|
+| BUG-418 名字推断越权 | **FIXED**（收窄为整名精确 + `agents.role` 优先）| 见下行 |
+| BUG-422 查表键自报 | **修复在途**（剔除 `agent_type="server"` 的自身份记录）| **仍可自报未登记名字** |
+| BUG-421 整名 `leader`/`lead` | **已裁决等 422(b) 同批** | 名字即身份 |
+| BUG-424 `lock_acquire` 无权限门 | **FIXED**（含 `legacy_grant`）| 同 BUG-422 |
+
+**⇒ 在 C1/C2/C3 不变的前提下，任何「自报 + 校验」的设计都只能做到「挡住无脑攻击」，
+挡不住「知道内情的定向调用方」。这不是能力问题，是约束问题。**
+
+## 三条出路（按代价排序，留裁决）
+
+- **S1（最小）**：**明确宣布这是已知边界** —— 在 `reserve_scope` / `lock_acquire` 的
+  工具描述与回执里写清「`agent` 是自报的、未经认证」。
+  配合已落地的 `role_source` 标注（BUG-422 (c)），让**越权痕迹可见**。
+  **代价：零代码；收益：不再有人误以为它是安全门。**
+- **S2（中期）**：**按 `agents.role` 走显式授权 + 拒绝未登记** ——
+  高权档（Leader/HumanSteward）必须 `agents.role` 登记过；
+  未登记一律 Executor（不再名字推断）。
+  **代价：需要 `agents_register` 暴露成工具（当前未暴露）+ 一次 lane 重登记；收益：关掉名字推断面。**
+- **S3（根治）**：**接入不可伪造的身份锚点** —— 填上 `pubkey_fp`（签名挑战）
+  或引入 per-connection 会话凭据。
+  **代价：动 schema + 工具协议；收益：真正关掉自报面。**
+
+## 为什么现在立这条账
+
+**不是为了「记一个修不掉的 bug」，是为了防止下一轮再有人（包括我自己）
+把 BUG-421/422 当成独立缺陷去修，修完发现还有新的。**
+
+**⇒ 这条账的作用是：把「四个投影」收敛成「一个缺口」，让后续修复有正确的靶子。**
+
+## 判据
+
+```bash
+# ① schema 无校验
+grep -n '"agent"' src/server/server.mbt | grep -c string_prop
+# ② pubkey_fp 全空
+python -c "import sqlite3;print(sqlite3.connect('fist-mbt.db').execute(\"select count(*) from agents where pubkey_fp!=''\").fetchone())"
+# ③ pid 可算
+sed -n '603,613p' src/server/server.mbt
+```
+Lane AF 报告 `reports/2026-10-27-bug422b-identity-assertion-plan.md` @ `0f1bad7b`（§11 是正文）。
+- reported_by: lead(Lane AF §11 正文)
+
+## BUG-431 [2026-10-26T18:57:20Z] [medium] OPEN
+- summary: [r11-assistant] server.mbt:5598 接管留痕取决于 sweep 是否先跑：sweep 标 dead 后 claim 报 elected 且不记 force_takeover 违例
+- detail: ## 缺陷
+
+`assistant_claim` 的「接管留痕」取决于 `assistant_sweep` **是否恰好先跑过**，
+同一业务事件会产出两种不同的账本结果。
+
+## 调用链（三处协同 bug）
+
+**① 读过滤（`src/engine/engine_assistant.mbt:39-53`）**
+```moonbit
+pub fn FistEngine::assistant_active_primary(self) -> @store.AssistantReg? {
+  for r in self.store.assistant_list() {
+    if r.is_primary && r.status == "active" {   // ★ 只认 active
+```
+⇒ 一旦 `sweep` 把主助理标 `dead`，**这里就看不到它**，返回 `None`。
+
+**② 裁决（`src/store/store.mbt:238-252`）**
+```moonbit
+match prev {
+  None => (true, "elected", "")                    // ★ prev=None ⇒ elected
+  Some(r) if r.agent == agent => (true, "renewed", "")
+  Some(r) if r.heartbeat_at < cutoff => (true, "taken_over", r.agent)
+  Some(r) => (false, "conflict", r.agent)
+}
+```
+`prev=None` ⇒ **`elected`**，`prev_agent=""`。
+
+**③ 留痕（`src/server/server.mbt:5595-5605`）**
+```moonbit
+if ok {
+  engine.assistant_upsert(...)
+  if action == "taken_over" {              // ★ 只有 taken_over 才记
+    engine.lock_violations_record(ts=now, agent=prev_agent, scope="assistant",
+                                  reason="force_takeover", lock_id=agent)
+  }
+}
+```
+
+**④ sweep 的条件（`src/server/server.mbt:5672`）**
+```moonbit
+if r.status == "active" && r.heartbeat_at < cutoff { engine.assistant_set_status(r.agent, "dead") }
+```
+**与 claim 的陈旧判据完全同源**（都是 `heartbeat_at < iso_minus_secs(now, secs)`），
+只是 **stale_secs 默认 600、claim 的 heartbeat_ttl_sec 默认 300**。
+
+## 两个时序（实测推演，脚本 `temp/audit/lane_ak_sweep_claim.py`）
+
+```
+情形 A：sweep 还没跑
+  B 心跳=t0（陈旧），status=active
+  active_primary → Some(("B","t0"))
+  claim(A) → ok=true action="taken_over" prev_agent="B"
+  ⇒ 写 lock_violations(reason="force_takeover", agent="B")     ✅ 有留痕
+
+情形 B：sweep 先跑了（同一 B，心跳同样陈旧且超 600s）
+  sweep ⇒ B.status = "dead"
+  active_primary → None                                          ★ dead 被过滤
+  claim(A) → ok=true action="elected" prev_agent=""
+  ⇒ 不写任何 lock_violations                                     ❌ 无留痕
+```
+
+**⇒ 同一个「A 接管失联的 B」，记不记案底取决于 sweep 是否恰好先跑。**
+`sweep` 是定时任务（默认 `stale_secs=600`，比 claim 的 300 宽），
+**⇒ 真实情况下「sweep 先跑」是可预期的**，也就是说**多数接管会丢留痕**。
+
+## 为什么是真 bug（不是设计）
+
+1. **工具自述承诺了留痕**：`server.mbt:5571` 的 description 明写
+   「主助理心跳陈旧则接管(taken_over，**旧主记 lock_violations force_takeover**)」
+   ⇒ 用户/审计读文档会以为「接管必有案底」，而**情形 B 没有**。
+2. **两种业务语义被压成同一回执**：
+   - B = 主助理**失联**（该死、该留痕）
+   - C = 主助理**主动退位**（`resigned`，不该留痕，**这是对的**）
+   情形 B 与情形 C **回执完全相同**（`elected` + 无违例）⇒ **无法区分「失联接管」与「正常接位」**。
+3. `assistant_status` 的锁违例统计因此**系统性偏低**（丢的正是「强制接管」这一档）。
+
+## 建议修法（三选一，建议 A）
+
+**A（推荐，最小）**：`sweep` 标 dead 时**同时**落一条违例，把留痕挪到「事件发生处」：
+```moonbit
+// server.mbt:5672 附近
+if r.status == "active" && r.heartbeat_at < cutoff {
+  if engine.assistant_set_status(r.agent, "dead") {
+    marked_dead = marked_dead + 1
+    // ★ sweep 自己留痕：这是「主助理失联」这个事件本身，与谁后来接位无关
+    engine.lock_violations_record(ts=now, agent=r.agent, scope="assistant",
+                                  reason="sweep_marked_dead", lock_id="")
+  }
+}
+```
+⇒ 失联**必然**留痕，且与 claim 解耦。喂给 claim 的 `elected`/`taken_over` 只剩「接位方式」语义。
+
+**B**：`assistant_active_primary` 改成「读最新一条 primary（不看 status）」，把 status 判断下放给 `assistant_claim_action`。
+风险：`resigned` 的主助理也会被当成「陈旧可接管」⇒ 反而给 resign 也留了 force_takeover，**不推荐**。
+
+**C**：保留现状，但把工具 description 改成诚实表述（「sweep 跑过之后接管不记违例」）。
+⇒ **不是修 bug，是承认现状**，只在 A 排不上时用。
+
+## 另附：`assistant_claim` 的 TOCTOU（不是 bug，按 R9 判据）
+
+`server.mbt:5584` 读 `assistant_active_primary()` → `:5591` 写 `assistant_upsert()`，
+**两次独立 IO**。但按 R9 的判据（读值是否改变裁决）：
+- 读到的 `prev` 只用于**算出 action 标签**
+- 「谁能成为主助理」这件事本身**没有互斥保护** —— 两个并发 claim 可以**都写 active**
+  （`assistant_upsert` 是按其 agent 键 upsert，两个不同 agent 各自成一行 is_primary=true）
+⇒ **这确实是并发缺口，但它属于「缺互斥」而不属于「先读后写」**，
+且 `assistant_active_primary` 用 `registered_at` 取最新一条兜住了「谁是主助理」的读侧歧义。
+**建议单独立案（并发双主助理），本单只记录。**
+
+## 关联
+
+`src/engine/engine_assistant.mbt:39-53`（读过滤）· `src/store/store.mbt:238-252`（裁决）·
+`src/server/server.mbt:5595-5605`（留痕）· `:5672`（sweep 条件）· BUG-237（此前修过 sweep 的静默吞）
+- reported_by: commander-gamma
+## BUG-432 [2026-10-26T19:01:32Z] [medium] OPEN
+- summary: [authz] `claim` 的 RANK_GATE 仍按 assignee **名字前缀**判军衔（`engine.mbt:1770 estimate_rank`：`has_prefix("leader") ⇒ 连长`）—— 与 reserve_scope 的角色门是**两条独立的路**，BUG-418/421/422 三轮收口全部漏掉它
+- detail: ## 现象（BUG-421/422 收口时发现的**另一条**「名字判角色」的路）
+
+`src/engine/engine.mbt:1770` 的 `estimate_rank` 按 **`assignee` 名字前缀**判军衔：
+
+```moonbit
+// 大意（原文见 engine.mbt:1770 附近）
+if assignee.has_prefix("leader") { 6 }          // 连长
+else if assignee == "human" || assignee == "human_steward" { 0 }   // 司令
+```
+
+而 `engine.mbt:164-172` 的 **`claim` 的 `RANK_GATE`** 把 `estimate_rank` 的结果**直接用于放行/拒绝认领**。
+
+⇒ **与 `reserve_scope` 的角色门是两条独立的路**：BUG-418/421/422 三轮收口全部打在
+`infer_role_from_agent` / `resolve_agent_role` / `agents.role` 这一路上，
+**`estimate_rank` 一行未动** —— 即：即便 reserve_scope 侧已全部收口，
+**在 `claim` 侧报一个 `leader-*` 的名字仍可能影响认领裁决**。
+
+## 与 BUG-421 的关系（同族但不同路）
+
+| | BUG-421（已 FIXED） | 本条 |
+|---|---|---|
+| 路径 | `reserve_scope` / `lock_*` 的**角色门** | `claim` 的 **RANK_GATE** |
+| 判据 | `infer_role_from_agent`（名字→角色） | `estimate_rank`（名字→**军衔数字**） |
+| 修法 | 已删名字白名单 | **未修** |
+
+**⇒ BUG-421 的「删白名单」不代表这条路也关了**。这正是「同一语义散落在多处、只改一处就是半个口子」的又一例
+（与 BUG-422 的「三条门各抄一遍 `.agents_get(...).role`」同族）。
+
+## 修法方向
+
+**① 短期（止血）**：`estimate_rank` 的名字推断**收窄到与 `infer_role_from_agent` 同口径** ——
+只认整名 `human` / `human_steward`（⇒ 0），其余**按 `agents.role` 登记查**（与 BUG-422 的
+`declared_role_for_judgment` 复用同一取数面），查不到则给中性档（不是「连长」）。
+
+**② 中期（正解）**：`claim` 的 `RANK_GATE` 与 `reserve_scope` 的角色门**合并为同一裁决函数** ——
+本仓已有 `resolve_agent_role` 做「名字推断兜底 + 登记优先」，`estimate_rank` 应改成从**角色**映射到**军衔**
+（而不是从名字映射），即 `role → rank` 而非 `name → rank`。
+
+**③ 一并检查**：`rank_of(L)`（`src/display/rank.mbt`）是**展示层**映射（level → 军衔名），与 `estimate_rank`
+（名字 → 军衔数字）**不同源** —— 确认没有第三处「名字判角色/军衔」后再收口。
+
+## 影响面
+
+- **认领裁决**可被名字影响（`leader-*` 可能拿到更高档/被放行）
+- 与 BUG-418/421/422 同族的安全面，但**三轮收口都没覆盖它**
+- 需要先量：`claim` 的 RANK_GATE 实际怎么用 `estimate_rank` 的结果（放行？降档？只记日志？）——
+  **本条立案时未实测这一层**，建议修复前先只读诊断
+
+## 建议
+
+1. 先做只读诊断：`RANK_GATE` 拿 `estimate_rank` 结果做什么（放行/拒绝/降档/仅记录）
+2. 按 ① 止血（小），再评估 ②
+3. 与 BUG-421/422 的关系写进报告，避免下一轮又漏掉这条路
+
+## 关联
+
+- **BUG-421 / BUG-422**（已 FIXED）：`reserve_scope` 侧的角色收口
+- **BUG-418**（已 FIXED）：名字推断的原始病灶
+- **BUG-425** 同族思路：同一语义散落多处 ⇒ 收口时要找**所有**取数点，不能只改被点名的那一处
+- reported_by: lead(BUG-421/422 收口时的相邻发现)
+
+## BUG-433 [2026-10-26T19:01:54Z] [high] OPEN
+- summary: [r11-ns] server.mbt:69 engine_for_ns 对非法 ns 静默回落主库：8 个工具全部受影响，delete/archive 可误删误归档主库任务
+- detail: ## 缺陷
+
+`server.mbt:63-72` 的 `engine_for_ns` 在 ns **不合法**时**静默回落主库**，
+8 个 MCP 工具的 `namespace` 参数**全部**走这条路径 ⇒ 传非法 ns 等于「静默改到主库执行」。
+
+**C 案止血（`8d9d3bb5`）没有覆盖这条路径。**
+
+## 代码定位（三处协同）
+
+**① 合法性判据（`src/store/multi_store.mbt:28-45`）**
+```moonbit
+pub fn MultiStore::safe_ns(ns : String) -> String? {
+  if ns == "" { return None }
+  for c in chars {
+    let ok = (u >= 48 && u <= 57) || (u >= 65 && u <= 90) || (u >= 97 && u <= 122)
+             || u == 45 || u == 95          // ★ 只允许 [0-9A-Za-z_-]
+    if !ok { return None }
+  }
+  Some(ns)
+}
+```
+⇒ **点 `.` / 空格 / 中文 / `/` / 冒号 全部非法**。
+
+**② 静默回落（`src/server/server.mbt:63-72`）**
+```moonbit
+fn engine_for_ns(ns : String) -> @engine.FistEngine {
+  if ns == "" || ns == "default" { engine }
+  else {
+    match mstore.get(ns) {
+      Some(s) => @engine.FistEngine::new(store=@store.StoreBackend::sqlite(s))
+      None => engine          // ★★ 静默回落主库，无告警、无 Err
+    }
+  }
+}
+```
+
+**③ 8 个工具全部走它**（实测行号）：
+```
+claim   1821  execute 1869  submit  1932  verify 2067
+archive 2206  list    2249  get     2284  delete 2337
+```
+
+## 实测读数（`temp/audit/lane_ak_ns_fallback.py`，safe_ns + engine_for_ns 逐字复刻）
+
+| ns 值 | `safe_ns` | `engine_for_ns` 落到 |
+|---|---|---|
+| `bugs` / `fist-mbt` / `r4-fix` / `a_b_c` | OK | **对应 ns 库** ✅ |
+| `my-ns.2`（含点） | **None** | **主库** ★静默回落 |
+| `ns with space` | **None** | **主库** ★ |
+| `中文ns` | **None** | **主库** ★ |
+| `ns/../escape` | **None** | **主库** ★ |
+| `ns:1` | **None** | **主库** ★ |
+
+## 为什么是真 bug（写路径比读路径严重）
+
+| 工具 | 静默回落后果 |
+|---|---|
+| `delete` | **删除主库任务**（若同 id 存在 ⇒ **误删，不可逆**） |
+| `archive` | **误归档主库任务** |
+| `execute` | 交付物写进**主库任务行**（可能覆盖错任务） |
+| `submit` / `verify` | 状态迁移/验收结果落在主库任务 |
+| `claim` | 认领落进主库而非请求的 ns 库 |
+| `get` | 读到主库同名 id 任务（ns 标签可能完全不同 ⇒ **串库读数**） |
+| `list` | 列出主库全部任务，调用方以为在做 ns 过滤 |
+
+**可达链路**：调用方 `list(namespace="a-b")` 拿到一堆 id → 后续用 `namespace="a-b.2"`
+（点了多一个点，或从别处复制了带点的 ns）操作那些 id ⇒ **真的打到主库任务上**。
+
+**为什么 C 案没覆盖**：C 案（`8d9d3bb5`）增强的是
+「`store_open(ns)` 回执诊断」+「`get`/`archive` 在**主库有该 ns 标签 + ns 库为空**时的 not-found 文案」。
+**它处理的是「路由到了空库」这一格，不处理「ns 非法 ⇒ 根本没路由」这一格。**
+两者是不同病灶：前者路由发生了但库是空的；后者**路由被静默取消**。
+
+## 建议修法（三选一，建议 A）
+
+**A（推荐，根因修法）**：`engine_for_ns` 不再回落，改成返回 `Result`：
+```moonbit
+fn engine_for_ns(ns : String) -> Result[@engine.FistEngine, String] {
+  if ns == "" || ns == "default" { return Ok(engine) }
+  match @store.MultiStore::safe_ns(ns) {
+    None => Err("ns 非法：'" + ns + "' 只允许 [0-9A-Za-z_-]（点/空格/中文/斜杠均被拒）。" +
+                "本项目**不会**回落到主库执行——请改用合法 ns，或省略 namespace 参数走 default。")
+    Some(safe) =>
+      match mstore.get(safe) {
+        Some(s) => Ok(@engine.FistEngine::new(store=@store.StoreBackend::sqlite(s)))
+        None => Err("ns 库打不开：" + safe)   // 也不再回落
+      }
+  }
+}
+```
+⇒ **8 个调用点各加一个 `?`/`match`**（改动面 8 行，机械）。
+
+**B（最小止血）**：保留回落，但在**回执里加 `ns_routed` 字段**：
+```moonbit
+// 每个工具的回执附 "ns_requested": ns, "ns_effective": (回落时)"default"
+```
+⇒ 不阻断（零回归），但调用方**看得见**回落 —— 这是 C 案的思路延续到「非法 ns」这一格。
+
+**C**：只加文档声明（**不推荐**，与 C 案同样的「诚实标注但不修」，且这里能真修）。
+
+**⇒ 建议 A 或 B；A 更彻底，B 零回归风险。**
+
+## 关联
+
+`src/store/multi_store.mbt:28-45`（safe_ns）· `src/server/server.mbt:63-72`（engine_for_ns）·
+BUG-420（C 案止血只覆盖「路由到空库」，**本单补「路由被取消」这一格**）·
+BUG-78（data_dir 隔离失效，同族）
+- reported_by: commander-gamma
