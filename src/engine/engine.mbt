@@ -794,7 +794,24 @@ pub fn FistEngine::archive(
       }
       // Omega 门（验收项：archive 不得绕过验收门）：强验证任务必须先过成果复验门，
       // 归档即"了账"，未通过 Omega 门就是假了账（纵深防御，与 archive_force 同门）。
-      if omega_enabled(t) {
+      //
+      // BUG-417：排除「孤儿 Omega 任务」——与 archive_force 同一判定，两处必须同步，
+      // 否则只修一条路径时另一条仍会拦住同一个任务。语义见
+      // omega_strong.mbt 的 omega_orphan_of_archived_parent。
+      let orphan = if omega_enabled(t) {
+        let parent_st : @core.TaskStatus? = match t.get_parent() {
+          None => None
+          Some(pid) =>
+            match self.get_task(pid) {
+              None => None
+              Some(p) => Some(p.get_status())
+            }
+        }
+        omega_orphan_of_archived_parent(t, parent_st)
+      } else {
+        false
+      }
+      if omega_enabled(t) && !orphan {
         match self.omega_verify_gate(task_id) {
           Err(e) => return Err("Omega 门禁拦截归档: \{e}")
           Ok(_) => ()

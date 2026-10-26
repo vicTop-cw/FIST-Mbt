@@ -62,6 +62,50 @@ pub fn omega_clean_slice(s : String) -> String {
 }
 
 ///|
+/// 「孤儿 Omega 任务」判据（BUG-417）：本任务自己**没开** omega（元数据列 = false），
+/// 描述里的 `[omega:required]` 是**从父层切片继承来的残留**，且**直接父任务已归档**。
+///
+/// 为什么需要这个判据：`omega_enabled` 的文本兜底（`description.contains(mark)`）
+/// **不区分标记归属** —— 一个 `omega_required=0` 的任务，只因描述里引用了父层文本
+/// （含标记）就被判为强验证任务。`task_plan_deep` 递归下钻 + `reinject_context`
+/// 把父层切片拼进子层描述时，标记会逐层累积。
+///
+/// 实测（Lane T）：孤儿 `T0r636.1.2` 描述长 4683 字节，`[父计划:` 出现 4 次，
+/// 两个 omega 标记**都在嵌套段内** ⇒ `strip_plan_annotations` 的单层截断有盲区。
+///
+/// 与 BUG-389 正相反：那条是「标记被静默**覆盖**」，本条是「标记被静默**继承**」。
+///
+/// **语义依据**：`omega_strong_verify` 的语义是「**这棵任务树**的成果要被验证」。
+/// 父已归档 ⇒ 那棵树的验收语境已终结 ⇒ 让一个没有父亲的叶子继续满足门禁是**判据错位**。
+///
+/// **只豁免「直接父已归档」这一种**：父未归档 / 取不到 / 祖父归档 / 根任务 一律 false（fail-closed）。
+/// `parent_status` 由调用方查库传入 ⇒ 本函数保持纯、可单测、无 IO。
+pub fn omega_orphan_of_archived_parent(
+  t : @core.Task,
+  parent_status : @core.TaskStatus?,
+) -> Bool {
+  // 元数据列真开了 ⇒ 是正经 Omega 任务，不许豁免
+  if t.get_omega_required() {
+    return false
+  }
+  // 描述里没有标记 ⇒ 文本兜底根本不会触发，无需豁免
+  if !t.description.contains(omega_mark()) {
+    return false
+  }
+  // **根任务无父 ⇒ 不豁免**（Lane P 原始设计里有这一条，我这里曾漏掉，
+  // 被锁 omega_orphan_wb2 抓出来：只信 parent_status 参数会让「根任务 + 传已归档」
+  // 也返回 true）。判据必须自己确认「确实有父」。
+  match t.get_parent() {
+    None => false
+    Some(_) =>
+      match parent_status {
+        None => false // 父取不到 ⇒ fail-closed 不豁免
+        Some(st) => st.is_archived()
+      }
+  }
+}
+
+///|
 /// 切到某个标记首次出现处之前（沿用 omega_author_of 的「迭代首个元素即返回」写法，
 /// 不对数组下标取，避免潜在越界）。无该标记则原样返回。
 fn cut_before(s : String, mark : String) -> String {
