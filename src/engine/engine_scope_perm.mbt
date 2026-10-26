@@ -196,9 +196,46 @@ pub fn matching_rule(scope : String) -> PermissionRule? {
 }
 
 ///|
-/// 匹配规则——最长 pattern 优先（最具体的覆盖最宽泛的）。
+/// 匹配规则——**最长 pattern 优先**（最具体的覆盖最宽泛的，BUG-419）。
+///
+/// 旧实现是「遍历 `scope_permissions`，第一条匹配即返回」，**结果依赖规则表顺序**：
+/// 任何人把一条更宽的前缀规则（如 `src/` 保护整棵源码树）插到前面，
+/// `src/store/store_sqlite.mbt`、`src/server/server.mbt` 这类 HumanSteward 独占规则
+/// 就会被**静默遮蔽**成「Leader 也能改」——两个方向都无报错、无日志、无测试红。
+///
+/// 实测（BUG-419）：注入 `src/` 到表首后，旧实现让上述两个文件从 HumanSteward 独占
+/// 降级为 Leader 可改（与 BUG-418 叠加 = 双重越权口）。
+///
+/// 现实现按 `pattern.length()` **降序遍历**，只取第一条（= 最长）匹配 ⇒ **对规则表顺序免疫**。
+/// 用「只认最长那一条」而不是「收集全部再选」，是为了让语义与注释一致：
+/// 最具体的规则**独占**裁决，不做多规则合并（合并会让权限面变成并集，更宽）。
 fn find_matching_rule(scope : String) -> PermissionRule? {
-  for rule in scope_permissions {
+  find_matching_rule_in(scope, scope_permissions)
+}
+
+///|
+/// 同 `find_matching_rule`，但**接受显式规则表** —— 只供白盒锁构造「宽规则排在窄规则前面」
+/// 的现场（判例-29：判据必须能测到实现，而不是只测现网那一份恰好正确的表）。
+///
+/// 生产调用一律只传 `scope_permissions`（见上一函数）⇒ 对现网零回归。
+fn find_matching_rule_in(
+  scope : String,
+  rules : Array[PermissionRule],
+) -> PermissionRule? {
+  // 按 pattern 长度降序：最长 = 最具体。稳定排序保证同长度时保持原相对顺序。
+  let ordered = rules.copy()
+  ordered.sort_by(fn(a, b) {
+    let la = a.pattern.length()
+    let lb = b.pattern.length()
+    if la > lb {
+      -1
+    } else if la < lb {
+      1
+    } else {
+      0
+    }
+  })
+  for rule in ordered {
     if scope_matches_pattern(scope, rule.pattern) {
       return Some(rule)
     }
