@@ -7068,16 +7068,18 @@ reserve_scope(scope="reports/2026-10-26-blocked-triage-report.md", agent="lane-b
 
 ### FIXED(2026-10-26T11:04:12Z / BUG-413)
 - evidence: commit 681832ce（7 文件 +197/-28）。改在 src/engine/engine_scope_perm.mbt：新增 pub enum ScopeVerdict 三态（Allowed 零元 / RoleDenied(String) / Unregistered(String)），check_scope_permission 从 Result[PermissionRule,String] 改返回 ScopeVerdict，另加 pub fn matching_rule(scope) 供需要规则详情的调用方。src/engine/engine_rsv.mbt 的 rsv_set/rsv_try_set 按三态分流：RoleDenied(e)=>Err(e) 保持硬拒（HumanSteward 保护原样保留）、Allowed 原行为、Unregistered(_) 仍走后端裁决（同一未登记 scope 抢照样判 conflict）但只在真拿到时用 RsvOutcome::relabel 把 action 标成 unregistered。src/store/store_rsv.mbt 新增 RsvOutcome::relabel（字段包内私有，跨包 struct literal 实测 4036/4033 被拒）。src/engine/moon.pkg 把 moonbitlang/x/fs 从 for "test" 提到主 import（实测 for "test" 在本包 wbtest 不生效，报 Package "fs" not found）。新增 src/engine/engine_scope_perm_wbtest.mbt 5 条锁：锁1 未登记⇒Unregistered、锁2 已登记够格⇒Allowed（零回归）、锁3 最关键=四条 HumanSteward 保护路径×Executor/Leader 双角色全断言仍拒（防 unregistered 成绕过口）、锁4 三面互不相等、锁5 接线格（判例-29，断言 engine_rsv 源码里三态分流真在）。验证：moon check --target js = 49 warnings 0 errors；moon_test_env --target js src/engine = 212/212/0 全绿（改前 207，+5 条新锁）。变异实测：把 Unregistered(_) 那个 arm 改名后 moon test 直接编译失败（duplicate/unreachable arm）⇒ 锁5 确实在读真代码行。未做（另立）：BUG-419 find_matching_rule 注释/实现不一致、BUG-418 infer_role_from_agent 名字宽松推断（high）。
-## BUG-414 [2026-10-26T04:50:53Z] [low] OPEN
+## BUG-414 [2026-10-26T04:50:53Z] [low] FALSE_POSITIVE
 - summary: [PROBE] lane-d 验证 report_bug 尾随空行是否真修干净（09c0867c）
 - detail: lane-d 验证用：检查 bug_lines_to_text 的末尾空行归一是���对全部写入路径（report_bug / bug_fix / bug_mark_status）一致生效。本条为探针，用后即改判 FALSE_POSITIVE。
 - reported_by: lane-d-guard
 
-## BUG-415 [2026-10-26T05:13:14Z] [low] OPEN
+- false_positive(2026-10-26T13:07:14Z): 探针用完即销（本条目自述「本条为探针，用后即改判 FALSE_POSITIVE」）。它要验的命题已由实测回答：`bug_lines_to_text` 的末尾空行归一（commit `09c0867c`）对走该函数的写入路径**生效** —— 2026-10-26 指挥官在 `bug_fix`（BUG-417 销账）之后跑 `git diff --cached --check`，**零输出**（修复前必报 `new blank line at EOF`）。⇒ 不是缺陷，是验证格。
+## BUG-415 [2026-10-26T05:13:14Z] [low] FALSE_POSITIVE
 - summary: [PROBE-2] lane-d 验证 report_bug 尾随空行修复后是否为 1
 - detail: lane-d 第二轮验证：`09c0867c` 只修了 `bug_lines_to_text`（`bug_fix`/`bug_mark_status` 走它），而 `report_bug` 是自己 fold entry 后 `old + entry` 直拼，不经过该函数 ⇒ 修复对 report_bug 无效，落盘尾部仍为 2 个换行。本探针用于验证修复后尾部是否为 1。用后改判 FALSE_POSITIVE。
 - reported_by: lane-d-guard
 
+- false_positive(2026-10-26T13:07:16Z): 探针用完即销，且它揭出的真问题**已修**：BUG-415 指出「`09c0867c` 只修 `bug_lines_to_text`，而 `report_bug` 是 `old + entry` 直拼、不经过该函数 ⇒ 修复对 report_bug 无效、落盘仍 2 个换行」。该发现在 `src/server/bugreport.mbt:336-348` 已落地修复（Lane D）：先 `let combined = old + entry`，再从头扫尾部 `'\n'` 归一到「无尾部空行、恰好一个终止换行」，注释逐字记了「单一语义，两处实现」。⇒ 本条作为探针已达成使命（把真问题挖出来并推动修复），本身不是缺陷。
 ## BUG-416 [2026-10-26T05:56:19Z] [medium] FIXED
 - summary: [judge-root] scripts/moon_test_env.py:113 的 ROOT 硬编码为脚本目录、忽略 cwd ⇒ 在副本/导出树里跑「隔离测试」会静默测主树，隔离从未真正生效
 - detail: ## 现象（2026-10-26 Lane F 实测并自行纠正）
@@ -7119,7 +7121,7 @@ Lane F 实测：在导出树里跑得到含主树在途改动的读数；改用�
 
 ### FIXED(2026-10-26T07:47:05Z / BUG-416)
 - evidence: 修 scripts/moon_test_env.py 共 3 处代码 + 1 处 README，commit a309cdbe。① 第 113 行 ROOT 常量下方新增 resolve_root(explicit, default=ROOT)（缺省 None/空串 ⇒ 原样返回 default=脚本目录，零回归；显式 ⇒ abspath；不存在 ⇒ None）与 parse_root(argv)（支持 --root X 与 --root=X）；② main() 接线：root 为 None ⇒ FATAL + rc=2 拒载、绝不静默回落到脚本目录（那正是病灶），启动日志恒打印实际生效 ROOT 并标注来源（缺省=脚本目录·与 cwd 无关 / --root 显式指定）；③ 关键：subprocess.run 第 453 行加 cwd=root —— 只打印不切 cwd 等于装饰，会让日志说测 A 实际测 B。selftest 28 → 38 格（+10 全部 BUG-416），含实现面锁 root-wired-into-subprocess-cwd（按判例-30 用 ln.startswith 行首锚定，因本文注释与 README 都含字符串 cwd=root，子串匹配会自指恒绿）与变异对照 root-mutation-detected。变异实测：删掉第 453 行 cwd=root ⇒ SELFTEST FAIL「root-wired-into-subprocess-cwd: got=False want=True」，还原后 38 格全绿。三次运行验证：缺省 → ROOT=E:\IDEProjects\AI\FIST-Mbt（缺省=脚本目录与 cwd 无关）；--root temp/fakeroot → ROOT=该临时目录（显式标记）；--root 不存在 → FATAL + rc=2 不回落。零回归：moon_test_env.py --target js src/store → Total tests 62 / passed 62 / failed 0；check_battery_count_doc → PASS。报告 reports/2026-10-26-bug416-envroot-fix-report.md，output_validate verdict=pass / l4-pass。
-## BUG-417 [2026-10-26T06:39:35Z] [medium] OPEN
+## BUG-417 [2026-10-26T06:39:35Z] [medium] FIXED
 - summary: [archive-force] `archive_force(force=true)` 只放开状态机前置、不放门禁族 ⇒ 描述残留 `[omega:required]` 标记的僵尸任务永久卡在已暂停，强制归档这个逃生口不可用
 - detail: ## 现象（2026-10-26 Lane I 实测，归档 7 条时撞到）
 
@@ -7179,6 +7181,23 @@ Lane I 倾向 **(b)**：父已归档 ⇒ 该任务的验收语境已不存在 �
 
 Lane I 报告 `reports/2026-10-26-lane-i-archive-execution.md` + `temp/audit/lane_i_results.json`（逐条回执原文）+ `temp/audit/lane_i_run.py`（正确执行器）。
 - reported_by: lead-explore(Lane I 实测)
+
+### FIXED(2026-10-26T12:50:45Z / BUG-417)
+- evidence: 代码面已落地并实测通过（commit `72986aa7`「fix(omega): BUG-417 孤儿 Omega 任务不再被归档门误拦（止血 patch A）」，已确认在 HEAD 祖先链上：`git merge-base --is-ancestor 72986aa7 HEAD` = true）：
+
+**修法（orphan 判定，两处同步）**：
+1. `src/engine/engine_archive_force.mbt`：`archive_force` 的 Omega 门前加 `orphan` 判定 ——
+   调 `omega_orphan_of_archived_parent(t, parent_st)`，只对「本任务自己没开 omega（元数据列 `omega_required=false`）+ 描述里的 `[omega:required]` 是从父层切片继承的残留 + 直接父任务已归档」这三种同时成立的任务放行。注释写明本条与 BUG-389 的关系：「BUG-389 是标记被静默覆盖，本条是标记被静默继承」（两个相反方向）。
+2. `src/engine/engine.mbt:796-798`：主 `archive` 路径同款注释 + 同一判定（注释逐字写「与 archive_force 同一判定，两处必须同步」）。
+
+**回归锁**：`src/engine/omega_orphan_wbtest.mbt` 是成对锁（文件头注释「BUG-417 的成对锁：孤儿 Omega 任务的判据必须精确」）：
+- 正例 `omega_orphan_of_archived_parent(t, ow_st("已归档"))` = true（父已归档 ⇒ 孤儿 ⇒ 放行）
+- 反例三格：父为 `已领取` / `执行中` / `待验收` 全部 = false（父还在流态 ⇒ 不是孤儿 ⇒ 仍拦）
+- 边界格：父为 `None`（无父）= false（无父不当作孤儿）
+
+**实测**：`python scripts/moon_test_env.py --target js src/engine` = **219/219 passed, 0 failed**（含上述 5 格）。
+
+**为什么这是真修而非改状态**：修法直接改的是「归档门怎么判」这个实现，不是账本抬头；且判据从「父任务已归档」这个**客观状态**读，而不是从调用方声明的名字/描述读 —— 这与 BUG-418（拿不可信的名字做权限判定）是相反方向的正确示范。
 ## BUG-418 [2026-10-26T09:59:21Z] [high] OPEN
 - summary: [authz] `infer_role_from_agent` 从 agent 名字宽松推断角色 ⇒ 命名 `leader-xxx` 即可越过所有 Leader 级保护（含 `src/engine/` 引擎层），是能被主动利用的越权面
 - detail: ## 现象（Lane Q 实测，`src/engine/` 只读诊断）
@@ -7233,7 +7252,7 @@ grep -n "infer_role_from_agent" src/engine/*.mbt src/server/*.mbt
 Lane Q 报告 `reports/2026-10-26-bug413-reserve-scope-third-state-report.md` @ `5c2e6bea`。
 - reported_by: lead-explore(Lane Q 实测)
 
-## BUG-419 [2026-10-26T10:00:08Z] [medium] OPEN
+## BUG-419 [2026-10-26T10:00:08Z] [medium] FIXED
 - summary: [scope-perm] `find_matching_rule` 注释称「最长 pattern 优先」但实现是「第一条匹配即返回」⇒ 未来插入更宽的前缀规则会静默遮蔽窄规则，保护被绕过或功能悄悄坏掉，两个方向都无报错无测试红
 - detail: ## 现象（Lane Q 只读诊断发现）
 
@@ -7277,3 +7296,78 @@ grep -n -B2 -A12 "fn find_matching_rule" src/engine/engine_scope_perm.mbt
 ```
 Lane Q 报告 `reports/2026-10-26-bug413-reserve-scope-third-state-report.md` @ `5c2e6bea`（§缺口与风险 #2）。
 - reported_by: lead-explore(Lane Q 实测)
+
+
+### FIXED(2026-10-26T11:47:10Z / BUG-419)
+- evidence: commit 6ffbda03（2 文件）。改在 src/engine/engine_scope_perm.mbt：find_matching_rule 改为转调新增的 find_matching_rule_in(scope, rules)，后者按 pattern.length() 降序遍历只取第一条（=最长）匹配 ⇒ 对规则表顺序免疫。抽 _in 版本供白盒锁构造「宽规则排在窄规则前面」的现场（判例-29）。生产调用只传 scope_permissions ⇒ 零回归。新增 src/engine/engine_scope_perm_order_wbtest.mbt 3 条锁：锁1=16 个真实 scope 下「最长优先」与「旧第一条匹配」结果逐条完全一致（Lane U 实测 23 个 scope 0 差异）；锁2=关键反例格，造「宽规则 src/ 排在窄规则 store_sqlite.mbt 前面」的现场，最长优先仍返回窄规则且 allowed_roles 只有 HumanSteward 不含 Leader；锁3=变异对照，断言实现里 let ordered = rules.copy() / ordered.sort_by( / for rule in ordered { 三行真在（判例-30 防护：带缩进精确片段）。验证：moon check --target js = 51 warnings 0 errors；moon_test_env --target js src/engine = 215/215/0（改前 212，+3 锁）。变异实测：删掉 sort_by 后 215/213/2（锁2 与锁3 双双变红），恢复后复跑 215/215/0。雷的实测（Lane U）：注入宽规则 src/ 到表首后旧实现让 src/store/store_sqlite.mbt 与 src/server/server.mbt 从 HumanSteward 独占降级为 Leader 可改，与 BUG-418 叠加=双重越权口。未做另立：moon.pkg 规则对子包永不生效（src/engine/moon.pkg 命中 src/engine/），当前角色集相同无实际后果但作者意图未实现。
+## BUG-420 [2026-10-26T13:15:34Z] [high] OPEN
+- summary: [multi-tenant] ns 字段只是标签不是落库位置：2432 条历史任务物理全在 default 库，按 ns 路由的工具（get/list/archive）对它们一律 not found —— BUG-407 的修复只覆盖了「真分库」场景
+- detail: ## 现象（2026-10-26 21:10 实测，清账时撞到）
+
+所有按 `namespace` 路由的写/读工具，对「ns 字段标了非 default 但物理在 default 库」的历史任务**全部返回 not found**。
+
+实测三组：
+
+| 调用 | 结果 |
+|---|---|
+| `get(task_id="T0r741", namespace="bugs")` | ❌ `task not found: T0r741` |
+| `list(namespace="bugs", status="已暂停")` | ❌ `[]`（空数组） |
+| `archive(task_id="T0r741", namespace="bugs", force=true)` | ❌ `task not found` |
+| `get(task_id="T0r741")`（不传 ns） | ✅ 找到，`"namespace":"bugs"` |
+| `archive(task_id="T0r741", force=true)`（不传 ns） | ✅ 找到任务（但被 Omega 门拦，那是另一个问题） |
+
+## 物理位置实测（SQL 直查，非推断）
+
+```
+fist-mbt.db（default 物理库）：
+  total tasks: 2432
+  T0r741       -> ns='bugs',              status='已暂停', parent=''
+  T0r745       -> ns='bugs',              status='已暂停', parent=''
+  T0r636.1.2   -> ns='fist-opt-20261016', status='已暂停', parent='T0r636.1'
+  T0r744       -> ns='bugs',              status='已领取', parent=''
+  T0r588       -> ns='bugs',              status='已暂停', parent=''
+
+.fist-mbt/data/bugs.db              -> total tasks: 0   ← 空
+.fist-mbt/data/fist-opt-20261016.db -> total tasks: 0   ← 空
+```
+
+⇒ **`ns` 字段是「标签」，不是「落库位置」**。所有任务物理都在 default 库，而按 ns 路由的工具去查那个 0 条的独立库，必然 not found。
+
+## 与 BUG-407 的关系（本条是它的残留，不是重复）
+
+BUG-407 已标 FIXED，当时验证的是「**真分库**场景」：`store_list()` 显示 `tnr-polish total:1`，`get(namespace="tnr-polish", task_id="T0")` 能查到 —— 那条任务物理确实在 `tnr-polish.db` 里。
+
+**但 BUG-407 的修复没有覆盖「跨库标签」场景**：历史任务（BUG-23 时期 `publish` 对错名 ns 静默落 default 的产物）ns 字段标了 `bugs` / `fist-opt-20261016`，物理却在 default 库。这类任务在 BUG-407 的验证面之外。
+
+**为什么不能就地重开 BUG-407**：`bug_mark_status` 对 FIXED 一律拒绝（`bug_fix` 只能 OPEN→FIXED），账本没有 FIXED→OPEN 的合法路径。按记账规则「叙述面只追加」，故新立本条。
+
+## 影响面
+
+1. **清账/归档流程被卡**：无法用带 ns 的调用归档任何历史任务（只能不带 ns，但那就失去命名空间隔离的语义）
+2. **多租户隔离形同虚设**：物理上所有任务混在一个库，ns 只是 description 之外的装饰字段
+3. **`store_open` 会引导用户走向空库**：`store_open("bugs")` 返回 `opened:true` + `data_dir:"."`（legacy 复用），但 `.fist-mbt/data/bugs.db` 是 0 条；如果 legacy 路径不存在则新建空库 ⇒ 用户以为「切到 bugs 库」，实际看到空任务列表
+
+## 修法方向（三选一，需 owner 裁）
+
+**A 案：读取侧回落 + 过滤（BUG-407 当时的 B 方案，推荐）**
+按 ns 查询时：先查物理库；查不到再回落到 default 库并按 `ns` 字段过滤；回执标明「命中在 default 库」。
+- 优点：零数据迁移、历史任务立即可达
+- 缺点：每次查询最多两次（可加缓存）
+
+**B 案：数据迁移（一次性）**
+写一个迁移工具：扫 default 库所有任务，按 `ns` 字段分发到各自的库。
+- 优点：物理隔离真正生效
+- 缺点：**风险高**（2432 条任务的跨库搬迁，失败一半会留下双写/丢失），且要处理「换来换去」的幂等
+
+**C 案：显式说明 + 拒绝**
+`store_open(ns)` 时检测该 ns 在 default 库有任务但本库为空 ⇒ 回执带 `warning: "本 ns 在 default 库有 N 条历史任务（ns 标签），本库为空；按 ns 查询会找不到它们"`，并给 `migrate` 选项。
+- 优点：最小改动、把矛盾暴露给调用方
+- 缺点：不解决可达性，只是让用户知道
+
+## 建议
+
+先做 **C 案**（止血 + 可诊断，半小时），再评估 A 案（真正的可达性修复）。B 案在有备份的前提下才考虑。
+
+## 连带发现（同一次实测）
+
+`archive(force=true)` 对「根任务 + 描述残留 `[omega:required]`」的僵尸（T0r741/T0r745）**永远过不了 Omega 门** —— 因为 `omega_orphan_of_archived_parent` 有一格「根任务无父 ⇒ 不豁免」（`src/engine/omega_strong.mbt:95-99`）。而这类僵尸的修复目标（BUG-389）已 FIXED，它们的存在意义已消失。这一条与 BUG-417 同族但方向不同（BUG-417 是「有父已归档」的孤儿，本条是「无父的根僵尸」）。
