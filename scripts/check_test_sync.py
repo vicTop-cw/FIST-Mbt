@@ -318,6 +318,125 @@ def collect_claims(text: str):
     return hits
 
 
+
+
+# ── `--fix-dry-run`：只建议、不落盘（判例-63 的产物）────────────────────────────
+#
+# ## 为什么**没有** `--fix`（写盘版）
+#
+# 2026-10-26 实测事故：第一版 `--fix` 直接写盘，一次误伤 **19 个文档 / 40+ 处数字** ——
+# 把 `572/572`（native 面）、`811/737/807/295/50/86/62`（BACKLOG 历史读数）、
+# `77/162/1058` 全当成了「JS 测试总数」改成 1463。
+#
+# 根因不是笔误，是**权限级别搞错了**：
+#   `collect_claims()` 报出的 `num` 是「行内**任意**带 测试/test/全绿 关键词的数字」，
+#   **不是「总数」**。`judge()` 用它只读报红——让人去看，是对的；
+#   但拿它**写盘**就是灾难，因为「像声明的数字」和「该改的数字」不是同一集合。
+#
+# ⇒ **判据「报红让人看」与「自动改」是两种权限级别。**
+#   本工具只做前者：把「我认为该改哪几处、为什么」摆出来，**由人落最后一笔**。
+#   连 `--force` 都不提供（人工确认挡不住自动化误判：一屏 21 条会让人条件反射按 y）。
+#
+# ## 语义面判别（第二次误伤的防线）
+#
+# 同一份文件里，「测试总数」至少有三个面：
+#   · JS 面   `moon test --target js` / 「JS 后端」/ 「JS 端」     ⇒ 该改
+#   · native 面 `moon test --target native` / 「Native 后端」      ⇒ **绝不改**（572 ≠ 1463）
+#   · 其它    工具数 / 守卫数 / 电池格数 / 历史里程碑读数          ⇒ **绝不改**
+#
+# 判不准时**必须显式说不确定**（`[?]`），不许猜 —— 见 `classify_claim_context()`。
+
+# native 语境标记：出现即判定「这个数字属于 native 面」
+RX_NATIVE_CTX = re.compile(
+    r"--target\s+native|Native\s*后端|native\s*后?端|native\s+track|WSL",
+    re.I)
+# JS 语境标记：出现才可能判定「这个数字属于 JS 面」
+RX_JS_CTX = re.compile(
+    r"--target\s+js|JS\s*后端|JS\s*端|JS\s*target|JS\s+backend",
+    re.I)
+
+
+def classify_claim_context(line: str):
+    """判断一行里的「测试总数」到底属于哪个面。返回 (verdict, reason)。
+
+    verdict:
+      "js"     → `[✓]` 明确是 JS 面，建议改
+      "native" → `[✗]` 明确是 native 面，**建议不改**
+      "?"      → `[?]` 判不准（既无 JS 标记也无 native 标记，或两者都有），**建议人看**
+
+    **判不准时返回 `?` 而不是猜 js** —— 这是本工具与事故版最根本的区别：
+    事故版在 `RX_KEY` 命中（只要行里有个「测试」字）就当成总数，等于**默认猜 js**。
+    """
+    has_native = bool(RX_NATIVE_CTX.search(line))
+    has_js = bool(RX_JS_CTX.search(line))
+    if has_native and has_js:
+        return ("?", "该行同时含 native 与 JS 语境 ⇒ 分不清这个数属于哪个面")
+    if has_native:
+        return ("native", "该行含 native 语境（`--target native` / 「Native 后端」）⇒ native 面 ≠ JS 面，建议不改")
+    if has_js:
+        return ("js", "该行含 JS 语境（`--target js` / 「JS 后端」）")
+    return ("?", "该行既无 JS 标记也无 native 标记 ⇒ 无法判断这个数属于哪个面，需人看")
+
+
+def scan_fix_candidates(total: str, docs_dir=None):
+    """扫全仓，产出**建议清单**（不落盘）。返回 [(rel, ln, old, shape, verdict, reason, line)]。
+
+    三道边界与判据共用同一份判据（不另立一套）：
+      ① `is_history()` 判真 ⇒ 跳过（`reports/` / `memory/` / `docs/superpowers/plans/` / CHANGELOG）
+      ② `collect_claims()` 已跳过围栏代码块
+      ③ 只收 `collect_claims()` 认出的声明形态（叙述句本来就不在其中）
+      ④ **`EXEMPT` 表里已点名豁免的 `(文件, 数字)` ⇒ 跳过** ——
+         这一条是 2026-10-26 第二轮实测补的：判据已 PASS（EXEMPT 生效）时本工具仍报 41 处，
+         全是 `BACKLOG.md` / `docs/probe-authoring.md`（教学示例）等**已被豁免的历史读数**。
+         **建议清单不检查豁免 ⇒ 人会把已豁免的当该改的**，正是"建议本身在制造噪声"。
+      ⑤ 语义面判别（`classify_claim_context`）—— native 面/说不清的一律不建议改。
+    """
+    root = Path(docs_dir) if docs_dir else Path(".")
+    out = []
+    exempt_pairs = {(f, n) for f, n, _ in EXEMPT}
+    for rel in tracked_docs():
+        if is_history(rel):
+            continue
+        try:
+            text = (root / rel).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        src_lines = text.splitlines()
+        for num, shape, ln in collect_claims(text):
+            if num == total:
+                continue
+            if (rel, num) in exempt_pairs:      # ④ 已豁免 ⇒ 不是待办
+                continue
+            line = src_lines[ln - 1] if 0 <= ln - 1 < len(src_lines) else ""
+            verdict, reason = classify_claim_context(line)
+            out.append((rel, ln, num, shape, verdict, reason, line.strip()))
+    return out
+
+
+def print_suggestions(total: str):
+    """把建议清单打成人能读的形式。**只打印，不落盘。**"""
+    items = scan_fix_candidates(total)
+    if not items:
+        print(f"SUGGEST 无需改动：现状面已全部等于实测 {total}")
+        return 0, 0
+    ok_n = q_n = 0
+    for rel, ln, old, shape, verdict, reason, line in items:
+        if verdict == "js":
+            mark, ok_n = "[✓]", ok_n + 1
+        elif verdict == "native":
+            mark = "[✗]"
+        else:
+            mark, q_n = "[?]", q_n + 1
+        print(f"SUGGEST {rel}:{ln}  {old} → {total}  {mark} {reason}")
+        print(f"        （形态 {shape}）{line[:110]}")
+    print("")
+    print(f"合计 {len(items)} 处：可改 [✓] {ok_n} / 待判 [?] {q_n} / "
+          f"native 面不动 [✗] {len(items) - ok_n - q_n}")
+    print("本工具**不落盘**。请人工核 [✓] 那几处；[?] 需先判定语义面再改；[✗] 一律不动。")
+    return ok_n, q_n
+
+
+
 def judge(total: str, docs: dict, sweep: list, must_carry: list, exempt: list):
     """纯判定：docs = {相对路径: 正文}。返回 (问题列表, 命中数, 使用掉的豁免条目集合)。"""
     problems = []
@@ -727,6 +846,99 @@ def selftest() -> int:
         return 1
     done[0] += 1
     print("  ok  rc-propagation")
+
+    # ── `--fix-dry-run` 四格（判例-63：**写盘类工具的 selftest 必须用真实语料**）─────
+    #
+    # 为什么这四格和旧的三格不同：旧三格**全部用合成句**（`"测试 **1460/1460** 全绿"`），
+    # 于是它们证明了「我设计的输入能被我处理」，**没有证明「真实语料里不会误伤」**。
+    # 2026-10-26 第一版 `--fix` 就是这么误伤 19 文件 40+ 处的：写盘版被合成句自证「通过」，
+    # 一碰真实文档就把 native 面的 572 与历史读数 811/737/807 当成 JS 总数改写。
+    #
+    # ⇒ 下面每一格都从**真实文件**取行（`git show HEAD:AGENTS.md`），不是编的。
+    FIX_TOTAL = "1463"
+
+    def _real_line(rel, needle):
+        """从真实文件的 HEAD 版本里取第一行含 needle 的行（真实语料，非合成）。"""
+        try:
+            import subprocess as _sp
+            txt = _sp.run(["git", "show", "HEAD:" + rel], capture_output=True, text=True,
+                          encoding="utf-8", errors="replace").stdout
+        except Exception:
+            return ""
+        for ln in txt.splitlines():
+            if needle in ln:
+                return ln
+        return ""
+
+    # 格 A（**真实语料**）：真实 AGENTS.md 的 native 那行（含 `--target native` + `572/572`）
+    #   ⇒ 必须判 native ⇒ 建议不改。这是事故那一处的回归锁。
+    _nat = _real_line("AGENTS.md", "moon test --target native")
+    if not _nat:
+        print("SELFTEST FAIL [fix-real-native-line-is-not-js] 取不到真实 AGENTS.md 的 native 行"
+              "（判据输入面缺失，拒绝出结论）")
+        return 1
+    _v, _why = classify_claim_context(_nat)
+    if _v != "native":
+        print("SELFTEST FAIL [fix-real-native-line-is-not-js] 真实 native 行被判成 %r（应 native）"
+              " ⇒ 会重演「572 → 1463」那次误伤。行：%s" % (_v, _nat[:100]))
+        return 1
+    # 真实 AGENTS.md 的 JS 那行必须判 js（成对反例：不能一棍子全判 ?/native）
+    _js = _real_line("AGENTS.md", "moon test --target js")
+    if not _js:
+        print("SELFTEST FAIL [fix-real-native-line-is-not-js] 取不到真实 AGENTS.md 的 JS 行")
+        return 1
+    _v2, _ = classify_claim_context(_js)
+    if _v2 != "js":
+        print("SELFTEST FAIL [fix-real-native-line-is-not-js] 真实 JS 行被判成 %r（应 js）"
+              " ⇒ 现状面改不动。行：%s" % (_v2, _js[:100]))
+        return 1
+    done[0] += 1
+    print("  ok  fix-real-native-line-is-not-js")
+
+    # 格 B（**变异对照**，判例-29/30）：把「native 语境识别」删掉 ⇒ 格 A 必红。
+    # 这才是证明格 A 不是恒绿装饰的方式 —— 单独断言「判对了」证明不了它真在看。
+    _saved = globals()["RX_NATIVE_CTX"]
+    try:
+        globals()["RX_NATIVE_CTX"] = re.compile(r"(?!)")   # 恒不匹配 = 变异掉 native 识别
+        _v_mut, _ = classify_claim_context(_nat)
+    finally:
+        globals()["RX_NATIVE_CTX"] = _saved
+    if _v_mut == "native":
+        print("SELFTEST FAIL [fix-native-veto-is-live] 变异掉 native 识别后仍判 native ⇒ 本格恒绿")
+        return 1
+    # 且恢复后必须回到 native（证明变异确实只在这格生效）
+    if classify_claim_context(_nat)[0] != "native":
+        print("SELFTEST FAIL [fix-native-veto-is-live] 恢复 RX_NATIVE_CTX 后判不回 native")
+        return 1
+    done[0] += 1
+    print("  ok  fix-native-veto-is-live")
+
+    # 格 C：**无任何落盘路径**（判例-63 的硬要求：连 --force 都不给）。
+    # 直接断言模块级不存在写盘函数 —— 旧版有 `run_fix()`，本版必须没有。
+    for _gone in ("run_fix", "fix_claims"):
+        if hasattr(globals().get("__main__"), _gone) or _gone in globals():
+            print("SELFTEST FAIL [fix-has-no-write-path] 仍存在写盘函数 %r ⇒ 有人可以绕过 dry-run" % _gone)
+            return 1
+    _src_txt = Path(__file__).read_text(encoding="utf-8")
+    _suggest_zone = _src_txt.split("def scan_fix_candidates")[1].split("def judge")[0]
+    if "open(" in _suggest_zone:
+        print("SELFTEST FAIL [fix-has-no-write-path] 建议面里出现 open( ⇒ 可能落盘")
+        return 1
+    done[0] += 1
+    print("  ok  fix-has-no-write-path")
+
+    # 格 D：历史面在 `scan_fix_candidates` 里被跳过（与 judge 同一判据 is_history）
+    for _p in ("reports/x.md", "memory/2026-01-01.md", "docs/superpowers/plans/p.md", "CHANGELOG.md"):
+        if not is_history(_p):
+            print("SELFTEST FAIL [fix-skips-history] is_history(%r) 判 False ⇒ 历史门失守" % _p)
+            return 1
+    for _p in ("README.md", "AGENTS.md", "docs/SOP.md", "scripts/scoring_rubric.md"):
+        if is_history(_p):
+            print("SELFTEST FAIL [fix-skips-history] is_history(%r) 误判为历史 ⇒ 现状面看不到" % _p)
+            return 1
+    done[0] += 1
+    print("  ok  fix-skips-history")
+
     print(f"SELFTEST PASS {done[0]} 个变体各自命中自己指名的判据（计数由 run_case 实测累加，非手写）")
     return 0
 
@@ -764,6 +976,17 @@ def main():
     # R25（判例-25/33）：`--fresh` = 判前真跑一次全仓，跑完重写快照 + 源码面锚点。
     fresh = "--fresh" in raw_args
     args = [a for a in raw_args if a != "--fresh"]
+    # `--fix-dry-run`：**只建议、不落盘**（判例-63）。
+    # 旧名 `--fix`（写盘版）在 2026-10-26 实测误伤 19 文件 40+ 处 ⇒ 已删除，**不留任何落盘路径**。
+    # 若有人仍敲 `--fix`，必须明确告诉他「这个功能已改为只建议」，不能静默当成 dry-run
+    # （静默降级会让人以为文件已经改好了）。
+    if "--fix" in args:
+        print("REJECT `--fix`（写盘版）已废弃：它在 2026-10-26 实测误伤 19 个文档 40+ 处数字"
+              "（把 native 面的 572 与历史读数 811/737/807 当成 JS 总数改写）。")
+        print("       改用 `--fix-dry-run`：只列出建议与理由，**不落盘**，由人落最后一笔（判例-63）。")
+        return 2
+    do_fix = "--fix-dry-run" in args
+    args = [a for a in args if a != "--fix-dry-run"]
     total = None
     if args and args[0] == "--total" and len(args) >= 2:
         total = int(args[1])
@@ -800,6 +1023,10 @@ def main():
     if total is None:
         print("REJECT 无法从参数/日志解析测试总数")
         return 2
+    if do_fix:
+        ok_n, q_n = print_suggestions(str(total))
+        # 只建议、不落盘；判据本身照常复判，把「现在红不红」如实说清
+        print("")
     return run(str(total))
 
 
