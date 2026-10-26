@@ -169,6 +169,19 @@ def advisories(dirty_paths, strict=False):
     if dirty_docs_overlap(dirty_paths):
         return []                       # 闸 3：被检文档自身脏 ⇒ 真信号
     return list(dirty_paths)            # 其余 ⇒ advisory
+
+
+class AdvisoryVerdict:
+    """BUG-425 降级判决：`warn_paths`（要点名的脏文件）+ `rc`（run() 该返回的码）。"""
+
+    __slots__ = ("warn_paths", "rc")
+
+    def __init__(self, warn_paths, rc):
+        self.warn_paths = warn_paths
+        self.rc = rc
+
+    def __repr__(self):
+        return "AdvisoryVerdict(warn=%r, rc=%r)" % (self.warn_paths, self.rc)
 # ------------------------------------------------------------ /BUG-425
 
 
@@ -543,6 +556,42 @@ def judge(total: str, docs: dict, sweep: list, must_carry: list, exempt: list):
     return problems, agree, used
 
 
+def advisory_verdict(dirty_paths, strict=False):
+    """BUG-425：把「脏工作树 ⇒ 降级」的**判决**抽成可测的纯函数。
+
+    返回 `AdvisoryVerdict(warn_paths, rc)`：
+      · `warn_paths` 非空 ⇒ 要打印 WARN 并点名这些文件
+      · `rc` 就是 `run()` 该返回的码：**降级时 0**（不判红），否则 1（照常判红）
+
+    **为什么必须抽出来（判例-29「机制格 ≠ 实现路径格」）**：
+    原先降级逻辑内联在 `run()` 里，自检只能测纯函数 `advisories()`——
+    把 `run()` 里那段 `if _adv: ... return 0` **整段删掉**，`advisories()` 的锁**照样全绿**
+    （它测的是纯函数，降级发生在另一处）。抽出本函数后，
+    「删掉降级 ⇒ 本函数 rc 变 1 ⇒ 锁 2 必红」这条对照才成立。
+    """
+    adv = advisories(dirty_paths, strict=strict)
+    if not adv:
+        return AdvisoryVerdict([], 1)      # 不降级 ⇒ 违例照常红
+    return AdvisoryVerdict(list(adv), 0)   # 降级 ⇒ rc 0
+
+
+def print_advisory(verdict, total):
+    """打印 BUG-425 的 WARN 块（点名脏文件）。"""
+    if not verdict.warn_paths:
+        return
+    _adv = verdict.warn_paths
+    print("")
+    print(f"WARN 工作树有 {len(_adv)} 个未提交/未跟踪的 *.mbt —— 本格不判红（BUG-425）")
+    print(f"     why：读数面 = 工作树实测 {total}；原文面 = 已提交态文档；两者不同源，")
+    print("          此刻的红可能是「文档落后于在途工作」，不是「文档写错了数」。")
+    print(f"     点名脏文件（前 20 条 / 共 {len(_adv)} 条）：")
+    for _p in _adv[:20]:
+        print(f"       · {_p}")
+    if len(_adv) > 20:
+        print(f"       …（共 {len(_adv)} 条）")
+    print("     强制确认走 `--strict`；CI 上的红不受此影响（CI 工作树应干净）。")
+
+
 def run(total: str, strict: bool = False) -> int:
     sweep = current_docs()
     docs = {}
@@ -558,22 +607,13 @@ def run(total: str, strict: bool = False) -> int:
         for p in problems:
             print(f"  - {p}")
         # BUG-425：脏工作树 ⇒ 读数面与原文面不同源 ⇒ 降级为 advisory（rc 仍 0）
-        _dirty = dirty_mbt_files()
-        _adv = advisories(_dirty, strict=strict)
-        if _adv:
-            print("")
-            print(f"WARN 工作树有 {len(_adv)} 个未提交/未跟踪的 *.mbt —— 本格不判红（BUG-425）")
-            print(f"     why：读数面 = 工作树实测 {total}；原文面 = 已提交态文档；两者不同源，")
-            print("          此刻的红可能是「文档落后于在途工作」，不是「文档写错了数」。")
-            print(f"     点名脏文件（前 20 条 / 共 {len(_adv)} 条）：")
-            for _p in _adv[:20]:
-                print(f"       · {_p}")
-            if len(_adv) > 20:
-                print(f"       …（共 {len(_adv)} 条）")
-            print("     强制确认走 `--strict`；CI 上的红不受此影响（CI 工作树应干净）。")
+        # 判例-29 补强：降级**动作**必须能被自检单独驱动（见 advisory_verdict 的注释），
+        # 否则「测了纯函数 advisories()」不等于「测了 run() 这条实现路径」。
+        veto = advisory_verdict(dirty_mbt_files(), strict=strict)
+        print_advisory(veto, total)
+        if veto.warn_paths:
             print(f"ADVISORY 上述 {len(problems)} 条违例不判红（工作树脏）；确认要红请加 --strict")
-            return 0
-        return 1
+        return veto.rc
     print(f"PASS 测试总数单一真源一致：实测 {total}；扫描现状面 {len(live)} 份文档，"
           f"{agree} 条声明全部等于实测；must-carry {len(MUST_CARRY)} 份齐全；"
           f"豁免 {len(EXEMPT)} 条全部有效")
@@ -1049,6 +1089,20 @@ def selftest() -> int:
         _got = dirty_mbt_files(porcelain_text=_fake)
         if _got != ["src/a.mbt"]:
             return "bug425-only-mbt-got-%r" % (_got,)
+        # 锁 7（**变异对照·实现路径格**，判例-29）：降级**动作**必须真的落在 rc 上。
+        #   前 6 格测的都是纯函数 advisories()——把 run() 里那段降级整段删掉，它们**照样全绿**
+        #   （判例-29 的原始形状：机制格 ≠ 实现路径格）。本格直接断言 advisory_verdict().rc：
+        #     · 脏 ⇒ rc **必须**是 0（降级生效）
+        #     · 干净/闸生效 ⇒ rc **必须**是 1（违例照常红）
+        #   删掉降级那段（让脏也回 1）⇒ 本格必红。
+        if advisory_verdict(_d).rc != 0:
+            return "bug425-dirty-must-degrade-rc0"
+        if advisory_verdict(_d).warn_paths != _d:
+            return "bug425-dirty-must-name-files"
+        if advisory_verdict([]).rc != 1:
+            return "bug425-clean-must-keep-rc1"
+        if advisory_verdict(_d, strict=True).rc != 1:
+            return "bug425-strict-must-keep-rc1"
         return None
     _bad = _bug425()
     if _bad:
