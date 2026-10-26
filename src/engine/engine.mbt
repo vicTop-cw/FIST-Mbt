@@ -1795,11 +1795,11 @@ fn extract_needs(desc : String) -> Array[String] {
       } else if sv.has_prefix("need:") {
         s["need:".length():].trim()
       } else if sv.has_prefix("requires:") {
-        s.substring(start="requires:".length()).trim()
+        s["requires:".length():].trim()
       } else if sv.has_prefix("能力:") {
-        s.substring(start="能力:".length()).trim()
+        s["能力:".length():].trim()
       } else if sv.has_prefix("能力：") {
-        s.substring(start="能力：".length()).trim()
+        s["能力：".length():].trim()
       } else {
         ""
       }
