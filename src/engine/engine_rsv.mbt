@@ -203,8 +203,21 @@ pub fn FistEngine::locks_try_acquire(
         Some(existing) =>
           if existing.agent_of() == agent && existing.status_of() == "active" {
             let o = self.store.locks_try_acquire(lock)
-            // 只改标签不改裁决：granted 保持后端算出的那个
-            o.relabel("renewed_legacy_grant", o.granted)
+            // **BUG-429：必须判 `o.granted` 再打标。**
+            //
+            // `locks_get`（:202）与 `locks_try_acquire`（:205）是两次独立 IO ——
+            // 中间别的 agent 可以抢到同一把锁且 ttl 新鲜 ⇒ 本次写被后端拒
+            // ⇒ `granted=false`。此时若无条件标 `renewed_legacy_grant`，
+            // 回执就会是 **`granted=false` + `action="renewed_legacy_grant"` + `agent=别人`**
+            // —— **三个字段互相矛盾**（同文件 Unregistered 分支写对了 `if o.granted`，这里漏抄）。
+            //
+            // 补上后语义：只有**真拿到**才标 legacy_grant；被后端拒时保留后端原标签
+            // （那是更硬的信息：conflict / taken_over 说明锁被别人拿走了）。
+            if o.granted {
+              o.relabel("renewed_legacy_grant", true)
+            } else {
+              o
+            }
           } else {
             @store.LockAcquireOutcome::denied_by_permission()
           }
