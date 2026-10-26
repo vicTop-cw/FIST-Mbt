@@ -157,56 +157,121 @@ pub fn agent_fp_of(raw : String) -> String {
 }
 
 ///|
-/// 从 agent 名字推断角色（**BUG-418 收窄后：只做缺省提示，不是授权依据**）。
+/// 从 agent 名字推断角色（**BUG-418 收窄 + BUG-421 二次收窄：只做缺省提示，不是授权依据**）。
 ///
 /// ⚠️ BUG-418 前的实现用 `contains("commander")` 做**子串**匹配 ⇒
 /// 任何自称 `commander-fake` 的 agent 都能拿到 HumanSteward，进而过 HumanSteward 保护门。
 /// **那不是「文档不准」，是可主动利用的越权面。**
 ///
-/// 收窄规则（BUG-418 裁决 (b)，按「整名精确匹配」而非「永不返回高角色」）：
+/// 收窄规则（BUG-418 裁决 (b) + BUG-421 收口，按「整名精确匹配」）：
 ///   · **禁止**「前缀/子串命中即给高角色」—— 这才是攻击面
-///   · **允许**整名精确匹配：`human_steward` / `human` / `leader` / `lead`
-///     人类指挥官与军官自报的就是这几个固定名字，关掉这条路会把合法路径一起关死
-///   · 其余一律 Executor
+///   · **只允许**人类指挥官的整名：`human_steward` / `human` ⇒ HumanSteward
+///   · **其余一律 Executor**，**包括整名 `leader` / `lead`**（BUG-421）：
+///     那两条白名单写于 BUG-418 修法期，理由是「关掉会把军官自报这条路关死」——
+///     但「军官自报」本身就是「名字即身份」，与 BUG-418 要堵的是同一个东西，
+///     只是从「任意子串」收窄成了「一个单词」。实测 `agent=leader` 可订
+///     `src/engine/` / `src/core/` / `src/router/` / `cmd/`（军官面），
+///     与「只有 human_steward/human 两个精确匹配算特权」的口径不一致。
 ///
-/// ⇒ `commander-fake` → Executor（不再靠 commander 子串）；`human_steward` → HumanSteward（合法）
+/// ⇒ 现在 `leader` / `lead` / `LEADER` → Executor（与 `commander-fake` 同一档）
+/// ⇒ `human_steward` / `human` → HumanSteward（人类指挥官唯一路径，保留）
+///
+/// ⚠️ **硬约束：角色不可从名字推断 Leader。Leader 只来自 `agents.role`（已登记身份）。**
+/// 需要 Leader 面的 lane 必须在 `agents` 表被显式登记成 `role="Leader"`
+/// （唯一入口是 server 启动注册；当前**没有**面向 agent 的自助登记工具面，
+/// 这是 BUG-421 关闭后的既定代价 —— 见 memory/bugs.md BUG-421「风险」段与
+/// reports/2026-10-27-bug421-decision-brief.md Q2 的步数推算）。
 ///
 /// **权威面仍是 `agents.role`**（见 `resolve_agent_role`）：本函数只在查不到声明时做兜底，
 /// 且回执会带 `role_source="inferred"` 让调用方知道这是猜的。
 pub fn infer_role_from_agent(agent_name : String) -> String {
   let a = agent_name.to_lower()
-  // 整名精确匹配（大小写已归一）。子串/前缀一律不给高角色。
+  // 整名精确匹配（大小写已归一）。子串/前缀/军官单词一律不给高角色。
   if a == "human_steward" || a == "human" {
     "HumanSteward"
-  } else if a == "leader" || a == "lead" {
-    "Leader"
   } else {
+    // ⚠️ 硬约束：此处**不得**再把军官单词（leader / lead）加回整名白名单 —— BUG-421 已删。
+    // 判据：`engine_role_resolve_wbtest.mbt::role_resolve_wb3`（纯函数）+
+    //       `engine_scope_perm_role_wbtest.mbt::scope_role_wb1/wb7`（端到端）+
+    //       `scope_role_wb6` 的函数体扫描（源码级 tripwire）。
     "Executor"
   }
 }
 
 ///|
-/// 解析 agent 的**权威角色**与**来源**（BUG-418 裁决 (a)）。
+/// 角色档位（数值越大权越大）。**未知/拼错的值一律 0（= Executor 档）—— fail-closed。**
 ///
-/// 优先级：`agents.role`（显式声明，权威） > `infer_role_from_agent`（缺省提示）。
+/// 为什么需要它（BUG-422）：`resolve_agent_role` 要把「名字推断」当作**下限**，
+/// 就不能再用字符串相等判「谁更高」。档位表是唯一真源，别处不要再手写比较。
+pub fn role_rank(role : String) -> Int32 {
+  match role {
+    "HumanSteward" => 2
+    "Leader" => 1
+    "Executor" => 0
+    _ => 0
+  }
+}
+
+///|
+/// **哪些角色允许从「自报名字 → agents 登记表」这条路继承**（BUG-422 加固）。
 ///
-/// `declared` 由调用方查库传入（`agents_get(agent_id).role`），保持本函数纯、可单测、无 IO。
-/// 查不到（None / 空串）⇒ 退到推断，且**推断结果只可能是 Executor 或 Leader**（见上）。
+///   · `Executor` / `Leader` ⇒ 可继承（Leader 是「派下来的军官」的唯一正道）
+///   · `HumanSteward` 与任何未知值 ⇒ **None，永不继承**
 ///
-/// 返回 `(role, source)`，`source` ∈ {`"declared"`, `"inferred"`} ——
-/// 调用方据此知道这个角色是**派下来的**还是**猜的**（BUG-418 的可观测性要求）。
+/// 为什么把 HumanSteward 挡在继承面之外：HS 是**人类指挥官**的唯一身份，
+/// 独占 4 条不可逆路径（`store_sqlite.mbt` / `store.mbt` / `server.mbt` / `moon.mod`）。
+/// 「报一个已登记名字 ⇒ 继承它的 role」如果能把 HS 交出去，等于把 BUG-418
+/// 刚关掉的统帅面从登记表那一侧又开回来，而且这次连 `human_steward` 这个整名都不用猜。
+/// 现网 `agents` 表**没有任何 HS 记录**（`agent_touch_first_seen` 只写 Executor，
+/// server 启动只写一条 Leader）⇒ 本限制的现实代价为 0，纯属把未来的口先堵上。
+pub fn inheritable_role(declared_role : String) -> String? {
+  match declared_role {
+    "Executor" => Some("Executor")
+    "Leader" => Some("Leader")
+    _ => None
+  }
+}
+
+///|
+/// 解析 agent 的**裁决角色**与**来源**（BUG-418 裁决 (a) + BUG-422 B 案收口）。
+///
+/// **BUG-422 前的语义（已废）**：`agents.role` 无条件优先（`declared` > `inferred`）。
+/// 那条规则的致命之处不在「读表」，而在**查表键是调用方自报的名字**：
+/// 报 `agent="fist-mbt"` 就继承了 `server.mbt` 启动时写下的 `role="Leader"`（实测 ALLOWED）。
+///
+/// **现在的语义（三件硬约束，缺一不可）**：
+///   1. **`inferred` 是下限** —— 声明**不许降级**：名字已经推出 HumanSteward 时，
+///      一条 `role="Executor"` 的登记记录不能把它压回 Executor（BUG-423 的注册面毒化同族）。
+///   2. **只有可继承角色生效** —— 见 `inheritable_role`：`Executor`/`Leader` 可继承，
+///      `HumanSteward` 与未知值一律**忽略声明**（fail-closed 到推断）。
+///   3. **声明必须来自「非本进程自身份」的登记记录** —— 这一条不在本纯函数里做，
+///      而在它的**取数侧**：`engine_rsv.mbt` 的 `declared_role_for_judgment` 走
+///      `SqliteStore::agents_role_for_judgment`，后者把 `agent_type == "server"` 的记录
+///      整条剔除（那是**服务器自己**的身份，任何外部 agent 报它的名字都不该继承它）。
+///      ⇒ 本函数保持纯、无 IO、可单测；「谁能被冒用」的政策落在 store 那一层，且有单测钉住。
+///
+/// 返回 `(role, source)`：
+///   · `"declared"` = 裁决角色来自一条**通过上述过滤**的登记记录
+///   · `"inferred"` = 没有可用声明（未登记 / 被过滤 / 角色不可继承 / 低于推断）
 pub fn resolve_agent_role(
   agent_name : String,
   declared : String?,
 ) -> (String, String) {
+  let inferred = infer_role_from_agent(agent_name)
   match declared {
     Some(r) =>
-      if r != "" {
-        (r, "declared")
-      } else {
-        (infer_role_from_agent(agent_name), "inferred")
+      match inheritable_role(r) {
+        // 下限语义：声明只有**不低于**推断时才生效，永不允许把推断结果降级
+        Some(d) =>
+          if role_rank(d) >= role_rank(inferred) {
+            (d, "declared")
+          } else {
+            (inferred, "inferred")
+          }
+        // HumanSteward / 未知值 / 空串：不可继承 ⇒ 退推断
+        None => (inferred, "inferred")
       }
-    None => (infer_role_from_agent(agent_name), "inferred")
+    None => (inferred, "inferred")
   }
 }
 

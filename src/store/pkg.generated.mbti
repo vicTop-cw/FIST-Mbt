@@ -8,6 +8,8 @@ import {
 }
 
 // Values
+pub fn agent_record_is_process_self(AgentRecord) -> Bool
+
 pub fn aggregate_stats(@sqlite.Database) -> Json
 
 pub fn assistant_claim_action(AssistantReg?, String, String, String) -> (Bool, String, String)
@@ -226,6 +228,7 @@ pub fn SqliteStore::agents_acl_grant(Self, agent_id~ : String, ns~ : String, can
 pub fn SqliteStore::agents_get(Self, String) -> AgentRecord?
 pub fn SqliteStore::agents_heartbeat(Self, agent_id~ : String, agent_type~ : String, role~ : String, soldier~ : String, pid~ : Int32, now~ : String) -> Result[Unit, String]
 pub fn SqliteStore::agents_register(Self, agent_id~ : String, agent_type~ : String, role~ : String, soldier~ : String, pubkey_fp~ : String, pid~ : Int32, now~ : String) -> Result[Unit, String]
+pub fn SqliteStore::agents_role_for_judgment(Self, String) -> String?
 pub fn SqliteStore::agents_set_pid(Self, agent_id~ : String, pid~ : Int32) -> Result[Unit, String]
 pub fn SqliteStore::agents_stale_check(Self, String) -> Array[AgentRecord]
 pub fn SqliteStore::archive_task(Self, @core.Task, archived_at~ : String) -> Result[Unit, String]

@@ -37,16 +37,50 @@ test "lock_perm_wb1_executor_denied_on_engine" {
 }
 
 ///|
-/// 锁 2：Leader 抢同一 scope ⇒ **拿到**（防修过头 —— 门不能把合法军官也挡了）。
+/// 锁 2（**BUG-421 落地后的改判**）：整名 `"leader"` 抢 `src/engine/` ⇒ **被硬拒**。
 ///
-/// 用整名 `"leader"` 而不是 `"lead-1"`：BUG-418 把子串匹配收窄为整名精确匹配后，
-/// `lead-1` 已含子串失效（塌回 Executor）；`"leader"` 整名仍是 Leader（BUG-421 那条
-/// 「整名单词仍买军官面」的政策状态）。⇒ **本格同时是 BUG-421 的现状锚点**：
-/// 若哪天 BUG-421 落地（删掉整名 leader 白名单），本格会红，应同步改成
-/// 「登记 `agents.role=Leader` 的 agent」。
-test "lock_perm_wb2_leader_allowed_on_engine" {
+/// **改判记录**：本格原先钉的是相反的事 —— `"leader"` 能拿到锁（当时 `infer_role_from_agent`
+/// 的整名白名单还留着一档，本格被写成「BUG-421 的现状锚点」）。BUG-421 把白名单删掉后，
+/// 本格如约变红，按当时的注释改成现在的语义（**军官只来自 `agents.role` 登记**）。
+///
+/// 内存后端 `agents` 表恒空 ⇒ 只剩推断这一层 ⇒ 覆盖「名字即身份」这条攻击面。
+test "lock_perm_wb2_leader_name_denied_on_engine" {
   let e = FistEngine::new()
   let o = e.locks_try_acquire(lock_of("src/engine/x.mbt", "leader"))
+  assert_false(o.granted)
+  assert_eq(o.action, "permission_denied")
+}
+
+///|
+/// 锁 2b（防修过头 · **正例**）：**登记 `agents.role=Leader` 的 agent** 才拿得到军官面。
+///
+/// 这一格是 BUG-421 关闭「自报名字」通道后**唯一**的合法路径：
+/// 身份必须在 `agents` 表被显式登记（当前唯一写入面是 server 内部，
+/// 没有面向 agent 的自助登记工具 —— 这是 BUG-421 的既定代价，见账本该条「风险」段）。
+///
+/// 注意 `agent_type` 必须**不是** `"server"`：`"server"` 是「本进程自身份」，
+/// BUG-422 把这类记录整条剔出角色裁决 —— 用 `"server"` 登记的话本格会（正确地）红。
+test "lock_perm_wb2b_registered_leader_allowed_on_engine" {
+  let db = "temp/lock_perm_registered_leader_wb.db"
+  let e = match FistEngine::open_sqlite(db) {
+    None => abort("open_sqlite 失败：" + db)
+    Some(x) => x
+  }
+  let lane = "lock-perm-leader-lane"
+  match
+    e.agents_register(
+      agent_id=agent_fp_of(lane),
+      agent_type="executor",
+      role="Leader",
+      soldier="工兵",
+      pubkey_fp="",
+      pid=7,
+      now="2026-10-27T00:00:00Z",
+    ) {
+    Err(msg) => abort("agents_register 失败：" + msg)
+    Ok(_) => ()
+  }
+  let o = e.locks_try_acquire(lock_of("src/engine/x.mbt", lane))
   assert_true(o.granted)
 }
 

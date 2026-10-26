@@ -51,6 +51,8 @@ pub fn gate_mark() -> String
 
 pub fn infer_role_from_agent(String) -> String
 
+pub fn inheritable_role(String) -> String?
+
 pub fn matching_rule(String) -> PermissionRule?
 
 pub fn mc_percentile_index(Int32, Int32) -> Int32
@@ -84,6 +86,8 @@ pub fn phi_domain_error(Array[Int32], Int32) -> String
 pub fn plan_route(String, n_files? : Int32) -> Json
 
 pub fn resolve_agent_role(String, String?) -> (String, String)
+
+pub fn role_rank(String) -> Int32
 
 pub fn root_task_id() -> String
 
