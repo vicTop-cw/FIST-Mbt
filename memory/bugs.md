@@ -6912,7 +6912,7 @@ reported_by: lead
 
 
 - false_positive(2026-10-26T01:30:38Z): 误报：report_bug 的 project_dir 相对 FIST-Mbt server cwd 且拒绝 .. ，无法指向 lang-zone 项目；本 bug 属 lang-zone，已如实记入 lang-zone/memory/bugs.md 为 BUG-466（提交 37395e7，11/11 DEMO --emit=ir vs --emit=ir-lz 逐字节一致）。FIST-Mbt 账本此条为误落。
-## BUG-411 [2026-10-26T01:50:30Z] [medium] OPEN
+## BUG-411 [2026-10-26T01:50:30Z] [medium] FIXED
 - summary: 同一命名空间内 publish 成功、board_ascii 可读，但 claim 被 ACL 拒绝（can_write=0）：创建权限与写权限未统一判定
 - detail: 复现（fist-mbt v0.3.10，2026-10-25~26）：
 1) store_open(namespace="tnr-tql") → {"opened":true}
@@ -6938,6 +6938,30 @@ C) 或提供 agent_acl_grant 的显式自救路径（该工具存在，但客户
 附带说明（不是缺陷，供参考）：supervisor_task_upsert 在同一 ns 内可以成功更新任务描述（我据此把 5 条陈旧任务刷新为当前状态），说明「更新」权限与「认领」权限的判定也不同源。
 - reported_by: tnr-tql-agent
 
+
+### FIXED(2026-10-26T04:04:36Z / BUG-411)
+- evidence: 采纳建议 B（publish 成功时明确预警「该 ns 只可创建、不可认领」）+ 建议 C 已在前单落地（`agent_acl_grant` 工具，commit 46c1382d）。**stdio 探针实测回执**（2026-10-26 12:00，`temp/probe_bug411.py`，独立 db 夹具 probe411ns）：
+
+```
+[3] publish -> {"task_id":"T0","namespace":"probe411ns",
+  "message":"已发布根任务；**警告（BUG-411）**：该 ns 当前没有任何 agent 持有 can_write=1
+            —— publish 因走 human_steward 特权路径能成功，但**紧接着的 claim 会被 ns ACL 拒**
+            （两道独立门，见 BUG-408）。认领前先调 agent_acl_grant(agent_id=<你的 assignee>,
+            namespace=\"probe411ns\", can_write=true)",
+  "claim_ready":false,"writable_agents":0}
+[4] claim -> （空 = 被 ns ACL 拒，与预警一致）
+```
+
+**改动**：
+1. `src/store/store_sqlite.mbt` 新增 `agents_acl_count_writable(ns)` —— 只回答「这个 ns 现在有几个 can_write=1 的 agent」（口径与 agents_acl_check 同源：只看 can_write；内存 stub 回 0）
+2. `src/engine/engine.mbt` 转发
+3. `src/server/server.mbt` publish 回执新增：`claim_ready`(bool，机器可读) + `writable_agents`(int，具体读数) + `message` 里的人读警告（含 agent_acl_grant 调用形态）
+
+**为什么选 B 而不是 A（统一判定口径）**：A 是契约变更（要么 publish 也受 ns ACL 约束，导致 human_steward 特权路径失效；要么 claim 失去 ACL 保护），影响面大、需 owner 裁决。B 直接消除 BUG-411 的核心痛点「中间没有预警」—— 无人值守流水线现在在发布那一刻就知道「接下来认领会撞墙，必须先授权」。
+
+**验证**：`moon check --target js` 49 warnings / **0 errors**；`moon test src/server` **387/387**；stdio 探针实测如上。
+
+**踩坑**：MoonBit match 分支多语句必须 `{ }` 包裹（`Ok(id) =>` 直接跟 `let` 会炸成 2428 errors，与 registry_test 那次同坑）。
 ## BUG-412 [2026-10-26T01:56:01Z] [medium] FIXED
 - summary: output_validate 把相对 path 解析到 server 进程 cwd 而非 project_dir，导致真实存在的文件被判「不存在」（假 RED），且回执不回显基准目录
 - detail: 复现（fist-mbt v0.3.10，2026-10-26）：

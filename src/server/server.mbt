@@ -1559,17 +1559,33 @@ pub async fn run_server() -> Unit {
         ns~,
       )
       match r {
-        Ok(id) =>
+        Ok(id) => {
+          // BUG-411：publish 走 human_steward 特权路径（不看 ns ACL），而 claim 走
+          // agent_write_gate 的 ns ACL —— 同 ns 内「发布成功、认领被拒」是合法组合，
+          // 但调用方在此之前零预警（无人值守流水线会先发布、再撞墙，排查成本高）。
+          // 这里在发布成功时**当场**把「该 ns 有没有人能认领」摆出来。
+          let writable = engine_for_ns(ns).agents_acl_count_writable(ns~)
+          let claim_hint = if writable > 0 {
+            ""
+          } else {
+            "；**警告（BUG-411）**：该 ns 当前没有任何 agent 持有 can_write=1 —— publish 因走 human_steward 特权路径能成功，但**紧接着的 claim 会被 ns ACL 拒**（两道独立门，见 BUG-408）。认领前先调 agent_acl_grant(agent_id=<你的 assignee>, namespace=\"" +
+            ns +
+            "\", can_write=true)"
+          }
           Ok(
             @mcp.ToolResult::text(
               Json::object({
                 "task_id": Json::string(id),
                 // BUG-23：回显任务**实际落在**哪个 ns，落错当场看得见
                 "namespace": Json::string(ns),
-                "message": Json::string("已发布根任务"),
+                "message": Json::string("已发布根任务" + claim_hint),
+                // BUG-411：显式布尔，机器可读（message 里的警告是给人看的）
+                "claim_ready": Json::boolean(writable > 0),
+                "writable_agents": Json::number(writable.to_double()),
               }).stringify(),
             ),
           )
+        }
         Err(e) => Err(@mcp_types.ToolError(e))
       }
     },
