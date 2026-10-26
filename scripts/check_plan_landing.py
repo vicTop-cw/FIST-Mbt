@@ -239,7 +239,68 @@ def exempt_reason(p):
     return None
 
 
-def fatal_reason(n_enum, n_readable, n_paths):
+# ── P8/P9 设计性排除（2026-10-26 路 B）────────────────────────────────────────
+#
+# **为什么这是「设计性排除」而不是「为转绿硬塞豁免」** —— 判据读错了面，不是文档缺了什么：
+#
+#   P8 `memory/YYYY-MM-DD.md` 日日志：
+#     `.gitignore` 明写 `memory/2026-*.md` 被永久排除（理由见其注释：614MB 级膨胀 + 每次合并必撞冲突）。
+#     **被 gitignore 的设计性排除面本就不进跟踪面** ⇒ 拿跟踪面当分母问「它在不在」是永远为假的问题。
+#     ⚠️ 自愈：本判据每次**现读 .gitignore**，若哪天该规则被移除，排除自动失效 ⇒ 6 条重新计入。
+#
+#   P9 `docs/proposals/` 提案目录：
+#     **提案 ≠ 落地承诺。** 计划说「将新增 X」是对交付的承诺；提案说「建议新增 X」是选项讨论，
+#     未被采纳就本不该落地。把提案点名算 missing = 要求「讨论过的每个选项都必须实现」。
+#     ⚠️ 触发条件（正向）：**若某条提案被采纳并转成正式计划**（从 proposals/ 移入正式面，
+#     或在正式计划里重新点名），P9 不再覆盖它 ⇒ 该点名重新计入判定面。
+
+_RE_DAILY_LOG = re.compile(r"^memory/(?:19|20)\d{2}-\d{2}-\d{2}\.md$")
+_GITIGNORE_FILE = ".gitignore"
+# P9：提案目录前缀（窄形：只认这一条路径前缀，不按名字含 "proposal" 模糊匹配）
+PROPOSAL_DOC_PREFIX = "docs/proposals/"
+
+
+def _gitignore_excludes_daily_logs(root=None):
+    """P8 的**真源现读**：`.gitignore` 里是否确有 `memory/20XX-*.md` 这类日日志排除规则。
+
+    不写死 True：规则被移除 ⇒ 排除自动失效（自愈，不是一次性豁免）。
+    读不到 .gitignore ⇒ 返回 False（**保守**：宁可多报，不可错放）。
+    只认日日志形态的规则；`memory/` 整目录挡**不算**（本仓刻意逐文件点名，见 .gitignore 注释）。
+    """
+    root = root or ROOT
+    try:
+        with open(os.path.join(root, _GITIGNORE_FILE), encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return False
+    for raw in text.splitlines():
+        s = raw.strip()
+        if not s or s.startswith("#"):
+            continue
+        if re.match(r"^/?memory/(?:20\d{2}|\*|20\?\?)[-*].*\.md$", s):
+            return True
+    return False
+
+
+def design_exempt_reason(p, doc, daily_logs_ignored=None,
+                         proposal_prefix=PROPOSAL_DOC_PREFIX):
+    """P8/P9 纯判据：命中「设计性排除」⇒ 返回 (态名, 处置话术)；否则 None。
+
+    两个参数都可注入，供 selftest 造夹具与**变异对照**（判例-29/30）：
+      daily_logs_ignored : `_gitignore_excludes_daily_logs()` 的结果（None ⇒ 现读）
+      proposal_prefix    : 提案目录前缀（变异格可置空，以证明排除真在起作用）
+    """
+    if daily_logs_ignored is None:
+        daily_logs_ignored = _gitignore_excludes_daily_logs()
+    if daily_logs_ignored and _RE_DAILY_LOG.match(p):
+        return ("ignored-log",
+                "**设计性排除面**（`.gitignore` 明确排除 `memory/20XX-*.md` 日日志）"
+                "⇒ 它本就不进跟踪面，拿跟踪面当分母问「在不在」恒为假 ⇒ 只出数不判红")
+    if proposal_prefix and doc.startswith(proposal_prefix):
+        return ("proposal",
+                "**提案面**（提案 ≠ 落地承诺：计划说「将新增」是承诺，提案说「建议新增」是选项讨论）"
+                "⇒ 未被采纳的提案点名不算未落地；提案转成正式计划后该点名重新计入 ⇒ 只出数不判红")
+    return None
     """P2 防空转的三条判据（纯函数，供 `--selftest` 直接考）。任一成立即 FATAL，返回那条因由。
     本轮把它从 main 里三处 `raise SystemExit("FATAL …")` 抽出来，实测顺手抓了一条自己的缺陷：
     **`SystemExit(带字符串)` 的退出码是 1，不是 2**（`python -c` 与真跑双测）⇒ 本文件 docstring 承诺的
@@ -253,6 +314,21 @@ def fatal_reason(n_enum, n_readable, n_paths):
         return "全仓计划文档里一条仓内落点路径都没抽到 —— 判据空转，拒绝出读数"
     return None
 
+
+
+def fatal_reason(n_enum, n_readable, n_paths):
+    """P2 防空转的三条判据（纯函数，供 `--selftest` 直接考）。任一成立即 FATAL，返回那条因由。
+    本轮把它从 main 里三处 `raise SystemExit("FATAL …")` 抽出来，实测顺手抓了一条自己的缺陷：
+    **`SystemExit(带字符串)` 的退出码是 1，不是 2**（`python -c` 与真跑双测）⇒ 本文件 docstring 承诺的
+    「2=判据无法自证」从来没有生效过，「判据空转」与「有落点未落地」在退出码面上同色，而电池期望文本里
+    那句「读出 0 或 2 都算这格漂移」的 2 是不可达的。同族面见 temp/r41_fatal_census.py 的普查（BUG-369）。"""
+    if not n_enum:
+        return "一份文档都没枚举到 —— 判据空转，拒绝出读数"
+    if not n_readable:
+        return "一份计划文档都读不到 —— 判据空转，拒绝出读数"
+    if not n_paths:
+        return "全仓计划文档里一条仓内落点路径都没抽到 —— 判据空转，拒绝出读数"
+    return None
 
 def emit_fatal(msg):
     """FATAL 的统一出口：打到 stderr（与改前的 `SystemExit(str)` 同一条流）并**返回整数 2**
@@ -273,12 +349,15 @@ def mode_fatal(gate, all_faces):
     return None
 
 
-def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None):
+def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None,
+          daily_logs_ignored=None, proposal_prefix=PROPOSAL_DOC_PREFIX):
     """doc_paths = {文档: [点名路径]}。返回 (诊断条目, 检查过的路径数)。
     非 tracked 的才进诊断；disk_set 用来区分「在工作树磁盘上」与「都没有」；都没有时先问一次
     find_moved，有搬家证据就落 moved（P5），否则落 missing。
     tracked_dirs 提供时，目录形态的落点也按「跟踪面隐含目录」判定（防已跟踪目录被误报），
     并与跟踪文件一起构成 moved 的宇宙。
+    daily_logs_ignored / proposal_prefix 透传给 P8/P9 设计性排除，**仅供 selftest 注入夹具与变异对照**；
+    main 走默认值（现读 .gitignore / 用 PROPOSAL_DOC_PREFIX）。
     条目 (文档, 路径, 态, 处置话术, 面, 搬家候选)；第 5 位是**面**（"活文档"/"存档面"）——
     判定红只数活文档面那一档，且 moved 不入判定面（第 6 位对非 moved 条目恒为空列表）。"""
     tracked_dirs = tracked_dirs or set()
@@ -303,6 +382,12 @@ def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None):
             if ex:
                 findings.append((doc, p, ex[0], ex[1], face, []))
                 continue
+            # P8/P9 设计性排除：gitignore 的日日志面 / 提案面。同样只替换 missing。
+            dx = design_exempt_reason(p, doc, daily_logs_ignored=daily_logs_ignored,
+                                      proposal_prefix=proposal_prefix)
+            if dx:
+                findings.append((doc, p, dx[0], dx[1], face, []))
+                continue
             mv = find_moved(p, moved_universe)
             if mv:
                 findings.append((doc, p, "moved",
@@ -317,13 +402,16 @@ def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None):
 
 
 def split_faces(findings, all_faces):
-    """(判定面, 搬家态, 豁免态, 存档面)。moved **恒不进判定面**（P5），P7 的 external/scratch 同样
-    只出数不判红；`--all-faces` 只把存档面拉进判定面。抽成纯函数是为了让「搬家态不判红」「豁免态不判红」
-    这两条律都有夹具，而不是只活在 main 的某一次打印里。"""
+    """(判定面, 搬家态, 豁免态, 存档面)。moved **恒不进判定面**（P5），P7 的 external/scratch 与
+    P8/P9 的 ignored-log/proposal 同样只出数不判红；`--all-faces` 只把存档面拉进判定面。
+    抽成纯函数是为了让「搬家态不判红」「豁免态/设计性排除不判红」这些律都有夹具，
+    而不是只活在 main 的某一次打印里。"""
+    # 不进判定面的态：moved(P5) + external/scratch(P7) + ignored-log/proposal(P8/P9)
+    NON_VERDICT = ("moved", "external", "scratch", "ignored-log", "proposal")
     pool = findings if all_faces else [x for x in findings if x[4] == "活文档"]
     moved = [x for x in pool if x[2] == "moved"]
-    exempt = [x for x in pool if x[2] in ("external", "scratch")]
-    live = [x for x in pool if x[2] not in ("moved", "external", "scratch")]
+    exempt = [x for x in pool if x[2] in ("external", "scratch", "ignored-log", "proposal")]
+    live = [x for x in pool if x[2] not in NON_VERDICT]
     archived = [x for x in findings if x[4] == "存档面"]
     return live, moved, exempt, archived
 
@@ -492,6 +580,60 @@ def selftest():
          True)
     print("  ok  all-faces-still-excludes-moved（--all-faces 拉进存档面也不拉搬家态/豁免态：%d 条仍单列）"
           % (len(mv_a) + len(ex_a)))
+
+    # 9c) P8/P9 设计性排除（2026-10-26 路 B）：**成对验证** —— 命中格 + 变异对照格（判例-29/30）
+    #
+    # 变异对照的做法：**注入** daily_logs_ignored False / proposal_prefix ""（而不是改文档、也不是改常量），
+    # 这样「排除真在起作用」与「排除失效后条目真的回来」两侧都是同一份代码在同一格里算出来的
+    # ⇒ 不是「机制格」，是**实现路径格**（判例-29）。
+    f10, _ = judge({"a.md": ["memory/2026-10-12.md"]}, set(), set(),
+                   daily_logs_ignored=True)
+    cell("p8-ignored-log-detected", len(f10) == 1 and f10[0][2] == "ignored-log", True)
+    print("  ok  p8-ignored-log-detected（被 gitignore 的日日志 ⇒ ignored-log 态，不进判定面）")
+    # 变异对照 1：注入 daily_logs_ignored=False（模拟「.gitignore 规则被移除」）⇒ 必须回到 missing
+    f11, _ = judge({"a.md": ["memory/2026-10-12.md"]}, set(), set(),
+                   daily_logs_ignored=False)
+    cell("p8-mutation-disabled-falls-back-to-missing",
+         len(f11) == 1 and f11[0][2] == "missing", True)
+    print("  ok  p8-mutation-disabled-falls-back-to-missing"
+          "（变异：关掉 gitignore 判定 ⇒ 该条**重新计入**判定面，证排除真在起作用）")
+
+    f12, _ = judge({"docs/proposals/p.md": ["docs/foo-skill.md"]}, set(), set(),
+                   daily_logs_ignored=True)
+    cell("p9-proposal-detected", len(f12) == 1 and f12[0][2] == "proposal", True)
+    print("  ok  p9-proposal-detected（docs/proposals/ 下的点名 ⇒ proposal 态，不进判定面）")
+    # 变异对照 2：注入 proposal_prefix=""（模拟「排除被删掉」）⇒ 必须回到 missing
+    f13, _ = judge({"docs/proposals/p.md": ["docs/foo-skill.md"]}, set(), set(),
+                   daily_logs_ignored=True, proposal_prefix="")
+    cell("p9-mutation-prefix-removed-falls-back-to-missing",
+         len(f13) == 1 and f13[0][2] == "missing", True)
+    print("  ok  p9-mutation-prefix-removed-falls-back-to-missing"
+          "（变异：删掉 proposals 排除 ⇒ 该条**重新计入**判定面）")
+
+    # 反证（防两条排除开成「大面免检牌」）：
+    # ① 非日日志形态的 memory/ 件**不许**被 P8 吃掉（memory/lock-config.json 仍是 missing/待判）
+    f14, _ = judge({"a.md": ["memory/lock-config.json"]}, set(), set(),
+                   daily_logs_ignored=True)
+    cell("p8-not-overbroad-non-daily-log", len(f14) == 1 and f14[0][2] != "ignored-log", True)
+    print("  ok  p8-not-overbroad-non-daily-log（memory/lock-config.json 非日日志 ⇒ 不被 P8 排除）")
+    # ② 非 proposals/ 目录下的提案式名字**不许**被 P9 吃掉（docs/proposal-x.md 不在前缀内）
+    f15, _ = judge({"docs/proposal-x.md": ["docs/foo-skill.md"]}, set(), set(),
+                   daily_logs_ignored=True)
+    cell("p9-not-overbroad-non-proposal-dir", len(f15) == 1 and f15[0][2] != "proposal", True)
+    print("  ok  p9-not-overbroad-non-proposal-dir（docs/proposal-x.md 不在 proposals/ 前缀内 ⇒ 不被 P9 排除）")
+    # ③ 两态都必须**不进判定面**（split_faces 是纯函数，这条律要有夹具而非只活在打印里）
+    mixed2 = [("l.md", "memory/2026-10-12.md", "ignored-log", "", "活文档", []),
+              ("docs/proposals/p.md", "docs/foo-skill.md", "proposal", "", "活文档", []),
+              ("l.md", "src/gone.mbt", "missing", "", "活文档", [])]
+    live2, mv2, ex2, _ = split_faces(mixed2, False)
+    cell("split-p8p9-out-of-verdict",
+         len(live2) == 1 and len(ex2) == 2 and live2[0][1] == "src/gone.mbt", True)
+    print("  ok  split-p8p9-out-of-verdict（判定面只留真正 missing 的 1 条，P8/P9 那 2 条进豁免态）")
+
+    # 9d) P8 的真源自证：`.gitignore` 现读结果本身也要能考（不写死 True）
+    cell("p8-gitignore-read-from-truth",
+         isinstance(_gitignore_excludes_daily_logs(), bool), True)
+    print("  ok  p8-gitignore-read-from-truth（排除依据是**现读 .gitignore**，不是写死常量）")
 
     # 9b) P7 豁免：外部宿主精确名单 / scripts/ `_` 前缀 ⇒ external/scratch，只出数不判红
     f8, _ = judge({"a.md": ["src/adapter.js"]}, set(), set())
