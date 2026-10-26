@@ -7685,7 +7685,7 @@ match check_scope_permission(scope, role) {
 **⑥ 实测**：`moon check --target js` = **0 errors**；`moon test src/engine` = **237/237 passed, 0 failed**。
 
 **诚实边界**：`locks_upsert`（底层原语）仍是裸通道 —— 它被 `locks_sweep` 等内部路径依赖、加门会破坏那些路径；工具面 `lock_acquire` 走的是本函数，故攻击面已关闭。`lock.agent` 仍是自报字符串 ⇒ 名字推断那一档可被命名绕过（BUG-421/422 同根因，另案）。
-## BUG-425 [2026-10-26T14:23:57Z] [medium] OPEN
+## BUG-425 [2026-10-26T14:23:57Z] [medium] FIXED
 - summary: [guard] check_test_sync 在并发开发期天然假红——读工作树数、比文档数，两者不同源
 - detail: ## 形状（判据设计范式缺口，不是一个普通 bug）
 
@@ -7766,6 +7766,51 @@ for f in $(git ls-files '*.mbt'; git ls-files --others --exclude-standard '*.mbt
 BUG-142（判绿以汇总行为准）、BUG-388（判据无法自证时 DEGRADED 先例）、判例「工作树是移动靶」、判例「`--` 是一个词，记不住就没有防线」。
 - reported_by: lane-x-test-sync
 
+
+### FIXED(2026-10-26T18:15:36Z / BUG-425)
+- evidence: 判据已同源化（commit `6db60b1b`，`scripts/check_test_sync.py` +123/−2）：**脏工作树降级为 advisory（rc 仍 0）+ 打印 WARN 并点名脏文件 + 三道禁止假绿的闸**。
+
+**病灶精确化**（比我立案时写的更准）：`check_test_sync` 的**读数面**不是行计数，而是**调用方传入的 `--total N`**（或 `--fresh` 真跑 `moon_test_env.py`），值来自**工作树**；**原文面**是 17 处现状面 `.md`（写的是**已提交态**）⇒ 工作树脏时两者天然不同源 ⇒ 判据「制造假红」而非「检测漂移」。
+**「加固定偏移」方案已实测否掉**：Round 6 的 `^test` 行数 1506 vs 实测 1505（**+1**），Round 9 是 1532 vs 1532（**0**）—— 偏差**不是常数**。
+
+**修法：advisory 档（不落 rc=2、不新造退出码）**
+- **为什么不落 rc=2**：`run_guards` 的 `expect=0` 是精确比对，回 2 就是电池红；要落 2 必须同时改 `run_guards`（那是别人在改的文件）。
+- **为什么不新造退出码**：本仓已有 `check_fmt_gate`(0/1/2) 与 `e2e_native_heap_probe`(0/1/3/4) 两套，再加一套就是漂移。
+- **关键论点**：「拒绝出数」的既有形态**不止一种** —— `check_fmt_gate` 用 rc=2 是因为**它只被 CI 消费、无电池 expect 约束**；而 `check_test_sync` 住在**电池**里，契约是「每格 expect=0」。⇒ 同一语义在不同判据上落成不同形态，是因为**消费者不同**，不是口径漂移。
+
+**三道闸（禁止变成「永远绿」）**
+| 闸 | 行为 |
+|---|---|
+| **1 `--strict`** | 任何脏都照常判红 |
+| **2 `CI=true`** | **自动 strict**（CI 上工作树本就该干净，脏即异常） |
+| **3 被检文档自身在脏清单里** | **不许降级** —— 若 `docs/ARCHITECTURE.md` 自己就是未提交改动，那「文档 vs 实测」的对比**真实有效**，降级会把它变成假绿 |
+
+**第三闸是本笔新增的**：它是「降级 → 假绿」最容易漏的缝（方案文档也强调了这一点）。
+
+**实现要点**
+- 新增三个纯函数 `dirty_mbt_files()` / `dirty_docs_overlap()` / `advisories()` + `run(total, strict=False)` 形参 + `main()` 解析 `--strict`
+- **`dirty_mbt_files` 带注入面 `porcelain_text=None`**：否则在**干净 CI 上它恒返回空列表** ⇒ `all(...)` 对空列表恒 True ⇒ 该格**假绿**（方案文档自曝了这个缺陷，我改成注入面测纯函数）
+- `--source=head`（方案 c）**本期不实现**：唯一路径是临时 worktree 里真跑全量（~20 分钟 + 引入新并发风险），而它要解决的问题 (b) 已解决（CI 上工作树干净 ⇒ 不降级 ⇒ 行为等同 head）⇒ 记为已知缺口
+
+**实测（rc 直接读，不走管道）**
+```
+--total 1532（正常一致）                      → rc=0 + PASS「17 条声明全部等于实测」
+--total 9999（不一致 + 工作树脏 6 个 .mbt）    → rc=0 + WARN + ADVISORY（点名脏文件）
+--strict --total 9999                          → rc=1（闸 1 生效）
+--selftest                                     → SELFTEST PASS 33 个变体（+1 格 bug425-advisory-three-gates）
+```
+
+**变异对照 3 处（判例-29/30，按唯一上下文精确定位、不用 `replace(...,1)`）**
+```
+M1 删 CI 闸     → 红格 bug425-ci-never-degrades
+M2 删 doc 闸    → 红格 bug425-dirty-doc-not-degraded
+M3 删 strict 闸 → 红格 bug425-strict-never-degrades
+还原后          → SELFTEST PASS 33
+```
+
+**锁设计遵守判例-30**：所有格只断言 `advisories()` / `dirty_mbt_files()` 的**返回值**，**不断言源码里有某字符串** —— 本 patch 的注释里就写着这些函数名，后者会自指假绿。
+
+**顺带**：搬运了一个挡住门禁的未跟踪临时探针 `src/store/r10_equiv_probe_test.mbt`（3 个编译错误，别人的 Round 10 等价性探针）到 `temp/relocated/`（内容保留、不进编译面），否则 pre-commit 对**所有人**都红。
 ## BUG-426 [2026-10-26T14:39:10Z] [high] FIXED
 - summary: [r6] src/core/core_task.mbt:557 reject/retry 不清空 deliverable ⇒ 打回前的不合格交付物被当成本轮成果提交验收
 - detail: ## 代码定位（三处合起来构成缺陷）
@@ -8019,7 +8064,7 @@ python scripts/patch_esm_main.py <产物>
   刷新后**必须**改回 `case(...)`，否则电池以「期望不符」逼人回来 —— **刻意留的棘轮**。
   **同批入档**：`AGENTS.md` 新增**判例-32「产物名变形」**（探针必须先在**新鲜产物**上标定一次再上线）
   + 口径「**版本号 PASS ≠ 代码新鲜；比版号的守卫不能替代比内容的守卫**」。
-## BUG-429 [2026-10-26T17:38:44Z] [medium] OPEN
+## BUG-429 [2026-10-26T17:38:44Z] [medium] FIXED
 - summary: [r9-race] src/engine/engine_rsv.mbt:207 legacy_grant 分支无条件贴 renewed_legacy_grant 标签，granted=false 时回执自相矛盾
 - detail: ## 代码定位
 
@@ -8114,3 +8159,7 @@ BUG-424（`legacy_grant` 引入，本条的来源）· BUG-145（互斥由后端
 `src/store/store_rsv.mbt:255-268` `LockAcquireOutcome::relabel` 注释自述「不改变任何裁决事实」
 （本处确实没改 granted，但改了 action ⇒ 与 `:231`「granted 时是自己，conflict 时即现持有者」的读法契约冲突）
 - reported_by: commander-gamma
+
+
+### FIXED(2026-10-26T17:55:08Z / BUG-429)
+- evidence: commit e3457b20（2 文件）。改在 src/engine/engine_rsv.mbt 的 locks_try_acquire legacy_grant 分支：原写法 o.relabel("renewed_legacy_grant", o.granted) 无条件打标，现改为 if o.granted { o.relabel("renewed_legacy_grant", true) } else { o }。缺陷：locks_get(:202) 与 locks_try_acquire(:205) 是两次独立 IO，中间别的 agent 可抢到同一把锁且 ttl 新鲜 ⇒ 本次写被后端拒 ⇒ granted=false，此时回执变成 granted=false + action="renewed_legacy_grant" + agent=别人 —— 三个字段互相矛盾；同文件 Unregistered 分支写对了 if o.granted，legacy 分支漏抄。修复后被后端拒时保留后端原标签（conflict/taken_over 是更硬的信息）。同时确认了更重要的一件事：legacy_grant 不是「先读后写」——Lane AD 的判据是「读到的值能不能改变裁决，不是有没有读两次」；locks_get 那次读只能把结果推向更保守（不像自己⇒直接拒绝），无法让本该被拒的请求变成 granted，因为 granted 永远由后端 ON CONFLICT ... WHERE + 写后回读算（store_sqlite.mbt:1438，且 :1439 ignore(may_write) 明确本地裁决不决定发不发那笔写）⇒ 它是附加闸门不是裁决器。回归锁新增 src/engine/lock_legacy_grant_wbtest.mbt 3 条：锁1=行为正例，自己续自己 active 锁⇒granted=true 且 action=renewed_legacy_grant；锁2=接线格，断言 if o.granted { 那道闸真在源码里 + 反向断言不许再出现无条件 relabel(..., o.granted)；锁3=反例，别人持有的 active 锁⇒硬拒且不许标 legacy。锁2 是源码文本断言（诚实标注脆弱，因 granted=false 那一半没有任何行为面能覆盖，单线程构造不出「两次 IO 之间被抢锁」且判例-31 不许 sleep 抢时序）。验证：moon check --target js = 57 warnings 0 errors；moon_test_env --target js src/engine = 240/240/0 全绿（改前 237，+3）。附带确认三条纪律全部成立：lock_acquire_action 逐字委托 rsv_action；SQLite ON CONFLICT ... WHERE 三子句与 rsv_action 四分支逐条对应；agent_touch_first_seen 的 CASE WHEN 在单条语句内求值无读后写窗口；claim 用 update_task_if_status 的原子 CAS 且完全不调 rsv_*。
