@@ -6900,3 +6900,15 @@ audit_permission 纳入 ns ACL 维度（返回 effective_allowed + 拒绝来源�
 ④ **只读对象 chmod 重试**：`.git/objects` 里文件带只读属性。新增 `_force_rm(func, path, exc_info)` 做 `os.chmod(path, stat.S_IWRITE)` 后重试本点，外层再 `time.sleep(0.3)` 让 git 子进程释放句柄后 `rmtree(onerror=_force_rm)` 重试一次。
 
 实测：`--selftest` = **SELFTEST OK（9 格：分类纯函数 6 档 + 真仓库端到端 3 支 clean/conflict/contained）**；跑前 Temp 残留 0 → 跑后残留 **0**（修复前每次泄漏 1 个）。⇒ 报告的两个缺陷（finally 不保证 + 静默吞失败）都已消除，且额外把「泄漏本体」也修掉了（不是只让它出声）。
+## BUG-410 [2026-10-26T01:29:09Z] [high] FALSE_POSITIVE
+- summary: --emit=ir-lz 自举 display 管线对含 embed/外联类型的输入编译失败（rustc E0599）：LZ 侧 IrType/Item 枚举缺 Ext / EmbedBlock 变体
+- detail: --emit=ir-lz 链路：build_ir_opt → src/ir/lz_codegen.rs::ir_module_to_lz_source 把 IR 数据序列化为 LZ 构造调用（display 逻辑完全由 LZ 侧 lz_ir_lib.lz 承担）→ lang-zone 编译 .lzlz → rustc → 运行输出 IR 文本，应与原生 --emit=ir 逐字节一致（main.rs:907 注释）。实测 11 个 DEMO 中 2 个（embed_tnr_demo.lz、extern_demo.lz）在 rustc 步报 error[E0599]: no variant named EmbedBlock/Ext found for enum Item/IrType，原生 --emit=ir 正常。
+
+根因：src/ir/types.rs 的 IrType 与 src/ir/node.rs 的 Item 已增 Ext/EmbedBlock 变体，lz_codegen.rs:961/403 会发射 IrType.Ext / Item.EmbedBlock(...)，但 LZ 侧 lz_ir_lib.lz 的对应枚举（IrType / Item）未镜像这些变体 → 生成 Rust 引用不存在的变体 → E0599。属"LZ IR 库是 Rust IR 模型子集、新变体未镜像"的系统性漂移。
+
+复现：./target/debug/lang-zone.exe DEMO/extern_demo.lz --emit=ir-lz（rustc E0599 Ext）；./target/debug/lang-zone.exe DEMO/embed_tnr_demo.lz --emit=ir-lz（rustc E0599 EmbedBlock）。
+交叉核对：_probes/cross_check_ir_lib.py 枚举 lz_ir_lib.lz 变体 vs lz_codegen.rs 发射，缺漏为 Item{EmbedBlock,ScriptMain} / Expr{EnumFieldGet,GenBuild,LitBigInt,LitComplex,LitInt128,Spread} / IrType{BigInt,Complex,Ext,Int128} / Pattern{EnumNamed}，共 13 个。
+reported_by: lead
+
+
+- false_positive(2026-10-26T01:30:38Z): 误报：report_bug 的 project_dir 相对 FIST-Mbt server cwd 且拒绝 .. ，无法指向 lang-zone 项目；本 bug 属 lang-zone，已如实记入 lang-zone/memory/bugs.md 为 BUG-466（提交 37395e7，11/11 DEMO --emit=ir vs --emit=ir-lz 逐字节一致）。FIST-Mbt 账本此条为误落。
