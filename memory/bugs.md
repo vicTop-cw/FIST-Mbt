@@ -7975,6 +7975,50 @@ python scripts/patch_esm_main.py <产物>
 - 文档：`AGENTS.md` 诊断纪律一条 + `docs/SOP.md` 部署面检查清单
 - 报告：`reports/2026-10-26-bug417-orphan-deploy-stale-report.md`
 - reported_by: lead(BUG-417 诊断副产物 + A/B 对照实证)
+
+- 追记（2026-10-27 **判据已落地；且立案时的一条根因前提被推翻并改写**）：
+  **判据交付**（commit `4e43f4dc`，5 个 scripts 文件）：
+  - `scripts/check_deployment_freshness.py`（**新建 657 行**）：部署产物 vs 源码 = **时间面 + 内容面**，
+    覆盖 PATH 垫片反解出的真 `.js` / 部署副本 / `dist/` / `_release/` / `--artifact`；`--selftest` **42 格**
+  - `scripts/_deployment_symbols.py`（新建 191 行）：探针**单一真源**（`KEY_SYMBOLS` + 变形探针 + `anchor_problems()` 反脱锚）
+  - `scripts/check_dist_snapshot.py`（+86/−13）：加**内容面格**，点名「版本对但代码旧」；`--selftest` 19 格
+  - `scripts/run_guards.py`（+21/−1）：电池登记 3 格（2 门禁 + 1 诊断）
+  - `scripts/README.md`（+11/−4）：索引 + `BATTERY-REGISTRATION` 锚点
+  **⭐ 根因前提改写（本条立案时写错的一处，必须更正）**：
+  我立案时写「三份产物都 `grep` 不到修复符号」，**那个判断方法本身是错的** ——
+  MoonBit 的 JS 产物把标识符里的 `_` **逐字翻倍**：
+  ```
+  grep -c  'omega_orphan_of_archived_parent'        _build/js/debug/.../cli.js → 0    ← 裸串
+  grep -cE 'omega_+orphan_+of_+archived_+parent\('  同上                      → 3    ← 容忍变形
+  实际: function _M0FP411vicTop_…6engine35omega__orphan__of__archived__parent(t)
+  ```
+  ⇒ **裸 substring 探针会把新鲜产物判成旧的（假红）**。所以判据改成「容忍 `_`→`_+` 且要求紧跟 `(`
+  （顺带挡掉 bundle 里大量工具名**字符串**）」，并新增 `anchor_problems()` 每次现查
+  「今天还有没有 `fn <name>(` 定义（剔注释行）」⇒ 脱锚 **rc=4「尺子坏了」**，不是「产物旧」。
+  **判据实测读数**（rc=1，4 面：3 FAIL + 1 WARN）：
+  ```
+  源码基线 max(mtime)=10-27 01:23 @ src/store/store_rsv.mbt（179 份）
+    [WARN] PATH fist-mbt.cmd → _build/.../cli.js      01:19      内容 3/3  落后 4 分钟（构建缓存，按需重建）
+    [FAIL] PATH fist-mbt ／部署副本 → %LOCALAPPDATA%/… 10-26 11:59 内容 2/3  落后 13.4h｜缺 orphan
+    [FAIL] dist/fist-mbt.js                           10-24 06:16 内容 1/3  落后 2.8 天｜缺 orphan+strip
+    [FAIL] _release/js/fist-mbt.js                    10-18 16:34 内容 1/3  落后 8.4 天｜缺同上
+  ```
+  **内容面读数自带年代信息**：剩 `omega_enabled` ⇒ 落后到「10-22 之后」；缺 `strip_plan_annotations` ⇒ 早于 10-22；
+  缺 `orphan` ⇒ 早于 10-26 20:40。**三个符号按年代梯度排**（`omega_enabled` 基线对照 → strip（10-22）→ orphan（10-26 20:40 现场符号））。
+  **变异对照 5 处**（改坏⇒必红，还原后 sha256 一致）：内容面失明红 4 格 / 时间面失明红 3 格 /
+  拆掉变形容忍红 5 格 / 拆掉缓存降级红 1 格 / 拆掉面去重红 1 格。F 族是**真夹具端到端**
+  （真文件 + `os.utime` 设 mtime，**不用 sleep** —— 判例-31）。
+  **两级严重度（刻意设计，不是放宽）**：内容面缺符号（任何面）+ **部署面**时间落后 ⇒ FAIL；
+  `_build/` **构建缓存**时间落后 ⇒ 只 WARN（改一行源码就落后，判红＝恒红；恒红判据没人读），
+  **但内容面对缓存照样硬判**（本机 3/3 通过，正好证明它不是恒红）。
+  **rc 契约**：`0` 全新鲜 / `1` 有产物落后 / `2` 无可判面（拒绝判绿）/ `4` 探针脱锚（尺子坏了）。
+  **遗留（诚实标注）**：① CI/Linux 无垫片 ⇒ rc=2（想在 CI 有读数就 `--artifact`）；
+  ② 探针会腐烂（rc=4 自曝，但只在被跑时才喊）；③ **release 构建 DCE 风险未标定**（本机 `_release/` 是 10-18 旧物，
+  没在真 release 产物上验过 3/3，`refresh_dist.py` 重建后应复跑）；④ mtime 只是代理（`git checkout` 会刷源码 mtime ⇒ 假红）；
+  ⑤ `dist/` 刷新是人的决定（5MB 级大 diff）⇒ 电池里登记为 `expected(...,1,kind="known-red")`，
+  刷新后**必须**改回 `case(...)`，否则电池以「期望不符」逼人回来 —— **刻意留的棘轮**。
+  **同批入档**：`AGENTS.md` 新增**判例-32「产物名变形」**（探针必须先在**新鲜产物**上标定一次再上线）
+  + 口径「**版本号 PASS ≠ 代码新鲜；比版号的守卫不能替代比内容的守卫**」。
 ## BUG-429 [2026-10-26T17:38:44Z] [medium] OPEN
 - summary: [r9-race] src/engine/engine_rsv.mbt:207 legacy_grant 分支无条件贴 renewed_legacy_grant 标签，granted=false 时回执自相矛盾
 - detail: ## 代码定位
