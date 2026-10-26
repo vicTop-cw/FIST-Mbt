@@ -7438,6 +7438,24 @@ BUG-407 已标 FIXED，当时验证的是「**真分库**场景」：`store_list
 ## 连带发现（同一次实测）
 
 `archive(force=true)` 对「根任务 + 描述残留 `[omega:required]`」的僵尸（T0r741/T0r745）**永远过不了 Omega 门** —— 因为 `omega_orphan_of_archived_parent` 有一格「根任务无父 ⇒ 不豁免」（`src/engine/omega_strong.mbt:95-99`）。而这类僵尸的修复目标（BUG-389）已 FIXED，它们的存在意义已消失。这一条与 BUG-417 同族但方向不同（BUG-417 是「有父已归档」的孤儿，本条是「无父的根僵尸」）。
+
+- 追记（2026-10-27 **C 案已落地，但本条仍 OPEN——C 案 ≠ 关闭 A/B 案**）：
+  **C 案（止血 + 可诊断）三档 + A 案只读最小格**已落地（commit `8d9d3bb5`）：
+  ① `store_open(ns)` 回执加 `warning`（逐字写明「主库 148 条带此 ns 标签 / 本 ns 库 0 条」
+  + 两条出路）与结构化读数 `ns_routing{bug,main_db_tasks,ns_db_tasks}`，**合法情形回空串（拒绝恒阳性）**；
+  ② `get` 错误文案：主库同 id 任务 ns 标签 == 请求 ns ⇒ 报「任务在**主库**、不在 ns 库」+ 三条出路，
+  主库也没有 ⇒ 保持原文案（反向自证）；
+  ③ `archive` 写路径错误文案增强但**绝不回落**，且只在 `not found` 支换文案（Omega/状态门原样透出）；
+  ④ `get(resolve_from_main=true)`（**默认 false**）做只读回落，回执带 `resolved_from:"default(main)"`。
+  **实测回执**：`store_open({"namespace":"bugs"})` → `"warning":"BUG-420：主库 fist-mbt.db 里有 148 条
+  带 ns 标签 'bugs' 的历史任务，而本命名空间库 .fist-mbt/data/bugs.db 为 0 条 —— **按 ns 查询会找不到它们**…"`。
+  **7 条锁**（store 3 + server 4）+ 变异对照（改坏早退条件/探针相等判定 ⇒ 3 红，恢复全绿）。
+  **为什么仍 OPEN**：C 案只补「呈现层两个信息缺口」，不改数据也不改路由语义。
+  **A 案完整版**（读取侧回落 + 按 ns 过滤，`list` 也覆盖、写路径明确定义）需 owner 先裁隔离语义
+  ——兜底会让 A ns 客户端查到 B ns 数据；**B 案**（迁移 2271 条）仍是正解、仍待 owner 裁。
+  **C 案不阻碍 B 案**：迁移完成后 `warning` 自动消失（`main_db_tasks` 归零）。
+  **未覆盖面**：`list`（返回体是数组，加 warning 会改合约形状）、其余 ns 路由工具
+  （claim/execute/submit/verify/…/dag_*）仍是原文案（探针+文案可直接复用）。
 ## BUG-421 [2026-10-26T14:14:16Z] [medium] OPEN
 - summary: [authz] BUG-418 残留：整名 `leader` / `lead` 仍买到 Leader 军官面（子串面已关，单词面还在）—— 与「只有 human_steward/human 算特权」的口径不一致，属政策取舍待裁
 - detail: ## 现象（BUG-418 修法的残留，2026-10-26 Lane Q 实测）
@@ -7815,7 +7833,7 @@ BUG-29（done_no_artifact 假绿档）· OMEGA 成果复验门（`omega_strong.m
 
 ### FIXED(2026-10-26T15:24:47Z / BUG-426)
 - evidence: commit 949fff44（2 文件）。改在 src/core/core_task.mbt:580 的 Task::retry：Rejected => Ok({ ..self, status: Executing, deliverable: "" })，只清 deliverable、保留 assignee（retry 是「同一个人重做」，reopen 才是「回认领池」该清 assignee）。缺陷链：execute(A)→submit→reject→retry→submit 走完一圈后 deliverable 仍是 A 且 submit 不查新鲜度 ⇒ 旧废品被当成本轮成果提交验收。三处合起来构成：reject(:557) 只改 status + 追加打回原因不动 deliverable；retry(:580) 只改 status 同样不动；FistEngine::submit(engine.mbt:599) 无 deliverable 新鲜度检查。决定性对照（证明是遗漏不是设计选择）：同一条 Rejected 分支上兄弟方法 Task::reopen(:549) 清了 deliverable: "" + assignee: None，而 retry 两者都没清。危害链：omega_strong.mbt:642 用 deliverable.trim()=="" 判「尚无交付物」⇒ 旧废品被当成果复验判绿即真了账；board_ascii.mbt:252 假绿档系统性低估。回归锁新增 src/core/core_task_retry_deliverable_wbtest.mbt 3 条：锁1=submit→reject→retry 后 deliverable 必须为空，同时断言 reject 时交付物还在（打回要留证据不该在 reject 阶段清）；锁2=防过度修复，retry 后 assignee 必须仍是 exec-1；锁3=对照，reopen 与 retry 语义不同不可混（reopen 清 deliverable 且清 assignee，retry 清 deliverable 但保留 assignee）。验证：moon check --target js = 51 warnings 0 errors；moon_test_env --target js src/core = 21/21/0 全绿。变异实测：把 deliverable: "" 从 retry 删掉（退回原实现）⇒ 21/20/1（锁1 bug426_retry_clears_deliverable 变红），恢复后复跑 21/21/0。未做另立：BUG-427（reject 无上限追加 description，T0r636.4.2 单次打回 4.7KB）；submit 端兜底未补（需要「交付物时间戳 vs 本轮开始时间」的语义定义）。
-## BUG-427 [2026-10-26T14:55:38Z] [medium] OPEN
+## BUG-427 [2026-10-26T14:55:38Z] [medium] FIXED
 - summary: [r6] src/core/core_task.mbt:557 reject 把打回原因无上限追加进 description ⇒ 污染 triage/drift_check/supervisor 的进料面
 - detail: ## 代码定位
 
@@ -7880,6 +7898,9 @@ description 保持「任务原始意图」不变。理由：description 的语�
 `engine_triage.mbt` 能力抽取 · `goal_drift_check`（R100）· `supervisor_status` 截断口径
 - reported_by: commander-gamma
 
+
+### FIXED(2026-10-26T17:06:02Z / BUG-427)
+- evidence: commit 4111bd2e（3 文件）。改在 src/core/core_task.mbt 的 Task::reject，加两道闸：(1) 滚动窗口 strip_reject_tail —— 剥掉尾部已有的 [打回原因: …]（只留最近 1 次），打回 N 次长度不随 N 线性增长；(2) UTF-8 安全截断 clip_utf8(reason, REJECT_REASON_CAP=200) —— 按字符边界截断不产生半个汉字。实测 T0r636.4.2 单次打回即 4737 字节；污染面：task_triage 能力抽取（cap_match 用 desc.contains(want)）、goal_drift_check 的 Jaccard（@evolve.tokens(get_description())）、supervisor_status 200 字节截断三处共同进料面。依赖面已核不新增依赖：strip_reject_tail 用自实现反向查找（本仓无 String::rev_find 先例，grep rev_find/rfind 为空）；clip_utf8 用 @encoding.encode/decode_to（core/moon.pkg:3 是 moonbitlang/x/encoding 不是 core/encoding/utf8，与既有 desc_clip 同套 API）。core/moon.pkg 加 moonbitlang/x/fs 到主 import（锁4 接线格要读源码；实测 for "test" 在本包 wbtest 不生效，同 engine 包 BUG-413 踩过的坑）。回归锁新增 core_task_reject_cap_wbtest.mbt 4 条：锁1=单条超长原因（~2000 字节）增量 ≤ REJECT_REASON_CAP+固定开销(11字节) 且原始描述完整保留；锁2=核心，打回 5 次后第5次与第1次长度差 ≤ 20 字节（无窗口版会差 ~120）；锁3=对照，不含打回原因的正常描述不被误伤；锁4=变异对照，断言源码里 strip_reject_tail(self.description) 与 clip_utf8(reason, REJECT_REASON_CAP) 真在。验证：moon check --target js = 56 warnings 0 errors；moon_test_env --target js src/core = 25/25/0 全绿（改前 21，+4）。变异实测：两闸退回裸拼接 ⇒ 25/22/3（锁1/2/4 三条全红），恢复后复跑 25/25/0。未做另立：独立历史表（根治，动 schema）；存量清理（库里已有的超长 description 如 T0r636.4.2 4737 字节本笔不清，修复只保证不再增长，历史数据需一次性 migration）。
 ## BUG-428 [2026-10-26T15:01:12Z] [high] OPEN
 - summary: [deploy] 部署产物陈旧但版本守卫 PASS —— `dist/fist-mbt.js`(Oct 24)、`_release/js/fist-mbt.js`、PATH 上的 `AppData/Local/FIST-Mbt/fist-mbt.js`(11:59) 三份都 grep 不到 BUG-417 的修复符号，而 `check_dist_snapshot.py` 只比版本字符串判 PASS ⇒ 把「代码改了但 MCP 行为不变」误诊成「逻辑缺陷」
 - detail: ## 现象（2026-10-26 BUG-417 诊断的副产物，A/B 对照实证）
@@ -7954,3 +7975,98 @@ python scripts/patch_esm_main.py <产物>
 - 文档：`AGENTS.md` 诊断纪律一条 + `docs/SOP.md` 部署面检查清单
 - 报告：`reports/2026-10-26-bug417-orphan-deploy-stale-report.md`
 - reported_by: lead(BUG-417 诊断副产物 + A/B 对照实证)
+## BUG-429 [2026-10-26T17:38:44Z] [medium] OPEN
+- summary: [r9-race] src/engine/engine_rsv.mbt:207 legacy_grant 分支无条件贴 renewed_legacy_grant 标签，granted=false 时回执自相矛盾
+- detail: ## 代码定位
+
+`src/engine/engine_rsv.mbt:202-212`（`locks_try_acquire` 的 `legacy_grant` 特判，BUG-424 引入，`f36dd190`）：
+
+```moonbit
+match self.store.locks_get(scope) {
+  Some(existing) =>
+    if existing.agent_of() == agent && existing.status_of() == "active" {
+      let o = self.store.locks_try_acquire(lock)
+      // 只改标签不改裁决：granted 保持后端算出的那个
+      o.relabel("renewed_legacy_grant", o.granted)     // ★ 无论如何都叫 renewed_legacy_grant
+    } else {
+      @store.LockAcquireOutcome::denied_by_permission()
+    }
+  None => @store.LockAcquireOutcome::denied_by_permission()
+}
+```
+
+## 缺陷（**不是竞态，是标签与事实相反**）
+
+`o.relabel("renewed_legacy_grant", o.granted)` 把 action **无条件**改成 `"renewed_legacy_grant"`，
+**即使后端返回 `granted=false`（冲突拒绝）**。
+
+⇒ 回执会同时出现：
+```
+granted         = false
+action          = "renewed_legacy_grant"     ← 词面意思是「续期成功」
+agent           = <现持有者，别人>
+violation_logged= true
+```
+**调用方读 `action` 会以为续上了，读 `granted` 才知道没续。两个字段互相矛盾。**
+
+## 触发条件（时序，两次独立 IO 之间）
+
+`:202 locks_get` 与 `:205 locks_try_acquire` 是**两次独立的库访问**，中间存在真实窗口：
+
+```
+t0  agent A（角色被降为 Executor）调 locks_try_acquire，锁是自己且 active
+      权限门 ⇒ RoleDenied（A 已降级）
+t1  :202 locks_get ⇒ Some(agent=A, status=active) ⇒ 进 legacy 分支
+    ⚠️ 此刻 A 认为「我可以续」
+t2  agent B（有权限）抢到同一把锁：:205 后端 ON CONFLICT
+      WHERE(A==B? no | status<>active? no | A.ttl < B.ts? 若 ttl 未过 ⇒ no)
+      ⇒ 写被拒 ⇒ B 得 conflict
+t3  agent A 在 :205 执行 locks_try_acquire
+      后端 ON CONFLICT 此刻 cur=(B, active, ttl_B)
+      WHERE(B==A? no | status<>active? no | ttl_B < A.ts? 视 ttl)
+      ① 若 ttl_B < A.ts ⇒ 写成立 ⇒ 写后库主=A ⇒ granted=**true** ⇒ 标签与事实一致 ✅
+      ② 若 ttl_B >= A.ts ⇒ 写被拒 ⇒ 写后库主=B ⇒ granted=**false**
+         ⇒ 回执 action 仍被写成 "renewed_legacy_grant" ⇒ **★ 缺陷触发**
+```
+
+**⇒ 情形 ② 可达且不罕见**（B 刚拿到锁、ttl 新鲜时）。
+
+## 为什么后端裁决挡不住 —— 它挡的是「裁决」，不是「标签」
+
+后端 `locks_try_acquire`（`store_sqlite.mbt:1438`）的 `ON CONFLICT ... WHERE` + 写后回读
+`lock_outcome_after_write` **正确**地算出 `granted=false`；
+**应用层随后把这个正确的拒绝重新贴了一个「成功」的标签。**
+⇒ **这是应用层逻辑缺陷，后端不负责也挡不住。正是「后端挡不住的应用层逻辑」那一类。**
+
+## 建议修法（二选一，建议 A）
+
+**A（推荐，最小）**：只在 `granted=true` 时改标签，拒绝时保留后端的 `conflict`：
+
+```moonbit
+let o = self.store.locks_try_acquire(lock)
+if o.granted {
+  o.relabel("renewed_legacy_grant", true)
+} else {
+  o                    // 保持 conflict —— 那是更硬、更真的信息
+}
+```
+理由：与同文件 `Unregistered` 分支的既有写法**完全同构**
+（`:213-220`：`if o.granted { o.relabel("unregistered", true) } else { o }`）——
+**`legacy_grant` 分支漏抄了这个 `if`，属实现疏漏而非设计选择。**
+
+**B（更信息量）**：拒绝时给一个区分标签，如 `"legacy_grant_conflict"`，让 legacy 量能同时统计
+「续期成功」与「legacy 续期被拒」两档。
+
+## 附：裁决级 TOCTOU **不存在**（本单同批复核结论，不必改）
+
+同一段代码的**读**只决定「进不进 legacy 分支」，**不决定 granted 真假**：
+分支内的写仍由后端原子语句 + 写后回读裁决。
+⇒ 就「裁决」而言**不是先读后写**，不违反 BUG-145 纪律。
+**唯一的问题是标签**，即本条。
+
+## 关联
+
+BUG-424（`legacy_grant` 引入，本条的来源）· BUG-145（互斥由后端定纪律——**本处未违反**）·
+`src/store/store_rsv.mbt:255-268` `LockAcquireOutcome::relabel` 注释自述「不改变任何裁决事实」
+（本处确实没改 granted，但改了 action ⇒ 与 `:231`「granted 时是自己，conflict 时即现持有者」的读法契约冲突）
+- reported_by: commander-gamma
