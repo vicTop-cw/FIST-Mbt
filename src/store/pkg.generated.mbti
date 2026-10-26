@@ -197,6 +197,7 @@ pub struct SqliteStore {
   db : @sqlite.Database?
 }
 pub fn SqliteStore::agents_acl_check(Self, agent_id~ : String, ns~ : String, write~ : Bool, current_pid~ : Int32) -> Result[Unit, String]
+pub fn SqliteStore::agents_acl_count_writable(Self, ns~ : String) -> Int32
 pub fn SqliteStore::agents_acl_ensure(Self, agent_id~ : String, ns~ : String, now~ : String) -> Result[Unit, String]
 pub fn SqliteStore::agents_acl_grant(Self, agent_id~ : String, ns~ : String, can_read~ : Bool, can_write~ : Bool, pid_bound~ : Bool, now~ : String, by~ : String) -> Result[Unit, String]
 pub fn SqliteStore::agents_get(Self, String) -> AgentRecord?
