@@ -1,0 +1,210 @@
+# Lane K · 文档漂移修复报告（测试总数 1457 → 1460）
+
+- **日期**：2026-10-26
+- **执行人**：司令-ε（Lane K）
+- **目标**：把描述当前能力的文档里声明的测试总数 `1457` 改成真基线 `1460`，使 `check_test_sync` 转 PASS
+- **边界**：**只改文档**，未改 `src/` `scripts/` 任何文件
+
+---
+
+## 一、结论
+
+| 项 | 前 | 后 |
+|---|---|---|
+| `check_test_sync --total 1460` | **FAIL**（R1 17 条 + R2 5 条 + R3 1 条） | ✅ **PASS** |
+| 改动处数 | — | **21 处 / 9 个文件** |
+| 明确不改 | — | **8 处（历史读数）** |
+
+```
+前：FAIL 测试总数一致性守卫（实测 1460，扫描 141 份现状文档，0 条声明一致）
+后：PASS 测试总数单一真源一致：实测 1460；扫描现状面 141 份文档，17 条声明全部等于实测；
+     must-carry 5 份齐全；豁免 26 条全部有效
+```
+
+**任务卡给的「14 处」是估计值，实测 21 处**（R1 判据逐行报 17 条 + 徽章 2 处 + `scripts/scoring_rubric.md` 与 `scripts/README.md` 的 2 处语境差异，见 §4）。
+
+---
+
+## 二、证据：改了哪 21 处（文件:行 前后）
+
+### 2.1 README.md（5 处）
+
+| 行 | 前 | 后 |
+|---|---|---|
+| 8 | `tests-1457%2F1457-brightgreen` | `tests-1460%2F1460-brightgreen` |
+| 13 | `以 JS 目标 1457 项测试全绿` | `以 JS 目标 1460 项测试全绿` |
+| 27 | `= **1457/1457**（2026-10-23 Windows 实测…` | `= **1460/1460**（2026-10-26 Windows 实测…` |
+| 51 | `→ 1457/1457 零回归` | `→ 1460/1460 零回归` |
+| 122 | `Total tests: 1457, passed: 1457` | `Total tests: 1460, passed: 1460` |
+
+### 2.2 AGENTS.md（3 处）
+
+| 行 | 前 | 后 |
+|---|---|---|
+| 177 | `实测清理后全仓 **1457/1457 passed, rc=0**` | `**1460/1460 passed, rc=0**` |
+| 186 | `= **1457/1457**（2026-10-23 Windows 本机实测…` | `= **1460/1460**（2026-10-26 …` |
+| 211 | `本轮 1457/1457` | `本轮 1460/1460` |
+
+### 2.3 README_EN.md（7 处）
+
+| 行 | 前 | 后 |
+|---|---|---|
+| 9 | `tests-1457%2F1457-brightgreen` | `tests-1460%2F1460-brightgreen` |
+| 14 | `pass **1457/1457 tests on the JS target** (…measured 2026-10-23)` | `**1460/1460**…` `(measured 2026-10-26)` |
+| 26 | `Total tests: 1457, passed: 1457` | `1460, passed: 1460` |
+| 86 | `re-runs the 1457-test JS suite` | `the 1460-test JS suite` |
+| 110 | `- **1457/1457** tests green…re-confirmed 2026-10-23` | `- **1460/1460**…re-confirmed 2026-10-26` |
+| 112 | `` `check_test_sync` (1457 aligned `` | `` (1460 aligned `` |
+| 131 | `1457/1457 measured on Windows` | `1460/1460 measured on Windows` |
+
+### 2.4 其余五个文件（各 1 处）
+
+| 文件:行 | 前 | 后 |
+|---|---|---|
+| `README.mbt.md:9` | `JS 端 **1457/1457**` | `JS 端 **1460/1460**` |
+| `ARCHITECTURE.md:81` | `= 1457/1457（2026-10-23 Windows 实测，权威门槛）` | `= 1460/1460（2026-10-26 …）` |
+| `docs/SOP.md:38` | `全量 = 1457/1457 绿` | `全量 = 1460/1460 绿` |
+| `docs/agent-map.md:10` | `（**1457 项全绿**，2026-10-23 Windows 实测）` | `（**1460 项全绿**，2026-10-26 …）` |
+| `docs/deliverable.md:18` | `**`moon test --target js` 1457/1457**（2026-10-23 …）` | `…1460/1460**（2026-10-26 …）` |
+| `scripts/scoring_rubric.md:8` | `JS 目标测试全绿（1457/1457，…）` | `（1460/1460，…）` |
+
+> 上表 6 行 + 前面 5+3+7 = **21 处**。
+
+---
+
+## 三、明确不改的 8 处及理由（**历史读数，改了就是伪造历史**）
+
+任务卡的硬约束：`reports/2026-10-2*-*.md` 里的 1457 是**当时的真实读数**，不得改。
+我把判断标准推广为：**凡「描述了某一时刻发生过什么」的文本，一律不动。**
+
+### 3.1 历史报告（7 处，7 个文件）
+
+| 文件:行 | 原文语境 | 为何不改 |
+|---|---|---|
+| `reports/2026-10-25-planB-git-compaction-runbook.md:154` | `# 基线 N = 1457（2026-10-23 实测；执行时以当场 HEAD 的真实数为准，不抄旧数）` | 那是**该 runbook 的基线快照**，且原文已写明「执行时以当场为准」—— 它自己已经防了误用 |
+| `reports/2026-10-25-planB-git-compaction-runbook.md:186` | `| moon test | 1457 passed |` | 该 runbook 的执行记录表 |
+| `reports/2026-10-25-pr-batch-merge-and-bug407-408-report.md:18` | `| moon test（js） | 1457/1457 | **1457/1457**（零回归） |` | 那轮合并的**当时读数** |
+| `reports/2026-10-25-pr-batch-merge-and-bug407-408-report.md:67` | `→ Total tests: 1457, passed: 1457, failed: 0` | 当时命令输出**原文回显** |
+| `reports/2026-10-25-scout-epsilon-fresh-escape.md:101` | `PASS 徽章一致：README tests-1457%2F1457 == 快照 @ 2026-10-25 06:02:56` | 我那轮侦察的**实测输出**（当时确实读到 1457） |
+| `reports/2026-10-25-scout-epsilon-fresh-escape.md:106` | `PASS 测试总数单一真源一致：实测 1457；…17 条声明全部等于实测` | 同上，**当时的真实结论** |
+| `reports/2026-10-25-stage3-prerequisites-checklist.md:238` | `# 必须 Total tests: 1457, passed: 1457, failed: 0` | 该 checklist 的**通过基线**（写死当时的门槛，改了就换了门槛） |
+| `reports/2026-10-26-full-test-baseline-report.md:22` | `| check_test_sync | ❌ **FAIL**（文档写 1457，真基线 1460）` | **本 lane 的上游报告**，它记录的就是「文档写 1457」这个事实 |
+
+> **共 8 处**（planB 2 + pr-batch 2 + scout 2 + stage3 1 + baseline 1）。
+
+### 3.2 `scripts/README.md:49`（1 处，**不属于历史报告但也未改**）
+
+```
+**判例-25（2026-10-24，真源是「可过期快照」的假绿）**：…
+实测 `temp/pt27.log` 停在 1455（19:54 手跑一次后再无人跑），而现状 1457，判据却 PASS 绿。
+```
+
+**为何不改**：这是**判例-25 的案情叙述**——它讲的正是「当时快照停 1455、现状 1457、
+判据却报绿」这起事故。把 1457 改成 1460，等于**篡改事故记录**，判例本身就不成立了。
+判据也同意：`check_test_sync` 的 R1 扫描**没有报这一行**（它的正则要求 `N/N` 或 `N 全绿`
+等「声明现状」的形态，而这里是叙述句）。
+
+> ⇒ 所以**实际枚举到 84 处 `1457`，其中 21 处是现状声明（已改）、8+1 = 9 处是历史叙述（不改）**，
+> 余下 54 处在 `memory/bugs.md`（6 处）等历史面，同样不改。
+
+---
+
+## 四、分析：为什么任务卡说 14 处、实测 21 处
+
+| 来源 | 计数 |
+|---|---|
+| 任务卡给的 | 14（8 处 `1457/1457` + 6 处 `1457`） |
+| 判据 R1 逐行报的 | **17 条**（同一行 `AGENTS.md:177` 被两种正则各报一次，故 17 条 ≠ 17 行） |
+| 我实际改的 | **21 处 / 9 文件** |
+
+**差异来源**：
+1. **徽章 URL 里的 `%2F` 形态**（`tests-1457%2F1457`）—— 人眼扫 `1457/1457` 容易漏，判据 R2 会抓；
+2. **`scripts/scoring_rubric.md:8`** —— 它在 `scripts/` 下但**是文档**，任务卡的「`docs/*.md`」
+   列表没列它，但判据 R1 报了它（它是 must-carry 面之一）；
+3. **`scripts/README.md:49`** —— 判据**不报**，我**也不改**（历史叙述，见 §3.2）。
+
+> ⇒ **结论：判据的扫描面比任务卡描述的更准。** 建议后续同类任务直接以判据 R1/R2 输出为清单，
+> 不要依赖人工估计的处数。
+
+---
+
+## 五、附加核查：`moon_test_env.py` 的 ROOT 硬编码（**只核不修**）
+
+### 5.1 Lane F 报的问题
+
+> `scripts/moon_test_env.py:113` 把 `ROOT` 硬编码为脚本目录、**忽略 cwd** ⇒
+> 在副本树跑隔离测试会静默测主树。
+
+### 5.2 核查结论：**该问题已被 BUG-416 修复，`--root` 参数已存在且带校验**
+
+`scripts/moon_test_env.py:113-116` 现在是这样写的（**带完整自述**）：
+
+```python
+DEFAULT_MOONC_SHIM = os.path.join(os.path.expanduser("~"), ".moon-shim", "shim.exe")
+# BUG-416：本常量是「脚本自身所在仓库」的根，**与 cwd 无关**——这正是它作为缺省值的原因
+# （本入口被 AGENTS 定为常驻入口，习惯上从仓库任意位置调用，缺省必须落到本仓，而不是调用者站的地方）。
+# 但「与 cwd 无关」同时意味着：**在副本 / `git archive` 导出树里跑本脚本，缺省仍会去测本仓**，
+# 隔离"从未生效"。要测别的树请显式传 `--root <path>`（见 parse_root / main）。
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+```
+
+配套函数 `resolve_root(explicit, default=ROOT)`（第 121 行）+ `parse_root(argv)`（第 136 行），
+且 `--selftest` 里有 `parse-root-space-form` 等格（第 355-356 行）。
+
+**实测**：
+```
+ROOT = E:\IDEProjects\AI\FIST-Mbt
+resolve_root(None)                  = E:\IDEProjects\AI\FIST-Mbt   ← 缺省=本仓，零回归
+resolve_root("E:/tmp/faketree")     = None                        ← 路径不存在⇒拒绝（有校验）
+```
+
+### 5.3 判定
+
+| 项 | 结论 |
+|---|---|
+| Lane F 的描述是否仍成立 | **部分过时**——「硬编码为脚本目录」仍对，但「**忽略 cwd**」已是**设计意图**（常驻入口要能从任意位置调），且**已给显式 `--root` 出口** |
+| 是否会在副本树静默测主树 | **缺省仍会**（这是保留行为），但**不是静默**——注释明写、且给了 `--root` |
+| 建议 | **不需要改**。若要更保险，可让 `moon_test_env.py` 在检测到「cwd 不在 ROOT 子树」时**打印一行提示**（如 `注意：在 <cwd> 调用，缺省仍测 <ROOT>；要测别处请用 --root`）。这是**可观测性增强**，不是缺陷修复 |
+
+---
+
+## 六、缺口与风险
+
+1. **基线 1460 来自 Lane F 的隔离树实测**（`reports/2026-10-26-full-test-baseline-report.md` @ `d46845ae`）。
+   我**没有自己重跑** `moon test`（约 7~9 分钟，且本单边界是改文档）。⇒ 若该基线本身有误，
+   这 21 处会一起错。**建议下次跑全量时顺带复核 1460 这个数。**
+2. **`scripts/README.md:49` 里的 1457 我判断为历史叙述不改**——这是我的解释，判据也同意（不报它）。
+   若有人希望它也更新，那是改写判例-25 的案情，需 owner 裁决。
+3. **8 处历史读数一律不改**，判据当前也不报它们（R1 的扫描面只含 must-carry + 现状面，
+   `reports/` 在 `HISTORY_DIR_PREFIXES` 豁免内）。
+4. **`check_badge` 未跑**——它的徽章比对依赖快照/`--fresh`（7~9 分钟）。本单改了徽章那两行，
+   若快照是旧的会报 SNAPSHOT-STALE。**这属于正常行为**，下次 `--fresh` 跑即可。
+
+---
+
+## 七、可复现命令
+
+```bash
+# 前后两次判据读数
+python scripts/check_test_sync.py --total 1460      # 前 FAIL / 后 PASS
+
+# 全量枚举（84 处）
+git grep -c '1457' -- '*.md'
+
+# 当前能力文档的精确行号（21 处来源）
+git grep -n '1457' -- README.md AGENTS.md README_EN.md README.mbt.md ARCHITECTURE.md \
+    docs/SOP.md docs/agent-map.md docs/deliverable.md scripts/scoring_rubric.md
+
+# 附加核查
+sed -n '110,120p' scripts/moon_test_env.py
+```
+
+## 八、建议入档位置
+
+| 项 | 位置 |
+|---|---|
+| 本报告 | `reports/2026-10-26-test-count-doc-sync-report.md` |
+| 基线复用 | `reports/2026-10-26-full-test-baseline-report.md`（Lane F） |
+| 附加核查结论 | 建议并入 BUG-416 追记（「`--root` 出口已存在，Lane F 的描述部分过时」） |
+
+**来源**：任务卡（统帅 Lane K 派工）、`scripts/check_test_sync.py`、`scripts/moon_test_env.py`（BUG-416 注释）
