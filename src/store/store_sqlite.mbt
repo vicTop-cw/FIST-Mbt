@@ -2753,7 +2753,23 @@ pub fn SqliteStore::agents_register(
   match self.db {
     None => Err("sqlite store 未打开")
     Some(db) => {
-      let sql = "INSERT INTO agents (agent_id, agent_type, role, soldier, pid, pubkey_fp, first_seen, last_seen, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active') ON CONFLICT(agent_id) DO UPDATE SET pid=excluded.pid, last_seen=excluded.last_seen, status='active'"
+      // BUG-423：`ON CONFLICT` 必须**防降级**。
+      //
+      // 原实现只刷 `pid`/`last_seen`/`status`、**完全不碰 `role`** —— 本意是
+      // 「防低权路径改高权角色」，但副作用是「**第一次出现的 role 终生有效**」，
+      // 而第一次出现往往来自低权路径（claim/execute 的 `agent_touch_first_seen`
+      // 对任意 assignee 写 `role="Executor"`）。
+      //
+      // ⇒ 一旦有人以 `human_steward` 作为 assignee 认领过任务，那个身份就被永久
+      // 固定为 Executor；而 BUG-418 的修法让角色判定**优先读 `agents.role`**
+      // ⇒ **合法统帅本人订自己的独占面会被拒**（`src/store/store_sqlite.mbt`）。
+      //
+      // 修法：`role` 取「库里现值 vs 本次值」中**不低于 Executor 的那一个** ——
+      //   · 库里是 HumanSteward/Leader ⇒ **不被 Executor 覆盖**（防降级）
+      //   · 库里是 Executor ⇒ 可被显式注册抬高为 HumanSteward/Leader（正道可行）
+      // 用 CASE 而不是无条件 `role=excluded.role`，是因为后者会让低权路径
+      // （claim 传 Executor）把高角色打回去 —— 那正是本条 bug 的原始形状。
+      let sql = "INSERT INTO agents (agent_id, agent_type, role, soldier, pid, pubkey_fp, first_seen, last_seen, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active') ON CONFLICT(agent_id) DO UPDATE SET pid=excluded.pid, last_seen=excluded.last_seen, status='active', role=CASE WHEN agents.role != 'Executor' THEN agents.role ELSE excluded.role END"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: agents_register")
         Some(stmt) => {
