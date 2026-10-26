@@ -479,9 +479,21 @@ fn bug_lines_of(text : String) -> Array[String] {
 
 ///|
 fn bug_lines_to_text(lines : Array[String]) -> String {
+  // 末尾连续空行归一（2026-10-26 实测踩了 4 次的坑）：
+  // `bug_read_text` 用 `split("\n")` 读，文件以 `\n` 结尾时会留一个末尾空串元素；
+  // `bug_fix` / `bug_mark_status` / `report_bug` 又在 `insert_at` 后追加小记/条目，
+  // 两者叠加写盘就成了「尾部空行」—— 而 pre-commit 的
+  // `git diff --cached --check` 把 `new blank line at EOF` 判红，整笔提交被挡。
+  // 归一为「无尾部空行、恰好一个终止换行」。
+  let mut end = lines.length()
+  while end > 0 && lines[end - 1].trim().is_empty() {
+    end = end - 1
+  }
   let mut acc = ""
-  for l in lines {
-    acc = acc + l + "\n"
+  let mut i = 0
+  while i < end {
+    acc = acc + lines[i] + "\n"
+    i = i + 1
   }
   acc
 }
