@@ -26,7 +26,17 @@ pub fn FistEngine::rsv_set(
     None => None
     Some(rec) => Some(rec.role)
   }
-  let (role, _role_source) = resolve_agent_role(agent, declared)
+  // BUG-422：角色来源**必须带进回执**（诚实标注）。
+  //
+  // `role_source` 的值域：
+  //   "declared"   = 从 `agents` 表读到的 —— **但查表键是调用方自报的名字**，
+  //                  所以「declared」不等于「可信」，只等于「不是从名字模式推的」。
+  //                  报一个已登记身份的名字（如 `fist-mbt`）即可继承它的 role（BUG-422 本尊）。
+  //   "inferred"   = 从名字模式推的 —— 更不可信（BUG-421：整名 `leader`/`lead` 仍买到军官面）
+  //
+  // 为什么不直接返回 `Result` 让调用方区分：`rsv_set` 的签名是 `Result[String, String]`，
+  // 改签名会波及工具面 3 处调用方。所以用**后缀标注** —— 零签名变更，且回执自带证据。
+  let (role, role_source) = resolve_agent_role(agent, declared)
   match check_scope_permission(scope, role) {
     // RoleDenied 是**硬拒** —— HumanSteward 保护路径必须继续拒绝，绝不放行
     RoleDenied(e) => Err(e)
@@ -34,7 +44,10 @@ pub fn FistEngine::rsv_set(
     //   Allowed      = 已登记且够格（原行为）
     //   Unregistered = 未登记 ⇒ advisory 登记，不参与授权裁决
     Allowed | Unregistered(_) =>
-      self.store.rsv_set(scope~, agent~, ttl_until~, created_at~)
+      match self.store.rsv_set(scope~, agent~, ttl_until~, created_at~) {
+        Err(e) => Err(e)
+        Ok(o) => Ok(o + " [role_source=" + role_source + "]")
+      }
   }
 }
 
@@ -54,17 +67,43 @@ pub fn FistEngine::rsv_try_set(
     None => None
     Some(rec) => Some(rec.role)
   }
-  let (role, _role_source) = resolve_agent_role(agent, declared)
+  // BUG-422：角色来源带进回执的 `action`（与 rsv_set 同口径，见那边的长注释）。
+  // `action` 的合法取值因此扩展为：reserved | renewed | taken_over | conflict |
+  //   unregistered | <上述之一>+role_inferred
+  let (role, role_source) = resolve_agent_role(agent, declared)
   match check_scope_permission(scope, role) {
     RoleDenied(e) => Err(e)
-    Allowed => self.store.rsv_try_set(scope~, agent~, ttl_until~, created_at~)
+    Allowed =>
+      match self.store.rsv_try_set(scope~, agent~, ttl_until~, created_at~) {
+        Err(e) => Err(e)
+        Ok(o) =>
+          Ok(
+            if role_source == "inferred" {
+              // 只在 inferred 时打标：declared 是「查到了表」但仍不可信（BUG-422 本尊），
+              // 两个都标会让标签失去区分力。inferred 才是「连表都没查到」的那一档。
+              o.relabel(o.action + "+role_inferred")
+            } else {
+              o
+            },
+          )
+      }
     Unregistered(_) =>
       // 仍走后端裁决：同一未登记 scope 上两个 lane 抢，照样要判 conflict。
       // 区别只在 action 标签——调用方据此知道「这不是授权通过，是登记通过」。
       match self.store.rsv_try_set(scope~, agent~, ttl_until~, created_at~) {
         Err(e) => Err(e)
         // advisory 只在**真拿到**时打标；conflict 保持 conflict（那条信息更硬）
-        Ok(o) => Ok(if o.reserved { o.relabel("unregistered") } else { o })
+        Ok(o) =>
+          Ok(
+            if o.reserved {
+              o.relabel(
+                "unregistered" +
+                (if role_source == "inferred" { "+role_inferred" } else { "" }),
+              )
+            } else {
+              o
+            },
+          )
       }
   }
 }
