@@ -119,6 +119,27 @@ pub let scope_permissions : Array[PermissionRule] = [
 ]
 
 ///|
+/// 权限判定三态（BUG-413）——**三种拒绝面必须能被调用方区分**：
+///   · Allowed        已登记且角色够格 ⇒ 正常预订
+///   · RoleDenied     已登记但角色不够（HumanSteward 保护等）⇒ **必须继续拒绝，绝不放行**
+///   · Unregistered   根本没有匹配规则 ⇒ advisory 登记，不参与授权裁决
+///
+/// 为什么必须拆开：旧实现把两种 Err 混成同一个 String，调用方无法分辨
+/// 「这条路我不能碰」（有规则、我不够格）与「这条路没人管、你自己负责字面不相交」。
+/// 后果是 explore 模式的第 4 道并行门恒不可过——`reports/` 这类未登记路径永远拿不到 granted。
+///
+/// **`Unregistered` 不是放行授权**：它只表示「预订登记成功」；
+/// 真实写权限仍由 `RoleDenied` 那一侧决定（HumanSteward 保护路径照旧拒绝）。
+///
+/// 为什么 `Allowed` 不带 `PermissionRule` 载荷：`PermissionRule` 是包内私有 struct，
+/// 作为 `pub enum` 的 variant 载荷会触发可见性错误。需要规则详情时用 `matching_rule()`。
+pub enum ScopeVerdict {
+  Allowed
+  RoleDenied(String)
+  Unregistered(String)
+}
+
+///|
 /// 从 agent 名字推断角色（宽松推断，不是安全门禁）。
 /// fail-soft：宁可放行也不要卡死开发。
 pub fn infer_role_from_agent(agent_name : String) -> String {
@@ -136,39 +157,42 @@ pub fn infer_role_from_agent(agent_name : String) -> String {
 }
 
 ///|
-/// 判断 agent（按角色）是否有权限编辑 scope。fail-closed。
+/// 判断 agent（按角色）是否有权限编辑 scope。
+/// **不再用单一 `Result[_, String]` 表达三种不同结论** —— 见 `ScopeVerdict`（BUG-413）。
 pub fn check_scope_permission(
   scope : String,
   agent_role : String,
-) -> Result[PermissionRule, String] {
-  let matched = find_matching_rule(scope)
-  match matched {
+) -> ScopeVerdict {
+  match find_matching_rule(scope) {
     None =>
-      Err(
-        "拒绝：scope '" +
+      Unregistered(
+        "未登记：scope '" +
         scope +
-        "' 无权限规则（fail-closed）。" +
-        "指挥官需要在 engine_scope_perm.mbt 里加规则才能开放。",
+        "' 无匹配权限规则 ⇒ advisory 登记（不参与授权裁决）；" +
+        "并行时须自行保证与其他 lane 的文件字面不相交。",
       )
-    Some(rule) => {
-      let allowed = rule.allowed_roles.contains(agent_role)
-      if allowed {
-        Ok(rule)
+    Some(rule) =>
+      if rule.allowed_roles.contains(agent_role) {
+        Allowed
       } else {
-        Err(
+        RoleDenied(
           "拒绝：角色 '" +
           agent_role +
           "' 无权编辑 '" +
           scope +
-          "'。" +
-          "允许的角色：" +
+          "'。允许的角色：" +
           rule.allowed_roles.join(", ") +
           "；规则原因：" +
           rule.reason,
         )
       }
-    }
   }
+}
+
+///|
+/// 取 scope 命中的规则（`Allowed` 之外的调用方若需要规则详情，走这里）。
+pub fn matching_rule(scope : String) -> PermissionRule? {
+  find_matching_rule(scope)
 }
 
 ///|

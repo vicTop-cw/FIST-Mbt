@@ -177,6 +177,7 @@ pub struct RsvOutcome {
   agent : String
   ttl_until : String
 }
+pub fn RsvOutcome::relabel(Self, String) -> Self
 
 pub struct SpecRecord {
   id : String

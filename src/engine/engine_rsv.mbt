@@ -14,11 +14,16 @@ pub fn FistEngine::rsv_set(
   ttl_until~ : String,
   created_at~ : String,
 ) -> Result[String, String] {
-  // 权限门禁（fail-closed）：先过权限，再预订
+  // 权限门禁：先过权限，再预订（BUG-413 三态分流）
   let role = infer_role_from_agent(agent)
   match check_scope_permission(scope, role) {
-    Err(e) => Err(e)
-    Ok(_rule) => self.store.rsv_set(scope~, agent~, ttl_until~, created_at~)
+    // RoleDenied 是**硬拒** —— HumanSteward 保护路径必须继续拒绝，绝不放行
+    RoleDenied(e) => Err(e)
+    // Allowed 与 Unregistered 都放行到后端登记：
+    //   Allowed      = 已登记且够格（原行为）
+    //   Unregistered = 未登记 ⇒ advisory 登记，不参与授权裁决
+    Allowed | Unregistered(_) =>
+      self.store.rsv_set(scope~, agent~, ttl_until~, created_at~)
   }
 }
 
@@ -32,11 +37,19 @@ pub fn FistEngine::rsv_try_set(
   ttl_until~ : String,
   created_at~ : String,
 ) -> Result[@store.RsvOutcome, String] {
-  // 权限门禁（fail-closed）：先过权限，再进后端裁决
+  // 权限门禁：先过权限，再进后端裁决（BUG-413 三态分流）
   let role = infer_role_from_agent(agent)
   match check_scope_permission(scope, role) {
-    Err(e) => Err(e)
-    Ok(_rule) => self.store.rsv_try_set(scope~, agent~, ttl_until~, created_at~)
+    RoleDenied(e) => Err(e)
+    Allowed => self.store.rsv_try_set(scope~, agent~, ttl_until~, created_at~)
+    Unregistered(_) =>
+      // 仍走后端裁决：同一未登记 scope 上两个 lane 抢，照样要判 conflict。
+      // 区别只在 action 标签——调用方据此知道「这不是授权通过，是登记通过」。
+      match self.store.rsv_try_set(scope~, agent~, ttl_until~, created_at~) {
+        Err(e) => Err(e)
+        // advisory 只在**真拿到**时打标；conflict 保持 conflict（那条信息更硬）
+        Ok(o) => Ok(if o.reserved { o.relabel("unregistered") } else { o })
+      }
   }
 }
 
