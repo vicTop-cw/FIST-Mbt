@@ -577,9 +577,25 @@ pub fn Task::reject(self : Task, reason~ : String = "") -> Result[Task, String] 
 
 ///|
 /// 已打回 -> 执行中（重新执行）
+///
+/// **BUG-426：必须清空 `deliverable`。**
+///
+/// 缺陷原形：`reject` 只改 status + 追加打回原因、`retry` 只改 status，
+/// **两者都不动 `deliverable`** ⇒ `execute(A) → submit → reject → retry → submit`
+/// 走完一圈后，**`deliverable` 还是被打回的那份 A**，而 `submit` 也不查新鲜度，
+/// 于是**旧废品被当成本轮成果提交验收**。
+///
+/// **这不是设计选择，是遗漏** —— 同一条 `Rejected` 分支上，兄弟方法
+/// `Task::reopen`（:549）**清了** `deliverable: ""` + `assignee: None`。
+///
+/// 危害链：`omega_strong.mbt:642` 用 `deliverable.trim() == ""` 判「尚无交付物」
+/// ⇒ 旧废品被当成果复验，**判绿即真了账**；`board_ascii.mbt:252` 的假绿档因此系统性低估。
+///
+/// **只清 `deliverable`、保留 `assignee`**：`retry` 是「同一个人重做」，
+/// 而 `reopen` 是「重新回到可认领池」（所以那边把 assignee 也清了）。
 pub fn Task::retry(self : Task) -> Result[Task, String] {
   match self.status {
-    Rejected => Ok({ ..self, status: Executing, })
+    Rejected => Ok({ ..self, status: Executing, deliverable: "" })
     _ =>
       Err(
         "非法迁移: retry 要求状态 [已打回]，当前是 [" +
