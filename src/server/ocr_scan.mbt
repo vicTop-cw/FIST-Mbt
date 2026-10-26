@@ -115,6 +115,100 @@ pub fn ocr_probe_binary(project_dir : String) -> String? {
 }
 
 ///|
+/// T0r588（P0 诊断结论）：`.mbt` 放行规则的 JSON 正文。
+///
+/// 为什么不是"认命"：OCR 的扩展名白名单是 `go:embed supported_file_types.json`
+/// 内嵌进二进制的（源码 internal/config/allowlist/allowed_ext.go 只读 embed，
+/// 运行时**没有** env / 配置文件可改），所以「把 .mbt 加进白名单」这条路不存在。
+/// 但 `--rule <json>` 属于**最高优先级**的 custom 层，其 `include` glob 在扩展名
+/// 白名单**之前**短路放行——internal/scan/agent.go 的 whyExcluded 顺序是
+/// `HasInclude() && IsUserIncluded(path) ⇒ ExcludeNone`，先于
+/// `IsAllowedExt(ext) ⇒ ExcludeExtension`。故本仓走"合法放行"而非"接受不可达"。
+///
+/// `rules: []` 是刻意的：不含任何 per-path 规则 ⇒ composedResolver.Resolve 在第一层
+/// 匹配不到 entry，自然落到 system 层，系统评审规则一条都不丢（不会因为注入而静默降质）。
+pub fn ocr_mbt_include_rule_json() -> String {
+  "{\n  \"rules\": [],\n  \"include\": [\"**/*.mbt\"]\n}\n"
+}
+
+///|
+/// path（逗号分隔的文件/目录列表）里是否点名了 .mbt 目标。
+pub fn ocr_path_has_mbt(path : String) -> Bool {
+  for p in path.split(",") {
+    if p.trim().has_suffix(".mbt") {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// 是否需要自动注入 .mbt 放行规则（纯计算，决策与 IO 分离以便白盒锁）：
+///   - 显式给了 rules_file ⇒ false：custom 层只有一格，注入会抢掉用户自己的规则文件。
+///     此时不假装能审，改由 fake-green 检测 + 兜底提示如实报不可达（fail-closed）。
+///   - 目标点名 .mbt ⇒ true
+///   - 目标项目是 MoonBit 项目（根有 moon.mod）⇒ true（目录/全仓扫描同样被白名单拦）
+pub fn ocr_needs_mbt_include(
+  path : String,
+  rules_file : String,
+  moonbit_project : Bool,
+) -> Bool {
+  if rules_file.trim().length() > 0 {
+    return false
+  }
+  if ocr_path_has_mbt(path) {
+    return true
+  }
+  moonbit_project
+}
+
+///|
+/// 系统临时目录（TEMP > TMPDIR > TMP）。都拿不到返回 None——绝不退化成往
+/// 工作树里写文件（那会污染用户仓库）。
+fn ocr_temp_dir() -> String? {
+  for k in ["TEMP", "TMPDIR", "TMP"] {
+    match @env.get_env_var(k) {
+      Some(v) => {
+        let t = v.trim()
+        if t.length() > 0 {
+          return Some(t.to_owned())
+        }
+      }
+      None => ()
+    }
+  }
+  None
+}
+
+///|
+/// 幂等落盘 .mbt 放行规则到系统临时目录，返回可传给 `--rule` 的路径；
+/// 无临时目录或写盘失败返回 None（调用方据此记 mbt_include_error，并照旧
+/// 走 fake-green fail-closed —— 写不进去不等于"审过了"）。
+/// 文件名固定 ⇒ 并发重复调用是同一份内容，覆盖写无副作用。
+fn ocr_ensure_mbt_include_rule() -> String? {
+  let dir = match ocr_temp_dir() {
+    Some(d) => d
+    None => return None
+  }
+  // 反斜杠统一成正斜杠：Windows 上两类分隔符都可接受，但混拼进 argv 更难排障。
+  // 注意必须用 replace_all——String::replace 只换**第一处**（本仓实测：会留下
+  // `C:/Users\victo\AppData\Local\Temp/...` 这种混拼），replace_all 才是全量。
+  let p = ocr_join(
+    dir.replace_all(old="\\", new="/"),
+    "fist-mbt-ocr-moonbit-include.json",
+  )
+  let r : Unit? = Some(
+    @fs.write_string_to_file(p, ocr_mbt_include_rule_json(), encoding="utf8"),
+  ) catch {
+    _ => None
+  }
+  match r {
+    Some(_) => if @fs.path_exists(p) { Some(p) } else { None }
+    None => None
+  }
+}
+
+///|
 /// argv 构造（纯计算，不经过 shell）：返回 Result，非法输入显式 Err（不猜测、不降级）。
 /// 子命令形状与 open-code-review CLI 实测对齐：
 ///   scan/files : ocr scan --repo <repo> --preview --format json [--path <path>] [--rule <rules>]
@@ -203,6 +297,37 @@ fn ocr_extract_files(stdout : String) -> Array[String] {
 }
 
 ///|
+/// 从 OCR stdout JSON 里取一个整数字段；键缺失或解析失败返回 -1（调用方据此
+/// 区分「0 份」与「这个版本不给这个键」——证据制判据必须能分辨这两者）。
+fn ocr_stdout_int(stdout : String, key : String) -> Int32 {
+  if stdout.trim().is_empty() {
+    return -1
+  }
+  let j = @json.parse(stdout) catch { _ => return -1 }
+  match j {
+    Json::Object(m) =>
+      match m.get(key) {
+        Some(Json::Number(n, ..)) => n.to_int()
+        _ => -1
+      }
+    _ => -1
+  }
+}
+
+///|
+/// 把 ocr_plan 回执里的 .mbt 放行现场字段原样搬到最终回执（纯搬运，缺则略过）。
+fn ocr_plan_mbt_pairs(pm : Map[String, Json]) -> Array[(String, Json)] {
+  let out : Array[(String, Json)] = []
+  for k in ["mbt_include", "mbt_include_rule", "mbt_include_error"] {
+    match pm.get(k) {
+      Some(v) => out.push((k, v))
+      None => ()
+    }
+  }
+  out
+}
+
+///|
 /// 统一构造回执 JSON（键顺序稳定，便于测试断言）
 fn ocr_obj(pairs : Array[(String, Json)]) -> Json {
   let m : Map[String, Json] = Map([])
@@ -261,11 +386,43 @@ pub fn ocr_plan(
       [],
     )
   }
-  let args = match ocr_build_args(project_dir~, subcmd~, path~, rules_file~) {
+  // T0r588：.mbt 放行——ASCII 白名单改不动，但 --rule 的 include 能短路放行。
+  // 条件是"目标涉及 MoonBit 且用户没自己给规则文件"（见 ocr_needs_mbt_include）。
+  // `rules` 子命令只 dump 某文件的规则、不做扩展名过滤 ⇒ 不为它落盘放行规则。
+  let is_mbt_proj = @fs.path_exists(ocr_join(project_dir, "moon.mod"))
+  let needs_inc = subcmd != "rules" &&
+    ocr_needs_mbt_include(path, rules_file, is_mbt_proj)
+  let mut eff_rules = rules_file
+  let mut inc_path = ""
+  let mut inc_err = ""
+  if needs_inc {
+    match ocr_ensure_mbt_include_rule() {
+      Some(p) => {
+        eff_rules = p
+        inc_path = p
+      }
+      // 写不进放行规则：不静默、也不假装成功，只把原因带进回执，
+      // 后续由 fake-green 检测把 ok 强制成 false。
+      None =>
+        inc_err = "ocr_scan: 无法落盘 .mbt 放行规则（无临时目录或写盘失败）；" +
+          "OCR 内嵌扩展名白名单不含 .mbt，本次 LLM review 不会真正执行"
+    }
+  }
+  let args = match
+    ocr_build_args(project_dir~, subcmd~, path~, rules_file=eff_rules) {
     Err(e) => return ocr_fail(subcmd, e, "修正参数后重试", [])
     Ok(a) => a
   }
   let args_json = Json::array(args.map(fn(a) { Json::string(a) }))
+  let inc_pairs : Array[(String, Json)] = [
+      ("mbt_include", Json::boolean(inc_path != "")),
+      ("mbt_include_rule", Json::string(inc_path)),
+    ] +
+    (if inc_err == "" {
+      []
+    } else {
+      [("mbt_include_error", Json::string(inc_err))]
+    })
   if dry_run {
     // 只回显"将要执行的 argv"，一个进程都不起：宿主命令能力默认收紧，
     // 让运维能在真跑之前逐字审命令。
@@ -273,24 +430,27 @@ pub fn ocr_plan(
       Some(b) => b
       None => ""
     }
-    return ocr_obj([
-      ("ok", Json::boolean(true)),
-      ("ocr_available", Json::boolean(true)),
-      ("dry_run", Json::boolean(true)),
-      ("executed", Json::boolean(false)),
-      ("subcmd", Json::string(subcmd)),
-      ("stdout", Json::string("")),
-      ("stderr", Json::string("")),
-      ("exit_code", Json::number(0.0)),
-      ("args", args_json),
-      ("binary", Json::string(bin_hint)),
-      (
-        "hint",
-        Json::string(
-          "dry_run 未启动任何进程；去掉 dry_run 才会真跑 opencodereview.exe（argv 只作为参数，不经 shell）",
+    return ocr_obj(
+      [
+        ("ok", Json::boolean(true)),
+        ("ocr_available", Json::boolean(true)),
+        ("dry_run", Json::boolean(true)),
+        ("executed", Json::boolean(false)),
+        ("subcmd", Json::string(subcmd)),
+        ("stdout", Json::string("")),
+        ("stderr", Json::string("")),
+        ("exit_code", Json::number(0.0)),
+        ("args", args_json),
+        ("binary", Json::string(bin_hint)),
+        (
+          "hint",
+          Json::string(
+            "dry_run 未启动任何进程；去掉 dry_run 才会真跑 opencodereview.exe（argv 只作为参数，不经 shell）",
+          ),
         ),
-      ),
-    ])
+      ] +
+      inc_pairs,
+    )
   }
   let bin = match ocr_probe_binary(project_dir) {
     Some(b) => b
@@ -302,14 +462,17 @@ pub fn ocr_plan(
         [("args", args_json)],
       )
   }
-  ocr_obj([
-    ("ok", Json::boolean(true)),
-    ("dry_run", Json::boolean(false)),
-    ("ocr_available", Json::boolean(true)),
-    ("subcmd", Json::string(subcmd)),
-    ("binary", Json::string(bin)),
-    ("args", args_json),
-  ])
+  ocr_obj(
+    [
+      ("ok", Json::boolean(true)),
+      ("dry_run", Json::boolean(false)),
+      ("ocr_available", Json::boolean(true)),
+      ("subcmd", Json::string(subcmd)),
+      ("binary", Json::string(bin)),
+      ("args", args_json),
+    ] +
+    inc_pairs,
+  )
 }
 
 ///|
@@ -391,31 +554,56 @@ pub fn ocr_effective_ok(okk : Bool, reviewed : Bool) -> Bool {
 }
 
 ///|
-/// BUG-327b（本轮实证发现）：`ocr_fake_green_check` 只解析 stdout，对「单 .mbt 文件
-/// 目标」无能为力——OCR 二进制会静默返回 files:[] / reviewable_count:0 /
-/// excluded_count:0（不计 excluded），与「空目录」同形，走空目录豁免判
-/// reviewed=true（假绿，顶层 ok 跟着 true）。此处把「目标路径本身不可审」也纳入
-/// fail-closed：目标为单个 .mbt 文件时强制 reviewed=false，附 notice 说明。
-/// 纯函数供白盒锁（`ocr_reviewed_final_*`）。
+/// 单目标复核（T0r588 改为**证据制**，替代「见 .mbt 就恒 false」的旧一刀切）：
+///
+/// 旧的 BUG-327b 盲区是：单 .mbt 文件目标时 OCR 静默返回 `files:[] /
+/// reviewable_count:0 / excluded_count:0`，与「空目录」同形 ⇒ 走空目录豁免
+/// 判 reviewed=true（假绿）。但一刀切「目标带 .mbt 就 false」会**挡住已修好的
+/// 真审查**（T0r588 注入 include 规则后，单 .mbt 文件真的会被评审）。
+///
+/// 证据制判据：目标点名 .mbt 时，必须看到回执里 `total_files >= 1`（该文件确实
+/// 进了选择面）才算 reviewed；`total_files == 0`（静默丢弃）或 <0（回执无该键，
+/// 版本差异）一律 fail-closed —— 宁可报不可达，不可谎报审过。
 pub fn ocr_reviewed_final(
   stdout_reviewed : Bool,
   path : String,
+  total_files : Int32,
 ) -> (Bool, String) {
-  if stdout_reviewed && path.has_suffix(".mbt") {
-    (
-      false, "目标为单个 .mbt 文件（OCR 白名单外扩展名），LLM review 未真正执行；顶层 ok 已强制 fail-closed",
-    )
-  } else {
-    (stdout_reviewed, "")
+  if !stdout_reviewed {
+    return (false, "")
   }
+  if !ocr_path_has_mbt(path) {
+    return (true, "")
+  }
+  if total_files >= 1 {
+    return (true, "")
+  }
+  (
+    false,
+    "目标点名了 .mbt 文件，但 OCR 回执未把它纳入选择面（total_files=" +
+    total_files.to_string() +
+    "）；LLM review 未真正执行，顶层 ok 已强制 fail-closed",
+  )
 }
 
 ///|
-/// BUG-327 部分 2：bugfind 的 require_ocr 门不能只看「二进制在不在」——OCR 的扩展名
-/// 白名单不收 .mbt（实测 scan reviewable_count=0、单文件也被拦），MoonBit 目标上该约束
-/// 恒不可满足。返回 (gate, note)：satisfied / degraded / unavailable。
-/// degraded = 二进制可用但 .mbt 不可审查 ⇒ 如实降级为只用 issue_scan，不得按
-/// available=true 当作门已满足（伪能力）。
+/// .mbt 未真审时的可执行修法提示（追加到 notice，让调用方知道下一步怎么做）。
+/// 只在确实没审成时返回非空——审成了就不该再喊修法。
+pub fn ocr_mbt_remedy(path : String, reviewed : Bool) -> String {
+  if reviewed || !ocr_path_has_mbt(path) {
+    return ""
+  }
+  "；修法：省略 rules_file 让 ocr_scan 自动注入 include 规则，或在你的规则 JSON 顶层加 \"include\": [\"**/*.mbt\"]"
+}
+
+///|
+/// T0r588 修订：`.mbt` **不再恒不可达**。OCR 内嵌的扩展名白名单确实不含 .mbt
+/// （go:embed，运行时改不动），但 `--rule` 的 include glob 优先级更高、能短路放行
+/// （见 ocr_mbt_include_rule_json）。因此 MoonBit 目标的 gate 由 degraded 改为
+/// satisfied —— 前提是 ocr_scan 会自动注入该规则。
+///
+/// 但 gate=satisfied 只表示"机制可达"，不表示"这一发真审了"：最终判据仍是单次
+/// 回执的 ok / ocr_reviewed（reviewable_count 与 total_files 证据）。
 pub fn ocr_gate_state(
   binary_available : Bool,
   moonbit_target : Bool,
@@ -427,7 +615,7 @@ pub fn ocr_gate_state(
   }
   if moonbit_target {
     return (
-      "degraded", "OCR 二进制可用，但其扩展名白名单不收 .mbt（实测 reviewable_count=0）；目标为 MoonBit 项目 ⇒ require_ocr 不可满足，bugfind 如实降级为只用 issue_scan",
+      "satisfied", "OCR 二进制可用；.mbt 不在二进制内嵌扩展名白名单里，但 ocr_scan 会自动注入 --rule 的 include 规则（**/*.mbt）短路放行（T0r588）。require_ocr 的最终判据是本发回执的 ok/ocr_reviewed，不能只看本 gate",
     )
   }
   (
@@ -439,6 +627,11 @@ pub fn ocr_gate_state(
 /// bugfind 的 require_ocr 预检回执（IO 薄壳，pipeline_tick / watchdog_tick 共用）：
 /// probe 二进制 + 判目标是否 MoonBit 项目（project_dir 根有 moon.mod）。
 /// 纯读探测，不 spawn；新增字段对旧调用方是纯增量。
+///
+/// T0r588：`mbt_reviewable` 由恒 false 改为跟随二进制可用性——放行机制是
+/// `--rule` 的 include glob（见 ocr_mbt_include_rule_json），由 ocr_scan 自动注入。
+/// 这只是"机制可达"的声明；某一发到底审没审，看该发回执的 ocr_reviewed
+/// （reviewable_count / total_files 证据）。本函数仍保持纯读：不写临时文件。
 pub fn ocr_capability_json(project_dir : String) -> Json {
   let bin = ocr_probe_binary(project_dir)
   let is_mbt = @fs.path_exists(ocr_join(project_dir, "moon.mod"))
@@ -451,7 +644,11 @@ pub fn ocr_capability_json(project_dir : String) -> Json {
     None => ()
   }
   m.set("moonbit_target", Json::boolean(is_mbt))
-  m.set("mbt_reviewable", Json::boolean(false))
+  m.set("mbt_reviewable", Json::boolean(avail))
+  m.set(
+    "mbt_admission",
+    Json::string(if avail { "rule-include" } else { "none" }),
+  )
   m.set("gate", Json::string(gate))
   m.set("note", Json::string(note))
   Json::object(m)
@@ -540,16 +737,32 @@ pub async fn ocr_scan_impl(
       }
       // BUG-165：scan/files 对白名单外扩展名（如 .mbt）会假绿——回执 ok=true 但
       // reviewable_count=0。这里把假绿显式摊到回执上，调用方不再误读为「已审完」。
-      let (reviewed, _fake_notice) = if subcmd == "scan" || subcmd == "files" {
+      let (reviewed, fake_notice) = if subcmd == "scan" || subcmd == "files" {
         ocr_fake_green_check(stdout)
       } else {
         (true, "")
       }
-      // BUG-327b：单 .mbt 文件目标时 OCR 静默 files:[] 且不计 excluded（reviewed 仍
-      // true 的假绿盲区），按目标路径补判（见 ocr_reviewed_final）。
-      let (reviewed2, fake_notice2) = ocr_reviewed_final(reviewed, path)
+      // T0r588：把证据读数摊到回执上（reviewable_count / total_files），
+      // 让「到底几份进了选择面」不必调用方再解析 stdout。
+      let reviewable_n = ocr_stdout_int(stdout, "reviewable_count")
+      let total_n = ocr_stdout_int(stdout, "total_files")
+      // 单 .mbt 目标复核改为证据制：必须看到 total_files>=1（见 ocr_reviewed_final）。
+      let (reviewed2, evidence_notice) = ocr_reviewed_final(
+        reviewed, path, total_n,
+      )
       // BUG-327：假绿 fail-closed——reviewable_count=0 时顶层 ok 强制 false（见 ocr_effective_ok）。
       let ok_eff = ocr_effective_ok(okk, reviewed2)
+      // 诊断面：假绿原因优先（它更接近根因），其次是单目标证据不足的原因；
+      // 再补一条"下一步怎么修"的动作提示——只报失败不给修法等于半张回执。
+      let mut notice = if fake_notice != "" {
+        fake_notice
+      } else {
+        evidence_notice
+      }
+      let remedy = ocr_mbt_remedy(path, reviewed2)
+      if remedy != "" {
+        notice = notice + remedy
+      }
       ocr_obj(
         [
           ("ok", Json::boolean(ok_eff)),
@@ -562,12 +775,13 @@ pub async fn ocr_scan_impl(
           ("error", Json::string(errtxt)),
           ("args", args_json),
           ("ocr_reviewed", Json::boolean(reviewed2)),
+          ("reviewable_count", Json::number(reviewable_n.to_double())),
+          ("total_files", Json::number(total_n.to_double())),
         ] +
-        (if fake_notice2 == "" {
-          []
-        } else {
-          [("notice", Json::string(fake_notice2))]
-        }) +
+        (if notice == "" { [] } else { [("notice", Json::string(notice))] }) +
+        // T0r588：.mbt 放行机制的现场留痕（注入没注入、注入了哪份规则），
+        // 便于一次回执就判「不可达是机制问题还是写盘问题」。
+        ocr_plan_mbt_pairs(pm) +
         [("files", Json::array(files.map(fn(f) { Json::string(f) })))],
       )
     }
