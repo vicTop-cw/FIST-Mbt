@@ -4,8 +4,35 @@
 > **日期**：2026-10-27 · **执行**：Lane AF
 > **边界**：**未改 `src/` 任何文件**（`engine/` `server.mbt` `store_sqlite.mbt` 受保护）
 > **所有读数均为本次现读**
+>
+> **补记（待填）**：并发 lane 的实现 commit = ______
 
 ---
+
+## 0. ⭐ 本报告与并发 lane 的实现**独立收敛**
+
+**本报告 §10 的三条核心判断，与另一条 lane 在 `src/engine/` 的 `BUG-422(b)` 实现（同一时段、互不知情）
+得出的结论**逐条一致**。这不是巧合，是**两个独立分析路径撞到同一个点**：
+
+| 判断 | 本报告 §10 | 并发 lane 的 `engine_rsv.mbt` 注释（原文） |
+|---|---|---|
+| **剩余攻击面** | 矩阵里 `agent="fist-mbt"` ⇒ Leader ⇒ 高权目录 | 「报 `agent="fist-mbt"` 直接继承 Leader 面」 |
+| **根因** | `make_engine()` 给 server 自己登记了 Leader | 「server 进程给自己登记的那一条（`agent_type="server"`、`role="Leader"`，`server.mbt` 的 `make_engine()` 写的）」 |
+| **解法方向** | 剔除 server 自身份记录 | 「`agents_role_for_judgment` 把这类『本进程自身份』记录**整条剔除**」 |
+
+**⇒ 两个独立路径收敛到同一结论，是「结论可信」的强证据** —— 比一个人重复论证十遍更有力。
+
+**⚠️ 并且它比本报告 §10.3 的 B+ 更好，我认这一点**：
+
+| | 本报告 §10.3 的 B+ | 并发 lane 的实现 |
+|---|---|---|
+| 判据 | `if agent == "fist-mbt"` —— **硬编码名字** | 剔除 `agent_type == "server"` 的记录 —— **按类别** |
+| 名字变了 | **要改代码** ⇒ 下一颗漂移雷 | **自动覆盖** |
+| future 的 server 自身份 | **漏掉** | **自动覆盖** |
+
+> **⇒ 枚举实例 vs 枚举类别 —— 后者总是对的那个。**
+> 这一条我要明说：**它做得比我对**。我回看自己 §10.3 时，写的是「排除一个不可能的调用方」，
+> 那个「一个」就是症结 —— 我把问题当成「这一个名字」，而正确的问题是「这一类身份」。
 
 ## 结论
 
@@ -514,6 +541,194 @@ fn make_engine() -> @engine.FistEngine {
 
 **⇒ 最终取舍需要你在「重启掉权的地雷」与「报真名的越权口」之间选一个。**
 **这两个都不是好选项 —— 但这是现架构（无 `pubkey_fp`、无会话凭据）能给出的全部。**
+
+---
+
+## 10. 【统帅裁决后补】选 B —— 剩余攻击面的**精确量化**
+
+**统帅裁决：选 B（关整名 + 保持 `agents.role` 唯一来源），不选 A。三条理由我逐条认同：**
+
+1. **A 的语义变更波及面我只算了一半** —— `pid_bound` 是 `agent_acl` 表的字段，被 `agent_write_gate`
+   **另一道门**消费（BUG-408 的「两道独立门」）。M1 重绑 pid 会**同时放松 `agent_write_gate`** ——
+   一个本因「换进程」被 ACL 拒的 agent，重启后被绑成当前 token ⇒ **静默通过**。
+   **⇒ 在一个门上开锁，另一扇门跟着松。这比「语义变更」严重。**
+2. **A 挡不住定向攻击**（我自己的 R1）⇒ 拿一道**硬门**换一道**软门**，不划算。
+3. **B 的代价可枚举**（单一已知名字），**A 的代价不可枚举**（要重审全部 ACL 消费点）。
+
+### 10.1 统帅问的两个问题 —— **实测读数，不推演**
+
+#### 问题 1：`fist-mbt` 这个名字，外部调用方怎么知道？
+
+| 读法 | 实测值 |
+|---|---|
+| 含 `fist-mbt` 的跟踪面 `.md` 文档 | **363 份** |
+| **作为 agent 名的公开处** | **`src/server/server.mbt:16-17`** 源码本身 |
+| `.mcp.dev.json` 里的角色 | **是 server 名**（连接器条目），**不是 agent 名** |
+| `call_log` 里 `caller='fist-mbt'` | **0 次** |
+
+**⇒ `fist-mbt` 作为「agent 名」是完全公开的 —— 它写在源码里。按你的判据，等同公开凭据。**
+
+#### 问题 2：`agents` 表 `type=server` 那条，是不是 MCP server 自己？
+
+**⇒ 是。三处互证：**
+```
+① server.mbt:13-18  注释「server 启动即给自身 agent 落一次注册」，参数就是 "fist-mbt"
+② agents 表          b2acdbf4c6cea9fe  type='server'  role='Leader'  soldier='通信兵'
+③ 反查               fnv1a64("agent_id:fist-mbt") = b2acdbf4c6cea9fe  ✅ 命中
+```
+
+**⇒ 第二问（关键）：server 自己会调 `reserve_scope` 吗？**
+```
+grep -n "rsv_set\|rsv_try_set" src/server/server.mbt
+→ 5264:  match engine.rsv_try_set(scope~, agent~, ...)   ← **只有一处，在 handler 入口**
+   agent 来自 MCP 客户端入参，不是 server 自身的常量
+```
+
+**⇒ 结论：server 自己**从不调用** `reserve_scope`。**
+**⇒ 所以任何 `reserve_scope(agent="fist-mbt")` 的请求，自称者**不可能是 server 本身**。**
+**⇒ 你的第二问有答案了：遇到 `agent="fist-mbt"` 时**应该拒绝**，因为合法的 server 根本不会发这个请求。**
+
+#### 🔴 这一条比「B+ 怎么改」更重要：它证明**剔除是正确做法，不是妥协**
+
+**沿着上面的读数再走一步：**
+
+```
+server 从不调 reserve_scope           （实测：rsv_try_set 全仓仅 server.mbt:5264 一处，在 handler 入口，
+                                       agent 来自 MCP 客户端入参，不是 server 自身常量）
+⇒ 任何自称 fist-mbt 的 reserver 都不是 server
+⇒ 那条 server 自身份记录的 role（Leader），**本来就不该进入任何 reserve_scope 的判定**
+⇒ **「剔除 agent_type='server' 的记录」不是在打补丁绕过一个特例 —— 是把一条本不该在判定面的数据挪出去**
+```
+
+**⇒ 「剔除」是**正确做法**，不是权宜之计。**
+**这也解释了为什么并发 lane 按 `agent_type` 剔除比本报告 §10.3 硬编码名字更对：**
+**它剔除的是「本来就不该出现在这里的一切」，而不是「我已知的那一个」。**
+
+### 10.2 B 落地后的精确权限矩阵
+
+| 攻击者自称 | 名字推断给（421 关后） | `agents.role` 查到 | **B 落地后实得** | 能改哪些目录 |
+|---|---|---|---|---|
+| **`fist-mbt`**（真实 Leader 名，**源码公开**） | Executor | **Leader** | **⚠️ Leader —— 剩余攻击面** | `src/engine/` `src/store/store_sqlite.mbt` `src/store/store.mbt` `src/server/server.mbt` `moon.mod` |
+| 任意未登记名 | Executor | 无 | **Executor** | `scripts/` `docs/` `memory/` `templates/` `patches/` |
+| **`leader` / `lead`** | ~~Leader~~ → **Executor**（421） | 无 | **Executor** | 同上 |
+| `commander-*` 等 | Executor（BUG-418 已封死） | 无 | **Executor** | 同上 |
+
+**⇒ 剩余攻击面精确到一行：`agent="fist-mbt"` ⇒ Leader ⇒ 5 条高权规则。**
+**⇒ 且这个名字**源码公开** ⇒ 攻击不需要任何猜测。**
+
+### 10.3 「B+」：零语义变更就关掉这最后一行
+
+**你提到「可能不需要改 `resolve_agent_role`，只做 421」。我实测后建议再加一条成本极低的拒绝：**
+
+```moonbit
+// engine_rsv.mbt 的两个调用点，check_scope_permission 之前：
+// 「自称者是 server 自身的 agent 名 ⇒ 拒绝」——因为 server 从不调 reserve_scope（实测 0 处调用）。
+// 这不是「猜谁有权」，是「排除一个不可能的调用方」。
+if agent == "fist-mbt" {
+  return Err("reserve_scope 不接受 server 自身的 agent 名（server 不预订作用域）")
+}
+```
+
+| 项 | 值 |
+|---|---|
+| 收益 | **剩余攻击面从「1 个公开名字」降到 0** |
+| 代价 | **零语义变更**（不动 `pid_bound`、不动 `agent_write_gate`、不动 schema） |
+| 风险 | 将来 server 若真需要 `reserve_scope` 会被拒 —— 但实测 0 处调用，注释写清出路即可 |
+| 改动面 | **1 个文件**（`engine_rsv.mbt` 2 处）+ 1 格测试 |
+
+**⇒ 建议的「B+」= 关整名（421）+ 拒绝 `fist-mbt` 自称（1 行）+ 文档标注。不动任何硬门。**
+
+---
+
+## 11. 【统帅要求】架构级建议 —— 独立成账，不并入 BUG-422
+
+### 标题
+
+> **`[arch] MCP 工具面零认证 —— 所有 agent 身份参数可自报，reserve_scope/lock_acquire 的角色判定本质上是 advisory`**
+
+### 结论
+
+**这不是「BUG-422 修不掉」，是「在无认证层的架构里，任何『自报身份』的设计都修不掉」。**
+
+**证据链就是我 Q3 的四层读数：**
+```
+schema 层   "agent": string_prop("预订者（如 exec_1，必填）")   ← 无 format / 无 enum
+工具层      let agent = get_str(args, "agent")                 ← 直接取
+引擎层      infer_role_from_agent(agent) / resolve_agent_role(agent, declared)
+            ← 用名字或查表，**从不校验「你是谁」**
+store 层    agent 只作为字段值写入，**不参与鉴权**
+```
+**⇒ 四层无一处校验。`agent` 从入口到落库是纯自由文本。**
+
+**同类面（同一个病）：** `reserve_scope`/`reserve_check`/`reserve_release` 的 `agent`；
+`lock_acquire`/`lock_renew`/`lock_release` 的 `agent`；`claim`/`execute` 的 `assignee`/`executor`；
+`agent_acl_grant` 的 `by`。
+
+### 为什么现架构修不掉（三条硬约束）
+
+| # | 约束 | 读数 |
+|---|---|---|
+| **C1** | 没有凭据字段 | `agents.pubkey_fp` **全空**（3/3 行 `''`） |
+| **C2** | 唯一「服务端才知道」的值可算 | `pid = floor(Unix 秒) % 2e9`，反查得精确启动时刻 |
+| **C3** | 没有会话层 | MCP 连接与 `agent` 标识**无绑定** |
+
+**⇒ 任何「自报 + 校验」只能校验到「名字存在」，不能校验到「你是名字的主人」⇒ 角色判定本质是 advisory。**
+
+### 出路（架构级投入）
+
+| 方向 | 需要 | 量级 |
+|---|---|---|
+| **S1 会话绑定** | 连接时协商 `session_token`（服务端生成随机），`agents` 存 hash | 动 schema + 签名 + 全部身份类工具 |
+| **S2 公钥凭据** | 填 `pubkey_fp`（字段已在），签名/验签 | 动 schema 使用 + 客户端改造，量级最大 |
+| **S3 进程级绑定（最轻）** | 每个 MCP 客户端进程申请一次性 `agent_token` 写本地文件 | 动签名 + 客户端改造，不需真密码学 |
+
+**⇒ 我倾向 S1 或 S3。S2 最正确但量级最大。**
+
+### 与 BUG-403 的关系
+
+Lane AB 说「长期仍需 BUG-403」——**我的实测支持**：`pid_bound` 回答「ACL 是不是本进程实例的」，
+**不是「你是谁」**。若 BUG-403 做的是会话级身份，**它就是上面 S1**。
+**⇒ 建议：让 BUG-403 成为这条架构账的**第一个切片**，或与它合流。**
+
+---
+
+## 12. 三条判例归档
+
+### 判例 ①（统帅评：本年最重要）
+> **可计算的值不是凭据。**
+> `current_pid_token()` 名为 "pid"，实为**服务器启动时刻的 Unix 秒数** —— 不随机、可反推。
+> **判断方法：问「这个值能不能被外部推导出来」—— 能，就不是凭据。**
+
+### 判例 ②
+> **「可选参数」不是安全措施。** 可选参数攻击者永远不传。
+> **⇒ 任何「自报 + 校验」的设计，校验用的那一半必须不来自被校验方输入。**
+
+### 判例 ③（统帅补，源于本单 §8）
+> **「看起来零误伤」要问一句「是设计还是巧合」。**
+> 那三条过期 pid 的 agent 本来就是 Executor，所以方案 A 落地时「零误伤」——
+> **但那是它们恰好不需要高权，不是方案 A 设计得好。**
+> **⇒ 任何「影响面为零」的读数，必须能回答「零是因为不可能发生，还是因为还没发生」。**
+
+**我对 ③ 的实证补充**：`agent_write_gate` **确实**消费 `agent_acl.pid_bound`
+（`store_sqlite.mbt:2976` 的 SQL `SELECT ... a.pid_bound, g.pid ... LEFT JOIN agents`）——
+**我的「零误伤」读数只覆盖了 `reserve_scope`，没覆盖 `agent_write_gate`。这正是判例 ③ 要问的那一半。**
+
+---
+
+## 13. 【最终建议】BUG-422(b) 在现架构下**无可落地的修复** —— 转架构级
+
+> **BUG-422(b)「让 `reserve_scope` 的身份不可自报」在现架构下没有可落地的修复。**
+>
+> **理由**：无凭据字段（`pubkey_fp` 全空）+ 唯一服务端值可算（`pid`）+ 无会话层
+> ⇒ 任何校验只能确认「名字存在」，不能确认「你是名字的主人」。
+>
+> **可落地的部分只有两条，都属 BUG-421 范畴：**
+> 1. **关整名白名单**（421 本体）
+> 2. **拒绝 `agent="fist-mbt"` 自称**（§10.3，1 行 + 1 格测试，零语义变更）
+>
+> **剩余部分（任意自称真实登记名即可拿对应角色）：转架构级缺口，另立账，不与 BUG-422 绑定。**
+
+**⇒ 这不是「修不掉就放弃」，是把「能修的」与「架构性的」精确切开，各归各账。**
 
 ---
 
