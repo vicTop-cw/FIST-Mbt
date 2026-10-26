@@ -7595,7 +7595,7 @@ let role = max_role(declared, infer_role_from_agent(name))
 
 ### FIXED(2026-10-26T14:48:54Z / BUG-423)
 - evidence: commit 5d388548（2 文件）。改在 src/store/store_sqlite.mbt 的 agents_register：ON CONFLICT 的 SET 里加 role=CASE WHEN agents.role != 'Executor' THEN agents.role ELSE excluded.role END。语义：库里是 HumanSteward/Leader ⇒ 不被 Executor 覆盖（防降级）；库里是 Executor ⇒ 可被显式注册抬高（正道可行）。为什么用 CASE 而非无条件 role=excluded.role：后者会让低权路径（claim 传 Executor）把高角色打回去，那正是本条 bug 的原始形状。问题链：agent_touch_first_seen（server.mbt:1716 的 claim / :1777 的 execute）对任意 assignee 调 agents_register(role="Executor")，而原 ON CONFLICT 只刷 pid/last_seen/status 不更新 role ⇒ 第一次出现的 role 终生有效，且第一次往往来自低权路径；与 BUG-418 组合成死锁（BUG-418 让角色优先读 agents.role ⇒ 合法统帅被永久锁死在 HumanSteward 面外，Lane Q 实测 DENIED agent=human_steward scope=src/store/store_sqlite.mbt）。回归锁 store_sqlite_agents_wbtest.mbt +3 条：锁1=先登记 Executor（模拟 claim）再显式注册 HumanSteward 必须抬上去（钉本条真实形状）；锁2=核心反例格，已是 HumanSteward 时低权路径再传 Executor 必须仍是 HumanSteward，且断言 pid 仍刷新为 3002（防一刀切不更新的过度修复）；锁3=Leader 同样不被降级。验证：moon check --target js = 52 warnings 0 errors；moon_test_env --target js src/store = 76/76/0 全绿。变异实测：把 role=CASE… 从 SQL 删掉（退回原实现）⇒ 76/75/1（锁1变红=无法抬高），恢复后复跑 76/76/0。变异揭示的重要事实：锁2/3 在原实现上本来就绿（原实现不更新 role 天然防降级），只有锁1红 ⇒ 原 bug 的准确形状不是「降级」而是「第一次出现终生有效」，锁2/3 的作用是守住「别为了能抬高而把防降级一起拆掉」。未做另立：BUG-421（整名 leader/lead 仍买到 Leader 面）、BUG-422（A 案查表键仍是调用方自报名字）、BUG-424（lock_acquire/lock_renew 完全没有权限门）。
-## BUG-424 [2026-10-26T14:17:00Z] [high] OPEN
+## BUG-424 [2026-10-26T14:17:00Z] [high] FIXED
 - summary: [authz] lock_acquire / lock_renew 完全没有权限门（engine_rsv.mbt:108-109 注释自述「暂时没接」）⇒ reserve_scope 收口后，改 src/engine/ 的协作锁仍可绕过权限判定
 - detail: ## 现象（2026-10-26 Lane Q 只读诊断 + 指挥官复核）
 
@@ -7640,6 +7640,33 @@ match check_scope_permission(scope, role) {
 - BUG-421/422/423（同批新立）：角色来源的三条残留
 - 两者合起来的完整结论：**「软预订有门、硬锁没门」是不一致的安全边界**
 - reported_by: lead(Lane Q 回传 + 指挥官终审)
+
+### FIXED(2026-10-26T16:58:57Z / BUG-424)
+- evidence: `locks_try_acquire` 权限门已接 + engine 层 4 格成对锁（commit `a4d1a597`）+ 变异对照：
+
+**① 原注释里的「技术障碍」被证伪**（写于 2026-10-22、挂了 4 天）：
+`engine_rsv.mbt:147-149` 原文称「锁的权限门禁暂时没接 —— `LockAcquireOutcome` 是 read-only 类型，必须在 store 内部创建」。
+逐条核验：`LockAcquireOutcome` 字段无任何 `read-only`/`readonly` 标记（grep 0 命中），真障碍只是**字段包内私有**（跨包写 literal 被编译器拒，BUG-413 已实测 4036/4033）—— **与 read-only 无关**；而 BUG-413 早用 `RsvOutcome::relabel` 解决过同一障碍，只是没人回头看那条注释。
+
+**② 补齐实现缺口（三个文档未提的坑）**：
+- store 侧补 `LockAcquireOutcome::denied_by_permission()`（拒绝态不碰库 ⇒ agent/ttl_until 必须为空，不许由请求反推）+ `LockAcquireOutcome::relabel(action, granted)`
+- **`FileLock` 的字段同样是包内私有** ⇒ 补 `FileLock::agent_of()` / `scope_of()` 两个**读访问器**（否则 engine 侧连「谁要锁、锁哪个 scope」都读不到，权限门无从判起）
+- 角色来源改用 `resolve_agent_role`（权威面 `agents.role` 优先）而**不是** patch 文档写的裸 `infer_role_from_agent` —— 否则 BUG-418 刚收窄的那层会被这里绕开
+
+**③ 三态语义与 `check_scope_permission` 一致（BUG-413）**：
+`RoleDenied` ⇒ 硬拒（`granted=false` + `action="permission_denied"`，不写库）/ `Unregistered` ⇒ advisory（放行 + 标 `unregistered`）/ `Allowed` ⇒ 原样。
+另含并发 lane 的 `legacy_grant` 特判：**只放行「续自己那条还活着的锁」**（防「一律硬拒制造僵尸锁」——僵尸比遗留更糟，遗留有主可追、僵尸无主）。
+
+**④ 4 格成对锁（全走 `FistEngine::locks_try_acquire` 真实路径）**：
+`wb1` Executor 抢 `src/engine/` ⇒ 硬拒 ｜ `wb2` 整名 `"leader"` 抢同一 scope ⇒ 拿到（防修过头；同时是 BUG-421 现状锚点）｜ `wb3` Executor 抢 `scripts/` ⇒ 拿到 ｜ `wb4` 未登记规则 scope ⇒ advisory。
+**为什么必须 engine 层**：`engine_scope_perm_role_wbtest.mbt` 锁的是**纯函数**，纯函数全绿 + 接线被删也能过（判例-29）。
+
+**⑤ 变异对照（判例-29/30）**：把 `locks_try_acquire` 的 `match check_scope_permission(...)` 强制成 `Allowed` ⇒ **wb1 精确变红**（`true is not false`），还原即复绿。
+**踩坑实证**：第一次变异用 `t.replace(old, new, 1)`，该串在文件里出现多次（`rsv_set` L40 / `locks_try_acquire` L181），`replace(...,1)` 命中**前面那个** ⇒ 变异落在错误位置、锁照样绿（判例-30 原话「在错误的地方验了」）。改**按行号精确定位**后立刻变红。
+
+**⑥ 实测**：`moon check --target js` = **0 errors**；`moon test src/engine` = **237/237 passed, 0 failed**。
+
+**诚实边界**：`locks_upsert`（底层原语）仍是裸通道 —— 它被 `locks_sweep` 等内部路径依赖、加门会破坏那些路径；工具面 `lock_acquire` 走的是本函数，故攻击面已关闭。`lock.agent` 仍是自报字符串 ⇒ 名字推断那一档可被命名绕过（BUG-421/422 同根因，另案）。
 ## BUG-425 [2026-10-26T14:23:57Z] [medium] OPEN
 - summary: [guard] check_test_sync 在并发开发期天然假红——读工作树数、比文档数，两者不同源
 - detail: ## 形状（判据设计范式缺口，不是一个普通 bug）
