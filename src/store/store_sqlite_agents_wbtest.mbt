@@ -381,6 +381,14 @@ test "bug411_count_writable_ns_filter_mutation" {
 /// Executor，之后 HumanSteward 显式注册成 HumanSteward ⇒ 必须能抬上去。
 /// 若实现把 `role` 从 DO UPDATE 里彻底删掉（原实现），本格必红。
 test "bug423_register_can_raise_executor_to_steward" {
+  // 清场（与 `_reset_bug411` 同款理由）：本格用固定路径 `temp/bug423_raise.db`，
+  // 第二次跑时库里残留上一轮的 `role=HumanSteward`，第一步的「首次应是 Executor」
+  // 前置断言必假红（实测连跑两次：76/76 → 75/76，红的就是本格）。
+  if @fs.path_exists("temp/bug423_raise.db") {
+    @fs.remove_file("temp/bug423_raise.db") catch {
+      _ => ()
+    }
+  }
   match SqliteStore::open("temp/bug423_raise.db") {
     None => fail("sqlite open 失败：判据没跑到被测面")
     Some(s) => {
