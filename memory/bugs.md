@@ -5842,7 +5842,7 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 - 实测锁钉：`moon check --target js` 0 errors、`moon test --target js` 全绿（1352 passed，含 star_gate 白盒 KAT），未新增跨实现 KAT（原出路 (a) 中 KAT 部分留后续）。
 - 依据：BUG-360 detail 四格证据（UTF-16LE 探针 + core builtin/string.mbt 背书 + attest.yml utf-8 签名侧 + 镜像测试盲区）。
 
-## BUG-361 [2026-10-21T03:30:00Z] [medium] OPEN
+## BUG-361 [2026-10-21T03:30:00Z] [medium] FIXED
 - summary: [惯用法基线决策面] 0020 弃用面最后一族 `Json::value` 判据面 430 处 / 文本面 441 处，跨 9 个包 53 个文件；三条可实施形态的代价差一个数量级且互不可替代 ⇒ 按金条四只出量尺不开修。量尺稿 `docs/decisions/2026-10-21-json-value-430-decision.md`。选定之前 0020 面停在 448、总 warnings 停在 489，本项目的「提交前零 WARNING」硬要求在这一族上没有绕行路径
 - detail: 这一族和前三个弃用族（`not(x)` 203、切片 42、布尔/字符串访问器 22、同一原语改名 12）的性质不同：那几族都是**逐字改名**，本族 prescribed 的是一个**表达式形态**，所以「落成什么形状」是产品决定而不是机械决定。本单元把它拆成四格实测：
   ① 语义面（实测 core）：`~/.moon/lib/core/json/json.mbt:79-86` 的弃用体逐字就是 prescribed 表达式 `if self is Object(obj) { obj.get(key) } else { None }`，且 core **不提供**任何现行替代键访问器（`json.mbt:17-72` 其余弃用件都不是键访问）。⇒ 收口只能是「判据面不再报」，不存在「改坏语义」的风险面，这一点和 BUG-359 那两族落到同一条 primitive 完全同型。
@@ -5853,6 +5853,30 @@ L744 `routed.set(id, best)` 之后追加：`let prev_load = match load.get(best)
 - 后续建议: ① 请指挥官定五件事（稿 §7）：选案 / 辅助件命名（草稿用 `jget`，实测与 core 的 `Json::get` 不冲突）/ 放置（每包新建 `json_get.mbt` + `json_get_test.mbt`，还是挂既有文件尾）/ 黑盒作用域自带私有件是否可接受 / 收口口径认 430 还是 441（后者见 BUG-362）。② 选定后按稿 §6 的 9 批推进，单批 ≤60 站点便于终审，收口后 0020 面 448→18、总 warnings 489→48。③ 命名要一次定死：15 份重复件跨名漂移是本仓已记过的 BUG-330 同族形状。
 - task_id: T0r15
 
+
+### FIXED(2026-10-25T23:25:59Z / BUG-361)
+- evidence: 按 owner 2026-10-25 批准的 A 案口径全部落地（9 批，commits e2eda739 / 3819dc6b / fb9bd934 / b79ee869）。**收口实测：判据面 0 / 文本面 1 / 缺口 1 ≤ 上限 11，PASS。**
+
+**五件事定案**（量尺稿 §7）：① A 案（每作用域私有辅助件）② 命名 `jget` ③ 每包新建 `json_get.mbt` / `json_get_test.mbt` ④ 黑盒作用域自带私有件可接受 ⑤ 口径认文本普查 441（判据面归零只是必要条件，守卫已承载）。
+
+**辅助件（11 个作用域件，9 个包）**：store / decompose / router / ops / executor / evolve / omega / server / engine 各自的 `json_get.mbt`（包作用域，白盒可见）+ `json_get_test.mbt`（黑盒作用域）。evolve 只有黑盒站点故仅建黑盒件。语义与 core 弃用体逐字等价：`if self is Object(obj) { obj.get(key) } else { None }`。**`.mbti` 全程零变化**（私有件不进接口面）。
+
+**替换读数（逐批实测，可复核）**：
+| 批 | 范围 | 站点 | 批后 warnings |
+|---|---|---|---|
+| 1 | store 2 + decompose 2 + router 7 | 11 | 501→491 |
+| 2 | ops 15 + executor 18 + evolve 10 | 43 | 491→448 |
+| 3 | omega 生产+白盒 | 48 | 448→400 |
+| 4 | omega 黑盒 | 33 | 400→367 |
+| 5 | server 生产+白盒 | 46 | 367→322 |
+| 6 | server 黑盒 | 42 | 322→280 |
+| 7 | engine 生产+白盒 | 22 | 280→258 |
+| 8 | engine 黑盒（17 文件，dag_ext_test 单文件 67） | 186 | 258→82 |
+| 补扫 | 复杂 receiver（`cr[0].value(` 等 21）+ 漏网单标识符 2 + 函数调用 receiver 2 | 25 | 82→57 |
+
+**终态**：`.value(` 全仓站点 **0**（`grep -rn '\.value(' src/ | grep -v json_get` 空）；`moon check --target js` = **57 warnings / 0 errors**（起点 501，**降 444**）；`moon test --target js` = **1457/1457 passed, 0 failed**；`check_deprecated_text_census` = 判据面 0 / 文本面 1（仅剩 `json_get.mbt` docstring 里 `Json::value` 字样的注释提及）/ 缺口 1 ≤ 上限 11 PASS。
+
+**与量尺稿预期的差异（诚实标注）**：预期「489→48」，实际「501→57」——起点差 12（这一周新增站点）、收口差 9（剩余 57 是其他弃用族：Show 8 / Show-collect 3 / utf8.encode 3 / FFI Array 3 / 隐式提升 1 / 方言噪声，按 §6 属各自另案）。批 8 有 10 处「替换了但 warnings 没降」正是 BUG-362 记过的编译器静默盲区，两单互相印证。
 ## BUG-362 [2026-10-21T03:30:00Z] [low] FIXED
 - summary: [判据面缺陷] 编译器对 `Json::value` 站点**报不全**：文本普查 `.value(` = 441 处，`moon check --target js` 只报 430 处，**11 处沉默跨 8 个文件**（最多一处 `engine_contract_test.mbt` 文本 6 / 判据 3）⇒ BUG-344 那条「以 `error_code` 命中数作为收口口径」的铁律在这一族上给出的是**下界**
 - detail: 证据链四格：① 三种跑法读数逐格相同（暖跑 489/448/430、`moon clean` 后冷跑完全相同、touch 单文件再跑也相同）⇒ 排除聚合级缓存截断这个解释；② 反向哨兵 0 处（不存在「判据报了但文本没有 .value(」的文件）⇒ 不是普查口径太松；③ 决定性一格：`src/engine/engine_dispatch_test.mbt:47` 是真实 `.value(` 调用，在干净树的三种跑法里**都不被报**，只有把它改成新形态再跑才在诊断面现形 ⇒ 沉默是**逐文件**发生的，不是整族按比例均匀漏；④ `src/server/supervisor_tools_wbtest.mbt` 那处更干脆：整个白盒文件判据面 0 报，文本面有 1 处。
