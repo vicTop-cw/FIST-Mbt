@@ -7025,7 +7025,7 @@ C) 至少在 detail 里补一句「已在 <base> 下查找」。
 **遗留**：`path_miss_hint` 里「该文件在 server cwd 下其实存在」那一支实测**不会触发**（因为 `full` 本身就是相对 cwd 的路径，`@fs.path_exists(full)` 与 `@fs.path_exists(cwd+full)` 等价）—— 保留作防御性提示，不影响结论。
 
 **踩坑**：`let where = ...` 在 MoonBit 里 parse error（`where` 是类型约束保留字），改名 `hit_note`。
-## BUG-413 [2026-10-26T04:15:51Z] [medium] OPEN
+## BUG-413 [2026-10-26T04:15:51Z] [medium] FIXED
 - summary: [explore] reserve_scope 对未登记路径 fail-closed，使 explore 模式并行门第 4 道在实践中恒不可过 —— 并行能力只剩串行一条路
 - detail: ## 现象（2026-10-26 12:05 实测，explore 模式派单时撞到）
 
@@ -7065,6 +7065,9 @@ reserve_scope(scope="reports/2026-10-26-blocked-triage-report.md", agent="lane-b
 
 `grep -n "fn reserve_scope\|engine_scope_perm\|fail-closed" src/engine/engine_scope_perm.mbt src/server/server.mbt` + 上面三条实测回执原文。本条不改代码（属机制语义变更，按金条四留统帅裁决）。
 
+
+### FIXED(2026-10-26T11:04:12Z / BUG-413)
+- evidence: commit 681832ce（7 文件 +197/-28）。改在 src/engine/engine_scope_perm.mbt：新增 pub enum ScopeVerdict 三态（Allowed 零元 / RoleDenied(String) / Unregistered(String)），check_scope_permission 从 Result[PermissionRule,String] 改返回 ScopeVerdict，另加 pub fn matching_rule(scope) 供需要规则详情的调用方。src/engine/engine_rsv.mbt 的 rsv_set/rsv_try_set 按三态分流：RoleDenied(e)=>Err(e) 保持硬拒（HumanSteward 保护原样保留）、Allowed 原行为、Unregistered(_) 仍走后端裁决（同一未登记 scope 抢照样判 conflict）但只在真拿到时用 RsvOutcome::relabel 把 action 标成 unregistered。src/store/store_rsv.mbt 新增 RsvOutcome::relabel（字段包内私有，跨包 struct literal 实测 4036/4033 被拒）。src/engine/moon.pkg 把 moonbitlang/x/fs 从 for "test" 提到主 import（实测 for "test" 在本包 wbtest 不生效，报 Package "fs" not found）。新增 src/engine/engine_scope_perm_wbtest.mbt 5 条锁：锁1 未登记⇒Unregistered、锁2 已登记够格⇒Allowed（零回归）、锁3 最关键=四条 HumanSteward 保护路径×Executor/Leader 双角色全断言仍拒（防 unregistered 成绕过口）、锁4 三面互不相等、锁5 接线格（判例-29，断言 engine_rsv 源码里三态分流真在）。验证：moon check --target js = 49 warnings 0 errors；moon_test_env --target js src/engine = 212/212/0 全绿（改前 207，+5 条新锁）。变异实测：把 Unregistered(_) 那个 arm 改名后 moon test 直接编译失败（duplicate/unreachable arm）⇒ 锁5 确实在读真代码行。未做（另立）：BUG-419 find_matching_rule 注释/实现不一致、BUG-418 infer_role_from_agent 名字宽松推断（high）。
 ## BUG-414 [2026-10-26T04:50:53Z] [low] OPEN
 - summary: [PROBE] lane-d 验证 report_bug 尾随空行是否真修干净（09c0867c）
 - detail: lane-d 验证用：检查 bug_lines_to_text 的末尾空行归一是���对全部写入路径（report_bug / bug_fix / bug_mark_status）一致生效。本条为探针，用后即改判 FALSE_POSITIVE。
@@ -7176,3 +7179,101 @@ Lane I 倾向 **(b)**：父已归档 ⇒ 该任务的验收语境已不存在 �
 
 Lane I 报告 `reports/2026-10-26-lane-i-archive-execution.md` + `temp/audit/lane_i_results.json`（逐条回执原文）+ `temp/audit/lane_i_run.py`（正确执行器）。
 - reported_by: lead-explore(Lane I 实测)
+## BUG-418 [2026-10-26T09:59:21Z] [high] OPEN
+- summary: [authz] `infer_role_from_agent` 从 agent 名字宽松推断角色 ⇒ 命名 `leader-xxx` 即可越过所有 Leader 级保护（含 `src/engine/` 引擎层），是能被主动利用的越权面
+- detail: ## 现象（Lane Q 实测，`src/engine/` 只读诊断）
+
+`reserve_scope` 的角色判定里，**角色是从 agent 名字推断出来的**，而推断规则宽松到可被命名绕过。
+
+Lane Q 实测三面：
+```
+reserve_scope("reports/xxx.md",   agent="lane-b-audit")    → 无权限规则（fail-closed）
+reserve_scope("templates/xxx.md", agent="lane-q-scope")    → reserved（已登记且角色够）
+reserve_scope("src/engine/engine_scope_perm.mbt", agent="lane-q-scope")
+  → 拒绝：角色 'Executor' 无权编辑。允许的角色：HumanSteward, Leader
+```
+
+**关键：那个「角色 'Executor'」不是调用方声明的，是 `infer_role_from_agent` 从字符串 `"lane-q-scope"` 猜出来的。**
+
+## 危害
+
+**任何人只要把自己的 agent 名字起成 `leader-xxx`（或任何命中 Leader 推断规则的前缀），就能越过所有「Leader 级」保护。**
+
+Lane Q 的原话：
+> **`infer_role_from_agent` 是宽松名字推断：`leader-xxx` 命名即可越过所有 Leader 级保护 —— 独立安全面缺口。**
+
+这与本项目既有的安全设计原则**直接冲突**：
+- ACL 体系（BUG-408）是 `fail-closed` + 显式 `agents_acl_grant`
+- 而角色推断是 `fail-open by naming` —— **名字一变身份就变**
+
+更严重的是：`infer_role_from_agent` 保护的是 **`src/engine/`**（引擎层）与 **`src/store/`、`src/server/`**（后者另有 HumanSteward 硬保护）。**能猜出 Leader 就等于能改引擎层判定逻辑。**
+
+## 与既有条目同族
+
+- **BUG-403**（`agent_fp` 宣称「不可逆指纹」但 FNV-1a 可逆）—— 同为「身份面过度承诺」
+- **BUG-404**（`agents_register` 注释宣称落默认 ACL 但实际没落）—— 同为「身份/权限面注释与实现不符」
+- **BUG-401**（`current_pid_token` 契约与实现不符）—— 同上
+
+**本条的严重度高于上述三条**：前三条是「说得好但没做到」，本条是「**能被主动利用**」。
+
+## 建议出路（三档，留裁决）
+
+- **(a) 角色改为显式声明 + 服务端校验**：agent 注册时由 `human_steward` 显式赋 role（与 `agents_acl_grant` 同一权限级别），`infer_role_from_agent` 只作为**缺省提示**并返回 `role_source="inferred"`，让调用方知道这个角色是猜的
+- **(b) 推断规则收窄 + 保留但标注**：禁止「前缀命中即给高角色」，只允许精确匹配（如 `leader` 整名），并返回 `role_source`
+- **(c) 维持现状 + 在 `reserve_scope` 回执里回显 `role_source="inferred"`** —— 最小改动，至少让**越权痕迹可见**
+
+Lane Q 未给倾向（它按边界只报不改）。**本条涉及安全面，按金条四留统帅裁决。**
+
+## 判据
+
+```bash
+grep -n "infer_role_from_agent" src/engine/*.mbt src/server/*.mbt
+# Lane Q 已核：check_scope_permission 全仓仅 2 处调用，src/engine/*wbtest* 零命中
+```
+Lane Q 报告 `reports/2026-10-26-bug413-reserve-scope-third-state-report.md` @ `5c2e6bea`。
+- reported_by: lead-explore(Lane Q 实测)
+
+## BUG-419 [2026-10-26T10:00:08Z] [medium] OPEN
+- summary: [scope-perm] `find_matching_rule` 注释称「最长 pattern 优先」但实现是「第一条匹配即返回」⇒ 未来插入更宽的前缀规则会静默遮蔽窄规则，保护被绕过或功能悄悄坏掉，两个方向都无报错无测试红
+- detail: ## 现象（Lane Q 只读诊断发现）
+
+`src/engine/engine_scope_perm.mbt` 的 `find_matching_rule` **注释声称「最长 pattern 优先」，实现却是「第一条匹配即返回」**。
+
+Lane Q 原话：
+> `find_matching_rule` 注释写「最长 pattern 优先」，实现却是「**第一条匹配即返回**」。
+> 本 patch 刻意不动（动了会改裁决面），但若将来加宽前缀规则，窄规则会被**静默遮蔽** —— 建议单开。
+
+## 危害（现在不发作，但埋了雷）
+
+**当前规则表里若「短 pattern 恰好排在长 pattern 前面」，长 pattern 永远不会被命中。**
+
+具体风险链：
+1. 现在 `engine_scope_perm.mbt` 的规则表**顺序恰好**让 `src/engine/` 这类长前缀排在前面 ⇒ 侥幸正确
+2. 未来任何人**新增一条更宽的前缀规则并插到前面**（如 `src/` 保护整棵源码树）⇒ **`src/engine/` 等窄规则被静默遮蔽**
+3. 遮蔽的后果分两种方向，**都是事故**：
+   - 若宽规则**更宽松**（如 `src/` 只要求 Executor）⇒ **窄规则的 Leader 级保护被绕过**（与 BUG-418 叠加，等于双重越权口）
+   - 若宽规则**更严格**（如 `src/` 要求 HumanSteward）⇒ 原本允许 Leader 改的 `src/engine/` **突然变成 Leader 也无权**，功能悄悄坏掉
+
+**两种方向都不会报错、不会有日志、不会有测试红** —— 这正是「静默遮蔽」的形状。
+
+## 与既有的判例关系
+
+**这是「注释即承诺，实现不兑现」的又一例**，与本轮 BUG-404（`agents_register` 注释宣称落默认 ACL 但没落）、BUG-403（`agent_fp` 宣称不可逆但 FNV-1a 可逆）**同族**。
+
+**但它比那两条更危险**：那两条是「说了没做」，本条是「**做了但和说的不一样，且差异方向取决于未来改动的顺序**」。
+
+## 建议出路（两档）
+
+- **(a) 实现改成真「最长 pattern 优先」**：按 pattern 长度排序后再取第一条匹配。**这是让它符合注释**。改动小、语义清晰。
+- **(b) 注释改成「第一条匹配即返回」+ 在规则表上方写明「顺序重要，宽规则必须排在窄规则之后」**。**这是让注释符合实现**，但把「顺序正确」的责任压给未来每个改规则表的人。
+
+**推荐 (a)**：判据/配置类的「顺序敏感」是**隐式契约**，靠注释提醒不可靠；让它对顺序免疫才是根治。且 (a) 与 BUG-413 的 patch 落在同一文件，可一并做（省一次改动面）。
+
+## 判据
+
+```bash
+grep -n -B2 -A12 "fn find_matching_rule" src/engine/engine_scope_perm.mbt
+# 注释与实现的差异一眼可见
+```
+Lane Q 报告 `reports/2026-10-26-bug413-reserve-scope-third-state-report.md` @ `5c2e6bea`（§缺口与风险 #2）。
+- reported_by: lead-explore(Lane Q 实测)
