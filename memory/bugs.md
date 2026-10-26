@@ -3266,6 +3266,24 @@ B. 若判定新契约作废，则删/改三条锁——但那等于放弃 BUG-18
 
 ### FIXED(2026-10-15T05:03:01Z / BUG-165)
 - evidence: 改在 src/server/ocr_scan.mbt：新增 `ocr_fake_green_check(stdout)->(Bool,String)`（解析 stdout JSON，`reviewable_count==0 && excluded>0 && files[].exclude_reason` 时返回 false + 汇总说明），`ocr_scan_impl` 对 `subcmd=scan|files` 调用它并把结果摊到回执（`ocr_reviewed:false` + `notice` 段）；4 条白盒锁在 src/server/ocr_scan_wbtest.mbt（.mbt 假绿 / .py 正常 / 非 scan JSON 形状保守通过 / 空目录不误报）。真源锁：commit 049ffbd（全量 1065 测试 1064 通过，唯一红是 BUG-167 的 BUG-18 漂移，与本条无关）。
+
+- 追记（2026-10-26 T0r588，**本条 FIXED 是假绿，本轮才真正修好**）：
+  **上面「白名单不可经参数覆盖」这个结论不完整** —— 旗确实没有（`--ext`/`--include`/`--lang` 都不存在），
+  但 `--rule` 指向的规则 JSON 里 `ProjectRule.Include` 的 glob 可以覆盖。
+  真源过滤链（`internal/scan/agent.go::whyExcluded`）的判定顺序是：
+  `IsSecretPath → IsUserExcluded → HasInclude() && IsUserIncluded(path) ⇒ ExcludeNone → IsAllowedExt ⇒ ExcludeExtension → IsExcludedPath`
+  —— **第 3 步在扩展名白名单之前短路**，源码注释亦写明「explicit include glob can admit
+  otherwise-unsupported extensions (e.g. .ftl)」。`include` 三层优先级 `custom(--rule) > project > global`。
+  **关键性质**：`include` 是增量放行而非限制性白名单（未命中的文件继续走正常扩展名判断）
+  ⇒ 对非 `.mbt` 零回归（实测 `.py` 与 `.mbt` 并存仍双双 reviewable）。
+  **实测（同一二进制、同一文件）**：基线 `reviewable_count:0` + `exclude_reason:"unsupported_ext"`
+  → 加 `--rule include` 后 `reviewable_count:1` / `will_review:true`；目录级 `--path src/server` 从 0 变 **88/91**。
+  **落地面**：commit `32c743f4`（`src/server/ocr_scan.mbt` 自动注入 include 规则 +
+  旧的一刀切「见 .mbt 恒 false」改为证据制「要求 `total_files>=1`」+ 补回被丢弃的 notice）；
+  `ocr_scan_wbtest.mbt` HEAD 18 → **29 条**；`moon test src/server` = **401/401**。
+  **保留 fail-closed**：用户自带不放行 `.mbt` 的 rules_file 时仍回 `ok=false` + 明确原因 + 修法提示。
+  **诚实边界**：端到端只用 `--preview` 验到「文件选择闸门真被打开」（正是原 bug 的根因面），
+  **未验**「LLM 真吐出 review 意见」（需 API key，本机无）。
 ## BUG-166 [2026-10-15T04:53:11Z] [low] FIXED
 - summary: [determinism] watchdog_tick 续轮选 prev_task 依赖 list_in_ns 未定义顺序：多个未标记完成根任务时无条件覆盖 pending_advance，续轮链条可能串错（两后端 list_tasks_in 均无 ORDER BY / recency 排序）
 - detail: 【现象】`watchdog_tick`（src/ops/ops_watchdog.mbt:285）在遍历命名空间内任务时，遇到**多个**已完成的未续轮根任务会无条件 `pending_advance = Some(t)` 覆盖——最终指向哪个任务完全取决于 `list_in_ns` 返回顺序，而该顺序在两个后端上都是**未定义/插入序**，不是「最近完成优先」。
@@ -5519,7 +5537,7 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - 本单原判的修正（append-only，不改上文）："修复属机器级、要重建 stdlib 安装、出口 403 装不动"这一条**不成立**，正确定性是"安装侧缺 bundle 合成这道工序，编译器自己能做"。连带解除两条限制：① 金条八的 `moon test` 全绿自证在本机恢复可用；② 上一版交 CI 兜的 `moon test` / `moon build` 面现在可以本机实跑，BUG-328 的"未自证面"已补验。
 - 边界与副作用（如实记）：① 合成物落在 `~/.moon/lib/core/_build/js/release/bundle/core.core`，属机器级、不进仓库、不随本 PR 走，换机/重装工具链需重跑同一工序；② 同目录 `all_pkgs.json` 里那批 `\\?\` 长路径是上一轮为绕 moonc 的 Windows 长路径 ICE 手工改写留下的（`all_pkgs.json.orig-fossil` 是改写前的原件），本单沿用现状、未再动它；③ 本机仍靠 `MOONC_OVERRIDE` 指向自建 shim 才能跑 moon，这颗 ICE 未解（另单）。
 
-## BUG-330 [2026-10-20T12:54:00Z] [medium] OPEN
+## BUG-330 [2026-10-20T12:54:00Z] [medium] FALSE_POSITIVE
 - summary: [工具链] moonc/moonfmt 0.10.16 把 `Int` 规范化打印成 `Int32` —— `moon fmt --check` 与 `.mbti` 生成面在新版下与仓库存量拼写系统性不一致
 - detail: 本机实测两例同根：① `moon check` 成功后会把 24 份 `pkg.generated.mbti` 里的 `Int` 改写成 `Int32`；② 直调 `moonfmt.exe <file> -o out` 后 diff，唯一差异就是 `fn evolve_col_text(stmt, i : Int)` → `i : Int32` 这类签名行 —— 即 **moonfmt 自己**要求 `Int32` 拼写，不是谁手改的。
 
@@ -5532,6 +5550,7 @@ self.scope 字典（行 190）跟踪名称 → 'var'|'param'，但从未在遇�
 - task_id: T0-slave-moonc-0.10.16-result-api
 
 
+- false_positive(2026-10-26T15:04:41Z): Lane Y（Round 6）复现尝试直接否定原条目主张的方向。(1) 最小工程直调 moonfmt.exe：fn pick(x : Int) -> Int { ... } ⇒ diff 无差异（Int 未被改写）。(2) .mbti 面计数：Int32 = 173 / Int = 0 ⇒ 全是 Int32，不存在「拼写不一致」。(3) .mbt 面计数：Int32 = 461 / Int = 47 ⇒ 已是 Int32 主流。⇒ 原条目主张的「全仓存量都写 Int、new moonfmt 要 Int32」方向已反转，现象不复现。报 FALSE_POSITIVE 而非 FIXED：没有任何针对 BUG-330 的修复提交，「现象消失」≠「有人修了」（判例-25 口径）。报告 reports/2026-10-26-r6-bugfind-round2-report.md（14691 字节）。
 ## BUG-336 [2026-10-19T09:03:42Z] [medium] FIXED
 - summary: dag_cost_route 负载感知冻结：load 只在循环前一次性快照，路由循环内从不更新累计负载 → 等成本平局时全堆给先注册执行者（1180 任务 59% 给单一执行者）
 - detail: ## 现象
@@ -7198,6 +7217,29 @@ Lane I 报告 `reports/2026-10-26-lane-i-archive-execution.md` + `temp/audit/lan
 **实测**：`python scripts/moon_test_env.py --target js src/engine` = **219/219 passed, 0 failed**（含上述 5 格）。
 
 **为什么这是真修而非改状态**：修法直接改的是「归档门怎么判」这个实现，不是账本抬头；且判据从「父任务已归档」这个**客观状态**读，而不是从调用方声明的名字/描述读 —— 这与 BUG-418（拿不可信的名字做权限判定）是相反方向的正确示范。
+
+- 追记（2026-10-26 真因更正，**我最初的归因是错的**）：
+  真因**不是** orphan 判定有缺陷，而是**调用 archive 的那台 MCP server 跑的是旧构建**。
+  A/B 对照（同一份真实库副本 × 两台 server，只换代码）：
+  ```
+  git log -1 --format='%h %ad' --date=iso 72986aa7  → 2026-10-26 20:40:30 +0800
+  ls -la AppData/Local/FIST-Mbt/fist-mbt.js         → Oct 26 11:59（比修复早 8.7 小时）
+  grep -c "omega_orphan_of_archived_parent" 该产物   → 0     ← 现场产物里根本没有这个函数
+
+  A. 固定构建（HEAD 72986aa7）→ archive T0r636.1.2 成功，status='已归档'
+  B. 现场 installed bundle    → -32000: Omega 门禁拦截归档: … 尚未做成果复验
+  ```
+  ⇒ **同一份数据、同一参数，旧构建复现报错、新构建通过**。判据本身没错，引擎不用改。
+  **诊断陷阱**：门禁报错只回一句「尚未做成果复验」，不告诉你它跑的是哪份代码；而 `moon check` 绿 +
+  源码里判定齐全 + `git log` 有修复 commit，三样都让人以为「逻辑在场」。
+  唯一能把「逻辑错」和「部署旧」分开的实验，是拿**同一份库副本**分别喂新旧两个 server。
+  **补充**：既有 `omega_orphan_wbtest.mbt` 只锁纯函数，判据绿不证明接线对（判例-29）
+  ⇒ 本轮补了 `engine_archive_force_wbtest.mbt` 4 条引擎层成对锁（commit `765eb674`，
+  含「父已归档+元数据false+描述含标记 ⇒ 放行**并落库**」正例与三条反例）；
+  变异对照：基线 219/219 → 加锁 223/223 → 删 orphan 豁免红锁5 / 删「元数据真开不豁免」红锁7。
+  **僵尸实清**：`T0r636.1.2` / `.2.2` / `.3.2` → **已归档**（走修好后的 `FistEngine::archive_force`，
+  无一条 SQL 直改）；残留扫描「metadata=0 + 描述含标记 + 父已归档 + 已暂停/已打回」= **0**。
+  **同族缺陷已新立 BUG-428**：「部署产物陈旧但版本守卫 PASS」（`dist/` / `_release/` / PATH 三份都 grep 不到本修复符号）。
 ## BUG-418 [2026-10-26T09:59:21Z] [high] FIXED
 - summary: [authz] `infer_role_from_agent` 从 agent 名字宽松推断角色 ⇒ 命名 `leader-xxx` 即可越过所有 Leader 级保护（含 `src/engine/` 引擎层），是能被主动利用的越权面
 - detail: ## 现象（Lane Q 实测，`src/engine/` 只读诊断）
@@ -7484,7 +7526,7 @@ DENIED  agent=fist-mbt  src/store/store_sqlite.mbt · moon.mod   ← HumanStewar
 - 同批新立：单词 leader 仍买军官面 / 注册面毒化 human_steward / lock_acquire 无权限门
 - reported_by: lead(Lane Q 回传 + 指挥官终审)
 
-## BUG-423 [2026-10-26T14:17:00Z] [high] OPEN
+## BUG-423 [2026-10-26T14:17:00Z] [high] FIXED
 - summary: [authz] BUG-418 副作用：claim/execute 的 agent_touch_first_seen 对任意 assignee 写 role="Executor" 且 ON CONFLICT 不更新 role ⇒ 统帅被这样注册过后永久锁死在 HumanSteward 面外
 - detail: ## 现象（功能性雷，2026-10-26 Lane Q 实测）
 
@@ -7550,6 +7592,9 @@ let role = max_role(declared, infer_role_from_agent(name))
 - 同批新立：单词 leader 仍买军官面 / A 案查表键仍是自报名字 / lock_acquire 无权限门
 - reported_by: lead(Lane Q 回传 + 指挥官终审)
 
+
+### FIXED(2026-10-26T14:48:54Z / BUG-423)
+- evidence: commit 5d388548（2 文件）。改在 src/store/store_sqlite.mbt 的 agents_register：ON CONFLICT 的 SET 里加 role=CASE WHEN agents.role != 'Executor' THEN agents.role ELSE excluded.role END。语义：库里是 HumanSteward/Leader ⇒ 不被 Executor 覆盖（防降级）；库里是 Executor ⇒ 可被显式注册抬高（正道可行）。为什么用 CASE 而非无条件 role=excluded.role：后者会让低权路径（claim 传 Executor）把高角色打回去，那正是本条 bug 的原始形状。问题链：agent_touch_first_seen（server.mbt:1716 的 claim / :1777 的 execute）对任意 assignee 调 agents_register(role="Executor")，而原 ON CONFLICT 只刷 pid/last_seen/status 不更新 role ⇒ 第一次出现的 role 终生有效，且第一次往往来自低权路径；与 BUG-418 组合成死锁（BUG-418 让角色优先读 agents.role ⇒ 合法统帅被永久锁死在 HumanSteward 面外，Lane Q 实测 DENIED agent=human_steward scope=src/store/store_sqlite.mbt）。回归锁 store_sqlite_agents_wbtest.mbt +3 条：锁1=先登记 Executor（模拟 claim）再显式注册 HumanSteward 必须抬上去（钉本条真实形状）；锁2=核心反例格，已是 HumanSteward 时低权路径再传 Executor 必须仍是 HumanSteward，且断言 pid 仍刷新为 3002（防一刀切不更新的过度修复）；锁3=Leader 同样不被降级。验证：moon check --target js = 52 warnings 0 errors；moon_test_env --target js src/store = 76/76/0 全绿。变异实测：把 role=CASE… 从 SQL 删掉（退回原实现）⇒ 76/75/1（锁1变红=无法抬高），恢复后复跑 76/76/0。变异揭示的重要事实：锁2/3 在原实现上本来就绿（原实现不更新 role 天然防降级），只有锁1红 ⇒ 原 bug 的准确形状不是「降级」而是「第一次出现终生有效」，锁2/3 的作用是守住「别为了能抬高而把防降级一起拆掉」。未做另立：BUG-421（整名 leader/lead 仍买到 Leader 面）、BUG-422（A 案查表键仍是调用方自报名字）、BUG-424（lock_acquire/lock_renew 完全没有权限门）。
 ## BUG-424 [2026-10-26T14:17:00Z] [high] OPEN
 - summary: [authz] lock_acquire / lock_renew 完全没有权限门（engine_rsv.mbt:108-109 注释自述「暂时没接」）⇒ reserve_scope 收口后，改 src/engine/ 的协作锁仍可绕过权限判定
 - detail: ## 现象（2026-10-26 Lane Q 只读诊断 + 指挥官复核）
@@ -7595,3 +7640,290 @@ match check_scope_permission(scope, role) {
 - BUG-421/422/423（同批新立）：角色来源的三条残留
 - 两者合起来的完整结论：**「软预订有门、硬锁没门」是不一致的安全边界**
 - reported_by: lead(Lane Q 回传 + 指挥官终审)
+## BUG-425 [2026-10-26T14:23:57Z] [medium] OPEN
+- summary: [guard] check_test_sync 在并发开发期天然假红——读工作树数、比文档数，两者不同源
+- detail: ## 形状（判据设计范式缺口，不是一个普通 bug）
+
+`check_test_sync` 的**读数面**与**原文面**来自**不同时间点**：
+
+- **读数面**：`--total <N>` 由调用方传入，实际值来自**工作树**的 `moon test` 实测（moving target）
+- **原文面**：被检的 17 处现状面 `.md`（README/AGENTS/ARCHITECTURE/…）写的是**已提交态**的数
+
+⇒ 两者天然不同源 ⇒ **在并发开发期它不是「检测到漂移」，而是「制造假漂移」**。
+
+## 复现（2026-10-26 实测，本仓工作树当时有 12 个文件在途）
+
+```
+工作树实测：Total tests: 1505, passed: 1505, failed: 0   (rc=0，汇总行为准)
+```
+
+| 调用 | 结果 | 为什么「正确」 |
+|---|---|---|
+| `check_test_sync.py --total 1468` | **FAIL**（17 处 R1 仍写 1463） | 对 **HEAD** 正确：`HEAD` 面 `^test` 行 = 1479，文档该写已提交态 |
+| `check_test_sync.py --total 1505` | **PASS**（若把 17 处改成 1505） | 对 **工作树** 正确：实测确实是 1505 |
+
+**两种调用都能自证「正确」** ⇒ 判据无法表达这个区别 ⇒ 调用方无从判断该用哪个数。
+
+## 为什么不能靠「人记得传对数字」
+
+那正是本仓已立判例的反面教材：「`--` 是一个词，记不住就没有防线」。
+要求调用方自己判断「现在该传 HEAD 的数还是工作树的数」，等于**把判据的判断力外包给人的记忆**。
+
+更硬的一条（统帅补充）：若那 12 个在途文件有任何一个被回滚，按工作树数改的 17 处会**全部变成错的**，
+而且是「文档说 1505、实测 1468」这种**静默错** —— **改错要被人看出来，改早没人看出来。**
+
+## ⚠️ 关键实测：方案 (a)「读 HEAD」**不精确**
+
+统帅要求在选出路前先核「`git show HEAD:<file>` 数 `^test` 行 vs 实测总数能不能对上」。**实测结论：对不上。**
+
+| 面 | `^test` 行数 | `moon test` 实测总数 | 差 |
+|---|---|---|---|
+| 工作树（本次实测） | **1506** | **1505** | **−1** |
+| HEAD（`git show HEAD:<file>` 逐文件数） | **1479** | （未在 HEAD 树跑实测） | — |
+
+复算方式（可复现）：
+```
+# HEAD 面
+for f in $(git ls-files '*.mbt'); do git show "HEAD:$f" 2>/dev/null | grep -cE '^test '; done   # 逐文件累加 = 1479
+# 工作树面（跟踪 + 未跟踪）
+for f in $(git ls-files '*.mbt'; git ls-files --others --exclude-standard '*.mbt'); do grep -cE '^test ' "$f"; done   # = 1506
+```
+
+**为什么差 1**：`^test ` 行数 ≠ `moon test` 的用例数。已排除的候选原因：
+- 无 `skip`/`ignored`/`pending`（测试日志 grep 全空）
+- 无缩进内联 `test "` 行（`grep -E '^\s+test "'` = 0）
+- 无 `test_inline` / `@skip` / `ignore_test` 标记（全仓 grep 空）
+
+⇒ **偏差来源未能定位到单一构造**（可能是某个 snapshot 类用例的计数口径差异，或多文件同名 test 的合并）。
+**关键结论不变：`^test` 行计数与实测总数不是一一对应 ⇒ 「读 HEAD 数行」这条路不能作为精确判据。**
+
+## 建议出路（三档，统帅拍）
+
+| 档 | 做法 | 评价 |
+|---|---|---|
+| **(a) 读 HEAD 数 `^test` 行** | `git show HEAD:<paths> \| grep -c '^test '` | ❌ **实测不精确**（1506 vs 1505 差 1）⇒ **不推荐** |
+| **(b) 脏则 advisory** | 工作树有未提交 `*.mbt` ⇒ 输出 `WARN`、退出码降为 **0**（不判红），并**在输出里点名是哪几个文件** | ✅ **可行且低成本**。不假装有精确面，只承认「此刻不可判」；与 `check_fmt_gate` 的 DEGRADED(2) 同族（判据无法自证时不判红也不判绿） |
+| **(c) 双模式 `--source=head\|worktree`（默认 head）** | 调用方显式选面；`head` 档需实现在临时 worktree 里跑 `moon test`（昂贵）或退回数行（不精确） | ⚠️ 语义最清晰，但 `head` 档要么贵要么不准 |
+
+**我的推荐：(b) 为主 + (c) 只保留 `--source=worktree` 显式覆盖**。
+理由：`(b)` 直接消灭「假红」这一故障形态，且不需要引入「不精确的近似面冒充精确面」。
+`check_fmt_gate.py` 已有 DEGRADED(2) 先例（BUG-388）：**判据无法自证时拒绝判红也拒绝判绿**——
+本条的「工作树脏」正是同一种「无法自证」形状，应复用同一口径。
+
+## 影响面
+
+- 并发开发期（本仓常态：多 lane 同时改 `src/`）**每一次** `check_test_sync` 都会红，除非人工传入脏树数
+- 2026-10-26 本轮已实际造成一次派单摩擦：Lane X 被派来做「1463 → 实测数」的同步，
+  但实测数在不稳定的工作树上，只能停下等收口
+
+## 关联
+
+BUG-142（判绿以汇总行为准）、BUG-388（判据无法自证时 DEGRADED 先例）、判例「工作树是移动靶」、判例「`--` 是一个词，记不住就没有防线」。
+- reported_by: lane-x-test-sync
+
+## BUG-426 [2026-10-26T14:39:10Z] [high] FIXED
+- summary: [r6] src/core/core_task.mbt:557 reject/retry 不清空 deliverable ⇒ 打回前的不合格交付物被当成本轮成果提交验收
+- detail: ## 代码定位（三处合起来构成缺陷）
+
+1. `src/core/core_task.mbt:557` `Task::reject` —— 只改 status + 在 description 追加打回原因，**`deliverable` 字段原样保留**：
+   `Ok({ ..self, status: Rejected, description: ... })`
+2. `src/core/core_task.mbt:580` `Task::retry` —— 只把 Rejected→Executing，**同样不动 `deliverable`**：
+   `Rejected => Ok({ ..self, status: Executing, })`
+3. `src/engine/engine.mbt:599` `FistEngine::submit` —— **没有任何 deliverable 非空/新鲜度检查**，
+   直接 `t.submit()`（Executing→Reviewing）后落库。
+
+## 缺陷路径（状态机完全合法，每一步都不报错）
+
+```
+execute(deliverable="旧的不合格交付物 A")   → Executing
+submit()                                    → Reviewing
+reject(reason="不达标")                      → Rejected   ★ deliverable 仍是 A
+retry()                                     → Executing  ★ deliverable 仍是 A
+submit()                                    → Reviewing  ★ 无任何门禁，直接进验收
+verify(...)                                 → Completed  ★ 验收的是 A
+```
+
+**关键**：只要 retry 之后**不重新 execute**，旧交付物 A 就顶替了本轮成果。
+而 `submit` 不查 deliverable ⇒ 整条链**无报错、无日志、无测试红**。
+
+## 为什么是真 bug（不是「设计如此」）
+
+- `src/engine/omega_strong.mbt:642` 的成果复验门用 `if t.deliverable.trim() == ""` 判「尚无交付物」——
+  **它假设 deliverable 与「本轮执行」同步**。reject/retry 不清空，这个假设就是假的：
+  **旧交付物让 Omega 门误判「已有成果可复验」，复验的是上一轮的废品。**
+- `src/server/board_ascii.mbt:252` `done_no_artifact` 用 `deliverable == ""` 识别「假绿已完成」（BUG-29 档）——
+  同理，**打回重试后完成的假绿任务不会被计入该档**，账本读数为 0 假绿。
+- 现有测试零覆盖：`grep -rn 'deliverable' src/core/*wbtest*.mbt src/engine/*wbtest*.mbt | grep -i 'retry\|reject'` → **空**。
+
+## 影响面
+
+- `[gate:required]` / Omega 强验证任务：**复验对象错位**（复验旧交付物，判绿后当真了账）
+- `done_no_artifact` 假绿计数：**系统性低估**
+- 任何「打回→重试→直接提交」的 agent 流水线：**无惩罚地复用上一轮成果**
+
+## 建议修法（二选一，建议 A）
+
+**A（推荐，根因修法）**：`Task::retry` 里清空 deliverable，并留一行打回历史：
+```moonbit
+Rejected =>
+  Ok({
+    ..self,
+    status: Executing,
+    deliverable: "",          // 打回即作废：新一轮执行必须重新 execute
+  })
+```
+理由：`retry` 的语义是「重新开始执行」，交付物是**本轮执行的产物**，跨轮继承没有正当性。
+打回原因已经写在 `description` 里，历史不丢。
+
+**B（兜底修法）**：`FistEngine::submit` 加硬门 —— `if t.deliverable.trim() == "" { return Err("无交付物不可提交验收") }`。
+不推荐单独用：它只拦「空」，拦不住「非空的旧交付物」。
+
+**⇒ 建议 A + B 同批做**（A 清脏、B 兜底），并配 wbtest：
+`execute(A) → submit → reject → retry → (不 execute) → submit` 必须因为 deliverable 已空而**验收判据能识别**。
+
+## 关联
+
+BUG-29（done_no_artifact 假绿档）· OMEGA 成果复验门（`omega_strong.mbt:642`）· BUG-2（execute 的出路文案同族：状态机允许但语义该拦）
+- reported_by: commander-gamma
+
+### FIXED(2026-10-26T15:24:47Z / BUG-426)
+- evidence: commit 949fff44（2 文件）。改在 src/core/core_task.mbt:580 的 Task::retry：Rejected => Ok({ ..self, status: Executing, deliverable: "" })，只清 deliverable、保留 assignee（retry 是「同一个人重做」，reopen 才是「回认领池」该清 assignee）。缺陷链：execute(A)→submit→reject→retry→submit 走完一圈后 deliverable 仍是 A 且 submit 不查新鲜度 ⇒ 旧废品被当成本轮成果提交验收。三处合起来构成：reject(:557) 只改 status + 追加打回原因不动 deliverable；retry(:580) 只改 status 同样不动；FistEngine::submit(engine.mbt:599) 无 deliverable 新鲜度检查。决定性对照（证明是遗漏不是设计选择）：同一条 Rejected 分支上兄弟方法 Task::reopen(:549) 清了 deliverable: "" + assignee: None，而 retry 两者都没清。危害链：omega_strong.mbt:642 用 deliverable.trim()=="" 判「尚无交付物」⇒ 旧废品被当成果复验判绿即真了账；board_ascii.mbt:252 假绿档系统性低估。回归锁新增 src/core/core_task_retry_deliverable_wbtest.mbt 3 条：锁1=submit→reject→retry 后 deliverable 必须为空，同时断言 reject 时交付物还在（打回要留证据不该在 reject 阶段清）；锁2=防过度修复，retry 后 assignee 必须仍是 exec-1；锁3=对照，reopen 与 retry 语义不同不可混（reopen 清 deliverable 且清 assignee，retry 清 deliverable 但保留 assignee）。验证：moon check --target js = 51 warnings 0 errors；moon_test_env --target js src/core = 21/21/0 全绿。变异实测：把 deliverable: "" 从 retry 删掉（退回原实现）⇒ 21/20/1（锁1 bug426_retry_clears_deliverable 变红），恢复后复跑 21/21/0。未做另立：BUG-427（reject 无上限追加 description，T0r636.4.2 单次打回 4.7KB）；submit 端兜底未补（需要「交付物时间戳 vs 本轮开始时间」的语义定义）。
+## BUG-427 [2026-10-26T14:55:38Z] [medium] OPEN
+- summary: [r6] src/core/core_task.mbt:557 reject 把打回原因无上限追加进 description ⇒ 污染 triage/drift_check/supervisor 的进料面
+- detail: ## 代码定位
+
+`src/core/core_task.mbt:557` `Task::reject`：
+
+```moonbit
+Reviewing =>
+  Ok({
+    ..self,
+    status: Rejected,
+    description: if reason == "" {
+      self.description
+    } else {
+      self.description + " [打回原因: " + reason + "]"   // ★ 纯追加，无上限、无去重
+    },
+  })
+```
+
+## 缺陷
+
+每次 `reject` 都把 `[打回原因: ...]` **追加**到 description 尾部：
+
+1. **无长度上限**：`grep -rn 'description.length()' src/` 在生产路径只命中 `router.mbt:49`（难度打分）与
+   `laya_route.mbt:95`（>120 截断），**存储面无任何长度闸**。`desc_clip`（`core_task.mbt:680`）
+   只在 `to_json` 输出时截断，**库里存的是全文**。
+2. **无去重**：同一原因被连续打回 N 次就追加 N 次。
+3. **description 是多个判据的进料面**：
+   - `task_triage` 的能力抽取（`engine_triage.mbt`）从 description 正则取关键词 —— 追尾的
+     `[打回原因: ...]` 文本会被当成任务描述参与匹配，**污染推荐排序**。
+   - `goal_drift_check`（`server.mbt` 的 R100）用 description 做词法 Jaccard —— 打回原因越长，
+     **drift 读数越失真**（子任务描述被撑大，与根目标的覆盖率算出来是假的）。
+   - `supervisor_status(detail=false)` 截断到 200 字节 —— 打回原因占满前 200 字节后，
+     **真正的任务描述在回执里被挤掉**。
+
+## 实测（不是推断）
+
+`fist-mbt.db` 现读：
+```
+T0r636.4.2   len=4737  打回次数=1   ← 单次打回就 4.7KB（原因文本本身极长）
+T0r581.2     len=633   打回次数=2
+T0r581.3     len=633   打回次数=2
+```
+⇒ **该路径已被真实使用**，且单次打回即可把 description 撑到 4.7KB。
+
+**注意诚实边界**：现有数据里**没有**观察到「同一任务几十次打回」的极端膨胀，
+所以这是**结构性缺陷（无界增长 + 污染判据进料面）**，不是「已经在炸」。
+
+## 建议修法（三选一，建议 A）
+
+**A（推荐）**：打回原因**不进 description**，进独立的追加式历史（新字段或 `memory` 式旁路），
+description 保持「任务原始意图」不变。理由：description 的语义是「这个任务要做什么」，
+打回原因是「过程记录」，两者混在一个字段里必然互相污染。
+
+**B（最小改动）**：给 description 追加设上限 —— 只保留**最近 1 条**打回原因
+（先剥掉旧的 ` [打回原因: ...]` 尾巴再拼新的），且总长截断到某阈值（如 1000 字符）。
+
+**C（兜底）**：`reject` 时若 `description.length()` 超阈值，拒绝追加并返回 Err 提示先清理。
+
+## 关联
+
+`src/core/core_task.mbt:680` `desc_clip`（只在输出面截断，存储面无闸）·
+`engine_triage.mbt` 能力抽取 · `goal_drift_check`（R100）· `supervisor_status` 截断口径
+- reported_by: commander-gamma
+
+## BUG-428 [2026-10-26T15:01:12Z] [high] OPEN
+- summary: [deploy] 部署产物陈旧但版本守卫 PASS —— `dist/fist-mbt.js`(Oct 24)、`_release/js/fist-mbt.js`、PATH 上的 `AppData/Local/FIST-Mbt/fist-mbt.js`(11:59) 三份都 grep 不到 BUG-417 的修复符号，而 `check_dist_snapshot.py` 只比版本字符串判 PASS ⇒ 把「代码改了但 MCP 行为不变」误诊成「逻辑缺陷」
+- detail: ## 现象（2026-10-26 BUG-417 诊断的副产物，A/B 对照实证）
+
+修复 commit `72986aa7`（20:40:30）落地后，验证时发现**三份部署产物都还是旧代码**，而现有守卫只比版本字符串：
+
+| 产物 | mtime | `grep -c omega_orphan_of_archived_parent` | 守卫判定 |
+|---|---|---|---|
+| `C:/Users/victo/AppData/Local/FIST-Mbt/fist-mbt.js`（**现场 PATH 上的那个**） | Oct 26 **11:59** | **0** | — |
+| `dist/fist-mbt.js` | Oct 24 06:16 | **0** | `check_dist_snapshot.py` → **PASS** |
+| `_release/js/fist-mbt.js` | — | **0** | — |
+
+`check_dist_snapshot.py` 的输出逐字：`PASS 快照版本 0.3.10 == moon.mod 0.3.10`。
+
+⇒ **版本对得上，代码是旧的**。版本守卫只比字符串（`0.3.10 == 0.3.10`），**覆盖不到内容新鲜度**。
+
+## 危害（这次实际造成的损失）
+
+BUG-417 的修复明明在 HEAD 上，但：
+1. 我调 MCP `archive(force=true)` 归档僵尸 → 被 Omega 门拦 → **误判为「判定逻辑有缺陷」**
+2. 花了约 40 分钟查 orphan 判定的四个条件（`omega_required` / 描述标记 / `get_parent` / `is_archived`），逐项实测**全部正常**
+3. 最后靠 **A/B 对照**（同一份库副本 × 新旧两台 server）才定位：**旧构建无条件过 Omega 门，四条件全满足也照拦**
+
+**同一份数据、同一参数，旧构建复现报错、新构建通过** —— 差的是代码，不是数据、不是判据。
+
+**这类误诊的代价**：把「部署陈旧」误判成「逻辑缺陷」，可能触发对**正确代码**的错误修改（幸好这次没改引擎）。
+
+## 同族历史（不是孤例）
+
+- 今天早些时候我自己也踩过同一个面：DSH 的 MCP server 进程跑的是 18 小时前的 release build（170 工具），而 `_build` 已重建 —— 表现为「代码改了但 MCP 面行为不变」
+- BUG-377（已 FIXED）：`fist-mbt.cmd` shim 指向 `_build/js/debug/.../cli.js`，而 `_build` 被清空 ⇒ 所有 CLI 命令无法启动
+- BUG-32（已 FIXED）：`scripts/fist.py` 不校验入口产物新鲜度 ⇒ 调用面验收在度量旧二进制
+
+## 修法方向
+
+**① 给 dist 加内容面判据**（最小）：
+```python
+# scripts/check_dist_snapshot.py 增一格
+KEY_SYMBOLS = ["omega_orphan_of_archived_parent", "check_branch_ancestry", ...]  # 或自动取近期修复的关键符号
+for sym in KEY_SYMBOLS:
+    assert sym in dist_content, f"dist 快照缺关键符号 {sym}：版本对但代码旧"
+```
+更通用的做法：**与 `git show HEAD:<src>` 的构建指纹对照** —— 从源码提取一组「最近 N 个 commit 引入的函数名」，逐个 grep dist 产物。
+
+**② 部署面新鲜度判据**（覆盖 AppData / PATH shim）：
+- 新增 `scripts/check_deployment_freshness.py`：对 PATH 上的 `fist-mbt` 解析实际产物路径 → 比 mtime 与 `max(src/**/*.mbt, moon.pkg)` → 落后则红
+- 或让 `fist doctor` 加一格「部署产物新鲜度」
+
+**③ 诊断纪律**（文档面，成本最低）：
+`AGENTS.md` 加一条：**MCP 工具报「门禁拦截 / 拒绝」时，先 grep 部署产物 + 对时间戳，再做逻辑归因**。
+复现 A/B 对照的脚本模板已在 `temp/b417_run2.py`。
+
+**④ 现场恢复**（运维动作）：
+```
+moon build --target js cmd/cli
+python scripts/patch_esm_main.py <产物>
+覆盖 C:/Users/victo/AppData/Local/FIST-Mbt/fist-mbt.js
+重启 MCP 客户端
+```
+注：本次僵尸清理是用新构建**直接对真实库**跑的（效果已生效，与进程无关）。
+
+## 关联
+
+- **BUG-417**（已 FIXED）：本次误诊的源头
+- **BUG-377 / BUG-32**（已 FIXED）：同族「部署面陈旧 / 产物新鲜度」
+- **BUG-389 / BUG-420**：诊断过程中被「带 namespace → task not found」引开注意力的另一条独立机制
+
+## 建议入档
+
+- 新判据：`scripts/check_deployment_freshness.py`（PATH 产物 mtime vs 源码）
+- 扩展：`scripts/check_dist_snapshot.py` 增内容面格（grep 关键符号）
+- 文档：`AGENTS.md` 诊断纪律一条 + `docs/SOP.md` 部署面检查清单
+- 报告：`reports/2026-10-26-bug417-orphan-deploy-stale-report.md`
+- reported_by: lead(BUG-417 诊断副产物 + A/B 对照实证)
