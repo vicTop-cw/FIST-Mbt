@@ -3,7 +3,7 @@
 > **文件命名**：`2026-10-22-folder-watch-trigger-proposal.md`
 > **放置目录**：`docs/proposals/`
 > **状态**：`draft`
-> **替代**：`reports/2026-10-16-future-plan.md` §二（内容整合进 `improvement-plan-20261010.md` §7）
+> **替代**：`docs/archive/2026-10-16-future-plan.md` §二（内容整合进 `improvement-plan-20261010.md` §7）
 > **来源**：用户提及「RX-MBT 触发器」历史 + `src/ops/ops_watchdog.mbt` 已有 tick 骨架
 
 ---
@@ -63,6 +63,6 @@ FIST-Mbt 当前靠外部 cron 每分钟 tick 驱动 pipeline。用户历史提�
 ## 8. 参考
 
 - `improvement-plan-20261010.md` §7（方向六）
-- `reports/2026-10-16-future-plan.md` §二（已归档）
+- `docs/archive/2026-10-16-future-plan.md` §二（已归档）
 - `src/ops/ops_watchdog.mbt`（现有 tick 骨架）
 - `src/ops/ops_pipeline_tick.mbt`（pipeline 唤醒一拍）

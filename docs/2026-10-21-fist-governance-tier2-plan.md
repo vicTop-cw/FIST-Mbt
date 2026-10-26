@@ -74,7 +74,7 @@ machines:
 | merge_markers | 调已存在的 `scripts/blackbox/check_merge_markers.py` | 冲突标记硬门禁 |
 | fmt | `moon fmt --check` | MoonBit 格式门禁 |
 | build | `moon build --target js src/server src/engine src/store src/router src/ops` | 编译门禁（0 errors 才过） |
-| ps_encoding | 调已存在的 `scripts/blackbox/check_ps_encoding.py` 或内联 20 行 | BOM/UTF-8 门禁 |
+| ps_encoding | 调已存在的 `scripts/check_ps_encoding.py` 或内联 20 行 | BOM/UTF-8 门禁 |
 | store_path | 内联 10 行 grep store 源文件绝对路径 | 路径硬编码门禁 |
 
 **排除目录**: `_build/`、`temp/`、`.git/`、`node_modules/`
