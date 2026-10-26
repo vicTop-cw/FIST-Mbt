@@ -37,7 +37,7 @@ pub fn ch_desc(String, String, String) -> String
 
 pub fn challenge_strategies() -> Array[String]
 
-pub fn check_scope_permission(String, String) -> Result[PermissionRule, String]
+pub fn check_scope_permission(String, String) -> ScopeVerdict
 
 pub fn deps_ready_memo(Array[String], Map[String, Bool]) -> Bool
 
@@ -48,6 +48,8 @@ pub fn gate_enabled(@core.Task) -> Bool
 pub fn gate_mark() -> String
 
 pub fn infer_role_from_agent(String) -> String
+
+pub fn matching_rule(String) -> PermissionRule?
 
 pub fn mc_percentile_index(Int32, Int32) -> Int32
 
@@ -219,6 +221,12 @@ pub fn FistEngine::triage(Self, String, String, String, skill? : String) -> Json
 pub fn FistEngine::verify(Self, task_id~ : String, verifier~ : String, now~ : String, docs_check? : Bool) -> Result[@core.Task, String]
 
 type PermissionRule
+
+pub enum ScopeVerdict {
+  Allowed
+  RoleDenied(String)
+  Unregistered(String)
+}
 
 // Type aliases
 

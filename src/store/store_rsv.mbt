@@ -61,12 +61,31 @@ pub fn MemoryStore::rsv_list(
 /// 不是调用方想要的那个值——回执不许由请求反推。
 pub struct RsvOutcome {
   reserved : Bool
-  /// reserved | renewed | taken_over | conflict
+  /// reserved | renewed | taken_over | conflict | unregistered
   action : String
   /// 仅 taken_over 非空：被让渡掉的原持有者
   prev_agent : String
   agent : String
   ttl_until : String
+}
+
+///|
+/// 只改 `action` 标签、其余字段原样保留（BUG-413）。
+///
+/// 为什么需要这个而不是让调用方自己构造：`RsvOutcome` 的字段是包内私有的，
+/// 跨包 struct literal 会被编译器拒绝（实测 4036/4033）。
+/// 而 `engine_rsv` 需要在「未登记路径 advisory 登记成功」时把 action 标成 `unregistered`，
+/// 好让调用方分辨「这是登记通过」而不是「授权通过」。
+///
+/// **本函数不改变 `reserved`** —— 只改标签，不改裁决。
+pub fn RsvOutcome::relabel(self : RsvOutcome, action : String) -> RsvOutcome {
+  RsvOutcome::{
+    reserved: self.reserved,
+    action,
+    prev_agent: self.prev_agent,
+    agent: self.agent,
+    ttl_until: self.ttl_until,
+  }
 }
 
 ///|
