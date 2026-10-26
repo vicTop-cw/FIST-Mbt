@@ -240,6 +240,58 @@ pub struct LockAcquireOutcome {
 pub extend LockAcquireOutcome with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
+/// BUG-424：锁裁决结果的**受控改写**（与 `RsvOutcome::relabel` 同款手法）。
+///
+/// 为什么需要它（这是那条「暂时没接」注释的真实原因，它一直说错了）：
+/// `engine_rsv.mbt` 里挂着一句「锁的权限门禁**暂时没接**——`LockAcquireOutcome` 是 read-only
+/// 类型，必须在 store 内部创建；将来会在 store_rsv 层加一个 permission_denied 构造器」。
+/// **该注释写于 2026-10-22，挂了 4 天，而它的理由从来就不成立**：
+///   ① 本结构体**没有**任何 read-only 标记（`grep read-only\|readonly` → 0 命中），它是普通 `pub struct`；
+///   ② 真正的限制只有一条：**字段是包内私有的** ⇒ `engine_rsv` 跨包写 struct literal 会被编译器
+///      拒绝（BUG-413 实测 4036/4033）；
+///   ③ 而同一个障碍 **BUG-413 已经用 `RsvOutcome::relabel` 解决过一遍** —— 只是没人回头看那条注释。
+/// ⇒ 「等后端扩展」是伪需求：**在本文件补一个同款 helper 即可**。
+///
+/// **本函数不改变任何裁决事实** —— `agent` / `ttl_until` / `prev_agent` / `violation_logged`
+/// 一律原样透传（谁持有、持到什么时候，仍由库里现值说话）；只改 `action` 与 `granted`，
+/// 因为锁的权限门需要表达「拒绝」（`granted=false` + `action="permission_denied"`），
+/// 而预订那边 `RoleDenied` 是走 `Err` —— 两条通道形状不同，故本函数比 `RsvOutcome::relabel`
+/// 多一个 `granted` 参数。
+pub fn LockAcquireOutcome::relabel(
+  self : LockAcquireOutcome,
+  action : String,
+  granted : Bool,
+) -> LockAcquireOutcome {
+  LockAcquireOutcome::{
+    granted,
+    action,
+    prev_agent: self.prev_agent,
+    agent: self.agent,
+    ttl_until: self.ttl_until,
+    violation_logged: self.violation_logged,
+  }
+}
+
+///|
+/// BUG-424：权限拒绝态的**规范构造**（`granted=false` + `action="permission_denied"`）。
+///
+/// 与 `relabel` 的分工：`relabel` 用于「拿到锁但改标签」（如 `unregistered` advisory），
+/// 本函数用于「**根本没有碰库**就被权限门挡住」——此时库里没有对应行，`agent`/`ttl_until`
+/// 必须为空（不许由请求反推，否则回执会谎报「库里现值」）。
+///
+/// 为什么不复用 `relabel`：拒绝态没有「原 outcome」可改（门的判断在写库**之前**）。
+pub fn LockAcquireOutcome::denied_by_permission() -> LockAcquireOutcome {
+  LockAcquireOutcome::{
+    granted: false,
+    action: "permission_denied",
+    prev_agent: "",
+    agent: "",
+    ttl_until: "",
+    violation_logged: false,
+  }
+}
+
+///|
 /// 内存后端：把锁写入（按 scope 唯一，覆盖旧值；旧锁若 active 且非本人且未过期则记违例）。
 ///
 /// **这是底层原语，不是互斥门**：它永远落库（last-write-wins），只在覆盖他人 live 锁时
