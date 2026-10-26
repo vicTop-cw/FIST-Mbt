@@ -144,14 +144,82 @@ pub fn FistEngine::locks_upsert(
 
 ///|
 /// 按裁决抢锁（BUG-145）：互斥由后端定，工具面只渲染结论——不许在这里先读后写。
-/// 注：锁的权限门禁**暂时没接**——LockAcquireOutcome 是 read-only 类型，
-/// 必须在 store 内部创建；将来会在 store_rsv 层加一个 permission_denied 构造器。
-/// 目前先跳过锁的权限检查，等后端扩展。
+///
+/// **BUG-424：权限门已接**（原注释称「暂时没接」，写于 2026-10-22、挂了 4 天）。
+/// 拆解那个「技术障碍」，两条都要纠正：
+///   · 「`LockAcquireOutcome` 是 read-only 类型」—— **说法不成立**：字段只是**包内私有**
+///     （跨包写 literal 被编译器拒，BUG-413 已实测 4036/4033），与 read-only 无关；
+///     而 BUG-413 早就用 `RsvOutcome::relabel` 解决过同一个障碍，只是没人回头看这条注释。
+///   · 「必须在 store 内部创建」—— 对，但 store 侧已补
+///     `LockAcquireOutcome::denied_by_permission()`（拒绝态，不碰库 ⇒ agent/ttl 为空）
+///     与 `FileLock::agent_of()` / `scope_of()` 两个**读访问器**（本笔同批）⇒ **无需后端扩展**。
+///
+/// 三态语义与 `check_scope_permission` 一致（BUG-413）：
+///   · `RoleDenied`   ⇒ **硬拒**：`granted=false` + `action="permission_denied"`，**不写库**
+///   · `Unregistered` ⇒ advisory：正常抢锁，拿到时把 action 标 `unregistered`（不参与授权裁决）
+///   · `Allowed`      ⇒ 原样
+///
+/// 角色来源走 `resolve_agent_role`（权威面 `agents.role` 优先、名字推断兜底）——
+/// **不是**裸 `infer_role_from_agent`，否则 BUG-418 刚收窄的那层会被这里绕开
+/// （与 `rsv_set` / `rsv_try_set` 同口径）。
+///
+/// **本门覆盖不到的面（诚实标注）**：
+///   · `locks_upsert`（底层原语）仍是裸通道 —— 它被 `locks_sweep` 等内部路径依赖，
+///     加门会破坏那些路径；工具面 `lock_acquire` 走的是本函数，故攻击面已关闭
+///   · `lock.agent` 是调用方自报字符串 ⇒ 名字推断那一档仍可被命名绕过（BUG-421/422 是同一根因，另案）
 pub fn FistEngine::locks_try_acquire(
   self : FistEngine,
   lock : @store.FileLock,
 ) -> @store.LockAcquireOutcome {
-  self.store.locks_try_acquire(lock)
+  let agent = lock.agent_of()
+  let scope = lock.scope_of()
+  let declared = match self.agents_get(agent_fp_of(agent)) {
+    None => None
+    Some(rec) => Some(rec.role)
+  }
+  let (role, _role_source) = resolve_agent_role(agent, declared)
+  match check_scope_permission(scope, role) {
+    RoleDenied(_) =>
+      // **legacy_grant 特判（BUG-424 裁决 (a)(b)(c)）**
+      //
+      // 一个 Executor 在权限门接上**之前**可能已持有高权 scope 的锁，现在它要续期：
+      //   · 一律硬拒 ⇒ **制造僵尸锁**：它持有锁却续不了，到期后谁也拿不回，
+      //     原持有者也被门挡在门外。**僵尸比遗留更糟：遗留有主可追，僵尸无主。**
+      //   · 放行 + 留痕 + 禁止扩大 ⇒ 采纳这条。
+      //
+      // 判决：**只放行「续自己那条还活着的锁」**
+      //   `RoleDenied` AND 现有锁(agent==自己 AND status=="active") ⇒ 放行，标 `renewed_legacy_grant`
+      //   `RoleDenied` AND (别人的锁 OR 非 active)                  ⇒ 硬拒
+      //
+      // **留痕落在 `action` 而不是 `violation_logged`**：后者的语义是「抢别人的锁」
+      // （有受害者），legacy 是「续自己的锁」（无受害者）。混进去会污染 `lock_denied` 统计口径。
+      // legacy 量可由 `action == "renewed_legacy_grant"` 单独计数。
+      //
+      // **「禁止扩大」不需要新约束**：`lock_renew` 工具面已强制同 scope + 同 agent
+      // （`server.mbt:5271` `Some(l) if l.agent != agent => Err`），天然不能借续期换 scope；
+      // 而 `lock_acquire` 走到这里时，若库里没有「自己那条 active 锁」，仍是硬拒 ⇒ 不开新口。
+      // **不加「ttl 不延长」**——那等于软拒绝，又回到僵尸问题。
+      match self.store.locks_get(scope) {
+        Some(existing) =>
+          if existing.agent_of() == agent && existing.status_of() == "active" {
+            let o = self.store.locks_try_acquire(lock)
+            // 只改标签不改裁决：granted 保持后端算出的那个
+            o.relabel("renewed_legacy_grant", o.granted)
+          } else {
+            @store.LockAcquireOutcome::denied_by_permission()
+          }
+        None => @store.LockAcquireOutcome::denied_by_permission()
+      }
+    Unregistered(_) => {
+      let o = self.store.locks_try_acquire(lock)
+      if o.granted {
+        o.relabel("unregistered", true)
+      } else {
+        o
+      }
+    }
+    Allowed => self.store.locks_try_acquire(lock)
+  }
 }
 
 ///|
