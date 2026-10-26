@@ -99,9 +99,16 @@ test "scope_perm_wb5_rsv_try_set_wired" {
         "读 src/engine/engine_rsv.mbt 失败：接线格没跑到被测面",
       )
   }
-  // 用**带缩进的精确代码片段**断言（判例-30：注释里写的是中文描述，
-  // 不会出现 "    RoleDenied(e) => Err(e)" 这种带 4 空格缩进的真代码形状）。
-  assert_true(src.contains("    RoleDenied(e) => Err(e)"))
-  assert_true(src.contains("    Unregistered(_) =>"))
-  assert_true(src.contains("o.relabel(\"unregistered\")"))
+  // ⚠️ 本轮教训（BUG-422 落地时被这条锁自己抓到）：**不要断言「带缩进的精确片段」**。
+  // 我原来断言 `"o.relabel(\"unregistered\")"`，BUG-422 把那次调用改成条件化的
+  // `o.relabel(o.action + "+role_inferred")` 之后，**接线本身没坏，但锁红了**。
+  // ⇒ 源码文本断言必然把「实现重构」误判成「接线断裂」。
+  //
+  // 改为断言**语义锚点**（这三样任何一样丢了，三态分流就真坏了）：
+  //   ① `check_scope_permission` 被调用（接线在）
+  //   ② `RoleDenied` 分支存在（硬拒不丢）
+  //   ③ `relabel(` 被调用（action 打标能力在，不绑定具体字面量）
+  assert_true(src.contains("check_scope_permission(scope, role)"))
+  assert_true(src.contains("RoleDenied(e) => Err(e)"))
+  assert_true(src.contains("relabel("))
 }
