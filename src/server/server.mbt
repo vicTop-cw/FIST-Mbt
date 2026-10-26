@@ -72,6 +72,135 @@ fn engine_for_ns(ns : String) -> @engine.FistEngine {
 }
 
 ///|
+/// 从任务 JSON 读它的 ns **标签**（`Task::to_json` 的 `"namespace"` 键）。
+/// core 没有开 ns 字段的访问器（`get_status/get_assignee/...` 里没有 `get_ns`），
+/// 而本轮的改动面限定在 server/store 两处，故走已序列化面取标签。
+fn task_ns_of(t : @core.Task) -> String {
+  match jget(t.to_json(), "namespace") {
+    Some(String(s)) => s
+    _ => ""
+  }
+}
+
+///|
+/// BUG-420 探针（可注入主库引擎的形态，供白盒锁形状；handler 用下面的薄壳）。
+///
+/// 判据：**主库里有这条任务、且它的 ns 标签正好等于请求的 ns** ⇒ 返回 Some(标签)。
+/// 其余一律 None ——「主库也没有」或「主库有但这任务的标签是别的 ns」都是
+/// 真正的 not found，必须保持原文案（否则就是把 ID 写错说成路由错位，制造假诊断）。
+fn ns_misroute_probe_in(
+  main_eng : @engine.FistEngine,
+  task_id : String,
+  ns : String,
+) -> String? {
+  if ns == "" || ns == "default" {
+    return None
+  }
+  match main_eng.get_task(task_id) {
+    None => None
+    Some(t) => {
+      let main_ns = task_ns_of(t)
+      if main_ns == ns {
+        Some(main_ns)
+      } else {
+        None
+      }
+    }
+  }
+}
+
+///|
+/// BUG-420 探针：带 ns 查不到时，判断「任务是否其实在主库、且 ns 标签正好等于请求的 ns」。
+///
+/// 命中返回主库里该任务的 ns 标签（供文案引用），未命中返回 None ——
+/// **未命中必须保持原文案**：把真正的「ID 写错」说成路由错位就是制造假诊断。
+/// `default`/空 ns 本来就走主库（`engine_for_ns` 直通 `engine`），此处不重复探测。
+fn ns_misroute_probe(task_id : String, ns : String) -> String? {
+  ns_misroute_probe_in(engine, task_id, ns)
+}
+
+///|
+/// BUG-420 A 案（只读回落）回执：把任务 JSON 摊平，追加来源标注。
+/// **只在 `get(resolve_from_main=true)` 这条显式开启的只读路径上用**，
+/// 写路径绝不回落（跨 ns 写是设计上的两难，不能顺手兜底）。
+fn with_resolved_from(
+  task_json : Json,
+  source : String,
+  requested_ns : String,
+) -> Json {
+  match task_json {
+    Object(m) => {
+      m.set("resolved_from", Json::string(source))
+      m.set("namespace_requested", Json::string(requested_ns))
+      m.set(
+        "resolved_note",
+        Json::string(
+          "BUG-420：该任务物理在主库 fist-mbt.db，不在 ns 库 '\{requested_ns}'；本次是只读回落（写路径不回落）",
+        ),
+      )
+      Json::object(m)
+    }
+    _ => task_json
+  }
+}
+
+///|
+/// BUG-420 store_open 回执用：主库 `fist-mbt.db` 里带该 ns **标签**的任务数。
+/// 这是「标签面」的读数——与「物理面」（下面 `bug420_ns_db_tasks`）成对出现，
+/// 两个数一比就能看出路由键与标签分家（诊断报告里 148 vs 0 就是这么来的）。
+fn bug420_main_ns_tasks(ns : String) -> Int32 {
+  if ns == "" || ns == "default" {
+    return 0
+  }
+  engine.list_in_ns(ns).length()
+}
+
+///|
+/// BUG-420 store_open 回执用：该 ns 对应的**物理库**（`.fist-mbt/data/<ns>.db`）里的任务数。
+fn bug420_ns_db_tasks(ns : String) -> Int32 {
+  if ns == "" || ns == "default" {
+    return 0
+  }
+  mstore.ns_task_count(ns)
+}
+
+///|
+/// BUG-420 store_open 回执用的诊断文案（无错位时为空串）。
+fn bug420_routing_warning(ns : String) -> String {
+  @store.ns_routing_warning(
+    ns,
+    bug420_main_ns_tasks(ns),
+    bug420_ns_db_tasks(ns),
+  )
+}
+
+///|
+/// BUG-420：`archive` 拒绝文案的裁决（**纯函数**，白盒锁 `bug420_7`）。
+///
+/// 两条硬约束：
+///  ① 只有「确实没找到」(`e` 含 `not found`) 才允许换成路由错位诊断；
+///  ② 探针没命中（主库也没有 / 标签不一致）时原样透出——**判据拒绝**（Omega 门、
+///     状态门、权限门）尤其不能被改写：把判据拒绝说成路由错位，等于把
+///     「验收没过」误导成「数据找不到」，比原来的报错更难查。
+fn bug420_archive_error_text(
+  e : String,
+  task_id : String,
+  ns : String,
+  main_ns : String?,
+) -> String {
+  if !e.contains("not found") {
+    return e
+  }
+  match main_ns {
+    Some(mn) =>
+      @store.ns_misroute_not_found(task_id, ns, mn) +
+      "【写路径不回落】本次未做任何写入。原错误: " +
+      e
+    None => e
+  }
+}
+
+///|
 /// DGM 档案库（进程内 Archive，演化/自驱机制状态容器）。
 /// SQLite 持久化能力已在 store 层（evolve_artifacts 表 + evolve_upsert/list）就绪；
 /// 本进程 Archive 用于 MCP 工具的实时采样/查重/新颖性/谱系演示与编排。
@@ -2096,7 +2225,23 @@ pub async fn run_server() -> Unit {
       let by = get_str(args, "by", default="human_steward")
       let force = get_bool(args, "force")
       let ts = now_default()
-      to_result(eng.archive_force(task_id~, by~, force~, now=ts))
+      // BUG-420：写路径**绝不回落**（跨 ns 写是设计上的两难），但「带 ns 查不到」
+      // 的文案同样必须可诊断——否则「任务在主库」会被读成「ID 写错了」。
+      // 文案裁决在 bug420_archive_error_text（纯函数，白盒锁 bug420_7）。
+      match eng.archive_force(task_id~, by~, force~, now=ts) {
+        Ok(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
+        Err(e) =>
+          Err(
+            @mcp_types.ToolError(
+              bug420_archive_error_text(
+                e,
+                task_id,
+                ns,
+                ns_misroute_probe(task_id, ns),
+              ),
+            ),
+          )
+      }
     },
   )
   s1 = instrumented_tool(
@@ -2137,12 +2282,15 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "get",
-    "查询单个任务详情。参数：task_id。",
+    "查询单个任务详情。参数：task_id、namespace(可选)、resolve_from_main(可选默认 false)。**BUG-420 诊断**：带 namespace 查不到、但主库里同 id 任务的 ns 标签正好等于该 namespace 时，不再回『task not found』（那是误导，看起来像 ID 写错）——改为逐字指出「任务在**主库** fist-mbt.db、ns 标签=X，不在 ns 库」，并给三条出路。`resolve_from_main=true` 开启 **A 案只读回落**：直接回主库取那条任务并核对其 ns 字段，回执带 `resolved_from:\"default(main)\"`（只读；写路径绝不回落）。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
         "namespace": string_prop(
           "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+        ),
+        "resolve_from_main": bool_prop(
+          "可选默认 false：true 时带 ns 查不到会做**只读**回落——回主库按 id 取，并核对其 ns 字段等于请求的 ns，命中则回执带 resolved_from=default(main)。默认 false 保持 BUG-420 诊断式错误文案",
         ),
       },
       ["task_id"],
@@ -2150,10 +2298,37 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ns = get_str(args, "namespace", default="default")
+      let resolve_main = get_bool(args, "resolve_from_main", default=false)
       let eng = engine_for_ns(ns)
       match eng.get_task(task_id) {
         Some(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
-        None => Err(@mcp_types.ToolError("task not found: \{task_id}"))
+        None =>
+          // BUG-420：带 ns 查不到时先确认是不是「ns 路由与物理位置分家」——
+          // 历史任务的 ns 标签对得上、物理行却留在主库。这形状下原文案是误导的
+          // （看起来像 ID 写错），必须换成可行动的诊断。
+          match ns_misroute_probe(task_id, ns) {
+            None => Err(@mcp_types.ToolError("task not found: \{task_id}"))
+            Some(main_ns) =>
+              if resolve_main {
+                // A 案只读回落（显式开启）：只读主库 + 核 ns 字段；写路径不回落
+                match engine.get_task(task_id) {
+                  Some(t) =>
+                    Ok(
+                      @mcp.ToolResult::text(
+                        with_resolved_from(t.to_json(), "default(main)", ns).stringify(),
+                      ),
+                    )
+                  None =>
+                    Err(@mcp_types.ToolError("task not found: \{task_id}"))
+                }
+              } else {
+                Err(
+                  @mcp_types.ToolError(
+                    @store.ns_misroute_not_found(task_id, ns, main_ns),
+                  ),
+                )
+              }
+          }
       }
     },
   )
@@ -6263,6 +6438,22 @@ pub async fn run_server() -> Unit {
                 "active_namespaces": Json::array(
                   mstore.ns_list().map(fn(s) { Json::string(s) }),
                 ),
+                // BUG-420（C 案 · 止血 + 可诊断）：ns 在主库那边是**标签**、在路由这边是
+                // **物理库选择器**，两者从未对齐。「主库里有 N 条带此 ns 标签的任务、
+                // 而这个 ns 对应的库是空的」是一件沉默但决定性的事——所有按 ns 路由的
+                // 工具（get/list/archive）对这批历史任务一律 not found，而原文案看起来
+                // 像 ID 写错。这里把这对读数直接摆进回执（过去只能靠外部 sqlite3 直查）。
+                // 合法情形（default / 分库已有数据）回空串，拒绝恒阳性。
+                "warning": Json::string(bug420_routing_warning(ns)),
+                "ns_routing": Json::object({
+                  "bug": Json::string("BUG-420"),
+                  "main_db_tasks": Json::number(
+                    bug420_main_ns_tasks(ns).to_double(),
+                  ),
+                  "ns_db_tasks": Json::number(
+                    bug420_ns_db_tasks(ns).to_double(),
+                  ),
+                }),
               }).stringify(),
             ),
           )
