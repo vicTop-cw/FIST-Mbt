@@ -333,7 +333,20 @@ pub fn report_bug(
   }
   lines.push("\n")
   let entry = lines.fold(init="", fn(acc, l) { acc + l })
-  if !mem_write(path, old + entry) {
+  // 末尾空行归一（2026-10-26 Lane D 实测：`09c0867c` 只修了 `bug_lines_to_text`
+  // 那条路——`bug_fix` / `bug_mark_status` 走它；而**本函数**是自己 fold 出 entry 再
+  // `old + entry` 直拼，根本不经过 `bug_lines_to_text` ⇒ 那笔修复对 report_bug 无效。
+  // 叠加效应：`old` 以 `\n` 结尾（`split` 语义未参与），`entry` 又以 `lines.push("\n")`
+  // 收尾 ⇒ 落盘 `…\n` + `\n` = **尾部两个换行**，pre-commit 的
+  // `git diff --cached --check` 报 `new blank line at EOF` 挡住整笔提交。
+  // 归一为「无尾部空行、恰好一个终止换行」，与 `bug_lines_to_text` 同口径（单一语义，两处实现）。
+  let combined = old + entry
+  let mut end = combined.length()
+  while end > 0 && combined[end - 1] == '\n' {
+    end = end - 1
+  }
+  let normalized = combined[0:end].to_owned() + "\n"
+  if !mem_write(path, normalized) {
     return Err("report_bug: 写入 bugs.md 失败: " + path)
   }
   let m : Map[String, Json] = Map([])
