@@ -491,6 +491,21 @@ pub fn FistEngine::agents_acl_grant(
 }
 
 ///|
+/// 统计某命名空间下 `can_write=1` 的 agent 数（BUG-411；仅 SQLite 后端，内存 stub 回 0）。
+///
+/// 用途：`publish` 成功时判断「这个 ns 到底有没有人能认领」，让调用方在
+/// 「发布成功但 claim 会被拒」之间拿到预警而不是撞墙。
+pub fn FistEngine::agents_acl_count_writable(
+  self : FistEngine,
+  ns~ : String,
+) -> Int32 {
+  match self.store.sqlite_store() {
+    None => 0
+    Some(s) => s.agents_acl_count_writable(ns~)
+  }
+}
+
+///|
 /// 陈旧 agent 扫描（仅 SQLite 后端；内存后端返回空）。
 pub fn FistEngine::agents_stale_check(
   self : FistEngine,

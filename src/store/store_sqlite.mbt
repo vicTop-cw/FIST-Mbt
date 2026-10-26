@@ -3004,6 +3004,44 @@ pub fn SqliteStore::agents_acl_check(
 }
 
 ///|
+/// 统计某命名空间下 `can_write=1` 的 agent 数（BUG-411）。
+///
+/// **为什么需要它**：`publish` / `publish_parallel` / `dag_publish` 走 human_steward
+/// 特权路径、**不看 ns ACL**，而 `claim` 走 `agent_write_gate` 的 ns ACL ——
+/// 两道门结论可以相反（同一 ns 内 publish 成功、claim 被拒）。调用方在
+/// 「发布成功」与「认领被拒」之间没有任何预警，排查成本高（BUG-411 实测）。
+///
+/// 本函数只回答一个问题：**这个 ns 现在有没有任何一个 agent 能写**。
+/// publish 成功时若为 0，回执就该当场预警「你之后 claim 会被拒 + 出路」。
+///
+/// 口径与 `agents_acl_check` 保持一致：只看 `can_write`，不看 `revoked_at`
+/// （吊销在 `agents_acl_grant` 里就是 `can_write=0`，两处同源）。
+/// 内存 stub 返回 0（无持久化 ACL 面，与 `agent_write_gate` 的放行口径不同——
+/// 那是写门，这是诊断读数，0 会让调用方看到「无持久化 ACL」这个事实）。
+pub fn SqliteStore::agents_acl_count_writable(
+  self : SqliteStore,
+  ns~ : String,
+) -> Int32 {
+  match self.db {
+    None => 0
+    Some(db) => {
+      let sql = "SELECT COUNT(*) FROM agent_acl WHERE ns = ? AND can_write = 1"
+      match db.prepare(sql) {
+        None => 0
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          let n = if stmt.step() { stmt.column_int(0) } else { 0 }
+          stmt.finalize()
+          n
+        }
+      }
+    }
+  }
+}
+
+///|
 /// 授权/收权（UPSERT）：`can_read`/`can_write` 直接覆盖；`pid_bound=1` 时绑定当前 `agents.pid`，
 /// 之后换进程实例即失效。`now` 写入 revoked_at/revoked_by 仅用于吊销记录（can_write=0 且 pid_bound=0）。
 pub fn SqliteStore::agents_acl_grant(
