@@ -6912,3 +6912,92 @@ reported_by: lead
 
 
 - false_positive(2026-10-26T01:30:38Z): 误报：report_bug 的 project_dir 相对 FIST-Mbt server cwd 且拒绝 .. ，无法指向 lang-zone 项目；本 bug 属 lang-zone，已如实记入 lang-zone/memory/bugs.md 为 BUG-466（提交 37395e7，11/11 DEMO --emit=ir vs --emit=ir-lz 逐字节一致）。FIST-Mbt 账本此条为误落。
+## BUG-411 [2026-10-26T01:50:30Z] [medium] OPEN
+- summary: 同一命名空间内 publish 成功、board_ascii 可读，但 claim 被 ACL 拒绝（can_write=0）：创建权限与写权限未统一判定
+- detail: 复现（fist-mbt v0.3.10，2026-10-25~26）：
+1) store_open(namespace="tnr-tql") → {"opened":true}
+2) publish(project_dir=".", namespace="tnr-tql", description="...") → {"task_id":"T0","message":"已发布根任务"}   ← 写成功
+3) publish_parallel × 4 → 全部 {"task_id":"T0r2"...}                                              ← 写成功
+4) board_ascii(namespace="tnr-tql") → counts:{待领取:5}，能看到全部 5 条                        ← 读成功
+5) task_triage(namespace="tnr-tql") → 返回 5 条                                                  ← 读成功
+6) claim(task_id="T0r3", assignee="tnr-tql-agent", namespace="tnr-tql")
+   → Error: acl: ACL 默认拒绝写（can_write=0）: ebf594c09c308d88/tnr-tql                        ← 写被拒
+
+即：同一命名空间内 publish/publish_parallel 成功、board_ascii/task_triage 可读，但 claim 被 ACL 拒绝。
+
+不自洽之处：若该 ns 的 can_write=0，那么 publish 本应同样被拒；实际却允许创建。
+推测 publish 走的是「创建」权限、claim 走的是「写」权限，两者未统一到同一判定。
+
+建议（任一，但需一致）：
+A) 统一 publish/claim/execute/submit 的 ACL 判定口径；
+B) 或在 publish 成功但 claim 会被拒时，明确提示「该 ns 只可创建、不可认领」；
+C) 或提供 agent_acl_grant 的显式自救路径（该工具存在，但客户端并不知道需要调用它）。
+
+影响：无人值守流水线会先发布任务（成功），再在认领时被拒，中间没有预警，排查成本高。
+
+附带说明（不是缺陷，供参考）：supervisor_task_upsert 在同一 ns 内可以成功更新任务描述（我据此把 5 条陈旧任务刷新为当前状态），说明「更新」权限与「认领」权限的判定也不同源。
+- reported_by: tnr-tql-agent
+
+## BUG-412 [2026-10-26T01:56:01Z] [medium] FIXED
+- summary: output_validate 把相对 path 解析到 server 进程 cwd 而非 project_dir，导致真实存在的文件被判「不存在」（假 RED），且回执不回显基准目录
+- detail: 复现（fist-mbt v0.3.10，2026-10-26）：
+调用方自己的工作目录是 E:/IDEProjects/AI/Tnr，server 进程 cwd 是 E:/IDEProjects/AI/FIST-Mbt。
+
+1) output_validate(project_dir=".", artifacts=[
+     {path:"tql/05-自举实现规划.md", min_chars:100000},
+     {path:"tql/tqlc.ps1", min_chars:20000},
+     {path:"tql/run_all.ps1", min_chars:5000},
+     ...])
+2) 返回 verdict=fail，6/6 全部 "文件不存在: ./tql/05-自举实现规划.md" 等
+3) 但用 Test-Path / Get-Item 核对，这些文件全部真实存在且非空：
+   tql/05-自举实现规划.md   349,444 bytes  ✅
+   tql/tqlc.ps1              44,446 bytes  ✅
+   tql/run_all.ps1           18,113 bytes  ✅
+   reports/2026-10-24-*.md    ~8.7 KB      ✅
+
+结论：output_validate 把相对路径解析到了 server 进程的 cwd（FIST-Mbt 仓库），
+而不是调用方项目目录，也不是回执里 project_dir 指向的目录。
+
+为什么这是缺陷而不是「按文档就该如此」：
+- 同一批工具里，report_bug / bug_list / model_route 的文档都**显式写明**「project_dir 必须是相对 server 进程 cwd 的相对路径」，用户看文档就知道要对齐；
+- 而 output_validate 的 output/回执里没有任何关于「基准目录」的提示，只回一句「文件不存在」；
+- 结果：调用方会误以为自己声称的交付物根本没生成——这正是 output_validate 想防的「假 GREEN」，却反过来制造了「假 RED」。
+- 尤其当 project_dir 我显式传了 "." 时，语义上应当解析到**该 project_dir**，而不是 server cwd。
+
+建议（任一，但需明确）：
+A) 相对 path 一律相对 **project_dir** 解析（与 project_dir 参数语义自洽）；project_dir 本身仍按相对 server cwd 解析；
+B) 回执里回显实际用于解析的**绝对基准目录**（如 "resolved_base": ".../FIST-Mbt"），让调用方一眼看出错在哪；
+C) 至少在 detail 里补一句「已在 <base> 下查找」。
+
+附注：这不是我第一个撞到的「路径基准」类问题。FIST-Mbt 里 project_dir 的契约此前已有 BUG-5（bug 族强制相对、memory 族接受绝对，同名参数两套契约）。本条是「同名参数/路径基准」类的又一例，建议一并统一并在回执里回显基准。
+- reported_by: tnr-tql-agent
+
+
+
+### FIXED(2026-10-26T03:08:15Z / BUG-412)
+- evidence: commit 4ae32356 + **实测回执验证**（2026-10-26 11:05，重启 MCP server 加载新 release build 后实调）：
+
+**修复前**：`输出: {"verdict":"fail","checks":[{"artifact":"tql/05-自举实现规划.md","ok":false,"detail":"文件不存在: ./tql/05-自举实现规划.md"}]}` —— 看不出「./ 相对的是谁」，且回执无 base_dir，调用方只能怀疑自己没交付。
+
+**修复后（实测回执原文）**：
+```
+"detail": "文件不存在: ./tql/nonexistent-probe.md。基准 project_dir=\".\"，
+           相对 path 按 **server 进程 cwd** 解析（已按 server 进程 cwd 解析为：
+           E:/IDEProjects/AI/FIST-Mbt/./tql/nonexistent-probe.md，该处也不存在）。
+           跨项目请传绝对 project_dir（如 \"E:/IDEProjects/AI/Tnr\"）",
+"project_dir": ".",
+"base_dir": "E:/IDEProjects/AI/FIST-Mbt"
+```
+三件事一次说清：① 基准根是谁（`.` 被解析成 server cwd 的绝对路径）② 解析结果是什么 ③ 出路（传绝对 project_dir）。
+
+**为什么只加可诊断性、不改解析语义**：让 server 猜调用方 cwd 不可能（MCP 协议不带），且猜错比报错更坏（会静默读到别的项目同名文件）。
+
+**改动**：
+1. `src/server/output_validate.mbt` 新增 `path_miss_hint()`，文件不存在时拼接基准根 + 绝对解析结果 + 出路（取不到 cwd 时不拿 `.` 冒充绝对落点）
+2. 主回执新增 `project_dir`（调用方传的值）+ `base_dir`（实际解析到的绝对目录 = server cwd）
+
+**验证**：`moon check` 49 warnings / **0 errors**；`moon test src/server` **387/387**；release build 重建 + ESM patch + MCP server 重启后，`output_validate` 实调回执如上（含 1 条 PASS 的 `src/server/server.mbt` 对照，证明正常路径未受影响）。
+
+**遗留**：`path_miss_hint` 里「该文件在 server cwd 下其实存在」那一支实测**不会触发**（因为 `full` 本身就是相对 cwd 的路径，`@fs.path_exists(full)` 与 `@fs.path_exists(cwd+full)` 等价）—— 保留作防御性提示，不影响结论。
+
+**踩坑**：`let where = ...` 在 MoonBit 里 parse error（`where` 是类型约束保留字），改名 `hit_note`。
