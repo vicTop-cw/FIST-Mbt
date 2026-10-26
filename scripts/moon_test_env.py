@@ -110,8 +110,54 @@ def resolve_node(clean):
 
 
 DEFAULT_MOONC_SHIM = os.path.join(os.path.expanduser("~"), ".moon-shim", "shim.exe")
+# BUG-416：本常量是「脚本自身所在仓库」的根，**与 cwd 无关**——这正是它作为缺省值的原因
+# （本入口被 AGENTS 定为常驻入口，习惯上从仓库任意位置调用，缺省必须落到本仓，而不是调用者站的地方）。
+# 但「与 cwd 无关」同时意味着：**在副本 / `git archive` 导出树里跑本脚本，缺省仍会去测本仓**，
+# 隔离"从未生效"。要测别的树请显式传 `--root <path>`（见 parse_root / main）。
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER_SPAWN_REL = os.path.join("src", "server", "run_check_js.mbt")
+
+
+def resolve_root(explicit, default=ROOT):
+    """把 `--root` 的入参解析成**实际生效的根**（纯函数，BUG-416）。
+
+    缺省（`explicit` 为 None / 空串）⇒ 原样返回 `default`（= 脚本目录）——**零回归**：
+    不传 `--root` 时本函数不改变任何行为。
+    显式传入 ⇒ 返回其绝对规范路径；目录不存在时返回 None，由调用方 rc=2 拒载
+    （宁可拒绝出数，也不静默回落到脚本目录——那正是 BUG-416 的病灶）。
+    """
+    if explicit is None or explicit == "":
+        return default
+    if not os.path.isdir(explicit):
+        return None
+    return os.path.abspath(explicit)
+
+
+def parse_root(argv):
+    """从 argv 摘出 `--root <path>`（BUG-416）。
+
+    支持 `--root X` 与 `--root=X` 两种写法，与 `parse_raw_log` 同族形态。
+    返回 (路径或 None, 剩余 argv)；参数缺失/为空 ⇒ SystemExit 点名，绝不静默吞掉。
+    """
+    out, path = [], None
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--root":
+            if i + 1 >= len(argv) or not argv[i + 1].strip():
+                raise SystemExit("--root 需要一个非空路径参数")
+            path = argv[i + 1].strip()
+            i += 2
+            continue
+        if a.startswith("--root="):
+            path = a.split("=", 1)[1].strip()
+            if not path:
+                raise SystemExit("--root 需要一个非空路径参数")
+            i += 1
+            continue
+        out.append(a)
+        i += 1
+    return path, out
 
 
 def pick_moonc_override(env_value, shim_path, shim_exists, is_windows):
@@ -283,20 +329,95 @@ def selftest():
     cell("strip-prefix-idempotent", strip_redundant_moon_prefix(["src/x"]), ["src/x"])
     cell("strip-prefix-moon-test-only", strip_redundant_moon_prefix(["moon", "test"]), [])
 
+    # BUG-416：--root 解析 + 生效根 + **变异对照**（判例-29/30）
+    #
+    # 缺陷原形：ROOT 恒为脚本目录、忽略 cwd ⇒ 在副本 / `git archive` 导出树里跑本入口，
+    # 会**静默测主树**，隔离从未生效。修法：`--root` 显式指定，缺省仍为脚本目录（零回归），
+    # 且 `subprocess.run(..., cwd=root)` 让 `--root` **真正生效**（只打印不切 cwd = 没修）。
+    tmp_root = tempfile.mkdtemp(prefix="mte-root-")
+    other_root = tempfile.mkdtemp(prefix="mte-root2-")
+    try:
+        # ① 缺省 ⇒ 原样返回 default（零回归锚：不传 --root 时行为一个字不变）
+        cell("root-default-is-script-dir", resolve_root(None), ROOT)
+        cell("root-empty-string-is-default", resolve_root(""), ROOT)
+
+        # ② 显式 ⇒ 返回该目录的绝对路径（**这是 --root 的核心语义**）
+        cell("root-explicit-switches", resolve_root(tmp_root), os.path.abspath(tmp_root))
+
+        # ③ 两个明显不同的树必须解析成不同根（防「传了但被忽略」）
+        cell("root-distinct-trees-differ",
+             resolve_root(tmp_root) != resolve_root(other_root), True)
+
+        # ④ 不存在的目录 ⇒ None（调用方 rc=2 拒载；**不静默回落到脚本目录**，那正是本病灶）
+        missing = os.path.join(tmp_root, "definitely-not-here")
+        cell("root-missing-is-none", resolve_root(missing), None)
+
+        # ⑤ parse_root：两种写法都要认
+        cell("parse-root-space-form", parse_root(["--root", tmp_root, "src/x"]),
+             (tmp_root, ["src/x"]))
+        cell("parse-root-equals-form", parse_root(["--root=" + tmp_root, "src/x"]),
+             (tmp_root, ["src/x"]))
+        cell("parse-root-absent", parse_root(["src/x"]), (None, ["src/x"]))
+        cell("parse-root-empty-arg-errors",
+             _raises_system_exit(lambda: parse_root(["--root"])), True)
+
+        # ⑥ **变异对照格（判例-29）**：把 `--root` 接线拆掉（call face 退化成恒用 ROOT），
+        #    本格必须红。做法：直接调用 main 的装配路径不可行（会真跑 moon），
+        #    改为锁**实现面**：函数体必须真的把 resolve_root 的结果交给 subprocess 的 cwd。
+        #    `^` 行首锚定 + 只比对真实代码行（判例-30：防模式串自指 —— 本文件的字符串常量里
+        #    也出现过 "cwd=root"，用子串匹配会恒绿）。
+        src_text = ""
+        try:
+            with open(os.path.abspath(__file__), encoding="utf-8", errors="replace") as f:
+                src_text = f.read()
+        except OSError:
+            src_text = ""
+        real_line = any(
+            ln.startswith("    p = subprocess.run(") and "cwd=root" in ln
+            for ln in src_text.splitlines()
+        )
+        cell("root-wired-into-subprocess-cwd", real_line, True)
+        # 变异对照：把真实代码行里的 cwd=root 删掉后，上面的判据必须变红
+        mutated = "\n".join(
+            ("    p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding=\"utf-8\", errors=\"replace\")"
+             if ln.startswith("    p = subprocess.run(") else ln)
+            for ln in src_text.splitlines()
+        )
+        mutated_ok = any(
+            ln.startswith("    p = subprocess.run(") and "cwd=root" in ln
+            for ln in mutated.splitlines()
+        )
+        cell("root-mutation-detected", mutated_ok, False)
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+        shutil.rmtree(other_root, ignore_errors=True)
+
     bad = [(n, w) for n, ok, w in cells if not ok]
     if bad:
         print("SELFTEST FAIL：")
         for n, w in bad:
             print("  - %s：%s" % (n, w))
         return 1
-    print("SELFTEST OK（%d 格：垫片目录识别两档 + PATH 清理三档 + node 解析两档 + moonc 覆盖四档 + 服务端 spawn 面六档 + BUG-394 透传九档）" % len(cells))
+    print("SELFTEST OK（%d 格：垫片目录识别两档 + PATH 清理三档 + node 解析两档 + moonc 覆盖四档 + 服务端 spawn 面六档 + BUG-394 透传九档 + BUG-416 root 十档含变异对照）" % len(cells))
     return 0
 
 
 def main(argv):
     if "--selftest" in argv:
         return selftest()
+    root_arg, argv = parse_root(argv)
+    root = resolve_root(root_arg)
+    if root is None:
+        print("  FATAL --root 不是已存在的目录：%s ⇒ 拒绝出数（rc=2）" % root_arg)
+        print("        本入口**不静默回落到脚本目录**——那正是 BUG-416（在副本/导出树里静默测主树）。")
+        return 2
     raw_log, argv = parse_raw_log(argv)
+    # BUG-416：把**实际生效的根**打出来，让「这一跑测的是哪棵树」一眼可核。
+    # 缺省时同时标出「= 脚本目录」，提醒它与 cwd 无关（在副本里跑会测到主树）。
+    if root_arg is None:
+        print("  ROOT：%s（缺省=脚本目录，与本进程 cwd 无关；要测别的树请加 --root <path>）" % root)
+    else:
+        print("  ROOT：%s（--root 显式指定）" % root)
     dry = "--dry-run" in argv
     args = strip_redundant_moon_prefix([a for a in argv if a not in ("--dry-run",)])
     clean, dropped, _kept = clean_path(os.environ.get("PATH", ""))
@@ -325,7 +446,11 @@ def main(argv):
     print("  执行：%s" % " ".join(cmd))
     if dry:
         return 0
-    p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    # BUG-416：`cwd=root` 是本修的**实质**——只打印 ROOT 而不切 cwd 等于没修
+    # （moon 会在调用者 cwd 里跑，副本树仍静默测主树）。缺省 root=脚本目录，
+    # 与修前「无 cwd 参数、由调用者 cwd 决定」**不同**：修前从仓库外调用会跑错树，
+    # 修后恒定落到脚本所在仓库 ⇒ 这是**修正**，不是回归（见 reports 里的零回归论证）。
+    p = subprocess.run(cmd, env=env, cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace")
     out = (p.stdout or "") + (p.stderr or "")
     if raw_log:
         write_raw_log(raw_log, p.stdout or "")
