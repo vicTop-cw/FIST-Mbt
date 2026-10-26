@@ -893,3 +893,342 @@ test "locks_try_acquire: SQLite 后端 已释放锁 → reserved 复用行" {
   assert_eq(o.action, "reserved")
   assert_eq(o.agent, "exec_2")
 }
+
+// ============================================================================
+// BUG-431 / Lane AJ：**双后端等价性锁**（MemoryStore ↔ SqliteStore）
+//
+// 为什么这组锁必须存在（Lane AH 等价性审计 e9cd1ac7 发现的结构性盲区）：
+//   落锁之前 `grep -c 'MemoryStore' src/store/store_rsv_test.mbt` = **0**
+//   而 `SqliteStore` = 13 —— 即**整个 rsv 测试面只跑了一个后端**。
+//   而 `store_rsv.mbt:110-112` 的原地注释**早就警告过这个形状**：
+//   「两后端必须同一形状，否则单测永远绿而 SQLite 红」。**警告还在，盲区也还在。**
+//
+// 本组锁的形状（每个 test 自己造两个库，天然隔离）：
+//   · 同输入喂 MemoryStore 与 SqliteStore::open(":memory:")
+//   · 把两边**返回的结构体序列化成 JSON 再比**（moon test 吞掉通过测试的 stdout，
+//     所以必须用断言而不是 println —— 这是 Lane AH 探针的原始设计，保留）
+//   · 不依赖上一格状态：每格 `rsv_pair` / `lock_pair` 内部各自 `new()` / `open()`
+//
+// 覆盖量（对应 Lane AH 的 20 组，一格不少）：
+//   rsv_action 四分支 4/4 · ttl 与 now 的 <,==,> 3/3 · agent 相同/不同/空 3/3
+//   锁：无锁/有锁 2/2 · 锁 status 4 种 · ttl 边界
+//   变异对照 2 格（证明这组锁**真的在看**规则，而不是恒绿）
+// ============================================================================
+
+///|
+/// `RsvOutcome` → 稳定字符串（字段顺序固定，便于逐字比对）。
+fn eq_rsv_json(o : @store.RsvOutcome) -> String {
+  "{" +
+  "\"reserved\":" +
+  o.reserved.to_string() +
+  ",\"action\":\"" +
+  o.action +
+  "\"" +
+  ",\"prev_agent\":\"" +
+  o.prev_agent +
+  "\"" +
+  ",\"agent\":\"" +
+  o.agent +
+  "\"" +
+  ",\"ttl_until\":\"" +
+  o.ttl_until +
+  "\"}"
+}
+
+///|
+/// 在两个**独立新建**的后端上跑同一组预订请求，返回 (内存侧 JSON, SQLite 侧 JSON)。
+///
+/// `prev` = 预先用 `rsv_set` 种下的既有预订（agent, ttl_until, created_at）。
+/// 每个调用**都新建两个库** ⇒ 不依赖任何上一格的状态（`":memory:"` 每次 open 都是新库）。
+fn eq_rsv_pair(
+  prev : (String, String, String)?,
+  req_agent : String,
+  req_ttl : String,
+  req_created : String,
+) -> (String, String) {
+  let mem = @store.MemoryStore::new()
+  let sql = match @store.SqliteStore::open(":memory:") {
+    Some(s) => s
+    None => return ("{\"error\":\"sqlite open\"}", "{\"error\":\"sqlite open\"}")
+  }
+  match prev {
+    Some((a, ttl, ts)) => {
+      ignore(mem.rsv_set(scope="S", agent=a, ttl_until=ttl, created_at=ts))
+      ignore(sql.rsv_set(scope="S", agent=a, ttl_until=ttl, created_at=ts))
+    }
+    None => ()
+  }
+  let m = mem.rsv_try_set(
+    scope="S",
+    agent=req_agent,
+    ttl_until=req_ttl,
+    created_at=req_created,
+  )
+  let s = sql.rsv_try_set(
+    scope="S",
+    agent=req_agent,
+    ttl_until=req_ttl,
+    created_at=req_created,
+  )
+  let mj = match m {
+    Ok(o) => eq_rsv_json(o)
+    Err(e) => "{\"err\":\"" + e + "\"}"
+  }
+  let sj = match s {
+    Ok(o) => eq_rsv_json(o)
+    Err(e) => "{\"err\":\"" + e + "\"}"
+  }
+  (mj, sj)
+}
+
+///|
+/// 【等价锁 1】预订裁决：rsv_action 四分支 + ttl/now 三态 + agent 三态（10 组）
+///
+/// **为什么这格会在变异下红**：两后端共用 `rsv_action` 单一真源，
+/// 但 SQLite 侧另有一条 `ON CONFLICT … WHERE` 谓词编码同一规则
+/// （`reservations.agent = excluded.agent OR reservations.ttl_until < excluded.created_at`）。
+/// 若有人把 SQL 那侧改成 `<=`（即判 `ttl == now` 也算过期），
+/// **`EDGE other(ttl==now)` 这组就会内存说 conflict、SQLite 说 taken_over ⇒ 本格 abort**。
+test "rsv 双后端等价：B1~B4 四分支 + ttl/now 边界 + agent 三态" {
+  let cases : Array[(String, (String, String, String)?, String, String, String)] = [
+    ("B1 none->reserved", None, "A", "t2", "t1"),
+    ("B1 none->reserved(空 agent)", None, "", "t2", "t1"),
+    ("B2 self->renewed", Some(("A", "t9", "t0")), "A", "t9", "t1"),
+    ("B2 self->renewed(ttl==now)", Some(("A", "t1", "t0")), "A", "t9", "t1"),
+    ("B2 self->renewed(ttl<now)", Some(("A", "t0", "t0")), "A", "t9", "t1"),
+    ("B3 other->taken_over(ttl<now)", Some(("B", "t0", "t0")), "A", "t9", "t1"),
+    ("EDGE other(ttl==now)", Some(("B", "t1", "t0")), "A", "t9", "t1"),
+    ("B4 other->conflict(ttl>now)", Some(("B", "t9", "t0")), "A", "t9", "t1"),
+    ("EDGE empty->empty", Some(("", "t9", "t0")), "", "t9", "t1"),
+    ("EDGE empty->A", Some(("", "t9", "t0")), "A", "t9", "t1"),
+  ]
+  for (label, prev, ra, rt, rc) in cases {
+    let (mj, sj) = eq_rsv_pair(prev, ra, rt, rc)
+    if mj != sj {
+      abort("双后端预订分歧 [" + label + "]\n  内存 = " + mj + "\n  SQLite = " + sj)
+    }
+  }
+  // 至少跑过一组，防空转（判例：「空集合恒真」不算证明）
+  assert_true(cases.length() == 10)
+}
+
+///|
+/// `LockAcquireOutcome` → 稳定字符串。
+fn eq_lock_json(o : @store.LockAcquireOutcome) -> String {
+  "{" +
+  "\"granted\":" +
+  o.granted.to_string() +
+  ",\"action\":\"" +
+  o.action +
+  "\"" +
+  ",\"prev_agent\":\"" +
+  o.prev_agent +
+  "\"" +
+  ",\"agent\":\"" +
+  o.agent +
+  "\"" +
+  ",\"ttl_until\":\"" +
+  o.ttl_until +
+  "\"" +
+  ",\"violation_logged\":" +
+  o.violation_logged.to_string() +
+  "}"
+}
+
+///|
+fn eq_mk_lock(
+  agent : String,
+  status : String,
+  ts : String,
+  ttl : String,
+) -> @store.FileLock {
+  @store.FileLock::new(
+    lock_id="L1",
+    batch_id="B1",
+    scope="S",
+    agent~,
+    status~,
+    ts~,
+    ttl_until=ttl,
+    meta="",
+  )
+}
+
+///|
+/// 在两个独立新建的后端上跑同一组锁请求，返回 (内存侧 JSON, SQLite 侧 JSON)。
+fn eq_lock_pair(
+  prev : (String, String, String, String)?,
+  req_agent : String,
+  req_ts : String,
+  req_ttl : String,
+) -> (String, String) {
+  let mem = @store.MemoryStore::new()
+  let sql = match @store.SqliteStore::open(":memory:") {
+    Some(s) => s
+    None => return ("{\"error\":\"sqlite open\"}", "{\"error\":\"sqlite open\"}")
+  }
+  match prev {
+    Some((pa, ps, pts, pttl)) => {
+      let l = eq_mk_lock(pa, ps, pts, pttl)
+      mem.locks_upsert(l)
+      sql.locks_upsert(l)
+    }
+    None => ()
+  }
+  let req = eq_mk_lock(req_agent, "active", req_ts, req_ttl)
+  let m = mem.locks_try_acquire(req)
+  let s = sql.locks_try_acquire(req)
+  (eq_lock_json(m), eq_lock_json(s))
+}
+
+///|
+/// 【等价锁 2】锁层裁决：无锁/有锁 2/2 + status 四种 + ttl 边界（10 组）
+///
+/// **为什么这格会在变异下红**：
+///   · 若有人把「非 active 折成 None」的折叠条件去掉（`status == "active"` 不看 status）
+///     ⇒ `L4 released->reserved` / `L5 expired` / `L6 violated` 三组会从 reserved 变 conflict；
+///   · 若有人在 SQLite 侧把 `ttl < now` 写成 `<=` ⇒ `LEDGE other(ttl==now)` 这组分歧。
+test "rsv 双后端等价：锁层无锁/有锁 + status 四种 + ttl 边界" {
+  let cases : Array[(String, (String, String, String, String)?, String, String, String)] = [
+    ("L0 none->reserved", None, "A", "t1", "t9"),
+    ("L1 self->renewed", Some(("A", "active", "t0", "t9")), "A", "t1", "t9"),
+    ("L2 other->conflict", Some(("B", "active", "t0", "t9")), "A", "t1", "t9"),
+    ("L3 other->taken_over(ttl<now)", Some(("B", "active", "t0", "t0")), "A", "t1", "t9"),
+    ("LEDGE other(ttl==now)", Some(("B", "active", "t0", "t1")), "A", "t1", "t9"),
+    ("L4 released->reserved", Some(("B", "released", "t0", "t9")), "A", "t1", "t9"),
+    ("L5 expired->reserved", Some(("B", "expired", "t0", "t9")), "A", "t1", "t9"),
+    ("L6 violated->reserved", Some(("B", "violated", "t0", "t9")), "A", "t1", "t9"),
+    ("LEDGE empty->empty", Some(("", "active", "t0", "t9")), "", "t1", "t9"),
+    ("LEDGE empty->A", Some(("", "active", "t0", "t9")), "A", "t1", "t9"),
+  ]
+  for (label, prev, ra, rt, rttl) in cases {
+    let (mj, sj) = eq_lock_pair(prev, ra, rt, rttl)
+    if mj != sj {
+      abort("双后端锁分歧 [" + label + "]\n  内存 = " + mj + "\n  SQLite = " + sj)
+    }
+  }
+  assert_true(cases.length() == 10)
+}
+
+///|
+/// 【等价锁 3】`locks_sweep(now) -> Int32` 清扫数一致（Lane AH 的缺口项）
+///
+/// **为什么断言清扫数而不只是「都成功」**：`locks_sweep` 返回 `Int32`（清掉几条），
+/// 若两后端对「什么算过期」的判据不同，**返回的数字会不同**。
+/// 只断言 `Ok`/不 panic 会让「清 3 条 vs 清 0 条」这种真分歧溜过去。
+///
+/// 场景：种 4 条锁（2 条 ttl 已过、1 条 ttl == now、1 条未过），`sweep("t1")` ⇒
+/// 严格 `<` 口径下应清 **2** 条（ttl 已过那两条），`ttl == now` 那条**不该被清**。
+test "rsv 双后端等价：locks_sweep 清扫数（Int32）一致" {
+  let mem = @store.MemoryStore::new()
+  let sql = match @store.SqliteStore::open(":memory:") {
+    Some(s) => s
+    None => abort("sqlite open 失败")
+  }
+  // (scope, agent, status, ts, ttl_until) —— ttl 相对 sweep 时刻 now="t1"
+  let seeds : Array[(String, String, String, String, String)] = [
+    ("S1", "A", "active", "t0", "t0"), // ttl < now ⇒ 该被清
+    ("S2", "A", "active", "t0", "t0"), // ttl < now ⇒ 该被清
+    ("S3", "A", "active", "t0", "t1"), // ttl == now ⇒ **不该被清**（严格 <）
+    ("S4", "A", "active", "t0", "t9"), // ttl > now ⇒ 不该被清
+  ]
+  for (sc, ag, st, ts, ttl) in seeds {
+    let l = @store.FileLock::new(
+      lock_id="L-" + sc,
+      batch_id="B1",
+      scope=sc,
+      agent=ag,
+      status=st,
+      ts=ts,
+      ttl_until=ttl,
+      meta="",
+    )
+    mem.locks_upsert(l)
+    sql.locks_upsert(l)
+  }
+  let m_n = mem.locks_sweep("t1")
+  let s_n = sql.locks_sweep("t1")
+  if m_n != s_n {
+    abort(
+      "双后端 locks_sweep 清扫数分歧：内存清 " +
+      m_n.to_string() +
+      " 条，SQLite 清 " +
+      s_n.to_string() +
+      " 条（同为 4 条种子、now=t1）",
+    )
+  }
+  // 清扫数本身也要对：ttl ∈ {t0,t0,t1,t9}、now=t1 ⇒ 严格 < 只清 t0 那两条
+  assert_eq(m_n, 2)
+}
+
+///|
+/// 【变异对照 1】`ttl < now` 的严格性真的被测到（判例-29/30）
+///
+/// 把 `rsv_action` 的 `ttl < now` 写成 `ttl <= now`（本仓最易犯的错），
+/// 在 `ttl == now` 边界上**结果必须不同** —— 若相同，说明「严格 <」这条规则
+/// 没有任何一格在测，等价锁就是恒绿的假锁。
+test "rsv 变异对照：strict_lt 在 ttl==now 边界上可分辨" {
+  let prev = Some(("B", "t1", "t0"))
+  // 真实现：ttl == now ⇒ **不算过期** ⇒ conflict（严格 <）
+  let (ok_w, ok_a) = @store.rsv_action(prev, "A", "t1")
+  assert_eq(ok_w, false)
+  assert_eq(ok_a, "conflict")
+  // 变异实现：把谓词写成 `<=` ⇒ 同一输入得 taken_over（用独立的纯函数表达，不改生产码）
+  let mut_a = mut_rsv_action_le(prev, "A", "t1")
+  assert_eq(mut_a, "taken_over")
+  // ★ 两者在 ttl==now 这一格上**必须不同** ⇒ 证明「严格 <」被真测到
+  assert_true(ok_a != mut_a)
+}
+
+///|
+/// 变异版裁决（仅用于证明"严格 <"可分辨）：把 `ttl < now` 写成 `ttl <= now`。
+fn mut_rsv_action_le(
+  prev : (String, String, String)?,
+  agent : String,
+  now : String,
+) -> String {
+  match prev {
+    None => "reserved"
+    Some((owner, _, _)) if owner == agent => "renewed"
+    Some((_, ttl, _)) if ttl <= now => "taken_over"
+    _ => "conflict"
+  }
+}
+
+///|
+/// 【变异对照 2】锁层「非 active 折成 None」真的被测到（判例-29/30）
+///
+/// 若有人把 `status == "active"` 这个折叠条件去掉（不看 status），
+/// `active` 与 `released` 两种输入会得到**相同**裁决 ⇒ 本格红。
+test "rsv 变异对照：锁 status 折叠条件可分辨" {
+  let active = @store.FileLock::new(
+    lock_id="L1",
+    batch_id="B1",
+    scope="S",
+    agent="B",
+    status="active",
+    ts="t0",
+    ttl_until="t9",
+    meta="",
+  )
+  let released = @store.FileLock::new(
+    lock_id="L1",
+    batch_id="B1",
+    scope="S",
+    agent="B",
+    status="released",
+    ts="t0",
+    ttl_until="t9",
+    meta="",
+  )
+  // active ⇒ 有人持 ⇒ conflict
+  let a = @store.lock_acquire_action(Some(active), "A", "t1")
+  assert_eq(a.0, false)
+  assert_eq(a.1, "conflict")
+  // released ⇒ 折成 None ⇒ reserved
+  let r = @store.lock_acquire_action(Some(released), "A", "t1")
+  assert_eq(r.0, true)
+  assert_eq(r.1, "reserved")
+  // ★ 两种 status 结果**必须不同** ⇒ 证明折叠条件真的在起作用
+  assert_true(a.1 != r.1)
+}
