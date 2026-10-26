@@ -431,7 +431,11 @@ test "bug423_register_can_raise_executor_to_steward" {
         None => fail("二次登记后必须存在")
         Some(a) =>
           if a.role != "HumanSteward" {
-            fail("BUG-423: 显式注册没能抬高角色（实得 " + a.role + "）")
+            fail(
+              "BUG-423: 显式注册没能抬高角色（实得 " +
+              a.role +
+              "）",
+            )
           }
       }
     }
@@ -490,7 +494,10 @@ test "bug423_register_does_not_downgrade_steward" {
           }
           // 顺带确认心跳字段仍被刷新（防「一刀切不更新」的过度修复）
           if a.pid != 3002 {
-            fail("过度修复：pid 应被刷新为 3002，实得 " + a.pid.to_string())
+            fail(
+              "过度修复：pid 应被刷新为 3002，实得 " +
+              a.pid.to_string(),
+            )
           }
         }
       }
@@ -528,6 +535,117 @@ test "bug423_register_does_not_downgrade_leader" {
           if a.role != "Leader" {
             fail("BUG-423: Leader 被降级为 " + a.role)
           }
+      }
+    }
+  }
+}
+
+///|
+/// BUG-422 锁 1：`agents_role_for_judgment` 把「本进程自身份」记录剔出角色裁决。
+///
+/// 病灶：角色裁决的查表键是**调用方自报的名字**，而 `agents` 表里唯一的高角色记录
+/// 恰好是 server 给自己登记的那一条（`agent_type="server"`, `role="Leader"`）⇒
+/// `agent="fist-mbt"` 直接继承 Leader（实测 ALLOWED on `src/engine/` · `src/core/`）。
+///
+/// 本格钉的是**取数面**（判例-29：机制格 ≠ 实现路径格）：
+///   ① server 自身份 ⇒ `agents_get` 有记录（证明「不是查不到」）但裁决面 None
+///   ② 非 server 类型的 Leader ⇒ 裁决面 Some("Leader")（便利性没被一刀切掉）
+///   ③ 纯谓词 `agent_record_is_process_self` 大小写无关（"SERVER" 也算自身份）
+///   ④ `HumanSteward` 记录**在 store 层照旧可读** —— 「不可继承」是 engine 侧政策
+///      （`inheritable_role`），存取层不替政策做决定
+test "bug422_agents_role_for_judgment_filters_process_self" {
+  match SqliteStore::open("temp/bug422_agents_judgment_wb.db") {
+    None => fail("sqlite open 失败：判据没跑到被测面")
+    Some(s) => {
+      // ① server 自身份（复刻 server.mbt 启动注册）
+      let self_id = "fp-bug422-server-self"
+      let _ = s.agents_register(
+        agent_id=self_id,
+        agent_type="server",
+        role="Leader",
+        soldier="通信兵",
+        pubkey_fp="",
+        pid=5001,
+        now="T1",
+      )
+      match s.agents_get(self_id) {
+        None =>
+          abort("★判据没跑到被测面：server 自身份记录没写成")
+        Some(a) => assert_eq(a.role, "Leader")
+      }
+      match s.agents_role_for_judgment(self_id) {
+        Some(r) =>
+          fail(
+            "★BUG-422 未修：server 自身份仍进角色裁决（role=" +
+            r +
+            "）",
+          )
+        None => ()
+      }
+      // ② 非 server 类型的 Leader：仍可裁决（防修过头）
+      let lane_id = "fp-bug422-lane-leader"
+      let _ = s.agents_register(
+        agent_id=lane_id,
+        agent_type="executor",
+        role="Leader",
+        soldier="工兵",
+        pubkey_fp="",
+        pid=5002,
+        now="T1",
+      )
+      match s.agents_role_for_judgment(lane_id) {
+        None =>
+          fail(
+            "★修过头：非 server 类型的 Leader 记录也被剔除了",
+          )
+        Some(r) => assert_eq(r, "Leader")
+      }
+      // ③ 纯谓词大小写无关
+      let _ = s.agents_register(
+        agent_id="fp-bug422-upper",
+        agent_type="SERVER",
+        role="Leader",
+        soldier="通信兵",
+        pubkey_fp="",
+        pid=5003,
+        now="T1",
+      )
+      match s.agents_get("fp-bug422-upper") {
+        None => abort("登记失败：判据没跑到被测面")
+        Some(a) =>
+          if !agent_record_is_process_self(a) {
+            fail(
+              "agent_record_is_process_self 大小写敏感 —— agent_type=\"SERVER\" 漏判",
+            )
+          }
+      }
+      match s.agents_role_for_judgment("fp-bug422-upper") {
+        Some(_) =>
+          fail("★大小写漏判：agent_type=\"SERVER\" 仍进角色裁决")
+        None => ()
+      }
+      // ④ HumanSteward 记录在 store 层照旧可读（政策在 engine 侧）
+      let hs_id = "fp-bug422-hs"
+      let _ = s.agents_register(
+        agent_id=hs_id,
+        agent_type="agent",
+        role="HumanSteward",
+        soldier="工兵",
+        pubkey_fp="",
+        pid=5004,
+        now="T1",
+      )
+      match s.agents_role_for_judgment(hs_id) {
+        None =>
+          fail(
+            "store 层不该替政策决定 —— HS 记录应原样返回给 engine",
+          )
+        Some(r) => assert_eq(r, "HumanSteward") // engine 侧 inheritable_role 会拒绝它
+      }
+      // ⑤ 未登记 ⇒ None
+      match s.agents_role_for_judgment("fp-bug422-ghost") {
+        Some(_) => fail("未登记的 agent 必须返回 None")
+        None => ()
       }
     }
   }

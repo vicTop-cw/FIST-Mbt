@@ -7,6 +7,32 @@
 ///   不是防并发——是防越权。就像军队里炊事员不能进指挥中心，不是因为有人，是因为没资格。
 
 ///|
+/// 权限门禁的**角色取数**单一真源（BUG-418 (a) + BUG-422 B 案）。
+///
+/// 三条门（`rsv_set` / `rsv_try_set` / `locks_try_acquire`）都必须走这里，不许各写一份：
+/// 旧实现三处各抄一遍 `agents_get(agent_fp_of(agent)).role`，改一处漏两处就是半个越权口。
+///
+/// **⚠️ 关键陷阱（BUG-418 实测）**：`agents.agent_id` 是 16 位指纹
+/// （`@omega.fnv1a64("agent_id:" + raw)`），而这里收到的是调用方自由填的**原始名**
+/// ⇒ 必须自己算指纹再查，直接传原始名永远查不到（那会让权威面静默失效，等于没接）。
+///
+/// **⚠️ BUG-422：必须走 `agents_role_for_judgment` 而不是 `agents_get(...).role`**。
+/// 后者的查表键是调用方自报的名字，而 `agents` 表里唯一的高角色记录恰好是
+/// **server 进程给自己登记的那一条**（`agent_type="server"`、`role="Leader"`，
+/// `server.mbt` 的 `make_engine()` 写的）⇒ 报 `agent="fist-mbt"` 直接继承 Leader 面
+/// （实测 ALLOWED on `src/engine/` · `src/core/`）。
+/// `agents_role_for_judgment` 把这类「本进程自身份」记录**整条剔除** ⇒ 不再可被冒用。
+///
+/// 内存后端没有 agents 表 ⇒ None（只剩名字推断；BUG-421 后推断最高只到整名
+/// `human_steward`/`human`，军官单词 `leader`/`lead` 已不再提权）。
+fn declared_role_for_judgment(eng : FistEngine, agent : String) -> String? {
+  match eng.store.sqlite_store() {
+    None => None
+    Some(s) => s.agents_role_for_judgment(agent_fp_of(agent))
+  }
+}
+
+///|
 pub fn FistEngine::rsv_set(
   self : FistEngine,
   scope~ : String,
@@ -18,21 +44,18 @@ pub fn FistEngine::rsv_set(
   //
   // BUG-418：角色**先查权威面 `agents.role`**（显式声明），查不到才退到收窄后的推断。
   // 旧实现只用名字推断 ⇒ 自称 `commander-*` 即可拿 HumanSteward（可主动利用的越权面）。
-  //
-  // ⚠️ 关键陷阱：`agents.agent_id` 是 16 位指纹（`@omega.fnv1a64("agent_id:" + raw)`），
-  // 而这里收到的是调用方自由填的**原始名** ⇒ 必须自己算指纹再查，
-  // 直接传原始名永远查不到（那会让 (a) 静默失效，等于只做了 (b)）。
-  let declared = match self.agents_get(agent_fp_of(agent)) {
-    None => None
-    Some(rec) => Some(rec.role)
-  }
+  // BUG-422：查表改走 `declared_role_for_judgment`（剔除 server 自身份），见其长注释。
+  let declared = declared_role_for_judgment(self, agent)
   // BUG-422：角色来源**必须带进回执**（诚实标注）。
   //
   // `role_source` 的值域：
-  //   "declared"   = 从 `agents` 表读到的 —— **但查表键是调用方自报的名字**，
-  //                  所以「declared」不等于「可信」，只等于「不是从名字模式推的」。
-  //                  报一个已登记身份的名字（如 `fist-mbt`）即可继承它的 role（BUG-422 本尊）。
-  //   "inferred"   = 从名字模式推的 —— 更不可信（BUG-421：整名 `leader`/`lead` 仍买到军官面）
+  //   "declared"   = 来自一条**通过裁决过滤的**登记记录（非 server 自身份、角色可继承、
+  //                  且不低于名字推断）。它仍是**未核验**的自报身份 —— 「declared」只说明
+  //                  「不是从名字模式推的」，不说明「已核验」。
+  //                  现存残余：报一个**非 server 类型**且被显式授予 Leader 的登记名仍可继承
+  //                  （现网该类记录 0 条；详见 `agents_role_for_judgment` 的诚实边界）。
+  //   "inferred"   = 从名字模式推的（或声明被过滤/不可继承）—— 更不可信；
+  //                  BUG-421 后推断最高只到整名 `human_steward`/`human`。
   //
   // 为什么不直接返回 `Result` 让调用方区分：`rsv_set` 的签名是 `Result[String, String]`，
   // 改签名会波及工具面 3 处调用方。所以用**后缀标注** —— 零签名变更，且回执自带证据。
@@ -63,10 +86,8 @@ pub fn FistEngine::rsv_try_set(
 ) -> Result[@store.RsvOutcome, String] {
   // 权限门禁：先过权限，再进后端裁决（BUG-413 三态分流）
   // BUG-418：角色先查权威面 `agents.role`（同上，必须自己算指纹）。
-  let declared = match self.agents_get(agent_fp_of(agent)) {
-    None => None
-    Some(rec) => Some(rec.role)
-  }
+  // BUG-422：查表走 `declared_role_for_judgment`（剔除 server 自身份，见其长注释）。
+  let declared = declared_role_for_judgment(self, agent)
   // BUG-422：角色来源带进回执的 `action`（与 rsv_set 同口径，见那边的长注释）。
   // `action` 的合法取值因此扩展为：reserved | renewed | taken_over | conflict |
   //   unregistered | <上述之一>+role_inferred
@@ -79,8 +100,9 @@ pub fn FistEngine::rsv_try_set(
         Ok(o) =>
           Ok(
             if role_source == "inferred" {
-              // 只在 inferred 时打标：declared 是「查到了表」但仍不可信（BUG-422 本尊），
-              // 两个都标会让标签失去区分力。inferred 才是「连表都没查到」的那一档。
+              // 只在 inferred 时打标：declared 说明「有一条通过过滤的登记记录」，
+              // 两个都标会让标签失去区分力。inferred 才是「没有可用声明」的那一档
+              // （未登记 / 被 BUG-422 过滤 / 角色不可继承 / 低于推断）。
               o.relabel(o.action + "+role_inferred")
             } else {
               o
@@ -166,17 +188,17 @@ pub fn FistEngine::locks_upsert(
 /// **本门覆盖不到的面（诚实标注）**：
 ///   · `locks_upsert`（底层原语）仍是裸通道 —— 它被 `locks_sweep` 等内部路径依赖，
 ///     加门会破坏那些路径；工具面 `lock_acquire` 走的是本函数，故攻击面已关闭
-///   · `lock.agent` 是调用方自报字符串 ⇒ 名字推断那一档仍可被命名绕过（BUG-421/422 是同一根因，另案）
+///   · `lock.agent` 是调用方自报字符串 ⇒ 「身份未经核验」这一根因仍在（BUG-422 的诚实边界）：
+///     BUG-421 已删掉整名 `leader`/`lead` 提权，BUG-422 已把 server 自身份记录剔出裁决，
+///     但「报一个非 server 类型的高角色登记名」仍可继承 —— 彻底收口需认证身份（A/C 案）。
 pub fn FistEngine::locks_try_acquire(
   self : FistEngine,
   lock : @store.FileLock,
 ) -> @store.LockAcquireOutcome {
   let agent = lock.agent_of()
   let scope = lock.scope_of()
-  let declared = match self.agents_get(agent_fp_of(agent)) {
-    None => None
-    Some(rec) => Some(rec.role)
-  }
+  // BUG-422：与两条预订门同一取数（剔除 server 自身份，见 `declared_role_for_judgment`）。
+  let declared = declared_role_for_judgment(self, agent)
   let (role, _role_source) = resolve_agent_role(agent, declared)
   match check_scope_permission(scope, role) {
     RoleDenied(_) =>

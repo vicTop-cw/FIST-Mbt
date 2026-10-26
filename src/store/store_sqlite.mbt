@@ -2885,6 +2885,52 @@ pub fn SqliteStore::agents_get(
 }
 
 ///|
+/// **这条记录是不是「本进程自己的身份」（BUG-422）**。
+///
+/// 判据只看登记来源：`agent_type == "server"`（大小写归一）。
+/// 本仓唯一的写入点是 `server.mbt` 的 `make_engine()`：
+/// `agent_touch_first_seen(eng, "fist-mbt", "default", "server", "Leader", …)` ——
+/// 也就是 **server 进程给「自己」登记的那一条**。
+///
+/// 为什么需要这条判据：角色裁决的 `declared` 取值**以调用方自报的名字为查表键**，
+/// 而 `fist-mbt` 是 `agents` 表里**唯一** role=Leader 的记录 ⇒ 报这个名字就继承 Leader
+/// （实测 `ALLOWED agent=fist-mbt src/engine/* · src/core/*`，BUG-422 本尊）。
+/// 服务器**自己**的身份不该被任何外部 agent 冒用，所以它整条退出角色裁决。
+///
+/// 这是**事实判据，不是政策**：政策（哪些角色可继承、推断是下限）在
+/// `engine_scope_perm.mbt` 的 `inheritable_role` / `resolve_agent_role`。
+pub fn agent_record_is_process_self(rec : AgentRecord) -> Bool {
+  rec.agent_type.to_lower() == "server"
+}
+
+///|
+/// 取「**可用于角色裁决的** declared 角色」（BUG-422 B 案）。
+///
+/// 与 `agents_get(agent_id).role` 的差别只有一条，但就是这条决定它是不是越权口：
+///   · 未登记 ⇒ None（推断兜底）
+///   · **本进程自身份（`agent_type == "server"`）⇒ None** —— 报 `fist-mbt` 不再继承 Leader
+///   · 其余登记的 agent ⇒ Some(role)，交给 `resolve_agent_role` 做「可继承 / 下限」判定
+///
+/// **诚实边界（残余攻击面，未在本条关闭）**：任何**非 server 类型**且被显式授予 Leader
+/// 的登记记录，仍可被「报它的名字」继承。现网该类记录 **0 条**（`agents_register` 只被
+/// server 内部调用：启动写 1 条 server/Leader，claim·execute 写 Executor），且 MCP 工具面
+/// **没有** `agents_register` ⇒ 要利用需先有内部写入面。彻底关闭需认证身份（BUG-422 A 案 / C 案）。
+pub fn SqliteStore::agents_role_for_judgment(
+  self : SqliteStore,
+  agent_id : String,
+) -> String? {
+  match self.agents_get(agent_id) {
+    None => None
+    Some(rec) =>
+      if agent_record_is_process_self(rec) {
+        None
+      } else {
+        Some(rec.role)
+      }
+  }
+}
+
+///|
 /// 换绑进程实例（server 启动时调用）：仅刷新 `pid`，不动 `first_seen`/`last_seen`。
 pub fn SqliteStore::agents_set_pid(
   self : SqliteStore,
