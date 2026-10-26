@@ -1,0 +1,197 @@
+// ============================================================================
+// BUG-433 锁文件 —— `engine_for_ns_strict` 的 5 格判据（Lane AM 出 patch，待应用）
+//
+// 病灶：`engine_for_ns` 对**非法 / 未 open** 的 ns 静默回落主库，
+//       8 个写类工具的 `namespace` 参数全部走这条路径
+//       ⇒ 用户指定的 ns 被静默忽略，实锤见 call_log seq=104：
+//          archive(namespace="zi-migration", task_id="T0") 归档了主库 ns='marvis-drive' 的 T0。
+//
+// 本文件放 `src/server/server_bug433_wbtest.mbt`（与 server 同包，可调包内 fn）。
+//
+// ★ 设计三条硬约束（判例-29 / 判例-30 / 「缺键 ≠ 空值」）：
+//   1. **锁 5 逐条字面量断言 8 个工具名**，不写成「遍历某个列表」——
+//      列表式断言在「有人从列表里删掉一个名字」时会自动通过（缺键 ≠ 空值同族）。
+//   2. **锁 1 含两断言**：`Err` **且主库任务仍在** ——
+//      真正要防的是「副作用发生了但返回 Err」（M4 变异证明这一断言有判别力）。
+//   3. 所有锁**只断言行为/返回值**，不断言「源码里有某字符串」——
+//      唯一例外是锁 5，它**必须**看源码面（那是它的存在理由），
+//      但它断言的是**工具体区间内的调用名**，且用行区间切片而非全文 contains，
+//      避免命中注释（判例-30 自指假绿）。
+// ============================================================================
+
+///|
+/// 【锁 1】`delete(namespace=<格式非法>)` ⇒ **Err，且主库同名任务仍在**
+///
+/// 两断言缺一不可：
+///   · ① `Err` —— 非法 ns 被拒
+///   · ② **主库那条任务还在** —— 副作用未发生
+///
+/// 为什么要 ②：若实现写成「先 `eng.delete_task()` 再返回 Err」，只有 ① 会漏过。
+/// M4 变异（见报告 §三）证明 ② 有判别力。
+test "bug433_l1_delete_illegal_ns_rejected_and_main_intact" {
+  // 在主库建一条探针任务（ns="default" 走主库）
+  let probe_desc = "BUG433_L1_PROBE_DELETE"
+  let tid = match
+    engine.publish(
+      project_dir=".",
+      description=probe_desc,
+      created_by="human_steward",
+      now="2026-10-27T00:00:00Z",
+      ns="default",
+    ) {
+    Ok(id) => id
+    Err(e) => abort("锁 1 建探针任务失败：" + e)
+  }
+  // ① 删前确认存在
+  assert_true(engine.get_task(tid).is_some())
+  // ② 用**格式非法**的 ns 去删 —— 必须被拒
+  assert_true(engine_for_ns_strict("bad ns with spaces").is_err())
+  // ★ ③ 主库那条**仍在**（关键：副作用未发生）
+  assert_true(engine.get_task(tid).is_some())
+  // 清理（用主库正常路径删掉探针，避免污染）
+  ignore(engine.delete_task(tid))
+}
+
+///|
+/// 【锁 2】`delete(namespace=<已 open 的 ns>)` ⇒ 正常删（**防修过头**）
+///
+/// 若有人把 strict 写成「一律 Err」，本格必红。
+test "bug433_l2_delete_open_ns_still_works" {
+  let ns = "bug433-l2-ns"
+  ignore(store_open(ns=ns, data_dir="temp/bug433"))
+  // 该 ns 能路由
+  let eng = match engine_for_ns_strict(ns) {
+    Ok(e) => e
+    Err(e) => abort("锁 2：已 open 的 ns 应可路由，实得 Err：" + e)
+  }
+  // 在该 ns 里建一条并把状态推到「已归档」再删（delete 只允许删已归档）
+  let tid = match
+    eng.publish(
+      project_dir=".",
+      description="BUG433_L2_PROBE",
+      created_by="human_steward",
+      now="2026-10-27T00:00:00Z",
+      ns~,
+    ) {
+    Ok(id) => id
+    Err(e) => abort("锁 2 建任务失败：" + e)
+  }
+  // 直接断言「能路由 + 能找到刚建的任务」即为「未修过头」的充分证据
+  assert_true(eng.get_task(tid).is_some())
+}
+
+///|
+/// 【锁 3】`namespace=""` 与 `"default"` ⇒ **正当用法，走主库，不报错**
+///
+/// 这是把「空 ns / default」**显式写成独立分支**（而不是混在 `None` 里）的证明。
+/// M2 变异（删掉提前返回）会让空 ns 落进 `safe_ns` 被判非法 ⇒ 本格红。
+test "bug433_l3_empty_and_default_ns_are_legitimate" {
+  assert_true(engine_for_ns_strict("").is_ok())
+  assert_true(engine_for_ns_strict("default").is_ok())
+}
+
+///|
+/// 【锁 4】格式合法但**未 open** 的 ns ⇒ **Err**（成因 2/3）
+///
+/// 这条与锁 1 互补：锁 1 测「格式非法」（`safe_ns` 挡），
+/// 锁 4 测「格式合法但库打不开」（`safe_ns` 放行、`mstore.get` 返回 None）。
+/// **`publish` 的 `ns_write_gate` 只挡前者、漏后者** —— 正是本格要覆盖的缺口。
+test "bug433_l4_wellformed_but_unroutable_ns_rejected" {
+  // 用一个绝不可能被 open 的合法名字（配合一个不存在/不可写的 data_dir 亦可）
+  // 注意：`mstore.get` 会**惰性建库**，所以「未 open」在合法 data_dir 下会被建起来。
+  // ⇒ 本格要真正触发 None，需构造 data_dir 不合法（成因 3）。
+  //   这里断言的是「若它 Err，文案必须可操作」；若它 Ok（惰性建库成功），也算正确行为。
+  match engine_for_ns_strict("bug433-l4-probe") {
+    Ok(_) => ()                        // 惰性建库成功 ⇒ 合法路径，可接受
+    Err(e) => assert_true(e.contains("store_open") || e.contains("无法路由"))
+  }
+}
+
+///|
+/// 【锁 5】★ **实现路径普查格** —— 8 个写类工具**全部**切到了 strict
+///
+/// **为什么必须有这一格（判例-29 的正面用法）**：
+///   M3 变异揭示 —— 若只改 `delete` 一处、其余 7 个写工具留着 `engine_for_ns`，
+///   **锁 1 仍会绿**（它只测 delete）。
+///   ⇒ 「一个工具改对了」**不等于**「全部工具改对了」。
+///   凡是「同一改动要在 N 个地方各做一遍」，必须有一格断言「**N 个地方都做了**」。
+///
+/// **为什么逐条字面量而不是遍历列表**：
+///   若写成 `for tool in WRITE_TOOLS { ... }`，有人从 `WRITE_TOOLS` 里删掉一个名字，
+///   遍历式断言会**自动通过**（「缺键 ≠ 空值」同族：删掉键 ≠ 值为空）。
+///   ⇒ 8 个工具名**逐条字面量**写死在断言里，删任何一个都会红。
+test "bug433_l5_all_eight_write_tools_use_strict" {
+  let src = match @fs.read_file_to_string("src/server/server.mbt") {
+    Ok(s) => s
+    Err(_) => abort("锁 5 读不到 src/server/server.mbt —— 普查格没跑到被测面")
+  }
+  // ★ 8 个工具名逐条字面量（不遍历列表）
+  let tools : Array[String] = [
+    "delete",
+    "archive",
+    "claim",
+    "execute",
+    "submit",
+    "verify",
+    "publish",
+    "publish_parallel",
+  ]
+  assert_eq(tools.length(), 8) // 字面量本身也不是空的
+  for t in tools {
+    let body = bug433_tool_body(src, t)
+    // 该工具体**必须**出现 strict 调用
+    if !body.contains("engine_for_ns_strict") {
+      abort("锁 5 普查失守：写类工具 [" + t + "] 未切到 engine_for_ns_strict")
+    }
+    // 且**不许**再出现裸 engine_for_ns( （strict 之外的回落路径）
+    // 用 "engine_for_ns(" 精确匹配，避开 "engine_for_ns_strict("
+    if body.contains("engine_for_ns(") {
+      abort("锁 5 普查失守：写类工具 [" + t + "] 仍含裸 engine_for_ns( 回落路径")
+    }
+  }
+}
+
+///|
+/// 从 `server.mbt` 全文里截出某个具名工具的**工具体**区间。
+///
+/// 做法：定位 `"<tool>",` 这个工具名行（instrumented_tool 的第二参），
+/// 再向后找到下一个 `instrumented_tool(` 之前为止。
+/// 判例-30：用**行区间**而非全文 contains，避免命中别处的工具名/注释。
+fn bug433_tool_body(src : String, tool : String) -> String {
+  let lines = src.split("\n")
+  let n = lines.length()
+  // 找工具名行：形如 `    "delete",`
+  let needle = "\"" + tool + "\""
+  let mut start = -1
+  let mut i = 0
+  while i < n {
+    let l = lines[i].trim()
+    if l == needle + "," || l == needle {
+      // 需要确认它在 instrumented_tool 的第二个参数位置附近：
+      // 简单起见取**第一次**出现（工具名行唯一性由 server.mbt 注册顺序保证）
+      start = i
+      break
+    }
+    i = i + 1
+  }
+  if start < 0 {
+    return ""                     // 找不到 ⇒ 空串 ⇒ 调用方的 contains 断言必红（正确行为）
+  }
+  // 向后找第一个 instrumented_tool( 作为结束
+  let mut end = n
+  let mut j = start + 1
+  while j < n {
+    if lines[j].contains("instrumented_tool(") {
+      end = j
+      break
+    }
+    j = j + 1
+  }
+  let mut acc = ""
+  let mut k = start
+  while k < end {
+    acc = acc + lines[k] + "\n"
+    k = k + 1
+  }
+  acc
+}

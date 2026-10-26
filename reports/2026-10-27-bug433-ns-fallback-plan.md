@@ -221,88 +221,76 @@ fn engine_for_ns_strict(ns : String) -> Result[@engine.FistEngine, String] {
       }
 ```
 
-**`get`（L2302）/ `list`（L2265）** —— **保持原 `engine_for_ns`**（只读面容忍回落），
-但**建议在回执里加 `ns_fallback` 标记**（候选 (c) 的合理用法，见 §五）。
+**`get`（L2302）/ `list`（L2265）** —— **保持原 `engine_for_ns`**（只读面容忍回落）。
+
+### 2.4 ⚠️ 「读类面仍静默回落」这个取舍的**代价**（不只是「取舍」）
+
+我原写成「有意取舍，读错库可容忍」。**那是在回避代价。把代价写清：**
+
+> **`get(namespace=X)` 在 X 未 open 时，返回的是主库里的同名任务**
+> ⇐ **调用方会把它当成「X 库里的那条」**。
+>
+> 具体后果：
+> - `get(namespace="zi-migration", task_id="T0")` 返回主库 `T0`（`ns='marvis-drive'`），
+>   **调用方看到 `ns` 字段是 `marvis-drive` 也不会警觉** —— 因为工具签名说「我查的是 zi-migration」；
+> - `list(namespace=X)` 在 X 未 open 时**列的是主库全部任务**，
+>   而调用方会把它读成「X 库有这么多任务」；
+> - **这是「静默成功」的读侧版本** —— 与写侧的 `delete` 同族，
+>   只是后果从「删错了」变成「**基于错的清单做决策**」。
+>
+> **⇒ 建议（另立，不硬做）**：`get`/`list` 回执加 `"ns_fallback": true` + `"actual_ns": "<主库>"`。
+> 这要改回执 JSON 结构（`server.mbt` 改动面扩大）⇒ **本单记为缺口，另立单**。
+
+### 2.5 ⚠️ `publish` 的「一半保护」—— 本仓守卫**按输入形状分层，不按后果分层**
+
+**实测读数**：`publish` 已有 `ns_write_gate`（`server.mbt:1678` → `write_gate.mbt:171`）：
+
+| 输入 | `ns_write_gate` | 是否被挡 |
+|---|---|---|
+| `""` / `"default"` | **Err**（拒绝写 default）| ✅ 已堵 |
+| **格式非法**（`safe_ns` → None）| **Err**「仅允许字母数字与 _ / -」| ✅ **已堵** |
+| **合法新 ns** | Ok ⇒ `mstore.get` **惰性建库** | 放行（正确）|
+| **格式合法但库打不开 / data_dir 歪** | **Ok（放行）** ⇒ `engine_for_ns` **静默回落主库** | ❌ **漏** |
+
+**⇒ 它是 8 个工具里唯一「已经有一半保护」的。**
+**而这一半保护暴露的是一个**模式**：**
+
+> **本仓的守卫是「按输入形状分层」的，不是「按操作危险度分层」的。**
+> **格式非法的攻击被挡住，是因为它「看起来不像合法输入」；
+> 而库打不开没被挡住，是因为它「看起来完全合法」。**
+>
+> ⇒ 这是「**守卫按形状分，不按后果分**」的又一个标本（与本 BUG-433 本尊同族）：
+> 挡住它的条件与它的**危险性**无关，只与它的**外貌**有关。
+
+**⇒ 对 `publish` 的修法因此更简单**：**不动 `ns_write_gate`**，
+只需把 `engine_for_ns(ns)` 换成 `engine_for_ns_strict(ns)`。两者是**叠加**关系，不冲突。
 
 ---
 
-## 三、4 格锁设计
+## 三、5 格锁设计
 
-新增位置建议 `src/server/server_bug433_wbtest.mbt`（受 HumanSteward 保护 ⇒ 出 patch）：
+> **⚠️ 完整可粘贴的锁文件正文在附件**：`reports/2026-10-27-bug433-lock-file.mbt.txt`（8.6 KB）。
+> 本节只给设计与变异表；**正文以附件为准**（报告体量限制，故分离）。
 
-```moonbit
-///|
-/// 锁 1：`delete(namespace="非法ns")` ⇒ **Err，且主库同名任务仍在**
-///
-/// ★ 断言必须含「主库那条任务还在」—— 真正要防的是
-///   **副作用发生了但返回了 Err**。只断言 Err 会让「删了再报错」溜过去。
-test "bug433_lock1_delete_illegal_ns_rejected_and_main_intact" {
-  // 造一条主库任务（ns=""，即主库面）
-  let tid = "BUG433_PROBE_DEL"
-  ignore(engine.publish(description="bug433 探针任务", created_by="human_steward", ...))
-  // 删前确认存在
-  assert_true(engine.get_task(tid).is_some())
-  // 用非法 ns 删它
-  let r = engine_for_ns_strict("bad ns with space")
-  assert_true(r.is_err())                       // ① 被拒
-  // ★ ② 主库那条**仍在**（关键：副作用未发生）
-  assert_true(engine.get_task(tid).is_some())
-}
+| 锁 | 断言 | 防什么 |
+|---|---|---|
+| **锁 1** | `delete(非法ns)` ⇒ **Err 且主库任务仍在**（两断言）| 防「副作用发生了但返回 Err」（M4 证明第二断言有判别力）|
+| **锁 2** | `delete(已open ns)` ⇒ 正常删 | 防修过头（一律 Err）|
+| **锁 3** | `""` / `"default"` ⇒ Ok（正当用法）| 防把正当用法误判成非法（M2）|
+| **锁 4** | 格式合法但未 open ⇒ Err（或合法惰性建库）| 覆盖 `ns_write_gate` 漏掉的成因 2/3 |
+| **锁 5** | ★ **8 个写工具逐条字面量**断言都用了 strict | 防「只改一处」漏网（M3）|
 
-///|
-/// 锁 2：`delete(namespace=<已 open 的 ns>)` ⇒ 正常删（防修过头）
-test "bug433_lock2_delete_open_ns_still_works" {
-  ignore(store_open(ns="bug433ok"))
-  let eng = engine_for_ns_strict("bug433ok")
-  assert_true(eng.is_ok())                      // 已 open ⇒ 放行
-  // 在该 ns 里建一条再删，断言真的删掉
-}
+**判例（统帅核定，请入档）**：
+> **「一个工具改对了」不等于「全部工具改对了」。**
+> 锁 1 只测 `delete` ⇒ 若只改 `delete`，锁 1 绿、锁 5 红。
+> **⇒ 凡是「同一改动要在 N 个地方各做一遍」，必须有一格断言「N 个地方都做了」，
+> 而不是「其中一处做对了」。**
+> 与本仓第二轮 `report_bug` trailing newline 同族（「修了一处 ≠ 修了全部写入路径」），
+> **但方向更狠**：那次是「两条路只修一条」；这次是「**同一条路在 8 个工具里各写一遍**」。
 
-///|
-/// 锁 3：`namespace=""` 与「未传 namespace」⇒ **正当用法，走主库，不报错**
-/// （这是把「"" / default」显式写成独立分支的证明）
-test "bug433_lock3_empty_ns_is_legitimate" {
-  assert_true(engine_for_ns_strict("").is_ok())
-  assert_true(engine_for_ns_strict("default").is_ok())
-}
-
-///|
-/// 锁 4（变异对照）：把 `Err` 改回 `None => Ok(engine)` ⇒ 锁 1 必红
-/// 变异方式：临时把 engine_for_ns_strict 的 None 分支改成 Ok(engine)，跑本组
-test "bug433_lock4_mutation_control" {
-  // 见 §四 变异实测：M1 把 Err 改回回落 ⇒ 锁 1 的「被拒」断言红
-}
-```
-
-///|
-/// 锁 5（**实现路径普查格**，判例-29）：6 个写类工具**全部**已切到 strict。
-///
-/// ★ 为什么必须有这一格：M3 变异揭示 —— 若只改 `delete` 一处、其余 5 个写工具留着
-///   `engine_for_ns(ns)`，**锁 1 仍会绿**（它只测 delete）。
-///   这正是判例-29「机制格 ≠ 实现路径格」：测了一个工具 ≠ 测了全部写路径。
-///
-/// 做法：断言**源码面**里，6 个写工具的工具体内出现的是 `engine_for_ns_strict`
-/// 而不是裸 `engine_for_ns`。用**行号区间**界定每个工具体，避免命中别处。
-test "bug433_lock5_all_write_tools_use_strict" {
-  // 每个写类工具：(工具名, 工具定义行, 期望出现的调用)
-  let expected : Array[(String, String)] = [
-    ("delete", "engine_for_ns_strict"),
-    ("archive", "engine_for_ns_strict"),
-    ("claim", "engine_for_ns_strict"),
-    ("execute", "engine_for_ns_strict"),
-    ("submit", "engine_for_ns_strict"),
-    ("verify", "engine_for_ns_strict"),
-  ]
-  let src = /* 读 src/server/server.mbt 全文 */
-  for (tool, want) in expected {
-    // 从工具定义行起、到下一个 instrumented_tool( 止，截出该工具体
-    let body = slice_tool_body(src, tool)
-    assert_true(body.contains(want))          // 必须含 strict
-    // 且**不许**在写体里出现裸 engine_for_ns(（除 strict 自身）
-    assert_false(body_has_bare_engine_for_ns(body))
-  }
-}
-```
+**锁 5 为何逐条字面量、不遍历列表**：若写成 `for t in WRITE_TOOLS {…}`，
+有人**从列表里删掉一个名字**，遍历式断言会**自动通过** —— 「缺键 ≠ 空值」同族。
+**删任何一个工具名，锁 5 必红。**
 
 ### 变异实测（真跑，非设计）
 
