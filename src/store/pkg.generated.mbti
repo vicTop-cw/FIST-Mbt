@@ -28,6 +28,10 @@ pub fn lock_acquire_action(FileLock?, String, String) -> (Bool, String)
 
 pub fn migrate_legacy_store(String, String, String, force? : Bool) -> StoreMigration
 
+pub fn ns_misroute_not_found(String, String, String) -> String
+
+pub fn ns_routing_warning(String, Int32, Int32) -> String
+
 pub fn rsv_action((String, String, String)?, String, String) -> (Bool, String)
 
 pub fn specs_table_sql() -> String
@@ -91,10 +95,13 @@ pub struct FileLock {
   ttl_until : String
   meta : String
 } derive(Eq, @debug.Debug)
+pub fn FileLock::agent_of(Self) -> String
 pub fn FileLock::equal(Self, Self) -> Bool
 pub fn FileLock::new(lock_id~ : String, batch_id~ : String, scope~ : String, agent~ : String, status? : String, ts? : String, ttl_until? : String, meta? : String) -> Self
 pub fn FileLock::not_equal(Self, Self) -> Bool
 pub fn FileLock::renew(Self, ttl_until~ : String, ts~ : String) -> Self
+pub fn FileLock::scope_of(Self) -> String
+pub fn FileLock::status_of(Self) -> String
 pub fn FileLock::to_json(Self) -> Json
 pub fn FileLock::to_repr(Self) -> @debug.Repr
 
@@ -106,6 +113,8 @@ pub struct LockAcquireOutcome {
   ttl_until : String
   violation_logged : Bool
 } derive(@debug.Debug)
+pub fn LockAcquireOutcome::denied_by_permission() -> Self
+pub fn LockAcquireOutcome::relabel(Self, String, Bool) -> Self
 pub fn LockAcquireOutcome::to_repr(Self) -> @debug.Repr
 
 pub struct LockViolation {
@@ -179,6 +188,7 @@ pub fn MultiStore::get(Self, String) -> SqliteStore?
 pub fn MultiStore::new(data_dir? : String) -> Self
 pub fn MultiStore::ns_list(Self) -> Array[String]
 pub fn MultiStore::ns_stats(Self) -> Json
+pub fn MultiStore::ns_task_count(Self, String) -> Int32
 pub fn MultiStore::open(Self, ns~ : String, data_dir~ : String) -> Bool
 pub fn MultiStore::safe_ns(String) -> String?
 

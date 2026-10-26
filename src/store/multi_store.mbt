@@ -683,3 +683,103 @@ pub fn migrate_legacy_store(
   }
   { ..base, applied: true, moved_tasks: legacy_tasks, backup, }
 }
+
+// ---------------------------------------------------------------------------
+// BUG-420 · 命名空间「标签 vs 物理位置」错位诊断（C 案：止血 + 可诊断）
+//
+// 背景（事实见 reports/2026-10-26-bug420-ns-routing-diagnosis.md）：
+//   ns 在四层里有两种角色 —— ①②③ 层把它当**路由键**（决定打开哪个物理库），
+//   ④ 层（`tasks.ns` 列）把它当**纯标签**（只被 `WHERE ns=?` 过滤）。
+//   当存量任务的标签与物理位置分家时，**数据既没丢也没坏，却永远查不到**：
+//   带 ns 查 ⇒ 打开一个空分库 ⇒ `task not found`，而文案只说 ID 没找到，
+//   看起来像调用方把 id 写错了。
+//
+// C 案不动数据（B 案迁移不可逆、需 owner 裁），只做两件事：
+//   ① 路由到空库这件事**显式可见**（store_open 回执带 warning）；
+//   ② 查不到时**给可行动的信息**（错误文案指出「任务在主库、ns 标签是 X」）。
+// 两个文案都由纯函数产出，白盒可锁（multi_store_bug420_wbtest.mbt）。
+// ---------------------------------------------------------------------------
+
+///|
+/// BUG-420 路由错位诊断（纯计算）。
+///
+/// `main_tasks` = 主库 `fist-mbt.db` 里带该 ns 标签的任务数；
+/// `store_tasks` = 该 ns 物理库（`.fist-mbt/data/<ns>.db`）里的任务数。
+///
+/// 仅当「主库有、本库空」且 ns 非 `default`/空时返回诊断文案，其余一律返回空串：
+/// - `default`/空串本来就走主库，不存在路由错位；
+/// - 分库已有数据说明写入路径工作正常，不必告警（**不制造恒阳性**）。
+pub fn ns_routing_warning(
+  ns : String,
+  main_tasks : Int32,
+  store_tasks : Int32,
+) -> String {
+  if ns == "" || ns == "default" {
+    return ""
+  }
+  if main_tasks <= 0 || store_tasks > 0 {
+    return ""
+  }
+  let safe = match MultiStore::safe_ns(ns) {
+    Some(s) => s
+    None => ns
+  }
+  "BUG-420：主库 fist-mbt.db 里有 \{main_tasks} 条带 ns 标签 '\{ns}' 的历史任务，" +
+  "而本命名空间库 .fist-mbt/data/\{safe}.db 为 \{store_tasks} 条 —— " +
+  "**按 ns 查询会找不到它们**（ns 在这里既是路由键又是标签，两者从未对齐；" +
+  "数据没丢也没坏，是物理位置与标签分家）。两条出路：" +
+  "① 不传 namespace 参数即可查到（这些任务落在主库）；" +
+  "② 或等 A 案（读取侧回落主库 + 按 ns 字段过滤）实现后，带 ns 也能查到。"
+}
+
+///|
+/// BUG-420 查不到时的可行动文案（纯计算）。
+///
+/// 形状：带 ns 查不到，但主库里同 id 任务的 ns 标签**正好等于**请求的 ns。
+/// 这形状下 `task not found: <id>` 是**误导性文案**（看起来像 ID 写错），
+/// 必须指出「任务在主库、只是不在这个 ns 库」并给三条出路。
+///
+/// 前提由调用方（server 的 get/archive handler）负责核验：只在标签对得上时调用，
+/// 否则真正的「ID 不存在」会被说成路由错位（那是制造假诊断）。
+pub fn ns_misroute_not_found(
+  task_id : String,
+  ns : String,
+  main_ns : String,
+) -> String {
+  let safe = match MultiStore::safe_ns(ns) {
+    Some(s) => s
+    None => ns
+  }
+  "task not found: \{task_id} —— 但该任务在**主库** fist-mbt.db 里" +
+  "（ns 标签=\{main_ns}），不在 ns 库 '\{ns}'（.fist-mbt/data/\{safe}.db，空库）中。" +
+  "这是 BUG-420（ns 标签与物理位置不一致）：历史任务的 ns 标签仍是 '\{ns}'，" +
+  "物理行却留在主库，按 ns 路由只会打开那个空分库。三条出路：" +
+  "① 去掉 namespace 参数即可命中（走主库）；" +
+  "② get 传 resolve_from_main=true 做**只读**回落（回执带 resolved_from=default(main)）；" +
+  "③ 等 A 案（读取侧统一回落 + 按 ns 字段过滤）与 B 案（数据迁移，需 owner 裁）落地。"
+}
+
+///|
+/// 某个命名空间库里的任务总数（未打开 / 打开失败 / 无句柄一律 0）。
+///
+/// BUG-420：store_open 回执要给出「本库几条 vs 主库同标签几条」这对读数 ——
+/// 过去这两个数只能靠外部 `sqlite3` 直查（诊断报告就是这么拿到 148 vs 0 的）。
+/// 注意这里**是惰性打开**（复用 `MultiStore::get` 语义）：调用方应先把 ns open 好。
+pub fn MultiStore::ns_task_count(self : MultiStore, ns : String) -> Int32 {
+  match self.get(ns) {
+    None => 0
+    Some(store) =>
+      match store.db {
+        None => 0
+        Some(db) =>
+          match db.prepare("SELECT COUNT(*) FROM tasks") {
+            None => 0
+            Some(stmt) => {
+              let n = if stmt.step() { stmt.column_int(0) } else { 0 }
+              stmt.finalize()
+              n
+            }
+          }
+      }
+  }
+}
