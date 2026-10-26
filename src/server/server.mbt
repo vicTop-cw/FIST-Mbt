@@ -6165,7 +6165,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "store_open",
-    "打开（或复用）一个命名空间。参数：namespace、data_dir(可选，**缺省落 `<target>/.fist-mbt/data/`**（server 以目标项目根为 cwd 启动，即目标项目私有目录，不落 server cwd 根）；只接受相对 server 进程 cwd 的相对路径——含 .. / 前导分隔符 / 盘符一律拒。BUG-78：过去 data_dir 原样拼接，指到哪就往哪建 .db，『命名空间物理隔离』形同虚设)、scratch(可选，true 时库落 temp/ 临时区，不污染仓库根)。返回 {namespace, opened, data_dir, path}；失败原因分列（非法 ns 与非法 data_dir 不合并成一句『打开失败』，否则调用方不知道该改哪个参数）。",
+    "打开（或复用）一个命名空间。参数：namespace、data_dir(可选，**缺省落 `<target>/.fist-mbt/data/`**（server 以目标项目根为 cwd 启动，即目标项目私有目录，不落 server cwd 根）；只接受相对 server 进程 cwd 的相对路径——含 .. / 前导分隔符 / 盘符一律拒。BUG-78：过去 data_dir 原样拼接，指到哪就往哪建 .db，『命名空间物理隔离』形同虚设)、scratch(可选，true 时库落 temp/ 临时区，不污染仓库根)、migrate(可选，默认 false：显式要求把 cwd 根旧位置 `<ns>.db` 覆盖到新位置——仅在『两边都有数据』时才有意义，新库先留档 .replaced-bak)。**T0r744 / BUG-78 迁移缺口**：不传 data_dir 时会做真迁移而不是永远复用旧位置——旧位置有库、新位置没有／新位置是空壳（0 条）→ 自动迁移并回执 migrated_from / migrated_tasks；两边都有数据 → 不自动覆盖，回执 migration.reason=conflict 亮红灯给两条出路。返回 {namespace, opened, data_dir, migrated_from, migrated_tasks, migration{reason, applied, from, to, legacy_tasks, new_tasks, migrated_tasks, backup, note}, scratch, active_namespaces}；失败原因分列（非法 ns 与非法 data_dir 不合并成一句『打开失败』，否则调用方不知道该改哪个参数）。",
     schema(
       {
         "namespace": string_prop("命名空间（必填）"),
@@ -6175,6 +6175,9 @@ pub async fn run_server() -> Unit {
         "scratch": bool_prop(
           "临时命名空间开关(可选，默认 false)：true 时强制 data_dir=temp/（gitignore），避免根目录堆 .db",
         ),
+        "migrate": bool_prop(
+          "强制迁移开关(可选，默认 false)：true 时把 cwd 根旧位置存量库覆盖到新默认位置（新库先留档 .replaced-bak）。只在『两边都有数据』的 conflict 档需要显式打开；空壳/仅旧库两档本来就自动迁",
+        ),
       },
       ["namespace"],
     ),
@@ -6182,6 +6185,9 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace")
       let mut dir = get_str(args, "data_dir", default="")
       let scratch = get_bool(args, "scratch", default=false)
+      let force_migrate = get_bool(args, "migrate", default=false)
+      // 迁移结论的默认档：显式给了 data_dir（或 scratch）时不做任何默认落点判定
+      let mut migration = @store.StoreMigration::skipped("explicit-data-dir")
       // 临时命名空间：强制落到 temp/（gitignore），不污染仓库根
       if scratch {
         @fs.create_dir("temp") catch {
@@ -6193,25 +6199,27 @@ pub async fn run_server() -> Unit {
       // 而是走 MultiStore 默认 `.fist-mbt/data/`（多库/多租户台账落目标项目私有目录）。
       // 空串是"用默认"的信号，不走 data_dir_ok（data_dir_ok 会拒空）；实传值仍严格校验。
       if dir.is_empty() {
-        // BUG-389 修复：BUG-78 把默认 data_dir 改成 `.fist-mbt/data/` 但没迁存量库，
-        // cwd 根仍留有 `<ns>.db`——server 重启后 store_open 落新空库，同 ns 任务"凭空消失"
-        // （2026-10-23 实测：fist-mbt-refactor 40 条 / tnr-polish 23 条 / tql-b5 1 条全部丢失）。
-        // 打开前先检测旧位置存量库：存在则复用旧库（任务不丢），否则才落 BUG-78 新默认。
-        let legacy_exists = legacy_store_exists(ns)
-        if legacy_exists {
-          dir = "."
-        } else {
-          dir = ".fist-mbt/data"
-          // `@fs.create_dir` 不递归（见 model_router_ops.mbt 同款三层建目录），
-          // 而 SqliteStore 只建文件不建目录——缺了这两层，默认落点会在首个
-          // store_open 直接 `unable to open database file` 崩掉整个 server。
-          @fs.create_dir(".fist-mbt") catch {
-            _ => ()
-          }
-          @fs.create_dir(dir) catch {
-            _ => ()
-          }
+        // T0r744（BUG-78 的迁移缺口）：这里过去是 BUG-389 的临时兼容——
+        // 「检测到 cwd 根旧库就永远复用旧位置（data_dir="."）」。两个后果：
+        //   ① 存量库永远搬不进 BUG-78 的新默认位置（默认落点形同虚设）；
+        //   ② 用户先跑出 `.fist-mbt/data/<ns>.db` 空壳、旧位置有真库时，
+        //      落点由"旧库存在"单因素决定，两边都有数据也没有裁定与诊断。
+        // 现在改成**真迁移**：判定与搬迁都在 @store.migrate_legacy_store（纯判定 + 复制，
+        // 不销毁旧库），这里只负责建目录、挑目录、把结论搬进回执。
+        let new_dir = ".fist-mbt/data"
+        @fs.create_dir(".fist-mbt") catch {
+          _ => ()
         }
+        @fs.create_dir(new_dir) catch {
+          _ => ()
+        }
+        migration = if mstore.ns_list().contains(ns) {
+          // 句柄还开着：不在活库上搬文件（会被 WAL/锁搅在一起），只报状态
+          @store.StoreMigration::skipped("already-open")
+        } else {
+          @store.migrate_legacy_store(".", new_dir, ns, force=force_migrate)
+        }
+        dir = new_dir
       }
       // BUG-78：原因分列再动手——把非法 ns 和非法 data_dir 合并成一句"打开失败"，
       // 调用方就只能猜该改哪个参数（本项目对拒绝文案的一贯要求：自带出路）
@@ -6239,6 +6247,19 @@ pub async fn run_server() -> Unit {
                 "opened": Json::boolean(true),
                 "data_dir": Json::string(dir),
                 "scratch": Json::boolean(scratch),
+                // T0r744：把"这次到底搬没搬、搬了多少条"写进回执（验收要求 4）——
+                // 顶层两个平铺字段给流水线判，migration 对象给人和排障读。
+                "migrated_from": Json::string(
+                  if migration.applied {
+                    migration.from
+                  } else {
+                    ""
+                  },
+                ),
+                "migrated_tasks": Json::number(
+                  migration.moved_tasks.to_double(),
+                ),
+                "migration": migration.to_json(),
                 "active_namespaces": Json::array(
                   mstore.ns_list().map(fn(s) { Json::string(s) }),
                 ),
