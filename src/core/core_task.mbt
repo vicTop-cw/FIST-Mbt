@@ -553,7 +553,93 @@ pub fn Task::reopen(self : Task) -> Result[Task, String] {
 }
 
 ///|
+/// 打回原因单条上限（字节，UTF-8，BUG-427）。
+///
+/// 取 200 与 `supervisor_status` 的 description 截断口径一致 ——
+/// 单次打回最多占掉回执的 200 字节窗口，不会把任务意图整体挤掉。
+const REJECT_REASON_CAP : Int32 = 200
+
+///|
+/// 剥掉 description 尾部已存在的 `[打回原因: …]`（BUG-427 滚动窗口）。
+///
+/// 只剥**最后一次**拼上去的那一段（从最后一个 `" [打回原因: "` 起，到末尾的 `"]"`），
+/// 这样「同一任务被打回 N 次」的 description 长度**不随 N 线性增长**。
+///
+/// ⚠️ 本仓**没有** `String::rev_find` 的先例（`grep -rn 'rev_find\|rfind' src/` 为空），
+/// 故此处用「自实现反向查找」而非依赖不存在的 API。
+fn strip_reject_tail(desc : String) -> String {
+  let marker = " [打回原因: "
+  let ml = marker.length()
+  let dl = desc.length()
+  if dl < ml || not(desc.has_suffix("]")) {
+    return desc
+  }
+  // 反向扫：找最后一个 marker 的起始下标
+  let mut i = dl - ml
+  let mut last = -1
+  while i >= 0 {
+    if desc[i:i + ml] == marker {
+      last = i
+      break
+    }
+    i = i - 1
+  }
+  if last < 0 {
+    desc
+  } else {
+    desc[0:last].to_owned()
+  }
+}
+
+///|
+/// 按 UTF-8 字符边界截断到 `cap` 字节（不产生半个字符）。
+///
+/// 与既有 `desc_clip`（:700 附近）同族，但**语义是「纯截断」不追加 "…"** ——
+/// 外层会再拼 `]`，加省略号反而破坏 `[打回原因: …]` 的形状。
+///
+/// 依赖面：`src/core/moon.pkg:3` 是 `"moonbitlang/x/encoding"`（**不是** `core/encoding/utf8`），
+/// 故此处用 `@encoding.encode(UTF8, s)` / `@encoding.decode_to(...)`，
+/// 与 `desc_clip` 同一套 API，**不新增依赖**。
+fn clip_utf8(s : String, cap : Int32) -> String {
+  if cap <= 0 {
+    return ""
+  }
+  let bytes = @encoding.encode(UTF8, s)
+  if bytes.length() <= cap {
+    return s
+  }
+  let mut cut = cap
+  while cut > 0 && bytes[cut].to_int().land(0xC0) == 0x80 {
+    cut = cut - 1
+  }
+  let sb = StringBuilder()
+  @encoding.decode_to(bytes[0:cut], sb, encoding=UTF8) catch {
+    _ => ()
+  }
+  sb.to_string()
+}
+
+///|
 /// 待验收 -> 已打回（验收不通过，需重做）
+///
+/// **BUG-427：打回原因不再无上限追加进 `description`。**
+///
+/// 旧实现每次 `reject` 都拼一段 ` [打回原因: …]`，而：
+///   · 存储面无任何长度闸（`desc_clip` 只在 `to_json` 输出时截断）；
+///   · `description` 是三处功能的**共同进料面**：
+///     `task_triage` 的能力抽取（`cap_match` 的 `desc.contains(want)`）、
+///     `goal_drift_check` 的 Jaccard（`@evolve.tokens(get_description())`）、
+///     `supervisor_status` 的 200 字节截断。
+///
+/// 实测：`T0r636.4.2` **单次打回即 4737 字节**。
+///
+/// 现实现两道闸：
+///   ① 先剥掉**已有**的 `[打回原因: …]` 尾巴（滚动窗口 = 只留最近 1 次）
+///   ② 单条原因截断到 `REJECT_REASON_CAP` 字节（按 UTF-8 字符边界，不切半字）
+///
+/// **只留最近 1 次是有意取舍**：打回原因属于过程信息，留住「最近为什么被打回」
+/// 已经够驱动重做；留全部会让任务意图被历史噪声淹没。
+/// 需要完整历史时应走独立历史表（另立，动 schema）。
 pub fn Task::reject(self : Task, reason~ : String = "") -> Result[Task, String] {
   match self.status {
     Reviewing =>
@@ -563,7 +649,10 @@ pub fn Task::reject(self : Task, reason~ : String = "") -> Result[Task, String] 
         description: if reason == "" {
           self.description
         } else {
-          self.description + " [打回原因: " + reason + "]"
+          strip_reject_tail(self.description) +
+          " [打回原因: " +
+          clip_utf8(reason, REJECT_REASON_CAP) +
+          "]"
         },
       })
     _ =>
@@ -595,7 +684,7 @@ pub fn Task::reject(self : Task, reason~ : String = "") -> Result[Task, String] 
 /// 而 `reopen` 是「重新回到可认领池」（所以那边把 assignee 也清了）。
 pub fn Task::retry(self : Task) -> Result[Task, String] {
   match self.status {
-    Rejected => Ok({ ..self, status: Executing, deliverable: "" })
+    Rejected => Ok({ ..self, status: Executing, deliverable: "", })
     _ =>
       Err(
         "非法迁移: retry 要求状态 [已打回]，当前是 [" +

@@ -1,6 +1,11 @@
 import {
   "moonbitlang/core/debug",
   "moonbitlang/x/encoding",
+  // BUG-427 的接线格（bug427_strip_tail_wired）需要读源码断言实现真在。
+  // 放主 import 而非 `for "test"`：实测 `for "test"` 在本包 wbtest 里不生效
+  // （同 engine 包 BUG-413 踩过的坑：报 "Package fs not found in the loaded packages"）。
+  // 生产代码不使用它；本包未设 warnings 抑制，unused_package 若告警属预期。
+  "moonbitlang/x/fs",
 }
 
 import {
