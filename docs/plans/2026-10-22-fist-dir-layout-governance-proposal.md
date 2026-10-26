@@ -9,7 +9,7 @@ proposed_by: lead
 
 ## 一、为何需要（背景与乱象）
 
-1. **计划治理缺位**：agent 把纯计划（如 `reports/2026-10-16-future-plan.md`，含方案对比/里程碑）直接塞进 `reports/`，绕过"提案→定案→执行"流程。实测 `reports/` 混入 13+ 计划类文件，`docs/` 另有 12 个 plan——**计划无统一位置、无状态字段、无定案门禁**。
+1. **计划治理缺位**：agent 把纯计划（如 `docs/archive/2026-10-16-future-plan.md`，含方案对比/里程碑，原置于 `reports/` 后归档）直接塞进 `reports/`，绕过"提案→定案→执行"流程。实测 `reports/` 混入 13+ 计划类文件，`docs/` 另有 12 个 plan——**计划无统一位置、无状态字段、无定案门禁**。
 2. **机器独有工件污染主仓根**：95 个 `*.db`（含 `fist-mbt.db` 14.6MB）+ 37 个 `temp_*/build*.log` + 3 个 `.cron_state_*.json` + 10 个杂目录（`__pycache__/ _build/ _scratch/ logs/ backup/ temp/…`）散落根目录。这些是**每台机器各自不同**的运行时态，不该进主仓。
 3. **同机任务池藏在 `.git/fist/`**：在 `.git` 内部 → 不进版本控制、普通文件树不可见。
 4. **`improvement-plan-20261010.md` 未覆盖上述治理缺口**：grep `提案|定案|治理|proposal` 零命中。

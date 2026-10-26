@@ -3,7 +3,7 @@
 > **文件命名**：`2026-10-22-cross-machine-task-publish-proposal.md`
 > **放置目录**：`docs/proposals/`
 > **状态**：`draft`
-> **替代**：`reports/2026-10-16-future-plan.md` §一（内容整合进 `improvement-plan-20261010.md` §6）
+> **替代**：`docs/archive/2026-10-16-future-plan.md` §一（内容整合进 `improvement-plan-20261010.md` §6）
 > **来源**：用户口述「跨机器发布/查看任务」需求 + `scripts/fist-mbt-http.py` 已有基础
 
 ---
@@ -62,5 +62,5 @@ FIST-Mbt 当前 MCP server 绑定 `127.0.0.1:3100`，只能本机调用。用户
 ## 8. 参考
 
 - `improvement-plan-20261010.md` §6（方向五）
-- `reports/2026-10-16-future-plan.md` §一（已归档）
+- `docs/archive/2026-10-16-future-plan.md` §一（已归档）
 - `scripts/fist-mbt-http.py`（现有 HTTP 桥）
