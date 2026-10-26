@@ -250,3 +250,126 @@ test "agents_stale_check: last_seen 早于 cutoff 判 stale" {
     }
   }
 }
+
+///|
+/// BUG-411 测试库清理：每个测试用独立库文件，重复跑时先 clear 掉上次残留。
+/// 为什么需要：不清理时第二次跑锁 1/锁 3 的「默认应为 0」前置断言会假红
+/// （库里有上次 grant 留下的 can_write=1 行），与本缺陷本身无关。
+fn _reset_bug411(path : String) -> Unit {
+  // 直接删库文件而不是 `Store::clear`：实测 `clear` 不清 agent_acl 表，
+  // 第二次跑时残留的 can_write=1 行会让锁 1/锁 3 的「默认应为 0」前置断言假红。
+  if @fs.path_exists(path) {
+    @fs.remove_file(path) catch {
+      _ => ()
+    }
+  }
+}
+
+///|
+/// BUG-411 锁 1：新建 ns 无人可写 ⇒ count_writable=0 且 write 门拒绝。
+/// 成对：与锁 2 互为反例（0 → 1）。
+test "bug411_no_writer_means_claim_would_be_rejected" {
+  _reset_bug411("temp/bug411_lock1.db")
+  match SqliteStore::open("temp/bug411_lock1.db") {
+    None => fail("sqlite open 失败：判据没跑到被测面")
+    Some(s) => {
+      ignore(
+        s.agents_acl_ensure(
+          agent_id="agent-x",
+          ns="bug411-ns-1",
+          now="2026-10-26T00:00:00Z",
+        ),
+      )
+      if s.agents_acl_count_writable(ns="bug411-ns-1") != 0 {
+        fail("BUG-411: 新建 ns 应 0 个可写 agent")
+      }
+      match
+        s.agents_acl_check(
+          agent_id="agent-x",
+          ns="bug411-ns-1",
+          write=true,
+          current_pid=0,
+        ) {
+        Ok(_) =>
+          fail("BUG-411: can_write=0 却放行写 —— fail-closed 漏了")
+        Err(_) => ()
+      }
+    }
+  }
+}
+
+///|
+/// BUG-411 锁 2：授权后 ⇒ count_writable=1 且 write 门放行。
+test "bug411_granted_writer_means_claim_ready" {
+  _reset_bug411("temp/bug411_lock2.db")
+  match SqliteStore::open("temp/bug411_lock2.db") {
+    None => fail("sqlite open 失败：判据没跑到被测面")
+    Some(s) => {
+      ignore(
+        s.agents_acl_ensure(agent_id="agent-y", ns="bug411-ns-2", now="T0"),
+      )
+      ignore(
+        s.agents_acl_grant(
+          agent_id="agent-y",
+          ns="bug411-ns-2",
+          can_read=true,
+          can_write=true,
+          pid_bound=false,
+          now="T1",
+          by="human_steward",
+        ),
+      )
+      if s.agents_acl_count_writable(ns="bug411-ns-2") != 1 {
+        fail("BUG-411: 授权后应 1 个可写 agent")
+      }
+      match
+        s.agents_acl_check(
+          agent_id="agent-y",
+          ns="bug411-ns-2",
+          write=true,
+          current_pid=0,
+        ) {
+        Ok(_) => ()
+        Err(_) => fail("BUG-411: 已授权却被拒")
+      }
+    }
+  }
+}
+
+///|
+/// BUG-411 锁 3（变异对照，判例-29）：ns 过滤真在生效。
+/// 抓的变异：把 count_writable 的 `WHERE ns = ?` 删掉 ⇒ ns=OTHER 那一格会返回 1 ⇒ 必红。
+test "bug411_count_writable_ns_filter_mutation" {
+  _reset_bug411("temp/bug411_lock3.db")
+  match SqliteStore::open("temp/bug411_lock3.db") {
+    None => fail("sqlite open 失败：判据没跑到被测面")
+    Some(s) => {
+      ignore(
+        s.agents_acl_ensure(agent_id="agent-z", ns="bug411-ns-3", now="T0"),
+      )
+      if s.agents_acl_count_writable(ns="bug411-ns-3") != 0 {
+        fail("前置不成立：默认应为 0")
+      }
+      ignore(
+        s.agents_acl_grant(
+          agent_id="agent-z",
+          ns="bug411-ns-3",
+          can_read=true,
+          can_write=true,
+          pid_bound=false,
+          now="T1",
+          by="test",
+        ),
+      )
+      if s.agents_acl_count_writable(ns="bug411-ns-3") != 1 {
+        fail("BUG-411: count 与 check 口径不同源")
+      }
+      // 【变异对照核心】ns 过滤若被删，这里会拿到 1
+      if s.agents_acl_count_writable(ns="bug411-ns-OTHER") != 0 {
+        fail(
+          "BUG-411: count_writable 的 ns 过滤失效 —— WHERE ns = ? 被删或被绕过",
+        )
+      }
+    }
+  }
+}
