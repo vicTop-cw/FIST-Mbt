@@ -232,12 +232,17 @@ test "BUG-327 部分2 ocr_gate_state 三态：二进制缺=unavailable" {
 }
 
 ///|
-test "BUG-327 部分2 ocr_gate_state 三态：MoonBit 目标恒 degraded" {
-  // 二进制在 ≠ 约束可满足：.mbt 不在 OCR 白名单内，require_ocr 必须如实降级
+/// T0r588 改判：MoonBit 目标不再恒 degraded。
+/// 旧口径（"白名单不收 .mbt ⇒ require_ocr 恒不可满足"）已被 P0 诊断推翻：
+/// OCR 内嵌白名单确实改不动，但 --rule 的 include glob 优先级更高、能短路放行，
+/// ocr_scan 会自动注入 ⇒ 机制可达，gate 允许 satisfied。
+/// 注意：satisfied 只代表"机制可达"，不代表"这一发真审了"——后者看回执证据。
+test "T0r588 ocr_gate_state：MoonBit 目标按机制可达判 satisfied，但把最终判据推给回执" {
   let (g, n) = ocr_gate_state(true, true)
-  assert_eq(g, "degraded")
-  assert_true(n.contains("require_ocr 不可满足"))
-  assert_true(n.contains("只用 issue_scan"))
+  assert_eq(g, "satisfied")
+  assert_true(n.contains("include"))
+  // 必须明确"gate ≠ 这一发真审了"，否则又把伪能力请回来
+  assert_true(n.contains("ok/ocr_reviewed"))
 }
 
 ///|
@@ -248,20 +253,251 @@ test "BUG-327 部分2 ocr_gate_state 三态：非 MoonBit 目标才 satisfied" {
 }
 
 ///|
-test "BUG-327 部分2 ocr_capability_json 本仓回执不得伪满足" {
-  // 本仓根有 moon.mod ⇒ moonbit_target=true、mbt_reviewable=false，
-  // 且 gate 绝不能是 satisfied（二进制在/不在都只配 degraded/unavailable）
+/// T0r588：本仓回执不得伪满足——`mbt_reviewable` 必须与二进制可用性同源
+/// （机制可达 = 有二进制可注规则），gate 只允许 satisfied(二进制在) / unavailable，
+/// 且必须给出 mbt_admission 说明走的是哪条放行通道。
+test "T0r588 ocr_capability_json：mbt_reviewable 跟随二进制可用性，gate 不伪满足" {
   let j = ocr_capability_json(".")
   let m = match j {
     Json::Object(mm) => mm
     _ => abort("capability 不是对象")
   }
   assert_eq(m.get("moonbit_target"), Some(Json::boolean(true)))
-  assert_eq(m.get("mbt_reviewable"), Some(Json::boolean(false)))
+  let avail = m.get("available") == Some(Json::boolean(true))
+  // 同源断言：可用 ⇒ 可审；不可用 ⇒ 不可审（绝不出现"没二进制却宣称可审"）
+  assert_eq(m.get("mbt_reviewable"), Some(Json::boolean(avail)))
+  assert_eq(
+    m.get("mbt_admission"),
+    Some(Json::string(if avail { "rule-include" } else { "none" })),
+  )
   let g = match m.get("gate") {
     Some(Json::String(s)) => s
     _ => abort("gate 缺失")
   }
-  assert_true(g == "degraded" || g == "unavailable")
+  assert_true(g == "satisfied" || g == "unavailable")
   assert_true(m.get("note") is Some(_))
+}
+
+///|
+/// T0r588 锁 1：放行规则正文形状。
+/// `include` 必须是 **/*.mbt（放行 .mbt），`rules` 必须为空数组——
+/// 后者是硬约束：custom 层若带 per-path 规则，composedResolver.Resolve 会在
+/// 第一层命中并**盖掉** system 评审规则（静默降质），故放行规则只许带 filter。
+test "T0r588 ocr_mbt_include_rule_json 形状：include **/*.mbt 且 rules 为空" {
+  let s = ocr_mbt_include_rule_json()
+  let j = @json.parse(s) catch { _ => abort("放行规则不是合法 JSON") }
+  let m = match j {
+    Json::Object(mm) => mm
+    _ => abort("放行规则不是对象")
+  }
+  let inc = match m.get("include") {
+    Some(Json::Array(a)) => a
+    _ => abort("缺 include")
+  }
+  assert_eq(inc.length(), 1)
+  let pat = match inc[0] {
+    Json::String(p) => p
+    _ => abort("include 元素不是字符串")
+  }
+  assert_eq(pat, "**/*.mbt")
+  let rules = match m.get("rules") {
+    Some(Json::Array(a)) => a
+    _ => abort("缺 rules")
+  }
+  assert_eq(rules.length(), 0)
+}
+
+///|
+/// T0r588 锁 2：目标是否点名 .mbt（逗号列表 / 前后空格 / 目录 / 其他扩展名）。
+test "T0r588 ocr_path_has_mbt 判定" {
+  assert_true(ocr_path_has_mbt("src/server/ocr_scan.mbt"))
+  assert_true(ocr_path_has_mbt("a/b.mbt, c/d.py"))
+  assert_true(ocr_path_has_mbt(" src/x.mbt "))
+  assert_false(ocr_path_has_mbt("src/server"))
+  assert_false(ocr_path_has_mbt("scripts/issue_scan.py"))
+  assert_false(ocr_path_has_mbt(""))
+}
+
+///|
+/// T0r588 锁 3：注入决策。核心是"绝不抢用户自己的 custom 层"——
+/// --rule 只有一格，注入会顶掉用户的规则文件。
+test "T0r588 ocr_needs_mbt_include 决策：显式 rules_file 优先" {
+  assert_false(ocr_needs_mbt_include("src/x.mbt", "my-rules.json", true))
+  assert_true(ocr_needs_mbt_include("src/x.mbt", "", false))
+  assert_true(ocr_needs_mbt_include("src/server", "", true))
+  // 零回归格：非 MoonBit 且非 .mbt ⇒ 不注入，argv 与旧行为逐字一致
+  assert_false(ocr_needs_mbt_include("src", "", false))
+}
+
+///|
+/// T0r588 锁 4（**变异对照**）：证据制复核。
+/// 第一格就是本任务的变异格——把实现改回旧的一刀切「目标带 .mbt 即 false」，
+/// 这一格必红（真审查已可达时旧实现会谎报不可达）。其余格钉住 fail-closed 半边。
+test "T0r588 ocr_reviewed_final 证据制：真进了选择面才算审过" {
+  // 变异对照：真审了（total_files>=1）必须判 reviewed=true
+  let (r1, n1) = ocr_reviewed_final(true, "src/server/ocr_scan.mbt", 1)
+  assert_true(r1)
+  assert_eq(n1, "")
+  // 静默丢弃（BUG-327b 形态）⇒ fail-closed
+  let (r2, n2) = ocr_reviewed_final(true, "src/server/ocr_scan.mbt", 0)
+  assert_false(r2)
+  assert_true(n2.contains("total_files"))
+  // 回执无该键（版本差异）⇒ 保守 fail-closed，不猜
+  let (r3, _) = ocr_reviewed_final(true, "src/server/ocr_scan.mbt", -1)
+  assert_false(r3)
+  // 非 .mbt 目标不受本判据影响
+  let (r4, n4) = ocr_reviewed_final(true, "scripts/issue_scan.py", 0)
+  assert_true(r4)
+  assert_eq(n4, "")
+  // 上游已判假绿时原样 false（不得被这里洗白）
+  let (r5, _) = ocr_reviewed_final(false, "src/server/ocr_scan.mbt", 1)
+  assert_false(r5)
+}
+
+///|
+/// T0r588 锁 5：证据读数必须能区分「0 份」与「这个版本不给这个键」。
+/// 混同这两者会让证据制判据在旧版本上假绿。
+test "T0r588 ocr_stdout_int 区分 0 与键缺失" {
+  let s = "{\"total_files\":3,\"reviewable_count\":0}"
+  assert_eq(ocr_stdout_int(s, "total_files"), 3)
+  assert_eq(ocr_stdout_int(s, "reviewable_count"), 0)
+  assert_eq(ocr_stdout_int("{\"other\":1}", "total_files"), -1)
+  assert_eq(ocr_stdout_int("not json", "total_files"), -1)
+  assert_eq(ocr_stdout_int("", "total_files"), -1)
+}
+
+///|
+/// T0r588 锁 6：修法提示只在"确实没审成"时出现，且必须给出可执行动作。
+test "T0r588 ocr_mbt_remedy 只在没审成时给修法" {
+  assert_eq(ocr_mbt_remedy("src/x.mbt", true), "")
+  let h = ocr_mbt_remedy("src/x.mbt", false)
+  assert_true(h.contains("include"))
+  assert_true(h.contains("**/*.mbt"))
+  assert_eq(ocr_mbt_remedy("scripts/a.py", false), "")
+}
+
+///|
+/// T0r588 锁 7（**接线格**，判例-3：改名不是接线）：
+/// 光有纯函数还不算修好——必须证明 argv 里真的带上了 `--rule <放行规则>`，
+/// 且那份文件**真在盘上、内容真是放行规则**（不是空文件 / 只写进回执字段）。
+test "T0r588 ocr_plan 真把放行规则接进 argv 并落盘" {
+  let j = ocr_plan(
+    ".",
+    subcmd="files",
+    path="src/server/ocr_scan.mbt",
+    dry_run=true,
+  )
+  let m = match j {
+    Json::Object(mm) => mm
+    _ => abort("回执不是对象")
+  }
+  assert_eq(m.get("ok"), Some(Json::boolean(true)))
+  assert_eq(m.get("mbt_include"), Some(Json::boolean(true)))
+  let rule_path = match m.get("mbt_include_rule") {
+    Some(Json::String(s)) => s
+    _ => abort("缺 mbt_include_rule")
+  }
+  assert_true(rule_path.length() > 0)
+  assert_true(@fs.path_exists(rule_path))
+  let strs = match m.get("args") {
+    Some(Json::Array(a)) =>
+      a.map(fn(v) {
+        match v {
+          Json::String(s) => s
+          _ => ""
+        }
+      })
+    _ => abort("缺 args")
+  }
+  assert_true(strs.contains("--rule"))
+  assert_true(strs.contains(rule_path))
+  // 落盘内容自证：不是空壳
+  let body = @fs.read_file_to_string(rule_path, encoding="utf8") catch {
+    _ => abort("读不回放行规则：落盘格没跑到被测面")
+  }
+  assert_true(body.contains("**/*.mbt"))
+}
+
+///|
+/// T0r588 锁 8（零回归）：非 MoonBit / 未点名 .mbt 的目标**不注入**，
+/// argv 长度与旧行为逐字一致（6 项），避免把普通项目的扫描面悄悄改掉。
+test "T0r588 ocr_plan 非 .mbt 目标零回归：不注入、argv 不变" {
+  let j = ocr_plan("src", subcmd="files", dry_run=true)
+  let m = match j {
+    Json::Object(mm) => mm
+    _ => abort("回执不是对象")
+  }
+  assert_eq(m.get("mbt_include"), Some(Json::boolean(false)))
+  assert_eq(m.get("mbt_include_rule"), Some(Json::string("")))
+  let args = match m.get("args") {
+    Some(Json::Array(a)) => a
+    _ => abort("缺 args")
+  }
+  assert_eq(args.length(), 6)
+}
+
+///|
+/// T0r588 锁 9：用户给了 rules_file ⇒ 走用户的规则文件，不注入、不顶替。
+test "T0r588 显式 rules_file 时不注入，argv 用用户的规则" {
+  let j = ocr_plan(
+    ".",
+    subcmd="files",
+    path="src/server/ocr_scan.mbt",
+    rules_file="my-rules.json",
+    dry_run=true,
+  )
+  let m = match j {
+    Json::Object(mm) => mm
+    _ => abort("回执不是对象")
+  }
+  assert_eq(m.get("mbt_include"), Some(Json::boolean(false)))
+  let strs = match m.get("args") {
+    Some(Json::Array(a)) =>
+      a.map(fn(v) {
+        match v {
+          Json::String(s) => s
+          _ => ""
+        }
+      })
+    _ => abort("缺 args")
+  }
+  assert_true(strs.contains("--rule"))
+  assert_true(strs.contains("my-rules.json"))
+}
+
+///|
+/// T0r588 锁 10（踩坑锁）：放行规则路径不得混拼分隔符。
+/// 实现起初用 `String::replace(old="\\", new="/")`，而它只换**第一处**
+/// （实测回执给出 `C:/Users\victo\AppData\Local\Temp/...json`），换成
+/// `replace_all` 才干净。这一格钉住"路径里不出现反斜杠"，防回退。
+test "T0r588 放行规则路径无混拼反斜杠" {
+  let j = ocr_plan(".", subcmd="files", path="src/x.mbt", dry_run=true)
+  let m = match j {
+    Json::Object(mm) => mm
+    _ => abort("回执不是对象")
+  }
+  let rule_path = match m.get("mbt_include_rule") {
+    Some(Json::String(s)) => s
+    _ => abort("缺 mbt_include_rule")
+  }
+  assert_true(rule_path.length() > 0)
+  assert_false(rule_path.contains("\\"))
+}
+
+///|
+/// T0r588 锁 11：`rules` 子命令不做扩展名过滤 ⇒ 不该为它落盘放行规则
+/// （少一次无用的临时文件写；也让"注入了没有"这件事只在真需要时发生）。
+test "T0r588 rules 子命令不注入放行规则" {
+  let j = ocr_plan(
+    ".",
+    subcmd="rules",
+    path="src/server/ocr_scan.mbt",
+    dry_run=true,
+  )
+  let m = match j {
+    Json::Object(mm) => mm
+    _ => abort("回执不是对象")
+  }
+  assert_eq(m.get("mbt_include"), Some(Json::boolean(false)))
+  assert_eq(m.get("mbt_include_rule"), Some(Json::string("")))
 }

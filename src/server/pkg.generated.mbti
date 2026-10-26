@@ -153,13 +153,21 @@ pub fn ocr_effective_ok(Bool, Bool) -> Bool
 
 pub fn ocr_gate_state(Bool, Bool) -> (String, String)
 
+pub fn ocr_mbt_include_rule_json() -> String
+
+pub fn ocr_mbt_remedy(String, Bool) -> String
+
 pub fn ocr_missing_hint() -> String
+
+pub fn ocr_needs_mbt_include(String, String, Bool) -> Bool
+
+pub fn ocr_path_has_mbt(String) -> Bool
 
 pub fn ocr_plan(String, subcmd~ : String, path? : String, rules_file? : String, dry_run? : Bool) -> Json
 
 pub fn ocr_probe_binary(String) -> String?
 
-pub fn ocr_reviewed_final(Bool, String) -> (Bool, String)
+pub fn ocr_reviewed_final(Bool, String, Int32) -> (Bool, String)
 
 pub async fn ocr_scan_impl(String, subcmd~ : String, path? : String, rules_file? : String, timeout_ms? : Int32, dry_run? : Bool) -> Json
 
