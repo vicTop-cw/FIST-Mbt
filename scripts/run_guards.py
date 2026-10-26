@@ -381,7 +381,27 @@ SPECIAL_CASES = [
              kind="known-red"),
     # ── 兑现（R108）：主线 `866e2e65` 把 dist 快照刷到与 moon.mod 同版 ⇒ 这一格现读 got=0，"
     #    登记的红已不成立。按本文件自订的律「被检内容修好 ⇒ 把期望改回 0」转回门禁格，依据一起删。──
-    case("check_dist_snapshot.py"),
+    # ── BUG-428（2026-10-26）打回预存红：R108 那条「版本同版 ⇒ 绿」的兑现**被证明不够**——版本面
+    #    一直 PASS，而 dist 快照是 Oct 24 的旧构建（缺 2 条内容面探针）。判据新增内容面格后现读 got=1，
+    #    依据即事故本身：`版本对但代码旧`。刷新 `dist/fist-mbt.js`（python scripts/refresh_dist.py）
+    #    后**必须把期望改回 0**（本文件自订的律：被检内容修好 ⇒ 期望归位）。──
+    expected("check_dist_snapshot.py", 1,
+             "预存红（BUG-428）：dist/fist-mbt.js 版本面 PASS 而内容面缺 omega_orphan_of_archived_parent / "
+             "strip_plan_annotations —— 「版本对但代码旧」。刷新快照后改回 0；**不许**靠删内容面变绿",
+             kind="known-red"),
+    # 内容面格的变异对照在它自己的 --selftest 里（19 格：版本 8 + 内容 6 + 合成 5）；同批接进电池。
+    case("check_dist_snapshot.py", "--selftest"),
+    # ── BUG-428 P0：部署产物新鲜度（PATH 垫片反解 + 固定候选 × 时间面 + 内容面）。
+    #    自检格是门禁（40 格，含 5 处变异对照：内容面/时间面/变形容忍/缓存降级/面去重各有必红格）；
+    #    裸跑格是**诊断**：它的 rc 反映这台机器的部署状态（0=全新鲜 / 1=有产物落后 / 2=一个可判面都没有，
+    #    例如 Linux CI 没有 fist-mbt 垫片），三读都正确 —— 本机现读 1（部署副本/dist/_release 都落后）。
+    #    写死 0 会在任何"改了源码还没重建"的机器上假红；写死 1 会在刚刷新的机器上假绿。故允许 {0,1,2}。──
+    case("check_deployment_freshness.py", "--selftest"),
+    tolerant("check_deployment_freshness.py", (0, 1, 2),
+             "部署新鲜度诊断读数：0=全新鲜 / 1=有产物落后源码（本机现读，刷新后转 0）/ "
+             "2=一个可判面都没有（CI 无垫片），三读都正确，本格只报读数。"
+             "**这格不是免检牌**：0/1/2 之外的读数（4=探针脱锚/尺子坏、崩溃 traceback、"
+             "被改成恒绿）仍判 FAIL；确定性门禁在上一格 --selftest（42 格，含 5 处变异对照）"),
     # —— R49：这一格**只报读数不判健康**。cleanup --check 的 rc 取决于工作树脏不脏
     #    （temp/ 残留、`_` 临时脚本 ⇒ 1；隔离树/空 temp ⇒ 0），不是代码健康。
     #    写死 1 ⇒ 干净 worktree 恒假红；写死 0 ⇒ 真脏树假绿；按 temp/ 存在算期望也不行
