@@ -40,3 +40,11 @@ jobs:
 
       - name: Run unified gate chain
         run: python3 scripts/fist-gate.py
+
+      # R66/BUG-398 接线：ad5d38df 落了 scripts/check_branch_ancestry.py 却从未接进任何 workflow。
+      # 613MB 事故后主线被重写（92d0edba → 788c5823），早先 PR 分支基点成孤儿，git merge 直接报
+      # "refusing to merge unrelated histories"——「分支绿、尺全过、merge-tree 报无冲突」却物理
+      # 合并不了，合并机器人只能空转。本步靠 fetch-depth: 0 的整段历史真正测出 orphan。
+      - name: Branch-ancestry gate (R66/BUG-398：PR 分支失基检测，防合并不了)
+        shell: bash
+        run: python3 scripts/check_branch_ancestry.py
