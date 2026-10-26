@@ -7548,12 +7548,12 @@ DENIED  agent=fist-mbt  src/store/store_sqlite.mbt · moon.mod   ← HumanStewar
 ### FIXED(2026-10-26T19:01:31Z / BUG-421, BUG-422)
 - evidence: 同笔收口（commit `eecf05f7`，9 文件 +700/−134）——**两条必须同笔**：R7 报告警告「单独修 421 是白修」（删了名字白名单，但 A 案查表键仍可冒用已登记名继承角色），同笔即消解。
 
-## BUG-421：整名 `leader`/`lead` 提权面 → 已删白名单
+**（BUG-421 小节）整名 `leader`/`lead` 提权面 → 已删白名单**
 
 `engine_scope_perm.mbt` 的 `infer_role_from_agent` 只剩 `human_steward`/`human` ⇒ HumanSteward，**其余一律 Executor**，并落硬注释「角色不可从名字推断 Leader；Leader 只来自 `agents.role`（已登记身份）」。
 **连带改判 3 处原本钉错误行为的锁**：`role_resolve_wb3_exact_leader_still_works` → **`..._exact_leader_is_executor`**；`scope_role_wb1` 名单加 `leader/lead/LEADER/Lead`；`lock_perm_wb2_leader_allowed_on_engine` → **`lock_perm_wb2_leader_name_denied_on_engine`**（钉 `permission_denied`），并新增 **`lock_perm_wb2b_registered_leader_allowed_on_engine`** 把「军官只来自登记」这条正道也钉住。
 
-## BUG-422：查表键仍是自报名字 → B 案三层
+**（BUG-422 小节）查表键仍是自报名字 → B 案三层**
 
 **不选 A**：`agents.pubkey_fp` **全仓恒空**（BUG-403/404 的死承诺）⇒ 无可信身份源。
 **不选 C**：会把「服务端登记过的执行者拿到被授予角色」这条**唯一正道**一起关死，而收益为 0 —— 现网唯一 Leader 记录恰好就是要挡的 **server 自身份**（挡掉它即可，不必废掉机制）。
@@ -8563,3 +8563,81 @@ fn engine_for_ns(ns : String) -> Result[@engine.FistEngine, String] {
 BUG-420（C 案止血只覆盖「路由到空库」，**本单补「路由被取消」这一格**）·
 BUG-78（data_dir 隔离失效，同族）
 - reported_by: commander-gamma
+## BUG-434 [2026-10-26T19:04:57Z] [medium] OPEN
+- summary: [ledger] `bug_fix`/`report_bug` 的 evidence/detail **不转义 `^## BUG-` 行** ⇒ 调用方在 evidence 里写小节标题就会**污染账本唯一键**（多条同编号抬头，后一条覆盖前一条，真实状态不进计数），且 `bug_fix` 回执不报
+- detail: ## 现象（2026-10-27 实测，我在给 BUG-421/422 销账时踩到）
+
+用 `bug_fix` 一笔两条销账时，`evidence` 里我写了两行**小节标题**：
+
+```
+## BUG-421：整名 leader/lead 提权面 → 已删白名单
+## BUG-422：查表键仍是自报名字 → B 案三层
+```
+
+结果 `memory/bugs.md` 里**真的多出两个条目抬头**：
+
+```
+7459:## BUG-421 [2026-10-26T14:14:16Z] [medium] FIXED      ← 真条目
+7507:## BUG-422 [2026-10-26T14:14:19Z] [medium] FIXED      ← 真条目
+7551:## BUG-421：整名 `leader`/`lead` 提权面 → 已删白名单   ← evidence 里的小节标题被当成条目
+7556:## BUG-422：查表键仍是自报名字 → B 案三层              ← 同上
+```
+
+`gen_plugins.py` 立刻报出来（这是它**做对了**）：
+
+```
+- 2 个编号被重复使用：BUG-421×2 BUG-422×2（抬头编号是唯一键；
+  同一编号写两条 ⇒ 前一条被 dict 吞掉，不进任何计数）
+```
+
+## 危害
+
+1. **账本唯一键（抬头编号）被破坏** ⇒ 解析器按 `^## BUG-(\d+)` 取条目时，**后一条覆盖前一条**
+   ⇒ 该 BUG 的**真实抬头状态不进任何计数**（待修/已修统计错）
+2. **插件态跟着错**（`gen_plugins.py` 的 BUG 计数与 SKILL.md 摘要都取自账本）
+3. **静默性**：`bug_fix` 的返回值**只报 `heading_changed` / `note_written`**，**不报「你的 evidence 污染了账本结构」**
+   —— 我是**跑 `gen_plugins.py` 时才发现的**，不是在 `bug_fix` 回执里
+
+## 根因
+
+`bug_fix` 把 `evidence` **原样追加**进条目正文（叙述面只追加，这个方向是对的），
+但**没有对 evidence 里形如 `^## BUG-<n>` 的行做转义/降级** ——
+而账本的条目解析器正是用 `^## BUG-(\d+)` 作唯一键 ⇒ **两者口径不匹配**。
+
+同族：`report_bug` 的 `detail` 也有同样风险（本条的 detail 我已**刻意避开** `## BUG-` 形式）。
+
+## 修法方向（三选一）
+
+**A 案（推荐，最小且不改变调用方）**：`bug_fix` / `report_bug` 在写入前，把 evidence/detail 里
+`^## BUG-` 开头的行**自动降级**为 `### BUG-` 或 `**BUG-...**`，并在回执里加
+`evidence_headings_neutralized: N`（**让调用方知道发生过降级**，不静默）。
+
+**B 案（更彻底）**：账本条目解析器**加一条规则** —— `^## BUG-` 必须是「日期 + 严重度 + 状态」三段式
+（如 `^## BUG-421 [2026-...] [medium] FIXED`），**不匹配三段式的行不算条目抬头**
+⇒ 从解析侧消解歧义，对写入侧零要求。
+
+**C 案（最保守）**：`bug_fix` 在 evidence 含 `^## BUG-` 时**直接拒绝**并提示改写法
+—— 但这会让「必须能写完整 evidence」的诉求受挫，不推荐。
+
+**我倾向 B 案 + A 案组合**：B 案从解析侧根治（历史账本里可能已有类似的隐性污染），
+A 案从写入侧预防 + **回执可见**（不静默）。
+
+## 立即处置（本轮已做）
+
+把两行降级为 `**（BUG-421 小节）...**` / `**（BUG-422 小节）...**` ⇒
+`gen_plugins.py` 立即恢复正常（`BUG-1~433 共 416 条入账：7 条待修 / 376 条已修`，无重复警告）。
+
+## 建议
+
+1. **先做 B 案**（解析侧收紧），它是根治且能顺带发现历史账本里的同类污染
+2. 再做 A 案（写入侧降级 + 回执字段）
+3. **加一格判据**：`gen_plugins.py` 已有重复检测（做对了），但它是**生成期**发现；
+   建议把它提到 `check_*` 判据族里（或让 `bug_fix` / `report_bug` 的自检里也查一次），
+   做到**写入即报**
+
+## 关联
+
+- 本轮实测：BUG-421/422 销账时踩到（commit `ae7cf50d` 之后的修复）
+- 同族思路：BUG-425（读数面与原文面不同源）—— 本条是「**写入面与解析面口径不匹配**」，同一类问题的另一形态
+- `gen_plugins.py` 的重复检测是**正例**：它把问题从「静默计数错」变成「显式警告」
+- reported_by: lead(销账时实测)
