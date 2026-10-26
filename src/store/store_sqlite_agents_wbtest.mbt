@@ -373,3 +373,154 @@ test "bug411_count_writable_ns_filter_mutation" {
     }
   }
 }
+
+///|
+/// BUG-423 锁 1：`agents_register` 的 `ON CONFLICT` **可抬高** role
+///
+/// 场景：低权路径（claim/execute 的 `agent_touch_first_seen`）先把某身份登记成
+/// Executor，之后 HumanSteward 显式注册成 HumanSteward ⇒ 必须能抬上去。
+/// 若实现把 `role` 从 DO UPDATE 里彻底删掉（原实现），本格必红。
+test "bug423_register_can_raise_executor_to_steward" {
+  match SqliteStore::open("temp/bug423_raise.db") {
+    None => fail("sqlite open 失败：判据没跑到被测面")
+    Some(s) => {
+      // 第一步：低权路径先把它登记成 Executor（模拟 claim 的 agent_touch_first_seen）
+      match
+        s.agents_register(
+          agent_id="fp-steward-x",
+          agent_type="server",
+          role="Executor",
+          soldier="工兵",
+          pubkey_fp="",
+          pid=2001,
+          now="T1",
+        ) {
+        Err(e) => fail("首次登记失败：" + e)
+        Ok(_) => ()
+      }
+      match s.agents_get("fp-steward-x") {
+        None => fail("首次登记后必须存在")
+        Some(a) =>
+          if a.role != "Executor" {
+            fail("前置不成立：首次应是 Executor，实得 " + a.role)
+          }
+      }
+      // 第二步：显式注册抬高为 HumanSteward ⇒ 必须抬上去
+      match
+        s.agents_register(
+          agent_id="fp-steward-x",
+          agent_type="server",
+          role="HumanSteward",
+          soldier="工兵",
+          pubkey_fp="",
+          pid=2002,
+          now="T2",
+        ) {
+        Err(e) => fail("二次登记失败：" + e)
+        Ok(_) => ()
+      }
+      match s.agents_get("fp-steward-x") {
+        None => fail("二次登记后必须存在")
+        Some(a) =>
+          if a.role != "HumanSteward" {
+            fail("BUG-423: 显式注册没能抬高角色（实得 " + a.role + "）")
+          }
+      }
+    }
+  }
+}
+
+///|
+/// BUG-423 锁 2（**核心反例格**）：`ON CONFLICT` **防降级**
+///
+/// 场景：某身份已是 HumanSteward，低权路径（claim 传 Executor）又来登记一次
+/// ⇒ **必须仍是 HumanSteward**，不许被打回 Executor。
+///
+/// 这正是本条 bug 的原始形状：`agent_touch_first_seen` 对任意 assignee 写
+/// `role="Executor"`，若不防降级，统帅被这样注册过后永久锁死在 HumanSteward 面外。
+test "bug423_register_does_not_downgrade_steward" {
+  match SqliteStore::open("temp/bug423_nodown.db") {
+    None => fail("sqlite open 失败：判据没跑到被测面")
+    Some(s) => {
+      // 先正当地登记成 HumanSteward
+      match
+        s.agents_register(
+          agent_id="fp-steward-y",
+          agent_type="human",
+          role="HumanSteward",
+          soldier="后勤兵",
+          pubkey_fp="",
+          pid=3001,
+          now="T1",
+        ) {
+        Err(e) => fail("首次登记失败：" + e)
+        Ok(_) => ()
+      }
+      // 低权路径再来一次（模拟 claim 的 agent_touch_first_seen 传 Executor）
+      match
+        s.agents_register(
+          agent_id="fp-steward-y",
+          agent_type="server",
+          role="Executor",
+          soldier="工兵",
+          pubkey_fp="",
+          pid=3002,
+          now="T2",
+        ) {
+        Err(e) => fail("二次登记失败：" + e)
+        Ok(_) => ()
+      }
+      match s.agents_get("fp-steward-y") {
+        None => fail("二次登记后必须存在")
+        Some(a) => {
+          if a.role != "HumanSteward" {
+            fail(
+              "BUG-423 未修：HumanSteward 被低权路径降级为 " +
+              a.role +
+              "（统帅会永久锁死在独占面外）",
+            )
+          }
+          // 顺带确认心跳字段仍被刷新（防「一刀切不更新」的过度修复）
+          if a.pid != 3002 {
+            fail("过度修复：pid 应被刷新为 3002，实得 " + a.pid.to_string())
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// BUG-423 锁 3：Leader 同样不被 Executor 降级（不止 HumanSteward 一档）
+test "bug423_register_does_not_downgrade_leader" {
+  match SqliteStore::open("temp/bug423_leader.db") {
+    None => fail("sqlite open 失败：判据没跑到被测面")
+    Some(s) => {
+      let _ = s.agents_register(
+        agent_id="fp-leader-z",
+        agent_type="human",
+        role="Leader",
+        soldier="通信兵",
+        pubkey_fp="",
+        pid=4001,
+        now="T1",
+      )
+      let _ = s.agents_register(
+        agent_id="fp-leader-z",
+        agent_type="server",
+        role="Executor",
+        soldier="工兵",
+        pubkey_fp="",
+        pid=4002,
+        now="T2",
+      )
+      match s.agents_get("fp-leader-z") {
+        None => fail("必须存在")
+        Some(a) =>
+          if a.role != "Leader" {
+            fail("BUG-423: Leader 被降级为 " + a.role)
+          }
+      }
+    }
+  }
+}
