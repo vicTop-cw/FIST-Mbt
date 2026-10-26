@@ -106,6 +106,72 @@ if hasattr(sys.stderr, "reconfigure"):
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# ---------------------------------------------------------------- BUG-425
+# 读数面与原文面必须**同源**。
+#   · 读数面 = 调用方传入的 `--total N`（通常来自刚跑完的**工作树** `moon test`）
+#   · 原文面 = 现状面 .md（写的是**已提交态**）
+# 工作树脏时两者天然不同源 ⇒ 本判据会「制造假红」而不是「检测漂移」。
+# 处置：脏则**降级为 advisory**（rc 仍 0，但打印 WARN 并点名脏文件）。
+# 三道闸禁止它变成「永远绿」：`--strict` / `CI=true` / 被检文档自身在脏清单里。
+STRICT_ENV = "CI"
+
+
+def dirty_mbt_files(porcelain_text=None, cwd=None):
+    """工作树里未提交/未跟踪的 *.mbt（只读）。
+
+    为什么用 `git status --porcelain` 而非比 mtime：mtime 会被 checkout/touch 误触发
+    （判例-21「stat-dirty 噪声 ≠ 真变更」）。
+
+    `porcelain_text` 是**注入面**：自检用它摆夹具，否则在干净 CI 上
+    `dirty_mbt_files()` 恒返回空列表 ⇒ `all(...)` 对空列表恒 True ⇒ 该格假绿
+    （本仓判例-30 同族：判据要能被证明「真的在看」）。
+    """
+    if porcelain_text is None:
+        try:
+            pr = subprocess.run(
+                ["git", "status", "--porcelain", "--", "*.mbt"],
+                cwd=cwd or str(ROOT), capture_output=True,
+            )
+        except OSError:
+            return []
+        porcelain_text = (pr.stdout or b"").decode("utf-8", "replace")
+    files = []
+    for ln in porcelain_text.splitlines():
+        if len(ln) > 3:
+            path = ln[3:].strip()
+            if path.endswith(".mbt"):
+                files.append(path)
+    return files
+
+
+def dirty_docs_overlap(dirty_paths):
+    """第三闸：被检文档**自身**在脏清单里 ⇒ 这种红是真信号，不许被 advisory 盖掉。
+
+    为什么必须单列这一闸：若 `docs/ARCHITECTURE.md` 自己就是未提交改动，
+    那「文档 1463 vs 实测 1532」的对比**真实有效**，降级会把它变成假绿。
+    """
+    for p in dirty_paths:
+        if not p.endswith(".md"):
+            continue
+        if p.startswith("docs/") or "/" not in p:
+            return p
+    return None
+
+
+def advisories(dirty_paths, strict=False):
+    """返回 advisory 理由列表（空 = 不降级）。三道闸依次判。"""
+    if strict:
+        return []                       # 闸 1：--strict，任何脏都照常判红
+    if os.environ.get(STRICT_ENV, "").strip().lower() in ("true", "1", "yes"):
+        return []                       # 闸 2：CI 上工作树应干净，脏即异常
+    if not dirty_paths:
+        return []                       # 干净 ⇒ 无需降级
+    if dirty_docs_overlap(dirty_paths):
+        return []                       # 闸 3：被检文档自身脏 ⇒ 真信号
+    return list(dirty_paths)            # 其余 ⇒ advisory
+# ------------------------------------------------------------ /BUG-425
+
+
 # R2 必须携带实测数的文档（口径来源：本轮实测它们确实携带，不是许愿清单）
 MUST_CARRY = [
     "README.md",
@@ -477,7 +543,7 @@ def judge(total: str, docs: dict, sweep: list, must_carry: list, exempt: list):
     return problems, agree, used
 
 
-def run(total: str) -> int:
+def run(total: str, strict: bool = False) -> int:
     sweep = current_docs()
     docs = {}
     for rel in sweep:
@@ -491,6 +557,22 @@ def run(total: str) -> int:
               f"{agree} 条声明一致）：")
         for p in problems:
             print(f"  - {p}")
+        # BUG-425：脏工作树 ⇒ 读数面与原文面不同源 ⇒ 降级为 advisory（rc 仍 0）
+        _dirty = dirty_mbt_files()
+        _adv = advisories(_dirty, strict=strict)
+        if _adv:
+            print("")
+            print(f"WARN 工作树有 {len(_adv)} 个未提交/未跟踪的 *.mbt —— 本格不判红（BUG-425）")
+            print(f"     why：读数面 = 工作树实测 {total}；原文面 = 已提交态文档；两者不同源，")
+            print("          此刻的红可能是「文档落后于在途工作」，不是「文档写错了数」。")
+            print(f"     点名脏文件（前 20 条 / 共 {len(_adv)} 条）：")
+            for _p in _adv[:20]:
+                print(f"       · {_p}")
+            if len(_adv) > 20:
+                print(f"       …（共 {len(_adv)} 条）")
+            print("     强制确认走 `--strict`；CI 上的红不受此影响（CI 工作树应干净）。")
+            print(f"ADVISORY 上述 {len(problems)} 条违例不判红（工作树脏）；确认要红请加 --strict")
+            return 0
         return 1
     print(f"PASS 测试总数单一真源一致：实测 {total}；扫描现状面 {len(live)} 份文档，"
           f"{agree} 条声明全部等于实测；must-carry {len(MUST_CARRY)} 份齐全；"
@@ -939,6 +1021,42 @@ def selftest() -> int:
     done[0] += 1
     print("  ok  fix-skips-history")
 
+    # ---- BUG-425：advisory 三闸（读數面/原文面同源）----
+    def _bug425():
+        # 锁 1：干净工作树 ⇒ 不降级
+        if advisories([]) != []:
+            return "bug425-clean-no-advisory"
+        # 锁 2：脏工作树 ⇒ 降级且**点名全部脏文件**
+        _d = ["src/a.mbt", "src/b.mbt"]
+        if advisories(_d) != _d:
+            return "bug425-dirty-advisory-lists-files"
+        # 锁 3：**被检文档自身脏 ⇒ 不降级**（第三闸，防「脏」盖掉真信号）
+        if advisories(["docs/ARCHITECTURE.md"]) != []:
+            return "bug425-dirty-doc-not-degraded"
+        # 锁 4（变异对照 / 判例-29）：CI 环境下**必须不降级**
+        os.environ[STRICT_ENV] = "true"
+        try:
+            if advisories(_d) != []:
+                return "bug425-ci-never-degrades"
+        finally:
+            del os.environ[STRICT_ENV]
+        # 锁 5：--strict 环境下**必须不降级**
+        if advisories(_d, strict=True) != []:
+            return "bug425-strict-never-degrades"
+        # 锁 6：**注入面**只认 *.mbt（不把 .md/.py 算进来）
+        #   —— 用假 porcelain 文本，避免「干净 CI 上返回空列表 ⇒ all() 恒 True」的假绿
+        _fake = "\n".join([" M src/a.mbt", " M docs/x.md", "?? scripts/y.py"]) + "\n"
+        _got = dirty_mbt_files(porcelain_text=_fake)
+        if _got != ["src/a.mbt"]:
+            return "bug425-only-mbt-got-%r" % (_got,)
+        return None
+    _bad = _bug425()
+    if _bad:
+        print("SELFTEST FAIL [%s] BUG-425 advisory 三闸失守" % _bad)
+        return 1
+    done[0] += 1
+    print("  ok  bug425-advisory-three-gates")
+
     print(f"SELFTEST PASS {done[0]} 个变体各自命中自己指名的判据（计数由 run_case 实测累加，非手写）")
     return 0
 
@@ -974,6 +1092,9 @@ def main():
     if raw_args == ["--selftest"]:
         return selftest()
     # R25（判例-25/33）：`--fresh` = 判前真跑一次全仓，跑完重写快照 + 源码面锚点。
+    # BUG-425 闸 1：--strict 强制不许降级
+    strict = "--strict" in raw_args
+    raw_args = [a for a in raw_args if a != "--strict"]
     fresh = "--fresh" in raw_args
     args = [a for a in raw_args if a != "--fresh"]
     # `--fix-dry-run`：**只建议、不落盘**（判例-63）。
@@ -1027,7 +1148,7 @@ def main():
         ok_n, q_n = print_suggestions(str(total))
         # 只建议、不落盘；判据本身照常复判，把「现在红不红」如实说清
         print("")
-    return run(str(total))
+    return run(str(total), strict=strict)
 
 
 if __name__ == "__main__":
