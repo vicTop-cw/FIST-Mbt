@@ -7025,3 +7025,154 @@ C) 至少在 detail 里补一句「已在 <base> 下查找」。
 **遗留**：`path_miss_hint` 里「该文件在 server cwd 下其实存在」那一支实测**不会触发**（因为 `full` 本身就是相对 cwd 的路径，`@fs.path_exists(full)` 与 `@fs.path_exists(cwd+full)` 等价）—— 保留作防御性提示，不影响结论。
 
 **踩坑**：`let where = ...` 在 MoonBit 里 parse error（`where` 是类型约束保留字），改名 `hit_note`。
+## BUG-413 [2026-10-26T04:15:51Z] [medium] OPEN
+- summary: [explore] reserve_scope 对未登记路径 fail-closed，使 explore 模式并行门第 4 道在实践中恒不可过 —— 并行能力只剩串行一条路
+- detail: ## 现象（2026-10-26 12:05 实测，explore 模式派单时撞到）
+
+按 `templates/pipeline_mode_explore.md` 第 6 步「并行路径：先绑作用域」执行：
+
+```
+reserve_scope(scope="src/store/store_sqlite.mbt", agent="lane-a-fix-acl", ttl_until=...)
+→ 拒绝：角色 'Executor' 无权编辑 'src/store/store_sqlite.mbt'。允许的角色：HumanSteward
+  规则原因：store_sqlite 是数据库层唯一真源，迁移逻辑不可逆
+
+reserve_scope(scope="src/server/server.mbt", agent="lane-a-fix-acl", ttl_until=...)
+→ 拒绝：角色 'Executor' 无权编辑 'src/server/server.mbt'。允许的角色：HumanSteward
+  规则原因：所有 MCP 工具注册 + 核心路由 = 对外接口契约
+
+reserve_scope(scope="reports/2026-10-26-blocked-triage-report.md", agent="lane-b-audit", ...)
+→ 拒绝：scope 'reports/2026-10-26-blocked-triage-report.md' 无权限规则（fail-closed）。
+  指挥官需要在 engine_scope_perm.mbt 里加规则才能开放。
+```
+
+## 危害
+
+`pipeline_mode_explore.md` 步骤 4 的**第 4 道并行门**逐字要求：
+
+> 4. 每个作用域都用 `reserve_scope` 拿到 `reserved`/`renewed`/`taken_over`，且每个候选任务认领前 `conflicts_check` 都返回可安全认领。
+
+而 `reserve_scope` 对**任何未在 `engine_scope_perm.mbt` 里显式登记的路径**一律 fail-closed 拒绝 ⇒ 第 4 道门**在实践中恒不可过** ⇒ explore 模式的并行能力（`allow_parallel_modes=true`、`require_disjoint_files=true` 两个约束键的全部意义）**只有单模式串行一条路**。
+
+这与模板第 3 道门（「申报的作用域两两不相交」）的设计意图矛盾：第 3 道门是**可自证的**（比对字面路径即可），第 4 道门却要求一个**默认拒绝**的机制放行 —— 于是唯一能并行的情形是「先有人手工把规则写进 engine_scope_perm.mbt」，而那个文件本身也受 HumanSteward 保护（同族死锁）。
+
+## 建议出路（三档，留裁决）
+
+- **(a) 给 `reserve_scope` 加「未登记路径 → 只在 advisory 层登记、不参与授权」的第三态**：返回 `action="unregistered"`，让 explore 的第 4 道门可以把「已登记」与「未登记但字面不相交」分开判定，而不是把两者都当拒绝。
+- **(b) 模板层修正**：把第 4 道门改成「已登记路径必须拿到预订；未登记路径按字面不相交 + 人工确认放行」，并在模板里写死这条降级规则 —— 这是**文档跟上实现**的最小改动。
+- **(c) 维持现状但显式声明**：在 `mode_list` 的 explore 条目 `constraints` 里加一条 `parallel_effective=false`（或 `requires_perm_registration=true`），让调用方在读 `allow_parallel_modes=true` 时不会误以为开箱可并行。
+
+## 判据
+
+`grep -n "fn reserve_scope\|engine_scope_perm\|fail-closed" src/engine/engine_scope_perm.mbt src/server/server.mbt` + 上面三条实测回执原文。本条不改代码（属机制语义变更，按金条四留统帅裁决）。
+
+## BUG-414 [2026-10-26T04:50:53Z] [low] OPEN
+- summary: [PROBE] lane-d 验证 report_bug 尾随空行是否真修干净（09c0867c）
+- detail: lane-d 验证用：检查 bug_lines_to_text 的末尾空行归一是���对全部写入路径（report_bug / bug_fix / bug_mark_status）一致生效。本条为探针，用后即改判 FALSE_POSITIVE。
+- reported_by: lane-d-guard
+
+## BUG-415 [2026-10-26T05:13:14Z] [low] OPEN
+- summary: [PROBE-2] lane-d 验证 report_bug 尾随空行修复后是否为 1
+- detail: lane-d 第二轮验证：`09c0867c` 只修了 `bug_lines_to_text`（`bug_fix`/`bug_mark_status` 走它），而 `report_bug` 是自己 fold entry 后 `old + entry` 直拼，不经过该函数 ⇒ 修复对 report_bug 无效，落盘尾部仍为 2 个换行。本探针用于验证修复后尾部是否为 1。用后改判 FALSE_POSITIVE。
+- reported_by: lane-d-guard
+
+## BUG-416 [2026-10-26T05:56:19Z] [medium] FIXED
+- summary: [judge-root] scripts/moon_test_env.py:113 的 ROOT 硬编码为脚本目录、忽略 cwd ⇒ 在副本/导出树里跑「隔离测试」会静默测主树，隔离从未真正生效
+- detail: ## 现象（2026-10-26 Lane F 实测并自行纠正）
+
+`scripts/moon_test_env.py:113` 把测试根 `ROOT` **硬编码为脚本自身所在目录**，**忽略调用方 cwd**。
+
+Lane F 的复现路径：
+1. 为建立「不受并发 lane 干扰」的可信基线，用 `git archive HEAD` 导出一份**隔离树**到临时目录
+2. 在该导出树里跑 `python scripts/moon_test_env.py --target js`
+3. **得到的读数却包含其他 lane 在主树里的在途改动**（Total 1460 而不是干净树的真实值）
+4. 反查发现：脚本用自身路径推导 `ROOT`，于是「在导出树里跑」实际测的仍是主树
+
+**修正方式**（Lane F 自己找到的）：用**导出树自己的那份** `scripts/moon_test_env.py` 跑，`ROOT` 才正确指向导出树。交叉验证：导出树 `@test` 粗计数 = 1460，与汇总行一致。
+
+## 危害
+
+这是「**判据在错误的地方验**」的形状，与判例-29「机制格 ≠ 实现路径格」同族：
+
+1. **隔离测试静默失效**：任何人想「在副本/导出树里验证一个干净 HEAD」，都会得到主树的读数 —— **看起来做了隔离，实际没隔离**
+2. **基线的可信度不可自证**：Lane F 的四次运行得到 1457/1459/1460/1460 四个数，其中一次就是被这个缺陷骗的（在导出树里跑却拿到主树含在途改动的读数）
+3. **无人值守流水线会把「主树当时的状态」当成「某个 commit 的状态」**：报告里写「@ d5a84c76 全绿」，而实际测的是当时工作树
+
+## 建议修法（两档，留裁决）
+
+- **(a) 加 `--root <path>` 参数**：显式指定测试根，缺省仍用脚本目录（零回归），并在 `scripts/README.md` 该脚本条目写明「默认根=脚本目录，与 cwd 无关」
+- **(b) 改为优先认 cwd**：`ROOT = cwd if <cwd>/moon.mod 存在 else 脚本目录` —— 语义更符合直觉，但会改变既有调用面的行为，需核所有调用点
+
+Lane F 建议 (a)（更保守）。本条不改代码，等裁决。
+
+## 判据
+
+```bash
+sed -n '105,120p' scripts/moon_test_env.py
+# 读 ROOT 的赋值方式即可确认是否与 cwd 无关
+```
+Lane F 实测：在导出树里跑得到含主树在途改动的读数；改用导出树自己的脚本后读数才正确。
+- reported_by: lead-explore(Lane F 实测)
+
+
+### FIXED(2026-10-26T07:47:05Z / BUG-416)
+- evidence: 修 scripts/moon_test_env.py 共 3 处代码 + 1 处 README，commit a309cdbe。① 第 113 行 ROOT 常量下方新增 resolve_root(explicit, default=ROOT)（缺省 None/空串 ⇒ 原样返回 default=脚本目录，零回归；显式 ⇒ abspath；不存在 ⇒ None）与 parse_root(argv)（支持 --root X 与 --root=X）；② main() 接线：root 为 None ⇒ FATAL + rc=2 拒载、绝不静默回落到脚本目录（那正是病灶），启动日志恒打印实际生效 ROOT 并标注来源（缺省=脚本目录·与 cwd 无关 / --root 显式指定）；③ 关键：subprocess.run 第 453 行加 cwd=root —— 只打印不切 cwd 等于装饰，会让日志说测 A 实际测 B。selftest 28 → 38 格（+10 全部 BUG-416），含实现面锁 root-wired-into-subprocess-cwd（按判例-30 用 ln.startswith 行首锚定，因本文注释与 README 都含字符串 cwd=root，子串匹配会自指恒绿）与变异对照 root-mutation-detected。变异实测：删掉第 453 行 cwd=root ⇒ SELFTEST FAIL「root-wired-into-subprocess-cwd: got=False want=True」，还原后 38 格全绿。三次运行验证：缺省 → ROOT=E:\IDEProjects\AI\FIST-Mbt（缺省=脚本目录与 cwd 无关）；--root temp/fakeroot → ROOT=该临时目录（显式标记）；--root 不存在 → FATAL + rc=2 不回落。零回归：moon_test_env.py --target js src/store → Total tests 62 / passed 62 / failed 0；check_battery_count_doc → PASS。报告 reports/2026-10-26-bug416-envroot-fix-report.md，output_validate verdict=pass / l4-pass。
+## BUG-417 [2026-10-26T06:39:35Z] [medium] OPEN
+- summary: [archive-force] `archive_force(force=true)` 只放开状态机前置、不放门禁族 ⇒ 描述残留 `[omega:required]` 标记的僵尸任务永久卡在已暂停，强制归档这个逃生口不可用
+- detail: ## 现象（2026-10-26 Lane I 实测，归档 7 条时撞到）
+
+按 Lane B 审计结论，用 `archive` 清理 7 条「父已归档 / 现象已消失」的 `已暂停` 任务：
+
+| task_id | 结果 |
+|---|---|
+| `T0r662.1.2` | ✅ 已归档 |
+| `T0r662.1.3` | ✅ 已归档 |
+| `T0r662.2` | ✅ 已归档 |
+| `T0r672` | ✅ 已归档 |
+| `T0r636.1.2` | ❌ **Omega 门禁拦截** |
+| `T0r636.2.2` | ❌ **Omega 门禁拦截** |
+| `T0r636.3.2` | ❌ **Omega 门禁拦截** |
+
+失败回执原文：
+```
+{"error":{"code":-32000,"message":"Omega 门禁拦截归档: 任务 [T0r636.1.2] 尚未做成果复验，
+请先由验证者执行 omega_result_verify"}}
+```
+
+## 根因（Lane I 直接查库 + 读源码）
+
+```sql
+-- 失败 3 条
+omega_required=0，但 description 含 [omega:required] 标记  ← 命中「文本兜底面」
+-- 成功 4 条
+omega_required=0，description 不含该标记
+```
+
+源码逻辑：
+```
+omega_enabled(t) = t.get_omega_required() || t.description.contains(omega_mark())
+```
+
+⇒ **`archive_force` 的 `force` 只放开状态机前置（「要求 [已完成]，当前是 [已暂停]」），但不放开门禁族**。对「父已归档 + 无交付物 + 只有描述残留 `[omega:required]` 标记」的任务，**「强制归档」这个逃生口不可用**。
+
+## 危害
+
+1. **僵尸任务无法清理**：`T0r636.*` 三条是**父任务已归档的孤儿叶子**（父没了、没人验收、没有交付物），却因为描述里残留一个 `[omega:required]` 文本标记而永久卡在 `已暂停`
+2. **`force` 语义不完整**：`archive_force(force=true)` 的名字与文档暗示「可以强制归档」，但实际只放状态机、不放门禁 —— 调用方按名字理解会连试 7 次才明白哪 3 条不行
+3. **与 BUG-227 同族**：BUG-227 记的是「force 放行已暂停/已打回僵尸任务」，本条是它的**下一层**：force 放状态机、不放门禁族
+
+## 建议出路（三档，留裁决）
+
+- **(a) 给 `archive_force` 加独立参数 `skip_gates=true`**（或 `force` 升级为「真 force：状态机 + 门禁族一起放」），并要求 `reason` 必填 —— 让「强制」名副其实，但不默默绕过（每次绕过留审计）
+- **(b) 修 Omega 门禁：对「父已归档」的任务自动判 `omega_enabled=false`** —— 父都没了，成果复验没有意义。这是**语义修正**，比加参数更根本
+- **(c) 维持现状 + 在 `archive_force` 描述里逐字写明「force 不放门禁族，Omega 任务需先 omega_result_verify」** —— 最小改动，但僵尸还是清不掉
+
+Lane I 倾向 **(b)**：父已归档 ⇒ 该任务的验收语境已不存在 ⇒ 门禁继续要求它复验是**判据错位**，不是任务的问题。
+
+## 附带发现（同批入账，另一条）
+
+`store_open --data_dir .` 会在**已有根库**的前提下**静默建出空分库**（Lane I 误建 `bugs.db` / `default.db`，两者 `tasks=0` 且在 gitignore）。建议 `store_open` 在检测到已有根库时给出提示。
+
+## 判据
+
+Lane I 报告 `reports/2026-10-26-lane-i-archive-execution.md` + `temp/audit/lane_i_results.json`（逐条回执原文）+ `temp/audit/lane_i_run.py`（正确执行器）。
+- reported_by: lead-explore(Lane I 实测)
