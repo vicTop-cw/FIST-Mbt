@@ -8585,6 +8585,9 @@ BUG-78（data_dir 隔离失效，同族）
 
 ### FIXED(2026-10-27T03:12:49Z / BUG-433)
 - evidence: 真因：engine_for_ns 的 `None => engine` 把「请求的 ns 不存在/非法」与「就用主库」在**类型上**做成不可分 —— 而 ns 既是任务标签又是物理库路由 ⇒ 非法 ns 静默回落会让 delete/archive/execute/claim 这些写工具打到**主库任务**上（同 id 存在即误删，不可逆）。8 个工具受影响。修法：收口为 Result + 三件（ns_reject_reason 纯判定拒绝文案 / ns_unavailable_reason 与「非法」分开 / engine_route_in 可注入 getter 的纯路由判据）。三条出口没有一条是静默换库：①主库（""/default）⇒ Ok(main_eng)；②非法 ns ⇒ Err 且 getter 一次都不调（连库句柄都不碰）；③合法 ns ⇒ getter，拿到库 ⇒ Ok(该库引擎)，拿不到 ⇒ Err（不是 Ok(main_eng)）。判据真源复用 @store.MultiStore::safe_ns，不另立字符集规则。回归锁 4 格（src/server/ns_fallback_wbtest.mbt）：①机制格（6 种非法 ns 全 Err + getter 计数=0）②最容易修回去的一格（getter 返回 None 时必须 Err，不能 Ok(main)）③防修过头（""/default 必须 Ok 且不查 mstore）④拒绝文案三要件 + 5 种合法形态不误拒。变异对照 2 组：M1 非法 ns 静默回落 ⇒ 锁1红；M2 库打不开静默回落 ⇒ 锁2红；还原后 4/4 绿。验收：moon check 0 errors、server 420/420、全仓 1567/1567。附带修掉一处「引用不存在的测试文件」（server.mbt 注释曾引用 ns_fallback_wbtest.mbt 但文件不存在，与 BUG-373 引用面完整性同族）—— 现在那个引用是真的。过程教训：新文件写完必须立刻 git add，否则会被并发 lane 的 git clean 清掉（本笔第一版就这样丢过一次）。
+
+### FIXED(2026-10-27T03:20:15Z / BUG-433)
+- evidence: 并发 lane 已在 `ccca8b93` 完整收口 BUG-433。改法比 beta 建议的 `engine_for_ns_strict` 更彻底：直接改 `engine_for_ns` 签名从 `FistEngine` 到 `Result[FistEngine, MCPError]`，不用双函数；新增 `engine_route_in(main_eng, getter, ns)` 可注入纯路由判据；新增 `ns_reject_reason(ns) -> String?` 和 `ns_unavailable_reason(ns) -> String` 两条可行动文案。44 个调用点统一处理 match Err/Ok。4 格锁在 `ns_fallback_wbtest.mbt`（锁1：非法 ns ⇒ Err 且 getter 调用计数=0，连库句柄都不碰；锁2：合法但库打不开 ⇒ Err 绝不 Ok(main)；锁3：""/"default" ⇒ Ok(main) 且不查 mstore；锁4：拒绝文案三要件「非法」+「0-9A-Za-z_-」+「静默回落主库」）。验证：全量测试 1567/1567/0 全绿；server 包 420/420/0；moon check 0 errors。设计亮点：getter 注入让锁能摆出「合法但库打不开」这一格（真 mstore 惰性语义下很难自然产生），调用计数自证「非法 ns 连库都没碰」。
 ## BUG-434 [2026-10-26T19:04:57Z] [medium] FIXED
 - summary: [ledger] `bug_fix`/`report_bug` 的 evidence/detail **不转义 `^## BUG-` 行** ⇒ 调用方在 evidence 里写小节标题就会**污染账本唯一键**（多条同编号抬头，后一条覆盖前一条，真实状态不进计数），且 `bug_fix` 回执不报
 - detail: ## 现象（2026-10-27 实测，我在给 BUG-421/422 销账时踩到）
@@ -8704,7 +8707,7 @@ A 案从写入侧预防 + **回执可见**（不静默）。
 - 遗留（A 案未做，诚实标注）：写入侧降级 + 回执字段 `evidence_headings_neutralized: N` 未实现 ——
   理由是 B 案已让**账本结构安全**（污染行不再是条目），A 案属可见性增强，可另开任务。
   **但要知道**：现在污染行虽不再破坏结构，它仍会**原样留在账本正文里**（当普通文本）。
-## BUG-435 [2026-10-26T19:09:12Z] [low] OPEN
+## BUG-435 [2026-10-26T19:09:12Z] [low] FIXED
 - summary: [r12-mirror] constraint.mbt:69-79 手工重抄 store_rsv.mbt:96 的 rsv_action 四分支（实测现在等价，但两副本会各自漂移；constraint 包零依赖零引用）
 - detail: ## 缺陷（形态：**手工抄写真源**，非「一源两投影」）
 
@@ -8858,6 +8861,9 @@ src/store/moon.pkg       →  只 import core / sqlite / encoding / fs / env / j
 R10 报告的「四者共同根因」（本单是第 5 个标本，形态最纯粹）
 - reported_by: commander-gamma
 
+
+### FIXED(2026-10-27T03:26:42Z / BUG-435)
+- evidence: 病灶：constraint.mbt:69-79 的 rsv_conflict_verdict 是 store_rsv.mbt:96-107 的 rsv_action 的手工逐字重抄（四分支），实测现在等价但两副本会各自漂移，而两个包互不依赖（constraint 是零依赖包）⇒ 没有任何现有测试能同时看见两者 ⇒ 任一边改规则另一边静默过期。为什么不直接把 constraint 改成 import store：constraint/moon.pkg 只有 supported_targets（零依赖），constraint.mbt:21 注释写明这是刻意的政策侧镜像「让约束层不耦合到 store 层」，硬加依赖会破坏该架构意图；试过 test-import（仅测试期依赖）当前工具链不支持（moon check 报 Failed to calculate build plan）已回退。解法：新建独立交叉一致性包 src/consistency/（同时依赖 store + constraint，只做这件事），生产面零依赖保持不变。2 格锁：①bug435_constraint_mirror_matches_store_rsv_action —— 6 组用例两侧逐一比对（None⇒reserved / 本人未过期⇒renewed / 本人已过期⇒renewed（注释点名的坑：同持有者优先）/ 他人已过期⇒taken_over / 他人未过期⇒conflict / ttl==now⇒conflict（严格 < 而非 <=））；②bug435_canonical_verdicts_unchanged_on_both_sides —— 四动词集合相等，防「两边一起改名」的同时漂移（上格只比两边相同，两边都改成 acquired 时它仍绿）。变异对照 2 组（改的是镜像侧，证明锁在看漂移）：M1 把同持有者优先那支顺序调换 ⇒ 锁1红；M2 把 ttl < now 改成 <=（边界漂移）⇒ 锁1红；还原后 2/2 绿。验收：moon check 0 errors、src/consistency 2/2、全仓 1569/1569、check_pkg_imports / check_mbti_sync / check_battery_count_doc 三判据 PASS。
 ## BUG-436 [2026-10-27T00:45:00Z] [high] FIXED
 - summary: [authz] ACL 判定身份逐调用漂移：新命名空间任务恒 can_write=0，agent_acl_grant 授权后仍拒 —— execute 进不去，submit/verify 全断（标准六步流在新 ns 不可完成）
 - detail: 复现（fist-mbt v0.3.10，2026-10-26，另侧 `E:\IDEProjects\AIools` 的清账/开发会话实测）：
