@@ -8983,7 +8983,7 @@ DSH 侧 MCP 插件在本会话内仍不可用（配置只在会话启动时读�
 实测：`version`（bash + cmd 两条 shell）/ `doctor` 5/5 / `list-tools` 171 工具 / `serve` 握手 171 工具 + 3 resources；
 `call <tool>` 路由已证实到达网关的新鲜度门（当时另有 lane 的 3 个 src 文件比产物新，按 BUG-32 拒绝旧二进制；
 不设 `FIST_NO_AUTOBUILD=1` 时它会自动 `moon build`——本条实测刻意未触发，避免与并发构建互踩）。
-## BUG-438 [2026-10-27T04:09:04Z] [medium] OPEN
+## BUG-438 [2026-10-27T04:09:04Z] [medium] FIXED
 - summary: [r17-filelocks] store_sqlite.mbt:1311 locks_upsert 的 ON CONFLICT 带 WHERE，与内存版「永远落库 last-write-wins」语义相反
 - detail: ## 缺陷
 
@@ -9101,3 +9101,7 @@ F3 目前只对表 `rsv_action ↔ reservations` 那条 `ON CONFLICT`，
 `claimguard_wbtest.mbt:1118/1240`（夹具以「无条件覆盖」为前提）·
 R10「两后端等价」结论（**本条的发现说明：R10 只验了 try_acquire，没验 upsert**）
 - reported_by: commander-gamma
+
+
+### FIXED(2026-10-27T04:26:00Z / BUG-438)
+- evidence: 双后端语义对齐（代 lane 修）。病灶：同一底层原语 locks_upsert 在两后端行为相反 —— 内存版（store_rsv.mbt）无条件 file_locks.set(scope, lock)（永远落库 last-write-wins，只在覆盖他人 live 锁时记一条 lock_taken_over 事后审计）；SQLite 版（store_sqlite.mbt:1311）带 ON CONFLICT … WHERE status != active OR agent = excluded.agent OR ttl_until < excluded.ts（条件写，条件不满足时静默不写）。而 MemoryStore::locks_upsert 的注释写明这是底层原语不是互斥门「它永远落库（last-write-wins）… 要抢不到就拒请用 locks_try_acquire」⇒ 内存版对、SQLite 版的条件写是缺陷：调用方无从区分自己在哪个后端上 ⇒ 同一段业务代码在内存测试里过、在生产 SQLite 里静默失效；而且 WHERE 与上面的审计 SQL 重复表达了同一个条件（审计已在做覆盖他人 live 锁时留痕，写入侧再拦一次是双重语义）。修法：只删 WHERE（ON CONFLICT(scope) DO UPDATE SET … 保留），让写入与内存版一致；审计保持不动（与内存版同条件，只事后留痕不阻止覆盖）。回归锁 3 格（新文件 src/store/locks_upsert_equiv_test.mbt）：①修复点本尊（覆盖他人 live 锁时两后端都必须真写进去，修前 SQLite 侧 locks_get 拿到旧 agent）；②防拿掉 WHERE 顺手把审计也拿掉（两后端都要记 lock_taken_over）；③防审计条件写宽了（本人续订自己的锁不是夺锁不该留违例）。变异对照 1 组：M1 把 WHERE 塞回去 ⇒ 锁1红（3 格 2 绿 1 红）；还原后 3/3 绿。验收：moon check 0 errors、src/store 88/88、src/engine 251/251（locks 调用方）。
