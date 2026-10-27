@@ -456,10 +456,11 @@ S1 落地后 BUG-430 **保持 OPEN**，状态 `[arch] 边界已公告 / 认证�
 | `executor_clear` | 清空全部执行者能力注册（Marketplace 重置/整洁，防测试残留） |
 | `selfdrive_dispatch` | 能力路由自动派单（R32/R33）：取 triage 顶部可领取任务 → 确定所需能力（显式 `want` 优先，否则从任务描述自动抽取已注册能力标签，R33 免手传）→ 经 executor_route 找最佳执行者 → **直接认领给该执行者**（待领取→已领取）；无匹配时回退 `agent`，把"推荐"落成动作 |
 
-### 审计与权限（3）
+### 审计与权限（4）
 | 工具 | 说明 |
 |---|---|
 | `agent_acl_grant` | 授予/收权某 agent 在某命名空间的读写权限（**BUG-408 收口**）：ACL 拒绝后此前无任何 MCP 面可自救——`agents_acl_grant` 只是 store 方法、未暴露为工具。本工具补上这条自救路径。仅 SQLite 后端可用（内存后端显式报错，不静默成功）；`can_read`/`can_write` 缺省即授权读写（fail-open 仅限显式调用本工具，默认 ACL 仍是 fail-closed）；`pid_bound=true` 绑定当前进程实例，换进程即失效。真源 `src/server/server.mbt` + `src/engine/engine.mbt:462` + `src/store/store_sqlite.mbt:2994` |
+| `agent_register_key` | **BUG-430 / S3**：为某 agent 登记 Ed25519 **公钥**（hex，64 字符 = 32 字节），登记后该 agent 才能通过 `challenge` 挑战认证（`reserve_scope` / `lock_acquire` / `claim` 的 `challenge` + `challenge_sig` 可选参数）。⚠️ **只登记公钥，不产生签名** —— 私钥由调用方自持；本服务**没有也不会有**「代签」能力（服务端代签 = 自己给自己发通行证 = 绕过 S3）。⚠️ 公钥可被任何人覆盖登记 ⇒ **本工具不防「别人替你换公钥」**，那属于密钥分发/轮换（尚未做）。落库前校验 32 字节形状，坏公钥不进库；写后回读确认。参数：agent_id、namespace、pubkey_hex(均必填)、by(可选)。真源 `src/server/server.mbt`（`agent_register_key`）+ 复用 `agent_touch_first_seen` 的首拍注册路径。白盒锁 `src/server/server_bug430_s3_keytool_wbtest.mbt`(4 格，含「服务端永不代签」) + `src/engine/engine_bug430_s3_key_wbtest.mbt`(4 格端到端) |
 | `audit_permission` | 角色权限查询（**注意**：只反映角色矩阵、不反映 ns ACL——两道独立门，见 BUG-408） |
 | `audit_log` | 追加式审计日志 |
 
