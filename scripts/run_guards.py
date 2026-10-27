@@ -388,14 +388,15 @@ SPECIAL_CASES = [
              kind="known-red"),
     # ── 兑现（R108）：主线 `866e2e65` 把 dist 快照刷到与 moon.mod 同版 ⇒ 这一格现读 got=0，"
     #    登记的红已不成立。按本文件自订的律「被检内容修好 ⇒ 把期望改回 0」转回门禁格，依据一起删。──
-    # ── BUG-428（2026-10-26）打回预存红：R108 那条「版本同版 ⇒ 绿」的兑现**被证明不够**——版本面
-    #    一直 PASS，而 dist 快照是 Oct 24 的旧构建（缺 2 条内容面探针）。判据新增内容面格后现读 got=1，
-    #    依据即事故本身：`版本对但代码旧`。刷新 `dist/fist-mbt.js`（python scripts/refresh_dist.py）
-    #    后**必须把期望改回 0**（本文件自订的律：被检内容修好 ⇒ 期望归位）。──
-    expected("check_dist_snapshot.py", 1,
-             "预存红（BUG-428）：dist/fist-mbt.js 版本面 PASS 而内容面缺 omega_orphan_of_archived_parent / "
-             "strip_plan_annotations —— 「版本对但代码旧」。刷新快照后改回 0；**不许**靠删内容面变绿",
-             kind="known-red"),
+    # ── BUG-428（2026-10-26 立案 / 2026-10-27 收口）：
+    #    ① 立案时：版本面一直 PASS，而 dist 快照是 Oct 24 的旧构建（缺 2 条内容面探针）⇒ 现读 got=1，
+    #       依据即事故本身：`版本对但代码旧`；当时转成 known-red 预存红。
+    #    ② **收口（本笔）**：`python scripts/refresh_dist.py` 真刷新后，`check_dist_snapshot` 现读
+    #       `PASS 版本面 0.3.10 == moon.mod 0.3.10 · 内容面 3 条探针全部有调用形`
+    #       ⇒ **按本文件自订的律把期望归位到 0**（`expected(...,1)` → `case(...)`）。
+    #    ③ 刷新用的源码约束（重要）：必须在 `engine/*` 的 WIP 被提交**之后**跑
+    #       —— 否则会把未完成改动打进发布快照。本笔是在 `BUG-432` 提交（`c68f3250`）之后刷的。──
+    case("check_dist_snapshot.py"),
     # 内容面格的变异对照在它自己的 --selftest 里（19 格：版本 8 + 内容 6 + 合成 5）；同批接进电池。
     case("check_dist_snapshot.py", "--selftest"),
     # ── BUG-428 P0：部署产物新鲜度（PATH 垫片反解 + 固定候选 × 时间面 + 内容面）。
