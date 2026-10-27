@@ -8563,7 +8563,7 @@ fn engine_for_ns(ns : String) -> Result[@engine.FistEngine, String] {
 BUG-420（C 案止血只覆盖「路由到空库」，**本单补「路由被取消」这一格**）·
 BUG-78（data_dir 隔离失效，同族）
 - reported_by: commander-gamma
-## BUG-434 [2026-10-26T19:04:57Z] [medium] OPEN
+## BUG-434 [2026-10-26T19:04:57Z] [medium] FIXED
 - summary: [ledger] `bug_fix`/`report_bug` 的 evidence/detail **不转义 `^## BUG-` 行** ⇒ 调用方在 evidence 里写小节标题就会**污染账本唯一键**（多条同编号抬头，后一条覆盖前一条，真实状态不进计数），且 `bug_fix` 回执不报
 - detail: ## 现象（2026-10-27 实测，我在给 BUG-421/422 销账时踩到）
 
@@ -8651,3 +8651,187 @@ A 案从写入侧预防 + **回执可见**（不静默）。
   **⇒ 加重了本条的严重性判定**：污染路径**不止「用小节标题」**，连「在 detail/evidence 里原样引用一行既有抬头」都会中招。
   修法建议同步升级：**解析侧（B 案）应把围栏代码块内的 `^## BUG-` 排除**（markdown 语义上它就是字面量），
   否则「描述这个 bug」本身就会复现这个 bug —— 本条自己就是活例。
+
+### FIXED(2026-10-27T00:43:01Z / BUG-434)
+
+- evidence: 账本抬头**解析侧**双端收口（commit `ca107f98`，3 文件 +90/−4）—— 病灶是销账时**实测撞了两次**的：
+  ① 在 evidence 里写小节标题（形如 `## BUG-421：…`）⇒ 账本多出两个条目抬头 ⇒ `gen_plugins.py` 报
+  「BUG-421×2 / BUG-422×2（抬头编号是唯一键；同一编号写两条 ⇒ 前一条被 dict 吞掉，不进任何计数）」；
+  ② **更狠的第二次**：修完第一次后，在本条自己的 `detail` 里「原样引用」那两行（放进围栏代码块）——
+  **代码块里的那行照样被当成条目抬头** ⇒ **「描述这个 bug」本身就会复现这个 bug**。
+- 修法（B 案，解析侧收紧，双端同口径）：
+  **MoonBit 侧** `src/server/bugreport.mbt::bug_is_header` 从 `has_prefix("## BUG-")` 收紧为
+  「日期 + 严重度 + 状态」三段式 + 两个闭集校验（`bug_severities()` / `bug_status_closed()`）。
+  **两个实测坑**：(a) **不能用 `bug_parse_header` 的 status** —— 它对空 status 会**默认补 `"OPEN"`**
+  （`sure_status` 是给解析容错用的），拿它判「是不是条目」会让「缺状态」的行被判成条目（我第一版就红在这）；
+  (b) status 段可能带后缀（`DUPLICATE →BUG-1` / `FALSE_POSITIVE (evidence)`）⇒ 必须**只取首个词**，
+  否则**合法抬头**会被误判成非条目（「修过头」方向）。
+  **Python 侧** `scripts/gen_plugins.py` 的 `RE_BUG_HEAD` 从 `^## BUG-(\d+)` 收紧为与 `RE_BUG_STATUS`
+  同口径；145 行内联 `re.findall` 改用 `RE_BUG_HEAD`（消掉第二份口径）。捕获组必须保留纯数字
+  `BUG-(\d+)`（写成 `(BUG-\d+)` 立刻炸 `ValueError: invalid literal for int() ... 'BUG-1'`）。
+- 回归锁：`bugreport_status_wbtest.mbt::bug434_heading_is_three_segment_only`（7 格，**两方向都覆盖**）——
+  正例 3 格防修过头（完整三段 / `DUPLICATE →BUG-1` 带后缀 / `FALSE_POSITIVE (evidence)` 带括号后缀）、
+  反例 4 格（污染行 ×2 / 缺状态 / 严重度不在闭集 / 状态不在闭集）。
+- 变异对照（**诚实标注，不硬凑**）：M1 删三段式空检查 = **等价变异报绿**（删掉后闭集校验仍会挡住
+  `status_word=""`，**行为不变**）；M2 删闭集校验 = **红**；M3 删首词截断 = **红**。
+  ⇒ **真正的判据是闭集校验**，三段式空检查是防御性早期返回；**等价变异报绿是正确行为**，
+  把它写成「锁失效」会是假证据。
+- 实测：`moon check` = 0 errors ｜ `src/server` = **406/406**（+1 格）｜ `gen_plugins.py` 正常
+  （`BUG-1~435 共 418 条入账`，**无重复警告**）｜ 解析器注入 5 种形态实测：真抬头收 / 污染行 ×2 排除 /
+  缺状态排除 / 严重度非法排除。
+- 遗留（A 案未做，诚实标注）：写入侧降级 + 回执字段 `evidence_headings_neutralized: N` 未实现 ——
+  理由是 B 案已让**账本结构安全**（污染行不再是条目），A 案属可见性增强，可另开任务。
+  **但要知道**：现在污染行虽不再破坏结构，它仍会**原样留在账本正文里**（当普通文本）。
+## BUG-435 [2026-10-26T19:09:12Z] [low] OPEN
+- summary: [r12-mirror] constraint.mbt:69-79 手工重抄 store_rsv.mbt:96 的 rsv_action 四分支（实测现在等价，但两副本会各自漂移；constraint 包零依赖零引用）
+- detail: ## 缺陷（形态：**手工抄写真源**，非「一源两投影」）
+
+`src/constraint/constraint.mbt:69-79` 的 `rsv_conflict_verdict` 是
+`src/store/store_rsv.mbt:96-107` 的 `rsv_action` 的**手工逐字重抄**：
+
+```moonbit
+// constraint.mbt:55-79（注释自称「忠实镜像 = src/store/store_rsv.mbt::rsv_action」）
+pub fn rsv_conflict_verdict(prev, agent, now) -> (Bool, String) {
+  match prev {
+    None => (true, "reserved")
+    Some((owner, _, _)) if owner == agent => (true, "renewed")
+    Some((_, ttl, _)) if ttl < now => (true, "taken_over")
+    _ => (false, "conflict")
+  }
+}
+```
+
+**两处代码**各自维护同一套四分支冲突矩阵 ⇒ **任何一侧改动，另一侧不会跟着变。**
+
+## ★ 实测：现在**等价**（10 格真跑 + 1 格变异对照）
+
+**编译恢复后真跑**（`src/constraint/r12_ak_mirror_probe_test.mbt`，临时给 `constraint/moon.pkg`
+加 `src/store` 依赖以跨包调用两个 pub 函数，跑完已还原）：
+
+```
+r12_mirror_vs_source_equivalence —— 10 格逐格比对
+  B1 none->reserved                    src == mir  ✅
+  B2 self->renewed                     src == mir  ✅
+  B3 other-ttl<now->taken_over         src == mir  ✅
+  B4 other-ttl>now->conflict           src == mir  ✅
+  ★ EDGE ttl==now                      src == mir  ✅  ← 关键格
+  EDGE empty-agent-self                src == mir  ✅
+  EDGE empty-agent-other               src == mir  ✅
+  EDGE self-ttl<now                    src == mir  ✅
+  EDGE ttl=now+1 / ttl=now-1           src == mir  ✅
+
+r12_mutation_control_lt_vs_le_is_distinguishable —— 变异对照
+  rsv_action(ttl==now) = "conflict"；变异版(<=) = "taken_over" ⇒ 断言不同 ✅
+
+读数：Total tests 16, passed: 16, failed: 0
+```
+
+**⇒ 第 ① 问的答案：两个实现现在**完全等价**，`ttl == now` 边界**都用严格 `<`**（不是 `<=`）。**
+
+## ② 是「抄错了」还是「有意不同」？
+
+**答：既不是抄错，也不是有意不同 —— 是「抄对了但抄了一份会分别漂移的副本」。**
+
+证据：
+1. **注释明说是镜像**（`constraint.mbt:56-57`：「= `src/store/store_rsv.mbt::rsv_action` L77-88 的忠实镜像」）
+2. **实测 10 格全同** ⇒ 抄写时是对的
+3. **`constraint` 包零依赖**（`src/constraint/moon.pkg` 只有 `supported_targets = "js+native"`，**无任何 import**）
+   ⇒ 它**看不见** `store` 的代码，**无法在编译期跟着 `rsv_action` 变** ⇒ 这是漂移的结构性成因
+
+## ③ 谁在用 `constraint.mbt:127`？—— **无生产调用方**
+
+```
+$ grep -rn 'eval_no_overlap' src/ --include=*.mbt | grep -v 'src/constraint/'
+（空）
+
+$ grep -rn 'src/constraint' src/*/moon.pkg
+（空 —— 没有任何包 import 它）
+
+$ grep -rn 'constraint' src/server/server.mbt
+（只命中 "constraints" 这个词在工具描述文本里，不是包引用）
+```
+
+**⇒ `constraint` 是一个孤立包**：零依赖、零被引用，只被 `moon check`（编译面）与
+`moon test`（14 格自测）覆盖，**不在任何 MCP 工具的生产路径上**。
+
+**这显著降低了本条的严重度**（不是「两套并发裁决同时生效」），
+**但它是本仓「第 N 个两面」普查的**最纯粹标本**：
+真源 → 手工抄本 → 两者都会漂，且**抄本所在的包连依赖关系都没有**，连「改了会编译失败」这种最低保障都没有。
+
+## 修法（两个候选，都不需动生产路径）
+
+### (a) 删镜像，改成调 `rsv_action` —— **依赖图实测允许**
+
+**关键实测**：
+```
+src/constraint/moon.pkg  →  目前零 import
+src/store/moon.pkg       →  只 import core / sqlite / encoding / fs / env / json / debug
+                             **不 import constraint**
+```
+⇒ **`constraint` 加 `src/store` 依赖不会成环**（store 不反向依赖 constraint）。
+
+**而且我已经实测验证过这条路可行**：为跑探针，我临时把
+`src/constraint/moon.pkg` 改成 import `src/store`，**编译通过、16/16 全绿**
+（跑完已还原为原状，`git status src/constraint/` 干净）。
+
+**修法**：
+```diff
+--- a/src/constraint/moon.pkg
++++ b/src/constraint/moon.pkg
+@@
++import {
++  "vicTop-cw/fist-mbt/src/store",
++}
++
+ supported_targets = "js+native"
+```
+```diff
+--- a/src/constraint/constraint.mbt
++++ b/src/constraint/constraint.mbt
+@@
+-/// 锁裁决动词的忠实镜像（= `src/store/store_rsv.mbt::rsv_action` L77-88）。
++/// 锁裁决动词：**直接委托真源** `@store.rsv_action`（原本是手工镜像，已收口）。
+ ///
+-/// 为什么镜像：让约束层不耦合到 store 层。
++/// 为什么不再镜像：手抄的副本会**各自漂移** —— 实测（BUG-xxx）两实现当前等价，
++/// 但 `constraint` 包原本零依赖，看不见 store 的改动，**漂移了也不会编译失败**。
++/// 现在改为直接调用 ⇒ 只有一份代码，改哪边都不会漏。
+ pub fn rsv_conflict_verdict(
+   prev : (String, String, String)?,
+   agent : String,
+   now : String,
+ ) -> (Bool, String) {
+-  match prev {
+-    None => (true, "reserved")
+-    Some((owner, _, _)) if owner == agent => (true, "renewed")
+-    Some((_, ttl, _)) if ttl < now => (true, "taken_over")
+-    _ => (false, "conflict")
+-  }
++  @store.rsv_action(prev, agent, now)
+ }
+```
+**保留 `rsv_conflict_verdict` 这个函数名**（`constraint.mbt:127` 与 `constraint_wbtest.mbt` 的 4 格测试
+都调它）⇒ **零调用面改动**，只把函数体换成一行委托。
+
+### (b) 保留镜像 + 加等价判据（wbtest + 变异对照）
+
+**缺点**：仍是两份代码。且因为 `constraint` 现在的 `moon.pkg` **不 import store**，
+要写这个 wbtest **必须加依赖** ⇒ **既然终究要加依赖，不如直接 (a)**。
+
+**⇒ (b) 的唯一场景是「依赖图不允许 (a)」—— 而实测允许。**
+
+## 建议
+
+**选 (a)。** 理由：
+1. 依赖图实测允许（已真跑验证编译通过）
+2. (b) 为了写等价判据反而**必须先加同一个依赖** ⇒ (b) 是 (a) 的严格劣化
+3. 保留函数名 ⇒ 调用面与现有 4 格测试**零改动**
+
+## 关联
+
+`src/store/store_rsv.mbt:96-107`（真源 `rsv_action`）·
+`src/store/store_sqlite.mbt:981`（SQL 侧投影，同一规则的第三条表达）·
+`src/constraint/constraint.mbt:69-79`（手工镜像 = 本条）·
+`src/constraint/constraint.mbt:127`（唯一调用方 `eval_no_overlap`，无生产上游）·
+R10 报告的「四者共同根因」（本单是第 5 个标本，形态最纯粹）
+- reported_by: commander-gamma
