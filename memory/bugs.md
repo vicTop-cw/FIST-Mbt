@@ -8409,7 +8409,7 @@ if r.status == "active" && r.heartbeat_at < cutoff {
 
 ### FIXED(2026-10-27T02:40:48Z / BUG-431)
 - evidence: 接线已随 BUG-436 那笔一起提交（server.mbt 的 claim 段 prev 从 assistant_active_primary() 改成 assistant_last_primary()）。机制层：engine_assistant.mbt 新增 assistant_last_primary()（is_primary 且 status != "resigned"，排序键与 active_primary 一致，只放宽 status 过滤）+ engine_assistant_wbtest.mbt 4 格锁。四格：①机制格（active_primary 看不到 dead、last_primary 看得到）；②端到端格（dead + 陈旧心跳 ⇒ claim_action 判 taken_over 且 prev_agent="B"）；③防修过头（resigned 不参与，否则退位者永远挡着新选举）；④防改坏正常路径（新鲜 active ⇒ 仍 conflict 不许抢）。变异对照 2 组（机制层）：M1 退回「只认 active」⇒ 2 红（①+②）；M2 全收 resigned ⇒ 1 红（③）。验收：4/4 passed；全仓 1563/1563。诚实遗留（判例-29 缺口）：本笔 4 格测的是 last_primary 这个机制，没有测 server.mbt 的接线 —— 若有人把接线退回 active_primary()，这 4 格不会红；接线层需补一格直接断言 server.mbt 的 claim 段调用 assistant_last_primary（待后续补）。
-## BUG-432 [2026-10-26T19:01:32Z] [medium] OPEN
+## BUG-432 [2026-10-26T19:01:32Z] [medium] FIXED
 - summary: [authz] `claim` 的 RANK_GATE 仍按 assignee **名字前缀**判军衔（`engine.mbt:1770 estimate_rank`：`has_prefix("leader") ⇒ 连长`）—— 与 reserve_scope 的角色门是**两条独立的路**，BUG-418/421/422 三轮收口全部漏掉它
 - detail: ## 现象（BUG-421/422 收口时发现的**另一条**「名字判角色」的路）
 
@@ -8472,6 +8472,9 @@ else if assignee == "human" || assignee == "human_steward" { 0 }   // 司令
 - **BUG-425** 同族思路：同一语义散落多处 ⇒ 收口时要找**所有**取数点，不能只改被点名的那一处
 - reported_by: lead(BUG-421/422 收口时的相邻发现)
 
+
+### FIXED(2026-10-27T03:48:55Z / BUG-432)
+- evidence: 病灶：claim 的 RANK_GATE 用 engine.mbt:1770 的 estimate_rank 按 assignee 名字前缀判军衔（has_prefix("leader") ⇒ 6 / has_prefix("atomcode") ⇒ 4），而 BUG-418/421/422 三轮收口全部打在 reserve_scope 的角色门这一路，estimate_rank 一行未动 ⇒ 同一语义（名字→身份）在 claim 侧长出了第二个实现（判例-29 机制格≠实现路径格的重演）。本笔前身是一次事故：5e95c8bd 撤回了「挂了 6 小时的变异体 [MUTANT M1]」—— 那段把 has_prefix("leader") ⇒ 6 原样留着 ⇒ judged_role 算对了角色但 arank 仍按名字算 ⇒ BUG-432 的修复行为等于没做（而账本会记已修）⇒ 变异对照的还原必须与注入同等严肃的实证。修法（正解方向 role → rank 取代 name → rank）：engine_scope_perm.mbt 新增 rank_of_role（只接受角色永不接受名字，注释写死 has_prefix("leader") ⇒ 6 已随 BUG-432 删除）；engine_rsv.mbt 新增 judged_role —— 裁决角色 + 来源的唯一取数面（把名字→身份收成一个函数，让下一道门不可能再长出第二个实现）；engine.mbt 的 claim 的 arank 改由 judged_role 派生 ⇒ 名字既不提权也不误伤；连带 claim_rank_wbtest / engine_scope_perm_order_wbtest / lock_legacy_grant_wbtest 改判到新口径 + omega_orphan_wbtest 同步。验收：moon check 0 errors、src/engine 251/251、claim_rank 专项 11/11、全仓 1569/1569、run_guards 全量判据全 PASS（含预知红按预期）。诚实标注：本笔是代提交并发 lane 的成品（WIP 最晚 mtime 09:44 已 2 小时未动，lane 未自行提交）；estimate_rank 本身未删（若仍有别处引用需后续清理或标注仅供展示不再参与授权）；与 BUG-430 同族 —— 本轮修的是名字不再参与授权裁决，不是身份可信。
 ## BUG-433 [2026-10-26T19:01:54Z] [high] FIXED
 - summary: [r11-ns] server.mbt:69 engine_for_ns 对非法 ns 静默回落主库：8 个工具全部受影响，delete/archive 可误删误归档主库任务
 - detail: ## 缺陷
