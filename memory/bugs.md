@@ -8207,7 +8207,7 @@ BUG-424（`legacy_grant` 引入，本条的来源）· BUG-145（互斥由后端
 
 ### FIXED(2026-10-26T17:55:08Z / BUG-429)
 - evidence: commit e3457b20（2 文件）。改在 src/engine/engine_rsv.mbt 的 locks_try_acquire legacy_grant 分支：原写法 o.relabel("renewed_legacy_grant", o.granted) 无条件打标，现改为 if o.granted { o.relabel("renewed_legacy_grant", true) } else { o }。缺陷：locks_get(:202) 与 locks_try_acquire(:205) 是两次独立 IO，中间别的 agent 可抢到同一把锁且 ttl 新鲜 ⇒ 本次写被后端拒 ⇒ granted=false，此时回执变成 granted=false + action="renewed_legacy_grant" + agent=别人 —— 三个字段互相矛盾；同文件 Unregistered 分支写对了 if o.granted，legacy 分支漏抄。修复后被后端拒时保留后端原标签（conflict/taken_over 是更硬的信息）。同时确认了更重要的一件事：legacy_grant 不是「先读后写」——Lane AD 的判据是「读到的值能不能改变裁决，不是有没有读两次」；locks_get 那次读只能把结果推向更保守（不像自己⇒直接拒绝），无法让本该被拒的请求变成 granted，因为 granted 永远由后端 ON CONFLICT ... WHERE + 写后回读算（store_sqlite.mbt:1438，且 :1439 ignore(may_write) 明确本地裁决不决定发不发那笔写）⇒ 它是附加闸门不是裁决器。回归锁新增 src/engine/lock_legacy_grant_wbtest.mbt 3 条：锁1=行为正例，自己续自己 active 锁⇒granted=true 且 action=renewed_legacy_grant；锁2=接线格，断言 if o.granted { 那道闸真在源码里 + 反向断言不许再出现无条件 relabel(..., o.granted)；锁3=反例，别人持有的 active 锁⇒硬拒且不许标 legacy。锁2 是源码文本断言（诚实标注脆弱，因 granted=false 那一半没有任何行为面能覆盖，单线程构造不出「两次 IO 之间被抢锁」且判例-31 不许 sleep 抢时序）。验证：moon check --target js = 57 warnings 0 errors；moon_test_env --target js src/engine = 240/240/0 全绿（改前 237，+3）。附带确认三条纪律全部成立：lock_acquire_action 逐字委托 rsv_action；SQLite ON CONFLICT ... WHERE 三子句与 rsv_action 四分支逐条对应；agent_touch_first_seen 的 CASE WHEN 在单条语句内求值无读后写窗口；claim 用 update_task_if_status 的原子 CAS 且完全不调 rsv_*。
-## BUG-430 [2026-10-26T18:47:23Z] [high] OPEN
+## BUG-430 [2026-10-26T18:47:23Z] [high] FALSE_POSITIVE
 - summary: [arch] MCP 工具面零认证 —— 所有 agent 身份参数可自报，reserve_scope/lock_acquire 的角色判定本质上是 advisory（C1 pubkey_fp 全空 / C2 pid 可算 / C3 无会话层）
 - detail: ## 形状（架构级缺口，不是某个 bug）
 
@@ -8297,6 +8297,7 @@ Lane AF 报告 `reports/2026-10-27-bug422b-identity-assertion-plan.md` @ `0f1bad
   成本远超收益（挡的是自家 agent）⇒ **当前选择：承认它，并把它写死**。
   **本条保留 OPEN 的唯一理由**：它是「若将来要真认证」的**锚点**（一关就没人记得这条路的代价）。
   届时若要立项，参考路径见本条 detail 的三条建议（① 连接期会话令牌 ② `pubkey_fp` 签名链路 ③ 只对破坏性工具要求显式 token）。
+- false_positive(2026-10-27T04:59:10Z): owner 裁决（2026-10-27 12:53）：「暂接受『协作式约定』这个定性，后面有需要再改」。立据三条：①边界已写进 AI-DEVELOPMENT-STANDARD.md §7「已知边界」（三条硬事实：pubkey_fp 全仓恒空 / current_pid_token() 是伪 pid 会同秒撞值 / 无会话层），并明写「已收口的是一致性不是认证强度」+「下一个人不得把它当安全边界用」；②四轮同族收口实际做到的是「同一个人在不同工具里是同一个身份」（BUG-418/421/422 名字不再能提权 + BUG-423/424 注册面毒化与锁权限门 + BUG-432 RANK_GATE 改 role→rank + BUG-436 ACL 身份收敛为单一真源），不是「这个名字不能被冒用」；③本仓 MCP 工具的用户是自家 AI agent 不是敌对环境，真收口成本（会话令牌/pubkey_fp 签名 + 4 客户端全改）远超收益。后续路径（若需要真认证时按此立项）：① MCP 面给 reserve_scope/lock_* 增加已核验身份（连接期会话令牌 或 agents.pubkey_fp 签名，该列已存在但全仓恒空）② 角色只从已验证身份对应行读、agent 名字降级为显示字段不参与裁决 ③ store 侧区分「身份首登」与「低权覆盖 role」④ 之后整体删除 infer_role_from_agent，回归锁改成「名字完全不参与裁决」。诚实标注：本条关闭不等于「零认证已修好」，只是「owner 接受当前定性」—— 有需要随时可重开（账本无 FIXED→OPEN 路径，但可新立一条并引用本条作前身）。
 ## BUG-431 [2026-10-26T18:57:20Z] [medium] FIXED
 - summary: [r11-assistant] server.mbt:5598 接管留痕取决于 sweep 是否先跑：sweep 标 dead 后 claim 报 elected 且不记 force_takeover 违例
 - detail: ## 缺陷
@@ -9105,3 +9106,232 @@ R10「两后端等价」结论（**本条的发现说明：R10 只验了 try_acq
 
 ### FIXED(2026-10-27T04:26:00Z / BUG-438)
 - evidence: 双后端语义对齐（代 lane 修）。病灶：同一底层原语 locks_upsert 在两后端行为相反 —— 内存版（store_rsv.mbt）无条件 file_locks.set(scope, lock)（永远落库 last-write-wins，只在覆盖他人 live 锁时记一条 lock_taken_over 事后审计）；SQLite 版（store_sqlite.mbt:1311）带 ON CONFLICT … WHERE status != active OR agent = excluded.agent OR ttl_until < excluded.ts（条件写，条件不满足时静默不写）。而 MemoryStore::locks_upsert 的注释写明这是底层原语不是互斥门「它永远落库（last-write-wins）… 要抢不到就拒请用 locks_try_acquire」⇒ 内存版对、SQLite 版的条件写是缺陷：调用方无从区分自己在哪个后端上 ⇒ 同一段业务代码在内存测试里过、在生产 SQLite 里静默失效；而且 WHERE 与上面的审计 SQL 重复表达了同一个条件（审计已在做覆盖他人 live 锁时留痕，写入侧再拦一次是双重语义）。修法：只删 WHERE（ON CONFLICT(scope) DO UPDATE SET … 保留），让写入与内存版一致；审计保持不动（与内存版同条件，只事后留痕不阻止覆盖）。回归锁 3 格（新文件 src/store/locks_upsert_equiv_test.mbt）：①修复点本尊（覆盖他人 live 锁时两后端都必须真写进去，修前 SQLite 侧 locks_get 拿到旧 agent）；②防拿掉 WHERE 顺手把审计也拿掉（两后端都要记 lock_taken_over）；③防审计条件写宽了（本人续订自己的锁不是夺锁不该留违例）。变异对照 1 组：M1 把 WHERE 塞回去 ⇒ 锁1红（3 格 2 绿 1 红）；还原后 3/3 绿。验收：moon check 0 errors、src/store 88/88、src/engine 251/251（locks 调用方）。
+## BUG-439 [2026-10-27T04:52:51Z] [medium] OPEN
+- summary: [r18-twofaces] store.mbt:979/997 熔断器在内存后端 cb_get 恒 None、cb_save no-op ⇒ 永不熔断且回执看不出
+- detail: ## 缺陷
+
+熔断器（`circuit_*` 三工具）在**内存后端下完全不工作**：
+状态读取恒返回 `None`、状态写入是 no-op ⇒ **三态机永远停在 `closed`，永不熔断**。
+
+## 代码定位
+
+**① 读（`src/store/store.mbt:976-986`）**
+```moonbit
+pub fn StoreBackend::cb_get(self, ns, circuit) -> (String, Int32, ...)? {
+  match self {
+    Mem(_) => None                    // ★★ 内存后端恒 None
+    Sql(s) => s.cb_get(ns, circuit)
+  }
+}
+```
+
+**② 写（`src/store/store.mbt:992-1016`）**
+```moonbit
+pub fn StoreBackend::cb_save(self, ns, circuit, state, failures, ...) -> Result[Unit, String] {
+  match self {
+    Mem(_) => Ok(())                  // ★★ 内存后端 no-op
+    Sql(s) => s.cb_save(...)
+  }
+}
+```
+
+**③ 消费（`src/engine/engine_circuit.mbt:17-45`）**
+```moonbit
+let row = self.store.cb_get(ns, circuit)
+let (state, failures, w, thr, rec, opened_at, last_fail_ts) = match row {
+  None => ("closed", 0, window_secs, threshold, recovery_secs, 0, 0)   // ★ 恒走这里
+  Some(r) => r
+}
+...
+let (new_state, new_failures, new_opened) = if state == "open" {
+  ("open", failures, opened_at)
+} else if state == "half_open" { ... }
+else {
+  // Closed：窗口内计数
+  let nf = if now_secs - last_fail_ts > w { 1 } else { failures + 1 }
+  if nf >= thr { ("open", nf, now_secs) } else { ("closed", nf, 0) }
+}
+```
+**在内存后端**：
+- 每次 `cb_get` 都返回 `None` ⇒ `state` 恒 `"closed"`、`failures` 恒 **0**、`last_fail_ts` 恒 **0**
+- ⇒ `nf = failures + 1` 恒 = **1**（因为 `now_secs - 0 > w` 通常成立，走 `1`；否则也是 `0+1`）
+- ⇒ **`nf >= thr`（默认 3）永远不成立** ⇒ **永远 `closed`，永不熔断**
+- 且 `cb_save` 是 no-op ⇒ 计数**连一次都不累积**
+
+## 为什么是真 bug（不是「内存后端不承诺持久化」）
+
+1. **熔断器的价值在于「同进程内的连续失败累计」**，不需要跨进程持久化。
+   「不持久化」与「完全不计数」是两件事 —— 前者是设计，后者是**功能缺失**。
+2. **`StoreBackend` 的其余方法在内存后端都是真实实现的**（`rsv_*` / `locks_*` / `store_*` / `tasks` 全是），
+   **只有 `cb_get` / `cb_save` 是 None/no-op** ⇒ 这不是统一的设计约定，是**两处遗漏**。
+3. **工具自述承诺了计数语义**：`circuit_fail` 的 description 写
+   「Closed 窗口内失败计数达阈值 → Open」——**内存后端从不计数**，与承诺矛盾。
+4. **`assistant_claim` 那类工具会用到它**（advisor 场景），一旦 server 起在内存后端（
+   `SqliteStore::open` 失败时的兜底路径，见 `server.mbt` 的 `make_engine()`），**熔断保护静默失效**。
+
+## 触发场景
+
+```
+server 以内存后端启动（SQLite 打开失败 ⇒ Mem 兜底）
+  → circuit_fail 调 10 次（threshold=3）
+  → 每次 cb_get 返回 None ⇒ state="closed", failures=0
+  → nf 恒为 1 ⇒ 1 >= 3 不成立 ⇒ 回执恒 allowed=true / state=closed
+  → circuit_status 也恒报 closed / failures 无累积
+⇒ **熔断器完全不存在，而所有回执都「看起来正常」。**
+```
+
+**这是「假绿」的典型形态**：工具没报错、回执字段齐全、但保护从未生效。
+
+## 建议修法（二选一，建议 A）
+
+**A（推荐）：内存后端真实实现（加一张表）**
+```moonbit
+// MemoryStore 加字段：circuit_breakers : Map[String, (String, Int32, Int32, Int32, Int32, Int32, Int32)]
+pub fn StoreBackend::cb_get(self, ns, circuit) -> (String, Int32, ...)? {
+  match self {
+    Mem(m) => m.cb_get(ns, circuit)      // ★ 真实读
+    Sql(s) => s.cb_get(ns, circuit)
+  }
+}
+pub fn StoreBackend::cb_save(self, ns, circuit, ...) -> Result[Unit, String] {
+  match self {
+    Mem(m) => { m.cb_save(...); Ok(()) }  // ★ 真实写
+    Sql(s) => s.cb_save(...)
+  }
+}
+```
+key 用 `ns + "/" + circuit`（与 SQLite 的 `PRIMARY KEY (ns, circuit)` 对齐）。
+
+**B（若确认有意为之）：在工具 description 里明说「内存后端不生效」**
+并把 `circuit_status` 回执加 `backend: "memory"` + `degraded: true`。
+**不推荐**：熔断器不计数等于没有，明说也不解决问题。
+
+## 建议同批补的锁
+
+`store_rsv_test.mbt` 已有双后端等价格（:993/:1100/:1170）。
+**必须补 `circuit_*` 的双后端等价锁**：同一组 (ns, circuit, 10 次 fail) 喂两后端，
+断言 `cb_get` 返回的 `failures` 与 `state` 相同（**内存后端在修前恒为 `state=closed`、无累积 ⇒ 该格会红**）。
+
+## 与 R17 `BUG-438` 的关系
+
+同族：**「内存后端与 SQLite 版行为不同」**。但 `BUG-438` 是**语义相反**（一个写一个不写），
+本条是**一端完全没有实现**（None/no-op）。**两者都是「两后端不等价」的标本，形态更极端。**
+
+## 附带：R18 面1/面4 的结论（同一批次查到的，不另开单）
+
+- **面1 `heal` vs `watchdog_tick`**：**共用真源，不是两面**。两者都调
+  `@ops.heal_stale_tasks_from_store`（`server.mbt:3185` / `ops_watchdog.mbt:282` / `ops_pipeline.mbt:506`）。
+  但 `ops_heal.mbt` **另有一条 `heal_stale_tasks_by_phi`（:180-）**，它把「stale 判定」
+  **抄了一份**（`last_seen` 查表 + `ts_s<0 ⇒ false` + `stale_by_task_clock` 兜底 + `elapsed > timeout_sec`），
+  与 `from_store` 的判据**逐条重复**。**当前两处行为等价**（我逐个比过），
+  **但这是「同一规则两份实现」⇒ 建议后续收成共享函数**（不报 bug：现网等价且 `phi_gate` 默认关闭）。
+- **面4 `saga_*`**：见报告 §缺口（本轮未扫完，时间用于前三个面）。
+
+## 关联
+
+`src/store/store.mbt:976-1016`（`cb_get`/`cb_save` 分发）·
+`src/store/store_sqlite.mbt:131/867`（`circuit_breakers` 表定义）·
+`src/engine/engine_circuit.mbt:17-45`（消费点）·
+`src/server/mcpcf_embed.mbt`（另有内嵌 `mcpcf.circuit`，**可能与引擎版是第二个实现**，未核）·
+R17 `BUG-438`（同族：两后端不等价）
+- reported_by: commander-gamma
+## BUG-440 [2026-10-27T04:55:16Z] [medium] OPEN
+- summary: [r18-plan] docs/plans/README.md:22 承诺的 check_plan_location 守卫不存在，4pools 提案缺全部强制字段却静默入库
+- detail: ## 缺陷
+
+`docs/plans/README.md:22` 承诺：
+
+> **头部强制字段**（**缺一即红**，`check_plan_location` 守卫）：
+> ```yaml
+> ---
+> status: 提案中   # 提案中 | 已定案 | 已驳回 | 已推迟 | 已完成
+> decided_by:      # 定案人（仅 human_steward）
+> decided_at:      # 定案时间戳
+> decision:        # approved | rejected | deferred
+> ---
+> ```
+
+**但这个守卫文件不存在。**
+
+```
+$ ls scripts/check_plan_location.py
+  → 不存在
+
+$ ls scripts/ | grep -i plan
+  check_plan_landing.py      ← docstring 自述「只读诊断，非门禁」；管的是「计划点名的落点是否已实现」
+  plan_gradient_verify.py    ← 难度梯度验证，与计划治理无关
+```
+
+## 已造成的实际后果
+
+`docs/plans/2026-10-26-4pools-rhop-roadmap-proposal.md` **头部完全不合规**——它的第一个 `---` 块是
+**AIGC 水印元数据**，被误当成 YAML frontmatter：
+
+```yaml
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: 9f2a11add43fbf12a546606fb2b962ab_f991019ad13511f18460525400393706
+    ReservedCode1: pC4ZdXEB8Gbp9/szeM+c3IuLw0nsYhDYrF3drfnn6LiNR/SwlReOdZODuiqMYjoJzz8VZxPeKUn9pBOwVW3wxaqR/...
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: 9f2a11add43fbf12a546606fb2b962ab_f991019ad13511f18460525400393706
+    ReservedCode2: ...
+---
+```
+
+⇒ **`status` / `decided_by` / `decided_at` / `decision` 四个强制字段全部缺失**，
+而**没有任何判据报红**，提案静默入库。
+
+## 为什么是真 bug（不是「文档写多了」）
+
+`docs/plans/README.md` 的**硬规则 2** 依赖这些字段：
+> 「**未定案（`status != 已定案`）禁止发布任务**（`plan_publish` 门禁）」
+
+⇒ 若 `status` 字段本身可以缺失，`plan_publish` 门禁读什么？
+- 读不到 `status` ⇒ 要么当成「已定案」放行（**越权**），要么当成「提案中」拒绝（但没有任何规则说明）
+- **两种都不可接受** ⇒ 缺字段必须**在入库时**就红
+
+**当前状态**：4 份提案里 **1 份（25%）缺 frontmatter**，**0 份被任何判据拦下**。
+
+## 建议修法（二选一，建议 A）
+
+**A（推荐）：补 `scripts/check_plan_location.py`（README 已承诺的名字）**
+
+判据内容（窄口径，只判 header 形状）：
+- 扫 `docs/plans/*-proposal.md`
+- 每个文件必须以**第一个** `---` 开头（行 1 必须是 `---`）
+- 该块内必须有 `status` / `decided_by` / `decided_at` / `decision` 四个键
+- `status` ∈ 闭集 `{提案中, 已定案, 已驳回, 已推迟, 已完成}`
+- `status == 已定案` ⇒ `decided_by` 非空 且 == `human_steward`
+- `status == 已定案` ⇒ 必须存在 `decisions/<对应记录>.md`
+- 空扫描面 ⇒ `rc=2` 自拒（不因没找到文件报绿）
+- rc 契约：`0` 全部合规 / `1` 有违例（逐条点名）/ `2` 判据无法自证
+
+**⚠️ 注意**：AIGC 水印块是**合法存在**的（文件确实有 AIGC 元数据），
+判据不能把它当违规 —— 只需**要求「在那之前还有一段真正的 frontmatter」**，
+或**要求 frontmatter 必须是文件第 1 行起**（当前 AIGC 块在第 1 行 ⇒ 违例）。
+
+**B（若确认不打算守）：改 README，删掉「缺一即红，`check_plan_location` 守卫」这句**
+⇒ **承认计划 header 是自律**。但这与硬规则 2 的 `plan_publish` 门禁矛盾。
+
+**⇒ 建议 A；若选 B，须同时改硬规则 2（否则门禁读不到字段）。**
+
+## 与「两面」普查的关系
+
+本单的任务 2（未实现计划检查）偶然发现的。
+**它其实是「两面」的第四种形态**：**文档承诺了一个不存在的判据** ——
+- 形态 ①②③（R12）：两个**实现**面
+- 形态 ④⑤（R12）：消费面的前提 / 胶水的语义
+- **形态 ⑥（本条）**：**文档承诺的判据从未存在** ⇒ 比「注释靠人守」更彻底：
+  **连守的东西都没有**
+
+同族先例：`BUG-403`（`pubkey_fp` 注释称「另行派生」但全仓零派生 = 死承诺）。
+**那条是代码注释的死承诺，本条是治理文档的死承诺。**
+
+## 关联
+
+`docs/plans/README.md:22`（承诺）· `docs/plans/2026-10-26-4pools-rhop-roadmap-proposal.md`（违例样本）·
+`docs/plans/README.md:35`（硬规则 2 `plan_publish` 门禁，依赖 `status` 字段）·
+`scripts/check_plan_landing.py`（**不是**这个守卫，别混）· BUG-403（同族：死承诺）
+- reported_by: commander-gamma
