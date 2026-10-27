@@ -56,18 +56,88 @@ let audit : @ops.AuditLog = @ops.AuditLog::new()
 let mstore : @store.MultiStore = @store.MultiStore::new()
 
 ///|
-/// 多租户引擎路由：按 ns 返回对应持久化引擎（M5 库级物理隔离闭环）。
-/// - "" / "default" → 模块级默认引擎（默认库 fist-mbt.db，完全向后兼容）
-/// - 其他合法 ns → mstore.get(ns) 命中的独立库引擎（{data_dir}/{ns}.db 库级隔离）；
-///   该 ns 尚未 open 时回退默认引擎（与 MultiStore 惰性语义一致，调用方应先用 store_open）
-fn engine_for_ns(ns : String) -> @engine.FistEngine {
+/// BUG-433：ns 非法的**拒绝文案**（纯判定，无 IO；判据真源 = `@store.MultiStore::safe_ns`，
+/// 本函数**不另立一套字符集规则**，只把 None 翻成可行动的中文）。
+///
+/// 非法返回 Some(文案)；合法（含 "" / "default"）返回 None。
+/// 为什么这里必须能"拒绝"而不是含糊：`ns` 既是任务标签又是**物理库路由**，非法 ns
+/// 若静默回落主库，`delete`/`archive`/`execute`/`claim` 这些写工具就会打到**主库任务**上
+/// ——同 id 存在即误删，不可逆（BUG-433 的病灶）。
+fn ns_reject_reason(ns : String) -> String? {
   if ns == "" || ns == "default" {
-    engine
-  } else {
-    match mstore.get(ns) {
-      Some(s) => @engine.FistEngine::new(store=@store.StoreBackend::sqlite(s))
-      None => engine
-    }
+    return None
+  }
+  match @store.MultiStore::safe_ns(ns) {
+    Some(_) => None
+    None =>
+      Some(
+        "ns 非法：'" +
+        ns +
+        "'。命名空间只允许 [0-9A-Za-z_-]（点 / 空格 / 中文 / 斜杠 / 冒号等一律非法）。" +
+        "本项目**不会**把非法 ns 静默回落主库执行——那会把本次操作打到主库任务上（delete/archive 不可逆）。" +
+        "请改用合法 ns（把上面的非法字符换成 '-' 或 '_'），或省略 namespace 参数显式走 default；" +
+        "要多租户隔离请先 store_open(ns=<合法名>) 打开目标库。",
+      )
+  }
+}
+
+///|
+/// BUG-433：合法但**库打不开**时的拒绝文案（与「非法 ns」分开，调用方才知道该改哪个参数）。
+fn ns_unavailable_reason(ns : String) -> String {
+  "ns 库打不开：'" +
+  ns +
+  "'（名称合法，但 SqliteStore::open 失败：检查 data_dir 是否可写、jdbc/node:sqlite 是否可用）。" +
+  "本项目**不会**静默回落主库执行——本次未做任何读写。"
+}
+
+///|
+/// 多租户引擎路由（M5 库级物理隔离闭环；BUG-433 收口为 **Result**：
+/// **打不开就 Err，绝不静默回落主库**）。
+///
+/// - `""` / `"default"` → `Ok(模块级默认引擎)`（默认库，完全向后兼容）
+/// - 其他**合法** ns → `Ok(mstore.get(ns) 的独立库引擎)`（`{data_dir}/{ns}.db` 库级隔离）。
+///   ⚠ 未经 `store_open` 的**合法** ns 走 MultiStore 的**惰性打开**：建的是**它自己的**
+///   空库，**不是**回落主库（实测自证见 `ns_fallback_wbtest.mbt` 的 lazy 一格）。
+/// - **非法** ns（`safe_ns` 拒绝：点/空格/中文/斜杠/冒号…）→ `Err`
+/// - 合法但库打不开（data_dir 歪了 / sqlite 不可用）→ `Err`
+///
+/// 返回 Result 是这次修复的**结构面**：过去 `None => engine` 让"请求的 ns 不存在/非法"
+/// 与"就用主库"在类型上不可分，谁也看不见自己在动主库。现在调用点必须先过这道门，
+/// 想静默回落得先改签名——不会再有一条"忘了检查"的路。
+fn engine_for_ns(
+  ns : String,
+) -> Result[@engine.FistEngine, @mcp_types.MCPError] {
+  engine_route_in(engine, fn(one) { mstore.get(one) }, ns)
+}
+
+///|
+/// BUG-433：`engine_for_ns` 的**可注入形态**（路由判据的单一真源；薄壳只负责接真 store）。
+///
+/// 依赖注入不是为了好看：`getter` 让白盒锁能摆出「**合法 ns 但库打不开**」这一格
+/// （真 `mstore` 的惰性语义下这一格很难在测试里自然产生），并用**调用计数**自证
+/// 「非法 ns 连库都没碰」——不注入就只能断言文案，等于锁不住机制。
+///
+/// 三条出口，**没有一条是"静默换库"**：
+/// ① 主库（""/"default"）→ Ok(main_eng)
+/// ② 非法 ns → Err，**getter 一次都不调**（连库句柄都不碰）
+/// ③ 合法 ns → getter；拿到库 → Ok(该库引擎)，拿不到 → Err（不是 Ok(main_eng)！）
+fn engine_route_in(
+  main_eng : @engine.FistEngine,
+  getter : (String) -> @store.SqliteStore?,
+  ns : String,
+) -> Result[@engine.FistEngine, @mcp_types.MCPError] {
+  match ns_reject_reason(ns) {
+    Some(msg) => Err(@mcp_types.ToolError(msg))
+    None =>
+      if ns == "" || ns == "default" {
+        Ok(main_eng)
+      } else {
+        match getter(ns) {
+          Some(s) =>
+            Ok(@engine.FistEngine::new(store=@store.StoreBackend::sqlite(s)))
+          None => Err(@mcp_types.ToolError(ns_unavailable_reason(ns)))
+        }
+      }
   }
 }
 
@@ -582,7 +652,11 @@ fn iso_minus_secs(iso : String, secs : Int32) -> String {
 /// 注释接入「公钥钉身份」，会静默绑定到空串（等于没有键位绑定）。接线前
 /// `pubkey_fp` 必须视为占位，不得在安全断言里依赖。
 fn agent_fp(raw : String) -> String {
-  @omega.fnv1a64("agent_id:" + raw)
+  // BUG-436：与 `@engine.agent_fp_of` 收敛到**同一实现**。
+  // 此前 server 与 engine 各写一份 `@omega.fnv1a64("agent_id:" + raw)`——
+  // 一旦任一侧改了前缀/算法，写门判定的身份与 grant 写入的行就会静默分叉，
+  // 而症状恰好是「已落库但仍拒」这种最难查的形状。现在只有一份。
+  @engine.agent_fp_of(raw)
 }
 
 ///|
@@ -645,19 +719,54 @@ fn agent_touch_first_seen(
 /// 写面 ACL 硬门：`agents_acl_check(write=true)` 失败即拒绝（can_write=0 → Err）。
 /// 内存后端无持久化 ACL 面，不设门（放行），保证 server/wbtest 既有路径零回归；
 /// **sqlite 后端**（生产面）才真正执行 fail-closed。返回 Ok 才能继续写操作。
+///
+/// **BUG-436**：入参从「原始字符串」改成 `AclIdentity`——判定身份由
+/// `acl_claim_identity` / `acl_execute_identity` 统一解析，拒绝文案也由
+/// `acl_gate_fail_message` 统一生成（不复用 store 那层只有指纹的原文案，
+/// 因为指纹不可反解、把它当 grant 入参会再哈希一次）。
 fn agent_write_gate(
   eng : @engine.FistEngine,
-  raw_agent_id : String,
+  id : AclIdentity,
   ns : String,
 ) -> Result[Unit, String] {
   if eng.heartbeat_backend() != "sqlite" {
     return Ok(())
   }
-  eng.agents_acl_check(
-    agent_id=agent_fp(raw_agent_id),
-    ns~,
-    write=true,
-    current_pid=current_pid_token(),
+  match
+    eng.agents_acl_check(
+      agent_id=agent_fp(id.raw),
+      ns~,
+      write=true,
+      current_pid=current_pid_token(),
+    ) {
+    Ok(_) => Ok(())
+    Err(e) => Err(acl_gate_fail_message(e, id, ns))
+  }
+}
+
+///|
+/// `execute` 的判定身份**接线层**（BUG-436）：把「调用方入参 / 任务库里的归属 /
+/// 工具缺省值」三者接成一条确定的身份解析。
+///
+/// 单独抽出来不是为了好看：`agent_write_gate` 与 `acl_execute_identity` 都是纯件，
+/// 而**接线本身**才是这次的病灶（纯件没错、接错了参数）。白盒锁要能测到"接线后
+/// 的身份"，就必须有一个可调用的接线体——否则只能测纯件，改回旧接线照样绿
+/// （判例-29「机制格 ≠ 实现路径格」）。
+fn execute_write_identity(
+  eng : @engine.FistEngine,
+  args : Json,
+  task_id : String,
+  executor : String,
+) -> AclIdentity {
+  let task_assignee = match eng.get_task(task_id) {
+    Some(t) => t.get_assignee().unwrap_or("")
+    None => ""
+  }
+  acl_execute_identity(
+    get_str(args, "agent"),
+    executor,
+    acl_arg_given(args, "executor"),
+    task_assignee,
   )
 }
 
@@ -1669,6 +1778,10 @@ pub async fn run_server() -> Unit {
       let project_dir = get_str(args, "project_dir")
       let description = get_str(args, "description")
       let ns = get_str(args, "namespace", default="default")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let created_by = get_str(args, "created_by", default="human_steward")
       let level = get_int(args, "level", default=6)
       let ts = now_default()
@@ -1679,7 +1792,7 @@ pub async fn run_server() -> Unit {
       if g is Err(ge) {
         return Err(@mcp_types.ToolError(ge))
       }
-      let r = engine_for_ns(ns).publish(
+      let r = eng.publish(
         project_dir~,
         description~,
         created_by~,
@@ -1693,7 +1806,7 @@ pub async fn run_server() -> Unit {
           // agent_write_gate 的 ns ACL —— 同 ns 内「发布成功、认领被拒」是合法组合，
           // 但调用方在此之前零预警（无人值守流水线会先发布、再撞墙，排查成本高）。
           // 这里在发布成功时**当场**把「该 ns 有没有人能认领」摆出来。
-          let writable = engine_for_ns(ns).agents_acl_count_writable(ns~)
+          let writable = eng.agents_acl_count_writable(ns~)
           let claim_hint = if writable > 0 {
             ""
           } else {
@@ -1736,10 +1849,14 @@ pub async fn run_server() -> Unit {
       let project_dir = get_str(args, "project_dir")
       let description = get_str(args, "description")
       let ns = get_str(args, "namespace")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let created_by = get_str(args, "created_by", default="selfdrive")
       let ts = now_default()
       match
-        engine_for_ns(ns).publish_parallel(
+        eng.publish_parallel(
           ns~,
           description~,
           created_by~,
@@ -1782,7 +1899,10 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ns = get_str(args, "namespace", default="default")
-      let eng = engine_for_ns(ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let split_n = get_int(args, "split_n", default=3)
       if split_n < 1 {
         return Err(
@@ -1819,11 +1939,14 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "claim",
-    "认领任务（待领取 -> 已领取；随后 execute 进入执行中）。参数：task_id、assignee 认领人、inject 可选逗号分隔档案资产关键词(命中则把 code/note 追加到返回 injected_assets)。",
+    "认领任务（待领取 -> 已领取；随后 execute 进入执行中）。参数：task_id、assignee 认领人、inject 可选逗号分隔档案资产关键词(命中则把 code/note 追加到返回 injected_assets)、agent 可选（**ACL 判定身份**的显式声明，缺省即 assignee；两者不同时只有 agent 需要被授权）。**BUG-436**：claim 与 execute 现在共用同一条身份优先级链（显式 agent > assignee / executor > 任务 assignee），因此「claim 用 A、execute 却按 B 判」不再发生。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
         "assignee": string_prop("认领人（必填）"),
+        "agent": string_prop(
+          "可选：ACL 判定身份的显式声明（缺省=assignee）。改了它就要对**它**授权",
+        ),
         "inject": string_prop(
           "可选：逗号分隔的档案库资产 keywords，按 goal 子串检索命中资产并追加到返回",
         ),
@@ -1839,14 +1962,25 @@ pub async fn run_server() -> Unit {
       let ts = now_default()
       let inject = get_str(args, "inject")
       let ns = get_str(args, "namespace", default="default")
-      let eng = engine_for_ns(ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       // T0r5：首次访问自动注册 agent + 默认 ACL（can_write=false 落地）
+      // BUG-436：判定身份走单一真源（显式 agent > assignee），注册与判门用**同一个** raw。
+      let who = acl_claim_identity(get_str(args, "agent"), assignee)
       agent_touch_first_seen(
-        eng, assignee, ns, "claim", "Executor", "工兵", ts,
+        eng,
+        who.raw,
+        ns,
+        "claim",
+        "Executor",
+        "工兵",
+        ts,
       )
       // T0r5：写面 ACL 硬门（sqlite 后端 fail-closed）
-      match agent_write_gate(eng, assignee, ns) {
-        Err(e) => return Err(@mcp_types.ToolError("acl: " + e))
+      match agent_write_gate(eng, who, ns) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
         Ok(_) => ()
       }
       match eng.claim(task_id~, assignee~, now=ts) {
@@ -1867,12 +2001,17 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "execute",
-    "记录执行交付物（向后兼容）。合法前态：拆分中/已领取/**执行中**→执行中（BUG-2 收口：执行中重复 execute = 追加/覆盖交付物，因此 reject→retry（→执行中）后可以直接原地更新交付物，无需 pause→resume 绕行；被拒时错误文案会给出当前状态的可用出路）。必填：task_id、deliverable；可选：executor(默认manual)、model、tokens_in、tokens_out、cost、duration_ms、rate_limited、failure_reason。",
+    "记录执行交付物（向后兼容）。合法前态：拆分中/已领取/**执行中**→执行中（BUG-2 收口：执行中重复 execute = 追加/覆盖交付物，因此 reject→retry（→执行中）后可以直接原地更新交付物，无需 pause→resume 绕行；被拒时错误文案会给出当前状态的可用出路）。必填：task_id、deliverable；可选：executor(默认manual，**执行元数据**)、agent(可选，**ACL 判定身份**)、model、tokens_in、tokens_out、cost、duration_ms、rate_limited、failure_reason。**BUG-436**：ACL 判定身份不再取 `executor` 的缺省值 `manual`（那会把同一条链判成两个身份），而是 显式 agent > 显式且非 manual 的 executor > **任务当前 assignee**（=claim 用的身份）；要授权就授权那个身份。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
         "deliverable": string_prop("交付物描述（必填）"),
-        "executor": string_prop("执行器名称(默认 manual)"),
+        "executor": string_prop(
+          "执行器名称(默认 manual；**执行元数据**，仅当显式且非 manual 时才兼作 ACL 判定身份)",
+        ),
+        "agent": string_prop(
+          "可选：ACL 判定身份的显式声明（缺省=任务 assignee，即 claim 用的身份）",
+        ),
         "model": string_prop("模型名称(可选)"),
         "tokens_in": int_prop("输入 token 数(可选默认0)"),
         "tokens_out": int_prop("输出 token 数(可选默认0)"),
@@ -1891,7 +2030,10 @@ pub async fn run_server() -> Unit {
       let deliverable = get_str(args, "deliverable")
       let ts = now_default()
       let ns = get_str(args, "namespace", default="default")
-      let eng = engine_for_ns(ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       // 提取可选执行元数据（向后兼容：无元数据时行为同旧版 execute）
       let executor = get_str(args, "executor", default="manual")
       let model = get_str(args, "model", default="")
@@ -1902,11 +2044,21 @@ pub async fn run_server() -> Unit {
       let rate_limited = get_bool(args, "rate_limited", default=false)
       let failure_reason = get_str(args, "failure_reason", default="")
       // T0r5：首次访问自动注册 + 默认 ACL + 写面硬门
+      // BUG-436：判定身份由 `execute_write_identity` 统一解析（显式 agent > 显式且非
+      // manual 的 executor > **任务 assignee**）。旧实现恒取 executor 的缺省值
+      // "manual" ⇒ 同一条链两个身份，grant 永远打不中。
+      let who = execute_write_identity(eng, args, task_id, executor)
       agent_touch_first_seen(
-        eng, executor, ns, "execute", "Executor", "工兵", ts,
+        eng,
+        who.raw,
+        ns,
+        "execute",
+        "Executor",
+        "工兵",
+        ts,
       )
-      match agent_write_gate(eng, executor, ns) {
-        Err(e) => return Err(@mcp_types.ToolError("acl: " + e))
+      match agent_write_gate(eng, who, ns) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
         Ok(_) => ()
       }
       // 调用 execute_with_meta：同时写入 executions 表 + 流转任务状态
@@ -1943,7 +2095,11 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
-      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      let eng = match
+        engine_for_ns(get_str(args, "namespace", default="default")) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       to_result(eng.submit(task_id~, now=ts))
     },
   )
@@ -1979,7 +2135,10 @@ pub async fn run_server() -> Unit {
       // 旧实现恒用模块级 engine（只查根库 fist-mbt.db），ns 任务 claim/execute/submit
       // 可见、get/run_check/verify 却查不到 ⇒ ns 验收门永远无法满足。
       let ns = get_str(args, "namespace", default="default")
-      let eng = engine_for_ns(ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let args_arr = get_array(args, "args").map(fn(j) {
         match j {
           String(s) => s
@@ -2082,7 +2241,10 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ns = get_str(args, "namespace", default="default")
-      let eng = engine_for_ns(ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let verifier = get_str(args, "verifier")
       let ts = now_default()
       let docs_check = get_bool(args, "docs_check", default=false)
@@ -2107,7 +2269,10 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ns = get_str(args, "namespace", default="default")
-      let eng = engine_for_ns(ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let reason = get_str(args, "reason", default="")
       let by = get_str(args, "by", default="human_steward")
       let ts = now_default()
@@ -2130,7 +2295,10 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ns = get_str(args, "namespace", default="default")
-      let eng = engine_for_ns(ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let ts = now_default()
       to_result(eng.retry_task(task_id~, now=ts))
     },
@@ -2151,7 +2319,10 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ns = get_str(args, "namespace", default="default")
-      let eng = engine_for_ns(ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let ts = now_default()
       match eng.reopen_task(task_id, ts) {
         Ok(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
@@ -2175,7 +2346,10 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ns = get_str(args, "namespace", default="default")
-      let eng = engine_for_ns(ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let ts = now_default()
       to_result(eng.pause_task(task_id~, now=ts))
     },
@@ -2196,7 +2370,10 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ns = get_str(args, "namespace", default="default")
-      let eng = engine_for_ns(ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let ts = now_default()
       to_result(eng.resume_task(task_id~, now=ts))
     },
@@ -2221,7 +2398,10 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ns = get_str(args, "namespace", default="default")
-      let eng = engine_for_ns(ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let by = get_str(args, "by", default="human_steward")
       let force = get_bool(args, "force")
       let ts = now_default()
@@ -2262,7 +2442,10 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let status_str = get_str(args, "status")
       let ns_str = get_str(args, "namespace", default="")
-      let eng = if ns_str == "" { engine } else { engine_for_ns(ns_str) }
+      let eng = match engine_for_ns(ns_str) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let tasks = if status_str == "" {
         eng.list_all()
       } else {
@@ -2299,7 +2482,10 @@ pub async fn run_server() -> Unit {
       let task_id = get_str(args, "task_id")
       let ns = get_str(args, "namespace", default="default")
       let resolve_main = get_bool(args, "resolve_from_main", default=false)
-      let eng = engine_for_ns(ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       match eng.get_task(task_id) {
         Some(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
         None =>
@@ -2348,7 +2534,10 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ns = get_str(args, "namespace", default="default")
-      let eng = engine_for_ns(ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       to_unit_result(eng.delete_task(task_id))
     },
   )
@@ -2407,7 +2596,11 @@ pub async fn run_server() -> Unit {
       let by = get_str(args, "by", default="leader")
       let spec_raw = get_str(args, "spec")
       let ts = now_default()
-      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      let eng = match
+        engine_for_ns(get_str(args, "namespace", default="default")) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let spec : Json? = if spec_raw == "" {
         None
       } else {
@@ -2626,7 +2819,11 @@ pub async fn run_server() -> Unit {
       let content = get_str(args, "content")
       let max_rounds = get_int(args, "max_rounds", default=3)
       let ts = now_default()
-      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      let eng = match
+        engine_for_ns(get_str(args, "namespace", default="default")) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       match
         eng.omega_spec_create(task_id~, author~, content~, now=ts, max_rounds~) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
@@ -2658,7 +2855,11 @@ pub async fn run_server() -> Unit {
       let reason = get_str(args, "reason")
       let max_rounds = get_int(args, "max_rounds", default=3)
       let ts = now_default()
-      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      let eng = match
+        engine_for_ns(get_str(args, "namespace", default="default")) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       match
         eng.omega_spec_review(
           task_id~,
@@ -2718,7 +2919,11 @@ pub async fn run_server() -> Unit {
       let reason = get_str(args, "reason")
       let max_rounds = get_int(args, "max_rounds", default=3)
       let ts = now_default()
-      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      let eng = match
+        engine_for_ns(get_str(args, "namespace", default="default")) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       match
         eng.omega_result_verify(
           task_id~,
@@ -2768,7 +2973,11 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
-      let eng = engine_for_ns(get_str(args, "namespace", default="default"))
+      let eng = match
+        engine_for_ns(get_str(args, "namespace", default="default")) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       match eng.omega_status(task_id) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -4552,6 +4761,10 @@ pub async fn run_server() -> Unit {
       let description = get_str(args, "description")
       let depends_on_raw = get_str(args, "depends_on", default="[]")
       let ns = get_str(args, "namespace", default="default")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let created_by = get_str(args, "created_by", default="human_steward")
       let level = get_int(args, "level", default=6)
       let ts = now_default()
@@ -4565,7 +4778,7 @@ pub async fn run_server() -> Unit {
         _ => []
       }
       let id = match
-        engine_for_ns(ns).publish_with_deps(
+        eng.publish_with_deps(
           project_dir~,
           description~,
           depends_on~,
@@ -4603,8 +4816,12 @@ pub async fn run_server() -> Unit {
       let task_id = get_str(args, "task_id")
       let dep_id = get_str(args, "dep_id")
       let ns = get_str(args, "namespace", default="default")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let ts = now_default()
-      to_result(engine_for_ns(ns).dag_depend(task_id~, dep_id~, now=ts))
+      to_result(eng.dag_depend(task_id~, dep_id~, now=ts))
     },
   )
   s1 = instrumented_tool(
@@ -4617,7 +4834,11 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
-      let path = engine_for_ns(ns).critical_path()
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      let path = eng.critical_path()
       Ok(
         @mcp.ToolResult::text(
           Json::object({
@@ -4638,7 +4859,11 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
-      let n = engine_for_ns(ns).parallelism()
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      let n = eng.parallelism()
       Ok(
         @mcp.ToolResult::text(
           Json::object({ "parallelism": Json::number(n.to_double()) }).stringify(),
@@ -4656,11 +4881,11 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
-      Ok(
-        @mcp.ToolResult::text(
-          engine_for_ns(ns).dag_slack_analysis().stringify(),
-        ),
-      )
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      Ok(@mcp.ToolResult::text(eng.dag_slack_analysis().stringify()))
     },
   )
   s1 = instrumented_tool(
@@ -4673,7 +4898,11 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
-      Ok(@mcp.ToolResult::text(engine_for_ns(ns).dag_schedule().stringify()))
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      Ok(@mcp.ToolResult::text(eng.dag_schedule().stringify()))
     },
   )
   s1 = instrumented_tool(
@@ -4686,7 +4915,11 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
-      Ok(@mcp.ToolResult::text(engine_for_ns(ns).dag_cost_route().stringify()))
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      Ok(@mcp.ToolResult::text(eng.dag_cost_route().stringify()))
     },
   )
   s1 = instrumented_tool(
@@ -4707,15 +4940,17 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let root = get_str(args, "root_task_id", default="")
       let deadline = get_int(args, "deadline", default=0)
       let samples = get_int(args, "samples", default=1000)
       let seed = get_int(args, "seed", default=42)
       Ok(
         @mcp.ToolResult::text(
-          engine_for_ns(ns)
-          .dag_mc(root_task_id=root, deadline~, samples~, seed~)
-          .stringify(),
+          eng.dag_mc(root_task_id=root, deadline~, samples~, seed~).stringify(),
         ),
       )
     },
@@ -4736,12 +4971,14 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let root = get_str(args, "root_task_id")
       let feedback = get_array(args, "feedback")
       Ok(
-        @mcp.ToolResult::text(
-          engine_for_ns(ns).plan_revise(root, feedback~, ns~).stringify(),
-        ),
+        @mcp.ToolResult::text(eng.plan_revise(root, feedback~, ns~).stringify()),
       )
     },
   )
@@ -4761,13 +4998,15 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let root = get_str(args, "root_task_id")
       let subtask = get_str(args, "subtask_id", default="")
       Ok(
         @mcp.ToolResult::text(
-          engine_for_ns(ns)
-          .goal_drift_check(root, subtask_id=subtask, ns~)
-          .stringify(),
+          eng.goal_drift_check(root, subtask_id=subtask, ns~).stringify(),
         ),
       )
     },
@@ -4779,7 +5018,11 @@ pub async fn run_server() -> Unit {
     schema({ "namespace": string_prop("命名空间(默认 default)") }, []),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
-      let ascii = engine_for_ns(ns).dag_ascii(ns~)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      let ascii = eng.dag_ascii(ns~)
       Ok(
         @mcp.ToolResult::text(
           Json::object({
@@ -4797,7 +5040,11 @@ pub async fn run_server() -> Unit {
     schema({ "namespace": string_prop("命名空间(默认全部)") }, []),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
-      let board = render_board_ascii(engine_for_ns(ns).list_all(), ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      let board = render_board_ascii(eng.list_all(), ns)
       Ok(@mcp.ToolResult::text(board.stringify()))
     },
   )
@@ -4808,7 +5055,11 @@ pub async fn run_server() -> Unit {
     schema({ "namespace": string_prop("命名空间(默认全部)") }, []),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
-      let flow = render_state_flow_ascii(engine_for_ns(ns).list_all(), ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      let flow = render_state_flow_ascii(eng.list_all(), ns)
       Ok(@mcp.ToolResult::text(flow.stringify()))
     },
   )
@@ -4822,10 +5073,14 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let tasks = if ns == "" {
-        engine_for_ns(ns).list_all()
+        eng.list_all()
       } else {
-        engine_for_ns(ns).list_all().filter(fn(t) { t.ns == ns })
+        eng.list_all().filter(fn(t) { t.ns == ns })
       }
       let j = render_status_summary(tasks, mstore.ns_list(), project_version)
       Ok(@mcp.ToolResult::text(j.stringify()))
@@ -4841,10 +5096,14 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let tasks = if ns == "" {
-        engine_for_ns(ns).list_all()
+        eng.list_all()
       } else {
-        engine_for_ns(ns).list_all().filter(fn(t) { t.ns == ns })
+        eng.list_all().filter(fn(t) { t.ns == ns })
       }
       let j = render_project_health(tasks, project_version)
       Ok(@mcp.ToolResult::text(j.stringify()))
@@ -4860,10 +5119,14 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let tasks = if ns == "" {
-        engine_for_ns(ns).list_all()
+        eng.list_all()
       } else {
-        engine_for_ns(ns).list_all().filter(fn(t) { t.ns == ns })
+        eng.list_all().filter(fn(t) { t.ns == ns })
       }
       let j = render_health_check(tasks, if ns == "" { "all" } else { ns })
       Ok(@mcp.ToolResult::text(j.stringify()))
@@ -4943,14 +5206,16 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let circuit = get_str(args, "circuit")
       let now = now_default()
       let secs = @ops.iso_to_secs(now)
       Ok(
         @mcp.ToolResult::text(
-          engine_for_ns(ns)
-          .circuit_succeed(ns~, circuit~, now_secs=secs)
-          .stringify(),
+          eng.circuit_succeed(ns~, circuit~, now_secs=secs).stringify(),
         ),
       )
     },
@@ -5007,10 +5272,14 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
       let skill = get_str(args, "skill")
-      let j = engine_for_ns(ns).triage(ns, agent, want, skill~)
+      let j = eng.triage(ns, agent, want, skill~)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
@@ -5030,10 +5299,14 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
       let ts = now_default()
-      let j = engine_for_ns(ns).pick_next(ns, agent, want, ts)
+      let j = eng.pick_next(ns, agent, want, ts)
       Ok(@mcp.ToolResult::text(j.stringify()))
     },
   )
@@ -5158,12 +5431,16 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let agent = get_str(args, "agent", default="self")
       let want = get_str(args, "want")
       let ts = now_default()
       sync_db_executors()
       // 1. 取顶部可领取任务
-      let tr = engine_for_ns(ns).triage(ns, agent, want)
+      let tr = eng.triage(ns, agent, want)
       let sug = match jget(tr, "suggestion") {
         Some(Json::Object(o)) => o
         _ => Map([])
@@ -5188,7 +5465,7 @@ pub async fn run_server() -> Unit {
         )
       }
       // 2. 能力决定派给谁：显式 want 优先，否则从任务描述自动抽取所需能力（R33 免手传）
-      let desc = match engine_for_ns(ns).get_task(task_id) {
+      let desc = match eng.get_task(task_id) {
         Some(t) => t.get_description()
         None => ""
       }
@@ -5207,7 +5484,7 @@ pub async fn run_server() -> Unit {
         agent
       }
       // 3. 认领（0 状态迁移：待领取→已领取）
-      match engine_for_ns(ns).claim(task_id~, assignee~, now=ts) {
+      match eng.claim(task_id~, assignee~, now=ts) {
         Err(e) =>
           Ok(
             @mcp.ToolResult::text(
@@ -5580,7 +5857,13 @@ pub async fn run_server() -> Unit {
       let ttl = get_int(args, "heartbeat_ttl_sec", default=300)
       let now = now_default()
       let cutoff = iso_minus_secs(now, ttl)
-      let prev = engine.assistant_active_primary()
+      // BUG-431：用 `assistant_last_primary`（含 `dead`、排除 `resigned`）而不是
+      // `assistant_active_primary`（只认 active）。
+      // 否则 `assistant_sweep` 一旦把陈旧主助理标 `dead`，这里就拿到 `None` ⇒
+      // `assistant_claim_action` 判 `elected` 且 `prev_agent=""` ⇒ 下方留痕分支
+      // （只在 `taken_over` 时记 `force_takeover`）**不记违例** ⇒
+      // 同一个业务事件因「sweep 是否恰好先跑过」产出两种账本结果。
+      let prev = engine.assistant_last_primary()
       let (ok, action, prev_agent) = @store.assistant_claim_action(
         prev, agent, now, cutoff,
       )
@@ -5757,7 +6040,11 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ns = get_str(args, "namespace", default="default")
-      let ok = engine_for_ns(ns).deps_satisfied(task_id)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      let ok = eng.deps_satisfied(task_id)
       Ok(
         @mcp.ToolResult::text(
           Json::object({
@@ -5775,7 +6062,11 @@ pub async fn run_server() -> Unit {
     schema({ "namespace": string_prop("命名空间(默认 default)") }, []),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
-      let ready = engine_for_ns(ns).ready_tasks(ns_filter=ns)
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      let ready = eng.ready_tasks(ns_filter=ns)
       Ok(
         @mcp.ToolResult::text(
           Json::array(ready.map(fn(t) { t.to_json() })).stringify(),
@@ -5797,6 +6088,10 @@ pub async fn run_server() -> Unit {
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let raw = get_str(args, "task_ids")
       let ns = get_str(args, "namespace", default="default")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let task_ids : Array[String] = try {
         match @json.parse(raw) {
           Json::Array(a) =>
@@ -5806,7 +6101,7 @@ pub async fn run_server() -> Unit {
       } catch {
         _ => []
       }
-      let sorted = engine_for_ns(ns).topo_sort(task_ids)
+      let sorted = eng.topo_sort(task_ids)
       Ok(
         @mcp.ToolResult::text(
           Json::object({
@@ -5944,9 +6239,13 @@ pub async fn run_server() -> Unit {
       let budget = jnum(args, "budget").to_int()
       let root = get_str(args, "task_id")
       let ns = get_str(args, "namespace")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       Ok(
         @mcp.ToolResult::text(
-          engine_for_ns(ns).budget_split_by_dag(budget, root~, ns~).stringify(),
+          eng.budget_split_by_dag(budget, root~, ns~).stringify(),
         ),
       )
     },
@@ -6091,13 +6390,17 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let root_task_id = get_str(args, "root_task_id")
       let step = get_str(args, "step")
       let task_id = get_str(args, "task_id", default="")
       let compensation = get_str(args, "compensation")
       let now = now_default()
       match
-        engine_for_ns(ns).saga_register(
+        eng.saga_register(
           ns~,
           root_task_id~,
           step~,
@@ -6126,9 +6429,13 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let root_task_id = get_str(args, "root_task_id")
       let mark = get_bool(args, "mark", default=true)
-      match engine_for_ns(ns).saga_rollback(ns~, root_task_id, mark~) {
+      match eng.saga_rollback(ns~, root_task_id, mark~) {
         Err(m) => Err(@mcp_types.ToolError(m))
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
       }
@@ -6151,11 +6458,14 @@ pub async fn run_server() -> Unit {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace", default="default")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let root_task_id = get_str(args, "root_task_id")
       let failed_step = get_str(args, "failed_step")
       let mark = get_bool(args, "mark", default=true)
-      match
-        engine_for_ns(ns).saga_repair(ns~, root_task_id, failed_step~, mark~) {
+      match eng.saga_repair(ns~, root_task_id, failed_step~, mark~) {
         Err(m) => Err(@mcp_types.ToolError(m))
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
       }
@@ -6225,42 +6535,78 @@ pub async fn run_server() -> Unit {
       let pid_bound = get_bool(args, "pid_bound", default=false)
       let by = get_str(args, "by", default="human_steward")
       let ts = now_default()
-      let eng = engine_for_ns(ns)
-      match
-        eng.agents_acl_grant(
-          agent_id=agent_fp(agent_id),
-          ns~,
-          can_read~,
-          can_write~,
-          pid_bound~,
-          now=ts,
-          by~,
-        ) {
-        Err(e) =>
-          Err(
-            @mcp_types.ToolError(
-              "agent_acl_grant: " +
-              e +
-              "。若报「仅 SQLite 后端可用」说明当前后端是内存版——ACL 面不存在，也就无所谓拒绝（claim 会直接放行）",
-            ),
-          )
-        Ok(_) =>
-          Ok(
-            @mcp.ToolResult::text(
-              Json::object({
-                "agent_id": Json::string(agent_id),
-                "namespace": Json::string(ns),
-                "can_read": Json::boolean(can_read),
-                "can_write": Json::boolean(can_write),
-                "pid_bound": Json::boolean(pid_bound),
-                "by": Json::string(by),
-                "message": Json::string(
-                  "已落库。注意 audit_permission 只反映角色矩阵、不反映 ns ACL（两道独立门）——授权后 claim 才会真正可写",
-                ),
-              }).stringify(),
-            ),
-          )
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
       }
+      // BUG-436：目标身份解析。
+      // 正常路径：传**原始身份**（claim 的 assignee / execute 的 agent / 显式 executor），
+      // 落一行 fp(raw) —— 与 `agent_write_gate` 判门用的是同一个函数。
+      // 兼容路径：调用方把报错里那串 16 位指纹原样粘回来时，那串**已经是**行键，
+      // 再哈希一次会写到另一行（旧实现就是这样，「已落库」但判定侧看不到）。
+      // 因此：指纹形态的入参同时写「字面行」与 fp(入参) 两行，两条路都通，
+      // 回执把真实写入的行逐条列出（granted_rows），不再只说「已落库」。
+      let primary = agent_fp(agent_id)
+      let targets : Array[String] = [primary]
+      if acl_id_is_fp(agent_id) && agent_id != primary {
+        targets.push(agent_id)
+      }
+      let granted : Array[Json] = []
+      for tid in targets {
+        match
+          eng.agents_acl_grant(
+            agent_id=tid,
+            ns~,
+            can_read~,
+            can_write~,
+            pid_bound~,
+            now=ts,
+            by~,
+          ) {
+          Err(e) =>
+            return Err(
+              @mcp_types.ToolError(
+                "agent_acl_grant: " +
+                e +
+                "（目标行 agent_id=" +
+                tid +
+                "，namespace=" +
+                ns +
+                "）。若报「仅 SQLite 后端可用」说明当前后端是内存版——ACL 面不存在，也就无所谓拒绝（claim 会直接放行）",
+              ),
+            )
+          Ok(_) => granted.push(Json::string(tid))
+        }
+      }
+      let identity_note = if acl_id_is_fp(agent_id) {
+        "入参已是 16 位指纹形态：已同时写「字面行」与 fp(入参) 两行，因此无论判定侧按指纹还是按原始名查都能命中（BUG-436 兼容路径）"
+      } else {
+        "入参按原始身份处理，写入行 = fp(入参)（与 agent_write_gate 判门同一函数）"
+      }
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "agent_id": Json::string(agent_id),
+            "namespace": Json::string(ns),
+            "can_read": Json::boolean(can_read),
+            "can_write": Json::boolean(can_write),
+            "pid_bound": Json::boolean(pid_bound),
+            "by": Json::string(by),
+            "target": Json::object({
+              "backend": Json::string(eng.heartbeat_backend()),
+              "namespace": Json::string(ns),
+              "note": Json::string(
+                "ACL 行写在**该 ns 自己的库**里（主库 default 与各 ns 库互不相通）；pid_bound=false 时跨进程持续有效",
+              ),
+            }),
+            "granted_rows": Json::array(granted),
+            "identity_note": Json::string(identity_note),
+            "message": Json::string(
+              "已落库（granted_rows 是真实写入的行）。注意 audit_permission 只反映角色矩阵、不反映 ns ACL（两道独立门）；claim/execute 的判定身份见各自回执：execute 缺省继承任务 assignee（BUG-436），要授权就授权那个身份",
+            ),
+          }).stringify(),
+        ),
+      )
     },
   )
   s1 = instrumented_tool(
