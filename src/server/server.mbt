@@ -1943,9 +1943,11 @@ pub async fn run_server() -> Unit {
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
-        "assignee": string_prop("认领人（必填）"),
+        "assignee": string_prop(
+          "认领人（必填）。⚠️ 本参数由调用方自报，服务端无法验证 —— 不能防有意的冒充（BUG-430）",
+        ),
         "agent": string_prop(
-          "可选：ACL 判定身份的显式声明（缺省=assignee）。改了它就要对**它**授权",
+          "可选：ACL 判定身份的显式声明（缺省=assignee）。改了它就要对**它**授权。⚠️ 本参数由调用方自报，服务端无法验证 —— 不能防有意的冒充（BUG-430）",
         ),
         "inject": string_prop(
           "可选：逗号分隔的档案库资产 keywords，按 goal 子串检索命中资产并追加到返回",
@@ -2007,10 +2009,10 @@ pub async fn run_server() -> Unit {
         "task_id": string_prop("任务 id（必填）"),
         "deliverable": string_prop("交付物描述（必填）"),
         "executor": string_prop(
-          "执行器名称(默认 manual；**执行元数据**，仅当显式且非 manual 时才兼作 ACL 判定身份)",
+          "执行器名称(默认 manual；**执行元数据**，仅当显式且非 manual 时才兼作 ACL 判定身份)。⚠️ 本参数由调用方自报，服务端无法验证 —— 不能防有意的冒充（BUG-430）",
         ),
         "agent": string_prop(
-          "可选：ACL 判定身份的显式声明（缺省=任务 assignee，即 claim 用的身份）",
+          "可选：ACL 判定身份的显式声明（缺省=任务 assignee，即 claim 用的身份）。⚠️ 本参数由调用方自报，服务端无法验证 —— 不能防有意的冒充（BUG-430）",
         ),
         "model": string_prop("模型名称(可选)"),
         "tokens_in": int_prop("输入 token 数(可选默认0)"),
@@ -5560,7 +5562,9 @@ pub async fn run_server() -> Unit {
         "scope": string_prop(
           "作用域（如 src/foo.mbt 或模块名，必填）",
         ),
-        "agent": string_prop("预订者（如 exec_1，必填）"),
+        "agent": string_prop(
+          "预订者（如 exec_1，必填）。⚠️ 本参数由调用方自报，服务端无法验证 —— 不能防有意的冒充（BUG-430）",
+        ),
         "ttl_until": string_prop("TTL 截止时间戳（ISO-8601，必填）"),
       },
       ["scope", "agent", "ttl_until"],
@@ -5677,7 +5681,9 @@ pub async fn run_server() -> Unit {
         "lock_id": string_prop("锁唯一 id（必填）"),
         "batch_id": string_prop("批次 id（必填）"),
         "scope": string_prop("作用域，文件/目录路径（必填）"),
-        "agent": string_prop("持有者（必填）"),
+        "agent": string_prop(
+          "持有者（必填）。⚠️ 本参数由调用方自报，服务端无法验证 —— 不能防有意的冒充（BUG-430）",
+        ),
         "ttl_until": string_prop("锁过期时间 ISO 字符串（必填）"),
         "ts": string_prop("获取时间戳（可选，默认当前时间）"),
         "meta": string_prop("元数据 JSON 字符串（可选）"),
