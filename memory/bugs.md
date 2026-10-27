@@ -7983,7 +7983,7 @@ description 保持「任务原始意图」不变。理由：description 的语�
 
 ### FIXED(2026-10-26T17:06:02Z / BUG-427)
 - evidence: commit 4111bd2e（3 文件）。改在 src/core/core_task.mbt 的 Task::reject，加两道闸：(1) 滚动窗口 strip_reject_tail —— 剥掉尾部已有的 [打回原因: …]（只留最近 1 次），打回 N 次长度不随 N 线性增长；(2) UTF-8 安全截断 clip_utf8(reason, REJECT_REASON_CAP=200) —— 按字符边界截断不产生半个汉字。实测 T0r636.4.2 单次打回即 4737 字节；污染面：task_triage 能力抽取（cap_match 用 desc.contains(want)）、goal_drift_check 的 Jaccard（@evolve.tokens(get_description())）、supervisor_status 200 字节截断三处共同进料面。依赖面已核不新增依赖：strip_reject_tail 用自实现反向查找（本仓无 String::rev_find 先例，grep rev_find/rfind 为空）；clip_utf8 用 @encoding.encode/decode_to（core/moon.pkg:3 是 moonbitlang/x/encoding 不是 core/encoding/utf8，与既有 desc_clip 同套 API）。core/moon.pkg 加 moonbitlang/x/fs 到主 import（锁4 接线格要读源码；实测 for "test" 在本包 wbtest 不生效，同 engine 包 BUG-413 踩过的坑）。回归锁新增 core_task_reject_cap_wbtest.mbt 4 条：锁1=单条超长原因（~2000 字节）增量 ≤ REJECT_REASON_CAP+固定开销(11字节) 且原始描述完整保留；锁2=核心，打回 5 次后第5次与第1次长度差 ≤ 20 字节（无窗口版会差 ~120）；锁3=对照，不含打回原因的正常描述不被误伤；锁4=变异对照，断言源码里 strip_reject_tail(self.description) 与 clip_utf8(reason, REJECT_REASON_CAP) 真在。验证：moon check --target js = 56 warnings 0 errors；moon_test_env --target js src/core = 25/25/0 全绿（改前 21，+4）。变异实测：两闸退回裸拼接 ⇒ 25/22/3（锁1/2/4 三条全红），恢复后复跑 25/25/0。未做另立：独立历史表（根治，动 schema）；存量清理（库里已有的超长 description 如 T0r636.4.2 4737 字节本笔不清，修复只保证不再增长，历史数据需一次性 migration）。
-## BUG-428 [2026-10-26T15:01:12Z] [high] OPEN
+## BUG-428 [2026-10-26T15:01:12Z] [high] FIXED
 - summary: [deploy] 部署产物陈旧但版本守卫 PASS —— `dist/fist-mbt.js`(Oct 24)、`_release/js/fist-mbt.js`、PATH 上的 `AppData/Local/FIST-Mbt/fist-mbt.js`(11:59) 三份都 grep 不到 BUG-417 的修复符号，而 `check_dist_snapshot.py` 只比版本字符串判 PASS ⇒ 把「代码改了但 MCP 行为不变」误诊成「逻辑缺陷」
 - detail: ## 现象（2026-10-26 BUG-417 诊断的副产物，A/B 对照实证）
 
@@ -8101,6 +8101,9 @@ python scripts/patch_esm_main.py <产物>
   刷新后**必须**改回 `case(...)`，否则电池以「期望不符」逼人回来 —— **刻意留的棘轮**。
   **同批入档**：`AGENTS.md` 新增**判例-32「产物名变形」**（探针必须先在**新鲜产物**上标定一次再上线）
   + 口径「**版本号 PASS ≠ 代码新鲜；比版号的守卫不能替代比内容的守卫**」。
+
+### FIXED(2026-10-27T03:58:24Z / BUG-428)
+- evidence: 判据 + dist 刷新双落地。①判据：scripts/check_deployment_freshness.py（新建 657 行，42 格自检 + 5 处变异对照）+ scripts/_deployment_symbols.py（探针单一真源 191 行 + anchor_problems 反脱锚 ⇒ rc=4）+ check_dist_snapshot.py 加内容面格（19 格）+ run_guards 登记 3 格。②dist 刷新：python scripts/refresh_dist.py 真跑（release 构建 rc=0 → ESM shim 注入 rc=0 → 拷贝 5812692 字节 → 自证版本一致 rc=0），刷新后 check_dist_snapshot 从「FAIL 内容面缺 omega_orphan_of_archived_parent / strip_plan_annotations」转「PASS 内容面 3 条探针全部有调用形」，电池棘轮按 run_guards 自订的律归位（expected(...,1,kind=known-red) → case(...)）。③刷新用的源码约束（本笔遵守）：必须在 engine/* 的 WIP 被提交之后跑，否则会把未完成改动打进发布快照 —— 本笔是在 BUG-432 提交（c68f3250）之后刷的。④根因前提改写（本条立案时写错的一处）：我当时写「三份产物都 grep 不到修复符号」，那个判断方法本身是错的 —— MoonBit 的 JS 产物把标识符里的 _ 逐字翻倍（裸串 0 命中 vs 容忍变形 3 命中，实际标识符 omega__orphan__of__archived__parent）⇒ 裸 substring 探针在新鲜产物上也会报找不到。已入 AGENTS.md 判例-32「探针必须先在新样本上标定」+ 口径「版本号 PASS ≠ 代码新鲜」。⑤剩余两面（运维面，不是代码缺陷）：check_deployment_freshness 仍报 3 面 FAIL —— 部署副本 %LOCALAPPDATA%/FIST-Mbt/fist-mbt.js（10-26 11:59，内容 2/3，需按安装流程重装）、_release/js/fist-mbt.js（10-18，内容 1/3，需下一次 release 流程重建）、PATH 垫片（WARN 级，构建缓存）。该判据在电池里是诊断格（tolerant((0,1,2))，因为 rc 反映机器部署状态，Linux CI 无垫片时 rc=2）⇒ 不挡门禁。验收：check_dist_snapshot PASS、check_battery_count_doc PASS、check_scripts_index PASS、run_guards --selftest 40 格 OK。
 ## BUG-429 [2026-10-26T17:38:44Z] [medium] FIXED
 - summary: [r9-race] src/engine/engine_rsv.mbt:207 legacy_grant 分支无条件贴 renewed_legacy_grant 标签，granted=false 时回执自相矛盾
 - detail: ## 代码定位
