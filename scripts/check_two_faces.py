@@ -48,8 +48,11 @@
   逐行比对函数体（归一化后）。**不同 ⇒ rc=1**。
 - **F2 同签名多定义**：同一函数名在多个文件里有**实现**（非 trait 声明、非测试）
   ⇒ 提示「可能是一源多投影」，逐条列出供人判。**只告警不判红**（多后端是合法设计）。
-- **F3 SQL 谓词对表**：源码注释里出现「`ON CONFLICT ... WHERE` 编码的是同一条规则」
-  这类声称时，把 SQL 谓词里的比较符与 Go/MoonBit 侧的比较符对表。
+- **F3 SQL 谓词对表**（**R16：无条件**）：把 `src/store/store_sqlite.mbt` 里
+  `ON CONFLICT ... WHERE` 子句的比较符集合，与 `src/store/store_rsv.mbt` 里
+  `rsv_action` 的比较符集合逐条对表；不一致 ⇒ DRIFT。
+  **不依赖任何注释声称**（旧 docstring 曾写「注释声称时才查」，与实现相反，已改）。
+  **高精度低召回**：只比比较符集合，不比名字/顺序。
 
 **rc 契约**：`0` PASS（形态 ①②③ 无漂移）/ `1` 发现漂移（逐条点名）/ `2` 判据无法自证
 （扫描面为空、找不到任何可判对象 ⇒ 拒绝出结论，绝不因"没找到"报绿）。
@@ -268,16 +271,26 @@ MB_CMP_RE = re.compile(r"ttl\s*(<=|>=|<|>)\s*now")
 
 
 def check_f3(root: str):
-    """F3：注释声称「SQL 编码的是同一条规则」时，把两侧比较符对表。
+    """F3：**无条件**把两侧比较符对表（R16：不再依赖注释声称）。
+
+    R16 改动：上一版 docstring 写「注释声称『SQL 编码的是同一条规则』时才查」——
+    **但代码从来就是无条件的**（`check_f3` 里没有任何读注释的分支）。
+    那是一句**与实现相反**的 docstring：读代码的人会以为「没在注释里声称就查不到」，
+    从而要么误以为覆盖面比实际小、要么（更糟）照着这句去加注释以求被检查。
+    ⇒ 本版把 docstring 改成与实现一致：**按判定形状扫，不看注释文字**。
 
     ⚠️ R12 修正（原版 100% 误报）：上一版在整个文件里抓所有 `ttl <=> x` 形式的比较符，
     把**别处逻辑**（`MemoryStore::locks_upsert` 的「旧锁是否仍 live」用 `old.ttl_until >= lock.ts`）
     当成 rsv_action 的投影 ⇒ 报 DRIFT，而 `rsv_action` 的投影是严格 `<`，**两侧本就一致**。
 
-    现在只对表**真正成对的**两处：
+    当前只对表**真正成对的**两处（无条件，不要求任何注释）：
       · MoonBit 侧：`fn rsv_action` 体内的比较符
       · SQL 侧：`reservations` / `file_locks` 表的 `ON CONFLICT ... WHERE` 子句里的比较符
     其它比较符（如 live 判定）不属于这条规则，**不入表**。
+
+    **高精度低召回**：只比比较符集合，不比名字/顺序 ⇒ 不报「名字不同但逻辑相同」。
+    SQL 侧删掉 `ON CONFLICT ... WHERE` ⇒ 本面不产生条目（不误报 DRIFT）；
+    由 selftest 的 `MUTATION-f3-no-where-no-false-drift` 钉住该行为。
     """
     findings = []
     rsv_mb = os.path.join(root, "store", "store_rsv.mbt")
@@ -321,6 +334,12 @@ def judge(root: str = SRC):
     if scanned == 0 or not c1:
         return RC_BROKEN, {
             "scanned_files": scanned, "f1_checked": [], "f1_checked_n": len(c1),
+            # R16：自拒分支也必须带齐**全部**结果键 ——
+            # 否则调用方 `res["f3_violations"]` 会 KeyError（不是"没漂移"，是"键不存在"）。
+            # 这正是「缺键 ≠ 空值」判例：缺键必须显式补空值，不能靠调用方 get() 兜。
+            "f1_violations": v1,
+            "f2_multi_def": {k: v for k, v in sorted(f2.items())},
+            "f3_checked": f3, "f3_violations": f3_bad,
             "note": "扫描面为空或无可判对象 ⇒ 拒绝出结论（绝不因「没找到」报绿）",
         }
     res = {
@@ -464,19 +483,68 @@ def selftest() -> int:
         cell("coverage-names-form5", chr(33014)+chr(27700)+chr(30340)+chr(35821)+chr(20041) in out, True)
         cell("coverage-pass-not-full", chr(19981)+chr(20195)+chr(34920) in out, True)
 
-        # ── 格7：**覆盖率声明必须在运行输出里**（不只是 docstring）──
-        # 理由：docstring 只有读代码的人看，跑判据的人只看输出；
-        #      输出里不写覆盖率，他就会把 3/5 的判据当成全量门（BUG-433 的教训）。
-        import contextlib, io as _io
-        buf = _io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            render({"scanned_files": 0, "f1_checked": [], "f1_violations": [],
-                    "f2_multi_def": {}, "f3_checked": [], "f3_violations": []})
-        out = buf.getvalue()
-        cell("coverage-3of5-in-output", "3/5" in out, True)
-        cell("coverage-names-form4", "消费面的前提" in out, True)
-        cell("coverage-names-form5", "胶水的语义" in out, True)
-        cell("coverage-pass-not-full", "不代表" in out, True)
+        # ── 格 8~10：★ F3 SQL 谓词对表的三个变异对照（R16）──
+        #
+        # 为什么必须补这三格：格 2/3 的变异只测 **F1 抄本漂移**，
+        # **F3（SQL 谓词对表）此前没有任何变异对照** ⇒ 把 check_f3 整个删掉、
+        # 或把它改成恒 true，自检**照样全绿**（判例-29：机制格 ≠ 实现路径格）。
+        #
+        # 造法：在临时裸目录里搭一对最小 store 包（store_rsv.mbt + store_sqlite.mbt），
+        # 只放 rsv_action 与一条 ON CONFLICT ... WHERE，然后分别变异两侧。
+        f3pkg = os.path.join(td, "f3pkg", "store")
+        os.makedirs(f3pkg)
+        # ⚠️ 必须同时造一个**可判的 F1 对象**，否则 judge() 会走「一个 F1 对象都没找到 ⇒ 自拒」
+        # 分支并返回 RC_BROKEN(2)，把 F3 的 DRIFT 吃掉（实测踩到：F3 违反计数正确为 1，
+        # 但整体 rc=2）。F1 的可判对象 = 一个带「镜像/等价」声称且参照存在的定义 ⇒
+        # 这里造一对内容**相同**的最小镜像（不产生 F1 违例），只为让判据不进入自拒分支。
+        with open(os.path.join(td, "f3pkg", "anchor_a.mbt"), "w", encoding="utf-8") as fh:
+            fh.write("///|\npub fn anchor_real(p : Int) -> Int {\n  p + 1\n}\n")
+        with open(os.path.join(td, "f3pkg", "anchor_b.mbt"), "w", encoding="utf-8") as fh:
+            fh.write("///|\n/// 本函数是 `anchor_a.mbt::anchor_real` **的镜像**。\n"
+                     "pub fn anchor_copy(p : Int) -> Int {\n  p + 1\n}\n")
+
+        def _write_f3(rsv_cmp, sql_cmp, drop_where=False):
+            """按给定比较符写一对最小 store 文件。drop_where=True 时删掉 ON CONFLICT 子句。"""
+            with open(os.path.join(f3pkg, "store_rsv.mbt"), "w", encoding="utf-8") as fh:
+                fh.write(
+                    "///|\n"
+                    "pub fn rsv_action(prev : String, agent : String, now : String) -> String {\n"
+                    "  if ttl " + rsv_cmp + " now { \"taken_over\" } else { \"conflict\" }\n"
+                    "}\n")
+            sql = ("INSERT INTO reservations (scope) VALUES (?) "
+                   "ON CONFLICT(scope) DO UPDATE SET agent=excluded.agent "
+                   "WHERE reservations.ttl_until " + sql_cmp + " excluded.created_at")
+            if drop_where:
+                sql = "INSERT INTO reservations (scope) VALUES (?) ON CONFLICT(scope) DO NOTHING"
+            with open(os.path.join(f3pkg, "store_sqlite.mbt"), "w", encoding="utf-8") as fh:
+                fh.write('///|\n/// 表\nlet sql = "' + sql + '"\n')
+
+        # 格 8（基线）：两侧都是 < ⇒ 对齐，不得报漂移
+        _write_f3("<", "<")
+        rc8, res8 = judge(os.path.join(td, "f3pkg"))
+        cell("f3-baseline-aligned", len(res8["f3_violations"]), 0)
+        cell("f3-baseline-checked", len(res8["f3_checked"]), 1)
+
+        # 格 9（★变异 A）：**MB 侧** < → <= ⇒ 必须报 DRIFT
+        _write_f3("<=", "<")
+        rc9, res9 = judge(os.path.join(td, "f3pkg"))
+        cell("MUTATION-f3-mb-cmp-drift-detected", rc9, RC_DRIFT)
+        cell("MUTATION-f3-mb-cmp-violation-count", len(res9["f3_violations"]), 1)
+
+        # 格 10（★变异 B）：**SQL 侧** < → <= ⇒ 必须报 DRIFT
+        _write_f3("<", "<=")
+        rc10, res10 = judge(os.path.join(td, "f3pkg"))
+        cell("MUTATION-f3-sql-cmp-drift-detected", rc10, RC_DRIFT)
+        cell("MUTATION-f3-sql-cmp-violation-count", len(res10["f3_violations"]), 1)
+
+        # 格 11（★变异 C）：删掉 SQL 侧 ON CONFLICT ... WHERE ⇒
+        #   不是 DRIFT，而是「无法对表」⇒ check_f3 返回空 ⇒ **不得报漂移**、
+        #   但整体也不得因此变成绿（其余面仍照常判）。
+        #   本格断言「SQL 侧无比较符时不产生 F3 条目」（高精度：不误报）。
+        _write_f3("<", "<", drop_where=True)
+        rc11, res11 = judge(os.path.join(td, "f3pkg"))
+        cell("MUTATION-f3-no-where-no-false-drift", len(res11["f3_violations"]), 0)
+        cell("MUTATION-f3-no-where-not-checked", len(res11["f3_checked"]), 0)
 
     ok = sum(1 for _n, g, w in cells if g == w)
     print("\n[selftest] %d/%d 格通过" % (ok, len(cells)))
