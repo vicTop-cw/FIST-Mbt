@@ -6844,18 +6844,76 @@ pub async fn run_server() -> Unit {
       let ts = now_default()
       // BUG-436 同口径：落库身份与 `agent_write_gate` 判门用**同一个** `agent_fp`。
       let fp = agent_fp(agent_id)
-      // 复用既有首拍注册路径（ON CONFLICT 幂等）：不存在时建行，存在时更新 pubkey_fp。
-      // 不新造第二条「注册」真源。
-      agent_touch_first_seen(
-        eng,
-        agent_id,
-        ns,
-        "key-registration",
-        "Executor",
-        "工兵",
-        pubkey_hex~,
-        ts,
-      )
+      // ══════════════════════════════════════════════════════════════════════
+      // BUG-430 / S3 第五段：**首次登记锁定**（堵「抢先登记 / 换钥劫持」）
+      //
+      // 病灶：本工具此前**无任何归属校验** —— 任何人都能对任何 agent_id 调它。
+      //
+      // ⚠️ 实测澄清（很重要，别照抄「覆盖」这个说法）：
+      //   `store_sqlite.mbt:2779` 的 `ON CONFLICT(agent_id) DO UPDATE SET` **不含**
+      //   `pubkey_fp`（只更新 pid / last_seen / status / role）
+      //   ⇒ **已有公钥不会被「覆盖」**，第二次登记会静默「不生效」。
+      //   所以真正的攻击面**不是**「我把别人的公钥换成我的」，
+      //   而是 **①「抢注」**：趁某 agent 还没登记公钥，先替他登记**我的**公钥
+      //            → 之后他以「我有密钥」的身份接入，实际验的是**我的**签名
+      //        **②「静默不生效」**：调用方以为换钥成功，实际库里还是旧的 ——
+      //            这是可用性缺陷，会把人卡死在「我明明换了却还是 challenge_failed」。
+      //
+      // 本段的规则（**只加严，不放宽**）：
+      //   · 库里**没有**该 agent 的 pubkey ⇒ 允许登记（首次登记）；
+      //   · 库里**已有** pubkey 且**与本次相同** ⇒ 幂等成功（重放安全）；
+      //   · 库里**已有** pubkey 且**与本次不同** ⇒ **拒绝**，并明确告诉调用方
+      //     「换钥要走轮换流程（尚未实现）」，而不是静默不生效。
+      //
+      // 回读必须**在写之前**做 —— 写完再读就看不出「已有」了。
+      // ══════════════════════════════════════════════════════════════════════
+      let existing = match eng.store.sqlite_store() {
+        None => Some("")   // 内存后端无 agents 表 ⇒ 视为「无既有公钥」
+        Some(s) =>
+          match s.agents_get(fp) {
+            None => Some("")
+            Some(a) => Some(a.pubkey_fp)
+          }
+      }
+      let prev_key = match existing {
+        Some(k) => k
+        None => ""
+      }
+      let mut already_registered = false
+      if prev_key != "" {
+        if prev_key == pubkey_hex {
+          // 幂等：同一把公钥重复登记 ⇒ 成功（重放安全，重试友好）
+          already_registered = true
+        } else {
+          // ★ 拒绝换钥：走轮换流程（未实现）
+          return Err(
+            @mcp_types.ToolError(
+              "agent_register_key: 该 agent **已有公钥且与本次不同**，拒绝覆盖。" +
+              "如需更换请走密钥轮换流程（BUG-430 尚未实现）。" +
+              "⚠️ 本拒绝是有意的：允许任意覆盖 = 任何调用方都能把某身份的密钥换成自己的（身份劫持）。" +
+              "已有前缀=" +
+              substring_at(prev_key, 0, 16) +
+              "… 本次前缀=" +
+              substring_at(pubkey_hex, 0, 16) +
+              "…",
+            ),
+          )
+        }
+      }
+      if !already_registered {
+        // 复用既有首拍注册路径（ON CONFLICT 幂等）：不存在时建行。
+        // 不新造第二条「注册」真源。
+        agent_touch_first_seen(
+          eng,
+          agent_id,
+          ns,
+          "key-registration",
+          "Executor",
+          "工兵",
+          pubkey_hex~,
+          ts,
+        )
+      }
       // 写后回读：回执不许由请求反推（BUG-145 同口径）
       let stored = match eng.store.sqlite_store() {
         None => ""
