@@ -8716,7 +8716,7 @@ A 案从写入侧预防 + **回执可见**（不静默）。
   （`sure_status` 是给解析容错用的），拿它判「是不是条目」会让「缺状态」的行被判成条目（我第一版就红在这）；
   (b) status 段可能带后缀（`DUPLICATE →BUG-1` / `FALSE_POSITIVE (evidence)`）⇒ 必须**只取首个词**，
   否则**合法抬头**会被误判成非条目（「修过头」方向）。
-  **Python 侧** `scripts/gen_plugins.py` 的 `RE_BUG_HEAD` 从 `^## BUG-(\d+)` 收紧为与 `RE_BUG_STATUS`
+  **Python 侧** `scripts/gen_plugins.py` 的 `RE_BUG_HEAD` 从 `^## BUG-(\d+)` 收紧为与 `RE_BUG_STATUS`
   同口径；145 行内联 `re.findall` 改用 `RE_BUG_HEAD`（消掉第二份口径）。捕获组必须保留纯数字
   `BUG-(\d+)`（写成 `(BUG-\d+)` 立刻炸 `ValueError: invalid literal for int() ... 'BUG-1'`）。
 - 回归锁：`bugreport_status_wbtest.mbt::bug434_heading_is_three_segment_only`（7 格，**两方向都覆盖**）——
@@ -8891,7 +8891,7 @@ R10 报告的「四者共同根因」（本单是第 5 个标本，形态最纯�
 - evidence: 病灶：constraint.mbt:69-79 的 rsv_conflict_verdict 是 store_rsv.mbt:96-107 的 rsv_action 的手工逐字重抄（四分支），实测现在等价但两副本会各自漂移，而两个包互不依赖（constraint 是零依赖包）⇒ 没有任何现有测试能同时看见两者 ⇒ 任一边改规则另一边静默过期。为什么不直接把 constraint 改成 import store：constraint/moon.pkg 只有 supported_targets（零依赖），constraint.mbt:21 注释写明这是刻意的政策侧镜像「让约束层不耦合到 store 层」，硬加依赖会破坏该架构意图；试过 test-import（仅测试期依赖）当前工具链不支持（moon check 报 Failed to calculate build plan）已回退。解法：新建独立交叉一致性包 src/consistency/（同时依赖 store + constraint，只做这件事），生产面零依赖保持不变。2 格锁：①bug435_constraint_mirror_matches_store_rsv_action —— 6 组用例两侧逐一比对（None⇒reserved / 本人未过期⇒renewed / 本人已过期⇒renewed（注释点名的坑：同持有者优先）/ 他人已过期⇒taken_over / 他人未过期⇒conflict / ttl==now⇒conflict（严格 < 而非 <=））；②bug435_canonical_verdicts_unchanged_on_both_sides —— 四动词集合相等，防「两边一起改名」的同时漂移（上格只比两边相同，两边都改成 acquired 时它仍绿）。变异对照 2 组（改的是镜像侧，证明锁在看漂移）：M1 把同持有者优先那支顺序调换 ⇒ 锁1红；M2 把 ttl < now 改成 <=（边界漂移）⇒ 锁1红；还原后 2/2 绿。验收：moon check 0 errors、src/consistency 2/2、全仓 1569/1569、check_pkg_imports / check_mbti_sync / check_battery_count_doc 三判据 PASS。
 ## BUG-436 [2026-10-27T00:45:00Z] [high] FIXED
 - summary: [authz] ACL 判定身份逐调用漂移：新命名空间任务恒 can_write=0，agent_acl_grant 授权后仍拒 —— execute 进不去，submit/verify 全断（标准六步流在新 ns 不可完成）
-- detail: 复现（fist-mbt v0.3.10，2026-10-26，另侧 `E:\IDEProjects\AIools` 的清账/开发会话实测）：
+- detail: 复现（fist-mbt v0.3.10，2026-10-26，另侧 `E:\IDEProjects\AIools` 的清账/开发会话实测）：
 
   1. `store_open(namespace="vools-retry", data_dir=".fist-mbt/data")` → opened=true，active_namespaces 含 vools-retry
   2. `publish(namespace="vools-retry", project_dir="E:\IDEProjects\AI\vools", ...)` → T0 发布成功
