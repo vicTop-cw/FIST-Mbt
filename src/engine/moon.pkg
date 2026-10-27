@@ -8,6 +8,8 @@ import {
   "moonbitlang/core/json",
   "moonbitlang/core/math",
   "moonbitlang/x/fs",
+  "moonbitlang/core/encoding/utf8",
+  "cc06b/mooncry/lib" @mooncry,
 }
 
 supported_targets = "js+native"
