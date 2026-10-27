@@ -160,14 +160,42 @@ pub fn FistEngine::claim(
     None => Err("task not found: \{task_id}")
     Some(t) => {
       // ===== P0-2: Claim 硬门 — 军衔门 =====
+      //
+      // **BUG-432：军衔不再从 `assignee` 名字猜，改由「角色 → 军衔」映射。**
+      //
+      // 旧实现 `estimate_rank(assignee)` 是**名字即身份**：`has_prefix("leader") ⇒ 6`、
+      // 整名 `human_steward`/`human` ⇒ 0、`has_prefix("atomcode"/"aider") ⇒ 4`、else 5。
+      // 它和 BUG-418/421/422 三轮收口的 `infer_role_from_agent` / `resolve_agent_role` /
+      // `agents.role` **是两个独立实现** —— 那条路收口三轮，这条路一行未动（本条即第三处）。
+      //
+      // 且它的方向是**误伤**而非越权：`rank_can_claim` 是「数值越小权越大」，
+      // rank 6（连长）比默认档 5（营长）**更受限** ⇒ 一个叫 `leader-xxx` 的普通 agent
+      // 反而领不了 level=5 的任务，而 `slave01` 能领（实测见
+      // reports/2026-10-27-bug432-rank-gate-plan.md + 本条修复回执的 before/after 读数）。
+      //
+      // 现在角色取数走 `judged_role`（**与 rsv_set / rsv_try_set / locks_try_acquire
+      // 同一取数面**：`declared_role_for_judgment` 已登记优先 + 收窄后推断兜底），
+      // 军衔由纯函数 `rank_of_role` 给出 ⇒ **名字既不提权也不误伤**。
       let task_level = t.get_level()
-      let arank = estimate_rank(assignee)
+      let (role, role_source) = judged_role(self, assignee)
+      // ⚠️ **BUG-432 修复本体**：军衔由角色派生，**名字既不提权也不误伤**。
+      //
+      // ⛔ **此处曾留着一个未撤回的变异体**（`[MUTANT M1]`，2026-10-27 03:20 写入，
+      //    09:30 发现时已挂 6 小时）：注释写着「测完立即撤回」，但没撤回。
+      //    那段把 `has_prefix("leader") ⇒ 6` / `has_prefix("atomcode") ⇒ 4` 原样留着
+      //    ⇒ **`judged_role` 算对了角色，但 `arank` 仍按名字算** ⇒ 修复行为等于没做，
+      //    而 `claim_rank_wbtest.mbt` 的 5 格锁全红（**是锁救的，不是流程救的**）。
+      //
+      // 判例：**变异对照必须「撤回」与「跑测试」原子化**，不许靠人记得撤回 ——
+      //    本仓已有正确范式：`engine_scope_perm_role_wbtest.mbt` 的 `scope_role_wb6`
+      //    把旧实现复刻在**测试内部**（`let old_infer = fn(...)`），不污染源码。
+      let arank = rank_of_role(role)
       let arank_s = arank.to_string()
       let tlevel_s = task_level.to_string()
       let tname = level_to_rank(task_level)
       if !rank_can_claim(arank, task_level) {
         return Err(
-          "RANK_GATE: assignee \{assignee} (rank=\{arank_s}) cannot claim task level=\{tlevel_s} (task_rank=\{tname}). 需要更高军衔或让 human_steward/leader 认领后分派。",
+          "RANK_GATE: assignee \{assignee} (rank=\{arank_s}, role=\{role}, role_source=\{role_source}) cannot claim task level=\{tlevel_s} (task_rank=\{tname}). 需要更高军衔或让 human_steward/leader 认领后分派。",
         )
       }
       // ===== End P0-2 Gate 1 =====
@@ -1770,19 +1798,10 @@ pub fn FistEngine::publish_with_deps(
 }
 
 ///|
-fn estimate_rank(assignee : String) -> Int32 {
-  if assignee == "human_steward" || assignee == "human" {
-    0
-  } else if assignee.has_prefix("leader") || assignee.has_prefix("polish-lead") {
-    6
-  } else if assignee.has_prefix("atomcode") || assignee.has_prefix("aider") {
-    4
-  } else {
-    5
-  }
-}
-
-///|
+/// ⚠️ **`estimate_rank(name)` 已随 BUG-432 删除** —— 名字 → 军衔那条路是病灶本身
+/// （`has_prefix("leader") ⇒ 6`、`has_prefix("atomcode"/"aider") ⇒ 4`）。
+/// 现在唯一入口是：`judged_role(eng, assignee)`（角色取数面）→ `rank_of_role(role)`
+/// （政策面，见 `engine_scope_perm.mbt`）。**不要**在这里再写任何「从名字猜」的兜底。
 fn rank_can_claim(arank : Int32, tlevel : Int32) -> Bool {
   arank == 0 || arank <= tlevel
 }
