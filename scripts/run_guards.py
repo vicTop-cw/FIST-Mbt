@@ -157,6 +157,13 @@ SPECIAL_CASES = [
     case("check_slave_task_list.py", "--selftest"),
     case("check_mbti_sync.py"),
     case("check_mbti_sync.py", "--selftest"),
+    # —— R12：「两面」漂移普查判据（形态 ①②③）——
+    # 本仓 6 天内因同一根因踩了 5 次（BUG-420/425、R10 内存vs SQLite、R10 SQL 谓词、BUG-435 抄本）。
+    # **覆盖面 3/5**：④消费面的前提、⑤胶水的语义 不在覆盖面内（需人工判据）——
+    # 判据自己是运行时输出覆盖率声明的，PASS **不代表无两面**。
+    # 自证格含 2 个变异对照（抄本改坏 1 字符 / `<`改`<=`）+ 空扫描自拒 + 覆盖率必须在输出里。
+    case("check_two_faces.py", "--selftest"),
+    case("check_two_faces.py"),
     case("check_store_tables_wired.py"),
     case("check_pkg_imports.py"),
     case("check_entry_paths.py"),
