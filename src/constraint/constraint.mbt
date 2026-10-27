@@ -55,7 +55,8 @@ pub struct Verdict {
 }
 
 ///|
-/// 锁裁决动词的忠实镜像（= `src/store/store_rsv.mbt::rsv_action` L77-88）。
+/// 锁裁决动词的**委托入口**（R17 / BUG-435 打磨：手工镜像已消除）。
+///
 /// 给定写前快照 `prev = (owner, ttl_until, created_at)?` 与本次请求
 /// `(agent, now)`，返回 `(是否可写, 动作标签)`：
 ///   None                        -> (true,  "reserved")   空闲，新预订
@@ -63,20 +64,27 @@ pub struct Verdict {
 ///   ttl_until < now             -> (true,  "taken_over") 旧主已过期，接管
 ///   其它                        -> (false, "conflict")   被他人 live 持有
 ///
-/// 注意：本函数是 store 侧裁决的**镜像**，不是锁机制本身；锁机制把这里的
-///  `conflict` 落到 `reservations` 表的 `ON CONFLICT ... WHERE` 并写
-///  `lock_violations`（见 `locks_upsert` / `locks_sweep`）。
+/// **本函数曾是 `src/store/store_rsv.mbt::rsv_action` 的手工抄本** ——
+/// 两份实现靠「交叉一致性锁」维持等价（BUG-435 已用该锁标 FIXED）。
+/// 但**等价 ≠ 无风险**：`constraint` 包原先零依赖，看不见 `store` 的代码，
+/// 改任何一边都**不会编译失败**，只能靠那一把锁事后抓。
+///
+/// R17 起改为**直接委托** `@store.rsv_action`（依赖方向 `constraint → store`，
+/// `store` 不 import `constraint` ⇒ 不成环）：
+/// 单一真源，漂移风险**结构性消失**，不再需要靠锁事后发现。
+///
+/// 保留本函数而非让调用方直接写 `@store.rsv_action`：它是 `constraint` 包对外的
+/// **稳定 API 面**（`src/consistency` 等已 import 它），改名会波及调用点。
+///
+/// 注意：本函数只做裁决，不是锁机制本身；锁机制把这里的 `conflict` 落到
+/// `reservations` 表的 `ON CONFLICT ... WHERE` 并写 `lock_violations`
+/// （见 `locks_upsert` / `locks_sweep`）。
 pub fn rsv_conflict_verdict(
   prev : (String, String, String)?,
   agent : String,
   now : String,
 ) -> (Bool, String) {
-  match prev {
-    None => (true, "reserved")
-    Some((owner, _, _)) if owner == agent => (true, "renewed")
-    Some((_, ttl, _)) if ttl < now => (true, "taken_over")
-    _ => (false, "conflict")
-  }
+  @store.rsv_action(prev, agent, now)
 }
 
 ///|

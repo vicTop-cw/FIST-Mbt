@@ -50,6 +50,49 @@ test "rsv_verdict_conflict" {
 }
 
 ///|
+/// **R17 委托格（实现路径格，判例-29）**：`rsv_conflict_verdict` 必须与
+/// `@store.rsv_action` **逐输入恒等**。
+///
+/// 为什么需要这一格：上面几条只断言**行为**（reserved/renewed/taken_over/conflict），
+/// 它们**在手工镜像时代就已存在且全绿**。也就是说 ——
+/// 「把这四条锁留在这里、把实现改回手工抄本」，它们**照样全绿**
+/// （判例-29「机制格 ≠ 实现路径格」：测了行为，不等于测了「它真的在委托」）。
+///
+/// 本格把两侧**同一批输入**各喂一遍，断言返回值逐一相等：
+///   · 若它改回手工抄本、且抄本与 `rsv_action` 一致 ⇒ 本格仍绿（**这是对的**：
+///     此时行为确实等价，漂移风险由「两侧一致」兜住）；
+///   · 若抄本与 `rsv_action` 漂移（任一方向）⇒ **本格红**。
+/// 即本格锁的是**「行为恒等」这个事实**，而不是「实现里有没有 `@store.` 这个串」
+/// （后者会命中注释、造成判例-30 自指假绿）。
+test "rsv_verdict_delegates_to_rsv_action" {
+  // 覆盖 rsv_action 四个分支 + ttl==now 边界 + 空 agent
+  let cases : Array[((String, String, String)?, String, String)] = [
+    (None, "A", "t1"),
+    (None, "", "t1"),
+    (Some(("A", "t9", "t0")), "A", "t1"),
+    (Some(("A", "t1", "t0")), "A", "t1"),
+    (Some(("B", "t0", "t0")), "A", "t1"),
+    (Some(("B", "t1", "t0")), "A", "t1"),
+    (Some(("B", "t9", "t0")), "A", "t1"),
+    (Some(("", "t9", "t0")), "A", "t1"),
+  ]
+  for (prev, agent, now) in cases {
+    let mine = rsv_conflict_verdict(prev, agent, now)
+    let theirs = @store.rsv_action(prev, agent, now)
+    if mine != theirs {
+      abort(
+        "rsv_conflict_verdict 与 @store.rsv_action 漂移：prev=" +
+        (match prev { None => "None" ; Some((a, t, _)) => "Some(" + a + "," + t + ")" }) +
+        " agent=" + agent + " now=" + now +
+        " ⇒ constraint=" + mine.0.to_string() + "/" + mine.1 +
+        " store=" + theirs.0.to_string() + "/" + theirs.1,
+      )
+    }
+  }
+  assert_eq(cases.length(), 8)
+}
+
+///|
 /// 构造一个世界快照的小工具。
 fn mk_world(
   reservations : Array[ActiveReservation],
