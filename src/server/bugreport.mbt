@@ -65,9 +65,55 @@ fn bug_char_index(s : String, ch : Char, from : Int32) -> Int32 {
 }
 
 ///|
-/// 是否 bug 条目头行（`## BUG-<n> [...]`）。
+/// 是否 bug 条目头行（`## BUG-<n> [日期] [严重度] 状态`）。
 fn bug_is_header(line : String) -> Bool {
-  line.has_prefix("## BUG-")
+  if !line.has_prefix("## BUG-") {
+    return false
+  }
+  // BUG-434：抬头必须是「日期 + 严重度 + 状态」**三段式**，且后两段在闭集内。
+  //
+  // 为什么必须收紧：`bug_fix` / `report_bug` 把 evidence/detail **原样追加**进账本
+  // （叙述面只追加，这个方向是对的），而调用方完全可能在里面写小节标题
+  // （实测：我写了 `## BUG-421：…`），**甚至只是在围栏代码块里引用一行既有抬头** ——
+  // 那些行以前会被当成条目抬头 ⇒ 「同编号两条 ⇒ 后一条覆盖前一条 ⇒ 真实状态不进任何计数」。
+  //
+  // 口径与 `scripts/gen_plugins.py` 的 `RE_BUG_STATUS` 一致（同一条抬头文法）。
+  //
+  // ⚠️ 关键坑（实测抓出来的）：**不能用 `bug_parse_header` 的 status** ——
+  // 它对「status 段为空」会**默认补 `"OPEN"`**（见 `sure_status`，那是给解析容错用的），
+  // 拿它做「是不是条目」的判据 ⇒ `## BUG-999 [x] [medium]`（缺状态）会被判成条目。
+  // ⇒ 这里自己解析原始三段，**空就是空**。
+  let raw = line.trim().to_owned()
+  let body = if raw.has_prefix("## ") {
+    raw[3:raw.length()].to_owned()
+  } else {
+    raw
+  }
+  let sp = bug_char_index(body, ' ', 0)
+  if sp < 0 {
+    return false
+  }
+  let id = body[0:sp].to_owned()
+  if !id.has_prefix("BUG-") {
+    return false
+  }
+  let tail = body[sp + 1:body.length()].to_owned()
+  let ts = bug_next_bracket(tail)
+  let after_ts = bug_after_bracket(tail)
+  let sev = bug_next_bracket(after_ts)
+  let status_raw = bug_after_bracket(after_ts).trim().to_owned()
+  if ts.is_empty() || sev.is_empty() || status_raw.is_empty() {
+    return false
+  }
+  // 状态段可能带后缀（`DUPLICATE →BUG-1` / `FALSE_POSITIVE (evidence)`）⇒ 只取**首个词**
+  // 再进闭集比对（否则合法抬头会被误判成非条目）。
+  let ssp = bug_char_index(status_raw, ' ', 0)
+  let status_word = if ssp < 0 {
+    status_raw
+  } else {
+    status_raw[0:ssp].to_owned()
+  }
+  bug_severities().contains(sev) && bug_status_closed().contains(status_word)
 }
 
 ///|
