@@ -164,6 +164,12 @@ SPECIAL_CASES = [
     # 自证格含 2 个变异对照（抄本改坏 1 字符 / `<`改`<=`）+ 空扫描自拒 + 覆盖率必须在输出里。
     case("check_two_faces.py", "--selftest"),
     case("check_two_faces.py"),
+    # —— BUG-440：docs/plans/ frontmatter 守卫（README:22 承诺了 5 天，守卫文件此前不存在）——
+    # 判据：文件名 / frontmatter 必须第 1 行起 / 四强制字段 / status 闭集 / 已定案自洽(含 decisions 记录)。
+    # 实测抓出过真违例：4pools 提案的第一个 `---` 块是 AIGC 水印元数据，四字段全缺。
+    # 自证 16 格含 3 个变异对照（删字段 / AIGC 伪 frontmatter / 已定案缺 decisions 记录）+ 空扫描自拒。
+    case("check_plan_location.py", "--selftest"),
+    case("check_plan_location.py"),
     case("check_store_tables_wired.py"),
     case("check_pkg_imports.py"),
     case("check_entry_paths.py"),
