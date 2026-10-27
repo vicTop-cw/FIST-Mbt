@@ -330,8 +330,12 @@ def judge(root: str = SRC):
     f3_bad = [x for x in f3 if not x["aligned"]]
 
     scanned = sum(1 for _ in iter_mbt(root))
-    # 自拒：扫描面为空 / 一个 F1 对象都没找到 ⇒ 判据无法自证
-    if scanned == 0 or not c1:
+    # 自拒：只有**扫描面为空**（读不到任何 .mbt）才拒绝出结论。
+    # 「扫描成功但 F1 无候选」= 没有手工镜像 ⇒ **干净**（rc=0），不是无法自证。
+    # R17 修：此前 `or not c1` 把「有 .mbt 文件但无镜像」也当自拒 rc=2 ——
+    # 那是**误报**：消除镜像（BUG-435 delegation）后 F1 必然为空，
+    # 而脚本应该报绿（确实没有镜像了），不是报红。
+    if scanned == 0:
         return RC_BROKEN, {
             "scanned_files": scanned, "f1_checked": [], "f1_checked_n": len(c1),
             # R16：自拒分支也必须带齐**全部**结果键 ——
@@ -344,7 +348,7 @@ def judge(root: str = SRC):
         }
     res = {
         "scanned_files": scanned,
-        "f1_checked": c1, "f1_violations": v1,
+        "f1_checked": c1, "f1_checked_n": len(c1), "f1_violations": v1,
         "f2_multi_def": {k: v for k, v in sorted(f2.items())},
         "f3_checked": f3, "f3_violations": f3_bad,
         "coverage": "3/5",
@@ -460,6 +464,18 @@ def selftest() -> int:
         rc5, res5 = judge(empty)
         cell("empty-scan-self-reject", rc5, RC_BROKEN)
         cell("empty-scan-has-note", "note" in res5, True)
+
+        # ── 格5b：R17 修后新增 —— 有 .mbt 文件但无 F1 候选 ⇒ rc=0（干净，非自拒）──
+        # 此前 `or not c1` 会把「扫描成功但无镜像」当 rc=2 误报。
+        # BUG-435 delegation 后 F1 必然为空 ⇒ 脚本应报绿（确实没有镜像了）。
+        no_mirror = os.path.join(td, "no_mirror")
+        os.makedirs(no_mirror)
+        with open(os.path.join(no_mirror, "a.mbt"), "w", encoding="utf-8") as fh:
+            fh.write("///|\npub fn something(p : Int) -> Int {\n  p + 1\n}\n")
+        rc5b, res5b = judge(no_mirror)
+        cell("no-mirror-is-clean-not-broken", rc5b, RC_OK)
+        cell("no-mirror-scanned-files", res5b["scanned_files"], 1)
+        cell("no-mirror-f1-zero", res5b["f1_checked_n"], 0)
 
         # -- cell6: F2 same-name multi-def needs TWO implementations --
         with open(os.path.join(pkg, "c.mbt"), "w", encoding="utf-8") as fh:
