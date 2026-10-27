@@ -2875,11 +2875,21 @@ pub async fn run_server() -> Unit {
         "critic": bool_prop(
           "是否开启防漂移门禁(默认 false；true 时挑战题过 Critic 评审，漂移自动降档/拒发)",
         ),
+        // BUG-454 同族：源任务在独立 ns 库里时必须能取到
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default）。源任务在独立 ns 库里时必须传",
+        ),
       },
       ["task_id"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
+      // BUG-454：按 ns 路由（不传 ⇒ default ⇒ 零回归）
+      let ns_ch = get_str(args, "namespace", default="default")
+      let eng_ch = match engine_for_ns(ns_ch) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let by = get_str(args, "by", default="auto")
       let factor = get_int(args, "factor", default=2)
       let strat = get_str(args, "strat", default="scale")
@@ -2891,7 +2901,7 @@ pub async fn run_server() -> Unit {
       }
       let gated = if critic_on { Some(evolve_arc) } else { None }
       match
-        engine.challenge(task_id~, by~, factor~, strat~, now=ts, critic=gated) {
+        eng_ch.challenge(task_id~, by~, factor~, strat~, now=ts, critic=gated) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
@@ -3143,18 +3153,29 @@ pub async fn run_server() -> Unit {
         "force": bool_prop(
           "是否按 force 语义预检(可选，默认 false)：action=archive 时建模 BUG-227 强制归档路径——放行 已暂停/已打回 非流态僵尸任务（在流态仍拒）",
         ),
+        // BUG-454：**这条最关键** —— 缺 ns 时不只「查不到」，而是拿**主库同名任务**
+        // 去算，给出与 `get(namespace=…)` **相反**的结论 ⇒ 调用方据此做错决策。
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default）。⚠️ 任务在独立 ns 库里时**必须传** —— 否则本工具会对**主库**同名任务做迁移预检，给出与 `get(namespace=…)` 相反的结论",
+        ),
       },
       ["task_id", "action"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let action = get_str(args, "action")
+      // BUG-454：按 ns 路由（不传 ⇒ default ⇒ 主库 ⇒ 零回归）
+      let ns_tx = get_str(args, "namespace", default="default")
+      let eng_tx = match engine_for_ns(ns_tx) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let assignee = get_str(args, "assignee", default="agent")
       let completed_by = get_str(args, "completed_by", default="human_steward")
       let force = get_bool(args, "force", default=false)
       Ok(
         @mcp.ToolResult::text(
-          engine
+          eng_tx
           .transition_contract(
             task_id,
             action,
@@ -4657,15 +4678,27 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "task_cleanup",
-    "归档清理：删除超过保留期的已归档任务。参数：retention_days(可选默认30)。",
+    "归档清理：删除超过保留期的已归档任务。参数：retention_days(可选默认30)、namespace(可选)。⚠️ **一次只清一个库** —— 不传 namespace 只清主库（零回归，与旧版一致）；要清独立 ns 的库必须显式传。清理是**不可逆删除**，故刻意不做「自动遍历所有 ns」：那会让一次调用波及多个租户库，事后无法核对到底删了哪些。要清多个库请逐个传 namespace。",
     schema(
-      { "retention_days": int_prop("归档保留天数(可选默认30)") },
+      {
+        "retention_days": int_prop("归档保留天数(可选默认30)"),
+        // BUG-454：批量操作也不做「遍历所有 ns」——不可逆删除不该跨库
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default，只清主库）。要清独立 ns 的库必须显式传；**不会被遍历**",
+        ),
+      },
       [],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ts = now_default()
       let retention_days = get_int(args, "retention_days", default=30)
-      match @ops.cleanup_archived(engine, ts, retention_days~) {
+      // BUG-454：按 ns 路由（不传 ⇒ default ⇒ 只清主库 ⇒ 零回归）
+      let ns_tc = get_str(args, "namespace", default="default")
+      let eng_tc = match engine_for_ns(ns_tc) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      match @ops.cleanup_archived(eng_tc, ts, retention_days~) {
         Ok(removed) =>
           Ok(
             @mcp.ToolResult::text(
