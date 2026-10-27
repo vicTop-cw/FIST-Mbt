@@ -934,7 +934,7 @@ fn opt_challenge(args : Json) -> (String?, String?) {
 
 ///|
 /// 取 `s` 的 `[start, end)` 子串（越界自动夹紧）。用于打公钥前缀（不回显全串）。
-fn substring_at(s : String, start : Int, end : Int) -> String {
+fn substring_at(s : String, start : Int32, end : Int32) -> String {
   let chars = s.to_array()
   let lo = if start < 0 { 0 } else { start }
   let hi = if end > chars.length() { chars.length() } else { end }
@@ -2082,13 +2082,11 @@ pub async fn run_server() -> Unit {
         "namespace": string_prop(
           "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库）",
         ),
-        // BUG-430 S3 第三段：可选挑战。不传 ⇒ 走原逻辑（零回归）
-        "challenge": string_prop(
-          "可选：S3 挑战 nonce。⚠️ 须配合 challenge_sig；不传则行为与旧版完全一致",
-        ),
-        "challenge_sig": string_prop(
-          "可选：对 challenge 的 Ed25519 签名 hex（128 字符）。⚠️ 服务端无法伪造，必须由调用方私钥产生",
-        ),
+        // BUG-453：这里**曾有** challenge / challenge_sig 两个参数，但 `execute` 从不调
+        // `opt_challenge(args)` ⇒ 收下就丢（死参数，与 BUG-440「声明了但没接线」同族）。
+        // 为什么删而不是接上：`execute` 不走角色取数面（`judged_role_gated`），验签结果
+        // 无处可用 —— 接一个「验了但不影响任何判决」的参数比不声明更坏（调用方会以为传了
+        // 就受保护）。S3 的门是 claim / reserve_scope / lock_acquire。
       },
       ["task_id", "deliverable"],
     ),
@@ -2524,7 +2522,8 @@ pub async fn run_server() -> Unit {
         } else {
           match @core.TaskStatus::from_string(status_str) {
             Some(st) => engine.list_by_status(st)
-            None => return Err(@mcp_types.ToolError("未知状态: \{status_str}"))
+            None =>
+              return Err(@mcp_types.ToolError("未知状态: \{status_str}"))
           }
         }
         let filtered = all.filter(fn(t) { task_ns_of(t) == ns_str })
@@ -3093,13 +3092,23 @@ pub async fn run_server() -> Unit {
       {
         "task_id": string_prop("任务 id（必填）"),
         "assignee": string_prop("拟认领人（必填）"),
+        // BUG-452：非 default ns 的任务必须能查到（此前只查主库 ⇒ 恒 task not found）
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default）。⚠️ 任务在独立 ns 库里时**必须传**，否则本工具查主库、恒报 task not found",
+        ),
       },
       ["task_id", "assignee"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let assignee = get_str(args, "assignee")
-      match @ops.check_claim(engine, task_id, assignee) {
+      // BUG-452：按 ns 路由到对应引擎（不传 ⇒ default ⇒ 与旧版完全一致，零回归）
+      let ns = get_str(args, "namespace", default="default")
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      match @ops.check_claim(eng, task_id, assignee) {
         Ok(_) =>
           Ok(
             @mcp.ToolResult::text(
@@ -3161,21 +3170,31 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "heartbeat",
-    "活动信号上报（AO ActivityState）：任务执行前/执行中周期性上报，超时静默将触发 heal 回滚。参数：task_id、signal(可选默认 active)。",
+    "活动信号上报（AO ActivityState）：任务执行前/执行中周期性上报，超时静默将触发 heal 回滚。参数：task_id、signal(可选默认 active)、namespace(可选默认 default)。",
     schema(
       {
         "task_id": string_prop("任务 id（必填）"),
         "signal": string_prop(
           "信号(可选)：pre-execution/active/submit，默认 active",
         ),
+        // BUG-452 同族：非 default ns 的任务必须能查到
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default）。任务在独立 ns 库里时必须传",
+        ),
       },
       ["task_id"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
+      // BUG-452：按 ns 路由（不传 ⇒ default ⇒ 零回归）
+      let ns_hb = get_str(args, "namespace", default="default")
+      let engine_hb = match engine_for_ns(ns_hb) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let signal = get_str(args, "signal", default="active")
       let ts = now_default()
-      match engine.get_task(task_id) {
+      match engine_hb.get_task(task_id) {
         None => Err(@mcp_types.ToolError("task not found: \{task_id}"))
         Some(_) => {
           // 计算本次心跳间隔（R90：Phi Accrual 判活数据源），上次心跳存在且可解析才记
@@ -3186,7 +3205,7 @@ pub async fn run_server() -> Unit {
             let prev_s = @ops.iso_to_secs(prev)
             if now_s >= 0 && prev_s >= 0 && now_s > prev_s {
               ignore(
-                engine.store_write_heartbeat_interval(
+                engine_hb.store_write_heartbeat_interval(
                   task_id~,
                   interval_sec=now_s - prev_s,
                   ts~,
@@ -3199,7 +3218,7 @@ pub async fn run_server() -> Unit {
           // SQLite 持久化：落库失败不阻塞主流程，但必须如实回执（BUG-119）——
           // 内存后端下 write_heartbeat 也返回 Ok，所以"是否落库"只能看后端自述
           let store_ok = match
-            engine.store_write_heartbeat(
+            engine_hb.store_write_heartbeat(
               agent_id="fist-mbt",
               task_id~,
               last_seen=ts,
@@ -5802,7 +5821,11 @@ pub async fn run_server() -> Unit {
       // 「A 持锁后 B 应 granted=false」相反；且先读后写的竞态窗口只有跨进程才暴露。
       // BUG-430 S3 收尾：挑战从 args 读并透传（空串 ⇒ None ⇒ 零回归）
       let ch = opt_challenge(args)
-      let o = engine.locks_try_acquire(lock, challenge_nonce=ch.0, challenge_sig=ch.1)
+      let o = engine.locks_try_acquire(
+        lock,
+        challenge_nonce=ch.0,
+        challenge_sig=ch.1,
+      )
       let blocked_by = if o.granted { "" } else { o.agent }
       Ok(
         @mcp.ToolResult::text(
@@ -6868,7 +6891,7 @@ pub async fn run_server() -> Unit {
       // 回读必须**在写之前**做 —— 写完再读就看不出「已有」了。
       // ══════════════════════════════════════════════════════════════════════
       let existing = match eng.store.sqlite_store() {
-        None => Some("")   // 内存后端无 agents 表 ⇒ 视为「无既有公钥」
+        None => Some("") // 内存后端无 agents 表 ⇒ 视为「无既有公钥」
         Some(s) =>
           match s.agents_get(fp) {
             None => Some("")
