@@ -7368,7 +7368,7 @@ Lane Q 报告 `reports/2026-10-26-bug413-reserve-scope-third-state-report.md` @ 
 
 ### FIXED(2026-10-26T11:47:10Z / BUG-419)
 - evidence: commit 6ffbda03（2 文件）。改在 src/engine/engine_scope_perm.mbt：find_matching_rule 改为转调新增的 find_matching_rule_in(scope, rules)，后者按 pattern.length() 降序遍历只取第一条（=最长）匹配 ⇒ 对规则表顺序免疫。抽 _in 版本供白盒锁构造「宽规则排在窄规则前面」的现场（判例-29）。生产调用只传 scope_permissions ⇒ 零回归。新增 src/engine/engine_scope_perm_order_wbtest.mbt 3 条锁：锁1=16 个真实 scope 下「最长优先」与「旧第一条匹配」结果逐条完全一致（Lane U 实测 23 个 scope 0 差异）；锁2=关键反例格，造「宽规则 src/ 排在窄规则 store_sqlite.mbt 前面」的现场，最长优先仍返回窄规则且 allowed_roles 只有 HumanSteward 不含 Leader；锁3=变异对照，断言实现里 let ordered = rules.copy() / ordered.sort_by( / for rule in ordered { 三行真在（判例-30 防护：带缩进精确片段）。验证：moon check --target js = 51 warnings 0 errors；moon_test_env --target js src/engine = 215/215/0（改前 212，+3 锁）。变异实测：删掉 sort_by 后 215/213/2（锁2 与锁3 双双变红），恢复后复跑 215/215/0。雷的实测（Lane U）：注入宽规则 src/ 到表首后旧实现让 src/store/store_sqlite.mbt 与 src/server/server.mbt 从 HumanSteward 独占降级为 Leader 可改，与 BUG-418 叠加=双重越权口。未做另立：moon.pkg 规则对子包永不生效（src/engine/moon.pkg 命中 src/engine/），当前角色集相同无实际后果但作者意图未实现。
-## BUG-420 [2026-10-26T13:15:34Z] [high] OPEN
+## BUG-420 [2026-10-26T13:15:34Z] [high] FIXED
 - summary: [multi-tenant] ns 字段只是标签不是落库位置：2432 条历史任务物理全在 default 库，按 ns 路由的工具（get/list/archive）对它们一律 not found —— BUG-407 的修复只覆盖了「真分库」场景
 - detail: ## 现象（2026-10-26 21:10 实测，清账时撞到）
 
@@ -7457,6 +7457,9 @@ BUG-407 已标 FIXED，当时验证的是「**真分库**场景」：`store_list
   **C 案不阻碍 B 案**：迁移完成后 `warning` 自动消失（`main_db_tasks` 归零）。
   **未覆盖面**：`list`（返回体是数组，加 warning 会改合约形状）、其余 ns 路由工具
   （claim/execute/submit/verify/…/dag_*）仍是原文案（探针+文案可直接复用）。
+
+### FIXED(2026-10-27T04:19:11Z / BUG-420)
+- evidence: C 案 + A 案（opt-in）双落地。①C 案（诊断可见，此前已落）：store_open 回执加 warning（实测主库 148 条 vs 本 ns 库 0 条）+ 结构化 ns_routing + get/archive 诊断式错误文案（archive 绝不回落）+ get(resolve_from_main=true) 只读回落；7 格锁 + 变异对照。②A 案（本笔，opt-in）：list 新增 resolve_from_main 参数（默认 false）—— 默认仍按 namespace 路由到对应库、返回纯数组（零变化）；true 时回主库 fist-mbt.db + 按 namespace 字段过滤，返回对象 {tasks, count, resolved_from, namespace_requested, resolved_note}。为什么做成 opt-in 而不是改默认：ns 在本仓既既是任务标签又是物理库路由，而 2432 条历史任务物理全在主库各自带不同 ns 标签，默认按 ns 路由查不到它们；但兜底回落会让 A ns 客户端查到 B ns 数据 —— 那是隔离语义的变更，不该由工具单方面决定。⇒ 做成显式开关，调用方自己选。与 C 案给 get 做的 resolve_from_main=true 是同一模式。③实测（stdio 探针 cwd=仓库根）：list(namespace=bugs, resolve_from_main=true) → count 154，前 3 条 [T0r295, T0r296, T0r297] 全是 bugs 标签；status_summary total_tasks=2438 确认主库有货；对照 list(namespace=bug420list-ns, resolve_from_main=true) → count 0（该 ns 任务在 ns 库不在主库，正确）；默认路径返回纯数组长度 1（路由到 ns 库找得到）。④诚实标注：A 案无 wbtest 锁 —— 逻辑在 handler 里不是纯函数，难以 wbtest 覆盖，本笔验证靠 stdio 探针；若要锁定建议把过滤+回执组装抽成纯函数 list_resolved_from_main_json(tasks, ns) 再补锁。⑤顺带发现（不在本笔边界）：fist-mbt call list --namespace bugs --resolve_from_main true 得到 count 0，而 stdio 探针（cwd=仓库根）得到 count 154 ⇒ scripts/fist.py 网关的 cwd 不是仓库根 ⇒ SqliteStore::new()（相对 cwd）打开的是另一个库或新建空库。这不是 A 案的 bug，是 CLI 网关的 cwd 语义问题，建议另立。⑥B 案（迁移 2271 条到各 ns 库）未做：风险高（搬迁到一半失败会留双写/丢失），且 A 案 opt-in 已提供可达性 ⇒ 留给 owner 决定是否真物理隔离。验收：moon check 0 errors、src/server 420/420。
 ## BUG-421 [2026-10-26T14:14:16Z] [medium] FIXED
 - summary: [authz] BUG-418 残留：整名 `leader` / `lead` 仍买到 Leader 军官面（子串面已关，单词面还在）—— 与「只有 human_steward/human 算特权」的口径不一致，属政策取舍待裁
 - detail: ## 现象（BUG-418 修法的残留，2026-10-26 Lane Q 实测）
@@ -8980,3 +8983,121 @@ DSH 侧 MCP 插件在本会话内仍不可用（配置只在会话启动时读�
 实测：`version`（bash + cmd 两条 shell）/ `doctor` 5/5 / `list-tools` 171 工具 / `serve` 握手 171 工具 + 3 resources；
 `call <tool>` 路由已证实到达网关的新鲜度门（当时另有 lane 的 3 个 src 文件比产物新，按 BUG-32 拒绝旧二进制；
 不设 `FIST_NO_AUTOBUILD=1` 时它会自动 `moon build`——本条实测刻意未触发，避免与并发构建互踩）。
+## BUG-438 [2026-10-27T04:09:04Z] [medium] OPEN
+- summary: [r17-filelocks] store_sqlite.mbt:1311 locks_upsert 的 ON CONFLICT 带 WHERE，与内存版「永远落库 last-write-wins」语义相反
+- detail: ## 缺陷
+
+同一个底层原语 `locks_upsert` 在两后端**行为相反**：
+
+| | 内存后端（`store_rsv.mbt:299-317`） | SQLite 后端（`store_sqlite.mbt:1311`） |
+|---|---|---|
+| 写条件 | **无条件** `self.file_locks.set(lock.scope, lock)` | **条件写**：`WHERE status != 'active' OR agent = excluded.agent OR ttl_until < excluded.ts` |
+| 他人 live 锁时 | **覆盖写** + 记一条 `lock_taken_over` 违例 | **不写**（原持有者保住），**不记任何违例** |
+
+## 代码定位
+
+**内存版（`store_rsv.mbt:299-317`）**：
+```moonbit
+pub fn MemoryStore::locks_upsert(self : MemoryStore, lock : FileLock) -> Unit {
+  match self.file_locks.get(lock.scope) {
+    Some(old) if old.status == "active" && old.agent != lock.agent &&
+                 old.ttl_until >= lock.ts =>
+      self.lock_violations.push(LockViolation::{ reason: "lock_taken_over", ... })
+    _ => ()
+  }
+  self.file_locks.set(lock.scope, lock)      // ★ 无条件写
+}
+```
+**它自己的注释（`:296-298`）明写**：
+> 「**这是底层原语，不是互斥门**：它**永远落库**（last-write-wins），只在覆盖他人 live 锁时
+> 留一条 `lock_taken_over` 事后审计。要『抢不到就拒』请用 `locks_try_acquire`。」
+
+**SQLite 版（`store_sqlite.mbt:1311`）**：
+```sql
+INSERT INTO file_locks (...) VALUES (...)
+ON CONFLICT(scope) DO UPDATE SET agent=excluded.agent, status=excluded.status, ...
+  WHERE file_locks.status != 'active'
+     OR file_locks.agent = excluded.agent
+     OR file_locks.ttl_until < excluded.ts     ← ★ 让它变成了「会拒」
+```
+
+## 为什么是真 bug（不是「两后端本来就该不同」）
+
+1. **内存版注释明写「永远落库（last-write-wins）」** ⇒ 设计意图是无条件覆盖。
+2. **测试侧的注释也这么认为**：`claimguard_wbtest.mbt:1118` 写
+   「重建物理层 locks_upsert 的「**覆盖写 + 仅记违例**」语义」、
+   `:1240` 写「重建 lock_acquire / locks_upsert 的「手写 forked 谓词 + **无条件覆盖**」语义」
+   ⇒ **两处测试都是以「无条件覆盖」为前提建夹具的**。
+3. **`store.mbt:637-638` 的注释也这么说**：`locks_try_acquire` 才是「被他人 live 持有时拒绝，不覆盖」。
+   `locks_upsert` 与它并列存在，语义必须不同 —— 否则两个函数没有区别。
+
+**⇒ SQLite 侧的 WHERE 让 `locks_upsert` 变成了「第二个 `locks_try_acquire`」，但没有 `locks_try_acquire` 的写后回读、也不记 `lock_denied` 违例。**
+
+## 为什么没被发现（三重盲区）
+
+1. **`locks_upsert` 的测试只跑内存后端**：`store_rsv_test.mbt:270/341` 都是
+   `let b = @store.StoreBackend::memory()`，**SQLite 后端对 `locks_upsert` 零覆盖**。
+2. **工具面已经不走了**：`server.mbt:5671` 注释「BUG-145：走 `locks_try_acquire`……不再走 `locks_upsert`」
+   ⇒ 生产主路径绕开了它，**漂移不会在工具调用里显形**。
+3. **仅剩的调用方是测试夹具**（`lock_legacy_grant_wbtest.mbt:45/108` 用 `e.locks_upsert` 造锁）
+   ⇒ 若哪天引擎切到 SQLite 后端，这个夹具会**造不出预期状态**（他人 live 锁时写不进去），
+   而内存后端照常 ⇒ **测试在不同后端下行为不同**。
+
+## 触发时序（可推演）
+
+```
+t0  agent A 经 locks_try_acquire 得到 scope 锁（active, ttl=t9）
+t1  agent B 调 locks_upsert（底层原语，绕过裁决）
+      · 内存后端   ：B 的锁覆盖 A 的（last-write-wins），记一条 lock_taken_over(agent=B)
+      · SQLite 后端：WHERE 三子句全 false（不是自己 / 是 active / ttl 未过）⇒ **不写**
+                     ⇒ 库里仍是 A 的锁，**且没有任何违例记录**
+```
+⇒ 同一动作，两个后端一个「换主 + 留痕」、一个「静默无操作 + 无痕」。
+
+## 建议修法（二选一，建议 A）
+
+**A（推荐）：让 SQLite 侧符合「无条件覆盖」的设计意图**
+```diff
+--- a/src/store/store_sqlite.mbt   (locks_upsert, ~:1311)
+-  ... ON CONFLICT(scope) DO UPDATE SET ... WHERE file_locks.status != 'active' OR file_locks.agent = excluded.agent OR file_locks.ttl_until < excluded.ts
++  ... ON CONFLICT(scope) DO UPDATE SET ...        -- 无 WHERE：无条件覆盖
+```
+并**同批**在 SQL 执行前用写前快照判「是否记 `lock_taken_over`」（与内存版同一判据）：
+```moonbit
+let need_violation = match self.locks_get(lock.scope) {
+  Some(old) => old.status_of() == "active" && old.agent_of() != lock.agent
+               && old.ttl_of() >= lock.ts
+  None => false
+}
+```
+⇒ 两后端统一为「永远落库 + 条件记违例」。
+
+**B（反向收口）：承认 SQLite 行为是对的，改内存版 + 改注释**
+即把 `locks_upsert` 定义成「也做互斥」，但这与 `locks_try_acquire` 职责重叠，
+**且要让 `claimguard_wbtest.mbt:1118/1240` 那两个夹具重建的语义跟着改** ⇒ 改动面更大。
+**不推荐。**
+
+## 建议同批补的锁（判例-5 同族）
+
+`store_rsv_test.mbt` 现有的 `locks_upsert` 测试只跑 `memory()`。
+**必须补一对「双后端等价锁」**：同一组 (既有锁, 新锁) 喂两后端，断言
+`locks_get` 的结果与 `lock_violations_list` 的长度都相同（这一格在修前会红）。
+
+## 与 `check_two_faces.py` 的关系
+
+F3 目前只对表 `rsv_action ↔ reservations` 那条 `ON CONFLICT`，
+**`file_locks` 的两条（`locks_upsert` / `locks_try_acquire`）未纳入**。
+本单已确认：
+- `locks_try_acquire` 的三子句 ↔ `rsv_action` 四分支 **完全对应** ✓（严格 `<`，两侧一致）
+- **`locks_upsert` 那条与内存版语义相反** ← 本条 bug
+⇒ **建议 F3 扩到 `file_locks`，并新增一条「同一原语两后端语义」的判据**（见报告 §缺口）
+
+## 关联
+
+`src/store/store_rsv.mbt:299-317`（内存版 + 注释「永远落库」）·
+`src/store/store_sqlite.mbt:1311`（SQLite 版 WHERE）·
+`src/store/store_sqlite.mbt:1438`（`locks_try_acquire` 的 WHERE，**这条是对的**）·
+`src/store/store.mbt:637-638`（两函数职责分界注释）·
+`claimguard_wbtest.mbt:1118/1240`（夹具以「无条件覆盖」为前提）·
+R10「两后端等价」结论（**本条的发现说明：R10 只验了 try_acquire，没验 upsert**）
+- reported_by: commander-gamma
