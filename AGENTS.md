@@ -161,6 +161,36 @@ grep -cE 'omega_+orphan_+of_+archived_+parent\('  cli.js → 3    ← 容忍变�
 要比内容，不能只比号。落地见 `scripts/check_deployment_freshness.py`（42 格自检，5 处变异对照）
 + `scripts/_deployment_symbols.py`（探针单一真源）。
 
+### 判例-33：自检要测「配置这根线」，不是「服务本体」（2026-10-27 立 · BUG-437）
+
+**判据绿了整场，而生产入口一次都没起来。** `scripts/mcp_smoke.py` 一直 PASS（171 工具），
+DSH 侧 `fist-mbt` 却恒报 `mcp-client(fist-mbt): server is disconnected` —— 因为 smoke 自己拼了
+`[NODE, main_js, "serve"]` 直接拉 bundle，**绕过了 `.mcp.json` 那根真正出故障的线**
+（`"command": "fist-mbt"` 在 Windows 无 shell 不可 spawn：裸名 → `ENOENT`，`.cmd` → `EINVAL`）。
+
+⇒ 与判例-29「机制格 ≠ 实现路径格」、判例-32「版本号 PASS ≠ 代码新鲜」同族：
+**「被测对象能工作」与「被测对象被正确接入」是两件事**，而用户只感知后者。
+
+**硬要求**：任何「服务可用性」自检，必须用**生产配置的同一份启动描述**（`command` + `args` 原样）去 spawn，
+不得自己拼一条更"好走"的路；绕路那一条只能在拿不到配置时当 fallback，且必须**明说降级**。
+
+**第二条（同族不同面）：构建产物不是稳定属性。** 依赖「产物后处理」的东西
+（ESM `require` 兼容层、`MOONC_OVERRIDE` 注入、`patch_esm_main.py` 这类补丁）**必须在每次启动时幂等重建**，
+不能假设「上一次 build 之后它还在」。实测同一路径 `cli.js` 的 shim 在 **08:50 / 08:57 / 09:03 三次反复**
+（并发构建各写各的）⇒ 不幂等的补丁等于没有补丁，且失效形态是「能启动、一用就死」（首次打库才崩），
+比启动即崩更难判。**判据要盯「启动后真的用一次」，不能只盯 banner。**
+
+**第三条（Windows 面）**：`spawn('x')` **不认 `.cmd`/`.bat`**（「node 18.20.2」起无 `shell:true` 直接 `EINVAL` —— 这是**行为变更版本**，不是地板声明），
+也不认无扩展名的 sh 脚本。配置里写裸命令名**只在 POSIX 成立**。Windows 上要么写绝对 `node <js>`，
+要么钉真 `node.exe`（PATH 首条常是 `dsh-desktop\harness\.desktop-bin\node.cmd` 垫片，
+经 `cmd.exe` 转发会吞引号 —— BUG-380 同源）。
+
+**落地**：`%LOCALAPPDATA%\FIST-Mbt\serve-launcher.cjs`（幂等补 ESM shim + 修双补丁 + debug/release 自动选 +
+日志打**内容身份** mtime/size/sha8；**双路由**：`serve|version|demo|doctor|help` → MoonBit bundle，
+其余 → `scripts/fist.py` 网关，网关子进程注入 `FIST_NODE=process.execPath` 避开 `node.cmd` 垫片）
++ `.mcp.json` 走 `node` + 该启动器 + 两份注册垫片（`~/.local/bin/fist-mbt.cmd` 与 POSIX `fist-mbt`，均委派它，
+`.cmd` 另钉真 `node.exe`）；账本 BUG-437。
+
 ## Tooling
 
 - `moon fmt` is used to format your code properly.
