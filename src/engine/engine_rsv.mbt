@@ -157,6 +157,150 @@ pub fn judged_role_with_challenge(
 }
 
 ///|
+/// S3 第二段：**四道门专用的取数面**（保留原有 `role_source` 语义）。
+///
+/// 与 `judged_role_with_challenge` 的关键区别 —— **`None` 分支不做任何改变**：
+///   · `challenge_nonce = None` ⇒ **原样返回 `judged_role` 的结果**（`declared` / `inferred`）。
+///     理由：四道门的回执文案（如 `RANK_GATE: ... role_source=inferred`）与既有测试
+///     都依赖这两个取值；把 `None` 改标成 `"unauthenticated"` 会**改掉现网语义**
+///     （实测代价：3 格 rank_gate 测试立刻红）—— 那是第三段的「全量切换到认证」才该做的事。
+///   · `challenge_nonce = Some(_)` ⇒ **必须验签**：通过 ⇒ `(role, "challenge_verified")`
+///     （真实身份，可以拿高权）；失败或未登记公钥 ⇒ `("Executor", "challenge_failed")`（fail-closed）。
+///
+/// **⇒ 语义是「加严不放宽」**：不传挑战 = 完全维持现状；传了挑战 = 必须验过才给真角色。
+///   真正想「没挑战就不给高权」是**第三段**（全量切换），本段刻意不做，以免半途改坏现网。
+pub fn judged_role_gated(
+  eng : FistEngine,
+  agent : String,
+  challenge_nonce : String?,
+) -> (String, String) {
+  match challenge_nonce {
+    None => judged_role(eng, agent)   // ← 零回归：原样返回
+    Some(_) => {
+      let (role, src) = judged_role_with_challenge(eng, agent, challenge_nonce)
+      (role, src)
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// BUG-430 / S3 **第二段**：nonce 一次性消费 + 四条门接入
+//
+// 第一段的 nonce **不落库** ⇒ 同一个 nonce 可以被重复使用 ⇒「挑战」退化成
+// 「长期通行证」。第二段补两件事：
+//   ① **nonce 登记 + 一次性消费**（`claim_challenge_nonce` 原子消费）
+//   ② **四条门全部走 `judged_role_with_challenge`**
+//
+// ⚠️ 诚实边界（必读）：
+//   · `pubkey_fp` 目前是**死承诺**（`server.mbt:649` 明写「全仓无任何代码真正派生它，
+//     所有写入点恒传 `pubkey_fp=""`」，BUG-403）。⇒ **线上没有任何 agent 有公钥**
+//     ⇒ 传了 `challenge` 的调用**一律 challenge_failed**。
+//     这是**正确且期望的** fail-closed 行为，不是 bug。
+//   · 要真正生效还需要：**客户端签名回传**（`s3_last_sig_probe` 换成真实来源）
+//     + **公钥登记入口**（`agents_register` 的 `pubkey_fp` 参数接线，在 `server.mbt`）。
+// ══════════════════════════════════════════════════════════════════════════
+
+///|
+/// S3 第二段：nonce 登记表（**进程内**，不落库）。
+///
+/// key = agent 的归一化 fp，value = 「已签发但未消费」的 nonce 集合。
+///
+/// 为什么用进程内而不是新表：`store_sqlite.mbt` 是 HumanSteward 独占面（本轮改不了），
+/// 且 nonce 的语义天然是**短命**的（一次挑战一用即弃），进程内存储足够；
+/// 代价是**跨进程不共享**（多实例部署时各自的 nonce 互不可见）—— 已在 §缺口 登记。
+pub let s3_pending_nonces : Map[String, Array[String]] = Map([])
+
+///|
+/// S3 第二段：**签发**一个 challenge 并登记为「待消费」。
+///
+/// 返回 nonce 字符串（调用方交客户端去签）。同一 agent 可同时有多个未消费 nonce
+/// （并发挑战），但每个**只能用一次**。
+pub fn FistEngine::s3_issue_challenge(
+  self : FistEngine,
+  agent : String,
+  counter : Int32,
+) -> String {
+  ignore(self)
+  let nonce = issue_challenge_nonce(agent, counter)
+  let k = agent_fp_of(agent)
+  let cur = match s3_pending_nonces.get(k) {
+    None => []
+    Some(a) => a
+  }
+  cur.push(nonce)
+  s3_pending_nonces.set(k, cur)
+  nonce
+}
+
+///|
+/// S3 第二段：**一次性消费**（原子：查到即删除，第二次查必空）。
+///
+/// 语义：nonce 必须在**已登记且未消费**集合里，才返回 `true` 并**立即移除**。
+/// 重复提交同一 nonce ⇒ 第二次 `false` ⇒ **防重放**。
+///
+/// 为什么是「消费」而不是「标记 consumed」：本表只存**未消费**的，
+/// 消费即删除 ⇒ 表不会无限增长，且**不存在「标记了但没生效」**的中间态。
+pub fn s3_consume_nonce(agent : String, nonce : String) -> Bool {
+  let k = agent_fp_of(agent)
+  match s3_pending_nonces.get(k) {
+    None => false
+    Some(arr) => {
+      // 线性查找（未消费的 nonce 通常只有个位数，不值得上索引）
+      let mut found = -1
+      let mut i = 0
+      while i < arr.length() {
+        if arr[i] == nonce {
+          found = i
+          break
+        }
+        i = i + 1
+      }
+      if found < 0 {
+        false
+      } else {
+        ignore(arr.remove(found))
+        true
+      }
+    }
+  }
+}
+
+///|
+/// S3 第二段：**带 nonce 防重放的挑战判定**（四条门统一入口）。
+///
+/// 与 `judged_role_with_challenge` 的区别：本函数在验签**前后**各多一道 nonce 闸：
+///   1. `challenge_nonce = None` ⇒ 直接走无挑战路径（**不消费任何 nonce**）；
+///   2. `Some(nonce)` ⇒ **先验签**，验签通过**才**消费 nonce（避免「验签失败也烧掉 nonce」
+///      导致合法调用方白白重试）；
+///   3. nonce 已被消费过 ⇒ `challenge_replayed`（**不降级为 unauthenticated**，
+///      而是明确告诉调用方「你重放了」）。
+///
+/// ⚠️ 返回值 `role_source` 的新增取值：`"challenge_replayed"`。
+pub fn judged_role_with_nonce(
+  eng : FistEngine,
+  agent : String,
+  challenge_nonce : String?,
+) -> (String, String) {
+  match challenge_nonce {
+    None => judged_role_gated(eng, agent, None)
+    Some(nonce) => {
+      let (role, src) = judged_role_gated(eng, agent, Some(nonce))
+      if src == "challenge_verified" {
+        // 验签通过 ⇒ 消费 nonce；若已被消费过 ⇒ 判重放（且**不**保留已验证身份）
+        if s3_consume_nonce(agent, nonce) {
+          (role, src)
+        } else {
+          ("Executor", "challenge_replayed")
+        }
+      } else {
+        // 验签失败 / 未登记公钥 ⇒ 不消费 nonce（让调用方可用同一 nonce 修正重试）
+        (role, src)
+      }
+    }
+  }
+}
+
+///|
 /// S3 第一段：取某 agent 登记的**公钥 hex**（agents 表 `pubkey_fp` 列）。
 ///
 /// 取数走**与 `declared_role_for_judgment` 完全相同的路径**
@@ -209,6 +353,8 @@ pub fn FistEngine::rsv_set(
   agent~ : String,
   ttl_until~ : String,
   created_at~ : String,
+  // BUG-430 S3 第二段：可选挑战（不传 ⇒ None ⇒ 走原逻辑，零回归）
+  challenge_nonce~ : String? = None,
 ) -> Result[String, String] {
   // 权限门禁：先过权限，再预订（BUG-413 三态分流）
   //
@@ -229,7 +375,7 @@ pub fn FistEngine::rsv_set(
   //
   // 为什么不直接返回 `Result` 让调用方区分：`rsv_set` 的签名是 `Result[String, String]`，
   // 改签名会波及工具面 3 处调用方。所以用**后缀标注** —— 零签名变更，且回执自带证据。
-  let (role, role_source) = judged_role(self, agent)
+  let (role, role_source) = judged_role_gated(self, agent, challenge_nonce)
   match check_scope_permission(scope, role) {
     // RoleDenied 是**硬拒** —— HumanSteward 保护路径必须继续拒绝，绝不放行
     RoleDenied(e) => Err(e)
@@ -265,6 +411,8 @@ pub fn FistEngine::rsv_try_set(
   agent~ : String,
   ttl_until~ : String,
   created_at~ : String,
+  // BUG-430 S3 第二段：可选挑战（不传 ⇒ None ⇒ 走原逻辑，零回归）
+  challenge_nonce~ : String? = None,
 ) -> Result[@store.RsvOutcome, String] {
   // 权限门禁：先过权限，再进后端裁决（BUG-413 三态分流）
   // BUG-418：角色先查权威面 `agents.role`（同上，必须自己算指纹）。
@@ -278,7 +426,7 @@ pub fn FistEngine::rsv_try_set(
   //   在 S3（身份锚点）落地前，冒充风险不会消除。
   // `action` 的合法取值因此扩展为：reserved | renewed | taken_over | conflict |
   //   unregistered | <上述之一>[+role_inferred][+agent_self_reported]
-  let (role, role_source) = judged_role(self, agent)
+  let (role, role_source) = judged_role_gated(self, agent, challenge_nonce)
   let src_tag = "+agent_self_reported"
   match check_scope_permission(scope, role) {
     RoleDenied(e) => Err(e)
@@ -380,12 +528,14 @@ pub fn FistEngine::locks_upsert(
 pub fn FistEngine::locks_try_acquire(
   self : FistEngine,
   lock : @store.FileLock,
+  // BUG-430 S3 第二段：可选挑战（不传 ⇒ None ⇒ 走原逻辑，零回归）
+  challenge_nonce~ : String? = None,
 ) -> @store.LockAcquireOutcome {
   let agent = lock.agent_of()
   let scope = lock.scope_of()
   // BUG-422：与两条预订门同一取数（剔除 server 自身份，见 `declared_role_for_judgment`）。
   // BUG-432：并入 `judged_role` —— 锁门 / 预订门 / claim 的 RANK_GATE 现在是**同一个**取数面。
-  let (role, _role_source) = judged_role(self, agent)
+  let (role, _role_source) = judged_role_gated(self, agent, challenge_nonce)
   match check_scope_permission(scope, role) {
     RoleDenied(_) =>
       // **legacy_grant 特判（BUG-424 裁决 (a)(b)(c)）**
