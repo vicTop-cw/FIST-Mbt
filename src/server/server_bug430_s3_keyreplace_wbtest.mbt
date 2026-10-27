@@ -13,7 +13,7 @@
 
 ///|
 /// 造一个 32 字节形状的合法 hex（本段只测登记逻辑，不测密码学）。
-fn bl_key_hex(fill : Int) -> String {
+fn bl_key_hex(fill : Int32) -> String {
   let hx = "0123456789abcdef"
   let hi = hx.to_array()[fill / 16]
   let lo = hx.to_array()[fill % 16]
@@ -41,21 +41,31 @@ test "bl_01_store_does_not_overwrite_pubkey" {
   let k2 = bl_key_hex(0xbb)
   ignore(
     sql.agents_register(
-      agent_id="FP-A", agent_type="t", role="Executor", soldier="工兵",
-      pubkey_fp=k1, pid=1, now="2026-10-27T00:00:00Z",
+      agent_id="FP-A",
+      agent_type="t",
+      role="Executor",
+      soldier="工兵",
+      pubkey_fp=k1,
+      pid=1,
+      now="2026-10-27T00:00:00Z",
     ),
   )
   ignore(
     sql.agents_register(
-      agent_id="FP-A", agent_type="t", role="Executor", soldier="工兵",
-      pubkey_fp=k2, pid=1, now="2026-10-27T00:00:01Z",
+      agent_id="FP-A",
+      agent_type="t",
+      role="Executor",
+      soldier="工兵",
+      pubkey_fp=k2,
+      pid=1,
+      now="2026-10-27T00:00:01Z",
     ),
   )
   let got = match sql.agents_get("FP-A") {
     None => abort("读不回")
     Some(a) => a.pubkey_fp
   }
-  assert_eq(got, k1)   // 不覆盖 ⇒ 仍是 k1
+  assert_eq(got, k1) // 不覆盖 ⇒ 仍是 k1
 }
 
 ///|
@@ -68,8 +78,13 @@ test "bl_02_first_registration_succeeds" {
   let k = bl_key_hex(0xcc)
   ignore(
     sql.agents_register(
-      agent_id="FP-B", agent_type="t", role="Executor", soldier="工兵",
-      pubkey_fp=k, pid=1, now="2026-10-27T00:00:00Z",
+      agent_id="FP-B",
+      agent_type="t",
+      role="Executor",
+      soldier="工兵",
+      pubkey_fp=k,
+      pid=1,
+      now="2026-10-27T00:00:00Z",
     ),
   )
   match sql.agents_get("FP-B") {
@@ -99,7 +114,9 @@ test "bl_03_tool_rejects_key_replacement" {
   }
   // ① 必须做「写前回读既有公钥」
   if !code.contains("let prev_key = match existing") {
-    abort("没有在写之前读既有公钥 —— 写完再读就看不出「已有」了")
+    abort(
+      "没有在写之前读既有公钥 —— 写完再读就看不出「已有」了",
+    )
   }
   // ② 必须有「已相等 ⇒ 幂等」的判断（同钥重复登记不该被拒）
   if !code.contains("prev_key == pubkey_hex") {
@@ -117,13 +134,22 @@ test "bl_03_tool_rejects_key_replacement" {
     )
   }
   // ④ 拒绝必须发生在写之前（`agent_touch_first_seen` 之前）
+  //
+  // ⚠️ 不能用「全文件第一个 agent_touch_first_seen」—— 实测踩过：
+  //   本仓有 4 处该调用（claim / execute / heartbeat / 本工具），
+  //   取第一个会让索引比较错位，锁在**无关的改动**下变红
+  //   （BUG-452 给 heartbeat 加路由时就撞上了）。
+  //   ⇒ 必须**从 `prev_key` 之后**找第一个，那才是本工具自己的写。
   let i_prev = code.find("let prev_key = match existing")
-  let i_touch = code.find("agent_touch_first_seen(\n          eng")
-  let (a, b) = match (i_prev, i_touch) {
-    (Some(x), Some(y)) => (x, y)
-    _ => abort("找不到关键语句位置")
+  let a = match i_prev {
+    Some(x) => x
+    None => abort("找不到「回读既有公钥」语句")
   }
-  if a >= b {
-    abort("「回读既有公钥」在「写」之后 —— 那时已经覆盖完了，检查形同虚设")
+  let tail = substring_from(code, a + 1)
+  if tail.find("agent_touch_first_seen(") is None {
+    abort(
+      "「回读既有公钥」之后**没有** agent_touch_first_seen 调用 —— " +
+      "要么本工具没写库，要么写在检查之前",
+    )
   }
 }
