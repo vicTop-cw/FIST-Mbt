@@ -2427,7 +2427,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "list",
-    "列出任务，可按状态与命名空间过滤。参数：status(可选，中文状态名)、namespace(可选，按命名空间过滤；不传则列出全库所有命名空间)。",
+    "列出任务，可按状态与命名空间过滤。参数：status(可选，中文状态名)、namespace(可选)、resolve_from_main(可选默认 false)。**BUG-420 的 A 案（opt-in）**：`resolve_from_main=true` 时**回主库** + 按 ns 字段过滤（跨库查历史任务），回执形状变为 `{tasks, count, resolved_from, namespace_requested, resolved_note}`；**默认 false 时行为与以前完全一致**（按 namespace 路由到对应库、返回纯数组）—— 即「跨库查」是**调用方显式选的**，不是默认语义。",
     schema(
       {
         "status": string_prop(
@@ -2436,12 +2436,46 @@ pub async fn run_server() -> Unit {
         "namespace": string_prop(
           "按命名空间过滤(可选)：如 default/cron-auto/cron-cypy/fist-iter；不传则列出全部命名空间",
         ),
+        "resolve_from_main": bool_prop(
+          "可选默认 false。true = BUG-420 A 案只读回落：回主库 fist-mbt.db 后按 ns **字段**过滤（跨库查历史任务），回执变成对象 {tasks, count, resolved_from, …}；false = 老行为（按 namespace 路由到对应库、返回纯数组）。**写路径绝不回落**——本开关只影响 list 这个只读工具。",
+        ),
       },
       [],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let status_str = get_str(args, "status")
       let ns_str = get_str(args, "namespace", default="")
+      let resolve_main = get_bool(args, "resolve_from_main", default=false)
+      // ── BUG-420 A 案（opt-in，默认关）：跨库查历史任务 ──────────────────
+      // 为什么做成 opt-in 而不是改默认：`ns` 在本仓**既是任务标签又是物理库路由**，
+      // 而 2432 条历史任务物理全在主库、各自带不同 ns 标签 ⇒ 默认按 ns 路由会查不到它们。
+      // 但「兜底回落」会让 A ns 的客户端查到 B ns 的数据 —— 那是**隔离语义的变更**，
+      // 不该由工具单方面决定。⇒ 做成显式开关：调用方自己选，默认零变化。
+      if resolve_main && ns_str != "" && ns_str != "default" {
+        let all = if status_str == "" {
+          engine.list_all()
+        } else {
+          match @core.TaskStatus::from_string(status_str) {
+            Some(st) => engine.list_by_status(st)
+            None => return Err(@mcp_types.ToolError("未知状态: \{status_str}"))
+          }
+        }
+        let filtered = all.filter(fn(t) { task_ns_of(t) == ns_str })
+        let arr = Json::array(filtered.map(fn(t) { t.to_json() }))
+        let m : Map[String, Json] = Map([])
+        m.set("tasks", arr)
+        m.set("count", Json::number(filtered.length().to_double()))
+        m.set("resolved_from", Json::string("default(main)"))
+        m.set("namespace_requested", Json::string(ns_str))
+        m.set(
+          "resolved_note",
+          Json::string(
+            "BUG-420 A 案：本次是**只读回落** —— 回主库 fist-mbt.db 后按 ns 字段过滤（`resolved_from` 标注来源）。写路径绝不回落。默认（不传本开关）仍按 namespace 路由到对应库。",
+          ),
+        )
+        return Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
+      }
+      // ── 老路径（默认）：按 ns 路由到对应库，返回纯数组 ──────────────────
       let eng = match engine_for_ns(ns_str) {
         Ok(e) => e
         Err(m) => return Err(m)
