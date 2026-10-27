@@ -1308,7 +1308,14 @@ pub fn SqliteStore::locks_upsert(self : SqliteStore, lock : FileLock) -> Unit {
           stmt.finalize()
         }
       }
-      let sql = "INSERT INTO file_locks (scope, lock_id, batch_id, agent, status, ts, ttl_until, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(scope) DO UPDATE SET lock_id=excluded.lock_id, batch_id=excluded.batch_id, agent=excluded.agent, status=excluded.status, ts=excluded.ts, ttl_until=excluded.ttl_until, meta=excluded.meta WHERE file_locks.status != 'active' OR file_locks.agent = excluded.agent OR file_locks.ttl_until < excluded.ts"
+      // BUG-438：**去掉 `WHERE`** —— 与内存版 `.file_locks.set(scope, lock)` 的
+      // 「**永远落库**（last-write-wins）」语义对齐。本函数是**底层原语、不是互斥门**
+      // （见 `MemoryStore::locks_upsert` 的注释：「要『抢不到就拒』请用 `locks_try_acquire`」），
+      // 所以它不该有条件写：上面那句 `INSERT INTO lock_violations … 'lock_taken_over'`
+      // 只做**事后审计**（覆盖他人 live 锁时留痕），**不阻止**覆盖本身。
+      // 旧实现在这里带 `WHERE file_locks.status != 'active' OR …` ⇒ 条件不满足时**静默不写**
+      // ⇒ 同一原语在两后端行为相反（SQLite 拒绝覆盖 / 内存覆盖），而调用方无从区分。
+      let sql = "INSERT INTO file_locks (scope, lock_id, batch_id, agent, status, ts, ttl_until, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(scope) DO UPDATE SET lock_id=excluded.lock_id, batch_id=excluded.batch_id, agent=excluded.agent, status=excluded.status, ts=excluded.ts, ttl_until=excluded.ttl_until, meta=excluded.meta"
       match db.prepare(sql) {
         None => ()
         Some(stmt) => {
