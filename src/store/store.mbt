@@ -39,6 +39,22 @@ pub struct MemoryStore {
   lock_violations : Array[LockViolation]
   // 项目助理登记（multi-agent-lock v3 阶段2）：agent -> AssistantReg
   assistant_reg : Map[String, AssistantReg]
+  // BUG-439：熔断器记录（R104 的资源门，此前内存后端**从未实现**）
+  //   key = "<ns>\u0000<circuit>"（与 SQLite 侧 UNIQUE(ns, circuit) 同口径），
+  //   value = (state, failures, window_secs, threshold, recovery_secs, opened_at, last_fail_ts)
+  //
+  // 为什么必须存在：此前 `StoreBackend::cb_get(Mem)` 恒返回 `None`、
+  // `cb_save(Mem)` 直接 `Ok(())` no-op ⇒ 引擎侧 `failures` 永远读到 0，
+  // `nf = failures + 1` 恒为 1，`1 >= threshold(3)` 永不成立 ⇒ **内存后端永不熔断**。
+  // 这是**假绿**形态：工具不报错、回执字段齐全、保护从未生效。
+  circuit_breakers : Map[String, (String, Int32, Int32, Int32, Int32, Int32, Int32)]
+}
+
+///|
+/// BUG-439：熔断器记录的进程内复合键（与 SQLite 的 `UNIQUE(ns, circuit)` 同口径）。
+/// 用 `\u{0}` 分隔而不是 `:` —— ns / circuit 名里可能出现 `:`，用 `:` 会有键碰撞。
+fn cb_key(ns : String, circuit : String) -> String {
+  ns + "\u{0}" + circuit
 }
 
 ///|
@@ -53,6 +69,7 @@ pub fn MemoryStore::new() -> MemoryStore {
     file_locks: Map([]),
     lock_violations: [],
     assistant_reg: Map([]),
+    circuit_breakers: Map([]),
   }
 }
 
@@ -972,20 +989,26 @@ pub fn StoreBackend::mark_saga_actions_done(
 }
 
 ///|
-/// 读取某熔断器记录（R104：内存后端返回 None，SQLite 实读）。
+/// 读取某熔断器记录（R104）。**BUG-439：内存后端已实读**（此前恒 `None` ⇒ 永不熔断）。
+///
+/// 返回 `(state, failures, window_secs, threshold, recovery_secs, opened_at, last_fail_ts)`，
+/// 与 `SqliteStore::cb_get` **逐字段同序**。
 pub fn StoreBackend::cb_get(
   self : StoreBackend,
   ns : String,
   circuit : String,
 ) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)? {
   match self {
-    Mem(_) => None
+    Mem(m) => m.circuit_breakers.get(cb_key(ns, circuit))
     Sql(s) => s.cb_get(ns, circuit)
   }
 }
 
 ///|
-/// 写入/覆盖熔断器记录（R104：内存后端为 no-op，SQLite 幂等 upsert）。
+/// 写入/覆盖熔断器记录（R104）。**BUG-439：内存后端已实写**（此前是 no-op ⇒ 计数从不累积）。
+///
+/// 语义与 SQLite 的 `ON CONFLICT(ns, circuit) DO UPDATE` **逐字段一致**：
+/// 整体覆盖，不保留旧值（引擎侧每次 save 都写全量快照）。
 pub fn StoreBackend::cb_save(
   self : StoreBackend,
   ns : String,
@@ -1000,7 +1023,16 @@ pub fn StoreBackend::cb_save(
   updated_at : String,
 ) -> Result[Unit, String] {
   match self {
-    Mem(_) => Ok(())
+    // 内存后端不持久化 `updated_at`（SQLite 有那一列，内存版无对应字段）——
+    // 这是**有意的**：`updated_at` 只用于库内审计/排序，不参与三态判定。
+    // 引擎侧读回的是 `cb_get` 的 7 元组，本就不含 `updated_at` ⇒ 两侧读回形状一致。
+    Mem(m) => {
+      m.circuit_breakers.set(
+        cb_key(ns, circuit),
+        (state, failures, window_secs, threshold, recovery_secs, opened_at, last_fail_ts),
+      )
+      Ok(())
+    }
     Sql(s) =>
       s.cb_save(
         ns, circuit, state, failures, window_secs, threshold, recovery_secs, opened_at,
