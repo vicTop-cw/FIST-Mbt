@@ -696,6 +696,7 @@ fn agent_touch_first_seen(
   agent_type : String,
   role : String,
   soldier : String,
+  pubkey_hex~ : String = "",
   now : String,
 ) -> Unit {
   let fp = agent_fp(raw_agent_id)
@@ -708,7 +709,9 @@ fn agent_touch_first_seen(
       agent_type~,
       role~,
       soldier~,
-      pubkey_fp="",
+      // BUG-430 S3 第三段：接线公钥录入（此前恒传 ""，是死承诺 —— BUG-403）
+      // 传空串 ⇒ 保持现有行为（该 agent 无法通过挑战认证，fail-closed）
+      pubkey_fp=pubkey_hex,
       pid=current_pid_token(),
       now~,
     ),
@@ -1893,6 +1896,13 @@ pub async fn run_server() -> Unit {
         "namespace": string_prop(
           "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
         ),
+        // BUG-430 S3 第三段：可选挑战。不传 ⇒ 走原逻辑（零回归）
+        "challenge": string_prop(
+          "可选：S3 挑战 nonce。⚠️ 须配合 challenge_sig；不传则行为与旧版完全一致",
+        ),
+        "challenge_sig": string_prop(
+          "可选：对 challenge 的 Ed25519 签名 hex（128 字符）。⚠️ 服务端无法伪造，必须由调用方私钥产生",
+        ),
       },
       ["task_id"],
     ),
@@ -2023,6 +2033,13 @@ pub async fn run_server() -> Unit {
         "failure_reason": string_prop("失败原因(可选)"),
         "namespace": string_prop(
           "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库）",
+        ),
+        // BUG-430 S3 第三段：可选挑战。不传 ⇒ 走原逻辑（零回归）
+        "challenge": string_prop(
+          "可选：S3 挑战 nonce。⚠️ 须配合 challenge_sig；不传则行为与旧版完全一致",
+        ),
+        "challenge_sig": string_prop(
+          "可选：对 challenge 的 Ed25519 签名 hex（128 字符）。⚠️ 服务端无法伪造，必须由调用方私钥产生",
         ),
       },
       ["task_id", "deliverable"],
@@ -5566,6 +5583,13 @@ pub async fn run_server() -> Unit {
           "预订者（如 exec_1，必填）。⚠️ 本参数由调用方自报，服务端无法验证 —— 不能防有意的冒充（BUG-430）",
         ),
         "ttl_until": string_prop("TTL 截止时间戳（ISO-8601，必填）"),
+        // BUG-430 S3 第三段：可选挑战。不传 ⇒ 走原逻辑（零回归）
+        "challenge": string_prop(
+          "可选：S3 挑战 nonce。⚠️ 须配合 challenge_sig；不传则行为与旧版完全一致",
+        ),
+        "challenge_sig": string_prop(
+          "可选：对 challenge 的 Ed25519 签名 hex（128 字符）。⚠️ 服务端无法伪造，必须由调用方私钥产生",
+        ),
       },
       ["scope", "agent", "ttl_until"],
     ),
@@ -5687,6 +5711,13 @@ pub async fn run_server() -> Unit {
         "ttl_until": string_prop("锁过期时间 ISO 字符串（必填）"),
         "ts": string_prop("获取时间戳（可选，默认当前时间）"),
         "meta": string_prop("元数据 JSON 字符串（可选）"),
+        // BUG-430 S3 第三段：可选挑战。不传 ⇒ 走原逻辑（零回归）
+        "challenge": string_prop(
+          "可选：S3 挑战 nonce。⚠️ 须配合 challenge_sig；不传则行为与旧版完全一致",
+        ),
+        "challenge_sig": string_prop(
+          "可选：对 challenge 的 Ed25519 签名 hex（128 字符）。⚠️ 服务端无法伪造，必须由调用方私钥产生",
+        ),
       },
       ["lock_id", "batch_id", "scope", "agent", "ttl_until"],
     ),
