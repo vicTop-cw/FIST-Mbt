@@ -8275,7 +8275,7 @@ sed -n '603,613p' src/server/server.mbt
 Lane AF 报告 `reports/2026-10-27-bug422b-identity-assertion-plan.md` @ `0f1bad7b`（§11 是正文）。
 - reported_by: lead(Lane AF §11 正文)
 
-## BUG-431 [2026-10-26T18:57:20Z] [medium] OPEN
+## BUG-431 [2026-10-26T18:57:20Z] [medium] FIXED
 - summary: [r11-assistant] server.mbt:5598 接管留痕取决于 sweep 是否先跑：sweep 标 dead 后 claim 报 elected 且不记 force_takeover 违例
 - detail: ## 缺陷
 
@@ -8406,6 +8406,9 @@ if r.status == "active" && r.heartbeat_at < cutoff {
   **另一处判例-29 缺口（诚实标注）**：本笔 4 格测的是 `last_primary` 这个**机制**，
   **没有**测 `server.mbt` 的接线 —— 若有人把接线退回 `active_primary()`，本笔的锁**不会红**。
   接线层需要一格直接断言 `server.mbt` 的 claim 段调用 `assistant_last_primary`（待 lane 收口后补）。
+
+### FIXED(2026-10-27T02:40:48Z / BUG-431)
+- evidence: 接线已随 BUG-436 那笔一起提交（server.mbt 的 claim 段 prev 从 assistant_active_primary() 改成 assistant_last_primary()）。机制层：engine_assistant.mbt 新增 assistant_last_primary()（is_primary 且 status != "resigned"，排序键与 active_primary 一致，只放宽 status 过滤）+ engine_assistant_wbtest.mbt 4 格锁。四格：①机制格（active_primary 看不到 dead、last_primary 看得到）；②端到端格（dead + 陈旧心跳 ⇒ claim_action 判 taken_over 且 prev_agent="B"）；③防修过头（resigned 不参与，否则退位者永远挡着新选举）；④防改坏正常路径（新鲜 active ⇒ 仍 conflict 不许抢）。变异对照 2 组（机制层）：M1 退回「只认 active」⇒ 2 红（①+②）；M2 全收 resigned ⇒ 1 红（③）。验收：4/4 passed；全仓 1563/1563。诚实遗留（判例-29 缺口）：本笔 4 格测的是 last_primary 这个机制，没有测 server.mbt 的接线 —— 若有人把接线退回 active_primary()，这 4 格不会红；接线层需补一格直接断言 server.mbt 的 claim 段调用 assistant_last_primary（待后续补）。
 ## BUG-432 [2026-10-26T19:01:32Z] [medium] OPEN
 - summary: [authz] `claim` 的 RANK_GATE 仍按 assignee **名字前缀**判军衔（`engine.mbt:1770 estimate_rank`：`has_prefix("leader") ⇒ 连长`）—— 与 reserve_scope 的角色门是**两条独立的路**，BUG-418/421/422 三轮收口全部漏掉它
 - detail: ## 现象（BUG-421/422 收口时发现的**另一条**「名字判角色」的路）
@@ -8469,7 +8472,7 @@ else if assignee == "human" || assignee == "human_steward" { 0 }   // 司令
 - **BUG-425** 同族思路：同一语义散落多处 ⇒ 收口时要找**所有**取数点，不能只改被点名的那一处
 - reported_by: lead(BUG-421/422 收口时的相邻发现)
 
-## BUG-433 [2026-10-26T19:01:54Z] [high] OPEN
+## BUG-433 [2026-10-26T19:01:54Z] [high] FIXED
 - summary: [r11-ns] server.mbt:69 engine_for_ns 对非法 ns 静默回落主库：8 个工具全部受影响，delete/archive 可误删误归档主库任务
 - detail: ## 缺陷
 
@@ -8579,6 +8582,9 @@ fn engine_for_ns(ns : String) -> Result[@engine.FistEngine, String] {
 BUG-420（C 案止血只覆盖「路由到空库」，**本单补「路由被取消」这一格**）·
 BUG-78（data_dir 隔离失效，同族）
 - reported_by: commander-gamma
+
+### FIXED(2026-10-27T03:12:49Z / BUG-433)
+- evidence: 真因：engine_for_ns 的 `None => engine` 把「请求的 ns 不存在/非法」与「就用主库」在**类型上**做成不可分 —— 而 ns 既是任务标签又是物理库路由 ⇒ 非法 ns 静默回落会让 delete/archive/execute/claim 这些写工具打到**主库任务**上（同 id 存在即误删，不可逆）。8 个工具受影响。修法：收口为 Result + 三件（ns_reject_reason 纯判定拒绝文案 / ns_unavailable_reason 与「非法」分开 / engine_route_in 可注入 getter 的纯路由判据）。三条出口没有一条是静默换库：①主库（""/default）⇒ Ok(main_eng)；②非法 ns ⇒ Err 且 getter 一次都不调（连库句柄都不碰）；③合法 ns ⇒ getter，拿到库 ⇒ Ok(该库引擎)，拿不到 ⇒ Err（不是 Ok(main_eng)）。判据真源复用 @store.MultiStore::safe_ns，不另立字符集规则。回归锁 4 格（src/server/ns_fallback_wbtest.mbt）：①机制格（6 种非法 ns 全 Err + getter 计数=0）②最容易修回去的一格（getter 返回 None 时必须 Err，不能 Ok(main)）③防修过头（""/default 必须 Ok 且不查 mstore）④拒绝文案三要件 + 5 种合法形态不误拒。变异对照 2 组：M1 非法 ns 静默回落 ⇒ 锁1红；M2 库打不开静默回落 ⇒ 锁2红；还原后 4/4 绿。验收：moon check 0 errors、server 420/420、全仓 1567/1567。附带修掉一处「引用不存在的测试文件」（server.mbt 注释曾引用 ns_fallback_wbtest.mbt 但文件不存在，与 BUG-373 引用面完整性同族）—— 现在那个引用是真的。过程教训：新文件写完必须立刻 git add，否则会被并发 lane 的 git clean 清掉（本笔第一版就这样丢过一次）。
 ## BUG-434 [2026-10-26T19:04:57Z] [medium] FIXED
 - summary: [ledger] `bug_fix`/`report_bug` 的 evidence/detail **不转义 `^## BUG-` 行** ⇒ 调用方在 evidence 里写小节标题就会**污染账本唯一键**（多条同编号抬头，后一条覆盖前一条，真实状态不进计数），且 `bug_fix` 回执不报
 - detail: ## 现象（2026-10-27 实测，我在给 BUG-421/422 销账时踩到）
@@ -8852,7 +8858,7 @@ src/store/moon.pkg       →  只 import core / sqlite / encoding / fs / env / j
 R10 报告的「四者共同根因」（本单是第 5 个标本，形态最纯粹）
 - reported_by: commander-gamma
 
-## BUG-436 [2026-10-27T00:45:00Z] [high] OPEN
+## BUG-436 [2026-10-27T00:45:00Z] [high] FIXED
 - summary: [authz] ACL 判定身份逐调用漂移：新命名空间任务恒 can_write=0，agent_acl_grant 授权后仍拒 —— execute 进不去，submit/verify 全断（标准六步流在新 ns 不可完成）
 - detail: 复现（fist-mbt v0.3.10，2026-10-26，另侧 `E:\IDEProjects\AIools` 的清账/开发会话实测）：
 
@@ -8875,3 +8881,74 @@ R10 报告的「四者共同根因」（本单是第 5 个标本，形态最纯�
 
   建议修法（二选一或叠加）：① `current_pid_token()` 改为进程生命周期内固定（首次调用快照）；② ACL 判定改用稳定身份（assignee / 显式 agent 名），pid token 仅作辅助校验；或 ACL 未命中时回退角色矩阵并输出非误导性提示。
 - reported_by: vools-commander（跨项目实测：vools 清账会话）
+
+
+### FIXED(2026-10-27T02:38:16Z / BUG-436)
+- evidence: ACL 判定身份收敛为单一真源（commit 见 git log）。真因：claim 用 assignee、execute 用 executor 而 executor 缺省 "manual" ⇒ fp("manual")=020934005581bee2 与 fp("vools-retry-lead")=4e3b9eb2cd9cb473 被判成两个人。叠加二层：grant 把报错印的指纹再哈希 ⇒ 写第三行仍拒。①pid token 漂移实测排除（跨 4s pid 不变）；④grant 写错 store 实测排除（ACL 行全在 ns 库）。修法：write_gate.mbt 新增 AclIdentity + acl_claim_identity / acl_execute_identity（execute 缺省继承任务 assignee）+ acl_arg_given（区分显式/缺省，缺省值不得当身份）+ acl_id_is_fp；grant 对指纹形态双写并回执 granted_rows；agent_fp 收敛到 @engine.agent_fp_of；store 拒绝文案修掉未插值占位符。验收：编译 0 errors、server 416/416、store 85/85、全仓 1563/1563；修前复现漂移、修后不漂移且六步流走完；10 格回归锁 + 变异 M1 红 3 格 / M2 红接线格。遗留：submit/verify/run_check/pause/archive 仍无 ACL 门；agent_fp 是 FNV 指纹不是认证 —— 本轮加强的是一致性不是认证强度。
+## BUG-437 [2026-10-27T01:24:35Z] [high] FIXED
+- summary: [ops/Windows] MCP 服务 fist-mbt 恒 unavailable（客户端报 `server is disconnected`）——两层叠加：① `.mcp.json` 里的 `fist-mbt` 在无 shell 时不可 spawn；② 每次 `moon build` 重生成的 JS 产物丢失 ESM `require` 兼容层，服务首次访问 SQLite 即崩
+- detail: 实测（2026-10-27 08:45~09:25，DSH 桌面端 + 本仓 debug/release 双产物）：
+
+  **层①「配置不可 spawn」**。`.mcp.json` 原为 `{"command":"fist-mbt","args":["serve"]}`。Windows 上无 shell 解析：
+  `spawn('fist-mbt')` → **ENOENT**（PATH 上的 `~/.local/bin/fist-mbt` 是 77 字节 sh 脚本，Windows 不可执行）；
+  `spawn('fist-mbt.cmd')` → **EINVAL**（node ≥18.20.2 拒绝无 `shell:true` 启动 .cmd/.bat）。
+  ⇒ 客户端从未成功拉起过服务。旁证：若客户端走 shell，`.cmd` 本可命中，故「disconnected」这一现象本身即证明它不经 shell。
+
+  **层②「产物不是稳定属性」**。bundle 顶层是 ESM（moonc ≥0.10.14），而 `mizchi/sqlite` 的 JS 桩用 CJS `require`，
+  必须注入 `createRequire` 兼容层。实测同一路径 `_build/js/debug/build/cmd/cli/cli.js`：
+  **08:50 有 shim → 08:57 无 → 09:03 又有**（本仓有并发构建在跑，`git status` 十余个 M 文件即线索）。
+  缺 shim 时不是启动就崩，而是**首次打库才崩**：`ReferenceError: require is not defined in ES module scope`（cli.js:2562），
+  于是「能起 banner、一用就死」，更像"服务不稳定"而不像"补丁问题"。
+
+  **为什么长期没人发现**：本仓已有 `scripts/mcp_smoke.py`，它一直 **PASS（171 工具）**——但它自己拼
+  `[NODE, main_js, "serve"]` 直接拉 cli.js，**绕过了 `.mcp.json` 这根真正出故障的线**。
+  判据测的是「服务本体能不能跑」，不是「配置这根线能不能拉起它」⇒ 假绿，见判例-33。
+
+- 修法（全在本机仓外，未改仓内代码）：
+  1. 新增启动器 `%LOCALAPPDATA%\FIST-Mbt\serve-launcher.cjs`（**必须 .cjs**：同目录 package.json 是 `{"type":"module"}`）：
+     纯 CJS 恒可 spawn；启动前幂等补 ESM shim、能修双补丁；debug→release 自动选产物（两档都支持，环境变量可覆盖）；
+     日志打印**内容身份**（mtime+size+sha8）而非版本号；stdio 直通，不碰 MCP 帧。
+  2. `.mcp.json`（未跟踪本地文件）改为 `node` + 该启动器。
+  3. PATHEXT 垫片 `~/.local/bin/fist-mbt.cmd` 改委派启动器，并**钉死真 `node.exe`**：
+     `where node` 首条是 `%APPDATA%\dsh-desktop\harness\.desktop-bin\node.cmd`（BUG-380 那个吞引号的垫片），
+     不钉死就会经它转发 argv。
+
+- evidence（5 格实测，全部用 `.mcp.json` 同款 command+args）：
+  A 默认 → `bundle=debug mtime=…T01:20:44Z size=5326010 sha8=a719fc0c` / shim already-patched / initialize `fist-mbt 0.3.10` / **171 工具** / **3 resources**；
+  B `FIST_MBT_PROFILE=release` → 选中 release 并把它从 0 补到 1 处 shim，握手同样 171/3；
+  C1 删除 shim（模拟一次干净构建）→ 启动器回 `patched`，声明数 1；
+  C2 人为叠双补丁 → 回 `patched + repaired-duplicate`，声明数归 1（不再 `Identifier 'require' has already been declared`）；
+  D `cmd /c fist-mbt serve`（PATHEXT 路径）→ 完整握手 171/3。
+- 遗留：本修法在**仓外本机面**，仓内**没有判据锁**；且 `.mcp.example.json` / `default-fist.mcp.json` / `plugins/claude/.mcp.json`
+  等跟踪模板仍是 `"command": "fist-mbt"`（对 POSIX 成立、对 Windows 不成立），未改（跨平台语义不同，需单独立项）。
+  另：本工作区根 `E:\IDEProjects\AI\FIST-Mbt` 属主为 `BUILTIN\Administrators`、当前用户无 `WRITE_DAC`/`WRITE_OWNER`，
+  DSH 无法准备 workspace-write 沙箱（ACL 修复脚本判 `REPAIR_REFUSED`，报告 `E:\IDEProjects\AI\FIST-Mbt-acl-recovery\`），与本案无关但同场发现。
+- reported_by: lead（DSH 会话实测，含变异对照）
+
+### FIXED(2026-10-27T01:24:35Z / BUG-437)
+
+修了三处本机面：启动器 `serve-launcher.cjs`（新建）、`.mcp.json`（command 改 `node`+启动器）、
+`~/.local/bin/fist-mbt.cmd`（委派启动器 + 钉真 node.exe，旧垫片留 `fist-mbt.cmd.bak-20261027`）。
+仓内零改动、零新增文件。
+
+**诚实标注：本条没有仓内锁。** 上述 5 格是手工实测（含 2 格变异对照：删 shim / 叠双补丁），不是自动化判据；
+而"能自动发现复发"的锁按判例-33 应当长在 `scripts/mcp_smoke.py` 里——**用 `.mcp.json` 自己的 command+args 去 spawn**
+（现状是它自己拼一条更好走的路，所以本案绿了整场）。该项未做：本仓此刻有并发 WIP 在改 `src/`，动共享脚本与电池面
+的收益/风险比不划算，留作下一轮单独立项（一并处理跨平台模板措辞）。
+
+### 追记(2026-10-27T01:57:01Z / BUG-437 补记 · skill 模式命令注册)
+
+DSH 侧 MCP 插件在本会话内仍不可用（配置只在会话启动时读一次），故按用户要求把**注册的 `fist-mbt` 命令**
+做成 skill 模式的完整入口，而不只是 MCP 启动器：
+
+- 启动器 `serve-launcher.cjs` 增加**双路由**：`serve|version|demo|doctor|help` → MoonBit CLI bundle（原逻辑）；
+  其余（`call <tool> --k v` / `list-tools`）→ `scripts/fist.py`（仓内统一 CLI 网关，自带新鲜度检查 + ESM 补丁）。
+  网关子进程显式注入 `FIST_NODE=process.execPath`，避开 PATH 首条的 `node.cmd` 垫片（BUG-380 同族）。
+- 两份注册垫片统一委派启动器：`~/.local/bin/fist-mbt.cmd`（钉真 `node.exe`）与 `~/.local/bin/fist-mbt`
+  （POSIX、**LF**、`chmod +x`，旧件留 `.bak-20261027`）。后者此前指向 `%LOCALAPPDATA%\FIST-Mbt\fist-mbt.js`
+  （10-26 快照）——「注册的入口跑的是隔夜产物」，与判例-32「版本号 PASS ≠ 代码新鲜」同族。
+- `fist` / `fist.cmd` **未动**（仍指部署快照，属"生产安装面"，且被 blackbox e2e 探针引用）。
+
+实测：`version`（bash + cmd 两条 shell）/ `doctor` 5/5 / `list-tools` 171 工具 / `serve` 握手 171 工具 + 3 resources；
+`call <tool>` 路由已证实到达网关的新鲜度门（当时另有 lane 的 3 个 src 文件比产物新，按 BUG-32 拒绝旧二进制；
+不设 `FIST_NO_AUTOBUILD=1` 时它会自动 `moon build`——本条实测刻意未触发，避免与并发构建互踩）。
