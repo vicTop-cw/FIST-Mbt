@@ -89,7 +89,11 @@ pub fn issue_challenge_nonce(agent : String, counter : Int32) -> String {
 ///
 /// 任何一步不合法（hex 坏、公钥非 32 字节、签名非 64 字节、验签失败）⇒ `false`。
 /// **fail-closed**：宁可拒绝，绝不在格式错误时放行。
-pub fn verify_challenge_sig(pubkey_hex : String, msg : String, sig_hex : String) -> Bool {
+pub fn verify_challenge_sig(
+  pubkey_hex : String,
+  msg : String,
+  sig_hex : String,
+) -> Bool {
   let pk = match @mooncry.hex_to_bytes_or(pubkey_hex) {
     Ok(b) => b
     Err(_) => return false
@@ -138,12 +142,11 @@ pub fn judged_role_with_challenge(
   challenge_sig~ : String? = None,
 ) -> (String, String) {
   match challenge_nonce {
-    None =>
-      // 无挑战 ⇒ 未认证。role 仍按现有逻辑算（保持可用性），但来源如实标注。
-      {
-        let (role, _) = judged_role(eng, agent)
-        (role, "unauthenticated")
-      }
+    // 无挑战 ⇒ 未认证。role 仍按现有逻辑算（保持可用性），但来源如实标注。
+    None => {
+      let (role, _) = judged_role(eng, agent)
+      (role, "unauthenticated")
+    }
     Some(nonce) => {
       // 有挑战 ⇒ 必须验签。公钥从 agents 表的 pubkey_fp 取。
       let pubkey = declared_pubkey_for(eng, agent)
@@ -185,9 +188,14 @@ pub fn judged_role_gated(
   challenge_sig~ : String? = None,
 ) -> (String, String) {
   match challenge_nonce {
-    None => judged_role(eng, agent)   // ← 零回归：原样返回
+    None => judged_role(eng, agent) // ← 零回归：原样返回
     Some(_) => {
-      let (role, src) = judged_role_with_challenge(eng, agent, challenge_nonce, challenge_sig~)
+      let (role, src) = judged_role_with_challenge(
+        eng,
+        agent,
+        challenge_nonce,
+        challenge_sig~,
+      )
       (role, src)
     }
   }
@@ -296,7 +304,12 @@ pub fn judged_role_with_nonce(
   match challenge_nonce {
     None => judged_role_gated(eng, agent, None)
     Some(nonce) => {
-      let (role, src) = judged_role_gated(eng, agent, Some(nonce), challenge_sig~)
+      let (role, src) = judged_role_gated(
+        eng,
+        agent,
+        Some(nonce),
+        challenge_sig~,
+      )
       if src == "challenge_verified" {
         // 验签通过 ⇒ 消费 nonce；若已被消费过 ⇒ 判重放（且**不**保留已验证身份）
         if s3_consume_nonce(agent, nonce) {
@@ -327,12 +340,7 @@ fn declared_pubkey_for(eng : FistEngine, agent : String) -> String? {
     Some(s) =>
       match s.agents_get(agent_fp_of(agent)) {
         None => None
-        Some(a) =>
-          if a.pubkey_fp == "" {
-            None
-          } else {
-            Some(a.pubkey_fp)
-          }
+        Some(a) => if a.pubkey_fp == "" { None } else { Some(a.pubkey_fp) }
       }
   }
 }
@@ -349,7 +357,6 @@ fn declared_pubkey_for(eng : FistEngine, agent : String) -> String? {
 /// 任何人都能过。签名**只能来自调用方私钥**，服务端只负责**验**。
 /// 这是 S3 的命门：**「验签」与「签发」必须在不同主体**。
 /// ══════════════════════════════════════════════════════════════════════════
-
 
 ///|
 pub fn FistEngine::rsv_set(
@@ -410,6 +417,50 @@ pub fn FistEngine::rsv_set(
 }
 
 ///|
+/// ══════════════════════════════════════════════════════════════════════════
+/// BUG-453：**认证态 → `action` 后缀的唯一映射源**。
+///
+/// 病灶（本函数存在的理由）：`judged_role_with_challenge` 承诺
+/// 「`role_source` 的取值扩展是**调用方可见的变化**……让「认证状态」显式可见」
+/// （见 `:124-126`），但 `rsv_try_set` / `locks_try_acquire` 的 `action` 面
+/// **只映射了 `inferred` 一种**，且**无条件**追加硬编码 `+agent_self_reported`：
+///   ⇒ 验签**通过**时回执仍写「自报未验证」（诚实标注写反）
+///   ⇒ 验签**失败**时与「压根没传 challenge」逐字相同（日志里不可区分）
+///
+/// 现在四个认证态各有一个后缀，**且 `+agent_self_reported` 只在确实未经挑战时出现**。
+///
+/// ⚠️ 为什么抽成函数而不是两处各写一份：`rsv_try_set` 与 `locks_try_acquire`
+/// 是同一取数面（`judged_role_gated`）的两个消费点，**各写一份映射就是下一个 BUG-435**。
+/// ══════════════════════════════════════════════════════════════════════════
+///
+
+///|
+/// BUG-453：`RoleDenied` 的硬拒回执也要带认证态（否则「验签失败后被硬拒」与
+/// 「未验签被硬拒」在 `action` 面不可区分 —— 那正是本单要消除的那类混同）。
+///
+fn denied_tagged(role_source : String) -> @store.LockAcquireOutcome {
+  let o = @store.LockAcquireOutcome::denied_by_permission()
+  let t = auth_tag(role_source)
+  // BUG-453：默认态零后缀 ⇒ `permission_denied` 保持既有精确断言（lock_perm_wbtest:36/51）
+  if t == "" { o } else { o.relabel(o.action + t, false) }
+}
+
+///|
+pub fn auth_tag(role_source : String) -> String {
+  match role_source {
+    // 三个**新增**认证态：必须可见
+    "challenge_verified" => "+challenge_verified"
+    "challenge_failed" => "+challenge_failed"
+    "challenge_replayed" => "+challenge_replayed"
+    // 既有态：**零后缀**。为什么不是 "+agent_self_reported"：
+    //   该后缀在 `rsv_try_set` 里由调用点显式追加（修前就是这样，零回归）；
+    //   而 `locks_try_acquire` 的 `permission_denied` / `unregistered` 有**精确相等**的
+    //   既有断言（`lock_perm_wbtest.mbt:36/51/104`）⇒ 在这条门上必须保持逐字不变。
+    _ => ""
+  }
+}
+
+///|
 /// 按裁决抢预订（BUG-136）：互斥由后端定，工具面只渲染结论——不许在这里先读后写。
 /// 额外加了权限门禁（engine_scope_perm）：没有编辑资格的角色不许抢预订。
 pub fn FistEngine::rsv_try_set(
@@ -436,7 +487,10 @@ pub fn FistEngine::rsv_try_set(
   // `action` 的合法取值因此扩展为：reserved | renewed | taken_over | conflict |
   //   unregistered | <上述之一>[+role_inferred][+agent_self_reported]
   let (role, role_source) = judged_role_gated(self, agent, challenge_nonce, challenge_sig~)
-  let src_tag = "+agent_self_reported"
+  // BUG-453：三个**新**认证态各带自己的后缀；既有态保持修前的 `+agent_self_reported`
+  // （`auth_tag` 对它们返回空串，故这里补上 —— 语义与修前逐字一致，零回归）。
+  let auth = auth_tag(role_source)
+  let src_tag = if auth == "" { "+agent_self_reported" } else { auth }
   match check_scope_permission(scope, role) {
     RoleDenied(e) => Err(e)
     Allowed =>
@@ -546,7 +600,8 @@ pub fn FistEngine::locks_try_acquire(
   let scope = lock.scope_of()
   // BUG-422：与两条预订门同一取数（剔除 server 自身份，见 `declared_role_for_judgment`）。
   // BUG-432：并入 `judged_role` —— 锁门 / 预订门 / claim 的 RANK_GATE 现在是**同一个**取数面。
-  let (role, _role_source) = judged_role_gated(self, agent, challenge_nonce, challenge_sig~)
+  // BUG-453：**不再丢弃 `role_source`** —— 它必须进 `action` 面（认证态可见）。
+  let (role, role_source) = judged_role_gated(self, agent, challenge_nonce, challenge_sig~)
   match check_scope_permission(scope, role) {
     RoleDenied(_) =>
       // **legacy_grant 特判（BUG-424 裁决 (a)(b)(c)）**
@@ -588,19 +643,26 @@ pub fn FistEngine::locks_try_acquire(
               o
             }
           } else {
-            @store.LockAcquireOutcome::denied_by_permission()
+            denied_tagged(role_source)
           }
-        None => @store.LockAcquireOutcome::denied_by_permission()
+        None => denied_tagged(role_source)
       }
     Unregistered(_) => {
       let o = self.store.locks_try_acquire(lock)
-      if o.granted {
+      let o2 = if o.granted {
         o.relabel("unregistered", true)
       } else {
         o
       }
+      let t2 = auth_tag(role_source)
+      if t2 == "" { o2 } else { o2.relabel(o2.action + t2, o2.granted) }
     }
-    Allowed => self.store.locks_try_acquire(lock)
+    Allowed => {
+      // BUG-453：`Allowed` 分支过去直接原样返回后端结论 ⇒ 认证态在**最常见**的路径上丢失。
+      let o = self.store.locks_try_acquire(lock)
+      let t3 = auth_tag(role_source)
+      if t3 == "" { o } else { o.relabel(o.action + t3, o.granted) }
+    }
   }
 }
 
