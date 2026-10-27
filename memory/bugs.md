@@ -8298,6 +8298,31 @@ Lane AF 报告 `reports/2026-10-27-bug422b-identity-assertion-plan.md` @ `0f1bad
   **本条保留 OPEN 的唯一理由**：它是「若将来要真认证」的**锚点**（一关就没人记得这条路的代价）。
   届时若要立项，参考路径见本条 detail 的三条建议（① 连接期会话令牌 ② `pubkey_fp` 签名链路 ③ 只对破坏性工具要求显式 token）。
 - false_positive(2026-10-27T04:59:10Z): owner 裁决（2026-10-27 12:53）：「暂接受『协作式约定』这个定性，后面有需要再改」。立据三条：①边界已写进 AI-DEVELOPMENT-STANDARD.md §7「已知边界」（三条硬事实：pubkey_fp 全仓恒空 / current_pid_token() 是伪 pid 会同秒撞值 / 无会话层），并明写「已收口的是一致性不是认证强度」+「下一个人不得把它当安全边界用」；②四轮同族收口实际做到的是「同一个人在不同工具里是同一个身份」（BUG-418/421/422 名字不再能提权 + BUG-423/424 注册面毒化与锁权限门 + BUG-432 RANK_GATE 改 role→rank + BUG-436 ACL 身份收敛为单一真源），不是「这个名字不能被冒用」；③本仓 MCP 工具的用户是自家 AI agent 不是敌对环境，真收口成本（会话令牌/pubkey_fp 签名 + 4 客户端全改）远超收益。后续路径（若需要真认证时按此立项）：① MCP 面给 reserve_scope/lock_* 增加已核验身份（连接期会话令牌 或 agents.pubkey_fp 签名，该列已存在但全仓恒空）② 角色只从已验证身份对应行读、agent 名字降级为显示字段不参与裁决 ③ store 侧区分「身份首登」与「低权覆盖 role」④ 之后整体删除 infer_role_from_agent，回归锁改成「名字完全不参与裁决」。诚实标注：本条关闭不等于「零认证已修好」，只是「owner 接受当前定性」—— 有需要随时可重开（账本无 FIXED→OPEN 路径，但可新立一条并引用本条作前身）。
+
+- 追记（2026-10-27 21:25 **S3 落地复核：技术能力已具备，但仍是死路**）：
+  并发 lane 已把 **S3（身份锚点）** 做到第五段，实测读数如下。
+  **① 验签是真的（不是摆设）**：`src/engine/engine_rsv.mbt:92 verify_challenge_sig` 走
+  `@mooncry.ed25519_verify(pk, @utf8.encode(msg), sig)` —— 与 `star_gate.mbt:301` **同一个函数**；
+  `judged_role_with_challenge` 三态 `challenge_verified` / `challenge_failed` / `unauthenticated`，
+  **fail-closed**：验不过 ⇒ 降级 `("Executor", "challenge_failed")`，绝不放行高权。
+  `challenge_nonce` 一次性消费（`claim_challenge_nonce` 原子消费）⇒ 不能当长期通行证复用。
+  **② 但默认路径仍完全自报**：`challenge_nonce~ : String? = None`（四门**全是可选**），
+  `None => judged_role(eng, agent)` **原样返回零回归** ⇒ **不传 challenge 的调用与修前逐字相同**。
+  **③ 最要命的一条（代码注释自己承认）**：`pubkey_fp` 目前是**死承诺**（BUG-403），
+  **线上没有任何 agent 有公钥** ⇒ **传了 `challenge` 的调用一律 `challenge_failed`**。
+  也就是说：**那条「不可自报」的路径存在，但当前是断路** —— 谁走谁降权，所以没人会走。
+
+  **⇒ 关闭条件（按 AGENTS.md 的原文「存在至少一条『调用方无法自报』的路径」）技术上满足、实质上未满足**：
+  路修好了，但**没有车能开上去**。
+
+  **实测复核（2026-10-27 21:20）**：
+  - `agent_register_key` 工具**已在**（工具数 172 的第 172 个，签名 `agent_id`/`namespace`/`pubkey_hex`）
+  - 但 `agents` 表里**没有任何一行有非空 `pubkey_fp`** ⇒ 登记公钥这件事**从未被真正做过一次**
+  - ⇒ **关闭的真正前置**：① 至少一个真实 agent 用 `agent_register_key` 登记公钥
+    ② 该 agent 的客户端**默认走 challenge**（不是可选传）③ 有回归锁证明「不传 challenge 会被拒/降权到无实效」
+
+  **状态更新**：`[arch] S1 已公告 / S3 已具备（验签真实、fail-closed、nonce 一次性）/ 但默认自报 + 无公钥 ⇒ 死路`。
+  **保持 OPEN**（AGENTS.md 的「S1 落地后保持 OPEN」仍然成立，且 S3 的「具备」不等于「生效」）。
 ## BUG-431 [2026-10-26T18:57:20Z] [medium] FIXED
 - summary: [r11-assistant] server.mbt:5598 接管留痕取决于 sweep 是否先跑：sweep 标 dead 后 claim 报 elected 且不记 force_takeover 违例
 - detail: ## 缺陷
@@ -9106,7 +9131,7 @@ R10「两后端等价」结论（**本条的发现说明：R10 只验了 try_acq
 
 ### FIXED(2026-10-27T04:26:00Z / BUG-438)
 - evidence: 双后端语义对齐（代 lane 修）。病灶：同一底层原语 locks_upsert 在两后端行为相反 —— 内存版（store_rsv.mbt）无条件 file_locks.set(scope, lock)（永远落库 last-write-wins，只在覆盖他人 live 锁时记一条 lock_taken_over 事后审计）；SQLite 版（store_sqlite.mbt:1311）带 ON CONFLICT … WHERE status != active OR agent = excluded.agent OR ttl_until < excluded.ts（条件写，条件不满足时静默不写）。而 MemoryStore::locks_upsert 的注释写明这是底层原语不是互斥门「它永远落库（last-write-wins）… 要抢不到就拒请用 locks_try_acquire」⇒ 内存版对、SQLite 版的条件写是缺陷：调用方无从区分自己在哪个后端上 ⇒ 同一段业务代码在内存测试里过、在生产 SQLite 里静默失效；而且 WHERE 与上面的审计 SQL 重复表达了同一个条件（审计已在做覆盖他人 live 锁时留痕，写入侧再拦一次是双重语义）。修法：只删 WHERE（ON CONFLICT(scope) DO UPDATE SET … 保留），让写入与内存版一致；审计保持不动（与内存版同条件，只事后留痕不阻止覆盖）。回归锁 3 格（新文件 src/store/locks_upsert_equiv_test.mbt）：①修复点本尊（覆盖他人 live 锁时两后端都必须真写进去，修前 SQLite 侧 locks_get 拿到旧 agent）；②防拿掉 WHERE 顺手把审计也拿掉（两后端都要记 lock_taken_over）；③防审计条件写宽了（本人续订自己的锁不是夺锁不该留违例）。变异对照 1 组：M1 把 WHERE 塞回去 ⇒ 锁1红（3 格 2 绿 1 红）；还原后 3/3 绿。验收：moon check 0 errors、src/store 88/88、src/engine 251/251（locks 调用方）。
-## BUG-439 [2026-10-27T04:52:51Z] [medium] OPEN
+## BUG-439 [2026-10-27T04:52:51Z] [medium] FIXED
 - summary: [r18-twofaces] store.mbt:979/997 熔断器在内存后端 cb_get 恒 None、cb_save no-op ⇒ 永不熔断且回执看不出
 - detail: ## 缺陷
 
@@ -9235,7 +9260,7 @@ key 用 `ns + "/" + circuit`（与 SQLite 的 `PRIMARY KEY (ns, circuit)` 对齐
 `src/server/mcpcf_embed.mbt`（另有内嵌 `mcpcf.circuit`，**可能与引擎版是第二个实现**，未核）·
 R17 `BUG-438`（同族：两后端不等价）
 - reported_by: commander-gamma
-## BUG-440 [2026-10-27T04:55:16Z] [medium] OPEN
+## BUG-440 [2026-10-27T04:55:16Z] [medium] FIXED
 - summary: [r18-plan] docs/plans/README.md:22 承诺的 check_plan_location 守卫不存在，4pools 提案缺全部强制字段却静默入库
 - detail: ## 缺陷
 
@@ -9335,3 +9360,704 @@ AIGC:
 `docs/plans/README.md:35`（硬规则 2 `plan_publish` 门禁，依赖 `status` 字段）·
 `scripts/check_plan_landing.py`（**不是**这个守卫，别混）· BUG-403（同族：死承诺）
 - reported_by: commander-gamma
+
+
+### FIXED(2026-10-27T05:50:27Z / BUG-439, BUG-440)
+- evidence: BUG-439 commit 3c00d095 + 89273e92（代码+报告）。根因：MemoryStore 从未实现 cb_get/cb_save，Mem 分支返回占位值 None/Ok(()) ⇒ failures 恒 0 ⇒ 熔断器永不触发。修法：MemoryStore 加 circuit_breakers 字段 + cb_key（用 ␀ 分隔），Mem 分支直接读写。4 格锁：锁1 cb_save→cb_get 读回七字段相等；锁2 failures 真的累积到 threshold（三轮 0→1→2→3 断言 3>=threshold）；锁3 内存版与 SQLite 版七元组逐字段相等；锁4 不同 (ns,circuit) 不串味。变异实测：恢复原状（cb_get→None, cb_save→no-op）⇒ src/store 92 格中 passed 88/failed 4 正是四格全红。门禁：moon check 0 errors；src/store 92/92；全量 1580/1580/0。分析亮点：从未实现比弃用后腐化更危险——占位返回值是合法值（None=没有记录、Ok(())=写成功），编译器不报、调用方不疑；唯一可靠防法是跨调用状态累积测试而非单次返回值测试。
+
+BUG-440 commit d868bc84 + 21a29f2b（代码+锚点）。根因：docs/plans/4pools-rhop 的 frontmatter 是 AIGC 水印而非 YAML ⇒ status/decided_by/decided_at/decision 四字段全缺；README 承诺的 check_plan_location 守卫不存在。修法：(a) 创建 scripts/check_plan_location.py（387 行、16 格 selftest 含 3 个变异对照）；进电池 run_guards.py:167-168；修 4pools-rhop 的 frontmatter（补齐四字段，AIGC 水印保留为 HTML 注释）。6 条判据：P1 文件名、P2 frontmatter 必须第 1 行起、P3 四键名必须出现、P4 status 闭集、P5 已定案自洽（含 decisions/ 有同日记录）、P6 终态应归档（只告警）。rc 契约 0/1/2（与 check_fmt_gate.py 同口径）；空扫描面 ⇒ 2 自拒。变异对照：删字段 ⇒ 红；AIGC 伪 frontmatter ⇒ 红；已定案缺 decisions 记录 ⇒ 红；CRLF 容忍格；README 跳过格。验证：判据 rc=0；selftest 16/16；check_battery_count_doc PASS rulers=123 battery=82 missing=0。分析：选 (a) 而非改 README 删承诺——README 硬规则 2 依赖 status，字段缺失时门禁要么越权放行要么无依据拒绝，缺字段必须在入库时红不能在消费时猜。P3 只判键名不判值——status=提案中时后三个字段本来就该为空，判值会把合法提案判红。beta 漏了一步：第一笔进了电池但没同批改锚点 ⇒ battery 当场报 X1/X3/X5 三键落后；第二笔补齐。这说明执行面不止电池格子还包括锚点里的数。
+## BUG-441 [2026-10-27T06:04:51Z] [medium] FIXED
+- summary: [r19-twofaces] store.mbt:941-990 saga 三方法在内存后端全是占位(Ok(())/[]) 且回执无降级披露 ⇒ 补偿序列静默为空
+- detail: ## 缺陷（与 BUG-439 同族：「占位返回值是合法值」）
+
+`saga_*` 三工具的 store 层在**内存后端全部是占位实现**，而**回执无任何降级披露**：
+
+| Store 方法 | 内存后端（`src/store/store.mbt`） | SQLite |
+|---|---|---|
+| `write_saga_action` `:941-958` | **`Mem(_) => Ok(())`** | 真写 |
+| `list_saga_actions` `:966-976` | **`Mem(_) => []`** | 真读 |
+| `mark_saga_actions_done` `:979-990` | **`Mem(_) => Ok(())`** | 真更新 |
+
+## 实际后果（推演，链已核）
+
+**① `saga_register` 在内存后端**：`write_saga_action` 返回 `Ok(())` ⇒ 工具回执**成功**
+⇒ **补偿动作被静默丢弃**（durable action log 一条没写）。
+
+**② `saga_rollback` / `saga_repair` 在内存后端**：
+```moonbit
+// engine_saga.mbt:54-63
+let rows = self.store_list_saga_actions(ns, root_task_id)   // ← 内存后端恒 []
+let pending : Array[...] = []
+for r in rows { if r.4 == "pending" { pending.push(r) } }   // ← 恒空
+...
+m.set("pending_count", Json::number(lifo.length().to_double()))  // ← 恒 0
+m.set("pending", Json::array(steps))                             // ← 恒 []
+m.set("marked_done", Json::number(marked_n.to_double()))         // ← 恒 0
+```
+⇒ 回执是 `pending_count: 0` + `pending: []` + `marked_done: 0`
+**这与「这个根任务确实没有待补偿步骤」的回执一模一样** ⇒ **无法区分「没有」与「读不到」**。
+
+## 为什么是真 bug（假绿形态）
+
+1. **占位返回值是合法值**：`Ok(())` 是一个合法的成功回执、`[]` 是一个合法的空列表。
+   编译器不报、调用方不疑、**回执字段齐全**。
+2. **工具自述承诺了持久语义**：`saga_register` 的 description 写
+   「登记其「可补偿动作」（业务逆转描述）到 **durable action log**」——
+   **内存后端一条都不写，且回执说成功了。**
+3. **`saga_repair` 的「最小补偿切片」逻辑完全依赖 `list_saga_actions`**：
+   读到空 ⇒ 切片为空 ⇒ 回执 `compensate_count: 0` ⇒ 调用方以为「没有需要补偿的」。
+4. **与 BUG-439（熔断器）同族但更隐蔽**：熔断器至少 `state` 字段会一直是 `closed`（有心人看得出异常）；
+   saga 的空列表**在任何正常系统里都可能是合法状态**。
+
+## 差异：这次注释是「承认式」的，但承认写在 store 层，消费方看不到
+
+`store.mbt:965` / `:978` 的注释明写：
+> 「R92：**内存后端返回空**，SQLite 前向顺序」
+> 「R92：**内存后端为 no-op**，SQLite 幂等更新」
+
+**⇒ 实现者知道，但回执不知道。** 这与 `heartbeat` 的处理形成对照：
+
+```moonbit
+// server.mbt:3160 —— heartbeat 正确地披露了
+"persisted": Json::boolean(store_ok && hb_backend == "sqlite")
+```
+**⇒ 本仓已有正确的做法（heartbeat 的 `persisted` 字段），saga 三工具没沿用。**
+
+## 触发场景
+
+```
+server 以内存后端启动（SQLite 打开失败 ⇒ Mem 兜底，见 make_engine）
+  → saga_register(root, step="扣款", compensation="退款")  → 回执 ok=true   ← ★ 实际没写
+  → 后续业务失败
+  → saga_rollback(root)  → 回执 pending_count=0            ← ★ 补偿序列空
+  → 调用方按回执判定「无需补偿」→ **一致性被破坏且无人知晓**
+```
+
+## 建议修法（三选一，建议 A）
+
+**A（推荐，与 heartbeat 同口径）：三工具回执加 `persisted` 字段**
+```moonbit
+// engine_saga.mbt 的三个出口各加一行
+m.set("persisted", Json::boolean(self.store.backend_name() == "sqlite"))
+m.set("backend", Json::string(self.store.backend_name()))
+```
+⇒ 零行为改动、零回归，**但调用方第一次就能看见「这次没落库」**。
+这是本仓**已被 heartbeat 验证过**的做法（`server.mbt:3160`）。
+
+**B：内存后端真实实现 saga 表**（加 `Map` 字段）
+⇒ 更彻底，但要动 `MemoryStore` 结构与三处分发，改动面大于 A。
+
+**C：内存后端直接 `Err("saga 需要 SQLite 后端")`**
+⇒ 最强硬（fail-closed），但会让纯内存场景的三工具完全不可用。
+**若产品上认为「内存后端不该用 saga」，C 是最诚实的**。
+
+**⇒ 建议 A（立即止血）+ 视产品决策再定 B/C。**
+**⚠️ 无论选哪个，都比现在好：现在是「静默成功 + 合法空值」。**
+
+## 同批建议补的锁
+
+`saga_*` 的 store 面**有双后端分发，但无任何双后端测试**。
+建议补一格：同一组 (root, step, compensation) 喂两后端，
+断言 `list_saga_actions` 返回的条数相同 ⇒ **内存后端在修前必然为 0 而 SQLite 为 1 ⇒ 该格会红。**
+
+## 关联
+
+`src/store/store.mbt:941-990`（三处 Mem 占位）· `src/engine/engine_saga.mbt:54-95`（消费 + 回执）·
+`src/server/server.mbt:3160`（**heartbeat 的正确做法，可照抄**）·
+`BUG-439`（同族：熔断器内存后端占位）· `src/store/store.mbt:986` 那个 `mark_saga_actions_done` 的
+`Mem(_) => Ok(())` 在同一批占位里（本单已含）
+- reported_by: commander-gamma
+
+### FIXED(2026-10-27T06:40:38Z / BUG-441)
+- evidence: commit c3e30b79 + f5aa7e96（代码+报告）。根因：MemoryStore 从未实现 saga 三方法（write_saga_action/list_saga_actions/mark_saga_actions_done），Mem 分支返回占位 Ok(())/[]，补偿序列静默为空。修法：MemoryStore 加 saga_log + saga_next_id，三方法改为实际读写，逐条对齐 SQLite 语义（幂等登记同 step 就地更新保留旧 id、按 push 顺序、mark done 遍历改 status 不删行）。5 格锁：写 3 条读回 3 条 + 顺序/mark done 可见/同 step 幂等/ns+root 隔离/双后端语义四字段相等。变异实测：把 list_saga_actions 改回 [] ⇒ src/store 97 格中 passed 92/failed 5 正是五格全红；恢复 97/97/0。门禁：moon check 0 errors；src/store 97/97；全量 1585/1585/0。分析亮点：Saga 的空列表在任何正常系统里都合法（「没有待补偿步骤」是正常状态），比 BUG-439 更隐蔽；选 (a) 补实现而非 (b) 加披露的理由——披露的前提是有人会去看那个字段，而这里调用方根本不会怀疑返回为空。与 heartbeat 对照：heartbeat 做对了（persisted 披露），saga 功能上一致了但披露上还不一致（引擎侧回执仍无 persisted，建议另立一单）。beta 还如实记录了一次假失败：首次跑锁 4 格红，隔离探针得到 1!=3（写 1 条读回 1 条，实现是对的），排查发现是测试写错（写入没传 ns），修正后 97/97。
+## BUG-442 [2026-10-27T06:35:19Z] [high] OPEN
+- summary: [atom-family] 提交 4fde29e 新增 atom 族后，门 GROUP BY 2000 rows (vectorised) 恒失败：E9402「$visibility 域 atom 不可参与比较」
+- detail: ## 复现
+
+```
+pwsh -NoProfile -File tql/run_all.ps1 -SkipPerf
+== run_all: 111 PASS / 1 FAIL ==
+failed: GROUP BY 2000 rows (vectorised)
+```
+
+连续两次重跑结果一致（非并发锁偶发）。
+
+单独复现：
+```
+pwsh -NoProfile -File tql/tqlc.ps1 -QueryPath tql/_qgv2k.tql -FixturePath tql/fixtures/expect_gv2k.tnrd
+tnr: error: [E9402] tql/out/cmp.tnr: 执行失败: Atom 未注册进 $Compable 大域（D3c）：域 $visibility 的 atom 不可参与比较——默认集合：$dtype::*、$True/$False、$Enum::*::*、$err_*；用户 Atom 需显式注册
+```
+
+## 归因
+
+回归由提交 `4fde29e fix(atom): cover the cache and visibility families too (table now 10 families, 122 codes)`
+（author: VictorTop，Co-Authored-By: AtomCode，时间 2026-10-27T14:29:22+08:00）引入，改动文件：
+- `docs/CHANGELOG.md`
+- `scripts/check_test_count.sh`
+- `scripts/gen_math_atoms.py`
+- `src/tensor/mod.rs`（+7 行，新增 atom 族条目）
+
+时间证据：该提交落在我同日的 `c90c29e`（14:27）之后、下一次门运行之前。
+在 `c90c29e` 上同一套门为 112 PASS / 0 FAIL。
+
+## 机制推断
+
+门在比较结果时用一个生成的 `tql/out/cmp.tnr` 程序比较两个张量。
+新增的 atom 族（含 `$visibility` 域）进入了比较路径，但未被登记进 `$Compable` 大域，
+于是 D3c 守卫按设计拒绝它——守卫行为正确，是新增 atom 未同步注册到可比较集合。
+
+## 影响面
+
+仅 `GROUP BY 2000 rows (vectorised)` 一例失败；`cargo test --lib` 6629 passed / 0 failed，
+说明问题局限在「结果比较路径 + 新增 atom 族」这一组合，不是普遍性破坏。
+
+## 建议
+
+二选一：
+1. 把 `$visibility`（及其它新增 atom 族）显式登记进 `$Compable` 允许集合；或
+2. 若它们本不该参与比较，则让比较路径在遇到它们时跳过/转字符串比较，而不是整体失败。
+
+## 说明
+
+本条由并行工作的另一 agent 报告的现场发现提出（非我引入的回归）。我自己的改动
+（`src/gpu/mod.rs`、`src/tensor/tnrd.rs`、`src/cli/mod.rs`）在同一份代码上全量测试 6629 通过。
+- reported_by: tnr-tql-agent
+## BUG-443 [2026-10-27T06:56:28Z] [medium] FIXED
+- summary: [dtype] Dtype::Ps 的 elem_width 为 8（声称可字节化），但 canonical_le_bytes/num_bytes 不支持它并 panic——两个真源不一致
+- detail: ## 现象
+
+`Dtype::Ps` 的 `elem_width` 返回 **8**（见 `src/tensor/tnrd.rs` 的 `elem_width`），即被归类为「有固定元素宽度的扁平类型」；
+但 `canonical_le_bytes` → `num_bytes` 的 match 分支里**没有 `Ps`**，落到兜底 `_ => panic!("num_bytes: 非数值 dtype {dtype}")`。
+
+**因此把 `Ps` 张量交给任何走规范字节化的路径（保存 tnrd、跨设备搬运、压缩）都会直接 panic。**
+
+## 复现
+
+```rust
+let t = Tensor::new(Dtype::Ps, Shape::new(vec![4]), Data::Num(vec![0.0; 4].into()));
+tnr::tensor::tnrd::canonical_le_bytes(&t);   // panic: num_bytes: 非数值 dtype ps
+```
+
+在我这一侧的间接复现：`gpu::stage_tensor(&t)`（它会调 `canonical_le_bytes`）对该 dtype panic。
+
+## 判据不一致
+
+这里有一个**两个真源不匹配**的问题：
+- `elem_width(Ps) == 8` ⇒ 声称「扁平、定长、可字节化」
+- `num_bytes` 不支持 `Ps` ⇒ 实际「不可字节化」
+
+任一消费者若只看 `elem_width`（我最初的 21-dtype 分类正是这么做的）就会误判它可搬运/可存储。
+
+## 影响面
+
+`cargo test --lib` 全绿（6633 passed），说明现有测试没有覆盖 `Ps` 的序列化路径；
+也就是说这个不一致目前**静默存在**，一旦有人真用 `Ps` 张量落盘就会崩。
+
+## 建议（二选一，关键是让两个真源一致）
+
+1. 若 `Ps` 确实应可字节化：在 `num_bytes` / `from_le_bytes` 补上 `Ps` 分支（按 8 字节承载）。
+2. 若 `Ps` 只是占位、不应可字节化：把 `elem_width(Ps)` 改为 **0**，
+   这样所有「=0 即不可扁平化」的守卫会自动拒绝它（我在 gpu 侧的结构化 dtype 拒绝逻辑正是这个判据）。
+
+**推荐第 2 种**：它让 `elem_width == 0` 成为唯一判据，消除「宽度为 8 却不能序列化」的矛盾态。
+
+## 相关
+
+我在同一轮还发现并修复了 `dtype.rs::f32_to_f16_bits` 的移位溢出（`0.0` 转 Float16 在 debug 下 panic），
+说明同一区域的边界情况测试覆盖不足，建议给 dtype 转换补一组「0 / 极小 / 极大 / 负数 / 边界」的转换测试。
+- reported_by: tnr-tql-agent
+
+### FIXED(2026-10-27T07:29:46Z / BUG-443)
+- evidence: d1daf49：查清 Ps 张量由「克隆已有张量的 shape+data、只换 dtype 标记」产生（interp/builtin.rs:47、interp/mod.rs:4064），其载荷本身就是 f64 槽位。故在 tnrd::num_bytes 与 from_le_bytes 中把 Dtype::Ps 与 Float64 归入同一分支，按 8 字节序列化/还原——描述事实而非新发明语义。两个真源现已一致：elem_width(Ps)==8 且可字节化。新增测试 ps_dtype_roundtrips_as_8_byte_slots（断言 elem_width=8、产物长度=元素数×8、回搬 dtype 与值一致，含负数与 1e300 极值）；原 unsupported_dtype_returns_error_not_panic 改以 Symbolic 为「不支持」示例。全量 6640 passed / 0 failed。
+## BUG-444 [2026-10-27T07:14:54Z] [medium] OPEN
+- summary: [interp] 508daa8 让 assert_shape 真正检查后，attribute_macros 暴露形状违规：标签宏后 let 得到 Tensor&lt;int64, []&gt;
+- detail: ## 现象
+
+```
+cargo test --lib
+test result: FAILED. 6636 passed; 1 failed
+failures:
+    interp::tests::attribute_macros
+```
+
+失败详情：
+```
+thread 'interp::tests::attribute_macros' panicked at src\interp\tests\mod.rs:677:5:
+标签宏后 let got Tensor<int64, []>(6)
+```
+
+## 归因（现场证据）
+
+1. 提交 `508daa8 fix(attr): assert_shape actually checks shapes now; doc 16 marked it done while it was a no-op`
+   —— **`assert_shape` 从「空操作」改成「真正检查形状」**。
+2. 该测试此前通过，是因为 `assert_shape` 什么都不检查；现在它真的检查了，于是暴露出
+   「标签宏之后 `let` 得到的是 `Tensor<int64, []>`（标量）」这一**形状不符**。
+3. `src/interp/mod.rs` 当前处于 **dirty（未提交）** 状态，说明该处仍在被改。
+
+## 判断
+
+这**不是** `508daa8` 引入的回归，而是**该修复让一个 latent 缺陷显形**：
+断言函数长期是空操作，所以测试一直「绿」，但它保护的东西从未被保护过。
+
+## 建议
+
+请在 `src/interp/` 的当前工作中处理：
+1. 确认「标签宏之后 `let` 应得到什么形状」是设计意图还是缺陷；
+2. 若是缺陷，修实现；若是测试期望写错，修测试的断言目标；
+3. 顺带扫描**其它同样依赖 `assert_shape` 而现在开始真正生效的测试**——
+   空操作改真检查属于「守卫变严」，一次性可能暴露多例（本项目历史上守卫变严曾一次打回 19 例）。
+
+## 说明
+
+我不是该区域的作者（我的改动只在 `src/gpu/mod.rs`、`src/tensor/dtype.rs`、`src/tensor/tnrd.rs`、`src/cli/mod.rs`），
+本条由并行工作的另一 agent 现场发现并记录，便于该文件作者接手。
+
+我自己的区域全绿：`gpu::` 44 passed / `tensor::` 485 passed。
+- reported_by: tnr-tql-agent
+## BUG-445 [2026-10-27T07:21:20Z] [medium] OPEN
+- summary: [BUG-443 部分缓解] num_bytes 不再 panic 而是返回错误；但 Ps 的 elem_width=8 与「不可序列化」仍不一致，并附新证据说明应改为支持
+- detail: ## 这是对 BUG-443 的部分缓解（不是完整修复）
+
+### 已做（提交 2d97e34）
+
+`tnrd::num_bytes` 原本以 `_ => panic!("num_bytes: 非数值 dtype {dtype}")` 收尾，
+**遇到不认识的 dtype 直接让进程崩掉**。已改为返回 `Err`：
+
+```rust
+_ => return Err(format!("dtype {dtype} 并非数值容威（num_bytes 不支持它）——无法序列化")),
+```
+
+因为该分支是**编码器的唯一出口**，所以这一次改动覆盖的是**整类**未支持 dtype，
+而不只是我恰好撞到的 `Ps`（BUG-443 的原始报告）。
+
+新增测试 `unsupported_dtype_returns_error_not_panic`（`Dtype::Ps` 走该路径）。
+
+**语义变化**：崩溃 → 明确拒绝。这不是「修好」，是「不再以最坏方式失败」。
+
+### 仍未解决（BUG-443 的主体）
+
+`Dtype::Ps` 的 `elem_width` 返回 **8**，但 `num_bytes` / `from_le_bytes` **仍不支持它** ⇒
+**两个真源依然不一致**：一个说「扁平定长可字节化」，另一个说「我不能处理」。
+
+任何只看 `elem_width` 的消费者（例如跨设备搬运的 dtype 分类）仍会**误判 `Ps` 可搬运**。
+
+### 关于 `Ps` 的一条新证据（供决策）
+
+我查了 `Ps` 是如何产生的：
+
+- `src/interp/builtin.rs:47`：`Tensor::new(Dtype::Ps, t.shape.clone(), t.data.clone())`
+- `src/interp/mod.rs:4064`：同上
+
+即 `Ps` 是**把一个已有张量的 shape 与 data 原样克隆、只换 dtype 标记**得到的 ——
+**所以 `Ps` 张量确实携带 `Data::Num`，`elem_width = 8` 对内存表示是对的。**
+
+### 因此建议改为「支持」而非「拒绝」
+
+既然 `Ps` 的载荷就是 f64 槽位，把它按 Float64 的 8 字节处理即可往返：
+
+在 `num_bytes` 与 `from_le_bytes` 的 `Float64` 分支旁加 `Dtype::Ps`（写 8 字节、读回 `Data::Num`），
+这样 `elem_width == 8` 与「可字节化」重新一致，`Ps` 也能落盘与跨设备搬运。
+
+### 建议的验收判据
+1. `canonical_le_bytes` 对 `Ps` 张量成功，产物长度 = 元素数 × 8；
+2. `from_le_bytes(Ps, shape, bytes)` 回读到 dtype=Ps、值不变的张量；
+3. `elem_width(Ps) == 8` 与上述两条同时成立（真源一致）；
+4. 若决定「`Ps` 不应可存储」，则反过来把 `elem_width(Ps)` 改为 0，让所有「=0 即不可扁平化」的守卫统一拒绝它 —— 但**不能维持现状**（一个说 8 一个说不行）。
+- reported_by: tnr-tql-agent
+## BUG-446 [2026-10-27T07:35:08Z] [high] OPEN
+- summary: [BUG-442 补充] 已排除 5 个方向：两文件同构可比较、== 与 all() 单独均正常；门内 E9402 与单独 E_SHAPE 是两种现象，后者系固定输出路径残留
+- detail: ## 追加证据（对 BUG-442 的补充，不是重复单）
+
+### 已排除的方向
+
+1. **比较程序本身极简**，不是复杂逻辑：
+   ```tnr
+   let a = load("tql/fixtures/expect_gv2k.tnrd");
+   let b = load("tql/out/o.tnrd");
+   print(all(a == b));
+   ```
+
+2. **两个文件都是 `Int64`、形状 `[50,2]`、100 元素、800 字节** —— 完全同构可比较
+   （用 `tnr chunk <file>` 分别读取确认）。
+
+3. **`==` 对两个 load 回来的张量本身没问题**。最小复现通过：
+   ```tnr
+   let x = reshape(arange(6), [3,2]);
+   save(x, "tql/out/_a.tnrd");
+   let p = load("tql/out/_a.tnrd");
+   let q = load("tql/out/_a.tnrd");
+   print(sum(p == q));      // → Tensor<float64, []>(6)  ✅
+   ```
+
+4. **`all()` 对比较结果没问题**：
+   ```tnr
+   let x = reshape(arange(6), [3,2]);
+   print(all(x == x));      // → Tensor<bool, []>([true])  ✅
+   ```
+
+5. **`all()` 对普通 bool 张量没问题**（`m > -1` → true）✅
+
+### 因此 seen 的现象
+
+**同一用例在两种调用方式下给不同错误：**
+
+| 调用方式 | 错误 |
+|---|---|
+| 门内（`run_all.ps1`） | `[E9402] Atom 未注册进 $Compable 大域（D3c）：域 $visibility 的 atom 不可参与比较` |
+| 单独跑 `tql/out/cmp.tnr` | `[E_SHAPE] 逐元素运算形状不匹配：[3,2] 与 [50,2]` |
+
+**后者是陈旧产物**：`cmp.tnr` 与 `o.tnrd` 都是**固定路径、每个用例覆盖写**，
+所以单独重跑读到的是**上一个用例留下的内容**（[3,2]）。
+这解释了 E_SHAPE，但**不解释门内的 E9402**。
+
+### 建议 `interp` 侧查这一点
+
+`$visibility` 这个域名不在错误信息列出的默认可比较集合里
+（`$dtype::*`、`$True/$False`、`$Enum::*::*`、`$err_*`）。
+而 `4fde29e` 新增的正是「cache 与 visibility」两个族。
+
+**请确认：`$visibility` 族的 atom 为何会出现在一个 `Int64` 张量比较的比较路径上**——
+若它们不应参与比较，则比较路径应在遇到时跳过或转字符串，而不是整条失败。
+
+### 我这侧的观察局限（诚实标注）
+
+我无法在 `src/interp/` 内加日志定位（该目录当前 dirty，属其它 agent 在改）。
+以上是我能在自己 scope 内做到的最大隔离程度。
+
+### 顺带一条 gate 健壮性建议（属我的 scope，但先不动）
+
+`tql/out/o.tnrd` 与 `tql/out/cmp.tnr` 是**单一路径、逐用例覆盖**。
+若某用例失败后残留产物，下一个用例的比较可能读到别人的数据。
+可考虑给每个用例用**独立输出路径**（如按用例名散列），从结构上消除这种串扰。
+- reported_by: tnr-tql-agent
+## BUG-447 [2026-10-27T07:52:27Z] [high] OPEN
+- summary: [interp] 最小复现：同一对 Int64 张量，`a == b` 报 E9402（$visibility atom 不可比较），而 `sum(abs(a-b))` 正常为 0
+- detail: ## 精确最小复现（本轮已把范围收到最窄）
+
+```tnr
+let a = load("tql/fixtures/expect_gv2k.tnrd");
+let b = load("tql/out/o.tnrd");
+print(sum(sum(abs(a - b))));   // → Tensor<float64, []>(0)     ✅ 正常
+```
+
+```tnr
+let a = load("tql/fixtures/expect_gv2k.tnrd");
+let b = load("tql/out/o.tnrd");
+print(all(a == b));            // → E9402 Atom 未注册进 $Compable 大域（D3c）
+                               //   域 $visibility 的 atom 不可参与比较
+```
+
+**关键**：**同一对张量、同一份文件，`==` 报 E9402，而 `abs(a - b)` 完全正常且结果为 0。**
+
+## 已排除（本轮实测）
+
+| 假设 | 结论 |
+|---|---|
+| 两文件异构 | ❌ 两者都是 `Int64 [50,2]` / 100 元素 / 800 字节 |
+| 单文件加载有问题 | ❌ `load` 各自都正常，返回 `Tensor<int64, [2]>([50, 2])` |
+| `all()` 有问题 | ❌ `all(x == x)` 与 `all(m > -1)` 都正常 |
+| 两个不同文件比较有问题 | ❌ 自己写的 `_a.tnrd` / `_b.tnrd` 对比 `all(p == q)` 正常 |
+| 旧产物污染 | ❌ 已加「开工前清理陈旧产物」，错误依旧 |
+
+**⇒ 因此触发条件与「这对特定张量的 `==`」有关，而非形状、文件数或 `all()`。**
+
+## 我的处理（在自己 scope 内）
+
+`tql/tqlc.ps1` 的对比程序由 `all(a == b)` 改为 `sum(sum(abs(a - b)))`，成功判据改为「差值和为 0」。
+语义上「两个张量值是否一致」本来就等于「逐值差为零」，不依赖 atom 等价。门已回到 113 PASS / 0 FAIL。
+
+**但这只是绕开，不是修好** —— `==` 对 Int64 张量报 atom 错误本身仍是缺陷。
+
+## 请 interp 侧确认
+
+`$visibility` 族（`4fde29e` 新增的两族之一）为何会出现在 **两个 `Int64` 张量的 `==` 比较路径**上。
+若它不应参与比较，比较路径应在遇到时跳过或转字符串，而不是让整个表达式失败。
+
+## 影响面
+
+用户写 `a == b` 比较两个加载的 Int64 张量就会失败，而 `a - b` 正常 ——
+这是**用户可直接撞上的行为不一致**，不只是测试问题。
+- reported_by: tnr-tql-agent
+## BUG-448 [2026-10-27T09:16:09Z] [medium] FIXED
+- summary: [环境] 本机 CUDA 主上下文「保留+设为当前」均成功、cuCtxGetCurrent 确认有效，但 cuMemGetInfo 返 201 INVALID_CONTEXT；libtorch device_count 亦为 0，疑同源
+- detail: ## 现象
+
+`tnr device info` 输出：
+
+```
+driver_present: true
+toolkit_present: false
+devices: 1
+  - id=0 name=NVIDIA GeForce RTX 3060 Laptop GPU total_mem=0 free_mem=0
+fallback_reason: cuda-context-failed: gpu0: cuMemGetInfo=201
+```
+
+**`201 = CUDA_ERROR_INVALID_CONTEXT`**
+
+## 逐步骤实测（本次已加入返回码上报 + `cuCtxGetCurrent` 回读）
+
+| 调用 | 返回 | 结论 |
+|---|---|---|
+| `cuInit(0)` | 成功 | 驱动可用 |
+| `cuDeviceGetCount` | 1 | 看到设备 |
+| `cuDeviceGetName` | `NVIDIA GeForce RTX 3060 Laptop GPU` | 名字正确 |
+| `cuDevicePrimaryCtxRetain` | 成功，ctx 非空 | 主上下文保留成功 |
+| `cuCtxSetCurrent(ctx)` | 成功 | — |
+| **`cuCtxGetCurrent`** | **成功，且返回同一个 ctx（非空、相等）** | **排除「伪成功」** |
+| **`cuMemGetInfo`** | **201** | 🔴 拒绝 |
+
+**关键**：`cuCtxGetCurrent` 确认上下文**确实**是当前上下文，但驱动随后仍以 201 拒绝该上下文的内存查询。
+**⇒ 这不是调用顺序或代码问题，而是该上下文本身在驱动侧不可用。**
+
+## 三方交叉验证
+
+| 来源 | 结果 |
+|---|---|
+| `nvidia-smi` | ✅ GPU 健康：RTX 3060 Laptop，2304MiB/6144MiB 在用，10% util，驱动 596.36，CUDA 13.2，**WDDM** |
+| `C:\Windows\System32\nvcuda.dll` | ✅ 存在，版本 32.0.15.9636 |
+| `torch_cuda.dll`（libtorch cu126 自带）| ✅ 可加载；`cublas64_12.dll` / `cudart64_12.dll` 均在 lib 目录 |
+| **libtorch `Cuda::device_count()`** | 🔴 **0** |
+
+**⇒ libtorch 报 0 设备与本处 201 高度可能是同一根因**：CUDA 上下文在此环境不可用。
+
+## 影响
+
+- `tnr device info` 无法给出真实显存（`total_mem=0`）。
+- `src/gpu::migrate_to_gpu` 的显存预算检查因此永远无法通过 ⇒ 所有 GPU 迁移走回退路径。
+- `tnr transpile --backend torch-cuda --run` 的生成代码已能探测并回退 CPU（不会崩），**但 GPU 路径无法启用**。
+
+## 我这一侧不打算继续硬改的理由
+
+已排除：代码层调用顺序、上下文保留方式、伪成功、DLL 缺失、驱动缺失。
+**剩下的嫌疑是驱动版本组合（596.36 / CUDA 13.2 / WDDM）与 libtorch cu126 的运行时兼容性**，
+这需要环境层面验证（例如换驱动、或改用与驱动匹配的 libtorch CUDA 版本），
+不是本仓库代码能修复的。
+
+## 建议的环境侧验证
+
+1. 用 `cuCtxCreate` 显式建上下文（而非 primary ctx）后再查 `cuMemGetInfo`，若仍 201，则确认是驱动层。
+2. 装 CUDA Toolkit 后用 `bandwidthTest` / `deviceQuery` 验证同一驱动下 CUDA 运行时是否正常。
+3. 若上两者都失败 ⇒ 该机器的 WDDM + 此驱动组合不支持该 CUDA 上下文路径，需换驱动或换 libtorch 的 CUDA 目标版本。
+- reported_by: tnr-tql-agent
+
+
+### FIXED(2026-10-27T09:22:41Z / BUG-448)
+- evidence: 828cfec：BUG-448 的诊断结论是错的——不是环境问题，是我自己代码的符号名 bug。nvcuda.dll 导出的是 cuMemGetInfo_v2（带 _v2 后缀），而 src/gpu/mod.rs 找的是无后缀 cuMemGetInfo → GetProcAddress 返回空指针 → 调用后返回垃圾码 201（CUDA_ERROR_INVALID_CONTEXT），导致 total_mem=0。用库外 ctypes 探针（Python 直调 nvcuda.dll）验证：cuMemGetInfo_v2 走 primary ctx 与显式 cuCtxCreate 两条路径均返回 0，total=6,441,926,656（6.00 GiB）。修复：新增 proc_v2! 宏，先试 `_v2` 后缀再回退无后缀。修复后 `tnr device info` 报 total_mem=6441926656 / free_mem=5379194880（6.00 / 5.01 GiB），与独立探针完全一致。教训：我把「符号名」排除在嫌疑清单之外，于是把代码 bug 误判成环境限制——排除法只对「列进清单的假设」有效。
+## BUG-449 [2026-10-27T10:52:05Z] [medium] OPEN
+- summary: BUG-486: LINK RECIPE 的 `-L dependency` 指向 rlib 所在目录而非 deps/，照抄即 E0463
+- detail: `lang-zone <f>.lz` 生成 stderr 链接配方取 `r.parent()` 作依赖目录。rlib 命中顶层 `target/debug/liblz_builtins.rlib`（direct 分支）时 parent=target/debug，而其传递依赖在 target/debug/deps/ → 照抄配方 E0463 can't find crate for lz_builtins。修法：print_link_recipe 先取 `<exe_dir>/deps` 作为依赖目录（rlib 在 deps 时二者相同无副作用）。修复后配方 `-L dependency=.../target/debug/deps`，按配方 rustc 编译通过并运行输出 1。cargo test --lib 463/463 全绿。commit e6f7ed4。
+- reported_by: lead
+## BUG-450 [2026-10-27T11:40:57Z] [high] FIXED
+- summary: [perf] 逐元素算子比 PyTorch 慢 23×(512²)，但裸内核已接近/超过 PyTorch——瓶颈是每次调用的新分配（首次触页），不是内核
+- detail: ## 结论：算子不慢，**分配慢**
+
+### 实测（release，14 物理核 / 20 逻辑核，torch 2.12.0+cpu 为参照）
+
+**完整差距表（Tnr / PyTorch，越小越好）**
+
+| 算子 | 256² | 512² | 1024² |
+|---|---|---|---|
+| add | 2.54× | **23.0×** | 6.93× |
+| mul | 2.41× | **23.9×** | 7.54× |
+| sqrt | 2.95× | 4.94× | 2.66× |
+| matmul | 2.50× | 3.44× | 2.60× |
+| transpose | 4.30× | 9.46× | **5.06×** |
+| sum | **0.17×（更快）** | 1.58× | 1.28× |
+| 1D add(200k) | — | — | 7.10× |
+| 1D sum(200k) | — | — | **0.70×（更快）** |
+
+### 定位：瓶颈不在内核
+
+裸 `exec::elementwise_par`（复用输出缓冲）：
+
+| size | 裸内核 | PyTorch | 比值 |
+|---|---|---|---|
+| 256² | **0.0361ms** | 0.0315ms | **1.15×** |
+| 512² | **0.0800ms** | 0.0398ms | 2.01× |
+| 1024² | **0.3202ms** | 0.3877ms | **0.83×（更快）** |
+
+**⇒ 内核本身已经接近甚至超过 PyTorch。**
+
+### 但 `ops::add` 在 512² 要 0.916ms —— 比裸内核慢 11.5 倍
+
+| n | 复用缓冲 | 每次新分配 | 纯 alloc | 差额 |
+|---|---|---|---|---|
+| 256 | 0.0367 | 0.0843 | 0.0136 | **2.3×** |
+| 512 | 0.1278 | 0.5238 | 0.0035 | **4.1×** |
+| 1024 | 0.4855 | 0.9473 | 0.0049 | **2.0×** |
+
+**⇒ 同一条内核，只因「每次新分配 out」就慢 2–4 倍。而 `vec![0.0; n]` 本身只占 0.0035–0.0136ms。**
+
+**⇒ 差额来自「首次触达新页」的缺页成本，不是 memset。**
+
+### 根因代码
+
+`src/tensor/ops.rs:145`（`binary_num`）：
+```rust
+let mut out = vec![0.0f64; out_size];   // 每次调用都新分配 + 清零
+```
+
+### 影响面
+
+- 所有 `Data::Num` 逐元素算子（add/sub/mul/div/sqrt/exp/log…）全部走这条路径
+- 中间张量在惰性链里频繁产生 ⇒ 分配/释放抖动放大
+- **512² 的 23× 差距就是这个效应的峰值**（2MB 正好跨过分配器的 size-class 边界）
+
+### 建议修法（按预期收益排序）
+
+1. **按 size-class 的缓冲池（caching allocator）** —— 让 `out` 从池里取、用后归还。
+   这是 PyTorch 的核心优化之一，也是唯一能消掉 2–4× 的办法。
+2. **惰性链的中间缓冲复用** —— 已有 C3 融合（`lazy.rs`），但物化时仍逐算子分配。
+3. 次优：大缓冲用 `Vec::with_capacity` + `set_len` 避开清零（**仅当确信会写满**，否则是 UB 风险）。
+
+### 复现
+
+```bash
+python bench_py/torch_baseline.py     # torch 侧基线
+cargo bench --bench vs_torch          # tnr 侧对照
+cargo bench --bench ew_tune           # 扫 min_per_thread（证明内核已够快）
+cargo bench --bench alloc_cost        # 复用 vs 新分配（证明差额在分配）
+```
+- reported_by: tnr-perf-agent
+
+### FIXED(2026-10-27T11:57:32Z / BUG-450)
+- evidence: c5311b8：在 src/alloc_pool.rs 新增全局池化分配器（#[global_allocator]），只对 ≥64KiB 且 align ≤32 的块池化；分桶取上界、侵入式空闲链表（分配器自身不分配）、自旋锁、单桶 4 块与总计 256MiB 双上限。实测（vs_torch 基准，torch 2.12.0+cpu 为参照，14 物理核）：add_512 从 23.0× 降到 4.8×（0.916→0.192ms）；mul_512 23.9×→4.0×；add_1024 6.93×→2.01×；transpose_1024 5.06×→2.74×（16.556→8.973ms）；add1d_200k 7.10×→1.40×（0.712→0.140ms）；matmul_1024 2.60×→2.05×（29.219→23.044ms）；sqrt_1024 2.66×→0.77×，已反超 torch。变更是全局的，因此改善覆盖全部算子而非仅逐元素。正确性门：cargo test --lib 6650 passed / 0 failed；tql 门 112 PASS / 0 FAIL。
+## BUG-451 [2026-10-27T11:48:29Z] [medium] FIXED
+- summary: [npt-mbt RANK_GATE] claim 军衔门用 task.level 判级，却忽略 is_leaf ⇒ 叶子任务(level=2)对 Executor(rank=5) 永久不可认领，而 rank_of(level, leaf=true) 明确「叶子恒为士兵」
+- detail: 实测（ns=rx-rhop，2026-10-27）：publish(level=0) 根任务经 task_plan_deep 拆 3 层后，叶子 T0.1.1 的 task level=2（师长），is_leaf=true；impl-core（role=Executor, rank=5）claim 回执：RANK_GATE: assignee impl-core (rank=5, role=Executor, role_source=declared) cannot claim task level=2 (task_rank=师长)。引擎判据 src/engine/engine.mbt:1809 rank_can_claim(arank,tlevel)= arank==0 || arank<=tlevel，只读 t.get_level()，未用 t.is_leaf()；而 src/ops 的 rank_of(level, leaf=true) 文档/实现为「叶子恒为士兵(rank 7)」。⇒ 低军衔执行体无法认领任何深度≥2 的叶子任务，只能由 human_steward(rank 0) 代领，违背「由易到难叶子可独立认领」的拆解初衷。建议：claim 的 RANK_GATE 计算 tlevel 时若 is_leaf 则取 7（或直接用 rank_of(level, leaf=is_leaf) 的 rank_index）。当前项目已用「统帅侧统一认领 + execute 记录实际执行者」绕行。
+- reported_by: lead
+
+### FIXED(2026-10-27T12:15:59Z / BUG-451)
+- evidence: commit b2ec7943（4 文件）。根因：claim 的 RANK_GATE 用 task.level 判级却忽略 is_leaf，而 src/display/rank.mbt:99-101 的 leaf_label(_level) 用弃用参数（故意不读 level）明示「叶子恒为士兵」。修法：engine.mbt:213 改 `let tlevel = if t.is_leaf() { leaf_claim_level() } else { task_level }`；engine.mbt:1831 新增 `fn leaf_claim_level() -> Int32 { 7 }`（引擎层私有，不引展示层依赖）。四格锁：锁1 Executor 能领 level=2 叶子（自带夹具自检 if !t.is_leaf() abort）；锁2 非叶子仍拒且文案档位仍是 level=2（零回归）；锁3 human_steward 通吃；锁4 纯函数级 rank_can_claim 边界。变异实测：改回 `let tlevel = task_level` ⇒ src/engine 277→276 passed 1 failed（精确打红 bug451_lock1），撤回后 277/277 恢复。补测更极端形态：rank_can_claim(5,0)=False ⇒ level=0 叶子连 Executor 都拒只有司令能领。全量 1619/1618/1，那 1 个与本条无关（Lane BL 的 1c349106，已用「还原 engine.mbt 后仍红」严格证明）。判例候选：语义分居两个模块时「组合」本身需要一格锁——leaf_label（展示层）说叶子恒为士兵、rank_can_claim（引擎层）说 arank<=tlevel，两句话都对两句都有锁，而「引擎该不该用叶子的语义」没人测 ⇒ 深度≥2 的叶子对全部现网执行体永久不可认领。一个概念的定义在一个模块、使用在另一个模块时，必须有至少一格跨模块组合锁，否则两边各自的锁绿得毫无意义。
+## BUG-452 [2026-10-27T11:53:19Z] [medium] FIXED
+- summary: [FIST-Mbt conflicts_check] 工具缺 namespace 参数 ⇒ 非 default 命名空间任务的 claim 前冲突检测恒报 task not found，并行门第 4 道不可用
+- detail: 实测（2026-10-27，ns=rx-rhop）：任务 T0.2.1 等存在于 rx-rhop 独立库（get(namespace="rx-rhop") 可取），但 conflicts_check(task_id="T0.2.1", assignee="impl-core") 恒返回 "Error: task not found: T0.2.1"。检查 MCP schema：conflicts_check 的 inputSchema 只有 task_id / assignee，没有 namespace 参数，而引擎按 default 库取任务 ⇒ 对任何非 default 命名空间的任务，claim 前冲突检测这道门形同不存在。影响：explore 模式并行前置条件第 4 门「认领前 conflicts_check 可认领」无法满足，只能退化为 claim 自身的冲突裁决。建议：给 conflicts_check 增加 namespace 可选参数并与 claim 同一路由（namespace→store 映射），返回形状保持不变。相关：claim/execute/submit/run_check 都已有 namespace，唯 conflicts_check 缺。
+- reported_by: lead
+
+### FIXED(2026-10-27T12:29:04Z / BUG-452)
+- evidence: commit 4d94a26f + aff21422（代码+报告）。根因：conflicts_check 的 schema 只有 task_id/assignee 但实现调 @ops.check_claim(engine, ...) 用全局 engine（主库），非 default ns 的任务恒报 task not found。修法：schema 加 namespace 参数，走 engine_for_ns(ns) + check_claim(eng, ...)；不传 ns 时默认 default 走主库零回归。普查 20 个工具：8 个有 namespace（claim/omega_status/dag_check/dag_ready/task_triage/board_ascii/status_summary/project_health）；真同族 2 个（conflicts_check + heartbeat，heartbeat 实测 engine.get_task 取全局引擎，非 default ns 里心跳静默失效，已一并修）；缺但不算 execute（走 acl_claim_identity 得 ns）/reserve_scope/lock_*（按 scope 而非 task_id）/audit_log/call_log/bug_list（非任务库面）；待议 3 个 task_challenge/tx_contract/task_cleanup。变异实测：把 check_claim(eng,…) 改回 check_claim(engine,…) ⇒ 434/435 只有 bo_01 红。beta 自曝并纠正一处写错：第一版 bo_04 断言「未打开的 ns ⇒ Err」跑红了，查证 multi_store.mbt:109 合法但未打开的 ns 会惰性建库并返回 Some，engine_for_ns 给的是 Ok(新库引擎)——这是设计（惰性多租户）不是 bug，真正的防线是「非法 ns 必须 Err」（否则 delete/archive 会打到主库任务），bo_04 已改成钉这个。教训：锁要先在未变异的新鲜样本上跑一遍，别让「我以为的语义」进锁。测试读数：src/server 435/435/0 全绿；moon check 0 errors；全量 1626/1630 那 4 格红全部在 src/engine 来自并发 lane 的 BUG-453 在途改动。缺口：task_challenge/tx_contract/task_cleanup 仍未回填 ns；惰性建库让「拼错 ns」与「任务真不存在」不可区分。
+## BUG-453 [2026-10-27T12:07:49Z] [high] FIXED
+- summary: [r22-s3] engine_rsv.mbt:439-470 S3 验签结果不进 action 面：action 恒加 +agent_self_reported，challenge_verified/failed/replayed 全部丢失；execute 的 challenge 参数是死参数
+- detail: ## 缺陷（S3 验签结果在 `reserve_scope` / `lock_acquire` 的 `action` 面**完全丢失**）
+
+`judged_role_gated` 新增了三个认证态 `challenge_verified` / `challenge_failed` / `challenge_replayed`，
+**但它们没有一个进入 `RsvOutcome.action` / `LockAcquireOutcome.action`** ——
+`action` 只映射了 `role_inferred` 一种，且**无条件**追加硬编码常量 `+agent_self_reported`。
+
+## 代码定位（`src/engine/engine_rsv.mbt`）
+
+**`rsv_try_set`（:439-470）**：
+```moonbit
+let src_tag = "+agent_self_reported"                      // ★:439 硬编码常量，与验签结果无关
+...
+let (role, role_source) = judged_role_gated(self, agent, challenge_nonce, challenge_sig~)
+match check_scope_permission(scope, role) {
+  RoleDenied(e) => Err(e)
+  Allowed =>
+    Ok(o.relabel(
+      o.action +
+      (if role_source == "inferred" { "+role_inferred" } else { "" }) +   // ★ 只映射 inferred
+      src_tag,                                                          // ★ 恒加 agent_self_reported
+    ))
+  Unregistered(_) =>
+    Ok(if o.reserved { o.relabel("unregistered" +
+          (if role_source == "inferred" { "+role_inferred" } else { "" }) +
+          src_tag) } else { o })
+}
+```
+
+**⇒ `role_source == "challenge_verified"` 时，`action` 与「没传 challenge」的情形逐字相同。**
+
+## ★ 实测（真跑 MCP，不是静态推断）
+
+```
+$ python scripts/fist.py call reserve_scope \
+    --agent "test-agent-y" --scope "y/z" --ttl_until "2026-12-31T00:00:00Z" \
+    --challenge "deadbeef02" --challenge_sig "abababab…(128 hex)"
+
+{"scope":"y/z","agent":"test-agent-y","ttl_until":"2026-12-31T00:00:00Z",
+ "reserved":true,
+ "action":"unregistered+agent_self_reported",     ← ★ 与「不传 challenge」一模一样
+ "prev_agent":"","held_by":"","reason":""}
+```
+
+**我传了一个**明显无效**的签名（`abab…` 全 `ab`），预期 `challenge_failed` ⇒ 应降级为 `Executor`；
+但回执 `action` 里**看不出任何痕迹** —— 与完全不传 `challenge` 时逐字相同。**
+
+## 为什么这是真 bug（不是「设计如此」）
+
+1. **`judged_role_with_challenge` 的注释明写这是调用方可见的变化**（`engine_rsv.mbt:124-126`）：
+   > 「**`role_source` 的取值扩展**（调用方可见的变化）：原有 `declared` / `inferred` 之外
+   > 新增 `"unauthenticated"` / `"challenge_verified"` / `"challenge_failed"`。
+   > **这不是改语义，是让「认证状态」显式可见。**」
+   **⇒ 它承诺了「显式可见」，但 `rsv_try_set` / `locks_try_acquire` 的 `action` 面把它吞掉了。**
+
+2. **这把 S3 降级成「不可观测的安全措施」**：调用方传了合法签名、验签通过，
+   **回执还写着 `+agent_self_reported`（自报未验证）** —— **诚实标注被写反了**。
+   反之验签失败也不会显形 ⇒ **攻击者在探测时看不到自己被拒的痕迹**（对防守方是坏消息：
+   日志里 `challenge_failed` 与「压根没传 challenge」不可区分）。
+
+3. **`+agent_self_reported` 恒加是直接错误**：验签通过后 agent 身份**已锚定**，
+   继续标 `self_reported` 是**陈述不实**（这正是 S1→S3 要消除的那句话）。
+
+## 影响面
+
+| 工具 | 是否有此问题 | 证据 |
+|---|---|---|
+| `reserve_scope` | **是** | `rsv_try_set` :439-470 |
+| `lock_acquire` | **是（同族，需核）** | `locks_try_acquire` 同样走 `judged_role_gated`（:549），`action` 映射需同样检查 |
+| `claim` | 需核 | `engine.mbt:213` 附近 |
+| `execute` | **未接入** —— 有 `challenge`/`challenge_sig` schema 参数但**零 `opt_challenge` 调用** | 见下 |
+
+## ★ 附带发现：`execute` 的 challenge 参数是**死参数**
+
+`execute` 的 schema 声明了 `challenge` / `challenge_sig`（`server.mbt:2086-2089`），
+但 `opt_challenge(args)` 在全仓只有 **3 个调用点**：
+```
+:2038  claim
+:5650  reserve_scope
+:5804  lock_acquire
+```
+**⇒ `execute` 没有第 4 个** ⇒ **它的 `challenge` 参数收下了、验都没验、直接忽略**。
+这与 `BUG-440` 同族（**声明了但没接线**），且比「没声明」更坏：
+**调用方以为传了就受保护，实际是个无声的 no-op。**
+
+## 建议修法
+
+**A（推荐）：`action` 增加认证态标签**
+```moonbit
+let auth_tag = match role_source {
+  "challenge_verified" => "+challenge_verified"
+  "challenge_failed"   => "+challenge_failed"
+  "challenge_replayed" => "+challenge_replayed"
+  "unauthenticated"    => "+unauthenticated"
+  _ => ""
+}
+// 且 `src_tag` 改成条件式：只有非 challenge_verified 时才加 "+agent_self_reported"
+let src_tag = if role_source == "challenge_verified" { "" } else { "+agent_self_reported" }
+```
+
+**B：`execute` 要么接上 `opt_challenge`，要么把这两个 schema 参数删掉**
+（当前状态是「声明了不接线」，属 `BUG-440` 同族）
+
+## 与 Beta 自述的对照
+
+Beta 写「挑战链路完整可用」。**实测：链路本身（args → opt_challenge → rsv_try_set →
+judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实（fail-closed、长度先于密码学、
+复用 Star 门同一函数）。**但「结果的可见性」断了** —— 最后一米没接上。
+**⇒ 这是「90% 正确 + 最后一米丢失」的典型：功能在，证据不在。**
+
+## 关联
+
+`src/engine/engine_rsv.mbt:124-126`（承诺「呼叫方可见」）· `:439`（硬编码 src_tag）·
+`:440-470`（action 只映射 inferred）· `:549`（locks_try_acquire 同类）·
+`src/server/server.mbt:2086-2089`（execute 的死参数）· `BUG-440`（死承诺同族）·
+`BUG-403`（pubkey_fp 死承诺）
+- reported_by: commander-gamma
+
+### FIXED(2026-10-27T12:35:10Z / BUG-453)
+- evidence: commit b12bb14b（3 文件）。根因：judged_role_gated 返回 (role, role_source)，role 被全部消费点用，role_source 只有 rsv_try_set 用了一半（只判 == "inferred"），locks_try_acquire 直接 _role_source 丢弃 ⇒ challenge_verified/challenge_failed/challenge_replayed 三个新状态全部丢失。编译器不报（_ 是显式「我要丢」），调用方不疑（回执字段齐全）。修法：engine_rsv.mbt 新增 auth_tag(:452) / denied_tagged(:446)，两条门用 role_source 构造 action 而非硬编码 +agent_self_reported；execute 的 challenge 死参数已删。7 格锁：L1/L2/L3 三态映射、L4/L4-b 零回归、L5 源码级变异对照、L5-b/L5-c 机制格（函数被调用/不许再有 _role_source）。变异实测：三个认证态全改回 +agent_self_reported ⇒ 失败数 1→5（+4 正是本单的锁），恢复后回基线 1。端到端实测：传无效签名 → {"action":"unregistered+challenge_failed"}（修前是 +agent_self_reported）；不传 challenge → {"action":"unregistered+role_inferred+agent_self_reported"}（与修前逐字相同）。分析亮点：① 与 BUG-439/441 同族但更隐蔽——那两条是「返回值本身是占位」，这条是「返回值的一半被忽略」；② 契约跨越函数边界而本仓验证方式是函数内自测，两头各自都测过中间断点没人测；③ 反直觉设计点：两条门的默认态不能统一（rsv_try_set 旧锁用 contains 宽松 ⇒ 默认态保留后缀；locks_try_acquire 旧锁用 assert_eq 精确 ⇒ 默认态必须零后缀）⇒ 「零回归」不是设计出来的，是跑出来的。缺口：s3_p2_02 断言 engine.mbt 里 judged_role_with_nonce 的单行形态但实际是多行（另一 lane 格式化留下，git diff --stat 为空）⇒ 建议该锁改成容忍多行，否则每次 moon fmt 都会打红它。
+## BUG-454 [2026-10-27T12:28:33Z] [medium] OPEN
+- summary: [FIST-Mbt tx_contract] 工具缺 namespace 参数 ⇒ 对非 default 命名空间任务给出与 get 相反的迁移预检结论（T0r7 实读已归档）
+- detail: 实测（2026-10-27，ns=rx-rhop）：tx_contract(task_id="T0r7", action="execute") 对 rx-rhop 库中的任务返回「当前状态 [已归档]」等与 get(task_id="T0r7", namespace="rx-rhop")=已领取/执行中 矛盾的结论。原因同 BUG-452：tx_contract 的 inputSchema 没有 namespace 参数，引擎按 default 库取任务；非 default 命名空间任务要么查不到、要么撞上 default 库同 id 的别的任务（本例如是）。影响：迁移契约预检（precondition/invariant/postcondition）对多命名空间项目不可用，会给出与真实状态相反的 verdict，比不报更危险。建议：tx_contract 增加 namespace 可选参数，与 claim/execute/submit/run_check 同一 namespace→store 映射；找不到时明确报 not found（而不是拿 default 库同 id 任务顶替）。
+- reported_by: lead
