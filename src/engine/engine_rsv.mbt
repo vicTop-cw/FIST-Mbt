@@ -49,6 +49,159 @@ fn judged_role(eng : FistEngine, agent : String) -> (String, String) {
   resolve_agent_role(agent, declared_role_for_judgment(eng, agent))
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// BUG-430 / S3 **第一段**：挑战-签名-验签的**纯函数骨架**
+//
+// 为什么从纯函数开始、而不是从握手开始：
+//   「握手」涉及 MCP 传输层、客户端配合、密钥分发 —— 任何一处没通，整条链都跑不起来，
+//   而且**失败原因分不清**（是密码学错了？是传输错了？是客户端没实现？）。
+//   纯函数段可以在**一条编译命令 + 一个 test** 内证明「挑战确实接进了角色取数面」，
+//   且**零回归**（不改 `judged_role` 签名、不碰 4 个现有调用点）。
+//
+// ⚠️ 诚实边界：本段**不改变安全属性**。`nonce=None` 时行为与 S1 完全一致（仍可自报）。
+//   真正的安全属性要等：①握手把 nonce 真发出去 ②客户端真签名 ③服务端存得住公钥。
+// ══════════════════════════════════════════════════════════════════════════
+
+///|
+/// S3：生成一次挑战的 nonce（**纯函数**，不落库、不读时钟）。
+///
+/// 为什么用「计数器 + agent」而不是随机数：`moonbitlang/x` **没有独立的 random 包**
+/// （可行性核查已确认）。而 Ed25519 的 nonce 并**不需要密码学随机** ——
+/// nonce 的作用是「**一次性、不可重放**」，由「单调计数器 + 主体标识」即可满足：
+/// 同一 agent 每次挑战拿到不同 nonce，且 nonce 里绑定了 agent（换主体即失效）。
+///
+/// ⚠️ 本函数**不保证全局唯一**（纯函数不可能做到）。真正的唯一性由调用方传入的
+/// 计数器保证（服务端单调递增）。**这是有意的**：纯函数可以在测试里完全确定。
+pub fn issue_challenge_nonce(agent : String, counter : Int32) -> String {
+  "fist-s3-challenge:v1:" + agent + ":" + counter.to_string()
+}
+
+///|
+/// S3：**验签**（纯函数）。
+///
+/// `pubkey_hex` = Ed25519 公钥的 hex（64 字符 = 32 字节）；
+/// `sig_hex`    = 签名的 hex（128 字符 = 64 字节）；
+/// `msg`        = 被签的消息（通常 = nonce）。
+///
+/// hex 解码复用 `@mooncry.hex_to_bytes_or`（与 `src/router/star_gate.mbt:112` 同一个函数）。
+/// 验签复用 `@mooncry.ed25519_verify`（与 `star_gate.mbt:301` **同一个函数**，
+/// 本仓已在 Star 门生产使用）。
+///
+/// 任何一步不合法（hex 坏、公钥非 32 字节、签名非 64 字节、验签失败）⇒ `false`。
+/// **fail-closed**：宁可拒绝，绝不在格式错误时放行。
+pub fn verify_challenge_sig(pubkey_hex : String, msg : String, sig_hex : String) -> Bool {
+  let pk = match @mooncry.hex_to_bytes_or(pubkey_hex) {
+    Ok(b) => b
+    Err(_) => return false
+  }
+  let sig = match @mooncry.hex_to_bytes_or(sig_hex) {
+    Ok(b) => b
+    Err(_) => return false
+  }
+  // 长度先于密码学校验（Ed25519 规格：公钥 32 字节、签名 64 字节）
+  if pk.length() != 32 || sig.length() != 64 {
+    return false
+  }
+  @mooncry.ed25519_verify(pk, @utf8.encode(msg), sig)
+}
+
+///|
+/// S3：**带挑战的角色取数**（第一段的核心 —— 挑战真的接进了取数面）。
+///
+/// 语义（三态）：
+///   · `challenge_nonce = None`
+///       ⇒ **走现有 `judged_role` 逻辑（零回归）**，但 `role_source` 强制标注
+///         `"unauthenticated"` —— 因为**没有挑战就意味着身份未认证**。
+///         这是 S1 公告的延续：S1 说「自报不可验证」，S3 第一段说「未认证就别装成 declared」。
+///   · `challenge_nonce = Some(nonce)` 且验签**通过**
+///       ⇒ 返回 `(role, "challenge_verified")`，role 来自 `declared_role_for_judgment`
+///         （即 agents 表里的 declared 角色）。
+///   · `challenge_nonce = Some(_)` 但验签**失败**（含公钥未登记、hex 坏、签名不匹配）
+///       ⇒ **降级为 `("Executor", "challenge_failed")`** —— fail-closed，绝不放行高权。
+///
+/// ⚠️ **`role_source` 的取值扩展**（调用方可见的变化）：
+///   原有 `"declared"` / `"inferred"` 之外新增 `"unauthenticated"` / `"challenge_verified"`
+///   / `"challenge_failed"`。**这不是改语义，是让「认证状态」显式可见。**
+///
+/// ⚠️ **诚实边界**：本函数**不改变 `judged_role`**（4 个现有调用点零回归）。
+///   要把 S3 真正生效，还需要让四条门都改调本函数 —— 那是**第二段**。
+pub fn judged_role_with_challenge(
+  eng : FistEngine,
+  agent : String,
+  challenge_nonce : String?,
+) -> (String, String) {
+  match challenge_nonce {
+    None =>
+      // 无挑战 ⇒ 未认证。role 仍按现有逻辑算（保持可用性），但来源如实标注。
+      {
+        let (role, _) = judged_role(eng, agent)
+        (role, "unauthenticated")
+      }
+    Some(nonce) => {
+      // 有挑战 ⇒ 必须验签。公钥从 agents 表的 pubkey_fp 取。
+      let pubkey = declared_pubkey_for(eng, agent)
+      let msg = nonce
+      let verified = match pubkey {
+        // 没登记公钥 ⇒ 无法认证 ⇒ 失败（fail-closed）
+        None => false
+        Some(pk) => verify_challenge_sig(pk, msg, s3_last_sig_probe(eng, agent, nonce))
+      }
+      if verified {
+        let (role, _src) = judged_role(eng, agent)
+        (role, "challenge_verified")
+      } else {
+        ("Executor", "challenge_failed")
+      }
+    }
+  }
+}
+
+///|
+/// S3 第一段：取某 agent 登记的**公钥 hex**（agents 表 `pubkey_fp` 列）。
+///
+/// 取数走**与 `declared_role_for_judgment` 完全相同的路径**
+/// （`eng.store.sqlite_store()` → `SqliteStore::agents_get`），不新造第二条取数面 ——
+/// BUG-432 的教训：同一语义长第二个实现必翻车。
+///
+/// 返回 `None` 表示「未登记公钥」⇒ 该 agent **无法通过挑战认证**（fail-closed）。
+/// `pubkey_fp` 为空串视为未登记。
+fn declared_pubkey_for(eng : FistEngine, agent : String) -> String? {
+  match eng.store.sqlite_store() {
+    None => None
+    Some(s) =>
+      match s.agents_get(agent_fp_of(agent)) {
+        None => None
+        Some(a) =>
+          if a.pubkey_fp == "" {
+            None
+          } else {
+            Some(a.pubkey_fp)
+          }
+      }
+  }
+}
+
+///|
+/// S3 第一段：**签名来源占位**。
+///
+/// 纯函数段**拿不到**调用方提交的签名（那要走握手/参数），故此处返回空串 ⇒
+/// 任何 `Some(nonce)` 调用在**第一段**都会走到 `challenge_failed`。
+///
+/// **这是有意为之，且必须写清**：
+/// 第一段证明的是「挑战接进了取数面 + 验签函数可用 + fail-closed 正确」，
+/// **不证明**「真客户端能通过认证」—— 后者需要第二段把
+/// 「调用方提交的 (nonce, sig)」真正传进来（替换本占位）。
+///
+/// ⚠️ 若有人把本函数改成返回一个恒能验过的签名，等于**绕过 S3** ——
+/// 第二段实现时必须**删掉本函数**，而不是让它返回真签名。
+fn s3_last_sig_probe(eng : FistEngine, agent : String, nonce : String) -> String {
+  ignore(eng)
+  ignore(agent)
+  ignore(nonce)
+  ""
+}
+
+
 ///|
 pub fn FistEngine::rsv_set(
   self : FistEngine,
