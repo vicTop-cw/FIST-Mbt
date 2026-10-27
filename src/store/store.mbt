@@ -48,6 +48,26 @@ pub struct MemoryStore {
   // `nf = failures + 1` 恒为 1，`1 >= threshold(3)` 永不成立 ⇒ **内存后端永不熔断**。
   // 这是**假绿**形态：工具不报错、回执字段齐全、保护从未生效。
   circuit_breakers : Map[String, (String, Int32, Int32, Int32, Int32, Int32, Int32)]
+  // BUG-441：Saga 补偿日志（R92 的 durable action log，此前内存后端**从未实现**）
+  //   key   = "<ns>\u0000<root_task_id>"（与 SQLite 侧 `WHERE ns=? AND root_task_id=?` 同口径）
+  //   value = 该根任务下的步骤数组（**按登记顺序**，对应 SQLite 的 `ORDER BY id ASC`）
+  //   每项  = (id, step, task_id, compensation, status)
+  //
+  // 为什么必须存在：此前三方法在内存后端分别返回 `Ok(())` / `[]` / `Ok(())`
+  // ⇒ **补偿序列静默为空**：`saga_rollback` 永远"没有待补偿步骤"、
+  // `saga_repair` 永远找不到切片 —— 工具不报错、回执合法、补偿机制从未生效。
+  //
+  // ⚠️ 这比 BUG-439 的熔断器**更隐蔽**：熔断器的 `state` 恒 `closed` 还算有点异常，
+  // 而「没有待补偿步骤」在**任何正常系统里都合法** —— 空列表不是错误信号。
+  saga_log : Map[String, Array[(Int32, String, String, String, String)]]
+  // 下一个 Saga 步骤 id（模拟 SQLite 的 AUTOINCREMENT：单调递增、不复用）
+  mut saga_next_id : Int32
+}
+
+///|
+/// BUG-441：Saga 日志的进程内复合键（与 SQLite 侧 `ns + root_task_id` 过滤同口径）。
+fn saga_key(ns : String, root_task_id : String) -> String {
+  ns + "\u{0}" + root_task_id
 }
 
 ///|
@@ -70,6 +90,8 @@ pub fn MemoryStore::new() -> MemoryStore {
     lock_violations: [],
     assistant_reg: Map([]),
     circuit_breakers: Map([]),
+    saga_log: Map([]),
+    saga_next_id: 1,
   }
 }
 
@@ -937,7 +959,12 @@ pub fn StoreBackend::list_heartbeat_intervals(
 }
 
 ///|
-/// 登记 Saga 补偿步骤（R92：SQLite 落库 durable action log，内存后端为 no-op）。
+/// 登记 Saga 补偿步骤（R92：SQLite 落库 durable action log）。
+/// **BUG-441：内存后端已实写**（此前 `Ok(())` no-op ⇒ 补偿序列静默为空）。
+///
+/// 语义与 SQLite 的 `ON CONFLICT(ns, root_task_id, step) DO UPDATE` **一致**：
+/// 同一 `(ns, root_task_id, step)` 重复登记 ⇒ **就地更新**（task_id/compensation 覆盖、
+/// status 复位为 `pending`），**不新增行**、**不改 id**。
 pub fn StoreBackend::write_saga_action(
   self : StoreBackend,
   ns~ : String = "default",
@@ -948,7 +975,33 @@ pub fn StoreBackend::write_saga_action(
   created_at~ : String,
 ) -> Result[Unit, String] {
   match self {
-    Mem(_) => Ok(())
+    // 内存版不存 created_at（SQLite 有该列，但 `list_saga_actions` 不返回它、
+    // 它也不参与任何判定）⇒ 两侧读回形状一致。
+    Mem(m) => {
+      let k = saga_key(ns, root_task_id)
+      let rows = match m.saga_log.get(k) {
+        None => []
+        Some(r) => r
+      }
+      // 幂等：同 step 已存在 ⇒ 就地更新（与 ON CONFLICT DO UPDATE 同口径）
+      let mut found = false
+      let mut i = 0
+      while i < rows.length() {
+        let (old_id, old_step, _, _, _) = rows[i]
+        if old_step == step {
+          rows[i] = (old_id, step, task_id, compensation, "pending")
+          found = true
+          break
+        }
+        i = i + 1
+      }
+      if !found {
+        rows.push((m.saga_next_id, step, task_id, compensation, "pending"))
+        m.saga_next_id = m.saga_next_id + 1
+      }
+      m.saga_log.set(k, rows)
+      Ok(())
+    }
     Sql(s) =>
       s.write_saga_action(
         ns~,
@@ -962,28 +1015,54 @@ pub fn StoreBackend::write_saga_action(
 }
 
 ///|
-/// 列出某根任务的 Saga 补偿步骤（R92：内存后端返回空，SQLite 前向顺序）。
+/// 列出某根任务的 Saga 补偿步骤（R92：**前向顺序** = 登记顺序）。
+/// **BUG-441：内存后端已实读**（此前恒 `[]` ⇒ "没有待补偿步骤"永远成立）。
+///
+/// 返回 `(id, step, task_id, compensation, status)` 五元组数组，与 SQLite 同序同形。
 pub fn StoreBackend::list_saga_actions(
   self : StoreBackend,
   ns : String,
   root_task_id : String,
 ) -> Array[(Int32, String, String, String, String)] {
   match self {
-    Mem(_) => []
+    // 复制一份返回：调用方拿到的是快照，后续 mark done 不会改变已返还的数组
+    Mem(m) =>
+      match m.saga_log.get(saga_key(ns, root_task_id)) {
+        None => []
+        Some(r) => r.copy()
+      }
     Sql(s) => s.list_saga_actions(ns, root_task_id)
   }
 }
 
 ///|
-/// 把指定 Saga 补偿步骤标记 done（R92：内存后端为 no-op，SQLite 幂等更新）。
+/// 把指定 Saga 补偿步骤标记 done（R92：幂等）。
+/// **BUG-441：内存后端已实操作**（此前 `Ok(())` 静默无操作 ⇒ mark 了但列表不变）。
 pub fn StoreBackend::mark_saga_actions_done(
   self : StoreBackend,
   ns~ : String = "default",
   root_task_id~ : String,
   ids~ : Array[Int32],
 ) -> Result[Unit, String] {
+  if ids.is_empty() {
+    return Ok(())
+  }
   match self {
-    Mem(_) => Ok(())
+    Mem(m) => {
+      let k = saga_key(ns, root_task_id)
+      match m.saga_log.get(k) {
+        None => Ok(())   // 没有该根任务的日志 ⇒ 幂等无操作（与 SQLite 的 UPDATE 0 行同口径）
+        Some(rows) => {
+          for i = 0; i < rows.length(); i = i + 1 {
+            let (id, step, task_id, compensation, status) = rows[i]
+            if ids.contains(id) && status != "done" {
+              rows[i] = (id, step, task_id, compensation, "done")
+            }
+          }
+          Ok(())
+        }
+      }
+    }
     Sql(s) => s.mark_saga_actions_done(ns~, root_task_id~, ids~)
   }
 }
