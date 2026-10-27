@@ -181,7 +181,12 @@ pub fn FistEngine::claim(
       // 同一取数面**：`declared_role_for_judgment` 已登记优先 + 收窄后推断兜底），
       // 军衔由纯函数 `rank_of_role` 给出 ⇒ **名字既不提权也不误伤**。
       let task_level = t.get_level()
-      let (role, role_source) = judged_role_with_nonce(self, assignee, challenge_nonce, challenge_sig~)
+      let (role, role_source) = judged_role_with_nonce(
+        self,
+        assignee,
+        challenge_nonce,
+        challenge_sig~,
+      )
       // ⚠️ **BUG-432 修复本体**：军衔由角色派生，**名字既不提权也不误伤**。
       //
       // ⛔ **此处曾留着一个未撤回的变异体**（标记为 MUTANT-M1，2026-10-27 03:20 写入，
@@ -195,9 +200,25 @@ pub fn FistEngine::claim(
       //    把旧实现复刻在**测试内部**（`let old_infer = fn(...)`），不污染源码。
       let arank = rank_of_role(role)
       let arank_s = arank.to_string()
-      let tlevel_s = task_level.to_string()
-      let tname = level_to_rank(task_level)
-      if !rank_can_claim(arank, task_level) {
+      // ⚠️ **BUG-451 修复本体**：叶子任务的**准入军衔**恒为排长档（7，最宽档）。
+      //
+      // 为什么：`src/display/rank.mbt` 的 `leaf_label` 约定「叶子原子任务固定为士兵（无论层级）」——
+      // 那是**设计意图**：`task_plan_deep` 拆出的叶子是**可独立认领的最小执行单元**，
+      // 它的 `level` 继承自父链（`子任务 level = 父级 + 1`），**不代表它的认领难度**。
+      // 旧实现只读 `t.get_level()` ⇒ 深度 ≥2 的叶子（level=2 师长档）**永远要 rank ≤2 的人**才能领，
+      // 而现网执行体是 Executor（rank 5）、Leader（rank 4）⇒ **叶子对它们永久不可认领**，
+      // 只能由 human_steward（rank 0）代领 ⇒ **拆解失去意义**（这是本条的危害）。
+      //
+      // 判据：`rank_can_claim` 是「数值越小权越大」且 `arank <= tlevel` ⇒
+      // 把叶子任务的 `tlevel` 取满档 7 后，**任何非 0 军衔都能认领叶子**（rank 5 ≤ 7）。
+      // 非叶子（`is_leaf == false`）**原样保留** `t.get_level()` ⇒ 零回归（硬要求 ②）。
+      //
+      // ⚠️ 引擎层**不调** `@display.leaf_label`（`src/display` 是展示层，依赖方向反了）；
+      // 这里就地取满档常量，语义由本注释与本格测试共同钉住。
+      let tlevel = if t.is_leaf() { leaf_claim_level() } else { task_level }
+      let tlevel_s = tlevel.to_string()
+      let tname = level_to_rank(tlevel)
+      if !rank_can_claim(arank, tlevel) {
         return Err(
           "RANK_GATE: assignee \{assignee} (rank=\{arank_s}, role=\{role}, role_source=\{role_source}) cannot claim task level=\{tlevel_s} (task_rank=\{tname}). 需要更高军衔或让 human_steward/leader 认领后分派。",
         )
@@ -1799,6 +1820,16 @@ pub fn FistEngine::publish_with_deps(
     Ok(_) => Ok(id)
     Err(e) => Err(e)
   }
+}
+
+///|
+/// **BUG-451**：叶子任务的准入军衔档 = 排长档（7，**最宽档**，`rank_can_claim` 数值越小权越大）。
+///
+/// 语义真源在展示层：`src/display/rank.mbt` 的 `leaf_label(_) = "士兵"` ——
+/// 「叶子原子任务固定为士兵（无论层级）」。引擎层**不 import 展示层**（依赖方向），
+/// 故就地取满档常量，由 `engine_leaf_rank_gate_wbtest.mbt` 的四格锁与展示层语义对齐。
+fn leaf_claim_level() -> Int32 {
+  7
 }
 
 ///|

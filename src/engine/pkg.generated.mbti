@@ -53,6 +53,14 @@ pub fn infer_role_from_agent(String) -> String
 
 pub fn inheritable_role(String) -> String?
 
+pub fn issue_challenge_nonce(String, Int32) -> String
+
+pub fn judged_role_gated(FistEngine, String, String?, challenge_sig? : String?) -> (String, String)
+
+pub fn judged_role_with_challenge(FistEngine, String, String?, challenge_sig? : String?) -> (String, String)
+
+pub fn judged_role_with_nonce(FistEngine, String, String?, challenge_sig? : String?) -> (String, String)
+
 pub fn matching_rule(String) -> PermissionRule?
 
 pub fn mc_percentile_index(Int32, Int32) -> Int32
@@ -95,6 +103,10 @@ pub fn root_task_id() -> String
 
 pub fn route(String, String) -> Json
 
+pub fn s3_consume_nonce(String, String) -> Bool
+
+pub let s3_pending_nonces : Map[String, Array[String]]
+
 pub fn schedule_json(Json) -> Json
 
 pub fn schedule_task(String, n_files? : Int32) -> Json
@@ -102,6 +114,8 @@ pub fn schedule_task(String, n_files? : Int32) -> Json
 pub let scope_permissions : Array[PermissionRule]
 
 pub fn strip_plan_annotations(String) -> String
+
+pub fn verify_challenge_sig(String, String, String) -> Bool
 
 // Errors
 
@@ -135,7 +149,7 @@ pub fn FistEngine::children_of(Self, String) -> Array[@core.Task]
 pub fn FistEngine::circuit_fail(Self, ns? : String, circuit~ : String, now_secs~ : Int32, window_secs? : Int32, threshold? : Int32, recovery_secs? : Int32) -> Json
 pub fn FistEngine::circuit_status(Self, ns? : String, circuit~ : String, now_secs~ : Int32, probe_limit? : Int32) -> Json
 pub fn FistEngine::circuit_succeed(Self, ns? : String, circuit~ : String, now_secs~ : Int32) -> Json
-pub fn FistEngine::claim(Self, task_id~ : String, assignee~ : String, now~ : String) -> Result[@core.Task, String]
+pub fn FistEngine::claim(Self, task_id~ : String, assignee~ : String, now~ : String, challenge_nonce? : String?, challenge_sig? : String?) -> Result[@core.Task, String]
 pub fn FistEngine::cold_publish(Self, ns~ : String, description~ : String, created_by~ : String, project_dir~ : String, now~ : String, level? : Int32) -> Result[String, String]
 pub fn FistEngine::cost_stats(Self) -> Json
 pub fn FistEngine::critical_path(Self) -> Array[String]
@@ -170,7 +184,7 @@ pub fn FistEngine::locks_get(Self, String) -> @store.FileLock?
 pub fn FistEngine::locks_list(Self) -> Array[@store.FileLock]
 pub fn FistEngine::locks_release(Self, String, String) -> Bool
 pub fn FistEngine::locks_sweep(Self, String) -> Int32
-pub fn FistEngine::locks_try_acquire(Self, @store.FileLock) -> @store.LockAcquireOutcome
+pub fn FistEngine::locks_try_acquire(Self, @store.FileLock, challenge_nonce? : String?, challenge_sig? : String?) -> @store.LockAcquireOutcome
 pub fn FistEngine::locks_upsert(Self, @store.FileLock) -> Unit
 pub fn FistEngine::new(store? : @store.StoreBackend, registry? : @executor.ExecutorRegistry) -> Self
 pub fn FistEngine::omega_auto_lesson(Self, Int32, String, String, String, String) -> Bool
@@ -205,8 +219,9 @@ pub fn FistEngine::retry_task(Self, task_id~ : String, now~ : String) -> Result[
 pub fn FistEngine::rsv_get(Self, String) -> (String, String, String)?
 pub fn FistEngine::rsv_list(Self) -> Array[(String, String, String)]
 pub fn FistEngine::rsv_release(Self, String, String) -> Bool
-pub fn FistEngine::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[String, String]
-pub fn FistEngine::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String) -> Result[@store.RsvOutcome, String]
+pub fn FistEngine::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String, challenge_nonce? : String?, challenge_sig? : String?) -> Result[String, String]
+pub fn FistEngine::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String, challenge_nonce? : String?, challenge_sig? : String?) -> Result[@store.RsvOutcome, String]
+pub fn FistEngine::s3_issue_challenge(Self, String, Int32) -> String
 pub fn FistEngine::saga_register(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, now~ : String) -> Result[Json, String]
 pub fn FistEngine::saga_repair(Self, ns? : String, String, failed_step~ : String, mark? : Bool) -> Result[Json, String]
 pub fn FistEngine::saga_rollback(Self, ns? : String, String, mark? : Bool) -> Result[Json, String]
