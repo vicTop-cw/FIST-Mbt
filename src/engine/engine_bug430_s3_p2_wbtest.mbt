@@ -23,23 +23,37 @@ test "s3_p2_01_all_four_gates_accept_challenge_param" {
   let bogus = Some("not-a-valid-nonce")
   // ① rsv_set
   let r1 = e.rsv_set(
-    scope="scripts/a.py", agent="lane-bg", ttl_until="2099-01-01T00:00:00Z",
-    created_at="2026-10-27T00:00:00Z", challenge_nonce=bogus,
+    scope="scripts/a.py",
+    agent="lane-bg",
+    ttl_until="2099-01-01T00:00:00Z",
+    created_at="2026-10-27T00:00:00Z",
+    challenge_nonce=bogus,
   )
   // ② rsv_try_set
   let r2 = e.rsv_try_set(
-    scope="scripts/b.py", agent="lane-bg", ttl_until="2099-01-01T00:00:00Z",
-    created_at="2026-10-27T00:00:00Z", challenge_nonce=bogus,
+    scope="scripts/b.py",
+    agent="lane-bg",
+    ttl_until="2099-01-01T00:00:00Z",
+    created_at="2026-10-27T00:00:00Z",
+    challenge_nonce=bogus,
   )
   // ③ locks_try_acquire
   let lock = @store.FileLock::new(
-    lock_id="L1", batch_id="B1", scope="scripts/c.py", agent="lane-bg",
-    status="active", ts="2026-10-27T00:00:00Z", ttl_until="2099-01-01T00:00:00Z", meta="",
+    lock_id="L1",
+    batch_id="B1",
+    scope="scripts/c.py",
+    agent="lane-bg",
+    status="active",
+    ts="2026-10-27T00:00:00Z",
+    ttl_until="2099-01-01T00:00:00Z",
+    meta="",
   )
   let o3 = e.locks_try_acquire(lock, challenge_nonce=bogus)
   // ④ claim（无任务 ⇒ 会 Err，但**门必须已过**，不 panic）
   let r4 = e.claim(
-    task_id="nonexistent", assignee="lane-bg", now="2026-10-27T00:00:00Z",
+    task_id="nonexistent",
+    assignee="lane-bg",
+    now="2026-10-27T00:00:00Z",
     challenge_nonce=bogus,
   )
   // 四门都不崩（走到这里即证明签名已接、可传参）
@@ -59,23 +73,57 @@ test "s3_p2_01_all_four_gates_accept_challenge_param" {
 test "s3_p2_02_four_gates_wire_the_challenge" {
   // @fs.read_file_to_string 直接返回 String（IOError 是 raises 而非 Result）
   let src_rsv = @fs.read_file_to_string("src/engine/engine_rsv.mbt") catch {
-    _ => abort("读不到 engine_rsv.mbt —— 实现路径格没跑到被测面")
+    _ =>
+      abort("读不到 engine_rsv.mbt —— 实现路径格没跑到被测面")
   }
   let src_eng = @fs.read_file_to_string("src/engine/engine.mbt") catch {
     _ => abort("读不到 engine.mbt —— 实现路径格没跑到被测面")
   }
   // 三道门在 engine_rsv.mbt：断言出现次数 ≥ 3（rsv_set / rsv_try_set / locks_try_acquire）
   // S3 第三段：调用点已带 challenge_sig~ ⇒ 匹配串随之更新
-  let n_gated = count_of(src_rsv, "judged_role_gated(self, agent, challenge_nonce, challenge_sig~)")
+  //
+  // ⚠️ **R23 修（同 R22 的教训，上一版只修了第四道门那格）**：`count_of` 原先匹配**单行**形态
+  // `judged_role_gated(self, agent, challenge_nonce, challenge_sig~)`，
+  // 而 `moon fmt` 会把长调用折成多行 ⇒ **每次格式化都会打红本格**（不是实现错，是尺子太紧）。
+  // 改成与第四道门同一口径：**去掉全部空白后再比**，仍钉住「函数名 + 四个参数顺序」这个代码形态，
+  // 判例-30 防护不变（注释里的同名串不会带 `(self,agent,...)` 这个参数序列）。
+  let n_gated = count_of(
+    strip_ws(src_rsv),
+    "judged_role_gated(self,agent,challenge_nonce,challenge_sig~)",
+  )
   assert_true(n_gated >= 3)
   // 第四道门在 engine.mbt：claim 走 judged_role_with_nonce（带 nonce 消费 + 签名透传）
-  assert_true(src_eng.contains("judged_role_with_nonce(self, assignee, challenge_nonce, challenge_sig~)"))
+  //
+  // ⚠️ **R22 修：容忍多行** —— 原断言写死了单行形态
+  // `judged_role_with_nonce(self, assignee, challenge_nonce, challenge_sig~)`，
+  // 而 `moon fmt` 会把长调用折成多行 ⇒ **每次格式化都会打红本格**（不是代码错，是尺子太紧）。
+  // 改成「去掉全部空白后再比」：仍钉住「函数名 + 四个参数顺序」这个**代码形态**，
+  // 但不受折行影响。判例-30 防护不变：注释里的同名串不会带 `(self,assignee,...)` 这个参数序列。
+  assert_true(
+    strip_ws(src_eng).contains(
+      "judged_role_with_nonce(self,assignee,challenge_nonce,challenge_sig~",
+    ),
+  )
+}
+
+///|
+/// 去掉全部空白（空格/换行/制表）—— 用于容忍 `moon fmt` 的折行。
+fn strip_ws(s : String) -> String {
+  let chars = s.to_array()
+  let mut out = ""
+  for i in 0..<chars.length() {
+    let c = chars[i]
+    if c != ' ' && c != '\n' && c != '\r' && c != '\t' {
+      out = out + c.to_string()
+    }
+  }
+  out
 }
 
 ///|
 /// 数子串出现次数（判例-30：只数**代码**，本函数里的字面量不会自命中，
 /// 因为被测串 `judged_role_gated(self, agent, challenge_nonce)` 不在本文件里）。
-fn count_of(hay : String, needle : String) -> Int {
+fn count_of(hay : String, needle : String) -> Int32 {
   let mut n = 0
   let mut start = 0
   while true {
@@ -90,7 +138,7 @@ fn count_of(hay : String, needle : String) -> Int {
 }
 
 ///|
-fn find_from(hay : String, needle : String, from : Int) -> Int {
+fn find_from(hay : String, needle : String, from : Int32) -> Int32 {
   let h = hay.to_array()
   let nd = needle.to_array()
   if nd.length() == 0 || nd.length() > h.length() {

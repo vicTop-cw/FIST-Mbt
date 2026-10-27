@@ -14,7 +14,7 @@ python scripts/mcp_smoke.py
 ## 二、硬指标（快照）
 | 项 | 值 |
 |---|---|
-| MCP 工具 | **171**（+ 3 resources + 2 prompts）—— 真源：`python scripts/check_tools_sync.py` 实测 `server.mbt` 注册数 |
+| MCP 工具 | **172**（+ 3 resources + 2 prompts）—— 真源：`python scripts/check_tools_sync.py` 实测 `server.mbt` 注册数 |
 | 测试 | **`moon test --target js` 1532/1532**（2026-10-26 Windows 本机实测，四模式流水线自我迭代 Round 1~3 收口；native 轨见 AGENTS.md「已知边界」） |
 | 回归 | 0（既有语义不破坏，增强默认关闭零回归） |
 | 依赖 | 全公开，`moon update` 即可构建，无私有包/登录/vendor |
