@@ -155,6 +155,8 @@ pub fn FistEngine::claim(
   task_id~ : String,
   assignee~ : String,
   now~ : String,
+  // BUG-430 S3 第二段：可选挑战（不传 ⇒ None ⇒ 走原逻辑，零回归）
+  challenge_nonce~ : String? = None,
 ) -> Result[@core.Task, String] {
   match self.store.get_task(task_id) {
     None => Err("task not found: \{task_id}")
@@ -177,7 +179,7 @@ pub fn FistEngine::claim(
       // 同一取数面**：`declared_role_for_judgment` 已登记优先 + 收窄后推断兜底），
       // 军衔由纯函数 `rank_of_role` 给出 ⇒ **名字既不提权也不误伤**。
       let task_level = t.get_level()
-      let (role, role_source) = judged_role(self, assignee)
+      let (role, role_source) = judged_role_with_nonce(self, assignee, challenge_nonce)
       // ⚠️ **BUG-432 修复本体**：军衔由角色派生，**名字既不提权也不误伤**。
       //
       // ⛔ **此处曾留着一个未撤回的变异体**（标记为 MUTANT-M1，2026-10-27 03:20 写入，
