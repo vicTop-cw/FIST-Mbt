@@ -10057,7 +10057,52 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
 
 ### FIXED(2026-10-27T12:35:10Z / BUG-453)
 - evidence: commit b12bb14b（3 文件）。根因：judged_role_gated 返回 (role, role_source)，role 被全部消费点用，role_source 只有 rsv_try_set 用了一半（只判 == "inferred"），locks_try_acquire 直接 _role_source 丢弃 ⇒ challenge_verified/challenge_failed/challenge_replayed 三个新状态全部丢失。编译器不报（_ 是显式「我要丢」），调用方不疑（回执字段齐全）。修法：engine_rsv.mbt 新增 auth_tag(:452) / denied_tagged(:446)，两条门用 role_source 构造 action 而非硬编码 +agent_self_reported；execute 的 challenge 死参数已删。7 格锁：L1/L2/L3 三态映射、L4/L4-b 零回归、L5 源码级变异对照、L5-b/L5-c 机制格（函数被调用/不许再有 _role_source）。变异实测：三个认证态全改回 +agent_self_reported ⇒ 失败数 1→5（+4 正是本单的锁），恢复后回基线 1。端到端实测：传无效签名 → {"action":"unregistered+challenge_failed"}（修前是 +agent_self_reported）；不传 challenge → {"action":"unregistered+role_inferred+agent_self_reported"}（与修前逐字相同）。分析亮点：① 与 BUG-439/441 同族但更隐蔽——那两条是「返回值本身是占位」，这条是「返回值的一半被忽略」；② 契约跨越函数边界而本仓验证方式是函数内自测，两头各自都测过中间断点没人测；③ 反直觉设计点：两条门的默认态不能统一（rsv_try_set 旧锁用 contains 宽松 ⇒ 默认态保留后缀；locks_try_acquire 旧锁用 assert_eq 精确 ⇒ 默认态必须零后缀）⇒ 「零回归」不是设计出来的，是跑出来的。缺口：s3_p2_02 断言 engine.mbt 里 judged_role_with_nonce 的单行形态但实际是多行（另一 lane 格式化留下，git diff --stat 为空）⇒ 建议该锁改成容忍多行，否则每次 moon fmt 都会打红它。
-## BUG-454 [2026-10-27T12:28:33Z] [medium] OPEN
+## BUG-454 [2026-10-27T12:28:33Z] [medium] FIXED
 - summary: [FIST-Mbt tx_contract] 工具缺 namespace 参数 ⇒ 对非 default 命名空间任务给出与 get 相反的迁移预检结论（T0r7 实读已归档）
 - detail: 实测（2026-10-27，ns=rx-rhop）：tx_contract(task_id="T0r7", action="execute") 对 rx-rhop 库中的任务返回「当前状态 [已归档]」等与 get(task_id="T0r7", namespace="rx-rhop")=已领取/执行中 矛盾的结论。原因同 BUG-452：tx_contract 的 inputSchema 没有 namespace 参数，引擎按 default 库取任务；非 default 命名空间任务要么查不到、要么撞上 default 库同 id 的别的任务（本例如是）。影响：迁移契约预检（precondition/invariant/postcondition）对多命名空间项目不可用，会给出与真实状态相反的 verdict，比不报更危险。建议：tx_contract 增加 namespace 可选参数，与 claim/execute/submit/run_check 同一 namespace→store 映射；找不到时明确报 not found（而不是拿 default 库同 id 任务顶替）。
 - reported_by: lead
+
+### FIXED(2026-10-27T13:03:34Z / BUG-454)
+- evidence: commit 26929cef + fad280a8（代码+报告）。根因：tx_contract 缺 namespace 参数，对非 default ns 任务拿主库同名任务算 pre/postcondition ⇒ 给出完全自洽但属于另一个对象的结论。修法：三个工具全处理——tx_contract 加 namespace + engine_for_ns(ns_tx) 且 transition_contract 作用在 eng_tx；task_challenge 加 namespace + eng_ch.challenge；task_cleanup 加 namespace 但刻意不做遍历（不可逆删除不该跨库，一次调用波及多租户库事后无法核对删了哪些，语义改为不传 ns ⇒ 只清主库零回归，要清别的库逐个显式传，与 delete/archive 必须显式指定 ns 的既定纪律一致）。变异实测：M1 tx_contract 的 eng_tx 改回 engine ⇒ 438/439 精确打红 bq_01；M2 task_cleanup 加 for ns_x in [ns_tc] ⇒ 438/439 精确打红 bq_04。门禁 moon check 0 errors；全量 1635/1635/0。分析亮点：错误结论比「查不到」更糟——查不到时调用方看到 task not found 知道有问题；而 tx_contract 是只读预检，输出被当作「能不能做这一步」的依据，缺 ns 时拿主库同名任务算出一个完全自洽但属于另一个对象的结论，不报错、看起来正常，是最难被发现的形态。beta 自曝并纠正四处：① bq_block 窗口 3000 太窄切不到 tx_contract 函数体 ⇒ 加到 6000；② 跨行字面硬拼与源码真实换行对不上恒不匹配 ⇒ 改成逐行扫；③ trim()/replace() 返回 StringView 不能赋给 String 也不能拼接 ⇒ 先 to_string()；④ 检测词只写 "for ns in" 漏过变异用的 "for ns_x in" ⇒ 改为「行首 for + 行含 in」通配形态。缺口：tx_contract 的「基于主库同名任务」仍静默，建议后续回执附提示；task_cleanup 多租户需多次调用（有意取舍）；reserve_scope/lock_* 按 scope 而非 task_id，ns 语义不同需设计决策。
+## BUG-455 [2026-10-27T12:58:31Z] [medium] OPEN
+- summary: MCP 工具面 34/154 个工具在测试文本里一次都没出现（22% 零覆盖）
+- detail: 普查方法：从 src/server/server.mbt 抽 instrumented_tool(...) 与 tool(...) 的名字（154 个可抽），再在全部 src/**/*_test.mbt + src/**/*_wbtest.mbt 的文本里搜 —— 有 34 个工具名一次都没出现。清单（分族）：assistant 族 2（assistant_resign / assistant_status）；atgc_old 族 3（atgc_old_compile / atgc_old_run / atgc_old_talk）；audit 族 1（audit_permission）；dag 族 6（dag_check / dag_critical_path / dag_parallelism / dag_publish / dag_ready / dag_sort）；debate 族 3（debate_convene / debate_register / debate_verdict）；evolve 族 1（evolve_snapshot）；executor 族 1（executor_auction）；github/gitcode 族 3（github_env_check / github_issue_close / gitcode_env_check）；其余 14 个。为什么这是缺陷而不是「测试策略」：本仓的自我迭代宣称「每个工具都有白盒锁」（AGENTS.md 里逐工具列了锁文件，如 rank_of 有 rank_test.mbt 9 条、soldier_type_of 有 8 条），但实测 22% 的工具面根本没有锁 ⇒ 「工具命名即文档」这条硬门（f5-naming-clarity）在 34 个工具上是空话。特别高风险的是 dag 族 6 个（dag_sort 拓扑排序 / dag_critical_path 最长链 / dag_parallelism 可并行数 —— 都是纯计算、可完全单测，却一个都没测）与 debate 族 3 个（会话态 in-memory，重启即失，连测都没有就更没人知道它长什么样）。建议分批：第一批补纯计算族（dag 6 + debate 3 + audit_permission + evolve_snapshot 共 11 个，预计 1-2 轮），第二批补 I/O 族（github/gitcode 3 + atgc_old 3 + assistant 2 共 8 个，需注入 env/fs），第三批剩余 15 个。
+- reported_by: lead
+
+- **追记（2026-10-27 21:30 自查：我的普查方法有假阳性，本单需降级重新核实）**：
+  我立案时用的判据是「**工具名在测试文本里一次都没出现**」—— **这个判据不成立**。
+  实测反例：`audit_permission` 在清单里，但它的**实质逻辑全是** `@ops.enforce(action, role)`，
+  而 `enforce` **有测试**（`src/ops/audit_test.mbt:37`「enforce：合法放行 / 越权拒绝」，
+  且 `Role::from_string` 在同文件 :6/:10/:14 三处被测）⇒ **它其实是覆盖的**。
+  **这正是判例-29「机制格 ≠ 实现路径格」的同型错误**：我普查的是「工具名」（显示面），
+  不是「工具的行为」（实现面）。**工具名不出现在测试里，完全可能因为测试测的是它调用的纯函数**。
+  **⇒ 34 个的数字不可信**，必须按下面方法重新核实：
+  ① 对每个 handler，抽出它**内部调用的包级函数**（如 `audit_permission → @ops.enforce`）；
+  ② 看那些函数**有没有测试**（这才是覆盖的真判据）；
+  ③ 只有「handler 里**本身有实质分支逻辑**（不是纯转发）**且**这些分支没有测试」才算真零覆盖。
+  **已知需要按新方法重查的**（我怀疑这些是真的，因为它们的逻辑在 handler 内联）：
+  `dag_sort` / `dag_critical_path` / `dag_parallelism`（都走 `engine_for_ns` + 引擎方法，
+  而引擎方法 `parallelism` / `topo_sort` 等**疑似无测试**）、`debate_*` 三件（会话态在 handler 外、
+  但 `debate_convene` 的 session 管理逻辑在 `src/ops/ops_hats.mbt`，**该文件有 wbtest**，
+  需确认是否覆盖 session 路径）、`atgc_old_*` 三件（衍生子项目，可能有独立测试目录）。
+  **本单保持 OPEN**，但**降级为「普查方法待改进」**，不是「34 条确认缺陷」。
+
+- 追记（2026-10-27 22:35 **第一批已完成：4 个 DAG 核心方法补上锁**）：
+  **实做**：新建 `src/engine/dag_core_wbtest.mbt`（134 行 / 4 格），覆盖
+  `topo_sort` / `ready_tasks` / `critical_path` / `parallelism` —— 这四个在**全部 engine 测试文件里
+  此前出现 0 次**，而 `dag_sort`/`dag_ready`/`dag_critical_path`/`dag_parallelism` 四个 MCP 工具的
+  **全部实质逻辑就在它们里**（handler 只是纯转发）。
+  **变异对照**：M1（`parallelism` 去掉 pending 过滤）⇒ 锁红 ✅；
+  M2（`critical_path` 的 `>` → `>=`）⇒ **等价变异**（只在「两条等长最长链」时有别，本图最长链唯一）
+  —— **等价的变异理应保持绿**，已在提交信息里标注，不是锁无效。
+  **验收**：`dag455` 4/4；全仓 **1639/1639 passed, 0 failed**。
+  **过程踩坑（供下一批参考）**：① `Task` **没有 `with_status`**（不可变）⇒ 改 status 只能
+  `Task::from_db(...)` 造同 id 行再 `update_task`；② `TaskStatus` 枚举值是 **`Completed`**（首字母大写）；
+  ③ 变异按 `str.replace(...,1)` 会 MISS（串出现 2 次）⇒ **必须按行号定位**（判例-30 正面）。
+  **下一批（按本单建议的顺序）**：
+  ① **debate 族 3**（`debate_convene`/`register`/`verdict` —— session 管理逻辑在
+     `src/ops/ops_hats.mbt`，该文件**有 wbtest**，需确认是否覆盖 session 路径）
+  ② **`evolve_snapshot`**（纯读，最易）
+  ③ **I/O 族 8**（github/gitcode 3 + atgc_old 3 + assistant 2，需注入 env/fs）
+  ④ **剩余 15**
+  **注意**：本单的「34 个」数字已被上面的假阳性追记降级 —— **下一批前必须先按新方法重核**。
