@@ -8835,3 +8835,27 @@ src/store/moon.pkg       →  只 import core / sqlite / encoding / fs / env / j
 `src/constraint/constraint.mbt:127`（唯一调用方 `eval_no_overlap`，无生产上游）·
 R10 报告的「四者共同根因」（本单是第 5 个标本，形态最纯粹）
 - reported_by: commander-gamma
+
+## BUG-436 [2026-10-27T00:45:00Z] [high] OPEN
+- summary: [authz] ACL 判定身份逐调用漂移：新命名空间任务恒 can_write=0，agent_acl_grant 授权后仍拒 —— execute 进不去，submit/verify 全断（标准六步流在新 ns 不可完成）
+- detail: 复现（fist-mbt v0.3.10，2026-10-26，另侧 `E:\IDEProjects\AIools` 的清账/开发会话实测）：
+
+  1. `store_open(namespace="vools-retry", data_dir=".fist-mbt/data")` → opened=true，active_namespaces 含 vools-retry
+  2. `publish(namespace="vools-retry", project_dir="E:\IDEProjects\AI\vools", ...)` → T0 发布成功
+  3. `claim(assignee="vools-retry-lead", namespace="vools-retry", task_id="T0")`：未授权时被拒，报错身份 = `4e3b9eb2cd9cb473`
+  4. `agent_acl_grant(agent_id="vools-retry-lead", ns="vools-retry", can_write=true)` → 已落库；再 claim 成功（身份 `vools-retry-lead`）
+  5. `execute(task_id="T0", deliverable=...)` 恒失败：`acl: ACL 默认拒绝写（can_write=0）: 020934005581bee2/vools-retry`
+     —— 注意报错身份变成 **`020934005581bee2`**（与第 3 步的 `4e3b9eb2cd9cb473` 不同）
+  6. `agent_acl_grant(agent_id="020934005581bee2", ns="vools-retry", can_write=true)` → 「已落库」，再 execute **仍拒**（同一串 id）
+  7. 追加 `pid_bound=true` 再授 → 「已落库」，execute **仍拒**
+  8. `submit` 走不到（要求状态 [执行中]，而 execute 是唯一入口）；`reopen_task` 后重 claim 也无法绕开（claim 要求 [待领取]）
+  9. 最终只能 `pause` + `archive(force=true)` 收口 —— 活干完了却记不进账（本次正是因为「做了活记不进账」才被迫归档）
+
+  根因判断：同一次会话内用于 ACL 判定的 agent 身份逐调用漂移（claim 报 A、execute 报 B）。`agent_acl_grant` 按写入时刻的 id 落库，后续判定用另一个 id ⇒ 授权永不命中。与 BUG-401（`current_pid_token()` 注释称进程内固定、实现每次重取 `@env.now()` 秒级漂移）同族；若 ACL 判定的 agent_id 取自该 token，则**天然不可授权**。
+
+  影响面：官方推荐的多租户用法（`store_open` 新建 ns 做物理隔离）在写侧不可用——能发布/领取，但永远走不完 execute→submit→verify；且错误提示给出的自救路径（grant）本身就是无效指引。
+
+  附带观察：`agent_acl_grant` 回「已落库」但判定侧看不到，也可能是 grant 写进了别的 store（默认库 vs ns 库）；若如此，grant 应回显目标 store 路径或跨 store 时显式报错。
+
+  建议修法（二选一或叠加）：① `current_pid_token()` 改为进程生命周期内固定（首次调用快照）；② ACL 判定改用稳定身份（assignee / 显式 agent 名），pid token 仅作辅助校验；或 ACL 未命中时回退角色矩阵并输出非误导性提示。
+- reported_by: vools-commander（跨项目实测：vools 清账会话）
