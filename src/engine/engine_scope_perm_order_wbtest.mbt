@@ -22,22 +22,10 @@
 /// 是**同一条 pattern**（不是同一个 struct —— PermissionRule 无 eq，比 pattern 字符串）。
 test "scope_perm_order_wb1_no_regression_on_current_table" {
   let scopes = [
-    "src/store/store_sqlite.mbt",
-    "src/store/store.mbt",
-    "src/server/server.mbt",
-    "moon.mod",
-    "src/core/core_task.mbt",
-    "src/engine/engine.mbt",
-    "src/router/model_router.mbt",
-    "src/display/soldier.mbt",
-    "cmd/cli/main.mbt",
-    "plugins/source/x.md",
-    "scripts/foo.py",
-    "docs/x.md",
-    "memory/x.md",
-    "templates/x.md",
-    "patches/x.sh",
-    "moon.pkg",
+    "src/store/store_sqlite.mbt", "src/store/store.mbt", "src/server/server.mbt",
+    "moon.mod", "src/core/core_task.mbt", "src/engine/engine.mbt", "src/router/model_router.mbt",
+    "src/display/soldier.mbt", "cmd/cli/main.mbt", "plugins/source/x.md", "scripts/foo.py",
+    "docs/x.md", "memory/x.md", "templates/x.md", "patches/x.sh", "moon.pkg",
   ]
   for scope in scopes {
     // 旧语义：原表顺序下第一条命中
@@ -87,7 +75,9 @@ test "scope_perm_order_wb2_wide_rule_first_still_picks_narrow" {
   assert_eq(hit.allowed_roles[0], "HumanSteward")
   // 关键断言：Leader 不在允许角色里（若被宽规则遮蔽，这里会是 2 且含 Leader）
   if hit.allowed_roles.contains("Leader") {
-    fail("★遮蔽未被修：宽规则 src/ 盖掉了窄规则的 HumanSteward 独占")
+    fail(
+      "★遮蔽未被修：宽规则 src/ 盖掉了窄规则的 HumanSteward 独占",
+    )
   }
 }
 
@@ -104,7 +94,10 @@ test "scope_perm_order_wb3_sort_by_wired" {
     "src/engine/engine_scope_perm.mbt",
     encoding="utf8",
   ) catch {
-    _ => abort("读 src/engine/engine_scope_perm.mbt 失败：接线格没跑到被测面")
+    _ =>
+      abort(
+        "读 src/engine/engine_scope_perm.mbt 失败：接线格没跑到被测面",
+      )
   }
   assert_true(src.contains("  let ordered = rules.copy()"))
   assert_true(src.contains("  ordered.sort_by("))

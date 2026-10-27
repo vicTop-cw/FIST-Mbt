@@ -60,7 +60,9 @@ test "legacy_grant_wb1_own_active_lock_renews" {
   }
   if o.action != "renewed_legacy_grant" {
     fail(
-      "legacy_grant 正例没打标：action=" + o.action + "（期望 renewed_legacy_grant）",
+      "legacy_grant 正例没打标：action=" +
+      o.action +
+      "（期望 renewed_legacy_grant）",
     )
   }
 }
@@ -75,7 +77,10 @@ test "legacy_grant_wb2_granted_guard_wired" {
     "src/engine/engine_rsv.mbt",
     encoding="utf8",
   ) catch {
-    _ => abort("读 src/engine/engine_rsv.mbt 失败：接线格没跑到被测面")
+    _ =>
+      abort(
+        "读 src/engine/engine_rsv.mbt 失败：接线格没跑到被测面",
+      )
   }
   // 必须同时存在：`if o.granted {` 与 legacy 标签。两者都有才说明闸没被摘掉。
   assert_true(src.contains("if o.granted {"))
@@ -117,6 +122,8 @@ test "legacy_grant_wb3_others_lock_denied" {
     fail("★越权：Executor 拿到了别人持有的 src/engine 锁")
   }
   if o.action == "renewed_legacy_grant" {
-    fail("★legacy 通道被滥用：不是自己的锁却标了 renewed_legacy_grant")
+    fail(
+      "★legacy 通道被滥用：不是自己的锁却标了 renewed_legacy_grant",
+    )
   }
 }

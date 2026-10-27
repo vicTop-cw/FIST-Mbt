@@ -33,6 +33,23 @@ fn declared_role_for_judgment(eng : FistEngine, agent : String) -> String? {
 }
 
 ///|
+/// **裁决角色 + 来源的唯一取数面**（BUG-432 收口）。
+///
+/// 四条门（`rsv_set` / `rsv_try_set` / `locks_try_acquire` / **`claim` 的 RANK_GATE**）
+/// 一律只准走这里，**不许各写一份 `resolve_agent_role(...)`**：
+/// BUG-432 正是「同一语义（名字 → 身份）在 claim 侧长出了第二个实现（`estimate_rank`）」，
+/// 而 BUG-418/421/422 三轮收口全漏 —— 把取数面收成**一个函数**，是让下一道门
+/// **没有地方**再分叉。要加新门，请复用本函数，不要新造判据。
+///
+/// 返回 `(role, role_source)`，语义见 `resolve_agent_role`：
+///   · `role` ∈ {`HumanSteward`, `Leader`, `Executor`}
+///   · `role_source` = `"declared"` | `"inferred"`（`"declared"` 只表示「有一条通过过滤的
+///     登记记录」，**不表示已核验** —— 见 `agents_role_for_judgment` 的诚实边界）
+fn judged_role(eng : FistEngine, agent : String) -> (String, String) {
+  resolve_agent_role(agent, declared_role_for_judgment(eng, agent))
+}
+
+///|
 pub fn FistEngine::rsv_set(
   self : FistEngine,
   scope~ : String,
@@ -45,7 +62,7 @@ pub fn FistEngine::rsv_set(
   // BUG-418：角色**先查权威面 `agents.role`**（显式声明），查不到才退到收窄后的推断。
   // 旧实现只用名字推断 ⇒ 自称 `commander-*` 即可拿 HumanSteward（可主动利用的越权面）。
   // BUG-422：查表改走 `declared_role_for_judgment`（剔除 server 自身份），见其长注释。
-  let declared = declared_role_for_judgment(self, agent)
+  // BUG-432：连「查表 + 推断」这一步也收进 `judged_role`（四条门共用，见该函数注释）。
   // BUG-422：角色来源**必须带进回执**（诚实标注）。
   //
   // `role_source` 的值域：
@@ -59,7 +76,7 @@ pub fn FistEngine::rsv_set(
   //
   // 为什么不直接返回 `Result` 让调用方区分：`rsv_set` 的签名是 `Result[String, String]`，
   // 改签名会波及工具面 3 处调用方。所以用**后缀标注** —— 零签名变更，且回执自带证据。
-  let (role, role_source) = resolve_agent_role(agent, declared)
+  let (role, role_source) = judged_role(self, agent)
   match check_scope_permission(scope, role) {
     // RoleDenied 是**硬拒** —— HumanSteward 保护路径必须继续拒绝，绝不放行
     RoleDenied(e) => Err(e)
@@ -87,11 +104,11 @@ pub fn FistEngine::rsv_try_set(
   // 权限门禁：先过权限，再进后端裁决（BUG-413 三态分流）
   // BUG-418：角色先查权威面 `agents.role`（同上，必须自己算指纹）。
   // BUG-422：查表走 `declared_role_for_judgment`（剔除 server 自身份，见其长注释）。
-  let declared = declared_role_for_judgment(self, agent)
+  // BUG-432：该步已并入 `judged_role`（四条门共用取数面）。
   // BUG-422：角色来源带进回执的 `action`（与 rsv_set 同口径，见那边的长注释）。
   // `action` 的合法取值因此扩展为：reserved | renewed | taken_over | conflict |
   //   unregistered | <上述之一>+role_inferred
-  let (role, role_source) = resolve_agent_role(agent, declared)
+  let (role, role_source) = judged_role(self, agent)
   match check_scope_permission(scope, role) {
     RoleDenied(e) => Err(e)
     Allowed =>
@@ -198,8 +215,8 @@ pub fn FistEngine::locks_try_acquire(
   let agent = lock.agent_of()
   let scope = lock.scope_of()
   // BUG-422：与两条预订门同一取数（剔除 server 自身份，见 `declared_role_for_judgment`）。
-  let declared = declared_role_for_judgment(self, agent)
-  let (role, _role_source) = resolve_agent_role(agent, declared)
+  // BUG-432：并入 `judged_role` —— 锁门 / 预订门 / claim 的 RANK_GATE 现在是**同一个**取数面。
+  let (role, _role_source) = judged_role(self, agent)
   match check_scope_permission(scope, role) {
     RoleDenied(_) =>
       // **legacy_grant 特判（BUG-424 裁决 (a)(b)(c)）**

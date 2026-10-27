@@ -31,7 +31,7 @@ fn ow_st(s : String) -> @core.TaskStatus? {
 fn ow_orphan_task(id : String, parent : String) -> @core.Task {
   let desc = "子任务单元 1" + " | " + omega_mark()
   @core.Task::new(
-    id=id,
+    id~,
     project_dir=".",
     description=desc,
     parent_id=parent,
