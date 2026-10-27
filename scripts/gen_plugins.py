@@ -94,7 +94,15 @@ def real_tools():
 
 
 RE_VERSION = re.compile(r'^version\s*=\s*"([^"]+)"', re.M)
-RE_BUG_HEAD = re.compile(r"^## BUG-(\d+)\b", re.M)
+# BUG-434：抬头必须是「日期 + 严重度 + 状态」**三段式**（口径与下面的 RE_BUG_STATUS 一致）。
+# 以前是 `^## BUG-(\d+)\b` —— 宽到「evidence/detail 里的小节标题」甚至
+# 「围栏代码块里引用的一行既有抬头」都会被当成条目 ⇒ 同编号两条 ⇒ 后一条覆盖前一条、
+# 真实状态不进任何计数（实测：`bug_fix` 一笔两条时，evidence 里的 `## BUG-421：…` 中招两次）。
+RE_BUG_HEAD = re.compile(
+    r"^## BUG-(\d+) \[[^\]]+\] \[(?:critical|high|medium|low)\] "
+    r"(?:OPEN|FIXED|DUPLICATE|FALSE_POSITIVE)\b",
+    re.M,
+)
 RE_FIXED = re.compile(r"^### FIXED\(", re.M)
 # 抬头文法与闭集（真源定义写在 memory/bugs.md 的「记账规则」段）
 BUG_STATUSES = ("OPEN", "FIXED", "DUPLICATE", "FALSE_POSITIVE")
@@ -142,7 +150,7 @@ def ledger_status(bugs_txt):
     抽成函数是为了能被变异证明直接考（temp/recon/prove_ledger_gates.py）——
     长在 die() 里的门禁和写在纸上的规则一样，没人验证过它会不会红。
     """
-    ids = re.findall(r"^## BUG-(\d+)\b", bugs_txt, re.M)
+    ids = RE_BUG_HEAD.findall(bugs_txt)  # BUG-434：与 RE_BUG_STATUS 同口径（三段式）
     if not ids:
         return {}, ["账本一条 BUG 条目都没解析到（判据坏了，不是账本空）"]
     heads = RE_BUG_STATUS.findall(bugs_txt)
