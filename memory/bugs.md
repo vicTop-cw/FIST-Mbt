@@ -8390,6 +8390,22 @@ if r.status == "active" && r.heartbeat_at < cutoff {
 `src/engine/engine_assistant.mbt:39-53`（读过滤）· `src/store/store.mbt:238-252`（裁决）·
 `src/server/server.mbt:5595-5605`（留痕）· `:5672`（sweep 条件）· BUG-237（此前修过 sweep 的静默吞）
 - reported_by: commander-gamma
+
+- 追记（2026-10-27 **机制层已落地，接线待并发 lane 收口**）：
+  **机制层已提交**（commit `feat(assistant)`）：新增 `engine_assistant.mbt::assistant_last_primary()`
+  （`is_primary` 且 `status != "resigned"`，排序键与 `active_primary` 一致）+
+  `engine_assistant_wbtest.mbt` **4 格锁**：
+  ① `last_primary_sees_dead`（机制格：`active_primary` 看不到 dead、`last_primary` 看得到）
+  ② `dead_primary_claim_is_taken_over_not_elected`（**端到端格**：dead + 陈旧 ⇒ `taken_over` 且 `prev_agent="B"`）
+  ③ `last_primary_excludes_resigned`（防修过头：退位后应重新选举）
+  ④ `fresh_active_primary_still_conflict`（防改坏正常路径：新鲜 active ⇒ 仍 `conflict`）
+  **变异对照**：M1 退回「只认 active」⇒ **2 红**（锁①+②）；M2 全收 `resigned` ⇒ **1 红**（锁③）。
+  **⚠️ 为什么仍 OPEN**：`server.mbt` 的关键**接线**（`claim` 的 `prev` 从 `assistant_active_primary()`
+  改成 `assistant_last_primary()`）**已在工作树改好并编译通过，但该文件当时混着另一条 lane 的
+  BUG-433 WIP（5 处）** ⇒ 按路径纪律**未随本笔提交**。**⇒ 在接线落盘之前，BUG-431 在运行期尚未真正修好。**
+  **另一处判例-29 缺口（诚实标注）**：本笔 4 格测的是 `last_primary` 这个**机制**，
+  **没有**测 `server.mbt` 的接线 —— 若有人把接线退回 `active_primary()`，本笔的锁**不会红**。
+  接线层需要一格直接断言 `server.mbt` 的 claim 段调用 `assistant_last_primary`（待 lane 收口后补）。
 ## BUG-432 [2026-10-26T19:01:32Z] [medium] OPEN
 - summary: [authz] `claim` 的 RANK_GATE 仍按 assignee **名字前缀**判军衔（`engine.mbt:1770 estimate_rank`：`has_prefix("leader") ⇒ 连长`）—— 与 reserve_scope 的角色门是**两条独立的路**，BUG-418/421/422 三轮收口全部漏掉它
 - detail: ## 现象（BUG-421/422 收口时发现的**另一条**「名字判角色」的路）
