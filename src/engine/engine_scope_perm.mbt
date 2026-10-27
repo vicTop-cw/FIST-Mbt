@@ -213,6 +213,39 @@ pub fn role_rank(role : String) -> Int32 {
 }
 
 ///|
+/// **角色 → 军衔数字**（BUG-432 正解：`role → rank` 取代 `name → rank`）。
+///
+/// ⚠️ 别把本函数与 `role_rank` 混成一套：`role_rank` 是**角色档位**（数值越大权越大，2/1/0），
+/// 本函数是 **claim 门用的军衔数字**（数值越小权越大，口径见 `rank_can_claim` 的
+/// `arank == 0 || arank <= tlevel`）。两者方向**相反**，这正是 BUG-432 立案时被绕进去的地方
+/// （抬头写「可能拿到更高档」，实测 rank 6 比默认档 5 **更低权**）。
+///
+/// | role | rank | 军衔 | 依据 |
+/// |---|---|---|---|
+/// | `HumanSteward` | 0 | 司令/统帅 | 人类指挥官通吃（与整名白名单 `human_steward`/`human` 同源） |
+/// | `Leader` | 4 | 团长 | 军官线：**必须比默认执行者档(5)更高**。旧表把 `leader*` 判成 6（连长）⇒ 军官比普通执行者**更受限**，方向反转 |
+/// | `Executor` | 5 | 营长 | 现网默认档，**逐字沿用** `estimate_rank` 的 else 分支 ⇒ 零回归 |
+/// | 未知 / 空串 / 拼错 | 5 | — | fail-closed 到默认档：未知值**不提权**（也不误伤） |
+///
+/// **为什么 Executor 不是 7（排长）/8（士兵）**：门是 `arank <= tlevel`，现网 100% 任务 level=6
+/// ⇒ rank 7 会让**所有** Executor 连 level=6 都领不了（门直接焊死，全仓 claim 全线 Err）。
+/// 5 是现网实际生效的默认档，平移过来即零回归。
+///
+/// ⚠️ **硬约束：本函数只接受角色，永不接受「名字」**。`has_prefix("leader") ⇒ 6` 已随 BUG-432 删除；
+/// claim 侧要拿军衔，必须先经 `judged_role`（登记优先 + 收窄后推断兜底）拿到角色。
+/// 判据见 `claim_rank_wbtest.mbt` 的 G5（行为翻转锁）+ 入档回执里的变异对照（判例-29/30：
+/// **不许**写「grep 源码有没有 has_prefix」那种会命中注释的自指判据 —— 它是恒绿的）。
+pub fn rank_of_role(role : String) -> Int32 {
+  match role {
+    "HumanSteward" => 0
+    "Leader" => 4
+    "Executor" => 5
+    // 未知值 ⇒ 默认档：不比今天更宽，绝不因未知/空值提权
+    _ => 5
+  }
+}
+
+///|
 /// **哪些角色允许从「自报名字 → agents 登记表」这条路继承**（BUG-422 加固）。
 ///
 ///   · `Executor` / `Leader` ⇒ 可继承（Leader 是「派下来的军官」的唯一正道）

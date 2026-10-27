@@ -180,7 +180,7 @@ pub fn FistEngine::claim(
       let (role, role_source) = judged_role(self, assignee)
       // ⚠️ **BUG-432 修复本体**：军衔由角色派生，**名字既不提权也不误伤**。
       //
-      // ⛔ **此处曾留着一个未撤回的变异体**（`[MUTANT M1]`，2026-10-27 03:20 写入，
+      // ⛔ **此处曾留着一个未撤回的变异体**（标记为 MUTANT-M1，2026-10-27 03:20 写入，
       //    09:30 发现时已挂 6 小时）：注释写着「测完立即撤回」，但没撤回。
       //    那段把 `has_prefix("leader") ⇒ 6` / `has_prefix("atomcode") ⇒ 4` 原样留着
       //    ⇒ **`judged_role` 算对了角色，但 `arank` 仍按名字算** ⇒ 修复行为等于没做，

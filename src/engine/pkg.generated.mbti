@@ -85,6 +85,8 @@ pub fn phi_domain_error(Array[Int32], Int32) -> String
 
 pub fn plan_route(String, n_files? : Int32) -> Json
 
+pub fn rank_of_role(String) -> Int32
+
 pub fn resolve_agent_role(String, String?) -> (String, String)
 
 pub fn role_rank(String) -> Int32
@@ -121,6 +123,7 @@ pub fn FistEngine::archive(Self, task_id~ : String, by~ : String, now~ : String)
 pub fn FistEngine::archive_force(Self, task_id~ : String, by~ : String, force~ : Bool, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::assistant_active_primary(Self) -> @store.AssistantReg?
 pub fn FistEngine::assistant_get(Self, String) -> @store.AssistantReg?
+pub fn FistEngine::assistant_last_primary(Self) -> @store.AssistantReg?
 pub fn FistEngine::assistant_list(Self) -> Array[@store.AssistantReg]
 pub fn FistEngine::assistant_set_status(Self, String, String) -> Bool
 pub fn FistEngine::assistant_upsert(Self, @store.AssistantReg) -> Unit
