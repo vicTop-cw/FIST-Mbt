@@ -65,10 +65,11 @@ test "s3_p2_02_four_gates_wire_the_challenge" {
     _ => abort("读不到 engine.mbt —— 实现路径格没跑到被测面")
   }
   // 三道门在 engine_rsv.mbt：断言出现次数 ≥ 3（rsv_set / rsv_try_set / locks_try_acquire）
-  let n_gated = count_of(src_rsv, "judged_role_gated(self, agent, challenge_nonce)")
+  // S3 第三段：调用点已带 challenge_sig~ ⇒ 匹配串随之更新
+  let n_gated = count_of(src_rsv, "judged_role_gated(self, agent, challenge_nonce, challenge_sig~)")
   assert_true(n_gated >= 3)
-  // 第四道门在 engine.mbt：claim 走 judged_role_with_nonce（带 nonce 消费）
-  assert_true(src_eng.contains("judged_role_with_nonce(self, assignee, challenge_nonce)"))
+  // 第四道门在 engine.mbt：claim 走 judged_role_with_nonce（带 nonce 消费 + 签名透传）
+  assert_true(src_eng.contains("judged_role_with_nonce(self, assignee, challenge_nonce, challenge_sig~)"))
 }
 
 ///|

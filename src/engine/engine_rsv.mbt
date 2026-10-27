@@ -125,10 +125,17 @@ pub fn verify_challenge_sig(pubkey_hex : String, msg : String, sig_hex : String)
 ///
 /// ⚠️ **诚实边界**：本函数**不改变 `judged_role`**（4 个现有调用点零回归）。
 ///   要把 S3 真正生效，还需要让四条门都改调本函数 —— 那是**第二段**。
+///
+/// **S3 第三段**：新增 `challenge_sig : String?` 参数 —— 由**调用方**提交签名。
+/// 第一段用 `s3_last_sig_probe`（返回空串，永远验不过）做占位；第三段**删掉了它**，
+/// 因为「服务端自己造签名」等于**自己给自己发通行证**。
+/// 签名只能来自调用方私钥，服务端只负责**验** —— 这是 S3 的命门。
 pub fn judged_role_with_challenge(
   eng : FistEngine,
   agent : String,
   challenge_nonce : String?,
+  // S3 第三段：调用方提交的签名 hex（128 字符 = 64 字节）。None ⇒ 视为未提交 ⇒ 验不过。
+  challenge_sig~ : String? = None,
 ) -> (String, String) {
   match challenge_nonce {
     None =>
@@ -141,10 +148,11 @@ pub fn judged_role_with_challenge(
       // 有挑战 ⇒ 必须验签。公钥从 agents 表的 pubkey_fp 取。
       let pubkey = declared_pubkey_for(eng, agent)
       let msg = nonce
-      let verified = match pubkey {
-        // 没登记公钥 ⇒ 无法认证 ⇒ 失败（fail-closed）
-        None => false
-        Some(pk) => verify_challenge_sig(pk, msg, s3_last_sig_probe(eng, agent, nonce))
+      let verified = match (pubkey, challenge_sig) {
+        // 没登记公钥 / 调用方没交签名 ⇒ 无法认证 ⇒ 失败（fail-closed）
+        (None, _) => false
+        (_, None) => false
+        (Some(pk), Some(sig)) => verify_challenge_sig(pk, msg, sig)
       }
       if verified {
         let (role, _src) = judged_role(eng, agent)
@@ -173,11 +181,13 @@ pub fn judged_role_gated(
   eng : FistEngine,
   agent : String,
   challenge_nonce : String?,
+  // S3 第三段：调用方提交的签名（透传给 `judged_role_with_challenge`）
+  challenge_sig~ : String? = None,
 ) -> (String, String) {
   match challenge_nonce {
     None => judged_role(eng, agent)   // ← 零回归：原样返回
     Some(_) => {
-      let (role, src) = judged_role_with_challenge(eng, agent, challenge_nonce)
+      let (role, src) = judged_role_with_challenge(eng, agent, challenge_nonce, challenge_sig~)
       (role, src)
     }
   }
@@ -280,11 +290,13 @@ pub fn judged_role_with_nonce(
   eng : FistEngine,
   agent : String,
   challenge_nonce : String?,
+  // S3 第三段：调用方提交的签名（透传）
+  challenge_sig~ : String? = None,
 ) -> (String, String) {
   match challenge_nonce {
     None => judged_role_gated(eng, agent, None)
     Some(nonce) => {
-      let (role, src) = judged_role_gated(eng, agent, Some(nonce))
+      let (role, src) = judged_role_gated(eng, agent, Some(nonce), challenge_sig~)
       if src == "challenge_verified" {
         // 验签通过 ⇒ 消费 nonce；若已被消费过 ⇒ 判重放（且**不**保留已验证身份）
         if s3_consume_nonce(agent, nonce) {
@@ -326,24 +338,17 @@ fn declared_pubkey_for(eng : FistEngine, agent : String) -> String? {
 }
 
 ///|
-/// S3 第一段：**签名来源占位**。
+/// ══════════════════════════════════════════════════════════════════════════
+/// BUG-430 / S3 **第三段**：`s3_last_sig_probe` **已删除**。
 ///
-/// 纯函数段**拿不到**调用方提交的签名（那要走握手/参数），故此处返回空串 ⇒
-/// 任何 `Some(nonce)` 调用在**第一段**都会走到 `challenge_failed`。
+/// 第一段的 `s3_last_sig_probe` 返回空串（永远验不过）。第三段**删掉它**，
+/// 改为由调用方经 `challenge_sig` 参数**显式提交签名**。
 ///
-/// **这是有意为之，且必须写清**：
-/// 第一段证明的是「挑战接进了取数面 + 验签函数可用 + fail-closed 正确」，
-/// **不证明**「真客户端能通过认证」—— 后者需要第二段把
-/// 「调用方提交的 (nonce, sig)」真正传进来（替换本占位）。
-///
-/// ⚠️ 若有人把本函数改成返回一个恒能验过的签名，等于**绕过 S3** ——
-/// 第二段实现时必须**删掉本函数**，而不是让它返回真签名。
-fn s3_last_sig_probe(eng : FistEngine, agent : String, nonce : String) -> String {
-  ignore(eng)
-  ignore(agent)
-  ignore(nonce)
-  ""
-}
+/// ⚠️ **为什么不「填一个真签名」**：
+/// 若本层自己生成/返回一个能验过的签名，等于**服务端自己给自己发通行证** ——
+/// 任何人都能过。签名**只能来自调用方私钥**，服务端只负责**验**。
+/// 这是 S3 的命门：**「验签」与「签发」必须在不同主体**。
+/// ══════════════════════════════════════════════════════════════════════════
 
 
 ///|
@@ -355,6 +360,8 @@ pub fn FistEngine::rsv_set(
   created_at~ : String,
   // BUG-430 S3 第二段：可选挑战（不传 ⇒ None ⇒ 走原逻辑，零回归）
   challenge_nonce~ : String? = None,
+  // BUG-430 S3 第三段：调用方提交的签名 hex（不传 ⇒ None ⇒ 验不过 ⇒ fail-closed）
+  challenge_sig~ : String? = None,
 ) -> Result[String, String] {
   // 权限门禁：先过权限，再预订（BUG-413 三态分流）
   //
@@ -375,7 +382,7 @@ pub fn FistEngine::rsv_set(
   //
   // 为什么不直接返回 `Result` 让调用方区分：`rsv_set` 的签名是 `Result[String, String]`，
   // 改签名会波及工具面 3 处调用方。所以用**后缀标注** —— 零签名变更，且回执自带证据。
-  let (role, role_source) = judged_role_gated(self, agent, challenge_nonce)
+  let (role, role_source) = judged_role_gated(self, agent, challenge_nonce, challenge_sig~)
   match check_scope_permission(scope, role) {
     // RoleDenied 是**硬拒** —— HumanSteward 保护路径必须继续拒绝，绝不放行
     RoleDenied(e) => Err(e)
@@ -413,6 +420,8 @@ pub fn FistEngine::rsv_try_set(
   created_at~ : String,
   // BUG-430 S3 第二段：可选挑战（不传 ⇒ None ⇒ 走原逻辑，零回归）
   challenge_nonce~ : String? = None,
+  // BUG-430 S3 第三段：调用方提交的签名 hex（不传 ⇒ None ⇒ 验不过 ⇒ fail-closed）
+  challenge_sig~ : String? = None,
 ) -> Result[@store.RsvOutcome, String] {
   // 权限门禁：先过权限，再进后端裁决（BUG-413 三态分流）
   // BUG-418：角色先查权威面 `agents.role`（同上，必须自己算指纹）。
@@ -426,7 +435,7 @@ pub fn FistEngine::rsv_try_set(
   //   在 S3（身份锚点）落地前，冒充风险不会消除。
   // `action` 的合法取值因此扩展为：reserved | renewed | taken_over | conflict |
   //   unregistered | <上述之一>[+role_inferred][+agent_self_reported]
-  let (role, role_source) = judged_role_gated(self, agent, challenge_nonce)
+  let (role, role_source) = judged_role_gated(self, agent, challenge_nonce, challenge_sig~)
   let src_tag = "+agent_self_reported"
   match check_scope_permission(scope, role) {
     RoleDenied(e) => Err(e)
@@ -530,12 +539,14 @@ pub fn FistEngine::locks_try_acquire(
   lock : @store.FileLock,
   // BUG-430 S3 第二段：可选挑战（不传 ⇒ None ⇒ 走原逻辑，零回归）
   challenge_nonce~ : String? = None,
+  // BUG-430 S3 第三段：调用方提交的签名 hex（不传 ⇒ None ⇒ 验不过 ⇒ fail-closed）
+  challenge_sig~ : String? = None,
 ) -> @store.LockAcquireOutcome {
   let agent = lock.agent_of()
   let scope = lock.scope_of()
   // BUG-422：与两条预订门同一取数（剔除 server 自身份，见 `declared_role_for_judgment`）。
   // BUG-432：并入 `judged_role` —— 锁门 / 预订门 / claim 的 RANK_GATE 现在是**同一个**取数面。
-  let (role, _role_source) = judged_role_gated(self, agent, challenge_nonce)
+  let (role, _role_source) = judged_role_gated(self, agent, challenge_nonce, challenge_sig~)
   match check_scope_permission(scope, role) {
     RoleDenied(_) =>
       // **legacy_grant 特判（BUG-424 裁决 (a)(b)(c)）**
