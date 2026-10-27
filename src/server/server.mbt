@@ -909,6 +909,30 @@ fn get_str(args : Json, key : String, default~ : String = "") -> String {
 }
 
 ///|
+/// **BUG-430 S3 收尾**：从 MCP args 读可选挑战，返回 `(challenge_nonce, challenge_sig)`。
+///
+/// 语义（**零回归是关键**）：
+///   · `challenge` 缺失或空串 ⇒ `(None, None)` ⇒ 引擎走 `judged_role` 原逻辑，
+///     **行为与 S3 之前的版本完全一致**；
+///   · `challenge` 非空 ⇒ `(Some(challenge), sig_opt)` ⇒ 引擎走验签分支
+///     （fail-closed：无公钥 / 无签名 / 验签失败 ⇒ `Executor` + `challenge_failed`）。
+///
+/// 为什么空串当 None 而不是当「空挑战」：MCP 的 optional string 参数，
+/// 调用方「没传」与「传空串」在协议层难以区分（`get_str` 都返回 `""`）。
+/// 若把空串当 `Some("")`，会让**所有旧调用方**突然进入验签分支 ⇒ 全部 `challenge_failed`
+/// ⇒ 那是**灾难性回归**。⇒ **空串必须等价于「没传」**。
+///
+/// `challenge_sig` 单独判空：传了 challenge 没传 sig ⇒ `(Some(ch), None)` ⇒
+/// 引擎按「没交签名」fail-closed（这是**正确**的：挑战了不签名，等于没认证）。
+fn opt_challenge(args : Json) -> (String?, String?) {
+  let ch = get_str(args, "challenge")
+  let sig = get_str(args, "challenge_sig")
+  let c = if ch == "" { None } else { Some(ch) }
+  let s = if sig == "" { None } else { Some(sig) }
+  (c, s)
+}
+
+///|
 /// 从 JSON 参数中读取整数，缺省回退默认值。
 /// BUG-194：`Double::to_int()` 对超 Int32 域的值**饱和**（BUG-26 实测：1e300 → Int max），
 /// 会让超时/阈值/配额类参数静默变成天量值（如 `timeout_ms=2147483647` 永不超时、
@@ -1995,7 +2019,16 @@ pub async fn run_server() -> Unit {
         Err(e) => return Err(@mcp_types.ToolError(e))
         Ok(_) => ()
       }
-      match eng.claim(task_id~, assignee~, now=ts) {
+      // BUG-430 S3 收尾：挑战从 args 读并透传（空串 ⇒ None ⇒ 零回归）
+      let ch = opt_challenge(args)
+      match
+        eng.claim(
+          task_id~,
+          assignee~,
+          now=ts,
+          challenge_nonce=ch.0,
+          challenge_sig=ch.1,
+        ) {
         Err(e) => Err(@mcp_types.ToolError(e))
         Ok(t) => {
           if inject == "" {
@@ -5598,9 +5631,19 @@ pub async fn run_server() -> Unit {
       let agent = get_str(args, "agent")
       let ttl_until = get_str(args, "ttl_until")
       let now = now_default()
+      // BUG-430 S3 收尾：从 args 读挑战并透传（空串 ⇒ None ⇒ 零回归）
+      let ch = opt_challenge(args)
       // BUG-136：这里过去是「先 rsv_get 判空闲、再无条件 rsv_set」——两个进程都读到空闲
       // 就都写成功，两边都拿到 reserved=true 而表里只剩最后一笔。裁决交回后端，工具面只渲染结论。
-      match engine.rsv_try_set(scope~, agent~, ttl_until~, created_at=now) {
+      match
+        engine.rsv_try_set(
+          scope~,
+          agent~,
+          ttl_until~,
+          created_at=now,
+          challenge_nonce=ch.0,
+          challenge_sig=ch.1,
+        ) {
         Err(e) => Err(@mcp_types.ToolError(e))
         Ok(o) =>
           Ok(
@@ -5742,7 +5785,9 @@ pub async fn run_server() -> Unit {
       // BUG-145：走 locks_try_acquire（复用 rsv_action 的裁决），不再走 locks_upsert
       // ——后者是 last-write-wins 的底层原语，恒「拿到」，与设计文档 lk2 的
       // 「A 持锁后 B 应 granted=false」相反；且先读后写的竞态窗口只有跨进程才暴露。
-      let o = engine.locks_try_acquire(lock)
+      // BUG-430 S3 收尾：挑战从 args 读并透传（空串 ⇒ None ⇒ 零回归）
+      let ch = opt_challenge(args)
+      let o = engine.locks_try_acquire(lock, challenge_nonce=ch.0, challenge_sig=ch.1)
       let blocked_by = if o.granted { "" } else { o.agent }
       Ok(
         @mcp.ToolResult::text(
