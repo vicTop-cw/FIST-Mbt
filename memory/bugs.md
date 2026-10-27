@@ -6625,7 +6625,7 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 
 - BUG-387 是 2026-10-22 的**补录块**（原抬头写作 `BUG-333 [2026-10-19T00:00:00Z]`，据 `memory/2026-10-19.md:158` 与源码注释追记），而同一缺陷的**原始抬头**早已存在（`BUG-333 [2026-10-19T05:54:08Z]`，含完整 9925 命中拆解）。两者是同一件事的两份记录 ⇒ 补录块重编为 BUG-387 并标 `DUPLICATE →BUG-333`（硬门③：主编号存在、非自身、非链式 DUPLICATE），原始抬头按 `### FIXED(… / BUG-333 …)` 小记改判 FIXED（硬门②：被小记点名者必须是 FIXED）。
 
-## BUG-388 [2026-10-22T11:02:00Z] [medium] OPEN
+## BUG-388 [2026-10-22T11:02:00Z] [medium] FALSE_POSITIVE
 - summary: [工具链] `moon fmt --check` 在本机跑不完（moon 0.1.20261016 / Windows）：rc=-1 报 `_build/wasm-gc/release/format/<file>: No such file` + `fatal: cannot hash`；而同版本 `moon fmt`（写模式）rc=0 正常
 - detail: 现象与对照（2026-10-22 R55 实测）：
   | 场景 | 结果 |
@@ -6638,6 +6638,7 @@ main 树上 `moon check` → **0 errors**；测试面以 CI 为权威（同一�
 - 处置（R55 已落）：新增 `scripts/check_fmt_gate.py` 三档闸（`0` 干净 / **`2` DEGRADED 不可测** / `1` 真 diff），`--selftest` 6 格；已登记索引与守卫电池；AGENTS 提交门禁补口径。实测该闸真跑返回 **rc=2 DEGRADED**（正是期望档）。
 - note: 编号说明——本条最初被我误写成 `BUG-381`，但 `BUG-381` 在主线早已被占（`check_mbti_sync` 泛型盲区，已 FIXED），故另立本编号；R55 的更正提交里写清了这件事。
 - 后续建议: ① 格式门权威面交给 CI（Linux nightly）；② 升级 moon 后先跑 `python scripts/check_fmt_gate.py`，转 `0` 即可把该闸降为普通门禁；③ 与 BUG-330（fmt 世代漂移）一并复核。
+- false_positive(2026-10-27T04:06:54Z): 外部工具链边界，非本仓缺陷（立据三条）：① 对照实验：与本仓无关的 3 文件最小工程同样复现 `_build/wasm-gc/release/format/<file>: No such file` + `fatal: cannot hash` + rc=-1 ⇒ 坏的是 moon 0.1.20261016 在 Windows 上的 --check 管线，不是本仓代码；② 同版本 `moon fmt`（写模式）rc=0 正常 ⇒ 写盘面没坏，只有 --check 面坏；③ 替代判据已落地：`scripts/check_fmt_gate.py`（rc 契约 0 干净 / 2 不可测（拒绝判红也拒绝判绿）/ 1 真差异），本机恒 DEGRADED(2)，格式门权威面以 CI（Linux nightly）为准。已把这条写进 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」（新增一条），并保留在 AGENTS.md 的 BUG-388 引用处。⇒ 建议：若后续 moon 修好该管线，把 check_fmt_gate 的 DEGRADED 分支改成真判即可恢复，不需要重开本条。
 ## BUG-389 [2026-10-23T05:19:36Z] [medium] FIXED
 - summary: [omega] task_plan_deep 注入的 [omega:required] 标记在 supervisor_task_upsert 更新描述时被静默覆盖丢失，omega_spec_create 误报「未开启 Omega 强验证」
 - detail: 现象：task_plan_deep(omega_strong_verify=true) 把 [omega:required] 标记写进子任务 description；随后调用 supervisor_task_upsert（action=updated）更新描述时，若新描述不含该标记，标记被静默覆盖丢失。再调 omega_spec_create 报「任务 [T0.1.1] 未开启 Omega 强验证（description 缺少 [omega:required] 标记），无需创建语料」——把一个「标记丢失」的流程事故伪装成「用户没开 Omega」。实测：T0.1.1 等 6 叶在 upsert 后 omega_spec_create 全红，二次 upsert 补回标记才通过。根因：Omega 门禁从 description 文本读标记（字符串匹配），而描述是可被合法更新的字段；标记没有独立载体（如任务元数据列/标志位）。修法方向：① supervisor_task_upsert 更新 description 时保留既有 [omega:required]/[难度梯度]/[边界四问] 等 decomposer 注入的标记；或② Omega 门禁从任务元数据（如 omega_required: bool 列）读取而非描述文本（描述可被覆盖，元数据列才是身份载体）。证据：本会话 T0.1.1–T0.5.3 共 13 叶，upsert 后首轮 omega_spec_create 全部报「未开启」，补标记后全通过。
@@ -8278,6 +8279,21 @@ sed -n '603,613p' src/server/server.mbt
 Lane AF 报告 `reports/2026-10-27-bug422b-identity-assertion-plan.md` @ `0f1bad7b`（§11 是正文）。
 - reported_by: lead(Lane AF §11 正文)
 
+
+- 追记（2026-10-27 **已定性为「协作式约定」，边界已文档化；本条保留 OPEN 作长期架构方向**）：
+  **已收口的是「一致性」，不是「认证强度」** —— 四轮同族收口实际做到的是「同一个人在不同工具里是同一个身份」，
+  **不是**「这个名字不能被冒用」：
+  - BUG-418 / 421 / 422：名字不再能提权（子串 / 整名单词白名单全删）
+  - BUG-423 / 424：注册面毒化 + 锁权限门
+  - BUG-432：`claim` 的 RANK_GATE 改 `role → rank`（名字不参与授权裁决）
+  - BUG-436：ACL 判定身份收敛为单一真源（`AclIdentity` + `acl_arg_given`：缺省值不得当身份）
+  **边界已写入 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」**（新增一条，含三条硬事实：
+  `pubkey_fp` 全仓恒空 / `current_pid_token()` 是伪 pid 会同秒撞值 / 无会话层），
+  并明写「**下一个人不得把它当安全边界用**」。
+  **要真收口 = 架构变更**（会话令牌 或 `pubkey_fp` 签名 + 4 个客户端全改），
+  成本远超收益（挡的是自家 agent）⇒ **当前选择：承认它，并把它写死**。
+  **本条保留 OPEN 的唯一理由**：它是「若将来要真认证」的**锚点**（一关就没人记得这条路的代价）。
+  届时若要立项，参考路径见本条 detail 的三条建议（① 连接期会话令牌 ② `pubkey_fp` 签名链路 ③ 只对破坏性工具要求显式 token）。
 ## BUG-431 [2026-10-26T18:57:20Z] [medium] FIXED
 - summary: [r11-assistant] server.mbt:5598 接管留痕取决于 sweep 是否先跑：sweep 标 dead 后 claim 报 elected 且不记 force_takeover 违例
 - detail: ## 缺陷
