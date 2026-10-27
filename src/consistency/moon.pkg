@@ -1,0 +1,6 @@
+import {
+  "vicTop-cw/fist-mbt/src/store",
+  "vicTop-cw/fist-mbt/src/constraint",
+}
+
+supported_targets = "js+native"
