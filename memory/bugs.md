@@ -8207,7 +8207,7 @@ BUG-424（`legacy_grant` 引入，本条的来源）· BUG-145（互斥由后端
 
 ### FIXED(2026-10-26T17:55:08Z / BUG-429)
 - evidence: commit e3457b20（2 文件）。改在 src/engine/engine_rsv.mbt 的 locks_try_acquire legacy_grant 分支：原写法 o.relabel("renewed_legacy_grant", o.granted) 无条件打标，现改为 if o.granted { o.relabel("renewed_legacy_grant", true) } else { o }。缺陷：locks_get(:202) 与 locks_try_acquire(:205) 是两次独立 IO，中间别的 agent 可抢到同一把锁且 ttl 新鲜 ⇒ 本次写被后端拒 ⇒ granted=false，此时回执变成 granted=false + action="renewed_legacy_grant" + agent=别人 —— 三个字段互相矛盾；同文件 Unregistered 分支写对了 if o.granted，legacy 分支漏抄。修复后被后端拒时保留后端原标签（conflict/taken_over 是更硬的信息）。同时确认了更重要的一件事：legacy_grant 不是「先读后写」——Lane AD 的判据是「读到的值能不能改变裁决，不是有没有读两次」；locks_get 那次读只能把结果推向更保守（不像自己⇒直接拒绝），无法让本该被拒的请求变成 granted，因为 granted 永远由后端 ON CONFLICT ... WHERE + 写后回读算（store_sqlite.mbt:1438，且 :1439 ignore(may_write) 明确本地裁决不决定发不发那笔写）⇒ 它是附加闸门不是裁决器。回归锁新增 src/engine/lock_legacy_grant_wbtest.mbt 3 条：锁1=行为正例，自己续自己 active 锁⇒granted=true 且 action=renewed_legacy_grant；锁2=接线格，断言 if o.granted { 那道闸真在源码里 + 反向断言不许再出现无条件 relabel(..., o.granted)；锁3=反例，别人持有的 active 锁⇒硬拒且不许标 legacy。锁2 是源码文本断言（诚实标注脆弱，因 granted=false 那一半没有任何行为面能覆盖，单线程构造不出「两次 IO 之间被抢锁」且判例-31 不许 sleep 抢时序）。验证：moon check --target js = 57 warnings 0 errors；moon_test_env --target js src/engine = 240/240/0 全绿（改前 237，+3）。附带确认三条纪律全部成立：lock_acquire_action 逐字委托 rsv_action；SQLite ON CONFLICT ... WHERE 三子句与 rsv_action 四分支逐条对应；agent_touch_first_seen 的 CASE WHEN 在单条语句内求值无读后写窗口；claim 用 update_task_if_status 的原子 CAS 且完全不调 rsv_*。
-## BUG-430 [2026-10-26T18:47:23Z] [high] FALSE_POSITIVE
+## BUG-430 [2026-10-26T18:47:23Z] [high] OPEN
 - summary: [arch] MCP 工具面零认证 —— 所有 agent 身份参数可自报，reserve_scope/lock_acquire 的角色判定本质上是 advisory（C1 pubkey_fp 全空 / C2 pid 可算 / C3 无会话层）
 - detail: ## 形状（架构级缺口，不是某个 bug）
 
