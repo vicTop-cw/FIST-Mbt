@@ -206,3 +206,149 @@ pub fn legacy_store_exists_in(dir : String, ns : String) -> Bool {
 pub fn legacy_store_exists(ns : String) -> Bool {
   legacy_store_exists_in(".", ns)
 }
+
+// ---------------------------------------------------------------------------
+// BUG-436：写面 ACL 的**判定身份**（单一真源）
+//
+// 病灶（实测，非推断）：`claim` 的判定身份取 `assignee`（调用方给的原始名），
+// `execute` 取 `executor`——而 `executor` 是可选的、缺省 `"manual"`。
+// 于是同一进程里「同一个动作链」被判成两个身份：
+//     claim   → fp("vools-retry-lead") = 4e3b9eb2cd9cb473
+//     execute → fp("manual")           = 020934005581bee2
+// grant 只能授权到前者，execute 永远进不去；而报错里印的是**指纹**，
+// 调用方把那串指纹再传给 `agent_acl_grant` 会被再哈希一次（→ dfd9df…），
+// 「已落库」但 execute 仍拒 —— 这就是 BUG-436 的完整闭环。
+//
+// 修法：把「判定身份从哪来」抽成纯函数，所有写门共用一条优先级链，
+// 并且身份**永远以原始名（raw）呈现**，指纹只作为诊断附注。
+// ---------------------------------------------------------------------------
+
+///|
+/// ACL 判定身份：`raw` 是调用方能说出口、也能拿去 `agent_acl_grant` 的**原始**身份；
+/// `source` 记录它来自哪个参数（诊断用，直接进错误文案）；`implicit=true` 表示
+/// 这身份不是调用方给的，而是工具缺省兜出来的（这种身份天然不可预期，必须点明）。
+struct AclIdentity {
+  raw : String
+  source : String
+  implicit : Bool
+}
+
+///|
+/// 该身份对应的 ACL 指纹（与 `agent_write_gate` / `agent_acl_grant` 同一函数）。
+fn AclIdentity::fp(self : AclIdentity) -> String {
+  @engine.agent_fp_of(self.raw)
+}
+
+///|
+/// 按优先级取第一个非空候选；全空则退回 `manual` 并标记 `implicit=true`
+/// （`implicit` 是错误文案里那句「该身份来自工具缺省」的开关——没有它，
+/// 「grant 了却还是拒」对调用方就是一句无法行动的谜语）。
+fn acl_identity_pick(cands : Array[(String, String)]) -> AclIdentity {
+  for c in cands {
+    let (raw, source) = c
+    if raw != "" {
+      return { raw, source, implicit: false, }
+    }
+  }
+  { raw: "manual", source: "default-manual", implicit: true, }
+}
+
+///|
+/// `claim` 的判定身份：显式 `agent` > `assignee`（必填，故基本恒为它）。
+fn acl_claim_identity(
+  explicit_agent : String,
+  assignee : String,
+) -> AclIdentity {
+  acl_identity_pick([(explicit_agent, "explicit-agent"), (assignee, "assignee")])
+}
+
+///|
+/// `execute` 的判定身份：显式 `agent` > **显式给出且非占位**的 `executor` >
+/// **任务当前 assignee**（= 同一条链上 claim 用的那个身份）> 缺省 `manual`。
+///
+/// 三个关键口径：
+/// ① `executor="manual"` 视为**未给出**——它是「人工执行」的占位名，不是 agent 身份；
+///    真要拿它当身份就得显式传 `agent="manual"`，那时文案会点明是显式选择。
+/// ② 回落到任务 assignee 是根治点：`execute` 本来就是「claim 到的人汇报交付物」，
+///    身份必须与 claim 同源，否则同一条链天然有两个身份（BUG-436 的形状）。
+/// ③ `executor` 仍照旧作为**执行元数据**写进 executions 表，与判定身份解耦
+///    （那是"用什么执行器跑的"，不是"谁在写"）。
+fn acl_execute_identity(
+  explicit_agent : String,
+  executor : String,
+  executor_explicit : Bool,
+  task_assignee : String,
+) -> AclIdentity {
+  let executor_for_id = if executor_explicit && executor != "manual" {
+    executor
+  } else {
+    ""
+  }
+  acl_identity_pick([
+    (explicit_agent, "explicit-agent"),
+    (executor_for_id, "executor"),
+    (task_assignee, "task-assignee"),
+  ])
+}
+
+///|
+/// 参数「是否由调用方显式给出」（非空字符串才算给出）。
+///
+/// 需要它是因为 **缺省值不可当身份**：`execute` 的 `executor` 缺省 `"manual"`，
+/// 拿缺省值当 ACL 身份就是 BUG-436 的病灶（调用方从没说过自己叫 manual）。
+fn acl_arg_given(args : Json, key : String) -> Bool {
+  match jget(args, key) {
+    Some(Json::String(s)) => s != ""
+    _ => false
+  }
+}
+
+///|
+/// 是否形似 ACL 指纹（16 位**小写**十六进制）——用于 `agent_acl_grant` 的兼容：
+/// 调用方把报错里的指纹原样粘回来时，别再哈希一次（否则写进另一行 → BUG-436）。
+fn acl_id_is_fp(s : String) -> Bool {
+  if s.length() != 16 {
+    return false
+  }
+  for c in s.to_array() {
+    let u = c.to_int()
+    let is_hex = (u >= 48 && u <= 57) || (u >= 97 && u <= 102)
+    if !is_hex {
+      return false
+    }
+  }
+  true
+}
+
+///|
+/// ACL 拒绝时的**可行动**文案（纯函数，好被白盒锁钉住）。
+///
+/// 必须同时给出：① 原始身份（grant 用它）；② 指纹（与库里的行对表）；
+/// ③ 身份来源（调用方才知道自己漏了哪个参数）；④ 一句「别传指纹」的警示
+/// ——这正是 BUG-436 里「grant 后仍拒」的那一环。
+fn acl_gate_fail_message(
+  store_err : String,
+  id : AclIdentity,
+  ns : String,
+) -> String {
+  let implicit_note = if id.implicit {
+    "；⚠ 该身份来自工具缺省（调用方未显式给 agent/assignee/executor）——先显式传 agent=<你的身份> 再授权，否则它每次都是这个缺省身份"
+  } else {
+    ""
+  }
+  "acl: " +
+  store_err +
+  "；判定身份: " +
+  id.raw +
+  "（fp=" +
+  id.fp() +
+  "，来源=" +
+  id.source +
+  "）" +
+  implicit_note +
+  "；出路: agent_acl_grant(agent_id=\"" +
+  id.raw +
+  "\", namespace=\"" +
+  ns +
+  "\", can_write=true) —— 传**原始身份**；报错里那串 16 位指纹是身份的名字，不是身份本身（再哈希一次会写到另一行，BUG-436）"
+}

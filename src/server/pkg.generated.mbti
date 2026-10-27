@@ -238,6 +238,8 @@ pub fn write_gate_path_ok(String) -> Bool
 // Errors
 
 // Types and methods
+type AclIdentity
+
 type ScanCtx
 
 pub enum WriteVerdict {
