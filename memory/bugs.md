@@ -10106,3 +10106,20 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
   ③ **I/O 族 8**（github/gitcode 3 + atgc_old 3 + assistant 2，需注入 env/fs）
   ④ **剩余 15**
   **注意**：本单的「34 个」数字已被上面的假阳性追记降级 —— **下一批前必须先按新方法重核**。
+
+- 追记（2026-10-27 23:45 **第二批已完成：debate 族 session 管理补 4 格**）：
+  **实做**：新建 `src/server/debate_session_wbtest.mbt`（93 行 / 4 格），覆盖
+  `debate_next_session_id`（格式 + 单调性）/ `split_hat_items`（三种分隔符 + 空段 + trim）/
+  `DebateRegistry`（空表 + 插入可见 + 可删）。
+  **这批是「真零覆盖」**（区别于第一批的假阳性）：`ops_hats_wbtest.mbt` 的 9 格测的全是纯函数，
+  而 session 管理住在 `server.mbt`（`DebateSession` / `DebateRegistry` / `debate_sessions` /
+  `debate_next_session_id` / `split_hat_items`）—— **一行测试都没有**，且那是三个 debate 工具的**实质逻辑**。
+  **过程踩坑（MoonBit 0.1.20261016，供下一批参考）**：① `String::substring(start=, end=)` **已弃用** ⇒ 用 `to_array()`；
+  ② `String::to_owned()` **不存在**；③ `Map::size()` **已弃用** ⇒ `length()`。
+  **验收**：`debate455` 4/4；本笔自身 `moon check` 0 errors。
+  **⚠️ 并发撞车**：另一条 lane **也在做 BUG-455**（`src/server/server_bug455_coverage_wbtest.mbt`，
+  其中 `b455_lock_release_only_owner_can_release` 当前**是红的**）。本笔不碰那个文件。
+  **⇒ 下一批之前必须先看该 lane 的进展**，否则会重复劳动。
+  **剩余待做**：`evolve_snapshot`（纯读）、`assistant_status`/`assistant_resign`（I/O）、
+  `github/gitcode` 3（I/O）、`atgc_old` 3（衍生子项目）、其余；
+  **且必须按新方法重核**（先抽 handler 的实质逻辑，再看那逻辑有没有测试）。
