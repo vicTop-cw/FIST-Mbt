@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 171 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 172 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -930,6 +930,21 @@ fn opt_challenge(args : Json) -> (String?, String?) {
   let c = if ch == "" { None } else { Some(ch) }
   let s = if sig == "" { None } else { Some(sig) }
   (c, s)
+}
+
+///|
+/// 取 `s` 的 `[start, end)` 子串（越界自动夹紧）。用于打公钥前缀（不回显全串）。
+fn substring_at(s : String, start : Int, end : Int) -> String {
+  let chars = s.to_array()
+  let lo = if start < 0 { 0 } else { start }
+  let hi = if end > chars.length() { chars.length() } else { end }
+  let mut out = ""
+  let mut i = lo
+  while i < hi {
+    out = out + chars[i].to_string()
+    i = i + 1
+  }
+  out
 }
 
 ///|
@@ -6771,6 +6786,104 @@ pub async fn run_server() -> Unit {
               )
           }
       }
+    },
+  )
+  // ── BUG-430 / S3 第四段：公钥登记（让 agent 真的能通过挑战认证）──────────
+  s1 = instrumented_tool(
+    s1,
+    "agent_register_key",
+    "**BUG-430 / S3**：为某个 agent 登记 Ed25519 **公钥**（hex，64 字符 = 32 字节）。登记后该 agent 才能通过 `challenge` 挑战认证（`reserve_scope` / `lock_acquire` / `claim` 的 `challenge` + `challenge_sig` 参数）。⚠️ **只登记公钥，不产生签名** —— 私钥必须由调用方自己保管；本服务**没有也不会有**「代签」能力（服务端代签 = 服务端自己给自己发通行证 = 绕过 S3）。⚠️ 公钥可被任何人登记覆盖 ⇒ **本工具不防「别人替你换公钥」**，那是密钥分发/轮换的活（尚未做，见 BUG-430 缺口）。参数：agent_id(必填，原始身份，与 claim 的 assignee 同源)、namespace(必填)、pubkey_hex(必填，Ed25519 公钥 hex)、by(可选默认 human_steward)。返回 {agent_id, namespace, pubkey_hex_prefix, registered, persisted_pubkey_matches}。",
+    schema(
+      {
+        "agent_id": string_prop(
+          "agent 身份（必填，与 claim 的 assignee / reserve_scope 的 agent 同源）",
+        ),
+        "namespace": string_prop("命名空间（必填）"),
+        "pubkey_hex": string_prop(
+          "Ed25519 公钥 hex（必填，64 个 hex 字符 = 32 字节）。⚠️ 私钥由调用方自持，本服务不接收也不产生私钥",
+        ),
+        "by": string_prop("登记者身份（可选默认 human_steward）"),
+      },
+      ["agent_id", "namespace", "pubkey_hex"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let agent_id = get_str(args, "agent_id")
+      let ns = get_str(args, "namespace")
+      let pubkey_hex = get_str(args, "pubkey_hex")
+      if agent_id == "" || ns == "" {
+        return Err(
+          @mcp_types.ToolError(
+            "agent_register_key: agent_id / namespace 均不能为空（哪个为空就补哪个）",
+          ),
+        )
+      }
+      // 形状校验：必须是 32 字节的合法 hex。**在落库前拒**。
+      // 坏公钥进了库，症状是「这个 agent 永远认证失败」——极难查，所以入口就拦。
+      let pk = match @mooncry.hex_to_bytes_or(pubkey_hex) {
+        Ok(b) => b
+        Err(e) =>
+          return Err(
+            @mcp_types.ToolError(
+              "agent_register_key: pubkey_hex 不是合法 hex：" + e,
+            ),
+          )
+      }
+      if pk.length() != 32 {
+        return Err(
+          @mcp_types.ToolError(
+            "agent_register_key: pubkey_hex 必须是 32 字节（Ed25519 公钥），实际 " +
+            pk.length().to_string() +
+            " 字节",
+          ),
+        )
+      }
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      let ts = now_default()
+      // BUG-436 同口径：落库身份与 `agent_write_gate` 判门用**同一个** `agent_fp`。
+      let fp = agent_fp(agent_id)
+      // 复用既有首拍注册路径（ON CONFLICT 幂等）：不存在时建行，存在时更新 pubkey_fp。
+      // 不新造第二条「注册」真源。
+      agent_touch_first_seen(
+        eng,
+        agent_id,
+        ns,
+        "key-registration",
+        "Executor",
+        "工兵",
+        pubkey_hex~,
+        ts,
+      )
+      // 写后回读：回执不许由请求反推（BUG-145 同口径）
+      let stored = match eng.store.sqlite_store() {
+        None => ""
+        Some(s) =>
+          match s.agents_get(fp) {
+            None => ""
+            Some(a) => a.pubkey_fp
+          }
+      }
+      let ok = stored == pubkey_hex && pubkey_hex != ""
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "agent_id": Json::string(agent_id),
+            "namespace": Json::string(ns),
+            "pubkey_hex_prefix": Json::string(
+              if pubkey_hex.length() >= 16 {
+                substring_at(pubkey_hex, 0, 16) + "…"
+              } else {
+                pubkey_hex
+              },
+            ),
+            // 回读确认：只有库里真的存成这串才算登记成功
+            "registered": Json::boolean(ok),
+            "persisted_pubkey_matches": Json::boolean(ok),
+          }).stringify(),
+        ),
+      )
     },
   )
   s1 = instrumented_tool(

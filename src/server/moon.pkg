@@ -18,6 +18,7 @@ import {
   "moonbitlang/x/fs",
   "moonbitlang/async/io",
   "moonbitlang/async/js_async",
+  "cc06b/mooncry/lib" @mooncry,
 }
 
 supported_targets = "js+native"
