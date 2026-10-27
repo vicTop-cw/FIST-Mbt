@@ -86,7 +86,19 @@ pub fn FistEngine::rsv_set(
     Allowed | Unregistered(_) =>
       match self.store.rsv_set(scope~, agent~, ttl_until~, created_at~) {
         Err(e) => Err(e)
-        Ok(o) => Ok(o + " [role_source=" + role_source + "]")
+        // BUG-430 / S1：**公告边界，不提供安全保障**。
+        // `agent` 是调用方自报的字符串，服务端没有任何手段验证它真属于谁 ⇒ 可冒充任何已登记名字。
+        // 本字段让这件事**可见**，不解决它。
+        // ⚠️ 写了说明 ≠ 安全了 —— 恰相反，写了说明可能让人更放心。
+        // 关闭条件是 S3（身份锚点：签名挑战/验签）；S1/S2 都不消除冒充风险。
+        Ok(o) =>
+          Ok(
+            o +
+            " [role_source=" +
+            role_source +
+            "; agent_source=self-reported - agent is caller-asserted, unverifiable by the server; " +
+            "this does NOT prevent impersonation and will not be closed before BUG-430 S3]",
+          )
       }
   }
 }
@@ -106,9 +118,15 @@ pub fn FistEngine::rsv_try_set(
   // BUG-422：查表走 `declared_role_for_judgment`（剔除 server 自身份，见其长注释）。
   // BUG-432：该步已并入 `judged_role`（四条门共用取数面）。
   // BUG-422：角色来源带进回执的 `action`（与 rsv_set 同口径，见那边的长注释）。
+  // BUG-430 / S1：`agent` 是**调用方自报**的，服务端无法验证 ⇒ 回执必须让它可见。
+  //   `RsvOutcome` 是 store 侧结构体、本层不能加字段 ⇒ 走既有的 `action` 标签机制
+  //   （与 `role_inferred` 同一手法），后缀 `+agent_self_reported`。
+  //   ⚠️ 这是**公告**不是**保障**：它不阻止冒充，只让冒充在回执里看得见；
+  //   在 S3（身份锚点）落地前，冒充风险不会消除。
   // `action` 的合法取值因此扩展为：reserved | renewed | taken_over | conflict |
-  //   unregistered | <上述之一>+role_inferred
+  //   unregistered | <上述之一>[+role_inferred][+agent_self_reported]
   let (role, role_source) = judged_role(self, agent)
+  let src_tag = "+agent_self_reported"
   match check_scope_permission(scope, role) {
     RoleDenied(e) => Err(e)
     Allowed =>
@@ -116,14 +134,11 @@ pub fn FistEngine::rsv_try_set(
         Err(e) => Err(e)
         Ok(o) =>
           Ok(
-            if role_source == "inferred" {
-              // 只在 inferred 时打标：declared 说明「有一条通过过滤的登记记录」，
-              // 两个都标会让标签失去区分力。inferred 才是「没有可用声明」的那一档
-              // （未登记 / 被 BUG-422 过滤 / 角色不可继承 / 低于推断）。
-              o.relabel(o.action + "+role_inferred")
-            } else {
-              o
-            },
+            o.relabel(
+              o.action +
+              (if role_source == "inferred" { "+role_inferred" } else { "" }) +
+              src_tag,
+            ),
           )
       }
     Unregistered(_) =>
@@ -137,7 +152,8 @@ pub fn FistEngine::rsv_try_set(
             if o.reserved {
               o.relabel(
                 "unregistered" +
-                (if role_source == "inferred" { "+role_inferred" } else { "" }),
+                (if role_source == "inferred" { "+role_inferred" } else { "" }) +
+                src_tag,
               )
             } else {
               o
