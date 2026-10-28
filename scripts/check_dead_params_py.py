@@ -63,6 +63,10 @@ PRINT_CAP = 25
 # 带理由的豁免表（键 = (相对路径, 函数名, 形参名)）。每条都必须写清「为什么不删」，
 # 否则就成了免检牌。R83 实测第一例：夹具类要**保签名 drop-in**，参数按设计不用。
 EXEMPT = {
+    ("scripts/blackbox/e2e_lock_xproc.py", "p_double_no_both_granted", "rounds"):
+        "判定谓词族**签名对称**：同文件的 p_exactly_one_row(n_rows, rounds) 用 rounds，本谓词保留同形签名便于统一调用；删它会让族内签名不一致",
+    ("scripts/blackbox/e2e_reserve_xproc.py", "p_rounds_no_double_success", "rounds"):
+        "同上：谓词族签名对称（兄弟谓词同形）",
     ("scripts/check_badge.py", "anchor_problems", "snapshot_path"):
         "selftest 内的替身桩 `_StubAnchor.anchor_problems`：签名必须与真模块一致才能 drop-in 替换，参数按设计不用（真模块那份**确实用了** snapshot_path）",
     ("scripts/check_badge.py", "anchor_problems", "cwd"):
