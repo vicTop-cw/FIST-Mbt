@@ -184,7 +184,7 @@ def value_for(name, prop, ctx, depth=0):
         return ""            # 可选字符串一律留空 = 走服务端默认分支
     if t == "boolean":
         return False
-    if t == "integer":
+    if t in ("integer", "number"):   # R77：漏了 number ⇒ budget 类必填参数被发 ""
         return 1
     if t == "array":
         return []
@@ -237,13 +237,27 @@ NAME_HINTS = {
     "artifacts": None,       # 特判，见下
     "external_results": None,
     "abilities": ["probe"],
-    "need": ["probe"],
+    "need": "probe",   # R77：schema 是 string_prop；旧值 ["probe"] 是**列表** ⇒ 必填参数类型不匹配
     "tags": ["tour"],
     "modes": ["advance"],
     "timeout_ms": 20000,
     "max_rounds": 3,
     "split_n": 2,
     "now": None,             # 走 ctx
+}
+
+
+# R77：**同名参数在不同工具里类型不同** ⇒ 单靠全局 NAME_HINTS 会发错类型，
+# 服务端回 `inputSchema mismatch at /x (type)`，工具其实**从未被真正调用**（覆盖率虚低）。
+# 实测两例：`feedback` 在 plan_revise 是数组、在 eval_feedback 是字符串；
+# `task_ids` 是**字符串**（描述写「JSON 数组」但 type=string）。
+TOOL_HINTS = {
+    "eval_feedback": {
+        "feedback": "## Defects | ## Evidence probe | ## Fix | ## Acceptance probe",
+    },
+    "dag_publish": {
+        "task_ids": "[]",      # schema 是 string（内含 JSON 数组），不是 array
+    },
 }
 
 
@@ -265,6 +279,9 @@ def build_args(tool, schema, ctx, read_only):
             continue
         if k == "name" and tool.startswith("loop_"):
             args[k] = ctx["loop_name"]     # 组合环工具要认本轮真建的那个环，不是随便一个名
+            continue
+        if k in TOOL_HINTS.get(tool, {}):
+            args[k] = TOOL_HINTS[tool][k]
             continue
         if k in NAME_HINTS and NAME_HINTS[k] is not None:
             args[k] = NAME_HINTS[k]
