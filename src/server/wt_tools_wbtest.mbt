@@ -211,3 +211,21 @@ test "W11 ttl_min 非正值不得让新沙箱立刻 stale" {
   // 零回归：正 TTL 仍按原语义（301 > 300 ⇒ stale）
   assert_eq(wt_state_of(true, Some(false), 0, 301, 300, "new", "old").0, "stale")
 }
+
+///|
+/// W12 **主工作树不是沙箱**：`git worktree list --porcelain` 的**第 0 条恒为主工作树**（仓库根）。
+/// 原实现把它也算进 `unregistered` ⇒ **每次 `wt_status` 都报「有个没人管的沙箱」**——
+/// 那是假信号，会诱导人去「清理」仓库根。修法：跳过第 0 条（并回执 `main_worktree` 说明是谁）。
+test "W12 unregistered 跳过主工作树" {
+  let main = wt_porcelain_row("/repo", "aaa", "main", false)
+  let sb = wt_porcelain_row("/repo-sb", "bbb", "wt/t1", false)
+  let parsed : Array[Json] = [main, sb]
+  // 账上只有 sandbox ⇒ 无 unregistered（主工作树被跳过）
+  assert_eq(wt_unregistered(parsed, ["/repo-sb"]).length(), 0)
+  // 账上为空 ⇒ 只报 sandbox 一条（不是 2 条）
+  assert_eq(wt_unregistered(parsed, []).length(), 1)
+  // 尾部斜杠归一后仍能匹配
+  assert_eq(wt_unregistered(parsed, ["/repo-sb/"]).length(), 0)
+  // 只有主工作树一条 ⇒ 永远没有 unregistered
+  assert_eq(wt_unregistered([wt_porcelain_row("/x", "", "", false)], []).length(), 0)
+}
