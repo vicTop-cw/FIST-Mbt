@@ -404,9 +404,10 @@ SPECIAL_CASES = [
     #    被检面修到 0 之后这一格自己翻红，逼下一位把期望改回 0。 ——
     case("check_selftest_hermetic.py", "--selftest"),
     expected("check_selftest_hermetic.py", 1,
-             "R153 立尺现读：自检体真源读写红档 72 处（W=写探针进真树 10 / R=读现状面 48 / G=打真仓 14，"
-             "分布在 24 把尺），另记账档 5 处（T=4 约定的 gitignored temp/、S=1 隔离自 spawn）只点名不判红；"
-             "本单只把形状变成常驻可见，不代修这 72 条——逐条核实归后续单"),
+             "R153 立尺；**R117 按实测重写读数**：红档 **94 处 = W 4 / R 62 / G 28**，另记账 6（S 2 / T 4），涉 37 个文件。"
+             "（原登记「72 处 / W=10 / R=48 / G=14」已过时：W 10→4 是 R111/R114/R115 三轮还掉的；R 48→62 是期间新增读面。）"
+             "**三档语义不同，别混成一个数字**：W=写探针进真树（**真污染，仅剩 4 处、可优先清零**）；R=读仓库现状面、G=打真仓跑 git —— 这两种**多是集成断言的必要代价**"
+             "（例：check_release_asset_names 的 13 处在验「本仓现状必须通过」，换合成夹具就丢掉这条性质）。棘轮只许下降；新增没有该性质的自检不许再涨。"),
     case("check_fmt_gate.py", "--selftest"),
     case("audit_branch_delete.py", "--selftest"),
     # —— R55：`moon fmt --check` 的可判性闸（BUG-381）。只跑 --selftest：
