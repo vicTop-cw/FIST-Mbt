@@ -416,7 +416,7 @@ fn token_placeholder() -> String {
 /// （`don't`）到了 GitHub 侧就成了 `don"t`，且 shell 语义上 `'` 本来就能安全转义成
 /// `'"'"'`，没有理由改内容。
 fn shell_quote(s : String) -> String {
-  let replaced = s.replace(old="'", new="'\"'\"'")
+  let replaced = s.replace_all(old="'", new="'\"'\"'")
   "'" + replaced + "'"
 }
 
