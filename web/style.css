@@ -94,6 +94,8 @@ main { max-width:1400px; margin:18px auto; padding:0 16px; }
 @media (max-width:960px) {
   .layout { grid-template-columns:1fr; }
 }
+/* 单页视图占满两列 */
+.layout.single { grid-template-columns:1fr; }
 
 /* 卡片 */
 .card {
@@ -247,4 +249,169 @@ footer .sse { display:inline-flex; align-items:center; gap:6px; }
   .node-row { padding:5px 6px; }
   .node-row .desc { min-width:100px; }
   footer { gap:8px; }
+}
+
+/* ---------- 标签栏 ---------- */
+.tabs {
+  display:flex;
+  gap:4px;
+  margin-bottom:14px;
+  border-bottom:2px solid var(--line);
+}
+.tab {
+  font:inherit;
+  padding:8px 18px;
+  border:0;
+  border-bottom:2px solid transparent;
+  margin-bottom:-2px;
+  background:none;
+  cursor:pointer;
+  color:var(--muted);
+  font-weight:600;
+  font-size:13px;
+  border-radius:6px 6px 0 0;
+}
+.tab:hover { background:var(--card); color:var(--ink); }
+.tab.active {
+  color:var(--accent);
+  border-bottom-color:var(--accent);
+  background:var(--card);
+}
+
+/* ---------- 状态流转页 ---------- */
+.ascii-flow {
+  background:var(--panel);
+  color:#e6edf3;
+  padding:14px;
+  border-radius:8px;
+  font:12.5px/1.6 var(--mono);
+  white-space:pre;
+  overflow:auto;
+  margin:0 0 14px;
+}
+.big-num {
+  font-size:28px;
+  font-weight:700;
+  color:var(--accent);
+  margin:4px 0;
+}
+.count-table {
+  width:100%;
+  border-collapse:collapse;
+  font-size:12.5px;
+}
+.count-table th, .count-table td {
+  text-align:left;
+  padding:6px 8px;
+  border-bottom:1px solid var(--line);
+}
+.count-table th { color:var(--muted); font-size:11.5px; }
+
+/* ---------- 健康卡页 ---------- */
+.health-grade {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:14px 16px;
+  border-radius:8px;
+  margin-bottom:14px;
+}
+.health-grade .grade-label {
+  font-size:18px;
+  font-weight:700;
+}
+.health-grade .grade-version {
+  font-size:12px;
+  opacity:.7;
+}
+.grade-healthy { background:var(--ok); color:#fff; }
+.grade-attention { background:var(--bad); color:#fff; }
+.grade-stalled   { background:#ca8a04; color:#fff; }
+.grade-empty     { background:var(--muted); color:#fff; }
+.grade-unknown   { background:#6b7280; color:#fff; }
+
+.health-grid {
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:10px;
+  margin-bottom:14px;
+}
+@media (max-width:640px) {
+  .health-grid { grid-template-columns:repeat(2,1fr); }
+}
+.health-stat {
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:10px;
+  text-align:center;
+}
+.health-stat b {
+  display:block;
+  font-size:22px;
+  font-weight:700;
+  color:var(--accent);
+}
+.health-stat span {
+  font-size:11px;
+  color:var(--muted);
+}
+.warn-banner {
+  background:#fef3c7;
+  border:1px solid #f59e0b;
+  color:#92400e;
+  padding:8px 12px;
+  border-radius:8px;
+  font-size:13px;
+  margin-bottom:14px;
+}
+
+/* ---------- 脉冲页 ---------- */
+.pulse-header {
+  display:flex;
+  align-items:center;
+  gap:16px;
+  margin-bottom:14px;
+}
+.pulse-version {
+  font:700 14px var(--mono);
+  background:var(--panel);
+  color:#e6edf3;
+  padding:4px 10px;
+  border-radius:6px;
+}
+.pulse-total {
+  font-size:13px;
+  color:var(--muted);
+}
+.pulse-total b {
+  font-size:18px;
+  color:var(--accent);
+}
+.diff-grid {
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-bottom:14px;
+}
+.diff-stat {
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:8px 14px;
+  text-align:center;
+}
+.diff-stat b {
+  display:block;
+  font-size:20px;
+  color:var(--ink);
+}
+.diff-stat span {
+  font-size:11px;
+  color:var(--muted);
+}
+.chip-list {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
 }
