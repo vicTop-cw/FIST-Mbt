@@ -638,7 +638,11 @@ def surface_selftest():
         "OK" if not fails else "FAIL", len(cases) + 1, len(cases) - 1, len(fails)))
     for f in fails:
         print("  FAIL " + f)
-    return 0 if not fails else 2
+    # 判据 `check_selftest_call_face` J2：自检函数的调用图必须**到得了调用面**
+    # （函数名 main/run/cli，或 sys.exit/exit/raise SystemExit —— 退出码是承诺面，跑过才算核过）。
+    # 原来这里 `return 0 if not fails else 2` 只把码**交回** main()，自检函数自己到不了退出面
+    # ⇒ 判据判 NO_CALL_FACE。改成 sys.exit 后：本函数自己就是调用面，0/2 语义不变。
+    sys.exit(0 if not fails else 2)
 
 
 def surface_snapshot():
