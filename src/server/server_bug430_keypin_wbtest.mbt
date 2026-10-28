@@ -363,3 +363,32 @@ test "kp_06_pin_keeps_first_registration_proof_and_never_signs" {
     )
   }
 }
+
+///|
+/// 【钉·锁 7】**手搓 UTF-8 字节 == 引擎的 `@utf8.encode`**（实测等价，不是注释断言）。
+///
+/// 为什么需要这一格：`src/server` 没 import utf8（任务边界不许改 `moon.pkg`），
+/// 测试夹具用「ASCII 字符码 → hex → Bytes」手搓字节。若手搓错一个字节，
+/// 挑战签名就全错 —— 而**签名错会表现为 challenge_failed**，很容易被误判成
+/// 「实现有 bug」。所以等价性必须单独钉住：
+///   ① 期望字节序列由**独立实现**（Python `'…'.encode('utf-8').hex()`）算出，
+///      与 MoonBit 手搓结果逐字节相等；
+///   ② 用手搓字节签出的签名，交给**引擎** `verify_challenge_sig`
+///      （内部走 `@utf8.encode`，见 `engine_rsv.mbt:109`）必须验得过
+///      —— Ed25519 对消息**逐字节敏感**，字节不等必败；
+///   ③ 反向对照：消息末尾多一个字节 ⇒ 同一签名必须验不过（证明 ② 不是恒真）。
+test "kp_07_handrolled_utf8_bytes_equal_engine_utf8" {
+  let msg = "fist-s3-challenge:v1:kp-utf8-check:7"
+  // ① 独立实现算出的期望值：python -c "print('…'.encode('utf-8').hex())"
+  assert_eq(
+    @mooncry.bytes_to_hex(kp_utf8_bytes_ascii(msg)),
+    "666973742d73332d6368616c6c656e67653a76313a6b702d757466382d636865636b3a37",
+  )
+  // ② 真签名 + 引擎真验签（引擎内部 @utf8.encode）⇒ 字节序列等价
+  let seed = kp_seed_a()
+  let pk = kp_pub_hex(seed)
+  let sig = kp_sign_with(seed, msg)
+  assert_true(@engine.verify_challenge_sig(pk, msg, sig))
+  // ③ 反向对照：多一个字节必须失败
+  assert_false(@engine.verify_challenge_sig(pk, msg + "x", sig))
+}
