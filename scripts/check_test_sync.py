@@ -1111,6 +1111,24 @@ def selftest() -> int:
     done[0] += 1
     print("  ok  bug425-advisory-three-gates")
 
+    # 12) BUG-456 实现路径格（判例-29 + **判例-30**）：`--fresh` 无 log_path 时必须**自取默认路径**。
+    #     为什么是**静态读源码**而不是真跑：真跑要 `moon test` 全仓（分钟级），
+    #     塞进 --selftest 会让每一次「门的门」都变成两分钟 —— 尺子会被人绕过。
+    #     ⚠️ **判例-30 的正面教训（我第一版就踩了）**：模式串**自己就在本函数的注释里**，
+    #     裸 `in` 断言于是恒绿（变异真代码后注释仍命中）。修法 = **行首锚定 + 带换行**：
+    #     注释里那串前面是 `：` 后面是 ` 这一行`，构造不出 `"\n    if fresh and not args:\n"`。
+    _src = Path(__file__).read_text(encoding="utf-8")
+    _needle = "\n    if fresh and not args:\n"
+    if _needle not in _src:
+        print("SELFTEST FAIL [bug456-fresh-default-path] "
+              "`--fresh` 无 log_path 的默认路径分支不见了（判据输入面又变成人手填）")
+        return 1
+    if 'temp/check_test_sync_fresh.log' not in _src:
+        print("SELFTEST FAIL [bug456-fresh-default-path] 默认快照路径不见了")
+        return 1
+    done[0] += 1
+    print("  ok  bug456-fresh-default-path")
+
     print(f"SELFTEST PASS {done[0]} 个变体各自命中自己指名的判据（计数由 run_case 实测累加，非手写）")
     return 0
 
@@ -1163,13 +1181,19 @@ def main():
     do_fix = "--fix-dry-run" in args
     args = [a for a in args if a != "--fix-dry-run"]
     total = None
+    # BUG-456：`--fresh` 允许**不带 log_path** —— 自己挑默认快照路径再去真跑。
+    # 旧行为：`--fresh` 只在「已经给了 log_path」的分支里生效 ⇒ 裸敲 `--fresh` 直接
+    #   `REJECT 无法从参数/日志解析测试总数`（我实测过一次），等于「真跑」这个能力
+    #   **必须先知道一个文件路径才能用** —— 而路径不该是人的负担（判据输入面应自取）。
+    if fresh and not args:
+        args = ["temp/check_test_sync_fresh.log"]
     if args and args[0] == "--total" and len(args) >= 2:
         total = int(args[1])
     elif args:
         log_path = Path(args[0])
-        if not log_path.is_file():
-            print(f"REJECT 测试日志不存在：{args[0]}（判据输入面缺失，拒绝出结论）")
-            return 2
+        # BUG-456：`--fresh` 的真跑必须**先于**「文件必须存在」检查 ——
+        # 否则裸敲 `--fresh` 时默认快照路径还不存在 ⇒ 直接 REJECT，
+        # 等于「真跑」这个能力先要知道一个已存在的文件才能用（顺序反了）。
         if fresh:
             ok, tail = run_fresh(str(log_path))
             print("FRESH 真跑全仓：%s" % ("成功" if ok else "失败"))
@@ -1178,6 +1202,9 @@ def main():
             if not ok:
                 print("REJECT --fresh 跑不出真值（rc≠0）⇒ rc=2，不拿旧快照冒充现实")
                 return 2
+        if not log_path.is_file():
+            print(f"REJECT 测试日志不存在：{args[0]}（判据输入面缺失，拒绝出结论）")
+            return 2
         # 判例-25：与 check_badge 共用同一份源码面锚点（scripts/_badge_anchor.py）。
         # 没有这一关，「换个人只跑本尺」照样会被旧快照骗绿——那正是判例-25 的病灶。
         aprobs, _ainfo = anchor_problems(str(log_path))
