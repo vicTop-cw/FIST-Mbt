@@ -342,7 +342,12 @@ def find_child(srv, ctx, exclude=frozenset()):
 def seed(srv, ctx):
     """建一棵真树：后面的 task_id/root_task_id/bug_id 全是这里产生的，不造假对象。"""
     out = []
-    def do(label, tool, args):
+    def do(label, tool, args, skip_why=""):
+        # R80：前置缺失（如 leaf task_id 拿不到）应记 SKIP 并**带说明**，
+        # 而不是照常调用后被服务端按「缺必填参数」拒掉 —— 那读起来像工具抗性。
+        if skip_why:
+            out.append((label, "skipped", skip_why[:200]))
+            return None
         r = srv.call(tool, args)
         t = text_of(r)
         out.append((label, "ok" if "error" not in r else "refused", t[:200]))
@@ -364,16 +369,24 @@ def seed(srv, ctx):
     leaf = find_child(srv, ctx, exclude={ctx["task_id"]})
     if leaf:
         ctx["task_id_leaf"] = leaf
-    do("claim leaf", "claim", {
-        "project_dir": ctx["project_dir"], "namespace": ctx["namespace"],
-        "task_id": ctx.get("task_id_leaf", ""), "assignee": "tour-agent", "now": now_iso()})
-    do("execute leaf", "execute", {
-        "project_dir": ctx["project_dir"], "namespace": ctx["namespace"],
-        "task_id": ctx.get("task_id_leaf", ""), "assignee": "tour-agent",
-        "deliverable": "巡回交付物：一段说明 + 一行结论", "now": now_iso()})
-    do("submit leaf", "submit", {
-        "project_dir": ctx["project_dir"], "namespace": ctx["namespace"],
-        "task_id": ctx.get("task_id_leaf", ""), "assignee": "tour-agent", "now": now_iso()})
+    # R80：`find_child` 没拿到 leaf 时 task_id 会是空串 ⇒ 服务端按「缺必填参数」拒。
+    # 那是**前置缺失**（上游 plan/claim 被 ACL/ns 门拒），按 SKIP 纪律必须带说明。
+    if not ctx.get("task_id_leaf"):
+        for _lbl, _tool in (("claim leaf", "claim"), ("execute leaf", "execute"),
+                            ("submit leaf", "submit")):
+            do(_lbl, _tool, {},
+               skip_why="前置缺失：find_child 未拿到 leaf task_id（上游 plan/claim 被拒）")
+    else:
+        do("claim leaf", "claim", {
+            "project_dir": ctx["project_dir"], "namespace": ctx["namespace"],
+            "task_id": ctx.get("task_id_leaf", ""), "assignee": "tour-agent", "now": now_iso()})
+        do("execute leaf", "execute", {
+            "project_dir": ctx["project_dir"], "namespace": ctx["namespace"],
+            "task_id": ctx.get("task_id_leaf", ""), "assignee": "tour-agent",
+            "deliverable": "巡回交付物：一段说明 + 一行结论", "now": now_iso()})
+        do("submit leaf", "submit", {
+            "project_dir": ctx["project_dir"], "namespace": ctx["namespace"],
+            "task_id": ctx.get("task_id_leaf", ""), "assignee": "tour-agent", "now": now_iso()})
     # Omega 链单独一棵树（标记只能在 publish 期写进 description，事后无工具可改）
     t = do("publish omega root", "publish", {
         "project_dir": ctx["project_dir"], "namespace": ctx["namespace"],
@@ -770,6 +783,15 @@ def main():
                 kinds["skipped"] = kinds.get("skipped", 0) + 1
                 continue
             args = build_args(name, tl.get("inputSchema"), ctx, a.plane == "read")
+            # R80：必填参数取自 ctx 但为空 ⇒ 前置缺失（不是工具拒绝），带理由 SKIP。
+            _req = (tl.get("inputSchema") or {}).get("required", []) or []
+            _empty = [k for k in _req if k in args and args[k] in ("", None)]
+            if _empty:
+                rows.append({"tool": name, "kind": "skipped",
+                             "why": "前置缺失：必填 %s 取自 ctx 但为空（上游步骤被拒）"
+                                    % ",".join(_empty), "excerpt": ""})
+                kinds["skipped"] = kinds.get("skipped", 0) + 1
+                continue
             try:
                 r = srv.call(name, args)
                 t = text_of(r)
