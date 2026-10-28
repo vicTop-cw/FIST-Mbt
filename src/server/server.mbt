@@ -6123,7 +6123,9 @@ pub async fn run_server() -> Unit {
           "持有者（必填）。⚠️ 本参数由调用方自报，服务端无法验证 —— 不能防有意的冒充（BUG-430）",
         ),
         "ttl_until": string_prop("锁过期时间 ISO 字符串（必填）"),
-        "ts": string_prop("获取时间戳（可选，默认当前时间）"),
+        "ts": string_prop(
+          "获取时间戳（可选）。⚠️ **时间戳由服务端盖章（BUG-33 政策），此字段不接受覆盖** —— 传了也会被服务端时间覆盖（handler 用 now_default()）",
+        ),
         "meta": string_prop("元数据 JSON 字符串（可选）"),
         // BUG-430 S3 第三段：可选挑战。不传 ⇒ 走原逻辑（零回归）
         "challenge": string_prop(
@@ -6192,7 +6194,9 @@ pub async fn run_server() -> Unit {
         "scope": string_prop("作用域（必填）"),
         "agent": string_prop("持有者（必填）"),
         "ttl_until": string_prop("新的过期时间 ISO 字符串（必填）"),
-        "ts": string_prop("续期时间戳（可选，默认当前时间）"),
+        "ts": string_prop(
+          "续期时间戳（可选）。⚠️ **时间戳由服务端盖章（BUG-33 政策），此字段不接受覆盖** —— 传了也会被服务端时间覆盖（handler 用 now_default()）",
+        ),
       },
       ["lock_id", "scope", "agent", "ttl_until"],
     ),
