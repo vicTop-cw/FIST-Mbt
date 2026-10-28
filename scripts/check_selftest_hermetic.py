@@ -286,6 +286,19 @@ def classify_primitive(call, prim_name, sources, scratch, hit):
     attr = call.func.attr if isinstance(call.func, ast.Attribute) else ""
     if hit and all(h in scratch for h in hit):
         return "T"
+    # R115：**copy 类原语的源是读面、目标是写面**。原实现对所有 `shutil.*` 一律判 W，
+    # 于是 `shutil.copy(ROOT/x, td/y)` 这种「只读真仓、写临时目录」的合规夹具被记成
+    # 「写探针进真树」（实测 check_push_guard.py 3 处即此类假红）。
+    # `shutil.move` 的源会被**删除** ⇒ 不列入 copy 类，仍按写面算。
+    _COPY_FAMILY = ("shutil.copy", "shutil.copy2", "shutil.copyfile", "shutil.copytree")
+    if prim_name in _COPY_FAMILY and len(call.args) >= 2:
+        _dst = names_in(call.args[1]) & sources
+        _src = names_in(call.args[0]) & sources
+        if _dst:
+            return "T" if all(h in scratch for h in _dst) else "W"
+        if _src:
+            return "T" if all(h in scratch for h in _src) else "R"
+        return "S"
     is_write = (prim_name.startswith("shutil.") or prim_name in WRITE_PRIMITIVES
                 or attr in WRITE_METHODS)
     if prim_name in ("open", "io.open", "codecs.open") and any(c in mode_of(call) for c in "wa"):
