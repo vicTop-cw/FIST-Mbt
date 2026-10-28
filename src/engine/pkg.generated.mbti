@@ -144,6 +144,8 @@ pub fn schedule_task(String, n_files? : Int32) -> Json
 
 pub let scope_permissions : Array[PermissionRule]
 
+pub fn strict_challenge_denial(String, String) -> String?
+
 pub fn strip_plan_annotations(String) -> String
 
 pub fn verify_challenge_sig(String, String, String) -> Bool
@@ -156,6 +158,7 @@ pub enum AuthMode {
   Soft
   Strict
 } derive(Eq, @debug.Debug)
+pub fn AuthMode::to_string(Self) -> String
 
 pub struct DepsReport {
   state : DepsState
