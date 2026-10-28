@@ -46,6 +46,29 @@ else
   echo "[pre-commit] 警告：$GITLINK 不存在（不在仓库根？），跳过 gitlink 判据" >&2
 fi
 
+# ── 门：暂存面 scripts/*.py 的三条静态体检（E1 / A1 / A2）──────────────
+# 放这里的理由：本门**不依赖任何前置分支**（不像门 4 只在含 MoonBit 源时跑）。
+# 三条规则都来自本场实测（详见 scripts/_new_script_hygiene.py 头注释）：
+#   E1 = 打印中文却没带 stdout reconfigure 门（R63/R64 新增判据全中，红了两轮没人发现）；
+#   A1 = `if a != "--selftest"` 把**位置参数**判成未知（R65 的 12 把全中）；
+#   A2 = 用 `sys.argv`（含 argv[0]）判未知 ⇒ 脚本自身路径被当旗标 ⇒ 恒 rc=2。
+# 只判**本次暂存面**，不看全仓 ⇒ 不会被别的 lane 的 WIP 误拦。
+HYGIENE="scripts/_new_script_hygiene.py"
+if [ -f "$HYGIENE" ]; then
+  STAGED_PY_LIST="$(git diff --cached --name-only --diff-filter=ACM -- scripts/ | grep "\.py$" || true)"
+  if [ -n "$STAGED_PY_LIST" ]; then
+    echo "[pre-commit] 暂存脚本体检（尺子自证 + E1/A1/A2）..."
+    if ! "$PY" "$HYGIENE" --selftest >/dev/null; then
+      echo "error: _new_script_hygiene.py 自检失败——尺子本身坏了，拒绝提交" >&2
+      exit 1
+    fi
+    if ! printf "%s\n" "$STAGED_PY_LIST" | xargs "$PY" "$HYGIENE"; then
+      echo "error: 暂存脚本体检不通过 —— 提交被拒（按上方逐条修，别用 --no-verify 绕）" >&2
+      exit 1
+    fi
+  fi
+fi
+
 # ── 门 1/2：冲突标记 ────────────────────────────────────────────────────────────────
 MARKER="scripts/blackbox/check_merge_markers.py"
 if [ -f "$MARKER" ]; then
