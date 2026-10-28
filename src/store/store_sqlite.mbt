@@ -174,6 +174,13 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     "CREATE TABLE IF NOT EXISTS executors (name TEXT PRIMARY KEY, abilities_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT '')",
     // 分布式文件锁：scope 为主键，同一作用域只保留最新一笔
     "CREATE TABLE IF NOT EXISTS file_locks (scope TEXT PRIMARY KEY, lock_id TEXT NOT NULL DEFAULT '', batch_id TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', ts TEXT NOT NULL DEFAULT '', ttl_until TEXT NOT NULL DEFAULT '', meta TEXT NOT NULL DEFAULT '')",
+    // BUG-466：S3 challenge nonce **落库**（此前只在进程内 Map ⇒ 多实例部署时
+    // A 进程签发的票 B 进程消费不掉，"既有限制"变成硬阻碍）。
+    // 主键 (ns, agent_fp, nonce)：**ns 隔离** + **按 agent 归档** + **nonce 唯一**。
+    // `consumed` 用标记而不是删行 ⇒ 保留「这张票被用过」的审计证据
+    // （删行后无法区分「从未签发」与「已消费」，且并发下 UPDATE...WHERE consumed=0 的 rowcount
+    //  是**原子一次性消费**的唯一可靠判据）。
+    "CREATE TABLE IF NOT EXISTS agent_challenges (ns TEXT NOT NULL DEFAULT 'default', agent_fp TEXT NOT NULL DEFAULT '', nonce TEXT NOT NULL DEFAULT '', issued_at TEXT NOT NULL DEFAULT '', consumed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (ns, agent_fp, nonce))",
     // 锁违例记录（过期未续 / 被抢占），追加式
     "CREATE TABLE IF NOT EXISTS lock_violations (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', lock_id TEXT NOT NULL DEFAULT '')",
     // 项目助理登记（multi-agent-lock v3 阶段2）：agent 为主键，同一助理一行
@@ -910,6 +917,16 @@ impl Store for SqliteStore with fn clear(self) {
       ignore(
         db.exec(
           "CREATE TABLE IF NOT EXISTS executors (name TEXT PRIMARY KEY, abilities_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT '')",
+        ),
+      )
+      // BUG-466：S3 challenge nonce **落库**（此前只在进程内 Map ⇒ 多实例部署时
+      // A 进程签发的票 B 进程消费不掉）。主键 (ns, agent_fp, nonce)：
+      // **ns 隔离** + **按 agent 归档** + **nonce 唯一**。
+      // `consumed` 用标记而不是删行 ⇒ 保留「这张票被用过」的审计证据，
+      // 且 `UPDATE ... WHERE consumed=0` 的 rowcount 是**原子一次性消费**的唯一可靠判据。
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS agent_challenges (ns TEXT NOT NULL DEFAULT 'default', agent_fp TEXT NOT NULL DEFAULT '', nonce TEXT NOT NULL DEFAULT '', issued_at TEXT NOT NULL DEFAULT '', consumed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (ns, agent_fp, nonce))",
         ),
       )
       ignore(
