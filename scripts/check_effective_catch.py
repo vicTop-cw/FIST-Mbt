@@ -210,7 +210,7 @@ Finished. moon: ran 28 tasks, now up to date (85 warnings, 0 errors)
 
     ok = sum(1 for _n, g, w in cells if g == w)
     print("\n[selftest] %d/%d 格通过" % (ok, len(cells)))
-    return 0 if ok == len(cells) else 4
+    sys.exit(0 if ok == len(cells) else 4)  # NO_CALL_FACE J2：自检函数自己就是调用面
 
 
 def main(argv=None) -> int:
