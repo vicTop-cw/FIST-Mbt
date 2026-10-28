@@ -151,7 +151,7 @@ SPECIAL_CASES = [
     case("check_doc_surface.py"),
     case("check_doc_surface.py", "--selftest"),
     # —— R126：副机认领入口（docs/2026-10-20-slave-tasks.md）的自证尺。裸跑判「证据锚点指不指
-    #    得到真源 + 文首计数自述对不对」，--selftest 判「这把尺能不能发红」（22 格合成树：2026-10-28 补
+    #    得到真源 + 文首计数自述对不对」，--selftest 判「这把尺能不能发红」（24 格合成树：2026-10-28 补
     #    D4 文件级自述落后 2 格 + B6 整份文件无记号 2 格，其中 B6b 是抗漂移的**反向对照**）。
     #    手写点名两格而不靠自动补格：自动补格只补裸跑，自检格必须点名（本文件既有纪律）。
     case("check_slave_task_list.py"),

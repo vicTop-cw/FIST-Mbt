@@ -94,6 +94,11 @@ FILE_BARE_RE = re.compile(
 IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_./\-]{3,}")
 BACKTICK_RE = re.compile(r"`([^`]+)`")
 QUOTED_RE = re.compile(r"[\"“]([^\"”]{3,})[\"”]")
+# B7：整份文件级锚点的记号必须是**能钉住某一处**的——出现次数 ≤ 这个数。
+# 为什么要有上限：B6 只问「整份文件任意一行含这个记号」，于是 `FIXED` / `$rc` / `gated`
+# 这种在几百行文件里出现十几次的词也能让锚点变绿，可它钉不住任何一处 ⇒ 等于没指。
+# 上限取 3：留出「步骤名重复出现在 header 与 echo 两处」这类正常冗余，同时挡掉泛化词。
+WEAK_TOKEN_MAX = 3
 NOISE_TOKENS = {"true", "false", "none", "http", "https", "json", "mcp", "name", "path", "type",
                 "list", "impl", "utf", "github", "gitcode", "node", "file", "line", "code",
                 "serve", "temp", "docs", "src", "with", "that", "this", "from", "main", "test",
@@ -256,10 +261,21 @@ def collect_anchors(rows, root, tracked):
                      "tokens": toks, "ok": False, "code": u"B6", "why": u""}
                 if lines is None:
                     a["why"] = u"文件读不到，整份文件级锚点无法核对记号"
-                elif any(t in whole for t in toks):
-                    a["ok"] = True
                 else:
-                    a["why"] = u"整份文件 %d 行里一个记号都不含（指认的这件事不在这个文件里）" % len(lines)
+                    hit = [t for t in toks if t in whole]
+                    disc = [t for t in hit if whole.count(t) <= WEAK_TOKEN_MAX]
+                    if disc:
+                        a["ok"] = True
+                        a["token_pick"] = disc[0]
+                    elif hit:
+                        # 记号都在，但每个都泛化 ⇒ 钉不住具体那一处（B7）。
+                        worst = sorted(hit, key=lambda t: whole.count(t))[0]
+                        a["code"] = u"B7"
+                        a["why"] = (u"记号都在整份文件里，但最少的 `%s` 也出现 %d 次（>%d）"
+                                    u"——泛化记号钉不住具体那一处，等于没指"
+                                    % (worst, whole.count(worst), WEAK_TOKEN_MAX))
+                    else:
+                        a["why"] = u"整份文件 %d 行里一个记号都不含（指认的这件事不在这个文件里）" % len(lines)
                 content_n += 1
                 anchors.append(a)
         fileface[r["id"]] = bare
@@ -316,8 +332,8 @@ def evaluate(doc_text, rows, anchors, struct_n, content_n, fileface):
     for a in bad:
         viol.append(u"%s %s：%s:%s —— %s" % (a["code"], a["row"], a["file"], a["line"], a["why"]))
     for a in bad_ftok:
-        viol.append(u"B6 %s：%s —— %s（记号 %s）"
-                    % (a["row"], a["file"], a["why"],
+        viol.append(u"%s %s：%s —— %s（记号 %s）"
+                    % (a["code"], a["row"], a["file"], a["why"],
                        u" / ".join(u"`%s`" % t for t in a["tokens"][:3])))
     for a in content_bad:
         viol.append(u"B3 %s：%s:%s —— 锚点后括号点了记号 %s，那一行一个都不含（真读到的是：%s）"
@@ -470,6 +486,10 @@ def selftest():
     try:
         _write(os.path.join(base, "src", "a.mbt"),
                u"let alpha_marker = 1\nlet beta_marker = 2\n\n// gamma\n")
+        # B7 的样本：`repeat_marker` 出现 5 次（泛化，钉不住），`only_once_marker` 只 1 次。
+        _write(os.path.join(base, "src", "rep.mbt"),
+               u"// repeat_marker 1\n// repeat_marker 2\n// repeat_marker 3\n"
+               u"// repeat_marker 4\n// repeat_marker 5\nlet only_once_marker = 0\n")
         _write(os.path.join(base, ".github", "workflows", "ci.yml"),
                u"jobs:\n  step:\n    - name: Model-auth-no-key guard\n")
         doc = os.path.join(base, "docs", "list.md")
@@ -514,6 +534,16 @@ def selftest():
         cases.append((u"B6b 记号在别行也不误红（抗漂移）",
                       go(_doc(struct=0, content=1, rows=1,
                               evidence=u"`src/a.mbt`（`gamma`）")),
+                      0, None))
+        # B7 是 B6 的**变异对照**：同一个指认形状，只把记号换成在整份文件里出现 5 次的泛化词
+        # ⇒ 必须红。只测 B6/B6b 的话，「随便给个到处都有的词」也能把锚点钉绿，尺等于没看。
+        cases.append((u"B7 泛化记号（整份文件里出现太多次）必红",
+                      go(_doc(struct=0, content=1, rows=1,
+                              evidence=u"`src/rep.mbt`（`repeat_marker`）")),
+                      1, u"泛化记号钉不住"))
+        cases.append((u"B7b 唯一记号不误红（反向对照）",
+                      go(_doc(struct=0, content=1, rows=1,
+                              evidence=u"`src/rep.mbt`（`only_once_marker`）")),
                       0, None))
         cases.append((u"C1c 已落地只指不存在的文件必红",
                       go(_doc(struct=0, content=0, rows=1, evidence=u"`src/gone.mbt` 整份在场")),
