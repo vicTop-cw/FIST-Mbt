@@ -170,10 +170,19 @@ def selftest():
         sys.exit(2)  # NO_CALL_FACE J2
     cells.append(("empty-role-table-selfrefuse", ok7))
 
-    # 8) 真源码阳性对照：现状读数必须 == 棘轮上限（上限烂掉比没上限更贵）
+    # 8) 真源码校准：**上限不得宽于实测**（上限烂掉比没上限更贵）。
+    #
+    #    ⚠️ 这一格原来写的是「实测 == 上限」——那等于把「债没还完」也算成「尺子坏了」：
+    #    只要 N1/N2 超上限，`--selftest` 就返 rc=2「判据无法自证」，而真相是**判据工作正常、
+    #    只是对象有债**。判例-32 明令：「判据自己的腐烂与对象的陈旧是两种结论，混为一谈会让
+    #    下一个人去修错的东西」。⇒ 债由**主路径**报 FAIL（rc=1），自检只负责证明尺子能咬。
+    #
+    #    改成 >= 后原意完整保留且更精确：
+    #      · 上限 > 实测 ⇒ 上限比现实松（有人还了债忘降上限）⇒ 红
+    #      · 上限 <= 实测 ⇒ 上限仍在卡着 ⇒ 绿（债由主路径报）
     real_n1, real_n2 = census(top, prefixes, suffixes)
-    cells.append(("real-ceiling-matches-measured",
-                  len(real_n1) == N1_CEILING and len(real_n2) == N2_CEILING))
+    cells.append(("real-ceiling-not-looser-than-measured",
+                  len(real_n1) >= N1_CEILING and len(real_n2) >= N2_CEILING))
 
     # 9) 子目录点名必须按 basename 分类：`blackbox/check_foo.py` 已带角色，不许算成债；
     #    同一条路径里的 `-` 也不许算进 N2（那是目录名，不是模块名）。
