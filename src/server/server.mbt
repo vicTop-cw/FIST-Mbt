@@ -2081,6 +2081,10 @@ pub async fn run_server() -> Unit {
         )
       }
       let by = get_str(args, "by", default="human_steward")
+      match agent_write_gate(eng, acl_claim_identity(by, by), ns) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
+        Ok(_) => ()
+      }
       let ts = now_default()
       let inject = get_str(args, "inject")
       // 先执行拆解拿 ids
@@ -2321,16 +2325,28 @@ pub async fn run_server() -> Unit {
         "namespace": string_prop(
           "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库）",
         ),
+        "agent": string_prop(
+          "可选：ACL 判定身份（缺省空 ⇒ manual；内存后端放行，sqlite 面需该身份在本 ns 有 can_write=1，否则拒绝）",
+        ),
       },
       ["task_id"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
+      let ns = get_str(args, "namespace", default="default")
       let eng = match
-        engine_for_ns(get_str(args, "namespace", default="default")) {
+        engine_for_ns(ns) {
         Ok(e) => e
         Err(m) => return Err(m)
+      }
+      // BUG-471 批 2：**质量闸门**的身份门 —— 与 `verify` 对称。
+      // `submit` 是「交付方盖章说『我做完了，请验收』」，与 `verify` 同属质量闸门；
+      // 二者都是「对任务结论负责」的写操作 ⇒ 同一道 ACL 写门。
+      let agent = get_str(args, "agent")
+      match agent_write_gate(eng, acl_claim_identity(agent, agent), ns) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
+        Ok(_) => ()
       }
       to_result(eng.submit(task_id~, now=ts))
     },
@@ -2534,6 +2550,10 @@ pub async fn run_server() -> Unit {
       }
       let reason = get_str(args, "reason", default="")
       let by = get_str(args, "by", default="human_steward")
+      match agent_write_gate(eng, acl_claim_identity(by, by), ns) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
+        Ok(_) => ()
+      }
       let ts = now_default()
       to_result(eng.reject_task(task_id~, reason~, by~, now=ts))
     },
@@ -2548,6 +2568,9 @@ pub async fn run_server() -> Unit {
         "namespace": string_prop(
           "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
         ),
+        "agent": string_prop(
+          "可选：ACL 判定身份（缺省空 ⇒ manual；内存后端放行，sqlite 面需该身份在本 ns 有 can_write=1，否则拒绝）",
+        ),
       },
       ["task_id"],
     ),
@@ -2557,6 +2580,11 @@ pub async fn run_server() -> Unit {
       let eng = match engine_for_ns(ns) {
         Ok(e) => e
         Err(m) => return Err(m)
+      }
+      let agent = get_str(args, "agent")
+      match agent_write_gate(eng, acl_claim_identity(agent, agent), ns) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
+        Ok(_) => ()
       }
       let ts = now_default()
       to_result(eng.retry_task(task_id~, now=ts))
@@ -2572,6 +2600,9 @@ pub async fn run_server() -> Unit {
         "namespace": string_prop(
           "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
         ),
+        "agent": string_prop(
+          "可选：ACL 判定身份（缺省空 ⇒ manual；内存后端放行，sqlite 面需该身份在本 ns 有 can_write=1，否则拒绝）",
+        ),
       },
       ["task_id"],
     ),
@@ -2581,6 +2612,11 @@ pub async fn run_server() -> Unit {
       let eng = match engine_for_ns(ns) {
         Ok(e) => e
         Err(m) => return Err(m)
+      }
+      let agent = get_str(args, "agent")
+      match agent_write_gate(eng, acl_claim_identity(agent, agent), ns) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
+        Ok(_) => ()
       }
       let ts = now_default()
       match eng.reopen_task(task_id, ts) {
@@ -2599,6 +2635,9 @@ pub async fn run_server() -> Unit {
         "namespace": string_prop(
           "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
         ),
+        "agent": string_prop(
+          "可选：ACL 判定身份（缺省空 ⇒ manual；内存后端放行，sqlite 面需该身份在本 ns 有 can_write=1，否则拒绝）",
+        ),
       },
       ["task_id"],
     ),
@@ -2608,6 +2647,11 @@ pub async fn run_server() -> Unit {
       let eng = match engine_for_ns(ns) {
         Ok(e) => e
         Err(m) => return Err(m)
+      }
+      let agent = get_str(args, "agent")
+      match agent_write_gate(eng, acl_claim_identity(agent, agent), ns) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
+        Ok(_) => ()
       }
       let ts = now_default()
       to_result(eng.pause_task(task_id~, now=ts))
@@ -2623,6 +2667,9 @@ pub async fn run_server() -> Unit {
         "namespace": string_prop(
           "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
         ),
+        "agent": string_prop(
+          "可选：ACL 判定身份（缺省空 ⇒ manual；内存后端放行，sqlite 面需该身份在本 ns 有 can_write=1，否则拒绝）",
+        ),
       },
       ["task_id"],
     ),
@@ -2632,6 +2679,11 @@ pub async fn run_server() -> Unit {
       let eng = match engine_for_ns(ns) {
         Ok(e) => e
         Err(m) => return Err(m)
+      }
+      let agent = get_str(args, "agent")
+      match agent_write_gate(eng, acl_claim_identity(agent, agent), ns) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
+        Ok(_) => ()
       }
       let ts = now_default()
       to_result(eng.resume_task(task_id~, now=ts))
