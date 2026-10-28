@@ -68,7 +68,7 @@
 
 | # | 任务 | 分支名 | 状态 | 现读证据（对账时点 `08e540bf`） | 主机账本 bug_id | 参考 plan | 验收标准 |
 |---|---|---|---|---|---|---|---|
-| WEB-01 | 任务看板（board_ascii 可视化 + DAG 图） | `feature/web-dashboard-board` | `部分` | 面板已在场：`web/index.html:47`「任务树 / DAG」，副标「按深度缩进 · 点击行查看详情」在同行的 `<span class="sub">` 里，渲染 `web/app.js:140`（`renderTaskTreeHTML`）+ `web/app.js:75`（`renderStatusBarHTML` 状态分组 = 看板分组）+ `web/app.js:333`（详情面板）。**缺口**：DAG 只到文本行（`web/app.js:370`「DAG 依赖」标题 + `web/app.js:371` 上下游 `depends_on` 列表），未渲染 `dag_ascii`；`web/app.js` 内 `board` 关键字 0 命中 ⇒ 与 `board_ascii` 的分组/难度标注口径各写一份，未收口 | 新 | `docs/2026-10-12-fist-mbt-web-dashboard-plan.md` | 纯 HTML/JS 静态页；fetch MCP HTTP 端点 |
+| WEB-01 | 任务看板（board_ascii 可视化 + DAG 图） | `feature/web-dashboard-board` | `部分` | 面板已在场：`web/index.html:55`「任务树 / DAG」，副标「按深度缩进 · 点击行查看详情」在同行的 `<span class="sub">` 里，渲染 `web/app.js:141`（`renderTaskTreeHTML`）+ `web/app.js:76`（`renderStatusBarHTML` 状态分组 = 看板分组）+ `web/app.js:335`（详情面板）。**缺口**：DAG 只到文本行（`web/app.js:372`「DAG 依赖」标题 + `web/app.js:373` 上下游 `depends_on` 列表），未渲染 `dag_ascii`；`web/app.js` 内 `board` 关键字 0 命中 ⇒ 与 `board_ascii` 的分组/难度标注口径各写一份，未收口 | 新 | `docs/2026-10-12-fist-mbt-web-dashboard-plan.md` | 纯 HTML/JS 静态页；fetch MCP HTTP 端点 |
 | WEB-02 | 状态流转 + 健康卡 + 脉冲三页 | `feature/web-dashboard-health` | `未开工` | `web/` 只有 4 个跟踪文件（`index.html` 76 行 / `app.js` 565 行），`index.html` 只有 2 个 `<h2>`（任务树、任务详情）；`app.js` 无 `state_flow_ascii` / `project_health` / `health_check` 视图，`:234` 只是防御式取 `status_summary` 计数 ⇒ 三页全无 | 新 | 同上 | 同上 |
 
 ---
