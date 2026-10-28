@@ -160,6 +160,12 @@ test "candidates_to_tsv_lines 替换 Tab 防破坏" {
   let parts = lines[0].split("\t").to_array()
   // name 里的 Tab 被替换成空格，所以 parts 仍是 4 个
   assert_eq(parts.length(), 4)
+  // R150：**多个 Tab 必须全替** —— 原实现用 `replace` 只替首个，第二个 Tab 会把 TSV 拆成 5 段
+  // （docstring 明写「防止破坏行解析」，这正是它承诺要防的）。
+  let cands2 = [analyze_candidate("a\tb\tc", "t", "gh", "m")]
+  let tsv2 = candidates_to_tsv_lines(cands2)
+  let parts2 = tsv2.split("\n").to_array()[0].split("\t").to_array()
+  assert_eq(parts2.length(), 4)
 }
 
 ///|

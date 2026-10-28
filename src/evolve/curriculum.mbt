@@ -200,7 +200,8 @@ pub fn is_distillable(score : Double, note : String) -> Bool {
 pub fn derive_skill_name(_goal : String, note : String) -> String {
   // 取 note 的前 8 个字符作为 skill 名前缀
   let prefix = if note.length() > 8 { note[0:8].to_owned() } else { note }
-  let cleaned = prefix.trim().replace(old=" ", new="_").to_owned()
+  // R150：`replace` 只替首个空格 ⇒ skill 名里残留空格（名不是合法标识符）。改 `replace_all`。
+  let cleaned = prefix.trim().replace_all(old=" ", new="_").to_owned()
   "skill_" + cleaned
 }
 

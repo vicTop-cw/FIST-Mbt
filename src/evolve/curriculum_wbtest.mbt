@@ -100,6 +100,15 @@ test "distill_skill 不可蒸馏返回 None" {
 }
 
 ///|
+///|
+/// R150：**多个空格必须全替** —— 原实现用 `replace` 只替首个 ⇒ skill 名里残留空格
+/// （skill 名是要给下游当标识符用的，含空格就废了）。
+test "derive_skill_name 多空格全替" {
+  let name = derive_skill_name("g", "a b c d e")
+  assert_true(!name.contains(" "))
+  assert_true(name.has_prefix("skill_"))
+}
+
 test "derive_skill_name 前缀截取" {
   let name = derive_skill_name("goal", "一二三四五六七八九十")
   assert_true(name.contains("skill_"))
