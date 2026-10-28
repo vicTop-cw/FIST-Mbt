@@ -70,11 +70,21 @@ test "test_crypto_seeds_are_usable" {
   //    它正是 `verify_challenge_sig` 内部调的那个函数（见 engine_rsv.mbt 的同源注释）。
   let msg = "bug468-fixture-selftest"
   let pk_a_bytes = @mooncry.ed25519_public_key(TEST_ED25519_SEED_A)
-  let sig_a_bytes = @mooncry.ed25519_sign(TEST_ED25519_SEED_A, @utf8.encode(msg))
-  assert_true(@mooncry.ed25519_verify(pk_a_bytes, @utf8.encode(msg), sig_a_bytes))
+  let sig_a_bytes = @mooncry.ed25519_sign(
+    TEST_ED25519_SEED_A,
+    @utf8.encode(msg),
+  )
+  assert_true(
+    @mooncry.ed25519_verify(pk_a_bytes, @utf8.encode(msg), sig_a_bytes),
+  )
   // 反向：用 B 签的签名不能被 A 的公钥验过
-  let sig_b_bytes = @mooncry.ed25519_sign(TEST_ED25519_SEED_B, @utf8.encode(msg))
-  assert_false(@mooncry.ed25519_verify(pk_a_bytes, @utf8.encode(msg), sig_b_bytes))
+  let sig_b_bytes = @mooncry.ed25519_sign(
+    TEST_ED25519_SEED_B,
+    @utf8.encode(msg),
+  )
+  assert_false(
+    @mooncry.ed25519_verify(pk_a_bytes, @utf8.encode(msg), sig_b_bytes),
+  )
 }
 
 ///|

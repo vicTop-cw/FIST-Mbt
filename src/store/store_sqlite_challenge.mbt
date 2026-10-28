@@ -26,6 +26,7 @@
 /// 而 `UPDATE ... WHERE consumed=0` 的 rowcount 精确表达「**我是那个把它从 0 变 1 的人**」。
 /// ══════════════════════════════════════════════════════════════════════════
 ///
+
 ///|
 /// 签发一张 challenge（落库）。`INSERT OR IGNORE` ⇒ 重复签发同 nonce 幂等。
 pub fn SqliteStore::challenge_issue(
@@ -42,13 +43,23 @@ pub fn SqliteStore::challenge_issue(
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: challenge_issue")
         Some(stmt) => {
-          ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))))
           ignore(
-            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_fp))),
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
           )
-          ignore(stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, nonce))))
           ignore(
-            stmt.bind(4, @sqlite.SqlValue::Text(@encoding.encode(UTF8, issued_at))),
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_fp)),
+            ),
+          )
+          ignore(
+            stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, nonce))),
+          )
+          ignore(
+            stmt.bind(
+              4,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, issued_at)),
+            ),
           )
           // ⚠️ **必须用 `execute()` 而不是 `step()`**：
           //   `Statement::step()` 返回「有没有下一行结果」——INSERT/UPDATE/DELETE
@@ -88,11 +99,18 @@ pub fn SqliteStore::challenge_consume(
       match db.prepare(sql) {
         None => false
         Some(stmt) => {
-          ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))))
           ignore(
-            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_fp))),
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
           )
-          ignore(stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, nonce))))
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_fp)),
+            ),
+          )
+          ignore(
+            stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, nonce))),
+          )
           // ⚠️ UPDATE 无结果行 ⇒ 必须 `execute()`（见 challenge_issue 的长注释）。
           let ok = stmt.execute()
           stmt.finalize()
@@ -154,9 +172,14 @@ pub fn SqliteStore::challenge_pending_count(
       match db.prepare(sql) {
         None => 0
         Some(stmt) => {
-          ignore(stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))))
           ignore(
-            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_fp))),
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_fp)),
+            ),
           )
           let mut n = 0
           if stmt.step() {

@@ -36,7 +36,8 @@ test "cw_01_six_tools_have_no_challenge_and_no_role_consumer" {
     let blk = cw_tool_block(srv, tool)
     if cw_code_has(blk, "\"challenge\": string_prop") {
       abort(
-        tool + " 又声明了 challenge —— 但它的引擎没有角色消费点（死参数）。" +
+        tool +
+        " 又声明了 challenge —— 但它的引擎没有角色消费点（死参数）。" +
         "要么先给引擎加 judged_role 门，再接 challenge。",
       )
     }
@@ -59,7 +60,12 @@ test "cw_01_six_tools_have_no_challenge_and_no_role_consumer" {
     for needle in ["judged_role_gated(", "judged_role_with_nonce("] {
       if cw_code_has(body, needle) {
         abort(
-          label + " 的 " + sig + " 里出现了 `" + needle + "` —— " +
+          label +
+          " 的 " +
+          sig +
+          " 里出现了 `" +
+          needle +
+          "` —— " +
           "它已接入角色取数面！那就**应该**接 challenge 了（并更新本文件）。",
         )
       }
@@ -79,19 +85,18 @@ test "cw_01_six_tools_have_no_challenge_and_no_role_consumer" {
 /// 若将来某个目标工具的引擎真加了角色门 ⇒ 本格红 ⇒ 提醒「六工具该重评」。
 test "cw_02_consumer_whitelist_excludes_six_tools" {
   let targets = [
-    "execute_with_meta", "submit", "verify", "reject_task", "retry_task",
-    "archive_force", "archive",
+    "execute_with_meta", "submit", "verify", "reject_task", "retry_task", "archive_force",
+    "archive",
   ]
   for f in ["src/engine/engine.mbt", "src/engine/engine_rsv.mbt"] {
-    let src = @fs.read_file_to_string(f) catch {
-      _ => abort("读不到 " + f)
-    }
+    let src = @fs.read_file_to_string(f) catch { _ => abort("读不到 " + f) }
     for t in targets {
       // 逐个可能的签名形态找（找不到就跳过，不失败）
-      for sig in [
-        "pub fn FistEngine::" + t + "(",
-        "pub fn FistEngine::" + t + " (",
-      ] {
+      for
+        sig in [
+          "pub fn FistEngine::" + t + "(",
+          "pub fn FistEngine::" + t + " (",
+        ] {
         let body = cw_func_body(src, sig)
         if body.length() == 0 {
           continue
@@ -99,7 +104,12 @@ test "cw_02_consumer_whitelist_excludes_six_tools" {
         for needle in ["judged_role_gated(", "judged_role_with_nonce("] {
           if cw_code_has(body, needle) {
             abort(
-              f + " 的 " + t + " 里出现了 `" + needle + "` —— " +
+              f +
+              " 的 " +
+              t +
+              " 里出现了 `" +
+              needle +
+              "` —— " +
               "消费点清单变了，六工具「不该接 challenge」的结论**需要重新评审**。",
             )
           }
@@ -123,7 +133,8 @@ test "cw_03_ts_descriptions_state_server_stamped" {
     let blk = cw_tool_block(srv, tool)
     if not(cw_code_has(blk, "服务端盖章")) {
       abort(
-        tool + " 的 ts 描述里没有「服务端盖章」字样 —— " +
+        tool +
+        " 的 ts 描述里没有「服务端盖章」字样 —— " +
         "它是 C 类设计如此（BUG-33），描述必须让调用方知道传了也无效。",
       )
     }
@@ -152,7 +163,7 @@ fn cw_code_has(raw : String, needle : String) -> Bool {
 }
 
 ///|
-fn cw_count_code(raw : String, needle : String) -> Int {
+fn cw_count_code(raw : String, needle : String) -> Int32 {
   let hay = cw_code_only(raw)
   let h = hay.to_array()
   let nd = needle.to_array()
@@ -223,7 +234,7 @@ fn cw_func_body(src : String, sig : String) -> String {
 }
 
 ///|
-fn cw_find(hay : String, needle : String, from : Int) -> Int? {
+fn cw_find(hay : String, needle : String, from : Int32) -> Int32? {
   let h = hay.to_array()
   let nd = needle.to_array()
   if nd.length() == 0 || nd.length() > h.length() {
@@ -249,7 +260,7 @@ fn cw_find(hay : String, needle : String, from : Int) -> Int? {
 }
 
 ///|
-fn cw_slice(s : String, from : Int, to : Int) -> String {
+fn cw_slice(s : String, from : Int32, to : Int32) -> String {
   let a = s.to_array()
   let lo = if from < 0 { 0 } else { from }
   let hi = if to > a.length() { a.length() } else { to }

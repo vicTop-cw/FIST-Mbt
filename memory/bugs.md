@@ -10485,9 +10485,12 @@ Beta 核完发现：`verify` 不经过角色取数面 ⇒ **给它接 `challenge
 - detail: **拆自 BUG-430**（430 主条已 FIXED，关闭范围 = 认证基础设施建成且可用；本条是**覆盖面缺口**，不是同一缺陷）。**实测**：工具面 156 个中仅 5 个声明 `challenge`（`plan` / `claim` / `reserve_scope` / `lock_acquire` / `agent_register_key`，其中后者是登记面用 `proof_sig`）⇒ **3.2%**。而 `execute` / `submit` / `verify` / `reject` / `retry` / `archive` **全部无 `challenge`** ⇒ 一个已登记公钥的 agent 在 claim 时会被软强制降级，但「记录交付物 / 提交验收 / 验收 / 打回 / 重试 / 归档」**全部无需认证**。**危害**：S3 保护了生命周期前半段（谁领活儿），后半段（干得怎么样、验收过不过）仍是自报 —— 而验收恰恰是权限最敏感的一步（BUG-467 已单点为 verify 加了身份门，但其余五个仍未覆盖）。**关闭条件（三格，说清差什么）**：(1) 上述六个工具**全部声明 `challenge` + `challenge_sig`**；(2) 每条路径的回执 `action` 面能表达 `+challenge_verified` / `+challenge_required`（复用 `auth_tag` 单一真源）；(3) 有锁证明「已登记公钥的 agent 在这六个工具上不传 challenge ⇒ 降级或拒绝」，且**变异对照真跑**。**注意**：`verify` 已在 BUG-467 加了「谁是验收人」的身份门（但那是 ACL 维度，不是 S3 挑战维度，两者不替代）。**附带**：`challenge` 与 `challenge_sig` 声明数不一致（5 vs 4，`agent_register_key` 用 `proof_sig` 故差异合理）——统计时勿误读成「5 个受保护工具」。报告 `reports/2026-10-28-bug430-final-verdict.md`。
 
 - false_positive(2026-10-28T11:48:04Z): commit aa793252（代码+锁+判据）+ 0c8684a9（报告）。核心事实：challenge 的唯一消费者是 judged_role_gated / judged_role_with_nonce，全仓生产消费点只有 FistEngine::claim + rsv_set/rsv_try_set/locks_try_acquire/challenge_pending_count，六个目标工具（execute/submit/verify/reject/retry/archive）一个都不在清单里 ⇒ 接了就是死参数（判例-29 第三种假接线）。逐工具：execute 用 execute_with_meta（R23 已证不经过角色面，本单复核仍成立）；submit/verify/reject_task/retry_task/archive_force 全部无角色取数。verify 特别说明：BUG-467 加的是 ACL 门不是角色门 —— ACL 问能不能写、challenge 问你是谁，ACL 不需要签名。14 个生命周期工具的 S3 最终覆盖面：真受 S3（challenge 验签）1 个（claim）、有身份门但无 S3 11 个、特权路径 2 个 ⇒ 只有 claim 真受 S3 保护，剩 13 个不需要因为不判角色。变异对照两轮真跑：M1 给 execute schema 加回 challenge ⇒ 535/536 cw_01 精确打红；M2 给 reject_task 加 judged_role_gated ⇒ 534/536 cw_01+cw_02 双双打红（M2 证明双向断言的价值：只断 schema 不会红、只断引擎也不够）。门禁：moon check 0 errors；src/server+src/engine 872/872/0。附带修了死参数判据的一个误报：loop_create.items 是 steps 的 JSON Schema 数组元素声明（给客户端看的）不是工具顶层入参，旧判据 declared() 用正则扫整段 schema 不区分嵌套层级 ⇒ 误判；修法新增 _top_level_pairs() 用括号深度跟踪只在深度 1 收集。判据最终读数：工具块 354、含 schema 声明的工具 88、读取干净 23、opaque 13、死参数 0、设计如此 2（lock_acquire.ts / lock_renew.ts 已改成「时间戳由服务端盖章（BUG-33），此字段不接受覆盖」），rc=0，selftest 14/14。缺口：opaque 的 13 个工具判据看不见（handler 整包透传 args），可能仍有死参数 —— 已知边界不是零风险。
-## BUG-470 [2026-10-28T09:53:45Z] [medium] OPEN
+## BUG-470 [2026-10-28T09:53:45Z] [medium] FIXED
 - summary: [authz] 认证仍非默认要求 —— 83.3% 的 agent 无公钥，软强制降权不触发（拆自 BUG-430）
 - detail: **拆自 BUG-430**（本条是**产品决策**，不是技术缺陷）。**实测**：产品库 `fist-mbt.db` 6 个 agents 中仅 **1 个有公钥**（16.7%）⇒ 软强制降权（有公钥 + 不传 challenge ⇒ role 降 Executor + `challenge_required`）**只对那 1 个 agent 生效**，其余 5 个完全不受影响，仍按自报角色放行。**⇒ 「存在一条无法自报的路径」≠「调用方被要求走那条路」**：截至本条，S3 是**可选加入**的，不是默认要求。**为什么不是简单改默认**：直接「默认拒绝」会让现网 83.3% 的调用方立刻失败（它们连公钥都没有，取不到票）⇒ 一刀切等于停摆。**关闭条件（三格，需 owner 拍板）**：(1) 存在**批量登记公钥**的运维路径（否则「默认要求」无法推行）；(2) owner 明确选择「默认拒绝」还是「默认降权」（两者对现网影响差一个量级）；(3) 有一条**可回滚的开关**（避免一刀切停摆，出问题能立刻退回）。**本条不是 bug 而是方向**：在 owner 决策前不应动手，动手前必须有回滚方案。报告 `reports/2026-10-28-bug430-final-verdict.md`。
+
+### FIXED(2026-10-28T12:29:52Z / BUG-470)
+- evidence: commit b85c566a（5 文件）+ owner 裁决 cdf6244c。owner 于 2026-10-28 选择策略 B（默认降权），决策单 docs/plans/2026-10-28-bug470-owner-decision.md 已定案、裁决记录 docs/plans/decisions/2026-10-28-bug470.md。实现：src/engine/auth_mode.mbt 新增 pub enum AuthMode { Off, Soft, Strict } + auth_mode_parse（纯函数唯一判定面）+ auth_mode()（唯一 env 读取点，进程内缓存）。三档接入 judged_role_gated 的 None 分支：Off = 修前行为逐字保持（有钥匙降权 / 无钥匙自报）；Soft = 无钥匙也降权（owner 批准的 B）；Strict = 返回专用 challenge_missing 标签。派单理解经核实成立：off 不是完全关闭认证，S3 第九段的「有钥匙不传⇒降权」在 off 下仍生效，off 关的只是「对无钥匙者也降权」那一层。五格锁：A 解析规则+非法值回退 off、B 非法值才有 warning、C off 逐字零回归（有钥匙两字段逐字 / 无钥匙与 judged_role 全等）、D soft≠off 差别只在无钥匙支、E strict 用专用 challenge_missing。变异两处真跑：默认值 off→soft ⇒ 341→340/1 failed（锁 A）；非法值回退 off→strict ⇒ 341→340/1 failed（锁 A）；恢复后 341/341。回滚实测：FIST_AUTH_MODE=soft 切到B 8.69 秒、FIST_AUTH_MODE=off 回滚 0.95 秒、不设（launcher 默认 off）0.85 秒 —— 0.95 秒是改 env 到确认恢复的真实墙钟不是估算（承诺 <10 秒）。启动器注入：serve-launcher.cjs 加 DEFAULT_AUTH_MODE=off + authEnv()，网关 spawn 注入，已备份 .bak-bug470，node -c 通过；.mcp.json 不加 env（否则两个真源）。MoonBit 两个限制已规避：顶层 let mut 不支持（Error 4074）⇒ 用单元素 Array[String] 当可变槽；trim() 返回 StringView ⇒ 需 to_string()。文档同批：AGENTS.md 已知边界段加三档表 + off 定义 + 非法值回退理由 + 默认值写在启动器 + 回滚 0.95 秒 + 读一次即缓存。测试：src/engine 341/341；moon check 0 errors；全量 1825/1825/0。诚实边界：strict 尚未在门层真正拒绝（只到专用标签+降权，效果接近 soft），已加 auth_mode_startup_warning() 专门告警；启用 strict 前必须先补门层拒绝，已单开 BUG-476。
 ## BUG-471 [2026-10-28T09:59:41Z] [high] FIXED
 - summary: [gate] 9 个生命周期工具无任何身份门（BUG-467 同族）：delete/archive/submit/reject/retry/pause/resume/reopen_task/plan
 - detail: 【按形状搜的普查结果】机械扫描 server.mbt 的 14 个生命周期工具代码面（跳注释），检测 8 种身份门形态。
@@ -10547,7 +10550,7 @@ sqlite 面 manual 无 can_write ⇒ 被拒（fail-closed），正是所需。
 - reported_by: commander-gamma
 
 - false_positive(2026-10-28T10:59:17Z): Beta 复核推翻（Lane CR，c4463d61）：Gamma 的死参数探针只检查 handler 的文本字面量，但身份解析在辅助函数里 —— server.mbt:833 fn execute_write_identity 的第 11-12 行是 acl_execute_identity(get_str(args, "agent"), executor, acl_arg_given(args,"executor"), task_assignee)，agent 真的被读了；handler:53 的 let who = execute_write_identity(...) + agent_write_gate(eng, who, ns) 让门真的用了 who。实现与 BUG-436 描述的推断链完全一致，描述与实现没有矛盾。⇒ 探针口径缺陷（判例-32 同族）：只查 handler 不跟踪辅助函数会误报。Beta 自己也犯过同类错（用起始行+230 窗口扫 agent_register_key，漏掉第 270 行的 get_str(args,"proof_sig")，一度把正确实现判成死参数）。已加 cr_03 锁断言两段（handler 调用链 + 辅助函数读取）防复发。
-## BUG-474 [2026-10-28T11:39:09Z] [high] OPEN
+## BUG-474 [2026-10-28T11:39:09Z] [high] FALSE_POSITIVE
 - summary: [S1] publish_parallel 的 created_by 无硬检查 —— 与 publish 不对称，任何调用方可在任意非 default ns 并行发布（Lane CX 独立验证发现）
 - detail: Gamma 独立验证 BUG-471 的「14/14 有身份门」时发现的不对称：
 
@@ -10584,3 +10587,71 @@ server.mbt:805 的 agent_write_gate 有  —— 内存后端**直接放行**。
 生产走 sqlite（server.mbt:10/137 确证），但 FistEngine::new() 默认是 memory（engine.mbt:20）⇒ CLI 直调/测试下 14 个门全不拦。
 建议表述改为「**sqlite 后端下 14/14 有生效的身份门**」。这不是 bug（内存后端无持久化 ACL 面是设计），但**引用时必须带条件**。
 - reported_by: commander-gamma
+
+- false_positive(2026-10-28T12:04:44Z): Beta 复核推翻（Lane DA，1a43922d）。派单的核心前提不成立：① 两者 ns 权限完全相同 —— publish 在 handler 层用 ns_write_gate 限制，publish_parallel 在引擎层 engine.mbt:1054 用自身限制，两者都拒 default、都能写任意非 default ns，所以「publish_parallel 影响所有命名空间」不成立；② 补检查会打断 3 条生产路径 —— ops_selfdrive.mbt:782 的 created_by=selfdrive（自驱主链）、bugreport.mbt:355 的 created_by（report_bug publish_task=true）、server.mbt:2014 的调用方自报（工具缺省值就是 selfdrive），补上 publish 那套检查三条全部立刻 Err；③ 加检查的安全收益为 0 —— @core.Task 没有 created_by 字段（grep core_task.mbt 零命中）⇒「谁发布的」根本没落库 ⇒ 硬检查只能拦名字写错、拦不住身份冒充（填 human_steward 就过），仍是 S1 同族。判据：一道检查的价值 = 它挡住的风险 − 它打断的功能；两者挡住的风险相同（都只比较字符串），打断的功能完全不同（publish 零代价 vs publish_parallel 断 3 条链）—— 这不是双标而是同一道门在不同调用语境下成本不同。且 publish_parallel 强制 ns != default ⇒ 调用方必须先 store_open 专属 ns ⇒ 真正的边界是 ns 不是 created_by。另核 dag_publish 已有硬检查（publish_with_deps:1891）不是缺陷。本单未改任何代码。衍生：@core.Task 无 created_by 字段 ⇒ 审计缺失，这比无检查更值得修，已单开 BUG-475。
+## BUG-475 [2026-10-28T12:04:45Z] [high] OPEN
+- summary: [audit] @core.Task 无 created_by 字段 —— 「谁发布的」根本没落库，导致审计缺失且所有 created_by 硬检查都无意义
+- detail: Beta 复核 BUG-474 时发现的更深层缺陷（Lane DA，1a43922d）。
+
+## 事实
+
+grep -n created_by src/core/core_task.mbt ⇒ 零命中。
+@core.Task 结构体没有 created_by 字段。
+
+⇒ engine.publish 的 created_by 硬检查（engine.mbt:46 要求 human_steward/human）只能拦「名字写错」，拦不住「身份冒充」（填 human_steward 就过），而且「谁发布的」这个事实**根本没有被保存**。
+
+## 为什么这比「无检查」更严重
+
+- 「无检查」= 我们知道有风险，只是没防
+- **「不落库」= 事后审计也查不出来** —— 出事了无法回答「这条任务是谁发布的」
+
+## 具体后果
+
+1. BUG-464（created_by 自报）的 root cause 不是「没检查」而是「检查了也没用」
+2. BUG-474 被推翻的 root cause 也是这个 —— 加检查的收益为 0 因为字段不存在
+3. publish / publish_parallel / dag_publish 三处的 created_by 都只是「丢弃前的一次字符串比较」
+4. 任何「谁发起、谁发布、谁批准」的事后追溯都不可能
+
+## 建议
+
+1. @core.Task 加 created_by 字段 + store 层落库 + 旧库迁移（照 ensure_level_column 的 PRAGMA 探测模式）
+2. 落库后 created_by 才有审计价值，S3 签名认证才有挂载点
+3. 补一条「Task 的溯源字段必须落库」的判据
+
+## 关系
+
+- 与 BUG-464（created_by 自报）是**因果**关系：464 说「无法验证」，本条说「**连记录都没有**」
+- 与 BUG-472/473（死参数）不同：那两处是参数被忽略，本条是**字段根本不存在**
+- reported_by: lead(Beta 复核衍生)
+## BUG-476 [2026-10-28T12:30:05Z] [medium] OPEN
+- summary: [authz] FIST_AUTH_MODE=strict 尚未在门层真正拒绝 —— 效果接近 soft，但会让人以为已经严格了
+- detail: Alpha 在 BUG-470 落地报告里主动披露的诚实边界（Lane CZ，b85c566a）。
+
+## 事实
+
+本版 strict 只做到「返回专用 challenge_missing 标签 + 降权」，各门消费者（rsv_set / rsv_try_set / locks_try_acquire / claim）还没据此硬拒 ⇒ 实际效果接近 soft。
+
+已加 auth_mode_startup_warning()：设了 strict 会提示「本版 strict 尚未真正拒绝，不要以为已经严格了」。
+
+## 为什么值得单开而不是塞在 BUG-470 里
+
+「以为自己安全了」比不设更危险：
+- 运维设了 FIST_AUTH_MODE=strict，以为现网已严格
+- 实际行为是 soft（降权但仍放行无钥匙者）
+- 出事后查配置看到 strict，会误判「配置是对的，是别的地方漏了」
+
+这与 BUG-472/473（声明了但不验）同族，也与「假防线比没有防线更坏」同源。
+
+## 关闭条件
+
+1. 四个门消费者（rsv_set / rsv_try_set / locks_try_acquire / claim）遇到 challenge_missing 时真的返回 Err
+2. 有锁证明 strict 下无钥匙者被硬拒（不是降权）
+3. auth_mode_startup_warning() 真的在 run_server() 开头被调用（当前未接线）
+4. 变异对照：把某个门的硬拒删掉 ⇒ 对应锁必红
+
+## 当前状态
+
+- 默认值 off ⇒ 现网不受影响
+- strict 不默认启用（决策单也写明）⇒ 不是紧急缺陷
+- 但必须在任何人设 strict 之前补完
+- reported_by: commander-alpha

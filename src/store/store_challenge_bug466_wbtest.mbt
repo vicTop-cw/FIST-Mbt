@@ -116,7 +116,9 @@ test "c466_l2b_cross_store_replay_is_rejected" {
     None => abort("c466-L2b: C 打不开")
     Some(c) => {
       if c.challenge_consume(ns, fp, nonce) {
-        abort("c466-L2b **重放被接受** —— 一次性消费没跨进程生效")
+        abort(
+          "c466-L2b **重放被接受** —— 一次性消费没跨进程生效",
+        )
       }
       c.close()
     }
@@ -150,7 +152,9 @@ test "c466_l2d_nonce_is_namespace_isolated" {
       ignore(s.challenge_issue("ns-A", fp, "n-shared", "2026-10-28T00:00:00Z"))
       // 在 ns-B 消费同一 nonce ⇒ 必须 false
       if s.challenge_consume("ns-B", fp, "n-shared") {
-        abort("c466-L2d **跨 ns 复用成功** —— 主键的 ns 条件失效")
+        abort(
+          "c466-L2d **跨 ns 复用成功** —— 主键的 ns 条件失效",
+        )
       }
       // 在 ns-A 消费 ⇒ 成功（证明票本身是好的，只是隔离生效）
       assert_true(s.challenge_consume("ns-A", fp, "n-shared"))

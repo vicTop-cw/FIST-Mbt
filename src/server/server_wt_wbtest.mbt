@@ -85,10 +85,15 @@ test "wt_01_three_tools_registered_with_schema" {
   for name in ["wt_create", "wt_destroy", "wt_status"] {
     let blk = wt_block(src, name)
     if blk.length() == 0 {
-      abort(name + " 在 server.mbt 里切不到注册块 —— 工具可能被改名/删除")
+      abort(
+        name +
+        " 在 server.mbt 里切不到注册块 —— 工具可能被改名/删除",
+      )
     }
     if !blk.contains("schema(") {
-      abort(name + " 没有 schema —— 工具注册缺 schema 就不可调用")
+      abort(
+        name + " 没有 schema —— 工具注册缺 schema 就不可调用",
+      )
     }
   }
 }
@@ -101,19 +106,27 @@ test "wt_01_three_tools_registered_with_schema" {
 test "wt_02_create_builds_worktree_add" {
   let blk = wt_block(wt_read_src(), "wt_create")
   if !blk.contains("git_args.push(\"worktree\")") {
-    abort("wt_create 没有 push(\"worktree\") —— 拼的不是 git worktree 子命令")
+    abort(
+      "wt_create 没有 push(\"worktree\") —— 拼的不是 git worktree 子命令",
+    )
   }
   if !blk.contains("git_args.push(\"add\")") {
     abort("wt_create 没有 push(\"add\") —— 拼错了子命令")
   }
   if !blk.contains("git_args.push(\"--detach\")") {
-    abort("wt_create 没有 --detach 分支 —— detach=true 会被静默忽略")
+    abort(
+      "wt_create 没有 --detach 分支 —— detach=true 会被静默忽略",
+    )
   }
   if !blk.contains("if detach {") {
-    abort("--detach 不是由 `detach` 参数门控的 —— 无条件加会让普通 create 变成 detached HEAD")
+    abort(
+      "--detach 不是由 `detach` 参数门控的 —— 无条件加会让普通 create 变成 detached HEAD",
+    )
   }
   if !blk.contains("run_check_external(\"git\"") {
-    abort("wt_create 没有真跑 git —— 拼完 args 不执行等于没实现")
+    abort(
+      "wt_create 没有真跑 git —— 拼完 args 不执行等于没实现",
+    )
   }
 }
 
@@ -127,10 +140,14 @@ test "wt_03_destroy_builds_worktree_remove" {
     abort("wt_destroy 没有 push(\"remove\") —— 拼错了子命令")
   }
   if !blk.contains("git_args.push(\"--force\")") {
-    abort("wt_destroy 没有 --force 分支 —— force=true 会被静默忽略")
+    abort(
+      "wt_destroy 没有 --force 分支 —— force=true 会被静默忽略",
+    )
   }
   if !blk.contains("if force {") {
-    abort("--force 不是由 `force` 参数门控的 —— 无条件强删会丢未提交改动")
+    abort(
+      "--force 不是由 `force` 参数门控的 —— 无条件强删会丢未提交改动",
+    )
   }
   if !blk.contains("run_check_external(\"git\"") {
     abort("wt_destroy 没有真跑 git")
@@ -148,7 +165,9 @@ test "wt_04_status_uses_list_porcelain" {
     abort("wt_status 没有 push(\"list\")")
   }
   if !blk.contains("git_args.push(\"--porcelain\")") {
-    abort("wt_status 没带 --porcelain —— 人读格式随 git 版本变，解析不稳定")
+    abort(
+      "wt_status 没带 --porcelain —— 人读格式随 git 版本变，解析不稳定",
+    )
   }
   if !blk.contains("run_check_external(\"git\"") {
     abort("wt_status 没有真跑 git")
@@ -167,8 +186,12 @@ test "wt_05_three_tools_do_not_cross_contaminate" {
   let create_blk = wt_block(src, "wt_create")
   let destroy_blk = wt_block(src, "wt_destroy")
   let status_blk = wt_block(src, "wt_status")
-  if create_blk.length() == 0 || destroy_blk.length() == 0 || status_blk.length() == 0 {
-    abort("切块为空 ⇒ 本格会空转假绿，先修 wt_block（多半是行尾/缩进漂移）")
+  if create_blk.length() == 0 ||
+    destroy_blk.length() == 0 ||
+    status_blk.length() == 0 {
+    abort(
+      "切块为空 ⇒ 本格会空转假绿，先修 wt_block（多半是行尾/缩进漂移）",
+    )
   }
   if create_blk.contains("git_args.push(\"remove\")") {
     abort("wt_create 块里出现了 remove —— 复制粘贴串味")
@@ -193,7 +216,9 @@ test "wt_06_required_params_and_empty_guard" {
   let create_blk = wt_block(src, "wt_create")
   let destroy_blk = wt_block(src, "wt_destroy")
   let status_blk = wt_block(src, "wt_status")
-  if create_blk.length() == 0 || destroy_blk.length() == 0 || status_blk.length() == 0 {
+  if create_blk.length() == 0 ||
+    destroy_blk.length() == 0 ||
+    status_blk.length() == 0 {
     abort("切块为空 ⇒ 本格会空转假绿")
   }
   // ① create / destroy 的必填面是 project_dir + path
@@ -208,13 +233,16 @@ test "wt_06_required_params_and_empty_guard" {
     abort("wt_status 的必填参数不是 [\"project_dir\"]")
   }
   // ③ 三者都必须有「空 project_dir 就拒绝」的前置兜底
-  if !(create_blk.contains("project_dir == \"\"") && create_blk.contains("必填")) {
+  if !(create_blk.contains("project_dir == \"\"") &&
+    create_blk.contains("必填")) {
     abort("wt_create 没有空值前置拒绝")
   }
-  if !(destroy_blk.contains("project_dir == \"\"") && destroy_blk.contains("必填")) {
+  if !(destroy_blk.contains("project_dir == \"\"") &&
+    destroy_blk.contains("必填")) {
     abort("wt_destroy 没有空值前置拒绝")
   }
-  if !(status_blk.contains("project_dir == \"\"") && status_blk.contains("必填")) {
+  if !(status_blk.contains("project_dir == \"\"") &&
+    status_blk.contains("必填")) {
     abort("wt_status 没有空值前置拒绝")
   }
 }

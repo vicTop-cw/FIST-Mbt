@@ -28,6 +28,16 @@ pub fn advance_mark_prefix() -> String
 
 pub fn agent_fp_of(String) -> String
 
+pub fn auth_mode() -> AuthMode
+
+pub fn auth_mode_parse(String) -> AuthMode
+
+pub fn auth_mode_reset_cache_for_test() -> Unit
+
+pub fn auth_mode_startup_warning() -> String
+
+pub fn auth_mode_warning(String) -> String
+
 pub fn auth_tag(String) -> String
 
 pub fn boundary_probe_hint() -> String
@@ -141,6 +151,12 @@ pub fn verify_challenge_sig(String, String, String) -> Bool
 // Errors
 
 // Types and methods
+pub enum AuthMode {
+  Off
+  Soft
+  Strict
+} derive(Eq, @debug.Debug)
+
 pub struct DepsReport {
   state : DepsState
   missing_deps : Array[String]

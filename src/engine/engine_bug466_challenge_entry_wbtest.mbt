@@ -75,7 +75,10 @@ test "bug466_c1_issued_challenge_can_verify" {
   assert_true(verify_challenge_sig(ce_pub_hex(), chal, ce_sign(chal)))
   // ③ 走真实取数面 ⇒ challenge_verified
   let (role, src) = judged_role_with_nonce(
-    eng, agent, Some(chal), challenge_sig=Some(ce_sign(chal)),
+    eng,
+    agent,
+    Some(chal),
+    challenge_sig=Some(ce_sign(chal)),
   )
   assert_eq(src, "challenge_verified")
   let _ = role
@@ -98,7 +101,10 @@ test "bug466_c2_no_key_means_no_challenge_use" {
   // ★ 即使签名是用某个私钥真签的，也没有公钥可验 ⇒ 恒失败
   assert_eq(
     judged_role_with_nonce(
-      eng, agent, Some(chal), challenge_sig=Some(ce_sign(chal)),
+      eng,
+      agent,
+      Some(chal),
+      challenge_sig=Some(ce_sign(chal)),
     ).1,
     "challenge_failed",
   )

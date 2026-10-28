@@ -24,13 +24,20 @@ test "co_01_memory_backend_open_for_both" {
   let d_id = acl_claim_identity("", "")
   match agent_write_gate(eng, d_id, "any-ns") {
     Ok(_) => ()
-    Err(e) => abort("内存后端 delete 的门应放行（零回归），实际 Err：" + e)
+    Err(e) =>
+      abort(
+        "内存后端 delete 的门应放行（零回归），实际 Err：" + e,
+      )
   }
   // archive：未传 by ⇒ 缺省 human_steward
   let a_id = acl_claim_identity("human_steward", "human_steward")
   match agent_write_gate(eng, a_id, "any-ns") {
     Ok(_) => ()
-    Err(e) => abort("内存后端 archive 的门应放行（零回归），实际 Err：" + e)
+    Err(e) =>
+      abort(
+        "内存后端 archive 的门应放行（零回归），实际 Err：" +
+        e,
+      )
   }
 }
 
@@ -128,8 +135,10 @@ test "co_03_both_handlers_are_wired" {
     let flat = co_strip_ws(blk)
     if not(flat.contains(expect)) {
       abort(
-        tool + " 的 handler **没有**接 ACL 门，或身份来源不对。" +
-        "期望形状（去空白）：" + expect,
+        tool +
+        " 的 handler **没有**接 ACL 门，或身份来源不对。" +
+        "期望形状（去空白）：" +
+        expect,
       )
     }
   }
@@ -151,7 +160,7 @@ fn co_strip_ws(s : String) -> String {
 }
 
 ///|
-fn co_find(hay : String, needle : String, from : Int) -> Int? {
+fn co_find(hay : String, needle : String, from : Int32) -> Int32? {
   let h = hay.to_array()
   let nd = needle.to_array()
   if nd.length() == 0 || nd.length() > h.length() {
@@ -177,7 +186,7 @@ fn co_find(hay : String, needle : String, from : Int) -> Int? {
 }
 
 ///|
-fn co_slice(s : String, from : Int, to : Int) -> String {
+fn co_slice(s : String, from : Int32, to : Int32) -> String {
   let a = s.to_array()
   let lo = if from < 0 { 0 } else { from }
   let hi = if to > a.length() { a.length() } else { to }

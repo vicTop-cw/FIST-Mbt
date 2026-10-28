@@ -345,7 +345,7 @@ test "k463_8b_external_raw_close_then_store_close_throws_by_design" {
   let db_path = dir + "/raw.db"
   match SqliteStore::open(db_path) {
     None => abort("夹具库打不开: " + db_path)
-    Some(s) => {
+    Some(s) =>
       // 白盒直关底层句柄：store 无从得知
       // BUG-465：这里过去用 `try { db.close() } catch { _ => () }` 模拟「外部直关」，
       // 但那个 catch 从未生效（`Database::close` 无 raise）。现在直接关 —— 这才是真实写法。
@@ -353,11 +353,11 @@ test "k463_8b_external_raw_close_then_store_close_throws_by_design" {
         Some(db) => db.close()
         None => abort("刚打开的库不该是无句柄")
       }
-    }
   }
   k463_rm_tree(dir)
 }
 
+///|
 test "k463_9_close_all_tolerates_external_raw_close" {
   let dir = k463_base("extall")
   let ms = MultiStore::new(data_dir=dir)
