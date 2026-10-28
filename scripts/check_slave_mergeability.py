@@ -22,6 +22,7 @@ cherry-pick 时撞冲突（append-only 日志、`scripts/README.md` 追加重叠
 import argparse
 import atexit
 import io
+import re
 import os
 import shutil
 import stat
@@ -43,6 +44,18 @@ def git(*args, cwd=None):
     r = subprocess.run(["git"] + list(args), cwd=cwd or ROOT, capture_output=True, text=True,
                        encoding="utf-8", errors="replace", env=isolated_git_env())
     return r.returncode, (r.stdout or "") + (r.stderr or "")
+
+
+def dup_symbols(added, base_symbols):
+    """纯函数：分支新增的符号名里，**base 已经有的**那些（R131）。
+
+    R131 实测事故：`gitcode/slave/fix/store-open-preflight` 判 `ok`，真 cherry-pick 后
+    **往 master 里插入了第二份同签名函数**（`SqliteStore::open_preflight_ok` 在 master 已存在 1 份，
+    该支的 wbtest 文件也已逐字存在）—— 3-way 合并把"已存在"的内容又插了一遍，合进去**编译不过**。
+    这是 `ok` 最危险的假阳形态：贴得上、树也变了，但变的是**重复**。
+    判法：分支新增的 `pub fn X` 若 base 已有 X ⇒ 记 `duplicate`，不按 `ok` 放行。
+    """
+    return sorted({s for s in added if s in base_symbols})
 
 
 def classify(ahead, pick_rc, conflicts, has_merge=False):
@@ -134,6 +147,9 @@ def scan(base, remotes, keep=False, limit=0, include="/slave/"):
         shutil.rmtree(tmp, ignore_errors=True)
         return [], 2
     rows = []
+    # R131：base 侧既有的 `pub fn` 名集合（只算一次）
+    _, sym_out = git("grep", "-h", "-E", "pub fn ", base, "--", "*.mbt")
+    base_syms = set(re.findall(r"pub fn ([A-Za-z0-9_:]+)", sym_out))
     try:
         for b in bs:
             rc, out = git("rev-list", "--reverse", "%s..%s" % (base, b))
@@ -142,8 +158,17 @@ def scan(base, remotes, keep=False, limit=0, include="/slave/"):
             _, mout = git("rev-list", "--merges", "%s..%s" % (base, b))
             has_merge = bool([m for m in mout.split() if m]) if commits else False
             kind = adjust_kind(classify(len(commits), pick_rc, files, has_merge), changed)
+            # R131：`ok` 再验一次「新增符号是否 base 已有」——防 3-way 合并把已有内容插成重复定义
+            if kind == "ok":
+                _, adiff = git("diff", "%s...%s" % (base, b))
+                added = re.findall(r"^\+\s*pub fn ([A-Za-z0-9_:]+)", adiff, re.M)
+                dups = dup_symbols(added, base_syms)
+                if dups:
+                    kind = "duplicate"
+                    files = ["重复符号: " + ", ".join(dups[:3])]
             rows.append({"branch": b, "ahead": len(commits), "kind": kind, "files": files})
-            mark = {"ok": "✓", "contained": "=", "conflict": "✗", "merge": "M", "error": "!"}[kind]
+            mark = {"ok": "✓", "contained": "=", "conflict": "✗", "merge": "M", "error": "!",
+                    "duplicate": "⚠"}[kind]
             extra = ("  冲突: " + ", ".join(files[:3]) + (" …" if len(files) > 3 else "")) if files else ""
             print("  %s %-52s ahead=%-3d %s%s" % (mark, b, len(commits), kind, extra))
     finally:
@@ -286,6 +311,9 @@ def selftest():
     cell("adjust-ok-but-no-content-is-contained", adjust_kind("ok", False), "contained")
     cell("adjust-ok-with-content-stays-ok", adjust_kind("ok", True), "ok")
     cell("adjust-other-kinds-untouched", adjust_kind("conflict", False), "conflict")
+    # R131：新增符号与 base 撞名 ⇒ 必须点名（否则合进去是重复定义，编译不过）
+    cell("dup-symbols-detected", dup_symbols(["A", "B"], {"B", "C"}) == ["B"], True)
+    cell("dup-symbols-clean", dup_symbols(["A"], {"C"}) == [], True)
 
     # 端到端格：造真仓库
     d = tempfile.mkdtemp(prefix="mergeability-st-")
