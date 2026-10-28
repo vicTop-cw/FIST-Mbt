@@ -10435,7 +10435,7 @@ Beta 核完发现：`verify` 不经过角色取数面 ⇒ **给它接 `challenge
 
 ### FIXED(2026-10-28T09:27:21Z / BUG-467)
 - evidence: commit 509e547f（代码）+ 72bb4388（报告）。三条代码证据定「该由谁验收」：① src/ops/audit.mbt:178 的 enforce() 权限矩阵里根本没有 verify 条目（未知 action 一律 false）；②「验收宪兵」只是 staff_label_of 的展示层标签（docstring 明写「参谋军职不是协议角色」）⇒ 候选②在协议层不存在；③ execute 已有的门是「ns 写权限」不是角色。修法：verify 函数体加 agent_write_gate(eng, acl_claim_identity(verifier, verifier), ns)，verifier 同时用作记录名与显式身份（verify 没有独立 agent 参数，不引入新参数、零回归），与 execute 同源。三格锁：ci_01 内存后端放行零回归、ci_02 sqlite 双向真实数据链路（收权⇒拒/授权⇒放，不是断言源码）、ci_03 实现路径格用 strip_ws 归一化防 fmt 假红。变异：删掉 ACL 门 ⇒ 517/518，ci_03 精确打红。门禁：moon check 0 errors；src/server+src/engine = 848/848 全绿。分析：created_by 是「入口不严」（可逆），verify 是「出口失守」（不可逆，下游全按已完成推进，危害整个任务体系产出可信度）⇒ 出口失守比入口不严更致命。对称性：修后 execute 与 verify 同一道门函数同一身份真源 ⇒ 已对称（判例-29 正面用法）。缺口：verifier 仍是自报串（本单加的是「能不能在 ns 写」，仍在 S1 边界内）；角色矩阵仍无 verify 条目（建议后续补 can_verify）；submit/reject/retry 是否需同类门仍未评估。
-## BUG-430c [2026-10-28T08:50:20Z] [high] OPEN
+## BUG-430c [2026-10-28T08:50:20Z] [high] DUPLICATE →BUG-469
 
 - summary: [authz] BUG-430 拆分（三）认证仍非默认要求 —— execute/verify 未接 challenge、公钥按 ns 隔离
 - reported_by: commander-alpha (Lane CF)
