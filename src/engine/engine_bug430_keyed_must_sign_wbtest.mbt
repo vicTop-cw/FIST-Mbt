@@ -20,19 +20,22 @@
 // ============================================================================
 
 ///|
-/// 测试密钥对（复用 BUG-466 已验证可用的 seed）。
+/// 测试密钥对。**BUG-468：统一用 `test_crypto.mbt` 的常量**，不再自写字面量。
+///
+/// 短 seed（!=32 字节）会让 `@mooncry` **abort**，而 abort 在测试汇总里
+/// 只显示 `Error` 不回显消息 ⇒「seed 长度错」被伪装成「被测代码坏了」。
 fn cf_seed() -> Bytes {
-  b"\x3a\x7f\x21\xb4\x5c\x0e\x99\x12\xaa\x3d\x61\x8f\x24\xbe\x07\xc5\xd8\x19\x42\xe0\x7b\x53\x96\x2c\x1a\x88\xf4\x0d\x6e\x31\xb7\x95"
+  TEST_ED25519_SEED_A
 }
 
 ///|
 fn cf_pub_hex() -> String {
-  @mooncry.bytes_to_hex(@mooncry.ed25519_public_key(cf_seed()))
+  test_ed25519_pub_hex(cf_seed())
 }
 
 ///|
 fn cf_sign(msg : String) -> String {
-  @mooncry.bytes_to_hex(@mooncry.ed25519_sign(cf_seed(), @utf8.encode(msg)))
+  test_ed25519_sign_hex(cf_seed(), msg)
 }
 
 ///|
