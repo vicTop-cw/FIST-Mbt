@@ -25,17 +25,17 @@
 /// 短 seed（!=32 字节）会让 `@mooncry` **abort**，而 abort 在测试汇总里
 /// 只显示 `Error` 不回显消息 ⇒「seed 长度错」被伪装成「被测代码坏了」。
 fn cf_seed() -> Bytes {
-  TEST_ED25519_SEED_A
+  @core.TEST_ED25519_SEED_A
 }
 
 ///|
 fn cf_pub_hex() -> String {
-  test_ed25519_pub_hex(cf_seed())
+  @core.test_ed25519_pub_hex(cf_seed())
 }
 
 ///|
 fn cf_sign(msg : String) -> String {
-  test_ed25519_sign_hex(cf_seed(), msg)
+  @core.test_ed25519_sign_hex(cf_seed(), msg)
 }
 
 ///|

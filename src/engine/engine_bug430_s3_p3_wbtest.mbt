@@ -16,7 +16,7 @@
 ///|
 /// 造一对 Ed25519 密钥（固定 seed，确定性）。
 fn s3_p3_keypair() -> (String, Bytes) {
-  let seed : Bytes = b"\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10"
+  let seed : Bytes = @core.TEST_ED25519_SEED_B
   let pk = @mooncry.ed25519_public_key(seed)
   (@mooncry.bytes_to_hex(pk), seed)
 }
