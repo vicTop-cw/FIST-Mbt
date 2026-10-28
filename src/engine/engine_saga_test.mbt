@@ -5,6 +5,8 @@
 ///|
 /// 构建干净的 SQLite 引擎（先清库保证用例幂等）。
 fn saga_sqlite_engine(db_path : String) -> @engine.FistEngine {
+  // BUG-455：测试 db 统一落 `.fist-mbt/tmp/`，不再污染仓库根（根目录曾有 81 个 *.db）
+  let db_path = ".fist-mbt/tmp/" + db_path
   match @store.SqliteStore::open(db_path) {
     Some(s) => ignore(s.clear())
     None => abort("sqlite open failed: " + db_path)
