@@ -1963,6 +1963,14 @@ pub async fn run_server() -> Unit {
       let project_dir = get_str(args, "project_dir")
       let description = get_str(args, "description")
       let ns = get_str(args, "namespace")
+      // BUG-459：与 publish 同一道 ns 写门（write_gate.mbt 文档声称覆盖 publish /
+      // publish_parallel / dag_publish 三支，此前只剩 publish 真调用 ⇒ 文档与调用点漂移）。
+      // 门放在 engine_for_ns **之前**：被拒的 ns 不得先建库（拒绝必须无副作用），
+      // 这也是本处与 publish 的唯一顺序差异（publish 的门在 engine_for_ns 之后）。
+      let g = ns_write_gate(ns)
+      if g is Err(ge) {
+        return Err(@mcp_types.ToolError(ge))
+      }
       let eng = match engine_for_ns(ns) {
         Ok(e) => e
         Err(m) => return Err(m)
@@ -4967,7 +4975,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "dag_publish",
-    "发布带依赖关系的根任务。参数：project_dir、description、depends_on(依赖任务 id JSON 数组)、namespace、created_by、level(任务层级，可选，0..7，默认 6 连长级)。",
+    "发布带依赖关系的根任务。参数：project_dir、description、depends_on(依赖任务 id JSON 数组)、namespace、created_by、level(任务层级，可选，0..7，默认 6 连长级)。⚠ namespace 传 default 或留空会**立即返回 Err**（ns 写门，与 publish / publish_parallel 同口径，BUG-459）：请先 `store_open(ns=<你的项目命名空间>)` 再发布，避免跨项目任务污染 default.db。",
     schema(
       {
         "project_dir": string_prop("项目目录（必填）"),
@@ -4986,6 +4994,14 @@ pub async fn run_server() -> Unit {
       let description = get_str(args, "description")
       let depends_on_raw = get_str(args, "depends_on", default="[]")
       let ns = get_str(args, "namespace", default="default")
+      // BUG-459：dag_publish 此前**没有** ns 写门，而 write_gate.mbt 的文档声称三支都拦
+      // ⇒ 同一道门在三支里缺一支，客户端换个工具名就能把任务写进 default.db（跨项目污染）。
+      // 口径与 publish 完全一致：同一个 ns_write_gate + 同一种 Err→ToolError 回执形状。
+      // 门放在 engine_for_ns 之前——被拒的 ns 不得先建库（无副作用拒绝）。
+      let g = ns_write_gate(ns)
+      if g is Err(ge) {
+        return Err(@mcp_types.ToolError(ge))
+      }
       let eng = match engine_for_ns(ns) {
         Ok(e) => e
         Err(m) => return Err(m)

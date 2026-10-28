@@ -29,15 +29,36 @@ fn sd_memory_dir(project_dir : String) -> String {
 }
 
 ///|
-/// memory 四件套路径。
-fn sd_kind_path(project_dir : String, kind : String) -> String {
-  if kind.length() == 0 ||
-    kind.contains("/") ||
-    kind.contains("\\") ||
-    kind.contains("..") {
-    abort("invalid kind: \{kind}")
+/// memory 四件套路径（BUG-458：非法 kind 一律回结构化 `Err`，不再 `abort()` 崩进程）。
+///
+/// 三类非法输入各自点名原因，便于 MCP 侧把 `Err` 原样透传成可读错误：
+///   ① 空字符串；② 含路径分隔符（`/` 或 `\`）—— kind 只能是单一文件名，不许带目录；
+///   ③ 含 `..` —— 防路径穿越（`../../etc/passwd` 这类拼进 memory/ 之外）。
+///
+/// 为什么是 `Result` 而不是继续 `abort()`：本函数由 `selfdrive_get` / `selfdrive_append` /
+/// `selfdrive_export_tasks` / `selfdrive_review_tick` 四条对外工具路径调用，`abort()` 在
+/// MCP 侧是**进程级崩溃**而不是结构化错误回执（BUG-458，参考同族 BUG-374/433）。
+fn sd_kind_path(project_dir : String, kind : String) -> Result[String, String] {
+  if kind.length() == 0 {
+    return Err(
+      "非法 memory kind: 空字符串（kind 不得为空，仅支持 product/target/task/thinking）",
+    )
   }
-  join_path(sd_memory_dir(project_dir), kind + ".md")
+  if kind.contains("/") || kind.contains("\\") {
+    return Err(
+      "非法 memory kind: \"" +
+      kind +
+      "\" 含路径分隔符（kind 只能是单一文件名，不得携带 / 或 \\）",
+    )
+  }
+  if kind.contains("..") {
+    return Err(
+      "非法 memory kind: \"" +
+      kind +
+      "\" 含 \"..\"（禁止路径穿越，kind 只能是单一文件名）",
+    )
+  }
+  Ok(join_path(sd_memory_dir(project_dir), kind + ".md"))
 }
 
 ///|
@@ -277,7 +298,11 @@ pub fn selfdrive_memory_append(
   content~ : String,
   now~ : String,
 ) -> Result[Json, String] {
-  let p = sd_kind_path(project_dir, kind)
+  // BUG-458：非法 kind 走 Err 透传，不崩进程（调用方 MCP handler 已把 Err 映成 ToolError）
+  let p = match sd_kind_path(project_dir, kind) {
+    Ok(p) => p
+    Err(e) => return Err(e)
+  }
   if kind == "thinking" {
     let old = match sd_read(p) {
       None => ""
@@ -323,7 +348,11 @@ pub fn selfdrive_memory_get(
   ns~ : String,
   kind~ : String,
 ) -> Result[Json, String] {
-  let p = sd_kind_path(project_dir, kind)
+  // BUG-458：同上——get 路径也不许因非法 kind 崩进程
+  let p = match sd_kind_path(project_dir, kind) {
+    Ok(p) => p
+    Err(e) => return Err(e)
+  }
   match sd_read(p) {
     None =>
       Ok(
@@ -391,7 +420,12 @@ pub fn selfdrive_export_tasks(
       "\n",
     )
   }
-  let p = sd_kind_path(project_dir, "task")
+  // BUG-458：kind 是字面量 "task"（恒合法），但签名改 Result 后必须显式收口，
+  // 不做 `unwrap()` —— 将来若改成参数化 kind，这一层自然就是 Err 透传点
+  let p = match sd_kind_path(project_dir, "task") {
+    Ok(p) => p
+    Err(e) => return Err(e)
+  }
   if sd_write(p, lines.fold(init="", fn(acc, l) { acc + l })) {
     Ok(
       sd_json(
@@ -477,7 +511,12 @@ pub fn selfdrive_review_tick(
   let kinds = ["product", "target", "task", "thinking"]
   let mem_summary : Array[Json] = []
   for k in kinds {
-    let p = sd_kind_path(project_dir, k)
+    // BUG-458：四种 kind 都是字面量（恒合法），但签名已改 Result ——
+    // 非法就跳过该项（不要把「解析不出路径」说成「文件不存在」）
+    let p = match sd_kind_path(project_dir, k) {
+      Ok(p) => p
+      Err(_) => continue
+    }
     let exists = @fs.path_exists(p)
     mem_summary.push(
       Json::object({ "kind": Json::string(k), "exists": Json::boolean(exists) }),
