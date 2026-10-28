@@ -247,6 +247,13 @@ def current_state_text(rel, txt, latest_iplan):
     return txt
 
 
+# ↓ 严格参数面（R66）：未知旗标不再被静默忽略（拼错 --selftest 会假绿）
+_known = {"--selftest"}
+_unknown = [a for a in sys.argv[1:] if a.startswith("--") and a.split("=")[0] not in _known]
+if _unknown:
+    print("FATAL 未知参数：%s（本尺只接受：%s）" % (" ".join(_unknown), " ".join(sorted(_known))))
+    sys.exit(2)
+
 def main():
     # 与守卫族同款：cp936 控制台下中文判据文案会乱码（崩溃/不可读的守卫等于没有守卫）。
     try:

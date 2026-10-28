@@ -67,6 +67,13 @@ def git(args, cwd=None):
     return p.returncode, p.stdout.decode("utf-8", "replace").strip()
 
 
+# ↓ 严格参数面（R66）：未知旗标不再被静默忽略（拼错 --selftest 会假绿）
+_known = {"--selftest"}
+_unknown = [a for a in sys.argv[1:] if a.startswith("--") and a.split("=")[0] not in _known]
+if _unknown:
+    print("FATAL 未知参数：%s（本尺只接受：%s）" % (" ".join(_unknown), " ".join(sorted(_known))))
+    sys.exit(2)
+
 def judge(cwd):
     """返回 (verdict, problems)。verdict ∈ "ok" / "broken" / "unverifiable"。
 

@@ -169,15 +169,10 @@ SPECIAL_CASES = [
     #    判例-32 同族但更靠前一步：判据最危险的失效不是报错，而是**什么都没扫到却报绿**。
     case("check_empty_scan_face.py"),
     case("check_empty_scan_face.py", "--selftest"),
-    # —— R64：参数面元判据 —— 未知旗标必须被拒绝；吃到未知旗标还报绿 = 参数面没兜住
-    #    （把 `--selftest` 拼错 ⇒ 静默跑真检查并报 PASS ⇒ 调用方以为自检跑过了）
-    #    【这是债，不是判据坏了】现读 **15 把**（/75；R65 已还 12 把单旗标形态）。
-    #    出路：加允许旗标白名单（未知 ⇒ FATAL + rc=2）或改用 argparse；**禁止为变绿删登记或放宽**。
-    expected("check_arg_face_strict.py", 1,
-             "预存红（债非坏）：15 把判据吃下未知旗标仍 rc=0 —— 参数面没兜住（拼错自检开关会"
-             "静默跑真检查并报绿）。**判据工作正常，它正确报告了参数面债**；R65 已还 12 把"
-             "旗标白名单或改用 argparse。被检面修到 0 之后这一格自己翻红，届时把期望改回 0",
-             kind="known-red"),
+    # —— R64/R66：参数面元判据 —— 未知旗标必须被拒绝（拼错 `--selftest` 会静默跑真检查并报绿）。
+    #    【债已还完】R64 实测 27 把中招 ⇒ R65 还 12 把（单旗标）⇒ R66 还 15 把（多旗标/模块级），
+    #    现读 **0 把**（75/75 全部拒绝未知旗标）。按本仓律「被检面修到 0 ⇒ 把期望改回门禁格」。
+    case("check_arg_face_strict.py"),
     case("check_arg_face_strict.py", "--selftest"),
     # —— BUG-440：docs/plans/ frontmatter 守卫（README:22 承诺了 5 天，守卫文件此前不存在）——
     # 判据：文件名 / frontmatter 必须第 1 行起 / 四强制字段 / status 闭集 / 已定案自洽(含 decisions 记录)。
