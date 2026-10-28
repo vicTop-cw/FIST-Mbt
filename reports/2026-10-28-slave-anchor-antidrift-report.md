@@ -70,3 +70,27 @@ python scripts/check_slave_task_list.py            # rc=0 PASS
 python scripts/check_slave_task_list.py --selftest # SELFTEST OK（22 格）
 python scripts/check_selftest_inventory_doc.py     # INVENTORY_SYNC=clean
 ```
+
+## 八、追记（并发提交归属，2026-10-28 12:3x）
+
+本单一共动了 5 个文件，最终落成**两笔**提交：
+
+| 文件 | 落点 | 说明 |
+| --- | --- | --- |
+| `scripts/check_slave_task_list.py` | 501c4929 | 本单主体（B6 + D4） |
+| `docs/2026-10-20-slave-tasks.md` | 501c4929 | 12 处指认改指法 + 文首自述对齐 |
+| `reports/2026-10-28-slave-anchor-antidrift-report.md` | 501c4929 | 本报告 |
+| `scripts/README.md` | **9518c590** | 被并发提交带走（`+5`，含本单的「22 格」条目） |
+| `scripts/run_guards.py` | **9518c590** | 被并发提交带走（`+8`，含本单的 `--selftest` 说明注释） |
+
+即：**同一笔提交里混进了不属于它的两处改动**（AGENTS.md「判例-11 单次并发索引事故」同族）。
+事后已用 `git show 9518c590:scripts/README.md | grep` 与 `git show 9518c590:scripts/run_guards.py | grep`
+逐字核实**内容确实落盘**（「22 格（A×3 / B×7 / C×4 / D×6 / E×2」与「22 格合成树」各命中 1 次），
+不存在「被带走但内容丢了」的情形。
+
+**这暴露的不是谁手滑，是流程缺口**：本单已按纪律用 `scripts/commit_scoped.sh`（前置暂存面必须为空 +
+逐个 add + `git commit -F msg -- <paths>`），但那只护住**我自己那一笔**；在别人正在跑的窗口里，
+我的工作树改动会先被别人的 `git add` 扫走——**防护面在「写」那一侧，不在「谁提交」那一侧**。
+⇒ 可行改进（未单独立项）：并发窗口内改 `scripts/README.md` / `scripts/run_guards.py` 这两份热点文件时，
+改完立刻自查 `git status --porcelain -- <file>`：若显示 clean 而自己并未提交，说明已被扫走，
+应立即核实内容（`git show <HEAD>:<file> | grep <记号>`）并在下一笔里记清归属，而不是以为「丢了」重写一遍。
