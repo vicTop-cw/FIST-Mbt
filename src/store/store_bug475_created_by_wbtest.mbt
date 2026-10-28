@@ -186,16 +186,22 @@ test "dc_04_engine_wires_created_by_into_task" {
 // ── 小工具 ──────────────────────────────────────────────────────────────
 
 ///|
-/// 库名序号（顶层 `let mut` 在 MoonBit 非法，用 `Ref`）。
-let dc_db_seq : Ref[Int] = Ref::new(0)
-
-///|
-/// 生成**每次调用都不同**的库路径（避免上次运行的残留库干扰迁移测试）。
-/// ⚠️ 不用 `@time`（该包未在本 `moon.pkg` 加载，实测 4020）——
-/// 改用包内计数器，唯一性同样成立且无依赖。
+/// 生成**跨进程也唯一**的库路径。
+///
+/// ⚠️ 实测踩坑（本单第二次，教训比第一次更重要）：
+/// **只用进程内计数器是不够的** —— 每次 `moon test` 是新进程，计数器都从 0 起
+/// ⇒ 生成的库名**每次运行都一样** ⇒ 上一次运行留下的库（**旧 schema，没有
+/// `created_by` 列**）会被命中 ⇒ `create_task` 写进旧表、`get_task` 读出旧行
+/// ⇒ **锁假红**（代码明明是对的）。
+///
+/// 修法：复用同包**已有**的 `bug462_unique_db`（`bug462_fixtures.mbt`，生产文件里，
+/// 不是 `_wbtest` 所以本文件也看得见）。它的唯一性来源是 **`@env.rand(8)`**
+/// —— 跨进程唯一，且它自己有一格 `b462_u1_unique_db_is_actually_unique` 锁着。
+///
+/// **⇒ 教训：造唯一路径前，先在同包找找有没有现成的** —— 本仓已经踩过一次
+/// （`bug462_unique_db is unbound` 那条注释），别再造第二个。
 fn dc_unique_db(tag : String) -> String {
-  dc_db_seq.val = dc_db_seq.val + 1
-  "temp/" + tag + "_" + dc_db_seq.val.to_string() + ".db"
+  bug462_unique_db("dc_" + tag)
 }
 
 ///|
