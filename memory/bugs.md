@@ -10589,7 +10589,7 @@ server.mbt:805 的 agent_write_gate 有  —— 内存后端**直接放行**。
 - reported_by: commander-gamma
 
 - false_positive(2026-10-28T12:04:44Z): Beta 复核推翻（Lane DA，1a43922d）。派单的核心前提不成立：① 两者 ns 权限完全相同 —— publish 在 handler 层用 ns_write_gate 限制，publish_parallel 在引擎层 engine.mbt:1054 用自身限制，两者都拒 default、都能写任意非 default ns，所以「publish_parallel 影响所有命名空间」不成立；② 补检查会打断 3 条生产路径 —— ops_selfdrive.mbt:782 的 created_by=selfdrive（自驱主链）、bugreport.mbt:355 的 created_by（report_bug publish_task=true）、server.mbt:2014 的调用方自报（工具缺省值就是 selfdrive），补上 publish 那套检查三条全部立刻 Err；③ 加检查的安全收益为 0 —— @core.Task 没有 created_by 字段（grep core_task.mbt 零命中）⇒「谁发布的」根本没落库 ⇒ 硬检查只能拦名字写错、拦不住身份冒充（填 human_steward 就过），仍是 S1 同族。判据：一道检查的价值 = 它挡住的风险 − 它打断的功能；两者挡住的风险相同（都只比较字符串），打断的功能完全不同（publish 零代价 vs publish_parallel 断 3 条链）—— 这不是双标而是同一道门在不同调用语境下成本不同。且 publish_parallel 强制 ns != default ⇒ 调用方必须先 store_open 专属 ns ⇒ 真正的边界是 ns 不是 created_by。另核 dag_publish 已有硬检查（publish_with_deps:1891）不是缺陷。本单未改任何代码。衍生：@core.Task 无 created_by 字段 ⇒ 审计缺失，这比无检查更值得修，已单开 BUG-475。
-## BUG-475 [2026-10-28T12:04:45Z] [high] OPEN
+## BUG-475 [2026-10-28T12:04:45Z] [high] FIXED
 - summary: [audit] @core.Task 无 created_by 字段 —— 「谁发布的」根本没落库，导致审计缺失且所有 created_by 硬检查都无意义
 - detail: Beta 复核 BUG-474 时发现的更深层缺陷（Lane DA，1a43922d）。
 
@@ -10623,7 +10623,7 @@ grep -n created_by src/core/core_task.mbt ⇒ 零命中。
 - 与 BUG-464（created_by 自报）是**因果**关系：464 说「无法验证」，本条说「**连记录都没有**」
 - 与 BUG-472/473（死参数）不同：那两处是参数被忽略，本条是**字段根本不存在**
 - reported_by: lead(Beta 复核衍生)
-## BUG-476 [2026-10-28T12:30:05Z] [medium] OPEN
+## BUG-476 [2026-10-28T12:30:05Z] [medium] FIXED
 - summary: [authz] FIST_AUTH_MODE=strict 尚未在门层真正拒绝 —— 效果接近 soft，但会让人以为已经严格了
 - detail: Alpha 在 BUG-470 落地报告里主动披露的诚实边界（Lane CZ，b85c566a）。
 
@@ -10654,4 +10654,66 @@ grep -n created_by src/core/core_task.mbt ⇒ 零命中。
 - 默认值 off ⇒ 现网不受影响
 - strict 不默认启用（决策单也写明）⇒ 不是紧急缺陷
 - 但必须在任何人设 strict 之前补完
+- reported_by: commander-alpha
+
+
+### FIXED(2026-10-28T13:52:10Z / BUG-475, BUG-476)
+- evidence: BUG-475（a64f2053 + 回归修复 e2168550）：@core.Task 加 created_by 字段（缺省空串，不用 unknown/legacy 这类看起来像身份的占位符，避免审计查询把占位符当成一个叫 unknown 的 agent）；Task::new 加 created_by~ 命名参数；新增 Task::from_db_with_created_by（20 参）而 from_db 保持 19 参委托到它（因为 from_db 是位置参数函数、全仓 4 个测试文件直接调它）；store 层 task_columns 加列 + CREATE TABLE 加列 + 旧库 PRAGMA 探测迁移。回归：bind_task_update_values 加 created_by（第 18 位）但两处 UPDATE 调用方的 WHERE 绑定没跟着后移 ⇒ id 被绑到 created_by 上、WHERE id = ? 拿到 NULL ⇒ UPDATE 一行都不改而 execute() 仍返回成功 ⇒ 状态迁移静默失效（38 个测试失败）。用 git revert --no-commit a64f2053 做确定对照（有改动 335/12 failed、无改动 347/0 failed）确认归因；修法两处 WHERE 后移（update_task 18→19；update_task_if_status id 18→19、expected_status 19→20）。另修 dc_unique_db 用进程内 Ref[Int] 计数器导致库名跨进程重复 ⇒ 命中旧 schema 库 ⇒ 锁假红；改用 bug462_unique_db（@env.rand(8)）。读数：src/engine 347/347/0、src/store 125/125 连跑两轮、全量 1835/1835/0。本单补的是审计不是验证：created_by 仍可伪造（S1 边界），但至少事后能查出当时填的是什么。
+
+BUG-476（dccdbc56）：strict 真的拒绝 —— 四处门硬拒（rsv_set + rsv_try_set、locks_try_acquire、claim 在 server 层）+ auth_mode_startup_warning() 接线到 run_server()（修前调用点 0 处）。判断依据：选在门消费者判而非改 judged_role_gated 返回值 —— 职责分离（它算身份不决定拒不拒）、错误可区分（否则验签失败与 strict 未提供被压成同一种）、与既有范式一致（check_scope_permission 在门层判 RoleDenied）。六格锁 S1~S6 全绿：S1 strict 无挑战拒、S2 strict 有 verified 不拒、S3 soft 得到 challenge_required（≠ challenge_missing）⇒ strict≠soft 直接证据、S4 off 不拒零回归、S5 实现路径格（run_server 真调了 startup_warning）、S6 实现路径格接线计数 reserve_scope=2/lock_acquire=1/claim=1。变异五个逐个生效并恢复。★ 变异暴露判据缺口：M1~M4 删掉接线后 S1~S4 全绿（只测门层函数语义）⇒ 补 S6 直接读源码数接线点、必须是计数不是 contains。另 S6 曾用 split().count() 读数不可靠 ⇒ 换 count_of 范式。缺口：strict 只覆盖 4 个门，execute/verify/submit/archive 本来无挑战门（那是 BUG-430c）；claim 的拒在 server 层；startup_warning 只在 run_server 打印。附：该 warning 原用 println（stdout）打断 MCP JSON-RPC 传输（fist.py call 报 malformed JSON-RPC response），已改 eprintln。
+## BUG-477 [2026-10-28T13:52:20Z] [high] OPEN
+- summary: [authz] reserve_scope / lock_acquire 不消费 nonce —— 同一张 S3 票可无限次重放（claim 会消费，它们不会）
+- detail: Alpha 实测发现（Lane DE，0e78038d）。
+
+三个门都接受 challenge + challenge_sig，但消费语义不同：
+- claim 走 judged_role_with_nonce -> 消费
+- reserve_scope / lock_acquire 走 judged_role_gated -> 不消费
+
+实测：reserve_scope 首次用票与重复用票回执完全相同（都是 unregistered+challenge_verified+identity_verified）=> 同一张票可无限次使用。
+
+危害：
+1. 攻击者截获一张票后可反复占用作用域/锁
+2. 与 agent_issue_challenge 的 schema 承诺不符（明写每个 nonce 只能用一次、重放判 challenge_replayed）
+3. 与 claim 不一致 => 调用方无法从描述判断哪些工具真防重放
+
+根因：judged_role_gated 只验签不消费（有意，它被 5 处消费，其中 judged_role_with_nonce 才消费）。但 reserve_scope / lock_acquire 直接用它而没补消费那一步。
+
+关闭条件：
+1. reserve_scope / lock_acquire 验签通过后也消费 nonce
+2. 锁证明同一张票第二次使用被判 challenge_replayed
+3. 变异对照：删掉消费 => 锁必红
+
+文档 docs/integration/s3-client-bootstrap.md 已写明这个差异，但行为仍需修。
+- reported_by: commander-alpha
+## BUG-478 [2026-10-28T13:52:49Z] [high] OPEN
+- summary: [authz] reserve_scope / lock_acquire 不接受 namespace 参数 —— 与 agent_issue_challenge 不一致，跨 ns 验签必失败
+- detail: Alpha 实测发现（Lane DE，0e78038d）。
+
+## 事实
+
+- agent_issue_challenge 接受 namespace 参数、按 ns 签发挑战
+- reserve_scope / lock_acquire **不接受 namespace 参数、不调 engine_for_ns**
+- 而 S3 的公钥是按 ns 隔离的（在哪个 ns 登记就在哪个 ns 验签）
+
+## 后果
+
+若调用方在 ns-A 登记公钥、取到 ns-A 的票，但 reserve_scope / lock_acquire 按 default 库验签 =>
+**票一定验不过**，且调用方无从修正（这两个工具没有 ns 参数）。
+
+## 与 BUG-477 的区别
+
+BUG-477 = 票能用无限次（消费语义）
+本条 = 票在非 default ns 上根本用不了（路由语义）
+两者都源于同一组门函数的实现不一致，但修法不同。
+
+## 关闭条件
+
+1. reserve_scope / lock_acquire 增加可选 namespace 参数，与 claim/execute/submit/run_check 同一 namespace->store 映射
+2. 锁证明非 default ns 下带真签名能验签通过
+3. 变异对照：传错 ns => 验签失败（fail-closed，不是放行）
+
+## 相关
+
+同族：BUG-452（conflicts_check 缺 namespace）、BUG-454（tx_contract 缺 namespace）
+=> 这是同一类缺陷的第三个实例：工具面缺 ns 参数导致非 default ns 下功能失效
 - reported_by: commander-alpha
