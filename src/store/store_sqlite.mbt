@@ -611,9 +611,14 @@ impl Store for SqliteStore with fn update_task(self, task) {
         None => Err("sqlite prepare 失败: update_task")
         Some(stmt) => {
           SqliteStore::bind_task_update_values(stmt, task)
+          // BUG-475 修正：bind_task_update_values 现在占了 1..18（新增 created_by），
+          // 所以 WHERE 的 id 从第 18 位后移到**第 19 位**。
+          // ⚠️ 漏了这一格 ⇒ id 被绑到 created_by、WHERE id 拿到 NULL ⇒
+          //    UPDATE 一行不改而 execute() 仍可能报成功 ⇒ **状态迁移静默失效**
+          //    （实测症状：「待领取」!=「已领取」）。
           ignore(
             stmt.bind(
-              18,
+              19,
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, task.get_id())),
             ),
           )
@@ -644,15 +649,16 @@ pub fn SqliteStore::update_task_if_status(
         None => Err("sqlite prepare 失败: update_task_if_status")
         Some(stmt) => {
           SqliteStore::bind_task_update_values(stmt, task)
+          // BUG-475 修正：id -> 19、expected_status -> 20（见 update_task 处的说明）
           ignore(
             stmt.bind(
-              18,
+              19,
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, task.get_id())),
             ),
           )
           ignore(
             stmt.bind(
-              19,
+              20,
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, expected_status)),
             ),
           )
