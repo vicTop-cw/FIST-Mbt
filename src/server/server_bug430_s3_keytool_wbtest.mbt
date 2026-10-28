@@ -56,10 +56,16 @@ test "s3_keytool_02_pubkey_is_actually_written" {
       "公钥录入是死承诺（BUG-403 原状）",
     )
   }
-  // ② 反向断言：不许出现恒空串（那正是变异形状）
-  //    注意：注释里会讲「此前恒传 \"\"」这段历史，所以只查代码面
-  if src.contains("pubkey_fp=\"\"") {
-    abort("代码面里仍有 pubkey_fp=\"\" —— 公钥录入被退回死承诺")
+  // ② 反向断言：`agent_touch_first_seen` 那条路径不许再出现恒空串（那正是变异形状）。
+  //    ⚠️ **R24 修：原断言扫全文件，但 `agent_revoke_key` 会「合法地」传空串**
+  //    （吊销 = 清空公钥，`agents_set_pubkey(agent_id=fp, pubkey_fp="")`）⇒ 全文件扫描会误伤。
+  //    收紧到**形态**：`pubkey_fp="",` 带逗号 = 传给 `agents_register` 的实参（死承诺现场）；
+  //    `pubkey_fp="")` 带右括号 = 传给 `agents_set_pubkey` 的末参（吊销，合法）。
+  //    只查代码面（`srv_code_only` 已剥注释，注释里讲「此前恒传」的历史不误伤）。
+  if src.contains("pubkey_fp=\"\",") {
+    abort(
+      "`agent_touch_first_seen` 仍在给 agents_register 传 pubkey_fp=\"\" —— 公钥录入被退回死承诺",
+    )
   }
 }
 

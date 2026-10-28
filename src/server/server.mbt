@@ -1881,7 +1881,12 @@ pub async fn run_server() -> Unit {
         "project_dir": string_prop("项目目录（必填）"),
         "description": string_prop("任务描述（必填）"),
         "namespace": string_prop("命名空间(默认 default)"),
-        "created_by": string_prop("创建者身份(默认 human_steward)"),
+        "created_by": string_prop(
+          "创建者身份(默认 human_steward)。⚠️ **自报、服务端不可验证**（BUG-430/S1）：" +
+          "本参数是「人类指挥官特权入口」的准入凭证，但全仓零验证 —— 任何能调到本工具的人" +
+          "都能填 human_steward 走特权路径（可在任意 ns 发布任务、绕过 ns ACL）。" +
+          "**这不是安全措施**，真收口需要 S3 身份锚点（见 AGENTS.md §S1）。",
+        ),
         "level": int_prop(
           "任务层级 L（可选，0..7，默认 6 连长级）",
         ),
@@ -5001,7 +5006,12 @@ pub async fn run_server() -> Unit {
         "description": string_prop("任务描述（必填）"),
         "depends_on": string_prop("依赖任务 id 列表 JSON 数组(可选)"),
         "namespace": string_prop("命名空间(默认 default)"),
-        "created_by": string_prop("创建者身份(默认 human_steward)"),
+        "created_by": string_prop(
+          "创建者身份(默认 human_steward)。⚠️ **自报、服务端不可验证**（BUG-430/S1）：" +
+          "本参数是「人类指挥官特权入口」的准入凭证，但全仓零验证 —— 任何能调到本工具的人" +
+          "都能填 human_steward 走特权路径（可在任意 ns 发布任务、绕过 ns ACL）。" +
+          "**这不是安全措施**，真收口需要 S3 身份锚点（见 AGENTS.md §S1）。",
+        ),
         "level": int_prop(
           "任务层级 L（可选，0..7，默认 6 连长级）",
         ),
