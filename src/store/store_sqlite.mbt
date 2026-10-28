@@ -97,10 +97,14 @@ pub fn SqliteStore::close(self : SqliteStore) -> Unit {
       // `db.close()` 是合法写法，store 无从得知）。node:sqlite 对已关闭的
       // `DatabaseSync` 再 `close()` 会抛 `database is not open`（实测：BUG-463 回归
       // — `t744_9` 白盒直关 + `close_all` 二次关闭 ⇒ 整个测试进程未捕获异常）。
-      // 这里吞掉关闭期的异常，把「close 恒成功」做实；状态归零在下面统一做。
-      db.close() catch {
-        _ => ()
-      }
+      // ⚠️ **BUG-465：这里过去是 `db.close() catch { _ => () }`，那是装饰性防线。**
+      //   `daqing/sqlite` 的 `Database::close(self) -> Unit` **无 raise 标注**，
+      //   而 node:sqlite 的 `DatabaseSync.close()` 在已关闭时抛 **JS 运行时异常**；
+      //   MoonBit 的 catch/try·catch **只包 raise 效果** ⇒ **拦不住**。
+      //   实测（BUG-463 报告 P2/Q1/Q2）：标准 `catch` 写法与 `try·catch` 写法**都仍抛**。
+      //   ⇒ 删掉这个假的防线，让「二次 close 会抛」这个真实行为显式暴露
+      //     （`moon check` 的 unused_try 一直在报它，是 `check_effective_catch.py` 的判据面）。
+      db.close()
   }
   // 两种幂等面共用同一出口：自己关过（上面 Some 分支）/ 别人先关过 / 本来就没句柄。
   self.db = None
@@ -216,19 +220,21 @@ fn SqliteStore::ensure_task_columns(self : SqliteStore) -> Bool {
     Some(db) => {
       let cols : Map[String, Bool] = Map([])
       let mut probe_ok = true
-      try {
-        match db.prepare("PRAGMA table_info(tasks)") {
-          None => probe_ok = false
-          Some(stmt) => {
-            while stmt.step() {
-              let name = str_from_bytes(stmt.column_text(1))
-              cols.set(name, true)
-            }
-            stmt.finalize()
+      // ⚠️ **BUG-465：这里过去包着 `try { ... } catch { _ => probe_ok = false }`，
+      //   那个 catch 从未生效**（块内全是 `db.prepare` / `stmt.step` / `column_text`
+      //   等**无 raise 标注**的 FFI 调用；它们抛的是 JS 运行时异常，catch 拦不住）。
+      //   删掉后**行为不变**：`probe_ok = false` 仍由**显式分支**设置
+      //   （下面的 `None => probe_ok = false`），而「FFI 抛异常」这条路本来就是
+      //   **直接崩**，不是 `probe_ok = false` —— 那才是它的真实语义。
+      match db.prepare("PRAGMA table_info(tasks)") {
+        None => probe_ok = false
+        Some(stmt) => {
+          while stmt.step() {
+            let name = str_from_bytes(stmt.column_text(1))
+            cols.set(name, true)
           }
+          stmt.finalize()
         }
-      } catch {
-        _ => probe_ok = false
       }
       if !probe_ok {
         return false
