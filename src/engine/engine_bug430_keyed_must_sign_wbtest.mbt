@@ -71,7 +71,10 @@ test "bug430cf_c1_keyed_with_valid_sig_verifies" {
   let eng = cf_eng(agent, true)
   let chal = eng.s3_issue_challenge_auto(agent)
   let (role, src) = judged_role_with_nonce(
-    eng, agent, Some(chal), challenge_sig=Some(cf_sign(chal)),
+    eng,
+    agent,
+    Some(chal),
+    challenge_sig=Some(cf_sign(chal)),
   )
   assert_eq(src, "challenge_verified")
   // 拿到的是登记的角色（Leader），不是被降级的 Executor
@@ -170,16 +173,36 @@ test "bug430cf_c6_prefetch_must_not_consume_nonce" {
   let chal = eng.s3_issue_challenge_auto(agent)
   let sig = cf_sign(chal)
   // ① 只验签、不消费的那一侧：连调两次都必须 verified（nonce 未被吃掉）
-  let (_r1, w1) = judged_role_with_challenge(eng, agent, Some(chal), challenge_sig=Some(sig))
-  let (_r2, w2) = judged_role_with_challenge(eng, agent, Some(chal), challenge_sig=Some(sig))
+  let (_r1, w1) = judged_role_with_challenge(
+    eng,
+    agent,
+    Some(chal),
+    challenge_sig=Some(sig),
+  )
+  let (_r2, w2) = judged_role_with_challenge(
+    eng,
+    agent,
+    Some(chal),
+    challenge_sig=Some(sig),
+  )
   assert_eq(w1, "challenge_verified")
-  assert_eq(w2, "challenge_verified")   // ← 若此句红，说明 with_challenge 也消费了 ⇒ 不能用于预取
+  assert_eq(w2, "challenge_verified") // ← 若此句红，说明 with_challenge 也消费了 ⇒ 不能用于预取
 
   // ② 会消费的那一侧：第一次 verified，**第二次必 replayed**
   let chal2 = eng.s3_issue_challenge_auto(agent)
   let sig2 = cf_sign(chal2)
-  let (_n1, n1) = judged_role_with_nonce(eng, agent, Some(chal2), challenge_sig=Some(sig2))
+  let (_n1, n1) = judged_role_with_nonce(
+    eng,
+    agent,
+    Some(chal2),
+    challenge_sig=Some(sig2),
+  )
   assert_eq(n1, "challenge_verified")
-  let (_n2, n2) = judged_role_with_nonce(eng, agent, Some(chal2), challenge_sig=Some(sig2))
-  assert_eq(n2, "challenge_replayed")   // ← 这就是「预取会造成 claim 看到 replayed」的机理
+  let (_n2, n2) = judged_role_with_nonce(
+    eng,
+    agent,
+    Some(chal2),
+    challenge_sig=Some(sig2),
+  )
+  assert_eq(n2, "challenge_replayed") // ← 这就是「预取会造成 claim 看到 replayed」的机理
 }

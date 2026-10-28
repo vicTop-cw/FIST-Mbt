@@ -2335,8 +2335,7 @@ pub async fn run_server() -> Unit {
       let task_id = get_str(args, "task_id")
       let ts = now_default()
       let ns = get_str(args, "namespace", default="default")
-      let eng = match
-        engine_for_ns(ns) {
+      let eng = match engine_for_ns(ns) {
         Ok(e) => e
         Err(m) => return Err(m)
       }
@@ -10111,7 +10110,9 @@ pub async fn run_server() -> Unit {
       {
         "project_dir": string_prop("git 仓库根目录（必填）"),
         "path": string_prop("worktree 路径（必填）"),
-        "branch": string_prop("分支名（可选；不传则 checkout 当前 HEAD）"),
+        "branch": string_prop(
+          "分支名（可选；不传则 checkout 当前 HEAD）",
+        ),
         "detach": bool_prop("detached HEAD（可选，默认 false）"),
         "timeout_ms": int_prop("超时毫秒（可选，默认 60000）"),
       },
@@ -10147,7 +10148,10 @@ pub async fn run_server() -> Unit {
             _ => {
               let err : Map[String, Json] = Map([])
               err.set("ok", Json::boolean(false))
-              err.set("error", Json::string("run_check_external 返回非 JSON 对象"))
+              err.set(
+                "error",
+                Json::string("run_check_external 返回非 JSON 对象"),
+              )
               return Ok(@mcp.ToolResult::text(Json::object(err).stringify()))
             }
           }
@@ -10175,7 +10179,11 @@ pub async fn run_server() -> Unit {
           out.set("stdout", Json::string(stdout))
           out.set("stderr", Json::string(stderr))
           out.set("code", Json::number(code))
-          let note = if ok { "worktree 创建成功" } else { "git worktree add 失败，见 stderr" }
+          let note = if ok {
+            "worktree 创建成功"
+          } else {
+            "git worktree add 失败，见 stderr"
+          }
           out.set("note", Json::string(note))
           Ok(@mcp.ToolResult::text(Json::object(out).stringify()))
         }
@@ -10220,7 +10228,10 @@ pub async fn run_server() -> Unit {
             _ => {
               let err : Map[String, Json] = Map([])
               err.set("ok", Json::boolean(false))
-              err.set("error", Json::string("run_check_external 返回非 JSON 对象"))
+              err.set(
+                "error",
+                Json::string("run_check_external 返回非 JSON 对象"),
+              )
               return Ok(@mcp.ToolResult::text(Json::object(err).stringify()))
             }
           }
@@ -10295,7 +10306,10 @@ pub async fn run_server() -> Unit {
             _ => {
               let err : Map[String, Json] = Map([])
               err.set("ok", Json::boolean(false))
-              err.set("error", Json::string("run_check_external 返回非 JSON 对象"))
+              err.set(
+                "error",
+                Json::string("run_check_external 返回非 JSON 对象"),
+              )
               return Ok(@mcp.ToolResult::text(Json::object(err).stringify()))
             }
           }
@@ -10322,7 +10336,11 @@ pub async fn run_server() -> Unit {
           out.set("stdout", Json::string(stdout))
           out.set("stderr", Json::string(stderr))
           out.set("code", Json::number(code))
-          let note = if ok { "worktree 已移除" } else { "git worktree remove 失败，见 stderr" }
+          let note = if ok {
+            "worktree 已移除"
+          } else {
+            "git worktree remove 失败，见 stderr"
+          }
           out.set("note", Json::string(note))
           Ok(@mcp.ToolResult::text(Json::object(out).stringify()))
         }

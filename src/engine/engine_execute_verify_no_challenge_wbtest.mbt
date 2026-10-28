@@ -77,11 +77,16 @@ test "ch_execute_does_not_pass_role_resolution" {
     _ => abort("读不到 engine.mbt")
   }
   let lines = ch_code_lines(raw)
-  let body = ch_slice_between(lines, "pub fn FistEngine::execute_with_meta(", "\npub fn ")
+  let body = ch_slice_between(
+    lines, "pub fn FistEngine::execute_with_meta(", "\npub fn ",
+  )
   if body.length() == 0 {
-    abort("切不到 execute_with_meta 函数体 —— 本格没跑到被测面")
+    abort(
+      "切不到 execute_with_meta 函数体 —— 本格没跑到被测面",
+    )
   }
-  for needle in ["judged_role_gated(", "judged_role_with_nonce(", "judged_role("] {
+  for
+    needle in ["judged_role_gated(", "judged_role_with_nonce(", "judged_role("] {
     if ch_contains_line(body, needle) {
       abort(
         "execute_with_meta 里出现了 `" +
@@ -107,7 +112,8 @@ test "ch_verify_does_not_pass_role_resolution" {
   if body.length() == 0 {
     abort("切不到 verify 函数体 —— 本格没跑到被测面")
   }
-  for needle in ["judged_role_gated(", "judged_role_with_nonce(", "judged_role("] {
+  for
+    needle in ["judged_role_gated(", "judged_role_with_nonce(", "judged_role("] {
     if ch_contains_line(body, needle) {
       abort(
         "verify 里出现了 `" +
@@ -119,7 +125,9 @@ test "ch_verify_does_not_pass_role_resolution" {
   }
   // 反向：确认它的门确实是业务闸门（防止我切错了函数体而误判）
   if !ch_contains_line(body, "omega_verify_gate(") {
-    abort("verify 的函数体里看不到 omega_verify_gate —— 可能切错函数体了，本格结论不可信")
+    abort(
+      "verify 的函数体里看不到 omega_verify_gate —— 可能切错函数体了，本格结论不可信",
+    )
   }
 }
 
@@ -139,7 +147,9 @@ test "ch_tools_do_not_declare_challenge_param" {
     let marker = "\"" + tool + "\","
     let blk = ch_slice_between(lines, marker, "s1 = instrumented_tool(")
     if blk.length() == 0 {
-      abort("切不到 " + tool + " 的工具块 —— 本格没跑到被测面")
+      abort(
+        "切不到 " + tool + " 的工具块 —— 本格没跑到被测面",
+      )
     }
     for p in ["\"challenge\": string_prop(", "\"challenge_sig\": string_prop("] {
       if ch_contains_line(blk, p) {

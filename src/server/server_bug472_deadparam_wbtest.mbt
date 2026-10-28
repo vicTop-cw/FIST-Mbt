@@ -48,12 +48,17 @@ test "cr_02_plan_engine_has_no_role_gate" {
   }
   let body = cr_func_body(raw, "pub fn FistEngine::plan(")
   if body.length() == 0 {
-    abort("切不到 FistEngine::plan 函数体 —— 本格没跑到被测面")
+    abort(
+      "切不到 FistEngine::plan 函数体 —— 本格没跑到被测面",
+    )
   }
-  for needle in ["judged_role(", "judged_role_gated(", "judged_role_with_nonce("] {
+  for
+    needle in ["judged_role(", "judged_role_gated(", "judged_role_with_nonce("] {
     if cr_has_code(body, needle) {
       abort(
-        "FistEngine::plan 里出现了 `" + needle + "` —— 它已接入角色取数面！" +
+        "FistEngine::plan 里出现了 `" +
+        needle +
+        "` —— 它已接入角色取数面！" +
         "那就**应该**给 plan 接 challenge，并更新本文件与 cr_01。",
       )
     }
@@ -154,7 +159,7 @@ fn cr_func_body(raw : String, sig : String) -> String {
 }
 
 ///|
-fn cr_find(hay : String, needle : String, from : Int) -> Int? {
+fn cr_find(hay : String, needle : String, from : Int32) -> Int32? {
   let h = hay.to_array()
   let nd = needle.to_array()
   if nd.length() == 0 || nd.length() > h.length() {
@@ -180,7 +185,7 @@ fn cr_find(hay : String, needle : String, from : Int) -> Int? {
 }
 
 ///|
-fn cr_slice(s : String, from : Int, to : Int) -> String {
+fn cr_slice(s : String, from : Int32, to : Int32) -> String {
   let a = s.to_array()
   let lo = if from < 0 { 0 } else { from }
   let hi = if to > a.length() { a.length() } else { to }

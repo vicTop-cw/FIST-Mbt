@@ -50,7 +50,11 @@ test "ct_01_seven_handlers_wired" {
   for tool in agent_group {
     let blk = ct_block(code, tool)
     let flat = ct_strip_ws(blk)
-    if not(flat.contains("agent_write_gate(eng,acl_claim_identity(agent,agent),ns)")) {
+    if not(
+        flat.contains(
+          "agent_write_gate(eng,acl_claim_identity(agent,agent),ns)",
+        ),
+      ) {
       abort(tool + " 没接门（或身份来源不是 agent）")
     }
   }
@@ -118,10 +122,16 @@ test "ct_03_memory_backend_zero_regression" {
   // 未传 agent ⇒ 空串 ⇒ 兜底 manual
   match agent_write_gate(eng, acl_claim_identity("", ""), "any-ns") {
     Ok(_) => ()
-    Err(e) => abort("内存后端应放行（零回归契约），实际 Err：" + e)
+    Err(e) =>
+      abort("内存后端应放行（零回归契约），实际 Err：" + e)
   }
   // reject / plan 未传 by ⇒ 缺省值（各工具自己给的缺省）
-  match agent_write_gate(eng, acl_claim_identity("human_steward", "human_steward"), "any-ns") {
+  match
+    agent_write_gate(
+      eng,
+      acl_claim_identity("human_steward", "human_steward"),
+      "any-ns",
+    ) {
     Ok(_) => ()
     Err(e) => abort("内存后端应放行（by 缺省），实际 Err：" + e)
   }
@@ -158,7 +168,7 @@ fn ct_block(code : String, name : String) -> String {
 }
 
 ///|
-fn ct_find(hay : String, needle : String, from : Int) -> Int? {
+fn ct_find(hay : String, needle : String, from : Int32) -> Int32? {
   let h = hay.to_array()
   let nd = needle.to_array()
   if nd.length() == 0 || nd.length() > h.length() {
@@ -184,7 +194,7 @@ fn ct_find(hay : String, needle : String, from : Int) -> Int? {
 }
 
 ///|
-fn ct_slice(s : String, from : Int, to : Int) -> String {
+fn ct_slice(s : String, from : Int32, to : Int32) -> String {
   let a = s.to_array()
   let lo = if from < 0 { 0 } else { from }
   let hi = if to > a.length() { a.length() } else { to }

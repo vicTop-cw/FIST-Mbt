@@ -3,7 +3,7 @@ import {
   // ⚠️ 这会让**所有依赖 core 的包**间接拿到 mooncry；
   //    实测 engine/router/server 本来就依赖它 ⇒ 实际只新增 2 个包。
   "cc06b/mooncry/lib" @mooncry,
-  "moonbitlang/core/encoding/utf8" @utf8,
+  "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/debug",
   "moonbitlang/x/encoding",
   // BUG-427 的接线格（bug427_strip_tail_wired）需要读源码断言实现真在。
