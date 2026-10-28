@@ -186,7 +186,7 @@ def selftest():
 
 
 if __name__ == "__main__":
-    unknown = [a for a in sys.argv[1:] if a != "--selftest"]
+    unknown = [a for a in sys.argv[1:] if a.startswith("--") and a != "--selftest"]
     if unknown:
         print("FATAL 未知参数：%s（本尺只接受 --selftest）" % " ".join(unknown))
         sys.exit(2)
