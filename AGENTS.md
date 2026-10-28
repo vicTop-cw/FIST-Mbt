@@ -158,7 +158,7 @@ grep -cE 'omega_+orphan_+of_+archived_+parent\('  cli.js → 3    ← 容忍变�
 
 **同族口径**：**版本号 PASS ≠ 代码新鲜。** 只比版本字符串的守卫
 （`check_dist_snapshot` 的前身）在「快照版本 0.3.10 == moon.mod 0.3.10、代码是 3 天前的」时照样绿。
-要比内容，不能只比号。落地见 `scripts/check_deployment_freshness.py`（42 格自检，5 处变异对照）
+要比内容，不能只比号。落地见 `scripts/check_deployment_freshness.py`（48 格自检，7 处变异对照）
 + `scripts/_deployment_symbols.py`（探针单一真源）。
 
 ### 判例-33：自检要测「配置这根线」，不是「服务本体」（2026-10-27 立 · BUG-437）

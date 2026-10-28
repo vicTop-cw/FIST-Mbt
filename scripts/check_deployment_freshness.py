@@ -89,10 +89,22 @@ BASELINE_DIRS = ("src", "cmd")
 WALK_EXCLUDE = {"_build", ".git", ".mooncakes", "node_modules", "temp", "__pycache__",
                 ".moon", ".moon-lock", "dist", "_release"}
 
-# `node <旗标>* <路径.js>`：路径允许带引号/不带引号。`(?<![A-Za-z0-9_.\-])` 挡掉 `node_modules`。
+# `node <旗标>* <路径.js|.cjs|.mjs>`: path may be quoted or bare.
+# `(?<![A-Za-z0-9_.-])` keeps `node_modules` from matching.
+# BUG-438 (1): extension widened from only `.js` to `.js/.cjs/.mjs` -- after BUG-437 the
+#   PATH entry is `serve-launcher.cjs`, and the old vocabulary only knew `.js`, so both
+#   shims reported UNPROVABLE forever. Those two lines are exactly the ones most worth
+#   checking (precedent-33: a self-check must test the configuration wire).
+# BUG-438 (2): the program token may be a variable, not only a literal `node` --
+#   this repo's `.cmd` shim does `set "FIST_NODE=%ProgramFiles%\\nodejs\\node.exe"` then
+#   `"%FIST_NODE%" "...\\serve-launcher.cjs"`. A literal-only regex never matches it.
 RE_NODE_JS_CALL = re.compile(
-    r"""(?<![A-Za-z0-9_.\-])node(?:\.exe)?(?:\s+-{1,2}[^\s"']+)*\s+"""
-    r"""(?:"([^"]+\.js)"|'([^']+\.js)'|([^\s"']+\.js))""",
+    r'''(?<![A-Za-z0-9_.\-])'''
+    r'''"?'''
+    r'''(?:node(?:\.exe)?|%[A-Za-z_][A-Za-z0-9_]*%|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?)'''
+    r'''"?'''
+    r'''(?:\s+-{1,2}[^\s"']+)*\s+'''
+    r'''(?:"([^"]+\.(?:js|cjs|mjs))"|'([^']+\.(?:js|cjs|mjs))'|([^\s"']+\.(?:js|cjs|mjs)))''',
     re.I,
 )
 RE_WIN_ABS = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
@@ -125,6 +137,12 @@ def parse_shim_target(text, shim_dir=None):
             return None
     if RE_WIN_ABS.match(raw) or os.path.isabs(raw):
         return raw
+    # BUG-438: `%LOCALAPPDATA%\FIST-Mbt\serve-launcher.cjs` style env placeholders must be
+    # expanded, otherwise the path is never absolute and the shim face stays UNPROVABLE
+    # forever. This is exactly the shape of the repo `.cmd` shim.
+    expanded = os.path.expandvars(raw)
+    if expanded != raw and (RE_WIN_ABS.match(expanded) or os.path.isabs(expanded)):
+        return os.path.normpath(expanded)
     if shim_dir:
         return os.path.normpath(os.path.join(shim_dir, raw.replace("\\", "/")))
     return raw
@@ -179,22 +197,133 @@ def shim_faces(env):
             target = parse_shim_target(text, shim_dir=d)
             if not target:
                 unprovable.append({"label": "PATH 垫片 %s" % path, "artifact": path,
-                                   "why": "垫片正文解析不出它执行的 .js（形状不在判据词表内）"})
+                                   "why": "垫片正文解析不出它执行的 .js/.cjs（形状不在判据词表内）"})
                 continue
-            faces.append({"kind": "path-shim", "label": "PATH 垫片 %s" % path,
-                          "shim": path, "artifact": target})
+            # **BUG-438 跟随一跳**：垫片指向的可能是**启动器包装**（`.cjs`，如 BUG-437 的
+            # `serve-launcher.cjs`），它自己不是生产物、必含不了业务符号 ⇒ 直接拿它评符号
+            # 会恒报「缺符号」（假红）。这里把它**再解析一层**到它真正加载的 `cli.js`；
+            # 解析不出就原样保留（不猜），但标 `wrapper=True` 让上层知道它不可当产物判。
+            wrapper = target.lower().endswith((".cjs", ".mjs"))
+            followed = None
+            if wrapper:
+                ttext = read_artifact(target)
+                profiles = launcher_profiles(ttext) if ttext else []
+                if profiles:
+                    _prof, followed = choose_bundle(ROOT, profiles)
+            if followed:
+                faces.append({"kind": "path-shim", "label": "PATH 垫片 %s（经 %s 跳转）"
+                              % (path, os.path.basename(target)),
+                              "shim": path, "artifact": followed})
+            else:
+                faces.append({"kind": "path-shim", "label": "PATH 垫片 %s" % path,
+                              "shim": path, "artifact": target, "wrapper": wrapper})
     return faces, unprovable
+
+
+MIN_BUNDLE_BYTES = 100 * 1000
+
+
+def _stat_bundle(path):
+    """复刻 launcher 的 `statBundle`：存在 + 是文件 + ≥100KB ⇒ 返回 size，否则 None。
+
+    **必须复刻而不是只看存在性**（BUG-438）：launcher 的 `chooseBundle` 会跳过
+    「不存在 / 不是文件 / 小于 100KB」的候选再去试下一个 profile。
+    判据若只按「文件在不在」挑，就会挑到 launcher **实际不会选**的那一个（判例-34 同族）。
+    """
+    try:
+        if not os.path.isfile(path):
+            return None
+        size = os.path.getsize(path)
+        return size if size >= MIN_BUNDLE_BYTES else None
+    except OSError:
+        return None
+
+
+def choose_bundle(root, profiles):
+    """复刻 launcher 的 `chooseBundle`：按 profiles 顺序取第一个 statBundle 通过的。
+
+    返回 (profile, path)；全不通过 ⇒ (None, None)。
+    """
+    for profile in profiles:
+        p = os.path.normpath(os.path.join(
+            root, "_build", "js", profile, "build", "cmd", "cli", "cli.js"))
+        if _stat_bundle(p):
+            return profile, p
+    return None, None
+
+
+def launcher_profiles(text):
+    """从 `serve-launcher.cjs` 正文反解它**候选 profile 的解析顺序**。
+
+    真源是 launcher 自己：`CANDIDATES` 列出的 name 顺序 + `want = FIST_MBT_PROFILE || 'debug'`
+    决定的实际尝试顺序。这里做**保守**解析：拿到 CANDIDATES 里的 name 列表，
+    再按「`FIST_MBT_PROFILE` 默认值优先」把它排前面（默认取 `debug`）。
+    解析不出任何 profile ⇒ 返回空（宁可不判，不猜）。
+    """
+    if not text:
+        return []
+    names = re.findall(
+        r"""\{\s*name\s*:\s*['"]([A-Za-z0-9_-]+)['"]\s*,\s*file\s*:\s*path\.join\(""", text)
+    if not names:
+        return []
+    # 默认 profile：`process.env.FIST_MBT_PROFILE || '<x>'`
+    m = re.search(r"""FIST_MBT_PROFILE\s*\|\|\s*['"]([A-Za-z0-9_-]+)['"]""", text)
+    want = m.group(1) if m else "debug"
+    order = [want] + [n for n in names if n != want]
+    return order
+
+
+def launcher_faces(root):
+    """PATH 实际入口 `serve-launcher.cjs` ⇒ 它**真会执行**的那一个产物面。
+
+    找不到 launcher（未按 BUG-437 部署）⇒ 返回空（本面不出现，不影响其它面）。
+    """
+    candidates = [os.path.join(root, "serve-launcher.cjs")]
+    local = os.environ.get("LOCALAPPDATA") or ""
+    if local:
+        candidates.append(os.path.join(local, "FIST-Mbt", "serve-launcher.cjs"))
+    out, seen = [], set()
+    for p in candidates:
+        try:
+            if not os.path.isfile(p):
+                continue
+        except OSError:
+            continue
+        key = os.path.normcase(os.path.normpath(p))
+        if key in seen:
+            continue
+        seen.add(key)
+        text = read_artifact(p)
+        if text is None:
+            continue
+        profiles = launcher_profiles(text)
+        if not profiles:
+            continue
+        profile, chosen = choose_bundle(root, profiles)
+        if not chosen:
+            continue
+        out.append({"kind": "runtime-entry",
+                    "label": "运行产物(%s，launcher 实际执行)" % profile,
+                    "shim": p, "artifact": chosen})
+    return out
 
 
 def fixed_faces(root, env, extra=()):
     """固定候选面（存在与否交给 assess 判，不存在不算面）。"""
     out = []
+    # **BUG-438**：PATH 入口真实产物排第一 —— 它才是「用户拿到什么」的那一格。
+    out.extend(launcher_faces(root))
     js = deploy_js_path(env)
     if js:
-        out.append({"kind": "deploy-copy", "label": "部署副本", "artifact": js})
+        # **BUG-438**：旧「部署副本」降为 informational —— BUG-437 后 PATH 已不走它，
+        # 它过期不说明用户拿到旧版。保留显示（人要看得到），但不计入 FAIL。
+        out.append({"kind": "deploy-copy-legacy", "informational": True,
+                    "label": "部署副本（旧位，BUG-437 后已非运行路径）", "artifact": js})
     out.append({"kind": "repo-dist", "label": "仓内快照",
                 "artifact": os.path.join(root, "dist", "fist-mbt.js")})
-    out.append({"kind": "repo-release", "label": "release 产物",
+    # **BUG-438**：`_release/` 是 `build_release.ps1` 生成的**发布包快照**（供 `install.ps1 -Source`），
+    # 本就该停在发版那一刻 ⇒ 判它「必须新鲜」是把发布包当开发产物，降为 informational。
+    out.append({"kind": "repo-release", "informational": True, "label": "release 产物（发布包快照）",
                 "artifact": os.path.join(root, "_release", "js", "fist-mbt.js")})
     for p in extra or ():
         out.append({"kind": "extra", "label": "指定面", "artifact": p})
@@ -300,10 +429,19 @@ def fmt_ts(mtime):
 
 
 def assess_face(face, baseline, symbols=KEY_SYMBOLS):
-    """判一格面 → row（含 fails / warns / state）。不存在或读不到 ⇒ UNPROVABLE（不冒判）。"""
+    """判一格面 → row（含 fails / warns / state）。不存在或读不到 ⇒ UNPROVABLE（不冒判）。
+
+    **`informational=True`（BUG-438）**：该面**不以「必须新鲜」判定** ——
+    它可能是发布包快照（`_release/`）或旧运行位（BUG-437 前的 `%LOCALAPPDATA%` 副本），
+    过期是**正常状态**。这类面照常算 `lag` / `missing` 供人读，但结论一律进 `warns`，**不进 `fails`**
+    ⇒ 不会把整体判红。**为什么必须区分**：一条永远红、且红的理由已失效的守卫，
+    不只是「没有守卫」，是「让人去修错的东西」（判例-34）。
+    """
     row = dict(face)
+    informational = bool(face.get("informational"))
     row.update({"mtime": None, "lag": None, "missing": [], "hits": {},
-                "fails": [], "warns": [], "state": "UNPROVABLE", "why": ""})
+                "fails": [], "warns": [], "state": "UNPROVABLE", "why": "",
+                "informational": informational})
     path = face["artifact"]
     try:
         row["mtime"] = os.path.getmtime(path)
@@ -316,21 +454,34 @@ def assess_face(face, baseline, symbols=KEY_SYMBOLS):
         return row
     row["hits"] = found_report(text, symbols)
     row["missing"] = missing_symbols(text, symbols)
-    cache = is_build_cache(path)
+    # **BUG-438 关键修正**：`runtime-entry` / `path-shim` 是**用户实际运行的那个文件**
+    # （经 launcher 解析出来），即使它在 `_build/` 下也**不能按构建缓存降级为 WARN** ——
+    # 它旧了用户就拿到旧版，这正是本判据存在的理由。
+    # 实测反例（本单变异对照）：把 launcher 实际执行的 cli.js mtime 改到 2020 年，
+    # 旧逻辑只出 `WARN … 构建缓存，按需重建` ⇒ **判据对「用户拿到旧版」沉默**。
+    runtime = face.get("kind") in ("runtime-entry", "path-shim")
+    cache = is_build_cache(path) and not runtime
     row["cache"] = cache
+    # informational 面的结论一律落 warns；其它面按原两级严重度落 fails/warns。
+    def _note(msg):
+        if informational:
+            row["warns"].append(msg + "（informational：过期属正常，不计 FAIL）")
+        elif cache:
+            row["warns"].append(msg + "（构建缓存，按需重建 ⇒ WARN）")
+        else:
+            row["fails"].append(msg)
+
     if baseline is not None:
         row["lag"] = baseline["mtime"] - row["mtime"]
         if row["lag"] > 0:
-            msg = "时间面落后 %s（源码最新改动 %s @ %s）" % (
-                fmt_dur(row["lag"]), baseline["path"], fmt_ts(baseline["mtime"]))
-            if cache:
-                row["warns"].append(msg + "（构建缓存，按需重建 ⇒ WARN）")
-            else:
-                row["fails"].append(msg)
+            _note("时间面落后 %s（源码最新改动 %s @ %s）" % (
+                fmt_dur(row["lag"]), baseline["path"], fmt_ts(baseline["mtime"])))
     if row["missing"]:
-        row["fails"].append("内容面缺符号：%s（产物里连一次调用形都没有）"
-                           % " / ".join(row["missing"]))
+        _note("内容面缺符号：%s（产物里连一次调用形都没有）"
+              % " / ".join(row["missing"]))
     row["state"] = "FAIL" if row["fails"] else ("WARN" if row["warns"] else "FRESH")
+    if informational and row["state"] == "WARN":
+        row["state"] = "INFO"
     return row
 
 
@@ -468,6 +619,41 @@ def selftest():
     cell("P5-no-node", parse_shim_target("@echo off\necho fist-mbt\n"), None)
     cell("P6-first-of-two", parse_shim_target(
         'node "C:/a/first.js" "C:/a/second.js"'), "C:/a/first.js")
+
+    # ---- R 族（BUG-438）：PATH 实际入口 launcher 的解析与跟随 ----
+    # 判例-34：判据必须检查「用户实际运行的那个文件」，不是随便一个同名副本。
+    # 这三格钉住三点：.cjs 能解析（旧词表只认 .js ⇒ 两条垫片恒 UNPROVABLE）、
+    # %VAR% 节点名能解析（.cmd 垫片用 set "FIST_NODE=..."）、%LOCALAPPDATA% 能展开。
+    cell("R1-launcher-cjs-literal", parse_shim_target(
+        'node "C:/shims/serve-launcher.cjs" %*'), "C:/shims/serve-launcher.cjs")
+    cell("R2-cmd-var-program", parse_shim_target(
+        'set "FIST_NODE=%ProgramFiles%\\nodejs\\node.exe"\r\n'
+        '"%FIST_NODE%" "C:/shims/serve-launcher.cjs" %*\r\n'), "C:/shims/serve-launcher.cjs")
+    cell("R3-env-placeholder-expanded", parse_shim_target(
+        '"%FIST_NODE%" "%LOCALAPPDATA%\\FIST-Mbt\\serve-launcher.cjs" %*',
+        shim_dir="X:/shims"),
+        os.path.normpath(os.path.expandvars("%LOCALAPPDATA%\\FIST-Mbt\\serve-launcher.cjs")))
+    # R4：launcher 正文的 profile 解析顺序（FIST_MBT_PROFILE 默认 debug 优先）
+    cell("R4-launcher-profile-order", launcher_profiles(
+        "const REPO = process.env.FIST_MBT_REPO || 'E:\\\\repo';\n"
+        "const want = (process.env.FIST_MBT_PROFILE || 'debug').toLowerCase();\n"
+        "const CANDIDATES = [\n"
+        "  { name: 'debug', file: path.join(REPO, '_build', 'js', 'debug', 'build', 'cmd', 'cli', 'cli.js') },\n"
+        "  { name: 'release', file: path.join(REPO, '_build', 'js', 'release', 'build', 'cmd', 'cli', 'cli.js') },\n"
+        "];\n"), ["debug", "release"])
+    # R5（变异对照，informational 面）：把 _release 当 informational ⇒ 它落后只进 warns、
+    # 绝不进 fails（否则「发布包快照该停在发版那一刻」这条语义就又退回到假红）。
+    # 判例-29：本格直接走 assess_face 这条实现路径，不另写一份判断。
+    _rel = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "_release", "js", "fist-mbt.js")
+    _info = assess_face({"kind": "repo-release", "informational": True, "label": "L",
+                         "artifact": _rel}, {"mtime": time.time() + 1e6, "path": "src/x.mbt"})
+    cell("R5-informational-never-fails",
+         (len(_info.get("fails") or []) == 0, len(_info.get("warns") or []) > 0), (True, True))
+    # R6（正向对照）：同一落后量，非 informational 面必须进 fails。
+    _hard = assess_face({"kind": "extra", "label": "H", "artifact": _rel},
+                        {"mtime": time.time() + 1e6, "path": "src/x.mbt"})
+    cell("R6-non-informational-does-fail", len(_hard.get("fails") or []) > 0, True)
 
     # ---- S 族：源码基线（真文件系统）----
     tmp = tempfile.mkdtemp(prefix="deploy-fresh-self-")
