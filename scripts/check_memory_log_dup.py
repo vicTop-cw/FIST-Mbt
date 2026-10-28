@@ -371,6 +371,12 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def main(argv=None):
+    # ↓ 严格参数面（R66）：未知旗标不再被静默忽略（拼错 --selftest 会假绿）
+    _known = {"--selftest", "--fix", "--scan"}
+    _unknown = [a for a in (argv or sys.argv[1:]) if a.startswith("--") and a.split("=")[0] not in _known]
+    if _unknown:
+        print("FATAL 未知参数：%s（本尺只接受：%s）" % (" ".join(_unknown), " ".join(sorted(_known))))
+        sys.exit(2)
     argv = list(sys.argv[1:] if argv is None else argv)
     if "--selftest" in argv:
         return selftest()
