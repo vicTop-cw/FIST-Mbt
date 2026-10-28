@@ -147,7 +147,7 @@ fn gc_extract_data(cmd : String) -> Result[String, String] {
   }
   // 去掉外层引号，再把 shell 的 '"'"' 还原成 '
   let inner = rest[1:rest.length() - 1].to_owned()
-  let unwrapped = inner.replace(old="'\"'\"'", new="'")
+  let unwrapped = inner.replace_all(old="'\"'\"'", new="'")
   Ok(unwrapped)
 }
 

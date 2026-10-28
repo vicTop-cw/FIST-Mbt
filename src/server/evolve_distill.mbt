@@ -81,15 +81,22 @@ pub fn do_evolve_distill(
 }
 
 ///|
-/// 从时间戳提取可作 id 的紧凑片段（去掉分隔符，取前 16 位）。
-/// 同一 now 蒸馏同一目标会得到同一 id → upsert 幂等覆盖（符合既有语义）。
+/// 从时间戳提取可作 id 的紧凑片段（**去全部**分隔符，保留到「秒」）。
+///
+/// **R149 修（与 R148 的 `lesson_ts_part` 是同一份逻辑的副本，同样两处缺陷）**：
+///   ① 原来用 `replace`（只替换**第一次出现**）⇒ 分隔符去不干净（`"2026-10-28"` ⇒ `"202610-28"`）；
+///   ② 原来截 16 位会**切掉秒的个位** ⇒ `12:34:56` 与 `12:34:59` 得到同一个片段。
+///
+/// ⚠️ **纠正原注释的说法**：原文写「同一 now 蒸馏**同一目标**会得到同一 id」——但 id 实际是
+/// `"principle-" + distill_ts_part(now)`，**不含 target**；所以缺陷②的真实后果不是"同目标幂等"，
+/// 而是**同一 10 秒窗口内、不同目标的两次蒸馏拿到同一个 id** ⇒ 后一次 **upsert 静默覆盖**前一次。
 fn distill_ts_part(now : String) -> String {
   let compact = now
-    .replace(old="-", new="")
-    .replace(old=":", new=".")
-    .replace(old="T", new=".")
-  if compact.length() > 16 {
-    compact[0:16].to_owned()
+    .replace_all(old="-", new="")
+    .replace_all(old=":", new=".")
+    .replace_all(old="T", new=".")
+  if compact.length() > 17 {
+    compact[0:17].to_owned()
   } else {
     compact
   }

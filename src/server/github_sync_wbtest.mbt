@@ -68,7 +68,7 @@ fn extract_data_arg(cmd : String) -> Result[String, String] {
   }
   // 去掉外层引号，再把 shell 的 '"'"' 还原成 '
   let inner = rest[1:rest.length() - 1].to_owned()
-  let unwrapped = inner.replace(old="'\"'\"'", new="'")
+  let unwrapped = inner.replace_all(old="'\"'\"'", new="'")
   Ok(unwrapped)
 }
 
@@ -216,6 +216,9 @@ test "BUG-35：comment 与 close 的 payload 同样必须是合法 JSON" {
 test "BUG-35/87：shell_quote 与 token 占位符不得篡改载荷" {
   // POSIX 单引号安全形态：'don'"'"'t' —— 外层引号保持，内部单引号用 '"'"' 接续
   assert_eq(shell_quote("don't"), "'don'\"'\"'t'")
+  // R149：**多个单引号必须全部转义**（原实现用 `replace` 只替第一个 ⇒ 第二个 `'` 会把
+  // shell 的引用提前终止，命令行语法破缺/载荷被截）。
+  assert_eq(shell_quote("a'b'c"), "'a'\"'\"'b'\"'\"'c'")
   assert_eq(shell_quote("plain"), "'plain'")
   // 换行不需要额外处理：payload 已是单行 JSON（stringify 把 \n 转义成两字符），
   // 这里锁住"JSON 层不含裸换行"这一事实，否则单引号包装也救不了命令行参数
