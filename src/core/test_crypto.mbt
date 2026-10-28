@@ -64,14 +64,17 @@ test "test_crypto_seeds_are_usable" {
     test_ed25519_pub_hex(TEST_ED25519_SEED_A) !=
     test_ed25519_pub_hex(TEST_ED25519_SEED_B),
   )
-  // 全链路：sign → verify 必须通过
+  // 全链路：sign → verify 必须通过。
+  // ⚠️ core 版**不能用** `verify_challenge_sig`（那是 engine 包的）——
+  //    core 是基础包，不能反向依赖 engine。这里直接用 `@mooncry.ed25519_verify`，
+  //    它正是 `verify_challenge_sig` 内部调的那个函数（见 engine_rsv.mbt 的同源注释）。
   let msg = "bug468-fixture-selftest"
-  let pk_a = test_ed25519_pub_hex(TEST_ED25519_SEED_A)
-  let sig_a = test_ed25519_sign_hex(TEST_ED25519_SEED_A, msg)
-  assert_true(verify_challenge_sig(pk_a, msg, sig_a))
+  let pk_a_bytes = @mooncry.ed25519_public_key(TEST_ED25519_SEED_A)
+  let sig_a_bytes = @mooncry.ed25519_sign(TEST_ED25519_SEED_A, @utf8.encode(msg))
+  assert_true(@mooncry.ed25519_verify(pk_a_bytes, @utf8.encode(msg), sig_a_bytes))
   // 反向：用 B 签的签名不能被 A 的公钥验过
-  let sig_b = test_ed25519_sign_hex(TEST_ED25519_SEED_B, msg)
-  assert_false(verify_challenge_sig(pk_a, msg, sig_b))
+  let sig_b_bytes = @mooncry.ed25519_sign(TEST_ED25519_SEED_B, @utf8.encode(msg))
+  assert_false(@mooncry.ed25519_verify(pk_a_bytes, @utf8.encode(msg), sig_b_bytes))
 }
 
 ///|
