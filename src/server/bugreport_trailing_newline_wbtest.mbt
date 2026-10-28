@@ -21,7 +21,7 @@
 ///
 /// 判据用「换行个数」而非 `trim` 后比较：要锁的正是「恰好一个终止换行」这个**精确形状** ——
 /// 归一成 0 个（把终止换行也吃掉）或留下 2 个（缺陷复现）都必须能区分出来。
-fn tnl_trailing_newlines(s : String) -> Int {
+fn tnl_trailing_newlines(s : String) -> Int32 {
   let mut n = 0
   let mut i = s.length()
   while i > 0 && s[i - 1] == '\n' {
@@ -133,10 +133,14 @@ test "tnl_2 归一是恰好一个终止换行而非零个" {
   }
   let n = tnl_trailing_newlines(bug_read_text(d))
   if n == 0 {
-    fail("末尾换行数 = 0（正文末尾无终止换行，违反 POSIX 文本惯例）")
+    fail(
+      "末尾换行数 = 0（正文末尾无终止换行，违反 POSIX 文本惯例）",
+    )
   }
   if n > 1 {
-    fail("末尾换行数 = " + n.to_string() + "（尾随空行缺陷复现）")
+    fail(
+      "末尾换行数 = " + n.to_string() + "（尾随空行缺陷复现）",
+    )
   }
 }
 
@@ -183,7 +187,13 @@ test "tnl_3 report_bug 与 bug_fix 尾随换行一致" {
   }
   let na = tnl_trailing_newlines(bug_read_text(d))
   // bug_fix 返回 Result（不是 raise 型）⇒ 必须 match，不能用 catch
-  match bug_fix(d, [bid], evidence="尾随换行一致性锁", ts="2026-10-26T00:00:02Z") {
+  match
+    bug_fix(
+      d,
+      [bid],
+      evidence="尾随换行一致性锁",
+      ts="2026-10-26T00:00:02Z",
+    ) {
     Ok(_) => ()
     Err(m) => {
       fail("bug_fix 失败: " + m)

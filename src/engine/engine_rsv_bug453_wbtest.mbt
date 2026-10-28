@@ -51,7 +51,7 @@ fn bug453_auth_tag_body() -> String {
   if end < 0 {
     abort("BUG-453: auth_tag 函数体没有闭合的大括号")
   }
-  raw.substring(start=start, end=end)
+  raw.substring(start~, end~)
 }
 
 ///|
@@ -63,19 +63,27 @@ test "bug453_L5_auth_tag_maps_all_four_states" {
   let body = bug453_auth_tag_body()
   // 四个后缀必须各自出现（缺任一个 = 该认证态在 action 面不可见）
   if !body.contains("+challenge_verified") {
-    abort("BUG-453 变异：auth_tag 没有映射 challenge_verified ⇒ 验签通过在 action 面不可见")
+    abort(
+      "BUG-453 变异：auth_tag 没有映射 challenge_verified ⇒ 验签通过在 action 面不可见",
+    )
   }
   if !body.contains("+challenge_failed") {
-    abort("BUG-453 变异：auth_tag 没有映射 challenge_failed ⇒ 验签失败与未挑战不可区分")
+    abort(
+      "BUG-453 变异：auth_tag 没有映射 challenge_failed ⇒ 验签失败与未挑战不可区分",
+    )
   }
   if !body.contains("+challenge_replayed") {
-    abort("BUG-453 变异：auth_tag 没有映射 challenge_replayed ⇒ 重放在 action 面不可见")
+    abort(
+      "BUG-453 变异：auth_tag 没有映射 challenge_replayed ⇒ 重放在 action 面不可见",
+    )
   }
   // `inferred` 归入默认零后缀（由 `rsv_try_set` 调用点按旧口径补 `+role_inferred`）
   // ⇒ 这里不断言 auth_tag 含 +role_inferred，改由 L4 断言 auth_tag("inferred") == ""。
   // 兜底分支必须是空串（既有态零后缀；`+agent_self_reported` 由 rsv_try_set 调用点补）
   if !body.contains("_ =>") {
-    abort("BUG-453 变异：auth_tag 没有兜底分支 ⇒ 新增认证态之外的角色会 panic")
+    abort(
+      "BUG-453 变异：auth_tag 没有兜底分支 ⇒ 新增认证态之外的角色会 panic",
+    )
   }
 }
 

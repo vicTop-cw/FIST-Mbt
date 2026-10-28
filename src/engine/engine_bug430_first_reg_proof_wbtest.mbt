@@ -11,7 +11,7 @@
 // ============================================================================
 
 ///|
-fn bs_seed(which : Int) -> Bytes {
+fn bs_seed(which : Int32) -> Bytes {
   if which == 0 {
     b"\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a\x5a"
   } else {
@@ -20,12 +20,12 @@ fn bs_seed(which : Int) -> Bytes {
 }
 
 ///|
-fn bs_pub_hex(which : Int) -> String {
+fn bs_pub_hex(which : Int32) -> String {
   @mooncry.bytes_to_hex(@mooncry.ed25519_public_key(bs_seed(which)))
 }
 
 ///|
-fn bs_sign(which : Int, msg : String) -> String {
+fn bs_sign(which : Int32, msg : String) -> String {
   @mooncry.bytes_to_hex(
     @mooncry.ed25519_sign(bs_seed(which), @utf8.encode(msg)),
   )
@@ -64,9 +64,7 @@ test "bs_v2_missing_or_bad_proof_fails_closed" {
   assert_false(verify_challenge_sig(pk, challenge, "zzzz"))
   // 正确签名但**换了 challenge**（重放/篡改）
   let sig = bs_sign(0, challenge)
-  assert_false(
-    verify_challenge_sig(pk, "fist-s3-challenge:v1:agent:999", sig),
-  )
+  assert_false(verify_challenge_sig(pk, "fist-s3-challenge:v1:agent:999", sig))
 }
 
 ///|
@@ -78,7 +76,9 @@ test "bs_v3_challenge_is_server_issued_and_unique" {
   let a = eng.s3_issue_challenge_auto("agent-x")
   let b = eng.s3_issue_challenge_auto("agent-x")
   if a == b {
-    abort("两次签发得到同一个 challenge —— 调用方可离线预计算并复用，验签失效")
+    abort(
+      "两次签发得到同一个 challenge —— 调用方可离线预计算并复用，验签失效",
+    )
   }
   // nonce 里绑定 agent（换主体即失效）
   assert_true(a.contains("agent-x"))

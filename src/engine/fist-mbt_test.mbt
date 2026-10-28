@@ -235,7 +235,8 @@ test "sqlite 后端：create/get/update/list/delete 全链路" {
 
 ///|
 test "sqlite 后端：跨连接持久化" {
-  let s1 = match @store.SqliteStore::open(".fist-mbt/tmp/smoke_e2e_persist.db") {
+  let s1 = match
+    @store.SqliteStore::open(".fist-mbt/tmp/smoke_e2e_persist.db") {
     Some(x) => x
     None => abort("sqlite open #1 failed")
   }
@@ -248,7 +249,8 @@ test "sqlite 后端：跨连接持久化" {
   )
   ignore(s1.create_task(t))
   // 重新打开数据库（模拟进程重建），任务应仍存在
-  let s2 = match @store.SqliteStore::open(".fist-mbt/tmp/smoke_e2e_persist.db") {
+  let s2 = match
+    @store.SqliteStore::open(".fist-mbt/tmp/smoke_e2e_persist.db") {
     Some(x) => x
     None => abort("sqlite open #2 failed")
   }

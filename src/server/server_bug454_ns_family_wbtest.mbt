@@ -47,7 +47,9 @@ test "bq_01_tx_contract_routes_by_ns" {
     abort("tx_contract 的 schema 缺 namespace")
   }
   if !blk.contains("engine_for_ns(ns_tx)") {
-    abort("tx_contract 没有按 ns 路由（仍用全局 engine ⇒ 拿主库同名任务算，结论相反）")
+    abort(
+      "tx_contract 没有按 ns 路由（仍用全局 engine ⇒ 拿主库同名任务算，结论相反）",
+    )
   }
   // ★ 判据用「eng_tx 与 transition_contract 都出现」，不硬拼跨行字面
   //   （实测踩过：字符串里写 "\n          .transition_contract(" 与源码真实换行对不上 ⇒ 恒不匹配）
@@ -63,7 +65,9 @@ test "bq_01_tx_contract_routes_by_ns" {
     let line = l.to_string()
     let t = line.trim()
     if prev_was_bare_engine && t.has_prefix(".transition_contract(") {
-      abort("仍用全局 engine 做 transition_contract —— 旧形态残留，结论仍会相反")
+      abort(
+        "仍用全局 engine 做 transition_contract —— 旧形态残留，结论仍会相反",
+      )
     }
     prev_was_bare_engine = t == "engine"
   }
@@ -79,7 +83,10 @@ test "bq_02_all_three_default_to_default" {
   for name in ["tx_contract", "task_challenge", "task_cleanup"] {
     let blk = bq_block(src, name)
     if !blk.contains("get_str(args, \"namespace\", default=\"default\")") {
-      abort(name + " 的 namespace 缺省不是 \"default\" —— 不传会走到别的库")
+      abort(
+        name +
+        " 的 namespace 缺省不是 \"default\" —— 不传会走到别的库",
+      )
     }
   }
 }
@@ -127,7 +134,9 @@ test "bq_04_cleanup_does_not_sweep_all_namespaces" {
     let t = s.trim()
     if t.has_prefix("for ") && t.contains(" in ") {
       abort(
-        "task_cleanup 里出现了遍历（" + s.trim().to_string() + "）—— " +
+        "task_cleanup 里出现了遍历（" +
+        s.trim().to_string() +
+        "）—— " +
         "不可逆删除不该跨库遍历（一次调用波及多个租户库，事后无法核对）",
       )
     }
@@ -135,19 +144,25 @@ test "bq_04_cleanup_does_not_sweep_all_namespaces" {
   // 不许出现读取「已打开 ns 清单」的调用
   for bad in ["active_namespaces", "foreach_ns"] {
     if cl.contains(bad) {
-      abort("task_cleanup 里出现了 `" + bad + "` —— 那是「遍历所有库」的入口")
+      abort(
+        "task_cleanup 里出现了 `" +
+        bad +
+        "` —— 那是「遍历所有库」的入口",
+      )
     }
   }
   // 且必须明确只清一个库
   if !cl.contains("eng_tc") {
-    abort("task_cleanup 没有单一目标引擎 —— 无法保证只清一个库")
+    abort(
+      "task_cleanup 没有单一目标引擎 —— 无法保证只清一个库",
+    )
   }
 }
 
 // ── 小工具 ──────────────────────────────────────────────────────────────
 
 ///|
-fn bq_find_at(hay : String, needle : String, from : Int) -> Int? {
+fn bq_find_at(hay : String, needle : String, from : Int32) -> Int32? {
   let h = hay.to_array()
   let nd = needle.to_array()
   if nd.length() == 0 || nd.length() > h.length() {
@@ -173,7 +188,7 @@ fn bq_find_at(hay : String, needle : String, from : Int) -> Int? {
 }
 
 ///|
-fn bq_slice(s : String, from : Int, to : Int) -> String {
+fn bq_slice(s : String, from : Int32, to : Int32) -> String {
   let a = s.to_array()
   let lo = if from < 0 { 0 } else { from }
   let hi = if to > a.length() { a.length() } else { to }

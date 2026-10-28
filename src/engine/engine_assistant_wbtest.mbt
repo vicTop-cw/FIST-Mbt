@@ -37,12 +37,16 @@ test "bug431_last_primary_sees_dead" {
   e.assistant_upsert(mk_asst("B", true, "dead", "2026-10-26T07:00:00Z"))
   // 前提：active_primary 确实看不到它（否则本格的修法前提不成立）
   match e.assistant_active_primary() {
-    Some(_) => fail("前提不成立：active_primary 不该看到 dead 的 primary")
+    Some(_) =>
+      fail("前提不成立：active_primary 不该看到 dead 的 primary")
     None => ()
   }
   // 修法：last_primary 必须看得到
   match e.assistant_last_primary() {
-    None => fail("BUG-431：last_primary 应看到 dead 的 primary（否则 claim 会误判 elected）")
+    None =>
+      fail(
+        "BUG-431：last_primary 应看到 dead 的 primary（否则 claim 会误判 elected）",
+      )
     Some(_) => ()
   }
 }
@@ -78,7 +82,10 @@ test "bug431_last_primary_excludes_resigned" {
   e.assistant_upsert(mk_asst("R", true, "resigned", "2026-10-26T07:00:00Z"))
   match e.assistant_last_primary() {
     None => ()
-    Some(_) => fail("BUG-431：resigned 不应参与 last_primary（退位后应重新选举）")
+    Some(_) =>
+      fail(
+        "BUG-431：resigned 不应参与 last_primary（退位后应重新选举）",
+      )
   }
 }
 
@@ -91,7 +98,10 @@ test "bug431_fresh_active_primary_still_conflict" {
   e.assistant_upsert(mk_asst("B", true, "active", "2026-10-26T09:59:00Z"))
   // 两个查询面都该看到它
   match e.assistant_active_primary() {
-    None => fail("前提不成立：新鲜的 active primary 应能被 active_primary 看到")
+    None =>
+      fail(
+        "前提不成立：新鲜的 active primary 应能被 active_primary 看到",
+      )
     Some(_) => ()
   }
   let (ok, action, prev_agent) = @store.assistant_claim_action(

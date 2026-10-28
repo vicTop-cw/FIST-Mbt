@@ -198,14 +198,16 @@ fn path_miss_hint(project_dir : String, full : String) -> String {
       candidate +
       " ⇒ 说明 path 写对了、基准根不对"
     } else {
-      "（已按 server 进程 cwd 解析为：" + candidate + "，该处也不存在）"
+      "（已按 server 进程 cwd 解析为：" +
+      candidate +
+      "，该处也不存在）"
     }
   }
   "。基准 project_dir=\"" +
   project_dir +
   "\"，相对 path 按 **server 进程 cwd** 解析" +
   hit_note +
-  "。跨项目请传绝对 project_dir（如 \"E:/IDEProjects/AI/Tnr\"）"
+  "。跨项目请传绝对 project_dir（如 \"E:/work/my-project\"）"
 }
 
 ///|

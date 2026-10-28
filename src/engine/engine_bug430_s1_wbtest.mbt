@@ -86,11 +86,14 @@ test "bug430_s1_receipt_must_say_insecure_not_merely_documented" {
   // ① 字段在（锁 1 已覆盖，这里再钉一次以防锁 1 被改弱）
   assert_true(o.contains("agent_source"))
   // ② **否定性措辞**必须在场：不能只说「有字段」，要说「挡不住」
-  let has_negative = o.contains("unverifiable") || o.contains("不能防") || o.contains("冒充")
+  let has_negative = o.contains("unverifiable") ||
+    o.contains("不能防") ||
+    o.contains("冒充")
   if !has_negative {
     abort(
       "S1 公告不合格：回执只有字段名、没有说明「挡不住冒充」。" +
-      "写了说明 ≠ 安全了 —— 只写文档反而让人更放心。实得：" + o,
+      "写了说明 ≠ 安全了 —— 只写文档反而让人更放心。实得：" +
+      o,
     )
   }
   // ③ 关闭条件必须点名（否则读者以为这就是全部）

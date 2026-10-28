@@ -70,7 +70,8 @@ test "b455_lock_release_only_owner_can_release" {
   // ⇒ 断言必须是「status 变了」，不是「行没了」。这条语义差异正是本测试的价值：
   //   若有人以为释放=删除，会写出基于「locks_get == None」的错误逻辑。
   match e.locks_get("lk/s") {
-    None => abort("B455-L1: 释放后行仍在（status=released），不该是 None")
+    None =>
+      abort("B455-L1: 释放后行仍在（status=released），不该是 None")
     Some(l) => assert_eq(l.status_of(), "released")
   }
 }

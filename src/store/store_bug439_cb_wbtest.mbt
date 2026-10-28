@@ -23,20 +23,26 @@ test "bug439_mem_cb_save_then_get_roundtrip" {
   // 存前：空
   assert_true(b.cb_get("ns1", "circ-a") is None)
   // 存
-  match b.cb_save("ns1", "circ-a", "closed", 2, 60, 3, 30, 0, 1700000000, "2026-10-27T00:00:00Z") {
+  match
+    b.cb_save(
+      "ns1", "circ-a", "closed", 2, 60, 3, 30, 0, 1700000000, "2026-10-27T00:00:00Z",
+    ) {
     Err(e) => abort("cb_save 应成功：" + e)
     Ok(_) => ()
   }
   // 读回：**必须不是 None**
   match b.cb_get("ns1", "circ-a") {
-    None => abort("BUG-439 复发：内存后端 cb_get 仍是 None（cb_save 没真正写入）")
+    None =>
+      abort(
+        "BUG-439 复发：内存后端 cb_get 仍是 None（cb_save 没真正写入）",
+      )
     Some(t) => {
-      assert_eq(t.0, "closed")  // state
-      assert_eq(t.1, 2)         // failures
-      assert_eq(t.2, 60)        // window_secs
-      assert_eq(t.3, 3)         // threshold
-      assert_eq(t.4, 30)        // recovery_secs
-      assert_eq(t.5, 0)         // opened_at
+      assert_eq(t.0, "closed") // state
+      assert_eq(t.1, 2) // failures
+      assert_eq(t.2, 60) // window_secs
+      assert_eq(t.3, 3) // threshold
+      assert_eq(t.4, 30) // recovery_secs
+      assert_eq(t.5, 0) // opened_at
       assert_eq(t.6, 1700000000) // last_fail_ts
     }
   }
@@ -63,7 +69,18 @@ test "bug439_mem_cb_failures_accumulate_to_threshold" {
     }
     failures = cur + 1
     ignore(
-      b.cb_save("ns2", "circ-b", "closed", failures, 60, threshold, 30, 0, 1700000000 + rounds, "t"),
+      b.cb_save(
+        "ns2",
+        "circ-b",
+        "closed",
+        failures,
+        60,
+        threshold,
+        30,
+        0,
+        1700000000 + rounds,
+        "t",
+      ),
     )
     rounds = rounds + 1
   }
@@ -89,7 +106,9 @@ test "bug439_mem_and_sql_cb_get_same_shape" {
     Some(s) => StoreBackend::sqlite(s)
     None => abort("sqlite open 失败：本格没跑到被测面")
   }
-  let args : (String, Int32, Int32, Int32, Int32, Int32) = ("open", 5, 60, 3, 30, 1700000123)
+  let args : (String, Int32, Int32, Int32, Int32, Int32) = (
+    "open", 5, 60, 3, 30, 1700000123,
+  )
   let (st, fa, wi, th, re, la) = args
   ignore(mem.cb_save("ns3", "circ-c", st, fa, wi, th, re, 1700000000, la, "t"))
   ignore(sql.cb_save("ns3", "circ-c", st, fa, wi, th, re, 1700000000, la, "t"))
@@ -101,7 +120,7 @@ test "bug439_mem_and_sql_cb_get_same_shape" {
     None => abort("SQLite 后端读不回")
     Some(t) => t
   }
-  assert_eq(m, s)   // 七元组逐字段相等
+  assert_eq(m, s) // 七元组逐字段相等
 }
 
 ///|

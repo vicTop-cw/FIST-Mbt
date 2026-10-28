@@ -23,9 +23,33 @@ test "bug441_mem_saga_write_then_list_roundtrip" {
   // 空 Log
   assert_eq(b.list_saga_actions("ns1", "root-1").length(), 0)
   // 写三步
-  ignore(b.write_saga_action(ns="ns1", root_task_id="root-1", step="s1", compensation="undo-1", created_at="t1"))
-  ignore(b.write_saga_action(ns="ns1", root_task_id="root-1", step="s2", compensation="undo-2", created_at="t2"))
-  ignore(b.write_saga_action(ns="ns1", root_task_id="root-1", step="s3", compensation="undo-3", created_at="t3"))
+  ignore(
+    b.write_saga_action(
+      ns="ns1",
+      root_task_id="root-1",
+      step="s1",
+      compensation="undo-1",
+      created_at="t1",
+    ),
+  )
+  ignore(
+    b.write_saga_action(
+      ns="ns1",
+      root_task_id="root-1",
+      step="s2",
+      compensation="undo-2",
+      created_at="t2",
+    ),
+  )
+  ignore(
+    b.write_saga_action(
+      ns="ns1",
+      root_task_id="root-1",
+      step="s3",
+      compensation="undo-3",
+      created_at="t3",
+    ),
+  )
   // ★ 必须读回 3 条（修前恒 0）
   let rows = b.list_saga_actions("ns1", "root-1")
   assert_eq(rows.length(), 3)
@@ -43,17 +67,33 @@ test "bug441_mem_saga_write_then_list_roundtrip" {
 /// （此前 no-op ⇒ mark 了但列表不变，rollback 会**重复补偿**）。
 test "bug441_mem_saga_mark_done_is_visible" {
   let b = StoreBackend::memory()
-  ignore(b.write_saga_action(ns="ns1", root_task_id="root-2", step="a", compensation="u-a", created_at="t"))
-  ignore(b.write_saga_action(ns="ns1", root_task_id="root-2", step="b", compensation="u-b", created_at="t"))
+  ignore(
+    b.write_saga_action(
+      ns="ns1",
+      root_task_id="root-2",
+      step="a",
+      compensation="u-a",
+      created_at="t",
+    ),
+  )
+  ignore(
+    b.write_saga_action(
+      ns="ns1",
+      root_task_id="root-2",
+      step="b",
+      compensation="u-b",
+      created_at="t",
+    ),
+  )
   let rows0 = b.list_saga_actions("ns1", "root-2")
   assert_eq(rows0.length(), 2)
   let id_a = rows0[0].0
   // 标记第一条 done
   ignore(b.mark_saga_actions_done(ns="ns1", root_task_id="root-2", ids=[id_a]))
   let rows1 = b.list_saga_actions("ns1", "root-2")
-  assert_eq(rows1.length(), 2)          // 行数不变（不是删除，是改状态）
-  assert_eq(rows1[0].4, "done")          // ★ 第一条 done
-  assert_eq(rows1[1].4, "pending")       // 第二条仍 pending
+  assert_eq(rows1.length(), 2) // 行数不变（不是删除，是改状态）
+  assert_eq(rows1[0].4, "done") // ★ 第一条 done
+  assert_eq(rows1[1].4, "pending") // 第二条仍 pending
   // 幂等：再 mark 一次不炸
   ignore(b.mark_saga_actions_done(ns="ns1", root_task_id="root-2", ids=[id_a]))
   assert_eq(b.list_saga_actions("ns1", "root-2")[0].4, "done")
@@ -66,21 +106,45 @@ test "bug441_mem_saga_mark_done_is_visible" {
 /// 若实现成「每次 push」⇒ 行数会变成 2、id 会变 ⇒ 本格红。
 test "bug441_mem_saga_write_is_idempotent_by_step" {
   let b = StoreBackend::memory()
-  ignore(b.write_saga_action(ns="ns1", root_task_id="root-3", step="dup", compensation="v1", created_at="t1"))
+  ignore(
+    b.write_saga_action(
+      ns="ns1",
+      root_task_id="root-3",
+      step="dup",
+      compensation="v1",
+      created_at="t1",
+    ),
+  )
   let id_first = b.list_saga_actions("ns1", "root-3")[0].0
   // 同 step 再写一次（补偿描述改了）
-  ignore(b.write_saga_action(ns="ns1", root_task_id="root-3", step="dup", compensation="v2", created_at="t2"))
+  ignore(
+    b.write_saga_action(
+      ns="ns1",
+      root_task_id="root-3",
+      step="dup",
+      compensation="v2",
+      created_at="t2",
+    ),
+  )
   let rows = b.list_saga_actions("ns1", "root-3")
-  assert_eq(rows.length(), 1)            // ★ 不新增行
-  assert_eq(rows[0].0, id_first)         // ★ id 不变
-  assert_eq(rows[0].3, "v2")             // 内容更新
+  assert_eq(rows.length(), 1) // ★ 不新增行
+  assert_eq(rows[0].0, id_first) // ★ id 不变
+  assert_eq(rows[0].3, "v2") // 内容更新
 }
 
 ///|
 /// 【锁 4】不同 `(ns, root_task_id)` **不串味**（复合键正确性）。
 test "bug441_mem_saga_keys_are_isolated" {
   let b = StoreBackend::memory()
-  ignore(b.write_saga_action(ns="ns1", root_task_id="r", step="x", compensation="u", created_at="t"))
+  ignore(
+    b.write_saga_action(
+      ns="ns1",
+      root_task_id="r",
+      step="x",
+      compensation="u",
+      created_at="t",
+    ),
+  )
   // 不同 root
   assert_eq(b.list_saga_actions("ns1", "other").length(), 0)
   // 不同 ns（同名 root）
@@ -102,8 +166,24 @@ test "bug441_mem_and_sql_saga_same_shape" {
     None => abort("sqlite open 失败：本格没跑到被测面")
   }
   for b in [mem, sql] {
-    ignore(b.write_saga_action(root_task_id="R", step="p1", task_id="T1", compensation="c1", created_at="t"))
-    ignore(b.write_saga_action(root_task_id="R", step="p2", task_id="T2", compensation="c2", created_at="t"))
+    ignore(
+      b.write_saga_action(
+        root_task_id="R",
+        step="p1",
+        task_id="T1",
+        compensation="c1",
+        created_at="t",
+      ),
+    )
+    ignore(
+      b.write_saga_action(
+        root_task_id="R",
+        step="p2",
+        task_id="T2",
+        compensation="c2",
+        created_at="t",
+      ),
+    )
   }
   let m = mem.list_saga_actions("default", "R")
   let s = sql.list_saga_actions("default", "R")
@@ -112,10 +192,10 @@ test "bug441_mem_and_sql_saga_same_shape" {
   let mut i = 0
   while i < m.length() {
     // 只比语义四字段（id 数值可以不同）
-    assert_eq(m[i].1, s[i].1)   // step
-    assert_eq(m[i].2, s[i].2)   // task_id
-    assert_eq(m[i].3, s[i].3)   // compensation
-    assert_eq(m[i].4, s[i].4)   // status
+    assert_eq(m[i].1, s[i].1) // step
+    assert_eq(m[i].2, s[i].2) // task_id
+    assert_eq(m[i].3, s[i].3) // compensation
+    assert_eq(m[i].4, s[i].4) // status
     i = i + 1
   }
 }

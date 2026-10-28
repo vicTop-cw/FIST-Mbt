@@ -37,7 +37,8 @@ fn s3_p3_sign(seed : Bytes, nonce : String) -> String {
 /// ⇒ 整个 S3 失效。本格把「它必须不存在」钉死。
 test "s3_p3_01_sig_probe_is_gone" {
   let src = @fs.read_file_to_string("src/engine/engine_rsv.mbt") catch {
-    _ => abort("读不到 engine_rsv.mbt —— 实现路径格没跑到被测面")
+    _ =>
+      abort("读不到 engine_rsv.mbt —— 实现路径格没跑到被测面")
   }
   // ⚠️ 判例-30 防护：**不能全文 contains** —— 文件里的注释还在讲「s3_last_sig_probe 已删除」
   // 这段历史，全文匹配会永远命中注释（自指假绿的反面：自指假红）。
@@ -46,7 +47,7 @@ test "s3_p3_01_sig_probe_is_gone" {
   for line in src.split("\n") {
     let l = line.trim()
     if l.has_prefix("///") || l.has_prefix("//") || l.has_prefix("///|") {
-      continue          // 跳过注释行
+      continue // 跳过注释行
     }
     if l.contains("s3_last_sig_probe") {
       code_hit = true
@@ -54,7 +55,9 @@ test "s3_p3_01_sig_probe_is_gone" {
     }
   }
   if code_hit {
-    abort("s3_last_sig_probe 仍在**代码**里（注释里的历史说明不算）—— 它必须被删除")
+    abort(
+      "s3_last_sig_probe 仍在**代码**里（注释里的历史说明不算）—— 它必须被删除",
+    )
   }
 }
 
@@ -66,7 +69,9 @@ test "s3_p3_02_missing_sig_fails_closed" {
   let e = FistEngine::new(store=@store.StoreBackend::memory())
   // 没登记公钥的 agent + 有 nonce 但无签名 ⇒ challenge_failed
   let (role, src) = judged_role_with_challenge(
-    e, "no-pubkey-agent", Some("some-nonce"),
+    e,
+    "no-pubkey-agent",
+    Some("some-nonce"),
   )
   assert_eq(role, "Executor")
   assert_eq(src, "challenge_failed")
@@ -126,7 +131,8 @@ test "s3_p3_04_default_sig_param_keeps_phase2_behavior" {
 /// 而**不是**恒传空串或忽略它。
 test "s3_p3_05_upper_layer_really_forwards_the_sig" {
   let src = @fs.read_file_to_string("src/engine/engine_rsv.mbt") catch {
-    _ => abort("读不到 engine_rsv.mbt —— 实现路径格没跑到被测面")
+    _ =>
+      abort("读不到 engine_rsv.mbt —— 实现路径格没跑到被测面")
   }
   // 只查非注释行（判例-30）
   let mut forwards = false
@@ -145,9 +151,13 @@ test "s3_p3_05_upper_layer_really_forwards_the_sig" {
     }
   }
   if ignores {
-    abort("上层**忽略了**调用方签名（恒传空串）—— challenge_sig 形同摆设")
+    abort(
+      "上层**忽略了**调用方签名（恒传空串）—— challenge_sig 形同摆设",
+    )
   }
   if !forwards {
-    abort("上层没有把解出的 sig 传给 verify_challenge_sig —— challenge_sig 没接线")
+    abort(
+      "上层没有把解出的 sig 传给 verify_challenge_sig —— challenge_sig 没接线",
+    )
   }
 }

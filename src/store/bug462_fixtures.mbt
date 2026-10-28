@@ -30,11 +30,7 @@
 ///
 /// `tag` 只做**可读性**（事后在 `temp/` 里认出是哪个测试留下的），**不参与唯一性**。
 pub fn bug462_unique_db(tag : String) -> String {
-  "temp/b462_" +
-  bug462_sanitize(tag) +
-  "_" +
-  bug462_run_token() +
-  ".db"
+  "temp/b462_" + bug462_sanitize(tag) + "_" + bug462_run_token() + ".db"
 }
 
 ///|

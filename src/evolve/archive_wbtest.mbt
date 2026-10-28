@@ -154,13 +154,12 @@ test "arch455_sample_parent_endpoints_and_weight_order" {
     let r = i.to_double() / 1000.0
     match a.sample_parent(rand=fn() { r }) {
       None => fail("非空库不该 None")
-      Some(x) => {
+      Some(x) =>
         if x.id == "LOW" {
           hits_low = hits_low + 1
         } else {
           hits_high = hits_high + 1
         }
-      }
     }
   }
   // HIGH 的权重远大于 LOW（10/(10+0.4)≈0.96 vs 0.01/(0.01+0.4)≈0.024）⇒ 命中数必须更多

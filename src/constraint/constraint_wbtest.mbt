@@ -82,10 +82,22 @@ test "rsv_verdict_delegates_to_rsv_action" {
     if mine != theirs {
       abort(
         "rsv_conflict_verdict 与 @store.rsv_action 漂移：prev=" +
-        (match prev { None => "None" ; Some((a, t, _)) => "Some(" + a + "," + t + ")" }) +
-        " agent=" + agent + " now=" + now +
-        " ⇒ constraint=" + mine.0.to_string() + "/" + mine.1 +
-        " store=" + theirs.0.to_string() + "/" + theirs.1,
+        (match prev {
+          None => "None"
+          Some((a, t, _)) => "Some(" + a + "," + t + ")"
+        }) +
+        " agent=" +
+        agent +
+        " now=" +
+        now +
+        " ⇒ constraint=" +
+        mine.0.to_string() +
+        "/" +
+        mine.1 +
+        " store=" +
+        theirs.0.to_string() +
+        "/" +
+        theirs.1,
       )
     }
   }

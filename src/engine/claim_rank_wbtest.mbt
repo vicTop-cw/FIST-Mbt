@@ -238,7 +238,8 @@ test "rank_gate G4: 执行器实例名不靠前缀拿团长档" {
   match
     e.claim(task_id=t5, assignee="atomcode-r91", now="2026-10-22T01:00:00Z") {
     Ok(_) => ()
-    Err(m) => abort("执行者档（rank=5）应可领 level=5，实际被拒: \{m}")
+    Err(m) =>
+      abort("执行者档（rank=5）应可领 level=5，实际被拒: \{m}")
   }
 }
 
@@ -262,7 +263,8 @@ test "rank_gate G4: 执行器实例名不靠前缀拿团长档" {
 test "rank_gate G5: leader 前缀不再取得军衔（行为翻转）" {
   // 纯函数面：名字进不去军衔，角色才进得去
   let mem = FistEngine::new()
-  for n in ["leader-xxx", "leader", "leader-tools-bot", "polish-lead", "fist-mbt"] {
+  for
+    n in ["leader-xxx", "leader", "leader-tools-bot", "polish-lead", "fist-mbt"] {
     let (role, src) = judged_role(mem, n)
     assert_eq(role, "Executor")
     assert_eq(src, "inferred")
@@ -274,8 +276,7 @@ test "rank_gate G5: leader 前缀不再取得军衔（行为翻转）" {
   // 端到端翻转：level=5（营长级）任务，`leader-xxx` 与匿名执行者现在**同样放行**
   let e = FistEngine::new()
   let t5 = cr_publish(e, "营长级任务（level=5）", 5)
-  match
-    e.claim(task_id=t5, assignee="leader-xxx", now="2026-10-27T02:00:00Z") {
+  match e.claim(task_id=t5, assignee="leader-xxx", now="2026-10-27T02:00:00Z") {
     Ok(_) => ()
     Err(m) =>
       abort(
@@ -290,12 +291,15 @@ test "rank_gate G5: leader 前缀不再取得军衔（行为翻转）" {
 /// 更高军衔 —— 领 level=4（团长级）照旧被 RANK_GATE 拒，文案点名 `rank=5`。
 test "rank_gate G5: 名字不得提权（含 atomcode 前缀不再拿团长档）" {
   let e = FistEngine::new()
-  for n in [
-    "leader", "leader-xxx", "leader-tools-bot", "polish-lead", "fist-mbt",
-    "atomcode-r90", "aider-m1", "commander-fake",
-  ] {
+  for
+    n in [
+      "leader", "leader-xxx", "leader-tools-bot", "polish-lead", "fist-mbt", "atomcode-r90",
+      "aider-m1", "commander-fake",
+    ] {
     let tid = cr_publish(e, "团长级任务（level=4）", 4)
-    let msg = cr_err_of(e.claim(task_id=tid, assignee=n, now="2026-10-27T02:00:00Z"))
+    let msg = cr_err_of(
+      e.claim(task_id=tid, assignee=n, now="2026-10-27T02:00:00Z"),
+    )
     assert_true(msg.contains("RANK_GATE"))
     assert_true(msg.contains("rank=5"))
   }
@@ -335,10 +339,12 @@ test "rank_gate G5: 已登记 Leader 拿军官军衔，前缀同名未登记仍�
   assert_eq(rank_of_role(role), 4)
   // 正面：军官档能领团长级任务（修前这条名字按前缀要么 5 拒、要么 6 拒 —— 都不对）
   let t4 = cr_publish(e, "团长级任务（level=4）", 4)
-  match
-    e.claim(task_id=t4, assignee=legit, now="2026-10-27T02:00:00Z") {
+  match e.claim(task_id=t4, assignee=legit, now="2026-10-27T02:00:00Z") {
     Ok(_) => ()
-    Err(m) => abort("已登记 Leader（rank=4）应可领 level=4，实际被拒: " + m)
+    Err(m) =>
+      abort(
+        "已登记 Leader（rank=4）应可领 level=4，实际被拒: " + m,
+      )
   }
   // 反例：同前缀但未登记 ⇒ 默认档 5 ⇒ 同一级别任务被拒（名字不带权限）
   let fake = "bug432-officer-lane-fake"
@@ -377,7 +383,8 @@ test "rank_gate G5: server 自身份不因 Leader 登记拿到军官军衔" {
   }
   // 记录在表里（假绿防护：先证明它不是「查不到」）
   match e.agents_get(agent_fp_of("fist-mbt")) {
-    None => abort("★判据没跑到被测面：server 自身份记录没写成")
+    None =>
+      abort("★判据没跑到被测面：server 自身份记录没写成")
     Some(rec) => assert_eq(rec.role, "Leader")
   }
   // 但裁决面看不到它 ⇒ Executor / inferred / rank 5

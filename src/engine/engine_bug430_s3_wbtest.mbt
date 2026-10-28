@@ -35,7 +35,9 @@ test "s3_min_01_no_nonce_no_leader" {
 test "s3_min_02_nonce_without_registered_pubkey_fails" {
   let e = s3_eng()
   let (role, source) = judged_role_with_challenge(
-    e, "ghost-agent", Some(issue_challenge_nonce("ghost-agent", 1)),
+    e,
+    "ghost-agent",
+    Some(issue_challenge_nonce("ghost-agent", 1)),
   )
   assert_eq(role, "Executor")
   assert_eq(source, "challenge_failed")
@@ -50,9 +52,9 @@ test "s3_min_03_nonce_is_deterministic_and_distinct" {
   let a2 = issue_challenge_nonce("lane-be", 1)
   let b = issue_challenge_nonce("lane-be", 2)
   let c = issue_challenge_nonce("other", 1)
-  assert_eq(a1, a2)          // 同输入 ⇒ 同输出
-  assert_true(a1 != b)       // 计数器不同 ⇒ 不同
-  assert_true(a1 != c)       // agent 不同 ⇒ 不同
+  assert_eq(a1, a2) // 同输入 ⇒ 同输出
+  assert_true(a1 != b) // 计数器不同 ⇒ 不同
+  assert_true(a1 != c) // agent 不同 ⇒ 不同
   // nonce 里绑定了 agent（换主体即失效）
   assert_true(a1.contains("lane-be"))
 }
