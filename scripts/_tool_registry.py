@@ -161,10 +161,10 @@ def selftest():
         print("SELFTEST FAIL：")
         for n, w in bad:
             print("  - %s：%s" % (n, w))
-        return 1
+        sys.exit(1)  # NO_CALL_FACE J2
     print("SELFTEST OK（%d 格：真实读数三格 / 两形态正则各一格 / 不误吃一格 / 测试排除一格 / 收口两格）"
           % len(cells))
-    return 0
+    sys.exit(0)  # NO_CALL_FACE J2
 
 
 def main():

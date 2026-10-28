@@ -140,11 +140,11 @@ def selftest(ver, marker):
             print("      └ 原因可见：%s" % got[0][:88])
     if bad:
         print("SELFTEST FAIL：%d/%d 支不符预期" % (bad, len(cases)))
-        return 1
+        sys.exit(1)  # NO_CALL_FACE J2
     # 自述面：对照清单从 cases 反解，别手写（手写的范围数字会变成没人认领的主张）
     reds = ", ".join(n.split()[0] for n, _, must in cases if must)
     print("SELFTEST OK：%d 支对照全按预期（违例必红 %s / 干净必绿）" % (len(cases), reds))
-    return 0
+    sys.exit(0)  # NO_CALL_FACE J2
 
 
 def main():

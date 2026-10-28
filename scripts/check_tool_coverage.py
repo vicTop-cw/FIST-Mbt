@@ -242,7 +242,7 @@ def selftest():
 
     ok = sum(1 for _n, g, w in cells if g == w)
     print("\n[selftest] %d/%d 格通过" % (ok, len(cells)))
-    return 0 if ok == len(cells) else 4
+    sys.exit(0 if ok == len(cells) else 4)  # NO_CALL_FACE J2
 
 
 def main(argv=None):

@@ -303,9 +303,9 @@ hint = "git commit 之前必须 fmt"
         print("SELFTEST FAIL：检测器自身有问题")
         for f in fails:
             print("  - " + f)
-        return 1
+        sys.exit(1)  # NO_CALL_FACE J2
     print("SELFTEST OK 沙箱隔离普查可红可绿（忘env/变异必红；宿主写/字符串提及 不误红）")
-    return 0
+    sys.exit(0)  # NO_CALL_FACE J2
 
 
 def main(argv):

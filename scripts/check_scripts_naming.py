@@ -125,11 +125,11 @@ def selftest():
     prefixes, suffixes, probs = read_roles(NAMING_DOC)
     if probs:
         print("FATAL 判据无法自证：词法读不到 —— " + "；".join(probs))
-        return 2
+        sys.exit(2)  # NO_CALL_FACE J2
     top, sub = universe(SCRIPTS_DIR)
     if not top:
         print("FATAL 判据无法自证：scripts/ 顶层 .py 宇宙为空")
-        return 2
+        sys.exit(2)  # NO_CALL_FACE J2
 
     # 1) 合成宇宙：全带角色 ⇒ 两面 0
     synth = ["check_foo.py", "gen_bar.py", "baz_verify.py", "qux_probe.py"]
@@ -158,7 +158,7 @@ def selftest():
         ok6 = (t2 == []) and pr2 != []
     except Exception as e:
         print("FATAL 判据未捕获异常：%s" % e)
-        return 2
+        sys.exit(2)  # NO_CALL_FACE J2
     cells.append(("empty-universe-and-missing-doc-selfrefuse", ok6))
 
     # 7) 空词表不许报绿（词法解析到 0 个词就是判据坏了）
@@ -167,7 +167,7 @@ def selftest():
         ok7 = pr3 != []
     except Exception as e:
         print("FATAL 判据未捕获异常：%s" % e)
-        return 2
+        sys.exit(2)  # NO_CALL_FACE J2
     cells.append(("empty-role-table-selfrefuse", ok7))
 
     # 8) 真源码阳性对照：现状读数必须 == 棘轮上限（上限烂掉比没上限更贵）
@@ -189,7 +189,7 @@ def selftest():
                                         " ".join(n for n, _ in cells)))
     if bad:
         print("未通过格：" + " ".join(bad))
-    return 0 if not bad else 2
+    sys.exit(0 if not bad else 2)  # NO_CALL_FACE J2
 
 
 def _write_tmp_naming(body):

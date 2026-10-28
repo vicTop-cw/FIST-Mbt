@@ -703,7 +703,7 @@ def selftest():
         print("SELFTEST FAIL：")
         for nm, why in bad:
             print("  - %s：%s" % (nm, why))
-        return 1
+        sys.exit(1)  # NO_CALL_FACE J2
     print("SELFTEST OK（%d 格：抽取口径 9 格（`<…>`/`*` 形态、日期与变量占位、形态出数反证、"
           "「路径:行号」剥离 + 同串正反证、绝对路径、目录形态、非仓内）/ 干净不误报 / on-disk 必报 / "
           "missing 必报 / 跟踪目录反解 3 格 / P4 分面 3 格 / 空转计数 / P5 搬家 7 格（检出、深层子目录仍认、"
@@ -711,7 +711,7 @@ def selftest():
           "P7 豁免 6 格（external/scratch 检出、名单外/非 `_` 前缀 2 条反证、不抢 on-disk 反证）/ "
           "P6 棘轮 3 格 / 退出码两口径 5 格 / 上限常量 1 格 / P2 空转三条 4 格 / 模式互斥 2 格 / FATAL 出口码 1 格）"
           % len(cells))
-    return 0
+    sys.exit(0)  # NO_CALL_FACE J2
 
 
 def main():
