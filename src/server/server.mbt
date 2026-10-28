@@ -2469,6 +2469,33 @@ pub async fn run_server() -> Unit {
       }
       let verifier = get_str(args, "verifier")
       let ts = now_default()
+      // ══════════════════════════════════════════════════════════════════════
+      // BUG-467：**ns 写权限门（ACL）** —— `verify` 此前**一道门都没有**。
+      //
+      // 病灶：函数体原只有 `to_result(eng.verify(task_id~, verifier~, …))`
+      // ⇒ 无角色门、无 ACL 门，`verifier` 是自报串
+      // ⇒ **任何能调到 MCP 的人都能验收任何任务**（质量闸门形同虚设）。
+      //
+      // 与 `execute` 对齐（判例-29 的正面用法：**照抄已验证的接线**，不新造第二条）：
+      //   身份 = `acl_claim_identity(explicit_agent, assignee)` 同一真源；
+      //   门   = `agent_write_gate` → `agents_acl_check(write=true)`。
+      //
+      // **`verifier` 与身份门的关系**（派单要点）：
+      //   · `verifier` = **回执里记录的操作者名**（写进任务历史）
+      //   · 身份门判的是「**调用方是否有权在这个 ns 写**」
+      //   两者**可以不同**——与 `execute` 的 `executor` / `agent` 同一关系（BUG-436 已定）。
+      //   本处 `verify` **没有独立的 agent 参数** ⇒ 把 `verifier` 同时用作
+      //   「显式身份」与「记录名」（`acl_claim_identity(verifier, verifier)`）：
+      //   这比 `execute` 的链更简单，且**不引入新参数**（零回归）。
+      //
+      // ⚠️ 零回归：`agent_write_gate` 对**内存后端直接放行**
+      //    （见其 docstring「内存后端无持久化 ACL 面，不设门（放行）」）
+      //    ⇒ 既有测试不受影响；只有生产 sqlite 面才真正 fail-closed。
+      // ══════════════════════════════════════════════════════════════════════
+      match agent_write_gate(eng, acl_claim_identity(verifier, verifier), ns) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
+        Ok(_) => ()
+      }
       let docs_check = get_bool(args, "docs_check", default=false)
       to_result(eng.verify(task_id~, verifier~, now=ts, docs_check~))
     },
@@ -7148,7 +7175,12 @@ pub async fn run_server() -> Unit {
       // `rotate_challenge` 也由服务端签发（`s3_issue_challenge_auto`，进程级单调递增），
       // 不接受调用方自选 —— 否则可离线预计算并提前签好 ⇒ 挑战退化 ⇒ 旧私钥证明被架空。
       if pin == key_pin_reject_different && rotate_sig == "" {
-        let issued = eng.s3_issue_challenge_auto(agent_id, ns~, issued_at=now_default())
+        let issued = eng.s3_issue_challenge_auto(
+                agent_id,
+                ns~,
+                issued_at=now_default(),
+                cleanup_cutoff=iso_minus_secs(now_default(), 86400),
+              )
         return Ok(
           @mcp.ToolResult::text(
             Json::object({
@@ -7290,7 +7322,12 @@ pub async fn run_server() -> Unit {
         let proof_sig = get_str(args, "proof_sig")
         if challenge == "" {
           // ① 只签发挑战，**一个字节都不写库**
-          let issued = eng.s3_issue_challenge_auto(agent_id, ns~, issued_at=now_default())
+          let issued = eng.s3_issue_challenge_auto(
+                agent_id,
+                ns~,
+                issued_at=now_default(),
+                cleanup_cutoff=iso_minus_secs(now_default(), 86400),
+              )
           return Ok(
             @mcp.ToolResult::text(
               Json::object({
@@ -7561,7 +7598,12 @@ pub async fn run_server() -> Unit {
       }
       // 复用 `s3_issue_challenge_auto`（与首登 / 轮换**同源**：服务端进程级单调递增计数器）
       // ⇒ 调用方无法离线预计算 nonce 并提前签好（那会让「挑战」退化成固定字符串）。
-      let issued = eng.s3_issue_challenge_auto(agent_id, ns~, issued_at=now_default())
+      let issued = eng.s3_issue_challenge_auto(
+                agent_id,
+                ns~,
+                issued_at=now_default(),
+                cleanup_cutoff=iso_minus_secs(now_default(), 86400),
+              )
       Ok(
         @mcp.ToolResult::text(
           Json::object({
