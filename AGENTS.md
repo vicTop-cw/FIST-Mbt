@@ -191,13 +191,18 @@ DSH 侧 `fist-mbt` 却恒报 `mcp-client(fist-mbt): server is disconnected` —�
 + `.mcp.json` 走 `node` + 该启动器 + 两份注册垫片（`~/.local/bin/fist-mbt.cmd` 与 POSIX `fist-mbt`，均委派它，
 `.cmd` 另钉真 `node.exe`）；账本 BUG-437。
 
-### 已知边界：`agent` / `assignee` / `executor` 是**自报的**，服务端无法验证（BUG-430 · S1）
+### 已知边界：`agent` / `assignee` / `executor` / **`created_by`** 是**自报的**，服务端无法验证（BUG-430 / BUG-464 · S1）
 
 **这是安全性公告，不是安全措施。** 写在这里**不会**让系统更安全 ——
 **在 S3（身份锚点）落地前，冒充风险不会消除。**
 
 `reserve_scope` / `lock_acquire` / `claim` / `execute` 等工具的 `agent`（以及 `assignee` / `executor`）
 都是**调用方自报的字符串**，服务端没有任何手段验证它真属于谁。
+
+**还有一条更容易被漏掉的**：`publish` / `publish_parallel` / `dag_publish` 的 **`created_by`** ——
+它是「人类指挥官特权入口」的准入凭证（`engine.publish` 硬检查 `created_by` 必须是 `human_steward`/`human`），
+而 `created_by` **同样全仓零验证**（三处都是 `get_str(args, "created_by", default="human_steward")`）
+⇒ **任何能调到 MCP 的人都能以指挥官身份在任意 ns 发布任务**（BUG-464 定夺：这**不是** ACL 缺陷，是 S1 同族）。
 
 **⇒ 不能防有意的冒充**：任何调用方都可以把这个字段填成任意已登记的名字，
 从而以那个身份取得该身份有资格取得的一切（预订、锁、任务认领、验收……）。
