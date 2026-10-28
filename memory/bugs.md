@@ -10218,3 +10218,7 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
 - summary: [r2-lane-c] deps_satisfied 对不存在的任务也返回 false，与「依赖未满足」不可分
 - detail: 实测（Lane C 2026-10-28，只读）：dag_check / deps_satisfied 对「依赖任务 id 不存在」与「依赖任务存在但未完成」两种情况都返回 false。后果：上游无法区分「我的前置还没做完」（应等待）与「我的前置根本不存在」（应报配置错误）—— 后者会让任务永久卡在「等一个永远不会完成的前置」，且看板上看不出异常。建议：三值化（satisfied / pending / missing）或在回执里附 missing_deps 列表；配两格锁分别覆盖两种输入。
 - reported_by: lead
+## BUG-461 [2026-10-28T04:00:39Z] [medium] OPEN
+- summary: [r3-lead] store_migration_wbtest 夹具路径跨进程共享（temp/t744_<case>）⇒ 并发跑测试时 6 格 t744_* 报 database is locked，全量绿不可判
+- detail: 实测（2026-10-28 12:00–12:10）：\n① 后台跑全量 python scripts/moon_test_env.py --target js（同时另一进程在跑 moon check 预提交钩子）→ Total tests 1719 / passed 1713 / failed 6，6 格全在 src/store/store_migration_wbtest.mbt（:111 t744_2_legacy_only_migrates / :144 t744_3_empty_target_migrates / :170 t744_4_conflict_does_not_touch_either_side / :243 t744_7_forced_overwrites_with_backup 等），报错含 'Error: database is locked'。\n② 同一份代码单包跑 python scripts/moon_test_env.py --target js -p vicTop-CW/fist-mbt/src/store → 97/97 passed 全绿。\n③ 无并发时全量复跑 → 1719/1719 passed 全绿。\n根因：夹具用**进程间共享的固定相对路径**（temp/t744_legacy_only 等，见 :111 行 let base = "temp/t744_legacy_only"），两个测试进程同时打开同一个 .db ⇒ sqlite 锁冲突。这与 BUG-455「测试 db 统一落 .fist-mbt/tmp/」同族但更深：光换目录不解决跨进程并发，需要**每进程唯一子目录**（如 temp/t744_<pid>_<rand>/）或环境变量注入基线目录。\n后果：并发场景下（CI 双臂、守卫电池 spawn 测试、开发者同时跑单包与全量）全量结论不可信，绿/红随机。\n建议：夹具基线改为「每进程唯一临时目录 + 用后清理」，并加一格自检断言两次不同基线的路径不相等。
+- reported_by: lead
