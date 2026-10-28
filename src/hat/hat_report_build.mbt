@@ -112,7 +112,8 @@ fn render_markdown(
       Ok(e) => e.name_zh + "（" + r.element_id + "）"
       Err(_) => r.element_id
     }
-    let ev = r.evidence.replace(old="\n", new=" ")
+    // R150：`replace` 只替首个换行 ⇒ 表格单元格里残留 `\n` 会断行。改 `replace_all`。
+    let ev = r.evidence.replace_all(old="\n", new=" ")
     s = s +
       "| " +
       el +

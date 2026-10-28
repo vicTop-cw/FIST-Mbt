@@ -245,10 +245,10 @@ pub fn distill_code_search(json_text : String) -> Array[SearchCandidate] {
 pub fn candidates_to_tsv_lines(cands : Array[SearchCandidate]) -> String {
   let lines : Array[String] = []
   for c in cands {
-    let name = c.name.replace(old="\t", new=" ")
-    let title = c.title.replace(old="\t", new=" ")
-    let source = c.source.replace(old="\t", new=" ")
-    let mech = c.mechanism.replace(old="\t", new=" ")
+    let name = c.name.replace_all(old="\t", new=" ")
+    let title = c.title.replace_all(old="\t", new=" ")
+    let source = c.source.replace_all(old="\t", new=" ")
+    let mech = c.mechanism.replace_all(old="\t", new=" ")
     lines.push(name + "\t" + title + "\t" + source + "\t" + mech)
   }
   lines.join("\n")
