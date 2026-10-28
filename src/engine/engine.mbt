@@ -57,6 +57,7 @@ pub fn FistEngine::publish(
     level~,
     created_at=now,
     ns~,
+    created_by~,
   )
   match self.store.create_task(t) {
     Ok(_) => Ok(id)
@@ -1074,6 +1075,7 @@ pub fn FistEngine::cold_publish(
     level~,
     created_at=now,
     ns~,
+    created_by~,
   )
   match self.store.create_task(t) {
     Ok(_) => Ok(id)
@@ -1113,6 +1115,7 @@ pub fn FistEngine::publish_parallel(
     level~,
     created_at=now,
     ns~,
+    created_by~,
   )
   match self.store.create_task(t) {
     Ok(_) => Ok(id)

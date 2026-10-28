@@ -185,6 +185,17 @@ pub struct Task {
   /// plan_deep(omega_strong_verify=true) 写子任务时置 true；supervisor_task_upsert
   /// 覆盖描述不会影响本字段。
   omega_required : Bool
+  /// **BUG-475**：发布者身份（`created_by`）。
+  ///
+  /// 为什么加这一列：`publish` / `dag_publish` 有 `created_by` **硬检查**，
+  /// 但那个值**从来没落库** ⇒ 「谁发布的」事后**查不出来**，审计面为零。
+  /// 落库后仍**不能防冒充**（值仍是调用方自报，S1 边界，见 BUG-430/464）——
+  /// 补的是**审计**，不是**验证**。
+  ///
+  /// 空值语义：缺省 `""` = **该任务没有记录发布者**（旧库迁移后的历史任务就是这个值）。
+  /// 不用 `"unknown"` / `"legacy"` 这类**看起来像身份**的占位符 ——
+  /// 那会让审计查询把「占位符」当成「一个叫 unknown 的 agent」。
+  created_by : String
 } derive(Eq, Debug)
 
 ///|
@@ -294,6 +305,7 @@ pub fn Task::new(
   ns~ : String = "default",
   depends_on~ : Array[String] = [],
   omega_required~ : Bool = false,
+  created_by~ : String = "",
 ) -> Task {
   {
     id,
@@ -323,6 +335,7 @@ pub fn Task::new(
     cleanup_mode,
     depends_on,
     omega_required,
+    created_by,
   }
 }
 
@@ -349,6 +362,61 @@ pub fn Task::from_db(
   depends_on : Array[String],
   omega_required : Bool,
 ) -> Task {
+  // BUG-475：`from_db` 保持 19 参签名不变（4 个测试文件在用），委托到新构造器。
+  Task::from_db_with_created_by(
+    id,
+    parent_id,
+    project_dir,
+    ns,
+    priority,
+    importance,
+    depth,
+    split_n,
+    level,
+    status_s,
+    assignee,
+    description,
+    deliverable,
+    created_at,
+    updated_at,
+    completed_by,
+    cleanup_mode,
+    depends_on,
+    omega_required,
+    "",
+  )
+}
+
+///|
+/// **BUG-475**：带 `created_by` 的行反序列化（20 参）。
+///
+/// 为什么另开一个而不是给 `from_db` 加参：`from_db` 是**位置参数**函数
+/// （MoonBit 位置参数不能有默认值），全仓 **4 个测试文件**直接调它。
+/// 加第 20 个必填参会让它们全部编译失败 —— 那是**用测试的改动去换一个字段**，
+/// 代价不对等。⇒ 保留旧签名（委托到本函数、`created_by=""`），
+/// store 层改用本函数。
+pub fn Task::from_db_with_created_by(
+  id : String,
+  parent_id : String?,
+  project_dir : String,
+  ns : String,
+  priority : String,
+  importance : String,
+  depth : Int32,
+  split_n : Int32,
+  level : Int32,
+  status_s : String,
+  assignee : String?,
+  description : String,
+  deliverable : String,
+  created_at : String,
+  updated_at : String,
+  completed_by : String?,
+  cleanup_mode : String,
+  depends_on : Array[String],
+  omega_required : Bool,
+  created_by : String,
+) -> Task {
   let status = match TaskStatus::from_string(status_s) {
     Some(s) => s
     None => Pending
@@ -373,6 +441,7 @@ pub fn Task::from_db(
     cleanup_mode,
     depends_on,
     omega_required,
+    created_by,
   }
 }
 
