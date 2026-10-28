@@ -10339,3 +10339,89 @@ BUG-430 拆分为两半：
 
 ### FIXED(2026-10-28T08:08:01Z / BUG-466)
 - evidence: commit eacebda9（5 文件）+ 545964b7（工具数 173→174 一源四态）。根因：S3 链 = 签发→签名→验签→消费，前八段做完后三步，唯独「签发」只有内部调用者够得着 —— 已登记 agent 想认证需要 challenge，但只有 agent_register_key 能签发，而对已登记者它只回 already_registered ⇒ 只能自己手工构造 nonce。不是「可选 vs 默认」问题，是「可选也不可选」：一条安全路径若只有知道内情的人手工构造输入才能走，工程上等于不存在。修法三处：① 新增 agent_issue_challenge 工具（只给已登记公钥的 agent 签发，未登记直接 Err；复用 s3_issue_challenge_auto 与首登/轮换同源；不写业务库只签发并登记待消费）；② claim schema 补 challenge/challenge_sig（关键发现：引擎层 engine.mbt:153 FistEngine::claim 早就有这两个参数，缺的只是 tool schema 声明 —— 接口声明与实现分叉）；③ 消 unregistered+ 误读，改用拆维度 unregistered+...+identity_verified|unverified|self_reported（追加而非改写，因为 unregistered 前导词有精确相等的既有断言）。产品面真跑（同一 server 进程）：agent_issue_challenge ⇒ challenge + pubkey_registered=true（取票窗口）；claim 带 challenge ⇒ action=+challenge_verified（S3 真活了）；claim 不带 ⇒ action=None 回执无 action 键（零回归）。变异实测：verify_challenge_sig 改恒 true ⇒ 320→316/4 failed 锁 5 必红；恢复后 320/320。测试：engine 320/320、server 515/515、moon check 0 errors。判例候选：接口声明与实现分叉 —— 加参数必须改两处（引擎签名 + schema），只改前者「存在但不可达」，只改后者「收下就丢」（BUG-440 反向形态）。缺口：challenge 表进程内（多实例消费不掉）、公钥按 ns 隔离、execute/verify 仍不接受 challenge。
+## BUG-467 [2026-10-28T08:34:07Z] [high] OPEN
+- summary: [S1] verify 工具无任何身份门 —— verifier 是自报串，任何调用方都能验收任何任务（与 execute 不对称）
+- detail: ## 缺陷（Lane CH 实测，2026-10-28）
+
+### 代码证据
+
+`src/server/server.mbt:2463` 的 `verify` 工具函数体只有：
+
+```moonbit
+to_result(eng.verify(task_id~, verifier~, now=ts, docs_check~))
+```
+
+**无 judged_role、无 agent_write_gate、无 ACL 门** —— `verifier` 是 `get_str(args, "verifier")` 的自报串。
+
+### 对比：execute 有门，verify 没有
+
+`execute` 有 `agent_write_gate`（BUG-436 的 AclIdentity 链），
+`verify` **完全没有** ⇒ **两者不对称**。
+
+### 后果
+
+**任何能调到 MCP 的人都能验收任何任务。**
+「验收」是整个生命周期的**质量闸门** —— 它被绕过意味着：
+- 未完成的任务可被标为「已完成」
+- 未达标的交付物可被放行
+- 与 `created_by` 自报（BUG-464）同族，但后果更直接：**不是「谁能发起」，是「谁能盖章通过」**
+
+### 与 challenge 的关系（顺序问题）
+
+Beta 核完发现：`verify` 不经过角色取数面 ⇒ **给它接 `challenge` 是死参数**。
+
+**正确顺序是：先定「verify 该由谁做」（加身份门），再谈 challenge。**
+现在连「该由谁做」都没定义 ⇒ 加 challenge 无处可验。
+
+### 建议
+
+1. **先定义 verify 的身份门**（谁能验收？院长级？政委？任务创建者？）
+2. 加 `judged_role` / `agent_write_gate`（与 execute 同源）
+3. 有了身份门之后，challenge 才有挂载点
+4. 补对表判据：生命周期 14 个工具里，哪些有身份门、哪些没有
+
+### 相关数据（Beta 实测）
+
+- **真正受 S3 保护的工具只有 3/14（21%）**：`claim` / `reserve_scope` / `lock_acquire`
+- 有 `challenge` schema 的 5 个：`agent_register_key` / `claim` / `lock_acquire` / `plan` / `reserve_scope`
+- 其余 11 个**不经过角色取数面** ⇒ 不是因为「还没接」，是「本来就不问身份」
+
+**⇒ 14 个里只有 3 个真受保护，这不是「还差 11 个没接」，而是「另外 11 个本来就不需要」——
+但 `verify` 是例外：它需要，却没有。**
+- reported_by: lead(Lane CH 实测)
+
+- 追记（2026-10-28 10:50 **十四格静态普查：问题比单条 verify 更系统**）：
+  我用 14 个生命周期工具逐格扫了四类身份门的在场情况（`judged_role` / `agent_write_gate` /
+  `challenge` / `acl`），结果：
+
+  | 工具 | judged_role | agent_write_gate | challenge | acl |
+  |---|---|---|---|---|
+  | `publish` | ✗ | **✓** | ✗ | ✓ |
+  | `publish_parallel` | ✗ | ✗ | ✗ | ✓ |
+  | `plan` | ✗ | ✗ | ✓ | ✗ |
+  | `claim` | ✗ | ✗ | ✓ | ✓ |
+  | `execute` | **✓** | ✗ | ✓ | ✓ |
+  | **`submit`** | ✗ | ✗ | ✗ | ✗ |
+  | **`verify`** | ✗ | ✗ | ✗ | ✗ |
+  | **`reject`** | ✗ | ✗ | ✗ | ✗ |
+  | **`retry`** | ✗ | ✗ | ✗ | ✗ |
+  | **`pause`** | ✗ | ✗ | ✗ | ✗ |
+  | **`resume`** | ✗ | ✗ | ✗ | ✗ |
+  | **`reopen_task`** | ✗ | ✗ | ✗ | ✗ |
+  | **`archive`** | ✗ | ✗ | ✗ | ✗ |
+  | **`delete`** | ✗ | ✗ | ✗ | ✗ |
+
+  **统计**：`judged_role` 1/14 · `agent_write_gate` 1/14 · `challenge` 3/14 · `acl` 4/14。
+  **⇒ 14 个里 8 个（submit/verify/reject/retry/pause/resume/reopen_task/archive/delete，
+  共 9 个其实——`submit` 也无门）完全四门皆无。**
+
+  **⇒ 这比原报告说的「只有 3/14 受 S3 保护」更严重**：不是「3 个保护、11 个不需要」，
+  而是**9 个「需要但没有」**（`archive`/`delete` 尤其 —— 归档与删除是不可逆操作）。
+
+  **⇒ 我不擅改**（这要定「谁能验收/归档/删除」的策略）。**建议 owner 按风险排序**：
+  1. **`delete` / `archive`**（不可逆，最高）
+  2. **`verify` / `reject` / `submit`**（质量闸门）
+  3. **`pause` / `resume` / `retry` / `reopen_task`**（状态机，中）
+  4. `publish_parallel`（已知设计：自驱动路径不查 `created_by`，BUG-464 定判）
+
+  **普查方法可复现**：`grep -A50 '"<tool>",' src/server/server.mbt | grep -c judged_role` 等四道即可。
