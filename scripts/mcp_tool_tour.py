@@ -262,7 +262,10 @@ TOOL_HINTS = {
 }
 
 
-def build_args(tool, schema, ctx, read_only):
+def build_args(tool, schema, ctx):
+    # R81：原签名有第 4 个参数 `read_only`，但**函数体从未使用**（死参数）。
+    # 读面的「禁写件」由调用方的 `READ_PLANE_SKIP` 表处理，不通过参数传递 ⇒ 去掉。
+    # ⚠️ 顺带发现：`check_dead_params` **只扫 .mbt**，Python 死参数不在它覆盖内（见本轮日志）。
     props = (schema or {}).get("properties", {}) or {}
     required = (schema or {}).get("required", []) or []
     args = {}
@@ -782,7 +785,7 @@ def main():
                              "excerpt": ""})
                 kinds["skipped"] = kinds.get("skipped", 0) + 1
                 continue
-            args = build_args(name, tl.get("inputSchema"), ctx, a.plane == "read")
+            args = build_args(name, tl.get("inputSchema"), ctx)
             # R80：必填参数取自 ctx 但为空 ⇒ 前置缺失（不是工具拒绝），带理由 SKIP。
             _req = (tl.get("inputSchema") or {}).get("required", []) or []
             _empty = [k for k in _req if k in args and args[k] in ("", None)]
