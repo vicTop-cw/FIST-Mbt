@@ -33,6 +33,12 @@ fn wt_state_dir(project_dir : String) -> String {
 ///|
 /// 单个沙箱的账文件路径。task 先过白名单（防 `../` 把账写出目录）。
 fn wt_manifest_path(project_dir : String, task : String) -> String {
+  // 防御纵深（R105）：本函数原**只靠调用方**先过 `wt_task_ok`（注释写明了，但没强制）。
+  // 漏校验一处就能用 `../` 把账读出/写出目录。改为：task 不合规 ⇒ 返回一个
+  // **必然不存在**的哨兵路径 —— 读 ⇒ None、写 ⇒ false、删 ⇒ 忽略，越界不可能发生。
+  if !wt_task_ok(task) {
+    return wt_state_dir(project_dir) + "/__invalid_task__"
+  }
   wt_state_dir(project_dir) + "/wt-" + task + ".json"
 }
 
