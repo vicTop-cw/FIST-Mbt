@@ -23,7 +23,7 @@ e2e_upgrade_mirror.py — fist-mbt upgrade 写盘路径五格端到端（设计�
     `/releases/download/vX/...` 两个文档形（BUG-C 已修复：`js_fetch_latest` 尊重 `--base-url`
     走镜像 `/releases/latest`——见 `--audit-mirror-shapes`）。旧 `/_release/...` 形已删
     （`_release/` 不再持久升级安装器）。
-  * 沙箱把 LOCALAPPDATA/USERPROFILE/TEMP 指 `temp/upg-e2e-sandbox`，绝不碰真 `%LOCALAPPDATA%\FIST-Mbt`；
+  * 沙箱把 LOCALAPPDATA/USERPROFILE/TEMP 指 `temp/upg-e2e-sandbox`，绝不碰真 `%LOCALAPPDATA%\\FIST-Mbt`；
     用户级 PATH 跑前抓原值、跑完逐字还原并复核；真安装目录产物 sha256 跑前跑后必须相同。
   * 每次跑沙箱清场（BUG-117 同型：上一轮的旧产物会让判据红在旧状态上）。
 
