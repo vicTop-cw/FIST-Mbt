@@ -60,6 +60,13 @@ CALLBACK_PARAMS = {
 STUB_ONLY = (ast.Pass, ast.Expr)
 PRINT_CAP = 25
 
+# 带理由的豁免表（键 = (相对路径, 函数名, 形参名)）。每条都必须写清「为什么不删」，
+# 否则就成了免检牌。R83 实测第一例：夹具类要**保签名 drop-in**，参数按设计不用。
+EXEMPT = {
+    ("scripts/mcp_tool_tour.py", "raw", "params"):
+        "夹具类方法：靠 self.spec 查表返回固定回执，params 保留是为了与真客户端 drop-in 同签名",
+}
+
 
 def _is_stub(body):
     """函数体是否只有 docstring / pass / ...（占位实现）"""
@@ -134,7 +141,9 @@ def scan(root=ROOT):
             continue
         n_funcs += sum(1 for n in ast.walk(tree)
                        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))
-        findings.extend(scan_source(src, rel))
+        got = scan_source(src, rel)
+        got = [x for x in got if (x[0], x[1], x[2]) not in EXEMPT]
+        findings.extend(got)
     return findings, n_funcs
 
 

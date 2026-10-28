@@ -175,7 +175,8 @@ def jload(s):
         return None
 
 
-def value_for(name, prop, ctx, depth=0):
+def value_for(name, prop, ctx):
+    # R83：原签名有 `depth=0` 但**函数体从未使用**（死参数，被新判据 `check_dead_params_py` 抓到）。
     """按"名字优先、类型兜底"给值；ctx 里是本轮真实产生的 id，绝不造假对象。"""
     if name in ctx:
         return ctx[name]
