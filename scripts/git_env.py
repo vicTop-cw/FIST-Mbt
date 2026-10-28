@@ -103,7 +103,7 @@ def selftest():
     print("SELFTEST %s (%d cells: %s)" % ("OK" if not fails else "FAIL", len(cells), " / ".join(cells)))
     for f in fails:
         print("SELFTEST FAIL " + f)
-    return 0 if not fails else 1
+    sys.exit(0 if not fails else 1)  # NO_CALL_FACE J2
 
 
 def main(argv):

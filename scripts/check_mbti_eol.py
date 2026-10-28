@@ -155,13 +155,13 @@ def selftest():
         print("SELFTEST FAIL：")
         for n, w in bad:
             print("  - %s：%s" % (n, w))
-        return 1
+        sys.exit(1)  # NO_CALL_FACE J2
     n_rule = len([n for n, _, _ in cells if n.startswith("rule")])
     n_blob = len([n for n, _, _ in cells if n.startswith("blob")])
     n_cov = len([n for n, _, _ in cells if n.startswith("coverage")])
     print("SELFTEST OK（%d 格：规则 %d / blob %d / 覆盖面 %d）"
           % (len(cells), n_rule, n_blob, n_cov))
-    return 0
+    sys.exit(0)  # NO_CALL_FACE J2
 
 
 def main(argv):

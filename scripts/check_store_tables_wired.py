@@ -99,12 +99,12 @@ def selftest():
     if fails:
         for f in fails:
             print("SELFTEST FAIL: " + f)
-        return 1
+        sys.exit(1)  # NO_CALL_FACE J2
     print(
         "SELFTEST OK: 判据对「死 schema」与「声明滞后」两个方向都发红，"
         "干净输入不误红，表名解析口径可证"
     )
-    return 0
+    sys.exit(0)  # NO_CALL_FACE J2
 
 
 def main():

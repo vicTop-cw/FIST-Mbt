@@ -1168,7 +1168,7 @@ def selftest():
         print("SELFTEST FAIL：")
         for nm, why in bad:
             print("  - %s：%s" % (nm, why))
-        return 1
+        sys.exit(1)  # NO_CALL_FACE J2
     print("SELFTEST OK（%d 格：宇宙=递归全集且排除族不入宇宙 + 分类机器活着 + 覆盖 blackbox 真尺 / "
           "G2 不误判 blackbox stale / G1 抓 blackbox 孤儿 + 带前缀点名 / G1 干净 / G1 抓漏面尺 + 必点名 / "
           "G3 三种空宇宙各自拒 / G2 电池点了不存在的脚本自拒 / 真源现状全绿（登记面入账）/ "
@@ -1179,7 +1179,7 @@ def selftest():
           "常驻分类器咬 serve_forever 与 run_forever 且不误咬干净尺 / 常驻面逐条点名不静默 / "
           "电池里没有裸跑的常驻格 / 有常驻豁免时真孤儿仍判红 / "
           "逐格判定列取自 verdict 而非 kind（红不印成 OK / 命中印 PASS / 预存红仍带口径标注））" % len(cells))
-    return 0
+    sys.exit(0)  # NO_CALL_FACE J2
 
 
 def main():

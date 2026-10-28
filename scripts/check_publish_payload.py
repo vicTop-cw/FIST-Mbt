@@ -206,7 +206,7 @@ def selftest():
             box = _sandbox(os.path.abspath(tempfile.mkdtemp(prefix="cpp-selftest-")))
         except (RuntimeError, OSError) as e:
             print("SELFTEST FAIL 合成夹具起不来（判据无法自证，不冒用违例档）：%s" % e)
-            return 2
+            sys.exit(2)  # NO_CALL_FACE J2
         ok, why = _sandbox_ok(box)
         executed.append("S0 沙箱形状自证（tracked + 忽略规则都在场）")
         if not ok:
@@ -286,7 +286,7 @@ def selftest():
           % ("OK" if not fails else "FAIL", " / ".join(executed)))
     for f in fails:
         print("SELFTEST FAIL " + f)
-    return 0 if not fails else 2
+    sys.exit(0 if not fails else 2)  # NO_CALL_FACE J2
 
 
 def main():

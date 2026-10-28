@@ -155,14 +155,14 @@ def selftest():
     failed = [cid for cid, ok in cells if not ok]
     if failed:
         print("SELFTEST FAIL: %d/%d（%s）" % (len(failed), len(cells), ", ".join(failed)))
-        return 1
+        sys.exit(1)  # NO_CALL_FACE J2
     order = []
     for cid, _ in cells:
         if cid[0] not in order:
             order.append(cid[0])
     inv = " / ".join("%s×%d" % (f, sum(1 for c, _ in cells if c[0] == f)) for f in order)
     print("SELFTEST OK: %d 格（反解：%s）" % (len(cells), inv))
-    return 0
+    sys.exit(0)  # NO_CALL_FACE J2
 
 
 def main(argv=None):
