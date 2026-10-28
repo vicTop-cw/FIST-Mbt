@@ -40,6 +40,8 @@ _cron_query.py
 .trae/
 .office-claw/
 _cron_tmp_sends.jsonl
+# 并发 lane 的临时诊断目录（如 tmp_lanej/）：一次性件，不该入库
+/tmp_*/
 # blackbox release artifacts
 _release/
 memory/bugs_pending_github.json
