@@ -1,3 +1,4 @@
+import sys
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """scripts/check_ci_step_position.py - CI「gate 步骤位置」守卫（TASK-003，R84）。
@@ -176,7 +177,7 @@ def selftest():
     print("SELFTEST %s (grid: %s)" % ("OK" if not fails else "FAIL", " / ".join(executed)))
     for f in fails:
         print("SELFTEST FAIL " + f)
-    return 0 if not fails else 2
+    sys.exit(0 if not fails else 2)  # NO_CALL_FACE J2
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+import sys
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """scripts/cleanup_artifacts.py — 项目整洁：清理 gitignore 的代码生成物/临时脚本残留。
@@ -252,7 +253,7 @@ def selftest():
             box = _sandbox(os.path.abspath(tempfile.mkdtemp(prefix="ca-selftest-")))
         except (RuntimeError, OSError) as e:
             print("SELFTEST FAIL: 合成夹具起不来 ⇒ 判据看不见输入面，绝不报绿：%s" % e)
-            return 1
+            sys.exit(1)  # NO_CALL_FACE J2
         # S0
         ok, why = _sandbox_ok(box)
         if not ok:
@@ -321,10 +322,10 @@ def selftest():
         fails.append("S6: 豁免项未印出（豁免不可见 ⇒ 虚报无法与真残留区分）")
     if fails:
         print("SELFTEST FAIL: " + "; ".join(fails))
-        return 1
+        sys.exit(1)  # NO_CALL_FACE J2
     print("SELFTEST PASS: S0 夹具形状自证（含 M1 变异对照）/ S1 tracked 识别 / S2 `_tool_registry.py` 豁免 / "
           "S3 真临时脚本仍被抓（S0-S3 打在 temp 合成仓根）/ S4 逐条点名 / S5 超上限折叠且报总数 / S6 豁免面可见")
-    return 0
+    sys.exit(0)  # NO_CALL_FACE J2
 
 
 def main():
