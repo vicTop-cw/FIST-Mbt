@@ -63,6 +63,10 @@ PRINT_CAP = 25
 # 带理由的豁免表（键 = (相对路径, 函数名, 形参名)）。每条都必须写清「为什么不删」，
 # 否则就成了免检牌。R83 实测第一例：夹具类要**保签名 drop-in**，参数按设计不用。
 EXEMPT = {
+    ("scripts/check_badge.py", "anchor_problems", "snapshot_path"):
+        "selftest 内的替身桩 `_StubAnchor.anchor_problems`：签名必须与真模块一致才能 drop-in 替换，参数按设计不用（真模块那份**确实用了** snapshot_path）",
+    ("scripts/check_badge.py", "anchor_problems", "cwd"):
+        "同上：替身桩保持 drop-in 签名",
     ("scripts/mcp_tool_tour.py", "raw", "params"):
         "夹具类方法：靠 self.spec 查表返回固定回执，params 保留是为了与真客户端 drop-in 同签名",
 }
