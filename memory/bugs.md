@@ -10522,11 +10522,14 @@ sqlite 面 manual 无 can_write ⇒ 被拒（fail-closed），正是所需。
 证据：reports/2026-10-28-lifecycle-identity-gate-audit.md
 扫描脚本：temp/audit/lane_cl_gate.py
 - reported_by: lead(Lane CL 普查)
-## BUG-472 [2026-10-28T10:33:59Z] [high] OPEN
+## BUG-472 [2026-10-28T10:33:59Z] [high] FIXED
 - summary: plan 工具的 challenge/challenge_sig schema 声明未接线 —— 调用方传签名不被验证也不被告知（Lane CQ 审核发现）
 - detail: Lane CQ 独立审核（BUG-430 覆盖面）发现：plan 工具的 schema 声明了 challenge 与 challenge_sig 两个可选参数（server.mbt:2052/2056，文案写「可选：S3 挑战 nonce。⚠️ 须配合 challenge_sig」），但 instrumented_tool 的 plan 注册块（2036-2100）的 handler 实现体里从未读取这两个参数 —— 没有 opt_challenge(args)，没有 challenge_nonce= 透传。后果：(1) 调用方以为传了 Ed25519 签名就受验，实际静默降级为自报身份，且不会收到任何警告；(2) 与 claim(2101) / reserve_scope(5920) / lock_acquire(6056) 三个同形声明让调用方无法区分「真验」与「只声明」。判据：按 instrumented_tool 块括号配平切分，plan 块内 challenge 命中但 challenge_nonce= / challenge_sig= 均无；对照 claim/reserve_scope/lock_acquire 三者两者皆有（真验）。这违反一源四态（schema 声明的能力与实现不一致）。建议：要么给 plan 接上 judged_role_gated 验签，要么从 schema 摘掉这两个字段并在描述里明说 plan 不做挑战认证。
 - reported_by: commander-gamma
-## BUG-473 [2026-10-28T10:45:42Z] [high] OPEN
+
+### FIXED(2026-10-28T10:59:18Z / BUG-472)
+- evidence: commit c4463d61（代码和锁）+ 7a0d1d29（报告）。核实：FistEngine::plan 里 judged_role* 出现 0 次，只做父任务状态校验、update_task 和建子任务 ⇒ challenge 没有任何读取方（与 R23 对 execute 的结论相同）。处置：移除 schema 里的 challenge/challenge_sig 两个字段（不接线），因为接线需要一个消费点而引擎层没有。原文案「⚠️ 须配合 challenge_sig」本身也不准确，一并移除。变异对照：把 challenge 加回 plan 的 schema ⇒ 523/524，cr_01 精确失败。cr_03 特意断言两段（handler 调用链 + 辅助函数读取）因为只看 handler 会漏（Gamma 的探针正是这样漏掉的）。门禁：moon check 0 errors；src/server+src/engine 860/860/0。判据（22 处死参数三分类）：① 该接线 = 引擎有消费点但 handler 没传下去 ② 该摘 schema = 引擎没有消费点（本条）③ 设计如此 = 参数被服务端覆盖且 schema 已承诺传了也不算（如 lock_acquire.ts 的 BUG-33 时间戳盖章）。缺口：plan 仍无身份门（BUG-471 第 3 批之一），移除 challenge 只是让它不再给出不准确的承诺，不代表 plan 已受保护 —— 若第 3 批给 plan 加门，应同时按 cr_02 提示把 challenge 接回来。
+## BUG-473 [2026-10-28T10:45:42Z] [high] FALSE_POSITIVE
 - summary: execute 工具的 agent 参数 schema 声明了（明写「ACL 判定身份」）但 handler 从不读 —— 调用方显式指定身份被静默忽略（与 BUG-472 同族）
 - detail: Lane CQ 死参数普查（22 处中的人工级复核项）：execute 的 schema 声明了 agent 参数，描述明写「agent(可选，**ACL 判定身份**)」（server.mbt:2223 块内，与 executor/model/tokens_in 等同列声明），但 handler 实现体（schema 之后的 1830 字符）里 agent 字面量出现 0 次 —— 3 条含词根的行全是注释（// BUG-436：判定身份由 execute_write_identity 统一解析）与别的函数名（agent_touch_first_seen(、agent_write_gate(），没有 get_str(args, "agent")。
 
@@ -10538,3 +10541,5 @@ sqlite 面 manual 无 can_write ⇒ 被拒（fail-closed），正是所需。
 
 建议：要么让 handler 读 agent 并在与 execute_write_identity 冲突时报错或告警，要么从 schema 摘掉并把推断链写进描述。
 - reported_by: commander-gamma
+
+- false_positive(2026-10-28T10:59:17Z): Beta 复核推翻（Lane CR，c4463d61）：Gamma 的死参数探针只检查 handler 的文本字面量，但身份解析在辅助函数里 —— server.mbt:833 fn execute_write_identity 的第 11-12 行是 acl_execute_identity(get_str(args, "agent"), executor, acl_arg_given(args,"executor"), task_assignee)，agent 真的被读了；handler:53 的 let who = execute_write_identity(...) + agent_write_gate(eng, who, ns) 让门真的用了 who。实现与 BUG-436 描述的推断链完全一致，描述与实现没有矛盾。⇒ 探针口径缺陷（判例-32 同族）：只查 handler 不跟踪辅助函数会误报。Beta 自己也犯过同类错（用起始行+230 窗口扫 agent_register_key，漏掉第 270 行的 get_str(args,"proof_sig")，一度把正确实现判成死参数）。已加 cr_03 锁断言两段（handler 调用链 + 辅助函数读取）防复发。
