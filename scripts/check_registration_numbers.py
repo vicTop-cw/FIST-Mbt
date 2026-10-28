@@ -40,6 +40,7 @@ if hasattr(sys.stderr, "reconfigure"):
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUN_GUARDS = os.path.join(ROOT, "scripts", "run_guards.py")
+AGENTS_DOC = os.path.join(ROOT, "AGENTS.md")   # R127：文档里的条数声明从这里反解
 
 RC_OK, RC_MISMATCH, RC_BROKEN = 0, 1, 2
 
@@ -135,6 +136,36 @@ def judge(run_guards_text, measured):
     return problems
 
 
+# ── R127：文档里的「N 条测试在 `path`」也必须对表 ──────────────────────
+# 抽检 4 处曾发现 2 处漂移（text_diff 8→18、soldier_type_of 8→9）—— 这类声明从没人对过表。
+# 正则从文档**反解**（不手抄数字），覆盖两种形态：
+#   「18 条白盒测试在 `src/diff/diff_test.mbt`」  /  「15 条白盒锁 `src/..._wbtest.mbt`」
+RE_DOC_TEST_CLAIM = re.compile(r"(\d+) 条(?:白盒)?(?:测试|白盒锁)(?:在)? ?`([^`]+)`")
+
+
+def parse_doc_test_claims(text):
+    """纯函数：从文档正文反解 [(declared, path, lineno)]。"""
+    out = []
+    for ln, line in enumerate(text.splitlines(), 1):
+        for m in RE_DOC_TEST_CLAIM.finditer(line):
+            out.append((int(m.group(1)), m.group(2), ln))
+    return out
+
+
+def check_doc_test_claims(text, count_fn):
+    """纯函数：文档声明 vs 实测条数。`count_fn(path) -> int|None`（None=读不到）。"""
+    problems = []
+    for declared, path, ln in parse_doc_test_claims(text):
+        actual = count_fn(path)
+        if actual is None:
+            problems.append("%s:%d 声明 %d 条测试，但**读不到该文件** ⇒ 声明指向不存在/不可读的面"
+                            % (path, ln, declared))
+        elif actual != declared:
+            problems.append("%s:%d 声明 %d 条测试 ≠ 实测 %d 条（文档漂移：改文档或改测试）"
+                            % (path, ln, declared, actual))
+    return problems
+
+
 def render_claim(entry, meas):
     red, w, r, g, diag, s, t = meas
     return (entry["claim"].format(red=red, W=w, R=r, G=g),
@@ -174,6 +205,22 @@ def selftest():
     # 测量跑不出数 ⇒ 报无法对表（不静默）
     cell("broken-measurement-is-caught", judge(good_text, [None] * len(ENTRIES)) != [])
 
+    # R127：文档里的「N 条测试在 `path`」对表（合成夹具，**不读仓库**）
+    _doc = "真源 `x.mbt`，3 条白盒测试在 `a_test.mbt`。"
+    _cnt = {"a_test.mbt": 3}
+
+    def _cf(rel):
+        return _cnt.get(rel)
+
+    cell("doc-test-count-matches", check_doc_test_claims(_doc, _cf) == [])
+    # 变异对照（判例-29）：把 3 改成 9 ⇒ 必须被抓到
+    cell("doc-test-count-drift-is-caught",
+         len(check_doc_test_claims(_doc.replace("3 条", "9 条"), _cf)) == 1)
+    cell("doc-test-count-missing-file-is-caught",
+         check_doc_test_claims("2 条白盒锁 `nope_wbtest.mbt`", _cf) != [])
+    cell("doc-test-count-no-claims-is-clean",
+         check_doc_test_claims("本篇没有任何条数声明", _cf) == [])
+
     print("SELFTEST %s（%d 格：%s）" % ("OK" if not fails else "FAIL",
                                        len(cells), " ".join(cells)))
     for f in fails:
@@ -202,6 +249,24 @@ def main(argv):
         else:
             measured.append(None)
     problems = judge(text, measured)
+    # R127：AGENTS 里「N 条测试在 `path`」的声明也对表（抽检曾 2/4 漂移）
+    try:
+        agents = io.open(AGENTS_DOC, encoding="utf-8", errors="replace").read()
+    except OSError as e:
+        print("FATAL 读不到 AGENTS.md：%s ⇒ 判据无法自证" % e)
+        return RC_BROKEN
+
+    def _count_tests(rel):
+        p = os.path.join(ROOT, rel)
+        if not os.path.isfile(p):
+            return None
+        with io.open(p, encoding="utf-8", errors="replace") as fh:
+            return sum(1 for ln in fh if ln.startswith('test "'))
+
+    _claims = parse_doc_test_claims(agents)
+    doc_problems = check_doc_test_claims(agents, _count_tests)
+    print("  文档条数声明：%d 处（AGENTS「N 条测试在 `path`」）" % len(_claims))
+    problems = problems + doc_problems
     for entry, meas in zip(ENTRIES, measured):
         if entry["measure"] == "over_faces" and meas is not None:
             print("  实测 %-28s 应为：现读 %d 条命名判定面" % (entry["script"], meas))
