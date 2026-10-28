@@ -91,6 +91,11 @@ IMPL_MAP = {
     # 纯计算
     "github_issue_webhook_parse": ["github_webhook_parse"],
     "executor_auction": ["auction_pick"],
+    # @server · wt_tools.mbt（R103：三个 worktree 工具的**实现已迁出 server.mbt**，
+    # 此处映到工具所依赖的**纯函数核心**——A 面查工具名、B 面查这些核心函数是否被试过）
+    "wt_create": ["wt_task_ok", "wt_branch_default", "wt_entry_json", "wt_path_ok"],
+    "wt_status": ["wt_state_of", "wt_tally", "wt_parse_porcelain", "wt_reclaimable"],
+    "wt_destroy": ["wt_path_ok", "wt_state_of"],
 }
 
 TOOL_RX = re.compile(
