@@ -257,6 +257,8 @@ pub fn wt_tally(Array[String]) -> Json
 
 pub fn wt_task_ok(String) -> Bool
 
+pub fn wt_unregistered(Array[Json], Array[String]) -> Array[Json]
+
 // Errors
 
 // Types and methods
