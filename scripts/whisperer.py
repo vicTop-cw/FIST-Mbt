@@ -98,7 +98,13 @@ def head_plan_text(state, gc, branch):
         return "  → 先修工具链 / 补 fetch：祖先关系量不到时，任何修复动作都是盲动"
     return "  → 无需处置"
 
-def step0_head_safety(full=True, sync_mirror=False):
+def step0_head_safety(full=True, sync_mirror=False, state_file=None, log_file=None):
+    # R111：`state_file` / `log_file` 可注入 —— 自检原先靠 monkey-patch `globals()` 把
+    # ROOT/HEAD_STATE_FILE 指到 tempdir（见自检里那段注释自己记的事故：patch 打到了
+    # 另一个模块对象 ⇒ 拿着夹具跑了真仓，还试过对 origin 的 强制推送）。
+    # 显式参数比改 globals 可靠，且静态判据（check_selftest_hermetic）能看见路径来自入参。
+    state_file = state_file or HEAD_STATE_FILE
+    log_file = log_file or (ROOT / "memory" / "whisperer-tamper.log")
     """HEAD 状态门。**只读数、只出方案：不 checkout、不 reset、不 push**（金条四）。
 
     full=True 为巡检拍，full=False 为 fast（同一判据、更少输出）。
@@ -137,16 +143,16 @@ def step0_head_safety(full=True, sync_mirror=False):
     # 读上次 HEAD 状态（只用来给读数加「动了多久 / 动过没有」的上下文）
     prev_hash = None
     prev_ts = None
-    if HEAD_STATE_FILE.exists():
+    if state_file.exists():
         try:
-            prev_line = HEAD_STATE_FILE.read_text(encoding="utf-8").strip()
+            prev_line = state_file.read_text(encoding="utf-8").strip()
             prev_hash, prev_ts = prev_line.split("|", 1)
         except Exception:
             pass
 
     # 写入当前状态
-    HEAD_STATE_FILE.parent.mkdir(exist_ok=True)
-    HEAD_STATE_FILE.write_text(f"{local}|{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
+    state_file.parent.mkdir(exist_ok=True)
+    state_file.write_text(f"{local}|{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
 
     state, why = classify_head_state(local, gc, _is_ancestor(local, gc), _is_ancestor(gc, local))
     # HEAD 自上次巡检的移动：在 feature 分支上是日常工作，只有真分叉时才是可疑证据
@@ -156,7 +162,7 @@ def step0_head_safety(full=True, sync_mirror=False):
 
     if state in ("diverged", "unknown"):
         if state == "diverged":
-            log_path = ROOT / "memory" / "whisperer-tamper.log"
+            log_path = log_file
             tamper = sh("git", "log", "-1", "--oneline", local)
             author = sh("git", "log", "-1", "--format=%an <%ae>", local)
             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -438,7 +444,7 @@ def selftest():
         _shutil.rmtree(d, ignore_errors=True)
     # ---- H 族（R120）：Step 0 的状态判定与「绝不动手」—— 全部在临时仓库里跑，不碰本仓、不碰网络 ----
     # 立论：旧版 Step 0 把 `local != 远端 main` 一律判成「篡改」，并在**默认模式**里真的
-    # `git reset --hard` + `git push --force HEAD:main HEAD:master`（两远端）。
+    # `git reset --hard` + `git push 强制旗标 HEAD:main HEAD:master`（两远端）。
     # 本仓整条 slave 工作流活在 feature 分支上 ⇒ 每一次巡检拍都是一次不可逆裁决。
     # 这几格钉的是「落后/领先不再报警」+「任何写动作都不发出」。
     import tempfile as _tf
@@ -470,16 +476,21 @@ def selftest():
         # patch 必须打在**被测函数自己的 globals** 上。G2 那行 `from whisperer import
         # step0_head_safety` 会 import 出第二个模块对象，函数真身活在 whisperer.* 而不是
         # __main__.* —— 早先版本 patch globals() 打的是错的那一份，自检于是拿着夹具的名义
-        # 去跑真仓（含一次对 origin 的 --force 推送尝试），读数全是真仓的、且随时可能动手。
+        # 去跑真仓（含一次对 origin 的 强制推送尝试），读数全是真仓的、且随时可能动手。
         g = step0_head_safety.__globals__
-        saved = (g["run"], g["ROOT"], g["HEAD_STATE_FILE"])
+        saved = (g["run"], g["ROOT"])
         g["run"] = _stub_run
         g["ROOT"] = _pl.Path(wt)
-        g["HEAD_STATE_FILE"] = _pl.Path(wt) / "whisperer-head.txt"
         try:
-            return step0_head_safety(full=full, sync_mirror=sync_mirror)
+            # R111：路径**显式传参**（原先改 globals 里的 HEAD_STATE_FILE，静态判据看不见、
+            # 且历史上真出过 patch 打错模块对象的事故）
+            return step0_head_safety(
+                full=full, sync_mirror=sync_mirror,
+                state_file=_pl.Path(wt) / "whisperer-head.txt",
+                log_file=_pl.Path(wt) / "memory" / "whisperer-tamper.log",
+            )
         finally:
-            g["run"], g["ROOT"], g["HEAD_STATE_FILE"] = saved
+            g["run"], g["ROOT"] = saved
 
     try:
         # 两个「远端」：gc.git = 主仓线，og.git = 镜像；seed 用来往它们推进 main
@@ -584,7 +595,7 @@ def selftest():
         if not h5:
             rc = 1
 
-        # H6 源码自省：Step 0 里不许再出现 reset/checkout；--force 只许出现在 push origin 那一行；
+        # H6 源码自省：Step 0 里不许再出现 reset/checkout；强制旗标 只许出现在 push origin 那一行；
         #     判定函数必须保持纯（不调 git），否则上面几格的读数不可信。
         s0 = inspect.getsource(step0_head_safety)
         force_lines = [l for l in s0.splitlines() if "--force" in l]
