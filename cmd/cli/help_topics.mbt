@@ -10,7 +10,7 @@ pub fn list_topics() -> String {
   let v = FIST_VERSION
   "FIST-Mbt Help  v" +
   v +
-  "  (173 MCP tools)\n" +
+  "  (174 MCP tools)\n" +
   "\n" +
   "Usage: fist help <topic>\n" +
   "Topics: overview / cli / tools / mcp / plugins / install\n" +
@@ -25,7 +25,7 @@ pub fn help_overview() -> String {
   " ===\n" +
   "\n" +
   "Pure MoonBit AI commander orchestration, exposed as MCP Server.\n" +
-  "173 MCP tools / 3 resources / 2 prompts.\n" +
+  "174 MCP tools / 3 resources / 2 prompts.\n" +
   "\n" +
   "Lifecycle: publish -> plan -> claim -> execute -> submit -> verify -> archive\n" +
   "Self-drive: selfdrive_init -> review -> publish_next -> triage\n" +
@@ -55,7 +55,7 @@ pub fn help_tools() -> String {
   let v = FIST_VERSION
   "=== " +
   v +
-  "  173 MCP tools (18 groups) ===\n" +
+  "  174 MCP tools (18 groups) ===\n" +
   "\n" +
   "  [Lifecycle 14] publish publish_parallel plan claim execute submit verify reject retry pause resume reopen_task archive delete\n" +
   "  [Query 2] list get\n" +
@@ -73,7 +73,7 @@ pub fn help_tools() -> String {
   "  [Assistant 5] assistant_claim assistant_status assistant_sweep assistant_resign assistant_heartbeat\n" +
   "  [Supervisor 8] supervisor_status supervisor_task_tree supervisor_kill_plan supervisor_prompt_inject supervisor_prompt_list supervisor_prompt_consume supervisor_task_upsert supervisor_reminder_tick\n" +
   "  [MCPCf-Embed 7] mcpcf.ops_init mcpcf.circuit mcpcf.report mcpcf.review mcpcf.run_batch mcpcf.verify mcpcf.watchdog\n" +
-  "  [Other 11] store_open store_list store_close agent_acl_grant agent_register_key agent_revoke_key audit_permission audit_log atgc_old_compile atgc_old_run atgc_old_talk\n" +
+  "  [Other 12] store_open store_list store_close agent_acl_grant agent_register_key agent_revoke_key agent_issue_challenge audit_permission audit_log atgc_old_compile atgc_old_run atgc_old_talk\n" +
   "  [Modes 2] mode_list mode_templates\n" +
   "\n" +
   "  Per-tool detail: fist help tool <name>"
