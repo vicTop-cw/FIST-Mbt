@@ -100,6 +100,57 @@ test "evolve_is_duplicate_jaccard" {
 }
 
 ///|
+/// R138：`tokens` 是 `goal_drift_check` / `evolve_critic` 的**单真源**
+/// （AGENTS 明写「复用 @evolve.tokens/jaccard」），但此前**零直接测试** ——
+/// 只有 `evolve_is_duplicate_jaccard` 间接用到它。而它的 CJK 逻辑非平凡：
+/// 中文按「单字 + 相邻二字组」发词，ASCII 按整词，两者不跨边界拼接。
+test "tokens_cjk_single_and_bigram" {
+  // 「熔断器」⇒ 单字 熔/断/器 + 二字组 熔断/断器 = 5（去重后仍 5）
+  let t = tokens("熔断器")
+  assert_eq(t.length(), 5)
+  assert_true(t.contains("熔"))
+  assert_true(t.contains("断"))
+  assert_true(t.contains("器"))
+  assert_true(t.contains("熔断"))
+  assert_true(t.contains("断器"))
+}
+
+///|
+/// R138：ASCII 侧必须**小写归一 + 去重**（否则 `Hello`/`hello` 会被当成两个不同词，
+/// Jaccard 恒偏低 —— 本仓任务描述里英文术语混用大小写是常态）。
+test "tokens_ascii_lowercased_and_deduped" {
+  let t = tokens("Hello hello WORLD")
+  assert_eq(t.length(), 2)
+  assert_true(t.contains("hello"))
+  assert_true(t.contains("world"))
+}
+
+///|
+/// R138：**中英边界不许拼词** —— 「修复 bug」里 `修`/`复` 相邻可成「修复」，
+/// 但 `复` 与 `b` 隔着一个空格，绝不能拼出「复bug」（否则英文术语会被中文尾巴污染）。
+test "tokens_mixed_cjk_word_boundary" {
+  let t = tokens("修复 bug")
+  assert_true(t.contains("修"))
+  assert_true(t.contains("修复"))
+  assert_true(t.contains("bug"))
+  assert_true(!t.contains("复bug"))
+}
+
+///|
+/// R138：`jaccard` 的四个边界 —— 双方皆空必须回 **0.0 而不是 NaN**（`0/0`），
+/// 全不相交 0.0、完全相同 1.0、部分重叠落在 (0,1)。
+/// 为什么重要：`goal_drift_check` 用 `1 - jaccard` 判漂移；NaN 会让比较**恒 false**
+/// ⇒ 漂移永远报不出来（静默失效）。
+test "jaccard_edge_cases" {
+  let e : Array[String] = []
+  assert_eq(jaccard(e, e), 0.0)
+  assert_eq(jaccard(tokens("a b"), tokens("c d")), 0.0)
+  assert_eq(jaccard(tokens("a b"), tokens("a b")), 1.0)
+  let third = jaccard(tokens("a b"), tokens("b c"))
+  assert_true(third > 0.33 && third < 0.34)
+}
+
+///|
 test "evolve_novelty_and_lineage" {
   let a = Archive::new("mem")
   a.add(
