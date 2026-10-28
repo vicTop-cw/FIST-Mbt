@@ -224,6 +224,10 @@ def main(argv=None):
     v = judge(n1, n2, N1_CEILING, N2_CEILING)
     if ns.show_ceiling:
         print("上限 N1=%d N2=%d｜现状 N1=%d N2=%d" % (N1_CEILING, N2_CEILING, len(n1), len(n2)))
+    if ns.show:
+        print("  N1：" + " ".join(sorted(n1)))
+        print("  N2：" + " ".join(sorted(n2)))
+        print("  C（子目录只报面）：" + " ".join(sorted(set(c1) | set(c2))))
     if v:
         for line in v:
             print("  违规 %s" % line)
@@ -231,10 +235,6 @@ def main(argv=None):
         return 1
     print("PASS scripts/ 顶层 %d 份 .py：N1 无角色 %d/%d、N2 连字符 %d/%d；只报面子目录 N1=%d N2=%d（%d 份，本轮不判）"
           % (len(top), len(n1), N1_CEILING, len(n2), N2_CEILING, len(c1), len(c2), len(sub)))
-    if ns.show:
-        print("  N1：" + " ".join(sorted(n1)))
-        print("  N2：" + " ".join(sorted(n2)))
-        print("  C（子目录只报面）：" + " ".join(sorted(set(c1) | set(c2))))
     return 0
 
 
