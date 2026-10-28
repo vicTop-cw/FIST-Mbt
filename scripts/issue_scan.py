@@ -77,7 +77,8 @@ def main():
         print("用法: python scripts/issue_scan.py <dir> [--max-findings N] "
               "[--include-tests [true|false]] "
               "[--min-severity high|medium|low|info]")
-        sys.exit(1)
+        # 用法错误 ⇒ rc=2（判据无法自证）；1 留给「扫到违例」
+        sys.exit(2)
     argv = sys.argv[1:]
     scan_dir = None
     max_findings = 100
