@@ -151,3 +151,31 @@ test "bug427_strip_tail_wired" {
   assert_true(src.contains("strip_reject_tail(self.description)"))
   assert_true(src.contains("clip_utf8(reason, REJECT_REASON_CAP)"))
 }
+
+///|
+/// 锁 5（R137）：**`clip_utf8` 的 CJK 边界行为** —— 本仓打回原因全是中文。
+///
+/// 为什么补这格：本文件前 4 格**全是 ASCII**（`"x"` 重复串），而 `clip_utf8` 按**字节**截断；
+/// 同族的 `desc_clip` 有「中文业主证」（`core_task_desc_clip_wbtest.mbt` 的 `dc_*`），`clip_utf8` 此前**没有**。
+///
+/// ⚠️ **实测：本格锁的是"行为"，不能当 continuation 回退的变异对照**（老实记下来）：
+/// 把 `clip_utf8` 里的回退 `while` 整段删掉，本格**仍然绿** —— 因为
+/// `@encoding.decode_to` 对不完整尾字节会**静默丢弃**（`catch` 都不触发），
+/// 于是 `bytes[0:7]` 与被回退后的 `bytes[0:6]` 解出来的字符串**相同**。
+/// ⇒ 那段回退是**防御性冗余**（显式表达意图），不是可观测的行为差异。
+/// 能作为它变异对照的断言必须直接看**字节下标**（`cut` 落在字符起始），而 `cut` 是局部变量。
+test "clip_utf8_cjk_boundary_is_safe" {
+  // 「一二三四五六七八九十」= 10 个 3 字节字符（共 30 字节）
+  let s = "一二三四五六七八九十"
+  // 上限 7 落在第 3 个字符中间 ⇒ 必须回退到 6（2 个完整字符）
+  assert_eq(clip_utf8(s, 7), "一二")
+  // 上限正好落在字符边界 ⇒ 不回退
+  assert_eq(clip_utf8(s, 6), "一二")
+  // 上限不小于全串 ⇒ 原样返回
+  assert_eq(clip_utf8(s, 30), s)
+  assert_eq(clip_utf8(s, 99), s)
+  // 混合中英：`a`(1) + `一`(3) + `二`(3)；上限 3 落在「一」中间 ⇒ 回退到 1 ⇒ 只剩 "a"
+  assert_eq(clip_utf8("a一二", 3), "a")
+  // 上限 4 正好是 `a` + 完整「一」的边界 ⇒ "a一"
+  assert_eq(clip_utf8("a一二", 4), "a一")
+}
