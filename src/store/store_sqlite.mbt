@@ -161,7 +161,7 @@ pub fn SqliteStore::new() -> SqliteStore? {
 /// 初始化 schema：tasks 为完整任务表，specs/runs/heartbeats/archive 为后续阶段预置骨架。
 fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
   let sqls : Array[String] = [
-    "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority TEXT NOT NULL DEFAULT '中', importance TEXT NOT NULL DEFAULT '中', depth INTEGER NOT NULL DEFAULT 3, split_n INTEGER NOT NULL DEFAULT 3, level INTEGER NOT NULL DEFAULT 6, status TEXT NOT NULL DEFAULT '待领取', assignee TEXT DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT 'deferred', depends_on TEXT NOT NULL DEFAULT '[]', omega_required INTEGER NOT NULL DEFAULT 0)",
+    "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority TEXT NOT NULL DEFAULT '中', importance TEXT NOT NULL DEFAULT '中', depth INTEGER NOT NULL DEFAULT 3, split_n INTEGER NOT NULL DEFAULT 3, level INTEGER NOT NULL DEFAULT 6, status TEXT NOT NULL DEFAULT '待领取', assignee TEXT DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT 'deferred', depends_on TEXT NOT NULL DEFAULT '[]', omega_required INTEGER NOT NULL DEFAULT 0, created_by TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS specs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', spec_type TEXT NOT NULL DEFAULT 'spec', content TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', run_type TEXT NOT NULL DEFAULT 'verify', status TEXT NOT NULL DEFAULT 'running', detail TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL DEFAULT '', finished_at TEXT DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS heartbeats (agent_id TEXT NOT NULL, task_id TEXT NOT NULL, last_seen TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', PRIMARY KEY (agent_id, task_id))",
@@ -270,6 +270,9 @@ fn SqliteStore::ensure_task_columns(self : SqliteStore) -> Bool {
         (
           "omega_required", "ALTER TABLE tasks ADD COLUMN omega_required INTEGER NOT NULL DEFAULT 0",
         ),
+        (
+          "created_by", "ALTER TABLE tasks ADD COLUMN created_by TEXT NOT NULL DEFAULT ''",
+        ),
       ]
       let mut ok = true
       for (name, sql) in needed {
@@ -290,7 +293,7 @@ fn SqliteStore::ensure_task_columns(self : SqliteStore) -> Bool {
 
 ///|
 fn SqliteStore::task_columns() -> String {
-  "id, parent_id, project_dir, ns, priority, importance, depth, split_n, level, status, assignee, description, deliverable, created_at, updated_at, completed_by, cleanup_mode, depends_on, omega_required"
+  "id, parent_id, project_dir, ns, priority, importance, depth, split_n, level, status, assignee, description, deliverable, created_at, updated_at, completed_by, cleanup_mode, depends_on, omega_required, created_by"
 }
 
 ///|
@@ -370,6 +373,13 @@ fn SqliteStore::bind_task_values(
       @sqlite.SqlValue::Int(if t.get_omega_required() { 1 } else { 0 }),
     ),
   )
+  // BUG-475：发布者身份落库（第 20 位）
+  ignore(
+    stmt.bind(
+      20,
+      @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.created_by)),
+    ),
+  )
 }
 
 ///|
@@ -446,6 +456,13 @@ fn SqliteStore::bind_task_update_values(
       @sqlite.SqlValue::Int(if t.get_omega_required() { 1 } else { 0 }),
     ),
   )
+  // BUG-475：发布者身份（第 18 位）
+  ignore(
+    stmt.bind(
+      18,
+      @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.created_by)),
+    ),
+  )
 }
 
 ///|
@@ -494,7 +511,7 @@ fn row_to_task(stmt : @sqlite.Statement) -> @core.Task {
   let completed_raw = str_from_bytes(stmt.column_text(15))
   let depends_raw = str_from_bytes(stmt.column_text(17))
   let omega_raw = stmt.column_int(18)
-  @core.Task::from_db(
+  @core.Task::from_db_with_created_by(
     str_from_bytes(stmt.column_text(0)),
     if parent_raw == "" {
       None
@@ -526,6 +543,8 @@ fn row_to_task(stmt : @sqlite.Statement) -> @core.Task {
     str_from_bytes(stmt.column_text(16)),
     _json_to_array(depends_raw),
     omega_raw != 0,
+    // BUG-475：第 20 列（索引 19）= 发布者身份
+    str_from_bytes(stmt.column_text(19)),
   )
 }
 
@@ -540,7 +559,7 @@ impl Store for SqliteStore with fn create_task(self, task) {
         Some(_) => return Err("task already exists: \{task.get_id()}")
         None => ()
       }
-      let sql = "INSERT INTO tasks (\{SqliteStore::task_columns()}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+      let sql = "INSERT INTO tasks (\{SqliteStore::task_columns()}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: create_task")
         Some(stmt) => {
@@ -587,7 +606,7 @@ impl Store for SqliteStore with fn update_task(self, task) {
       if self.get_task(task.get_id()) is None {
         return Err("task not found: \{task.get_id()}")
       }
-      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ?, omega_required = ? WHERE id = ?"
+      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ?, omega_required = ?, created_by = ? WHERE id = ?"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: update_task")
         Some(stmt) => {
@@ -620,7 +639,7 @@ pub fn SqliteStore::update_task_if_status(
   match self.db {
     None => Err("sqlite store 未打开")
     Some(db) => {
-      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ?, omega_required = ? WHERE id = ? AND status = ?"
+      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ?, omega_required = ?, created_by = ? WHERE id = ? AND status = ?"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: update_task_if_status")
         Some(stmt) => {
@@ -895,7 +914,7 @@ impl Store for SqliteStore with fn clear(self) {
     Some(db) => {
       ignore(
         db.exec(
-          "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT NOT NULL DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority INTEGER NOT NULL DEFAULT 0, importance INTEGER NOT NULL DEFAULT 0, depth INTEGER NOT NULL DEFAULT 0, split_n INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'Creating', assignee TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT NOT NULL DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT '', depends_on TEXT NOT NULL DEFAULT '[]')",
+          "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT NOT NULL DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority INTEGER NOT NULL DEFAULT 0, importance INTEGER NOT NULL DEFAULT 0, depth INTEGER NOT NULL DEFAULT 0, split_n INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'Creating', assignee TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT NOT NULL DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT '', depends_on TEXT NOT NULL DEFAULT '[]', created_by TEXT NOT NULL DEFAULT '')",
         ),
       )
       ignore(
