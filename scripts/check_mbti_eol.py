@@ -165,6 +165,12 @@ def selftest():
 
 
 def main(argv):
+    # R95：严格参数面 —— 本尺只接受 `--selftest`。旧实现只 `in argv` 判断、**不拒绝未知旗标**
+    # ⇒ 拼错自检开关会静默跑真检查并报 PASS（与 R64/R66 同族；电池门禁 check_arg_face_strict 抓到）。
+    _unknown = [a for a in argv if a.startswith("--") and a != "--selftest"]
+    if _unknown:
+        print("FATAL 未知参数：%s（本尺只接受 --selftest）" % " ".join(_unknown))
+        sys.exit(2)
     if "--selftest" in argv:
         return selftest()
 
