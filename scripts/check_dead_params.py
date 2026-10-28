@@ -57,10 +57,18 @@ PROP_FNS = ("string_prop", "int_prop", "bool_prop", "array_prop",
             "json_prop", "number_prop", "object_prop", "double_prop")
 
 # ④ 透传形态：整包 args 交给别人 ⇒ 该工具的参数一律「静态判不了」
+#
+# ⚠️ **`args` 必须用完整标识符边界匹配**（实测踩过，BUG-474 追加）：
+#    `run_check_external("git", git_args, project_dir, timeout_ms)` 里的 `git_args`
+#    **以 `args` 结尾**，旧正则 `\(\s*args\s*,` 会从 `git_args` 中的
+#    `args` 处命中 ⇒ `wt_create` / `wt_destroy` 等一批用 `*_args` 变量的工具被误判 opaque。
+#    修法：前后都不能是标识符字符的 `args` 完整词。
+_ARGS_TOK = r"(?<![A-Za-z0-9_])args(?![A-Za-z0-9_])"
 OPAQUE_RX = [
-    re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\s*\(\s*args\s*\)"),          # foo(args)
-    re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\s*\(\s*args\s*,"),          # foo(args, ...)
-    re.compile(r"\b(?:[A-Za-z_][A-Za-z0-9_]*\.)+[A-Za-z_][A-Za-z0-9_]*\s*\(\s*args\b"),  # @engine.y(args)
+    re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\s*\(\s*" + _ARGS_TOK + r"\s*\)"),
+    re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\s*\(\s*" + _ARGS_TOK + r"\s*,"),
+    re.compile(r"\b(?:[A-Za-z_][A-Za-z0-9_]*\.)+[A-Za-z_][A-Za-z0-9_]*\s*\("
+               + _ARGS_TOK + r"\s*[),]"),
 ]
 
 # ⑤ 取值函数族的**兜底**（实际运行时以「从 fn 定义反推」为准，见 reader_family()）
@@ -338,29 +346,27 @@ MULTI_READERS = {"opt_challenge": ["challenge", "challenge_sig"]}
 def is_opaque(handler: str) -> bool:
     """④ handler 是否整包透传 args 给**别人**（静态判不了）。
 
-    ⚠️ 必须排除**取值函数自己**：`get_str(args, "a")` 也长得像 `foo(args,`，
-    若不排除，凡是读参数的 handler 都会被判 opaque ⇒ 判据永远沉默（另一种失效）。
+    ⚠️ 两条实测踩过的坑（BUG-474 追加）：
+      1. **必须排除取值函数自己**：`get_str(args, "a")` 也长得像 `foo(args,`，
+         不排除则所有读参数的 handler 都被判 opaque ⇒ 判据永远沉默。
+      2. **callee 必须取完整名**：用「匹配点前 60 字符窗口」会切在名字中间
+         （`get_bool` 被读成 `_bool`）⇒ 不在 READER 族 ⇒ 仍判 opaque。
+
+    实现：对**整段代码**扫「标识符 + ( + args」三元组，一次取出完整 callee，
+    不依赖任何字符窗口 —— 这样名字永远不会被切断。
     """
     hc = strip_comments(handler)
-    # 先把 handler 自己的签名抹掉，免得 `fn(args : Json)` 被当成透传
     hc = SELF_SIG_RX.sub("fn(__SELF__)", hc)
-    for rx in OPAQUE_RX:
-        for m in rx.finditer(hc):
-            # 取被调函数名
-            callee = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*args$",
-                               hc[:m.end()].rstrip())
-            name = None
-            seg = hc[max(0, m.start() - 60):m.end()]
-            nm = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*args\s*[),]", seg)
-            if nm:
-                name = nm.group(1)
-            if name in READER_CACHE or name in MULTI_READERS:
-                continue
-            # @pkg.fn(args) 形态：取最后一段
-            dm = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*args\s*[),]", seg)
-            if dm and dm.group(1) in READER_CACHE:
-                continue
-            return True
+    # 直接在整段上匹配「<ident>[.ident]*(<args>)」形态，group(1) 即完整 callee
+    pat = re.compile(
+        r"([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)"
+        r"\s*\(\s*(?<![A-Za-z0-9_])args(?![A-Za-z0-9_])"
+    )
+    for m in pat.finditer(hc):
+        callee = m.group(1).split(".")[-1]
+        if callee in READER_CACHE or callee in MULTI_READERS:
+            continue
+        return True
     return False
 
 
