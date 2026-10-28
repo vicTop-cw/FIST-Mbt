@@ -208,14 +208,71 @@ def split_schema(body: str) -> tuple:
     return body[i:j + 1], body[j + 1:]
 
 
-def declared(sch: str) -> set:
-    out = set()
-    for m in re.finditer(r'"([A-Za-z_][A-Za-z0-9_]*)"\s*:', sch):
-        name = m.group(1)
-        tail = sch[m.end():m.end() + 60].lstrip()
-        if any(tail.startswith(f + "(") for f in PROP_FNS):
-            out.add(name)
+def _top_level_pairs(sch: str) -> list:
+    """取 `schema({ ... })` **第一层**的 (字段名, 值起点) —— 跳过嵌套 JSON Schema 声明。
+
+    ★ 为什么必须按层切（Lane CW 实测）：`loop_create` 的 schema 长这样
+        schema({ "name": …, "steps": Json::object({ "type": "array",
+                 "items": string_prop("单个 step mode") }), … })
+      `items` 是 **steps 数组的元素声明**（给客户端看的 JSON Schema），
+      **不是工具顶层入参** —— handler 只需读 `steps` 数组，永远不需要读 `items`。
+      旧版用一条正则扫整段 schema ⇒ 把 `items` 判成死参数（**误报**）。
+
+    做法：从 `schema(` 的 `{` 之后开始，用**括号深度**跟踪，
+    只在深度 1（即 `{` 内容直属层）时收集 `"name": prop_fn(`。
+    """
+    i = sch.find("{")
+    if i < 0:
+        return []
+    out = []
+    depth = 0
+    j = i + 1
+    n = len(sch)
+    while j < n:
+        c = sch[j]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+        elif depth == 0 and c == '"':
+            m = re.match(r'"([A-Za-z_][A-Za-z0-9_]*)"\s*:', sch[j:])
+            if m:
+                name = m.group(1)
+                tail = sch[j + m.end():j + m.end() + 60].lstrip()
+                if any(tail.startswith(f + "(") for f in PROP_FNS):
+                    out.append(name)
+        j += 1
     return out
+
+
+def declared(sch: str) -> set:
+    return set(_top_level_pairs(sch))
+
+
+# ★ C 类「设计如此」的**认定标记**（Lane CW）。
+#
+# 判据只能看出「声明了但没读」；但「没读」有两种：
+#   B 该摘 schema（遗留字段，承诺了却不实现）
+#   C 设计如此（参数存在、但被**服务端覆盖**，schema 的承诺本就是「你传了不算」）
+# 典型实例：`lock_acquire.ts` / `lock_renew.ts` —— BUG-33 政策：
+# **时间戳一律服务端盖章（now_default()），不接受调用方注入。**
+#
+# 认定方式：**看该参数的 schema 描述**。描述里明说「服务端盖章 / 不接受覆盖」，
+# 就是 C 类 —— 此时判据**不再报死参数**，改为单独列出（`[设计如此]`），
+# 这样既不误报，也不会让它静默消失（描述被改掉 ⇒ 立刻回到死参数）。
+BY_DESIGN_MARKERS = ("服务端盖章", "不接受覆盖", "会被服务端时间覆盖")
+
+
+def _is_by_design(param: str, sch: str) -> bool:
+    """该参数的 schema 描述里是否已声明「服务端覆盖」。"""
+    m = re.search(r'"%s"\s*:\s*\w+\(' % re.escape(param), sch)
+    if not m:
+        return False
+    # 取该字段描述的前 400 字符（覆盖到多行描述）
+    seg = sch[m.end():m.end() + 400]
+    return any(mk in seg for mk in BY_DESIGN_MARKERS)
 
 
 def local_helpers(handler: str, src: str) -> str:
@@ -329,6 +386,7 @@ def judge(root: str, verbose: bool = False):
     n_blocks = 0
     n_total_candidate = 0
     dead, opaque, clean = [], [], []
+    designed = []
 
     for fn, src in files.items():
         bl = blocks(src)
@@ -349,7 +407,18 @@ def judge(root: str, verbose: bool = False):
             unread = [p for p in sorted(params)
                       if not is_read(p, scope, readers) and not is_read(p, src, readers)]
             if unread:
-                dead.append((fn, name, line, unread))
+                # ★ C 类：**设计如此**（Lane CW 实测）。
+                # 参数被服务端覆盖/规范化，schema 承诺是「你传了也不算」——
+                # 典型是 `ts`（BUG-33 政策：时间戳一律服务端盖章，不接受调用方注入）。
+                # 认定方式：**该参数的 schema 描述里已写明**，见 BY_DESIGN_MARKERS。
+                by_design = [p for p in unread if _is_by_design(p, sch)]
+                real = [p for p in unread if p not in by_design]
+                if by_design:
+                    designed.append((fn, name, line, by_design))
+                if real:
+                    dead.append((fn, name, line, real))
+                if not real and not by_design:
+                    clean.append((fn, name))
             else:
                 clean.append((fn, name))
 
@@ -364,6 +433,7 @@ def judge(root: str, verbose: bool = False):
         "dead": dead,
         "opaque": opaque,
         "clean": clean,
+        "designed": designed,
     }
 
 
@@ -376,13 +446,19 @@ def render(rc, res):
           % (len(res["readers"]), ", ".join(res["readers"][:12])
              + (" …" if len(res["readers"]) > 12 else "")))
     print("[扫描] 工具块 %d · 含 schema 声明的工具 %d" % (res["n_blocks"], res["n_tools"]))
-    print("       读取干净 %d · opaque（透传，静态判不了）%d · 死参数 %d"
-          % (len(res["clean"]), len(res["opaque"]), len(res["dead"])))
+    print("       读取干净 %d · opaque（透传，静态判不了）%d · 死参数 %d · 设计如此 %d"
+          % (len(res["clean"]), len(res["opaque"]), len(res["dead"]),
+             len(res.get("designed", []))))
     if res["opaque"]:
         print()
         print("[opaque · 主动沉默] 这些工具的 handler 整包透传 args ⇒ 参数在别处读，**不判死**：")
         for fn, name, line, params in res["opaque"]:
             print("  ~ %s:%d  %-26s 参数 %s" % (fn, line, name, ",".join(params[:6])))
+    if res.get("designed"):
+        print()
+        print("[设计如此 · 不判死] schema 描述里已写明「服务端覆盖」，参数存在但不接受调用方注入：")
+        for fn, name, line, params in res["designed"]:
+            print("  = %s:%d  %-26s 覆盖：%s" % (fn, line, name, ", ".join(params)))
     if res["dead"]:
         print()
         print("[死参数] schema 声明了但 handler/helper 从不读：")
