@@ -10141,3 +10141,18 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
   **剩余待做**：`assistant_status`/`assistant_resign`（I/O）、`github/gitcode` 3（I/O）、
   `atgc_old` 3（衍生子项目，先查有无独立测试目录）、其余；
   **且下一批前必须先看 `server_bug455_coverage_wbtest.mbt` 那条 lane 的进展**（避免重复）。
+
+- 追记（2026-10-28 09:25 **第四批已完成：`deps_satisfied` 5 格**，累计 19 格）：
+  **实做**：追加到 `src/engine/dag_core_wbtest.mbt`（现 232 行 / 9 格），
+  覆盖 `deps_satisfied` 的**5 个出口**（任务不存在 / 无依赖 / 依赖未完成 / 全完成 / 依赖 id 不存在）。
+  **为什么这批不重复另一条 lane**：它的 `server_bug455_pure_wbtest.mbt` 已覆盖
+  `assistant_status` / `executor_auction` / `github_issue_webhook_parse` / `reserve_check` /
+  `lock_release` / `store_close` —— 本笔做的是**它没碰的** `deps_satisfied`
+  （实测它与 `dag_check` 在全部测试文件里各 0 次，而 `dag_check` handler 是纯转发）。
+  **变异对照 3 组全红**：M1（`None => true`）⇒ 锁 5 红；M2（依赖 `None => ()` 跳过）⇒ 锁 9 红；
+  M3（删除 status 检查）⇒ **锁 7 + 锁 8 同时红**（证明「多级依赖不穿透」那格真的在看）。
+  **验收**：`dag455` **9/9**；全仓 **1670/1670 passed, 0 failed**。
+  **累计四批 19 格**：DAG 4（第一批）+ debate 4（第二批）+ Archive 6（第三批）+ deps_satisfied 5（第四批）。
+  **剩余待做**：`github_env_check`/`gitcode_env_check`（I/O 读 env）、`github_issue_close`（网络）、
+  `assistant_resign`（I/O）、`atgc_old` 3（衍生子项目，先查有无独立测试目录）、其余；
+  **且每批前必须先看两条 lane 的进展**（`server_bug455_coverage_wbtest.mbt` / `server_bug455_pure_wbtest.mbt`）。
