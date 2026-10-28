@@ -141,14 +141,28 @@ def judge(run_guards_text, measured):
 # 正则从文档**反解**（不手抄数字），覆盖两种形态：
 #   「18 条白盒测试在 `src/diff/diff_test.mbt`」  /  「15 条白盒锁 `src/..._wbtest.mbt`」
 RE_DOC_TEST_CLAIM = re.compile(r"(\d+) 条(?:白盒)?(?:测试|白盒锁)(?:在)? ?`([^`]+)`")
+# R134：另两种形态（AGENTS 里实测存在，见 parse_doc_test_claims 的 docstring ②③）
+RE_DOC_LOCK_RANGE = re.compile(r"`([^`]+)`\(sr_(\d+)~(\d+)\)")
+RE_DOC_GE = re.compile(r"`([^`]+)`\((\d+) 格")
 
 
 def parse_doc_test_claims(text):
-    """纯函数：从文档正文反解 [(declared, path, lineno)]。"""
+    """纯函数：从文档正文反解 [(declared, path, lineno)]。
+
+    R134 起覆盖**三种**声明形态（都在 AGENTS 里实测存在）：
+      ① 「18 条白盒测试在 `path`」 / 「15 条白盒锁 `path`」   —— RE_DOC_TEST_CLAIM
+      ② 「`path`(sr_1~7)」            —— 区间式，声明格数 = 末 - 首 + 1
+      ③ 「`path`(4 格，含…）」         —— 显式格数
+    """
     out = []
     for ln, line in enumerate(text.splitlines(), 1):
         for m in RE_DOC_TEST_CLAIM.finditer(line):
             out.append((int(m.group(1)), m.group(2), ln))
+        for m in RE_DOC_LOCK_RANGE.finditer(line):
+            start, end = int(m.group(2)), int(m.group(3))
+            out.append((end - start + 1, m.group(1), ln))
+        for m in RE_DOC_GE.finditer(line):
+            out.append((int(m.group(2)), m.group(1), ln))
     return out
 
 
