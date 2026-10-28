@@ -55,6 +55,15 @@ ENTRIES = [
         "re_diag": r"另记账 (\d+)（S (\d+) / T (\d+)）",
         "measure": "faces",
     },
+    {
+        "script": "check_scripts_naming.py",
+        "cmd": [sys.executable, "scripts/check_scripts_naming.py"],
+        "claim": "现读 {n} 条命名判定面",
+        "re_claim": r"现读 (\d+) 条命名判定面",
+        "diag": None,
+        "re_diag": None,
+        "measure": "over_faces",
+    },
 ]
 
 
@@ -73,6 +82,17 @@ def measure_faces(entry):
     return (red, c["W"], c["R"], c["G"], diag, c["S"], c["T"])
 
 
+def measure_over_faces(entry):
+    """数输出了几条「违规 N…」——即**超过棘轮上限**的面数（登记里那个「2 条」）。"""
+    try:
+        out = subprocess.run(entry["cmd"], capture_output=True, text=True,
+                             encoding="utf-8", cwd=ROOT).stdout
+    except OSError:
+        return None
+    m = re.findall(r"^\s*违规 (N\d)", out, re.M)   # 输出行有前导空格
+    return len(m) if out.strip() else None
+
+
 def judge(run_guards_text, measured):
     """纯函数：登记为什么 vs 实测 → 违例列表。便于 --selftest 合成自证。"""
     problems = []
@@ -80,6 +100,15 @@ def judge(run_guards_text, measured):
     for entry, meas in zip(ENTRIES, measured):
         if meas is None:
             problems.append("%s：测量命令跑不出数 ⇒ 无法对表" % entry["script"])
+            continue
+        if entry["measure"] == "over_faces":
+            m = re.search(entry["re_claim"], text)
+            if not m:
+                problems.append("%s：why 里解析不到「现读 N 条命名判定面」" % entry["script"])
+                continue
+            if int(m.group(1)) != meas:
+                problems.append("%s：登记现读 %s 条 ≠ 实测 %d 条"
+                                % (entry["script"], m.group(1), meas))
             continue
         red, w, r, g, diag, s, t = meas
         m = re.search(entry["re_claim"], text)
@@ -121,12 +150,21 @@ def selftest():
         if not ok:
             fails.append(name)
 
-    good_text = ("红档 **90 处 = W 1 / R 61 / G 28**，另记账 10（S 3 / T 7），涉 37 个文件。")
-    good_meas = [(90, 1, 61, 28, 10, 3, 7)]
+    # 夹具**从条目表生成**：加/删条目时自证自动跟随（不会出现"新条目没被自证覆盖"）
+    good_meas, good_parts = [], []
+    for e in ENTRIES:
+        if e["measure"] == "faces":
+            good_meas.append((90, 1, 61, 28, 10, 3, 7))
+            claim, diag = render_claim(e, good_meas[-1])
+            good_parts.append(claim + "，" + diag + "，涉 37 个文件。")
+        else:
+            good_meas.append(2)
+            good_parts.append(e["claim"].format(n=2) + " > 棘轮上限")
+    good_text = "；".join(good_parts)
     cell("consistent-claim-passes", judge(good_text, good_meas) == [])
 
     # 变异对照：把登记里的 W 改一个数，必须被抓到（判例-29：改坏机制要红）
-    drift_text = good_text.replace("W 1", "W 4")
+    drift_text = good_text.replace("W 1", "W 4")   # 只改红档那一条的 W
     bad = judge(drift_text, good_meas)
     cell("drifted-claim-is-caught", len(bad) == 1 and "W" in bad[0])
 
@@ -134,7 +172,7 @@ def selftest():
     cell("unparseable-claim-is-caught", judge("why 里没有读数", good_meas) != [])
 
     # 测量跑不出数 ⇒ 报无法对表（不静默）
-    cell("broken-measurement-is-caught", judge(good_text, [None]) != [])
+    cell("broken-measurement-is-caught", judge(good_text, [None] * len(ENTRIES)) != [])
 
     print("SELFTEST %s（%d 格：%s）" % ("OK" if not fails else "FAIL",
                                        len(cells), " ".join(cells)))
@@ -157,10 +195,17 @@ def main(argv):
         return RC_BROKEN
     measured = []
     for entry in ENTRIES:
-        measured.append(measure_faces(entry) if entry["measure"] == "faces" else None)
+        if entry["measure"] == "faces":
+            measured.append(measure_faces(entry))
+        elif entry["measure"] == "over_faces":
+            measured.append(measure_over_faces(entry))
+        else:
+            measured.append(None)
     problems = judge(text, measured)
     for entry, meas in zip(ENTRIES, measured):
-        if meas:
+        if entry["measure"] == "over_faces" and meas is not None:
+            print("  实测 %-28s 应为：现读 %d 条命名判定面" % (entry["script"], meas))
+        elif meas:
             claim, diag = render_claim(entry, meas)
             print("  实测 %-28s 应为：%s；%s" % (entry["script"], claim, diag))
     if problems:
