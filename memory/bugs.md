@@ -10291,7 +10291,7 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
 - summary: [authz] BUG-430 拆分（二）产品面「取不出挑战」且 claim 不接受 challenge —— 连"可选地走 S3"都做不到
 - reported_by: commander-alpha (Lane CB)
 - detail: **拆自 BUG-430**，是本轮实测发现的**比「默认不走」更基础**的缺口。两条实测：① **没有为已登记 agent 签发挑战的入口** —— 已登记 agent 调 `agent_register_key`（不带 challenge）只得 mode=already_registered，**回执里没有 challenge 字段**；挑战签发只在「非幂等」分支内。② **`claim` 不接受 `challenge` / `challenge_sig`** —— 实测 claim 的 inputSchema 为 `agent, assignee, inject, namespace, task_id`；只有 `reserve_scope` / `lock_acquire` 接受 challenge。⇒ **一个真实客户端无法从工具面取得服务端签发的挑战**；本轮能验签成功，是因为**手工拼出 nonce 形态**（`fist-s3-challenge:v1:<agent>:<counter>`，纯函数可复现）。**⇒ 产品现状是「路上缺一个收费站」而不是「有路没人走」：车到了入口却没有取票窗口，只能自己伪造一张票。** 建议修法：新增独立工具 `agent_issue_challenge(agent_id)`（服务端 `s3_issue_challenge_auto` 签发、不写库），并给 `claim` / `execute` / `verify` 补 `challenge` + `challenge_sig` 可选参数。**关闭条件（本条）**：存在至少一条**产品工具面**上「非手工构造」的取挑战路径，且主生命周期工具（`claim`）支持认证。**另注**：`fist.py` 默认把 `FIST_DB_PATH` 改道 `temp/fist.db`（BUG-122 同型收口），导致 `agent_register_key` 回 registered=true 而产品库仍是 0 行 —— 建议回执明示实际写入库路径。
-## BUG-466 [2026-10-28T07:25:26Z] [high] OPEN
+## BUG-466 [2026-10-28T07:25:26Z] [high] FIXED
 - summary: [BUG-430b] S3 挑战在产品面上无签发入口 —— 已登记 agent 拿不到服务端签发的 challenge，claim 也不接受 challenge 参数
 - detail: ## 缺陷（Lane CB 实测，2026-10-28）
 
@@ -10335,3 +10335,7 @@ BUG-430 拆分为两半：
 - **BUG-430a（已可关）**：路径存在 + 产品库有真公钥 + 「调用方无法自报」的判定路径已实测
 - **BUG-430b（本条，OPEN）**：产品面缺挑战签发入口 + claim 不接受 challenge
 - reported_by: lead(Lane CB 实测)
+
+
+### FIXED(2026-10-28T08:08:01Z / BUG-466)
+- evidence: commit eacebda9（5 文件）+ 545964b7（工具数 173→174 一源四态）。根因：S3 链 = 签发→签名→验签→消费，前八段做完后三步，唯独「签发」只有内部调用者够得着 —— 已登记 agent 想认证需要 challenge，但只有 agent_register_key 能签发，而对已登记者它只回 already_registered ⇒ 只能自己手工构造 nonce。不是「可选 vs 默认」问题，是「可选也不可选」：一条安全路径若只有知道内情的人手工构造输入才能走，工程上等于不存在。修法三处：① 新增 agent_issue_challenge 工具（只给已登记公钥的 agent 签发，未登记直接 Err；复用 s3_issue_challenge_auto 与首登/轮换同源；不写业务库只签发并登记待消费）；② claim schema 补 challenge/challenge_sig（关键发现：引擎层 engine.mbt:153 FistEngine::claim 早就有这两个参数，缺的只是 tool schema 声明 —— 接口声明与实现分叉）；③ 消 unregistered+ 误读，改用拆维度 unregistered+...+identity_verified|unverified|self_reported（追加而非改写，因为 unregistered 前导词有精确相等的既有断言）。产品面真跑（同一 server 进程）：agent_issue_challenge ⇒ challenge + pubkey_registered=true（取票窗口）；claim 带 challenge ⇒ action=+challenge_verified（S3 真活了）；claim 不带 ⇒ action=None 回执无 action 键（零回归）。变异实测：verify_challenge_sig 改恒 true ⇒ 320→316/4 failed 锁 5 必红；恢复后 320/320。测试：engine 320/320、server 515/515、moon check 0 errors。判例候选：接口声明与实现分叉 —— 加参数必须改两处（引擎签名 + schema），只改前者「存在但不可达」，只改后者「收下就丢」（BUG-440 反向形态）。缺口：challenge 表进程内（多实例消费不掉）、公钥按 ns 隔离、execute/verify 仍不接受 challenge。
