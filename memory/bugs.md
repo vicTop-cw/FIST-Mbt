@@ -10235,15 +10235,21 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
 
 ### FIXED(2026-10-28T04:17:50Z / BUG-461)
 - evidence: b546258f: 夹具基线改每进程唯一目录（@env.rand(8) 唯一 + now 可读排序 + FIST_T744_RUN_ID 检索标签）。判据：HEAD 原版两进程并发该包 A 97/86/11、B 97/89/8，t744 红 7/6 格报 database is locked（store_migration_wbtest.mbt:111/:144/:170/:219/:243/:268/:297），单进程 97/97 全绿 ⇒ 单进程绿不能当修好。修后：-f 't744_*' 双进程 A 12/12、B 12/12；单包 98/98；全量 1743/1743 rc=0；变异对照（基线退回固定路径）→ 98/97/1 仅 t744_12 红（:495）。10 格断言逐条保留未放宽。
-## BUG-462 [2026-10-28T04:18:17Z] [medium] OPEN
+## BUG-462 [2026-10-28T04:18:17Z] [medium] FIXED
 - summary: store 包其余测试夹具固定路径/FIST_DB_PATH 共享 —— 同族并发 database is locked（BUG-461 的兄弟面）
 - detail: BUG-461 只修了 store_migration_wbtest.mbt 一处（b546258f）。同包同族缺陷仍在：多测试共用固定相对路径或默认 FIST_DB_PATH，两进程并发跑同一包即红。实测（HEAD 原版两进程同时跑 src/store）：A 97/86/11、B 97/89/8，红格点名为 multi_store_test.mbt:170/245/269、store_sqlite_agents_wbtest.mbt:271/303/342/383、multi_store_bug420_wbtest.mbt:38、executions_upsert_test.mbt:21、call_log_test.mbt:33；另见 store_rsv_test.mbt:733/762、store_backend_semantics_test.mbt:30、executor_store_test.mbt:41。报错含 Error: database is locked。修法同 BUG-461：夹具基线改每进程唯一目录（@env.rand(8)），断言不放宽。
 - reported_by: lead(Lane H 回传证据)
-## BUG-463 [2026-10-28T04:18:31Z] [medium] OPEN
+
+### FIXED(2026-10-28T05:41:05Z / BUG-462)
+- evidence: commit 5662c58b。全包普查修 37 处共享路径：34 处 temp 下固定 db 路径（27 文件）+ 1 处 .fist-mbt/tmp/tmp_exec_upsert.db + 2 处 temp/r28 固定目录 + 1 处 base_dir 为点号（仓根 alpha.db/beta.db 的来源）；store_db_path_wbtest.mbt 2 处故意固定不改。并发实测：改回固定路径则两进程并发各 Total 110/passed 103/failed 7（5 条 database is locked）；修复后同条件各 110/107/3 且 locked=0，两进程失败集合完全相同（t744_9/k463_8/k463_9 都是既有 database is not open）。变异对照：唯一化生成器失效则 b462_u1 红。坑：辅助函数写在 _wbtest.mbt 时 9 处 unbound（_test.mbt 是黑盒只看 pub），移到普通 .mbt 才修好。分析：Windows DeleteFile 在持有句柄时返回 ERROR_SHARING_VIOLATION，POSIX unlink 只摘目录项是平台不对称；SQLite 锁是连接级。建议把「测试文件里不许出现固定 temp 路径」做成判据。
+## BUG-463 [2026-10-28T04:18:31Z] [medium] FIXED
 - summary: MultiStore::close_all 只清 map 不关 sqlite 句柄，SqliteStore 无 public close —— 产品侧关不掉、Windows 上删不动 .db
 - detail: src/store/multi_store.mbt:143 的 close_all 只从 map 摘除条目，不调用底层句柄关闭；SqliteStore 也没有 public close。后果：①Windows 上文件句柄仍被占用，.db 删不掉/改名失败；②调用方无法显式释放连接，只能等 GC/进程退出；③测试面被迫用同包白盒 match s.db { Some(db) => db.close() } 绕开（BUG-461 就是这么做的），说明「测试能关、产品关不掉」——接口缺口本身。建议：SqliteStore 增 public close（幂等），close_all 逐个调用；补白盒锁验证关闭后句柄释放（Windows 上以删除 .db 成功为判据，需允许平台跳过）。
 - reported_by: lead(Lane H 回传证据)
-## BUG-464 [2026-10-28T04:31:02Z] [medium] OPEN
+
+### FIXED(2026-10-28T05:41:12Z / BUG-463)
+- evidence: 由并发 lane 实现、Lane BD（gamma）独立核实通过。三条实证：① SqliteStore::close 已存在（store_sqlite.mbt:92，幂等 + try/catch 吞已关闭异常）；② MultiStore::close 真正关闭句柄（multi_store.mbt:142 先 s.close() 再 remove）；③ close_all 逐个走 close（:157）。根因分析：Windows 上只要进程持有句柄 DeleteFile 就返回 ERROR_SHARING_VIOLATION，POSIX 下 unlink 只是摘目录项 ⇒ 平台不对称缺陷；Map 里摘掉条目只是放弃引用，GC 时机不确定。缺口：store_bug463_close_wbtest.mbt 里有 2 格当前是红的（database is not open，既有问题非本单引入），且「关后能删 db」的 Windows 实测仍待该文件 owner 做。
+## BUG-464 [2026-10-28T04:31:02Z] [medium] DUPLICATE →BUG-430
 - summary: publish 家族（publish / publish_parallel / dag_publish）不查 ns ACL —— BUG-459 只补了 ns 合法性门，写权限面仍敞
 - detail: BUG-459/9518c590 给 dag_publish 与 publish_parallel 补了 ns_write_gate（拒 default/空/非法 ns），但实测三条 publish 路径都走 human_steward 特权路径、不查调用方在该 ns 的 ACL can_write。与 claim 侧不一致：claim 走 ns ACL（can_write=0 会被拒，BUG-408/BUG-411 收口过这条），publish 侧不查。后果：任何调用方（在 BUG-430 未收口前身份本就可自报）可向任意已打开 ns 发布根任务，绕过写权限。注意口径依赖：若按 BUG-430 的 framing（agent 自报不可验证），补 ACL 只提高一致性不提高安全性；但一致性本身是判据面『文档声称==代码调用点』的一部分。建议：publish/publish_parallel/dag_publish 在 engine_for_ns 之前加与 claim 同源的 ns ACL can_write 判定（created_by 不再是免检通道，或显式区分 privileged path 并在文档里写明豁免理由），并补对表判据一格。
 - reported_by: lead(Lane E 边界自述)
@@ -10264,3 +10270,9 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
   ③ 保持 OPEN 作 S1 的**子面**锚点（与 BUG-430 一起收）。
   **⚠️ 本条带 `[Lane E 边界自述]` 标记且 detail 只有一行** —— 我没有它的完整证据，
   **不擅自改判**，只补上面的代码事实供定夺。
+
+## BUG-465 [2026-10-28T05:52:55Z] [high] OPEN
+
+- summary: [store] 公钥一旦登记即永久不可变 —— `agent_register_key` 注释只说「不会被覆盖」，没说「也永远改不了」
+- reported_by: commander-alpha (Lane BZ)
+- detail: 三条互证（实测）：① `src/store/store_sqlite.mbt:2835` 的 `agents_register` UPSERT 是 `ON CONFLICT(agent_id) DO UPDATE SET pid=excluded.pid, last_seen=excluded.last_seen, status='active', role=CASE ...` —— **DO UPDATE SET 里没有 `pubkey_fp`**；② 全文件 `UPDATE agents SET` 此前只有 `agents_set_pid` 一处，**没有任何更新 `pubkey_fp` 的写面**；③ store 层 `agents_*` 十个函数里**没有 `agents_set_pubkey`**。⇒ 公钥一旦写入就既不可修改、也不可清空。**组合危害（抢注 + 不可变 = 永久劫持不可逆）**：攻击者趁某 agent 还没登记公钥先替他登记自己的（抢注，第七段首登验签只挡住一部分，抢注窗口从 agent 首次出现到它自己登记之间仍在）⇒ 合法持有者**无法恢复**：换钥没写面、吊销没写面、重新登记因 `ON CONFLICT` 不更新 `pubkey_fp` 而**静默不生效** ⇒ **该身份永久废掉**，攻击者永久通过、正主永久通不过，且**没有任何运维手段修复**。**注释具有误导性**：`key_pin_reject_message` 写「如需更换请走密钥轮换流程（BUG-430 **尚未实现**：轮换通道需 owner 决策，本轮不含）」—— 这把问题描述成「**功能未做**」（做一下就有），而真实情况是「**存储层没有能力**」（不动 store 就永远做不了）；对使用者一个意味着「等等就好」，另一个意味着「现在锁死」。**修复**：`src/store/store_sqlite.mbt` 新增 `agents_set_pubkey(agent_id, pubkey_fp)`（约 25 行，按 `agents_set_pid` 逐字模板），轮换与吊销即可落地（已在 BUG-430 第八段同步落地）。**与 BUG-430 是不同缺陷**：BUG-430 = 「没人用 S3」（路修好了但产品层没车）；本条 = 「用了就锁死」（登记错误或被抢注后无法恢复）⇒ 即使 BUG-430 关闭本条仍成立，应独立跟。

@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 172 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 173 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -1906,6 +1906,23 @@ pub async fn run_server() -> Unit {
       if g is Err(ge) {
         return Err(@mcp_types.ToolError(ge))
       }
+      // ══════════════════════════════════════════════════════════════════════
+      // **BUG-464 定夺：此处刻意不加 ACL 门**（`agent_write_gate`）。
+      //
+      // 曾按 BUG-464 的初判在此补 ACL，后经代码复核**推翻**：
+      //   · `engine.publish` 开头有硬检查
+      //     `if created_by != "human_steward" && created_by != "human" ⇒ Err`
+      //     ⇒ publish 是**人类指挥官特权入口**，不是普通 agent 写路径；
+      //   · 下方（发布成功后）有 BUG-411 的**配套预警**：
+      //     `claim_ready` / `writable_agents` 明写
+      //     「publish 因走 human_steward 特权路径能成功，但紧接着的 claim 会被 ns ACL 拒」
+      //     ⇒ 「不查 ACL」是**显式设计 + 有弥补机制**，不是遗漏。
+      // ⇒ 在此加强制 ACL 会**削掉指挥官的跨 ACL 发任务能力**，属于修错方向。
+      //
+      // ⚠️ 真正的口子在 **S1**：`created_by` 是调用方自报串（`get_str(args,…)`），
+      //    全仓**无任何验证** ⇒ 任何调用方填 `created_by=human_steward` 即进特权路径。
+      //    这与 `agent`/`assignee` 自报是**同一类**问题，归 BUG-430（S3 认证）收口。
+      // ══════════════════════════════════════════════════════════════════════
       let r = eng.publish(
         project_dir~,
         description~,
@@ -1977,6 +1994,8 @@ pub async fn run_server() -> Unit {
       }
       let created_by = get_str(args, "created_by", default="selfdrive")
       let ts = now_default()
+      // BUG-464 定夺：**刻意不加 ACL**（publish 家族是 human_steward 特权路径，
+      // `engine.publish` 开头已有 created_by 硬检查）。详见 publish 处的长注释。
       match
         eng.publish_parallel(
           ns~,
@@ -5009,6 +5028,8 @@ pub async fn run_server() -> Unit {
       let created_by = get_str(args, "created_by", default="human_steward")
       let level = get_int(args, "level", default=6)
       let ts = now_default()
+      // BUG-464 定夺：**刻意不加 ACL**（publish 家族是 human_steward 特权路径，
+      // `engine.publish` 开头已有 created_by 硬检查）。详见 publish 处的长注释。
       let depends_on : Array[String] = try {
         match @json.parse(depends_on_raw) {
           Json::Array(a) =>
@@ -6952,6 +6973,13 @@ pub async fn run_server() -> Unit {
         "proof_sig": string_prop(
           "可选：用**私钥**对 `challenge` 签出的 Ed25519 签名 hex（128 字符）。与 challenge 同时传才算第二步；验不过一律拒绝",
         ),
+        "rotate_sig": string_prop(
+          "可选：**密钥轮换**证明 —— 用**旧私钥**对 `rotate_challenge` 签出的 Ed25519 签名 hex（128 字符）。" +
+          "仅当该 agent 已有公钥且与本次不同时才需要；缺/验不过 ⇒ 一律拒绝换钥（无此证明即可换 = 身份劫持）",
+        ),
+        "rotate_challenge": string_prop(
+          "可选：轮换用挑战 nonce。**必须是服务端签发**（先用不传 rotate_sig 的调用拿到 challenge，服务端会把同一 nonce 用于轮换）",
+        ),
         "by": string_prop("登记者身份（可选默认 human_steward）"),
       },
       ["agent_id", "namespace", "pubkey_hex"],
@@ -7032,12 +7060,112 @@ pub async fn run_server() -> Unit {
       // BUG-430 / S3 第七段：判定收进 `key_pin_verdict`（纯函数、白盒可测）。
       // 三态：first（首登，仍须验签）/ idempotent（同键幂等）/ reject_different（拒绝）。
       let pin = key_pin_verdict(prev_key, pubkey_hex)
+      // ══════════════════════════════════════════════════════════════════════
+      // BUG-430 / S3 **第八段：密钥轮换**（旧私钥签得出才允许换）
+      //
+      // 第七段对「已有公钥且与本次不同」一律拒绝。那堵住了劫持，
+      // 但也意味着**私钥丢了就永久锁死**（抢注成功 = 正主再也要不回来）。
+      // 本段补上唯一合法的换钥通道：**必须由旧私钥对本次 challenge 签名**。
+      //
+      // 三态（`key_rotate_verdict`，纯函数）：
+      //   · 无旧键 / 同键 ⇒ `rotate_not_needed`（走首登/幂等，不需要旧钥证明）
+      //   · 有旧键且不同 + 没给 rotate_sig ⇒ `rotate_reject_no_proof`（拒绝）
+      //   · 有旧键且不同 + 给了但验不过 ⇒ `rotate_reject_bad_proof`（拒绝）
+      //   · 有旧键且不同 + 给了且验过 ⇒ `rotate_allowed`（换钥）
+      //
+      // ⚠️ **为什么必须验旧钥**：不验就换 ⇒ 任何能调到本工具的调用方都能把别人的
+      //   公钥换成自己的 ⇒ 身份劫持（正是 `key_pin` 要防的事）。
+      //   「旧私钥签得出」是本仓**唯一**能证明「你就是原来那个主体」的手段。
+      // ══════════════════════════════════════════════════════════════════════
+      let rotate_sig = get_str(args, "rotate_sig")
+      let rotate_challenge = get_str(args, "rotate_challenge")
+      let mut rotate_allowed = false
       if pin == key_pin_reject_different {
-        return Err(
-          @mcp_types.ToolError(key_pin_reject_message(prev_key, pubkey_hex)),
+        // 只有「确有旧键且不同」时才谈轮换；验签用**旧**公钥
+        let old_sig_ok = if rotate_sig == "" || rotate_challenge == "" {
+          false
+        } else {
+          @engine.verify_challenge_sig(prev_key, rotate_challenge, rotate_sig)
+        }
+        let rv = @engine.key_rotate_verdict(
+          prev_key, pubkey_hex, rotate_sig, old_sig_ok,
         )
+        if rv == @engine.key_rotate_reject_no_proof ||
+          rv == @engine.key_rotate_reject_bad_proof {
+          let why = if rv == @engine.key_rotate_reject_no_proof {
+            "没提交 rotate_sig ⇒ 无法证明持有旧私钥"
+          } else if rotate_challenge == "" {
+            "提交了 rotate_sig 但没带 rotate_challenge（旧私钥要签**服务端签发**的挑战）"
+          } else {
+            "rotate_sig 用**旧**公钥验不过 ⇒ 不是原主体的私钥签的"
+          }
+          return Err(
+            @mcp_types.ToolError(
+              key_pin_reject_message(prev_key, pubkey_hex) +
+              " ｜ 本轮已试轮换但被拒：" +
+              why +
+              "。轮换须两步：① 先调一次 agent_register_key 不带 rotate_sig 拿到 challenge；" +
+              "② 用**旧私钥**对该 challenge 签名作为 rotate_sig，连同 rotate_challenge 再次调用",
+            ),
+          )
+        }
+        rotate_allowed = rv == @engine.key_rotate_allowed
       }
       let already_registered = pin == key_pin_idempotent
+      if rotate_allowed {
+        // 换钥：写新公钥（`agents_set_pubkey`，BUG-430 第八段新增的 store 写入面）
+        let rst = match eng.store.sqlite_store() {
+          None =>
+            return Err(
+              @mcp_types.ToolError(
+                "agent_register_key: 内存后端无 agents 表，无法轮换公钥",
+              ),
+            )
+          Some(s) => s
+        }
+        match rst.agents_set_pubkey(agent_id=fp, pubkey_fp=pubkey_hex) {
+          Err(m) =>
+            return Err(
+              @mcp_types.ToolError(
+                "agent_register_key: 轮换写库失败 —— " + m,
+              ),
+            )
+          Ok(_) => ()
+        }
+        // 写后回读：不许由请求反推（BUG-145 同口径）
+        let after = match rst.agents_get(fp) {
+          None => ""
+          Some(a) => a.pubkey_fp
+        }
+        if after != pubkey_hex {
+          return Err(
+            @mcp_types.ToolError(
+              "agent_register_key: **轮换写后回读不一致** —— 库里仍不是新键（不许假装成功）。" +
+              "库里前缀=" +
+              substring_at(after, 0, 16) +
+              "…",
+            ),
+          )
+        }
+        return Ok(
+          @mcp.ToolResult::text(
+            Json::object({
+              "agent_id": Json::string(agent_id),
+              "namespace": Json::string(ns),
+              "mode": Json::string("rotated"),
+              "registered": Json::boolean(true),
+              "rotated": Json::boolean(true),
+              "old_key_prefix": Json::string(substring_at(prev_key, 0, 16)),
+              "new_key_prefix": Json::string(substring_at(pubkey_hex, 0, 16)),
+              "persisted_pubkey_matches": Json::boolean(true),
+              "note": Json::string(
+                "换钥成功：旧私钥签名已在服务端验过，库里已回读确认为新键。" +
+                "旧私钥即日起失效（此后用旧私钥签的 challenge 一律 challenge_failed）",
+              ),
+            }).stringify(),
+          ),
+        )
+      }
       if !already_registered {
         // ══════════════════════════════════════════════════════════════════
         // BUG-430 / S3 **第六段：首登也验签**（堵抢注）
@@ -7148,6 +7276,118 @@ pub async fn run_server() -> Unit {
       )
     },
   )
+  s1 = instrumented_tool(
+    s1,
+    "agent_revoke_key",
+    "**BUG-430 / S3 第八段 · 密钥吊销**：清空某 agent 已登记的公钥，使其退回「无密钥」状态（此后再传 challenge 一律 challenge_failed）。" +
+    "**私钥丢了的唯一出路** —— 没有吊销面 = 抢注成功后正主永久锁死。" +
+    "⚠️ 本工具**只清除「有密钥」这件事**，不把身份交给任何人：吊销后重新登记走**首登流程**，所以它**不是**提权面。" +
+    "⚠️ **身份仍是自报的（BUG-430 未关闭）**：本工具不校验调用方是谁 ⇒ 任何能调到它的调用方都能吊销任何 agent 的密钥。" +
+    "它是**运维便利**（私钥丢失、agent 退役），**不是安全措施**。" +
+    "参数：agent_id、namespace(可选)、by(可选，仅记入回执)。返回 {agent_id, namespace, mode, revoked, had_key, revoked_by, note}。",
+    schema(
+      {
+        "agent_id": string_prop("要吊销密钥的 agent（必填）"),
+        "namespace": string_prop("命名空间（可选，缺省 default）"),
+        "by": string_prop(
+          "操作者（可选，仅记入回执；**不是鉴权**）",
+        ),
+      },
+      ["agent_id"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let agent_id = get_str(args, "agent_id")
+      let ns = get_str(args, "namespace", default="default")
+      let by = get_str(args, "by", default="")
+      if agent_id == "" {
+        return Err(
+          @mcp_types.ToolError("agent_revoke_key: agent_id 不能为空"),
+        )
+      }
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      // 只对 sqlite 后端有意义（内存后端无 agents 表 ⇒ 本来就没有密钥）
+      let store = match eng.store.sqlite_store() {
+        None =>
+          return Err(
+            @mcp_types.ToolError(
+              "agent_revoke_key: 当前是内存后端，没有持久化 agents 表 ⇒ 无密钥可吊销。" +
+              "本工具只在 SQLite 后端可用（与 agent_register_key 同口径）",
+            ),
+          )
+        Some(s) => s
+      }
+      let fp = agent_fp(agent_id)
+      // 读现值（回读必须在写之前 —— 写完再读就看不出「本来有没有」）
+      let prev_key = match store.agents_get(fp) {
+        None => ""
+        Some(a) => a.pubkey_fp
+      }
+      let verdict = @engine.key_revoke_verdict(prev_key)
+      if verdict == @engine.key_revoke_not_needed {
+        return Ok(
+          @mcp.ToolResult::text(
+            Json::object({
+              "agent_id": Json::string(agent_id),
+              "namespace": Json::string(ns),
+              "mode": Json::string(verdict),
+              "revoked": Json::boolean(false),
+              "had_key": Json::boolean(false),
+              "revoked_by": Json::string(by),
+              "note": Json::string(
+                "该 agent 当前没有已登记的公钥 ⇒ 无需吊销（不是失败，是本来就空）",
+              ),
+            }).stringify(),
+          ),
+        )
+      }
+      // 清空公钥：`agents_set_pubkey(agent_id, "")` —— BUG-430 第八段新增的 store 写入面。
+      match store.agents_set_pubkey(agent_id=fp, pubkey_fp="") {
+        Err(m) =>
+          return Err(
+            @mcp_types.ToolError(
+              "agent_revoke_key: 清空公钥失败 —— " + m,
+            ),
+          )
+        Ok(_) => ()
+      }
+      // 写后回读：回执不许由请求反推（BUG-145 同口径）
+      let after = match store.agents_get(fp) {
+        None => ""
+        Some(a) => a.pubkey_fp
+      }
+      if after != "" {
+        return Err(
+          @mcp_types.ToolError(
+            "agent_revoke_key: **写后回读发现公钥仍在** —— 清空未生效（不许假装成功）。" +
+            "残留前缀=" +
+            substring_at(after, 0, 16) +
+            "…",
+          ),
+        )
+      }
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "agent_id": Json::string(agent_id),
+            "namespace": Json::string(ns),
+            "mode": Json::string(verdict),
+            "revoked": Json::boolean(true),
+            "had_key": Json::boolean(true),
+            "revoked_by": Json::string(by),
+            "persisted_pubkey_empty": Json::boolean(true),
+            "note": Json::string(
+              "公钥已清空，写后回读确认为空。该 agent 现在传 challenge 一律 challenge_failed，" +
+              "直到重新登记公钥（走首登流程，需新私钥签名）",
+            ),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+
   s1 = instrumented_tool(
     s1,
     "audit_log",
