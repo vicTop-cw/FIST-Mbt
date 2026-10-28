@@ -177,7 +177,7 @@ def ledger_status(bugs_txt):
     named = {i for grp in RE_FIXED_IDS.findall(bugs_txt)
              for i in re.split(r"[,\s]+", grp) if i.startswith("BUG-")}
     counts = {s: sum(1 for _, (v, _m) in st.items() if v == s) for s in BUG_STATUSES}
-    key = lambda x: int(x.split("-")[1])  # noqa: E731
+    key = lambda x: int(re.match(r"\d+", x.split("-")[1]).group())  # noqa: E731  # 容忍 BUG-430a/430b 这类拆分段后缀（S1/S3 拆分）
     # 硬门①：标 FIXED 必须被某条小记抬头点名（防空口标修好）
     unclaimed = sorted((k for k, (v, _) in st.items() if v == "FIXED" and k not in named), key=key)
     if unclaimed:
