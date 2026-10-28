@@ -9,8 +9,22 @@
 
 ///|
 /// SQLite 后端：持有打开的 Database（Option 以承载 open 失败场景）。
+///
+/// **字段为什么是 `mut`（BUG-463）**：`close()` 必须把 `Some(db)` 归零成 `None`，
+/// 否则「已关闭」这件事在类型里无处可存 —— 既做不出幂等（二次 close 会对着已释放的
+/// 底层句柄再 close 一次），也做不出「关闭后既有操作返回 Err 而非 panic」。
+/// 归零后全文件 60 处 `match self.db` 的 `None` 分支自动接手：返回
+/// `Err("sqlite store 未打开")` / 空集合 / false（见各函数），**全文件零 `abort`**。
+///
+/// **`closed` 与 `db = None` 不是同一件事**（BUG-463 回归面）：`db == None` 只说明
+/// 「当前没有可用句柄」，而底层句柄**可能已被外部先关掉**（白盒测试直接
+/// `match s.db { Some(db) => db.close() }` 是合法写法，store 无从得知）。那种情况下
+/// `db` 仍是 `Some(已关闭句柄)`，再 close 一次会让 node:sqlite 抛 `database is not open`
+/// ⇒ 进程级未捕获异常。`closed` + 容错关闭一起保证对外语义：
+/// **`close()` 恒成功、可重复调用**，两种幂等面（自己关过 / 别人先关过）都覆盖。
 pub struct SqliteStore {
-  db : @sqlite.Database?
+  mut db : @sqlite.Database?
+  mut closed : Bool
 }
 
 ///|
@@ -25,7 +39,7 @@ pub fn SqliteStore::open(db_path : String) -> SqliteStore? {
   match @sqlite.Database::open(db_path) {
     None => None
     Some(db) => {
-      let s = { db: Some(db), }
+      let s = { db: Some(db), closed: false, }
       if s.create_schema() {
         // 幂等迁移：旧库升级补现役必需列（见 ensure_task_columns）。
         // BUG-374：补列失败必须**拒载**而非静默降级——缺列库（旧 schema 根库）
@@ -51,6 +65,46 @@ pub fn SqliteStore::open(db_path : String) -> SqliteStore? {
       }
     }
   }
+}
+
+///|
+/// **关闭底层连接（幂等）** —— BUG-463。
+///
+/// 为什么需要它：`@sqlite.Database` 持有操作系统级文件句柄。Windows 上未关闭的 sqlite
+/// 句柄会一直握着 `.db`（以及 `-wal`/`-shm`）的文件锁 ⇒ ① 测试夹具里删不掉库文件、
+/// ② 同路径重新 open 可能撞 `database is locked`、③ `MultiStore::close_all` 号称
+/// 「关闭全部命名空间」却只把 store 从 Map 里摘掉，句柄**永远不会释放**（进程内泄漏，
+/// 直到进程退出才由 OS 回收）。本函数把「关闭」这件事真正落到句柄上。
+///
+/// 幂等语义（**两种面都要**，别只做第一种）：
+/// 1. 自己重复调 `close()` ⇒ no-op（`db` 已是 `None`），不对已释放对象二次 close
+///    （js 侧是用已关闭句柄，native 侧是 double free 面）；
+/// 2. 底层句柄**已被外部先关掉**（白盒测试直接 `match s.db { Some(db) => db.close() }`
+///    是合法写法）⇒ 本函数仍必须**安全返回**：关闭动作包了容错，吞掉 node:sqlite 的
+///    `database is not open`，并把状态统一归零。实测反例：BUG-463 首版只做第一种，
+///    `t744_9` 白盒直关 + `close_all` 二次关闭 ⇒ 整个测试进程未捕获异常、汇总行都没了。
+///
+/// 对外契约：**`close()` 恒成功、可重复调用**；关闭后既有操作走各自 `None` 分支。
+///
+/// 关闭后的既有操作：全部走各函数既有的 `None` 分支 —— 返回
+/// `Err("sqlite store 未打开")`（写路径）/ 空数组 / false / `()`，
+/// **不 panic**。白盒锁见 `store_bug463_close_wbtest.mbt`。
+pub fn SqliteStore::close(self : SqliteStore) -> Unit {
+  match self.db {
+    None => ()
+    Some(db) =>
+      // 容错关闭：底层句柄可能**已被外部先关掉**（白盒测试/将来别的路径直接
+      // `db.close()` 是合法写法，store 无从得知）。node:sqlite 对已关闭的
+      // `DatabaseSync` 再 `close()` 会抛 `database is not open`（实测：BUG-463 回归
+      // — `t744_9` 白盒直关 + `close_all` 二次关闭 ⇒ 整个测试进程未捕获异常）。
+      // 这里吞掉关闭期的异常，把「close 恒成功」做实；状态归零在下面统一做。
+      db.close() catch {
+        _ => ()
+      }
+  }
+  // 两种幂等面共用同一出口：自己关过（上面 Some 分支）/ 别人先关过 / 本来就没句柄。
+  self.db = None
+  self.closed = true
 }
 
 ///|
@@ -2964,6 +3018,62 @@ pub fn SqliteStore::agents_set_pid(
             Ok(())
           } else {
             Err("sqlite 换绑 pid 失败: \{agent_id}")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// **BUG-430 / S3 第八段**：改写（或清空）某 agent 已登记的公钥。
+///
+/// 为什么必须新增这条写入面（三条互证，实测）：
+///   ① `agents_register` 的 `ON CONFLICT(agent_id) DO UPDATE SET` **不含 `pubkey_fp`**
+///      （只更新 pid / last_seen / status / role）⇒ 已存在的公钥**永远不会被改**；
+///   ② 本文件全仓 `UPDATE agents SET` 此前只有 `agents_set_pid` 一处；
+///   ③ `agents_*` 十个函数里没有 `agents_set_pubkey`。
+///   ⇒ **公钥一旦写入即永久不可变**：登记错了（含被抢注）该身份就永久废掉。
+///
+/// 本函数补上「可改」这条能力，供两条路使用：
+///   · **轮换**：`agents_set_pubkey(fp, 新公钥)`（调用方须先验过**旧私钥**签名）
+///   · **吊销**：`agents_set_pubkey(fp, "")`（清空 ⇒ 之后传 challenge 恒 challenge_failed）
+///
+/// ⚠️ 本函数**只写库，不做任何鉴权** —— 「该不该换」由上层判定面
+///   （`key_rotate_verdict` / `key_revoke_verdict`）与工具受理；
+///   把鉴权塞进 store 会让同一规则出现两份实现（判例-29）。
+///
+/// ⚠️ 传空串是**有意的合法用法**（吊销），不当作「参数漏传」拒绝。
+pub fn SqliteStore::agents_set_pubkey(
+  self : SqliteStore,
+  agent_id~ : String,
+  pubkey_fp~ : String,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "UPDATE agents SET pubkey_fp = ? WHERE agent_id = ?"
+      match db.prepare(sql) {
+        None => Err("sqlite prepare 失败: agents_set_pubkey")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, pubkey_fp)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, agent_id)),
+            ),
+          )
+          let exec_ok = stmt.execute()
+          stmt.finalize()
+          if exec_ok {
+            Ok(())
+          } else {
+            Err("sqlite 改写 pubkey_fp 失败: \{agent_id}")
           }
         }
       }
