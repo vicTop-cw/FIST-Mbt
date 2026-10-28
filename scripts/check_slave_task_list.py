@@ -20,6 +20,11 @@ r"""scripts/check_slave_task_list.py — 副机任务清单「认领入口」自
                         行号在界内、括号里没点名记号，于是"指向一行空白"就白拿一条在场证据。
   B5 范围锚点两端都核 = `file:4-10` 是在声称一个范围，尺把上端也当一条锚点核对；只核下端等于放过
                         写错的上端（R126 实测：本清单 WT-05 原来就写 `:4-10`，而下端恰是一行空白）。
+  B6 整份文件无记号   = 只点文件不点行的指认若紧跟 `（…）`/`「…」`，记号必须在该文件**任意一行**出现
+                        ⇒ 否则红。这一形 2026-10-28 补：`ci.yml`/`run_guards.py` 每轮都在插行，
+                        指行号必然过期（当天修完 11 处，另一 agent 插一段又漂 1 处）——
+                        指「整份文件含这件事」既抗漂移，又仍然可机器核对。**这是硬核对不是放宽**：
+                        记号在别行必须绿、从文件里删掉必须红（`B6`/`B6b` 两格变异对照锁住）。
   C1 已落地无据       = 状态 `已落地` 而证据列没有任何**指得到在场真源**的指认（`文件:行` 锚点或整份
                         文件都在都算据），或证据列为空 ⇒ 红。口径沿用 R119 的 `UNPROVEN-DONE 不许无据`
                         与 `bug_list.open_with_linked_done`（账本说没修、任务库说修完了）——入口面此前
@@ -27,9 +32,14 @@ r"""scripts/check_slave_task_list.py — 副机任务清单「认领入口」自
   C2 状态词表越界     = 状态列不在闭集 `已落地 / 部分 / 未开工 / 作废 / 无法取证` 之内 ⇒ 红。
                         词表一散，"done" 与 "done-ish" 就分不开，分布自述也无从对表。
   D1 结构级/失配自述落后 = 文首写 `结构级 N 条` 或 `失配 N`，而尺实算不是 N ⇒ 红。
-  D2 内容级自述落后   = 文首写 `内容级 M 条`，而尺反解到「带点名记号」的锚点数不是 M ⇒ 红。
+  D2 内容级自述落后   = 文首写 `内容级 M 条`，而尺反解到「带点名记号」的锚点数不是 M ⇒ 红
+                        （行号锚点的记号要落在那一行、文件级锚点的记号要落在整份文件里）。
   D3 分布/行数自述落后 = 文首写 `已落地 a / 部分 b / 未开工 c / 作废 d` 与 `实读编号行是 **R**`，
                         与状态列实算不一致 ⇒ 红（登记文字自身是被检面）。
+  D4 文件级自述落后   = 文首写 `文件级在场 N 条`（只点文件不点行的指认数），而尺实算不是 N ⇒ 红。
+                        **这一格 2026-10-28 才补**：此前 D1/D2/D3 只核结构级/内容级/分布/行数，
+                        文首那行「文件级在场 14 条」是**没人核过的手抄数**，实测当时已是 16 ——
+                        正是本文件开头自述要治的「声明滞后」形状，只是漏在了第四个数上。
   E1 空扫描面自拒     = 一行任务都没解析到 ⇒ 2，绝不冒用「0 违例」的绿灯。
   E2 读不到就自拒     = 清单文件缺失 / 根目录不存在 ⇒ 2。
 
@@ -91,6 +101,7 @@ NOISE_TOKENS = {"true", "false", "none", "http", "https", "json", "mcp", "name",
 
 CLAIM_STRUCT = re.compile(u"结构级\\s*(\\d+)\\s*条")
 CLAIM_CONTENT = re.compile(u"内容级\\s*(\\d+)\\s*条")
+CLAIM_FILEFACE = re.compile(u"文件级在场\\s*(\\d+)\\s*条")
 CLAIM_MISMATCH = re.compile(u"失配\\s*(\\d+)")
 CLAIM_DIST = re.compile(u"已落地\\s*(\\d+)\\s*/\\s*部分\\s*(\\d+)\\s*/\\s*未开工\\s*(\\d+)\\s*/\\s*作废\\s*(\\d+)")
 CLAIM_ROWS = re.compile(u"实读编号行是\\s*\\*\\*(\\d+)\\*\\*")
@@ -229,12 +240,28 @@ def collect_anchors(rows, root, tracked):
         bare = []
         for m in FILE_BARE_RE.finditer(masked):
             rel = norm_rel(m.group(0))
-            if rel in [b[0] for b in bare]:
-                continue
             if rel not in cache:
                 cache[rel] = read_lines(root, rel)
             lines, _why = cache[rel]
-            bare.append((rel, lines is not None and (tracked is None or rel in tracked)))
+            present = lines is not None and (tracked is None or rel in tracked)
+            if rel not in [b[0] for b in bare]:
+                bare.append((rel, present))
+            # 文件级锚点若紧跟（…）「…」，记号要**整份文件**里有——行号会漂，这个指认不会：
+            # 两句不同的记得住的东西（`ci.yml`、`run_guards.py`）每轮都在插入行，
+            # 指行号必然过期；指「整份文件含这件事」既抗漂移又仍然可机器核对。
+            toks = paren_tokens(cell, m.end())
+            if toks:
+                whole = u"\n".join(lines) if lines is not None else u""
+                a = {"row": r["id"], "file": rel, "line": None, "filetok": True,
+                     "tokens": toks, "ok": False, "code": u"B6", "why": u""}
+                if lines is None:
+                    a["why"] = u"文件读不到，整份文件级锚点无法核对记号"
+                elif any(t in whole for t in toks):
+                    a["ok"] = True
+                else:
+                    a["why"] = u"整份文件 %d 行里一个记号都不含（指认的这件事不在这个文件里）" % len(lines)
+                content_n += 1
+                anchors.append(a)
         fileface[r["id"]] = bare
         last_file = None
         for st, en, fl, ln in events:
@@ -275,10 +302,11 @@ def collect_anchors(rows, root, tracked):
 def evaluate(doc_text, rows, anchors, struct_n, content_n, fileface):
     """判定面。返回 (违例去重列表, 自拒理由列表)。"""
     viol, selfref = [], []
-    bad = [a for a in anchors if not a["ok"]]
+    bad = [a for a in anchors if not a["ok"] and not a.get("filetok")]
+    bad_ftok = [a for a in anchors if not a["ok"] and a.get("filetok")]
     content_bad = [a for a in anchors if a.get("content") and not a["content_ok"]]
     blanks = [a for a in anchors if a["ok"] and a.get("blank")]
-    mismatch_n = len(bad) + len(content_bad) + len(blanks)
+    mismatch_n = len(bad) + len(bad_ftok) + len(content_bad) + len(blanks)
     counts = dict((w, 0) for w in STATUS_WORDS)
     for r in rows:
         w, legal = status_word(r["status"])
@@ -287,6 +315,10 @@ def evaluate(doc_text, rows, anchors, struct_n, content_n, fileface):
 
     for a in bad:
         viol.append(u"%s %s：%s:%s —— %s" % (a["code"], a["row"], a["file"], a["line"], a["why"]))
+    for a in bad_ftok:
+        viol.append(u"B6 %s：%s —— %s（记号 %s）"
+                    % (a["row"], a["file"], a["why"],
+                       u" / ".join(u"`%s`" % t for t in a["tokens"][:3])))
     for a in content_bad:
         viol.append(u"B3 %s：%s:%s —— 锚点后括号点了记号 %s，那一行一个都不含（真读到的是：%s）"
                     % (a["row"], a["file"], a["line"],
@@ -325,6 +357,11 @@ def evaluate(doc_text, rows, anchors, struct_n, content_n, fileface):
     for m in CLAIM_MISMATCH.finditer(doc_text):
         if int(m.group(1)) != mismatch_n:
             viol.append(u"D1 文首写「失配 %s」，尺实算失配 %d 条" % (m.group(1), mismatch_n))
+    file_n = sum(1 for k in fileface for f in fileface[k] if f[1])
+    for m in CLAIM_FILEFACE.finditer(doc_text):
+        if int(m.group(1)) != file_n:
+            viol.append(u"D4 文首写「文件级在场 %s 条」，尺实算 %d 条（只点文件不点行的指认）"
+                        % (m.group(1), file_n))
     for m in CLAIM_DIST.finditer(doc_text):
         got = tuple(int(m.group(i)) for i in (1, 2, 3, 4))
         exp = (counts[u"已落地"], counts[u"部分"], counts[u"未开工"], counts[u"作废"])
@@ -404,13 +441,16 @@ def _write(path, text):
         f.write(text)
 
 
-def _doc(evidence=None, status=u"已落地", struct=None, content=1, mis=0, dist=True, rows=1, body=None):
+def _doc(evidence=None, status=u"已落地", struct=None, content=1, mis=0, dist=True, rows=1, body=None,
+         fileface=None):
     """造一份与真源同构的最小清单；默认那份应当**全绿**。"""
     head = u"# 清单\n\n"
     if struct is not None:
         head += (u"> 自证读数：**结构级 %d 条**（文件存在 + 行号不越界）失配 %d；"
                  u"**内容级 %d 条**（那一行确实含所声称的记号）失配 %d。\n"
                  % (struct, mis, content, mis))
+    if fileface is not None:
+        head += u"> **文件级在场 %d 条**（只点文件不点行的指认）。\n" % fileface
     if dist:
         head += u"> 改判后的分布是 **已落地 1 / 部分 0 / 未开工 0 / 作废 0**\n"
     head += u"> 实读编号行是 **%d**\n" % rows
@@ -464,6 +504,17 @@ def selftest():
         cases.append((u"C1 已落地无锚点必红",
                       go(_doc(struct=0, content=0, rows=1, evidence=u"看着像做完了，没给地方")),
                       1, u"没有任何一条指得到在场真源"))
+        cases.append((u"B6 整份文件不含记号必红",
+                      go(_doc(struct=0, content=1, rows=1,
+                              evidence=u"`src/a.mbt`（`absent_tok`）")),
+                      1, u"一个记号都不含"))
+        # B6b 是 B6 的**反向对照**，也是这一族存在的理由：`gamma` 在 a.mbt 的第 4 行、
+        # 不在第 2 行——指行号会红，指「整份文件含 gamma」必须绿。只测红不测这条，
+        # 就分不清「抗漂移指认」与「把尺调松」。
+        cases.append((u"B6b 记号在别行也不误红（抗漂移）",
+                      go(_doc(struct=0, content=1, rows=1,
+                              evidence=u"`src/a.mbt`（`gamma`）")),
+                      0, None))
         cases.append((u"C1c 已落地只指不存在的文件必红",
                       go(_doc(struct=0, content=0, rows=1, evidence=u"`src/gone.mbt` 整份在场")),
                       1, u"点名的文件都读不到"))
@@ -485,6 +536,16 @@ def selftest():
         cases.append((u"D3b 行数自述落后必红",
                       go(_doc(struct=1, rows=8)),
                       1, u"实读编号行是 8"))
+        # D4 的两格是**变异对照**：同一个合成清单，只把文首那个第二次声明改坏 ⇒ 必须发红；
+        # 写对（= 实算 1 条文件级指认）⇒ 必须不误红。只测红不测绿会让「永远红」蒙混过关。
+        cases.append((u"D4 文件级自述落后必红",
+                      go(_doc(struct=1, content=0, rows=1, fileface=7,
+                              evidence=u"`src/a.mbt` 整份在场")),
+                      1, u"文件级在场 7 条"))
+        cases.append((u"D4b 文件级自述写对不误红",
+                      go(_doc(struct=0, content=0, rows=1, fileface=1,
+                              evidence=u"`src/a.mbt` 整份在场")),
+                      0, None))
         cases.append((u"A3 点目录路径不误红",
                       go(_doc(struct=1, rows=1,
                               evidence=u".github/workflows/ci.yml:3（`Model-auth-no-key guard`）")),
