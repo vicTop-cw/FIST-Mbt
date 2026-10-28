@@ -65,7 +65,12 @@ OPTIONAL_METHODS = [
 ]
 
 
-def start_shim(dist: Path, shim: Path) -> subprocess.Popen:
+def start_shim(dist: Path, shim: Path, server_cmd=None) -> subprocess.Popen:
+    """启动 shim（内部 spawn server）。
+
+    R90：`server_cmd` 非空时**覆盖**内建启动命令 —— 这正是 `--server` 的 help 承诺
+    （「覆盖 shim 内建的 server 启动命令（默认 dist serve）」），但旧实现**从未读取**它
+    ⇒ 旗标是空开关（文档第 24 行还宣传了用法）。"""
     """启动 shim（内部 spawn 发布版 dist serve）。"""
     if not dist.exists():
         print(f"  [SKIP] dist 不存在：{dist}", file=sys.stderr)
@@ -74,7 +79,8 @@ def start_shim(dist: Path, shim: Path) -> subprocess.Popen:
     env = dict(os.environ)
     env["FIST_DB_PATH"] = db
     return subprocess.Popen(
-        ["node", str(shim), "--server", "node", str(dist), "serve"],
+        ["node", str(shim), "--server"]
+        + (list(server_cmd) if server_cmd else ["node", str(dist), "serve"]),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -319,7 +325,8 @@ def main():
     args = ap.parse_args()
 
     dist = DEFAULT_DIST
-    if not dist.exists():
+    # R90：给了 --server 就按调用方指定的命令跑 ⇒ 不再要求默认 dist 存在
+    if args.server is None and not dist.exists():
         print("FATAL: dist/fist-mbt.js 不存在——请先 moon build + patch_esm_main.py", file=sys.stderr)
         return 2
 
@@ -328,7 +335,7 @@ def main():
     print(f"dist : {dist} ({dist.stat().st_size} bytes)")
     print()
 
-    proc = start_shim(dist, DEFAULT_SHIM)
+    proc = start_shim(dist, DEFAULT_SHIM, args.server)
     if proc is None:
         return 2
 
