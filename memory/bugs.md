@@ -10123,3 +10123,21 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
   **剩余待做**：`evolve_snapshot`（纯读）、`assistant_status`/`assistant_resign`（I/O）、
   `github/gitcode` 3（I/O）、`atgc_old` 3（衍生子项目）、其余；
   **且必须按新方法重核**（先抽 handler 的实质逻辑，再看那逻辑有没有测试）。
+
+- 追记（2026-10-28 00:55 **第三批已完成：`Archive` 6 格**）：
+  **实做**：新建 `src/evolve/archive_wbtest.mbt`（168 行 / 6 格），覆盖
+  `Archive::new/len/is_empty/get/all/best/sample_parent` + `add` 的两条关键不变量
+  （**重复 id 不虚高父 children** / **新增子代 +1**）。
+  **为什么这是真零覆盖（第三次核实）**：`src/evolve/` 有 4 个测试文件，但 `evolve_wbtest.mbt` 的 14 格
+  **全是 curriculum**（`next_level` / `can_graduate` / `select_mutation` / `is_distillable` …），
+  而 `Archive::best`/`all`/`len`/`is_empty`/`get`/`sample_parent` 在**全部 evolve 测试文件里各 0 次**。
+  `Archive` 是 **DGM 演化的核心数据结构** —— `evolve_snapshot`/`evolve_sample`/`evolve_submit`/
+  `evolve_asset_register`/`task_challenge` 的实质全建立在它上面。
+  **变异对照 3 组全红**：M1（去掉 `is_new` 守卫）⇒ 锁 3 红；M2（不 +1）⇒ 2 格红；
+  M3（`best` 取最低分，**按行号定位** 176→186）⇒ 锁 5 红。
+  **过程踩坑**：`_wbtest.mbt` 是白盒（同包）⇒ **不需要 `@evolve.` 前缀**（第一版 8 处报
+  `Package "evolve" not found`）。
+  **验收**：`arch455` 6/6；全仓 **1654/1654 passed, 0 failed**。
+  **剩余待做**：`assistant_status`/`assistant_resign`（I/O）、`github/gitcode` 3（I/O）、
+  `atgc_old` 3（衍生子项目，先查有无独立测试目录）、其余；
+  **且下一批前必须先看 `server_bug455_coverage_wbtest.mbt` 那条 lane 的进展**（避免重复）。
