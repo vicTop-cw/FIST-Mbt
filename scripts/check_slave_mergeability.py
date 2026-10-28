@@ -181,7 +181,14 @@ def scan(base, remotes, keep=False, limit=0, include="/slave/"):
             rows.append({"branch": b, "ahead": len(commits), "kind": kind, "files": files})
             mark = {"ok": "✓", "contained": "=", "conflict": "✗", "merge": "M", "error": "!",
                     "duplicate": "⚠"}[kind]
-            extra = ("  冲突: " + ", ".join(files[:3]) + (" …" if len(files) > 3 else "")) if files else ""
+            # R133：`…` 会掩盖规模（4 个还是 40 个完全不同）——显式打**冲突文件总数**。
+            # 实测依据：67 支同时列 `.githooks/pre-commit / .githooks/README.md / .gitattributes`
+            # 曾让人以为"冲突高度集中、可批量解决"，其实是**字母序前三个**，真实冲突面很宽。
+            if files:
+                extra = "  冲突 %d 个: %s%s" % (len(files), ", ".join(files[:3]),
+                                               " …" if len(files) > 3 else "")
+            else:
+                extra = ""
             print("  %s %-52s ahead=%-3d %s%s" % (mark, b, len(commits), kind, extra))
     finally:
         if not keep:
