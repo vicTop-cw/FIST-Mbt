@@ -719,6 +719,78 @@ fn agent_touch_first_seen(
 }
 
 ///|
+/// BUG-430 / S3 **第七段**：公钥登记的**三态判定表**（纯函数 —— 唯一判定面）。
+///
+/// 为什么抽出来（判例-29「机制格 ≠ 实现路径格」）：
+///   本判定此前是 `agent_register_key` handler 里的一段内联 if；handler 是
+///   `run_server()` 内部的闭包，白盒测试**调不到**，只能查源码（source-grep）
+///   ⇒「已有公钥且与本次不同 ⇒ 拒绝」这条最关键的安全规则，一格**行为**锁都没有。
+///   抽成纯函数后三态可以逐项断言；「工具确实用它」由同批的 wiring 格钉住。
+///
+/// 取值：
+///   · `key_pin_first`            —— 该 agent 尚无公钥 ⇒ 允许首登（**仍须验签**，见工具）
+///   · `key_pin_idempotent`       —— 同钥重复登记 ⇒ 幂等成功（重试/重放安全）
+///   · `key_pin_reject_different` —— 已有公钥且不同 ⇒ **拒绝，一个字节都不写库**
+///
+/// ⚠️ 只判定、不 IO：读旧键 / 验签 / 写库都留在 handler，纯件才可测。
+fn key_pin_verdict(prev_key : String, pubkey_hex : String) -> String {
+  if prev_key == "" {
+    key_pin_first
+  } else if prev_key == pubkey_hex {
+    key_pin_idempotent
+  } else {
+    key_pin_reject_different
+  }
+}
+
+///|
+/// 三态判定的取值常量（**单一真源**：判定、回执、测试都引这里，不各写一份字符串）。
+let key_pin_first : String = "first_registration"
+
+///|
+let key_pin_idempotent : String = "idempotent"
+
+///|
+let key_pin_reject_different : String = "reject_different_key"
+
+///|
+/// 登记**成功**回执的 `mode`：区分「这次调用钉死的」与「库里本来就是这个键的」（幂等）。
+///
+/// 为什么值得区分：`registered=true` 只说明「库里现在有这个键」；
+/// 幂等路径上调用方**并没有证明自己持有私钥**（它也不需要 —— 什么都没改）。
+/// 把两者混成一个值，会让调用方误以为「我刚刚获得了这个身份」。
+fn key_pin_receipt_mode(pin : String) -> String {
+  if pin == key_pin_idempotent {
+    "already_registered"
+  } else {
+    "registered"
+  }
+}
+
+///|
+/// 「已有公钥且与本次不同」的**唯一拒绝文案构造面**（纯函数，白盒可测）。
+///
+/// 必须带三件事：
+///   ① 旧键前缀 —— 让调用方看到确实是**另一把**键（不是格式/大小写误判）
+///   ② 本次前缀 —— 同上
+///   ③ 去路说明 —— **当前没有密钥轮换通道**（需 owner 决策，本轮不含）。
+///      不许让调用方以为「换个参数重试就能过」；更**不许**留「管理员可强制改」
+///      的后门 —— 那等于没修：任何能调到它的调用方都能改别人的键。
+///
+/// 文案里的「拒绝覆盖」「密钥轮换」是本仓既有回归锁的锚点
+/// （`server_bug430_s3_keyreplace_wbtest.bl_03`），改词前先跑那格。
+fn key_pin_reject_message(prev_key : String, pubkey_hex : String) -> String {
+  "agent_register_key: 该 agent **已有公钥且与本次不同**，拒绝覆盖。" +
+  "如需更换请走密钥轮换流程（BUG-430 **尚未实现**：轮换通道需 owner 决策，本轮不含）。" +
+  "⚠️ 本拒绝是有意的：允许任意覆盖 = 任何调用方都能把某身份的密钥换成自己的（身份劫持）。" +
+  "已有前缀=" +
+  substring_at(prev_key, 0, 16) +
+  "… 本次前缀=" +
+  substring_at(pubkey_hex, 0, 16) +
+  "…"
+}
+
+///|
 /// 写面 ACL 硬门：`agents_acl_check(write=true)` 失败即拒绝（can_write=0 → Err）。
 /// 内存后端无持久化 ACL 面，不设门（放行），保证 server/wbtest 既有路径零回归；
 /// **sqlite 后端**（生产面）才真正执行 fail-closed。返回 Ok 才能继续写操作。
@@ -6941,27 +7013,15 @@ pub async fn run_server() -> Unit {
         Some(k) => k
         None => ""
       }
-      let mut already_registered = false
-      if prev_key != "" {
-        if prev_key == pubkey_hex {
-          // 幂等：同一把公钥重复登记 ⇒ 成功（重放安全，重试友好）
-          already_registered = true
-        } else {
-          // ★ 拒绝换钥：走轮换流程（未实现）
-          return Err(
-            @mcp_types.ToolError(
-              "agent_register_key: 该 agent **已有公钥且与本次不同**，拒绝覆盖。" +
-              "如需更换请走密钥轮换流程（BUG-430 尚未实现）。" +
-              "⚠️ 本拒绝是有意的：允许任意覆盖 = 任何调用方都能把某身份的密钥换成自己的（身份劫持）。" +
-              "已有前缀=" +
-              substring_at(prev_key, 0, 16) +
-              "… 本次前缀=" +
-              substring_at(pubkey_hex, 0, 16) +
-              "…",
-            ),
-          )
-        }
+      // BUG-430 / S3 第七段：判定收进 `key_pin_verdict`（纯函数、白盒可测）。
+      // 三态：first（首登，仍须验签）/ idempotent（同键幂等）/ reject_different（拒绝）。
+      let pin = key_pin_verdict(prev_key, pubkey_hex)
+      if pin == key_pin_reject_different {
+        return Err(
+          @mcp_types.ToolError(key_pin_reject_message(prev_key, pubkey_hex)),
+        )
       }
+      let already_registered = pin == key_pin_idempotent
       if !already_registered {
         // ══════════════════════════════════════════════════════════════════
         // BUG-430 / S3 **第六段：首登也验签**（堵抢注）
@@ -6999,7 +7059,9 @@ pub async fn run_server() -> Unit {
                 ),
                 "registered": Json::boolean(false),
                 // 明确告诉调用方这一步没改库，避免误以为已登记
-                "note": Json::string("尚未登记。本回执只是挑战，需带 proof_sig 第二次调用才落库"),
+                "note": Json::string(
+                  "尚未登记。本回执只是挑战，需带 proof_sig 第二次调用才落库",
+                ),
               }).stringify(),
             ),
           )
@@ -7052,6 +7114,9 @@ pub async fn run_server() -> Unit {
           Json::object({
             "agent_id": Json::string(agent_id),
             "namespace": Json::string(ns),
+            // BUG-430 / S3 第七段：区分「这次钉死的」与「库里本来就是同键」（幂等）。
+            // 幂等路径**没有**验签（什么都没改）⇒ 不许让调用方以为获得了身份。
+            "mode": Json::string(key_pin_receipt_mode(pin)),
             "pubkey_hex_prefix": Json::string(
               if pubkey_hex.length() >= 16 {
                 substring_at(pubkey_hex, 0, 16) + "…"
