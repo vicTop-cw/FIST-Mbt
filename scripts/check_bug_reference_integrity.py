@@ -70,7 +70,8 @@ class Ref:
     text: str
 
 
-def face_of_col(line, idx, comment_at, in_str):
+def face_of_col(idx, comment_at, in_str):
+    # R84：原第 1 个形参 line 在函数体内零引用（新判据 check_dead_params_py 抓到）⇒ 去掉。
     """列位所在面：`//` 已开始（且该 `//` 本身不在字面量里）就是注释面，注释优先。"""
     if comment_at is not None and idx >= comment_at:
         return "comment"
@@ -99,7 +100,7 @@ def faces_of(line):
         if m and i > 0 and (line[i - 1].isalnum() or line[i - 1] == "_"):
             continue  # 防把 `XBUG-1` 这类更长 token 切出假引用
         if m:
-            out.append((m.group(0), face_of_col(line, i, comment_at, in_str)))
+            out.append((m.group(0), face_of_col(i, comment_at, in_str)))
     return out
 
 

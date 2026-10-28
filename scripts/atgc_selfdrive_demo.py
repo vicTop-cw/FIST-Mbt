@@ -357,7 +357,7 @@ def main():
         print("\n—— DB 证据核对 (只读) ——")
         db_path = resolved_db_path()
         print(f"    库 = {db_path}（服务端同一解析：FIST_DB_PATH 优先，空/未设置才回仓库根默认库）")
-        verify_db(db_path, root, all_node_ids, counts, call_start_ms)
+        verify_db(db_path, root, all_node_ids)
         print(f"\nMCP-ATG-SELFDRIVE PASS · SUCCESS")
 
     finally:
@@ -373,7 +373,8 @@ def main():
             pass
 
 
-def verify_db(db_path, root, node_ids, counts, call_start_ms):
+def verify_db(db_path, root, node_ids):
+    # R84：原 counts / call_start_ms 两个形参在函数体内零引用（新判据抓到）⇒ 去掉。
     if not os.path.exists(db_path):
         print(f"    ({db_path} 不存在，跳过 DB 核对)")
         return
