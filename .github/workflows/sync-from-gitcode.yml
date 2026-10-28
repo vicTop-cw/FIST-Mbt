@@ -60,11 +60,13 @@ jobs:
           for b in $BRANCHES; do
             # ⚠️ 反丢历史守卫：GitHub 侧若存在**源侧没有**的提交，force 会静默抹掉它们 ⇒ 跳过并点名。
             #    只有「GitHub 侧是本分支祖先」（纯快进）才允许 force 覆盖。
-            if git rev-parse --verify --quiet "refs/remotes/gh/$b" >/dev/null 2>&1                && ! git merge-base --is-ancestor "refs/remotes/gh/$b" "$b"; then
-              SKIP_COUNT=$((SKIP_COUNT + 1))
-              SKIPPED_BRANCHES="$SKIPPED_BRANCHES $b"
-              echo "::warning::skip branch(has-unique-commits): $b"
-              continue
+            if git rev-parse --verify --quiet "refs/remotes/gh/$b" >/dev/null 2>&1; then
+              if ! git merge-base --is-ancestor "refs/remotes/gh/$b" "$b"; then
+                SKIP_COUNT=$((SKIP_COUNT + 1))
+                SKIPPED_BRANCHES="$SKIPPED_BRANCHES $b"
+                echo "::warning::skip branch(has-unique-commits): $b"
+                continue
+              fi
             fi
             if git push --force gh "$b:$b"; then
               OK_COUNT=$((OK_COUNT + 1))
@@ -76,7 +78,21 @@ jobs:
           done
 
           # 3) 默认分支映射：GitCode master -> GitHub master（**同样受反丢历史守卫约束**）
-          if git rev-parse --verify --quiet refs/remotes/gh/master >/dev/null 2>&1              && ! git merge-base --is-ancestor refs/remotes/gh/master master; then
+          MASTER_UNSAFE=0
+          if git rev-parse --verify --quiet refs/remotes/gh/master >/dev/null 2>&1; then
+            if ! git merge-base --is-ancestor refs/remotes/gh/master master; then
+              MASTER_UNSAFE=1
+            fi
+          fi
+          #    若 `master` 已在第 2 步的 `for b in $BRANCHES` 里推过，这里**不再推一次**：
+          #    重复推会让 `OK=` 计数虚高（实测 fixtures 3 支可推却读到 OK=4），也白跑一次网络。
+          MASTER_IN_BRANCHES=0
+          if echo "$BRANCHES" | grep -qx master; then
+            MASTER_IN_BRANCHES=1
+          fi
+          if [ "$MASTER_IN_BRANCHES" = "1" ]; then
+            : # 已在分支循环里处理（含反丢历史守卫），不重复推
+          elif [ "$MASTER_UNSAFE" = "1" ]; then
             SKIP_COUNT=$((SKIP_COUNT + 1))
             SKIPPED_BRANCHES="$SKIPPED_BRANCHES master(default)"
             echo "::warning::skip branch(has-unique-commits): master (default branch mapping)"
