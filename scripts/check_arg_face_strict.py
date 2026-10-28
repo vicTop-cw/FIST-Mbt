@@ -48,6 +48,7 @@ import argparse
 import glob
 import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 import sys
 import tempfile
 if hasattr(sys.stdout, "reconfigure"):
@@ -95,10 +96,16 @@ def probe_one(script, timeout=CASE_TIMEOUT):
 
 def judge(scripts_dir=None, timeout=CASE_TIMEOUT):
     cands = candidates(scripts_dir)
+    if not cands:
+        return [], [], 0
+    # 并发探测：每个候选都是一次独立子进程，纯等待 ⇒ 并发不改变判定，只改变墙钟。
+    # 结果按脚本名排序后再分桶，保证输出顺序与串行一致（可复现）。
+    workers = min(8, max(1, len(cands)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(lambda p: (p, probe_one(p, timeout)), cands))
     verdicts, unknown = [], []
-    for p in cands:
+    for p, (kind, rc, tail) in sorted(results, key=lambda x: os.path.basename(x[0])):
         name = os.path.basename(p)
-        kind, rc, tail = probe_one(p, timeout)
         if kind == "unknown":
             unknown.append((name, tail))
         elif kind == "green":
