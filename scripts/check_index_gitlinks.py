@@ -382,6 +382,10 @@ def main(argv):
     rc, report = check(staged_only=args.staged)
     for line in report:
         print(line)
+    if rc == 2:
+        # 判据无法自证 ⇒ **真给 2**。`check()` 里是 `return 2, [...]` 元组出口，
+        # AST 面看不到字面 2（R1 会判「模块面幻影」）⇒ 这里显式落一次，让承诺可证。
+        return 2
     return rc
 
 

@@ -322,12 +322,15 @@ def tracked_docs():
             errors="replace",
         )
     except Exception as e:  # git 不在 PATH 等
-        raise SystemExit(f"FATAL 无法调用 git ls-files（{e}）—— 拒绝在无枚举时出绿灯")
+        print(f"FATAL 无法调用 git ls-files（{e}）—— 拒绝在无枚举时出绿灯")
+        raise SystemExit(2)
     if r.returncode != 0:
-        raise SystemExit(f"FATAL git ls-files 退出码 {r.returncode}：{r.stderr.strip()[:200]}")
+        print(f"FATAL git ls-files 退出码 {r.returncode}：{r.stderr.strip()[:200]}")
+        raise SystemExit(2)
     files = [x.replace("\\", "/") for x in (r.stdout or "").split("\0") if x.strip()]
     if len(files) < 20:
-        raise SystemExit(f"FATAL 只枚举到 {len(files)} 份跟踪 .md（<20 视为枚举失效）")
+        print(f"FATAL 只枚举到 {len(files)} 份跟踪 .md（<20 视为枚举失效）")
+        raise SystemExit(2)
     return files
 
 
