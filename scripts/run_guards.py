@@ -151,7 +151,8 @@ SPECIAL_CASES = [
     case("check_doc_surface.py"),
     case("check_doc_surface.py", "--selftest"),
     # —— R126：副机认领入口（docs/2026-10-20-slave-tasks.md）的自证尺。裸跑判「证据锚点指不指
-    #    得到真源 + 文首计数自述对不对」，--selftest 判「这把尺能不能发红」（18 格合成树）。
+    #    得到真源 + 文首计数自述对不对」，--selftest 判「这把尺能不能发红」（22 格合成树：2026-10-28 补
+    #    D4 文件级自述落后 2 格 + B6 整份文件无记号 2 格，其中 B6b 是抗漂移的**反向对照**）。
     #    手写点名两格而不靠自动补格：自动补格只补裸跑，自检格必须点名（本文件既有纪律）。
     case("check_slave_task_list.py"),
     case("check_slave_task_list.py", "--selftest"),
@@ -457,6 +458,11 @@ SPECIAL_CASES = [
     #    都红，S9 是「真源现状面必须绿」的活格。
     case("check_unit_number_unique.py"),
     case("check_unit_number_unique.py", "--selftest"),
+    # ── BUG-459：写门文档声称覆盖的工具清单 vs 注册面实际调用点——两侧必须相等，
+    #    防「文档说三支、代码只接两支」这种漂移再发生。自检 9 格（4 格变异对照：
+    #    删代码行 / 只留注释 / 文档多声称 / 代码多接一支），变异点都落在代码行。
+    #    注意：本行注释刻意不写被对表的工具名字面，避免模式串自己进判定面。
+    case("check_ns_write_gate_coverage.py", "--selftest"),
 ]
 
 
