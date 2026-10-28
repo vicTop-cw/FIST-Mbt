@@ -123,10 +123,33 @@ def scan_source(src, rel="<src>"):
     return out
 
 
+def names_used_as_value(src):
+    """返回本文件里「被当作值引用」的名字集合（排除 `ast.Call` 的 func 位置）。
+
+    判据：调用 `f(...)` 不算「当值用」；而 `{... "k": f}` / `handlers.append(f)` / `[f, g]`
+    这类才是 ⇒ 形参可能由注册方按固定签名回填，不能为了消债去删它。
+    """
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return set()
+    called = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            called.add(node.func.id)
+    used = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            used.add(node.id)
+    return used - called
+
+
 def scan(root=ROOT):
     """返回 (findings, n_funcs)。"""
     findings = []
+    sig_like = []
     n_funcs = 0
+    as_value_all = set()
     for path in sorted(glob.glob(os.path.join(root, "scripts", "**", "*.py"), recursive=True)):
         if "__pycache__" in path:
             continue
@@ -141,10 +164,14 @@ def scan(root=ROOT):
             continue
         n_funcs += sum(1 for n in ast.walk(tree)
                        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))
+        as_value_all |= names_used_as_value(src)
         got = scan_source(src, rel)
         got = [x for x in got if (x[0], x[1], x[2]) not in EXEMPT]
         findings.extend(got)
-    return findings, n_funcs
+    # 两面分类：名字被当作值引用 ⇒ 疑似「签名约束」（注册回调/夹具 drop-in），不计债
+    dead = [x for x in findings if x[1] not in as_value_all]
+    sig_like = [x for x in findings if x[1] in as_value_all]
+    return dead, sig_like, n_funcs
 
 
 def selftest():
@@ -167,7 +194,7 @@ def selftest():
     cell("stub-not-flagged", scan_source(stub) == [])
     cell("syntax-error-returns-empty", scan_source("def f(a:\n") == [])
     # 端到端：真实扫描面必须非空（否则判据饿死）
-    findings, n = scan(ROOT)
+    findings, sig_like, n = scan(ROOT)
     cell("real-face-nonempty", n > 0)
 
     print("SELFTEST %s（%d 格：%s）" % ("OK" if not fails else "FAIL", len(cells), " ".join(cells)))
@@ -183,11 +210,17 @@ def main(argv):
     args = ap.parse_args(argv)
     if args.selftest:
         return selftest()
-    findings, n = scan(ROOT)
+    findings, sig_like, n = scan(ROOT)
     if n == 0:
         print("FATAL 判据无法自证：一个函数都没解析到 ⇒ 拒绝出绿")
         return 2
     print("扫描面：%d 个函数（scripts/**/*.py）" % n)
+    if sig_like:
+        print("NOTE 签名约束面 %d 条（形参零引用，但函数名被**当作值**引用 ⇒ 可能由注册方按固定"
+              "签名回填；删它要连着改调用面，先别当成债）：" % len(sig_like))
+        for rel, func, param, ln in sig_like[:PRINT_CAP]:
+            print("  ~ %s:%d %s() 参数 %s" % (rel, ln, func, param))
+
     if findings:
         print("FAIL Python 死参数 %d 条（形参在函数体内零引用 ⇒ 调用方传了也没人用）："
               % len(findings))
@@ -197,7 +230,7 @@ def main(argv):
             print("  …（共 %d 条，只列前 %d）" % (len(findings), PRINT_CAP))
         print("处置：删掉该形参并同步调用点，或按职责补上使用；确属协议要求则在签名里改名 `_x`。")
         return 1
-    print("PASS Python 面无死参数：%d 个函数全部形参都有引用" % n)
+    print("PASS Python 面无死参数：%d 个函数，真债 0 条" % n)
     return 0
 
 
