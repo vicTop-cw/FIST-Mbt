@@ -94,3 +94,25 @@ python scripts/check_selftest_inventory_doc.py     # INVENTORY_SYNC=clean
 ⇒ 可行改进（未单独立项）：并发窗口内改 `scripts/README.md` / `scripts/run_guards.py` 这两份热点文件时，
 改完立刻自查 `git status --porcelain -- <file>`：若显示 clean 而自己并未提交，说明已被扫走，
 应立即核实内容（`git show <HEAD>:<file> | grep <记号>`）并在下一笔里记清归属，而不是以为「丢了」重写一遍。
+
+---
+
+## 追记（2026-10-28 12:42 · 本单余波：B7 · commit `34a9b2ae`）
+
+本报告正文里「`--selftest` **22 格**（A×3 / B×7 / C×4 / D×6 / E×2）」是**本单落盘时的真读数**，
+此处不改写——改写会让「当时是什么样」消失。但它是**当时的**：同日 `34a9b2ae` 把它推到 **24 格**。
+
+**为什么还要动一把刚绿的尺**：B6 的判法只问「整份文件里**任意一行**含这个记号」。于是
+`$rc`（`.github/workflows/ci.yml` 里 4 次）、`gated`（`scripts/run_guards.py` 里 8 次）这类
+到处都有的词也能把整文件级锚点钉绿——**它钉不住具体哪一处，等于没指**。判例-29 同族：
+断言「存在」≠ 断言「它钉住了目标」。
+
+| 项 | 内容 |
+| --- | --- |
+| 新判定面 | `B7`：文件级记号的「最稀有出现次数」必须 ≤ `WEAK_TOKEN_MAX = 3`，否则红并点名最泛化的那个词与次数 |
+| 反向对照 | `B7b`（唯一记号不误红）——证明这把尺不是恒红 |
+| 格数 | 22 → **24**（B×7 → B×9）；`scripts/README.md`、`scripts/run_guards.py` 注释同笔同步，`check_selftest_inventory_doc.py` 报 `INVENTORY_SYNC=clean` |
+| 命中情况 | **本仓现有 14 条整文件级锚点在 B7 下全部通过**（最泛的一条 `fist-mbt.db` 出现 2 次）⇒ 裸跑仍 `PASS` |
+
+**所以 B7 现在一个东西都抓不到。** 这点必须写明，否则下一位看见「加了一条判据、全绿」会以为它证明了什么。
+它是给后来者写的回归锁：真被 B7 抓住的那一刻，说明有人用泛化词把锚点钉绿了。
