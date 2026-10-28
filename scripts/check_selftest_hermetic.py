@@ -299,6 +299,14 @@ def classify_primitive(call, prim_name, sources, scratch, hit):
         if _src:
             return "T" if all(h in scratch for h in _src) else "R"
         return "S"
+    # R118：`write_text` / `write_bytes` 的**内容是数据、不是落点** —— 只看 receiver。
+    # 实测：`check_plugin_sync.py` 的 `(tmp/p.json).write_text('{"version": "%s"}' % version)`
+    # 写进的是 tempdir 的 p.json，`version` 只是写进去的值，却被原实现记成 W。
+    if attr in ("write_text", "write_bytes"):
+        _recv = names_in(call.func.value) & sources if isinstance(call.func, ast.Attribute) else set()
+        if _recv:
+            return "T" if all(h in scratch for h in _recv) else "W"
+        return "S"
     is_write = (prim_name.startswith("shutil.") or prim_name in WRITE_PRIMITIVES
                 or attr in WRITE_METHODS)
     if prim_name in ("open", "io.open", "codecs.open") and any(c in mode_of(call) for c in "wa"):
