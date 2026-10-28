@@ -540,3 +540,44 @@ test "lane-b#12 lock_status 回读：未锁→active→released(行在但非 act
     None => abort("违例列表末项缺失")
   }
 }
+
+// ---------------------------------------------------------------------------
+// 6) assistant_resign / lock_status 的接线锁（判例-29：机制格 ≠ 实现路径格）
+// ---------------------------------------------------------------------------
+
+///|
+/// 【B2-W2 · 接线锁】`assistant_resign` / `lock_status` 的**工具名 → 引擎方法**这根线还在。
+///
+/// 为什么需要单独一格：B2-AR / B2-LS 证明的是**引擎方法**的状态机对，但
+/// 「工具名是否仍指向这些方法」是另一件事——工具被改名、注册被删、handler 改接别的函数时，
+/// 那两个行为格**照样全绿**，而调用面已经坏了。
+/// 本格钉死四处**唯一代码行**（各 1 次）+ 一处出现 ≥1 次：
+///   · `engine.assistant_set_status(agent, "resigned")` —— resign 的唯一转发点
+///   · `let swept = engine.locks_sweep(now)`           —— 回执 `swept` 字段的来源
+///   · `engine.locks_get(scope)`                       —— 回执 `locked`/`lock` 字段的来源
+///   · 两个注册名字面仍在（≥1，容忍文档追加提及）
+test "lane-b#13 assistant_resign/lock_status 工具名到引擎方法的接线仍在（源码面）" {
+  let src = lb2_server_src()
+  assert_true(
+    lb2_count(src, "\"assistant_resign\"") >= 1,
+    msg="server.mbt 里找不到 assistant_resign 的注册名（工具被改名/删注册）",
+  )
+  assert_true(
+    lb2_count(src, "\"lock_status\"") >= 1,
+    msg="server.mbt 里找不到 lock_status 的注册名（工具被改名/删注册）",
+  )
+  assert_eq(
+    lb2_count(src, "engine.assistant_set_status(agent, \"resigned\")"),
+    1,
+    msg="assistant_resign 不再转发 engine.assistant_set_status(agent, \"resigned\")",
+  )
+  assert_eq(
+    lb2_count(src, "let swept = engine.locks_sweep(now)"),
+    1,
+    msg="lock_status 不再先 locks_sweep(now)（回执 swept 字段会失源）",
+  )
+  assert_true(
+    lb2_count(src, "engine.locks_get(scope)") >= 1,
+    msg="lock_status 不再用 engine.locks_get(scope) 读单 scope（回执 locked/lock 会失源）",
+  )
+}
