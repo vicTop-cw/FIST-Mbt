@@ -523,6 +523,11 @@ def selftest() -> list[str]:
 
 
 def main(argv: list[str]) -> int:
+    unknown = [a for a in argv if a != "--selftest"]
+    if unknown:
+        print("FATAL 未知参数：%s（本尺只接受 --selftest）" % " ".join(unknown))
+        sys.exit(2)
+    # ↑ 严格参数面（R65）：未知旗标不再被静默忽略（拼错 --selftest 会假绿）
     if "--selftest" in argv:
         fails = selftest()
         if fails:
