@@ -10271,12 +10271,15 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
   **⚠️ 本条带 `[Lane E 边界自述]` 标记且 detail 只有一行** —— 我没有它的完整证据，
   **不擅自改判**，只补上面的代码事实供定夺。
 
-## BUG-465 [2026-10-28T05:52:55Z] [high] OPEN
+## BUG-465 [2026-10-28T05:52:55Z] [high] FIXED
 
 - summary: [store] 公钥一旦登记即永久不可变 —— `agent_register_key` 注释只说「不会被覆盖」，没说「也永远改不了」
 - reported_by: commander-alpha (Lane BZ)
 - detail: 三条互证（实测）：① `src/store/store_sqlite.mbt:2835` 的 `agents_register` UPSERT 是 `ON CONFLICT(agent_id) DO UPDATE SET pid=excluded.pid, last_seen=excluded.last_seen, status='active', role=CASE ...` —— **DO UPDATE SET 里没有 `pubkey_fp`**；② 全文件 `UPDATE agents SET` 此前只有 `agents_set_pid` 一处，**没有任何更新 `pubkey_fp` 的写面**；③ store 层 `agents_*` 十个函数里**没有 `agents_set_pubkey`**。⇒ 公钥一旦写入就既不可修改、也不可清空。**组合危害（抢注 + 不可变 = 永久劫持不可逆）**：攻击者趁某 agent 还没登记公钥先替他登记自己的（抢注，第七段首登验签只挡住一部分，抢注窗口从 agent 首次出现到它自己登记之间仍在）⇒ 合法持有者**无法恢复**：换钥没写面、吊销没写面、重新登记因 `ON CONFLICT` 不更新 `pubkey_fp` 而**静默不生效** ⇒ **该身份永久废掉**，攻击者永久通过、正主永久通不过，且**没有任何运维手段修复**。**注释具有误导性**：`key_pin_reject_message` 写「如需更换请走密钥轮换流程（BUG-430 **尚未实现**：轮换通道需 owner 决策，本轮不含）」—— 这把问题描述成「**功能未做**」（做一下就有），而真实情况是「**存储层没有能力**」（不动 store 就永远做不了）；对使用者一个意味着「等等就好」，另一个意味着「现在锁死」。**修复**：`src/store/store_sqlite.mbt` 新增 `agents_set_pubkey(agent_id, pubkey_fp)`（约 25 行，按 `agents_set_pid` 逐字模板），轮换与吊销即可落地（已在 BUG-430 第八段同步落地）。**与 BUG-430 是不同缺陷**：BUG-430 = 「没人用 S3」（路修好了但产品层没车）；本条 = 「用了就锁死」（登记错误或被抢注后无法恢复）⇒ 即使 BUG-430 关闭本条仍成立，应独立跟。
 
+
+### FIXED(2026-10-28T07:34:16Z / BUG-465)
+- evidence: 代码 store_sqlite.mbt:3053（pub fn SqliteStore::agents_set_pubkey）+ engine_bug430_s3_rotate_wbtest.mbt 锁 1-6。三条互证全部解决：① agents_register 的 DO UPDATE 不加 pubkey_fp（有意，避免业务路径抹键）但新增独立写面 agents_set_pubkey；② UPDATE agents SET 现在有 agents_set_pid + agents_set_pubkey 两处；③ store 层 agents_* 十一函数含 agents_set_pubkey。修法：按 agents_set_pid 逐字模板（同 finalize、同错误文案风格），只写库不鉴权（该不该换归上层判定面，避免同一规则两份实现 —— 判例-29），传空串是合法吊销用法。配套：S3 第八段落轮换（旧私钥签得出才允许换，两阶段服务端签发 challenge + 一次性消费）+ agent_revoke_key（写后回读确认为空才返回 revoked=true，本来无键报 not_needed 不假装成功）。锁 1 专门钉「写入后能读回」（防「改了但没生效」）。原文案「轮换尚未实现」也已随 S3 第八段落修正为「S3 第八段已实现：带 rotate_sig 用旧私钥签名即可轮换；私钥已丢则用 agent_revoke_key 吊销后重新首登」。组合危害（抢注+不可变=永久劫持）已解除：抢注成功后可用 agent_revoke_key 吊销再重新首登，正主可恢复。全量 1765/1765/0。
 ## BUG-430a [2026-10-28T07:23:05Z] [high] FIXED
 
 - summary: [authz] BUG-430 拆分（一）S3 认证路径存在且产品库已有真公钥 —— 「调用方无法自报」的判定路径已实测成立
