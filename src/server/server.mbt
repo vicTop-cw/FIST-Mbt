@@ -1877,12 +1877,17 @@ pub async fn run_server() -> Unit {
   //   看见它真的生效了；设了非法值的人**必须**看见「已回退 off」，否则会以为
   //   自己开了严格的档（判例：「以为自己安全了」比不设更危险）。
   // 非空才打印：合法值时 `auth_mode_startup_warning()` 返回空串（零噪声）。
+  // ⚠️ 必须用 `eprintln`（stderr），**不能用 `println`**：
+  //   MCP stdio 传输把 **stdout 当 JSON-RPC 通道**，任何一行非 JSON 文本写进去
+  //   都会让客户端解析失败（实测：`fist.py call` 报
+  //   `malformed JSON-RPC response: '[fist-mbt] auth_mode = off\n'`）。
+  //   日志一律走 stderr —— 这是 MCP stdio 服务的铁律。
   let auth_warn = @engine.auth_mode_startup_warning()
   if auth_warn != "" {
-    println("⚠️  [fist-mbt] " + auth_warn)
+    eprintln("⚠️  [fist-mbt] " + auth_warn)
   }
   // 另外把生效档位也报一次 —— 合法值下 warning 是空串，但「现在是什么档」本身要可见。
-  println("[fist-mbt] auth_mode = " + @engine.auth_mode().to_string())
+  eprintln("[fist-mbt] auth_mode = " + @engine.auth_mode().to_string())
 
   // BUG-21：握手版本曾是硬编码 "0.1.0"，与 moon.mod / project_version / 文档三处口径分裂——
   // 客户端 tools/list 之外的唯一自报身份就是它，必须与单一真源一致。
