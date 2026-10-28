@@ -43,7 +43,9 @@ def sh(*args, cwd=None):
 # ============================================================
 # Step 0 — HEAD 状态门（R120：落后 ≠ 篡改；本门只读数、只出方案，永不动手）
 # ============================================================
-HEAD_STATE_FILE = ROOT / "memory" / "whisperer-head.txt"
+# R118：状态件落 **gitignored `temp/`**（本仓明文惯例「临时件放 temp/」）。
+# 原来落 `memory/`（曾是跟踪件，每跑一次就 dirty 一个文件；R111 已移出跟踪面）。
+HEAD_STATE_FILE = ROOT / "temp" / "whisperer-head.txt"
 
 def _is_ancestor(a, b):
     """a 是 b 的祖先 → True；确认不是 → False；git 答不了 → None。
@@ -104,7 +106,7 @@ def step0_head_safety(full=True, sync_mirror=False, state_file=None, log_file=No
     # 另一个模块对象 ⇒ 拿着夹具跑了真仓，还试过对 origin 的 强制推送）。
     # 显式参数比改 globals 可靠，且静态判据（check_selftest_hermetic）能看见路径来自入参。
     state_file = state_file or HEAD_STATE_FILE
-    log_file = log_file or (ROOT / "memory" / "whisperer-tamper.log")
+    log_file = log_file or (ROOT / "temp" / "whisperer-tamper.log")   # R118：temp/ 同上
     """HEAD 状态门。**只读数、只出方案：不 checkout、不 reset、不 push**（金条四）。
 
     full=True 为巡检拍，full=False 为 fast（同一判据、更少输出）。
