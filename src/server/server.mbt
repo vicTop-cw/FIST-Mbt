@@ -773,7 +773,8 @@ fn key_pin_receipt_mode(pin : String) -> String {
 /// 必须带三件事：
 ///   ① 旧键前缀 —— 让调用方看到确实是**另一把**键（不是格式/大小写误判）
 ///   ② 本次前缀 —— 同上
-///   ③ 去路说明 —— **当前没有密钥轮换通道**（需 owner 决策，本轮不含）。
+///   ③ 去路说明 —— **已实现轮换/吊销**（S3 第八段）：轮换带 `rotate_sig` 走旧私钥验签，
+///      吊销用 `agent_revoke_key`。**保留「拒绝覆盖」「密钥轮换」两个锚点词**（`bl_03` 依赖）。
 ///      不许让调用方以为「换个参数重试就能过」；更**不许**留「管理员可强制改」
 ///      的后门 —— 那等于没修：任何能调到它的调用方都能改别人的键。
 ///
@@ -781,7 +782,9 @@ fn key_pin_receipt_mode(pin : String) -> String {
 /// （`server_bug430_s3_keyreplace_wbtest.bl_03`），改词前先跑那格。
 fn key_pin_reject_message(prev_key : String, pubkey_hex : String) -> String {
   "agent_register_key: 该 agent **已有公钥且与本次不同**，拒绝覆盖。" +
-  "如需更换请走密钥轮换流程（BUG-430 **尚未实现**：轮换通道需 owner 决策，本轮不含）。" +
+  "如需更换请走密钥轮换流程（**S3 第八段已实现**：" +
+  "`agent_register_key` 带 `rotate_sig` 用**旧私钥**签名即可轮换；" +
+  "私钥已丢则用 `agent_revoke_key` 吊销后重新首登）。" +
   "⚠️ 本拒绝是有意的：允许任意覆盖 = 任何调用方都能把某身份的密钥换成自己的（身份劫持）。" +
   "已有前缀=" +
   substring_at(prev_key, 0, 16) +
