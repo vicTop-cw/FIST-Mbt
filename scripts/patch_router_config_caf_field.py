@@ -104,10 +104,10 @@ def selftest() -> int:
     print("格数 %d / 失败 %d" % (7, len(fails)))
     if fails:
         print("SELFTEST FAIL: " + " ".join(fails) + "（尺子坏了 ⇒ rc=2，不冒用判红的 1）")
-        return 2
+        sys.exit(2)  # NO_CALL_FACE J2
     print("SELFTEST OK（7 格：干净输入补一份且落在 use_laya 之后 / 第二次跑逐字节相同 / 第三次跑仍相同 / "
           "末行就是 use_laya 不越界 / 没有 use_laya 面时 matches=0 可见 / 缩进保真 / 变异台把门改回查当前行必红）")
-    return 0
+    sys.exit(0)  # NO_CALL_FACE J2
 
 
 def main() -> int:
