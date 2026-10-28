@@ -12,18 +12,18 @@
 ///|
 /// 测试用密钥对。**BUG-468：统一用 `test_crypto.mbt` 的常量**，不再自写字面量。
 fn s3_key_seed() -> Bytes {
-  TEST_ED25519_SEED_A
+  @core.TEST_ED25519_SEED_A
 }
 
 ///|
 fn s3_key_pub_hex() -> String {
-  test_ed25519_pub_hex(s3_key_seed())
+  @core.test_ed25519_pub_hex(s3_key_seed())
 }
 
 ///|
 /// 测试夹具：用私钥对 nonce 签名（**仅测试用**，生产不许有）。
 fn s3_key_sign(nonce : String) -> String {
-  test_ed25519_sign_hex(s3_key_seed(), nonce)
+  @core.test_ed25519_sign_hex(s3_key_seed(), nonce)
 }
 
 ///|

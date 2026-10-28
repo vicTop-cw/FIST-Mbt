@@ -22,18 +22,18 @@
 /// 背景：本文件最初用的是 **16 字节** seed ⇒ `@mooncry` abort ⇒
 /// 6 格测试全红且只显示 `Error`，排查约 10 分钟才定位到「seed 长度」。
 fn ce_seed() -> Bytes {
-  TEST_ED25519_SEED_A
+  @core.TEST_ED25519_SEED_A
 }
 
 ///|
 fn ce_pub_hex() -> String {
-  test_ed25519_pub_hex(ce_seed())
+  @core.test_ed25519_pub_hex(ce_seed())
 }
 
 ///|
 /// 测试夹具：用私钥签名（**仅测试用**，生产永无代签）。
 fn ce_sign(msg : String) -> String {
-  test_ed25519_sign_hex(ce_seed(), msg)
+  @core.test_ed25519_sign_hex(ce_seed(), msg)
 }
 
 ///|

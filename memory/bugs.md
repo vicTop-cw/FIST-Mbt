@@ -10289,6 +10289,9 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
 - reported_by: commander-alpha (Lane CB)
 - detail: **拆自 BUG-430**（原为「无人用 S3」）。本段证的是**路径存在 + 产品库有车**。① **S3 八段全落地**：骨架 / 四门接线 / nonce 一次性消费 / 公钥登记 / 首登验签 / 轮换（旧私钥签得出才允许换）/ 吊销 / 服务端签发挑战。② **产品库真有公钥**（本轮成果）：`fist-mbt.db` 的 `agents` 表 pubkey_fp 非空 = **1/6**（`4fb5d1353487b451` = `443688424a7a270b8dd1ebd192d8521073cf7e12dd2027d88e9c659c308ecb38`），走的是**真两步流程**（challenge_issued → 私钥签 proof_sig → registered + persisted_pubkey_matches=true），不是直接写库。③ **生产路径三组对照实测**（`reserve_scope`，`FIST_DB_PATH=fist-mbt.db`）：带真签名 ⇒ `action` 含 **`challenge_verified`**；不传 challenge ⇒ `agent_self_reported`；错签名 ⇒ `challenge_failed`（fail-closed）。三态区分明确，**「调用方无法自报」的判定路径在本生产库上真的成立**。⚠️ **诚实修正**：`action` 前缀是 `unregistered+challenge_verified` —— 该 agent `agent_type=executor` 未进某个已登记白名单，**不影响验签结论**，但会让调用方误读。⇒ **关闭依据**：AGENTS.md 关闭条件「存在至少一条『调用方无法自报』的路径」——**本段满足**。剩余问题（产品面取不出挑战、claim 不接受 challenge）已拆到 **BUG-430b** 继续跟。真源：`src/engine/engine_rsv.mbt` + `src/server/server.mbt`（agent_register_key / agent_revoke_key）+ `src/store/store_sqlite.mbt`（agents_set_pubkey）。报告 `reports/2026-10-28-bug430-closure-report.md`。
 
+
+### FIXED(2026-10-28T10:08:07Z / BUG-430a)
+- evidence: 补登点名小记（原因：本条先前由 Lane CM 标 FIXED 但未落点名小记，gen_plugins 因账本「标 FIXED 却无小记」判红）。BUG-430a 内容 = S3 认证基础设施建成且可用：S3 九段（挑战骨架 / 四门接入 / nonce 防重放 / 公钥登记 / 首登锁定 / 首登验签 / 轮换 / 吊销 / 软强制降权）+ BUG-466 取票窗口（agent_issue_challenge）+ BUG-467 verify 身份门 + nonce 落库与清理。实测：claim 带 challenge ⇒ action=+challenge_verified；有钥匙不传 ⇒ +challenge_required 且角色降 Executor；产品库 1/6 agents 有公钥。全量 1797/1797/0。剩余覆盖面缺口在 BUG-469（六工具未接 challenge）与 BUG-470（默认不要求认证，产品决策）。
 ## BUG-430b [2026-10-28T07:23:05Z] [high] FIXED
 
 - summary: [authz] BUG-430 拆分（二）产品面「取不出挑战」且 claim 不接受 challenge —— 连"可选地走 S3"都做不到
@@ -10484,3 +10487,38 @@ Beta 核完发现：`verify` 不经过角色取数面 ⇒ **给它接 `challenge
 ## BUG-470 [2026-10-28T09:53:45Z] [medium] OPEN
 - summary: [authz] 认证仍非默认要求 —— 83.3% 的 agent 无公钥，软强制降权不触发（拆自 BUG-430）
 - detail: **拆自 BUG-430**（本条是**产品决策**，不是技术缺陷）。**实测**：产品库 `fist-mbt.db` 6 个 agents 中仅 **1 个有公钥**（16.7%）⇒ 软强制降权（有公钥 + 不传 challenge ⇒ role 降 Executor + `challenge_required`）**只对那 1 个 agent 生效**，其余 5 个完全不受影响，仍按自报角色放行。**⇒ 「存在一条无法自报的路径」≠「调用方被要求走那条路」**：截至本条，S3 是**可选加入**的，不是默认要求。**为什么不是简单改默认**：直接「默认拒绝」会让现网 83.3% 的调用方立刻失败（它们连公钥都没有，取不到票）⇒ 一刀切等于停摆。**关闭条件（三格，需 owner 拍板）**：(1) 存在**批量登记公钥**的运维路径（否则「默认要求」无法推行）；(2) owner 明确选择「默认拒绝」还是「默认降权」（两者对现网影响差一个量级）；(3) 有一条**可回滚的开关**（避免一刀切停摆，出问题能立刻退回）。**本条不是 bug 而是方向**：在 owner 决策前不应动手，动手前必须有回滚方案。报告 `reports/2026-10-28-bug430-final-verdict.md`。
+## BUG-471 [2026-10-28T09:59:41Z] [high] OPEN
+- summary: [gate] 9 个生命周期工具无任何身份门（BUG-467 同族）：delete/archive/submit/reject/retry/pause/resume/reopen_task/plan
+- detail: 【按形状搜的普查结果】机械扫描 server.mbt 的 14 个生命周期工具代码面（跳注释），检测 8 种身份门形态。
+
+结论：只有 3 个真有身份门（claim / execute / verify），9 个该有没有：
+delete / archive / submit / reject / retry / pause / resume / reopen_task / plan
+另有 2 个（publish / publish_parallel）只有 ns_write_gate（ns 合法性，不看调用者），
+其口子是 S1 的 created_by 自报，与这 9 个不同类，不混算。
+
+【佐证】全仓 agent_write_gate 调用点只有 3 处：
+server.mbt:2154 (claim) / 2287 (execute) / 2500 (verify，上单 BUG-467 新加)
+
+【判据】9 个都真调用了会改任务状态的引擎函数：
+plan→update_task+建子任务 / submit→eng.submit / reject→eng.reject_task /
+retry→eng.retry_task / pause→eng.pause_task / resume→eng.resume_task /
+reopen_task→eng.reopen_task / archive→eng.archive_force / delete→eng.delete_task
+⇒ 符合「该动作改变任务状态 ⇒ 必须有门」。
+
+【危害分级】
+最高危：delete / archive（不可逆：物理删除 / 归档后极难恢复）
+高危：submit / reject（质量闸门：盖章通过或被恶意打回）
+中危：retry / reopen_task / pause / resume / plan
+
+【修法可行性（已验证）】
+acl_identity_pick 兜底为空身份 ⇒ manual（implicit=true）
+⇒ 新增可选 agent 参数、缺省空 ⇒ 身份=manual：内存后端放行（零回归），
+sqlite 面 manual 无 can_write ⇒ 被拒（fail-closed），正是所需。
+但 7 个连身份参数都没有（只有 reject / archive 有 by），
+修法必须「新增可选 agent + 一道门」，不能直接照抄 verify（它复用现成 verifier）。
+
+【建议】拆 3 单：不可逆类（delete+archive）→ 质量闸门类（submit+reject）→ 状态类（其余 5）。
+
+证据：reports/2026-10-28-lifecycle-identity-gate-audit.md
+扫描脚本：temp/audit/lane_cl_gate.py
+- reported_by: lead(Lane CL 普查)
