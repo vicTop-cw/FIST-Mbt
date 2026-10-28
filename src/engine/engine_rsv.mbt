@@ -194,7 +194,7 @@ pub fn judged_role_gated(
         eng,
         agent,
         challenge_nonce,
-        challenge_sig~
+        challenge_sig~,
       )
       (role, src)
     }
@@ -344,7 +344,7 @@ pub fn judged_role_with_nonce(
         eng,
         agent,
         Some(nonce),
-        challenge_sig~
+        challenge_sig~,
       )
       if src == "challenge_verified" {
         // 验签通过 ⇒ 消费 nonce；若已被消费过 ⇒ 判重放（且**不**保留已验证身份）
@@ -429,7 +429,7 @@ pub fn FistEngine::rsv_set(
     self,
     agent,
     challenge_nonce,
-    challenge_sig~
+    challenge_sig~,
   )
   match check_scope_permission(scope, role) {
     // RoleDenied 是**硬拒** —— HumanSteward 保护路径必须继续拒绝，绝不放行
@@ -535,7 +535,7 @@ pub fn FistEngine::rsv_try_set(
     self,
     agent,
     challenge_nonce,
-    challenge_sig~
+    challenge_sig~,
   )
   // BUG-453：三个**新**认证态各带自己的后缀；既有态保持修前的 `+agent_self_reported`
   // （`auth_tag` 对它们返回空串，故这里补上 —— 语义与修前逐字一致，零回归）。
@@ -655,7 +655,7 @@ pub fn FistEngine::locks_try_acquire(
     self,
     agent,
     challenge_nonce,
-    challenge_sig~
+    challenge_sig~,
   )
   match check_scope_permission(scope, role) {
     RoleDenied(_) =>

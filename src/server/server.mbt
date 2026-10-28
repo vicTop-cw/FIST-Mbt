@@ -1977,7 +1977,13 @@ pub async fn run_server() -> Unit {
         "project_dir": string_prop("项目目录（必填）"),
         "description": string_prop("任务描述（必填）"),
         "namespace": string_prop("命名空间（必填，不得为 default）"),
-        "created_by": string_prop("创建者身份(默认 selfdrive)"),
+        "created_by": string_prop(
+          "创建者身份(默认 selfdrive)。⚠️ 本工具与 publish 不同：created_by 全仓零校验" +
+          "（engine.publish_parallel 里 ignore(created_by)，注释写明仅作审计用途、非法值不阻断）——" +
+          "这是自驱/定时路径的设计（自驱进程不是人类指挥官，硬要 human_steward 会堵死自驱动）。" +
+          "⇒ 后果：任何能调到本工具的人都可以往任意合法 ns 追加根任务（只需 ns 合法，不需身份）。" +
+          "这是 BUG-430/S1 的已知边界（身份自报），不是本工具引入的新洞；真收口需 S3 身份锚点。",
+        ),
       },
       ["project_dir", "description", "namespace"],
     ),
@@ -7090,9 +7096,47 @@ pub async fn run_server() -> Unit {
       let rotate_sig = get_str(args, "rotate_sig")
       let rotate_challenge = get_str(args, "rotate_challenge")
       let mut rotate_allowed = false
+      // **R3：轮换第一步 —— 只签发挑战，一个字节都不写库**（与首登的第一步同形）。
+      // 触发条件：确有旧键且不同，且**没填 rotate_sig**（= 调用方在要挑战）。
+      // `rotate_challenge` 也由服务端签发（`s3_issue_challenge_auto`，进程级单调递增），
+      // 不接受调用方自选 —— 否则可离线预计算并提前签好 ⇒ 挑战退化 ⇒ 旧私钥证明被架空。
+      if pin == key_pin_reject_different && rotate_sig == "" {
+        let issued = eng.s3_issue_challenge_auto(agent_id)
+        return Ok(
+          @mcp.ToolResult::text(
+            Json::object({
+              "agent_id": Json::string(agent_id),
+              "namespace": Json::string(ns),
+              "mode": Json::string("rotate_challenge_issued"),
+              "registered": Json::boolean(false),
+              "rotated": Json::boolean(false),
+              "challenge": Json::string(issued),
+              "old_key_prefix": Json::string(substring_at(prev_key, 0, 16)),
+              "new_key_prefix": Json::string(substring_at(pubkey_hex, 0, 16)),
+              "how_to_continue": Json::string(
+                "用**旧私钥**对 challenge 原文做 Ed25519 签名，转 hex 作为 rotate_sig，" +
+                "连同本 challenge 作为 rotate_challenge 原样再调一次 agent_register_key。" +
+                "⚠️ 私钥由你自持，不要发给服务端",
+              ),
+              "note": Json::string(
+                "尚未换钥。本回执只是挑战（服务端签发、一次性），需带 rotate_sig 第二次调用才落库",
+              ),
+            }).stringify(),
+          ),
+        )
+      }
       if pin == key_pin_reject_different {
         // 只有「确有旧键且不同」时才谈轮换；验签用**旧**公钥
+        //
+        // ⚠️ **R3 修（与首登同口径）**：`rotate_challenge` **必须是服务端签发且未消费**的。
+        // 首登早已用 `s3_issue_challenge_auto` 签发挑战，理由是「调用方自选 counter ⇒
+        // 可离线预计算 nonce 并提前签好 ⇒ 挑战退化为固定字符串 ⇒ 验签形同虚设」。
+        // **同一原则必须用在自己身上**：轮换若接受调用方自选 challenge，
+        // 攻击者可预先算好 nonce、提前签好，之后任何时刻提交都成立 ⇒ **旧私钥证明被架空**。
+        // ⇒ 这里先 `s3_consume_nonce`（一次性消费，重复提交第二次必 false ⇒ 防重放）。
         let old_sig_ok = if rotate_sig == "" || rotate_challenge == "" {
+          false
+        } else if !@engine.s3_consume_nonce(agent_id, rotate_challenge) {
           false
         } else {
           @engine.verify_challenge_sig(prev_key, rotate_challenge, rotate_sig)

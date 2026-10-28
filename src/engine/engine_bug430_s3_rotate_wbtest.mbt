@@ -254,3 +254,78 @@ test "bug430_r7_revoke_verdict_distinguishes_noop" {
   assert_eq(key_revoke_verdict(""), key_revoke_not_needed)
   assert_eq(key_revoke_verdict(bz_pub_a()), key_revoke_ok)
 }
+
+///|
+/// 锁 8（**R3**）：轮换的 challenge **必须服务端签发且只能用一次**。
+///
+/// 为什么单独锁：首登早已用 `s3_issue_challenge_auto`（服务端单调递增计数器），
+/// 理由是「调用方自选 counter ⇒ 可离线预计算 nonce 并提前签好 ⇒ 挑战退化为固定字符串
+/// ⇒ 验签形同虚设」。**同一原则必须用在自己身上**：
+/// 轮换若接受调用方自选 challenge，攻击者可预先算好 nonce、提前签好，
+/// 之后任何时刻提交都成立 ⇒ 「旧私钥证明」被架空。
+///
+/// 三格断言：
+///   · 服务端签发的 nonce ⇒ `s3_consume_nonce` 第一次 true（认）
+///   · 同一 nonce 第二次 ⇒ false（**防重放**）
+///   · 调用方自造（未签发的）nonce ⇒ false（**不认**）
+test "bug430_r8_rotate_challenge_must_be_server_issued" {
+  let agent = "bz-r3-replay"
+  // 服务端签发（真实路径）
+  let issued = s3_issue_challenge_auto_for_test(agent)
+  assert_true(s3_consume_nonce(agent, issued))
+  // ★ 同一 nonce 第二次 ⇒ 必须 false（防重放）
+  assert_false(s3_consume_nonce(agent, issued))
+  // ★ 调用方自造（没经服务端签发）⇒ 必须 false（不认）
+  let forged = issue_challenge_nonce(agent, 999999)
+  assert_false(s3_consume_nonce(agent, forged))
+}
+
+///|
+/// 测试辅助：签发一个服务端 nonce（走与生产同一个 `issue_challenge_nonce` + 登记）。
+///
+/// ⚠️ 这里**不直接调 `FistEngine::s3_issue_challenge_auto`**（需要引擎实例），
+/// 而是复刻它的两步：`issue_challenge_nonce(agent, n)` + 登记进 pending 表。
+/// 但 pending 表是引擎包的私有 map ⇒ 用引擎实例更可靠，故本函数**由需要它的格直接内联**。
+/// 见 `bug430_r9`（带引擎实例的版本）——本函数保留给不需要引擎的纯函数格。
+fn s3_issue_challenge_auto_for_test(agent : String) -> String {
+  // 用一个不冲突的计数区间，避免与其他格串号
+  s3_issue_challenge_direct(agent, 77001)
+}
+
+///|
+/// 直接登记一条待消费 nonce（等价于 `s3_issue_challenge` 的两步）。
+fn s3_issue_challenge_direct(agent : String, counter : Int32) -> String {
+  let nonce = issue_challenge_nonce(agent, counter)
+  let k = agent_fp_of(agent)
+  let cur = match s3_pending_nonces.get(k) {
+    None => []
+    Some(a) => a
+  }
+  cur.push(nonce)
+  s3_pending_nonces.set(k, cur)
+  nonce
+}
+
+///|
+/// 锁 9（**R3 端到端**）：带引擎实例走一遍「服务端签发 → 旧私钥签 → 消费」。
+test "bug430_r9_rotate_consumes_server_issued_challenge" {
+  let agent = "bz-r3-e2e"
+  let eng = bz_eng_with_key(agent, bz_pub_a())
+  // ① 服务端签发（真实引擎路径）
+  let chal = eng.s3_issue_challenge_auto(agent)
+  // ② 旧私钥签
+  let sig = bz_sign(bz_seed_a(), chal)
+  assert_true(verify_challenge_sig(bz_pub_a(), chal, sig))
+  // ③ 消费 + 验签（轮换 handler 的判定顺序）
+  assert_true(s3_consume_nonce(agent, chal))
+  // ★ ④ 重放同一 challenge ⇒ 消费失败 ⇒ 即使签名是对的也不认
+  assert_false(s3_consume_nonce(agent, chal))
+  // ⑤ 换钥落地
+  let st = bz_store(eng)
+  match
+    st.agents_set_pubkey(agent_id=agent_fp_of(agent), pubkey_fp=bz_pub_b()) {
+    Err(e) => abort("轮换写库失败：" + e)
+    Ok(_) => ()
+  }
+  assert_eq(bz_pubkey_of(eng, agent), bz_pub_b())
+}
