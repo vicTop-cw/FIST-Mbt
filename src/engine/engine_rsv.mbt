@@ -216,12 +216,30 @@ pub fn judged_role_gated(
     //   且 `action` 里会明示 `+challenge_required` ⇒ **不是静默降权**，调用方看得见。
     // ══════════════════════════════════════════════════════════════════════
     None =>
-      if declared_pubkey_for(eng, agent) is Some(_) {
-        // 有钥匙却没出示 ⇒ 不给它自称的角色
-        ("Executor", "challenge_required")
-      } else {
-        // 没钥匙 ⇒ 原样（**零回归**：与修前逐字相同）
-        judged_role(eng, agent)
+      match auth_mode() {
+        // ══════════════════════════════════════════════════════════════════
+        // BUG-470：三档开关（默认 `off`）
+        //
+        // ⚠️ **`off` 分支必须与本开关引入之前逐字相同** —— 它是首次默认值，
+        //   任何差异都等于「上线开关」这件事本身引入了回归。
+        //   锁：`bug470_off_*` 两格（有钥匙 / 无钥匙各一）。
+        // ══════════════════════════════════════════════════════════════════
+        Off =>
+          if declared_pubkey_for(eng, agent) is Some(_) {
+            // 有钥匙却没出示 ⇒ 不给它自称的角色（S3 第九段，开关之前就有）
+            ("Executor", "challenge_required")
+          } else {
+            // 没钥匙 ⇒ 原样（**零回归**：与本开关引入前逐字相同）
+            judged_role(eng, agent)
+          }
+        // 无钥匙**也**降权 —— 这就是 owner 批准的「策略 B」。
+        //   有钥匙时与 Off 分支同值，保持语义一致（都是 challenge_required）。
+        Soft => ("Executor", "challenge_required")
+        // 一律拒绝。⚠️ 本函数返回 `(String, String)` 不能 `Err`（改签名会波及 5 处调用点，
+        //   且 `rsv_set` 的签名在更上层是 `Result[String,String]`），
+        //   故用**专用 role_source** `challenge_missing`，由各门的消费者据此拒绝
+        //   （与 `RoleDenied` 同一手法：硬拒在门层做）。
+        Strict => ("Executor", "challenge_missing")
       }
     Some(_) => {
       let (role, src) = judged_role_with_challenge(
@@ -419,10 +437,12 @@ pub fn FistEngine::challenge_cleanup(
 /// （那会把一个可恢复的维护问题变成不可用的鉴权面）。故 `ignore(...)`。
 /// ══════════════════════════════════════════════════════════════════════════
 ///
+
 ///|
 /// 签发时顺带清理的默认 cutoff：`now - 24h`（ISO 定宽 ⇒ 字符串可直接比）。
 ///
 /// 由 `challenge_cleanup_on_issue` 调用；单独抽出来是为了让白盒锁能算同一把尺。
+
 ///|
 /// **签发时顺带清理**（BUG-467 的接线点）：返回本次清掉的行数。
 ///
@@ -446,7 +466,9 @@ pub fn FistEngine::challenge_cleanup_on_issue(
 /// 三个数一起看才知道状态：
 ///   · `pending` 高 ⇒ 签发了但没人用（正常，票有时效）
 ///   · `consumed` 高而 `total` 不降 ⇒ **清理没跑**（本单要暴露的形态）
-pub fn FistEngine::challenge_table_stats(self : FistEngine) -> (Int32, Int32, Int32) {
+pub fn FistEngine::challenge_table_stats(
+  self : FistEngine,
+) -> (Int32, Int32, Int32) {
   let total = self.store.challenge_total_count()
   let consumed = self.store.challenge_consumed_count()
   (total, consumed, total - consumed)
@@ -675,6 +697,9 @@ pub fn auth_tag(role_source : String) -> String {
     "challenge_replayed" => "+challenge_replayed"
     // BUG-430 第九段：**有钥匙却没出示** —— 必须显式可见，不许静默降权。
     "challenge_required" => "+challenge_required"
+    // BUG-470 `strict` 档：**完全没出示** —— 与 `required`（有钥匙但没出示）区分开，
+    //   否则调用方看不出「我该去登记公钥」还是「我该去取票」。
+    "challenge_missing" => "+challenge_missing"
     // 既有态：**零后缀**。为什么不是 "+agent_self_reported"：
     //   该后缀在 `rsv_try_set` 里由调用点显式追加（修前就是这样，零回归）；
     //   而 `locks_try_acquire` 的 `permission_denied` / `unregistered` 有**精确相等**的
