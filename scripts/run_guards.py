@@ -170,6 +170,22 @@ SPECIAL_CASES = [
     # 自证 16 格含 3 个变异对照（删字段 / AIGC 伪 frontmatter / 已定案缺 decisions 记录）+ 空扫描自拒。
     case("check_plan_location.py", "--selftest"),
     case("check_plan_location.py"),
+    # —— BUG-455：MCP 工具「外壳 + 实现两层」覆盖判据 ——
+    # 核心洞察：零覆盖的危害不是「实现没测」，而是「外壳与实现之间那根线没测」。
+    # 本会话 3 次实证：BUG-440/453/436 都是「实现层测试全绿、工具照样是坏的」。
+    # 判法：A 外壳面（工具名在测试里）**或** B 实现面（映射函数在测试里）；
+    #       ⚠️ B 不能替代 A —— execute 底层有测试，但「challenge 参数有没有接上」只有外壳面测得出。
+    # 白名单 IMPL_MAP 而非启发式（实测启发式假阳性 13/30）。
+    # rc: 0 全有外壳覆盖 / 1 有零覆盖 / 2 无法自证。--selftest 10 格含 1 变异对照。
+    case("check_tool_coverage.py", "--selftest"),
+    # 判据本体：用 expected(..., 1) 「已知红」而非 tolerant —— 理由可自查：
+    #   rc=1（有工具外壳零覆盖）是**当前真实的待办清单**，不是判据坏了。
+    #   把现状登记为 known-red：覆盖率降到 0 时它自己变绿（逼下一位把期望改回 0）。
+    expected("check_tool_coverage.py", 1,
+             "工具外壳零覆盖 22/154（BUG-455 待办：github_*/atgc_old_*/dag_*/debate_* 等 22 个工具"
+             "从无任何测试碰过它们的接线面）。补完一个就把本数往下改——"
+             "这是待办清单不是免检牌。",
+             kind="known-red"),
     case("check_store_tables_wired.py"),
     case("check_pkg_imports.py"),
     case("check_entry_paths.py"),
