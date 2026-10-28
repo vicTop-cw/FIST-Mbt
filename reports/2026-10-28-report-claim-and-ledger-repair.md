@@ -108,3 +108,43 @@ python scripts/check_tool_coverage.py
 | 账本 | `memory/bugs.md`（BUG-457：OPEN → FIXED，同一笔落 `### FIXED` 小记） |
 | 门禁修复 | `reports/2026-10-28-dist-refresh-report.md:81`、`src/server/bugreport.mbt:84` |
 | **建议后续** | ① 覆盖清单最后 4 个工具（谁做谁负责把电池期望翻到 0）② 「回滚清单 ↔ 报告引用」对表 ③ 报告写作自查三条已写进被校正报告文末 |
+
+---
+
+## 追记（2026-10-28 二轮 · 覆盖清单清零 ⇒ known-red 转正门禁）
+
+> 本单 §建议后续 ① 当天就被兑现了 —— 但不是「谁做谁负责」，而是**别的 lane 先补齐、我来收期望**。
+
+**事实（不是推测）**：`python scripts/check_tool_coverage.py` 现读
+
+```text
+[B 实现面] 已映射 15 个工具，其中实现函数在测试里出现 15 个
+[结论] 外壳零覆盖 0 / 154（0.0%）；覆盖率 100.0%
+[PASS] 全部工具有外壳覆盖。**这不代表工具是对的** —— 只代表「有人碰过它」。
+rc=0
+```
+
+上一轮本报告写的「4 个零覆盖（`assistant_resign` / `github_issue_close` / `github_issue_comment` / `lock_status`）」
+已由并发 lane 的 `src/server/tool_cov_lane_*.mbt` 覆盖并入库（`b6fe0828` / `4080afd1` 两笔）。
+
+**本笔改了什么**：`scripts/run_guards.py` 里 `check_tool_coverage.py` 本体那一格
+
+| 项 | 改前 | 改后 |
+|---|---|---|
+| 注册形式 | `expected(..., 1, kind="known-red")` | `case(...)`（expect 0，真门禁） |
+| 依据 | 22/154 零覆盖 = 待办清单 | 0/154 零覆盖 = 谁删测试谁红 |
+| 锚点四键 | `rulers=124 ci=46 battery=83 gate=91` | **一个都不动** |
+
+**为什么锚点不动（这一条最容易改错）**：`gate` 数的是**门禁尺个数**（脚本级分类），不是格子级的期望值；
+`battery` 数的是**有电池面的脚本数**。known-red → 门禁是**同一把尺的同一格换了期望**，
+既不新增脚本也不新增格子 ⇒ `python scripts/check_battery_count_doc.py` 仍 PASS（实测逐键一致）。
+
+**为什么必须转**：known-red 的语义是「预期是红的，修好就变红提醒下一位改回 0」。
+覆盖清零那刻它就是**过期期望**：留着它，电池会稳定报一格假红，
+下一个人会去「修」一把其实全绿的尺 —— 这正是 BUG-457 同族的病（把不可复核的声称当结论）。
+
+**验证**：`check_tool_coverage.py` rc=0 / `--selftest` rc=0 / `check_battery_count_doc.py` PASS /
+`check_selftest_inventory_doc.py` rc=0 / `run_guards.py --list` rc=0 / `check_doc_surface.py` rc=0。
+
+**不要误读这条 100%**：判据的 A 面是「工具名在测试文本里出现过」，被一个 `str.contains` 就能满足；
+它证明的是**接线面有人碰过**，不是**接线对**。真实正确性仍由各 lane 的白盒锁与 `moon test` 兜底。
