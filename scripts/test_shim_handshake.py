@@ -71,24 +71,30 @@ def start_shim(dist: Path, shim: Path, server_cmd=None) -> subprocess.Popen:
     R90：`server_cmd` 非空时**覆盖**内建启动命令 —— 这正是 `--server` 的 help 承诺
     （「覆盖 shim 内建的 server 启动命令（默认 dist serve）」），但旧实现**从未读取**它
     ⇒ 旗标是空开关（文档第 24 行还宣传了用法）。"""
-    """启动 shim（内部 spawn 发布版 dist serve）。"""
     if not dist.exists():
         print(f"  [SKIP] dist 不存在：{dist}", file=sys.stderr)
         return None
     db = os.path.join(tempfile.gettempdir(), "fist-shim-test.db")
     env = dict(os.environ)
     env["FIST_DB_PATH"] = db
-    return subprocess.Popen(
-        ["node", str(shim), "--server"]
-        + (list(server_cmd) if server_cmd else ["node", str(dist), "serve"]),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        text=True,
-        encoding="utf-8",
-        bufsize=1,
-        env=env,
-    )
+    # R91：启动命令跑不起来（产物不存在/参数非法）时，给**干净消息 + 契约码**，
+    # 不要抛 `OSError: [Errno 22] Invalid argument` 栈（R90 变异对照时实测到）。
+    cmd = (["node", str(shim), "--server"]
+           + (list(server_cmd) if server_cmd else ["node", str(dist), "serve"]))
+    try:
+        return subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            bufsize=1,
+            env=env,
+        )
+    except OSError as e:
+        print("FATAL 启动命令跑不起来：%s（%s）" % (" ".join(cmd), e), file=sys.stderr)
+        return None
 
 
 class Client:
@@ -375,4 +381,10 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # R91：shim/server 断链时读写下层会抛 OSError/BrokenPipe —— 给**干净消息 + 契约码 2**
+    # （判据无法自证），不要吐 Python 栈（R90 变异对照实测到的那条）。
+    try:
+        sys.exit(main())
+    except (OSError, BrokenPipeError) as e:
+        print("FATAL shim/发布版链路断开：%s ⇒ 判据无法自证（rc=2）" % e, file=sys.stderr)
+        sys.exit(2)
