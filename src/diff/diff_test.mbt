@@ -85,6 +85,22 @@ test "diff_lines 多行追加" {
 }
 
 ///|
+/// **EOL 敏感**（R125 锁住）：CRLF 与 LF 视为不同行内容 —— 行尾 CR 参与比较。
+/// 这是既有行为（字节级真相）：整篇 CRLF vs 整篇 LF 会逐行全变。
+/// 锁住它是防「好心去掉 EOL 差异」——那会让「确实只差 EOL」的真实差异被静默吞掉。
+/// 需要 EOL 无关比较，请在调用前**归一化**，不要改 `diff_lines`。
+test "diff_lines EOL 敏感：CRLF 与 LF 是不同行" {
+  let ops = @diff.diff_lines("a\r\nb", "a\nb")
+  assert_eq(ops.length(), 3)
+  assert_eq(ops[0].kind(), "delete")
+  assert_eq(ops[0].text(), "a\r")
+  assert_eq(ops[1].kind(), "insert")
+  assert_eq(ops[1].text(), "a")
+  assert_eq(ops[2].kind(), "equal")
+  assert_eq(ops[2].text(), "b")
+}
+
+///|
 /// BUG-162 附证：issue_scan 的 moonbit-array-index-bounds 报
 /// diff_lines L60 `dp[i-1][j-1]`、L62/L65 `dp[i-1][j]`/`dp[i][j-1]`、
 /// L79 `dp[i][j-1]`/`dp[i-1][j]` 越界——以下边界用例直接压 DP 首格与回溯首步。

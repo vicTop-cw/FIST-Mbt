@@ -40,6 +40,11 @@ pub fn DiffOp::text(self : DiffOp) -> String {
 ///|
 /// 按行 diff（LCS）。输入 old/new 文本，返回操作序列（含空行）。
 /// 算法：经典 LCS 动态规划，O(n*m) 时间/空间。
+///
+/// ⚠️ **行尾参与比较**（EOL 敏感）：按 LF 切行、**保留行尾 CR** ⇒ CRLF 与 LF 视为不同行内容。
+/// 实测：把「a + CRLF + b」与「a + LF + b」比较 ⇒ delete(a 带 CR) / insert(a) / equal(b)，共 3 条；
+/// 所以**整篇 CRLF vs 整篇 LF 会逐行全变**（N 行 → N 删 + N 插）。
+/// 需要 EOL 无关比较请**先归一化**，不要改这里（否则真实差异被静默吞掉）。
 pub fn diff_lines(old : String, new : String) -> Array[DiffOp] {
   let old_lines = split_lines(old)
   let new_lines = split_lines(new)
