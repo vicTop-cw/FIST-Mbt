@@ -23,7 +23,10 @@ test "ci_01_memory_backend_gate_is_open_for_verify" {
   let id = acl_claim_identity("some-verifier", "some-verifier")
   match agent_write_gate(eng, id, "any-ns") {
     Ok(_) => ()
-    Err(e) => abort("内存后端 ACL 应放行（零回归契约），实际 Err：" + e)
+    Err(e) =>
+      abort(
+        "内存后端 ACL 应放行（零回归契约），实际 Err：" + e,
+      )
   }
 }
 
@@ -80,7 +83,9 @@ test "ci_02_sqlite_gate_denies_then_allows" {
         ),
       )
       if not(agent_write_gate(eng, vid, ns) is Ok(_)) {
-        abort("已授权的 verifier 被拒 —— 门太严，会误伤正当验收")
+        abort(
+          "已授权的 verifier 被拒 —— 门太严，会误伤正当验收",
+        )
       }
     }
   }
@@ -121,7 +126,11 @@ test "ci_03_verify_handler_is_wired_to_acl_gate" {
   let blk = slice_ci(rest, 0, j)
   // ③ 归一化：去所有空白后再找（防 fmt 重排导致假红）
   let flat = strip_ws(blk)
-  if not(flat.contains("agent_write_gate(eng,acl_claim_identity(verifier,verifier),ns)")) {
+  if not(
+      flat.contains(
+        "agent_write_gate(eng,acl_claim_identity(verifier,verifier),ns)",
+      ),
+    ) {
     abort(
       "verify 的 handler **没有**接 ACL 门（或缺 acl_claim_identity 同源身份解析）。" +
       "只测门函数本身不够 —— 必须断言接线（判例-29）。",
@@ -147,7 +156,7 @@ fn strip_ws(s : String) -> String {
 }
 
 ///|
-fn find_ci(hay : String, needle : String, from : Int) -> Int? {
+fn find_ci(hay : String, needle : String, from : Int32) -> Int32? {
   let h = hay.to_array()
   let nd = needle.to_array()
   if nd.length() == 0 || nd.length() > h.length() {
@@ -173,7 +182,7 @@ fn find_ci(hay : String, needle : String, from : Int) -> Int? {
 }
 
 ///|
-fn slice_ci(s : String, from : Int, to : Int) -> String {
+fn slice_ci(s : String, from : Int32, to : Int32) -> String {
   let a = s.to_array()
   let lo = if from < 0 { 0 } else { from }
   let hi = if to > a.length() { a.length() } else { to }

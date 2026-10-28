@@ -23,77 +23,77 @@ pub fn embed_hexa_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
   //   没有任何 `raise`；若注册过程真的崩，那是 JS 运行时异常，catch 拦不住。
   //   删掉后**行为不变**：正常路径完全一致，异常路径本来就是**直接崩**。
   let mut s1 = s
-    s1 = instrumented_tool(
-      s1,
-      "hat_run",
-      "HexaMind 六元派发（P0 单轮并行，纯计算只读）：解析 config_json → 给每个已选六元生成单元任务（角色 prompt + 模型车道 + 采样参数 + 输出契约）+ 星核合成任务 + 黑↔黄 / 红↔绿 辩论对。**本工具不发任何模型调用**：每个任务带 executor_hint=ofm 与 dry_run_shape，把 prompt 喂 executor_run 即可真实执行。参数：config_json(必填，含 topic/hats/hat_policy)、round(可选,默认 1)。返回 plan。",
-      schema(
-        {
-          "config_json": string_prop(
-            "HexaMind 配置（必填）：{topic, hats[], hat_policy{max_rounds,converge_threshold,auto_select_hats,debate_enabled}}",
-          ),
-          "round": number_prop(
-            "当前轮次（可选，默认 1，仅标记用）",
-          ),
-        },
-        ["config_json"],
-      ),
-      fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-        match hat_run_impl(args) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
+  s1 = instrumented_tool(
+    s1,
+    "hat_run",
+    "HexaMind 六元派发（P0 单轮并行，纯计算只读）：解析 config_json → 给每个已选六元生成单元任务（角色 prompt + 模型车道 + 采样参数 + 输出契约）+ 星核合成任务 + 黑↔黄 / 红↔绿 辩论对。**本工具不发任何模型调用**：每个任务带 executor_hint=ofm 与 dry_run_shape，把 prompt 喂 executor_run 即可真实执行。参数：config_json(必填，含 topic/hats/hat_policy)、round(可选,默认 1)。返回 plan。",
+    schema(
+      {
+        "config_json": string_prop(
+          "HexaMind 配置（必填）：{topic, hats[], hat_policy{max_rounds,converge_threshold,auto_select_hats,debate_enabled}}",
+        ),
+        "round": number_prop(
+          "当前轮次（可选，默认 1，仅标记用）",
+        ),
       },
-    )
-    s1 = instrumented_tool(
-      s1,
-      "hat_merge",
-      "HexaMind 分歧提取 + 收敛判定 + 裁决报告（P1，纯计算只读）：对 reports_json 里的单元报告做程序化分歧提取（verdict 对冲 / 置信度落差 / 论据路径 Jaccard）+ 收敛三态（converged/partial/diverged）+ 生成 Markdown 报告。**终态门=user**（本工具只给读数，不代用户裁决）。参数：topic(必填)、reports_json(必填,单元报告数组)、config_json(可选,缺省默认策略)、round(可选,默认 1)。返回 report。",
-      schema(
-        {
-          "topic": string_prop("议题（必填）"),
-          "reports_json": string_prop(
-            "单元报告数组 JSON（必填）：[{element_id, verdict, confidence, evidence, outcomes[]}]",
-          ),
-          "config_json": string_prop(
-            "HexaMind 配置（可选；缺省用默认策略 max_rounds=2/threshold=0.6）",
-          ),
-          "round": number_prop("当前轮次（可选，默认 1）"),
-        },
-        ["topic", "reports_json"],
-      ),
-      fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-        match hat_merge_impl(args) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
+      ["config_json"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      match hat_run_impl(args) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "hat_merge",
+    "HexaMind 分歧提取 + 收敛判定 + 裁决报告（P1，纯计算只读）：对 reports_json 里的单元报告做程序化分歧提取（verdict 对冲 / 置信度落差 / 论据路径 Jaccard）+ 收敛三态（converged/partial/diverged）+ 生成 Markdown 报告。**终态门=user**（本工具只给读数，不代用户裁决）。参数：topic(必填)、reports_json(必填,单元报告数组)、config_json(可选,缺省默认策略)、round(可选,默认 1)。返回 report。",
+    schema(
+      {
+        "topic": string_prop("议题（必填）"),
+        "reports_json": string_prop(
+          "单元报告数组 JSON（必填）：[{element_id, verdict, confidence, evidence, outcomes[]}]",
+        ),
+        "config_json": string_prop(
+          "HexaMind 配置（可选；缺省用默认策略 max_rounds=2/threshold=0.6）",
+        ),
+        "round": number_prop("当前轮次（可选，默认 1）"),
       },
-    )
-    s1 = instrumented_tool(
-      s1,
-      "hat_debate",
-      "HexaMind 辩论对冲（P2，纯计算只读）：给定两个不同六元，生成一对辩论计划（交锋议题 + 回合数）+ 建议的论据分歧类型。**本工具不发模型调用**：把议题与左右两元角色 prompt（见 hat_run）喂 executor_run 即可执行辩论。参数：left(必填)、right(必填,须与 left 不同)、issue(可选,缺省按黑↔黄/红↔绿给预设议题)、rounds(可选,默认 1,1..5)。返回 debate。",
-      schema(
-        {
-          "left": string_prop(
-            "六元代号 A（必填）：stargazer|pulse|wallbreaker|golddigger|nova|nucleus",
-          ),
-          "right": string_prop("六元代号 B（必填，须与 A 不同）"),
-          "issue": string_prop(
-            "交锋议题（可选，缺省按黑↔黄/红↔绿给预设）",
-          ),
-          "rounds": number_prop("回合数（可选，默认 1，1..5）"),
-        },
-        ["left", "right"],
-      ),
-      fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
-        match hat_debate_impl(args) {
-          Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
-          Err(e) => Err(@mcp_types.ToolError(e))
-        }
+      ["topic", "reports_json"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      match hat_merge_impl(args) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "hat_debate",
+    "HexaMind 辩论对冲（P2，纯计算只读）：给定两个不同六元，生成一对辩论计划（交锋议题 + 回合数）+ 建议的论据分歧类型。**本工具不发模型调用**：把议题与左右两元角色 prompt（见 hat_run）喂 executor_run 即可执行辩论。参数：left(必填)、right(必填,须与 left 不同)、issue(可选,缺省按黑↔黄/红↔绿给预设议题)、rounds(可选,默认 1,1..5)。返回 debate。",
+    schema(
+      {
+        "left": string_prop(
+          "六元代号 A（必填）：stargazer|pulse|wallbreaker|golddigger|nova|nucleus",
+        ),
+        "right": string_prop("六元代号 B（必填，须与 A 不同）"),
+        "issue": string_prop(
+          "交锋议题（可选，缺省按黑↔黄/红↔绿给预设）",
+        ),
+        "rounds": number_prop("回合数（可选，默认 1，1..5）"),
       },
-    )
-    s1
+      ["left", "right"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      match hat_debate_impl(args) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1
 }
 
 // ---------------------------------------------------------------------------
