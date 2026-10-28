@@ -100,7 +100,7 @@ def _has_root_flag(path):
 
 def candidates(scripts_dir=None):
     """返回支持 `--root` 的判据脚本绝对路径（排序）。"""
-    d = scripts_dir or SCRIPTS_DIR
+    d = scripts_dir or "."      # R97：不默认 ROOT/SCRIPTS_DIR（自检链不得触及真仓）
     out = []
     try:
         names = sorted(os.listdir(d))
@@ -115,12 +115,13 @@ def candidates(scripts_dir=None):
     return out
 
 
-def probe_one(script, empty_dir, timeout=CASE_TIMEOUT):
+def probe_one(script, empty_dir, timeout=CASE_TIMEOUT, cwd=None):
+    # R97：`cwd` 自检时传合成目录（原来无条件 ROOT ⇒ hermetic 记 G 档）。
     """跑一把尺，返回 ("ok"|"green"|"unknown", rc, 尾部读数)。"""
     try:
         r = subprocess.run([sys.executable, script, ROOT_FLAG, empty_dir],
                            capture_output=True, text=True, timeout=timeout,
-                           encoding="utf-8", errors="replace", cwd=ROOT)
+                           encoding="utf-8", errors="replace", cwd=cwd or os.path.dirname(script))
         rc = r.returncode
     except subprocess.TimeoutExpired:
         return "unknown", None, "超时 %ds" % timeout
@@ -133,7 +134,7 @@ def probe_one(script, empty_dir, timeout=CASE_TIMEOUT):
     return "ok", rc, tail
 
 
-def judge(scripts_dir=None, empty_dir=None, timeout=CASE_TIMEOUT):
+def judge(scripts_dir=None, empty_dir=None, timeout=CASE_TIMEOUT, cwd=None):
     """纯流程：返回 (verdicts, unknown, n_candidates)。verdicts = [(name, kind, rc, tail)]。"""
     cands = candidates(scripts_dir)
     if not cands:
@@ -146,7 +147,7 @@ def judge(scripts_dir=None, empty_dir=None, timeout=CASE_TIMEOUT):
         verdicts, unknown = [], []
         for p in cands:
             name = os.path.basename(p)
-            kind, rc, tail = probe_one(p, empty_dir, timeout)
+            kind, rc, tail = probe_one(p, empty_dir, timeout, cwd)
             if kind == "unknown":
                 unknown.append((name, tail))
             elif kind == "green":
@@ -167,7 +168,8 @@ def run(argv=None):
     if args.selftest:
         return selftest()
 
-    verdicts, unknown, n = judge()
+    # R97：显式传真仓面（candidates 默认已改成 `.`，避免自检链触及真仓）
+    verdicts, unknown, n = judge(scripts_dir=SCRIPTS_DIR, cwd=ROOT)
     if n == 0:
         print("FATAL 判据无法自证：没有一把 check_*.py 声明 `%s` ⇒ 本尺扫描面为空，拒绝出绿"
               % ROOT_FLAG)
