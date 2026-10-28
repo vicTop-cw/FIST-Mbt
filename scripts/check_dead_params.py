@@ -373,7 +373,9 @@ def is_opaque(handler: str) -> bool:
 READER_CACHE: set = set()
 
 
-def judge(root: str, verbose: bool = False):
+def judge(root: str):
+    # R88：原第 2 参 `verbose` **函数体从未使用**，而 CLI 的 `--verbose` 一路传进来
+    # ⇒ **旗标是空开关**（docstring 还写着用法）。改为在 render 里真正生效。
     files = {}
     for p in glob.glob(os.path.join(root, "src", "server", "*.mbt")):
         if p.endswith("_test.mbt") or p.endswith("_wbtest.mbt"):
@@ -443,7 +445,7 @@ def judge(root: str, verbose: bool = False):
     }
 
 
-def render(rc, res):
+def render(rc, res, verbose: bool = False):
     if rc == RC_BROKEN:
         print("[FATAL] " + res["note"])
         print("判据无法自证 ⇒ rc=2")
@@ -455,6 +457,12 @@ def render(rc, res):
     print("       读取干净 %d · opaque（透传，静态判不了）%d · 死参数 %d · 设计如此 %d"
           % (len(res["clean"]), len(res["opaque"]), len(res["dead"]),
              len(res.get("designed", []))))
+    # R88：`--verbose` 真的多说一点（旧实现是空开关）—— 把「读取干净」的**具名**工具列出来，
+    # 而不只是给计数。这正是 verbose 该提供的「可核对信息」。
+    if verbose and res.get("clean"):
+        print("[verbose · 读取干净逐条] 共 %d 个：" % len(res["clean"]))
+        for _fn, _name in res["clean"]:
+            print("  . %s  %s" % (_fn, _name))
     if res["opaque"]:
         print()
         print("[opaque · 主动沉默] 这些工具的 handler 整包透传 args ⇒ 参数在别处读，**不判死**：")
@@ -565,8 +573,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.selftest:
         return selftest()
-    rc, res = judge(a.root or ROOT, a.verbose)
-    render(rc, res)
+    rc, res = judge(a.root or ROOT)
+    render(rc, res, a.verbose)
     return rc
 
 
