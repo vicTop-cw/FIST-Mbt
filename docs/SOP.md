@@ -35,7 +35,7 @@ updated: 2026-10-16
 
 ## 测试基线
 
-- `moon test --target js` 全量 = 1867/1867 绿
+- `moon test --target js` 全量 = 1869/1869 绿
 - 单模块：`moon test --target js src/<module>`
 - 环境：`$env:MOON_HOME = "C:\Users\<user>\.moon"`
 

@@ -134,3 +134,66 @@ test "spec_gates_by_actor_string" {
     Err(e) => assert_true(e.contains("未知角色"))
   }
 }
+
+
+///|
+/// R141：**状态门 vs 域迁移的一致性锁** —— 这是本轮查出来的**已知不一致**，先用锁钉住现状。
+///
+/// 实测（`src/core/core_task.mbt`）：
+///   · `TaskStatus::can_split()` 接受 **Pending | Claimed | Splitting | Rejected**（4 态）
+///   · `Task::split()` 的域迁移只接受 **Claimed**（其余一律 `非法迁移: split 要求状态 [已领取]`）
+///
+/// ⇒ 对 Pending/Splitting/Rejected：**闸门放行、域层必拒**。
+/// 这与 `can_execute` 上方 docstring 记录的 **BUG-2 是同一类**（那里已把集合逐字对齐），
+/// `can_split` 这一侧**还没对齐**。
+///
+/// ⚠️ **本格锁的是"现状"，不是"正确"**：两种修法都会改语义 ——
+///   ① 闸门收窄到 Claimed ⇒ 那三态的用户从"带出路的域错误"变成"闸门错误"（体验更差）；
+///   ② 域层放宽到 4 态 ⇒ 允许 Pending/Rejected 直接进 Splitting（状态机语义变更）。
+/// 归属 **owner 裁决**，本轮只保证「谁改了这两处会立刻红」，不让它在无声中漂。
+test "status_gate_vs_domain_split_mismatch_is_pinned" {
+  // 闸门侧：4 态放行
+  assert_true(TaskStatus::can_split(Pending))
+  assert_true(TaskStatus::can_split(Claimed))
+  assert_true(TaskStatus::can_split(Splitting))
+  assert_true(TaskStatus::can_split(Rejected))
+  // 闸门侧：其余拒绝
+  assert_true(!TaskStatus::can_split(Executing))
+  assert_true(!TaskStatus::can_split(Reviewing))
+  assert_true(!TaskStatus::can_split(Completed))
+  // 域层侧（用真实构造的任务验证，而不是读代码）：只有 Claimed 能 split
+  // 用**全新 Pending 任务**（不能用 rc_reviewing：它已推进到 Reviewing，claim 会拒）
+  let fresh = Task::new(id="R141-1", project_dir=".", description="x", assignee="a1")
+  let claimed = match fresh.claim(assignee="a1") {
+    Ok(t) => t
+    Err(e) => abort("claim 失败：" + e)
+  }
+  assert_true(TaskStatus::can_split(claimed.get_status()))
+  match claimed.split() {
+    Ok(_) => ()
+    Err(e) => abort("Claimed 应能 split: " + e)
+  }
+}
+
+///|
+/// R141：`can_execute` 与 `Task::execute` 的**已对齐**关系（BUG-2 的回归锁）。
+/// 集合：`Claimed | Splitting | Executing`；`Rejected` 必须**不在**两侧任何一侧
+/// （BUG-2 当年就是闸门多了一条 Rejected）。
+test "status_gate_vs_domain_execute_aligned" {
+  assert_true(TaskStatus::can_execute(Claimed))
+  assert_true(TaskStatus::can_execute(Splitting))
+  assert_true(TaskStatus::can_execute(Executing))
+  assert_true(!TaskStatus::can_execute(Rejected))
+  assert_true(!TaskStatus::can_execute(Pending))
+  assert_true(!TaskStatus::can_execute(Completed))
+  // 域层：Claimed 可 execute；Rejected 必须 Err（且文案是"非法迁移"，不是闸门文案）
+  let fresh2 = Task::new(id="R141-2", project_dir=".", description="y", assignee="a2")
+  let claimed2 = match fresh2.claim(assignee="a2") {
+    Ok(t) => t
+    Err(e) => abort("claim 失败：" + e)
+  }
+  match claimed2.execute() {
+    Ok(_) => ()
+    Err(e) => abort("Claimed 应能 execute: " + e)
+  }
+}
