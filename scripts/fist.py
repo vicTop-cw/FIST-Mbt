@@ -247,7 +247,8 @@ def run_server():
     return proc
 
 
-def cmd_list_tools(proc):
+def cmd_list_tools():
+    # R86：原形参 proc 在函数体内零引用（check_dead_params_py 抓到）⇒ 去掉。
     """列出所有 MCP 工具名 —— 口径委托 `_tool_registry.real_tools()`（单一真源）。
 
     **为什么不再自己写正则（2026-10-25 收口，判例-16 同族）**：
@@ -331,7 +332,7 @@ def main():
     rest = argv[1:]
 
     if sub == "list-tools":
-        cmd_list_tools(None)
+        cmd_list_tools()
         return
 
     if sub == "call":
