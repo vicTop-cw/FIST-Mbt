@@ -74,7 +74,7 @@ test "rsv clear() 会一并清空预订（双后端，防跨次残留）" {
   mem.clear()
   assert_true(mem.rsv_get("src/mem.mbt") is None)
   // SQLite 后端
-  let db = bug462_unique_db("rsv_clear_test")
+  let db = @store.bug462_unique_db("rsv_clear_test")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed")
     Some(s) => {
@@ -95,7 +95,7 @@ test "rsv clear() 会一并清空预订（双后端，防跨次残留）" {
 
 ///|
 test "rsv SQLite 后端：同一库可持久化读回" {
-  let db = bug462_unique_db("rsv_persist_test")
+  let db = @store.bug462_unique_db("rsv_persist_test")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => {
@@ -174,7 +174,7 @@ test "rsv_action：四种结论互斥，同持有者排在过期之前" {
 /// BUG-136 的双后端同语义锁：同一串请求打过来，内存与 SQLite 必须给**同样的四段结论**，
 /// 且冲突那一次库里不许被覆盖（旧形状在这里会让第二个 agent 也拿到 reserved=true）。
 test "rsv_try_set：空闲/活体冲突/续期/过期让渡，两后端逐字段一致" {
-  let db = bug462_unique_db("rsv_try_test")
+  let db = @store.bug462_unique_db("rsv_try_test")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => ignore(s.clear())
@@ -731,7 +731,7 @@ test "locks_try_acquire: 两后端同构 —— 同序列同结论" {
 // 尤其「他人 live 锁 → granted=false、锁行不被覆盖、落一条 lock_denied」。
 
 test "locks_try_acquire: SQLite 后端 首取成功" {
-  let db = bug462_unique_db("lock_try_sqlite_fresh")
+  let db = @store.bug462_unique_db("lock_try_sqlite_fresh")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => ignore(s.clear())
@@ -760,7 +760,7 @@ test "locks_try_acquire: SQLite 后端 首取成功" {
 
 ///|
 test "locks_try_acquire: SQLite 后端 他人 live 锁 → granted=false + lock_denied + 锁行不动" {
-  let db = bug462_unique_db("lock_try_sqlite_conflict")
+  let db = @store.bug462_unique_db("lock_try_sqlite_conflict")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => ignore(s.clear())
@@ -813,7 +813,7 @@ test "locks_try_acquire: SQLite 后端 他人 live 锁 → granted=false + lock_
 
 ///|
 test "locks_try_acquire: SQLite 后端 旧主 TTL 已过 → taken_over + 覆盖为 exec_2" {
-  let db = bug462_unique_db("lock_try_sqlite_takeover")
+  let db = @store.bug462_unique_db("lock_try_sqlite_takeover")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => ignore(s.clear())
@@ -857,7 +857,7 @@ test "locks_try_acquire: SQLite 后端 旧主 TTL 已过 → taken_over + 覆盖
 
 ///|
 test "locks_try_acquire: SQLite 后端 已释放锁 → reserved 复用行" {
-  let db = bug462_unique_db("lock_try_sqlite_released")
+  let db = @store.bug462_unique_db("lock_try_sqlite_released")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => ignore(s.clear())
@@ -949,7 +949,8 @@ fn eq_rsv_pair(
   let mem = @store.MemoryStore::new()
   let sql = match @store.SqliteStore::open(":memory:") {
     Some(s) => s
-    None => return ("{\"error\":\"sqlite open\"}", "{\"error\":\"sqlite open\"}")
+    None =>
+      return ("{\"error\":\"sqlite open\"}", "{\"error\":\"sqlite open\"}")
   }
   match prev {
     Some((a, ttl, ts)) => {
@@ -1005,7 +1006,14 @@ test "rsv 双后端等价：B1~B4 四分支 + ttl/now 边界 + agent 三态" {
   for (label, prev, ra, rt, rc) in cases {
     let (mj, sj) = eq_rsv_pair(prev, ra, rt, rc)
     if mj != sj {
-      abort("双后端预订分歧 [" + label + "]\n  内存 = " + mj + "\n  SQLite = " + sj)
+      abort(
+        "双后端预订分歧 [" +
+        label +
+        "]\n  内存 = " +
+        mj +
+        "\n  SQLite = " +
+        sj,
+      )
     }
   }
   // 至少跑过一组，防空转（判例：「空集合恒真」不算证明）
@@ -1065,7 +1073,8 @@ fn eq_lock_pair(
   let mem = @store.MemoryStore::new()
   let sql = match @store.SqliteStore::open(":memory:") {
     Some(s) => s
-    None => return ("{\"error\":\"sqlite open\"}", "{\"error\":\"sqlite open\"}")
+    None =>
+      return ("{\"error\":\"sqlite open\"}", "{\"error\":\"sqlite open\"}")
   }
   match prev {
     Some((pa, ps, pts, pttl)) => {
@@ -1089,22 +1098,61 @@ fn eq_lock_pair(
 ///     ⇒ `L4 released->reserved` / `L5 expired` / `L6 violated` 三组会从 reserved 变 conflict；
 ///   · 若有人在 SQLite 侧把 `ttl < now` 写成 `<=` ⇒ `LEDGE other(ttl==now)` 这组分歧。
 test "rsv 双后端等价：锁层无锁/有锁 + status 四种 + ttl 边界" {
-  let cases : Array[(String, (String, String, String, String)?, String, String, String)] = [
+  let cases : Array[
+    (String, (String, String, String, String)?, String, String, String),
+  ] = [
     ("L0 none->reserved", None, "A", "t1", "t9"),
     ("L1 self->renewed", Some(("A", "active", "t0", "t9")), "A", "t1", "t9"),
     ("L2 other->conflict", Some(("B", "active", "t0", "t9")), "A", "t1", "t9"),
-    ("L3 other->taken_over(ttl<now)", Some(("B", "active", "t0", "t0")), "A", "t1", "t9"),
-    ("LEDGE other(ttl==now)", Some(("B", "active", "t0", "t1")), "A", "t1", "t9"),
-    ("L4 released->reserved", Some(("B", "released", "t0", "t9")), "A", "t1", "t9"),
-    ("L5 expired->reserved", Some(("B", "expired", "t0", "t9")), "A", "t1", "t9"),
-    ("L6 violated->reserved", Some(("B", "violated", "t0", "t9")), "A", "t1", "t9"),
+    (
+      "L3 other->taken_over(ttl<now)",
+      Some(("B", "active", "t0", "t0")),
+      "A",
+      "t1",
+      "t9",
+    ),
+    (
+      "LEDGE other(ttl==now)",
+      Some(("B", "active", "t0", "t1")),
+      "A",
+      "t1",
+      "t9",
+    ),
+    (
+      "L4 released->reserved",
+      Some(("B", "released", "t0", "t9")),
+      "A",
+      "t1",
+      "t9",
+    ),
+    (
+      "L5 expired->reserved",
+      Some(("B", "expired", "t0", "t9")),
+      "A",
+      "t1",
+      "t9",
+    ),
+    (
+      "L6 violated->reserved",
+      Some(("B", "violated", "t0", "t9")),
+      "A",
+      "t1",
+      "t9",
+    ),
     ("LEDGE empty->empty", Some(("", "active", "t0", "t9")), "", "t1", "t9"),
     ("LEDGE empty->A", Some(("", "active", "t0", "t9")), "A", "t1", "t9"),
   ]
   for (label, prev, ra, rt, rttl) in cases {
     let (mj, sj) = eq_lock_pair(prev, ra, rt, rttl)
     if mj != sj {
-      abort("双后端锁分歧 [" + label + "]\n  内存 = " + mj + "\n  SQLite = " + sj)
+      abort(
+        "双后端锁分歧 [" +
+        label +
+        "]\n  内存 = " +
+        mj +
+        "\n  SQLite = " +
+        sj,
+      )
     }
   }
   assert_true(cases.length() == 10)
@@ -1139,7 +1187,7 @@ test "rsv 双后端等价：locks_sweep 清扫数（Int32）一致" {
       scope=sc,
       agent=ag,
       status=st,
-      ts=ts,
+      ts~,
       ttl_until=ttl,
       meta="",
     )

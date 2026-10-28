@@ -39,7 +39,7 @@ test "executor 内存后端：save/list/覆盖幂等/clear" {
 
 ///|
 test "executor SQLite 后端：save/list/覆盖幂等/clear" {
-  let db = bug462_unique_db("executor_store_test")
+  let db = @store.bug462_unique_db("executor_store_test")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => {
@@ -68,7 +68,7 @@ test "executor clear()（整库清空）会一并清空注册（双后端）" {
   mem.clear()
   assert_eq(mem.executor_list().length(), 0)
   // SQLite
-  let db = bug462_unique_db("executor_clear_test")
+  let db = @store.bug462_unique_db("executor_clear_test")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed")
     Some(s) => {

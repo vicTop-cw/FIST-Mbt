@@ -4,7 +4,7 @@
 fn base_dir() -> String {
   // BUG-462：过去返回 "."（仓库根）⇒ 库文件散落仓根且并发时 database is locked。
   // 现在每次调用都取一个唯一目录（bug462_unique_db 同源 token）。
-  let d = bug462_unique_db("ms_base")
+  let d = @store.bug462_unique_db("ms_base")
   // 去掉 .db 后缀当目录名
   d.substring(start=0, end=d.length() - 3)
 }
@@ -247,7 +247,7 @@ test "data_dir 只接受相对路径（BUG-78 成对）" {
 /// 不存在 ⇒ 打开命名空间库时 js 侧 daqing FFI **throw**（不是返回 null）⇒ 未捕获异常打死 serve。
 /// 实测触发路径就是本仓对外宣称的一键自检 `python scripts/mcp_smoke.py`（干净树上先崩在 publish）。
 test "multi_store: 深层 data_dir 下打开命名空间库会补建目录（干净检出不再 unable to open）" {
-  let base = bug462_unique_dir("r28_mkdir_case")
+  let base = @store.bug462_unique_dir("r28_mkdir_case")
   let deep = base + "/a/b"
   // 自内向外清场（remove_dir 只删空目录）⇒ 下面的 assert_false 才真证明"原本不存在"
   for p in [deep, base + "/a", base] {
@@ -271,7 +271,7 @@ test "multi_store: 深层 data_dir 下打开命名空间库会补建目录（干
 /// 覆盖 `MultiStore::new` 管不到的那一面：调用方把 `FIST_DB_PATH` 指到**不存在的深层目录**。
 /// 同一根因（SQLite 不建中间目录 + FFI 打开失败是 throw），这一面由 `ensure_db_parent_dir` 兜住。
 test "sqlite_store: open 补建深层父目录（FIST_DB_PATH 指新目录不再抛）" {
-  let base = bug462_unique_dir("r28_deep_case")
+  let base = @store.bug462_unique_dir("r28_deep_case")
   let deep = base + "/x/y"
   for p in [deep, base + "/x", base] {
     @fs.remove_dir(p) catch {
