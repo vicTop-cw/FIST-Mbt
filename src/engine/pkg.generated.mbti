@@ -24,6 +24,10 @@ pub const COST_TIER_HOLD : String = "hold"
 
 pub const COST_TIER_PREMIUM : String = "premium"
 
+pub const TEST_ED25519_SEED_A : Bytes = b"\x3a\x7f\x21\xb4\x5c\x0e\x99\x12\xaa\x3d\x61\x8f\x24\xbe\x07\xc5\xd8\x19\x42\xe0\x7b\x53\x96\x2c\x1a\x88\xf4\x0d\x6e\x31\xb7\x95"
+
+pub const TEST_ED25519_SEED_B : Bytes = b"\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10"
+
 pub fn advance_mark_prefix() -> String
 
 pub fn agent_fp_of(String) -> String
@@ -134,6 +138,10 @@ pub let scope_permissions : Array[PermissionRule]
 
 pub fn strip_plan_annotations(String) -> String
 
+pub fn test_ed25519_pub_hex(Bytes) -> String
+
+pub fn test_ed25519_sign_hex(Bytes, String) -> String
+
 pub fn verify_challenge_sig(String, String, String) -> Bool
 
 // Errors
@@ -179,8 +187,10 @@ pub fn FistEngine::audit_execute_gate(Self, String, String) -> Result[Unit, Stri
 pub fn FistEngine::budget_split_by_dag(Self, Int32, root? : String, ns? : String) -> Json
 pub fn FistEngine::challenge(Self, task_id~ : String, by~ : String, factor? : Int32, strat? : String, now~ : String, critic? : @evolve.Archive?) -> Result[Json, String]
 pub fn FistEngine::challenge_cleanup(Self, String) -> Int32
+pub fn FistEngine::challenge_cleanup_on_issue(Self, String) -> Int32
 pub fn FistEngine::challenge_pending_count(Self, String, ns? : String) -> Int32
 pub fn FistEngine::challenge_persisted(Self) -> Bool
+pub fn FistEngine::challenge_table_stats(Self) -> (Int32, Int32, Int32)
 pub fn FistEngine::children_index(Self) -> Map[String, Array[String]]
 pub fn FistEngine::children_of(Self, String) -> Array[@core.Task]
 pub fn FistEngine::circuit_fail(Self, ns? : String, circuit~ : String, now_secs~ : Int32, window_secs? : Int32, threshold? : Int32, recovery_secs? : Int32) -> Json
@@ -260,8 +270,8 @@ pub fn FistEngine::rsv_release(Self, String, String) -> Bool
 pub fn FistEngine::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String, challenge_nonce? : String?, challenge_sig? : String?) -> Result[String, String]
 pub fn FistEngine::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String, challenge_nonce? : String?, challenge_sig? : String?) -> Result[@store.RsvOutcome, String]
 pub fn FistEngine::s3_consume_nonce(Self, String, String, ns? : String) -> Bool
-pub fn FistEngine::s3_issue_challenge(Self, String, Int32, ns? : String, issued_at? : String) -> String
-pub fn FistEngine::s3_issue_challenge_auto(Self, String, ns? : String, issued_at? : String) -> String
+pub fn FistEngine::s3_issue_challenge(Self, String, Int32, ns? : String, issued_at? : String, cleanup_cutoff? : String) -> String
+pub fn FistEngine::s3_issue_challenge_auto(Self, String, ns? : String, issued_at? : String, cleanup_cutoff? : String) -> String
 pub fn FistEngine::saga_register(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, now~ : String) -> Result[Json, String]
 pub fn FistEngine::saga_repair(Self, ns? : String, String, failed_step~ : String, mark? : Bool) -> Result[Json, String]
 pub fn FistEngine::saga_rollback(Self, ns? : String, String, mark? : Bool) -> Result[Json, String]
