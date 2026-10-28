@@ -5,6 +5,10 @@ import {
   "moonbitlang/core/json",
 }
 
+import {
+  "vicTop-cw/RX-MBT/rx",
+} for "wbtest"
+
 supported_targets = "js+native"
 
 options(

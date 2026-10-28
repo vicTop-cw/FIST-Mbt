@@ -608,6 +608,102 @@ pub fn secs_to_iso(secs : Int32) -> String {
   "\{y4}-\{two(m)}-\{two(d)}T\{two(h)}:\{two(mi)}:\{two(s)}Z"
 }
 
+// ---------------------------------------------------------------------------
+// 5h 滚动窗口门（A1' 单一真源）
+//
+// 这里**没有** `@rx.rate_limit` / `@rx.throttle`。不是没查，是查完发现 API 表达不了；
+// 逐条证据锁在 `rx_rate_limit_wbtest.mbt`（rx_1/rx_2），真源读数摘录：
+//   * RX-MBT 的 `throttle/rate_limit` 语义 = 「每 ms 毫秒最多放行 **1** 个值，窗口内多余的
+//     值**静默丢弃**」（.mooncakes/vicTop-cw/RX-MBT/rx/ops_time.mbt:288-352）——它表达不了
+//     「每模型窗口内 N 次配额」（本模块 limit=100/50），也没有「读回剩余配额」的 API；
+//     而 used/remaining/usage_pct/exhausted 是准入判定与 model_router_status 的公开读数。
+//   * 它的 `Clock` 是**虚拟时钟**：从 0 起、只能 `advance` 推进、没有墙钟源
+//     （ops_time.mbt:20-41）；本模块的时间戳由服务端盖章（BUG-33 政策），换不上。
+//
+// 所以窗口记账仍是确定性的手搓计数，但**收敛到下面这几个函数**——窗口到期判定、
+// 起点写入、配额消费、准入判定从此各只有一处实现（原来是 window_reset_check /
+// record_call / pool_pick / pick_with_* 五处各写一遍）。`now` 是本门的**唯一时钟注入点**：
+// 将来 B1 若把 RX `Clock` 落到引擎侧，只需换 `now` 的来源，记账逻辑不用改。
+// ---------------------------------------------------------------------------
+
+///|
+/// 窗口已流逝秒数；任一端 ISO 非法 → -1（调用方必须显式处理，不得当成 0 秒）
+pub fn window_elapsed_secs(window_start : String, now : String) -> Int32 {
+  let s = iso_to_secs(window_start)
+  if s < 0 {
+    return -1
+  }
+  let n = iso_to_secs(now)
+  if n < 0 {
+    return -1
+  }
+  n - s
+}
+
+///|
+/// 窗口是否到期：恰满 `window_seconds` 即算到期（`>=` 边界语义，与 rt_6 锁一致）。
+/// 起点为空/任一时间戳非法一律 false（不重置），绝不用坏时间戳清零用量。
+pub fn window_expired(
+  window_start : String,
+  now : String,
+  window_seconds : Int32,
+) -> Bool {
+  let elapsed = window_elapsed_secs(window_start, now)
+  elapsed >= 0 && elapsed >= window_seconds
+}
+
+///|
+/// 打开窗口：`window_start` 为空时记为 `now`；非空则**不动**。
+/// 起点只由「首次使用」或「过期重置」写——每次调用都往后推会让窗口永不过期。
+pub fn quota_window_open(m : ModelQuota, now : String) -> Unit {
+  if m.window_start == "" {
+    m.window_start = now
+  }
+}
+
+///|
+/// 到期则重置（used=0、window_start=now）；返回本次是否真的重置了一个窗口。
+pub fn quota_window_reset_if_expired(
+  m : ModelQuota,
+  now : String,
+  window_seconds : Int32,
+) -> Bool {
+  if m.window_start != "" && window_expired(m.window_start, now, window_seconds) {
+    m.used = 0
+    m.window_start = now
+    true
+  } else {
+    false
+  }
+}
+
+///|
+/// 记一次真实调用——窗口记账的**唯一 choke point**：先按到期重置，再初始化起点，最后 used+1。
+pub fn quota_window_consume(
+  m : ModelQuota,
+  now : String,
+  window_seconds : Int32,
+) -> Unit {
+  let _ = quota_window_reset_if_expired(m, now, window_seconds)
+  quota_window_open(m, now)
+  m.used = m.used + 1
+}
+
+///|
+/// 准入判定（四条硬约束的单一真源）：未达阈值 && 未耗尽 && 不在冷却 && 不在黑名单。
+/// 短路顺序与原 `pool_pick` 一致；阈值是**严格小于**（95% 已算达阈值）。
+pub fn quota_admitted(
+  m : ModelQuota,
+  threshold : Double,
+  now : String,
+  unhealthy_ids : Array[String],
+) -> Bool {
+  m.usage_pct() < threshold &&
+  !m.is_exhausted() &&
+  !m.in_cooldown(now) &&
+  !is_model_unhealthy(m.name, unhealthy_ids)
+}
+
 ///|
 /// 池内第一个可用模型下标（环形扫描：未达阈值且未耗尽且**不在黑名单**）；空池/全不可用 → None
 fn pool_pick(
@@ -627,11 +723,7 @@ fn pool_pick(
     // 格子重测 n 次 —— 游标停在耗尽模型上时整档被判不可用，于是"免费池还有健康模型"
     // 却切到付费档（白花钱 + switch_count 假增长）。负数绕回仍要保留（% 与被除数同号）。
     let idx = ((start_idx + i) % n + n) % n
-    let m = pool[idx]
-    if m.usage_pct() < threshold &&
-      !m.is_exhausted() &&
-      !m.in_cooldown(now) &&
-      !is_model_unhealthy(m.name, unhealthy_ids) {
+    if quota_admitted(pool[idx], threshold, now, unhealthy_ids) {
       return Some(idx)
     }
     i = i + 1
@@ -738,14 +830,8 @@ pub fn ModelRouter::window_reset_check(
   for pool in pools {
     let mut i = 0
     while i < pool.length() {
-      let m = pool[i]
-      if m.window_start != "" {
-        let s = iso_to_secs(m.window_start)
-        if s >= 0 && now_s - s >= win {
-          pool[i].used = 0
-          pool[i].window_start = now
-          reset = reset + 1
-        }
+      if quota_window_reset_if_expired(pool[i], now, win) {
+        reset = reset + 1
       }
       i = i + 1
     }
@@ -830,9 +916,7 @@ fn ModelRouter::pick_with_hint(
       } else {
         self.paid_idx = (idx + 1) % pool.length()
       }
-      if pool[idx].window_start == "" {
-        pool[idx].window_start = now
-      }
+      quota_window_open(pool[idx], now)
       Some({
         model_name: pool[idx].name,
         tier,
@@ -913,9 +997,7 @@ fn ModelRouter::pick_inner(
       match pool_pick(free, self.free_idx, th, now~, unhealthy_ids~) {
         Some(idx) => {
           self.free_idx = (idx + 1) % free.length()
-          if free[idx].window_start == "" {
-            free[idx].window_start = now
-          }
+          quota_window_open(free[idx], now)
           {
             model_name: free[idx].name,
             tier: Free,
@@ -935,9 +1017,7 @@ fn ModelRouter::pick_inner(
               self.last_switch_at = now
               self.last_reason = "free tier reached \{th}% threshold"
               self.paid_idx = (idx + 1) % paid.length()
-              if paid[idx].window_start == "" {
-                paid[idx].window_start = now
-              }
+              quota_window_open(paid[idx], now)
               {
                 model_name: paid[idx].name,
                 tier: Paid,
@@ -968,9 +1048,7 @@ fn ModelRouter::pick_inner(
       match pool_pick(paid, self.paid_idx, th, now~, unhealthy_ids~) {
         Some(idx) => {
           self.paid_idx = (idx + 1) % paid.length()
-          if paid[idx].window_start == "" {
-            paid[idx].window_start = now
-          }
+          quota_window_open(paid[idx], now)
           {
             model_name: paid[idx].name,
             tier: Paid,
@@ -990,9 +1068,7 @@ fn ModelRouter::pick_inner(
               self.last_switch_at = now
               self.last_reason = "paid pool exhausted, fallback to free"
               self.free_idx = (idx + 1) % free.length()
-              if free[idx].window_start == "" {
-                free[idx].window_start = now
-              }
+              quota_window_open(free[idx], now)
               {
                 model_name: free[idx].name,
                 tier: Free,
@@ -1036,10 +1112,7 @@ pub fn ModelRouter::record_call(
     let mut i = 0
     while i < pool.length() {
       if pool[i].name == model {
-        pool[i].used = pool[i].used + 1
-        if pool[i].window_start == "" {
-          pool[i].window_start = now
-        }
+        quota_window_consume(pool[i], now, self.config.window_seconds)
         hit = true
       }
       i = i + 1
