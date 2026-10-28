@@ -20,6 +20,67 @@ fn t744_rm(path : String) -> Unit {
 }
 
 ///|
+/// 每进程唯一基线目录（BUG-461）。
+///
+/// 旧夹具基线是**进程间共享的固定相对路径**（`temp/t744_legacy_only` 等）：
+/// 两个测试进程同时打开同一个 `.db` ⇒ sqlite 报 `database is locked`
+/// （实测后台全量 6 格假红、同一份代码单包 97/97 全绿）。
+/// 因此基线必须**每次取用都不同**。三个来源**组合**用，不是择一：
+///   · `@env.rand(8)`：跨进程加密熵（node crypto / native BCryptGenRandom），
+///     **唯一性由它保证**——时间戳只降低碰撞概率，不构成保证；
+///   · `@env.now()`：可读时间戳，便于事后在 `temp/` 里认出是哪一轮的残留；
+///   · `FIST_T744_RUN_ID`：可选人工标签，只做**附加**可检索性，不替换唯一性来源。
+fn t744_run_token() -> String {
+  let rand_part = match @env.rand(8) {
+    Some(bs) => {
+      let mut s = ""
+      for i = 0; i < bs.length(); i = i + 1 {
+        if i > 0 {
+          s = s + "-"
+        }
+        s = s + bs[i].to_int().to_string()
+      }
+      s
+    }
+    // 熵源拿不到：明确标出来，不伪装成"唯一"
+    None => "noentropy"
+  }
+  let label = match @env.get_env_var("FIST_T744_RUN_ID") {
+    Some(v) if v != "" => "_" + v
+    _ => ""
+  }
+  @env.now().to_string() + "-" + rand_part + label
+}
+
+///|
+/// 取一个**每次调用都不同**的夹具基线目录：`temp/t744_<tag>_<token>`。
+fn t744_base(tag : String) -> String {
+  "temp/t744_" + tag + "_" + t744_run_token()
+}
+
+///|
+/// 递归删目录（用后清理）。不存在不算错；删不掉也不抛——清理失败不该让断言假红，
+/// 残留只落在 gitignore 的 `temp/` 下，不会往仓库根泄漏。
+fn t744_rm_tree(path : String) -> Unit {
+  if !@fs.path_exists(path) {
+    return
+  }
+  let names = @fs.read_dir(path) catch { _ => return }
+  for name in names {
+    let child = path + "/" + name
+    let is_dir = @fs.is_dir(child) catch { _ => false }
+    if is_dir {
+      t744_rm_tree(child)
+    } else {
+      t744_rm(child)
+    }
+  }
+  @fs.remove_dir(path) catch {
+    _ => ()
+  }
+}
+
+///|
 /// 清场：主库 + WAL 侧车 + 覆盖留档，避免上一次运行的残留让"应当为空"的断言假红。
 fn t744_reset(dir : String, ns : String) -> Unit {
   let p = dir + "/" + ns + ".db"
@@ -54,6 +115,13 @@ fn t744_make_db(dir : String, ns : String, n : Int32) -> Unit {
           Err(msg) => abort("T0r744 夹具 create_task 失败: " + msg)
         }
         i = i + 1
+      }
+      // 夹具自持的 sqlite 句柄必须显式关掉：Windows 上未关闭的句柄会把 `.db` 钉住，
+      // 用例末尾的 t744_rm_tree 就删不掉（表现为"清理跑了但目录还在"）。
+      // 产品侧 `MultiStore::close_all` 同样只从 map 里摘掉、不关底层句柄（BUG-461 附带发现，已上报）。
+      match s.db {
+        Some(db) => db.close()
+        None => ()
       }
     }
   }
@@ -109,7 +177,7 @@ test "t744_1_migration_reason_table" {
 ///
 /// 判据不是"新文件存在"（建空库也能过），而是新库 `tasks` 行数 == 旧库行数。
 test "t744_2_legacy_only_migrates" {
-  let base = "temp/t744_legacy_only"
+  let base = t744_base("legacy_only")
   let ns = "ns-t744-only"
   let legacy_dir = base
   let new_dir = base + "/.fist-mbt/data"
@@ -134,6 +202,7 @@ test "t744_2_legacy_only_migrates" {
   // 回执 note 点名两边路径（"做了多少"要自证）
   assert_true(m.note.contains("3 条"))
   assert_true(m.note.contains(m.to))
+  t744_rm_tree(base)
 }
 
 ///|
@@ -142,7 +211,7 @@ test "t744_2_legacy_only_migrates" {
 /// 这是 BUG-389 那版修复**没有**覆盖的档：旧代码逻辑是"旧库存在就复用旧位置"，
 /// 于是新空壳永远不会被填上，用户按 BUG-78 默认路径去看就是"0 条任务"。
 test "t744_3_empty_target_migrates" {
-  let base = "temp/t744_empty_target"
+  let base = t744_base("empty_target")
   let ns = "ns-t744-empty"
   let legacy_dir = base
   let new_dir = base + "/.fist-mbt/data"
@@ -160,6 +229,7 @@ test "t744_3_empty_target_migrates" {
   assert_eq(db_file_task_count(m.to), 4)
   // 空壳没有留档价值：这次不该产生 .replaced-bak
   assert_false(db_file_exists(m.to + ".replaced-bak"))
+  t744_rm_tree(base)
 }
 
 ///|
@@ -168,7 +238,7 @@ test "t744_3_empty_target_migrates" {
 /// 自动覆盖在这里等于静默丢新库的数据；判定必须停在 conflict 并给出两条出路，
 /// 由人用 `migrate=true` 或 `data_dir="."` 显式选择。
 test "t744_4_conflict_does_not_touch_either_side" {
-  let base = "temp/t744_conflict"
+  let base = t744_base("conflict")
   let ns = "ns-t744-conflict"
   let legacy_dir = base
   let new_dir = base + "/.fist-mbt/data"
@@ -190,12 +260,13 @@ test "t744_4_conflict_does_not_touch_either_side" {
   assert_true(m.note.contains("conflict"))
   assert_true(m.note.contains("migrate=true"))
   assert_true(m.note.contains("data_dir=\".\""))
+  t744_rm_tree(base)
 }
 
 ///|
 /// 锁 5：两边都没有库 → no-legacy，不建任何文件（不能"迁移"出一个空库）。
 test "t744_5_no_legacy_creates_nothing" {
-  let base = "temp/t744_none"
+  let base = t744_base("none")
   let ns = "ns-t744-none"
   let legacy_dir = base
   let new_dir = base + "/.fist-mbt/data"
@@ -209,6 +280,7 @@ test "t744_5_no_legacy_creates_nothing" {
   // 纯判定，不算行数（也不该把"打不开"误算成"有 0 条"）
   assert_eq(m.legacy_tasks, 0)
   assert_eq(m.new_tasks, 0)
+  t744_rm_tree(base)
 }
 
 ///|
@@ -217,7 +289,7 @@ test "t744_5_no_legacy_creates_nothing" {
 /// 没有这一格，第二次 store_open 会怎么走全靠猜：重复复制会白白改写新库，
 /// 而错误地判成 conflict 会让"升级完成后每次 open 都亮红灯"。
 test "t744_6_second_open_is_already_migrated" {
-  let base = "temp/t744_idem"
+  let base = t744_base("idem")
   let ns = "ns-t744-idem"
   let legacy_dir = base
   let new_dir = base + "/.fist-mbt/data"
@@ -233,6 +305,7 @@ test "t744_6_second_open_is_already_migrated" {
   assert_eq(second.legacy_tasks, 3)
   assert_eq(second.new_tasks, 3)
   assert_eq(db_file_task_count(new_dir + "/" + ns + ".db"), 3)
+  t744_rm_tree(base)
 }
 
 ///|
@@ -241,7 +314,7 @@ test "t744_6_second_open_is_already_migrated" {
 /// 强制档是唯一**会覆盖已有数据**的路径，因此"覆盖前留档"必须锁住：
 /// 留档文件里要能数出新库原来的 2 条任务。
 test "t744_7_forced_overwrites_with_backup" {
-  let base = "temp/t744_forced"
+  let base = t744_base("forced")
   let ns = "ns-t744-forced"
   let legacy_dir = base
   let new_dir = base + "/.fist-mbt/data"
@@ -259,6 +332,7 @@ test "t744_7_forced_overwrites_with_backup" {
   assert_true(db_file_exists(m.backup))
   // 留档里是**被覆盖掉的新库**内容，不是迁移后的内容
   assert_eq(db_file_task_count(m.backup), 2)
+  t744_rm_tree(base)
 }
 
 ///|
@@ -266,7 +340,7 @@ test "t744_7_forced_overwrites_with_backup" {
 ///
 /// 这是验收要求 4 的直接对应面：不含这三个字段的回执等于"迁移做得再对也没人知道"。
 test "t744_8_receipt_json_is_self_evident" {
-  let base = "temp/t744_receipt"
+  let base = t744_base("receipt")
   let ns = "ns-t744-receipt"
   let legacy_dir = base
   let new_dir = base + "/.fist-mbt/data"
@@ -286,6 +360,7 @@ test "t744_8_receipt_json_is_self_evident" {
   assert_true(sj.contains("\"applied\":false"))
   assert_true(sj.contains("\"migrated_tasks\":0"))
   assert_true(sj.contains("explicit-data-dir"))
+  t744_rm_tree(base)
 }
 
 ///|
@@ -295,7 +370,7 @@ test "t744_8_receipt_json_is_self_evident" {
 /// 按 BUG-78 新默认位置 `MultiStore::new(data_dir=new_dir)` 打开后，
 /// 旧库里的任务能不能被列出来。
 test "t744_9_tasks_visible_after_migration" {
-  let base = "temp/t744_visible"
+  let base = t744_base("visible")
   let ns = "ns-t744-visible"
   let legacy_dir = base
   let new_dir = base + "/.fist-mbt/data"
@@ -310,9 +385,15 @@ test "t744_9_tasks_visible_after_migration" {
     Some(s) => {
       let tasks = s.list_tasks_in(ns)
       assert_eq(tasks.length(), 3)
+      // 同 t744_make_db：显式关掉夹具句柄，清理才删得掉（close_all 不关句柄）
+      match s.db {
+        Some(db) => db.close()
+        None => ()
+      }
     }
   }
   ms.close_all()
+  t744_rm_tree(base)
 }
 
 ///|
@@ -321,7 +402,7 @@ test "t744_9_tasks_visible_after_migration" {
 /// 为什么单独一格：把脏文件搬进新默认位置等于"把问题搬到更难发现的地方"——
 /// 迁移完 store_open 打开它照样炸，而审计面看到的是"迁移成功"。
 test "t744_11_invalid_legacy_is_refused" {
-  let base = "temp/t744_invalid_legacy"
+  let base = t744_base("invalid_legacy")
   let ns = "ns-t744-invalid"
   let legacy_dir = base
   let new_dir = base + "/.fist-mbt/data"
@@ -346,6 +427,7 @@ test "t744_11_invalid_legacy_is_refused" {
   assert_false(db_file_exists(new_dir + "/" + ns + ".db"))
   assert_true(db_file_exists(legacy_dir + "/" + ns + ".db"))
   assert_true(m.note.contains(legacy_dir + "/" + ns + ".db"))
+  t744_rm_tree(base)
 }
 
 ///|
@@ -353,7 +435,7 @@ test "t744_11_invalid_legacy_is_refused" {
 /// 且**探测本身不改物证**（空壳判据依赖这一点：探一下就把空壳变成"有表的新库"，
 /// 后续所有判定都会失去依据）。
 test "t744_10_task_count_probe_boundaries" {
-  let base = "temp/t744_probe"
+  let base = t744_base("probe")
   ensure_dir_tree(base)
   // 缺失文件 → 0
   let missing = base + "/ns-nope.db"
@@ -396,4 +478,57 @@ test "t744_10_task_count_probe_boundaries" {
       db.close()
     }
   }
+  t744_rm_tree(base)
+}
+
+///|
+/// 锁 12：基线自检——**两次取到的基线必须互不相等**（BUG-461 的防回退锁）。
+///
+/// 为什么这格必须存在：夹具路径一旦被改回固定常量，并发跑测就重新变成
+/// `database is locked`，而那几格假红只在**两个进程同时跑**时出现——
+/// 单进程全绿会把它伪装成"已经修好"。这一格把"基线唯一"变成可断言的属性。
+test "t744_12_unique_base_selftest" {
+  let a = t744_base("selftest")
+  let b = t744_base("selftest")
+  // 核心断言：同一 tag 两次取到不同基线（改回固定路径 ⇒ 这里立刻红）
+  assert_true(a != b)
+  // 基线必须落在 temp/ 下：不往仓库根/产品数据目录泄漏
+  assert_true(a.has_prefix("temp/t744_selftest_"))
+  assert_true(b.has_prefix("temp/t744_selftest_"))
+  // 确实带了唯一后缀，而不是把 tag 直接当路径用
+  let prefix_len = "temp/t744_selftest_".length()
+  assert_true(a.length() > prefix_len)
+  // 两个基线可以同时存在（并发跑测的形态），各自独立落盘、互不覆盖
+  ensure_dir_tree(a)
+  ensure_dir_tree(b)
+  let wa : Unit? = Some(
+    @fs.write_string_to_file(a + "/marker.txt", "a", encoding="utf8"),
+  ) catch {
+    _ => None
+  }
+  let wb : Unit? = Some(
+    @fs.write_string_to_file(b + "/marker.txt", "b", encoding="utf8"),
+  ) catch {
+    _ => None
+  }
+  assert_true(wa is Some(_))
+  assert_true(wb is Some(_))
+  assert_true(@fs.path_exists(a + "/marker.txt"))
+  assert_true(@fs.path_exists(b + "/marker.txt"))
+  // 环境变量注入只做**附加**标签，不替换唯一性来源（取完立刻还原，不污染进程）
+  @env.set_env_var("FIST_T744_RUN_ID", "lane-h-store")
+  let c = t744_base("selftest")
+  let d = t744_base("selftest")
+  @env.unset_env_var("FIST_T744_RUN_ID")
+  assert_true(c != d)
+  assert_true(c.has_suffix("_lane-h-store"))
+  // 用后清理：删干净，不留在 temp/ 里
+  t744_rm_tree(a)
+  t744_rm_tree(b)
+  t744_rm_tree(c)
+  t744_rm_tree(d)
+  assert_false(@fs.path_exists(a))
+  assert_false(@fs.path_exists(b))
+  assert_false(@fs.path_exists(c))
+  assert_false(@fs.path_exists(d))
 }
