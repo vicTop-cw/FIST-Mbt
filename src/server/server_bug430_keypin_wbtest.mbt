@@ -145,7 +145,13 @@ fn kp_tool_block(src : String) -> String {
         "找不到 agent_register_key 工具 —— 判据没跑到被测面",
       )
   }
-  kp_slice(src, i, i + 9000)
+  // R24 修：同 `bs_block` —— 固定 9000 字符窗口在描述变长后会把 handler 切掉。
+  // 改成切到下一个工具注册起点。
+  let j = match kp_find_from(src, "s1 = instrumented_tool(", i + 20) {
+    Some(x) => x
+    None => src.length()
+  }
+  kp_slice(src, i, j)
 }
 
 ///|
@@ -222,11 +228,15 @@ test "kp_03_different_key_is_rejected_with_reason" {
   assert_true(k_old != k_new)
   assert_eq(key_pin_verdict(k_old, k_new), key_pin_reject_different)
   let msg = key_pin_reject_message(k_old, k_new)
-  // 错误文案关键片段：拒绝语义 + 去路（轮换尚未实现，需 owner 决策）
+  // 错误文案关键片段：拒绝语义 + **可执行的去路**。
+  // ⚠️ R24 修：原断言「尚未实现 / owner」是**轮换实现前**的文案；S3 第八段落地后
+  // 文案改成了「已实现 + 带 rotate_sig 即可轮换 / 私钥丢了用 agent_revoke_key 吊销」。
+  // 断言跟着**语义**走（拒绝 + 两条去路），不钉过时的字面量 —— 与 R1 同一条纪律。
   assert_true(msg.contains("拒绝覆盖"))
   assert_true(msg.contains("密钥轮换"))
-  assert_true(msg.contains("尚未实现"))
-  assert_true(msg.contains("owner"))
+  assert_true(msg.contains("S3 第八段已实现"))
+  assert_true(msg.contains("rotate_sig"))
+  assert_true(msg.contains("agent_revoke_key"))
   // 必须亮出两把键的前缀 —— 否则调用方分不清「不同键」与「格式/大小写误判」
   assert_true(msg.contains(substring_at(k_old, 0, 16)))
   assert_true(msg.contains(substring_at(k_new, 0, 16)))
