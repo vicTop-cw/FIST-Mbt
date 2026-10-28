@@ -498,7 +498,7 @@ test "selfdrive_8_agent_contract_fields" {
 /// （旧实现写死字面量 "now"，审视轮拿这份视图就完全没有新鲜度判据）。
 test "selfdrive_b82_export_stamp_成对" {
   let dir = sd_dir("sd_b82_export")
-  let e = sd_engine("sd_b82.db")
+  let e = sd_engine(".fist-mbt/tmp/sd_b82.db")
   let path = dir + "/memory/task.md"
   match
     @ops.selfdrive_export_tasks(e, dir, "sd-b82", now="2026-09-27T07:00:00Z") {

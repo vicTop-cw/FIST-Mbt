@@ -300,7 +300,7 @@ test "omega 验证者不得审核自己创建的语料" {
 
 ///|
 test "omega 语料真正落库：同一 SQLite 库换引擎实例仍可读" {
-  let db = "omega_strong_persist.db"
+  let db = ".fist-mbt/tmp/omega_strong_persist.db"
   // 幂等：先经 SqliteStore 公共 API 清空上次残留任务，保证测试可重复执行
   match @store.SqliteStore::open(db) {
     Some(s) => ignore(s.clear())
@@ -348,7 +348,7 @@ test "omega 语料真正落库：同一 SQLite 库换引擎实例仍可读" {
 
 ///|
 test "omega 打回自动落 [lesson] 教训（spec 打回 + 复验打回 + 超限升级），同一库可读" {
-  let db = "omega_auto_lesson.db"
+  let db = ".fist-mbt/tmp/omega_auto_lesson.db"
   // 幂等：先经 SqliteStore 公共 API 清空上次残留任务，保证测试可重复执行
   match @store.SqliteStore::open(db) {
     Some(s) => ignore(s.clear())

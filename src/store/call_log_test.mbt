@@ -31,7 +31,7 @@ fn clog_bool(j : Json, key : String) -> Bool {
 
 ///|
 test "call_log_sql_roundtrip" {
-  let s = match @store.SqliteStore::open("calllog_c1.db") {
+  let s = match @store.SqliteStore::open(".fist-mbt/tmp/calllog_c1.db") {
     Some(x) => x
     None => abort("sqlite open failed")
   }
