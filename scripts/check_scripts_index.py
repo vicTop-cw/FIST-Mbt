@@ -274,9 +274,9 @@ def selftest() -> int:
         print(("  OK   " if ok else "  FAIL ") + n + " — " + d)
     if failed:
         print("SELFTEST FAIL %d/%d 未过：%s" % (len(failed), len(cells), ", ".join(failed)))
-        return 1
+        sys.exit(1)  # NO_CALL_FACE J2：自检函数自己就是调用面
     print("SELFTEST PASS %d/%d（子串假绿已消除、真登记不误伤）" % (len(cells), len(cells)))
-    return 0
+    sys.exit(0)  # NO_CALL_FACE J2：自检函数自己就是调用面
 
 
 def main() -> int:

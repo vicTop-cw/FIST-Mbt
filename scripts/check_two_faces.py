@@ -566,8 +566,8 @@ def selftest() -> int:
     print("\n[selftest] %d/%d 格通过" % (ok, len(cells)))
     if ok != len(cells):
         print("[selftest] ✗ 有格未通过 —— 判据自身坏了（rc=4 契约由调用方处理）")
-        return 4
-    return 0
+        sys.exit(4)  # NO_CALL_FACE J2：自检函数自己就是调用面
+    sys.exit(0)  # NO_CALL_FACE J2：自检函数自己就是调用面
 
 
 def main(argv=None) -> int:
