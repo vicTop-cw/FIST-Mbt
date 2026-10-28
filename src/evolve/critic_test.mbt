@@ -113,3 +113,49 @@ test "evolve_critic 中性 score=0.5：不得被一个没算过的分数一票�
     _ => abort("显式低分应拒收: " + low.stringify())
   }
 }
+
+///|
+/// R140：`critic_most_similar` 的**边界语义**（此前零直接引用，只被 `critic_review` 间接用）。
+///
+/// 关键一条：**零重合必须返回 None**，不能返回 `("", "", 0.0)` 这种"空 id 的假最相似"——
+/// 那会让回执渲染出「最相似：（空）」并把 `sim` 假成 0 却带一个 id，读者无法区分
+/// 「最相似的是空」与「根本没有相似项」。
+test "critic_most_similar_boundaries" {
+  let arc = cr_engine()
+  // ① 空库 ⇒ None
+  assert_true(@evolve.critic_most_similar(arc, "任意目标") == None)
+  cr_add(arc, "熔断器三态状态机与半开探测")
+  // ② 候选 tokenize 后为空（纯空白）⇒ None
+  assert_true(@evolve.critic_most_similar(arc, "   ") == None)
+  // ③ 零重合 ⇒ None（不是空 id 假结果）
+  assert_true(@evolve.critic_most_similar(arc, "qqq zzz") == None)
+  // ④ 有重合 ⇒ Some，且 id/note 非空、相似度落在 (0,1]
+  match @evolve.critic_most_similar(arc, "熔断器半开探测") {
+    None => abort("有重合却返回 None")
+    Some((id, note, sim)) => {
+      assert_true(!id.is_empty())
+      assert_true(!note.is_empty())
+      assert_true(sim > 0.0 && sim <= 1.0)
+    }
+  }
+}
+
+///|
+/// R140：`critic_dup_sim()` 是**判重阈值的单真源**（0.70），被 `critic_review` 的
+/// `sim < dup_sim` 当作拒收边界。值被改动会**静默**改变"多像才算重复"。
+/// 变异对照：改成 0.10 ⇒ 本格红，且大量全新目标会被判成重复。
+test "critic_dup_sim_is_documented_threshold" {
+  assert_eq(@evolve.critic_dup_sim(), 0.70)
+}
+
+///|
+/// R140：`score_of_lesson` 的归一语义 —— **0.0 视为"没算过"⇒ 0.5 中性**，其余原样。
+///
+/// 为什么钉它：`critic_review` 里「score==0.5（未计分）⇒ combined = novelty」那条分支
+/// 依赖的正是这个归一；若 0.0 原样传下去，**未计分条目会被当成"极差"而遭拒收**
+/// （静默误拒，比崩溃难查）。
+test "score_of_lesson_neutralizes_zero" {
+  assert_eq(@evolve.score_of_lesson(0.0), 0.5)
+  assert_eq(@evolve.score_of_lesson(0.9), 0.9)
+  assert_eq(@evolve.score_of_lesson(0.5), 0.5)
+}
