@@ -71,6 +71,10 @@ RE_AGG_ECHO = re.compile(r"echo\b[^\n]*\bOK=\$?\{?\w+\}?[^\n]*\bFAIL=")
 RE_NAME_WARN = re.compile(r"echo\b[^\n]*::warning::failed branches:", re.M)
 RE_EMPTY_GUARD = re.compile(r"if\s+\[\s*-z\s+\"?\$?\{?\w+\}?\"?\s+\]", re.M)
 RE_PIPEFAIL = re.compile(r"set\s+-o\s+pipefail")
+# S6：`git push --force` 必须配「反丢历史」祖先守卫（2026-10-28 实测事故：无条件 force
+#     覆盖 GitHub 同名分支，抹掉 431 笔提交 / 当日 159 笔，而 workflow 自己报绿）。
+RE_FORCE = re.compile(r"git\s+push\b[^\n]*--force")
+RE_ANCESTRY = re.compile(r"merge-base\s+--is-ancestor")
 RE_DEVNULL = re.compile(r"git\s+push\b[^\n]*2>\s*/dev/null")
 # 真陷阱形状：命令替换里带 push 的 stderr 重定向，后面还接了管道（尾部命令的 rc 顶替 push 的）
 RE_TRAP = re.compile(r"\$\([^)]*git\s+push\b[^)]*2>\s*/dev/null[^)]*\|")
@@ -179,6 +183,12 @@ def judge(text):
                     v.append(("S5", bi + 1, li,
                               "pipefail 下 `$( … git push … 2>/dev/null | … )` 的尾部命令会吃掉 push 的 rc",
                               ln.strip()))
+    # S6 force 前必须有「反丢历史」祖先守卫：无条件 force 会静默抹掉远端独有提交，
+    #    而 workflow 照常报绿。只允许「远端侧是本分支祖先」（纯快进）时才 force。
+    if RE_FORCE.search(whole) and not RE_ANCESTRY.search(whole):
+        v.append(("S6", 0, 0,
+                  "有 `git push --force` 却没有 `merge-base --is-ancestor` 反丢历史守卫"
+                  "（无条件 force 会静默抹掉远端独有提交）", ""))
     return v, m
 
 
@@ -187,7 +197,7 @@ def report(path, violations, metrics):
     print("  读数：run 块 %d / push 行 %d / 聚合 echo %d"
           % (metrics.get("n_bodies", 0), metrics.get("n_push_lines", 0), metrics.get("n_agg_echo", 0)))
     if not violations:
-        print("PASS 同步 workflow 的失败读数齐备（S1 禁静默吞 / S2 聚合 / S3 点名 / S4 空守卫 / S5 pipefail）")
+        print("PASS 同步 workflow 的失败读数齐备（S1 禁静默吞 / S2 聚合 / S3 点名 / S4 空守卫 / S5 pipefail / S6 force 前祖先守卫）")
         return 0
     for code, bi, li, why, line in violations:
         loc = "（run 块 %d 第 %d 行）" % (bi, li) if li else ""
@@ -217,6 +227,9 @@ def selftest():
         "          B=$(git for-each-ref refs/heads)\n"
         "          if [ -z \"$B\" ]; then\n            echo \"::warning::empty\"\n          fi\n"
         "          for b in $B; do\n"
+        "            if git rev-parse --verify --quiet \"refs/remotes/gh/$b\" >/dev/null 2>&1; then\n"
+        "              if ! git merge-base --is-ancestor \"refs/remotes/gh/$b\" \"$b\"; then\n"
+        "                continue\n              fi\n            fi\n"
         "            if git push --force gh \"$b:$b\" 2>/dev/null; then\n"
         "              OK=$((OK+1))\n            else\n              FAIL=$((FAIL+1))\n            fi\n"
         "          done\n"
@@ -261,6 +274,17 @@ def selftest():
     cell("S2-only-init", only_init, 1)
     cell("S3-no-name", no_name, 1)
     cell("S5-pipefail", pipefail_trap, 1)
+    # S6：把「反丢历史」祖先守卫摘掉必须红（判例-30：改的是代码面，不是注释）
+    force_no_guard = clean.replace(
+        "            if git rev-parse --verify --quiet \"refs/remotes/gh/$b\" >/dev/null 2>&1; then\n"
+        "              if ! git merge-base --is-ancestor \"refs/remotes/gh/$b\" \"$b\"; then\n"
+        "                continue\n              fi\n            fi\n",
+        "",
+    )
+    v6, _ = judge(force_no_guard)
+    cells.append("S6-force-no-guard")
+    if not any(x[0] == "S6" for x in v6):
+        fails.append("S6-force-no-guard: 摘掉祖先守卫后没有 S6 违例（锁恒绿）")
     # S4：把「空枚举守卫」摘掉必须红
     v4, _ = judge(no_guard.replace("if [ -z \"$B\" ]; then", "# guard removed"))
     cells.append("S4-no-guard")
