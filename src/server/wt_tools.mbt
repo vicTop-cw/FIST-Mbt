@@ -139,8 +139,11 @@ pub fn wt_state_of(
   if !created_sha.is_empty() && !head_sha.is_empty() && head_sha == created_sha {
     return ("idle", "从创建锚点起一次都没提交过（按账判定，不按年龄）")
   }
-  // 7) 超龄
-  if age_min > ttl_min {
+  // 7) 超龄 —— ⚠️ ttl 先钳制（R106）：账里/入参给 `ttl_min <= 0` 时，
+  // 原来 `age_min > ttl_min` 对任何沙箱恒真 ⇒ **刚创建的沙箱立刻判 stale**（可回收），
+  // 等于把活沙箱当垃圾。非正值一律按默认 120 分钟算（宁可留久，不可误收）。
+  let eff_ttl = if ttl_min <= 0 { 120 } else { ttl_min }
+  if age_min > eff_ttl {
     return ("stale", "超过 TTL 且未并入，属可回收的陈旧沙箱")
   }
   ("fresh", "在用：未并入、未超龄、无未落盘改动")
@@ -397,6 +400,10 @@ pub async fn wt_create_impl(
   if !branch.is_empty() && detach {
     return Err("branch 与 detach 互斥：要么开分支，要么 detached HEAD")
   }
+  // R106：ttl_min 必须为正 —— 0/负值会让账一落盘就被判超龄（沙箱刚建就可回收）。
+  if ttl_min <= 0 {
+    return Err("非法 ttl_min：必须 > 0（分钟；缺省 120）")
+  }
   let eff_branch = if detach {
     ""
   } else if branch.is_empty() {
@@ -405,6 +412,17 @@ pub async fn wt_create_impl(
     branch
   }
   let eff_base = if base.is_empty() { "HEAD" } else { base }
+  // R106：同 task 已有账**且指向别的路径** ⇒ 拒绝。原来 `wt_save` 直接覆盖，
+  // 前一个沙箱的账就此消失（目录还在、账没了 ⇒ unregistered）——正是本功能要防的「账对不上」。
+  match wt_load(project_dir, eff_task) {
+    Some(prev) => {
+      let prev_path = wt_s(prev, "path")
+      if !prev_path.is_empty() && prev_path != path {
+        return Err("该 task 已有账且指向别的路径（task=" + eff_task + ", path=" + prev_path + "）；先 wt_destroy 或换 task")
+      }
+    }
+    None => ()
+  }
   let args : Array[String] = ["worktree", "add"]
   if detach {
     args.push("--detach")
