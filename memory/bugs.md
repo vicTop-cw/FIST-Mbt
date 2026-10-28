@@ -8207,7 +8207,7 @@ BUG-424（`legacy_grant` 引入，本条的来源）· BUG-145（互斥由后端
 
 ### FIXED(2026-10-26T17:55:08Z / BUG-429)
 - evidence: commit e3457b20（2 文件）。改在 src/engine/engine_rsv.mbt 的 locks_try_acquire legacy_grant 分支：原写法 o.relabel("renewed_legacy_grant", o.granted) 无条件打标，现改为 if o.granted { o.relabel("renewed_legacy_grant", true) } else { o }。缺陷：locks_get(:202) 与 locks_try_acquire(:205) 是两次独立 IO，中间别的 agent 可抢到同一把锁且 ttl 新鲜 ⇒ 本次写被后端拒 ⇒ granted=false，此时回执变成 granted=false + action="renewed_legacy_grant" + agent=别人 —— 三个字段互相矛盾；同文件 Unregistered 分支写对了 if o.granted，legacy 分支漏抄。修复后被后端拒时保留后端原标签（conflict/taken_over 是更硬的信息）。同时确认了更重要的一件事：legacy_grant 不是「先读后写」——Lane AD 的判据是「读到的值能不能改变裁决，不是有没有读两次」；locks_get 那次读只能把结果推向更保守（不像自己⇒直接拒绝），无法让本该被拒的请求变成 granted，因为 granted 永远由后端 ON CONFLICT ... WHERE + 写后回读算（store_sqlite.mbt:1438，且 :1439 ignore(may_write) 明确本地裁决不决定发不发那笔写）⇒ 它是附加闸门不是裁决器。回归锁新增 src/engine/lock_legacy_grant_wbtest.mbt 3 条：锁1=行为正例，自己续自己 active 锁⇒granted=true 且 action=renewed_legacy_grant；锁2=接线格，断言 if o.granted { 那道闸真在源码里 + 反向断言不许再出现无条件 relabel(..., o.granted)；锁3=反例，别人持有的 active 锁⇒硬拒且不许标 legacy。锁2 是源码文本断言（诚实标注脆弱，因 granted=false 那一半没有任何行为面能覆盖，单线程构造不出「两次 IO 之间被抢锁」且判例-31 不许 sleep 抢时序）。验证：moon check --target js = 57 warnings 0 errors；moon_test_env --target js src/engine = 240/240/0 全绿（改前 237，+3）。附带确认三条纪律全部成立：lock_acquire_action 逐字委托 rsv_action；SQLite ON CONFLICT ... WHERE 三子句与 rsv_action 四分支逐条对应；agent_touch_first_seen 的 CASE WHEN 在单条语句内求值无读后写窗口；claim 用 update_task_if_status 的原子 CAS 且完全不调 rsv_*。
-## BUG-430 [2026-10-26T18:47:23Z] [high] OPEN
+## BUG-430 [2026-10-26T18:47:23Z] [high] FIXED
 - summary: [arch] MCP 工具面零认证 —— 所有 agent 身份参数可自报，reserve_scope/lock_acquire 的角色判定本质上是 advisory（C1 pubkey_fp 全空 / C2 pid 可算 / C3 无会话层）
 - detail: ## 形状（架构级缺口，不是某个 bug）
 
@@ -8323,6 +8323,9 @@ Lane AF 报告 `reports/2026-10-27-bug422b-identity-assertion-plan.md` @ `0f1bad
 
   **状态更新**：`[arch] S1 已公告 / S3 已具备（验签真实、fail-closed、nonce 一次性）/ 但默认自报 + 无公钥 ⇒ 死路`。
   **保持 OPEN**（AGENTS.md 的「S1 落地后保持 OPEN」仍然成立，且 S3 的「具备」不等于「生效」）。
+
+### FIXED(2026-10-28T09:52:48Z / BUG-430)
+- evidence: BUG-430 主条「MCP 工具面零认证」已由 S3 九段 + BUG-466/467 解决，**关闭范围 = 认证基础设施建成且可用**，不含「认证成为默认」。已落地：S1 公告边界 → S3 段 1~9（挑战骨架 / 四门接入 / nonce 一次性消费 / 公钥登记 / 首登锁定 / 首登验签 / 轮换需旧私钥 / 吊销 / 有钥匙必须出示）→ BUG-466 取票窗口（agent_issue_challenge，真实 MCP 客户端实测 claim 回 '+challenge_verified'）→ BUG-467 verify 身份门 → nonce 落库 + cleanup（多实例可用）。实测读数：工具面 156 个中 5 个声明 challenge（3.2%）；产品库 6 个 agents 中 1 个有公钥（16.7%）；软强制降权已在 engine_rsv.mbt:218-225 生效（有公钥不传 challenge ⇒ role 降 Executor + role_source=challenge_required + action 带 +challenge_required）。AGENTS.md 关闭条件「存在至少一条调用方无法自报的路径」已满足且经端到端实测。**未纳入本条、另开新号**：BUG-469 = execute/submit/verify/reject/retry/archive 六个工具未接 challenge（覆盖面缺口，技术活）；BUG-470 = 「默认要求认证」的迁移方案（产品决策，需 owner 拍板）。报告 reports/2026-10-28-bug430-final-verdict.md。
 ## BUG-431 [2026-10-26T18:57:20Z] [medium] FIXED
 - summary: [r11-assistant] server.mbt:5598 接管留痕取决于 sweep 是否先跑：sweep 标 dead 后 claim 报 elected 且不记 force_takeover 违例
 - detail: ## 缺陷
