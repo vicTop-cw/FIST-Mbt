@@ -181,7 +181,11 @@ def value_for(name, prop, ctx, depth=0):
         return ctx[name]
     t = prop.get("type", "")
     if t == "string":
-        return ""            # 可选字符串一律留空 = 走服务端默认分支
+        # R78：本函数**只给必填参数**取值（build_args 只遍历 required）。旧值是空串，
+        # 而多数 handler 用 `get_str` 判必填时把空串当「没给」⇒ 回「缺必填参数 X」⇒
+        # 该工具**从未被真正调用**（实测 45/70 条 refused 都是这个成因）。
+        # 必填 ⇒ 给非空占位；语义是否被接受由被测工具自己判（那才是它的真实读端行为）。
+        return "probe"
     if t == "boolean":
         return False
     if t in ("integer", "number"):   # R77：漏了 number ⇒ budget 类必填参数被发 ""
@@ -227,7 +231,7 @@ NAME_HINTS = {
     "link_a": "memory/log.md",
     "link_b": "memory/bugs.md",
     "asset_id": "tour-asset",
-    "task_ids": [],
+    "task_ids": "[]",   # R78：schema 是 string_prop（内含 JSON 数组），旧值 [] 是列表 ⇒ 必填参数类型不匹配
     "bug_ids": [],
     "steps_required": [],
     "project_dir": None,     # 走 ctx
@@ -254,9 +258,6 @@ NAME_HINTS = {
 TOOL_HINTS = {
     "eval_feedback": {
         "feedback": "## Defects | ## Evidence probe | ## Fix | ## Acceptance probe",
-    },
-    "dag_publish": {
-        "task_ids": "[]",      # schema 是 string（内含 JSON 数组），不是 array
     },
 }
 
