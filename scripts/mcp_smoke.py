@@ -105,6 +105,15 @@ def registry_tool_count():
     return len(registry_tool_names())
 
 
+# R71：本脚本**没有** CLI 旗标 ⇒ 任何 `--x` 都是拼错，必须当场拒绝（rc=2）。
+# 旧行为：静默忽略 ⇒ 把 `--main-js` 之类拼错时会**跑默认流程并报 PASS**，
+# 与 R64/R69 同族（参数面没兜住 ⇒ 假绿）。
+_UNKNOWN = [a for a in sys.argv[1:] if a.startswith("--")]
+if _UNKNOWN:
+    print("FAIL 未知参数：%s（mcp_smoke 不接受任何 CLI 旗标）" % " ".join(_UNKNOWN))
+    sys.exit(2)
+
+
 def main():
     main_js = find_main()
     if not main_js:
