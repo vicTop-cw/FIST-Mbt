@@ -179,6 +179,13 @@ SPECIAL_CASES = [
     # 白名单 IMPL_MAP 而非启发式（实测启发式假阳性 13/30）。
     # rc: 0 全有外壳覆盖 / 1 有零覆盖 / 2 无法自证。--selftest 10 格含 1 变异对照。
     case("check_tool_coverage.py", "--selftest"),
+    # —— BUG-465：无效 catch 判据（`catch` 对 FFI 抛出的 JS 异常无效）——
+    # 语言层边界：MoonBit 的 catch/try·catch 只包 raise 效果；
+    # daqing/sqlite / node:sqlite 的函数**无 raise 标注**，抛的是 JS 运行时异常 ⇒ 拦不住。
+    # 判法用编译器算好的 `unused_try` 警告（不自己写正则：那要类型信息）。
+    # 覆盖面诚实：只判「编译器能证明」的，PASS 不代表「没有无效 catch」。
+    case("check_effective_catch.py", "--selftest"),
+    case("check_effective_catch.py"),
     # 判据本体（2026-10-28 转正门禁）：本格曾是 expected(..., 1) 的 known-red，
     #   当时 22/154 个工具从无任何测试碰过接线面（BUG-455）。同日各 lane 补齐后
     #   判据实测 rc=0（外壳零覆盖 0/154）——known-red 的到期条件就是「修好会变红」，
