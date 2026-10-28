@@ -115,6 +115,12 @@ def check_entry(desc_file: Path, close_file: Path, close_fn: str,
 
 
 def main() -> int:
+    unknown = [a for a in sys.argv[1:] if a != "--selftest"]
+#     必须切掉 argv[0]（脚本自身路径），否则它会被当成未知旗标 ⇒ 恒 rc=2
+    if unknown:
+        print("FATAL 未知参数：%s（本尺只接受 --selftest）" % " ".join(unknown))
+        sys.exit(2)
+    # ↑ 严格参数面（R65）：未知旗标不再被静默忽略（拼错 --selftest 会假绿）
     selftest = "--selftest" in sys.argv
     if selftest:
         # 合成违例：闭集外值 → 必红

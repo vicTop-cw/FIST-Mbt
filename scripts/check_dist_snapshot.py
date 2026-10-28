@@ -170,6 +170,11 @@ def _entry_probe() -> None:
 
 
 def main():
+    unknown = [a for a in sys.argv[1:] if a != "--selftest"]
+    if unknown:
+        print("FATAL 未知参数：%s（本尺只接受 --selftest）" % " ".join(unknown))
+        sys.exit(2)
+    # ↑ 严格参数面（R65）：未知旗标不再被静默忽略（拼错 --selftest 会假绿）
     if "--selftest" in sys.argv[1:]:
         return selftest()
     if not os.path.isfile(DIST):

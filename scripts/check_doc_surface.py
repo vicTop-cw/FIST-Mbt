@@ -1733,6 +1733,11 @@ def j3_body_group_problems(readme_txt, n_groups, parsed_counts):
 
 
 def main(argv):
+    unknown = [a for a in argv if a != "--selftest"]
+    if unknown:
+        print("FATAL 未知参数：%s（本尺只接受 --selftest）" % " ".join(unknown))
+        sys.exit(2)
+    # ↑ 严格参数面（R65）：未知旗标不再被静默忽略（拼错 --selftest 会假绿）
     selftest = "--selftest" in argv
     tools = real_tools()
     n = len(tools)
