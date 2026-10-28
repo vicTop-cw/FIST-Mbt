@@ -10206,19 +10206,44 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
 
 ### FIXED(2026-10-28T03:45:18Z / BUG-457)
 - evidence: 修正 reports/2026-10-27-tool-coverage-judge-report.md：§4「2 个工具测了吗/4 格」与 §5 变异 B 的 456 读数加作废标记，文末加「追记（BUG-457）」逐条列事实（git log --all -- src/server/server_bug455_pure_wbtest.mbt 空 = 从未落盘；c684499a/0cc7f7ca 的 --stat 无测试文件；判据仍点名两工具零覆盖）+ 同族对照（bug335 是提交后 revert，不算假绿）+ 报告写作三条自查。实证：python scripts/check_tool_coverage.py 现读数 150/154（零覆盖 4）；moon test --target js src/server = 504/504 passed。
-## BUG-458 [2026-10-28T03:44:57Z] [medium] OPEN
+## BUG-458 [2026-10-28T03:44:57Z] [medium] FIXED
 - summary: [r2-lane-c] ops_selfdrive.mbt:33 sd_kind_path 对空/含 .. 或 / 的 kind 直接 abort ⇒ selfdrive_get/append 在 MCP 侧是非结构化崩溃而非 Err
 - detail: 实测（Lane C 2026-10-28，read-only）：src/ops/ops_selfdrive.mbt:33 的 sd_kind_path 对空 kind 或含 .. / / 的 kind 直接 abort()。最小复现：@ops.selfdrive_memory_get(dir, ns="d", kind="../etc") ⇒ 进程级 abort 而非 Err(...)。后果：MCP 工具面 selfdrive_get / selfdrive_append 收到恶意或手误 kind 时不是「返回错误」，而是「打崩调用栈」——与 BUG-374/433 同族（工具面把内部 panic 暴露成崩溃）。建议：改返回 Result[String, String]，调用方透传 Err，配最小复现锁（空 kind / ".." / "a/b" 三态各一格）。
 - reported_by: lead
-## BUG-459 [2026-10-28T03:45:11Z] [medium] OPEN
+
+### FIXED(2026-10-28T04:30:48Z / BUG-458)
+- evidence: 9518c590: sd_kind_path 由 abort() 改 Result[String,String]，三类非法 kind（空/含斜杠/含..）各自点名，四个调用点透传 Err，review_tick 循环按 continue 跳过。变异对照：三类守卫改 if false ⇒ src/server 包 10 格中 5 格红（空/../a/b/a\b/get 面），还原 ⇒ 10/10。包测试 515/515 rc=0。
+## BUG-459 [2026-10-28T03:45:11Z] [medium] FIXED
 - summary: [r2-lane-c] dag_publish handler 缺 ns_write_gate（publish 有）⇒ 与 write_gate.mbt 文档「拦 publish/publish_parallel/dag_publish」不符，留了污染 default.db 的路
 - detail: 实测（Lane C 2026-10-28，只读）：src/server/server.mbt 的工具注册里，publish handler 调了 ns_write_gate（全仓仅 server.mbt:1833 一处引用），而 dag_publish handler 没有。而 src/server/write_gate.mbt 的文档声明本门覆盖 publish / publish_parallel / dag_publish 三支。后果：多命名空间场景下，dag_publish 可以绕过写入门禁把任务写进主库 default.db —— 与 BUG-411/436 同族（写权限门覆盖不全）。建议：dag_publish handler 补同一道 ns_write_gate；补一格锁断言「无 can_write 的 agent dag_publish ⇒ 被拒」，并让判据扫「声称覆盖的工具清单 == 实际调用点清单」防再次漂移。
 - reported_by: lead
-## BUG-460 [2026-10-28T03:45:12Z] [low] OPEN
+
+### FIXED(2026-10-28T04:30:49Z / BUG-459)
+- evidence: 9518c590: dag_publish(server.mbt:5001) 与 publish_parallel(server.mbt:1970) 各补 ns_write_gate，位置在 engine_for_ns 之前（被拒 ns 不建库=无副作用拒绝），与 publish 同形；新增 scripts/check_ns_write_gate_coverage.py（501 行，9 格自检）对表『文档声称==代码调用点』。变异对照：删 dag_publish 的门 ⇒ rc=1 点名 dag_publish；删 publish_parallel 的门 ⇒ rc=1 点名 publish_parallel；还原 ⇒ rc=0。边界：publish 家族仍不查 ns ACL（另开 BUG-464）。
+## BUG-460 [2026-10-28T03:45:12Z] [low] FIXED
 - summary: [r2-lane-c] deps_satisfied 对不存在的任务也返回 false，与「依赖未满足」不可分
 - detail: 实测（Lane C 2026-10-28，只读）：dag_check / deps_satisfied 对「依赖任务 id 不存在」与「依赖任务存在但未完成」两种情况都返回 false。后果：上游无法区分「我的前置还没做完」（应等待）与「我的前置根本不存在」（应报配置错误）—— 后者会让任务永久卡在「等一个永远不会完成的前置」，且看板上看不出异常。建议：三值化（satisfied / pending / missing）或在回执里附 missing_deps 列表；配两格锁分别覆盖两种输入。
 - reported_by: lead
-## BUG-461 [2026-10-28T04:00:39Z] [medium] OPEN
+
+### FIXED(2026-10-28T04:31:01Z / BUG-460)
+- evidence: f976ce77: engine 新增加法式 deps_report(task_id) -> DepsReport{state: DepsSatisfied|DepsPending|DepsMissing|DepsNoTask, missing_deps, pending_deps}，两个点名列表同时填充不取舍；8 格白盒锁 src/engine/…deps_report…wbtest.mbt 含变异对照。既有 API 签名零改动。
+## BUG-461 [2026-10-28T04:00:39Z] [medium] FIXED
 - summary: [r3-lead] store_migration_wbtest 夹具路径跨进程共享（temp/t744_<case>）⇒ 并发跑测试时 6 格 t744_* 报 database is locked，全量绿不可判
 - detail: 实测（2026-10-28 12:00–12:10）：\n① 后台跑全量 python scripts/moon_test_env.py --target js（同时另一进程在跑 moon check 预提交钩子）→ Total tests 1719 / passed 1713 / failed 6，6 格全在 src/store/store_migration_wbtest.mbt（:111 t744_2_legacy_only_migrates / :144 t744_3_empty_target_migrates / :170 t744_4_conflict_does_not_touch_either_side / :243 t744_7_forced_overwrites_with_backup 等），报错含 'Error: database is locked'。\n② 同一份代码单包跑 python scripts/moon_test_env.py --target js -p vicTop-CW/fist-mbt/src/store → 97/97 passed 全绿。\n③ 无并发时全量复跑 → 1719/1719 passed 全绿。\n根因：夹具用**进程间共享的固定相对路径**（temp/t744_legacy_only 等，见 :111 行 let base = "temp/t744_legacy_only"），两个测试进程同时打开同一个 .db ⇒ sqlite 锁冲突。这与 BUG-455「测试 db 统一落 .fist-mbt/tmp/」同族但更深：光换目录不解决跨进程并发，需要**每进程唯一子目录**（如 temp/t744_<pid>_<rand>/）或环境变量注入基线目录。\n后果：并发场景下（CI 双臂、守卫电池 spawn 测试、开发者同时跑单包与全量）全量结论不可信，绿/红随机。\n建议：夹具基线改为「每进程唯一临时目录 + 用后清理」，并加一格自检断言两次不同基线的路径不相等。
 - reported_by: lead
+
+
+### FIXED(2026-10-28T04:17:50Z / BUG-461)
+- evidence: b546258f: 夹具基线改每进程唯一目录（@env.rand(8) 唯一 + now 可读排序 + FIST_T744_RUN_ID 检索标签）。判据：HEAD 原版两进程并发该包 A 97/86/11、B 97/89/8，t744 红 7/6 格报 database is locked（store_migration_wbtest.mbt:111/:144/:170/:219/:243/:268/:297），单进程 97/97 全绿 ⇒ 单进程绿不能当修好。修后：-f 't744_*' 双进程 A 12/12、B 12/12；单包 98/98；全量 1743/1743 rc=0；变异对照（基线退回固定路径）→ 98/97/1 仅 t744_12 红（:495）。10 格断言逐条保留未放宽。
+## BUG-462 [2026-10-28T04:18:17Z] [medium] OPEN
+- summary: store 包其余测试夹具固定路径/FIST_DB_PATH 共享 —— 同族并发 database is locked（BUG-461 的兄弟面）
+- detail: BUG-461 只修了 store_migration_wbtest.mbt 一处（b546258f）。同包同族缺陷仍在：多测试共用固定相对路径或默认 FIST_DB_PATH，两进程并发跑同一包即红。实测（HEAD 原版两进程同时跑 src/store）：A 97/86/11、B 97/89/8，红格点名为 multi_store_test.mbt:170/245/269、store_sqlite_agents_wbtest.mbt:271/303/342/383、multi_store_bug420_wbtest.mbt:38、executions_upsert_test.mbt:21、call_log_test.mbt:33；另见 store_rsv_test.mbt:733/762、store_backend_semantics_test.mbt:30、executor_store_test.mbt:41。报错含 Error: database is locked。修法同 BUG-461：夹具基线改每进程唯一目录（@env.rand(8)），断言不放宽。
+- reported_by: lead(Lane H 回传证据)
+## BUG-463 [2026-10-28T04:18:31Z] [medium] OPEN
+- summary: MultiStore::close_all 只清 map 不关 sqlite 句柄，SqliteStore 无 public close —— 产品侧关不掉、Windows 上删不动 .db
+- detail: src/store/multi_store.mbt:143 的 close_all 只从 map 摘除条目，不调用底层句柄关闭；SqliteStore 也没有 public close。后果：①Windows 上文件句柄仍被占用，.db 删不掉/改名失败；②调用方无法显式释放连接，只能等 GC/进程退出；③测试面被迫用同包白盒 match s.db { Some(db) => db.close() } 绕开（BUG-461 就是这么做的），说明「测试能关、产品关不掉」——接口缺口本身。建议：SqliteStore 增 public close（幂等），close_all 逐个调用；补白盒锁验证关闭后句柄释放（Windows 上以删除 .db 成功为判据，需允许平台跳过）。
+- reported_by: lead(Lane H 回传证据)
+## BUG-464 [2026-10-28T04:31:02Z] [medium] OPEN
+- summary: publish 家族（publish / publish_parallel / dag_publish）不查 ns ACL —— BUG-459 只补了 ns 合法性门，写权限面仍敞
+- detail: BUG-459/9518c590 给 dag_publish 与 publish_parallel 补了 ns_write_gate（拒 default/空/非法 ns），但实测三条 publish 路径都走 human_steward 特权路径、不查调用方在该 ns 的 ACL can_write。与 claim 侧不一致：claim 走 ns ACL（can_write=0 会被拒，BUG-408/BUG-411 收口过这条），publish 侧不查。后果：任何调用方（在 BUG-430 未收口前身份本就可自报）可向任意已打开 ns 发布根任务，绕过写权限。注意口径依赖：若按 BUG-430 的 framing（agent 自报不可验证），补 ACL 只提高一致性不提高安全性；但一致性本身是判据面『文档声称==代码调用点』的一部分。建议：publish/publish_parallel/dag_publish 在 engine_for_ns 之前加与 claim 同源的 ns ACL can_write 判定（created_by 不再是免检通道，或显式区分 privileged path 并在文档里写明豁免理由），并补对表判据一格。
+- reported_by: lead(Lane E 边界自述)
