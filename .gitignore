@@ -45,6 +45,9 @@ _cron_tmp_sends.jsonl
 # blackbox release artifacts
 _release/
 memory/bugs_pending_github.json
+# 运行时状态（每次 whisperer 运行都会改写）：移出跟踪面 —— R111，见
+# reports/2026-10-22-guards-inline-verdict-r121-report.md §5 的推荐做法。
+memory/whisperer-head.txt
 # runtime state & scratch (2026-10-13 维护提交排除项)
 /memory/model-router-default.json
 /fist-runtime.json
