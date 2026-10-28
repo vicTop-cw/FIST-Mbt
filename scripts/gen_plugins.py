@@ -99,7 +99,7 @@ RE_VERSION = re.compile(r'^version\s*=\s*"([^"]+)"', re.M)
 # 「围栏代码块里引用的一行既有抬头」都会被当成条目 ⇒ 同编号两条 ⇒ 后一条覆盖前一条、
 # 真实状态不进任何计数（实测：`bug_fix` 一笔两条时，evidence 里的 `## BUG-421：…` 中招两次）。
 RE_BUG_HEAD = re.compile(
-    r"^## BUG-(\d+) \[[^\]]+\] \[(?:critical|high|medium|low)\] "
+    r"^## BUG-(\d+[a-z]?) \[[^\]]+\] \[(?:critical|high|medium|low)\] "
     r"(?:OPEN|FIXED|DUPLICATE|FALSE_POSITIVE)\b",
     re.M,
 )
@@ -107,7 +107,7 @@ RE_FIXED = re.compile(r"^### FIXED\(", re.M)
 # 抬头文法与闭集（真源定义写在 memory/bugs.md 的「记账规则」段）
 BUG_STATUSES = ("OPEN", "FIXED", "DUPLICATE", "FALSE_POSITIVE")
 RE_BUG_STATUS = re.compile(
-    r"^## (BUG-\d+) \[[^\]]+\] \[(critical|high|medium|low)\] (\S+)(?: (→BUG-\d+))?",
+    r"^## (BUG-\d+[a-z]?) \[[^\]]+\] \[(critical|high|medium|low)\] (\S+)(?: (→BUG-\d+[a-z]?))?",
     re.M,
 )
 # 小记抬头里点名的编号集合：### FIXED(<stamp> / BUG-a, BUG-b …)
@@ -258,7 +258,7 @@ def measure() -> dict:
     if not m:
         die("moon.mod 未解析到 version")
     bugs_txt = BUGS.read_text(encoding="utf-8")
-    ids = [int(x) for x in RE_BUG_HEAD.findall(bugs_txt)]
+    ids = [int(re.match(r"\d+", x).group()) for x in RE_BUG_HEAD.findall(bugs_txt)]  # 容忍 430a/b 后缀
     if not ids:
         die("memory/bugs.md 未解析到任何缺陷条目")
     # 计数只从**条目抬头的状态位**反解（2026-09-27 兑账立的口径）。
