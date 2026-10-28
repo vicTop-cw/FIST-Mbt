@@ -195,6 +195,12 @@ SPECIAL_CASES = [
     # —— R135：文档引用的**文件路径必须真实存在**（R134 抓出一份从未存在的白盒锁后立尺）
     case("check_doc_paths.py"),
     case("check_registration_numbers.py"),
+    # —— R146：**显式有界跑法**。`check_slave_mergeability.py` 原先靠「自动补无参格」进电池，
+    #    而无参 = 扫全部 `/slave/` 通道支（实测 **70 支**，逐支真 cherry-pick）
+    #    ⇒ 单格 >600s，被电池判 `TIMEOUT`（R146 实测：那 600s 正是**唯一失败**）。
+    #    加 `--limit 8`：仍走**真 cherry-pick** 的同一路径（不是 selftest 替身），实测 ~38s。
+    #    全量普查请显式跑：`python scripts/check_slave_mergeability.py --include gitcode/`。
+    case("check_slave_mergeability.py", "--limit", "8"),
     case("check_tool_coverage.py", "--selftest"),
     # —— BUG-465：无效 catch 判据（`catch` 对 FFI 抛出的 JS 异常无效）——
     # 语言层边界：MoonBit 的 catch/try·catch 只包 raise 效果；
