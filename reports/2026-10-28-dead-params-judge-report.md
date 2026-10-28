@@ -12,7 +12,7 @@
 | **判据怎么写的** | 切工具块（list）→ 切 schema/handler → 找取值点（带引号 + 去空白 + 完整取值函数族）→ 透传检出即 `opaque` |
 | **5 条纠正都在代码里吗** | **✅ 全部在代码里**（不是注释），每格配一个 selftest 变异对照 |
 | **全仓实测是否 3 处** | **✅ 是**（`loop_create.items` B 类 + `lock_acquire.ts` / `lock_renew.ts` C 类） |
-| **selftest / 进电池** | **14/14** · `expected(...,1,kind="known-red")` + `case(...,"--selftest")` |
+| **selftest / 电池** | **14/14** · `expected(...,1,kind="known-red")` + `--selftest` 格 |
 
 ---
 
@@ -98,7 +98,7 @@
   - `lock_acquire.ts` / `lock_renew.ts`：描述改为「**服务端盖章、不接受覆盖**」
 - **R3** `reader_family()` 从 `fn` 定义反推，若某取值函数**只写调用不写定义**（外部包），
   就反推不出来 ⇒ 当前靠 `READER_FALLBACK` 兜底
-- **R4** `local_helpers()` 用「4000 字符近似」取函数体 ⇒ helper 超长会截断（当前未触发，已知粗糙点）
+- **R4** `local_helpers()` 用 4000 字符近似取函数体 ⇒ helper 超长会截断（未触发）
 - **R5** 未跑 `moon fmt`（本机 BUG-388）；判据是 `.py`，不受 fmt 门约束
 
 ---
