@@ -87,9 +87,18 @@ test "s3_p2_02_four_gates_wire_the_challenge" {
   // 而 `moon fmt` 会把长调用折成多行 ⇒ **每次格式化都会打红本格**（不是实现错，是尺子太紧）。
   // 改成与第四道门同一口径：**去掉全部空白后再比**，仍钉住「函数名 + 四个参数顺序」这个代码形态，
   // 判例-30 防护不变（注释里的同名串不会带 `(self,agent,...)` 这个参数序列）。
+  //
+  // ⚠️ **R24 修（第三次同类，前两次只修了引擎那处、漏了这里三处）**：
+  // 原模式写死了 `...challenge_sig~)` **带右括号**，而 `moon fmt` 会把长调用折行并
+  // **补尾随逗号** ⇒ 实际产物是 `...challenge_sig~,` ⇒ 精确匹配计数 **3 → 0 ⇒ 锁红**。
+  // **这把尺子每次跟 fmt 打架、每次 fmt 都赢。**
+  // 修法同 R22：**去掉右括号**（只钉到 `challenge_sig~` 为止），这样
+  // `challenge_sig~)` 与 `challenge_sig~,` 两种形态都命中，而
+  // 「函数名 + 四个参数顺序」这个**代码形态**仍被钉住（判例-30 防护不变：
+  // 注释里的同名串若不带 `(self,agent,...)` 这个参数序列仍然不会命中）。
   let n_gated = count_of(
     strip_ws(src_rsv),
-    "judged_role_gated(self,agent,challenge_nonce,challenge_sig~)",
+    "judged_role_gated(self,agent,challenge_nonce,challenge_sig~",
   )
   assert_true(n_gated >= 3)
   // 第四道门在 engine.mbt：claim 走 judged_role_with_nonce（带 nonce 消费 + 签名透传）
