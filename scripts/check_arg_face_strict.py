@@ -67,7 +67,7 @@ SELF_NAME = "check_arg_face_strict.py"
 
 def candidates(scripts_dir=None):
     """被测面：scripts/check_*.py（排除本尺自己）。"""
-    d = scripts_dir or SCRIPTS_DIR
+    d = scripts_dir or "."      # R96：不默认 ROOT（自检链不得触及真仓）
     out = []
     for p in sorted(glob.glob(os.path.join(d, "check_*.py"))):
         if os.path.basename(p) == SELF_NAME:
@@ -76,12 +76,13 @@ def candidates(scripts_dir=None):
     return out
 
 
-def probe_one(script, timeout=CASE_TIMEOUT):
+def probe_one(script, timeout=CASE_TIMEOUT, cwd=None):
+    # R96：`cwd` 自检时传合成目录（原来无条件 ROOT ⇒ hermetic 判据记 G 档）。
     """返回 ("ok"|"green"|"unknown", rc, 尾部读数)。"""
     try:
         r = subprocess.run([sys.executable, script, BAD_FLAG],
                            capture_output=True, text=True, timeout=timeout,
-                           encoding="utf-8", errors="replace", cwd=ROOT)
+                           encoding="utf-8", errors="replace", cwd=cwd or os.path.dirname(script))
         rc = r.returncode
     except subprocess.TimeoutExpired:
         return "unknown", None, "超时 %ds" % timeout
@@ -94,7 +95,7 @@ def probe_one(script, timeout=CASE_TIMEOUT):
     return "ok", rc, tail
 
 
-def judge(scripts_dir=None, timeout=CASE_TIMEOUT):
+def judge(scripts_dir=None, timeout=CASE_TIMEOUT, cwd=None):
     cands = candidates(scripts_dir)
     if not cands:
         return [], [], 0
@@ -102,7 +103,7 @@ def judge(scripts_dir=None, timeout=CASE_TIMEOUT):
     # 结果按脚本名排序后再分桶，保证输出顺序与串行一致（可复现）。
     workers = min(8, max(1, len(cands)))
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        results = list(pool.map(lambda p: (p, probe_one(p, timeout)), cands))
+        results = list(pool.map(lambda p: (p, probe_one(p, timeout, cwd)), cands))
     verdicts, unknown = [], []
     for p, (kind, rc, tail) in sorted(results, key=lambda x: os.path.basename(x[0])):
         name = os.path.basename(p)
@@ -121,7 +122,8 @@ def run(argv=None):
     if args.selftest:
         return selftest()
 
-    verdicts, unknown, n = judge()
+    # R96：显式传真仓面（默认已改成 `.`，避免自检链触及真仓）
+    verdicts, unknown, n = judge(scripts_dir=SCRIPTS_DIR, cwd=ROOT)
     if n == 0:
         print("FATAL 判据无法自证：scripts/ 下没有 check_*.py（扫描面为空）⇒ 拒绝出绿")
         return 2
@@ -170,7 +172,7 @@ def selftest():
     io.open(os.path.join(d, "check_bad_arg.py"), "w", encoding="utf-8").write(bad)
     io.open(os.path.join(d, "check_good_arg.py"), "w", encoding="utf-8").write(good)
 
-    v, u, n = judge(scripts_dir=d, timeout=20)
+    v, u, n = judge(scripts_dir=d, timeout=20, cwd=tmp)
     cell("bad-arg-guard-is-flagged", n == 2 and len(v) == 1 and v[0][0] == "check_bad_arg.py")
     cell("good-arg-guard-not-flagged", not any(x[0] == "check_good_arg.py" for x in v))
     v2, _u2, n2 = judge(scripts_dir=os.path.join(tmp, "nonexist"), timeout=20)

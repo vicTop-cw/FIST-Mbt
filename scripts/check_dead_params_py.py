@@ -43,7 +43,9 @@ import ast
 import glob
 import io
 import os
+import shutil
 import sys
+import tempfile
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -201,9 +203,15 @@ def selftest():
     cell("exempt-not-flagged", scan_source(exempt) == [])
     cell("stub-not-flagged", scan_source(stub) == [])
     cell("syntax-error-returns-empty", scan_source("def f(a:\n") == [])
-    # 端到端：真实扫描面必须非空（否则判据饿死）
-    findings, sig_like, n = scan(ROOT)
-    cell("real-face-nonempty", n > 0)
+    # R96：端到端格改用**合成树**（原来扫 ROOT ⇒ hermetic 判据记 R 档）。
+    # 语义保留：证明 scan() 真的会走 scripts/ 目录并解析出函数。
+    tmpd = tempfile.mkdtemp(prefix="deadpy-st-")
+    os.makedirs(os.path.join(tmpd, "scripts"))
+    io.open(os.path.join(tmpd, "scripts", "a.py"), "w", encoding="utf-8").write(
+        "def f(a, b):\n    return a\n")
+    findings, sig_like, n = scan(tmpd)
+    cell("synthetic-face-nonempty", n == 1 and len(findings) == 1)
+    shutil.rmtree(tmpd, ignore_errors=True)
 
     print("SELFTEST %s（%d 格：%s）" % ("OK" if not fails else "FAIL", len(cells), " ".join(cells)))
     print("  真实扫描面：%d 个函数，死参数 %d 条" % (n, len(findings)))
