@@ -90,7 +90,7 @@ SOURCE_REF = "refs/heads/main"
 # ── 纯函数（可单测，不依赖 git）─────────────────────────────────────────────────────
 
 
-def classify(master_sha, main_sha, is_ancestor):
+def classify(master_sha, main_sha, is_ancestor, main_is_ancestor=False):
     """纯函数：给一个远端镜像的三种状态。
 
     - `same`       : master == main               （rc 视角：健康）
@@ -111,10 +111,18 @@ def classify(master_sha, main_sha, is_ancestor):
         return ("same", "master 与 main 同 sha")
     if is_ancestor:
         return ("fast_forward", "master 是 main 的祖先")
+    # R98：`main` 是 `master` 的祖先 ⇒ main **落后**（镜像陈旧），不是分叉。
+    # 对齐方向（force main←master 或删 main）是 **owner 决定**，判据只记 WARN。
+    if main_is_ancestor:
+        return ("stale_main", "main 是 master 的祖先 ⇒ main 落后（镜像陈旧）；"
+                             "master 才是主干，对齐方向属 owner 决定")
     return ("diverged", "master 不是 main 的祖先（非快进）⇒ 拒绝推送，绝不 force")
 
 
 def plan_action(state):
+    # R98：`stale_main` 既不是「可推送」也不是「拒绝」—— 它是**镜像落后**，记 WARN 等 owner。
+    if state == "stale_main":
+        return "warn"
     """纯函数：给定状态，决定动作。`push` 只在 fast_forward 时成立。
 
     这条是**安全契约的代码化**：`diverged` 永远拿不到 `push`。
@@ -176,7 +184,9 @@ def inspect(remotes=DEFAULT_REMOTES, cwd=None, env=None):
                          "action": "refuse"})
             continue
         anc = is_ancestor(m, n, cwd=cwd, env=env)
-        state, why = classify(m, n, anc)
+        # R98：再算一次反方向（main 是否为 master 祖先）⇒ 区分「镜像落后」与「真分叉」
+        anc_rev = is_ancestor(n, m, cwd=cwd, env=env)
+        state, why = classify(m, n, anc, anc_rev)
         rows.append({"remote": r, "master": m, "main": n,
                      "state": state, "why": why, "action": plan_action(state)})
     if unreadable and len(unreadable) == len(remotes):
@@ -396,6 +406,9 @@ def run(argv):
             return 0 if not refused else 1
         return 0 if not refused else 1
 
+    warns = [r for r in rows if r["action"] == "warn"]
+    for r in warns:
+        print("WARN %s 的 main 是 master 的祖先（镜像落后）⇒ 不对齐、不推送；对齐方向属 owner 决定" % r["remote"])
     if refused:
         for r in refused:
             print("FAIL %s 的 master 不能自动对齐（%s）⇒ 拒绝推送、绝不 force；请人工判断"
