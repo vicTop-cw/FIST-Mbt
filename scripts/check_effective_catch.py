@@ -55,6 +55,7 @@ import os
 import re
 import subprocess
 import sys
+from moon_env_probe import moon_env
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -80,6 +81,7 @@ def run_moon_check(root: str):
             timeout=900,
             encoding="utf-8",
             errors="replace",
+            env=moon_env(),
         )
     except (OSError, subprocess.TimeoutExpired) as e:  # noqa: BLE001
         return "moon check 跑不起来: %s" % e, False
