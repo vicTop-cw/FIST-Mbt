@@ -367,6 +367,8 @@ jobs:
           python3 scripts/store_isolation_probe.py --selftest
 
       - name: Heartbeat cross-process guard (BUG-119：判活必须打到两个真进程)
+        # position-why: 要拉起**两个真进程**做判活/认领，依赖 Migrate 之后的构建产物与依赖面
+        # 就位；Migrate 之前跑只会 fail-fast 成假红。
         shell: bash
         # 单元测试用 MemoryStore + 同进程心跳对象，结构上照不到这一格；
         # 这条常驻 e2e 起两个真 `node cli.js serve`，锁「无心跳行不等于首拍即死」与跨进程心跳可见
@@ -376,6 +378,7 @@ jobs:
           python3 scripts/blackbox/e2e_heartbeat_xproc.py
 
       - name: Reserve cross-process guard (BUG-136：预订的互斥必须打到两个真进程)
+        # position-why: 同上——两进程预订互斥要用真产物起进程，Migrate 之后才有可跑的入口。
         shell: bash
         # 缺陷本体只在「A 的读与 B 的读都早于彼此的写」时现形，单进程结构上造不出这个窗口；
         # 另一半崩因（没有 busy_timeout ⇒ `Error: database is locked` 未捕获打死 server）要两个连接才撞得到。
@@ -395,6 +398,8 @@ jobs:
           python3 scripts/cli_flag_probe.py
 
       - name: Cleanliness guard (仓库整洁，仅交付库 fist-mbt.db)
+        # position-why: Migrate 自己会建/迁移交付库 `fist-mbt.db` —— 整洁面判的是「除交付库之外
+        # 不许有脏文件」，必须在 Migrate 之后，否则会把 Migrate 刚产出的库误判成脏。
         shell: bash
         run: python3 scripts/cleanup_artifacts.py && python3 scripts/cleanup_artifacts.py --check && python3 scripts/cleanup_artifacts.py --selftest
 
@@ -451,6 +456,8 @@ jobs:
       # 读法两种都算解释过：门红 = BUG-133 在场；**门绿而下一步 Test (native) 仍被信号打死** = 12 次抽检
       # 没抽中（同一支尺、同一次会话连跑两发给出过 3/12 与 0/12 两端 ⇒ 0/N 是抽样性质），不是又冒出一条新缺陷。
       - name: Native heap gate (BUG-133 探针当门)
+        # position-why: 判的是 **native 构建产物**的堆行为，必须先由 Migrate 拉依赖并重打
+        # BUG-133 的 sqlite FFI 补丁，否则测的是没补丁的旧桩。
         run: |
           python3 scripts/blackbox/e2e_native_heap_probe.py --selftest
           python3 scripts/blackbox/e2e_native_heap_probe.py --runs 12

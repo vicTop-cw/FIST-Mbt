@@ -112,6 +112,7 @@ jobs:
       # 两种红都解释过：门红 = BUG-133 在场；门绿而下一步 `Test (native, j=1)` 仍被信号打死 = 12 次抽检没抽中
       # （同一支尺、同一次会话连跑两发给出过 3/12 与 0/12 两端），不是新缺陷——0/N 是抽样性质，见判据 docstring 与账本 BUG-133 追记。
       - name: Native heap gate (BUG-133 探针当门)
+        # position-why: 同 ci.yml —— native 堆探针依赖 Migrate 后的依赖面与 BUG-133 补丁。
         run: |
           python3 scripts/blackbox/e2e_native_heap_probe.py --selftest
           rc=0
@@ -124,6 +125,8 @@ jobs:
           esac
 
       - name: Test (native, j=1)
+        # position-why: native 全量测试必须在 Migrate 之后（依赖 + BUG-133 补丁就位），
+        # 且在 Native heap gate 之后（门绿才放行全量）。
         run: |
           rc=0
           moon test --target native -j 1 || rc=$?
