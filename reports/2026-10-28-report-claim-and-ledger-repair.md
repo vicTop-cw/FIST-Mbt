@@ -148,3 +148,13 @@ rc=0
 
 **不要误读这条 100%**：判据的 A 面是「工具名在测试文本里出现过」，被一个 `str.contains` 就能满足；
 它证明的是**接线面有人碰过**，不是**接线对**。真实正确性仍由各 lane 的白盒锁与 `moon test` 兜底。
+
+**归属更正（同日 11:57 实测）**：上面这笔改动**不是我提交的**——它在落盘前被并发 lane 的
+`9597bb47 chore(guard): check_tool_coverage 从 known-red 转正为门禁（0/154 实测 rc=0）…`
+一并带走（该笔同时含 `src/engine|store/pkg.generated.mbti` 与 `memory/whisperer-head.txt`，
+即典型的**目录级 `git add` 扫面**，AGENTS.md「提交纪律」判例-11 的形状）。
+内容逐字一致（`git show --stat 9597bb47` 里 `scripts/run_guards.py 15 +/-`、
+`scripts/README.md 2 +/-`、本报告 40 行），故**结论不变、归属需记清**：
+我的 `commit_scoped.sh` 因此报「申报的路径没有进入暂存面」——不是路径写错，是**工作面已被别人提交**。
+教训（记进流程而非记进情绪）：`commit_scoped.sh` 只保护**提交者**自己，
+挡不住别人把**我工作树里的在飞改动**一起 add 走；能做的只有「改完立刻提交、不要留跨轮未提交的写面」。
