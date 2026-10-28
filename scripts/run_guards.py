@@ -489,7 +489,16 @@ SPECIAL_CASES = [
     # 已不成立——实测 `moon fmt` 预热出 `_build/wasm-gc/release/format/` 之后，fmt 段判
     # **PASS（moon fmt --check: clean）**，六门全 PASS、rc=0。按本文件自订的律
     # 「被检内容修好 ⇒ 把期望改回 0」转回门禁格（预存红是借条，不是免检牌）。
-    case("fist-gate.py"),
+    # R122：本机 rc=2 是**环境读数**（BUG-388 让 `moon fmt --check` 不可测 ⇒ 下游判据拒绝出数），
+    # 不是缺陷；CI（Linux nightly）上应为 0。两种读数都正确 ⇒ 按本文件自订的「树态诊断格」口径
+    # 用 tolerant 允许 (0, 2)，标签记「诊断」、末列照实打印真实 rc（人一眼能看到这次读到几）。
+    # ⚠️ **不会自己收紧**：`(0, 2)` 里 0 也允许 ⇒ BUG-388 修好后本格**照样绿**。
+    # 所以这条依赖人复查（`check_fmt_gate.py` 能出 0/1 时就该把 allow 收窄到 (0,)）；
+    # 写在这里而不是假装它自动红 —— 本仓纪律要求把「靠人」的部分明说。
+    tolerant("fist-gate.py", (0, 2),
+             "诊断口径：本机 `moon fmt --check` 因 BUG-388（工具链 `--check` 管线报 No such file / rc=-1）"
+             "不可测 ⇒ `fist-gate.py` 读 2（DEGRADED，拒绝判红也拒绝判绿）；CI Linux nightly 上读 0。"
+             "两者都是**正确读数**，缺陷不在判据也不在本仓代码。"),
     # ── R134：轮次号在 reports/ 交付面被不同单元复用（R110/R113/R118/R121 各两组）是
     #    「编号没有认领面」的直接后果——两支各自读开工时刻的远端快照，谁先推谁占号。历史
     #    4 组进 docs/tasks/unit-number-baseline.txt 棘轮；新撞号 / 基线过期 / 悬空认领三态
