@@ -10339,7 +10339,7 @@ BUG-430 拆分为两半：
 
 ### FIXED(2026-10-28T08:08:01Z / BUG-466)
 - evidence: commit eacebda9（5 文件）+ 545964b7（工具数 173→174 一源四态）。根因：S3 链 = 签发→签名→验签→消费，前八段做完后三步，唯独「签发」只有内部调用者够得着 —— 已登记 agent 想认证需要 challenge，但只有 agent_register_key 能签发，而对已登记者它只回 already_registered ⇒ 只能自己手工构造 nonce。不是「可选 vs 默认」问题，是「可选也不可选」：一条安全路径若只有知道内情的人手工构造输入才能走，工程上等于不存在。修法三处：① 新增 agent_issue_challenge 工具（只给已登记公钥的 agent 签发，未登记直接 Err；复用 s3_issue_challenge_auto 与首登/轮换同源；不写业务库只签发并登记待消费）；② claim schema 补 challenge/challenge_sig（关键发现：引擎层 engine.mbt:153 FistEngine::claim 早就有这两个参数，缺的只是 tool schema 声明 —— 接口声明与实现分叉）；③ 消 unregistered+ 误读，改用拆维度 unregistered+...+identity_verified|unverified|self_reported（追加而非改写，因为 unregistered 前导词有精确相等的既有断言）。产品面真跑（同一 server 进程）：agent_issue_challenge ⇒ challenge + pubkey_registered=true（取票窗口）；claim 带 challenge ⇒ action=+challenge_verified（S3 真活了）；claim 不带 ⇒ action=None 回执无 action 键（零回归）。变异实测：verify_challenge_sig 改恒 true ⇒ 320→316/4 failed 锁 5 必红；恢复后 320/320。测试：engine 320/320、server 515/515、moon check 0 errors。判例候选：接口声明与实现分叉 —— 加参数必须改两处（引擎签名 + schema），只改前者「存在但不可达」，只改后者「收下就丢」（BUG-440 反向形态）。缺口：challenge 表进程内（多实例消费不掉）、公钥按 ns 隔离、execute/verify 仍不接受 challenge。
-## BUG-467 [2026-10-28T08:34:07Z] [high] OPEN
+## BUG-467 [2026-10-28T08:34:07Z] [high] FIXED
 - summary: [S1] verify 工具无任何身份门 —— verifier 是自报串，任何调用方都能验收任何任务（与 execute 不对称）
 - detail: ## 缺陷（Lane CH 实测，2026-10-28）
 
@@ -10426,6 +10426,9 @@ Beta 核完发现：`verify` 不经过角色取数面 ⇒ **给它接 `challenge
 
   **普查方法可复现**：`grep -A50 '"<tool>",' src/server/server.mbt | grep -c judged_role` 等四道即可。
 
+
+### FIXED(2026-10-28T09:27:21Z / BUG-467)
+- evidence: commit 509e547f（代码）+ 72bb4388（报告）。三条代码证据定「该由谁验收」：① src/ops/audit.mbt:178 的 enforce() 权限矩阵里根本没有 verify 条目（未知 action 一律 false）；②「验收宪兵」只是 staff_label_of 的展示层标签（docstring 明写「参谋军职不是协议角色」）⇒ 候选②在协议层不存在；③ execute 已有的门是「ns 写权限」不是角色。修法：verify 函数体加 agent_write_gate(eng, acl_claim_identity(verifier, verifier), ns)，verifier 同时用作记录名与显式身份（verify 没有独立 agent 参数，不引入新参数、零回归），与 execute 同源。三格锁：ci_01 内存后端放行零回归、ci_02 sqlite 双向真实数据链路（收权⇒拒/授权⇒放，不是断言源码）、ci_03 实现路径格用 strip_ws 归一化防 fmt 假红。变异：删掉 ACL 门 ⇒ 517/518，ci_03 精确打红。门禁：moon check 0 errors；src/server+src/engine = 848/848 全绿。分析：created_by 是「入口不严」（可逆），verify 是「出口失守」（不可逆，下游全按已完成推进，危害整个任务体系产出可信度）⇒ 出口失守比入口不严更致命。对称性：修后 execute 与 verify 同一道门函数同一身份真源 ⇒ 已对称（判例-29 正面用法）。缺口：verifier 仍是自报串（本单加的是「能不能在 ns 写」，仍在 S1 边界内）；角色矩阵仍无 verify 条目（建议后续补 can_verify）；submit/reject/retry 是否需同类门仍未评估。
 ## BUG-430c [2026-10-28T08:50:20Z] [high] OPEN
 
 - summary: [authz] BUG-430 拆分（三）认证仍非默认要求 —— execute/verify 未接 challenge、公钥按 ns 隔离
