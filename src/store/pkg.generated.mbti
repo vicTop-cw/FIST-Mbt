@@ -142,6 +142,9 @@ pub struct MemoryStore {
   file_locks : Map[String, FileLock]
   lock_violations : Array[LockViolation]
   assistant_reg : Map[String, AssistantReg]
+  circuit_breakers : Map[String, (String, Int32, Int32, Int32, Int32, Int32, Int32)]
+  saga_log : Map[String, Array[(Int32, String, String, String, String)]]
+  mut saga_next_id : Int32
 }
 pub fn MemoryStore::assistant_get(Self, String) -> AssistantReg?
 pub fn MemoryStore::assistant_list(Self) -> Array[AssistantReg]

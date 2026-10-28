@@ -178,14 +178,13 @@ SPECIAL_CASES = [
     # 白名单 IMPL_MAP 而非启发式（实测启发式假阳性 13/30）。
     # rc: 0 全有外壳覆盖 / 1 有零覆盖 / 2 无法自证。--selftest 10 格含 1 变异对照。
     case("check_tool_coverage.py", "--selftest"),
-    # 判据本体：用 expected(..., 1) 「已知红」而非 tolerant —— 理由可自查：
-    #   rc=1（有工具外壳零覆盖）是**当前真实的待办清单**，不是判据坏了。
-    #   把现状登记为 known-red：覆盖率降到 0 时它自己变绿（逼下一位把期望改回 0）。
-    expected("check_tool_coverage.py", 1,
-             "工具外壳零覆盖 22/154（BUG-455 待办：github_*/atgc_old_*/dag_*/debate_* 等 22 个工具"
-             "从无任何测试碰过它们的接线面）。补完一个就把本数往下改——"
-             "这是待办清单不是免检牌。",
-             kind="known-red"),
+    # 判据本体（2026-10-28 转正门禁）：本格曾是 expected(..., 1) 的 known-red，
+    #   当时 22/154 个工具从无任何测试碰过接线面（BUG-455）。同日各 lane 补齐后
+    #   判据实测 rc=0（外壳零覆盖 0/154）——known-red 的到期条件就是「修好会变红」，
+    #   所以本笔改回 expect 0：待办清单清零，它才有资格当门（谁删测试谁红）。
+    #   ⚠️ 100% 只代表「每个工具名在测试文本里出现过」，不代表接线是对的 ——
+    #   判据自述：`只判「有没有测试」，不判测试好不好`。
+    case("check_tool_coverage.py"),
     case("check_store_tables_wired.py"),
     case("check_pkg_imports.py"),
     case("check_entry_paths.py"),

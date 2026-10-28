@@ -27,6 +27,8 @@ pub fn advance_mark_prefix() -> String
 
 pub fn agent_fp_of(String) -> String
 
+pub fn auth_tag(String) -> String
+
 pub fn boundary_probe_hint() -> String
 
 pub fn boundary_probe_slice() -> String
@@ -222,6 +224,7 @@ pub fn FistEngine::rsv_release(Self, String, String) -> Bool
 pub fn FistEngine::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String, challenge_nonce? : String?, challenge_sig? : String?) -> Result[String, String]
 pub fn FistEngine::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String, challenge_nonce? : String?, challenge_sig? : String?) -> Result[@store.RsvOutcome, String]
 pub fn FistEngine::s3_issue_challenge(Self, String, Int32) -> String
+pub fn FistEngine::s3_issue_challenge_auto(Self, String) -> String
 pub fn FistEngine::saga_register(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, now~ : String) -> Result[Json, String]
 pub fn FistEngine::saga_repair(Self, ns? : String, String, failed_step~ : String, mark? : Bool) -> Result[Json, String]
 pub fn FistEngine::saga_rollback(Self, ns? : String, String, mark? : Bool) -> Result[Json, String]
