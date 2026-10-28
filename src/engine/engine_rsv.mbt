@@ -194,7 +194,7 @@ pub fn judged_role_gated(
         eng,
         agent,
         challenge_nonce,
-        challenge_sig~,
+        challenge_sig~
       )
       (role, src)
     }
@@ -344,7 +344,7 @@ pub fn judged_role_with_nonce(
         eng,
         agent,
         Some(nonce),
-        challenge_sig~,
+        challenge_sig~
       )
       if src == "challenge_verified" {
         // 验签通过 ⇒ 消费 nonce；若已被消费过 ⇒ 判重放（且**不**保留已验证身份）
@@ -425,7 +425,12 @@ pub fn FistEngine::rsv_set(
   //
   // 为什么不直接返回 `Result` 让调用方区分：`rsv_set` 的签名是 `Result[String, String]`，
   // 改签名会波及工具面 3 处调用方。所以用**后缀标注** —— 零签名变更，且回执自带证据。
-  let (role, role_source) = judged_role_gated(self, agent, challenge_nonce, challenge_sig~)
+  let (role, role_source) = judged_role_gated(
+    self,
+    agent,
+    challenge_nonce,
+    challenge_sig~
+  )
   match check_scope_permission(scope, role) {
     // RoleDenied 是**硬拒** —— HumanSteward 保护路径必须继续拒绝，绝不放行
     RoleDenied(e) => Err(e)
@@ -478,7 +483,11 @@ fn denied_tagged(role_source : String) -> @store.LockAcquireOutcome {
   let o = @store.LockAcquireOutcome::denied_by_permission()
   let t = auth_tag(role_source)
   // BUG-453：默认态零后缀 ⇒ `permission_denied` 保持既有精确断言（lock_perm_wbtest:36/51）
-  if t == "" { o } else { o.relabel(o.action + t, false) }
+  if t == "" {
+    o
+  } else {
+    o.relabel(o.action + t, false)
+  }
 }
 
 ///|
@@ -522,7 +531,12 @@ pub fn FistEngine::rsv_try_set(
   //   在 S3（身份锚点）落地前，冒充风险不会消除。
   // `action` 的合法取值因此扩展为：reserved | renewed | taken_over | conflict |
   //   unregistered | <上述之一>[+role_inferred][+agent_self_reported]
-  let (role, role_source) = judged_role_gated(self, agent, challenge_nonce, challenge_sig~)
+  let (role, role_source) = judged_role_gated(
+    self,
+    agent,
+    challenge_nonce,
+    challenge_sig~
+  )
   // BUG-453：三个**新**认证态各带自己的后缀；既有态保持修前的 `+agent_self_reported`
   // （`auth_tag` 对它们返回空串，故这里补上 —— 语义与修前逐字一致，零回归）。
   let auth = auth_tag(role_source)
@@ -637,7 +651,12 @@ pub fn FistEngine::locks_try_acquire(
   // BUG-422：与两条预订门同一取数（剔除 server 自身份，见 `declared_role_for_judgment`）。
   // BUG-432：并入 `judged_role` —— 锁门 / 预订门 / claim 的 RANK_GATE 现在是**同一个**取数面。
   // BUG-453：**不再丢弃 `role_source`** —— 它必须进 `action` 面（认证态可见）。
-  let (role, role_source) = judged_role_gated(self, agent, challenge_nonce, challenge_sig~)
+  let (role, role_source) = judged_role_gated(
+    self,
+    agent,
+    challenge_nonce,
+    challenge_sig~
+  )
   match check_scope_permission(scope, role) {
     RoleDenied(_) =>
       // **legacy_grant 特判（BUG-424 裁决 (a)(b)(c)）**
@@ -685,19 +704,23 @@ pub fn FistEngine::locks_try_acquire(
       }
     Unregistered(_) => {
       let o = self.store.locks_try_acquire(lock)
-      let o2 = if o.granted {
-        o.relabel("unregistered", true)
-      } else {
-        o
-      }
+      let o2 = if o.granted { o.relabel("unregistered", true) } else { o }
       let t2 = auth_tag(role_source)
-      if t2 == "" { o2 } else { o2.relabel(o2.action + t2, o2.granted) }
+      if t2 == "" {
+        o2
+      } else {
+        o2.relabel(o2.action + t2, o2.granted)
+      }
     }
     Allowed => {
       // BUG-453：`Allowed` 分支过去直接原样返回后端结论 ⇒ 认证态在**最常见**的路径上丢失。
       let o = self.store.locks_try_acquire(lock)
       let t3 = auth_tag(role_source)
-      if t3 == "" { o } else { o.relabel(o.action + t3, o.granted) }
+      if t3 == "" {
+        o
+      } else {
+        o.relabel(o.action + t3, o.granted)
+      }
     }
   }
 }
@@ -735,3 +758,72 @@ pub fn FistEngine::lock_violations_list(
 ) -> Array[@store.LockViolation] {
   self.store.lock_violations_list()
 }
+
+///|
+/// BUG-430 / S3 **第八段**：**密钥轮换**的准入判定（纯函数 —— 唯一判定面）。
+///
+/// 背景：`key_pin_verdict` 对「已有公钥且与本次不同」返回 `reject_different_key`，
+/// 拒绝文案里写着「轮换通道尚未实现」。**没有轮换 = 私钥丢了就永久锁死**
+/// （攻击者抢注成功后，正主再也拿不回自己的身份）。本函数补上那条通道。
+///
+/// 规则（**只加严，不放宽**）：
+///   · 库里**没有**公钥 ⇒ `rotate_not_needed`（走首登路径，不需要旧钥证明）
+///   · 库里公钥 == 本次公钥 ⇒ `rotate_not_needed`（幂等，不需要旧钥证明）
+///   · 库里公钥 != 本次公钥 ⇒ **必须**由**旧私钥**对本次 challenge 签名：
+///       - 没给 `rotate_sig`         ⇒ `rotate_reject_no_proof`（拒绝）
+///       - 给了但旧公钥验不过        ⇒ `rotate_reject_bad_proof`（拒绝）
+///       - 给了且旧公钥验过          ⇒ `rotate_allowed`（允许换）
+///
+/// ⚠️ **为什么必须验旧钥**：换钥若不需要任何证明，则任何能调到本工具的调用方
+///   都能把某身份的公钥换成自己的 ⇒ **身份劫持**（正是 `key_pin` 那条锁要防的事）。
+///   「旧私钥签得出」是本仓**唯一**能证明「你就是原来那个主体」的手段。
+///
+/// ⚠️ 本函数只判定、不 IO：验签留在 handler（纯件才可测，判例-29）。
+pub fn key_rotate_verdict(
+  prev_key : String,
+  pubkey_hex : String,
+  rotate_sig : String,
+  old_sig_ok : Bool,
+) -> String {
+  if prev_key == "" || prev_key == pubkey_hex {
+    key_rotate_not_needed
+  } else if rotate_sig == "" {
+    key_rotate_reject_no_proof
+  } else if !old_sig_ok {
+    key_rotate_reject_bad_proof
+  } else {
+    key_rotate_allowed
+  }
+}
+
+///|
+/// 轮换判定取值常量（单一真源）。
+pub let key_rotate_not_needed : String = "rotate_not_needed"
+
+///|
+pub let key_rotate_reject_no_proof : String = "rotate_reject_no_proof"
+
+///|
+pub let key_rotate_reject_bad_proof : String = "rotate_reject_bad_proof"
+
+///|
+pub let key_rotate_allowed : String = "rotate_allowed"
+
+///|
+/// 吊销判定（纯函数）：只有**当前确实有公钥**的 agent 才谈得上吊销。
+///
+/// 为什么单独判定：吊销一个没键的 agent 应报「无需吊销」而不是「吊销成功」——
+/// 否则回执会让调用方以为「我把他锁掉了」，实际什么都没变（假安全）。
+pub fn key_revoke_verdict(prev_key : String) -> String {
+  if prev_key == "" {
+    key_revoke_not_needed
+  } else {
+    key_revoke_ok
+  }
+}
+
+///|
+pub let key_revoke_not_needed : String = "revoke_not_needed"
+
+///|
+pub let key_revoke_ok : String = "revoked"
