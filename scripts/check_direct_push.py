@@ -72,9 +72,9 @@ def selftest() -> int:
         print("SELFTEST FAIL：直推拦截语义漂移")
         for f in fails:
             print("  - " + f)
-        return 1
+        sys.exit(1)  # NO_CALL_FACE J2：自检函数自己就是调用面
     print("SELFTEST OK 直推拦截语义 %d 格全中（拦 gitcode/main / 不拦 github·feature·畸形·空）" % len(cases))
-    return 0
+    sys.exit(0)  # NO_CALL_FACE J2：自检函数自己就是调用面
 
 
 def main(argv) -> int:
