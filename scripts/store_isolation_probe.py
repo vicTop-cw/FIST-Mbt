@@ -198,6 +198,14 @@ def publish_and_check(js, ns, cwd, env, expect_db, tag):
         detail["tools_listed"] = ntools
         if ntools <= 100:
             return "RED", detail | {"why": "tools/list 只回 %d 个工具 ⇒ 探针看不见样本" % ntools}
+        # R73：写入门（ns_gate）要求**先 store_open 再写** —— 探针原来直接 publish，
+        # 于是三格全 RED（`拒绝写入 default 命名空间：请先 store_open(...)`）。
+        # 探针真正要证明的是「行落在哪个 sqlite 文件」，开库只是前置，不改变该论点。
+        open_r = srv.call("store_open", {"namespace": ns})
+        if "error" in open_r:
+            return "RED", detail | {"why": "store_open 被拒：%s"
+                                    % json.dumps(open_r, ensure_ascii=False)[:200]}
+        detail["store_open_response"] = json.dumps(open_r, ensure_ascii=False)[:200]
         r = srv.call("publish", {
             "project_dir": ".", "namespace": ns,
             "description": "隔离探针 %s —— 只为一行任务，不落任何交付物" % ns,
@@ -305,7 +313,13 @@ def main():
         results["ST1_synthetic_violation"] = (verdict, dst)
 
     for k, (v, d) in results.items():
-        say("%-22s %s  %s" % (k, v, json.dumps(d, ensure_ascii=False)[:300]))
+        # R73：旧写法 `json.dumps(d)[:300]` 把 detail 从**尾部**截断，而 `why` 恰好排在最后
+        # ⇒ 判 RED 却永远看不到理由（判例-32 家族：诊断把理由藏起来 = 诊断不可用）。
+        # 新写法：`why` **前置**且不截断，其余 detail 仍限长。
+        why = d.get("why", "")
+        rest = {kk: vv for kk, vv in d.items() if kk != "why"}
+        say("%-22s %s  why=%s | %s" % (k, v, why,
+                                      json.dumps(rest, ensure_ascii=False)[:220]))
 
     reds = [k for k, (v, _) in results.items() if v != "GREEN"]
     if "--json" in sys.argv:
