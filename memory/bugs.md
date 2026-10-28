@@ -10526,3 +10526,15 @@ sqlite 面 manual 无 can_write ⇒ 被拒（fail-closed），正是所需。
 - summary: plan 工具的 challenge/challenge_sig schema 声明未接线 —— 调用方传签名不被验证也不被告知（Lane CQ 审核发现）
 - detail: Lane CQ 独立审核（BUG-430 覆盖面）发现：plan 工具的 schema 声明了 challenge 与 challenge_sig 两个可选参数（server.mbt:2052/2056，文案写「可选：S3 挑战 nonce。⚠️ 须配合 challenge_sig」），但 instrumented_tool 的 plan 注册块（2036-2100）的 handler 实现体里从未读取这两个参数 —— 没有 opt_challenge(args)，没有 challenge_nonce= 透传。后果：(1) 调用方以为传了 Ed25519 签名就受验，实际静默降级为自报身份，且不会收到任何警告；(2) 与 claim(2101) / reserve_scope(5920) / lock_acquire(6056) 三个同形声明让调用方无法区分「真验」与「只声明」。判据：按 instrumented_tool 块括号配平切分，plan 块内 challenge 命中但 challenge_nonce= / challenge_sig= 均无；对照 claim/reserve_scope/lock_acquire 三者两者皆有（真验）。这违反一源四态（schema 声明的能力与实现不一致）。建议：要么给 plan 接上 judged_role_gated 验签，要么从 schema 摘掉这两个字段并在描述里明说 plan 不做挑战认证。
 - reported_by: commander-gamma
+## BUG-473 [2026-10-28T10:45:42Z] [high] OPEN
+- summary: execute 工具的 agent 参数 schema 声明了（明写「ACL 判定身份」）但 handler 从不读 —— 调用方显式指定身份被静默忽略（与 BUG-472 同族）
+- detail: Lane CQ 死参数普查（22 处中的人工级复核项）：execute 的 schema 声明了 agent 参数，描述明写「agent(可选，**ACL 判定身份**)」（server.mbt:2223 块内，与 executor/model/tokens_in 等同列声明），但 handler 实现体（schema 之后的 1830 字符）里 agent 字面量出现 0 次 —— 3 条含词根的行全是注释（// BUG-436：判定身份由 execute_write_identity 统一解析）与别的函数名（agent_touch_first_seen(、agent_write_gate(），没有 get_str(args, "agent")。
+
+后果：调用方显式传 agent 以为能指定 ACL 判定身份，实际该参数被静默忽略，身份改由 execute_write_identity 的推断链（显式且非 manual 的 executor > 任务当前 assignee）决定，且调用方不会收到任何提示。
+
+判据：按 instrumented_tool 块括号配平切分，schema 段与 handler 段分开统计 —— agent 在 schema 段 1 次、handler 段（剥 // 注释后）0 次；双向标定：正向 claim 读 "agent" 判活、反向 execute 判死，两者都过才出数（判例-32）。
+
+与 BUG-472（plan 的 challenge 声明未接线）同族，属「声明了但不验」这一类。
+
+建议：要么让 handler 读 agent 并在与 execute_write_identity 冲突时报错或告警，要么从 schema 摘掉并把推断链写进描述。
+- reported_by: commander-gamma
