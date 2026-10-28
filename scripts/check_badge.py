@@ -80,7 +80,8 @@ def parse_test_count(log_text):
         if m:
             total, passed, failed = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
     if total is None:
-        raise SystemExit("FATAL: 未在日志中找到 'Total tests:' 行")
+        print("FATAL: 未在日志中找到 'Total tests:' 行 —— 判据无法自证")
+        raise SystemExit(2)
     return total, passed, failed
 
 
