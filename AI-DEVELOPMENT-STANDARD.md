@@ -248,7 +248,7 @@ report_bug({ "project_dir": ".", "summary": "[verify] file:line: reason", "sever
 - **身份自报 = 已知边界（BUG-430 的定性，非「已修复」）**：本仓 MCP 工具面**没有认证层**——`agent` / `assignee` / `executor` 都是**调用方可自报的字符串**；`agents.pubkey_fp` 全仓恒空（BUG-403/404 的死承诺）；`current_pid_token()` 是 `@env.now()/1000 % 2e9` 的**伪 pid**（同秒启动两进程会撞值）。**ACL / reserve_scope / RANK_GATE 因此是「协作式约定」，不是安全边界**。
   **已收口的是「一致性」不是「认证强度」**：BUG-418/421/422（名字不再能提权）、BUG-423/424（注册面毒化 + 锁权限门）、BUG-432（`claim` 的 RANK_GATE 改 `role → rank`，名字不参与授权裁决）、BUG-436（ACL 判定身份收敛为单一真源）——这些让「同一个人在不同工具里是同一个身份」，**但没有**让「这个名字不能被冒用」。
   **要真收口需要架构变更**（会话令牌 或 `pubkey_fp` 签名 + 4 个客户端全改），成本远超收益（挡的是自家 agent）⇒ 当前选择：**承认它是协作式约定，并把它写在这里**。**下一个人不得把它当安全边界用**。
-- **部署产物新鲜度：判据能「看见陈旧」，不等于「已经重装」（BUG-428）**：`scripts/check_deployment_freshness.py`（42 格自检 + 5 处变异对照）能报出 PATH 垫片 / 部署副本 / `dist/` / `_release/` 四个面的时间面与内容面。但**「判据报红」与「产物已更新」是两件事**：
+- **部署产物新鲜度：判据能「看见陈旧」，不等于「已经重装」（BUG-428）**：`scripts/check_deployment_freshness.py`（48 格自检 + 7 处变异对照）能报出 PATH 垫片 / 部署副本 / `dist/` / `_release/` 四个面的时间面与内容面。但**「判据报红」与「产物已更新」是两件事**：
   - `dist/fist-mbt.js` 可用 `python scripts/refresh_dist.py` 一条命令刷新（**必须在所有 WIP 被提交之后跑**，否则会把未完成改动打进发布快照）
   - **部署副本**（`%LOCALAPPDATA%/FIST-Mbt/`）要按安装流程**重装**
   - **`_release/js/`** 要**下一次 release 流程**重建
