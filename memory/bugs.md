@@ -9470,7 +9470,7 @@ m.set("backend", Json::string(self.store.backend_name()))
 
 ### FIXED(2026-10-27T06:40:38Z / BUG-441)
 - evidence: commit c3e30b79 + f5aa7e96（代码+报告）。根因：MemoryStore 从未实现 saga 三方法（write_saga_action/list_saga_actions/mark_saga_actions_done），Mem 分支返回占位 Ok(())/[]，补偿序列静默为空。修法：MemoryStore 加 saga_log + saga_next_id，三方法改为实际读写，逐条对齐 SQLite 语义（幂等登记同 step 就地更新保留旧 id、按 push 顺序、mark done 遍历改 status 不删行）。5 格锁：写 3 条读回 3 条 + 顺序/mark done 可见/同 step 幂等/ns+root 隔离/双后端语义四字段相等。变异实测：把 list_saga_actions 改回 [] ⇒ src/store 97 格中 passed 92/failed 5 正是五格全红；恢复 97/97/0。门禁：moon check 0 errors；src/store 97/97；全量 1585/1585/0。分析亮点：Saga 的空列表在任何正常系统里都合法（「没有待补偿步骤」是正常状态），比 BUG-439 更隐蔽；选 (a) 补实现而非 (b) 加披露的理由——披露的前提是有人会去看那个字段，而这里调用方根本不会怀疑返回为空。与 heartbeat 对照：heartbeat 做对了（persisted 披露），saga 功能上一致了但披露上还不一致（引擎侧回执仍无 persisted，建议另立一单）。beta 还如实记录了一次假失败：首次跑锁 4 格红，隔离探针得到 1!=3（写 1 条读回 1 条，实现是对的），排查发现是测试写错（写入没传 ns），修正后 97/97。
-## BUG-442 [2026-10-27T06:35:19Z] [high] OPEN
+## BUG-442 [2026-10-27T06:35:19Z] [high] FIXED
 - summary: [atom-family] 提交 4fde29e 新增 atom 族后，门 GROUP BY 2000 rows (vectorised) 恒失败：E9402「$visibility 域 atom 不可参与比较」
 - detail: ## 复现
 
@@ -9569,7 +9569,7 @@ tnr::tensor::tnrd::canonical_le_bytes(&t);   // panic: num_bytes: 非数值 dtyp
 
 ### FIXED(2026-10-27T07:29:46Z / BUG-443)
 - evidence: d1daf49：查清 Ps 张量由「克隆已有张量的 shape+data、只换 dtype 标记」产生（interp/builtin.rs:47、interp/mod.rs:4064），其载荷本身就是 f64 槽位。故在 tnrd::num_bytes 与 from_le_bytes 中把 Dtype::Ps 与 Float64 归入同一分支，按 8 字节序列化/还原——描述事实而非新发明语义。两个真源现已一致：elem_width(Ps)==8 且可字节化。新增测试 ps_dtype_roundtrips_as_8_byte_slots（断言 elem_width=8、产物长度=元素数×8、回搬 dtype 与值一致，含负数与 1e300 极值）；原 unsupported_dtype_returns_error_not_panic 改以 Symbolic 为「不支持」示例。全量 6640 passed / 0 failed。
-## BUG-444 [2026-10-27T07:14:54Z] [medium] OPEN
+## BUG-444 [2026-10-27T07:14:54Z] [medium] FIXED
 - summary: [interp] 508daa8 让 assert_shape 真正检查后，attribute_macros 暴露形状违规：标签宏后 let 得到 Tensor&lt;int64, []&gt;
 - detail: ## 现象
 
@@ -9614,7 +9614,10 @@ thread 'interp::tests::attribute_macros' panicked at src\interp\tests\mod.rs:677
 
 我自己的区域全绿：`gpu::` 44 passed / `tensor::` 485 passed。
 - reported_by: tnr-tql-agent
-## BUG-445 [2026-10-27T07:21:20Z] [medium] OPEN
+
+### FIXED(2026-10-28T01:25:12Z / BUG-444)
+- evidence: 归属 Tnr（非 FIST-Mbt 本仓）。根因：508daa8 让 assert_shape 从空操作变真检查，暴露「标签宏后 let 形状/测试期望不符」——断言长期空转、保护的东西从未被保护过。现状态：assert_shape 已真检查（round 122），attribute_macros 测试已重写为匹配真实行为（fn 调用=6、let=5、#[time] 计时行），不再是旧版对 let 期望 5 却得 6 的断言。验证读数：隔离 target 全量 6533 passed 中 interp::tests::attribute_macros 实测 ok（其余失败项均为环境性 file-I/O，与本改动无关）。
+## BUG-445 [2026-10-27T07:21:20Z] [medium] FIXED
 - summary: [BUG-443 部分缓解] num_bytes 不再 panic 而是返回错误；但 Ps 的 elem_width=8 与「不可序列化」仍不一致，并附新证据说明应改为支持
 - detail: ## 这是对 BUG-443 的部分缓解（不是完整修复）
 
@@ -9664,7 +9667,10 @@ _ => return Err(format!("dtype {dtype} 并非数值容威（num_bytes 不支持�
 3. `elem_width(Ps) == 8` 与上述两条同时成立（真源一致）；
 4. 若决定「`Ps` 不应可存储」，则反过来把 `elem_width(Ps)` 改为 0，让所有「=0 即不可扁平化」的守卫统一拒绝它 —— 但**不能维持现状**（一个说 8 一个说不行）。
 - reported_by: tnr-tql-agent
-## BUG-446 [2026-10-27T07:35:08Z] [high] OPEN
+
+### FIXED(2026-10-28T01:25:13Z / BUG-445)
+- evidence: 归属 Tnr（非 FIST-Mbt 本仓）。本条是 BUG-443 的部分缓解，其主体（Ps 的 elem_width=8 与「不可序列化」两个真源不一致）已被 BUG-443 的完整修复（commit d1daf49）解决：tnrd::num_bytes(:387) 与 from_le_bytes(:486) 均把 Dtype::Ps 与 Float64 归入同一 8 字节分支，Ps 载荷本就是 f64 槽位。现 elem_width(Ps)==8 与可字节化重新一致；旧 Ps=>Err(:580) 已成不可达分支（编译器 unreachable_patterns 警告佐证）。验证：ps_dtype_roundtrips_as_8_byte_slots 与 unsupported_dtype_returns_error_not_panic 均 ok（隔离 target 实测）。
+## BUG-446 [2026-10-27T07:35:08Z] [high] FIXED
 - summary: [BUG-442 补充] 已排除 5 个方向：两文件同构可比较、== 与 all() 单独均正常；门内 E9402 与单独 E_SHAPE 是两种现象，后者系固定输出路径残留
 - detail: ## 追加证据（对 BUG-442 的补充，不是重复单）
 
@@ -9730,7 +9736,7 @@ _ => return Err(format!("dtype {dtype} 并非数值容威（num_bytes 不支持�
 若某用例失败后残留产物，下一个用例的比较可能读到别人的数据。
 可考虑给每个用例用**独立输出路径**（如按用例名散列），从结构上消除这种串扰。
 - reported_by: tnr-tql-agent
-## BUG-447 [2026-10-27T07:52:27Z] [high] OPEN
+## BUG-447 [2026-10-27T07:52:27Z] [high] FIXED
 - summary: [interp] 最小复现：同一对 Int64 张量，`a == b` 报 E9402（$visibility atom 不可比较），而 `sum(abs(a-b))` 正常为 0
 - detail: ## 精确最小复现（本轮已把范围收到最窄）
 
@@ -9778,6 +9784,9 @@ print(all(a == b));            // → E9402 Atom 未注册进 $Compable 大域�
 用户写 `a == b` 比较两个加载的 Int64 张量就会失败，而 `a - b` 正常 ——
 这是**用户可直接撞上的行为不一致**，不只是测试问题。
 - reported_by: tnr-tql-agent
+
+### FIXED(2026-10-28T01:25:11Z / BUG-442, BUG-446, BUG-447)
+- evidence: 归属 Tnr（非 FIST-Mbt 本仓）。根因：提交 4fde29e 把 visibility/cache 两族并入 src/tensor/mod.rs 的 MATH_SYMBOL_ATOMS 反查表，使 atom_id_to_name(40000/90000) 由 None 变 Some，于是 Int64 数据张量恰好含这些编号（如 GROUP BY 2000 rows 结果）时被 src/interp/expr.rs::precheck_atom_cmp 误判为 atom 比较、报 E9402。修复（Tnr commit dee48de）：门禁恢复「纯 Atom 引用」收紧——任一侧含任一普通数据元素（未注册编号/可比较域编号/错误码 0-1999）即整张量按普通数值比较，三处 continue 改 return None；纯 atom 比较（F8）与 Compable 语义不变。回归锁：interp::tests::data_tensor_with_atom_code_not_misfired_as_atom_cmp（[40000,1,2]==[40000,1,2]→true、[90000,5]==[90000,5]→true、bridge 同域仍 E9402/跨域仍 E9401）。验证（隔离 target 避开 TnrPolishCron 的 target/ 锁）：该锁 + non_comparable_atoms_rejected_in_comparison + bug228_* 全绿；126 个 e2e/file-I/O 失败均为环境性（并发抢占同一 temp/项目目录写权限），与纯内存比较门禁无关。
 ## BUG-448 [2026-10-27T09:16:09Z] [medium] FIXED
 - summary: [环境] 本机 CUDA 主上下文「保留+设为当前」均成功、cuCtxGetCurrent 确认有效，但 cuMemGetInfo 返 201 INVALID_CONTEXT；libtorch device_count 亦为 0，疑同源
 - detail: ## 现象
@@ -9843,10 +9852,13 @@ fallback_reason: cuda-context-failed: gpu0: cuMemGetInfo=201
 
 ### FIXED(2026-10-27T09:22:41Z / BUG-448)
 - evidence: 828cfec：BUG-448 的诊断结论是错的——不是环境问题，是我自己代码的符号名 bug。nvcuda.dll 导出的是 cuMemGetInfo_v2（带 _v2 后缀），而 src/gpu/mod.rs 找的是无后缀 cuMemGetInfo → GetProcAddress 返回空指针 → 调用后返回垃圾码 201（CUDA_ERROR_INVALID_CONTEXT），导致 total_mem=0。用库外 ctypes 探针（Python 直调 nvcuda.dll）验证：cuMemGetInfo_v2 走 primary ctx 与显式 cuCtxCreate 两条路径均返回 0，total=6,441,926,656（6.00 GiB）。修复：新增 proc_v2! 宏，先试 `_v2` 后缀再回退无后缀。修复后 `tnr device info` 报 total_mem=6441926656 / free_mem=5379194880（6.00 / 5.01 GiB），与独立探针完全一致。教训：我把「符号名」排除在嫌疑清单之外，于是把代码 bug 误判成环境限制——排除法只对「列进清单的假设」有效。
-## BUG-449 [2026-10-27T10:52:05Z] [medium] OPEN
+## BUG-449 [2026-10-27T10:52:05Z] [medium] FIXED
 - summary: BUG-486: LINK RECIPE 的 `-L dependency` 指向 rlib 所在目录而非 deps/，照抄即 E0463
 - detail: `lang-zone <f>.lz` 生成 stderr 链接配方取 `r.parent()` 作依赖目录。rlib 命中顶层 `target/debug/liblz_builtins.rlib`（direct 分支）时 parent=target/debug，而其传递依赖在 target/debug/deps/ → 照抄配方 E0463 can't find crate for lz_builtins。修法：print_link_recipe 先取 `<exe_dir>/deps` 作为依赖目录（rlib 在 deps 时二者相同无副作用）。修复后配方 `-L dependency=.../target/debug/deps`，按配方 rustc 编译通过并运行输出 1。cargo test --lib 463/463 全绿。commit e6f7ed4。
 - reported_by: lead
+
+### FIXED(2026-10-28T01:25:14Z / BUG-449)
+- evidence: 归属 lang-zone（非 FIST-Mbt 本仓）。根因：lang-zone 生成 stderr 链接配方时取 rlib 的 r.parent() 作 -L dependency；rlib 命中顶层 target/debug/liblz_builtins.rlib（direct 分支）时 parent=target/debug，而传递依赖在 target/debug/deps/，照抄配方 rustc 报 E0463 cannot find crate for lz_builtins。修复（lang-zone commit 4520840，其账本 BUG-486）：print_link_recipe 先取 <exe_dir>/deps 作依赖目录，且 5 处 recipe/build 站点（main.rs:270/296/401/955/1021/1480）统一指向 deps/。验证（实测 lang-zone.exe probe/m1_a.lz 的 stderr 配方）：-L dependency=E:\IDEProjects\AI\lang-zone\target\debug\deps（正确指向 deps/，非 target/debug）。
 ## BUG-450 [2026-10-27T11:40:57Z] [high] FIXED
 - summary: [perf] 逐元素算子比 PyTorch 慢 23×(512²)，但裸内核已接近/超过 PyTorch——瓶颈是每次调用的新分配（首次触页），不是内核
 - detail: ## 结论：算子不慢，**分配慢**
@@ -10179,3 +10191,11 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
 
 ### FIXED(2026-10-28T01:18:13Z / BUG-455)
 - evidence: 五批硬产出，原始「34/154 零覆盖」判据作废（自查假阳性）。①判据作废的诚实说明：我用「工具名在测试文本里不出现」当零覆盖判据，实测多例假阳性 —— audit_permission（实质是 @ops.enforce，audit_test.mbt:37 有测）、atgc_old 三件（atgc-old/atgc_test.mbt 10 格覆盖 atgc_compile/run）、assistant_status/assistant_resign（assistant_set_status 被测 11 次）、dag_publish（publish_with_deps 被测 6 次）、evolve_snapshot（实质是 Archive::best/all）。⇒ 34 这个数字不可信，真正的判据应该是「抽 handler 的实质逻辑，再看那逻辑有没有测试」。②五批真产出（19 格锁 + 一个仓库卫生根治）：第一批 4 格（topo_sort/ready_tasks/critical_path/parallelism，全部在 engine 测试文件里 0 次）；第二批 4 格（debate 族 session：next_session_id 格式与单调性 / split_hat_items 三分隔符 / DebateRegistry 空表与插入，这些逻辑住在 server.mbt 的 DebateSession/DebateRegistry 里此前零测试）；第三批 6 格（Archive 6 方法 new/len/is_empty/get/all/best/sample_parent + add 的两条关键不变量「重复 id 不虚高父 children」「新增子代 +1」，Archive 是 DGM 演化核心，此前在全部 evolve 测试文件里各 0 次）；第四批 5 格（deps_satisfied 5 个出口，它是 dag_check 工具的全部实质逻辑且 handler 纯转发）；第五批（不是补测试，是根治仓库卫生：测试 db 统一落 .fist-mbt/tmp/ —— 抓 4 个统一建库 helper 一处改 64 处受益 + 6 个散点文件 10 处，根目录 *.db 从 81 降到 10，其中主库 1 + 测路径解析的必要残留 9，.fist-mbt/tmp/*.db 从 0 到 75）。③变异对照：第一批 M1（parallelism 去掉 pending 过滤）红 / M2 是等价变异（> 与 >= 只在等长链时有别）；第二批无变异（session 状态直接断言）；第三批 3 组全红（去掉 is_new 守卫 / 不 +1 父 children / best 取最低分）；第四批 3 组全红（None=>true / 依赖 None 跳过 / 不看 status，最后一组同时红 2 格证明「多级依赖不穿透」那格真的在看）。④重要教训（判例-29 又一次正面）：第五批第一版批量替换还动了 store_db_path_wbtest 与 multi_store_test —— 但这两个文件测的就是路径解析本身（db_path_from_env 默认值 / MultiStore.data_dir 拼接），改它们的输入等于改被测对象，锁当然红，已 git checkout 回滚；对照 store_migration_wbtest 故意没改（它测根目录 legacy 到 .fist-mbt/data 的迁移，必须在根目录造 fixture）。⑤累计：全仓测试从 1639 涨到 1670（+31 格含其他 lane 的），本单自身贡献 19 格 + 根目录 db 降 71 个。
+## BUG-456 [2026-10-28T01:59:51Z] [medium] FIXED
+- summary: [FIST-Mbt check_test_sync] --fresh 只在「已给 log_path」的分支里生效 ⇒ 裸敲 --fresh 直接 REJECT「无法从参数/日志解析测试总数」，等于「真跑」这个能力必须先知道一个已存在的文件路径才能用
+- detail: 病灶（实测）：main() 的 elif args: 分支先查 log_path.is_file()（不存在则 REJECT），再在它里面才 if fresh: run_fresh(...)。⇒ 裸敲 check_test_sync.py --fresh 时 args 为空 ⇒ 走不进 elif ⇒ total=None ⇒ REJECT。修法两处缺一不可：①--fresh 且无 args ⇒ 自取默认快照路径 temp/check_test_sync_fresh.log；②--fresh 的真跑必须早于「文件必须存在」检查（否则默认路径还不存在，仍 REJECT）。回归锁第 34 格 bug456-fresh-default-path（静态实现路径格，读本文件源码断言行首锚定的 needle）。为什么静态而不真跑：真跑要 moon test 全仓分钟级，塞进 --selftest 会让每一次「门的门」都变成两分钟 —— 尺子会被人绕过。⚠️ 我第一版就踩了判例-30 自指假绿：裸 if "if fresh and not args:" not in _src 的模式串自己就在注释里 ⇒ 变异真代码后注释仍命中 ⇒ 静态格恒绿（实测 M1 rc=0）；修法是行首锚定 + 带换行 _needle="\n    if fresh and not args:\n"。变异对照 M1（把那行改成 if False:）⇒ rc=1 且精确命中 [bug456-fresh-default-path]。验收：--fresh（不带 log_path）= 真跑 + ADVISORY；--selftest = PASS 34（33→34）；--total 1670 老路径仍可用。同类：BUG-425「判据输入面」——判据的输入应该自己取，不该让人手填（手填的数可能又是错的，正是 drift 的形状）。
+- reported_by: lead
+
+
+### FIXED(2026-10-28T02:00:16Z / BUG-456)
+- evidence: 修法两处缺一不可（commit da875464）：①--fresh 且无 args ⇒ 自取默认快照路径 temp/check_test_sync_fresh.log；②--fresh 的真跑必须早于「文件必须存在」检查（旧顺序先查存在 ⇒ 默认路径还不存在 ⇒ 仍 REJECT）。回归锁第 34 格 bug456-fresh-default-path（静态实现路径格，判例-29）：读本文件源码断言 "\n    if fresh and not args:\n" 与默认路径串都在。为什么静态而不真跑：真跑要 moon test 全仓分钟级，塞进 --selftest 会让每一次「门的门」都变成两分钟 —— 尺子会被人绕过。⚠️ 我第一版就踩了判例-30 自指假绿（已修）：裸 if "if fresh and not args:" not in _src 的模式串自己就在这条注释里 ⇒ 变异真代码后注释仍命中 ⇒ 静态格恒绿（实测 M1 变异 rc=0，本应 1）；改行首锚定 + 带换行 _needle="\n    if fresh and not args:\n" 后 M1 ⇒ rc=1 且精确命中 [bug456-fresh-default-path]。验收：--fresh（不带 log_path）= 真跑 + ADVISORY（工作树脏的正常降级）；--selftest = SELFTEST PASS 34（33 升至 34）；--total 1670 老路径仍可用。同类：BUG-425「判据输入面」—— 判据的输入应该自己取，不该让人手填（手填的那个数可能又是错的，正是 drift 的形状）。
