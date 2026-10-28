@@ -19,8 +19,8 @@ fn _stat_d(j : Json, key : String) -> Double {
 
 ///|
 test "record_execution 幂等：同 id 重复写入优雅覆盖不抛 UNIQUE" {
-  _reset_exec(bug462_unique_db("exec_upsert"))
-  let s = match @store.SqliteStore::open(bug462_unique_db("exec_upsert")) {
+  _reset_exec(@store.bug462_unique_db("exec_upsert"))
+  let s = match @store.SqliteStore::open(@store.bug462_unique_db("exec_upsert")) {
     Some(x) => x
     None => abort("sqlite open failed")
   }
