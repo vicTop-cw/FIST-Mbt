@@ -1,3 +1,10 @@
+---
+status: 提案中
+decided_by:
+decided_at:
+decision:
+---
+
 # BUG-470 决策单
 
 ## 一句话
