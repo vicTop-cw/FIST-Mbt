@@ -194,7 +194,8 @@ def hint_for(name):
     return "对照 AI-DEVELOPMENT-STANDARD.md §4.1：要么反解真源，要么把声称改窄并写明缺口"
 
 
-def judge(rel, text):
+def judge(text):
+    # R93：原第 1 参 rel 零引用（新判据抓到）；调用点用 AST 精确移除。
     """纯函数：对一份尺的正文出「可能窄」条目。返回 [(name, n, start_line, kind, hint)]。"""
     rows = []
     for name, items, line, _inline in extract_list_constants(text):
@@ -358,7 +359,8 @@ def _is_pure_predicate(block):
     return True
 
 
-def judge_single_values(rel, text, others_corpus=None, n_guards=1, guard_corpus=None):
+def judge_single_values(text, others_corpus=None, n_guards=1, guard_corpus=None):
+    # R93：原第 1 参 rel 零引用；调用点用 AST 精确移除。
     """纯函数：对一份尺的正文出「单值写死」条目（D1–D6）。
 
     返回 [dict]：{line, op, literal, verdict, evidence, text}
@@ -481,10 +483,10 @@ def selftest():
 
     # ④ judge 端到端：indexed 报、iterated 不报（这正是 α 普查时做过的区分）
     bad = 'BAD_FILES = (\n    "a.mbti",\n    "b.mbti",\n)\nfor i in range(1):\n    use(BAD_FILES[0])\n'
-    cell("judge-flags-indexed", [r[0] for r in judge("scripts/check_bad.py", bad)], ["BAD_FILES"])
+    cell("judge-flags-indexed", [r[0] for r in judge(bad)], ["BAD_FILES"])
     good = 'OK_FILES = (\n    "a.mbti",\n    "b.mbti",\n)\nfor f in OK_FILES:\n    use(f)\n'
     # 设计如此：iterated **也列出**，但标 iterated 让人一眼排除（不静默丢弃 = 数字不能凭空少）
-    _gj = judge("scripts/check_good.py", good)
+    _gj = judge(good)
     cell("judge-marks-iterated-not-indexed",
          [(r[0], r[3]) for r in _gj], [("OK_FILES", "iterated")])
     # 反向验证（这三格钉住「修复前的形态必须能被看见」）：
@@ -492,18 +494,18 @@ def selftest():
     _before = ('MBTI_FILES = (\n    "a.mbti",\n    "b.mbti",\n    "c.mbti",\n)\n'
                'for rel in MBTI_FILES:\n    pass\n')
     cell("reverse-mbti-before-fix-is-listed",
-         [(r[0], r[3]) for r in judge("x.py", _before)], [("MBTI_FILES", "iterated")])
+         [(r[0], r[3]) for r in judge(_before)], [("MBTI_FILES", "iterated")])
     # ② 单值常量（check_esm_bundle_runnable 修复前的 DEFAULT_BUNDLE）**不在本尺射程**
     #    —— 诚实缺口：本尺只认「清单」，单值写死由「覆盖面自证格」在各自尺里钉
     cell("reverse-single-const-out-of-scope",
-         judge("x.py", 'DEFAULT_BUNDLE = "a/cli.js"\n'), [])
+         judge('DEFAULT_BUNDLE = "a/cli.js"\n'), [])
     # ③ 典型 indexed 形态必须判为 indexed（最高可疑）
     cell("reverse-indexed-detected",
-         [(r[0], r[3]) for r in judge("x.py", 'SCAN_FILES = (\n    "a",\n    "b",\n)\nf = SCAN_FILES[0]\n')],
+         [(r[0], r[3]) for r in judge('SCAN_FILES = (\n    "a",\n    "b",\n)\nf = SCAN_FILES[0]\n')],
          [("SCAN_FILES", "indexed")])
     # 名字不像覆盖清单的，即使 indexed 也不报
     other = 'REG = (\n    "a",\n    "b",\n)\nuse(REG[0])\n'
-    cell("judge-skips-other-name", [r[0] for r in judge("scripts/check_other.py", other)], [])
+    cell("judge-skips-other-name", [r[0] for r in judge(other)], [])
 
     # ⑤ 自我对表（本尺也过判例-16）：我扫的 == git ls-files 的
     tr = tracked_guards()
@@ -582,16 +584,16 @@ def selftest():
     # --- D4 有真源副本：值在判据**外**也出现才算「真源值」 ---
     _src_d4 = 'if p == "shared-config-value":\n    pass\n'
     cell("d4-has-elsewhere",
-         len(judge_single_values("scripts/check_a.py", _src_d4,
+         len(judge_single_values(_src_d4,
                                  others_corpus={"moon.mod": 'name = "shared-config-value"\n'},
                                  n_guards=0)), 1)
     cell("d4-no-elsewhere",
-         len(judge_single_values("scripts/check_a.py", _src_d4,
+         len(judge_single_values(_src_d4,
                                  others_corpus={"moon.mod": "nothing here\n"},
                                  n_guards=0)), 0)
     # D4 变异对照：others_corpus 为空 ⇒ 全部丢弃（判据不会凭空报）
     cell("d4-mutation-empty-corpus",
-         len(judge_single_values("scripts/check_a.py", _src_d4,
+         len(judge_single_values(_src_d4,
                                  others_corpus={}, n_guards=0)), 0)
 
     # --- D5 反店：通用词汇不许冒充真源（普通词汇会以大量"外部来源"混进来）---
@@ -603,17 +605,17 @@ def selftest():
     _gc = ['if p == "%s":\n' % _common for _ in range(10)]
     _oc = {"x.py": 'p = "%s"\n' % _common}
     cell("d5-common-word-filtered",
-         len(judge_single_values("scripts/check_a.py", _src_d5,
+         len(judge_single_values(_src_d5,
                                  others_corpus=_oc, n_guards=10, guard_corpus=_gc)), 0)
     # D5 变异对照：把 n_guards 置 0（反店关闭）⇒ 同一个词会被报出来
     # 注意：必须用**能过 D4' 的值**（含分隔符 + 出现在真源面），否则 D4' 先挡掉，测不到 D5。
     _d5_oc = {"moon.mod": 'name = "%s"\n' % _common}
     cell("d5-mutation-refractory-off",
-         len(judge_single_values("scripts/check_a.py", _src_d5,
+         len(judge_single_values(_src_d5,
                                  others_corpus=_d5_oc, n_guards=0, guard_corpus=_gc)), 1)
     # 另补一格：`__main__` 必须被 D3 挡（不是 D5）——两条过滤各司其职
     cell("d5-main-guard-is-d3-not-d5",
-         len(judge_single_values("scripts/check_a.py",
+         len(judge_single_values(
                                  'if __name__ == "__main__":\n    pass\n',
                                  others_corpus={"x.py": '__main__\n'}, n_guards=0)), 0)
 
@@ -627,7 +629,7 @@ def selftest():
         '        raise SystemExit(emit_fatal("FATAL 空扫描，拒绝报绿"))\n'
         '    return 0\n'
     )
-    _r6p = judge_single_values("scripts/check_a.py", _d6_protected,
+    _r6p = judge_single_values(_d6_protected,
                                others_corpus={"moon.mod": '"shared-config-value"\n'}, n_guards=0)
     cell("d6-with-refusal-is-ok-refused",
          [(r["literal"], r["verdict"]) for r in _r6p],
@@ -639,7 +641,7 @@ def selftest():
         '        return 0\n'
         '    return 0\n'
     )
-    _r6u = judge_single_values("scripts/check_a.py", _d6_unprotected,
+    _r6u = judge_single_values(_d6_unprotected,
                                others_corpus={"moon.mod": '"shared-config-value"\n'}, n_guards=0)
     cell("d6-without-refusal-is-hard",
          [(r["literal"], r["verdict"]) for r in _r6u],
@@ -651,7 +653,7 @@ def selftest():
         '        raise SystemExit(emit_fatal("FATAL 空扫描，拒绝报绿"))\n', '')
     cell("d6-mutation-drop-refusal-flips-to-hard",
          [r["verdict"] for r in judge_single_values(
-             "scripts/check_a.py", _d6_mutated,
+             _d6_mutated,
              others_corpus={"moon.mod": '"shared-config-value"\n'}, n_guards=0)],
          ["hard"])
     # D6 实现面锁（判例-29：机制格 ≠ 实现路径格）：
@@ -681,12 +683,12 @@ def selftest():
                '    return False\n')
     cell("d4-real-source-value-is-hard",
          [(r["literal"], r["verdict"]) for r in judge_single_values(
-             "scripts/check_a.py", _src_tp, others_corpus=_oc_real, n_guards=0)],
+             _src_tp, others_corpus=_oc_real, n_guards=0)],
          [("vicTop-cw/fist-mbt", "hard")])
     # **反向变异对照（判例-30）**：把真源面语料换掉 ⇒ 同一份代码不再报
     #   （证明它真在比对真源面，不是无脑命中）
     cell("d4-mutation-no-source-face-no-report",
-         judge_single_values("scripts/check_a.py", _src_tp,
+         judge_single_values(_src_tp,
                              others_corpus={"docs/a.md": "vicTop-cw/fist-mbt\n"}, n_guards=0), [])
     # 枚举标签：即便在 docs 里出现，也不许报（首版 31 条假阳性的形状）
     _src_label = ('def classify(kind):\n'
@@ -694,12 +696,12 @@ def selftest():
                   '        return 1\n'
                   '    return 0\n')
     cell("d4-enum-label-not-reported",
-         judge_single_values("scripts/check_a.py", _src_label,
+         judge_single_values(_src_label,
                              others_corpus={"docs/a.md": "comment contract extern\n"},
                              n_guards=0), [])
     # 同一枚举标签放进**真源面**也不报（形状判据独立于"出现在哪"）
     cell("d4-enum-label-in-source-face-still-not-reported",
-         judge_single_values("scripts/check_a.py", _src_label,
+         judge_single_values(_src_label,
                              others_corpus={"moon.mod": "comment\n"}, n_guards=0), [])
     # **D4' 变异对照**：把 `_RE_ENUM_LABEL` 替换成永不匹配 ⇒ 枚举标签会被报出来
     # 注意：为了让本格只测「枚举过滤」这一件事，样本必须**能过 D4' 的 a/c 两条**
@@ -713,17 +715,17 @@ def selftest():
     try:
         globals()["_RE_ENUM_LABEL"] = re.compile(r"(?!x)x")
         cell("d4-mutation-enum-filter-off-reports-label",
-             len(judge_single_values("scripts/check_a.py", _label_src,
+             len(judge_single_values(_label_src,
                                      others_corpus=_label_oc, n_guards=0)), 1)
     finally:
         globals()["_RE_ENUM_LABEL"] = re.compile(_saved_enum)
     # 还原后：`enum/comment` 形如带分隔符的值 ⇒ 不再被当枚举标签挡掉，仍会被报（这是正确行为）
     cell("d4-mutation-enum-filter-restored",
-         len(judge_single_values("scripts/check_a.py", _label_src,
+         len(judge_single_values(_label_src,
                                  others_corpus=_label_oc, n_guards=0)), 1)
     # 而纯单词标签 `comment` 必须被 D4' 的枚举形状挡掉（真阴性）
     cell("d4-plain-word-label-not-reported",
-         judge_single_values("scripts/check_a.py", _src_label,
+         judge_single_values(_src_label,
                              others_corpus={"moon.mod": "comment\n"}, n_guards=0), [])
 
     # --- D6 纯谓词豁免（实跑 `is_contract` 假阳性之后的修正格）---
@@ -825,7 +827,7 @@ def run(argv):
             unreadable.append(rel)
             continue
         guard_corpus.append(txt)
-        for name, n, line, kind, hint in judge(rel, txt):
+        for name, n, line, kind, hint in judge(txt):
             rows.append({"guard": rel, "const": name, "items": n, "line": line,
                          "kind": kind, "hint": hint})
 
@@ -840,7 +842,7 @@ def run(argv):
             txt = io.open(p, encoding="utf-8", errors="replace").read()
         except OSError:
             continue
-        for r in judge_single_values(rel, txt, others_corpus=others_corpus,
+        for r in judge_single_values(txt, others_corpus=others_corpus,
                                      n_guards=len(guards), guard_corpus=guard_corpus):
             r["guard"] = rel
             single_rows.append(r)
