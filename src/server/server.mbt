@@ -6848,7 +6848,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "agent_register_key",
-    "**BUG-430 / S3**：为某个 agent 登记 Ed25519 **公钥**（hex，64 字符 = 32 字节）。登记后该 agent 才能通过 `challenge` 挑战认证（`reserve_scope` / `lock_acquire` / `claim` 的 `challenge` + `challenge_sig` 参数）。⚠️ **只登记公钥，不产生签名** —— 私钥必须由调用方自己保管；本服务**没有也不会有**「代签」能力（服务端代签 = 服务端自己给自己发通行证 = 绕过 S3）。⚠️ 公钥可被任何人登记覆盖 ⇒ **本工具不防「别人替你换公钥」**，那是密钥分发/轮换的活（尚未做，见 BUG-430 缺口）。参数：agent_id(必填，原始身份，与 claim 的 assignee 同源)、namespace(必填)、pubkey_hex(必填，Ed25519 公钥 hex)、by(可选默认 human_steward)。返回 {agent_id, namespace, pubkey_hex_prefix, registered, persisted_pubkey_matches}。",
+    "**BUG-430 / S3（第六段：首登也验签）**：为某个 agent 登记 Ed25519 **公钥**（hex，64 字符 = 32 字节）。**两步流程，缺一步不改库**：①**不带** `challenge` 调用 ⇒ 服务端签发一个挑战 nonce 并在回执里返回（**不改库**）；②带上该 `challenge` + 用**私钥**对它签出的 `proof_sig` 再调 ⇒ 验签通过**才落库**。⚠️ 为什么必须验签：否则任何人可**抢注**——趁某 agent 还没登记，先替他登**自己的**公钥，之后他以「我有密钥」接入时验的是攻击者的签名 ⇒ **永久身份劫持**。⚠️ `challenge` **必须由服务端签发**（调用方自选 challenge ⇒ 可离线预计算并预先签好 ⇒ 验签失效）。⚠️ 只登记公钥，**不产生签名**：本服务没有也不会有「代签」能力。已有公钥且与本次不同 ⇒ 拒绝（需走轮换，尚未实现）。参数：agent_id、namespace、pubkey_hex(必填)、challenge(可选)、proof_sig(可选)、by(可选)。返回 {agent_id, namespace, mode, challenge?, pubkey_hex_prefix?, registered?, persisted_pubkey_matches?}。",
     schema(
       {
         "agent_id": string_prop(
@@ -6857,6 +6857,12 @@ pub async fn run_server() -> Unit {
         "namespace": string_prop("命名空间（必填）"),
         "pubkey_hex": string_prop(
           "Ed25519 公钥 hex（必填，64 个 hex 字符 = 32 字节）。⚠️ 私钥由调用方自持，本服务不接收也不产生私钥",
+        ),
+        "challenge": string_prop(
+          "可选：第一步 `agent_register_key` 返回的挑战 nonce。**第二步必须原样带回来**。不传 ⇒ 本调用只签发挑战、不改库",
+        ),
+        "proof_sig": string_prop(
+          "可选：用**私钥**对 `challenge` 签出的 Ed25519 签名 hex（128 字符）。与 challenge 同时传才算第二步；验不过一律拒绝",
         ),
         "by": string_prop("登记者身份（可选默认 human_steward）"),
       },
@@ -6957,6 +6963,67 @@ pub async fn run_server() -> Unit {
         }
       }
       if !already_registered {
+        // ══════════════════════════════════════════════════════════════════
+        // BUG-430 / S3 **第六段：首登也验签**（堵抢注）
+        //
+        // 前五段只保证「登记后不可改」，**没保证「第一次是本人登记的」** ——
+        // 攻击者仍可**先于**合法持有者完成首次登记（抢注窗口 = 从 agent 首次出现
+        // 到它自己登记公钥之间）。抢注成功 = 攻击者**永久拥有**那个身份：
+        // 合法持有者来接入时，验的是攻击者的公钥 ⇒ 他永远通不过，而攻击者永远通过。
+        //
+        // 本段规则（**两步流程**）：
+        //   ① 不带 `challenge` ⇒ **只签发挑战，不改库**，回执里返回 nonce；
+        //   ② 带上 `challenge` + 用它签出的 `proof_sig` ⇒ 验签通过**才**落库。
+        //
+        // ⚠️ 为什么 `challenge` **必须服务端签发**（不能由调用方传自己的）：
+        //   `issue_challenge_nonce(agent, counter)` 是**纯函数** ⇒
+        //   调用方能离线预计算 nonce、提前签好，任何时候提交都成立
+        //   ⇒ 「挑战」退化成固定字符串 ⇒ **验签形同虚设**。
+        //   所以计数器由 `s3_issue_challenge_auto` 在服务端单调递增地选。
+        // ══════════════════════════════════════════════════════════════════
+        let challenge = get_str(args, "challenge")
+        let proof_sig = get_str(args, "proof_sig")
+        if challenge == "" {
+          // ① 只签发挑战，**一个字节都不写库**
+          let issued = eng.s3_issue_challenge_auto(agent_id)
+          return Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "agent_id": Json::string(agent_id),
+                "namespace": Json::string(ns),
+                "mode": Json::string("challenge_issued"),
+                "challenge": Json::string(issued),
+                "how_to_continue": Json::string(
+                  "用**私钥**对 challenge 原文做 Ed25519 签名，转 hex 作为 proof_sig，" +
+                  "连同本 challenge 原样再调一次 agent_register_key。⚠️ 私钥由你自持，不要发给服务端",
+                ),
+                "registered": Json::boolean(false),
+                // 明确告诉调用方这一步没改库，避免误以为已登记
+                "note": Json::string("尚未登记。本回执只是挑战，需带 proof_sig 第二次调用才落库"),
+              }).stringify(),
+            ),
+          )
+        }
+        if proof_sig == "" {
+          return Err(
+            @mcp_types.ToolError(
+              "agent_register_key: 传了 challenge 却没传 proof_sig。" +
+              "挑战必须用私钥签名后回传 —— 否则任何人可替他人首登（抢注）。",
+            ),
+          )
+        }
+        // ② 验签：**公钥是本次要登记的那把**，消息是 challenge 原文
+        if !@engine.verify_challenge_sig(pubkey_hex, challenge, proof_sig) {
+          return Err(
+            @mcp_types.ToolError(
+              "agent_register_key: **首登验签失败** —— proof_sig 不能由 pubkey_hex 对应的私钥" +
+              "对 challenge 验证通过。可能原因：①签名不是这把私钥签的 ②challenge 被改过 " +
+              "③challenge 不是本服务签发的。" +
+              "⚠️ 本拒绝是有意的：不验签就能首登 ⇒ 任何人可抢注他人身份（永久劫持）。",
+            ),
+          )
+        }
+        // ③ 验签通过 ⇒ 落库
         // 复用既有首拍注册路径（ON CONFLICT 幂等）：不存在时建行。
         // 不新造第二条「注册」真源。
         agent_touch_first_seen(

@@ -229,10 +229,28 @@ pub fn judged_role_gated(
 pub let s3_pending_nonces : Map[String, Array[String]] = Map([])
 
 ///|
+/// BUG-430 / S3 **第六段**：challenge 的**进程级单调计数器**（服务端自选，不给调用方）。
+///
+/// 为什么不能让调用方给 counter：`issue_challenge_nonce` 是纯函数 ⇒
+/// 调用方给 counter 就能**离线预计算 nonce 并提前签好** ⇒ 挑战退化成固定串 ⇒ 验签失效。
+///
+/// ⚠️ 进程级 ⇒ 多实例部署各算各的（不同实例可能发出相同 nonce），
+/// 但**每个实例只认自己发过的**（`s3_pending_nonces` 也是进程内）⇒ 跨实例不会误放行。
+/// 真正的分布式唯一性需要落库（见缺口）。
+///
+/// 用 `Ref` 而不是顶层 `let mut`：MoonBit 顶层不允许 `let mut`（实测报 4074/3002）。
+let s3_challenge_counter : Ref[Int32] = Ref(1)
+
+///|
 /// S3 第二段：**签发**一个 challenge 并登记为「待消费」。
 ///
 /// 返回 nonce 字符串（调用方交客户端去签）。同一 agent 可同时有多个未消费 nonce
 /// （并发挑战），但每个**只能用一次**。
+///
+/// ⚠️ **`counter` 由调用方传入 —— 只适合测试/内部路径**。
+/// 生产面要「服务端自选 counter」，请用 `s3_issue_challenge_auto`：
+/// 若让调用方自选 counter，调用方就能**预计算** nonce 并预先签好，
+/// 那「挑战」就退化成一个固定字符串 ⇒ 验签失去意义（BUG-430 S3 第六段）。
 pub fn FistEngine::s3_issue_challenge(
   self : FistEngine,
   agent : String,
@@ -248,6 +266,24 @@ pub fn FistEngine::s3_issue_challenge(
   cur.push(nonce)
   s3_pending_nonces.set(k, cur)
   nonce
+}
+
+///|
+/// BUG-430 / S3 **第六段**：**服务端自选 counter** 签发 challenge（生产面用这个）。
+///
+/// 为什么必须服务端自选：`issue_challenge_nonce(agent, counter)` 是**纯函数** ⇒
+/// 若 counter 由调用方给，调用方可以**离线预计算** nonce、**提前签好**，
+/// 然后任何时候提交都成立 ⇒ 「挑战」退化为固定字符串 ⇒ **验签形同虚设**。
+///
+/// 计数器是**进程级单调递增**（`s3_challenge_counter`），每个 challenge 的 nonce 都不同。
+/// 与 `s3_pending_nonces` 一样是进程内的 ⇒ 多实例部署各自计数（见缺口）。
+pub fn FistEngine::s3_issue_challenge_auto(
+  self : FistEngine,
+  agent : String,
+) -> String {
+  let n = s3_challenge_counter.val
+  s3_challenge_counter.val = n + 1
+  self.s3_issue_challenge(agent, n)
 }
 
 ///|
