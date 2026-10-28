@@ -66,7 +66,14 @@ def classify(ahead, pick_rc, conflicts, has_merge=False):
     return "error"
 
 
-def branches(remotes):
+def branches(remotes, include="/slave/"):
+    """列出候选分支。`include` 是**子串过滤**（默认 `/slave/`，R130 起可配）。
+
+    R130 立据：`gitcode/*` 通道有 95 支未并入分支，但本尺只扫 `*/slave/*` ⇒ **那个面没有权威读数**。
+    而三种"看起来能判待合并"的现成指标在本仓**全都不可信**（实测同一支：`git cherry` +0 /
+    两点 diff 223842 行 / 三点 diff 13 行，逐行比对却证明内容已在 master）—— 唯一可信的判定是
+    **真跑 cherry-pick**，也就是本尺在做的事。⇒ 把扫描面做成可配，而不是另造一个指标。
+    """
     rc, out = git("for-each-ref", "--format=%(refname:short)", "refs/remotes")
     if rc != 0:
         return []
@@ -75,13 +82,19 @@ def branches(remotes):
         b = line.strip()
         if not b or b.endswith("/HEAD"):
             continue
-        if "/slave/" in b and any(b.startswith(r + "/") for r in remotes):
+        if include in b and any(b.startswith(r + "/") for r in remotes):
             names.append(b)
     return sorted(names)
 
 
 def simulate(base, wt, commits):
-    """在临时 worktree 里真跑 cherry-pick；返回 (rc, conflict_files)。"""
+    """在临时 worktree 里真跑 cherry-pick；返回 (rc, conflict_files, changed)。
+
+    `changed`（R130）：全部 `--no-commit` 贴完之后，**树相对 base 是否真的有变化**。
+    实测动机：`gitcode/fix/e2e-upgrade-mirror-escape-r2` 判 `ok`（补丁能干净贴上），
+    但逐行比对证明该内容**已在 master** ⇒ 合它只会产生一个**空效果提交**。
+    "能贴上" 与 "有内容" 不是一回事（判例-32/33 同族：工具给的是形状，不是状态）。
+    """
     git("checkout", "-q", "--detach", base, cwd=wt)
     git("reset", "-q", "--hard", base, cwd=wt)
     for c in commits:
@@ -90,16 +103,28 @@ def simulate(base, wt, commits):
             _, conf = git("diff", "--name-only", "--diff-filter=U", cwd=wt)
             files = [f.strip() for f in conf.splitlines() if f.strip()]
             git("cherry-pick", "--abort", cwd=wt)
-            return 1, files
-    return 0, []
+            return 1, files, False
+    _, diff = git("diff", "--name-only", base, cwd=wt)
+    changed = bool([f for f in diff.splitlines() if f.strip()])
+    return 0, [], changed
 
 
-def scan(base, remotes, keep=False, limit=0):
-    bs = branches(remotes)
+def adjust_kind(kind, changed):
+    """纯函数：`ok` 但树无变化 ⇒ `contained`（补丁贴上了，却没有任何内容）。
+
+    R130 立据：`ok` 原先只表示"cherry-pick 不冲突"，不是"有内容可合"。
+    """
+    if kind == "ok" and not changed:
+        return "contained"
+    return kind
+
+
+def scan(base, remotes, keep=False, limit=0, include="/slave/"):
+    bs = branches(remotes, include)
     if limit:
         bs = bs[:limit]
     if not bs:
-        print("scan: 通道里没有 <remote>/slave/* 分支")
+        print("scan: 通道里没有匹配 %r 的分支" % include)
         return [], 0
     tmp = tempfile.mkdtemp(prefix="mergeability-")
     wt = os.path.join(tmp, "wt")
@@ -113,10 +138,10 @@ def scan(base, remotes, keep=False, limit=0):
         for b in bs:
             rc, out = git("rev-list", "--reverse", "%s..%s" % (base, b))
             commits = [c for c in out.split() if c] if rc == 0 else []
-            pick_rc, files = simulate(base, wt, commits) if commits else (0, [])
+            pick_rc, files, changed = simulate(base, wt, commits) if commits else (0, [], False)
             _, mout = git("rev-list", "--merges", "%s..%s" % (base, b))
             has_merge = bool([m for m in mout.split() if m]) if commits else False
-            kind = classify(len(commits), pick_rc, files, has_merge)
+            kind = adjust_kind(classify(len(commits), pick_rc, files, has_merge), changed)
             rows.append({"branch": b, "ahead": len(commits), "kind": kind, "files": files})
             mark = {"ok": "✓", "contained": "=", "conflict": "✗", "merge": "M", "error": "!"}[kind]
             extra = ("  冲突: " + ", ".join(files[:3]) + (" …" if len(files) > 3 else "")) if files else ""
@@ -256,6 +281,11 @@ def selftest():
     cell("classify-error", classify(1, 1, []), "error")
     cell("classify-merge", classify(3, 1, [], True), "merge")
     cell("classify-merge-but-ok", classify(3, 0, [], True), "ok")
+    # R130：**"能贴上" ≠ "有内容"** —— 贴完树没变化 ⇒ contained（合了只是空提交）。
+    # 变异对照（判例-29）：把 adjust_kind 的 `not changed` 去掉，本格立刻红。
+    cell("adjust-ok-but-no-content-is-contained", adjust_kind("ok", False), "contained")
+    cell("adjust-ok-with-content-stays-ok", adjust_kind("ok", True), "ok")
+    cell("adjust-other-kinds-untouched", adjust_kind("conflict", False), "conflict")
 
     # 端到端格：造真仓库
     d = tempfile.mkdtemp(prefix="mergeability-st-")
@@ -294,7 +324,7 @@ def selftest():
         for name, want in (("clean", "ok"), ("conflict", "conflict"), ("contained", "contained")):
             out = g("rev-list", "--reverse", "%s..%s" % (base, name)).stdout
             commits = [c for c in out.split() if c]
-            pick_rc, files = simulate(base2, wt, commits) if commits else (0, [])
+            pick_rc, files, _changed = simulate(base2, wt, commits) if commits else (0, [], False)
             cell("e2e-" + name, classify(len(commits), pick_rc, files), want)
     finally:
         # BUG-409：清理失败必须出声（原实现 ignore_errors=True 静默吞掉，泄漏既不被发现也不被报告）
@@ -336,6 +366,9 @@ def main():
     ap.add_argument("--strict", action="store_true", help="有冲突 ⇒ rc=1")
     ap.add_argument("--keep", action="store_true", help="保留临时 worktree 现场")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--include", default="/slave/",
+                    help="分支名**子串过滤**（默认 /slave/；R130：可传 gitcode/ 之类"
+                         "扫整条通道 —— 本尺靠真跑 cherry-pick 判定，是唯一可信的\"可否合并\"读数）")
     ap.add_argument("--apply", action="store_true",
                     help="把判定为 ok 的分支真跑 cherry-pick（默认 dry-run 只打印将执行的命令）")
     ap.add_argument("--yes", action="store_true", help="与 --apply 同用：确认真的执行（防手滑）")
@@ -348,7 +381,7 @@ def main():
         return 2
     remotes = args.remote or ["gitcode", "origin"]
     print("通道可合并性巡检：base=%s，remotes=%s" % (args.base, ",".join(remotes)))
-    rows, rc = scan(args.base, remotes, args.keep, args.limit)
+    rows, rc = scan(args.base, remotes, args.keep, args.limit, args.include)
     if rc != 0:
         return rc
     if not rows:
