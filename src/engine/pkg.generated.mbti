@@ -2,6 +2,7 @@
 package "vicTop-cw/fist-mbt/src/engine"
 
 import {
+  "moonbitlang/core/debug",
   "vicTop-cw/fist-mbt/src/core",
   "vicTop-cw/fist-mbt/src/evolve",
   "vicTop-cw/fist-mbt/src/executor",
@@ -122,6 +123,21 @@ pub fn verify_challenge_sig(String, String, String) -> Bool
 // Errors
 
 // Types and methods
+pub struct DepsReport {
+  state : DepsState
+  missing_deps : Array[String]
+  pending_deps : Array[String]
+} derive(@debug.Debug)
+pub fn DepsReport::is_satisfied(Self) -> Bool
+
+pub enum DepsState {
+  DepsSatisfied
+  DepsPending
+  DepsMissing
+  DepsNoTask
+} derive(Eq, @debug.Debug)
+pub fn DepsState::to_string(Self) -> String
+
 pub struct FistEngine {
   store : @store.StoreBackend
   registry : @executor.ExecutorRegistry
@@ -162,6 +178,7 @@ pub fn FistEngine::dag_mc(Self, ns? : String, root_task_id? : String, deadline? 
 pub fn FistEngine::dag_schedule(Self) -> Json
 pub fn FistEngine::dag_slack_analysis(Self) -> Json
 pub fn FistEngine::delete_task(Self, String) -> Result[Unit, String]
+pub fn FistEngine::deps_report(Self, String) -> DepsReport
 pub fn FistEngine::deps_satisfied(Self, String) -> Bool
 pub fn FistEngine::dispatch_next(Self, String, String, String, String) -> Json
 pub fn FistEngine::docs_verify_gate(Self, String) -> Result[Unit, String]
