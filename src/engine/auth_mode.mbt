@@ -44,6 +44,19 @@ pub enum AuthMode {
 } derive(Eq, Debug)
 
 ///|
+/// 转回 `FIST_AUTH_MODE` 的**取值字符串**（小写，与 env 里人配的字面量一致）。
+///
+/// ⚠️ 为什么不用 `Debug`：`Debug` 给的是 `Off`/`Soft`/`Strict`（大写），
+///   与人配的 `off`/`soft`/`strict` **不一致** ⇒ 人读启动日志会以为配错了。
+pub fn AuthMode::to_string(self : AuthMode) -> String {
+  match self {
+    Off => "off"
+    Soft => "soft"
+    Strict => "strict"
+  }
+}
+
+///|
 /// 解析 `FIST_AUTH_MODE` 的原始字符串（**纯函数，唯一判定面**）。
 ///
 /// 取值（大小写不敏感、两端空白忽略）：

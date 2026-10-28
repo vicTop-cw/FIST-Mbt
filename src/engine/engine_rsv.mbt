@@ -254,6 +254,46 @@ pub fn judged_role_gated(
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+// BUG-476：`strict` 的**硬拒**判定（单一真源）。
+//
+// ## 为什么 `judged_role_gated` 不自己 `Err`
+//
+// 它的签名是 `(String, String)`（role, role_source），被 5 处消费：
+//   `rsv_set` / `rsv_try_set` / `locks_try_acquire` / `claim`（经 `judged_role_with_nonce`）
+//   / `judged_role_with_challenge`
+// 改成 `Result[(String,String), String]` 会波及全部 5 处 + 工具面 3 处调用方。
+//
+// ⇒ **保持它纯净（返回 role/role_source）**，把「拒不拒」留给门层 ——
+//   与既有的 `RoleDenied` 是**同一手法**（`judged_role` 返回角色，`check_scope_permission`
+//   在门层判 `RoleDenied`）。
+//
+// ## 为什么统一抽成一个函数
+//
+// 三处门各写一份 `if src == "challenge_missing" { Err(...) }` 就是下一个 BUG-435
+// （手工抄写真源，两份/三份副本会各自漂移）。**本函数是唯一判定点**。
+// ══════════════════════════════════════════════════════════════════════════
+///|
+/// BUG-476：`strict` 模式下「无挑战 ⇒ 一律拒绝」的门层判定。
+///
+/// 返回 `Some(错误文案)` ⇔ **必须拒**；`None` ⇔ 放行（由门继续走原有逻辑）。
+///
+/// 判据是 `role_source == "challenge_missing"` —— 该值**只在 `Strict` 分支产生**
+/// （见 `judged_role_gated`），`soft` 产生的是 `challenge_required`，
+/// 所以本判定**天然区分 soft 与 strict**，不需要再读一次 env。
+pub fn strict_challenge_denial(role_source : String, action : String) -> String? {
+  if role_source == "challenge_missing" {
+    Some(
+      "FIST_AUTH_MODE=strict：{action} 需要 S3 挑战认证，调用方未提供 challenge。" +
+      "本模式下**无挑战一律拒绝**（不是降权）。" +
+      "请先 agent_register_key 登记公钥，再 agent_issue_challenge 取票并签名。" +
+      "（要放宽请把 FIST_AUTH_MODE 设为 soft 或 off）",
+    )
+  } else {
+    None
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // BUG-430 / S3 **第二段**：nonce 一次性消费 + 四条门接入
 //
 // 第一段的 nonce **不落库** ⇒ 同一个 nonce 可以被重复使用 ⇒「挑战」退化成
@@ -629,6 +669,12 @@ pub fn FistEngine::rsv_set(
     challenge_nonce,
     challenge_sig~,
   )
+  // BUG-476：strict 下无挑战 ⇒ **硬拒**（不是降权）。
+  //   判定抽在 `strict_challenge_denial` 单一真源里，三处门共用。
+  match strict_challenge_denial(role_source, "reserve_scope") {
+    Some(msg) => return Err(msg)
+    None => ()
+  }
   match check_scope_permission(scope, role) {
     // RoleDenied 是**硬拒** —— HumanSteward 保护路径必须继续拒绝，绝不放行
     RoleDenied(e) => Err(e)
@@ -740,6 +786,12 @@ pub fn FistEngine::rsv_try_set(
     challenge_nonce,
     challenge_sig~,
   )
+  // BUG-476：strict 下无挑战 ⇒ **硬拒**（不是降权）。
+  //   判定抽在 `strict_challenge_denial` 单一真源里，三处门共用。
+  match strict_challenge_denial(role_source, "reserve_scope") {
+    Some(msg) => return Err(msg)
+    None => ()
+  }
   // BUG-453：三个**新**认证态各带自己的后缀；既有态保持修前的 `+agent_self_reported`
   // （`auth_tag` 对它们返回空串，故这里补上 —— 语义与修前逐字一致，零回归）。
   let auth = auth_tag(role_source)
@@ -879,6 +931,33 @@ pub fn FistEngine::locks_try_acquire(
     challenge_nonce,
     challenge_sig~,
   )
+  // BUG-476：strict 下无挑战 ⇒ **硬拒**（不是降权）。
+  //
+  // ⚠️ **本函数返回 `@store.LockAcquireOutcome`（不是 `Result`）** —— 实测踩过：
+  //    第一版写成 `Some(msg) => return Err(msg)`，类型不匹配（`Err` 是 `Result` 的构造子），
+  //    而该错误会**让整个项目的类型推导失同步**，在 atgc/constraint/core 等
+  //    无关文件里炸出 10 个「假错」（判例-34：报错指向 ≠ 病因所在）。
+  //
+  // 拒绝的**正确表达**在这个返回类型里是 `granted: false`，与既有 `RoleDenied`
+  //   ⇒ `denied_by_permission()` 同一通道（`:727` 就是这么写的）。
+  //   `action` 用 `strict_challenge_missing` 而**不是** `permission_denied`：
+  //   · 后者有**精确相等**的既有断言（`lock_perm_wbtest.mbt:36/51/104`），改动会破坏零回归；
+  //   · 前者让「strict 拒」在回执里**可区分**（调用方看得出该去登记公钥，不是权限不足）。
+  match strict_challenge_denial(role_source, "lock_acquire") {
+    Some(msg) => {
+      ignore(msg)
+      // ⚠️ `LockAcquireOutcome` 是**只读结构**（`pub struct` 未开放构造）——
+      //    实测踩过：直接写 `LockAcquireOutcome::{ granted:false, ... }` 报
+      //    `[4033] no record definition with the fields` + `[4036] Cannot create values
+      //    of the read-only type`。**必须走既有构造器**：`denied_by_permission()`
+      //    （`:727` 就是这么写的）+ `relabel` 换 action。
+      return @store.LockAcquireOutcome::denied_by_permission().relabel(
+        "strict_challenge_missing",
+        false,
+      )
+    }
+    None => ()
+  }
   match check_scope_permission(scope, role) {
     RoleDenied(_) =>
       // **legacy_grant 特判（BUG-424 裁决 (a)(b)(c)）**

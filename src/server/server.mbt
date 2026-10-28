@@ -1870,6 +1870,20 @@ fn debate_get_session(session_id : String) -> Result[DebateSession, String] {
 ///|
 /// —— MCP server 构建与运行 ——
 pub async fn run_server() -> Unit {
+  // BUG-476：**启动即报认证模式**（判例-29 实现路径格：函数存在 ≠ 被调用）。
+  //
+  // 为什么必须在启动处喊：`FIST_AUTH_MODE` 是**唯一**能改变「拒绝还是降权」的开关，
+  //   而它读一次即缓存、不看回执就发现不了。设了 `strict` 的人**必须**在启动日志里
+  //   看见它真的生效了；设了非法值的人**必须**看见「已回退 off」，否则会以为
+  //   自己开了严格的档（判例：「以为自己安全了」比不设更危险）。
+  // 非空才打印：合法值时 `auth_mode_startup_warning()` 返回空串（零噪声）。
+  let auth_warn = @engine.auth_mode_startup_warning()
+  if auth_warn != "" {
+    println("⚠️  [fist-mbt] " + auth_warn)
+  }
+  // 另外把生效档位也报一次 —— 合法值下 warning 是空串，但「现在是什么档」本身要可见。
+  println("[fist-mbt] auth_mode = " + @engine.auth_mode().to_string())
+
   // BUG-21：握手版本曾是硬编码 "0.1.0"，与 moon.mod / project_version / 文档三处口径分裂——
   // 客户端 tools/list 之外的唯一自报身份就是它，必须与单一真源一致。
   let mut s1 = @mcp.MCPServer::MCPServer("fist-mbt", project_version)
@@ -2187,6 +2201,17 @@ pub async fn run_server() -> Unit {
         ch.0,
         challenge_sig=ch.1,
       )
+      // BUG-476：`strict` 下无挑战 ⇒ **硬拒**（不是降权）。
+      //
+      // 为什么在 server 层判而不是 engine 层：`claim` 的门在 `engine.mbt` 的
+      // `judged_role_with_nonce` 之后，而那个函数签名是 `(String,String)`（不能 `Err`）。
+      // 本文件的 `judged_role_with_challenge` 预取点**已经拿到 `role_source`**，
+      // 且**不消费 nonce** ⇒ 在这里拒，代价最小且语义正确（拒之前没动任何状态）。
+      // 判定与另外三处共用同一真源 `@engine.strict_challenge_denial`。
+      match @engine.strict_challenge_denial(auth.1, "claim") {
+        Some(msg) => return Err(@mcp_types.ToolError(msg))
+        None => ()
+      }
       let tag = @engine.auth_tag(auth.1)
       match
         eng.claim(
