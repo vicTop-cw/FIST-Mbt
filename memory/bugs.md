@@ -10286,11 +10286,14 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
 - reported_by: commander-alpha (Lane CB)
 - detail: **拆自 BUG-430**（原为「无人用 S3」）。本段证的是**路径存在 + 产品库有车**。① **S3 八段全落地**：骨架 / 四门接线 / nonce 一次性消费 / 公钥登记 / 首登验签 / 轮换（旧私钥签得出才允许换）/ 吊销 / 服务端签发挑战。② **产品库真有公钥**（本轮成果）：`fist-mbt.db` 的 `agents` 表 pubkey_fp 非空 = **1/6**（`4fb5d1353487b451` = `443688424a7a270b8dd1ebd192d8521073cf7e12dd2027d88e9c659c308ecb38`），走的是**真两步流程**（challenge_issued → 私钥签 proof_sig → registered + persisted_pubkey_matches=true），不是直接写库。③ **生产路径三组对照实测**（`reserve_scope`，`FIST_DB_PATH=fist-mbt.db`）：带真签名 ⇒ `action` 含 **`challenge_verified`**；不传 challenge ⇒ `agent_self_reported`；错签名 ⇒ `challenge_failed`（fail-closed）。三态区分明确，**「调用方无法自报」的判定路径在本生产库上真的成立**。⚠️ **诚实修正**：`action` 前缀是 `unregistered+challenge_verified` —— 该 agent `agent_type=executor` 未进某个已登记白名单，**不影响验签结论**，但会让调用方误读。⇒ **关闭依据**：AGENTS.md 关闭条件「存在至少一条『调用方无法自报』的路径」——**本段满足**。剩余问题（产品面取不出挑战、claim 不接受 challenge）已拆到 **BUG-430b** 继续跟。真源：`src/engine/engine_rsv.mbt` + `src/server/server.mbt`（agent_register_key / agent_revoke_key）+ `src/store/store_sqlite.mbt`（agents_set_pubkey）。报告 `reports/2026-10-28-bug430-closure-report.md`。
 
-## BUG-430b [2026-10-28T07:23:05Z] [high] OPEN
+## BUG-430b [2026-10-28T07:23:05Z] [high] FIXED
 
 - summary: [authz] BUG-430 拆分（二）产品面「取不出挑战」且 claim 不接受 challenge —— 连"可选地走 S3"都做不到
 - reported_by: commander-alpha (Lane CB)
 - detail: **拆自 BUG-430**，是本轮实测发现的**比「默认不走」更基础**的缺口。两条实测：① **没有为已登记 agent 签发挑战的入口** —— 已登记 agent 调 `agent_register_key`（不带 challenge）只得 mode=already_registered，**回执里没有 challenge 字段**；挑战签发只在「非幂等」分支内。② **`claim` 不接受 `challenge` / `challenge_sig`** —— 实测 claim 的 inputSchema 为 `agent, assignee, inject, namespace, task_id`；只有 `reserve_scope` / `lock_acquire` 接受 challenge。⇒ **一个真实客户端无法从工具面取得服务端签发的挑战**；本轮能验签成功，是因为**手工拼出 nonce 形态**（`fist-s3-challenge:v1:<agent>:<counter>`，纯函数可复现）。**⇒ 产品现状是「路上缺一个收费站」而不是「有路没人走」：车到了入口却没有取票窗口，只能自己伪造一张票。** 建议修法：新增独立工具 `agent_issue_challenge(agent_id)`（服务端 `s3_issue_challenge_auto` 签发、不写库），并给 `claim` / `execute` / `verify` 补 `challenge` + `challenge_sig` 可选参数。**关闭条件（本条）**：存在至少一条**产品工具面**上「非手工构造」的取挑战路径，且主生命周期工具（`claim`）支持认证。**另注**：`fist.py` 默认把 `FIST_DB_PATH` 改道 `temp/fist.db`（BUG-122 同型收口），导致 `agent_register_key` 回 registered=true 而产品库仍是 0 行 —— 建议回执明示实际写入库路径。
+
+### FIXED(2026-10-28T09:48:15Z / BUG-430b)
+- evidence: BUG-466 已落地 430b 的两条诉求并实测通过：① 新增工具 agent_issue_challenge（src/server/server.mbt，服务端 s3_issue_challenge_auto 签发、只给已登记公钥的 agent、不写业务库、一次性）—— 已登记 agent 现在能从产品面取得服务端签发的挑战；② claim 的 inputSchema 已声明 challenge + challenge_sig（改前只有 agent/assignee/inject/namespace/task_id），引擎层 judged_role_with_nonce 本来早就接了、缺的只是 schema 声明 + action 面。真实 MCP 客户端同进程实测：agent_issue_challenge 取票 → 私钥签 → claim 回 action='+challenge_verified'；不带 challenge 对照回 action=None（零回归）。六格锁 engine_bug466_challenge_entry_wbtest.mbt 含变异对照（删验签 ⇒ 320→316/4 failed）。提交 eacebda9。
 ## BUG-466 [2026-10-28T07:25:26Z] [high] FIXED
 - summary: [BUG-430b] S3 挑战在产品面上无签发入口 —— 已登记 agent 拿不到服务端签发的 challenge，claim 也不接受 challenge 参数
 - detail: ## 缺陷（Lane CB 实测，2026-10-28）
