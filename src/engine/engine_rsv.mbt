@@ -291,6 +291,8 @@ pub fn FistEngine::s3_issue_challenge(
   counter : Int32,
   ns~ : String = "default",
   issued_at~ : String = "",
+  // BUG-467：清理 cutoff（`issued_at` 早于它的行会被删）。空串 = 本次不清。
+  cleanup_cutoff~ : String = "",
 ) -> String {
   let nonce = issue_challenge_nonce(agent, counter)
   let k = agent_fp_of(agent)
@@ -298,6 +300,15 @@ pub fn FistEngine::s3_issue_challenge(
   // 内存后端也真写（`MemoryStore.challenges`），不是占位 —— 但它跨不了进程，
   // 这一点由 `challenge_persisted` 如实披露。
   let _ = self.store.challenge_issue(ns, k, nonce, issued_at)
+  // BUG-467：**签发时顺带清理**（接线点）。返回值丢弃 ——
+  // 清理是维护动作，它失败不该让「取票」失败（那会把可恢复的维护问题变成不可用的鉴权面）。
+  //
+  // 为什么在这里清而不是定时任务：清理的**触发条件**与表的**增长条件**是同一件事（签发）。
+  // 绑在一起之后，**「表在长但没人清」这个状态不可能出现** —— 而这正是本单要消灭的状态。
+  // `cleanup_cutoff` 由调用方给（engine 不依赖 @ops，不为一时间戳引依赖）。
+  if cleanup_cutoff != "" {
+    ignore(self.challenge_cleanup_on_issue(cleanup_cutoff))
+  }
   // 保留进程内登记是**有意的双写**：老的模块级 `s3_consume_nonce` 仍只认进程内表，
   // 新路径（`FistEngine::s3_consume_nonce`）先 store 后内存 ⇒ 两条路都不破。
   let cur = match s3_pending_nonces.get(k) {
@@ -323,10 +334,11 @@ pub fn FistEngine::s3_issue_challenge_auto(
   agent : String,
   ns~ : String = "default",
   issued_at~ : String = "",
+  cleanup_cutoff~ : String = "",
 ) -> String {
   let n = s3_challenge_counter.val
   s3_challenge_counter.val = n + 1
-  self.s3_issue_challenge(agent, n, ns~, issued_at~)
+  self.s3_issue_challenge(agent, n, ns~, issued_at~, cleanup_cutoff~)
 }
 
 ///|
@@ -373,6 +385,71 @@ pub fn FistEngine::challenge_cleanup(
   cutoff : String,
 ) -> Int32 {
   self.store.challenge_cleanup(cutoff)
+}
+
+///|
+/// ══════════════════════════════════════════════════════════════════════════
+/// BUG-467：**清理接线 —— 「签发时顺带清」**（不需要外部调度器）。
+///
+/// ## 为什么选「签发时清」而不是 `watchdog_tick` / `task_cleanup`
+///
+/// | 候选 | 优点 | 致命缺点 |
+/// |---|---|---|
+/// | `watchdog_tick` | 已是定时入口 | **没人跑 watchdog 就永远不清**；且它要 host 定时器 |
+/// | `task_cleanup` | 语义接近 | **手工调用**，不是定时 —— 没人调一样不清 |
+/// | **签发时清** | **无外部依赖**；**天然节流**（签发越多清得越勤）；签发少时表也不增长 | 签发少时不清（但那时表也不长） |
+///
+/// **决定性理由**：清理的**触发条件**与表的**增长条件**是同一件事（签发）。
+/// 把两者绑在一起 ⇒ **不存在「表在长但没人清」的状态**，而这正是本单要消灭的状态。
+/// 换成外部调度器就多了一个「调度器没跑」的失效面 —— 而本仓的定时任务本来就靠人。
+///
+/// ## 策略：保守档 + 24h
+///
+/// · **保守档**（`challenge_cleanup_conservative`）：只删 `issued_at < cutoff` 的行，
+///   **保留 cutoff 之内的审计证据**（`consumed=1` 是「票被用过」的唯一记录）。
+/// · **cutoff = now - 24h**：challenge 生命周期是分钟级（签发→签→提交），
+///   24h 给足重试/排队容错；且删掉的是「调用方早已拿不到」的票。
+///
+/// ## 为什么清理**不会**影响未过期的票
+///
+/// 清理条件是 `issued_at < cutoff`，而**未过期**的票满足 `issued_at >= cutoff`
+/// ⇒ 两条集合**不相交** ⇒ 清理动不到它们。白盒锁 `c467_l2` 钉住这条。
+///
+/// ⚠️ **失败不阻塞签发**：清理是维护动作，它出错不该让「取票」失败
+/// （那会把一个可恢复的维护问题变成不可用的鉴权面）。故 `ignore(...)`。
+/// ══════════════════════════════════════════════════════════════════════════
+///
+///|
+/// 签发时顺带清理的默认 cutoff：`now - 24h`（ISO 定宽 ⇒ 字符串可直接比）。
+///
+/// 由 `challenge_cleanup_on_issue` 调用；单独抽出来是为了让白盒锁能算同一把尺。
+///|
+/// **签发时顺带清理**（BUG-467 的接线点）：返回本次清掉的行数。
+///
+/// 在 `s3_issue_challenge` 里调用 —— 每次签发顺手清一次过期票，
+/// 于是「表的增长」与「表的回收」绑在同一个动作上，不需要任何外部调度器。
+///
+/// `cutoff` 由**调用方**算（`server.mbt` 用 `iso_minus_secs(now, 86400)`）——
+/// engine 包不依赖 `@ops`，也不该为了算一个时间戳引入依赖。
+/// engine 只负责**策略**（保守档：保留 cutoff 内的审计证据）。
+pub fn FistEngine::challenge_cleanup_on_issue(
+  self : FistEngine,
+  cutoff : String,
+) -> Int32 {
+  self.store.challenge_cleanup_conservative(cutoff)
+}
+
+///|
+/// BUG-467：**表大小可观测** —— 供回执/诊断回答「表在长吗」。
+///
+/// 返回 `(total, consumed, pending)`：总数 / 已消费数 / 未消费数。
+/// 三个数一起看才知道状态：
+///   · `pending` 高 ⇒ 签发了但没人用（正常，票有时效）
+///   · `consumed` 高而 `total` 不降 ⇒ **清理没跑**（本单要暴露的形态）
+pub fn FistEngine::challenge_table_stats(self : FistEngine) -> (Int32, Int32, Int32) {
+  let total = self.store.challenge_total_count()
+  let consumed = self.store.challenge_consumed_count()
+  (total, consumed, total - consumed)
 }
 
 ///|
