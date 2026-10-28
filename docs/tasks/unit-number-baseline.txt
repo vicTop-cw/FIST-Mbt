@@ -15,3 +15,5 @@ R113 plan-deep-annotation-compound pr-automator-safe-defaults
 R118 audit-branch-delete-face readme-staleness-onsite-reading
 R121 guards-inline-verdict text-control-char
 R126 mcp-server-moon-env slave-task-list-selfproof-ruler
+R127 issue-scan-prefix-guard slave-readme-env-bold
+R133 memory-log-dup memory-log-dedupe
