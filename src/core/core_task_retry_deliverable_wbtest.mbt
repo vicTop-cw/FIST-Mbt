@@ -99,7 +99,10 @@ test "bug426_retry_keeps_assignee" {
     Err(e) => abort("retry 失败：" + e)
   }
   match retried.get_assignee() {
-    None => fail("★过度修复：retry 不该清 assignee（那是 reopen 的语义）")
+    None =>
+      fail(
+        "★过度修复：retry 不该清 assignee（那是 reopen 的语义）",
+      )
     Some(a) =>
       if a != "exec-1" {
         fail("retry 应保留原 assignee=exec-1，实得 " + a)

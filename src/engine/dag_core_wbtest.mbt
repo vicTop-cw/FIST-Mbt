@@ -51,7 +51,7 @@ test "dag455_topo_sort_respects_dependency_order" {
   let e = dag_core_setup()
   let ordered = e.topo_sort(["D", "B", "A", "C"])
   assert_eq(ordered.length(), 4)
-  let idx = fn(id : String) -> Int {
+  let idx = fn(id : String) -> Int32 {
     let mut i = -1
     let mut n = 0
     for x in ordered {

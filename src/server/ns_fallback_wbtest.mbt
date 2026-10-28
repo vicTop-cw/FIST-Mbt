@@ -13,7 +13,7 @@
 
 ///|
 /// 计数用的可变盒子（MoonBit 闭包捕获 `mut` 局部变量受限，用 Array 兜住）。
-fn _ns_probe_counter() -> Array[Int] {
+fn _ns_probe_counter() -> Array[Int32] {
   [0]
 }
 
@@ -53,7 +53,10 @@ test "bug433_unopenable_valid_ns_is_err_not_main" {
   let getter = fn(_ns : String) -> @store.SqliteStore? { None }
   match engine_route_in(main, getter, "valid-ns") {
     Err(_) => ()
-    Ok(_) => fail("BUG-433：合法但库打不开必须 Err —— Ok 意味着静默回落主库")
+    Ok(_) =>
+      fail(
+        "BUG-433：合法但库打不开必须 Err —— Ok 意味着静默回落主库",
+      )
   }
 }
 
@@ -72,7 +75,12 @@ test "bug433_default_paths_ok_main_without_lookup" {
   for ok in ok_ns {
     match engine_route_in(main, getter, ok) {
       Ok(_) => ()
-      Err(_) => fail("BUG-433：非法判定过宽 —— \"" + ok + "\" 必须走主库 Ok")
+      Err(_) =>
+        fail(
+          "BUG-433：非法判定过宽 —— \"" +
+          ok +
+          "\" 必须走主库 Ok",
+        )
     }
   }
   assert_eq(cnt[0], 0) // 默认路径不查 mstore
@@ -93,7 +101,9 @@ test "bug433_reject_message_is_actionable" {
     }
   }
   // 合法形态不拒（含默认两档与常见合法字符）
-  let ok_ns : Array[String] = ["", "default", "valid-ns", "valid_ns_123", "A1-b2_c3"]
+  let ok_ns : Array[String] = [
+    "", "default", "valid-ns", "valid_ns_123", "A1-b2_c3",
+  ]
   for ok in ok_ns {
     match ns_reject_reason(ok) {
       None => ()

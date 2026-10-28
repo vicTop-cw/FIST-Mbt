@@ -133,7 +133,10 @@ test "bo_04_route_semantics" {
   }
   // ★ 真防线：**非法** ns 必须 Err（不许静默回落主库 —— 那会把操作打到主库任务上）
   match engine_for_ns("bad ns with spaces") {
-    Ok(_) => abort("非法 ns 竟返回 Ok —— 静默回落主库，delete/archive 会打到主库任务")
+    Ok(_) =>
+      abort(
+        "非法 ns 竟返回 Ok —— 静默回落主库，delete/archive 会打到主库任务",
+      )
     Err(_) => ()
   }
   match engine_for_ns("bad/ns") {

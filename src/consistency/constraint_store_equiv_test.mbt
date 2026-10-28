@@ -20,15 +20,35 @@ fn _cases() -> Array[((String, String, String)?, String, String)] {
     // ① None ⇒ reserved
     (None, "A", "2026-01-01T00:00:05"),
     // ② 本人 + 未过期 ⇒ renewed
-    (Some(("A", "2026-01-01T00:01:00", "2026-01-01T00:00:00")), "A", "2026-01-01T00:00:05"),
+    (
+      Some(("A", "2026-01-01T00:01:00", "2026-01-01T00:00:00")),
+      "A",
+      "2026-01-01T00:00:05",
+    ),
     // ③ 本人 + **已过期** ⇒ renewed（不是 taken_over —— 同持有者优先，注释点名的坑）
-    (Some(("A", "2026-01-01T00:00:01", "2026-01-01T00:00:00")), "A", "2026-01-01T00:00:05"),
+    (
+      Some(("A", "2026-01-01T00:00:01", "2026-01-01T00:00:00")),
+      "A",
+      "2026-01-01T00:00:05",
+    ),
     // ④ 他人 + 已过期 ⇒ taken_over
-    (Some(("B", "2026-01-01T00:00:01", "2026-01-01T00:00:00")), "A", "2026-01-01T00:00:05"),
+    (
+      Some(("B", "2026-01-01T00:00:01", "2026-01-01T00:00:00")),
+      "A",
+      "2026-01-01T00:00:05",
+    ),
     // ⑤ 他人 + 未过期 ⇒ conflict
-    (Some(("B", "2026-01-01T00:01:00", "2026-01-01T00:00:00")), "A", "2026-01-01T00:00:05"),
+    (
+      Some(("B", "2026-01-01T00:01:00", "2026-01-01T00:00:00")),
+      "A",
+      "2026-01-01T00:00:05",
+    ),
     // ⑥ ttl == now ⇒ conflict（严格 `<` 而非 `<=`）
-    (Some(("B", "2026-01-01T00:00:05", "2026-01-01T00:00:00")), "A", "2026-01-01T00:00:05"),
+    (
+      Some(("B", "2026-01-01T00:00:05", "2026-01-01T00:00:00")),
+      "A",
+      "2026-01-01T00:00:05",
+    ),
   ]
 }
 
@@ -71,7 +91,9 @@ test "bug435_constraint_mirror_matches_store_rsv_action" {
 /// 上格仍绿 —— 但那时 store 的 SQL 侧 `ON CONFLICT ... WHERE` 与账本口径已经不一致了。
 /// 本格把四个**规范动词**钉死（`reserved` / `renewed` / `taken_over` / `conflict`）。
 test "bug435_canonical_verdicts_unchanged_on_both_sides" {
-  let expected : Array[String] = ["reserved", "renewed", "taken_over", "conflict"]
+  let expected : Array[String] = [
+    "reserved", "renewed", "taken_over", "conflict",
+  ]
   let got_store : Array[String] = []
   let got_mirror : Array[String] = []
   for c in _cases() {

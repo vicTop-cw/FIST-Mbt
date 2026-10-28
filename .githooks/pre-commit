@@ -69,8 +69,35 @@ if ! git diff --cached --check; then
   exit 1
 fi
 
+# ── 门 4：moon check（只在暂存面**含 MoonBit 源**时跑）──────────────────────────
+# 为什么加这个判定：moon check 编译的是**整个工作树**，别人未提交的半成品同样会被编到。
+# 于是纯文档提交会被与它无关的 WIP 挡住。2026-10-28 实测：一笔只改 `reports/*.md` 的提交
+# 被另一 agent 的瞬时 1 error 拒了两次（`27 warnings, 1 errors`），内容一字未改再提交就过。
+# 文档/脚本改动不可能让 moon check 失败 ⇒ 跳过不放弃任何真实风险；有源改动仍照跑，
+# CI 侧也有同名判据兜底（`--no-verify` 不是通行证，见文件头）。
+# 判定口径：`*.mbt` / `*.mbti` / `moon.pkg` / `moon.mod`（含子包路径）任一进暂存面就跑。
+staged_moon_sources() {
+  git diff --cached --name-only | grep -E '(^|/)moon\.(pkg|mod)$|\.(mbt|mbti)$' || true
+}
+MOON_SRC_STAGED="$(staged_moon_sources)"
+
+# FIST_PRECOMMIT_DECIDE_ONLY=1：只打印本门判定、不执行任何检查（判定口径的自证缝）。
+if [ "${FIST_PRECOMMIT_DECIDE_ONLY:-0}" = "1" ]; then
+  if [ -z "$MOON_SRC_STAGED" ]; then
+    echo "DECIDE=skip-moon-check（暂存面无 MoonBit 源）"
+  else
+    echo "DECIDE=run-moon-check（暂存面含：$(echo "$MOON_SRC_STAGED" | tr '\n' ' ')）"
+  fi
+  exit 0
+fi
+
 if [ "${FIST_PRECOMMIT_SKIP_MOON:-0}" = "1" ]; then
   echo "[pre-commit] 已按 FIST_PRECOMMIT_SKIP_MOON=1 跳过 moon check（CI 仍会查）"
+  exit 0
+fi
+
+if [ -z "$MOON_SRC_STAGED" ]; then
+  echo "[pre-commit] 4/4 跳过 moon check：暂存面没有 MoonBit 源（文档/数据类提交）"
   exit 0
 fi
 
@@ -79,5 +106,5 @@ if ! command -v moon >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[pre-commit] 4/4 moon check ..."
+echo "[pre-commit] 4/4 moon check（暂存面含 MoonBit 源）..."
 moon check

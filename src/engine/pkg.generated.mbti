@@ -64,6 +64,22 @@ pub fn judged_role_with_challenge(FistEngine, String, String?, challenge_sig? : 
 
 pub fn judged_role_with_nonce(FistEngine, String, String?, challenge_sig? : String?) -> (String, String)
 
+pub let key_revoke_not_needed : String
+
+pub let key_revoke_ok : String
+
+pub fn key_revoke_verdict(String) -> String
+
+pub let key_rotate_allowed : String
+
+pub let key_rotate_not_needed : String
+
+pub let key_rotate_reject_bad_proof : String
+
+pub let key_rotate_reject_no_proof : String
+
+pub fn key_rotate_verdict(String, String, String, Bool) -> String
+
 pub fn matching_rule(String) -> PermissionRule?
 
 pub fn mc_percentile_index(Int32, Int32) -> Int32

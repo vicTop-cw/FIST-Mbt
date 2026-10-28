@@ -19,7 +19,9 @@ test "b462_u1_unique_db_is_actually_unique" {
   let b = bug462_unique_db("same_tag")
   if a == b {
     abort(
-      "BUG-462 变异：两次取到同一路径 " + a + " —— 唯一性来源（@env.rand）失效了",
+      "BUG-462 变异：两次取到同一路径 " +
+      a +
+      " —— 唯一性来源（@env.rand）失效了",
     )
   }
 }

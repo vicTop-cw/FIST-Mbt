@@ -63,16 +63,22 @@ test "s3_key_01_agent_with_key_can_pass_challenge" {
   let sig = s3_key_sign(nonce)
   // ③ 走带挑战的角色取数
   let (role, src) = judged_role_with_challenge(
-    eng, agent, Some(nonce), challenge_sig=Some(sig),
+    eng,
+    agent,
+    Some(nonce),
+    challenge_sig=Some(sig),
   )
   // ★ 必须 challenge_verified（修前没有公钥 ⇒ 恒 challenge_failed）
   if src != "challenge_verified" {
     abort(
-      "有公钥 + 真签名却没通过挑战：role=" + role + " src=" + src +
+      "有公钥 + 真签名却没通过挑战：role=" +
+      role +
+      " src=" +
+      src +
       "（若为 challenge_failed ⇒ 公钥没真正落库或没被读到）",
     )
   }
-  assert_eq(role, "Leader")   // 拿到登记的 declared 角色
+  assert_eq(role, "Leader") // 拿到登记的 declared 角色
 }
 
 ///|
@@ -87,9 +93,12 @@ test "s3_key_02_agent_without_key_fails_closed" {
   let eng = FistEngine::new(store=@store.StoreBackend::sqlite(sql))
   let agent = "lane-bk-nokey"
   let nonce = issue_challenge_nonce(agent, 1)
-  let sig = s3_key_sign(nonce)   // 签名是真的，但**公钥没登记**
+  let sig = s3_key_sign(nonce) // 签名是真的，但**公钥没登记**
   let (role, src) = judged_role_with_challenge(
-    eng, agent, Some(nonce), challenge_sig=Some(sig),
+    eng,
+    agent,
+    Some(nonce),
+    challenge_sig=Some(sig),
   )
   assert_eq(role, "Executor")
   assert_eq(src, "challenge_failed")
@@ -125,7 +134,10 @@ test "s3_key_03_wrong_signature_fails_closed" {
     @mooncry.ed25519_sign(other_seed, @utf8.encode(nonce)),
   )
   let (role, src) = judged_role_with_challenge(
-    eng, agent, Some(nonce), challenge_sig=Some(bad_sig),
+    eng,
+    agent,
+    Some(nonce),
+    challenge_sig=Some(bad_sig),
   )
   assert_eq(role, "Executor")
   assert_eq(src, "challenge_failed")
@@ -155,6 +167,6 @@ test "s3_key_04_pubkey_is_persisted_and_readable" {
   )
   match sql.agents_get(fp) {
     None => abort("agents_get 读不到刚注册的 agent")
-    Some(a) => assert_eq(a.pubkey_fp, pk)   // ★ 逐字相等
+    Some(a) => assert_eq(a.pubkey_fp, pk) // ★ 逐字相等
   }
 }

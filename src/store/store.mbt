@@ -47,7 +47,10 @@ pub struct MemoryStore {
   // `cb_save(Mem)` 直接 `Ok(())` no-op ⇒ 引擎侧 `failures` 永远读到 0，
   // `nf = failures + 1` 恒为 1，`1 >= threshold(3)` 永不成立 ⇒ **内存后端永不熔断**。
   // 这是**假绿**形态：工具不报错、回执字段齐全、保护从未生效。
-  circuit_breakers : Map[String, (String, Int32, Int32, Int32, Int32, Int32, Int32)]
+  circuit_breakers : Map[
+    String,
+    (String, Int32, Int32, Int32, Int32, Int32, Int32),
+  ]
   // BUG-441：Saga 补偿日志（R92 的 durable action log，此前内存后端**从未实现**）
   //   key   = "<ns>\u0000<root_task_id>"（与 SQLite 侧 `WHERE ns=? AND root_task_id=?` 同口径）
   //   value = 该根任务下的步骤数组（**按登记顺序**，对应 SQLite 的 `ORDER BY id ASC`）
@@ -1051,7 +1054,7 @@ pub fn StoreBackend::mark_saga_actions_done(
     Mem(m) => {
       let k = saga_key(ns, root_task_id)
       match m.saga_log.get(k) {
-        None => Ok(())   // 没有该根任务的日志 ⇒ 幂等无操作（与 SQLite 的 UPDATE 0 行同口径）
+        None => Ok(()) // 没有该根任务的日志 ⇒ 幂等无操作（与 SQLite 的 UPDATE 0 行同口径）
         Some(rows) => {
           for i = 0; i < rows.length(); i = i + 1 {
             let (id, step, task_id, compensation, status) = rows[i]
@@ -1108,7 +1111,9 @@ pub fn StoreBackend::cb_save(
     Mem(m) => {
       m.circuit_breakers.set(
         cb_key(ns, circuit),
-        (state, failures, window_secs, threshold, recovery_secs, opened_at, last_fail_ts),
+        (
+          state, failures, window_secs, threshold, recovery_secs, opened_at, last_fail_ts,
+        ),
       )
       Ok(())
     }

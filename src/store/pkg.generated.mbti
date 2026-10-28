@@ -14,6 +14,10 @@ pub fn aggregate_stats(@sqlite.Database) -> Json
 
 pub fn assistant_claim_action(AssistantReg?, String, String, String) -> (Bool, String, String)
 
+pub fn bug462_unique_db(String) -> String
+
+pub fn bug462_unique_dir(String) -> String
+
 pub fn db_file_exists(String) -> Bool
 
 pub fn db_file_task_count(String) -> Int32
@@ -222,7 +226,8 @@ pub fn SpecRecord::to_json(Self) -> Json
 pub fn SpecRecord::to_repr(Self) -> @debug.Repr
 
 pub struct SqliteStore {
-  db : @sqlite.Database?
+  mut db : @sqlite.Database?
+  mut closed : Bool
 }
 pub fn SqliteStore::agents_acl_check(Self, agent_id~ : String, ns~ : String, write~ : Bool, current_pid~ : Int32) -> Result[Unit, String]
 pub fn SqliteStore::agents_acl_count_writable(Self, ns~ : String) -> Int32
@@ -233,6 +238,7 @@ pub fn SqliteStore::agents_heartbeat(Self, agent_id~ : String, agent_type~ : Str
 pub fn SqliteStore::agents_register(Self, agent_id~ : String, agent_type~ : String, role~ : String, soldier~ : String, pubkey_fp~ : String, pid~ : Int32, now~ : String) -> Result[Unit, String]
 pub fn SqliteStore::agents_role_for_judgment(Self, String) -> String?
 pub fn SqliteStore::agents_set_pid(Self, agent_id~ : String, pid~ : Int32) -> Result[Unit, String]
+pub fn SqliteStore::agents_set_pubkey(Self, agent_id~ : String, pubkey_fp~ : String) -> Result[Unit, String]
 pub fn SqliteStore::agents_stale_check(Self, String) -> Array[AgentRecord]
 pub fn SqliteStore::archive_task(Self, @core.Task, archived_at~ : String) -> Result[Unit, String]
 pub fn SqliteStore::assistant_get(Self, String) -> AssistantReg?
@@ -242,6 +248,7 @@ pub fn SqliteStore::assistant_upsert(Self, AssistantReg) -> Unit
 pub fn SqliteStore::cb_get(Self, String, String) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)?
 pub fn SqliteStore::cb_save(Self, String, String, String, Int32, Int32, Int32, Int32, Int32, Int32, String) -> Result[Unit, String]
 pub fn SqliteStore::clear(Self) -> Unit
+pub fn SqliteStore::close(Self) -> Unit
 pub fn SqliteStore::create_task(Self, @core.Task) -> Result[Unit, String]
 pub fn SqliteStore::db_path_from_env(String?) -> String
 pub fn SqliteStore::default_db_path() -> String

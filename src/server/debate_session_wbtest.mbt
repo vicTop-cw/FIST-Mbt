@@ -44,10 +44,11 @@ test "debate455_next_session_id_monotonic" {
   let before = debate_sessions.sessions.length()
   let a = debate_next_session_id()
   // 模拟 convene：把 a 真正写进注册表（否则下一次还是同一个序号）
-  debate_sessions.sessions.set(
-    a,
-    DebateSession::{ threshold: 0.6, verdicts: [], created_at: "" },
-  )
+  debate_sessions.sessions.set(a, DebateSession::{
+    threshold: 0.6,
+    verdicts: [],
+    created_at: "",
+  })
   let b = debate_next_session_id()
   assert_eq(debate_sessions.sessions.length(), before + 1)
   assert_true(a != b) // 序号必须变
@@ -82,10 +83,11 @@ test "debate455_split_hat_items_three_separators" {
 test "debate455_registry_starts_empty_and_mutates" {
   let r = DebateRegistry::new()
   assert_eq(r.sessions.length(), 0)
-  r.sessions.set(
-    "debate-20260101-001",
-    DebateSession::{ threshold: 0.6, verdicts: [], created_at: "2026-01-01T00:00:00Z" },
-  )
+  r.sessions.set("debate-20260101-001", DebateSession::{
+    threshold: 0.6,
+    verdicts: [],
+    created_at: "2026-01-01T00:00:00Z",
+  })
   assert_eq(r.sessions.length(), 1)
   assert_true(r.sessions.contains("debate-20260101-001"))
   r.sessions.remove("debate-20260101-001")

@@ -132,18 +132,30 @@ pub fn MultiStore::get(self : MultiStore, ns : String) -> SqliteStore? {
 
 ///|
 /// 关闭并移除某个命名空间（不删除物理文件，可重新 open 恢复）。
+///
+/// **真关句柄**（BUG-463）：过去只 `stores.remove(ns)`，底层 `@sqlite.Database`
+/// 句柄仍被引用着（Map 摘掉 ≠ 释放），Windows 上该 `.db` 的写锁/文件锁一直不放。
+/// `SqliteStore::close()` 幂等，故本函数重复调用安全。
 pub fn MultiStore::close(self : MultiStore, ns : String) -> Unit {
-  if self.stores.contains(ns) {
-    self.stores.remove(ns)
+  match self.stores.get(ns) {
+    Some(s) => {
+      s.close()
+      self.stores.remove(ns)
+    }
+    None => ()
   }
 }
 
 ///|
-/// 关闭全部命名空间。
+/// 关闭全部命名空间（逐库真关句柄，幂等）。
+///
+/// BUG-463：旧实现只 `stores.remove(k)`，句柄一个都没释放；`close_all` 之后
+/// 进程内仍握着全部 ns 的 sqlite 连接 ⇒ 测试夹具删 `.db` 失败、重开同库可能撞锁。
+/// 现在逐个走 `MultiStore::close`（它对每个 ns 都调 `SqliteStore::close()`）。
 pub fn MultiStore::close_all(self : MultiStore) -> Unit {
   let keys = self.ns_list()
   for k in keys {
-    self.stores.remove(k)
+    self.close(k)
   }
 }
 

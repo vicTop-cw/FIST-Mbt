@@ -59,7 +59,11 @@ test "s3_wire_01_tools_read_challenge_from_args" {
     start = idx + 1
   }
   if n < 3 {
-    abort("只有 " + n.to_string() + " 道门调用了 opt_challenge(args)，期望 ≥ 3（reserve_scope / lock_acquire / claim）")
+    abort(
+      "只有 " +
+      n.to_string() +
+      " 道门调用了 opt_challenge(args)，期望 ≥ 3（reserve_scope / lock_acquire / claim）",
+    )
   }
 }
 
@@ -73,15 +77,22 @@ test "s3_wire_02_empty_challenge_is_none" {
   // 用假 args 直接测纯函数（不需要起服务）
   let empty : Json = Json::object(Map([]))
   let (c1, s1) = opt_challenge(empty)
-  assert_true(c1 is None)     // 没传 challenge ⇒ None
+  assert_true(c1 is None) // 没传 challenge ⇒ None
   assert_true(s1 is None)
   // 显式传空串 ⇒ 同样 None（MCP 层「没传」与「传空串」难区分，必须同义）
-  let blank : Json = Json::object(Map([("challenge", Json::string("")), ("challenge_sig", Json::string(""))]))
+  let blank : Json = Json::object(
+    Map([("challenge", Json::string("")), ("challenge_sig", Json::string(""))]),
+  )
   let (c2, s2) = opt_challenge(blank)
   assert_true(c2 is None)
   assert_true(s2 is None)
   // 传了真值 ⇒ Some
-  let real : Json = Json::object(Map([("challenge", Json::string("n1")), ("challenge_sig", Json::string("sig1"))]))
+  let real : Json = Json::object(
+    Map([
+      ("challenge", Json::string("n1")),
+      ("challenge_sig", Json::string("sig1")),
+    ]),
+  )
   let (c3, s3) = opt_challenge(real)
   match c3 {
     Some(v) => assert_eq(v, "n1")
@@ -114,10 +125,18 @@ test "s3_wire_03_tools_forward_challenge_to_engine" {
   let n_nonce = count_ci(src, "challenge_nonce=ch.0")
   let n_sig = count_ci(src, "challenge_sig=ch.1")
   if n_nonce < 3 {
-    abort("challenge_nonce=ch.0 只出现 " + n_nonce.to_string() + " 次，期望 ≥ 3")
+    abort(
+      "challenge_nonce=ch.0 只出现 " +
+      n_nonce.to_string() +
+      " 次，期望 ≥ 3",
+    )
   }
   if n_sig < 3 {
-    abort("challenge_sig=ch.1 只出现 " + n_sig.to_string() + " 次，期望 ≥ 3")
+    abort(
+      "challenge_sig=ch.1 只出现 " +
+      n_sig.to_string() +
+      " 次，期望 ≥ 3",
+    )
   }
 }
 
@@ -140,14 +159,16 @@ test "s3_wire_04_execute_is_not_a_judged_role_gate" {
   let end = find_from_ci(rest, "\npub fn ", 0)
   let body = if end < 0 { rest } else { substring_to(rest, end) }
   if body.contains("judged_role") {
-    abort("execute_with_meta 里出现了 judged_role —— 那它就该接挑战，四道门清单需要更新")
+    abort(
+      "execute_with_meta 里出现了 judged_role —— 那它就该接挑战，四道门清单需要更新",
+    )
   }
 }
 
 // ── 小工具（避免依赖外部字符串库）────────────────────────────────────────
 
 ///|
-fn find_from_ci(hay : String, needle : String, from : Int) -> Int {
+fn find_from_ci(hay : String, needle : String, from : Int32) -> Int32 {
   let h = hay.to_array()
   let nd = needle.to_array()
   if nd.length() == 0 || nd.length() > h.length() {
@@ -173,7 +194,7 @@ fn find_from_ci(hay : String, needle : String, from : Int) -> Int {
 }
 
 ///|
-fn count_ci(hay : String, needle : String) -> Int {
+fn count_ci(hay : String, needle : String) -> Int32 {
   let mut n = 0
   let mut start = 0
   while true {
@@ -188,7 +209,7 @@ fn count_ci(hay : String, needle : String) -> Int {
 }
 
 ///|
-fn substring_from(s : String, from : Int) -> String {
+fn substring_from(s : String, from : Int32) -> String {
   let a = s.to_array()
   if from >= a.length() {
     return ""
@@ -203,7 +224,7 @@ fn substring_from(s : String, from : Int) -> String {
 }
 
 ///|
-fn substring_to(s : String, to : Int) -> String {
+fn substring_to(s : String, to : Int32) -> String {
   let a = s.to_array()
   let mut out = ""
   let mut i = 0

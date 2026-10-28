@@ -530,20 +530,26 @@ test "BUG-241：同号重复条目被逐条标 FIXED，不再只改首条" {
 /// 口径与 `scripts/gen_plugins.py` 的 `RE_BUG_HEAD` / `RE_BUG_STATUS` 一致。
 test "bug434_heading_is_three_segment_only" {
   // 正例①：完整三段式（真抬头）
-  assert_true(
-    bug_is_header("## BUG-421 [2026-10-26T14:14:16Z] [medium] FIXED"),
-  )
+  assert_true(bug_is_header("## BUG-421 [2026-10-26T14:14:16Z] [medium] FIXED"))
   // 正例②：DUPLICATE 带 `→BUG-1` 后缀 ⇒ **仍是合法抬头**（防修过头）
   assert_true(
     bug_is_header("## BUG-2 [2026-09-26T00:00:01Z] [medium] DUPLICATE →BUG-1"),
   )
   // 正例③：FALSE_POSITIVE 带括号后缀
   assert_true(
-    bug_is_header("## BUG-3 [2026-09-26T00:00:02Z] [low] FALSE_POSITIVE (evidence)"),
+    bug_is_header(
+      "## BUG-3 [2026-09-26T00:00:02Z] [low] FALSE_POSITIVE (evidence)",
+    ),
   )
   // 反例①：**污染行**（小节标题，无 [] 段）—— 这就是本轮实测撞到的形状
-  assert_false(bug_is_header("## BUG-421：整名 leader/lead 提权面 → 已删白名单"))
-  assert_false(bug_is_header("## BUG-422：查表键仍是自报名字 → B 案三层"))
+  assert_false(
+    bug_is_header(
+      "## BUG-421：整名 leader/lead 提权面 → 已删白名单",
+    ),
+  )
+  assert_false(
+    bug_is_header("## BUG-422：查表键仍是自报名字 → B 案三层"),
+  )
   // 反例②：只有日期段、缺状态
   assert_false(bug_is_header("## BUG-999 [x] [medium]"))
   // 反例③：严重度不在闭集
