@@ -630,7 +630,7 @@ def selftest_projection() -> int:
         "SELFTEST %s（五格：相同/仅行尾/内容漂移/缺失与多余/真源文件名不被本机残留决定）"
         % ("OK" if not fails else "FAIL")
     )
-    return 0 if not fails else 2
+    sys.exit(0 if not fails else 2)  # NO_CALL_FACE J2：自检函数自己就是调用面
 
 
 def main() -> int:
