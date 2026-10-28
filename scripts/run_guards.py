@@ -194,6 +194,22 @@ SPECIAL_CASES = [
     # The three-layer rule found 12 real seeds with 0 false positives.
     # Intentional leftovers live in INTENTIONAL, registered ONE BY ONE WITH A REASON.
     case("check_handwritten_seed.py", "--selftest"),
+    # -- BUG-474: dead-parameter judge (schema promises a param the handler never reads) --
+    # Same family as BUG-472 (plan.challenge) and BUG-473 (execute.agent): the caller
+    # passes a value that is silently discarded, with NO error surfaced.
+    # Encodes the FIVE pitfalls found the hard way; each has a selftest mutation cell:
+    #   1 dict setdefault overwrote same-name tools -> under-report (blocks is a list)
+    #   2 substring match hit agent_touch_first_seen( -> false-alive (quoted literal only)
+    #   3 paren matching did not skip strings -> block closed early -> false-dead (state machine)
+    #   4 passthrough foo(args)/engine.y(args) -> false-dead -> reported as opaque, never dead
+    #   5 reader whitelist incomplete (jnum/get_json_text/jget/arg_str) -> derived from fn defs
+    expected(
+        "check_dead_params.py",
+        1,
+        "全仓现有 3 处死参数，是已人工逐条核实的真读数，不是判据缺陷：loop_create.items（B 类该摘 schema）+ lock_acquire.ts / lock_renew.ts（C 类：handler 用 let ts = now_default() 覆盖调用方值，属 BUG-33 政策服务端盖章）。修这三处要动 server.mbt（Beta 独占），故本判据上线时如实报红。清理条件：items 摘字段 + 两个 ts 描述改为服务端盖章不接受覆盖后转绿。",
+        kind="known-red",
+    ),
+    case("check_dead_params.py", "--selftest"),
     case("check_handwritten_seed.py"),
     case("check_effective_catch.py"),
     # 判据本体（2026-10-28 转正门禁）：本格曾是 expected(..., 1) 的 known-red，
@@ -234,21 +250,13 @@ SPECIAL_CASES = [
     case("check_upgrade_installer.py"),
     case("check_plan_landing.py", "--selftest"),
     # —— R84 (TASK-003)：gate 步骤位置纪律 ——
-    # 【这是债，不是判据坏了】（R185 登记，理由按统帅要求写全，防止下一轮有人去改常量）
-    # 判据**工作正常**：它如实报告 `ci.yml` 里 Migrate 之后有 35 个 gate 步骤缺 position-why 锚，
-    # 超过钉住的上限 34。红的含义是「CI workflow 内容债累积了」，不是「判据算错了」。
-    # **出路只有一条**：给人裁决——要么真正补锚点（降实测面），要么由 owner 明示升档。
-    # **禁止**：为了让这格变绿去改 `POSITION_WHY_CEILING`（那等于把债务判成无债）。
-    expected("check_ci_step_position.py", 1,
-             "预存红（债非坏）：位置违规 35 条 > 棘轮上限 34（ci.yml 里 Migrate 之后无 position-why "
-             "锚的 gate 步骤）。**判据工作正常，它正确报告了 CI workflow 内容债**——不是判据算错，"
-             "也不是常量该动。出路是人裁决：补锚点（真还债）或 owner 明示升档；"
-             "禁止为了变绿去改 POSITION_WHY_CEILING（那等于把债判成无债）",
-             kind="known-red"),
-    expected("check_ci_step_position.py", 2,
-             "级联：同一处棘轮超限 ⇒ 自检格 T9「真源现状 rc=0」不成立，判据按契约自拒出 2。"
-             "**这是债的连带效应，不是第二笔债**：主债修好后本格自动转绿", "--selftest",
-             kind="known-red"),
+    # 【债已还完】（R185 登记 → R56 还债）：R185 时的「35 条 > 上限 34」已修 —— 给 5 个**确实依赖
+    # Migrate** 的步骤补了 position-why 锚点（Cleanliness guard / Heartbeat xproc / Reserve xproc /
+    # Native heap gate ×2 / Test (native, j=1)），实测 **30 ≤ 34** ⇒ 判据 rc=0。
+    # 按本文件的律「被检内容修好 ⇒ 把期望改回门禁格」，从 known-red 转回 case。
+    # **没动 `POSITION_WHY_CEILING`**（上限仍是 34）—— 降的是实测面，不是闸门。
+    case("check_ci_step_position.py"),
+    case("check_ci_step_position.py", "--selftest"),
     # —— 远端状态读数（2026-10-24）：这两格红的是**远端形态**，不是仓内容债 ——
     # filter-repo 重写历史后，多数通道支与当前 `gitcode/main` 已**无共同祖先**（`git merge`
     # 会拒绝 unrelated histories）⇒ 合并面只能走 cherry-pick（本会话全程即如此）。这不是缺陷
@@ -415,16 +423,13 @@ SPECIAL_CASES = [
              "见 scripts/NAMING.md）。**判据工作正常，它正确报告了命名债**——不是判据算错。"
              "出路：改名还债并同批下调上限；禁止为变绿改常量（放宽是人的决定）",
              kind="known-red"),
-    # 【这是债，不是判据坏了】（R185 新增登记——此前这把尺**完全没进电池**，
-    # 它的 rc=1 从未在任何门禁面显形，属于判例-5「判据存在但没接线」的同族）
-    # 判据工作正常：判定面 5 条「自述与实现不同色」> 钉住上限 0。
-    # 出路（判据自己写明的两条）：把码改真，或把承诺改真；改上限常量不算出路。
-    expected("check_exit_code_contract.py", 1,
-             "预存红（债非坏）：判定面 5 条 > 棘轮上限 0 —— 5 处「自述退出码契约与 ast 实现面不同色」。"
-             "**判据工作正常，它正确报告了契约债**；它是本仓唯一检查「文档自述退出码 == 代码实际返回」"
-             "的尺。出路只有两条：把码改真 / 把承诺改真；改上限常量绕过不算出路。"
-             "**此前它没进电池**（判例-5 同族），本登记同时把它接进执行面",
-             kind="known-red"),
+    # 【债已还完】（R185 登记 → R55 还债）：R185 时的「判定面 5 条 > 上限 0」已清零 ——
+    # 4 处 `raise SystemExit("FATAL…")`（check_badge ×1 / check_test_sync ×3）改成
+    # `print(…) + raise SystemExit(2)`（**把码改真**）；check_index_gitlinks 的元组出口补了字面
+    # `return 2`（**让已存在的承诺可证**）。实测「判定面归零（上限 0）」⇒ rc=0。
+    # 按本文件的律「被检内容修好 ⇒ 把期望改回门禁格」，从 known-red 转回 case。
+    # **没动 `CONTRACT_GAP_CEILING`**（仍是 0）。
+    case("check_exit_code_contract.py"),
     # ── 兑现（R108）：主线 `866e2e65` 把 dist 快照刷到与 moon.mod 同版 ⇒ 这一格现读 got=0，"
     #    登记的红已不成立。按本文件自订的律「被检内容修好 ⇒ 把期望改回 0」转回门禁格，依据一起删。──
     # ── BUG-428（2026-10-26 立案 / 2026-10-27 收口）：
@@ -1128,18 +1133,17 @@ def selftest():
     # 统帅要求：「理由必须写清『这是债不是坏』——否则每轮有人以为判据坏了去改常量」。
     # 这几格把该要求**变成可执行断言**，而不是只留在注释里：
     #   ① 每个 known-red 格必须带非空 why（空 why = 发了张免检牌，判据不属于任何人）；
-    #   ② 三把棘轮债必须在册 —— 少一条说明有人**删了登记**而不是把债还了。
+    #   ② 只剩**一把**棘轮债在册（`check_scripts_naming` 的命名债）—— 少一条说明有人**删了登记**
+    #      而不是把债还了；**还了债的要同批从册上摘掉并转回门禁格**（R55/R56 已摘两把：
+    #      `check_exit_code_contract` 判定面归零 / `check_ci_step_position` 35→30）。
     _kr = [c for c in CASES if c.get("kind") == "known-red"]
     cell("known-red-all-have-why", all((c.get("why") or "").strip() for c in _kr), True)
     _kr_scripts = {c.get("script") for c in _kr}
-    cell("known-red-covers-three-ratchet-debts",
-         {"check_ci_step_position.py", "check_exit_code_contract.py",
-          "check_scripts_naming.py"} <= _kr_scripts, True)
-    # ③ 三把的 why 必须写明「债非坏」的口径词（防止有人把理由改成一句"已知红"就交差）
+    cell("known-red-covers-remaining-ratchet-debt",
+         {"check_scripts_naming.py"} <= _kr_scripts, True)
+    # ③ 在册那把的 why 必须写明「债非坏」的口径词（防止有人把理由改成一句"已知红"就交差）
     _kr_why = " ".join((c.get("why") or "") for c in _kr
-                       if c.get("script") in ("check_ci_step_position.py",
-                                              "check_exit_code_contract.py",
-                                              "check_scripts_naming.py"))
+                       if c.get("script") in ("check_scripts_naming.py",))
     cell("known-red-why-says-debt-not-broken", "债非坏" in _kr_why, True)
     # R106 第二处同形缺陷：run_battery 里 `auto_cases(battery, ci, guards)` 是**另一版**的三参签名，
     # 合并后调用面与定义不同形 ⇒ 只有真跑电池才炸（`--selftest`/`--list` 都摸不到那一行）。
