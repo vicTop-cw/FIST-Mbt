@@ -151,13 +151,17 @@ F1="$ROOT/f1"; make_fixture "$F1" || { echo "FATAL 夹具造不出来（格1）"
 OUT1=$(run_segment "$F1/work" 2>&1); RC1=$?
 printf '%s\n' "$OUT1" | sed 's/^/    | /'
 echo "    | (exit=$RC1)"
-chk "聚合读数行存在" "$(contains "$OUT1" '::notice::OK=')" "yes"
+# ⚠️ 契约变更（R29 / e3c044b9）：旧 workflow 是「失败**不阻断**」⇒ 旧格断言 rc=0；
+#    R29 有意改成**响亮失败**（::error:: + 非零退出）⇒ 这两格现在断言 rc=1。
+#    同时聚合行格式改为 `OK=<n> FAIL=<n> SKIP=<n> TAGS=… FAILED_BRANCHES=…`（不再有 `branch sync:` 前缀、
+#    也不再单独发 `::notice::tag sync:` / `::notice::master synced`）。
+chk "聚合读数行存在（裸 OK=/FAIL= 聚合行）" "$(contains "$OUT1" 'OK=3 FAIL=1')" "yes"
 chk "OK=3（br-ok-1 + master + other）" "$(field "$OUT1" 1)" "3"
 chk "FAIL=1（br-bad-gone）" "$(field "$OUT1" 2)" "1"
 chk "失败分支被点名" "$(contains "$OUT1" '::warning::failed branches: br-bad-gone')" "yes"
-chk "master 成功读数" "$(contains "$OUT1" '::notice::master synced')" "yes"
-chk "标签聚合读数行" "$(contains "$OUT1" '::notice::tag sync: OK=')" "yes"
-chk "rc 语义不变（失败不阻断 ⇒ 0）" "$RC1" "0"
+chk "master 成功读数（分支循环里真推成功）" "$(contains "$OUT1" 'master -> master')" "yes"
+chk "标签读数（聚合行里的 TAGS=）" "$(contains "$OUT1" 'TAGS=ok')" "yes"
+chk "rc 语义（失败 ⇒ 响亮非零，R29 契约）" "$RC1" "1"
 
 echo
 echo "===== 2) 全失败面（远端 pre-receive 一律拒 ⇒ 每一次 push 都失败） ====="
@@ -173,8 +177,8 @@ echo "    | (exit=$RC2)"
 chk "全失败时 OK=0" "$(field "$OUT2" 1)" "0"
 chk "全失败时 FAIL=4" "$(field "$OUT2" 2)" "4"
 chk "四支全部点名" "$(allfour "$OUT2")" "yes"
-chk "master 失败逐字点名" "$(contains "$OUT2" '::warning::master sync FAILED')" "yes"
-chk "rc 语义不变（全失败也不阻断 ⇒ 0）" "$RC2" "0"
+chk "master 失败逐字点名（走同一 failed branch 形态）" "$(contains "$OUT2" 'failed branch: master')" "yes"
+chk "rc 语义（全失败 ⇒ 非零，R29 契约）" "$RC2" "1"
 
 echo
 echo "===== 3) 反证：旧写法 || echo 在同一夹具上必须假绿 ====="
