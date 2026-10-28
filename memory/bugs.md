@@ -10247,3 +10247,20 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
 - summary: publish 家族（publish / publish_parallel / dag_publish）不查 ns ACL —— BUG-459 只补了 ns 合法性门，写权限面仍敞
 - detail: BUG-459/9518c590 给 dag_publish 与 publish_parallel 补了 ns_write_gate（拒 default/空/非法 ns），但实测三条 publish 路径都走 human_steward 特权路径、不查调用方在该 ns 的 ACL can_write。与 claim 侧不一致：claim 走 ns ACL（can_write=0 会被拒，BUG-408/BUG-411 收口过这条），publish 侧不查。后果：任何调用方（在 BUG-430 未收口前身份本就可自报）可向任意已打开 ns 发布根任务，绕过写权限。注意口径依赖：若按 BUG-430 的 framing（agent 自报不可验证），补 ACL 只提高一致性不提高安全性；但一致性本身是判据面『文档声称==代码调用点』的一部分。建议：publish/publish_parallel/dag_publish 在 engine_for_ns 之前加与 claim 同源的 ns ACL can_write 判定（created_by 不再是免检通道，或显式区分 privileged path 并在文档里写明豁免理由），并补对表判据一格。
 - reported_by: lead(Lane E 边界自述)
+
+- 追记（2026-10-28 14:00 **实测复核：这可能是既有设计而非缺陷，请 Lane E 补证据后定夺**）：
+  **代码证据**：`src/server/server.mbt:1914-1919` 的 `publish` handler 里**明写着**：
+  > BUG-411：publish 走 human_steward 特权路径（不看 ns ACL），而 claim 走 agent_write_gate 的 ns ACL
+  > —— 同 ns 内「发布成功、认领被拒」是合法组合
+  且 `engine.publish` 开头有硬检查 `if created_by != "human_steward" && created_by != "human" { Err }`
+  ⇒ **三条 publish 路径本身是「人类指挥官特权入口」**，不是普通 agent 写路径。
+  **⇒ 「不查 ns ACL」是 BUG-411 当初的**显式设计**：指挥官发任务是跨 ACL 的，ACL 管的是 agent。
+  **⇒ 真正敞的口子不是 ACL，而是 S1**（`created_by` 自报、服务端不可验证）——
+  任何调用方填 `created_by=human_steward` 就能走特权路径，这已在
+  `AGENTS.md`「已知边界：agent/assignee/executor 是自报的（BUG-430 · S1）」里公告。
+  **⇒ 建议定夺方向**（三选一，需 Lane E 或 owner 拍）：
+  ① **判 FALSE_POSITIVE**（既有设计 + S1 已知边界，不新增缺陷）；
+  ② **加强 `created_by` 的校验**（如要求 challenge 验签证明是 human_steward 本人）—— 那是 S3 的延伸；
+  ③ 保持 OPEN 作 S1 的**子面**锚点（与 BUG-430 一起收）。
+  **⚠️ 本条带 `[Lane E 边界自述]` 标记且 detail 只有一行** —— 我没有它的完整证据，
+  **不擅自改判**，只补上面的代码事实供定夺。
