@@ -2157,12 +2157,22 @@ pub async fn run_server() -> Unit {
       }
       // BUG-430 S3 收尾：挑战从 args 读并透传（空串 ⇒ None ⇒ 零回归）
       let ch = opt_challenge(args)
-      // BUG-466：把**认证结论**也进 action 面（与 reserve_scope / lock_acquire 同源，复用 `auth_tag`）。
-      //   `judged_role_with_nonce` 是 claim 内部真正决定角色的那次取数；
-      //   这里用**同一套入参**再取一次只为渲染标签（纯函数 + nonce 消费在 claim 内部完成）。
-      //   ⚠️ 为什么不从 claim 的返回值取：`claim` 返回 `@core.Task`，没有 role_source 字段；
-      //     而「认证状态」是调用方唯一能判断「我这次到底认证了没有」的东西，必须显式给出。
-      let auth = @engine.judged_role_with_nonce(eng, assignee, ch.0, challenge_sig=ch.1)
+      // BUG-466 / BUG-430 第九段：**认证结论**进 action 面，但预取**绝不能消费 nonce**。
+      //
+      // ⛔ 修前写法（实测确认是真 bug）：
+      //   在 `eng.claim` **之前**调 `judged_role_with_nonce` 渲染标签 —— 而它
+      //   **验签通过就会消费 nonce**（`s3_consume_nonce` 是**真删除**）。
+      //   实测同一 nonce 连调两次：`s1=challenge_verified` / `s2=challenge_replayed`
+      //   ⇒ 预取吃掉 nonce，`claim` 内部那次拿到 **`challenge_replayed`**
+      //   ⇒ **回执显示 verified，实际 claim 却按"重放"(降级) 跑** ——
+      //   比不显示更糟：调用方以为认证过了，行为却是未认证的。
+      //
+      // ✅ 修法：预取改用 **`judged_role_with_challenge`**（只验签、**不消费** nonce），
+      //   让 `claim` 内部那次成为**唯一消费点**。两者判定逻辑同源
+      //   （`judged_role_with_nonce` 在验签失败时也不消费，两函数在"失败"上结论一致），
+      //   唯一差别是 `with_nonce` 多判一次重放 —— 而重放只可能发生在**别人已用过该 nonce**，
+      //   那时 `claim` 内部的 `challenge_replayed` 才是权威结论，标签面保持一致即可。
+      let auth = @engine.judged_role_with_challenge(eng, assignee, ch.0, challenge_sig=ch.1)
       let tag = @engine.auth_tag(auth.1)
       match
         eng.claim(
@@ -7138,7 +7148,7 @@ pub async fn run_server() -> Unit {
       // `rotate_challenge` 也由服务端签发（`s3_issue_challenge_auto`，进程级单调递增），
       // 不接受调用方自选 —— 否则可离线预计算并提前签好 ⇒ 挑战退化 ⇒ 旧私钥证明被架空。
       if pin == key_pin_reject_different && rotate_sig == "" {
-        let issued = eng.s3_issue_challenge_auto(agent_id)
+        let issued = eng.s3_issue_challenge_auto(agent_id, ns~, issued_at=now_default())
         return Ok(
           @mcp.ToolResult::text(
             Json::object({
@@ -7173,7 +7183,7 @@ pub async fn run_server() -> Unit {
         // ⇒ 这里先 `s3_consume_nonce`（一次性消费，重复提交第二次必 false ⇒ 防重放）。
         let old_sig_ok = if rotate_sig == "" || rotate_challenge == "" {
           false
-        } else if !@engine.s3_consume_nonce(agent_id, rotate_challenge) {
+        } else if !eng.s3_consume_nonce(agent_id, rotate_challenge, ns~) {
           false
         } else {
           @engine.verify_challenge_sig(prev_key, rotate_challenge, rotate_sig)
@@ -7280,7 +7290,7 @@ pub async fn run_server() -> Unit {
         let proof_sig = get_str(args, "proof_sig")
         if challenge == "" {
           // ① 只签发挑战，**一个字节都不写库**
-          let issued = eng.s3_issue_challenge_auto(agent_id)
+          let issued = eng.s3_issue_challenge_auto(agent_id, ns~, issued_at=now_default())
           return Ok(
             @mcp.ToolResult::text(
               Json::object({
@@ -7551,7 +7561,7 @@ pub async fn run_server() -> Unit {
       }
       // 复用 `s3_issue_challenge_auto`（与首登 / 轮换**同源**：服务端进程级单调递增计数器）
       // ⇒ 调用方无法离线预计算 nonce 并提前签好（那会让「挑战」退化成固定字符串）。
-      let issued = eng.s3_issue_challenge_auto(agent_id)
+      let issued = eng.s3_issue_challenge_auto(agent_id, ns~, issued_at=now_default())
       Ok(
         @mcp.ToolResult::text(
           Json::object({

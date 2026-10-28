@@ -65,6 +65,16 @@ pub struct MemoryStore {
   saga_log : Map[String, Array[(Int32, String, String, String, String)]]
   // 下一个 Saga 步骤 id（模拟 SQLite 的 AUTOINCREMENT：单调递增、不复用）
   mut saga_next_id : Int32
+  // BUG-466：S3 challenge nonce（此前只有**模块级进程内 Map** ⇒ 多实例部署时
+  // A 进程签发的票 B 进程消费不掉，「既有限制」变成硬阻碍）。
+  //   key   = <ns> NUL <agent_fp> NUL <nonce>（与 SQLite 侧 PRIMARY KEY(ns, agent_fp, nonce) 同口径）
+  //   value = (issued_at, consumed)
+  //
+  // ⚠️ **内存后端保持真实现而不是占位**（BUG-439/441 的教训：占位是假绿）。
+  //   但即便如此，**内存后端的 nonce 跨不了进程**（它就在本进程内存里）——
+  //   这一点由引擎回执的 `challenge_persisted` 字段**如实披露**，
+  //   不允许「看起来签发了、实际只活在本进程」。
+  challenges : Map[String, (String, Bool)]
 }
 
 ///|
@@ -78,6 +88,12 @@ fn saga_key(ns : String, root_task_id : String) -> String {
 /// 用 `\u{0}` 分隔而不是 `:` —— ns / circuit 名里可能出现 `:`，用 `:` 会有键碰撞。
 fn cb_key(ns : String, circuit : String) -> String {
   ns + "\u{0}" + circuit
+}
+
+///|
+/// BUG-466：challenge 的进程内复合键（与 SQLite 的 `PRIMARY KEY(ns, agent_fp, nonce)` 同口径）。
+fn challenge_key(ns : String, agent_fp : String, nonce : String) -> String {
+  ns + "\u{0}" + agent_fp + "\u{0}" + nonce
 }
 
 ///|
@@ -95,6 +111,7 @@ pub fn MemoryStore::new() -> MemoryStore {
     circuit_breakers: Map([]),
     saga_log: Map([]),
     saga_next_id: 1,
+    challenges: Map([]),
   }
 }
 

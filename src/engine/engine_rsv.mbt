@@ -188,7 +188,41 @@ pub fn judged_role_gated(
   challenge_sig~ : String? = None,
 ) -> (String, String) {
   match challenge_nonce {
-    None => judged_role(eng, agent) // ← 零回归：原样返回
+    // ══════════════════════════════════════════════════════════════════════
+    // BUG-430 / S3 **第九段**：**有钥匙就必须出示**（软强制降权）
+    //
+    // 上一段（BUG-466）把「取票窗口」装上了，产品面能拿到 challenge 并验签通过。
+    // 但还剩最后一个口子：
+    //
+    //   · agent **有公钥** + 传 challenge ⇒ challenge_verified   ✅
+    //   · agent **有公钥** + **不传** challenge ⇒ 仍按自报角色放行  ❌ ← 本段要堵的
+    //
+    // **「有钥匙的人可以不用钥匙进门」** —— 它自己选择了登记公钥（知道规则），
+    // 不传 challenge 只能是自己疏忽或恶意；而没钥匙的 agent 根本无从出示。
+    //
+    // 规则（**增量，只加严不放宽**）：
+    //   · `pubkey_fp == ""` 且 无 challenge ⇒ **原样返回 `judged_role`**（零回归，逐字相同）
+    //   · `pubkey_fp != ""` 且 无 challenge ⇒ **降级**：
+    //       role = "Executor"（fail-closed，不认它自称的角色）
+    //       src  = "challenge_required"
+    //   · 传了 challenge ⇒ 走下面 `Some(_)` 分支（不变）
+    //
+    // ⚠️ **为什么降级而不是 Err**（软强制）：
+    //   硬拒绝会让「先 publish 再 claim」这类既有流水线**整条停摆** ——
+    //   只要有一个 agent 登记过公钥却忘了带票，它的每一步都失败，
+    //   而失败原因（"你有钥匙"）与它正在做的事（认领任务）看起来无关。
+    //   降级则是**精确的**：它的读操作照常、写入照常，
+    //   只有**需要高权的地方**（RANK_GATE / 权限门）自然被拒 —— 失败点就在该失败的地方。
+    //   且 `action` 里会明示 `+challenge_required` ⇒ **不是静默降权**，调用方看得见。
+    // ══════════════════════════════════════════════════════════════════════
+    None =>
+      if declared_pubkey_for(eng, agent) is Some(_) {
+        // 有钥匙却没出示 ⇒ 不给它自称的角色
+        ("Executor", "challenge_required")
+      } else {
+        // 没钥匙 ⇒ 原样（**零回归**：与修前逐字相同）
+        judged_role(eng, agent)
+      }
     Some(_) => {
       let (role, src) = judged_role_with_challenge(
         eng,
@@ -255,10 +289,17 @@ pub fn FistEngine::s3_issue_challenge(
   self : FistEngine,
   agent : String,
   counter : Int32,
+  ns~ : String = "default",
+  issued_at~ : String = "",
 ) -> String {
-  ignore(self)
   let nonce = issue_challenge_nonce(agent, counter)
   let k = agent_fp_of(agent)
+  // BUG-466：**落库**（此前只写进程内 Map ⇒ 多实例部署 A 签发的票 B 消费不掉）。
+  // 内存后端也真写（`MemoryStore.challenges`），不是占位 —— 但它跨不了进程，
+  // 这一点由 `challenge_persisted` 如实披露。
+  let _ = self.store.challenge_issue(ns, k, nonce, issued_at)
+  // 保留进程内登记是**有意的双写**：老的模块级 `s3_consume_nonce` 仍只认进程内表，
+  // 新路径（`FistEngine::s3_consume_nonce`）先 store 后内存 ⇒ 两条路都不破。
   let cur = match s3_pending_nonces.get(k) {
     None => []
     Some(a) => a
@@ -280,10 +321,68 @@ pub fn FistEngine::s3_issue_challenge(
 pub fn FistEngine::s3_issue_challenge_auto(
   self : FistEngine,
   agent : String,
+  ns~ : String = "default",
+  issued_at~ : String = "",
 ) -> String {
   let n = s3_challenge_counter.val
   s3_challenge_counter.val = n + 1
-  self.s3_issue_challenge(agent, n)
+  self.s3_issue_challenge(agent, n, ns~, issued_at~)
+}
+
+///|
+/// BUG-466：**跨进程可消费**的一次性消费（engine 版，先查 store 再落内存）。
+///
+/// 与模块级 `s3_consume_nonce` 的差别：后者只认**本进程**的 `s3_pending_nonces`，
+/// 多实例部署时 A 进程签发的票 B 进程消费不掉（那正是 BUG-466 的病灶）。
+/// 本函数走 `store.challenge_consume` ⇒ SQLite 后端下**跨进程可见**。
+///
+/// 双写对齐：签发时同时写了 store 与内存表，故这里也两边都消费
+/// （内存那边是 best-effort，失败不影响结论 —— store 的结果才是权威）。
+pub fn FistEngine::s3_consume_nonce(
+  self : FistEngine,
+  agent : String,
+  nonce : String,
+  ns~ : String = "default",
+) -> Bool {
+  let k = agent_fp_of(agent)
+  let from_store = self.store.challenge_consume(ns, k, nonce)
+  // 内存表同步消费（best-effort；即使 store 说 false 也清掉，避免陈旧条目累加）
+  ignore(s3_consume_nonce(agent, nonce))
+  from_store
+}
+
+///|
+/// BUG-466：**本次部署里 challenge 是否真的持久化**（`true` = SQLite 落库、跨进程可见；
+/// `false` = 内存后端，只在本次进程生命周期内有效）。
+///
+/// 为什么要单独暴露：同一个 `+challenge_verified` 在两种后端下**可信度不同** ——
+/// 内存后端换进程就失效，多实例部署下还会误判重放。调用方拿到 `false`
+/// 就知道「这次验签只在本次进程内成立」，而不是以为它跨进程也成立。
+pub fn FistEngine::challenge_persisted(self : FistEngine) -> Bool {
+  self.store.challenge_persisted()
+}
+
+///|
+/// BUG-466：清理过期/已消费的 challenge（防表无限增长）。返回删除行数。
+///
+/// `cutoff` 之后的票保留；已消费的票一律清。建议由定时任务调用
+/// （如 `watchdog_tick` 或 `task_cleanup` 旁边），**不要**在每次消费时清
+/// —— 那会把审计证据一起删掉。
+pub fn FistEngine::challenge_cleanup(
+  self : FistEngine,
+  cutoff : String,
+) -> Int32 {
+  self.store.challenge_cleanup(cutoff)
+}
+
+///|
+/// BUG-466：某 agent 在 ns 下**未消费**的票数（只读诊断，供白盒锁用）。
+pub fn FistEngine::challenge_pending_count(
+  self : FistEngine,
+  agent : String,
+  ns~ : String = "default",
+) -> Int32 {
+  self.store.challenge_pending_count(ns, agent_fp_of(agent))
 }
 
 ///|
@@ -497,6 +596,8 @@ pub fn auth_tag(role_source : String) -> String {
     "challenge_verified" => "+challenge_verified"
     "challenge_failed" => "+challenge_failed"
     "challenge_replayed" => "+challenge_replayed"
+    // BUG-430 第九段：**有钥匙却没出示** —— 必须显式可见，不许静默降权。
+    "challenge_required" => "+challenge_required"
     // 既有态：**零后缀**。为什么不是 "+agent_self_reported"：
     //   该后缀在 `rsv_try_set` 里由调用点显式追加（修前就是这样，零回归）；
     //   而 `locks_try_acquire` 的 `permission_denied` / `unregistered` 有**精确相等**的
