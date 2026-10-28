@@ -66,17 +66,22 @@ pub fn TaskStatus::from_string(s : String) -> TaskStatus? {
 ///|
 /// 状态谓词（供跨包业务层判断，避免直接构造变体）
 ///
-/// **R142 修：删掉 `Rejected`（死分支）。** 实测三条线：
-///   · `Task::split()`（`engine.split` 用）只接受 **Claimed**；
-///   · `Task::mark_decomposing()`（`engine.plan_deep` 用）接受 **Pending | Claimed | Splitting**；
-///   · 本闸门被这两条**共用**，原本还多认 `Rejected` ⇒ 已打回的任务**过闸后必被域层拒**
-///     （`split` 拒、`mark_decomposing` 也拒），是一段永远走不通的放行。
-/// 与上方 `can_execute` 记的 **BUG-2 同形**（那里也是闸门多一条 `Rejected`）。
-/// 现集合 = 两条域方法接受集的**并集** {Pending, Claimed, Splitting}；`Rejected` 在闸门处 fail-closed
-/// （已打回的正确出路是 retry 而非拆分，两者都拒，只是文案层不同）。
+/// **这个闸门比域方法宽是「故意的」——R142 曾误删 `Rejected`，R143 已回滚并写清缘由。**
+///
+/// 三层分工：
+///   · `Task::split()`（`engine.split` 用）只收 **Claimed**；
+///   · `Task::mark_decomposing()`（`engine.plan_deep` 用）收 **Pending | Claimed | Splitting**；
+///   · 本闸门 = **"值得尝试"的宽集**，含 `Rejected` —— 因为 `engine` 的第二道门拒绝时会拼
+///     `split_remedy(...)` 给出**出路文案**（见 `engine.mbt` 的 `split_remedy` docstring：
+///     「第一道门 `can_split` 比它宽……只报'要求状态'不报'怎么到达'，调用方就会照文案去 claim
+///     一个已打回的任务，永远走不通」）。
+///
+/// ⇒ 若把 `Rejected` 从闸门删掉（R142 干过）：调用方只会拿到「非法拆分: [已打回]」，
+/// **丢掉「先 retry」这条唯一的出路提示** —— 那是 UX 倒退，不是清理死代码。
+/// 判据：**宽闸门 + 窄域层 + 带出路文案的第二道门错误** = 三层各司其职，不是不一致。
 pub fn TaskStatus::can_split(self : TaskStatus) -> Bool {
   match self {
-    Pending | Claimed | Splitting => true
+    Pending | Claimed | Splitting | Rejected => true
     _ => false
   }
 }

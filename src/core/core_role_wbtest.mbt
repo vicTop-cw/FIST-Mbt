@@ -137,26 +137,27 @@ test "spec_gates_by_actor_string" {
 
 
 ///|
-/// R141→R142：**状态门 vs 域迁移的一致性锁**（R142 已把死分支修掉）。
+/// R141→R143：**状态门 vs 域迁移**的三层分工锁（R142 曾误删、R143 回滚并定论）。
 ///
-/// 实测（`src/core/core_task.mbt`）三条线：
-///   · `Task::split()`（`engine.split` 用）只接受 **Claimed**；
-///   · `Task::mark_decomposing()`（`engine.plan_deep` 用）接受 **Pending | Claimed | Splitting**；
-///   · `TaskStatus::can_split()` 被两者**共用**，R141 时还多认 **`Rejected`**。
+/// 三层：
+///   · `Task::split()`（`engine.split`）只收 **Claimed**；
+///   · `Task::mark_decomposing()`（`engine.plan_deep`）收 **Pending | Claimed | Splitting**；
+///   · `TaskStatus::can_split()` = **宽闸门**，含 **`Rejected`**。
 ///
-/// ⇒ `Rejected` 是一段**永远走不通的放行**（`split` 拒、`mark_decomposing` 也拒）——
-/// 与 `can_execute` 上方记录的 **BUG-2 同形**。**R142 已删掉它**，现集合 = 两条域方法的**并集**
-/// {Pending, Claimed, Splitting}，`Rejected` 在闸门处 fail-closed。
+/// ⚠️ **宽是有意的**（R142 把它收窄成"并集"是错的）：`engine` 的第二道门拒绝时会拼
+/// `split_remedy(...)` 给出出路文案 —— 其 docstring 明写「第一道门 `can_split` 比它宽……
+/// 只报'要求状态'不报'怎么到达'，调用方就会照文案去 claim 一个已打回的任务，永远走不通」。
+/// 删掉 `Rejected` ⇒ 调用方只剩「非法拆分: [已打回]」，**丢掉「先 retry」这条唯一出路提示**。
 ///
-/// 本格同时钉住「并集」与「Rejected 不放行」两件事：谁把 `Rejected` 加回去，或把 Pending/Splitting
-/// 收窄掉（plan_deep 的二次拆解依赖它），都会立刻红。
+/// ⇒ 本格钉的是：**闸门宽集（4 态）+ 域层窄集（split 只 Claimed）**同时成立。
+/// 谁把 `Rejected` 从闸门删掉（重犯 R142），或让 `split` 放宽到能吃 Rejected，本格都会红。
 test "status_gate_vs_domain_split_mismatch_is_pinned" {
-  // 闸门侧：3 态放行（= split{Claimed} ∪ mark_decomposing{Pending,Claimed,Splitting}）
+  // 闸门侧：**宽集 4 态**（含 Rejected —— 宽是为了让第二道门能给出 retry 出路文案）
   assert_true(TaskStatus::can_split(Pending))
   assert_true(TaskStatus::can_split(Claimed))
   assert_true(TaskStatus::can_split(Splitting))
-  // R142：Rejected 必须 fail-closed（域层两条路都不接受它 ⇒ 放行是死分支）
-  assert_true(!TaskStatus::can_split(Rejected))
+  assert_true(TaskStatus::can_split(Rejected))
+  // 域层侧仍是窄集：Claimed 能 split —— 窄集这一侧由下面的真实构造验证
   // 闸门侧：其余拒绝
   assert_true(!TaskStatus::can_split(Executing))
   assert_true(!TaskStatus::can_split(Reviewing))
