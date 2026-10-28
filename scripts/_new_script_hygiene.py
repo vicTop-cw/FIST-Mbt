@@ -24,11 +24,19 @@
 
 `--selftest` 用**临时合成文件**验三条规则各自会咬、且不误伤（判例-29/30：改坏的是代码面）。
 """
+import ast
 import io
 import os
 import re
 import sys
 import tempfile
+
+# stdout UTF-8 门（BUG-58/138）：本文件打印中文结论，必须带门，否则本机控制台一红
+# 就崩在结论行之前，rc 被冒用成「缺陷在场」。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 NON_ASCII = re.compile(r"[^\x00-\x7f]")
 PRINT_CALL = re.compile(r"(?<![\w.])print\s*\(")
@@ -39,10 +47,24 @@ A1 = re.compile(r"for a in [^\]\n]+ if a != \"--selftest\"\]")
 A2 = re.compile(r"for a in sys\.argv if ")
 
 
+def _has_real_gate(text):
+    """真有 `*.reconfigure(...)` 调用吗（AST；解析失败按「无门」处理）。"""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "reconfigure":
+                return True
+    return False
+
+
 def check_text(rel, text):
     """纯函数：返回违例列表。"""
     out = []
-    if PRINT_CALL.search(text) and NON_ASCII.search(text) and GATE not in text:
+    # 判例-30：不能用「子串出现」判门 —— 注释/夹具里提一嘴就满足了。用 AST 认**真调用**。
+    if PRINT_CALL.search(text) and NON_ASCII.search(text) and not _has_real_gate(text):
         out.append("%s: E1 打印非 ASCII 却没有 stdout `reconfigure` 门 —— 本机控制台一红就崩在"
                    "结论行之前，rc 会被冒用成「缺陷在场」（见 check_py_stdout_encoding E1）" % rel)
     if A1.search(text):
@@ -102,6 +124,10 @@ def selftest():
 
     cell("E1-bad-is-flagged", any("E1" in p for p in check_text("x.py", bad_e1)))
     cell("E1-good-not-flagged", not any("E1" in p for p in check_text("x.py", good_e1)))
+    # 判例-30 收口：**只提一嘴 reconfigure、没有真调用**必须被判 E1
+    mention_only = "import sys\n# 提一句 sys.stdout.reconfigure( 但没调用\nprint('中文')\n"
+    cell("E1-mention-only-is-flagged",
+         any("E1" in p for p in check_text("x.py", mention_only)))
     cell("A1-bad-is-flagged", any("A1" in p for p in check_text("x.py", bad_a1)))
     cell("A1-good-not-flagged", not any("A1" in p for p in check_text("x.py", good_a1)))
     cell("A2-bad-is-flagged", any("A2" in p for p in check_text("x.py", bad_a2)))

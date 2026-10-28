@@ -1,3 +1,4 @@
+import ast
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """scripts/check_py_stdout_encoding.py — CI 侧脚本的 stdout 编码闸（BUG-138）。
@@ -80,7 +81,23 @@ def needs_gate(text):
 
 
 def has_gate(text):
-    return "reconfigure" in text
+    """真有 `sys.stdout.reconfigure(...)` 这类**调用**吗（AST 判定）。
+
+    ⚠️ 旧实现是 `return "reconfigure" in text` —— **注释里提一嘴就算通过**（判例-30 同族：
+   锁被注释满足）。实测铁证：`scripts/_new_script_hygiene.py` 打印中文却没真调用，
+    只因头注释提到该词而 PASS。⇒ 改成 AST：只认**被调用的属性方法** `*.reconfigure(...)`。
+
+    解析失败（语法错）按「无门」处理：解析不出调用面 ⇒ 拒绝判绿，不用子串兜底。
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "reconfigure":
+                return True
+    return False
 
 
 def evaluate(rel_paths, reader):
@@ -153,6 +170,11 @@ def selftest():
     faces = ["a.py", "b.py", "c.py"]
     books = {"a.py": ok_body, "b.py": bad_body, "c.py": ascii_body}
     probs, notes, scanned, gated = evaluate(faces, lambda r: books.get(r))
+    # 判例-30 收口格：**只在注释里提 reconfigure**、没有真调用的脚本必须被判红
+    mention_only = {"m.py": ("import sys\n# 这里提一句 sys.stdout.reconfigure( 但其实没调用\nprint('VIOLATION ⇒ 中文')\n")}
+    probs_m, _notes_m, _s_m, _g_m = evaluate(["m.py"], lambda r: mention_only.get(r))
+    if not any("E1 m.py" in p for p in probs_m):
+        fails.append("M-mention E1 只提一嘴（无真调用）的脚本没被判红 → 规则可被注释满足")
     if not any("E1 b.py" in p for p in probs):
         fails.append("M1 摘掉闸的脚本没被判红 → 判据是装饰")
     if any("a.py" in p for p in probs):
