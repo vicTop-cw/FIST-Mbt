@@ -1,11 +1,15 @@
 ---
-status: 提案中
-decided_by:
-decided_at:
-decision:
+status: 已定案
+decided_by: human_steward
+decided_at: 2026-10-28
+decision: approved
 ---
 
 # BUG-470 决策单
+
+## 最终裁决（2026-10-28 · owner）
+
+**B · 默认降权** —— 加 `FIST_AUTH_MODE` 开关（`off`/`soft`/`strict`），**首次默认 `off`**，观察一周后 flip 到 `soft`。
 
 ## 一句话
 要不要让「没公钥的调用方」自动降权（B），还是维持现状（A）？
