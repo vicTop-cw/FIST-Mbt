@@ -174,16 +174,10 @@ SPECIAL_CASES = [
     #    现读 **0 把**（75/75 全部拒绝未知旗标）。按本仓律「被检面修到 0 ⇒ 把期望改回门禁格」。
     case("check_arg_face_strict.py"),
     case("check_arg_face_strict.py", "--selftest"),
-    # —— R82：Python 侧死参数判据 —— `check_dead_params.py` 只扫 .mbt，Python 形参从未被查过
-    #    （R81 实测 `build_args(..., read_only)` 里的 read_only 函数体从未使用而无人发现）。
-    #    【这是债，不是判据坏了】现读 **2 条**（另有 19 条 NOTE 面：函数名被当作值引用 ⇒ 疑似签名约束，不计债）。出路：删形参并同步调用点，或按职责补使用；
-    #    确属协议要求则改名 `_x`。修到 0 后这一格自己翻红，届时把期望改回 0。
-    expected("check_dead_params_py.py", 1,
-             "预存红（债非坏）：2 条 Python 死参数 —— 形参在函数体内零引用，调用方传了也没人用。"
-             "**判据工作正常，它正确报告了 Python 侧的参数债**；出路见 README。被检面修到 0 "
-             "之后这一格自己翻红，届时把期望改回 0",
-             kind="known-red"),
-    case("check_dead_params_py.py", "--selftest"),
+    # —— R82/R94：Python 侧死参数判据 —— `check_dead_params.py` 只扫 .mbt，Python 形参此前从未被查过。
+    #    【债已清零】R82 建判据（36 条）⇒ R85 加两面口径（真债 12 / NOTE 19）⇒ R86–R94 逐条清完，
+    #    现读 **真债 0 条**（1771 个函数）。按本仓律「被检面修到 0 ⇒ 把期望改回门禁格」。
+    case("check_dead_params_py.py"),    case("check_dead_params_py.py", "--selftest"),
     # —— BUG-440：docs/plans/ frontmatter 守卫（README:22 承诺了 5 天，守卫文件此前不存在）——
     # 判据：文件名 / frontmatter 必须第 1 行起 / 四强制字段 / status 闭集 / 已定案自洽(含 decisions 记录)。
     # 实测抓出过真违例：4pools 提案的第一个 `---` 块是 AIGC 水印元数据，四字段全缺。
