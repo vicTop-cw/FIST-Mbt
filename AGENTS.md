@@ -262,8 +262,17 @@ DSH 侧 `fist-mbt` 却恒报 `mcp-client(fist-mbt): server is disconnected` —�
 | S2 显式授权 | 未登记者被拒 | **否**（已登记者仍可被冒充）|
 | **S3 身份锚点** | 签名挑战 / 验签 / 会话绑定 | **是**（唯一真正改变安全属性的一档）|
 
+**BUG-430 第九段（2026-10-28）：有钥匙就必须出示（软强制降权）。**
+agent 的 `pubkey_fp != ""`（自己选择登记了公钥）却**不传** `challenge` ⇒
+角色按 **Executor** 算（fail-closed，不认它自称的角色），`role_source = "challenge_required"`，
+回执 `action` 带 `+challenge_required`。**不传也不降级的只剩「根本没钥匙」的 agent**（零回归）。
+⚠️ 这是**软强制**不是硬拒绝：降权让失败精确发生在「真正需要那个权限」的那一刻，
+而 `+challenge_required` 让原因自解释；硬 `Err` 会让整条流水线停摆且原因难查。
+
 **⇒ BUG-430 的关闭条件不是「S1 做完」，而是「存在至少一条『调用方无法自报』的路径」。**
-S1 落地后 BUG-430 **保持 OPEN**，状态 `[arch] 边界已公告 / 认证未接入`。
+S3 九段全落地 + BUG-466 取票窗口 + 本段软强制后，**该条件技术上已满足**；
+但 `execute`/`verify` 仍未接 challenge、公钥按 ns 隔离、且**默认仍不要求认证**
+⇒ 建议拆 `430a/430b`（FIXED）与 `430c`（仍 OPEN：默认要求认证的迁移路径）。
 
 ## Tooling
 

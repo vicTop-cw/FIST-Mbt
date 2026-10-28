@@ -10425,3 +10425,14 @@ Beta 核完发现：`verify` 不经过角色取数面 ⇒ **给它接 `challenge
   4. `publish_parallel`（已知设计：自驱动路径不查 `created_by`，BUG-464 定判）
 
   **普查方法可复现**：`grep -A50 '"<tool>",' src/server/server.mbt | grep -c judged_role` 等四道即可。
+
+## BUG-430c [2026-10-28T08:50:20Z] [high] OPEN
+
+- summary: [authz] BUG-430 拆分（三）认证仍非默认要求 —— execute/verify 未接 challenge、公钥按 ns 隔离
+- reported_by: commander-alpha (Lane CF)
+- detail: **拆自 BUG-430**。第九段落地后，「有钥匙就必须出示」已实现（有公钥 + 不传 challenge ⇒ 角色降 Executor、role_source=challenge_required、action 带 +challenge_required，软强制不硬拒）。技术上 AGENTS.md 的关闭条件（「存在至少一条调用方无法自报的路径」）**已满足**。但本段仍不能整体关闭，还剩三条：① **execute / verify 不收 challenge** —— 它们不走 judged_role_gated，`+challenge_required` 在这两条路径上不触发 ⇒ 已登记公钥的 agent 在这两步仍可完全自报。② **公钥按 ns 隔离** —— 在 ns-A 登记的钥匙在 ns-B 不算「有钥匙」，降级不触发（跨 ns 场景仍有口子）。③ **默认仍不要求认证** —— 当前绝大多数 agent 根本没登记公钥，完全不受本段影响 ⇒ 认证是「可选加入」而非「默认要求」。程序化建议：把 BUG-430 拆为 430a/430b（路径存在 + 产品可达 + 有钥匙必须验签 ⇒ **FIXED**）与本条 430c（仍是 OPEN）；430c 的关闭条件是「主生命周期工具全部支持认证 + 存在一条『默认要求认证』的迁移路径」。配套修复见 commit `feat(authz)` 第九段：`judged_role_gated` 的 None 分支加 `declared_pubkey_for(...) is Some(_) ⇒ ("Executor","challenge_required")`，六格锁在 `src/engine/engine_bug430_keyed_must_sign_wbtest.mbt`（含变异对照，实测 329→326/3 failed）。
+## BUG-468 [2026-10-28T08:50:20Z] [medium] OPEN
+
+- summary: [toolchain] `@mooncry` 短 seed（<32 字节）生成的 Ed25519 密钥对签名/验签不自洽
+- reported_by: commander-alpha (Lane CF)
+- detail: 实测：用 `b":!´"`（4 字节）或 `b":!´\ª=a$¾Å"`（16 字节）作 seed，调 `@mooncry.ed25519_public_key(seed)` 得公钥、`@mooncry.ed25519_sign(seed, msg)` 得签名，**再用 `verify_challenge_sig(公钥, msg, 签名)` 验签恒 false**；换成 32 字节 seed（`b":!´...·"`）则一切正常。**踩了两次**（BUG-466 与本单各一次），每次症状都是「测试全红但看不出原因」，各耗约 10 分钟。**危害**：写测试时若随手用一个短 seed，会得到「签名永远验不过」的假象，极易误判为「被测代码坏了」而不是「夹具坏了」。**建议**：① 上报给 `@mooncry` 上游（或在 `engine_rsv.mbt` 的 `verify_challenge_sig` 文档里写明「seed 必须 32 字节」）；② 仓内测试统一用一个常量 `TEST_ED25519_SEED_32`，别再各写一份；③ 若这是 `@mooncry` 的有意行为（要求恰好 32 字节），至少要**在签名时报错**而不是静默产出验不过的签名。
