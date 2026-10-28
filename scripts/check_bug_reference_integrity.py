@@ -236,7 +236,8 @@ def measure(dry=False):
 
 # —— 自测：合成夹具只考分类与自拒，不碰仓库文件 ——
 
-def _mk(files, ledger_heads, extra_body=""):
+def _mk(files, ledger_heads):
+    # R86：原第 3 形参 extra_body 零引用，且 10 个调用点都没传 ⇒ 去掉。
     refs = scan(files)
     bodies = ledger_bodies(ledger_heads)
     return findings(refs, bodies), refs, bodies

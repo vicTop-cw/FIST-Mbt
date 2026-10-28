@@ -83,7 +83,8 @@ def classify_head_state(local, gc, anc_local_gc, anc_gc_local):
         return ("ahead", "本地领先主仓线：含未合入提交，feature 分支的常态")
     return ("diverged", "本地与主仓线互不为祖先：真分叉，需人工裁决")
 
-def head_plan_text(state, local, gc, branch):
+def head_plan_text(state, gc, branch):
+    # R86：原第 2 形参 local 零引用（新判据抓到）⇒ 去掉。
     """只出方案（执行权在人）：把「真要动，动的是什么」写清楚，本函数不执行任何东西。"""
     if state == "behind":
         return ("  → 常规处置：git merge " + gc[:7] + "（或 rebase）。当前分支 "
@@ -166,7 +167,7 @@ def step0_head_safety(full=True, sync_mirror=False):
             print("  ⚠️ HEAD 与主仓线分叉！%s%s" % (tamper[:80], moved))
         else:
             print("  ⚠️ HEAD 状态量不到：%s%s" % (why, moved))
-        print(head_plan_text(state, local, gc, branch))
+        print(head_plan_text(state, gc, branch))
         label = "真分叉" if state == "diverged" else "量不到"
         return (local[:7], "⚠️ %s：local=%s remote=%s（%s）" % (label, local[:7], gc[:7], why))
 
