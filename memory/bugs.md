@@ -10487,7 +10487,7 @@ Beta 核完发现：`verify` 不经过角色取数面 ⇒ **给它接 `challenge
 ## BUG-470 [2026-10-28T09:53:45Z] [medium] OPEN
 - summary: [authz] 认证仍非默认要求 —— 83.3% 的 agent 无公钥，软强制降权不触发（拆自 BUG-430）
 - detail: **拆自 BUG-430**（本条是**产品决策**，不是技术缺陷）。**实测**：产品库 `fist-mbt.db` 6 个 agents 中仅 **1 个有公钥**（16.7%）⇒ 软强制降权（有公钥 + 不传 challenge ⇒ role 降 Executor + `challenge_required`）**只对那 1 个 agent 生效**，其余 5 个完全不受影响，仍按自报角色放行。**⇒ 「存在一条无法自报的路径」≠「调用方被要求走那条路」**：截至本条，S3 是**可选加入**的，不是默认要求。**为什么不是简单改默认**：直接「默认拒绝」会让现网 83.3% 的调用方立刻失败（它们连公钥都没有，取不到票）⇒ 一刀切等于停摆。**关闭条件（三格，需 owner 拍板）**：(1) 存在**批量登记公钥**的运维路径（否则「默认要求」无法推行）；(2) owner 明确选择「默认拒绝」还是「默认降权」（两者对现网影响差一个量级）；(3) 有一条**可回滚的开关**（避免一刀切停摆，出问题能立刻退回）。**本条不是 bug 而是方向**：在 owner 决策前不应动手，动手前必须有回滚方案。报告 `reports/2026-10-28-bug430-final-verdict.md`。
-## BUG-471 [2026-10-28T09:59:41Z] [high] OPEN
+## BUG-471 [2026-10-28T09:59:41Z] [high] FIXED
 - summary: [gate] 9 个生命周期工具无任何身份门（BUG-467 同族）：delete/archive/submit/reject/retry/pause/resume/reopen_task/plan
 - detail: 【按形状搜的普查结果】机械扫描 server.mbt 的 14 个生命周期工具代码面（跳注释），检测 8 种身份门形态。
 
@@ -10522,6 +10522,9 @@ sqlite 面 manual 无 can_write ⇒ 被拒（fail-closed），正是所需。
 证据：reports/2026-10-28-lifecycle-identity-gate-audit.md
 扫描脚本：temp/audit/lane_cl_gate.py
 - reported_by: lead(Lane CL 普查)
+
+### FIXED(2026-10-28T11:20:33Z / BUG-471)
+- evidence: commit b0eeb6cd（代码）+ 6c8d4191（报告）+ scripts/check_dead_params.py 判据。批 1（90ee9a2e）：delete 新增可选 agent + archive 复用 by，两者都不可逆（Beta 推翻自己上一单假设：core_task.mbt:547 Archived => Err「已归档任务不可 reopen」，所以 archive 也恢复不了），但「不可逆」相同 ⇒ 同一道 ACL 写门；真正的更严靠操作序列（delete 只允许已归档，引擎 is_archived() 已强制）。批 2（质量闸门）：submit 新增 agent，reject 复用 by。批 3（状态类）：plan 复用 by（Beta 纠正派单：plan 也有 by，实际是 2 个复用 by + 5 个新增 agent），retry/pause/resume/reopen_task 新增 agent。最终覆盖率：生命周期 14/14 命中，无任何身份门 0 个（12 个有 ACL/角色门 + 2 个特权路径 publish/publish_parallel，其风险来自 S1 的 created_by 自报，BUG-464 已定夺）。变异对照两轮实测：M1 删 submit 整段门 ⇒ 527/533 ct_01 精确打红；M2 删 reopen_task 整段门 ⇒ 532/533 ct_01 精确打红。门禁：moon check 0 errors；src/server+src/engine 869/869/0。分析：submit/reject/verify 三者都是质量闸门，输出都是「对别人有约束力的结论」⇒ 同一道 ACL 写门；状态类改变流转状态不产出质量结论、错误可被后续动作纠正（pause 错了可以 resume）⇒ 同一道门即可、不需要 K of N 双人复核。这不是弱保护而是按危害配门：门强度应对齐「出错能不能挽回」而不是「听起来是否重要」。Beta 踩的两个坑：① 门必须插在身份 let 之后（插在 engine_for_ns 之后会 by unbound）② submit 跨行内联读 ns 导致脚本正则匹配不到，需先 let ns = ... 再传。缺口：所有门判的都是「能不能在 ns 写」而不是「你是不是那个人」，仍在 S1 边界内；BUG-469 与本单重叠 3 个（submit/reject/retry），它们现在已有身份门所以接 challenge 的前提已具备；plan 加的是 ACL 写门不是角色门，若将来要「只有 Leader 能拆」那才是角色门、届时才该接 challenge。
 ## BUG-472 [2026-10-28T10:33:59Z] [high] FIXED
 - summary: plan 工具的 challenge/challenge_sig schema 声明未接线 —— 调用方传签名不被验证也不被告知（Lane CQ 审核发现）
 - detail: Lane CQ 独立审核（BUG-430 覆盖面）发现：plan 工具的 schema 声明了 challenge 与 challenge_sig 两个可选参数（server.mbt:2052/2056，文案写「可选：S3 挑战 nonce。⚠️ 须配合 challenge_sig」），但 instrumented_tool 的 plan 注册块（2036-2100）的 handler 实现体里从未读取这两个参数 —— 没有 opt_challenge(args)，没有 challenge_nonce= 透传。后果：(1) 调用方以为传了 Ed25519 签名就受验，实际静默降级为自报身份，且不会收到任何警告；(2) 与 claim(2101) / reserve_scope(5920) / lock_acquire(6056) 三个同形声明让调用方无法区分「真验」与「只声明」。判据：按 instrumented_tool 块括号配平切分，plan 块内 challenge 命中但 challenge_nonce= / challenge_sig= 均无；对照 claim/reserve_scope/lock_acquire 三者两者皆有（真验）。这违反一源四态（schema 声明的能力与实现不一致）。建议：要么给 plan 接上 judged_role_gated 验签，要么从 schema 摘掉这两个字段并在描述里明说 plan 不做挑战认证。
