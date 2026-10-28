@@ -506,6 +506,27 @@ def selftest():
             'def selftest():\n    io.open(PROBE, "w").write("x")\n    return 0\n')
     cell("W1-anchor-derived-path-written-by-selftest", cls_of(v, 'PROBE') == ["W"], repr(v))
 
+    # R115/R116：`shutil.copy*` 的**源是读面(R)、目标是写面(W)**。原实现对所有 `shutil.*`
+    # 一律判 W，把「只读真仓、写临时目录」的合规夹具记成「写探针进真树」
+    # （实测 check_push_guard.py 3 处假写）。夹具写进**独立目录**，不进影数面。
+    def run_iso(fname, src_text):
+        idir = os.path.join(d, "iso")
+        if not os.path.isdir(idir):
+            os.makedirs(idir)
+        fixture(os.path.join(idir, fname), src_text)
+        with io.open(os.path.join(idir, fname), encoding="utf-8") as fh:
+            return violations_of(ast.parse(fh.read()), idir)
+
+    v = run_iso("copy_src_read.py", head + "import shutil\nSRC = os.path.join(ROOT, 'a.txt')\n"
+                    "def selftest():\n    shutil.copy(SRC, os.path.join(tempfile.mkdtemp(), 'b.txt'))\n"
+                    "    return 0\n")
+    cell("R115-copy-source-is-read-not-write", cls_of(v, "SRC") == ["R"], repr(v))
+
+    v = run_iso("copy_dst_write.py", head + "import shutil\nDST = os.path.join(ROOT, 'b.txt')\n"
+                    "def selftest():\n    shutil.copy(os.path.join(tempfile.mkdtemp(), 'a.txt'), DST)\n"
+                    "    return 0\n")
+    cell("R115-copy-dest-is-write", cls_of(v, "DST") == ["W"], repr(v))
+
     # 写原语的 Path 面：第一版只认 open 的 w 模式与 shutil，实测 `e2e_native_heap_probe.py` 用
     # `Path(SELFTEST_DIR / "x").write_text(...)` 落盘，一条都不报 ⇒ 漏红面。摘掉 WRITE_METHODS 这格必红。
     v = run("w_pathtext.py", head + "import pathlib\nPX = os.path.join(ROOT, 'px.txt')\n"
