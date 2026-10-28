@@ -176,10 +176,10 @@ SPECIAL_CASES = [
     case("check_arg_face_strict.py", "--selftest"),
     # —— R82：Python 侧死参数判据 —— `check_dead_params.py` 只扫 .mbt，Python 形参从未被查过
     #    （R81 实测 `build_args(..., read_only)` 里的 read_only 函数体从未使用而无人发现）。
-    #    【这是债，不是判据坏了】现读 **34 条**。出路：删形参并同步调用点，或按职责补使用；
+    #    【这是债，不是判据坏了】现读 **31 条**。出路：删形参并同步调用点，或按职责补使用；
     #    确属协议要求则改名 `_x`。修到 0 后这一格自己翻红，届时把期望改回 0。
     expected("check_dead_params_py.py", 1,
-             "预存红（债非坏）：34 条 Python 死参数 —— 形参在函数体内零引用，调用方传了也没人用。"
+             "预存红（债非坏）：31 条 Python 死参数 —— 形参在函数体内零引用，调用方传了也没人用。"
              "**判据工作正常，它正确报告了 Python 侧的参数债**；出路见 README。被检面修到 0 "
              "之后这一格自己翻红，届时把期望改回 0",
              kind="known-red"),
