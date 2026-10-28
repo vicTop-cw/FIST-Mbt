@@ -38,11 +38,50 @@ jobs:
           git checkout "gh/master" -- .github/workflows >/dev/null 2>&1 || true
           git add .github/workflows
           git commit -m "chore: preserve GitHub workflow files (add-only sync)" >/dev/null 2>&1 || true
+
           # 2) 推送所有 GitCode 分支：GitCode 为源，覆盖 GitHub 同名分支；GitHub 独有分支保留
-          for b in $(git for-each-ref --format='%(refname:short)' refs/heads); do
-            git push --force gh "$b:$b" 2>&1 || echo "push failed on $b"
+          # ⚠️ 失败**不吞**：逐个收集到 FAILED_BRANCHES，结尾聚合点名并以非零退出（check_sync_workflow_reports_failures S1/S2/S3）
+          BRANCHES="$(git for-each-ref --format='%(refname:short)' refs/heads)"
+          # S4：「枚举面为空」守卫 —— 0 支会被读成健康读数，必须显式报错
+          if [ -z "$BRANCHES" ]; then
+            echo "::error::枚举面为空：git for-each-ref 没有返回任何分支（0 支会被误读成健康读数）"
+            exit 1
+          fi
+          OK_COUNT=0
+          FAIL_COUNT=0
+          FAILED_BRANCHES=""
+          for b in $BRANCHES; do
+            if git push --force gh "$b:$b"; then
+              OK_COUNT=$((OK_COUNT + 1))
+            else
+              FAIL_COUNT=$((FAIL_COUNT + 1))
+              FAILED_BRANCHES="$FAILED_BRANCHES $b"
+              echo "::warning::failed branch: $b"
+            fi
           done
+
           # 3) 默认分支映射：GitCode master -> GitHub master
-          git push --force gh "master:master" 2>&1 || echo "push failed on default branch"
+          if git push --force gh "master:master"; then
+            OK_COUNT=$((OK_COUNT + 1))
+          else
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+            FAILED_BRANCHES="$FAILED_BRANCHES master(default)"
+            echo "::warning::failed branch: master (default branch mapping)"
+          fi
+
           # 4) 标签只增不删（GitHub 已存在的同名标签会拒绝，保留 GitHub 版）
-          git push gh --tags 2>&1 || true
+          #    标签推送失败是**预期**的（同名标签拒绝），所以这里不判红，但如实计数
+          if git push gh --tags; then
+            TAGS_RESULT=ok
+          else
+            TAGS_RESULT=partial-or-skipped
+          fi
+
+          # S2/S3：聚合读数 + 失败点名（同一行 echo 里 OK=… 与 FAIL=… 同现）
+          echo "OK=$OK_COUNT FAIL=$FAIL_COUNT TAGS=$TAGS_RESULT FAILED_BRANCHES=${FAILED_BRANCHES:-none}"
+          if [ "$FAIL_COUNT" -ne 0 ]; then
+            echo "::warning::failed branches:${FAILED_BRANCHES}"
+            echo "::error::failed branches:${FAILED_BRANCHES}"
+            exit 1
+          fi
+          echo "::notice::sync complete: OK=$OK_COUNT FAIL=0"
