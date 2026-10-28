@@ -105,6 +105,92 @@ pub fn StoreBackend::challenge_cleanup(
 }
 
 ///|
+/// BUG-467：**保守档清理（默认推荐）** —— 只删「签发早于 cutoff」的行，**不管消费与否**。
+///
+/// 与激进档 `challenge_cleanup` 的差别：这一档**保留 cutoff 之内的审计证据**
+/// （`consumed=1` 是「这张票被用过」的唯一记录）。表仍受「签发时间上界」约束不会无限长。
+pub fn StoreBackend::challenge_cleanup_conservative(
+  self : StoreBackend,
+  cutoff : String,
+) -> Int32 {
+  match self {
+    Mem(m) => {
+      let keys : Array[String] = []
+      m.challenges.each(fn(k, v) {
+        let (issued_at, _consumed) = v
+        if issued_at < cutoff {
+          keys.push(k)
+        }
+      })
+      let mut n : Int32 = 0
+      for k in keys {
+        m.challenges.remove(k)
+        n = n + 1
+      }
+      n
+    }
+    Sql(s) => s.challenge_cleanup_conservative(cutoff)
+  }
+}
+
+///|
+/// BUG-467：**激进档清理** —— 额外删已消费的行（**审计证据一并丢失**）。
+pub fn StoreBackend::challenge_cleanup_aggressive(
+  self : StoreBackend,
+  cutoff : String,
+) -> Int32 {
+  match self {
+    Mem(m) => {
+      let keys : Array[String] = []
+      m.challenges.each(fn(k, v) {
+        let (issued_at, consumed) = v
+        if consumed || issued_at < cutoff {
+          keys.push(k)
+        }
+      })
+      let mut n : Int32 = 0
+      for k in keys {
+        m.challenges.remove(k)
+        n = n + 1
+      }
+      n
+    }
+    Sql(s) => s.challenge_cleanup_aggressive(cutoff)
+  }
+}
+
+///|
+/// BUG-467：表**总行数**（让「表在长」可观测）。
+pub fn StoreBackend::challenge_total_count(self : StoreBackend) -> Int32 {
+  match self {
+    Mem(m) => {
+      let mut n : Int32 = 0
+      m.challenges.each(fn(_k, _v) { n = n + 1 })
+      n
+    }
+    Sql(s) => s.challenge_total_count()
+  }
+}
+
+///|
+/// BUG-467：**已消费**的票数。
+pub fn StoreBackend::challenge_consumed_count(self : StoreBackend) -> Int32 {
+  match self {
+    Mem(m) => {
+      let mut n : Int32 = 0
+      m.challenges.each(fn(_k, v) {
+        let (_issued, consumed) = v
+        if consumed {
+          n = n + 1
+        }
+      })
+      n
+    }
+    Sql(s) => s.challenge_consumed_count()
+  }
+}
+
+///|
 /// 只读诊断：某 agent 在 ns 下**未消费**的票数。
 pub fn StoreBackend::challenge_pending_count(
   self : StoreBackend,

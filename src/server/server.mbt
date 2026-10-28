@@ -2172,7 +2172,12 @@ pub async fn run_server() -> Unit {
       //   （`judged_role_with_nonce` 在验签失败时也不消费，两函数在"失败"上结论一致），
       //   唯一差别是 `with_nonce` 多判一次重放 —— 而重放只可能发生在**别人已用过该 nonce**，
       //   那时 `claim` 内部的 `challenge_replayed` 才是权威结论，标签面保持一致即可。
-      let auth = @engine.judged_role_with_challenge(eng, assignee, ch.0, challenge_sig=ch.1)
+      let auth = @engine.judged_role_with_challenge(
+        eng,
+        assignee,
+        ch.0,
+        challenge_sig=ch.1,
+      )
       let tag = @engine.auth_tag(auth.1)
       match
         eng.claim(
@@ -7176,11 +7181,11 @@ pub async fn run_server() -> Unit {
       // 不接受调用方自选 —— 否则可离线预计算并提前签好 ⇒ 挑战退化 ⇒ 旧私钥证明被架空。
       if pin == key_pin_reject_different && rotate_sig == "" {
         let issued = eng.s3_issue_challenge_auto(
-                agent_id,
-                ns~,
-                issued_at=now_default(),
-                cleanup_cutoff=iso_minus_secs(now_default(), 86400),
-              )
+          agent_id,
+          ns~,
+          issued_at=now_default(),
+          cleanup_cutoff=iso_minus_secs(now_default(), 86400),
+        )
         return Ok(
           @mcp.ToolResult::text(
             Json::object({
@@ -7323,11 +7328,11 @@ pub async fn run_server() -> Unit {
         if challenge == "" {
           // ① 只签发挑战，**一个字节都不写库**
           let issued = eng.s3_issue_challenge_auto(
-                agent_id,
-                ns~,
-                issued_at=now_default(),
-                cleanup_cutoff=iso_minus_secs(now_default(), 86400),
-              )
+            agent_id,
+            ns~,
+            issued_at=now_default(),
+            cleanup_cutoff=iso_minus_secs(now_default(), 86400),
+          )
           return Ok(
             @mcp.ToolResult::text(
               Json::object({
@@ -7392,7 +7397,12 @@ pub async fn run_server() -> Unit {
           None => ()
           Some(st) =>
             match st.agents_set_pubkey(agent_id=fp, pubkey_fp=pubkey_hex) {
-              Err(e) => return Err(@mcp_types.ToolError("agent_register_key: 写公钥失败 —— " + e))
+              Err(e) =>
+                return Err(
+                  @mcp_types.ToolError(
+                    "agent_register_key: 写公钥失败 —— " + e,
+                  ),
+                )
               Ok(_) => ()
             }
         }
@@ -7554,7 +7564,9 @@ pub async fn run_server() -> Unit {
     "参数：agent_id、namespace(可选)。返回 {agent_id, namespace, challenge, issued_at, expires_hint, pubkey_registered}。",
     schema(
       {
-        "agent_id": string_prop("要签发挑战的 agent（必填；必须已用 agent_register_key 登记过公钥）"),
+        "agent_id": string_prop(
+          "要签发挑战的 agent（必填；必须已用 agent_register_key 登记过公钥）",
+        ),
         "namespace": string_prop("命名空间（可选，缺省 default）"),
       },
       ["agent_id"],
@@ -7563,7 +7575,9 @@ pub async fn run_server() -> Unit {
       let agent_id = get_str(args, "agent_id")
       let ns = get_str(args, "namespace", default="default")
       if agent_id == "" {
-        return Err(@mcp_types.ToolError("agent_issue_challenge: agent_id 不能为空"))
+        return Err(
+          @mcp_types.ToolError("agent_issue_challenge: agent_id 不能为空"),
+        )
       }
       let eng = match engine_for_ns(ns) {
         Ok(e) => e
@@ -7592,18 +7606,21 @@ pub async fn run_server() -> Unit {
           @mcp_types.ToolError(
             "agent_issue_challenge: **该 agent 尚未登记公钥**，签出的挑战永远验不过（签了也没用）。" +
             "请先调 `agent_register_key`（两步：① 不带 challenge 拿挑战 ② 用私钥签 proof_sig 再调一次）。" +
-            "agent=" + agent_id + " ns=" + ns,
+            "agent=" +
+            agent_id +
+            " ns=" +
+            ns,
           ),
         )
       }
       // 复用 `s3_issue_challenge_auto`（与首登 / 轮换**同源**：服务端进程级单调递增计数器）
       // ⇒ 调用方无法离线预计算 nonce 并提前签好（那会让「挑战」退化成固定字符串）。
       let issued = eng.s3_issue_challenge_auto(
-                agent_id,
-                ns~,
-                issued_at=now_default(),
-                cleanup_cutoff=iso_minus_secs(now_default(), 86400),
-              )
+        agent_id,
+        ns~,
+        issued_at=now_default(),
+        cleanup_cutoff=iso_minus_secs(now_default(), 86400),
+      )
       Ok(
         @mcp.ToolResult::text(
           Json::object({
