@@ -150,7 +150,10 @@ def main():
             "tools/call",
             name="issue_scan",
             arguments={
-                "dir": scan_dir,
+                # ⚠️ 服务端 schema 里 dir 是 **required + string**；旧代码在未给位置参数时
+                # 传 None ⇒ JSON null ⇒ `inputSchema mismatch at /dir (type)`（实测 R70）。
+                # 缺省落当前目录，绝不发 null。
+                "dir": scan_dir or ".",
                 "max_findings": max_findings,
                 "include_tests": include_tests,
                 "min_severity": min_severity,

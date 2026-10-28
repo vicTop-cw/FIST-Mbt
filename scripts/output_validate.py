@@ -112,7 +112,7 @@ def main():
             "[--evidence <string>] "
             "[--require-evidence]"
         )
-        sys.exit(0 if args else 1)
+        sys.exit(0 if args else 2)
 
     # 1) 位置参数：project_dir
     project_dir = args[0]
@@ -128,51 +128,51 @@ def main():
         a = args[i]
         if a == "--artifacts":
             if i + 1 >= len(args):
-                print("FAIL --artifacts 需要值")
-                sys.exit(1)
+                print("FAIL --artifacts 需要值（参数面错误 rc=2）")
+                sys.exit(2)
             artifacts_raw = args[i + 1]
             i += 2
         elif a == "--external-results":
             if i + 1 >= len(args):
-                print("FAIL --external-results 需要值")
-                sys.exit(1)
+                print("FAIL --external-results 需要值（参数面错误 rc=2）")
+                sys.exit(2)
             external_results_raw = args[i + 1]
             i += 2
         elif a == "--evidence":
             if i + 1 >= len(args):
-                print("FAIL --evidence 需要值")
-                sys.exit(1)
+                print("FAIL --evidence 需要值（参数面错误 rc=2）")
+                sys.exit(2)
             evidence = args[i + 1]
             i += 2
         elif a == "--require-evidence":
             require_evidence = True
             i += 1
         else:
-            print(f"FAIL 未知参数: {a}")
-            sys.exit(1)
+            print(f"FAIL 未知参数: {a}（参数面错误 rc=2）")
+            sys.exit(2)
 
     if artifacts_raw is None:
-        print("FAIL 必须提供 --artifacts")
-        sys.exit(1)
+        print("FAIL 必须提供 --artifacts（参数面错误 rc=2）")
+        sys.exit(2)
 
     try:
         artifacts = _parse_json_arg(artifacts_raw, "--artifacts")
         if not isinstance(artifacts, list):
-            print("FAIL --artifacts 解析结果必须是数组")
-            sys.exit(1)
+            print("FAIL --artifacts 解析结果必须是数组（参数面错误 rc=2）")
+            sys.exit(2)
         external_results = _parse_json_arg(external_results_raw, "--external-results") \
             if external_results_raw is not None else {}
         if not isinstance(external_results, dict):
-            print("FAIL --external-results 解析结果必须是对象(dict)")
-            sys.exit(1)
+            print("FAIL --external-results 解析结果必须是对象(dict)（参数面错误 rc=2）")
+            sys.exit(2)
     except RuntimeError as e:
         print("FAIL " + str(e))
         sys.exit(1)
 
     main_js = find_main()
     if not main_js:
-        print("FAIL main.js 未找到；请先执行 `moon build --target js cmd/cli`")
-        sys.exit(1)
+        print("FAIL main.js 未找到 ⇒ 判据无法自证（rc=2）；先 `moon build --target js cmd/cli`")
+        sys.exit(2)
 
     import importlib.util
     _spec = importlib.util.spec_from_file_location(
@@ -216,8 +216,8 @@ def main():
             # 无法解析结果 JSON：视作 fail
             sys.exit(1)
     except Exception as e:
-        print("FAIL " + str(e))
-        sys.exit(1)
+        print("FATAL 判据未捕获异常：%s" % e)
+        sys.exit(4)  # 尺子自己坏了，绝不冒用 1
     finally:
         try:
             proc.stdin.close()
