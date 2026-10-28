@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 174 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 177 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -2659,6 +2659,25 @@ pub async fn run_server() -> Unit {
       let by = get_str(args, "by", default="human_steward")
       let force = get_bool(args, "force")
       let ts = now_default()
+      // ══════════════════════════════════════════════════════════════════════
+      // BUG-471 第 1 批：**ns 写权限门（ACL）** —— `archive` 此前一道门都没有。
+      //
+      // 为什么 `archive` 需要门（**它同样不可逆**，与 `delete` 同级）：
+      //   `Task::reopen` 对 `Archived` 状态**明确拒绝** ——
+      //   `src/core/core_task.mbt:547`：`Archived => Err("已归档任务不可 reopen，请重新发布")`
+      //   ⇒ 归档后**无法恢复原任务**（只能重新发布、丢掉历史 id 与子树关联）。
+      //   ⚠️ 与「delete 才不可逆」的直觉相反 —— 本单实测确认两者**都不可逆**。
+      //
+      // 身份取 `by`（操作者，缺省 human_steward）—— `archive` **本来就有这个参数**，
+      // 与 `verify` 复用 `verifier` 同一手法：不新增参数。
+      //
+      // 零回归：`agent_write_gate` 对**内存后端直接放行**（既有测试不受影响）；
+      // 生产 sqlite 面才真正 fail-closed。
+      // ══════════════════════════════════════════════════════════════════════
+      match agent_write_gate(eng, acl_claim_identity(by, by), ns) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
+        Ok(_) => ()
+      }
       // BUG-420：写路径**绝不回落**（跨 ns 写是设计上的两难），但「带 ns 查不到」
       // 的文案同样必须可诊断——否则「任务在主库」会被读成「ID 写错了」。
       // 文案裁决在 bug420_archive_error_text（纯函数，白盒锁 bug420_7）。
@@ -2817,6 +2836,9 @@ pub async fn run_server() -> Unit {
         "namespace": string_prop(
           "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
         ),
+        "agent": string_prop(
+          "可选：操作者身份（ACL 判定用）。⚠️ 缺省空 ⇒ 视为 manual；内存后端放行，sqlite 面需该身份在本 ns 有 can_write=1，否则拒绝",
+        ),
       },
       ["task_id"],
     ),
@@ -2826,6 +2848,27 @@ pub async fn run_server() -> Unit {
       let eng = match engine_for_ns(ns) {
         Ok(e) => e
         Err(m) => return Err(m)
+      }
+      // ══════════════════════════════════════════════════════════════════════
+      // BUG-471 第 1 批：**ns 写权限门（ACL）** —— `delete` 此前一道门都没有。
+      //
+      // `delete` 是**物理删除**（`store.delete_task` 把行删掉），比 `archive` 更彻底：
+      // 归档至少还留着任务行（可查、可审计），删除后**什么都不剩**。
+      //
+      // ⚠️ 门强度与 `archive` **相同**，理由：两者**都不可逆** ——
+      //   `Task::reopen` 对 `Archived` 明确拒绝（core_task.mbt:547）
+      //   ⇒ 归档也无法恢复原任务，只能重新发布。
+      //   所以不给 delete 单独设「更严」的道；真正的「更严」体现在
+      //   **操作序列**（delete 只允许已归档，`delete_task` 内 `is_archived()` 已强制）。
+      //
+      // 身份取 `agent`（**新增可选**）—— `delete` 原先没有任何身份参数。
+      // 缺省空 ⇒ `acl_identity_pick` 兜底 `manual`：
+      //   内存后端放行（**零回归**）；sqlite 面 fail-closed（**加严，有意**）。
+      // ══════════════════════════════════════════════════════════════════════
+      let agent = get_str(args, "agent")
+      match agent_write_gate(eng, acl_claim_identity(agent, agent), ns) {
+        Err(e) => return Err(@mcp_types.ToolError(e))
+        Ok(_) => ()
       }
       to_unit_result(eng.delete_task(task_id))
     },

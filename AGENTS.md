@@ -461,7 +461,7 @@ S3 九段全落地 + BUG-466 取票窗口 + 本段软强制后，**该条件技�
 | `atgc_old_run` | ATGC-old 运行（DNA 程序执行） |
 | `atgc_old_talk` | ATGC-old 会话（叙事/模式切换） |
 
-### 项目看板 / 脉冲 / 预订 / 推荐 + DAG（24）
+### 项目看板 / 脉冲 / 预订 / 推荐 + DAG（27）
 | 工具 | 说明 |
 |---|---|
 | `dag_critical_path` | 最长依赖链 |
@@ -486,6 +486,9 @@ S3 九段全落地 + BUG-466 取票窗口 + 本段软强制后，**该条件技�
 | `reserve_scope` / `reserve_check` / `reserve_release` | 作用域预订（拿来主义：Interlinked 文件预订 → 多 agent 并发编辑冲突预防） |
 | `lock_acquire` / `lock_renew` / `lock_release` / `lock_status` | 分布式文件锁系统（作用域锁的持久化版，支持 TTL、续租、违例接管与状态查询；多 agent 跨进程并发编辑冲突预防） |
 | `task_triage` | 下一步推荐：可领取任务按 能力匹配(want)→**skill 命中度(skill 非空时)**→优先级→重要度→深度 排行 + suggestion（agent 无需全量扫描即知下一单；want 为能力路由，Marketplookup 雏形）。每条含真实 DAG 依赖 `depends_on`（复用 dag_depend/gradient_dag 建边，"下一单"就绪前驱可见）。`skill` 可选（逗号分隔 skill 关键词，R§5.2-4）：非空时按 skill 命中度排在能力匹配之后、优先级之前，并在 suggestion 给 `skill`（命中关键词）与 `mode`（SKILL→MODE 建议的开发模式，如 `tdd`→`fix_and_merge`）；空串=不做 skill 路由零回归 |
+| `wt_create` | 创建 git worktree（WT-02）：`git worktree add <path> -b <branch>`；`detach=true` 时用 `--detach`。失败回执带 stderr 摘要，不静默成功 |
+| `wt_destroy` | 删除 worktree（WT-02）：`git worktree remove <path>`（`force=true` 时加 `--force`）|
+| `wt_status` | 列出 worktree（WT-02）：`git worktree list --porcelain` 解析成结构化数组 |
 
 ### 自我记忆与自进化（11，F/G 新增强化）
 | 工具 | 说明 |
