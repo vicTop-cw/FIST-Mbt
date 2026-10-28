@@ -10156,3 +10156,22 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
   **剩余待做**：`github_env_check`/`gitcode_env_check`（I/O 读 env）、`github_issue_close`（网络）、
   `assistant_resign`（I/O）、`atgc_old` 3（衍生子项目，先查有无独立测试目录）、其余；
   **且每批前必须先看两条 lane 的进展**（`server_bug455_coverage_wbtest.mbt` / `server_bug455_pure_wbtest.mbt`）。
+
+- 追记（2026-10-28 11:05 **第五批已完成：根治测试 db 污染，根目录 81 → 10**）：
+  **这条是本单最有价值的一批** —— 它不是「补测试」，而是**清掉一个真实的仓库卫生问题**。
+  **做法**：不改 98 处裸 `open("x.db")`，而是抓 **4 个统一建库 helper**
+  （`wd_sqlite_engine` / `contract_engine` / `saga_sqlite_engine` / `cb_sqlite_engine`，
+  合计 **64 处受益**），在每个 helper 第一行加 `let db_path = ".fist-mbt/tmp/" + db_path`；
+  再补 6 个没有 helper 的散点（10 处）。
+  **为什么不在 `SqliteStore::open` 里无脑重定向**：`fist-mbt.db`（主库）**本身就是裸文件名**
+  （`FIST_DB_PATH` 空时的默认值）⇒ 加「裸文件名 ⇒ tmp」会把主库也重定向掉。
+  **为什么不改测试 cwd**：`issue_scan_test.mbt` 等用 `"src/server"` 这类**仓库根相对路径**读源码。
+  **⭐ 回滚了 2 个文件（重要教训）**：`store_db_path_wbtest.mbt` / `multi_store_test.mbt`
+  **测的就是路径解析本身**（`db_path_from_env` 默认值 / `MultiStore.data_dir` 拼接）——
+  改它们的输入等于**改被测对象**，锁当然红。**判例-29 的又一次正面**：
+  你不能一边改被测对象的输入，一边期望它的锁还是绿的。
+  **对照**：`store_migration_wbtest.mbt`（18 处）**故意没改** —— 它测「根目录 legacy → `.fist-mbt/data/` 迁移」，
+  必须在根目录造 fixture。
+  **验收**：根目录 `*.db` **81 → 10**（主库 1 + 测路径解析的必要残留 9），
+  `.fist-mbt/tmp/*.db` 0 → **75**；全仓 **1670/1670 passed**；主库完好（2450 条）。
+  **提交**：`c9d245cf`（4 helper）+ `27967547`（第二批 6 文件）。
