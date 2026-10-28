@@ -137,26 +137,26 @@ test "spec_gates_by_actor_string" {
 
 
 ///|
-/// R141：**状态门 vs 域迁移的一致性锁** —— 这是本轮查出来的**已知不一致**，先用锁钉住现状。
+/// R141→R142：**状态门 vs 域迁移的一致性锁**（R142 已把死分支修掉）。
 ///
-/// 实测（`src/core/core_task.mbt`）：
-///   · `TaskStatus::can_split()` 接受 **Pending | Claimed | Splitting | Rejected**（4 态）
-///   · `Task::split()` 的域迁移只接受 **Claimed**（其余一律 `非法迁移: split 要求状态 [已领取]`）
+/// 实测（`src/core/core_task.mbt`）三条线：
+///   · `Task::split()`（`engine.split` 用）只接受 **Claimed**；
+///   · `Task::mark_decomposing()`（`engine.plan_deep` 用）接受 **Pending | Claimed | Splitting**；
+///   · `TaskStatus::can_split()` 被两者**共用**，R141 时还多认 **`Rejected`**。
 ///
-/// ⇒ 对 Pending/Splitting/Rejected：**闸门放行、域层必拒**。
-/// 这与 `can_execute` 上方 docstring 记录的 **BUG-2 是同一类**（那里已把集合逐字对齐），
-/// `can_split` 这一侧**还没对齐**。
+/// ⇒ `Rejected` 是一段**永远走不通的放行**（`split` 拒、`mark_decomposing` 也拒）——
+/// 与 `can_execute` 上方记录的 **BUG-2 同形**。**R142 已删掉它**，现集合 = 两条域方法的**并集**
+/// {Pending, Claimed, Splitting}，`Rejected` 在闸门处 fail-closed。
 ///
-/// ⚠️ **本格锁的是"现状"，不是"正确"**：两种修法都会改语义 ——
-///   ① 闸门收窄到 Claimed ⇒ 那三态的用户从"带出路的域错误"变成"闸门错误"（体验更差）；
-///   ② 域层放宽到 4 态 ⇒ 允许 Pending/Rejected 直接进 Splitting（状态机语义变更）。
-/// 归属 **owner 裁决**，本轮只保证「谁改了这两处会立刻红」，不让它在无声中漂。
+/// 本格同时钉住「并集」与「Rejected 不放行」两件事：谁把 `Rejected` 加回去，或把 Pending/Splitting
+/// 收窄掉（plan_deep 的二次拆解依赖它），都会立刻红。
 test "status_gate_vs_domain_split_mismatch_is_pinned" {
-  // 闸门侧：4 态放行
+  // 闸门侧：3 态放行（= split{Claimed} ∪ mark_decomposing{Pending,Claimed,Splitting}）
   assert_true(TaskStatus::can_split(Pending))
   assert_true(TaskStatus::can_split(Claimed))
   assert_true(TaskStatus::can_split(Splitting))
-  assert_true(TaskStatus::can_split(Rejected))
+  // R142：Rejected 必须 fail-closed（域层两条路都不接受它 ⇒ 放行是死分支）
+  assert_true(!TaskStatus::can_split(Rejected))
   // 闸门侧：其余拒绝
   assert_true(!TaskStatus::can_split(Executing))
   assert_true(!TaskStatus::can_split(Reviewing))
