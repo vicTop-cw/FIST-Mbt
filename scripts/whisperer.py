@@ -167,7 +167,14 @@ def step0_head_safety(full=True, sync_mirror=False):
             print("  ⚠️ HEAD 与主仓线分叉！%s%s" % (tamper[:80], moved))
         else:
             print("  ⚠️ HEAD 状态量不到：%s%s" % (why, moved))
-        print(head_plan_text(state, gc, branch))
+        # R87：docstring 承诺 `full=False 为 fast（更少输出）`，但**实现从未用 full** ⇒
+        # 两种模式输出完全一样（「文档承诺 ≠ 实现」，新判据 check_dead_params_py 抓到）。
+        # 现按承诺实现：fast 模式省掉最冗长的 plan 文本，但**省略必须可见**（SKIP 纪律：
+        # 不说明的省略在汇总里跟「没问题」长得一样）。判据面（⚠️ 两档）不受 full 影响。
+        if full:
+            print(head_plan_text(state, gc, branch))
+        else:
+            print("  （fast 模式：省略 plan 文本；要看请用 --full）")
         label = "真分叉" if state == "diverged" else "量不到"
         return (local[:7], "⚠️ %s：local=%s remote=%s（%s）" % (label, local[:7], gc[:7], why))
 
