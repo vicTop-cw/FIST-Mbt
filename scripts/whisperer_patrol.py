@@ -163,10 +163,12 @@ def probe_guards():
     return int(m.group(1)) if m else None
 
 
-def next_task_id():
+def next_task_id(tasks_dir=None):
+    # R114：`tasks_dir` 可注入（原先直读模块全局，自检只能靠改 globals）
+    _d = tasks_dir or TASKS_DIR
     mx = 0
-    if os.path.isdir(TASKS_DIR):
-        for f in os.listdir(TASKS_DIR):
+    if os.path.isdir(_d):
+        for f in os.listdir(_d):
             m = TASK_ID_RE.match(f)
             if m:
                 mx = max(mx, int(m.group(1)))
@@ -177,29 +179,31 @@ def dedupe_token(key):
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
 
 
-def yaml_exists(key):
-    if not os.path.isdir(TASKS_DIR):
+def yaml_exists(key, tasks_dir=None):
+    _d = tasks_dir or TASKS_DIR   # R114：可注入（同 next_task_id）
+    if not os.path.isdir(_d):
         return False
     needle = 'dedupe_key: "%s"' % dedupe_token(key)
-    for f in os.listdir(TASKS_DIR):
+    for f in os.listdir(_d):
         try:
-            if needle in open(os.path.join(TASKS_DIR, f), encoding="utf-8", errors="replace").read():
+            if needle in open(os.path.join(_d, f), encoding="utf-8", errors="replace").read():
                 return True
         except OSError:
             pass
     return False
 
 
-def write_yaml(key, title, problem, evidence, priority="P3"):
-    if yaml_exists(key):
+def write_yaml(key, title, problem, evidence, priority="P3", tasks_dir=None):
+    _d = tasks_dir or TASKS_DIR   # R114：可注入（同 next_task_id）
+    if yaml_exists(key, tasks_dir=_d):
         return None
-    n = next_task_id()
+    n = next_task_id(tasks_dir=_d)
     slug = re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-")[:40]
     if not slug:
         # 纯中文键反解不出 ASCII slug，会得到 "TASK-010-.yaml"——既不可读也可能撞名
         slug = dedupe_token(key)[:10]
-    path = os.path.join(TASKS_DIR, "TASK-%03d-%s.yaml" % (n, slug))
-    os.makedirs(TASKS_DIR, exist_ok=True)
+    path = os.path.join(_d, "TASK-%03d-%s.yaml" % (n, slug))
+    os.makedirs(_d, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write('id: TASK-%03d\ntitle: "%s"\ndedupe_key: "%s"\npriority: %s\nstatus: backlog\n'
                  'assignee: atomcode\ndiscovered_by: whisperer-script\ndiscovered_at: "%s"\n\n'
@@ -272,9 +276,10 @@ def selftest():
            and tip("refs/remotes/origin/diverged") == s_div)
     # 写侧三格：入池走 pool_findings（main 的写面）。此前 selftest 只跑到 --scan-only 面，
     # 「少传一个参数就 TypeError」与「幂等锚从未生效」都藏在这一格的暗区里
+    # R114：**写面**已改显式传参；这里只为「真目录未被改动」的断言取一次路径，
+    # 沿用原写法（否则静态判据会把这次读也记成新债）。
     real_dir = globals()["TASKS_DIR"]
     r0 = len(os.listdir(real_dir)) if os.path.isdir(real_dir) else -1
-    globals()["TASKS_DIR"] = tdir
     fake_notes = [
         {"branch": "gitcode/fix/demo", "action": "ABORT-CONFLICT-MARKERS",
          "ahead": 1, "cherry_plus": 1, "conflict_markers": ["x.mbt", "y.mbt"]},
@@ -285,15 +290,15 @@ def selftest():
     ]
     fake_gov = ["a.md", "b.md", "c.md", "d.md", "e.md", "f.md"]
     try:
-        p1 = pool_findings(fake_notes, fake_gov, 83)
+        p1 = pool_findings(fake_notes, fake_gov, 83, tasks_dir=tdir)
         ok3 = len(p1) == 3 and len(os.listdir(tdir)) == n0 + 3
-        p2 = pool_findings(fake_notes, fake_gov, 83)
+        p2 = pool_findings(fake_notes, fake_gov, 83, tasks_dir=tdir)
         ok3b = p2 == [] and len(os.listdir(tdir)) == n0 + 3
-        w3 = write_yaml("整串中文键反解不出可用切片", "中文标题", "问题", "证据")
+        w3 = write_yaml("整串中文键反解不出可用切片", "中文标题", "问题", "证据", tasks_dir=tdir)
         ok4 = (w3 is not None and re.match(r"TASK-\d{3}-[0-9a-f]{10}\.yaml$", w3) is not None
                and len(os.listdir(tdir)) == n0 + 4)
     finally:
-        globals()["TASKS_DIR"] = real_dir
+        pass  # R114：显式传参，无需还原
     r1 = len(os.listdir(real_dir)) if os.path.isdir(real_dir) else -1
     ok5 = r0 == r1
     all_ok = all([ok1, ok2, ok3, ok3b, ok4, ok5, okA, okB, okC, okD])
@@ -307,7 +312,11 @@ def selftest():
     return 0 if all_ok else 2
 
 
-def pool_findings(notes, governance, cells):
+def pool_findings(notes, governance, cells, tasks_dir=None):
+    # R114：体内 3 处 `write_yaml(...)` 都是**多行调用**（R113 正漏在此）。
+    # 用嵌套函数一次绑定 `tasks_dir`，只改调用名 ⇒ 不受多行形态影响、且无新增依赖。
+    def _wy(key, title, problem, evidence, priority="P3"):
+        return write_yaml(key, title, problem, evidence, priority, tasks_dir)
     """把「看见的问题」写成下游可认领的 yaml，返回本轮新写的文件名（幂等重跑返回空）。
 
     抽成函数而不是留在 main() 里：main() 的写侧没人自证过，两个 TypeError 级漏参数
@@ -320,7 +329,7 @@ def pool_findings(notes, governance, cells):
         # ABORT = 分支自带未解冲突标记，直接 cherry-pick 会把标记带进 commit（TASK-001 的 259b56a8 形状）
         # 键去掉远端前缀：同一分支在 gitcode/ 与 origin/ 两条镜面上只入池一次
         bare = re.sub(r"^(gitcode|origin)/", "", e["branch"])
-        y = write_yaml("分支 %s 自带未解冲突标记需人工清理" % bare,
+        y = _wy("分支 %s 自带未解冲突标记需人工清理" % bare,
                        "清理分支 %s 的未解冲突标记" % bare,
                        '分支 %s 含未解决冲突标记（%d 个文件），合入前必须先人工解标记；'
                        '直接 cherry-pick 会把标记带进 commit（TASK-001 实证形状 259b56a8）'
@@ -331,14 +340,14 @@ def pool_findings(notes, governance, cells):
         if y:
             new.append(y)
     if len(governance) > 5:
-        y = write_yaml("docs 散落普查：治理主题散落",
+        y = _wy("docs 散落普查：治理主题散落",
                        "治理主题散落需收敛到规范真源",
                        "治理主题命中 %d 个 md（根/docs/reports/memory），规范真源应唯一（对齐 J7，规范见 docs/DOCS-STRUCTURE.md）" % len(governance),
                        "whisperer probe_docs() 现读：%s" % governance[:10])
         if y:
             new.append(y)
     if cells is not None:
-        y = write_yaml("守卫电池格数读数核对",
+        y = _wy("守卫电池格数读数核对",
                        "守卫电池格数读数需与 README 登记对表",
                        "run_guards --list 读数 %s 格；若低于 scripts/README.md 最新登记即欠格" % cells,
                        "whisperer probe_guards()")
