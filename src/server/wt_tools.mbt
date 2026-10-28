@@ -375,6 +375,44 @@ fn wt_strip_ref(s : String) -> String {
 }
 
 ///|
+/// 路径归一（**仅用于比较**）：`\` → `/`，剥尾部 `/`。
+/// **不改大小写**：POSIX 大小写敏感，Windows 上同目录两种大小写极罕见 —— 宁可漏认、不可误认。
+fn wt_norm_path(p : String) -> String {
+  let s = p.replace_all(old="\\", new="/")
+  let mut end = s.length()
+  while end > 1 && s[end - 1] == '/' {
+    end = end - 1
+  }
+  s[0:end].to_owned()
+}
+
+///|
+/// 「目录在但不在账上」——**第 0 条恒为主工作树**（`git worktree list` 的约定：主工作树在最前）。
+/// 主工作树是仓库根、不是沙箱；把它算进 `unregistered` 会让**每次 `wt_status` 都报**
+/// 「有个没人管的沙箱」——那是假信号，会诱导人去「清理」仓库根。故跳过第 0 条。
+pub fn wt_unregistered(parsed : Array[Json], known : Array[String]) -> Array[Json] {
+  let out : Array[Json] = []
+  let mut idx = 0
+  for e in parsed {
+    let is_main = idx == 0
+    idx = idx + 1
+    if !is_main {
+      let p = wt_norm_path(wt_s(e, "path"))
+      let mut hit = false
+      for k in known {
+        if wt_norm_path(k) == p {
+          hit = true
+        }
+      }
+      if !hit {
+        out.push(e)
+      }
+    }
+  }
+  out
+}
+
+///|
 /// `wt_create`：开沙箱 + 落账。
 ///
 /// 参数与 GitHub 主线那份薄封装同名同义（`project_dir` / `path` / `branch` / `detach` /
@@ -563,19 +601,8 @@ pub async fn wt_status_impl(
     sandboxes.push(Json::object(row))
   }
   // 「目录在但不在账上」：看得见才敢管；它们不进 tally（没账就没有生命周期结论）
-  let unregistered : Array[Json] = []
-  for e in parsed {
-    let p = wt_s(e, "path").replace_all(old="\\", new="/")
-    let mut hit = false
-    for k in known {
-      if k == p {
-        hit = true
-      }
-    }
-    if !hit {
-      unregistered.push(e)
-    }
-  }
+  // R107：主工作树（第 0 条）不是沙箱，不能算 unregistered（详见 wt_unregistered 注释）
+  let unregistered = wt_unregistered(parsed, known)
   let m : Map[String, Json] = Map([])
   m.set("ok", Json::boolean(ok))
   m.set("code", Json::number(code.to_int().to_double()))
@@ -584,6 +611,7 @@ pub async fn wt_status_impl(
   m.set("sandboxes", Json::array(sandboxes))
   m.set("tally", wt_tally(states))
   m.set("unregistered", Json::array(unregistered))
+  m.set("main_worktree", Json::string(if parsed.length() > 0 { wt_s(parsed[0], "path") } else { "" }))
   m.set(
     "note",
     Json::string(
