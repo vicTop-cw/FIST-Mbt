@@ -270,7 +270,7 @@ def is_read(param: str, text: str, readers: tuple) -> bool:
 
 # handler 自己的签名 `fn(args : Json) -> ...` 不是透传（实测踩过：
 # lock_acquire 因此被判 opaque，从而漏掉它的真实死参数 ts）
-SELF_SIG_RX = re.compile(r"fn\s*\(\s*args\s*:\s*Json\s*\)")
+SELF_SIG_RX = re.compile(r"\bfn\s*\(\s*args\s*:\s*Json\s*\)")
 
 # 一次读**多个**参数的取值函数（实测：opt_challenge(args) 返回 challenge + challenge_sig）。
 # 它们外形像 `foo(args)` 透传，但其实是取值 ⇒ 必须在 opaque 判定里排除，
