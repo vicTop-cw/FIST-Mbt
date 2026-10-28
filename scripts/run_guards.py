@@ -191,6 +191,8 @@ SPECIAL_CASES = [
     #       ⚠️ B 不能替代 A —— execute 底层有测试，但「challenge 参数有没有接上」只有外壳面测得出。
     # 白名单 IMPL_MAP 而非启发式（实测启发式假阳性 13/30）。
     # rc: 0 全有外壳覆盖 / 1 有零覆盖 / 2 无法自证。--selftest 10 格含 1 变异对照。
+    # —— R119：登记理由里的**数字**必须与实测一致（R117/R118 连续两轮漂移，机器对表）
+    case("check_registration_numbers.py"),
     case("check_tool_coverage.py", "--selftest"),
     # —— BUG-465：无效 catch 判据（`catch` 对 FFI 抛出的 JS 异常无效）——
     # 语言层边界：MoonBit 的 catch/try·catch 只包 raise 效果；
