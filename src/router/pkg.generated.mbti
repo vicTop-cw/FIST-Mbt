@@ -56,6 +56,14 @@ pub fn parse_ofm_models(String) -> Result[Array[OfmModel], String]
 
 pub fn pool_label_tier_hint(String) -> String
 
+pub fn quota_admitted(ModelQuota, Double, String, Array[String]) -> Bool
+
+pub fn quota_window_consume(ModelQuota, String, Int32) -> Unit
+
+pub fn quota_window_open(ModelQuota, String) -> Unit
+
+pub fn quota_window_reset_if_expired(ModelQuota, String, Int32) -> Bool
+
 pub fn resolve_ofm_endpoint(String, String) -> String
 
 pub fn router_restore(Json, config? : Json) -> (ModelRouter, Array[String])
@@ -77,6 +85,10 @@ pub fn star_gate_verify(String, String, Int64) -> StarGateOutcome
 pub fn star_gate_verify_pinned(String, String, Int64, String) -> StarGateOutcome
 
 pub let star_release_default_pubkey_hex : String
+
+pub fn window_elapsed_secs(String, String) -> Int32
+
+pub fn window_expired(String, String, Int32) -> Bool
 
 // Errors
 
