@@ -233,7 +233,8 @@ def gate(builder, ai1_json: dict, evidence_text: str, timeout: int):
     return rows, overall
 
 
-def render(rows, overall, target_text: str = ""):
+def render(rows, overall):
+    # R92：原第 3 参 target_text 零引用且唯一调用点没传 ⇒ 去掉。
     out = []
     out.append("== fist-mbt 4-AI 概率门禁 ==")
     header = f"{'AI':<5}{'载体':<18}{'verdict':<8}{'p1':>6}{'p2':>6}{'p3':>6}  error"
