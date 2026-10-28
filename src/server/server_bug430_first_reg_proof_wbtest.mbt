@@ -33,7 +33,15 @@ fn bs_block(src : String, name : String) -> String {
     Some(x) => x
     None => abort("找不到工具：" + name)
   }
-  bs_slice(src, i, i + 9000)
+  // R24 修：原用固定 9000 字符窗口 —— 但工具描述随 S3 各段变长后 handler 被顶出窗口
+  // （实测 `agent_touch_first_seen` 在 12999 字符处、`verify_challenge_sig` 在 12493 字符处）
+  // ⇒ 断言假红。改成切到**下一个工具注册起点**（`s1 = instrumented_tool(`），
+  // 块大小不随描述文本长度漂移 —— 与判例「判据不要钉格式化后的字面形状」同族。
+  let j = match bs_find(src, "s1 = instrumented_tool(", i + name.length() + 4) {
+    Some(x) => x
+    None => src.length()
+  }
+  bs_slice(src, i, j)
 }
 
 ///|
@@ -54,12 +62,17 @@ test "bs_01_phase1_issues_challenge_without_writing" {
     abort("第一步没有把 challenge 返回给调用方")
   }
   if !blk.contains("\"registered\": Json::boolean(false)") {
-    abort("第一步没有明确 registered=false —— 调用方会误以为已登记")
+    abort(
+      "第一步没有明确 registered=false —— 调用方会误以为已登记",
+    )
   }
   // 第一步必须**在写库之前** return
   let i_issue = match bs_find(blk, "eng.s3_issue_challenge_auto(", 0) {
     Some(x) => x
-    None => abort("第一步没调 s3_issue_challenge_auto —— challenge 不是服务端签发的")
+    None =>
+      abort(
+        "第一步没调 s3_issue_challenge_auto —— challenge 不是服务端签发的",
+      )
   }
   let i_touch = match bs_find(blk, "agent_touch_first_seen(", 0) {
     Some(x) => x
@@ -95,7 +108,9 @@ test "bs_03_proof_is_verified_before_write" {
     _ => abort("读不到 server.mbt")
   }
   let blk = bs_block(bs_code_only(raw), "agent_register_key")
-  if !blk.contains("@engine.verify_challenge_sig(pubkey_hex, challenge, proof_sig)") {
+  if !blk.contains(
+      "@engine.verify_challenge_sig(pubkey_hex, challenge, proof_sig)",
+    ) {
     abort(
       "没有用「本次要登记的公钥 + challenge 原文」验 proof_sig —— " +
       "验签参数错了就等于没验",
@@ -113,7 +128,9 @@ test "bs_03_proof_is_verified_before_write" {
     None => abort("找不到写库调用")
   }
   if i_verify >= i_touch {
-    abort("验签在写库之后 —— 那时已经落库了，验签形同虚设")
+    abort(
+      "验签在写库之后 —— 那时已经落库了，验签形同虚设",
+    )
   }
 }
 
@@ -130,7 +147,9 @@ test "bs_04_challenge_is_server_issued" {
   }
   let blk = bs_block(bs_code_only(raw), "agent_register_key")
   if !blk.contains("eng.s3_issue_challenge_auto(") {
-    abort("没有用服务端自选计数器的 s3_issue_challenge_auto —— challenge 可能由调用方自选")
+    abort(
+      "没有用服务端自选计数器的 s3_issue_challenge_auto —— challenge 可能由调用方自选",
+    )
   }
   // 引擎侧必须用 Ref 计数器（不是纯函数直出）
   let eng = @fs.read_file_to_string("src/engine/engine_rsv.mbt") catch {
@@ -138,7 +157,9 @@ test "bs_04_challenge_is_server_issued" {
   }
   let eng_code = bs_code_only(eng)
   if !eng_code.contains("let s3_challenge_counter : Ref[Int32]") {
-    abort("引擎侧没有进程级单调计数器 —— 调用方可预计算 nonce")
+    abort(
+      "引擎侧没有进程级单调计数器 —— 调用方可预计算 nonce",
+    )
   }
   if !eng_code.contains("s3_challenge_counter.val = ") {
     abort("计数器没有递增 —— 每个 challenge 的 nonce 会相同")
@@ -148,7 +169,7 @@ test "bs_04_challenge_is_server_issued" {
 // ── 小工具 ──────────────────────────────────────────────────────────────
 
 ///|
-fn bs_find(hay : String, needle : String, from : Int) -> Int? {
+fn bs_find(hay : String, needle : String, from : Int32) -> Int32? {
   let h = hay.to_array()
   let nd = needle.to_array()
   if nd.length() == 0 || nd.length() > h.length() {
@@ -174,7 +195,7 @@ fn bs_find(hay : String, needle : String, from : Int) -> Int? {
 }
 
 ///|
-fn bs_slice(s : String, from : Int, to : Int) -> String {
+fn bs_slice(s : String, from : Int32, to : Int32) -> String {
   let a = s.to_array()
   let lo = if from < 0 { 0 } else { from }
   let hi = if to > a.length() { a.length() } else { to }
