@@ -185,6 +185,16 @@ SPECIAL_CASES = [
     # 判法用编译器算好的 `unused_try` 警告（不自己写正则：那要类型信息）。
     # 覆盖面诚实：只判「编译器能证明」的，PASS 不代表「没有无效 catch」。
     case("check_effective_catch.py", "--selftest"),
+    # -- BUG-468 R2: handwritten Ed25519 seed judge --
+    # Alpha: this lane only removed the manual act; nothing stops a newcomer doing it again.
+    # Three-layer rule: (1) shape is a byte literal (2) length in {32,64} -- the only legal Ed25519 seed length is 32
+    # (3) the same file mentions ed25519 or seed.
+    # Calibrated by full-repo survey: bare byte-literal search => 13 hits, ALL false positives;
+    # 16/64-byte-only => 0 hits, misses everything; length!=32 => 1 hit and that one is hex data.
+    # The three-layer rule found 12 real seeds with 0 false positives.
+    # Intentional leftovers live in INTENTIONAL, registered ONE BY ONE WITH A REASON.
+    case("check_handwritten_seed.py", "--selftest"),
+    case("check_handwritten_seed.py"),
     case("check_effective_catch.py"),
     # 判据本体（2026-10-28 转正门禁）：本格曾是 expected(..., 1) 的 known-red，
     #   当时 22/154 个工具从无任何测试碰过接线面（BUG-455）。同日各 lane 补齐后
