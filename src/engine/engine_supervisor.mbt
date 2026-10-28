@@ -419,20 +419,10 @@ pub fn FistEngine::supervisor_task_upsert(
               } else {
                 let mut c = t
                 if item.description != "" {
-                  // BUG-389：描述是可被合法覆盖的字段，而 Omega 开关判据就读它
-                  // （omega_enabled = get_omega_required() || description.contains(omega_mark())）。
-                  // decomposer 注入的 [omega:required] 标记是旧数据的兜底载体，被 upsert 静默
-                  // 覆盖后，omega_spec_create 会把「标记丢失」误报成「用户没开 Omega」。
-                  // 这里保留既有标记：任务开着 Omega 且新描述不含标记时，把标记拼回
-                  // （保持文本开关判据对旧数据不变，不动状态机）。BUG-389 方向②的
-                  // tasks.omega_required 元数据列不受描述覆盖影响，两者叠起来才闭环。
-                  let desc = if omega_enabled(t) &&
-                    !item.description.contains(omega_mark()) {
-                    item.description + omega_mark()
-                  } else {
-                    item.description
-                  }
-                  c = c.with_description(desc, now)
+                  c = c.with_description(
+                    preserve_plan_markers(t.description, item.description),
+                    now,
+                  )
                 }
                 if item.priority != "" {
                   c = c.with_priority(item.priority, now)

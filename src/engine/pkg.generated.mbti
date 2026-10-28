@@ -116,6 +116,8 @@ pub fn phi_domain_error(Array[Int32], Int32) -> String
 
 pub fn plan_route(String, n_files? : Int32) -> Json
 
+pub fn preserve_plan_markers(String, String) -> String
+
 pub fn rank_of_role(String) -> Int32
 
 pub fn resolve_agent_role(String, String?) -> (String, String)

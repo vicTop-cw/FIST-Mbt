@@ -119,15 +119,11 @@ fn cut_before(s : String, mark : String) -> String {
 }
 
 ///|
-/// 去掉「拆解引擎自己追加」的计划标注，只留任务本体描述（R113）。
-/// `omega_clean_slice` 只洗强验证标记，而 gradient / reinject_context / boundary_probe /
-/// spec 指纹四项同样会在递归下钻时被逐层重喂（child.description 当作下一层的
-/// parent_desc，且又被嵌进「更简单变体」引用与「父计划」字段），实测 2 层拆分叶子
-/// 1996 字节、根部仅 12 字节，并出现同一叶两个互相矛盾的梯度档。
-/// 逐标记顺序截断 = 截在最靠前的那个标记之前，因此对已叠加多层的文本也能一次洗净。
-/// 标记面必须与 decompose_rec 写入端一字不差（含前导空格）。
-pub fn strip_plan_annotations(s : String) -> String {
-  let markers : Array[String] = [
+/// decomposer 结构标记清单（单一真源）。`strip_plan_annotations` 与
+/// `preserve_plan_markers` 共用同一份清单，消除两份清单漂移的风险。
+/// 标记面必须与 decompose_rec 写入端一字不差（含前导空格）——本函数是唯一落点。
+fn plan_markers() -> Array[String] {
+  [
     " [难度梯度 ",
     " [父计划:",
     " | [父计划: ",
@@ -135,11 +131,47 @@ pub fn strip_plan_annotations(s : String) -> String {
     " [spec:",
     omega_mark(),
   ]
+}
+
+///|
+/// 去掉「拆解引擎自己追加」的计划标注，只留任务本体描述（R113）。
+/// `omega_clean_slice` 只洗强验证标记，而 gradient / reinject_context / boundary_probe /
+/// spec 指纹四项同样会在递归下钻时被逐层重喂（child.description 当作下一层的
+/// parent_desc，且又被嵌进「更简单变体」引用与「父计划」字段），实测 2 层拆分叶子
+/// 1996 字节、根部仅 12 字节，并出现同一叶两个互相矛盾的梯度档。
+/// 逐标记顺序截断 = 截在最靠前的那个标记之前，因此对已叠加多层的文本也能一次洗净。
+/// 标记面来自 `plan_markers()`（单一真源）。
+pub fn strip_plan_annotations(s : String) -> String {
+  let markers = plan_markers()
   let mut out = s
   for m in markers {
     out = cut_before(out, m)
   }
   out.trim().to_owned()
+}
+
+///|
+/// 合并 decomposer 注入的结构标记：新描述缺哪些，就把旧描述里的对应标记补回（BUG-389）。
+///
+/// `supervisor_task_upsert` 用 `with_description` **整体覆盖** description，而用户经超级管家
+/// 更新任务描述时通常不会带上 `[omega:required]` / `[边界四问…]` / `[难度梯度 …]` /
+/// `[父计划:…]` / `[spec:…]` 这些由 decomposer 注入的结构标记；覆盖后标记被静默丢失，
+/// 之后 `omega_spec_create` 判门禁读到 description 不含 `[omega:required]` 就误报
+/// 「未开启 Omega 强验证」，把「标记丢失」伪装成「用户没开 Omega」。
+///
+/// 语义：对 `plan_markers()` 列出的标记面做「缺失补回」——若旧描述含某标记而新描述不含，
+/// 则把该标记（连同其前导空格，`omega_mark()` 无前导空格）追加到新描述末尾。
+pub fn preserve_plan_markers(old_desc : String, new_desc : String) -> String {
+  let markers = plan_markers()
+  let mut out = new_desc
+  for m in markers {
+    if !out.contains(m) {
+      if old_desc.contains(m) {
+        out = out + m
+      }
+    }
+  }
+  out
 }
 
 ///|
