@@ -165,6 +165,10 @@ SPECIAL_CASES = [
     # 自证格含 2 个变异对照（抄本改坏 1 字符 / `<`改`<=`）+ 空扫描自拒 + 覆盖率必须在输出里。
     case("check_two_faces.py", "--selftest"),
     case("check_two_faces.py"),
+    # —— R63：空扫描面元判据 —— 喂空目录给每把支持 `--root` 的尺，判它会不会「空转出绿」。
+    #    判例-32 同族但更靠前一步：判据最危险的失效不是报错，而是**什么都没扫到却报绿**。
+    case("check_empty_scan_face.py"),
+    case("check_empty_scan_face.py", "--selftest"),
     # —— BUG-440：docs/plans/ frontmatter 守卫（README:22 承诺了 5 天，守卫文件此前不存在）——
     # 判据：文件名 / frontmatter 必须第 1 行起 / 四强制字段 / status 闭集 / 已定案自洽(含 decisions 记录)。
     # 实测抓出过真违例：4pools 提案的第一个 `---` 块是 AIGC 水印元数据，四字段全缺。
