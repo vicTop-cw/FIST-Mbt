@@ -9,7 +9,7 @@
 
 ///|
 test "agents: register + get 首次出现登记、重复注册只刷新 pid/last_seen" {
-  match SqliteStore::open("temp/agents_register_wb.db") {
+  match SqliteStore::open(bug462_unique_db("agents_register_wb")) {
     None => fail("sqlite open 失败：判据没跑到被测面")
     Some(s) => {
       // 首次注册
@@ -63,7 +63,7 @@ test "agents: register + get 首次出现登记、重复注册只刷新 pid/last
 
 ///|
 test "agents_set_pid: 换绑后 agents.pid 更新" {
-  match SqliteStore::open("temp/agents_setpid_wb.db") {
+  match SqliteStore::open(bug462_unique_db("agents_setpid_wb")) {
     None => fail("sqlite open 失败")
     Some(s) => {
       ignore(
@@ -88,7 +88,7 @@ test "agents_set_pid: 换绑后 agents.pid 更新" {
 
 ///|
 test "agents_acl_ensure + agents_acl_check: 默认 can_write=0 → 写面 Err（fail-closed）" {
-  match SqliteStore::open("temp/agents_acl_default_wb.db") {
+  match SqliteStore::open(bug462_unique_db("agents_acl_default_wb")) {
     None => fail("sqlite open 失败")
     Some(s) => {
       // 默认档用专属 agent（本测试从不对它 grant），保证重复执行时
@@ -188,7 +188,7 @@ test "agents_acl_ensure + agents_acl_check: 默认 can_write=0 → 写面 Err（
 
 ///|
 test "agents_acl_grant: 收权 can_write=false 落 revoked_at/revoked_by" {
-  match SqliteStore::open("temp/agents_acl_revoke_wb.db") {
+  match SqliteStore::open(bug462_unique_db("agents_acl_revoke_wb")) {
     None => fail("sqlite open 失败")
     Some(s) => {
       let agent_id = "fp-d"
@@ -218,7 +218,7 @@ test "agents_acl_grant: 收权 can_write=false 落 revoked_at/revoked_by" {
 
 ///|
 test "agents_stale_check: last_seen 早于 cutoff 判 stale" {
-  match SqliteStore::open("temp/agents_stale_wb.db") {
+  match SqliteStore::open(bug462_unique_db("agents_stale_wb")) {
     None => fail("sqlite open 失败")
     Some(s) => {
       ignore(
@@ -269,8 +269,8 @@ fn _reset_bug411(path : String) -> Unit {
 /// BUG-411 锁 1：新建 ns 无人可写 ⇒ count_writable=0 且 write 门拒绝。
 /// 成对：与锁 2 互为反例（0 → 1）。
 test "bug411_no_writer_means_claim_would_be_rejected" {
-  _reset_bug411("temp/bug411_lock1.db")
-  match SqliteStore::open("temp/bug411_lock1.db") {
+  _reset_bug411(bug462_unique_db("bug411_lock1"))
+  match SqliteStore::open(bug462_unique_db("bug411_lock1")) {
     None => fail("sqlite open 失败：判据没跑到被测面")
     Some(s) => {
       ignore(
@@ -301,8 +301,8 @@ test "bug411_no_writer_means_claim_would_be_rejected" {
 ///|
 /// BUG-411 锁 2：授权后 ⇒ count_writable=1 且 write 门放行。
 test "bug411_granted_writer_means_claim_ready" {
-  _reset_bug411("temp/bug411_lock2.db")
-  match SqliteStore::open("temp/bug411_lock2.db") {
+  _reset_bug411(bug462_unique_db("bug411_lock2"))
+  match SqliteStore::open(bug462_unique_db("bug411_lock2")) {
     None => fail("sqlite open 失败：判据没跑到被测面")
     Some(s) => {
       ignore(
@@ -340,8 +340,8 @@ test "bug411_granted_writer_means_claim_ready" {
 /// BUG-411 锁 3（变异对照，判例-29）：ns 过滤真在生效。
 /// 抓的变异：把 count_writable 的 `WHERE ns = ?` 删掉 ⇒ ns=OTHER 那一格会返回 1 ⇒ 必红。
 test "bug411_count_writable_ns_filter_mutation" {
-  _reset_bug411("temp/bug411_lock3.db")
-  match SqliteStore::open("temp/bug411_lock3.db") {
+  _reset_bug411(bug462_unique_db("bug411_lock3"))
+  match SqliteStore::open(bug462_unique_db("bug411_lock3")) {
     None => fail("sqlite open 失败：判据没跑到被测面")
     Some(s) => {
       ignore(
@@ -384,12 +384,12 @@ test "bug423_register_can_raise_executor_to_steward" {
   // 清场（与 `_reset_bug411` 同款理由）：本格用固定路径 `temp/bug423_raise.db`，
   // 第二次跑时库里残留上一轮的 `role=HumanSteward`，第一步的「首次应是 Executor」
   // 前置断言必假红（实测连跑两次：76/76 → 75/76，红的就是本格）。
-  if @fs.path_exists("temp/bug423_raise.db") {
-    @fs.remove_file("temp/bug423_raise.db") catch {
+  if @fs.path_exists(bug462_unique_db("bug423_raise")) {
+    @fs.remove_file(bug462_unique_db("bug423_raise")) catch {
       _ => ()
     }
   }
-  match SqliteStore::open("temp/bug423_raise.db") {
+  match SqliteStore::open(bug462_unique_db("bug423_raise")) {
     None => fail("sqlite open 失败：判据没跑到被测面")
     Some(s) => {
       // 第一步：低权路径先把它登记成 Executor（模拟 claim 的 agent_touch_first_seen）
@@ -451,7 +451,7 @@ test "bug423_register_can_raise_executor_to_steward" {
 /// 这正是本条 bug 的原始形状：`agent_touch_first_seen` 对任意 assignee 写
 /// `role="Executor"`，若不防降级，统帅被这样注册过后永久锁死在 HumanSteward 面外。
 test "bug423_register_does_not_downgrade_steward" {
-  match SqliteStore::open("temp/bug423_nodown.db") {
+  match SqliteStore::open(bug462_unique_db("bug423_nodown")) {
     None => fail("sqlite open 失败：判据没跑到被测面")
     Some(s) => {
       // 先正当地登记成 HumanSteward
@@ -508,7 +508,7 @@ test "bug423_register_does_not_downgrade_steward" {
 ///|
 /// BUG-423 锁 3：Leader 同样不被 Executor 降级（不止 HumanSteward 一档）
 test "bug423_register_does_not_downgrade_leader" {
-  match SqliteStore::open("temp/bug423_leader.db") {
+  match SqliteStore::open(bug462_unique_db("bug423_leader")) {
     None => fail("sqlite open 失败：判据没跑到被测面")
     Some(s) => {
       let _ = s.agents_register(
@@ -554,7 +554,7 @@ test "bug423_register_does_not_downgrade_leader" {
 ///   ④ `HumanSteward` 记录**在 store 层照旧可读** —— 「不可继承」是 engine 侧政策
 ///      （`inheritable_role`），存取层不替政策做决定
 test "bug422_agents_role_for_judgment_filters_process_self" {
-  match SqliteStore::open("temp/bug422_agents_judgment_wb.db") {
+  match SqliteStore::open(bug462_unique_db("bug422_agents_judgment_wb")) {
     None => fail("sqlite open 失败：判据没跑到被测面")
     Some(s) => {
       // ① server 自身份（复刻 server.mbt 启动注册）

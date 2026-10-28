@@ -14,7 +14,7 @@ fn bsem_backend(kind : String) -> @store.StoreBackend {
   if kind == "mem" {
     @store.StoreBackend::memory()
   } else {
-    let db = "temp/store_backend_semantics.db"
+    let db = bug462_unique_db("store_backend_semantics")
     match @store.SqliteStore::open(db) {
       None => abort("sqlite open failed: " + db)
       Some(s) => {

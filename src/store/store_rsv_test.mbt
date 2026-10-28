@@ -74,7 +74,7 @@ test "rsv clear() 会一并清空预订（双后端，防跨次残留）" {
   mem.clear()
   assert_true(mem.rsv_get("src/mem.mbt") is None)
   // SQLite 后端
-  let db = "temp/rsv_clear_test.db"
+  let db = bug462_unique_db("rsv_clear_test")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed")
     Some(s) => {
@@ -95,7 +95,7 @@ test "rsv clear() 会一并清空预订（双后端，防跨次残留）" {
 
 ///|
 test "rsv SQLite 后端：同一库可持久化读回" {
-  let db = "temp/rsv_persist_test.db"
+  let db = bug462_unique_db("rsv_persist_test")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => {
@@ -174,7 +174,7 @@ test "rsv_action：四种结论互斥，同持有者排在过期之前" {
 /// BUG-136 的双后端同语义锁：同一串请求打过来，内存与 SQLite 必须给**同样的四段结论**，
 /// 且冲突那一次库里不许被覆盖（旧形状在这里会让第二个 agent 也拿到 reserved=true）。
 test "rsv_try_set：空闲/活体冲突/续期/过期让渡，两后端逐字段一致" {
-  let db = "temp/rsv_try_test.db"
+  let db = bug462_unique_db("rsv_try_test")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => ignore(s.clear())
@@ -731,7 +731,7 @@ test "locks_try_acquire: 两后端同构 —— 同序列同结论" {
 // 尤其「他人 live 锁 → granted=false、锁行不被覆盖、落一条 lock_denied」。
 
 test "locks_try_acquire: SQLite 后端 首取成功" {
-  let db = "temp/lock_try_sqlite_fresh.db"
+  let db = bug462_unique_db("lock_try_sqlite_fresh")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => ignore(s.clear())
@@ -760,7 +760,7 @@ test "locks_try_acquire: SQLite 后端 首取成功" {
 
 ///|
 test "locks_try_acquire: SQLite 后端 他人 live 锁 → granted=false + lock_denied + 锁行不动" {
-  let db = "temp/lock_try_sqlite_conflict.db"
+  let db = bug462_unique_db("lock_try_sqlite_conflict")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => ignore(s.clear())
@@ -813,7 +813,7 @@ test "locks_try_acquire: SQLite 后端 他人 live 锁 → granted=false + lock_
 
 ///|
 test "locks_try_acquire: SQLite 后端 旧主 TTL 已过 → taken_over + 覆盖为 exec_2" {
-  let db = "temp/lock_try_sqlite_takeover.db"
+  let db = bug462_unique_db("lock_try_sqlite_takeover")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => ignore(s.clear())
@@ -857,7 +857,7 @@ test "locks_try_acquire: SQLite 后端 旧主 TTL 已过 → taken_over + 覆盖
 
 ///|
 test "locks_try_acquire: SQLite 后端 已释放锁 → reserved 复用行" {
-  let db = "temp/lock_try_sqlite_released.db"
+  let db = bug462_unique_db("lock_try_sqlite_released")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => ignore(s.clear())

@@ -36,7 +36,7 @@ fn bug420_put(store : SqliteStore, id : String, ns : String) -> Unit {
 
 ///|
 test "bug420_1_shape: 主库有 2 条带 ns 标签的任务 + 该 ns 分库为 0 条 ⇒ 出诊断" {
-  let main_path = "temp/bug420_main_wb.db"
+  let main_path = bug462_unique_db("bug420_main_wb")
   bug420_reset(main_path)
   let ms = MultiStore::new(data_dir="temp")
   assert_eq(ms.open(ns="bug420probe", data_dir="temp"), true)
