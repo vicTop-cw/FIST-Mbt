@@ -496,7 +496,7 @@ test "plan_deep 难度校准：gradient+calibrate 用真实难度覆盖位置档
 
 ///|
 test "plan_deep SQLite 持久化：重启后子树可经 get_task 恢复" {
-  let db_path = "decompose_persist.db"
+  let db_path = ".fist-mbt/tmp/decompose_persist.db"
   // 幂等：先经 SqliteStore 公共 API 清空上次残留，再构建引擎
   match @store.SqliteStore::open(db_path) {
     Some(s) => ignore(s.clear())
