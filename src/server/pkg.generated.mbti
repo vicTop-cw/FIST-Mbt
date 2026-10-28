@@ -235,6 +235,28 @@ pub fn write_gate_ok(String, String) -> Result[Unit, String]
 
 pub fn write_gate_path_ok(String) -> Bool
 
+pub fn wt_branch_default(String) -> String
+
+pub async fn wt_create_impl(String, String, String, Bool, String, String, Int32, Int32) -> Result[Json, String]
+
+pub async fn wt_destroy_impl(String, String, Bool, Bool, Int32) -> Result[Json, String]
+
+pub fn wt_entry_json(String, String, String, String, String, String, Int32, Int32) -> Json
+
+pub fn wt_parse_porcelain(String) -> Array[Json]
+
+pub fn wt_path_ok(String) -> Bool
+
+pub fn wt_reclaimable(String) -> Bool
+
+pub fn wt_state_of(Bool, Bool?, Int32, Int32, Int32, String, String) -> (String, String)
+
+pub async fn wt_status_impl(String, Int32) -> Result[Json, String]
+
+pub fn wt_tally(Array[String]) -> Json
+
+pub fn wt_task_ok(String) -> Bool
+
 // Errors
 
 // Types and methods

@@ -7802,6 +7802,87 @@ pub async fn run_server() -> Unit {
       Ok(@mcp.ToolResult::text(audit_log_payload(entries).stringify()))
     },
   )
+  // ---- worktree 沙箱生命周期三工具（WT-02：创建 / 状态 / 拆除；账落 .fist-mbt/data/wt-*.json）----
+  s1 = instrumented_tool(
+    s1,
+    "wt_create",
+    "创建 git worktree 沙箱并落一条生命周期账（`<project_dir>/.fist-mbt/data/wt-<task>.json`，gitignore 面、跨进程可复现）。**为什么要账**：`git worktree add` 只回答『目录建出来了』，不回答『它现在能不能回收』——账里存创建锚点 `created_sha`（沙箱自己的 HEAD，不是 base 的名字：base 默认 HEAD 是活参照，事后会漂），`wt_status` 才有判定面。参数：project_dir(必填，git 仓库根)、path(必填，沙箱目录；拒空 / 含 `..` / 以分隔符结尾)、branch(可选，缺省 `wt/<task>`；与 detach 互斥)、detach(可选，detached HEAD)、task(可选，账 id；缺省取 path 末段，只允许字母/数字/_/-)、base(可选，缺省 HEAD)、ttl_min(可选，默认 120，供 stale 判定)、timeout_ms(可选，默认 60000)。返回 {ok, path, branch, detached, task, created_sha, manifest_saved, code, stdout, stderr, note}；账写失败时 manifest_saved=false 并点名『会表现为 unregistered、不会被自动回收』。",
+    schema(
+      {
+        "project_dir": string_prop("git 仓库根目录（必填）"),
+        "path": string_prop("沙箱目录路径（必填）"),
+        "branch": string_prop("分支名（可选，缺省 wt/<task>；与 detach 互斥）"),
+        "detach": bool_prop("detached HEAD（可选）"),
+        "task": string_prop("账 id（可选，缺省取 path 末段）"),
+        "base": string_prop("基线 ref（可选，缺省 HEAD）"),
+        "ttl_min": int_prop("沙箱 TTL 分钟（可选，默认 120）"),
+        "timeout_ms": int_prop("超时毫秒（可选，默认 60000）"),
+      },
+      ["project_dir", "path"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let path = get_str(args, "path")
+      let branch = get_str(args, "branch", default="")
+      let detach = get_bool(args, "detach", default=false)
+      let task = get_str(args, "task", default="")
+      let base = get_str(args, "base", default="")
+      let ttl_min = get_int(args, "ttl_min", default=120)
+      let timeout_ms = get_int(args, "timeout_ms", default=60000)
+      match wt_create_impl(
+        project_dir, path, branch, detach, task, base, ttl_min, timeout_ms,
+      ) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "wt_status",
+    "列出 worktree 沙箱并给每个**登记过**的沙箱判七档生命周期状态（`fresh/stale/blocked/merged/idle/abandoned/unknown`）。**为什么不是 `git worktree list` 的薄封装**：存在性不等于生命周期——本工具把 git 面（porcelain + 沙箱内 `status` 脏度 + `merge-base --is-ancestor` 是否并入）与账面对表后裁决，判定顺序是承重的：①**脏先看**（已并入 + 有未提交改动 ⇒ `blocked`，先判 merged 会把没落盘的活一起销毁）；②`idle` 只认账上的创建锚点（ff 合并后主线尖==分支尖，靠 git/年龄都会把已并入成果读成空沙箱）；③**git 读不到 ⇒ `unknown`**，绝不顺着年龄写成 fresh/stale。可回收档 = merged/stale/abandoned/idle（blocked 会丢活、unknown 会丢证据，都不在集合里）。参数：project_dir(必填)、timeout_ms(可选，默认 30000)。返回 {ok, code, worktrees_raw(porcelain 原文，兼容旧调用方), parsed[{path,head,branch,detached}], sandboxes[{task,path,branch,base,head_sha,created_sha,age_min,ttl_min,dirty,state,reason,reclaimable}], tally{state:count}, unregistered[目录在但不在账上], note}。",
+    schema(
+      {
+        "project_dir": string_prop("git 仓库根目录（必填）"),
+        "timeout_ms": int_prop("超时毫秒（可选，默认 30000）"),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let timeout_ms = get_int(args, "timeout_ms", default=30000)
+      match wt_status_impl(project_dir, timeout_ms) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "wt_destroy",
+    "拆除 worktree 沙箱（三道安全）。①**只动账上登记过的路径**：目录存在但不在账上 ⇒ 拒绝（回执 note 点名），确认要拆必须显式 force=true（path 仍要过形状校验：拒空 / 含 `..` / 以分隔符结尾）；②**分支默认不删**（删分支不可逆）：显式 delete_branch=true 才走 `git branch -d`，未并入的分支由 git 自己拒（branch_deleted=false + branch_error 点名『这是 git 的判断』）；③**拆失败不删账**：账留着 = 还看得见，只有 `git worktree remove` 成功才删账。参数：project_dir(必填)、path(必填)、force(可选，默认 false：既用于未登记路径放行，也透传 `git worktree remove --force`)、delete_branch(可选，默认 false)、timeout_ms(可选，默认 30000)。返回 {ok, path, task, registered, removed, code, stdout, stderr, manifest_deleted, branch_deleted, branch_code, branch_error, note}。",
+    schema(
+      {
+        "project_dir": string_prop("git 仓库根目录（必填）"),
+        "path": string_prop("要拆除的沙箱路径（必填）"),
+        "force": bool_prop("强制（可选，默认 false：未登记路径 / 脏工作树都需要它）"),
+        "delete_branch": bool_prop("同时删分支（可选，默认 false；走 git branch -d）"),
+        "timeout_ms": int_prop("超时毫秒（可选，默认 30000）"),
+      },
+      ["project_dir", "path"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let path = get_str(args, "path")
+      let force = get_bool(args, "force", default=false)
+      let delete_branch = get_bool(args, "delete_branch", default=false)
+      let timeout_ms = get_int(args, "timeout_ms", default=30000)
+      match wt_destroy_impl(project_dir, path, force, delete_branch, timeout_ms) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
   // ---- multi-store 命名空间工具 ----
   s1 = instrumented_tool(
     s1,
