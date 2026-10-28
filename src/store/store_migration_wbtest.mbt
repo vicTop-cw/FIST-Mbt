@@ -119,10 +119,7 @@ fn t744_make_db(dir : String, ns : String, n : Int32) -> Unit {
       // 夹具自持的 sqlite 句柄必须显式关掉：Windows 上未关闭的句柄会把 `.db` 钉住，
       // 用例末尾的 t744_rm_tree 就删不掉（表现为"清理跑了但目录还在"）。
       // 产品侧 `MultiStore::close_all` 同样只从 map 里摘掉、不关底层句柄（BUG-461 附带发现，已上报）。
-      match s.db {
-        Some(db) => db.close()
-        None => ()
-      }
+      s.close()
     }
   }
   match @sqlite.Database::open(path) {
@@ -386,10 +383,7 @@ test "t744_9_tasks_visible_after_migration" {
       let tasks = s.list_tasks_in(ns)
       assert_eq(tasks.length(), 3)
       // 同 t744_make_db：显式关掉夹具句柄，清理才删得掉（close_all 不关句柄）
-      match s.db {
-        Some(db) => db.close()
-        None => ()
-      }
+      s.close()
     }
   }
   ms.close_all()
