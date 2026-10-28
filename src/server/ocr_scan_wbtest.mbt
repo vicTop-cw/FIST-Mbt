@@ -468,7 +468,7 @@ test "T0r588 显式 rules_file 时不注入，argv 用用户的规则" {
 ///|
 /// T0r588 锁 10（踩坑锁）：放行规则路径不得混拼分隔符。
 /// 实现起初用 `String::replace(old="\\", new="/")`，而它只换**第一处**
-/// （实测回执给出 `C:/Users\victo\AppData\Local\Temp/...json`），换成
+/// （实测回执给出 `C:/Users/<user>\AppData\Local\Temp/...json`），换成
 /// `replace_all` 才干净。这一格钉住"路径里不出现反斜杠"，防回退。
 test "T0r588 放行规则路径无混拼反斜杠" {
   let j = ocr_plan(".", subcmd="files", path="src/x.mbt", dry_run=true)

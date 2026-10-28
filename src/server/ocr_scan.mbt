@@ -192,7 +192,7 @@ fn ocr_ensure_mbt_include_rule() -> String? {
   }
   // 反斜杠统一成正斜杠：Windows 上两类分隔符都可接受，但混拼进 argv 更难排障。
   // 注意必须用 replace_all——String::replace 只换**第一处**（本仓实测：会留下
-  // `C:/Users\victo\AppData\Local\Temp/...` 这种混拼），replace_all 才是全量。
+  // `C:/Users/<user>\AppData\Local\Temp/...` 这种混拼），replace_all 才是全量。
   let p = ocr_join(
     dir.replace_all(old="\\", new="/"),
     "fist-mbt-ocr-moonbit-include.json",

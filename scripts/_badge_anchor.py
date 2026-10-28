@@ -47,6 +47,7 @@ import hashlib
 import os
 import subprocess
 import sys
+from git_env import isolated_git_env
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -70,7 +71,8 @@ ANCHOR_PREFIX = "code="
 def _git(args, cwd=None):
     """只读 git 调用（不经 shell）。失败返回 (rc, "", err)，由调用方判 2 而不是崩。"""
     p = subprocess.run(["git"] + list(args), cwd=cwd or ROOT, capture_output=True,
-                       text=True, encoding="utf-8", errors="replace")
+                       text=True, encoding="utf-8", errors="replace",
+                       env=isolated_git_env())
     return p.returncode, (p.stdout or ""), (p.stderr or "")
 
 
