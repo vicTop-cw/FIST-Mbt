@@ -189,9 +189,42 @@ def main(argv):
     return run(argv)
 
 
+def _purge_probe_artifacts():
+    """删掉「探针旗标被当落盘路径」留下的同名产物。
+
+    R75 实测事故：某脚本把 `--definitely-not-a-real-flag` 当**输出路径**，在仓库根
+    写出 **56KB PDF**，文件名就是该旗标 ⇒ 未跟踪污染 ⇒ 连带 `check_publish_payload`
+    报 P1「未跟踪又未被忽略」（电池红）。
+
+    ⇒ **审计必须证明自己只跑不改**：跑前清残留（防上一发影响判定）、跑后清产物
+      （否则这一格自己会把工作树弄脏）。
+    """
+    removed = []
+    for path in (os.path.join(ROOT, BAD_FLAG), os.path.join(ROOT, BAD_FLAG + ".db")):
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+                removed.append(path)
+            elif os.path.isdir(path):
+                import shutil as _sh
+                _sh.rmtree(path, ignore_errors=True)
+                removed.append(path)
+        except OSError:
+            pass
+    return removed
+
+
 if __name__ == "__main__":
+    _purge_probe_artifacts()      # 跑前清残留
     try:
-        sys.exit(main(sys.argv[1:]))
+        try:
+            _rc = main(sys.argv[1:])
+        finally:
+            _left = _purge_probe_artifacts()   # 跑后清产物
+            if _left:
+                print("WARN 探针产物已清理：%s ⇒ 有脚本把未知旗标当落盘路径"
+                      % ", ".join(os.path.basename(p) for p in _left))
+        sys.exit(_rc)
     except SystemExit:
         raise
     except Exception as exc:  # 尺子自己坏了：4，绝不冒用 1
