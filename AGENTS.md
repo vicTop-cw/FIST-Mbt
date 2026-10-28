@@ -502,12 +502,13 @@ S1 落地后 BUG-430 **保持 OPEN**，状态 `[arch] 边界已公告 / 认证�
 | `executor_clear` | 清空全部执行者能力注册（Marketplace 重置/整洁，防测试残留） |
 | `selfdrive_dispatch` | 能力路由自动派单（R32/R33）：取 triage 顶部可领取任务 → 确定所需能力（显式 `want` 优先，否则从任务描述自动抽取已注册能力标签，R33 免手传）→ 经 executor_route 找最佳执行者 → **直接认领给该执行者**（待领取→已领取）；无匹配时回退 `agent`，把"推荐"落成动作 |
 
-### 审计与权限（5）
+### 审计与权限（6）
 | 工具 | 说明 |
 |---|---|
 | `agent_acl_grant` | 授予/收权某 agent 在某命名空间的读写权限（**BUG-408 收口**）：ACL 拒绝后此前无任何 MCP 面可自救——`agents_acl_grant` 只是 store 方法、未暴露为工具。本工具补上这条自救路径。仅 SQLite 后端可用（内存后端显式报错，不静默成功）；`can_read`/`can_write` 缺省即授权读写（fail-open 仅限显式调用本工具，默认 ACL 仍是 fail-closed）；`pid_bound=true` 绑定当前进程实例，换进程即失效。真源 `src/server/server.mbt` + `src/engine/engine.mbt:462` + `src/store/store_sqlite.mbt:2994` |
 | `agent_register_key` | **BUG-430 / S3**：为某 agent 登记 Ed25519 **公钥**（hex，64 字符 = 32 字节），登记后该 agent 才能通过 `challenge` 挑战认证（`reserve_scope` / `lock_acquire` / `claim` 的 `challenge` + `challenge_sig` 可选参数）。⚠️ **只登记公钥，不产生签名** —— 私钥由调用方自持；本服务**没有也不会有**「代签」能力（服务端代签 = 自己给自己发通行证 = 绕过 S3）。⚠️ 公钥**登记后不可静默覆盖**（与上次不同即拒绝）—— 要换请走**轮换**：带 `rotate_sig`（用**旧私钥**对服务端签发的 `rotate_challenge` 签名）+ `rotate_challenge`；私钥已丢则用 `agent_revoke_key` 吊销后重新走首登流程。（S3 第八段已实现；store 层能力是 `agents_set_pubkey`。）落库前校验 32 字节形状，坏公钥不进库；写后回读确认。参数：agent_id、namespace、pubkey_hex(均必填)、by(可选)。真源 `src/server/server.mbt`（`agent_register_key`）+ 复用 `agent_touch_first_seen` 的首拍注册路径。白盒锁 `src/server/server_bug430_s3_keytool_wbtest.mbt`(4 格，含「服务端永不代签」) + `src/engine/engine_bug430_s3_key_wbtest.mbt`(4 格端到端) |
 | `agent_revoke_key` | **BUG-430 / S3 第八段 · 密钥吊销**：清空某 agent 已登记的公钥，使其退回「无密钥」状态。**私钥丢了的唯一出路** —— 没有吊销面 = 抢注成功后正主永久锁死。⚠️ 本工具**只清除「有密钥」这件事**，不把身份交给任何人：吊销后重新登记走**首登流程**（带挑战验签）。⚠️ **身份仍是自报的（BUG-430 未关闭）**：本工具不校验调用方是谁 ⇒ 任何能调到它的人都能吊销任何人 ⇒ 它是**运维便利**（私钥丢失、agent 退役），**不是安全措施**。参数：agent_id、namespace(可选)、by(可选，仅记入回执)。返回 `{agent_id, namespace, mode, revoked, had_key, ...}`。真源 `src/server/server.mbt`（`agent_revoke_key`）+ 白盒锁 `src/server/server_bug430_s3_revoke_wbtest.mbt`(4 格) |
+| `agent_issue_challenge` | **BUG-466 · S3 取票窗口**：为一个**已登记公钥**的 agent 签发 Ed25519 挑战 nonce（服务端单向递增计数器签发、一次性）。拿到后用自己的**私钥**签名，把 `challenge` + `challenge_sig` 传给 `claim` / `reserve_scope` / `lock_acquire`，回执 `action` 才会出现 `+challenge_verified`（此时 `role_source` 才是真的认证过的身份）。⚠️ **只为已登记公钥的 agent 签发** —— 没有公钥的人签了也验不过（`judged_role_gated` 对 `(None,_)` 恒 false），所以直接拒绝并提示先 `agent_register_key`。⚠️ **不写业务库**，只签发并登记为「待消费」；每个 nonce **只能用一次**（重放判 `challenge_replayed`）。⚠️ **公钥按 ns 隔离** —— 在哪个 ns 登记就在哪个 ns 签发/验签，跨 ns 不互通。⚠️ 本服务**没有也不会有**「代签」能力。参数：agent_id、namespace(可选)。返回 `{agent_id, namespace, challenge, issued_at, expires_hint, pubkey_registered, pubkey_prefix, how_to_continue}`。真源 `src/server/server.mbt`（`agent_issue_challenge`）+ 白盒锁 `src/engine/engine_bug466_challenge_entry_wbtest.mbt`(6 格，含变异对照) |
 | `audit_permission` | 角色权限查询（**注意**：只反映角色矩阵、不反映 ns ACL——两道独立门，见 BUG-408） |
 | `audit_log` | 追加式审计日志 |
 

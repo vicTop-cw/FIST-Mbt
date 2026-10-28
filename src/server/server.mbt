@@ -2117,6 +2117,14 @@ pub async fn run_server() -> Unit {
         "namespace": string_prop(
           "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
         ),
+        "challenge": string_prop(
+          "可选：**S3 认证挑战**（BUG-466）。由 `agent_issue_challenge` 签发（服务端单向递增、一次性）。" +
+          "与 `challenge_sig` 一起传 ⇒ 回执 `action` 会出现 `+challenge_verified` / `+challenge_failed` / `+challenge_replayed`；" +
+          "**不传 ⇒ 完全走原逻辑（零回归）**",
+        ),
+        "challenge_sig": string_prop(
+          "可选：用**你的私钥**对 `challenge` 原文签出的 Ed25519 签名 hex（128 字符）。私钥永远在你自己手里，服务端只负责验",
+        ),
       },
       ["task_id", "assignee"],
     ),
@@ -2149,6 +2157,13 @@ pub async fn run_server() -> Unit {
       }
       // BUG-430 S3 收尾：挑战从 args 读并透传（空串 ⇒ None ⇒ 零回归）
       let ch = opt_challenge(args)
+      // BUG-466：把**认证结论**也进 action 面（与 reserve_scope / lock_acquire 同源，复用 `auth_tag`）。
+      //   `judged_role_with_nonce` 是 claim 内部真正决定角色的那次取数；
+      //   这里用**同一套入参**再取一次只为渲染标签（纯函数 + nonce 消费在 claim 内部完成）。
+      //   ⚠️ 为什么不从 claim 的返回值取：`claim` 返回 `@core.Task`，没有 role_source 字段；
+      //     而「认证状态」是调用方唯一能判断「我这次到底认证了没有」的东西，必须显式给出。
+      let auth = @engine.judged_role_with_nonce(eng, assignee, ch.0, challenge_sig=ch.1)
+      let tag = @engine.auth_tag(auth.1)
       match
         eng.claim(
           task_id~,
@@ -2159,13 +2174,32 @@ pub async fn run_server() -> Unit {
         ) {
         Err(e) => Err(@mcp_types.ToolError(e))
         Ok(t) => {
-          if inject == "" {
+          // 零回归：不传 challenge ⇒ tag 为空 ⇒ 返回体与修前**逐字相同**
+          if inject == "" && tag == "" {
             return Ok(@mcp.ToolResult::text(t.to_json().stringify()))
           }
-          let injected = lookup_injected_assets(inject)
+          let injected = if inject == "" {
+            Json::null()
+          } else {
+            lookup_injected_assets(inject)
+          }
           let m : Map[String, Json] = Map([])
-          m.set("task", t.to_json())
-          m.set("injected_assets", injected)
+          if inject == "" {
+            // 只为带 action 面的情况补字段：把 task 的字段平铺出来，保持与旧回执同形
+            let tj = t.to_json()
+            let objs = match tj {
+              Json::Object(o) => o
+              _ => Map([])
+            }
+            for k, v in objs {
+              m.set(k, v)
+            }
+          } else {
+            m.set("task", t.to_json())
+            m.set("injected_assets", injected)
+          }
+          m.set("action", Json::string(tag))
+          m.set("role_source", Json::string(auth.1))
           Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
         }
       }
@@ -7299,6 +7333,22 @@ pub async fn run_server() -> Unit {
           pubkey_hex~,
           ts,
         )
+        // ⚠️ **BUG-466 实测发现的真 bug**：`agent_touch_first_seen` 走的是
+        //   `agents_register`，其 `ON CONFLICT(agent_id) DO UPDATE SET` **不含 `pubkey_fp`**
+        //   （见 store_sqlite.mbt，BUG-465）⇒ **只要该 agent 的行已存在**（例如先被
+        //   `agent_acl_grant` / `claim` 的首拍注册建过行），这里的公钥**根本写不进去**。
+        //   症状极具欺骗性：验签通过、返回 `mode=registered`，但
+        //   `registered=false` / `persisted_pubkey_matches=false` —— 回执自相矛盾，
+        //   而调用方以为登记成功了。
+        //   ⇒ 用第八段新增的 `agents_set_pubkey` **显式写入**（它对已存在行也生效）。
+        match eng.store.sqlite_store() {
+          None => ()
+          Some(st) =>
+            match st.agents_set_pubkey(agent_id=fp, pubkey_fp=pubkey_hex) {
+              Err(e) => return Err(@mcp_types.ToolError("agent_register_key: 写公钥失败 —— " + e))
+              Ok(_) => ()
+            }
+        }
       }
       // 写后回读：回执不许由请求反推（BUG-145 同口径）
       let stored = match eng.store.sqlite_store() {
@@ -7438,6 +7488,86 @@ pub async fn run_server() -> Unit {
             "note": Json::string(
               "公钥已清空，写后回读确认为空。该 agent 现在传 challenge 一律 challenge_failed，" +
               "直到重新登记公钥（走首登流程，需新私钥签名）",
+            ),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+
+  s1 = instrumented_tool(
+    s1,
+    "agent_issue_challenge",
+    "**BUG-466 · S3 取票窗口**：为一个**已登记公钥**的 agent 签发 Ed25519 挑战 nonce（服务端单向递增计数器签发、一次性）。" +
+    "拿到后用自己的**私钥**对它签名，把 `challenge` + `challenge_sig` 传给 `claim` / `reserve_scope` / `lock_acquire`，" +
+    "这些工具的回执 `action` 就会出现 `+challenge_verified`（此时 `role_source` 才是真的认证过的身份）。" +
+    "⚠️ **只为已登记公钥的 agent 签发** —— 没有公钥的人签了也验不过，签发无意义，所以这里直接拒绝并告诉你先登记。" +
+    "⚠️ 本工具**不写业务库**，只签发并登记为「待消费」；每个 nonce **只能用一次**（重放会被判 `challenge_replayed`）。" +
+    "⚠️ 本服务**没有也不会有**「代签」能力 —— 私钥永远只在你自己手里。" +
+    "参数：agent_id、namespace(可选)。返回 {agent_id, namespace, challenge, issued_at, expires_hint, pubkey_registered}。",
+    schema(
+      {
+        "agent_id": string_prop("要签发挑战的 agent（必填；必须已用 agent_register_key 登记过公钥）"),
+        "namespace": string_prop("命名空间（可选，缺省 default）"),
+      },
+      ["agent_id"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let agent_id = get_str(args, "agent_id")
+      let ns = get_str(args, "namespace", default="default")
+      if agent_id == "" {
+        return Err(@mcp_types.ToolError("agent_issue_challenge: agent_id 不能为空"))
+      }
+      let eng = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      let store = match eng.store.sqlite_store() {
+        None =>
+          return Err(
+            @mcp_types.ToolError(
+              "agent_issue_challenge: 当前是内存后端，没有持久化 agents 表 ⇒ 不存在「已登记公钥」这个概念。" +
+              "本工具只在 SQLite 后端可用（与 agent_register_key 同口径）",
+            ),
+          )
+        Some(s) => s
+      }
+      // ★ 硬要求：**只给已登记公钥的 agent 签发**
+      //   理由：没有公钥 ⇒ 签出的挑战永远验不过（`judged_role_gated` 的 `(None, _) => false`）
+      //   ⇒ 签发无意义，还让调用方以为「我有挑战了应该能过」。宁可在入口就说清楚。
+      let fp = agent_fp(agent_id)
+      let pubkey = match store.agents_get(fp) {
+        None => ""
+        Some(a) => a.pubkey_fp
+      }
+      if pubkey == "" {
+        return Err(
+          @mcp_types.ToolError(
+            "agent_issue_challenge: **该 agent 尚未登记公钥**，签出的挑战永远验不过（签了也没用）。" +
+            "请先调 `agent_register_key`（两步：① 不带 challenge 拿挑战 ② 用私钥签 proof_sig 再调一次）。" +
+            "agent=" + agent_id + " ns=" + ns,
+          ),
+        )
+      }
+      // 复用 `s3_issue_challenge_auto`（与首登 / 轮换**同源**：服务端进程级单调递增计数器）
+      // ⇒ 调用方无法离线预计算 nonce 并提前签好（那会让「挑战」退化成固定字符串）。
+      let issued = eng.s3_issue_challenge_auto(agent_id)
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "agent_id": Json::string(agent_id),
+            "namespace": Json::string(ns),
+            "challenge": Json::string(issued),
+            "issued_at": Json::string(now_default()),
+            "expires_hint": Json::string(
+              "进程内一次性消费：用完即失效；重放会被判 challenge_replayed。无墙钟过期时间",
+            ),
+            "pubkey_registered": Json::boolean(true),
+            "pubkey_prefix": Json::string(substring_at(pubkey, 0, 16)),
+            "how_to_continue": Json::string(
+              "用你的**私钥**对该 challenge 原文做 Ed25519 签名 → hex 作为 challenge_sig，" +
+              "连同 challenge 原样传给 claim / reserve_scope / lock_acquire。" +
+              "⚠️ 私钥由你自持，不要发给服务端",
             ),
           }).stringify(),
         ),

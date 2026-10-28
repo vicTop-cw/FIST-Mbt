@@ -567,7 +567,26 @@ pub fn FistEngine::rsv_try_set(
               o.relabel(
                 "unregistered" +
                 (if role_source == "inferred" { "+role_inferred" } else { "" }) +
-                src_tag,
+                src_tag +
+                // **BUG-466：把两个维度分开报，消掉误读。**
+                //
+                // 实测误读（commander-alpha 在生产库上踩到）：`action` 形如
+                //   `unregistered+challenge_verified`
+                // 会被读成「这个 agent 没注册」。**其实不是**：
+                //   · `unregistered` 说的是 **scope 未登记**（advisory：正常抢，不参与授权裁决）
+                //   · `challenge_verified` 说的是 **这个 agent 验签通过**
+                // 两件事挤在一个前导词里，而前导词比后缀显眼 ⇒ 人先看到的是「没注册」。
+                //
+                // 为什么**追加**而不是改写：`unregistered` 这个前导词有**精确相等**的既有断言
+                // （`lock_perm_wbtest.mbt:104` 等），改写它会打红那些门。
+                // 所以保持前导逐字不变，**另加一段自解释的显式维度标签**。
+                (if role_source == "challenge_verified" {
+                  "+identity_verified"
+                } else if role_source == "challenge_failed" {
+                  "+identity_unverified"
+                } else {
+                  "+identity_self_reported"
+                }),
               )
             } else {
               o
