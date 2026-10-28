@@ -38,7 +38,7 @@ node _build/js/debug/build/cmd/cli/cli.js serve   # start the MCP server (STDIO)
 **One-command self-check (for reviewers):**
 
 ```bash
-python scripts/mcp_smoke.py    # → PASS tools/list → 130 tools … MCP-SMOKE PASS
+python scripts/mcp_smoke.py    # → PASS tools/list → 177 tools … MCP-SMOKE PASS
 python scripts/award_demo.py   # → MCP-AWARD-DEMO PASS (capability chain, ends with cleanup → CLEAN)
 ```
 
