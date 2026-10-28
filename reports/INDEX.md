@@ -1,0 +1,725 @@
+# `reports/` 索引（自动生成）
+
+> **用途**：711 份报告没有索引时，找一份特定报告只能靠 `ls | grep`。
+> 本索引按**月份**分组，每份一行 `<文件名> — <首行标题>`。
+> **生成方式**：一次性脚本读每份文件的第一行 `# ` 标题（**不是手写**）。
+> **维护**：新增报告后建议重跑生成逻辑（或手工在对应月份下追加一行）。
+
+**总计 711 份**，跨 **2** 个月份。
+
+## 2026-10（582 份）
+
+- `2026-10-28-slave-anchor-antidrift-report.md` — 副机入口锚点：从「修行号」到「改指法」（2026-10-28）
+- `2026-10-28-round3-parallel-lanes-report.md` — Round 3 报告：四条并发 lane 收口（BUG-458/459/460/461）
+- `2026-10-28-report-claim-and-ledger-repair.md` — 假绿报告校正 + 两条门禁红线收口（lead · 见缝插针单）
+- `2026-10-28-dist-refresh-report.md` — `dist/` 部署刷新报告（Lane BU）
+- `2026-10-28-deployment-guard-fix.md` — 部署新鲜度判据修正（Lane BU 第二段 · BUG-438）
+- `2026-10-28-bug464-publish-acl-report.md` — BUG-464 定夺：`publish` 家族「不查 ns ACL」是**设计**，不是缺陷 · Lane BX · 2026-10-28
+- `2026-10-28-bug463-462-store-report.md` — BUG-463 + BUG-462 修复报告（store 句柄 + 测试夹具去共享）
+- `2026-10-28-bug430-rotation-e2e-report.md` — BUG-430 第八段 · 密钥轮换 + 吊销 + 端到端证明
+- `2026-10-27-tool-coverage-judge-report.md` — 工具覆盖判据 + 两个纯计算工具补测
+- `2026-10-27-s3-independent-verification.md` — BUG-430 S3 独立验证（不信自述）
+- `2026-10-27-s3-feasibility-report.md` — BUG-430 S3 可行性核查 · Lane BC · 2026-10-27
+- `2026-10-27-rx-mbt-lightweight-assessment.md` — `rx-mbt-lightweight` 计划评估：4 个项目现在还需要做吗？
+- `2026-10-27-remaining-4-decision-brief.md` — FIST-Mbt 剩余 4 条缺陷 · 决策简报
+- `2026-10-27-r9-race-condition-audit.md` — R9 并发/竞态审计报告 · 方向 C
+- `2026-10-27-r7-authz-residuals-plan.md` — R7 授权残留三单方案 · BUG-421 / BUG-422 / BUG-427
+- `2026-10-27-r20-evolve-omega-deep-check.md` — R20 深挖 · `evolve_critic` 阈值 + `omega_*` 门禁（补 R19 第三波的两个「未查」）
+- `2026-10-27-r19-unimplemented-plans-and-s3.md` — R19 · 未实现计划检查 + BUG-430 S3 方案细化
+- `2026-10-27-r19-two-faces-broad-scan-3.md` — R19 第二波 · 剩余 7 面普查（形状搜索 + 面扫描）
+- `2026-10-27-r19-two-faces-broad-scan-2.md` — R19 · 未覆盖区域「两面」普查（第六波）
+- `2026-10-27-r18-two-faces-broad-scan.md` — R18 · 未覆盖区域「两面」普查 + 未实现计划检查
+- `2026-10-27-r17-engine-store-audit.md` — R17 · engine/store「第二个实现」普查
+- `2026-10-27-r16-f3-unconditional-report.md` — R16 · `check_two_faces.py` F3 升级 · Lane AO · 2026-10-27
+- `2026-10-27-r12-two-faces-classification.md` — R12 · `check_two_faces.py` 精度修正 + rc 契约 + 执行面
+- `2026-10-27-r11-assistant-ns-audit.md` — R11 助理并发 + 跨 ns 数据流审计
+- `2026-10-27-r10-backend-equivalence-audit.md` — R10 后端裁决等价性审计 · 内存 vs SQLite
+- `2026-10-27-fist-dir-layout-cleanup-report.md` — `fist-dir-layout-governance` 清理落地报告（1/6 → 6/6）
+- `2026-10-27-bug455-coverage-report.md` — BUG-455 补测报告：30 个零覆盖工具（8.4 万行代码里的 22% 盲区）
+- `2026-10-27-bug454-ns-family-fix.md` — BUG-454：`tx_contract` / `task_challenge` / `task_cleanup` 缺 `namespace` · Lane BQ · 2026-10-27
+- `2026-10-27-bug453-challenge-state-report.md` — BUG-453 修复报告：S3 认证态进入 `action` 面
+- `2026-10-27-bug452-conflicts-check-ns-fix.md` — BUG-452：`conflicts_check` 缺 `namespace` —— 非 default ns 冲突检测恒失败 · Lane BO · 2026-10-27
+- `2026-10-27-bug451-rank-gate-leaf-fix.md` — BUG-451 修复 · `claim` 的 RANK_GATE 必须认叶子
+- `2026-10-27-bug441-saga-memory-plan.md` — BUG-441 Saga 内存后端落地 · Lane AZ · 2026-10-27
+- `2026-10-27-bug440-plan-guard-report.md` — BUG-440 修复报告 · `check_plan_location.py` 守卫落地
+- `2026-10-27-bug439-circuit-memory-plan.md` — BUG-439 熔断器内存后端落地 · Lane AV · 2026-10-27
+- `2026-10-27-bug438-locks-upsert-plan.md` — BUG-438 `locks_upsert` 双后端语义对齐 · Lane AS · 2026-10-27
+- `2026-10-27-bug435-delegation-report.md` — BUG-435 消除手工镜像：`constraint.mbt` 委托 `rsv_action` · Lane AP · 2026-10-27
+- `2026-10-27-bug433-ns-fallback-plan.md` — BUG-433 · `engine_for_ns` 非法 ns 静默回落主库 · Lane AM · 2026-10-27
+- `2026-10-27-bug432-rank-gate-plan.md` — BUG-432 + R1 · `estimate_rank` 名字前缀判军衔：误伤一格 vs 提权一格
+- `2026-10-27-bug430-s3-wiring-report.md` — BUG-430 / S3 **收尾**：四门工具实现读 challenge 并透传 · Lane BJ · 2026-10-27
+- `2026-10-27-bug430-s3-phase3-report.md` — BUG-430 / S3 **第三段**：删 probe + 签名由调用方提交 · Lane BH · 2026-10-27
+- `2026-10-27-bug430-s3-phase2-report.md` — BUG-430 / S3 **第二段**：四条门接入 + nonce 防重放 · Lane BG · 2026-10-27
+- `2026-10-27-bug430-s3-phase1-report.md` — BUG-430 / S3 **第一段**：挑战-签名-验签骨架 · Lane BE · 2026-10-27
+- `2026-10-27-bug430-s3-key-management-report.md` — BUG-430 / S3 **第四段**：密钥管理 —— 公钥录入 + 端到端可用 · Lane BK · 2026-10-27
+- `2026-10-27-bug430-s1-landing-report.md` — BUG-430 · S1 公告边界落地 · Lane AT · 2026-10-27
+- `2026-10-27-bug430-landing-plan.md` — BUG-430 的 S1/S2/S3 落地计划
+- `2026-10-27-bug430-key-replacement-fix.md` — BUG-430 / S3 第五段：堵住密钥替换 / 抢注攻击 · Lane BL · 2026-10-27
+- `2026-10-27-bug430-first-reg-proof-report.md` — BUG-430 / S3 第六段：首登也验签 —— 堵抢注 · Lane BS · 2026-10-27
+- `2026-10-27-bug428-dist-guard-fix-plan.md` — BUG-428 诊断与修法方案 · 部署产物陈旧但版本守卫 PASS
+- `2026-10-27-bug425-test-sync-samesource-plan.md` — BUG-425 · `check_test_sync` 读数面与原文面同源 · 精确 patch · Lane AC · 2026-10-27
+- `2026-10-27-bug425-landing-report.md` — BUG-425 落地报告 · `check_test_sync` 读数面与原文面同源 · Lane AG · 2026-10-27
+- `2026-10-27-bug424-lock-perm-fix-plan.md` — BUG-424 · `lock_acquire`/`lock_renew` 权限门 · 精确 patch · Lane AA · 2026-10-27
+- `2026-10-27-bug422b-identity-assertion-plan.md` — BUG-422(b) 身份断言方案 · 让 `reserve_scope` 的身份不可自报
+- `2026-10-27-bug421-decision-brief.md` — BUG-421 决策简报 · 整名 `leader`/`lead` 是否关掉
+- `2026-10-27-bug421-422-authz-residuals-fix-report.md` — BUG-421 + BUG-422 authz 残留收口 · 报告
+- `2026-10-27-backend-equiv-locks-landing.md` — 双后端等价性锁落地（BUG-431 / Lane AJ）· 2026-10-27
+- `2026-10-26-test-count-sync-round2-report.md` — Lane R · 1460 → 1463 同步 + `--fix-dry-run`（含事故记录）
+- `2026-10-26-test-count-doc-sync-report.md` — Lane K · 文档漂移修复报告（测试总数 1457 → 1460）
+- `2026-10-26-r6-test-sync-report.md` — R6 · `check_test_sync` 同步任务 · 停手记录 + 机制缺口入账 · 2026-10-26
+- `2026-10-26-r6-bugfind-round2-report.md` — R6 寻虫 Round 2 报告 · BUG-330 核销判定 + 换方向寻虫（方向 A/B）
+- `2026-10-26-r3-test-baseline-report.md` — Round 3 全量测试基线 + `check_test_sync` 复核报告
+- `2026-10-26-plan-landing-triage-report.md` — Lane E · 未实现计划落地盘点报告
+- `2026-10-26-plan-landing-p0-execution-report.md` — Lane H · plan-landing P0 执行报告
+- `2026-10-26-plan-landing-judge-improvement-report.md` — Lane L：`check_plan_landing.py` 两条设计性排除落地报告
+- `2026-10-26-plan-landing-b-class-verdict.md` — B 类 21 条「落地 vs 作废」裁决材料
+- `2026-10-26-lane-i-archive-execution.md` — Lane I · 7 条 blocked 任务归档执行报告 · 2026-10-26
+- `2026-10-26-gitcode-residual-capacity-report.md` — gitcode 剩余容量审计报告
+- `2026-10-26-full-test-baseline-report.md` — Lane F · 全量测试基线报告（2026-10-26）
+- `2026-10-26-bugreport-trailing-newline-lock-report.md` — report_bug 尾随空行归一 · 白盒锁补测报告
+- `2026-10-26-bugfind-scan-report.md` — Lane C · bugfind 扫描报告
+- `2026-10-26-bug420-ns-routing-diagnosis.md` — BUG-420 诊断报告 · `ns` 字段只是标签不是落库位置
+- `2026-10-26-bug419-find-matching-rule-fix-plan.md` — BUG-419 修复方案 · `find_matching_rule` 注释/实现不一致（静默遮蔽）
+- `2026-10-26-bug418-role-inference-narrowing-report.md` — BUG-418 角色推断收窄 · 收回与验证报告
+- `2026-10-26-bug418-role-inference-fix-plan.md` — BUG-418 诊断与修复方案 · `infer_role_from_agent` 名字宽松推断 = 可主动利用的越权面
+- `2026-10-26-bug417-patch-ready-plan.md` — BUG-417 · patch 可应用性核验 + 两个可粘贴 patch · Lane T · 2026-10-26
+- `2026-10-26-bug417-omega-orphan-fix-report.md` — BUG-417 诊断报告 · Omega 门禁对「父已归档」任务判据错位
+- `2026-10-26-bug416-envroot-fix-report.md` — BUG-416 修复报告：`moon_test_env.py` 的 ROOT 忽略 cwd
+- `2026-10-26-bug413-reserve-scope-third-state-report.md` — BUG-413 · `reserve_scope` 第三态 `unregistered` · Lane Q 交付 · 2026-10-26
+- `2026-10-26-bug411-acl-diagnosis.md` — BUG-411 ACL 诊断报告
+- `2026-10-26-bug388-and-guard-polish-report.md` — Lane D · BUG-388 复核 + 判据面打磨 · 2026-10-26
+- `2026-10-26-blocked-triage-report.md` — 阻塞任务审计报告（Lane B）· 2026-10-26
+- `2026-10-25-worktree-zeroing.md` — worktree 归零 · 执行与证据记录 · 2026-10-25
+- `2026-10-25-worktree-zero-checklist.md` — Worktree 归零 checklist（Stage 3 前置）
+- `2026-10-25-stage3-reflog-expire-checklist.md` — Stage 3 · 方案 B（`reflog expire` + `gc --prune=now`）执行前 Checklist
+- `2026-10-25-stage3-prerequisites-checklist.md` — Stage 3（历史压缩）前置检查清单
+- `2026-10-25-stage3-preparation-execution.md` — Stage 3 前置准备执行报告
+- `2026-10-25-stage3-git-history-audit.md` — Stage 3 · `.git` 历史对象审计 —— `memory/2026-10-22.md` 的 2.22 GB
+- `2026-10-25-stage3-d359c69b-investigation.md` — `d359c69b` 调查报告
+- `2026-10-25-sibling-directory-cleanup.md` — 兄弟目录 34 个 —— 逐个核查与分类 · 2026-10-25
+- `2026-10-25-sibling-cleanup-execution.md` — 兄弟目录清理 · 执行记录 · 2026-10-25
+- `2026-10-25-selftest-mutation-coverage-audit.md` — 全仓 selftest 变异格普查（判例-29/30/50 覆盖度审计）
+- `2026-10-25-scout-zeta-list-tools-gap.md` — 侦察报告：CLI `list-tools` 152 vs 真源 170 的 18 个缺口
+- `2026-10-25-scout-epsilon-fresh-escape.md` — 侦察报告：`--fresh` 逃生口覆盖验证（判例-33 落地核查）
+- `2026-10-25-scout-beta-judge-false-green.md` — 判据自证面假绿抽查（侦察兵 · 司令-β）· 2026-10-25
+- `2026-10-25-scout-audit-single-value-hardcode.md` — 侦察报告：判据「单值写死型」覆盖面普查
+- `2026-10-25-rxmbt-token-exposure.md` — rx-mbt 仓库 origin URL 内嵌明文 OAuth token —— 侦察与处置方案
+- `2026-10-25-render-release-priority-regression.md` — `fix/render-release-priority-master` 基线倒退核查报告
+- `2026-10-25-precedent-62-methodology-failures.md` — 判例-62 方法学实证：三次假结论的完整记录
+- `2026-10-25-pr-batch-merge-and-bug407-408-report.md` — 2026-10-25 PR 批量合并收口 + BUG-407/408 修复 · 汇报
+- `2026-10-25-pol-keeper-readings-digest.md` — pol_keeper 巡检快照读数蒸馏（phase-2 清理前的史料提取）
+- `2026-10-25-planB-git-compaction-runbook.md` — 方案 B 执行手册：`.git` 2.0G → ~100M 压缩归档
+- `2026-10-25-phase2-directory-cleanup.md` — 阶段 2 目录清理（temp 284M → 11M）+ `_proj_*` 符号链接解析
+- `2026-10-25-overnight-governance-digest.md` — 一夜治理总报告（Overnight Governance Digest）· 2026-10-25
+- `2026-10-25-git-backup-procedure.md` — `.git` 整目录备份操作单（Stage 3 方案 B 前置）
+- `2026-10-25-fix-zeta-list-tools-gap.md` — 修复报告：CLI `list-tools` 152 → 170（委托单一真源）
+- `2026-10-25-fix-plugin-sync-j2j6-mutations.md` — `check_plugin_sync.py` J2~J6 变异格补齐（判例-29/30/50）
+- `2026-10-25-fix-coverage-face-d1d6.md` — 修复报告：把 D1–D6「单值写死型」并入 `check_coverage_face.py`
+- `2026-10-25-fix-beta-plugin-sync-j1.md` — 修 `check_plugin_sync` 的 J1 假绿 + 补 J 面覆盖对表 · 2026-10-25
+- `2026-10-25-dirty-files-classification.md` — 工作树 M 文件分类核实测（只读）
+- `2026-10-25-consolidated-r65-suggest-anchors-salvage.md` — `--suggest-anchors` 只读建议器 · 未交付增量的蒸馏保全
+- `2026-10-25-c-branch-cleanup-execution.md` — C 档分支清理执行报告 · 2026-10-25
+- `2026-10-24-whisperer-merge-marathon-report.md` — Whisperer 合并马拉松 · 会话总结报告（2026-10-23 ~ 10-24）
+- `2026-10-24-warning-cleanup-merge-ready-report.md` — 清 warning 批次 · 合并就绪说明（2026-10-24）
+- `2026-10-24-verify-guards-completeness.md` — `scripts/` 判据面完备性验证报告（B·verify · task-18）
+- `2026-10-24-verify-doc-consistency.md` — 文档一致性与手抄数字普查（C 路 · verify 模式）
+- `2026-10-24-tidy-residual-cleanup.md` — F·tidy 残留清理报告（task-21）
+- `2026-10-24-test-count-1451-report.md` — 交付报告 · test-count-1451 文档同步（发现为冗余，已在 main）
+- `2026-10-24-structure-gap-analysis.md` — 结构矫正清单（Structure Gap Analysis）
+- `2026-10-24-slim-gitcode-capacity-report.md` — 瘦身报告 · gitcode 容量收拢（task-4）
+- `2026-10-24-polish-plugins-cl7.md` — D·polish：`plugins/` 四宿主 cl7 插件态对齐
+- `2026-10-24-omega-required-column-report.md` — 汇报：BUG-389 方向② omega_required 元数据列（PR#29）
+- `2026-10-24-merge-precedents.md` — 判例集：本批多司令合并作业沉淀的判据（2026-10-24）
+- `2026-10-24-lead-pr-merge-manual.md` — 合并手册：lead 的 11 个 PR 批量合入（2026-10-24）
+- `2026-10-24-fix-judge-coverage-gap.md` — 判据覆盖面修复报告（判例-16 / 判例-17 落地）
+- `2026-10-24-fist-mbt-local-dsh-restore-report.md` — 报告 · 本地 fist-mbt 命令与 DSH 插件恢复最新可用（BUG-405）
+- `2026-10-24-external-issue-esm-cjs-bundle-crash.md` — fist-mbt 问题报告：CLI/`serve` 因 ESM/CJS 混用**整体崩溃**（`require is not defined in ES module scope`）
+- `2026-10-24-bugfind-src-omega-merge.md` — bugfind：`src/` 核心引擎的合并后副作用排查（task-17 · A 路）
+- `2026-10-24-branch-cleanup-execution.md` — 分支清理执行报告（阶段 1）
+- `2026-10-24-asset-preservation-proof.md` — 资产保全证明书（Asset Preservation Proof）· **v4 终版**
+- `2026-10-23-write-gate-T0r3-report.md` — T0r3 功能C·核心写入门禁 — 终审报告
+- `2026-10-23-w-tier-hermetic-fix-r179-report.md` — R179 · W 档 hermetic 收口：`check_publish_payload.py` 与 `cleanup_artifacts.py` 改打合成夹具
+- `2026-10-23-unit-number-unique-r134-report.md` — R134 · 立 `check_unit_number_unique.py` 轮次号唯一性守卫（副机自立项）
+- `2026-10-23-toolchain-floor-guard-r141-report.md` — 2026-10-23 · R141 工具链地板单一真源 + `check_doc_surface` J17 · 交付报告
+- `2026-10-23-slave-readme-env-bold-r180-report.md` — R180 · README 环境要求前移 + 工具链地板钉 0.1.20261016 + 测试计数 1382→1387
+- `2026-10-23-selftest-hermetic-guard-r153-report.md` — R153 · 自检 hermetic 守卫（`check_selftest_hermetic.py`）· 报告
+- `2026-10-23-scripts-readme-dedupe-r136-report.md` — R136 · scripts/README.md 结构去重 + check_doc_dup 硬化接线
+- `2026-10-23-memory-log-dedupe-r181-report.md` — R181 报告：每日日志整块重复常驻判据 + 无损去重（memory/2026-10-22.md 91MB → 250KB）
+- `2026-10-23-find-main-cwd-r159-report.md` — R159 · `find_main()` 的 CWD 依赖缺陷修复（派单给 atomcode · 指挥官终审）· 2026-10-23
+- `2026-10-23-eval-feedback-list-markers-r135-report.md` — R135 报告：`eval_feedback` 列表标记假绿（`*` / `+` / 有序列表写下的缺陷被静默吞成 pass）
+- `2026-10-23-entry-cwd-anchor-r170-report.md` — R170 · 把「产物路径按调用方 CWD 寻址」做成常驻判据（R3）· 2026-10-23
+- `2026-10-23-doctor-rc-and-db-isolation-r172-report.md` — R172 · `fist doctor` 的三层遮罩收口：退出码 / 体检库改道 / 检查 4 闭环（BUG-391、BUG-392、BUG-393 FIXED + BUG-394 立案）
+- `2026-10-23-backlog-anchor-no-copy-count-r175-report.md` — R175 · BACKLOG 锚点行去掉三个陈旧计数，改成只指真源（不再抄数）· 2026-10-23
+- `2026-10-22-version-align-report.md` — 2026-10-22 · v0.3.10 升版对齐报告（fix/version-align-r2）
+- `2026-10-22-version-align-r3-report.md` — 2026-10-22 · v0.3.10 升版对齐 r3 报告（fix/version-align-r3）
+- `2026-10-22-text-control-char-r121-report.md` — R121 · 文本面控制字符零容忍门 + 全仓 30 处「被吃字母」修回
+- `2026-10-22-task001-yaml-duplicate-block-r109-report.md` — R109 · TASK-001 台账面去重（P0 · 副机接主机任务池 · 2026-10-22）
+- `2026-10-22-supervisor-ns-routing-r114-report.md` — R114 · 超级管家家族的多租户寻址收口（status / task_tree / kill_plan / task_upsert / reminder_tick）
+- `2026-10-22-supervisor-bool-flags-schema-r110-report.md` — R110 · 超级管家四枚开关参数收口成真 boolean —— 报告
+- `2026-10-22-staleness-expectation-cashout-report.md` — 交付报告 · 兑现 backlog 状态落差的预存红期望
+- `2026-10-22-slave-task009-whisperer-write-side-r90-report.md` — 2026-10-22 · 副机 R90 · TASK-009 写侧收口 report
+- `2026-10-22-slave-task-list-selfproof-ruler-r126-report.md` — 交付报告 · 副机认领入口自证尺（R126）
+- `2026-10-22-slave-task-list-reconcile-r122-report.md` — 交付报告 · 副机任务清单逐行对账（R122）
+- `2026-10-22-slave-r99-patch-caf-idempotent-report.md` — R99 修尺：补丁脚本的幂等门查错行 ⇒ 绿格子写脏 src/router · 2026-10-22
+- `2026-10-22-slave-r98-task007-battery-resident-report.md` — R98 副机自踩坑收口：守卫电池被常驻脚本挂死（TASK-007 面追修）· 2026-10-22
+- `2026-10-22-slave-r97-task002-cherry-pick-blacklist-report.md` — 汇报 · 2026-10-22 · 副机 R97 —— TASK-002 cherry-pick 黑名单（`slave-branch-merge.ps1`）
+- `2026-10-22-slave-r96-scripts-index-closeout-report.md` — 2026-10-22 副机 R96 汇报 —— scripts/README 登记收口（main 的索引门转绿）
+- `2026-10-22-slave-r95-scripts-naming-report.md` — 2026-10-22 副机 R95 汇报 · TASK-008 第一批（scripts/ 命名规范 + 词法棘轮，零改名）
+- `2026-10-22-slave-r94-whisperer-apply-surface-report.md` — 2026-10-22 · 副机 R94 追记三 · `whisperer_patrol.py --apply` 快进面收口
+- `2026-10-22-slave-r94-peer-branch-merge-order-report.md` — 2026-10-22 · 副机 R94 合序裁决材料 · 四支同伴 slave 分支 × r94 集成分支
+- `2026-10-22-slave-r94-main-cef1e9c-integration-report.md` — 2026-10-22 · 副机 R94 报告 · 落到最新主线 cef1e9c 并接线主机新入仓的两把尺
+- `2026-10-22-slave-r105-inventory-face-generalize-self-lock-report.md` — 2026-10-22 · 副机 R105 · 格数自述守卫泛化 + 自锁 + 抄本逐份并入 · 报告
+- `2026-10-22-slave-r104-selftest-inventory-doc-sync-report.md` — R104 报告 · 立 `check_selftest_inventory_doc.py`：把「文档抄的格数」钉到「实现跑的格数」
+- `2026-10-22-slave-r103-ci-moon-bootstrap-census-report.md` — 副机 R103 汇报 · R9 被检面改目录派生（`.github/workflows/` 普查）+ README 离线线版本字面量同步
+- `2026-10-22-slave-r102-backlog-status-staleness-report.md` — 副机 R102 汇报 · 新尺 check_backlog_status_staleness.py（任务池 status ↔ 主线盖章对表）
+- `2026-10-22-slave-r101-battery-isolation-report.md` — 2026-10-22 · 副机 R101 · git 面隔离守卫 `check_battery_isolation.py`（副机自立项）
+- `2026-10-22-slave-r100-merge-selftest-report.md` — R100 副机自驱：`slave-branch-merge.ps1` 补黑名单自证面（TASK-002 追修）· 2026-10-22
+- `2026-10-22-six-hats-live-debate-router-default-pool-report.md` — 2026-10-22 · 六顶帽真跑一次（模型路由默认池议题）+ 本机 P0-c 技能补装
+- `2026-10-22-server-ts-shape-r131-report.md` — R131 · server `_iso_to_unix_ms` 形状与日历日校验 报告
+- `2026-10-22-run-guards-universe-nameerror-r106-report.md` — 2026-10-22 · 副机 R106 · run_guards 合并毁伤收口（NameError → 电池全绿）report
+- `2026-10-22-router-iso-calendar-r130-report.md` — R130 · router `iso_to_secs` 日历日校验 + 往返锁 报告
+- `2026-10-22-readme-staleness-onsite-reading-r118-report.md` — R118 · `check_backlog_status_staleness` 的 README 盘上读数结清 — 报告
+- `2026-10-22-pr-automator-safe-defaults-r113-report.md` — R113 · TASK-021：fist-pr-automator.py 安全默认（merge 默认关 + --dry-run）
+- `2026-10-22-plan-deep-annotation-compound-r113-report.md` — R113 · plan_deep 标注逐层叠乘 + 校准静默失效 修复报告
+- `2026-10-22-output-validate-ext-invariant-r132-report.md` — R132 · `output_validate` 外部产物 invariant 假绿两入口 报告
+- `2026-10-22-native-uaf-rootcause-report.md` — native 崩溃根因定位报告：daqing/sqlite stub 的 use-after-free（BUG-133 族）
+- `2026-10-22-moon-test-env-moonc-shim-r124-report.md` — R124 报告：moon test 执行面第二道坑（moonc `\\?\` ICE）收口 + BUG-380 结案
+- `2026-10-22-moon-spawn-shim-r125-report.md` — R125 报告：常驻入口 spawn moon 统一带 shim（moonc `\\?\` ICE 收口到调用面）
+- `2026-10-22-merge-backlog-clear-report.md` — 合并积压清账 · 收口报告（2026-10-22）
+- `2026-10-22-memory-log-dup-r133-report.md` — 交付报告 · 当日日志整块重复守卫 + 无损去重（R133）
+- `2026-10-22-mcp-server-moon-env-r126-report.md` — R126 · MCP `run_check` 服务端 spawn 面注入 moonc shim
+- `2026-10-22-ledger-reconcile-bug381-383-report.md` — 账本状态归位：BUG-381/382/383（已修却仍 OPEN）
+- `2026-10-22-issue-scan-prefix-guard-r127-report.md` — R127 · issue_scan 形态 F 自守卫 + 近邻窗口单源（12 行）
+- `2026-10-22-iso-secs-field-bounds-r128-report.md` — R128 · iso_to_secs 字段范围校验：堵掉 Int32 真实溢出（issue_scan secs-overflow 归零）
+- `2026-10-22-guards-inline-verdict-r121-report.md` — R121 · 守卫电池的逐格行不再把红格印成 OK —— 报告
+- `2026-10-22-drop-orphan-gitlink-report.md` — 交付报告 · 删除误入库的 worktree gitlink，Merge-marker 门归绿
+- `2026-10-22-dist-snapshot-expectation-cashout-r108-report.md` — R108 · 兑现 `check_dist_snapshot` 的预存红期望（副机自立项 · 2026-10-22）
+- `2026-10-22-bug-refs-single-remit-r115-report.md` — R115 交付报告：check_bug_refs 分面 --strict（TASK-020 裁决）
+- `2026-10-22-battery-count-doc-r112-report.md` — R112 · 电池读数 ↔ README 登记对表门（TASK-017）
+- `2026-10-22-backlog-yaml-integrity-gate-r110-report.md` — R110 报告 · backlog 台账键唯一性门（TASK-001 的常驻化）
+- `2026-10-22-backlog-status-reconcile-r111-report.md` — R111 任务池状态对账报告 — 9 条落差清零，STALE_CEILING 4→0
+- `2026-10-22-backlog-stale-branch-r123-report.md` — R123 交付报告：任务池状态尺补 R4 分支并线面 + TASK-013/014/015 台账对账
+- `2026-10-22-backlog-reconcile-r119-report.md` — 交付报告 · 任务池状态对账（R119）
+- `2026-10-22-backlog-control-char-r120-report.md` — 交付报告 · backlog 控制字符清理 + 完整性尺 R4（R120）
+- `2026-10-22-audit-branch-delete-face-r118-report.md` — 交付报告 · 分支删除硬门补执行面（R118）
+- `2026-10-21-slave-unused-value-params-report.md` — 2026-10-21 R29 汇报：`slave/fix/unused-value-params` —— 0002 参数位子族的形态分界（17 条里 6 条可机械清，10 条是契约决策）
+- `2026-10-21-slave-unused-value-locals-report.md` — 2026-10-21 R24 汇报：`slave/fix/unused-value-locals` —— 0002 非参数绑定子族清零（20 条）
+- `2026-10-21-slave-unused-import-0029-report.md` — 副机报告 · 0029 unused_package 清零（T0r35 / BUG-378）
+- `2026-10-21-slave-unused-function-0001-report.md` — 副机报告 · 0001 unused function 死代码清零（T0r37 / BUG-380）
+- `2026-10-21-slave-unused-field-0007-report.md` — 副机报告 · 0007 unused_field 清零（T0r36 / BUG-379）
+- `2026-10-21-slave-trial-r71-r77-integration-report.md` — R78 试金石报告 — slave/trial/r71-r77-integration（七分支叠栈合序实测）
+- `2026-10-21-slave-test-unqualified-package-report.md` — 副机报告 · 0025 黑盒测试包限定清零（T0r33 / BUG-376）
+- `2026-10-21-slave-task009-whisperer-r86-report.md` — 2026-10-21 · TASK-009 风语者巡检器 whisperer.py 报告（R86）
+- `2026-10-21-slave-task007-run-guards-universe-r82-report.md` — R82 报告 — TASK-007 run_guards 宇宙扩展：26 把尺 → 全树自动扫描 + 登记面
+- `2026-10-21-slave-task006-docs-structure-r85-report.md` — 2026-10-21 副机 R85 报告 — TASK-006：docs 结构规范 DOCS-STRUCTURE.md
+- `2026-10-21-slave-task005-gate-scan-r83-report.md` — R83 报告 — TASK-005 fist-gate.py `--scan` 分支普查（合入者巡检自动进料）
+- `2026-10-21-slave-task004-revert-diff-detector-r87-report.md` — 2026-10-21 · TASK-004 反向 diff 检测 REVERT-PATTERN 报告（R87）
+- `2026-10-21-slave-task003-ci-step-position-r84-report.md` — 2026-10-21 副机 R84 报告 — TASK-003：CI 步骤位置门 check_ci_step_position.py
+- `2026-10-21-slave-task001-marker-gate-r81-report.md` — R81 报告 · slave/ci/task001-marker-gate-r81 — TASK-001 冲突标记硬前置门禁
+- `2026-10-21-slave-task001-conflict-marker-gate-r88-report.md` — 2026-10-21 · TASK-001 冲突标记硬前置门禁报告（R88）
+- `2026-10-21-slave-syntax-micro-families-report.md` — 副机报告 · 0021/0002 语法小族清零（T0r34 / BUG-377）
+- `2026-10-21-slave-site-list-report.md` — 2026-10-21 · 副机 R38 单元报告：不可入表族的「站点清单 + 结构归属」读数器
+- `2026-10-21-slave-simulate-head-fatal-rc-report.md` — 2026-10-21 R45 汇报：`slave/guard/simulate-head-fatal-rc` —— 修掉 BUG-369 的最后一把尺，棘轮 1→0（T0r26）
+- `2026-10-21-slave-rhop-poll-once-fix-report.md` — 副机报告 · 同步基点编译红修复（T0r31 / BUG-374）
+- `2026-10-21-slave-result-error-return-report.md` — 2026-10-21 R28 汇报：`slave/fix/result-error-return` —— 0078 result_error_return 伪 Result 通道清到契约边界（13→3）
+- `2026-10-21-slave-reserved-keyword-priv-report.md` — 2026-10-21 R25 汇报：`slave/fix/reserved-keyword-and-priv` —— 0035/0004/0067 三族清零（25 条）
+- `2026-10-21-slave-plan-landing-moved-face-report.md` — 2026-10-21 R41 汇报：`slave/guard/plan-landing-moved-face` —— 搬家态 + 判定面棘轮，顺手抓到「自述 rc=2 是幻影」（BUG-367 D 类 / T0r22）
+- `2026-10-21-slave-pkg-imports-fatal-rc-report.md` — 2026-10-21 R44 汇报：`slave/guard/pkg-imports-fatal-rc` —— 修掉 BUG-369 的第三把尺，棘轮 8→1（T0r25）
+- `2026-10-21-slave-ops-compile-restore-r79-report.md` — R79 报告 — slave/fix/ops-compile-restore-r79（新 master src/ops 编译修复）
+- `2026-10-21-slave-merge-marker-gate-r74-report.md` — R74 报告 · 冲突标记硬门禁接线 CI（slave/ci/merge-marker-gate-r74）
+- `2026-10-21-slave-mbti-sync-fatal-rc-report.md` — 2026-10-21 R43 汇报：`slave/guard/mbti-sync-fatal-rc` —— 修掉 BUG-369 的第二把尺，棘轮 16→8（T0r24）
+- `2026-10-21-slave-ledger-id-uniqueness-report.md` — R47 · 账本编号唯一门（门④）+ 串号条目重编号 —— 汇报
+- `2026-10-21-slave-json-bool-str-report.md` — 2026-10-21 · R31 · slave/fix/json-bool-string-accessors（PR #18）
+- `2026-10-21-slave-issue-scan-severity-buckets-report.md` — 副机任务报告 · T0r39 / BUG-345 —— issue_scan by_severity 四桶（info 独立成桶）
+- `2026-10-21-slave-issue-scan-qualified-needle-report.md` — 副机报告 · issue_scan 外部规则命名空间被丢弃（T0r38 / BUG-347）
+- `2026-10-21-slave-issue-scan-min-severity-r71-report.md` — R71 `slave/fix/issue-scan-min-severity-r71` — issue_scan 严重度下限（min_severity）+ 同步基点编译红修复
+- `2026-10-21-slave-implicit-impl-report.md` — 2026-10-21 R26 汇报：`slave/fix/implicit-impl-as-method` —— 0079 implicit_impl_as_method 全族清零（63 条）+ 耦合 0071 + 守卫 derive 盲区
+- `2026-10-21-slave-idiom-same-primitive-report.md` — 2026-10-21 · R33 · slave/fix/idiom-same-primitive-renames（PR #20）
+- `2026-10-21-slave-guard-execution-face-report.md` — 2026-10-21 · R40 守卫执行面普查 + 仓内电池真源化 · 副机汇报
+- `2026-10-21-slave-exit-code-contract-report.md` — 2026-10-21 R42 汇报：`slave/guard/exit-code-contract` —— 给「自述退出码」装上一道机器门（BUG-369 建议② / T0r23）
+- `2026-10-21-slave-ecc-selftest-r72-report.md` — R72 `slave/fix/ecc-selftest-r72` — 修复同步基点 scripts 面坏合并：ecc 自检 rc=2 归零
+- `2026-10-21-slave-docs-surface-report.md` — 2026-10-21 · R32 · slave/fix/docs-surface-current-state-sync（PR #19）
+- `2026-10-21-slave-doc-surface-blindspot-report.md` — 2026-10-21 · 副机 R39 单元报告：文档面「写了就没人钉」的三格盲区（J14 认领地图面 + J3 钉组数）
+- `2026-10-21-slave-derive-show-report.md` — 2026-10-21 R27 汇报：`slave/fix/deprecated-derive-show` —— 0027 derive(Show) 弃用面清到承重边界（5→1）
+- `2026-10-21-slave-deprecated-text-census-report.md` — 2026-10-21 · 副机 R35 报告 · 弃用调用「判据面 vs 文本面」普查棘轮挂上权威 CI
+- `2026-10-21-slave-deprecated-substring-report.md` — 2026-10-21 R30 汇报：`slave/fix/deprecated-substring` —— 0020 `str[:]` 子族 42 处清零（565→523）
+- `2026-10-21-slave-deprecated-renames-report.md` — 2026-10-21 R23 汇报：`slave/fix/deprecated-api-renames` —— 0020 机械改名子族清零（176 条）
+- `2026-10-21-slave-deprecated-family-census-report.md` — 2026-10-21 · 副机 R36 报告 · 0020 其余子族的文本代理量程实测（BUG-362 建议③ / T0r17 / PR #23）
+- `2026-10-21-slave-core-debug-imports-report.md` — 副机报告 · 0071 核心包隐式 import 清零（T0r32 / BUG-375）
+- `2026-10-21-slave-census-distribution-report.md` — 2026-10-21 · 拆族探针固化成守卫的进料口模式（R37 / T0r18）
+- `2026-10-21-slave-bug373-title-refs-r77-report.md` — R77 报告 — BUG-373 出路② 批2：测试标题面错号收口（192→194 / 189→172）
+- `2026-10-21-slave-bug373-ref-integrity-r80-report.md` — R80 报告 · slave/docs/bug373-ref-integrity-r80 — J1 悬空收口搬运到新 master 基点
+- `2026-10-21-slave-bug373-ref-integrity-r76-report.md` — R76 报告 — BUG-373 出路② 收口：注释面悬空引用归零 + 主机账本补账 + 棘轮降档
+- `2026-10-21-slave-bug370-nextseq-lock-r75-report.md` — R75 报告 · BUG-370 出路③ 收尾：bug_next_seq 白盒锁（slave/test/bug370-nextseq-lock-r75）
+- `2026-10-21-slave-bug369-fixed-ledger-report.md` — 2026-10-21 R46 汇报：`slave/docs/bug369-fixed-ledger` —— BUG-369 结案，抬头转 FIXED 与插件账本面同批（T0r28）
+- `2026-10-21-slave-battery-expectations-r73-report.md` — R73 报告 · 电池滞后期望清账（slave/fix/battery-expectations-r73）
+- `2026-10-21-r36-bugbear-scan-and-guard-verify.md` — R36 · ruff B(bugbear) 二次扫查 + 守卫 F541 验证 + 关键守卫零回归确认
+- `2026-10-21-r35-ruff-clean-scan-and-fixes.md` — R35 · clean 面静态分析扫查 + 修 2 真 bug（裸 except / 重复 import）+ 清 56KB 杂项 PDF
+- `2026-10-21-r34-ocr-scan-fix-pending-and-router-blocker.md` — R34 · 修复 ocr_scan dry_run 契约（待应用）+ 发现仓库阻断：router_state 重复字段
+- `2026-10-21-r33-ocr-scan-dry-run-contract-finding.md` — R33 · 发布能力一致性验证：ocr_scan dry_run 契约瑕疵 + mode 模板一致性 + --help tidy 覆盖确认
+- `2026-10-21-r32-regression-verify-and-fix-patch-esm-help.md` — R32 · 回归验证自有接线 + 修复 patch_esm_main.py --help 崩溃
+- `2026-10-21-r31-test-gate-green-and-fmt-drift-cleared.md` — R31 · 权威测试门 1347/1347 零回归 + fmt 漂移技术前置已消（owner 可加速恢复门强度）
+- `2026-10-21-r30-issue-scan-fp-corpus-on-clean-code.md` — R30 · issue_scan 干净代码 FP 语料实证 + boundary_probe 三段闭环实测
+- `2026-10-21-r29-ci-guard-wiring-gap-fix.md` — R29 · 修复 CI 守卫接线缺口：2 个死重守卫接入门禁（19→21）
+- `2026-10-21-r28-contract-probes-and-guard-selftests.md` — R28 · 发布版 fist-mbt 契约不变量实测（15+ 探测全符合）+ 守卫族 25 selftest 全绿
+- `2026-10-21-r27-guard-family-all-green.md` — R27 · 守卫族全绿权威锚点（11/11）+ BUG-339 复核
+- `2026-10-21-r25-health-baseline-evidence.md` — R25 · 全仓健康基线证据（测试门 + 守卫族 + 缺陷账）
+- `2026-10-21-r23-six-hat-decision-on-rule-layer-fix.md` — R23 · 六顶帽辩论：issue_scan 规则层修复批（BUG-345/346/347/348）处置口径
+- `2026-10-21-issue-scan-rule-layer-audit.md` — 独立 L4 审计：issue_scan 规则层缺陷（BUG-345/346/347/348）第三来源确认
+- `2026-10-20-slave-unused-package-deps-report.md` — 2026-10-20 汇报 —— `slave/fix/unused-package-deps`（0029 unused_package 全族清零）
+- `2026-10-20-slave-test-qualified-report.md` — 2026-10-20 R22 汇报：`slave/fix/test-qualified-imports` —— 清零 0025 test_unqualified_package 803 处
+- `2026-10-20-slave-syntax-noise-report.md` — 2026-10-20 R21 汇报：`slave/fix/syntax-noise-sweep` —— 纯语法噪声三族合清（19 条）
+- `2026-10-20-slave-scripts-index-temp-declare-report.md` — 2026-10-20 · 副机 · scripts 索引守卫恒红收口报告（BUG-327）
+- `2026-10-20-slave-moonc-0.10.16-result-api-report.md` — 2026-10-20 副机汇报 — moonc 0.10.16 `Result` API 适配（BUG-328）
+- `2026-10-20-slave-migrate-selftest-ice-routing-report.md` — 2026-10-20 副机首单汇报 · BUG-324 迁移器指路自检 + ICE 分流
+- `2026-10-20-slave-docs-test-count-1302-sync-report.md` — 2026-10-20 · slave/docs/test-count-1302-sync · 现状面文档收口（测试数 1302 / 判据自检 / SOP 入口）
+- `2026-10-20-slave-deprecated-not-report.md` — 2026-10-20 R20 汇报：`slave/fix/deprecated-not-operator` —— 0020 deprecated 的 `not(x)` 子族清零
+- `2026-10-20-slave-core-package-imports-report.md` — 2026-10-20 汇报 —— `slave/fix/core-package-imports`（0071 core_package_not_imported 剩族清零）
+- `2026-10-20-r9-churn-health-sweep.md` — R9 · churn 健康复查 + 守卫清扫
+- `2026-10-20-r8-bug333-denoise.md` — 报告：R8 组合模式（BUG-333 默认降噪落地 + 端到端真 MCP 验证）
+- `2026-10-20-r7-guard-resweep.md` — 报告：R7 组合模式（并发 churn 后守卫族复扫 + BUG-333 落点定性）
+- `2026-10-20-r6-ci-audit.md` — 报告：R6 组合模式（入口搬家残留审计 + CI 守卫接线完整性）
+- `2026-10-20-r5-full-verify.md` — 报告：R5 组合模式（全量验证 + 自动路由实测 + 剩余守卫判绿）
+- `2026-10-20-r4-plugin-sync.md` — 报告：R4 组合模式（cl7 插件态再生成收口）
+- `2026-10-20-r3-entry-path-guard.md` — 报告：R3 组合模式（守卫族体检 + 入口路径回归修复）
+- `2026-10-20-r21-combo-loop-and-auto-route-verify.md` — R21 报告：组合模式编排 + 自动路由能力验证（为规则层修复落地定执行者）
+- `2026-10-20-r20-low-info-rule-precision-audit.md` — R20 报告：issue_scan low/info 规则精度审计（成本工具样本 12/12 近似全 FP）
+- `2026-10-20-r2-verify-sweep.md` — 报告：R2 组合模式（验证 + 清整，守卫族体检）
+- `2026-10-20-r19-issue-scan-rule-layer-catalog.md` — R19 报告：issue_scan 规则层缺陷总目录（R11→R19 九轮收敛）
+- `2026-10-20-r18-json-injection-sink-vestigial.md` — R18 报告：`moonbit-json-injection` 的注入汇（sink）在本仓根本不存在 → 建议退役而非修 pattern
+- `2026-10-20-r17-bug347-fix-blueprint.md` — BUG-347 修复蓝图：统一 `issue_scan` 外部 `rules_file` 与内建的 pattern 匹配器
+- `2026-10-20-r16-denoise-rules-v2-and-bug347.md` — R16 报告：降噪规则 v2 + BUG-347（外部 rules_file 的 `::` 限定剥离）
+- `2026-10-20-r15-store-scan-bug346-rule-inversion.md` — R15 组合模式 · 高风险持久层扫描 + 发现规则级真缺陷 BUG-346（pattern 与意图相反）
+- `2026-10-20-r14-bug345-fix-blueprint.md` — R14 组合模式 · BUG-345 修复蓝本（drop-in 就绪，待 src/server 清空即落）
+- `2026-10-20-r13-clean-sweep-remain-and-l4-selfcheck.md` — R13 组合模式 · clean 面补齐扫描 + 交付物 L4 自证（Round 13）
+- `2026-10-20-r12-denoise-rules-ab-and-bug345.md` — R12 组合模式 · BUG-333 降噪预案实测 + 上报 BUG-345（Round 12）
+- `2026-10-20-r11-churn-clean-sweep.md` — R11 组合模式 · churn 下守卫清扫与干净面复扫（Round 11）
+- `2026-10-20-r10-publish-payload-close.md` — R10 · churn 下守卫清扫 + publish 载荷面收口
+- `2026-10-20-bug332-stdout-encoding-fix.md` — 报告：BUG-332 残余 stdout UTF-8 重配收口（R1）
+- `2026-10-20-R46-bug333-denoise-report.md` — Round 46 报告：BUG-333 降噪预案（外部 rules_file 版）实机验证
+- `2026-10-20-R45-combo-report.md` — 2026-10-20 R45 组合模式汇总报告（打磨·寻虫·修复·验证·清整）
+- `2026-10-20-R33-report.md` — Round 33 报告 · 发现 moon test 并行全量 flaky
+- `2026-10-20-R32-report.md` — R32 收口报告：BUG-335 修复被并发 WIP 阻塞的裁决 + HEAD 13ddb72 L4 实证
+- `2026-10-20-R31-report.md` — R31 收口报告：揪出并纠正 feea1e3 编译红（commit 成对性教训）
+- `2026-10-20-R30-report.md` — R30 报告：BUG-335 配套锁补提交 + BUG-338 独立发现闭环 + HEAD 干净树全绿验证
+- `2026-10-20-R29-report.md` — R29 报告：修复 HEAD RED 构建（moon 0.1.20261016 适配）+ 清理已合并分支
+- `2026-10-20-R28-report.md` — FIST-Mbt R28 报告（2026-10-20）
+- `2026-10-20-R27-report.md` — FIST-Mbt R27 报告（2026-10-20）
+- `2026-10-19-fist-mbt-round9-issue-scan-audit-and-part2-block-report.md` — Round 9 · 寻虫审计 + CI 覆盖核验 + BUG-327 part 2 阻塞定位
+- `2026-10-19-fist-mbt-round8-gates-and-badge-stale-report.md` — Round 8 · 全门禁巡检 + README 徽章陈旧修复 + BUG-327 part 1 上线状态核验
+- `2026-10-19-fist-mbt-round7-bug327-ocr-fail-closed-report.md` — Round 7 · BUG-327 part 1 · ocr_scan 顶层 `ok` 对假绿 fail-closed
+- `2026-10-19-fist-mbt-round6-gates-and-publish-finding-report.md` — Round 6 收口 · cl7 插件投影失同步修复 + 发布载荷面 P1 发现
+- `2026-10-19-fist-mbt-round5-adversarial-guard-lock-report.md` — Round 5 · 对抗守卫锁 · 报告
+- `2026-10-19-fist-mbt-round3-bug268-fp-cleanup-report.md` — Round 3 · BUG-268 substring-overrun 假阳性归零 + 三门全绿
+- `2026-10-19-fist-mbt-round19-cleanup-scan-bug333-report.md` — Round 19 报告 · 守卫 selftest 基线 + 工作树 清整 扫描 + issue_scan 精度量化
+- `2026-10-19-fist-mbt-round18-guard-selftest-bug332-report.md` — Round 18 报告 · 守卫族 selftest 系统性体检 → BUG-332 `--all` 残余面修复
+- `2026-10-19-fist-mbt-round17-guard-enumeration-fix-report.md` — Round 17 报告 · 补全 CI 权威守卫枚举 + 修复 2 处守卫自身缺陷
+- `2026-10-19-fist-mbt-round12-publish-payload-clean-report.md` — Round 12 · 消 P1 publish 载荷面红
+- `2026-10-19-fist-mbt-round11-gate-green-and-scan-blindspot-report.md` — Round 11 · 权威门禁绿 + 徽章仍正确 + 寻虫盲区根因定位
+- `2026-10-19-fist-mbt-round10-correction-and-array-index-audit-report.md` — Round 10 · 更正 Round 9 §4.4 误判 + 数组下标审计收口
+- `2026-10-19-R25-report.md` — FIST-Mbt R25 报告（2026-10-19）
+- `2026-10-19-R23-report.md` — FIST-Mbt R23 报告（2026-10-19）
+- `2026-10-19-R22-report.md` — FIST-Mbt R22 报告（2026-10-19）
+- `2026-10-19-R21-report.md` — Round 21 汇报（闭环 / 加固 / 发现）
+- `2026-10-19-R20-report.md` — Round 20 汇报（寻虫 / 修复 / 清整）
+- `2026-10-18-vools-pypi-wsl-publish-report.md` — vools PyPI 发布 + WSL Linux 接入测试 · 执行报告
+- `2026-10-18-toolchain-recovery-report.md` — 工具链死锁恢复 + 合并后同步死角清扫报告
+- `2026-10-18-fist-mbt-issue-scan-fp-report.md` — Round 2 报告 · issue_scan substring-overrun 假阳性根因分析
+- `2026-10-18-fist-mbt-cleanup-report.md` — FIST-Mbt 清整（tidy + bugfind 组合环 dogfooding）收口报告
+- `2026-10-18-fist-mbt-caf-slice-c-report.md` — FIST-Mbt CAF 失败执行污染修复（Slice C）报告
+- `2026-10-18-fist-mbt-bugfix-round.md` — FIST-Mbt 修复轮报告（BUG-261 / BUG-262 / BUG-268）
+- `2026-10-18-fist-mbt-bugfix-publish-report.md` — 2026-10-18 · FIST-Mbt 寻虫-修复-打磨-验证闭环 + 发布 0.3.9 收口报告
+- `2026-10-18-caf-slice-b-report.md` — CAF Slice B —— 记忆闭环写半 + bad-JSON 降级锁 · 交付报告
+- `2026-10-18-bug268-issue-scan-fix-report.md` — BUG-268 修复 · issue_scan substring-overrun 假阳性清除
+- `2026-10-17-zombie-cleanup-report.md` — 僵尸台账清零报告（2026-10-17）
+- `2026-10-17-soldier-route-report.md` — 军衔体系 · §8.3 兵种↔模型池路由联动 — 报告
+- `2026-10-17-marvis-verify-round1.md` — Marvis 验证轮 Round 1 — 汇总报告
+- `2026-10-17-marvis-unsafe-scan.md` — Marvis Unsafe 扫描报告 — engine_dag_ext / issue_scan / issue_scan_wbtest
+- `2026-10-17-marvis-junxian-soldier.md` — 军衔体系 · 士兵分类 · 参谋线（§8.1 / §8.2 / §8.1 参谋线）实现报告
+- `2026-10-17-compile-gate-closure-report.md` — 编译阻塞收口报告（指挥官方案 A）— 2026-10-17
+- `2026-10-17-caf-dryrun-wiring-report.md` — CAF 验收标准 3：server 层 dry_run 接线 —— 汇报
+- `2026-10-17-bug272-contract-force-report.md` — BUG-272 修复汇报（tx_contract 建模 archive force=true 强制归档路径）
+- `2026-10-17-actus-infra-readiness-report.md` — actus 项目基建完备度报告
+- `2026-10-16-round262-plugin-forms-and-verify.md` — Round 262（2026-10-16）· 项目健康验证 + 判据修复
+- `2026-10-16-round261-publish-payload-and-caf-register.md` — Round 261（组合模式第 9 轮）· 发布载荷面清整 + CAF 脚本登记
+- `2026-10-16-marvis-verify-round7.md` — marvis 组合模式第7轮 · 验证回归
+- `2026-10-16-marvis-explore-round5.md` — marvis 组合模式第5轮 · 探索发现报告
+- `2026-10-16-marvis-combo-sweep-report.md` — FIST-Mbt 组合模式全程开发交付报告
+- `2026-10-16-marvis-combo-round4.md` — marvis 组合模式第4轮（2026-10-16）
+- `2026-10-16-marvis-combo-r8-11.md` — marvis 组合循环 Round 8-11 报告
+- `2026-10-16-marvis-bugfind-round6.md` — marvis 组合模式第6轮 · 扩展模块边界寻虫
+- `2026-10-16-marvis-advance-summary.md` — marvis-combo-sweep-20261016 · 推进汇总
+- `2026-10-16-marvis-advance-round5.md` — marvis 组合模式第5轮 · 推进评估报告
+- `2026-10-16-marvis-advance-round2.md` — marvis-combo-sweep-20261016 · 第 2 轮推进汇总
+- `2026-10-16-fist-mbt-self-iter-sweep.md` — FIST-Mbt 自我迭代任务清扫清单
+- `2026-10-15-testsync-nn-fix-report.md` — Round 118 Report · test_sync N/N 陷阱修复 + 基线复验
+- `2026-10-15-round49-caf-no-neighborhood-lock-report.md` — Goal-2 Round 49 报告：标准 1 无邻域保留原始顺序真源锁
+- `2026-10-15-round48-caf-mixed-neighborhood-lock-report.md` — Goal-2 Round 48 报告：标准 1 混合邻域排列不变真源锁
+- `2026-10-15-round47-caf-permutation-lock-report.md` — Goal-2 Round 47 报告：标准 1 候选集置换不变真源锁
+- `2026-10-15-round46-caf-ab-source-lock-report.md` — Goal-2 Round 46 报告：标准 2 A/B 端到端真源锁
+- `2026-10-15-round45-middle-whitespace-semantics-report.md` — Goal-2 Round 45 报告：中间空白保留语义锁
+- `2026-10-15-round44-fullwidth-whitespace-report.md` — Goal-2 Round 44 报告：全角空白归一化（U+3000）
+- `2026-10-15-round43-min-evidence-boundary-report.md` — Goal-2 Round 43 报告：min_evidences 分界契约锁（接线前置）
+- `2026-10-15-round42-normalize-context-report.md` — Goal-2 Round 42 报告：caf_normalize_context 归一化契约（接线前置）
+- `2026-10-15-round41-iso-secs-len-report.md` — Goal-2 Round 41 报告：iso_to_secs 长度与分隔符边界契约锁（issue_scan 寻虫产出）
+- `2026-10-15-round40-caf-replay-distinct-report.md` — Goal-2 Round 40 报告：CAF 离线回放上下文区分度契约锁（验收标准 1 真源锁）
+- `2026-10-15-round39-caf-rate-monotone-report.md` — Goal-2 Round 39 报告：CAF 重排成功率不降契约锁（验收标准 2 纯计算侧收尾）
+- `2026-10-15-round38-caf-cost-decides-report.md` — Goal-2 Round 38 报告：CAF 路由成本决胜契约锁（验收标准 2 纯计算侧）
+- `2026-10-15-round37-caf-dryrun-json-report.md` — Goal-2 Round 37 报告：CAF dry_run 预览 JSON 输出层（验收标准 3 纯计算侧补齐）
+- `2026-10-15-round36-caf-persistence-layer-report.md` — Goal-2 Round 36 报告：CAF 记忆逐条持久化层（caf_memory_dump / load）
+- `2026-10-15-round35-caf-badtype-contract-locks-report.md` — Goal-2 Round 35 报告：CAF 字段坏类型降级契约锁（caf_cfg_3~4）
+- `2026-10-15-round34-caf-boundary-hardening-report.md` — Goal-2 Round 34 报告：CAF 边界加固 5 锁
+- `2026-10-15-round33-router-config-caf-fields-report.md` — Goal-2 Round 33 报告：RouterConfig 加 caf_default_preference / caf_min_evidences
+- `2026-10-15-round32-caf-status-text-report.md` — Round 32 报告 · caf_memory_status_text + RouterConfig 字段改动面教训
+- `2026-10-15-round30-31-caf-loop-and-p2d-unify-report.md` — Round 30-31 报告 · caf_loop_1 回写通路真源 + P2c/P2d 统一
+- `2026-10-15-round28-29-caf-bug206-dryrun-report.md` — Round 28-29 报告 · BUG-206 Y2038 冷却坑修复 + P2c 标准 3 dry_run 纯计算落地
+- `2026-10-15-round27-caf-pick-hook-report.md` — Round 27 报告 · P2c §2.2 pick_caf 软性重排钩子
+- `2026-10-15-round168-final-verification-report.md` — Round 168 报告 · 最终验证 + 目标完成判定
+- `2026-10-15-round167-gitcode-tick-report.md` — Round 167 报告 · gitcode_queue_status + pipeline_tick(report_ready)
+- `2026-10-15-round166-failsafe-report.md` — Round 166 报告 · task_cleanup + github_flush_execute 失败安全验证
+- `2026-10-15-round165-matrix-mode-store-report.md` — Round 165 报告 · 能力试用覆盖矩阵 + mode_templates + store_list
+- `2026-10-15-round164-tick-reminder-mode-report.md` — Round 164 报告 · pipeline_tick(prompt_ready) + supervisor_reminder_tick + mode_list
+- `2026-10-15-round163-evolve-flush-report.md` — Round 163 报告 · evolve_sample + evolve_submit + evolve_critic + github_flush_plan
+- `2026-10-15-round162-queue-circuit-report.md` — Round 162 报告 · github_queue_status + mcpcf.circuit + selfdrive_publish_next
+- `2026-10-15-round161-parse-gc-watchdog-report.md` — Round 161 报告 · selfdrive_parse_next_tasks + memory_gc + mcpcf.watchdog
+- `2026-10-15-round160-append-verify-tick-report.md` — Round 160 报告 · selfdrive_append + mcpcf.verify + pipeline_tick
+- `2026-10-15-round16-lock-xproc-race-closure-report.md` — R16 跨进程并发竞态实证收口 · BUG-157 闭环报告（金条五）
+- `2026-10-15-round159-review-mcpcf-report.md` — Round 159 报告 · selfdrive_review_tick/ready + mcpcf.review/run_batch
+- `2026-10-15-round158-env-lock-report.md` — Round 158 报告 · github/gitcode_env_check + reserve_scope/check/release + lock_acquire/status/release
+- `2026-10-15-round157-debate-mcpcf-report.md` — Round 157 报告 · debate_convene/register/verdict + mcpcf_ops_init/report
+- `2026-10-15-round156-cost-omega-report.md` — Round 156 报告 · cost_stats + call_log + cost_budget_check + omega_verify + omega_verify_fix
+- `2026-10-15-round155b-upsert-report.md` — Round 155 续 · selfdrive_pick_next + supervisor_task_upsert
+- `2026-10-15-round155-discipline-report.md` — Round 155 报告 · 提交纪律修正 + selfdrive_export_tasks
+- `2026-10-15-round154-selfdrive-report.md` — Round 154 报告 · selfdrive_init + selfdrive_get
+- `2026-10-15-round153-standards-guidance-report.md` — Round 153 报告 · project_standards + supervisor_prompt 引导管道
+- `2026-10-15-round152-orchestration-report.md` — Round 152 报告 · loop_create/tick/status + hat_list
+- `2026-10-15-round151-governance-report.md` — Round 151 报告 · assistant 选举生命周期 + store_open/close
+- `2026-10-15-round150-milestone-report.md` — Round 150 报告 · 里程碑轮：evolve_distill + audit_log + evolve_snapshot + supervisor_kill_plan
+- `2026-10-15-round149-diagnostic-report.md` — Round 149 报告 · goal_drift_check + audit_permission + circuit 熔断器
+- `2026-10-15-round148-five-capabilities-report.md` — Round 148 报告 · memory_link + plan_revise + dag_mc + eval_feedback + tx_contract
+- `2026-10-15-round147-endtoend-report.md` — Round 147 报告 · T0r611 整树 Omega 强验证端到端收口
+- `2026-10-15-round146-saga-dispatch-report.md` — Round 146 报告 · Saga 补偿 + dispatch 续跑
+- `2026-10-15-round145-selfdrive-dispatch-report.md` — Round 145 报告 · selfdrive_dispatch 自动派单 + Omega 生命周期续跑
+- `2026-10-15-round144-omega-lifecycle-report.md` — Round 144 报告 · Omega 强验证完整生命周期
+- `2026-10-15-round143-omega-report.md` — Round 143 报告 · Omega spec 验证 + schema 摸清
+- `2026-10-15-round142-modes-laya-reminder-report.md` — Round 142 报告 · 模式枚举 + 确定性决策 + 全库体检
+- `2026-10-15-round141-hexamind-report.md` — Round 141 报告 · supervisor_task_tree + HexaMind 辩论链
+- `2026-10-15-round140-task-challenge-lifecycle-report.md` — Round 140 报告 · task_challenge 实测 + 完整 FIST 生命周期
+- `2026-10-15-round139-scaffold-a7-report.md` — Round 139 报告 · mcp_config_scaffold 实测 + A7 补充
+- `2026-10-15-round138-laya-concurrency-report.md` — Round 138 报告 · laya_decide 实测 + 并发深度验证
+- `2026-10-15-round137-supervisor-a4-report.md` — Round 137 报告 · supervisor_status + shim-review 任务 + A4 请求超时实现
+- `2026-10-15-round136-critic-lesson-report.md` — Round 136 报告 · evolve_critic 防漂移门禁实测 + 教训归档
+- `2026-10-15-round135-budget-dag-report.md` — Round 135 报告 · cost_budget_split + DAG 调度视图实测
+- `2026-10-15-round134-boundary-probe-report.md` — Round 134 报告 · 试用 boundary_probe + 边界输入固化测试
+- `2026-10-15-round133-marketplace-report.md` — Round 133 报告 · Marketplace 执行者能力路由 + 置信度拍卖实测
+- `2026-10-15-round132-hat-debate-dgm-report.md` — Round 132 报告 · 六顶帽辩论收敛 + 关键发现归档 DGM
+- `2026-10-15-round131-shim-prompts-get-report.md` — Round 131 报告 · shim 测试补全提示面 prompts/get
+- `2026-10-15-round130-shim-res-read-report.md` — Round 130 报告 · shim 测试扩展 resources/read + prompts/list
+- `2026-10-15-round129-shim-robustness-report.md` — Round 129 报告 · shim 健壮性测试 + 内建 compat 第二差异
+- `2026-10-15-round128-compat-review-report.md` — Round 128 报告 · 独立评审并发 agent 内建 compat 层
+- `2026-10-15-round127-shim-tools-call-report.md` — Round 127 报告 · shim 测试扩展到 tools/call + ATGC-old 试用
+- `2026-10-15-round126-shim-regression-test-report.md` — Round 126 报告 · shim 回归测试固化 + 工具数 166 实证
+- `2026-10-15-round125-shim-a7-bug155-fakegreen-report.md` — Round 125 报告 · BUG-155 假绿实锤 + shim A7 用法示例
+- `2026-10-15-round124-selfdrive-shim-improve-report.md` — Round 124 报告 · 用发布版 fist-mbt 自驱闭环审出并实施 shim 改进
+- `2026-10-15-round123-shim-ping-report.md` — Round 123 报告 · shim 补 ping + 扩展标准方法验证
+- `2026-10-15-round122-mcp-compat-shim-report.md` — Round 122 报告 · mcp_compat_shim（BUG-161 / BUG-163 外部缓解层）
+- `2026-10-15-publish-verify-and-testsync-1058-report.md` — Round 120 报告 · 发布版校验 + 测试数同步 1058 + MCP 协议 BUG-163
+- `2026-10-15-issue-scan-falsepositive-report.md` — Round 119 Report · issue_scan 超时缺陷发现 + diff.mbt 假阳性证伪
+- `2026-10-15-goal2-round9-p2c-wiring-design-report.md` — Goal-2 Round 9 报告 · P2c 接线设计文档 + CAF 代码终审
+- `2026-10-15-goal2-round8-edit-distance-guard-report.md` — Goal-2 Round 8 报告 · caf_edit_distance 长度守卫 + .mbti 同步
+- `2026-10-15-goal2-round7-caf-property-tests-report.md` — Goal-2 Round 7 报告 · CAF 属性测试（随机化寻虫 + 数学性质验证）
+- `2026-10-15-goal2-round6-caf-integration-report.md` — Goal-2 Round 6 报告 · CAF P2 端到端集成 + 防御性寻虫
+- `2026-10-15-goal2-round5-caf-decision-fusion-report.md` — Goal-2 Round 5 报告 · P2 决策融合核心 + 性能优化
+- `2026-10-15-goal2-round4-caf-p2-report.md` — Goal-2 Round 4 报告 · C-A-F P2 核心算法 + 测试覆盖缺口闭合
+- `2026-10-15-goal2-round3-fix-bugs-173-174-report.md` — Goal-2 Round 3 报告 · 修复 BUG-173（sort_by 弱序）+ BUG-174（哈希溢出）
+- `2026-10-15-goal2-round26-p2c-config-field-report.md` — Goal-2 Round 26 报告 · P2c 前置：RouterConfig 加 use_caf_memory 字段
+- `2026-10-15-goal2-round25-bugscan-abpreflight-report.md` — Goal-2 Round 25 报告 · 寻虫 + P2d A/B 预演（场景依赖发现）
+- `2026-10-15-goal2-round24-p2d-status-update-report.md` — Goal-2 Round 24 报告 · P2d 状态更新 + 项目健康快照
+- `2026-10-15-goal2-round23-p2d-impl-report.md` — Goal-2 Round 23 报告 · 实施 P2d 冷启动启发式
+- `2026-10-15-goal2-round22-p2d-coldstart-report.md` — Goal-2 Round 22 报告 · P2d 冷启动启发式设计
+- `2026-10-15-goal2-round21-bug193-fixed-zeroreg-report.md` — Goal-2 Round 21 报告 · BUG-193 已修 + 锁测试验证 + 全仓零回归
+- `2026-10-15-goal2-round20-bug193-coordination-report.md` — Goal-2 Round 20 报告 · BUG-193 未修且扩散 + 引导注入 + 关联沉淀
+- `2026-10-15-goal2-round2-caf-testgap-report.md` — Goal-2 Round 2 报告 · BUG-173/174 状态确认 + C-A-F 测试覆盖缺口分析
+- `2026-10-15-goal2-round19-bug193-locktests-report.md` — Goal-2 Round 19 报告 · 发现 BUG-193 + 新增锁测试
+- `2026-10-15-goal2-round18-caf-acceptance-status-report.md` — Goal-2 Round 18 报告 · CAF 验收标准对照表
+- `2026-10-15-goal2-round17-concurrent-review-health-report.md` — Goal-2 Round 17 报告 · 并发改动复核 + 项目健康快照 + 交付物硬门验证
+- `2026-10-15-goal2-round16-caf-p2c-ab-preflight-report.md` — Goal-2 Round 16 报告 · CAF P2c 接线 A/B 预演验证（验收标准 2）
+- `2026-10-15-goal2-round15-p2c-design-precision-report.md` — Goal-2 Round 15 报告 · P2c 接线设计文档精度修正
+- `2026-10-15-goal2-round14-scan-validate-regression-report.md` — Goal-2 Round 14 报告 · 寻虫复核 + 交付物硬门验证 + 全仓回归
+- `2026-10-15-goal2-round13-caf-boundary-tests-report.md` — Goal-2 Round 13 报告 · CAF 边界用例补测
+- `2026-10-15-goal2-round12-caf-offline-replay-report.md` — Goal-2 Round 12 报告 · CAF 离线回放验证（验收标准 1）
+- `2026-10-15-goal2-round11-plan-status-audit-report.md` — Goal-2 Round 11 报告 · 计划状态审计 + CAF 状态行更新
+- `2026-10-15-goal2-round10-caf-benchmark-report.md` — Goal-2 Round 10 报告 · CAF 性能基准验证
+- `2026-10-15-goal2-round1-caf-bugfind-report.md` — Goal-2 Round 1 报告 · C-A-F 学习路由寻虫 + BUG-173/174 上报
+- `2026-10-15-cl7-unlock-and-toolsync-166-report.md` — Round 121 报告 · 发布版缺 18 工具 + cl7 解锁 + 插件态重生成
+- `2026-10-15-capability-coverage-matrix.md` — FIST-Mbt 发布版能力试用覆盖矩阵（R127–R165）
+- `2026-10-15-bug157-verify-report.md` — Round 117 Report · BUG-157 修复独立验证 + 单主跨进程回归判据
+- `2026-10-15-bug156-fix-and-refactor-verify-report.md` — Round 115 · BUG-156 修复 + 并发 agent 大重构验证（金条五）
+- `2026-10-14-toolcount-current-surface-audit-report.md` — 2026-10-14 · 工具计数当前面漂移系统性审计 + 修复（Round 109）
+- `2026-10-14-tool-registry-single-source-report.md` — 2026-10-14 · 抽单一 `_tool_registry` 实现报告（5 消费者收口）
+- `2026-10-14-tool-count-gap-148to166-report.md` — 2026-10-14 · 闭合 148→166 工具计数差口报告（判据扩面 + 文档补齐）
+- `2026-10-14-tool-count-drift-and-lock-audit-report.md` — 2026-10-14 工具计数自述漂移清零 + 锁定机制审计
+- `2026-10-14-test-sync-1051-report.md` — 测试总数同步 1033→1051 · Round 114 报告
+- `2026-10-14-test-green-and-backlog-convergence-report.md` — 2026-10-14 · 终审：测试 1043/1043 里程碑 + 计划项收敛核对 + BACKLOG L33 翻 done（Round 111）
+- `2026-10-14-template-guard-ci-and-autocrlf-audit-report.md` — 2026-10-14 · 模板判据收口：字节级守卫 autocrlf 审计 + check_template_ctrl 接入 CI（Round 107）
+- `2026-10-14-template-control-char-guard-report.md` — 2026-10-14 · 模板「无裸控制字符」守卫（Round 103）
+- `2026-10-14-template-control-char-guard-and-fix-report.md` — 2026-10-14 · 模板「无裸控制字符」判据 + 修复 + autocrlf 假象纠正（Round 103-106）
+- `2026-10-14-supervisor-tools-test-report.md` — 超级管家 supervisor 工具白盒测试收口报告（P1 计划 §5/§7）
+- `2026-10-14-router-enhancement-execution-report.md` — 2026-10-14 FIST-Mbt 路由增强计划执行报告
+- `2026-10-14-round15-lock-suite-reservation-assistant-dogfood-report.md` — 2026-10-14 Round 15 · 锁机制全家族 live dogfood 报告（reserve_* + assistant_* 实证 · 开关全开）
+- `2026-10-14-round14-lock-mechanism-live-dogfood-report.md` — 2026-10-14 Round 14 · 锁机制 live dogfood 报告（开关全开 · 直接自驱验证）
+- `2026-10-14-round13-multilane-coordination-report.md` — 2026-10-14 Round 13 · 多 Agent 同改一项目 · 锁机制实时协调观测报告
+- `2026-10-14-plugin-sync-toolcount-report.md` — 2026-10-14 · 闭合插件态同族缺口报告（check_plugin_sync / gen_plugins 真源扩面）
+- `2026-10-14-plugin-regeneration-cl7-green-report.md` — 2026-10-14 · 重生成插件态修 check_plugin_sync——一源四态 cl7 归绿（Round 113）
+- `2026-10-14-multilang-examples-s1-report.md` — 2026-10-14 · 多语言示例（计划 multilang S1 验收格）实测报告
+- `2026-10-14-multilang-examples-new-arms-report.md` — 2026-10-14 · 补上计划点名却缺失的两支语言示例（requests / HttpClient）报告
+- `2026-10-14-multilane-coordination-report.md` — 多 Agent 同改一项目协调报告（Round 9–12 观测收敛）
+- `2026-10-14-lock-acquire-mutex-report.md` — 2026-10-14 lock_acquire 拒绝型互斥修复报告（BUG-154）
+- `2026-10-14-l33-self-search-fact-report.md` — 2026-10-14 · L33（self_search 外部检索入库）半落地核账报告
+- `2026-10-14-j16-help-tool-names-and-overreach-revert-report.md` — 2026-10-14 · J16 判据 + 一次越界改动的自查与回退报告
+- `2026-10-14-j14-template-count-face-report.md` — 2026-10-14 · J14 扩面：提示词模板计数主张纳入工具计数自述对表（Round 110）
+- `2026-10-14-issue-scan-map-set-rule-premise-bug-report.md` — 2026-10-14 · 用 issue_scan 找 bug：发现 moonbit-map-set-no-rebind 规则前提错误（Round 112）
+- `2026-10-14-guard-hint-and-ci-precheck-report.md` — 2026-10-14 · 修误导提示语 + 收口自检挂 CI 报告
+- `2026-10-14-file-lock-mechanism.md` — 2026-10-14 多 Agent 文件锁定机制速览
+- `2026-10-14-dist-toolcount-drift-bugfind-report.md` — 2026-10-14 · 使用发布版 fist-mbt 找 bug：dist/fist-mbt.js 工具计数漂移（Round 108）
+- `2026-10-14-cl3-config-skill-and-plan-landing-filter-report.md` — 2026-10-14 · 补交计划 P0-b 第四态（cl3）+ check_plan_landing 占位过滤报告
+- `2026-10-14-check-plan-landing-report.md` — 2026-10-14 · 新增 check_plan_landing 计划落点核对工具报告
+- `2026-10-13-test-count-drift-737to807-report.md` — 2026-10-13 · 测试总数漂移定因与修复报告（737 → 807）
+- `2026-10-13-supervisor-tools-plan-gap-report.md` — 2026-10-13 · supervisor-tools 计划验收缺口 + 工作树测试读数交接单
+- `2026-10-13-star-gate-implementation-report.md` — 2026-10-13 Star 门端到端实装报告
+- `2026-10-13-simulate-head-commit-report.md` — 2026-10-13 · 新增 simulate_head_commit 提交前干净树模拟报告
+- `2026-10-13-self-search-wireup-report.md` — 报告 · Unit 3 打磨环 · P3 self_search 入库半：`evolve_asset_register` 接线
+- `2026-10-13-second-breakage-20-errors-report.md` — 2026-10-13 · 第二次 master 坏状态诊断报告（HEAD 编译不过 · 20 errors）
+- `2026-10-13-r13-cycle4-self-search-wireup.md` — R13 Cycle4 · P3 悬空件接线：self_search → 现有工具 IO 层
+- `2026-10-13-r13-cycle3-report.md` — R13 第 3 环报告 · 修 BUG-153（issue_scan 除法守卫同一行识别）
+- `2026-10-13-r13-cycle2-report.md` — R13 · 四模式流水线自我迭代 · Round 2 报告
+- `2026-10-13-r13-cycle1-report.md` — R13 · 四模式流水线自我迭代 · Round 1 报告
+- `2026-10-13-r13-boundary-audit.md` — R13 边界审视统一报告（全局输入域 owner）
+- `2026-10-13-r13-boundary-audit-v2.md` — FIST-Mbt R13 统一边界审视报告（本子代理口径 · 源码锚点版）
+- `2026-10-13-pkg-imports-guard-report.md` — 2026-10-13 · 新增 check_pkg_imports 判据报告（master 坏状态判据化）
+- `2026-10-13-ofm-retry-health-wiring-report.md` — 2026-10-13 ofm 七发收口 · 二次重试 + 502 黑名单接线报告
+- `2026-10-13-ocr-local-档4-report.md` — 2026-10-13 · ocr-local 集成 · 档4（boundary_probe 边界输入建议生成器）汇报
+- `2026-10-13-ocr-local-档3-report.md` — 2026-10-13 · ocr-local 集成 · 档3（ocr_scan MCP 工具）汇报
+- `2026-10-13-ocr-local-档1档2-report.md` — ocr-local 融入 bugfind · 档 1+档 2 验收报告
+- `2026-10-13-native-arms-green-bug133-report.md` — 2026-10-13 · native 双臂转绿 + BUG-133 关闭条件首达报告
+- `2026-10-13-multilane-round9-report.md` — 多 lane 自我迭代 · Round 9 报告
+- `2026-10-13-multilane-round8-report.md` — 四模式流水线自我迭代 · Round 8 — 跨 agent 集中裁决门 + 隔离存活实证
+- `2026-10-13-multilane-round7-report.md` — 四模式流水线自我迭代 · Round 7 — 跨 agent 对账与隔离回归实证
+- `2026-10-13-multilane-round6-report.md` — 四模式流水线自我迭代 · Round 6 — 三维盲点综合门
+- `2026-10-13-multilane-round5-report.md` — 四模式流水线自我迭代 · Round 5 — 盲点层语义化加固
+- `2026-10-13-multilane-round4-sweep-report.md` — 四模式流水线自我迭代 · Round 4 — 计划表扫雷 + 多 agent 文件锁复核
+- `2026-10-13-multilane-round16-report.md` — 四模式流水线自我迭代 · Round 16 报告（多 Agent 文件锁机制 · R16 末态不变量收口）
+- `2026-10-13-multilane-round15-report.md` — 四模式流水线自我迭代 · Round 15 报告（多 Agent 文件锁机制 · R15 调度器收口）
+- `2026-10-13-multilane-round14-report.md` — 多 Lane 文件锁机制 · Round 14 收口报告
+- `2026-10-13-multilane-round13-report.md` — 多 lane 锁机制 · Round 13 收口报告（优先级感知级联谈判）
+- `2026-10-13-multilane-round12-report.md` — 多 lane 锁机制 · Round 12 收口报告（协调器级联谈判层）
+- `2026-10-13-multilane-round11-report.md` — 多 lane 迭代 · Round 11 收口报告（协调器协商层：让权模拟 + 准入后验）
+- `2026-10-13-multilane-round10-report.md` — 多 lane 迭代 · Round 10 收口报告（协调器准入门 + 分诊记分牌）
+- `2026-10-13-multilane-lock-mechanism-report.md` — 多 Agent 文件锁机制观测报告（FIST-Mbt 自迭代 · 顺带看看）
+- `2026-10-13-mbti-sync-guard-report.md` — 2026-10-13 · 新增 check_mbti_sync 判据报告（.mbti 接口声明 ↔ 源定义）
+- `2026-10-13-mbti-guard-enhancement-report.md` — 2026-10-13 · check_mbti_sync 判据增强报告（6 形状扩面 + 红文案出路分流）
+- `2026-10-13-master-broken-src-diff-diagnosis-report.md` — 2026-10-13 · master 级坏状态诊断报告（src/diff 悬空 import）+ 我的修正判断
+- `2026-10-13-linux-wsl-install-report.md` — 2026-10-13 G5「Linux 同等实现（WSL2 实测）」端到端验证报告
+- `2026-10-13-http-contract-v1-report.md` — 2026-10-13 · 多语言 HTTP 契约 v1 落地报告（fist-mbt-api）
+- `2026-10-13-http-contract-selftest-report.md` — 2026-10-13 · e2e_http_contract 补 --selftest 报告（判据先自证会红）
+- `2026-10-13-fist-mbt-web-m0-dashboard-report.md` — 报告 · fist-mbt Web 管理面板 M0 任务看板 MVP（一源五态·态5 落地一期）
+- `2026-10-13-ci-js-track-predict-hidden-drift-report.md` — 2026-10-13 · CI js 轨「Format 降门后」预测 + 隐藏漂移定因报告
+- `2026-10-13-ci-guard-clean-tree-two-reds-report.md` — 2026-10-13 · CI 守卫族干净树两红定因与修复报告（R13 / R1）
+- `2026-10-13-ci-format-int32-diagnosis-report.md` — 2026-10-13 · CI Format check 红的定因报告（nightly moon fmt 的 Int→Int32 规范化）
+- `2026-10-13-bug152-secs-overflow-report.md` — R13 第 4 环报告 · 修 BUG-152（issue_scan secs-overflow 的 Int32 假设）
+- `2026-10-13-backlog-reconcile-batch3-report.md` — 2026-10-13 · BACKLOG 对表翻账第三批报告（L16 / L27 / L24）
+- `2026-10-13-backlog-drift-reconcile-report.md` — 2026-10-13 · BACKLOG 双向漂移对表翻账报告（P1×2 / P2×1 done + P3 self_search 半落地精确化）
+- `2026-10-12-supervisor-tools-report.md` — 2026-10-12 · 超级管家专属工具（supervisor_ 前缀，+7 工具）实施报告
+- `2026-10-12-star-gate-default-on-report.md` — 2026-10-12 · Star 门默认开启（发布模板带默认值）+ ofm response_format 部分容错
+- `2026-10-12-ofm-retry-strategy-report.md` — 2026-10-12 ofm 非 JSON 二次重试策略报告
+- `2026-10-12-ofm-max-tokens-margin-report.md` — 2026-10-12 ofm max_tokens 余量预留报告
+- `2026-10-12-ofm-fusion-p0-report.md` — 2026-10-12 OFM 融合升级计划 P0 · fist-mbt 自驱实现报告
+- `2026-10-12-hexamind-real-run-report.md` — HexaMind 六元引擎 · 真模型回体实测报告
+- `2026-10-12-hexamind-engine-report.md` — HexaMind 六元自驱决策引擎 · 实现报告
+- `2026-10-12-hexamind-e2e-report.md` — HexaMind 六元引擎 · 端到端实测报告
+- `2026-10-12-health-probe-502-report.md` — 2026-10-12 502 健康探测报告
+- `2026-10-12-fist-config-page-report.md` — 2026-10-12 · fist-config.html 配置页完善 · 报告
+- `2026-10-12-assistant-stage2-report.md` — 项目助理落地报告（multi-agent-lock v3 阶段2 精简版）
+- `2026-10-11-r17-goal-round7-report.md` — 四模式流水线自我迭代 · Round 7（终审收口）
+- `2026-10-11-r15-goal-round5-report.md` — 目标 Round 5 · issue_scan 寻虫终审报告
+- `2026-10-11-r14-goal-round4-report.md` — 目标 Round 4 · 自驱闭环终审收口报告
+- `2026-10-11-r13-self-polish-report.md` — FIST-Mbt 自我打磨 · Round 13 汇报
+- `2026-10-11-r12-round9-report.md` — Round 9 报告（R12 十二轮六相流水线 · 第 9 轮）
+- `2026-10-11-r12-round8-report.md` — Round 8 报告（R12 十二轮六相流水线 · 第 8 轮）
+- `2026-10-11-r12-round7-report.md` — Round 7 报告（12 轮六相流水线）
+- `2026-10-11-r12-round6-report.md` — Round 6 报告（12 轮六相流水线）
+- `2026-10-11-r12-round5-report.md` — Round 5 报告（12 轮六相流水线）
+- `2026-10-11-r12-round4-report.md` — Round 4 报告（12 轮六相流水线）
+- `2026-10-11-r12-round3-report.md` — Round 3 报告（12 轮六相流水线）
+- `2026-10-11-r12-round2-report.md` — Round 2 报告（12 轮六相流水线）
+- `2026-10-11-r12-round12-summary.md` — R12 十二轮六相流水线 · 收敛总结（Round 12 · 收官）
+- `2026-10-11-r12-round11-report.md` — Round 11 报告（R12 十二轮六相流水线 · 第 11 轮）
+- `2026-10-11-r12-round10-report.md` — Round 10 报告（R12 十二轮六相流水线 · 第 10 轮）
+- `2026-10-11-r12-round1-report.md` — Round 1 报告（12 轮六相流水线）
+- `2026-10-11-r12-followup2-leftovers-report.md` — FIST-Mbt · R12 遗留处置（followup-2 · leftovers）
+- `2026-10-11-r12-followup-report.md` — FIST-Mbt · R12 收口后续汇报（12 轮闭环后的遗留处置）
+- `2026-10-11-r12-cycle9-report.md` — FIST-Mbt 四模式流水线自我迭代 · Round 9 汇报
+- `2026-10-11-r12-cycle8-report.md` — FIST-Mbt 四模式流水线自我迭代 · Round 8 汇报
+- `2026-10-11-r12-cycle7-report.md` — FIST-Mbt 四模式流水线自我迭代 · Round 7 汇报
+- `2026-10-11-r12-cycle12-report.md` — FIST-Mbt 四模式流水线自我迭代 · Round 12 汇报（末轮）
+- `2026-10-11-r12-cycle11-report.md` — FIST-Mbt 四模式流水线自我迭代 · Round 11 汇报
+- `2026-10-11-r12-cycle10-report.md` — FIST-Mbt 四模式流水线自我迭代 · Round 10 汇报
+- `2026-10-11-r119-project-standards-report.md` — R119 · project-standards r6-no-hardcode + issue_scan 字面量内通道 — 执行报告
+- `2026-10-11-plan-v3-gap-audit-report.md` — 2026-10-11 · improvement-plan-20261010.md v3 五方向落地核对报告
+- `2026-10-11-fist-upgrade-phase2-report.md` — fist-mbt upgrade 阶段 2 · 真写盘升级 · 终审报告
+- `2026-10-11-fist-upgrade-phase1-report.md` — FIST-Mbt `--upgrade` 自动升级 · 阶段 1（`--check` 只读）实施报告
+- `2026-10-11-cypy-selfdrive-round1-report.md` — FIST-Mbt 驱动 cypy 自驱测试 · Round 1 报告
+- `2026-10-10-terminal-review-report.md` — 终审报告 · 四项遗留（A/B/C/D）+ Star 门公钥钉死边界
+- `2026-10-10-r12-round7-report.md` — FIST-Mbt 12 轮自我迭代 · Round 7 汇报（评估 mizchi/llm）
+- `2026-10-10-r12-round1-report.md` — FIST-Mbt 12 轮自我迭代 · Round 1 汇报（bugfind → fix_and_merge → polish → verify）
+- `2026-10-10-r12-cycle6-report.md` — FIST-Mbt 四模式流水线自我迭代 · Round 6 汇报
+- `2026-10-10-r12-cycle5-report.md` — 12 轮 [寻虫→修复→打磨→验证] 自我迭代 · Round 5 报告
+- `2026-10-10-r12-cycle4-report.md` — 12 轮 [寻虫→修复→打磨→验证] 自我迭代 · Round 4 报告
+- `2026-10-10-r12-cycle3-report.md` — 12 轮 [寻虫→修复→打磨→验证] 自我迭代 · Round 3 报告
+- `2026-10-10-r12-cycle2-report.md` — 12 轮 [寻虫→修复→打磨→验证] 自我迭代 · Round 2 报告
+- `2026-10-10-r12-cycle1-report.md` — 12 轮 [寻虫→修复→打磨→验证] 自我迭代 · Cycle 1（bugfind + fix_and_merge + polish + verify）
+- `2026-10-10-p2-three-guards-report.md` — 2026-10-10 · P2 · 三个新守卫 + 文档收口
+- `2026-10-10-p2-guards-report.md` — P2 守卫族三新增候选收口报告 · 2026-10-10
+- `2026-10-10-five-directions-closure-report.md` — 五方向落地收口报告（2026-10-10 晚间）
+- `2026-10-10-d4-p0c-host-skill-install-report.md` — P0-c 报告 · fist-mbt skill 装进宿主 + 生态 skill 注册（D4 · 拿来主义）
+- `2026-10-10-d3-p1b-six-hats-report.md` — 2026-10-10 · D3 · P1-b · 六顶帽 · 辩论裁决（hat_list / debate_*）
+- `2026-10-10-d1-p0a-fist-logo-assets-report.md` — 方向一 · P0-a 切片 · fist-logo + assets 投影 · 执行报告
+- `2026-10-10-bug140-141-asset-persist-report.md` — 2026-10-10 · BUG-140 / BUG-141 · asset 落库 → 跨进程回灌 → inject 检索 三态闭环
+- `2026-10-07-bug136-137-138-reserve-caller-encoding-report.md` — 2026-10-07 BUG-136/137/138 报告：预订原子性 + 调用方身份 + CI 侧 stdout 编码闸
+- `2026-10-07-bug135-release-status-phrase-report.md` — 2026-10-07 · BUG-135：一条「落盘即假」的发布状态主张，和一支专门盯它的判据 J13
+- `2026-10-07-bug132-nightly-dead-gate-report.md` — 2026-10-07 · BUG-132 收口：删掉恒 skipped 的 nightly 空壳 + 把「恒假门」做成常驻判据 J12
+- `2026-10-02-bug134-resolved-path-absolute-report.md` — 2026-10-02 · BUG-134 修复：`resolved_path` 从此真是绝对落点
+- `2026-10-02-bug130-ruling3-native-gate-report.md` — 2026-10-02 · BUG-130 出路③ 落地：native 臂改由常驻判据当门
+- `2026-10-01-bug130-native-heap-rootcause-report.md` — 2026-10-01 · BUG-130 定因轮汇报（native 门槛的根在依赖的 FFI）
+
+## 2026-09（129 份）
+
+- `2026-09-29-qoder-plugin-packaging-report.md` — 汇报 · 2026-09-29 · Qoder 插件封装（fist-mbt 黑盒形态）
+- `2026-09-29-mooncakes-publish-report.md` — 2026-09-29 · 发布到 mooncakes（0.3.4 → 0.3.5）收口报告
+- `2026-09-29-improvement-plan-recheck-report.md` — 2026-09-29 · 改进建议书逐条复测与计划修正 · 报告
+- `2026-09-29-final-review-prep-report.md` — 2026-09-29 · 终审前收口报告（清 bug / 无回归 / demo 可用 / 探索模式）
+- `2026-09-28-open-clearing-report.md` — 2026-09-28 · 缺陷账本 OPEN 清零轮（BUG-106/111/112/114 → 版本 0.3.4）
+- `2026-09-28-installed-cli-tour-report.md` — 2026-09-28 · 安装面自证：以用户身份装，再用装好的全局命令把 129 工具打一遍
+- `2026-09-27-sync-b50-b51-report.md` — 2026-09-27 · 双远端同步（GitCode）+ 遗留 OPEN 缺陷 BUG-50/51 闭合 · 汇报
+- `2026-09-27-round5-report.md` — 四模式流水线自我迭代 · Round 5 汇报（寻虫 → 修复 → 验证 → 打磨 + 勘误）
+- `2026-09-27-round4-report.md` — 四模式流水线自我迭代 · Round 4 汇报（寻虫 → 修复 → 验证 → 打磨）
+- `2026-09-27-ledger-reconcile-cleanup-report.md` — 2026-09-27 · 缺陷账本兑账 + 已知 OPEN 独立清零 · 汇报
+- `2026-09-26-selfloop-round3-report.md` — 自我迭代 Round 3 收口报告（寻虫 → 修复 → 验证 → 打磨）
+- `2026-09-26-selfloop-round2-report.md` — FIST 四模式流水线 · Round 2 汇报（寻虫 → 修复 → 验证 → 打磨）
+- `2026-09-26-selfloop-round1-report.md` — FIST 四模式流水线 · Round 1 汇报（寻虫 → 修复 → 验证 → 打磨）
+- `2026-09-26-selfloop-3round-summary.md` — 三轮自我迭代汇总（寻虫 → 修复 → 验证 → 打磨 × 3）
+- `2026-09-26-selfdrive-ab-test-report.md` — FIST-Mbt 自驱式推进能力 A/B 对照实验报告
+- `2026-09-26-router-merge-report.md` — 结果摘要
+- `2026-09-26-polish-issue-scan-report.md` — FIST-Mbt 打磨收尾汇报：issue_scan 规则驱动源码扫描
+- `2026-09-26-devstandard-align-report.md` — 2026-09-26 · 开发规范单文件化与全量文档合规（自驱式【验证】模式）
+- `2026-09-26-award-enhancement-r99-gate-reconfirm-report.md` — R99 汇报：门禁复评确认 R98（第 23 次评估全过 · `--prompt-file` 通道连续四轮零超时）
+- `2026-09-26-award-enhancement-r98-plan-revise-report.md` — R98 汇报：反馈驱动计划修订 plan_revise（ReAct 2210.03629 / CoPAL 2310.07263 蒸馏 · 95→96 工具 / 273→277 测试）
+- `2026-09-26-award-enhancement-r97-gate-reconfirm-report.md` — R97 汇报：门禁复评确认 R96（第 22 次评估全过 · `--prompt-file` 通道连续三轮零超时）
+- `2026-09-26-award-enhancement-r96-local-compensation-report.md` — R96 汇报：局部补偿控级联 saga_repair（Plan Commitment 2023 蒸馏 · 94→95 工具 / 269→273 测试）
+- `2026-09-26-award-enhancement-r95-gate-reconfirm-report.md` — R95 汇报：门禁复评确认 R94（第 21 次评估全过 · `--prompt-file` 默认通道连续两轮零超时）
+- `2026-09-26-award-enhancement-r94-dag-mc-report.md` — R94 汇报：Monte Carlo 概率式完工预测 dag_mc（Van Slyke 1963 蒸馏 · 93→94 工具 / 265→269 测试）
+- `2026-09-26-award-enhancement-r93-gate-reconfirm-report.md` — R93 汇报：门禁复评确认 R92（第 20 次评估全过 · `--prompt-file` 默认通道零超时）
+- `2026-09-26-award-enhancement-r92-saga-compensation-report.md` — R92 汇报：Saga 补偿事务（Garcia-Molina & Salem 1987 蒸馏 · 91→93 工具 / 261→265 测试）
+- `2026-09-26-award-enhancement-r91-gate-reconfirm-report.md` — R91 汇报：4-AI 概率门禁第 19 次复评（R84-R90 增量后 · score_gate Windows 长提示词修复）
+- `2026-09-26-award-enhancement-r90-phi-gate-report.md` — R90 汇报：概率式看护闭环 watchdog phi_gate（R89 原语 → 运行时行为）
+- `2026-09-26-award-enhancement-r89-phi-accrual-report.md` — R89 汇报：概率式故障检测 phi_accrual（Hayashibara 2004 经典算法落地）
+- `2026-09-26-award-enhancement-r88-progress-gate-report.md` — R88 汇报：进度预算路由门控 progress_gate（PROGROUTER arXiv 2608.25992 蒸馏落地）
+- `2026-09-26-award-enhancement-r87-agora-auction-report.md` — R87 汇报：置信度校准拍卖 executor_auction（Agora arXiv 2607.09600 蒸馏落地）
+- `2026-09-26-award-enhancement-r112-gate-reconfirm-report.md` — R112 汇报：门禁复评确认 R111（第 29 次评估全过 · 连续十轮零超时）+ 转入打磨模式
+- `2026-09-26-award-enhancement-r111-evaluator-optimizer-schema-report.md` — R111 汇报：反馈收敛 eval_feedback（Evaluator-Optimizer schema 蒸馏 · 102→103 工具 / 301→307 测试）
+- `2026-09-26-award-enhancement-r110-gate-reconfirm-report.md` — R110 汇报：门禁复评确认 R109（第 28 次评估全过 · `--prompt-file` 通道连续九轮零超时）
+- `2026-09-26-award-enhancement-r109-transactional-transition-report.md` — R109 汇报：迁移契约检查 tx_contract（Design by Contract 蒸馏 · 101→102 工具 / 295→301 测试）
+- `2026-09-26-award-enhancement-r108-gate-reconfirm-report.md` — R108 汇报：门禁复评确认 R107（第 27 次评估全过 · `--prompt-file` 通道连续八轮零超时）
+- `2026-09-26-award-enhancement-r107-quickcheck-property-tests-report.md` — R107 汇报：quickcheck 属性测试（BACKLOG P2 落地 · 复用 moonbitlang/core/quickcheck · 287→295/295）
+- `2026-09-26-award-enhancement-r106-english-readme-report.md` — R106 汇报：English README（P3 国际受众 · Lambda World 2026 · 纯文档轮）
+- `2026-09-26-award-enhancement-r105-gate-reconfirm-report.md` — R105 汇报：门禁复评确认 R104（第 26 次评估全过 · `--prompt-file` 通道连续七轮零超时）
+- `2026-09-26-award-enhancement-r104-circuit-breaker-report.md` — R104 汇报：熔断器三态 circuit_fail/succeed/status（Nygard Release It! 2007 蒸馏 · 98→101 工具 / 283→287 测试）
+- `2026-09-26-award-enhancement-r103-gate-reconfirm-report.md` — R103 汇报：门禁复评确认 R102（第 25 次评估全过 · `--prompt-file` 通道连续六轮零超时 · AI3 大涨）
+- `2026-09-26-award-enhancement-r102-health-check-report.md` — R102 汇报：四金信号健康巡检 health_check（Google SRE Book 2016 蒸馏 · 97→98 工具 / 280→283 测试）
+- `2026-09-26-award-enhancement-r101-gate-reconfirm-report.md` — R101 汇报：门禁复评确认 R100（第 24 次评估全过 · `--prompt-file` 通道连续五轮零超时）
+- `2026-09-26-award-enhancement-r100-goal-drift-check-report.md` — R100 汇报：全局目标校验 goal_drift_check（goal drift 2505.02709 / Repetitiveness 2603.12710 蒸馏 · 96→97 工具 / 277→280 测试）
+- `2026-09-25-calllog-fix-and-enhance-report.md` — call_log 修复 + 三块增强 汇报（2026-09-25）
+- `2026-09-25-award-enhancement-r83-gate-confirm-report.md` — R83 汇报：门禁复评确认——R77-R82 增量后新档位持续全过
+- `2026-09-25-award-enhancement-r82-demo-visibility-report.md` — R82 汇报：R80/R81 并入 award_demo 演示链（软可见）
+- `2026-09-25-award-enhancement-r81-budget-split-report.md` — R81 汇报：预算按依赖图阶段切分 cost_budget_split（ZEBRA 蒸馏落地）
+- `2026-09-25-award-enhancement-r8-status-summary-report.md` — 获奖提升 · 第 8 轮汇报：项目脉冲 status_summary + 修复 overview
+- `2026-09-25-award-enhancement-r79-r80-count-sync-trust-axis-report.md` — R79-R80 汇报：全仓计数同步 + 历史信任轴（SwarmHarness 蒸馏落地）
+- `2026-09-25-award-enhancement-r76-r77-gate-fail-cost-route-pass-report.md` — R76-R77 汇报：门禁 FAIL → 成本路由硬创新 → PASS（闭环第二次成立）
+- `2026-09-25-award-enhancement-r75-dag-schedule-load-report.md` — R75 汇报：排程视图负载感知——建议派单（dag_schedule 增强）
+- `2026-09-25-award-enhancement-r74-dag-schedule-report.md` — 获奖提升 · R74 dag_schedule 排程视图 汇报
+- `2026-09-25-award-enhancement-r73-gate-confirm-report.md` — 获奖提升 · R73 门禁复评确认 汇报
+- `2026-09-25-award-enhancement-r72-gate-pass-report.md` — 获奖提升 · R72 门禁复评 PASS（FAIL→硬创新→PASS 闭环）汇报
+- `2026-09-25-award-enhancement-r70-r71-gate-fail-and-dag-slack-report.md` — 获奖提升 · R70/R71 门禁复评FAIL→dag_slack 硬创新 汇报
+- `2026-09-25-award-enhancement-r7-board-ascii-report.md` — 获奖提升 · 第 7 轮汇报：实时任务看板 board_ascii
+- `2026-09-25-award-enhancement-r69-demo-health-report.md` — 获奖提升 · R69 project_health 并入 award_demo 演示链 汇报
+- `2026-09-25-award-enhancement-r68-project-health-report.md` — 获奖提升 · R68 项目健康卡 project_health 汇报
+- `2026-09-25-award-enhancement-r67-apply-sync-report.md` — 获奖提升 · R67 申报书校准 汇报
+- `2026-09-25-award-enhancement-r66-cleanup-underscore-report.md` — 获奖提升 · R66 临时脚本"任务完即清"策略自动化 汇报
+- `2026-09-25-award-enhancement-r65-gate-reconfirm-report.md` — 获奖提升 · R65 门禁复评（R62-64 后）汇报
+- `2026-09-25-award-enhancement-r64-demo-reinject-report.md` — 获奖提升 · R64 父计划回注并入 award_demo 演示链 汇报
+- `2026-09-25-award-enhancement-r63-reinject-context-report.md` — 获奖提升 · R63 父计划回注（plan_deep reinject_context）汇报
+- `2026-09-25-award-enhancement-r62-scripts-index-report.md` — 获奖提升 · R62 工具类辅助代码统一管理 汇报
+- `2026-09-25-award-enhancement-r61-gate-confirm-report.md` — 获奖提升 · R61 门禁复评确认 汇报
+- `2026-09-25-award-enhancement-r6-omega-lesson-report.md` — 获奖提升 · 第 6 轮汇报：Omega 打回自动落 [lesson] 教训
+- `2026-09-25-award-enhancement-r59-r60-gate-and-showcase-report.md` — 获奖提升 · R59/R60 4-AI 概率门禁复跑 & 视觉演示增强 汇报
+- `2026-09-25-award-enhancement-r58-dispatch-want-autodetect-report.md` — 获奖提升 · R58 派单能力自动抽取（dispatch_next want 免手传）汇报
+- `2026-09-25-award-enhancement-r57-watchdog-autodispatch-report.md` — 获奖提升 · R57 看门狗自治派单接入（watchdog_tick + autodispatch → dispatch_next）汇报
+- `2026-09-25-award-enhancement-r56-engine-dispatch-report.md` — 获奖提升 · R56 汇报：引擎层自治派单 primitive（dispatch_next）
+- `2026-09-25-award-enhancement-r55-board-difficulty-report.md` — 获奖提升 · R55 汇报：看板每行标注难度档
+- `2026-09-25-award-enhancement-r54-cli-unused-dep-report.md` — 获奖提升 · R54 汇报：清理 cmd/cli 未使用 store 依赖
+- `2026-09-25-award-enhancement-r53-repro-audit-report.md` — 获奖提升 · R53 汇报：评审一链自检复现审计
+- `2026-09-25-award-enhancement-r52-badge-selfcheck-guard-report.md` — 获奖提升 · R52 汇报：check_badge 防自检注释陈旧
+- `2026-09-25-award-enhancement-r51-watchdog-preview-report.md` — 获奖提升 · R51 汇报：看门狗无人值守派发预览
+- `2026-09-25-award-enhancement-r50-readme-selfcheck-report.md` — 获奖提升 · R50 汇报：README 评审自检注释校准
+- `2026-09-25-award-enhancement-r49-doc-finalize-report.md` — 获奖提升 · R49 汇报：文档收尾快照（申报书 / scripts-README 对齐 HEAD）
+- `2026-09-25-award-enhancement-r48-map-complete-report.md` — 获奖提升 · R48 汇报：fist://map 补全工具家族 + map_verify 锁定
+- `2026-09-25-award-enhancement-r47-test-single-source-report.md` — 获奖提升 · R47 汇报：测试总数单一真源守卫
+- `2026-09-25-award-enhancement-r46-tools-single-source-report.md` — 获奖提升 · R46 汇报：工具清单单一真源守卫 + AGENTS 补齐 29 工具
+- `2026-09-25-award-enhancement-r45-demo-difficulty-report.md` — 获奖提升 · R45 汇报：award_demo 难度一路可见
+- `2026-09-25-award-enhancement-r44-status-difficulty-report.md` — 获奖提升 · R44 汇报：status_summary 难度分布 by_difficulty
+- `2026-09-25-award-enhancement-r43-triage-diff-dedup-report.md` — 获奖提升 · R43 汇报：triage 难度抽取单一化（复用 extract_difficulty 去重）
+- `2026-09-25-award-enhancement-r42-triage-depends-on-report.md` — 获奖提升 · R42 汇报：task_triage 携带真实 DAG 依赖 depends_on
+- `2026-09-25-award-enhancement-r41-award-demo-dag-plan-report.md` — 获奖提升 · R41 汇报：award_demo 串演「真实 DAG + 执行计划」
+- `2026-09-25-award-enhancement-r40-exec-order-report.md` — 获奖提升 · R40 汇报：「执行计划视图」（task_plan_deep 新增 exec_order）
+- `2026-09-25-award-enhancement-r39-gradient-dag-report.md` — 获奖提升 · R39 汇报：LADDER 真实 DAG 前驱链（gradient_dag）
+- `2026-09-25-award-enhancement-r38-clean-guard-report.md` — 获奖提升 · R38 CI 仓库整洁守卫（cleanup_artifacts --check 接入 JS 轨）
+- `2026-09-25-award-enhancement-r37-accounts-report.md` — 获奖提升 · R37 评审证据表全量对账（deliverable / 申报书轮表补 R33-R36）
+- `2026-09-25-award-enhancement-r36-map-sync-report.md` — 获奖提升 · R36 项目地图 fist://map 全量同步（agent 首读即有地图）
+- `2026-09-25-award-enhancement-r35-ladder-deepen-report.md` — 获奖提升 · R35 LADDER 递归拆解深化（gradient 提示补"先易后逆推"自举闭环）
+- `2026-09-25-award-enhancement-r34-badge-guard-report.md` — 获奖提升 · R34 README 测试徽章一致性守卫（CI 门禁）
+- `2026-09-25-award-enhancement-r33-dispatch-handsfree-report.md` — 获奖提升 · R33 派单免手传（selfdrive_dispatch 自动抽取所需能力）
+- `2026-09-25-award-enhancement-r32-dispatch-report.md` — 获奖提升 · R32 能力路由自动派单（selfdrive_dispatch）
+- `2026-09-25-award-enhancement-r31-executor-persist-report.md` — 获奖提升 · R31 执行者能力注册持久化（跨进程可复现）
+- `2026-09-25-award-enhancement-r30-capacity-route-report.md` — 获奖提升 · R30 执行者能力路由（Marketplace/Dynamic 范式雏形）
+- `2026-09-25-award-enhancement-r29-challenge-critic-report.md` — 获奖提升 · R29 挑战题防漂移门禁 + R28 脚本区整洁
+- `2026-09-25-award-enhancement-r27-loop-report.md` — 获奖提升 · R27 汇报：award_demo 自推进闭环（推荐→取单→执行→验收→再推荐）
+- `2026-09-25-award-enhancement-r26-picknext-report.md` — 获奖提升 · R26 汇报：自驱取单 selfdrive_pick_next（按能力推荐自动认领）
+- `2026-09-25-award-enhancement-r25-selfcheck-report.md` — 获奖提升 · R25 汇报：README 一键完整自检门禁 + Tools 计数修正（评审可复现闭环）
+- `2026-09-25-award-enhancement-r24-reconcile-report.md` — 获奖提升 · R24 汇报：交付文档轮证据表全量对账（R1..R23 连续）
+- `2026-09-25-award-enhancement-r23-want-report.md` — 获奖提升 · R23 汇报：task_triage 能力偏好路由（want，Marketplace 雏形）
+- `2026-09-25-award-enhancement-r22-ci-consistency-report.md` — 获奖提升 · R22 汇报：CI 三轨道复核 + R21 工具计数补漏（文档即实现收尾）
+- `2026-09-25-award-enhancement-r21-triage-report.md` — 获奖提升 · R21 汇报：下一步该做啥（task_triage，推荐式挑选原语）
+- `2026-09-25-award-enhancement-r20-deliverable-report.md` — 获奖提升 · R20 汇报：评审交付文档完整化（deliverable 覆盖 19 轮 + 遗留如实）
+- `2026-09-25-award-enhancement-r19-native-report.md` — 获奖提升 · R19 汇报：native 双端证据 + Windows native 竞态文档如实修正
+- `2026-09-25-award-enhancement-r18-consistency-report.md` — 获奖提升 · R18 汇报：文档/资源一致性修复（文档即实现扫尾）
+- `2026-09-25-award-enhancement-r17-calibrate-report.md` — 获奖提升 · R17 汇报：难度校准（LADDER 补真实难度）
+- `2026-09-25-award-enhancement-r16-demo-report.md` — 获奖提升 · R16 汇报：获奖自驱 DEMO（一条命令串演增强能力链）
+- `2026-09-25-award-enhancement-r15-cleanup-report.md` — 获奖提升 · R15 汇报：项目整洁——生成物清理策略（cleanup_artifacts）
+- `2026-09-25-award-enhancement-r14-challenge-report.md` — 获奖提升 · R14 汇报：Challenger 进阶变体（SAGE 四专家环补齐）
+- `2026-09-25-award-enhancement-r13-critic-report.md` — 获奖提升 · R13 汇报：Critic 防漂移门禁（SAGE 论文落地）
+- `2026-09-25-award-enhancement-r12-gradient-report.md` — 获奖提升 · R12 汇报：难度梯度拆解（LADDER 自举信号）
+- `2026-09-25-award-enhancement-r10-reserve-report.md` — 获奖提升 · 第 10 轮汇报：作用域预订 reserve_scope（生态拿来主义）
+- `2026-09-25-award-enhancement-5rounds-report.md` — 获奖提升 5 轮自驱增强 综合汇报（2026-09-25）
+- `2026-09-24-top10-selfdrive-round6-report.md` — 第六轮自驱报告：push 同步 + 根治 CI 常年全红（真实 CI 绿标达成）
+- `2026-09-24-top10-selfdrive-round5-report.md` — 第五轮自驱报告：tools↔文档一致性 + native 轨道实证
+- `2026-09-24-top10-selfdrive-round3-report.md` — 冲刺前10·自驱打磨第三轮报告（2026-09-24）
+- `2026-09-24-top10-selfdrive-round2-report.md` — 冲刺前10·自驱打磨第二轮报告（2026-09-24）
+- `2026-09-24-top10-selfdrive-round1-report.md` — 冲刺全国十·自驱打磨第一轮报告（2026-09-24）
+- `2026-09-24-project-polish-report.md` — 项目打磨部署报告（2026-09-24）
+- `2026-09-24-laya-decide-integration-report.md` — Laya 集成部署报告（2026-09-24）
+- `2026-09-20-pipeline-watchdog-state-machine.md` — FIST-Mbt Watchdog 流水线状态机化 —— 空转根因修复报告
+- `2026-09-17-watchdog-remediation-plan.md` — FIST-Mbt Watchdog 整改计划
+- `2026-09-17-watchdog-cron-plan.md` — FIST-Mbt 定时任务看门狗（watchdog_tick）功能计划
+- `2026-09-13-m8-delivery-report.md` — FIST-Mbt M8 交付报告 — 文档体系完善 + 用户体验增强
+- `2026-09-13-m6-delivery-report.md` — FIST-Mbt M6 交付报告 — Omega 闭环 + 调度路由 + 执行器抽象 + 成本统计
+- `2026-09-13-fist-mbt-enhancement-plan.md` — FIST-Mbt 增强计划 — 对比 fistcode + FIST Python 的能力差距
