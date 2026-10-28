@@ -17,20 +17,23 @@
 // ============================================================================
 
 ///|
-/// 测试密钥对（固定 seed，确定性可复现）。
+/// 测试密钥对。**BUG-468：统一用 `test_crypto.mbt` 的常量**，不再自写字面量。
+///
+/// 背景：本文件最初用的是 **16 字节** seed ⇒ `@mooncry` abort ⇒
+/// 6 格测试全红且只显示 `Error`，排查约 10 分钟才定位到「seed 长度」。
 fn ce_seed() -> Bytes {
-  b"\x3a\x7f\x21\xb4\x5c\x0e\x99\x12\xaa\x3d\x61\x8f\x24\xbe\x07\xc5\xd8\x19\x42\xe0\x7b\x53\x96\x2c\x1a\x88\xf4\x0d\x6e\x31\xb7\x95"
+  TEST_ED25519_SEED_A
 }
 
 ///|
 fn ce_pub_hex() -> String {
-  @mooncry.bytes_to_hex(@mooncry.ed25519_public_key(ce_seed()))
+  test_ed25519_pub_hex(ce_seed())
 }
 
 ///|
 /// 测试夹具：用私钥签名（**仅测试用**，生产永无代签）。
 fn ce_sign(msg : String) -> String {
-  @mooncry.bytes_to_hex(@mooncry.ed25519_sign(ce_seed(), @utf8.encode(msg)))
+  test_ed25519_sign_hex(ce_seed(), msg)
 }
 
 ///|
