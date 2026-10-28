@@ -10288,3 +10288,47 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
 - summary: [authz] BUG-430 拆分（二）产品面「取不出挑战」且 claim 不接受 challenge —— 连"可选地走 S3"都做不到
 - reported_by: commander-alpha (Lane CB)
 - detail: **拆自 BUG-430**，是本轮实测发现的**比「默认不走」更基础**的缺口。两条实测：① **没有为已登记 agent 签发挑战的入口** —— 已登记 agent 调 `agent_register_key`（不带 challenge）只得 mode=already_registered，**回执里没有 challenge 字段**；挑战签发只在「非幂等」分支内。② **`claim` 不接受 `challenge` / `challenge_sig`** —— 实测 claim 的 inputSchema 为 `agent, assignee, inject, namespace, task_id`；只有 `reserve_scope` / `lock_acquire` 接受 challenge。⇒ **一个真实客户端无法从工具面取得服务端签发的挑战**；本轮能验签成功，是因为**手工拼出 nonce 形态**（`fist-s3-challenge:v1:<agent>:<counter>`，纯函数可复现）。**⇒ 产品现状是「路上缺一个收费站」而不是「有路没人走」：车到了入口却没有取票窗口，只能自己伪造一张票。** 建议修法：新增独立工具 `agent_issue_challenge(agent_id)`（服务端 `s3_issue_challenge_auto` 签发、不写库），并给 `claim` / `execute` / `verify` 补 `challenge` + `challenge_sig` 可选参数。**关闭条件（本条）**：存在至少一条**产品工具面**上「非手工构造」的取挑战路径，且主生命周期工具（`claim`）支持认证。**另注**：`fist.py` 默认把 `FIST_DB_PATH` 改道 `temp/fist.db`（BUG-122 同型收口），导致 `agent_register_key` 回 registered=true 而产品库仍是 0 行 —— 建议回执明示实际写入库路径。
+## BUG-466 [2026-10-28T07:25:26Z] [high] OPEN
+- summary: [BUG-430b] S3 挑战在产品面上无签发入口 —— 已登记 agent 拿不到服务端签发的 challenge，claim 也不接受 challenge 参数
+- detail: ## 缺陷（Lane CB 实测，2026-10-28）
+
+Alpha 按派单给产品库（fist-mbt.db）登记了真公钥（1/6 agents 的 pubkey_fp 非空），
+并用 reserve_scope 在生产路径上走通了 challenge_verified。**但暴露了产品面的结构性缺口。**
+
+### 三处产品面缺口（互证）
+
+1. **无挑战签发入口**：`agent_register_key(已登记 agent, 不带 challenge)` ⇒ `mode=already_registered`，
+   **回执里没有 challenge 字段**。已登记 agent 无法再拿到服务端签发的 nonce。
+
+2. **claim 不接受 challenge**：`claim` 的参数只有 agent / assignee / inject / namespace / task_id，
+   **没有 challenge / challenge_sig** ⇒ **最重要的生命周期工具无法认证**。
+
+3. **只有 reserve_scope / lock_acquire 接受 challenge**。
+
+⇒ **已登记 agent 在产品面上没有任何渠道拿到服务端签发的挑战。**
+Alpha 这次能验签成功，是因为**手工拼出了 nonce 形态**（纯函数可复现）。
+
+### 为什么这比「默认不走」更基础
+
+- 「默认不走」（S3 可选）：调用方**可以选择**走安全路径，只是默认走不安全的那条
+- 「没有取票窗口」：调用方**连选择权都没有**，只能自己伪造票
+⇒ 后者更基础。
+
+### 建议修法
+
+1. 新增独立工具 `agent_issue_challenge(agent_id)` —— 已登记 agent 可用它拿服务端签发的 nonce
+2. `claim` 补 `challenge` / `challenge_sig` 可选参数（与 reserve_scope / lock_acquire 同源）
+3. 回执里 `action` 前缀的 `unregistered+` 会让调用方误读（该 agent 是 executor 未进某白名单，不影响验签结论）⇒ 建议改成更准确的标注
+
+### 相关缺口（本单副产物）
+
+- `scripts/fist.py:44-48` 把 FIST_DB_PATH 默认改道 temp/fist.db（BUG-122 防污染收口）⇒
+  **「工具回执说 registered:true」与「产品库真的变了」是两件事**，极易误判。建议回执明示实际写入库路径。
+- 私钥在 temp/cb/agent.key（gitignore 覆盖，git ls-files temp/ 为空），但**无备份/轮换预案**。
+
+### 关闭条件
+
+BUG-430 拆分为两半：
+- **BUG-430a（已可关）**：路径存在 + 产品库有真公钥 + 「调用方无法自报」的判定路径已实测
+- **BUG-430b（本条，OPEN）**：产品面缺挑战签发入口 + claim 不接受 challenge
+- reported_by: lead(Lane CB 实测)
