@@ -178,6 +178,9 @@ pub fn FistEngine::assistant_upsert(Self, @store.AssistantReg) -> Unit
 pub fn FistEngine::audit_execute_gate(Self, String, String) -> Result[Unit, String]
 pub fn FistEngine::budget_split_by_dag(Self, Int32, root? : String, ns? : String) -> Json
 pub fn FistEngine::challenge(Self, task_id~ : String, by~ : String, factor? : Int32, strat? : String, now~ : String, critic? : @evolve.Archive?) -> Result[Json, String]
+pub fn FistEngine::challenge_cleanup(Self, String) -> Int32
+pub fn FistEngine::challenge_pending_count(Self, String, ns? : String) -> Int32
+pub fn FistEngine::challenge_persisted(Self) -> Bool
 pub fn FistEngine::children_index(Self) -> Map[String, Array[String]]
 pub fn FistEngine::children_of(Self, String) -> Array[@core.Task]
 pub fn FistEngine::circuit_fail(Self, ns? : String, circuit~ : String, now_secs~ : Int32, window_secs? : Int32, threshold? : Int32, recovery_secs? : Int32) -> Json
@@ -256,8 +259,9 @@ pub fn FistEngine::rsv_list(Self) -> Array[(String, String, String)]
 pub fn FistEngine::rsv_release(Self, String, String) -> Bool
 pub fn FistEngine::rsv_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String, challenge_nonce? : String?, challenge_sig? : String?) -> Result[String, String]
 pub fn FistEngine::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until~ : String, created_at~ : String, challenge_nonce? : String?, challenge_sig? : String?) -> Result[@store.RsvOutcome, String]
-pub fn FistEngine::s3_issue_challenge(Self, String, Int32) -> String
-pub fn FistEngine::s3_issue_challenge_auto(Self, String) -> String
+pub fn FistEngine::s3_consume_nonce(Self, String, String, ns? : String) -> Bool
+pub fn FistEngine::s3_issue_challenge(Self, String, Int32, ns? : String, issued_at? : String) -> String
+pub fn FistEngine::s3_issue_challenge_auto(Self, String, ns? : String, issued_at? : String) -> String
 pub fn FistEngine::saga_register(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, now~ : String) -> Result[Json, String]
 pub fn FistEngine::saga_repair(Self, ns? : String, String, failed_step~ : String, mark? : Bool) -> Result[Json, String]
 pub fn FistEngine::saga_rollback(Self, ns? : String, String, mark? : Bool) -> Result[Json, String]

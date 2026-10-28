@@ -149,6 +149,7 @@ pub struct MemoryStore {
   circuit_breakers : Map[String, (String, Int32, Int32, Int32, Int32, Int32, Int32)]
   saga_log : Map[String, Array[(Int32, String, String, String, String)]]
   mut saga_next_id : Int32
+  challenges : Map[String, (String, Bool)]
 }
 pub fn MemoryStore::assistant_get(Self, String) -> AssistantReg?
 pub fn MemoryStore::assistant_list(Self) -> Array[AssistantReg]
@@ -247,6 +248,10 @@ pub fn SqliteStore::assistant_set_status(Self, String, String) -> Bool
 pub fn SqliteStore::assistant_upsert(Self, AssistantReg) -> Unit
 pub fn SqliteStore::cb_get(Self, String, String) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)?
 pub fn SqliteStore::cb_save(Self, String, String, String, Int32, Int32, Int32, Int32, Int32, Int32, String) -> Result[Unit, String]
+pub fn SqliteStore::challenge_cleanup(Self, String) -> Int32
+pub fn SqliteStore::challenge_consume(Self, String, String, String) -> Bool
+pub fn SqliteStore::challenge_issue(Self, String, String, String, String) -> Result[Unit, String]
+pub fn SqliteStore::challenge_pending_count(Self, String, String) -> Int32
 pub fn SqliteStore::clear(Self) -> Unit
 pub fn SqliteStore::close(Self) -> Unit
 pub fn SqliteStore::create_task(Self, @core.Task) -> Result[Unit, String]
@@ -309,6 +314,11 @@ pub fn StoreBackend::assistant_upsert(Self, AssistantReg) -> Unit
 pub fn StoreBackend::backend_name(Self) -> String
 pub fn StoreBackend::cb_get(Self, String, String) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)?
 pub fn StoreBackend::cb_save(Self, String, String, String, Int32, Int32, Int32, Int32, Int32, Int32, String) -> Result[Unit, String]
+pub fn StoreBackend::challenge_cleanup(Self, String) -> Int32
+pub fn StoreBackend::challenge_consume(Self, String, String, String) -> Bool
+pub fn StoreBackend::challenge_issue(Self, String, String, String, String) -> Result[Unit, String]
+pub fn StoreBackend::challenge_pending_count(Self, String, String) -> Int32
+pub fn StoreBackend::challenge_persisted(Self) -> Bool
 pub fn StoreBackend::clear(Self) -> Unit
 pub fn StoreBackend::cost_stats(Self) -> Json
 pub fn StoreBackend::create_task(Self, @core.Task) -> Result[Unit, String]
