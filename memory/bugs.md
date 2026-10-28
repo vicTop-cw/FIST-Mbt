@@ -10439,3 +10439,30 @@ Beta 核完发现：`verify` 不经过角色取数面 ⇒ **给它接 `challenge
 - summary: [toolchain] `@mooncry` 短 seed（<32 字节）生成的 Ed25519 密钥对签名/验签不自洽
 - reported_by: commander-alpha (Lane CF)
 - detail: 实测：用 `b":\x7f!´"`（4 字节）或 `b":\x7f!´\\x0e\x12ª=a$¾\x07Å"`（16 字节）作 seed，调 `@mooncry.ed25519_public_key(seed)` 得公钥、`@mooncry.ed25519_sign(seed, msg)` 得签名，**再用 `verify_challenge_sig(公钥, msg, 签名)` 验签恒 false**；换成 32 字节 seed（`b":\x7f!´...·"`）则一切正常。**踩了两次**（BUG-466 与本单各一次），每次症状都是「测试全红但看不出原因」，各耗约 10 分钟。**危害**：写测试时若随手用一个短 seed，会得到「签名永远验不过」的假象，极易误判为「被测代码坏了」而不是「夹具坏了」。**建议**：① 上报给 `@mooncry` 上游（或在 `engine_rsv.mbt` 的 `verify_challenge_sig` 文档里写明「seed 必须 32 字节」）；② 仓内测试统一用一个常量 `TEST_ED25519_SEED_32`，别再各写一份；③ 若这是 `@mooncry` 的有意行为（要求恰好 32 字节），至少要**在签名时报错**而不是静默产出验不过的签名。
+
+- 追记（2026-10-28 15:20 **建议②已落地：统一常量在 `src/engine/test_crypto.mbt`**）：
+  我核了建议②的实现状态 —— **已经有统一常量了**：
+
+  `src/engine/test_crypto.mbt` 里：
+  ```moonbit
+  pub const TEST_ED25519_SEED_A : Bytes = b"\x3a\x7f\x21\xb4\x5c\x0e\x99\x12\xaa\x3d\x61\x8f\x24\xb…（32 字节）
+  pub const TEST_ED25519_SEED_B : Bytes = b"\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xe…（32 字节）
+  pub fn test_ed25519_pub_hex(Bytes) -> String
+  pub fn test_ed25519_sign_hex(Bytes, String) -> String
+  ```
+
+  且 `test_crypto.mbt:98` 有**自证格**：`let ok32 = @mooncry.ed25519_public_key(TEST_ED25519_SEED_A).length() == 32`
+  —— **这正是在锁「seed 必须 32 字节」这件事**。
+
+  **⇒ 建议②「仓内测试统一用一个常量，别再各写一份」已经做了**（`engine_bug430_keyed_must_sign_wbtest.mbt:28`
+  和 `engine_bug430_s3_key_wbtest.mbt:15` 都在引用 `TEST_ED25519_SEED_A`，没有各自硬编码）。
+
+  **⇒ 建议①「在 `verify_challenge_sig` 文档里写明」不成立**：`verify_challenge_sig` **不收 seed**
+  （签名是 `(pubkey_hex, msg, sig_hex)`）—— 短 seed 的坑在**调用方**
+  （`ed25519_public_key(seed)` / `ed25519_sign(seed, msg)`），不在验签面。
+  **要写也该写在 `test_crypto.mbt` 的常量注释上**（那里已经隐含了）。
+
+  **⇒ 建议③「若是有意行为，至少签名时报错」**：这是 `@mooncry` **上游**行为，仓内改不了 —— 只能等上游或加包装。
+
+  **⇒ 本单在本仓能做的都做了**，剩下「上游报错」不是本仓范围。
+  **建议 owner 判 FIXED 或转 upstream。**
