@@ -1568,6 +1568,100 @@ pub fn FistEngine::deps_satisfied(self : FistEngine, task_id : String) -> Bool {
 }
 
 ///|
+/// 依赖体检三态（BUG-460）：把 `deps_satisfied` 里被压成同一个 `false` 的三种处境拆开。
+///
+/// 为什么必须拆：`deps_satisfied` 对「依赖存在但未完成」与「依赖 id 根本不存在」都回 `false`
+/// ⇒ 上游无从区分「等一等会好」与「配置错了永远等不到」，后者会把任务**永久卡死而看板看不出异常**。
+///
+/// **加法式**：`deps_satisfied` 的签名与语义一字不动（`false` 仍然覆盖 Pending / Missing / NoTask 三档），
+/// 本类型只是给需要分辨的调用方多一个出口。第四态 `DepsNoTask` 的裁定见 `deps_report`。
+pub enum DepsState {
+  /// 依赖全部已完成（或本任务无依赖）—— 可执行
+  DepsSatisfied
+  /// 依赖都存在，但至少一个未完成 —— 时间能解决，等
+  DepsPending
+  /// 至少一个依赖 id 在库里查不到 —— 时间解决不了，要人改配置
+  DepsMissing
+  /// 任务自身不存在 —— 没有依赖面可谈（**不等于** satisfied，也不等于 missing）
+  DepsNoTask
+} derive(Eq, Debug)
+
+///|
+/// 依赖体检报告：三态结论 + 点名（哪个缺了、哪个还没完成）。
+///
+/// 两个点名列表**同时**填充，不做"只报一种"的取舍（裁定见 `deps_report`），
+/// 因此调用方拿到 `DepsMissing` 时仍能看到"除了配置错之外还差谁"。
+pub struct DepsReport {
+  /// 结论态
+  state : DepsState
+  /// 库里查不到的依赖 id（按 `depends_on` 原序、去重）
+  missing_deps : Array[String]
+  /// 存在但未完成的依赖 id（按 `depends_on` 原序、去重）
+  pending_deps : Array[String]
+} derive(Debug)
+
+///|
+/// 依赖体检结论是否可执行（等价于 `state == DepsSatisfied`）。
+pub fn DepsReport::is_satisfied(self : DepsReport) -> Bool {
+  self.state == DepsSatisfied
+}
+
+///|
+/// 稳定机器标签（供 `dag_check` 回执等展示面直接复用，避免各处自己拼 match 拼出两套口径）。
+pub fn DepsState::to_string(self : DepsState) -> String {
+  match self {
+    DepsSatisfied => "satisfied"
+    DepsPending => "pending"
+    DepsMissing => "missing"
+    DepsNoTask => "no_task"
+  }
+}
+
+///|
+/// 依赖体检（BUG-460 加法式新 API）：返回三态结论 + `missing_deps` / `pending_deps` 点名。
+///
+/// 与 `deps_satisfied` 的契约（`dag460` 白盒锁逐格钉住）：**永不反向**
+/// —— `is_satisfied() == true` ⟺ `deps_satisfied(task_id) == true`。
+///
+/// 两条裁定，写在这里免得下一个人重猜：
+/// ① **任务自身不存在 ⇒ `DepsNoTask`，不是 `DepsMissing`**。`DepsMissing` 的语义是"依赖里有幽灵"，
+///    而此刻连"依赖表"本身都没有；把两者混成一档，等于让调用方把"task_id 打错了"读成"某个上游被删了"。
+///    也不返回 `Err`：同包既有风格是 `Bool`/纯值（`deps_satisfied` 无错误通道），Err 会逼调用方
+///    为一个"查不到"改签名或 unwrap；显式第四态在模式匹配上是穷尽的，漏处理会编译期报错。
+/// ② **混合（同时有 pending 与 missing）⇒ 结论取 `DepsMissing`（missing 优先），但两个列表都照实填**。
+///    优先级反映"先修哪个"：pending 会随时间自愈，missing 不会，所以整体不可执行的原因归档为 missing；
+///    而两个列表都填，保证"除了配置错之外还差 A"这种信息不被优先级吃掉。
+pub fn FistEngine::deps_report(
+  self : FistEngine,
+  task_id : String,
+) -> DepsReport {
+  match self.store.get_task(task_id) {
+    None => { state: DepsNoTask, missing_deps: [], pending_deps: [], }
+    Some(t) => {
+      let missing : Array[String] = []
+      let pending : Array[String] = []
+      for tid in t.depends_on {
+        // 同一 id 在 depends_on 里重复出现时只点一次名（去重，按原序）
+        if !missing.contains(tid) && !pending.contains(tid) {
+          match self.store.get_task(tid) {
+            None => missing.push(tid)
+            Some(dt) => if !dt.get_status().is_completed() { pending.push(tid) }
+          }
+        }
+      }
+      let state = if !missing.is_empty() {
+        DepsMissing
+      } else if !pending.is_empty() {
+        DepsPending
+      } else {
+        DepsSatisfied
+      }
+      { state, missing_deps: missing, pending_deps: pending, }
+    }
+  }
+}
+
+///|
 /// 拓扑排序（Kahn 算法）：task A 在 depends_on 中的任务之后执行（依赖先输出）。
 /// 仅按 task_ids 集合内的依赖建图；集合外的依赖视为已满足（不影响本集合内排序）。
 /// 稳定：同批 indegree=0 的节点按 task_ids 原序输出；环残留节点按原序追加尾部。
