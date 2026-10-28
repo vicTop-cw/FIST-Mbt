@@ -33,6 +33,7 @@ import tarfile
 
 from moon_env_probe import moon_env
 import tempfile
+from git_env import isolated_git_env
 
 # BUG-138 同族：中文结论里的 ⇒ 在 Windows 默认 cp936 控制台会先崩掉 print（rc 被读成「缺陷在场」）。
 if hasattr(sys.stdout, "reconfigure"):

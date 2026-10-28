@@ -31,6 +31,7 @@ EXC = ("_build", "temp", ".git", "node_modules")
 # moonc 会撞 `Sys_error("\\\\?: Invalid argument")` 路径 ICE（工具链缺陷，见 BUG-380 同族），
 # 不接线就会把工具链故障记成「分支构建失败」。本脚本的 auto_merge 门② 会真跑 moon build。
 from moon_env_probe import moon_env
+from git_env import isolated_git_env
 
 def run(cmd, cwd=None, capture=True, env=None):
     r = subprocess.run(cmd, cwd=cwd or ROOT, capture_output=capture, text=True, encoding="utf-8", errors="replace", env=env)
