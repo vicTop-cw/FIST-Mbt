@@ -50,7 +50,22 @@ jobs:
           OK_COUNT=0
           FAIL_COUNT=0
           FAILED_BRANCHES=""
+          SKIP_COUNT=0
+          SKIPPED_BRANCHES=""
+          # 0) 「反丢历史」前置：只读拉一次 GitHub 侧分支引用，供下面的祖先判定用。
+          #    2026-10-28 实测事故：本 workflow 以 GitCode 为准 force 覆盖 GitHub 同名分支，
+          #    把 GitHub master 上的 431 笔提交（含当日 159 笔）整体抹掉，而 workflow 自己报绿。
+          #    `--force` 单独用是「源侧永远赢」，而 GitHub 侧才是这仓的活跃交付线 ⇒ 必须先判定。
+          git fetch gh '+refs/heads/*:refs/remotes/gh/*' >/dev/null 2>&1 || true
           for b in $BRANCHES; do
+            # ⚠️ 反丢历史守卫：GitHub 侧若存在**源侧没有**的提交，force 会静默抹掉它们 ⇒ 跳过并点名。
+            #    只有「GitHub 侧是本分支祖先」（纯快进）才允许 force 覆盖。
+            if git rev-parse --verify --quiet "refs/remotes/gh/$b" >/dev/null 2>&1                && ! git merge-base --is-ancestor "refs/remotes/gh/$b" "$b"; then
+              SKIP_COUNT=$((SKIP_COUNT + 1))
+              SKIPPED_BRANCHES="$SKIPPED_BRANCHES $b"
+              echo "::warning::skip branch(has-unique-commits): $b"
+              continue
+            fi
             if git push --force gh "$b:$b"; then
               OK_COUNT=$((OK_COUNT + 1))
             else
@@ -60,8 +75,12 @@ jobs:
             fi
           done
 
-          # 3) 默认分支映射：GitCode master -> GitHub master
-          if git push --force gh "master:master"; then
+          # 3) 默认分支映射：GitCode master -> GitHub master（**同样受反丢历史守卫约束**）
+          if git rev-parse --verify --quiet refs/remotes/gh/master >/dev/null 2>&1              && ! git merge-base --is-ancestor refs/remotes/gh/master master; then
+            SKIP_COUNT=$((SKIP_COUNT + 1))
+            SKIPPED_BRANCHES="$SKIPPED_BRANCHES master(default)"
+            echo "::warning::skip branch(has-unique-commits): master (default branch mapping)"
+          elif git push --force gh "master:master"; then
             OK_COUNT=$((OK_COUNT + 1))
           else
             FAIL_COUNT=$((FAIL_COUNT + 1))
@@ -78,7 +97,7 @@ jobs:
           fi
 
           # S2/S3：聚合读数 + 失败点名（同一行 echo 里 OK=… 与 FAIL=… 同现）
-          echo "OK=$OK_COUNT FAIL=$FAIL_COUNT TAGS=$TAGS_RESULT FAILED_BRANCHES=${FAILED_BRANCHES:-none}"
+          echo "OK=$OK_COUNT FAIL=$FAIL_COUNT SKIP=$SKIP_COUNT TAGS=$TAGS_RESULT FAILED_BRANCHES=${FAILED_BRANCHES:-none} SKIPPED=${SKIPPED_BRANCHES:-none}"
           if [ "$FAIL_COUNT" -ne 0 ]; then
             echo "::warning::failed branches:${FAILED_BRANCHES}"
             echo "::error::failed branches:${FAILED_BRANCHES}"
