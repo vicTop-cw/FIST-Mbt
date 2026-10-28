@@ -167,3 +167,19 @@ test "W9 末段与 ref 剥离：wt_last_segment 容错尾分隔符，wt_strip_re
   assert_eq(wt_strip_ref("refs/heads/wt/x"), "wt/x")
   assert_eq(wt_strip_ref("tags/v1"), "tags/v1")
 }
+
+///|
+/// W9 **三工具共用同一本账**（契约面，不是空转断言）：
+/// `wt_create` 落这条账、`wt_status` 按这条账判七档、`wt_destroy` 只认这条账上的路径——
+/// 三者只要有一方把路径约定改掉（例如改成 `wt_<task>.json` 或落别的目录），
+/// 「创建了但 status 看不见」「status 说能收但 destroy 拒动」就会同时出现，
+/// 而这正是本功能要防的那类**账对不上**的事故。
+/// ⇒ 此处锁死：账路径 = `<project>/.fist-mbt/data/wt-<task>.json`，且 task 先过白名单。
+test "W9 三工具共用同一本账：路径约定与 task 白名单" {
+  let p = wt_manifest_path("/proj", "r181-preflight")
+  assert_eq(p, "/proj/.fist-mbt/data/wt-r181-preflight.json")
+  // 同一 task 两次调用必须得到**同一个**路径（否则 status 与 destroy 会看不同的账）
+  assert_eq(wt_manifest_path("/proj", "t1"), wt_manifest_path("/proj", "t1"))
+  // 不同 task 落不同文件（否则多沙箱会互相覆盖账）
+  assert_true(wt_manifest_path("/proj", "a") != wt_manifest_path("/proj", "b"))
+}
