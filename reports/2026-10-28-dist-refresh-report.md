@@ -78,7 +78,7 @@ $ python scripts/refresh_dist.py
 
 | # | 项 |
 |---|---|
-| **R1** | 🔴 **守卫检查的 3 个目标全部是误报**（同一个根因）：①「部署副本」`%LOCALAPPDATA%ist-mbt.js`（launcher 不读它，44.7h lag 是假的）②「release 产物」`_release/js/fist-mbt.js`（`build_release.ps1` 生成的**发布包快照**，供 `install.ps1 -Source` 用，本就该停在发版那一刻）③ 2 条 `[UNPROVABLE]` 垫片（实测执行 `.cjs`，不在判据词表内） |
+| **R1** | 🔴 **守卫检查的 3 个目标全部是误报**（同一个根因）：①「部署副本」`%LOCALAPPDATA%\FIST-Mbt\fist-mbt.js`（launcher 不读它，44.7h lag 是假的）②「release 产物」`_release/js/fist-mbt.js`（`build_release.ps1` 生成的**发布包快照**，供 `install.ps1 -Source` 用，本就该停在发版那一刻）③ 2 条 `[UNPROVABLE]` 垫片（实测执行 `.cjs`，不在判据词表内） |
 | **R4** | 首次刷新因并发 lane 的 `engine_rsv.mbt:240` 顶层 `let mut`（编译错）失败；**等 ~5 分钟收口后重试成功**。`refresh_dist.py`「构建失败即中止、不留半成品」行为**正确** |
 
 ---

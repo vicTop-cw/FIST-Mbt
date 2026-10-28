@@ -81,7 +81,10 @@ fn bug_is_header(line : String) -> Bool {
   //
   // ⚠️ 关键坑（实测抓出来的）：**不能用 `bug_parse_header` 的 status** ——
   // 它对「status 段为空」会**默认补 `"OPEN"`**（见 `sure_status`，那是给解析容错用的），
-  // 拿它做「是不是条目」的判据 ⇒ `## BUG-999 [x] [medium]`（缺状态）会被判成条目。
+  // 拿它做「是不是条目」的判据 ⇒ `## BUG-NNN [x] [medium]`（缺状态）会被判成条目。
+  // 注：示例编号写成 `NNN` 而非真数字 —— `check_bug_reference_integrity.py` 的 J1 把注释面
+  //     `BUG-<数字>` 一律当引用（这是对的：翻旧账时数字会被当成账本条目去查），
+  //     示例若要可点就必须先入账，不值得为一个举例在账本里造一条假 BUG。
   // ⇒ 这里自己解析原始三段，**空就是空**。
   let raw = line.trim().to_owned()
   let body = if raw.has_prefix("## ") {

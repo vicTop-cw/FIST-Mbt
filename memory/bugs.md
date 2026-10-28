@@ -10199,3 +10199,22 @@ judged_role_gated → verify_challenge_sig）是通的**，验签实现也扎实
 
 ### FIXED(2026-10-28T02:00:16Z / BUG-456)
 - evidence: 修法两处缺一不可（commit da875464）：①--fresh 且无 args ⇒ 自取默认快照路径 temp/check_test_sync_fresh.log；②--fresh 的真跑必须早于「文件必须存在」检查（旧顺序先查存在 ⇒ 默认路径还不存在 ⇒ 仍 REJECT）。回归锁第 34 格 bug456-fresh-default-path（静态实现路径格，判例-29）：读本文件源码断言 "\n    if fresh and not args:\n" 与默认路径串都在。为什么静态而不真跑：真跑要 moon test 全仓分钟级，塞进 --selftest 会让每一次「门的门」都变成两分钟 —— 尺子会被人绕过。⚠️ 我第一版就踩了判例-30 自指假绿（已修）：裸 if "if fresh and not args:" not in _src 的模式串自己就在这条注释里 ⇒ 变异真代码后注释仍命中 ⇒ 静态格恒绿（实测 M1 变异 rc=0，本应 1）；改行首锚定 + 带换行 _needle="\n    if fresh and not args:\n" 后 M1 ⇒ rc=1 且精确命中 [bug456-fresh-default-path]。验收：--fresh（不带 log_path）= 真跑 + ADVISORY（工作树脏的正常降级）；--selftest = SELFTEST PASS 34（33 升至 34）；--total 1670 老路径仍可用。同类：BUG-425「判据输入面」—— 判据的输入应该自己取，不该让人手填（手填的那个数可能又是错的，正是 drift 的形状）。
+## BUG-457 [2026-10-28T03:39:49Z] [medium] FIXED
+- summary: 工具覆盖报告 §4 声称的 4 格测试在 HEAD 中从不存在（假绿报告）
+- detail: reports/2026-10-27-tool-coverage-judge-report.md §4 声称新增 src/server/server_bug455_pure_wbtest.mbt 的 4 格测试（webhook 2 + auction 2）并报 Total tests: 456。实证：git log --all -- src/server/server_bug455_pure_wbtest.mbt 无任何提交；该文件在 HEAD 与工作树均不存在；同批两个 commit c684499a / 0cc7f7ca 的 --stat 只含 scripts/check_tool_coverage.py / run_guards.py / README.md（无测试文件）；check_tool_coverage.py 至今仍把 github_issue_webhook_parse 与 executor_auction 列为外壳零覆盖。判定：报告把未落盘的工作写成已完成（口径不是修复）。修正：报告 §4 加作废追记并指向真实覆盖文件；本单只修记录，不冒充补测。
+- reported_by: lead
+
+### FIXED(2026-10-28T03:45:18Z / BUG-457)
+- evidence: 修正 reports/2026-10-27-tool-coverage-judge-report.md：§4「2 个工具测了吗/4 格」与 §5 变异 B 的 456 读数加作废标记，文末加「追记（BUG-457）」逐条列事实（git log --all -- src/server/server_bug455_pure_wbtest.mbt 空 = 从未落盘；c684499a/0cc7f7ca 的 --stat 无测试文件；判据仍点名两工具零覆盖）+ 同族对照（bug335 是提交后 revert，不算假绿）+ 报告写作三条自查。实证：python scripts/check_tool_coverage.py 现读数 150/154（零覆盖 4）；moon test --target js src/server = 504/504 passed。
+## BUG-458 [2026-10-28T03:44:57Z] [medium] OPEN
+- summary: [r2-lane-c] ops_selfdrive.mbt:33 sd_kind_path 对空/含 .. 或 / 的 kind 直接 abort ⇒ selfdrive_get/append 在 MCP 侧是非结构化崩溃而非 Err
+- detail: 实测（Lane C 2026-10-28，read-only）：src/ops/ops_selfdrive.mbt:33 的 sd_kind_path 对空 kind 或含 .. / / 的 kind 直接 abort()。最小复现：@ops.selfdrive_memory_get(dir, ns="d", kind="../etc") ⇒ 进程级 abort 而非 Err(...)。后果：MCP 工具面 selfdrive_get / selfdrive_append 收到恶意或手误 kind 时不是「返回错误」，而是「打崩调用栈」——与 BUG-374/433 同族（工具面把内部 panic 暴露成崩溃）。建议：改返回 Result[String, String]，调用方透传 Err，配最小复现锁（空 kind / ".." / "a/b" 三态各一格）。
+- reported_by: lead
+## BUG-459 [2026-10-28T03:45:11Z] [medium] OPEN
+- summary: [r2-lane-c] dag_publish handler 缺 ns_write_gate（publish 有）⇒ 与 write_gate.mbt 文档「拦 publish/publish_parallel/dag_publish」不符，留了污染 default.db 的路
+- detail: 实测（Lane C 2026-10-28，只读）：src/server/server.mbt 的工具注册里，publish handler 调了 ns_write_gate（全仓仅 server.mbt:1833 一处引用），而 dag_publish handler 没有。而 src/server/write_gate.mbt 的文档声明本门覆盖 publish / publish_parallel / dag_publish 三支。后果：多命名空间场景下，dag_publish 可以绕过写入门禁把任务写进主库 default.db —— 与 BUG-411/436 同族（写权限门覆盖不全）。建议：dag_publish handler 补同一道 ns_write_gate；补一格锁断言「无 can_write 的 agent dag_publish ⇒ 被拒」，并让判据扫「声称覆盖的工具清单 == 实际调用点清单」防再次漂移。
+- reported_by: lead
+## BUG-460 [2026-10-28T03:45:12Z] [low] OPEN
+- summary: [r2-lane-c] deps_satisfied 对不存在的任务也返回 false，与「依赖未满足」不可分
+- detail: 实测（Lane C 2026-10-28，只读）：dag_check / deps_satisfied 对「依赖任务 id 不存在」与「依赖任务存在但未完成」两种情况都返回 false。后果：上游无法区分「我的前置还没做完」（应等待）与「我的前置根本不存在」（应报配置错误）—— 后者会让任务永久卡在「等一个永远不会完成的前置」，且看板上看不出异常。建议：三值化（satisfied / pending / missing）或在回执里附 missing_deps 列表；配两格锁分别覆盖两种输入。
+- reported_by: lead
