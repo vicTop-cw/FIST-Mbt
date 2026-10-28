@@ -10522,3 +10522,7 @@ sqlite 面 manual 无 can_write ⇒ 被拒（fail-closed），正是所需。
 证据：reports/2026-10-28-lifecycle-identity-gate-audit.md
 扫描脚本：temp/audit/lane_cl_gate.py
 - reported_by: lead(Lane CL 普查)
+## BUG-472 [2026-10-28T10:33:59Z] [high] OPEN
+- summary: plan 工具的 challenge/challenge_sig schema 声明未接线 —— 调用方传签名不被验证也不被告知（Lane CQ 审核发现）
+- detail: Lane CQ 独立审核（BUG-430 覆盖面）发现：plan 工具的 schema 声明了 challenge 与 challenge_sig 两个可选参数（server.mbt:2052/2056，文案写「可选：S3 挑战 nonce。⚠️ 须配合 challenge_sig」），但 instrumented_tool 的 plan 注册块（2036-2100）的 handler 实现体里从未读取这两个参数 —— 没有 opt_challenge(args)，没有 challenge_nonce= 透传。后果：(1) 调用方以为传了 Ed25519 签名就受验，实际静默降级为自报身份，且不会收到任何警告；(2) 与 claim(2101) / reserve_scope(5920) / lock_acquire(6056) 三个同形声明让调用方无法区分「真验」与「只声明」。判据：按 instrumented_tool 块括号配平切分，plan 块内 challenge 命中但 challenge_nonce= / challenge_sig= 均无；对照 claim/reserve_scope/lock_acquire 三者两者皆有（真验）。这违反一源四态（schema 声明的能力与实现不一致）。建议：要么给 plan 接上 judged_role_gated 验签，要么从 schema 摘掉这两个字段并在描述里明说 plan 不做挑战认证。
+- reported_by: commander-gamma
