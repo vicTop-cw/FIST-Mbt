@@ -18,8 +18,11 @@
 ///|
 /// 把 HexaMind 三工具注册到 MCPServer 上并返回扩展后的 server。
 pub fn embed_hexa_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
-  try {
-    let mut s1 = s
+  // ⚠️ **BUG-465：这里过去是 `try { ...整段注册... } catch { _ => s }`，
+  //   那个 catch **从未生效** —— 块内全是 `instrumented_tool(...)` 注册调用，
+  //   没有任何 `raise`；若注册过程真的崩，那是 JS 运行时异常，catch 拦不住。
+  //   删掉后**行为不变**：正常路径完全一致，异常路径本来就是**直接崩**。
+  let mut s1 = s
     s1 = instrumented_tool(
       s1,
       "hat_run",
@@ -91,9 +94,6 @@ pub fn embed_hexa_tools(s : @mcp.MCPServer) -> @mcp.MCPServer {
       },
     )
     s1
-  } catch {
-    _ => s
-  }
 }
 
 // ---------------------------------------------------------------------------

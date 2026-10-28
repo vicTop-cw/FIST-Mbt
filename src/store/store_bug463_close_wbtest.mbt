@@ -347,13 +347,10 @@ test "k463_8b_external_raw_close_then_store_close_throws_by_design" {
     None => abort("夹具库打不开: " + db_path)
     Some(s) => {
       // 白盒直关底层句柄：store 无从得知
+      // BUG-465：这里过去用 `try { db.close() } catch { _ => () }` 模拟「外部直关」，
+      // 但那个 catch 从未生效（`Database::close` 无 raise）。现在直接关 —— 这才是真实写法。
       match s.db {
-        Some(db) =>
-          try {
-            db.close()
-          } catch {
-            _ => ()
-          }
+        Some(db) => db.close()
         None => abort("刚打开的库不该是无句柄")
       }
     }
