@@ -5,6 +5,8 @@
 ///|
 /// 构建干净的 SQLite 引擎（先清库保证用例幂等）。
 fn contract_engine(db_path : String) -> @engine.FistEngine {
+  // BUG-455：测试 db 统一落 `.fist-mbt/tmp/`，不再污染仓库根（根目录曾有 81 个 *.db）
+  let db_path = ".fist-mbt/tmp/" + db_path
   match @store.SqliteStore::open(db_path) {
     Some(s) => ignore(s.clear())
     None => abort("sqlite open failed: " + db_path)
@@ -105,7 +107,7 @@ test "tx_contract：三件套全通过（已领取任务 execute → allowed 执
 test "tx_contract：invariant 失败整笔拒绝（K 值非法 depth=0 任务 execute：前置过、不变量拒、回稳）" {
   let e = contract_engine("tc_r109_t3.db")
   // 注入非法 K 值任务（depth=0）到 store，模拟上游缺陷产生的非法状态
-  match @store.SqliteStore::open("tc_r109_t3.db") {
+  match @store.SqliteStore::open(".fist-mbt/tmp/tc_r109_t3.db") {
     Some(s) =>
       match
         s.create_task(
