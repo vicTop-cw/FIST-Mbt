@@ -79,6 +79,23 @@ def classify(ahead, pick_rc, conflicts, has_merge=False):
     return "error"
 
 
+def verdict(ahead, pick_rc, conflicts, has_merge, changed, added, base_symbols):
+    """纯函数：**把三面判定合成一次结论**（R132）。
+
+    为什么要有它：`ok` 的判定先后有三道工序 —— ① `classify`（贴得上否）→
+    ② `adjust_kind`（贴完树有没有变）→ ③ `dup_symbols`（变的是不是**重复**）。
+    原先这三道散在 `scan` 的循环体里，而 `--selftest` 只测 ①②③ 各自的纯函数
+    ⇒ **"合起来是否按这个顺序生效"没人验**（判例-29：机制格 ≠ 实现路径格）。
+    抽成一个纯函数后：接线只剩一行，自证可直接断言**组合结果**。
+    """
+    kind = adjust_kind(classify(ahead, pick_rc, conflicts, has_merge), changed)
+    if kind == "ok":
+        dups = dup_symbols(added, base_symbols)
+        if dups:
+            return "duplicate", ["重复符号: " + ", ".join(dups[:3])]
+    return kind, conflicts
+
+
 def branches(remotes, include="/slave/"):
     """列出候选分支。`include` 是**子串过滤**（默认 `/slave/`，R130 起可配）。
 
@@ -157,15 +174,10 @@ def scan(base, remotes, keep=False, limit=0, include="/slave/"):
             pick_rc, files, changed = simulate(base, wt, commits) if commits else (0, [], False)
             _, mout = git("rev-list", "--merges", "%s..%s" % (base, b))
             has_merge = bool([m for m in mout.split() if m]) if commits else False
-            kind = adjust_kind(classify(len(commits), pick_rc, files, has_merge), changed)
-            # R131：`ok` 再验一次「新增符号是否 base 已有」——防 3-way 合并把已有内容插成重复定义
-            if kind == "ok":
-                _, adiff = git("diff", "%s...%s" % (base, b))
-                added = re.findall(r"^\+\s*pub fn ([A-Za-z0-9_:]+)", adiff, re.M)
-                dups = dup_symbols(added, base_syms)
-                if dups:
-                    kind = "duplicate"
-                    files = ["重复符号: " + ", ".join(dups[:3])]
+            _, adiff = git("diff", "%s...%s" % (base, b))
+            added = re.findall(r"^\+\s*pub fn ([A-Za-z0-9_:]+)", adiff, re.M)
+            # R132：三面合成收进纯函数 `verdict` —— 接线只剩这一行，自证可断言组合结果
+            kind, files = verdict(len(commits), pick_rc, files, has_merge, changed, added, base_syms)
             rows.append({"branch": b, "ahead": len(commits), "kind": kind, "files": files})
             mark = {"ok": "✓", "contained": "=", "conflict": "✗", "merge": "M", "error": "!",
                     "duplicate": "⚠"}[kind]
@@ -314,6 +326,15 @@ def selftest():
     # R131：新增符号与 base 撞名 ⇒ 必须点名（否则合进去是重复定义，编译不过）
     cell("dup-symbols-detected", dup_symbols(["A", "B"], {"B", "C"}) == ["B"], True)
     cell("dup-symbols-clean", dup_symbols(["A"], {"C"}) == [], True)
+    # R132：**三面合成**的组合结果（判例-29 补位：此前只测各工序，没测"合起来按序生效"）
+    cell("verdict-ok-clean", verdict(1, 0, [], False, True, ["New"], {"Old"})[0], "ok")
+    cell("verdict-ok-no-content-is-contained",
+         verdict(1, 0, [], False, False, [], set())[0], "contained")
+    v_dup = verdict(1, 0, [], False, True, ["SqliteStore::open_preflight_ok"],
+                    {"SqliteStore::open_preflight_ok"})
+    cell("verdict-ok-but-dup-symbol-is-duplicate", v_dup[0], "duplicate")
+    cell("verdict-dup-lists-symbol", "open_preflight_ok" in v_dup[1][0], True)
+    cell("verdict-conflict-untouched", verdict(1, 1, ["a.txt"], False, True, [], set())[0], "conflict")
 
     # 端到端格：造真仓库
     d = tempfile.mkdtemp(prefix="mergeability-st-")
