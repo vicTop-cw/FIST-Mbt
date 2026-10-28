@@ -249,6 +249,8 @@ pub fn wt_path_ok(String) -> Bool
 
 pub fn wt_reclaimable(String) -> Bool
 
+pub fn wt_same_path(String, String) -> Bool
+
 pub fn wt_state_of(Bool, Bool?, Int32, Int32, Int32, String, String) -> (String, String)
 
 pub async fn wt_status_impl(String, Int32) -> Result[Json, String]

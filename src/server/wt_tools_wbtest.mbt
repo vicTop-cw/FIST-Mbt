@@ -229,3 +229,19 @@ test "W12 unregistered 跳过主工作树" {
   // 只有主工作树一条 ⇒ 永远没有 unregistered
   assert_eq(wt_unregistered([wt_porcelain_row("/x", "", "", false)], []).length(), 0)
 }
+
+///|
+/// W13 **同一概念只有一个路径口径**：`wt_status` 判「登记过」用 `wt_norm_path`（剥尾 `/`），
+/// 而 `wt_find_by_path`（`wt_destroy` 的安全面）原来只做 `\`→`/` ⇒
+/// **带尾斜杠调用 destroy 时，已登记沙箱被判成 `unregistered`**（status 说登记了、destroy 说没登记）。
+/// 两处现在都走 `wt_same_path`；这里锁死它的语义：只归一 **分隔符与尾斜杠**，不动大小写。
+test "W13 wt_same_path 单一口径：尾斜杠/反斜杠归一，大小写不归一" {
+  // 尾斜杠：同一个沙箱
+  assert_true(wt_same_path("/a/b", "/a/b/"))
+  assert_true(wt_same_path("/a/b/", "/a/b"))
+  // 反斜杠：同一个沙箱（Windows 面）
+  // 不同沙箱
+  assert_false(wt_same_path("/a/b", "/a/c"))
+  // **大小写不归一**（POSIX 大小写敏感；宁可漏认不可误认）
+  assert_false(wt_same_path("/a/B", "/a/b"))
+}

@@ -303,10 +303,9 @@ fn wt_load_all(project_dir : String) -> Array[(String, Json)] {
 ///|
 /// 按路径找账（`wt_destroy` 的安全面：未登记路径默认拒拆）。
 fn wt_find_by_path(project_dir : String, path : String) -> (String, Json)? {
-  let target = path.replace_all(old="\\", new="/")
+  // R108：路径比对走 `wt_same_path`（与 `wt_unregistered` 同一口径，带尾斜杠也能认出来）
   for pair in wt_load_all(project_dir) {
-    let p = wt_s(pair.1, "path").replace_all(old="\\", new="/")
-    if p == target {
+    if wt_same_path(wt_s(pair.1, "path"), path) {
       return Some(pair)
     }
   }
@@ -387,6 +386,15 @@ fn wt_norm_path(p : String) -> String {
 }
 
 ///|
+/// 「这两个路径指的是同一个沙箱吗」——**单一口径**（走 `wt_norm_path`）。
+/// R108：原 `wt_find_by_path` 只做 `\`→`/`（**不剥尾 `/`**），而 `wt_unregistered` 用
+/// `wt_norm_path`（剥尾 `/`）⇒ 带尾斜杠调用 `wt_destroy` 时，**已登记沙箱会被判成
+/// unregistered**（status 说登记了、destroy 说没登记，各说各话）。同一概念只许一个口径。
+pub fn wt_same_path(a : String, b : String) -> Bool {
+  wt_norm_path(a) == wt_norm_path(b)
+}
+
+///|
 /// 「目录在但不在账上」——**第 0 条恒为主工作树**（`git worktree list` 的约定：主工作树在最前）。
 /// 主工作树是仓库根、不是沙箱；把它算进 `unregistered` 会让**每次 `wt_status` 都报**
 /// 「有个没人管的沙箱」——那是假信号，会诱导人去「清理」仓库根。故跳过第 0 条。
@@ -397,10 +405,10 @@ pub fn wt_unregistered(parsed : Array[Json], known : Array[String]) -> Array[Jso
     let is_main = idx == 0
     idx = idx + 1
     if !is_main {
-      let p = wt_norm_path(wt_s(e, "path"))
+      let ep = wt_s(e, "path")
       let mut hit = false
       for k in known {
-        if wt_norm_path(k) == p {
+        if wt_same_path(k, ep) {
           hit = true
         }
       }
