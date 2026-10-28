@@ -100,7 +100,7 @@ def j_selftest():
 
 
 def main(argv):
-    unknown = [a for a in argv if a != "--selftest"]
+    unknown = [a for a in argv if a.startswith("--") and a != "--selftest"]
     if unknown:
         print("FATAL 未知参数：%s（本尺只接受 --selftest）" % " ".join(unknown))
         sys.exit(2)
