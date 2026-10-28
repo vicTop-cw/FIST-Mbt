@@ -21,3 +21,11 @@
 # R158：新尺本体 + 索引/电池/CI 接线 + 报告。带 .github/* 是因为本单往 ci.yml 的既有步骤里
 # 追加了一条自证命令；不碰契约面 ⇒ 不带 contract。
 slave/feat/diff-scope-guard-r158	scripts/* docs/tasks/* reports/* memory/* .github/*
+
+# BUG-389 修法①：supervisor_task_upsert 保留 decomposer 结构标记。
+# 改动 = src/engine/omega_strong.mbt（新增 plan_markers() 单一真源 + preserve_plan_markers 缺失补回）
+#       + src/engine/engine_supervisor.mbt（with_description 前先 preserve）+ omega_strong_test.mbt（5 条新锁）
+#       + src/engine/pkg.generated.mbti（moon info 同步新公开 API）。
+# 带 contract：本次 touch 了 src/engine/pkg.generated.mbti（moon info 惯例生成面，纯新增 API 投影），
+# 按 D2 需显式声明，交主线审。
+fix/omega-marker-preserve	src/engine/* docs/tasks/* reports/*	contract
