@@ -10480,10 +10480,11 @@ Beta 核完发现：`verify` 不经过角色取数面 ⇒ **给它接 `challenge
 ### FIXED(2026-10-28T09:30:32Z / BUG-468)
 - evidence: commit 75c20ce0（5 文件）+ 5264bd9a（追记）。⚠️ 根因修正：原报「@mooncry 短 seed 签名/验签不自洽」被探针推翻 —— @mooncry 的契约明确且正确（.mooncakes/cc06b/mooncry/lib/ed25519.mbt:263 对 seed.length()!=32 直接 abort），真正的问题是「错误信息不可见」：MoonBit 的 abort 在测试汇总里只显示 Error 不回显 abort 消息 ⇒「seed 长度错」被伪装成「被测代码坏了」，这才是每次烧 10 分钟的原因。行为事实表（探针实测）：seed 1/4/8/16/31/33/64 全 abort，只有 32 字节 OK（RFC 8032 canonical 长度）。修法：新建 src/engine/test_crypto.mbt 提供单一真源——TEST_ED25519_SEED_A/B（32 字节）+ test_ed25519_pub_hex + test_ed25519_sign_hex，自检格 test_crypto_seeds_are_usable 钉住「A/B 都 32 字节、导出不同公钥、A 的 sign→verify 通过、B 签的用 A 公钥验必须失败」。普查：手写 b"\x.." 字面量 16 处（15 处已 32 字节，1 处 star_gate_wbtest.mbt:79 的 deadbeef 是 hex 编解码数据非 seed 不改）；自写 *_seed() 函数 3 处全部改为 TEST_ED25519_SEED_A；现存短 seed 0 处（两次踩坑后已就地修正，本单是防复发）。验证：moon check 0 errors，src/engine 333/333。分析：统一常量能根治不是因为约束了什么，而是移除了「手写 seed」这个动作本身。缺口：test_crypto.mbt 在 src/engine 只能被 engine 包测试用（server/router 需 seed 要上提到 src/core）；只移除手写动作没有机制阻止新人再手写（建议 run_guards 加静态检查：*_test/_wbtest.mbt 里 b"\x.." 紧邻 ed25519_ 判红）；test_crypto.mbt 非 _test 后缀会进产品包编译（当前 0 errors 无实际影响）。
 
-## BUG-469 [2026-10-28T09:53:45Z] [high] OPEN
+## BUG-469 [2026-10-28T09:53:45Z] [high] FALSE_POSITIVE
 - summary: [authz] 生命周期后半段六个工具未接 challenge —— S3 覆盖面只有 3.2%（拆自 BUG-430）
 - detail: **拆自 BUG-430**（430 主条已 FIXED，关闭范围 = 认证基础设施建成且可用；本条是**覆盖面缺口**，不是同一缺陷）。**实测**：工具面 156 个中仅 5 个声明 `challenge`（`plan` / `claim` / `reserve_scope` / `lock_acquire` / `agent_register_key`，其中后者是登记面用 `proof_sig`）⇒ **3.2%**。而 `execute` / `submit` / `verify` / `reject` / `retry` / `archive` **全部无 `challenge`** ⇒ 一个已登记公钥的 agent 在 claim 时会被软强制降级，但「记录交付物 / 提交验收 / 验收 / 打回 / 重试 / 归档」**全部无需认证**。**危害**：S3 保护了生命周期前半段（谁领活儿），后半段（干得怎么样、验收过不过）仍是自报 —— 而验收恰恰是权限最敏感的一步（BUG-467 已单点为 verify 加了身份门，但其余五个仍未覆盖）。**关闭条件（三格，说清差什么）**：(1) 上述六个工具**全部声明 `challenge` + `challenge_sig`**；(2) 每条路径的回执 `action` 面能表达 `+challenge_verified` / `+challenge_required`（复用 `auth_tag` 单一真源）；(3) 有锁证明「已登记公钥的 agent 在这六个工具上不传 challenge ⇒ 降级或拒绝」，且**变异对照真跑**。**注意**：`verify` 已在 BUG-467 加了「谁是验收人」的身份门（但那是 ACL 维度，不是 S3 挑战维度，两者不替代）。**附带**：`challenge` 与 `challenge_sig` 声明数不一致（5 vs 4，`agent_register_key` 用 `proof_sig` 故差异合理）——统计时勿误读成「5 个受保护工具」。报告 `reports/2026-10-28-bug430-final-verdict.md`。
 
+- false_positive(2026-10-28T11:48:04Z): commit aa793252（代码+锁+判据）+ 0c8684a9（报告）。核心事实：challenge 的唯一消费者是 judged_role_gated / judged_role_with_nonce，全仓生产消费点只有 FistEngine::claim + rsv_set/rsv_try_set/locks_try_acquire/challenge_pending_count，六个目标工具（execute/submit/verify/reject/retry/archive）一个都不在清单里 ⇒ 接了就是死参数（判例-29 第三种假接线）。逐工具：execute 用 execute_with_meta（R23 已证不经过角色面，本单复核仍成立）；submit/verify/reject_task/retry_task/archive_force 全部无角色取数。verify 特别说明：BUG-467 加的是 ACL 门不是角色门 —— ACL 问能不能写、challenge 问你是谁，ACL 不需要签名。14 个生命周期工具的 S3 最终覆盖面：真受 S3（challenge 验签）1 个（claim）、有身份门但无 S3 11 个、特权路径 2 个 ⇒ 只有 claim 真受 S3 保护，剩 13 个不需要因为不判角色。变异对照两轮真跑：M1 给 execute schema 加回 challenge ⇒ 535/536 cw_01 精确打红；M2 给 reject_task 加 judged_role_gated ⇒ 534/536 cw_01+cw_02 双双打红（M2 证明双向断言的价值：只断 schema 不会红、只断引擎也不够）。门禁：moon check 0 errors；src/server+src/engine 872/872/0。附带修了死参数判据的一个误报：loop_create.items 是 steps 的 JSON Schema 数组元素声明（给客户端看的）不是工具顶层入参，旧判据 declared() 用正则扫整段 schema 不区分嵌套层级 ⇒ 误判；修法新增 _top_level_pairs() 用括号深度跟踪只在深度 1 收集。判据最终读数：工具块 354、含 schema 声明的工具 88、读取干净 23、opaque 13、死参数 0、设计如此 2（lock_acquire.ts / lock_renew.ts 已改成「时间戳由服务端盖章（BUG-33），此字段不接受覆盖」），rc=0，selftest 14/14。缺口：opaque 的 13 个工具判据看不见（handler 整包透传 args），可能仍有死参数 —— 已知边界不是零风险。
 ## BUG-470 [2026-10-28T09:53:45Z] [medium] OPEN
 - summary: [authz] 认证仍非默认要求 —— 83.3% 的 agent 无公钥，软强制降权不触发（拆自 BUG-430）
 - detail: **拆自 BUG-430**（本条是**产品决策**，不是技术缺陷）。**实测**：产品库 `fist-mbt.db` 6 个 agents 中仅 **1 个有公钥**（16.7%）⇒ 软强制降权（有公钥 + 不传 challenge ⇒ role 降 Executor + `challenge_required`）**只对那 1 个 agent 生效**，其余 5 个完全不受影响，仍按自报角色放行。**⇒ 「存在一条无法自报的路径」≠「调用方被要求走那条路」**：截至本条，S3 是**可选加入**的，不是默认要求。**为什么不是简单改默认**：直接「默认拒绝」会让现网 83.3% 的调用方立刻失败（它们连公钥都没有，取不到票）⇒ 一刀切等于停摆。**关闭条件（三格，需 owner 拍板）**：(1) 存在**批量登记公钥**的运维路径（否则「默认要求」无法推行）；(2) owner 明确选择「默认拒绝」还是「默认降权」（两者对现网影响差一个量级）；(3) 有一条**可回滚的开关**（避免一刀切停摆，出问题能立刻退回）。**本条不是 bug 而是方向**：在 owner 决策前不应动手，动手前必须有回滚方案。报告 `reports/2026-10-28-bug430-final-verdict.md`。
@@ -10546,3 +10547,40 @@ sqlite 面 manual 无 can_write ⇒ 被拒（fail-closed），正是所需。
 - reported_by: commander-gamma
 
 - false_positive(2026-10-28T10:59:17Z): Beta 复核推翻（Lane CR，c4463d61）：Gamma 的死参数探针只检查 handler 的文本字面量，但身份解析在辅助函数里 —— server.mbt:833 fn execute_write_identity 的第 11-12 行是 acl_execute_identity(get_str(args, "agent"), executor, acl_arg_given(args,"executor"), task_assignee)，agent 真的被读了；handler:53 的 let who = execute_write_identity(...) + agent_write_gate(eng, who, ns) 让门真的用了 who。实现与 BUG-436 描述的推断链完全一致，描述与实现没有矛盾。⇒ 探针口径缺陷（判例-32 同族）：只查 handler 不跟踪辅助函数会误报。Beta 自己也犯过同类错（用起始行+230 窗口扫 agent_register_key，漏掉第 270 行的 get_str(args,"proof_sig")，一度把正确实现判成死参数）。已加 cr_03 锁断言两段（handler 调用链 + 辅助函数读取）防复发。
+## BUG-474 [2026-10-28T11:39:09Z] [high] OPEN
+- summary: [S1] publish_parallel 的 created_by 无硬检查 —— 与 publish 不对称，任何调用方可在任意非 default ns 并行发布（Lane CX 独立验证发现）
+- detail: Gamma 独立验证 BUG-471 的「14/14 有身份门」时发现的不对称：
+
+## 对比
+
+| 工具 | created_by 硬检查 | 判定 |
+|---|---|---|
+| publish | engine.mbt:46 必须是 human_steward/human + BUG-411 预警 | **理由完整** |
+| **publish_parallel** | engine.mbt:1090 **无**；只有 ignore(created_by) + 注释「仅作审计用途，非法值不阻断」 | **显式设计，但弱一档** |
+
+## 后果
+
+publish_parallel 的 created_by 默认值 "selfdrive"，而它**没有任何准入检查** ⇒
+**任何能调到 MCP 的人都能在任意非 default 命名空间并行发布根任务**，无身份约束。
+
+这比 publish 更宽：publish 至少有 created_by 必须是 human_steward/human 的硬检查（虽然那本身也是自报，但至少把「随便谁」挡在外面一档）。
+
+## 与既有 bug 的关系
+
+- 同族：BUG-464（created_by 自报，S1 边界）
+- 但本条**更基础**：BUG-464 说的是「created_by 无法验证」，本条说的是「**根本没人看它**」
+- 与 BUG-472/473 的「声明了但不验」不同：这里连声明都没有，是**显式 ignore**
+
+## 建议
+
+1. 要么给 publish_parallel 补 created_by 硬检查（与 publish 对齐）
+2. 要么在工具描述里明说「本工具不检查 created_by，任意调用方可在任意 ns 发布」（让不安全可见）
+3. 顺带核 dag_publish（server.mbt:5223）也自报 created_by，未细查其 engine 路径
+
+## 附带发现（同单，需一并记录）
+
+BUG-471 声称的「14/14 有身份门」**只在 sqlite 后端成立**：
+server.mbt:805 的 agent_write_gate 有  —— 内存后端**直接放行**。
+生产走 sqlite（server.mbt:10/137 确证），但 FistEngine::new() 默认是 memory（engine.mbt:20）⇒ CLI 直调/测试下 14 个门全不拦。
+建议表述改为「**sqlite 后端下 14/14 有生效的身份门**」。这不是 bug（内存后端无持久化 ACL 面是设计），但**引用时必须带条件**。
+- reported_by: commander-gamma
