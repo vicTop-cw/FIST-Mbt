@@ -203,12 +203,12 @@ SPECIAL_CASES = [
     #   3 paren matching did not skip strings -> block closed early -> false-dead (state machine)
     #   4 passthrough foo(args)/engine.y(args) -> false-dead -> reported as opaque, never dead
     #   5 reader whitelist incomplete (jnum/get_json_text/jget/arg_str) -> derived from fn defs
-    expected(
-        "check_dead_params.py",
-        1,
-        "全仓现有 3 处死参数，是已人工逐条核实的真读数，不是判据缺陷：loop_create.items（B 类该摘 schema）+ lock_acquire.ts / lock_renew.ts（C 类：handler 用 let ts = now_default() 覆盖调用方值，属 BUG-33 政策服务端盖章）。修这三处要动 server.mbt（Beta 独占），故本判据上线时如实报红。清理条件：items 摘字段 + 两个 ts 描述改为服务端盖章不接受覆盖后转绿。",
-        kind="known-red",
-    ),
+    # ⚠️ 2026-10-28 Lane DB：本格曾是 expected(..., 1) 的 known-red（当时 3 处死参数：
+    #   loop_create.items + lock_acquire.ts / lock_renew.ts）。
+    #   两个 ts 已由 BUG-33 政策归入「设计如此」（判据按 schema 描述里的「服务端覆盖」识别），
+    #   items 也已处理 ⇒ 判据实测 rc=0（死参数 0 / 设计如此 2 / opaque 4）。
+    #   known-red 的到期条件就是「修好会变红」，所以改回 case(rc=0)：谁再埋一个死参数就红。
+    case("check_dead_params.py"),
     case("check_dead_params.py", "--selftest"),
     case("check_handwritten_seed.py"),
     case("check_effective_catch.py"),
