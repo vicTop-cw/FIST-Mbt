@@ -10434,7 +10434,7 @@ Beta 核完发现：`verify` 不经过角色取数面 ⇒ **给它接 `challenge
 - summary: [authz] BUG-430 拆分（三）认证仍非默认要求 —— execute/verify 未接 challenge、公钥按 ns 隔离
 - reported_by: commander-alpha (Lane CF)
 - detail: **拆自 BUG-430**。第九段落地后，「有钥匙就必须出示」已实现（有公钥 + 不传 challenge ⇒ 角色降 Executor、role_source=challenge_required、action 带 +challenge_required，软强制不硬拒）。技术上 AGENTS.md 的关闭条件（「存在至少一条调用方无法自报的路径」）**已满足**。但本段仍不能整体关闭，还剩三条：① **execute / verify 不收 challenge** —— 它们不走 judged_role_gated，`+challenge_required` 在这两条路径上不触发 ⇒ 已登记公钥的 agent 在这两步仍可完全自报。② **公钥按 ns 隔离** —— 在 ns-A 登记的钥匙在 ns-B 不算「有钥匙」，降级不触发（跨 ns 场景仍有口子）。③ **默认仍不要求认证** —— 当前绝大多数 agent 根本没登记公钥，完全不受本段影响 ⇒ 认证是「可选加入」而非「默认要求」。程序化建议：把 BUG-430 拆为 430a/430b（路径存在 + 产品可达 + 有钥匙必须验签 ⇒ **FIXED**）与本条 430c（仍是 OPEN）；430c 的关闭条件是「主生命周期工具全部支持认证 + 存在一条『默认要求认证』的迁移路径」。配套修复见 commit `feat(authz)` 第九段：`judged_role_gated` 的 None 分支加 `declared_pubkey_for(...) is Some(_) ⇒ ("Executor","challenge_required")`，六格锁在 `src/engine/engine_bug430_keyed_must_sign_wbtest.mbt`（含变异对照，实测 329→326/3 failed）。
-## BUG-468 [2026-10-28T08:50:20Z] [medium] OPEN
+## BUG-468 [2026-10-28T08:50:20Z] [medium] FIXED
 
 - summary: [toolchain] `@mooncry` 短 seed（<32 字节）生成的 Ed25519 密钥对签名/验签不自洽
 - reported_by: commander-alpha (Lane CF)
@@ -10466,3 +10466,7 @@ Beta 核完发现：`verify` 不经过角色取数面 ⇒ **给它接 `challenge
 
   **⇒ 本单在本仓能做的都做了**，剩下「上游报错」不是本仓范围。
   **建议 owner 判 FIXED 或转 upstream。**
+
+
+### FIXED(2026-10-28T09:30:32Z / BUG-468)
+- evidence: commit 75c20ce0（5 文件）+ 5264bd9a（追记）。⚠️ 根因修正：原报「@mooncry 短 seed 签名/验签不自洽」被探针推翻 —— @mooncry 的契约明确且正确（.mooncakes/cc06b/mooncry/lib/ed25519.mbt:263 对 seed.length()!=32 直接 abort），真正的问题是「错误信息不可见」：MoonBit 的 abort 在测试汇总里只显示 Error 不回显 abort 消息 ⇒「seed 长度错」被伪装成「被测代码坏了」，这才是每次烧 10 分钟的原因。行为事实表（探针实测）：seed 1/4/8/16/31/33/64 全 abort，只有 32 字节 OK（RFC 8032 canonical 长度）。修法：新建 src/engine/test_crypto.mbt 提供单一真源——TEST_ED25519_SEED_A/B（32 字节）+ test_ed25519_pub_hex + test_ed25519_sign_hex，自检格 test_crypto_seeds_are_usable 钉住「A/B 都 32 字节、导出不同公钥、A 的 sign→verify 通过、B 签的用 A 公钥验必须失败」。普查：手写 b"\x.." 字面量 16 处（15 处已 32 字节，1 处 star_gate_wbtest.mbt:79 的 deadbeef 是 hex 编解码数据非 seed 不改）；自写 *_seed() 函数 3 处全部改为 TEST_ED25519_SEED_A；现存短 seed 0 处（两次踩坑后已就地修正，本单是防复发）。验证：moon check 0 errors，src/engine 333/333。分析：统一常量能根治不是因为约束了什么，而是移除了「手写 seed」这个动作本身。缺口：test_crypto.mbt 在 src/engine 只能被 engine 包测试用（server/router 需 seed 要上提到 src/core）；只移除手写动作没有机制阻止新人再手写（建议 run_guards 加静态检查：*_test/_wbtest.mbt 里 b"\x.." 紧邻 ed25519_ 判红）；test_crypto.mbt 非 _test 后缀会进产品包编译（当前 0 errors 无实际影响）。
