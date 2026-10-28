@@ -9998,6 +9998,240 @@ pub async fn run_server() -> Unit {
     },
   )
 
+  // WT-02：git worktree 生命周期管理三工具（wt_create / wt_status / wt_destroy）
+  s1 = instrumented_tool(
+    s1,
+    "wt_create",
+    "创建 git worktree（git worktree add 封装）。在指定 git 仓库下创建新的 worktree，可选指定分支或 detached HEAD。返回 { ok, path, branch, detached, stdout, stderr, code, note }。参数：project_dir(必填，git 仓库根目录)、path(必填，worktree 路径)、branch(可选，分支名)、detach(可选，detached HEAD)、timeout_ms(可选，默认 60000)。",
+    schema(
+      {
+        "project_dir": string_prop("git 仓库根目录（必填）"),
+        "path": string_prop("worktree 路径（必填）"),
+        "branch": string_prop("分支名（可选；不传则 checkout 当前 HEAD）"),
+        "detach": bool_prop("detached HEAD（可选，默认 false）"),
+        "timeout_ms": int_prop("超时毫秒（可选，默认 60000）"),
+      },
+      ["project_dir", "path"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let path = get_str(args, "path")
+      let branch = get_str(args, "branch", default="")
+      let detach = get_bool(args, "detach", default=false)
+      let timeout_ms = get_int(args, "timeout_ms", default=60000)
+      if project_dir == "" || path == "" {
+        let m : Map[String, Json] = Map([])
+        m.set("ok", Json::boolean(false))
+        m.set("error", Json::string("project_dir 和 path 必填"))
+        return Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
+      }
+      let git_args : Array[String] = []
+      git_args.push("worktree")
+      git_args.push("add")
+      if detach {
+        git_args.push("--detach")
+      }
+      if branch != "" {
+        git_args.push(branch)
+      }
+      git_args.push(path)
+      let r = run_check_external("git", git_args, project_dir, timeout_ms)
+      match r {
+        Ok(res) => {
+          let m : Map[String, Json] = match res {
+            Json::Object(mm) => mm
+            _ => {
+              let err : Map[String, Json] = Map([])
+              err.set("ok", Json::boolean(false))
+              err.set("error", Json::string("run_check_external 返回非 JSON 对象"))
+              return Ok(@mcp.ToolResult::text(Json::object(err).stringify()))
+            }
+          }
+          let ok = match m.get("ok") {
+            Some(Json::True) => true
+            _ => false
+          }
+          let stdout = match m.get("stdout") {
+            Some(Json::String(s)) => s
+            _ => ""
+          }
+          let stderr = match m.get("stderr") {
+            Some(Json::String(s)) => s
+            _ => ""
+          }
+          let code = match m.get("code") {
+            Some(Json::Number(n, ..)) => n
+            _ => -1.0
+          }
+          let out : Map[String, Json] = Map([])
+          out.set("ok", Json::boolean(ok))
+          out.set("path", Json::string(path))
+          out.set("branch", Json::string(branch))
+          out.set("detached", Json::boolean(detach))
+          out.set("stdout", Json::string(stdout))
+          out.set("stderr", Json::string(stderr))
+          out.set("code", Json::number(code))
+          let note = if ok { "worktree 创建成功" } else { "git worktree add 失败，见 stderr" }
+          out.set("note", Json::string(note))
+          Ok(@mcp.ToolResult::text(Json::object(out).stringify()))
+        }
+        Err(e) => {
+          let err : Map[String, Json] = Map([])
+          err.set("ok", Json::boolean(false))
+          err.set("error", Json::string("wt_create: " + e))
+          Ok(@mcp.ToolResult::text(Json::object(err).stringify()))
+        }
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "wt_status",
+    "列出全部 git worktree（git worktree list --porcelain 封装）。返回原始 porcelain stdout + 退出码。调用方自行解析 porcelain 格式。返回 { ok, stdout, stderr, code }。参数：project_dir(必填)、timeout_ms(可选，默认 30000)。",
+    schema(
+      {
+        "project_dir": string_prop("git 仓库根目录（必填）"),
+        "timeout_ms": int_prop("超时毫秒（可选，默认 30000）"),
+      },
+      ["project_dir"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let timeout_ms = get_int(args, "timeout_ms", default=30000)
+      if project_dir == "" {
+        let m : Map[String, Json] = Map([])
+        m.set("ok", Json::boolean(false))
+        m.set("error", Json::string("project_dir 必填"))
+        return Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
+      }
+      let git_args : Array[String] = []
+      git_args.push("worktree")
+      git_args.push("list")
+      git_args.push("--porcelain")
+      let r = run_check_external("git", git_args, project_dir, timeout_ms)
+      match r {
+        Ok(res) => {
+          let m : Map[String, Json] = match res {
+            Json::Object(mm) => mm
+            _ => {
+              let err : Map[String, Json] = Map([])
+              err.set("ok", Json::boolean(false))
+              err.set("error", Json::string("run_check_external 返回非 JSON 对象"))
+              return Ok(@mcp.ToolResult::text(Json::object(err).stringify()))
+            }
+          }
+          let ok = match m.get("ok") {
+            Some(Json::True) => true
+            _ => false
+          }
+          let stdout = match m.get("stdout") {
+            Some(Json::String(s)) => s
+            _ => ""
+          }
+          let stderr = match m.get("stderr") {
+            Some(Json::String(s)) => s
+            _ => ""
+          }
+          let code = match m.get("code") {
+            Some(Json::Number(n, ..)) => n
+            _ => -1.0
+          }
+          let out : Map[String, Json] = Map([])
+          out.set("ok", Json::boolean(ok))
+          out.set("stdout", Json::string(stdout))
+          out.set("stderr", Json::string(stderr))
+          out.set("code", Json::number(code))
+          Ok(@mcp.ToolResult::text(Json::object(out).stringify()))
+        }
+        Err(e) => {
+          let err : Map[String, Json] = Map([])
+          err.set("ok", Json::boolean(false))
+          err.set("error", Json::string("wt_status: " + e))
+          Ok(@mcp.ToolResult::text(Json::object(err).stringify()))
+        }
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "wt_destroy",
+    "移除 git worktree（git worktree remove 封装）。删除指定 worktree，可选强制移除。返回 { ok, path, removed, stdout, stderr, code, note }。参数：project_dir(必填)、path(必填，worktree 路径)、force(可选，强制移除)、timeout_ms(可选，默认 30000)。",
+    schema(
+      {
+        "project_dir": string_prop("git 仓库根目录（必填）"),
+        "path": string_prop("worktree 路径（必填）"),
+        "force": bool_prop("强制移除（可选，默认 false）"),
+        "timeout_ms": int_prop("超时毫秒（可选，默认 30000）"),
+      },
+      ["project_dir", "path"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let path = get_str(args, "path")
+      let force = get_bool(args, "force", default=false)
+      let timeout_ms = get_int(args, "timeout_ms", default=30000)
+      if project_dir == "" || path == "" {
+        let m : Map[String, Json] = Map([])
+        m.set("ok", Json::boolean(false))
+        m.set("error", Json::string("project_dir 和 path 必填"))
+        return Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
+      }
+      let git_args : Array[String] = []
+      git_args.push("worktree")
+      git_args.push("remove")
+      if force {
+        git_args.push("--force")
+      }
+      git_args.push(path)
+      let r = run_check_external("git", git_args, project_dir, timeout_ms)
+      match r {
+        Ok(res) => {
+          let m : Map[String, Json] = match res {
+            Json::Object(mm) => mm
+            _ => {
+              let err : Map[String, Json] = Map([])
+              err.set("ok", Json::boolean(false))
+              err.set("error", Json::string("run_check_external 返回非 JSON 对象"))
+              return Ok(@mcp.ToolResult::text(Json::object(err).stringify()))
+            }
+          }
+          let ok = match m.get("ok") {
+            Some(Json::True) => true
+            _ => false
+          }
+          let stdout = match m.get("stdout") {
+            Some(Json::String(s)) => s
+            _ => ""
+          }
+          let stderr = match m.get("stderr") {
+            Some(Json::String(s)) => s
+            _ => ""
+          }
+          let code = match m.get("code") {
+            Some(Json::Number(n, ..)) => n
+            _ => -1.0
+          }
+          let out : Map[String, Json] = Map([])
+          out.set("ok", Json::boolean(ok))
+          out.set("path", Json::string(path))
+          out.set("removed", Json::boolean(ok))
+          out.set("stdout", Json::string(stdout))
+          out.set("stderr", Json::string(stderr))
+          out.set("code", Json::number(code))
+          let note = if ok { "worktree 已移除" } else { "git worktree remove 失败，见 stderr" }
+          out.set("note", Json::string(note))
+          Ok(@mcp.ToolResult::text(Json::object(out).stringify()))
+        }
+        Err(e) => {
+          let err : Map[String, Json] = Map([])
+          err.set("ok", Json::boolean(false))
+          err.set("error", Json::string("wt_destroy: " + e))
+          Ok(@mcp.ToolResult::text(Json::object(err).stringify()))
+        }
+      }
+    },
+  )
+
   // HexaMind 六元自驱决策三工具（hat_run / hat_merge / hat_debate，真源 src/hat）。
   s1 = embed_hexa_tools(s1)
 

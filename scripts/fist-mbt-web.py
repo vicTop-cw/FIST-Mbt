@@ -9,8 +9,10 @@ MCPBridge 直接调用 stdio MCP server，绝不绕过 MCP 直读 SqliteStore。
   GET  /static/<path>        → web/ 目录下的静态资源（路径穿越 403）
   GET  /api/tasks?ns=<ns>    → list → 平铺数组 → 嵌套树 JSON
   GET  /api/tasks/<task_id>  → get → 单任务详情
-  GET  /api/status           → status_summary → 项目脉冲
-  GET  /api/events           → SSE：连接即发 snapshot，之后每 15s heartbeat
+   GET  /api/status           → status_summary → 项目脉冲
+   GET  /api/stateflow?ns=<ns> → state_flow_ascii → 状态流转图
+   GET  /api/health?ns=<ns>    → project_health → 项目健康卡
+   GET  /api/events           → SSE：连接即发 snapshot，之后每 15s heartbeat
   GET  /health               → {"ok":true,"server":"fist-mbt-web","mcp_alive":bool}
 
 认证：
@@ -293,6 +295,8 @@ th{background:#f9fafb}
 <tr><th>端点</th><th>说明</th></tr>
 <tr><td><code>GET /health</code></td><td>健康检查</td></tr>
 <tr><td><code>GET /api/status</code></td><td>项目脉冲（status_summary）</td></tr>
+<tr><td><code>GET /api/stateflow?ns=&lt;ns&gt;</code></td><td>状态流转图（state_flow_ascii）</td></tr>
+<tr><td><code>GET /api/health?ns=&lt;ns&gt;</code></td><td>项目健康卡（project_health）</td></tr>
 <tr><td><code>GET /api/tasks?ns=&lt;ns&gt;</code></td><td>任务树（嵌套）</td></tr>
 <tr><td><code>GET /api/tasks/&lt;task_id&gt;</code></td><td>单任务详情</td></tr>
 <tr><td><code>GET /api/events</code></td><td>SSE 实时流</td></tr>
@@ -423,6 +427,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/status":
             self._handle_status()
             return
+        if path == "/api/stateflow":
+            self._handle_stateflow()
+            return
+        if path == "/api/health":
+            self._handle_health()
+            return
         if path == "/api/events":
             self._handle_events()
             return
@@ -496,6 +506,28 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": err}, status=502)
             return
         self._send_json({"ok": True, "status": data, "updated_at": now_iso()})
+
+    def _handle_stateflow(self) -> None:
+        """GET /api/stateflow：状态流转 ASCII + 各状态计数 + 在流任务数。"""
+        qs = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+        ns = qs.get("ns") or qs.get("namespace") or [""]
+        ns = ns[0] if isinstance(ns, list) else ns
+        ok, data, err = call_mcp(self.bridge, "state_flow_ascii", {"namespace": ns})
+        if not ok:
+            self._send_json({"ok": False, "error": err}, status=502)
+            return
+        self._send_json({"ok": True, "stateflow": data, "updated_at": now_iso()})
+
+    def _handle_health(self) -> None:
+        """GET /api/health：项目健康卡（grade + 六类计数 + 阻塞任务列表）。"""
+        qs = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+        ns = qs.get("ns") or qs.get("namespace") or [""]
+        ns = ns[0] if isinstance(ns, list) else ns
+        ok, data, err = call_mcp(self.bridge, "project_health", {"namespace": ns})
+        if not ok:
+            self._send_json({"ok": False, "error": err}, status=502)
+            return
+        self._send_json({"ok": True, "health": data, "updated_at": now_iso()})
 
     def _handle_events(self) -> None:
         """GET /api/events：SSE 流。连接即发 snapshot，之后每 15s heartbeat。"""
