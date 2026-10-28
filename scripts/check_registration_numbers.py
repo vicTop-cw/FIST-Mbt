@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""scripts/check_registration_numbers.py —— 登记理由里的**数字**必须与实测一致。
+
+## 为什么有这把尺（R119）
+
+`run_guards.py` 的 `expected(..., why=...)` 里常写「现读 N 处（W=a / R=b / …）」这类读数。
+实测发现它会**漂**，而且漂得很快：
+
+- R117 按实测把 `check_selftest_hermetic` 的登记从「72 处 / W=10 / R=48」改成「94 / W 4 / R 62 / G 28」；
+- R118 修完分类缺陷与状态件位置后，实测立刻变成「90 / W 1 / R 61 / G 28」——
+  **一轮之内就漂了**，靠人同步必然跟不上。
+
+**登记数字漂移和代码腐烂是一回事**：不报错、不变红，只在有人真去量的时候才暴露；
+更糟的是后来者按漂了的数字判断"还剩多少可修"。
+
+## 判据
+
+对一张表里的每个条目：跑测量命令 → 解析实测；从 `run_guards.py` 的 why 里解析登记 → 对表。
+不一致就红，并**逐项打印差在哪**（不是只报一个总数）。
+
+## 退出码
+
+- `0` = 全部一致
+- `1` = 有登记与实测不一致（**这就是要修的东西**）
+- `2` = 判据无法自证（读不到 run_guards / 解析不出登记读数 / 测量命令跑不出数）
+"""
+import io
+import os
+import re
+import subprocess
+import sys
+
+# 控制台编码门（check_py_stdout_encoding E1）：本判据打印中文；没有这道门时，
+# 本机控制台一红就崩在结论行之前，rc 会被冒用成「缺陷在场」。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RUN_GUARDS = os.path.join(ROOT, "scripts", "run_guards.py")
+
+RC_OK, RC_MISMATCH, RC_BROKEN = 0, 1, 2
+
+# 登记条目：脚本名 → (why 里的读数正则组, 实测命令)
+# 正则必须**从 why 里反解**（不手抄数字：手抄就是第二份真源）。
+ENTRIES = [
+    {
+        "script": "check_selftest_hermetic.py",
+        "cmd": [sys.executable, "scripts/check_selftest_hermetic.py"],
+        "claim": "红档 **{red} 处 = W {W} / R {R} / G {G}**",
+        "re_claim": r"红档 \*\*(\d+) 处 = W (\d+) / R (\d+) / G (\d+)\*\*",
+        "diag": "另记账 {diag}（S {S} / T {T}）",
+        "re_diag": r"另记账 (\d+)（S (\d+) / T (\d+)）",
+        "measure": "faces",
+    },
+]
+
+
+def measure_faces(entry):
+    """跑测量命令，数各档出现次数。返回 (red, w, r, g, diag, s, t) 或 None。"""
+    try:
+        out = subprocess.run(entry["cmd"], capture_output=True, text=True,
+                             encoding="utf-8", cwd=ROOT).stdout
+    except OSError:
+        return None
+    if not out.strip():
+        return None
+    c = {k: len(re.findall(r"\[%s\]" % k, out)) for k in "WRGST"}
+    red = c["W"] + c["R"] + c["G"]
+    diag = c["S"] + c["T"]
+    return (red, c["W"], c["R"], c["G"], diag, c["S"], c["T"])
+
+
+def judge(run_guards_text, measured):
+    """纯函数：登记为什么 vs 实测 → 违例列表。便于 --selftest 合成自证。"""
+    problems = []
+    text = run_guards_text
+    for entry, meas in zip(ENTRIES, measured):
+        if meas is None:
+            problems.append("%s：测量命令跑不出数 ⇒ 无法对表" % entry["script"])
+            continue
+        red, w, r, g, diag, s, t = meas
+        m = re.search(entry["re_claim"], text)
+        if not m:
+            problems.append("%s：why 里解析不到「红档 N 处 = W a / R b / G c」⇒ 登记形状变了"
+                            % entry["script"])
+            continue
+        claim = tuple(int(x) for x in m.groups())
+        real = (red, w, r, g)
+        if claim != real:
+            problems.append(
+                "%s：登记红档 red=%d/W=%d/R=%d/G=%d ≠ 实测 red=%d/W=%d/R=%d/G=%d"
+                % ((entry["script"],) + claim + real))
+        m2 = re.search(entry["re_diag"], text)
+        if m2:
+            c2 = tuple(int(x) for x in m2.groups())
+            r2 = (diag, s, t)
+            if c2 != r2:
+                problems.append(
+                    "%s：登记记账 diag=%d/S=%d/T=%d ≠ 实测 diag=%d/S=%d/T=%d"
+                    % ((entry["script"],) + c2 + r2))
+        else:
+            problems.append("%s：why 里解析不到「另记账 N（S a / T b）」" % entry["script"])
+    return problems
+
+
+def render_claim(entry, meas):
+    red, w, r, g, diag, s, t = meas
+    return (entry["claim"].format(red=red, W=w, R=r, G=g),
+            entry["diag"].format(diag=diag, S=s, T=t))
+
+
+def selftest():
+    """合成夹具自证（**不读任何仓库文件**）：含一格变异对照。"""
+    fails, cells = [], []
+
+    def cell(name, ok):
+        cells.append(name)
+        if not ok:
+            fails.append(name)
+
+    good_text = ("红档 **90 处 = W 1 / R 61 / G 28**，另记账 10（S 3 / T 7），涉 37 个文件。")
+    good_meas = [(90, 1, 61, 28, 10, 3, 7)]
+    cell("consistent-claim-passes", judge(good_text, good_meas) == [])
+
+    # 变异对照：把登记里的 W 改一个数，必须被抓到（判例-29：改坏机制要红）
+    drift_text = good_text.replace("W 1", "W 4")
+    bad = judge(drift_text, good_meas)
+    cell("drifted-claim-is-caught", len(bad) == 1 and "W" in bad[0])
+
+    # 形状变了（解析不到）也要报，而不是静默通过
+    cell("unparseable-claim-is-caught", judge("why 里没有读数", good_meas) != [])
+
+    # 测量跑不出数 ⇒ 报无法对表（不静默）
+    cell("broken-measurement-is-caught", judge(good_text, [None]) != [])
+
+    print("SELFTEST %s（%d 格：%s）" % ("OK" if not fails else "FAIL",
+                                       len(cells), " ".join(cells)))
+    for f in fails:
+        print("SELFTEST FAIL " + f)
+    return RC_OK if not fails else RC_MISMATCH
+
+
+def main(argv):
+    if "--selftest" in argv:
+        return selftest()
+    unknown = [a for a in argv if a.startswith("--") and a != "--selftest"]
+    if unknown:
+        print("FATAL 未知参数：%s（只接受 --selftest）" % " ".join(unknown))
+        return RC_BROKEN
+    try:
+        text = io.open(RUN_GUARDS, encoding="utf-8", errors="replace").read()
+    except OSError as e:
+        print("FATAL 读不到 run_guards.py：%s ⇒ 判据无法自证" % e)
+        return RC_BROKEN
+    measured = []
+    for entry in ENTRIES:
+        measured.append(measure_faces(entry) if entry["measure"] == "faces" else None)
+    problems = judge(text, measured)
+    for entry, meas in zip(ENTRIES, measured):
+        if meas:
+            claim, diag = render_claim(entry, meas)
+            print("  实测 %-28s 应为：%s；%s" % (entry["script"], claim, diag))
+    if problems:
+        print("FAIL 登记与实测不一致：")
+        for p in problems:
+            print("  - " + p)
+        print("修法：把 why 改成上面「应为」那行（同批提交；这是登记漂移，不是判据坏了）")
+        return RC_MISMATCH
+    print("PASS 登记读数与实测一致（%d 条）" % len(ENTRIES))
+    return RC_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
