@@ -183,3 +183,17 @@ test "W9 三工具共用同一本账：路径约定与 task 白名单" {
   // 不同 task 落不同文件（否则多沙箱会互相覆盖账）
   assert_true(wt_manifest_path("/proj", "a") != wt_manifest_path("/proj", "b"))
 }
+
+///|
+/// W10 **防御纵深**：`wt_manifest_path` 自己就该挡住不合规 task，而不是把这件事
+/// 托付给每个调用方。原实现只在注释里写「task 先过白名单」——调用方漏一处，
+/// 就能用 `../` 把账读出/写出目录。合规 task 仍得到正常路径（零回归）。
+test "W10 账路径自带白名单：不合规 task 不产生可越界路径" {
+  // 合规：正常路径
+  assert_eq(wt_manifest_path("/p", "r1"), "/p/.fist-mbt/data/wt-r1.json")
+  // 不合规：不得把 `..` / 分隔符拼进路径（哨兵路径不含 task 内容）
+  let bad = wt_manifest_path("/p", "../../etc/passwd")
+  assert_false(bad.contains("./") || bad.contains("passwd"))
+  let bad2 = wt_manifest_path("/p", "a/b")
+  assert_false(bad2.contains("a/b"))
+}
