@@ -10700,6 +10700,11 @@ BUG-476（dccdbc56）：strict 真的拒绝 —— 四处门硬拒（rsv_set + r
 若调用方在 ns-A 登记公钥、取到 ns-A 的票，但 reserve_scope / lock_acquire 按 default 库验签 =>
 **票一定验不过**，且调用方无从修正（这两个工具没有 ns 参数）。
 
+- blocker(R112 / 2026-10-29)：**本轮复核确认仍被同一 lane 占用，故不动手** —— 实测该 lane 的未提交 WIP
+  测试里 `reserve_scope` / `lock_acquire` / `nonce` 相关行数：`engine_bug430_s3_key_wbtest.mbt` 14 行、
+  `engine_bug430_s3_p3_wbtest.mbt` 13 行、`engine_bug430_s3_rotate_wbtest.mbt` 30 行 ⇒ 这正是他们在改的面。
+  我若同时改 `judged_role_gated` / `judged_role_with_nonce` 的消费语义，会与他们的 WIP 测试语义直接冲突。
+  **判据**：等这三份 wbtest 提交后（`git status` 里不再有它们）再动，届时先读他们的锁，再决定是否仍需要修。
 ## 与 BUG-477 的区别
 
 BUG-477 = 票能用无限次（消费语义）
