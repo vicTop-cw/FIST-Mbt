@@ -78,8 +78,8 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 ### 衍生（3）
 `atgc_old_compile` · `atgc_old_run` · `atgc_old_talk`
 
-### 看板·DAG·规划（27）
-`dag_critical_path` · `dag_parallelism` · `dag_ascii` · `dag_check` · `dag_ready` · `dag_sort` · `dag_depend` · `dag_publish` · `dag_slack` · `dag_schedule` · `dag_cost_route` · `dag_mc` · `plan_revise` · `goal_drift_check` · `board_ascii` · `state_flow_ascii` · `status_summary` · `project_health` · `health_check` · `reserve_scope` · `reserve_check` · `reserve_release` · `lock_acquire` · `lock_renew` · `lock_release` · `lock_status` · `task_triage`
+### 看板·DAG·规划（30）
+`dag_critical_path` · `dag_parallelism` · `dag_ascii` · `dag_check` · `dag_ready` · `dag_sort` · `dag_depend` · `dag_publish` · `dag_slack` · `dag_schedule` · `dag_cost_route` · `dag_mc` · `plan_revise` · `goal_drift_check` · `board_ascii` · `state_flow_ascii` · `status_summary` · `project_health` · `health_check` · `reserve_scope` · `reserve_check` · `reserve_release` · `lock_acquire` · `lock_renew` · `lock_release` · `lock_status` · `task_triage` · `wt_create` · `wt_destroy` · `wt_status`
 
 ### 自我记忆·自进化（11）
 `memory_consolidate` · `memory_gc` · `memory_link` · `evolve_distill` · `evolve_lesson` · `evolve_critic` · `evolve_sample` · `evolve_snapshot` · `evolve_submit` · `evolve_asset_register` · `task_challenge`
