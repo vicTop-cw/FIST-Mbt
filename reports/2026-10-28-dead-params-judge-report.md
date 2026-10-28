@@ -98,7 +98,7 @@
   - `lock_acquire.ts` / `lock_renew.ts`：描述改为「**服务端盖章、不接受覆盖**」
 - **R3** `reader_family()` 从 `fn` 定义反推，若某取值函数**只写调用不写定义**（外部包），
   就反推不出来 ⇒ 当前靠 `READER_FALLBACK` 兜底
-- **R4** `local_helpers()` 用 4000 字符近似取函数体 ⇒ helper 超长会截断（未触发）
+- **R4** `local_helpers()` 用 4000 字符近似取函数体 ⇒ helper 超长会截断
 - **R5** 未跑 `moon fmt`（本机 BUG-388）；判据是 `.py`，不受 fmt 门约束
 
 ---
