@@ -290,6 +290,7 @@ pub fn SqliteStore::locks_upsert(Self, FileLock) -> Unit
 pub fn SqliteStore::mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int32]) -> Result[Unit, String]
 pub fn SqliteStore::new() -> Self?
 pub fn SqliteStore::open(String) -> Self?
+pub fn SqliteStore::open_preflight_ok(String) -> Bool
 pub fn SqliteStore::read_heartbeat(Self, String) -> (String, String, String)
 pub fn SqliteStore::recent_call_logs(Self, limit? : Int32) -> Array[Json]
 pub fn SqliteStore::record_execution(Self, task_id~ : String, executor~ : String, model~ : String, tokens_in~ : Int32, tokens_out~ : Int32, cost~ : Double, duration_ms~ : Int32, rate_limited~ : Bool, failure_reason~ : String, created_at~ : String) -> Result[Unit, String]

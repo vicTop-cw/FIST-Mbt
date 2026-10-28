@@ -28,6 +28,42 @@ pub struct SqliteStore {
 }
 
 ///|
+/// 打开前的可写性预检：把「`SqliteStore::open` 失败返回 None」这句契约在 **js 侧也变成真的**。
+///
+/// **为什么还要这一层**（BUG-390 的遗留项 ①，上面那段注释点名了却一直没补）：`ensure_db_parent_dir`
+/// 只会**建**目录，而且失败被 `catch { _ => () }` 吞掉——目录建不出来时它照样往下走。而 js 侧
+/// `daqing/sqlite` 的 `Database::open` 是 `Some(new DatabaseSync(path))` 无条件、**从不返回 null，
+/// 只会 throw**（`.mooncakes/daqing/sqlite/sqlite_js.mbt`）⇒ 任何开库失败都以未捕获异常终止 serve
+/// 进程，调用面（`store_open` / `engine_for_ns`）永远接不到 `false`/`None`：一个畸形
+/// `namespace`/`data_dir` 参数就是一次服务面 DoS。native 侧同一个函数诚实返回 None ⇒ 这条契约
+/// 只在 native 为真，正是「同族守卫不许两套规则」（BUG-78 口径）该收口的形状。
+///
+/// 建不出目录的 reachable 形态（都过 `data_dir_ok`，无需绝对路径或穿越）：
+/// ① 父段是既存**文件**（`data_dir="README.md/sub"`）；② 目标名撞既存**目录**（存在 `ghost.db/`
+/// 时 ns=ghost）；③ Windows **保留设备名**（`aux` / `con` / `nul` / `com1`，`aux.db` 整段保留）；
+/// ④ 权限不足。
+///
+/// 预检口径：既存目标必须是普通文件；不存在则用一次「写空文件」探测父目录可写性与名字合法性——
+/// SQLite 本来就要创建这个文件，探测成功即等价于把它的活提前干完，不新增残留类别。
+/// `:memory:` 与空串不涉文件系统，直接放行。
+pub fn SqliteStore::open_preflight_ok(db_path : String) -> Bool {
+  if db_path == "" || db_path == ":memory:" {
+    return true
+  }
+  if @fs.path_exists(db_path) {
+    // 存在但不是普通文件（目录/设备）⇒ SQLite 开它会 throw，这里先判掉
+    @fs.is_file(db_path) catch {
+      _ => false
+    }
+  } else {
+    let probe : Unit? = Some(@fs.write_bytes_to_file(db_path, "".to_bytes())) catch {
+      _ => None
+    }
+    probe.is_some()
+  }
+}
+
+///|
 /// 打开数据库并初始化五表 schema。失败返回 None（调用方决定是否 abort / 回退内存）。
 pub fn SqliteStore::open(db_path : String) -> SqliteStore? {
   // SQLite **不创建中间目录**：`FIST_DB_PATH`（或任何调用方）指到不存在的深层目录时，
@@ -36,6 +72,11 @@ pub fn SqliteStore::open(db_path : String) -> SqliteStore? {
   // 命名空间库那条路径已由 `MultiStore::new` 补建 data_dir 覆盖（见 multi_store.mbt）；
   // 这里兜住「任意 db 路径」这一面（BUG-390 报告里点名的遗留项 ①）。
   ensure_db_parent_dir(db_path)
+  // 补建只是「能建的目录」那一半；剩下建不出来的（父段是文件/保留名/权限）必须在这里转成 None，
+  // 否则 js 侧的 throw 会穿透 `match` 打死整个 serve 进程（见 open_preflight_ok）。
+  if !SqliteStore::open_preflight_ok(db_path) {
+    return None
+  }
   match @sqlite.Database::open(db_path) {
     None => None
     Some(db) => {
