@@ -65,9 +65,18 @@ pub fn TaskStatus::from_string(s : String) -> TaskStatus? {
 
 ///|
 /// 状态谓词（供跨包业务层判断，避免直接构造变体）
+///
+/// **R142 修：删掉 `Rejected`（死分支）。** 实测三条线：
+///   · `Task::split()`（`engine.split` 用）只接受 **Claimed**；
+///   · `Task::mark_decomposing()`（`engine.plan_deep` 用）接受 **Pending | Claimed | Splitting**；
+///   · 本闸门被这两条**共用**，原本还多认 `Rejected` ⇒ 已打回的任务**过闸后必被域层拒**
+///     （`split` 拒、`mark_decomposing` 也拒），是一段永远走不通的放行。
+/// 与上方 `can_execute` 记的 **BUG-2 同形**（那里也是闸门多一条 `Rejected`）。
+/// 现集合 = 两条域方法接受集的**并集** {Pending, Claimed, Splitting}；`Rejected` 在闸门处 fail-closed
+/// （已打回的正确出路是 retry 而非拆分，两者都拒，只是文案层不同）。
 pub fn TaskStatus::can_split(self : TaskStatus) -> Bool {
   match self {
-    Pending | Claimed | Splitting | Rejected => true
+    Pending | Claimed | Splitting => true
     _ => false
   }
 }
