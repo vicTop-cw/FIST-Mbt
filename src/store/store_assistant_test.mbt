@@ -115,7 +115,7 @@ test "assistant 双后端同构：claim → heartbeat → resign → sweep 标 d
     None => abort("asst_stale 应仍登记（dead）")
   }
   // —— SQLite 后端（同构） ——
-  let db = "temp/assistant_store_test.db"
+  let db = bug462_unique_db("assistant_store_test")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => {
@@ -183,7 +183,7 @@ test "assistant 双后端同构：违例落案底" {
   assert_eq(after[after.length() - 1].reason, "force_takeover")
   assert_eq(after[after.length() - 1].agent, "asst_old")
   // —— SQLite 后端（同构） ——
-  let db = "temp/assistant_store_test.db"
+  let db = bug462_unique_db("assistant_store_test")
   match @store.SqliteStore::open(db) {
     None => abort("sqlite open failed: \{db}")
     Some(s) => {

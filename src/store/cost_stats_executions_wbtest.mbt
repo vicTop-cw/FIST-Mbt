@@ -11,7 +11,7 @@
 
 ///|
 test "cost_stats: 开库即有 executions 表（建表清单漏它 ⇒ prepare 抛异常打死 server）" {
-  match SqliteStore::open("temp/cost_stats_schema_wb.db") {
+  match SqliteStore::open(bug462_unique_db("cost_stats_schema_wb")) {
     None => fail("sqlite open 失败：判据根本没跑到被测面")
     Some(s) =>
       match s.db {
@@ -27,7 +27,7 @@ test "cost_stats: 开库即有 executions 表（建表清单漏它 ⇒ prepare �
 
 ///|
 test "cost_stats: 表被摘掉后只读聚合必须自保并回零值" {
-  match SqliteStore::open("temp/cost_stats_ensure_wb.db") {
+  match SqliteStore::open(bug462_unique_db("cost_stats_ensure_wb")) {
     None => fail("sqlite open 失败：判据根本没跑到被测面")
     Some(s) =>
       match s.db {
