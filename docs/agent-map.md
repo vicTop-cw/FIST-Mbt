@@ -9,7 +9,7 @@
 
 - **构建/测试**：`moon check` / `moon test --target js`（**1765 项全绿**，2026-10-28 Windows 实测）
 - **跑 MCP Server**：`moon build --target js cmd/cli && python scripts/patch_esm_main.py` → `node _build/js/debug/build/cmd/cli/cli.js`
-- **一键自检**：`python scripts/mcp_smoke.py`（实测 173 个工具 + publish/get 链路 + issue_scan 命中校验；这个数由 `check_doc_surface.py` 的 J14 项目地图面钉住，改工具数时这张图必须跟着改）
+- **一键自检**：`python scripts/mcp_smoke.py`（实测 174 个工具 + publish/get 链路 + issue_scan 命中校验；这个数由 `check_doc_surface.py` 的 J14 项目地图面钉住，改工具数时这张图必须跟着改）
 - **找目标项目潜问题**：`issue_scan`（MCP 工具）/ `python scripts/issue_scan.py <dir>`（CLI）/ [技能文档](issue-scan-skill.md)（skill）三处手写形态 + 插件态投影（四态），规则驱动扫描，命中喂 `report_bug` 闭环
 - **多步闭环怎么转**：[组合环编排技能文档](loop-mode-skill.md)——`loop_create`/`loop_tick`/`loop_status` 管「转几轮、何时停」，`mode_list`/`mode_templates` 管「每步做什么」；[看护闭环技能文档](phi-accrual-heal-skill.md)——`phi_accrual` 概率式判活 → `heal` 回滚 → `watchdog_tick` 单入口编排
 - **语言**：MoonBit；测试用 `suite`/`test` 而非 `@test def`；guard/match 冒号后换行。
@@ -24,7 +24,7 @@
 | `evolve` | DGM 自进化档案库：Archive/Artifact/sample_parent/查重/新颖度/谱线 | `evolve.mbt` `scoring.mbt` `self_search.mbt` |
 | `omega` | Ω-check：项目结构/回传五段式校验、spec 解析/批量校验 | `check.mbt` |
 | `ops` | 运维：心跳/看门狗/google 调度 | `ops_watchdog.mbt` 等 |
-| `server` | MCP 层：173 个工具+3 resources+2 prompts 注册、call_log 注入、Laya/evolve MCP 封装、规则驱动源码扫描（issue_scan） | `server.mbt` `laya_js.mbt` `evolve_distill.mbt` `evolve_lesson.mbt` `issue_scan.mbt` |
+| `server` | MCP 层：174 个工具+3 resources+2 prompts 注册、call_log 注入、Laya/evolve MCP 封装、规则驱动源码扫描（issue_scan） | `server.mbt` `laya_js.mbt` `evolve_distill.mbt` `evolve_lesson.mbt` `issue_scan.mbt` |
 | `decompose` | 递归拆解规格 | — |
 | `executor` | 执行器抽象 + 能力注册表 + 能力路由（Marketplace 雏形，R30/R31）+ store 持久化 | `registry.mbt` `base.mbt` |
 | `atgc-old` | 旧 ATGC 叙事子项目（保留全量） | — |
@@ -58,7 +58,7 @@
 
 > **本表的承诺只到「族」这一层，不承诺逐工具穷举**（2026-10-24 定点修，BUG-364）：
 > 旧表在组名后缀手写计数（12 行带计数、和=100），其中约四成的族根本没列——读者会把"和=100"当成
-> "全量"，而真源是 **173 个工具**（本行是唯一允许出现工具数的地方，由 `check_doc_surface.py` J14 钉住）。计数是抄来的、工具是长出来的，两者必然漂；所以本表**去掉所有计数**，
+> "全量"，而真源是 **174 个工具**（本行是唯一允许出现工具数的地方，由 `check_doc_surface.py` J14 钉住）。计数是抄来的、工具是长出来的，两者必然漂；所以本表**去掉所有计数**，
 > 只保留族与代表工具，并把"全量"交给单一真源：
 > · 全量清单：`python scripts/fist.py list-tools`（= `tools/list` 实测）
 > · 工具数与文档/插件/徽章对齐：`python scripts/check_tools_sync.py`（判据守，不靠人抄）

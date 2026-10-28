@@ -88,7 +88,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 `executor_register` · `executor_route` · `executor_auction` · `executor_clear` · `selfdrive_dispatch`
 
 ### 审计·多租户（9）
-`agent_acl_grant` · `agent_register_key` · `agent_revoke_key` · `audit_permission` · `audit_log` · `store_open` · `store_list` · `store_close`
+`agent_acl_grant` · `agent_register_key` · `agent_revoke_key` · `agent_issue_challenge` · `audit_permission` · `audit_log` · `store_open` · `store_list` · `store_close`
 
 ### GitHub/GitCode 同步·缺陷外发（12）
 `github_env_check` · `github_queue_status` · `github_flush_plan` · `github_flush_execute` · `github_queue_mark_sent` · `github_issue_close` · `github_issue_comment` · `github_issue_webhook_parse` · `gitcode_env_check` · `gitcode_queue_status` · `gitcode_flush_plan` · `gitcode_queue_mark_sent`
