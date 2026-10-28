@@ -84,6 +84,14 @@ jobs:
 
       # position-why: 本尺只读 docs/ 副机清单与 git 跟踪面，不依赖 moon。住在 Migrate 之前
       # 与上一条同因：Migrate 崩掉时正是「这一单还能不能认领」最需要出声的时刻，放在之后会被 skip。
+      # position-why: 与上一条同因 —— 本尺只读 `run_guards.py` 的 why 文本并跑两把判据取读数，
+      # **不依赖 moon**。住在 Migrate 之前：登记数字漂了（R117/R118 一轮内漂两次）同样需要在
+      # Migrate 崩掉时可见，否则「还剩多少可修」的读数会长期错着没人知道。R119 立尺 / R121 接线。
+      - name: Registration-numbers guard (why 里的读数 ↔ 实测，R119)
+        shell: bash
+        run: |
+          python3 scripts/check_registration_numbers.py --selftest
+          python3 scripts/check_registration_numbers.py
       - name: Slave-task-list self-proof guard (副机认领入口：证据锚点 ↔ 真源对表，R126)
         shell: bash
         run: |
