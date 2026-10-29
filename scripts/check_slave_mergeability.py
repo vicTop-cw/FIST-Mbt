@@ -96,6 +96,68 @@ def verdict(ahead, pick_rc, conflicts, has_merge, changed, added, base_symbols):
     return kind, conflicts
 
 
+def contained_decision(rows):
+    """纯函数（R161）：冲突支的**内容是否已在 base**。
+
+    `rows` = [(path, branch_lines, base_lines, missing_syms)]，逐文件一行：
+      · `base_lines == -1` ⇒ base **没有**这个文件（不满足包含）；
+      · `base_lines < branch_lines` ⇒ base 更短（不满足）；
+      · `missing_syms` 非空 ⇒ 支里出现的顶层符号在 base 同名文件里找不到（不满足）。
+
+    判定（**全满足**才算 contained）：
+      1. 至少 1 个产品文件被触碰（空列表不算 —— 不能因为"没比较过"就给绿灯）；
+      2. 每行都满足上面三条。
+
+    ⚠️ 为什么单列成纯函数：本尺的老问题就是"机制能跑 ≠ 判定被正确接入"（判例-29）。
+    纯函数让 `--selftest` 能直接喂数、并且能造**变异对照**（把某行改坏 ⇒ 结论翻面）。
+    """
+    if not rows:
+        return False
+    for _path, bl, basel, missing in rows:
+        if basel < 0 or basel < bl or missing:
+            return False
+    return True
+
+
+def content_contained_probe(base, branch, prefixes=("src/", "scripts/", "cmd/")):
+    """R161：对**冲突支**取数，交给 `contained_decision` 裁。
+
+    取数口径（全部只读 git，不碰工作树）：
+      · 支触碰的文件 = 它自己那几笔提交的 `--name-only` 并集；
+      · 只看**产品面**（`src/` `scripts/` `cmd/`）—— 文档/插件面不参与"内容是否已在"；
+      · 逐文件比行数 + 比顶层符号（`fn/struct/enum/trait`）。
+    返回 `(bool, 说明行列表)`。
+    """
+    rc, out = git("log", "--name-only", "--format=", "%s..%s" % (base, branch))
+    if rc != 0:
+        return False, []
+    touched = sorted({ln.strip() for ln in out.splitlines() if ln.strip()})
+    product = [p for p in touched if p.startswith(prefixes)]
+    if not product:
+        return False, ["支未触碰产品文件"]
+    rows = []
+    for p in product:
+        rc_b, bt = git("show", "%s:%s" % (branch, p))
+        rc_a, at = git("show", "%s:%s" % (base, p))
+        bl = len(bt.splitlines()) if rc_b == 0 else 0
+        basel = len(at.splitlines()) if rc_a == 0 else -1
+        missing = []
+        if rc_b == 0 and rc_a == 0:
+            syms = set(re.findall(r"^\s*(?:pub )?(?:fn|struct|enum|trait) ([A-Za-z_][A-Za-z0-9_]*)",
+                                  bt, re.M))
+            have = set(re.findall(r"^\s*(?:pub )?(?:fn|struct|enum|trait) ([A-Za-z_][A-Za-z0-9_]*)",
+                                  at, re.M))
+            missing = sorted(syms - have)[:3]
+        rows.append((p, bl, basel, missing))
+    ok = contained_decision(rows)
+    detail = []
+    for p, bl, basel, missing in rows:
+        detail.append("%s: base=%s/sub=%s%s" % (
+            p, "缺" if basel < 0 else basel, bl,
+            "" if not missing else " 符号缺:" + ",".join(missing)))
+    return ok, detail
+
+
 def branches(remotes, include="/slave/"):
     """列出候选分支。`include` 是**子串过滤**（默认 `/slave/`，R130 起可配）。
 
@@ -178,6 +240,13 @@ def scan(base, remotes, keep=False, limit=0, include="/slave/"):
             added = re.findall(r"^\+\s*pub fn ([A-Za-z0-9_:]+)", adiff, re.M)
             # R132：三面合成收进纯函数 `verdict` —— 接线只剩这一行，自证可断言组合结果
             kind, files = verdict(len(commits), pick_rc, files, has_merge, changed, added, base_syms)
+            # R161：**冲突不必然是"有内容待合"** —— 无共同祖先的支必冲突，而它的内容可能早已在 base
+            # （实测 `gitcode/slave/feat/wt-lifecycle-tools`：冲突 28 个，但 master 728 行 ⊃ 支 668 行）。
+            # 冲突时再跑一次**内容包含探针**，命中就归 `contained`。
+            if kind == "conflict":
+                _c_ok, _c_detail = content_contained_probe(base, b)
+                if _c_ok:
+                    kind, files = "contained", _c_detail
             rows.append({"branch": b, "ahead": len(commits), "kind": kind, "files": files})
             mark = {"ok": "✓", "contained": "=", "conflict": "✗", "merge": "M", "error": "!",
                     "duplicate": "⚠"}[kind]
@@ -342,6 +411,26 @@ def selftest():
     cell("verdict-ok-but-dup-symbol-is-duplicate", v_dup[0], "duplicate")
     cell("verdict-dup-lists-symbol", "open_preflight_ok" in v_dup[1][0], True)
     cell("verdict-conflict-untouched", verdict(1, 1, ["a.txt"], False, True, [], set())[0], "conflict")
+
+    # R161：**冲突支的内容包含探针**（纯判据部分）。
+    # 动机（实测）：`gitcode/slave/feat/wt-lifecycle-tools` 判 conflict（28 个），
+    # 而逐层核实是"master 早已包含、且更演进"⇒ 需要一道"内容是否已在 base"的判据，
+    # 否则 104 支里大部分 `conflict` 都无法分辨"真有待合内容"与"早就落地了"。
+    cell("contained-decision-empty-is-false", contained_decision([]), False)
+    cell("contained-decision-base-longer-true",
+         contained_decision([("src/a.mbt", 100, 120, [])]), True)
+    cell("contained-decision-equal-length-true",
+         contained_decision([("src/a.mbt", 100, 100, [])]), True)
+    # 变异对照（判例-29）：base 更短 ⇒ 支里有 base 没有的行 ⇒ **不是** contained
+    cell("contained-decision-base-shorter-false",
+         contained_decision([("src/a.mbt", 101, 100, [])]), False)
+    cell("contained-decision-missing-file-false",
+         contained_decision([("src/a.mbt", 10, -1, [])]), False)
+    cell("contained-decision-missing-symbol-false",
+         contained_decision([("src/a.mbt", 10, 20, ["wt_new_thing"])]), False)
+    # 一行不满足就整体否定（不能因为有 3 个文件已包含就放行第 4 个缺口）
+    cell("contained-decision-one-bad-vetoes-all",
+         contained_decision([("src/a.mbt", 10, 20, []), ("src/b.mbt", 11, 10, [])]), False)
 
     # 端到端格：造真仓库
     d = tempfile.mkdtemp(prefix="mergeability-st-")
