@@ -293,6 +293,64 @@ run_selftest() {
     cell "s9-not-a-repo" "$?" "2"
   fi
 
+  # ---- s12/s13/s14：BUG-482 暂存残留清理（Lane DR）----
+  #
+  # 病灶（Gamma R38 两轮踩）：脚本先 `git add` 再 `git commit`，commit 失败时 add 不回收
+  # ⇒ **下一次**跑脚本时第 1 道校验「前置暂存面必须为空」**恒红**，而那人「什么都没改」。
+  # ⇒ 一个让人怀疑自己的工具，比一个报错的工具更糟。
+  #
+  # 三格：默认清 / 显式保留 / **变异对照**（把 trap 摘掉 ⇒ 清理格必红）。
+  # ⚠️ 判例-30 检查（统帅提醒）：本格的**样本里不能包含本判据自己的模式串** ——
+  #    这里的判据是「暂存面是否为空」（用 `git diff --cached --name-only` 读真状态），
+  #    不是 grep 文本 ⇒ 天然没有自指问题。
+  local dcb="$TMPROOT/bug482"; mkdir -p "$dcb"
+  (
+    cd "$dcb" || exit 1
+    git init -q .; git config user.email t@t; git config user.name t
+    printf 'a\n' > a.txt; printf 'm\n' > CM.txt
+    git add a.txt >/dev/null 2>&1; git commit -qm seed >/dev/null 2>&1
+  )
+  # 造「别人的暂存残留」⇒ 触发第 1 道校验 REJECT(1)（**在 git add 之前就拒绝**）
+  printf 'b\n' > "$dcb/b.txt"
+  git -C "$dcb" add b.txt >/dev/null 2>&1
+  local before_c; before_c="$(git -C "$dcb" diff --cached --name-only | wc -l | tr -d ' ')"
+  cell "s12-preflight-sees-residue" "$before_c" "1"
+
+  # ★ s13：**默认清** —— 被拒后暂存面必须归零
+  ( COMMIT_SCOPED_CWD="$dcb" bash "$SELF" "$dcb/CM.txt" b.txt >/dev/null 2>&1 )
+  local rc13=$?
+  local after_c; after_c="$(git -C "$dcb" diff --cached --name-only | wc -l | tr -d ' ')"
+  cell "s13-rejected-clears-staging" "$rc13:$after_c" "1:0"
+
+  # ★ s14：**`--keep-staged` 真的保留** —— 这格同时防「参数被解析但没用」的语义撒谎
+  #    （同族教训：`patches/rx-mbt-bug480/reapply.sh` 的 `--force` 曾被解析却从不分支使用）
+  printf 'c\n' > "$dcb/c.txt"
+  git -C "$dcb" add c.txt >/dev/null 2>&1
+  ( COMMIT_SCOPED_CWD="$dcb" bash "$SELF" --keep-staged "$dcb/CM.txt" c.txt >/dev/null 2>&1 )
+  local rc14=$?
+  local kept_c; kept_c="$(git -C "$dcb" diff --cached --name-only | wc -l | tr -d ' ')"
+  cell "s14-keep-staged-preserves" "$rc14:$kept_c" "1:1"
+
+  # ★ s15：**变异对照** —— 把 `trap _cleanup_staged EXIT` 摘掉后重跑 s13 场景，
+  #    暂存面**必须留着**（= 证明 s13 的「清」是 trap 干的，不是巧合）。
+  #    做法：复制一份脚本到夹具目录、用 sed 删掉 trap 行，再用那份跑。
+  git -C "$dcb" restore --staged . >/dev/null 2>&1
+  printf 'd\n' > "$dcb/d.txt"
+  git -C "$dcb" add d.txt >/dev/null 2>&1
+  local mut="$TMPROOT/mut_scoped.sh"
+  sed 's/^trap _cleanup_staged EXIT$/:/' "$SELF" > "$mut"
+  if grep -q '^trap _cleanup_staged EXIT$' "$mut"; then
+    say "  FAIL s15-mutation-no-trap: 变异没生效（sed 没删掉 trap 行）"
+    fails=$((fails+1)); cells=$((cells+1))
+  else
+    ( COMMIT_SCOPED_CWD="$dcb" bash "$mut" "$dcb/CM.txt" d.txt >/dev/null 2>&1 )
+    local rc15=$?
+    local mut_c; mut_c="$(git -C "$dcb" diff --cached --name-only | wc -l | tr -d ' ')"
+    # 期望：仍被拒（rc=1）**且**暂存面**没被清**（=1）⇒ 证明 s13 的清是 trap 的功劳
+    cell "s15-mutation-no-trap-leaves-residue" "$rc15:$mut_c" "1:1"
+  fi
+  git -C "$dcb" restore --staged . >/dev/null 2>&1
+
   rm -rf "$TMPROOT"
   say ""
   if [ "$fails" -eq 0 ]; then
@@ -310,15 +368,78 @@ fi
 
 # ---------------------------------------------------------------------------
 # 参数校验
+#
+# ⚠️ **`--keep-staged` 预扫描必须在这里**（Lane DR）：
+#    指纹教训 —— `patches/rx-mbt-bug480/reapply.sh` 的 `--force` 被解析却**从未
+#    分支使用**（「语义撒谎」）。本脚本的做法是：**先摘旗标、再按位置取参**，
+#    并在 s11/s12 两格分别验证「默认清」与「显式保留」**真的走不同路径**。
 # ---------------------------------------------------------------------------
+KEEP_STAGED=0
+_REST=()
+for _a in "$@"; do
+  case "$_a" in
+    --keep-staged) KEEP_STAGED=1 ;;
+    *)             _REST+=("$_a") ;;
+  esac
+done
+set -- "${_REST[@]}"
+
 if [ $# -lt 2 ]; then
-  err "用法: $SELF_NAME <commit-msg-file> <path1> [path2 ...]"
+  err "用法: $SELF_NAME [--keep-staged] <commit-msg-file> <path1> [path2 ...]"
   err "  例: $SELF_NAME .git/CM_work src/engine/engine.mbt"
+  err "  --keep-staged  失败时**保留暂存面**供看现场（默认清空，理由见 trap 处注释）"
   exit 2
 fi
 
 MSG_FILE="$1"; shift
 DECLARED=("$@")
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BUG-482（Lane DR）：**失败时清理暂存面**（trap EXIT）
+#
+# 病灶（Gamma 在 R38 发现、两轮都踩）：被拒绝的 `commit_scoped.sh` 会**留下暂存残留**
+# —— 它先 `git add` 再 `git commit`，commit 失败时 add 不回收。
+# 后果：**下一个人**跑脚本时第 1 道校验（「前置暂存面必须为空」）**恒红**，
+# 而他「什么都没改」⇒ **一个让人怀疑自己的工具，比一个报错的工具更糟**。
+# Gamma 原话：「开工时发现暂存区有 8 个文件，这是上次 commit_scoped.sh 被拒时 add 过的残留」。
+#
+# 为什么 `trap` 在**成功路径**上也是 no-op：commit 会消费暂存面 ⇒ 之后本来就空。
+# ⇒ 成功时那次 `git restore --staged .` 无对象可清，无害（s10 格实测确认）。
+#
+# 为什么默认清、而不是默认留：
+#   本脚本的用途是「**批量/正式提交的最后一步**」，成功即结束；
+#   失败时**要保留现场**是少数场景 ⇒ 用 `--keep-staged` 显式索取。
+#   （反向默认会让 Gamma 那种踩法每次复发。）
+#
+# ⚠️ **不许把「清暂存」做成「假装成功」**：`git restore` 失败必须**说出来**，
+#    写 stderr，且**不改变本脚本的退出码**（退出码已由 reject_1/die_2 决定，
+#    清暂存是收尾、不是判据）。⇒ 用 `if/else`，不用 `|| true` 静默吞。
+# ═══════════════════════════════════════════════════════════════════════════
+_cleanup_staged() {
+  # 成功路径已经消费掉暂存面；这里再清一次是幂等 no-op（s10 验证）
+  if [ "$KEEP_STAGED" = "1" ]; then
+    if [ -n "$(git_ diff --cached --name-only 2>/dev/null)" ]; then
+      err "[commit_scoped] --keep-staged：保留暂存面（未清理）"
+    fi
+    return 0
+  fi
+  # 只在**确有残留**时才动手，避免在干净仓里制造噪声
+  local staged
+  staged="$(git_ diff --cached --name-only 2>/dev/null || true)"
+  [ -z "$staged" ] && return 0
+  local r
+  if r="$(git_ restore --staged . 2>&1)"; then
+    # ⚠️ 计数修正（Lane DR 实测）：`printf '%s' | wc -l` 对**无结尾换行**的单行文本回 0
+    #    （wc -l 数的是换行符）。改用 `grep -c .` 数「非空行数」，单行也能得 1。
+    err "[commit_scoped] 已清理暂存残留（BUG-482）：$(printf '%s' "$staged" | grep -c .) 个文件"
+  else
+    # 不静默：清失败要说出来，且提示下一个人手工处理
+    err "[commit_scoped] ⚠️ 清暂存**失败**：$r"
+    err "  ⇒ 请手工执行: git restore --staged ."
+  fi
+  return 0
+}
+trap _cleanup_staged EXIT
 
 [ -f "$MSG_FILE" ] || die_2 "commit message 文件不存在: $MSG_FILE"
 [ -s "$MSG_FILE" ] || die_2 "commit message 文件为空: $MSG_FILE"
