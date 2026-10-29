@@ -2,7 +2,9 @@
 /// diff/diff.mbt —— 轻量文本 diff（LCS 最长公共子序列）。
 ///
 /// 用于报告对比、测试输出 diff、AI 交付物变更审查等场景。
-/// 纯函数零依赖（除 core/json 用于序列化），双后端通用。
+/// **纯函数零依赖**（R210 更正：旧 docstring 写「除 core/json 用于序列化」，
+/// 但 `src/diff/moon.pkg` 只有 `supported_targets`、**没有任何 import** ——
+/// JSON 是 `json_escape` 手写拼出来的，不经库。别照旧说法去找依赖。）
 ///
 /// 用法：
 ///   let ops = diff_lines("a\nb\nc", "a\nx\nc")
