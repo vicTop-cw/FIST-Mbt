@@ -83,6 +83,19 @@
 
 **⇒ 该支的结论修正为：不是"待实施"，而是"待裁定"** —— 实施前必须先决定 marker 与 `rc=1` 的语义。
 
+### ④ `gitcode/slave/fix/count-guard-reject-rc-r178` —— ⛔ **判定 superseded（R181 新增）**
+
+| 项 | 内容 |
+|---|---|
+| 支的意图 | 把 `check_badge.py` / `check_test_sync.py` 的「**判据无法自证**」从 `rc=1` 拆成 `rc=2` |
+| 支援引的实证 | R175 真实事故：漏传 `<moon_test_log>` 时旧实现回 `rc=1`，消费者唯一读法就是"徽章守卫判红" ⇒ **一次调用形状错误被写进了交付报告** |
+| master 现状 | **已采纳且更完整**：`check_badge.py` **431 行**（分支 254 行），docstring 里直接写着 `R178：problems 每项是 (kind, text), kind ∈ {REJECT, VIOLATE}`；`check_test_sync.py` 同样已有 0/1/2/4 分档 |
+| 结论 | **同一改进已由更完整的版本落在主线** ⇒ 合并会把 431 行换回 254 行 |
+
+> ⚠️ 判据对它仍报 `conflict`（内容已含但探针判不出）—— 因为探针要 master 每个触碰文件都 ≥ 支，
+> 而该支还带一份**主线没有的报告文件名**（`reports/2026-10-23-count-guard-reject-rc-r178-report.md`）。
+> 这类"**新版直接写在 master 上、旧分支还挂着**"的支，静态探针看不出，只能人工裁决。
+
 ## 四、结论
 
 1. **可合 PR = 0**（全量 104 支）；本轮**已合 1 支**（纯文档，§3①）。
