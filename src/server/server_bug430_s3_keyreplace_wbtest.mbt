@@ -105,7 +105,7 @@ test "bl_03_tool_rejects_key_replacement" {
   // 跳过注释行（判例-30）
   let mut code = ""
   for line in raw.split("\n") {
-    let s = line.to_string()
+    let s = line.to_owned()
     let l = s.trim()
     if l.has_prefix("///") || l.has_prefix("//") {
       continue

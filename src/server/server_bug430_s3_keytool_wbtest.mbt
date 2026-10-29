@@ -16,7 +16,7 @@
 fn srv_code_only(src : String) -> String {
   let mut acc = ""
   for line in src.split("\n") {
-    let s = line.to_string()
+    let s = line.to_owned()
     let l = s.trim()
     if l.has_prefix("///") || l.has_prefix("//") {
       continue

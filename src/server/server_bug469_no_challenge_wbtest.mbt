@@ -131,7 +131,7 @@ test "cw_03_ts_descriptions_state_server_stamped" {
   }
   for tool in ["lock_acquire", "lock_renew"] {
     let blk = cw_tool_block(srv, tool)
-    if not(cw_code_has(blk, "服务端盖章")) {
+    if !(cw_code_has(blk, "服务端盖章")) {
       abort(
         tool +
         " 的 ts 描述里没有「服务端盖章」字样 —— " +
@@ -147,7 +147,7 @@ test "cw_03_ts_descriptions_state_server_stamped" {
 fn cw_code_only(raw : String) -> String {
   let mut acc = ""
   for line in raw.split("\n") {
-    let s = line.to_string()
+    let s = line.to_owned()
     let l = s.trim()
     if l.has_prefix("///") || l.has_prefix("//") {
       continue

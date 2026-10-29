@@ -14,7 +14,14 @@
 /// 变异对照：把任一 `from_string` 分支的字符串改一个字母，本格立刻红。
 test "role_roundtrip_all_nine" {
   let all : Array[Role] = [
-    HumanSteward, Leader, Searcher, Allocator, Executor, Verifier, Recorder, Observer,
+    HumanSteward,
+    Leader,
+    Searcher,
+    Allocator,
+    Executor,
+    Verifier,
+    Recorder,
+    Observer,
     SpecAuthor,
   ]
   for r in all {
@@ -72,7 +79,14 @@ test "can_permission_matrix" {
   assert_true(can(Verifier, ReviewSpec))
   assert_true(!can(Verifier, CreateSpec))
   // ④ 其余六角色：两个动作都不许（fail-closed）
-  let others : Array[Role] = [Leader, Searcher, Allocator, Executor, Recorder, Observer]
+  let others : Array[Role] = [
+    Leader,
+    Searcher,
+    Allocator,
+    Executor,
+    Recorder,
+    Observer,
+  ]
   for r in others {
     for a in acts {
       assert_true(!can(r, a))
@@ -135,7 +149,6 @@ test "spec_gates_by_actor_string" {
   }
 }
 
-
 ///|
 /// R141→R143：**状态门 vs 域迁移**的三层分工锁（R142 曾误删、R143 回滚并定论）。
 ///
@@ -164,7 +177,12 @@ test "status_gate_vs_domain_split_mismatch_is_pinned" {
   assert_true(!TaskStatus::can_split(Completed))
   // 域层侧（用真实构造的任务验证，而不是读代码）：只有 Claimed 能 split
   // 用**全新 Pending 任务**（不能用 rc_reviewing：它已推进到 Reviewing，claim 会拒）
-  let fresh = Task::new(id="R141-1", project_dir=".", description="x", assignee="a1")
+  let fresh = Task::new(
+    id="R141-1",
+    project_dir=".",
+    description="x",
+    assignee="a1",
+  )
   let claimed = match fresh.claim(assignee="a1") {
     Ok(t) => t
     Err(e) => abort("claim 失败：" + e)
@@ -188,7 +206,12 @@ test "status_gate_vs_domain_execute_aligned" {
   assert_true(!TaskStatus::can_execute(Pending))
   assert_true(!TaskStatus::can_execute(Completed))
   // 域层：Claimed 可 execute；Rejected 必须 Err（且文案是"非法迁移"，不是闸门文案）
-  let fresh2 = Task::new(id="R141-2", project_dir=".", description="y", assignee="a2")
+  let fresh2 = Task::new(
+    id="R141-2",
+    project_dir=".",
+    description="y",
+    assignee="a2",
+  )
   let claimed2 = match fresh2.claim(assignee="a2") {
     Ok(t) => t
     Err(e) => abort("claim 失败：" + e)

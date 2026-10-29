@@ -13,7 +13,7 @@
 fn bq_code_only(raw : String) -> String {
   let mut acc = ""
   for line in raw.split("\n") {
-    let s = line.to_string()
+    let s = line.to_owned()
     let l = s.trim()
     if l.has_prefix("///") || l.has_prefix("//") {
       continue
@@ -62,7 +62,7 @@ test "bq_01_tx_contract_routes_by_ns" {
   //  且硬拼 "eng_tx\n          .transition_contract(" 与真实换行对不上 ⇒ 恒不匹配）
   let mut prev_was_bare_engine = false
   for l in blk.split("\n") {
-    let line = l.to_string()
+    let line = l.to_owned()
     let t = line.trim()
     if prev_was_bare_engine && t.has_prefix(".transition_contract(") {
       abort(
@@ -130,12 +130,12 @@ test "bq_04_cleanup_does_not_sweep_all_namespaces" {
   // ⚠️ 检测词不能只写 "for ns in" —— 实测变异用的 `for ns_x in …` 就漏过了。
   //   改为逐行扫：只要出现 `for ` 且同一行含 ` in `，就是遍历形态。
   for line in cl.split("\n") {
-    let s = line.to_string()
+    let s = line.to_owned()
     let t = s.trim()
     if t.has_prefix("for ") && t.contains(" in ") {
       abort(
         "task_cleanup 里出现了遍历（" +
-        s.trim().to_string() +
+        s.trim().to_owned()+
         "）—— " +
         "不可逆删除不该跨库遍历（一次调用波及多个租户库，事后无法核对）",
       )

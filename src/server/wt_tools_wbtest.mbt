@@ -100,7 +100,9 @@ test "W5 可回收集合：merged/stale/abandoned/idle 在内，blocked/unknown/
 
 ///|
 test "W6 账 JSON 往返：字段与类型都不丢（与 Python 面同名字段）" {
-  let j = wt_entry_json("t1", "temp/wt-t1", "wt/t1", "HEAD", "sha0", "sha1", 1234567, 90)
+  let j = wt_entry_json(
+    "t1", "temp/wt-t1", "wt/t1", "HEAD", "sha0", "sha1", 1234567, 90,
+  )
   assert_eq(wt_s(j, "id"), "t1")
   assert_eq(wt_s(j, "path"), "temp/wt-t1")
   assert_eq(wt_s(j, "branch"), "wt/t1")
@@ -198,7 +200,7 @@ test "W10 账路径自带白名单：不合规 task 不产生可越界路径" {
   assert_false(bad2.contains("a/b"))
 }
 
-////|
+///|
 /// W11 **TTL 非正值不许把活沙箱判成垃圾**：`wt_state_of` 原直接 `age_min > ttl_min`,
 /// 于是 `ttl_min = 0` 或负值对任何沙箱恒真 ⇒ 刚创建、没动过、没并入的沙箱会立刻被判
 /// `stale`（**可回收档**）⇒ 无人值守车道会把它当垃圾收掉。修法：非正值按默认 120 分钟算。
@@ -209,7 +211,10 @@ test "W11 ttl_min 非正值不得让新沙箱立刻 stale" {
   assert_eq(wt_state_of(true, Some(false), 0, 5, 0, "new", "old").0, "fresh")
   assert_eq(wt_state_of(true, Some(false), 0, 5, -30, "new", "old").0, "fresh")
   // 零回归：正 TTL 仍按原语义（301 > 300 ⇒ stale）
-  assert_eq(wt_state_of(true, Some(false), 0, 301, 300, "new", "old").0, "stale")
+  assert_eq(
+    wt_state_of(true, Some(false), 0, 301, 300, "new", "old").0,
+    "stale",
+  )
 }
 
 ///|
@@ -227,7 +232,10 @@ test "W12 unregistered 跳过主工作树" {
   // 尾部斜杠归一后仍能匹配
   assert_eq(wt_unregistered(parsed, ["/repo-sb/"]).length(), 0)
   // 只有主工作树一条 ⇒ 永远没有 unregistered
-  assert_eq(wt_unregistered([wt_porcelain_row("/x", "", "", false)], []).length(), 0)
+  assert_eq(
+    wt_unregistered([wt_porcelain_row("/x", "", "", false)], []).length(),
+    0,
+  )
 }
 
 ///|

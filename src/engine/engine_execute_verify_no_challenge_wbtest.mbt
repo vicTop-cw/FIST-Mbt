@@ -19,7 +19,7 @@
 fn ch_code_lines(raw : String) -> Array[String] {
   let out : Array[String] = []
   for line in raw.split("\n") {
-    let s = line.to_string()
+    let s = line.to_owned()
     let l = s.trim()
     if l.has_prefix("///") || l.has_prefix("//") {
       continue

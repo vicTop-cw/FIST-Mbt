@@ -46,7 +46,10 @@ test "P1b/P2a 父段是既存文件：预检 false，open 返回 None" {
   assert_eq(SqliteStore::open_preflight_ok(path), false)
   match SqliteStore::open(path) {
     None => ()
-    Some(_) => abort("父段是既存文件时 open 竟然成功：预检没接住 js 侧 throw 那一面")
+    Some(_) =>
+      abort(
+        "父段是既存文件时 open 竟然成功：预检没接住 js 侧 throw 那一面",
+      )
   }
   pf_remove(blocker)
 }
@@ -61,7 +64,10 @@ test "P1c/P2b 目标名撞既存目录：预检 false，open 返回 None" {
   assert_eq(SqliteStore::open_preflight_ok(dir_db), false)
   match SqliteStore::open(dir_db) {
     None => ()
-    Some(_) => abort("目标是既存目录时 open 竟然成功：『既存路径必须是普通文件』这一半没判掉")
+    Some(_) =>
+      abort(
+        "目标是既存目录时 open 竟然成功：『既存路径必须是普通文件』这一半没判掉",
+      )
   }
   @fs.remove_dir(dir_db) catch {
     _ => ()
@@ -87,7 +93,10 @@ test "P3 正向对照：干净路径放行且 open 真能建库" {
   assert_eq(SqliteStore::open_preflight_ok(path), true)
   match SqliteStore::open(path) {
     Some(s) => ignore(s)
-    None => abort("干净可写路径被预检误拒：判据会把能用面当缺陷报")
+    None =>
+      abort(
+        "干净可写路径被预检误拒：判据会把能用面当缺陷报",
+      )
   }
   pf_remove(path)
   pf_remove("\{path}-wal")

@@ -73,7 +73,7 @@ test "co_02_sqlite_denies_then_allows" {
       )
       ignore(eng.agents_acl_ensure(agent_id=d_id.fp(), ns~, now~))
       // ★ 未授权 ⇒ 必须拒（delete 的物理删除不该被任意人触发）
-      if not(agent_write_gate(eng, d_id, ns) is Err(_)) {
+      if !(agent_write_gate(eng, d_id, ns) is Err(_)) {
         abort(
           "未授权身份竟通过了 delete 的门 —— BUG-471 未修（任何人可物理删除任务）",
         )
@@ -90,7 +90,7 @@ test "co_02_sqlite_denies_then_allows" {
           by="human_steward",
         ),
       )
-      if not(agent_write_gate(eng, d_id, ns) is Ok(_)) {
+      if !(agent_write_gate(eng, d_id, ns) is Ok(_)) {
         abort("已授权身份被拒 —— 门太严，会误伤正当删除")
       }
     }
@@ -108,7 +108,7 @@ test "co_03_both_handlers_are_wired" {
   }
   let mut code = ""
   for line in raw.split("\n") {
-    let s = line.to_string()
+    let s = line.to_owned()
     let l = s.trim()
     if l.has_prefix("///") || l.has_prefix("//") {
       continue
@@ -133,7 +133,7 @@ test "co_03_both_handlers_are_wired" {
     }
     let blk = co_slice(rest, 0, j)
     let flat = co_strip_ws(blk)
-    if not(flat.contains(expect)) {
+    if !(flat.contains(expect)) {
       abort(
         tool +
         " 的 handler **没有**接 ACL 门，或身份来源不对。" +
@@ -150,7 +150,7 @@ test "co_03_both_handlers_are_wired" {
 fn co_strip_ws(s : String) -> String {
   let mut out = ""
   for ch in s.split("") {
-    let c = ch.to_string()
+    let c = ch.to_owned()
     if c == " " || c == "\t" || c == "\n" || c == "\r" {
       continue
     }

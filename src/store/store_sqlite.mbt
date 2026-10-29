@@ -416,10 +416,7 @@ fn SqliteStore::bind_task_values(
   )
   // BUG-475：发布者身份落库（第 20 位）
   ignore(
-    stmt.bind(
-      20,
-      @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.created_by)),
-    ),
+    stmt.bind(20, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.created_by))),
   )
 }
 
@@ -499,10 +496,7 @@ fn SqliteStore::bind_task_update_values(
   )
   // BUG-475：发布者身份（第 18 位）
   ignore(
-    stmt.bind(
-      18,
-      @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.created_by)),
-    ),
+    stmt.bind(18, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.created_by))),
   )
 }
 

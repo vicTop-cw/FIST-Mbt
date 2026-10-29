@@ -1,8 +1,8 @@
 ---
-status: 提案中
-decided_by:
-decided_at:
-decision:
+status: 已驳回
+decided_by: human_steward
+decided_at: 2026-10-29
+decision: rejected
 ---
 
 > **来源（孤本捞回，判例-24）**：本稿原只存在于 sibling 目录 `E:/IDEProjects/AI/FIST-Mbt-slave-wt03` 的
@@ -10,6 +10,8 @@ decision:
 > 该 sibling 三条件全过（dirty=0/unpushed=0/conflict=0）却含此孤本 ⇒ 由 tidy/F 路（task-21）原样捞回，
 > **正文一字未改**，仅补本头部以满足 `docs/plans/README.md` 的强制字段与 `check_plan_location` 守卫。
 > 关联：`docs/plan-light-worktree-isolation.md`（母计划，§4 定双轨）｜`scripts/run_light_wt.py`（Python 主轨，已实现同名能力）。
+
+> **裁决（2026-10-29 · Lane DJ）**：**已驳回** —— 能力已由 `scripts/run_light_wt.py`（535 行）100% 覆盖（create/teardown/status 三条全有，实跑证据见 `docs/plans/2026-10-29-wt03-verdict.md`）。提案要的 4 个 shell 文件确实不存在，但它们要提供的**能力**已有；再写两份是**负债**（bash + pwsh + python 三份同名逻辑 ⇒ 改一处忘两处 = 三个行为不一致，正是 `check_two_faces.py` 要抓的形态）。
 
 # WT-03 设计：sparse cone worktree 创建 + light-wt / light-wt-teardown 双轨脚本
 

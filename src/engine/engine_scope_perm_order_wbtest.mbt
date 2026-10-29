@@ -32,7 +32,7 @@ test "scope_perm_order_wb1_no_regression_on_current_table" {
     let mut old_pattern = ""
     let mut old_found = false
     for rule in scope_permissions {
-      if not(old_found) && scope_matches_pattern(scope, rule.pattern) {
+      if !(old_found) && scope_matches_pattern(scope, rule.pattern) {
         old_pattern = rule.pattern
         old_found = true
       }

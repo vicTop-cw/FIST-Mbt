@@ -28,7 +28,7 @@ test "ct_01_seven_handlers_wired" {
   }
   let mut code = ""
   for line in raw.split("\n") {
-    let s = line.to_string()
+    let s = line.to_owned()
     let l = s.trim()
     if l.has_prefix("///") || l.has_prefix("//") {
       continue
@@ -43,14 +43,14 @@ test "ct_01_seven_handlers_wired" {
   for tool in by_group {
     let blk = ct_block(code, tool)
     let flat = ct_strip_ws(blk)
-    if not(flat.contains("agent_write_gate(eng,acl_claim_identity(by,by),ns)")) {
+    if !(flat.contains("agent_write_gate(eng,acl_claim_identity(by,by),ns)")) {
       abort(tool + " 没接门（或身份来源不是 by）")
     }
   }
   for tool in agent_group {
     let blk = ct_block(code, tool)
     let flat = ct_strip_ws(blk)
-    if not(
+    if !(
         flat.contains(
           "agent_write_gate(eng,acl_claim_identity(agent,agent),ns)",
         ),
@@ -91,7 +91,7 @@ test "ct_02_sqlite_gate_denies_then_allows" {
         ),
       )
       ignore(eng.agents_acl_ensure(agent_id=id.fp(), ns~, now~))
-      if not(agent_write_gate(eng, id, ns) is Err(_)) {
+      if !(agent_write_gate(eng, id, ns) is Err(_)) {
         abort("未授权身份通过了门 —— 批 2/3 的修复无效")
       }
       // ② 授权 ⇒ 放
@@ -106,7 +106,7 @@ test "ct_02_sqlite_gate_denies_then_allows" {
           by="human_steward",
         ),
       )
-      if not(agent_write_gate(eng, id, ns) is Ok(_)) {
+      if !(agent_write_gate(eng, id, ns) is Ok(_)) {
         abort("已授权身份被拒 —— 门太严")
       }
     }
@@ -143,7 +143,7 @@ test "ct_03_memory_backend_zero_regression" {
 fn ct_strip_ws(s : String) -> String {
   let mut out = ""
   for ch in s.split("") {
-    let c = ch.to_string()
+    let c = ch.to_owned()
     if c == " " || c == "\t" || c == "\n" || c == "\r" {
       continue
     }

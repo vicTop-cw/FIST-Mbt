@@ -78,10 +78,7 @@ pub fn soldier_type_of(keywords : String) -> String {
     ),
     (
       "特种兵",
-      [
-        "高价值", "关键", "紧急", "架构", "critical", "urgent",
-        "arch",
-      ],
+      ["高价值", "关键", "紧急", "架构", "critical", "urgent", "arch"],
     ),
     (
       "工兵",

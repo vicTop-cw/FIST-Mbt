@@ -52,10 +52,10 @@ fn b458_expect_err(
 ) -> Unit {
   match r {
     Err(e) => {
-      if not(e.contains("kind")) {
+      if !(e.contains("kind")) {
         abort(what + "：错误文案必须点名 kind，实际：" + e)
       }
-      if not(e.contains(cause)) {
+      if !(e.contains(cause)) {
         abort(
           what +
           "：错误文案必须点名原因「" +
@@ -82,7 +82,7 @@ fn b459_expect_err(
 ) -> Unit {
   match r {
     Err(e) =>
-      if not(e.contains(must)) {
+      if !(e.contains(must)) {
         abort(
           what + "：错误文案必须含「" + must + "」，实际：" + e,
         )
@@ -188,7 +188,7 @@ test "BUG-458 正向对照：合法 kind 仍然照常工作（修 Err 不等于�
     Ok(_) => ()
     Err(e) => abort("合法 kind=thinking 必须成功，实际 Err：" + e)
   }
-  if not(@fs.path_exists(d + "/memory/thinking.md")) {
+  if !(@fs.path_exists(d + "/memory/thinking.md")) {
     abort(
       "合法 kind=thinking 必须落 memory/thinking.md（Err 化不得吞掉正常写入）",
     )
@@ -196,7 +196,7 @@ test "BUG-458 正向对照：合法 kind 仍然照常工作（修 Err 不等于�
   match @ops.selfdrive_memory_get(d, ns="r1goal", kind="thinking") {
     Ok(j) =>
       // exists=true + content 含刚写入的流水；用 JSON 字符串形态做可比读数
-      if not(j.stringify().contains("流水")) {
+      if !(j.stringify().contains("流水")) {
         abort(
           "get 回读必须拿到刚写入的内容，实际：" + j.stringify(),
         )

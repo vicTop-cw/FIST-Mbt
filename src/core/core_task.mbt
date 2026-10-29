@@ -378,26 +378,9 @@ pub fn Task::from_db(
 ) -> Task {
   // BUG-475：`from_db` 保持 19 参签名不变（4 个测试文件在用），委托到新构造器。
   Task::from_db_with_created_by(
-    id,
-    parent_id,
-    project_dir,
-    ns,
-    priority,
-    importance,
-    depth,
-    split_n,
-    level,
-    status_s,
-    assignee,
-    description,
-    deliverable,
-    created_at,
-    updated_at,
-    completed_by,
-    cleanup_mode,
-    depends_on,
-    omega_required,
-    "",
+    id, parent_id, project_dir, ns, priority, importance, depth, split_n, level,
+    status_s, assignee, description, deliverable, created_at, updated_at, completed_by,
+    cleanup_mode, depends_on, omega_required, "",
   )
 }
 
@@ -654,7 +637,7 @@ fn strip_reject_tail(desc : String) -> String {
   let marker = " [打回原因: "
   let ml = marker.length()
   let dl = desc.length()
-  if dl < ml || not(desc.has_suffix("]")) {
+  if dl < ml || !(desc.has_suffix("]")) {
     return desc
   }
   // 反向扫：找最后一个 marker 的起始下标

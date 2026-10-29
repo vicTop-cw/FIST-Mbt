@@ -40,7 +40,8 @@ fn st_of(s : String) -> TaskStatus {
 /// 锁 1：**9 个状态全部返回非空文案**（空串等于没有指引）。
 test "execute_exit_hint_all_nine_non_empty" {
   let keys : Array[String] = [
-    "待领取", "已领取", "拆分中", "执行中", "待验收", "已完成", "已归档", "已打回", "已暂停",
+    "待领取", "已领取", "拆分中", "执行中", "待验收", "已完成",
+    "已归档", "已打回", "已暂停",
   ]
   for k in keys {
     let hint = Task::execute_exit_hint(st_of(k))
@@ -63,8 +64,12 @@ test "execute_exit_hint_actions_are_real_and_correct" {
   // 已暂停 ⇒ resume
   assert_true(Task::execute_exit_hint(st_of("已暂停")).contains("resume"))
   // 已完成 / 已归档 ⇒ reopen_task（不是 retry —— 终态没有 retry 出路）
-  assert_true(Task::execute_exit_hint(st_of("已完成")).contains("reopen_task"))
-  assert_true(Task::execute_exit_hint(st_of("已归档")).contains("reopen_task"))
+  assert_true(
+    Task::execute_exit_hint(st_of("已完成")).contains("reopen_task"),
+  )
+  assert_true(
+    Task::execute_exit_hint(st_of("已归档")).contains("reopen_task"),
+  )
   assert_true(!Task::execute_exit_hint(st_of("已归档")).contains("retry"))
 }
 
