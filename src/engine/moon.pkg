@@ -6,6 +6,8 @@ import {
   "vicTop-cw/fist-mbt/src/evolve",
   "vicTop-cw/fist-mbt/src/executor",
   "moonbitlang/core/json",
+  // BUG-478：auth_mode.mbt 用 @env.get_env_var ⇒ 显式导入（原先靠隐式解析，已弃用）
+  "moonbitlang/core/env",
   "moonbitlang/core/math",
   "moonbitlang/x/fs",
   "moonbitlang/core/encoding/utf8",

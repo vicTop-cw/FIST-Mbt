@@ -44,6 +44,15 @@ pub enum AuthMode {
 } derive(Eq, Debug)
 
 ///|
+/// **显式 extend（BUG-478 清理 warn）**：编译器 `implicit_impl_as_method` 要求把
+/// `derive(Eq, Debug)` 生成的 impl 方法**显式声明**为普通方法，否则将被移除。
+/// 不写这两行时 `AuthMode` 的 `.equal()` / `.to_string()`（Debug 路径）会在未来版本失效。
+pub extend AuthMode with Eq::{not_equal, equal}
+
+///|
+pub extend AuthMode with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 /// 转回 `FIST_AUTH_MODE` 的**取值字符串**（小写，与 env 里人配的字面量一致）。
 ///
 /// ⚠️ 为什么不用 `Debug`：`Debug` 给的是 `Off`/`Soft`/`Strict`（大写），

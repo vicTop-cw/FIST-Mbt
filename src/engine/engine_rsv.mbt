@@ -287,7 +287,7 @@ pub fn strict_challenge_denial(
 ) -> String? {
   if role_source == "challenge_missing" {
     Some(
-      "FIST_AUTH_MODE=strict：{action} 需要 S3 挑战认证，调用方未提供 challenge。" +
+      "FIST_AUTH_MODE=strict：\{action} 需要 S3 挑战认证，调用方未提供 challenge。" +
       "本模式下**无挑战一律拒绝**（不是降权）。" +
       "请先 agent_register_key 登记公钥，再 agent_issue_challenge 取票并签名。" +
       "（要放宽请把 FIST_AUTH_MODE 设为 soft 或 off）",

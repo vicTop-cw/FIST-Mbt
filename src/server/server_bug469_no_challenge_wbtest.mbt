@@ -131,7 +131,7 @@ test "cw_03_ts_descriptions_state_server_stamped" {
   }
   for tool in ["lock_acquire", "lock_renew"] {
     let blk = cw_tool_block(srv, tool)
-    if !(cw_code_has(blk, "服务端盖章")) {
+    if !cw_code_has(blk, "服务端盖章") {
       abort(
         tool +
         " 的 ts 描述里没有「服务端盖章」字样 —— " +
@@ -160,36 +160,6 @@ fn cw_code_only(raw : String) -> String {
 ///|
 fn cw_code_has(raw : String, needle : String) -> Bool {
   cw_code_only(raw).contains(needle)
-}
-
-///|
-fn cw_count_code(raw : String, needle : String) -> Int32 {
-  let hay = cw_code_only(raw)
-  let h = hay.to_array()
-  let nd = needle.to_array()
-  if nd.length() == 0 {
-    return 0
-  }
-  let mut cnt = 0
-  let mut i = 0
-  while i + nd.length() <= h.length() {
-    let mut j = 0
-    let mut ok = true
-    while j < nd.length() {
-      if h[i + j] != nd[j] {
-        ok = false
-        break
-      }
-      j = j + 1
-    }
-    if ok {
-      cnt = cnt + 1
-      i = i + nd.length()
-    } else {
-      i = i + 1
-    }
-  }
-  cnt
 }
 
 ///|
