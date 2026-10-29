@@ -39,7 +39,7 @@ fn lb2_count(hay : String, needle : String) -> Int32 {
         let next = i + needle.length()
         // deprecated substring → 切片。安全性：`i` 来自 find、`needle.length() > 0`
         // ⇒ next = i + len ≤ rest.length()（B0/B1 边界内，实测同值）。
-        rest = rest[next:].to_string()
+        rest = rest[next:].to_owned()
       }
     }
   }
