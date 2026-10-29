@@ -75,6 +75,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      # BUG-480：RX-MBT 的 fs.watch 句柄泄漏。**发布产物必须带这个补丁** ——
+      # 否则用户装到的 JS bundle 里仍是 `close()` 永不执行的旧代码。
+      - name: Reapply RX-MBT BUG-480 fs.watch handle fix (js)
+        shell: bash
+        run: bash patches/rx-mbt-bug480/reapply.sh --force
+
       - name: Build JS target
         run: |
           # 2026-10-13 run#6 红在此步（`moon build --target js` 退出 255）：moon 0.1.20261012+
@@ -118,6 +124,14 @@ jobs:
 
       - name: Install sqlite3 dev
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev sqlite3
+
+      - name: Install sqlite3 dev
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev sqlite3
+
+      # BUG-480：发布产物必须带补丁（理由同 js 臂）
+      - name: Reapply RX-MBT BUG-480 fs.watch handle fix (native)
+        shell: bash
+        run: bash patches/rx-mbt-bug480/reapply.sh --force
 
       - name: Build native
         run: bash scripts/migrate_mooncakes_modjson.sh "moon build --target native"
