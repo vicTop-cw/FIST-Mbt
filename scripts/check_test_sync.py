@@ -272,6 +272,12 @@ EXEMPT = [
      "**判例-25 的病历原文**（`check_badge.py` / `moon_test_env.py` 两条说明里）："
      "「快照停在 1455 而现状 1457，判据却 PASS 绿」是本单的病灶记录；"
      "改成 1457 即伪造病历史（判例-39：判例正文的旧数字不得随现状更新）"),
+
+    # 2026-10-29（T0r6 后收口）：把现状面刷到实测 1904 时暴露的一条**历史测量记录**。
+    # 判据自述 prescribe「合法的历史数必须在 EXEMPT 表里逐条点名」，故按机制登记而非改写历史行。
+    ("scripts/README.md", "1835",
+     "`check_mcp_stdio_purity.py` 条目里记录的 R33 当轮实测（moon test 1835/1835/0 全绿而 MCP 仍不可用）——"
+     "那是该判据的**病历读数**（判例-39 同型），改写成 1904 等于说当时就已经是 1904"),
 ]
 
 # 历史记录类别：整路径豁免（按日期追加，改写即伪造历史）
@@ -680,7 +686,7 @@ def selftest() -> int:
         # 否则 R4「豁免条目已失效」会让 baseline-clean 恒红（与上面 R186 那组同一设计）。
         # 措辞要带测试语义关键词（窄口径 A 要求 `N/N` 同行出现「测试/全绿/通过/passed」），
         # 否则 collect_claims 根本收不到 ⇒ 声明白写、R4 恒红（实测踩过一次）。
-        "scripts/README.md": "判例-25 的病历原文：快照停在测试 **1455/1455** 全绿，而现状 1457，判据却 PASS",
+        "scripts/README.md": "判例-25 的病历原文：快照停在测试 **1455/1455** 全绿，而现状 1457，判据却 PASS；另 `check_mcp_stdio_purity` 条目记 R33 那轮 `moon test` 1835/1835/0 全绿（病历读数）",
         "docs/other.md": "无关文字：测试 105/104 是引文，1986/1997 是年份",
         "memory/2026-09-26.md": "当日记录写 406/406（历史面豁免）",
         "reports/2026-09-26-x.md": "报告写 406/406（历史面豁免）",
@@ -800,12 +806,12 @@ def selftest() -> int:
     #    两格成对：豁免真的按「数字」生效（不是按文件全免），且豁免不是「整份 README 都放行」。
     #    注意：`d = dict(base)` 只覆盖该文件，别的豁免条目声明仍在 ⇒ 不会触发 R4。
     d = dict(base)
-    d["scripts/README.md"] = "判例-25 的病历：快照停在测试 **1455/1455** 全绿，而现状 1457"
+    d["scripts/README.md"] = "判例-25 的病历：快照停在测试 **1455/1455** 全绿，而现状 1457；`check_mcp_stdio_purity` 记 **1835/1835** 全绿（在豁免表里）"
     if run_case("judge-script-readme-casefile-exempt", d, want=None) is None:
         return 1
     d = dict(base)
     d["scripts/README.md"] = (
-        "判例-25 的病历：测试 **1455/1455** 全绿；另有一条历史读数 **1234/1234** 全绿（不在豁免表里）")
+        "判例-25 的病历：测试 **1455/1455** 全绿；另 `check_mcp_stdio_purity` 条目记 **1835/1835** 全绿（在豁免表里）；还有一条 **1234/1234** 全绿（不在豁免表里）")
     if run_case("casefile-exempt-is-not-file-wide", d,
                 want="R1 scripts/README.md") is None:
         return 1
