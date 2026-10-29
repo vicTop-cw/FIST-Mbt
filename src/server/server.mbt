@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 178 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 179 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -1036,6 +1036,29 @@ fn get_int(args : Json, key : String, default~ : Int32 = 3) -> Int32 {
             default
           } else {
             n.to_int()
+          }
+        _ => default
+      }
+    _ => default
+  }
+}
+
+///|
+/// 从 JSON 参数中读取 Int64（epoch 毫秒一类的**游标**参数）。
+/// 与 `get_int` 同规（BUG-194）：越界/NaN 一律回落默认 —— 不饱和、不静默变成天量值。
+/// 域取 Double 能**精确表示整数**的上限 2^53（9.007e15），超出即判越界：
+/// epoch 毫秒在 2^53 处还差 28 万年，这条线对时间戳/游标参数绰绰有余。
+fn get_i64(args : Json, key : String, default~ : Int64 = 0L) -> Int64 {
+  match args {
+    Object(map) =>
+      match map.get(key) {
+        Some(Number(n, ..)) =>
+          if n != n ||
+            n < -9_007_199_254_740_992.0 ||
+            n > 9_007_199_254_740_992.0 {
+            default
+          } else {
+            n.to_int64()
           }
         _ => default
       }
@@ -10611,6 +10634,69 @@ pub async fn run_server() -> Unit {
           "已写入 events 目录。⚠️ 本工具只发送；接收侧请**同步读取**（勿订阅：BUG-480 下订阅会让进程永不退出）。",
         ),
       )
+      Ok(@mcp.ToolResult::text(Json::object(out).stringify()))
+    },
+  )
+
+  // T0r3：`commissar_read` —— 接收侧**同步读取**面（只读、一次性遍历、不订阅）。
+  // 与 `commissar_send` 成对：发一条 ⇒ 同步读出同一条（round-trip）。
+  // ⚠️ 本工具**不订阅**任何东西：无 watcher / 无 Subscription / 无后台句柄，
+  //    调用返回即结束（BUG-480：订阅会让 server 进程永不退出）。
+  s1 = instrumented_tool(
+    s1,
+    "commissar_read",
+    "**政委消息·同步读取**：一次性遍历 `<project_dir>/.commissar/events/*.rhop`，用 rhop 自己的解码链（`RhopEnvelope::decode` → `decrypt` → `RhopPacket::from_json_text` → `CommissarSignal::from_json`）把信号读出来，返回**信号数组 + 逐类跳过统计**；与 `commissar_send` 成对（发一条 / 读一条 round-trip）。⚠️ **本工具不订阅、不注册 watcher、不留后台句柄** —— BUG-480：js 后端 `fs.watch(persistent:true)` 的 handle 在 `Subscription::dispose()` 后仍不释放，**订阅会让 server 进程永不退出**；而 MCP 是请求/响应模型 ⇒ 收消息请**反复调用本工具**（短轮询），调用返回即结束，进程随时可退出。坏文件**逐个计数 + 逐个点名**（`bad.read/envelope/decrypt/packet/payload` 与 `bad.files`），**绝不静默吞**，且坏文件不影响其余文件读出。参数：project_dir(必填)、limit(可选，默认 100，上限 1000；取**最新** limit 条，按时间升序返回)、kind(可选，按信号类别精确过滤)、target(可选，按目标精确过滤)、since_seq(可选游标下界，**闭区间** `seq >= since_seq`；seq = 信号发送时刻 epoch 毫秒，见每条信号的 seq 字段；同一毫秒的多条会一起进出 = 宁可重复不可丢)。返回 {ok, project_dir, events_dir, dir_exists, error, entries[{id,source,kind,target,text,namespace,seq,at_ms}], counts{scanned,matched,returned,ignored_non_rhop}, skipped{filtered_kind,filtered_target,before_cursor,dropped_by_limit}, bad{total,read,envelope,decrypt,packet,payload,files[]}, note}。目录不存在 ⇒ 返回空且 dir_exists=false（**不是错误**）。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录（必填）；读 <project_dir>/.commissar/events/*.rhop",
+        ),
+        "limit": int_prop(
+          "最多返回多少条（可选，默认 100，上限 1000；<=0 回落默认）。取最新 limit 条，按时间升序返回",
+        ),
+        "kind": string_prop(
+          "按信号类别精确过滤（可选，空=不过滤）：guidance / heartbeat / reminder / 自定义",
+        ),
+        "target": string_prop(
+          "按目标精确过滤（可选，空=不过滤）",
+        ),
+        "since_seq": int_prop(
+          "游标下界（可选，闭区间 seq >= since_seq；seq = 信号发送时刻 epoch 毫秒）。0 = 不截断",
+        ),
+      },
+      ["project_dir"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      if project_dir == "" {
+        return Err(@mcp_types.ToolError("commissar_read: project_dir 必填"))
+      }
+      let limit = get_int(args, "limit", default=100)
+      let kind = get_str(args, "kind")
+      let target = get_str(args, "target")
+      let since_seq = get_i64(args, "since_seq", default=0L)
+      let report = @ops.commissar_read(
+        project_dir,
+        limit~,
+        kind~,
+        target~,
+        since_seq~,
+      )
+      let out : Map[String, Json] = Map([])
+      // ok 只表示「这次扫描本身可信」（目录级无故障）；坏文件是**已计数**的事实，
+      // 不把整个回执判成失败 —— 否则调用方会以为"一条都没读到"。
+      out.set("ok", Json::boolean(report.error == ""))
+      out.set("project_dir", Json::string(project_dir))
+      out.set(
+        "note",
+        Json::string(
+          "同步读取（不订阅）：调用返回即结束。要持续收消息请反复调用本工具；勿用订阅（BUG-480：会让进程永不退出）。",
+        ),
+      )
+      match report.to_json() {
+        Object(m) => m.each(fn(k, v) { out.set(k, v) })
+        _ => ()
+      }
       Ok(@mcp.ToolResult::text(Json::object(out).stringify()))
     },
   )

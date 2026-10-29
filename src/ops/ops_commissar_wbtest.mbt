@@ -173,3 +173,212 @@ fn dl_cleanup(proj : String) -> Unit {
     _ => ()
   }
 }
+
+// ============================================================================
+// T0r3 · 接收侧「同步读取」白盒锁（`commissar_read`）
+//
+// 被测面：`commissar_read` 的解码链 + 过滤 + 坏文件计数 + 空目录语义。
+// **全部断言返回值/结构体字段，不断言源码字符串**（判例-30）；
+// 全程不订阅 rhop、不 sleep（判例-31）。
+// ============================================================================
+
+///|
+/// 夹具：往 events/ 里直接落一个原始文件（**不是**通过 `commissar_send`）
+/// —— 这样能造出 send 造不出来的坏文件。
+fn dl_write_raw(proj : String, name : String, body : String) -> Unit {
+  let path = commissar_events_dir(proj) + "/" + name
+  @fs.write_string_to_file(path, body) catch {
+    _ =>
+      abort(
+        "dl_write_raw: 写文件失败 \{path}（本格没跑到被测面）",
+      )
+  }
+}
+
+///|
+/// 坏文件计数之和（tests 里要反复用，别每处重写一遍）
+fn dl_bad_total(rep : CommissarReadReport) -> Int32 {
+  rep.bad_read +
+  rep.bad_envelope +
+  rep.bad_decrypt +
+  rep.bad_packet +
+  rep.bad_payload
+}
+
+///|
+/// 锁 R1：**round-trip** —— `commissar_send` 发一条，`commissar_read` 同步读出同一条。
+/// 顺带锁住「四个子目录都被 `ensure_dirs` 建出来」（T0r3 的目录正式化）。
+test "dl_c4_read_round_trip_single" {
+  let proj = dl_tmp_project("c4")
+  commissar_ensure_dirs(proj)
+  // 目录约定：events / inbox / outbox / archive 四者都在
+  assert_true(@fs.path_exists(commissar_events_dir(proj)))
+  assert_true(@fs.path_exists(commissar_inbox_dir(proj)))
+  assert_true(@fs.path_exists(commissar_outbox_dir(proj)))
+  assert_true(@fs.path_exists(commissar_archive_dir(proj)))
+
+  let sig = CommissarSignal::new(
+    kind="reminder",
+    target="dl-c4-agent",
+    text="round-trip-42",
+    ns="ns-c4",
+  )
+  commissar_send(proj, sig, 1_700_000_000_100L)
+
+  let rep = commissar_read(proj)
+  assert_eq(rep.error, "") // 目录级故障必须为空
+  assert_true(rep.dir_exists)
+  assert_eq(rep.scanned, 1)
+  assert_eq(rep.returned, 1)
+  assert_eq(dl_bad_total(rep), 0)
+  assert_eq(rep.dropped_by_limit, 0)
+  // ★ 读回来的就是发出去的那一条（不是"读到了点东西"）
+  let e = rep.entries[0]
+  assert_eq(e.text, "round-trip-42")
+  assert_eq(e.kind, "reminder")
+  assert_eq(e.target, "dl-c4-agent")
+  assert_eq(e.ns, "ns-c4")
+  assert_eq(e.at, 1_700_000_000_100L)
+  assert_eq(e.source, "commissar-send")
+  assert_true(e.id != "") // 信封 id 没丢
+  dl_cleanup(proj)
+}
+
+///|
+/// 锁 R2：过滤（kind / target）与 limit / since_seq 游标真的生效。
+test "dl_c5_read_filters_limit_and_cursor" {
+  let proj = dl_tmp_project("c5")
+  commissar_ensure_dirs(proj)
+  commissar_send(
+    proj,
+    CommissarSignal::new(kind="reminder", target="a", text="t1"),
+    1_700_000_000_201L,
+  )
+  commissar_send(
+    proj,
+    CommissarSignal::new(kind="guidance", target="a", text="t2"),
+    1_700_000_000_202L,
+  )
+  commissar_send(
+    proj,
+    CommissarSignal::new(kind="reminder", target="b", text="t3"),
+    1_700_000_000_203L,
+  )
+
+  // kind 过滤：reminder 两条，guidance 一条被计为 filtered_kind
+  let rk = commissar_read(proj, kind="reminder")
+  assert_eq(rk.returned, 2)
+  assert_eq(rk.filtered_kind, 1)
+  assert_eq(rk.matched, 2)
+  // target 过滤
+  let rt = commissar_read(proj, target="a")
+  assert_eq(rt.returned, 2)
+  assert_eq(rt.filtered_target, 1)
+  // 组合过滤
+  let rb = commissar_read(proj, kind="reminder", target="b")
+  assert_eq(rb.returned, 1)
+  assert_eq(rb.entries[0].text, "t3")
+  // limit：取**最新** limit 条，按时间升序返回
+  let rl = commissar_read(proj, limit=2)
+  assert_eq(rl.returned, 2)
+  assert_eq(rl.dropped_by_limit, 1)
+  assert_eq(rl.entries[0].text, "t2")
+  assert_eq(rl.entries[1].text, "t3")
+  // since_seq：闭区间下界（seq >= since_seq），只留最新那条
+  let rs = commissar_read(proj, since_seq=1_700_000_000_203L)
+  assert_eq(rs.returned, 1)
+  assert_eq(rs.entries[0].text, "t3")
+  assert_eq(rs.before_cursor, 2)
+  dl_cleanup(proj)
+}
+
+///|
+/// 锁 R3：坏文件**被计数并点名**，且**不中断**其余文件的读取。
+///
+/// 三种坏法各走一个解码阶段（信封 / 解密 / packet），外加一个 `.rhop.tmp` 残留
+/// （它不是信号，不该被算成坏文件）。
+test "dl_c6_read_bad_files_counted_not_fatal" {
+  let proj = dl_tmp_project("c6")
+  commissar_ensure_dirs(proj)
+  commissar_send(
+    proj,
+    CommissarSignal::new(kind="reminder", target="ok", text="good"),
+    1_700_000_000_301L,
+  )
+  dl_write_raw(proj, "bad1-envelope.rhop", "not-json-at-all")
+  dl_write_raw(
+    proj, "bad2-ciphertext.rhop", "{\"v\":1,\"alg\":\"none\",\"ct\":\"%%%not-base64%%%\"}",
+  )
+  // ct = base64("{}") ⇒ 信封与解密都过，packet 字段缺失
+  dl_write_raw(
+    proj, "bad3-packet.rhop", "{\"v\":1,\"alg\":\"none\",\"ct\":\"e30=\"}",
+  )
+  // 原子写的中间态残留：不是 .rhop、不算坏文件
+  dl_write_raw(proj, "leftover.rhop.tmp", "x")
+
+  let rep = commissar_read(proj)
+  assert_eq(rep.error, "")
+  assert_eq(rep.scanned, 4) // 4 个 .rhop（.rhop.tmp 不算）
+  assert_eq(rep.ignored, 1)
+  // ★ 一个坏文件不能带走好文件
+  assert_eq(rep.returned, 1)
+  assert_eq(rep.entries[0].text, "good")
+  // ★ 坏文件逐个计数（不是"有东西被丢了"）
+  assert_eq(dl_bad_total(rep), 3)
+  assert_true(rep.bad_envelope >= 1) // bad1 必然停在信封层
+  assert_eq(rep.bad_files.length(), 3) // 三个坏文件都有名有姓
+  let names = rep.bad_files.join("|")
+  assert_true(names.contains("bad1-envelope.rhop"))
+  assert_true(names.contains("bad2-ciphertext.rhop"))
+  assert_true(names.contains("bad3-packet.rhop"))
+  dl_cleanup(proj)
+}
+
+///|
+/// 锁 R4：空目录 / 根本不存在的目录 ⇒ **返回空，不报错**；
+/// 且读取是**纯读**（不顺手建目录 —— 读操作有副作用的话，`dir_exists` 就永远为真了）。
+test "dl_c7_read_empty_or_missing_dir_is_empty_not_error" {
+  let proj = dl_tmp_project("c7")
+  // ① 连 .commissar 都没有
+  let rep = commissar_read(proj)
+  assert_false(rep.dir_exists)
+  assert_eq(rep.error, "")
+  assert_eq(rep.returned, 0)
+  assert_eq(rep.scanned, 0)
+  assert_eq(rep.bad_files.length(), 0)
+  // ★ 纯读：读一遍不该把 .commissar 建出来
+  assert_false(@fs.path_exists(commissar_root(proj)))
+  // ② 目录建好了但没有任何信号
+  commissar_ensure_dirs(proj)
+  let rep2 = commissar_read(proj)
+  assert_true(rep2.dir_exists)
+  assert_eq(rep2.error, "")
+  assert_eq(rep2.scanned, 0)
+  assert_eq(rep2.returned, 0)
+  assert_eq(dl_bad_total(rep2), 0)
+  dl_cleanup(proj)
+}
+
+///|
+/// 锁 R5（**变异对照的等价态**）：目录里**只有**坏文件。
+///
+/// 复刻两种变异下的等价状态，让"改坏了必然红"能在这里被独立看见：
+///   · 把坏文件**静默跳过**（不计数）⇒ `dl_bad_total == 1` 变 0、`bad_files` 变空 ⇒ 红；
+///   · 把 ct **当明文直读**（跳过 decrypt）⇒ 明文是信封 JSON、不是 packet JSON
+///     ⇒ 计数落到别的桶（bad_packet），而 `bad_decrypt==1` 的读数为 0 ⇒ 红。
+/// ⇒ 本格与 `dl_c4`（正常路径）构成一对：正常路径绿、坏路径红。
+test "dl_c8_read_mutation_control_bad_only_dir" {
+  let proj = dl_tmp_project("c8")
+  commissar_ensure_dirs(proj)
+  dl_write_raw(
+    proj, "only-bad.rhop", "{\"v\":1,\"alg\":\"none\",\"ct\":\"%%%broken%%%\"}",
+  )
+  let rep = commissar_read(proj)
+  assert_eq(rep.scanned, 1)
+  assert_eq(rep.returned, 0) // 坏文件不能被当成信号返回
+  // ★ 核心：坏文件必须"被看见"（计数 + 点名），而不是静默变成"目录是空的"
+  assert_eq(dl_bad_total(rep), 1)
+  assert_eq(rep.bad_files.length(), 1)
+  assert_true(rep.bad_files[0].contains("only-bad.rhop"))
+  dl_cleanup(proj)
+}

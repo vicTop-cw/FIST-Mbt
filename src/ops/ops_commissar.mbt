@@ -1,21 +1,26 @@
-/// ops_commissar.mbt —— 政委引导提醒监控体系（同机异进程事件触发）
+/// ops_commissar.mbt —— 政委引导提醒监控体系（同机异进程消息池）
 ///
-/// 体系组成（.commissar/ 目录，位于项目根，同机共享）：
-///   events/        信号目录：send 进程（指挥官 / 外部 agent）写 .rhop 信封文件，
-///                  watch 进程（政委常驻）用 rx-mbt rhop.from_filesystem_with
-///                  （node fs.watch 事件驱动）实时接收 —— 事件触发，非轮询。
-///   inbox/         R1 引导提醒落盘：guidance 信号到达后写入 <ts>.md 引导文件，
-///                  供目标角色/管家查收。
-///   reminder_log.md R4 心跳汇报：轮询/事件摘要追加日志，供 supervisor_status 展示。
+/// 体系组成（`.commissar/` 目录，位于**项目根**，同机共享；T0r3 正式化）：
+///   events/          **信号目录（唯一收发信道）**：send 侧写 `<id>.rhop` 信封文件；
+///                    接收侧用 `commissar_read` **同步遍历**读出（一次性、不订阅）。
+///   inbox/           R1 引导提醒落盘：guidance 信号到达后写入 `<ts>.md`，供目标角色/管家查收。
+///   outbox/          **出站目录（预留）**：接收侧回执 / reply 通道的落点。
+///                    本版本只建目录、不写入 —— 谁写、写什么语义留给后续单元定案。
+///   archive/         **归档目录（预留）**：已消费信号的人工/工具归档落点。
+///                    本模块**不自动搬移**（自动搬会让"读过的还在不在"变得不可预期）。
+///   reminder_log.md  R4 心跳汇报：轮询/事件摘要追加日志，供 supervisor_status 展示。
+///
+/// ⚠️ **没有迁移到 `.fist-mbt/pool/messages/`**：4 池子提案的 owner 未定案，
+///    本模块不为未定案的目录布局预支兼容成本。
 ///
 /// 职责映射（docs/2026-10-12-fist-mbt-reminder-role-plan.md）：
-///   R1 引导提醒  = guidance 信号（进程 A 注入引导 -> 进程 B 实时提醒落盘）
+///   R1 引导提醒  = guidance 信号（进程 A 注入引导 -> 进程 B 提醒落盘）
 ///   R2 方向偏离  = stale 信号 / commissar_tick 扫描（活跃任务超时未更新）
 ///   R3 事项提醒  = pending 信号 / commissar_tick 扫描（待处理任务超时未被接管）
 ///   R4 心跳汇报  = heartbeat 信号 / commissar_tick 摘要 -> reminder_log.md
 ///
 /// 运行方式：
-///   moon run cmd/commissar -- watch <project_dir>   # 政委常驻（事件驱动）
+///   moon run cmd/commissar -- watch <project_dir>   # ⚠️ 不可接 MCP（订阅型，见 BUG-480）
 ///   moon run cmd/commissar -- send  <project_dir> <kind> <target> <text>
 ///   moon run cmd/commissar -- tick  <project_dir>   # 一次性全量检查
 
@@ -38,17 +43,36 @@ pub fn commissar_inbox_dir(project_dir : String) -> String {
 }
 
 ///|
+/// 出站目录（接收侧回执 / reply 通道的预留落点；本版本只建目录不写入）
+pub fn commissar_outbox_dir(project_dir : String) -> String {
+  commissar_root(project_dir) + "/outbox"
+}
+
+///|
+/// 归档目录（已消费信号的归档落点；本模块不自动搬移）
+pub fn commissar_archive_dir(project_dir : String) -> String {
+  commissar_root(project_dir) + "/archive"
+}
+
+///|
 /// R4 心跳汇报日志
 pub fn commissar_log_path(project_dir : String) -> String {
   commissar_root(project_dir) + "/reminder_log.md"
 }
 
 ///|
-/// 确保 .commissar 目录树存在（幂等）。
+/// 确保 `.commissar` 目录树存在（幂等）。
+///
+/// T0r3 起覆盖**四子目录**：`events/`（收发信道）、`inbox/`（R1 落盘）、
+/// `outbox/`（回执预留）、`archive/`（归档预留）。
+/// outbox/archive 目前**只建不写** —— 建出来是为了让「目录约定」在同机上是同一个事实，
+/// 而不是每个消费者各自猜。
 pub fn commissar_ensure_dirs(project_dir : String) -> Unit {
   commissar_ensure_dir(commissar_root(project_dir))
   commissar_ensure_dir(commissar_events_dir(project_dir))
   commissar_ensure_dir(commissar_inbox_dir(project_dir))
+  commissar_ensure_dir(commissar_outbox_dir(project_dir))
+  commissar_ensure_dir(commissar_archive_dir(project_dir))
 }
 
 ///|
@@ -272,4 +296,332 @@ fn commissar_seq_next() -> Int32 {
   let v = commissar_seq.val
   commissar_seq.val = v + 1
   v
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 接收侧 · **同步读取**（T0r3）
+//
+// 为什么是「同步读」而不是「订阅」：**BUG-480 / 账本结论** —— js 后端
+// `@rhop.from_filesystem_with` 底层是 `fs.watch(path, {persistent: true})`，
+// 即便 `Subscription::dispose()` 之后 handle 也**不释放** ⇒ 一旦把订阅型工具
+// 注册成 MCP 工具，**server 进程永不退出**。而 MCP 本身是请求/响应模型，
+// 「持续订阅」与它不匹配。
+//
+// ⇒ 本模块的接收面 = **一次性遍历目录**：
+//    无 watcher / 无 Subscription / 无后台任务 / 无句柄要释放，
+//    调用返回即结束，进程随时可以退出。
+//    要持续收消息 ⇒ **反复调用**（短轮询），而不是让长驻订阅可关闭。
+// ══════════════════════════════════════════════════════════════════════════
+
+///|
+/// 读取面：一条**已成功解码**的政委信号。
+///
+/// 与 `CommissarSignal`（发送侧载荷）分开：读取面还要带出 rhop 信封里的
+/// `id` / `source` / `at`（游标字段），那是信封的，不是 payload 的。
+pub struct CommissarEntry {
+  id : String
+  source : String
+  kind : String
+  target : String
+  text : String
+  ns : String
+  at : Int64
+}
+
+///|
+pub fn CommissarEntry::to_json(self : CommissarEntry) -> Json {
+  Json::object({
+    "id": Json::string(self.id),
+    "source": Json::string(self.source),
+    "kind": Json::string(self.kind),
+    "target": Json::string(self.target),
+    "text": Json::string(self.text),
+    "namespace": Json::string(self.ns),
+    // seq 与 at_ms 同值：`seq` 是给 `since_seq` 游标用的名字，
+    // `at_ms` 是它的物理含义（信号发送时刻 epoch 毫秒）。两个都发，免得调用方猜。
+    "seq": Json::number(self.at.to_double()),
+    "at_ms": Json::number(self.at.to_double()),
+  })
+}
+
+///|
+/// 读取面回执：信号数组 + **逐类跳过统计**。
+///
+/// 为什么把"跳过"拆成这么多格而不是一个 `skipped` 总数：
+/// 坏文件、解不开的密文、能解密但 payload 不合规是**四种不同的故障**，
+/// 合成一个数就只剩"有东西被丢了"，没人能判断该修哪一段（BUG-74 同族：
+/// 两栏混读会把"没读到"读成"没有"）。
+pub struct CommissarReadReport {
+  events_dir : String
+  dir_exists : Bool
+  /// 非空表示**目录级**故障（读目录失败）；空串表示这次扫描本身是可信的
+  error : String
+  entries : Array[CommissarEntry]
+  /// 目录里 `*.rhop` 文件总数（= 本次真正尝试解码的个数）
+  scanned : Int32
+  /// 通过 kind/target/since_seq 过滤后、截断前的条数
+  matched : Int32
+  /// 实际返回条数（= entries.length()）
+  returned : Int32
+  /// 非 `.rhop` 文件数（`.rhop.tmp` 残留等）
+  ignored : Int32
+  filtered_kind : Int32
+  filtered_target : Int32
+  before_cursor : Int32
+  bad_read : Int32
+  bad_envelope : Int32
+  bad_decrypt : Int32
+  bad_packet : Int32
+  bad_payload : Int32
+  /// "文件名: 原因"（最多 20 条 + 一行省略提示）—— 坏文件**逐个点名**，不静默吞
+  bad_files : Array[String]
+  /// 因 limit 被截掉的条数（= 被截掉的更早信号数）
+  dropped_by_limit : Int32
+}
+
+///|
+pub fn CommissarReadReport::to_json(self : CommissarReadReport) -> Json {
+  let bad_total = self.bad_read +
+    self.bad_envelope +
+    self.bad_decrypt +
+    self.bad_packet +
+    self.bad_payload
+  Json::object({
+    "events_dir": Json::string(self.events_dir),
+    "dir_exists": Json::boolean(self.dir_exists),
+    "error": Json::string(self.error),
+    "entries": Json::array(self.entries.map(fn(e) { e.to_json() })),
+    "counts": Json::object({
+      "scanned": commissar_jint(self.scanned),
+      "matched": commissar_jint(self.matched),
+      "returned": commissar_jint(self.returned),
+      "ignored_non_rhop": commissar_jint(self.ignored),
+    }),
+    "skipped": Json::object({
+      "filtered_kind": commissar_jint(self.filtered_kind),
+      "filtered_target": commissar_jint(self.filtered_target),
+      "before_cursor": commissar_jint(self.before_cursor),
+      "dropped_by_limit": commissar_jint(self.dropped_by_limit),
+    }),
+    "bad": Json::object({
+      "total": commissar_jint(bad_total),
+      "read": commissar_jint(self.bad_read),
+      "envelope": commissar_jint(self.bad_envelope),
+      "decrypt": commissar_jint(self.bad_decrypt),
+      "packet": commissar_jint(self.bad_packet),
+      "payload": commissar_jint(self.bad_payload),
+      "files": Json::array(self.bad_files.map(fn(s) { Json::string(s) })),
+    }),
+  })
+}
+
+///|
+fn commissar_jint(n : Int32) -> Json {
+  Json::number(n.to_double())
+}
+
+///|
+/// 坏文件登记（最多留 20 条明细，之后只留一行省略提示 —— 明细不为输出体积服务，
+/// 但**计数永远是全量**，不存在"因为太多所以不数了"）。
+fn commissar_record_bad(
+  list : Array[String],
+  name : String,
+  reason : String,
+) -> Unit {
+  if list.length() < 20 {
+    list.push("\{name}: \{reason}")
+  } else if list.length() == 20 {
+    list.push(
+      "……更多坏文件已省略明细（见 bad.total 计数，计数是全量的）",
+    )
+  }
+}
+
+///|
+/// 列目录（失败返回空数组，并把原因写进 `err` —— 不挂在返回值上，
+/// 是为了让"没有目录"与"目录读不了"在回执里仍然是两件事）。
+fn commissar_list_names(dir : String, err : @ref.Ref[String]) -> Array[String] {
+  let names = @fs.read_dir(dir) catch {
+    _ => {
+      err.val = "commissar_read: 读目录失败（权限不足或不是目录）：\{dir}"
+      []
+    }
+  }
+  names.to_array()
+}
+
+///|
+/// **同步读取** `.commissar/events/*.rhop` —— 一次性遍历，不订阅、不留句柄。
+///
+/// 解码链（与 `commissar_send` 成对，全部走 rhop **自己的**解码器）：
+///   读盘 → `RhopEnvelope::decode` → `RhopCipher::decrypt`
+///   → `RhopPacket::from_json_text` → `CommissarSignal::from_json`
+///
+/// 参数：
+///   limit      最多返回多少条（默认 100；`<=0` 回落默认；上限 1000）。
+///              取**最新** limit 条，按时间升序（旧→新）返回 —— 队列消费的自然顺序。
+///   kind       按信号类别精确过滤（空串 = 不过滤）
+///   target     按目标精确过滤（空串 = 不过滤）
+///   since_seq  游标下界，**闭区间**（`seq >= since_seq`），`seq` = 信号发送时刻 epoch 毫秒。
+///              默认 0 = 不截断。⚠️ 闭区间的取舍：同一毫秒的多条会**一起**进出
+///              （宁可重复，不可丢 —— 丢消息比重复一条更难查）。
+///
+/// 坏文件策略：**逐个计数 + 逐个点名原因**，且坏文件**不影响**其余文件读出。
+/// 目录不存在 ⇒ 返回空 + `dir_exists=false`，**不是错误**（"还没人发过"是合法状态）。
+pub fn commissar_read(
+  project_dir : String,
+  limit~ : Int32 = 100,
+  kind~ : String = "",
+  target~ : String = "",
+  since_seq~ : Int64 = 0L,
+) -> CommissarReadReport {
+  let events = commissar_events_dir(project_dir)
+  let entries : Array[CommissarEntry] = []
+  let bad_files : Array[String] = []
+  let err : @ref.Ref[String] = @ref.Ref::new("")
+  let mut scanned = 0
+  let mut ignored = 0
+  let mut filtered_kind = 0
+  let mut filtered_target = 0
+  let mut before_cursor = 0
+  let mut bad_read = 0
+  let mut bad_envelope = 0
+  let mut bad_decrypt = 0
+  let mut bad_packet = 0
+  let mut bad_payload = 0
+  let dir_exists = @fs.path_exists(events)
+  let names = if dir_exists { commissar_list_names(events, err) } else { [] }
+  for name in names {
+    if !name.has_suffix(".rhop") {
+      // `.rhop.tmp`（原子写的中间态）也落在这里：它不是信号，不该算坏文件
+      ignored = ignored + 1
+      continue
+    }
+    scanned = scanned + 1
+    let path = events + "/" + name
+    let text = @fs.read_file_to_string(path) catch { _ => "" }
+    if text == "" {
+      bad_read = bad_read + 1
+      commissar_record_bad(
+        bad_files, name, "读盘失败或文件为空（空 .rhop 也是坏文件）",
+      )
+      continue
+    }
+    let env = match @rhop.RhopEnvelope::decode(text) {
+      Err(reason) => {
+        bad_envelope = bad_envelope + 1
+        commissar_record_bad(bad_files, name, reason)
+        continue
+      }
+      Ok(e) => e
+    }
+    if env.v != 1 {
+      bad_envelope = bad_envelope + 1
+      commissar_record_bad(
+        bad_files,
+        name,
+        "信封版本不支持：v=\{env.v.to_string()}（本读取器只认 v=1）",
+      )
+      continue
+    }
+    if env.alg != "none" {
+      // 只认 none：拿 RhopCipherNone 去解别的 alg 会得到垃圾明文，
+      // 然后在 packet 层报"字段缺失"—— 那会把"解不开密文"误报成"payload 不合规"
+      bad_decrypt = bad_decrypt + 1
+      commissar_record_bad(
+        bad_files,
+        name,
+        "信封 alg=\{env.alg}，本读取器只支持 none（无法解密）",
+      )
+      continue
+    }
+    let plain = match @rhop.RhopCipherNone::new().decrypt(env.ct) {
+      None => {
+        bad_decrypt = bad_decrypt + 1
+        commissar_record_bad(
+          bad_files, name, "解密失败：ct 不是合法 base64/UTF-8",
+        )
+        continue
+      }
+      Some(p) => p
+    }
+    let pkt = match @rhop.RhopPacket::from_json_text(plain) {
+      Err(reason) => {
+        bad_packet = bad_packet + 1
+        commissar_record_bad(bad_files, name, reason)
+        continue
+      }
+      Ok(p) => p
+    }
+    let sig = match CommissarSignal::from_json(pkt.payload) {
+      None => {
+        bad_payload = bad_payload + 1
+        commissar_record_bad(
+          bad_files, name, "payload 不是合法 CommissarSignal",
+        )
+        continue
+      }
+      Some(s) => s
+    }
+    if kind != "" && sig.kind != kind {
+      filtered_kind = filtered_kind + 1
+      continue
+    }
+    if target != "" && sig.target != target {
+      filtered_target = filtered_target + 1
+      continue
+    }
+    if pkt.at < since_seq {
+      before_cursor = before_cursor + 1
+      continue
+    }
+    let entry : CommissarEntry = {
+      id: pkt.id,
+      source: pkt.source,
+      kind: sig.kind,
+      target: sig.target,
+      text: sig.text,
+      ns: sig.ns,
+      at: pkt.at,
+    }
+    entries.push(entry)
+  }
+  // 时间序（同一毫秒按 id 稳定 —— id 里带进程内自增序号）
+  entries.sort_by(fn(a, b) {
+    let c = a.at.compare(b.at)
+    if c != 0 {
+      c
+    } else {
+      a.id.compare(b.id)
+    }
+  })
+  let matched = entries.length()
+  let cap = if limit <= 0 { 100 } else if limit > 1000 { 1000 } else { limit }
+  let start = if matched > cap { matched - cap } else { 0 }
+  let out : Array[CommissarEntry] = []
+  let mut i = start
+  while i < matched {
+    out.push(entries[i])
+    i = i + 1
+  }
+  {
+    events_dir: events,
+    dir_exists,
+    error: err.val,
+    entries: out,
+    scanned,
+    matched,
+    returned: out.length(),
+    ignored,
+    filtered_kind,
+    filtered_target,
+    before_cursor,
+    bad_read,
+    bad_envelope,
+    bad_decrypt,
+    bad_packet,
+    bad_payload,
+    bad_files,
+    dropped_by_limit: start,
+  }
 }
