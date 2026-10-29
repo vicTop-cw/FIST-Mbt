@@ -3835,7 +3835,9 @@ mc_finish(A)=dur[A]（<ms，不判关键），mc_finish(B)=dur[A]+dur[B]=ms（�
 - reported_by: fist-iter-bug-hunter
 
 ### FIXED(2026-10-15T10:48:00Z / BUG-205)
-- evidence: src/hat/hat_report_build.mbt 数据行第二格 `r.verdict` 改为 `hexa_hat_id(r.element_id)`（白/红/黑/黄/绿/蓝）。锁：src/hat/hat_wbtest.mbt 新增测试"BUG-205：报告表「帽子」列显示六顶帽 id（hexa_hat_id），不再误填 verdict"，断言 `观星者（stargazer） | white | pass`、`破壁者（wallbreaker） | black | reject` 存在，且旧形态 `（stargazer） | pass | pass` 不存在。`moon test --target js src/hat` 24/24、`src/server` 278/278 通过，`moon check --target js` 0 errors。## BUG-206 [2026-10-15T10:53:48Z] [high] OPEN
+- evidence: src/hat/hat_report_build.mbt 数据行第二格 `r.verdict` 改为 `hexa_hat_id(r.element_id)`（白/红/黑/黄/绿/蓝）。
+## BUG-206 锁：src/hat/hat_wbtest.mbt 新增测试"BUG-205：报告表「帽子」列显示六顶帽 id（hexa_hat_id），不再误填 verdict"，断言 `观星者（stargazer） | white | pass`、`破壁者（wallbreaker） | black | reject` 存在，且旧形态 `（stargazer） | pass | pass` 不存在。`moon test --target js src/hat` 24/24、`src/server` 278/278 通过，`moon check --target js` 0 errors。[2026-10-15T10:53:48Z] [high] FIXED
+- legacy_note: **历史重复 ID**（与下方 dag_mc 那条同为 BUG-206）。本条为 ModelQuota::in_cooldown 的 Y2038 溢出，修复小记见 `### FIXED(2026-10-15T11:00:04Z / BUG-206)`；抬头曾被人拼进上一条 evidence 行尾，致 `bug_list` / `gen_plugins` 均不可见（BUG-481）。本次拆行恢复可见，状态按既有修复小记改 FIXED。
 - summary: ModelQuota::in_cooldown 对 Y2038 后冷却截止静默失效（iso_to_secs 溢出返回 -1 使 now < -1 恒 false，冷却机制被绕过）
 - detail: 现象：`ModelQuota::in_cooldown`（src/router/model_router.mbt:151）里 `cool_secs = iso_to_secs(self.cooldown_until)`，而 `iso_to_secs` 对超出 Y2038 的日期因 Int 溢出返回 -1（BUG-218 同族，rt_2b 测试确认 2038 溢出返回 -1）。于是 `now_secs < cool_secs` 变成 `2026秒 < -1` = 恒 false —— 冷却截止一旦超过 Y2038，该模型永远被视为"不在冷却期"。
 
@@ -10822,7 +10824,7 @@ dispose() 返回 void、is_disposed() 返回 true —— 但底下 fs.watch 仍�
 依赖侧：../rx-mbt/rhop（rhop_js.mbt:92/132 + watcher_js.mbt:71）+ ../rx-mbt/rx（RX-MBT.mbt:82）
 不是本仓源码，但这个缺口直接卡住 ops_commissar 的 MCP 接线。
 - reported_by: commander-alpha(Lane DL)
-## BUG-481 [2026-10-29T04:07:53Z] [medium] OPEN
+## BUG-481 [2026-10-29T04:07:53Z] [medium] FIXED
 - summary: [ledger] memory/bugs.md 有一条抬头被拼进行尾 —— 该条对 bug_list / gen_plugins 完全不可见，且与另一条共用一个 ID
 - detail: 我在核验 Round 39 账本时发现的（不是本轮引入，是 2026-10-15 的历史损坏）。
 
@@ -10843,6 +10845,9 @@ memory/bugs.md:3838 的一行：
 ## 更麻烦的：它和一个 ID 相同的条目并存
 
 memory/bugs.md:3846 有另一个正常抬头：
+
+### FIXED(2026-10-29T04:13:27Z / BUG-481)
+- evidence: 本笔（memory/bugs.md 拆行修复）。memory/bugs.md:3838 那条 evidence 行尾被拼进了 ## BUG-206 [2026-10-15T10:53:48Z] [high] OPEN 抬头（历史损坏，2026-10-15 引入），导致 bug_list / gen_plugins 均按行首 ^## BUG- 解析时看不见它 => 账本统计说 2 条 OPEN，明细只列得出 1 条。更麻烦的是它与 :3846 的另一个 ## BUG-206 [medium] FIXED（dag_mc p90）共用一个 ID，两条是不同 bug（时间戳差 44 秒、严重度不同、summary 完全不同）。修法：把行内抬头拆到独立行 + 状态按既有修复小记（### FIXED(2026-10-15T11:00:04Z / BUG-206)，evidence 是 model_router.mbt in_cooldown 加 fail-open）改 OPEN -> FIXED + 加 legacy_note 说明历史重复 ID。判据：bug_list 现在能列出两条 BUG-206（ModelQuota Y2038 [high] FIXED + dag_mc p90 [medium] FIXED）；账本行首 ## BUG- 计数 467 -> 468；以 ］ OPEN 结尾的行数与行首 OPEN 行数现在相等（都是 2）。另修我自己引入的同类形态：登记 BUG-481 时在 detail 里原样引用了那段坏文本 => 又产生 2 处 ］ OPEN 行尾匹配（引用损坏文本会复现损坏形态），已改成非条目形态。判例：「解析口径」与「文本形态」必须同时被守卫 —— 本仓大量判据按行首解析，任何一处行内出现 ## BUG- 都会让它静默消失；判据应正反两面都查（该出现的必须出现 + 不该出现的形态必须不出现）。
   ## BUG-206 [2026-10-15T10:54:32Z] [medium] FIXED   ← dag_mc p90 分位索引
 
 两条是**不同的 bug**，时间戳差 44 秒、严重度不同、summary 完全不同：
