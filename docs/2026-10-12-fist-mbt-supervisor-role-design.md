@@ -42,6 +42,16 @@ AIGC:
 | Agent 分级（kill 白名单依据） | 同上 | `role=planner` 拳长（不可杀）/ `role=sublead` 拳节（不可杀）/ `role=worker` 执行者（可杀） | 设计态 |
 | **提醒者 Reminder**（轮询调度监督，不执行） | `docs\2026-10-12-fist-mbt-reminder-role-plan.md` | 职责 R1 引导提醒 / R2 方向偏离 / R3 事项提醒 / R4 心跳汇报；轮询周期 10/30/10 分钟；偏离检测口径见独立计划 §4 | 计划待实施（夜间开发批次） |
 
+> **状态勘误（2026-10-29 · 只订现状，不改上表历史叙述）**：上表三行里**两行已过时、一行仍准确**。
+>
+> | 角色 | 2026-10-29 实测 | 结论 |
+> |---|---|---|
+> | 项目助理 | `assistant_claim` / `assistant_heartbeat` / `assistant_resign` / `assistant_status` / `assistant_sweep` **5 个 MCP 工具已在**（真源 `src/store/store_assistant.mbt`） | **已落地**（上表「未落地」已失效） |
+> | 提醒者 Reminder | `supervisor_reminder_tick` 已注册（`src/server/supervisor_tools.mbt:619`，R1-R4 载荷） | **已落地** |
+> | Agent 分级 | 仅有 `engine_supervisor.mbt:200` 的 `G3_protected_planner` **近似**（借「根任务=拳长承诺」实现「不可杀」），**没有** planner/sublead/worker 三档实体 | **仍部分未落地**（上表「设计态」基本成立） |
+>
+> 依据：`reports/2026-10-29-plan-reconciliation-report.md`（T0 计划↔实现对表）。
+
 ### 1.3 FIST 框架参照（E:\IDEProjects\AI\_archive\FIST，v2.3.0）
 
 层级：**人类 → human_steward 人类管家 → leader 拳长 → 拳节（searcher/reviewer/cleaner/verifier/documenter）→ executor 执行者**。
