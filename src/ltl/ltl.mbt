@@ -63,6 +63,29 @@ pub fn atom(name : String) -> LtlFormula {
 }
 
 ///|
+/// 构造 **φ ∧ ψ**（合取）。
+///
+/// **BUG-480 / Lane DM（2026-10-29）**：`And` 变体**求值器完整支持**
+/// （`evaluate` / `eval_end` / `eval_const` / `formula_to_string` 四处 match 分支齐全），
+/// 但**没有任何构造入口** —— 用户**写不出合取公式**。
+/// ⇒ 编译器报 `unused_constructor: Variant 'And' is never constructed`
+/// 不是「死代码」，而是**「消费面建好了、生产面没接」**（判例-29）。
+/// 同族：`Or` / `Not` 有 `implies` / `globally` 等辅助函数，`And` / `Next` 却漏了。
+pub fn and_(p : LtlFormula, q : LtlFormula) -> LtlFormula {
+  And(p, q)
+}
+
+///|
+/// 构造 **X φ**（next：下一状态 φ 成立）。
+///
+/// **BUG-480 / Lane DM**：理由同 `and_` —— `Next` 有 4 处 match 分支
+/// （`evaluate` / `eval_end` / `eval_const` / `formula_to_string`），
+/// 但从未被构造 ⇒ 用户写不出「下一状态」公式。
+pub fn next_(f : LtlFormula) -> LtlFormula {
+  Next(f)
+}
+
+///|
 /// 真常量（内部用 __true__ 原子）
 pub fn ltl_true() -> LtlFormula {
   Atom("__true__".to_string())

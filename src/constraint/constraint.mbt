@@ -25,6 +25,10 @@
 ///|
 /// 当前世界状态快照（只读输入）。`reservations` 仅含"当前仍 active"的预订；
 /// `agents` 为已登记执行者集合。
+/// ⚠️ **当前无生产构造点**（2026-10-29 普查：构造 0 / 生产消费 5 / 测试构造 1）。
+/// 保留原因：这是 `constraint` 引擎的**公开 API 面**——
+/// 评估函数（`eval_known_agent` / `eval_no_overlap` 等）全以它为参数类型，
+/// 测试已覆盖「构造 + 消费」全链路。删了引擎就没有 API 面了。
 pub struct WorldState {
   reservations : Array[ActiveReservation]
   agents : Array[String]
@@ -32,6 +36,10 @@ pub struct WorldState {
 
 ///|
 /// 一条当前 active 的作用域预订。
+/// ⚠️ **当前无生产构造点**（2026-10-29 普查：构造 0 / 生产消费 2 / 测试构造 1）。
+/// 保留原因：这是 `constraint` 引擎的**公开 API 面**——
+/// 评估函数（`eval_known_agent` / `eval_no_overlap` 等）全以它为参数类型，
+/// 测试已覆盖「构造 + 消费」全链路。删了引擎就没有 API 面了。
 pub struct ActiveReservation {
   scope : String
   holder : String
@@ -40,6 +48,10 @@ pub struct ActiveReservation {
 
 ///|
 /// 一个计划动作：某 agent 想要对一组作用域做某种操作。
+/// ⚠️ **当前无生产构造点**（2026-10-29 普查：构造 0 / 生产消费 6 / 测试构造 1）。
+/// 保留原因：这是 `constraint` 引擎的**公开 API 面**——
+/// 评估函数（`eval_known_agent` / `eval_no_overlap` 等）全以它为参数类型，
+/// 测试已覆盖「构造 + 消费」全链路。删了引擎就没有 API 面了。
 pub struct PlannedAction {
   agent : String
   scopes : Array[String]

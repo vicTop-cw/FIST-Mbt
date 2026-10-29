@@ -135,3 +135,61 @@ test "decision_to_string 非空" {
   assert_true(s.contains("L3"))
   assert_true(s.contains("泛化"))
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// BUG-479（Lane DM）：`MutationKind::Combine` 从「文档承诺但永不产出」
+// 变成「有前置条件、可达、且能说清为什么」。
+//
+// 病灶：`mutation_prompt`（:158）与字符串化（:279）**都为 Combine 写了分支**
+// （消费面建好了），但 `select_mutation` 的 4 个分支**只返回其它四个**
+// （生产面没接）⇒ 判例-29 的又一实例。
+//
+// 修法按**语义**不按**阈值**：`Combine` = 「融合两个父代」⇒ 前置是「≥2 个父代」，
+// 而旧签名只有 `score`、**结构上就拿不到父代数** ⇒ 加 `parents~` 参数（缺省 1 = 零回归）。
+// ══════════════════════════════════════════════════════════════════════════
+
+///|
+/// 【BUG-479·锁 1】★ **新能力可达**：高分 + 多父代 ⇒ `Combine`。
+///
+/// 这是「修复真的生效」的正面锁：若有人把 `Combine` 分支删掉，本格必红。
+test "dm_01_combine_reachable_with_multiple_parents" {
+  assert_eq(select_mutation(0.9, parents=2), Combine)
+  assert_eq(select_mutation(1.0, parents=5), Combine)
+  // 边界：0.85 恰好在「高分」起点
+  assert_eq(select_mutation(0.85, parents=2), Combine)
+}
+
+///|
+/// 【BUG-479·锁 2】★★ **零回归**：不传 `parents` ⇒ 行为与修前**逐字相同**。
+///
+/// 这条是本单最重要的锁 —— 派单明确要求「现有调用方（只传 score）行为不变」。
+/// 逐档验证：三个旧档位的返回值必须与修前的 if-else 链**完全一致**，
+/// 尤其是 `>= 0.85` 仍返回 `Specialize`（**不是** `Combine`）。
+test "dm_02_zero_regression_without_parents" {
+  // 低分档
+  assert_eq(select_mutation(0.0), Simplify)
+  assert_eq(select_mutation(0.54), Simplify)
+  // 中分档
+  assert_eq(select_mutation(0.55), Rewrite)
+  assert_eq(select_mutation(0.69), Rewrite)
+  // 较高分档
+  assert_eq(select_mutation(0.70), Generalize)
+  assert_eq(select_mutation(0.84), Generalize)
+  // ★ 高分档：不传 parents ⇒ 仍是 Specialize（**零回归的关键一格**）
+  assert_eq(select_mutation(0.85), Specialize)
+  assert_eq(select_mutation(0.9), Specialize)
+  assert_eq(select_mutation(1.0), Specialize)
+  // 显式传 1 也必须等同缺省
+  assert_eq(select_mutation(0.9, parents=1), Specialize)
+}
+
+///|
+/// 【BUG-479·锁 3】**语义前置**：`parents >= 2` 但**分数不高**时不产出 `Combine`。
+///
+/// 防「只要多父代就 Combine」的过度修正 —— `Combine` 仍是「追求极致」档的算子。
+test "dm_03_combine_requires_high_score_too" {
+  assert_eq(select_mutation(0.3, parents=5), Simplify)
+  assert_eq(select_mutation(0.6, parents=5), Rewrite)
+  assert_eq(select_mutation(0.75, parents=5), Generalize)
+  assert_eq(select_mutation(0.84, parents=5), Generalize)
+}

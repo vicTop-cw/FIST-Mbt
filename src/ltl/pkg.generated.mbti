@@ -6,6 +6,8 @@ import {
 }
 
 // Values
+pub fn and_(LtlFormula, LtlFormula) -> LtlFormula
+
 pub fn atom(String) -> LtlFormula
 
 pub fn evaluate(LtlFormula, Array[State]) -> Verdict
@@ -21,6 +23,8 @@ pub fn implies(LtlFormula, LtlFormula) -> LtlFormula
 pub fn ltl_true() -> LtlFormula
 
 pub fn monitor_step(LtlFormula, Array[State]) -> Verdict
+
+pub fn next_(LtlFormula) -> LtlFormula
 
 pub fn states_to_json(Array[State]) -> String
 

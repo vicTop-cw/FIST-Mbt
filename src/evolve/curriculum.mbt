@@ -165,10 +165,29 @@ pub fn mutation_prompt(
 /// 选择变异算子：根据当前评分档位选择合适的变异策略
 ///   - 低分（L1/L2）：偏向 Simplify / Rewrite（先搞对、搞简）
 ///   - 中分（L3）：偏向 Generalize / Rewrite（完善结构）
-///   - 高分（L4）：偏向 Specialize / Combine（追求极致）
-pub fn select_mutation(score : Double) -> MutationKind {
+///   - 高分（L4）：`parents < 2` ⇒ Specialize；`parents >= 2` ⇒ **Combine**（融合父代特征）
+///
+/// **BUG-479 / Lane DM（2026-10-29）**：`Combine` 过去是**文档承诺但永不产出** ——
+/// 消费面早就建好了（`mutation_prompt` / 字符串化都写了 `Combine` 分支），
+/// 但本函数的 4 个分支只返回 Simplify/Rewrite/Generalize/Specialize
+/// ⇒ 判例-29 的又一实例（「消费面建好了、生产面没接」）。
+///
+/// **为什么按 `parents` 修而不是按阈值修**：
+/// `Combine` 的语义是「**融合两个父代**」⇒ 它的前置条件是「**有 ≥2 个父代**」。
+/// 而旧的 `select_mutation(score)` **只有分数、没有父代信息**
+/// ⇒ **它结构上就不可能正确产出 `Combine`** —— 那是「参数面缺信息」，
+/// 不是「阈值没调对」。按阈值修只会让它在单父代时也瞎「融合」。
+///
+/// **零回归**：`parents` 缺省 1 ⇒ 现有调用方（只传 score）行为**逐字不变**。
+pub fn select_mutation(
+  score : Double,
+  parents~ : Int = 1,
+) -> MutationKind {
   let r = score.clamp(min=0.0, max=1.0)
-  if r < 0.55 {
+  // Combine 的语义前置：**有多个父代可融合** + 高分（追求极致）
+  if r >= 0.85 && parents >= 2 {
+    Combine
+  } else if r < 0.55 {
     Simplify
   } else if r < 0.70 {
     Rewrite

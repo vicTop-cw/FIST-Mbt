@@ -87,7 +87,7 @@ pub fn score_of_lesson(Double) -> Double
 
 pub fn score_rank(Double) -> String
 
-pub fn select_mutation(Double) -> MutationKind
+pub fn select_mutation(Double, parents? : Int32) -> MutationKind
 
 pub fn standard_curriculum() -> Array[CurriculumItem]
 
