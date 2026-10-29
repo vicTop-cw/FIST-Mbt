@@ -486,3 +486,27 @@ test "BUG-205：报告表「帽子」列显示六顶帽 id（hexa_hat_id），�
     msg="「帽子」列不得再等于 verdict",
   )
 }
+
+///|
+/// R151：**证据列的多处换行必须全部替换成空格** —— 表格单元格里残留 `\n` 会把 markdown 表格断行。
+///
+/// R150 修的是 `replace`（只替首个）→ `replace_all`；本格是那次修复的**锁**（当时如实标注
+/// "hat 那处暂无锁"，本轮补上）。
+/// 变异对照：把 `replace_all` 改回 `replace`，本格立刻红（第二、三行的换行残留）。
+test "build: 证据多行换行全替换（表格不断行）" {
+  let cfg = default_config("议题")
+  let rs = [
+    hat_report("stargazer", "pass", 0.8, "第一行\n第二行\n第三行", ["数据"], ""),
+  ]
+  let r = build_report(cfg.topic, cfg, rs, 1)
+  // ① 不得残留"行尾换行 + 下一行开头"这种会断表的组合
+  assert_true(
+    !r.markdown.contains("第一行\n第二行"),
+    msg="证据列残留换行 ⇒ 表格断行",
+  )
+  // ② 三行必须被空格连接成一行（全部换行被替换，而不只是第一个）
+  assert_true(
+    r.markdown.contains("第一行 第二行 第三行"),
+    msg="证据列应是空格连接的单行",
+  )
+}
