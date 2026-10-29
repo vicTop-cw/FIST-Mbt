@@ -59,11 +59,43 @@ def case(script, *args):
             "argv": list(args), "expect": 0, "needs": [], "why": "", "kind": "gate"}
 
 
-def expected(script, rc, why, *args, kind="known-red"):
+def expected(script, rc, why, *args, kind="known-red", until=None, blame="unknown"):
     """期望非 0 的 case。kind="known-red"=预存红（修好后要改回 0）；kind="diag"=诊断型守卫的
-    真读数（它的 1 本来就不是门禁）。两者都必须带 why，否则等于发了张免检牌。"""
+    真读数（它的 1 本来就不是门禁）。两者都必须带 why，否则等于发了张免检牌。
+
+    ══════════════════════════════════════════════════════════════════════
+    ★ `until` / `blame`（Lane DV）—— **让债有到期日**
+    ══════════════════════════════════════════════════════════════════════
+
+    **为什么必须有**：`kind="known-red"` 允许「红」被登记为「已知」，
+    但**没有任何东西提醒你「它已经绿了，该销账」** ⇒ 判据自己把债还了，却没人销账
+    ⇒ `check_battery_count_doc` 因此 FAIL（R46 实测踩过）。
+
+    **⇒ 一个永远红着的判据，三个月后会变成「大家都知道它红，但没人记得为什么」——
+    那比没有判据更糟，因为它训练人忽略红色。**
+
+    `until` 是**销账条件的机核描述**，三种类型：
+
+    | kind | 语义 | 机核 | 必填 |
+    |---|---|---|---|
+    | `rc` | 该判据 rc == `value` 时销账 | 真跑该判据 | `value` |
+    | `contains` | 某文件出现某串时销账 | 读文件 grep | `file` + `text` |
+    | `manual` | 人工裁量 | **不机核**，但过期报 EXPIRED | `by` + `deadline` |
+
+    ⚠️ **`manual` 是必要的逃生门**（有些债真的只能人判），
+    但它**必须带 `deadline`** ⇒ 过期即 `EXPIRED` ⇒ 升格为 FAIL。
+    **没有 deadline 的 manual 就等于没有 until。**
+
+    `blame` 回答「**该修哪一边**」——这是 `known-red` 原本混掉的信息：
+    | 值 | 含义 |
+    |---|---|
+    | `"judge"` | 判据自己坏了 / 期望值写错 ⇒ 改判据 |
+    | `"subject"` | 判据正确、**被判对象**有问题 ⇒ 改对象 |
+    | `"unknown"` | 未判定（默认，报告里会点名） |
+    """
     return {"name": "%s %s" % (script, " ".join(args)), "script": script,
-            "argv": list(args), "expect": rc, "needs": [], "why": why, "kind": kind}
+            "argv": list(args), "expect": rc, "needs": [], "why": why, "kind": kind,
+            "until": until, "blame": blame}
 
 
 def tolerant(script, allow, why, *args, kind="diag"):
@@ -271,10 +303,21 @@ SPECIAL_CASES = [
     # ⚠️ 销账判例：`kind="known-red"` 允许「红」被登记为「已知」，
     #    **但没有任何东西提醒你「它已经绿了，该销账」** ⇒ 判据自己把债还了，却没人销账
     #    ⇒ `check_battery_count_doc` 会 FAIL。**⇒ 标 known-red 必须同时写清销账条件。**
-    expected("check_warning_ledger.py", 1, kind="known-red",
-             why="deprecated 台账记 12、现算 **15 块**（按位置去重会虚报成 12 ⇒ 覆盖率虚高）。"
-                 "判据本身正确（selftest 12/12，含同位置两条不合并的变异对照）。"
-                 "**销账条件**：§2 的 deprecated 现算总数改为 15 后 rc=0 ⇒ 本格改回 case()。"),
+    # ★ **已销账**（Lane DV）：销账条件 `until={kind:"rc", value:0}` 已由
+    #   司令-γ 的 `a474d5b18` 满足 —— 台账 §2 的 deprecated 改为 **15**（按 Warning 块计）
+    #   ⇒ 本判据现在 **L1 26/26 + L2 7/7 = rc=0**。
+    #   ⇒ **这正是 `until` 机制要的形态**：债有到期日，条件满足就销账，不留免检牌。
+    case("check_warning_ledger.py"),
+    # —— `known-red` 的**到期日**机核（Lane DV）——
+    # `kind="known-red"` 允许一个「红」被登记为「已知」，但原本**没有任何到期机制** ⇒
+    # ① 判据自己把债还了却没人销账（R46 实测：`check_battery_count_doc` 因此 FAIL）；
+    # ② 「判据坏了」和「被判对象坏了」混成一档，下一个人不知道该修哪边。
+    # ⇒ 本判据机核三规则：**每个 known-red 必须有 until** / **until 条件已满足 ⇒ 该销账了** /
+    #    **manual 过了 deadline ⇒ 超期 FAIL**。并核 `blame`（judge/subject/unknown）回答「修哪边」。
+    # ⚠️ 判据自身的 `--selftest` 用假 CASES，真名单来自 `run_guards.CASES`；
+    #    `--no-run` 可跳过「真跑判据核 rc 条件」（快，但不核 rc 类条件）。
+    case("check_known_red_until.py"),
+    case("check_known_red_until.py", "--selftest"),
 
     # -- BUG-477: MCP stdio stdout purity (the judge against MY OWN R33 bug) --
     # I added a `println` to run_server() in BUG-476; stdout is the JSON-RPC channel,
@@ -477,7 +520,19 @@ SPECIAL_CASES = [
              "（R197 这一格 +1 是 **G 档**：新增的测试格把「打真仓跑」的面多覆盖了一处；W/R 两档未变 ⇒ 污染面没有扩大。）"
              "（更早：「90 处 / G 28」← R117 重写；原登记「72 处 / W=10 / R=48 / G=14」已两次过时：R111/R114/R115/R118 还掉写面与误分类，同时期新增读面；**这条 why 每次读数变化都要同批改**——机器对表见 R118 日志的后续单。）"
              "**三档语义不同，别混成一个数字**：W=写探针进真树（**真污染，仅剩 1 处**）；R=读仓库现状面、G=打真仓跑 git —— 这两种**多是集成断言的必要代价**"
-             "（例：check_release_asset_names 的 13 处在验「本仓现状必须通过」，换合成夹具就丢掉这条性质）。棘轮只许下降；新增没有该性质的自检不许再涨。"),
+             "（例：check_release_asset_names 的 13 处在验「本仓现状必须通过」，换合成夹具就丢掉这条性质）。棘轮只许下降；新增没有该性质的自检不许再涨。",
+             # ⚠️ **销账条件说不清** ⇒ 用 `manual` + `deadline`（Lane DV）：
+             #    这是**棘轮**（R 档 61 处是「集成断言的必要代价」，不是「坏了」），
+             #    它不会因为「某件事做完」而变绿 —— 只会在**有人继续还债**时**下降**。
+             #    ⇒ 机器无法判「还剩多少算够」，只能人判。
+             #    ⇒ deadline 到期若仍未裁决，本格 `EXPIRED` ⇒ 升格 FAIL，**不许无限期红着**。
+             until={"kind": "manual", "by": "owner", "deadline": "2026-11-12",
+                    "note": "棘轮式预存红（R=61/G=30 是集成断言的必要代价）。"
+                            "销账不由单件事触发，只能在「还债到可接受水平」时人工裁决："
+                            "要么继续下降到目标值后改期望，要么重新定义该判据的判据面。"},
+             # blame=unknown：这一条的红**两边都有可能**（探针可改进 / 仓现状可清理）。
+             # 按时限逼出人工裁决，而不是硬编一个假的 blame。
+             blame="unknown"),
     case("check_fmt_gate.py", "--selftest"),
     case("audit_branch_delete.py", "--selftest"),
     # —— R55：`moon fmt --check` 的可判性闸（BUG-381）。只跑 --selftest：
@@ -506,7 +561,14 @@ SPECIAL_CASES = [
              "预存红（债非坏）：现读 2 条命名判定面 > 棘轮上限（N1 无角色名 + N2 连字符名，"
              "见 scripts/NAMING.md）。**判据工作正常，它正确报告了命名债**——不是判据算错。" "出路：改名还债并同批下调上限；禁止为变绿改常量（放宽是人的决定）。"
              "⚠️ **改名范围本身是 owner 裁决项，别自作主张动手**：NAMING.md 实测全仓改 46 份 =" "1224 处引用、其中 **944 处在归档面**（memory/reports/stories/docs），而本仓定律-3 禁止动归档面" "⇒ 照字面执行会撞定律-3。R110 复核确认此约束，登记在此防止后来者直接开改。",
-             kind="known-red"),
+             kind="known-red",
+             # ⚠️ 这条**销账条件说不清**（改名范围是 owner 裁决项，且撞定律-3）⇒
+             #    用 `manual` + `deadline`。7 天到期后 `EXPIRED` ⇒ 升格 FAIL ⇒
+             #    必须有人重新裁决，不许它无限期「红着但无人管」。
+             until={"kind": "manual", "by": "owner",
+                    "deadline": "2026-11-05",
+                    "note": "改名范围撞定律-3（944 处在归档面）⇒ 需 owner 裁决是「改判据口径」还是「改名」"},
+             blame="unknown"),
     # 【债已还完】（R185 登记 → R55 还债）：R185 时的「判定面 5 条 > 上限 0」已清零 ——
     # 4 处 `raise SystemExit("FATAL…")`（check_badge ×1 / check_test_sync ×3）改成
     # `print(…) + raise SystemExit(2)`（**把码改真**）；check_index_gitlinks 的元组出口补了字面
