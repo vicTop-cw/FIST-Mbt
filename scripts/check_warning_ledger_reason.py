@@ -116,7 +116,7 @@ def file_lines(path: str) -> int | None:
         return None
 
 
-def find_file(name: str, hint_dir: str = "") -> str | None:
+def find_file(name: str) -> str | None:
     """找文件：先按给定相对路径，再按 basename 在仓内搜（限 src/ cmd/ scripts/ atgc*/）。
 
     ⚠️ 只做**有界搜索**（4 个顶层目录），不扫全仓 —— 否则判据本身变成性能问题。
@@ -198,7 +198,7 @@ def extract_refs(reason: str, loc_col: str) -> list:
     return refs
 
 
-def resolve(ref, hint: str = "") -> tuple[bool, str]:
+def resolve(ref) -> tuple[bool, str]:
     """核一条引用。返回 (ok, 读数说明)"""
     kind, name, nums, raw = ref
     if kind == "full":
