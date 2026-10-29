@@ -8,6 +8,46 @@ pub fn root_task_id() -> String {
 }
 
 ///|
+/// ===== 逻辑项互斥闸（claimguard 接线，T0r2）=====
+///
+/// 物理文件锁 / 作用域锁 / file_binds 只防「物理并发」；`claimguard` 补的是
+/// 「同一**逻辑项**（任务 id）同一时刻只被一人持有」这扇门
+/// （多 lane 盲点，见 reports/2026-10-13-multilane-lock-mechanism-report.md §9）。
+///
+/// **为什么状态挂在模块级、而不是 `FistEngine` 的字段**（实测依据，不是风格偏好）：
+/// `server.mbt` 的 `engine_for_ns` 对**非 default 命名空间每次调用都新建一个引擎**
+/// （server.mbt:137 `Ok(@engine.FistEngine::new(store=sqlite(s)))`），只有 default
+/// 复用模块级单例。挂在 struct 字段上的 guard 因此在**非 default ns 恒为空表**
+/// —— 恰恰是「没接线」的形状（本项目自己这条 T0r2 就落在非 default ns）。
+/// 进程级单例才跨 FistEngine 实例、跨调用持有。
+///
+/// **键为什么必须带 ns**：任务 id 空间是**每库各自**的（`T0`/`T0r2` 在多棵树里都存在），
+/// 只按 task_id 记会把两个 ns 的无关任务判成同一条 ⇒ (ns, task_id) 复合键。
+///
+/// **陈旧持有为何按「账本仍待领取」对账**：guard 在**进程内**，账本在**库内/跨库**。
+/// 同 (ns,id) 在另一份库或上一个进程留下的持有，在本库表现为「行还是待领取」——
+/// 那条持有对**这一行**不成立，必须允许接管，否则一条陈旧条目就把任务**永久锁死**。
+/// 反过来，行已不在待领取态 ⇒ 持有是真的 ⇒ 拒绝并点名持有者。
+/// （判例-31：不做任何「靠时序/靠 sleep 抢」的判定，只按权威账本对账。）
+let claim_guard : @claimguard.ClaimGuardState = @claimguard.make_guard()
+
+///|
+/// 逻辑项键 = `(ns, task_id)`；ns 空串按 default 归一（与 store 的 ns 语义一致）。
+fn claim_item_key(ns : String, task_id : String) -> String {
+  (if ns == "" { "default" } else { ns }) + "|" + task_id
+}
+
+///|
+/// 释放逻辑项持有（按**现持有者**释放：引擎内部释放不该要求调用方报出持有者名字，
+/// 否则调用方一改名就释放不掉，形成死锁式持有）。
+fn release_claim_item(item : String) -> Unit {
+  match @claimguard.holder_of(claim_guard, item) {
+    Some(h) => ignore(@claimguard.release_item(claim_guard, item, h))
+    None => ()
+  }
+}
+
+///|
 /// 核心引擎：持有 store，暴露指挥-执行-验收完整闭环。
 /// store 为后端路由（内存 / SQLite），业务逻辑不感知具体实现。
 pub struct FistEngine {
@@ -249,14 +289,44 @@ pub fn FistEngine::claim(
       if !self.deps_satisfied(task_id) {
         return Err("依赖未满足，不可领取: \{task_id}")
       }
+      // ===== 逻辑项互斥闸（claimguard 接线）=====
+      // 位置：**所有既有门之后**（军衔/能力/依赖）、**状态迁移 `t.claim` 之前**。
+      // 放在门后 ⇒ 被前序门拒掉的请求不会在 guard 里留下任何条目（拒绝必须无副作用）。
+      let gitem = claim_item_key(t.ns, task_id)
+      // 陈旧对账：账本说这行还没被认领 ⇒ 进程内那条「别人持有」对本行不成立，清掉再抢
+      match @claimguard.holder_of(claim_guard, gitem) {
+        Some(h) if h != assignee && t.get_status().is_pending() =>
+          ignore(@claimguard.release_item(claim_guard, gitem, h))
+        _ => ()
+      }
+      let mut gowned = false
+      match @claimguard.claim_item(claim_guard, gitem, assignee) {
+        Denied =>
+          return Err(
+            "CLAIM_GUARD: 非法认领：任务 \{task_id} 已被 \{@claimguard.holder_of(claim_guard, gitem).unwrap_or("?")} 持有（当前状态 [\{t.status_to_string()}]）。同一逻辑项同一时刻只许一人持有；等它完成 / 被打回 / 归档释放后再 claim。",
+          )
+        Claimed => gowned = true
+        _ => ()
+      }
       let c = match t.claim(assignee~) {
         Ok(x) => x
-        Err(e) => return Err(e)
+        Err(e) => {
+          // 刚拿到的持有必须退回：否则状态迁移失败后任务仍待领取、而 guard 已锁死
+          if gowned {
+            release_claim_item(gitem)
+          }
+          return Err(e)
+        }
       }
       let c3 = c.with_updated_at(now)
       match self.store.update_task_if_status(c3, "待领取") {
         Ok(_) => ()
-        Err(e) => return Err("认领落库失败: \{e}")
+        Err(e) => {
+          if gowned {
+            release_claim_item(gitem)
+          }
+          return Err("认领落库失败: \{e}")
+        }
       }
       Ok(c3)
     }
@@ -774,6 +844,8 @@ pub fn FistEngine::verify(
         Ok(_) => ()
         Err(e) => return Err("验收落库失败: \{e}")
       }
+      // 验收完成 = 这条逻辑项的持有到此为止（释放点之一：claim → verify → 释放）
+      release_claim_item(claim_item_key(c2.ns, task_id))
       // 向上归并：父任务全部子任务完成后自动待验收
       match c2.get_parent() {
         Some(pid) =>
@@ -880,6 +952,8 @@ pub fn FistEngine::archive(
         Ok(_) => ()
         Err(e) => return Err("归档落库失败: \{e}")
       }
+      // 归档 = 了账，持有释放（任务已进终态，不再需要逻辑项互斥）
+      release_claim_item(claim_item_key(c2.ns, task_id))
       Ok(c2)
     }
   }
@@ -1178,6 +1252,8 @@ pub fn FistEngine::reject_task(
         Ok(_) => ()
         Err(e) => return Err("拒绝落库失败: \{e}")
       }
+      // 打回 = 这条逻辑项退回可返工态，持有释放（否则打回后无人能接）
+      release_claim_item(claim_item_key(c2.ns, task_id))
       Ok(c2)
     }
   }
@@ -1226,6 +1302,8 @@ pub fn FistEngine::pause_task(
         Ok(_) => ()
         Err(e) => return Err("暂停落库失败: \{e}")
       }
+      // 暂停 = 这条逻辑项停下来，持有释放（否则暂停后任务被锁在无人可接的状态）
+      release_claim_item(claim_item_key(c2.ns, task_id))
       Ok(c2)
     }
   }
