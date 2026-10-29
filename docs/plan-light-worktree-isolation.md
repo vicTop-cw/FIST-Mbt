@@ -36,6 +36,19 @@ AIGC:
 | worktree 集成 | F094 Phase 3 | ⏸ 未排期（spec 态） |
 | light worktree | zip 方案文档（light-worktree.md / light-worktree-drift.md） | 📄 仅文档，未落仓 |
 
+> **状态刷新（2026-10-29 · 追加，不改上文历史读数）**：上表有四行已与现网不符，逐条订正（只订事实，不改计划主张）：
+>
+> | 面 | 2026-10-29 实测 | 证据 |
+> |---|---|---|
+> | 助理选举单主 | **已修**（BUG-157 抬头 `FIXED`） | `memory/bugs.md` |
+> | worktree 集成 | **空间层已落地**：`wt_create` / `wt_destroy` / `wt_status` 三个 MCP 工具（七档判定 + 生命周期账） | `src/server/wt_tools.mbt`（26KB） |
+> | light worktree | **已落仓**：Python 主轨 `scripts/run_light_wt.py`（535 行，create/teardown/status 全覆盖，实测 sparse cone 生效） | 该脚本 + `docs/plans/2026-10-29-wt03-verdict.md`（WT-03 提案判「该关」） |
+> | 逻辑项互斥（claimguard） | **仍未接线**（`src/claimguard/` 库在，`server.mbt` / `engine.mbt` 引用数 = 0） | 本轮 grep 实测 |
+> | 文件绑定协调 / 合并收口门禁 | **仍未实现**（`file_bind` 注册数 = 0；diff-scope / drift-check / merge-predict 未见实现） | 本轮 grep 实测 |
+>
+> ⇒ 本计划的**空间层已完成、生命周期层已有，缺的收敛到「逻辑项互斥接线 + 文件绑定 + 合并收口」三项**；
+> 已按此发布任务到 ns `fist-plan-20261029`（T0r2 / T0r5）。
+
 ### 1.2 为什么三套都要弄
 
 - **文件锁**解决「同一物理作用域的并发写互斥」——协议级硬互斥的底座，已落地但缺 worktree 维度；

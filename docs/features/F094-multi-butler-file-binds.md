@@ -2,6 +2,10 @@
 
 > Status: spec（未来扩展，未排期）｜ 提案人：Loomy ｜ 日期：2026-09-29
 > 前置依赖：**BUG-119（心跳跨进程可见性）修复**——见 docs/improvement-plan-20260929.md §P0′ 第 1/2 条（该修复是多进程并行的硬前置）
+>
+> **状态更新（2026-10-29 · 事实订正）**：三块能力里 **worktree 终态已先行落地**（`wt_create` / `wt_destroy` / `wt_status`，
+> `src/server/wt_tools.mbt`）；本文档负责的**文件绑定协调层仍未实现**（`server.mbt` 里 `file_bind` 注册数 = 0），
+> 已发布任务 **T0r5**（ns `fist-plan-20261029`）承接「文件绑定三工具」；构建/测试互斥仍未立项。
 
 ---
 
