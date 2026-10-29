@@ -33,7 +33,7 @@ fn dl_tmp_project(tag : String) -> String {
   let mut i = 0
   while i < 1000 {
     let cand = "temp/dl-\{tag}-\{i.to_string()}"
-    if not(@fs.path_exists(cand)) {
+    if !@fs.path_exists(cand) {
       @fs.create_dir(cand) catch {
         _ =>
           abort(
@@ -97,7 +97,7 @@ test "dl_c2_round_trip_via_rhop_decoders" {
   let mut found = false
   let mut seen_target = ""
   for name in names {
-    if not(name.has_suffix(".rhop")) {
+    if !name.has_suffix(".rhop") {
       continue
     }
     let path = events + "/" + name

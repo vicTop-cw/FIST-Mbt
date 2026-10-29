@@ -6,6 +6,10 @@ import {
   "moonbitlang/core/env",
   "moonbitlang/core/json",
   "moonbitlang/core/debug",
+  // 替换 "".to_bytes() 时为 @utf8.encode 补的导入。
+  // ⚠️ 必须显式别名：本包已用 @encoding 指 moonbitlang/x/encoding（:4），
+  //    core 的 encoding/utf8 默认别名也是 @encoding ⇒ 冲突 ⇒ [4020] not found。
+  "moonbitlang/core/encoding/utf8" @utf8,
 }
 
 supported_targets = "js+native"

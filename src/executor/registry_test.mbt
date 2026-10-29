@@ -173,12 +173,20 @@ test "auction_pick：胜者诅咒防护——过度自信者被校准折扣击�
             if n == "ex-A" {
               match jget(c, "overconfident") {
                 Some(j) =>
-                  match j.as_bool() {
-                    Some(b) =>
-                      if !b {
-                        abort("ex-A 应标记 overconfident: " + j.stringify())
-                      }
-                    None => abort("overconfident 非布尔: " + j.stringify())
+                  // deprecated as_bool → `is True/False/其他` 三态。
+                  // ⚠️ 语义：原 `Some(b) => if !b { abort }` ⇒ **b 必须为 false 才通过**。
+                  //   第一次我写成了 `if j is True { abort }` —— 方向反了，测试立刻抓到
+                  //   （registry_test.mbt:146 auction_pick 胜者诅咒防护红）。已按原语义修正。
+                  // ⚠️ 语义（两次才改对）：原 `Some(b) => if !b { abort }`
+                  //   ⇒ b 为 **false** 才 abort ⇒ **b 必须为 true 才通过**。
+                  //   即：ex-A 的 overconfident 应 = true（见 :169 注释「应标记 overconfident=true」）。
+                  //   第一次我写成 `if j is True { abort }`（方向反），第二次也只对了一半。
+                  if j is True {
+                    ()
+                  } else if j is False {
+                    abort("ex-A 应标记 overconfident: " + j.stringify())
+                  } else {
+                    abort("overconfident 非布尔: " + j.stringify())
                   }
                 _ => abort("overconfident 字段缺失: " + j.stringify())
               }

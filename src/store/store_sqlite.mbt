@@ -56,10 +56,10 @@ pub fn SqliteStore::open_preflight_ok(db_path : String) -> Bool {
       _ => false
     }
   } else {
-    let probe : Unit? = Some(@fs.write_bytes_to_file(db_path, "".to_bytes())) catch {
+    let probe : Unit? = Some(@fs.write_bytes_to_file(db_path, @utf8.encode(""))) catch {
       _ => None
     }
-    probe.is_some()
+    probe is Some(_)
   }
 }
 
