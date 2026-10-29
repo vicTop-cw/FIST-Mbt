@@ -116,6 +116,42 @@ You can browse and install extra skills here:
 
 判据自己会抓：`check_battery_count_doc` 报 `缺面清单：x.py` 就是漏了这一步。
 
+### 新判据必须**拒绝未知旗标**（2026-10-29 立 · R207 · 同族实测四次）
+
+**同一个缺陷在本会话被修了四次**，每次都是"新脚本扫了 `--flag in argv`、却不拒绝未知旗标"：
+
+| 轮 | 脚本 |
+|---|---|
+| R197 | `check_bug_ledger_shape.py` |
+| R198 | `check_mcp_stdio_purity.py` |
+| R199 | `check_warning_ledger.py` |
+| R206 | `check_known_red_until.py` |
+
+**失效形态**：把 `--selftest` 拼成 `--self-test` ⇒ 条件不成立 ⇒ **落进真检查分支并可能回 rc=0**
+⇒ 人以为"自检通过"，实际跑的是对真仓库的扫描。**自检开关拼错 = 静默失去自检。**
+
+**硬要求**（三选一，写的时候就要有）：
+
+1. **argparse**（天生拒绝未知参数）；
+2. **白名单 + 未知即拒**：
+   ```python
+   _KNOWN = ("--selftest", "--list")          # 带值旗标只放旗标名
+   unknown = [a for a in argv if a.startswith("-") and a not in _KNOWN]
+   if unknown:
+       print("[FATAL] 未知参数 %s —— 已知：%s（rc=2）" % (" ".join(unknown), " / ".join(_KNOWN)))
+       return 2
+   ```
+3. 整体拒绝剩余参数（`if argv: … return 2`，`--selftest` 另行先处理）。
+
+**两道防线各司其职**（别只指望其中一道）：
+
+- **提交时** `scripts/_new_script_hygiene.py` 的 **A3** 给 advisory（**低精度**：实测 6/6 误报，
+  因为 while 分派 / 整体拒绝这些合格形状它认不全）⇒ 看到它**先自己跑一次
+  `python <script> --definitely-not-real` 确认**，再据它改代码；
+- **落地后** `scripts/check_arg_face_strict.py` 是**行为级**真门（真跑、按结果判，已在电池里）。
+
+判据自己会抓：`check_arg_face_strict` 报 "参数面没兜住 N 把" 就是漏了这一步。
+
 ### 变异对照必做（2026-10-24 立 · 判例-29/30）
 
 **任何判据的 `--selftest`，必须至少有一格是「变异对照」**：把被测机制改坏，断言锁会红。
