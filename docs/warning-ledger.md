@@ -43,11 +43,11 @@
 
 ## 2. 覆盖率表（**必须与 §1 合计一致**）
 
-**现算于 2026-10-29 15:45**，`moon check --target js` ⇒ **47 warnings / 0 errors**。
+**现算于 2026-10-29 15:48**，`moon check --target js` ⇒ **43 warnings / 0 errors**。
 
 | 类型 | 现算总数 | 台账收录 | 未收录 | 未收录处理 |
 |---|---|---|---|---|
-| `deprecated` | **16** | **15**（L6 11 + L7 3 + L9 1） | **1** | `multi_store_test.mbt:9`（运行时构造，不改）—— **已登记为 L9** |
+| `deprecated` | **12** | **12**（L6 11 + L9 1，L7 3 已由并发 lane 消掉 —— **判据现算为准**） | 0 | — |
 | `unused_value` | 10 | 10（L8） | 0 | — |
 | `unused_constructor` | 9 | 9（L2） | 0 | — |
 | `unused_package` | 4 | 4（L4） | 0 | — |
@@ -55,9 +55,9 @@
 | `struct_never_constructed` | 3 | 3（L3） | 0 | — |
 | `deprecated_syntax` | 1 | 1（L5） | 0 | — |
 | `unused_async` | **0** | — | 0 | **已消**（`87a2d9536`：删 `commissar_send` 的无用 `async`） |
-| **合计** | **47** | **46** | **1** | |
+| **合计** | **43** | **43** | **0** | |
 
-**覆盖率 46/47 = 97.9%。仅剩 `multi_store_test.mbt:9` 一个未收（已登记，不改）。**
+**覆盖率 43/43 = 100.0%。**（`check_warning_ledger.py` 现算核对，Lane DU）
 
 ---
 
