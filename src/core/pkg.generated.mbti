@@ -16,6 +16,8 @@ pub fn child_id(parent_id~ : String, idx~ : Int32) -> String
 
 pub fn child_level(Int32) -> Int32
 
+pub fn clip_utf8(String, Int32) -> String
+
 pub fn ensure_can(Role, Action) -> Result[Unit, String]
 
 pub fn ensure_can_create_spec(String) -> Result[Unit, String]
