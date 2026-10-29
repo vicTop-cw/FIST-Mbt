@@ -6023,10 +6023,21 @@ pub async fn run_server() -> Unit {
         "challenge_sig": string_prop(
           "可选：对 challenge 的 Ed25519 签名 hex（128 字符）。⚠️ 服务端无法伪造，必须由调用方私钥产生",
         ),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）。**BUG-478**：公钥按 ns 隔离 ⇒ 在哪个 ns 登记就要在同一个 ns 取票/验签",
+        ),
       },
       ["scope", "agent", "ttl_until"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      // BUG-478：namespace 路由（与 claim/execute/verify/submit 同一映射）。
+      // ⚠️ 零回归：不传 ⇒ "default" ⇒ `engine_route_in` 返回**主引擎**，
+      //    与修前用的进程级 `engine` 是**同一个实例**。
+      let ns = get_str(args, "namespace", default="default")
+      let engine = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let scope = get_str(args, "scope")
       let agent = get_str(args, "agent")
       let ttl_until = get_str(args, "ttl_until")
@@ -6073,8 +6084,22 @@ pub async fn run_server() -> Unit {
     s1,
     "reserve_check",
     "查询某工作作用域是否可编辑（空闲可用）。参数：scope。",
-    schema({ "scope": string_prop("作用域（必填）") }, ["scope"]),
+    schema(
+      {
+        "scope": string_prop("作用域（必填）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库）",
+        ),
+      },
+      ["scope"],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      // BUG-478：namespace 路由（零回归：不传 ⇒ default ⇒ 主引擎）
+      let ns = get_str(args, "namespace", default="default")
+      let engine = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let scope = get_str(args, "scope")
       let now = now_default()
       match engine.rsv_get(scope) {
@@ -6121,10 +6146,21 @@ pub async fn run_server() -> Unit {
       {
         "scope": string_prop("作用域（必填）"),
         "agent": string_prop("持有者（必填）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）。**BUG-478**：公钥按 ns 隔离 ⇒ 在哪个 ns 登记就要在同一个 ns 取票/验签",
+        ),
       },
       ["scope", "agent"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      // BUG-478：namespace 路由（与 claim/execute/verify/submit 同一映射）。
+      // ⚠️ 零回归：不传 ⇒ "default" ⇒ `engine_route_in` 返回**主引擎**，
+      //    与修前用的进程级 `engine` 是**同一个实例**。
+      let ns = get_str(args, "namespace", default="default")
+      let engine = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let scope = get_str(args, "scope")
       let agent = get_str(args, "agent")
       let ok = engine.rsv_release(scope, agent)
@@ -6163,10 +6199,21 @@ pub async fn run_server() -> Unit {
         "challenge_sig": string_prop(
           "可选：对 challenge 的 Ed25519 签名 hex（128 字符）。⚠️ 服务端无法伪造，必须由调用方私钥产生",
         ),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）。**BUG-478**：公钥按 ns 隔离 ⇒ 在哪个 ns 登记就要在同一个 ns 取票/验签",
+        ),
       },
       ["lock_id", "batch_id", "scope", "agent", "ttl_until"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      // BUG-478：namespace 路由（与 claim/execute/verify/submit 同一映射）。
+      // ⚠️ 零回归：不传 ⇒ "default" ⇒ `engine_route_in` 返回**主引擎**，
+      //    与修前用的进程级 `engine` 是**同一个实例**。
+      let ns = get_str(args, "namespace", default="default")
+      let engine = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let lock_id = get_str(args, "lock_id")
       let batch_id = get_str(args, "batch_id")
       let scope = get_str(args, "scope")
@@ -6226,10 +6273,21 @@ pub async fn run_server() -> Unit {
         "ts": string_prop(
           "续期时间戳（可选）。⚠️ **时间戳由服务端盖章（BUG-33 政策），此字段不接受覆盖** —— 传了也会被服务端时间覆盖（handler 用 now_default()）",
         ),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）。**BUG-478**：公钥按 ns 隔离 ⇒ 在哪个 ns 登记就要在同一个 ns 取票/验签",
+        ),
       },
       ["lock_id", "scope", "agent", "ttl_until"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      // BUG-478：namespace 路由（与 claim/execute/verify/submit 同一映射）。
+      // ⚠️ 零回归：不传 ⇒ "default" ⇒ `engine_route_in` 返回**主引擎**，
+      //    与修前用的进程级 `engine` 是**同一个实例**。
+      let ns = get_str(args, "namespace", default="default")
+      let engine = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let lock_id = get_str(args, "lock_id")
       let scope = get_str(args, "scope")
       let agent = get_str(args, "agent")
@@ -6278,10 +6336,21 @@ pub async fn run_server() -> Unit {
       {
         "scope": string_prop("作用域（必填）"),
         "agent": string_prop("持有者（必填）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）。**BUG-478**：公钥按 ns 隔离 ⇒ 在哪个 ns 登记就要在同一个 ns 取票/验签",
+        ),
       },
       ["scope", "agent"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      // BUG-478：namespace 路由（与 claim/execute/verify/submit 同一映射）。
+      // ⚠️ 零回归：不传 ⇒ "default" ⇒ `engine_route_in` 返回**主引擎**，
+      //    与修前用的进程级 `engine` 是**同一个实例**。
+      let ns = get_str(args, "namespace", default="default")
+      let engine = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let scope = get_str(args, "scope")
       let agent = get_str(args, "agent")
       let ok = engine.locks_release(scope, agent)
@@ -6299,8 +6368,22 @@ pub async fn run_server() -> Unit {
     s1,
     "lock_status",
     "查询文件锁状态。参数：scope(可选)。不传 scope 返回全部锁 + 违例记录 + 过期清理数。",
-    schema({ "scope": string_prop("作用域（可选）") }, []),
+    schema(
+      {
+        "scope": string_prop("作用域（可选）"),
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库）",
+        ),
+      },
+      [],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      // BUG-478：namespace 路由（零回归：不传 ⇒ default ⇒ 主引擎）
+      let ns = get_str(args, "namespace", default="default")
+      let engine = match engine_for_ns(ns) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
       let now = now_default()
       // 每次查询都先扫一遍过期锁
       let swept = engine.locks_sweep(now)
@@ -7811,7 +7894,9 @@ pub async fn run_server() -> Unit {
       {
         "project_dir": string_prop("git 仓库根目录（必填）"),
         "path": string_prop("沙箱目录路径（必填）"),
-        "branch": string_prop("分支名（可选，缺省 wt/<task>；与 detach 互斥）"),
+        "branch": string_prop(
+          "分支名（可选，缺省 wt/<task>；与 detach 互斥）",
+        ),
         "detach": bool_prop("detached HEAD（可选）"),
         "task": string_prop("账 id（可选，缺省取 path 末段）"),
         "base": string_prop("基线 ref（可选，缺省 HEAD）"),
@@ -7829,9 +7914,10 @@ pub async fn run_server() -> Unit {
       let base = get_str(args, "base", default="")
       let ttl_min = get_int(args, "ttl_min", default=120)
       let timeout_ms = get_int(args, "timeout_ms", default=60000)
-      match wt_create_impl(
-        project_dir, path, branch, detach, task, base, ttl_min, timeout_ms,
-      ) {
+      match
+        wt_create_impl(
+          project_dir, path, branch, detach, task, base, ttl_min, timeout_ms,
+        ) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
@@ -7865,8 +7951,12 @@ pub async fn run_server() -> Unit {
       {
         "project_dir": string_prop("git 仓库根目录（必填）"),
         "path": string_prop("要拆除的沙箱路径（必填）"),
-        "force": bool_prop("强制（可选，默认 false：未登记路径 / 脏工作树都需要它）"),
-        "delete_branch": bool_prop("同时删分支（可选，默认 false；走 git branch -d）"),
+        "force": bool_prop(
+          "强制（可选，默认 false：未登记路径 / 脏工作树都需要它）",
+        ),
+        "delete_branch": bool_prop(
+          "同时删分支（可选，默认 false；走 git branch -d）",
+        ),
         "timeout_ms": int_prop("超时毫秒（可选，默认 30000）"),
       },
       ["project_dir", "path"],
@@ -7877,7 +7967,8 @@ pub async fn run_server() -> Unit {
       let force = get_bool(args, "force", default=false)
       let delete_branch = get_bool(args, "delete_branch", default=false)
       let timeout_ms = get_int(args, "timeout_ms", default=30000)
-      match wt_destroy_impl(project_dir, path, force, delete_branch, timeout_ms) {
+      match
+        wt_destroy_impl(project_dir, path, force, delete_branch, timeout_ms) {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }

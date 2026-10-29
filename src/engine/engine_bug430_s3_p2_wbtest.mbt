@@ -100,7 +100,25 @@ test "s3_p2_02_four_gates_wire_the_challenge" {
     strip_ws(src_rsv),
     "judged_role_gated(self,agent,challenge_nonce,challenge_sig~",
   )
-  assert_true(n_gated >= 3)
+  assert_true(n_gated >= 1)
+  // ══════════════════════════════════════════════════════════════════════════
+  // **BUG-477 更新本格（Lane DF）**：上面那行原本是 `>= 3`
+  // —— 那是**旧设计**的计数（四道门里三道只验签、不消费 nonce）。
+  //
+  // BUG-477 实测发现其中**两个**（`rsv_try_set` / `locks_try_acquire`）
+  // 因不消费 nonce ⇒ **同一张票可无限重放**（首次与重复用票回执完全相同）。
+  // 修法是把它们换成 `judged_role_with_nonce`（与 `claim` 同源）⇒
+  // **本格的期望值必须随设计更新，否则「修好了反而变红」。**
+  //
+  // 新形态（仍钉住「函数名 + 参数顺序」这个**代码形态**，判例-30 防护不变）：
+  //   · `judged_role_gated`      >= 1（只剩 `rsv_set`，它没有 challenge 参数面）
+  //   · `judged_role_with_nonce` >= 2（新增的 rsv_try_set / locks_try_acquire）
+  // ══════════════════════════════════════════════════════════════════════════
+  let n_rsv_with_nonce = count_of(
+    strip_ws(src_rsv),
+    "judged_role_with_nonce(self,agent,challenge_nonce,challenge_sig~",
+  )
+  assert_true(n_rsv_with_nonce >= 2)
   // 第四道门在 engine.mbt：claim 走 judged_role_with_nonce（带 nonce 消费 + 签名透传）
   //
   // ⚠️ **R22 修：容忍多行** —— 原断言写死了单行形态
