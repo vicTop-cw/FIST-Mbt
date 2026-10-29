@@ -56,7 +56,32 @@
 | master 现状 | `fist-gate.py:60-74` **仍自带**一份 `DEGRADED fmt: ...` 三档划分 ⇒ **复制仍在** |
 | 价值判断 | 本仓为"判据复制"返工过（tools 计数曾有 5 处复制）⇒ 该收敛**成立** |
 | 为什么不直接合 | master 的 `fist-gate.py` 已演进（DEGRADED 文案、退出码契约），**直接取分支版本会覆盖新版逻辑**；须把"收敛意图"重新实施到当前文件上，并跑 `fist-gate.py` 自检 |
-| 下一步 | 按"读 master 现状 → 写 `map_fmt_rc` 委派 → 替换调用点 → 跑自检"四步做，**不合分支版本** |
+| 下一步 | 按"读 master 现状 → 委派真源 → 替换调用点 → 跑自检"四步做，**不合分支版本** |
+
+#### ③ 实施尝试的结果（R173，**失败并撤回**，但拿到了关键证据）
+
+按上表做了一次委派式收敛（`classify_fmt` 委托 `check_fmt_gate.run`），**2 格自检立刻红**
+（`冷格式化器识别失败` / `未知退化未归 unknown`），已 `git checkout` 撤回。
+
+**根因：两份实现不是"同一套判定的两份拷贝"，而是两个不同的判定。**
+
+| 面 | `fist-gate.classify_fmt` | `check_fmt_gate.run` |
+|---|---|---|
+| 档数 | 4（clean / generation-mismatch / cold-formatter / unknown） | 3（clean / degraded / red） |
+| 冷格式化器 marker | `failed to execute \`git --no-pager diff`、`/format/moon.mod`、`wasm-gc/release/format` | `No such file`、`cannot hash`、`failed when formatting project`（且要求输出含 `_build`） |
+| `rc==1` | `generation-mismatch`（当"世代差"**软化**） | `red`（**真格式差异**） |
+| 未知非 0 | `unknown` | `red` |
+
+⇒ **收敛不是搬迁，是判定语义的取舍**：谁当冷格式化器的 marker？`rc=1` 该软化还是该判红？
+这需要 **owner / 判据主人**裁定，不属于"合并一个分支"的机械动作。
+
+**候选解法（按推荐度）**：
+1. **以真源为唯一面，把 fist-gate 的 3 个 marker 并入真源**，并给真源补"冷格式化器"专格
+   —— 会让真源的 `degraded` 判定面变宽（更保守），需复核依赖它 `red` 读数的调用方；
+2. 保持两份，但**在两边 docstring 互相点名差异**（至少让下一个人不再以为它们等价）；
+3. `check_fmt_gate.run(moon_rc, output, extra_markers=…)` 加可选参数，调用方各自补齐。
+
+**⇒ 该支的结论修正为：不是"待实施"，而是"待裁定"** —— 实施前必须先决定 marker 与 `rc=1` 的语义。
 
 ## 四、结论
 
