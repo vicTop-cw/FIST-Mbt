@@ -121,7 +121,6 @@ core 的 `encoding/utf8` 默认别名**也是** `@encoding` ⇒ 冲突。
 
 - **R1** `deprecated` 17 个中：11 Show→Debug + 3 FFI 已进台账**不做**，其余待查 + `deprecated_syntax` 1。
 - **R2** `substring` 那条**没做**，进台账。若将来该函数返回短串才暴露 —— **那时该改的是 `bug462_fixtures`，不是这里**。
-- **R3** `commit_scoped.sh` 暂存残留**已由他人按 BUG-482 修好**（实测「已清理暂存残留」✅）。
 
 ---
 
