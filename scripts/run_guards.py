@@ -241,6 +241,17 @@ SPECIAL_CASES = [
     #   known-red 的到期条件就是「修好会变红」，所以改回 case(rc=0)：谁再埋一个死参数就红。
     case("check_dead_params.py"),
     case("check_dead_params.py", "--selftest"),
+    # —— BUG-481：账本 `memory/bugs.md` 的**形态**守卫（Lane DP）——
+    # 病灶：有一条抬头被拼进了 `- evidence:` 行的行尾
+    #（`... 0 errors。## BUG-206 [ts] [sev] OPEN`）⇒ `bug_list` / `gen_plugins`
+    # 都按**行首** `^## BUG-` 解析 ⇒ 该条**不可见**、计数少 1。
+    # **「账本自己坏了，而账本说没问题」** ⇒ 只有专门看形态的判据抓得住。
+    # 抬头正则与 `gen_plugins.RE_BUG_HEAD` **逐字同源**，且 `--selftest` 有一格
+    # `regex-parity-with-gen_plugins` 由机器盯着同步（判例「同一规则多份实现」）。
+    # 合法引用有四种形态（反引号 / 中文冒号小节标题 / 缩进续行 / 行号前缀引述），
+    # 判据只报「**完整三段式被拼接**」（`##` 前一个字符非空白且非行号冒号）。
+    case("check_bug_ledger_shape.py"),
+    case("check_bug_ledger_shape.py", "--selftest"),
     # -- BUG-477: MCP stdio stdout purity (the judge against MY OWN R33 bug) --
     # I added a `println` to run_server() in BUG-476; stdout is the JSON-RPC channel,
     # so the whole server became unusable to every client while moon test was 1835/0 green.
