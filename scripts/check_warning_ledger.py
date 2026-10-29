@@ -478,6 +478,17 @@ Finished. moon: ran 3 tasks, up to date (9 warnings, 0 errors)
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    # R199：**未知旗标必须拒绝**（rc=2），不许静默忽略。
+    # 病象与 R197/R198 修过的两把尺同族：拼错 `--selftest`（例如 `--self-test`）会被吃下，
+    # 然后**照跑真检查并回 rc=0** ⇒ 看起来"自检通过"，实际跑的是对真台账的扫描。
+    # 判据 `check_arg_face_strict` 就是为这一族立的；带值旗标（`--ledger X` / `--check-output X`）的白名单只放旗标名。
+    _KNOWN = ("--selftest", "--list", "--ledger", "--check-output")
+    unknown = [a for a in argv if a.startswith("-") and a not in _KNOWN]
+    if unknown:
+        print(
+            "[FATAL] 未知参数 %s —— 已知：%s（rc=2）" % (" ".join(unknown), " / ".join(_KNOWN))
+        )
+        return 2
     if "--selftest" in argv:
         return selftest()
 
