@@ -27,6 +27,9 @@ import re
 import subprocess
 import sys
 
+# 行尾检测常量（用 bytes([...]) 拼，避开跨层转义）
+BS_CRLF = bytes([13, 10])
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -205,18 +208,71 @@ def main(argv):
               "先 `git add --renormalize` 归一再落规则" % ", ".join(cr_files))
         return 1
 
-    # 3) 工作树不 dirty（eol 生效）
+    # ══════════════════════════════════════════════════════════════════
+    # 3) **EOL 面**（判 rc）—— 工作树文件的实际字节里有没有 CR
+    #
+    # ══ R216 拆分（Lane DY 诊断 + 统帅三条建议）══
+    #
+    # 旧实现把**两件不同的事**混成一个 FAIL：
+    #   「工作树 `.mbti` 有未提交改动（dirty），**eol=lf 未生效**」
+    # 前半句（dirty）对；**后半句（eol 未生效）是错的** —— 实测四步：
+    #   ① `.gitattributes` 有 `*.mbti text eol=lf` ② 文件 CRLF: 0
+    #   ③ `git checkout` 后仍 CRLF: 0 且不脏（决定性）④ 差异是 +7/-2 **行真实内容**
+    #
+    # **⇒ 两档分开：EOL 面判 rc；脏面只报、不判红。**
+    #
+    # ⚠️ 旧提示 `git checkout -- <mbti>` **会丢掉真实内容更新** ——
+    #    「误导性的修复建议比没有建议更糟」：没建议他会去查，错建议让他**以为修好了**。
+    # ══════════════════════════════════════════════════════════════════
+    eol_bad = []
+    for rel in mbti_files:
+        fp = os.path.join(ROOT, rel)
+        if not os.path.isfile(fp):
+            continue
+        try:
+            raw = open(fp, "rb").read()
+        except OSError:
+            continue
+        if BS_CRLF in raw:
+            eol_bad.append(rel)
+    if eol_bad:
+        print("FAIL **EOL 面**：工作树这些 `.mbti` 真的含 CRLF ⇒ `eol=lf` 没生效：")
+        for rel in eol_bad:
+            print("  | " + rel)
+        print("  处置：`git add --renormalize -- <mbti>` 或 `git checkout -- <mbti>`（此处 checkout 安全：")
+        print("        文件内容 == HEAD，只有行尾不同）。若立刻复现，查 `.gitattributes` / `core.autocrlf`。")
+        return 1
+
+    # ── 4) **脏面**（只报不判红 + 归因反解）──────────────────────────
     cr, status, _ = git("status", "--porcelain", "--", *mbti_files)
     dirty = [l for l in (status or "").splitlines() if l.strip()]
     if dirty:
-        print("FAIL 工作树 `.mbti` 有未提交改动（dirty），eol=lf 未生效：")
+        print("NOTE 工作树 `.mbti` 有未提交改动 —— **但这不是 EOL 问题**（上面 EOL 面已确认纯 LF）。")
+        print("     通常是**改了代码但没跑 `moon info`**，或跑完没提交。")
         for l in dirty:
             print("  | " + l[:160])
-        print("  提示：`git checkout -- <mbti>` 重新 checkout 为 LF；若 `moon info` 后立刻变脏，"
-              "说明规则没被 git 采纳（检查 `.gitattributes` 语法 / `core.autocrlf`）")
-        return 1
+        # ★ 统帅要求：报「这几个 .mbti 对应源码变更了什么」（能反解就反解）
+        print("  归因（反解该 `.mbti` 的源码差异）：")
+        for l in dirty:
+            rel = l[3:].strip() if len(l) > 3 else ""
+            if not rel:
+                continue
+            pkg = os.path.dirname(rel)
+            cr2, dstat, _ = git("diff", "--numstat", "--", pkg)
+            changed = [x for x in (dstat or "").splitlines() if x.strip()]
+            if changed:
+                print("    · `%s` ← 同包源码有 %d 个文件变更：" % (rel, len(changed)))
+                for x in changed[:4]:
+                    print("        " + x.strip()[:110])
+            else:
+                print("    · `%s` ← **无法归因**（同包无未提交源码变更；可能改动已提交但 .mbti 漏了）" % rel)
+        print("  处置：`moon info` 后**提交这些 `.mbti`** —— **不要用 `git checkout` 丢掉它们**"
+              "（那是真实内容更新，不是 EOL 噪声）。")
+    else:
+        print("      工作树 `.mbti` 干净。")
 
-    print("PASS `.mbti` 行尾闸：规则在 / HEAD blob 纯 LF / 工作树干净（`moon info` 后不再脏）")
+    print("PASS `.mbti` 行尾闸：规则在 / HEAD blob 纯 LF / 工作树文件纯 LF（EOL 面全绿）"
+          + ("（脏面见上方 NOTE，不判红）" if dirty else ""))
     return 0
 
 
