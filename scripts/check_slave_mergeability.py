@@ -96,6 +96,49 @@ def verdict(ahead, pick_rc, conflicts, has_merge, changed, added, base_symbols):
     return kind, conflicts
 
 
+COUNT_RE = re.compile(r"([A-Za-z][A-Za-z0-9 _\-]{1,24}?|\u4e00-\u9fff{1,8})\s*(\d{1,6})")
+
+
+def count_marks(text):
+    """从文本里抽「标签 → 数字」记号（`177 MCP tools` / `[Board-DAG 30]` / `共 26 格`）。
+
+    为什么需要：判 `contained` 只比**行数**，而"支更新的那一行恰好是旧计数"这种情形
+    行数比较看不出来（R161 实测：base=140 / 支=141，支多一行却是**旧版 174 工具**）。
+    """
+    out = {}
+    for m in COUNT_RE.finditer(text):
+        label = m.group(1).strip()
+        try:
+            out[label] = int(m.group(2))
+        except ValueError:
+            continue
+    return out
+
+
+def count_regressions(branch_text, base_text, min_delta=1):
+    """纯函数：**支相对 base 的计数倒退**（合并会造成数字变小 ⇒ 多半是旧版覆盖新版）。
+
+    返回 [(label, sub_n, base_n)]，按标签序。`min_delta` 默认 1（任何变小都算）。
+    ⚠️ 只报"同一标签下 支 < base"；标签集合不同不算（可能是新增段落）。
+    """
+    sub = count_marks(branch_text)
+    basem = count_marks(base_text)
+    bad = []
+    for label in sorted(set(sub) & set(basem)):
+        if sub[label] + min_delta <= basem[label]:
+            bad.append((label, sub[label], basem[label]))
+    return bad
+
+
+def superseded_decision(regressions):
+    """纯函数：出现**任何**计数倒退即判 `superseded`（空列表 ⇒ False）。
+
+    刻意用"任一即真"而不是"多数"：一个数字倒退就足以说明这段文本是旧版，
+    合并它会让用户看到更少的功能数（本仓 help_topics 正是这种）。
+    """
+    return bool(regressions)
+
+
 def contained_decision(rows):
     """纯函数（R161）：冲突支的**内容是否已在 base**。
 
@@ -117,6 +160,24 @@ def contained_decision(rows):
         if basel < 0 or basel < bl or missing:
             return False
     return True
+
+
+def superseded_probe(base, branch, prefixes=("src/", "scripts/", "cmd/", "plugins/")):
+    """R162：对**冲突支**取"计数倒退"读数（只读 git）。返回 (bool, [(path, label, sub, base)])。"""
+    rc, out = git("log", "--name-only", "--format=", "%s..%s" % (base, branch))
+    if rc != 0:
+        return False, []
+    touched = sorted({ln.strip() for ln in out.splitlines() if ln.strip()})
+    product = [p for p in touched if p.startswith(prefixes)]
+    hits = []
+    for p in product:
+        rc_b, bt = git("show", "%s:%s" % (branch, p))
+        rc_a, at = git("show", "%s:%s" % (base, p))
+        if rc_b != 0 or rc_a != 0:
+            continue
+        for label, sub_n, base_n in count_regressions(bt, at):
+            hits.append((p, label, sub_n, base_n))
+    return superseded_decision(hits), hits
 
 
 def content_contained_probe(base, branch, prefixes=("src/", "scripts/", "cmd/")):
@@ -247,9 +308,16 @@ def scan(base, remotes, keep=False, limit=0, include="/slave/"):
                 _c_ok, _c_detail = content_contained_probe(base, b)
                 if _c_ok:
                     kind, files = "contained", _c_detail
+                else:
+                    # R162：不是"已包含"，再看是不是**被取代**（支把计数改小了 ⇒ 合=倒退）
+                    _s_hit, _s_detail = superseded_probe(base, b)
+                    if _s_hit:
+                        kind = "superseded"
+                        files = ["%s: %s %s→%s" % (p, lab, s_n, b_n)
+                                 for p, lab, s_n, b_n in _s_detail[:4]]
             rows.append({"branch": b, "ahead": len(commits), "kind": kind, "files": files})
             mark = {"ok": "✓", "contained": "=", "conflict": "✗", "merge": "M", "error": "!",
-                    "duplicate": "⚠"}[kind]
+                    "duplicate": "⚠", "superseded": "↓"}[kind]
             # R133：`…` 会掩盖规模（4 个还是 40 个完全不同）——显式打**冲突文件总数**。
             # 实测依据：67 支同时列 `.githooks/pre-commit / .githooks/README.md / .gitattributes`
             # 曾让人以为"冲突高度集中、可批量解决"，其实是**字母序前三个**，真实冲突面很宽。
@@ -428,6 +496,23 @@ def selftest():
          contained_decision([("src/a.mbt", 10, -1, [])]), False)
     cell("contained-decision-missing-symbol-false",
          contained_decision([("src/a.mbt", 10, 20, ["wt_new_thing"])]), False)
+    # R162：**`superseded`（被取代）** —— 支把计数改小 ⇒ 合它会让用户看到更少功能数。
+    # 实测动机：`help_topics.mbt` 支从 `[Board-DAG 30]/[Other 12]` 改回 `27/9`（174 工具）。
+    cell("count-marks-extract", count_marks("[Board-DAG 30] x [Other 12] y"),
+         {"Board-DAG": 30, "Other": 12})
+    cell("count-regression-detected",
+         [x[:1] for x in count_regressions("[Board-DAG 27]", "[Board-DAG 30]")], [("Board-DAG",)])
+    cell("count-regression-none-when-bigger",
+         count_regressions("[Board-DAG 31]", "[Board-DAG 30]"), [])
+    cell("count-regression-none-when-equal",
+         count_regressions("[Board-DAG 30]", "[Board-DAG 30]"), [])
+    cell("superseded-decision-empty-false", superseded_decision([]), False)
+    # 变异对照（判例-29）：把 `count_regressions` 的方向反过来 ⇒ 本格立刻红
+    cell("superseded-decision-any-regression-true",
+         superseded_decision(count_regressions("[Other 9]", "[Other 12]")), True)
+    # 标签只在单侧出现 ⇒ 不算倒退（可能是新增段落）
+    cell("count-regression-ignores-new-label",
+         count_regressions("[NewGroup 3]", "[Old 5]"), [])
     # 一行不满足就整体否定（不能因为有 3 个文件已包含就放行第 4 个缺口）
     cell("contained-decision-one-bad-vetoes-all",
          contained_decision([("src/a.mbt", 10, 20, []), ("src/b.mbt", 11, 10, [])]), False)
