@@ -232,7 +232,12 @@ def judge(cases, mod=None, run=True, today=None) -> tuple[int, dict]:
     return rc, {"reds": reds, "violations": violations, "notes": notes}
 
 
-def render(rc, r) -> None:
+def render(r) -> None:
+    """渲染结果。
+
+    R206：删掉形参 `rc` —— 它在函数体内**零引用**（被 `check_dead_params_py` 判死参数）；
+    死参数的危险是"调用方以为传了会改变渲染"，实际不会。
+    """
     print(f"[known-red] 共 **{len(r['reds'])}** 条")
     for ln in r["notes"]:
         print(ln)
@@ -373,6 +378,16 @@ def _ok(c) -> bool:
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    # R206：**未知旗标必须拒绝**（rc=2）。病象与 R197/R198/R199/R201 同族：
+    # 拼错 `--self-test` 会被吃下，然后**照跑真检查**并可能回 rc=0 ⇒ 看起来"自检通过"。
+    # （本文件是**第四把**栽在同一处的尺；R200 的提交时 advisory 体检 A3 本可提前提示。）
+    _KNOWN = ("--selftest", "--no-run")
+    unknown = [a for a in argv if a.startswith("-") and a not in _KNOWN]
+    if unknown:
+        print(
+            "[FATAL] 未知参数 %s —— 已知：%s（rc=2）" % (" ".join(unknown), " / ".join(_KNOWN))
+        )
+        return RC_CANNOT
     if "--selftest" in argv:
         return selftest()
     run = "--no-run" not in argv
@@ -382,7 +397,7 @@ def main(argv=None) -> int:
         print(f"[FATAL] 无法加载 run_guards.CASES：{e} ⇒ rc=2")
         return RC_CANNOT
     rc, r = judge(cs, mod, run)
-    render(rc, r)
+    render(r)
     return rc
 
 
