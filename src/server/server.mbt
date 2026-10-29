@@ -3735,7 +3735,6 @@ pub async fn run_server() -> Unit {
       let phi_gate = get_bool(args, "phi_gate", default=false)
       let phi_threshold = get_int(args, "phi_threshold", default=8)
       let mode = get_str(args, "mode")
-      let flush_bug_queue = get_bool(args, "flush_bug_queue", default=false)
       // BUG-233：omega_spec 解析失败此前被静默吞成 None——用户传了非法 spec
       // 时回执无任何提示，watchdog 静默丢 spec 跑默认逻辑。现捕获 Result，失败原因经
       // omega_spec_error 透出（非空才出现，成功路径零回归）。
