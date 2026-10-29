@@ -85,7 +85,9 @@ def split_top_level(s):
     return [x for x in items if x]
 
 
-def analyze(text, path=""):
+def analyze(text):
+    """解析文本里的 INSERT。**注意：不再接 `path` 形参** —— 它在本函数内零引用，
+    被 `check_dead_params_py` 判死参数（R179 修正；该判据当晚就抓到了本尺自己）。"""
     """返回 [(table, n_cols|None, n_ph, n_bind, bind_ids, note)]。`n_cols=None` = 列数不可静态判定。"""
     out = []
     for m in INSERT_RE.finditer(text):
@@ -161,7 +163,7 @@ def scan(paths):
             txt = io.open(p, encoding="utf-8", errors="replace").read()
         except OSError:
             continue
-        for r in analyze(txt, p):
+        for r in analyze(txt):
             rows.append((p,) + r)
     return rows
 
