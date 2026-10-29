@@ -65,14 +65,14 @@ core 的 `encoding/utf8` 默认别名**也是** `@encoding` ⇒ 冲突。
 
 ## ④ 更新的「已知 warning 台账」
 
-### 新增两条
+### 新增
 
 | 类型 | 数 | 位置 | 为什么保留 | 复审条件 |
 |---|---|---|---|---|
 | **`deprecated`（Show→Debug）** | **11** | `cmd/cli/main.mbt:501`(2) · `router/*_wbtest.mbt` 与 `router/*_test.mbt`(9) | `star_gate.mbt:42` 是**手写 `Show` 实现**（非 derive）；3 处 `inspect(...,content=)` **快照断言**改后会变。**更深风险：快照绿灯可能只是「新快照被接受了」，不是「行为没变」。** | 单独一轮 + `--update` + **逐条核 diff** |
 | **`deprecated`（JS FFI Array）** | **3** | `server/github_js.mbt:63` · `server/laya_js.mbt:18` · `server/run_check_js.mbt:32` | FFI 边界类型，改 `FixedArray` 要**同步改 JS 侧**，波及三个文件全部调用点；`run_check_js` 是**执行面**（R126） | 单独一轮 + 同步改 JS 侧 |
 
-### 本单新增一条「不改」
+### 新增「不改」
 
 | 类型 | 数 | 位置 | 为什么不改 |
 |---|---|---|---|
@@ -121,7 +121,7 @@ core 的 `encoding/utf8` 默认别名**也是** `@encoding` ⇒ 冲突。
 
 - **R1** `deprecated` 17 个中：11 Show→Debug + 3 FFI 已进台账**不做**，其余待查 + `deprecated_syntax` 1。
 - **R2** `substring` 那条**没做**，进台账。若将来该函数返回短串才暴露 —— **那时该改的是 `bug462_fixtures`，不是这里**。
-- **R3** `commit_scoped.sh` 暂存残留**已由他人按 BUG-482 修好**（实测输出「已清理暂存残留」✅）。
+- **R3** `commit_scoped.sh` 暂存残留**已由他人按 BUG-482 修好**（实测「已清理暂存残留」✅）。
 
 ---
 
