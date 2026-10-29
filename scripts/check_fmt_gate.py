@@ -47,24 +47,30 @@ BROKEN_SIGNATURES = (
 )
 
 
-def run(moon_rc, output):
+def run(moon_rc, output, markers=None):
     """纯函数：把 (moon 的 rc, 输出) 判成 'clean' / 'degraded' / 'red'。
+
+    `markers`（**R194**，可选）：判「输出是否像工具链故障」的**字面量表**。
+    缺省用本文件的 `BROKEN_SIGNATURES`；`fist-gate.py` 传它自己的 `FMT_COLD_MARKERS`
+    ⇒ **marker 匹配只有一处实现**，而「三档怎么映射成本门的四档」仍由各调用方决定
+    （机制与策略分离：机制在此，策略在调用方）。
 
     - 只有 rc==0 才是 clean；
     - rc!=0 但输出命中 `_build/…/format/…` 这一族签名 ⇒ degraded（量不出来）；
     - 其余非 0 ⇒ red（真格式差异）。
 
-    ⚠️ **R174：`scripts/fist-gate.py:classify_fmt()` 是另一套判定，本函数不是它的单一真源。**
-    差异（实测）：它是 4 档（多一个 `unknown`）、冷 marker 用 `FMT_COLD_MARKERS`（3 条不同字面量）、
-    且 **`rc==1` 当"世代差"软化**（非 strict 时报 DEGRADED），而本函数把 `rc==1` 判 `red`。
-    R173 曾把 fist-gate 委派到本函数 ⇒ 2 格自检红、已撤回 ⇒ **统一前必须先裁定 marker 与 rc=1 语义**。
+    ⚠️ **R174 的历史（R194 已收口）**：`fist-gate.py:classify_fmt()` 曾是**另一套判定**
+    （4 档 / 不同 marker 字面量 / `rc==1` 软化）。R173 直接委派失败（丢 marker ⇒ 2 格红）。
+    R194 用「本函数收 markers 参数 + fist-gate 只做档位映射」解决：两边行为**逐字不变**，
+    而 marker 匹配不再有第二份实现。
     """
     out = output or ""
     if moon_rc == 0:
         return "clean"
-    if "_build" in out.replace("\\", "/") and any(s in out for s in BROKEN_SIGNATURES):
+    marks = BROKEN_SIGNATURES if markers is None else tuple(markers)
+    if "_build" in out.replace("\\", "/") and any(s in out for s in marks):
         return "degraded"
-    if any(s in out for s in BROKEN_SIGNATURES):
+    if any(s in out for s in marks):
         return "degraded"
     return "red"
 
