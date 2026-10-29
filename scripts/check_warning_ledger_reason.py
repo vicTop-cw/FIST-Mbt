@@ -421,7 +421,7 @@ DEF_ORIENTED_TYPES = (
 )
 
 
-def check_r5_def(loc_col: str, reason: str, type_cell: str) -> tuple[int, int, list]:
+def check_r5_def(loc_col: str, type_cell: str) -> tuple[int, int, list]:
     """★ **R5-定义档**：对**位置列**的引用，要求每行都是**定义行**。
 
     为什么单立：位置列写的是「这条 warning 出现在哪些行」——
@@ -486,7 +486,7 @@ def judge(text: str) -> tuple[int, dict]:
             per_entry.append((eid, 0, False))
             continue
         # ★ R5-定义档：位置列的行号必须是定义行（对漂移最敏感、零台账配合）
-        dchecks, dbad, dmsgs = check_r5_def(loc, reason, ty)
+        dchecks, dbad, dmsgs = check_r5_def(loc, ty)
         for m_ in dmsgs:
             problems.append(("R5def 位置列飘移", eid, m_))
 
@@ -647,20 +647,20 @@ def selftest() -> int:
 
     def _r5_def_wrong():
         """★ 变异 1（复现本轮真 bug）：行号指向续行 `) -> Result[...]` ⇒ 必须红。"""
-        checks, bad, msgs = check_r5_def("`server.mbt:109`", "见 `x`", "unused_value")
+        checks, bad, msgs = check_r5_def("`server.mbt:109`", "unused_value")
         return (bad > 0, checks > 0)
     case("MUT-drifted-line-goes-red", _r5_def_wrong, (True, True))
 
     def _r5_def_right():
         """同一函数：行号对 ⇒ 不报（反证：判据真在区分，不是恒红）。"""
-        _c, bad, _m = check_r5_def("`server.mbt:107`", "见 `x`", "unused_value")
+        _c, bad, _m = check_r5_def("`server.mbt:107`", "unused_value")
         return bad == 0
     case("def-line-correct-not-reported", _r5_def_right, True)
 
     # ★ 变异 2：`deprecated` 类**不做**定义档校验（它指向使用点，不是定义）
     #    —— 这条防「按定义行判使用点」的假红（实测 15 处误报后补的分流）。
     def _r5_def_skipped_for_deprecated():
-        checks, bad, _m = check_r5_def("`main.mbt:501`", "见 `x`", "`deprecated`（Show→Debug）")
+        checks, bad, _m = check_r5_def("`main.mbt:501`", "`deprecated`（Show→Debug）")
         return (checks, bad)
     case("MUT-deprecated-skipped-by-deffile", _r5_def_skipped_for_deprecated, (0, 0))
 
