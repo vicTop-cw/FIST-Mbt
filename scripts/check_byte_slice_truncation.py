@@ -160,8 +160,20 @@ def selftest() -> int:
     return 0 if not fails else 1
 
 
+KNOWN_FLAGS = ("--selftest", "--list")
+
+
 def main() -> int:
     args = sys.argv[1:]
+    # **R155：未知旗标 ⇒ rc=2，绝不静默跑真检查。**
+    # 否则 `--selfets` 这种拼错会落到"无参"分支、跑完真扫描回 rc=0 而人以为自检过了
+    # —— 那是最坏的一种假绿（`check_arg_face_strict.py` 正是为此立的尺）。
+    unknown = [a for a in args if a not in KNOWN_FLAGS]
+    if unknown:
+        print("FATAL 未知参数：%s" % " ".join(unknown))
+        print("  已知参数：%s" % " ".join(KNOWN_FLAGS))
+        print("  拼错自检开关会让本判据静默跑真检查并回 rc=0 ⇒ 假绿；故这里直接 rc=2（不自证）")
+        return 2
     if "--selftest" in args:
         return selftest()
 
