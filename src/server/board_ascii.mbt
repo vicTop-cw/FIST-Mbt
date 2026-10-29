@@ -142,7 +142,9 @@ fn append_group(
     let full_desc = t.get_description()
     let mut desc = full_desc
     if desc.length() > 40 {
-      desc = desc[0:40].to_owned() + "…"
+      // R152：**中文 description 的字节硬切会切在字符中间**（半个汉字 ⇒ 乱码）。
+      // 走 @core.clip_utf8（全仓唯一的 UTF-8 边界安全截断真源）。
+      desc = @core.clip_utf8(desc, 40) + "…"
     }
     // R55：看板每行标注自身难度档（复用 pub extract_difficulty 单一来源，支柱①②"一目了然+复用"）
     let mut diff_note = ""
