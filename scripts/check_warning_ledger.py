@@ -56,6 +56,13 @@ import re
 import subprocess
 import sys
 
+# R208：spawn `moon` 必须经 `moon_env()`（本机 moonc 的 `\\?\` 路径 ICE 靠 MOONC_OVERRIDE 绕开）。
+# 病象：本文件 `run_moon_check()` 直接 `subprocess.run(["moon", …])` 没带 env
+# ⇒ `moon_env_probe.py` 的 L1「真现状面」把它判成违例 1/13，且 `--selftest` 1/11 红。
+# 判据自己的话：「13 份接线 / 违例 1」。修法与 R125 的 8 个入口一致：`env=moon_env()`。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from moon_env_probe import moon_env  # noqa: E402  （同目录共享模块，需先补 sys.path）
+
 # Windows 控制台默认 GBK ⇒ 打印 `⇒`/`✗` 会 UnicodeEncodeError。
 # 判据必须**在任何平台上都能把话说出来**（说不出来 = rc 契约失效）。
 try:
@@ -348,6 +355,7 @@ def run_moon_check() -> str:
     r = subprocess.run(
         ["moon", "check", "--target", "js"],
         capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT,
+        env=moon_env(),
     )
     out = (r.stdout or "") + (r.stderr or "")
     if not out.strip():
