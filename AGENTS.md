@@ -1,5 +1,12 @@
 # Project Agents.md Guide
 
+> ⚠️ **本文件中后段对 agent 不可见（R211 实测）**：harness 对工作区指令有字节预算（本机 65,536，
+> 实际注入 65,244），而本文件 **101,115 字节 / 730 行** ⇒ **第 ~591 行之后的 10 个章节任何 agent 都读不到**
+> （含 `## 路径约定`、`### 一源四态 · 插件态`、Omega 强验证、开发模式与模板、GitHub/GitCode 同步、
+> 模型路由·外部执行器、六顶帽、项目助理、超级管家、MCPCf 内部工具）。
+> **没人读到的规则等于没有规则。** 新增规则请放**文件前部**；判据：
+> `python scripts/check_instruction_budget.py`（逐条列出被截章节，`--strict` 才判红）。
+
 This is a [MoonBit](https://docs.moonbitlang.com) project.
 
 You can browse and install extra skills here:
