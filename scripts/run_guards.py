@@ -263,14 +263,18 @@ SPECIAL_CASES = [
     # ⚠️ 注意：本判据**会红**，因为它揭出真问题（台账漏登记 + 数量记错）——
     # 那是台账作者的活，不是判据坏了。⇒ 见下方 known-red 处的理由。
     case("check_warning_ledger.py", "--selftest"),
-    # ★ 已从 `expected(..., 1, kind="known-red")` **销账转 case(rc=0)**（Lane DU 收口）：
-    #   登记 known-red 时台账 43/44（1 处未登记 + deprecated 账 16 现算 13）；
-    #   司令-γ 随即补登记 ⇒ 现 **43/43 = 100% / rc=0**。
-    # ⚠️ **这条销账本身是一条判例**：`kind="known-red"` 允许「红」被登记为「已知」，
-    #    但**没有任何东西提醒你「它已经绿了，该销账」** ⇒
-    #    **判据自己把债还了，却没人销账** ⇒ `check_battery_count_doc` 因此 FAIL。
-    #    ⇒ 将来再把某格标 known-red，**必须同时写清「何时销账」**（这里就是那句转绿条件）。
-    case("check_warning_ledger.py"),
+    # ⚠️ **重新标 known-red（Lane DU 第 2 轮）**：判据修好了「分母偏小」缺陷后，
+    #   真读数从「43/43 = 100%（虚高）」变成 **L1 26/26 全覆盖 + L2 deprecated 账 12 现算 15**。
+    #   ⇒ 红的是**台账**（记的是按位置去重后的数，比真实块数少 3），不是判据。
+    #   **转绿条件（销账条件，必须写清）**：司令-γ 把 §2 的 `deprecated` 现算总数
+    #   从 12 改成 **15**（按 Warning 块计数）后，本判据 rc=0 ⇒ 本格改回 case()。
+    # ⚠️ 销账判例：`kind="known-red"` 允许「红」被登记为「已知」，
+    #    **但没有任何东西提醒你「它已经绿了，该销账」** ⇒ 判据自己把债还了，却没人销账
+    #    ⇒ `check_battery_count_doc` 会 FAIL。**⇒ 标 known-red 必须同时写清销账条件。**
+    expected("check_warning_ledger.py", 1, kind="known-red",
+             why="deprecated 台账记 12、现算 **15 块**（按位置去重会虚报成 12 ⇒ 覆盖率虚高）。"
+                 "判据本身正确（selftest 12/12，含同位置两条不合并的变异对照）。"
+                 "**销账条件**：§2 的 deprecated 现算总数改为 15 后 rc=0 ⇒ 本格改回 case()。"),
 
     # -- BUG-477: MCP stdio stdout purity (the judge against MY OWN R33 bug) --
     # I added a `println` to run_server() in BUG-476; stdout is the JSON-RPC channel,

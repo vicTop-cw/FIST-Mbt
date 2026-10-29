@@ -89,7 +89,13 @@ def read(p: str) -> str:
 # ══════════════════════════════════════════════════════════════════════
 
 def parse_check_output(text: str) -> tuple[dict, bool]:
-    """返回 ({类型: {(文件, 行)}}, compiled_ok)
+    """返回 ({类型: [(文件, 行)]}, compiled_ok)
+
+    ⚠️ **值是 list 不是 set**（Lane DU 修正，统帅实测抓出）：
+    一个表达式可以触发**多条** warning（如 `x.to_string()` 同时触发 `to_string` 的
+    deprecated 与隐式 impl 的 deprecated）⇒ **位置相同，warning 是两条**。
+    用 set 去重会让**分母偏小** ⇒ 覆盖率**虚高**（实测 43 vs 真值 46，虚报成 100%）。
+    ⇒ 这里保留重复；**去重只发生在判 L1 文件覆盖时**。
 
     ⚠️ **判据-30 自检**：本函数只认 `Warning (` 与 `╭─[ path:line:col ]` 两种形态，
     台账里的 markdown 表格/反引号不会命中（它们用 `[` 不是 `╭─[`）。
@@ -119,7 +125,7 @@ def parse_check_output(text: str) -> tuple[dict, bool]:
             cur = (path, int(m.group(2)))
         w = RE_WARN.search(ln)
         if w and cur:
-            out.setdefault(w.group(1), set()).add(cur)
+            out.setdefault(w.group(1), []).append(cur)
             cur = None
     return out, compiled_ok
 
@@ -230,38 +236,60 @@ def _hit(path: str, ment: set) -> bool:
 
 
 def judge(actual: dict, cov: dict, mentioned: dict) -> dict:
-    """返回 {uncovered_files, count_mismatch, stale_types, covered, total}"""
-    actual_counts = {t: len(v) for t, v in actual.items()}
-    total = sum(actual_counts.values())
+    """★★ **两级分母分开算**（Lane DU 修正，统帅实测抓出「分母偏小」）
 
-    uncovered_files = []   # [(类型, 文件, 行)]
-    covered = 0
-    for ty, poss in sorted(actual.items()):
-        ment = mentioned.get(ty, set())
-        for (path, line) in sorted(poss):
-            if _hit(path, ment):
-                covered += 1
+    | 级 | 分母 | 断言 |
+    |---|---|---|
+    | **L1 文件覆盖** | 按 (类型, 文件) **去重** 的组合数 | 每个组合必须被台账点名 |
+    | **L2 数量核对** | 按 **Warning 块**计数（**不去重**） | 台账 §2「现算总数」== 真实块数 |
+
+    **为什么必须分开**：
+    · L1 问的是「**这个文件有没有被登记过**」—— 同文件同类型多条，登记一次就够 ⇒ 必须去重；
+    · L2 问的是「**台账记的数量对不对**」—— 数量就是 warning 条数 ⇒ **绝不能去重**。
+    用一个分母同时服务两个问题，就会出现本单实测的：
+    **L1 去重把分母缩小 3 ⇒ 43/43 = 100% 虚高**（真值 46）。
+    """
+    # 块计数（不去重）—— L2 用的分母
+    block_counts = {t: len(v) for t, v in actual.items()}
+    total_blocks = sum(block_counts.values())
+
+    # 去重到 (类型, 文件) —— L1 用的分母
+    combos: dict[str, set] = {}
+    for ty, poss in actual.items():
+        for (path, _line) in poss:
+            combos.setdefault(ty, set()).add(path)
+
+    uncovered_files = []   # [(类型, 文件, 示例行)]
+    covered_combos = 0
+    total_combos = 0
+    for ty, paths in sorted(combos.items()):
+        for path in sorted(paths):
+            total_combos += 1
+            if _hit(path, mentioned.get(ty, set())):
+                covered_combos += 1
             else:
+                line = next(l for (p, l) in actual[ty] if p == path)
                 uncovered_files.append((ty, path, line))
 
-    count_mismatch = []    # [(类型, 台账, 现算)]
-    for ty, n in sorted(actual_counts.items()):
+    count_mismatch = []    # [(类型, 台账, 现算块数)]
+    for ty, n in sorted(block_counts.items()):
         if ty in cov and cov[ty] != n:
             count_mismatch.append((ty, cov[ty], n))
 
-    # stale：台账 §2 记某类型有 N>0 条，而现算 0 条（已修但没删台账行）
+    # stale：台账 §2 记某类型 N>0，而现算 0 块
     stale_types = []
     for ty, n in sorted(cov.items()):
-        if n > 0 and actual_counts.get(ty, 0) == 0:
+        if n > 0 and block_counts.get(ty, 0) == 0:
             stale_types.append((ty, n))
 
     return {
         "uncovered_files": uncovered_files,
         "count_mismatch": count_mismatch,
         "stale_types": stale_types,
-        "covered": covered,
-        "total": total,
-        "actual_counts": actual_counts,
+        "covered_combos": covered_combos,
+        "total_combos": total_combos,
+        "total_blocks": total_blocks,
+        "block_counts": block_counts,
         "cov": cov,
     }
 
@@ -271,43 +299,64 @@ def render(rc: int, r: dict, note: str = "") -> None:
         print(f"[{'FATAL' if rc == RC_CANNOT else 'BROKEN'}] {note}")
         print(f"判据无法自证 ⇒ rc={rc}")
         return
-    a = r["actual_counts"]
-    print(f"[现算] 合计 {r['total']} warnings —— "
-          + " · ".join(f"{k}={v}" for k, v in sorted(a.items(), key=lambda x: -x[1])))
-    pct = (100.0 * r["covered"] / r["total"]) if r["total"] else 100.0
-    print(f"[覆盖] {r['covered']}/{r['total']} = **{pct:.1f}%**")
+    bc = r["block_counts"]
+    print(f"[现算] 合计 **{r['total_blocks']}** 条 warning —— "
+          + " · ".join(f"{k}={v}" for k, v in sorted(bc.items(), key=lambda x: -x[1])))
+    # ★ 两级读数分开打印（Lane DU：分母口径不同，混在一起会掩盖「虚高」）
+    p1 = (100.0 * r["covered_combos"] / r["total_combos"]) if r["total_combos"] else 100.0
+    print(f"[L1 文件覆盖] {r['covered_combos']}/{r['total_combos']} 个 (类型,文件) 组合已登记"
+          f" = {p1:.1f}%")
+    n_match = len(r["block_counts"]) - len(r["count_mismatch"])
+    print(f"[L2 数量核对] {n_match}/{len(r['block_counts'])} 类与台账声明相符"
+          f"（分母按 **Warning 块** 计：{r['total_blocks']} 条）")
     bad = bool(r["uncovered_files"] or r["count_mismatch"] or r["stale_types"])
     if not bad:
         print()
-        print("[结论] 台账全覆盖。**这不等于台账理由都对** —— 本判据只查「有没有登记 + 数量对不对」，"
-              "不查「为什么保留」是否成立。")
+        print("[结论] L1 全覆盖 且 L2 数量全相符。")
+        print("       ⚠️ **这不等于台账理由都对** —— 本判据只查「有没有登记 + 数量对不对」，")
+        print("          不查「为什么保留」是否成立。")
         return
     if r["uncovered_files"]:
         print()
-        print(f"[未覆盖] {len(r['uncovered_files'])} 处（(类型,文件) 未在台账点名）：")
+        print(f"[L1 未覆盖] {len(r['uncovered_files'])} 个 (类型,文件) 组合未在台账点名：")
         for ty, path, line in r["uncovered_files"]:
             print(f"  ✗ ({ty}) {path}:{line}")
     if r["count_mismatch"]:
         print()
-        print(f"[数量不符] {len(r['count_mismatch'])} 类（台账 §2 vs 现算）：")
+        print(f"[L2 数量不符] {len(r['count_mismatch'])} 类（台账 §2 vs **块计数**）：")
         for ty, lv, nv in r["count_mismatch"]:
-            print(f"  ✗ {ty}: 台账记 {lv}，现算 {nv}")
+            print(f"  ✗ {ty}: 台账记 {lv}，现算 **{nv}** 块")
     if r["stale_types"]:
         print()
-        print(f"[stale] {len(r['stale_types'])} 类（台账记有，现算为 0 ⇒ 修了但没删台账行）：")
+        print(f"[stale] {len(r['stale_types'])} 类（台账记有，现算 0 ⇒ 修了但没删台账行）：")
         for ty, n in r["stale_types"]:
             print(f"  ✗ {ty}: 台账记 {n}，现算 0")
     print()
-    print("  处置：把未覆盖项登记进 §1（带理由 + 复审条件）并更新 §2；")
-    print("        stale 项从台账删除；数量不符则改正 §2 的「现算总数」。")
+    print("  处置：L1 未覆盖 ⇒ 登记进 §1（带理由 + 复审条件）；")
+    print("        L2 不符 ⇒ 改正 §2 的「现算总数」（**注意：要按 Warning 块计数，不是按去重后的位置数**）；")
+    print("        stale ⇒ 从台账删除该项。")
 
 
 def run_moon_check() -> str:
+    """跑 `moon check` 并把 **stdout + stderr 合并**返回。
+
+    ⚠️ **实测（Lane DU，统帅提醒）**：本机 `moon check` 的**全部输出走 stderr**
+    （`stdout len=0` / `stderr len≈13934`）。
+    ⇒ 只读 stdout 的判据会拿到空 ⇒ **「永远 0 warnings」且静默判绿**。
+    这里两路都读；若两路都空则**显式报错**，绝不让「没读到」变成「没问题」。
+    """
     r = subprocess.run(
         ["moon", "check", "--target", "js"],
         capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT,
     )
-    return (r.stdout or "") + (r.stderr or "")
+    out = (r.stdout or "") + (r.stderr or "")
+    if not out.strip():
+        # 不静默：输出流变了（或 moon 换版本）必须说出来，走 rc=2 那一档
+        raise RuntimeError(
+            "moon check 的 stdout 与 stderr **都为空** ⇒ 无法测量"
+            "（可能输出流变了）⇒ 拒绝判绿"
+        )
+    return out
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -324,6 +373,20 @@ Warning: [0001]
  20 │ fn dead() {}
     │    ╰─ Warning (unused_value): Unused function 'dead'
 Finished. moon: ran 3 tasks, now up to date (49 warnings, 0 errors)
+"""
+
+# ★ 同位置两条 warning（Lane DU 修正的锁）：一个表达式可触发多条 deprecated
+#   —— 统帅实测抓出「按 (类型,文件:行) 去重 ⇒ 分母偏小 ⇒ 覆盖率虚高」。
+CHECK_DUP_POS = """\
+Error: [0020]
+    ╭─[ /r/src/a.mbt:10:5 ]
+ 10 │   x.to_string()
+    │    ╰─ Warning (deprecated): Use Debug instead of Show
+Error: [0020]
+    ╭─[ /r/src/a.mbt:10:5 ]
+ 10 │   x.to_string()
+    │    ╰─ Warning (deprecated): Use `@debug.Debug` instead of `Show`
+Finished. moon: ran 3 tasks, up to date (9 warnings, 0 errors)
 """
 
 CHECK_RED = """\
@@ -454,6 +517,26 @@ Finished. moon: ran 3 tasks, up to date (9 warnings, 0 errors)
         _pkg_not_collapsed,
         (RC_VIOLATION, ["src/bbb/moon.pkg"]),
     )
+
+    # ★ 同位置两条 warning（统帅实测抓出的「分母偏小」缺陷的锁）：
+    #   台账记 `deprecated` 1 条，现算 **2 块**（同位置）⇒ L2 必须报数量不符 ⇒ rc=1。
+    #   ⚠️ 若判据按 (类型,文件:行) 去重，这里会得 1 == 1 ⇒ **假绿**。
+    def _dup_pos_reports_mismatch():
+        rc, r = _measure(CHECK_DUP_POS, LEDGER_GOOD)
+        return (rc, [t for (t, _lv, _nv) in r["count_mismatch"]])
+
+    case(
+        "same-position-two-warnings-not-merged",
+        _dup_pos_reports_mismatch,
+        (RC_VIOLATION, ["deprecated"]),
+    )
+
+    # 同一份样本：L1 (类型,文件) 只有一个组合 ⇒ 覆盖率仍按去重算 = 1/1
+    def _dup_pos_l1_still_full():
+        _rc, r = _measure(CHECK_DUP_POS, LEDGER_GOOD)
+        return (r["covered_combos"], r["total_combos"])
+
+    case("same-position-l1-still-deduped", _dup_pos_l1_still_full, (1, 1))
 
     # 台账解析不出 §2 ⇒ rc=2
     case("no-cov-table-is-rc2",
