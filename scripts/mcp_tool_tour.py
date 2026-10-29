@@ -466,6 +466,12 @@ def surface_probe(srv, root=None):
     problems = []
     root = root or ROOT
     agents = io.open(os.path.join(root, "AGENTS.md"), encoding="utf-8", errors="replace").read()
+    # R216：**AGENTS 面可能被拆开**（R212 把 MCP 工具清单整块搬到 `docs/AGENTS-mcp-inventory.md`，
+    # 那一块里带着 `Resources:` / `Prompts:` 两行）⇒ 合并后再反解，否则这里会报
+    # 「自述面反解失败」（本判据的**第 4 个**拆分副作用：三把 check_* 各修一次，这是第四面）。
+    _inv = os.path.join(root, "docs", "AGENTS-mcp-inventory.md")
+    if os.path.isfile(_inv):
+        agents = agents + "\n" + io.open(_inv, encoding="utf-8", errors="replace").read()
     m_res = re.search(r"^Resources:(.*)$", agents, re.M)
     m_pr = re.search("^Prompts:(.*)$", agents, re.M)
     want_res = set(re.findall(r"`(fist://[\w./-]+)`", m_res.group(1))) if m_res else set()
