@@ -104,6 +104,13 @@ def selftest():
 
 
 def main(argv):
+    # R201：**未知旗标必须拒绝**（rc=2）。病象：拼错 `--self-test` 会被静默忽略，
+    # 然后照跑真 `moon fmt --check` 并可能回 rc=0 ⇒ 看起来"自检通过"，实际跑的是真检查。
+    # （同族实测：R197/R198/R199 三把新尺栽在同一处；R200 已把这条做成提交时的 advisory 体检 A3。）
+    unknown = [a for a in argv if a.startswith("-") and a != "--selftest"]
+    if unknown:
+        print("[FATAL] 未知参数 %s —— 已知：--selftest（rc=2）" % " ".join(unknown))
+        return 2
     if "--selftest" in argv:
         return selftest()
     p = subprocess.run(["moon", "fmt", "--check"], cwd=ROOT, capture_output=True, text=True,

@@ -353,6 +353,15 @@ def _entry_probe() -> None:
 
 def main():
     argv = sys.argv[1:]
+    # R201：**未知旗标必须拒绝**（rc=2）。病象：本函数的自检入口是
+    # `len(argv)==1 and argv[0]=="--selftest"` ⇒ 拼错成 `--self-test` 时条件不成立，
+    # 于是落进"两参"分支并只打 usage（旧实现回 rc=1）—— 一次**调用形状错**会被读成"徽章判红"。
+    # 同族实测：R197/R198/R199/R200（A3 advisory）。这里补硬门：未知 `-` 开头 ⇒ rc=2。
+    _KNOWN = ("--fresh", "--selftest")
+    unknown = [a for a in argv if a.startswith("-") and a not in _KNOWN]
+    if unknown:
+        print("[FATAL] 未知参数 %s —— 已知：%s（rc=2）" % (" ".join(unknown), " / ".join(_KNOWN)))
+        return 2
     if len(argv) == 1 and argv[0] == "--selftest":
         return selftest()
     # A 方案（判例-25）：--fresh 判前真跑一次全仓，跑完重写快照 + 源码面锚点。
