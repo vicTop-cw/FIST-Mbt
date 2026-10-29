@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scripts/_new_script_hygiene.py —— 提交时对**本次暂存的 scripts/*.py** 做的三条静态体检。
+"""scripts/_new_script_hygiene.py —— 提交时对**本次暂存的 scripts/*.py** 做的四条静态体检。
 
 ## 为什么要有它（不是理论，是本场三次实测）
 
@@ -45,6 +45,19 @@ GATE = "reconfigure"
 A1 = re.compile(r"for a in [^\]\n]+ if a != \"--selftest\"\]")
 # A2：用完整 sys.argv（含 argv[0]=脚本自身路径）判未知
 A2 = re.compile(r"for a in sys\.argv if ")
+# A3（R200）：**扫了旗标但没有拒绝未知旗标** ⇒ 拼错自检开关会静默跑真检查。
+# 实测同族三次：`check_bug_ledger_shape.py`（R197）/ `check_mcp_stdio_purity.py`（R198）/
+# `check_warning_ledger.py`（R199）—— 三次都是"新脚本没兜住未知旗标"，由 `check_arg_face_strict` 事后抓。
+# 这条规则把**事后**变成**提交时**：新脚本要么用 argparse（天生拒绝），要么有白名单。
+A3_SCAN = re.compile(r'"[^"\n]*--[a-z][\w-]*[^"\n]*"\s+in\s+(?:sys\.)?argv')
+A3_GUARD = (
+    re.compile(r"argparse\.ArgumentParser\s*\("),
+    re.compile(r"not\s+in\s+[\(\[]"),          # `a not in ("--selftest", …)`
+    re.compile(r"not\s+in\s+_?[A-Z_]{3,}\b"),  # `a not in _KNOWN_FLAGS`
+    re.compile(r"unknown\s*=\s*\["),           # 显式收集未知旗标
+)
+# 逃生口：确实不需要参数门的脚本（例如纯库/纯函数）在文件里写这一句
+A3_SUPPRESS = "hygiene: no-arg-gate"
 
 
 def _has_real_gate(text):
@@ -61,8 +74,15 @@ def _has_real_gate(text):
 
 
 def check_text(rel, text):
-    """纯函数：返回违例列表。"""
+    """纯函数：返回 (blocking, advisory) 两个违例列表。
+
+    **R200：A3 是 advisory（不阻断）**。实测全仓 153 个脚本里 10 个命中 A3 ——
+    若阻断，任何人**改到**这 10 个文件都会被提交钩子挡住（共享仓里的意外摩擦）。
+    真正的落地门由 `check_arg_face_strict.py`（事后、按结果）承担；
+    本规则的价值是**在写的时候就在眼前提示一次**。
+    """
     out = []
+    adv = []
     # 判例-30：不能用「子串出现」判门 —— 注释/夹具里提一嘴就满足了。用 AST 认**真调用**。
     if PRINT_CALL.search(text) and NON_ASCII.search(text) and not _has_real_gate(text):
         out.append("%s: E1 打印非 ASCII 却没有 stdout `reconfigure` 门 —— 本机控制台一红就崩在"
@@ -74,7 +94,14 @@ def check_text(rel, text):
     if A2.search(text):
         out.append("%s: A2 用 `for a in sys.argv` 判未知参数 —— 含 argv[0]（脚本自身路径），"
                    "它会被当成未知旗标 ⇒ 恒 rc=2（R65 实测）。改成 `sys.argv[1:]`" % rel)
-    return out
+    # A3（R200）：扫旗标但不拒绝未知 ⇒ 拼错自检开关会静默跑真检查（同族实测三次）
+    if A3_SCAN.search(text) and not any(g.search(text) for g in A3_GUARD) \
+            and A3_SUPPRESS not in text:
+        adv.append("%s: A3(建议) 扫了 `--flag in argv` 但**没有拒绝未知旗标** —— 拼错自检开关"
+                   "（`--self-test`）会被吃下并**静默跑真检查**（R197/R198/R199 同族三次）。"
+                   '修法：argparse，或白名单 `if unknown: print(...); return 2`；'
+                   '确实不需要参数门就写 `%s`' % (rel, A3_SUPPRESS))
+    return out, adv
 
 
 def main(argv):
@@ -91,19 +118,24 @@ def main(argv):
               % len(files))
         return 0
     problems = []
+    warns = []
     for rel in targets:
         try:
             text = io.open(rel, encoding="utf-8", errors="replace").read()
         except OSError as e:
             problems.append("%s: 读不到（%s）—— 拒绝判绿" % (rel, e))
             continue
-        problems.extend(check_text(rel.replace("\\", "/"), text))
+        blocking, advisory = check_text(rel.replace("\\", "/"), text)
+        problems.extend(blocking)
+        warns.extend(advisory)
+    for w in warns:
+        print("WARN " + w)   # advisory：不阻断，只提示
     if problems:
         print("FAIL 暂存脚本体检 %d 条：" % len(problems))
         for p in problems:
             print("  - " + p)
         return 1
-    print("PASS 暂存脚本体检：%d 份 .py 无 E1/A1/A2 违例" % len(targets))
+    print("PASS 暂存脚本体检：%d 份 .py 无 E1/A1/A2/A3 违例" % len(targets))
     return 0
 
 
@@ -122,16 +154,33 @@ def selftest():
     bad_a2 = "unknown = [a for a in sys.argv if a.startswith('--')]\n"
     good_a2 = "unknown = [a for a in sys.argv[1:] if a.startswith('--')]\n"
 
-    cell("E1-bad-is-flagged", any("E1" in p for p in check_text("x.py", bad_e1)))
-    cell("E1-good-not-flagged", not any("E1" in p for p in check_text("x.py", good_e1)))
+    cell("E1-bad-is-flagged", any("E1" in p for p in check_text("x.py", bad_e1)[0]))
+    cell("E1-good-not-flagged", not any("E1" in p for p in check_text("x.py", good_e1)[0]))
     # 判例-30 收口：**只提一嘴 reconfigure、没有真调用**必须被判 E1
     mention_only = "import sys\n# 提一句 sys.stdout.reconfigure( 但没调用\nprint('中文')\n"
     cell("E1-mention-only-is-flagged",
-         any("E1" in p for p in check_text("x.py", mention_only)))
-    cell("A1-bad-is-flagged", any("A1" in p for p in check_text("x.py", bad_a1)))
-    cell("A1-good-not-flagged", not any("A1" in p for p in check_text("x.py", good_a1)))
-    cell("A2-bad-is-flagged", any("A2" in p for p in check_text("x.py", bad_a2)))
-    cell("A2-good-not-flagged", not any("A2" in p for p in check_text("x.py", good_a2)))
+         any("E1" in p for p in check_text("x.py", mention_only)[0]))
+    cell("A1-bad-is-flagged", any("A1" in p for p in check_text("x.py", bad_a1)[0]))
+    cell("A1-good-not-flagged", not any("A1" in p for p in check_text("x.py", good_a1)[0]))
+    # A3（R200）：扫旗标但不拒绝未知 ⇒ 必须红；两种正解（argparse / 白名单）⇒ 不红
+    bad_a3 = 'if "--selftest" in argv:\n    pass\n'  # 扫了旗标、无任何兜底
+    good_a3_ap = (
+        "import argparse\n"
+        'ap = argparse.ArgumentParser()\n'
+        'ap.add_argument("--selftest", action="store_true")\n'
+        'if "--selftest" in argv:\n    pass\n'
+    )
+    good_a3_wl = (
+        '_KNOWN = ("--selftest",)\n'
+        'unknown = [a for a in argv if a.startswith("-") and a not in _KNOWN]\n'
+        "if unknown:\n    return 2\n"
+    )
+    cell("A3-bad-is-advisory", any("A3" in p for p in check_text("x.py", bad_a3)[1])
+         and not any("A3" in p for p in check_text("x.py", bad_a3)[0]))
+    cell("A3-argparse-not-flagged", not any("A3" in p for p in check_text("x.py", good_a3_ap)[1]))
+    cell("A3-whitelist-not-flagged", not any("A3" in p for p in check_text("x.py", good_a3_wl)[1]))
+    cell("A2-bad-is-flagged", any("A2" in p for p in check_text("x.py", bad_a2)[0]))
+    cell("A2-good-not-flagged", not any("A2" in p for p in check_text("x.py", good_a2)[0]))
 
     # 端到端：真建文件跑 main()
     tmp = tempfile.mkdtemp(prefix="hygiene-st-")
