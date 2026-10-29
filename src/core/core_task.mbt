@@ -683,7 +683,11 @@ fn strip_reject_tail(desc : String) -> String {
 /// 依赖面：`src/core/moon.pkg:3` 是 `"moonbitlang/x/encoding"`（**不是** `core/encoding/utf8`），
 /// 故此处用 `@encoding.encode(UTF8, s)` / `@encoding.decode_to(...)`，
 /// 与 `desc_clip` 同一套 API，**不新增依赖**。
-fn clip_utf8(s : String, cap : Int32) -> String {
+/// **R152：提升为 `pub`** —— 全仓**唯一**的 UTF-8 边界安全截断真源。
+/// 此前它是私有、只服务「拒绝理由」一处，而 `board_ascii` / `ops_selfdrive` 里对
+/// **中文 description** 直接用 `desc[0:40]` / `desc[0:200]` 硬切 ⇒ 可能切在字符中间（半个汉字）。
+/// 需要裁剪的地方一律走本函数，不要自己写 `[0:N]`。
+pub fn clip_utf8(s : String, cap : Int32) -> String {
   if cap <= 0 {
     return ""
   }
