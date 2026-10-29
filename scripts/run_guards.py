@@ -357,6 +357,16 @@ SPECIAL_CASES = [
     #   ⇒ **这正是 until 机制要的形态：债有到期日，条件满足就销账，不留免检牌。**
     # ⚠️ 本轮另加了 **R5（行号必须指向被引用的东西）** —— 见下方 R5 格的说明。
     case("check_warning_ledger_reason.py"),
+    # —— **「加一个工具要改几处」的可执行版本**（Lane DY）——
+    # 本仓有条说法叫「一源四态」，**但实测加一个 MCP 工具要改 10 处，不是 4 处**。
+    # 实证（加 `commissar_send`，177→178）：我们记了 5 处，
+    # **漏了 CLI 帮助面的 2 处**（`check_doc_surface` J14/J16 当场抓出），
+    # 之后又发现 R212 把清单搬出 AGENTS.md、**J3 判据面没跟进**（第 10 处）。
+    # **⇒ 低估同步成本，是「一致性债」的唯一来源。**
+    # 判据面：AGENTS 清单 / README / deliverable / CLI 帮助的 **数字面与名字面分开判** ——
+    # 因为**「数字对、名字错」是本轮实际发生的**（J16）。
+    case("check_tool_add_completeness.py"),
+    case("check_tool_add_completeness.py", "--selftest"),
 
     # -- BUG-477: MCP stdio stdout purity (the judge against MY OWN R33 bug) --
     # I added a `println` to run_server() in BUG-476; stdout is the JSON-RPC channel,
