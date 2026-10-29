@@ -237,6 +237,21 @@ SPECIAL_CASES = [
     #   known-red 的到期条件就是「修好会变红」，所以改回 case(rc=0)：谁再埋一个死参数就红。
     case("check_dead_params.py"),
     case("check_dead_params.py", "--selftest"),
+    # -- BUG-477: MCP stdio stdout purity (the judge against MY OWN R33 bug) --
+    # I added a `println` to run_server() in BUG-476; stdout is the JSON-RPC channel,
+    # so the whole server became unusable to every client while moon test was 1835/0 green.
+    # Perfect 判例-33 instance: engine-layer tests never cross the stdio transport.
+    #
+    # THREE layers, because each alone is blind somewhere:
+    #   L1 static  : src/server/**/*.mbt writing stdout (catches obvious println/print)
+    #   L2 dynamic : spawn with the PRODUCTION launch description (.mcp.json command+args
+    #                verbatim, 判例-33) and require EVERY stdout line to parse as JSON
+    #                (catches dependency/library prints that static cannot see)
+    #   L3 dynamic : tools/call must return result.content (replays R33's KeyError 'content')
+    # rc: 0 clean / 1 dirty / 2 cannot self-certify / 4 ruler broken (anti-anchor)
+    # Battery runs L1+L2+L3. It is a real gate: the tree is clean right now (rc=0).
+    case("check_mcp_stdio_purity.py"),
+    case("check_mcp_stdio_purity.py", "--selftest"),
     case("check_handwritten_seed.py"),
     case("check_effective_catch.py"),
     # 判据本体（2026-10-28 转正门禁）：本格曾是 expected(..., 1) 的 known-red，
