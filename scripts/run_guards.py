@@ -193,6 +193,10 @@ SPECIAL_CASES = [
     # rc: 0 全有外壳覆盖 / 1 有零覆盖 / 2 无法自证。--selftest 10 格含 1 变异对照。
     # —— R119：登记理由里的**数字**必须与实测一致（R117/R118 连续两轮漂移，机器对表）
     # —— R135：文档引用的**文件路径必须真实存在**（R134 抓出一份从未存在的白盒锁后立尺）
+    # —— R154：**中文文本字节硬切**（`[0:N]`）的常驻判据。R148/R149 清完 `replace` 类之后，
+    #    R152/R153 清 `[0:N]` 硬切（切半个汉字）；本尺保证「新增的硬切必须被解释一次」。
+    case("check_byte_slice_truncation.py"),
+    case("check_byte_slice_truncation.py", "--selftest"),
     case("check_doc_paths.py"),
     case("check_registration_numbers.py"),
     # —— R146：**显式有界跑法**。`check_slave_mergeability.py` 原先靠「自动补无参格」进电池，
