@@ -252,6 +252,22 @@ SPECIAL_CASES = [
     # 判据只报「**完整三段式被拼接**」（`##` 前一个字符非空白且非行号冒号）。
     case("check_bug_ledger_shape.py"),
     case("check_bug_ledger_shape.py", "--selftest"),
+    # —— `docs/warning-ledger.md` 的**可核性**判据（Lane DU）——
+    # 台账是「我说这些 warning 不用改」的清单。**一份没人能核的清单，和没有清单是一样的** ——
+    # 下一个人不知道它是「真核过」还是「作者自己的声明」。
+    # 断言：**每条 `moon check` 的 warning，要么出现在台账里，要么被修掉。**
+    # 匹配粒度**两级**：L1 (类型,文件) 必须在台账点名 · L2 类型总数必须相符。
+    # 不用 (类型,文件,行)：行号是**代码的属性**不是**豁免理由的属性**，
+    # 一次 `moon fmt` 就全 stale ⇒ 台账会变成「天天要改的负担」，而负担重的台账必然被放弃。
+    # **已知盲区写在判据 docstring 里**（同文件同类型多条只登记一条 ⇒ 抓不到）。
+    # ⚠️ 注意：本判据**会红**，因为它揭出真问题（台账漏登记 + 数量记错）——
+    # 那是台账作者的活，不是判据坏了。⇒ 见下方 known-red 处的理由。
+    case("check_warning_ledger.py", "--selftest"),
+    expected("check_warning_ledger.py", 1, kind="known-red",
+             why="台账真实覆盖率 43/44 = 97.7%（1 处未登记：tool_cov_lane_b2_test.mbt:42；"
+                 "deprecated 数量账记 16 现算 13）。**判据本身正确**（selftest 10/10），"
+                 "红的是台账，由司令-γ 补登记后本格自动转绿。转绿条件：判据 rc=0。"),
+
     # -- BUG-477: MCP stdio stdout purity (the judge against MY OWN R33 bug) --
     # I added a `println` to run_server() in BUG-476; stdout is the JSON-RPC channel,
     # so the whole server became unusable to every client while moon test was 1835/0 green.
