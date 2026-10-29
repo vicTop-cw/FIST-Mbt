@@ -35,7 +35,10 @@ fn dl_tmp_project(tag : String) -> String {
     let cand = "temp/dl-\{tag}-\{i.to_string()}"
     if not(@fs.path_exists(cand)) {
       @fs.create_dir(cand) catch {
-        _ => abort("夹具目录建不出来：\{cand}（本格没跑到被测面）")
+        _ =>
+          abort(
+            "夹具目录建不出来：\{cand}（本格没跑到被测面）",
+          )
       }
       dir = cand
       break
@@ -57,7 +60,7 @@ test "dl_c1_send_writes_rhop_file" {
   let proj = dl_tmp_project("c1")
   commissar_ensure_dirs(proj)
   assert_true(@fs.path_exists(commissar_events_dir(proj)))
-  assert_eq(dl_count_rhop(commissar_events_dir(proj)), 0)  // 前置：还没有文件
+  assert_eq(dl_count_rhop(commissar_events_dir(proj)), 0) // 前置：还没有文件
 
   let sig = CommissarSignal::new(
     kind="reminder",
@@ -98,9 +101,7 @@ test "dl_c2_round_trip_via_rhop_decoders" {
       continue
     }
     let path = events + "/" + name
-    let text = @fs.read_file_to_string(path) catch {
-      _ => continue
-    }
+    let text = @fs.read_file_to_string(path) catch { _ => continue }
     // rhop 自己的三段解码
     match @rhop.RhopEnvelope::decode(text) {
       Err(_) => continue
@@ -123,8 +124,8 @@ test "dl_c2_round_trip_via_rhop_decoders" {
         }
     }
   }
-  assert_true(found)                      // ★ 真的读回来了
-  assert_eq(seen_target, "dl-c2-agent")   // 且字段没串
+  assert_true(found) // ★ 真的读回来了
+  assert_eq(seen_target, "dl-c2-agent") // 且字段没串
   dl_cleanup(proj)
 }
 
@@ -147,10 +148,14 @@ test "dl_c3_mutation_control_noop_is_red" {
 
 // ── 私有小工具 ─────────────────────────────────────────────────────────────
 
-///| 数目录下的 `.rhop` 文件
-fn dl_count_rhop(dir : String) -> Int {
+///|
+/// 数目录下的 `.rhop` 文件
+fn dl_count_rhop(dir : String) -> Int32 {
   let names = @fs.read_dir(dir) catch {
-    _ => abort("dl_count_rhop: read_dir 失败 \{dir}（本格没跑到被测面）")
+    _ =>
+      abort(
+        "dl_count_rhop: read_dir 失败 \{dir}（本格没跑到被测面）",
+      )
   }
   let mut n = 0
   for name in names {
@@ -161,7 +166,8 @@ fn dl_count_rhop(dir : String) -> Int {
   n
 }
 
-///| 清理夹具（失败不报错 —— 清理不是被测面）
+///|
+/// 清理夹具（失败不报错 —— 清理不是被测面）
 fn dl_cleanup(proj : String) -> Unit {
   @fs.remove_dir(proj) catch {
     _ => ()
