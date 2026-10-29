@@ -97,6 +97,8 @@ def verdict(ahead, pick_rc, conflicts, has_merge, changed, added, base_symbols):
     return kind, conflicts
 
 
+PROBE_FILE_CAP = 8
+
 COUNT_RE = re.compile(r"([A-Za-z][A-Za-z0-9 _\-]{1,24}?|\u4e00-\u9fff{1,8})\s*(\d{1,6})")
 # R164：「数字在前」形态（`(177 MCP tools)` / `共 26 格`）—— 反向一条。
 # 为什么要两条：help_topics 的工具总数是 `(177 MCP tools)`，只有反向正则抓得到；
@@ -182,7 +184,10 @@ def superseded_probe(base, branch, prefixes=("src/", "scripts/", "cmd/", "plugin
     if rc != 0:
         return False, []
     touched = sorted({ln.strip() for ln in out.splitlines() if ln.strip()})
-    product = [p for p in touched if p.startswith(prefixes)]
+    # R170b：**限量取样** —— 探针每文件要跑 2 次 `git show`（Windows 每次 50–100ms），
+    # 大支动辄 30+ 文件 ⇒ 单支 70s。判"内容是否已在/是否被取代"**不需要看完全部文件**，
+    # 扫前 PROBE_FILE_CAP 个就足够触发；未命中的支仍会落到昂贵路径（真 cherry-pick）拿最终结论。
+    product = [p for p in touched if p.startswith(prefixes)][:PROBE_FILE_CAP]
     hits = []
     for p in product:
         rc_b, bt = git("show", "%s:%s" % (branch, p))
@@ -207,7 +212,10 @@ def content_contained_probe(base, branch, prefixes=("src/", "scripts/", "cmd/"))
     if rc != 0:
         return False, []
     touched = sorted({ln.strip() for ln in out.splitlines() if ln.strip()})
-    product = [p for p in touched if p.startswith(prefixes)]
+    # R170b：**限量取样** —— 探针每文件要跑 2 次 `git show`（Windows 每次 50–100ms），
+    # 大支动辄 30+ 文件 ⇒ 单支 70s。判"内容是否已在/是否被取代"**不需要看完全部文件**，
+    # 扫前 PROBE_FILE_CAP 个就足够触发；未命中的支仍会落到昂贵路径（真 cherry-pick）拿最终结论。
+    product = [p for p in touched if p.startswith(prefixes)][:PROBE_FILE_CAP]
     if not product:
         return False, ["支未触碰产品文件"]
     rows = []
@@ -314,6 +322,26 @@ def scan(base, remotes, keep=False, limit=0, include="/slave/"):
         for b in bs:
             rc, out = git("rev-list", "--reverse", "%s..%s" % (base, b))
             commits = [c for c in out.split() if c] if rc == 0 else []
+            # R170：**探针优先**。`contained` / `superseded` 两个结论只读 git 就能定
+            # （实测 78s/支 的成本几乎全在"建 worktree + 真 cherry-pick"上），
+            # 而通道里绝大多数支就是这两类 ⇒ 先跑探针，命中即短路。
+            if commits:
+                _c_ok, _c_detail = content_contained_probe(base, b)
+                if _c_ok:
+                    rows.append({"branch": b, "ahead": len(commits), "kind": "contained",
+                                 "files": _c_detail})
+                    print("  %s %-52s ahead=%-3d contained%s" % (
+                        "=", b, len(commits),
+                        ("  内容已含: " + _c_detail[0]) if _c_detail else ""))
+                    continue
+                _s_hit, _s_detail = superseded_probe(base, b)
+                if _s_hit:
+                    _d = ["%s: %s %s→%s" % (p, lab, s_n, b_n) for p, lab, s_n, b_n in _s_detail[:4]]
+                    rows.append({"branch": b, "ahead": len(commits), "kind": "superseded",
+                                 "files": _d})
+                    print("  %s %-52s ahead=%-3d superseded  冲突 %d 个: %s" % (
+                        "↓", b, len(commits), len(_d), ", ".join(_d[:2])))
+                    continue
             pick_rc, files, changed = simulate(base, wt, commits) if commits else (0, [], False)
             _, mout = git("rev-list", "--merges", "%s..%s" % (base, b))
             has_merge = bool([m for m in mout.split() if m]) if commits else False
@@ -321,20 +349,6 @@ def scan(base, remotes, keep=False, limit=0, include="/slave/"):
             added = re.findall(r"^\+\s*pub fn ([A-Za-z0-9_:]+)", adiff, re.M)
             # R132：三面合成收进纯函数 `verdict` —— 接线只剩这一行，自证可断言组合结果
             kind, files = verdict(len(commits), pick_rc, files, has_merge, changed, added, base_syms)
-            # R161：**冲突不必然是"有内容待合"** —— 无共同祖先的支必冲突，而它的内容可能早已在 base
-            # （实测 `gitcode/slave/feat/wt-lifecycle-tools`：冲突 28 个，但 master 728 行 ⊃ 支 668 行）。
-            # 冲突时再跑一次**内容包含探针**，命中就归 `contained`。
-            if kind == "conflict":
-                _c_ok, _c_detail = content_contained_probe(base, b)
-                if _c_ok:
-                    kind, files = "contained", _c_detail
-                else:
-                    # R162：不是"已包含"，再看是不是**被取代**（支把计数改小了 ⇒ 合=倒退）
-                    _s_hit, _s_detail = superseded_probe(base, b)
-                    if _s_hit:
-                        kind = "superseded"
-                        files = ["%s: %s %s→%s" % (p, lab, s_n, b_n)
-                                 for p, lab, s_n, b_n in _s_detail[:4]]
             rows.append({"branch": b, "ahead": len(commits), "kind": kind, "files": files})
             mark = {"ok": "✓", "contained": "=", "conflict": "✗", "merge": "M", "error": "!",
                     "duplicate": "⚠", "superseded": "↓"}[kind]
@@ -612,6 +626,13 @@ def selftest():
          "_cleanup_paths(tmp, wt)" in _inspect.getsource(_on_signal), True)
     # R169：**平台事实** —— Windows 的 TerminateProcess 让 atexit/signal 都跑不到，
     # 所以清理必须有"启动自愈"这条路径（只断言 atexit 存在会给出安全的错觉）。
+    # R170：**探针优先**接线 —— 两个只读探针必须在 `simulate(` 之前出现，否则省不下成本。
+    _probe_pos = _scan_src.find("content_contained_probe(base, b)")
+    _sim_pos = _scan_src.find("simulate(base, wt, commits)")
+    cell("probe-first-before-simulate",
+         0 <= _probe_pos < _sim_pos, True)
+    cell("superseded-probe-also-before",
+         0 <= _scan_src.find("superseded_probe(base, b)") < _sim_pos, True)
     cell("scan-sweeps-stale-worktrees-first",
          "sweep_stale_worktrees()" in _scan_src, True)
     _sweep_src = _inspect.getsource(sweep_stale_worktrees)
