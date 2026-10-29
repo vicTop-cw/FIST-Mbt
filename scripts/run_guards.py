@@ -197,6 +197,10 @@ SPECIAL_CASES = [
     #    R152/R153 清 `[0:N]` 硬切（切半个汉字）；本尺保证「新增的硬切必须被解释一次」。
     case("check_byte_slice_truncation.py"),
     case("check_byte_slice_truncation.py", "--selftest"),
+    # —— R177：**SQL 三方对齐**（列 ↔ VALUES 项 ↔ bind 次数）。R176 人工核过一处
+    #    `insert_execution`（11/11 对齐），但仓库还有 21 处 INSERT 无人核。
+    case("check_sql_bind_alignment.py"),
+    case("check_sql_bind_alignment.py", "--selftest"),
     case("check_doc_paths.py"),
     case("check_registration_numbers.py"),
     # —— R146：**显式有界跑法**。`check_slave_mergeability.py` 原先靠「自动补无参格」进电池，
