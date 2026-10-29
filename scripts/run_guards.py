@@ -209,7 +209,22 @@ SPECIAL_CASES = [
     # —— R82/R94：Python 侧死参数判据 —— `check_dead_params.py` 只扫 .mbt，Python 形参此前从未被查过。
     #    【债已清零】R82 建判据（36 条）⇒ R85 加两面口径（真债 12 / NOTE 19）⇒ R86–R94 逐条清完，
     #    现读 **真债 0 条**（1771 个函数）。按本仓律「被检面修到 0 ⇒ 把期望改回门禁格」。
-    case("check_dead_params_py.py"),    case("check_dead_params_py.py", "--selftest"),
+    #
+    #    ⚠️ **R214 起登记为 known-red（1 条）**，因为新出现的这一条是**判据的误报**：
+    #    `check_warning_ledger_reason.py:424 check_r5_def(reason)` 的形参确实零引用，
+    #    但它的**位置是刻意保留**的 —— 该文件 `check_r1..r7` 一族统一用
+    #    (loc_col, reason, type_cell) 三段式签名、调用点按位置传参。
+    #    **实测证明不能照判据建议改成 `_reason`**：一改，该文件 `--selftest` **17/17 → 6/17**、
+    #    真检查 **rc=0 → rc=4**（其变异探针对签名/源文本有依赖）。
+    #    ⇒ **不为消红去改被测面**（那会把尺子的误报变成被测面的伤）。
+    #    收回条件：判据支持「按位置保留形参」的豁免语法（如 `# noqa: dead-param`），
+    #    或该文件家族签名重构后再改回 0。
+    expected("check_dead_params_py.py", 1,
+             "R214：唯一一条 check_warning_ledger_reason.check_r5_def(reason) 是**误报** —— "
+             "位置被三段式签名刻意保留；实测改成 `_reason` 会让该文件 selftest 17/17→6/17、"
+             "真检查 rc=0→rc=4（变异探针依赖源文本）。**不为消红改被测面**，等判据支持豁免语法再收回 0。",
+             kind="known-red", until="2026-11-15", blame="lead(R214)"),
+    case("check_dead_params_py.py", "--selftest"),
     # —— BUG-440：docs/plans/ frontmatter 守卫（README:22 承诺了 5 天，守卫文件此前不存在）——
     # 判据：文件名 / frontmatter 必须第 1 行起 / 四强制字段 / status 闭集 / 已定案自洽(含 decisions 记录)。
     # 实测抓出过真违例：4pools 提案的第一个 `---` 块是 AIGC 水印元数据，四字段全缺。
@@ -539,7 +554,7 @@ SPECIAL_CASES = [
     #    被检面修到 0 之后这一格自己翻红，逼下一位把期望改回 0。 ——
     case("check_selftest_hermetic.py", "--selftest"),
     expected("check_selftest_hermetic.py", 1,
-             "R153 立尺；**R209 代补按实测重写读数**：红档 **97 处 = W 1 / R 65 / G 31**（⚠️ 这是**代补**：R61→65 / G30→31 来自他人新落地尺的 selftest 面；**下次新增 selftest 的一方请自行同批更新**，本仓纪律见 R183「两笔流程」），另记账 10（S 3 / T 7），涉 37 个文件。"
+             "R153 立尺；**R214 按实测重写读数**：红档 **99 处 = W 1 / R 67 / G 31**（R65→67 来自他人新落地尺的 selftest 面；W 未变 ⇒ 污染面没有扩大）（⚠️ 这是**代补**：R61→65 / G30→31 来自他人新落地尺的 selftest 面；**下次新增 selftest 的一方请自行同批更新**，本仓纪律见 R183「两笔流程」），另记账 10（S 3 / T 7），涉 37 个文件。"
              "（91→92 的 +1 又是 **G 档**：`check_warning_ledger.py` 上线带来的 selftest 面；W/R 未变。）"
              "（R197 这一格 +1 是 **G 档**：新增的测试格把「打真仓跑」的面多覆盖了一处；W/R 两档未变 ⇒ 污染面没有扩大。）"
              "（更早：「90 处 / G 28」← R117 重写；原登记「72 处 / W=10 / R=48 / G=14」已两次过时：R111/R114/R115/R118 还掉写面与误分类，同时期新增读面；**这条 why 每次读数变化都要同批改**——机器对表见 R118 日志的后续单。）"
