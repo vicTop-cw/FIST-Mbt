@@ -10726,3 +10726,99 @@ BUG-477 = 票能用无限次（消费语义）
 
 ### FIXED(2026-10-29T01:02:42Z / BUG-477, BUG-478)
 - evidence: commit 188994349（4 文件 +338/-15）。BUG-477：rsv_try_set / locks_try_acquire 改用 judged_role_with_nonce（与 claim 同源，验签通过后消费 nonce）—— 关键是不能把消费塞进 judged_role_gated，它被 5 处消费（含只读的 challenge_pending_count），塞进去会让那 5 处全变成读一次就消费。nonce 跨工具语义经核实是全局一次性（s3_consume_nonce 按 agent 索引并 arr.remove），所以 reserve_scope 消费后 lock_acquire 再用同票必判 challenge_replayed。BUG-478：派单说 2 个工具缺 ns，实测普查发现 7 个全缺（reserve_scope/reserve_check/reserve_release/lock_acquire/lock_renew/lock_release/lock_status），根因是它们都用 server.mbt:27 的进程级全局 engine（主库）、整个工具面不走多租户路由；修法是七工具全加 namespace + engine_for_ns 路由。零回归论证：engine_for_ns(default) 返回主引擎，与修前那个全局 engine 是同一个实例。变异对照两个都精确打红：M1 把 rsv_try_set 退回 judged_role_gated ⇒ 348/350 df_01 红；M2 删一处 ns 路由 ⇒ 349/350 df_03 红。门禁：moon check 0 errors、check_fmt_gate.py PASS、src/engine+src/server 903/903/0、全量 1888/1888/0。★ 变异实测抓出锁自身的缺陷：第一版 df_01 直接调 judged_role_with_nonce 没走 rsv_try_set ⇒ 做 M1 时 df_01 照样绿（判例-29 老坑第二次：测了门函数会消费 ≠ 测了消费者接的是会消费的门）；改 df_01 走真实引擎函数后 M1 才精确打红。另 s3_p2_02 原来断言 judged_role_gated >= 3（旧设计计数），本单把其中两个换成 judged_role_with_nonce ⇒ 期望值必须随设计更新否则修好了反而变红，已改成 >= 1 + 新增 judged_role_with_nonce >= 2。缺口：双入口并存（reserve_*/lock_* 走 engine_for_ns 但全局 engine 简写仍在，行为已对齐，建议后续统一）；本次期间 server.mbt 被并发 lane 覆盖过一次（5 处改动丢失 + POLLUTION-PROBE 变异残留），已复查无残留。
+## BUG-479 [2026-10-29T02:53:58Z] [medium] FIXED
+- summary: [evolve] MutationKind::Combine 文档承诺但永不产出 —— 消费面建好、生产面没接（判例-29 又一实例）
+- detail: Lane DM 批 3 普查发现（commit 7cf9b766）。
+
+## 事实
+
+curriculum.mbt 里 Combine 的消费面全建好了：
+- :123 定义 Combine // 组合（融合两个父代的特征）
+- :158 mutation_prompt 的 Combine 分支（【组合】融合多个父代的优点...）
+- :279 decision_to_string 的 Combine => 组合
+
+但生产面 0 处：select_mutation 的 4 个分支（Simplify/Rewrite/Generalize/Specialize）永不返回 Combine。
+调用链：evolve_decision(:253) -> select_mutation(:256)。
+
+## 为什么这是 bug 而不是「预留」
+
+:168 的 docstring 明写「高分（L4）：偏向 Specialize / Combine（追求极致）」——
+文档承诺了 Combine 会被选中，代码结构上做不到。
+
+## 根因（比「阈值写错」更深）
+
+Combine 的语义是「融合两个父代」=> 前置条件是「有 >=2 个父代」。
+而 select_mutation(score) 只有分数、没有父代信息 => 它结构上就不可能正确产出 Combine。
+
+## 修法（按语义修，不按阈值修）
+
+给 select_mutation 加 parents~ : Int = 1：
+  if r >= 0.85 && parents >= 2 { Combine } else if r < 0.55 { Simplify } ...
+
+零回归：默认 parents=1 => 现有调用方（只传 score）行为逐字不变。
+不动 evolve_decision（它不知道父代数，保持现状是对的）。
+
+## 锁
+
+- 锁 1：select_mutation(0.9, parents=2) == Combine（新能力可达）
+- 锁 2：select_mutation(0.9) == Specialize（零回归）
+
+## 判例
+
+「有 match 分支」不等于「本该构造」 —— 要看那个分支在说什么。
+本例的分支是正常消费（prompt 文案 + 字符串标签），不是防御性 Err，所以确实是缺失。
+- reported_by: commander-beta(Lane DM)
+
+
+### FIXED(2026-10-29T02:54:16Z / BUG-479)
+- evidence: commit 7cf9b766。curriculum.mbt 的 Combine 消费面建好了（:123 定义 / :158 mutation_prompt 分支 / :279 字符串化）但生产面 0 处 —— select_mutation 的 4 个分支永不返回它，而 :168 的 docstring 明写「高分（L4）：偏向 Specialize / Combine」⇒ 文档承诺了 Combine 会被选中、代码结构上做不到。根因比「阈值写错」更深：Combine 的语义是「融合两个父代」⇒ 前置条件是「有 >=2 个父代」，而 select_mutation(score) 只有分数没有父代信息 ⇒ 结构上就不可能正确产出它。修法按语义不按阈值：给 select_mutation 加 parents~ : Int = 1，if r >= 0.85 && parents >= 2 { Combine }。零回归：默认 parents=1 ⇒ 现有调用方（只传 score）行为逐字不变；不动 evolve_decision（它不知道父代数，保持现状是对的）。锁：锁 1 select_mutation(0.9, parents=2) == Combine（新能力可达）、锁 2 select_mutation(0.9) == Specialize（零回归）。验证：moon check 0 errors、warning 69→67、全量 1891/1891/0。判例：「有 match 分支」不等于「本该构造」—— 要看那个分支在说什么；本例是正常消费（prompt 文案 + 字符串标签）不是防御性 Err，所以确实是缺失。
+## BUG-480 [2026-10-29T03:05:36Z] [high] OPEN
+- summary: [rhop/rx] from_filesystem_with 在 js 后端不可取消 —— Subscription::dispose() 传递不到 fs.watch，订阅者让进程永不退出
+- detail: Alpha 最小复现证明（Lane DL，2026-10-29）。
+
+## 三个探针（确定性对照）
+
+| 探针 | 内容 | 结果 |
+|---|---|---|
+| P1 | 只构造 Observable，不订阅 | ✅ 4 秒退出 |
+| P2 | 订阅 + 立刻 dispose() + 断言 is_disposed()==true | ❌ 121 秒被 SIGTERM，无汇总行 |
+| P3 | 纯同步读，不碰 watcher | ✅ 4 秒退出 |
+
+=> P2 是关键格：dispose() 执行了、is_disposed() 返回 true，但进程仍然不退出。
+
+## 根因链（源码级）
+
+watcher_js.mbt:71   fs.watch(path, { persistent: true })   <- persistent:true 就是「持有者不结束」
+rx/RX-MBT.mbt:82    Subscription::dispose() -> 执行 dispose_fn
+rhop_js.mbt:132     from_filesystem_with 返回 Subscription::new(fn(){ sub.dispose() })
+rhop_js.mbt:92      let sub = @monitor.watch_folder(path).subscribe(...)
+
+sub.dispose() 执行了，但底下的 fs.watch 没被 close => from_filesystem_with 在 js 后端不可取消。
+
+## 危害（生产级，不只是测试）
+
+任何在生产里订阅它的调用方都会让进程永不退出。
+src/ops/ops_commissar.mbt 的 commissar_watch 正是这么用的 =>
+一旦 ops_commissar 接成 MCP 工具，commissar_watch 被调一次，server 就永不退出。
+
+这不是「测试写错了」，是「rhop/rx 的流不可关闭」—— 任何订阅者都泄漏。
+
+## 判例
+
+「资源释放」的调用成功 ≠ 资源真的释放了。
+dispose() 返回 void、is_disposed() 返回 true —— 但底下 fs.watch 仍然 persistent: true。
+=> 判「有没有泄漏」必须看进程能否退出，不能看 dispose 有没有被调用。
+
+同族判例-29「机制格 ≠ 实现路径格」—— 本条是「调用格 ≠ 生效格」。
+
+## 关闭条件
+
+1. from_filesystem_with 返回的 Subscription 被 dispose 时，底层 fs.watch 真的 close（persistent:false 或显式 close）
+2. 有锁证明：订阅 + dispose 后，进程能在 N 秒内正常退出
+3. 变异对照：删掉底层 close => 锁必红
+
+## 定位
+
+依赖侧：../rx-mbt/rhop（rhop_js.mbt:92/132 + watcher_js.mbt:71）+ ../rx-mbt/rx（RX-MBT.mbt:82）
+不是本仓源码，但这个缺口直接卡住 ops_commissar 的 MCP 接线。
+- reported_by: commander-alpha(Lane DL)

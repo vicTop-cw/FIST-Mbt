@@ -122,7 +122,7 @@ fn append_log(project_dir : String, line : String) -> Unit {
     ""
   }
   @fs.write_string_to_file(path, old + line) catch {
-    _ => println("commissar: 写 reminder_log 失败: \{path}")
+    _ => eprintln("commissar: 写 reminder_log 失败: \{path}")
   }
 }
 
@@ -150,7 +150,7 @@ pub fn commissar_send(
     pkt,
     @rhop.RhopCipherNone::new(),
   )
-  println("commissar: sent \{id} kind=\{sig.kind} target=\{sig.target}")
+  eprintln("commissar: sent \{id} kind=\{sig.kind} target=\{sig.target}")
 }
 
 ///|
@@ -198,7 +198,7 @@ pub fn commissar_watch(
       fn(pkt : @rhop.RhopPacket) {
         let at = pkt.at
         match CommissarSignal::from_json(pkt.payload) {
-          None => println("commissar: 忽略无法解析的信号 \{pkt.id}")
+          None => eprintln("commissar: 忽略无法解析的信号 \{pkt.id}")
           Some(sig) => {
             append_log(project_dir, signal_line(sig, at))
             match sig.kind {
@@ -207,7 +207,7 @@ pub fn commissar_watch(
                 write_inbox(project_dir, sig, at)
               "heartbeat" =>
                 // R4 心跳汇报：摘要已入日志，不额外动作
-                println("commissar: heartbeat from \{sig.target}: \{sig.text}")
+                eprintln("commissar: heartbeat from \{sig.target}: \{sig.text}")
               // R2/R3 及任意信号：触发一次全量提醒检查
               _ => {
                 let r = commissar_tick(
@@ -217,7 +217,7 @@ pub fn commissar_watch(
                   stale_hours~,
                   pending_hours~,
                 )
-                println(
+                eprintln(
                   "commissar: \{sig.kind} 触发检查，提醒 \{reminder_count_of(r).to_string()} 条",
                 )
               }
@@ -225,11 +225,11 @@ pub fn commissar_watch(
           }
         }
       },
-      fn(err : String) { println("commissar watch error: \{err}") },
-      fn() { println("commissar watch completed") },
+      fn(err : String) { eprintln("commissar watch error: \{err}") },
+      fn() { eprintln("commissar watch completed") },
     ),
   )
-  println(
+  eprintln(
     "commissar watch started: \{events}（事件驱动，Ctrl-C 退出）",
   )
   // js 目标：fs.watch persistent 保持事件循环；native 目标（占位）自然返回。
@@ -245,9 +245,9 @@ fn write_inbox(
   let path = commissar_inbox_dir(project_dir) + "/" + at_ms.to_string() + ".md"
   let content = "---\nkind: \{sig.kind}\ntarget: \{sig.target}\nns: \{sig.ns}\nat: \{at_ms.to_string()}\n---\n\n\{sig.text}\n"
   @fs.write_string_to_file(path, content) catch {
-    _ => println("commissar: 写 inbox 失败: \{path}")
+    _ => eprintln("commissar: 写 inbox 失败: \{path}")
   }
-  println("commissar: R1 引导提醒已投递 inbox -> \{path}")
+  eprintln("commissar: R1 引导提醒已投递 inbox -> \{path}")
 }
 
 ///|
