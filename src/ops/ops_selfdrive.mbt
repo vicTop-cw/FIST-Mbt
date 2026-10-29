@@ -406,8 +406,9 @@ pub fn selfdrive_export_tasks(
   for t in tasks {
     let desc = t.description
     let short = if desc.length() > 200 {
-      // R152：中文 description 的字节硬切会切在字符中间 ⇒ 走 @core.clip_utf8
-      @core.clip_utf8(desc, 200) + "..."
+      // R185 更正：`String` 是字符粒度，`desc[0:200]` 本来就安全；`clip_utf8` 的 cap 是字节
+      // ⇒ 换回去（否则 200 字符会被缩成 ~66 汉字）。
+      desc[0:200].to_owned() + "..."
     } else {
       desc
     }
