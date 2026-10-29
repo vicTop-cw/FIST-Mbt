@@ -1767,8 +1767,17 @@ def main(argv):
         return 0
 
     agents_txt = AGENTS.read_text(encoding="utf-8")
+    # R215：**AGENTS 面可能被拆开了**（R212 为 harness 指令字节预算把 MCP 工具清单搬到
+    # `docs/AGENTS-mcp-inventory.md`，内容逐字保留、AGENTS.md 只留指针）⇒ 合并后再判，
+    # 否则「AGENTS 未逐个列出 N 个工具」是**拆分的副作用**而不是真缺口。
+    # （同族修法见 check_tools_sync.py 的 R213 改动——两把尺各有自己的 AGENTS 扫描面。）
+    _inv = ROOT / "docs" / "AGENTS-mcp-inventory.md"
+    if _inv.is_file():
+        agents_txt = agents_txt + "\n" + _inv.read_text(encoding="utf-8")
     readme_txt = README.read_text(encoding="utf-8")
     anames, rnames = names_in(AGENTS), names_in(README)
+    if _inv.is_file():
+        anames = anames | names_in(_inv)
     for guard_name, got, label in (("AGENTS", anames, "AGENTS.md"), ("README", rnames, "README.md")):
         if len(got) <= 100:
             print(f"FATAL: {label} 只解析到 {len(got)} 个反引号名——判据不可信")
