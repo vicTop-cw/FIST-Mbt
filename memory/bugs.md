@@ -10661,7 +10661,7 @@ grep -n created_by src/core/core_task.mbt ⇒ 零命中。
 - evidence: BUG-475（a64f2053 + 回归修复 e2168550）：@core.Task 加 created_by 字段（缺省空串，不用 unknown/legacy 这类看起来像身份的占位符，避免审计查询把占位符当成一个叫 unknown 的 agent）；Task::new 加 created_by~ 命名参数；新增 Task::from_db_with_created_by（20 参）而 from_db 保持 19 参委托到它（因为 from_db 是位置参数函数、全仓 4 个测试文件直接调它）；store 层 task_columns 加列 + CREATE TABLE 加列 + 旧库 PRAGMA 探测迁移。回归：bind_task_update_values 加 created_by（第 18 位）但两处 UPDATE 调用方的 WHERE 绑定没跟着后移 ⇒ id 被绑到 created_by 上、WHERE id = ? 拿到 NULL ⇒ UPDATE 一行都不改而 execute() 仍返回成功 ⇒ 状态迁移静默失效（38 个测试失败）。用 git revert --no-commit a64f2053 做确定对照（有改动 335/12 failed、无改动 347/0 failed）确认归因；修法两处 WHERE 后移（update_task 18→19；update_task_if_status id 18→19、expected_status 19→20）。另修 dc_unique_db 用进程内 Ref[Int] 计数器导致库名跨进程重复 ⇒ 命中旧 schema 库 ⇒ 锁假红；改用 bug462_unique_db（@env.rand(8)）。读数：src/engine 347/347/0、src/store 125/125 连跑两轮、全量 1835/1835/0。本单补的是审计不是验证：created_by 仍可伪造（S1 边界），但至少事后能查出当时填的是什么。
 
 BUG-476（dccdbc56）：strict 真的拒绝 —— 四处门硬拒（rsv_set + rsv_try_set、locks_try_acquire、claim 在 server 层）+ auth_mode_startup_warning() 接线到 run_server()（修前调用点 0 处）。判断依据：选在门消费者判而非改 judged_role_gated 返回值 —— 职责分离（它算身份不决定拒不拒）、错误可区分（否则验签失败与 strict 未提供被压成同一种）、与既有范式一致（check_scope_permission 在门层判 RoleDenied）。六格锁 S1~S6 全绿：S1 strict 无挑战拒、S2 strict 有 verified 不拒、S3 soft 得到 challenge_required（≠ challenge_missing）⇒ strict≠soft 直接证据、S4 off 不拒零回归、S5 实现路径格（run_server 真调了 startup_warning）、S6 实现路径格接线计数 reserve_scope=2/lock_acquire=1/claim=1。变异五个逐个生效并恢复。★ 变异暴露判据缺口：M1~M4 删掉接线后 S1~S4 全绿（只测门层函数语义）⇒ 补 S6 直接读源码数接线点、必须是计数不是 contains。另 S6 曾用 split().count() 读数不可靠 ⇒ 换 count_of 范式。缺口：strict 只覆盖 4 个门，execute/verify/submit/archive 本来无挑战门（那是 BUG-430c）；claim 的拒在 server 层；startup_warning 只在 run_server 打印。附：该 warning 原用 println（stdout）打断 MCP JSON-RPC 传输（fist.py call 报 malformed JSON-RPC response），已改 eprintln。
-## BUG-477 [2026-10-28T13:52:20Z] [high] OPEN
+## BUG-477 [2026-10-28T13:52:20Z] [high] FIXED
 - summary: [authz] reserve_scope / lock_acquire 不消费 nonce —— 同一张 S3 票可无限次重放（claim 会消费，它们不会）
 - detail: Alpha 实测发现（Lane DE，0e78038d）。
 
@@ -10685,7 +10685,7 @@ BUG-476（dccdbc56）：strict 真的拒绝 —— 四处门硬拒（rsv_set + r
 
 文档 docs/integration/s3-client-bootstrap.md 已写明这个差异，但行为仍需修。
 - reported_by: commander-alpha
-## BUG-478 [2026-10-28T13:52:49Z] [high] OPEN
+## BUG-478 [2026-10-28T13:52:49Z] [high] FIXED
 - summary: [authz] reserve_scope / lock_acquire 不接受 namespace 参数 —— 与 agent_issue_challenge 不一致，跨 ns 验签必失败
 - detail: Alpha 实测发现（Lane DE，0e78038d）。
 
@@ -10722,3 +10722,7 @@ BUG-477 = 票能用无限次（消费语义）
 同族：BUG-452（conflicts_check 缺 namespace）、BUG-454（tx_contract 缺 namespace）
 => 这是同一类缺陷的第三个实例：工具面缺 ns 参数导致非 default ns 下功能失效
 - reported_by: commander-alpha
+
+
+### FIXED(2026-10-29T01:02:42Z / BUG-477, BUG-478)
+- evidence: commit 188994349（4 文件 +338/-15）。BUG-477：rsv_try_set / locks_try_acquire 改用 judged_role_with_nonce（与 claim 同源，验签通过后消费 nonce）—— 关键是不能把消费塞进 judged_role_gated，它被 5 处消费（含只读的 challenge_pending_count），塞进去会让那 5 处全变成读一次就消费。nonce 跨工具语义经核实是全局一次性（s3_consume_nonce 按 agent 索引并 arr.remove），所以 reserve_scope 消费后 lock_acquire 再用同票必判 challenge_replayed。BUG-478：派单说 2 个工具缺 ns，实测普查发现 7 个全缺（reserve_scope/reserve_check/reserve_release/lock_acquire/lock_renew/lock_release/lock_status），根因是它们都用 server.mbt:27 的进程级全局 engine（主库）、整个工具面不走多租户路由；修法是七工具全加 namespace + engine_for_ns 路由。零回归论证：engine_for_ns(default) 返回主引擎，与修前那个全局 engine 是同一个实例。变异对照两个都精确打红：M1 把 rsv_try_set 退回 judged_role_gated ⇒ 348/350 df_01 红；M2 删一处 ns 路由 ⇒ 349/350 df_03 红。门禁：moon check 0 errors、check_fmt_gate.py PASS、src/engine+src/server 903/903/0、全量 1888/1888/0。★ 变异实测抓出锁自身的缺陷：第一版 df_01 直接调 judged_role_with_nonce 没走 rsv_try_set ⇒ 做 M1 时 df_01 照样绿（判例-29 老坑第二次：测了门函数会消费 ≠ 测了消费者接的是会消费的门）；改 df_01 走真实引擎函数后 M1 才精确打红。另 s3_p2_02 原来断言 judged_role_gated >= 3（旧设计计数），本单把其中两个换成 judged_role_with_nonce ⇒ 期望值必须随设计更新否则修好了反而变红，已改成 >= 1 + 新增 judged_role_with_nonce >= 2。缺口：双入口并存（reserve_*/lock_* 走 engine_for_ns 但全局 engine 简写仍在，行为已对齐，建议后续统一）；本次期间 server.mbt 被并发 lane 覆盖过一次（5 处改动丢失 + POLLUTION-PROBE 变异残留），已复查无残留。
