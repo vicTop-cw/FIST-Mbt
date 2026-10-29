@@ -464,9 +464,11 @@ Prompts: `fist:check_in`, `fist:verify`
 
 ## MCP 工具清单（已搬出，本文件只留指针）
 
-> 完整工具清单（生命周期 / 查询 / 运维 / 自驱 / 记忆与进化 / Marketplace / 审计权限 /
+> 本仓 MCP Server 共 **178 个 MCP 工具**（+3 resources +2 prompts）。完整清单
+> （生命周期 / 查询 / 运维 / 自驱 / 记忆与进化 / Marketplace / 审计权限 /
 > 多租户 / Omega 强验证 / 开发模式与模板 / GitHub·GitCode 同步 / 模型路由·外部执行器 /
 > 六顶帽 / 项目助理 / 超级管家 / MCPCf 内部工具）**共约 274 行**，已搬到
 > **`docs/AGENTS-mcp-inventory.md`**（逐字保留；需要时用 read 打开）。
 > 搬出的原因：`AGENTS.md` 超过 harness 指令预算（上限 65,244 字节），后段对 agent 不可见 ——
-> **清单是参考材料，规则必须可见**。判据：`python scripts/check_instruction_budget.py`。
+> **清单是参考材料，规则必须可见**。判据：`python scripts/check_instruction_budget.py`；
+> 工具计数一致性判据 `check_tools_sync` 会把「本文件 + 那份清单」**合起来**当 AGENTS 面（R213）。

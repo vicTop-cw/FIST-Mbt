@@ -268,6 +268,12 @@ def main():
     n = len(tools)
     problems = []
     agents = AGENTS.read_text(encoding="utf-8")
+    # R213：**AGENTS 面可能被拆开了**（R212 为了 harness 的指令字节预算，把 MCP 工具清单
+    # 整块搬到 `docs/AGENTS-mcp-inventory.md`，内容逐字保留、AGENTS.md 只留指针）。
+    # ⇒ 本判据的「AGENTS 面」= AGENTS.md **+ 那份清单文件**（存在才拼，不存在的仓库行为不变）。
+    inv = ROOT / "docs" / "AGENTS-mcp-inventory.md"
+    if inv.is_file():
+        agents = agents + "\n" + inv.read_text(encoding="utf-8")
     server_txt = SERVER.read_text(encoding="utf-8")
 
     # 反幻影：真源解析退化时绝不给绿灯（与 cl7 守卫同口径）
@@ -296,7 +302,10 @@ def main():
     #    - 精确式  "148 个 MCP 工具" → 等于实测 n
     #    - 下限式  "140+ 个 MCP 工具" → n >= 下限（下限超过实测即虚报，不算一致）
     for path in (README, AGENTS, DELIV, RUBRIC):
-        claims, _ = surface_claims(path.read_text(encoding="utf-8"))
+        # R213：AGENTS 的「工具总数自述」允许落在**清单文件**里（R212 拆分后，AGENTS 只留指针
+        # + 一句总数；逐工具名与总数都按「本文件 + 清单」合并面判，与规则 2 同口径）。
+        _txt = agents if path == AGENTS else path.read_text(encoding="utf-8")
+        claims, _ = surface_claims(_txt)
         ok = any(
             (n >= num and is_floor) or (num == n and not is_floor)
             for num, is_floor, _, _ in claims
