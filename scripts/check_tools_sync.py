@@ -146,6 +146,11 @@ RE_CHANGELOG_H2 = re.compile(r"^##\s+v[^\n]*", re.M)
 # ^docs/improvement-plan-，归档版本整份被当现状面比对，逼人伪造历史
 # （实测 docs/archive/improvement-plan-20260929.md:136 写 129，被 166 判红）。
 RE_IPLAN = re.compile(r"^docs/(?:archive/)?improvement-plan-(\d{8})\.md$")
+# R219：`docs/YYYY-MM-DD-*.md` 是**时点档案**（设计/评估/决策记录，J15 已按此口径管它们），
+# 不是「现状声明」面 —— 拿它去对当前工具总数是**范畴错误**（判例-33 同族：自述面 ≠ 现状面）。
+# 触发本条的实据：`docs/2026-10-12-fist-mbt-supervisor-role-design.md:49` 的表格单元格写
+# 「**5 个 MCP 工具已在**」（项目助理那 5 个 = **分组数**），被 R3b 当成总数 178 的错报。
+RE_DATED_DOC = re.compile(r"^docs/20\d{2}-\d{2}-\d{2}-.+\.md$")
 
 
 def changelog_current_section(txt):
@@ -243,6 +248,11 @@ def current_state_text(rel, txt, latest_iplan):
         return changelog_current_section(txt)
     m = RE_IPLAN.match(rel)
     if m and latest_iplan is not None and m.group(1) != latest_iplan:
+        return None
+    # R219：带日期的 docs/ 档案（设计/评估/决策）整份归历史面 —— 它们记录「当时」而非「现在」。
+    # 现状总数仍由 README / AGENTS(+清单) / deliverable / scoring_rubric 四个**现状面**兜住；
+    # 这一格只免掉「拿历史文档里的分组数当总数」这类范畴错误，不放宽任何一个现状面。
+    if RE_DATED_DOC.match(rel):
         return None
     return txt
 
