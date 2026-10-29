@@ -46,27 +46,38 @@ FMT_COLD_MARKERS = (
 )
 
 
+def _fmt_single_source():
+    """取 `scripts/check_fmt_gate.py`（**marker 匹配的单一实现**）。惰性导入，避免启动时延。"""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import check_fmt_gate  # noqa: E402
+
+    return check_fmt_gate
+
+
 def classify_fmt(rc, text):
     """把 fmt 臂的失败归成四档：clean / cold-formatter / generation-mismatch / unknown。
 
-    ⚠️ **R174：本函数与 `scripts/check_fmt_gate.py:run()` 是两个不同的判定，不要当成同一份拷贝。**
-    R173 试过直接委派给真源 ⇒ **2 格自检红**（冷格式化器识别失败 / 未知退化未归 unknown）⇒ 已撤回。
-    实测差异（**裁定前请勿"顺手统一"**）：
+    **R194：marker 匹配已收敛到单一实现**（`check_fmt_gate.run(..., markers=FMT_COLD_MARKERS)`），
+    本函数只保留**档位策略**（哪一档算什么严重度）。行为与 R174 之前逐字一致：
 
-    | 面 | 本函数 | `check_fmt_gate.run` |
+    | 顺序 | 判定 | 归到 |
     |---|---|---|
-    | 档数 | 4 | 3 |
-    | 冷格式化器 marker | `FMT_COLD_MARKERS`（3 条，含 `wasm-gc/release/format`） | `BROKEN_SIGNATURES`（3 条，且要求输出含 `_build`） |
-    | `rc==1` | `generation-mismatch`（当"世代差"**软化**，非 strict 时报 DEGRADED） | `red`（**真格式差异**） |
-    | 未知非 0 | `unknown` | `red` |
+    | 1 | `rc == 0` | `clean` |
+    | 2 | **`rc == 1` 先于 marker**（本门的软化策略：世代差） | `generation-mismatch` |
+    | 3 | 输出命中 `FMT_COLD_MARKERS`（**交真源匹配**） | `cold-formatter` |
+    | 4 | 其余 | `unknown` |
 
-    ⇒ 收敛不是搬迁、是**语义取舍**（谁当冷 marker、`rc=1` 软化还是判红）⇒ 需判据主人裁定。
+    为什么不再自己 `any(m in text …)`：R173 的教训是「同一判定的两份实现会悄悄分歧」
+    （本门 `rc=1` 软化、真源判 red）。R194 的做法是**机制收拢、策略留本地**：
+    marker 表仍由本文件持有（它是本门的事实），但**匹配逻辑**只有真源一处。
     """
     if rc == 0:
         return "clean"
     if rc == 1:
         return "generation-mismatch"
-    if any(m in text for m in FMT_COLD_MARKERS):
+    if _fmt_single_source().run(rc, text, markers=FMT_COLD_MARKERS) == "degraded":
         return "cold-formatter"
     return "unknown"
 
