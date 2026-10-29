@@ -53,6 +53,11 @@ def run(moon_rc, output):
     - 只有 rc==0 才是 clean；
     - rc!=0 但输出命中 `_build/…/format/…` 这一族签名 ⇒ degraded（量不出来）；
     - 其余非 0 ⇒ red（真格式差异）。
+
+    ⚠️ **R174：`scripts/fist-gate.py:classify_fmt()` 是另一套判定，本函数不是它的单一真源。**
+    差异（实测）：它是 4 档（多一个 `unknown`）、冷 marker 用 `FMT_COLD_MARKERS`（3 条不同字面量）、
+    且 **`rc==1` 当"世代差"软化**（非 strict 时报 DEGRADED），而本函数把 `rc==1` 判 `red`。
+    R173 曾把 fist-gate 委派到本函数 ⇒ 2 格自检红、已撤回 ⇒ **统一前必须先裁定 marker 与 rc=1 语义**。
     """
     out = output or ""
     if moon_rc == 0:
