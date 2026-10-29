@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 177 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 178 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -10553,6 +10553,66 @@ pub async fn run_server() -> Unit {
           Ok(@mcp.ToolResult::text(Json::object(err).stringify()))
         }
       }
+    },
+  )
+
+  // BUG-477 / Lane DL：`ops_commissar` 接线（**只接 send，不接 watch**）。
+  s1 = instrumented_tool(
+    s1,
+    "commissar_send",
+    "**政委消息·只发送**：把一条政委信号（R1-R4 载荷）经 rhop 写入项目的 `.commissar/events/`，供接收侧同步读取。⚠️ **本工具只发送，当前版本不提供 watch / 订阅能力** —— 底层的 `from_filesystem_with` 在 js 后端不可取消（`fs.watch(persistent:true)` 的 handle 在 `Subscription::dispose()` 后仍不释放，见账本 **BUG-480**），**订阅会让 server 进程永不退出** ⇒ 接收侧请用同步读取（读 `.commissar/events/*.rhop` → `RhopEnvelope::decode` → `decrypt` → `RhopPacket::from_json_text`）。本项目**不注册** `commissar_watch`，也不注册任何订阅型工具。参数：project_dir(必填，信号落 `<project_dir>/.commissar/`)、kind(必填，信号类别：guidance / heartbeat / reminder / 自定义)、target(必填，目标角色或 agent)、text(必填，正文)、namespace(可选，默认 default；随 `CommissarSignal.ns` 落盘，供多租户区分)。返回 {ok, id, kind, target, namespace, events_dir, log_path, note}。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录（必填）；信号落到 <project_dir>/.commissar/events/",
+        ),
+        "kind": string_prop(
+          "信号类别（必填）：guidance（R1 引导）/ heartbeat（R4 心跳汇报）/ reminder（提醒）/ 自定义",
+        ),
+        "target": string_prop("目标角色或 agent（必填）"),
+        "text": string_prop("正文（必填）"),
+        "namespace": string_prop(
+          "命名空间（可选，默认 default；随信号落盘供多租户区分）",
+        ),
+      },
+      ["project_dir", "kind", "target", "text"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let kind = get_str(args, "kind")
+      let target = get_str(args, "target")
+      let text = get_str(args, "text")
+      let ns = get_str(args, "namespace", default="default")
+      if project_dir == "" || kind == "" || target == "" {
+        return Err(
+          @mcp_types.ToolError(
+            "commissar_send: project_dir / kind / target 均必填",
+          ),
+        )
+      }
+      // at_ms：用 store 侧已盖章的时间不可得 ⇒ 这里取进程时间。
+      // ⚠️ 只用作信号 id 与落盘时间戳，**不参与任何裁决**（时间戳由服务端盖章的政策
+      //   针对的是「调用方可注入的审计时间」，本字段是发送时刻的本地读数）。
+      let at_ms = @env.now().reinterpret_as_int64()
+      let sig = @ops.CommissarSignal::new(kind~, target~, text~, ns~)
+      @ops.commissar_send(project_dir, sig, at_ms)
+      let out : Map[String, Json] = Map([])
+      out.set("ok", Json::boolean(true))
+      out.set("kind", Json::string(kind))
+      out.set("target", Json::string(target))
+      out.set("namespace", Json::string(ns))
+      out.set(
+        "events_dir",
+        Json::string(@ops.commissar_events_dir(project_dir)),
+      )
+      out.set("log_path", Json::string(@ops.commissar_log_path(project_dir)))
+      out.set(
+        "note",
+        Json::string(
+          "已写入 events 目录。⚠️ 本工具只发送；接收侧请**同步读取**（勿订阅：BUG-480 下订阅会让进程永不退出）。",
+        ),
+      )
+      Ok(@mcp.ToolResult::text(Json::object(out).stringify()))
     },
   )
 
