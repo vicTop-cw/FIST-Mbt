@@ -199,7 +199,12 @@ def superseded_probe(base, branch, prefixes=("src/", "scripts/", "cmd/", "plugin
     return superseded_decision(hits), hits
 
 
-def content_contained_probe(base, branch, prefixes=("src/", "scripts/", "cmd/")):
+def content_contained_probe(base, branch,
+                            prefixes=("src/", "scripts/", "cmd/", "docs/", "reports/")):
+    # R181：**把 docs/ 与 reports/ 也纳入包含面**。实测动机：`docs/fist-gate-degraded-analysis-r41`
+    # 的全部改动都是 docs（一份新报告 + 账本 3 行），R171 已把内容手工合入 ⇒ 内容确实"已含"，
+    # 但旧探针只看产品面 ⇒ 返回"支未触碰产品文件" ⇒ 仍判 conflict（**已合过的支永远红着**）。
+    # 对 append-only/只增不减的文档，行数比较依然成立。
     """R161：对**冲突支**取数，交给 `contained_decision` 裁。
 
     取数口径（全部只读 git，不碰工作树）：
