@@ -66,16 +66,58 @@ if _unknown:
     print("FATAL 未知参数：%s（本尺只接受：%s）" % (" ".join(_unknown), " ".join(sorted(_known))))
     sys.exit(2)
 
+def _base_ref():
+    """解析「即将进主线的新 commit」的 base ref —— **R202 修**。
+
+    **原实现写死 `origin/main`**。R202 实测发现两个问题叠在一起：
+
+    1. 本仓主力分支叫 **`master`**（`origin/HEAD → origin/master`）；
+    2. 远端**还残留一个陈旧的 `origin/main`**（落后 HEAD **779 笔**）。
+
+    ⇒ 写死 `origin/main` 让扫描面永远是「最近 779 笔」，而该尺自述契约是
+    「只扫即将进主线的新 commit，不扫全部历史（否则一开判就红死）」——
+    于是它在**已落地**的 `f5035ee7`（引用 BUG-482）上永久报红，读数与契约相反。
+
+    **修法：不猜名字，选「最接近 HEAD 的 base」**——对每个候选算 `rev-list --count <ref>..HEAD`，
+    取**最小**者（= 最新鲜的远端基线）。这样 `master` 被选中的自然原因是它更近，
+    而不是因为代码里碰巧先写了它；将来分支改名 / 换默认分支也无需再改代码。
+
+    候选：`origin/main` / `origin/master` / `origin/HEAD` / `@{upstream}`；
+    一个都不存在才退回最近 20 条，并在输出里**明说降级**（判据无法自证时不静默）。
+    """
+    best, best_ahead = None, None
+    for ref in ("origin/main", "origin/master", "origin/HEAD", "@{upstream}"):
+        if git("rev-parse", "--verify", "--quiet", ref).returncode != 0:
+            continue
+        r = git("rev-list", "--count", "%s..HEAD" % ref)
+        try:
+            ahead = int((r.stdout or "0").strip())
+        except ValueError:
+            continue
+        if best_ahead is None or ahead < best_ahead:
+            best, best_ahead = ref, ahead
+    if best is None:
+        return "-20", False, None
+    return best, True, best_ahead
+
+
 def scan(ledger):
     """扫描未推送 commit message，返回 [(sha8, bug_id, msg首行)] 孤儿引用（按 bug_id 去重）。
 
-    只扫 `origin/main..HEAD`（即将进 main 的 commit），不扫全部历史——这样判据
+    只扫 base..HEAD（即将进主线的新 commit），不扫全部历史——这样判据
     是「新 commit 不得引入幽灵编号」，而不是对既有历史算总账（后者一开判就红死）。
-    origin/main 不存在时退回最近 20 条（判据无法自证时仍给出读数面）。
+    base 由 `_base_ref()` 解析；解析不到才退回最近 20 条，且**如实标注降级**。
     """
-    r = git("log", "--format=%H%x00%B", "origin/main..HEAD")
+    base, exact, ahead = _base_ref()
+    if exact:
+        print("  扫描面 base=%s（ahead=%d 笔）" % (base, ahead or 0))
+    r = git("log", "--format=%H%x00%B", "%s..HEAD" % base if exact else base)
     if r.returncode != 0:
         r = git("log", "--format=%H%x00%B", "-20", "HEAD")
+        exact = False
+    if not exact:
+        print("  ⚠️ 降级：解析不到 origin/main|origin/master|origin/HEAD|@{upstream}，"
+              "本发只扫最近 20 条（判据无法自证，请勿据此判历史总账）")
     orphan = {}
     for chunk in r.stdout.split("\n"):
         if not chunk.strip():
