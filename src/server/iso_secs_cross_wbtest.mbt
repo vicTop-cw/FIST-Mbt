@@ -54,7 +54,8 @@ test "iso_to_secs: 两份实现基准不同 + 年界不同（共同窗口 2024..
   let off = 1703980800
   assert_eq(@ops.iso_to_secs("2024-01-01T00:00:00Z"), 86400)
   assert_eq(@router.iso_to_secs("2024-01-01T00:00:00Z"), 1704067200)
-  for s in [
+  for
+    s in [
       "2024-01-01T00:00:00Z", "2026-09-26T13:37:55Z", "2037-12-31T23:59:59Z",
     ] {
     let o = @ops.iso_to_secs(s)
