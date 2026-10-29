@@ -318,6 +318,26 @@ SPECIAL_CASES = [
     #    `--no-run` 可跳过「真跑判据核 rc 条件」（快，但不核 rc 类条件）。
     case("check_known_red_until.py"),
     case("check_known_red_until.py", "--selftest"),
+    # —— 台账「理由」列的**可执行证据**判据（Lane DW，判据体系第 7 层）——
+    # 前 6 层查「有没有登记 / 数量对不对 / 形态对不对 / 到期日」，
+    # **一条都没查「理由本身是不是可核的」** —— 那是人工抽查（Gamma §4 的「5/5 仍成立」），
+    # **下次没人为它做，它就没了**。本判据把 R1~R4 机核：
+    #   R1 非空 · R2 至少一处引用 · R3 引用的文件存在 · R4 行号 ≤ 文件行数。
+    # ⚠️ **力量上限写进 docstring**：它证明「理由指向了仓里真实存在的东西」，
+    #    **不证明「那个东西支持这条理由」**（第 8 层需语义理解，本判据不碰也不假装能碰）。
+    #    R4 只核「≤ 文件行数」不核「那行内容对不对」—— 判例 R46：行号是代码的属性，
+    #    要求精确会让台账变「天天要改的负担」⇒ 必然被放弃。
+    # **已知红（真读数）**：真台账 9 条里 **2 条纯散文**（L1 `result_error_return` 的
+    #    「刻意的结构约束」/ L7 FFI 边界的「要同步改 JS 侧」）⇒ rc=1。
+    #    **红的正确处置是「让 Gamma 给这两条补引用」，不是放宽判据。**
+    #    销账条件：台账 L1/L7 补上可核引用 ⇒ 本判据 rc=0 ⇒ 转 case()。
+    case("check_warning_ledger_reason.py", "--selftest"),
+    expected("check_warning_ledger_reason.py", 1, kind="known-red",
+             why="真台账 9 条理由里 2 条是纯散文（L1 结构约束 / L7 FFI 同步改 JS 侧），"
+                 "无可执行证据引用 ⇒ R2 红。**判据本身正确**（selftest 12/12，含 2 变异对照）。",
+             # ⚠️ 判例（R46 立）：标 known-red **必须同时写销账条件**，否则是没有到期日的免检牌。
+             until={"kind": "rc", "value": 0},
+             blame="subject"),
 
     # -- BUG-477: MCP stdio stdout purity (the judge against MY OWN R33 bug) --
     # I added a `println` to run_server() in BUG-476; stdout is the JSON-RPC channel,
