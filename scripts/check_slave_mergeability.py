@@ -97,6 +97,10 @@ def verdict(ahead, pick_rc, conflicts, has_merge, changed, added, base_symbols):
 
 
 COUNT_RE = re.compile(r"([A-Za-z][A-Za-z0-9 _\-]{1,24}?|\u4e00-\u9fff{1,8})\s*(\d{1,6})")
+# R164：「数字在前」形态（`(177 MCP tools)` / `共 26 格`）—— 反向一条。
+# 为什么要两条：help_topics 的工具总数是 `(177 MCP tools)`，只有反向正则抓得到；
+# 少了它，R163 那支只能靠分组计数（`[Board-DAG 27]`）判出来，**主计数反而看不见**。
+COUNT_REV_RE = re.compile(r"(\d{1,6})\s+([A-Za-z][A-Za-z0-9_\-]*(?: [A-Za-z][A-Za-z0-9_\-]*)*)")
 
 
 def count_marks(text):
@@ -112,6 +116,15 @@ def count_marks(text):
             out[label] = int(m.group(2))
         except ValueError:
             continue
+    # R164：反向形态（数字在前）。**同 label 只认第一次出现**，避免后出现的噪声覆盖主计数。
+    for m in COUNT_REV_RE.finditer(text):
+        label = m.group(2).strip()
+        try:
+            n = int(m.group(1))
+        except ValueError:
+            continue
+        if label and label not in out:
+            out[label] = n
     return out
 
 
@@ -511,6 +524,14 @@ def selftest():
     cell("superseded-decision-any-regression-true",
          superseded_decision(count_regressions("[Other 9]", "[Other 12]")), True)
     # 标签只在单侧出现 ⇒ 不算倒退（可能是新增段落）
+    # R164：**数字在前**形态（`(177 MCP tools)`）必须抓到 —— R163 的已知局限
+    cell("count-marks-reverse-form-label-whole",
+         count_marks("(177 MCP tools)") == {"MCP tools": 177}, True)
+    cell("count-marks-reverse-form-catches-label",
+         count_marks("(177 MCP tools)").get("MCP tools"), 177)
+    cell("count-regression-reverse-form",
+         [x[:1] for x in count_regressions("(174 MCP tools)", "(177 MCP tools)")],
+         [("MCP tools",)])
     cell("count-regression-ignores-new-label",
          count_regressions("[NewGroup 3]", "[Old 5]"), [])
     # 一行不满足就整体否定（不能因为有 3 个文件已包含就放行第 4 个缺口）
