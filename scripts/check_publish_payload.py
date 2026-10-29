@@ -11,6 +11,15 @@
 判据（两个方向都发红）：
   P1  未被 .gitignore 挡住、又**没有被 git 跟踪**的非点号文件 ⇒ 红：下一次 `moon publish` 会把它公开出去。
       （这正是 `__cli_pkg.mbt.tmp` 的形状；跟踪文件是有意公开的，不在红面里。）
+
+      ⚠️ **R205 观察：P1 的绝大多数命中不是"临时件"，而是"新写的交付物忘了 `git add`"。**
+      实测连续三轮、三个不同 lane、三个不同文件：
+        `docs/warning-ledger.md`（R195）→ `scripts/check_warning_ledger.py`（R198）→
+        `docs/plans/decisions/2026-10-29-challenge-level.md`（R205）。
+      三者都是**该被跟踪的真交付物**，只是作者写完还没提交。
+      ⇒ **看到 P1 的第一反应应该是 `git add`（若确属交付物），而不是加 `.gitignore`**；
+      把它 ignore 掉等于让一份该公开的文档永远进不了发布载荷。
+      （若同一文件每次轮询都红着，先查它是否仍在别人手里 —— 未跟踪 + 有 WIP 标记 = 在飞，别抢。）
   P2  红面里若出现凭据形状（`ghp_`/`github_pat_`/`sk-`/`Bearer`/`PRIVATE-TOKEN:`/slack-telegram webhook）⇒ 单独点名，
       这类不是卫生问题而是事故，必须当场人审。
   P3  扫描面自证：git 不可用 / 一条文件都没列出来 ⇒ FATAL(2)（判据看不见样本就等于没判，J10/BUG-118 同族）。
