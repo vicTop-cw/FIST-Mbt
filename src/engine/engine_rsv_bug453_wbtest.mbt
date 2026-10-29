@@ -54,7 +54,7 @@ fn bug453_auth_tag_body() -> String {
   // deprecated substring → 切片。安全性：`end < 0` 已在 :50-52 abort，
   // 且 start/end 都来自上面 find 循环的合法索引 ⇒ 落在 [0, len] 边界内
   // （B0/B1 区间，与 substring 实测同值）。
-  raw[start:end].to_string()
+  raw[start:end].to_owned()
 }
 
 ///|
