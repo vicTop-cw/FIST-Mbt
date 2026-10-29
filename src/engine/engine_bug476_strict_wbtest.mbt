@@ -49,6 +49,39 @@ test "bug476_s1_strict_without_challenge_is_denied" {
 }
 
 ///|
+/// 【S1b · 实现路径格】错误文案里**真的带上了调用方传的 action**。
+///
+/// ⚠️ 为什么要单独一格（判例-29「机制格 ≠ 实现路径格」）：
+///   S1 只断言了 `msg.contains("agent_register_key")` / `"FIST_AUTH_MODE"` ——
+///   **这两个都是文案里的固定字面量，与 `action` 参数无关** ⇒
+///   实测踩过：文案曾写成**单花括号** `"{action} …"`（MoonBit 插值必须反斜杠加花括号），
+///   于是 `action` 参数**从未被读取**（编译器报 unused_value），而 **S1 全绿** ——
+///   锁测了「门会拒」，没测「文案带对了 action」。
+///   ⇒ 本格把「action 真的拼进去了」变成可断言的事实。
+///
+/// **变异对照**：把插值改回单花括号 ⇒ 本格必红（`msg.contains(act)` 失败 + 残留占位符）。
+test "bug476_s1b_action_is_interpolated_into_message" {
+  for act in ["reserve_scope", "lock_acquire", "claim"] {
+    match strict_challenge_denial("challenge_missing", act) {
+      Some(msg) => {
+        if !msg.contains(act) {
+          abort(
+            "BUG-476 文案里没有 action=" +
+            act +
+            " —— 插值没生效（MoonBit 必须写反斜杠花括号，单花括号只是字面文本）",
+          )
+        }
+        // 反脱锚：不能出现**未展开的占位符**
+        if msg.contains("{action}") {
+          abort("文案里残留了字面量占位符 —— 插值语法写错了")
+        }
+      }
+      None => abort("challenge_missing 应产生 Some")
+    }
+  }
+}
+
+///|
 /// 【S2】`strict` + 验签通过（`challenge_verified`）⇒ 门层**不拒**。
 ///
 /// 真 Ed25519 全链路由 `engine_bug430_*` 的锁负责；这里只钉「门放行」。
@@ -125,7 +158,7 @@ test "bug476_s5_startup_warning_is_wired_in_run_server" {
     Some(i) => {
       let hi = if i + 4000 < code.length() { i + 4000 } else { code.length() }
       let rest = code[i:hi].to_owned()
-      if !(rest.contains("auth_mode_startup_warning()")) {
+      if !rest.contains("auth_mode_startup_warning()") {
         abort(
           "BUG-476 **startup_warning 未被 run_server 调用** —— 函数存在但没接线（判例-29）",
         )

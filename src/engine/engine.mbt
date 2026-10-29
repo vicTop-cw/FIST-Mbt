@@ -1590,6 +1590,13 @@ pub enum DepsState {
 } derive(Eq, Debug)
 
 ///|
+/// **显式 extend（BUG-478 清理 warn）**：见 `auth_mode.mbt` 同名说明。
+pub extend DepsState with Eq::{not_equal, equal}
+
+///|
+pub extend DepsState with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
 /// 依赖体检报告：三态结论 + 点名（哪个缺了、哪个还没完成）。
 ///
 /// 两个点名列表**同时**填充，不做"只报一种"的取舍（裁定见 `deps_report`），
@@ -1602,6 +1609,10 @@ pub struct DepsReport {
   /// 存在但未完成的依赖 id（按 `depends_on` 原序、去重）
   pending_deps : Array[String]
 } derive(Debug)
+
+///|
+/// **显式 extend（BUG-478 清理 warn）**：见 `auth_mode.mbt` 同名说明。
+pub extend DepsReport with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
 /// 依赖体检结论是否可执行（等价于 `state == DepsSatisfied`）。

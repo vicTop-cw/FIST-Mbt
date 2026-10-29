@@ -44,7 +44,7 @@ test "audit: enforce 放行与拒绝" {
     Some(r) => r
     None => return
   }
-  let agent = match @ops.Role::from_string("agent") {
+  let _agent = match @ops.Role::from_string("agent") {
     Some(r) => r
     None => return
   }
