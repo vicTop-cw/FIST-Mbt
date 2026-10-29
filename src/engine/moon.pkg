@@ -8,6 +8,9 @@ import {
   "moonbitlang/core/json",
   // BUG-478：auth_mode.mbt 用 @env.get_env_var ⇒ 显式导入（原先靠隐式解析，已弃用）
   "moonbitlang/core/env",
+  // BUG-478 补：R38 加显式 `extend ... with @moonbitlang/core/debug.Debug::{to_repr}` 时
+  // 用了该包但未 import ⇒ 引入 3 个 core_package_not_imported（auth_mode.mbt:53 / engine.mbt:1597/1615）。
+  "moonbitlang/core/debug",
   "moonbitlang/core/math",
   "moonbitlang/x/fs",
   "moonbitlang/core/encoding/utf8",
