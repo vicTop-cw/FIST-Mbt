@@ -231,6 +231,11 @@ SPECIAL_CASES = [
     case("check_byte_slice_truncation.py", "--selftest"),
     # —— R177：**SQL 三方对齐**（列 ↔ VALUES 项 ↔ bind 次数）。R176 人工核过一处
     #    `insert_execution`（11/11 对齐），但仓库还有 21 处 INSERT 无人核。
+    # —— R211：**指令文件超预算**诊断。实测 AGENTS.md 101,115 字节，而 harness 注入上限 65,244
+    #    ⇒ 第 ~591 行之后 10 个章节**任何 agent 都读不到**（含 `## 路径约定`）。
+    #    默认只报告（rc=0）；`--strict` 才判红，留给把文件拆瘦之后的 CI 启用。
+    case("check_instruction_budget.py"),
+    case("check_instruction_budget.py", "--selftest"),
     case("check_sql_bind_alignment.py"),
     case("check_sql_bind_alignment.py", "--selftest"),
     case("check_doc_paths.py"),
@@ -332,12 +337,11 @@ SPECIAL_CASES = [
     #    **红的正确处置是「让 Gamma 给这两条补引用」，不是放宽判据。**
     #    销账条件：台账 L1/L7 补上可核引用 ⇒ 本判据 rc=0 ⇒ 转 case()。
     case("check_warning_ledger_reason.py", "--selftest"),
-    expected("check_warning_ledger_reason.py", 1, kind="known-red",
-             why="真台账 9 条理由里 2 条是纯散文（L1 结构约束 / L7 FFI 同步改 JS 侧），"
-                 "无可执行证据引用 ⇒ R2 红。**判据本身正确**（selftest 12/12，含 2 变异对照）。",
-             # ⚠️ 判例（R46 立）：标 known-red **必须同时写销账条件**，否则是没有到期日的免检牌。
-             until={"kind": "rc", "value": 0},
-             blame="subject"),
+    # ★ **已销账**（Lane DX）：原 known-red 的销账条件 `until={kind:"rc", value:0}`
+    #   已由司令-γ 补齐 L1 / L7 的可核引用满足 —— 现真台账 **9 条全部可核 / rc=0**。
+    #   ⇒ **这正是 until 机制要的形态：债有到期日，条件满足就销账，不留免检牌。**
+    # ⚠️ 本轮另加了 **R5（行号必须指向被引用的东西）** —— 见下方 R5 格的说明。
+    case("check_warning_ledger_reason.py"),
 
     # -- BUG-477: MCP stdio stdout purity (the judge against MY OWN R33 bug) --
     # I added a `println` to run_server() in BUG-476; stdout is the JSON-RPC channel,
