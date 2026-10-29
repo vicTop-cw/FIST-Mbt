@@ -10822,3 +10822,58 @@ dispose() 返回 void、is_disposed() 返回 true —— 但底下 fs.watch 仍�
 依赖侧：../rx-mbt/rhop（rhop_js.mbt:92/132 + watcher_js.mbt:71）+ ../rx-mbt/rx（RX-MBT.mbt:82）
 不是本仓源码，但这个缺口直接卡住 ops_commissar 的 MCP 接线。
 - reported_by: commander-alpha(Lane DL)
+## BUG-481 [2026-10-29T04:07:53Z] [medium] OPEN
+- summary: [ledger] memory/bugs.md 有一条抬头被拼进行尾 —— 该条对 bug_list / gen_plugins 完全不可见，且与另一条共用一个 ID
+- detail: 我在核验 Round 39 账本时发现的（不是本轮引入，是 2026-10-15 的历史损坏）。
+
+## 现象
+
+memory/bugs.md:3838 的一行：
+- evidence: src/hat/hat_report_build.mbt ... 0 errors。<行内被拼接的抬头：BUG-206 / 2026-10-15T10:53:48Z / high / OPEN>
+
+抬头 ## BUG-206 被拼在了「- evidence:」行的行尾，不在行首。
+
+## 后果
+
+1. bug_list 按行首 ^## BUG- 解析 => 该条不可见
+2. gen_plugins 同解析口径 => 「BUG-1~480 共 466 条入账」这个数少 1
+3. 账本统计（grep '] OPEN'）说 2 条 OPEN，但明细只列得出 1 条（BUG-480）；
+   第二条就是这个不可见的 BUG-206（high / OPEN，抬头被拼进行尾）
+
+## 更麻烦的：它和一个 ID 相同的条目并存
+
+memory/bugs.md:3846 有另一个正常抬头：
+  ## BUG-206 [2026-10-15T10:54:32Z] [medium] FIXED   ← dag_mc p90 分位索引
+
+两条是**不同的 bug**，时间戳差 44 秒、严重度不同、summary 完全不同：
+- 行内那条 [high]：ModelQuota::in_cooldown 对 Y2038 后冷却截止静默失效
+- 正常那条 [medium]：dag_mc 的 p90 分位索引比 p50 高 1
+
+而 :3846 之后有两条 ### FIXED(... / BUG-206) 小记，分别对应这两个 bug：
+  ### FIXED(2026-10-15T11:00:04Z / BUG-206)  - evidence: model_router.mbt in_cooldown 加 fail-open  ← ModelQuota
+  ### FIXED(2026-10-15T11:02:29Z / BUG-206)  - evidence: engine_dag_mc.mbt mc_percentile_index  ← dag_mc
+
+=> 两个 bug 都是 FIXED，功能上无损；但**ID 冲突**且**其中一条不可见**。
+
+## 为什么我没直接修
+
+按纪律「绝不改 memory/ 历史数字」。修它需要二选一：
+(a) 拆行 + 给行内那条一个新编号 => 改历史编号
+(b) 拆行 + 把行内那条改成非 ## BUG- 抬头 => 该条永远不被当作 bug 条目
+
+**两种都要人裁决，不是我该单方面做的。** 已备份到 temp/bugs.md.bak-r39。
+
+## 关闭条件
+
+1. 裁决 (a) 还是 (b)（或第三种）
+2. 裁决后修好，且 bug_list 能列出两条、gen_plugins 计数 +1
+3. 加一条判据：**memory/bugs.md 里任何 '## BUG-' 必须出现在行首**
+   （grep -nE '[^\n]## BUG-' 应为 0 命中）—— 防止同类损坏再次发生
+4. 变异对照：故意把某条抬头拼进行尾 => 判据必红
+
+## 相关
+
+同族：本仓的「判据按行首解析」是普遍做法（bug_list / gen_plugins / check_* 都是），
+任何一处行内出现 ## BUG- 都会让它静默消失。
+=> 判据应该正反两面都查：**该出现的必须出现** + **不该出现的形态必须不出现**。
+- reported_by: lead
