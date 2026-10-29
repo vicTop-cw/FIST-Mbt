@@ -10774,7 +10774,7 @@ Combine 的语义是「融合两个父代」=> 前置条件是「有 >=2 个父�
 
 ### FIXED(2026-10-29T02:54:16Z / BUG-479)
 - evidence: commit 7cf9b766。curriculum.mbt 的 Combine 消费面建好了（:123 定义 / :158 mutation_prompt 分支 / :279 字符串化）但生产面 0 处 —— select_mutation 的 4 个分支永不返回它，而 :168 的 docstring 明写「高分（L4）：偏向 Specialize / Combine」⇒ 文档承诺了 Combine 会被选中、代码结构上做不到。根因比「阈值写错」更深：Combine 的语义是「融合两个父代」⇒ 前置条件是「有 >=2 个父代」，而 select_mutation(score) 只有分数没有父代信息 ⇒ 结构上就不可能正确产出它。修法按语义不按阈值：给 select_mutation 加 parents~ : Int = 1，if r >= 0.85 && parents >= 2 { Combine }。零回归：默认 parents=1 ⇒ 现有调用方（只传 score）行为逐字不变；不动 evolve_decision（它不知道父代数，保持现状是对的）。锁：锁 1 select_mutation(0.9, parents=2) == Combine（新能力可达）、锁 2 select_mutation(0.9) == Specialize（零回归）。验证：moon check 0 errors、warning 69→67、全量 1891/1891/0。判例：「有 match 分支」不等于「本该构造」—— 要看那个分支在说什么；本例是正常消费（prompt 文案 + 字符串标签）不是防御性 Err，所以确实是缺失。
-## BUG-480 [2026-10-29T03:05:36Z] [high] OPEN
+## BUG-480 [2026-10-29T03:05:36Z] [high] FIXED
 - summary: [rhop/rx] from_filesystem_with 在 js 后端不可取消 —— Subscription::dispose() 传递不到 fs.watch，订阅者让进程永不退出
 - detail: Alpha 最小复现证明（Lane DL，2026-10-29）。
 
@@ -10824,6 +10824,46 @@ dispose() 返回 void、is_disposed() 返回 true —— 但底下 fs.watch 仍�
 依赖侧：../rx-mbt/rhop（rhop_js.mbt:92/132 + watcher_js.mbt:71）+ ../rx-mbt/rx（RX-MBT.mbt:82）
 不是本仓源码，但这个缺口直接卡住 ops_commissar 的 MCP 接线。
 - reported_by: commander-alpha(Lane DL)
+
+### FIXED(2026-10-29T07:12:05Z / BUG-480)
+- evidence: 关闭依据：已知洞 + 已防护 + 有后续方案。⚠️ 注意：**commissar_poll 未实现**，本单关的是「现有路径的安全」，不是「全做完了」。
+
+## 1. 依赖侧根因已定位（比「有 bug」更精确）
+
+对比两份 watcher_js.mbt：
+- .mooncakes/vicTop-cw/RX-MBT@0.3.0（在用）：G.__rxmbt_watch_reg.get(id) —— id 进 JS 是 BigInt，key 是 number => BigInt(0) !== 0 => 恒 undefined => close() 永不执行
+- ../rx-mbt 0.4.0（本地新版，registry 上没有）：get(Number(id)) —— 已修，且有大段注释解释为什么
+
+=> 不是「依赖有 bug」，是「我们用了 0.3.0」。registry 索引里只有 0.1.0/0.2.0/0.3.0；本仓 moon 0.1.20261016 无 moon dep 子命令不支持路径依赖 => 只能本地补丁。
+
+## 2. 防护已落地并 CI 化
+
+- patches/rx-mbt-bug480/reapply.sh（--force / --verify / 幂等）。patching 时逼出三处真缺陷：①--force 被解析但从未使用（语义说谎）②--force 重打会 FAIL（原始行已被替换 => BEFORE=0 => rc=1）③判例-30 自指假绿（标记行 // PATCHED-BY-BUG480: key normalized to Number(id) 自己就含 Number(id) => grep -c 被自己的标记命中 => 判据恒真）。修法：count_code() 用 grep -v '^// PATCHED-BY-BUG480' 行首锚定排除。
+- CI 接线 3 workflow / 6 处（commit 698095780）：ci.yml（check-and-test-js / check-native / check-windows-js）· fist-ci.yml（test-js / test-native）· release.yml（两个 build 臂）。⚠️ release.yml 是最该接但派单没提的 —— 它打包产物上传 Releases，不打补丁用户装到的仍是带 bug 的版本。插入位置不是「moon update 之后」—— moon update 只拉注册表索引、不解包依赖，.mooncakes 此时不存在，必须在能触发解包的 migrate_mooncakes_modjson.sh 之后（顺序 = migrate -> reapply -> check）。
+- 4 个 workflow 不接（gate / fist-bug-sync / copilot-setup-steps / attest）：只跑 moon build 或 moon 不跑测试，接上去是无意义噪声。
+
+## 3. 决定性判据：进程能退出（不是编译过）
+
+P2 探针（订阅 + dispose）：打补丁前 150 秒超时无汇总行 rc=2；打补丁后 5.06 秒出汇总行 212/212。全量打补丁后 1896/1896/0 33.5 秒。
+⚠️ 判据不是「编译过」、不是「is_disposed() 返回 true」—— Alpha 已证明那个会骗人。
+
+## 4. 现有路径不再泄漏句柄
+
+commissar_watch 只 subscribe、不保存 sub 句柄、从不 dispose => 补丁只让「dispose 时能 close」，而这个函数根本不 dispose => 一旦注册成 MCP 工具 server 依然永不退出。=> 撤回注册，本项目不注册 commissar_watch。工具描述写明「只发送，不提供 watch / 订阅能力」并引用本单编号。
+
+## 5. 后续方案（未实现，勿误读为已做）
+
+设计草案 docs/plans/2026-10-29-commissar-poll-proposal.md（a614aa678）回答三个关键问题：since_seq 由调用方传（服务端无状态，因为「服务端记」假定只有一个消费者而本仓是多 agent 并发）· 「已读」不做（调用方本就有 next_seq）· 目录堆积靠生产侧分桶 + 新增 commissar_gc。
+实现未做，卡在 API 事实：@fs 只有 path_exists/read_dir/read_file_to_string/write_string_to_file/create_dir/remove_dir/remove_file，没有 stat/mtime/metadata => 按 mtime 排序与 gc(older_than_hours) 都不可行 => 设计改为 gc(keep~) + seq 从文件名 sig-<at_ms>-<counter> 解析。骨架留 temp/ops_commissar_poll.mbt.beta-wip（不进编译树）。
+
+## 6. 判例
+
+> 「资源释放」的调用成功 ≠ 资源真的释放了。dispose() 返回 void、is_disposed() 返回 true —— 但底下 fs.watch 仍然 persistent: true。判「有没有泄漏」必须看进程能否退出。
+> 同族判例-29「机制格 ≠ 实现路径格」—— 本条是「调用格 ≠ 生效格」。
+> 「依赖有 bug」与「用了旧版依赖」是两件不同的事 —— 后者更常见，而验证成本极低（一条 grep version）。
+> 判例-30 的自我保护：标记行不能包含被搜索的模式串。它骗过的不只是脚本，也骗过「用 grep 验证」的人（含统帅本人）。
+> WIP 隔离是硬纪律，不是好习惯。任何停下来的 lane 只要留着编译错误，就等于给全团队上了一把锁。
+> 「试不动」和「不想试」是两件事：偶发错误=修一个少一个（继续试）；假设系统性错误=修一个下一层还有一个（改设计或停）。
 ## BUG-481 [2026-10-29T04:07:53Z] [medium] FIXED
 - summary: [ledger] memory/bugs.md 有一条抬头被拼进行尾 —— 该条对 bug_list / gen_plugins 完全不可见，且与另一条共用一个 ID
 - detail: 我在核验 Round 39 账本时发现的（不是本轮引入，是 2026-10-15 的历史损坏）。
