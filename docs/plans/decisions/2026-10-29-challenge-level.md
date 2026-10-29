@@ -14,7 +14,8 @@ plan: docs/2026-10-18-fist-mbt-rank-wiring-report.md
 
 1. **语义**：源任务与变体的关系是「同源更难」，不是「上下级」。继承会把军衔从「指挥层级」变成「血缘」。
 2. **真源一致**：`level` 的真源是「任务在本棵树里的指挥层级」；`challenge` 产出的是**新根**
-   （`parent_id` 指向源任务仅作溯源），新根以连长级起步与 `publish` 的缺省 `level=6` 一致，
+   （**`parent_id` 为空** —— 新根就是新根，不引入父子关系；源任务关系只由 description 里的
+   `from <源 id>` 承担，那是**溯源**不是**树归属**），新根以连长级起步与 `publish` 的缺省 `level=6` 一致，
    符合 `docs/2026-10-12-fist-mbt-web-dashboard-plan.md` §8.1「默认连长级」。
 3. **防语义漂移**：继承会让「升阶挑战」意外携带源任务的高军衔，进而改变看板读数与派单展示，
    而这种改变没有任何一层是**有意设计**的。
@@ -29,3 +30,17 @@ plan: docs/2026-10-18-fist-mbt-rank-wiring-report.md
 1. 新增回归锁：`challenge` 新根的 `level == 6`，且 `parent_id` 仍指向源任务（溯源不变）；
 2. **变异对照**：把接线改成「继承源任务 level」⇒ 该锁必红（判例-29/30：改的是代码不是注释）；
 3. 文档同步：`docs/2026-10-18-fist-mbt-rank-wiring-report.md` 的「待裁决」条目标注已裁决并指向本文件。
+
+## 订正（2026-10-29 · 终审时修正）
+
+本裁决初稿「依据 2」曾写「`parent_id` 指向源任务仅作溯源」——**这句是错的**（把 2026-10-18 报告里
+「未显式接线」误读成了「接线了、只是没写 level」）。实现事实：
+
+- `challenge` 建根走 `@core.Task::new(...)` 时**既不传 `level` 也不传 `parent_id`** ⇒ 新根 `parent_id = None`；
+- 溯源由 `pick.desc` 里的 `from <源 id>` 承担。
+
+**口径（以此为准）**：新根 `level == 6`、`parent_id == None`、`children_of(源)` 为空。
+
+⚠️ **不要**为了"补齐溯源"去接线 `parent_id=Some(源)` —— 那会让"新根"在看板树 / DAG 里变成源的**子节点**，
+正是本裁决「依据 1：同源更难 ≠ 上下级」要防的形态。回归锁已按此口径钉住：
+`src/engine/engine_challenge_level_wbtest.mbt`（变异对照：`level=src.level` ⇒ 2/2 红；改期望值 ⇒ 2/2 红）。

@@ -178,6 +178,11 @@ pub fn FistEngine::challenge(
         )
       }
       let new_id = self.first_free_root_id()
+      // ⚠️ **故意不传 `level`**（2026-10-29 裁决，见 docs/plans/decisions/2026-10-29-challenge-level.md）：
+      //    挑战变体是「同源更难」，不是「上下级」⇒ 新根**不继承**源任务军衔，落回 `Task::new`
+      //    缺省的 6（连长级），与 `publish` 缺省一致。也没有 `parent_id`：新根就是新根，
+      //    源任务关系只由 `pick.desc` 里的 `from <id>` 承担（那是溯源，不是树归属）。
+      //    回归锁：src/engine/engine_challenge_level_wbtest.mbt（改成 `level=src.level` 必红）。
       let child = @core.Task::new(
         id=new_id,
         project_dir=src.project_dir,
