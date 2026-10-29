@@ -21,6 +21,7 @@ cherry-pick 时撞冲突（append-only 日志、`scripts/README.md` 追加重叠
 """
 import argparse
 import atexit
+import signal
 import io
 import re
 import os
@@ -286,6 +287,7 @@ def adjust_kind(kind, changed):
 
 
 def scan(base, remotes, keep=False, limit=0, include="/slave/"):
+    sweep_stale_worktrees()
     bs = branches(remotes, include)
     if limit:
         bs = bs[:limit]
@@ -298,7 +300,7 @@ def scan(base, remotes, keep=False, limit=0, include="/slave/"):
     # `finally` 没机会跑 ⇒ `%TEMP%` 里堆了 **27 个完整 checkout 的 worktree**，
     # 最终把系统吃到 `OSError [WinError 1455] 页面文件太小`（连 spawn 子进程都失败）。
     # `selftest` 从 BUG-409 起就有这层保护，`scan` 一直漏着（判例-33 同族：保护只加在一条路径上）。
-    atexit.register(_cleanup_paths, tmp, wt)
+    register_cleanup(tmp, wt)
     rc, out = git("worktree", "add", "--detach", wt, base)
     if rc != 0:
         print("FATAL 建临时 worktree 失败：%s" % out.strip()[:200])
@@ -466,6 +468,73 @@ def _cleanup_paths(*paths):
             )
 
 
+# R169：**信号路径也要清理**。`timeout` 发的是 SIGTERM，Python 默认**不跑 atexit** 就退出
+# ⇒ R165 的 atexit 兜底在这条路径上等于没有（实测：被 timeout 杀掉后仍留 2 个 worktree）。
+_CLEANUP_TARGETS = []
+
+
+def sweep_stale_worktrees(verbose=True):
+    """R169：**启动自愈** —— 清扫上次被硬杀遗留的临时 worktree。
+
+    为什么必须这样做（实测）：Windows + Git-Bash 的 `timeout` 通过 TerminateProcess 终止进程，
+    **`atexit` 与 `signal` 处理器都不会跑**（R169 kill-test：`timeout 45` 后仍留 2 个 worktree）。
+    ⇒ 光靠"优雅退出的清理"在这平台上是**无效承诺**；唯一可靠的是**下次启动先扫**。
+
+    只清**本脚本自己前缀**的路径（`mergeability-*`），不碰任何别人的 worktree；
+    清理失败只告警不中断（清理是帮助，不是前置条件）。
+    """
+    rc, out = git("worktree", "list", "--porcelain")
+    if rc != 0:
+        return 0
+    removed = 0
+    tmp_root = tempfile.gettempdir()
+    for block in out.split("\n\n"):
+        path = ""
+        for line in block.splitlines():
+            if line.startswith("worktree "):
+                path = line[len("worktree "):].strip()
+        if not path:
+            continue
+        base = os.path.basename(os.path.dirname(path))
+        if not base.startswith("mergeability-"):
+            continue
+        if not os.path.abspath(path).startswith(os.path.abspath(tmp_root)):
+            continue  # 路径不在 temp 下 ⇒ 不是我们建的，绝不删
+        git("worktree", "remove", "--force", path)
+        parent = os.path.dirname(path)
+        if os.path.isdir(parent):
+            shutil.rmtree(parent, ignore_errors=True)
+        removed += 1
+    if removed:
+        git("worktree", "prune")
+        if verbose:
+            print("  [自愈] 清扫上次遗留的临时 worktree：%d 个" % removed)
+    return removed
+
+
+def register_cleanup(tmp, wt):
+    """登记一处临时 worktree：atexit（正常退出）+ 信号（被 kill）双路清理。"""
+    _CLEANUP_TARGETS.append((tmp, wt))
+    atexit.register(_cleanup_paths, tmp, wt)
+
+
+def _on_signal(signum, _frame):
+    for tmp, wt in list(_CLEANUP_TARGETS):
+        try:
+            _cleanup_paths(tmp, wt)
+        except Exception:
+            pass
+    # 退出码沿用 shell 约定：SIGTERM ⇒ 143，SIGINT ⇒ 0（用户主动中断不算失败）
+    sys.exit(0 if signum == signal.SIGINT else 143)
+
+
+for _sig in (signal.SIGTERM, signal.SIGINT):
+    try:
+        signal.signal(_sig, _on_signal)
+    except (ValueError, OSError):
+        pass  # 非主线程/平台不支持 ⇒ 只剩 atexit 兜底（诚实降级，不静默冒充已接线）
+
+
 def selftest():
     """临时仓库造 clean / conflict / contained 三支，断言分类与真实 cherry-pick 行为。"""
     cells = []
@@ -534,8 +603,22 @@ def selftest():
     # ⇒ 系统资源耗尽（WinError 1455）。只断言"有 atexit 机制"不够，必须断言**它在 scan 里**。
     import inspect as _inspect
     _scan_src = _inspect.getsource(scan)
-    cell("scan-registers-atexit-cleanup",
-         "atexit.register(_cleanup_paths" in _scan_src, True)
+    # R169：改成 register_cleanup（atexit + 信号双路）；同时断言信号处理器真的装了 ——
+    # 只断言"有清理"不够，`timeout` 杀的那条路径上必须也有（实测泄漏 2 个）。
+    cell("scan-registers-cleanup", "register_cleanup(tmp, wt)" in _scan_src, True)
+    cell("signal-handler-installed",
+         "_on_signal" in _inspect.getsource(_on_signal), True)
+    cell("signal-handler-cleans-targets",
+         "_cleanup_paths(tmp, wt)" in _inspect.getsource(_on_signal), True)
+    # R169：**平台事实** —— Windows 的 TerminateProcess 让 atexit/signal 都跑不到，
+    # 所以清理必须有"启动自愈"这条路径（只断言 atexit 存在会给出安全的错觉）。
+    cell("scan-sweeps-stale-worktrees-first",
+         "sweep_stale_worktrees()" in _scan_src, True)
+    _sweep_src = _inspect.getsource(sweep_stale_worktrees)
+    cell("sweep-only-touches-own-prefix",
+         "mergeability-" in _sweep_src, True)
+    cell("sweep-refuses-outside-temp",
+         "startswith(os.path.abspath(tmp_root))" in _sweep_src, True)
     cell("scan-still-has-finally-cleanup",
          "git(\"worktree\", \"remove\"" in _scan_src, True)
 
