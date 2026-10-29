@@ -50,11 +50,18 @@ A2 = re.compile(r"for a in sys\.argv if ")
 # `check_warning_ledger.py`（R199）—— 三次都是"新脚本没兜住未知旗标"，由 `check_arg_face_strict` 事后抓。
 # 这条规则把**事后**变成**提交时**：新脚本要么用 argparse（天生拒绝），要么有白名单。
 A3_SCAN = re.compile(r'"[^"\n]*--[a-z][\w-]*[^"\n]*"\s+in\s+(?:sys\.)?argv')
+# R203：**识别面要宽，否则 advisory 会变成狼来了**。实测两个误报：
+#   · `check_script_single_copy.py` 用 `if argv: print(...); return 2`（**整体拒绝**剩余参数）
+#   · `issue_scan.py` 用 while 显式分派 + 未知分支（实测 `--definitely-not-real` ⇒ **rc=2**）
+# 两者都是合格的守卫，只是形状不在 R200 那四种里 ⇒ 补齐。
 A3_GUARD = (
     re.compile(r"argparse\.ArgumentParser\s*\("),
     re.compile(r"not\s+in\s+[\(\[]"),          # `a not in ("--selftest", …)`
     re.compile(r"not\s+in\s+_?[A-Z_]{3,}\b"),  # `a not in _KNOWN_FLAGS`
     re.compile(r"unknown\s*=\s*\["),           # 显式收集未知旗标
+    re.compile(r"if\s+argv\s*:"),              # 整体拒绝：剩下任何参数都算未知（R203）
+    # 显式分派 + 未知分支：**消息里点名"不认识/未知"** 且伴随非零退出
+    re.compile(r"(不认识的参数|未知参数|未知旗标|unrecognized|unknown\s+arg)"),
 )
 # 逃生口：确实不需要参数门的脚本（例如纯库/纯函数）在文件里写这一句
 A3_SUPPRESS = "hygiene: no-arg-gate"
@@ -97,10 +104,15 @@ def check_text(rel, text):
     # A3（R200）：扫旗标但不拒绝未知 ⇒ 拼错自检开关会静默跑真检查（同族实测三次）
     if A3_SCAN.search(text) and not any(g.search(text) for g in A3_GUARD) \
             and A3_SUPPRESS not in text:
-        adv.append("%s: A3(建议) 扫了 `--flag in argv` 但**没有拒绝未知旗标** —— 拼错自检开关"
+        adv.append("%s: A3(建议·**低精度**) 扫了 `--flag in argv` 但**没有拒绝未知旗标** —— 拼错自检开关"
                    "（`--self-test`）会被吃下并**静默跑真检查**（R197/R198/R199 同族三次）。"
                    '修法：argparse，或白名单 `if unknown: print(...); return 2`；'
-                   '确实不需要参数门就写 `%s`' % (rel, A3_SUPPRESS))
+                   '确实不需要参数门就写 `%s`。'
+                   '⚠️ **R203 实测：本规则当前 6/6 误报**（`issue_scan`/`check_script_single_copy`/'
+                   '`refresh_dist`/`git_env`/`store_isolation_probe` 等用 while 分派或整体拒绝，'
+                   '实测拼错旗标都能 rc=2）⇒ **先自己跑一次 `python <script> --definitely-not-real` 验证，'
+                   '再据它改代码**；真正的行为级门是 `check_arg_face_strict.py`（已在电池里）'
+                   % (rel, A3_SUPPRESS))
     return out, adv
 
 
@@ -175,6 +187,13 @@ def selftest():
         'unknown = [a for a in argv if a.startswith("-") and a not in _KNOWN]\n'
         "if unknown:\n    return 2\n"
     )
+    # R203：两种"合格但形状不同"的守卫不许误报
+    good_a3_blanket = 'if argv:\n    print("不认识的参数")\n    return 2\n'
+    good_a3_dispatch = 'else:\n    print("FAIL 未知参数")\n    sys.exit(2)\n'
+    cell("A3-blanket-reject-not-flagged",
+         not any("A3" in p for p in check_text("x.py", good_a3_blanket)[1]))
+    cell("A3-message-named-not-flagged",
+         not any("A3" in p for p in check_text("x.py", good_a3_dispatch)[1]))
     cell("A3-bad-is-advisory", any("A3" in p for p in check_text("x.py", bad_a3)[1])
          and not any("A3" in p for p in check_text("x.py", bad_a3)[0]))
     cell("A3-argparse-not-flagged", not any("A3" in p for p in check_text("x.py", good_a3_ap)[1]))
