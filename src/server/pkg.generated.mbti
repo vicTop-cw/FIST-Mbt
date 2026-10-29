@@ -264,8 +264,6 @@ pub fn wt_unregistered(Array[Json], Array[String]) -> Array[Json]
 // Errors
 
 // Types and methods
-type AclIdentity
-
 type ScanCtx
 
 pub enum WriteVerdict {

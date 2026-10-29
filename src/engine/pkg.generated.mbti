@@ -158,6 +158,9 @@ pub enum AuthMode {
   Soft
   Strict
 } derive(Eq, @debug.Debug)
+pub fn AuthMode::equal(Self, Self) -> Bool
+pub fn AuthMode::not_equal(Self, Self) -> Bool
+pub fn AuthMode::to_repr(Self) -> @debug.Repr
 pub fn AuthMode::to_string(Self) -> String
 
 pub struct DepsReport {
@@ -166,6 +169,7 @@ pub struct DepsReport {
   pending_deps : Array[String]
 } derive(@debug.Debug)
 pub fn DepsReport::is_satisfied(Self) -> Bool
+pub fn DepsReport::to_repr(Self) -> @debug.Repr
 
 pub enum DepsState {
   DepsSatisfied
@@ -173,6 +177,9 @@ pub enum DepsState {
   DepsMissing
   DepsNoTask
 } derive(Eq, @debug.Debug)
+pub fn DepsState::equal(Self, Self) -> Bool
+pub fn DepsState::not_equal(Self, Self) -> Bool
+pub fn DepsState::to_repr(Self) -> @debug.Repr
 pub fn DepsState::to_string(Self) -> String
 
 pub struct FistEngine {
