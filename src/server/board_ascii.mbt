@@ -142,9 +142,10 @@ fn append_group(
     let full_desc = t.get_description()
     let mut desc = full_desc
     if desc.length() > 40 {
-      // R152：**中文 description 的字节硬切会切在字符中间**（半个汉字 ⇒ 乱码）。
-      // 走 @core.clip_utf8（全仓唯一的 UTF-8 边界安全截断真源）。
-      desc = @core.clip_utf8(desc, 40) + "…"
+      // R185 更正：MoonBit 的 `String` 索引/长度是**字符**粒度（实测 "一二三".to_array().length()==3），
+      // `desc[0:40]` 本来就**不会**切出半个汉字 ⇒ R152 的"中文硬切"是**误报**。
+      // 而 `clip_utf8` 的 cap 是**字节** ⇒ 用它会把 40 字符缩成 ~13 汉字（信息损失）。
+      desc = desc[0:40].to_owned() + "…"
     }
     // R55：看板每行标注自身难度档（复用 pub extract_difficulty 单一来源，支柱①②"一目了然+复用"）
     let mut diff_note = ""
