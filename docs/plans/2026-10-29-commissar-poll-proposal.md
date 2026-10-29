@@ -129,3 +129,108 @@ pub fn commissar_poll(
    要求 `send` 侧文件名带单调递增前缀）
 2. `limit` 默认 100 是否够？（要估政委信号的日常量级）
 3. `commissar_gc` 的保留期默认值（建议 72h，与 `stale_hours` 24h 错开两级）
+
+---
+
+## 八、实现卡点实录（Lane DS 实测，2026-10-29）
+
+> **本节是本文档最有长期价值的部分** —— 它记录的是**对 API 面的事实认定**，不是猜测。
+> 下一个实现者会先想「按 mtime 排序」，然后撞同一堵墙。**请先读本节。**
+
+### 8.1 `@fs` 可用接口的**完整清单**（实测枚举）
+
+本包能用的 `moonbitlang/x/fs` 接口**只有这 7 个**：
+
+| 接口 | 用途 |
+|---|---|
+| `@fs.path_exists(p) -> Bool` | 判存在 |
+| `@fs.read_dir(dir) -> Array[String]`（抛错式，用 `catch`） | 列目录 |
+| `@fs.read_file_to_string(p) -> String`（抛错式） | 读全文 |
+| `@fs.write_string_to_file(p, content)`（抛错式） | 写全文 |
+| `@fs.create_dir(p)`（抛错式） | 建目录 |
+| `@fs.remove_dir(p)`（抛错式） | 删目录 |
+| `@fs.remove_file(p)`（抛错式） | 删文件 |
+
+### 🔴 8.2 **没有 `stat` / `mtime` / `metadata`** —— 由此推出两条硬约束
+
+**这是本设计的形状限制，不是代码细节。**
+
+| 原设计 | 为什么不可行 | 改成 |
+|---|---|---|
+| 按 **mtime** 排序决定 seq | **拿不到 mtime** | seq 从**文件名** `sig-<at_ms>-<counter>` 解析 |
+| `gc(older_than_hours)` 按「文件多老」删 | **拿不到「文件多老」** | `gc(keep~ : Int)` —— **保留最近 N 条** |
+
+**⇒ 「保留最近 N 条」不但可行，语义还更好**：
+不依赖时钟（时钟回拨/时区不会影响）、可预测、且**与 seq 的「位置」语义天然对齐**。
+
+**seq 的三段排序键（都不能省）**：
+```
+(at_ms, counter, name)
+  │        │        └── 兜底：保证同一份目录的次序**确定**（判例「确定性优先」）
+  │        └── 破同毫秒并列（`commissar_send` 的进程内自增）
+  └── 时间先后（epoch 毫秒，粗粒度）
+```
+
+### 8.3 剩下 3 处 API 适配（逐条给出「假设错在哪」+「正确的做法」）
+
+#### ① `String::parse_int64` **不存在**（`[4015] Value parse_int64 not found`）
+
+**我的错误假设**：以为 `String` 有 `parse_int64()` / `parse_int()`。
+**实际**：**MoonBit 标准库没有这个**；本仓的做法是**手工逐字符解析**。
+
+**正确做法**（本仓既有先例 `src/ops/ops_ts.mbt:12`）：
+```moonbit
+fn parse_digits(chars : Array[Char], start : Int32, len~ : Int32) -> Int32 {
+  let mut v = 0
+  for i = 0; i < len; i = i + 1 {
+    let c = chars[start + i]
+    if c < '0' || c > '9' { return -1 }
+    v = v * 10 + (c.to_int() - '0'.to_int())
+  }
+  v
+}
+```
+**⇒ 实现 `parse_event_name` 时改用这个模式**（自己写一个小 helper，或用 `@json.parse` 绕）。
+
+#### ② `@rhop.RhopEnvelope::decode` **返回 `Result`，不是 `Option`**
+
+**我的错误假设**：`Some(env) ... None` 匹配。
+**实际签名**（`RX-MBT/rhop/packet.mbt:86`）：
+```moonbit
+pub fn RhopEnvelope::decode(text : String) -> Result[RhopEnvelope, String]
+```
+**⇒ 应写 `Ok(env) => ... Err(_) => None`。**
+
+⚠️ 顺带：`env.decrypt(cipher)` 的返回类型**也需再核**（未确认，是下一手的第 1 个检查点）。
+
+#### ③ `derive(Debug)` 会因 `CommissarSignal` 无 `Debug` 而报 `[4018]`
+
+**我的错误假设**：给 `CommissarPollItem` 加 `derive(Debug)` 便于调试。
+**实际**：它含 `signal : CommissarSignal?`，而 `CommissarSignal`（`ops_commissar.mbt:66`）**没有 `derive(Debug)`**
+⇒ `Option[它]` 也没有 ⇒ `[4018]`。
+**⇒ 两个选择**：(a) 不加 `derive(Debug)`（**已在 WIP 里这么做**）；
+(b) 给 `CommissarSignal` 加 `derive(Debug)`（它字段全是 `String`，安全）——但那要改别人的文件。
+
+### 8.4 WIP 位置与复用建议
+
+半成品在 **`temp/ops_commissar_poll.mbt.beta-wip`**（**不在编译树内**）。
+
+**可直接复用的骨架**（是对的，只差 API 适配）：
+- `parse_event_name`
+- `commissar_list_events_sorted`（三段排序）
+- `commissar_poll`（`since_seq` / `limit` / `next_seq` / `has_more` / `total` 的结构完整）
+- `commissar_gc(keep~, dry_run~)`（含「`dry_run` 真不删」的实现）
+
+**⚠️ 下一手的工作纪律**：**在 `temp/` 改到自洽，再一次性移回 `src/ops/`。**
+中间态永远不进编译树 —— 本单曾两次因为红态挂在 `src/` 里而**挡住全仓提交各一轮**。
+
+### 8.5 「为什么停」的判据（值得入档）
+
+停手时有两条**可观测特征**，不是主观感受：
+
+| 情况 | 特征 | 正确反应 |
+|---|---|---|
+| **偶发错误** | 修一个，错误数**减少** | 继续试 |
+| **假设系统性错误** | 修一个，**下一层还有一个**（错误数不降反增：2 → 8） | **改设计或停** |
+
+本单实测：2 errors → 改完 → **8 errors**。**这个方向是判据**：错误数不降 = 假设错了，不是手气差。
