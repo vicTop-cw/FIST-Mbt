@@ -68,5 +68,5 @@ impl Executor for McpDelegateExecutor with fn run(
 /// 便捷函数：直接委托（供 engine 调用）
 pub fn delegate_execute(task : @core.Task, ctx : ExecContext) -> ExecResult {
   let ex = McpDelegateExecutor::new()
-  ex.run(task, ctx)
+  Executor::run(ex, task, ctx)
 }

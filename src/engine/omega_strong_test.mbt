@@ -526,7 +526,7 @@ test "preserve_plan_markers_no_duplicate_when_present" {
   let got = @engine.preserve_plan_markers(old, new)
   // 只出现一次
   let parts = got.split("[omega:required]")
-  assert_eq(parts.length(), 2)
+  assert_eq(parts.count(), 2)
 }
 
 ///|
