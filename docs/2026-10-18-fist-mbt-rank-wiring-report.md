@@ -39,6 +39,9 @@
 ## 遗留风险 / 后续项
 
 1. **`src/engine/engine_challenge.mbt` L181 `challenge` 根任务未显式接线 level**。它走 `Task::new` 默认已得 level=6（连长级），行为已正确，只是无显式覆盖/继承 src 的入口。可选：a) 保留默认连长；b) 继承 src 军衔（语义更贴「更难变体」）。**本次未进提交**，待裁决。
+   - ✅ **已裁决（2026-10-29 · human_steward）：取 a) 保留默认连长** —— `challenge` 派生的新根**固定 `level=6`，不继承源任务军衔**；`parent_id` 同样不指向源任务（新根就是新根，溯源只由 description 的 `from <id>` 承担）。即上句「行为已正确」的状态**被定为契约**，而不是「未接线的巧合」。
+     裁决正文：[`docs/plans/decisions/2026-10-29-challenge-level.md`](plans/decisions/2026-10-29-challenge-level.md)。
+     回归锁：`src/engine/engine_challenge_level_wbtest.mbt` —— 源任务 level=3/0/5/7 四档均断言新根 `level==6`、`parent_id==None`、溯源 `from <源 id>` 在；**变异对照**：把实现改成 `level=src.level`（继承）实测该文件 `Total tests: 2, passed: 0, failed: 2`，还原后 `2/2 passed`。
 2. `execute` L262 兜底 `Task::new` 未改 —— 那是读库失败时的占位 Task，非持久化任务，保留默认 6 正确。
 3. 新增 5 条 warning 属既有测试风格（`test_unqualified_package` + `json.value` deprecated），与 `fist-mbt_test.mbt` / `board_ascii_test.mbt` 同款，非本次回归。
 4. USAGE.md 版本 `0.3.8` vs moon.mod `0.3.9`（并发 agent 改的 moon.mod），与本次军衔无关，J4 文档面守卫待并发侧同步。
