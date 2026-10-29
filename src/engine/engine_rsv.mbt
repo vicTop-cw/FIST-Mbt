@@ -272,6 +272,7 @@ pub fn judged_role_gated(
 // 三处门各写一份 `if src == "challenge_missing" { Err(...) }` 就是下一个 BUG-435
 // （手工抄写真源，两份/三份副本会各自漂移）。**本函数是唯一判定点**。
 // ══════════════════════════════════════════════════════════════════════════
+
 ///|
 /// BUG-476：`strict` 模式下「无挑战 ⇒ 一律拒绝」的门层判定。
 ///
@@ -280,7 +281,10 @@ pub fn judged_role_gated(
 /// 判据是 `role_source == "challenge_missing"` —— 该值**只在 `Strict` 分支产生**
 /// （见 `judged_role_gated`），`soft` 产生的是 `challenge_required`，
 /// 所以本判定**天然区分 soft 与 strict**，不需要再读一次 env。
-pub fn strict_challenge_denial(role_source : String, action : String) -> String? {
+pub fn strict_challenge_denial(
+  role_source : String,
+  action : String,
+) -> String? {
   if role_source == "challenge_missing" {
     Some(
       "FIST_AUTH_MODE=strict：{action} 需要 S3 挑战认证，调用方未提供 challenge。" +
@@ -780,7 +784,14 @@ pub fn FistEngine::rsv_try_set(
   //   在 S3（身份锚点）落地前，冒充风险不会消除。
   // `action` 的合法取值因此扩展为：reserved | renewed | taken_over | conflict |
   //   unregistered | <上述之一>[+role_inferred][+agent_self_reported]
-  let (role, role_source) = judged_role_gated(
+  //
+  // BUG-477：**改用 `judged_role_with_nonce`**（与 `claim` 同源）——
+  //   `judged_role_gated` 只验签**不消费 nonce** ⇒ 同一张票可无限重放。
+  //   实测症状：`reserve_scope` 首次用票与重复用票回执**完全相同**。
+  //   ⚠️ **不能把消费塞进 `judged_role_gated`**：它被 5 处消费（含只读的
+  //   `challenge_pending_count`）⇒ 那 5 处会全变成「读一次就消费」。
+  //   ⇒ 只能在**消费者**这里换成带消费的版本。
+  let (role, role_source) = judged_role_with_nonce(
     self,
     agent,
     challenge_nonce,
@@ -925,7 +936,8 @@ pub fn FistEngine::locks_try_acquire(
   // BUG-422：与两条预订门同一取数（剔除 server 自身份，见 `declared_role_for_judgment`）。
   // BUG-432：并入 `judged_role` —— 锁门 / 预订门 / claim 的 RANK_GATE 现在是**同一个**取数面。
   // BUG-453：**不再丢弃 `role_source`** —— 它必须进 `action` 面（认证态可见）。
-  let (role, role_source) = judged_role_gated(
+  // BUG-477：改用 `judged_role_with_nonce`（消费 nonce，防重放；理由见 rsv_try_set 处）。
+  let (role, role_source) = judged_role_with_nonce(
     self,
     agent,
     challenge_nonce,
@@ -952,8 +964,7 @@ pub fn FistEngine::locks_try_acquire(
       //    of the read-only type`。**必须走既有构造器**：`denied_by_permission()`
       //    （`:727` 就是这么写的）+ `relabel` 换 action。
       return @store.LockAcquireOutcome::denied_by_permission().relabel(
-        "strict_challenge_missing",
-        false,
+        "strict_challenge_missing", false,
       )
     }
     None => ()
