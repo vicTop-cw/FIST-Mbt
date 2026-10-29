@@ -10576,7 +10576,7 @@ pub async fn run_server() -> Unit {
       },
       ["project_dir", "kind", "target", "text"],
     ),
-    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let project_dir = get_str(args, "project_dir")
       let kind = get_str(args, "kind")
       let target = get_str(args, "target")
