@@ -185,3 +185,33 @@ test "evolve_novelty_and_lineage" {
   assert_eq(chain[0].0, "c1")
   assert_eq(chain[1].0, "p1")
 }
+
+///|
+/// R190：`jaccard` 的三条**语义不变量**（R138 只锁了四个边界样本，没锁性质）。
+///
+/// 为什么要锁：
+/// 1. **对称性** —— `jaccard(a,b)` 与 `jaccard(b,a)` 必须相等。实现里 `inter` 只遍历 `in_a` 查 `in_b`，
+///    看上去对称，但"只从一个方向数"的写法一旦改成"两边都数"就会**双计**，而现有边界样本抓不到。
+/// 2. **重复词折叠（集合语义）** —— `["a","a"]` 与 `["a"]` 必须给 **1.0**：实现用 `Map` 去重。
+///    若有人改成"多重集"（数出现次数）会变成 0.5，`goal_drift_check` 的漂移判定随之整体偏移。
+/// 3. **值域 [0,1]** —— 下游用 `1 - jaccard` 当漂移度，越界即无意义。
+test "jaccard_invariants_symmetry_set_semantics_range" {
+  let pairs : Array[(String, String)] = [
+    ("a b c", "b c d"),
+    ("x", "x y z"),
+    ("中文 词 表", "词 表 中文"),
+    ("q", "r"),
+  ]
+  for p in pairs {
+    let (x, y) = p
+    let ab = jaccard(tokens(x), tokens(y))
+    let ba = jaccard(tokens(y), tokens(x))
+    // ① 对称性（浮点相等是安全的：同一组整数计数的同一种除法）
+    assert_eq(ab, ba, msg="不对称: " + x + " / " + y)
+    // ③ 值域
+    assert_true(ab >= 0.0 && ab <= 1.0, msg="越界: " + ab.to_string())
+  }
+  // ② 重复词折叠：集合语义下 ["a","a"] vs ["a"] == 1.0
+  assert_eq(jaccard(["a", "a"], ["a"]), 1.0, msg="重复词未折叠（应回 1.0 而非 0.5）")
+  assert_eq(jaccard(tokens("a a a"), tokens("a")), 1.0)
+}
