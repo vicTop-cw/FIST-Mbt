@@ -29,3 +29,6 @@ slave/feat/diff-scope-guard-r158	scripts/* docs/tasks/* reports/* memory/* .gith
 # 带 contract：本次 touch 了 src/engine/pkg.generated.mbti（moon info 惯例生成面，纯新增 API 投影），
 # 按 D2 需显式声明，交主线审。
 fix/omega-marker-preserve	src/engine/* docs/tasks/* reports/*	contract
+# R41（lead）：fist-gate 在 Windows 上永久 DEGRADED（BUG-388 连带面）的诊断与两条出路（只出方案，
+# 未改 gates 语义/电池期望——退出码契约属不可逆面，等 owner 裁决）。纯 reports/ 新增。
+docs/fist-gate-degraded-analysis-r41	reports/* docs/tasks/*
