@@ -230,8 +230,12 @@ def spawn_and_talk(launch, reqs, timeout=60):
     return (out or "").splitlines(), err or ""
 
 
-def l2_l3_dynamic(root: str, launch):
-    """返回 (rc, detail)。"""
+def l2_l3_dynamic(launch):
+    """返回 (rc, detail)。
+
+    R198：删掉形参 `root` —— 它在函数体内**零引用**，被 `check_dead_params_py` 判死参数
+    （该判据当晚就抓到了本函数；死参数的危险是"调用方以为传了会起作用"）。
+    """
     reqs = [INIT_REQ,
             {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
             # ⚠️ 探针工具必须**零参数、零副作用、纯计算**：`mode_list` 是这类
@@ -320,7 +324,7 @@ def judge(root: str, static_only: bool, allow_fallback: bool):
             return RC_BROKEN, {"note": "既无 .mcp.json 也无 cli.js 产物 ⇒ 无法自证"}
     print("[L2/L3 动态] 启动描述来源：%s" % launch["source"])
     print("            %s %s" % (launch["command"], " ".join(launch["args"])))
-    rc, d = l2_l3_dynamic(root, launch)
+    rc, d = l2_l3_dynamic(launch)
     if rc == RC_OK:
         print("[L2] stdout %d 行全部是合法 JSON-RPC ✅" % d["n_stdout"])
         print("[L3] tools/call 的 result.content 存在 ✅")
