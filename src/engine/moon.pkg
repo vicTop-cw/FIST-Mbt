@@ -5,6 +5,8 @@ import {
   "vicTop-cw/fist-mbt/src/omega",
   "vicTop-cw/fist-mbt/src/evolve",
   "vicTop-cw/fist-mbt/src/executor",
+  // T0r2：claim 路径接逻辑项互斥闸（claimguard），引擎侧唯一新增依赖
+  "vicTop-cw/fist-mbt/src/claimguard",
   "moonbitlang/core/json",
   // BUG-478：auth_mode.mbt 用 @env.get_env_var ⇒ 显式导入（原先靠隐式解析，已弃用）
   "moonbitlang/core/env",
