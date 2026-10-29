@@ -123,6 +123,29 @@ def find_file(name: str) -> str | None:
     """
     if os.path.isfile(os.path.join(ROOT, name)):
         return name
+
+    # ★ **带路径的引用必须按路径后缀解析**（本轮实测踩到，与 R46 的 `moon.pkg` 同族第 2 次）：
+    #   台账写 `store/json_get.mbt`，仓里却有两个 `json_get.mbt`
+    #   （`src/store/` 和 `src/decompose/`）⇒ 旧实现按 basename 搜，命中**先遍历到的
+    #   `src/decompose/json_get.mbt`** ⇒ 去核一个完全无关的文件 ⇒ 报「行号漂移」**假红**。
+    #   **台账带路径时，basename 兜底会把不同文件塌成一个。**
+    if "/" in name:
+        for r in ("src", "cmd", "scripts", "docs", "atgc", "atgc-old"):
+            cand = os.path.join(ROOT, r, name)
+            if os.path.isfile(cand):
+                return (r + "/" + name).replace("\\", "/")
+        suffix = "/" + name
+        for r in ("src", "cmd", "scripts", "docs", "atgc", "atgc-old"):
+            d = os.path.join(ROOT, r)
+            if not os.path.isdir(d):
+                continue
+            for dirpath, _dirnames, filenames in os.walk(d):
+                rel = os.path.relpath(dirpath, ROOT).replace("\\", "/")
+                for f in filenames:
+                    if (rel + "/" + f).endswith(suffix):
+                        return (rel + "/" + f).replace("\\", "/")
+        return None
+
     base = os.path.basename(name)
     roots = ["src", "cmd", "scripts", "atgc", "atgc-old", "docs"]
     for r in roots:
@@ -221,6 +244,220 @@ def resolve(ref) -> tuple[bool, str]:
     return True, f"{path}:{nums}（文件 {n} 行）"
 
 
+# ══════════════════════════════════════════════════════════════════════
+# ★ R5：引用行号指向的**那一行**是否「像被引用的东西」
+#
+# 这是「第 8 层」（语义支持）里**唯一可机核的窄形态**。
+# 本轮铁证（Lane DX）：L1 的 4 个行号曾整体漂移 -2/-4，而 R4 只查
+# 「行号 ≤ 文件行数」⇒ **一个都没抓**。
+#   · 正确行（107/124/1275/1330）都是 `fn <符号名>(`
+#   · 漂移行（109/128/1277/1332）都是 `) -> Result[...]`  ← **不含符号名**
+#
+# **两档强度**（取决于能不能拿到符号名）：
+#   **强档**：引用的**前文**出现了 `` `symbol` ``（形如 `` `foo`（path:line） ``）
+#            ⇒ 该行**必须包含** symbol（这是 R5 的完整形态）。
+#   **弱档**：取不到符号名 ⇒ 只查「该行**非空、非纯注释、非孤立 `}`**」
+#            —— 挡不住漂移，但能挡住「指向一个空行/闭合括号」这类离谱错位。
+#
+# ⚠️ **为什么强档要求「前文」，而不是「全文任意反引号词」**：
+#    理由文本里穿插大量别的标识符（`raise`/`catch`/`match`），
+#    用「全文任意」会把它们误当符号名 ⇒ 假红（实测 L1 理由里有 6 个反引号词）。
+#    ⇒ 只取**紧挨在引用前面**的那一个。
+# ══════════════════════════════════════════════════════════════════════
+
+RE_SYMBOL_BEFORE = re.compile(r"`([A-Za-z_][\w~]*)`[^`\w]{0,6}$")
+
+
+def symbol_near(reason: str, ref_raw: str) -> str:
+    """取引用**紧前方**的符号名；没有则返回空串。"""
+    idx = reason.find(ref_raw)
+    if idx <= 0:
+        return ""
+    before = reason[:idx]
+    m = RE_SYMBOL_BEFORE.search(before)
+    return m.group(1) if m else ""
+
+
+def line_is_meaningful(text: str) -> tuple[bool, str]:
+    """弱档：该行是否「像代码/配置的实质行」。
+
+    返回 (ok, 说明)。**故意宽松**：只挡空行、纯注释行、孤立闭合括号。
+    """
+    t = text.strip()
+    if not t:
+        return False, "该行是空行"
+    # ⚠️ **`#|` 是 MoonBit 的内嵌 JS 代码块，不是注释**（实测踩到：L7 的
+    #    `github_js.mbt:92/104` 指向 `#| ...` 行，被判「纯注释」⇒ **假红**）。
+    #    ⇒ 必须先排除 `#|` 再判「以 # 开头是注释」。
+    if t.startswith("#|"):
+        return True, ""
+    # ⚠️ **纯注释行是合法的引用目标**（实测踩到：`moon.mod:3` 是 `//` 注释，
+    #    而台账 L1 的理由正是「注释里写着『想静默回落得先改签名』」⇒ 引注 **是** 可核证据）。
+    #    ⇒ 弱档只挡「空行 / 孤立闭合括号 / 过短行」，**不挡注释**。
+    #    （这也说明弱档的力量很有限：它只挡「离谱错位」，不挡「漂移几行」。）
+    if t in ("}", ")", "];", "}", "end"):
+        return False, "该行是孤立的闭合括号"
+    # ⚠️ **不做过短判定**（实测踩到：`moon.mod:3` 是 `//` 分隔注释，2 字符）
+    #    —— 弱档的力量本来就只够挡「空行 / 孤立括号」，再收紧就变成假红工厂。
+    return True, ""
+
+
+# ══════════════════════════════════════════════════════════════════════
+# ★ **定义行识别**（R5 的强档 2）
+#
+# 本轮铁证：L1 的 4 个行号曾漂移 -2/-4，**弱档抓不到**（因为漂移后的
+# `) -> Result[...]` 也是「实质内容」）。但两类行有一条**稳定区别**：
+#
+#   · **正确的行** = `fn engine_for_ns(` / `fn to_result(` —— **定义行**
+#   · **漂移的行** = `) -> Result[...] {`               —— **续行**
+#
+# ⇒ 「引用行必须是定义行」比「行内容非空」强得多，**且零台账配合**。
+#   它不能证明「这个符号就是论断说的那个」，但能挡住「整体漂移几行」这一类，
+#   而那正是本轮的真 bug。
+# ══════════════════════════════════════════════════════════════════════
+
+RE_DEF_LINE = re.compile(
+    r"^\s*(?:pub\s+)?(?:async\s+)?(?:fn|struct|enum|type|let|const|impl|trait|val|def|class|function)"
+)
+
+
+RE_VARIANT_LINE = re.compile(r"^\s*([A-Z][A-Za-z0-9_]*)(\([^)]*\))?\s*(//.*)?$")
+# ⚠️ 必须收 **带 `~` 的标签形参**（实测：L8 的 `by~ : String,` / `ns~ : String = "default",`
+#    是合法的声明行，但原正则不认 `~` ⇒ 7 处误报）。
+RE_FIELD_LINE = re.compile(r"^\s*[a-z_][A-Za-z0-9_]*~?\s*:\s*\S")
+RE_PKG_LINE = re.compile(r'^\s*"[^"]+"')
+
+
+def line_is_def(text: str) -> bool:
+    """该行是否像一条**定义位置**。
+
+    **不能只认 `fn/struct`**（实测踩到：26 处误报）——本仓的「定义位置」有 5 种合法形态：
+
+    | 形态 | 实例 | 为什么合法 |
+    |---|---|---|
+    | 函数/类型定义 | `fn engine_for_ns(` / `pub struct WorldState {` | `unused_value`/`result_error_return` 指向它 |
+    | **enum 变体行** | `Active // 正常推进中` / `Load` | `unused_constructor` 指向**变体行** |
+    | **struct 字段行** | `reservations : Array[...]` | 字段相关 warning 指向它 |
+    | **moon.pkg import 行** | `"vicTop-cw/fist-mbt/src/store",` | `unused_package` 指向**import 行** |
+    | **`.mbt` 内嵌 JS 块** | `#| ...` | FFI warning 可能指向它 |
+
+    ⚠️ **这个放宽是有代价的**：它让 R5-定义档**挡不住「漂移到一个字段行」**。
+    但它挡的是本轮的真 bug（漂移到 `) -> Result[...]` 续行）—— **续行不是上述任何一种**。
+    """
+    t = text
+    if RE_DEF_LINE.match(t):
+        return True
+    if t.strip().startswith("#|"):
+        return True
+    if RE_VARIANT_LINE.match(t):
+        return True
+    if RE_FIELD_LINE.match(t):
+        return True
+    if RE_PKG_LINE.match(t):
+        return True
+    return False
+
+
+def read_line(path: str, lineno: int) -> str | None:
+    fp = os.path.join(ROOT, path)
+    try:
+        lines = read(fp).splitlines()
+    except Exception:  # noqa: BLE001
+        return None
+    if lineno < 1 or lineno > len(lines):
+        return None
+    return lines[lineno - 1]
+
+
+def check_r5(reason: str, ref, path: str) -> tuple[bool, str, str]:
+    """R5。返回 (ok, 档位, 说明)"""
+    _kind, _name, nums, raw = ref
+    if not nums:
+        return True, "skip", "无行号，R5 不适用"
+    sym = symbol_near(reason, raw)
+    bad = []
+    weak_ok_all = True
+    for ln in nums:
+        line = read_line(path, ln)
+        if line is None:
+            bad.append(f"{path}:{ln} 读不到")
+            continue
+        if sym:
+            # 强档：该行必须包含符号名
+            if sym not in line:
+                bad.append(f"{path}:{ln} 不含符号 `{sym}`（该行=「{line.strip()[:50]}」）")
+        else:
+            ok, why = line_is_meaningful(line)
+            if not ok:
+                weak_ok_all = False
+                bad.append(f"{path}:{ln} {why}（该行=「{line.strip()[:40]}」）")
+    if bad:
+        return False, ("strong" if sym else "weak"), "；".join(bad)
+    return True, ("strong" if sym else "weak"), (
+        f"{path}:{nums} 含 `{sym}`" if sym else f"{path}:{nums}（弱档：行内容实质）"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════
+# ★ **R5-定义档只对「定义类」warning 有效**（实测踩到的关键分流）
+#
+# 15 处误报后才看清：**位置列指向哪儿，取决于 warning 类型**：
+#
+# | warning 类型 | 位置列指向 | 能否要求「定义行」 |
+# |---|---|---|
+# | `unused_value` / `unused_constructor` / `struct_never_constructed` | **定义处** | ✅ 能 |
+# | `unused_package` | `moon.pkg` 的 import 行 | ✅ 能 |
+# | **`deprecated` / `deprecated_syntax`** | **使用点**（`abort(...)` / `x.to_string()` / `derive(...)`）| ❌ **不能** |
+# | `result_error_return` | 函数签名行 | ✅ 能 |
+#
+# **⇒ 判据必须按类型分流，否则「按定义行判使用点」必然全红。**
+#    这正是「判据的规则要比被测对象的形态**双向对齐**」（判例-30 家族）的又一实例：
+#    这一次错在**宽**（统一要求）而不是窄。
+# ══════════════════════════════════════════════════════════════════════
+
+DEF_ORIENTED_TYPES = (
+    "unused_value", "unused_constructor", "struct_never_constructed",
+    "unused_package", "result_error_return",
+)
+
+
+def check_r5_def(loc_col: str, reason: str, type_cell: str) -> tuple[int, int, list]:
+    """★ **R5-定义档**：对**位置列**的引用，要求每行都是**定义行**。
+
+    为什么单立：位置列写的是「这条 warning 出现在哪些行」——
+    **它天然指向定义**（`fn x(` / `struct Y {` / 变体行）。
+    本轮铁证：L1 位置列漂移 -2/-4 后指向 `) -> Result[...]` ⇒ 续行 ⇒ 一眼可见。
+
+    返回 (checks, bad, [(eid 占位, 说明)])
+    """
+    # 只对「定义类」warning 生效（`deprecated*` 指向使用点，按定义行判必然误报）
+    if not any(t in type_cell for t in DEF_ORIENTED_TYPES):
+        return 0, 0, []
+    refs = extract_refs(loc_col, "")
+    checks = 0
+    bad = 0
+    msgs = []
+    for r in refs:
+        _k, name, nums, _raw = r
+        if not nums:
+            continue
+        path = find_file(name) if _k != "stem" else (find_file(name + ".mbt") or find_file(name))
+        if path is None:
+            continue
+        for ln in nums:
+            line = read_line(path, ln)
+            if line is None:
+                continue
+            checks += 1
+            if not line_is_def(line):
+                bad += 1
+                msgs.append(
+                    f"位置列 {path}:{ln} 不是定义行（该行=「{line.strip()[:50]}」）"
+                    " ⇒ 行号可能已漂移"
+                )
+    return checks, bad, msgs
+
+
 def judge(text: str) -> tuple[int, dict]:
     entries, errors = parse_entries(text)
     if errors:
@@ -248,17 +485,46 @@ def judge(text: str) -> tuple[int, dict]:
             )
             per_entry.append((eid, 0, False))
             continue
+        # ★ R5-定义档：位置列的行号必须是定义行（对漂移最敏感、零台账配合）
+        dchecks, dbad, dmsgs = check_r5_def(loc, reason, ty)
+        for m_ in dmsgs:
+            problems.append(("R5def 位置列飘移", eid, m_))
+
         oks = 0
+        r5_checks = 0
+        r5_bad = 0
         for r in refs:
             ok, reading = resolve(r)
             if ok:
                 oks += 1
             else:
                 problems.append(("R3/R4 引用不可核", eid, reading))
+                continue
+            # ★ R5：行号指向的那一行是否像被引用的东西（只在文件+行号都通过后做）
+            _k, name, _nums, _raw = r
+            if not _nums:
+                continue
+            path = find_file(name) if _k != "stem" else (find_file(name + ".mbt") or find_file(name))
+            if path is None:
+                continue
+            ok5, tier, reading5 = check_r5(reason, r, path)
+            r5_checks += 1
+            if not ok5:
+                r5_bad += 1
+                problems.append((f"R5({tier}) 行指向错", eid, reading5))
         per_entry.append((eid, len(refs), oks == len(refs)))
 
+    # ★ R5 的 rc=2 特殊档：**所有引用行都不通过** ⇒ 多半是判据解析坏了，
+    #    不是「台账全错」。两者处置完全不同（改判据 vs 改台账）。
+    if r5_checks > 0 and r5_bad == r5_checks and r5_checks >= 3:
+        return RC_CANNOT, {
+            "note": f"R5 对 {r5_checks} 处引用**全部**判不符 ⇒ 多半是判据的符号/行解析坏了"
+                    "（先人工抽查 1 处确认），不报「台账全错」"
+        }
+
     rc = RC_VIOLATION if problems else RC_OK
-    return rc, {"entries": entries, "problems": problems, "per_entry": per_entry}
+    return rc, {"entries": entries, "problems": problems, "per_entry": per_entry,
+                "r5_checks": r5_checks, "r5_bad": r5_bad}
 
 
 def render(rc: int, r: dict) -> None:
@@ -362,8 +628,48 @@ def selftest() -> int:
     case("colon-only-inherits-loc-file", lambda: judge(BARE_COLON)[0], RC_OK)
 
     # 多行号 `a:b/c/d` 逐一核
-    MULTI = _mk(f"见 `{REAL_A}:1/2/3`", f"见 `{REAL_B}:1/2`")
+    # ⚠️ 夹具用 `REAL_B`（长文件）而非 `REAL_A`：`moon.mod` 前几行里有**空注释行 `//`**，
+    #    弱档会挡（那是**对的**——空行不是实质内容），但会让这格测不到多行号本身。
+    MULTI = _mk(f"见 `{REAL_B}:1/3/5`", f"见 `{REAL_B}:1/3`")
     case("multi-line-numbers-all-ok", lambda: judge(MULTI)[0], RC_OK)
+
+    # ★ R5-定义档：位置列行号必须是定义行（Lane DX）
+    #
+    # 本轮铁证：L1 位置列 4 个行号曾整体漂移 -2/-4，正确行是 `fn x(`，
+    # 漂移行是 `) -> Result[...]` ⇒ **只认定义行就能抓住**。
+    def _r5_def_ok():
+        """位置列指向真定义行 ⇒ 通过。"""
+        ok, _tier, msg = check_r5(
+            "见 `moon.mod:3`", ("full", "server.mbt", [107], "server.mbt:107"),
+            "src/server/server.mbt")
+        return ok
+    case("R5-line-on-definition-passes", _r5_def_ok, True)
+
+    def _r5_def_wrong():
+        """★ 变异 1（复现本轮真 bug）：行号指向续行 `) -> Result[...]` ⇒ 必须红。"""
+        checks, bad, msgs = check_r5_def("`server.mbt:109`", "见 `x`", "unused_value")
+        return (bad > 0, checks > 0)
+    case("MUT-drifted-line-goes-red", _r5_def_wrong, (True, True))
+
+    def _r5_def_right():
+        """同一函数：行号对 ⇒ 不报（反证：判据真在区分，不是恒红）。"""
+        _c, bad, _m = check_r5_def("`server.mbt:107`", "见 `x`", "unused_value")
+        return bad == 0
+    case("def-line-correct-not-reported", _r5_def_right, True)
+
+    # ★ 变异 2：`deprecated` 类**不做**定义档校验（它指向使用点，不是定义）
+    #    —— 这条防「按定义行判使用点」的假红（实测 15 处误报后补的分流）。
+    def _r5_def_skipped_for_deprecated():
+        checks, bad, _m = check_r5_def("`main.mbt:501`", "见 `x`", "`deprecated`（Show→Debug）")
+        return (checks, bad)
+    case("MUT-deprecated-skipped-by-deffile", _r5_def_skipped_for_deprecated, (0, 0))
+
+    # 弱档：取不到符号名时，指向空行/纯注释/闭合括号 ⇒ 红
+    def _weak_blank():
+        ok, _t, _m = check_r5("见 `a.mbt:10`", ("full", "a.mbt", [999999], "a.mbt:999999"),
+                              "moon.mod")
+        return ok is False
+    case("weak-out-of-range-goes-red", _weak_blank, True)
 
     # 真源标定（判例-32）：真台账能被解析出 ≥1 条 L*
     def _calibrate_real():
