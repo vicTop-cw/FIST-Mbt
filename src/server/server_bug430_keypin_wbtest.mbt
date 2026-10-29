@@ -85,7 +85,7 @@ fn kp_engine() -> @engine.FistEngine {
 fn kp_code_only(raw : String) -> String {
   let mut acc = ""
   for line in raw.split("\n") {
-    let s = line.to_string()
+    let s = line.to_owned()
     let l = s.trim()
     if l.has_prefix("///") || l.has_prefix("//") {
       continue

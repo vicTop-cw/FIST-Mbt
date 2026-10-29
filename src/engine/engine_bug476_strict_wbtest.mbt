@@ -41,7 +41,10 @@ test "bug476_s1_strict_without_challenge_is_denied" {
       assert_true(msg.contains("agent_register_key"))
       assert_true(msg.contains("FIST_AUTH_MODE"))
     }
-    None => abort("BUG-476 **strict 没有硬拒** —— 门层放行了 challenge_missing")
+    None =>
+      abort(
+        "BUG-476 **strict 没有硬拒** —— 门层放行了 challenge_missing",
+      )
   }
 }
 
@@ -65,7 +68,8 @@ test "bug476_s3_soft_degrades_but_is_not_denied" {
   assert_eq(auth_mode_parse("soft"), Soft)
   // soft 的标注是 challenge_required（不是 missing）
   match strict_challenge_denial("challenge_required", "reserve_scope") {
-    Some(_) => abort("**soft 被当成了 strict** —— 两档不可区分了")
+    Some(_) =>
+      abort("**soft 被当成了 strict** —— 两档不可区分了")
     None => ()
   }
   // 两者必须是**不同**的 role_source（否则门层无法区分）
@@ -116,19 +120,22 @@ test "bug476_s5_startup_warning_is_wired_in_run_server" {
   }
   let at = code.find("pub async fn run_server()")
   match at {
-    None => abort("找不到 run_server 定义 ⇒ 本格锚点失效，请复核")
+    None =>
+      abort("找不到 run_server 定义 ⇒ 本格锚点失效，请复核")
     Some(i) => {
       let hi = if i + 4000 < code.length() { i + 4000 } else { code.length() }
-      let rest = code[i:hi].to_string()
-      if not(rest.contains("auth_mode_startup_warning()")) {
+      let rest = code[i:hi].to_owned()
+      if !(rest.contains("auth_mode_startup_warning()")) {
         abort(
           "BUG-476 **startup_warning 未被 run_server 调用** —— 函数存在但没接线（判例-29）",
         )
       }
       // 反脱锚：确认在 run_server **之前**没有该调用（否则本格的 find 锚点会认错位置）
-      let before = code[0:i].to_string()
+      let before = code[0:i].to_owned()
       if before.contains("auth_mode_startup_warning()") {
-        abort("startup_warning 在 run_server 之前已出现 ⇒ 本格锚点失效，请复核")
+        abort(
+          "startup_warning 在 run_server 之前已出现 ⇒ 本格锚点失效，请复核",
+        )
       }
     }
   }
@@ -173,7 +180,9 @@ test "bug476_s6_all_four_gates_are_wired" {
   let rsv_c = strip(rsv)
   let srv_c = strip(srv)
   // ① 预订门两处（rsv_set + rsv_try_set）：**计数必须 == 2**
-  let n1 = b476_count_of(rsv_c, "strict_challenge_denial(role_source, \"reserve_scope\")")
+  let n1 = b476_count_of(
+    rsv_c, "strict_challenge_denial(role_source, \"reserve_scope\")",
+  )
   if n1 != 2 {
     abort(
       "BUG-476 预订门硬拒接线数 = " +
@@ -182,14 +191,20 @@ test "bug476_s6_all_four_gates_are_wired" {
     )
   }
   // ② 锁门一处
-  let n2 = b476_count_of(rsv_c, "strict_challenge_denial(role_source, \"lock_acquire\")")
+  let n2 = b476_count_of(
+    rsv_c, "strict_challenge_denial(role_source, \"lock_acquire\")",
+  )
   if n2 != 1 {
-    abort("BUG-476 锁门硬拒接线数 = " + n2.to_string() + "（期望 1）")
+    abort(
+      "BUG-476 锁门硬拒接线数 = " + n2.to_string() + "（期望 1）",
+    )
   }
   // ③ claim 门一处（在 server.mbt）
   let n3 = b476_count_of(srv_c, "strict_challenge_denial(auth.1, \"claim\")")
   if n3 != 1 {
-    abort("BUG-476 claim 硬拒接线数 = " + n3.to_string() + "（期望 1）")
+    abort(
+      "BUG-476 claim 硬拒接线数 = " + n3.to_string() + "（期望 1）",
+    )
   }
 }
 

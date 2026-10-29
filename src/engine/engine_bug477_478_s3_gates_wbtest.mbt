@@ -43,7 +43,7 @@ test "df_01_rsv_and_lock_consume_nonce_across_calls" {
     Ok(o) => o.action
     Err(e) => abort("首次 rsv_try_set 失败：" + e)
   }
-  if not(rs1.contains("challenge_verified")) {
+  if !(rs1.contains("challenge_verified")) {
     abort("首次应 challenge_verified，实际 `" + rs1 + "`")
   }
   // ② ★ 同一张票再来一次 ⇒ 必须判重放
@@ -62,7 +62,7 @@ test "df_01_rsv_and_lock_consume_nonce_across_calls" {
         "第二次 rsv_try_set 应返回回执(判重放)，实际 Err：" + e,
       )
   }
-  if not(rs2.contains("challenge_replayed")) {
+  if !(rs2.contains("challenge_replayed")) {
     abort(
       "同一张票第二次应判 challenge_replayed，实际 `" +
       rs2 +
@@ -117,7 +117,7 @@ test "df_03_reserve_lock_tools_route_by_namespace" {
   }
   let mut code = ""
   for line in raw.split("\n") {
-    let s = line.to_string()
+    let s = line.to_owned()
     let l = s.trim()
     if l.has_prefix("///") || l.has_prefix("//") {
       continue
@@ -130,13 +130,13 @@ test "df_03_reserve_lock_tools_route_by_namespace" {
   ]
   for t in tools {
     let blk = df_block(code, t)
-    if not(blk.contains("\"namespace\": string_prop")) {
+    if !(blk.contains("\"namespace\": string_prop")) {
       abort(
         t +
         " 的 schema 没有 namespace 参数 —— 公钥按 ns 隔离 ⇒ 非 default ns 必验不过",
       )
     }
-    if not(blk.contains("engine_for_ns(")) {
+    if !(blk.contains("engine_for_ns(")) {
       abort(
         t +
         " 的 handler 没调 engine_for_ns —— namespace 参数是死参数",

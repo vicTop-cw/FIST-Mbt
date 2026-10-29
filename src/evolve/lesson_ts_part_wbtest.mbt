@@ -24,8 +24,14 @@ test "lesson_ts_part_seconds_are_distinct" {
 test "lesson_ts_part_across_units_and_idempotent" {
   let t = "2026-10-28T12:34:56Z"
   assert_eq(lesson_ts_part(t), lesson_ts_part(t))
-  assert_true(lesson_ts_part("2026-10-28T12:34:56Z") != lesson_ts_part("2026-10-28T12:35:56Z"))
-  assert_true(lesson_ts_part("2026-10-28T12:34:56Z") != lesson_ts_part("2026-10-29T12:34:56Z"))
+  assert_true(
+    lesson_ts_part("2026-10-28T12:34:56Z") !=
+    lesson_ts_part("2026-10-28T12:35:56Z"),
+  )
+  assert_true(
+    lesson_ts_part("2026-10-28T12:34:56Z") !=
+    lesson_ts_part("2026-10-29T12:34:56Z"),
+  )
 }
 
 ///|

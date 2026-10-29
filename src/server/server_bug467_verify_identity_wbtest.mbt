@@ -65,7 +65,7 @@ test "ci_02_sqlite_gate_denies_then_allows" {
       )
       ignore(eng.agents_acl_ensure(agent_id=vid.fp(), ns~, now~))
       // ★ 未授权 ⇒ 必须拒
-      if not(agent_write_gate(eng, vid, ns) is Err(_)) {
+      if !(agent_write_gate(eng, vid, ns) is Err(_)) {
         abort(
           "未授权的 verifier 竟通过了 ACL 门 —— BUG-467 未修（任何调用方都能验收任何任务）",
         )
@@ -106,7 +106,7 @@ test "ci_03_verify_handler_is_wired_to_acl_gate" {
   // ① 只留代码面（跳过注释行）
   let mut code = ""
   for line in raw.split("\n") {
-    let s = line.to_string()
+    let s = line.to_owned()
     let l = s.trim()
     if l.has_prefix("///") || l.has_prefix("//") {
       continue
@@ -126,7 +126,7 @@ test "ci_03_verify_handler_is_wired_to_acl_gate" {
   let blk = slice_ci(rest, 0, j)
   // ③ 归一化：去所有空白后再找（防 fmt 重排导致假红）
   let flat = strip_ws(blk)
-  if not(
+  if !(
       flat.contains(
         "agent_write_gate(eng,acl_claim_identity(verifier,verifier),ns)",
       ),
@@ -146,7 +146,7 @@ test "ci_03_verify_handler_is_wired_to_acl_gate" {
 fn strip_ws(s : String) -> String {
   let mut out = ""
   for ch in s.split("") {
-    let c = ch.to_string()
+    let c = ch.to_owned()
     if c == " " || c == "\t" || c == "\n" || c == "\r" {
       continue
     }

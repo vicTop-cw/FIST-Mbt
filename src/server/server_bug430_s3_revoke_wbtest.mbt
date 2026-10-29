@@ -45,7 +45,10 @@ test "rv_03_read_before_write" {
   let write_at = src.find("agents_set_pubkey(agent_id=fp, pubkey_fp=\"\")")
   let (r, w) = match (read_at, write_at) {
     (Some(a), Some(b)) => (a, b)
-    _ => abort("找不到读/写锚点 —— 判据脱锚（先确认这两个调用还在）")
+    _ =>
+      abort(
+        "找不到读/写锚点 —— 判据脱锚（先确认这两个调用还在）",
+      )
   }
   assert_true(r < w)
 }

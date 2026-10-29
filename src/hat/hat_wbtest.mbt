@@ -496,7 +496,14 @@ test "BUG-205：报告表「帽子」列显示六顶帽 id（hexa_hat_id），�
 test "build: 证据多行换行全替换（表格不断行）" {
   let cfg = default_config("议题")
   let rs = [
-    hat_report("stargazer", "pass", 0.8, "第一行\n第二行\n第三行", ["数据"], ""),
+    hat_report(
+      "stargazer",
+      "pass",
+      0.8,
+      "第一行\n第二行\n第三行",
+      ["数据"],
+      "",
+    ),
   ]
   let r = build_report(cfg.topic, cfg, rs, 1)
   // ① 不得残留"行尾换行 + 下一行开头"这种会断表的组合

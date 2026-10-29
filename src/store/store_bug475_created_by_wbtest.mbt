@@ -42,7 +42,7 @@ test "dc_01_created_by_round_trips" {
       // ★ 从**库里**读回来
       match backend.get_task("T-cb-1") {
         None => fail("读不回来 —— 落库失败")
-        Some(back) => {
+        Some(back) =>
           if back.created_by != "human_steward" {
             abort(
               "created_by 往返不一致：写 human_steward，读回 `" +
@@ -50,7 +50,6 @@ test "dc_01_created_by_round_trips" {
               "` —— BUG-475 未修（发布者没落库）",
             )
           }
-        }
       }
     }
   }
@@ -81,7 +80,7 @@ test "dc_02_empty_means_not_recorded" {
       }
       match backend.get_task("T-cb-2") {
         None => fail("读不回来")
-        Some(back) => {
+        Some(back) =>
           if back.created_by != "" {
             abort(
               "未传 created_by 时应读回空串（= 没记录），实际读回 `" +
@@ -89,7 +88,6 @@ test "dc_02_empty_means_not_recorded" {
               "` —— 不要用 unknown/legacy 这类占位符伪造身份",
             )
           }
-        }
       }
     }
   }
@@ -127,12 +125,18 @@ test "dc_03_migration_is_idempotent" {
   }
   // ② 再 open 一次（= 第二次迁移）⇒ 必须不报错、且数据还在
   match SqliteStore::open(db) {
-    None => abort("第二次 open 失败 —— 迁移不幂等（重复调用会拒载）")
+    None =>
+      abort(
+        "第二次 open 失败 —— 迁移不幂等（重复调用会拒载）",
+      )
     Some(s1) => {
       let b1 = StoreBackend::sqlite(s1)
       match b1.get_task("T-old-1") {
-        None => abort("第二次迁移后数据丢了 —— 迁移改坏了已有行")
-        Some(back) => {
+        None =>
+          abort(
+            "第二次迁移后数据丢了 —— 迁移改坏了已有行",
+          )
+        Some(back) =>
           if back.created_by != "legacy_owner" {
             abort(
               "第二次迁移把 created_by 改成了 `" +
@@ -140,7 +144,6 @@ test "dc_03_migration_is_idempotent" {
               "` —— 迁移不该改已有数据",
             )
           }
-        }
       }
     }
   }
@@ -157,7 +160,7 @@ test "dc_04_engine_wires_created_by_into_task" {
   }
   let mut code = ""
   for line in raw.split("\n") {
-    let s = line.to_string()
+    let s = line.to_owned()
     let l = s.trim()
     if l.has_prefix("///") || l.has_prefix("//") {
       continue
@@ -176,7 +179,7 @@ test "dc_04_engine_wires_created_by_into_task" {
     )
   }
   // 且 Task::new 的调用必须真的带 created_by~（不是写在别处）
-  if not(flat.contains("created_by~,)matchself.store.create_task")) {
+  if !(flat.contains("created_by~,)matchself.store.create_task")) {
     abort(
       "Task::new(...) 的收尾里看不到 `created_by~,` —— 接线可能断了",
     )
@@ -208,7 +211,7 @@ fn dc_unique_db(tag : String) -> String {
 fn dc_strip_ws(s : String) -> String {
   let mut out = ""
   for ch in s.split("") {
-    let c = ch.to_string()
+    let c = ch.to_owned()
     if c == " " || c == "\t" || c == "\n" || c == "\r" {
       continue
     }
@@ -218,7 +221,7 @@ fn dc_strip_ws(s : String) -> String {
 }
 
 ///|
-fn dc_count(hay : String, needle : String) -> Int {
+fn dc_count(hay : String, needle : String) -> Int32 {
   let h = hay.to_array()
   let nd = needle.to_array()
   if nd.length() == 0 {

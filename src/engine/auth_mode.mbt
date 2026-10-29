@@ -101,7 +101,7 @@ pub fn auth_mode_warning(raw : String) -> String {
 /// 规范化：去两端空白 + 转小写（`FIST_AUTH_MODE=OFF` 与 `off` 等价）。
 fn normalize_mode_str(raw : String) -> String {
   // `trim()` 返回 StringView ⇒ 先转 String 再 to_lower()
-  let t : String = raw.trim().to_string()
+  let t : String = raw.trim().to_owned()
   t.to_lower()
 }
 

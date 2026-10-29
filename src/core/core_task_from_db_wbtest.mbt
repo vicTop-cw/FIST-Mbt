@@ -44,7 +44,8 @@ fn fd(status_s : String, level : Int32, id : String) -> Task {
 /// 变异对照：把 `from_string` 任一分支的中文改一个字，本格立刻红。
 test "from_db_status_literals_roundtrip_all_nine" {
   let keys : Array[String] = [
-    "待领取", "已领取", "拆分中", "执行中", "待验收", "已完成", "已归档", "已打回", "已暂停",
+    "待领取", "已领取", "拆分中", "执行中", "待验收", "已完成",
+    "已归档", "已打回", "已暂停",
   ]
   for k in keys {
     let t = fd(k, 6, "rt")

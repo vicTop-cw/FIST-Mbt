@@ -105,9 +105,9 @@ fn wt_merged_yes(v : Bool?) -> Bool {
 pub fn wt_state_of(
   dir_exists : Bool,
   merged : Bool?,
-  dirty : Int,
-  age_min : Int,
-  ttl_min : Int,
+  dirty : Int32,
+  age_min : Int32,
+  ttl_min : Int32,
   head_sha : String,
   created_sha : String,
 ) -> (String, String) {
@@ -120,12 +120,17 @@ pub fn wt_state_of(
     return ("unknown", "沙箱内 git status 读不到，拒绝顺着年龄猜")
   }
   match merged {
-    None => return ("unknown", "分支是否并入基线 git 给不出结论（分支不存在或命令失败）")
+    None =>
+      return (
+        "unknown", "分支是否并入基线 git 给不出结论（分支不存在或命令失败）",
+      )
     Some(_) => ()
   }
   // 3) 脏先看：并入 + 未落盘 ⇒ blocked
   if wt_merged_yes(merged) && dirty > 0 {
-    return ("blocked", "分支已并入，但工作树有未提交改动——先落盘再回收")
+    return (
+      "blocked", "分支已并入，但工作树有未提交改动——先落盘再回收",
+    )
   }
   // 4) 已并入
   if wt_merged_yes(merged) {
@@ -137,7 +142,9 @@ pub fn wt_state_of(
   }
   // 6) 没动过：只认账上的创建锚点
   if !created_sha.is_empty() && !head_sha.is_empty() && head_sha == created_sha {
-    return ("idle", "从创建锚点起一次都没提交过（按账判定，不按年龄）")
+    return (
+      "idle", "从创建锚点起一次都没提交过（按账判定，不按年龄）",
+    )
   }
   // 7) 超龄 —— ⚠️ ttl 先钳制（R106）：账里/入参给 `ttl_min <= 0` 时，
   // 原来 `age_min > ttl_min` 对任何沙箱恒真 ⇒ **刚创建的沙箱立刻判 stale**（可回收），
@@ -153,7 +160,10 @@ pub fn wt_state_of(
 /// 可回收档（无人值守车道的「能收」集合）：merged / stale / abandoned / idle。
 /// blocked 与 unknown 都**不在**集合里——前者会丢活，后者会丢证据。
 pub fn wt_reclaimable(state : String) -> Bool {
-  state == "merged" || state == "stale" || state == "abandoned" || state == "idle"
+  state == "merged" ||
+  state == "stale" ||
+  state == "abandoned" ||
+  state == "idle"
 }
 
 ///|
@@ -171,7 +181,7 @@ fn wt_s(j : Json, key : String) -> String {
 
 ///|
 /// JSON 取整数字段（接受 Number，缺省给 default）。
-fn wt_i(j : Json, key : String, default : Int) -> Int {
+fn wt_i(j : Json, key : String, default : Int32) -> Int32 {
   match j {
     Object(m) =>
       match m.get(key) {
@@ -191,8 +201,8 @@ pub fn wt_entry_json(
   base : String,
   base_sha : String,
   created_sha : String,
-  created_at : Int,
-  ttl_min : Int,
+  created_at : Int32,
+  ttl_min : Int32,
 ) -> Json {
   let m : Map[String, Json] = Map([])
   m.set("id", Json::string(task))
@@ -222,7 +232,7 @@ pub fn wt_tally(states : Array[String]) -> Json {
 
 ///|
 /// 当前墙钟秒（服务端盖章；调用面不接受 now 入参——BUG-33 政策）。
-fn wt_now_secs() -> Int {
+fn wt_now_secs() -> Int32 {
   (@env.now().reinterpret_as_int64() / 1000L).to_int()
 }
 
@@ -272,7 +282,9 @@ fn wt_load(project_dir : String, task : String) -> Json? {
 ///|
 /// 落一条账（先建目录再写；写失败返回 false，由调用方决定是否降级回执）。
 fn wt_save(project_dir : String, task : String, j : Json) -> Bool {
-  @fs.create_dir(wt_state_dir(project_dir)) catch { _ => () }
+  @fs.create_dir(wt_state_dir(project_dir)) catch {
+    _ => ()
+  }
   let ok : Unit? = Some(
     @fs.write_string_to_file(wt_manifest_path(project_dir, task), j.stringify()),
   ) catch {
@@ -285,9 +297,7 @@ fn wt_save(project_dir : String, task : String, j : Json) -> Bool {
 /// 列全部账（`wt-*.json`），返回 (task, json) 数组；读不到的条目跳过。
 fn wt_load_all(project_dir : String) -> Array[(String, Json)] {
   let out : Array[(String, Json)] = []
-  let names = @fs.read_dir(wt_state_dir(project_dir)) catch {
-    _ => return out
-  }
+  let names = @fs.read_dir(wt_state_dir(project_dir)) catch { _ => return out }
   for name in names {
     if name.has_prefix("wt-") && name.has_suffix(".json") {
       let task = name[3:name.length() - 5].to_owned()
@@ -354,7 +364,12 @@ pub fn wt_parse_porcelain(stdout : String) -> Array[Json] {
 
 ///|
 /// porcelain 的一行 → Json（构造点单一，白盒可对表）。
-fn wt_porcelain_row(path : String, head : String, branch : String, detached : Bool) -> Json {
+fn wt_porcelain_row(
+  path : String,
+  head : String,
+  branch : String,
+  detached : Bool,
+) -> Json {
   let m : Map[String, Json] = Map([])
   m.set("path", Json::string(path))
   m.set("head", Json::string(head))
@@ -398,7 +413,10 @@ pub fn wt_same_path(a : String, b : String) -> Bool {
 /// 「目录在但不在账上」——**第 0 条恒为主工作树**（`git worktree list` 的约定：主工作树在最前）。
 /// 主工作树是仓库根、不是沙箱；把它算进 `unregistered` 会让**每次 `wt_status` 都报**
 /// 「有个没人管的沙箱」——那是假信号，会诱导人去「清理」仓库根。故跳过第 0 条。
-pub fn wt_unregistered(parsed : Array[Json], known : Array[String]) -> Array[Json] {
+pub fn wt_unregistered(
+  parsed : Array[Json],
+  known : Array[String],
+) -> Array[Json] {
   let out : Array[Json] = []
   let mut idx = 0
   for e in parsed {
@@ -433,7 +451,7 @@ pub async fn wt_create_impl(
   detach : Bool,
   task : String,
   base : String,
-  ttl_min : Int,
+  ttl_min : Int32,
   timeout_ms : Int32,
 ) -> Result[Json, String] {
   if !wt_path_ok(path) {
@@ -441,10 +459,14 @@ pub async fn wt_create_impl(
   }
   let eff_task = if task.is_empty() { wt_last_segment(path) } else { task }
   if !wt_task_ok(eff_task) {
-    return Err("非法 task id：只允许字母/数字/_/-（≤64 字符，账文件名由它拼）")
+    return Err(
+      "非法 task id：只允许字母/数字/_/-（≤64 字符，账文件名由它拼）",
+    )
   }
   if !branch.is_empty() && detach {
-    return Err("branch 与 detach 互斥：要么开分支，要么 detached HEAD")
+    return Err(
+      "branch 与 detach 互斥：要么开分支，要么 detached HEAD",
+    )
   }
   // R106：ttl_min 必须为正 —— 0/负值会让账一落盘就被判超龄（沙箱刚建就可回收）。
   if ttl_min <= 0 {
@@ -464,7 +486,13 @@ pub async fn wt_create_impl(
     Some(prev) => {
       let prev_path = wt_s(prev, "path")
       if !prev_path.is_empty() && prev_path != path {
-        return Err("该 task 已有账且指向别的路径（task=" + eff_task + ", path=" + prev_path + "）；先 wt_destroy 或换 task")
+        return Err(
+          "该 task 已有账且指向别的路径（task=" +
+          eff_task +
+          ", path=" +
+          prev_path +
+          "）；先 wt_destroy 或换 task",
+        )
       }
     }
     None => ()
@@ -510,7 +538,9 @@ pub async fn wt_create_impl(
   if !saved {
     m.set(
       "note",
-      Json::string("沙箱已建，但账没落盘：该沙箱在 wt_status 里表现为 unregistered，不会被自动回收"),
+      Json::string(
+        "沙箱已建，但账没落盘：该沙箱在 wt_status 里表现为 unregistered，不会被自动回收",
+      ),
     )
   }
   Ok(Json::object(m))
@@ -541,7 +571,11 @@ pub async fn wt_status_impl(
   project_dir : String,
   timeout_ms : Int32,
 ) -> Result[Json, String] {
-  let (ok, code, out, err) = wt_git(["worktree", "list", "--porcelain"], project_dir, timeout_ms)
+  let (ok, code, out, err) = wt_git(
+    ["worktree", "list", "--porcelain"],
+    project_dir,
+    timeout_ms,
+  )
   let parsed = wt_parse_porcelain(out)
   let entries = wt_load_all(project_dir)
   let sandboxes : Array[Json] = []
@@ -561,19 +595,33 @@ pub async fn wt_status_impl(
     let dir_exists = @fs.path_exists(path)
     let head_sha = if dir_exists {
       let (hok, _, hout, _) = wt_git(["rev-parse", "HEAD"], path, timeout_ms)
-      if hok { hout.trim().to_owned() } else { "" }
+      if hok {
+        hout.trim().to_owned()
+      } else {
+        ""
+      }
     } else {
       ""
     }
     let dirty = if dir_exists {
-      let (dok, _, dout, _) = wt_git(["status", "--porcelain"], path, timeout_ms)
-      if dok { wt_count_lines(dout) } else { -1 }
+      let (dok, _, dout, _) = wt_git(
+        ["status", "--porcelain"],
+        path,
+        timeout_ms,
+      )
+      if dok {
+        wt_count_lines(dout)
+      } else {
+        -1
+      }
     } else {
       0
     }
     let merged : Bool? = if dir_exists && !branch.is_empty() {
       let (mok, mcode, _, _) = wt_git(
-        ["merge-base", "--is-ancestor", branch, base], path, timeout_ms,
+        ["merge-base", "--is-ancestor", branch, base],
+        path,
+        timeout_ms,
       )
       if mok {
         Some(true)
@@ -619,7 +667,10 @@ pub async fn wt_status_impl(
   m.set("sandboxes", Json::array(sandboxes))
   m.set("tally", wt_tally(states))
   m.set("unregistered", Json::array(unregistered))
-  m.set("main_worktree", Json::string(if parsed.length() > 0 { wt_s(parsed[0], "path") } else { "" }))
+  m.set(
+    "main_worktree",
+    Json::string(if parsed.length() > 0 { wt_s(parsed[0], "path") } else { "" }),
+  )
   m.set(
     "note",
     Json::string(
@@ -634,7 +685,7 @@ pub async fn wt_status_impl(
 
 ///|
 /// 数非空行（`git status --porcelain` 的脏文件条数）。
-fn wt_count_lines(s : String) -> Int {
+fn wt_count_lines(s : String) -> Int32 {
   let mut n = 0
   for line in s.split("\n") {
     if !line.trim().is_empty() {
@@ -670,7 +721,9 @@ pub async fn wt_destroy_impl(
     m.set("registered", Json::boolean(false))
     m.set(
       "note",
-      Json::string("该路径不在账上（unregistered）⇒ 拒绝拆除；确认要拆请显式 force=true"),
+      Json::string(
+        "该路径不在账上（unregistered）⇒ 拒绝拆除；确认要拆请显式 force=true",
+      ),
     )
     return Ok(Json::object(m))
   }
@@ -698,31 +751,48 @@ pub async fn wt_destroy_impl(
   m.set("stdout", Json::string(out))
   m.set("stderr", Json::string(err))
   if ok && registered {
-    @fs.remove_file(wt_manifest_path(project_dir, task)) catch { _ => () }
+    @fs.remove_file(wt_manifest_path(project_dir, task)) catch {
+      _ => ()
+    }
     m.set("manifest_deleted", Json::boolean(true))
   } else {
     m.set("manifest_deleted", Json::boolean(false))
   }
   // 分支：默认不删；显式要求才动，且只走 `git branch -d`（未并入会被 git 自己拒绝）
   if ok && delete_branch && !branch.is_empty() {
-    let (bok, bcode, bout, berr) = wt_git(["branch", "-d", branch], project_dir, timeout_ms)
+    let (bok, bcode, bout, berr) = wt_git(
+      ["branch", "-d", branch],
+      project_dir,
+      timeout_ms,
+    )
     m.set("branch_deleted", Json::boolean(bok))
     m.set("branch_code", Json::number(bcode.to_int().to_double()))
     m.set("branch_stdout", Json::string(bout))
     if !bok {
       m.set(
         "branch_error",
-        Json::string("git branch -d 拒绝：通常=分支未并入（这是 git 的判断，不是本工具的判断）" + berr),
+        Json::string(
+          "git branch -d 拒绝：通常=分支未并入（这是 git 的判断，不是本工具的判断）" +
+          berr,
+        ),
       )
     }
   } else {
     m.set("branch_deleted", Json::boolean(false))
     if delete_branch && branch.is_empty() {
-      m.set("branch_error", Json::string("沙箱无分支名（detached），无可删"))
+      m.set(
+        "branch_error",
+        Json::string("沙箱无分支名（detached），无可删"),
+      )
     }
   }
   if !ok {
-    m.set("note", Json::string("git worktree remove 失败：账保留（还看得见的失败比静默丢账好）"))
+    m.set(
+      "note",
+      Json::string(
+        "git worktree remove 失败：账保留（还看得见的失败比静默丢账好）",
+      ),
+    )
   }
   Ok(Json::object(m))
 }
