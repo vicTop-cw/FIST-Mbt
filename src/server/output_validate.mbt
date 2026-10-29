@@ -312,7 +312,9 @@ fn check_external_invariants(stdout : String, spec : ArtifactSpec) -> String {
   if !spec.contains.is_empty() {
     if !stdout.contains(spec.contains) {
       let shown = if stdout.length() > 120 {
-        stdout[0:120].to_owned() + "..."
+        // R153：stdout 可能是中文（如 `moon test` 的中文断言输出），字节硬切会切半个汉字。
+        // 这是**回执展示**用的 cap（不是协议字段）⇒ 返回 ≤120 字节完全等价，且不乱码。
+        @core.clip_utf8(stdout, 120) + "..."
       } else {
         stdout
       }
@@ -482,7 +484,8 @@ fn check_external_artifact(
           let stderr = match m.get("stderr") {
             Some(String(s)) =>
               if s.length() > 200 {
-                s[0:200].to_owned() + "..."
+                // R153：同 :314 —— stderr 也可能是中文，展示用 cap 走 UTF-8 边界安全截断。
+                @core.clip_utf8(s, 200) + "..."
               } else {
                 s
               }
