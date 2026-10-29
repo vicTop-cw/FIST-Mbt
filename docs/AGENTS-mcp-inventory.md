@@ -104,7 +104,7 @@
 | `atgc_old_run` | ATGC-old 运行（DNA 程序执行） |
 | `atgc_old_talk` | ATGC-old 会话（叙事/模式切换） |
 
-### 项目看板 / 脉冲 / 预订 / 推荐 + DAG（28）
+### 项目看板 / 脉冲 / 预订 / 推荐 + DAG（29）
 
 > worktree 三件工具的真源是 `src/server/wt_tools.mbt`：**存在性 ≠ 生命周期**。它们补的是**账**，状态由「目录 / git / 时间」三方读数裁决；七档与 `scripts/run_light_wt.py` 的 `classify` 同名同义（一源四态）。判定顺序承重：**脏先看**（已并入 + 有未提交改动 ⇒ `blocked`，先判 merged 会把没落盘的活一起销毁）、`idle` 只认账上的创建锚点（ff 合并后主线尖 == 分支尖，靠 git/年龄都会误判）、**git 读不到 ⇒ `unknown`**（绝不顺着年龄写成 fresh/stale）。
 | 工具 | 说明 |
@@ -135,6 +135,7 @@
 | `wt_destroy` | 三道安全：①只动**账上登记过**的路径（否则必须 `force=true`）；②分支默认不删（显式 `delete_branch=true` 才走 `git branch -d`，未并入由 git 自己拒）；③拆失败**不删账**（账留着 = 还看得见） |
 | `wt_status` | 列 worktree，并给每个**登记过**的沙箱判七档 `fresh/stale/blocked/merged/idle/abandoned/unknown` + `tally` + `unregistered`（目录在但无账）；保留 `worktrees_raw` 兼容旧调用方。可回收档 = merged/stale/abandoned/idle（blocked 会丢活、unknown 会丢证据） |
 | `commissar_send` | **BUG-477**：政委消息**只发送**。把一条政委信号（R1-R4 载荷）经 rhop 写入 `<project_dir>/.commissar/events/`，供接收侧**同步读取**。⚠️ **本工具只发送，当前版本不提供 watch / 订阅能力** —— 底层 `from_filesystem_with` 在 js 后端不可取消（`fs.watch(persistent:true)` 的 handle 在 `Subscription::dispose()` 后仍不释放，见 **BUG-480**），**订阅会让 server 进程永不退出** ⇒ 接收侧请同步读取（`.rhop` → `RhopEnvelope::decode` → `decrypt` → `RhopPacket::from_json_text`）。本项目**不注册** `commissar_watch`。参数：project_dir / kind / target / text（必填）、namespace（可选）。真源 `src/ops/ops_commissar.mbt`（275 行，10 处 `println` 已改 `eprintln`）+ 白盒锁 `src/ops/ops_commissar_wbtest.mbt`（3 格，含变异对照） |
+| `commissar_read` | **T0r3**：政委消息**同步读取**（接收侧）。一次性遍历 `<project_dir>/.commissar/events/*.rhop`，走 rhop 自己的解码链（`RhopEnvelope::decode` → `decrypt` → `RhopPacket::from_json_text` → `CommissarSignal::from_json`）读回信号数组 + **逐类跳过统计**，与 `commissar_send` 成对（往返）。⚠️ **不订阅、不注册 watcher、不留后台句柄**（BUG-480：`fs.watch(persistent:true)` 的 handle 在 `dispose()` 后仍不释放 ⇒ 订阅会让 server 进程永不退出）⇒ MCP 是请求/响应模型，收消息靠**反复调用**（短轮询），调用返回即结束。坏文件**逐个计数 + 逐个点名**（`bad.read/envelope/decrypt/packet/payload` + `bad.files`），绝不静默吞，且不中断其余文件读出。参数：project_dir（必填）、limit（默认 100 / 上限 1000，取最新 N 条按时间升序）、kind / target（精确过滤）、since_seq（闭区间游标 = 发送时刻 epoch 毫秒）。目录不存在 ⇒ 返回空且 `dir_exists=false`（不是错误）。真源 `src/ops/ops_commissar.mbt` + 白盒锁 `src/ops/ops_commissar_wbtest.mbt`（dl_c4~c8 五格，含变异对照） |
 ### 自我记忆与自进化（11，F/G 新增强化）
 | 工具 | 说明 |
 |---|---|

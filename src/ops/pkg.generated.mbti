@@ -27,6 +27,8 @@ pub fn check_claim(@engine.FistEngine, String, String) -> Result[Unit, String]
 
 pub fn cleanup_archived(@engine.FistEngine, String, retention_days? : Int32) -> Result[Array[String], String]
 
+pub fn commissar_archive_dir(String) -> String
+
 pub fn commissar_ensure_dirs(String) -> Unit
 
 pub fn commissar_events_dir(String) -> String
@@ -34,6 +36,10 @@ pub fn commissar_events_dir(String) -> String
 pub fn commissar_inbox_dir(String) -> String
 
 pub fn commissar_log_path(String) -> String
+
+pub fn commissar_outbox_dir(String) -> String
+
+pub fn commissar_read(String, limit? : Int32, kind? : String, target? : String, since_seq? : Int64) -> CommissarReadReport
 
 pub fn commissar_root(String) -> String
 
@@ -176,6 +182,39 @@ pub fn AuditLog::entries(Self) -> Array[AuditEntry]
 pub fn AuditLog::new() -> Self
 pub fn AuditLog::record(Self, action~ : String, actor~ : String, task_id~ : String, detail? : String, now~ : String) -> Unit
 pub fn AuditLog::to_json(Self) -> Json
+
+pub struct CommissarEntry {
+  id : String
+  source : String
+  kind : String
+  target : String
+  text : String
+  ns : String
+  at : Int64
+}
+pub fn CommissarEntry::to_json(Self) -> Json
+
+pub struct CommissarReadReport {
+  events_dir : String
+  dir_exists : Bool
+  error : String
+  entries : Array[CommissarEntry]
+  scanned : Int32
+  matched : Int32
+  returned : Int32
+  ignored : Int32
+  filtered_kind : Int32
+  filtered_target : Int32
+  before_cursor : Int32
+  bad_read : Int32
+  bad_envelope : Int32
+  bad_decrypt : Int32
+  bad_packet : Int32
+  bad_payload : Int32
+  bad_files : Array[String]
+  dropped_by_limit : Int32
+}
+pub fn CommissarReadReport::to_json(Self) -> Json
 
 pub struct CommissarSignal {
   kind : String
