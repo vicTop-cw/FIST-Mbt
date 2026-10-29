@@ -388,6 +388,17 @@ def _parity_with_gen_plugins() -> bool:
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    # R197：**未知旗标必须拒绝**（rc=2），不许静默忽略。
+    # 实测病象：`--self-test`（多一个连字符）或拼错的旗标会被吃下，然后**照跑真检查并回 rc=0**
+    # ⇒ 看起来"自检通过"，实际跑的是对真账本的扫描 —— 自检开关拼错 = 静默失去自检。
+    # （同族：R155 给我自己那把尺补 KNOWN_FLAGS 的原因一模一样；判据 `check_arg_face_strict` 抓的就是这条。）
+    unknown = [a for a in argv if a not in ("--selftest", "--list", "--check")]
+    if unknown:
+        print(
+            "[FATAL] 未知参数 %s —— 已知：--selftest / --list / --check（rc=2）"
+            % " ".join(unknown)
+        )
+        return RC_BROKEN
     if "--selftest" in argv:
         return selftest()
     if not os.path.isfile(LEDGER):
