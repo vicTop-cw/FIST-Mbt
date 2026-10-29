@@ -294,6 +294,11 @@ def scan(base, remotes, keep=False, limit=0, include="/slave/"):
         return [], 0
     tmp = tempfile.mkdtemp(prefix="mergeability-")
     wt = os.path.join(tmp, "wt")
+    # R165：**`scan` 也必须 atexit 兜底** —— 本轮实测：多次普查被 `timeout` / 父 shell 退出杀掉后，
+    # `finally` 没机会跑 ⇒ `%TEMP%` 里堆了 **27 个完整 checkout 的 worktree**，
+    # 最终把系统吃到 `OSError [WinError 1455] 页面文件太小`（连 spawn 子进程都失败）。
+    # `selftest` 从 BUG-409 起就有这层保护，`scan` 一直漏着（判例-33 同族：保护只加在一条路径上）。
+    atexit.register(_cleanup_paths, tmp, wt)
     rc, out = git("worktree", "add", "--detach", wt, base)
     if rc != 0:
         print("FATAL 建临时 worktree 失败：%s" % out.strip()[:200])
@@ -524,6 +529,16 @@ def selftest():
     cell("superseded-decision-any-regression-true",
          superseded_decision(count_regressions("[Other 9]", "[Other 12]")), True)
     # 标签只在单侧出现 ⇒ 不算倒退（可能是新增段落）
+    # R165：**接线格**（判例-29 正身）—— `scan` 必须注册 atexit 清理。
+    # 实测动机：`finally` 在 SIGKILL/超时/父 shell 退出时不跑 ⇒ %TEMP% 堆了 27 个 worktree
+    # ⇒ 系统资源耗尽（WinError 1455）。只断言"有 atexit 机制"不够，必须断言**它在 scan 里**。
+    import inspect as _inspect
+    _scan_src = _inspect.getsource(scan)
+    cell("scan-registers-atexit-cleanup",
+         "atexit.register(_cleanup_paths" in _scan_src, True)
+    cell("scan-still-has-finally-cleanup",
+         "git(\"worktree\", \"remove\"" in _scan_src, True)
+
     # R164：**数字在前**形态（`(177 MCP tools)`）必须抓到 —— R163 的已知局限
     cell("count-marks-reverse-form-label-whole",
          count_marks("(177 MCP tools)") == {"MCP tools": 177}, True)
