@@ -49,12 +49,21 @@ N2_CEILING = 4
 
 PREFIX_ANCHOR = "naming-roles-prefix:"
 SUFFIX_ANCHOR = "naming-roles-suffix:"
+# 共享模块白名单：`_` 开头且不是独立判据的共享件（见 NAMING.md 同名段）
+SHARED_ANCHOR = "naming-shared-modules:"
 
 
 def read_roles(doc_path):
-    """从 NAMING.md 现读两份词表。返回 (prefixes, suffixes, problems)。"""
+    """从 NAMING.md 现读两份词表 + 共享模块白名单。
+
+    返回 (prefixes, suffixes, shared, problems)。
+
+    ⚠️ **白名单为什么放 NAMING.md 而不是「读文件头自述」**（判例-30 同族）：
+    按自述豁免 = 「写一句注释就绕过判据」，绕过成本从「改一个文档」降成「加一句话」，
+    且会随「谁写得好听」而扩大。**豁免必须付出「改另一个文件」的代价。**
+    """
     if not os.path.isfile(doc_path):
-        return [], [], ["读不到 NAMING.md：%s" % doc_path]
+        return [], [], [], ["读不到 NAMING.md：%s" % doc_path]
     with io.open(doc_path, encoding="utf-8", errors="replace") as f:
         text = f.read()
     roles = {}
@@ -65,13 +74,33 @@ def read_roles(doc_path):
                 line = ln
                 break
         if line is None:
-            return roles.get(PREFIX_ANCHOR, []), roles.get(SUFFIX_ANCHOR, []), ["NAMING.md 缺 anchor 行：%s" % anchor]
+            return roles.get(PREFIX_ANCHOR, []), roles.get(SUFFIX_ANCHOR, []), [], ["NAMING.md 缺 anchor 行：%s" % anchor]
         body = line.split(anchor, 1)[1]
         words = [w.strip() for w in body.replace("`", "").split(",")]
         roles[anchor] = [w for w in words if w and all(ch.isalnum() or ch in "_-" for ch in w)]
         if not roles[anchor]:
-            return roles.get(PREFIX_ANCHOR, []), roles.get(SUFFIX_ANCHOR, []), ["anchor 行解析到 0 个词：%s" % anchor]
-    return roles[PREFIX_ANCHOR], roles[SUFFIX_ANCHOR], []
+            return roles.get(PREFIX_ANCHOR, []), roles.get(SUFFIX_ANCHOR, []), [], ["anchor 行解析到 0 个词：%s" % anchor]
+    # 白名单行（可缺省 ⇒ 空名单；但**出现了就必须解析出 ≥1 个 .py**，否则是行写坏了）
+    shared = []
+    sline = None
+    for ln in text.splitlines():
+        if SHARED_ANCHOR in ln:
+            sline = ln
+            break
+    if sline is not None:
+        body = sline.split(SHARED_ANCHOR, 1)[1]
+        # ⚠️ 顺序要紧：先剥反引号再 strip —— 行首是 ` ` 反引号+空格，
+        #    先 strip 会留下反引号，`startswith("_")` 恒 false（实测踩过）。
+        shared = [w.replace("`", "").strip() for w in body.split(",")]
+        shared = [w for w in shared if w.endswith(".py")]
+        if not shared:
+            return roles[PREFIX_ANCHOR], roles[SUFFIX_ANCHOR], [], [
+                "白名单行解析到 0 个 .py：%s" % SHARED_ANCHOR]
+        bad = [w for w in shared if not w.startswith("_")]
+        if bad:
+            return roles[PREFIX_ANCHOR], roles[SUFFIX_ANCHOR], [], [
+                "白名单只收 `_` 开头的共享件，以下不是：%s" % ", ".join(bad)]
+    return roles[PREFIX_ANCHOR], roles[SUFFIX_ANCHOR], shared, []
 
 
 def universe(dir_path):
@@ -92,7 +121,7 @@ def universe(dir_path):
     return top, sub
 
 
-def census(names, prefixes, suffixes):
+def census(names, prefixes, suffixes, shared=()):
     """纯函数：按词法给一份宇宙挑出 N1（无角色名）与 N2（连字符名）。
     分类一律取 basename —— 子目录点名形如 `blackbox/check_foo.py`，拿整条路径比前缀会把
     已带角色的尺算成债（C 面虚高，读数就成了假的）。"""
@@ -101,6 +130,9 @@ def census(names, prefixes, suffixes):
         base = os.path.basename(fn)
         stem = base[:-3]
         has_role = stem.startswith(tuple(prefixes)) or stem.endswith(tuple(suffixes))
+        # 共享模块白名单（NAMING.md 显式登记，不是读文件头自述）⇒ 不算 N1
+        if base in shared:
+            has_role = True
         if not has_role:
             roleless.append(fn)
         if "-" in base:
@@ -122,7 +154,7 @@ def judge(roleless, hyphen, n1_ceiling, n2_ceiling):
 
 def selftest():
     cells = []
-    prefixes, suffixes, probs = read_roles(NAMING_DOC)
+    prefixes, suffixes, shared, probs = read_roles(NAMING_DOC)
     if probs:
         print("FATAL 判据无法自证：词法读不到 —— " + "；".join(probs))
         sys.exit(2)  # NO_CALL_FACE J2
@@ -154,7 +186,7 @@ def selftest():
     ok6 = False
     try:
         t2, _ = universe(empty_dir)
-        p2, s2, pr2 = read_roles(os.path.join(empty_dir, "NAMING.md"))
+        p2, s2, sh2, pr2 = read_roles(os.path.join(empty_dir, "NAMING.md"))
         ok6 = (t2 == []) and pr2 != []
     except Exception as e:
         print("FATAL 判据未捕获异常：%s" % e)
@@ -163,12 +195,55 @@ def selftest():
 
     # 7) 空词表不许报绿（词法解析到 0 个词就是判据坏了）
     try:
-        _, _, pr3 = read_roles(_write_tmp_naming("naming-roles-prefix:\nnaming-roles-suffix: _verify\n"))
+        _, _, _, pr3 = read_roles(_write_tmp_naming("naming-roles-prefix:\nnaming-roles-suffix: _verify\n"))
         ok7 = pr3 != []
     except Exception as e:
         print("FATAL 判据未捕获异常：%s" % e)
         sys.exit(2)  # NO_CALL_FACE J2
     cells.append(("empty-role-table-selfrefuse", ok7))
+
+    # 9) ★ 白名单有没有真的在起作用（判例-29 机制格 ≠ 实现路径格）
+    #    断言的是「同一个名字，名单内不报 N1、名单外报 N1」——
+    #    只断言「判据能跑」证明不了白名单接线了（把 shared 传空它照样跑）。
+    # ⚠️ 探针名必须**本身无角色**（`_xxx_probe` 的 `_probe` 是后缀角色 ⇒ 本来就免 N1，
+    #    用它测白名单会「假绿」——实测踩过）。
+    probe = ["_helper_thing.py", "plain_thing.py"]
+    n1_out, _ = census(probe, prefixes, suffixes, ())
+    n1_in, _ = census(probe, prefixes, suffixes, ("_helper_thing.py",))
+    ok9 = (len(n1_out) == 2) and (len(n1_in) == 1) and ("_helper_thing.py" not in n1_in)
+    cells.append(("shared-whitelist-actually-exempts", ok9))
+
+    # 10) ★ 变异 1：白名单里放一个**非 `_` 开头**的名字 ⇒ 必须自拒（不许静默豁免普通脚本）
+    try:
+        _, _, _, pr10 = read_roles(
+            _write_tmp_naming(
+                "naming-roles-prefix: check_\nnaming-roles-suffix: _verify\n"
+                "naming-shared-modules: plain_thing.py\n"))
+        ok10 = pr10 != []
+    except Exception as e:  # noqa: BLE001
+        print("FATAL 判据未捕获异常：%s" % e)
+        sys.exit(2)  # NO_CALL_FACE J2
+    cells.append(("MUTATION-non-underscore-in-whitelist-selfrefuse", ok10))
+
+    # 11) ★ 变异 2：白名单行**解析到 0 个 .py** ⇒ 必须自拒（行写坏了不许当空名单放行）
+    try:
+        _, _, _, pr11 = read_roles(
+            _write_tmp_naming(
+                "naming-roles-prefix: check_\nnaming-roles-suffix: _verify\n"
+                "naming-shared-modules: （空）\n"))
+        ok11 = pr11 != []
+    except Exception as e:  # noqa: BLE001
+        print("FATAL 判据未捕获异常：%s" % e)
+        sys.exit(2)  # NO_CALL_FACE J2
+    cells.append(("MUTATION-empty-whitelist-selfrefuse", ok11))
+
+    # 12) ★ 变异 3：**真仓库的白名单真的免掉了 3 份**（按真实 NAMING.md + 真实宇宙对表）
+    #     N1 现状 27 = 30 - 3 ⇒ 把 shared 传空应回到 30。这条锁住「白名单与现状读数一致」。
+    top_real, _sub_real = universe(SCRIPTS_DIR)
+    n1_with, _ = census(top_real, prefixes, suffixes, shared)
+    n1_without, _ = census(top_real, prefixes, suffixes, ())
+    ok12 = (len(n1_without) - len(n1_with) == len(shared)) and len(shared) > 0
+    cells.append(("MUTATION-whitelist-count-matches-live-repo", ok12))
 
     # 8) 真源码校准：**上限不得宽于实测**（上限烂掉比没上限更贵）。
     #
@@ -219,7 +294,7 @@ def main(argv=None):
     if ns.selftest:
         return selftest()
 
-    prefixes, suffixes, probs = read_roles(NAMING_DOC)
+    prefixes, suffixes, shared, probs = read_roles(NAMING_DOC)
     if probs:
         print("FATAL 判据无法自证：词法读不到 —— " + "；".join(probs))
         return 2
@@ -228,8 +303,8 @@ def main(argv=None):
         print("FATAL 判据无法自证：scripts/ 顶层 .py 宇宙为空")
         return 2
 
-    n1, n2 = census(top, prefixes, suffixes)
-    c1, c2 = census(sub, prefixes, suffixes)
+    n1, n2 = census(top, prefixes, suffixes, shared)
+    c1, c2 = census(sub, prefixes, suffixes, shared)
     v = judge(n1, n2, N1_CEILING, N2_CEILING)
     if ns.show_ceiling:
         print("上限 N1=%d N2=%d｜现状 N1=%d N2=%d" % (N1_CEILING, N2_CEILING, len(n1), len(n2)))
