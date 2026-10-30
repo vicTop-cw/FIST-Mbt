@@ -191,7 +191,7 @@ test "tnl_3 report_bug 与 bug_fix 尾随换行一致" {
     bug_fix(
       d,
       [bid],
-      evidence="尾随换行一致性锁",
+      evidence="尾随换行一致性锁：bugreport_trailing_newline_wbtest.mbt",
       ts="2026-10-26T00:00:02Z",
     ) {
     Ok(_) => ()

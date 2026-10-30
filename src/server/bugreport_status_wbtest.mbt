@@ -123,7 +123,7 @@ test "BUG-9：bug_fix 同一笔改抬头 + 落点名整批的小记（幂等，�
     bug_fix(
       d,
       ["BUG-901", "BUG-902"],
-      evidence="真源 x.mbt，锁 y",
+      evidence="真源 x.mbt，回归锁：bugreport_status_wbtest.mbt",
       ts="2026-09-27T12:00:00Z",
     ) {
     Ok(j) => j
@@ -141,7 +141,7 @@ test "BUG-9：bug_fix 同一笔改抬头 + 落点名整批的小记（幂等，�
   assert_true(
     text.contains("### FIXED(2026-09-27T12:00:00Z / BUG-901, BUG-902)"),
   )
-  assert_true(text.contains("- evidence: 真源 x.mbt，锁 y"))
+  assert_true(text.contains("- evidence: 真源 x.mbt，回归锁：bugreport_status_wbtest.mbt"))
   // 邻居条目的 summary 不能被搬进本批的证据里（insert_at 取的是本批最后一条的末尾）
   let seg = b9_between(text, "### FIXED(", "## BUG-903")
   assert_true(seg.contains("- evidence:"))
@@ -152,7 +152,7 @@ test "BUG-9：bug_fix 同一笔改抬头 + 落点名整批的小记（幂等，�
     bug_fix(
       d,
       ["BUG-901", "BUG-902"],
-      evidence="重复调用",
+      evidence="重复调用（幂等验证见 bugreport_status_wbtest.mbt）",
       ts="2026-09-27T12:00:00Z",
     ) {
     Ok(j) => j
@@ -287,7 +287,7 @@ test "BUG-9：终态之间不互跳，空 evidence 与非法 project_dir 一律�
   let jump = bug_fix(
     d,
     ["BUG-903"],
-    evidence="想直接改成修好",
+    evidence="想直接改成修好（本格测终态不互跳，不需锁）",
     ts="2026-09-27T12:00:00Z",
   )
   match jump {
@@ -301,7 +301,7 @@ test "BUG-9：终态之间不互跳，空 evidence 与非法 project_dir 一律�
     Ok(_) => abort("空 evidence 的 bug_fix 通过了")
   }
   // 缺 ts：时间戳由调用层服务端盖章，API 不接受"没有 ts 的写"
-  let no_ts = bug_fix(d, ["BUG-901"], evidence="有证据但没盖章", ts="")
+  let no_ts = bug_fix(d, ["BUG-901"], evidence="有证据但没盖章（本格测盖章门，不需锁）", ts="")
   match no_ts {
     Err(m) => assert_true(m.contains("ts"))
     Ok(_) => abort("缺 ts 也放行")
@@ -310,7 +310,7 @@ test "BUG-9：终态之间不互跳，空 evidence 与非法 project_dir 一律�
   let bad_dir = bug_fix(
     "../escape",
     ["BUG-901"],
-    evidence="越界写",
+    evidence="越界写（本格测 project_dir 越界面，不需锁）",
     ts="2026-09-27T12:00:00Z",
   )
   match bad_dir {
@@ -321,7 +321,7 @@ test "BUG-9：终态之间不互跳，空 evidence 与非法 project_dir 一律�
   let ghost = bug_fix(
     d,
     ["BUG-901", "BUG-999"],
-    evidence="混一条不存在的",
+    evidence="混一条不存在的（本格测编号存在性，不需锁）",
     ts="2026-09-27T12:00:00Z",
   )
   match ghost {
@@ -477,7 +477,7 @@ test "BUG-241：同号重复条目被逐条标 FIXED，不再只改首条" {
     bug_fix(
       d,
       ["BUG-217"],
-      evidence="claimguard.mbt may_proceed_full 只读预检（commit ba4fd93）",
+      evidence="claimguard.mbt may_proceed_full 只读预检（commit ba4fd93）；回归锁：bugreport_status_wbtest.mbt",
       ts="2026-10-16T14:35:00Z",
     ) {
     Ok(j) => j
@@ -576,7 +576,7 @@ test "bug_fix 回执带 next_step 指向 gen_plugins（改账本 ⇒ 投影必�
     bug_fix(
       d,
       ["BUG-903"],
-      evidence="真源 x.mbt，锁 y",
+      evidence="真源 x.mbt，回归锁：bugreport_status_wbtest.mbt",
       ts="2026-10-30T03:50:00Z",
     ) {
     Ok(j) => j
@@ -622,4 +622,65 @@ test "BUG-489：编号分配复核 —— 第二次读到更新的账本时编�
   let same_seq = if seq1 > seq2 { seq1 } else { seq2 }
   let no_change_final = if same_seq < 0 { 0 } else { bug_next_seq(first) }
   assert_eq(no_change_final, 904)
+}
+
+///|
+/// **R105 · 「回归锁」校验的锁**（决策单 A：只对新修复生效）。
+///
+/// 被测机制：`bug_fix` 的 evidence 必须二选一 ——
+///   ① 点名一条测试文件（`_test.mbt` / `_wbtest.mbt`）或写「回归锁」；
+///   ② 写明「本修复不需锁」的理由（含「不需锁」/「不适用锁」）。
+///
+/// **⚠️ 变异对照**：把 `bugreport.mbt` 里 `looks_locked` 的判定删掉（退回「非空即通过」），
+/// 本格 `regression_lock_missing_is_rejected` **必红**。
+///
+/// **依赖方向**（如实测所踩）：本校验在 `bug_ids` 校验**之前**，
+/// 所以「编号不存在」那类用例必须写合规 evidence，否则会先撞本校验 ——
+/// 本文件已按此调整（`混一条不存在的（…不需锁）`）。
+///
+/// 依赖方向（如实测所踩）：本校验在 `bug_ids` 校验完后写盘前，
+/// 所以一条原本测其它门的用例必须写合规 evidence，否则会先撞本校验。
+/// 本文件已按此调整（如 `越界写（…不需锁）`）。
+///
+/// 依赖方向（如实测所踩）：本校验在多个既有校验**之后**才轮到 evidence，
+/// 所以「越界 / 编号不存在」那类用例即使是负例，也必须写合规 evidence —-
+/// 否则会先撞本校验。本文件已按此调整（如 `越界写（…不需锁）`）。
+test "regression_lock_missing_is_rejected" {
+  let d = b9_seed()
+  // ① 缺「回归锁」标识 ⇒ 必须拒，且文案要给出两条出路
+  let no_lock = bug_fix(
+    d,
+    ["BUG-901"],
+    evidence="改了 x.mbt",
+    ts="2026-09-27T12:00:00Z",
+  )
+  match no_lock {
+    Err(m) => {
+      assert_true(m.contains("回归锁"))
+      assert_true(m.contains("_test.mbt") || m.contains("_wbtest.mbt"))
+    }
+    Ok(_) => abort("缺回归锁标识的 bug_fix 通过了（校验失灵）")
+  }
+  // ② 点名测试文件 ⇒ 放行
+  let with_test = bug_fix(
+    d,
+    ["BUG-901"],
+    evidence="真源 x.mbt，锁 bugreport_status_wbtest.mbt",
+    ts="2026-09-27T12:00:00Z",
+  )
+  match with_test {
+    Ok(_) => ()
+    Err(m) => abort("点名测试文件却被拒: " + m)
+  }
+  // ③ 写明「不需锁」⇒ 放行（这是**出口**，不是后门：它要求一串可判的关键词）
+  let no_need = bug_fix(
+    d,
+    ["BUG-902"],
+    evidence="纯文案修正，本修复不需锁",
+    ts="2026-09-27T12:00:00Z",
+  )
+  match no_need {
+    Ok(_) => ()
+    Err(m) => abort("合法出口（不需锁）被拒: " + m)
+  }
 }
