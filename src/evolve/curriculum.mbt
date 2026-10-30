@@ -179,10 +179,7 @@ pub fn mutation_prompt(
 /// 不是「阈值没调对」。按阈值修只会让它在单父代时也瞎「融合」。
 ///
 /// **零回归**：`parents` 缺省 1 ⇒ 现有调用方（只传 score）行为**逐字不变**。
-pub fn select_mutation(
-  score : Double,
-  parents~ : Int = 1,
-) -> MutationKind {
+pub fn select_mutation(score : Double, parents~ : Int32 = 1) -> MutationKind {
   let r = score.clamp(min=0.0, max=1.0)
   // Combine 的语义前置：**有多个父代可融合** + 高分（追求极致）
   if r >= 0.85 && parents >= 2 {

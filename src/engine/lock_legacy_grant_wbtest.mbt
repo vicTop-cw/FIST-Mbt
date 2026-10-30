@@ -55,7 +55,7 @@ test "legacy_grant_wb1_own_active_lock_renews" {
     meta="",
   )
   let o = e.locks_try_acquire(renewal)
-  if !(o.granted) {
+  if !o.granted {
     fail("前置不成立：自己续自己的 active 锁应 granted=true")
   }
   if o.action != "renewed_legacy_grant" {

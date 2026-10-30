@@ -179,7 +179,7 @@ test "dc_04_engine_wires_created_by_into_task" {
     )
   }
   // 且 Task::new 的调用必须真的带 created_by~（不是写在别处）
-  if !(flat.contains("created_by~,)matchself.store.create_task")) {
+  if !flat.contains("created_by~,)matchself.store.create_task") {
     abort(
       "Task::new(...) 的收尾里看不到 `created_by~,` —— 接线可能断了",
     )

@@ -77,7 +77,7 @@ test "cr_03_execute_agent_is_actually_read" {
   }
   // ① handler 里调了 identity 链
   let handler = cr_tool_block(raw, "execute")
-  if !(cr_has_code(handler, "execute_write_identity(")) {
+  if !cr_has_code(handler, "execute_write_identity(") {
     abort(
       "execute 的 handler 没调 execute_write_identity —— 身份解析链断了",
     )
@@ -87,7 +87,7 @@ test "cr_03_execute_agent_is_actually_read" {
   if helper.length() == 0 {
     abort("切不到 execute_write_identity —— 本格没跑到被测面")
   }
-  if !(cr_has_code(helper, "get_str(args, \"agent\")")) {
+  if !cr_has_code(helper, "get_str(args, \"agent\")") {
     abort(
       "execute_write_identity 里没有 get_str(args, \"agent\") —— " +
       "那 BUG-473（agent 是死参数）就**成立**了，请重新评估。",

@@ -43,17 +43,15 @@ test "ct_01_seven_handlers_wired" {
   for tool in by_group {
     let blk = ct_block(code, tool)
     let flat = ct_strip_ws(blk)
-    if !(flat.contains("agent_write_gate(eng,acl_claim_identity(by,by),ns)")) {
+    if !flat.contains("agent_write_gate(eng,acl_claim_identity(by,by),ns)") {
       abort(tool + " 没接门（或身份来源不是 by）")
     }
   }
   for tool in agent_group {
     let blk = ct_block(code, tool)
     let flat = ct_strip_ws(blk)
-    if !(
-        flat.contains(
-          "agent_write_gate(eng,acl_claim_identity(agent,agent),ns)",
-        ),
+    if !flat.contains(
+        "agent_write_gate(eng,acl_claim_identity(agent,agent),ns)",
       ) {
       abort(tool + " 没接门（或身份来源不是 agent）")
     }

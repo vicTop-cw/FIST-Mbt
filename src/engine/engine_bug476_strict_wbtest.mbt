@@ -73,7 +73,9 @@ test "bug476_s1b_action_is_interpolated_into_message" {
         }
         // 反脱锚：不能出现**未展开的占位符**
         if msg.contains("{action}") {
-          abort("文案里残留了字面量占位符 —— 插值语法写错了")
+          abort(
+            "文案里残留了字面量占位符 —— 插值语法写错了",
+          )
         }
       }
       None => abort("challenge_missing 应产生 Some")
