@@ -447,7 +447,7 @@ fn commissar_list_names(dir : String, err : @ref.Ref[String]) -> Array[String] {
       []
     }
   }
-  names.to_array()
+  names.to_owned()
 }
 
 ///|
@@ -478,7 +478,7 @@ pub fn commissar_read(
   let events = commissar_events_dir(project_dir)
   let entries : Array[CommissarEntry] = []
   let bad_files : Array[String] = []
-  let err : @ref.Ref[String] = @ref.Ref::new("")
+  let err : @ref.Ref[String] = @ref.Ref("")
   let mut scanned = 0
   let mut ignored = 0
   let mut filtered_kind = 0
