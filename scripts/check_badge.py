@@ -30,7 +30,9 @@ usage，消费者唯一的读法就是"徽章守卫判红"，于是把一次**�
 两条路都不许说谎：
 
 - **B'（默认，裸跑）**：快照必须**自带源码面锚点**，且锚点必须等于现在。
-  锚点 = `<snapshot>.src`，内容两行：`head=<sha>` 与 `code=<porcelain 摘要>`，只覆盖
+  锚点 = `<snapshot>.src`，内容**单行** `code=<最近一笔源码面提交 sha>@<16 hex porcelain 摘要>`
+  （格式真源 = `scripts/_badge_anchor.py` 的 `ANCHOR_PREFIX = "code="`；本行此前写「两行
+  `head=<sha>` 与 `code=…`」—— R70 实测该文件**只有一行**，旧措辞已过时），只覆盖
   **源码语义面**（`*.mbt` / `*.pkg` / `*.mod` / `moon.mod`）。缺失或不等 ⇒
   `rc=2 SNAPSHOT-STALE`（**诚实沉默**，不是 PASS、也不是违例红）。
   看的是**代码变没变**，不是 mtime 变没变（判据的真源若是文件系统事实，必须验证它是否代表语义事实）。
