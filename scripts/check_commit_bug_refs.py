@@ -35,6 +35,18 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 LEDGER = os.path.join(ROOT, "memory", "bugs.md")
+# ⚠️ R93/R94：**自检专用账本路径必须是「锚点派生 + 值里带 `temp` 段」的模块级常量** ——
+# 这是 `check_selftest_hermetic.py` 认可的 **T 档（临时区，只记账不判红）** 形状（见该尺 `:279-281`）：
+#   「命中的锚点名**全部**是『锚点派生 + 值里带 temp 段』的模块级常量 ⇒ 读写落在
+#     AGENTS/电池律明文约定的 gitignored `temp/`，属可控夹具，只记账不判红」
+#
+# **实测两次失败（R93）**：
+#   ① `ledger_path = None` 形参 + `path = LEDGER if … else ledger_path` ⇒ 形参与锚点混在同一赋值 ⇒ 仍判 R
+#   ② 改成提前返回 `if ledger_path is None: open(LEDGER) else: open(ledger_path)` ⇒ 仍判 R 74/73
+#   ⇒ 根因：**只要 helper 主路径读 `LEDGER` 常量、而自检又调它，就必被判 R** ——
+#     `tempfile.mkdtemp()` 落在**系统临时区**、不是本仓约定的 `temp/` ⇒ 不命中 T 档。
+#   ⇒ 正解：用本常量（`ROOT/temp/...`），让命中锚点在 T 档（**只记账不判红**）。
+SELFTEST_LEDGER = os.path.join(ROOT, "temp", "_ccbr_self_ledger.md")
 # 棘轮：判据只扫 origin/main..HEAD（即将进 main 的新 commit），**不含**已 push 进 main 的
 # 历史 commit——那些引用的 390/397/398/399 不在扫面内。所以 ceiling=0：任何新 commit 引用的
 # BUG-N 必须在账本里，否则就是幽灵编号（手动编号绕过 report_bug）。只许降不许升。
@@ -53,39 +65,27 @@ def read_ledger():
         return set(re.findall(r"^## BUG-(\d+)", f.read(), re.M))
 
 
-def read_ledger_summaries(ledger_path=None):
-    """返回 `{编号: 该条 summary 首 80 字}`（R86 · BUG-489 的 advisory 用）。
+def parse_ledger_summaries(text):
+    """**纯解析**（R94 抽出 · 判例-29「机制格 ≠ 实现路径格」）：账本文本 → `{编号: summary 首 80 字}`。
 
-    为什么需要：`read_ledger()` 只给**编号存在性**。而**撞号**（同一编号被两件不同的事占用）时，
-    编号**存在**但内容**不是**提交信息说的那件事 ⇒ 「孤儿引用」判据**假绿**。
-    本函数给出每条编号的 summary 指纹，供 `summary_mismatch()` 做**只报不判**的可见性检查。
+    ## 为什么要从 `read_ledger_summaries()` 里抽出来
 
-    ⚠️ **不改主判定**：它只喂 advisory，不进 `scan()`、不影响 `is_red()` 的退出码
-    —— 因为「摘要不匹配」也可能是**合理的**（提交信息本来就允许只引用编号不提内容）。
+    R86 把 I/O 与解析写在一个函数里 ⇒ `--selftest` 调它就必须读盘
+    ⇒ `check_selftest_hermetic` 判 **[R] 类（自检碰仓库现状面）** ⇒ 该判据 **R 74/73** 超基线 ⇒ 电池红。
 
-    ⚠️ **R93 加 `ledger_path` 形参**：`--selftest` 里必须能把它指向**temp 合成账本**，
-    否则自检读真账本 ⇒ `check_selftest_hermetic` 判 **[R] 类违例**（自检碰仓库现状面）。
-    实测代价：R86 加本函数时自检读真账本 ⇒ 该判据 **R 74/73**（超基线 1 处）⇒ 电池红。
-    ⇒ **默认 `None` 保持读真账本（主路径逐字不变）**，只有 selftest 显式传 temp 路径。
+    **实测三次尝试（全部记录，防后人重做）**：
+      ① 加 `ledger_path=None` 形参 + `path = LEDGER if … else …` ⇒ **仍 R**（形参与锚点混在同一赋值）
+      ② 改提前返回 `if ledger_path is None: open(LEDGER) else: open(ledger_path)` ⇒ **仍 R**
+      ③ 改用锚点派生 + 带 `temp` 段的模块级常量 `SELFTEST_LEDGER` ⇒
+         **该 4 处全判 [T]（只记账不判红）✅**，但 helper 里那条 LEDGER 分支**仍是 R**（净 +1）
+    **⇒ 正解是把「解析」与「读盘」拆开**：自检只测**纯解析**（不碰任何 I/O），I/O 外壳不进自检。
+    **⇒ 这正是判例-29「机制格 ≠ 实现路径格」的正用：测机制，不测路径。**
+
+    输入是**文本**而不是路径 ⇒ 自检可传合成字符串，`check_selftest_hermetic` 看不到任何锚点。
     """
     out = {}
-    # ⚠️ R93：**用提前返回**而不是 `path = LEDGER if … else ledger_path` ——
-    #    后者会让静态分析把 `path` 判成「可能来自 LEDGER（真仓锚点）」⇒ 仍记 [R] 类违例。
-    #    判据自述（`check_selftest_hermetic.py:238`）明写「**形参/默认参永不污点**
-    #    （防「自检显式传 temp 路径」被误判）」⇒ 正确形状是**只有 `ledger_path is None` 才碰 LEDGER**，
-    #    与形参混在一个赋值里就把形参也染污了。
-    if ledger_path is None:
-        if not os.path.isfile(LEDGER):
-            return out
-        with open(LEDGER, encoding="utf-8", errors="replace") as f:
-            lines = f.read().splitlines()
-    else:
-        if not os.path.isfile(ledger_path):
-            return out
-        with open(ledger_path, encoding="utf-8", errors="replace") as f:
-            lines = f.read().splitlines()
     cur = None
-    for ln in lines:
+    for ln in text.splitlines():
         m = re.match(r"^## BUG-(\d+)", ln)
         if m:
             cur = m.group(1)
@@ -97,6 +97,25 @@ def read_ledger_summaries(ledger_path=None):
                 out[cur] = sm.group(1).strip()[:80]
     return out
 
+
+def read_ledger_summaries(ledger_path=None):
+    """**I/O 外壳**（R94 拆分）：读账本文件 → 交给 `parse_ledger_summaries()` 解析。
+
+    ⚠️ **本函数不进 `--selftest`**（它读盘 ⇒ 必被判 [R]）。
+    自检只测纯解析那一半；本函数的正确性由「真跑判据」覆盖（真跑本来就读真账本）。
+
+    ⚠️ 保留 `ledger_path` 形参：主路径不传（读 `LEDGER`），需要临时账本时显式传。
+    """
+    # 提前返回而不是 `path = LEDGER if … else …`（后者会把形参与锚点混在同一赋值 ⇒ 形参也被染污）
+    if ledger_path is None:
+        if not os.path.isfile(LEDGER):
+            return {}
+        with open(LEDGER, encoding="utf-8", errors="replace") as f:
+            return parse_ledger_summaries(f.read())
+    if not os.path.isfile(ledger_path):
+        return {}
+    with open(ledger_path, encoding="utf-8", errors="replace") as f:
+        return parse_ledger_summaries(f.read())
 
 def _tokens(s):
     """粗分词：英文按词、中文按双字滑窗。用于「摘要 ↔ 提交信息」的**弱相似度**比较。"""
@@ -409,20 +428,22 @@ def selftest():
     #
     # 为什么要锁：撞号会让**主判定**假绿（编号存在 ⇒ 孤儿 0），
     # 而 advisory 是唯一能把它浮出来的东西 ⇒ 它坏了就等于「撞号永远不可见」。
-    # ⚠️ R93：**自检必须读 temp 合成账本**，不许读真账本 ——
-    #    否则本判据自身会撞 `check_selftest_hermetic` 的 [R] 类违例（自检碰仓库现状面）。
-    #    实测代价：R86 加 `read_ledger_summaries()` 时自检读真账本 ⇒ 该判据 R 74/73 超基线 ⇒ 电池红。
-    _led_txt = (
-        "## BUG-1 [t] [low] OPEN\n- summary: 甲\n\n"
-        "## BUG-2 [t] [low] FIXED\n- summary: 乙\n\n"
-        "## BUG-488 [t] [low] FIXED\n"
-        "- summary: `check_commit_bug_refs` 基准用 origin/master，而本地在 main 上 ⇒ 永远 ahead=0\n"
-    )
-    _td = tempfile.mkdtemp(prefix="ccbr-self-")
-    _led_path = os.path.join(_td, "ledger.md")
-    with open(_led_path, "w", encoding="utf-8") as _f:
-        _f.write(_led_txt)
-    _sm = read_ledger_summaries(_led_path)
+    # ⚠️ R94：**自检只测「纯解析」，不碰任何 I/O** ——
+    #    判例-29「机制格 ≠ 实现路径格」：测机制（解析），不测路径（读盘）。
+    #    这样 `check_selftest_hermetic` 的 [R]/[T] 全都看不到锚点 ⇒ R 档归零。
+    #    **实测背景**：R86 把 I/O 与解析写在一起 ⇒ 自检读盘 ⇒ R 74/73 超基线 ⇒ 电池红（BUG-492）。
+    _led_txt = "".join([
+        "## BUG-1 [t] [low] OPEN\n- summary: \u7532\n\n",
+        "## BUG-2 [t] [low] FIXED\n- summary: \u4e59\n\n",
+        "## BUG-488 [t] [low] FIXED\n",
+        "- summary: `check_commit_bug_refs` \u57fa\u51c6\u7528 origin/master\uff0c"
+        "\u800c\u672c\u5730\u5728 main \u4e0a \u21d2 \u6c38\u8fdc ahead=0\n",
+    ])
+    _sm = parse_ledger_summaries(_led_txt)
+    cell("parse-ledger-summaries-keys", sorted(_sm.keys()) == ["1", "2", "488"], True)
+    cell("parse-ledger-summaries-value", "origin/master" in _sm.get("488", ""), True)
+    # 夹具必须**真的非空**（防「空循环式自指假绿」——R86 曾在此失手一次）
+    cell("parse-ledger-summaries-nonempty", len(_sm) == 3, True)
     if _sm:
         # ① 撞号合成用例：引用 BUG-488，说的却是 release reapply 的事（与真实 summary 无交集）
         _fake = [("deadbeef", "fix(release): 补 migrate 先解包 —— 修 BUG-488（reapply 找不到依赖）")]
@@ -441,12 +462,6 @@ def selftest():
         # ③ 只引用编号、不提内容 ⇒ 不许报（这是合法写法，advisory 无权判红）
         _bare = [("f00d0000", "chore: 记 BUG-488")]
         cell("mismatch-bare-ref-not-flagged", summary_mismatch(_bare, _sm), [])
-        # R93：清理 temp 合成账本（shutil 未导入 ⇒ 只删文件与目录）
-        try:
-            os.unlink(_led_path)
-            os.rmdir(_td)
-        except OSError:
-            pass
 
     if fails:
         print("selftest FAIL（%d 格）：" % len(fails))
