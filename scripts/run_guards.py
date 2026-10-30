@@ -1187,6 +1187,16 @@ def run_battery(case_timeout=CASE_TIMEOUT_SEC):
     # 另一版（a86edc36）的三参签名，合并后签名与调用面不同形 ⇒ TypeError，被上面那道
     # 「未捕获异常 ⇒ 4」的门抓出来（这正是那一档要区分的形状）。
     print("\n=== 电池 %d 格 ===" % len(CASES))
+    # R73：**先落一份 `moon check --json` dump**，供 3 个 `gated(…, DUMP, …)` 格使用。
+    #
+    # 为什么必须在这里做：`temp/chk47.json` 是**临时件**（不进 git），而电池与 CI
+    # **从来没有**生成它的步骤 ⇒ 那 3 格**永远 SKIP**（实测 R71 电池的 3 个 SKIP 全是它）。
+    # 「永远 SKIP 的格 = 不存在」（判例-33：不带说明的 SKIP 会被读成「这格没问题」；
+    # 这里 SKIP 有说明，但**假如它永远不可能跑**，那说明只是把「不存在」写得好看了一点）。
+    #
+    # 成本：一次 `moon check --target js --json` 实测 **约 2 秒**（不是全量测试）。
+    # 失败时**不拦电池**（dump 生成失败 ⇒ 那 3 格仍 SKIP 并如实点名，不让整轮在这里崩）。
+    _ensure_check_dump()
     py = sys.executable
     fails, skips = [], []
     for c in CASES:
@@ -1386,6 +1396,37 @@ def selftest():
           "电池里没有裸跑的常驻格 / 有常驻豁免时真孤儿仍判红 / "
           "逐格判定列取自 verdict 而非 kind（红不印成 OK / 命中印 PASS / 预存红仍带口径标注））" % len(cells))
     sys.exit(0)  # NO_CALL_FACE J2
+
+
+def _ensure_check_dump():
+    """R73：电池启动前落一份 `moon check --target js --json` 到 `DUMP`。
+
+    为什么需要（实测）：`DUMP = temp/chk47.json` 是**临时件**（不进 git），
+    而电池与 CI **都没有**生成它的步骤 ⇒ 3 个 `gated(…, DUMP, …)` 格**永远 SKIP**：
+      缺前置 temp/chk47.json（×3）
+    **⇒ 「永远不可能跑的格」在实践上等于不存在。**
+
+    失败时**不拦电池**：生成不出来就让那 3 格继续 SKIP 并如实点名（判例-33 要的就是
+    「SKIP 必须说清跳过了什么」，而这里说清的正是「缺前置」）。
+    """
+    if os.path.exists(DUMP) and os.path.getsize(DUMP) > 0:
+        return  # 已有（可能是上一次跑的），不重采
+    try:
+        with open(DUMP, "w", encoding="utf-8") as f:
+            # ⚠️ 不传 `env=`：`moon_env()` 是 `moon_env_probe.py` 的符号，**本文件没有 import 它**
+            #    （R73 实测：第一版写了 `env=moon_env()` ⇒ `NameError: name 'moon_env' is not defined`
+            #    ⇒ 异常被下面的 `except` 吞成「落失败」，dump 留成 **0 字节** ⇒ 3 格仍 SKIP）。
+            #    继承当前环境即可 —— 电池里其它 `moon` 调用也都是这么做的。
+            p = subprocess.run(["moon", "check", "--target", "js", "--json"],
+                               cwd=ROOT, stdout=f, stderr=subprocess.STDOUT,
+                               timeout=120)
+        if p.returncode == 0:
+            print("（前置）已落 %s（moon check --json，%d 字节）"
+                  % (DUMP, os.path.getsize(DUMP)))
+        else:
+            print("（前置）moon check --json rc=%d ⇒ 相关格将 SKIP 并点名" % p.returncode)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print("（前置）落 %s 失败：%s ⇒ 相关格将 SKIP 并点名" % (DUMP, e))
 
 
 def main():
