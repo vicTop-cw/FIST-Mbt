@@ -6,6 +6,13 @@
 > **状态更新（2026-10-29 · 事实订正）**：三块能力里 **worktree 终态已先行落地**（`wt_create` / `wt_destroy` / `wt_status`，
 > `src/server/wt_tools.mbt`）；本文档负责的**文件绑定协调层仍未实现**（`server.mbt` 里 `file_bind` 注册数 = 0），
 > 已发布任务 **T0r5**（ns `fist-plan-20261029`）承接「文件绑定三工具」；构建/测试互斥仍未立项。
+>
+> **状态更新（2026-10-30 · T0r5 交付）**：**文件绑定协调层已落地**——`src/filebind/filebind.mbt`（纯逻辑、
+> 23 个 pub fn、`now` 可注入、禁 `sleep`）+ `src/filebind/filebind_wbtest.mbt`（24 格白盒锁，含变异对照）
+> + `server.mbt` 的 **`file_bind` / `file_release` / `file_status`** 三工具（进程内账本，与 `claimguard` 同型）。
+> 验收格「冲突返回持锁者信息、不静默」已由白盒锁覆盖；**未实现**的仍是：跨进程可见性（进程内 Map，
+> 需落 SQLite `file_binds` 表才算真正多管家可用）、§3.3 的生命周期挂钩（verify/archive 自动 release、
+> watchdog TTL 清理）与 §四 构建互斥——本单范围只到三工具的进程内语义。
 
 ---
 

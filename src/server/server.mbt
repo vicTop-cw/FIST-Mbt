@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 179 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 182 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -1888,6 +1888,123 @@ fn debate_get_session(session_id : String) -> Result[DebateSession, String] {
     Some(s) => Ok(s)
     None => Err("debate session not found: " + session_id)
   }
+}
+
+///|
+/// —— F094 多管家文件绑定协调层（进程内账本，T0r5）——
+///
+/// **与 `lock_acquire`（物理路径锁）、`wt_*`（worktree 空间隔离）互补而非重复**：
+/// 本层登记的是「**意图 / 持有者 / TTL**」（谁打算改哪个文件、打算改到什么时候），
+/// 冲突时**点名现持有者**并拒绝，让调用方决定等待 / 换单 / 协商，而不是 last-write-wins。
+///
+/// 裁决语义的单一真源在 `src/filebind/`（纯逻辑，`now` 可注入，禁 `sleep`）；
+/// 本段只做 IO（读账 / 写账 / 盖章）与回执渲染。账本是**进程内 Map**（与 claimguard 同型），
+/// **跨进程不可见**是已知缺口（见交付报告「缺口与风险」）——多进程需落到 SQLite 表。
+priv struct FileBindStore {
+  ledger : Map[String, Array[@filebind.FileBind]]
+}
+
+///|
+/// 进程内唯一账本实例（模块级 `let`，字段经 `Map.set` 原地更新，与 `debate_sessions` 同型）。
+let file_binds : FileBindStore = FileBindStore::{ ledger: Map([]), }
+
+///|
+/// 账本键 = `ns|归一 project_dir`：同 ns 同项目一本账，跨 ns / 跨项目互不可见。
+fn fb_store_key(ns : String, project_dir : String) -> String {
+  ns.trim().to_owned() + "|" + @filebind.fb_norm(project_dir)
+}
+
+///|
+/// 读账（该键无账时返回空数组）。
+fn fb_store_read(
+  ns : String,
+  project_dir : String,
+) -> Array[@filebind.FileBind] {
+  match file_binds.ledger.get(fb_store_key(ns, project_dir)) {
+    Some(a) => a
+    None => []
+  }
+}
+
+///|
+/// 写账（原地 `Map.set`）。
+fn fb_store_write(
+  ns : String,
+  project_dir : String,
+  bs : Array[@filebind.FileBind],
+) -> Unit {
+  file_binds.ledger.set(fb_store_key(ns, project_dir), bs)
+}
+
+///|
+/// JSON 数组 → 字符串数组（非字符串元素丢弃）。
+fn fb_strlist(arr : Array[Json]) -> Array[String] {
+  arr.map(fn(j) {
+    match j {
+      String(s) => s
+      _ => ""
+    }
+  })
+}
+
+///|
+/// 绑定行渲染：在 `fb_row_json` 基础上给冲突 / 非法路径补一句人话（点名现持有者）。
+fn fb_render_bind_row(r : @filebind.BindPlanRow, now : Int32) -> Json {
+  let base = @filebind.fb_row_json(r, now)
+  let name = @filebind.fb_verdict_name(r.verdict)
+  match base {
+    Object(m) => {
+      if name == "conflict" {
+        m.set(
+          "message",
+          Json::string(
+            "该路径已被 " +
+            r.holder +
+            " 持有（bound_at=" +
+            r.bound_at.to_string() +
+            ", ttl_secs=" +
+            r.ttl_secs.to_string() +
+            "）；等它释放或 TTL 过期后重试",
+          ),
+        )
+      } else if name == "invalid_path" {
+        m.set(
+          "message",
+          Json::string(
+            "路径不合法（空 / 绝对路径 / 含 .. 段），拒绝绑定",
+          ),
+        )
+      }
+      Json::object(m)
+    }
+    _ => base
+  }
+}
+
+///|
+/// 统计绑定行里"成功落账"的条数（New / Renewed / Reclaimed）。
+fn fb_count_bound(rows : Array[@filebind.BindPlanRow]) -> Int32 {
+  let mut n = 0
+  for r in rows {
+    let name = @filebind.fb_verdict_name(r.verdict)
+    if name == "bound" || name == "renewed" || name == "reclaimed" {
+      n = n + 1
+    }
+  }
+  n
+}
+
+///|
+/// 统计释放行里"实际移除"的条数（Released / Forced）。
+fn fb_count_released(rows : Array[@filebind.ReleaseRow]) -> Int32 {
+  let mut n = 0
+  for r in rows {
+    let name = @filebind.fb_release_name(r.verdict)
+    if name == "released" || name == "forced" {
+      n = n + 1
+    }
+  }
+  n
 }
 
 ///|
@@ -6465,6 +6582,186 @@ pub async fn run_server() -> Unit {
           )
         }
       }
+    },
+  )
+  // —— F094 多管家文件绑定协调层（3 个工具：bind / release / status）——
+  s1 = instrumented_tool(
+    s1,
+    "file_bind",
+    "F094 文件绑定：登记「谁打算改哪个文件」的意图账（不是物理锁）。同键已被他人有效持有 ⇒ 拒绝并点名现持有者；自己重复绑定 ⇒ 幂等续期；支持一次绑多个路径（逐条结果）。与 lock_acquire（物理路径锁）/ wt_*（worktree 空间隔离）互补。参数：project_dir、paths[]、holder、namespace(可选默认 default)、task_id/kind/scope/intent(可选)、ttl_secs(可选默认 1800，<=0 永不过期)。返回 rows[]（逐条 verdict/holder/bound_at/ttl/remaining/message）+ bound/rejected 计数。",
+    schema(
+      {
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default；进程内账本按 ns 分账）",
+        ),
+        "project_dir": string_prop("目标项目目录（必填）"),
+        "paths": array_prop(
+          "要绑定的相对路径数组（必填；一次可绑多个，逐条返回结果）",
+        ),
+        "holder": string_prop(
+          "绑定者 agent 身份（必填）。⚠️ 本参数由调用方自报，服务端无法验证 —— 不能防有意的冒充（BUG-430）",
+        ),
+        "task_id": string_prop("绑定到的任务 id（可选）"),
+        "kind": string_prop("file | dir（可选，默认 file）"),
+        "scope": string_prop("edit | build（可选，默认 edit）"),
+        "intent": string_prop("意图备注（可选）"),
+        "ttl_secs": int_prop(
+          "TTL 秒（可选，默认 1800；<=0 表示永不过期）",
+        ),
+      },
+      ["project_dir", "paths", "holder"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let project_dir = get_str(args, "project_dir")
+      let paths = fb_strlist(get_array(args, "paths"))
+      let holder = get_str(args, "holder")
+      let task_id = get_str(args, "task_id")
+      let kind = get_str(args, "kind", default="file")
+      let scope = get_str(args, "scope", default="edit")
+      let intent = get_str(args, "intent")
+      let ttl = get_int(args, "ttl_secs", default=@filebind.fb_default_ttl())
+      let now = @ops.iso_to_secs(now_default())
+      let ledger = fb_store_read(ns, project_dir)
+      let rows = @filebind.fb_plan_bind(
+        ledger, ns, project_dir, paths, holder, now, ttl,
+      )
+      let after = @filebind.fb_apply_bind(
+        ledger, ns, project_dir, rows, holder, task_id, kind, scope, intent, now,
+        ttl,
+      )
+      fb_store_write(ns, project_dir, after)
+      let row_jsons = rows.map(fn(r) { fb_render_bind_row(r, now) })
+      let bound = fb_count_bound(rows)
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "namespace": Json::string(ns),
+            "project_dir": Json::string(project_dir),
+            "holder": Json::string(holder),
+            "bound": Json::number(bound.to_double()),
+            "rejected": Json::number(
+              rows.length().to_double() - bound.to_double(),
+            ),
+            "rows": Json::array(row_jsons),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "file_release",
+    "F094 文件绑定释放：只持有者能释放（holder 匹配才移除）；非持有者 + force=true 可强制释放，但 **force 必须带 reason 理由**（否则整笔拒绝）；未命中筛选项不出行（不是拒绝）。参数：project_dir、holder、namespace/paths/task_id/scope(可选过滤)、force(可选默认 false)、reason(force 时必填)。返回 rows[] + released/denied 计数。",
+    schema(
+      {
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default）",
+        ),
+        "project_dir": string_prop("目标项目目录（必填）"),
+        "paths": array_prop(
+          "要释放的相对路径数组（可选；空 = 该作用域全部）",
+        ),
+        "holder": string_prop(
+          "释放者 agent 身份（必填）。⚠️ 自报、服务端不可验证（BUG-430）",
+        ),
+        "task_id": string_prop("按任务过滤（可选）"),
+        "scope": string_prop("按 scope 过滤（可选）"),
+        "force": bool_prop("强制释放（可选，默认 false）"),
+        "reason": string_prop(
+          "强制释放的理由（force=true 时必填，非空）",
+        ),
+      },
+      ["project_dir", "holder"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let project_dir = get_str(args, "project_dir")
+      let paths = fb_strlist(get_array(args, "paths"))
+      let holder = get_str(args, "holder")
+      let task_id = get_str(args, "task_id")
+      let scope = get_str(args, "scope")
+      let force = get_bool(args, "force")
+      let reason = get_str(args, "reason")
+      if force && reason.trim() == "" {
+        return Err(
+          @mcp_types.ToolError(
+            "file_release: force=true 必须带非空 reason（理由）",
+          ),
+        )
+      }
+      let ledger = fb_store_read(ns, project_dir)
+      let rows = @filebind.fb_plan_release(
+        ledger, ns, project_dir, paths, task_id, scope, holder, force,
+      )
+      let after = @filebind.fb_apply_release(
+        ledger, ns, project_dir, rows, task_id, scope,
+      )
+      fb_store_write(ns, project_dir, after)
+      let row_jsons = rows.map(fn(r) {
+        Json::object({
+          "path": Json::string(r.path),
+          "verdict": Json::string(@filebind.fb_release_name(r.verdict)),
+          "holder": Json::string(r.holder),
+        })
+      })
+      let released = fb_count_released(rows)
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "namespace": Json::string(ns),
+            "project_dir": Json::string(project_dir),
+            "released": Json::number(released.to_double()),
+            "denied": Json::number(
+              rows.length().to_double() - released.to_double(),
+            ),
+            "rows": Json::array(row_jsons),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "file_status",
+    "F094 文件绑定状态：按 namespace/project_dir/paths/task_id/scope 过滤，返回占用明细 + **过期与仍有效分开计数**（BUG-74：两栏不许混读）。过期项不隐藏（否则没人知道文件还被死掉的 agent 占着）。参数：project_dir(必填)、namespace/paths/task_id/scope(可选)。返回 entries[]（每条含 expired/remaining_secs）+ valid/expired/total。",
+    schema(
+      {
+        "namespace": string_prop(
+          "可选：目标命名空间（默认 default）",
+        ),
+        "project_dir": string_prop("目标项目目录（必填）"),
+        "paths": array_prop("按路径过滤（可选；空 = 不过滤）"),
+        "task_id": string_prop("按任务过滤（可选）"),
+        "scope": string_prop("按 scope 过滤（可选）"),
+      },
+      ["project_dir"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let project_dir = get_str(args, "project_dir")
+      let paths = fb_strlist(get_array(args, "paths"))
+      let task_id = get_str(args, "task_id")
+      let scope = get_str(args, "scope")
+      let now = @ops.iso_to_secs(now_default())
+      let ledger = fb_store_read(ns, project_dir)
+      let matched = ledger.filter(fn(b) {
+        @filebind.fb_match(b, ns, project_dir, paths, task_id, scope)
+      })
+      let (valid, expired) = @filebind.fb_counts(matched, now)
+      let entries = matched.map(fn(b) { @filebind.fb_status_json(b, now) })
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "namespace": Json::string(ns),
+            "project_dir": Json::string(project_dir),
+            "valid": Json::number(valid.to_double()),
+            "expired": Json::number(expired.to_double()),
+            "total": Json::number(matched.length().to_double()),
+            "entries": Json::array(entries),
+          }).stringify(),
+        ),
+      )
     },
   )
   // —— 项目助理（multi-agent-lock v3 阶段2 精简版：claim / status / sweep / resign / heartbeat）——
