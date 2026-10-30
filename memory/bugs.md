@@ -11195,7 +11195,7 @@ temp/ = 808 条目 / 142M 时：
 > **⇒ 区分方法只有一条：只改变一个变量。**
 
 > **有官方判据时不要手工 `rm`** —— 手动清理不会复用判据的「保留清单」。
-## BUG-485 [2026-10-30T03:14:14Z] [low] OPEN
+## BUG-485 [2026-10-30T03:14:14Z] [low] FIXED
 - summary: 【更正 R72】「剩 7 把判据待加 --check-output」是错的 —— 实测真正自跑 moon check 的只有 2 把，且都已支持
 - detail: ## 我在 R72 报了一个错误的待办清单
 
@@ -11266,3 +11266,50 @@ grep -rlE "moon check|moon\", \"check" scripts/check_*.py
 > **报待办清单前，先确认那 N 项**都需要**这件事** —— 本单 7 项里 0 项需要。**
 
 - reported_by: lead
+
+
+### FIXED(2026-10-30T03:33:40Z / BUG-485)
+- evidence: ## 关闭依据：这是「我自己的归因更正」，不是待修缺陷
+
+BUG-485 的内容是**更正 R72 的一条错误待办清单**：
+
+> R72 我写「剩下 7 把判据还没加 `--check-output`」，
+> 而实测证明：**那 7 把根本不需要它，因为它们从不 spawn `moon check`。**
+
+**⇒ 它是「账本的自我修正」，没有代码要改。**
+
+## 更正已落地（可核）
+
+| 位置 | 内容 |
+|---|---|
+| 本单正文 | 逐条 grep 核实那 7 把的 `moon check` 出现在**注释 / docstring / 自拒文案 / 测试夹具字符串**里，**0 处是真 spawn** |
+| `89a90cf7e` 提交信息 | 含「R72 报的『剩 7 把』是错的」与正确判据（`def run_moon_check` 结构特征 vs 裸词文本特征）|
+
+## 决定性实测证据
+
+```bash
+$ grep -lE "def run_moon_check" scripts/check_*.py
+scripts/check_effective_catch.py
+scripts/check_warning_ledger.py
+```
+**⇒ 真正 spawn 的只有 2 个，且两者都已支持 `--check-output` ⇒ R72 的待办清单是空的。**
+
+我 R72 用的 grep 是裸词 `moon check` ⇒ 命中了 9 个文件，其中 7 个是文本提及。
+
+## 顺带查明的两件正面事实（不需要新 bug）
+
+1. **「共享事实避免重复采集」这个机制本仓早就有**：
+   `check_deprecated_site_list` / `check_deprecated_text_census` 已共享同一份 dump
+   （`run_guards.py:47` 的 `DUMP = "temp/chk47.json"`）。
+   ⇒ `check_effective_catch` 的 `--check-output` 只是**接上同一条路**，不是新机制。
+2. **R73 已让那份 dump 真的能被生成**（`_ensure_check_dump()`，19176 字节）
+   ⇒ 从此这 3 格不再永久 SKIP。
+
+## 判例
+
+> **`grep <裸词>` 命中 N 个文件 ≠ 有 N 处实现。**
+> 注释 / docstring / 自拒文案 / 测试夹具字符串全都会命中。
+> **⇒ 判「有几处代码在做 X」必须用**结构特征**（`def run_x` / `subprocess.run(["x"])`），
+> 不能用**文本特征**（裸词）。**
+
+> **报待办清单前，先确认那 N 项**都需要**这件事** —— 本单 7 项里 0 项需要。**
