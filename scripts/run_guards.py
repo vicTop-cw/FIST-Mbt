@@ -399,6 +399,12 @@ SPECIAL_CASES = [
     case("check_template_ctrl.py"),
     case("check_model_auth_no_key.py"),
     case("check_release_asset_names.py"),
+    # R87（BUG-490 家族）：与上面那把**语义相邻** —— 都管「发布面与测试面同源」。
+    #   这把管的是**步骤覆盖面**：任何跑 moon 的 job 必须**先** migrate_mooncakes_modjson。
+    #   实测该缺失在两条 workflow 上发生过 **3 次**（build-js / build-native-linux /
+    #   build-native-windows），最后那个因 `continue-on-error` **长期静默**（资产少一件没人报）。
+    case("check_workflow_step_parity.py"),
+    case("check_workflow_step_parity.py", "--selftest"),
     case("check_publish_payload.py"),
     case("check_publish_payload.py", "--selftest"),
     # —— R141/R155 落仓的两支工具面带自检：render_dsh_patch（模板→本机渲染，
