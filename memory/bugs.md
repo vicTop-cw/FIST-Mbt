@@ -11067,7 +11067,7 @@ R64 我把 `k463_base()` 从仓库内相对路径改成系统临时**绝对路�
 改输入会牵动被测代码的所有隐含前提；改副作用只影响「留下什么」。
 
 **探针不可见的教训**：白盒测试驱动器下 `println` 零输出（而普通测试里可见）⇒ 「探针没输出」必须分清①没执行 ②被吞，否则会拿①去解释②。
-## BUG-484 [2026-10-30T02:30:33Z] [low] OPEN
+## BUG-484 [2026-10-30T02:30:33Z] [low] FIXED
 - summary: 【更正我自己的归因】BUG-482 的根因只有「删目录节点」一条，「temp/ 积压」被实测排除
 - detail: ## 背景
 
@@ -11141,3 +11141,128 @@ tolerant("cleanup_artifacts.py", (0, 1),
    —— 但那是**优化**，不是修 bug
 
 - reported_by: lead</string>
+
+
+### FIXED(2026-10-30T02:32:45Z / BUG-484)
+- evidence: ## 关闭依据：这是一条「归因更正」，不是待修缺陷
+
+BUG-484 的内容是**我（统帅）对自己的归因纠错**：
+R65 我给 BUG-482 写了「根因两段」（§1 删目录节点 + §2 temp/ 积压），
+本轮实测证明 §2 不成立，故记账更正。
+
+**⇒ 它是「账本的自我修正」，不是「代码里的缺陷」** —— 没有代码要改。
+
+## 更正已落地的地方（三处，可核）
+
+| 位置 | 内容 |
+|---|---|
+| 本单正文 | 完整反证（`temp/` 808 条目 / 142M 时 `src/store` **连跑 5 次全绿**）|
+| `6a805edad` | 提交信息里写明「§2 被实测排除」与区分方法（**只改一个变量**）|
+| 账本 BUG-482 的 FIXED 小记 | 保留了「§1 是唯一病因」 |
+
+## 实测证据（可复现）
+
+```
+temp/ = 808 条目 / 142M 时：
+  第1次: Total tests: 131, passed: 131
+  第2次: Total tests: 131, passed: 131
+  第3次: Total tests: 131, passed: 131
+  第4次: Total tests: 131, passed: 131
+  第5次: Total tests: 131, passed: 131
+```
+
+**⇒ 且 808 比 R65 清理后的 322 还多 ⇒ 「积压」既非充分也非必要。**
+
+## 顺带查明的两件事（已写进本单，不需要新 bug）
+
+1. **`temp/` 不清理是有意设计**：`src/store/bug462_fixtures.mbt` docstring 明写
+   「本函数不做清理 —— 调用方各自 remove / 交给 temp/ 的 gitignore 兜底」。
+2. **判据已存在且在工作**：`run_guards.py` 有
+   `tolerant("cleanup_artifacts.py", (0,1), "树态诊断…只报读数", "--check")`，
+   实测在电池输出里如实打印 `PASS rc=1 exp=0 ... 诊断`。
+
+**⇒ 所以「temp/ 积压」既不是 bug、也不缺判据 —— 缺的是「有人定期跑 cleanup_artifacts.py」（运维动作）。**
+**⇒ 这一条归运维，不归代码，故不在账本另开新单。**
+
+## 本轮做的实际动作（可核）
+
+用**官方判据**（不是手工 `find -exec rm`）清理：`cleanup_artifacts.py` → **移除 816 个生成物**，
+`temp/` 从 808 → 473 条目。**保留了交付库 `fist-mbt.db`**（这正是手工清理做不到的）。
+
+## 判例
+
+> **「两个事实同时出现」≠「因果」。** R63 失败现场恰好 temp/ 有 9945 条目 ⇒ 我把「同时」读成「因此」。
+> **⇒ 区分方法只有一条：只改变一个变量。**
+
+> **有官方判据时不要手工 `rm`** —— 手动清理不会复用判据的「保留清单」。
+## BUG-485 [2026-10-30T03:14:14Z] [low] OPEN
+- summary: 【更正 R72】「剩 7 把判据待加 --check-output」是错的 —— 实测真正自跑 moon check 的只有 2 把，且都已支持
+- detail: ## 我在 R72 报了一个错误的待办清单
+
+R72 我的提交信息与汇报里写：
+
+> **剩下 7 把**（`check_deprecated_site_list` / `check_deprecated_text_census` /
+> `check_doc_surface` / `check_esm_bundle_runnable` / `check_mbti_sync` /
+> `check_pkg_imports` / `check_plan_landing`）**还没加 `--check-output`**
+
+**⇒ 本轮实测证明：这 7 把根本不需要它，因为它们从不 spawn `moon check`。**
+
+## 反证（逐条实测）
+
+**真正 `def run_moon_check` 的判据只有 2 个**：
+```bash
+$ grep -lE "def run_moon_check" scripts/check_*.py
+scripts/check_effective_catch.py
+scripts/check_warning_ledger.py
+```
+
+**⇒ 而这 2 个**都已支持 `--check-output`** ⇒ **R72 的待办清单是空的。**
+
+**那 7 个判据提到 `moon check` 的真实形态**（逐条 grep 核实）：
+
+| 判据 | `moon check` 出现在哪 |
+|---|---|
+| `check_deprecated_site_list` | **docstring 里解释背景** + 自拒文案（它读 `temp/chk44.json` dump）|
+| `check_deprecated_text_census` | 同上（读 dump）|
+| `check_doc_surface` | **纯注释**（"agent 第一发 moon check 就崩"的历史叙述）|
+| `check_esm_bundle_runnable` | **docstring 标题**「为什么它不能靠 `moon check`」|
+| `check_mbti_sync` | **hint 文案**（"干净树 moon check 会报 unbound"）|
+| `check_pkg_imports` | **docstring 历史叙述** |
+| `check_plan_landing` | **测试夹具里的字符串**（`extract_paths("…`moon check`…")`）|
+
+**⇒ 7 个全部是「文本里出现这个词」，0 个是「真的 spawn」。**
+
+## 我 R72 是怎么数错的
+
+我用的 grep 是：
+```bash
+grep -rlE "moon check|moon\", \"check" scripts/check_*.py
+```
+**⇒ 裸词 `moon check` 同时命中注释、docstring、自拒文案、测试夹具字符串。**
+**⇒ 这就是判例-30 家族的形态：用文本匹配代替结构解析。**
+
+**正确判据**：`def run_moon_check`（结构特征）而不是 `moon check`（文本特征）。
+
+## 顺带查明：这个机制**早就存在**
+
+**`check_deprecated_site_list` / `check_deprecated_text_census` 已经共享同一份 dump**
+（`run_guards.py:47` 的 `DUMP = "temp/chk47.json"`）——
+
+**⇒ 「共享事实、避免重复采集」这个设计**不是本会话发明的，本仓早就有**，
+`check_effective_catch` 的 `--check-output` 只是**接上同一条路**（不是新机制）。
+
+## 影响
+
+- **R72 的提交信息里「剩下 7 把」这句是错的**（但代码改动本身是对的且有用）
+- **本单无需修代码** —— 只需更正账本记录，防下一个人照着 R72 去改 7 个判据（那是纯浪费）
+
+## 判例
+
+> **`grep <裸词>` 命中 N 个文件 ≠ 有 N 处实现。**
+> 注释、docstring、自拒文案、测试夹具字符串全都会命中。
+> **⇒ 判「有几处代码在做 X」必须用**结构特征**（`def run_x` / `subprocess.run(["x"])`），
+> 不能用**文本特征**（裸词）。
+
+> **报待办清单前，先确认那 N 项**都需要**这件事** —— 本单 7 项里 0 项需要。**
+
+- reported_by: lead
