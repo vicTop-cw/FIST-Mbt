@@ -33,7 +33,9 @@ import argparse
 import io
 import os
 import re
+import shutil
 import sys
+import tempfile
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -325,10 +327,17 @@ def selftest():
     #     变异：编一个没人引用的名字塞进 shared ⇒ check_admission 必须报 problem。
     # ⚠️ 探针名必须**拼接构造**：直接在源码里写死一个假名，会被 is_referenced 扫到
     #    「本判据自己源码里有这个字面量」⇒ 误判成「有人引用」⇒ 该格恒绿（判例-30 自指假绿）。
+    # ⚠️ **改读 temp 合成树**（R56）：本格只验「零引用被拒」，不需要真仓任何文件。
+    #    原版传 SCRIPTS_DIR ⇒ 触发 `check_selftest_hermetic` 的 R 档 +1（每格读真仓即计债）。
+    #    这不是放宽判据：被检的规则（条件 3）仍在 temp 树上完整生效。
     _fake13 = "_zero" + "_ref_probe.py"
-    _a13, _ = check_admission([_fake13], SCRIPTS_DIR,
-                              os.path.join(SCRIPTS_DIR, "run_guards.py"))
+    _t13 = tempfile.mkdtemp(prefix="naming-adm13-")
+    _guards13 = os.path.join(_t13, "run_guards.py")
+    with io.open(_guards13, "w", encoding="utf-8") as _f13:
+        _f13.write("# temp 合成 run_guards（不含任何登记）\n")
+    _a13, _ = check_admission([_fake13], _t13, _guards13)
     cells.append(("MUTATION-zero-ref-in-whitelist-rejected", len(_a13) >= 1))
+    shutil.rmtree(_t13, ignore_errors=True)
 
     # 14) ★ 准入条件 2：**被 run_guards 登记为独立格的文件进白名单 ⇒ 硬错**
     #     用真仓库里真实存在的一把判据当样本（check_doc_surface 确实在电池里登记）。
@@ -342,11 +351,18 @@ def selftest():
     cells.append(("admission-live-whitelist-all-passes", len(_a15) == 0))
 
     # 16) ★ 引用形态：`is_referenced` 认 import 与 subprocess 字面量两种
+    # ⚠️ `_r16a` 必须读真仓（要证明「真共享件**被认出**」—— 传 temp 空树等于没标定，判例-32）。
     _r16a = is_referenced("_badge_anchor.py", _iter_ref_texts(SCRIPTS_DIR))
+    # ⚠️ `_r16b` 改读 temp 合成树（本格只验「假名不被误认」，与真仓内容无关）：
+    #    原版也传 SCRIPTS_DIR ⇒ R 档 +1。规则（不误认）在 temp 上同样完整生效。
     # 同上：假名拼接构造（字面量会被本判据自身命中 ⇒ 假绿）
     _fake16 = "_definitely_nobody_" + "references_this.py"
-    _r16b = not is_referenced(_fake16, _iter_ref_texts(SCRIPTS_DIR))
+    _t16 = tempfile.mkdtemp(prefix="naming-ref16-")
+    with io.open(os.path.join(_t16, "unrelated.py"), "w", encoding="utf-8") as _f16:
+        _f16.write("# temp 合成文件，不含任何 import\n")
+    _r16b = not is_referenced(_fake16, _iter_ref_texts(_t16))
     cells.append(("ref-detector-sees-real-misses-fake", _r16a and _r16b))
+    shutil.rmtree(_t16, ignore_errors=True)
 
     # 8) 真源码校准：**上限不得宽于实测**（上限烂掉比没上限更贵）。
     #
