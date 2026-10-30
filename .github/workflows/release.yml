@@ -77,6 +77,13 @@ jobs:
 
       # BUG-480：RX-MBT 的 fs.watch 句柄泄漏。**发布产物必须带这个补丁** ——
       # 否则用户装到的 JS bundle 里仍是 `close()` 永不执行的旧代码。
+      # BUG-488（R256）：reapply 前必须**先解包依赖** —— `moon update` 只拉注册表索引，
+      # `.mooncakes/` 在 `moon check` 触发解包前不存在（ci.yml:447 已知坑，release 漏配）
+      # ⇒ build-js 与 build-native-linux 双双红在 reapply ⇒ release skipped ⇒ Release 零资产。
+      - name: Migrate mooncakes dep manifests (解包依赖 + 迁旧 moon.mod.json)
+        shell: bash
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
+
       - name: Reapply RX-MBT BUG-480 fs.watch handle fix (js)
         shell: bash
         run: bash patches/rx-mbt-bug480/reapply.sh --force
@@ -122,9 +129,8 @@ jobs:
       - name: Refresh registry (first build)
         run: moon update
 
-      - name: Install sqlite3 dev
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev sqlite3
-
+      # BUG-488（R256）：native 臂同样补「migrate 先解包」（见 js 臂注释）；顺带去掉重复的
+      # Install sqlite3 dev 步骤。
       - name: Install sqlite3 dev
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev sqlite3
 
