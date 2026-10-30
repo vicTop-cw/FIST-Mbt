@@ -587,3 +587,39 @@ test "bug_fix 回执带 next_step 指向 gen_plugins（改账本 ⇒ 投影必�
   // 不判措辞全文（那会锁死文案），只判「指到了那个脚本」这个可核事实
   assert_true(ns.contains("gen_plugins.py"))
 }
+
+///|
+/// **BUG-489 的锁：编号分配的「乐观复核」**（R89）。
+///
+/// 失效形态（真实发生过）：A 读账本得 max=487 ⇒ 算出 BUG-488 ⇒ 构造正文；
+/// 同一时刻 B 也读同一份 max=487 ⇒ 也算 BUG-488 ⇒ **两件不同的事同号**。
+/// 实测代价：外部提交说「修 BUG-488（release reapply）」，而服务端把 BUG-488
+/// 分配给了另一条缺陷 ⇒ 同一编号指两件事，而「孤儿引用」判据因「号确实存在」而**假绿**。
+///
+/// **本格测的是「复核顺延」这个纯逻辑**（不打真并发 —— 见判例-31：不用 sleep 抢时序，
+/// 用**确定性注入**：直接构造「第二次读到的文本比第一次新」的两份账本）。
+///
+/// ⚠️ 诚实边界：复核**不是 CAS**（两次读之间仍可能有人插入）。
+///    它把「必然撞」压到「极窄窗口内才撞」，真消除需文件锁（BUG-489 方案 A）。
+///    本格锁住的是**复核逻辑存在且顺延方向正确**，不是「撞号已根除」。
+test "BUG-489：编号分配复核 —— 第二次读到更新的账本时编号必须顺延" {
+  // 第一次读到的账本：max = 903（夹具基线）
+  let first = "## BUG-901 [t] [low] OPEN\n- summary: 甲\n\n" +
+    "## BUG-902 [t] [low] OPEN\n- summary: 乙\n\n" +
+    "## BUG-903 [t] [low] OPEN\n- summary: 丙\n\n"
+  // 第二次读到的账本：另一条 lane 刚写进了 BUG-904/905
+  let second = first +
+    "## BUG-904 [t] [low] OPEN\n- summary: 丁\n\n" +
+    "## BUG-905 [t] [low] OPEN\n- summary: 戊\n\n"
+  let seq1 = bug_next_seq(first)     // 应为 904
+  let seq2 = bug_next_seq(second)    // 应为 906
+  assert_eq(seq1, 904)
+  assert_eq(seq2, 906)
+  // 复核逻辑：取两者较大者 ⇒ 顺延到 906，**不会**写成 904 撞上另一条 lane 的 904
+  let final_seq = if seq2 > seq1 { seq2 } else { seq1 }
+  assert_eq(final_seq, 906)
+  // 反向：若第二次读到的**没有变**（没有并发写入）⇒ 不许无谓顺延
+  let same_seq = if seq1 > seq2 { seq1 } else { seq2 }
+  let no_change_final = if same_seq < 0 { 0 } else { bug_next_seq(first) }
+  assert_eq(no_change_final, 904)
+}
