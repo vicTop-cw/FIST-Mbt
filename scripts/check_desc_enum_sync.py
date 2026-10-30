@@ -58,6 +58,18 @@ ENUM_REGISTRY = [
         # 散文形：值串截止到全角/半角括号或句末，避免把「（真源 memory/bugs.md…）」说明词带进来。
         r"状态闭集\s*=\s*([^。；\n（(]+)",
     ),
+    # R76：`ocr_scan` 的 `subcmd` 早已在描述里列出四值，但**从未被登记** ⇒
+    #      没有任何判据在验证「描述 ↔ 闭集函数」。若哪天 `ocr_subcmds()` 删一个值，
+    #      描述会**静默落后** —— 这正是 BUG-214 的形状（描述侧落后而 schema/真源都是新值）。
+    (
+        "src/server/server.mbt",
+        "src/server/ocr_scan.mbt",
+        "ocr_subcmds",
+        "ocr_scan",
+        "subcmd",
+        # 参数子句形：subcmd(必填 scan|files|delegate|rules)
+        r"subcmd\s*\(\s*必填\s+([^)]*)\)",
+    ),
 ]
 
 # 闭集函数形如：fn bug_severities() -> Array[String] {\n  ["a", "b", "c"]\n}
@@ -101,7 +113,13 @@ def check_entry(desc_file: Path, close_file: Path, close_fn: str,
     if desc is None:
         problems.append(f"{desc_file} 里找不到 `{tool}` 的 `{param}(可选 …)` 子句（判据自拒，不出假绿）")
         return problems
-    listed = [v.strip().strip('"').strip("'") for v in desc.split("/") if v.strip()]
+    # ⚠️ 分隔符**两种都收**（R76 实测）：仓里工具描述同时存在
+    #    · `severity(可选 critical/high/medium/low)`  ← 斜杠形
+    #    · `subcmd(必填 scan|files|delegate|rules)`   ← 竖线形
+    #    只认 `/` 会让竖线形整串被当成**一个值** ⇒ 报「列了闭集外的值」的假红（实测撞到）。
+    #    ⇒ 判据要与**被测面的真实形态**对齐（判例-30 同族），不能只按自己习惯的那一种写。
+    listed = [v.strip().strip('"').strip("'")
+              for v in re.split(r"[/|]", desc) if v.strip()]
     # 允许「缺省 xx」这类尾部说明被 `/` 切开，只比对前段纯取值；这里简单处理：全段都进比对，
     # 但把形如 "缺省 ..." / "default ..." 的说明词剔掉。
     listed = [v for v in listed if not re.match(r"^(缺省|默认|default)", v)]
@@ -186,6 +204,37 @@ def main() -> int:
             print("SELFTEST FAIL 合成违例（状态闭集 = OPEN/FIXED/CLOSED）没被抓住，散文形判据失灵")
             return 1
         print(f"SELFTEST OK(散文形) 抓 status 闭集外值（抓住 {smut_problems[0]}）")
+
+        # 第三格（R76）：**竖线分隔形**（`subcmd(必填 scan|files|delegate|rules)`）。
+        # 为什么单立：判据原来只按 `/` 拆 ⇒ 竖线形整串被当成**一个值** ⇒
+        # 报「列了闭集外的值」的**假红**（实测在给 ocr_scan 登记时撞到）。
+        # 本格锁两件事：① 竖线形能被正确拆成多值；② 竖线形里塞闭集外值必须红。
+        ocr = next((e for e in ENUM_REGISTRY
+                    if e[2] == "ocr_subcmds"), None)
+        if ocr is None:
+            print("SELFTEST FAIL ocr_subcmds 登记项消失（本格失去标定对象）")
+            return 1
+        otext = (ROOT / ocr[0]).read_text(encoding="utf-8")
+        omm = re.search(ocr[5], otext)
+        if not omm:
+            print("SELFTEST FAIL 找不到 subcmd 子句，无法做竖线形反证")
+            return 1
+        # ① 干净：当前描述（四值全在闭集内）必须不误红
+        o_real = check_entry(ROOT / ocr[0], ROOT / ocr[1], ocr[2], ocr[3], ocr[4], ocr[5])
+        if o_real:
+            print(f"SELFTEST FAIL 当前 ocr_scan 描述已红（竖线形被误判）：{'；'.join(o_real)}")
+            return 1
+        # ② 违例：塞一个闭集外的值（`exotic`），必须被抓住
+        omut = otext[:omm.start()] + "subcmd(必填 scan|files|delegate|rules|exotic)" + otext[omm.end():]
+        otmp = ROOT / "temp" / "_enum_sync_pipe_mutated.mbt"
+        otmp.parent.mkdir(exist_ok=True)
+        otmp.write_text(omut, encoding="utf-8")
+        o_mut = check_entry(otmp, ROOT / ocr[1], ocr[2], ocr[3], ocr[4], ocr[5])
+        otmp.unlink(missing_ok=True)
+        if not o_mut:
+            print("SELFTEST FAIL 合成违例（subcmd 含 exotic）没被抓住 ⇒ 竖线形判据失灵")
+            return 1
+        print(f"SELFTEST OK(竖线形) 多值正确拆分 + 闭集外值必红（抓住 {o_mut[0]}）")
         return 0
 
     all_problems: list[str] = []
