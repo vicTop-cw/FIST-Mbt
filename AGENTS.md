@@ -498,6 +498,31 @@ Prompts: `fist:check_in`, `fist:verify`
 | FIST-Mbt 根 | `<FIST-Mbt-项目根目录>` |
 *（内容由AI生成，仅供参考）*
 
+## 同族一源库（rx-mbt）· 一等复用面（2026-10-30 立）
+
+**rx-mbt 是统帅自己的 MoonBit 库**（兄弟仓 `E:\IDEProjects\AI\rx-mbt`，远程 `https://github.com/vicTop-cw/RX-MBT`），
+**不是外部依赖** —— 可以深度绑定，本仓已经把它做成了真依赖（`moon.mod` 的 `"vicTop-cw/RX-MBT@0.4.0"`）。
+
+- **版本**：见 `moon.mod` 的 RX-MBT 导入行；**registry 发布状态以 `BACKLOG.md` 的发布条目为唯一权威**，本文件不再自述版本号
+- **本仓使用面**：`src/ops/ops_commissar.mbt` 里的 rhop 入口（`rhop_send` / `from_filesystem_with`，政委消息池），
+  以及 `@rx.Observer` / `Subscription::dispose`
+- **测试面**：rhop 套件 **172 格**、全仓 **860 格**；跑法
+  `python scripts/moon_test_env.py --root ../rx-mbt --target js test-suit/rhop`
+- **自己的账本**：rx-mbt 的 `memory/bugs.md`（如 BUG-1 = Windows 下 `skip_existing` 不生效，已 FIXED）
+
+**⇒ 硬规则：优先复用，不重造（「简单高效」的确切含义）**
+
+1. **先查库再写**：要实现「响应式 / 观察者 / 事件流 / 消息传输 / 加密信封 / 完整性校验」这类能力时，
+   **先在 rx-mbt 里找现成的**（`rx/*` 的 Observable/Subscription/trigger/filter/transform，
+   `rhop/*` 的信封/密码/签名/完整性），**不要手搓**。历史上吃过亏：2026-10-22 的提案指出本仓曾把 Rx 原语
+   全部手搓（熔断/限速/节流/防抖/事件触发/可控迭代器），而 rx-mbt 里早有。
+2. **复用 ≠ 无脑拷贝**：复用必须是**真实依赖**（import + 走接口），不是把源码抄进来改 ——
+   抄进来就成了第二份实现，将来两处漂移（判例「同一规则多份实现」）。
+3. **复用也要验**：依赖升级/换版本后必须跑通测试（本仓升 RX-MBT 0.3.0→0.4.0 时就是靠全量 **1964/1964** 兜住的）。
+4. **改库要同步**：rx-mbt 是兄弟仓，改它要单独提交、单独发布；本仓拿到新版后跑 `moon update` + 全量测试。
+
+> 一句话：**能用库就用库，能用现成就用现成。「简单高效」的衡量标准是「少一份要维护的实现」，不是「代码行数少」。**
+
 ## MCP 工具清单（已搬出，本文件只留指针）
 
 > 本仓 MCP Server 共 **182 个 MCP 工具**（+3 resources +2 prompts）。完整清单
