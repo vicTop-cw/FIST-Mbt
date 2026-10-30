@@ -10864,6 +10864,22 @@ commissar_watch 只 subscribe、不保存 sub 句柄、从不 dispose => 补丁�
 > 判例-30 的自我保护：标记行不能包含被搜索的模式串。它骗过的不只是脚本，也骗过「用 grep 验证」的人（含统帅本人）。
 > WIP 隔离是硬纪律，不是好习惯。任何停下来的 lane 只要留着编译错误，就等于给全团队上了一把锁。
 > 「试不动」和「不想试」是两件事：偶发错误=修一个少一个（继续试）；假设系统性错误=修一个下一层还有一个（改设计或停）。
+### 追记(2026-10-30T05:05:00Z / BUG-480 收口 · 修复上移至上游)
+
+2026-10-30 随 **RX-MBT 0.3.0 → 0.4.0** 升级，本地补丁 `patches/rx-mbt-bug480/reapply.sh` 已删除：
+0.4.0 把 `Number(id)` 归一收编为上游原生实现（`.mooncakes/vicTop-cw/RX-MBT/monitor/watcher_js.mbt:82` 的
+`const key = Number(id)`，无 `PATCHED-BY-BUG480` 标记）。
+
+同时删除了 7 处 reapply CI 步骤（`ci.yml` ×3 / `fist-ci.yml` ×2 / `release.yml` ×2，含说明注释）——
+其中 `release.yml` 的 2 处是升级的**直接连带破坏**：补丁删了它们必 bash 127 ⇒ release 臂挂 ⇒ Release 零资产
+（BUG-488 同类），故与升级同批收掉（提交 `4ecb9d3d`）。
+
+验证：全量 `1964/1964`；`check_tools_sync` / `check_test_sync --total 1964` / `check_doc_surface` 全 PASS；
+`.mooncakes` 里 `PATCHED-BY-BUG480` 残留 0 处。
+
+回退风险：若 `moon.mod` 被回退到 0.3.0，`ops_bug480_watch_probe_wbtest` 会重新挂住（回退场景，非本次引入）。
+另有 2 处过时补丁注释待清理：`src/ops/ops_bug480_watch_probe_wbtest.mbt:14`、`src/server/server.mbt:11011`。
+
 ## BUG-481 [2026-10-29T04:07:53Z] [medium] FIXED
 - summary: [ledger] memory/bugs.md 有一条抬头被拼进行尾 —— 该条对 bug_list / gen_plugins 完全不可见，且与另一条共用一个 ID
 - detail: 我在核验 Round 39 账本时发现的（不是本轮引入，是 2026-10-15 的历史损坏）。
@@ -11760,5 +11776,71 @@ selftest FAIL（2 格）：
 
 > **发现冲突时，「如实记录」优于「悄悄修正」。**
 > 改号会让文档面变干净，但会把一个**可见的矛盾**变成**不可见的悬空引用**。
+
+- reported_by: lead
+## BUG-490 [2026-10-30T04:52:57Z] [high] OPEN
+- summary: release.yml 缺「migrate 先解包」⇒ reapply rc=3 ⇒ Release 零资产（外部 lane 已修，本轮补记入账）
+- detail: ## 背景：外部 lane 修了它，但**从未入账**
+
+外部 lane 提交 `4d3833acd`（`fix(release): 补「migrate 先解包」步骤 —— 修 **BUG-488**`）
+修了一条**真实缺陷**，但 **`memory/bugs.md` 里没有这条记录**（实测：账本里 `BUG-482/483` 是 reapply
+相关的另外两条，均非本缺陷）。
+
+**⇒ 本轮补记。** 而「本单新分配的编号」与「外部提交说的 BUG-488」**不是同一个号** ——
+这正是 BUG-489（编号撞号）要治的问题，见本单 §撞号说明。
+
+## 缺陷本体（v0.3.10 tag 触发的 release run 实测失败）
+
+```
+build-js             ✗ Reapply RX-MBT BUG-480 … (failure)
+build-native-linux   ✗ Reapply RX-MBT BUG-480 … (failure)
+release              skipped ⇒ Release 零资产
+```
+
+## 根因
+
+`moon update` 只拉注册表索引、**不解包依赖** ⇒ `.mooncakes/RX-MBT` 在 `moon check` 触发解包前
+**不存在** ⇒ reapply `rc=3`（环境不给量）。
+
+**⇒ `ci.yml` 已于 2026-10-13 用「migrate 先解包」解决；`release.yml` 漏了这一步。**
+
+**⇒ 形态是「同一个已知坑在两条同源 workflow 上只修了一条」** ——
+与 AGENTS.md 里 `check_release_asset_names` 的 R9「工具链 bootstrap 与 CI 同源」（BUG-112）
+**完全同族**：那次是 `release.yml` 用 `install/unix` 少 `.sh` 且从不 `echo GITHUB_PATH`，
+这次是 `release.yml` 少 `migrate_mooncakes_modjson`。
+**⇒ 两次都是「ci.yml 有一条正确的步骤，release.yml 没有」。**
+
+## 修法（已由外部 lane 落地，本轮**验证**）
+
+`release.yml` 两条 build 臂的 reapply 前，各插 `migrate_mooncakes_modjson.sh "moon check …"`
+（同 `ci.yml:449` 同款）；顺带去掉 native 臂**重复的** Install sqlite3 dev 步骤。
+
+**验证（本轮实测）**：
+| 文件 | `migrate_mooncakes_modjson` 出现次数 |
+|---|---|
+| `.github/workflows/release.yml` | **3** |
+| `.github/workflows/ci.yml` | **4** |
+
+**⇒ 修复已落地。**
+
+## ⚠️ 撞号说明（与 BUG-489 的关系）
+
+- 账本里的 `BUG-488` = **我**记的「`check_commit_bug_refs` 基准分支不一致」（已 FIXED）
+- 外部提交里的 `BUG-488` = **本单**（release reapply 找不到依赖）
+- **两个不同的事占了同一个号** ⇒ 本单被服务端分配了新号，但**外部提交的引用仍指向旧号**
+
+**⇒ 补救**：本单正文在此**明确点名**「外部提交 `4d3833acd` 说的 BUG-488 就是本单」，
+让按号追溯的人能找到映射。**这是在不伪造历史的前提下能做到的最好补救。**
+
+## 判例
+
+> **「同一个已知坑只修了一条同源路由」是这一族的固定形态。**
+> 本仓已有 R9（BUG-112，release.yml 缺工具链 bootstrap）、
+> 本条（release.yml 缺 migrate 先解包）——
+> **⇒ 凡「ci.yml 有 / release.yml 没有」的步骤，都该有一条机核判据。**
+
+> **修了但不入账 = 账本看不见它。**
+> 外部 lane 的提交信息写得比账本还详细（有实测失败截图、根因、修法、验收），
+> **⇒ 信息没丢，只是记错了地方。而「记错地方」在按账本汇总时就等于「没发生」。**
 
 - reported_by: lead
