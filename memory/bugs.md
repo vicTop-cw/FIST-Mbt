@@ -12813,3 +12813,129 @@ if p.returncode in _WIN_INIT_FAILED:
 
 - ✅ 修的是**电池运行器**（新增 BROKEN 档 + 重试），**没有改任何判据**
 - ✅ 三要点全部落地（不判 PASS / 不静默 / 单次重试）
+## BUG-498 [2026-10-30T13:19:06Z] [medium] FIXED
+- summary: 电池两把 `--fresh` 尺各跑一次全仓（~16 分钟）⇒ 连续 9 轮跑不完；新增 `--fresh-if-stale` 共享一次
+- detail: ## 现象
+
+`run_guards.py` 的完整电池**连续 9 轮跑不完**（R61/63/66/68/69/71/79/81/108 实测）：
+每次我都不得不终止它（>1 小时）或改用定点判据。
+
+## 根因（本轮实测定位）
+
+电池里两格**吃同一份快照**（`temp/pt27.log` + `.src` 锚点），却各自无条件真跑一次全仓：
+
+```python
+gated("check_badge.py", TESTLOG, TESTLOG, "README.md", "--fresh"),
+gated("check_test_sync.py", TESTLOG, TESTLOG, "--fresh"),
+```
+
+`--fresh` 的语义是「判前真跑一次全仓 `moon test`」⇒ **~8 分钟 × 2 ≈ 16 分钟**。
+
+**⇒ 这是电池跑不完的主因之一**（另有 R108 的 22 格 `0xC0000142` 系统故障，已由 BUG-497 修）。
+
+## 修法（`dc5c2f50`）
+
+新增 `--fresh-if-stale`：**锚点已同源 ⇒ 跳过重跑**（复用前一把刚写的产物）。
+
+```python
+if fresh and if_stale and os.path.isfile(log_path):
+    probs, _info = anchor_problems(log_path)   # 判例-25 的同一把尺
+    if not probs:
+        print("FRESH-SKIP 快照源码面锚点已同源 ⇒ 跳过重跑")
+        fresh = False
+```
+
+**五个关键设计**：
+1. 只在 `--fresh-if-stale` 下生效 —— 显式 `--fresh` 仍**无条件**真跑（契约不变）
+2. 「新鲜」= **源码面锚点同源**（不是 mtime）
+3. 锚点读不到/不同源 ⇒ **照旧真跑**（不拿旧快照冒充现实）
+4. 电池第二格改用它，**必须排在 `check_badge --fresh` 之后**（顺序有意义）
+5. **逃生口同步**：`FIST_BADGE_FRESH=0` 的 SKIP 判断原来只认 `--fresh`
+   ⇒ 现同时认两个，否则设了逃生口本格反而不 SKIP、变成真跑（**与意图相反**）
+
+## ⚠️ 实施时撞到自家规则（如实记录）
+
+第一版加旗标但没加进参数白名单 ⇒ `[FATAL] 未知参数 --fresh-if-stale（rc=2）`。
+
+**⇒ 这是 AGENTS.md「新判据必须拒绝未知旗标」的反作用面**：
+它保护我们不被拼错骗过，同时要求**新增旗标必须同批登记**。
+修法：`_KNOWN = ("--fresh", "--fresh-if-stale", "--selftest")`。
+
+## 验证
+
+| 项 | 读数 |
+|---|---|
+| `check_badge --fresh-if-stale` | **FRESH-SKIP + PASS**（**1 秒**，原 ~8 分钟）|
+| `check_test_sync --fresh-if-stale` | **FRESH-SKIP + PASS**（**1 秒**）|
+| 两格合计 | **~16 分钟 → ~8 分钟**（省一半）|
+| `check_badge --selftest` | 16 支对照全按预期 |
+| `check_test_sync --selftest` | 34 变体全 PASS |
+| `run_guards --selftest` | 40 格全 PASS |
+
+## 判例
+
+> **「同一份事实」被两把尺各采一次 = 白付一倍时间。**
+> 修法的关键不是「加缓存」，是**让第二把尺能看见「第一把刚采过」**——
+> 判据用的是**已有的源码面锚点同源**（判例-25），不是新建缓存层。
+> **⇒ 已有机制往往够用；先找「已经能证明这件事的那把尺」。**
+
+> **自家纪律的反作用面**：「拒绝未知旗标」保护我们不被拼错骗过，
+> 但它同时要求**新增旗标必须同批登记** ⇒ 否则**正确的改动会被自家门禁拒绝**。
+
+- reported_by: lead
+
+
+### FIXED(2026-10-30T13:19:20Z / BUG-498)
+- evidence: ## 修法（`dc5c2f50`）：两把 `--fresh` 尺共享一次全仓测试，新增 `--fresh-if-stale`
+
+## 问题
+
+电池里两格吃**同一份快照**（`temp/pt27.log` + `.src` 锚点），却各自无条件真跑一次全仓：
+```python
+gated("check_badge.py", TESTLOG, TESTLOG, "README.md", "--fresh"),
+gated("check_test_sync.py", TESTLOG, TESTLOG, "--fresh"),
+```
+**⇒ ~8 分钟 × 2 ≈ 16 分钟** —— 电池跑不完的主因之一
+（R61/63/66/68/69/71/79/81/108 **连续 9 轮**实测跑不完 ⇒ 终止）。
+
+## 修法（五个关键设计）
+
+1. **只在 `--fresh-if-stale` 下生效** —— 显式 `--fresh` 仍**无条件**真跑（契约不变）
+2. 「新鲜」的判据是**源码面锚点同源**（判例-25 的同一把尺，不是 mtime）
+3. 锚点读不到/不同源 ⇒ **照旧真跑**（不拿旧快照冒充现实）
+4. 电池第二格改用它，且**必须排在 `check_badge --fresh` 之后**（顺序有意义）
+5. **逃生口同步**：`FIST_BADGE_FRESH=0` 的 SKIP 判断原来只认 `--fresh`
+   ⇒ 现同时认两个，否则设了逃生口本格反而不 SKIP、变成真跑（**与意图相反**）
+
+## ⚠️ 实施时撞到自家规则（如实记录）
+
+第一版加旗标但**没加进参数白名单** ⇒ `[FATAL] 未知参数 --fresh-if-stale（rc=2）`。
+**⇒ 这是 AGENTS.md「新判据必须拒绝未知旗标」的反作用面**：
+保护我们不被拼错骗过，同时要求**新增旗标必须同批登记**。
+修法：`_KNOWN = ("--fresh", "--fresh-if-stale", "--selftest")`。
+
+## 验证（实测读数）
+
+| 项 | 读数 |
+|---|---|
+| `check_badge --fresh-if-stale` | **FRESH-SKIP + PASS**（**1 秒**，原 ~8 分钟）|
+| `check_test_sync --fresh-if-stale` | **FRESH-SKIP + PASS**（**1 秒**）|
+| 两格合计 | **~16 分钟 → ~8 分钟**（省一半）|
+| `check_badge --selftest` | **16 支对照全按预期** |
+| `check_test_sync --selftest` | **34 变体全 PASS** |
+| `run_guards --selftest` | **40 格全 PASS** |
+
+## 判例
+
+> **「同一份事实」被两把尺各采一次 = 白付一倍时间。**
+> 修法的关键不是「加缓存」，是**让第二把尺能看见「第一把刚采过」**——
+> 判据用的是**已有的源码面锚点同源**（判例-25），不是新建缓存层。
+> **⇒ 已有机制往往够用；先找「已经能证明这件事的那把尺」。**
+
+> **自家纪律的反作用面**：「拒绝未知旗标」保护我们不被拼错骗过，
+> 但它同时要求**新增旗标必须同批登记** ⇒ 否则**正确的改动会被自家门禁拒绝**。
+
+## 边界
+
+- ✅ 修的是**电池执行器 + 两把尺的输入面**，没改任何判据的判定逻辑
+- ✅ 显式 `--fresh` 的契约**逐字不变**
