@@ -10985,3 +10985,57 @@ Caused by:
 - 记账规则：本条只记现象+根因+修法，**未修**
 
 - reported_by: lead</string>
+## BUG-483 [2026-10-30T02:18:02Z] [high] OPEN
+- summary: 【我已回滚】修 BUG-482 时改 k463 夹具路径 → 引入 4 格确定性红（src/store 131/131 → 127/131）
+- detail: ## 事故
+
+我（统帅）在 R64 试图修 BUG-482（`moon` 扫 `temp/` 的竞态），改了
+`src/store/store_bug463_close_wbtest.mbt` 的 `k463_base()`，把夹具目录从
+`temp/k463_<tag>_<token>`（仓库内）改成系统临时目录的**绝对路径**。
+
+**结果：`src/store` 从 131/131/0 变成 131/127/4** —— 4 格确定性变红：
+```
+k463_3_close_all_closes_every_ns
+k463_5_close_ns_releases_only_that_ns
+k463_7_close_all_idempotent
+k463_9_close_all_tolerates_external_raw_close
+```
+
+**⇒ 已 `git checkout --` 回滚，`src/store` 恢复 131/131/0。**
+
+## 我试过但没定位到的（如实记录，防下一人重走）
+
+| 尝试 | 结果 |
+|---|---|
+| 加 `ensure_dir_tree(dir)` 建目录（疑 SQLite 不建中间目录，同 BUG-390）| **无效**，仍 4 红 |
+| 在测试开头 `if !path_exists(dir) { abort(...) }` | **abort 未触发** ⇒ 目录**确实存在** |
+| 在 `ms.get(ns)` 的 `None` 分支 `abort("ns 打不开: ...")` | **abort 未触发** ⇒ `get` **成功** |
+| 在 `k463_base` 里 `println` token | **无输出** ⇒ 诊断探针在白盒测试驱动器下**不可见** |
+| `moon test src/store -f "k463_5*"` 单跑 | **撞 BUG-380**（`node.cmd` 垫片吞引号：`Unterminated string in JSON`）|
+
+**⇒ 关键未解点**：`get` 成功、目录存在、但 4 格仍红。
+**⇒ 说明失败发生在 `assert_true` 而非前置调用**（很可能 `ns_list()` 或 `k463_try_remove` 的语义
+与绝对路径有交互），但**探针不可见 ⇒ 无法取证**。
+
+## 为什么回滚而不是继续试
+
+1. **净效果为负**：原来的问题是**偶发竞态**（只在并发时才挂 discovery），
+   我的改动把它换成了**4 格确定性红**（每次必挂）⇒ **更糟**。
+2. **探针不可见** ⇒ 继续试等于盲改（判例-34：报错指向 ≠ 病因所在）。
+3. **`temp/` 竞态有更安全的修法**（把**整个 temp 目录**移出仓库树，而不是改某个夹具的路径）
+   —— 那不动任何测试语义。
+
+## 建议的正确修法（未实施）
+
+**A. `temp/` 整体改成符号链接 / 移出仓库**（一次性，不动测试代码）
+**B. 接受 BUG-482 存在**，把 `check_badge --fresh` / `check_test_sync --fresh` 的
+   「discovering 阶段失败」识别成 `rc=2`（它们**已经这么做了** ⇒ 这是正确行为，不是缺陷）
+**C. 让夹具改为在 `temp/` 下但**不清理**（只删文件不删目录）⇒ discovery 撞到的概率降到接近 0**
+
+## 教训
+
+> **修「偶发」问题时，不能引入「确定」的新问题。**
+> 偶发故障的最差后果是「偶尔要重试」；确定性故障的最差后果是「再也拿不到读数」。
+> **⇒ 在没定位到病因前，回滚 > 继续试。**
+
+- reported_by: lead</string>
