@@ -637,7 +637,7 @@ fn strip_reject_tail(desc : String) -> String {
   let marker = " [打回原因: "
   let ml = marker.length()
   let dl = desc.length()
-  if dl < ml || !(desc.has_suffix("]")) {
+  if dl < ml || !desc.has_suffix("]") {
     return desc
   }
   // 反向扫：找最后一个 marker 的起始下标

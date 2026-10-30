@@ -227,7 +227,7 @@ pub fn legacy_store_exists(ns : String) -> Bool {
 /// ACL 判定身份：`raw` 是调用方能说出口、也能拿去 `agent_acl_grant` 的**原始**身份；
 /// `source` 记录它来自哪个参数（诊断用，直接进错误文案）；`implicit=true` 表示
 /// 这身份不是调用方给的，而是工具缺省兜出来的（这种身份天然不可预期，必须点明）。
-struct AclIdentity {
+priv struct AclIdentity {
   raw : String
   source : String
   implicit : Bool

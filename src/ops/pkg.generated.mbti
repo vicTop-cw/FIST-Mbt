@@ -33,6 +33,8 @@ pub fn commissar_ensure_dirs(String) -> Unit
 
 pub fn commissar_events_dir(String) -> String
 
+pub fn commissar_gc(String, keep? : Int32, dry_run? : Bool) -> CommissarGcReport
+
 pub fn commissar_inbox_dir(String) -> String
 
 pub fn commissar_log_path(String) -> String
@@ -193,6 +195,16 @@ pub struct CommissarEntry {
   at : Int64
 }
 pub fn CommissarEntry::to_json(Self) -> Json
+
+pub struct CommissarGcReport {
+  total : Int32
+  kept : Int32
+  doomed : Array[String]
+  deleted : Array[String]
+  failed : Array[String]
+  dry_run : Bool
+  err : String
+}
 
 pub struct CommissarReadReport {
   events_dir : String

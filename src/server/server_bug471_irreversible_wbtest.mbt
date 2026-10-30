@@ -133,7 +133,7 @@ test "co_03_both_handlers_are_wired" {
     }
     let blk = co_slice(rest, 0, j)
     let flat = co_strip_ws(blk)
-    if !(flat.contains(expect)) {
+    if !flat.contains(expect) {
       abort(
         tool +
         " 的 handler **没有**接 ACL 门，或身份来源不对。" +

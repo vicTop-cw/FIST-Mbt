@@ -64,7 +64,7 @@ test "bug427_long_reason_is_clipped" {
     )
   }
   // 原始描述必须完整保留
-  if !(r.get_description().has_prefix(base)) {
+  if !r.get_description().has_prefix(base) {
     fail("原始描述被破坏：应以 '" + base + "' 开头")
   }
 }
@@ -129,11 +129,11 @@ test "bug427_plain_description_untouched" {
     Ok(x) => x
     Err(e) => abort("reject 失败：" + e)
   }
-  if !(r.get_description().has_prefix(base)) {
+  if !r.get_description().has_prefix(base) {
     fail("原始描述被误伤")
   }
   // 尾巴必须是新拼的那段
-  if !(r.get_description().contains("[打回原因: 第一次打回]")) {
+  if !r.get_description().contains("[打回原因: 第一次打回]") {
     fail("打回原因没进 description")
   }
 }

@@ -82,7 +82,7 @@ test "ci_02_sqlite_gate_denies_then_allows" {
           by="human_steward",
         ),
       )
-      if not(agent_write_gate(eng, vid, ns) is Ok(_)) {
+      if !(agent_write_gate(eng, vid, ns) is Ok(_)) {
         abort(
           "已授权的 verifier 被拒 —— 门太严，会误伤正当验收",
         )
@@ -126,10 +126,8 @@ test "ci_03_verify_handler_is_wired_to_acl_gate" {
   let blk = slice_ci(rest, 0, j)
   // ③ 归一化：去所有空白后再找（防 fmt 重排导致假红）
   let flat = strip_ws(blk)
-  if !(
-      flat.contains(
-        "agent_write_gate(eng,acl_claim_identity(verifier,verifier),ns)",
-      ),
+  if !flat.contains(
+      "agent_write_gate(eng,acl_claim_identity(verifier,verifier),ns)",
     ) {
     abort(
       "verify 的 handler **没有**接 ACL 门（或缺 acl_claim_identity 同源身份解析）。" +

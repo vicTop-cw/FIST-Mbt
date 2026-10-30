@@ -25,8 +25,12 @@
 test "dn_01_subscribe_dispose_does_not_leak_watch_handle" {
   // 复用同包已有夹具（`ops_commissar_wbtest.mbt` 的 `dl_tmp_project`）
   let dir = dl_tmp_project("dn_watch")
-  let source = @rhop.from_filesystem_with(dir, @rhop.RhopCipherNone::new(), true)
-  let seen : Ref[Int] = Ref(0)
+  let source = @rhop.from_filesystem_with(
+    dir,
+    @rhop.RhopCipherNone::new(),
+    true,
+  )
+  let seen : Ref[Int32] = Ref(0)
   let sub = source.subscribe(
     @rx.Observer::new(
       fn(_pkt : @rhop.RhopPacket) { seen.val = seen.val + 1 },

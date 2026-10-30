@@ -135,7 +135,7 @@ test "bq_04_cleanup_does_not_sweep_all_namespaces" {
     if t.has_prefix("for ") && t.contains(" in ") {
       abort(
         "task_cleanup 里出现了遍历（" +
-        s.trim().to_owned()+
+        s.trim().to_owned() +
         "）—— " +
         "不可逆删除不该跨库遍历（一次调用波及多个租户库，事后无法核对）",
       )
