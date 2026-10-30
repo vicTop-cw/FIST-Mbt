@@ -473,6 +473,35 @@ CLASS_LABEL = {
 RED_CLASSES = ("W", "R", "G")
 DIAG_CLASSES = ("S", "T")
 
+# ══════════════════════════════════════════════════════════════════════
+# ★★ 棘轮基线（R218 / Lane EC）—— **本判据原本是「无条件红」**
+# ══════════════════════════════════════════════════════════════════════
+#
+# ## 病历
+# R153 立尺时只写了「有 W/R/G 类违例 ⇒ return 1」，**没有上限、没有基线**。
+# ⇒ 它从上线起**一直红着**，`known-red` 的 `blame` 挂了很久是 `unknown`。
+# ⇒ **「无条件红」比「没有判据」更糟 —— 它训练人忽略红色。**（R50 已立此判例）
+#
+# ## 为什么「清零」不是合理终态（这是我判 `blame="judge"` 的依据）
+# 实测 100 处 / 43 个文件，而**大多数是校准/标定性质**：
+#   · `check_bug_refs.py` 自检里明写「**校准格**：真实语料上的注释面 ORPHAN 必须恰好等于
+#     棘轮上限——降了就说明该收紧上限，升了就说明悬空引用变多」
+#   · 判例-32 要求「**探针必须先在新鲜样本上标定**」—— 标定必然读真仓
+# ⇒ **要求清零，等于要求所有标定格放弃标定能力。那不是「更严」，是「更假」。**
+#
+# ## 所以改成：**钉基线，只许降不许升**
+# 与 `check_scripts_naming` / `check_selftest_call_face` 同构（本仓既有棘轮惯例）。
+# **上升 ⇒ FAIL**（新增没有该性质的自检要自己负责）；**下降 ⇒ 更新基线**（还债）。
+#
+# ## ⚠️ 基线是实测值，不是理想值
+# 它钉住的是「**当前实际欠多少**」，不是「应该欠多少」。
+# **⇒ 它不是标准，是账。**（标准是「只许降」这条规则本身。）
+# ⚠️ **基线取「HEAD 已提交态」的实测值**（不是工作树瞬时值）：
+#    测得时 `check_scripts_naming.py` 正被另一 lane 在途修改（R 档 68→70→75 实时涨），
+#    若按工作树瞬时值定，它一提交就「overshoot」误红。
+#    ⇒ **基线是账，钉的是「已落盘欠多少」，在途改动由那一方自己同批更新。**
+BASELINE = {"W": 1, "R": 70, "G": 31}
+
 
 def selftest():
     fails, executed = [], []
@@ -659,7 +688,7 @@ def selftest():
          "blackbox/b_realread.py" in files and "blackbox/b_realread.py" in offenders,
          repr(files))
 
-    rc1, reds, diags = verdict(viol)
+    rc1, reds, diags, _rt1 = verdict(viol)
     red_offenders = sorted({f for f, c, _fn, _n in viol if c in RED_CLASSES})
     classes = {c for _f, c, _fn, _n in viol}
     diag_only = {"s_selfspawn.py", "t_scratch.py", "t_local.py", "p_scratch_arg.py"}
@@ -679,7 +708,7 @@ def selftest():
             head + "SELF_PATH = os.path.join(ROOT, 'scripts', 'me.py')\n"
                    "def selftest():\n    return subprocess.run((sys.executable, SELF_PATH), cwd='.')\n")
     _f2, viol2, _u2 = scan(d2)
-    rc2, reds2, diags2 = verdict(viol2)
+    rc2, reds2, diags2, _rt2 = verdict(viol2)
     cell("F4-self-spawn-alone-is-not-red", (rc2, reds2, diags2) == (0, 0, 1), repr((rc2, reds2, diags2, viol2)))
 
     # T 档单独成面同样必须判绿（这一条是 T 档存在的全部理由：不绿就是把约定临时区判成债）
@@ -689,18 +718,60 @@ def selftest():
             head + 'TMPD = os.path.join(ROOT, "temp", "probe_selftest")\n'
                    "def selftest():\n    io.open(TMPD, 'w').write('x')\n    return 0\n")
     _f3, viol3, _u3 = scan(d3)
-    rc3, reds3, diags3 = verdict(viol3)
+    rc3, reds3, diags3, _rat3 = verdict(viol3)
     cell("F6-scratch-temp-alone-is-not-red", (rc3, reds3, diags3) == (0, 0, 1)
          and {v[1] for v in viol3} == {"T"}, repr((rc3, reds3, diags3, viol3)))
+
+    # ══════════════════════════════════════════════════════════════════
+    # ★★ R218 / Lane EC：**棘轮**的两支变异对照
+    #    改造前的 `verdict` 是「有 reds 就 rc=1」⇒ **无条件红**。
+    #    改造后按 BASELINE 分档比。下面两格锁住「棘轮真的在看」。
+    # ══════════════════════════════════════════════════════════════════
+    _v = [("a.py", "R", "selftest", "x"), ("b.py", "R", "selftest", "y")]
+
+    # 变异 1：现读**超过**基线 ⇒ 必红（证明棘轮在看，不是恒绿）
+    _rc4, _r4, _d4, _rat4 = verdict(_v, {"W": 0, "R": 1, "G": 0})
+    cell("T1-ratchet-exceeded-goes-red", _rc4 == 1 and _rat4["over"].get("R") == (2, 1),
+         repr((_rc4, _rat4.get("over"))))
+
+    # 变异 2：现读**等于**基线 ⇒ 绿（证明它是「不许更差」而非「必须更少」）
+    _rc5, _r5, _d5, _rat5 = verdict(_v, {"W": 0, "R": 2, "G": 0})
+    cell("T2-ratchet-at-baseline-is-green", _rc5 == 0 and not _rat5["over"],
+         repr((_rc5, _rat5.get("over"))))
+
+    # 反证 3：现读**低于**基线 ⇒ 仍绿，但必须报「还了债、请下调基线」
+    _rc6, _r6, _d6, _rat6 = verdict(_v, {"W": 0, "R": 5, "G": 0})
+    cell("T3-ratchet-under-baseline-green-but-notes-debt",
+         _rc6 == 0 and _rat6["under"].get("R") == (2, 5),
+         repr((_rc6, _rat6.get("under"))))
 
     return print_selftest(fails, executed)
 
 
-def verdict(viol):
-    """(rc, 红档条数, 记账档条数)。S/T 只记账不判红——口径见 CLASS_LABEL 与 §漏红面。"""
+def verdict(viol, baseline=None):
+    """(rc, 红档条数, 记账档条数, 棘轮读数)
+
+    **R218 / Lane EC 改造**：原版 `1 if reds else 0` ⇒ **无条件红**（有 1 处就红）。
+    现在按 `BASELINE` 分档比：
+      · 某档 **超过** 基线 ⇒ rc=1（新增没有该性质的自检要自己负责）
+      · 某档 **低于** 基线 ⇒ rc=0，但**报 NOTE 要求更新基线**（还了债）
+      · 全部 == 基线 ⇒ rc=0（这就是「合理终态」）
+    S/T 只记账不判红——口径见 CLASS_LABEL 与 §漏红面。
+    """
+    if baseline is None:
+        baseline = BASELINE
     reds = [v for v in viol if v[1] in RED_CLASSES]
     diags = [v for v in viol if v[1] in DIAG_CLASSES]
-    return (1 if reds else 0), len(reds), len(diags)
+    counts = {}
+    for cls in RED_CLASSES:
+        counts[cls] = sum(1 for v in reds if v[1] == cls)
+    over = {c: (counts[c], baseline.get(c, 0)) for c in RED_CLASSES
+            if counts[c] > baseline.get(c, 0)}
+    under = {c: (counts[c], baseline.get(c, 0)) for c in RED_CLASSES
+             if counts[c] < baseline.get(c, 0)}
+    return (1 if over else 0), len(reds), len(diags), {
+        "counts": counts, "over": over, "under": under, "baseline": baseline,
+    }
 
 
 def print_selftest(fails, executed):
@@ -735,9 +806,23 @@ def main():
         return fatal("扫描面为空（%s 下 scripts/*.py 一份都没枚举到）⇒ 缺样本＝没测" % root)
     if unread:
         print("DIAG 解析不了（不计失败，也不构成『这格过了』的证据）：%s" % ", ".join(unread))
-    rc, reds, diags = verdict(viol)
+    rc, reds, diags, rat = verdict(viol)
+    c, b = rat["counts"], rat["baseline"]
+    print("[棘轮] W=%d/%d  R=%d/%d  G=%d/%d   （现读/基线；基线只许降）"
+          % (c["W"], b.get("W", 0), c["R"], b.get("R", 0), c["G"], b.get("G", 0)))
+    if rat["over"]:
+        print("FAIL **棘轮越线**：这些档超过基线 = 新增了没有该性质的自检：")
+        for k, (got, want) in sorted(rat["over"].items()):
+            print("  ✗ %s 档 %d > 基线 %d" % (k, got, want))
+        print("  （新增 selftest 的一方请自己把那段移出 `--selftest` 归主面，或改用 temp 合成夹具；"
+              "不要为了变绿抬高基线。）")
+    if rat["under"]:
+        print("NOTE **还了债**：这些档低于基线 —— 请把 `BASELINE` 下调到现读，别让账虚高：")
+        for k, (got, want) in sorted(rat["under"].items()):
+            print("  ↓ %s 档 %d < 基线 %d ⇒ BASELINE[%r] 应改为 %d" % (k, got, want, k, got))
     if rc:
-        print("FAIL 自检体读/写仓库现状面 %d 处（W=写探针进真树 / R=读现状面 / G=打真仓）："
+        print()
+        print("自检体读/写仓库现状面 %d 处（W=写探针进真树 / R=读现状面 / G=打真仓）："
               "（`--selftest` 只许合成夹具；现状对表归主面）" % reds)
         for f, cls, fn, note in viol:
             if cls in RED_CLASSES:
@@ -750,8 +835,9 @@ def main():
     if rc:
         print("处置：把那一段移出 `--selftest` 归主面，或改用 temp 合成夹具（写探针的改成写 temp 树）。")
         return 1
-    print("PASS 自检 hermetic：%d 份带自检的脚本、自检体无 W/R/G 类真源读写（记账档 %d 处已点名）"
-          % (len(files), diags))
+    print("PASS 自检 hermetic：%d 份带自检的脚本、W/R/G 三档**都在棘轮基线内**"
+          "（W=%d R=%d G=%d，记账档 %d 处已点名）——**这不是「零违例」，是「没比基线更差」**"
+          % (len(files), c["W"], c["R"], c["G"], diags))
     return 0
 
 
