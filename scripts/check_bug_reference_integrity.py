@@ -196,7 +196,7 @@ def findings(refs, bodies):
     return {"J1": j1, "S1": s1, "S1b": s1b, "S2": s2, "S3": s3}
 
 
-def measure(dry=False):
+def measure(dry=False, dump_all=False):
     files, err = universe(ROOT)
     if err:
         return emit_fatal(err)
@@ -220,12 +220,34 @@ def measure(dry=False):
     for r in f["J1"]:
         print("  J1 %s:%d (%s) %s" % (r.path, r.line, r.ident, r.text))
     if dry:
-        for r in f["S1"][:12]:
+        # ⚠️ `--dump` 声称「打印只报面的**站点清单**（供下一批改进）」，但原实现对 S1 硬截
+        #    `[:12]` / S2 `[:20]` / S3 `[:10]` ⇒ **汇总说 41 处、清单只给 12 处**
+        #    ⇒ 剩下 29 处**无法核实**（R77 实测：我想确认「41 处是否全在测试夹具里」，
+        #    而 dump 只给 12 条、恰好全来自 2 个 wbtest ⇒ **我无法回答那个问题**）。
+        #
+        #    **⇒ 截断本身没错**（几十条贴满终端会淹没电池输出），但**截断必须可见**：
+        #    打出「共 N 处，此处 M 处，其余用 `--dump-all` 看」。`--dump-all` 不截断。
+        s1_lim = None if dump_all else 12
+        s2_lim = None if dump_all else 20
+        s3_lim = None if dump_all else 10
+        n1 = len(f["S1"])
+        for r in f["S1"][:s1_lim]:
             print("  S1 %s:%d (%s) %s" % (r.path, r.line, r.ident, r.text))
-        for r in f["S2"][:20]:
+        if s1_lim is not None and n1 > s1_lim:
+            print("  … S1 共 %d 处，此处仅列 %d 处；其余 %d 处用 `--dump-all` 看"
+                  % (n1, s1_lim, n1 - s1_lim))
+        n2 = len(f["S2"])
+        for r in f["S2"][:s2_lim]:
             print("  S2 %s:%d (%s) %s" % (r.path, r.line, r.ident, r.text))
-        for k, n in f["S3"][:10]:
+        if s2_lim is not None and n2 > s2_lim:
+            print("  … S2 共 %d 处，此处仅列 %d 处；其余 %d 处用 `--dump-all` 看"
+                  % (n2, s2_lim, n2 - s2_lim))
+        n3 = len(f["S3"])
+        for k, n in f["S3"][:s3_lim]:
             print("  S3 %s 被 %d 个文件引用" % (k, n))
+        if s3_lim is not None and n3 > s3_lim:
+            print("  … S3 共 %d 项，此处仅列 %d 项；其余 %d 项用 `--dump-all` 看"
+                  % (n3, s3_lim, n3 - s3_lim))
     if len(f["J1"]) > DANGLING_COMMENT_CEILING:
         print("FAIL 判定面 %d 条 > 上限 %d：新增的注释面悬空引用必须先入账再引用（或改正编号）"
               % (len(f["J1"]), DANGLING_COMMENT_CEILING))
@@ -366,6 +388,10 @@ def main(argv=None):
     ap.add_argument("--dump", action="store_true", help="打印只报面的站点清单（供下一批改判核）")
     ap.add_argument("--show-ceiling", action="store_true")
     ap.add_argument("--probe-empty-root", action="store_true", help=argparse.SUPPRESS)
+    # R77：`--dump` 对只报面是**截断**的（防淹没电池输出），但截断原先不可见
+    #      ⇒ 汇总 41 处、清单 12 条，剩下 29 处无法核实。本旗标给「完整出口」。
+    ap.add_argument("--dump-all", action="store_true",
+                    help="打印只报面**全部**站点（不截断；--dump 只列前若干条并注明总数）")
     a = ap.parse_args(argv)
     if a.probe_empty_root:
         tmp = Path(tempfile.mkdtemp(prefix="bri-empty-"))
@@ -375,7 +401,7 @@ def main(argv=None):
         return 0
     if a.selftest:
         return selftest()
-    return measure(dry=a.dump)
+    return measure(dry=a.dump or a.dump_all, dump_all=a.dump_all)
 
 
 if __name__ == "__main__":
