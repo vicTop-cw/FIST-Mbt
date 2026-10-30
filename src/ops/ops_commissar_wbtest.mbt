@@ -382,3 +382,107 @@ test "dl_c8_read_mutation_control_bad_only_dir" {
   assert_true(rep.bad_files[0].contains("only-bad.rhop"))
   dl_cleanup(proj)
 }
+
+///|
+/// `commissar_gc`：**保留最近 N 条**（不是按 mtime 删 —— `@fs` 拿不到 mtime）。
+///
+/// 三格合一，每格断言一个**不同**的不变量：
+///  ① `dry_run` 只报不删（`deleted` 空、文件仍在）
+///  ② 真删只删早的（保留末尾最新 N 条）
+///  ③ `keep >= total` 时零删除（边界：不该多删）
+///
+/// 排序依据是**文件名**（`sig-<at_ms>-<counter>.rhop`，`at_ms` 13 位 ⇒ 字典序 == 时间序）。
+/// 禁 `sleep`（判例-31）：`at_ms` 由 `commissar_send` 的参数给，不靠时序。
+test "dl_c9_gc_keep_recent_dry_run_then_delete" {
+  let proj = dl_tmp_project("c9")
+  commissar_ensure_dirs(proj)
+  let events = commissar_events_dir(proj)
+  // 造 5 条，at_ms 递增 ⇒ 文件名升序 = 12345..9
+  let mut i = 0
+  while i < 5 {
+    let at = 1_700_000_000_000L + i.to_int64() * 1000L
+    commissar_send(proj, { kind: "R1", target: "t9", ns: "default", text: "m\{i}" }, at)
+    i = i + 1
+  }
+  let before = commissar_list_names(events, @ref.Ref(""))
+  let rhop_before : Array[String] = []
+  for nm in before {
+    if nm.has_suffix(".rhop") {
+      rhop_before.push(nm)
+    }
+  }
+  assert_eq(rhop_before.length(), 5)
+
+  // ① dry_run：只报不删
+  let dry = commissar_gc(proj, keep=2, dry_run=true)
+  assert_eq(dry.total, 5)
+  assert_eq(dry.kept, 3)
+  assert_eq(dry.doomed.length(), 3)
+  assert_eq(dry.deleted.length(), 0)   // ★ 关键：dry_run 不许真删
+  for nm in before {
+    if nm.has_suffix(".rhop") {
+      assert_true(@fs.path_exists(events + "/" + nm))
+    }
+  }
+
+  // ② 真删：只删早的 3 条，末尾 2 条仍在
+  let real = commissar_gc(proj, keep=2, dry_run=false)
+  assert_eq(real.deleted.length(), 3)
+  assert_eq(real.failed.length(), 0)
+  let after = commissar_list_names(events, @ref.Ref(""))
+  let rhop_after : Array[String] = []
+  for nm in after {
+    if nm.has_suffix(".rhop") {
+      rhop_after.push(nm)
+    }
+  }
+  assert_eq(rhop_after.length(), 2)
+  // ★ 删掉的那 3 个必须不在，留下的 2 个必须在
+  for nm in real.deleted {
+    assert_false(@fs.path_exists(events + "/" + nm))
+  }
+
+  // ③ keep >= total ⇒ 零删除（边界：不许把「保留」读成「至少删一条」）
+  let noop = commissar_gc(proj, keep=99, dry_run=false)
+  assert_eq(noop.total, 2)
+  assert_eq(noop.kept, 2)
+  assert_eq(noop.doomed.length(), 0)
+  assert_eq(noop.deleted.length(), 0)
+
+  // ④ 目录不存在 ⇒ 不是错误（还没发过消息的仓）
+  let empty = commissar_gc(dl_tmp_project("c9b"), keep=10)
+  assert_eq(empty.total, 0)
+  assert_eq(empty.kept, 0)
+  assert_eq(empty.err, "")
+}
+
+///|
+/// `commissar_gc` 变异对照：**把「保留末尾」改成「保留开头」⇒ 本格必须变红**。
+///
+/// 为什么单独立一格：`dl_c9` 只证明「删了 3 条留了 2 条」——
+/// **如果实现删的是最新的 3 条，它也满足「删3留2」**。
+/// ⇒ 必须断言**留下的是最新的**，不是「数量对就行」（判例-30：数量对 ≠ 对象对）。
+test "dl_c10_gc_keeps_newest_not_oldest" {
+  let proj = dl_tmp_project("c10")
+  commissar_ensure_dirs(proj)
+  let events = commissar_events_dir(proj)
+  let mut i = 0
+  while i < 4 {
+    let at = 1_700_000_000_000L + i.to_int64() * 1000L
+    commissar_send(proj, { kind: "R1", target: "t10", ns: "default", text: "m\{i}" }, at)
+    i = i + 1
+  }
+  let rep = commissar_gc(proj, keep=1, dry_run=false)
+  assert_eq(rep.deleted.length(), 3)
+  let after = commissar_list_names(events, @ref.Ref(""))
+  let rhop_after : Array[String] = []
+  for nm in after {
+    if nm.has_suffix(".rhop") {
+      rhop_after.push(nm)
+    }
+  }
+  assert_eq(rhop_after.length(), 1)
+  // ★ 留下的必须是最晚那条（at_ms 最大）——只断言长度会让「保留最旧」也过
+  let kept_name = rhop_after[0]
+  assert_true(kept_name.contains("1700000003000"))
+}

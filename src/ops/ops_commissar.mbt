@@ -625,3 +625,105 @@ pub fn commissar_read(
     dropped_by_limit: start,
   }
 }
+
+///|
+/// **运维侧清理**：`commissar_gc(keep~)` —— 保留最近 N 条 `.rhop`，其余删掉。
+///
+/// ## 为什么参数是 `keep` 而不是 `retention_hours`（设计形状限制，不是代码细节）
+///
+/// 本包可用的 `@fs` 接口是：`path_exists` / `read_dir` / `read_file_to_string` /
+/// `write_string_to_file` / `create_dir` / `remove_dir` / `remove_file` ——
+/// **没有 `stat` / `mtime` / `metadata`** ⇒ 拿不到「文件多老」⇒ 按小时删**不可行**。
+///
+/// 改成「保留最近 N 条」不但可行，**语义还更好**：不依赖时钟（时钟回拨/时区不影响）、
+/// 可预测、且与 seq 的「位置」语义天然对齐。
+///
+/// ## 排序键：文件名（`sig-<at_ms>-<counter>.rhop`）
+///
+/// `at_ms` 是 13 位 epoch 毫秒 ⇒ **按文件名字典序 == 按时间序**（同位数左对齐）。
+/// 同一毫秒内用 `counter` 兜底 ⇒ 全序稳定。
+///
+/// ## 为什么不在 `commissar_read` 里裁
+///
+/// 读操作删文件是**最坏的副作用类型**：两个客户端并发读会互相删掉对方**还没读的**。
+/// 清理必须是**独立工具**，且必须由调用方显式选择「保留几条」。
+///
+/// 参数：`keep` 必须 ≥ 0；`dry_run=true` 只报不删。
+/// 返回：删除的文件名列表 + 保留数 + 是否真删（`dry_run` 时 `deleted` 为空）。
+pub fn commissar_gc(
+  project_dir : String,
+  keep~ : Int32 = 1000,
+  dry_run~ : Bool = false,
+) -> CommissarGcReport {
+  let events = commissar_events_dir(project_dir)
+  let err : @ref.Ref[String] = @ref.Ref("")
+  // ⚠️ 目录不存在 ⇒ 不是错误（还没发过消息的仓就是这种态）；返回「删 0 保 0」。
+  let names = if @fs.path_exists(events) {
+    commissar_list_names(events, err)
+  } else {
+    []
+  }
+  // 只留 `.rhop`（`.rhop.tmp` 是原子写的中间态，不属于可清对象，也不该算进 keep 配额）
+  let live : Array[String] = []
+  for name in names {
+    if name.has_suffix(".rhop") {
+      live.push(name)
+    }
+  }
+  // 按文件名升序 == 按时间升序（`at_ms` 同位数）
+  live.sort()
+  let n = live.length()
+  let k = if keep < 0 { 0 } else { keep }
+  // 保留**末尾**（最新）的 k 条；前缀超出的部分是可删集
+  let cut = if n > k { n - k } else { 0 }
+  let doomed : Array[String] = []
+  let deleted : Array[String] = []
+  let failed : Array[String] = []
+  for i in 0..<n {
+    if i < cut {
+      doomed.push(live[i])
+      if !dry_run {
+        let path = events + "/" + live[i]
+        @fs.remove_file(path) catch {
+          _ => {
+            failed.push(live[i])
+            continue
+          }
+        }
+        deleted.push(live[i])
+      }
+    }
+  }
+  CommissarGcReport::{
+    total: n,
+    kept: n - cut,
+    doomed,
+    deleted,
+    failed,
+    dry_run,
+    err: err.val,
+  }
+}
+
+///|
+/// `commissar_gc` 的回执。
+///
+/// **分栏理由**（BUG-74 同族：「没删」和「删不掉」不许混读）：
+///  `doomed` = 本次判定该删的（`dry_run` 时这就是预览全貌）
+///  `deleted` = 真删成功的
+///  `failed` = 判定该删但删失败的（**不静默吞**，否则下一个人会以为清干净了）
+pub struct CommissarGcReport {
+  /// 目录里 `.rhop` 总数（= kept + doomed）
+  total : Int32
+  /// 保留条数（= total - doomed）
+  kept : Int32
+  /// 判定该删的文件名（升序，早的在前）
+  doomed : Array[String]
+  /// 真删成功的文件名（`dry_run` 时恒空）
+  deleted : Array[String]
+  /// 判定该删但删失败的（`dry_run` 时恒空）
+  failed : Array[String]
+  dry_run : Bool
+  /// 非空表示目录级故障（读目录失败）
+  err : String
+}
