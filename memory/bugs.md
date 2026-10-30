@@ -12344,3 +12344,118 @@ $ grep -oE '"commissar_[a-z]+"' src/server/server.mbt | sort -u
 
 > **「提案中」不等于「未实现」。** 本单第二份提案三问全落地，只是 `status` 没同步 ——
 > **⇒ 读「提案中」时先查代码，再判断还差什么。**
+## BUG-494 [2026-10-30T08:35:19Z] [low] FIXED
+- summary: 【核查存档】4pools §3.1「自 .git/fist 迁来」不需执行：.git/fist 是有意 gitignored 的扫描候选区，与 docs/tasks 双区架构比提案更合理
+- detail: ## 本单是**核查结论存档**（防后人重做这次分析）
+
+按 4pools 提案 M1 逐条核查「同机任务池该不该迁」，结论是：**不该迁，现状是正确的**。
+
+## 核查过程（五步，每步都有读数）
+
+### ① 提案要求什么
+`docs/plans/2026-10-26-4pools-rhop-roadmap-proposal.md` §3.1：
+> 位置：`.fist-mbt/pool/tasks/`（**自 `.git/fist` 迁来**，遵循 DEC-2026-10-22-001 双层目录治理）
+> 文件形态：`task.md` 文件夹，子目录四态：`预案/` `定案/` `执行中/` `归档/`
+
+### ② 现状读数
+| 项 | 读数 |
+|---|---|
+| `.fist-mbt/` 结构 | cache / data / db / lock / logs / **pool** / state（**7 个子目录，治理已执行**）|
+| `.fist-mbt/pool/` | **空目录** |
+| `.git/fist/` | **102 个 yaml，0 个被 git 跟踪** |
+| `.gitignore:156` | **`.git/fist/` ← 有意的 ignore** |
+| `.git/fist/machines.yaml` | **不存在** ⇒ `fist-task-pool.py init` **从未运行** |
+
+### ③ 那 102 个 yaml 是谁产的？
+打开样本看首两行：
+```
+status: backlog
+source: fist-gate.py scan
+```
+**⇒ 是 `fist-gate.py --scan` 的分支扫描产物，不是 `fist-task-pool` 的任务池。**
+
+### ④ 生产者/消费者
+| 工具 | 与 `.git/fist` 的关系 |
+|---|---|
+| `fist-task-pool.py` | **硬编码** `.git/fist/tasks`（`:6` `T = ROOT/".git"/"fist"/"tasks"`），但 `machines.yaml` 不存在 ⇒ **从未 init 过** |
+| `fist-gate.py` | **写** `.git/fist/tasks/backlog/`（`:312` 自述：「`.git/fist/tasks/backlog/` 下的新 yaml 里值得处理的问题**提升为 `docs/tasks/backlog/*.yaml`**」）|
+
+**⇒ 这是一个**两阶段流程**：`scan` 产原始扫描（gitignored 中间产物）→ 人工/agent 挑选后**提升**到 `docs/tasks/backlog/`（受 git 跟踪）。**
+
+### ⑤ 两处重合度
+```
+旧 .git/fist/  yaml = 96
+新 docs/tasks/ yaml = 23
+同名重合          = 0
+```
+**⇒ 0 重合是**正常的**：旧区是「未提升的候选」，新区是「已提升的正式任务」——
+两者本来就**不该重合**（提升了就会从候选里移走或标记）。
+
+## ⇒ 结论：**「96 个文件留在 `.git/fist/`」是正常工作状态，不是迁移缺口**
+
+**⇒ 提案 §3.1 的「自 `.git/fist` 迁来」这句话描述的是**当时（2026-10-26）的设想**，
+而实际架构演化成了「`.git/fist` = 扫描候选区（gitignored）+ `docs/tasks/` = 正式任务区（tracked）」
+——**新架构比提案的更合理**（候选与正式分开，正是双层治理的精神）。
+
+## ⚠️ 我差点做错的事（如实记录）
+
+**我一度准备「迁移 96 个文件 + 改 `fist-task-pool.py` 的 T 常量 + 三态→四态重命名」。**
+
+**⇒ 若真做了，会：**
+1. 把**中间产物**挪进**受 git 跟踪的目录**（违反 gitignore 语义）
+2. 破坏 `fist-gate.py --scan` 的两阶段流程（它的 `:312` 明写「提升为 docs/tasks/」）
+3. 为一个**从未使用过**的工具（`machines.yaml` 不存在）付迁移成本
+
+## 判例
+
+> **`.gitignore` 里的一条规则，就是一条「这是中间产物」的声明。**
+> 我把「96 个文件没被 git 跟踪」读成「没迁移」，而 `.gitignore:156` 已经明写 `.git/fist/` 是**有意忽略**的。
+> **⇒ 判「某目录的资料该不该搬」之前，先查 `.gitignore` —— 它比任何提案都更准确地说明了设计意图。**
+
+> **提案是**当时**的快照，不是**现在**的规范。**
+> §3.1 说「自 `.git/fist` 迁来」，而实际演化成了「候选区 + 正式区」双区架构 ⇒
+> **⇒ 读提案时要问「这条现在还算数吗」，而不是「为什么没照做」。**
+> （与 R95 判例「『提案中』不等于『未实现』」同族：**提案的措辞 ≠ 代码的现状**。）
+
+- reported_by: lead
+
+
+### FIXED(2026-10-30T08:35:33Z / BUG-494)
+- evidence: ## 关闭依据：核查已完成，结论是「不需迁移」（无代码要改）
+
+## 五步核查结论（每条都可复核）
+
+| 探测 | 读数 | 含义 |
+|---|---|---|
+| `.fist-mbt/` 结构 | cache/data/db/lock/logs/**pool**/state（7 个）| 治理**已执行** |
+| `.fist-mbt/pool/` | **空目录** | 未被使用 |
+| `.git/fist/` | **102 个 yaml，0 被 git 跟踪** | |
+| **`.gitignore:156`** | **`.git/fist/`** | **有意忽略 ⇒ 它是中间产物区** |
+| `.git/fist/machines.yaml` | **不存在** | `fist-task-pool.py init` **从未运行** |
+| yaml 首批行 | `status: backlog` / `source: fist-gate.py scan` | 是**分支扫描产物**，非任务池 |
+| 两处重合 | 旧 96 / 新 23 / **重合 0** | 候选区与正式区**本就不该重合** |
+
+**⇒ 实际架构是「`.git/fist` = 扫描候选区（gitignored）+ `docs/tasks/` = 正式任务区（tracked）」，
+比提案 §3.1 的「单向迁到 `.fist-mbt/pool/tasks/`」**更合理**（候选与正式分开，正是双层治理的精神）。**
+
+## ⚠️ 我差点做错的事（如实记录）
+
+**一度准备做三项改动**：迁移 96 个文件 / 改 `fist-task-pool.py` 的 `T` 常量 / 三态→四态重命名。
+
+**若真做，会：**
+1. 把**中间产物**挪进**受 git 跟踪的目录**（违反 `.gitignore` 语义）
+2. 破坏 `fist-gate.py --scan` 的两阶段流程（它 `:312` 明写「提升为 `docs/tasks/backlog/*.yaml`」）
+3. 为一个**从未使用过**的工具（`machines.yaml` 不存在）付迁移成本
+
+**⇒ 没做，是这次核查最大的价值。**
+
+## 判例
+
+> **`.gitignore` 里的一条规则，就是一条「这是中间产物」的声明。**
+> 我把「96 个文件没被 git 跟踪」读成「没迁移」，而 `.gitignore:156` 已明写 `.git/fist/` 是**有意忽略**。
+> **⇒ 判「某目录的资料该不该搬」之前，先查 `.gitignore` —— 它比任何提案都更准确地说明了设计意图。**
+
+> **提案是**当时**的快照，不是**现在**的规范。**
+> §3.1 说「自 `.git/fist` 迁来」，实际演化成了双区架构
+> ⇒ **读提案时要问「这条现在还算数吗」，而不是「为什么没照做」。**
+> （与 R95「『提案中』≠『未实现』」同族：**提案措辞 ≠ 代码现状**。）
