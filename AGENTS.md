@@ -500,7 +500,7 @@ Prompts: `fist:check_in`, `fist:verify`
 
 ## 同族一源库（rx-mbt）· 一等复用面（2026-10-30 立）
 
-**rx-mbt 是统帅自己的 MoonBit 库**（兄弟仓 `E:\IDEProjects\AI\rx-mbt`，远程 `https://github.com/vicTop-cw/RX-MBT`），
+**rx-mbt 是统帅自己的 MoonBit 库**（兄弟仓 **rx-mbt**，远程 `https://github.com/vicTop-cw/RX-MBT`；本地克隆路径见 `path-conventions` 约定，本文不写本机绝对路径），
 **不是外部依赖** —— 可以深度绑定，本仓已经把它做成了真依赖（`moon.mod` 的 `"vicTop-cw/RX-MBT@0.4.0"`）。
 
 - **版本**：见 `moon.mod` 的 RX-MBT 导入行；**registry 发布状态以 `BACKLOG.md` 的发布条目为唯一权威**，本文件不再自述版本号
