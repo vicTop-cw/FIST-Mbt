@@ -1,12 +1,26 @@
 #!/usr/bin/env pwsh
 param(
-    [string]$Version = "0.3.0",
+    # R256：版本默认从 moon.mod **单一真源反解**（禁硬编码）—— 硬编码 "0.3.0" 在
+    # moon.mod 前进到 0.3.10 后仍产出旧名 zip，而 check_release_asset_names 的
+    # 扫描面不含本文件 ⇒ 三处同源判据看不见它。显式 -Version 仍可覆盖（CI 传版本）。
+    [string]$Version = "",
     [string]$TargetDir = "$PSScriptRoot\..\..\_release",
     [switch]$SkipNative,
     [switch]$SkipJs
 )
 $REPO_ROOT = (Resolve-Path "$PSScriptRoot\..\..").Path
 $ErrorActionPreference = "Stop"
+
+if (-not $Version) {
+    $modLine = Select-String -Path (Join-Path $REPO_ROOT "moon.mod") -Pattern 'version\s*=\s*"([^"]+)"' |
+        Select-Object -First 1
+    if (-not $modLine -or -not $modLine.Matches[0].Groups[1].Value) {
+        Write-Host "[FATAL] 从 moon.mod 解析不到 version —— 宁可不打包，也不产出错误资产名" -ForegroundColor Red
+        exit 1
+    }
+    $Version = $modLine.Matches[0].Groups[1].Value
+    Write-Host "[version] 从 moon.mod 反解: $Version" -ForegroundColor Cyan
+}
 
 function Invoke-MoonBuild($target, $label) {
     $prevErr = $ErrorActionPreference
