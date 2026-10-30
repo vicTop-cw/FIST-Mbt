@@ -1,8 +1,8 @@
 ---
-status: 提案中
-decided_by:
-decided_at:
-decision:
+status: 已定案
+decided_by: lead
+decided_at: 2026-10-30
+decision: 三问全部按草案落地（Q1 用 commissar_read 的 since_seq~；Q2 选「不做已读」，调用方 dedup；Q3 用 commissar_gc(keep~)）。无遗留待办。
 ---
 
 # `commissar_poll` 设计草案（BUG-480 的替代方案）
