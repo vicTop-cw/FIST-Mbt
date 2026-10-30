@@ -3,6 +3,7 @@ import {
   "vicTop-cw/fist-mbt/src/store",
   "vicTop-cw/fist-mbt/src/engine",
   "vicTop-cw/fist-mbt/src/ops",
+  "vicTop-cw/fist-mbt/src/filebind",
   "vicTop-cw/fist-mbt/src/omega",
   "vicTop-cw/fist-mbt/src/evolve",
   "vicTop-cw/fist-mbt/src/executor",
