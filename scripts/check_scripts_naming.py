@@ -32,6 +32,7 @@ r"""scripts/check_scripts_naming.py — scripts/ 命名的词法门（TASK-008 �
 import argparse
 import io
 import os
+import re
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -140,6 +141,81 @@ def census(names, prefixes, suffixes, shared=()):
     return roleless, hyphen
 
 
+def _iter_ref_texts(scripts_dir):
+    """产出 (相对路径, 源码文本) —— 用于「谁引用了谁」的扫描。
+
+    ⚠️ 扫 `scripts/` 全树（含 blackbox/），不扫别的目录：`import` 只在同目录/包内成立，
+    而 `subprocess` 调用的路径写法以 `scripts/` 为基。跨树引用是盲区（见 NAMING.md）。
+    """
+    out = []
+    for dp, _dn, fns in os.walk(scripts_dir):
+        for fn in sorted(fns):
+            if not fn.endswith(".py"):
+                continue
+            full = os.path.join(dp, fn)
+            rel = os.path.relpath(full, scripts_dir).replace(os.sep, "/")
+            try:
+                with io.open(full, encoding="utf-8", errors="replace") as f:
+                    out.append((rel, f.read()))
+            except OSError:
+                continue
+    return out
+
+
+def is_referenced(name, refs):
+    """`name`（含 .py）是否被 refs 里**任何一个**别处引用。
+
+    认三种形态（NAMING.md「引用形态」节同源）：
+      ① import `_x` / `from _x import`（按 stem）
+      ② subprocess/Popen 里出现 `"_x.py"`（按带扩展名的字面量）
+      ③ importlib / runpy 动态加载（按带扩展名的字面量出现算）
+    排除自身文件。
+    """
+    stem = name[:-3] if name.endswith(".py") else name
+    imp_rx = re.compile(r"^\s*(?:from\s+%s(?:\s+import|\s*$)|import\s+.*\b%s\b)"
+                        % (re.escape(stem), re.escape(stem)), re.M)
+    lit_rx = re.compile(r"""["']%s["']""" % re.escape(name))
+    for rel, text in refs:
+        if os.path.basename(rel) == name:
+            continue
+        if imp_rx.search(text) or lit_rx.search(text):
+            return True
+    return False
+
+
+def check_admission(shared, scripts_dir, guards_path):
+    """白名单**准入条件**核验（NAMING.md 的四条，条件 4 语义判断不在此核）。
+
+    返回 (problems, warns)：
+      problems ⇒ 硬错（判据 rc=2，拒绝判绿）—— 条件 1/2/3 被违反
+      warns    ⇒ 软提示（白名单行尾有 `#` 说明时用）
+
+    条件 1（`_` 开头）已在 read_roles 里核，此处只核 2/3。
+    """
+    problems, warns = [], []
+    if not shared:
+        return problems, warns
+    guards = ""
+    if guards_path and os.path.isfile(guards_path):
+        with io.open(guards_path, encoding="utf-8", errors="replace") as f:
+            guards = f.read()
+    refs = _iter_ref_texts(scripts_dir)
+    for name in shared:
+        # 条件 2：不得是独立电池格
+        if re.search(r'"%s"' % re.escape(name), guards):
+            problems.append(
+                "白名单成员 %s 被 run_guards.py 登记为独立电池格 ⇒ 它是**判据**不是共享件"
+                "（条件 2 违反）⇒ 该改名 check_*.py，不该进白名单" % name)
+            continue
+        # 条件 3：必须被别处引用
+        if not is_referenced(name, refs):
+            problems.append(
+                "白名单成员 %s **零引用**（无 import / 无 subprocess 字面量 / 无 runpy）"
+                "⇒ 它可能不是共享件（条件 3 违反）。若引用形态特殊（拼接名/跨树），"
+                "在白名单行尾加 `# 引用形态特殊：<说明>` 降为 WARN" % name)
+    return problems, warns
+
+
 def judge(roleless, hyphen, n1_ceiling, n2_ceiling):
     """判定面：超限的条目如实点名，返回违规行清单（空 = 在上限内）。"""
     v = []
@@ -245,6 +321,33 @@ def selftest():
     ok12 = (len(n1_without) - len(n1_with) == len(shared)) and len(shared) > 0
     cells.append(("MUTATION-whitelist-count-matches-live-repo", ok12))
 
+    # 13) ★ 准入条件 3：**零引用的文件进白名单 ⇒ 硬错**（本单主要缺口）
+    #     变异：编一个没人引用的名字塞进 shared ⇒ check_admission 必须报 problem。
+    # ⚠️ 探针名必须**拼接构造**：直接在源码里写死一个假名，会被 is_referenced 扫到
+    #    「本判据自己源码里有这个字面量」⇒ 误判成「有人引用」⇒ 该格恒绿（判例-30 自指假绿）。
+    _fake13 = "_zero" + "_ref_probe.py"
+    _a13, _ = check_admission([_fake13], SCRIPTS_DIR,
+                              os.path.join(SCRIPTS_DIR, "run_guards.py"))
+    cells.append(("MUTATION-zero-ref-in-whitelist-rejected", len(_a13) >= 1))
+
+    # 14) ★ 准入条件 2：**被 run_guards 登记为独立格的文件进白名单 ⇒ 硬错**
+    #     用真仓库里真实存在的一把判据当样本（check_doc_surface 确实在电池里登记）。
+    _a14, _ = check_admission(["check_doc_surface.py"], SCRIPTS_DIR,
+                              os.path.join(SCRIPTS_DIR, "run_guards.py"))
+    cells.append(("MUTATION-battery-registered-in-whitelist-rejected", len(_a14) >= 1))
+
+    # 15) ★ 正向对照：**真仓库的白名单必须全过**（否则这一格会把「现状」判成坏）
+    _a15, _ = check_admission(shared, SCRIPTS_DIR,
+                              os.path.join(SCRIPTS_DIR, "run_guards.py"))
+    cells.append(("admission-live-whitelist-all-passes", len(_a15) == 0))
+
+    # 16) ★ 引用形态：`is_referenced` 认 import 与 subprocess 字面量两种
+    _r16a = is_referenced("_badge_anchor.py", _iter_ref_texts(SCRIPTS_DIR))
+    # 同上：假名拼接构造（字面量会被本判据自身命中 ⇒ 假绿）
+    _fake16 = "_definitely_nobody_" + "references_this.py"
+    _r16b = not is_referenced(_fake16, _iter_ref_texts(SCRIPTS_DIR))
+    cells.append(("ref-detector-sees-real-misses-fake", _r16a and _r16b))
+
     # 8) 真源码校准：**上限不得宽于实测**（上限烂掉比没上限更贵）。
     #
     #    ⚠️ 这一格原来写的是「实测 == 上限」——那等于把「债没还完」也算成「尺子坏了」：
@@ -297,6 +400,15 @@ def main(argv=None):
     prefixes, suffixes, shared, probs = read_roles(NAMING_DOC)
     if probs:
         print("FATAL 判据无法自证：词法读不到 —— " + "；".join(probs))
+        return 2
+
+    # 白名单**准入条件**核验（NAMING.md 四条件的 2/3；条件 4 是语义判断，靠 review）
+    adm_probs, _adm_warns = check_admission(
+        shared, SCRIPTS_DIR, os.path.join(SCRIPTS_DIR, "run_guards.py"))
+    if adm_probs:
+        print("FATAL 白名单准入条件被违反（%d 条）—— 拒绝判绿：" % len(adm_probs))
+        for x in adm_probs:
+            print("  - " + x)
         return 2
     top, sub = universe(SCRIPTS_DIR)
     if not top:
