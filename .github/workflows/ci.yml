@@ -142,12 +142,6 @@ jobs:
         shell: bash
         run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
 
-      # BUG-480：RX-MBT 的 fs.watch 句柄泄漏（详见 native 臂同名步骤的注释）。
-      # js 臂跑全量 `moon test`，必然踩「挂起、不打印汇总行」。
-      - name: Reapply RX-MBT BUG-480 fs.watch handle fix
-        shell: bash
-        run: bash patches/rx-mbt-bug480/reapply.sh --force
-
       - name: Check (js)
         run: moon check --target js
 
@@ -463,17 +457,6 @@ jobs:
       - name: Reapply BUG-133 sqlite FFI fix
         run: bash patches/sqlite-bug133/reapply.sh --force
 
-      # BUG-480（2026-10-29 修）：依赖侧 `vicTop-cw/RX-MBT@0.3.0` 的 `monitor/watcher_js.mbt`
-      # 把 `ffi_watch_start` 的 JS **number** key 与 `ffi_watch_stop` 的 **BigInt** 形参混用
-      # ⇒ `Map.get(BigInt(0))` 恒 undefined ⇒ `close()` 永不执行 ⇒ fs.watch 句柄泄漏
-      # ⇒ **node 进程无法自然退出**（测试挂起、不打印 `Total tests:` 汇总行）。
-      # registry 上最高只到 0.3.0（无 0.4.0），moon 也不支持 path 依赖 ⇒ 只能本地补丁。
-      # 与本步同源风险：`.mooncakes` 每次 `moon update` 重生成 ⇒ 补丁必须每轮重打。
-      # 前置同上：依赖需先被解包（reapply.sh 在目标缺失时 rc=3 明确报「环境不给量」，不静默通过）。
-      # **失效形态很隐蔽**：不是编译失败，是「测试挂起 150 秒」——没人会把这跟「补丁丢了」联系起来。
-      - name: Reapply RX-MBT BUG-480 fs.watch handle fix
-        run: bash patches/rx-mbt-bug480/reapply.sh --force
-
       - name: Check (native)
         run: moon check --target native
 
@@ -537,12 +520,6 @@ jobs:
       - name: Migrate mooncakes dep manifests (新版 moon 拒旧 moon.mod.json，与 js/native 臂同雷)
         shell: bash
         run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
-
-      # BUG-480：RX-MBT 的 fs.watch 句柄泄漏（详见 native 臂同名步骤的注释）。
-      # windows 臂同样跑 `moon test --target js`，同样会踩「挂起不打印汇总行」。
-      - name: Reapply RX-MBT BUG-480 fs.watch handle fix
-        shell: bash
-        run: bash patches/rx-mbt-bug480/reapply.sh --force
 
       - name: Check (js)
         shell: pwsh
