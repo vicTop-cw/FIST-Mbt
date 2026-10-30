@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import os
 import re
 import subprocess
@@ -69,6 +70,9 @@ RC_OK, RC_VIOLATION, RC_BROKEN = 0, 1, 2
 # `moon check` 每处 unused_try 的上下文里有一行 `╭─[ <abs path>:<line>:<col> ]`
 LOC_RX = re.compile(r"[╭├]─\[\s*(.+?):(\d+):(\d+)\s*\]")
 WARN_RX = re.compile(r"unused_try")
+# `moon check --json` 里 unused_try 的 error_code（**探针实证**，见 `parse_hits` docstring：
+# 用最小工程 `try { 1+1 } catch {…}` 实跑得 error_code = 23，不是从文档抄的）。
+UNUSED_TRY_CODE = 23
 
 
 def run_moon_check(root: str):
@@ -90,12 +94,43 @@ def run_moon_check(root: str):
 
 
 def parse_hits(text: str):
-    """从 moon check 输出里抽出每一处 unused_try 的位置。
+    """从 `moon check` 输出里抽出每一处 unused_try 的位置。
 
     做法：按 `Warning:` 分块，块内含 unused_try ⇒ 取该块内第一条 `╭─[ ... ]` 定位。
     （**不**用「unused_try 前后各抓 N 行」—— 实测会串到相邻 warning 的位置上。）
+
+    **也吃 `--json` 格式**（R74）：`run_guards.py` 的 `_ensure_check_dump()` 落的是
+    `moon check --json`（给另外 3 格用），而 JSON 里**没有 `Warning:` 块** ⇒
+    本函数此前喂它会返回空 hits，看起来像「没有违例」，其实**没解析到**。
+    JSON 的 `unused_try` 用 `error_code == 23` 标识（**探针实证**，不是猜：
+    用最小工程 `try { 1+1 } catch {…}` 跑 `moon check --json` 得
+    `{"level":"warning","error_code":23,"message":"Warning (unused_try): …"}`）。
     """
     hits = []
+    # ① JSON 形态：以 `{` 开头的单行/多行 JSON ⇒ 走 diagnostics
+    maybe = text.lstrip()
+    if maybe.startswith("{"):
+        try:
+            doc = json.loads(maybe)
+        except (ValueError, TypeError):
+            doc = None
+        if isinstance(doc, dict):
+            for d in doc.get("diagnostics") or []:
+                if not isinstance(d, dict):
+                    continue
+                # 两条判据都用：error_code（稳）+ message 里出现 unused_try（可读性兜底）
+                if d.get("error_code") == UNUSED_TRY_CODE or WARN_RX.search(
+                        str(d.get("message") or "")):
+                    path = str(d.get("path") or "").replace("\\", "/")
+                    try:
+                        path = os.path.relpath(path, ROOT).replace("\\", "/")
+                    except ValueError:
+                        pass
+                    loc = str(d.get("loc") or "")
+                    m = re.match(r"(\d+)", loc)
+                    hits.append((path, int(m.group(1)) if m else 0))
+            return hits
+    # ② 人类可读形态（原路径，逐字不变）
     blocks = re.split(r"\nWarning: ", text)
     for b in blocks:
         if not WARN_RX.search(b):
@@ -133,7 +168,22 @@ def judge(root: str = ROOT, check_output: str = ""):
         if not ok:
             return RC_BROKEN, {"note": text}
     # 自拒：既没有 unused_try 也没有正常汇总行 ⇒ 输出不可信
-    if not WARN_RX.search(text) and not re.search(r"Finished\.|now up to date", text):
+    #
+    # ⚠️ JSON 形态要**换一条判据**（R74）：`--json` 里既没有 `unused_try` 字样（除非真违例）
+    #    也没有 `Finished.` / `now up to date`（那是人类可读面的词）⇒ 用原来的自拒式会把
+    #    一份**合法的 JSON dump** 判成"不可信"（实测 rc=2）。
+    #    JSON 的可信判据是它自己的 `status == "success"` 且有 `diagnostics` 数组。
+    stripped = text.lstrip()
+    if stripped.startswith("{"):
+        try:
+            _doc = json.loads(stripped)
+        except (ValueError, TypeError):
+            return RC_BROKEN, {"note": "check_output 是 JSON 但解析失败 ⇒ 拒绝出结论"}
+        if not (isinstance(_doc, dict) and _doc.get("status") == "success"
+                and isinstance(_doc.get("diagnostics"), list)):
+            return RC_BROKEN, {
+                "note": "JSON dump 缺少 status=success 或 diagnostics 数组 ⇒ 拒绝出结论"}
+    elif not WARN_RX.search(text) and not re.search(r"Finished\.|now up to date", text):
         return RC_BROKEN, {"note": "moon check 输出里既无 unused_try 也无汇总行 ⇒ 拒绝出结论"}
     hits = parse_hits(text)
     return (RC_OK if not hits else RC_VIOLATION), {"hits": hits, "raw": text}

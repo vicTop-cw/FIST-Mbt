@@ -376,7 +376,14 @@ SPECIAL_CASES = [
     case("check_mcp_stdio_purity.py"),
     case("check_mcp_stdio_purity.py", "--selftest"),
     case("check_handwritten_seed.py"),
-    case("check_effective_catch.py"),
+    # R74：让它**复用** `_ensure_check_dump()` 落的那份 `moon check --json`，
+    # 而不是自己再 spawn 一次 `moon check`。
+    # 为什么：它自 spawn 时，并发 lane 恰好在编译的那一两秒会让它 rc=2
+    # （**行为正确：拒绝出结论**），但电池里就多一条假红 —— 实测撞过（R71）。
+    # 现在 dump 由电池统一落一次 ⇒ 同一份事实只采一次，不存在「在窗口里抢」。
+    # ⚠️ 若 dump 没落成（`_ensure_check_dump` 失败），本格拿到不存在的文件 ⇒
+    #    它走 `judge` 的 `OSError` 分支 ⇒ rc=2 并点名，**不会静默绿**。
+    gated("check_effective_catch.py", DUMP, "--check-output", DUMP),
     # 判据本体（2026-10-28 转正门禁）：本格曾是 expected(..., 1) 的 known-red，
     #   当时 22/154 个工具从无任何测试碰过接线面（BUG-455）。同日各 lane 补齐后
     #   判据实测 rc=0（外壳零覆盖 0/154）——known-red 的到期条件就是「修好会变红」，
