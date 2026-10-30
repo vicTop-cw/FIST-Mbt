@@ -808,6 +808,26 @@ def print_selftest(fails, executed):
 
 def main():
     argv = sys.argv[1:]
+    # R227：未知旗标必须拒绝（R207 规则「新判据必须拒绝未知旗标」的第 5 例——
+    # 本文件 2026-10-30 被 check_arg_face_strict 行为级抓到）。已知：--selftest、--root <path>。
+    _known_flags = {"--selftest"}
+    _known_value_flags = {"--root"}
+    unknown = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in _known_flags or a in _known_value_flags:
+            i += 2 if a in _known_value_flags else 1
+            continue
+        if a.startswith("--"):
+            unknown.append(a)
+            i += 1
+        else:
+            i += 1
+    if unknown:
+        print("[FATAL] 未知参数 %s —— 已知：--selftest / --root <path>（rc=2）"
+              % " ".join(unknown))
+        return 2
     if "--selftest" in argv:
         return selftest()
     root = ROOT

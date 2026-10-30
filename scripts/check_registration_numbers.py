@@ -47,15 +47,10 @@ RC_OK, RC_MISMATCH, RC_BROKEN = 0, 1, 2
 # 登记条目：脚本名 → (why 里的读数正则组, 实测命令)
 # 正则必须**从 why 里反解**（不手抄数字：手抄就是第二份真源）。
 ENTRIES = [
-    {
-        "script": "check_selftest_hermetic.py",
-        "cmd": [sys.executable, "scripts/check_selftest_hermetic.py"],
-        "claim": "红档 **{red} 处 = W {W} / R {R} / G {G}**",
-        "re_claim": r"红档 \*\*(\d+) 处 = W (\d+) / R (\d+) / G (\d+)\*\*",
-        "diag": "另记账 {diag}（S {S} / T {T}）",
-        "re_diag": r"另记账 (\d+)（S (\d+) / T (\d+)）",
-        "measure": "faces",
-    },
+    # R227：check_selftest_hermetic.py 条目**移除** —— ①判据已改版（输出「[棘轮] W=a/b…」+
+    # 逐条 `- [W]`，不再打旧形状「红档 **N 处 = W a / R b / G c**」）；②电池登记已按其自带
+    # 销账条件转 case()（现读 0/0/0/0、rc=0）⇒ 不再有 why 需要对表。同批改动：
+    # run_guards.py 的 expected(...) → case(...)。
     {
         "script": "check_scripts_naming.py",
         "cmd": [sys.executable, "scripts/check_scripts_naming.py"],
@@ -94,11 +89,16 @@ def measure_over_faces(entry):
     return len(m) if out.strip() else None
 
 
-def judge(run_guards_text, measured):
-    """纯函数：登记为什么 vs 实测 → 违例列表。便于 --selftest 合成自证。"""
+def judge(run_guards_text, measured, entries=None):
+    """纯函数：登记为什么 vs 实测 → 违例列表。便于 --selftest 合成自证。
+
+    R227：hermetic 条目从 ENTRIES 移除（判据改版 + 电池转 case()）后，selftest 的
+    「drifted-claim-is-caught」变异格失去了 faces 夹具 ⇒ 允许调用方注入**合成条目**
+    （形状与原 hermetic 条目相同），让变异对照继续成立 —— 不动 ENTRIES 本身。
+    """
     problems = []
     text = run_guards_text
-    for entry, meas in zip(ENTRIES, measured):
+    for entry, meas in zip(entries if entries is not None else ENTRIES, measured):
         if meas is None:
             problems.append("%s：测量命令跑不出数 ⇒ 无法对表" % entry["script"])
             continue
@@ -196,8 +196,19 @@ def selftest():
             fails.append(name)
 
     # 夹具**从条目表生成**：加/删条目时自证自动跟随（不会出现"新条目没被自证覆盖"）
+    # R227：ENTRIES 已无 faces 条目（hermetic 移除）⇒ 变异对照用**合成 faces 条目**
+    # 注入 judge（形状与原条目相同），保证「改坏 W 要红」这一格不因条目表变动而失锚。
+    _synth_faces = {
+        "script": "synthetic_faces_entry.py",
+        "cmd": None,
+        "claim": "红档 **{red} 处 = W {W} / R {R} / G {G}**",
+        "re_claim": r"红档 \*\*(\d+) 处 = W (\d+) / R (\d+) / G (\d+)\*\*",
+        "diag": "另记账 {diag}（S {S} / T {T}）",
+        "re_diag": r"另记账 (\d+)（S (\d+) / T (\d+)）",
+        "measure": "faces",
+    }
     good_meas, good_parts = [], []
-    for e in ENTRIES:
+    for e in [_synth_faces] + ENTRIES:
         if e["measure"] == "faces":
             good_meas.append((90, 1, 61, 28, 10, 3, 7))
             claim, diag = render_claim(e, good_meas[-1])
@@ -206,18 +217,21 @@ def selftest():
             good_meas.append(2)
             good_parts.append(e["claim"].format(n=2) + " > 棘轮上限")
     good_text = "；".join(good_parts)
-    cell("consistent-claim-passes", judge(good_text, good_meas) == [])
+    cell("consistent-claim-passes",
+         judge(good_text, good_meas, [_synth_faces] + ENTRIES) == [])
 
     # 变异对照：把登记里的 W 改一个数，必须被抓到（判例-29：改坏机制要红）
     drift_text = good_text.replace("W 1", "W 4")   # 只改红档那一条的 W
-    bad = judge(drift_text, good_meas)
+    bad = judge(drift_text, good_meas, [_synth_faces] + ENTRIES)
     cell("drifted-claim-is-caught", len(bad) == 1 and "W" in bad[0])
 
     # 形状变了（解析不到）也要报，而不是静默通过
-    cell("unparseable-claim-is-caught", judge("why 里没有读数", good_meas) != [])
+    cell("unparseable-claim-is-caught",
+         judge("why 里没有读数", good_meas, [_synth_faces] + ENTRIES) != [])
 
     # 测量跑不出数 ⇒ 报无法对表（不静默）
-    cell("broken-measurement-is-caught", judge(good_text, [None] * len(ENTRIES)) != [])
+    cell("broken-measurement-is-caught",
+         judge(good_text, [None] * (len(ENTRIES) + 1), [_synth_faces] + ENTRIES) != [])
 
     # R127：文档里的「N 条测试在 `path`」对表（合成夹具，**不读仓库**）
     _doc = "真源 `x.mbt`，3 条白盒测试在 `a_test.mbt`。"
