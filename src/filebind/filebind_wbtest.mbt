@@ -547,3 +547,49 @@ test "fb_mutation_lock_conflict_never_allowed" {
   }
   assert_eq(rows[0].holder, "A")
 }
+
+///|
+/// 释放裁决四态 → 字符串映射（`file_release` 工具的**外壳面**）。
+///
+/// 覆盖动机：`check_tool_coverage` 报 `file_release` 外壳零覆盖 ⇒ 它坏了没人知道。
+/// 本格断言四条映射**逐条**（不是只断言"非空"），漏一条即红。
+test "fb_release_name_covers_all_four_verdicts" {
+  assert_eq(fb_release_name(RelReleased), "released")
+  assert_eq(fb_release_name(RelForced), "forced")
+  assert_eq(fb_release_name(RelNotHolder), "not_holder")
+  assert_eq(fb_release_name(RelNotFound), "not_found")
+}
+
+///|
+/// 状态行 JSON：**过期项不隐藏**（`file_status` 工具的**外壳面**）。
+///
+/// 覆盖动机：同上，`file_status` 外壳零覆盖。
+/// 禁用 `sleep`（判例-31）：`now` 由参数给，两格在同一毫秒内分别判「有效」与「过期」。
+/// 断言的是**派生读数**（`expired` / `remaining_secs`），不是源码字符串（判例-30）。
+test "fb_status_json_keeps_expired_visible" {
+  // 未过期：bound_at=100 / ttl=50 / now=120 ⇒ 剩 30，未过期
+  let live = mk("ns1", "/p", "a.mbt", "A", 100, 50)
+  let j_live = fb_status_json(live, 120)
+  assert_true(fb_js(j_live, "path") == "a.mbt")
+  // ⚠️ `fb_js` 只解 String 字段（Boolean 会返回 ""），所以 boolean 必须直接 match，
+  //    **不能**拿 fb_js 转成字符串再比 —— 那样恒得 "" ⇒ 断言恒假（我自己先踩了一次）。
+  let jb = match j_live {
+    Object(m) => m.get("expired")
+    _ => None
+  }
+  assert_eq(jb |> Option::unwrap, Json::boolean(false))
+  // 已过期：同一 now=200 ⇒ 剩 0 且 expired
+  let j_dead = fb_status_json(live, 200)
+  // ⚠️ 关键：过期项**仍然返回完整条目**（不隐藏）——这正是「死掉的 agent 占着文件」可见的原因
+  assert_true(fb_js(j_dead, "holder") == "A")
+  let jbd = match j_dead {
+    Object(m) => m.get("expired")
+    _ => None
+  }
+  assert_eq(jbd |> Option::unwrap, Json::boolean(true))
+  let num = match j_dead {
+    Object(m) => m.get("remaining_secs")
+    _ => None
+  }
+  assert_eq(num |> Option::unwrap, Json::number(0.0))
+}
