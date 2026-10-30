@@ -52,6 +52,91 @@ def read_ledger():
         return set(re.findall(r"^## BUG-(\d+)", f.read(), re.M))
 
 
+def read_ledger_summaries():
+    """返回 `{编号: 该条 summary 首 80 字}`（R86 · BUG-489 的 advisory 用）。
+
+    为什么需要：`read_ledger()` 只给**编号存在性**。而**撞号**（同一编号被两件不同的事占用）时，
+    编号**存在**但内容**不是**提交信息说的那件事 ⇒ 「孤儿引用」判据**假绿**。
+    本函数给出每条编号的 summary 指纹，供 `summary_mismatch()` 做**只报不判**的可见性检查。
+
+    ⚠️ **不改主判定**：它只喂 advisory，不进 `scan()`、不影响 `is_red()` 的退出码
+    —— 因为「摘要不匹配」也可能是**合理的**（提交信息本来就允许只引用编号不提内容）。
+    """
+    out = {}
+    if not os.path.isfile(LEDGER):
+        return out
+    with open(LEDGER, encoding="utf-8", errors="replace") as f:
+        lines = f.read().splitlines()
+    cur = None
+    for ln in lines:
+        m = re.match(r"^## BUG-(\d+)", ln)
+        if m:
+            cur = m.group(1)
+            out.setdefault(cur, "")
+            continue
+        if cur is not None:
+            sm = re.match(r"^- summary:\s*(.*)$", ln)
+            if sm and not out.get(cur):
+                out[cur] = sm.group(1).strip()[:80]
+    return out
+
+
+def _tokens(s):
+    """粗分词：英文按词、中文按双字滑窗。用于「摘要 ↔ 提交信息」的**弱相似度**比较。"""
+    s = re.sub(r"[^\w\u4e00-\u9fff]+", " ", s.lower())
+    out = set()
+    for p in [x for x in s.split() if x]:
+        if re.match(r"^[0-9a-z_]+$", p):
+            out.add(p)
+        else:
+            for i in range(len(p) - 1):
+                out.add(p[i:i + 2])
+    return out
+
+
+def trim_bug_refs(text):
+    """去掉 `BUG-n` 字样本身 —— 否则比对词表里全是 BUG 号，交集恒真。"""
+    return BUG_RE.sub(" ", text)
+
+
+def summary_mismatch(msgs, summaries):
+    """**只报不判**（R86 · BUG-489 方案 C）：找「引用了账本里**存在**的编号、但摘要**毫无交集**」的站点。
+
+    ⚠️ **不红、不改退出码**：一条提交可以只写「修 BUG-488」而不提内容 —— 那是合法的。
+    本函数的唯一价值是**让撞号看得见**：
+      · 撞号时，提交信息说的那件事与账本里那条的 summary **毫无交集** ⇒ 命中（「可能撞号」）
+      · 正常引用时，至少有一两个实词重合 ⇒ 不命中
+    ⇒ **命中即请人复核，不自动判红。**
+
+    返回 [(编号, sha8, 提交首行, 账本 summary 首 60 字)]。
+    """
+    hits = []
+    for sha, msg in msgs:
+        head_line = next((l.strip() for l in msg.strip().splitlines() if l.strip()), "")[:70]
+        msg_tok = _tokens(trim_bug_refs(msg))
+        # ⚠️ **实质信息门槛**（R86 自检抓到）：去掉 `BUG-n` 后若只剩零星虚词
+        #    （`chore: 记 BUG-488` ⇒ 去掉后只剩 chore/记 两三个词），那**不是**在描述缺陷，
+        #    而是在**引用编号**——这类提交**合法且常见**，advisory 无权怀疑它。
+        #    门槛取 ≥4 个 token：正常缺陷描述（「基准用 origin/master 而本地在 main」）远超此值，
+        #    而「只提编号」的提交都在此值以下（实测）。
+        if len(msg_tok) < 4:
+            continue
+        for m in BUG_RE.finditer(msg):
+            n = m.group(1)
+            if int(n) >= FIXTURE_FLOOR:
+                continue
+            sm = summaries.get(n)
+            if not sm:
+                continue          # 编号不存在 ⇒ 归 scan() 管（孤儿），不在这里重复
+            sm_tok = _tokens(sm)
+            if not sm_tok:
+                continue          # 摘要没词 ⇒ 无法比较，不乱报
+            if msg_tok & sm_tok:
+                continue          # 有交集 ⇒ 认为同源
+            hits.append((n, sha[:8], head_line, sm[:60]))
+    return hits
+
+
 def git(*args):
     return subprocess.run(
         ["git"] + list(args), cwd=ROOT, capture_output=True, text=True,
@@ -193,11 +278,45 @@ def run():
     for sha, n, msg in orphan:
         print("  ORPHAN BUG-%s (%s): %s" % (n, sha, msg))
     print("未推送 commit 引用的孤儿 BUG 编号：%d / ceiling=%d" % (len(orphan), PHANTOM_COMMIT_CEILING))
+    # ── R86 · BUG-489 方案 C：**只报不判**的撞号可见性 ────────────────────────
+    #
+    # 为什么加这一段：**撞号会把孤儿判据从红变成绿** —— 编号确实存在，只是内容是另一件事。
+    # 实测：外部 `4d3833acd` 说「修 BUG-488（release reapply）」，而账本里的 BUG-488 是
+    # 另一条（基准分支不一致）⇒ 本判据报「孤儿 0」⇒ **假绿**。
+    #
+    # ⚠️ 这段话**不进判定、不改退出码**：提交信息合法地可以只引用编号而不提内容。
+    #    它的作用只是**让可能撞号的站点浮出来**，由人复核。
+    # ⚠️ 也**不进 ceiling 棘轮** —— 棘轮管的是「孤儿数」，不管「摘要不匹配」（后者是 advisory）。
+    try:
+        _msgs = _read_commit_msgs(base if exact else "-20")
+        _mm = summary_mismatch(_msgs, read_ledger_summaries())
+    except Exception:  # noqa: BLE001 —— advisory 永不因自身失败而影响主判定
+        _mm = []
+    if _mm:
+        print("  ⚠️ ADVISORY 可能撞号 %d 处（引用存在但摘要毫无交集，**不判红**，请人工复核）：" % len(_mm))
+        for n, sha, head, sm in _mm:
+            print("     - BUG-%s (%s) 「%s」  ≟ 账本「%s」" % (n, sha, head, sm))
     if is_red(len(orphan)):
         print("FAIL：孤儿编号超 ceiling——新 commit 引入了账本里不存在的 BUG-N（手动编号绕过 report_bug）")
         return 1
     print("PASS：commit message 面的 BUG-N 完整性在 ceiling 内")
     return 0
+
+
+def _read_commit_msgs(base):
+    """读 `base..HEAD` 的 (sha, 全文) 列表。降级时 base="-20"（同 scan() 的语义）。"""
+    r = git("log", "--format=%H%x00%B", "%s..HEAD" % base)
+    if r.returncode != 0:
+        r = git("log", "--format=%H%x00%B", "-20", "HEAD")
+    out = []
+    for chunk in (r.stdout or "").split("\n"):
+        if not chunk.strip():
+            continue
+        parts = chunk.split("\x00", 1)
+        if len(parts) != 2:
+            continue
+        out.append((parts[0], parts[1]))
+    return out
 
 
 def selftest():
@@ -263,12 +382,43 @@ def selftest():
         # 降级态（一个候选都没有）必须**明说**，不许静默：exact=False 且 base="-20"
         cell("baseref-degraded-is-marked", base == "-20", True)
 
+    # 格9（R86）：**撞号可见性锁** —— 这是 BUG-489 方案 C 的锁。
+    #
+    # 被测机制：`summary_mismatch()` 必须在「引用了账本里存在的编号、但提交说的那件事
+    # 与账本 summary **毫无交集**」时报出，且在**正常引用**（有实词重合）时**不报**。
+    #
+    # ⚠️ **变异对照**：若有人把 `if msg_tok & sm_tok: continue` 删掉（变成「一律报」），
+    # `mismatch-clean-not-flagged` 必红；若删掉整段 advisory 逻辑，`mismatch-collision-caught` 必红。
+    #
+    # 为什么要锁：撞号会让**主判定**假绿（编号存在 ⇒ 孤儿 0），
+    # 而 advisory 是唯一能把它浮出来的东西 ⇒ 它坏了就等于「撞号永远不可见」。
+    _sm = read_ledger_summaries()
+    if _sm:
+        # ① 撞号合成用例：引用 BUG-488，说的却是 release reapply 的事（与真实 summary 无交集）
+        _fake = [("deadbeef", "fix(release): 补 migrate 先解包 —— 修 BUG-488（reapply 找不到依赖）")]
+        cell("mismatch-collision-caught", len(summary_mismatch(_fake, _sm)) > 0, True)
+        # ② 反向对照：引用同一个号、说的就是它本身的事 ⇒ **不许报**
+        #
+        # ⚠️ **R86 自检抓到的一处自指假绿**：本格初版写的是
+        #     `"fix(guard): check_commit_bug_refs 基准用 origin/master 而本地在 main"`
+        #     —— 它**根本没含 `BUG-488` 这个编号** ⇒ `BUG_RE.findall()` 返回空
+        #     ⇒ 循环体一次都没进 ⇒ **恒返回 []** ⇒ 这一格在任何变异下都"通过"。
+        #     实测代价：把 `if msg_tok & sm_tok: continue` 删掉后，本格仍绿（**变异对照失灵**）。
+        # ⇒ 修法：**带编号** + 带与 summary 同源的实词。
+        _same = [("cafe1234",
+                  "fix(guard): 修 BUG-488 —— check_commit_bug_refs 基准用 origin/master 而本地在 main")]
+        cell("mismatch-clean-not-flagged", summary_mismatch(_same, _sm), [])
+        # ③ 只引用编号、不提内容 ⇒ 不许报（这是合法写法，advisory 无权判红）
+        _bare = [("f00d0000", "chore: 记 BUG-488")]
+        cell("mismatch-bare-ref-not-flagged", summary_mismatch(_bare, _sm), [])
+
     if fails:
         print("selftest FAIL（%d 格）：" % len(fails))
         for f in fails:
             print("  - " + f)
         return 1
-    print("selftest PASS（8 格：提取/夹具/边界/ceiling/账本/实测/调用面/基准解析语义（R85·BUG-488 锁））")
+    print("selftest PASS（9 格：提取/夹具/边界/ceiling/账本/实测/调用面/"
+          "基准解析语义（R85·BUG-488 锁）/撞号可见性（R86·BUG-489 锁））")
     return 0
 
 
