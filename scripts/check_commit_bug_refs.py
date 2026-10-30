@@ -25,6 +25,7 @@ bug_list 面标 BUG-390=pre-push 拦截），编号**从未经 report_bug 原子
 """
 import io
 import os
+import tempfile
 import re
 import subprocess
 import sys
@@ -52,7 +53,7 @@ def read_ledger():
         return set(re.findall(r"^## BUG-(\d+)", f.read(), re.M))
 
 
-def read_ledger_summaries():
+def read_ledger_summaries(ledger_path=None):
     """返回 `{编号: 该条 summary 首 80 字}`（R86 · BUG-489 的 advisory 用）。
 
     为什么需要：`read_ledger()` 只给**编号存在性**。而**撞号**（同一编号被两件不同的事占用）时，
@@ -61,12 +62,28 @@ def read_ledger_summaries():
 
     ⚠️ **不改主判定**：它只喂 advisory，不进 `scan()`、不影响 `is_red()` 的退出码
     —— 因为「摘要不匹配」也可能是**合理的**（提交信息本来就允许只引用编号不提内容）。
+
+    ⚠️ **R93 加 `ledger_path` 形参**：`--selftest` 里必须能把它指向**temp 合成账本**，
+    否则自检读真账本 ⇒ `check_selftest_hermetic` 判 **[R] 类违例**（自检碰仓库现状面）。
+    实测代价：R86 加本函数时自检读真账本 ⇒ 该判据 **R 74/73**（超基线 1 处）⇒ 电池红。
+    ⇒ **默认 `None` 保持读真账本（主路径逐字不变）**，只有 selftest 显式传 temp 路径。
     """
     out = {}
-    if not os.path.isfile(LEDGER):
-        return out
-    with open(LEDGER, encoding="utf-8", errors="replace") as f:
-        lines = f.read().splitlines()
+    # ⚠️ R93：**用提前返回**而不是 `path = LEDGER if … else ledger_path` ——
+    #    后者会让静态分析把 `path` 判成「可能来自 LEDGER（真仓锚点）」⇒ 仍记 [R] 类违例。
+    #    判据自述（`check_selftest_hermetic.py:238`）明写「**形参/默认参永不污点**
+    #    （防「自检显式传 temp 路径」被误判）」⇒ 正确形状是**只有 `ledger_path is None` 才碰 LEDGER**，
+    #    与形参混在一个赋值里就把形参也染污了。
+    if ledger_path is None:
+        if not os.path.isfile(LEDGER):
+            return out
+        with open(LEDGER, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    else:
+        if not os.path.isfile(ledger_path):
+            return out
+        with open(ledger_path, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
     cur = None
     for ln in lines:
         m = re.match(r"^## BUG-(\d+)", ln)
@@ -392,7 +409,20 @@ def selftest():
     #
     # 为什么要锁：撞号会让**主判定**假绿（编号存在 ⇒ 孤儿 0），
     # 而 advisory 是唯一能把它浮出来的东西 ⇒ 它坏了就等于「撞号永远不可见」。
-    _sm = read_ledger_summaries()
+    # ⚠️ R93：**自检必须读 temp 合成账本**，不许读真账本 ——
+    #    否则本判据自身会撞 `check_selftest_hermetic` 的 [R] 类违例（自检碰仓库现状面）。
+    #    实测代价：R86 加 `read_ledger_summaries()` 时自检读真账本 ⇒ 该判据 R 74/73 超基线 ⇒ 电池红。
+    _led_txt = (
+        "## BUG-1 [t] [low] OPEN\n- summary: 甲\n\n"
+        "## BUG-2 [t] [low] FIXED\n- summary: 乙\n\n"
+        "## BUG-488 [t] [low] FIXED\n"
+        "- summary: `check_commit_bug_refs` 基准用 origin/master，而本地在 main 上 ⇒ 永远 ahead=0\n"
+    )
+    _td = tempfile.mkdtemp(prefix="ccbr-self-")
+    _led_path = os.path.join(_td, "ledger.md")
+    with open(_led_path, "w", encoding="utf-8") as _f:
+        _f.write(_led_txt)
+    _sm = read_ledger_summaries(_led_path)
     if _sm:
         # ① 撞号合成用例：引用 BUG-488，说的却是 release reapply 的事（与真实 summary 无交集）
         _fake = [("deadbeef", "fix(release): 补 migrate 先解包 —— 修 BUG-488（reapply 找不到依赖）")]
@@ -411,6 +441,12 @@ def selftest():
         # ③ 只引用编号、不提内容 ⇒ 不许报（这是合法写法，advisory 无权判红）
         _bare = [("f00d0000", "chore: 记 BUG-488")]
         cell("mismatch-bare-ref-not-flagged", summary_mismatch(_bare, _sm), [])
+        # R93：清理 temp 合成账本（shutil 未导入 ⇒ 只删文件与目录）
+        try:
+            os.unlink(_led_path)
+            os.rmdir(_td)
+        except OSError:
+            pass
 
     if fails:
         print("selftest FAIL（%d 格）：" % len(fails))
