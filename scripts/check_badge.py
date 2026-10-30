@@ -359,7 +359,7 @@ def main():
     # `len(argv)==1 and argv[0]=="--selftest"` ⇒ 拼错成 `--self-test` 时条件不成立，
     # 于是落进"两参"分支并只打 usage（旧实现回 rc=1）—— 一次**调用形状错**会被读成"徽章判红"。
     # 同族实测：R197/R198/R199/R200（A3 advisory）。这里补硬门：未知 `-` 开头 ⇒ rc=2。
-    _KNOWN = ("--fresh", "--selftest")
+    _KNOWN = ("--fresh", "--fresh-if-stale", "--selftest")
     unknown = [a for a in argv if a.startswith("-") and a not in _KNOWN]
     if unknown:
         print("[FATAL] 未知参数 %s —— 已知：%s（rc=2）" % (" ".join(unknown), " / ".join(_KNOWN)))
@@ -368,10 +368,14 @@ def main():
         return selftest()
     # A 方案（判例-25）：--fresh 判前真跑一次全仓，跑完重写快照 + 源码面锚点。
     fresh = "--fresh" in argv
+    # R109（BUG-498）：`--fresh-if-stale` = 「快照已同源就不重跑」（供电池里两把尺共享一次全仓）。
+    # ⚠️ 它**不改 `--fresh` 的语义** —— 显式 `--fresh` 仍无条件真跑。
+    if_stale = "--fresh-if-stale" in argv
+    fresh = fresh or if_stale
     if fresh:
-        argv = [a for a in argv if a != "--fresh"]
+        argv = [a for a in argv if a not in ("--fresh", "--fresh-if-stale")]
     if len(argv) != 2:
-        print("用法: python scripts/check_badge.py [--fresh] <moon_test_log> <README.md> | --selftest")
+        print("用法: python scripts/check_badge.py [--fresh|--fresh-if-stale] <moon_test_log> <README.md> | --selftest")
         print(f"REJECT 调用形状错：需要 2 个实参，收到 {len(argv)} 个"
               f"（判据没跑到被检面 ⇒ rc=2，不冒用违例红 rc=1）")
         return 2
@@ -380,6 +384,13 @@ def main():
         print(f"REJECT README读不到：{readme_path}（被检面缺失，判据拒绝出结论 ⇒ rc=2）")
         return 2
 
+    if fresh and if_stale and os.path.isfile(log_path):
+        # R109：快照已同源 ⇒ 跳过重跑（共享前一把的产物）
+        probs, _info = anchor_problems(log_path)
+        if not probs:
+            print("FRESH-SKIP 快照源码面锚点已同源（%s）⇒ 跳过重跑（共享前一把的产物）"
+                  % log_path)
+            fresh = False
     if fresh:
         ok, tail = run_fresh(log_path)
         print("FRESH 真跑全仓：%s" % ("成功" if ok else "失败"))

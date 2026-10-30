@@ -1201,7 +1201,11 @@ def main():
     strict = "--strict" in raw_args
     raw_args = [a for a in raw_args if a != "--strict"]
     fresh = "--fresh" in raw_args
-    args = [a for a in raw_args if a != "--fresh"]
+    # R109（BUG-498）：`--fresh-if-stale` = 「快照已同源就不重跑」（供电池里两把尺共享一次全仓）。
+    # ⚠️ 它**不改 `--fresh` 的语义** —— 显式 `--fresh` 仍无条件真跑。
+    if_stale = "--fresh-if-stale" in raw_args
+    fresh = fresh or if_stale
+    args = [a for a in raw_args if a not in ("--fresh", "--fresh-if-stale")]
     # `--fix-dry-run`：**只建议、不落盘**（判例-63）。
     # 旧名 `--fix`（写盘版）在 2026-10-26 实测误伤 19 文件 40+ 处 ⇒ 已删除，**不留任何落盘路径**。
     # 若有人仍敲 `--fix`，必须明确告诉他「这个功能已改为只建议」，不能静默当成 dry-run
@@ -1227,6 +1231,27 @@ def main():
         # BUG-456：`--fresh` 的真跑必须**先于**「文件必须存在」检查 ——
         # 否则裸敲 `--fresh` 时默认快照路径还不存在 ⇒ 直接 REJECT，
         # 等于「真跑」这个能力先要知道一个已存在的文件才能用（顺序反了）。
+        if fresh:
+            # ── R109 · 「快照已新鲜就不重跑」（BUG-498）─────────────────────
+            #
+            # **为什么加这个分支**：电池里 `check_badge --fresh` 与 `check_test_sync --fresh`
+            # **各自独立跑一次全仓** ⇒ 两次 ~8 分钟 = **~16 分钟**，这是电池跑不完的主因之一
+            # （R61/63/66/68/69/71/79/81/108 连续 9 轮实测跑不完 ⇒ 终止）。
+            #
+            # 而它们**吃的是同一份快照**（`temp/pt27.log` + `.src` 锚点）⇒
+            # **前一把跑完后，后一把看到的已经是新鲜快照** ⇒ 再跑一次是纯重复。
+            #
+            # **只在 `--fresh-if-stale` 下生效**（不是改 `--fresh` 的语义）：
+            # 显式 `--fresh` 仍**无条件**真跑（那是它的契约：证明「文档 == 现实」）。
+            #
+            # ⚠️ 「新鲜」的判据是**源码面锚点同源**（判例-25 的同一把尺），不是 mtime。
+            # ⚠️ 锚点读不到 / 不同源 ⇒ 照旧真跑（**不拿旧快照冒充现实**）。
+            if if_stale and log_path.is_file():
+                probs, _info = anchor_problems(str(log_path))
+                if not probs:
+                    print("FRESH-SKIP 快照源码面锚点已同源（%s）⇒ 跳过重跑（共享前一把的产物）"
+                          % log_path)
+                    fresh = False
         if fresh:
             ok, tail = run_fresh(str(log_path))
             print("FRESH 真跑全仓：%s" % ("成功" if ok else "失败"))
