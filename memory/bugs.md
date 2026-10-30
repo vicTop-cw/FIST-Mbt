@@ -10922,3 +10922,66 @@ memory/bugs.md:3846 有另一个正常抬头：
 任何一处行内出现 ## BUG- 都会让它静默消失。
 => 判据应该正反两面都查：**该出现的必须出现** + **不该出现的形态必须不出现**。
 - reported_by: lead
+## BUG-482 [2026-10-30T02:05:08Z] [medium] OPEN
+- summary: moon 包发现扫描 temp/：BUG-463 夹具「创建→用→递归删」与并发 moon test/check 撞出 os error 3
+- detail: ## 现象
+
+`moon test` / `moon check` 在并发下随机失败，报：
+
+```
+Error: Failed when discovering packages
+Caused by:
+    Unable to fetch info for packages in module 'vicTop-cw/fist-mbt@0.3.10
+    (local E:\IDEProjects\AI\FIST-Mbt)', error: IO error for operation on
+    E:\IDEProjects\AI\FIST-Mbt\temp\k463_closeall_1793325768919-...:
+    系统找不到指定的路径。 (os error 3)
+```
+
+连续两次采样拿到**不同**的目录名（`k463_reopen_*` / `k463_closeall_*`）⇒ 不是一次性残留，是**持续竞态**。
+
+## 根因（三段链，全部实测）
+
+1. **夹具位置**：`src/store/store_bug463_close_wbtest.mbt:48`
+   ```moonbit
+   "temp/k463_" + tag + "_" + k463_run_token()
+   ```
+   注释自述：「递归删目录（用后清理；残留只会落在 gitignore 的 `temp/` 下）」。
+
+2. **moon 的扫描面 = 整个仓库树，且不读 `.gitignore`**
+   - `temp/` 在 `.gitignore:29` **但** moon 的 package discovery 仍会遍历它
+   - 实证先例（R58）：`temp/t0r5_fmt_backup/src/server/moon.pkg` 曾让 moon 把它当成真实包，
+     导致 **104 errors / 130 处指向该副本**
+   - `moon.mod` 里**没有**任何 ignore 配置项（已核）
+
+3. **竞态**：夹具「创建 → 用 → 递归删」的过程中，moon 的 discovery 恰好遍历到已删除的路径
+   ⇒ `os error 3`
+
+## 影响面
+
+- **不是测试代码错**，也**不是 moon 的 bug**（它只是忠实遍历）
+- **是「夹具放在扫描面里」这个设计**导致的：任何并发 `moon test` / `moon check` 都可能撞上
+- **实测代价**：本轮 `moon test src/ops` 连续 2 次拿不到汇总行（`scripts/moon_test_env.py` 判 rc=2「无法自证」）
+- **更严重的是**：`rc=2` 意味着**判据拒绝出数** ⇒ 这会掩盖真实的测试结果
+
+## 修法（三选一，优先级从高到低）
+
+### A. 夹具移出仓库树（与 R58 同法，已验证有效）
+把 `temp/k463_*` 改成**仓库根外的临时目录**，例如
+`$LOCALAPPDATA/Temp/fist-mbt-k463-<token>`。
+- **优点**：根治，与 R58 修 `t0r5_fmt_backup` 的做法一致
+- **代价**：`k463_base_dir()` 要能跨平台取绝对临时路径（本仓已有 `@env` 同类先例）
+
+### B. 夹具改为**进程内唯一且不清理**（留在 temp/ 但不再递归删）
+- **优点**：改动最小（删掉清理调用）
+- **缺点**：`temp/` 会累积（但已在 gitignore，且有 `commissar_gc` 同类思路可复用）
+
+### C. 不修，把 `moon test` 的 rc=2 当成「环境噪声」重试
+- **不推荐**：这正是「红着没人读」的变体 —— 重试会掩盖真失败
+
+## 附件
+
+- `.gitignore:29` = `temp/`
+- `moon.mod` 全文无 ignore 段
+- 记账规则：本条只记现象+根因+修法，**未修**
+
+- reported_by: lead</string>
