@@ -75,18 +75,15 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # BUG-480：RX-MBT 的 fs.watch 句柄泄漏。**发布产物必须带这个补丁** ——
-      # 否则用户装到的 JS bundle 里仍是 `close()` 永不执行的旧代码。
-      # BUG-488（R256）：reapply 前必须**先解包依赖** —— `moon update` 只拉注册表索引，
+      # 2026-10-30：RX-MBT 已升 0.4.0，`Number(id)` 归一由上游原生实现，
+      # 原 `patches/rx-mbt-bug480/reapply.sh` 与其 reapply 步骤一并删除（BUG-480 上游已收编）。
+      # BUG-488（R256）：仍必须先解包依赖 —— `moon update` 只拉注册表索引，
       # `.mooncakes/` 在 `moon check` 触发解包前不存在（ci.yml:447 已知坑，release 漏配）
-      # ⇒ build-js 与 build-native-linux 双双红在 reapply ⇒ release skipped ⇒ Release 零资产。
+      # ⇒ 不做 migrate 就会 build 失败 ⇒ release skipped ⇒ Release 零资产。
       - name: Migrate mooncakes dep manifests (解包依赖 + 迁旧 moon.mod.json)
         shell: bash
         run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
 
-      - name: Reapply RX-MBT BUG-480 fs.watch handle fix (js)
-        shell: bash
-        run: bash patches/rx-mbt-bug480/reapply.sh --force
 
       - name: Build JS target
         run: |
@@ -134,10 +131,6 @@ jobs:
       - name: Install sqlite3 dev
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev sqlite3
 
-      # BUG-480：发布产物必须带补丁（理由同 js 臂）
-      - name: Reapply RX-MBT BUG-480 fs.watch handle fix (native)
-        shell: bash
-        run: bash patches/rx-mbt-bug480/reapply.sh --force
 
       - name: Build native
         run: bash scripts/migrate_mooncakes_modjson.sh "moon build --target native"
@@ -171,6 +164,17 @@ jobs:
           if (Test-Path scripts/native-env.ps1) {
             . scripts/native-env.ps1
           }
+
+      # BUG-490（R87 补）：**Windows 臂也缺 migrate 先解包** —— 与 build-js / build-native-linux
+      # 同雷（依赖惰性解包，新版 moon 拒旧 `moon.mod.json` ⇒ 解析依赖图即失败 ⇒ 本 job 红
+      # ⇒ 少一个 Windows native 资产）。`continue-on-error: true` 让它**不阻塞 release**，
+      # 所以这缺口**长期静默**：Release 一直少一个资产，而 CI 只看到「有个 job 黄了」。
+      #
+      # 为什么 `shell: bash`：与 ci.yml 的 windows 臂（:522）同款 —— windows-latest 自带 Git Bash，
+      # 那支迁移器内含 build 探针、exit 0 即依赖图已通。**照抄已验证的先例，不另造写法。**
+      - name: Migrate mooncakes dep manifests (先解包，与 js/linux 臂同雷)
+        shell: bash
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target native"
 
       - name: Build native
         run: moon build --target native

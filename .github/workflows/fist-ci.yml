@@ -37,12 +37,6 @@ jobs:
       - name: Migrate mooncakes dep manifests (新版 moon 拒旧 moon.mod.json，check/test 的公共前置)
         run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target js"
 
-      # BUG-480：RX-MBT 的 fs.watch 句柄泄漏（详见 ci.yml native 臂同名步骤的注释）。
-      # 失效形态不是编译错，是「测试挂起、不打印汇总行」。
-      - name: Reapply RX-MBT BUG-480 fs.watch handle fix
-        shell: bash
-        run: bash patches/rx-mbt-bug480/reapply.sh --force
-
       - name: Check (js)
         run: moon check --target js
 
@@ -104,11 +98,6 @@ jobs:
       # 前置：依赖必须先被上一步解包，否则目标 stub.c 不存在（脚本会 fail-loud 明确报出来）。
       - name: Reapply BUG-133 sqlite FFI fix
         run: bash patches/sqlite-bug133/reapply.sh --force
-
-      # BUG-480：RX-MBT 的 fs.watch 句柄泄漏（详见 ci.yml native 臂同名步骤的注释）。
-      - name: Reapply RX-MBT BUG-480 fs.watch handle fix
-        shell: bash
-        run: bash patches/rx-mbt-bug480/reapply.sh --force
 
       - name: Check (native)
         run: moon check --target native
