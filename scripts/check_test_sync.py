@@ -42,6 +42,20 @@
       日志里解析不到汇总行）——这三种情况下判据连实测数都没拿到，报 1 就是拿"没跑到"
       冒用"跑出来有缺陷"。R175 实测踩过：漏传实参得 rc=1，被读成一条预存红写进了报告。
 
+**⚠️ rc=0 是两种意思，别只读退出码（N4 / T0r772）**
+ rc=0 既可能是「真干净」，也可能是「**有违例但被 BUG-425 降级放行了**」——
+ 后者的实测形态：stdout 先打印 `FAIL 测试总数一致性守卫…` 列出全部违例，
+ 然后一行 `ADVISORY 上述 N 条违例不判红（工作树脏）`，**退出码仍是 0**。
+ CI 只读 `$?` 会把「25 条真违例被放行」读成绿灯。
+
+ ⇒ 因此本判据**每次判定末尾必打一行机器可读信号**（见 `dirty_tree_marker()`）：
+
+     DIRTY_TREE_DEGRADED released=<N> dirty=<M> strict=<0|1>
+
+ 消费口径（CI 侧一行即可）：`released > 0` ⇒ **本轮有 N 条违例没被判红**，
+ 必须把它当红（或加 `--strict` 复跑）。`dirty` 是当时观测到的脏 `*.mbt` 条数，
+ `strict` 记本轮是否走了强制闸。`released=0` ⇒ 没有违例被放行。
+
 **BUG-350**：日志面判绿必须看 passed/failed，不能只取 `Total tests`——否则
 `Total tests: 1347, passed: 3, failed: 1344` 这种"几乎全挂"的日志照样 PASS。
 现行口径：`passed == Total tests` 且 `failed == 0`；旧格式不写 failed 时只校验 passed==total。
@@ -114,6 +128,11 @@ ROOT = Path(__file__).resolve().parent.parent
 # 处置：脏则**降级为 advisory**（rc 仍 0，但打印 WARN 并点名脏文件）。
 # 三道闸禁止它变成「永远绿」：`--strict` / `CI=true` / 被检文档自身在脏清单里。
 STRICT_ENV = "CI"
+
+# N4 / T0r772：降级的机器可读信号行标记（见模块 docstring 的「rc=0 是两种意思」段）。
+# 为什么是常量而不是散在 print 里的字面量：CI 侧 grep 的是这个串，selftest 也断言这个串，
+# 散写会让「改了输出文案」与「改了契约」分不开（判例-25 同型：锚点必须单一真源）。
+DIRTY_TREE_DEGRADED_MARKER = "DIRTY_TREE_DEGRADED"
 
 
 def dirty_mbt_files(porcelain_text=None, cwd=None):
@@ -608,6 +627,26 @@ def advisory_verdict(dirty_paths, strict=False):
     return AdvisoryVerdict(list(adv), 0)   # 降级 ⇒ rc 0
 
 
+def dirty_tree_marker(released: int, dirty_count: int, strict: bool = False) -> str:
+    """BUG-425 降级的**机器可读信号行**（N4 / T0r772）。
+
+    **为什么必须是单独一行、且每次判定都打**：降级原先只表现为几行自然语言 WARN +
+    `ADVISORY 上述 N 条违例不判红（工作树脏）`。要把它接进 CI 只能 grep 中文句子，
+    于是「没 grep 到」「文案改了」「本轮没降级」三件事长得一模一样 ⇒ 25 条真违例在
+    脏工作树下被静默放行、CI 仍读成绿灯（本轮实测复现，见 T0r772 交付记录）。
+
+    `released`：**本轮被降级放行掉的违例条数**（0 = 没有东西被放行）；
+    `dirty`：当时观测到的脏 `*.mbt` 条数（脏≠放行，给人看上下文）；
+    `strict`：本轮是否走了强制闸（`--strict` / `CI=true`）。
+
+    为什么**保留 rc=0**（不把它改成 rc=3）：BUG-425 的既定设计就是「脏树不判红」，
+    改成红会把那笔修复退回原样（读数面与原文面不同源时制造假红）。本尺要修的是
+    **「静默放行」**，不是「降级」本身 ⇒ 放行必须留下可被 CI 机器消费的痕迹，退出码语义不变。
+    """
+    return "%s released=%d dirty=%d strict=%d" % (
+        DIRTY_TREE_DEGRADED_MARKER, released, dirty_count, 1 if strict else 0)
+
+
 def print_advisory(verdict, total):
     """打印 BUG-425 的 WARN 块（点名脏文件）。"""
     if not verdict.warn_paths:
@@ -625,6 +664,43 @@ def print_advisory(verdict, total):
     print("     强制确认走 `--strict`；CI 上的红不受此影响（CI 工作树应干净）。")
 
 
+def report(total: str, problems: list, agree: int, live_n: int,
+           dirty: list, strict: bool = False) -> int:
+    """判定结果的**全部输出 + 退出码**（`run()` 只负责取数）。
+
+    **为什么把这段从 `run()` 里拆出来**：降级动作与 N4 信号行都必须能被 `--selftest`
+    **单独驱动**（判例-29：测了纯函数 `advisories()` 不等于测了「打法」这条实现路径）。
+    但它们要驱动 `run()` 就必须读仓库现状面（`current_docs()` / `dirty_mbt_files()` /
+    `judge()`）⇒ 自检就不再是合成夹具（`check_selftest_hermetic` 的 R 档棘轮会当场越线）。
+    拆成「取数」与「打法」两半后，自检只喂**合成入参**就能走完整的打印/退出码路径，
+    两条性质同时成立：**实现路径被测到** + **不碰真仓库**。
+
+    注意 `dirty` 是**观测事实**（这一刻有几个脏 `*.mbt`），`released` 是**后果**
+    （几条违例被放行）。两者必须分开报 —— 只有 dirty 会让人以为「脏就等于放行」，
+    只有 released 又会让人看不出「本轮是在脏树上跑的」（脏树上本判据输入面本就不同源）。
+    """
+    if problems:
+        print(f"FAIL 测试总数一致性守卫（实测 {total}，扫描 {live_n} 份现状文档，"
+              f"{agree} 条声明一致）：")
+        for p in problems:
+            print(f"  - {p}")
+        # BUG-425：脏工作树 ⇒ 读数面与原文面不同源 ⇒ 降级为 advisory（rc 仍 0）
+        veto = advisory_verdict(dirty, strict=strict)
+        print_advisory(veto, total)
+        released = 0
+        if veto.warn_paths:
+            print(f"ADVISORY 上述 {len(problems)} 条违例不判红（工作树脏）；确认要红请加 --strict")
+            released = len(problems)
+        # N4：不管降级与否都打印信号行，且**放在最后**——CI 取最后一行即可，不必认中文文案。
+        print(dirty_tree_marker(released, len(dirty), strict=strict))
+        return veto.rc
+    print(f"PASS 测试总数单一真源一致：实测 {total}；扫描现状面 {live_n} 份文档，"
+          f"{agree} 条声明全部等于实测；must-carry {len(MUST_CARRY)} 份齐全；"
+          f"豁免 {len(EXEMPT)} 条全部有效")
+    print(dirty_tree_marker(0, len(dirty), strict=strict))
+    return 0
+
+
 def run(total: str, strict: bool = False) -> int:
     sweep = current_docs()
     docs = {}
@@ -634,23 +710,8 @@ def run(total: str, strict: bool = False) -> int:
             docs[rel] = p.read_text(encoding="utf-8", errors="replace")
     problems, agree, _ = judge(total, docs, sweep, MUST_CARRY, EXEMPT)
     live = [r for r in sweep if not is_history(r)]
-    if problems:
-        print(f"FAIL 测试总数一致性守卫（实测 {total}，扫描 {len(live)} 份现状文档，"
-              f"{agree} 条声明一致）：")
-        for p in problems:
-            print(f"  - {p}")
-        # BUG-425：脏工作树 ⇒ 读数面与原文面不同源 ⇒ 降级为 advisory（rc 仍 0）
-        # 判例-29 补强：降级**动作**必须能被自检单独驱动（见 advisory_verdict 的注释），
-        # 否则「测了纯函数 advisories()」不等于「测了 run() 这条实现路径」。
-        veto = advisory_verdict(dirty_mbt_files(), strict=strict)
-        print_advisory(veto, total)
-        if veto.warn_paths:
-            print(f"ADVISORY 上述 {len(problems)} 条违例不判红（工作树脏）；确认要红请加 --strict")
-        return veto.rc
-    print(f"PASS 测试总数单一真源一致：实测 {total}；扫描现状面 {len(live)} 份文档，"
-          f"{agree} 条声明全部等于实测；must-carry {len(MUST_CARRY)} 份齐全；"
-          f"豁免 {len(EXEMPT)} 条全部有效")
-    return 0
+    dirty = dirty_mbt_files()
+    return report(total, problems, agree, len(live), dirty, strict=strict)
 
 
 # ---------------------------------------------------------------- selftest
@@ -969,6 +1030,96 @@ def selftest() -> int:
             return 1
         done[0] += 1
         print("  ok  REJECT-no-summary")
+        # R207：**拼错的旗标必须由判据自己拒绝**，不许降级成「当日志路径解析」。
+        # 为什么值得单独一格：`--stirct` 走旧形状时 rc **也是 2**（报「测试日志不存在：--stirct」），
+        # 与真拒绝**退出码相同、只有文案不同** ⇒ 只断言 rc=2 的锁根本分不开这两件事，
+        # 而分不开的那一侧正是「强制闸被静默摘掉」（判例-34：报错指向 ≠ 病因所在）。
+        # 因此本格断言三件事：rc=2 / 点名「未知旗标」 / **不许**出现被当路径的文案。
+        r = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--stirct", str(p_ok)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        out = (r.stdout or "") + (r.stderr or "")
+        if r.returncode != 2 or "未知旗标" not in out or "--stirct" not in out:
+            print(f"SELFTEST FAIL [REJECT-unknown-flag] 拼错的 --stirct 应被点名为未知旗标并 rc=2："
+                  f"rc={r.returncode} out={out[:200]!r}")
+            return 1
+        if "测试日志不存在" in out:
+            print(f"SELFTEST FAIL [REJECT-unknown-flag] 旗标被降级当成日志路径解析"
+                  f"（这正是旧缺陷的形状）：out={out[:200]!r}")
+            return 1
+        done[0] += 1
+        print("  ok  REJECT-unknown-flag")
+        # N4：降级的**机器可读信号行**。两段考：① 纯函数的**契约形状**（CI 侧 grep 的就是它，
+        # 所以 released/dirty/strict 三个字段一个都不许掉）；② `run()` 这条**实现路径**上
+        # 无论降级与否都必须打，且 `released` 是**条数**不是布尔（判例-29：只测纯函数
+        # 不等于测到 run()；判例-37：只断言"有输出"不等于断言到了内容）。
+        _pure = dirty_tree_marker(25, 7)
+        if _pure != "DIRTY_TREE_DEGRADED released=25 dirty=7 strict=0":
+            print(f"SELFTEST FAIL [dirty-tree-marker-contract] 契约形状不对：{_pure!r}")
+            return 1
+        if dirty_tree_marker(0, 3, strict=True) != "DIRTY_TREE_DEGRADED released=0 dirty=3 strict=1":
+            print("SELFTEST FAIL [dirty-tree-marker-contract] strict 位没反映强制闸")
+            return 1
+        # 变异对照（判例-30）：`released` 一旦退化成布尔或常数 0，下面这两条断言必红。
+        for _n in (1, 25):
+            if f"released={_n} " not in dirty_tree_marker(_n, 1) + " ":
+                print(f"SELFTEST FAIL [dirty-tree-marker-contract] released={_n} 没有被原样写出"
+                      f"（退化成布尔/常数？）：{dirty_tree_marker(_n, 1)!r}")
+                return 1
+        import contextlib as _ctx
+        import io as _io
+        _saved_ci = os.environ.pop(STRICT_ENV, None)   # 闸 2：CI 上脏树照常判红，会盖掉要考的那条路径
+        try:
+            # 只喂**合成入参**（不碰 current_docs/dirty_mbt_files/judge）⇒ 走完 report() 的
+            # 全线打印与退出码路径，而输入面完全是人造的（check_selftest_hermetic 的 R 档要求）。
+            _syn_problems = ["合成违例 A：docs/X.md 声明 999/999，实测 1",
+                             "合成违例 B：docs/Y.md 声明 888/888，实测 1"]
+
+            def _report_lines(strict_flag, dirty_list, problems):
+                buf = _io.StringIO()
+                with _ctx.redirect_stdout(buf):
+                    rc = report("1", problems, 0, 2, dirty_list, strict=strict_flag)
+                return rc, [ln for ln in buf.getvalue().splitlines() if ln.strip()]
+
+            rc, lines = _report_lines(False, ["temp/fake_dirty.mbt"], _syn_problems)
+            if rc != 0:
+                print(f"SELFTEST FAIL [dirty-tree-marker-emitted] 脏树非 strict 应 rc=0，实际 {rc}")
+                return 1
+            m = re.match(r"^DIRTY_TREE_DEGRADED released=(\d+) dirty=(\d+) strict=(\d+)$",
+                         lines[-1] if lines else "")
+            if not m:
+                print(f"SELFTEST FAIL [dirty-tree-marker-emitted] 最后一行不是信号行："
+                      f"{(lines[-1] if lines else '<无输出>')!r}")
+                return 1
+            if int(m.group(1)) != len(_syn_problems):
+                print(f"SELFTEST FAIL [dirty-tree-marker-emitted] released 应等于被放行的违例条数"
+                      f"{len(_syn_problems)}，实际 {lines[-1]!r}")
+                return 1
+            if int(m.group(2)) != 1 or int(m.group(3)) != 0:
+                print(f"SELFTEST FAIL [dirty-tree-marker-emitted] dirty/strict 位不对：{lines[-1]!r}")
+                return 1
+            rc2, lines2 = _report_lines(True, ["temp/fake_dirty.mbt"], _syn_problems)
+            if rc2 != 1:
+                print(f"SELFTEST FAIL [dirty-tree-marker-emitted] strict 下应 rc=1，实际 {rc2}")
+                return 1
+            m2 = re.match(r"^DIRTY_TREE_DEGRADED released=(\d+) dirty=(\d+) strict=(\d+)$",
+                          lines2[-1] if lines2 else "")
+            if not m2 or int(m2.group(1)) != 0 or int(m2.group(3)) != 1:
+                print(f"SELFTEST FAIL [dirty-tree-marker-emitted] strict 分支没打 released=0/strict=1："
+                      f"{(lines2[-1] if lines2 else '<无输出>')!r}")
+                return 1
+            # 全绿分支（problems 为空）也必须打信号行 —— 否则 CI 在「本轮无违例」时拿不到读数，
+            # 会把「没打」与「没降级」混成同一件事（同 N4 的存在理由）。
+            rc3, lines3 = _report_lines(False, [], [])
+            if rc3 != 0 or not lines3 or not lines3[-1].startswith("DIRTY_TREE_DEGRADED released=0 "):
+                print(f"SELFTEST FAIL [dirty-tree-marker-emitted] 全绿分支没打 released=0 信号行："
+                      f"rc={rc3} {(lines3[-1] if lines3 else '<无输出>')!r}")
+                return 1
+        finally:
+            if _saved_ci is not None:
+                os.environ[STRICT_ENV] = _saved_ci
+        done[0] += 1
+        print("  ok  dirty-tree-marker-contract+emitted")
         # 实现路径格（判例-29/30）：**运行时注入**，不是模式串匹配源码
         # （模式串自己就在文件里 ⇒ 自指假绿）。把共用模块的 anchor_problems 换成抛异常版，
         # 断言本尺的透传函数真的调到它——若有人又复制一份锚点，这格必绿 ⇒ 立刻现形。
@@ -1196,6 +1347,38 @@ def main():
     raw_args = sys.argv[1:]
     if raw_args == ["--selftest"]:
         return selftest()
+    # ── R207：判据必须**拒绝未知旗标**（白名单 + 未知即拒）──────────────────────
+    #
+    # 旧形状：本尺**根本没有旗标概念**——任何 "-" 开头的 token 都落进 `args` 被当日志路径，
+    # 于是 `--totl 1983`（拼错）得到的是 `REJECT 测试日志不存在：--totl` rc=2：
+    #   · 报错指向**另一个名字**（把 flag 当路径），排查方向全错；
+    #   · 更坏的一种是 `--stirct`：它既不生效、也不报错 ⇒ **强制闸被静默摘掉**，
+    #     而被破坏的正是本尺唯一能给 CI 的那道闸（BUG-425 三闸里的闸 1）。
+    #
+    # ⇒ 判据读不懂的调用形状必须由**判据自己**报错，不许降级成「当路径解析」。
+    #   这与 R178 同一条律：读不懂 ≠ 没问题，也不许借用别人的错误码说别的话。
+    KNOWN_FLAGS = ("--selftest", "--strict", "--fresh", "--fresh-if-stale",
+                   "--total", "--fix-dry-run", "--fix")
+    unknown_flags = [a for a in raw_args if a.startswith("-") and a not in KNOWN_FLAGS]
+    if unknown_flags:
+        print("REJECT 未知旗标：%s" % "、".join(unknown_flags))
+        print("       本尺接受的旗标：%s" % " / ".join(KNOWN_FLAGS))
+        print("       其余位置只接受一个 moon test 日志路径（或 `--total <N>`）。")
+        print("       为什么硬拒：判据读不懂的调用形状必须由判据报错 —— 降级成"
+              "「当日志路径解析」会把拼写错误伪装成「文件不存在」（R207）。")
+        return 2
+    # 同一族守卫：`--total` **给<｜hy_place▁holder▁no▁813｜>值/位置不对**时必须明确拒，不许落到
+    # 「把它当路径」或「静默忽略这一段、用另一个输入面偷偷跑出结论」。
+    if "--total" in raw_args:
+        _ti = raw_args.index("--total")
+        _val_missing = _ti + 1 >= len(raw_args) or raw_args[_ti + 1].startswith("-")
+        if _ti != 0 or _val_missing:
+            print("REJECT `--total` 的调用形状不对：`--total <N>` 必须成对且处于首位"
+                  "（实测到 --total 位于第 %d 个实参%s）" %
+                  (_ti + 1, "、且缺值" if _val_missing else ""))
+            print("       为什么硬拒：旧实现遇到这种形状会**静默换输入面**"
+                  "（把它当日志路径，或忽略这一段去跑另一个分支），结论所属的输入面说不清（判例-16）。")
+            return 2
     # R25（判例-25/33）：`--fresh` = 判前真跑一次全仓，跑完重写快照 + 源码面锚点。
     # BUG-425 闸 1：--strict 强制不许降级
     strict = "--strict" in raw_args

@@ -24,8 +24,17 @@ R3b/R7 是唯一遍历 tracked_docs() 的两条规则，也是唯一受 BUG-139 
   * docs/improvement-plan-YYYYMMDD.md 系列只把日期最新那份当现状面，其余视为历史。
 R3b/R7 之外的规则（1/2/3/4/5/6）不对 CHANGELOG 做检查，行为不因本豁免改变。
 
+R1 的「工具名单元」口径（BUG-500 / 判例-38 收紧，替代此前的「整行首个反引号名」）：
+「表格行首个反引号名 = 工具名」只对**工具清单表**成立——它写成 `| `tool_name` | 说明 |`，
+工具名独占**首列整格**。判例/规则类表格（判例-37 的八次误判表就是实锤）首列是
+`R72` / `轮` / `阶段` / `项` 这类**纯文本**，反引号名落在后面的**叙述列**里
+（`` 静态 `grep` `` 讲的是外部符号名，不是工具声明），被旧口径当成工具报关 ⇒ 假阳。
+⇒ 收紧为：**只有「首列本身以单个反引号标识符开头」的行**才算工具声明。
+豁免的是「表格的哪一列有权声明工具」，不是「哪一类表格免检」——
+工具清单表仍在比对面里，工具名漂移照样红（--selftest 有对照格锁这一条）。
+
 用法：python scripts/check_tools_sync.py
-      python scripts/check_tools_sync.py --selftest   # BUG-139 历史豁免反向对照
+      python scripts/check_tools_sync.py --selftest   # BUG-139 历史豁免反向对照 + BUG-500 R1 口径变异对照
 """
 import re
 import subprocess
@@ -91,6 +100,52 @@ def now_ad_hits(text):
 # "被当成工具调用"的反引号名：`name(...)` 形状 —— 只有工具才会带括号出现，
 # 因此不会把 project_dir / task_id 这类参数名误纳进来。
 RE_TOOL_SHAPE = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\(")
+
+# ↓ R1 收紧用（BUG-500 / 判例-38）
+RE_CELL_HEAD_BACKTICK = re.compile(r"^`([^`]*)`")   # 单元格开头那个整格反引号 token
+RE_IDENT = re.compile(r"^[\w\-]+$")                 # 工具名形状：不含空格/标点
+
+
+def _table_first_cell(line):
+    """表格行的**首列**文本（`|` 分隔的第 1 格）。
+    `| a | b |`.split("|") → ['', ' a ', ' b ', '']，取 index 1。"""
+    parts = line.split("|")
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
+def declared_tool_names(text, require_first_cell=True):
+    """从 AGENTS 面抽「工具名声明」集合（R1 的输入）。纯函数，--selftest 直接考它。
+
+    require_first_cell=True（**线上口径**）：只认「首列本身以单个反引号标识符开头」的行 ——
+      工具清单表就是这个写法（`| `dag_ready` | 说明 |`），首列既是唯一声明位、也只能是工具名。
+    require_first_cell=False（**豁免被去掉的变异态**，仅 --selftest 反向对照用）：
+      退化为「整行首个反引号名」，即 BUG-500 修掉前的旧口径 —— 用它证明豁免一旦去掉，
+      判例-37 那 5 个非工具符号名（grep / circuit_breaker / phi_domain_error /
+      supervisor_kill_apply_pause / evidence）立刻复现为 phantom（红）。
+
+    两种口径都保留 `--` 排除（BUG-490：判例-35 的 git/grep 语义表首列就是 `--`）。"""
+    out = set()
+    for line in text.splitlines():
+        s = line.strip()
+        if not s.startswith("|"):
+            continue
+        if require_first_cell:
+            cell = _table_first_cell(s).lstrip("*").strip()
+            m = RE_CELL_HEAD_BACKTICK.match(cell)
+            if not m:
+                continue          # 首列是纯文本（R72/轮/阶段/项…）⇒ 这行不在声明工具名
+            name = m.group(1)
+            if not RE_IDENT.match(name):
+                continue          # 首列是带空格的命令片段（判例-35 的 `git grep -l -- x`）⇒ 不是工具名
+        else:
+            m = RE_BACKTICK.search(s)
+            if not m:
+                continue
+            name = m.group(1)
+        if name == "--":
+            continue
+        out.add(name)
+    return out
 
 
 
@@ -291,18 +346,21 @@ def main():
         print(f"FATAL server.mbt 只解析到 {n} 个工具（<100），判据已退化，拒绝出绿灯")
         return 2
 
-    # 1) 表格行首个反引号名 ⊆ 真源
+    # 1) 表格行的「工具名单元」⊆ 真源
     #    BUG-490（R256 发布轮）：普通文档表格里「首个反引号 token」可以是 `--`（判例-35
     #    的 git/grep 语义表）—— 工具名不可能是 `--`，解析时排除，防文档举例喂 phantom。
-    claimed = set()
-    for line in agents.splitlines():
-        if line.strip().startswith("|"):
-            m = RE_BACKTICK.search(line)
-            if m and m.group(1) != "--":
-                claimed.add(m.group(1))
+    #    BUG-500（R257 收口轮）：只排除 `--` 不够——判例-37 的规则表把 `grep` /
+    #    `circuit_breaker` 这类**外部符号名**写在叙述列，被「整行首个反引号名」当成工具报关。
+    #    ⇒ 收紧为「首列整格以反引号标识符开头」，工具清单表不受影响（declared_tool_names）。
+    claimed = declared_tool_names(agents, require_first_cell=True)
     phantom = sorted(claimed - real)
     if phantom:
         problems.append("AGENTS 表格出现但 server 未注册: " + ", ".join(phantom))
+    #    反幻影：收紧后若连一张工具表都没扫到，判据就退化成恒绿——直接拒绿。
+    #    （实测 AGENTS 面 = AGENTS.md + docs/AGENTS-mcp-inventory.md，后者必带 182 行工具表）
+    if len(claimed) < 100:
+        print(f"FATAL R1 只解析到 {len(claimed)} 个工具名单元（<100），判据已退化，拒绝出绿灯")
+        return 2
 
     # 2) 真源全部工具都应在 AGENTS 出现
     missing = sorted(t for t in tools if t not in agents)
@@ -575,6 +633,89 @@ def selftest():
         return 1
     done[0] += 1
     print("  ok  latest-improvement-plan-picks-max")
+
+    # ---------------------------------------------------------------- R1 口径（BUG-500 / 判例-38）
+    # 变异对照：豁免逻辑必须**可证伪**——把它去掉/改坏，同一份正文必须复现 phantom（红）。
+    # 否则「豁免」就成了「整条 R1 静默失效」的同义词（判例-29：判据先证明它会红）。
+    print("SELFTEST BUG-500 R1 工具名单元口径（合成表格，不碰仓库）")
+
+    # 真工具清单表形状：首列整格 = 反引号工具名
+    TOOL_TABLE = (
+        "| 工具 | 说明 |\n|---|---|\n"
+        "| `dag_ready` | 取可开工集 |\n"
+        "| `heartbeat` | 保活 |\n"
+    )
+    # 判例-37 的**真实形状**（本轮红的原样）：首列纯文本（R80），外部符号名在**叙述列**
+    CASE37_TABLE = (
+        "| 轮 | 探针 | 以为是 | 实际 |\n|---|---|---|---|\n"
+        "| R80 | 静态 `grep` 电池面 | 19 个缺面 | **0** |\n"
+        "| R90 | 名似 `circuit_breaker` | Rx 重复实现 | 语义不同 |\n"
+        "| R97 | `supervisor_kill_apply_pause` 零引用 | 零覆盖 | 薄包装 |\n"
+        "| R100 | `phi_domain_error` 符号零出现 | 零覆盖 | 两条分支都有断言 |\n"
+        "| R110 | `evidence` ratio 0.27 最弱 | 最弱包 | 零缺口 |\n"
+    )
+    # 判例-35 形状：首列是**带空格的命令行片段**，旧口径靠 `--` 排除兜住
+    CASE35_TABLE = "| 工具 | `--` 之后是什么 |\n|---|---|\n| `git grep -l -- <X>` | **pathspec** |\n"
+
+    def _r1_case(name, text, strict_want, loose_want):
+        """strict = 线上口径（收紧后）；loose = 豁免被去掉的变异态。两侧都断言到才计数。"""
+        got_s = declared_tool_names(text, require_first_cell=True)
+        got_l = declared_tool_names(text, require_first_cell=False)
+        if got_s != strict_want:
+            print(f"SELFTEST FAIL [{name}] 严格口径期望 {sorted(strict_want)} 实际 {sorted(got_s)}")
+            return False
+        if got_l != loose_want:
+            print(f"SELFTEST FAIL [{name}] 变异口径期望 {sorted(loose_want)} 实际 {sorted(got_l)}")
+            return False
+        done[0] += 1
+        print(f"  ok  {name}")
+        return True
+
+    # 1) 工具清单表：收紧**没有**把工具表一起豁免掉（这一格是"豁免别越界"的锁）
+    if not _r1_case(
+        "tool-table-still-scanned-under-exemption",
+        TOOL_TABLE,
+        {"dag_ready", "heartbeat"}, {"dag_ready", "heartbeat"},
+    ):
+        return 1
+    # 2) 判例-37 表：严格口径产出空集（豁免生效）；变异口径复现 5 个非工具符号名（必红）
+    _five = {"grep", "circuit_breaker", "supervisor_kill_apply_pause",
+             "phi_domain_error", "evidence"}
+    if not _r1_case("case37-rule-table-exempt-vs-mutation", CASE37_TABLE, set(), _five):
+        return 1
+    # 3) 判例-35 表：首列是带空格的命令行 ⇒ 两种口径都不产出工具名（`--` 兜底仍活着）
+    if not _r1_case("case35-command-cell-no-tool-name", CASE35_TABLE, set(), set()):
+        return 1
+    # 4) 加粗首列（`| **`tool_y`** | 说明 |`）仍算工具声明 —— 收紧不该被排版形式骗过
+    if not _r1_case(
+        "bolded-first-cell-still-declares",
+        "| 工具 | 说明 |\n|---|---|\n| **`tool_y`** | 加粗 |\n",
+        {"tool_y"}, {"tool_y"},
+    ):
+        return 1
+    # 5) 反向对照：真工具名若被写进**叙述列**（首列纯文本），收紧后不再报关——
+    #    这是本豁免**承认的代价**（宁可漏一个写在奇怪位置的真工具名，也不把规则表当报关单）。
+    if not _r1_case(
+        "tool-name-in-narrative-column-not-declared",
+        "| 轮 | 说明 |\n|---|---|\n| R1 | 用 `dag_ready` 取集 |\n",
+        set(), {"dag_ready"},
+    ):
+        return 1
+
+    # 6) 变异即红（把 2) 的"复现"翻译成判据电平）：拿一个**不含那 5 个符号名**的合成真源比对，
+    #    豁免在 ⇒ phantom 为空（绿）；豁免去掉 ⇒ phantom 非空 ⇒ R1 会 append 违例、main() return 1。
+    #    这一格证明本豁免不是"可省的装饰"：去掉它就红，留着它才绿，且红的是**该红的那一格**。
+    _real_sample = {"dag_ready", "heartbeat", "publish", "claim"}
+    _strict_ph = sorted(declared_tool_names(CASE37_TABLE, True) - _real_sample)
+    _loose_ph = sorted(declared_tool_names(CASE37_TABLE, False) - _real_sample)
+    if _strict_ph:
+        print(f"SELFTEST FAIL [case37-exemption-green] 豁免生效时 phantom 应为空，实际 {_strict_ph}")
+        return 1
+    if len(_loose_ph) != 5:
+        print(f"SELFTEST FAIL [case37-mutation-reds] 去掉豁免应恰有 5 个 phantom 变红，实际 {_loose_ph}")
+        return 1
+    done[0] += 1
+    print("  ok  case37-mutation-reds-exemption-not-decorative")
 
     print(f"SELFTEST PASS {done[0]} 个变体各自命中自己指名的判据（计数由 run_case 实测累加，非手写）")
     return 0
