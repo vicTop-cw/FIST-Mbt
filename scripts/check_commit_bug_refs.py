@@ -78,14 +78,32 @@ def _base_ref():
     「只扫即将进主线的新 commit，不扫全部历史（否则一开判就红死）」——
     于是它在**已落地**的 `f5035ee7`（引用 BUG-482）上永久报红，读数与契约相反。
 
-    **修法：不猜名字，选「最接近 HEAD 的 base」**——对每个候选算 `rev-list --count <ref>..HEAD`，
-    取**最小**者（= 最新鲜的远端基线）。这样 `master` 被选中的自然原因是它更近，
-    而不是因为代码里碰巧先写了它；将来分支改名 / 换默认分支也无需再改代码。
+    **R202 的修法方向对（不猜名字），但它取「ahead 最小」的判据错了一半** —— 见下方 R85 修正。
+
+    ## R85 修正：只在 **ahead > 0** 的候选里取最小（不是全局取最小）
+
+    **R202 的 bug 形态（实测复现）**：本地 HEAD 在 `main` 上、刚有一笔未推提交时——
+
+    ```
+    origin/main..HEAD   → 1 笔   （真正未推送的那一笔，应该被扫）
+    origin/master..HEAD → 0 笔   （master 已完全包含 HEAD）
+                        ↑ 全局取最小 ⇒ 选中这一条 ⇒ 扫描面 = 空 ⇒ 永远报 0 命中
+    ```
+
+    **⇒ 「ahead=0」的意思是「HEAD 已全部包含在该远端里」⇒ 那条线上**没有未推送提交可扫**。**
+    **把「0」当成「最新鲜」就是把这个判据**自己关掉**。**
+    实测代价：外部 lane 的 `4d3833acd` 引用了账本里不存在的 `BUG-488`，而本判据**PASS 且报 `ahead=0 笔`**
+    ⇒ 「扫描面为空」与「扫描面不覆盖我的位置」输出完全一样（判例-35 又一面）。
+
+    **⇒ 正确语义**：扫「即将进**那条线**的新 commit」时，候选必须**先有 ahead>0**（真有新 commit）；
+    在各自 ahead>0 的候选里取**最小**者（= 最接近 HEAD 的活跃远端线，避免陈旧分支扫出几百笔历史）。
+    **若全部候选 ahead==0 ⇒ 确实没有未推送提交 ⇒ 报 0 是对的**（不是降级、不是漏检）。
 
     候选：`origin/main` / `origin/master` / `origin/HEAD` / `@{upstream}`；
     一个都不存在才退回最近 20 条，并在输出里**明说降级**（判据无法自证时不静默）。
     """
     best, best_ahead = None, None
+    zero_ahead_seen = None
     for ref in ("origin/main", "origin/master", "origin/HEAD", "@{upstream}"):
         if git("rev-parse", "--verify", "--quiet", ref).returncode != 0:
             continue
@@ -94,9 +112,20 @@ def _base_ref():
             ahead = int((r.stdout or "0").strip())
         except ValueError:
             continue
+        if ahead == 0:
+            # 记录「也确实有上游完全包含 HEAD 的线」，但**不选它**当中选 base
+            # （选它 ⇒ 扫描面空 ⇒ 判据自己关掉）。留着只在读数里说明。
+            if zero_ahead_seen is None:
+                zero_ahead_seen = ref
+            continue
         if best_ahead is None or ahead < best_ahead:
             best, best_ahead = ref, ahead
     if best is None:
+        # 所有候选都 ahead==0（或一个候选都没有）。分两种情形，**读数不同**：
+        #   ① 有候选且全 ahead==0 ⇒ 确实无未推送提交 ⇒ 用 HEAD 作 base（扫描面空是**真相**）
+        #   ② 一个候选都没有 ⇒ 退回最近 20 条，并明说降级
+        if zero_ahead_seen is not None:
+            return "HEAD", True, 0
         return "-20", False, None
     return best, True, best_ahead
 
@@ -212,12 +241,34 @@ def selftest():
     cell("callface-run-rc", rc in (0, 1), True)
     cell("callface-run-prints", "ceiling" in out, True)
 
+    # 格8（R85）：**基准解析的语义锁** —— 这是 BUG-488 的锁。
+    #
+    # 被测机制：`_base_ref()` 必须**只在 ahead>0 的候选里取最小**，
+    # 绝不能把「ahead==0」（HEAD 已全部包含于该远端）当成「最新鲜」而选中它
+    # —— 选它 ⇒ 扫描面 = 空 ⇒ 判据自己关掉（实测代价：`4d3833acd` 的孤儿 BUG-488 漏检）。
+    #
+    # ⚠️ **变异对照**：若有人把 `if ahead == 0: continue` 删掉（退回 R202 的「全局取最小」），
+    # 本格必须变红。这是本格的**设计目的**，不是附带断言。
+    base, exact, ahead = _base_ref()
+    if exact:
+        # ① 中选的 base 必须真的 ahead>0 —— 除非「所有候选都 ahead==0」（此时 base=HEAD、ahead=0）
+        cell("baseref-never-picks-zero-ahead", base == "HEAD" or (ahead or 0) > 0, True)
+        # ② 自证读数：选中的 ref 必须**能**列出至少 1 笔（若 base 不是 HEAD）
+        if base != "HEAD":
+            r = git("rev-list", "--count", "%s..HEAD" % base)
+            got_n = int((r.stdout or "0").strip() or 0)
+            cell("baseref-chosen-has-commits", got_n > 0, True)
+            cell("baseref-ahead-matches-revlist", ahead, got_n)
+    else:
+        # 降级态（一个候选都没有）必须**明说**，不许静默：exact=False 且 base="-20"
+        cell("baseref-degraded-is-marked", base == "-20", True)
+
     if fails:
         print("selftest FAIL（%d 格）：" % len(fails))
         for f in fails:
             print("  - " + f)
         return 1
-    print("selftest PASS（7 格：提取/夹具/边界/ceiling/账本/实测/调用面）")
+    print("selftest PASS（8 格：提取/夹具/边界/ceiling/账本/实测/调用面/基准解析语义（R85·BUG-488 锁））")
     return 0
 
 
