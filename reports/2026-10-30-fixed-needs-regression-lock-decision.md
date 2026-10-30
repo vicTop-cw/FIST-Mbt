@@ -52,6 +52,43 @@
 - 而 56 条「小记没点名 src」**本探针无法判定** ⇒ **空白，不是 0**。
 - **⇒ 「可判定的 0」与「不可判定的 56」不许合并成「没问题」。**
 
+### §2b R104 续查：那 56 条已进一步分类，**真正待判只剩 14 条**
+
+按「这条修复的**验证面**在哪」再分一次（逐条读账本小记的 `summary` + 正文）：
+
+| 分类 | 条数 | 说明 |
+|---|---|---|
+| **他项目（Pentad / LZ 编译器 / `.rs` 源码）** | **29** | 🔴 **它们根本不是本仓的代码** —— 修复对象是 `stmt_gen.rs` 等 **Rust 文件**（Pentad 项目）⇒ 用本仓 `src/**/*.mbt` 的测试去找，**找不到是正常的** |
+| **脚本 / CI / 文档面** | **13** | 修复面在 `install_onecmd.ps1` / `README` / `workflow.yml` / 判据里 ⇒ **该由判据验证**，不由单测验证 |
+| **本仓代码面（才可能真需单测）** | **14** | 见下表 |
+
+**⇒ 所以「追溯存量」的真实范围是 14 条，不是 101 条，也不是 56 条。**
+
+#### 这 14 条（供你判断「B 到底有多贵」）
+
+| BUG | severity | 一句话 |
+|---|---|---|
+| `BUG-53` | high | 上游 `fist-model-router`：`current_model()` 池为空时索引 `[0]` panic |
+| `BUG-133` | high | **native FFI 内存安全**（依赖侧 `mizchi/sqlite@0.3.1`，本仓修不了） |
+| `BUG-154` | high | `lock_acquire` 拒绝型互斥缺失（第二 agent 恒 `granted=true`）|
+| `BUG-310` | high | `Result::is_ok/is_err` 返回类型未登记 → E0277 |
+| `BUG-323` | high | `semantic.py` 作用域检查缺失（未定义变量静默编译）|
+| `BUG-329` | high | **工具链/非本仓**（副机 `core.cjs` bundle） |
+| `BUG-391` | high | `fist doctor` 退出码不反映它自己的判决 |
+| `BUG-407` | high | `list` 可见但 `get --namespace` 找不到（namespace 字段与落库不一致）|
+| `BUG-437` | high | Windows 上 MCP 服务恒 unavailable |
+| `BUG-446` | high | 已排除 5 个方向的遗留（门内 E9402 与单独跑不一致）|
+| `BUG-466` | high | S3 挑战在产品面无签发入口 |
+| `BUG-471` | high | 9 个生命周期工具无身份门 |
+| `BUG-477` | high | `reserve_scope` / `lock_acquire` 不消费 nonce（票可复用）|
+| `BUG-478` | high | `reserve_scope` / `lock_acquire` 不接受 `namespace` 参数 |
+
+**⚠️ 这 14 条里又能再筛：** `BUG-133`（依赖侧）、`BUG-329`（工具链）、`BUG-53`（上游仓）
+这 **3 条本仓无法修** ⇒ **真正「本仓能补锁」的上限是 11 条。**
+
+**⇒ 「选项 B（追溯存量）」的真实成本 = 11 条，不是 101 条。**
+
+
 ## §3 三个选项
 
 | 选项 | 内容 | 代价 | 终态 |
