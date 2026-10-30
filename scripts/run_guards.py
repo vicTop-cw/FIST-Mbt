@@ -1212,6 +1212,8 @@ def run_battery(case_timeout=CASE_TIMEOUT_SEC):
     _ensure_check_dump()
     py = sys.executable
     fails, skips = [], []
+    # R108（BUG-497）：「判据没起来」单独记账 —— **不计 FAIL 也不计 PASS**（判据没给结论）。
+    broken = []
     for c in CASES:
         # BUG-368：前置既可能是文件（temp/*.json）也可能是目录（temp/ 树态）⇒ 用 exists
         miss = [n for n in c["needs"] if not os.path.exists(os.path.join(ROOT, n))]
@@ -1240,6 +1242,30 @@ def run_battery(case_timeout=CASE_TIMEOUT_SEC):
                           "限时 %ds 未结束" % tmo))
             print("TIMEOUT %-56s 限时 %ds 未结束（尺子不结束 ⇒ 判红点名）" % (c["name"], tmo))
             continue
+        # ── R108 · BUG-497：「判据没起来」≠「判据判红」─────────────────────────
+        #
+        # 实测：一轮电池里 **22 个格同时返回 `rc=3221225794`**（= `0xC0000142`
+        # = `STATUS_DLL_INIT_FAILED`，Windows 无法初始化子进程），而它们**单独跑全部 rc=0**
+        # （`check_bug_refs.py` 实测 `rc=0` 且汇总是正常读数）。
+        #
+        # **⇒ 那不是 22 个判据同时坏了，是电池批量 spawn 子进程时的系统级瞬时故障。**
+        # 按判例-32 第 3 条：判据自己的腐烂/起不来 与 被测对象的陈旧/违例 是两种结论。
+        #
+        # **设计三要点**（缺一条就会把「不知道」洗成「有问题」或「没问题」）：
+        #   ① **不判 PASS**（判据没给结论）；② **不静默**（必须逐格点名 + 汇总计数）；
+        #   ③ **单次重试**（这类故障是瞬时的，重试能消掉绝大多数）。
+        _WIN_INIT_FAILED = (3221225794, 3221225795, 3221225725)  # DLL_INIT / DLL_INIT2 / STACK_OVERFLOW
+        if p.returncode in _WIN_INIT_FAILED:
+            retry = subprocess.run([py, os.path.join(SCRIPTS_DIR, c["script"])] + c["argv"],
+                                   capture_output=True, text=True, encoding="utf-8",
+                                   errors="replace", cwd=ROOT, timeout=tmo)
+            if retry.returncode not in _WIN_INIT_FAILED:
+                p = retry  # 重试一次就好 ⇒ 按正常路径继续判
+            else:
+                broken.append((c["name"], p.returncode))
+                print("BROKEN %-56s rc=%d（进程没起来 ⇒ **判据未给出结论**，不计 FAIL 也不计 PASS）"
+                      % (c["name"], p.returncode))
+                continue
         out = ((p.stdout or "") + ("\n" + p.stderr if p.stderr else "")).strip().splitlines()
         tail = out[-1][:120] if out else ""
         # R49：树态诊断格可以声明"多个都正确的读数"（allow），不把环境差异误报成 FAIL。
@@ -1256,6 +1282,15 @@ def run_battery(case_timeout=CASE_TIMEOUT_SEC):
     print("格数 %d（手写 %d + 自动 %d）/ 失败 %d / SKIP %d / 缺执行面 %d"
           % (len(CASES), len(CASES) - auto_n, auto_n,
              len(fails), len(skips), len(missing)))
+    # R108（BUG-497）：「判据没起来」必须在汇总里可见 ——
+    # 否则它们会静默消失，等于把「不知道」洗成「没问题」（同 R100 判例）。
+    if broken:
+        print("  ⚠️ BROKEN %d 格：进程初始化失败（**判据未给出结论** —— 不计 FAIL、也不计 PASS）"
+              % len(broken))
+        for name, rc in broken:
+            print("  - %s：rc=%d（0xC%08X）" % (name, rc, rc & 0xFFFFFFFF))
+        print("  ⇒ 这类是**电池自己 spawn 子进程的系统级故障**（0xC0000142 = STATUS_DLL_INIT_FAILED），"
+              "不是判据判红。重跑通常全绿；若复现，逐个单跑核验。")
     if auto_n == 0:
         print("  自动补格 0 的成因：build_cases() 已按脚本名为每份可发现脚本补无参格，"
               "auto_case_for 的名字排除集因此恒命中；机器本身由 --selftest 的 7 格合成对照钉住"
