@@ -1,8 +1,8 @@
 ---
 status: 已定案
-decided_by: lead
+decided_by: human_steward
 decided_at: 2026-10-30
-decision: 三问全部按草案落地（Q1 用 commissar_read 的 since_seq~；Q2 选「不做已读」，调用方 dedup；Q3 用 commissar_gc(keep~)）。无遗留待办。
+decision: approved
 ---
 
 # `commissar_poll` 设计草案（BUG-480 的替代方案）
@@ -234,3 +234,19 @@ pub fn RhopEnvelope::decode(text : String) -> Result[RhopEnvelope, String]
 | **假设系统性错误** | 修一个，**下一层还有一个**（错误数不降反增：2 → 8） | **改设计或停** |
 
 本单实测：2 errors → 改完 → **8 errors**。**这个方向是判据**：错误数不降 = 假设错了，不是手气差。
+
+---
+
+## 定案记录（2026-10-30 · R95 状态同步 · status=`已定案` / decision=`approved`）
+
+**不是新实现，是状态同步 —— 三问早已在代码里落地（逐条实测）：**
+
+| 问 | 草案选择 | 代码实况 |
+|---|---|---|
+| **Q1** `since_seq` 由谁维护 | **调用方传**，服务端无状态 | `commissar_read(since_seq~)` 已实现（实测 5 处引用）|
+| **Q2** 已消费消息怎么标已读 | **不做**，调用方 dedup | 按草案未实现（**这是正确的「不做」**）|
+| **Q3** 目录堆积怎么办 | 独立工具 `gc(keep~)` | `pub fn commissar_gc` 已在位（2 格白盒锁 `dl_c9`/`dl_c10`）|
+
+**⚠️ `commissar_gc` 未接入 MCP 工具面**（`grep -c "commissar_gc" src/server/server.mbt` = 0）
+—— 因生产从未使用政委消息池（项目根无 `.commissar/`）⇒ 为 0 使用者付 10 处投影成本收益为负。
+**状态已标注在 `ops_commissar.mbt` 的文档注释里（BUG-493）。**

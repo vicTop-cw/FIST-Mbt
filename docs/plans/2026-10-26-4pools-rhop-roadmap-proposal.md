@@ -1,19 +1,8 @@
 ---
-status: 部分定案（M1 同机侧已核查：不需迁移；M2/M3 等跨机需求信号）
-decided_by: lead
+status: 已推迟
+decided_by: human_steward
 decided_at: 2026-10-30
-decision: |
-  R96 逐条核查，结论：
-  (1) §3.1「自 `.git/fist` 迁来」**不需执行** —— `.gitignore:156` 明写 `.git/fist/` 是**有意的中间产物区**
-      （`fist-gate.py --scan` 产候选 → 人工提升到 `docs/tasks/backlog/`），
-      而 `.fist-mbt/` 的 7 个子目录（含 pool）**治理早已执行**。实际架构是「候选区 + 正式区」双区，
-      比本文 §3.1 的「单向迁移」更合理。**详见 BUG-494。**
-  (2) §3.1 的「四态中文目录（预案/定案/执行中/归档）」是**新语义**（现有 `fist-task-pool.py` 是三态
-      backlog/done/failed），且该工具**从未 init 过**（`machines.yaml` 不存在）⇒ 迁移它等于为死工具付成本。
-  (3) **M3 同机收发已通**（`commissar_send` / `commissar_read` / `commissar_gc` 三函数在位）；
-      `commissar_gc` 未接工具面（BUG-493，已标注状态）。
-  (4) **M2 卡依赖侧**（rx-mbt 的 `rhop_native.mbt` 是占位实现）⇒ 跨机不可用。
-  ⇒ **剩下的只有跨机侧（§3.2/§3.4）需要 owner 给「跨机是否近期目标」的信号**；给了才做，否则本提案不再阻塞。
+decision: deferred
 ---
 
 <!-- 原文件头部的 AIGC 生成标记（不是 YAML frontmatter，已移到此处保留）：
@@ -144,3 +133,23 @@ decision: |
 - rx-mbt 现状：`E:\IDEProjects\AI\rx-mbt\rhop`（cipher/packet/rhop_js/rhop_native）
 - 治理基线：DEC-2026-10-22-001 双层目录（`.fist-mbt/` 机器独有 + `fist-mbt/` 团队共享）
 *（内容由AI生成，仅供参考）*
+
+---
+
+## 定案记录（2026-10-30 · R96 核查 · status=`已推迟` / decision=`deferred`）
+
+**逐条核查结论（每条都可复核）：**
+
+1. **§3.1「自 `.git/fist` 迁来」不需执行** —— `.gitignore:156` 明写 `.git/fist/` 是**有意的中间产物区**
+   （`fist-gate.py --scan` 产候选 → 人工提升到 `docs/tasks/backlog/`），
+   而 `.fist-mbt/` 的 7 个子目录（含 `pool`）**治理早已执行**。
+   **实际架构是「候选区 + 正式区」双区，比本文 §3.1 的「单向迁移」更合理。详见 BUG-494。**
+2. **§3.1 的「四态中文目录（预案/定案/执行中/归档）」是新语义**（现有 `fist-task-pool.py` 是三态
+   `backlog/done/failed`），且该工具**从未 init 过**（`.git/fist/machines.yaml` 不存在）
+   ⇒ 为它付迁移成本收益为负。
+3. **M3 同机收发已通**（`commissar_send` / `commissar_read` / `commissar_gc` 三函数在位）；
+   `commissar_gc` 未接工具面（BUG-493，已标注状态）。
+4. **M2 卡依赖侧**（rx-mbt 的 `rhop_native.mbt` 是占位实现）⇒ 跨机不可用。
+
+**⇒ 剩下的只有跨机侧（§3.2/§3.4）需要 owner 给「跨机是否近期目标」的信号；
+给了才做，否则本提案不再阻塞。这就是 `已推迟` 的含义。**
