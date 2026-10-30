@@ -35,7 +35,13 @@ decision:
 > | 同机消息池「只是雏形」 | 能力已实现且**已接出 MCP**：`src/ops/ops_commissar.mbt` + 工具 `commissar_send`（只发不收） | `src/ops/ops_commissar_wbtest.mbt`；BUG-477 / BUG-480 |
 > | `rhop_native` 占位 stub | **属实**：47 行 stub，三函数只 println + 返回空 | 同上 |
 >
-> **⇒ 真缺口不是「没实现」，而是「跨机传输 + native 实现 + 0 测试（0 测试下"全绿"= 0/0 空真）」。
+> **⇒ 真缺口不是「没实现」，而是「跨机传输 + native 实现」。**
+>
+> ⚠️ **订正（2026-10-30 实测，推翻本条里"0 测试"的读数）**：`rhop/` 包目录确实**没有**测试文件，但 rx-mbt 把 rhop 的测试放在 **`test-suit/rhop/`**（11 个测试文件 / **163 格**）。
+> 用 fist-mbt 的测试入口实测（rx-mbt 自己的入口在本机撞 BUG-380，见下）：
+> `python scripts/moon_test_env.py --root ../rx-mbt --target js test-suit/rhop`
+> → `Total tests: 163, passed: 163, failed: 0`；全仓 `--target js` → **851/851**。
+> ⇒ "0 测试 ⇒ 0/0 空真"的立论**不成立**，本条按更正后的读数重读；真正剩下的缺口是 rhop_native 占位（native 目标无文件系统 API，属有意设计）与 4 池的跨机目录未建。
 > 提案状态（`提案中`）未由本订正改变 —— `docs/plans/README.md` 硬规则 3：定案权仅 `human_steward`，agent 只提不定。**
 
 ## 二、目标
@@ -115,8 +121,10 @@ decision:
 
 - **M1（阶段一）**：本文档定案，4 池目录结构在 `.fist-mbt/pool/` 与 `fist-mbt/pool/` 创建完毕，README 说明流转规则。
 - **M2（阶段二）**：rx-mbt/rhop 补齐表内 P0 项（密钥派生抽象、签名/完整性、shared path 多端视图、在线/离线回退、heartbeat），js 目标 `moon test` 全绿。
-  - **前置（2026-10-29 补）**：**先补出测试，再谈"全绿"** —— 实测 rx-mbt/rhop 为 **0 个测试**，
-    0 测试下「`moon test` 全绿」= 0/0 空真，不能作为完成标志。见 `reports/2026-10-29-4pools-gap-analysis-report.md` §④。
+  - **前置（2026-10-29 补 → 2026-10-30 订正）**：本条原文写的「rx-mbt/rhop 为 0 个测试」是**错的**——测试放在 `test-suit/rhop/`（163 格，实测 163/163 全绿），
+    所以"先补测试"这个前置**已经满足**。真正的 M2 缺口改为：`rhop_native.mbt` 仍是 47 行占位 stub（MoonBit core 无文件系统 API，属有意设计），
+    以及 4 池的跨机目录（`fist-mbt/pool/`）未建。另注：在本地裸跑 rx-mbt 的 `moon test` 会撞 fist-mbt 已诊断的 BUG-380
+    （PATH 上的 node.cmd 垫片吞引号），要用 fist-mbt 的 `scripts/moon_test_env.py --root ../rx-mbt` 才能出汇总行。
 - **M3（阶段三）**：fist-mbt 接入 rhop，4 池工具可走通同机收发 + 跨机 shared path 同步；对照 vools-rhop 判据 1-5 全部通过。
 
 ## 七、参考
