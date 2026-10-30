@@ -11778,7 +11778,7 @@ selftest FAIL（2 格）：
 > 改号会让文档面变干净，但会把一个**可见的矛盾**变成**不可见的悬空引用**。
 
 - reported_by: lead
-## BUG-490 [2026-10-30T04:52:57Z] [high] OPEN
+## BUG-490 [2026-10-30T04:52:57Z] [high] FIXED
 - summary: release.yml 缺「migrate 先解包」⇒ reapply rc=3 ⇒ Release 零资产（外部 lane 已修，本轮补记入账）
 - detail: ## 背景：外部 lane 修了它，但**从未入账**
 
@@ -11844,3 +11844,54 @@ release              skipped ⇒ Release 零资产
 > **⇒ 信息没丢，只是记错了地方。而「记错地方」在按账本汇总时就等于「没发生」。**
 
 - reported_by: lead
+
+
+### FIXED(2026-10-30T05:17:42Z / BUG-490)
+- evidence: ## 修法（外部 lane `4d3833acd` 落地 + R87 补齐第 3 例 + R87 新判据守门）
+
+**缺陷**：`moon update` 只拉注册表索引、**不解包依赖** ⇒ `.mooncakes/RX-MBT` 在 `moon check` 触发解包前
+不存在 ⇒ reapply `rc=3` ⇒ build-js / build-native-linux 红 ⇒ `release` skipped ⇒ **Release 零资产**。
+
+**⇒ `ci.yml` 已于 2026-10-13 用「migrate 先解包」解决；`release.yml` 漏了这一步。**
+
+## 三处都补齐了（可核）
+
+| job | migrate 位置 | 谁修的 |
+|---|---|---|
+| `build-js` | `release.yml:85` + `:96` | 外部 lane `4d3833acd` |
+| `build-native-linux` | `release.yml:136` | 外部 lane `4d3833acd` |
+| **`build-native-windows`** | **`release.yml:177`** | **R87 我发现并补齐** |
+
+**`release.yml` 现有 4 处 `migrate_mooncakes_modjson`（实测 `grep -c → 4`）。**
+
+## **第 3 例为什么最危险**（这是本单真正的发现）
+
+`build-native-windows` 有 `continue-on-error: true` ⇒ **不阻塞 release**
+⇒ CI 只看到「有个 job 黄了」，而**资产面上少一件从来没人报**。
+**⇒ 静默缺失比红更持久。**（判例：`continue-on-error` 制造静默缺失，须盯产出不只看红绿）
+
+## 新增的守门判据（R87 `f066397d8`）
+
+`scripts/check_workflow_step_parity.py` —— **同源 workflow 的步骤覆盖面守卫**：
+- **S1**：跑 moon 的 job 必须**先** migrate（**位置意义** —— migrate 在 moon 之后也报错）
+- **S2**：不跑 moon 的 job 必须逐条点名理由（防「本该跑却没配」静默放过）
+- **S3 自拒**：workflow 读不到 / 枚举不到 job / 一个 moon 步骤都没有 ⇒ **rc=2**
+
+**验证（三条路径 + 变异对照）**：
+| 项 | 读数 |
+|---|---|
+| 真跑 | **PASS**：跑 moon 的 job **6/6** 都有 migrate |
+| `--selftest` | **7 格全 PASS** |
+| **变异对照**（撤掉 windows 臂 migrate）| **FAIL**：精准点名 `build-native-windows` 跑 moon（step #4）但没 migrate |
+| 未知旗标 | `--definitely-not-real` ⇒ **rc=2** |
+| 执行面 | 进电池 CASES（**146 格**），`check_battery_count_doc` **missing=0** |
+
+**⇒ 这个缺口从此有守门人：再出现同类缺失会**当场报红并点名**，不再静默。**
+
+## 判例
+
+> **`continue-on-error` 会制造「静默缺失」** —— 它让失败不阻塞，于是没人追。
+> **⇒ 凡带 `continue-on-error` 的 job，都要有一条判据盯它的产出，不能只看它的红绿。**
+
+> **「同一颗雷只修一条同源路由」是这一族的固定形态**（本单是第 2 例，R87 补的是第 3 例）。
+> **⇒ 凡「A 有 / B 没有」的必要步骤，都该有一条机核判据** —— 本单的依据。
