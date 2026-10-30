@@ -868,5 +868,19 @@ pub fn bug_fix(
   m.set("note_written", Json::boolean(!exists))
   m.set("note_header", Json::string(header))
   m.set("path", Json::string(path))
+  // ⚠️ **下一步必须有**：账本计数是插件态投影的真源之一（`gen_plugins.py` 读
+  //    `memory/bugs.md` 的四态计数写进 `plugins/` 与 README）。改了抬头 ⇒ 投影必然漂移
+  //    ⇒ `check_plugin_sync` 会红。实测这条连带已出现 4 次（R50/R70/R73/R74）。
+  //
+  //    **为什么本工具不自己做**：本工具是 MoonBit（MCP 服务端），**不能 spawn Python**；
+  //    而 `gen_plugins.py` 是 Python。跨语言那一步只能由调用来做。
+  //    ⇒ 能做的只有一件事：**把「下一步」写进回执**，让调用方不用靠记忆。
+  m.set(
+    "next_step",
+    Json::string(
+      "python scripts/gen_plugins.py —— 账本四态计数变了 ⇒ 插件态投影必然漂移，" +
+      "否则 check_plugin_sync.py 会红（MoonBit 侧无法代跑 Python）",
+    ),
+  )
   Ok(Json::object(m))
 }

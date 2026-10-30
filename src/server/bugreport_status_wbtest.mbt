@@ -557,3 +557,33 @@ test "bug434_heading_is_three_segment_only" {
   // 反例④：状态不在闭集
   assert_false(bug_is_header("## BUG-997 [x] [medium] MAYBE"))
 }
+
+///|
+/// **`bug_fix` 回执必须带 `next_step`**（R75）。
+///
+/// 为什么锁这一格：账本四态计数是插件态投影的真源之一（`gen_plugins.py` 读
+/// `memory/bugs.md` 写进 `plugins/` 与 README）⇒ **改抬头 ⇒ 投影必然漂移 ⇒
+/// `check_plugin_sync` 会红**。实测这条连带已出现 4 次（R50/R70/R73/R74），
+/// 每次都是「人忘了再跑一次 gen_plugins」。
+///
+/// **MoonBit 侧不能代跑 Python**（MCP 服务端无 spawn 能力）⇒ 唯一能做的是
+/// **把下一步写进回执**。本格锁住那个字段存在且**指到了正确的脚本**。
+///
+/// ⚠️ 变异对照：若有人删掉 `next_step`（或改成空串），本格必红。
+test "bug_fix 回执带 next_step 指向 gen_plugins（改账本 ⇒ 投影必重生成）" {
+  let d = b9_seed()
+  let r = match
+    bug_fix(
+      d,
+      ["BUG-903"],
+      evidence="真源 x.mbt，锁 y",
+      ts="2026-10-30T03:50:00Z",
+    ) {
+    Ok(j) => j
+    Err(m) => abort("bug_fix 失败: " + m)
+  }
+  let ns = b9_str(r, "next_step")
+  assert_true(ns != "")
+  // 不判措辞全文（那会锁死文案），只判「指到了那个脚本」这个可核事实
+  assert_true(ns.contains("gen_plugins.py"))
+}
