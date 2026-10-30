@@ -81,7 +81,7 @@
 ### 4.1 电池有预存红
 
 - `run_guards` 电池有 **6-9 格预存红**（多轮积累的存量债）。
-- 这些红格**不是产品功能缺陷**——`moon test` 全绿（1963/1963），红的是工程纪律面的守卫。
+- 这些红格**不是产品功能缺陷**——`moon test` 全绿（1964/1964），红的是工程纪律面的守卫。
 - 主要预存红：`check_scripts_index`（5 个脚本未登记）、`check_doc_dup`（scripts/README.md 冗余）、`check_unit_number_unique`（历史撞号未进基线）、`check_battery_count_doc`（计数漂移）。
 
 ### 4.2 `project_standards` 不支持自定义规则
@@ -112,7 +112,7 @@
 
 ## 6. 一句话总结
 
-> **技术底子是冠军级的**（170+ MCP 工具、1963 测试全绿、DAG/Phi Accrual/Saga/MC 全栈），但**文档计数落后、native 不稳定、mooncakes 未发布、演示叙事待打磨**——这些是最后冲刺阶段要补的硬伤，不是架构缺陷。
+> **技术底子是冠军级的**（170+ MCP 工具、1964 测试全绿、DAG/Phi Accrual/Saga/MC 全栈），但**文档计数落后、native 不稳定、mooncakes 未发布、演示叙事待打磨**——这些是最后冲刺阶段要补的硬伤，不是架构缺陷。
 
 ---
 
