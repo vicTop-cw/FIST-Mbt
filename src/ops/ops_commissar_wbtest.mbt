@@ -416,7 +416,7 @@ test "dl_c9_gc_keep_recent_dry_run_then_delete" {
   // ① dry_run：只报不删
   let dry = commissar_gc(proj, keep=2, dry_run=true)
   assert_eq(dry.total, 5)
-  assert_eq(dry.kept, 3)
+  assert_eq(dry.kept, 2)  // R230：笔误修正——keep=2 ⇒ kept=2、doomed=3（2+3=total=5；原断言 3+3>5 自相矛盾，且与本格后半 real.deleted==3 / rhop_after==2 冲突）
   assert_eq(dry.doomed.length(), 3)
   assert_eq(dry.deleted.length(), 0)   // ★ 关键：dry_run 不许真删
   for nm in before {
