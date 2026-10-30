@@ -51,6 +51,7 @@ rc 契约（与 `check_fmt_gate.py` / `check_plan_location.py` 同口径）：
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import re
 import subprocess
@@ -110,10 +111,27 @@ def parse_hits(text: str):
     return hits
 
 
-def judge(root: str = ROOT):
-    text, ok = run_moon_check(root)
-    if not ok:
-        return RC_BROKEN, {"note": text}
+def judge(root: str = ROOT, check_output: str = ""):
+    """`check_output` 非空时**从文件读 `moon check` 输出**，不真跑（R72）。
+
+    为什么需要：本判据会自己 spawn `moon check`。而**并发 lane 恰好在编译时**
+    `moon check` 可能瞬时失败 ⇒ 本判据 rc=2（**拒绝出结论，行为正确**），
+    但电池里就出现一条「无法自证」的假红 —— 实测撞过一次（`check_effective_catch.py`
+    在电池里 rc=2 而单独连跑 3 次全 rc=0）。
+
+    加了这个入口后：电池可以先跑**一次** `moon check` 落文件，再把同一份输出喂给需要它的判据
+    ⇒ 既消除并发抖动，也让同一份事实只被采一次（判例-29「机制格 ≠ 实现路径格」的延伸）。
+    """
+    if check_output:
+        try:
+            with io.open(check_output, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        except OSError as e:
+            return RC_BROKEN, {"note": "读 --check-output 失败: %s" % e}
+    else:
+        text, ok = run_moon_check(root)
+        if not ok:
+            return RC_BROKEN, {"note": text}
     # 自拒：既没有 unused_try 也没有正常汇总行 ⇒ 输出不可信
     if not WARN_RX.search(text) and not re.search(r"Finished\.|now up to date", text):
         return RC_BROKEN, {"note": "moon check 输出里既无 unused_try 也无汇总行 ⇒ 拒绝出结论"}
@@ -219,10 +237,12 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(add_help=True)
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--root", default="")
+    # R72：从文件读 `moon check` 输出（不真跑）—— 供电池复用同一份事实，消除并发抖动。
+    ap.add_argument("--check-output", default="")
     a = ap.parse_args(argv)
     if a.selftest:
         return selftest()
-    rc, res = judge(a.root or ROOT)
+    rc, res = judge(a.root or ROOT, a.check_output)
     if rc == RC_BROKEN:
         print("[FATAL] " + res["note"])
         print("判据无法自证 —— 拒绝出结论，也拒绝因「没找到」报绿。rc=2")
