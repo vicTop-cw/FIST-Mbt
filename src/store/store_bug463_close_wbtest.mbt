@@ -51,7 +51,24 @@ fn k463_base(tag : String) -> String {
 }
 
 ///|
-/// 递归删目录（用后清理；残留只会落在 gitignore 的 `temp/` 下）。
+/// 递归清理夹具目录：**删内容、保留目录本身**（BUG-482 的修法）。
+///
+/// ## 为什么不再 `remove_dir(path)`（这是本函数唯一的行为改动）
+///
+/// `moon` 的 **package discovery 扫整个仓库树，且不读 `.gitignore`** ——
+/// 夹具目录原先落在 `temp/k463_*`（仓库内）⇒ discovery 会在任意时刻遍历到它。
+/// 而旧实现是「创建 → 用 → **把目录本身删掉**」，于是 discovery 可能撞上一条**已消失的路径**：
+/// `IO error for operation on temp\k463_...: 系统找不到指定的路径 (os error 3)`
+/// ⇒ 整个 `moon test` / `moon check` 在 **discovering 阶段**就失败（不是测试失败，是**拿不到汇总行**）。
+///
+/// **保留空目录**后，discovery 永远能看到一个**稳定存在的节点**（哪怕是空的），
+/// 而**空目录对包发现没有任何影响**（没有 `moon.pkg` 就不是包，见 R58 的反例：
+/// `temp/t0r5_fmt_backup/src/server/moon.pkg` 才是问题，因为它**有** pkg 文件）。
+///
+/// ## 为什么这不是「把清理关掉」
+///
+/// 每个 `.db` / 中间文件仍然被删 —— **夹具的磁盘占用仍是 O(1)**。
+/// 只有「目录节点」留着（几十字节的 inode），且它已在 `.gitignore:29` 的 `temp/` 下。
 fn k463_rm_tree(path : String) -> Unit {
   if !@fs.path_exists(path) {
     return
@@ -66,9 +83,8 @@ fn k463_rm_tree(path : String) -> Unit {
       k463_rm(child)
     }
   }
-  @fs.remove_dir(path) catch {
-    _ => ()
-  }
+  // ⚠️ **故意不删目录本身**（BUG-482）：删掉它会让 moon 的 discovery 撞「已消失路径」。
+  // 旧代码在这里是 `@fs.remove_dir(path) catch { _ => () }` —— 已移除，理由见本 docstring。
 }
 
 ///|
