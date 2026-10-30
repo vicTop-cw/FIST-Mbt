@@ -1,0 +1,98 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/filebind"
+
+// Values
+pub fn fb_apply_bind(Array[FileBind], String, String, Array[BindPlanRow], String, String, String, String, String, Int32, Int32) -> Array[FileBind]
+
+pub fn fb_apply_release(Array[FileBind], String, String, Array[ReleaseRow], String, String) -> Array[FileBind]
+
+pub fn fb_counts(Array[FileBind], Int32) -> (Int32, Int32)
+
+pub fn fb_decide(FileBind?, String, Int32) -> BindVerdict
+
+pub fn fb_decide_release(FileBind?, String, Bool) -> ReleaseVerdict
+
+pub fn fb_default_ttl() -> Int32
+
+pub fn fb_entry_json(FileBind) -> Json
+
+pub fn fb_expired(FileBind, Int32) -> Bool
+
+pub fn fb_find_index(Array[FileBind], String, String, String) -> Int32?
+
+pub fn fb_key(String, String, String) -> String
+
+pub fn fb_ledger_parse(String) -> Array[FileBind]
+
+pub fn fb_ledger_serialize(Array[FileBind]) -> String
+
+pub fn fb_match(FileBind, String, String, Array[String], String, String) -> Bool
+
+pub fn fb_norm(String) -> String
+
+pub fn fb_of_json(Json) -> FileBind?
+
+pub fn fb_path_ok(String) -> Bool
+
+pub fn fb_plan_bind(Array[FileBind], String, String, Array[String], String, Int32, Int32) -> Array[BindPlanRow]
+
+pub fn fb_plan_release(Array[FileBind], String, String, Array[String], String, String, String, Bool) -> Array[ReleaseRow]
+
+pub fn fb_release_name(ReleaseVerdict) -> String
+
+pub fn fb_remaining(FileBind, Int32) -> Int32
+
+pub fn fb_row_json(BindPlanRow, Int32) -> Json
+
+pub fn fb_status_json(FileBind, Int32) -> Json
+
+pub fn fb_verdict_name(BindVerdict) -> String
+
+// Errors
+
+// Types and methods
+pub struct BindPlanRow {
+  path : String
+  verdict : BindVerdict
+  holder : String
+  bound_at : Int32
+  ttl_secs : Int32
+}
+
+pub enum BindVerdict {
+  BndNew
+  BndRenewed
+  BndReclaimed
+  BndConflict
+  BndInvalidPath
+}
+
+pub struct FileBind {
+  ns : String
+  project_dir : String
+  path : String
+  holder : String
+  task_id : String
+  kind : String
+  scope : String
+  intent : String
+  bound_at : Int32
+  ttl_secs : Int32
+}
+
+pub struct ReleaseRow {
+  path : String
+  verdict : ReleaseVerdict
+  holder : String
+}
+
+pub enum ReleaseVerdict {
+  RelReleased
+  RelForced
+  RelNotHolder
+  RelNotFound
+}
+
+// Type aliases
+
+// Traits
