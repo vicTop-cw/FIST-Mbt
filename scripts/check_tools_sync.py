@@ -292,11 +292,13 @@ def main():
         return 2
 
     # 1) 表格行首个反引号名 ⊆ 真源
+    #    BUG-490（R256 发布轮）：普通文档表格里「首个反引号 token」可以是 `--`（判例-35
+    #    的 git/grep 语义表）—— 工具名不可能是 `--`，解析时排除，防文档举例喂 phantom。
     claimed = set()
     for line in agents.splitlines():
         if line.strip().startswith("|"):
             m = RE_BACKTICK.search(line)
-            if m:
+            if m and m.group(1) != "--":
                 claimed.add(m.group(1))
     phantom = sorted(claimed - real)
     if phantom:
