@@ -11381,3 +11381,86 @@ $ git grep -l -- "*automator*"              → 0 个   （`--` 后是 pathspec 
 > **⇒ 名字近似的工具，参数语义可能相反；而「静默不同」比「报错」更难发现。**
 
 - reported_by: lead</string>
+## BUG-487 [2026-10-30T04:28:42Z] [low] OPEN
+- summary: 【更正外部 lane 的错误归因】`check_release_asset_names` 的扫描面**包含** build_release.ps1，且一直能抓写死版本
+- detail: ## 背景
+
+外部 lane 提交 `5e41ab5fe`（`fix(release): build_release.ps1 版本从 moon.mod 单一真源反解`）的**提交信息里写**：
+
+> 「而 `check_release_asset_names` 的**扫描面不含本文件** ⇒ 三处同源判据看不见它」
+
+**⇒ 本轮实测证明这句话是**错的**：判据的扫描面**包含** `build_release.ps1`，且**一直能抓这个形态**。**
+
+## 反证（三条，全部实测）
+
+### ① 扫描面确实包含它
+
+`scripts/check_release_asset_names.py:94`：
+```python
+"build": os.path.join("scripts", "blackbox", "build_release.ps1"),
+```
+**⇒ 它就在扫描面里。**
+
+### ② 判据有专门的「抓写死版本」正则，且注释写得很精确
+
+`:146-147`：
+```python
+# 写死字面量默认版本（注释里出现 0.3.0 不算，只抓赋值形态）
+HARDCODED = re.compile(r'(?:^\s*\[string\]\$Version\s*=\s*"[\d][^"]*"|(?:^|\n)\s*VERSION\s*=\s*"[\d][^"]*")', re.M)
+```
+`:169` 真实使用它：
+```python
+if HARDCODED.search(txt):
+    ... name, HARDCODED.search(txt).group(0).strip()[:70]
+```
+**⇒ 不只是有正则，它**在用**。**
+
+### ③ 用**真模块**跑变异对照（旧/新两态）
+
+```python
+spec = importlib.util.spec_from_file_location('cran', 'scripts/check_release_asset_names.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+old = 'param(\n    [string]$Version = "0.3.0",\n)'
+new = 'param(\n    [string]$Version = "",\n)'
+
+m.HARDCODED.search(old)  → 命中 '    [string]$Version = "0.3.0"'   ✅（旧形态必红）
+m.HARDCODED.search(new)  → NO-HIT                                ✅（新形态不误红）
+```
+
+**⇒ 判据**早就**能抓这个形态，而且新旧两态都判对。**
+
+## 我自己在查证时也踩了一次「探针坏了」
+
+**第一次我用 bash 内联 Python 测**，结果报「旧形态没命中」—— 差点据此断定「判据抓不到」。
+
+**真因**：bash 双引号里 `\$Version` 的转义被 shell 处理掉了 ⇒ 我喂给正则的字符串里 `$Version` 已经不在了
+⇒ 正则当然不命中。
+
+**⇒ 改用 `importlib` 加载**真模块**、用不受 shell 干扰的字符串 ⇒ 立刻正确。**
+
+**⇒ 这是「探针坏了而非被测面坏了」的第 2 次命中**（第 1 次是 R80/R81 的 `git grep -- '*pat*'` 静默返回 0，
+R81 我把它记成 BUG-486）。**同一族错误，两种形态（一个是参数语义，一个是 shell 转义）。**
+
+## 影响
+
+- **代码**：`5e41ab5fe` 的改动本身**是对的且有用**（把硬编码 `"0.3.0"` 换成从 `moon.mod` 反解
+  —— 实测 `[string]$Version = ""` + 解析逻辑已在位，`check_release_asset_names` 复验 OK）。
+- **叙述**：但那句「判据看不见它」是错的 ⇒ 会让人误以为「判据有缺口」，**从而可能去做一次无用的判据改动**。
+- **更正方式**：本单 + 账本记录，**不改代码**（代码是对的）。
+
+## 判例
+
+> **同一个 bug fix，代码正确 ≠ 它的**归因叙述**正确。**
+> 提交信息里那句「判据看不见」是**顺手加的推断**，而它没有被验证。
+> **⇒ 归因句和代码改动一样需要证据 —— 尤其当它出现在提交信息里时，未来的人会按它行动。**
+
+> **「探针坏了而非被测面坏了」有两种典型形态**：
+> ① **参数语义**（`git grep --` 之后是 pathspec 不是 pattern）→ 已记 BUG-486
+> ② **shell 转义**（bash 内联 Python 里 `\$X` 被 shell 吃掉）→ 本单
+> **⇒ 共同点：失败形态都是「不报错、只给出错误结论」，而不是报错。**
+
+> **在 bash 里内联测正则时，`$` 必须小心**；更稳的做法是**用 `importlib` 加载真模块**，
+> 这样被测的是真对象、不是我在 shell 里手抄的一份。
+
+- reported_by: lead
