@@ -531,7 +531,17 @@ SPECIAL_CASES = [
     # 逃生口 `FIST_BADGE_FRESH=0`：跳过 fresh ⇒ 本格 SKIP，且 SKIP 理由必须写清
     # **跳过了什么能力的证明**（判例-33：不带说明的 SKIP 在汇总里会被读成「这格没问题」）。
     gated("check_badge.py", TESTLOG, TESTLOG, "README.md", "--fresh"),
-    gated("check_test_sync.py", TESTLOG, TESTLOG, "--fresh"),
+    # ⚠️ R109（BUG-498）：**上面那格刚真跑完并重写了快照** ⇒ 本格改用 `--fresh-if-stale`：
+    #    **锚点已同源就跳过重跑**（共享同一份产物），否则照旧真跑。
+    #
+    # 为什么必须这样：两格吃的是**同一份快照**（`temp/pt27.log` + `.src` 锚点），
+    # 各自 `--fresh` = **两次全仓 ≈ 16 分钟** —— 实测这是电池跑不完的主因
+    # （R61/63/66/68/69/71/79/81/108 连续 9 轮跑不完）。
+    #
+    # ⚠️ 顺序有意义：本格**必须**排在 `check_badge.py --fresh` **之后**，
+    #    否则它前面没有「刚写好的新鲜快照」可复用，会退化成真跑（行为正确但慢）。
+    # ⚠️ 它**不改 `--fresh` 的语义** —— 人手工敲 `--fresh` 仍无条件真跑。
+    gated("check_test_sync.py", TESTLOG, TESTLOG, "--fresh-if-stale"),
     case("check_test_sync.py", "--selftest"),
     gated("check_deprecated_text_census.py", DUMP, DUMP),
     case("check_deprecated_text_census.py", "--selftest"),
@@ -1224,7 +1234,9 @@ def run_battery(case_timeout=CASE_TIMEOUT_SEC):
         # 判例-33：性能逃生口。`FIST_BADGE_FRESH=0` 跳过 `--fresh`（判前真跑全仓）时，
         # 本格只证明了「文档 == 快照」，**没有**证明「文档 == 现实」——
         # 不带这句说明的 SKIP，在汇总里会被读成「这格没问题」，那就是又一种假绿。
-        if "--fresh" in c["argv"] and not fresh_enabled():
+        # R109（BUG-498）：`--fresh-if-stale` 属于**同一族新鲜度检验** ⇒ 逃生口必须一并管住它，
+        # 否则 `FIST_BADGE_FRESH=0` 时本格反而不 SKIP、变成真跑（与逃生口意图相反）。
+        if ("--fresh" in c["argv"] or "--fresh-if-stale" in c["argv"]) and not fresh_enabled():
             why = ("SKIP 新鲜度检验（FIST_BADGE_FRESH=0）：本格只证明了「文档 == 快照」，"
                    "未证明「文档 == 现实」——快照可能比代码旧（判例-25）")
             skips.append((c["name"], why))
