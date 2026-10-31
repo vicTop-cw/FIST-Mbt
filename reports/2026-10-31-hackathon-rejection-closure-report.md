@@ -87,17 +87,20 @@ A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-m
    纯函数侧有锁（`cmd/cli/subcmd_wbtest.mbt:19-21`），坏在 extern→libc `exit` 那一跳。
    本轮**没修**的结转理由与三条出路都写进账本了：判绿需要真 native 产物复跑，而 Windows 本机
    native 构建要 MSVC+sqlite3.lib，且在共享树起 native 全量构建会与其它 lane 抢 `_build`。
-2. **测试计数现状面未扫（CI 的 `check_test_sync`/`check_badge` 会在干净树上红，这一格是已知且故意留的）**：
+2. **测试计数现状面未扫（CI 现在红在第 22 步的 `check_badge` 自证拒判上，把第 24 步 `check_test_sync`
+   该报的那格一起挡掉了——见 §四.9 与 BUG-508；数字那一格本身是已知且故意留的）**：
    实测 `python scripts/check_test_sync.py --total 2002 --strict` ⇒ **26 条违例，分布在 10 份现状面**
    （README_EN.md ×5、AGENTS.md ×5、README.md ×4、scripts/scoring_rubric.md ×2、docs/deliverable.md ×2、
    docs/SOP.md、README.mbt.md、ARCHITECTURE.md、docs/agent-map.md、docs/known-boundaries.md）。
    **为什么本笔不扫**（两条都是实测，不是推诿）：
    ① `README.md` / `AGENTS.md` 此刻是 lane-R115 的未提交 WIP（4 行改名指针对齐），按判例-11 带 `-- <明确路径>`
       提交＝把他们那 4 行也写进我的提交；`scripts/run_guards.py`（128 行改名批量）同理被占；
-   ② **更要紧**：2002 这个读数是**脏工作树**上的（我这 19 格 + 别人在途的测试改动混在一起测出来的），
-      此刻把 2002 烧进十份文档，等于「文档写了一个只有本机临时状态才成立的数」——
-      那正是本判据要罚的形状。判据自己也是这么定的：`DIRTY_TREE_DEGRADED`（BUG-425）在脏树下把红降为
-      ADVISORY，并明写「此刻的红可能是文档落后于在途工作，不是文档写错了数」。
+   ② 当时写这条的理由是「1999 只在脏树成立」——**这条已被 CI 削弱，如实更正**：推送后 ubuntu runner
+      在**干净树**（只有我的三笔、不含 lane-R115 的在途测试）上实测出**逐字相同的 2002**
+      （`temp/ci_after_push.log:1877`）⇒ 2002 是「当前 HEAD 的合法读数」，不是本机私物。
+      但**它仍然不是最终数**：lane-R115 那批在途文件里还有测试，他们落地后 N 会变；
+      而 ①（`README.md`/`AGENTS.md`/`USAGE.md`/`BACKLOG.md`/`CHANGELOG.md` 是他们的未提交 WIP）
+      依旧成立 ⇒ **同步这一笔现在做不了**，只能等他们落地。
    ⇒ 正确处置：**由最后落地的那一笔**做 `docs: 测试总数 1983 → N 同步`（本仓惯例），
       且 N 必须是在**干净树**上重测的数。这一格连同执行法一起结转，不伪装成已完成。
 3. **执行器抽象层与 MCP 通道仍是两条**：`mcp_delegate.mbt` 的 `delegate_execute` 无生产调用点；
@@ -119,22 +122,39 @@ A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-m
    （`5be75f1e` 现场已写在 `run_guards.py` 注释里）。⇒ **面与脚本必须同一笔提交**，故随 lane-R115 落地后一起补：
    `REGISTRY` 一行 + `git add` 探针，两步同批，缺一必红。
    本报告与申报书因此把「克隆即有」的复验口径写在 §一 A 栏（19 格具名锁），不用一条仓里还不存在的路径充证据。
-8. **BUG-507 的 Linux 正身还没复验到**（跨平台主张不能拿本机绿抵扣）：修法与三格锁在 Windows 上全绿，
-   但**这一形只有在「三个 env 都不给」的机器上才看得见**，而本机 WSL 有 node v25.2.1 却没有 moon
-   （在 WSL 里装工具链属于改动用户环境，未做）。⇒ 关闭证据 = 推送后 CI 的 `Test (js)`（ubuntu）由
-   `failure` 转 `success`；若仍红则本单退回 OPEN。取数法已写进账本与本栏，判据是步骤结论原文，不是「应该好了」。
+8. **BUG-507 的 Linux 正身已复验到（本笔唯一由外部事实关闭的一格）**：推送 `a7080f728` 后
+   CI run `41171466812` / job `124450135277` 的 **步骤 21 `Test (js)` = success**，
+   原文 `Total tests: 2002, passed: 2002, failed: 0`（本机与 CI 读数逐字相同）。
+   ⇒ 这条跨平台主张不是拿本机绿抵的；关闭证据是 ubuntu runner 上同一条命令的汇总行。
+9. **CI 上还挂着一格与本笔无关的红，且它挡住了后面 8 步（另立 BUG-508，OPEN）**：
+   `check_badge.py` 被 CI 以**裸跑**方式调用（`ci.yml:189`），而它要求快照同目录有源码面锚点
+   `<log>.src`——CI 从来没人写这个锚点（唯一写入口是带 `--fresh`/`--fresh-if-stale` 的那条路）。
+   实测正文：`REJECT SNAPSHOT-STALE … rc=2，不冒用违例红`。
+   ⇒ 这是**判据主动诚实沉默**被 CI 当红，与产品无关；更糟的是它一红，fail-fast 把
+   第 24 步 `check_test_sync`（真正该报「文档 1983 ≠ 实测 2002」那一步）一起 skipped 掉了。
+   修法是一行（改 `--fresh-if-stale`；ubuntu 全量实测只花 41 秒），但它**必须与 §四.2 的数字同步同批**：
+   改完照旧红（徽章仍是 1983），拆成两笔只会各红一次。成因、实测与为什么没单改都写进账本了。
 
 ## 五、后续建议（按性价比排序）
 
-1. **发版**：`moon.mod` 版本 0.3.10 → 0.3.11，跑 `scripts/build_release*` + `release.yml`，
-   让公网资产带上这批修复；同批把 Windows native 臂的 `continue-on-error: true` 摘掉或补 `sqlite3.lib` 就绪步骤
+1. **发版（0.3.10 → 0.3.11）——owner 已点头，但此刻做不到，缺的是版本号现状面**：
+   **已做**：`git push origin main` 落了 3 笔（`b2a7bf14` / `32bd6325` / `a7080f72`），CI 的 `Test (js)` 已由红转绿。
+   **未做**：版本号声明分布在 `moon.mod` + `src/server/server.mbt` + `cmd/cli/help_topics.mbt`(`FIST_VERSION`) +
+   **`README.md` / `USAGE.md` / `README_EN.md` / `BACKLOG.md` / `CHANGELOG.md`**，后五份此刻全是
+   lane-R115 的未提交 WIP（每份 1~3 行**改名指针对齐**，如 `output_validate.py`→`check_output_validate.py`）。
+   ⇒ 一并提交会同时犯两个错：① 判例-11（别人 WIP 进我的提交）；② HEAD 的文档指向「HEAD 里还不存在的脚本名」
+   ⇒ CI 第 12 步 Doc-path references guard (R135) 当场红。更糟的是他们随后提交会用自己的副本**覆掉我的版本行**
+   ⇒ 已发的 tag 与仓库自述脱钩。⇒ 顺序只能是：**R115 落地 → 数字同步 → 版本号前进 → 打 tag → 出资产**。
+   同批还要把 Windows native 臂的 `continue-on-error: true` 摘掉或补 `sqlite3.lib` 就绪步骤
    （它长期静默失败 ⇒ 公网至今只有 linux-x64 一个 native 资产，这正是「native 只会打印帮助」这类误读的土壤）。
-   ⚠️ 发版/推送是不可逆动作，**等 owner 明确点头**再执行。
 2. **一笔结转（等 lane-R115 落地后一起做，两半同批、缺一必红）**：
    ① `docs: 测试总数 1983 → N 同步`——N 必须在**干净树**上重测（现在脏树读的是 2002，含别人在途的测试），
       违例面实测 26 条 / 10 份文件（清单见 §四.2）；
    ② `scripts/run_guards.py` 的 `REGISTRY` 加一行 `"blackbox/e2e_acceptance_recheck.py": "端到端探针：起真 server + node 产物 + 沙箱库，需运行前提，跑法见 scripts/README.md"`，
-      **与 `git add scripts/blackbox/e2e_acceptance_recheck.py` 同一笔提交**（理由与禁走的捷径见 §四.7）。
+      **与 `git add scripts/blackbox/e2e_acceptance_recheck.py` 同一笔提交**（理由与禁走的捷径见 §四.7）；
+   ③ `ci.yml:189` 的 `check_badge.py` 补 `--fresh-if-stale`（BUG-508：现在那一步结构上永远 rc=2，
+      并把第 24 步 `check_test_sync` 挡成 skipped；改完才看得到「徽章 1983 ≠ 实测 N」那一格的真红）。
+   ⇒ 三半同批做完，CI 才有机会一次转绿；拆开做只会各红一次。
 3. **把 `e2e_acceptance_recheck.py` 挂进 CI**：六格逐条打到调用面，比任何「已修复」叙述都硬；
    挂目前会因 A4 的 native 臂在 Linux runner 上真跑而多测出 BUG-506 那一格（**这是好事**，红在真缺陷上）。
 4. **BUG-506 关闭路径**：优先做账本里的出路①（CI native 臂加行为面判据 + 换可靠退出方式），
@@ -146,7 +166,7 @@ A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-m
 
 - 给 `heal` 回执补 `scope_note`，并把 `backend` 从「主库自述」改成「实际在扫的那台库」——BUG-119 那套
   「后端身份必须写在回执里」的要求，在 ns 路由之后本来会说谎。
-- `check_bug_ledger_shape.py` 复跑（492 抬头 / OPEN 1）确认新账目形态干净。
+- `check_bug_ledger_shape.py` 复跑（收口终读：**494 抬头 / OPEN 2**——BUG-506 与 BUG-508）确认新账目形态干净。
 - `publish_with_deps` 的悬空依赖以前静默写进库、要等 `dag_check` 才红，本笔改为落库前拒。
 - `supervisor_task_upsert` 的「任一边被拒 ⇒ 整条不写」按本仓「事务性迁移」口径统一，不留半套改动。
 
