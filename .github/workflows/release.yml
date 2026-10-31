@@ -131,16 +131,59 @@ jobs:
       - name: Install sqlite3 dev
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev sqlite3
 
+      - name: Reapply BUG-133 sqlite FFI fix
+        # ⚠️ 这一步是**承重件**，不是「顺手对齐 ci.yml」（ci.yml 两条 native 臂都有它，release 这条从来没有）：
+        # 2026-10-31 WSL 实测同一棵树、同一枚产物，两态对照——
+        #   不 reapply：`version` / `--help` / `demo` / 未知子命令 **每次** `free(): invalid pointer`
+        #               或 `double free or corruption` ⇒ rc=134（一次 SIGSEGV rc=139）
+        #   reapply 后：三臂稳定 rc=0，未知子命令 rc=2
+        # ⇒ 过去这条作业即便建出产物，交付的也是一枚「能启动、一用就崩」的二进制（判例-33 第三条）。
+        # `moon update` 会整目录重生成 `.mooncakes`（gitignored），所以必须在 update 之后、build 之前落补丁。
+        run: bash patches/sqlite-bug133/reapply.sh --force
 
       - name: Build native
-        run: bash scripts/migrate_mooncakes_modjson.sh "moon build --target native"
+        # 只建**可执行包**，不建全项目：2026-10-31 WSL 实测 `moon build --target native`（全项目）
+        # 红在 `undefined reference to 'main'` —— moon 0.1.20261021 对**带 `options(link:{native:{...}})`
+        # 的库包**也去链可执行文件（`src/core`/`src/router`/`src/store`… 14 个库都中招），
+        # 而库没有 `main` ⇒ 必然失败。本仓 15 份 `moon.pkg` 里有 12 份是「库却带 link」，
+        # 那是 POLISH 期「全项目内置 -lsqlite3」留下的形状，另立单治理（见 memory/bugs.md）。
+        # 真正要发布的只有 `cmd/cli` 一枚，scoped 构建 rc=0 且产物齐全 ⇒ 本轮先让分发面通。
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon build --target native cmd/cli"
 
       - name: Package native artifact
+        # 「产物存在」不等于「产物能用」：打包前先**真的调一次**（判例-33），
+        # 版本首行逐字对不上、或未知子命令回 rc=0，都宁可不发这枚资产。
+        env:
+          VER: ${{ needs.meta.outputs.version }}
         run: |
+          set -uo pipefail
+          SRC=""
+          for c in _build/native/debug/build/cmd/cli/cli _build/native/debug/build/cmd/cli/cli.exe; do
+            if [ -f "$c" ]; then SRC="$c"; break; fi
+          done
+          if [ -z "$SRC" ]; then
+            echo "::error::native 产物两把名字都不在（cli / cli.exe）⇒ 判「产物没建出来」，不打 zip"
+            exit 1
+          fi
+          echo "被打包的产物：$SRC"
           mkdir -p _release/native
-          cp _build/native/debug/build/cmd/cli/cli _release/native/fist-mbt
+          cp "$SRC" _release/native/fist-mbt
           chmod +x _release/native/fist-mbt
-          cd _release/native && zip -r ../fist-mbt-native-linux-x64-v${{ needs.meta.outputs.version }}.zip . && cd ../..
+          OUT="$(./_release/native/fist-mbt version 2>&1 | head -1)"
+          echo "version 回执：[$OUT]（期望逐字 [FIST-Mbt v$VER]）"
+          if [ "$OUT" != "FIST-Mbt v$VER" ]; then
+            echo "::error::native 产物调用面不回显版本 ⇒ 不发一枚「建得出来但回显旧版/一用就崩」的二进制"
+            exit 1
+          fi
+          ./_release/native/fist-mbt definitely-not-real >/dev/null 2>&1
+          rc=$?
+          echo "未知子命令 rc=$rc（Linux native 实测应为 2；Windows 面的 rc=0 另有 BUG-506）"
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::未知子命令 rc=0 ⇒ native 参数分派面退化"
+            exit 1
+          fi
+          (cd _release/native && zip -qr "../fist-mbt-native-linux-x64-v$VER.zip" .)
+          ls -la "_release/fist-mbt-native-linux-x64-v$VER.zip"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -198,6 +241,13 @@ jobs:
     # ② JS 安装线只吃 build-js 的产物，却被**可选的** native 作业一票否决 ⇒ 一次 native 编译失败
     #    就等于 Release 全无资产（本机快照实测 JS 三步全通过，资产却一个也没出）。
     needs: [meta, build-js]
+    # 只有**tag push** 才许动公网 Release。这条不是分支门（J12 禁的是 `refs/heads/` 那种钉法，
+    # 分支一变就恒假），而是「事件 + tag 前缀」双条件：
+    # 2026-10-31 实测本文件有 `workflow_dispatch`，而 `release` 作业的 `tag_name: ${{ env.TAG }}`
+    # 读的是 `github.ref_name` —— 手动派发时它是**分支名**（如 main），softprops 会照着
+    # 创建一个 tag 名为 `main` 的 Release（名字还写着 FIST-Mbt v0.3.11）⇒ 平白多一条公开假交付物。
+    # 派发照旧产出 workflow 产物（各 build-* 作业与 upload-artifact 不受影响），只是不许顶掉发布面。
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

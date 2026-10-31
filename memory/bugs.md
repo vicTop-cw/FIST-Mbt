@@ -14286,3 +14286,97 @@ scripts/mcp_smoke.py 头注释      →  「断言含 publish 等 79 个工具�
 
 ⚠️ **本轮（0dd910d7d）只做了「改字」**：USAGE 三处 + `mcp_smoke.py` 头注释一处改成实测值/指向真源。
 按判例-36 的口径，这条修复**没有回归锁**，所以它以「未关闭」记在本单里，而不是记成已修。
+
+
+## BUG-526 [2026-10-31T10:33:00Z] [high] OPEN
+- summary: `release.yml` 的 `build-native-linux` **从来没有 `reapply BUG-133` 那一步**（ci.yml 两条 native 臂都有）
+  ⇒ 即便产物建得出来，交付出去的也是一枚「能启动、一用就崩」的二进制；同批发现打包步抄的文件名在本工具链下不存在
+- detail: ## 两态对照（2026-10-31 WSL ubuntu-22.04，moon `0.1.20261021`，同一棵树同一枚产物）
+
+```
+不 reapply patches/sqlite-bug133/stub.c ：
+  version / --help / -h / demo / 未知子命令   →  rc=134 为主（一次 rc=139 SIGSEGV）
+  stderr 逐字：free(): invalid pointer / free(): invalid size / double free or corruption (out)
+reapply --force 之后（reapply rc=0，落点 .mooncakes/daqing/sqlite/stub.c）：
+  version  → rc=0  首行逐字 FIST-Mbt v0.3.11      ×3 稳定
+  --help   → rc=0  FIST-Mbt Help  v0.3.11 (182 MCP tools)  ×3
+  -h / demo→ rc=0  ×3
+  未知子命令 → rc=2 ×3        serve → 起得来（3s 内被 timeout 收掉）
+```
+
+⚠️ 测量本身的坑：第一版用 `"$B" $arm 2>&1 | head -2; rc=$?` ⇒ **`$?` 是 `head` 的**，
+把 SIGABRT 读成 rc=0，差点把「每次都崩」记成「都正常」。改成先落文件再取 rc 才对（判例-35 同族）。
+
+## 另一格：文件名
+
+`moon build --target native` 在 Linux 上把可执行产物命名为 **`cli.exe`**（`file` 实测 `ELF 64-bit … cli.exe`），
+而打包步抄的是 `cp _build/native/debug/build/cmd/cli/cli` ⇒ 就算构建过了，`cp` 也必然 `No such file`。
+
+## 本轮已做的处置（提交见本节末）
+
+`build-native-linux` 补 `Reapply BUG-133 sqlite FFI fix` 步（位置钉在 `moon update` 之后、`Build native` 之前，
+因为 `moon update` 会整目录重生成 gitignored 的 `.mooncakes`）；打包步改成「两把名字都找 + **调用面先真用一次**」：
+版本首行必须逐字等于 `FIST-Mbt v<ver>`、未知子命令必须非零，否则 `::error::` + `exit 1` 宁可不发资产。
+同批给 `release` 作业加事件+tag 前缀门（读 `release.yml` 的 `on:` 现场确认：该文件带 `workflow_dispatch`，
+而 `tag_name: ${{ env.TAG }}` 展开的是 `github.ref_name` —— 派发时它是**分支名** ⇒ 会顶出一条 tag 名为 `main` 的公开假 Release）。
+
+闸的**变异对照**当场跑过（WSL 演练，不是纸上）：
+`G1 正身 VER=0.3.11 → rc=0，产出 fist-mbt-native-linux-x64-v0.3.11.zip（3,835,456B）`；
+`G2 故意 VER=9.9.9 → rc=1`（证明闸真在比对）；`G3 把产物改名 → rc=1「产物没建出来」`。
+
+⚠️ **本单关闭条件 = 派发那一跑 `build-native-linux` 的结论为 success 且 Actions 产物里有那枚 zip**。
+本轮**没有**据此宣称已修：CI 还没跑过这版 workflow。
+对照事实：`v0.3.10` 公网那枚 `fist-mbt-native-linux-x64-v0.3.10.zip`（3,793,380B）**是健康的**
+（实测 version/--help/demo rc=0、未知子命令 rc=2）⇒ 它是人工带补丁构建后上传的；
+而 release.yml 历史四次 run 的 `build-native-linux` **全部 failure** ⇒ 「流水线从未产出过 native 资产」，
+BUG-513 的缺口性质因此是**长期从未通过**，不是「最近退化了」。
+
+## BUG-527 的边界
+
+「全项目 `moon build --target native` 必崩」那一半不在本单里（那是库包带 `link` 的形状问题），见 **BUG-527**。
+
+
+## BUG-527 [2026-10-31T10:36:00Z] [medium] OPEN
+- summary: 全项目 `moon build --target native` 在 moon `0.1.20261021` 下**必崩**——12 份「库却带 `options(link:{native:{cc-link-flags}})`」的
+  `moon.pkg` 被当成可执行目标去链（`crt1.o` 要 `main`），报 `undefined reference to 'main'`，
+  且 `Error:` 那行只有包名没有文件:行 ⇒ 看起来像「源码编译错误」。本轮只在 `release.yml` 里**绕行**（scoped 构建），没治本
+- detail: ## 实测读数（WSL，同一棵 `git archive HEAD` 快照树）
+
+```
+moon build --target native            → rc=255
+  Error: failed to make executable vicTop-cw/fist-mbt/src/core (native): /usr/bin/cc -o …/src/core/core.exe …
+  Error: failed to make executable vicTop-cw/fist-mbt/src/router (native): …
+  …（src/store, src/engine, src/evolve, src/executor, src/ops, src/omega, src/server, src/decompose,
+     omega, atgc, atgc-old, tests/external_executor —— 全是**没有** pkgtype(kind:"executable") 的库包）
+  /usr/bin/ld: …/Scrt1.o: in function `_start': undefined reference to `main'
+  Failed with 44 warnings, 0 errors.  /  Error: failed to run build for target Native
+moon build --target native cmd/cli    → **rc=0**，产物 `_build/native/debug/build/cmd/cli/cli.exe`（ELF 64-bit）
+```
+
+`migrate_mooncakes_modjson.sh` 的根因分流把这形判成 `[源码编译错误]`，而**没有 'Error: [xxxx]' 文件:行可指**
+（0 errors！）⇒ 读的人被指去查一个不存在的源码问题。这是「错误信息的指向 ≠ 错误的真实位置」（判例-34）的又一形。
+
+## 面普查（当场数，不手抄）
+
+`git ls-files "*moon.pkg"` 里带 `cc-link-flags` 的 16 份，其中**可执行包只有 3 份**
+（`cmd/cli`、`cmd/main`、`tests/smoke`）⇒ 其余 **13 份是库却带 link**（含根 `moon.pkg`）。
+时间线：`b2a7bf144`（本日 12:01，黑客松六项整改）给 `tests/external_executor/moon.pkg` **新增**了 link 与依赖，
+其余库包的 link 早于本日（`84bddb299` 10-22 一族）⇒ 形状是既有的，**新工具链把它变成了硬失败**。
+
+⚠️ 因此「CI 的 native 臂一直红」这件事有两把独立的锁：BUG-526（缺 reapply ⇒ 产物会崩）与本单
+（全项目构建 ⇒ 根本建不出来）。`ci.yml` 的 `Test (native)` 那格与此同源还是另一因，**本轮未归因**
+（BUG-523 已点名「BUG-133 记 FIXED 而干净树全量那一格未满足」，接那一单时一起判）。
+
+## 三条出路（择一，都要配读数）
+
+1. **治本**：把 `cc-link-flags` 从**库包**摘掉，只留在可执行包与真正需要它的 `native-stub` 消费方；
+   然后 `moon build --target native`（全项目）与 `moon test --target native` 各跑一遍取证
+   —— ⚠️ 必须验「native 测试链得起来」（`-lsqlite3` 若在库包摘掉后由谁提供），别只验构建绿；
+2. **对齐口径**：确认 moon 的语义就是「库包不得带 link」（提上游 issue + 在本仓 `project_standards` 写死一条），
+   并用 **1** 的方式整改，二者不冲突；
+3. **承认边界**：如果 native 继续只当观测臂（`AI-DEVELOPMENT-STANDARD.md` §7），那就在 `ci.yml`/`release.yml`
+   把「native 全项目构建」这一格明确降级成**只建可执行包**（本轮 release 臂已经这么做），
+   并把全项目那一格转成一条常红但有主的观测项 —— 而不是留成「没人认领的编译错误」。
+
+⚠️ 本轮只做了 release 臂的绕行（`moon build --target native cmd/cli`），**没有**动 13 份 `moon.pkg`
+⇒ 本单保持 OPEN，别把它读成「native 全项目构建已可用」。
