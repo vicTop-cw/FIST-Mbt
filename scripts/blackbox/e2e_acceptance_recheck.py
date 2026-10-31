@@ -267,7 +267,87 @@ def ns_rows():
     return sql1(NS_DB, "select count(*) from tasks") or 0
 
 
-# ───────────────────────────────────────────────── A1 物理多租户隔离 ──
+# ───────────────────────────────────────────────── ST 尺子自检（先于一切真检查）──
+# BUG-523：自检格原来排在真检查**之后**——自检若崩，真检查已经跑过、结论面已污染。
+# 修法：fail-fast。尺子先自证健康（ST1/ST2/ST3），再做被测对象的检查（A1–A6）。
+# 退出码契约不变：自检失败仍 rc=3（尺子坏了），只是现在发生在任何真检查出数**之前**。
+if "--selftest" in sys.argv[1:]:
+    # 把探针的判据挪到一个「必然违例」的样本上：手工往主库塞一行 ns=<合成标签>，
+    # 让 A1 那套读数逻辑再跑一遍 ⇒ 必须报出漏点。抓不到 = 尺子坏了，六格的绿不可信。
+    synth = "synthetic-leak-" + RUN_ID[-6:]
+    c = sqlite3.connect(MAIN_DB)
+    try:
+        c.execute("insert into tasks (id,parent_id,project_dir,ns,priority,importance,depth,"
+                  "split_n,level,status,assignee,description,deliverable,created_at,updated_at,"
+                  "completed_by,cleanup_mode,depends_on,omega_required,created_by) "
+                  "values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                  ("ZZ-synth", "", ".", synth, "中", "中", 3, 3, 6, "待领取", "",
+                   "合成违例", "", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z",
+                   "", "deferred", "[]", 0, "acceptance-selftest"))
+        c.commit()
+    finally:
+        c.close()
+    caught = (sql1(MAIN_DB, "select count(*) from tasks where ns=?", (synth,)) or 0) > 0
+    record("ST1_合成违例(尺子自检)", "PASS" if caught else "FAIL",
+           "往主库注入 ns=%s 的行后，读数逻辑必须看得见（看不见=恒绿探针）" % synth,
+           ["main_db(synthetic ns)=%s" % sql1(MAIN_DB,
+                                              "select count(*) from tasks where ns=?", (synth,))])
+    if not caught:
+        print("[FATAL] 合成违例没被抓到 ⇒ 探针恒绿")
+        for k, v in CELLS.items():
+            print("%-30s %s  why=%s" % (k, v["verdict"], v["why"]))
+        sys.exit(3)
+    # 自检样本不留给后面的真检查：A1 的隔离读数用的是增量（before/after），本就不受这行影响，
+    # 但尺子验完就该把自己的脚印擦掉——沙箱里不该有第二个「人为违例」的来源。
+    c = sqlite3.connect(MAIN_DB)
+    try:
+        c.execute("delete from tasks where id='ZZ-synth'")
+        c.commit()
+    finally:
+        c.close()
+
+    # ── ST2 `FIST_ACCEPT_JS` 相对路径归一（BUG-524①，变异对照内建）──────────
+    # 真跑一次 spawn 用的那副面罩：把 cwd 切到沙箱再判存在性。不做归一 ⇒ 这一格必红
+    # （naive 形态是「原样交给 os.path.isfile」，在沙箱 cwd 下就是 False）。
+    rel_target = os.path.join("temp", "acceptance-recheck", RUN_ID, "b524_probe.js")
+    abs_target = os.path.join(ROOT, rel_target)
+    io.open(abs_target, "w", encoding="utf-8").write("// 合成产物，只用于路径归一自检\n")
+    _cwd0 = os.getcwd()
+    try:
+        os.chdir(SANDBOX)                      # 与 Server(...) 的 cwd 同一副面罩
+        naive_ok = os.path.isfile(rel_target)  # 不归一的读法
+        os.chdir(_cwd0)                        # 归一发生在调用方 cwd
+        resolved = resolve_env_js(rel_target)
+        resolved_ok = os.path.isfile(resolved)
+    finally:
+        os.chdir(_cwd0)
+    st2_ok = resolved_ok and os.path.isabs(resolved) and resolved == abs_target
+    record("ST2_相对路径归一(BUG-524)", "PASS" if st2_ok else "FAIL",
+           "FIST_ACCEPT_JS 给相对路径时必须按**调用方 cwd**归一；不归一则沙箱 cwd 下读成不存在"
+           "（naive 读数=%s ⇒ 未归一会在这里红）" % naive_ok,
+           ["raw=%s" % rel_target,
+            "resolved=%s isfile=%s" % (resolved, resolved_ok),
+            "naive_isfile_in_sandbox=%s" % naive_ok])
+    if not st2_ok:
+        print("[FATAL] ST2：路径归一失灵 ⇒ FIST_ACCEPT_JS 是个被承认但不生效的旗标")
+        sys.exit(3)
+
+    # ── ST3 `--help` 必须真的只出帮助（BUG-524②）──────────────────────────
+    # 行为级：起子进程跑 `--help`，要求 rc=0、回了用法段、**且没进真检查分支**
+    # （真检查会打 `server = ` 那行横幅）。摘掉处理分支 ⇒ 落进真检查 ⇒ 这一格红。
+    hp = subprocess.run([sys.executable, os.path.abspath(__file__), "--help"],
+                        capture_output=True, timeout=120)
+    htxt = hp.stdout.decode("utf-8", "replace")
+    st3_ok = (hp.returncode == 0 and "用法：" in htxt and "server = " not in htxt)
+    record("ST3_帮助旗标(BUG-524)", "PASS" if st3_ok else "FAIL",
+           "--help/-h 在白名单里就必须有处理分支；否则 40 秒全量复验会被当帮助跑掉",
+           ["rc=%d 有用法=%s 落了真检查=%s" % (hp.returncode, "用法：" in htxt,
+                                               "server = " in htxt)])
+    if not st3_ok:
+        print("[FATAL] ST3：--help 没被处理（rc=%d）⇒ 白名单里有旗标没人认领"
+              % hp.returncode)
+        sys.exit(3)
+
 A1_PATHS = [
     ("publish", lambda: srv.call("publish", {
         "project_dir": ".", "description": "A1 隔离复验-publish",
@@ -621,76 +701,7 @@ record("A4_native serve/demo", verdict,
        "; ".join(a4_skip),
        a4_detail)
 
-# ───────────────────────────────────────────────── ST 合成违例 ──
-if "--selftest" in sys.argv[1:]:
-    # 把探针的判据挪到一个「必然违例」的样本上：手工往主库塞一行 ns=<合成标签>，
-    # 让 A1 那套读数逻辑再跑一遍 ⇒ 必须报出漏点。抓不到 = 尺子坏了，六格的绿不可信。
-    synth = "synthetic-leak-" + RUN_ID[-6:]
-    c = sqlite3.connect(MAIN_DB)
-    try:
-        c.execute("insert into tasks (id,parent_id,project_dir,ns,priority,importance,depth,"
-                  "split_n,level,status,assignee,description,deliverable,created_at,updated_at,"
-                  "completed_by,cleanup_mode,depends_on,omega_required,created_by) "
-                  "values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                  ("ZZ-synth", "", ".", synth, "中", "中", 3, 3, 6, "待领取", "",
-                   "合成违例", "", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z",
-                   "", "deferred", "[]", 0, "acceptance-selftest"))
-        c.commit()
-    finally:
-        c.close()
-    caught = (sql1(MAIN_DB, "select count(*) from tasks where ns=?", (synth,)) or 0) > 0
-    record("ST1_合成违例(尺子自检)", "PASS" if caught else "FAIL",
-           "往主库注入 ns=%s 的行后，读数逻辑必须看得见（看不见=恒绿探针）" % synth,
-           ["main_db(synthetic ns)=%s" % sql1(MAIN_DB,
-                                              "select count(*) from tasks where ns=?", (synth,))])
-    if not caught:
-        print("[FATAL] 合成违例没被抓到 ⇒ 探针恒绿")
-        for k, v in CELLS.items():
-            print("%-30s %s  why=%s" % (k, v["verdict"], v["why"]))
-        sys.exit(3)
-
-    # ── ST2 `FIST_ACCEPT_JS` 相对路径归一（BUG-524①，变异对照内建）──────────
-    # 真跑一次 spawn 用的那副面罩：把 cwd 切到沙箱再判存在性。不做归一 ⇒ 这一格必红
-    # （naive 形态是「原样交给 os.path.isfile」，在沙箱 cwd 下就是 False）。
-    rel_target = os.path.join("temp", "acceptance-recheck", RUN_ID, "b524_probe.js")
-    abs_target = os.path.join(ROOT, rel_target)
-    io.open(abs_target, "w", encoding="utf-8").write("// 合成产物，只用于路径归一自检\n")
-    _cwd0 = os.getcwd()
-    try:
-        os.chdir(SANDBOX)                      # 与 Server(...) 的 cwd 同一副面罩
-        naive_ok = os.path.isfile(rel_target)  # 不归一的读法
-        os.chdir(_cwd0)                        # 归一发生在调用方 cwd
-        resolved = resolve_env_js(rel_target)
-        resolved_ok = os.path.isfile(resolved)
-    finally:
-        os.chdir(_cwd0)
-    st2_ok = resolved_ok and os.path.isabs(resolved) and resolved == abs_target
-    record("ST2_相对路径归一(BUG-524)", "PASS" if st2_ok else "FAIL",
-           "FIST_ACCEPT_JS 给相对路径时必须按**调用方 cwd**归一；不归一则沙箱 cwd 下读成不存在"
-           "（naive 读数=%s ⇒ 未归一会在这里红）" % naive_ok,
-           ["raw=%s" % rel_target,
-            "resolved=%s isfile=%s" % (resolved, resolved_ok),
-            "naive_isfile_in_sandbox=%s" % naive_ok])
-    if not st2_ok:
-        print("[FATAL] ST2：路径归一失灵 ⇒ FIST_ACCEPT_JS 是个被承认但不生效的旗标")
-        sys.exit(3)
-
-    # ── ST3 `--help` 必须真的只出帮助（BUG-524②）──────────────────────────
-    # 行为级：起子进程跑 `--help`，要求 rc=0、回了用法段、**且没进真检查分支**
-    # （真检查会打 `server = ` 那行横幅）。摘掉处理分支 ⇒ 落进真检查 ⇒ 这一格红。
-    hp = subprocess.run([sys.executable, os.path.abspath(__file__), "--help"],
-                        capture_output=True, timeout=120)
-    htxt = hp.stdout.decode("utf-8", "replace")
-    st3_ok = (hp.returncode == 0 and "用法：" in htxt and "server = " not in htxt)
-    record("ST3_帮助旗标(BUG-524)", "PASS" if st3_ok else "FAIL",
-           "--help/-h 在白名单里就必须有处理分支；否则 40 秒全量复验会被当帮助跑掉",
-           ["rc=%d 有用法=%s 落了真检查=%s" % (hp.returncode, "用法：" in htxt,
-                                               "server = " in htxt)])
-    if not st3_ok:
-        print("[FATAL] ST3：--help 没被处理（rc=%d）⇒ 白名单里有旗标没人认领"
-              % hp.returncode)
-        sys.exit(3)
-
+# （ST1/ST2/ST3 尺子自检格已前移到一切真检查之前 —— BUG-523 fail-fast，见 A1 前那一段。）
 srv.close()
 
 # ═══════════════════════════════════════════════════════════════════ 结论
