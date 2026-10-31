@@ -438,6 +438,7 @@ R115 那一批还了 N2 的 5 份连字符债却没同批把上限从 4 降到 0
 | BUG-512 | 同一条链解除后第 43 步第一次执行 | 干净树上「关键清单点了 gitignored 文件」⇒ **该步从未产出过结论** |
 | BUG-514 | 同上，第 47 步第一次执行 | 夹具 `AttributeError` ⇒ **整套对照一支都没跑** |
 | BUG-515 | 同上，第 49 步第一次执行 | 上限烂掉（实测 0 < 上限 4）⇒ **门形同虚设** |
+| BUG-519 | 同上，第 51 步第一次执行 | 探针在 ns 物理隔离后**整段变量盲**（五处）⇒ 8 格里 4 格红在「任务不存在」这个假象上 |
 
 四单同一个形状：**上游一步永久红 ⇒ 下游 N 步「看起来从未跑过」，缺陷在场、门不开、无人看见**。
 ⇒ 建议的下一把尺（本轮未做，已写进 BUG-515 小记）：把「本次 run 里 skipped 的 gate 步骤数」本身做成一个被观察的读数——
@@ -452,3 +453,26 @@ skipped 不是「没事」，是「没测」。
 | 拒收六项活体探针（重跑，产物身份当场核过） | **6 格 = 5 PASS / 0 FAIL / 1 SKIP，rc=0**；被测产物 = `_build/js/release/build/cmd/cli/cli.js`（`sha8=0456b470`、`tools=182`、构建于 14:03，晚于最后一笔 `.mbt` 提交 13:47；`node cli.js version` 自报 **FIST-Mbt v0.3.11**）；唯一 SKIP 是 A4 的 native 臂，理由逐字披露：本机无 Windows native 产物、已发布 native 资产仅 linux-x64（⇒ BUG-513 那一格） | `temp/acc_final_0311.log` + `temp/acceptance-recheck/*` |
 | 账本 | 抬头 503 条 / OPEN 5（BUG-506、510、513、516、517）；形态判据干净 | `memory/bugs.md` |
 | 文档面 | `check_doc_surface`（J1–J17）/ `check_doc_paths` / `check_scripts_index` / `check_doc_dup` / `check_plugin_sync` / `check_tool_add_completeness` / `check_registration_numbers` 全 rc=0 | 各尺裸跑 |
+
+### 8.12 第五格：第 51 步（心跳跨进程）第一次执行就红——红在探针身上，不在产品身上
+
+run `41179798322`（commit `6419cd84`）：第 **49** 步 `Scripts naming guard` **success** ⇒ **BUG-515 的正身到位**；
+第 50 步 `Store-isolation probe` 第一次拿到结论 **success**；第 **51** 步 `Heartbeat cross-process guard` **failure**（52~54 又被挡）。
+
+盘上事实与回执相反：沙箱 ns 库现读 4 条任务（`已领取/执行中/已暂停/已领取`）+ 1 行心跳，而探针报
+`task not found: T0` ⇒ **被测对象没坏，是探针没接到它**（判例-33 的第三层）。五处成因与处置逐条记在 **BUG-519**，要点三条：
+
+1. **任务级调用不带 `namespace`** ⇒ 走主库；ns 物理隔离之后（BUG-420/501）任务行在 `.fist-mbt/data/<ns>.db`，
+   工具描述本来就写着「任务在独立 ns 库里时必须传」；
+2. **setup 的返回值被整个丢掉** ⇒ `_error`（ACL fail-closed、缺 `agent` 身份落到缺省 `manual`）一路咽进八格判定，
+   rc=1 冒充「缺陷在场」。现在加 `must_ok()`：setup 任一被拒 ⇒ **rc=2「探针不可用」**并**转述服务端回执**，
+   不再自拟出路（我第一版自拟那句在 `pause` 那格就是错的——真缺的是 `agent=`，不是 `namespace`）；
+3. **取证读的是主库**：`db_rows()` 连 `FIST_DB_PATH` 那台 ⇒ D2「回滚后状态」恒 `None`；沙箱清场列表也只有主库，
+   残留会让下一轮读到上一轮的任务行（BUG-510/117 同族）。两处同批改指 ns 物理库 + 补 `NS_DB` 清场。
+
+⚠️ **本机读数不算 HEAD 的证据**（判例-32）：本机 `_build/js/debug/…/cli.js` 建于 2026-10-30 23:25，
+heal 回执还打着旧文案 `scope="all-namespaces"`，而 HEAD 源码给的是 `"main-db/all-ns-rows"`/`"namespace"`
+⇒ 产物落后于源码；工作树又带着 39 份别人的在途 `.mbt`，本机重建会把半套改动打进被测面。
+⇒ **正身只在 CI（干净树 + HEAD 构建）**：本单关闭条件 = 推送后第 51 步的结论原文；
+若 CI 在 setup 四笔全部放行之后仍红 B/D/D2，那才是产品缺陷（`heal`/`watchdog_tick` 在 ns 路由下扫不到本应扫到的 ns 库，
+而 `list`/`get` 同 ns 读得到）——**这一格现在没有锁，因为本机测不了，所以不许提前写成任何一种结论**。

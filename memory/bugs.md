@@ -13981,3 +13981,57 @@ SELFTEST FAIL（18 格：clean-synth-green … real-ceiling-not-looser-than-meas
 2. 约定自检函数一律叫 `selftest()` 并改名 `surface_selftest`；
    ⚠️ 改名会同时失去按名匹配的豁免面（判例-39），`check_selftest_call_face` 的白名单与本尺都得同批扫；
 3. 在这把尺的结论行里**点名「未被识别的自检体清单」**（只报不判）——最便宜，先把看不见变成看得见。
+
+
+## BUG-519 [2026-10-31T07:45:00Z] [medium] FIXED
+- summary: 心跳跨进程探针 `scripts/blackbox/e2e_heartbeat_xproc.py` 在 **ns 物理隔离之后整段是变量盲的**（五处），
+  而且把 setup 的返回值**全部丢弃** ⇒ CI 第 51 步第一次执行就 8 格里红 4 格，而那四格红的全是「任务不存在」这个假象
+- detail: ## 现形（run `41179798322` / job `124474681134`，commit `6419cd84`，第 51 步**有史以来第一次执行**）
+
+掩蔽链解开到第 51 步（BUG-508→512→514→515→本单，同一形状的第五例）：
+
+```
+A heartbeat 回执   {"_error": "task not found: T0"}
+  A0 heartbeat 自述已落库(persisted)   FAIL | persisted=None backend=None
+  B 跨进程心跳可见（last_seen 非空）    FAIL | active_tasks={}
+  D 无心跳+活动时钟超 timeout -> 仍回滚  FAIL | heal(timeout_sec=1) -> healed=[]
+  D2 回滚后状态是可重派的「已领取」      FAIL | T0r2 -> None
+基数门（臂集合==声明的 8 格）  4/8 通过   === E2E-HEARTBEAT-XPROC: FAIL === rc=1
+```
+
+**盘上事实**（沙箱 ns 库 `temp/hb-xproc-box/.fist-mbt/data/hb-xproc.db` 现读）：4 条任务全在，
+状态 `已领取/执行中/已暂停/已领取`，心跳表 1 行（`T0`）。⇒ 被测对象没坏，是**探针没接到它**。
+
+## 五处，逐条
+
+| # | 位置 | 错在哪 | 后果 |
+|---|---|---|---|
+| ① | `claim`/`execute`/`heartbeat`/`pause` | 不带 `namespace` ⇒ 走主库（任务行在 **ns 物理库**） | `task not found: T0` |
+| ② | setup 缺 `agent_acl_grant` | ns ACL 是 **fail-closed**（BUG-408 的设计，`agent_acl_grant` 是唯一自救面） | `claim` 被 ACL 拒 |
+| ③ | `pause` 不带 `agent` | 判定身份落到缺省 `manual`（BUG-436 那一族：「工具缺省不得当身份」） | `ACL 无记录（fail-closed）` |
+| ④ | `db_rows()` 连 `DB`（主库） | 取证面读错库：ns 物理库是**第二台** | D2 读到 `None`，把「读错库」报成「产品没回滚」 |
+| ⑤ | 四笔 setup 的返回值**直接丢掉** | `_error` 一路咽进八格判定 | 三个产品结论红在同一个假象上，且 rc=1 冒充「缺陷在场」 |
+
+**沙箱清场也只清了主库**（`for suf in ("","-wal","-shm"): os.remove(DB+suf)`）——ns 库是后来才存在的第二台，
+残留会让下一轮读到上一轮的任务行（BUG-510/117 那一族的又一处）；清场列表同批补 `NS_DB`。
+
+### FIXED(2026-10-31T07:45:00Z / BUG-519)
+- evidence: 回归锁分两层——
+  · **机制层（新）**：`must_ok(step, recv)` 把 setup 的 `_error` 一律转成 `die()` ⇒ **rc=2「探针不可用」**，
+    与 rc=1「判据红」分档（判例-33：服务本体 ≠ 服务接入；这里再接一条「夹具坏了 ≠ 被测有缺陷」）。
+    调用面实测（`importlib` 直调真函数，不靠注释）：`must_ok("claim", {"ok":true,…})` 原样返回；
+    `must_ok("claim", {"_error":"acl: 默认拒绝写"})` ⇒ 打印 `E2E-HEARTBEAT-XPROC REFUSED: claim 被拒（夹具面）…`
+    并 `SystemExit(2)`。**变异对照就是这一跑本身**：修完 ①②③ 之前它给 rc=1 加四条假红，
+    修完 ①②③ 之后当场从 rc=1 变 rc=2 并点名「pause 缺的是 agent=」——**出路文案直接转述服务端回执**，
+    探针不再自拟出路（我第一版自拟的那句「先查 ns 路由」在 ③ 这一格就是错的）。
+  · **实现层**：① 四笔任务调用逐笔带 `namespace=NS`；② setup 先 `agent_acl_grant(agent_id="hb-agent", namespace=NS)`；
+    ③ `pause` 显式 `agent="hb-agent"`；④ `db_rows()` 改连 `NS_DB = BOX/.fist-mbt/data/hb-xproc.db` 并在文件不存在时
+    `die()`（不返回空列表冒充读数）；⑤ 清场列表补 `NS_DB`；取证身份行新增 `ns 物理库（取证读这一台）`。
+  · `--selftest` 28 格 rc=0（不启进程那一层不变）；本机无参数跑从 `rc=1 / 4 格通过` 变成 **`rc=2` + 精确指认第 ③ 处前置**。
+  ⚠️ **本机那三格 FAIL 不能当 HEAD 的读数**（判例-32 同族）：本机 `_build/js/debug/…/cli.js` 建于 2026-10-30 23:25，
+  而今天的 ns 路由改动在其后——现证：本机 heal 回执仍打 `scope="all-namespaces"`，而 HEAD 的源码给的是
+  `"main-db/all-ns-rows"`/`"namespace"` ⇒ **产物落后于源码**。工作树另有 39 份别人的在途 `.mbt`，
+  本机重建会把半套改动打进被测面 ⇒ **正身只在 CI（干净树 + HEAD 构建）**：关闭条件 = 推送后第 51 步的结论原文。
+  ⚠️ 若 CI 仍红在 B/D/D2（干净产物、且 setup 四笔都已确认放行），那才是**产品缺陷**：
+  `heal`/`watchdog_tick` 在 ns 物理路由下扫不到本应扫到的 ns 库（`list`/`get` 同 ns 却读得到）——
+  这一格现在**没有锁**，因为本机测不了；不许在此之前把它写成结论（无论绿红）。

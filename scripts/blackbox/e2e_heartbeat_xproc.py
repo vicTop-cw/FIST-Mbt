@@ -42,6 +42,9 @@ CLI = os.path.join(ROOT, "_build", "js", "debug", "build", "cmd", "cli", "cli.js
 BOX = os.path.join(ROOT, "temp", "hb-xproc-box")
 DB = os.path.join(ROOT, "temp", "hb-xproc.db")
 NS = "hb-xproc"
+# BUG-519：ns 物理库的真实位置 = `server cwd` 下的 `.fist-mbt/data/<ns>.db`（MultiStore 默认 data_dir
+# 相对 cwd，而 Sess 用 cwd=BOX 起进程）。任务级调用与取证读盘都必须对准这一台。
+NS_DB = os.path.join(BOX, ".fist-mbt", "data", NS + ".db")
 # 协议注记：2026-07-28 版无 initialize 握手，_meta 必须逐条请求带（否则 -32602）
 META = {
     "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -129,6 +132,22 @@ def die(msg, hint=""):
     sys.exit(2)
 
 
+def must_ok(step, recv, hint=""):
+    """夹具面：setup 那一笔被服务端拒 ⇒ 走 rc=2「探针不可用」，不冒充「被测对象有缺陷」。
+
+    原来这四笔的返回值直接被丢掉，`_error` 一路咽到八格判定里，
+    于是「心跳跨进程不可见」「回滚没发生」这些**产品结论**全部红在「任务不存在」这个假象上
+    （判例-35 的同型：探针给出的结论 ≠ 探针真的测到了东西）。
+    服务端的拒绝文案本身会点名缺的前置（ns 路由 / ACL 身份），所以这里**原样转述，不再自拟出路**——
+    自拟那句在本轮就是误导（pause 真正缺的是 `agent=`，不是 namespace）。
+    """
+    if isinstance(recv, dict) and "_error" in recv:
+        err = str(recv.get("_error", ""))
+        die("%s 被拒（夹具面）：%s" % (step, err[:400]),
+            hint or "按上面回执里点名的前置补齐（BUG-519：本探针曾在 ns 路由与 ACL 身份两处是变量盲的）")
+    return recv
+
+
 class Sess:
     """一个真 `node cli.js serve` 进程：FIST_DB_PATH 指到隔离库，绝不碰仓库根台账。"""
 
@@ -190,7 +209,15 @@ class Sess:
 
 
 def db_rows(sql):
-    con = sqlite3.connect(DB)
+    """读 **ns 物理库**（BUG-519）：任务与心跳行自 BUG-420/501 之后落在
+    `<BOX>/.fist-mbt/data/hb-xproc.db`，而 `FIST_DB_PATH` 指的那台是**主库**——
+    原来这里连主库，于是 `select id,status from tasks` 恒空 ⇒ D2「回滚后状态」拿 None 当结论，
+    把「读错了库」报成「产品没回滚」。读不到 ns 库一律 `die()` 走 rc=2，不返回空列表冒充读数。
+    """
+    if not os.path.isfile(NS_DB):
+        die("ns 物理库不存在：%s" % NS_DB,
+            "任务行落在 ns 库里；先确认 publish 真落盘（BUG-420/501 的物理隔离），别去查主库")
+    con = sqlite3.connect(NS_DB)
     try:
         return list(con.execute(sql))
     finally:
@@ -228,11 +255,14 @@ def main():
         die("仓库根解析失败")
     os.makedirs(BOX, exist_ok=True)
     # 沙箱每次清场（BUG-117 的教训：否则判据红在"上一轮的旧状态"上）
-    for suf in ("", "-wal", "-shm"):
-        try:
-            os.remove(DB + suf)
-        except OSError:
-            pass
+    # ⚠️ BUG-519：清场列表原来**只有主库**——ns 物理库是后来才存在的第二台，
+    # 残留会让这一轮读到上一轮的任务行（状态字面像"没回滚"，实际是"没清场"）。
+    for _sbx in (DB, NS_DB):
+        for suf in ("", "-wal", "-shm"):
+            try:
+                os.remove(_sbx + suf)
+            except OSError:
+                pass
     ensure_patched_esm()
     with open(CLI, "rb") as f:
         blob = f.read()
@@ -245,9 +275,14 @@ def main():
     except Exception:
         say("HEAD", "(取不到)")
     say("隔离库", DB)
+    say("ns 物理库（取证读这一台）", NS_DB)
 
     # ---- 建两条在途任务 + 一条已暂停：全部由进程 A 落库后杀掉进程 ----
     a = Sess("A")
+    # BUG-519：ns ACL 是 fail-closed（BUG-408 的设计，`agent_acl_grant` 是唯一自救面）。
+    # 探针原先不授权就直接 claim ⇒ 被拒的那笔被**静默咽掉**，八格全红在「任务不存在/没回滚」上。
+    # 夹具面必须先把自己的前置条件做出来，再谈被测对象对不对；做不出来就 rc=2 自拒。
+    must_ok("agent_acl_grant", a.call("agent_acl_grant", {"agent_id": "hb-agent", "namespace": NS}))
     r1 = a.call("publish_parallel", {"project_dir": ".",
                                      "namespace": NS, "description": "臂A/B：心跳跨进程"})
     t1 = r1.get("task_id", "")
@@ -260,13 +295,19 @@ def main():
     r4 = a.call("publish_parallel", {"project_dir": ".",
                                      "namespace": NS, "description": "臂E：判死但回滚不了要披露"})
     t4 = r4.get("task_id", "")
+    # 夹具面（BUG-519）：任务行落在 **ns 物理库** `.fist-mbt/data/hb-xproc.db`（BUG-420/501 之后的物理隔离），
+    # 而任务级工具默认走主库 ⇒ 每一笔任务调用都必须带 `namespace`（工具描述里写着「任务在独立 ns 库里时必须传」）。
+    # 原来这四笔不带 ns ⇒ 服务端在 default 库里找不到任务，`heartbeat` 回 `_error`，
+    # 而**探针把 setup 的失败咽掉了**：后面七格全部红在「任务不存在」这个假象上（判例-35：探针的结果 ≠ 探针在工作）。
+    # 现在两件事一起做：① 逐笔带 ns；② setup 任一回 `_error` 立即 `die()` 走 rc=2「夹具不可用」，
+    # 绝不让「接入没通」冒充「被测对象有缺陷」（判例-33 同一口径）。
     for tid in (t1, t2, t3, t4):
         if not tid:
             die("publish_parallel 未回 task_id：%s" % str(r1)[:200])
-        a.call("claim", {"task_id": tid, "assignee": "hb-agent"})
-    a.call("execute", {"task_id": t2, "deliverable": "d-xproc"})
-    hb1 = a.call("heartbeat", {"task_id": t1, "signal": "active"})
-    a.call("pause", {"task_id": t3})
+        must_ok("claim", a.call("claim", {"task_id": tid, "assignee": "hb-agent", "namespace": NS}))
+    must_ok("execute", a.call("execute", {"task_id": t2, "deliverable": "d-xproc", "namespace": NS}))
+    hb1 = must_ok("heartbeat", a.call("heartbeat", {"task_id": t1, "signal": "active", "namespace": NS}))
+    must_ok("pause", a.call("pause", {"task_id": t3, "namespace": NS, "agent": "hb-agent"}))
     say("A heartbeat 回执", json.dumps(hb1, ensure_ascii=False)[:220])
     arm("A0 heartbeat 自述已落库(persisted)",
         p_hb_persisted(hb1),
