@@ -170,6 +170,12 @@ jobs:
         env:
           VER: ${{ needs.meta.outputs.version }}
         run: |
+          # ⚠️ Actions 把这段跑成 `bash -e {0}` ⇒ 「**期望非零**」的那一条会把整步直接打死。
+          # 2026-10-31 实测：版本闸先 PASS（`version 回执：[FIST-Mbt v0.3.11]`），下一行
+          # `fist-mbt definitely-not-real` 正常返回 rc=2 ⇒ errexit 当场吃掉，日志只留
+          # `##[error]Process completed with exit code 2`，看着像产物坏了，其实是**闸的写法**坏了。
+          # ⇒ 显式收回 -e，逐条自己取 rc：闸的语义是「不对才红」，不是「非零就红」。
+          set +e
           set -uo pipefail
           SRC=""
           for c in _build/native/debug/build/cmd/cli/cli _build/native/debug/build/cmd/cli/cli.exe; do
@@ -183,13 +189,20 @@ jobs:
           mkdir -p _release/native
           cp "$SRC" _release/native/fist-mbt
           chmod +x _release/native/fist-mbt
-          OUT="$(./_release/native/fist-mbt version 2>&1 | head -1)"
-          echo "version 回执：[$OUT]（期望逐字 [FIST-Mbt v$VER]）"
-          if [ "$OUT" != "FIST-Mbt v$VER" ]; then
-            echo "::error::native 产物调用面不回显版本 ⇒ 不发一枚「建得出来但回显旧版/一用就崩」的二进制"
+          if [ ! -f _release/native/fist-mbt ]; then
+            echo "::error::复制产物失败（_release/native/fist-mbt 不在）"
             exit 1
           fi
-          ./_release/native/fist-mbt definitely-not-real >/dev/null 2>&1
+          ./_release/native/fist-mbt version >_gate_version.txt 2>&1
+          vrc=$?
+          OUT="$(head -1 _gate_version.txt)"
+          echo "version rc=$vrc 回执：[$OUT]（期望逐字 [FIST-Mbt v$VER]）"
+          if [ "$OUT" != "FIST-Mbt v$VER" ]; then
+            echo "::error::native 产物调用面不回显版本 ⇒ 不发一枚「建得出来但回显旧版/一用就崩」的二进制"
+            sed -n '1,8p' _gate_version.txt
+            exit 1
+          fi
+          ./_release/native/fist-mbt definitely-not-real >_gate_unknown.txt 2>&1
           rc=$?
           echo "未知子命令 rc=$rc（Linux native 实测应为 2；Windows 面的 rc=0 另有 BUG-506）"
           if [ "$rc" -eq 0 ]; then
@@ -197,7 +210,13 @@ jobs:
             exit 1
           fi
           (cd _release/native && zip -qr "../fist-mbt-native-linux-x64-v$VER.zip" .)
-          ls -la "_release/fist-mbt-native-linux-x64-v$VER.zip"
+          zrc=$?
+          ZIP="_release/fist-mbt-native-linux-x64-v$VER.zip"
+          if [ "$zrc" -ne 0 ] || [ ! -s "$ZIP" ]; then
+            echo "::error::打包没成功（zip rc=$zrc，$ZIP 存在且非空=$([ -s "$ZIP" ] && echo yes || echo no)）"
+            exit 1
+          fi
+          ls -la "$ZIP"
 
       - uses: actions/upload-artifact@v4
         with:
