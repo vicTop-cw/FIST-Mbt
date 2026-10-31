@@ -138,6 +138,28 @@ python scripts/fist.py call store_open --namespace scratch --scratch true
 python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path":"moon.mod","contains":"vicTop-cw"}]'
 ```
 
+### 拒收项复验入口（六项核心承诺，逐条打到调用面）
+
+申报里承诺的六件事——物理多租户隔离、错误指纹三轮自动修复、可替换 Executor、native 参数分派、
+DAG 环依赖、Omega 验收门——都由一支活体探针复验（跨进程起真 server、真读 sqlite，不靠静态扫）：
+
+```bash
+python scripts/blackbox/e2e_acceptance_recheck.py --selftest --json
+#   期望末行：结论：7 格（拒收项 6 + 尺子自检 1）= 6 PASS / 0 FAIL / 1 SKIP
+#   第 1 行 `server = …(sha8=…) tools=182` 是**产物身份**：复验结论只对那一枚成立
+```
+
+它默认验 `_build/js/release` 的本机产物；**公网 Release 里那枚**（评委实际下载到的东西）这样指给它：
+
+```bash
+gh release download v0.3.11 -R vicTop-cw/FIST-Mbt -p fist-mbt-js-v0.3.11.zip
+python -c "import zipfile;open('fist-mbt.js','wb').write(zipfile.ZipFile('fist-mbt-js-v0.3.11.zip').read('fist-mbt.js'))"
+FIST_ACCEPT_JS="$(pwd)/fist-mbt.js" python scripts/blackbox/e2e_acceptance_recheck.py --selftest --json   # 必须绝对路径，见 BUG-524
+```
+
+A4 那一格在 Windows 本机回 `SKIP` 而不是 `PASS`：探针拒绝拿 WSL 读数冒充 Windows 交付物（判例-33）。
+逐条整改过程、远端 CI 读数与遗留缺陷见 [`reports/2026-10-31-hackathon-rejection-closure-report.md`](reports/2026-10-31-hackathon-rejection-closure-report.md)。
+
 ### 在 DeepSeek Harness 里安装（插件态）
 
 npm 包自带预构建 CLI（`dist/fist-mbt.js`），装插件不需要 moon、不需要源码构建：
