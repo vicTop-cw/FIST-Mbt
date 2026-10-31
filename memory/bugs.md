@@ -14530,3 +14530,40 @@ moon build --target native cmd/cli    → **rc=0**，产物 `_build/native/debug
   —— 谁把 `actions/checkout` 删掉，`meta` 立刻红在第一步并 skip 全链（红的位置就是病因，不必再猜）。
   这条锁是「从未被走到的分支」型缺陷的反面：**修好之后它每天都在被走到**。
   同批的门锁：`release` 作业的 `if:`（两半必须同批，先落门再救活路，否则第一个走通派发的人会把公开事故发出去）。
+
+
+## BUG-529 [2026-10-31T12:20:00Z] [medium] OPEN
+- summary: `scripts/blackbox/e2e_acceptance_recheck.py` 的**尺子自检格（ST1/ST2/ST3）排在真检查之后**
+  ⇒ `--selftest` 也要 node + js 产物 + server 起得来；任一前置缺失就 rc=2 退出，**三格一支都不会执行**。
+  本轮加 ST2/ST3 时把它扩成了「自检依赖产品」的形状（ST1 原本就如此，我延续了它）
+- detail: ## 实测（两条通道，不是推理）
+
+```
+FIST_ACCEPT_JS=temp/definitely-missing.js python scripts/blackbox/e2e_acceptance_recheck.py --selftest
+  → [FATAL] FIST_ACCEPT_JS 指向的文件不存在：…（rc=2）        ← 起跑就退，ST1/ST2/ST3 一支没跑
+```
+代码面：`# 起跑` 一节先 `find_js()` → `Server(...)` → `tools_count()`（`n_tools < 100` 即 `sys.exit(2)`），
+六格跑完之后才是 `if "--selftest" in sys.argv[1:]` 那段（ST1 注库、ST2 归一、ST3 起子进程）。
+
+## 为什么这一形状值得记（不是排版问题）
+
+1. **「尺子坏了」这一档被前置挤掉了**：`rc=3` 的契约（自检没抓到违例 ⇒ 六格的绿不可信）只在
+   「node 在、产物在、server 起得来」的机器上才可达。评审机上没有 node 24 ⇒ 看到 rc=2，
+   得到的是「探针不可用」，而**拿不到「这三格到底会不会红」**——这正是判例-33 说的
+   「被测对象能工作」与「被测对象被正确接入」两件事被合成了同一件。
+2. **ST 与 A 格互相拖死**：ST1 需要 `MAIN_DB`（server 建库才有那张表）⇒ 现在无法简单把整段前置。
+
+## 三条出路（择一，都要配反证格）
+
+- ① **分层前置**：ST2/ST3 不依赖 server（一个纯路径归一、一个 spawn `--help`），把它们提到 `# 起跑` 之前；
+  ST1 留在原处但在 rc=2 那条路上**明确打印「ST2/ST3 未执行」**，不许让「没跑」长得像「跑过了」。
+- ② `--selftest-only` 旗标：跳过六格只跑 ST（ST1 需要库 ⇒ 用合成库或把 ST1 也改成不依赖 server 的形状）。
+  代价：多一条旗标面，要按 R207 补未知旗标拒绝与拼错对照。
+- ③ 承认边界：在 README 的复验入口写明「`--selftest` 需要 node ≥ 24 + 一枚打过 shim 的 js 产物」，
+  并把 ST 格另迁到一支不依赖 server 的独立判据。**不推荐**——那是把「尺子能不能红」这件事交回散文。
+
+## 关联
+
+与 BUG-524（同日 FIXED）同一支探针；ST2/ST3 是那一笔新增的。**本轮没做的事**（如实记）：
+没改这段顺序——改它要动 ST1 的依赖面，而今天已经对这支被评审使用的探针做过两处改动，
+不宜在同一批里叠第三处未验证的重排。
