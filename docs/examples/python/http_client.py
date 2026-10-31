@@ -6,7 +6,7 @@
   1) GET  /tools               拿全量工具清单（含 inputSchema，可自描述驱动）
   2) POST /tools/{name}/call   body 就是该工具的 arguments，回执已剥 JSON-RPC 壳
 
-用法：先起桥 `python scripts/fist-mbt-http.py 3137`，再 `python http_client.py [port]`。
+用法：先起桥 `python scripts/run_fist_mbt_http.py 3137`，再 `python http_client.py [port]`。
 本文件同时是契约的活体冒烟——跑通即证明 fist-mbt-api v1 对任意语言可接。
 """
 import json

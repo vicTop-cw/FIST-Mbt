@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # docs/examples/curl/http_api.sh — 多语言接入的 curl 示例（计划 multilang S1「curl/requests/fetch
-# 示例可用」的 curl 那格；契约真源 docs/openapi/fist.yaml，桥起法 python scripts/fist-mbt-http.py）。
+# 示例可用」的 curl 那格；契约真源 docs/openapi/fist.yaml，桥起法 python scripts/run_fist_mbt_http.py）。
 # 纯标准工具（curl + python3 只做 JSON 摘要，没有它就整行输出原文）。
 # 用法：bash docs/examples/curl/http_api.sh [port]     # 默认 3137
 set -euo pipefail

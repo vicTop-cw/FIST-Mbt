@@ -1,4 +1,3 @@
-
 ///|
 /// R220：**模型校验锁** —— `dpll_sat` 返回 `Some(model)` 时，`model` 必须**真的满足每一条子句**。
 ///
@@ -13,10 +12,16 @@
 test "dpll_sat 返回的模型必须满足全部子句" {
   let cases : Array[BoolExpr] = [
     mk_or(mk_var("p"), mk_not(mk_var("p"))), // 永真
-    mk_and(mk_or(mk_var("a"), mk_var("b")), mk_or(mk_not(mk_var("a")), mk_var("c"))),
+    mk_and(
+      mk_or(mk_var("a"), mk_var("b")),
+      mk_or(mk_not(mk_var("a")), mk_var("c")),
+    ),
     mk_implies(mk_var("p"), mk_var("q")),
     mk_iff(mk_var("x"), mk_var("y")),
-    mk_and(mk_var("m"), mk_and(mk_var("n"), mk_not(mk_or(mk_var("m"), mk_var("n"))))),
+    mk_and(
+      mk_var("m"),
+      mk_and(mk_var("n"), mk_not(mk_or(mk_var("m"), mk_var("n")))),
+    ),
   ]
   for e in cases {
     let cnf = to_cnf(e)
@@ -31,7 +36,10 @@ test "dpll_sat 返回的模型必须满足全部子句" {
               satisfied = true
             }
           }
-          assert_true(satisfied, msg="dpll_sat 返回了 model，但有子句不被该 model 满足")
+          assert_true(
+            satisfied,
+            msg="dpll_sat 返回了 model，但有子句不被该 model 满足",
+          )
         }
     }
   }
@@ -48,7 +56,10 @@ test "is_satisfiable 与 dpll_sat 双向一致" {
     mk_not(mk_var("p")),
     mk_and(mk_var("p"), mk_not(mk_var("p"))), // unsat
     mk_implies(mk_var("p"), mk_var("q")),
-    mk_and(mk_implies(mk_var("p"), mk_var("q")), mk_and(mk_var("p"), mk_not(mk_var("q")))), // unsat
+    mk_and(
+      mk_implies(mk_var("p"), mk_var("q")),
+      mk_and(mk_var("p"), mk_not(mk_var("q"))),
+    ), // unsat
     mk_const(true),
     mk_const(false),
   ]
@@ -57,6 +68,10 @@ test "is_satisfiable 与 dpll_sat 双向一致" {
       None => false
       Some(_) => true
     }
-    assert_eq(is_satisfiable(e), has_model, msg="is_satisfiable 与 dpll_sat 结论分叉")
+    assert_eq(
+      is_satisfiable(e),
+      has_model,
+      msg="is_satisfiable 与 dpll_sat 结论分叉",
+    )
   }
 }

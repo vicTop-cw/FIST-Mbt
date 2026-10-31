@@ -152,7 +152,7 @@ You can browse and install extra skills here:
 
 **两道防线各司其职**（别只指望其中一道）：
 
-- **提交时** `scripts/_new_script_hygiene.py` 的 **A3** 给 advisory（**低精度**：实测 6/6 误报，
+- **提交时** `scripts/check_new_script_hygiene.py` 的 **A3** 给 advisory（**低精度**：实测 6/6 误报，
   因为 while 分派 / 整体拒绝这些合格形状它认不全）⇒ 看到它**先自己跑一次
   `python <script> --definitely-not-real` 确认**，再据它改代码；
 - **落地后** `scripts/check_arg_face_strict.py` 是**行为级**真门（真跑、按结果判，已在电池里）。

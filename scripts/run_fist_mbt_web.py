@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """FIST-Mbt Web 管理面板 —— M0 只读任务看板 后端
 
-定位：MCP Server 的可视化操作层后端（只读）。复用 scripts/fist-mbt-http.py 的
+定位：MCP Server 的可视化操作层后端（只读）。复用 scripts/run_fist_mbt_http.py 的
 MCPBridge 直接调用 stdio MCP server，绝不绕过 MCP 直读 SqliteStore。
 
 端点：
@@ -20,8 +20,8 @@ MCPBridge 直接调用 stdio MCP server，绝不绕过 MCP 直读 SqliteStore。
   未设置时默认无认证（默认只监听 127.0.0.1）。
 
 用法：
-  python scripts/fist-mbt-web.py [port]
-  FIST_WEB_PORT=5173 python scripts/fist-mbt-web.py
+  python scripts/run_fist_mbt_web.py [port]
+  FIST_WEB_PORT=5173 python scripts/run_fist_mbt_web.py
   两者都给时位置参数优先。
 
 环境：
@@ -52,15 +52,15 @@ log = logging.getLogger("fist-mbt-web")
 ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = ROOT / "web"
 
-# 复用 fist-mbt-http.py 的 MCPBridge / SSE subscriber / heartbeat 循环（不复制粘贴）。
-# 注意：fist-mbt-http.py 顶层的 `PORT = resolve_port(...)` 与全局 `bridge` 在 import 时求值，
+# 复用 run_fist_mbt_http.py 的 MCPBridge / SSE subscriber / heartbeat 循环（不复制粘贴）。
+# 注意：run_fist_mbt_http.py 顶层的 `PORT = resolve_port(...)` 与全局 `bridge` 在 import 时求值，
 # 这里不引入副作用：本文件的 PORT 由自己的 resolve_port 决定，bridge 由本文件新建。
 # 文件名带连字符不是合法标识符 ⇒ 用 importlib 从文件路径加载模块。
 import importlib.util as _ilu
 
 _http_spec = _ilu.spec_from_file_location(
-    "_fist_mbt_http_bridge", str(ROOT / "scripts" / "fist-mbt-http.py"))
-assert _http_spec and _http_spec.loader, "无法定位 scripts/fist-mbt-http.py"
+    "_fist_mbt_http_bridge", str(ROOT / "scripts" / "run_fist_mbt_http.py"))
+assert _http_spec and _http_spec.loader, "无法定位 scripts/run_fist_mbt_http.py"
 _fist_mbt_http = _ilu.module_from_spec(_http_spec)
 _http_spec.loader.exec_module(_fist_mbt_http)
 
@@ -81,7 +81,7 @@ def resolve_port(argv, env) -> int:
         p = int(str(raw).strip())
     except ValueError:
         raise SystemExit(
-            "FATAL 端口不是整数：%r（用法：python scripts/fist-mbt-web.py [port]，"
+            "FATAL 端口不是整数：%r（用法：python scripts/run_fist_mbt_web.py [port]，"
             "或 FIST_WEB_PORT=<port>）" % raw)
     if not (1 <= p <= 65535):
         raise SystemExit("FATAL 端口越界（1..65535）：%d" % p)
@@ -288,7 +288,7 @@ th{background:#f9fafb}
 </head>
 <body>
 <h1>fist-mbt Dashboard<span class="pill">后端已就绪，前端待建</span></h1>
-<p>M0 任务看板后端已就绪（<code>scripts/fist-mbt-web.py</code>）。前端
+<p>M0 任务看板后端已就绪（<code>scripts/run_fist_mbt_web.py</code>）。前端
 <code>web/index.html</code> 尚未创建，此页为占位状态页。</p>
 <h2>API 一览</h2>
 <table>

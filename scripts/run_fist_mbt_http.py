@@ -8,8 +8,8 @@ Exposes:
   GET  /events  → Server-Sent Events stream (notifications)
 
 Usage:
-  python scripts/fist-mbt-http.py [port]        # 位置参数（README「HTTP/SSE 桥」广告的就是这条）
-  FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
+  python scripts/run_fist_mbt_http.py [port]        # 位置参数（README「HTTP/SSE 桥」广告的就是这条）
+  FIST_MCP_PORT=3000 python scripts/run_fist_mbt_http.py
   两者都给时**位置参数优先**（命令行比环境更靠近这次调用）。
 
 Environment:
@@ -37,7 +37,7 @@ log = logging.getLogger("fist-mbt-http")
 ROOT = Path(__file__).resolve().parent.parent
 
 # 端口解析：位置参数 > FIST_MCP_PORT > 3000。
-# BUG-118：README.md:96-97 广告的是 `python scripts/fist-mbt-http.py [port]`，而这里过去
+# BUG-118：README.md:96-97 广告的是 `python scripts/run_fist_mbt_http.py [port]`，而这里过去
 # **只读 env**，位置参数被静默忽略 ⇒ 用户传 3001 仍监听 3000，第二个宿主直接 bind 失败。
 def resolve_port(argv, env) -> int:
     raw = argv[0] if argv else env.get("FIST_MCP_PORT", "")
@@ -47,7 +47,7 @@ def resolve_port(argv, env) -> int:
         p = int(str(raw).strip())
     except ValueError:
         raise SystemExit(
-            "FATAL 端口不是整数：%r（用法：python scripts/fist-mbt-http.py [port]，"
+            "FATAL 端口不是整数：%r（用法：python scripts/run_fist_mbt_http.py [port]，"
             "或 FIST_MCP_PORT=<port>）" % raw)
     if not (1 <= p <= 65535):
         raise SystemExit("FATAL 端口越界（1..65535）：%d" % p)

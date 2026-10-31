@@ -8,9 +8,9 @@
 1. **角色必须写在名字的两端之一**：要么以角色前缀开头（`check_*` 一眼是门禁），要么以角色后缀结尾
    （`*_verify.py` 一眼是验证件）。既无前缀又无后缀的名字，看文件名猜不出它是门禁、工具还是补丁 —— 这是债。
 2. **分隔符只有 `_`**：文件名里出现 `-` 的模块不可 `import`，在 shell 里与在 Python 里被切成的词还不一样
-   （`fist-gate.py` 在 bash 里是一个词、在 Python 里是 `fist` 减 `gate`）。
+   （`fist_gate.py` 在 bash 里是一个词、在 Python 里是 `fist` 减 `gate`）。
    ⚠️ **这条防的是「可能性」，不是「当前用法」**（R67 实测澄清）：现存 5 份连字符文件
-   （`fist-gate.py` / `fist-mbt-http.py` / `fist-mbt-web.py` / `fist-pr-automator.py` / `fist-task-pool.py`）
+   （`fist_gate.py` / `run_fist_mbt_http.py` / `run_fist_mbt_web.py` / `fist_pr_automator.py` / `run_fist_task_pool.py`）
    **当前 0 次被 import**（全部由 `subprocess` 调用，活面共 95 处），
    所以「不可 `import`」这一半理由**对它们当下不适用** —— 但规则仍然成立：
    ① `"fist-gate".isidentifier()` = **False**（永远不可能被 import，哪怕将来想 import）；
@@ -88,7 +88,7 @@
   —— **判据认不出，会误红**。出现这种情形时**在白名单行尾加 `# 引用形态特殊：<说明>`**，
   判据见到该注释即降为 WARN（**不静默放行，也不硬红**）。
 
-**⚠️ 未进白名单的 `_` 文件照样算 N1 债** —— 例如 `_new_script_hygiene.py` / `_run_check_t0r21.py`
+**⚠️ 未进白名单的 `_` 文件照样算 N1 债** —— 例如 `check_new_script_hygiene.py` / `check_t0r21.py`
 **是可独立执行的判据**（只是名字带 `_`），它们的正确归宿是改名 `check_*.py`，不是进白名单。
 
 ## 判定面（共用棘轮，只许下降）
@@ -124,18 +124,18 @@ python scripts/check_scripts_naming.py --selftest    # 合成夹具自证 + 真�
 
 | 现名 | 角色缺位 | 建议 | 活面引用 |
 |---|---|---|---|
-| `_run_check_t0r21.py` | 下划线开头 + 轮次号烤进文件名 | 临时件，移出 `scripts/` 或 `check_t0r21.py` | 0 |
+| `check_t0r21.py` | 下划线开头 + 轮次号烤进文件名 | 临时件，移出 `scripts/` 或 `check_t0r21.py` | 0 |
 | `_tool_registry.py` | 数据件混在脚本宇宙 | 移入 `scripts/data/` 或 `registry_data.py` 并登记豁免 | 53（含归档） |
-| `calibrate_goal_drift.py` | 动词没在表里 | `run_calibrate_goal_drift.py` | 低 |
-| `fist-gate.py` | N1+N2 双债 | `check_fist_gate.py`（它本是合入门） | 70 |
-| `fist-mbt-http.py` / `fist-mbt-web.py` | N1+N2 | `run_http_panel.py` / `run_web_panel.py` | 58 / 26 |
-| `fist-pr-automator.py` | N1+N2（`_automator` 后缀被 `-` 隔断） | `fist_pr_automator.py` | 26 |
+| `run_calibrate_goal_drift.py` | 动词没在表里 | `run_run_calibrate_goal_drift.py` | 低 |
+| `fist_gate.py` | N1+N2 双债 | `check_fist_gate.py`（它本是合入门） | 70 |
+| `run_fist_mbt_http.py` / `run_fist_mbt_web.py` | N1+N2 | `run_http_panel.py` / `run_web_panel.py` | 58 / 26 |
+| `fist_pr_automator.py` | N1+N2（`_automator` 后缀被 `-` 隔断） | `fist_pr_automator.py` | 26 |
 | `fist.py` | 主入口无角色 | `run_fist_cli.py`（入口搬家要同步 `check_entry_paths`） | 175 |
 | `fist_mbt_mcp_client.py` | 名词串 | `mcp_client_probe.py` | 低 |
 | `issue_scan.py` | 与 MCP 工具同名但只是 helper | `run_issue_scan_helper.py` | 36 |
 | `laya_decide.py` | 名词 | `run_laya_decide.py` | 32 |
-| `mcp_bug_loop.py` | 名词 | `run_mcp_bug_loop.py` | 低 |
-| `output_validate.py` | 名词化的验收件 | `check_output_validate.py` | 低 |
+| `run_mcp_bug_loop.py` | 名词 | `run_run_mcp_bug_loop.py` | 低 |
+| `check_output_validate.py` | 名词化的验收件 | `check_check_output_validate.py` | 低 |
 | `pentad_fist.py` | 驱动另一项目的件，名字两头都猜不出 | `run_pentad_fist.py` | 低 |
 | `simulate_head_commit.py` | 动词不在表里 | `_verify` 族：`simulate_head_commit_verify.py` | 低 |
 | `whisperer.py` | 编排件用人名命名 | `run_whisperer.py`（它与 `whisperer_patrol.py` 的分工见 scripts/README） | 74 |

@@ -6,7 +6,7 @@
   - `docs/2026-10-12-fist-mbt-supervisor-tools-plan.md` §5 点名 5 处落点，其中
     `src/server/supervisor_tools_test.mbt` **根本不存在**（测试锁未做），
     另两个新增文件（471 + 622 行）**在磁盘上却不在 HEAD**（已实现、未提交）
-  - `docs/2026-10-12-fist-mbt-web-dashboard-plan.md` 的 M0 落地件 `scripts/fist-mbt-web.py`
+  - `docs/2026-10-12-fist-mbt-web-dashboard-plan.md` 的 M0 落地件 `scripts/run_fist_mbt_web.py`
     **实现完成、README 登记已入库，本体却未跟踪**
 人工逐份核对要读十几份文档、几十个路径，且极易漏。本工具把这步机械化。
 

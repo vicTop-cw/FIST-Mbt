@@ -179,7 +179,7 @@ memory/archive/thinking.archive.md
 /.agents/*_probe2.sh`），不整目录挡：`.agents/pr-*.yaml` 是已跟踪的 PR 描述真源，
 # 上面 `.agents/worktrees/` 是 worktree 护栏，两者都不许被这条规则盖住。
 /.agents/_*
-# `.agents/pr-*.yaml` = `scripts/fist-pr-automator.py` 当轮读的 PR 描述草稿：已跟踪的那 6 份是
+# `.agents/pr-*.yaml` = `scripts/fist_pr_automator.py` 当轮读的 PR 描述草稿：已跟踪的那 6 份是
 # 真源，**未跟踪的**同族（2026-10-24 实测 6 份：pr-automator-windows-json / pr-gate-chain-fmt-warmup
 # / pr-j2-call-face / pr-moon-env-summary-shape / pr-omega-mark-keep / pr-omega-required-column）
 # 是各家 agent 的当轮草稿，开完 PR 即弃。gitignore 对已跟踪文件无效 ⇒ 下面这条只吃未跟踪的那批，
@@ -238,3 +238,17 @@ memory/archive/thinking.archive.md
 /origin/
 /_proj_lang-zone/
 /_proj_vools/
+
+# ── 2026-10-31 治理：`.tnr_decompose/`（拆解素材准备面）─────────────────────────
+# 谁造的：一个**外部 Rust 项目**的 T0 递归拆解素材（`decompose_prep.py` 生成
+# `t0_1..4.json` 给 `task_plan_deep` 的 spec、`t0_line_items.json` 给
+# `supervisor_task_upsert` 的 items）。里面写的是 `cargo` / `src/ir/lower.rs` /
+# `src/backend/tvm` 那一侧的内容，**不是本仓资产**。
+# 状态实测（2026-10-31）：`git log -- .tnr_decompose` 空 = 从未跟踪，
+# `git check-ignore -v` rc=1 = 不忽略 ⇒ 6 件 / 55,506B 落在 BUG-127 的载荷面上。
+# 为什么这一条**不是** P1：目录名以 `.` 开头，`moon publish` 本来就不打包点号条目，
+# `check_publish_payload.py` 的 `_is_dotpath()` 会把它从 leaky 面里剔掉。
+# ⇒ 加这条**不修任何判据红**，修的是「点号豁免是上游实现的隐含属性」这一层：
+#    `git status` 干净面、`git add .` 误入面、上游哪天不再剔点号时的失效面。
+# 不删文件（拆解正本属于那个外部项目，由它自己决定去留），只挡出本仓的跟踪面与载荷面。
+/.tnr_decompose/

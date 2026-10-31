@@ -41,7 +41,7 @@ if hasattr(sys.stderr, "reconfigure"):
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CLI = os.path.join(ROOT, "_build", "js", "debug", "build", "cmd", "cli", "cli.js")
-BRIDGE = os.path.join(ROOT, "scripts", "fist-mbt-http.py")
+BRIDGE = os.path.join(ROOT, "scripts", "run_fist_mbt_http.py")
 # BUG-122/90：起 serve 的面必须把库改道到 temp，绝不写仓库根自举台账
 DB = os.path.join(ROOT, "temp", "http-contract-e2e.db")
 PORT = 0  # 0 = 让 OS 发一个空闲端口（写死端口会在 CI 与本机并发时自撞）

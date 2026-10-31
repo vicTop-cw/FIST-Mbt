@@ -57,14 +57,35 @@ test "iso_accepts_canonical_form_and_matches_known_epoch" {
   assert_true(iso_to_epoch("2026-10-30T00:00:00Z") is Some(_))
   // **数值等价性断言**（不是「非空」）：相邻两天差必须恰好 86400 秒。
   // 这比「等于某个绝对数」更强 —— 它同时锁住「日/月/年进位」与「每天 86400 秒」两条。
-  assert_eq(iso_delta_seconds("2026-10-30T00:00:00Z", "2026-10-31T00:00:00Z"), Some(86400))
-  assert_eq(iso_delta_seconds("2026-10-30T00:00:00Z", "2026-10-30T01:00:00Z"), Some(3600))
-  assert_eq(iso_delta_seconds("2026-10-30T00:00:00Z", "2026-10-30T00:01:00Z"), Some(60))
-  assert_eq(iso_delta_seconds("2026-10-30T00:00:00Z", "2026-10-30T00:00:01Z"), Some(1))
+  assert_eq(
+    iso_delta_seconds("2026-10-30T00:00:00Z", "2026-10-31T00:00:00Z"),
+    Some(86400),
+  )
+  assert_eq(
+    iso_delta_seconds("2026-10-30T00:00:00Z", "2026-10-30T01:00:00Z"),
+    Some(3600),
+  )
+  assert_eq(
+    iso_delta_seconds("2026-10-30T00:00:00Z", "2026-10-30T00:01:00Z"),
+    Some(60),
+  )
+  assert_eq(
+    iso_delta_seconds("2026-10-30T00:00:00Z", "2026-10-30T00:00:01Z"),
+    Some(1),
+  )
   // 月进位 / 年进位（闰年 2/29 也要对：2028 是闰年）
-  assert_eq(iso_delta_seconds("2026-10-31T00:00:00Z", "2026-11-01T00:00:00Z"), Some(86400))
-  assert_eq(iso_delta_seconds("2026-12-31T00:00:00Z", "2027-01-01T00:00:00Z"), Some(86400))
-  assert_eq(iso_delta_seconds("2028-02-28T00:00:00Z", "2028-02-29T00:00:00Z"), Some(86400))
+  assert_eq(
+    iso_delta_seconds("2026-10-31T00:00:00Z", "2026-11-01T00:00:00Z"),
+    Some(86400),
+  )
+  assert_eq(
+    iso_delta_seconds("2026-12-31T00:00:00Z", "2027-01-01T00:00:00Z"),
+    Some(86400),
+  )
+  assert_eq(
+    iso_delta_seconds("2028-02-28T00:00:00Z", "2028-02-29T00:00:00Z"),
+    Some(86400),
+  )
 }
 
 ///|

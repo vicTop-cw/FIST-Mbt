@@ -13,7 +13,7 @@ openapi: 3.0.3
 # 所以下面 `/tools` 与 `/tools/{name}/call` 都做了剥壳（x-unwrapping）。
 # 通用 JSON-RPC 口 `/mcp` 与 `/events` SSE 是既有面，一并如实登记。
 #
-# 实测读数（2026-10-13，scripts/fist-mbt-http.py）：
+# 实测读数（2026-10-13，scripts/run_fist_mbt_http.py）：
 #   GET  /health                   200 {"status":"ok","product":"FIST-Mbt","transport":"http"}
 #   GET  /tools                    200 {"tools":[…163 项]}，首项 name=get
 #   POST /tools/mode_list/call     200 {ok:true, result:…, data:{constraints,description,…}}

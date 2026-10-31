@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""scripts/fist-gate.py - unified gate chain (merge_markers/fmt/build/ps_encoding/store_path) + --scan branch census. rc: 0=pass/scan-output 1=fail 2=degraded."""
+"""scripts/fist_gate.py - unified gate chain (merge_markers/fmt/build/ps_encoding/store_path) + --scan branch census. rc: 0=pass/scan-output 1=fail 2=degraded."""
 import os, re, subprocess, sys, tempfile
 from datetime import datetime
 from pathlib import Path
@@ -241,7 +241,7 @@ def scan_branch(root, base, ref):
     elif ahead == 0 and cherry_plus == 0: action = "DROP：base 已包含分支全部提交（可删分支/关 MR）"
     elif cherry_plus == 0: action = "DROP：全部提交内容已等价存在于 base（cherry 无 +）"
     elif src_lines == 0: action = "MERGE-LOW-RISK：纯文档/流水账改动，低风险合入"
-    else: action = "MERGE-CODE：有 src/scripts 代码改动——先过统一门链（fist-gate.py）再合入"
+    else: action = "MERGE-CODE：有 src/scripts 代码改动——先过统一门链（fist_gate.py）再合入"
     return {"branch": ref, "base": base, "ahead": ahead, "cherry_plus": cherry_plus,
             "insertions": add_total, "deletions": del_total, "revert_pattern": revert,
             "worst_deletions": ["%s -%d/+%d (净 -%d)" % (w[0], w[2], w[1], w[3]) for w in worst],
@@ -252,7 +252,7 @@ def yaml_cell(v):
     if isinstance(v, list): return "[" + ", ".join('"%s"' % x for x in v) + "]" if v else "[]"
     return '"%s"' % str(v).replace("\\", "\\\\").replace('"', '\\"')
 def write_scan_yaml(path, row):
-    body = ["status: backlog", "source: fist-gate.py scan"]
+    body = ["status: backlog", "source: fist_gate.py scan"]
     body += ["%s: %s" % (k, yaml_cell(v)) for k, v in row.items()]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(body) + "\n", encoding="utf-8")
@@ -308,7 +308,7 @@ def scan(root, do_fetch=True):
         print("  %-52s ahead=%-3d cherry+=%-3d src±=%-5d markers=%d → %s" % (
             row["branch"], row["ahead"], row["cherry_plus"], row["src_lines_changed"],
             len(row["conflict_markers"]), row["suggested_action"]))
-    print("巡检 prompt 追加句：『每次巡检先跑 python scripts/fist-gate.py --scan，把"
+    print("巡检 prompt 追加句：『每次巡检先跑 python scripts/fist_gate.py --scan，把"
           ".git/fist/tasks/backlog/ 下的新 yaml 里值得处理的问题提升为 docs/tasks/backlog/*.yaml』")
     return 0, "scan: %d branches" % len(rows)
 
@@ -442,5 +442,5 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv[1:]: sys.exit(selftest())
     if "--scan" in sys.argv[1:]:
         sys.exit(scan(ROOT)[0])
-    if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist-gate.py [--selftest|--scan]")
+    if len(sys.argv) > 1: raise SystemExit("usage: python scripts/fist_gate.py [--selftest|--scan]")
     sys.exit(gate(ROOT))

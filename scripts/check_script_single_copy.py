@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 r"""scripts/check_script_single_copy.py — 「单文件单副本」守卫（R139，副机自立项）。
 
-**为什么要有它**（实测 2026-10-23）：`scripts/fist-gate.py` 曾被三次「手动解冲突」整文件串接成
+**为什么要有它**（实测 2026-10-23）：`scripts/fist_gate.py` 曾被三次「手动解冲突」整文件串接成
 **4 份副本**（提交 5656cdfb / 8f75bf70 / d5dc918f 各串一次），四个 `# -*- coding` 头、四个
 `if __name__ == "__main__"` 块。Python 会按顺序执行模块顶层语句，首个 `__main__` 块里的
 `sys.exit(...)` 让进程当场退出 ⇒ **只有最老的一份在执行**，后面的副本（R93 的 whisperer 检查、

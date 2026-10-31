@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-scripts/output_validate.py — 产出物验证 CLI（一源四态 · CLI 形态：MCP / CLI / Skill 手写，Plugin 由 gen_plugins.py 投影）
+scripts/check_output_validate.py — 产出物验证 CLI（一源四态 · CLI 形态：MCP / CLI / Skill 手写，Plugin 由 gen_plugins.py 投影）
 
 用法（项目根）：
-    python scripts/output_validate.py <project_dir> \
+    python scripts/check_output_validate.py <project_dir> \
         --artifacts '[{"path":"README.md","contains":"FIST"}]' \
         [--external-results external.json] \
         [--evidence "agent 报告摘录"] \
@@ -106,7 +106,7 @@ def main():
     args = sys.argv[1:]
     if not args or args[0] in ("-h", "--help"):
         print(
-            "用法: python scripts/output_validate.py <project_dir> "
+            "用法: python scripts/check_output_validate.py <project_dir> "
             "--artifacts <json_or_file> "
             "[--external-results <json_or_file>] "
             "[--evidence <string>] "

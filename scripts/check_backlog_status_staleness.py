@@ -5,7 +5,7 @@ r"""scripts/check_backlog_status_staleness.py — 「任务池状态 ↔ 主线�
 为什么要有这把尺（实测驱动，2026-10-22）：`docs/tasks/backlog/TASK-*.yaml` 是主机派给副机的任务池真源，
 每份带 `id:` / `status:`。副机与 AtomCode 把活干完并合入主线之后，**commit subject 里点名了 TASK-0NN，
 而 yaml 的 `status` 还停在 `backlog`**。本轮实测到 4 条这种落差（TASK-001 / TASK-005 / TASK-006 / TASK-009）。
-后果不是不好看：状态是 `backlog` 意味着下一轮巡检（`fist-gate.py --scan`、`whisperer.py`）还会把这单当未做
+后果不是不好看：状态是 `backlog` 意味着下一轮巡检（`fist_gate.py --scan`、`whisperer.py`）还会把这单当未做
 再派一次，而它已经在线上了——重复派单正是本仓反复抓的那类「账面说没做、线上说做完了」（与 `bug_list`
 的 `open_with_linked_done` 同形，只是发生在任务池面而非缺陷账本面）。
 

@@ -50,6 +50,7 @@ test "risk_word_is_boundary_aware" {
   assert_false(contains_risk_kw("undeleted records"))
 }
 
+///|
 test "risk_word_case_insensitive" {
   // 大小写不敏感（实现里先 `desc.to_lower()`）
   assert_true(contains_risk_kw("DELETE the table"))

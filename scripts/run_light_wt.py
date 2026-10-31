@@ -14,8 +14,9 @@ r"""scripts/run_light_wt.py — 轻量 worktree 沙箱的生命周期入口（�
 的证据；PS 那条轨留给 `bin/`（未落地，见清单 WT-03 的 `部分` 语义差）。这是有意的偏离，不是遗漏。
 
 **为什么叫 `run_` 前缀**：`scripts/NAMING.md` 定律 1 要求角色写在名字两端之一，而判据
-`check_scripts_naming.py` 的 N1（无角色名存量 22 份 > 上限 16）是**只许下降的棘轮**——一个新脚本
-不该是新增的一条债。`run_`=「编排/跑手：把一串别的脚本跑起来并汇总」正是本体的形状
+`check_scripts_naming.py` 的 N1（无角色名存量）是**只许下降的棘轮**——一个新脚本
+不该是新增的一条债。（R115 已把存量从 27 还到 **16**，正好压在上限上，rc=0；
+`run_`=「编排/跑手：把一串别的脚本跑起来并汇总」正是本体的形状
 （串 `git worktree add` / `sparse-checkout set` / `merge-base` / `worktree remove` 并出读数）；
 不选 `cleanup_` 因为它还负责创建，不选 `check_` 因为它产出的是动作而非裁决。
 

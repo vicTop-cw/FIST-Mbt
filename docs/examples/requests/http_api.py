@@ -13,7 +13,7 @@
   - requests/http_api.py   ：**第三方库**这条线（requests 的 Session/params/错误语义）——覆盖
                             习惯 requests 的用户，且演示 `raise_for_status` 的显式错误面
 
-契约真源 docs/openapi/fist.yaml；桥起法：python scripts/fist-mbt-http.py [port]
+契约真源 docs/openapi/fist.yaml；桥起法：python scripts/run_fist_mbt_http.py [port]
 用法：python docs/examples/requests/http_api.py [port]        # 默认 3137
 依赖：pip install requests（无它时本文件**显式报前置不满足**，不假装跑通）
 """
@@ -52,7 +52,7 @@ try:
     h = S.get(BASE + "/health", timeout=10)
     h.raise_for_status()
 except requests.RequestException as e:
-    _die("连不上桥 %s（%s）—— 请先起 python scripts/fist-mbt-http.py %s"
+    _die("连不上桥 %s（%s）—— 请先起 python scripts/run_fist_mbt_http.py %s"
          % (BASE, type(e).__name__, sys.argv[1] if len(sys.argv) > 1 else "3137"))
 
 # 1) 自描述：清单 + inputSchema 就是参数真源，别硬编码参数表。

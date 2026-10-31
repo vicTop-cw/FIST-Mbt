@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/fist-task-pool.py - task pool yaml manager (.git/fist/tasks/).
+"""scripts/run_fist_task_pool.py - task pool yaml manager (.git/fist/tasks/).
 Commands: init | publish <yaml> | claim <tid> <machine> | release <tid> | archive <tid> | fail <tid> | list [--status X] [--machine Y]"""
 import re, shutil, sys
 from pathlib import Path
@@ -90,7 +90,7 @@ def c_lst(status=None, machine=None):
         print("%s | %s | owner=%s | %s" % (t.get("task_id"), t.get("status"), t.get("owner") or "-", t.get("title") or ""))
 def main():
     a = sys.argv[1:]
-    if not a: die("usage: fist-task-pool.py <cmd> [args]")
+    if not a: die("usage: run_fist_task_pool.py <cmd> [args]")
     c = a[0]
     if c == "init": c_init()
     elif c == "publish" and len(a) == 2: c_pub(a[1])

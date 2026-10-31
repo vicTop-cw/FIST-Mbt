@@ -141,7 +141,11 @@ test "BUG-9：bug_fix 同一笔改抬头 + 落点名整批的小记（幂等，�
   assert_true(
     text.contains("### FIXED(2026-09-27T12:00:00Z / BUG-901, BUG-902)"),
   )
-  assert_true(text.contains("- evidence: 真源 x.mbt，回归锁：bugreport_status_wbtest.mbt"))
+  assert_true(
+    text.contains(
+      "- evidence: 真源 x.mbt，回归锁：bugreport_status_wbtest.mbt",
+    ),
+  )
   // 邻居条目的 summary 不能被搬进本批的证据里（insert_at 取的是本批最后一条的末尾）
   let seg = b9_between(text, "### FIXED(", "## BUG-903")
   assert_true(seg.contains("- evidence:"))
@@ -301,7 +305,12 @@ test "BUG-9：终态之间不互跳，空 evidence 与非法 project_dir 一律�
     Ok(_) => abort("空 evidence 的 bug_fix 通过了")
   }
   // 缺 ts：时间戳由调用层服务端盖章，API 不接受"没有 ts 的写"
-  let no_ts = bug_fix(d, ["BUG-901"], evidence="有证据但没盖章（本格测盖章门，不需锁）", ts="")
+  let no_ts = bug_fix(
+    d,
+    ["BUG-901"],
+    evidence="有证据但没盖章（本格测盖章门，不需锁）",
+    ts="",
+  )
   match no_ts {
     Err(m) => assert_true(m.contains("ts"))
     Ok(_) => abort("缺 ts 也放行")
@@ -611,8 +620,8 @@ test "BUG-489：编号分配复核 —— 第二次读到更新的账本时编�
   let second = first +
     "## BUG-904 [t] [low] OPEN\n- summary: 丁\n\n" +
     "## BUG-905 [t] [low] OPEN\n- summary: 戊\n\n"
-  let seq1 = bug_next_seq(first)     // 应为 904
-  let seq2 = bug_next_seq(second)    // 应为 906
+  let seq1 = bug_next_seq(first) // 应为 904
+  let seq2 = bug_next_seq(second) // 应为 906
   assert_eq(seq1, 904)
   assert_eq(seq2, 906)
   // 复核逻辑：取两者较大者 ⇒ 顺延到 906，**不会**写成 904 撞上另一条 lane 的 904

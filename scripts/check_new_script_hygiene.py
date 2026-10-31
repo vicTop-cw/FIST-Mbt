@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scripts/_new_script_hygiene.py —— 提交时对**本次暂存的 scripts/*.py** 做的四条静态体检。
+"""scripts/check_new_script_hygiene.py —— 提交时对**本次暂存的 scripts/*.py** 做的四条静态体检。
 
 ## 为什么要有它（不是理论，是本场三次实测）
 
@@ -16,7 +16,7 @@
 
 ## 用法
 
-    python scripts/_new_script_hygiene.py scripts/a.py scripts/b.py
+    python scripts/check_new_script_hygiene.py scripts/a.py scripts/b.py
 
 退出码：`0` 干净 / `1` 有违例（逐条点名）/ `2` 入参里没有可判的文件（不静默出绿）。
 
@@ -30,6 +30,13 @@ import os
 import re
 import sys
 import tempfile
+
+# 自身路径（唯一真源）：main() 要排除自身，selftest 要用它做 A2 的「脚本自身路径」夹具。
+# 判例-39：这里原先引用的 `SELF_PATH` **从未被定义** ⇒ 改名（`_new_script_hygiene.py` →
+# `check_new_script_hygiene.py`）后第一次被真正跑就 `NameError` 崩在 main() 里。
+# 它一直没暴露，是因为带 `_` 前缀时被 `EXEMPT_RULES` 的 `("_", …)` 自动豁免、
+# **从未被任何一格跑过** ⇒ 豁免遮蔽了真实缺陷（判例-39 的第二现场）。
+SELF_PATH = os.path.abspath(__file__)
 
 # stdout UTF-8 门（BUG-58/138）：本文件打印中文结论，必须带门，否则本机控制台一红
 # 就崩在结论行之前，rc 被冒用成「缺陷在场」。
@@ -65,6 +72,50 @@ A3_GUARD = (
 )
 # 逃生口：确实不需要参数门的脚本（例如纯库/纯函数）在文件里写这一句
 A3_SUPPRESS = "hygiene: no-arg-gate"
+# R221：**A3 的盲区被实测抓到 —— 「根本不看 argv」的脚本它一句话都不说。**
+# 实测：`check_t0r21.py` 是纯线性判据（`argv` 一次都没出现），`--self-test` 拼错后
+# **静默跑真检查**（正是 AGENTS.md 记的失效形态），而旧 A3_SCAN 的两侧都要求
+# `"…--flag…" in argv` 这个形状 ⇒ 匹配不上 ⇒ **判据对最沉默的那一类完全瞎**。
+# 为什么这不会变成狼来了：真读参数的脚本一定出现 `argv` 这个名（探针实测 147 份宇宙里
+# 命中 2 份）；出现的走旧分支，不出现的只有「压根没写参数面」这一种可能。
+# 判例-30：用 AST 判**真实名字**，不用子串 —— docstring 里提一嘴 `argv` 就满足子串式判据。
+
+
+def _argv_names_real_code(text):
+    """AST：文本里有没有真实的 `argv` 名（Name / Attribute.attr）。解析失败按「有」处理（保守不误报）。"""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return True
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == "argv":
+            return True
+        if isinstance(node, ast.Attribute) and node.attr == "argv":
+            return True
+    return False
+
+
+def _looks_like_ruler(text):
+    """是不是「尺」形状：有按行的 print 结论（PASS/FAIL/FATAL/NOTHING）+ 文件级 docstring。
+
+    两条同时成立才认。为什么两条：①纯 print 的脚本（`refresh_dist.py` 这类通用工具）
+    不一定有结论行；②**判据本体的标志就是「按行吐 PASS/FAIL」**，而「拼错自检开关会
+    静默跑真检查」这个失效形态恰恰只在判据本体上才有意义。两条同时要求 = 宁可漏也不误伤。
+    """
+    has_doc = bool(ast.get_docstring(ast.parse(text))) if _parses(text) else False
+    # 行首锚定（判例-30）：只认 `print("PASS…` / `print("FAIL…` 这种**结论行**，
+    # 不认注释或小结里提一嘴 PASS 的散文。
+    verdict_line = re.search(r"""^\s*print\(\s*[fru]*['"](PASS|FAIL|FATAL|NOTHING)\b""",
+                             text, re.M)
+    return has_doc and bool(verdict_line)
+
+
+def _parses(text):
+    try:
+        ast.parse(text)
+        return True
+    except SyntaxError:
+        return False
 
 
 def _has_real_gate(text):
@@ -102,7 +153,11 @@ def check_text(rel, text):
         out.append("%s: A2 用 `for a in sys.argv` 判未知参数 —— 含 argv[0]（脚本自身路径），"
                    "它会被当成未知旗标 ⇒ 恒 rc=2（R65 实测）。改成 `sys.argv[1:]`" % rel)
     # A3（R200）：扫旗标但不拒绝未知 ⇒ 拼错自检开关会静默跑真检查（同族实测三次）
-    if A3_SCAN.search(text) and not any(g.search(text) for g in A3_GUARD) \
+    # R221 补盲区：**`argv` 一次都不出现的判据**同样逃不掉 —— 它拼错开关时行为与
+    # 「扫了旗标但不拒」完全一样（静默跑真检查），只是旧正则看不见它。
+    _a3_hit = bool(A3_SCAN.search(text)) or (
+        _looks_like_ruler(text) and not _argv_names_real_code(text))
+    if _a3_hit and not any(g.search(text) for g in A3_GUARD) \
             and A3_SUPPRESS not in text:
         adv.append("%s: A3(建议·**低精度**) 扫了 `--flag in argv` 但**没有拒绝未知旗标** —— 拼错自检开关"
                    "（`--self-test`）会被吃下并**静默跑真检查**（R197/R198/R199 同族三次）。"
@@ -111,7 +166,9 @@ def check_text(rel, text):
                    '⚠️ **R203 实测：本规则当前 6/6 误报**（`issue_scan`/`check_script_single_copy`/'
                    '`refresh_dist`/`git_env`/`store_isolation_probe` 等用 while 分派或整体拒绝，'
                    '实测拼错旗标都能 rc=2）⇒ **先自己跑一次 `python <script> --definitely-not-real` 验证，'
-                   '再据它改代码**；真正的行为级门是 `check_arg_face_strict.py`（已在电池里）'
+                   '再据它改代码**；真正的行为级门是 `check_arg_face_strict.py`（已在电池里）。'
+                   '⚠️ **R221 补了另一半盲区**：「`argv` 一次都不出现的判据」以前一句话都不说 ——'
+                   '见 `check_t0r21.py`（拼错 `--self-test` ⇒ rc=0 且**真跑了一整轮 382 格测试**）'
                    % (rel, A3_SUPPRESS))
     return out, adv
 
@@ -119,12 +176,29 @@ def check_text(rel, text):
 def main(argv):
     if "--selftest" in argv:
         return selftest()
+    # R207 同族（AGENTS.md「新判据必须拒绝未知旗标」）：本脚本吃的是**位置参数**（.py 路径），
+    # 未知旗标必须硬拒 —— 否则把 `--selftest` 拼成 `--self-test` 会落进下面的
+    # 「没有 .py 入参」分支 ⇒ 打出 `NOTHING … 退出码 0`，看起来像「体检通过」，
+    # 实际**自检一次都没跑**。这正是 R207 那句「自检开关拼错 = 静默失去自检」。
+    # 白名单只放本脚本真认的旗标；位置参数（不以 `-` 开头）不在此列。
+    _KNOWN_FLAGS = ("--selftest",)
+    unknown = [a for a in argv if a.startswith("-") and a not in _KNOWN_FLAGS]
+    if unknown:
+        print("[FATAL] 未知参数 %s —— 已知旗标：%s（rc=2；位置参数是 .py 路径，不加 `-`）"
+              % (" ".join(unknown), " / ".join(_KNOWN_FLAGS)))
+        return 2
     files = [a for a in argv if not a.startswith("--")]
     targets = [f for f in files if os.path.basename(f).endswith(".py")]
     # 排除自身：本文件里的**正则源码**与**自检夹具**都含 A1/A2 的目标形状 ⇒
     # 不排它会把自己判成违规（判例-30 的自指假阳性）。这是**刻意排除**，
     # 由 selftest 格 `self-excluded` 锁定，防止有人误以为那是漏判。
-    targets = [f for f in targets if os.path.basename(f) != "_{self_name}.py".format(self_name="new_script_hygiene")]
+    # R221 修正：这里原先写的是 `"_{self_name}.py"`，self_name 恒为 `new_script_hygiene`
+    # ⇒ 拼出来是 `_new_script_hygiene.py`（**改名前的旧名**）⇒ **自身从未被排除**。
+    # 因此下面那格 `self-excluded` 一直是红的（旧名还在时它是绿的，改名时没人跑自检）。
+    # 判例-39（改名会同时失去按名的豁免）在这一处又踩了一遍；改成**取真文件名**，
+    # 并让那格从「红着没人读」变成真门。
+    targets = [f for f in targets
+               if os.path.abspath(f) != os.path.abspath(SELF_PATH)]
     if not targets:
         print("NOTHING 入参里没有 .py（%d 个参数）—— 无可判面，退出码 0 由调用方决定是否算过"
               % len(files))
@@ -198,6 +272,49 @@ def selftest():
          and not any("A3" in p for p in check_text("x.py", bad_a3)[0]))
     cell("A3-argparse-not-flagged", not any("A3" in p for p in check_text("x.py", good_a3_ap)[1]))
     cell("A3-whitelist-not-flagged", not any("A3" in p for p in check_text("x.py", good_a3_wl)[1]))
+    # ── R221：A3 的第二半盲区 —— 「根本不看 argv 的判据」────────────────────────
+    # 这一支来自实测：`check_t0r21.py` 里 `argv` 一次都没出现，旧 A3_SCAN 匹配不上，
+    # 于是 `python scripts/check_t0r21.py --self-test` **rc=0 且真跑了一整轮测试**，
+    # 而判据一句提示都不给。下面四格把这个新面钉住（红 / 绿 / 不误伤 / suppression）。
+    silent_ruler = (
+        '"""假判据：完全不看 argv 的线性判据。"""\n'
+        "import sys\n"
+        "def main():\n"
+        "    print('PASS 跑完了')\n"
+        "    return 0\n"
+        "sys.exit(main())\n"
+    )
+    cell("A3-silent-ruler-is-flagged",
+         any("A3" in p for p in check_text("x.py", silent_ruler)[1]))
+    # 反向对照①：同一份判据加了 argparse ⇒ 不再点它
+    guarded_ruler = silent_ruler.replace(
+        "import sys\n", "import sys\nimport argparse\nap = argparse.ArgumentParser()\n")
+    cell("A3-silent-ruler-with-argparse-not-flagged",
+         not any("A3" in p for p in check_text("x.py", guarded_ruler)[1]))
+    # 反向对照②：同样「不看 argv」但**不是尺**（通用工具，没有 PASS/FAIL 结论行）⇒ 不点，
+    # 否则这条 advisory 会从「6/6 误报」升级成「全仓一半脚本误报」。
+    plain_tool = (
+        '"""通用工具：打印一段东西就返回。"""\n'
+        "print('hello world')\n"
+    )
+    cell("A3-plain-tool-not-flagged",
+         not any("A3" in p for p in check_text("x.py", plain_tool)[1]))
+    # 反向对照③：suppression 逃生口对这条新路径同样生效
+    cell("A3-silent-ruler-suppressed",
+         not any("A3" in p for p in check_text(
+             "x.py", silent_ruler.replace("import sys\n", "import sys\n# %s\n" % A3_SUPPRESS))[1]))
+    # 变异对照（判例-29「机制格 ≠ 实现路径格」）：把 `_looks_like_ruler` / `_argv_names_real_code`
+    # 的真实现抽掉 ⇒ `A3-silent-ruler-is-flagged` 必须变红。这里不复制一份正则，
+    # 而是直接调那两个函数并断言它们对上面的样本**真的**给出了预期的真假值 ——
+    # 判据「红」是靠它们算出来的，它们算错则上面那一格必红。
+    cell("A3-mutation-looks-like-ruler-real",
+         _looks_like_ruler(silent_ruler) and not _looks_like_ruler(plain_tool),
+         "got ruler=%r tool=%r（`_looks_like_ruler` 判错 ⇒ 上面那格的红是假的）"
+         % (_looks_like_ruler(silent_ruler), _looks_like_ruler(plain_tool)))
+    cell("A3-mutation-argv-names-real",
+         not _argv_names_real_code(silent_ruler) and _argv_names_real_code(good_a3_wl),
+         "got silent=%r guarded=%r（`_argv_names_real_code` 判错 ⇒ 上面那格的红是假的）"
+         % (_argv_names_real_code(silent_ruler), _argv_names_real_code(good_a3_wl)))
     cell("A2-bad-is-flagged", any("A2" in p for p in check_text("x.py", bad_a2)[0]))
     cell("A2-good-not-flagged", not any("A2" in p for p in check_text("x.py", good_a2)[0]))
 
@@ -207,13 +324,31 @@ def selftest():
     io.open(p_bad, "w", encoding="utf-8").write(bad_e1)
     rc_bad = _quiet(main, [p_bad])
     # 自指格（判例-30）：本文件必须被排除，否则它会被自己的正则判成违规
-    rc_self = _quiet(main, [os.path.abspath("scripts/_new_script_hygiene.py")])
+    rc_self = _quiet(main, [os.path.abspath("scripts/check_new_script_hygiene.py")])
     cell("self-excluded", rc_self == 0, "got rc=%d（应为 0：自身已排除）" % rc_self)
     cell("end-to-end-bad-rc1", rc_bad == 1, "got rc=%d" % rc_bad)
     p_ok = os.path.join(tmp, "ok.py")
     io.open(p_ok, "w", encoding="utf-8").write(good_e1 + good_a1)
     rc_ok = _quiet(main, [p_ok])
     cell("end-to-end-good-rc0", rc_ok == 0, "got rc=%d" % rc_ok)
+
+    # R207 同族（AGENTS.md「新判据必须拒绝未知旗标」）：本脚本吃**位置参数**，未知旗标必须硬拒。
+    # 三格全部**合成入参**（不读真仓 ⇒ 不抬棘轮基线）：
+    #   ① 拼错的自检开关（`--self-test`）必须被拒 —— 这正是 R207 的失效形态：没有这道闸时
+    #      它会落进「没有 .py 入参」⇒ 打出 `NOTHING … 退出码 0`，看着像「体检通过」，
+    #      实际**自检一次都没跑**（判例-30 第三形态的近亲：用例看起来在测，实际测了空输入）。
+    #   ② 真未知旗标 ⇒ rc=2。
+    #   ③ 反向对照：真的无参 ⇒ rc=0（证明这道闸是**判别**，不是一刀切拒所有参数）。
+    #   ① 直接调 `main()` 本体（实现路径格），所以不需要再补一格「源码里有没有这道闸」——
+    #      判据-29 要防的是「测了机制没测实现」，这里测的就是实现本身。
+    rc_misspelled = _quiet(main, ["--self-test"])
+    cell("end-to-end-misspelled-selftest-rejected", rc_misspelled == 2,
+         "got rc=%d（应为 2：拼错的自检开关必须被拒，否则静默失去自检）" % rc_misspelled)
+    rc_unk = _quiet(main, ["--definitely-not-real"])
+    cell("end-to-end-unknown-flag-rc2", rc_unk == 2, "got rc=%d" % rc_unk)
+    rc_noargs = _quiet(main, [])
+    cell("end-to-end-no-args-rc0-is-legit", rc_noargs == 0,
+         "got rc=%d（应为 0：真的无参时 NOTHING 是合法读数，闸不该一刀切）" % rc_noargs)
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
 
