@@ -13527,3 +13527,70 @@ CI 读数与本机读数**逐字相同（2002/2002）** ⇒ 「脏树读数会�
 `--fresh`/`--fresh-if-stale`」⇒ 谁把旗标静默改回去，CI 只会退回同一形状的红，没人当场知道是接错。
 建议落点：`check_ci_step_position.py` 里加一格（它的 `analyze()` 已经在解析 `- name:`/`run:` 行，
 与「CI 里那行命令也是配置面」同族），并同批过 `check_battery_count_doc` 的登记面。
+
+## BUG-509 [2026-10-31T05:52:00Z] [high] FIXED
+- summary: `moon_test_env.py` 判「真实可用 node」用的是 **`endswith(".exe")`**（Windows 的形状），
+  在 Linux/macOS 上把 `/usr/local/bin/node` 这种**无扩展名的真 ELF** 判成「仍是垫片/脚本（不可用）」
+  ⇒ 常驻入口在 POSIX 上**直接拒跑**（rc=2），凡走 `--fresh`/`--fresh-if-stale` 的尺子在 CI 上结构上永远拿不到真值
+- detail: ## 怎么撞出来的
+
+BUG-508 把 `ci.yml` 的 badge 步从裸跑改成 `--fresh-if-stale` 之后，CI 第 22 步换了个形状红：
+
+```
+FRESH 真跑全仓：失败
+    PATH 垫片目录：0 个
+    node 解析：/usr/local/bin/node（仍是垫片/脚本（不可用））
+    FATAL 清理后仍拿不到真实 node.exe ⇒ 拒绝出数（rc=2）
+```
+
+本机 WSL 直接复现同一条（不需要 CI）：`python3 scripts/moon_test_env.py --target js src/omega`
+⇒ 同一个「仍是垫片/脚本（不可用）」+ FATAL。
+
+**为什么全仓 44 格自检从没抓到**（这一条比缺陷本身更值得记）：旧 `--selftest` 在 Linux 上**全绿**，
+因为它造的"干净 node"样本**无条件叫 `node.exe`** —— 夹具本身就是 Windows 形状，
+于是 `.exe`-only 的判据在哪个平台上都"对"。⇒ **平台盲的夹具 = 恒绿的锁**（判例-36 同族：
+只断言正常路径通过的锁证明不了它在看；这里是连"正常路径"都只造了一台机器上的那一半）。
+
+## 修法
+
+- `node_is_real(cand)`：`.cmd`/`.bat` 一律否；**Windows 仍要 `.exe`（BUG-380 那道垫片零回归）**；
+  其它平台要「普通文件 + 有执行位」。`resolve_node` 的两个返回面都改用它（只改**真值判据**，
+  不改**候选挑选顺序** ⇒ 不会换一种 node 出来）。
+- 修好后入口改崩在下一处：`subprocess.run(["moon",…])` 抛 `FileNotFoundError: 'moon'` **裸 traceback**。
+  那是**环境态**，不是判据红也不是产品红 ⇒ 新增 `missing_tool(cmd0, path)` 前置检查，
+  给一句人话 + rc=2（实测 WSL：`RC= 2`，正文点名"这台机器没有该工具链"）。
+- 措辞面：FATAL 里「真实 node.exe」改成「真实可用的 node 二进制」（Linux 上没有 .exe 这回事）。
+
+## 回归锁（判例-36：点名测试文件）
+
+`scripts/moon_test_env.py --selftest` **44 格**（原 38），本单相关的新增：
+① 夹具改为**按平台造形状**（nt→`node.exe`；POSIX→无扩展名 + `chmod 0o755`），
+   于是 POSIX 上 `marks-real-node` 与 `extensionless-node-accepted-on-posix` 会咬住 `.exe`-only 的回退；
+② `nonexec-node-not-real-anywhere` / `cmd-bat-shim-rejected-anywhere` 两格**两平台同期望**（无执行位、垫片后缀都不许放过）；
+③ `missing-tool-is-named` / `present-tool-not-missing` 钉行为，
+   `entry-wires-missing-tool-precheck` **直接读自己源码**钉接线（判例-29：机制格 ≠ 实现路径格）；
+④ 跨平台那格写成 **`if nt: want False / else: want True` 两个字面期望**，
+   不用 `os.name != "nt"` 当 want——那是自指公式，判据改了它跟着改，等于没锁（判例-30 自家形状）。
+
+**实测矩阵**（当场跑的，不是推的）：
+
+| 面 | Windows | WSL(Linux) |
+|---|---|---|
+| 修前 `--selftest` | 41 格 OK | 38 格 **OK（平台盲，抓不到本单）** |
+| 修前入口面 | `node 解析：C:\Program Files\nodejs\node.exe（真实 node.exe）` ⇒ 正常跑 | **FATAL 拒跑 rc=2** |
+| 修后 `--selftest` | **44 格 OK** | **44 格 OK**（`RC= 0`） |
+| 修后入口面 | `src/omega` **56/56 passed**（零回归） | `RC= 2` + 人话（工具链缺席，不再裸 traceback） |
+| **变异对照**（把判据改回 `.exe`-only） | 44 格仍 OK（**正确的不变**：Windows 语义没变 ⇒ 不误红） | **`SELFTEST FAIL` RC=1**（锁咬住） |
+| 变异还原 | `字节相同 = True`（31029↔31029，还原后 WSL 复绿） | 同左 |
+
+⚠️ 还原核验里有一条**探针自己的假阳性**，一并记：我拿 `b'    return low.endswith(".exe")\n'` 查"变异残留"，
+它在**已还原**的文件上也命中——那 4 个空格是 8 空格那行的后缀。⇒ 判"还原干净"只认**与变异前快照逐字节相同**，
+不认"某串缺席"（判例-35 同族：探针的结果 ≠ 探针在工作）。
+
+### FIXED(2026-10-31T05:52:00Z / BUG-509)
+- evidence: 回归锁 = `scripts/moon_test_env.py --selftest` 新增的 ①–④ 共 6 格（含一格读自己源码钉接线）；
+  变异对照真跑（`.exe`-only 回退 ⇒ WSL `SELFTEST FAIL` rc=1、Windows 不误红）+ 按字节还原（31029↔31029）；
+  行为面实测矩阵见上表（WSL `RC=` 值经 python `subprocess` 复测，不信 `wsl bash -lc 'echo $?'`
+  ——那条在本机被 wsl.exe 的 UTF-16 输出吃成空串，是**读法**坏了不是 rc 真的空）。
+  ⚠️ 未锁的缺口：**CI 那一台什么时候能真跑到 `--fresh`，仍要靠 BUG-508 那一步的结论原文**；
+  本单的修法是脚本侧的，CI 上尚未复验（本笔推送后读第 22 步正文即可判）。
