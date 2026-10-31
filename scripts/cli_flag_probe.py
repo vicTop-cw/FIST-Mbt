@@ -48,6 +48,23 @@ def unknown_marker():
     return m.group(1)
 
 
+def help_banner_prefix():
+    """从**被检面**反解帮助横幅的前缀（`"FIST-Mbt Help  v"` 这一段，`cmd/cli/help_topics.mbt`）。
+
+    为什么必须反解而不是在夹具里写一遍（判例-30「期望值的字面形要同面取」）：
+    夹具原来写着 `FIST-Mbt CLI v<ver>`，而产品早在横幅里插了个 topic 标签
+    （现读是 `FIST-Mbt Help  v0.3.11  (182 MCP tools)`）⇒ 判据的针认不出真实形状，
+    三条帮助臂**集体假红**（CI 第 53 步，BUG-522）。反解之后产品的形状一变，夹具跟着变，
+    不会再出现「产品没错、夹具脱锚」这种红。读不到 ⇒ FATAL 自拒，不拿旧字面量凑。
+    """
+    src = io.open(os.path.join(ROOT, "cmd", "cli", "help_topics.mbt"),
+                  encoding="utf-8", errors="replace").read()
+    m = re.search(r'"(FIST-Mbt[^"]*)"\s*\+\s*\n\s*v\s*\+', src)
+    if not m:
+        raise SystemExit("FATAL cmd/cli/help_topics.mbt 反解不到帮助横幅前缀 ⇒ 判据看不见被检面，不报绿")
+    return m.group(1)
+
+
 def judge(transcript, ver, marker):
     """纯判定：转录 = {参数: (rc, stdout)}。返回问题清单（空 == 绿）。"""
     problems = []
@@ -72,8 +89,12 @@ def judge(transcript, ver, marker):
             problems.append("%-11s rc=%s（帮助旗应 0）" % (arm, rc))
         if marker in out:
             problems.append("%-11s 落了未知子命令文案（BUG-106 第一半复发）" % arm)
-        if not re.search(r"FIST-Mbt(?: CLI)? v%s([\s\n]|$)" % re.escape(ver), out):
-            problems.append("%-11s 帮助面不回显版本 %s（帮助自己也是自述面）" % (arm, ver))
+        first_h = (out.split("\n")[0] if out else "").strip()
+        # 只认「**首行**同时有 `FIST-Mbt` 与 `v<ver>`」——中间允许产品放 topic 标签（现读是 `Help`）。
+        # 不锚首行的话，帮助正文里任何一处版本号都会替横幅说谎（判例-35：针要盯在被检的那一面）。
+        if not re.search(r"^FIST-Mbt\b.*\bv%s\b" % re.escape(ver), first_h):
+            problems.append("%-11s 帮助面不回显版本 %s（帮助自己也是自述面），实得 %r"
+                            % (arm, ver, first_h[:56]))
     rc, out = transcript[UNKNOWN_ARG]
     if rc == 0:
         problems.append("未知子命令回 rc=0 ⇒ `fist --version || exit 1` 会把失败读成成功（BUG-106 第二半）")
@@ -94,12 +115,15 @@ def run_product(product, arm):
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
-def good_transcript(ver, marker):
+def good_transcript(ver, marker, banner=None):
     t = {}
+    # 帮助臂用**从被检面反解的横幅前缀**拼夹具（判例-30：期望值的字面形要同面取）；
+    # 只有合成对照（R6 那类）需要假形状时，调用方才显式传 banner。
+    head = banner if banner is not None else help_banner_prefix()
     for arm in ARMS_VERSION:
         t[arm] = (0, "FIST-Mbt v%s\n(moon.mod version 单一真源)" % ver)
     for arm in ARMS_HELP:
-        t[arm] = (0, "FIST-Mbt CLI v%s\n用法: fist <subcommand>" % ver)
+        t[arm] = (0, "%s%s  (N MCP tools)\n用法: fist <subcommand>" % (head, ver))
     t[UNKNOWN_ARG] = (2, "%s%s\n用法: fist <subcommand>" % (marker, UNKNOWN_ARG))
     return t
 
@@ -126,6 +150,19 @@ def selftest(ver, marker):
     cases.append(("R4 缺臂（转录不完整）", t, True))
     cases.append(("R5 零样本（判据瞎了）", {}, True))
     cases.append(("G1 干净三档全对", good_transcript(ver, marker), False))
+    # 反脱锚三格（BUG-522：夹具曾写着 `FIST-Mbt CLI v…` 而产品现印 `FIST-Mbt Help  v…`，
+    # 三条帮助臂集体假红；G1 的头现在**从被检面反解**，产品的形状一变夹具跟着变）：
+    # 针既要认得**没有标签**的旧形状（不许过拟合到某一个字面），又不许把「正文里出现过版本号」当横幅自述。
+    cases.append(("G2 无标签旧形状照样认", good_transcript(ver, marker, banner="FIST-Mbt v"), False))
+    cases.append(("G3 帮助面一个版本号都没有",
+                  good_transcript(ver, marker, banner="FIST-Mbt Help  "), True))
+    cases.append(("G4 版本号只在正文不在首行 ⇒ 仍算说谎",
+                  {"version": (0, "FIST-Mbt v%s\n" % ver), "--version": (0, "FIST-Mbt v%s\n" % ver),
+                   "-V": (0, "FIST-Mbt v%s\n" % ver),
+                   "help": (0, "FIST-Mbt Help\n正文里提到 v%s 过\n" % ver),
+                   "--help": (0, "FIST-Mbt Help\n正文里提到 v%s 过\n" % ver),
+                   "-h": (0, "FIST-Mbt Help\n正文里提到 v%s 过\n" % ver),
+                   UNKNOWN_ARG: (2, "%s%s\n" % (marker, UNKNOWN_ARG))}, True))
     bad = 0
     for name, tr, must_red in cases:
         got = judge(tr, ver, marker)
