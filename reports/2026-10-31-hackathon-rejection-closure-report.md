@@ -828,3 +828,23 @@ Actions 产物区，派发被发布门有意挡住；放上发布面要 owner �
 ② **BUG-527 保持 OPEN** —— 全项目 `moon build --target native` 仍必崩（13 份库包带 `link`），本轮只绕行。
 ③ `build-native-windows` 仍红在 `Install MoonBit`（`…/install/windows` 返回 403）——
 **本轮没有猜正确的安装 URL**，本机探到的几个候选只给 000/403 混合结果，不足以作依据；留给带读数的下一单。
+
+### 8.22 收口这批推上去之后：js 权威轨三面绿，native 两臂照旧红**且红因是在册那条**
+
+这一笔（含 9 份重生成插件面 + BUG-526/528 的 FIXED 小记）推 `origin` 与 `gitcode` 后，
+`ci.yml` 的读数不在这里抄快照——**复跑配方**：
+
+```bash
+SHA=$(git rev-parse origin/main)   # 两远端必须同值；SSH 偶发 reset 时用
+                                  # gh api repos/vicTop-cw/FIST-Mbt/git/ref/heads/main 兜底
+gh api "repos/vicTop-cw/FIST-Mbt/commits/$SHA/check-runs" \
+  --jq '.check_runs[] | "\(.name) | \(.status) | \(.conclusion // "-")"'
+```
+
+当时那一跑（派发后约 3 分钟收全 5 格）：**`check + test (js, ubuntu)` ×2 与 `(js, windows)` 全 success**，
+**`check + test (native, ubuntu)` ×2 failure**，逐步结论落在 `#11 Test (native, j=1)`。
+
+⚠️ 这一红**不是本批引入的回归**，annotations 里那条 `::error::` 是作业自己写的在册读面：
+「门在这一发是绿的，只代表这次 12 抽没抽中 ⇒ 不据此写『native 已修』；关闭条件见账本 BUG-133
+（抽检连发 0 崩溃 + `git archive HEAD` 干净树全量通过）」。
+⇒ 权威交付门（js）绿；native 仍是**观察臂**，这与 §8.20/8.21 里「产物面已通、全项目构建未通（BUG-527）」是同一口径的两面。
