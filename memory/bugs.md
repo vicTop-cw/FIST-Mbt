@@ -13466,7 +13466,7 @@ for k in ["TEMP", "TMPDIR", "TMP"] { match @env.get_env_var(k) { … } }  // 三
 ⇒ 判绿口径兑现：这条跨平台主张不是拿本机绿抵的，是 ubuntu runner 上同一条命令的汇总行。
 CI 读数与本机读数**逐字相同（2002/2002）** ⇒ 「脏树读数会不会失真」这一顾虑在这里也没有兑现。
 
-## BUG-508 [2026-10-31T05:20:00Z] [medium] OPEN
+## BUG-508 [2026-10-31T05:20:00Z] [medium] FIXED
 - summary: CI 的 `Badge consistency guard` 那一步**结构上不可能通过**——它把 `Test (js)` 用 `tee`
   落下的日志原样喂给 `check_badge.py`，而该判据要求同目录存在源码面锚点 `<log>.src` 才认这份快照；
   CI 从来没人写这个锚点 ⇒ 每次都是 `REJECT SNAPSHOT-STALE … rc=2`
@@ -13527,6 +13527,30 @@ CI 读数与本机读数**逐字相同（2002/2002）** ⇒ 「脏树读数会�
 `--fresh`/`--fresh-if-stale`」⇒ 谁把旗标静默改回去，CI 只会退回同一形状的红，没人当场知道是接错。
 建议落点：`check_ci_step_position.py` 里加一格（它的 `analyze()` 已经在解析 `- name:`/`run:` 行，
 与「CI 里那行命令也是配置面」同族），并同批过 `check_battery_count_doc` 的登记面。
+
+### FIXED(2026-10-31T06:05:00Z / BUG-508)
+- evidence: **关闭条件兑现**（推送 `5ad8edd59` 后的 run `41172747085` / job `124453995469`，正文
+  `temp/ci_b509_js.log:1871-1874`）：第 22 步不再回 `REJECT SNAPSHOT-STALE rc=2`，而是给出**真判据读数**
+  ——`FRESH 真跑全仓：成功` / `汇总：Total tests 2002 / passed 2002 / failed 0` /
+  `BADGE-STALE: README 徽章 1983/1983 ≠ 实际测试数 2002/2002`。⇒ 接线生效，红的是内容而不是形状，
+  第 23~30 步不再被 fail-fast skip（同一次 run 里它们照旧 skipped，因为这一格判的是**违例红**、
+  不是自我沉默；现状面同步后转绿，见下）。
+  **回归锁（判例-36 要求的锁，不是「验收跑过」）**：`scripts/check_badge.py --selftest` 新增 **W1/W2 两支接线格**
+  （`badge_call_lines()` / `wiring_problems()` / `workflow_texts()`）——W1 真读 `.github/workflows/*`，
+  要求每个 `check_badge.py` 调用行都带 `--fresh`/`--fresh-if-stale`，**且「一条调用都扫不到」同判不符预期**
+  （判例-32 反脱锚：步骤被删/改名时这道锁不许静默恒绿）；W2 变异对照只摘**调用那一行**上的旗标
+  （不碰注释——`--fresh-if-stale` 这串在 ci.yml 的 BUG-508 说明正文里也出现过，
+  `replace(…,1)` 会命中注释那处 = 假变异，判例-30 实测形状），断言必红。实测：`SELFTEST OK：18 支`，
+  W1 读数「扫到 1 处调用 / 违例 0 处（workflow 8 份）」、W2「变异点=ci.yml:193」。
+  **落点与施工追记的建议不同**（没去动 lane-R115 的 `check_ci_step_position.py`）：旗标语义归 `check_badge` 所有，
+  锁放在尺子自己家里 ⇒ 不新增尺、不动别人的尺、不必过 `check_battery_count_doc` 登记面。
+  **顺带还掉一格债**：给 badge 步骤补了 `position-why:` 锚点 ⇒ `check_ci_step_position.py` 的 F1 违例
+  **30 → 29**（棘轮只许降，上限 34 未动）。
+  **内容面已同步**：`check_test_sync.py --total 2002 --strict` rc=0
+  （现状面 145 份文档、19 条声明全等于实测、must-carry 5 份齐全、豁免 27 条全部有效）。
+  ⚠️ **仍未锁的缺口（如实）**：`run_guards.py:534` 那条「`check_test_sync --fresh-if-stale` 必须排在
+  `check_badge --fresh` **之后**」的顺序约束只有注释、没有判据——被调换不会红，只会退化成两次全仓
+  （BUG-498 的病灶复发）。要钉它得让电池自己声明格序，属于「记账面 vs 行为面」同族缺口，本轮未做。
 
 ## BUG-509 [2026-10-31T05:52:00Z] [high] FIXED
 - summary: `moon_test_env.py` 判「真实可用 node」用的是 **`endswith(".exe")`**（Windows 的形状），
