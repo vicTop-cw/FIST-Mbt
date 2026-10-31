@@ -14212,3 +14212,41 @@ FAIL 3 条：
 ⚠️ **本轮没做的事**（如实记）：没有对今天的 native 失败做**归因**（本仓 src 改动 / 工具链漂移 / 依赖侧未覆盖），
 理由是最后一轮的时间全部投给 js 权威轨那 8 格掩蔽的解除；native 的崩点会随机移动（旧实测），
 单次读数不足以下结论 ⇒ 接这一单的人先按出路 1 拿钉版读数，别拿今天这发当证据。
+
+
+## BUG-524 [2026-10-31T08:45:00Z] [medium] OPEN
+- summary: 验收探针 `scripts/blackbox/e2e_acceptance_recheck.py` 两处「旗标/路径被承认但不生效」——
+  ① `FIST_ACCEPT_JS` 给**相对路径**时，存在性按脚本 cwd 判、spawn 按沙箱 cwd 走 ⇒ 同一枚有效路径在两副面罩下结论相反；
+  ② `--help` / `-h` 写进了 `KNOWN_FLAGS` 白名单却**没有任何处理分支** ⇒ 落到真检查分支，把 40 秒起 server 的全量复验当帮助跑了
+- detail: ## 实测读数（本机，收口那一小时）
+
+**① 相对路径**：
+```
+FIST_ACCEPT_JS=temp/zipchk/fist-mbt.js  →  [FATAL] server 起不来：server closed stdout
+err 日志：Error: Cannot find module
+  E:\…\temp\acceptance-recheck\20261031T084310Z-47ce02\box\temp\zipchk\fist-mbt.js
+```
+路径被**拼在沙箱 box 之后** —— `find_js()` 里 `os.path.isfile(c)` 用的是脚本自己的 cwd（相对路径**判定通过**），
+spawn 出来的 node 用 `cwd=SANDBOX`（同一条相对串**解析到别处**）。绝对路径立刻正常（实测 rc=0，6 PASS / 1 SKIP）。
+⇒ 失效形态是「文件明明在，却说 server 起不来」，且 FATAL 文案不点名它按哪个根解析的。
+
+**② `--help`**：`grep -n '"--help"' scripts/blackbox/e2e_acceptance_recheck.py` 只命中 **line 61 那一行白名单**，
+全文再无任何处理分支 ⇒ `python …e2e_acceptance_recheck.py --help` 跑了完整六格复验并起了 server。
+
+## 为什么算一单而不是「小瑕疵」
+
+R207 的本仓口径是「**白名单承认 = 该旗标有确定语义**」。`--selftest` 拼错必须红，这条已经做到了
+（未知旗标 rc=2 拒得干净，实测 `[FATAL] 未知参数 --product`）；但**在名单里却不实现**是同一个洞的另一半：
+用户以为拿到了帮助，实际执行了一次有副作用的复验（建沙箱、起 server）。
+①同族：判据的存在性检查与被检对象的实际解析必须**同一副面罩**，否则「判定通过」与「跑不起来」能同时为真。
+
+## 三条出路（都要配读数）
+
+1. **①按 ROOT 归一**：候选表构造时就 `os.path.abspath(c)`（判定与 spawn 同根），FATAL 文案点名「按哪个根解析」；
+2. **②二选一**：实现 `--help`（打印用法与三面读数口径），或把它从 `KNOWN_FLAGS` **摘掉** ⇒ 未知旗标拒（宁可报错也不误跑）；
+3. **补 ST 面格子**：`find_js` 的候选解析抽成纯函数（吃 env 值 + 两个 cwd），`--selftest` 加一格
+   「相对路径在 spawn-cwd ≠ 脚本-cwd 时必须被归一」+ 一格变异对照（把 abspath 摘掉那格必须红）。
+   判例-36：这条探针是六项拒收的**验收面**，它的锁该是行为面格子而不是注释。
+
+⚠️ **本轮没做的事**：没在最后一小时动这两处（改探针 ⇒ 触发新一轮 CI 周期，而本轮时间已用于把
+**公网 zip 里那枚产物**跑通六格）。修复单按出路 1+2+3 一起接才成立：只改①不改②，白名单仍有一面谎。
