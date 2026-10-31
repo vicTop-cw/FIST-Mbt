@@ -14380,3 +14380,25 @@ moon build --target native cmd/cli    → **rc=0**，产物 `_build/native/debug
 
 ⚠️ 本轮只做了 release 臂的绕行（`moon build --target native cmd/cli`），**没有**动 13 份 `moon.pkg`
 ⇒ 本单保持 OPEN，别把它读成「native 全项目构建已可用」。
+
+
+## BUG-528 [2026-10-31T10:42:00Z] [medium] OPEN
+- summary: `release.yml` 的 `meta` 作业**没有 `actions/checkout`** ⇒ `workflow_dispatch` 那条
+  「ref 剥不出版本就退回真源 moon.mod」的出路**从来没跑通过**：实测第一步就
+  `FileNotFoundError: No such file or directory: 'moon.mod'`，rc=1，并**连带把四个下游作业全 skip**
+- detail: 为什么长期没人发现：tag push 时 `GITHUB_REF_NAME` = `v0.3.11` 走的是 `if` 那一支（**不读盘**），
+  所以 meta 在唯一被用过的路径上是好的；只有 2026-10-31 第一次为了「让流水线自己产出 native 资产」
+  而手动派发，才把 else 那一支的执行面暴露出来。
+  与 **BUG-512**（宿主可装性那格在干净树上**从未产出过结论**）同族：**开关的一侧从未被走到过**，
+  而文档/注释都写着它有兜底。
+- 读数：run `41193357636`（`3aa242056`，event `workflow_dispatch`）
+  `meta` = failure（失败步 `Run REF="${GITHUB_REF_NAME}"`），
+  `build-js` / `build-native-linux` / `build-native-windows` / `release` 全部 = skipped。
+- 本轮处置：`meta` 补 `- uses: actions/checkout@v4`（放在 `id: version` 那步之前），
+  注释写明「读盘的那条路必须先有盘」；本机先验过那条正则：
+  `python3 -c "…open('moon.mod')…"` → `0.3.11`（与 `scripts/gen_plugins.py` 的 `RE_VERSION` 同口径）。
+- ⚠️ **本单关闭条件 = 修后重跑的派发 run 里 `meta` = success 且 `build-native-linux` 走到结论**。
+  在拿到那一跑读数之前不标 FIXED（判例-36：没有可读的锁就不算修完）。
+- 同批另记一条公开面风险（已在本轮修）：`release` 作业的 `tag_name` 展开的是 `github.ref_name`，
+  手动派发时它是分支名 ⇒ 若不设门，本单修好后派发那一跑会**创建一条 tag 名为 `main` 的公开 Release**。
+  所以门（事件 + tag 前缀）必须先于 meta 修好落地，两半同批。
