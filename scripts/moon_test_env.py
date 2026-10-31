@@ -94,18 +94,42 @@ def clean_path(path):
     return os.pathsep.join(kept), dropped, kept
 
 
+def node_is_real(cand):
+    """这个路径是不是**真正可用的 node 二进制**。
+
+    BUG-509（2026-10-31 CI 实测）：旧判据是一句 `cand.lower().endswith(".exe")`，
+    那是 **Windows 的形状**（要挡的是 `node.cmd`/`node.bat` 垫片经 `cmd.exe` 转发时吞掉 JSON 引号，
+    见 BUG-380）。在 Linux/macOS 上真 node 就是**无扩展名**的 ELF（CI 上是 `/usr/local/bin/node`），
+    按旧判据一律「仍是垫片/脚本（不可用）」⇒ 凡走 `--fresh` 的尺子在 POSIX 上结构上永远 rc=2
+    （实测：CI 的 badge 步 `FRESH 真跑全仓：失败 → FATAL 清理后仍拿不到真实 node.exe`）。
+    本机 WSL 同一条入口同样复现，而 `--selftest` 38 格**全绿**——因为夹具造的样本本身就叫
+    `node.exe`（平台盲的锁，判例-36 同族）。
+
+    可移植判据：`.cmd`/`.bat` 一律不算；Windows 仍要 `.exe`（零回归）；
+    其它平台要「普通文件 + 有执行位」。
+    """
+    if not cand or not os.path.isfile(cand):
+        return False
+    low = cand.lower()
+    if low.endswith((".cmd", ".bat")):
+        return False
+    if os.name == "nt":
+        return low.endswith(".exe")
+    return os.access(cand, os.X_OK)
+
+
 def resolve_node(clean):
-    """在清理后的 PATH 里找 node，返回 (路径, 是否真实 exe, 说明)。"""
+    """在清理后的 PATH 里找 node，返回 (路径, 是否真实可用, 说明)。"""
     exts = os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";")
     for d in split_path(clean):
         for ext in [""] + [e.lower() for e in exts] + [e.upper() for e in exts]:
             cand = os.path.join(d, "node" + ext)
             if os.path.isfile(cand):
-                real = cand.lower().endswith(".exe")
-                return cand, real, ("真实 node.exe" if real else "仍是垫片/脚本（不可用）")
+                real = node_is_real(cand)
+                return cand, real, ("真实 node" if real else "仍是垫片/脚本（不可用）")
     which = shutil.which("node", path=clean)
     if which:
-        return which, which.lower().endswith(".exe"), "shutil.which 命中"
+        return which, node_is_real(which), "shutil.which 命中"
     return "", False, "清理后的 PATH 里找不到 node"
 
 
@@ -167,6 +191,19 @@ def pick_moonc_override(env_value, shim_path, shim_exists, is_windows):
     if is_windows and shim_exists:
         return shim_path, "discovered"
     return "", "none"
+
+
+def missing_tool(cmd0, path_value):
+    """`cmd0` 在 `path_value` 这条 PATH 上找不到时返回它的名字，找得到返回空串。
+
+    BUG-509 追出来的第二格：node 判据修好后，Linux 上入口改在 `subprocess.run(["moon", …])`
+    抛 `FileNotFoundError: 'moon'` **裸 traceback**（本机 WSL 实测）。
+    工具链不在场是**环境态**，不是判据红、更不是产品红——
+    裸崩会让下一个人去查『这台机器为什么在崩』，而不是『这台机器没装 moon』。
+    """
+    if not cmd0:
+        return ""
+    return "" if shutil.which(cmd0, path=path_value) else cmd0
 
 
 def server_spawn_env_violations(text):
@@ -272,7 +309,16 @@ def selftest():
         os.makedirs(shim)
         os.makedirs(clean_dir)
         open(os.path.join(shim, "node.cmd"), "w").close()
-        open(os.path.join(clean_dir, "node.exe"), "w").close()
+        # BUG-509：夹具必须造**本平台真 node 的形状**。旧夹具无条件写 `node.exe`，
+        # 于是这套格在 Linux 上也全绿（`.exe` 结尾当然算真），而**同一条入口在 Linux 上直接拒跑**
+        # ——平台盲的锁证明不了它在看的，正是这一形。
+        if os.name == "nt":
+            good_node = os.path.join(clean_dir, "node.exe")
+            open(good_node, "w").close()
+        else:
+            good_node = os.path.join(clean_dir, "node")
+            open(good_node, "w").close()
+            os.chmod(good_node, 0o755)
         cell("is-shim-dir", is_shim_dir(shim), True)
         cell("is-clean-dir", is_shim_dir(clean_dir), False)
         fake_path = os.pathsep.join([shim, clean_dir, "/does/not/exist"])
@@ -281,13 +327,47 @@ def selftest():
         cell("keeps-clean", clean_dir in kept, True)
         cell("new-path-lacks-shim", shim not in split_path(newp), True)
         node, real, _why = resolve_node(newp)
-        cell("resolves-clean-node", node, os.path.join(clean_dir, "node.exe"))
-        cell("marks-real-exe", real, True)
+        cell("resolves-clean-node", node, good_node)
+        cell("marks-real-node", real, True)
         # 只给垫片目录 ⇒ 必须解析失败（判据自证：不许把垫片当可用 node）
         node2, real2, _ = resolve_node(shim)
         cell("shim-only-not-real", real2, False)
+        # BUG-509 的跨平台那一格：**两边各写一个字面期望**，不用 `os.name != "nt"` 当 want——
+        # 那是自指公式（判据改了它跟着改 ⇒ 恒真、等于没锁，判例-30 的自家形状）。
+        plain_dir = os.path.join(base, "bin-plain")
+        os.makedirs(plain_dir)
+        plain = os.path.join(plain_dir, "node")
+        open(plain, "w").close()
+        os.chmod(plain, 0o755)
+        if os.name == "nt":
+            cell("extensionless-node-rejected-on-windows", node_is_real(plain), False)
+        else:
+            cell("extensionless-node-accepted-on-posix", node_is_real(plain), True)
+        # 没有执行位的无扩展名文件：两个平台都**不许**当可用 node（POSIX 缺 X / Windows 缺 .exe）
+        noexec = os.path.join(base, "bin-noexec")
+        os.makedirs(noexec)
+        ne = os.path.join(noexec, "node")
+        open(ne, "w").close()
+        os.chmod(ne, 0o644)
+        cell("nonexec-node-not-real-anywhere", node_is_real(ne), False)
+        # 垫片形状在两个平台都直接否（Windows 旧行为靠后缀，POSIX 旧行为会把它当"无扩展名"放过）
+        shshim = os.path.join(base, "node.bat")
+        open(shshim, "w").close()
+        cell("cmd-bat-shim-rejected-anywhere", node_is_real(shshim), False)
     finally:
         shutil.rmtree(base, ignore_errors=True)
+
+    # BUG-509 追记：工具链不在场要给一句人话（rc=2 那档），不许留 subprocess 的裸 FileNotFoundError
+    cell("missing-tool-is-named", missing_tool("moon-definitely-not-in-path", ""), "moon-definitely-not-in-path")
+    cell("present-tool-not-missing", missing_tool(os.path.basename(sys.executable),
+                                                  os.path.dirname(sys.executable)), "")
+    # 判例-29（机制格 ≠ 实现路径格）：上面两格只证明 `missing_tool` 本身对，
+    # 证明不了**入口真调它**。这一格直接读自己的源码，钉住那条接线还在。
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "moon_test_env.py"),
+              encoding="utf-8") as _f:
+        _self_src = _f.read()
+    cell("entry-wires-missing-tool-precheck",
+         "gone = missing_tool(cmd[0], clean)" in _self_src, True)
 
     # moonc 覆盖选择：显式 env 优先 / Windows 自动发现 / 缺失与非 Windows 不设
     fake_shim = os.path.join(base, "shim.exe")
@@ -398,7 +478,7 @@ def selftest():
         for n, w in bad:
             print("  - %s：%s" % (n, w))
         return 1
-    print("SELFTEST OK（%d 格：垫片目录识别两档 + PATH 清理三档 + node 解析两档 + moonc 覆盖四档 + 服务端 spawn 面六档 + BUG-394 透传九档 + BUG-416 root 十档含变异对照）" % len(cells))
+    print("SELFTEST OK（%d 格：垫片目录识别两档 + PATH 清理三档 + node 真伪判据五档 + 工具链在场两档 + 入口接线自证一档 + moonc 覆盖四档 + 服务端 spawn 面六档 + BUG-394 透传九档 + BUG-416 root 十档含变异对照）" % len(cells))
     return 0
 
 
@@ -425,7 +505,7 @@ def main(argv):
     print("  PATH 垫片目录：%d 个%s" % (len(dropped), ("（" + "; ".join(dropped) + "）") if dropped else ""))
     print("  node 解析：%s（%s）" % (node or "(无)", why))
     if not node or not real:
-        print("  FATAL 清理后仍拿不到真实 node.exe ⇒ 拒绝出数（rc=2，不冒用 0/1 两档）")
+        print("  FATAL 清理后仍拿不到真实可用的 node 二进制 ⇒ 拒绝出数（rc=2，不冒用 0/1 两档）")
         return 2
     override, owhy = pick_moonc_override(
         os.environ.get("MOONC_OVERRIDE", ""),
@@ -446,6 +526,14 @@ def main(argv):
     print("  执行：%s" % " ".join(cmd))
     if dry:
         return 0
+    # BUG-509：工具链不在场是**环境态**，要给出一句人话 + rc=2（判据无法自证那一档），
+    # 不许留 subprocess 的裸 FileNotFoundError —— 那会让下一个人去查"这台机器为什么崩"，
+    # 而真因只是"这台机器没装 moon"（本机 WSL 实测：node 判据修好后就改在这里崩）。
+    gone = missing_tool(cmd[0], clean)
+    if gone:
+        print("  FATAL 清理 PATH 之后找不到 `%s` ⇒ 这台机器没有该工具链，拒绝出数（rc=2）" % gone)
+        print("        （环境态，不是判据红、也不是产品红。装好再来，或换一台有的机器。）")
+        return 2
     # BUG-416：`cwd=root` 是本修的**实质**——只打印 ROOT 而不切 cwd 等于没修
     # （moon 会在调用者 cwd 里跑，副本树仍静默测主树）。缺省 root=脚本目录，
     # 与修前「无 cwd 参数、由调用者 cwd 决定」**不同**：修前从仓库外调用会跑错树，
