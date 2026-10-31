@@ -848,3 +848,32 @@ gh api "repos/vicTop-cw/FIST-Mbt/commits/$SHA/check-runs" \
 「门在这一发是绿的，只代表这次 12 抽没抽中 ⇒ 不据此写『native 已修』；关闭条件见账本 BUG-133
 （抽检连发 0 崩溃 + `git archive HEAD` 干净树全量通过）」。
 ⇒ 权威交付门（js）绿；native 仍是**观察臂**，这与 §8.20/8.21 里「产物面已通、全项目构建未通（BUG-527）」是同一口径的两面。
+
+### 8.23 最后一步：把 CI 产出的 native 资产放上公开面（owner 选「追加到 v0.3.11」）
+
+§8.21 留的那句「资产在发布面上 ≠ 流水线产出过它」现在有了反面：**流水线产出过它，也不等于它在发布面上**。
+`release` 作业被事件+tag 门有意挡住（派发不许顶出公开 Release），所以 run `41194094357` 那枚 zip 只活在
+Actions 产物区（有留存期、要登录才下得到）。owner 选路「追加到 v0.3.11，不新打 tag」，执行后现取读数：
+
+```bash
+gh api repos/vicTop-cw/FIST-Mbt/releases/tags/v0.3.11 --jq '.assets[] | "\(.name) \(.size)B"'
+# fist-mbt-js-v0.3.11.zip 794603B
+# fist-mbt-native-linux-x64-v0.3.11.zip 3835963B
+U=$(gh api repos/vicTop-cw/FIST-Mbt/releases/assets/695214492 --jq .browser_download_url)
+curl -sSL -o /tmp/n.zip -w "%{http_code} %{size_download}\n" "$U"   # 200 3835963
+head -c 2 /tmp/n.zip                                                 # PK
+```
+
+**为什么还要单独跑匿名线那两行**（BUG-107/R6 的形状：HTTP 200 可能给的是 HTML 页）：
+`sha256` 前缀 `aa609263ada30de4` 与 CI 产物区那枚**逐字节相等**，才算「公开面上那一枚 = 流水线产出的那一枚」，
+而不是「名字对得上的另一枚东西」。
+
+同批落账：
+- `BACKLOG.md` 的 `release-fact: v0.3.11` 从 `bytes=794603`（一枚）改为 `794603+3835963`（两枚），
+  并写明 native 那枚的来历与 **windows 臂仍红**；
+- `memory/bugs.md` BUG-513 **保持 OPEN**，追加追记点名「三条出路走了一条半」：
+  ② native 臂补 reapply = 已做（BUG-526 FIXED）；① 分发轨钉版 / `install/windows` 403 = 未动；
+  ③ 给资产集合加尺 = 未做。**本单关闭条件是「有判据自动比对臂声明与实际资产，少一枚即红」，
+  不是「资产数现在对了」**——数一数就绿的那格不是锁（判例-36）。
+
+至此拒收单第 ④ 项（Native serve/demo）的公开面证据链闭合：**源码 → 流水线产物 → 公网资产** 三段同一枚字节。
