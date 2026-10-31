@@ -13510,3 +13510,20 @@ CI 读数与本机读数**逐字相同（2002/2002）** ⇒ 「脏树读数会�
 2. `ci.yml` 里门禁步骤的位置/命令受 `check_ci_step_position`(TASK-003) 与 J12 约束，
    应当与「数字同步」同一笔落地并当场复跑那两把尺，而不是拆成两笔各红一次。
 - reported_by: Qoder 主会话（读 `a7080f728` 触发的 CI 步骤表时发现）
+
+### BUG-508 施工追记（2026-10-31T05:35Z）：接线已改，**状态仍留 OPEN 等 CI 判**
+
+`ci.yml:187-194` 已改为 `python3 scripts/check_badge.py --fresh-if-stale /tmp/moon_test.log README.md`
+（带四行注释写清「为什么不能裸跑」）。改后本地复跑：
+`check_ci_step_position.py` PASS（棘轮内，F2 的 continue-on-error 清单没被这次改动增减）、
+`check_badge.py --selftest` 16 支对照全按预期、`yaml.safe_load` 解析出的 `run` 逐字为新命令。
+
+**为什么还不标 FIXED**：本单的「现实」在 CI 那一步的输出里，不在这台机器上——
+裸跑改成真跑之后，第 22 步要么给出「徽章 1983 ≠ 实测 N」的**违例红**（那才是真缺陷的形状，
+且会顺带把第 23~30 步从 skipped 放出来），要么给出 PASS。两者都没看到之前，
+把 FIXED 写进账本＝拿「我改了配置」冒充「配置生效」。⇒ 关闭条件：推送后该步骤结论原文。
+
+⚠️ **未锁的缺口（如实）**：这一格靠**注释**解释，没有常驻判据钉住「调用 `check_badge.py` 的 CI 步骤必须带
+`--fresh`/`--fresh-if-stale`」⇒ 谁把旗标静默改回去，CI 只会退回同一形状的红，没人当场知道是接错。
+建议落点：`check_ci_step_position.py` 里加一格（它的 `analyze()` 已经在解析 `- name:`/`run:` 行，
+与「CI 里那行命令也是配置面」同族），并同批过 `check_battery_count_doc` 的登记面。

@@ -186,7 +186,11 @@ jobs:
 
       - name: Badge consistency guard (README 徽章须与实测一致)
         shell: bash
-        run: python3 scripts/check_badge.py /tmp/moon_test.log README.md
+        # BUG-508：裸跑必红——check_badge 要求快照同目录有源码面锚点 <log>.src，而锚点只有带
+        # --fresh/--fresh-if-stale 那条路才写（write_anchor）。:185 的 tee 不写锚点 ⇒ 永远
+        # REJECT SNAPSHOT-STALE rc=2，并把后面 8 步 fail-fast 成 skipped。
+        # --fresh-if-stale = 「同源就不重跑」：CI 上锚点缺席 ⇒ 真跑一次再比（ubuntu 实测 41 秒）。
+        run: python3 scripts/check_badge.py --fresh-if-stale /tmp/moon_test.log README.md
 
       - name: Tool-list single-source guard (AGENTS/README 工具与会注册对齐)
         shell: bash
