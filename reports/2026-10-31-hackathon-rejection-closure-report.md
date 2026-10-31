@@ -551,3 +551,33 @@ FAIL 3 条：  ✗ help / --help / -h   帮助面不回显版本 0.3.11        �
 ⚠️ 版本臂仍用**逐字相等**——故意不顺手放宽：它的语义就是「首行逐字回显版本」（BUG-114 的锁），
 放宽是 owner 的决定，不是修探针的顺路动作；今天它实测为真。
 ⚠️ 本单关闭条件 = 推送后 CI 第 53 步的结论原文，并第一次解除第 54 步（Cleanliness guard）的掩蔽。
+### 8.16 收口读数：js 权威轨 **56 步全绿**（八格掩蔽全部解除），native 那格照旧红
+
+run `41184056152`（commit `ead2687e`，CI #925）——本轮把掩蔽链从头解到底之后的第一次**全绿读数**：
+
+| job | 结论 |
+|---|---|
+| `check + test (js, ubuntu)`（56 步） | **success**（本仓权威轨） |
+| `check + test (js, windows)`（14 步） | **success** |
+| `check + test (native, ubuntu)` | failure：#9 `Native heap gate` **success**、#10 `Test (native)` **failure** |
+
+被掩蔽过、今天第一次拿到结论并转绿的八步（逐条对应本报告的 §8.8–§8.15）：
+
+```
+22 Badge consistency guard      success（BUG-508）   43 Host-installable guard   success（BUG-512）
+47 Self-described surface guard  success（BUG-514）   49 Scripts naming guard      success（BUG-515）
+50 Store-isolation probe         success             51 Heartbeat cross-process    success（BUG-519，8/8）
+52 Reserve cross-process guard   success（BUG-520/521，6/6）   53 CLI call-site probe success（BUG-522）
+54 Cleanliness guard             success
+```
+
+**native 那一格不写成交付结论**：按 `AI-DEVELOPMENT-STANDARD.md` §7 与 AGENTS 的口径，权威交付面只有 JS
+（Node ≥ 24，本轮实测汇总行 2002/2002）；native 属观测臂，且它今天的红与账上 **BUG-133 记 FIXED** 存在
+**关闭条件脱钩**（那单自己写着两格：抽检 0 崩溃 + 干净树全量通过；第二格今天未满足）
+⇒ 另立 **BUG-523**（OPEN，三条出路）点名这处账面矛盾；本轮**没有**对 native 失败做归因（时间全投给八格掩蔽的解除），
+这一点在账上如实写明，不拿今天这发当证据。
+
+**公网交付现状（收口终读）**：tag `v0.3.11` → commit `5f33517e2`；GitHub Release `2026-10-31T06:17:41Z`，
+资产 `fist-mbt-js-v0.3.11.zip`（794,603B，**只 js 一枚**，缺口 = BUG-513）；
+`origin/main` 与 `gitcode/main` 同一枚提交（本轮依次 fast-forward 推过 8 笔，末笔 `ead2687e`）。
+tag 之后这几笔全部只动判据/文档/探针面，零产品行为 ⇒ 公网那枚 zip 与仓库自述仍然逐字对得上。
