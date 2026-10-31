@@ -1,6 +1,6 @@
 {
   "name": "@victop/fist-mbt",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "private": true,
   "type": "module",
   "description": "FIST-Mbt MCP server integration — task orchestration and self-driving loops",
