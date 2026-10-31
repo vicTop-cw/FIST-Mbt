@@ -13800,6 +13800,8 @@ run 41176543619 / job 124465166015（ubuntu, commit c49e9ba31）
 
 
 ## BUG-513 [2026-10-31T06:42:00Z] [medium] OPEN
+> 关系注（2026-10-31 追）：与 BUG-523（账实拆单）/ BUG-527（库包带 link 必崩）同族——本单 windows 臂红在
+> `Install MoonBit`（安装线 403），与 527 **不同因**；但装好后 build 仍会撞 527。根因链见 527。
 - summary: `release.yml` 两条 native 臂（linux / windows）在 v0.3.11 这一发**双双失败** ⇒ 公网 Release 只剩
   **1 枚资产**（`fist-mbt-js-v0.3.11.zip` 794,603B），而 v0.3.10 那发有 2 枚（js + native-linux-x64）。
   因为两臂都带 `continue-on-error`，**这个缩水没有任何一把尺会红**
@@ -14292,6 +14294,17 @@ FAIL 3 条：
 单次读数不足以下结论 ⇒ 接这一单的人先按出路 1 拿钉版读数，别拿今天这发当证据。
 
 
+## 追记（2026-10-31，BUG-523 仍 OPEN —— 拆单对账）
+
+归因已可下结论：CI `Test (native)` 恒红与 **BUG-527 同根因**——13 份库包 `moon.pkg` 带
+`cc-link-flags`，被新 moon 当可执行目标去链（`undefined reference to 'main'`），
+干净树全量 native 从根本上建不出来。回看 BUG-133 记 FIXED 的口径：依赖侧 stub.c 修复 +
+`e2e_native_heap_probe.py --runs 12` 连发探针，**从未覆盖「干净树全量 native 通过」这一格**
+（②格）——红因不在依赖侧，所以 12 连发再多次也抽不中它。
+按本单出路 ② 显式拆单：native 全量那一格归 **BUG-527** 单号承接（含治本三出路）；
+BUG-523 本单聚焦「账实对齐」——即 BUG-133 状态标记与关闭条件 ② 脱钩这一格的账面处置。
+
+
 ## BUG-524 [2026-10-31T08:45:00Z] [medium] FIXED
 - summary: 验收探针 `scripts/blackbox/e2e_acceptance_recheck.py` 两处「旗标/路径被承认但不生效」——
   ① `FIST_ACCEPT_JS` 给**相对路径**时，存在性按脚本 cwd 判、spawn 按沙箱 cwd 走 ⇒ 同一枚有效路径在两副面罩下结论相反；
@@ -14433,6 +14446,7 @@ BUG-513 的缺口性质因此是**长期从未通过**，不是「最近退化�
 
 
 ## BUG-527 [2026-10-31T10:36:00Z] [medium] OPEN
+> 交叉引用（2026-10-31 追）：与 BUG-523（账实拆单）/ BUG-513（release 双臂）同族，根因链见本单 527。
 - summary: 全项目 `moon build --target native` 在 moon `0.1.20261021` 下**必崩**——12 份「库却带 `options(link:{native:{cc-link-flags}})`」的
   `moon.pkg` 被当成可执行目标去链（`crt1.o` 要 `main`），报 `undefined reference to 'main'`，
   且 `Error:` 那行只有包名没有文件:行 ⇒ 看起来像「源码编译错误」。本轮只在 `release.yml` 里**绕行**（scoped 构建），没治本
@@ -14564,6 +14578,16 @@ FIST_ACCEPT_JS=temp/definitely-missing.js python scripts/blackbox/e2e_acceptance
 
 ## 关联
 
-与 BUG-524（同日 FIXED）同一支探针；ST2/ST3 是那一笔新增的。**本轮没做的事**（如实记）：
+与 BUG-524（同日 FIXED）同一支探针；ST2/ST3 是那一笔新增的。
+关系注：与 BUG-527 **无因果**（本单是探针自检顺序问题，native 构建红因链见 527）。
+**本轮没做的事**（如实记）：
 没改这段顺序——改它要动 ST1 的依赖面，而今天已经对这支被评审使用的探针做过两处改动，
 不宜在同一批里叠第三处未验证的重排。
+
+## BUG-530 [2026-10-31T14:20:00Z] [medium] OPEN
+- summary: `model_route(config_json=…)` 声称「已按 config_json 播种池定义」但 `persisted=false`，且 `model_router_status` 读回 `free_pool: []` —— 池定义**没有落进状态盘**，`executor_run(executor=ofm, model 空)` 因此永远只能拿默认池
+- 实测（2026-10-31，ns=ofm-route-r1，直连 JSON-RPC）：①播种调用回执 `mode=query-only（…已按 config_json 播种池定义…）`、`persisted=false`；②紧接 `model_router_status` 同 ns 读回 `free_pool: []`；③`executor_run(executor=ofm, model 空)` 的路由回执 `warnings=["无有效状态，按配置新建路由器"]`、选中默认池 `ling-3.1-flash-free`（缺 `provider/` 前缀，被 relay 拒 400 `model must use provider/model format` ⇒ `failure_kind=BAD_REQUEST`）
+- 与工具文档承诺直接矛盾：`model_route` 描述写明「显式给了 config_json 的池定义时，在决策之前把池形状写进状态文件（否则 executor_run 自动记账那一笔不带 config，只能拿默认池，配额形同虚设）」——承诺的「播种→executor_run 可用」链路实际断裂
+- 影响：OFM 免费路由在「路由决策」与「执行器记账」两处读到的池**不一致**；默认池命名与 OpenAI 兼容 relay 的 `provider/model` 要求不兼容时，空 model 真跑必 400——历史「能启动、一用就死」的根因之一
+- 修复动线（待 src/router 并发 WIP 收口）：`src/router/router_state.mbt` / `model_router.mbt` 的播种写盘路径 + `executor_run` 路由调用是否带 config 透传；锁 = 播种后 `model_router_status` 必须读回同池 + `executor_run(空 model)` 选中播种池内 `provider/model` 形状模型
+- evidence: `reports/2026-10-31-ofm-relay-fullchain-report.md`（全链路实测三发现之①③）
