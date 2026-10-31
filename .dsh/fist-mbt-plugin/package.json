@@ -15,6 +15,6 @@
   },
   "meta": {
     "title": "FIST-Mbt",
-    "description": "FIST 指挥官任务编排与自驱流水线：FIST 指挥官任务编排与自驱流水线：MCP 工具集 + 记忆沉淀闭环，v0.3.10（0.3.9→0.3.10 为版本号推进：8 bug 修复 + mcp 0.18.1 + sqlite 0.4.0 + star_gate utf-8）"
+    "description": "FIST 指挥官任务编排与自驱流水线：MCP 工具集 + 记忆沉淀闭环，v0.3.11"
   }
 }
