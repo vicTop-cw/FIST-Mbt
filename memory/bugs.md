@@ -13802,6 +13802,34 @@ v0.3.10 在 2026-10-30 能出 native-linux 资产，而今天同一条命令在�
 在没有第二台可比环境的情况下改分发轨配置＝拿公网资产当试验品。**owner 裁决后再动**。
 
 
+## 追记（2026-10-31T11:20:00Z，BUG-513 仍 OPEN —— 三条出路走了一条半）
+
+**出路 ②「native 臂补 `reapply.sh`」已做，并顺带挖出两把独立锁**（记账在 BUG-526，已 FIXED）：
+`release.yml` 的 `build-native-linux` 现在是 先解包 → reapply → scoped 构建 → **交付前真调一次** → 打包 → 上传。
+run `41194094357` 那一跑 `build-native-linux` = success，本仓**第一次由流水线产出 native 资产**。
+
+**发布面也已补齐**（owner 选「追加到 v0.3.11」，不新打 tag）。复验配方：
+```bash
+# 1) 发布面有几枚资产
+gh api repos/vicTop-cw/FIST-Mbt/releases/tags/v0.3.11 \
+  --jq '.assets[] | "\(.name) \(.size)B"'        # 现为 2 枚
+# 2) 匿名线真的取到 zip（不是 200 + HTML）
+U=$(gh api repos/vicTop-cw/FIST-Mbt/releases/assets/695214492 --jq .browser_download_url)
+curl -sSL -o /tmp/n.zip -w "%{http_code} %{size_download}\n" "$U"
+head -c 2 /tmp/n.zip            # 必须是 PK
+```
+
+匿名线读数：`fist-mbt-native-linux-x64-v0.3.11.zip` 3,835,963B、HTTP 200、
+`sha256` 前缀 `aa609263ada30de4`，与 CI 产物区那枚**逐字节相等**（不是「大小像」）。
+
+**仍然没走的两条**，所以本单保持 OPEN：
+1. **出路 ①（分发轨钉版 / `install/windows` 403）没动** —— `build-native-windows` 仍红在
+   `Install MoonBit`。本轮**没有猜正确的安装 URL**（本机候选探测只给 000/403 混合结果，不足作依据），
+   这一半留给带读数的下一单。
+2. **出路 ③（给资产集合加尺）没做** —— 今天「少一枚」仍然是人查 API 发现的。
+   补一句可验的边界：本单的关闭条件是**「有判据在发布后自动比对臂声明与实际资产，少一枚即红」**，
+   不是「资产数现在对了」；数一数就绿的那格不是锁（判例-36）。
+
 ## BUG-514 [2026-10-31T06:50:00Z] [medium] FIXED
 - summary: `mcp_tool_tour.py` 的自述面**夹具** `surface_fixture()` 只读 `AGENTS.md`，而 `Resources:` 那一行
   早已随 R212 搬到 `docs/AGENTS-mcp-inventory.md` ⇒ `re.search(...)` 回 None、`.group(1)` 当场
