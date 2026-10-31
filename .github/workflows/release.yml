@@ -32,6 +32,12 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.value }}
     steps:
+      # 这一格原来**没有 checkout**：tag push 时版本从 `GITHUB_REF_NAME` 剥出来，不读盘 ⇒ 一直没暴露；
+      # 2026-10-31 首次 `workflow_dispatch` 实测红在第一步 ——
+      # `FileNotFoundError: [Errno 2] No such file or directory: 'moon.mod'`，
+      # 于是 else 分支那条「退回真源 moon.mod」的出路**从来没跑通过**，并连带把四个下游全 skip 掉。
+      # 读盘的那条路必须先有盘：补 checkout，且注释里的正则口径保持与 gen_plugins.py 的 RE_VERSION 同源。
+      - uses: actions/checkout@v4
       - id: version
         run: |
           REF="${GITHUB_REF_NAME}"

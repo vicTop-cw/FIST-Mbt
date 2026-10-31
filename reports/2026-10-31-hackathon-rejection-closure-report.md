@@ -783,3 +783,14 @@ FAIL 违例 2 条：
 **BUG-526 的关闭条件 = 派发那一跑 `build-native-linux` = success 且 Actions 产物里有那枚 zip**；
 BUG-527 保持 OPEN（本轮没动那 13 份 `moon.pkg`，别把它读成「native 全项目构建已可用」）。
 `ci.yml` 的 `Test (native)` 与这两把锁同源还是另一因，**本轮未归因**，接 BUG-523 时一起判。
+
+**同一条派发链上还有第三把锁（BUG-528，本轮一起修）**：为了「让流水线自己产出 native 资产」而第一次
+`workflow_dispatch` 时，`meta` 作业第一步就 `FileNotFoundError: 'moon.mod'` ⇒ rc=1，
+**四个下游作业全被 skip**。原因朴素得丢人：`meta` 没有 `actions/checkout` —— tag push 那一支从
+`GITHUB_REF_NAME` 剥版本、**根本不读盘**，所以注释里写着「退回真源 moon.mod」的那条兜底**从来没被执行过**
+（与 BUG-512「那格在干净树上从未产出过结论」同族：**开关的一侧从未被走到**）。
+补 checkout 之前，先在本机验过那条正则确实取到 `0.3.11`（与 `gen_plugins.py` 的 `RE_VERSION` 同口径）。
+
+⚠️ 顺序在这里是要命的：**发布门必须先于 meta 修好**。`meta` 一旦能用，派发那一跑就会走到 `release` 作业，
+而它的 `tag_name` 展开的是 `github.ref_name` = 分支名 ⇒ 会创建一条 tag 名为 `main` 的**公开假 Release**
+（名字还写着 `FIST-Mbt v0.3.11`）。所以「事件 + tag 前缀」门与 checkout 是同批两半，拆开做就是把事故留给下一个人。
