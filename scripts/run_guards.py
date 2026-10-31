@@ -917,6 +917,11 @@ def _match_rule(base):
 # 平台前提/一次性补丁/纯辅助库）。点名失效（脚本删了）由 G2 扩展面抓。
 REGISTRY = {
     "award_demo.py": "演示脚本（无门禁语义）",
+    # 2026-10-31（BUG-501~508 整改轮）：黑客松拒收六项的**活体**复验探针。它有自己的 `--selftest`
+    # （合成违例格 ST1，抓不到就回 rc=3 判「尺子坏了」），但它每格都要**跨进程起真 server + 真读 sqlite**
+    # ⇒ 与 e2e_assistant_xproc / e2e_lock_xproc 同族：进 REGISTRY 带理由，不进自动电池（电池是只读面，
+    # 跑一次数分钟且会 spawn 子进程；判例-33 要求的是「生产同一份启动描述」，不能为省时间降级成静态扫）。
+    "blackbox/e2e_acceptance_recheck.py": "端到端探针：拒收六项活体复验（跨进程起真 server + 真读 sqlite，需 js 产物），跑法见 scripts/README.md",
     "blackbox/e2e_assistant_xproc.py": "端到端探针：跨进程起真 assistant，需运行前提，跑法见 scripts/README.md",
     "blackbox/e2e_lock_xproc.py": "端到端探针：跨进程锁竞争，需运行前提，跑法见 scripts/README.md",
     "blackbox/e2e_mirror_install.py": "端到端探针：真下载镜像安装（网络 + 沙箱），跑法见 scripts/README.md",
