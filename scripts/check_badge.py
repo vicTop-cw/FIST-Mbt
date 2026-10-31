@@ -44,6 +44,15 @@ usage，消费者唯一的读法就是"徽章守卫判红"，于是把一次**�
 **文案纪律**：证明不了现实时**不许用「实测」这个词**。旧文案
 `PASS … == 实测 1455/1455` 里的「实测」指的不是现实，是快照 —— 那本身就在放大假绿。
 新文案把快照路径、mtime、源码面 sha 一起打出来。
+
+## BUG-508：接线面（W1/W2，判例-33）
+
+本尺**自己**没错，错的是 CI 里那句 `check_badge.py <log> README.md`——不带 `--fresh*` 就拿不到
+源码面锚点，于是**结构上永远 rc=2**（诚实沉默），并把 fail-fast 后面 8 步一起 skip。
+「服务本体能工作」与「服务被正确接入」是两件事 ⇒ `--selftest` 里加两格锁接线：
+W1 真读 `.github/workflows/*`，要求每个 `check_badge.py` 调用行都带新鲜度旗标
+（**一条都扫不到也算不符预期** —— 那叫尺子脱锚，不叫通过）；
+W2 把真调用行上的旗标摘掉（只改那一行，不碰注释——这串在 ci.yml 正文里也出现过），断言必红。
 """
 import os
 import re
@@ -156,6 +165,49 @@ def judge(log_text, readme_text):
              f"SELFCHECK-STALE: README 自检注释 Total tests {sn}/{sp} ≠ 实测 {total}/{total}。请同步。")
         )
     return problems, info
+
+
+# ── BUG-508 生产接线面（判例-33：测「配置这根线」，不是测判据本体）────────────────
+# 病灶：CI 的 badge 那一步裸跑 `check_badge.py <log> README.md` ⇒ 快照旁边没有 `<log>.src` 锚点
+# （锚点只由 `--fresh` / `--fresh-if-stale` 那条路经 `write_anchor` 写）⇒ **结构上永远 rc=2**，
+# 而 fail-fast 把后面 8 步一起 skip。判据本体一直正确，错的是接线 ⇒ 回归锁必须锁接线。
+FRESH_FLAGS = ("--fresh", "--fresh-if-stale")
+BADGE_CALL_RE = re.compile(r"python3?\s[^\n]*scripts[/\\]check_badge\.py")
+
+
+def badge_call_lines(text):
+    """文本里**真调用** check_badge.py 的行。注释行不算——ci.yml 里 BUG-508 的说明正文就写着它。"""
+    out = []
+    for i, line in enumerate(text.splitlines(), 1):
+        st = line.strip()
+        if st.startswith("#") or st.startswith("//"):
+            continue
+        if BADGE_CALL_RE.search(st):
+            out.append((i, st))
+    return out
+
+
+def wiring_problems(text):
+    """调用行没带任何新鲜度旗标 ⇒ 这一道门结构上只能回 rc=2（诚实沉默），等于没有门。"""
+    return [(i, st) for (i, st) in badge_call_lines(text)
+            if not any(f in st for f in FRESH_FLAGS)]
+
+
+def workflow_texts(root=None):
+    """`.github/workflows/*.yml|yaml` 的 (文件名, 正文)。目录读不到返回空表 ⇒ 调用方必须自拒。"""
+    d = os.path.join(root or ROOT, ".github", "workflows")
+    out = []
+    if not os.path.isdir(d):
+        return out
+    for f in sorted(os.listdir(d)):
+        if not f.endswith((".yml", ".yaml")):
+            continue
+        try:
+            with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
+                out.append((f, fh.read()))
+        except OSError:
+            continue
+    return out
 
 
 def selftest():
@@ -291,14 +343,49 @@ def selftest():
     print(f"  {'C1 真的调了共用模块':<22} {'是' if ok_call else '否'}  "
           f"{'符合预期' if ok_call else '**不符预期**（自己算了一份锚点？判例-29）'}")
 
+    # W 面（BUG-508 的回归锁，判例-33/36）：判据本体绿 ≠ 生产接线对。
+    # 结果一律攒进 wire_results，格子数与汇总行都从它反解（判例-30：计数别手写）。
+    wire_results = []
+    wfs = workflow_texts()
+    call_lines = [(f, ln, st) for (f, t) in wfs for (ln, st) in badge_call_lines(t)]
+    live_probs = [(f, ln, st) for (f, t) in wfs for (ln, st) in wiring_problems(t)]
+    # W1 反脱锚设计：**一条调用都扫不到 = 尺子坏了**，不许当成「没违例所以绿」——
+    # 否则将来有人改步骤名/挪 workflow，这道锁会静默恒绿（判例-32 同族）。
+    wire_results.append((
+        "W1 生产接线带新鲜度旗标",
+        bool(call_lines) and not live_probs,
+        "扫到 %d 处调用 / 违例 %d 处（workflow %d 份）" % (len(call_lines), len(live_probs), len(wfs))))
+
+    # W2 变异对照：只改**调用那一行**，不碰注释。`--fresh-if-stale` 这串在 ci.yml 的
+    # BUG-508 说明正文里也出现过 ⇒ `text.replace(..., 1)` 会命中注释那处 = 假变异（判例-30 实测）。
+    ok_w2 = False
+    for f, t in wfs:
+        hits = badge_call_lines(t)
+        if not hits:
+            continue
+        ln = hits[0][0]
+        lines = t.splitlines(True)
+        lines[ln - 1] = lines[ln - 1].replace("--fresh-if-stale", "").replace("--fresh", "")
+        ok_w2 = bool(wiring_problems("".join(lines)))
+        break
+    wire_results.append(("W2 摘掉旗标必红", ok_w2,
+                         "变异点=%s" % ("%s:%d" % call_lines[0][:2] if call_lines else "无调用行")))
+
+    for name, ok, readout in wire_results:
+        if not ok:
+            bad += 1
+        print(f"  {name:<22} {readout}  "
+              f"{'符合预期' if ok else '**不符预期**（BUG-508 复发或这道锁脱锚）'}")
+
+    n_wire = len(wire_results)
     if bad:
         print(f"SELFTEST FAIL：{bad} 项不符预期"
-              f"（判据 {len(cases)} 支 + 入口 {len(entry_cases)} 支 + 调用面 1 支）")
+              f"（判据 {len(cases)} 支 + 入口 {len(entry_cases)} 支 + 调用面 1 支 + 接线面 {n_wire} 支）")
         return 1
-    print(f"SELFTEST OK：{len(cases) + len(entry_cases) + 1} 支对照全按预期"
+    print(f"SELFTEST OK：{len(cases) + len(entry_cases) + 1 + n_wire} 支对照全按预期"
           f"（判据违例必红 {reds} / 干净必绿 {len(cases) - reds} / 入口分档 {len(entry_cases)} + "
-          f"调用面 1，含判例-25 A2/A3 快照锚点面与 C1 共用模块调用面；"
-          f"计数从 cases 与 entry_cases 反解，不手写）")
+          f"调用面 1 + 接线面 {n_wire}，含判例-25 A2/A3 快照锚点面、C1 共用模块调用面与"
+          f"BUG-508 W1/W2 生产接线面；计数从 cases、entry_cases 与 wire_results 反解，不手写）")
     return 0
 
 

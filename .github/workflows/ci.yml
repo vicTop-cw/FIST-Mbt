@@ -190,6 +190,8 @@ jobs:
         # --fresh/--fresh-if-stale 那条路才写（write_anchor）。:185 的 tee 不写锚点 ⇒ 永远
         # REJECT SNAPSHOT-STALE rc=2，并把后面 8 步 fail-fast 成 skipped。
         # --fresh-if-stale = 「同源就不重跑」：CI 上锚点缺席 ⇒ 真跑一次再比（ubuntu 实测 41 秒）。
+        # position-why: 本格读的是 :185 `Test (js)` tee 出来的 /tmp/moon_test.log，必须排在那一步之后；
+        #              它落在 Migrate 之后是这条数据依赖的连带，不是位置纪律失守（BUG-508 施工记录）。
         run: python3 scripts/check_badge.py --fresh-if-stale /tmp/moon_test.log README.md
 
       - name: Tool-list single-source guard (AGENTS/README 工具与会注册对齐)
