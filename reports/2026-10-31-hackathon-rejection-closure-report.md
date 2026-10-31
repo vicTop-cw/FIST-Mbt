@@ -7,7 +7,8 @@
 
 ## 一、结果摘要
 
-六项逐条打到调用面复验，**五修一立案**，六格一键复验探针全绿：
+六项逐条打到调用面复验，**五修一立案**，六格一键复验探针全绿；
+收口时读 CI 原始回执又**实测抓出一项不在拒收单里的跨平台缺陷**（BUG-507，见第七行）：
 
 | # | 拒收项 | 结论 | 落点 |
 |---|---|---|---|
@@ -17,18 +18,27 @@
 | ④ | native serve/demo 仅输出帮助 | **参数分派面已修**（BUG-159，本轮在 WSL 真跑三臂复核：version/serve/demo 均不回帮助）；本轮补：发布资产「内部文件魔数↔资产名声明平台」进判据、`user_arg` 补缺失 cfg 臂；**native 轨 `cli_exit` 退出码不生效立案 BUG-506（OPEN）** | BUG-506 |
 | ⑤ | DAG 接受成环依赖 | **修**：环闸抽成唯一真源 `depend_edge_ok`，三条写边入口全部接线；upsert 改为「任一边被拒 ⇒ 整条不写」；新建通道的悬空依赖同样拒 | BUG-503 |
 | ⑥ | Omega 验收门可由 archive 绕过 | **修**：抽出 `omega_archive_gate`，`archive` / `archive_force` / **自动续轮 `publish_next_round`**（原先完全没有门）三条路径同源；门判在建新轮任务之前，不留半套状态 | BUG-504 |
+| ＋ | **本轮实测新发现（不在拒收单里）**：CI 的 JS/ubuntu 臂 `Test (js)` 两格真红 | **修**：`.mbt` 放行规则的临时目录只认 `TEMP`/`TMPDIR`/`TMP`，而 ubuntu runner 三个都不给（本机 WSL 实测 `TMPDIR=[] TEMP=[] TMP=[]`）⇒ 落盘失败 ⇒ `mbt_include` 恒 false。抽成纯函数 `ocr_temp_candidates(env)` 并加 POSIX `/tmp`、`/var/tmp` 兜底；拒绝原因改为点名试过哪些候选 | BUG-507 |
+
+> 第七条是我读 **CI 原始回执**（`gh api actions/jobs/<id>/logs`）而不是读文档发现的：
+> `origin/main` 的 CI 在本轮之前已连续两次红（run `41063304724` / `41145839030`），红的是 `Test (js)`
+> （`Total tests: 1983, passed: 1981, failed: 2`），而**本机 Windows 全量永远 100% 绿**——
+> 有 `TEMP` 就测不出这一形（判例-33「服务本体 ≠ 服务接入」、判例-37「文本命中 ≠ 行为覆盖」同族：
+> **本机绿 ≠ 双环境绿**）。申报书里那句「JS 后端 Windows 与 Linux 双环境均可复现」在此之前是假的。
 
 复验面分两栏，**第一栏克隆即有**（评委不必依赖本轮工作树的私物）：
 
 **A. 仓内复跑（已随本笔提交进 git）**
 
 ```bash
-python scripts/moon_test_env.py --target js        # 全量，含本笔新增 16 格锁
+python scripts/moon_test_env.py --target js        # 全量，含本笔新增 19 格锁
 ```
 
 新增锁逐一点名：`src/engine/engine_acc_reject_wbtest.mbt`（7 格：环闸三拒 + upsert 关环且盘上 `depends_on` 未变 + 续轮被拦且不建 `T0r2` + 归档同门对照）、
 `src/omega/omega_acc_fix_test.mbt`（4 格：坏指纹被真修 + `fixed_specs` 可复用再验 + 未知根因不重盖章 + `max_rounds` 夹紧）、
-`src/evidence/evidence_acc_fix_test.mbt`（预算与两轮收敛）、`tests/external_executor/external_executor_test.mbt`（**独立包**实现两个 Executor，3 格）。
+`src/evidence/evidence_acc_fix_test.mbt`（预算与两轮收敛）、`tests/external_executor/external_executor_test.mbt`（**独立包**实现两个 Executor，3 格）、
+`src/server/ocr_scan_wbtest.mbt` 的 `BUG-507` 三格（空环境也必须给出 POSIX 兜底候选／候选不得含空串／环境变量优先且顺序不变）——
+第三栏那格钉的是「Linux runner 上三个 env 都不给」这一形，**在 Windows 本机也能跑红**（它断言的是候选表本身，不是本机目录）。
 
 **B. 活体探针（本轮工作树内可跑，入库动作被并发车道挡住，见 §四.7）**
 
@@ -44,9 +54,9 @@ A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-m
 ## 二、资源消耗
 
 - 时间：约 70 分钟墙钟（含 3 次全量/局部测试等待）。
-- 测试：全量 JS 轨 `Total tests: 1999, passed: 1999, failed: 0`（HEAD 基线 1983 + 本笔新增 16 格；
+- 测试：全量 JS 轨 `Total tests: 2002, passed: 2002, failed: 0`（HEAD 基线 1983 + 本笔新增 19 格；
   收口后又用最终树复跑一次，同数）；
-  分包复跑 `src/engine 389/389`、`src/server 560/560`、`src/omega 56/56`、`tests/external_executor 3/3`。
+  分包复跑 `src/engine 389/389`、`src/server 563/563`（BUG-507 三格另以 `-f "*BUG-507*"` 单跑 3/3）、`src/omega 56/56`、`tests/external_executor 3/3`。
 - 构建：`moon build --target js --release` 3 次；`moon fmt` + `moon info` 各 2 次（第二次 0 改动）。
 - 判据：`check_bug_ledger_shape` / `check_doc_surface` / `check_plugin_sync` / `check_scripts_index` /
   `check_demo_isolation` / `check_arg_face_strict` / `check_warning_ledger` / `check_fmt_gate` 全 PASS；
@@ -57,8 +67,11 @@ A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-m
   现读 `moon check --target js` = **48 warnings / 0 errors**，台账 L1 27/27、L2 7/7、覆盖率 100%。
 - 插件投影：`check_plugin_sync` 先红（9 文件漂移）⇒ 先核漂移**只由我的账本驱动**（BUG-1~506 / 1 条待修），
   再 `gen_plugins.py` 重生成 ⇒ PASS（4 宿主 / 64 生成文件 / 182 工具 / v0.3.10）。
-- 变异对照：**4 次真跑**（M1' 摘 upsert 环闸 → 2 格红；M2 门判错对象 → 1 格红；M3 恢复洗白分支 → 1 格红；
+- 变异对照：**5 次真跑**（M1' 摘 upsert 环闸 → 2 格红；M2 门判错对象 → 1 格红；M3 恢复洗白分支 → 1 格红；
+  M4 把 POSIX 兜底 `["/tmp","/var/tmp"]` 改成 `[]` → BUG-507 三格 **3/3 红**；
   外加 A2/A5/A6 三格的「修前 FAIL」活体对照）。
+  **M4 之后按字节还原**（`还原字节相同 = True`，29180↔29180）并复跑 3/3 绿 ⇒ 判例-30 的还原纪律这次做到了，
+  与上午 M3 那笔「忘了还原」形成对照（同族债还得当场还）。
 
 ## 三、任务分配记录
 
@@ -75,14 +88,14 @@ A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-m
    本轮**没修**的结转理由与三条出路都写进账本了：判绿需要真 native 产物复跑，而 Windows 本机
    native 构建要 MSVC+sqlite3.lib，且在共享树起 native 全量构建会与其它 lane 抢 `_build`。
 2. **测试计数现状面未扫（CI 的 `check_test_sync`/`check_badge` 会在干净树上红，这一格是已知且故意留的）**：
-   实测 `python scripts/check_test_sync.py --total 1999 --strict` ⇒ **26 条违例，分布在 10 份现状面**
-   （AGENTS.md ×4、README.md ×3+R2、README_EN.md ×5、ARCHITECTURE.md、README.mbt.md、docs/SOP.md、
-   docs/agent-map.md、docs/deliverable.md ×2、docs/known-boundaries.md ×2、scripts/scoring_rubric.md）。
+   实测 `python scripts/check_test_sync.py --total 2002 --strict` ⇒ **26 条违例，分布在 10 份现状面**
+   （README_EN.md ×5、AGENTS.md ×5、README.md ×4、scripts/scoring_rubric.md ×2、docs/deliverable.md ×2、
+   docs/SOP.md、README.mbt.md、ARCHITECTURE.md、docs/agent-map.md、docs/known-boundaries.md）。
    **为什么本笔不扫**（两条都是实测，不是推诿）：
    ① `README.md` / `AGENTS.md` 此刻是 lane-R115 的未提交 WIP（4 行改名指针对齐），按判例-11 带 `-- <明确路径>`
       提交＝把他们那 4 行也写进我的提交；`scripts/run_guards.py`（128 行改名批量）同理被占；
-   ② **更要紧**：1999 这个读数是**脏工作树**上的（我这 16 格 + 别人在途的测试改动混在一起测出来的），
-      此刻把 1999 烧进十份文档，等于「文档写了一个只有本机临时状态才成立的数」——
+   ② **更要紧**：2002 这个读数是**脏工作树**上的（我这 19 格 + 别人在途的测试改动混在一起测出来的），
+      此刻把 2002 烧进十份文档，等于「文档写了一个只有本机临时状态才成立的数」——
       那正是本判据要罚的形状。判据自己也是这么定的：`DIRTY_TREE_DEGRADED`（BUG-425）在脏树下把红降为
       ADVISORY，并明写「此刻的红可能是文档落后于在途工作，不是文档写错了数」。
    ⇒ 正确处置：**由最后落地的那一笔**做 `docs: 测试总数 1983 → N 同步`（本仓惯例），
@@ -105,7 +118,11 @@ A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-m
    **先加 `REGISTRY` 行、脚本暂不跟踪**更危险——台账点名的脚本不存在 ⇒ G2 在他机/CI 上 FATAL、整台电池卡死
    （`5be75f1e` 现场已写在 `run_guards.py` 注释里）。⇒ **面与脚本必须同一笔提交**，故随 lane-R115 落地后一起补：
    `REGISTRY` 一行 + `git add` 探针，两步同批，缺一必红。
-   本报告与申报书因此把「克隆即有」的复验口径写在 §一 A 栏（16 格具名锁），不用一条仓里还不存在的路径充证据。
+   本报告与申报书因此把「克隆即有」的复验口径写在 §一 A 栏（19 格具名锁），不用一条仓里还不存在的路径充证据。
+8. **BUG-507 的 Linux 正身还没复验到**（跨平台主张不能拿本机绿抵扣）：修法与三格锁在 Windows 上全绿，
+   但**这一形只有在「三个 env 都不给」的机器上才看得见**，而本机 WSL 有 node v25.2.1 却没有 moon
+   （在 WSL 里装工具链属于改动用户环境，未做）。⇒ 关闭证据 = 推送后 CI 的 `Test (js)`（ubuntu）由
+   `failure` 转 `success`；若仍红则本单退回 OPEN。取数法已写进账本与本栏，判据是步骤结论原文，不是「应该好了」。
 
 ## 五、后续建议（按性价比排序）
 
@@ -114,7 +131,7 @@ A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-m
    （它长期静默失败 ⇒ 公网至今只有 linux-x64 一个 native 资产，这正是「native 只会打印帮助」这类误读的土壤）。
    ⚠️ 发版/推送是不可逆动作，**等 owner 明确点头**再执行。
 2. **一笔结转（等 lane-R115 落地后一起做，两半同批、缺一必红）**：
-   ① `docs: 测试总数 1983 → N 同步`——N 必须在**干净树**上重测（现在脏树读的是 1999，含别人在途的测试），
+   ① `docs: 测试总数 1983 → N 同步`——N 必须在**干净树**上重测（现在脏树读的是 2002，含别人在途的测试），
       违例面实测 26 条 / 10 份文件（清单见 §四.2）；
    ② `scripts/run_guards.py` 的 `REGISTRY` 加一行 `"blackbox/e2e_acceptance_recheck.py": "端到端探针：起真 server + node 产物 + 沙箱库，需运行前提，跑法见 scripts/README.md"`，
       **与 `git add scripts/blackbox/e2e_acceptance_recheck.py` 同一笔提交**（理由与禁走的捷径见 §四.7）。
@@ -136,12 +153,20 @@ A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-m
 ## 七、来源
 
 - 拒收回执：用户消息（2026-10-31 转述组委会通知原文）。
+- **CI 原始回执（BUG-507 的唯一成因来源）**：`gh api repos/vicTop-cw/FIST-Mbt/actions/runs` 的
+  run `41145839030` / `41063304724`（`origin/main` 连红两次）→ `actions/jobs/124370614726` 步骤表
+  （20 Format check=success·带 continue-on-error，21 Test (js)=failure）→
+  `actions/jobs/124370614726/logs` 原文（留盘 `temp/js_job.log`，两条失败断言逐字在 1839/1840 行附近）。
 - 实测原件：`temp/acc_recheck_probe.py`（第一轮探针）、`temp/acc3_probe.py`（I5/I6 专项）、
-  `temp/full_js_suite_final.txt`（全量 1999/1999 汇总行）、`temp/acceptance-recheck/*`（六格沙箱与 JSON 证据）、
+  `temp/full_js_suite_b507.txt`（全量 **2002/2002** 汇总行；`temp/full_js_suite_final.txt` 是收口前那跑的 1999）、
+  `temp/b507*.log`（BUG-507 三格：修前红/修后绿/变异 3 红/还原复绿）、`temp/b507_pre_mutation.bytes`（变异前字节底）、
+  `temp/acceptance-recheck/*`（六格沙箱与 JSON 证据）、
   `temp/native_wsl_probe.txt`（native 三臂真跑）、`_release/native/fist-mbt.exe`（ELF 魔数 + WSL 读数）。
 - 代码面：`src/server/server.mbt`、`src/engine/{engine,engine_dag_ext,engine_supervisor,engine_archive_force,omega_strong}.mbt`、
   `src/omega/omega_tool.mbt`、`src/evidence/{auto_repair,evidence_acc_fix_test}.mbt`、`src/executor/base.mbt`、
   `cmd/cli/main.mbt`、`tests/external_executor/*`、`src/engine/engine_acc_reject_wbtest.mbt`、
-  `src/omega/omega_acc_fix_test.mbt`、`scripts/blackbox/e2e_acceptance_recheck.py`。
-- 账本：`memory/bugs.md` BUG-501～BUG-506（含每条的 FIXED 小记与回归锁点名）。
+  `src/omega/omega_acc_fix_test.mbt`、`scripts/blackbox/e2e_acceptance_recheck.py`（未入库，见 §四.7）、
+  **BUG-507 面**：`src/server/ocr_scan.mbt`（`ocr_temp_candidates` 纯函数 + POSIX 兜底 + 拒绝原因点名候选）、
+  `src/server/ocr_scan_wbtest.mbt`（`BUG-507` 三格）。
+- 账本：`memory/bugs.md` BUG-501～BUG-507（含每条的 FIXED 小记与回归锁点名；BUG-506 仍 OPEN）。
 - 判据与纪律依据：`AGENTS.md` 判例-29 / -30 / -32 / -33 / -36 / -37、R207（未知旗标必须拒）、判例-11（提交带明确路径）。

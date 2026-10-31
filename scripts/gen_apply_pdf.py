@@ -94,7 +94,7 @@ def main():
     pdf.add_page()
     pdf.hd("FIST-Mbt 项目申报书", 15, True)
     pdf.hd("FIST 指挥官任务分配体系的纯 MoonBit 原生重写与 MCP 化", 9)
-    pdf.hd("v0.3.10 · 已发布 mooncakes.io/fist-mbt + GitHub Release · 182 MCP 工具 · 1999 测试全绿 · JS 为权威门槛", 8)
+    pdf.hd("v0.3.10 · 已发布 mooncakes.io/fist-mbt + GitHub Release · 182 MCP 工具 · 2002 测试全绿 · JS 为权威门槛", 8)
 
     pdf.sec("一、项目简介")
     pdf.p("把多智能体任务编排框架 FIST（原 Python 版）用纯 MoonBit 原生重写，封装为 MCP Server。"
@@ -123,7 +123,7 @@ def main():
           "自愈运维：heartbeat 心跳 + heal 超时回滚 + dag_ready 拓扑派发，避免任务卡死。")
 
     pdf.sec("五、质量与可复现")
-    pdf.p("1999 项测试（`Total tests: 1999, passed: 1999, failed: 0`，判绿看汇总行不看退出码）覆盖全生命周期/DAG（含成环拒绝的盘上核对）/"
+    pdf.p("2002 项测试（`Total tests: 2002, passed: 2002, failed: 0`，判绿看汇总行不看退出码）覆盖全生命周期/DAG（含成环拒绝的盘上核对）/"
           "审计/并发/Omega（含验收门五条路径与自动修复三轮）。针对上轮拒收六项的**回归锁已入库**："
           "`src/engine/engine_acc_reject_wbtest.mbt`(7 格) + `src/omega/omega_acc_fix_test.mbt`(4) + "
           "`src/evidence/evidence_acc_fix_test.mbt`(2) + **独立包** `tests/external_executor/`(3)；"
@@ -133,6 +133,10 @@ def main():
           "`scripts/blackbox/e2e_acceptance_recheck.py`，2026-10-31 本机读数 `A1 PASS / A2 PASS / A3 PASS / A4 SKIP / A5 PASS / A6 PASS / ST1 PASS`。"
           "**如实声明：该探针脚本本轮尚未进 git**——本仓纪律要求「脚本」与「它的电池登记面」必须同一笔提交，"
           "而登记面此刻被另一条并发车道的未提交改动占用（成因与执行法见 `reports/2026-10-31-hackathon-rejection-closure-report.md` §四.7）。"
+          "**本轮另读 CI 原始回执实测抓出并修掉一项不在拒收单里的跨平台缺陷（BUG-507）**："
+          "`.mbt` 放行规则的临时目录只认 `TEMP`/`TMPDIR`/`TMP`，ubuntu runner 三个都不给 → "
+          "`mbt_include` 在 Linux 上恒 false、`Test (js)` 两格真红，而本机 Windows 永远测不出这一形；"
+          "已抽成纯函数 `ocr_temp_candidates(env)` 加 POSIX `/tmp`、`/var/tmp` 兜底，锁三格 + 变异对照（清空兜底 → 3/3 红）。"
           "如实边界：native 轨未知子命令退出码仍为 0（js 轨为 2，账本 BUG-506 OPEN）；执行器注册表存名字与能力标签、"
           "不持有 trait 实例，远程沙箱接入需本地包装可执行文件（BUG-505 未锁的缺口）；"
           "测试总数现状面（README/AGENTS 等 10 份）仍写上一轮的 1983，同步动作与上述同一笔结转（§四.2）。")
