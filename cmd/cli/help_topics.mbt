@@ -3,7 +3,7 @@
 ///|
 // R11 硬门：FIST_VERSION 必须 == moon.mod 的 version（check_release_asset_names），
 // 否则公网装出来的全局 `fist version` 会回旧版而资产/横幅/README 是新版。换版本号同步改两处。
-const FIST_VERSION = "0.3.10"
+const FIST_VERSION = "0.3.11"
 
 ///|
 pub fn list_topics() -> String {
