@@ -83,6 +83,10 @@ A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-m
 
 ## 四、遗留风险（如实，含本笔自己造成的过程债）
 
+> ⚠️ **本节写于 14:00**。其中 **2 / 6 / 7 / 9 四条已在 14:00–15:00 之间兑现**（不是绕过、不是降级、不是改判据），
+> 逐条读数与 commit 见文末 **§八 收口补记**；下方原文保留，是为了留下「当时为什么做不到」的判断依据，
+> 不代表现在的盘面。
+
 1. **native 轨 `cli_exit` 不生效**（BUG-506，OPEN）：未知子命令 js 轨 rc=2、native 轨 rc=0。
    纯函数侧有锁（`cmd/cli/subcmd_wbtest.mbt:19-21`），坏在 extern→libc `exit` 那一跳。
    本轮**没修**的结转理由与三条出路都写进账本了：判绿需要真 native 产物复跑，而 Windows 本机
@@ -155,6 +159,8 @@ A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-m
 
 ## 五、后续建议（按性价比排序）
 
+> ⚠️ 同 §四：**第 1/2/3 条已执行**（发版序列已跑到 tag 前一步），见 **§八**；第 4/5 条仍是待办。
+
 1. **发版（0.3.10 → 0.3.11）——owner 已点头，但此刻做不到，缺的是版本号现状面**：
    **已做**：`git push origin main` 落了 3 笔（`b2a7bf14` / `32bd6325` / `a7080f72`），CI 的 `Test (js)` 已由红转绿。
    **未做**：版本号声明分布在 `moon.mod` + `src/server/server.mbt` + `cmd/cli/help_topics.mbt`(`FIST_VERSION`) +
@@ -208,3 +214,116 @@ A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-m
   `src/server/ocr_scan_wbtest.mbt`（`BUG-507` 三格）。
 - 账本：`memory/bugs.md` BUG-501～BUG-507（含每条的 FIXED 小记与回归锁点名；BUG-506 仍 OPEN）。
 - 判据与纪律依据：`AGENTS.md` 判例-29 / -30 / -32 / -33 / -36 / -37、R207（未知旗标必须拒）、判例-11（提交带明确路径）。
+
+
+---
+
+## 八、收口补记（14:00–15:30）：§四.2 / §四.6 / §四.7 / §四.9 与 §五.1–5.3 全部兑现
+
+owner 授权两条：**「代 lane-R115 落地后再发版」**（0.3.10 → 0.3.11 + tag + 出资产）与**「同步推 gitcode」**。
+下面每一条都给 commit 与当场复跑的读数；**没有一条是「改了配置就算生效」**。
+
+### 8.1 落地 lane-R115 的在途批次（`6c18cd0c`）
+
+那份 WIP 当时占着发版要动的 5 份文档（`README.md` / `AGENTS.md` / `USAGE.md` / `BACKLOG.md` / `CHANGELOG.md`）
+与探针的执行面（`scripts/run_guards.py`）⇒ 顺序只能是**先落地、再同步、再发版**。
+
+- 提交面：**64 个路径**（55 处内容改动 + 10 处改名 + 1 处删除），逐字取自 `git diff HEAD --name-status -z`，
+  用 `git commit -F msg -- <路径>`（判例-11；共享索引里有 10 条 staged rename，
+  `commit_scoped.sh` 的「前置暂存面必须为空」用不了——带 `--` 的提交绕开索引，不会卷走别人的 staged 内容）。
+- 落地前**当场复跑**（不采信提交自述，判例-33/35）：`check_scripts_naming` **rc=0**
+  （现读 `N1 无角色 16/16、N2 连字符 0/4` ⇒ 债确实还完，`N1_CEILING/N2_CEILING` 两个上限常量逐字未动）、
+  `check_scripts_index` rc=0、`check_script_single_copy` rc=0（172 份全单副本）、`check_hardcoded_paths` rc=0、
+  `check_arg_face_strict` rc=0（91 把尺拒绝未知旗标）、`check_instruction_budget` rc=0（AGENTS 62,028B 全可见）。
+- 一条关键反证：diff 里 **`+test` / `-test` 各 0 处** ⇒ 那批 src 侧改动是**往既有格子里加断言**，
+  格子数不变 ⇒ 测试总数仍是 2002，本笔落地不需要重测总数（后来也真测了，见 8.3）。
+
+### 8.2 数字同步（`dfc78695`）与 BUG-508 关闭（`2d0c362b`）
+
+| 面 | 修法 | 复验读数 |
+|---|---|---|
+| 现状面 1983 → **2002** | 10 份 / 19 条声明（含 README 徽章、`README_EN` 徽章、「一键自检」注释里的 `Total tests`、各处**实测日期戳**） | `check_test_sync.py --total 2002 --strict` **rc=0**：现状面 145 份、19 条声明全等于实测、must-carry 5 份齐全、豁免 27 条全部有效 |
+| 徽章 | 同一批 | `check_badge.py temp/pt27.log README.md` **rc=0**（`tests-2002%2F2002` + 自检注释两把都过 + 快照同源 `code=95788f85f67b@…`） |
+| BUG-508（尺子接错） | `--fresh-if-stale` 已在上批接线；**本批补回归锁** | CI run `41172747085` / job `124453995469` 第 22 步原文：`FRESH 真跑全仓：成功` + `BADGE-STALE: 1983/1983 ≠ 2002/2002` ⇒ 从「永远 rc=2」变成**会说人话的真判据**；账本转 FIXED |
+| 回归锁本身 | `check_badge.py --selftest` 新增 **W1/W2** | `SELFTEST OK：18 支`；W1 读数「扫到 1 处调用 / 违例 0 处（workflow 8 份）」、W2「变异点=ci.yml:193」 |
+| 位置纪律 | badge 步补 `position-why:` 锚点 | `check_ci_step_position.py` **rc=0**，F1 违例 **30 → 29**（上限 34 未动） |
+
+⚠️ W2 的变异**只摘调用那一行的旗标**，不用 `replace(…,1)`：`--fresh-if-stale` 这串在 ci.yml 的 BUG-508
+说明正文里也出现过，先命中的会是注释 = **假变异**（判例-30 实测形状，本轮提前避开）。
+
+### 8.3 结转A：探针三面同批入库（`b4c2dd53`）
+
+`scripts/blackbox/e2e_acceptance_recheck.py`（648 行）与它的**执行面同一笔**落：
+`run_guards.REGISTRY` 一行 + `scripts/README.md` 条目 + `BATTERY-REGISTRATION` 锚点
+（`rulers` 145→146 / `gate` 117→118；`battery`、`ci` 不动，因为它进的是「在册但不自动跑」而不是自动格）。
+复跑：`run_guards.py --list` 现读 `尺 146 / CI 面 48 / 电池面 105 / 缺执行面 0`、
+`check_battery_count_doc.py` **rc=0**、`check_scripts_index.py` **rc=0**、探针 `--selftest` **rc=0**
+（`7 格 = 6 PASS / 0 FAIL / 1 SKIP`）。⇒ §四.7 那条「探针未进 git」与申报书里的同一句声明**同时作废**，
+申报书已改为「克隆即有两个面都可跑」（`项目申报书.md` 随 `b4c2dd53` 的说明同批改，PDF 重出）。
+
+### 8.4 0.3.11 版本落面（`95788f85` + `b27700d4` + `70258f12`）
+
+- **三处源码真源同号**：`moon.mod` / `src/server/server.mbt` 的 `project_version` / `cmd/cli/help_topics.mbt` 的
+  `FIST_VERSION`；文档面 `USAGE.md` 自述版本、README 离线线资产名 `fist-mbt-js-v0.3.11.zip`（R13：
+  照抄旧字面量就是 404）；投影 16 个生成文件重生成（`182 工具 / v0.3.11`）。
+  复验：`check_doc_surface.py` **rc=0**（J1–J17 全过）、`check_release_asset_names.py` **rc=0**（R1–R14）、
+  `check_plugin_sync.py` **rc=0**。
+- **CHANGELOG 一处标签纠正**：`## v0.3.11 (T0r3 写入门禁…) - 2026-10-22` → `## v0.3.10 …`。
+  证据不是推理：那一轮施工时 `moon.mod` 仍是 0.3.10，而 `src/server/write_gate.mbt` 的新增提交 `9d4dff43`
+  实测是 tag `v0.3.10` 的祖先（`git merge-base --is-ancestor` YES），该 tag `published=2026-10-30T04:41:04Z`。
+  ⇒ 那一轮从未以 0.3.11 出过网；留着旧标签，同一个版本号会在 CHANGELOG 里指向两轮不同内容。
+  **正文逐字未动**，只改标题 + 留一段说明——纠正标签不是改写历史。
+- **BACKLOG `release-fact:` 补两行**（v0.3.9 / v0.3.10，由 `gh api …/releases` 现读；v0.3.10 是**两枚**资产
+  js 787,487B + native-linux-x64 3,793,380B）。v0.3.11 那一行**等发布完成再补**——J13 反查的就是
+  「先有事实、再落标记」这个顺序，所以 §8.5 的 CHANGELOG 新节刻意**没写「已发布」**。
+- `dist/fist-mbt.js` 由 `scripts/refresh_dist.py` 刷到 0.3.11（6,232,239B；
+  `check_dist_snapshot.py` **rc=0**：版本面同号 + 内容面 3 条探针全部有调用形 ⇒ 不是只比号）。
+
+### 8.5 电池两跑：10 红 → 清 6，剩 4 格如实列出
+
+第一跑 `temp/bat_r116.log`：**149 格 / 失败 10 / SKIP 0 / 缺执行面 0**。逐格定位（每格修完单跑该尺复验）：
+
+| 那格 | 真因（现读，不是猜） | 处置 |
+|---|---|---|
+| `check_registration_numbers` | R115 把 naming 的登记正文换成只写 `N1=/N2=` ⇒ 尺子按 `现读 (\d+) 条命名判定面` 反解不到 | 按要求的形状写回（**数字与「条命名判定面」之间不许插粗体**，这是我修它时踩的第二坑）⇒ rc=0 |
+| `check_warning_ledger_reason` | L8 位置列三处飘到非定义行 | 一律以 `moon check --target js` 现读的 `unused_value` 位置重指 ⇒ rc=0 |
+| `check_text_control_chars` | **我自己探针里的裸 0x7F 字节**（ELF 魔数该写转义形） | 改 `b"\x7fELF"` ⇒ rc=0，连带 `check_selftest_inventory_doc` 的 X4 与它自己的 G4 复绿 |
+| `check_output_validate`（自动裸跑格 rc=2） | 改名成 `check_` 前缀后 `build_cases()` 按前缀**自动**补了一格裸跑，而它是必须带 `<project_dir> --artifacts` 的 CLI；`REGISTRY` 拦不住自动格 | 显式 `expected(…, 2, kind="diag")` 接管，并把「裸跑必回 usage+2」当调用形状契约断言（R207 同律）；`--list` 读数不变 |
+| `check_deprecated_site_list` rc=2 | `temp/chk47.json` 是**上一轮留下的 stale dump** ⇒ 按列切片取空，「尺子量不动」 | 挪开让电池重采（**不删**）；机制另立 **BUG-510**（OPEN，三条出路 + 必须配位移变异对照），不夹带进发版批 |
+| `check_dist_snapshot` / `check_host_installable` | 快照与 **DSH `package.json`** 都停在 0.3.10（后者不在 `gen_plugins` 投影里，是第五宿主手工安装面） | `refresh_dist.py` + 手改 manifest ⇒ 两格 rc=0 |
+
+**剩下的红（不粉饰）**：`check_delivery_gap`（本地未推送 ⇒ 8.6 推完即消）、
+`check_selftest_hermetic` 7 条**存量债**（命中的 `check_plugin_sync` / `check_exit_code_contract` /
+`e2e_native_heap_probe` 三份自 `e0676f349` 起逐字未变，`whisperer.py` 只有 10 行改名指针
+⇒ 不是本批引入，也不该在发版批里顺手改它的自检落盘面）。
+**第二跑 `temp/bat_r117.log`：149 格 / 失败 2 / SKIP 0 / 缺执行面 0** —— 剩下的两格正是上面那两条：
+`check_delivery_gap`（本地未推送，8.6 推完即消）与 `check_selftest_hermetic`（存量债，已在本节如实定性）。
+第一跑里的其余 8 格全部转绿，逐格读数在 `temp/bat_r117.log`：`check_registration_numbers` PASS、
+`check_badge … --fresh` PASS（快照同源 `code=95788f85f67b@…` ⇒ 文档改动不影响锚点这一条被兑现了一次）、
+`check_test_sync … --fresh-if-stale` PASS（`released=0`，共享同一份产物、不重跑全仓）、
+`check_deprecated_site_list temp/chk47.json` 由 rc=2 转 PASS（重采 dump）、`check_dist_snapshot` / `check_host_installable` 双双 rc=0。
+
+### 8.6 交付动作（推送 / tag / 镜像 / CI 读数）
+
+执行顺序（本笔之后立即做；**这一节的读数由下一笔回填**，此刻写「已完成」就是拿计划冒充事实）：
+
+1. `git push origin main`（把 §8.1–8.5 那 8 笔推上去）；
+2. `git tag -a v0.3.11 -F <标签正文>` 打在含本报告的最后一笔上，再 `git push origin v0.3.11` ⇒ 触发 `release.yml`
+   （上一次 v0.3.10 那一发实测 43 秒出资产，见 run `41004195773`）；
+3. `git push gitcode main` + `git push gitcode v0.3.11` ⇒ **fast-forward 已当场核过**：
+   `git merge-base --is-ancestor <gitcode/main=ee72c5e1> HEAD` 返回 YES ⇒ 不是 force、不覆写别人历史；
+4. 读 CI：`ci.yml` 的第 22 步应从「真违例红」转绿（现状面已同步），且第 23~30 步不再被 fail-fast skip；
+   `release.yml` 出资产后把 `<!-- release-fact: v0.3.11 github-published=… -->` 补进 `BACKLOG.md`（J13 的口径：先有事实再落标记）。
+
+### 8.7 本轮沉淀（写进判例/账本的那几条）
+
+1. **勘误里不许留被勘误的值**：把「285→290」写进台账说明行 ⇒ `R5def` 吃本行里**每一个** `file:line`，
+   于是它拿我自己写的旧号报「飘移」，**修一次红一次**（判例-30/35 同族，这次是在写勘误的当口兑现的）。
+2. **给可反解的登记写数，形状与数字同等重要**：`现读 **0 条…**` 的粗体让正则吃不下 ⇒ 登记等于没登记。
+3. **改名换的是前缀，前缀决定会不会被自动跑**（判例-39 的第二面）：`REGISTRY` 的「在册但不自动跑」
+   并不参与 `build_cases()` 的分类 ⇒ 只登记不改形状，就会多出一格必红的自动裸跑格。
+4. **heredoc 之间会少一层反斜杠**：想用 `\x7f` 换掉裸 DEL，落到 Python 里仍是那个字节 ⇒
+   写转义用 `bytes([0x5c])` 显式构造，别靠多层解释器帮忙（幸而 `assert not rest` 把我拦下）。
+   ⚠️ **这条在本报告里原地复发了**：我写「8.7 第 4 条教训」的时候，同一个机制把**报告正文**里的
+   `\x7f` 也落成了裸 DEL（2 处）与日志里 1 处 ⇒ 是 `check_text_control_chars` 在修完探针之后**又一次**报红抓到的。
+   「写清教训」不防教训复发，只有那把尺防。⇒ 任何写转义的动作都先写完再跑一次控制字符普查，别靠肉眼。
