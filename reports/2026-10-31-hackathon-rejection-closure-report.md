@@ -579,5 +579,7 @@ run `41184056152`（commit `ead2687e`，CI #925）——本轮把掩蔽链从头
 
 **公网交付现状（收口终读）**：tag `v0.3.11` → commit `5f33517e2`；GitHub Release `2026-10-31T06:17:41Z`，
 资产 `fist-mbt-js-v0.3.11.zip`（794,603B，**只 js 一枚**，缺口 = BUG-513）；
-`origin/main` 与 `gitcode/main` 同一枚提交（本轮依次 fast-forward 推过 8 笔，末笔 `ead2687e`）。
-tag 之后这几笔全部只动判据/文档/探针面，零产品行为 ⇒ 公网那枚 zip 与仓库自述仍然逐字对得上。
+`origin/main` 与 `gitcode/main` **同为「本报告落笔的这一笔」**（不钉哈希、不数笔数：钉了就会被下一笔自己作废，
+本轮已为此返工过一次）；要复核就跑 `git rev-parse HEAD origin/main gitcode/main`，三行必须相同。
+向两个远端的所有推送全程 fast-forward，无 force。
+tag 之后这些笔全部只动判据/文档/探针/账本面，零产品行为 ⇒ 公网那枚 zip 与仓库自述仍然逐字对得上。
