@@ -13,7 +13,59 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
-## v0.3.11 (T0r3：核心写入门禁——启动后不得任意落笔) - 2026-10-22
+## v0.3.11 (黑客松拒收六项整改收口 + 跨平台三修 BUG-507/508/509) - 2026-10-31
+
+### 本轮性质：把「已修复」的叙述换成调用面上的行为锁
+
+MoonBit 开源大赛九月黑客松回执点名六项，六项都是**核心主张**而不是质量目标。本轮逐项打到调用面，
+复验探针 `scripts/blackbox/e2e_acceptance_recheck.py`（本笔同时入库）给 **7 格 = 6 PASS / 0 FAIL / 1 SKIP**。
+
+- **①物理多租户隔离**（BUG-501）：无人值守写路径漏点补齐——`heal` / 自动续轮等写路径原先可绕开 ns 物理库落回主库；
+  修复面由白盒锁 + 活体探针（真起 server、真读 sqlite）双向钉住。已知边界如实保留：`heal` 不带 `namespace` 时
+  只扫主库全部 ns 行，回执文案已由 `all-namespaces` 改为 `main-db/all-ns-rows` 并附 `scope_note`。
+- **②自动修复三轮**（BUG-502）：错误指纹修复返回零修复的根因修掉，`omega_verify_fix` 面有回归锁。
+- **③可替换 Executor**（BUG-505）：`src/executor/base.mbt` 的 trait 开成 `pub(open)` + 访问器/构造器一组，
+  新增独立包 `tests/external_executor/`（3 格）在自己的包里实现 trait、经完全限定调用把**同一调用点**派发到
+  两个不同实现——「修前红」的证据是编译器原文，不是推测。未锁缺口：`mcp_delegate.delegate_execute` 仍无生产调用点，
+  注册表只存名字/能力标签、不持有 trait 实例。
+- **④native serve/demo 只打帮助**（BUG-506）：立案带实测、结转理由与三条出路，**本轮未修**（native 轨未知子命令退出码仍 0，js 轨是 2）。
+- **⑤DAG 接受成环**（BUG-503）：环闸抽成唯一真源 `depend_edge_ok`；`dag_depend` 关环被拒、
+  `supervisor_task_upsert` 的关环与自环都被拒**且盘上 `depends_on` 逐字未变**，合法边照常放行（4 格 + 变异对照 M1'）。
+- **⑥Omega 验收门可由 archive 绕过**（BUG-504）：`verify` 与 `archive(force=true)` 双向拦得住；
+  第三条写 Archived 的路径（自动续轮 `publish_next_round`）原本**没有任何门**，现与 `archive`/`archive_force`
+  同用 `omega_archive_gate`，且门判在建新轮任务之前（不留半套状态）。
+
+### 收口期间由 CI 原文新抓出的三修
+
+- **BUG-507**（high，FIXED）：`ocr_scan` 解析临时目录只读 `TEMP/TMPDIR/TMP`，Linux runner 上三者皆空
+  ⇒ 规则文件写不下去 ⇒ 两格真红，而本机永远测不出。改为纯函数候选表 + POSIX 兜底（`/tmp`、`/var/tmp`），
+  拒绝文案点名候选清单；白盒锁 3 格（`src/server/ocr_scan_wbtest.mbt`）。
+- **BUG-508**（medium，FIXED）：CI 的 `Badge consistency guard` 那一步**结构上不可能通过**（裸跑 ⇒ 拿不到
+  源码面锚点 ⇒ 永远 `REJECT SNAPSHOT-STALE rc=2`），还一路 fail-fast 把后面 8 步 skip 掉。接线改 `--fresh-if-stale`，
+  并补**接线面回归锁** `check_badge.py --selftest` 的 W1/W2（判例-33：尺子本体能工作 ≠ 尺子被接对；
+  W1 连「一条调用都扫不到」都判不符预期，防这道锁静默恒绿）。
+- **BUG-509**（high，FIXED）：`moon_test_env.py` 判「真实可用 node」用的是 Windows 形状（`endswith(".exe")`），
+  在 POSIX 上把无扩展名的真 ELF 判成垫片 ⇒ 常驻入口在 Linux 上直接拒跑，凡走 `--fresh*` 的尺子在 CI 上拿不到真值。
+  改为按平台分档的 `node_is_real()`，并加「清理 PATH 后找不到工具链 ⇒ rc=2 拒绝出数」；自检 38 → 44 格。
+
+### 计数与工程面
+
+- 测试总数现状面 **1983 → 2002**（10 份 / 19 条声明，含徽章与「一键自检」注释两处、实测日期戳同批）；
+  复验 `check_test_sync.py --total 2002 --strict` rc=0、`check_badge.py` rc=0。
+- 全仓 JS **2002 / 2002 passed / failed 0**（Windows 本机 + ubuntu CI 两面同一读数；快照 `temp/pt27.log` 带源码面锚点）。
+- 警告台账 `docs/warning-ledger.md` 48 条全覆盖（`unused_package` 4→6 补 `tests/external_executor/moon.pkg` 两格）。
+- 立判例-37（文本命中 ≠ 行为覆盖）、判例-38（反引号出现的位置 ≠ 报关意图）、判例-39（改名会同时失去按名/按前缀的豁免）。
+- lane-R115 的命名债批次（11 份脚本改名 + wbtest 断言收紧）随 `6c18cd0c7` 落地，
+  `check_scripts_naming.py` 现读 `N1 16/16、N2 0/4` ⇒ rc=0，**上限常量未动**。
+
+### 发布状态
+
+发布事实以 `BACKLOG.md` 的 `release-fact:` 机器可读标记为唯一权威；本笔不写「已发布」——
+tag `v0.3.11` 推送后由 `release.yml` 产出资产，发布完成再把那一行补进权威面（J13 反查的就是这个顺序）。
+
+## v0.3.10 (T0r3：核心写入门禁——启动后不得任意落笔) - 2026-10-22
+
+> ⚠️ **这一节的版本号标签原本写的是 v0.3.11，2026-10-31 收口轮把它纠正回实际所属的 v0.3.10**。证据：那一轮施工时 `moon.mod` 仍是 0.3.10，而 `src/server/write_gate.mbt` 的新增提交 `9d4dff43` 实测是 tag `v0.3.10` 的祖先 （`git merge-base --is-ancestor` YES），该 tag 于 2026-10-30T04:41:04Z 发布 ⇒ 这一轮从未以 v0.3.11 出过网。2026-10-31 这一版真正用掉了 0.3.11 这个号，若留着旧标签，同一个版本号就会在 CHANGELOG 里指向两轮不同的内容。**正文逐字未动，只改标题与加这段说明**——纠正标签不是改写历史，留着一个会撞车的号才是。
 
 ### 本轮性质：写入门禁（fail-closed）+ `store_open` 默认落点归位
 
