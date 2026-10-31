@@ -658,3 +658,34 @@ run_guards.py:941   "blackbox/e2e_acceptance_recheck.py" 在 REGISTRY（在册�
   跑法与三面读数口径写在 `scripts/README.md` 同名条目。
 - **接这一单的条件**（§五.3 的原意仍然成立）：BUG-506 定夺之后，把它按 heartbeat/reserve 那两步的形状挂上
   （`--selftest` 与全量各一步），那时 A4 在 Linux 上是**真测**而不是 SKIP，红就红在真缺陷上。
+
+### 8.18 收口时读自己的文档面：工具计数落后真源 52 个，而**没有一把尺管它**
+
+写「评委复验入口」那节时顺手 `grep` 了一遍 USAGE，读到三句互相打架的自述（当场实测）：
+
+```
+python scripts/mcp_smoke.py   →  PASS tools/list → 182 个工具（rc=0）        ← 真源对表的结果
+USAGE.md §5 Step1 / §6 标题   →  「140+ 个 MCP 工具」
+USAGE.md §5 末注              →  「PASS tools/list → 130 个工具」
+scripts/mcp_smoke.py 头注释   →  「断言含 publish 等 79 个工具」
+```
+
+同一件事**四份实现**（182 / 140+ / 130 / 79），而真源只有一处 —— `mcp_smoke.py:160` 就是拿
+`len(tools)` 与 `registry_tool_names()` 逐个对表的。守卫为什么抓不到：`check_doc_surface` 的
+**J1 只扫 AGENTS/README、J14 只比「计数自述 ↔ CLI 帮助分组和 ↔ 真源」，扫描面都不含 `USAGE.md` 的散文计数**。
+本仓记忆里已经有同型第一次：「USAGE 写『87 个』而活体 129」 ⇒ **同一形状第二次复发，第一次也只改了字**。
+
+**这一节的处置是刻意的两半**：
+
+1. 字面改对（`0dd910d7d`）：USAGE 三处 + 脚本头注释一处，改成实测值或**指向真源而不写数**；§6 标题里
+   那个含糊的「140+」直接去掉 —— 含糊的数既不是实测也不是上限，只是给下一次漂移留位置；
+   末注那句「三步 = 该脚本的内部逻辑，二者完全一致」也删了：脚本在 `tools/list` 与 `publish` 之间
+   还有一步 `issue_scan`（Step 1b），**四行不是三行**。
+2. **尺不补、但入账**：**BUG-525**（OPEN）。按判例-36，「改了字」不等于「有锁」——
+   没有回归锁的修复不许标 FIXED，所以这条以未关闭记在账上，三条出路里第一条（扩 J14 扫 USAGE）
+   明确要求配一支「故意把 USAGE 改回 130 ⇒ 必须红」的变异对照才允许上岗。
+
+顺带把复验入口搬到读者会走的那一页：README 新增「拒收项复验入口」一节（此前 `grep acceptance_recheck`
+在 README/USAGE **零命中** —— 六项承诺的复现命令只活在收口报告里，等于没有入口），
+USAGE §5 补该自检**默认改道 `temp/` 沙箱、不动根台账**的实测面（`find . -maxdepth 3 -name '*.db' -mmin -12`
+只命中 `./temp/mcp_smoke.db`）。
