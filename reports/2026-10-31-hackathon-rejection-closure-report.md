@@ -605,6 +605,9 @@ run `41184056152`（commit `ead2687e`，CI #925）——本轮把掩蔽链从头
 资产 `fist-mbt-js-v0.3.11.zip`（794,603B，**只 js 一枚**，缺口 = BUG-513）；
 `origin/main` 与 `gitcode/main` **同为「本报告落笔的这一笔」**（不钉哈希、不数笔数：钉了就会被下一笔自己作废，
 本轮已为此返工过一次）；要复核就跑 `git rev-parse HEAD origin/main gitcode/main`，三行必须相同。
+⚠️ 别只靠 `git ls-remote origin`：本机到 GitHub 的 **SSH 在这一小时里两次 `Connection reset by 20.205.243.166:22`**
+（同一笔 push 第一次失败、第二次成功 ⇒ 间歇性，不是权限问题）。HTTPS 侧那条永远可读：
+`gh api repos/vicTop-cw/FIST-Mbt/git/ref/heads/main --jq .object.sha`（实测与 HEAD 同号）。
 向两个远端的所有推送全程 fast-forward，无 force。
 tag 之后这些笔全部只动判据/文档/探针/账本面，零产品行为 ⇒ 公网那枚 zip 里没有东西被后来的提交作废。
 ⚠️ **这句初稿写作「zip 与仓库自述逐字对得上」，16:45 实测作废**：zip 内 `fist-mbt.js` 是 5,781,640B /
