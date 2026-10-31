@@ -173,6 +173,8 @@ pub async fn ocr_scan_impl(String, subcmd~ : String, path? : String, rules_file?
 
 pub fn ocr_subcmds() -> Array[String]
 
+pub fn ocr_temp_candidates(Map[String, String]) -> Array[String]
+
 pub async fn ofm_chat_http(String, String, Int32) -> Result[Json, String]
 
 pub fn output_validate(String, Array[Json], Json, String, require_evidence? : Bool) -> Result[Json, String]

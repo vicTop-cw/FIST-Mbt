@@ -13382,3 +13382,72 @@ libC `exit` 那一跳**（rc 仍是 0，说明退出码没交给进程）。
 所以公网 Release 至今只有 linux-x64 一个 native 资产）。A4 格已把「zip 内文件魔数 ↔ 资产名声明平台」
 纳入判据，本机残留只登记不判红。
 - reported_by: Qoder 主会话（九月黑客松拒收整改）
+
+## BUG-507 [2026-10-31T05:00:41Z] [high] FIXED
+- summary: `.mbt` 放行规则的临时目录**只认 `TEMP`/`TMPDIR`/`TMP` 三个环境变量** ⇒ Linux runner 上
+  一个都不存在 ⇒ 落盘返回 None ⇒ MoonBit 目标的 `mbt_include` 恒 false；
+  CI 的 **JS/ubuntu 臂 `Test (js)` 两格真红**（`Total tests: 1983, passed: 1981, failed: 2`），
+  而 Windows 本机有 `TEMP` ⇒ 同一条命令永远测不出这一形
+- detail: ## 怎么发现的（不是读文档，是读 CI 的原始回执）
+
+`origin/main` 的 CI 本轮之前已连续两次红（run 41063304724 / 41145839030）。用
+`gh api repos/.../actions/jobs/<id>` 取步骤结论、`actions/jobs/<id>/logs` 取原文：
+
+```
+步骤 20 Format check        → success（该步带 continue-on-error，日志里那串
+                              `_build/wasm-gc/release/format/…` 报错是 BUG-388 的同一形状，不是本单）
+步骤 21 Test (js)           → failure：
+  src/server/ocr_scan_wbtest.mbt:383 ("T0r588 ocr_plan 真把放行规则接进 argv 并落盘")
+      :395 FAILED: `Some(False) != Some(True)`          ← mbt_include 在 Linux 上是 false
+  src/server/ocr_scan_wbtest.mbt:473 ("T0r588 放行规则路径无混拼反斜杠")
+      :483 FAILED: `false` is not true                  ← rule_path 是空串
+```
+
+## 判决链
+
+`ocr_plan` ⇒ `ocr_ensure_mbt_include_rule()` ⇒ `ocr_temp_dir()`，旧实现是
+
+```moonbit
+for k in ["TEMP", "TMPDIR", "TMP"] { match @env.get_env_var(k) { … } }  // 三个都没有 ⇒ None
+```
+
+`TEMP`/`TMP` 是 Windows 习惯、`TMPDIR` 是 macOS/sandbox 习惯；**GitHub Actions 的 ubuntu runner
+三个都不给**（本机 WSL 实测逐字 `TMPDIR=[] TEMP=[] TMP=[]`，与 runner 同形）。
+⇒ 候选为空 ⇒ 规则文件落不了盘 ⇒ 按 fail-closed 设计把 `mbt_include` 记成 false、
+`mbt_include_error` 带上原因。**失败方向是安全的，但功能在 Linux 上等于没接**——
+申报书承诺的「JS 后端在 Windows 与 Linux 双环境均可复现全绿」因此是假的（判例-33 同族：
+能跑的那台机器 ≠ 被接入的那台机器；也和判例-37「本机绿测不出跨平台红」一脉）。
+
+## 修法（抽成纯函数，好让任何平台都能把它跑红）
+
+- 新增 `ocr_temp_candidates(env : Map[String,String]) -> Array[String]`（**不读环境、不碰盘**）：
+  先按 TEMP > TMPDIR > TMP 取注入值（trim、空串跳过），再追加 POSIX 的 `/tmp`、`/var/tmp`；
+- `ocr_temp_dir()` 改为对候选表逐个做存在性筛选（顺带修掉旧实现「不检查目录是否存在就写」那一手）；
+- 落盘失败时 `mbt_include_error` **点名试过哪些候选**（拒绝必须自带原因，否则下一个人只能重猜）。
+
+## 回归锁（判例-36：点名测试文件）
+
+`src/server/ocr_scan_wbtest.mbt` 新增三格 `BUG-507`：
+① 空环境也必须给出 POSIX 兜底候选（钉的是候选表本身，与本机有什么目录无关 ⇒ 在 Windows 上也能红）；
+② 候选不得含空串（空串到 `path_exists("")`/拼接上等价于 cwd ⇒ 会把规则写进用户仓库，本模块明令禁止）；
+③ 环境变量优先于兜底、顺序 TEMP>TMPDIR>TMP（零回归）。
+**变异对照真跑**：把 `for p in ["/tmp", "/var/tmp"]` 改成 `for p in []` ⇒ 三格 **3/3 红**；
+按字节还原（`还原字节相同 = True`，29180↔29180）后复绿 3/3。
+读数 `src/server -f "*BUG-507*"` = `Total tests: 3, passed: 3, failed: 0`。
+
+## 尚未闭合的一格（如实）
+
+**Linux 上的正身复跑要在 CI 上看**：本机 WSL 有 node v25.2.1 但没装 moon，
+在 WSL 里装工具链属改动用户环境，未做。⇒ 本单的关闭证据 = 推送后 CI 的 `Test (js)`（ubuntu）
+由红转绿；若仍红则本单回到 OPEN，不接受「本地绿」抵扣跨平台主张
+（见 [[feedback-gate-tests-full-suite-and-subprocess]]、[[feedback-verify-at-call-site]]）。
+- reported_by: Qoder 主会话（拒收整改收口时读 CI 原始回执发现）
+
+### FIXED(2026-10-31T05:00:41Z / BUG-507)
+- evidence: 回归锁 `src/server/ocr_scan_wbtest.mbt`（`BUG-507` 三格）+ 变异对照真跑
+  （`["/tmp","/var/tmp"]` → `[]` ⇒ **3/3 红**；按字节还原 29180↔29180 后 3/3 绿）+
+  全量 `Total tests: 2002, passed: 2002, failed: 0`。
+  成因实测温件 = `gh api actions/jobs/124370614726/logs` 的两条失败断言原文（留盘 `temp/js_job.log`）
+  与 WSL 实测 `TMPDIR=[] TEMP=[] TMP=[]`；接口面由 `moon info` 落 `src/server/pkg.generated.mbti`。
+  ⚠️ **本单的关闭条件不在本机**：跨平台主张要由 CI 的 JS/ubuntu 臂 `Test (js)` 由红转绿来判，
+  本地绿不作数（判例-33/37 同族）——见整改报告 §四.8 与账本 detail 末段。

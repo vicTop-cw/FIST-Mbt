@@ -501,3 +501,54 @@ test "T0r588 rules 子命令不注入放行规则" {
   assert_eq(m.get("mbt_include"), Some(Json::boolean(false)))
   assert_eq(m.get("mbt_include_rule"), Some(Json::string("")))
 }
+
+///|
+/// BUG-507 锁 1（**Linux 正身**）：一个环境变量都没给时，候选**不得为空**。
+/// CI 的 ubuntu runner 上 `TEMP`/`TMP`/`TMPDIR` 三个都不存在（本机 WSL 实测逐字为空），
+/// 旧实现只查环境变量 ⇒ 返回空 ⇒ 放行规则落不了盘 ⇒ `mbt_include` 恒 false、
+/// T0r588 锁 7/锁 10 两格在 Linux 上红（Windows 有 TEMP，永远测不出这一形）。
+/// 这一格钉的是「候选表本身」，与本机有什么目录无关 ⇒ 任何平台都能把它跑红。
+test "BUG-507 空环境也必须给出 POSIX 兜底候选" {
+  let e : Map[String, String] = Map([])
+  let c = ocr_temp_candidates(e)
+  assert_true(
+    !c.is_empty(),
+    msg="空环境给出空候选 ⇒ 落盘路径必然无解（BUG-507 复现）",
+  )
+  assert_true(c.contains("/tmp"), msg=c.join(" | "))
+  assert_true(c.contains("/var/tmp"), msg=c.join(" | "))
+}
+
+///|
+/// BUG-507 锁 2（安全不变量）：候选里**不得出现空串**。
+/// 空串会走到 `@fs.path_exists("")` 与「临时目录 + 文件名」的拼接上，
+/// 在部分平台上等价于当前工作目录 ⇒ 放行规则可能被写进用户仓库（本模块明令禁止）。
+test "BUG-507 候选不得含空串（空串等于 cwd，会把规则写进工作树）" {
+  let e : Map[String, String] = Map([])
+  e.set("TEMP", "   ")
+  e.set("TMP", "")
+  for c in ocr_temp_candidates(e) {
+    assert_true(c.trim().length() > 0, msg="候选含空白串：" + c)
+  }
+  // 上面三个 env 全是空白 ⇒ 只能剩下 POSIX 两项，且必须是绝对路径
+  let c2 = ocr_temp_candidates(e)
+  assert_eq(c2.length(), 2)
+  assert_true(c2[0].has_prefix("/"))
+}
+
+///|
+/// BUG-507 锁 3（顺序纪律）：给了环境变量时它排第一，且值被 trim；
+/// 优先级 TEMP > TMPDIR > TMP（与改前一致，兜底不许把既有行为改掉）。
+test "BUG-507 环境变量优先于 POSIX 兜底，且顺序是 TEMP>TMPDIR>TMP" {
+  let a : Map[String, String] = Map([])
+  a.set("TEMP", " D:/win-temp ")
+  a.set("TMPDIR", "/mac-tmp")
+  a.set("TMP", "D:/tmp2")
+  let ca = ocr_temp_candidates(a)
+  assert_eq(ca.length(), 5)
+  assert_eq(ca[0], "D:/win-temp")
+  assert_eq(ca[1], "/mac-tmp")
+  assert_eq(ca[2], "D:/tmp2")
+  assert_eq(ca[3], "/tmp")
+  assert_eq(ca[4], "/var/tmp")
+}

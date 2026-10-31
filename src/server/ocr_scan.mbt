@@ -163,18 +163,43 @@ pub fn ocr_needs_mbt_include(
 }
 
 ///|
-/// 系统临时目录（TEMP > TMPDIR > TMP）。都拿不到返回 None——绝不退化成往
-/// 工作树里写文件（那会污染用户仓库）。
-fn ocr_temp_dir() -> String? {
+/// 临时目录**候选顺序**（纯函数：不读环境、不碰盘，故可在任何平台上被断言）。
+/// 先按 TEMP > TMPDIR > TMP 取注入的环境变量（去空白、空串跳过），再追加 POSIX 的
+/// `/tmp` 与 `/var/tmp`。
+///
+/// **为什么必须有后两项**（BUG-507，2026-10-31 CI 实测）：`TEMP`/`TMP` 是 Windows 习惯、
+/// `TMPDIR` 是 macOS/sandbox 习惯，而 GitHub Actions 的 **ubuntu** runner 三个都不给
+/// （本机 WSL 实测 `TMPDIR=[] TEMP=[] TMP=[]`）⇒ 只查环境变量的实现返回**空候选**，
+/// 放行规则落不了盘 ⇒ MoonBit 目标的 `mbt_include` 在 Linux 上恒 false、两条锁当场红，
+/// 而 Windows 本机因为有 `TEMP` 永远测不出来（判例-33 同族：能跑的机器≠被接入的那台机器）。
+pub fn ocr_temp_candidates(env : Map[String, String]) -> Array[String] {
+  let out : Array[String] = []
   for k in ["TEMP", "TMPDIR", "TMP"] {
-    match @env.get_env_var(k) {
+    match env.get(k) {
       Some(v) => {
         let t = v.trim()
         if t.length() > 0 {
-          return Some(t.to_owned())
+          out.push(t.to_owned())
         }
       }
       None => ()
+    }
+  }
+  // POSIX 兜底：环境变量一个都没给也不能放弃落盘（这些目录在 Windows 上不存在，
+  // 由调用方的存在性筛自然滤掉，不会把 Windows 的行为改掉）。
+  for p in ["/tmp", "/var/tmp"] {
+    out.push(p)
+  }
+  out
+}
+
+///|
+/// 系统临时目录（TEMP > TMPDIR > TMP，再退 POSIX 的 /tmp、/var/tmp）。
+/// 都不存在时返回 None——绝不退化成往工作树里写文件（那会污染用户仓库）。
+fn ocr_temp_dir() -> String? {
+  for c in ocr_temp_candidates(@env.get_env_vars()) {
+    if @fs.path_exists(c) {
+      return Some(c)
     }
   }
   None
@@ -404,7 +429,9 @@ pub fn ocr_plan(
       // 写不进放行规则：不静默、也不假装成功，只把原因带进回执，
       // 后续由 fake-green 检测把 ok 强制成 false。
       None =>
-        inc_err = "ocr_scan: 无法落盘 .mbt 放行规则（无临时目录或写盘失败）；" +
+        inc_err = "ocr_scan: 无法落盘 .mbt 放行规则（候选临时目录 " +
+          ocr_temp_candidates(@env.get_env_vars()).join(" | ") +
+          " 都不存在或写盘失败）；" +
           "OCR 内嵌扩展名白名单不含 .mbt，本次 LLM review 不会真正执行"
     }
   }
