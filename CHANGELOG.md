@@ -60,8 +60,14 @@ MoonBit 开源大赛九月黑客松回执点名六项，六项都是**核心主�
 
 ### 发布状态
 
-发布事实以 `BACKLOG.md` 的 `release-fact:` 机器可读标记为唯一权威；本笔不写「已发布」——
-tag `v0.3.11` 推送后由 `release.yml` 产出资产，发布完成再把那一行补进权威面（J13 反查的就是这个顺序）。
+发布事实以 `BACKLOG.md` 的 `release-fact:` 机器可读标记为唯一权威；本节最初写于 tag 之前，刻意不写「已发布」——
+J13 反查的就是「先有事实、再落标记」这个顺序。
+
+**2026-10-31 回填（事实到位之后）**：tag `v0.3.11` 于 `2026-10-31T06:17:41Z` 出 GitHub Release，资产 =
+`fist-mbt-js-v0.3.11.zip`（794,603B）。⚠️ **只有 js 一枚**：`release.yml` 的 `build-native-linux` 与
+`build-native-windows` 两条臂同红（`continue-on-error` ⇒ 不阻塞发布，也就没人报警），而 v0.3.10 那发有 2 枚。
+A/B 实测在同一 WSL、同一 `moon 0.1.20261021` 上对**干净快照树**跑：tag `v0.3.10` 的树与 HEAD 一样 rc=255
+⇒ **不是本轮改动引入的回归**，差异在 `MOON_VERSION: latest` 的 nightly 漂移。立案 **BUG-513**（OPEN，含三条出路）。
 
 ## v0.3.10 (T0r3：核心写入门禁——启动后不得任意落笔) - 2026-10-22
 

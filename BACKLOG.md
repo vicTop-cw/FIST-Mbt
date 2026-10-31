@@ -62,6 +62,7 @@ http=200，2026-10-07 实测；读数原件 `temp/b135_release_evidence.txt`；v
 J13 用它反查 CHANGELOG 各节标题里的状态短语有没有落后于事实——**发布时刻由读数来，新增一发 Release 就补一行标记**（这里刻意不写「共 N 行」——写死数字就是下一颗漂移雷），别让人去猜哪一节该改。
 
 <!-- release-fact: v0.3.8 github-published=2026-10-13T06:19:06Z asset=fist-mbt-js-v0.3.8.zip bytes=429290 -->
+<!-- release-fact: v0.3.11 github-published=2026-10-31T06:17:41Z asset=fist-mbt-js-v0.3.11.zip bytes=794603 (只出 js 一枚：release.yml 两条 native 臂双双红 ⇒ 见 BUG-513，读数由 gh api …/releases 现取) -->
 <!-- release-fact: v0.3.10 github-published=2026-10-30T04:41:04Z asset=fist-mbt-js-v0.3.10.zip bytes=787487+3793380 (两枚：js + native-linux-x64) -->
 <!-- release-fact: v0.3.9 github-published=2026-10-18T08:09:20Z asset=fist-mbt-js-v0.3.9.zip bytes=525905 -->
 <!-- release-fact: v0.3.5 github-published=2026-09-30T00:03:17Z asset=fist-mbt-js-v0.3.5.zip bytes=376617 -->
