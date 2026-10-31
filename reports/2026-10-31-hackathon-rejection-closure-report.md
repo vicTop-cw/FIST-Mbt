@@ -40,7 +40,7 @@ python scripts/moon_test_env.py --target js        # 全量，含本笔新增 19
 `src/server/ocr_scan_wbtest.mbt` 的 `BUG-507` 三格（空环境也必须给出 POSIX 兜底候选／候选不得含空串／环境变量优先且顺序不变）——
 第三栏那格钉的是「Linux runner 上三个 env 都不给」这一形，**在 Windows 本机也能跑红**（它断言的是候选表本身，不是本机目录）。
 
-**B. 活体探针（本轮工作树内可跑，入库动作被并发车道挡住，见 §四.7）**
+**B. 活体探针（**已入库，克隆即有** —— 上午写这句时入库动作被并发车道挡住，午后由 §8.3 结转A 补上）**
 
 ```bash
 moon build --target js --release && python scripts/patch_esm_main.py _build/js/release/build/cmd/cli/cli.js
@@ -48,8 +48,32 @@ python scripts/blackbox/e2e_acceptance_recheck.py --selftest --json
 ```
 
 2026-10-31 本机读数：`A1 PASS / A2 PASS / A3 PASS / A4 SKIP / A5 PASS / A6 PASS / ST1 PASS`，rc=0。
-A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-mbt-native-linux-x64` 一个 native 资产——
-**探针拒绝拿 WSL 读数冒充 Windows 交付物**（判例-33：服务本体能跑 ≠ 服务被正确接入）。
+A4 回 SKIP 的理由**以 B′ 为准**（本节初稿写「公网只发 `fist-mbt-native-linux-x64` 一个 native 资产」，
+那句是 v0.3.10 的盘面，v0.3.11 的 Release **一枚 native 资产都没有** ⇒ BUG-513）。
+探针拒绝拿 WSL 读数冒充 Windows 交付物（判例-33：服务本体能跑 ≠ 服务被正确接入）。
+
+**B′. 拿公网交付物本体复跑（16:43 实测，这条才是「评委下载到的那一枚」的证据）**
+
+```bash
+gh release download v0.3.11 -R vicTop-cw/FIST-Mbt -p fist-mbt-js-v0.3.11.zip   # 794,603B
+python -c "import zipfile;open('fist-mbt.js','wb').write(zipfile.ZipFile('fist-mbt-js-v0.3.11.zip').read('fist-mbt.js'))"
+FIST_ACCEPT_JS="$(pwd)/fist-mbt.js" python scripts/blackbox/e2e_acceptance_recheck.py --selftest --json
+```
+
+读数：`结论：7 格（拒收项 6 + 尺子自检 1）= 6 PASS / 0 FAIL / 1 SKIP`，rc=0；
+`node fist-mbt.js version` 回 `FIST-Mbt v0.3.11`。**六项拒收全部在公网产物本体上复验通过。**
+
+三处必须一起读，否则这条证据会被用错：
+1. **它证明的是「行为」不是「字节」**。zip 里那枚 `fist-mbt.js`（5,781,640B，`sha8=4539bab0`）
+   与本机 `_build/js/release/…/cli.js`（6,232,239B，`sha8=0456b470`）**逐字节不同**（首差异在第 120 字节，
+   打包时改名 + 注入 ESM require shim）⇒ B 与 B′ 是两个不同产物，各自都跑过；
+2. **符号探针在这两枚产物上都探不到内部函数名**（`engine_for_ns` / `omega_archive_gate` /
+   `depend_edge_ok` 命中 0，含标定用的 `publish`=2、`heartbeat`=17 对照在场）
+   ⇒ 「产物里 grep 得到修复符号」**不是**可用的验收面，能用的只有 B′ 这种打到调用面的行为复验
+   （判例-37「文本命中 ≠ 行为覆盖」的产物侧同族）；
+3. **`FIST_ACCEPT_JS` 必须给绝对路径**：相对路径会被 `find_js()` 按脚本 cwd 判为存在、再被 spawn 按沙箱
+   cwd 解析 ⇒ `[FATAL] server 起不来` + `Cannot find module <box>/temp/…`（已入账 **BUG-524**，
+   同单还记了 `--help` 在白名单里但无处理分支 ⇒ 直接跑了全量复验）。
 
 ## 二、资源消耗
 
@@ -582,4 +606,29 @@ run `41184056152`（commit `ead2687e`，CI #925）——本轮把掩蔽链从头
 `origin/main` 与 `gitcode/main` **同为「本报告落笔的这一笔」**（不钉哈希、不数笔数：钉了就会被下一笔自己作废，
 本轮已为此返工过一次）；要复核就跑 `git rev-parse HEAD origin/main gitcode/main`，三行必须相同。
 向两个远端的所有推送全程 fast-forward，无 force。
-tag 之后这些笔全部只动判据/文档/探针/账本面，零产品行为 ⇒ 公网那枚 zip 与仓库自述仍然逐字对得上。
+tag 之后这些笔全部只动判据/文档/探针/账本面，零产品行为 ⇒ 公网那枚 zip 里没有东西被后来的提交作废。
+⚠️ **这句初稿写作「zip 与仓库自述逐字对得上」，16:45 实测作废**：zip 内 `fist-mbt.js` 是 5,781,640B /
+`sha8=4539bab0`，本机 release 产物 `cli.js` 是 6,232,239B / `sha8=0456b470`，首差异在第 120 字节
+（打包会改名并注入 ESM require shim）⇒ 两枚产物**不能互相代证**，交付证据改以 **§一 B′** 为准：
+公网产物本体跑六项 = `6 PASS / 0 FAIL / 1 SKIP`，rc=0，`version` 回 `FIST-Mbt v0.3.11`。
+
+### 8.17 最后一格：把验收探针指向**公网交付物本体**（这才发现两枚产物不能互相代证）
+
+前面所有「已复验」读数的对象都是**本机 `_build/js/release` 那枚产物**。评委不会用它 —— 他们 `irm | iex`
+装的是 GitHub Release 里的 `fist-mbt-js-v0.3.11.zip`。于是收口前做了一件本报告之前**没做过**的事：
+下载资产、取出 `fist-mbt.js`、用 `FIST_ACCEPT_JS` 把它喂给六项探针。
+
+**结果（16:43–16:45 实测，两次旗标形状都验过）**：`7 格（拒收项 6 + 尺子自检 1）= 6 PASS / 0 FAIL / 1 SKIP`，
+rc=0；探针自报 `server = temp/fist-mbt.js (sha8=4539bab0) tools=182` ⇒ 跑的就是公网那枚，不是本机产物。
+
+**顺带测出三件之前不知道的事**（都写进了 §一 B′ 与账本）：
+
+| 事 | 处置 |
+|---|---|
+| zip 内 `fist-mbt.js`（5,781,640B）与本机 `cli.js`（6,232,239B）**首差异第 120 字节**，逐字节不同 | §8.16 那句「逐字对得上」当场作废并改写；两枚产物不能互相代证 |
+| 内部修复符号在**两枚产物里都探不到**（`engine_for_ns` / `omega_archive_gate` / `depend_edge_ok` 命中 0，而标定符号 `publish`=2、`heartbeat`=17 在场） | 「grep 产物找修复符号」正式判为**不可用的验收面**（判例-37 的产物侧同族）；只有打到调用面的行为复验算数 |
+| 探针自己的两处参数面缺口：`FIST_ACCEPT_JS` 相对路径按脚本 cwd 判存在、按沙箱 cwd spawn ⇒ `[FATAL] server 起不来`；`--help`/`-h` 在 `KNOWN_FLAGS` 里但全文无处理分支 ⇒ 直接跑了全量复验 | 入账 **BUG-524**（OPEN，三条出路，出路 1+2+3 要同批做） |
+
+⚠️ 这里有一条**对本轮整条掩蔽链的补记**：`--product` 被白名单干净拒绝（`[FATAL] 未知参数 --product … rc=2`），
+那是 R207 的门真的在工作；而同一支探针的 `--help` 在名单里却不实现 —— **白名单只保证「不落到未知分支」，
+不保证「落到的分支有实现」**。这两半合起来才是 R207 的完整口径，之前八格修复都只修了前半。
