@@ -227,6 +227,7 @@ pub fn FistEngine::dag_mc(Self, ns? : String, root_task_id? : String, deadline? 
 pub fn FistEngine::dag_schedule(Self) -> Json
 pub fn FistEngine::dag_slack_analysis(Self) -> Json
 pub fn FistEngine::delete_task(Self, String) -> Result[Unit, String]
+pub fn FistEngine::depend_edge_ok(Self, String, String) -> Result[Unit, String]
 pub fn FistEngine::deps_report(Self, String) -> DepsReport
 pub fn FistEngine::deps_satisfied(Self, String) -> Bool
 pub fn FistEngine::dispatch_next(Self, String, String, String, String) -> Json
@@ -255,6 +256,7 @@ pub fn FistEngine::locks_sweep(Self, String) -> Int32
 pub fn FistEngine::locks_try_acquire(Self, @store.FileLock, challenge_nonce? : String?, challenge_sig? : String?) -> @store.LockAcquireOutcome
 pub fn FistEngine::locks_upsert(Self, @store.FileLock) -> Unit
 pub fn FistEngine::new(store? : @store.StoreBackend, registry? : @executor.ExecutorRegistry) -> Self
+pub fn FistEngine::omega_archive_gate(Self, @core.Task) -> Result[Unit, String]
 pub fn FistEngine::omega_auto_lesson(Self, Int32, String, String, String, String) -> Bool
 pub fn FistEngine::omega_count(Self, String, String, String) -> Int32
 pub fn FistEngine::omega_count_type(Self, String, String) -> Int32

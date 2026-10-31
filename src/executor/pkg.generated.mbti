@@ -57,7 +57,11 @@ pub struct ExecContext {
   description : String
   assignee : String
 }
+pub fn ExecContext::assignee_of(Self) -> String
+pub fn ExecContext::description_of(Self) -> String
 pub fn ExecContext::new(String, String, String, String) -> Self
+pub fn ExecContext::project_dir_of(Self) -> String
+pub fn ExecContext::task_id_of(Self) -> String
 
 pub struct ExecResult {
   ok : Bool
@@ -70,9 +74,21 @@ pub struct ExecResult {
   duration_ms : Int32
   error_msg : String
 }
+pub fn ExecResult::cost_of(Self) -> Double
+pub fn ExecResult::deliverable_of(Self) -> String
+pub fn ExecResult::duration_ms_of(Self) -> Int32
+pub fn ExecResult::error_msg_of(Self) -> String
+pub fn ExecResult::executor_of(Self) -> String
 pub fn ExecResult::fail(String, String) -> Self
+pub fn ExecResult::full(ok~ : Bool, deliverable~ : String, executor~ : String, model? : String, tokens_in? : Int32, tokens_out? : Int32, cost? : Double, duration_ms? : Int32, error_msg? : String) -> Self
+pub fn ExecResult::model_of(Self) -> String
 pub fn ExecResult::ok(String, String) -> Self
+pub fn ExecResult::succeeded(Self) -> Bool
 pub fn ExecResult::to_json(Self) -> Json
+pub fn ExecResult::tokens_in_of(Self) -> Int32
+pub fn ExecResult::tokens_out_of(Self) -> Int32
+pub fn ExecResult::with_duration_ms(Self, Int32) -> Self
+pub fn ExecResult::with_model(Self, String) -> Self
 pub fn ExecResult::with_tokens(Self, Int32, Int32, Double) -> Self
 
 pub struct ExecutorRegistry {
@@ -99,7 +115,7 @@ pub fn McpDelegateExecutor::with_name(String) -> Self
 // Type aliases
 
 // Traits
-pub trait Executor {
+pub(open) trait Executor {
   fn name(Self) -> String
   fn run(Self, @core.Task, ExecContext) -> ExecResult
 }

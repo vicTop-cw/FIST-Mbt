@@ -918,30 +918,12 @@ pub fn FistEngine::archive(
           "仅已完成任务可归档，当前状态: \{t.status_to_string()}",
         )
       }
-      // Omega 门（验收项：archive 不得绕过验收门）：强验证任务必须先过成果复验门，
-      // 归档即"了账"，未通过 Omega 门就是假了账（纵深防御，与 archive_force 同门）。
-      //
-      // BUG-417：排除「孤儿 Omega 任务」——与 archive_force 同一判定，两处必须同步，
-      // 否则只修一条路径时另一条仍会拦住同一个任务。语义见
-      // omega_strong.mbt 的 omega_orphan_of_archived_parent。
-      let orphan = if omega_enabled(t) {
-        let parent_st : @core.TaskStatus? = match t.get_parent() {
-          None => None
-          Some(pid) =>
-            match self.get_task(pid) {
-              None => None
-              Some(p) => Some(p.get_status())
-            }
-        }
-        omega_orphan_of_archived_parent(t, parent_st)
-      } else {
-        false
-      }
-      if omega_enabled(t) && !orphan {
-        match self.omega_verify_gate(task_id) {
-          Err(e) => return Err("Omega 门禁拦截归档: \{e}")
-          Ok(_) => ()
-        }
+      // Omega 门（验收项：archive 不得绕过验收门）：强验证任务必须先过成果复验门。
+      // 判定抽到 omega_archive_gate（唯一真源）——archive / archive_force /
+      // publish_next_round 三条写 Archived 的路径共用，孤儿豁免语义见 BUG-417。
+      match self.omega_archive_gate(t) {
+        Err(e) => return Err(e)
+        Ok(_) => ()
       }
       let c = match t.archive() {
         Ok(x) => x
@@ -1072,6 +1054,17 @@ pub fn FistEngine::publish_next_round(
   }
   if !prev.get_status().is_completed() {
     return Err("上一轮任务尚未完成: [\{prev.status_to_string()}]")
+  }
+  // 验收项「Omega 验收门不得被归档绕过」：自动续轮是**第三条**写 Archived 的路径，
+  // 原先直接 marked.archive() 落库、不过门 ⇒ 未复验的强验证任务会被 watchdog /
+  // pipeline 静默了账。现在与 archive / archive_force 同用 omega_archive_gate。
+  //
+  // 判在**建新轮任务之前**：门在后半截会把这一轮劈成「新根任务已落库、旧根任务没归档」
+  // 的半套状态，而自动续轮每个 tick 都会再走一遍 ⇒ 一次拦住长出 N 个孤儿轮次。
+  match self.omega_archive_gate(prev) {
+    Err(e) =>
+      return Err("续轮要归档上一轮根任务，被验收门拦住: \{e}")
+    Ok(_) => ()
   }
   let new_id = self.next_round_id()
   let next = @core.Task::new(
@@ -1991,6 +1984,17 @@ pub fn FistEngine::publish_with_deps(
   }
   // 根任务 id 全局唯一：T0 被占用时顺延 T0r2/T0r3
   let id = self.first_free_root_id()
+  // 环闸走唯一真源 depend_edge_ok（与 dag_depend / supervisor_task_upsert 同一道门）。
+  // 上面那圈存在性检查**留着**：它的文案「依赖任务不存在: X」被
+  // tool_cov_lane_c_test.mbt:229 钉住，换文案会把一条无关的锁打红。
+  // 新分配 id 使成环在本入口数学上不可能，但这条边仍要在落库前判一次——
+  // 「谁都不许绕过 depend_edge_ok 写 depends_on」这条纪律本身不该因入口而异。
+  for dep in depends_on {
+    match self.depend_edge_ok(id, dep) {
+      Err(e) => return Err(e)
+      Ok(_) => ()
+    }
+  }
   let t = @core.Task::new(
     id~,
     project_dir~,

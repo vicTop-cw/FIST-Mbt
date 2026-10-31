@@ -26,29 +26,11 @@ pub fn FistEngine::archive_force(
       }
       // Omega 门（验收项：archive 不得绕过验收门）：强验证任务必须先过成果复验门，
       // force 也不能放行——归档即"了账"，未通过 Omega 门就是假了账。
-      //
-      // BUG-417：但要排除「孤儿 Omega 任务」——本任务自己没开 omega（元数据列 = false），
-      // 描述里的标记是从父层切片继承来的残留，且直接父任务已归档。
-      // 父都没了 ⇒ 那棵树的验收语境已终结 ⇒ 继续要求它复验是判据错位
-      // （与 BUG-389「标记被静默覆盖」正相反，本条是「标记被静默继承」）。
-      let orphan = if omega_enabled(t) {
-        let parent_st : @core.TaskStatus? = match t.get_parent() {
-          None => None
-          Some(pid) =>
-            match self.get_task(pid) {
-              None => None
-              Some(p) => Some(p.get_status())
-            }
-        }
-        omega_orphan_of_archived_parent(t, parent_st)
-      } else {
-        false
-      }
-      if omega_enabled(t) && !orphan {
-        match self.omega_verify_gate(task_id) {
-          Err(e) => return Err("Omega 门禁拦截归档: \{e}")
-          Ok(_) => ()
-        }
+      // 判定与 FistEngine::archive 同一真源（omega_archive_gate，含 BUG-417 孤儿豁免）：
+      // 两条路径原先各写一份，第三条（publish_next_round 自动续轮）当时没门。
+      match self.omega_archive_gate(t) {
+        Err(e) => return Err(e)
+        Ok(_) => ()
       }
       let c = match t.archive_force(force~) {
         Ok(x) => x

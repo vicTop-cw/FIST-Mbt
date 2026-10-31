@@ -24,9 +24,24 @@ python scripts/mcp_smoke.py
 1. **任务编排闭环**：发布→认领→拆分(plan_deep 递归)→执行→提交→验收→归档；父任务自动上卷。
 2. **AI 自驱式**：selfdrive_*（审视→自我派活）；自驱脚本见 `scripts/*_selfdrive.py`。
 3. **Omega 强验证**：语料创建→审核→成果复验门禁，不达标记打回、超限升级人工（防死循环）。
+   验收门抽成唯一真源 `omega_archive_gate`，覆盖 **execute / verify / archive / archive(force) /
+   自动续轮** 五条落库路径——第三条（`publish_next_round`，watchdog 与 pipeline 用它）此前
+   直接 `Task::archive()` 落库、不过任何门（账本 BUG-504）。`omega_verify_fix` 是**真三轮**：
+   持有 spec 原文、逐轮在上一轮产物上继续收敛、`max_rounds` 夹 1..10 真消费、
+   回执 `fixed_specs` 给修好的全文，且**未知根因不许重算指纹盖章**（账本 BUG-502）。
 4. **DGM 自进化**：档案库 + 多样采样 + 蒸馏 principle + **失败回流 lesson**（见探索性闭环脚本）。
-5. **DAG 编排**：显式依赖 `dag_depend`、关键路径/并行度/ASCII 图/topo 排序。
-6. **多租户**：命名空间物理隔离（`store_open`，`scratch` 临时区不污染根）。
+5. **DAG 编排**：显式依赖 `dag_depend`、关键路径/并行度/ASCII 图/topo 排序；**环闸有唯一真源**
+   `FistEngine::depend_edge_ok`，三条能写 `depends_on` 的入口（`dag_depend`、
+   `supervisor_task_upsert` 的更新与新建两条通道、`publish_with_deps`）全部过它——
+   此前环检测只长在 `dag_depend` 函数体里，第二个入口照样把环写进库（账本 BUG-503）。
+6. **多租户**：命名空间**物理**隔离到独立 SQLite（`store_open`，`scratch` 临时区不污染根）。
+   路由由 `engine_for_ns` 一扇三门出口的门统一给（空/`default`⇒主库、合法 ns⇒该 ns 的库、
+   非法 ns⇒Err），**交互动词与无人值守/自愈类工具走同一扇门**——后者曾把模块级全局
+   `engine`（主库）原样传下去，使 ns 只剩列标签、`alpha.db`/`beta.db` 恒空（账本 BUG-501）。
+   当场复跑（克隆即有）：`python scripts/moon_test_env.py --target js`；
+   六格活体探针 `python scripts/blackbox/e2e_acceptance_recheck.py` 的 A1 格（八条写路径逐一核主库增量）
+   —— 该探针与其电池登记面须同批入库，登记面此刻被并发车道占用 ⇒ 脚本暂在工作树（见
+   `reports/2026-10-31-hackathon-rejection-closure-report.md` §四.7）。
 7. **项目地图**：`fist://map` resource——agent 首读即有，避免全项目乱找（docs/agent-map.md）；`board_ascii` 实时任务看板，一眼看全貌。
 
 ## 四、自驱增强证据（git 4994aae → HEAD，47 轮）

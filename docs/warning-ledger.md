@@ -32,40 +32,40 @@
 
 ---
 
-## 1. 台账条目（45 条，逐条可核）
+## 1. 台账条目（48 条，逐条可核）
 
 | # | 类型 | 数 | 位置 | 为什么保留 | 复审条件 |
 |---|---|---|---|---|---|
 | L1 | `result_error_return` | **4** | `server.mbt:107/124/1298/1353` | `Result` 是**刻意的结构约束**（注释：「想静默回落得先改签名」）。改 `raise` 会让「忘了检查」重新可能：`raise` 可被上层 `catch` 吞掉，`Result` 必须显式 `match`。`to_result`/`to_unit_result` 的职责**就是** Result→Result 映射。**可核引用**：4 处签名 `server.mbt:107/124/1275/1330`（`engine_for_ns` / `engine_route_in` / `to_result` / `to_unit_result`） | 某函数变成纯 handler 再评 |
 | L2 | `unused_constructor` | **9** | `ops_loop.mbt:33-37`(5) · `atgc-old/codon.mbt:56/58/60`(3) · `atgc/vm.mbt:33`(1) | ② 预留 API 面。**`ops_loop_wbtest.mbt:318-322` 逐个断言全部 5 个变体**（实测覆盖） | 90 天无构造再评 |
 | L3 | `struct_never_constructed` | **3** | `constraint.mbt:32/43/55` | ② 预留 API 面。三者在 `constraint.mbt:104/115/135/175` 作为**函数参数类型**使用 ⇒ 是 API 面，只是无构造点 | 同上 |
-| L4 | `unused_package` | **4** | `consistency/moon.pkg:2/3` · `core/moon.pkg:13` · `engine/moon.pkg:15` | ① `consistency` 包唯一文件是 `_test.mbt`（4 处 `@store.`/`@constraint.`）；② `core` 在 `core_task_reject_cap_wbtest:147` 用 `@fs.`；③ `engine` 测试内 **26 处** `@fs.`。**编译器的 `unused_package` 只扫产品面，不看测试** | 包内出现产品调用时再评 |
+| L4 | `unused_package` | **6** | `consistency/moon.pkg:2/3` · `core/moon.pkg:13` · `engine/moon.pkg:15` · `tests/external_executor/moon.pkg:2/3` | ① `consistency` 包唯一文件是 `_test.mbt`（4 处 `@store.`/`@constraint.`）；② `core` 在 `core_task_reject_cap_wbtest:147` 用 `@fs.`；③ `engine` 测试内 **26 处** `@fs.`；④ `external_executor` 与 `consistency` 同形——**整包只有一份 `_test.mbt`**（BUG-505 的包外 Executor 证据，`@core.Task`/`@executor.Executor` 全在测试里）⇒ 删依赖那两行会直接编译不过。**编译器的 `unused_package` 只扫产品面，不看测试** | 包内出现产品调用时再评 |
 | L5 | `deprecated_syntax` | **1** | `router/star_gate.mbt:33` | `derive(Show)` 是 `:42` `pub extend StarVerdict with Show::{to_string, output}` 的**前提**；删 ⇒ `[4018] does not implement trait Show` **连锁破坏** | MoonBit 支持 `extend` 不带 `derive` 时再评 |
 | L6 | `deprecated`（Show→Debug） | **11** | `cmd/cli/main.mbt:501`(2) · `router/model_router_caf_wbtest.mbt:551/625`(2) · `router/router_caf_replay_distinct_test.mbt:288`(2) · `router/router_state_wbtest.mbt:85`(2) · `router/star_gate_wbtest.mbt:280/296/311`(3) | `star_gate.mbt:42` 是**手写 `Show` 实现**（非 derive）；3 处是 `inspect(..., content=...)` **快照断言**，改 `Debug` 后快照字符串会变。**更深风险：快照绿灯可能只是「新快照被接受了」，不是「行为没变」** | 单独一轮 + `moon test --update` + **逐条复核 diff** |
 | L7 | `deprecated`（JS FFI Array） | **3** | `github_js.mbt:63` · `laya_js.mbt:18` · `run_check_js.mbt:32` | FFI 边界类型，改 `FixedArray` 要**同步改 JS 侧**，波及三个文件全部调用点；`run_check_js` 是**执行面**（R126）。**可核引用**：三处 `Array[String]` 形参 `github_js.mbt:63` / `laya_js.mbt:18` / `run_check_js.mbt:32`（另有 `:202` / `:66` / `:92` / `:104` 同类但当前未触发 warning） | 单独一轮 + 同步改 JS 侧 |
 | L8 | `unused_value`（②预留） | **10** | `cmd/cli/upgrade_core.mbt:182` `should_upgrade` · `engine.mbt:138/1235` `by~` · `engine_dag_ext.mbt:1218/1414` `ns~` · `evolve.mbt:140` `lam~` · `omega_tool.mbt:285` `max_rounds~` · `store/json_get.mbt:15` `jget` · `server.mbt:1145` `laya_client_budget_ms` · `issue_scan.mbt:489` `scan_outside_literal` | ① `jget`：15 包各一份（BUG-361 作用域定律），store 内调用**都在 `_test`/`_wbtest`**；② `should_upgrade` 被 `upgrade_wbtest.mbt:92` 引用；③ `by~`/`ns~`/`lam~`/`max_rounds~` 是 **pub 契约形参**（删会动 `.mbti` 与调用点）；④ `laya_client_budget_ms` 被 `pipeline_r2_wbtest:137` **断言**；⑤ `scan_outside_literal` 被 `issue_scan_wbtest:16/17/19` **断言** | 被替换为产品调用时再评 |
 | L9 | `deprecated`（substring） | **1** | `multi_store_test.mbt:9` | `d` 是**运行时构造**（`@store.bug462_unique_db` → 含 `@env.rand(8)` token，`bug462_fixtures.mbt:33/40`），**长度不受测试控制** ⇒ 切片在短串时行为与 `substring` 不同，不改 | 若 `bug462_unique_db` 改为返回定长串再评 |
-| **合计** | | **46** | | | |
+| **合计** | | **48** | | | |
 
 ---
 
 ## 2. 覆盖率表（**必须与 §1 合计一致**）
 
-**现算于 2026-10-29 16:35**，`moon check --target js` ⇒ **46 warnings / 0 errors**（**按 Warning 块计数，不去重**）。
+**现算于 2026-10-31 11:24**，`moon check --target js` ⇒ **48 warnings / 0 errors**（**按 Warning 块计数，不去重**）。
 
 | 类型 | 现算总数 | 台账收录 | 未收录 | 未收录处理 |
 |---|---|---|---|---|
 | `deprecated` | **15** | **15**（L6 11 + L7 3 + L9 1） | 0 | — |
 | `unused_value` | 10 | 10（L8） | 0 | — |
 | `unused_constructor` | 9 | 9（L2） | 0 | — |
-| `unused_package` | 4 | 4（L4） | 0 | — |
+| `unused_package` | 6 | 6（L4） | 0 | — |
 | `result_error_return` | 4 | 4（L1） | 0 | — |
 | `struct_never_constructed` | 3 | 3（L3） | 0 | — |
 | `deprecated_syntax` | 1 | 1（L5） | 0 | — |
 | `unused_async` | **0** | — | 0 | **已消**（`87a2d9536`：删 `commissar_send` 的无用 `async`） |
-| **合计** | **46** | **46** | **0** | |
+| **合计** | **48** | **48** | **0** | |
 
-**覆盖率 46/46 = 100.0%。**（`check_warning_ledger.py` 现算核对，Lane DU）
+**覆盖率 48/48 = 100.0%。**（`check_warning_ledger.py` 现算核对，Lane DU）
 
 ---
 

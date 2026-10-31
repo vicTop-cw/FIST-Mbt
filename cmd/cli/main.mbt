@@ -107,6 +107,19 @@ fn user_arg(args : Array[String], i : Int32) -> String {
 }
 
 ///|
+/// 兜底臂（与 user_first_arg 同口径）。缺这一臂时 js/native 之外的目标
+/// （wasm / interp）直接编译断——而 `user_first_arg` 早就有这一臂，
+/// 两半不对称本身就是下一颗雷。
+#cfg(not(any(target="js", target="native", target="llvm")))
+fn user_arg(args : Array[String], i : Int32) -> String {
+  if args.length() > i + 2 {
+    args[i + 2]
+  } else {
+    ""
+  }
+}
+
+///|
 fn print_help() -> Unit {
   println(list_topics())
 }

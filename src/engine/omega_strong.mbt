@@ -433,6 +433,40 @@ pub fn FistEngine::omega_verify_gate(
   }
 }
 
+///|
+/// 归档前的 Omega 门（**唯一真源**）。
+///
+/// 为什么要抽这一层：`FistEngine::archive` 与 `archive_force` 各自内联过一遍
+/// 「omega_enabled → 孤儿豁免 → omega_verify_gate」三连，而第三条能写 Archived 的路径
+/// ——`publish_next_round`（watchdog / pipeline 自动续轮）——**没有门**：
+/// 它直接对旧根任务 `Task::archive()` 后落库，于是「验收门可由归档绕过」在自动续轮
+/// 这条通道上仍然成立（判例-29：门长在调用点里，第二个调用点就漏）。
+/// 现在三条归档路径都从这里取判定；文案与原先逐字一致 ⇒ 既有锁零回归。
+pub fn FistEngine::omega_archive_gate(
+  self : FistEngine,
+  t : @core.Task,
+) -> Result[Unit, String] {
+  if !omega_enabled(t) {
+    return Ok(())
+  }
+  // BUG-417：排除「孤儿 Omega 任务」——语义见 omega_orphan_of_archived_parent
+  let parent_st : @core.TaskStatus? = match t.get_parent() {
+    None => None
+    Some(pid) =>
+      match self.get_task(pid) {
+        None => None
+        Some(p) => Some(p.get_status())
+      }
+  }
+  if omega_orphan_of_archived_parent(t, parent_st) {
+    return Ok(())
+  }
+  match self.omega_verify_gate(t.get_id()) {
+    Err(e) => Err("Omega 门禁拦截归档: \{e}")
+    Ok(_) => Ok(())
+  }
+}
+
 // —— 第一环：语料创建 ——
 
 ///|

@@ -66,7 +66,7 @@ pub fn validate_spec_json(String) -> Result[Json, String]
 
 pub fn verify_fingerprint(Json) -> Result[Unit, String]
 
-pub fn verify_fix_with_evidence(Array[(String, String)]) -> Json
+pub fn verify_fix_with_evidence(Array[(String, String)], max_rounds? : Int32) -> Json
 
 pub fn verify_single_spec(String, String) -> Json
 

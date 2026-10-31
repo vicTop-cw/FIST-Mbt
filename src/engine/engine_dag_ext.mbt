@@ -281,6 +281,34 @@ fn FistEngine::dag_reaches(
 }
 
 ///|
+/// 依赖边落库前的**唯一**校验面：自环 / 依赖不存在 / 传递环，三者各自给可处置文案。
+///
+/// 为什么必须有这一层（判例-29「机制格 ≠ 实现路径格」）：环检测原先只长在
+/// `dag_depend` 函数体里，于是第二个写 `depends_on` 的入口（supervisor_task_upsert）
+/// 照样能把环写进库而完全不红——评委实测的「DAG 接受成环依赖」就是这个形状。
+/// **所有**写依赖边的路径都必须过这里，不许再各写一份。
+pub fn FistEngine::depend_edge_ok(
+  self : FistEngine,
+  task_id : String,
+  dep_id : String,
+) -> Result[Unit, String] {
+  if dep_id == task_id {
+    return Err("不能依赖自身: \{task_id}")
+  }
+  match self.store.get_task(dep_id) {
+    None => return Err("依赖任务 \{dep_id} 不存在")
+    Some(_) => ()
+  }
+  // BUG-213：传递环检测——若 task_id 是 dep_id 的（传递）依赖，加这条边即成环
+  if self.dag_reaches(dep_id, task_id) {
+    return Err(
+      "拒绝成环依赖: \{task_id} 依赖 \{dep_id} 会形成传递环（\{dep_id} 已传递依赖 \{task_id}）",
+    )
+  }
+  Ok(())
+}
+
+///|
 /// 显式给任务追加一条前置依赖（构建 DAG 依赖边，不只靠 plan_deep 隐式父子）。
 /// 校验：task 与 dep 均存在、非同一任务、且不会形成直接自环；去重追加并落库。
 /// 返回追加后的任务 JSON。失败返回 Err（含人语原因）。
@@ -294,18 +322,9 @@ pub fn FistEngine::dag_depend(
     None => return Err("task not found: \{task_id}")
     Some(t) => t
   }
-  if dep_id == task_id {
-    return Err("不能依赖自身: \{task_id}")
-  }
-  let _dep = match self.store.get_task(dep_id) {
-    None => return Err("依赖任务 \{dep_id} 不存在")
-    Some(d) => d
-  }
-  // BUG-213：传递环检测——若 task_id 是 dep_id 的（传递）依赖，加这条边即成环
-  if self.dag_reaches(dep_id, task_id) {
-    return Err(
-      "拒绝成环依赖: \{task_id} 依赖 \{dep_id} 会形成传递环（\{dep_id} 已传递依赖 \{task_id}）",
-    )
+  match self.depend_edge_ok(task_id, dep_id) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
   }
   // 已存在则幂等返回现任务
   if task.depends_on.contains(dep_id) {

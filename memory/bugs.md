@@ -13096,3 +13096,289 @@ pub fn Spec::status_text(self : Spec) -> String {
 
 ### FIXED(2026-10-30T15:58:35Z / BUG-500)
 - evidence: 数据面已修：memory/bugs.md:10907 的缩进续行「引用抬头」改为反引号包裹（形态守卫认可的合法引用形态 c）⇒ bug_list 不再把它解析成条目。判据读数：bug_list count 487→486、status 非法枚举 1→0、BUG-206 条目 3→2、python scripts/check_bug_ledger_shape.py rc=0。回归锁（判例-36 出口②·显式「不需锁」+理由）：本笔是**纯文案修复**（改账本里一处引用文本的形态，不是代码行为），且 Lane G 作用域禁止新增 src/** 改动 ⇒ 无法在本笔内新增 _test.mbt/_wbtest.mbt 锁；复核锁复用既有两处当场可复跑的读数面 —— bug_list 的 status 闭集分布 与 check_bug_ledger_shape.py rc=0。⚠️ 未锁的缺口：RE_BUG_HEAD 的 (?:OPEN|FIXED|DUPLICATE|FALSE_POSITIVE)\b 不锚行尾 ⇒ 若有人在行首抬头行尾再加 ← 注释，形态守卫不会红、脏值会复活；代码面真因（bug_parse_header 未按首词归一，src/server/bugreport.mbt）本笔未修，建议另开单并配 wbtest 断言锁。
+
+
+## BUG-501 [2026-10-31T01:55:00Z] [critical] FIXED
+- summary: 九月黑客松拒收项①「物理多租户隔离名实不符」—— publish/claim 一类交互工具早已按 ns 路由到 `<ns>.db`，但**无人值守与自愈类工具**（report_bug / watchdog_tick / pipeline_tick / selfdrive_publish_next / selfdrive_export_tasks / heal / circuit_fail / circuit_status）收了 `namespace` 却把模块级全局 `engine`（主库）传给 ops 层 ⇒ ns 只剩 `tasks.ns` 列标签，行照样落 `fist-mbt.db`，`alpha.db`/`beta.db` 恒空
+- detail: ## 现象（当场实测读数，非叙述）
+
+活体探针 `scripts/blackbox/e2e_acceptance_recheck.py` 在沙箱里以 `FIST_DB_PATH=<沙箱>/main.db`
+起 server、`store_open(namespace=alpha)` 后逐条打写路径：
+
+| 工具 | alpha.db 增量 | 主库 ns=alpha 增量 | 修前判定 |
+|---|---|---|---|
+| publish | +1 | +0 | 已隔离 |
+| report_bug(publish_task=true, task_ns=alpha) | +0 | **+1** | **漏** |
+| supervisor_task_upsert | +1 | +0 | 已隔离 |
+| dag_publish / pipeline_tick / selfdrive_publish_next / heal | — | — | 需逐条钉 |
+
+评委那句「alpha/beta 库零任务，任务写同一主库」成立——主库实测 2450 行里带 63 个不同 ns 标签，
+而 `.fist-mbt/data/*.db` 与仓库根 `alpha.db`/`beta.db` 全为空。
+
+## 根因（两层，缺一层就还是漏）
+
+1. **代码面**：`src/server/server.mbt:27` 的进程级 `let engine`（`SqliteStore::new()` ⇒ 主库）
+   被 8 个工具的 handler 原样传给 `@ops.*` 函数。BUG-478 那轮只修了 `reserve_*/lock_*` 七件套，
+   无人值守这一族没扫到——**同族缺陷按工具族清完一批不等于全仓闭环**。
+2. **语义面**：`MultiStore::get` 对合法但未打开的 ns **惰性建库并返回 Some**（BUG-421 已记为设计），
+   所以「路由不到」不会报错，只会静默往主库写 ⇒ 失效形态是「看起来一切正常」。
+
+## 修法
+
+八个 handler 一律改过 `engine_for_ns(ns)` 这道唯一路由门（空/`default` 回主库，其余落该 ns 的库，
+非法 ns 直接 Err——三条出口没有一条是「静默换库」）：`report_bug(task_ns)`、`watchdog_tick`、
+`pipeline_tick`、`selfdrive_publish_next`、`selfdrive_export_tasks`、`heal`、`circuit_fail`、
+`circuit_status`。`heal` 的回执同时把 `scope` 从 `all-namespaces` 改成 **`main-db/all-ns-rows`**
+并补 `scope_note`——不传 namespace 的看护确实只扫主库，旧文案是让读者以为跨库扫；
+`backend` 一并改取**实际在扫的那台库**（`eng_ns.heartbeat_backend()`），不再自述主库。
+
+## 已知边界（不粉饰，另立追记）
+
+- **`heal` 不传 ns 时仍不跨库扫**：跨 ns 库的僵尸任务要点名 `namespace` 逐库处理。
+  真跨库扇出要复用 `supervisor_ns_candidates(ns)` 那套聚合面，属独立设计决策，本笔只做「文案不再说谎」。
+- **每次 `engine_for_ns` 新建一个 `FistEngine`**（`src/engine/engine.mbt:17-22` 自陈）⇒
+  进程内状态（claimguard/saga 等）在非 default ns 不共享。这是既有设计，不在本笔范围。
+- reported_by: Qoder 主会话（九月黑客松拒收整改）
+
+### FIXED(2026-10-31T01:55:00Z / BUG-501)
+- evidence: 代码面：`src/server/server.mbt` 八个 handler 由传全局 `engine` 改为 `engine_for_ns(ns)`
+  路由（report_bug 取 `task_ns`，其余取 `namespace`），`heal` 的 `scope`/`scope_note`/`backend`
+  三字段按实态改写。回归锁（判例-36 出口①·**行为面判据**，非单测）：常驻探针
+  `scripts/blackbox/e2e_acceptance_recheck.py` 的 **A1 格**逐条打八条写路径，断言
+  「主库 ns=alpha 行数增量为 0」且「ns 库确有增量」——**反向对照内置**：若八条路径一条都不写
+  （探针看不见样本），A1 自判 FAIL 而不是绿。修前实测该格 FAIL（report_bug 漏 +1 行进主库），
+  修后 8/8 全 PASS；同一形状另有 `scripts/store_isolation_probe.py` 的 C3 格做交叉面。
+  ⚠️ 未锁的缺口：`heal` 跨库扇出、`engine_for_ns` 每调用重建引擎的进程内状态语义，均已在条目正文
+  「已知边界」点名，不在本笔锁的范围内。
+
+
+## BUG-502 [2026-10-31T01:55:10Z] [critical] FIXED
+- summary: 九月黑客松拒收项②「自动修复三轮 = 零修复」—— MCP 工具 `omega_verify_fix` 明明收到了带 `content` 的 specs，却在 handler 里只把**剥掉 content 的** failed_details 喂给 `batch_verify_fix`；该纯函数因此结构上不可能修复，`fixes_applied` 恒为空数组、`total_rounds` 恒为 1；另有 `apply_fix` 的 default 分支把「未知根因」送去**重算指纹盖章**，等于给验收门发橡皮图章
+- detail: ## 现象（修前实测原文）
+
+`omega_verify_fix(specs=[{file_name:"s1.json", content:<坏指纹语料>}], max_rounds=3)` 回：
+
+```
+{"rounds":[{"round":1,"fixes_applied":[],"note":"本纯函数无 spec 内容，未实际修复，全部转人工审查"}],
+ "total_rounds":1,"final_accuracy":0,"fixes_applied":[],"veto":true}
+```
+
+## 根因（三处叠加，缺一处仍会零修复）
+
+1. `src/server/server.mbt` 的 handler：先 `batch_verify(all_spec_contents)`，再只把
+   `failed_details`（只有 `file_name` + `errors`）交给 `batch_verify_fix` ⇒ **内容在这一跳被丢掉**。
+2. `src/omega/omega_tool.mbt:322/335` 的 `fixes_applied` 是硬编码空数组，`:317` 的
+   `final_accuracy` 非满即 0 ⇒ 诚实性约束把它压成了分类器（BUG-354 出路 c 自述过这件事）。
+3. **真正的三轮引擎 `verify_fix_with_evidence` 全仓零调用点**（只有 `pkg.generated.mbti` 声明它），
+   而它内部的 `content_of(fname)` 每次都从**原始** spec_contents 取原文 ⇒ 就算接上，第二轮做的事与
+   第一轮逐字相同，轮次再多也不收敛。另外 `max_rounds` 在 `auto_repair` 里被 `MAX_FIX_ROUNDS` 写死。
+
+## 修法
+
+- handler 改调 `@omega.verify_fix_with_evidence(all_spec_contents, max_rounds~)`（持有原文那条链）。
+- 引擎引入**活内容表** `live : Map[String, String]`：fixer 把本轮产物写回 live，下一轮读 live ⇒
+  第二轮是在上一轮之上继续。并给每个 spec 维护 `live_err`（修完立刻重验、回填**新**错因），
+  下一轮针对残留问题而不是老问题。
+- `src/evidence/auto_repair.mbt` 增 `max_rounds~ : Int32 = MAX_FIX_ROUNDS`，夹 1..10（夹而不拒：
+  传 0 不许一轮都不跑，否则「修过了」这件事无法自证；直接 Err 会让无人值守为一个无意义的数停摆）。
+- `apply_fix` 的 default 分支由 `fix_fp_mismatch(spec)` 改为 `spec`：**未知就是没辙**，
+  不许重算指纹把验收项刷绿。
+- 回执形状加：`fixed_specs[{file_name, content}]`（修好的全文，调用方可直接采纳）、
+  `repair_ok`、`max_rounds`（请求的夹紧预算，不是「实际跑了几轮」），`rounds[]` 的
+  `accuracy_before/after` 改成**按轮累计**（去重后）而不是每行复制同一个终值。
+
+## 语义边界（写进工具描述，不靠人记）
+
+只有 `struct_missing / fp_mismatch / format_deviation` 三类可自动修复；`semantic_error` 与
+`unknown` 一律进 `needs_human_review` 并带**最后一轮**的残留错因。本工具不改写库里的语料，
+`fixed_specs` 由调用方自行采纳。
+- reported_by: Qoder 主会话（九月黑客松拒收整改）
+
+### FIXED(2026-10-31T01:55:10Z / BUG-502)
+- evidence: 代码面：`src/server/server.mbt`（handler 接线 + 工具描述重写返回契约）、
+  `src/omega/omega_tool.mbt`（`verify_fix_with_evidence` 活内容表 + 按轮累计 + `apply_fix` 摘掉
+  default 洗指纹）、`src/evidence/auto_repair.mbt`（`max_rounds` 真消费并夹 1..10）。
+  回归锁（判例-36 出口①·点名测试文件）：`src/omega/omega_acc_fix_test.mbt` 4 格 ——
+  ① 坏指纹走完整链路后 `fixes_applied` 非空 + `veto` 解除 + `fixed_specs` 的 content 再跑
+  `batch_verify` 真通过（「修好了」必须可复用）；② 好语料不误伤；③ **未知根因逐字不改**
+  （含整份 stringify 相等）+ fp_mismatch 对照必须改；④ `max_rounds` 0/999/缺省 = 1/10/3。
+  `src/evidence/evidence_acc_fix_test.mbt` 2 格 —— 预算 0/1/3/999 各按夹紧轮数停下；
+  「第 1 轮修不动、第 2 轮才动手」的夹具在预算 1 时 `rounds_used=1 且 !ok`、预算 3 时
+  `rounds_used=2 且 ok` ⇒ 钉的是**迭代**而不是重放。
+  变异对照（真跑）：M3 把 `apply_fix` 的 default 改回 `fix_fp_mismatch` ⇒
+  `src/omega` 56→55/1 failed，失败格正是「未知根因不重盖章」那条；还原后 56/56。
+  ⚠️ **自曝一条过程债**：M3 注入后一度忘记还原就去做下一项，靠全量测试那 1 格红兜住
+  （判例-30「变异的还原必须与注入同等严肃」本仓已有 BUG-432 先例，这次又差点重演）。
+  活体面另有探针 A2 格（对真 server 调用，修前 FAIL / 修后 PASS）。
+
+
+## BUG-503 [2026-10-31T01:55:20Z] [high] FIXED
+- summary: 九月黑客松拒收项⑤「DAG 接受成环依赖」—— BUG-213 的传递环检测只长在 `dag_depend` 函数体里，
+  第二个写 `depends_on` 的入口 `supervisor_task_upsert` 照样能把环写进库；`publish_with_deps` 也不判环
+- detail: ## 现象（修前实测原文，探针 A5 格）
+
+建 A←B←C 之后：
+
+```
+dag_depend(A, dep=C)                  ⇒ ERR 拒绝成环依赖            ✅（BUG-213 的门在）
+supervisor_task_upsert(A,[C])         ⇒ ok_count=1，盘上 A.depends_on=["T0r3"]   ❌ 环被写进库
+supervisor_task_upsert(B,[B])         ⇒ ok_count=1，盘上 B.depends_on=[...,自己]  ❌ 自环也被接受
+```
+
+根因与 BUG-501 同族（判例-29）：**校验长在调用点，第二个调用点就漏**。
+`src/engine/engine_supervisor.mbt` 的两条通道（更新已有任务 / 新建带依赖）都直接 `with_depends_on` 落库；
+`src/core/core_task.mbt:817` 只做去重不做校验；store 层没有最后一道闸
+（`src/store` 全目录 grep 环/cycle 零命中）。
+
+## 修法
+
+- `src/engine/engine_dag_ext.mbt` 抽出 **`FistEngine::depend_edge_ok(task_id, dep_id)`**：
+  自环 / 依赖不存在 / 传递环三拒，文案与 `dag_depend` 原先逐字一致（既有锁零回归）。
+- 三条写边入口全部过这一道门：`dag_depend`（改为调用它）、`supervisor_task_upsert` 的
+  **更新**与**新建**两条通道、`publish_with_deps`。
+- upsert 的语义按本仓「事务性迁移」口径：**任一条边被拒 ⇒ 该 item 整条不写**，
+  回执给 `error`（不留半套改动）；新建通道带**悬空依赖**同样拒（回执 `action="dep_rejected"`）——
+  以前会静默写进去，事后 `dag_check` 才红。
+- `publish_with_deps` 保留原先那圈存在性检查：它的文案「依赖任务不存在: X」被
+  `src/server/tool_cov_lane_c_test.mbt:229` 钉着，换文案会打红一条无关的锁（已在注释里写明）。
+- reported_by: Qoder 主会话（九月黑客松拒收整改）
+
+### FIXED(2026-10-31T01:55:20Z / BUG-503)
+- evidence: 代码面：`src/engine/engine_dag_ext.mbt`（新增 pub 唯一环闸 `depend_edge_ok`）、
+  `src/engine/engine_supervisor.mbt`（两条通道接线 + 整条不写）、`src/engine/engine.mbt`
+  （`publish_with_deps` 接线）。回归锁：`src/engine/engine_acc_reject_wbtest.mbt` 四格 ——
+  `depend_edge_ok` 三拒一放、upsert 关环被拒**且断言盘上 depends_on 逐字未变**、upsert 自环被拒、
+  合法边与新建合法依赖照常放行（反向对照，防新门恒红）。
+  变异对照（真跑）：M1' 把 upsert 的环闸接线摘掉（换成一个永不命中的条件）⇒
+  `src/engine` 389→387/2 failed，红的正是两条 upsert 格；还原后 389/389。
+  活体面另有探针 A5 格（对真 server 走三条入口 + 盘上核 depends_on + 合法边对照）。
+
+
+## BUG-504 [2026-10-31T01:55:30Z] [high] FIXED
+- summary: 九月黑客松拒收项⑥「Omega 验收门可由 archive 绕过」—— `archive` 与 `archive_force` 各自内联过
+  一遍门禁，但**第三条写 Archived 的路径** `publish_next_round`（watchdog / pipeline 自动续轮）
+  直接 `Task::archive()` 后落库，不过任何门
+- detail: ## 现象与定位
+
+`src/engine/engine.mbt` 的 `publish_next_round` 在标记旧根任务「已续轮」之后调
+`marked.archive()`（core 层状态机）再 `store.update_task` —— 绕开了 `FistEngine::archive` 里那段
+「omega_enabled → BUG-417 孤儿豁免 → omega_verify_gate」。于是未做成果复验的强验证根任务，
+会被无人值守的自动续轮**静默了账**，而且下一个 tick 还会再来一次。
+
+评委能直接观测的两条通道（`verify` / `archive(force=true)`）在 HEAD 已有门——实测：
+`archive(force=true)` 回 `ERR:Omega 门禁拦截归档: Omega 强验证门禁：任务 [T0r8] 尚未做成果复验…`，
+任务状态停在「已暂停」。本单修的是那两条之外的第三条。
+
+## 修法（两处判断，都写进注释）
+
+- `src/engine/omega_strong.mbt` 新增 **`FistEngine::omega_archive_gate(t)`** 作为唯一真源
+  （含 BUG-417 孤儿豁免），`archive` / `archive_force` / `publish_next_round` 三条路径全部改从它取判定；
+  文案「Omega 门禁拦截归档: …」逐字保持 ⇒ 既有锁零回归。
+- 门判在**建新轮任务之前**。第一次实现把门放在了 `create_task` 之后，实测留下半套状态
+  （新根任务已落库、旧根任务没归档），而自动续轮每个 tick 都重跑 ⇒ 一次拦住长出 N 个孤儿轮次；
+  回归锁里专门钉了「被拦时 `T0r2` 不得存在」。
+- reported_by: Qoder 主会话（九月黑客松拒收整改）
+
+### FIXED(2026-10-31T01:55:30Z / BUG-504)
+- evidence: 代码面：`src/engine/omega_strong.mbt`（`omega_archive_gate` 唯一真源）、
+  `src/engine/engine.mbt`（`archive` 与 `publish_next_round` 两处接线）、
+  `src/engine/engine_archive_force.mbt`（改调同一真源）。回归锁：
+  `src/engine/engine_acc_reject_wbtest.mbt` 三格 —— 自动续轮被拦时旧任务仍「已完成」且**没有**
+  新轮次落库、非 Omega 任务照旧续轮并归档（零回归对照）、`archive` 与 `archive_force` 同门 +
+  无标记时两条都放行（证明那两条红是门的功劳而不是别处坏了）。
+  变异对照（真跑）：M2 把门改成判一个不存在的 ghost 任务 ⇒ 389→388/1 failed，红的正是续轮那格；
+  还原后 389/389。活体面另有探针 A6 格（verify 拒 + archive(force) 拒 + 状态不得变「已归档」+ 双对照）。
+
+
+## BUG-505 [2026-10-31T01:55:40Z] [high] FIXED
+- summary: 九月黑客松拒收项③「外部实现 Executor 报 readonly」—— `trait Executor` 在包外**不可实现**：
+  第三方在自己的包里写 `impl @executor.Executor for 我的类型` 时，编译器直接拒
+  （`Error: [4145] Cannot implement trait '…executor.Executor' because it is readonly`）；
+  结果类型 `ExecResult` / `ExecContext` 的字段同样是包外闭包态
+- detail: ## 现象（本仓当场复现，不是转述）
+
+新建独立包 `tests/external_executor/` 实现一遍 trait，第一次编译的原文：
+
+```
+Error: [4145]
+  impl @executor.Executor for RemoteSandboxAgent with fn name(self) -> String {
+       Cannot implement trait '@vicTop-cw/fist-mbt/src/executor.Executor' because it is readonly.
+```
+
+同族第二道墙：闭包 `pub struct` 的字段包外读不到、也不能用字面量构造
+（4036/4033「Cannot create values of the read-only type」，本仓在
+`src/executor/cli_argv_wbtest.mbt:5`、账本 BUG-413 早有实测记录）。
+ ⇒ 申报书那句「执行器抽象层（Executor trait）允许接入自定义执行后端」在**包外根本不成立**；
+ 而 MCP 侧的 `executor_register` + `executor_run` 通道（注册名即可执行文件名、argv=[prompt]、不经 shell）
+ 本身是通的——评委撞的是 trait 那一面。
+
+## 修法
+
+- `src/executor/base.mbt`：trait 改 `pub(open) trait Executor`。
+  （曾先试 `pub(open) struct ExecResult` —— 本工具链在 `.mbt` 里报
+  `[4002] The pub(open) modifier is not supported here`；struct 的开放性只在 `.mbti` 面上表达，
+  而 `.mbti` 由 `moon info` 生成，不该手改 ⇒ **改走访问器**。）
+- 同文件补一组 pub 面：`ExecContext::{project_dir_of,task_id_of,description_of,assignee_of}`、
+  `ExecResult::{succeeded,deliverable_of,executor_of,model_of,error_msg_of,tokens_in_of,
+  tokens_out_of,cost_of,duration_ms_of}`、`ExecResult::{with_model,with_duration_ms,full}`
+  —— 外部实现者**不必知道内部字段布局**就能读上下文、造结果、填成本元数据。
+- reported_by: Qoder 主会话（九月黑客松拒收整改）
+
+### FIXED(2026-10-31T01:55:40Z / BUG-505)
+- evidence: 代码面：`src/executor/base.mbt`（`pub(open) trait` + 访问器/构造器一组），
+  接口面由 `moon info` 落 `src/executor/pkg.generated.mbti`。回归锁（判例-33「要测配置这根线，
+  不是服务本体」的编译版）：**新增独立 MoonBit 包** `tests/external_executor/`（3 格测试）——
+  它在自己的包里实现 trait、经访问器读 `ExecContext`、经 `ExecResult::full/ok + with_model +
+  with_duration_ms` 造结果，并用完全限定调用 `@executor.Executor::run(...)` 把**同一个调用点**
+  派发到两个不同实现（远程沙箱形 / 第三方 CLI 形）。
+  「修前红」的证据是编译器原文（本条目 detail 里那段 4145），不是推测：同一份文件在改 trait
+  之前编译不过，改后 3/3 通过。活体面另有探针 A3 格（注册即可派发、binary 取注册名、
+  argv=[prompt]、未注册一律拒——「可替换」没有把白名单这道安全线换掉）。
+  ⚠️ 未锁的缺口：`src/executor/mcp_delegate.mbt` 的 `delegate_execute` 仍无生产调用点
+  （trait 面与 MCP 面是两条通道，本笔没把它们并成一条）；注册表只存名字/能力标签，
+  不能持有一个 trait 实例 ⇒ 「远程沙箱」目前仍需一个本地包装可执行文件。已在整改报告点名。
+
+
+## BUG-506 [2026-10-31T01:55:50Z] [medium] OPEN
+- summary: native 轨的 `cli_exit` 不生效——未知子命令在 js 轨回 rc=2，native 轨回 rc=0；
+  申报书承诺的「未知参数必须非 0」这一档在 native 上无人守
+- detail: ## 实测（两个后端同一条命令）
+
+产物 = `_release/native/fist-mbt.exe`（2026-10-30 12:34 构建，ELF，在 WSL 下跑）：
+
+```
+./fist-mbt.exe definitely-not-a-subcmd   ⇒ 先打印「未知子命令: …」+ 帮助页，随后 rc=0
+node fist-mbt.js definitely-not-a-subcmd ⇒ rc=2
+./fist-mbt.exe version / serve / demo     ⇒ 均正常（BUG-159 的参数分派已修，本单不是它）
+```
+
+判决链在：`cmd/cli/main.mbt` 的 `Unknown(other) => { println(…); print_help();
+cli_exit(exit_code_of(cmd)) }`，`exit_code_of` 对 Unknown 返回 `USAGE_ERROR_EXIT_CODE=2`
+（这一层**有**白盒锁：`cmd/cli/subcmd_wbtest.mbt:19-21`），`cli_exit` 在 native/llvm 臂是
+`extern "c" fn native_exit(code : Int32) = "exit"`。所以纯函数侧是对的，坏的是**extern 到
+libC `exit` 那一跳**（rc 仍是 0，说明退出码没交给进程）。
+
+## 为什么本轮不修（结转理由 + 出路，不是「放着」）
+
+1. 判绿要靠**真 native 产物**复跑，而本机是 Windows：native 构建需 MSVC + sqlite3.lib
+   （`scripts/native-env.ps1`），在共享工作区起 native 全量构建会与其他 lane 抢 `_build`；
+2. WSL 那侧只有 Oct-30 的既有产物，改完源码无法在同一轮里廉价重建验证；
+3. 判例-32/33 的教训：拿「纯函数锁绿 + 二进制读数旧」当「已修」，正是本仓为 BUG-417 返工过的形状。
+
+出路（任一条都可作关闭条件，建议第 1 条）：
+- ① 在 CI 的 native 臂加一格**行为面**判据：`fist-mbt definitely-not-a-subcmd` 必须 rc≠0，
+  并把 `cli_exit` 换成 MoonBit native 可靠的退出方式（候选：`exit` 前显式 flush、
+  或经 `@env` 的 terminate 路径；需实测确认哪条真能改 rc）；
+- ② 若 native 确实拿不到退出码 API，则把「native 轨不保证退出码」写进 `USAGE.md` 的
+  已知边界 + 让 `cli_exit` 在 native 臂 `abort()`（rc=134，至少非 0，且原因可诊断）；
+- ③ 用 `scripts/blackbox/e2e_acceptance_recheck.py` 的 A4 格做常驻面：它在有本平台 native
+  产物时自动真跑并判这条（本机 Windows 下回 SKIP 并写明缺什么，不拿 WSL 读数冒充交付物）。
+
+## 关联
+
+同族的 native 面还有：`_release/native/fist-mbt.exe` 是 **ELF 却叫 .exe**（本机构建残留，
+`_release/` 在 .gitignore 面；CI 的 windows 臂 `release.yml:185` 产的是
+`fist-mbt-native-win-x64-*.zip`，且该 job 带 `continue-on-error: true` ⇒ 长期静默失败，
+所以公网 Release 至今只有 linux-x64 一个 native 资产）。A4 格已把「zip 内文件魔数 ↔ 资产名声明平台」
+纳入判据，本机残留只登记不判红。
+- reported_by: Qoder 主会话（九月黑客松拒收整改）
